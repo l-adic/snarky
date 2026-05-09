@@ -24,7 +24,7 @@ import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCompiled, deriveWrapVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain (StepMainSideLoadedMainParams, compileStepMainSideLoadedMain)
-import Pickles.Step.Prevs (PrevsSpecNil, PrevsSpecSideLoadedCons)
+import Pickles.Step.Slots (SideLoaded, Slot)
 import Pickles.Types (StatementIO, StepField, WrapField)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
 import Snarky.Backend.Compile (compile)
@@ -58,11 +58,11 @@ compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
       }
   -- mpv=1, single side-loaded slot with bound 2 (the side-loaded
   -- prev's `max_proofs_verified = N2` upper bound). Slots derived
-  -- from PrevsSpecSideLoadedCons via funcdep.
+  -- from the `Slot SideLoaded` spec via funcdep.
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     ( \stmt ->
         wrapMainForPrevs @1
-          @(PrevsSpecSideLoadedCons 2 (StatementIO (F StepField) Unit) PrevsSpecNil)
+          @(Slot SideLoaded 2 (StatementIO (F StepField) Unit) /\ Unit)
           config
           stmt
     )

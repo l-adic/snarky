@@ -32,7 +32,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Tuple.Nested (Tuple2, tuple2)
+import Data.Tuple.Nested (type (/\), Tuple2, tuple2)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -43,7 +43,7 @@ import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecu
 import Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn (compileWrapMainNoRecursionReturn)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, SlotVkSource(..), stepMain)
-import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
+import Pickles.Step.Slots (Compiled, Slot)
 import Pickles.Types (StatementIO, StepField)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compile)
@@ -163,8 +163,7 @@ compileStepMainTreeProofReturn params = do
       --   `exists`-allocated VK inside stepMain.
       -- Single-rule: mpvMax = len = 2, mpvPad = 0.
       ( \_ -> stepMain
-          @( PrevsSpecCons 0 (StatementIO Unit (F StepField))
-              (PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
+          @( Slot Compiled 0 (StatementIO Unit (F StepField)) /\ (Slot Compiled 2 (StatementIO Unit (F StepField)) /\ Unit)
           )
           @Unit
           @(F StepField)

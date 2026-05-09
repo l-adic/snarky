@@ -30,7 +30,6 @@ import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Pickles.Step.Prevs (PrevsSpecNil)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, assertEqual_, const_, exists)
@@ -132,7 +131,7 @@ compileStepMainSideLoadedChild params =
       -- (CircuitType funcdep), mpvPad (MpvPadding), outputSize
       -- (Mul/Add chain).
       ( \_ -> stepMain
-          @PrevsSpecNil
+          @Unit
           @(F StepField)
           @Unit
           @Unit

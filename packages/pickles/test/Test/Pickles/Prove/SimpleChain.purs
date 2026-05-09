@@ -22,7 +22,7 @@ import Data.Either (Either(..))
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
-import Data.Tuple.Nested (Tuple1, tuple1, (/\))
+import Data.Tuple.Nested (type (/\), Tuple1, tuple1, (/\))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
@@ -41,7 +41,7 @@ import Pickles.Prove.Compile
 import Pickles.Prove.Step (StepRule)
 import Pickles.Prove.Verify (verify)
 import Pickles.Step.Advice (getPrevAppStates)
-import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
+import Pickles.Step.Slots (Compiled, Slot)
 import Pickles.Types (StatementIO(..), StepField)
 import Pickles.Wrap.Slots (Slots1)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -89,7 +89,7 @@ simpleChainRule self = do
 type SimpleChainRules =
   RulesCons 1
     (Tuple1 (StatementIO (F StepField) Unit))
-    (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+    (Slot Compiled 1 (StatementIO (F StepField) Unit) /\ Unit)
     (Tuple1 SlotWrapKey)
     RulesNil
 
@@ -127,7 +127,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       runStep prevSlot appInput = do
         eRes <- liftEffect $ runExceptT $ chainProver
           -- Compiled slot's spec-derived vkCarrier is `Unit /\ Unit`
-          -- (one PrevsSpecCons over PrevsSpecNil). Threaded uniformly
+          -- (one Slot Compiled over Unit). Threaded uniformly
           -- with side-loaded callers; `unit /\ unit` is the
           -- semantically-identical spec-derived placeholder.
           { appInput, prevs: tuple1 prevSlot, sideloadedVKs: unit /\ unit }

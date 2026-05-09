@@ -35,7 +35,6 @@ import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Pickles.Step.Prevs (PrevsSpecNil)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, const_)
@@ -95,7 +94,7 @@ compileStepMainNoRecursionReturn params =
       -- nd (from perSlotFopDomainLog2s shape).
       -- Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
       -- outputSize = mpvMax*32 + 1 + mpvMax = 1.
-      ( \_ -> stepMain @PrevsSpecNil @Unit @(F StepField) @Unit @Unit @0 @1
+      ( \_ -> stepMain @Unit @Unit @(F StepField) @Unit @Unit @0 @1
           noRecursionReturnRule
           { perSlotLagrangeAt: Vector.nil
           , blindingH: params.blindingH

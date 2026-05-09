@@ -21,7 +21,7 @@ import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCompiled, deriveWrapVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn (StepMainTreeProofReturnParams, compileStepMainTreeProofReturn)
-import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
+import Pickles.Step.Slots (Compiled, Slot)
 import Pickles.Types (StatementIO, StepField, WrapField)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
 import Snarky.Backend.Compile (compile)
@@ -60,8 +60,7 @@ compileWrapMainTreeProofReturn { lagrangeAt, blindingH } stepParams = do
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     ( \stmt ->
         wrapMainForPrevs @1
-          @( PrevsSpecCons 0 (StatementIO Unit (F StepField))
-              (PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
+          @( Slot Compiled 0 (StatementIO Unit (F StepField)) /\ (Slot Compiled 2 (StatementIO Unit (F StepField)) /\ Unit)
           )
           config
           stmt

@@ -30,7 +30,6 @@ import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Pickles.Step.Prevs (PrevsSpecNil)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -83,7 +82,7 @@ compileStepMainAddOneReturn params =
       -- N=0 has no prev proofs, so prevInputVal/prevInput are unused —
       -- pick any concrete CircuitType-havers; Unit works.
       -- Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
-      ( \_ -> stepMain @PrevsSpecNil @(F StepField) @(F StepField) @Unit @Unit @0 @1
+      ( \_ -> stepMain @Unit @(F StepField) @(F StepField) @Unit @Unit @0 @1
           addOneReturnRule
           { perSlotLagrangeAt: Vector.nil
           , blindingH: params.blindingH
@@ -92,7 +91,7 @@ compileStepMainAddOneReturn params =
           }
           dummyWrapSg
           -- Side-loaded VK carrier: no side-loaded
-          -- slots in PrevsSpecNil, so the carrier is `Unit`.
+          -- slots in Unit, so the carrier is `Unit`.
           unit
       )
       Kimchi.initialState

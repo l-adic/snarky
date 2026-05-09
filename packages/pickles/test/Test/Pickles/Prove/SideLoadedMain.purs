@@ -1,7 +1,7 @@
 -- | End-to-end test for the side-loaded `step_main` pipeline.
 -- |
 -- | Drives `compileMulti` over a 1-rule spec whose single prev slot is
--- | a `PrevsSpecSideLoadedCons` (= the prev's wrap key is supplied at
+-- | a `Slot SideLoaded` (= the prev's wrap key is supplied at
 -- | prove time rather than compile time). The test compiles an
 -- | Input-mode `No_recursion` child, drives its prover to obtain a
 -- | `CompiledProof 0`, width-lifts to the side-loaded tag's bound, and
@@ -21,7 +21,7 @@ import Data.Either (Either(..))
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Tuple (fst)
-import Data.Tuple.Nested (Tuple1, tuple1, (/\))
+import Data.Tuple.Nested (type (/\), Tuple1, tuple1, (/\))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
@@ -42,7 +42,7 @@ import Pickles.Prove.Step (StepRule)
 import Pickles.Sideload.VerificationKey (ProofsVerified(..), fromCompiledWrap)
 import Pickles.Sideload.VerificationKey (VerificationKey) as Sideload
 import Pickles.Step.Advice (getPrevAppStates)
-import Pickles.Step.Prevs (PrevsSpecNil, PrevsSpecSideLoadedCons)
+import Pickles.Step.Slots (SideLoaded, Slot)
 import Pickles.Types (StatementIO(..), StepField)
 import Pickles.Wrap.Slots (NoSlots, Slots1)
 import Safe.Coerce (coerce)
@@ -104,13 +104,13 @@ noRecursionInputRule self = do
 -- | 1-rule carrier for the Input-mode No_recursion child (mpv=0,
 -- | valCarrier=Unit, no prevs).
 type NoRecursionInputRules =
-  RulesCons 0 Unit PrevsSpecNil Unit RulesNil
+  RulesCons 0 Unit Unit Unit RulesNil
 
 -- | 1-rule carrier with a single side-loaded prev slot, `Width.Max = N2`.
 type SideLoadedMainRules =
   RulesCons 1
     (Tuple1 (StatementIO (F StepField) Unit))
-    (PrevsSpecSideLoadedCons 2 (StatementIO (F StepField) Unit) PrevsSpecNil)
+    (Slot SideLoaded 2 (StatementIO (F StepField) Unit) /\ Unit)
     (Tuple1 Unit)
     RulesNil
 

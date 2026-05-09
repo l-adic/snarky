@@ -47,8 +47,8 @@ import Pickles.Prove.Compile
 import Pickles.Prove.Step (StepRule)
 import Pickles.Prove.Verify (verify)
 import Pickles.Step.Advice (getPrevAppStates)
-import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil, StepSlot)
-import Pickles.Types (StatementIO(..), StepField, StepIPARounds, WrapIPARounds)
+import Pickles.Step.Slots (Compiled, Slot)
+import Pickles.Types (StatementIO(..), StepField, StepIPARounds, StepPerProofWitness, WrapIPARounds)
 import Pickles.Wrap.Slots (NoSlots)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
@@ -131,7 +131,7 @@ incrementRule self = do
 
 -- | `makeZeroRule` packaged: mpv=0, no prevs, valCarrier=Unit.
 mkMakeZeroEntry
-  :: Effect (RuleEntry PrevsSpecNil 0 2 Unit (F StepField) Unit 34 Unit Unit)
+  :: Effect (RuleEntry Unit 0 2 Unit (F StepField) Unit 34 Unit Unit)
 mkMakeZeroEntry = mkRuleEntry @1 @Unit @(F StepField) makeZeroRule unit
 
 -- | `incrementRule` packaged: mpv=1, one self-referential prev,
@@ -139,13 +139,13 @@ mkMakeZeroEntry = mkRuleEntry @1 @Unit @(F StepField) makeZeroRule unit
 mkIncrementEntry
   :: Effect
        ( RuleEntry
-           (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+           (Slot Compiled 1 (StatementIO (F StepField) Unit) /\ Unit)
            1
            2
            (Tuple1 (StatementIO (F StepField) Unit))
            (F StepField)
            ( Tuple1
-               ( StepSlot 1 StepIPARounds WrapIPARounds (F StepField)
+               ( StepPerProofWitness 1 StepIPARounds WrapIPARounds (F StepField)
                    (Type2 (SplitField (F StepField) Boolean))
                    Boolean
                )
@@ -161,15 +161,15 @@ mkIncrementEntry = mkRuleEntry @1 @Unit @(F StepField) incrementRule (tuple1 Sel
 mkRulesCarrier
   :: Effect
        ( Tuple2
-           (RuleEntry PrevsSpecNil 0 2 Unit (F StepField) Unit 34 Unit Unit)
+           (RuleEntry Unit 0 2 Unit (F StepField) Unit 34 Unit Unit)
            ( RuleEntry
-               (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+               (Slot Compiled 1 (StatementIO (F StepField) Unit) /\ Unit)
                1
                2
                (Tuple1 (StatementIO (F StepField) Unit))
                (F StepField)
                ( Tuple1
-                   ( StepSlot 1 StepIPARounds WrapIPARounds (F StepField)
+                   ( StepPerProofWitness 1 StepIPARounds WrapIPARounds (F StepField)
                        (Type2 (SplitField (F StepField) Boolean))
                        Boolean
                    )
@@ -189,10 +189,10 @@ mkRulesCarrier = do
 -- |   * branch 0: makeZero (mpv=0, no prevs)
 -- |   * branch 1: increment (mpv=1, one self-prev)
 type TwoPhaseChainRules =
-  RulesCons 0 Unit PrevsSpecNil Unit
+  RulesCons 0 Unit Unit Unit
     ( RulesCons 1
         (Tuple1 (StatementIO (F StepField) Unit))
-        (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+        (Slot Compiled 1 (StatementIO (F StepField) Unit) /\ Unit)
         (Tuple1 SlotWrapKey)
         RulesNil
     )

@@ -50,7 +50,7 @@ import Pickles.Sideload.VerificationKey (Checked(..))
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM, getMessagesForNextWrapProof, getMessagesForNextWrapProofDummyHash, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex, setUserPublicOutputFields)
 import Pickles.Step.FinalizeOtherProof (DomainMode(..))
-import Pickles.Step.Prevs (class PrevsCarrier, StepSlot(..), traversePrevsA)
+import Pickles.Step.Slots (class StepSlotsCarrier, traverseStepSlotsA)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), UnfinalizedFieldCount, VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.Verify (ivpTrace)
@@ -633,7 +633,7 @@ unfFields unf =
 -- |
 -- | Drops `getStepPerProofWitnesses` / `traverse allocatePerProofWitness`
 -- | / `Vector.generateA @n` in favor of `getStepSlotsCarrier` + a single
--- | `traversePrevsA` that walks the carrier per slot, extracting SPPW
+-- | `traverseStepSlotsA` that walks the carrier per slot, extracting SPPW
 -- | from `StepSlot`, allocating, and running verify_one — all with the
 -- | per-slot `n_i` in scope.
 -- |
@@ -670,7 +670,7 @@ stepMain
   => CircuitType StepField prevInputVal prevInput
   => CircuitType StepField carrier carrierVar
   => CheckedType StepField (KimchiConstraint StepField) carrierVar
-  => PrevsCarrier
+  => StepSlotsCarrier
        prevsSpec
        StepIPARounds
        WrapIPARounds
@@ -838,7 +838,7 @@ stepMain
     constDummySg = { x: const_ dummySg.x, y: const_ dummySg.y }
 
   -- 8. verify_one × len + Assert.all (inside prevs_verified label).
-  -- Drive structurally via traversePrevsA — each callback invocation
+  -- Drive structurally via traverseStepSlotsA — each callback invocation
   -- has its slot's `n_i` in scope so per-slot sizes (prevSgs, etc.)
   -- are correct, and each slot's `fopParams` / `vkComms` are computed
   -- from the slot's own `fopDomainLog2` and `knownWrapKey`
@@ -846,9 +846,9 @@ stepMain
   -- and the `of_compiled_with_known_wrap_key` / `self_data` dispatch
   -- at step_main.ml:513-528).
   results <- label "prevs_verified" do
-    rs <- traversePrevsA @prevsSpec
-      ( \i (StepSlot slotRec) -> do
-          pw <- allocatePerProofWitness slotRec.sppw
+    rs <- traverseStepSlotsA @prevsSpec
+      ( \i sppw -> do
+          pw <- allocatePerProofWitness sppw
           let
             -- Per-slot Vector nd of all possible source-branch step domains.
             -- For nd=1 this is `Vector 1 [theLog2]` (single-rule, External
@@ -892,7 +892,7 @@ stepMain
               -- per-domain lagrange tables via
               -- `mkSideloadedLagrangeLookup`. A `Nothing` would
               -- indicate a spec/dispatch mismatch (the spec's
-              -- `PrevsSpecSideLoadedCons` slot got routed to
+              -- `Slot SideLoaded` slot got routed to
               -- `SideloadedExistsVk` here, but the traversal class
               -- produced `Nothing` at this position — should be
               -- impossible by construction).
@@ -912,7 +912,7 @@ stepMain
                       "Pickles.Step.Main: SideloadedExistsVk slot has \
                       \no per-slot allocated VK — \
                       \traverseSideloadedVKsCarrier should have \
-                      \produced a Just for every PrevsSpecSideLoadedCons \
+                      \produced a Just for every Slot SideLoaded \
                       \position. Spec/dispatch mismatch."
 
             slotIvpParams =

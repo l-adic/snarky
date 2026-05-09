@@ -39,7 +39,7 @@ import Data.Either (Either(..))
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
-import Data.Tuple.Nested (Tuple2, tuple1, tuple2, (/\))
+import Data.Tuple.Nested (type (/\), Tuple2, tuple1, tuple2, (/\))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
@@ -58,7 +58,7 @@ import Pickles.Prove.Compile
 import Pickles.Prove.Step (StepRule)
 import Pickles.Prove.Verify (verify)
 import Pickles.Step.Advice (getPrevAppStates)
-import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
+import Pickles.Step.Slots (Compiled, Slot)
 import Pickles.Types (StatementIO(..), StepField)
 import Pickles.Wrap.Slots (NoSlots, Slots2)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -70,8 +70,7 @@ import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
 type TreeProofReturnPrevsSpec =
-  PrevsSpecCons 0 (StatementIO Unit (F StepField))
-    (PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
+  Slot Compiled 0 (StatementIO Unit (F StepField)) /\ (Slot Compiled 2 (StatementIO Unit (F StepField)) /\ Unit)
 
 treeProofReturnRule
   :: StepRule 2
@@ -110,7 +109,7 @@ nrrRule _ = pure
 -- | NRR's 1-rule carrier (same shape as the standalone NRR test). NRR
 -- | output is a Field, so the StepRule's outputVal is `F StepField`.
 type NrrRules =
-  RulesCons 0 Unit PrevsSpecNil Unit
+  RulesCons 0 Unit Unit Unit
     RulesNil
 
 -- | Tree_proof_return's 1-rule carrier. Two prev slots: an NRR external

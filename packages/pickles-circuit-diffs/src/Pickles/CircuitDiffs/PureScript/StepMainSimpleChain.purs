@@ -13,7 +13,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainSimpleChain
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Tuple.Nested (Tuple1, tuple1)
+import Data.Tuple.Nested (type (/\), Tuple1, tuple1)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -21,7 +21,7 @@ import Effect.Exception (throw)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, SlotVkSource(..), stepMain)
-import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
+import Pickles.Step.Slots (Compiled, Slot)
 import Pickles.Types (StatementIO, StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -88,7 +88,7 @@ compileStepMainSimpleChain params = do
       --       @prevInputVal @prevInput @valCarrier @mpvMax @mpvPad.
       -- Single-rule: mpvMax = len = 1, mpvPad = 0.
       ( \_ -> stepMain
-          @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+          @(Slot Compiled 1 (StatementIO (F StepField) Unit) /\ Unit)
           @(F StepField)
           @Unit
           @(F StepField)

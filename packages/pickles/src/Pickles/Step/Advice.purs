@@ -79,7 +79,7 @@ import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Effect (Effect)
 import Effect.Exception (throw)
-import Pickles.Step.Prevs (class PrevsCarrier)
+import Pickles.Step.Slots (class StepSlotsCarrier)
 import Pickles.Types (PerProofUnfinalized, StepField, VerificationKey)
 import Snarky.Circuit.DSL (F, FVar)
 import Snarky.Curves.Class (class WeierstrassCurve)
@@ -183,12 +183,12 @@ instance
 -- |
 -- | The curve/field type params mirror `StepWitnessM`'s so an instance
 -- | can be piggybacked on an existing `StepProverT`-like monad. The
--- | `prevsSpec` / `len` / `carrier` fundep from `PrevsCarrier` pins
+-- | `prevsSpec` / `len` / `carrier` fundep from `StepSlotsCarrier` pins
 -- | the carrier's concrete shape.
 class
   ( Monad m
   , WeierstrassCurve f g
-  , PrevsCarrier
+  , StepSlotsCarrier
       prevsSpec
       ds
       dw
@@ -210,7 +210,7 @@ class
 -- | body during circuit compilation.
 instance
   ( WeierstrassCurve f g
-  , PrevsCarrier
+  , StepSlotsCarrier
       prevsSpec
       ds
       dw
@@ -236,7 +236,7 @@ instance
 -- carrier per `prover.step` invocation.
 --
 -- The `valCarrier` shape is determined by `prevsSpec` via
--- `Pickles.Step.Prevs.PrevValuesCarrier`. The compile-time `Effect`
+-- `Pickles.Step.Slots.SlotStatementsCarrier`. The compile-time `Effect`
 -- instance throws — Snarky's compile mode discards the witness
 -- computation, so `exists $ MT.lift $ getPrevAppStates …` is never
 -- actually evaluated when building the constraint system.

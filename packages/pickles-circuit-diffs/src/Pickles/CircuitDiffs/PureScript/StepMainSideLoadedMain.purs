@@ -12,15 +12,15 @@ module Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain
 -- | `step_main_side_loaded_main_circuit.json` — 11862 gates, pi=34.
 -- |
 -- | Same rule body as `StepMainSimpleChain.simpleChainRule`; the only
--- | difference is the spec's prev tag (`PrevsSpecSideLoadedCons`
--- | instead of `PrevsSpecCons`), which routes the slot's wrap-VK,
+-- | difference is the spec's prev tag (`Slot SideLoaded`
+-- | instead of `Slot Compiled`), which routes the slot's wrap-VK,
 -- | step-domain, and max-proofs-verified through the runtime
 -- | side-loaded VK.
 
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Tuple.Nested (Tuple1, tuple1)
+import Data.Tuple.Nested (type (/\), Tuple1, tuple1)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -29,7 +29,7 @@ import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStep
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Sideload.VerificationKey.Internal (CompilePlaceholderVK, compileDummy)
 import Pickles.Step.Main (RuleOutput, SlotVkSource(..), stepMain)
-import Pickles.Step.Prevs (PrevsSpecNil, PrevsSpecSideLoadedCons)
+import Pickles.Step.Slots (SideLoaded, Slot)
 import Pickles.Types (StatementIO, StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -104,8 +104,7 @@ compileStepMainSideLoadedMain params =
       -- tag's compile-time upper bound (`N2`). vkCarrier =
       -- `VerificationKey /\ Unit` (from `SideloadedVKsCarrier`).
       ( \_ -> stepMain
-          @( PrevsSpecSideLoadedCons 2 (StatementIO (F StepField) Unit)
-              PrevsSpecNil
+          @( Slot SideLoaded 2 (StatementIO (F StepField) Unit) /\ Unit
           )
           @(F StepField)
           @Unit

@@ -35,7 +35,7 @@ import Data.Exists (runExists)
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
-import Data.Tuple.Nested (Tuple1, tuple1, (/\))
+import Data.Tuple.Nested (type (/\), Tuple1, tuple1, (/\))
 import Data.Vector (Vector)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
@@ -55,7 +55,7 @@ import Pickles.Prove.Compile
   )
 import Pickles.Prove.Pure.Verify (ExpandDeferredInput, expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput)
-import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
+import Pickles.Step.Slots (Compiled, Slot)
 import Pickles.Types (StatementIO(..), StepField, StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Pickles.Wrap.Slots (NoSlots, Slots1)
@@ -68,13 +68,13 @@ import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
 type NrrRules =
-  RulesCons 0 Unit PrevsSpecNil Unit
+  RulesCons 0 Unit Unit Unit
     RulesNil
 
 type SimpleChainRules =
   RulesCons 1
     (Tuple1 (StatementIO (F StepField) Unit))
-    (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+    (Slot Compiled 1 (StatementIO (F StepField) Unit) /\ Unit)
     (Tuple1 SlotWrapKey)
     RulesNil
 

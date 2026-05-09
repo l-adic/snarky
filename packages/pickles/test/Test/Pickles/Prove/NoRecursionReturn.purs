@@ -38,7 +38,6 @@ import Pickles.Prove.Compile
   )
 import Pickles.Prove.Step (StepRule)
 import Pickles.Prove.Verify (verify)
-import Pickles.Step.Prevs (PrevsSpecNil)
 import Pickles.Types (StepField)
 import Pickles.Wrap.Slots (NoSlots)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -59,7 +58,7 @@ nrrRule _ = pure
 -- | NRR's 1-rule carrier shape: a single `RulesCons` for the no-prev
 -- | rule, terminated by `RulesNil`.
 type NrrRules =
-  RulesCons 0 Unit PrevsSpecNil Unit
+  RulesCons 0 Unit Unit Unit
     RulesNil
 
 spec :: SpecT Aff Unit Aff Unit
@@ -87,7 +86,7 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
       rules
 
     let BranchProver nrrProver = fst output.provers
-    -- Compiled-only spec (PrevsSpecNil) → spec-derived `vkCarrier =
+    -- Compiled-only spec (Unit) → spec-derived `vkCarrier =
     -- Unit`. Mirrors OCaml's `~handler:None` for non-side-loaded
     -- branches. Threading the field uniformly keeps the
     -- `BranchProver` API consistent with side-loaded specs.

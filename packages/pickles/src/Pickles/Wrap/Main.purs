@@ -68,7 +68,7 @@ import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOldBul
 import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
 import Pickles.Wrap.Slots (class PadSlots, padAllSlots, slotWidthsOf)
-import Pickles.Wrap.SlotsForPrevs (class SlotsForPrevsSpec)
+import Pickles.Wrap.SlotsFromSpec (class SlotsFromSpec)
 import Pickles.Wrap.Verify (wrapVerify)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
@@ -862,14 +862,14 @@ wrapMain config (WrapStatementPacked stmtR) = do
   label "block6-wrapVerify" $ wrapVerify ivpParams fullIvpInput verifyInput
 
 -- | `wrapMain` wrapper that takes `@prevsSpec` instead of `@slots`,
--- | deriving `slots` via `SlotsForPrevsSpec`. Single-rule only —
+-- | deriving `slots` via `SlotsFromSpec`. Single-rule only —
 -- | multi-rule wraps need a per-slot max across rules, which a single-
 -- | `prevsSpec` funcdep can't express, so multi-rule callers use
 -- | `wrapMain @branches @slots` directly.
 wrapMainForPrevs
   :: forall @branches @prevsSpec slots mpv branchesPred totalBases totalBasesPred t m
    . CircuitM WrapField (KimchiConstraint WrapField) t m
-  => SlotsForPrevsSpec prevsSpec slots
+  => SlotsFromSpec prevsSpec slots
   => PadSlots slots mpv
   => WrapWitnessM branches mpv slots VestaG WrapField m
   => CircuitType WrapField

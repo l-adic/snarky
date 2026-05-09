@@ -777,7 +777,7 @@ spec =
         exactMatchEff "step_main_no_recursion_return_circuit" (fromCompiledCircuit <<< _.stepCs <$> compileStepMainNoRecursionReturn stepMainSrsData)
         -- N=2, Output mode, HETEROGENEOUS prevs (No_recursion_return @ N0,
         -- self @ N2). All four layers of heterogeneity wired up:
-        -- * per-slot SPPW sizing  (`PrevsSpecCons 0 (PrevsSpecCons 2 …)`)
+        -- * per-slot SPPW sizing  (`Slot Compiled 0 (Slot Compiled 2 …)`)
         -- * per-slot FOP domain   (`[13, 14]`)
         -- * per-slot wrap VK      (`[Just no_rec_vk, Nothing]`)
         -- * per-slot lagrange     (`[domain 13 lookup, domain 14 lookup]`).

@@ -37,7 +37,7 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Pickles.Sideload.VerificationKey (VerificationKey, VerificationKeyVar)
 import Pickles.Sideload.VerificationKey.Internal (CompilePlaceholderVK, SideloadedVK, cellCircuit, compileDummy)
-import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil, PrevsSpecSideLoadedCons)
+import Pickles.Step.Slots (Compiled, SideLoaded, Slot)
 import Pickles.Types (StepField)
 import Prim.Int (class Add)
 import Snarky.Circuit.DSL (Snarky, exists)
@@ -48,27 +48,27 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 -- | `spec -> carrier` lets the compiler pin the carrier from the spec
 -- | alone.
 -- |
--- | * `PrevsSpecNil` → `Unit`
--- | * `PrevsSpecCons n stmt rest` → `Unit /\ restCarrier`
--- | * `PrevsSpecSideLoadedCons mpvMax stmt rest` → `VerificationKey /\ restCarrier`
+-- | * `Unit` → `Unit`
+-- | * `Slot Compiled n stmt /\ rest` → `Unit /\ restCarrier`
+-- | * `Slot SideLoaded mpvMax stmt /\ rest` → `VerificationKey /\ restCarrier`
 class SideloadedVKsCarrier :: Type -> Type -> Constraint
 class SideloadedVKsCarrier spec carrier | spec -> carrier
 
-instance SideloadedVKsCarrier PrevsSpecNil Unit
+instance SideloadedVKsCarrier Unit Unit
 
 -- | Compiled slot — wrap_key + step_domains come from compile-time-baked
 -- | data, no runtime VK needed.
 instance
   SideloadedVKsCarrier rest restCarrier =>
   SideloadedVKsCarrier
-    (PrevsSpecCons n statement rest)
+    (Slot Compiled n statement /\ rest)
     (Unit /\ restCarrier)
 
 -- | Side-loaded slot — runtime VK supplied via the prover input.
 instance
   SideloadedVKsCarrier rest restCarrier =>
   SideloadedVKsCarrier
-    (PrevsSpecSideLoadedCons mpvMax statement rest)
+    (Slot SideLoaded mpvMax statement /\ rest)
     (VerificationKey /\ restCarrier)
 
 -- | Prover-monad source for the spec-indexed VK carrier.
@@ -101,18 +101,18 @@ class MkUnitVkCarrier :: Type -> Type -> Constraint
 class MkUnitVkCarrier spec (carrier :: Type) | spec -> carrier where
   mkUnitVkCarrier :: carrier
 
-instance MkUnitVkCarrier PrevsSpecNil Unit where
+instance MkUnitVkCarrier Unit Unit where
   mkUnitVkCarrier = unit
 
 instance
   MkUnitVkCarrier rest restCarrier =>
-  MkUnitVkCarrier (PrevsSpecCons n statement rest) (Unit /\ restCarrier) where
+  MkUnitVkCarrier (Slot Compiled n statement /\ rest) (Unit /\ restCarrier) where
   mkUnitVkCarrier = unit /\ mkUnitVkCarrier @rest
 
 instance
   MkUnitVkCarrier rest restCarrier =>
   MkUnitVkCarrier
-    (PrevsSpecSideLoadedCons mpvMax statement rest)
+    (Slot SideLoaded mpvMax statement /\ rest)
     (CompilePlaceholderVK /\ restCarrier) where
   mkUnitVkCarrier = compileDummy /\ mkUnitVkCarrier @rest
 
@@ -138,7 +138,7 @@ class
     -> Snarky (KimchiConstraint StepField) t m
          (Vector len (Maybe (VerificationKeyVar StepField)))
 
-instance TraverseSideloadedVKsCarrier cell PrevsSpecNil 0 Unit where
+instance TraverseSideloadedVKsCarrier cell Unit 0 Unit where
   traverseSideloadedVKsCarrier _ = pure Vector.nil
 
 instance
@@ -147,7 +147,7 @@ instance
   ) =>
   TraverseSideloadedVKsCarrier
     cell
-    (PrevsSpecCons n statement rest)
+    (Slot Compiled n statement /\ rest)
     len
     (Unit /\ restCarrier)
   where
@@ -161,7 +161,7 @@ instance
   ) =>
   TraverseSideloadedVKsCarrier
     (SideloadedVK a)
-    (PrevsSpecSideLoadedCons mpvMax statement rest)
+    (Slot SideLoaded mpvMax statement /\ rest)
     len
     (SideloadedVK a /\ restCarrier)
   where

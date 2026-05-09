@@ -26,7 +26,6 @@ import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Pickles.Step.Prevs (PrevsSpecNil)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertEqual_, const_)
@@ -65,7 +64,7 @@ compileStepMainTwoPhaseChainMakeZero params =
   mkStepArtifact <$>
     compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
       ( \_ -> stepMain
-          @PrevsSpecNil
+          @Unit
           @(F StepField)
           @Unit
           @Unit

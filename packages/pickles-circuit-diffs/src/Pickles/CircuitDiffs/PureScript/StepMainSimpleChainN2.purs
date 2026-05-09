@@ -15,7 +15,7 @@ import Prelude
 
 import Control.Monad.Trans.Class (lift)
 import Data.Tuple (Tuple)
-import Data.Tuple.Nested (Tuple2, tuple2)
+import Data.Tuple.Nested (type (/\), Tuple2, tuple2)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -23,7 +23,7 @@ import Effect.Exception (throw)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, SlotVkSource(..), stepMain)
-import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
+import Pickles.Step.Slots (Compiled, Slot)
 import Pickles.Types (StatementIO, StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -89,8 +89,7 @@ compileStepMainSimpleChainN2 params = do
     compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
       -- Single-rule: mpvMax = len = 2, mpvPad = 0.
       ( \_ -> stepMain
-          @( PrevsSpecCons 2 (StatementIO (F StepField) Unit)
-              (PrevsSpecCons 2 (StatementIO (F StepField) Unit) PrevsSpecNil)
+          @( Slot Compiled 2 (StatementIO (F StepField) Unit) /\ (Slot Compiled 2 (StatementIO (F StepField) Unit) /\ Unit)
           )
           @(F StepField)
           @Unit

@@ -101,7 +101,7 @@ import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepU
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Step.Main as MpvPadding
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
-import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier, StepSlot(..), replicatePrevsCarrier)
+import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, replicateStepSlotsCarrier)
 import Pickles.Trace as Trace
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), UnfinalizedFieldCount, VerificationKey(..), WrapField, WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK)
@@ -168,7 +168,7 @@ type StepBranchData =
 --
 -- Polymorphic in `prevsSpec` (the type-level per-slot
 -- max_proofs_verified list). The per-slot dummy values feed a rank-2
--- `StepSlot n_i ds dw …` that `replicatePrevsCarrier` broadcasts to
+-- `StepSlot n_i ds dw …` that `replicateStepSlotsCarrier` broadcasts to
 -- each slot at its own `n_i`. The output type pins `ds` / `dw` at
 -- `StepIPARounds` / `WrapIPARounds` because the underlying
 -- `Pickles.Dummy` helpers are concretized there.
@@ -183,7 +183,7 @@ type StepBranchData =
 -- | is protocol-constant dummy data derived from `Pickles.Dummy`.
 -- | Inputs to `buildStepAdvice`. `most_recent_width` is NOT a field —
 -- | it's carried at the type level as `len` (the number of prev slots,
--- | derived from `prevsSpec` via the `PrevsCarrier` instance), and
+-- | derived from `prevsSpec` via the `StepSlotsCarrier` instance), and
 -- | reified to an Int internally via `reflectType (Proxy @len)` where
 -- | needed.
 type BuildStepAdviceInput inputVal valCarrier vkCarrier =
@@ -205,7 +205,7 @@ type BuildStepAdviceInput inputVal valCarrier vkCarrier =
   -- | Heterogeneous per-slot prev statements (mirrors OCaml's
   -- | `previous_proof_statements` argument to `Inductive_rule.t.main`).
   -- | The carrier shape is determined by `prevsSpec` via
-  -- | `PrevValuesCarrier`. Each slot's value is the prev's
+  -- | `SlotStatementsCarrier`. Each slot's value is the prev's
   -- | `StatementIO inputVal outputVal` — even on the base case,
   -- | callers supply an inhabitant of the right type (the values are
   -- | irrelevant when `proofMustVerify[i] = false`).
@@ -222,7 +222,7 @@ type BuildStepAdviceInput inputVal valCarrier vkCarrier =
 -- | Build a base-case `StepAdvice` keyed on a spec-indexed per-slot
 -- | carrier.
 -- |
--- | Requires a `PrevsCarrier prevsSpec … len carrier` instance so the
+-- | Requires a `StepSlotsCarrier prevsSpec … len carrier` instance so the
 -- | caller's `prevsSpec` determines `len` (= number of prev slots) and
 -- | `carrier` (= nested-tuple carrier type). The rank-2 `dummySlot`
 -- | builds each slot's `StepPerProofWitness` with the correct per-slot
@@ -235,7 +235,7 @@ type BuildStepAdviceInput inputVal valCarrier vkCarrier =
 buildStepAdvice
   :: forall @prevsSpec inputVal len carrier valCarrier vkCarrier
    . Reflectable len Int
-  => PrevsCarrier
+  => StepSlotsCarrier
        prevsSpec
        StepIPARounds
        WrapIPARounds
@@ -244,7 +244,7 @@ buildStepAdvice
        Boolean
        len
        carrier
-  => PrevValuesCarrier prevsSpec valCarrier
+  => SlotStatementsCarrier prevsSpec valCarrier
   => BuildStepAdviceInput inputVal valCarrier vkCarrier
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier valCarrier vkCarrier
 buildStepAdvice input =
@@ -377,64 +377,62 @@ buildStepAdvice input =
     dummySlot
       :: forall n
        . Reflectable n Int
-      => StepSlot
+      => StepPerProofWitness
            n
            StepIPARounds
            WrapIPARounds
            (F StepField)
            (Type2 (SplitField (F StepField) Boolean))
            Boolean
-    dummySlot = StepSlot
-      { sppw: StepPerProofWitness
-          { wrapProof: WrapProof
-              { opening: WrapProofOpening
-                  { lr: Vector.generate
-                      ( \_ ->
-                          { l: WeierstrassAffinePoint g0
-                          , r: WeierstrassAffinePoint g0
-                          }
-                      )
-                  , z1: z1
-                  , z2: z2
-                  , delta: WeierstrassAffinePoint g0
-                  , sg: WeierstrassAffinePoint g0
-                  }
-              , messages: WrapProofMessages
-                  { wComm: Vector.generate (\_ -> WeierstrassAffinePoint g0)
-                  , zComm: WeierstrassAffinePoint g0
-                  , tComm: Vector.generate (\_ -> WeierstrassAffinePoint g0)
-                  }
+    dummySlot = StepPerProofWitness
+      { wrapProof: WrapProof
+          { opening: WrapProofOpening
+              { lr: Vector.generate
+                  ( \_ ->
+                      { l: WeierstrassAffinePoint g0
+                      , r: WeierstrassAffinePoint g0
+                      }
+                  )
+              , z1: z1
+              , z2: z2
+              , delta: WeierstrassAffinePoint g0
+              , sg: WeierstrassAffinePoint g0
               }
-          , proofState: StepProofState
-              { fopState: FopProofState
-                  { combinedInnerProduct: unwrap dvFop.combinedInnerProduct
-                  , b: unwrap dvFop.b
-                  , zetaToSrsLength: unwrap pFop.zetaToSrsLength
-                  , zetaToDomainSize: unwrap pFop.zetaToDomainSize
-                  , perm: unwrap pFop.perm
-                  , spongeDigest: dummyFop.spongeDigestBeforeEvaluations
-                  , beta: UnChecked pFop.beta
-                  , gamma: UnChecked pFop.gamma
-                  , alpha: UnChecked pFop.alpha
-                  , zeta: UnChecked pFop.zeta
-                  , xi: UnChecked dvFop.xi
-                  , bulletproofChallenges: map UnChecked dvFop.bulletproofChallenges
-                  }
-              , branchData: BranchData
-                  { domainLog2: dummyBranch.domainLog2
-                  , mask0: dummyBranch.mask0
-                  , mask1: dummyBranch.mask1
-                  }
+          , messages: WrapProofMessages
+              { wComm: Vector.generate (\_ -> WeierstrassAffinePoint g0)
+              , zComm: WeierstrassAffinePoint g0
+              , tComm: Vector.generate (\_ -> WeierstrassAffinePoint g0)
               }
-          , prevEvals: prevEvalsDummy
-          , prevChallenges:
-              Vector.replicate (UnChecked (map F dummyIpaChallenges.stepExpanded))
-          , prevSgs: Vector.replicate (WeierstrassAffinePoint g0)
           }
+      , proofState: StepProofState
+          { fopState: FopProofState
+              { combinedInnerProduct: unwrap dvFop.combinedInnerProduct
+              , b: unwrap dvFop.b
+              , zetaToSrsLength: unwrap pFop.zetaToSrsLength
+              , zetaToDomainSize: unwrap pFop.zetaToDomainSize
+              , perm: unwrap pFop.perm
+              , spongeDigest: dummyFop.spongeDigestBeforeEvaluations
+              , beta: UnChecked pFop.beta
+              , gamma: UnChecked pFop.gamma
+              , alpha: UnChecked pFop.alpha
+              , zeta: UnChecked pFop.zeta
+              , xi: UnChecked dvFop.xi
+              , bulletproofChallenges: map UnChecked dvFop.bulletproofChallenges
+              }
+          , branchData: BranchData
+              { domainLog2: dummyBranch.domainLog2
+              , mask0: dummyBranch.mask0
+              , mask1: dummyBranch.mask1
+              }
+          }
+      , prevEvals: prevEvalsDummy
+      , prevChallenges:
+          Vector.replicate (UnChecked (map F dummyIpaChallenges.stepExpanded))
+      , prevSgs: Vector.replicate (WeierstrassAffinePoint g0)
       }
   in
     StepAdvice
-      { perProofSlotsCarrier: replicatePrevsCarrier @prevsSpec dummySlot
+      { perProofSlotsCarrier: replicateStepSlotsCarrier @prevsSpec dummySlot
       , publicInput: input.publicInput
       , publicUnfinalizedProofs: Vector.replicate dummyPublicUnfinalized
       , messagesForNextWrapProof: Vector.replicate (F zero)
@@ -972,7 +970,7 @@ type SlotAdviceContrib n =
       , challenges :: Vector StepIPARounds StepField
       }
   , slotSppw ::
-      StepSlot
+      StepPerProofWitness
         n
         StepIPARounds
         WrapIPARounds
@@ -1363,74 +1361,72 @@ buildSlotAdvice input = do
     dvFop = fopState.deferredValues
     pFop = dvFop.plonk
 
-    -- This slot's `StepSlot n` — the per-slot `prevSgs` and
+    -- This slot's per-proof witness — the per-slot `prevSgs` and
     -- `prevChallenges` come straight from `Vector.drop @pad`,
     -- preserving heterogeneous per-entry values for rules like
     -- Tree_proof_return.
     slotSppw
-      :: StepSlot n StepIPARounds WrapIPARounds
+      :: StepPerProofWitness n StepIPARounds WrapIPARounds
            (F StepField)
            (Type2 (SplitField (F StepField) Boolean))
            Boolean
-    slotSppw = StepSlot
-      { sppw: StepPerProofWitness
-          { wrapProof: WrapProof
-              { opening: WrapProofOpening
-                  { lr: map
-                      ( \r ->
-                          { l: WeierstrassAffinePoint r.l
-                          , r: WeierstrassAffinePoint r.r
-                          }
-                      )
-                      openingLr
-                  , z1: openingZ1
-                  , z2: openingZ2
-                  , delta: WeierstrassAffinePoint openingDelta
-                  , sg: WeierstrassAffinePoint openingSg
-                  }
-              , messages: WrapProofMessages
-                  { wComm: map WeierstrassAffinePoint wrapMessages.wComm
-                  , zComm: WeierstrassAffinePoint wrapMessages.zComm
-                  , tComm: map WeierstrassAffinePoint wrapMessages.tComm
-                  }
+    slotSppw = StepPerProofWitness
+      { wrapProof: WrapProof
+          { opening: WrapProofOpening
+              { lr: map
+                  ( \r ->
+                      { l: WeierstrassAffinePoint r.l
+                      , r: WeierstrassAffinePoint r.r
+                      }
+                  )
+                  openingLr
+              , z1: openingZ1
+              , z2: openingZ2
+              , delta: WeierstrassAffinePoint openingDelta
+              , sg: WeierstrassAffinePoint openingSg
               }
-          , proofState: StepProofState
-              { fopState: FopProofState
-                  { combinedInnerProduct: unwrap dvFop.combinedInnerProduct
-                  , b: unwrap dvFop.b
-                  , zetaToSrsLength: unwrap pFop.zetaToSrsLength
-                  , zetaToDomainSize: unwrap pFop.zetaToDomainSize
-                  , perm: unwrap pFop.perm
-                  , spongeDigest: fopState.spongeDigestBeforeEvaluations
-                  , beta: UnChecked pFop.beta
-                  , gamma: UnChecked pFop.gamma
-                  , alpha: UnChecked pFop.alpha
-                  , zeta: UnChecked pFop.zeta
-                  , xi: UnChecked dvFop.xi
-                  , bulletproofChallenges: map UnChecked dvFop.bulletproofChallenges
-                  }
-              , branchData: BranchData
-                  { domainLog2: slotBranchData.domainLog2
-                  , mask0: slotBranchData.mask0
-                  , mask1: slotBranchData.mask1
-                  }
+          , messages: WrapProofMessages
+              { wComm: map WeierstrassAffinePoint wrapMessages.wComm
+              , zComm: WeierstrassAffinePoint wrapMessages.zComm
+              , tComm: map WeierstrassAffinePoint wrapMessages.tComm
               }
-          , prevEvals: StepAllEvals
-              { publicEvals: PointEval evalsForAdvice.allEvals.publicEvals
-              , witnessEvals: map PointEval evalsForAdvice.allEvals.witnessEvals
-              , coeffEvals: map PointEval evalsForAdvice.allEvals.coeffEvals
-              , zEvals: PointEval evalsForAdvice.allEvals.zEvals
-              , sigmaEvals: map PointEval evalsForAdvice.allEvals.sigmaEvals
-              , indexEvals: map PointEval evalsForAdvice.allEvals.indexEvals
-              , ftEval1: evalsForAdvice.allEvals.ftEval1
-              }
-          , prevChallenges: map
-              (\chals -> UnChecked (map F chals))
-              (Vector.drop @pad input.prevChallengesForStepHash)
-          , prevSgs: map
-              (\e -> WeierstrassAffinePoint (coerce e.sg :: AffinePoint (F StepField)))
-              (Vector.drop @pad input.prevChalPolys)
           }
+      , proofState: StepProofState
+          { fopState: FopProofState
+              { combinedInnerProduct: unwrap dvFop.combinedInnerProduct
+              , b: unwrap dvFop.b
+              , zetaToSrsLength: unwrap pFop.zetaToSrsLength
+              , zetaToDomainSize: unwrap pFop.zetaToDomainSize
+              , perm: unwrap pFop.perm
+              , spongeDigest: fopState.spongeDigestBeforeEvaluations
+              , beta: UnChecked pFop.beta
+              , gamma: UnChecked pFop.gamma
+              , alpha: UnChecked pFop.alpha
+              , zeta: UnChecked pFop.zeta
+              , xi: UnChecked dvFop.xi
+              , bulletproofChallenges: map UnChecked dvFop.bulletproofChallenges
+              }
+          , branchData: BranchData
+              { domainLog2: slotBranchData.domainLog2
+              , mask0: slotBranchData.mask0
+              , mask1: slotBranchData.mask1
+              }
+          }
+      , prevEvals: StepAllEvals
+          { publicEvals: PointEval evalsForAdvice.allEvals.publicEvals
+          , witnessEvals: map PointEval evalsForAdvice.allEvals.witnessEvals
+          , coeffEvals: map PointEval evalsForAdvice.allEvals.coeffEvals
+          , zEvals: PointEval evalsForAdvice.allEvals.zEvals
+          , sigmaEvals: map PointEval evalsForAdvice.allEvals.sigmaEvals
+          , indexEvals: map PointEval evalsForAdvice.allEvals.indexEvals
+          , ftEval1: evalsForAdvice.allEvals.ftEval1
+          }
+      , prevChallenges: map
+          (\chals -> UnChecked (map F chals))
+          (Vector.drop @pad input.prevChallengesForStepHash)
+      , prevSgs: map
+          (\e -> WeierstrassAffinePoint (coerce e.sg :: AffinePoint (F StepField)))
+          (Vector.drop @pad input.prevChalPolys)
       }
 
   let
@@ -1479,7 +1475,7 @@ buildSlotAdvice input = do
 -- | Output-mode rules the computed value flows back via the rule's
 -- | returned `RuleOutput`.
 -- | The `valCarrier` slot is the per-rule heterogeneous prev-statement
--- | carrier shape that `Pickles.Step.Prevs.PrevValuesCarrier` derives
+-- | carrier shape that `Pickles.Step.Slots.SlotStatementsCarrier` derives
 -- | from the rule's `prevsSpec`. It mirrors the `'prev_values` axis of
 -- | OCaml's `Inductive_rule.Make.t` — what `previous_proof_statements
 -- | :: H4.T(...)` resolves to per rule. The body reads each slot's
@@ -1687,11 +1683,11 @@ newtype StepAdvice prevsSpec ds dw inputVal len carrier valCarrier vkCarrier =
           , challenges :: Vector ds StepField
           }
     -- | Heterogeneous per-slot prev statements, in the same nested-tuple
-    -- | shape `PrevValuesCarrier prevsSpec valCarrier` derives:
-    -- |   PrevsSpecNil                            → Unit
-    -- |   PrevsSpecCons n stmt rest               → Tuple stmt restValCarrier
+    -- | shape `SlotStatementsCarrier prevsSpec valCarrier` derives:
+    -- |   Unit                            → Unit
+    -- |   Slot Compiled n stmt /\ rest               → Tuple stmt restValCarrier
     -- | Each `stmt` is the prev rule's `StatementIO inputVal outputVal`
-    -- | (the same type bundled in `PrevsSpecCons`'s second parameter).
+    -- | (the same type bundled in `Slot Compiled`'s second parameter).
     -- | Mirrors OCaml's `previous_proof_statements` argument flowing into
     -- | the rule's `main` — the rule body reads slot-specific values out
     -- | (input for Input-mode prevs, output for Output-mode) inside its
@@ -1700,8 +1696,8 @@ newtype StepAdvice prevsSpec ds dw inputVal len carrier valCarrier vkCarrier =
     , prevAppStates :: valCarrier
     -- | Spec-indexed runtime side-loaded VK carrier, derived from the
     -- | `prevsSpec` via `Pickles.Sideload.Advice.SideloadedVKsCarrier`.
-    -- | Compiled slots (`PrevsSpecCons`) contribute `Unit`; side-loaded
-    -- | slots (`PrevsSpecSideLoadedCons`) contribute a runtime
+    -- | Compiled slots (`Slot Compiled`) contribute `Unit`; side-loaded
+    -- | slots (`Slot SideLoaded`) contribute a runtime
     -- | `Pickles.Sideload.VerificationKey`. The
     -- | `StepProverT`/`SideloadedVKsM` instance reads this field to
     -- | serve `getSideloadedVKsCarrier` to the rule body — i.e. this
@@ -1783,7 +1779,7 @@ runStepProverT advice (StepProverT m) =
 
 instance
   ( Monad m
-  , PrevsCarrier
+  , StepSlotsCarrier
       prevsSpec
       ds
       dw
@@ -1862,7 +1858,7 @@ instance
 -- | side-loaded VK carrier from the `StepAdvice` Reader payload — the
 -- | same channel every other piece of prove-time advice flows through.
 -- | Mirrors OCaml's per-prove `~handler` model: `mkStepAdvice` for
--- | `PrevsSpecSideLoadedCons` slots persists the runtime VK passed
+-- | `Slot SideLoaded` slots persists the runtime VK passed
 -- | through the spec-indexed carrier into `adv.sideloadedVKs`, and
 -- | `stepMain`'s side-loaded slot dispatch reads it back via
 -- | `getSideloadedVKsCarrier`.
@@ -1915,7 +1911,7 @@ stepCompile
   => CircuitType StepField prevInputVal prevInput
   => CircuitType StepField carrier carrierVar
   => CheckedType StepField (KimchiConstraint StepField) carrierVar
-  => PrevsCarrier
+  => StepSlotsCarrier
        prevsSpec
        StepIPARounds
        WrapIPARounds
@@ -1924,7 +1920,7 @@ stepCompile
        Boolean
        len
        carrier
-  => PrevsCarrier
+  => StepSlotsCarrier
        prevsSpec
        StepIPARounds
        WrapIPARounds
@@ -2066,7 +2062,7 @@ preComputeStepDomainLog2
   => CircuitType StepField prevInputVal prevInput
   => CircuitType StepField carrier carrierVar
   => CheckedType StepField (KimchiConstraint StepField) carrierVar
-  => PrevsCarrier
+  => StepSlotsCarrier
        prevsSpec
        StepIPARounds
        WrapIPARounds
@@ -2075,7 +2071,7 @@ preComputeStepDomainLog2
        Boolean
        len
        carrier
-  => PrevsCarrier
+  => StepSlotsCarrier
        prevsSpec
        StepIPARounds
        WrapIPARounds
@@ -2163,7 +2159,7 @@ stepSolveAndProve
   => CircuitType StepField prevInputVal prevInput
   => CircuitType StepField carrier carrierVar
   => CheckedType StepField (KimchiConstraint StepField) carrierVar
-  => PrevsCarrier
+  => StepSlotsCarrier
        prevsSpec
        StepIPARounds
        WrapIPARounds
@@ -2172,7 +2168,7 @@ stepSolveAndProve
        Boolean
        len
        carrier
-  => PrevsCarrier
+  => StepSlotsCarrier
        prevsSpec
        StepIPARounds
        WrapIPARounds
@@ -2183,7 +2179,7 @@ stepSolveAndProve
        carrierVar
   => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
-  => PrevValuesCarrier prevsSpec valCarrier
+  => SlotStatementsCarrier prevsSpec valCarrier
   => StepProveContext len nd
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> StepCompileResult

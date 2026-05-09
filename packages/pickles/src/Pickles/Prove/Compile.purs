@@ -8,7 +8,7 @@
 -- | `CircuitM t m` polymorphism; OCaml dispatches via
 -- | request/handler).
 -- |
--- | Everything that differs between `PrevsSpecNil` / `PrevsSpecCons`
+-- | Everything that differs between `Unit` / `Slot Compiled`
 -- | shapes lives inside `CompilableSpec`'s instances; `compile`
 -- | dispatches through them.
 module Pickles.Prove.Compile
@@ -156,7 +156,7 @@ import Pickles.Sideload.VerificationKey.Internal (CompilePlaceholderVK)
 import Pickles.Sideload.VerificationKey.Internal (SideloadedVK(..)) as SideloadInternal
 import Pickles.Step.Main (SlotVkSource(..))
 import Pickles.Step.Main as MpvPadding
-import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier, PrevsSpecCons, PrevsSpecNil, PrevsSpecSideLoadedCons, StepSlot)
+import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, Compiled, SideLoaded, Slot)
 import Pickles.Types
   ( PaddedLength
   , PerProofUnfinalized(..)
@@ -165,6 +165,7 @@ import Pickles.Types
   , StepAllEvals(..)
   , StepField
   , StepIPARounds
+  , StepPerProofWitness
   , UnfinalizedFieldCount
   , WrapField
   , WrapIPARounds
@@ -272,7 +273,7 @@ type StepInputs prevsSpec inputVal prevsCarrier vkCarrier =
   -- | specs (NRR/Simple_chain/Tree/TwoPhaseChain) populate this with
   -- | `mkUnitVkCarrier @prevsSpec` (an all-Unit chain — semantically
   -- | identical to omitting the field). Specs containing
-  -- | `PrevsSpecSideLoadedCons` slots populate the corresponding
+  -- | `Slot SideLoaded` slots populate the corresponding
   -- | slot positions with real `Pickles.Sideload.VerificationKey`
   -- | bundles. Mirrors OCaml's per-prove `~handler`: the runtime VK
   -- | is bound at prove time, not at compile time.
@@ -632,10 +633,10 @@ class
     -> ShapeProveData mpv slots
 
 --------------------------------------------------------------------------------
--- CompilableSpec PrevsSpecNil (N=0, NRR-shape)
+-- CompilableSpec Unit (N=0, NRR-shape)
 --------------------------------------------------------------------------------
 
-instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit Unit where
+instance CompilableSpec Unit Unit Unit 0 NoSlots Unit Unit Unit where
   shapeCompileData cfg _ =
     { stepProveCtx:
         { srsData:
@@ -667,7 +668,7 @@ instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit Unit where
       -- Nil has no prev slots, so `stepDomainLog2` is dead — the
       -- per-slot dummy that consumes it gets replicated to a
       -- `Vector 0` (= empty). `0` is a sentinel; any value works.
-      StepAdvice base = buildStepAdvice @PrevsSpecNil
+      StepAdvice base = buildStepAdvice @Unit
         { publicInput: appInput
         , stepDomainLog2: 0
         , prevAppStates: unit
@@ -703,10 +704,10 @@ instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit Unit where
     }
 
 --------------------------------------------------------------------------------
--- CompilableSpec PrevsSpecCons (N ≥ 1, recursive)
+-- CompilableSpec Slot Compiled (N ≥ 1, recursive)
 --------------------------------------------------------------------------------
 
--- | Recursive instance covering all `PrevsSpecCons n stmt rest` shapes
+-- | Recursive instance covering all `Slot Compiled n stmt /\ rest` shapes
 -- | (homogeneous: Simple_chain; heterogeneous: Tree). Derives `mpv`,
 -- | `prevsCarrier`, and `slots` by recursing through `rest`.
 -- |
@@ -737,10 +738,10 @@ instance
   , Compare n 3 LT
   , CircuitType StepField prevHeadInput prevHeadInputVar
   , CircuitType StepField prevHeadOutput prevHeadOutputVar
-  , PrevValuesCarrier rest restValCarrier
+  , SlotStatementsCarrier rest restValCarrier
   ) =>
   CompilableSpec
-    (PrevsSpecCons n (StatementIO prevHeadInput prevHeadOutput) rest)
+    (Slot Compiled n (StatementIO prevHeadInput prevHeadOutput) /\ rest)
     (SlotWrapKey /\ restSlotVKs)
     ( PrevSlot prevHeadInput n (StatementIO prevHeadInput prevHeadOutput) prevHeadOutput
         /\ restPrevsCarrier
@@ -748,7 +749,7 @@ instance
     mpv
     (Product (Vector n) restSlots)
     (StatementIO prevHeadInput prevHeadOutput /\ restValCarrier)
-    ( StepSlot
+    ( StepPerProofWitness
         n
         StepIPARounds
         WrapIPARounds
@@ -760,7 +761,7 @@ instance
     -- Compiled slots ignore the runtime side-loaded VK; the head
     -- entry of the carrier is `Unit`. Mirrors
     -- `Pickles.Sideload.Advice.SideloadedVKsCarrier`'s
-    -- `PrevsSpecCons → Unit /\ restCarrier` instance.
+    -- `Slot Compiled → Unit /\ restCarrier` instance.
     (Unit /\ restVkCarrier)
   where
   shapeCompileData cfg selfStepDomainLog2s =
@@ -1135,7 +1136,7 @@ instance
             contrib.slotKimchiPrevEntry :< restA.kimchiPrevChallenges
         , prevAppStates: slotData.prevStatement /\ restA.prevAppStates
         -- Compiled slot contributes Unit; mirrors
-        -- `SideloadedVKsCarrier`'s `PrevsSpecCons` instance shape.
+        -- `SideloadedVKsCarrier`'s `Slot Compiled` instance shape.
         , sideloadedVKs: unit /\ restA.sideloadedVKs
         }
     pure
@@ -1435,14 +1436,14 @@ instance
       }
 
 --------------------------------------------------------------------------------
--- CompilableSpec PrevsSpecSideLoadedCons (mpvMax ≥ 1, recursive) — STUB
+-- CompilableSpec Slot SideLoaded (mpvMax ≥ 1, recursive) — STUB
 --
--- Structural mirror of the `PrevsSpecCons` instance for type-level
+-- Structural mirror of the `Slot Compiled` instance for type-level
 -- threading: same per-slot witness shape (`StepSlot mpvMax …`), same
 -- statement axis, same recursion structure on `rest`. The slot's wrap
 -- VK / actual_wrap_domain / step_domain are sourced at runtime from
 -- the head `VerificationKey` of the spec-indexed `vkCarrier`
--- (`SideloadedVKsCarrier (PrevsSpecSideLoadedCons mpvMax stmt rest) =
+-- (`SideloadedVKsCarrier (Slot SideLoaded mpvMax stmt /\ rest) =
 -- VerificationKey /\ restCarrier`).
 --
 -- The method bodies are intentionally STUBS — using a side-loaded
@@ -1482,10 +1483,10 @@ instance
   , Compare mpvMax 3 LT
   , CircuitType StepField prevHeadInput prevHeadInputVar
   , CircuitType StepField prevHeadOutput prevHeadOutputVar
-  , PrevValuesCarrier rest restValCarrier
+  , SlotStatementsCarrier rest restValCarrier
   ) =>
   CompilableSpec
-    (PrevsSpecSideLoadedCons mpvMax (StatementIO prevHeadInput prevHeadOutput) rest)
+    (Slot SideLoaded mpvMax (StatementIO prevHeadInput prevHeadOutput) /\ rest)
     -- Side-loaded slots have NO compile-time wrap key; the head entry
     -- of `slotVKs` is `Unit`. Mirrors the `vkCarrier` head being
     -- `VerificationKey` (the runtime VK takes the place of the
@@ -1497,7 +1498,7 @@ instance
     mpv
     (Product (Vector mpvMax) restSlots)
     (StatementIO prevHeadInput prevHeadOutput /\ restValCarrier)
-    ( StepSlot
+    ( StepPerProofWitness
         mpvMax
         StepIPARounds
         WrapIPARounds
@@ -1508,7 +1509,7 @@ instance
     )
     (Sideload.VerificationKey /\ restVkCarrier)
   where
-  -- Structural mirror of the `PrevsSpecCons` `shapeCompileData`. The
+  -- Structural mirror of the `Slot Compiled` `shapeCompileData`. The
   -- slot's compile-time `slotWrapDomainLog2` and `slotLagrange` are
   -- carried as placeholders so the `perSlotLagrangeAt` /
   -- `perSlotFopDomainLog2s` vectors still have the right shape; the
@@ -1580,7 +1581,7 @@ instance
       , wrapDomainLog2: outerWrapDomainLog2
       }
 
-  -- Structural copy of the `PrevsSpecCons` `mkStepAdvice` with two
+  -- Structural copy of the `Slot Compiled` `mkStepAdvice` with two
   -- changes:
   --   (1) per-slot witness sized at `mpvMax` (the side-loaded tag's
   --       compile-time upper bound); the runtime VK's
@@ -1857,7 +1858,7 @@ instance
           slotData.wrapPublicInputArr :< restResult.baseCaseWrapPublicInputs
       }
 
-  -- Structural copy of the `PrevsSpecCons` `shapeProveData` body
+  -- Structural copy of the `Slot Compiled` `shapeProveData` body
   -- with the same three substitutions as `mkStepAdvice` above:
   -- slot sized at `mpvMax` (not `n`), `slotWrapVK` /
   -- `slotWrapDomainLog2` from the runtime VK, rest threaded with
@@ -2092,7 +2093,7 @@ instance
 --------------------------------------------------------------------------------
 -- Type-level rules spec
 --
--- Mirrors `Pickles.Step.Prevs.PrevsSpec` (which encodes a per-prev-slot
+-- Mirrors `Pickles.Step.Slots.PrevsSpec` (which encodes a per-prev-slot
 -- HList) but at the rules level. Each `RulesCons` slot carries the
 -- four type-level facts about that branch's rule:
 --
@@ -2218,7 +2219,7 @@ type MultiOutput proversCarrier perBranchStepCarrier mpvMax inputVal outputVal p
 --------------------------------------------------------------------------------
 -- CompilableRulesSpec
 --
--- Mirror of `Pickles.Step.Prevs.PrevsCarrier` at the rules level
+-- Mirror of `Pickles.Step.Slots.StepSlotsCarrier` at the rules level
 -- (one level up from per-prev-slot). Drives multi-branch compile via
 -- per-rule dispatch.
 --
@@ -2369,7 +2370,7 @@ instance
 
 -- | Cons instance: per-rule branch increments the running count via
 -- | `Add restBranches 1 branches`. The Tuple carrier shape is pinned
--- | by `PrevsCarrier prevsSpec … carrier` (carrier from prevsSpec) and
+-- | by `StepSlotsCarrier prevsSpec … carrier` (carrier from prevsSpec) and
 -- | by Add chains (outputSize from mpv). These constraints feed back
 -- | into the funDep `rs -> rulesCarrier` resolution.
 instance
@@ -2384,7 +2385,7 @@ instance
       restStepCompileResults
       restStepProveFns
   , Add restBranches 1 branches
-  , PrevsCarrier
+  , StepSlotsCarrier
       prevsSpec
       StepIPARounds
       WrapIPARounds
@@ -2761,7 +2762,7 @@ instance
   , CompilableSpec prevsSpec slotVKs prevsCarrier ruleMpv slots valCarrier
       carrier
       vkCarrier
-  , PrevValuesCarrier prevsSpec valCarrier
+  , SlotStatementsCarrier prevsSpec valCarrier
   -- Per-rule step+wrap constraints needed by runMultiProverBody.
   , CircuitGateConstructor StepField VestaG
   , CircuitGateConstructor WrapField PallasG
@@ -3097,7 +3098,7 @@ mkRuleEntry
   => CircuitType StepField prevInputVal prevInputVar
   => CircuitType StepField carrier carrierVar
   => CheckedType StepField (KimchiConstraint StepField) carrierVar
-  => PrevsCarrier
+  => StepSlotsCarrier
        prevsSpec
        StepIPARounds
        WrapIPARounds
@@ -3106,7 +3107,7 @@ mkRuleEntry
        Boolean
        mpv
        carrier
-  => PrevsCarrier
+  => StepSlotsCarrier
        prevsSpec
        StepIPARounds
        WrapIPARounds
@@ -3116,7 +3117,7 @@ mkRuleEntry
        mpv
        carrierVar
   => CheckedType StepField (KimchiConstraint StepField) inputVar
-  => PrevValuesCarrier prevsSpec valCarrier
+  => SlotStatementsCarrier prevsSpec valCarrier
   => PStepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
   -> slotVKs
   -> Effect (RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs sideloadedVkCarrier)
@@ -3259,7 +3260,7 @@ runMultiProverBody
        padMax totalBasesMax totalBasesMaxPred
        vkCarrier
    . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier vkCarrier
-  => PrevValuesCarrier prevsSpec valCarrier
+  => SlotStatementsCarrier prevsSpec valCarrier
   => CircuitGateConstructor StepField VestaG
   => CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
@@ -3357,7 +3358,7 @@ runMultiProverBody
   -- compiled-only specs the caller passes `mkUnitVkCarrier @prevsSpec`
   -- (an all-Unit chain — semantically identical to the prior
   -- baked-in synthesis). For specs containing
-  -- `PrevsSpecSideLoadedCons`, the caller supplies the runtime VK at
+  -- `Slot SideLoaded`, the caller supplies the runtime VK at
   -- the corresponding slot positions, mirroring OCaml's `~handler`.
   { stepAdvice, challengePolynomialCommitments, baseCaseWrapPublicInputs } <-
     liftEffect $ mkStepAdvice @prevsSpec perRuleCfg stepCR wrapResult appInput
