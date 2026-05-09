@@ -12,11 +12,3 @@ pub use complete_add::*;
 pub use generic::*;
 pub use poseidon::*;
 pub use varbasemul::*;
-
-use kimchi::circuits::wires::COLUMNS;
-use napi_derive::napi;
-
-#[napi]
-pub fn get_columns_count() -> u32 {
-    COLUMNS as u32
-}

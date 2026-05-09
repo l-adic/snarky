@@ -37,11 +37,6 @@ pub fn pallas_crs_create(n: u32, seed: u32) -> PallasCrsExternal {
     External::new(crs)
 }
 
-#[napi]
-pub fn pallas_crs_size(crs: &PallasCrsExternal) -> u32 {
-    crs.size() as u32
-}
-
 fn external_array_to_field_vec(arr: Vec<&PallasFieldExternal>) -> Vec<PallasScalarField> {
     arr.into_iter().map(|ext| **ext).collect()
 }
@@ -107,11 +102,6 @@ pub fn pallas_witness_create(
 }
 
 #[napi]
-pub fn pallas_witness_size(witness: &PallasWitnessExternal) -> u32 {
-    witness.size() as u32
-}
-
-#[napi]
 pub fn pallas_statement_create(
     crs: &PallasCrsExternal,
     witness: &PallasWitnessExternal,
@@ -143,16 +133,6 @@ pub fn pallas_circuit_create(
 
     let circuit = Circuit::new(w_l, w_r, w_o, w_v, c);
     External::new(circuit)
-}
-
-#[napi]
-pub fn pallas_circuit_n(circuit: &PallasCircuitExternal) -> u32 {
-    circuit.n() as u32
-}
-
-#[napi]
-pub fn pallas_circuit_q(circuit: &PallasCircuitExternal) -> u32 {
-    circuit.q() as u32
 }
 
 #[napi]
@@ -200,11 +180,6 @@ pub fn vesta_crs_create(n: u32, seed: u32) -> VestaCrsExternal {
     External::new(crs)
 }
 
-#[napi]
-pub fn vesta_crs_size(crs: &VestaCrsExternal) -> u32 {
-    crs.size() as u32
-}
-
 fn external_array_to_vesta_field_vec(arr: Vec<&VestaFieldExternal>) -> Vec<VestaScalarField> {
     arr.into_iter().map(|f| **f).collect()
 }
@@ -239,11 +214,6 @@ pub fn vesta_witness_create(
 
     let witness = Witness::new(a_l, a_r, a_o, v, &mut rng);
     External::new(witness)
-}
-
-#[napi]
-pub fn vesta_witness_size(witness: &VestaWitnessExternal) -> u32 {
-    witness.a_l.len() as u32
 }
 
 #[napi]
@@ -313,16 +283,6 @@ pub fn vesta_circuit_create(
 
     let circuit = Circuit::new(w_l, w_r, w_o, w_v, c);
     External::new(circuit)
-}
-
-#[napi]
-pub fn vesta_circuit_n(circuit: &VestaCircuitExternal) -> u32 {
-    circuit.w_l.first().map(|row| row.len()).unwrap_or(0) as u32
-}
-
-#[napi]
-pub fn vesta_circuit_q(circuit: &VestaCircuitExternal) -> u32 {
-    circuit.w_l.len() as u32
 }
 
 #[napi]
