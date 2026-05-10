@@ -847,205 +847,183 @@ instance
       stepEndoScalarF =
         let EndoScalar e = (endoScalar :: EndoScalar StepField) in e
 
-    slotData <- case headSlot of
-      BasePrev { dummyStatement } -> do
-        let
-          baseCaseDummyChalPoly =
-            { sg: dummyWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
+      slotData = case headSlot of
+        BasePrev { dummyStatement } ->
+          let
+            baseCaseDummyChalPoly =
+              { sg: dummyWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
 
-          msgWrapDigest = hashMessagesForNextWrapProofPureGeneral
-            { sg: dummyStepSg
-            , paddedChallenges:
-                Vector.replicate @2 Dummy.dummyIpaChallenges.wrapExpanded
-            }
-
-          fopProofState = Dummy.stepDummyUnfinalizedProof @n bcd
-            { domainLog2: Dummy.wrapDomainLog2ForProofsVerified slotN }
-            (map SizedF.wrapF bcd.ipaStepChallenges)
-
-          baseCaseWrapPI = dummyWrapTockPublicInput @n
-            { stepDomainLog2: slotParams.slotStepDomainLog2
-            , wrapVK: slotParams.slotWrapVK
-            , prevStatement: dummyStatement
-            , wrapSg: dummyWrapSg
-            , stepSg: dummyStepSg
-            , msgWrapDigest
-            , fopProofState
-            }
-        pure
-          { prevStatement: dummyStatement
-          , stepOpeningSg: dummyStepSg
-          , kimchiPrevSg: dummyStepSg
-          , wrapProof: dummyWrapProof bcd
-          , wrapPublicInputArr: baseCaseWrapPI
-          , prevChalPolys:
-              Vector.replicate @2 baseCaseDummyChalPoly
-          , wrapPlonkRaw:
-              { alpha: bcd.proofDummy.plonk.alpha
-              , beta: bcd.proofDummy.plonk.beta
-              , gamma: bcd.proofDummy.plonk.gamma
-              , zeta: bcd.proofDummy.plonk.zeta
+            msgWrapDigest = hashMessagesForNextWrapProofPureGeneral
+              { sg: dummyStepSg
+              , paddedChallenges:
+                  Vector.replicate @2 Dummy.dummyIpaChallenges.wrapExpanded
               }
-          , wrapPrevEvals: bcd.proofDummy.prevEvals
-          , wrapBranchData:
-              -- branch_data.domain_log2 of the prev's wrap statement
-              -- holds the prev's step domain (per OCaml
-              -- `Wrap_deferred_values.expand_deferred`'s use of
-              -- `Branch_data.domain branch_data` for `step_domain`).
-              { domainLog2: (Curves.fromInt slotParams.slotStepDomainLog2 :: StepField)
-              , proofsVerifiedMask
+
+            fopProofState = Dummy.stepDummyUnfinalizedProof @n bcd
+              { domainLog2: Dummy.wrapDomainLog2ForProofsVerified slotN }
+              (map SizedF.wrapF bcd.ipaStepChallenges)
+
+            baseCaseWrapPI = dummyWrapTockPublicInput @n
+              { stepDomainLog2: slotParams.slotStepDomainLog2
+              , wrapVK: slotParams.slotWrapVK
+              , prevStatement: dummyStatement
+              , wrapSg: dummyWrapSg
+              , stepSg: dummyStepSg
+              , msgWrapDigest
+              , fopProofState
               }
-          , wrapSpongeDigest: (zero :: StepField)
-          , mustVerify: false
-          , wrapOwnPaddedBpChals:
-              Vector.replicate @2 Dummy.dummyIpaChallenges.wrapExpanded
-          , fopState: fopProofState
-          , stepAdvicePrevEvals: bcd.proofDummy.prevEvals
-          , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
-          -- BasePrev: prev = dummy wrap, whose deferred.bp_chals =
-          -- `Dummy.Ipa.Step.challenges`. All PaddedLength entries are
-          -- the dummy step expansion.
-          , prevChallengesForStepHash:
-              Vector.replicate Dummy.dummyIpaChallenges.stepExpanded
-          }
-      InductivePrev prevCp prevTag -> do
-        let
-          CompiledProof prev = prevCp
-          Tag { verifier: prevVerifier } = prevTag
-
-          -- Step-field endo expansion of prev's RAW wrap-IPA chals (the
-          -- wrap proof's own IPA), for kimchi-level prev_challenges
-          -- threading. Not width-dependent; lives outside runExists.
-          prevStepBpChalsExpanded :: Vector StepIPARounds StepField
-          prevStepBpChalsExpanded =
-            map
-              ( \sc ->
-                  toFieldPure (coerceViaBits sc :: SizedF 128 StepField)
-                    stepEndoScalarF
-              )
-              prev.rawBulletproofChallenges
-
-          -- Reconstruct the wrap statement's serialization that
-          -- wrapSolveAndProve received as publicInputs.
-          wrapPI :: Array WrapField
-          wrapPI = wrapPublicInput prevVerifier prevCp
-
-        -- The width-sized fields (oldBulletproofChallenges,
-        -- msgWrapChallenges, outerStepChalPolyComms, wrapDvInput) are
-        -- hidden inside prev.widthData :: SomeCompiledProofWidthData.
-        -- runExists recovers the typed Vector inside a polymorphic
-        -- continuation; we Array-pad to PaddedLength using the
-        -- recovered `wd.width :: Int`. The result type doesn't mention
-        -- the existential width — only Vector PaddedLength shapes.
-        pure $ runExists
-          ( \(CompiledProofWidthData wd) ->
-              let
-                prevZetaField :: StepField
-                prevZetaField =
-                  coerce
-                    (toFieldPure prev.rawPlonk.zeta (F prevVerifier.stepEndo))
-
-                -- The prev's branch-specific step domain. The shared
-                -- `prevVerifier.stepDomainLog2` is a placeholder (first
-                -- branch's); use the proof's own `stepDomainLog2` so
-                -- multi-branch dispatch picks the right domain for each
-                -- prev. Mirrors OCaml `branch_data.domain_log2` driving
-                -- `step_domain` inside `expand_deferred`.
-                prevStepGenerator :: StepField
-                prevStepGenerator = domainGenerator prev.stepDomainLog2
-
-                prevStepShifts :: Vector 7 StepField
-                prevStepShifts = domainShifts prev.stepDomainLog2
-
-                prevVanishesOnZk :: StepField
-                prevVanishesOnZk = ProofFFI.permutationVanishingPolynomial
-                  { domainLog2: prev.stepDomainLog2
-                  , zkRows: prevVerifier.stepZkRows
-                  , pt: prevZetaField
-                  }
-
-                prevDv = expandDeferredForVerify
-                  { rawPlonk: prev.rawPlonk
-                  , rawBulletproofChallenges: prev.rawBulletproofChallenges
-                  , branchData: prev.branchData
-                  , spongeDigestBeforeEvaluations:
-                      prev.spongeDigestBeforeEvaluations
-                  , allEvals: prev.prevEvals
-                  , pEval0Chunks: prev.pEval0Chunks
-                  , oldBulletproofChallenges: wd.oldBulletproofChallenges
-                  , domainLog2: prev.stepDomainLog2
-                  , zkRows: prevVerifier.stepZkRows
-                  , srsLengthLog2: prevVerifier.stepSrsLengthLog2
-                  , generator: prevStepGenerator
-                  , shifts: prevStepShifts
-                  , vanishesOnZk: prevVanishesOnZk
-                  , omegaForLagrange: \_ -> one
-                  , endo: prevVerifier.stepEndo
-                  , linearizationPoly: prevVerifier.linearizationPoly
-                  }
-
-                -- Pre-padded `Vector PaddedLength` views are computed
-                -- inside `mkSomeCompiledProofWidthData` where the
-                -- producer's `Add pad mpv PaddedLength` constraint is in
-                -- scope. Inside this `runExists` continuation `width` is
-                -- existential and we cannot form the same constraint, so
-                -- we read the padded vectors directly. `prevPaddedChalPolys`
-                -- comes from zipping the two padded sources element-wise.
-                prevPaddedChalPolys
-                  :: Vector PaddedLength
-                       { sg :: AffinePoint StepField
-                       , challenges :: Vector WrapIPARounds WrapField
-                       }
-                prevPaddedChalPolys = Vector.zipWith
-                  (\sg ch -> { sg, challenges: ch })
-                  wd.outerStepChalPolyCommsPadded
-                  wd.msgWrapChallengesPadded
-
-                prevPaddedWrapBpChals
-                  :: Vector PaddedLength (Vector WrapIPARounds WrapField)
-                prevPaddedWrapBpChals = wd.msgWrapChallengesPadded
-
-                prevPaddedStepHashChals
-                  :: Vector PaddedLength (Vector StepIPARounds StepField)
-                prevPaddedStepHashChals = wd.oldBulletproofChallengesPadded
-
-                fopState =
-                  { deferredValues:
-                      { plonk: prevDv.plonk
-                      , combinedInnerProduct: prevDv.combinedInnerProduct
-                      , xi: prevDv.xi
-                      , bulletproofChallenges: prevDv.bulletproofPrechallenges
-                      , b: prevDv.b
-                      }
-                  , shouldFinalize: false
-                  , spongeDigestBeforeEvaluations:
-                      F prevDv.spongeDigestBeforeEvaluations
-                  }
-              in
-                { prevStatement: prev.statement
-                , stepOpeningSg: prev.challengePolynomialCommitment
-                , kimchiPrevSg: prev.challengePolynomialCommitment
-                , wrapProof: prev.wrapProof
-                , wrapPublicInputArr: wrapPI
-                , prevChalPolys: prevPaddedChalPolys
-                , wrapPlonkRaw:
-                    { alpha: SizedF.unwrapF prevDv.plonk.alpha
-                    , beta: SizedF.unwrapF prevDv.plonk.beta
-                    , gamma: SizedF.unwrapF prevDv.plonk.gamma
-                    , zeta: SizedF.unwrapF prevDv.plonk.zeta
-                    }
-                , wrapPrevEvals: prev.prevEvals
-                , wrapBranchData: prev.branchData
-                , wrapSpongeDigest: prev.spongeDigestBeforeEvaluations
-                , mustVerify: true
-                , wrapOwnPaddedBpChals: prevPaddedWrapBpChals
-                , fopState
-                , stepAdvicePrevEvals: prev.prevEvals
-                , kimchiPrevChallengesExpanded: prevStepBpChalsExpanded
-                , prevChallengesForStepHash: prevPaddedStepHashChals
+          in
+            { prevStatement: dummyStatement
+            , stepOpeningSg: dummyStepSg
+            , kimchiPrevSg: dummyStepSg
+            , wrapProof: dummyWrapProof bcd
+            , wrapPublicInputArr: baseCaseWrapPI
+            , prevChalPolys:
+                Vector.replicate @2 baseCaseDummyChalPoly
+            , wrapPlonkRaw:
+                { alpha: bcd.proofDummy.plonk.alpha
+                , beta: bcd.proofDummy.plonk.beta
+                , gamma: bcd.proofDummy.plonk.gamma
+                , zeta: bcd.proofDummy.plonk.zeta
                 }
-          )
-          prev.widthData
+            , wrapPrevEvals: bcd.proofDummy.prevEvals
+            , wrapBranchData:
+                -- branch_data.domain_log2 of the prev's wrap statement
+                -- holds the prev's step domain (per OCaml
+                -- `Wrap_deferred_values.expand_deferred`'s use of
+                -- `Branch_data.domain branch_data` for `step_domain`).
+                { domainLog2: (Curves.fromInt slotParams.slotStepDomainLog2 :: StepField)
+                , proofsVerifiedMask
+                }
+            , wrapSpongeDigest: (zero :: StepField)
+            , mustVerify: false
+            , wrapOwnPaddedBpChals:
+                Vector.replicate @2 Dummy.dummyIpaChallenges.wrapExpanded
+            , fopState: fopProofState
+            , stepAdvicePrevEvals: bcd.proofDummy.prevEvals
+            , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
+            , prevChallengesForStepHash:
+                Vector.replicate Dummy.dummyIpaChallenges.stepExpanded
+            }
+        InductivePrev prevCp prevTag ->
+          let
+            CompiledProof prev = prevCp
+            Tag { verifier: prevVerifier } = prevTag
+
+            prevStepBpChalsExpanded :: Vector StepIPARounds StepField
+            prevStepBpChalsExpanded =
+              map
+                ( \sc ->
+                    toFieldPure (coerceViaBits sc :: SizedF 128 StepField)
+                      stepEndoScalarF
+                )
+                prev.rawBulletproofChallenges
+
+            wrapPI :: Array WrapField
+            wrapPI = wrapPublicInput prevVerifier prevCp
+          in
+            runExists
+              ( \(CompiledProofWidthData wd) ->
+                  let
+                    prevZetaField :: StepField
+                    prevZetaField =
+                      coerce
+                        (toFieldPure prev.rawPlonk.zeta (F prevVerifier.stepEndo))
+
+                    -- The prev's branch-specific step domain. The shared
+                    -- `prevVerifier.stepDomainLog2` is a placeholder (first
+                    -- branch's); use the proof's own `stepDomainLog2` so
+                    -- multi-branch dispatch picks the right domain for each
+                    -- prev. Mirrors OCaml `branch_data.domain_log2` driving
+                    -- `step_domain` inside `expand_deferred`.
+                    prevStepGenerator :: StepField
+                    prevStepGenerator = domainGenerator prev.stepDomainLog2
+
+                    prevStepShifts :: Vector 7 StepField
+                    prevStepShifts = domainShifts prev.stepDomainLog2
+
+                    prevVanishesOnZk :: StepField
+                    prevVanishesOnZk = ProofFFI.permutationVanishingPolynomial
+                      { domainLog2: prev.stepDomainLog2
+                      , zkRows: prevVerifier.stepZkRows
+                      , pt: prevZetaField
+                      }
+
+                    prevDv = expandDeferredForVerify
+                      { rawPlonk: prev.rawPlonk
+                      , rawBulletproofChallenges: prev.rawBulletproofChallenges
+                      , branchData: prev.branchData
+                      , spongeDigestBeforeEvaluations:
+                          prev.spongeDigestBeforeEvaluations
+                      , allEvals: prev.prevEvals
+                      , pEval0Chunks: prev.pEval0Chunks
+                      , oldBulletproofChallenges: wd.oldBulletproofChallenges
+                      , domainLog2: prev.stepDomainLog2
+                      , zkRows: prevVerifier.stepZkRows
+                      , srsLengthLog2: prevVerifier.stepSrsLengthLog2
+                      , generator: prevStepGenerator
+                      , shifts: prevStepShifts
+                      , vanishesOnZk: prevVanishesOnZk
+                      , omegaForLagrange: \_ -> one
+                      , endo: prevVerifier.stepEndo
+                      , linearizationPoly: prevVerifier.linearizationPoly
+                      }
+
+                    prevPaddedChalPolys
+                      :: Vector PaddedLength
+                           { sg :: AffinePoint StepField
+                           , challenges :: Vector WrapIPARounds WrapField
+                           }
+                    prevPaddedChalPolys = Vector.zipWith
+                      (\sg ch -> { sg, challenges: ch })
+                      wd.outerStepChalPolyCommsPadded
+                      wd.msgWrapChallengesPadded
+
+                    prevPaddedWrapBpChals
+                      :: Vector PaddedLength (Vector WrapIPARounds WrapField)
+                    prevPaddedWrapBpChals = wd.msgWrapChallengesPadded
+
+                    prevPaddedStepHashChals
+                      :: Vector PaddedLength (Vector StepIPARounds StepField)
+                    prevPaddedStepHashChals = wd.oldBulletproofChallengesPadded
+
+                    fopState =
+                      { deferredValues:
+                          { plonk: prevDv.plonk
+                          , combinedInnerProduct: prevDv.combinedInnerProduct
+                          , xi: prevDv.xi
+                          , bulletproofChallenges: prevDv.bulletproofPrechallenges
+                          , b: prevDv.b
+                          }
+                      , shouldFinalize: false
+                      , spongeDigestBeforeEvaluations:
+                          F prevDv.spongeDigestBeforeEvaluations
+                      }
+                  in
+                    { prevStatement: prev.statement
+                    , stepOpeningSg: prev.challengePolynomialCommitment
+                    , kimchiPrevSg: prev.challengePolynomialCommitment
+                    , wrapProof: prev.wrapProof
+                    , wrapPublicInputArr: wrapPI
+                    , prevChalPolys: prevPaddedChalPolys
+                    , wrapPlonkRaw:
+                        { alpha: SizedF.unwrapF prevDv.plonk.alpha
+                        , beta: SizedF.unwrapF prevDv.plonk.beta
+                        , gamma: SizedF.unwrapF prevDv.plonk.gamma
+                        , zeta: SizedF.unwrapF prevDv.plonk.zeta
+                        }
+                    , wrapPrevEvals: prev.prevEvals
+                    , wrapBranchData: prev.branchData
+                    , wrapSpongeDigest: prev.spongeDigestBeforeEvaluations
+                    , mustVerify: true
+                    , wrapOwnPaddedBpChals: prevPaddedWrapBpChals
+                    , fopState
+                    , stepAdvicePrevEvals: prev.prevEvals
+                    , kimchiPrevChallengesExpanded: prevStepBpChalsExpanded
+                    , prevChallengesForStepHash: prevPaddedStepHashChals
+                    }
+              )
+              prev.widthData
     -- Per-slot helper: build THIS slot's contribution (PS analog of
     -- OCaml `expand_proof` at `step.ml:122-150`). Mirrors OCaml's
     -- `expand_proof dlog_vk dlog_index app_state p data ~must_verify`
@@ -1213,7 +1191,7 @@ instance
             dummyWrapXhatZeta = dummyWrapOracles.publicEvalZeta
             dummyWrapXhatOmegaZeta = dummyWrapOracles.publicEvalZetaOmega
             de = bcd.dummyEvals
-            pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
+            pe = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
             headPrevEvals = StepAllEvals
               { ftEval1: F de.ftEval1
               , publicEvals: PointEval
@@ -1289,10 +1267,7 @@ instance
                         , prevChallenges: prevWrapKimchiPrevChals
                         }
 
-                    peWF pe' = PointEval
-                      { zeta: F pe'.zeta
-                      , omegaTimesZeta: F pe'.omegaTimesZeta
-                      }
+                    peWF = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
                     prevHeadPrevEvals = StepAllEvals
                       { ftEval1: F prevWrapOracles.ftEval1
                       , publicEvals: PointEval
@@ -1431,19 +1406,13 @@ instance
         Just o -> o
         Nothing -> Dummy.wrapDomainLog2ForProofsVerified outerMpv
 
-      -- Carried only to fill the per-slot vector shape; the
-      -- side-loaded slot's real step-domain dispatch is in
-      -- `Step.FinalizeOtherProof`'s SideLoadedMode.
-      slotFopDomainLog2s = selfStepDomainLog2s
-
       -- Unused for side-loaded slots (Step.Main reads the per-domain
       -- triple inside `SideloadedExistsVk`); kept to match the
       -- `perSlotLagrangeAt` vector shape.
       slotWrapDomainLog2 = Dummy.wrapDomainLog2ForProofsVerified slotMpvMax
       slotLagrange =
         mkConstLagrangeBaseLookup \i ->
-          (coerce (ProofFFI.vestaSrsLagrangeCommitmentAt cfg.srs.pallasSrs slotWrapDomainLog2 i))
-            :: AffinePoint (F StepField)
+          coerce (ProofFFI.vestaSrsLagrangeCommitmentAt cfg.srs.pallasSrs slotWrapDomainLog2 i)
 
       -- Per-domain lagrange tables for the side-loaded VK's
       -- `actualWrapDomainSize` ∈ {N0=13, N1=14, N2=15}. Step.Main
@@ -1470,7 +1439,10 @@ instance
               , blindingH:
                   coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs
               , perSlotFopDomainLog2s:
-                  slotFopDomainLog2s
+                  -- Side-loaded slots have no compile-time step domain;
+                  -- placeholder fills the vector shape (real dispatch
+                  -- is in `Step.FinalizeOtherProof`'s SideLoadedMode).
+                  selfStepDomainLog2s
                     :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
               , perSlotVkSources:
                   headSlotVkSource :< restShape.stepProveCtx.srsData.perSlotVkSources
@@ -1536,173 +1508,173 @@ instance
       stepEndoScalarF =
         let EndoScalar e = (endoScalar :: EndoScalar StepField) in e
 
-    slotData <- case headSlot of
-      BasePrev { dummyStatement } -> do
-        let
-          baseCaseDummyChalPoly =
-            { sg: dummyWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
+      slotData = case headSlot of
+        BasePrev { dummyStatement } ->
+          let
+            baseCaseDummyChalPoly =
+              { sg: dummyWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
 
-          msgWrapDigest = hashMessagesForNextWrapProofPureGeneral
-            { sg: dummyStepSg
-            , paddedChallenges:
-                Vector.replicate @2 Dummy.dummyIpaChallenges.wrapExpanded
-            }
-
-          fopProofState = Dummy.stepDummyUnfinalizedProof @mpvMax bcd
-            { domainLog2: Dummy.wrapDomainLog2ForProofsVerified slotMpvMax }
-            (map SizedF.wrapF bcd.ipaStepChallenges)
-
-          baseCaseWrapPI = dummyWrapTockPublicInput @mpvMax
-            { stepDomainLog2: slotParams.slotStepDomainLog2
-            , wrapVK: slotParams.slotWrapVK
-            , prevStatement: dummyStatement
-            , wrapSg: dummyWrapSg
-            , stepSg: dummyStepSg
-            , msgWrapDigest
-            , fopProofState
-            }
-        pure
-          { prevStatement: dummyStatement
-          , stepOpeningSg: dummyStepSg
-          , kimchiPrevSg: dummyStepSg
-          , wrapProof: dummyWrapProof bcd
-          , wrapPublicInputArr: baseCaseWrapPI
-          , prevChalPolys:
-              Vector.replicate @2 baseCaseDummyChalPoly
-          , wrapPlonkRaw:
-              { alpha: bcd.proofDummy.plonk.alpha
-              , beta: bcd.proofDummy.plonk.beta
-              , gamma: bcd.proofDummy.plonk.gamma
-              , zeta: bcd.proofDummy.plonk.zeta
+            msgWrapDigest = hashMessagesForNextWrapProofPureGeneral
+              { sg: dummyStepSg
+              , paddedChallenges:
+                  Vector.replicate @2 Dummy.dummyIpaChallenges.wrapExpanded
               }
-          , wrapPrevEvals: bcd.proofDummy.prevEvals
-          , wrapBranchData:
-              { domainLog2: (Curves.fromInt slotParams.slotStepDomainLog2 :: StepField)
-              , proofsVerifiedMask
+
+            fopProofState = Dummy.stepDummyUnfinalizedProof @mpvMax bcd
+              { domainLog2: Dummy.wrapDomainLog2ForProofsVerified slotMpvMax }
+              (map SizedF.wrapF bcd.ipaStepChallenges)
+
+            baseCaseWrapPI = dummyWrapTockPublicInput @mpvMax
+              { stepDomainLog2: slotParams.slotStepDomainLog2
+              , wrapVK: slotParams.slotWrapVK
+              , prevStatement: dummyStatement
+              , wrapSg: dummyWrapSg
+              , stepSg: dummyStepSg
+              , msgWrapDigest
+              , fopProofState
               }
-          , wrapSpongeDigest: (zero :: StepField)
-          , mustVerify: false
-          , wrapOwnPaddedBpChals:
-              Vector.replicate @2 Dummy.dummyIpaChallenges.wrapExpanded
-          , fopState: fopProofState
-          , stepAdvicePrevEvals: bcd.proofDummy.prevEvals
-          , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
-          , prevChallengesForStepHash:
-              Vector.replicate Dummy.dummyIpaChallenges.stepExpanded
-          }
-      InductivePrev prevCp prevTag -> do
-        let
-          CompiledProof prev = prevCp
-          Tag { verifier: prevVerifier } = prevTag
-
-          prevStepBpChalsExpanded :: Vector StepIPARounds StepField
-          prevStepBpChalsExpanded =
-            map
-              ( \sc ->
-                  toFieldPure (coerceViaBits sc :: SizedF 128 StepField)
-                    stepEndoScalarF
-              )
-              prev.rawBulletproofChallenges
-
-          wrapPI :: Array WrapField
-          wrapPI = wrapPublicInput prevVerifier prevCp
-
-        pure $ runExists
-          ( \(CompiledProofWidthData wd) ->
-              let
-                prevZetaField :: StepField
-                prevZetaField =
-                  coerce
-                    (toFieldPure prev.rawPlonk.zeta (F prevVerifier.stepEndo))
-
-                prevStepGenerator :: StepField
-                prevStepGenerator = domainGenerator prev.stepDomainLog2
-
-                prevStepShifts :: Vector 7 StepField
-                prevStepShifts = domainShifts prev.stepDomainLog2
-
-                prevVanishesOnZk :: StepField
-                prevVanishesOnZk = ProofFFI.permutationVanishingPolynomial
-                  { domainLog2: prev.stepDomainLog2
-                  , zkRows: prevVerifier.stepZkRows
-                  , pt: prevZetaField
-                  }
-
-                prevDv = expandDeferredForVerify
-                  { rawPlonk: prev.rawPlonk
-                  , rawBulletproofChallenges: prev.rawBulletproofChallenges
-                  , branchData: prev.branchData
-                  , spongeDigestBeforeEvaluations:
-                      prev.spongeDigestBeforeEvaluations
-                  , allEvals: prev.prevEvals
-                  , pEval0Chunks: prev.pEval0Chunks
-                  , oldBulletproofChallenges: wd.oldBulletproofChallenges
-                  , domainLog2: prev.stepDomainLog2
-                  , zkRows: prevVerifier.stepZkRows
-                  , srsLengthLog2: prevVerifier.stepSrsLengthLog2
-                  , generator: prevStepGenerator
-                  , shifts: prevStepShifts
-                  , vanishesOnZk: prevVanishesOnZk
-                  , omegaForLagrange: \_ -> one
-                  , endo: prevVerifier.stepEndo
-                  , linearizationPoly: prevVerifier.linearizationPoly
-                  }
-
-                prevPaddedChalPolys
-                  :: Vector PaddedLength
-                       { sg :: AffinePoint StepField
-                       , challenges :: Vector WrapIPARounds WrapField
-                       }
-                prevPaddedChalPolys = Vector.zipWith
-                  (\sg ch -> { sg, challenges: ch })
-                  wd.outerStepChalPolyCommsPadded
-                  wd.msgWrapChallengesPadded
-
-                prevPaddedWrapBpChals
-                  :: Vector PaddedLength (Vector WrapIPARounds WrapField)
-                prevPaddedWrapBpChals = wd.msgWrapChallengesPadded
-
-                prevPaddedStepHashChals
-                  :: Vector PaddedLength (Vector StepIPARounds StepField)
-                prevPaddedStepHashChals = wd.oldBulletproofChallengesPadded
-
-                fopState =
-                  { deferredValues:
-                      { plonk: prevDv.plonk
-                      , combinedInnerProduct: prevDv.combinedInnerProduct
-                      , xi: prevDv.xi
-                      , bulletproofChallenges: prevDv.bulletproofPrechallenges
-                      , b: prevDv.b
-                      }
-                  , shouldFinalize: false
-                  , spongeDigestBeforeEvaluations:
-                      F prevDv.spongeDigestBeforeEvaluations
-                  }
-              in
-                { prevStatement: prev.statement
-                , stepOpeningSg: prev.challengePolynomialCommitment
-                , kimchiPrevSg: prev.challengePolynomialCommitment
-                , wrapProof: prev.wrapProof
-                , wrapPublicInputArr: wrapPI
-                , prevChalPolys: prevPaddedChalPolys
-                , wrapPlonkRaw:
-                    { alpha: SizedF.unwrapF prevDv.plonk.alpha
-                    , beta: SizedF.unwrapF prevDv.plonk.beta
-                    , gamma: SizedF.unwrapF prevDv.plonk.gamma
-                    , zeta: SizedF.unwrapF prevDv.plonk.zeta
-                    }
-                , wrapPrevEvals: prev.prevEvals
-                , wrapBranchData: prev.branchData
-                , wrapSpongeDigest: prev.spongeDigestBeforeEvaluations
-                , mustVerify: true
-                , wrapOwnPaddedBpChals: prevPaddedWrapBpChals
-                , fopState
-                , stepAdvicePrevEvals: prev.prevEvals
-                , kimchiPrevChallengesExpanded: prevStepBpChalsExpanded
-                , prevChallengesForStepHash: prevPaddedStepHashChals
+          in
+            { prevStatement: dummyStatement
+            , stepOpeningSg: dummyStepSg
+            , kimchiPrevSg: dummyStepSg
+            , wrapProof: dummyWrapProof bcd
+            , wrapPublicInputArr: baseCaseWrapPI
+            , prevChalPolys:
+                Vector.replicate @2 baseCaseDummyChalPoly
+            , wrapPlonkRaw:
+                { alpha: bcd.proofDummy.plonk.alpha
+                , beta: bcd.proofDummy.plonk.beta
+                , gamma: bcd.proofDummy.plonk.gamma
+                , zeta: bcd.proofDummy.plonk.zeta
                 }
-          )
-          prev.widthData
+            , wrapPrevEvals: bcd.proofDummy.prevEvals
+            , wrapBranchData:
+                { domainLog2: (Curves.fromInt slotParams.slotStepDomainLog2 :: StepField)
+                , proofsVerifiedMask
+                }
+            , wrapSpongeDigest: (zero :: StepField)
+            , mustVerify: false
+            , wrapOwnPaddedBpChals:
+                Vector.replicate @2 Dummy.dummyIpaChallenges.wrapExpanded
+            , fopState: fopProofState
+            , stepAdvicePrevEvals: bcd.proofDummy.prevEvals
+            , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
+            , prevChallengesForStepHash:
+                Vector.replicate Dummy.dummyIpaChallenges.stepExpanded
+            }
+        InductivePrev prevCp prevTag ->
+          let
+            CompiledProof prev = prevCp
+            Tag { verifier: prevVerifier } = prevTag
+
+            prevStepBpChalsExpanded :: Vector StepIPARounds StepField
+            prevStepBpChalsExpanded =
+              map
+                ( \sc ->
+                    toFieldPure (coerceViaBits sc :: SizedF 128 StepField)
+                      stepEndoScalarF
+                )
+                prev.rawBulletproofChallenges
+
+            wrapPI :: Array WrapField
+            wrapPI = wrapPublicInput prevVerifier prevCp
+          in
+            runExists
+              ( \(CompiledProofWidthData wd) ->
+                  let
+                    prevZetaField :: StepField
+                    prevZetaField =
+                      coerce
+                        (toFieldPure prev.rawPlonk.zeta (F prevVerifier.stepEndo))
+
+                    prevStepGenerator :: StepField
+                    prevStepGenerator = domainGenerator prev.stepDomainLog2
+
+                    prevStepShifts :: Vector 7 StepField
+                    prevStepShifts = domainShifts prev.stepDomainLog2
+
+                    prevVanishesOnZk :: StepField
+                    prevVanishesOnZk = ProofFFI.permutationVanishingPolynomial
+                      { domainLog2: prev.stepDomainLog2
+                      , zkRows: prevVerifier.stepZkRows
+                      , pt: prevZetaField
+                      }
+
+                    prevDv = expandDeferredForVerify
+                      { rawPlonk: prev.rawPlonk
+                      , rawBulletproofChallenges: prev.rawBulletproofChallenges
+                      , branchData: prev.branchData
+                      , spongeDigestBeforeEvaluations:
+                          prev.spongeDigestBeforeEvaluations
+                      , allEvals: prev.prevEvals
+                      , pEval0Chunks: prev.pEval0Chunks
+                      , oldBulletproofChallenges: wd.oldBulletproofChallenges
+                      , domainLog2: prev.stepDomainLog2
+                      , zkRows: prevVerifier.stepZkRows
+                      , srsLengthLog2: prevVerifier.stepSrsLengthLog2
+                      , generator: prevStepGenerator
+                      , shifts: prevStepShifts
+                      , vanishesOnZk: prevVanishesOnZk
+                      , omegaForLagrange: \_ -> one
+                      , endo: prevVerifier.stepEndo
+                      , linearizationPoly: prevVerifier.linearizationPoly
+                      }
+
+                    prevPaddedChalPolys
+                      :: Vector PaddedLength
+                           { sg :: AffinePoint StepField
+                           , challenges :: Vector WrapIPARounds WrapField
+                           }
+                    prevPaddedChalPolys = Vector.zipWith
+                      (\sg ch -> { sg, challenges: ch })
+                      wd.outerStepChalPolyCommsPadded
+                      wd.msgWrapChallengesPadded
+
+                    prevPaddedWrapBpChals
+                      :: Vector PaddedLength (Vector WrapIPARounds WrapField)
+                    prevPaddedWrapBpChals = wd.msgWrapChallengesPadded
+
+                    prevPaddedStepHashChals
+                      :: Vector PaddedLength (Vector StepIPARounds StepField)
+                    prevPaddedStepHashChals = wd.oldBulletproofChallengesPadded
+
+                    fopState =
+                      { deferredValues:
+                          { plonk: prevDv.plonk
+                          , combinedInnerProduct: prevDv.combinedInnerProduct
+                          , xi: prevDv.xi
+                          , bulletproofChallenges: prevDv.bulletproofPrechallenges
+                          , b: prevDv.b
+                          }
+                      , shouldFinalize: false
+                      , spongeDigestBeforeEvaluations:
+                          F prevDv.spongeDigestBeforeEvaluations
+                      }
+                  in
+                    { prevStatement: prev.statement
+                    , stepOpeningSg: prev.challengePolynomialCommitment
+                    , kimchiPrevSg: prev.challengePolynomialCommitment
+                    , wrapProof: prev.wrapProof
+                    , wrapPublicInputArr: wrapPI
+                    , prevChalPolys: prevPaddedChalPolys
+                    , wrapPlonkRaw:
+                        { alpha: SizedF.unwrapF prevDv.plonk.alpha
+                        , beta: SizedF.unwrapF prevDv.plonk.beta
+                        , gamma: SizedF.unwrapF prevDv.plonk.gamma
+                        , zeta: SizedF.unwrapF prevDv.plonk.zeta
+                        }
+                    , wrapPrevEvals: prev.prevEvals
+                    , wrapBranchData: prev.branchData
+                    , wrapSpongeDigest: prev.spongeDigestBeforeEvaluations
+                    , mustVerify: true
+                    , wrapOwnPaddedBpChals: prevPaddedWrapBpChals
+                    , fopState
+                    , stepAdvicePrevEvals: prev.prevEvals
+                    , kimchiPrevChallengesExpanded: prevStepBpChalsExpanded
+                    , prevChallengesForStepHash: prevPaddedStepHashChals
+                    }
+              )
+              prev.widthData
 
     contrib <- buildSlotAdvice @mpvMax
       { publicInput: appInput
@@ -1859,7 +1831,7 @@ instance
             dummyWrapXhatZeta = dummyWrapOracles.publicEvalZeta
             dummyWrapXhatOmegaZeta = dummyWrapOracles.publicEvalZetaOmega
             de = bcd.dummyEvals
-            pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
+            pe = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
             headPrevEvals = StepAllEvals
               { ftEval1: F de.ftEval1
               , publicEvals: PointEval
@@ -1924,10 +1896,7 @@ instance
                         , prevChallenges: prevWrapKimchiPrevChals
                         }
 
-                    peWF pe' = PointEval
-                      { zeta: F pe'.zeta
-                      , omegaTimesZeta: F pe'.omegaTimesZeta
-                      }
+                    peWF = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
                     prevHeadPrevEvals = StepAllEvals
                       { ftEval1: F prevWrapOracles.ftEval1
                       , publicEvals: PointEval
