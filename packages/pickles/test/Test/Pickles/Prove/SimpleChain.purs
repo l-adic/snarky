@@ -126,11 +126,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
         -> Aff (CompiledProof 1 (StatementIO (F StepField) Unit) Unit Unit)
       runStep prevSlot appInput = do
         eRes <- liftEffect $ runExceptT $ chainProver
-          -- Compiled slot's spec-derived vkCarrier is `Unit /\ Unit`
-          -- (one Slot Compiled over Unit). Threaded uniformly
-          -- with side-loaded callers; `unit /\ unit` is the
-          -- semantically-identical spec-derived placeholder.
-          { appInput, prevs: tuple1 prevSlot, sideloadedVKs: unit /\ unit }
+          { appInput, prevs: tuple1 prevSlot, sideloadedVKs: tuple1 unit }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("chainProver: " <> show e)
           Right p -> pure p

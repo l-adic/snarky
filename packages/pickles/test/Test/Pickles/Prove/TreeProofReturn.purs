@@ -193,9 +193,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
           { appInput: unit
           , prevs:
               tuple2 (InductivePrev nrrCp nrr.tag) selfPrev
-          -- Two compiled prev slots → spec-derived
-          -- `vkCarrier = Unit /\ Unit /\ Unit`.
-          , sideloadedVKs: unit /\ unit /\ unit
+          , sideloadedVKs: tuple2 unit unit
           }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("treeProver: " <> show e)
