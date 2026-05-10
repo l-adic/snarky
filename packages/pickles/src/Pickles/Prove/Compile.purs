@@ -150,7 +150,7 @@ import Pickles.Prove.Wrap
   )
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier, class TraverseSideloadedVKsCarrier)
-import Pickles.Sideload.VerificationKey (Checked(..))
+import Pickles.Sideload.VerificationKey (Checked(..), ProofsVerifiedCount)
 import Pickles.Sideload.VerificationKey (VerificationKey, boolVecToProofsVerified) as Sideload
 import Pickles.Sideload.VerificationKey.Internal (CompilePlaceholderVK)
 import Pickles.Sideload.VerificationKey.Internal (SideloadedVK(..)) as SideloadInternal
@@ -158,7 +158,8 @@ import Pickles.Step.Main (SlotVkSource(..))
 import Pickles.Step.Main as MpvPadding
 import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, Compiled, SideLoaded, Slot)
 import Pickles.Types
-  ( PaddedLength
+  ( MaxProofsVerified
+  , PaddedLength
   , PerProofUnfinalized(..)
   , PointEval(..)
   , StatementIO(..)
@@ -840,7 +841,7 @@ instance
       dummyWrapSg = dummySgs.ipa.wrap.sg
       dummyStepSg = dummySgs.ipa.step.sg
 
-      proofsVerifiedMask :: Vector 2 Boolean
+      proofsVerifiedMask :: Vector MaxProofsVerified Boolean
       proofsVerifiedMask = (slotN >= 2) :< (slotN >= 1) :< Vector.nil
 
       stepEndoScalarF :: StepField
@@ -856,7 +857,7 @@ instance
             msgWrapDigest = hashMessagesForNextWrapProofPureGeneral
               { sg: dummyStepSg
               , paddedChallenges:
-                  Vector.replicate @2 Dummy.dummyIpaChallenges.wrapExpanded
+                  Vector.replicate @PaddedLength Dummy.dummyIpaChallenges.wrapExpanded
               }
 
             fopProofState = Dummy.stepDummyUnfinalizedProof @n bcd
@@ -879,7 +880,7 @@ instance
             , wrapProof: dummyWrapProof bcd
             , wrapPublicInputArr: baseCaseWrapPI
             , prevChalPolys:
-                Vector.replicate @2 baseCaseDummyChalPoly
+                Vector.replicate @PaddedLength baseCaseDummyChalPoly
             , wrapPlonkRaw:
                 { alpha: bcd.proofDummy.plonk.alpha
                 , beta: bcd.proofDummy.plonk.beta
@@ -898,7 +899,7 @@ instance
             , wrapSpongeDigest: (zero :: StepField)
             , mustVerify: false
             , wrapOwnPaddedBpChals:
-                Vector.replicate @2 Dummy.dummyIpaChallenges.wrapExpanded
+                Vector.replicate @PaddedLength Dummy.dummyIpaChallenges.wrapExpanded
             , fopState: fopProofState
             , stepAdvicePrevEvals: bcd.proofDummy.prevEvals
             , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
@@ -1418,7 +1419,7 @@ instance
       -- `actualWrapDomainSize` ∈ {N0=13, N1=14, N2=15}. Step.Main
       -- one-hot-muxes among these via `mkSideloadedLagrangeLookup`.
       sideloadedPerDomainLagrangeAts
-        :: Vector 3 (Int -> AffinePoint (F StepField))
+        :: Vector ProofsVerifiedCount (Int -> AffinePoint (F StepField))
       sideloadedPerDomainLagrangeAts = map
         ( \log2 i ->
             coerce (ProofFFI.vestaSrsLagrangeCommitmentAt cfg.srs.pallasSrs log2 i)
@@ -1500,7 +1501,7 @@ instance
       dummyWrapSg = dummySgs.ipa.wrap.sg
       dummyStepSg = dummySgs.ipa.step.sg
 
-      proofsVerifiedMask :: Vector 2 Boolean
+      proofsVerifiedMask :: Vector MaxProofsVerified Boolean
       proofsVerifiedMask =
         (slotMpvMax >= 2) :< (slotMpvMax >= 1) :< Vector.nil
 
@@ -1517,7 +1518,7 @@ instance
             msgWrapDigest = hashMessagesForNextWrapProofPureGeneral
               { sg: dummyStepSg
               , paddedChallenges:
-                  Vector.replicate @2 Dummy.dummyIpaChallenges.wrapExpanded
+                  Vector.replicate @PaddedLength Dummy.dummyIpaChallenges.wrapExpanded
               }
 
             fopProofState = Dummy.stepDummyUnfinalizedProof @mpvMax bcd
@@ -1540,7 +1541,7 @@ instance
             , wrapProof: dummyWrapProof bcd
             , wrapPublicInputArr: baseCaseWrapPI
             , prevChalPolys:
-                Vector.replicate @2 baseCaseDummyChalPoly
+                Vector.replicate @PaddedLength baseCaseDummyChalPoly
             , wrapPlonkRaw:
                 { alpha: bcd.proofDummy.plonk.alpha
                 , beta: bcd.proofDummy.plonk.beta
@@ -1555,7 +1556,7 @@ instance
             , wrapSpongeDigest: (zero :: StepField)
             , mustVerify: false
             , wrapOwnPaddedBpChals:
-                Vector.replicate @2 Dummy.dummyIpaChallenges.wrapExpanded
+                Vector.replicate @PaddedLength Dummy.dummyIpaChallenges.wrapExpanded
             , fopState: fopProofState
             , stepAdvicePrevEvals: bcd.proofDummy.prevEvals
             , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
@@ -3388,7 +3389,7 @@ runMultiProverBody
 
     outerMpv = reflectType (Proxy @mpv)
 
-    proofsVerifiedMask :: Vector 2 Boolean
+    proofsVerifiedMask :: Vector MaxProofsVerified Boolean
     proofsVerifiedMask = (outerMpv >= 2) :< (outerMpv >= 1) :< Vector.nil
 
     wrapDvInput :: WrapDeferredValuesInput mpv

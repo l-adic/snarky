@@ -16,6 +16,7 @@ module Pickles.Sideload.VerificationKey
 import Pickles.Sideload.VerificationKey.Internal
   ( Checked(..)
   , ProofsVerified(..)
+  , ProofsVerifiedCount
   , VerificationKey
   , VerificationKeyVar
   , boolVecToProofsVerified

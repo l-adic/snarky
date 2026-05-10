@@ -46,7 +46,7 @@ import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, mkSideloadedLagrangeLookup)
 import Pickles.Sideload.Advice (class TraverseSideloadedVKsCarrier, traverseSideloadedVKsCarrier)
-import Pickles.Sideload.VerificationKey (Checked(..))
+import Pickles.Sideload.VerificationKey (Checked(..), ProofsVerifiedCount)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM, getMessagesForNextWrapProof, getMessagesForNextWrapProofDummyHash, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex, setUserPublicOutputFields)
 import Pickles.Step.FinalizeOtherProof (DomainMode(..))
@@ -131,7 +131,7 @@ type RuleOutput n prevInput output =
 data SlotVkSource
   = ConstVk (VerificationKey (WeierstrassAffinePoint PallasG (F StepField)))
   | SharedExistsVk
-  | SideloadedExistsVk (Vector 3 (Int -> AffinePoint (F StepField)))
+  | SideloadedExistsVk (Vector ProofsVerifiedCount (Int -> AffinePoint (F StepField)))
 
 -- | SRS data for `stepMain`. Carries per-slot FOP domain-log2s
 -- | (`finalize_other_proof` consumes the prev's `step_domains` Vector;

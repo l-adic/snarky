@@ -4,6 +4,7 @@
 -- | `Pickles.Sideload.VerificationKey` instead.
 module Pickles.Sideload.VerificationKey.Internal
   ( ProofsVerified(..)
+  , ProofsVerifiedCount
   , boolVecToProofsVerified
   , Checked(..)
   , SideloadedVK(..)
@@ -40,6 +41,11 @@ import Type.Proxy (Proxy(..))
 -- | side-loaded protocol (`Width.Max = Nat.N2`).
 data ProofsVerified = N0 | N1 | N2
 
+-- | Type-level cardinality of `ProofsVerified` (= 3 for {N0, N1, N2}).
+-- | Used to size one-hot bool vectors and per-domain lookup tables
+-- | indexed by a side-loaded VK's `actualWrapDomainSize`.
+type ProofsVerifiedCount = 3
+
 derive instance Eq ProofsVerified
 derive instance Ord ProofsVerified
 derive instance Generic ProofsVerified _
@@ -61,7 +67,7 @@ instance BoundedEnum ProofsVerified where
   fromEnum = genericFromEnum
 
 -- | Boolean-form one-hot vector.
-proofsVerifiedToBoolVec :: ProofsVerified -> Vector 3 Boolean
+proofsVerifiedToBoolVec :: ProofsVerified -> Vector ProofsVerifiedCount Boolean
 proofsVerifiedToBoolVec = case _ of
   N0 -> true :< false :< false :< Vector.nil
   N1 -> false :< true :< false :< Vector.nil
