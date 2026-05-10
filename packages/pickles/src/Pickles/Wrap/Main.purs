@@ -269,8 +269,11 @@ processOneSlotFopBody fopBaseParams slotIdx domain unfView witness paddedChals =
     , srsLengthLog2: fopBaseParams.srsLengthLog2
     , endo: fopBaseParams.endo
     , linearizationPoly: fopBaseParams.linearizationPoly
-    -- Wrap verifies compiled step proofs only (no side-loaded step
-    -- proofs in Pickles).
+    -- Always `KnownDomainsMode` here. Side-loading is a step-circuit
+    -- concept (a side-loaded prev = a wrap proof of a child verified
+    -- inside the parent's STEP circuit). The wrap circuit only ever
+    -- verifies its own step branches, whose domains are known at
+    -- wrap-compile time.
     , domainMode: KnownDomainsMode
     }
     domain.vanishingPolynomial
@@ -760,42 +763,33 @@ wrapMain config (WrapStatementPacked stmtR) = do
           spHead
           spTail
 
-    -- Lagrange-base lookup driving `publicInputCommit`.
-    --
-    -- Two paths, mirroring OCaml `wrap_verifier.ml:382-443`
+    -- Lagrange-base lookup driving `publicInputCommit`. Two paths,
+    -- mirroring OCaml `wrap_verifier.ml:382-443`
     -- (`lagrange_with_correction`):
     --
-    --   * Fast path (`Nothing`): all branches share the step domain (or
-    --     the wrap circuit is single-branch). The constant lagrange
-    --     basis at `config.lagrangeAt` works for every branch — no
-    --     in-circuit per-branch masking needed.
-    --   * Per-branch path (`Just`): branch domains differ. For each
-    --     index `i`, fetch one constant point per branch, sum-mask via
-    --     `branchBools`, and produce an in-circuit correction at scale
-    --     `2^shift` for `scalarMulLeaf`'s use. The MSM's
-    --     `AddWithCircuitCorrection` variant carries the FVar correction.
+    --   * Fast path (`Nothing`): all branches share the step domain
+    --     (or wrap is single-branch); the constant basis works for
+    --     every branch.
+    --   * Per-branch path (`Just`): branch domains differ; sum-mask
+    --     per-branch points via `branchBools` and produce an in-circuit
+    --     correction at scale `2^shift` for `scalarMulLeaf`.
+    --
+    -- Two byte-parity oddities below: the `Nothing` arm fakes the
+    -- 1-hot sum on `condAddPt` (OCaml's `lagrange` has no fast path,
+    -- unlike `lagrange_with_correction`); the `Just` arm carries an
+    -- unused `constant: head` to satisfy the record. `sealCondAddPt
+    -- = false` in both arms — only step side-loaded seals.
     maskedLagrangeAt :: LagrangeBaseLookup WrapField
     maskedLagrangeAt i = case config.perBranchLagrangeAt of
       Nothing ->
         let
           lb = config.lagrangeAt i
-          -- OCaml's `lagrange` (used for `Cond_add` leaves) has NO
-          -- fast path — it always per-branch masks via 1-hot sum,
-          -- even when all domains are equal. `lagrange_with_correction`
-          -- (used for scalar-mul leaves) DOES have the all-equal fast
-          -- path returning pure constants. So `circuit` matches the
-          -- fast-path constants while `condAddPt` mirrors the
-          -- always-masked `lagrange` shape: `Σ_b which_branch[b] *
-          -- constant`, which equals `constant` algebraically when
-          -- which_branch is 1-hot but emits Scale-summed CVars.
           replicatedConst = Vector.replicate @branches lb.constant
         in
           { constant: lb.constant
           , circuit: lb.circuit
           , condAddPt: sumMaskByBranch replicatedConst
           , correctionAt: Nothing
-          -- Cond_add `lagrange` path is unsealed; only the
-          -- `lagrange_with_correction` path seals.
           , sealCondAddPt: false
           }
       Just perBranchAt ->
@@ -812,16 +806,10 @@ wrapMain config (WrapStatementPacked stmtR) = do
                   perBranchPts
               )
         in
-          { -- `constant` is unused in the per-branch path (every
-            -- `scalarMulLeaf` consults `correctionAt` instead, and the
-            -- `InCircuitCorrections` extractor pulls FVar corrections
-            -- from `AddWithCircuitCorrection`). Carry the head branch's
-            -- constant as a placeholder so the record typechecks.
-            constant: (Vector.uncons perBranchPts).head
+          { constant: (Vector.uncons perBranchPts).head
           , circuit: summed
           , condAddPt: summed
           , correctionAt: Just correctionAt
-          -- Same as the `Nothing` arm: Cond_add `lagrange` is unsealed.
           , sealCondAddPt: false
           }
     ivpParams =
@@ -861,11 +849,13 @@ wrapMain config (WrapStatementPacked stmtR) = do
 
   label "block6-wrapVerify" $ wrapVerify ivpParams fullIvpInput verifyInput
 
--- | `wrapMain` wrapper that takes `@prevsSpec` instead of `@slots`,
--- | deriving `slots` via `SlotsFromSpec`. Single-rule only —
--- | multi-rule wraps need a per-slot max across rules, which a single-
--- | `prevsSpec` funcdep can't express, so multi-rule callers use
--- | `wrapMain @branches @slots` directly.
+-- | Spec-in API surface for `wrapMain`: takes `@prevsSpec` and
+-- | derives `slots` via `SlotsFromSpec`. Used by single-rule
+-- | circuit-diff fixtures that have a `prevsSpec` to hand and would
+-- | otherwise hand-write the corresponding `slots` shape. Multi-rule
+-- | wraps can't go through this (`prevsSpec -> slots` funcdep
+-- | doesn't compose across rules) and call `wrapMain @branches @slots`
+-- | directly.
 wrapMainForPrevs
   :: forall @branches @prevsSpec slots mpv branchesPred totalBases totalBasesPred t m
    . CircuitM WrapField (KimchiConstraint WrapField) t m
