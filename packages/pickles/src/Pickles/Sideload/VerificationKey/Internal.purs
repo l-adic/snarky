@@ -79,9 +79,26 @@ proofsVerifiedToBoolVec = case _ of
 -- |
 -- | Parameterised on `b` (Boolean / BoolVar) and `pt` (concrete /
 -- | circuit-var curve point) so the same record carries both forms.
+-- |
+-- | Both `maxProofsVerified` and `actualWrapDomainSize` are
+-- | `Vector ProofsVerifiedCount b` (= one-hot in-circuit form of a
+-- | `ProofsVerified` enum). The naming inherits from OCaml:
+-- |
+-- | * `maxProofsVerified` — the VK's mpv ∈ {N0, N1, N2}.
+-- |
+-- | * `actualWrapDomainSize` — *not* a domain SIZE in the integer
+-- |   sense; OCaml's `Side_loaded.Domain.t` reuses
+-- |   `Pickles_base.Proofs_verified.t` because side-loaded wrap
+-- |   circuits support exactly three domain sizes (2^13, 2^14, 2^15)
+-- |   and these correspond 1:1 to mpv ∈ {N0, N1, N2}. So this field
+-- |   is "which of the three supported wrap domains is in play",
+-- |   tagged by the enum value, not the literal log2.
+-- |
+-- | Both are stored as one-hot `Vector 3 b` because the in-circuit
+-- | form has Boolean wires and cannot pattern-match on an enum.
 newtype Checked b pt = Checked
-  { maxProofsVerified :: Vector 3 b
-  , actualWrapDomainSize :: Vector 3 b
+  { maxProofsVerified :: Vector ProofsVerifiedCount b
+  , actualWrapDomainSize :: Vector ProofsVerifiedCount b
   , wrapIndex :: PT.VerificationKey pt
   }
 
@@ -94,7 +111,7 @@ instance
   CircuitType f (Checked b pt) (Checked bvar ptvar) where
   sizeInFields pf _ =
     genericSizeInFields pf
-      (Proxy @(Tuple3 (Vector 3 b) (Vector 3 b) (PT.VerificationKey pt)))
+      (Proxy @(Tuple3 (Vector ProofsVerifiedCount b) (Vector ProofsVerifiedCount b) (PT.VerificationKey pt)))
   valueToFields (Checked r) =
     genericValueToFields (tuple3 r.maxProofsVerified r.actualWrapDomainSize r.wrapIndex)
   fieldsToValue fs =
@@ -109,13 +126,13 @@ instance
         tup
   varToFields (Checked r) =
     genericVarToFields
-      @(Tuple3 (Vector 3 b) (Vector 3 b) (PT.VerificationKey pt))
+      @(Tuple3 (Vector ProofsVerifiedCount b) (Vector ProofsVerifiedCount b) (PT.VerificationKey pt))
       (tuple3 r.maxProofsVerified r.actualWrapDomainSize r.wrapIndex)
   fieldsToVar fs =
     let
-      tup :: Tuple3 (Vector 3 bvar) (Vector 3 bvar) (PT.VerificationKey ptvar)
+      tup :: Tuple3 (Vector ProofsVerifiedCount bvar) (Vector ProofsVerifiedCount bvar) (PT.VerificationKey ptvar)
       tup = genericFieldsToVar
-        @(Tuple3 (Vector 3 b) (Vector 3 b) (PT.VerificationKey pt))
+        @(Tuple3 (Vector ProofsVerifiedCount b) (Vector ProofsVerifiedCount b) (PT.VerificationKey pt))
         fs
     in
       uncurry3
@@ -200,6 +217,10 @@ compileDummy = SideloadedVK
   , wrapVk: unit
   }
   where
+  -- Off-curve placeholder. Mirrors OCaml `Pickles.Side_loaded.dummy`'s
+  -- use of `Inner_curve.Constant.zero` for the wrap-VK commitments.
+  -- Never materialises in a real proof — `compileDummy` only feeds the
+  -- constraint-system pass, which doesn't read the point's coordinates.
   g :: WeierstrassAffinePoint Pallas.G (F StepField)
   g = WeierstrassAffinePoint { x: F zero, y: F zero }
 
@@ -213,7 +234,8 @@ cellCircuit
 cellCircuit (SideloadedVK r) = r.circuit
 
 -- | Build the `circuit` part from the user-friendly `ProofsVerified`
--- | enum for the two one-hot fields.
+-- | enum for the two one-hot fields. See the `Checked` doc-comment
+-- | for why `actualWrapDomainSize` is keyed by `ProofsVerified`.
 mkChecked
   :: { maxProofsVerified :: ProofsVerified
      , actualWrapDomainSize :: ProofsVerified
@@ -229,6 +251,10 @@ mkChecked r = Checked
 -- | Build a side-loaded VK from a PS-side compiled child's wrap
 -- | result. `verifierIndex` is the `WrapCompileResult.verifierIndex`
 -- | field; it is already a hydrated kimchi handle.
+-- |
+-- | Both `maxProofsVerified` and `actualWrapDomainSize` are
+-- | `ProofsVerified`-tagged — see the `Checked` doc-comment for why
+-- | wrap domain size shares the same enum as proof count.
 fromCompiledWrap
   :: { verifierIndex :: VerifierIndex Pallas.G WrapField
      , maxProofsVerified :: ProofsVerified
@@ -264,7 +290,7 @@ extractWrapVKComms vk =
 
 -- | Inverse of `proofsVerifiedToBoolVec`. Defaults to `N0` for the
 -- | zero-bit input and for malformed (non-one-hot) inputs.
-boolVecToProofsVerified :: Vector 3 Boolean -> ProofsVerified
+boolVecToProofsVerified :: Vector ProofsVerifiedCount Boolean -> ProofsVerified
 boolVecToProofsVerified v =
   let
     { head: b0, tail: t1 } = Vector.uncons v
