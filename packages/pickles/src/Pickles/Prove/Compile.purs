@@ -602,11 +602,6 @@ class
     -> WrapCompileResult
     -> inputVal
     -> prevsCarrier
-    -- | Spec-indexed runtime side-loaded VK carrier (from
-    -- | `Pickles.Sideload.Advice.SideloadedVKsCarrier`). Compiled
-    -- | slots contribute `Unit`; side-loaded slots contribute a
-    -- | runtime `VerificationKey`. Walked in lockstep with
-    -- | `prevsCarrier`.
     -> vkCarrier
     -> Effect
          { stepAdvice ::
@@ -628,7 +623,6 @@ class
     -> WrapCompileResult
     -> ShapeProveSideInfo mpv
     -> prevsCarrier
-    -- | Same side-loaded VK carrier as `mkStepAdvice` (see above).
     -> vkCarrier
     -> ShapeProveData mpv slots
 
@@ -642,8 +636,7 @@ instance CompilableSpec Unit Unit Unit 0 NoSlots Unit Unit Unit where
         { srsData:
             { perSlotLagrangeAt: Vector.nil
             , blindingH:
-                (coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs)
-                  :: AffinePoint (F StepField)
+                coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs
             , perSlotFopDomainLog2s: Vector.nil
             , perSlotVkSources: Vector.nil
             }
@@ -672,7 +665,6 @@ instance CompilableSpec Unit Unit Unit 0 NoSlots Unit Unit Unit where
         { publicInput: appInput
         , stepDomainLog2: 0
         , prevAppStates: unit
-        -- Nil has no slots so the spec-derived vkCarrier is `Unit`.
         , sideloadedVKs: unit
         }
       bcd = Dummy.baseCaseDummies { maxProofsVerified: 0 }
@@ -707,18 +699,8 @@ instance CompilableSpec Unit Unit Unit 0 NoSlots Unit Unit Unit where
 -- CompilableSpec Slot Compiled (N ≥ 1, recursive)
 --------------------------------------------------------------------------------
 
--- | Recursive instance covering all `Slot Compiled n stmt /\ rest` shapes
--- | (homogeneous: Simple_chain; heterogeneous: Tree). Derives `mpv`,
--- | `prevsCarrier`, and `slots` by recursing through `rest`.
--- |
--- | Each slot's prev is a `PrevSlot` sum: `BasePrev` carries the
--- | user-supplied dummy input for proof-level base case (b0);
--- | `InductivePrev` carries a real `CompiledProof` from a previous
--- | `prover.step` for inductive cases (b1+).
-
--- | Cons instance — head slot's per-slot data lives at the `/\`
--- | head; recursion threads the rest. Handles `Self` and `External`
--- | slot dispatch.
+-- | Recursive instance covering all `Slot Compiled n stmt /\ rest` shapes.
+-- | Derives `mpv`, `prevsCarrier`, and `slots` by recursing through `rest`.
 instance
   ( CompilableSpec rest restSlotVKs restPrevsCarrier restMpv restSlots restValCarrier restCarrier restVkCarrier
   , Add restMpv 1 mpv
@@ -727,10 +709,6 @@ instance
   , Reflectable n Int
   , Reflectable mpv Int
   , Reflectable pad Int
-  -- Per-slot pad (= PaddedLength − n), required by `buildSlotAdvice`'s
-  -- Vector.drop @slotPad to extract this slot's prev_challenge
-  -- _polynomial_commitments. Distinct from `pad` above (= PaddedLength
-  -- − mpv) when n ≠ mpv (= heterogeneous shapes like Tree slot 0).
   , Add slotPad n PaddedLength
   , Reflectable slotPad Int
   , Compare mpv 3 LT
@@ -798,17 +776,12 @@ instance
 
       slotLagrange =
         mkConstLagrangeBaseLookup \i ->
-          (coerce (ProofFFI.vestaSrsLagrangeCommitmentAt cfg.srs.pallasSrs slotWrapDomainLog2 i))
-            :: AffinePoint (F StepField)
+          coerce (ProofFFI.vestaSrsLagrangeCommitmentAt cfg.srs.pallasSrs slotWrapDomainLog2 i)
 
       outerBcd = Dummy.baseCaseDummies { maxProofsVerified: outerMpv }
       outerDummySgs = Dummy.computeDummySgValues outerBcd cfg.srs.pallasSrs cfg.srs.vestaSrs
 
-      -- Self → SharedExistsVk (wrap VK comes from advice via
-      -- `Req.Wrap_index` at prove time). External → ConstVk
-      -- (extracted external VK commitments inlined as compile-time
-      -- constants). Mirrors OCaml step_main.ml:514-528 dispatch on
-      -- Type_equal.Id.same_witness self.id tag.id.
+      -- Reference: OCaml `step_main.ml:514-528`.
       headSlotVkSource =
         case headSlotWrapKey of
           Self -> SharedExistsVk
@@ -820,8 +793,7 @@ instance
               { perSlotLagrangeAt:
                   slotLagrange :< restShape.stepProveCtx.srsData.perSlotLagrangeAt
               , blindingH:
-                  (coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs)
-                    :: AffinePoint (F StepField)
+                  coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs
               , perSlotFopDomainLog2s:
                   slotFopDomainLog2s
                     :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
@@ -840,12 +812,9 @@ instance
       slotN = reflectType (Proxy @n)
       headSlotWrapKey /\ _ = cfg.perSlotImportedVKs
 
-      -- Per-slot params (PS analog of OCaml `step.ml:751-754` Self/External
-      -- dispatch). `Self` slots use the OUTER rule's compile artifacts
-      -- (`stepCR` / `wrapCR`); `External` slots use the imported VKs.
-      -- For `Self`: `wrapDomainLog2` honours `cfg.wrapDomainOverride`
-      -- (mirrors OCaml `override_wrap_domain`). `External`: imported
-      -- rule's wrapDomainLog2 already encodes its own override.
+      -- Self/External dispatch (OCaml `step.ml:751-754`). `Self` honours
+      -- `cfg.wrapDomainOverride` (= OCaml `override_wrap_domain`);
+      -- `External`'s wrapDomainLog2 already encodes its own override.
       outerOverridenWrapDomainLog2 = case cfg.wrapDomainOverride of
         Just o -> o
         Nothing -> Dummy.wrapDomainLog2ForProofsVerified slotN
@@ -864,10 +833,8 @@ instance
                 ProofFFI.pallasProverIndexDomainLog2 vks.stepCompileResult.proverIndex
             }
 
-      -- Slot-specific dummies sized by THIS slot's prev rule's mpv (= n).
-      -- For Cons1 self-recursive, n = mpv = outer's (current single-slot
-      -- byte-identical behavior). For Tree slot 0 (NRR external), n = 0
-      -- but mpv = 2 — so using n correctly produces NRR-shaped dummies.
+      -- Slot-specific dummies sized by this slot's prev rule's mpv (= n),
+      -- not the outer rule's mpv.
       bcd = Dummy.baseCaseDummies { maxProofsVerified: slotN }
       dummySgs = Dummy.computeDummySgValues bcd cfg.srs.pallasSrs cfg.srs.vestaSrs
       dummyWrapSg = dummySgs.ipa.wrap.sg
@@ -880,9 +847,6 @@ instance
       stepEndoScalarF =
         let EndoScalar e = (endoScalar :: EndoScalar StepField) in e
 
-    -- All values that vary between BasePrev (b0) and InductivePrev (b1+)
-    -- are computed in one case-dispatch block, then handed to a single
-    -- buildSlotAdvice call.
     slotData <- case headSlot of
       BasePrev { dummyStatement } -> do
         let
@@ -925,11 +889,9 @@ instance
           , wrapPrevEvals: bcd.proofDummy.prevEvals
           , wrapBranchData:
               -- branch_data.domain_log2 of the prev's wrap statement
-              -- holds the prev's STEP domain (per OCaml
+              -- holds the prev's step domain (per OCaml
               -- `Wrap_deferred_values.expand_deferred`'s use of
               -- `Branch_data.domain branch_data` for `step_domain`).
-              -- For Tree slot 1 Self at b0 base, this is Tree's own
-              -- step domain (= prev = self's step domain).
               { domainLog2: (Curves.fromInt slotParams.slotStepDomainLog2 :: StepField)
               , proofsVerifiedMask
               }
@@ -1235,19 +1197,6 @@ instance
       stepEndoScalarF =
         let EndoScalar e = (endoScalar :: EndoScalar StepField) in e
 
-      -- Per-slot data that differs between BasePrev (head = dummy
-      -- predecessor) and InductivePrev (head = real prev CompiledProof).
-      slotData
-        :: { prevSg :: AffinePoint WrapField
-           , prevStepChals :: Vector StepIPARounds StepField
-           , prevStepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
-           , headPrevEvals :: StepAllEvals (F WrapField)
-           -- Per-slot prev wrap-IPA bp_chals (Vector n of WrapIPARounds-
-           -- sized vectors). For Cons1 self (n=1, prev's mpv=1): single
-           -- entry. For Tree slot 0 NRR (n=0, prev mpv=0): empty Vector 0.
-           -- For Tree slot 1 self (n=2, prev mpv=2): two entries.
-           , headSlotPrevWrapBpChalsVec :: Vector n (Vector WrapIPARounds (F WrapField))
-           }
       slotData = case headSlot of
         BasePrev _ ->
           let
@@ -1290,9 +1239,6 @@ instance
             CompiledProof prev = prevCp
             Tag { verifier: prevVerifier } = prevTag
 
-            -- Step-field endo expansion of prev's RAW wrap-IPA chals
-            -- (matches mkStepAdvice's `kimchiPrevChallengesExpanded`).
-            -- Not width-dependent; computed outside runExists.
             prevStepBpChalsExpanded :: Vector StepIPARounds StepField
             prevStepBpChalsExpanded =
               map
@@ -1305,16 +1251,9 @@ instance
             prevWrapPI :: Array WrapField
             prevWrapPI = wrapPublicInput prevVerifier prevCp
           in
-            -- The padded views (`Vector PaddedLength`) come pre-built
-            -- inside `prev.widthData` (computed by the producer side
-            -- where `Add pad mpv PaddedLength` is statically in scope).
-            -- We zip them once for the FFI prevChallenges argument
-            -- (single Array conversion at the FFI boundary) and use
-            -- `Vector.drop @slotPad` to take the `Vector n` view this
-            -- slot expects (with `Add slotPad n PaddedLength` from the
-            -- instance head). Mirrors OCaml's
+            -- Reference: OCaml `step_main`'s
             -- `messages_for_next_step_proof.old_bulletproof_challenges`
-            -- threading through `step_main`.
+            -- threading.
             runExists
               ( \(CompiledProofWidthData wd) ->
                   let
@@ -1371,14 +1310,8 @@ instance
                           map peWF (ProofFFI.proofIndexEvals prev.wrapProof)
                       }
 
-                    -- Take the slot's `Vector n` view from the padded
-                    -- `Vector PaddedLength`. Padding prepends dummies,
-                    -- so dropping the first `slotPad = PaddedLength - n`
-                    -- entries yields exactly the `n`-padded version
-                    -- this slot expects: dummies first (= PaddedLength-n
-                    -- minus pre-padded dummies; n ≥ width invariant in
-                    -- pickles), real entries last. `slotPad` is concrete
-                    -- via the instance's `Add slotPad n PaddedLength`.
+                    -- Take the slot's `Vector n` view by dropping the
+                    -- prepended dummies from the padded `Vector PaddedLength`.
                     headSlotPrevWrapBpChalsVec
                       :: Vector n (Vector WrapIPARounds (F WrapField))
                     headSlotPrevWrapBpChalsVec =
@@ -1415,14 +1348,8 @@ instance
       , prevStepAccs: slotData.prevStepAcc :< restProveData.prevStepAccs
       , prevEvals: slotData.headPrevEvals :< restProveData.prevEvals
       -- Wrap-domain index is `wrap_domain_log2 - 13` per the
-      -- `allPossibleDomainLog2s = [13, 14, 15]` table at
-      -- `Pickles.Prove.Wrap.purs:683`. Earlier code used `slotN`, which
-      -- only happens to coincide with the index when there's no
-      -- `wrap_domain_override` (Simple_chain). Tree with `override=14`
-      -- has `slotN=2` but log2=14 → correct index is 1, not 2. The
-      -- old formula caused the wrap circuit's slot 1 FOP to select a
-      -- domain whose generator gave a degenerate `inv_` for b1+
-      -- (b0 worked because the dummy proof short-circuits past it).
+      -- `allPossibleDomainLog2s = [13, 14, 15]` table in
+      -- `Pickles.Prove.Wrap`.
       , prevWrapDomainIndices:
           F (Curves.fromInt (slotWrapDomainLog2 - 13) :: WrapField)
             :< restProveData.prevWrapDomainIndices
@@ -1436,36 +1363,12 @@ instance
       }
 
 --------------------------------------------------------------------------------
--- CompilableSpec Slot SideLoaded (mpvMax ≥ 1, recursive) — STUB
+-- CompilableSpec Slot SideLoaded (mpvMax ≥ 1, recursive)
 --
--- Structural mirror of the `Slot Compiled` instance for type-level
--- threading: same per-slot witness shape (`StepSlot mpvMax …`), same
--- statement axis, same recursion structure on `rest`. The slot's wrap
+-- Structural mirror of the `Slot Compiled` instance. The slot's wrap
 -- VK / actual_wrap_domain / step_domain are sourced at runtime from
--- the head `VerificationKey` of the spec-indexed `vkCarrier`
--- (`SideloadedVKsCarrier (Slot SideLoaded mpvMax stmt /\ rest) =
--- VerificationKey /\ restCarrier`).
---
--- The method bodies are intentionally STUBS — using a side-loaded
--- slot crashes at prove time with a clear pointer to the routing
--- TODO. This commit locks in the type-level shape (so the spec
--- constructor compiles in user code) without committing to a
--- half-done routing implementation.
---
--- Real implementation needs (per OCaml `step_main.ml:520-525`'s
--- `Side_loaded -> of_side_loaded` path):
---   * `slotLagrange`: one-hot multiplexed across {N0, N1, N2}
---     wrap-domain lagrange tables, gated on the runtime VK's
---     `actual_wrap_domain_size :: Vector 3 BoolVar`.
---   * `slotFopDomainLog2s`: side-loaded step-domain dispatch in
---     `finalize_other_proof`'s Pseudo machinery.
---   * `slotWrapVK`: allocated per-slot via `exists @VerificationKeyVar
---     ~compute:(\_ -> toChecked vk)` rather than from the shared
---     `Req.Wrap_index`.
--- All three touch the `Pickles.Step.Main` verifier circuit + the
--- `perSlotKnownWrapKeys` `Just/Nothing` dispatch in `slotVkRec`
--- (which currently maps `Nothing` to a single shared exists-allocated
--- VK — side-loaded needs a third state for per-slot exists).
+-- the head `VerificationKey` of the spec-indexed `vkCarrier`.
+-- Reference: OCaml `step_main.ml:520-525`'s `Side_loaded -> of_side_loaded`.
 --------------------------------------------------------------------------------
 
 instance
@@ -1549,8 +1452,7 @@ instance
         :: Vector 3 (Int -> AffinePoint (F StepField))
       sideloadedPerDomainLagrangeAts = map
         ( \log2 i ->
-            (coerce (ProofFFI.vestaSrsLagrangeCommitmentAt cfg.srs.pallasSrs log2 i))
-              :: AffinePoint (F StepField)
+            coerce (ProofFFI.vestaSrsLagrangeCommitmentAt cfg.srs.pallasSrs log2 i)
         )
         (13 :< 14 :< 15 :< Vector.nil)
 
@@ -1566,8 +1468,7 @@ instance
               { perSlotLagrangeAt:
                   slotLagrange :< restShape.stepProveCtx.srsData.perSlotLagrangeAt
               , blindingH:
-                  (coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs)
-                    :: AffinePoint (F StepField)
+                  coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs
               , perSlotFopDomainLog2s:
                   slotFopDomainLog2s
                     :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s

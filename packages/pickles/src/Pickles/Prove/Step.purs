@@ -1694,16 +1694,11 @@ newtype StepAdvice prevsSpec ds dw inputVal len carrier valCarrier vkCarrier =
     -- | `exists` calls so the witness for the prev's app-state circuit
     -- | variable is sourced from advice rather than baked into a closure.
     , prevAppStates :: valCarrier
-    -- | Spec-indexed runtime side-loaded VK carrier, derived from the
-    -- | `prevsSpec` via `Pickles.Sideload.Advice.SideloadedVKsCarrier`.
-    -- | Compiled slots (`Slot Compiled`) contribute `Unit`; side-loaded
-    -- | slots (`Slot SideLoaded`) contribute a runtime
-    -- | `Pickles.Sideload.VerificationKey`. The
-    -- | `StepProverT`/`SideloadedVKsM` instance reads this field to
-    -- | serve `getSideloadedVKsCarrier` to the rule body — i.e. this
-    -- | is the channel through which the runtime side-loaded VK
-    -- | (set up by the test/caller per OCaml `~handler`) reaches
-    -- | `stepMain`.
+    -- | Runtime side-loaded VK carrier, shape derived from `prevsSpec`
+    -- | by `Pickles.Sideload.Advice.SideloadedVKsCarrier` (compiled
+    -- | slots contribute `Unit`, side-loaded slots contribute a
+    -- | `Pickles.Sideload.VerificationKey`). PS analog of OCaml's
+    -- | per-prove `~handler`.
     , sideloadedVKs :: vkCarrier
     }
 
@@ -1854,17 +1849,8 @@ instance
     StepProverT $ lift $ State.modify_ \s ->
       s { userPublicOutputFields = Just fields }
 
--- | `SideloadedVKsM` instance for `StepProverT`. Sources the runtime
--- | side-loaded VK carrier from the `StepAdvice` Reader payload — the
--- | same channel every other piece of prove-time advice flows through.
--- | Mirrors OCaml's per-prove `~handler` model: `mkStepAdvice` for
--- | `Slot SideLoaded` slots persists the runtime VK passed
--- | through the spec-indexed carrier into `adv.sideloadedVKs`, and
--- | `stepMain`'s side-loaded slot dispatch reads it back via
--- | `getSideloadedVKsCarrier`.
--- |
--- | Disjoint from the `Effect` instance (line 122 in
--- | `Pickles.Sideload.Advice`): different `m`, no overlap.
+-- | `SideloadedVKsM` instance for `StepProverT`. Reads the runtime
+-- | side-loaded VK carrier out of the `StepAdvice` Reader payload.
 instance
   ( Monad m
   , SideloadedVKsCarrier prevsSpec vkCarrier
@@ -1934,12 +1920,10 @@ stepCompile
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Effect StepCompileResult
 stepCompile ctx rule = do
-  -- Source the side-loaded VK carrier from the advice channel.
-  -- For compiled-only specs, the Effect `SideloadedVKsM` instance
-  -- synthesises an all-Unit chain via `mkUnitVkCarrier`. For specs
-  -- with side-loaded slots the constraint won't resolve unless a
-  -- different prover monad is in scope — forcing the user to wire
-  -- a real runtime-VK source.
+  -- For compiled-only specs the Effect `SideloadedVKsM` instance
+  -- synthesises an all-Unit chain via `mkUnitVkCarrier`; specs with
+  -- side-loaded slots won't resolve unless a prover monad with a
+  -- real runtime-VK source is in scope.
   sideloadedCarrier <- getSideloadedVKsCarrier @prevsSpec unit
   builtState <-
     compile
@@ -1959,8 +1943,6 @@ stepCompile ctx rule = do
             rule
             ctx.srsData
             ctx.dummySg
-            -- Sourced via `SideloadedVKsM` — Effect's instance
-            -- synthesises an all-Unit carrier for compiled-only specs.
             sideloadedCarrier
       )
       (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
@@ -2085,7 +2067,6 @@ preComputeStepDomainLog2
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Effect Int
 preComputeStepDomainLog2 ctx rule = do
-  -- See `stepCompile` for the SideloadedVKsM advice rationale.
   sideloadedCarrier <- getSideloadedVKsCarrier @prevsSpec unit
   builtState <-
     compile
@@ -2105,8 +2086,6 @@ preComputeStepDomainLog2 ctx rule = do
             rule
             ctx.srsData
             ctx.dummySg
-            -- Sourced via `SideloadedVKsM` — Effect's instance
-            -- synthesises an all-Unit carrier for compiled-only specs.
             sideloadedCarrier
       )
       (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
@@ -2224,8 +2203,6 @@ stepSolveAndProve ctx rule compileResult advice = do
               rule
               ctx.srsData
               ctx.dummySg
-              -- Sourced via `SideloadedVKsM`; captured from the
-              -- outer monad-`m` bind below.
               sideloadedCarrier
         )
 
