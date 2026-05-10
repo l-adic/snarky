@@ -180,6 +180,11 @@ type CompilePlaceholderVK = SideloadedVK Unit
 
 -- | Module-level compile-time placeholder. Pure construction — the
 -- | `Unit` payload needs no FFI.
+-- |
+-- | `maxProofsVerified` and `actualWrapDomainSize` are pinned at `N2`
+-- | because the placeholder must produce the constraint system shape
+-- | of the LARGEST possible side-loaded VK; smaller-mpv runtime VKs
+-- | mask down via their own `actualWrapDomainSize` one-hot bits.
 compileDummy :: CompilePlaceholderVK
 compileDummy = SideloadedVK
   { circuit: mkChecked

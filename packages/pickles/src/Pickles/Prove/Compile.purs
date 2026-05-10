@@ -704,6 +704,9 @@ instance CompilableSpec Unit Unit Unit 0 NoSlots Unit Unit Unit where
 -- | Derives `mpv`, `prevsCarrier`, and `slots` by recursing through `rest`.
 instance
   ( CompilableSpec rest restSlotVKs restPrevsCarrier restMpv restSlots restValCarrier restCarrier restVkCarrier
+  -- Both orderings: `restMpv 1 mpv` synthesizes `mpv` from `restMpv`;
+  -- `1 restMpv mpv` is the form `Vector.uncons` needs to recover
+  -- `restMpv` from `mpv`.
   , Add restMpv 1 mpv
   , Add 1 restMpv mpv
   , Add pad mpv PaddedLength
@@ -1349,6 +1352,9 @@ instance
 
 instance
   ( CompilableSpec rest restSlotVKs restPrevsCarrier restMpv restSlots restValCarrier restCarrier restVkCarrier
+  -- Both orderings: `restMpv 1 mpv` synthesizes `mpv` from `restMpv`;
+  -- `1 restMpv mpv` is the form `Vector.uncons` needs to recover
+  -- `restMpv` from `mpv`.
   , Add restMpv 1 mpv
   , Add 1 restMpv mpv
   , Add pad mpv PaddedLength
