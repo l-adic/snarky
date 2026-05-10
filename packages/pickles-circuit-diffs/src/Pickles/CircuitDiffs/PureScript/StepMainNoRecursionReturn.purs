@@ -99,7 +99,7 @@ compileStepMainNoRecursionReturn params =
           { perSlotLagrangeAt: Vector.nil
           , blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil
-          , perSlotVkSources: Vector.nil
+          , perSlotVkBlueprints: unit
           }
           dummyWrapSg
           -- Side-loaded VK carrier: no slots, carrier = `Unit`.

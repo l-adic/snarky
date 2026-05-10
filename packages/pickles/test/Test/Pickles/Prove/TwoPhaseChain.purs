@@ -47,6 +47,7 @@ import Pickles.Prove.Compile
 import Pickles.Prove.Step (StepRule)
 import Pickles.Prove.Verify (verify)
 import Pickles.Step.Advice (getPrevAppStates)
+import Pickles.Step.Main (SlotVkBlueprintCompiled)
 import Pickles.Step.Slots (Compiled, Slot)
 import Pickles.Types (StatementIO(..), StepField, StepIPARounds, StepPerProofWitness, WrapIPARounds)
 import Pickles.Wrap.Slots (NoSlots)
@@ -131,7 +132,7 @@ incrementRule self = do
 
 -- | `makeZeroRule` packaged: mpv=0, no prevs, valCarrier=Unit.
 mkMakeZeroEntry
-  :: Effect (RuleEntry Unit 0 2 Unit (F StepField) Unit 34 Unit Unit)
+  :: Effect (RuleEntry Unit 0 2 Unit (F StepField) Unit 34 Unit Unit Unit)
 mkMakeZeroEntry = mkRuleEntry @1 @Unit @(F StepField) makeZeroRule unit
 
 -- | `incrementRule` packaged: mpv=1, one self-referential prev,
@@ -153,6 +154,7 @@ mkIncrementEntry
            34
            (Tuple1 SlotWrapKey)
            (Tuple1 Unit)
+           (Tuple1 SlotVkBlueprintCompiled)
        )
 mkIncrementEntry = mkRuleEntry @1 @Unit @(F StepField) incrementRule (tuple1 Self)
 
@@ -161,7 +163,7 @@ mkIncrementEntry = mkRuleEntry @1 @Unit @(F StepField) incrementRule (tuple1 Sel
 mkRulesCarrier
   :: Effect
        ( Tuple2
-           (RuleEntry Unit 0 2 Unit (F StepField) Unit 34 Unit Unit)
+           (RuleEntry Unit 0 2 Unit (F StepField) Unit 34 Unit Unit Unit)
            ( RuleEntry
                (Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
                1
@@ -177,6 +179,7 @@ mkRulesCarrier
                34
                (Tuple1 SlotWrapKey)
                (Tuple1 Unit)
+               (Tuple1 SlotVkBlueprintCompiled)
            )
        )
 mkRulesCarrier = do

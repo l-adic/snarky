@@ -163,7 +163,7 @@ deriveStepVKFromCompiled vestaSrs builtState =
 -- | with coordinates in `Pallas.BaseField = StepField`, so the
 -- | resulting VK is what a step circuit consumes when verifying the
 -- | wrap proof. Used as a per-slot known wrap key in
--- | `perSlotVkSources` (e.g. `ConstVk realNrrWrapVK` for
+-- | `perSlotVkBlueprints` (e.g. `VkBlueprintConst realNrrWrapVK` for
 -- | Tree_proof_return's slot 0).
 deriveWrapVKFromCompiled
   :: forall @len

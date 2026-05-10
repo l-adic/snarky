@@ -13,14 +13,14 @@ module Pickles.CircuitDiffs.PureScript.StepMainSimpleChain
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Tuple.Nested (Tuple1, tuple1)
+import Data.Tuple.Nested (Tuple1, tuple1, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Step.Main (RuleOutput, SlotVkSource(..), stepMain)
+import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
 import Pickles.Step.Slots (Compiled, Slot)
 import Pickles.Types (StatementIO, StepField)
 import Snarky.Backend.Compile (compile)
@@ -99,7 +99,7 @@ compileStepMainSimpleChain params = do
           { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
           , blindingH: params.blindingH
           , perSlotFopDomainLog2s: (selfLog2 :< Vector.nil) :< Vector.nil
-          , perSlotVkSources: SharedExistsVk :< Vector.nil
+          , perSlotVkBlueprints: VkBlueprintShared /\ unit
           }
           dummyWrapSg
           -- Side-loaded VK carrier: one Cons slot,

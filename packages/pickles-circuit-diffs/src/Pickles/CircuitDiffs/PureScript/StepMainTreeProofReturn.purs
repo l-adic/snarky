@@ -32,7 +32,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Tuple.Nested (Tuple2, tuple2)
+import Data.Tuple.Nested (Tuple2, tuple2, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -42,7 +42,7 @@ import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecursionReturnParams)
 import Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn (compileWrapMainNoRecursionReturn)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Step.Main (RuleOutput, SlotVkSource(..), stepMain)
+import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
 import Pickles.Step.Slots (Compiled, Slot)
 import Pickles.Types (StatementIO, StepField)
 import Safe.Coerce (coerce)
@@ -156,10 +156,10 @@ compileStepMainTreeProofReturn params = do
       -- * slot 0: NRR's step_domain.h, derived from `nrrArt.stepDomainLog2`.
       -- * slot 1: self's step_domain.h, derived via shape pass.
       -- Per-slot known wrap keys:
-      -- * slot 0: ConstVk nrrArt.wrapVk — derived from compiled NRR
+      -- * slot 0: VkBlueprintConst nrrArt.wrapVk — derived from compiled NRR
       --   wrap CS. Mirrors OCaml `Lazy.force compiled.wrap_key` at
       --   `step_branch_data.ml:164`.
-      -- * slot 1: SharedExistsVk — slot's prev is SELF, uses the
+      -- * slot 1: VkBlueprintShared — slot's prev is SELF, uses the
       --   `exists`-allocated VK inside stepMain.
       -- Single-rule: mpvMax = len = 2, mpvPad = 0.
       ( \_ -> stepMain
@@ -177,8 +177,8 @@ compileStepMainTreeProofReturn params = do
               (nrrArt.stepDomainLog2 :< Vector.nil)
                 :< (selfLog2 :< Vector.nil)
                 :< Vector.nil
-          , perSlotVkSources:
-              ConstVk nrrArt.wrapVk :< SharedExistsVk :< Vector.nil
+          , perSlotVkBlueprints:
+              VkBlueprintConst nrrArt.wrapVk /\ VkBlueprintShared /\ unit
           }
           dummyWrapSg
           -- Side-loaded VK carrier: two Cons slots, both compiled.

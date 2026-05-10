@@ -94,11 +94,11 @@ import Pickles.ProofWitness (ProofWitness)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
-import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier, class SideloadedVKsM, class TraverseSideloadedVKsCarrier, getSideloadedVKsCarrier)
+import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier, class SideloadedVKsM, getSideloadedVKsCarrier)
 import Pickles.Sideload.VerificationKey (VerificationKey) as Sideload
 import Pickles.Sideload.VerificationKey.Internal (CompilePlaceholderVK)
 import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM)
-import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
+import Pickles.Step.Main (class BuildSlotVkSources, RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Step.Main as MpvPadding
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
 import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, replicateStepSlotsCarrier)
@@ -1506,8 +1506,8 @@ type StepRule (n :: Int) valCarrier inputVal input outputVal output prevInputVal
 -- |   known wrap keys) that `stepMain` consumes.
 -- | * `dummySg` — dummy sg point for sg_old padding in verify_one.
 -- | * `crs` — the step circuit's Vesta SRS.
-type StepProveContext len nd =
-  { srsData :: StepMainSrsData len nd
+type StepProveContext len nd blueprints =
+  { srsData :: StepMainSrsData len nd blueprints
   , dummySg :: AffinePoint StepField
   , crs :: CRS VestaG
   -- | When `true`, enables prover-state debug checks and runs a
@@ -1874,10 +1874,10 @@ instance
 -- | haven't introduced yet.
 stepCompile
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier
+       @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier blueprints
        pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
-  => TraverseSideloadedVKsCarrier CompilePlaceholderVK prevsSpec len sideloadedVkCarrier
+  => BuildSlotVkSources CompilePlaceholderVK prevsSpec len blueprints sideloadedVkCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -1916,7 +1916,7 @@ stepCompile
        len
        carrierVar
   => CheckedType StepField (KimchiConstraint StepField) input
-  => StepProveContext len nd
+  => StepProveContext len nd blueprints
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Effect StepCompileResult
 stepCompile ctx rule = do
@@ -2018,13 +2018,13 @@ stepCompile ctx rule = do
 -- | `range_check` / `xor` / `lookup` / `runtime_tables` gates.
 preComputeStepDomainLog2
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier
+       @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier blueprints
        pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
   -- Side-loaded VK carrier — see stepMain. preComputeStepDomainLog2
   -- runs at compile time; the caller synthesizes a placeholder
   -- carrier (e.g. `mkUnitVkCarrier` for compiled-only specs).
-  => TraverseSideloadedVKsCarrier CompilePlaceholderVK prevsSpec len sideloadedVkCarrier
+  => BuildSlotVkSources CompilePlaceholderVK prevsSpec len blueprints sideloadedVkCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -2063,7 +2063,7 @@ preComputeStepDomainLog2
        len
        carrierVar
   => CheckedType StepField (KimchiConstraint StepField) input
-  => StepProveContext len nd
+  => StepProveContext len nd blueprints
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Effect Int
 preComputeStepDomainLog2 ctx rule = do
@@ -2115,10 +2115,10 @@ preComputeStepDomainLog2 ctx rule = do
 -- | unsatisfied failures are reported as `FailedAssertion`.
 stepSolveAndProve
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier
+       @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier blueprints
        pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
-  => TraverseSideloadedVKsCarrier Sideload.VerificationKey prevsSpec len sideloadedVkCarrier
+  => BuildSlotVkSources Sideload.VerificationKey prevsSpec len blueprints sideloadedVkCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -2159,7 +2159,7 @@ stepSolveAndProve
   => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
   => SlotStatementsCarrier prevsSpec valCarrier
-  => StepProveContext len nd
+  => StepProveContext len nd blueprints
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> StepCompileResult
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier valCarrier sideloadedVkCarrier

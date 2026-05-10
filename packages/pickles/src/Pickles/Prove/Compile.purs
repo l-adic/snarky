@@ -149,12 +149,12 @@ import Pickles.Prove.Wrap
   , wrapSolveAndProve
   )
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
-import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier, class TraverseSideloadedVKsCarrier)
+import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier)
 import Pickles.Sideload.VerificationKey (Checked(..), ProofsVerifiedCount)
 import Pickles.Sideload.VerificationKey (VerificationKey, boolVecToProofsVerified) as Sideload
 import Pickles.Sideload.VerificationKey.Internal (CompilePlaceholderVK)
 import Pickles.Sideload.VerificationKey.Internal (SideloadedVK(..)) as SideloadInternal
-import Pickles.Step.Main (SlotVkSource(..))
+import Pickles.Step.Main (class BuildSlotVkSources, SlotVkBlueprintCompiled(..), SlotVkBlueprintSideLoaded)
 import Pickles.Step.Main as MpvPadding
 import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, Compiled, SideLoaded, Slot)
 import Pickles.Types
@@ -339,9 +339,9 @@ type CompileConfig prevsSpec slotVKs =
 -- | * `slotsValue` — runtime realisation of the `slots` type
 -- |   constructor (`noSlots`, `slots1 ...`, etc.) carrying each prev's
 -- |   wrap bp-challenges.
-type ShapeCompileData :: Int -> Int -> (Type -> Type) -> Type
-type ShapeCompileData mpv nd slots =
-  { stepProveCtx :: StepProveContext mpv nd
+type ShapeCompileData :: Int -> Int -> Type -> (Type -> Type) -> Type
+type ShapeCompileData mpv nd blueprints slots =
+  { stepProveCtx :: StepProveContext mpv nd blueprints
   , wrapDomainLog2 :: Int
   }
 
@@ -554,10 +554,11 @@ class CompilableSpec
   -> Type
   -> Type
   -> Type
+  -> Type
   -> Constraint
 class
-  CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier vkCarrier
-  | prevsSpec -> slotVKs prevsCarrier mpv slots valCarrier carrier vkCarrier
+  CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier vkCarrier blueprints
+  | prevsSpec -> slotVKs prevsCarrier mpv slots valCarrier carrier vkCarrier blueprints
   where
   -- | Compile-time shape data (stepProveCtx, constants). Nil: empty
   -- | per-slot vectors + wrapDomainLog2=13 + noSlots.
@@ -586,7 +587,7 @@ class
     => Reflectable nd Int
     => CompileConfig prevsSpec slotVKs
     -> Vector nd Int
-    -> ShapeCompileData mpv nd slots
+    -> ShapeCompileData mpv nd blueprints slots
 
   -- | Step solver advice + side info. Recurses on `rest` to assemble
   -- | the multi-slot StepAdvice (PS analog of OCaml `step.ml:736-770`).
@@ -631,7 +632,7 @@ class
 -- CompilableSpec Unit (N=0, NRR-shape)
 --------------------------------------------------------------------------------
 
-instance CompilableSpec Unit Unit Unit 0 NoSlots Unit Unit Unit where
+instance CompilableSpec Unit Unit Unit 0 NoSlots Unit Unit Unit Unit where
   shapeCompileData cfg _ =
     { stepProveCtx:
         { srsData:
@@ -639,7 +640,7 @@ instance CompilableSpec Unit Unit Unit 0 NoSlots Unit Unit Unit where
             , blindingH:
                 coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs
             , perSlotFopDomainLog2s: Vector.nil
-            , perSlotVkSources: Vector.nil
+            , perSlotVkBlueprints: unit
             }
         , dummySg: nrrDummyWrapSg cfg.srs.pallasSrs cfg.srs.vestaSrs
         , crs: cfg.srs.vestaSrs
@@ -703,7 +704,7 @@ instance CompilableSpec Unit Unit Unit 0 NoSlots Unit Unit Unit where
 -- | Recursive instance covering all `Slot Compiled n stmt /\ rest` shapes.
 -- | Derives `mpv`, `prevsCarrier`, and `slots` by recursing through `rest`.
 instance
-  ( CompilableSpec rest restSlotVKs restPrevsCarrier restMpv restSlots restValCarrier restCarrier restVkCarrier
+  ( CompilableSpec rest restSlotVKs restPrevsCarrier restMpv restSlots restValCarrier restCarrier restVkCarrier restScaffolds
   -- Both orderings: `restMpv 1 mpv` synthesizes `mpv` from `restMpv`;
   -- `1 restMpv mpv` is the form `Vector.uncons` needs to recover
   -- `restMpv` from `mpv`.
@@ -745,6 +746,11 @@ instance
     -- `Pickles.Sideload.Advice.SideloadedVKsCarrier`'s
     -- `Slot Compiled → Unit /\ restCarrier` instance.
     (Unit /\ restVkCarrier)
+    -- Compile-time blueprint for this slot's wrap-VK source. `Self`
+    -- becomes `VkBlueprintShared`; `External` becomes `VkBlueprintConst`.
+    -- Bundled into the post-walk `SlotVkSource` by
+    -- `buildSlotVkSources` at circuit-build time.
+    (SlotVkBlueprintCompiled /\ restScaffolds)
   where
   shapeCompileData cfg selfStepDomainLog2s =
     let
@@ -786,11 +792,10 @@ instance
       outerDummySgs = Dummy.computeDummySgValues outerBcd cfg.srs.pallasSrs cfg.srs.vestaSrs
 
       -- Reference: OCaml `step_main.ml:514-528`.
-      headSlotVkSource =
-        case headSlotWrapKey of
-          Self -> SharedExistsVk
-          External vks ->
-            ConstVk (extractWrapVKCommsAdvice vks.wrapCompileResult.verifierIndex)
+      headSlotScaffold = case headSlotWrapKey of
+        Self -> VkBlueprintShared
+        External vks ->
+          VkBlueprintConst (extractWrapVKCommsAdvice vks.wrapCompileResult.verifierIndex)
     in
       { stepProveCtx:
           { srsData:
@@ -801,8 +806,8 @@ instance
               , perSlotFopDomainLog2s:
                   slotFopDomainLog2s
                     :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
-              , perSlotVkSources:
-                  headSlotVkSource :< restShape.stepProveCtx.srsData.perSlotVkSources
+              , perSlotVkBlueprints:
+                  headSlotScaffold /\ restShape.stepProveCtx.srsData.perSlotVkBlueprints
               }
           , dummySg: outerDummySgs.ipa.wrap.sg
           , crs: cfg.srs.vestaSrs
@@ -1351,7 +1356,7 @@ instance
 --------------------------------------------------------------------------------
 
 instance
-  ( CompilableSpec rest restSlotVKs restPrevsCarrier restMpv restSlots restValCarrier restCarrier restVkCarrier
+  ( CompilableSpec rest restSlotVKs restPrevsCarrier restMpv restSlots restValCarrier restCarrier restVkCarrier restScaffolds
   -- Both orderings: `restMpv 1 mpv` synthesizes `mpv` from `restMpv`;
   -- `1 restMpv mpv` is the form `Vector.uncons` needs to recover
   -- `restMpv` from `mpv`.
@@ -1393,6 +1398,10 @@ instance
         /\ restCarrier
     )
     (Sideload.VerificationKey /\ restVkCarrier)
+    -- Side-loaded blueprint = the per-domain lagrange tables (one
+    -- entry per `wrap_domain ∈ {N0, N1, N2}`). The runtime VK is
+    -- bundled in by `buildSlotVkSources` at circuit-build time.
+    (SlotVkBlueprintSideLoaded /\ restScaffolds)
   where
   -- Structural mirror of the `Slot Compiled` `shapeCompileData`. The
   -- slot's compile-time `slotWrapDomainLog2` and `slotLagrange` are
@@ -1434,10 +1443,6 @@ instance
 
       outerBcd = Dummy.baseCaseDummies { maxProofsVerified: outerMpv }
       outerDummySgs = Dummy.computeDummySgValues outerBcd cfg.srs.pallasSrs cfg.srs.vestaSrs
-
-      -- `Step.Main` reads `SideloadedExistsVk`'s per-domain tables and
-      -- one-hot-muxes via `mkSideloadedLagrangeLookup`.
-      headSlotVkSource = SideloadedExistsVk sideloadedPerDomainLagrangeAts
     in
       { stepProveCtx:
           { srsData:
@@ -1451,8 +1456,9 @@ instance
                   -- is in `Step.FinalizeOtherProof`'s SideLoadedMode).
                   selfStepDomainLog2s
                     :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
-              , perSlotVkSources:
-                  headSlotVkSource :< restShape.stepProveCtx.srsData.perSlotVkSources
+              , perSlotVkBlueprints:
+                  sideloadedPerDomainLagrangeAts
+                    /\ restShape.stepProveCtx.srsData.perSlotVkBlueprints
               }
           , dummySg: outerDummySgs.ipa.wrap.sg
           , crs: cfg.srs.vestaSrs
@@ -2293,17 +2299,17 @@ instance
     branches
     mpvMax
     slotsMax
-    ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize slotVKs vkCarrier
+    ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints
         /\ restCarrier
     )
-    ( ( PProveStep.StepProveContext ruleMpv topBranches
+    ( ( PProveStep.StepProveContext ruleMpv topBranches blueprints
         -> Effect PProveStep.StepCompileResult
       )
         /\ restStepCompileFns
     )
-    (PProveStep.StepProveContext ruleMpv topBranches /\ restCtxs)
+    (PProveStep.StepProveContext ruleMpv topBranches blueprints /\ restCtxs)
     (PProveStep.StepCompileResult /\ restStepCompileResults)
-    ( ( PProveStep.StepProveContext ruleMpv topBranches
+    ( ( PProveStep.StepProveContext ruleMpv topBranches blueprints
         -> PProveStep.StepCompileResult
         -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
              inputVal
@@ -2639,6 +2645,7 @@ instance
   , CompilableSpec prevsSpec slotVKs prevsCarrier ruleMpv slots valCarrier
       carrier
       vkCarrier
+      blueprints
   , SlotStatementsCarrier prevsSpec valCarrier
   -- Per-rule step+wrap constraints needed by runMultiProverBody.
   , CircuitGateConstructor StepField VestaG
@@ -2690,17 +2697,17 @@ instance
       branches
       mpvMax
       slotsMax
-      ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize slotVKs vkCarrier
+      ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints
           /\ restCarrier
       )
-      ( ( PProveStep.StepProveContext ruleMpv topBranches
+      ( ( PProveStep.StepProveContext ruleMpv topBranches blueprints
           -> Effect PProveStep.StepCompileResult
         )
           /\ restStepCompileFns
       )
-      (PProveStep.StepProveContext ruleMpv topBranches /\ restCtxs)
+      (PProveStep.StepProveContext ruleMpv topBranches blueprints /\ restCtxs)
       (PProveStep.StepCompileResult /\ restStepCompileResults)
-      ( ( PProveStep.StepProveContext ruleMpv topBranches
+      ( ( PProveStep.StepProveContext ruleMpv topBranches blueprints
           -> PProveStep.StepCompileResult
           -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
                inputVal
@@ -2728,17 +2735,17 @@ instance
     branches
     mpvMax
     slotsMax
-    ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize slotVKs vkCarrier
+    ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints
         /\ restCarrier
     )
-    ( ( PProveStep.StepProveContext ruleMpv topBranches
+    ( ( PProveStep.StepProveContext ruleMpv topBranches blueprints
         -> Effect PProveStep.StepCompileResult
       )
         /\ restStepCompileFns
     )
-    (PProveStep.StepProveContext ruleMpv topBranches /\ restCtxs)
+    (PProveStep.StepProveContext ruleMpv topBranches blueprints /\ restCtxs)
     (PProveStep.StepCompileResult /\ restStepCompileResults)
-    ( ( PProveStep.StepProveContext ruleMpv topBranches
+    ( ( PProveStep.StepProveContext ruleMpv topBranches blueprints
         -> PProveStep.StepCompileResult
         -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
              inputVal
@@ -2903,7 +2910,8 @@ data RuleEntry
   -> Type
   -> Type
   -> Type
-data RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs vkCarrier = RuleEntry
+  -> Type
+data RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints = RuleEntry
   { -- | Pre-pass: takes a placeholder `StepProveContext mpv` (built
     -- | with OCaml `rough_domains` log2=20) and returns the actual
     -- | `selfStepDomainLog2` derived by counting gates in a one-shot
@@ -2914,9 +2922,9 @@ data RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs v
     -- | proof-system's `branches` count, used for Pseudo dispatch
     -- | over Self-prev step domains in `finalizeOtherProofCircuit`.
     preComputeStepDomainLog2Fn ::
-      PProveStep.StepProveContext mpv nd -> Effect Int
+      PProveStep.StepProveContext mpv nd blueprints -> Effect Int
   , stepCompileFn ::
-      PProveStep.StepProveContext mpv nd -> Effect PProveStep.StepCompileResult
+      PProveStep.StepProveContext mpv nd blueprints -> Effect PProveStep.StepCompileResult
   -- | `vkCarrier` is the spec-derived per-slot side-loaded VK carrier
   -- | (`SideloadedVKsCarrier prevsSpec vkCarrier`): compiled slots
   -- | contribute `Unit`, side-loaded slots contribute a runtime
@@ -2925,7 +2933,7 @@ data RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs v
   -- | it as a `RuleEntry` parameter lets the closure body's
   -- | `stepSolveAndProve` see a saturated `StepAdvice`.
   , stepProveFn ::
-      PProveStep.StepProveContext mpv nd
+      PProveStep.StepProveContext mpv nd blueprints
       -> PProveStep.StepCompileResult
       -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
            inputVal
@@ -2946,16 +2954,16 @@ mkRuleEntry
        prevsSpec mpv mpvPad nd ndPred outputSize valCarrier
        inputVal inputVar outputVar prevInputVar slotVKs
        carrier carrierVar pad unfsTotal digestPlusUnfs
-       compileSideloadedVkCarrier sideloadedVkCarrier
+       compileSideloadedVkCarrier sideloadedVkCarrier blueprints
    . CircuitGateConstructor StepField VestaG
   -- Compile-path carrier: cells = `CompilePlaceholderVK`. Synthesised
   -- by `MkUnitVkCarrier` for the `getSideloadedVKsCarrier` Effect
   -- instance inside `stepCompile` / `preComputeStepDomainLog2`.
-  => TraverseSideloadedVKsCarrier CompilePlaceholderVK prevsSpec mpv compileSideloadedVkCarrier
+  => BuildSlotVkSources CompilePlaceholderVK prevsSpec mpv blueprints compileSideloadedVkCarrier
   => MkUnitVkCarrier prevsSpec compileSideloadedVkCarrier
   -- Prove-path carrier: cells = `Sideload.VerificationKey`. Sourced
   -- from `StepAdvice.sideloadedVKs` inside `stepSolveAndProve`.
-  => TraverseSideloadedVKsCarrier Sideload.VerificationKey prevsSpec mpv sideloadedVkCarrier
+  => BuildSlotVkSources Sideload.VerificationKey prevsSpec mpv blueprints sideloadedVkCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable mpv Int
   => Reflectable pad Int
@@ -2997,7 +3005,7 @@ mkRuleEntry
   => SlotStatementsCarrier prevsSpec valCarrier
   => PStepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
   -> slotVKs
-  -> Effect (RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs sideloadedVkCarrier)
+  -> Effect (RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs sideloadedVkCarrier blueprints)
 mkRuleEntry rule slotVKs = pure $ RuleEntry
   { preComputeStepDomainLog2Fn: \ctx ->
       PProveStep.preComputeStepDomainLog2
@@ -3088,15 +3096,15 @@ type PStepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal
 -- | `shapeCompileData @prevsSpec` for the per-prev-spec layout
 -- | (per-slot lagrange basis, blinding H, FOP domains).
 buildStepProveCtx
-  :: forall @prevsSpec @nd ndPred slotVKs prevsCarrier mpv slots valCarrier carrier vkCarrier
-   . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier vkCarrier
+  :: forall @prevsSpec @nd ndPred slotVKs prevsCarrier mpv slots valCarrier carrier vkCarrier blueprints
+   . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier vkCarrier blueprints
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Reflectable nd Int
   => CompileMultiConfig
   -> slotVKs
   -> Vector nd Int
-  -> PProveStep.StepProveContext mpv nd
+  -> PProveStep.StepProveContext mpv nd blueprints
 buildStepProveCtx cfg slotVKs selfStepDomainLog2s =
   let
     perRuleCfg =
@@ -3135,8 +3143,8 @@ runMultiProverBody
        branches branchesPred topBranchesPred
        pad unfsTotal digestPlusUnfs outputSize carrierFVar
        padMax totalBasesMax totalBasesMaxPred
-       vkCarrier
-   . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier vkCarrier
+       vkCarrier blueprints
+   . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier vkCarrier blueprints
   => SlotStatementsCarrier prevsSpec valCarrier
   => CircuitGateConstructor StepField VestaG
   => CircuitGateConstructor WrapField PallasG
@@ -3204,7 +3212,7 @@ runMultiProverBody
   -- ^ this branch's step compile result
   -> Int
   -- ^ this branch's selfStepDomainLog2 (from the pre-pass)
-  -> RuleEntry prevsSpec mpv topBranches valCarrier inputVal carrier outputSize slotVKs vkCarrier
+  -> RuleEntry prevsSpec mpv topBranches valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints
   -> StepInputs prevsSpec inputVal prevsCarrier vkCarrier
   -> ExceptT ProveError Effect
        (CompiledProof mpvMax (StatementIO inputVal outputVal) outputVal Unit)

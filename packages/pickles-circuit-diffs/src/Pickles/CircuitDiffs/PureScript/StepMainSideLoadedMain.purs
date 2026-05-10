@@ -20,7 +20,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Tuple.Nested (Tuple1, tuple1)
+import Data.Tuple.Nested (Tuple1, tuple1, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -28,7 +28,7 @@ import Effect.Exception (throw)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Sideload.VerificationKey.Internal (CompilePlaceholderVK, compileDummy)
-import Pickles.Step.Main (RuleOutput, SlotVkSource(..), stepMain)
+import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Slots (SideLoaded, Slot)
 import Pickles.Types (StatementIO, StepField)
 import Snarky.Backend.Compile (compile)
@@ -114,10 +114,10 @@ compileStepMainSideLoadedMain params =
           @CompilePlaceholderVK
           sideLoadedMainRule
           -- This circuit-diff harness builds `perSlotLagrangeAt` /
-          -- `perSlotVkSources` / `perSlotFopDomainLog2s` inline rather
+          -- `perSlotVkBlueprints` / `perSlotFopDomainLog2s` inline rather
           -- than going through `Pickles.Prove.Compile.shapeCompileData`.
           -- The side-loaded slot ignores `perSlotLagrangeAt` (Step.Main
-          -- reads `SideloadedExistsVk`'s per-domain tables instead);
+          -- reads the per-domain tables from `SlotVkBlueprintSideLoaded` instead);
           -- it's still required to satisfy the Vector shape.
           { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
           , blindingH: params.blindingH
@@ -129,9 +129,8 @@ compileStepMainSideLoadedMain params =
           -- compile.
           , perSlotFopDomainLog2s:
               (0 :< Vector.nil) :< Vector.nil
-          , perSlotVkSources:
-              SideloadedExistsVk params.sideloadedPerDomainLagrangeAt
-                :< Vector.nil
+          , perSlotVkBlueprints:
+              params.sideloadedPerDomainLagrangeAt /\ unit
           }
           dummyWrapSg
           -- Single side-loaded slot with the dummy VK.

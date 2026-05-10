@@ -11,7 +11,11 @@
 -- | Reference: mina/src/lib/crypto/pickles/step_main.ml
 -- |            mina/src/lib/crypto/pickles/dump_circuit_impl.ml
 module Pickles.Step.Main
-  ( SlotVkSource(..)
+  ( SlotVkBlueprintCompiled(..)
+  , SlotVkBlueprintSideLoaded
+  , SlotVkSource(..)
+  , class BuildSlotVkSources
+  , buildSlotVkSources
   -- * Rule abstraction
   , RuleOutput
   -- * Spec-indexed per-slot carrier step_main
@@ -35,22 +39,23 @@ import Data.Array as Array
 import Data.Fin (getFinite)
 import Data.Foldable (foldM)
 import Data.FoldableWithIndex (forWithIndex_)
-import Data.Maybe (Maybe(..), fromJust)
+import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
+import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
-import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy as Dummy
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, mkSideloadedLagrangeLookup)
-import Pickles.Sideload.Advice (class TraverseSideloadedVKsCarrier, traverseSideloadedVKsCarrier)
 import Pickles.Sideload.VerificationKey (Checked(..), ProofsVerifiedCount)
+import Pickles.Sideload.VerificationKey.Internal (SideloadedVK, cellCircuit)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM, getMessagesForNextWrapProof, getMessagesForNextWrapProofDummyHash, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex, setUserPublicOutputFields)
 import Pickles.Step.FinalizeOtherProof (DomainMode(..))
-import Pickles.Step.Slots (class StepSlotsCarrier, traverseStepSlotsA)
+import Pickles.Step.Slots (class StepSlotsCarrier, Compiled, SideLoaded, Slot, traverseStepSlotsA)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), UnfinalizedFieldCount, VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.Verify (ivpTrace)
@@ -128,17 +133,102 @@ type RuleOutput n prevInput output =
 -- |   `Pickles.PublicInputCommit.mkSideloadedLagrangeLookup`).
 -- |
 -- | Reference: OCaml `step_main.ml`'s tag-kind dispatch.
+-- | Compile-time blueprint for a `Slot Compiled` slot. Two
+-- | inhabitants only — there is no `Slot SideLoaded` arm here, so
+-- | the `BuildSlotVkSources` Compiled instance can pattern-match
+-- | exhaustively without an "impossible" fallthrough.
+data SlotVkBlueprintCompiled
+  = VkBlueprintConst (VerificationKey (WeierstrassAffinePoint PallasG (F StepField)))
+  | VkBlueprintShared
+
+-- | Compile-time blueprint for a `Slot SideLoaded` slot — the
+-- | per-domain lagrange tables. The runtime VK is allocated in-
+-- | circuit by `BuildSlotVkSources` and bundled (alongside this) into
+-- | `SlotVkSource.SideloadedExistsVk`.
+type SlotVkBlueprintSideLoaded =
+  Vector ProofsVerifiedCount (Int -> AffinePoint (F StepField))
+
+-- | Post-walk per-slot wrap-VK dispatch type. `SideloadedExistsVk`
+-- | bundles BOTH the compile-time per-domain lagrange tables and the
+-- | in-circuit-allocated `VerificationKeyVar` so the Step.Main
+-- | dispatch loop has everything in one place — no parallel
+-- | `Vector len (Maybe …)` lookup required.
 data SlotVkSource
   = ConstVk (VerificationKey (WeierstrassAffinePoint PallasG (F StepField)))
   | SharedExistsVk
-  | SideloadedExistsVk (Vector ProofsVerifiedCount (Int -> AffinePoint (F StepField)))
+  | SideloadedExistsVk
+      SlotVkBlueprintSideLoaded
+      (Checked (BoolVar StepField) (WeierstrassAffinePoint PallasG (FVar StepField)))
+
+-- | Walk a spec-indexed blueprint carrier alongside the side-loaded
+-- | VK carrier and produce a `Vector len SlotVkSource` for the
+-- | dispatch loop. For each `Slot SideLoaded` position the runtime
+-- | VK is allocated in-circuit via `exists` and bundled (with the
+-- | compile-time per-domain lagrange tables) into the
+-- | `SideloadedExistsVk` constructor.
+-- |
+-- | Each instance pattern-matches exhaustively on the blueprint type
+-- | the spec kind dictates — there is no fallthrough arm. The class
+-- | encodes the protocol invariant that compiled and side-loaded
+-- | slots carry different compile-time data.
+class BuildSlotVkSources
+  :: Type -> Type -> Int -> Type -> Type -> Constraint
+class
+  BuildSlotVkSources cell prevsSpec len blueprints carrier
+  | cell prevsSpec -> len blueprints carrier
+  where
+  buildSlotVkSources
+    :: forall t m
+     . CircuitM StepField (KimchiConstraint StepField) t m
+    => CheckedType StepField (KimchiConstraint StepField)
+         (Checked (BoolVar StepField) (WeierstrassAffinePoint PallasG (FVar StepField)))
+    => blueprints
+    -> carrier
+    -> Snarky (KimchiConstraint StepField) t m (Vector len SlotVkSource)
+
+instance BuildSlotVkSources cell Unit 0 Unit Unit where
+  buildSlotVkSources _ _ = pure Vector.nil
+
+instance
+  ( BuildSlotVkSources cell rest restLen restScaffolds restCarrier
+  , Add restLen 1 len
+  ) =>
+  BuildSlotVkSources cell
+    (Slot Compiled n stmt /\ rest)
+    len
+    (SlotVkBlueprintCompiled /\ restScaffolds)
+    (Unit /\ restCarrier)
+  where
+  buildSlotVkSources (headScaffold /\ restScaffolds) (_ /\ restCarrier) = do
+    let
+      headSrc = case headScaffold of
+        VkBlueprintConst v -> ConstVk v
+        VkBlueprintShared -> SharedExistsVk
+    restSrcs <- buildSlotVkSources @cell @rest restScaffolds restCarrier
+    pure (headSrc :< restSrcs)
+
+instance
+  ( BuildSlotVkSources (SideloadedVK a) rest restLen restScaffolds restCarrier
+  , Add restLen 1 len
+  ) =>
+  BuildSlotVkSources (SideloadedVK a)
+    (Slot SideLoaded mpvMax stmt /\ rest)
+    len
+    (SlotVkBlueprintSideLoaded /\ restScaffolds)
+    (SideloadedVK a /\ restCarrier)
+  where
+  buildSlotVkSources (headLagrange /\ restScaffolds) (headCell /\ restCarrier) = do
+    headVar <- exists (pure (cellCircuit headCell))
+    let headSrc = SideloadedExistsVk headLagrange headVar
+    restSrcs <- buildSlotVkSources @(SideloadedVK a) @rest restScaffolds restCarrier
+    pure (headSrc :< restSrcs)
 
 -- | SRS data for `stepMain`. Carries per-slot FOP domain-log2s
 -- | (`finalize_other_proof` consumes the prev's `step_domains` Vector;
 -- | self-recursive rules share one value across slots, heterogeneous
 -- | prevs differ per slot) and per-slot wrap-VK sources (see
 -- | `SlotVkSource`).
-type StepMainSrsData len nd =
+type StepMainSrsData len nd blueprints =
   { -- | Per-slot lagrange commitments. In OCaml
     -- | `x_hat = Σᵢ x[i] * lagrange_commitment(~domain:d.wrap_domain, srs, i)`
     -- | (step_verifier.ml:564-571) uses the PREV's `wrap_domain`, read
@@ -163,7 +253,16 @@ type StepMainSrsData len nd =
   -- | (`step_verifier.ml:879-899`), which is then deduped into
   -- | `unique_domains` for `Pseudo.Domain.to_domain` dispatch.
   , perSlotFopDomainLog2s :: Vector len (Vector nd Int)
-  , perSlotVkSources :: Vector len SlotVkSource
+  -- | Spec-indexed compile-time blueprint for each slot's wrap-VK
+  -- | source. `Slot Compiled` slots contribute a
+  -- | `SlotVkBlueprintCompiled` (`VkBlueprintConst` / `VkBlueprintShared`);
+  -- | `Slot SideLoaded` slots contribute a `SlotVkBlueprintSideLoaded`
+  -- | (per-domain lagrange tables). The runtime VK for side-loaded
+  -- | slots is bundled in by `buildSlotVkSources` at circuit-build
+  -- | time. The `blueprints` shape mirrors `prevsSpec` slot-for-slot,
+  -- | so a Compiled instance physically cannot receive a SideLoaded
+  -- | blueprint and vice-versa — the protocol invariant is type-level.
+  , perSlotVkBlueprints :: blueprints
   }
 
 -------------------------------------------------------------------------------
@@ -646,18 +745,20 @@ unfFields unf =
 stepMain
   :: forall @prevsSpec pad outputSize @inputVal input @outputVal output @prevInputVal prevInput
        @valCarrier @mpvMax mpvPad @nd ndPred @cell
-       len carrier carrierVar sideloadedVkCarrier
+       len carrier carrierVar sideloadedVkCarrier blueprints
        unfsTotal digestPlusUnfs
        t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  -- Spec-indexed walk that allocates a per-side-loaded-slot
-  -- `VerificationKeyVar StepField` via `exists` against each cell's
-  -- `circuit` (a `Checked Boolean ...`, extracted via `HasCircuit`).
-  -- Compiled slots contribute `Nothing`. The cell type — compile-
-  -- placeholder vs prove-time `VerificationKey` — is supplied by
-  -- the caller via `@cell` and matched by the `sideloadedVkCarrier`
-  -- value's shape.
-  => TraverseSideloadedVKsCarrier cell prevsSpec len sideloadedVkCarrier
+  -- Spec-indexed walk that, for each `Slot SideLoaded` position,
+  -- allocates a `VerificationKeyVar` via `exists` and bundles it
+  -- (alongside the compile-time per-domain lagrange tables) into the
+  -- post-walk `SideloadedExistsVk` constructor of `SlotVkSource`.
+  -- For `Slot Compiled` positions, walks the blueprint's
+  -- `VkBlueprintConst`/`VkBlueprintShared` straight through to
+  -- `ConstVk`/`SharedExistsVk`. The cell type — compile-placeholder
+  -- vs prove-time `VerificationKey` — is supplied by the caller via
+  -- `@cell` and matched by the `sideloadedVkCarrier` value's shape.
+  => BuildSlotVkSources cell prevsSpec len blueprints sideloadedVkCarrier
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Reflectable nd Int
@@ -693,7 +794,7 @@ stepMain
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
   => (input -> Snarky (KimchiConstraint StepField) t m (RuleOutput len prevInput output))
-  -> StepMainSrsData len nd
+  -> StepMainSrsData len nd blueprints
   -> AffinePoint StepField
   -> sideloadedVkCarrier
   -> Snarky (KimchiConstraint StepField) t m (Vector outputSize (FVar StepField))
@@ -702,7 +803,7 @@ stepMain
   { perSlotLagrangeAt
   , blindingH
   , perSlotFopDomainLog2s
-  , perSlotVkSources
+  , perSlotVkBlueprints
   }
   dummySg
   sideloadedVkCarrier = do
@@ -716,17 +817,17 @@ stepMain
   -- exists. Mirrors OCaml's `with_label "rule_main" (fun () -> rule.main ...)`
   -- where the rule body itself contains `exists Side_loaded_verification_key.typ`
   -- (dump_circuit_impl.ml:4388 inside the lambda passed to `with_label`).
-  -- For compiled-only specs the side-loaded carrier is all-Unit and
-  -- `traverseSideloadedVKsCarrier` emits no constraints.
-  { prevPublicInputs, proofMustVerify, publicOutput, perSlotSideloadedVks } <-
+  -- For compiled-only specs the blueprint is all-Compiled and
+  -- `buildSlotVkSources` emits no `exists` calls.
+  { prevPublicInputs, proofMustVerify, publicOutput, perSlotVkSources } <-
     label "rule_main" do
-      vks <- traverseSideloadedVKsCarrier @cell @prevsSpec sideloadedVkCarrier
+      vks <- buildSlotVkSources @cell @prevsSpec perSlotVkBlueprints sideloadedVkCarrier
       result <- rule publicInput
       pure
         { prevPublicInputs: result.prevPublicInputs
         , proofMustVerify: result.proofMustVerify
         , publicOutput: result.publicOutput
-        , perSlotSideloadedVks: vks
+        , perSlotVkSources: vks
         }
 
   let
@@ -871,6 +972,10 @@ stepMain
             -- in-circuit FVar corrections, so it must use
             -- `InCircuitCorrections` mode (PureCorrections rejects
             -- `AddWithCircuitCorrection`).
+            --
+            -- The `SideloadedExistsVk` case carries the runtime VK
+            -- directly (bundled by `buildSlotVkSources`) — no parallel
+            -- vector lookup, no Maybe to discharge.
             slotConfig = case perSlotVkSources !! i of
               ConstVk constVk ->
                 { lagrangeAt: perSlotLagrangeAt !! i
@@ -884,36 +989,15 @@ stepMain
                 , fopDomainMode: KnownDomainsMode
                 , vkRec: sharedVkRec
                 }
-              -- Side-loaded: read the per-slot exists-allocated VK
-              -- from `perSlotSideloadedVks` (built above by
-              -- `traverseSideloadedVKsCarrier`). Each `Just (Checked
-              -- sl)` contains the slot's `wrapIndex` and
-              -- `actualWrapDomainSize` one-hot bitvec; mux the three
-              -- per-domain lagrange tables via
-              -- `mkSideloadedLagrangeLookup`. A `Nothing` would
-              -- indicate a spec/dispatch mismatch (the spec's
-              -- `Slot SideLoaded` slot got routed to
-              -- `SideloadedExistsVk` here, but the traversal class
-              -- produced `Nothing` at this position — should be
-              -- impossible by construction).
-              SideloadedExistsVk perDomainLagrangeAts ->
-                case perSlotSideloadedVks !! i of
-                  Just (Checked sl) ->
-                    { lagrangeAt: mkSideloadedLagrangeLookup
-                        (curveParams (Proxy @PallasG))
-                        sl.actualWrapDomainSize
-                        perDomainLagrangeAts
-                    , correctionMode: InCircuitCorrections
-                    , fopDomainMode: SideLoadedMode
-                    , vkRec: let VerificationKey r = sl.wrapIndex in r
-                    }
-                  Nothing ->
-                    unsafeCrashWith
-                      "Pickles.Step.Main: SideloadedExistsVk slot has \
-                      \no per-slot allocated VK — \
-                      \traverseSideloadedVKsCarrier should have \
-                      \produced a Just for every Slot SideLoaded \
-                      \position. Spec/dispatch mismatch."
+              SideloadedExistsVk perDomainLagrangeAts (Checked sl) ->
+                { lagrangeAt: mkSideloadedLagrangeLookup
+                    (curveParams (Proxy @PallasG))
+                    sl.actualWrapDomainSize
+                    perDomainLagrangeAts
+                , correctionMode: InCircuitCorrections
+                , fopDomainMode: SideLoadedMode
+                , vkRec: let VerificationKey r = sl.wrapIndex in r
+                }
 
             slotIvpParams =
               { curveParams: curveParams (Proxy @PallasG)
