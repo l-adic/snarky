@@ -53,7 +53,6 @@ import Pickles.Types (StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessa
 import Pickles.VerificationKey (StepVK)
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
-import Pickles.Wrap.Types as Wrap
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
 import Snarky.Circuit.DSL (F(..), UnChecked(..))
 import Snarky.Circuit.DSL.SizedF (SizedF, unsafeFromField, unwrapF, wrapF)

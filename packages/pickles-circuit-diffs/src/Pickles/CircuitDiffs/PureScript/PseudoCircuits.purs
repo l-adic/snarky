@@ -35,9 +35,7 @@ import Pickles.Pseudo (choose, oneHotVector)
 import Pickles.Pseudo as Pseudo
 import Pickles.Sideload.VerificationKey (compileDummy)
 import Pickles.Step.FinalizeOtherProof as FOP
-import Pickles.Step.Types as Step
 import Pickles.VerificationKey (chooseKey)
-import Pickles.Wrap.Types as Wrap
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_, exists, label)
 import Snarky.Constraint.Kimchi (KimchiConstraint)

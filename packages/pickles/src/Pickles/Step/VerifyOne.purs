@@ -21,12 +21,12 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (Params) as FOP
+import Pickles.IncrementallyVerifyProof (IncrementallyVerifyProofParams, incrementallyVerifyProof, ivpTrace, packStatement)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofOpt)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepIPARounds, WrapIPARounds)
-import Pickles.Verify (IncrementallyVerifyProofParams, incrementallyVerifyProof, ivpTrace, packStatement)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)

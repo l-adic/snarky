@@ -15,7 +15,6 @@ module Test.Pickles.Prove.SimpleChain
   ) where
 
 import Prelude
-import Pickles (BranchProver(..), Compiled, CompiledProof(..), compileMulti, getPrevAppStates, mkRuleEntry, PrevSlot(..), RulesCons, RulesNil, Slot, Slots1, SlotWrapKey(..), StatementIO(..), StepField, StepRule, verify)
 
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift) as MT
@@ -29,6 +28,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
+import Pickles (BranchProver(..), Compiled, CompiledProof(..), PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots1, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, verify)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.CVar (add_) as CVar

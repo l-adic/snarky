@@ -25,9 +25,7 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.ProofsVerified (ProofsVerified)
 import Pickles.Sideload.VerificationKey (mkVerificationKey)
 import Pickles.Sideload.VerificationKey as SLVK
-import Pickles.Step.Types as Step
 import Pickles.VerificationKey (extractWrapVKComms)
-import Pickles.Wrap.Types as Wrap
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
 import Snarky.Circuit.DSL (F)
 import Snarky.Curves.Pallas as Pallas

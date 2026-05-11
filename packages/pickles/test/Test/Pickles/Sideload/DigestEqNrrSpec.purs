@@ -16,13 +16,13 @@ module Test.Pickles.Sideload.DigestEqNrrSpec
   ) where
 
 import Prelude
-import Pickles (compileMulti, mkRuleEntry, NoSlots, StepField)
 
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
 import Data.Tuple.Nested (tuple1)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import Pickles (NoSlots, StepField, compileMulti, mkRuleEntry)
 import Pickles.ProofFFI (vestaVerifierIndexDigest)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl

@@ -47,7 +47,7 @@ import Pickles.IPA (bCorrectCircuit, bPolyCircuit)
 import Pickles.Linearization.Env (AlphaPowersLen, EnvM, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI, domainGenerator)
 import Pickles.Linearization.Interpreter (evaluateM)
-import Pickles.Linearization.Types (LinearizationPoly, runLinearizationPoly)
+import Pickles.Linearization.Types (runLinearizationPoly)
 import Pickles.OptSponge as OptSponge
 import Pickles.PlonkChecks (absorbAllEvals) as PlonkChecks
 import Pickles.PlonkChecks (absorbAllEvals, extractEvalFields)
@@ -57,7 +57,7 @@ import Pickles.ProofWitness (ProofWitness)
 import Pickles.Pseudo as Pseudo
 import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, liftSnarky, squeezeScalarChallenge)
 import Pickles.Util.Pow2 (pow2PowSquare)
-import Pickles.Verify.Types (BulletproofChallenges, UnfinalizedProof, toPlonkMinimal)
+import Pickles.Verify.Types (UnfinalizedProof, toPlonkMinimal)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)

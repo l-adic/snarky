@@ -32,10 +32,8 @@ import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero (StepMainTw
 import Pickles.Field (StepField, WrapField)
 import Pickles.ProofFFI (pallasSrsLagrangeCommitmentAt)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Step.Types as Step
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Pickles.Wrap.Slots (Slots1)
-import Pickles.Wrap.Types as Wrap
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)

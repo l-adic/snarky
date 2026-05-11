@@ -48,7 +48,7 @@ module Pickles.Prove.Compile
   , class IntMaxOrd
   , runMultiCompile
   , buildBranchProvers
-  , module Pickles.Prove.Verify
+  , module Pickles.Verify
   ) where
 
 import Prelude
@@ -125,17 +125,6 @@ import Pickles.Prove.Step
   , extractWrapVKCommsAdvice
   , mkDummyMsgWrapHash
   )
-import Pickles.Prove.Verify
-  ( CompiledProof(..)
-  , CompiledProofWidthData(..)
-  , SomeCompiledProofWidthData
-  , Verifier
-  , mkSomeCompiledProofWidthData
-  , mkVerifier
-  , verify
-  , verifyOne
-  , wrapPublicInput
-  )
 import Pickles.Prove.Wrap
   ( WrapCompileResult
   , buildWrapAdvice
@@ -170,6 +159,17 @@ import Pickles.Types
   , WrapIPARounds
   )
 import Pickles.Util.Unique (Unique, newUnique)
+import Pickles.Verify
+  ( CompiledProof(..)
+  , CompiledProofWidthData(..)
+  , SomeCompiledProofWidthData
+  , Verifier
+  , mkSomeCompiledProofWidthData
+  , mkVerifier
+  , verify
+  , verifyOne
+  , wrapPublicInput
+  )
 import Pickles.Verify.Types (toPlonkMinimal)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Slots (class PadSlots, NoSlots, noSlots, replicateSlots)

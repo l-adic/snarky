@@ -36,9 +36,7 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Prove.Step (extractWrapVKCommsAdvice)
 import Pickles.Prove.Wrap (extractStepVKComms, stepVkForCircuit)
-import Pickles.Step.Types as Step
 import Pickles.VerificationKey (StepVK, VerificationKey)
-import Pickles.Wrap.Types as Wrap
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges)
 import Snarky.Backend.Kimchi.Class (createProverIndex, createVerifierIndex)

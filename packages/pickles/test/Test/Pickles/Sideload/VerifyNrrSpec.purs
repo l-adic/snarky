@@ -11,9 +11,9 @@ module Test.Pickles.Sideload.VerifyNrrSpec
   ) where
 
 import Prelude
-import Pickles (mkVerifier)
 
 import Effect.Aff (Aff)
+import Pickles (mkVerifier)
 import Test.Pickles.Sideload.Loader (OcamlProof(..), loadNrrFixture, verifyOcamlProof)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)

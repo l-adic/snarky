@@ -43,9 +43,7 @@ import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Field (StepField, WrapField)
-import Pickles.Step.Types as Step
 import Pickles.Types (StepIPARounds, WrapIPARounds)
-import Pickles.Wrap.Types as Wrap
 import Prim.Int (class Add)
 import Snarky.Circuit.DSL (SizedF, fromBits)
 import Snarky.Circuit.Kimchi (toFieldPure)

@@ -18,7 +18,7 @@ import Data.Tuple.Nested (Tuple10, Tuple2, Tuple3, Tuple5, tuple10, tuple2, tupl
 import Data.Vector (Vector)
 import Partial.Unsafe (unsafePartial)
 import Pickles.Field (StepField)
-import Pickles.Types (PointEval, StepAllEvals, WrapProofMessages, WrapProofOpening)
+import Pickles.Types (StepAllEvals, WrapProofMessages, WrapProofOpening)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import Snarky.Circuit.DSL (BoolVar, F, FVar, UnChecked, const_, label)

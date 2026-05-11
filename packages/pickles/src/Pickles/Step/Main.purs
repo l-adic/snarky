@@ -48,6 +48,7 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (DomainMode(..))
+import Pickles.IncrementallyVerifyProof (ivpTrace)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.ProofsVerified (ProofsVerifiedCount)
@@ -63,7 +64,6 @@ import Pickles.Step.Types (BranchData(..), FopProofState(..), PerProofWitness(..
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (VerificationKey(..))
-import Pickles.Verify (ivpTrace)
 import Prim.Boolean (False, True)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)

@@ -27,10 +27,10 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (WrapField)
+import Pickles.IncrementallyVerifyProof (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, incrementallyVerifyProof)
 import Pickles.PublicInputCommit (class PublicInputCommit)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit, spongeFromConstants)
 import Pickles.Types (WrapIPARounds)
-import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, incrementallyVerifyProof)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
 import Pickles.Wrap.OtherField as WrapOtherField
 import Pickles.Wrap.Types (IvpBaseline)

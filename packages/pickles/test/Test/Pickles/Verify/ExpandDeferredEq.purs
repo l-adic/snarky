@@ -1,6 +1,6 @@
 -- | Self-consistency tests for `Pickles.Prove.Pure.Verify.expandDeferredForVerify`.
 -- |
--- | At the chain terminus, the out-of-circuit verifier (`Pickles.Prove.Verify`)
+-- | At the chain terminus, the out-of-circuit verifier (`Pickles.Verify`)
 -- | has to discharge the deferred IPA accumulator check that an inner step
 -- | circuit would otherwise have done. To do that it reconstructs the full
 -- | `Wrap_deferred_values.t` from the wrap proof's stored *minimal skeleton*
@@ -28,7 +28,6 @@ module Test.Pickles.Verify.ExpandDeferredEq
   ) where
 
 import Prelude
-import Pickles (BranchProver(..), Compiled, CompiledProof(..), compileMulti, mkRuleEntry, NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, Slots1, SlotWrapKey(..), StatementIO(..), StepField)
 
 import Control.Monad.Except (runExceptT)
 import Data.Either (Either(..))
@@ -41,12 +40,12 @@ import Data.Vector (Vector)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
+import Pickles (BranchProver(..), Compiled, CompiledProof(..), NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots1, StatementIO(..), StepField, StepIPARounds, compileMulti, mkRuleEntry)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.Prove.Compile (CompiledProofWidthData(..))
 import Pickles.Prove.Pure.Verify (ExpandDeferredInput, expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput)
-import Pickles.Types (StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl

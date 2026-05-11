@@ -18,7 +18,6 @@ module Test.Pickles.Prove.NoRecursionReturn
   ) where
 
 import Prelude
-import Pickles (BranchProver(..), compileMulti, mkRuleEntry, NoSlots, RulesCons, RulesNil, StepField, StepRule, verify)
 
 import Control.Monad.Except (runExceptT)
 import Data.Either (Either(..))
@@ -30,6 +29,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
+import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, verify)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.DSL (F, FVar, const_)

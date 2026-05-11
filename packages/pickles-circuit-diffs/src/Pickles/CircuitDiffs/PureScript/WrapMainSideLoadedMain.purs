@@ -27,10 +27,8 @@ import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain (StepMainSideLoadedMainParams, compileStepMainSideLoadedMain)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Slots (SideLoaded, Slot)
-import Pickles.Step.Types as Step
 import Pickles.Types (StatementIO)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
-import Pickles.Wrap.Types as Wrap
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Circuit.DSL (F)

@@ -38,8 +38,6 @@ module Test.Pickles.Sideload.Loader
   ) where
 
 import Prelude
-import Pickles (StepField, Verifier, WrapField, wrapPublicInputOf)
-import Pickles.Sideload (noOptionalFeatures, vestaHydrateVerifierIndex, vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJson)
 
 import Data.Argonaut.Core (Json)
 import Data.Argonaut.Decode (JsonDecodeError(..), decodeJson, printJsonDecodeError, (.:))
@@ -64,6 +62,7 @@ import JS.BigInt as JsBigInt
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync (readTextFile)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Pickles (PaddedLength, StepField, StepIPARounds, Verifier, WrapField, wrapPublicInputOf)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
@@ -71,12 +70,10 @@ import Pickles.ProofFFI (Proof, permutationVanishingPolynomial, verifyOpeningPro
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput)
 import Pickles.Prove.Step (extractWrapVKForStepHash)
+import Pickles.Sideload (noOptionalFeatures, vestaHydrateVerifierIndex, vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJson)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
-import Pickles.Step.Types as Step
-import Pickles.Types (PaddedLength, StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
-import Pickles.Wrap.Types as Wrap
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas (pallasCrsCreate)
@@ -112,7 +109,7 @@ wrapSrsDepthLog2 = 15
 --------------------------------------------------------------------------------
 
 -- | Width-existential carrier for `OcamlProof`'s prev-bulletproof
--- | challenges. Parallel to `Pickles.Prove.Verify.CompiledProofWidthData`
+-- | challenges. Parallel to `Pickles.Verify.CompiledProofWidthData`
 -- | but lacks the prover-trace fields (`wrapDvInput`, padded views) —
 -- | JSON fixtures only ship verify-readable data.
 data OcamlProofWidthData :: Int -> Type
@@ -135,7 +132,7 @@ mkSomeOcamlProofWidthData rec = mkExists $ OcamlProofWidthData
   }
 
 -- | An OCaml-produced wrap proof loaded from JSON. Distinct from
--- | `Pickles.Prove.Verify.CompiledProof`: PS-compiled proofs include
+-- | `Pickles.Verify.CompiledProof`: PS-compiled proofs include
 -- | prover-trace fields (`wrapDvInput`, `wrapDv`) that JSON fixtures
 -- | don't carry. `verifyOcamlProof` consumes this directly; converting
 -- | to a `CompiledProof` would require re-running the prover.
@@ -157,7 +154,7 @@ newtype OcamlProof mpv stmtVal = OcamlProof
   }
 
 -- | Verify an OCaml-loaded proof. Same three stages as
--- | `Pickles.Prove.Verify.verifyOne`: stage 1 deferred-values
+-- | `Pickles.Verify.verifyOne`: stage 1 deferred-values
 -- | expansion, stage 2 IPA accumulator check, stage 3 kimchi
 -- | `batch_verify`.
 verifyOcamlProof

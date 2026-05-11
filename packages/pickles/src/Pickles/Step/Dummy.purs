@@ -51,18 +51,16 @@ import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, frSpongeChallengesPure)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Sponge (initialSponge)
-import Pickles.Step.Types as Step
 import Pickles.Types (PerProofUnfinalized(..), StepIPARounds, WrapIPARounds)
 import Pickles.Verify.Types (UnfinalizedProof)
-import Prim.Int (class Add)
 import RandomOracle.Sponge as PureSponge
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
 import Snarky.Backend.Kimchi.Types (CRS)
-import Snarky.Circuit.DSL (F(..), SizedF, UnChecked(..), coerceViaBits, fromBits)
+import Snarky.Circuit.DSL (F(..), SizedF, UnChecked(..), coerceViaBits)
 import Snarky.Circuit.DSL.SizedF (fromField, toField, unwrapF, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt, pow) as Curves
+import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, pow) as Curves
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)

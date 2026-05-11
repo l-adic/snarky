@@ -51,6 +51,7 @@ import Data.Vector as Vector
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (WrapField)
 import Pickles.FinalizeOtherProof (DomainMode(..))
+import Pickles.IncrementallyVerifyProof (ivpTrace)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.Linearization.Types (LinearizationPoly)
@@ -63,7 +64,6 @@ import Pickles.PublicInputCommit (unwrapPt, wrapPt) as PIC
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
 import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK, chooseKey)
-import Pickles.Verify (ivpTrace)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOldBulletproofChallenges, getOpeningProof, getStepAccs, getWhichBranch, getWrapDomainIndices, getWrapProofState)
 import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)

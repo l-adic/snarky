@@ -16,15 +16,15 @@ module Pickles
   , module Pickles.Step.Advice
   , module Pickles.Prove.Step
   , module Pickles.Prove.Compile
-  , module Pickles.Prove.Verify
+  , module Pickles.Verify
   ) where
 
 import Pickles.Field (StepField, WrapField)
 import Pickles.ProofsVerified (ProofsVerified(..))
-import Pickles.Slots (Compiled, SideLoaded, Slot, SlotKind)
-import Pickles.Wrap.Slots (NoSlots, Slots1, Slots2)
-import Pickles.Types (StatementIO(..))
-import Pickles.Step.Advice (getPrevAppStates)
-import Pickles.Prove.Step (StepRule)
 import Pickles.Prove.Compile (BranchProver(..), CompiledProof(..), PrevSlot(..), RuleEntry, RulesCons, RulesNil, SlotWrapKey(..), Tag(..), compileMulti, mkRuleEntry)
-import Pickles.Prove.Verify (Verifier, mkVerifier, verify, wrapPublicInputOf)
+import Pickles.Prove.Step (StepRule)
+import Pickles.Slots (Compiled, SideLoaded, Slot, SlotKind)
+import Pickles.Step.Advice (getPrevAppStates)
+import Pickles.Types (PaddedLength, StatementIO(..), StepIPARounds, WrapIPARounds)
+import Pickles.Verify (Verifier, mkVerifier, verify, wrapPublicInputOf)
+import Pickles.Wrap.Slots (NoSlots, Slots1, Slots2)
