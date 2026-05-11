@@ -72,7 +72,6 @@ import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
-import Pickles.PlonkChecks (AllEvals)
 import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.ProofFFI
   ( pallasProofOpeningSg
@@ -100,11 +99,7 @@ import Pickles.ProofFFI
 import Pickles.ProofsVerified (ProofsVerifiedCount, boolVecToProofsVerified)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
-import Pickles.Prove.Pure.Wrap
-  ( WrapDeferredValuesInput
-  , assembleWrapMainInput
-  , wrapComputeDeferredValues
-  )
+import Pickles.Prove.Pure.Wrap (assembleWrapMainInput, wrapComputeDeferredValues)
 import Pickles.Prove.Step
   ( StepAdvice(..)
   , StepCompileResult
@@ -148,16 +143,7 @@ import Pickles.Step.Main (class BuildSlotVkSources, SlotVkBlueprintCompiled(..),
 import Pickles.Step.Main as MpvPadding
 import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier)
 import Pickles.Step.Types as Step
-import Pickles.Types
-  ( MaxProofsVerified
-  , PaddedLength
-  , PerProofUnfinalized(..)
-  , PointEval(..)
-  , StatementIO(..)
-  , StepAllEvals(..)
-  , StepIPARounds
-  , WrapIPARounds
-  )
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StatementIO(..), StepAllEvals(..), StepIPARounds, WrapIPARounds)
 import Pickles.Util.Unique (Unique, newUnique)
 import Pickles.Verify
   ( CompiledProof(..)

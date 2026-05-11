@@ -44,7 +44,7 @@ import Pickles (BranchProver(..), Compiled, CompiledProof(..), NoSlots, PrevSlot
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.Prove.Compile (CompiledProofWidthData(..))
-import Pickles.Prove.Pure.Verify (ExpandDeferredInput, expandDeferredForVerify)
+import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Snarky.Backend.Kimchi.Class (createCRS)

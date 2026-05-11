@@ -49,7 +49,7 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Pickles.IPA (bPoly)
-import Pickles.Linearization.Env (Challenges, fieldEnv)
+import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval)
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Types (LinearizationPoly, runLinearizationPoly)

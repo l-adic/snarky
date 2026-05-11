@@ -29,18 +29,16 @@ import Data.Vector as Vector
 import Pickles.Field (StepField)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.ProofFFI (OraclesResult)
-import Pickles.Prove.Pure.Common (BulletproofBOutput, CombinedInnerProductBatchInput, DerivePlonkInput, FtEval0Input, combinedInnerProductBatch, computeBpChalsAndB, derivePlonk, ftEval0)
+import Pickles.Prove.Pure.Common (combinedInnerProductBatch, computeBpChalsAndB, derivePlonk, ftEval0)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput)
 import Pickles.Sponge (PureSpongeM, absorb, evalPureSpongeM, initialSponge, squeeze, squeezeScalarChallengePure)
 import Pickles.Types (StepIPARounds)
-import Pickles.Verify.Types (BranchData, PlonkInCircuit, PlonkMinimal, ScalarChallenge)
-import RandomOracle.Sponge (Sponge)
+import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Circuit.DSL.SizedF (SizedF, unwrapF, wrapF)
 import Snarky.Circuit.DSL.SizedF as SizedF
-import Snarky.Circuit.Kimchi (Type1, toShifted)
+import Snarky.Circuit.Kimchi (toShifted)
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
 
 -- | Verifier-side input to `expandDeferredForVerify`. The fields split into

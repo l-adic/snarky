@@ -30,7 +30,7 @@ import Data.Vector as Vector
 import Effect.Unsafe (unsafePerformEffect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.FtComm (ftComm)
-import Pickles.IPA (CheckBulletproofInput, checkBulletproof)
+import Pickles.IPA (checkBulletproof)
 import Pickles.IncrementallyVerifyProof.FqSpongeTranscript (spongeTranscriptOptCircuit)
 import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode, LagrangeBaseLookup, publicInputCommit)
 import Pickles.ShiftOps (IpaScalarOps)

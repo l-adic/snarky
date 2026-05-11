@@ -37,7 +37,6 @@ import Pickles.Step.Dummy (BaseCaseDummies)
 import Snarky.Curves.Class (generator, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint)
 
 -- | Build the kimchi-level wrap proof body from a `BaseCaseDummies`.
 -- | Consumes `bcd.proofDummy.{z1, z2}` and `bcd.dummyEvals` — the exact

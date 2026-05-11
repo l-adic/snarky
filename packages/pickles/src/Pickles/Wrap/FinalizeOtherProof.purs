@@ -30,7 +30,7 @@ import Data.Vector as Vector
 import Pickles.FinalizeOtherProof (Output, Params)
 import Pickles.IPA (bCorrectCircuit, bPolyCircuit)
 import Pickles.IncrementallyVerifyProof (ivpTrace)
-import Pickles.Linearization.Env (AlphaPowersLen, EnvM, buildCircuitEnvM, precomputeAlphaPowers)
+import Pickles.Linearization.Env (AlphaPowersLen, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (runLinearizationPoly)
