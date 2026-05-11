@@ -59,7 +59,8 @@ import Pickles.Prove.Step (StepRule)
 import Pickles.Prove.Verify (verify)
 import Pickles.Step.Advice (getPrevAppStates)
 import Pickles.Step.Slots (Compiled, Slot)
-import Pickles.Types (StatementIO(..), StepField)
+import Pickles.Step.Types (Field)
+import Pickles.Types (StatementIO(..))
 import Pickles.Wrap.Slots (NoSlots, Slots2)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
@@ -71,18 +72,18 @@ import Test.Spec.Assertions (shouldEqual)
 
 type TreeProofReturnPrevsSpec =
   Tuple2
-    (Slot Compiled 0 (StatementIO Unit (F StepField)))
-    (Slot Compiled 2 (StatementIO Unit (F StepField)))
+    (Slot Compiled 0 (StatementIO Unit (F Field)))
+    (Slot Compiled 2 (StatementIO Unit (F Field)))
 
 treeProofReturnRule
   :: StepRule 2
-       (Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
+       (Tuple2 (StatementIO Unit (F Field)) (StatementIO Unit (F Field)))
        Unit
        Unit
-       (F StepField)
-       (FVar StepField)
-       (F StepField)
-       (FVar StepField)
+       (F Field)
+       (FVar Field)
+       (F Field)
+       (FVar Field)
 treeProofReturnRule _ = do
   nrrInput <- exists $ MT.lift do
     StatementIO { output: nrrOut } /\ _ <- getPrevAppStates unit
@@ -101,7 +102,7 @@ treeProofReturnRule _ = do
     , publicOutput: selfVal
     }
 
-nrrRule :: StepRule 0 Unit Unit Unit (F StepField) (FVar StepField) Unit Unit
+nrrRule :: StepRule 0 Unit Unit Unit (F Field) (FVar Field) Unit Unit
 nrrRule _ = pure
   { prevPublicInputs: Vector.nil
   , proofMustVerify: Vector.nil
@@ -109,7 +110,7 @@ nrrRule _ = pure
   }
 
 -- | NRR's 1-rule carrier (same shape as the standalone NRR test). NRR
--- | output is a Field, so the StepRule's outputVal is `F StepField`.
+-- | output is a Field, so the StepRule's outputVal is `F Field`.
 type NrrRules =
   RulesCons 0 Unit Unit Unit
     RulesNil
@@ -118,7 +119,7 @@ type NrrRules =
 -- | (mpv=0) and a self-recursive (mpv=2).
 type TreeRules =
   RulesCons 2
-    (Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
+    (Tuple2 (StatementIO Unit (F Field)) (StatementIO Unit (F Field)))
     TreeProofReturnPrevsSpec
     (Tuple2 SlotWrapKey SlotWrapKey)
     RulesNil
@@ -127,16 +128,16 @@ spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.TreeProofReturn" do
   it "5-iteration heterogeneous chain (b0..b4): NRR external slot + self-recursive slot, end-to-end verify" \_ -> do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
-    vestaSrs <- liftEffect $ createCRS @StepField
+    vestaSrs <- liftEffect $ createCRS @Field
 
     -- ===== NRR side: 1-rule compileMulti at mpvMax=0. =====
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule unit
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F Field) @Unit nrrRule unit
 
     let nrrRules = tuple1 nrrEntry
 
     nrr <- liftEffect $ compileMulti
       @NrrRules
-      @(F StepField)
+      @(F Field)
       @Unit
       @NoSlots
       { srs: { vestaSrs, pallasSrs }
@@ -165,7 +166,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         }
 
     -- ===== Tree side: 1-rule compileMulti at mpvMax=2 with override. =====
-    treeEntry <- liftEffect $ mkRuleEntry @2 @(F StepField) @(F StepField)
+    treeEntry <- liftEffect $ mkRuleEntry @2 @(F Field) @(F Field)
       treeProofReturnRule
       (tuple2 (External nrrProverVKs) Self)
 
@@ -173,8 +174,8 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
 
     tree <- liftEffect $ compileMulti
       @TreeRules
-      @(F StepField)
-      @(F StepField)
+      @(F Field)
+      @(F Field)
       @(Slots2 0 2)
       { srs: { vestaSrs, pallasSrs }
       , debug: false
@@ -186,8 +187,8 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
 
     let
       runStep
-        :: PrevSlot Unit 2 (StatementIO Unit (F StepField)) (F StepField)
-        -> Aff (CompiledProof 2 (StatementIO Unit (F StepField)) (F StepField) Unit)
+        :: PrevSlot Unit 2 (StatementIO Unit (F Field)) (F Field)
+        -> Aff (CompiledProof 2 (StatementIO Unit (F Field)) (F Field) Unit)
       runStep selfPrev = do
         eRes <- liftEffect $ runExceptT $ treeProver
           { appInput: unit
@@ -200,7 +201,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
           Right p -> pure p
 
       basePrevSelf = BasePrev
-        { dummyStatement: StatementIO { input: unit, output: F (negate one) :: F StepField }
+        { dummyStatement: StatementIO { input: unit, output: F (negate one) :: F Field }
         }
 
     b0 <- runStep basePrevSelf

@@ -35,7 +35,7 @@ import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Pickles.Types (StepField)
+import Pickles.Step.Types (Field)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, const_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -44,8 +44,8 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type StepMainNoRecursionReturnParams =
-  { lagrangeAt :: LagrangeBaseLookup StepField
-  , blindingH :: AffinePoint (F StepField)
+  { lagrangeAt :: LagrangeBaseLookup Field
+  , blindingH :: AffinePoint (F Field)
   }
 
 -- | Application-specific advice for the No_recursion_return rule.
@@ -63,11 +63,11 @@ instance (Monad m) => NoRecursionReturnAdvice m
 -- | Reference: test_no_sideloaded.ml:100-107
 noRecursionReturnRule
   :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+   . CircuitM Field (KimchiConstraint Field) t m
   => NoRecursionReturnAdvice m
   => Unit
-  -> Snarky (KimchiConstraint StepField) t m
-       (RuleOutput 0 Unit (FVar StepField))
+  -> Snarky (KimchiConstraint Field) t m
+       (RuleOutput 0 Unit (FVar Field))
 noRecursionReturnRule _ = pure
   { prevPublicInputs: Vector.nil
   , proofMustVerify: Vector.nil
@@ -78,23 +78,23 @@ compileStepMainNoRecursionReturn
   :: StepMainNoRecursionReturnParams -> Effect StepArtifact
 compileStepMainNoRecursionReturn params =
   mkStepArtifact <$>
-    compile (Proxy @Unit) (Proxy @(Vector 1 (F StepField))) (Proxy @(KimchiConstraint StepField))
+    compile (Proxy @Unit) (Proxy @(Vector 1 (F Field))) (Proxy @(KimchiConstraint Field))
       -- N=0: output size = 33*0 + 1 = 1 (just the msgForNextStep digest —
       -- no unfinalized_proofs, no messages_for_next_wrap_proof entries).
       -- N=0 has no prev proofs, so prevInputVal/prevInput are unused —
       -- pick any concrete CircuitType-havers; Unit works.
       --
       -- Output mode: inputVal/input are Unit (no caller-supplied input),
-      -- outputVal/output are `F StepField` / `FVar StepField` (the returned
+      -- outputVal/output are `F Field` / `FVar Field` (the returned
       -- field). Contrast Add_one_return's Input_and_output mode where
-      -- inputVal/outputVal are both `F StepField`.
+      -- inputVal/outputVal are both `F Field`.
       -- Visible axes: @prevsSpec @inputVal @outputVal @prevInputVal
       -- @valCarrier @mpvMax. Implicit: input/output/prevInput (via
       -- CircuitType), mpvPad (MpvPadding), outputSize (Mul/Add chain),
       -- nd (from perSlotFopDomainLog2s shape).
       -- Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
       -- outputSize = mpvMax*32 + 1 + mpvMax = 1.
-      ( \_ -> stepMain @Unit @Unit @(F StepField) @Unit @Unit @0 @1
+      ( \_ -> stepMain @Unit @Unit @(F Field) @Unit @Unit @0 @1
           noRecursionReturnRule
           { perSlotLagrangeAt: Vector.nil
           , blindingH: params.blindingH

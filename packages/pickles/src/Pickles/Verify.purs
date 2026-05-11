@@ -36,9 +36,9 @@ import Pickles.ShiftOps (IpaScalarOps)
 import Pickles.Sponge (SpongeM, initialSpongeCircuit, labelM, liftSnarky)
 import Pickles.Sponge as Sponge
 import Pickles.Trace as Trace
-import Pickles.Types (WrapIvpBaseline)
 import Pickles.Verify.FqSpongeTranscript (spongeTranscriptOptCircuit)
 import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, WrapDeferredValues, toPlonkMinimal)
+import Pickles.Wrap.Types (IvpBaseline)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import RandomOracle.Sponge (Sponge)
@@ -177,7 +177,7 @@ incrementallyVerifyProof
   => Reflectable d Int
   => Reflectable sgOldN Int
   => Add 1 dPred d
-  => Add sgOldN WrapIvpBaseline totalBases
+  => Add sgOldN IvpBaseline totalBases
   => Add 1 totalBasesPred totalBases
   => IpaScalarOps f t m sf
   -> IncrementallyVerifyProofParams f r

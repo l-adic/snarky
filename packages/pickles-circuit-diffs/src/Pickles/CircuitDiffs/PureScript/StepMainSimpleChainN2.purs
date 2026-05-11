@@ -23,7 +23,8 @@ import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStep
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
 import Pickles.Step.Slots (Compiled, Slot)
-import Pickles.Types (StatementIO, StepField)
+import Pickles.Step.Types (Field)
+import Pickles.Types (StatementIO)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertAny_, const_, equals_, exists, not_)
@@ -33,8 +34,8 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type StepMainSimpleChainN2Params =
-  { lagrangeAt :: LagrangeBaseLookup StepField
-  , blindingH :: AffinePoint (F StepField)
+  { lagrangeAt :: LagrangeBaseLookup Field
+  , blindingH :: AffinePoint (F Field)
   }
 
 -- | Application-specific advice for the Simple_Chain N2 rule.
@@ -44,8 +45,8 @@ type StepMainSimpleChainN2Params =
 -- | route them through this typeclass so the SAME rule definition serves
 -- | both compilation (Effect throws) and proving.
 class Monad m <= SimpleChainN2Advice m where
-  getSimpleChainN2Prev1 :: Unit -> m (F StepField)
-  getSimpleChainN2Prev2 :: Unit -> m (F StepField)
+  getSimpleChainN2Prev1 :: Unit -> m (F Field)
+  getSimpleChainN2Prev2 :: Unit -> m (F Field)
 
 -- | Compilation instance: throws if evaluated. `exists` in CircuitBuilderT
 -- | discards the AsProverT entirely so the throw never fires.
@@ -58,10 +59,10 @@ instance SimpleChainN2Advice Effect where
 -- | Reference: dump_circuit_impl.ml:4533-4566
 simpleChainN2Rule
   :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+   . CircuitM Field (KimchiConstraint Field) t m
   => SimpleChainN2Advice m
-  => FVar StepField
-  -> Snarky (KimchiConstraint StepField) t m (RuleOutput 2 (FVar StepField) Unit)
+  => FVar Field
+  -> Snarky (KimchiConstraint Field) t m (RuleOutput 2 (FVar Field) Unit)
 simpleChainN2Rule appState = do
   prev1 <- exists $ lift $ getSimpleChainN2Prev1 unit
   prev2 <- exists $ lift $ getSimpleChainN2Prev2 unit
@@ -85,14 +86,14 @@ compileStepMainSimpleChainN2 params = do
   mkStepArtifact <$> runStepCompile selfLog2
   where
   runStepCompile selfLog2 =
-    compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
+    compile (Proxy @Unit) (Proxy @(Vector 67 (F Field))) (Proxy @(KimchiConstraint Field))
       -- Single-rule: mpvMax = len = 2, mpvPad = 0.
       ( \_ -> stepMain
-          @(Tuple2 (Slot Compiled 2 (StatementIO (F StepField) Unit)) (Slot Compiled 2 (StatementIO (F StepField) Unit)))
-          @(F StepField)
+          @(Tuple2 (Slot Compiled 2 (StatementIO (F Field) Unit)) (Slot Compiled 2 (StatementIO (F Field) Unit)))
+          @(F Field)
           @Unit
-          @(F StepField)
-          @( Tuple2 (StatementIO (F StepField) Unit) (StatementIO (F StepField) Unit)
+          @(F Field)
+          @( Tuple2 (StatementIO (F Field) Unit) (StatementIO (F Field) Unit)
           )
           @2
           @1

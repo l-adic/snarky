@@ -16,7 +16,7 @@
 -- |   * The application statement, decoded by a caller-supplied function
 -- |
 -- | The `stmtVal` parameter generalises across applications: NRR's
--- | statement is a single `StepField`; richer apps (Simple_chain,
+-- | statement is a single `Step.Field`; richer apps (Simple_chain,
 -- | Two_phase_chain, Tree_proof_return) supply their own decoder.
 -- |
 -- | OCaml-yojson encodes 128-bit `Hex64` values as JSON int64 pairs that
@@ -72,9 +72,11 @@ import Pickles.Prove.Step (extractWrapVKForStepHash)
 import Pickles.Prove.Verify (Verifier, wrapPublicInputOf)
 import Pickles.Sideload.FFI (noOptionalFeatures, vestaHydrateVerifierIndex, vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJson)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
-import Pickles.Types (PaddedLength, StepField, StepIPARounds, WrapField)
+import Pickles.Step.Types as Step
+import Pickles.Types (PaddedLength, StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
+import Pickles.Wrap.Types as Wrap
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas (pallasCrsCreate)
@@ -116,7 +118,7 @@ wrapSrsDepthLog2 = 15
 data OcamlProofWidthData :: Int -> Type
 data OcamlProofWidthData width = OcamlProofWidthData
   { width :: Int
-  , oldBulletproofChallenges :: Vector width (Vector StepIPARounds StepField)
+  , oldBulletproofChallenges :: Vector width (Vector StepIPARounds Step.Field)
   }
 
 type SomeOcamlProofWidthData = Exists OcamlProofWidthData
@@ -124,7 +126,7 @@ type SomeOcamlProofWidthData = Exists OcamlProofWidthData
 mkSomeOcamlProofWidthData
   :: forall @width
    . Reflectable width Int
-  => { oldBulletproofChallenges :: Vector width (Vector StepIPARounds StepField)
+  => { oldBulletproofChallenges :: Vector width (Vector StepIPARounds Step.Field)
      }
   -> SomeOcamlProofWidthData
 mkSomeOcamlProofWidthData rec = mkExists $ OcamlProofWidthData
@@ -140,17 +142,17 @@ mkSomeOcamlProofWidthData rec = mkExists $ OcamlProofWidthData
 newtype OcamlProof :: Int -> Type -> Type
 newtype OcamlProof mpv stmtVal = OcamlProof
   { statement :: stmtVal
-  , wrapProof :: Proof Pallas.G WrapField
-  , rawPlonk :: PlonkMinimal (F StepField)
-  , rawBulletproofChallenges :: Vector StepIPARounds (ScalarChallenge (F StepField))
-  , branchData :: BranchData StepField Boolean
-  , spongeDigestBeforeEvaluations :: StepField
-  , challengePolynomialCommitment :: AffinePoint WrapField
+  , wrapProof :: Proof Pallas.G Wrap.Field
+  , rawPlonk :: PlonkMinimal (F Step.Field)
+  , rawBulletproofChallenges :: Vector StepIPARounds (ScalarChallenge (F Step.Field))
+  , branchData :: BranchData Step.Field Boolean
+  , spongeDigestBeforeEvaluations :: Step.Field
+  , challengePolynomialCommitment :: AffinePoint Wrap.Field
   , stepDomainLog2 :: Int
-  , prevEvals :: AllEvals StepField
-  , pEval0Chunks :: Array StepField
-  , messagesForNextStepProofDigest :: StepField
-  , messagesForNextWrapProofDigest :: WrapField
+  , prevEvals :: AllEvals Step.Field
+  , pEval0Chunks :: Array Step.Field
+  , messagesForNextStepProofDigest :: Step.Field
+  , messagesForNextWrapProofDigest :: Wrap.Field
   , widthData :: SomeOcamlProofWidthData
   }
 
@@ -165,16 +167,16 @@ verifyOcamlProof
   -> Boolean
 verifyOcamlProof verifier (OcamlProof p) =
   let
-    zetaField :: StepField
+    zetaField :: Step.Field
     zetaField = coerce (toFieldPure p.rawPlonk.zeta (F verifier.stepEndo))
 
-    pStepGenerator :: StepField
+    pStepGenerator :: Step.Field
     pStepGenerator = domainGenerator p.stepDomainLog2
 
-    pStepShifts :: Vector 7 StepField
+    pStepShifts :: Vector 7 Step.Field
     pStepShifts = domainShifts p.stepDomainLog2
 
-    vanishesOnZkAtZeta :: StepField
+    vanishesOnZkAtZeta :: Step.Field
     vanishesOnZkAtZeta = permutationVanishingPolynomial
       { domainLog2: p.stepDomainLog2
       , zkRows: verifier.stepZkRows
@@ -205,18 +207,18 @@ verifyOcamlProof verifier (OcamlProof p) =
       )
       p.widthData
 
-    expandedBpChals :: Array StepField
+    expandedBpChals :: Array Step.Field
     expandedBpChals = Array.fromFoldable $
-      map (\c -> coerce (toFieldPure c (F verifier.stepEndo)) :: StepField)
+      map (\c -> coerce (toFieldPure c (F verifier.stepEndo)) :: Step.Field)
         p.rawBulletproofChallenges
 
-    computedSg :: AffinePoint WrapField
+    computedSg :: AffinePoint Wrap.Field
     computedSg = vestaSrsBPolyCommitmentPoint verifier.vestaSrs expandedBpChals
 
     accumulatorOk :: Boolean
     accumulatorOk = computedSg == p.challengePolynomialCommitment
 
-    pi :: Array WrapField
+    pi :: Array Wrap.Field
     pi = wrapPublicInputOf dv p.messagesForNextStepProofDigest p.messagesForNextWrapProofDigest
 
     kimchiOk :: Boolean
@@ -233,7 +235,7 @@ verifyOcamlProof verifier (OcamlProof p) =
 -- | original JSON for round-trip checks) plus an `OcamlProof 0` for
 -- | verification.
 type LoadedFixture stmtVal =
-  { vk :: VerifierIndex Pallas.G WrapField
+  { vk :: VerifierIndex Pallas.G Wrap.Field
   , vkJson :: String
   , vestaSrs :: CRS Vesta.G
   , ocamlProof :: OcamlProof 0 stmtVal
@@ -252,7 +254,7 @@ type LoadedFixture stmtVal =
 loadFixture
   :: forall stmtVal
    . { decode :: Json -> Either JsonDecodeError stmtVal
-     , toFields :: stmtVal -> Array StepField
+     , toFields :: stmtVal -> Array Step.Field
      }
   -> String
   -> Aff (LoadedFixture stmtVal)
@@ -288,7 +290,7 @@ loadFixture cfg dir = do
   -- Vesta SRS for `mkSomeCompiledProofWidthData`'s `dummyChalPolyComm`
   -- filler — verifier internals don't read it for NRR (mpv = 0) but
   -- the existential needs *some* value at construction time.
-  vestaSrs <- liftEffect $ createCRS @StepField
+  vestaSrs <- liftEffect $ createCRS @Step.Field
 
   let
     appStateFields = cfg.toFields statement
@@ -305,7 +307,7 @@ loadFixture cfg dir = do
     -- would go here for mpv > 0.
     wrapVkStep = extractWrapVKForStepHash vk
 
-    msgStep :: StepField
+    msgStep :: Step.Field
     msgStep = hashMessagesForNextStepProofPure
       { stepVk: wrapVkStep
       , appState: appStateFields
@@ -315,10 +317,10 @@ loadFixture cfg dir = do
     -- For mpv = 0: paddedChallenges = full Vector PaddedLength of dummy
     -- expanded wrap-IPA challenges. Mirrors `msgWrapPadded` construction
     -- in `Pickles.Prove.Compile:2830-2833` with `padMax = PaddedLength`.
-    msgWrapPadded :: Vector PaddedLength (Vector _ WrapField)
+    msgWrapPadded :: Vector PaddedLength (Vector _ Wrap.Field)
     msgWrapPadded = Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
 
-    msgWrap :: WrapField
+    msgWrap :: Wrap.Field
     msgWrap = hashMessagesForNextWrapProofPureGeneral
       { sg: decoded.challengePolynomialCommitment
       , paddedChallenges: msgWrapPadded
@@ -346,9 +348,9 @@ loadFixture cfg dir = do
     }
 
 -- | NRR convenience: NRR's `Output Field.typ` makes the statement a single
--- | hex-encoded `StepField`. `toFields` wraps it in a singleton array — the
+-- | hex-encoded `Step.Field`. `toFields` wraps it in a singleton array — the
 -- | shape `hashMessagesForNextStepProofPure` expects for `appState`.
-loadNrrFixture :: String -> Aff (LoadedFixture StepField)
+loadNrrFixture :: String -> Aff (LoadedFixture Step.Field)
 loadNrrFixture = loadFixture
   { decode: decodeHex
   , toFields: \x -> [ x ]
@@ -461,14 +463,14 @@ parseStatement decode raw = do
 --------------------------------------------------------------------------------
 
 type DecodedPickles =
-  { rawPlonk :: PlonkMinimal (F StepField)
-  , rawBulletproofChallenges :: Vector StepIPARounds (ScalarChallenge (F StepField))
-  , branchData :: BranchData StepField Boolean
-  , spongeDigestBeforeEvaluations :: StepField
-  , challengePolynomialCommitment :: AffinePoint WrapField
+  { rawPlonk :: PlonkMinimal (F Step.Field)
+  , rawBulletproofChallenges :: Vector StepIPARounds (ScalarChallenge (F Step.Field))
+  , branchData :: BranchData Step.Field Boolean
+  , spongeDigestBeforeEvaluations :: Step.Field
+  , challengePolynomialCommitment :: AffinePoint Wrap.Field
   , stepDomainLog2 :: Int
-  , prevEvals :: AllEvals StepField
-  , pEval0Chunks :: Array StepField
+  , prevEvals :: AllEvals Step.Field
+  , pEval0Chunks :: Array Step.Field
   }
 
 decodePickles :: String -> Either String DecodedPickles
@@ -497,7 +499,7 @@ decodePicklesJson j = do
 
   msgWrap <- (proofState .: "messages_for_next_wrap_proof") >>= decodeJson
   cpcJ <- msgWrap .: "challenge_polynomial_commitment"
-  cpc <- decodeAffinePoint cpcJ :: Either JsonDecodeError (AffinePoint WrapField)
+  cpc <- decodeAffinePoint cpcJ :: Either JsonDecodeError (AffinePoint Wrap.Field)
 
   -- prev_evals
   prevEvalsJ <- (obj .: "prev_evals") >>= decodeJson
@@ -527,21 +529,21 @@ decodeChallengeBI j =
       innerJ <- obj .: "inner"
       decodeLimbVec innerJ
 
--- | Wrap a decoded 128-bit BigInt as `SizedF 128 (F StepField)`.
-mkScalarChallenge :: BigInt -> SizedF 128 (F StepField)
+-- | Wrap a decoded 128-bit BigInt as `SizedF 128 (F Step.Field)`.
+mkScalarChallenge :: BigInt -> SizedF 128 (F Step.Field)
 mkScalarChallenge bi =
   let
-    f = fromBigInt bi :: StepField
+    f = fromBigInt bi :: Step.Field
     -- 128-bit value is guaranteed to fit in our 255-bit field, so the
     -- Partial constraint on `unsafeFromField` is safely discharged.
-    sized = unsafePartial $ unsafeFromField f :: SizedF 128 StepField
+    sized = unsafePartial $ unsafeFromField f :: SizedF 128 Step.Field
   in
     wrapF sized
 
-decodeChallengeSized :: Json -> Either JsonDecodeError (SizedF 128 (F StepField))
+decodeChallengeSized :: Json -> Either JsonDecodeError (SizedF 128 (F Step.Field))
 decodeChallengeSized j = mkScalarChallenge <$> decodeChallengeBI j
 
-decodePlonkMinimal :: Json -> Either JsonDecodeError (PlonkMinimal (F StepField))
+decodePlonkMinimal :: Json -> Either JsonDecodeError (PlonkMinimal (F Step.Field))
 decodePlonkMinimal j = do
   obj <- decodeJson j
   alphaJ <- obj .: "alpha"
@@ -556,14 +558,14 @@ decodePlonkMinimal j = do
 
 decodeBulletproofVec
   :: Array Json
-  -> Either JsonDecodeError (Vector StepIPARounds (ScalarChallenge (F StepField)))
+  -> Either JsonDecodeError (Vector StepIPARounds (ScalarChallenge (F Step.Field)))
 decodeBulletproofVec arr = do
   vals <- traverse decodeBPChallenge arr
   case Vector.toVector @StepIPARounds vals of
     Just v -> pure v
     Nothing -> Left (TypeMismatch ("expected 16 bulletproof challenges, got " <> show (Array.length vals)))
 
-decodeBPChallenge :: Json -> Either JsonDecodeError (SizedF 128 (F StepField))
+decodeBPChallenge :: Json -> Either JsonDecodeError (SizedF 128 (F Step.Field))
 decodeBPChallenge j = do
   obj <- decodeJson j
   prech <- obj .: "prechallenge"
@@ -571,7 +573,7 @@ decodeBPChallenge j = do
 
 -- | Decode `proof_state.sponge_digest_before_evaluations` which is a
 -- | `Digest.Constant.t = Hex64 vector of 4 limbs` = 256-bit value.
-decodeDigestField :: Json -> Either JsonDecodeError StepField
+decodeDigestField :: Json -> Either JsonDecodeError Step.Field
 decodeDigestField j = do
   bi <- decodeLimbVec j
   pure (fromBigInt bi)
@@ -579,7 +581,7 @@ decodeDigestField j = do
 -- | Decode `branch_data` and project out `domain_log2 :: Int`.
 decodeBranchDataAndLog2
   :: Json
-  -> Either JsonDecodeError (Tuple (BranchData StepField Boolean) Int)
+  -> Either JsonDecodeError (Tuple (BranchData Step.Field Boolean) Int)
 decodeBranchDataAndLog2 j = do
   obj <- decodeJson j
   pvJ <- obj .: "proofs_verified"
@@ -587,7 +589,7 @@ decodeBranchDataAndLog2 j = do
   domLog2J <- obj .: "domain_log2"
   domLog2 <- decodeOcamlByte domLog2J
   pure $ Tuple
-    { domainLog2: fromBigInt (JsBigInt.fromInt domLog2) :: StepField
+    { domainLog2: fromBigInt (JsBigInt.fromInt domLog2) :: Step.Field
     , proofsVerifiedMask
     }
     domLog2
@@ -652,11 +654,11 @@ decodeOcamlByte j = do
 -- | OCaml absorption order (`generic`, `poseidon`, `complete_add`, `mul`,
 -- | `emul`, `endomul_scalar` — matching `extractEvalFields` in
 -- | `Pickles.PlonkChecks`).
-decodeAllEvals :: Json -> Either JsonDecodeError (AllEvals StepField)
+decodeAllEvals :: Json -> Either JsonDecodeError (AllEvals Step.Field)
 decodeAllEvals j = do
   obj <- decodeJson j
   ftJ <- obj .: "ft_eval1"
-  ftEval1 <- decodeHex ftJ :: Either JsonDecodeError StepField
+  ftEval1 <- decodeHex ftJ :: Either JsonDecodeError Step.Field
 
   evalsObj <- (obj .: "evals") >>= decodeJson
   publicJ <- evalsObj .: "public_input"
@@ -697,7 +699,7 @@ decodeAllEvals j = do
 
 -- | Decode a flat-format point eval: `[zeta_hex, omega_zeta_hex]`.
 -- | Used for `prev_evals.evals.public_input`.
-decodePointEvalFlat :: Json -> Either JsonDecodeError (PointEval StepField)
+decodePointEvalFlat :: Json -> Either JsonDecodeError (PointEval Step.Field)
 decodePointEvalFlat j = do
   arr <- decodeJson j :: Either JsonDecodeError (Array Json)
   case arr of
@@ -710,7 +712,7 @@ decodePointEvalFlat j = do
 -- | Decode a chunked-singleton point eval: `[[zeta_hex], [omega_zeta_hex]]`.
 -- | Used for the kimchi `proof_evaluations` inside `prev_evals.evals.evals`.
 -- | For num_chunks=1, each chunk array has length 1.
-decodePointEvalChunked :: Json -> Either JsonDecodeError (PointEval StepField)
+decodePointEvalChunked :: Json -> Either JsonDecodeError (PointEval Step.Field)
 decodePointEvalChunked j = do
   arr <- decodeJson j :: Either JsonDecodeError (Array Json)
   case arr of

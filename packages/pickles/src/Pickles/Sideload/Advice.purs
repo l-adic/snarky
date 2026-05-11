@@ -29,7 +29,7 @@ import Effect (Effect)
 import Pickles.Sideload.Bundle (Bundle)
 import Pickles.Sideload.VerificationKey (VerificationKey, compileDummy) as SLVK
 import Pickles.Step.Slots (Compiled, SideLoaded, Slot)
-import Pickles.Types (StepField)
+import Pickles.Step.Types (Field)
 import Snarky.Circuit.DSL (F)
 
 -- | Prove-time spec-indexed VK carrier shape. Funcdep
@@ -101,5 +101,5 @@ instance
   MkUnitVkCarrier rest restCarrier =>
   MkUnitVkCarrier
     (Slot SideLoaded mpvMax statement /\ rest)
-    (SLVK.VerificationKey (F StepField) Boolean /\ restCarrier) where
+    (SLVK.VerificationKey (F Field) Boolean /\ restCarrier) where
   mkUnitVkCarrier = SLVK.compileDummy /\ mkUnitVkCarrier @rest

@@ -22,7 +22,7 @@
 -- | per-slot `max_proofs_verified` list), `ds` (step IPA rounds), and
 -- | `dw` (wrap IPA rounds). The commitment curve is pinned to
 -- | `PallasG` (the wrap proof being verified by step has commitments
--- | on Pallas) and the field to `StepField` (= `Vesta.ScalarField` =
+-- | on Pallas) and the field to `Step.Field` (= `Vesta.ScalarField` =
 -- | `Pallas.BaseField`) — both structural for any step circuit in
 -- | the Pasta cycle, not specific to any one application rule.
 module Pickles.Prove.Step
@@ -102,12 +102,14 @@ import Pickles.Step.Main (class BuildSlotVkSources, RuleOutput, StepMainSrsData,
 import Pickles.Step.Main as MpvPadding
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
 import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, replicateStepSlotsCarrier)
+import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
-import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), UnfinalizedFieldCount, WrapField, WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK, VerificationKey(..))
 import Pickles.Verify.Types (BranchData) as VT
 import Pickles.Verify.Types (PlonkMinimal, UnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
+import Pickles.Wrap.Types as Wrap
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
@@ -150,7 +152,7 @@ import Type.Proxy (Proxy(..))
 -- | per `dump_circuit_impl.ml:3723`) and `mask0`/`mask1` encode
 -- | which prev-proof slot is active.
 type StepBranchData =
-  { domainLog2 :: F StepField
+  { domainLog2 :: F Step.Field
   , mask0 :: Boolean
   , mask1 :: Boolean
   }
@@ -225,7 +227,7 @@ type BuildStepAdviceInput inputVal valCarrier vkCarrier =
 -- | Requires a `StepSlotsCarrier prevsSpec … len carrier` instance so the
 -- | caller's `prevsSpec` determines `len` (= number of prev slots) and
 -- | `carrier` (= nested-tuple carrier type). The rank-2 `dummySlot`
--- | builds each slot's `StepPerProofWitness` with the correct per-slot
+-- | builds each slot's `Step.PerProofWitness` with the correct per-slot
 -- | `n_i` via `Vector.replicate`.
 -- |
 -- | Handles homogeneous specs (Simple_chain N1/N2, Add_one_return) and
@@ -239,8 +241,8 @@ buildStepAdvice
        prevsSpec
        StepIPARounds
        WrapIPARounds
-       (F StepField)
-       (Type2 (SplitField (F StepField) Boolean))
+       (F Step.Field)
+       (Type2 (SplitField (F Step.Field) Boolean))
        Boolean
        len
        carrier
@@ -252,10 +254,10 @@ buildStepAdvice input =
     -- Pallas generator (= OCaml `Tock.Curve.one`). Never the
     -- point-at-infinity, so `toAffine` is always `Just`. Reused for
     -- every curve-point field in the base-case dummy advice.
-    g0 :: AffinePoint (F StepField)
-    g0 = coerce (unsafePartial (fromJust (Curves.toAffine (Curves.generator :: Pallas.G))) :: AffinePoint StepField)
+    g0 :: AffinePoint (F Step.Field)
+    g0 = coerce (unsafePartial (fromJust (Curves.toAffine (Curves.generator :: Pallas.G))) :: AffinePoint Step.Field)
 
-    g0w :: WeierstrassAffinePoint PallasG (F StepField)
+    g0w :: WeierstrassAffinePoint PallasG (F Step.Field)
     g0w = WeierstrassAffinePoint g0
 
     -- Reify `len` (= most_recent_width = max_proofs_verified) to a
@@ -267,16 +269,16 @@ buildStepAdvice input =
 
     -- z1 / z2 from OCaml `proof.ml:dummy` openings (Ro.tock values
     -- re-wrapped as cross-field Type2 SplitField in the step field).
-    z1 :: Type2 (SplitField (F StepField) Boolean)
+    z1 :: Type2 (SplitField (F Step.Field) Boolean)
     z1 = toShifted (F bcd.proofDummy.z1)
 
-    z2 :: Type2 (SplitField (F StepField) Boolean)
+    z2 :: Type2 (SplitField (F Step.Field) Boolean)
     z2 = toShifted (F bcd.proofDummy.z2)
 
-    wrapPE :: LFFI.PointEval StepField -> LFFI.PointEval (F StepField)
+    wrapPE :: LFFI.PointEval Step.Field -> LFFI.PointEval (F Step.Field)
     wrapPE pe = { zeta: F pe.zeta, omegaTimesZeta: F pe.omegaTimesZeta }
 
-    wrapAE :: AllEvals StepField -> AllEvals (F StepField)
+    wrapAE :: AllEvals Step.Field -> AllEvals (F Step.Field)
     wrapAE ae =
       { ftEval1: F ae.ftEval1
       , publicEvals: wrapPE ae.publicEvals
@@ -287,7 +289,7 @@ buildStepAdvice input =
       , sigmaEvals: map wrapPE ae.sigmaEvals
       }
 
-    prevEvalsDummy :: StepAllEvals (F StepField)
+    prevEvalsDummy :: StepAllEvals (F Step.Field)
     prevEvalsDummy =
       let
         aeF = wrapAE bcd.proofDummy.prevEvals
@@ -303,7 +305,7 @@ buildStepAdvice input =
           }
 
     dummyFop
-      :: UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
+      :: UnfinalizedProof StepIPARounds (F Step.Field) (Type1 (F Step.Field)) Boolean
     dummyFop = stepDummyUnfinalizedProof @len bcd
       { domainLog2: wrapDomainLog2ForProofsVerified mrw }
       (map SizedF.wrapF bcd.ipaStepChallenges)
@@ -316,7 +318,7 @@ buildStepAdvice input =
       --   N0 → [F, F]
       --   N1 → [F, T]
       --   N2 → [T, T]
-      { domainLog2: F (Curves.fromInt input.stepDomainLog2 :: StepField)
+      { domainLog2: F (Curves.fromInt input.stepDomainLog2 :: Step.Field)
       , mask0: mrw >= 2
       , mask1: mrw >= 1
       }
@@ -325,18 +327,18 @@ buildStepAdvice input =
     pFop = dvFop.plonk
 
     -- Cross-field conversion of `wrapDummyUnfinalizedProof` (which
-    -- is in wrap-field `Type2 (F WrapField)`) to the step-field
-    -- `Type2 (SplitField (F StepField) Boolean)` that step_main's
+    -- is in wrap-field `Type2 (F Wrap.Field)`) to the step-field
+    -- `Type2 (SplitField (F Step.Field) Boolean)` that step_main's
     -- `publicInputCommit` walks over.
     du = wrapDummyUnfinalizedProof bcd
 
-    t2toT2sf :: Type2 (F WrapField) -> Type2 (SplitField (F StepField) Boolean)
-    t2toT2sf t = toShifted (fromShifted t :: F WrapField)
+    t2toT2sf :: Type2 (F Wrap.Field) -> Type2 (SplitField (F Step.Field) Boolean)
+    t2toT2sf t = toShifted (fromShifted t :: F Wrap.Field)
 
-    chalToStep :: SizedF 128 (F WrapField) -> SizedF 128 (F StepField)
+    chalToStep :: SizedF 128 (F Wrap.Field) -> SizedF 128 (F Step.Field)
     chalToStep s = SizedF.wrapF (coerceViaBits (SizedF.unwrapF s))
 
-    digestStep :: F StepField
+    digestStep :: F Step.Field
     digestStep =
       let
         F digestWrap = du.spongeDigestBeforeEvaluations
@@ -349,8 +351,8 @@ buildStepAdvice input =
     dummyPublicUnfinalized
       :: PerProofUnfinalized
            WrapIPARounds
-           (Type2 (SplitField (F StepField) Boolean))
-           (F StepField)
+           (Type2 (SplitField (F Step.Field) Boolean))
+           (F Step.Field)
            Boolean
     dummyPublicUnfinalized = PerProofUnfinalized
       { combinedInnerProduct: t2toT2sf dvDu.combinedInnerProduct
@@ -377,15 +379,15 @@ buildStepAdvice input =
     dummySlot
       :: forall n
        . Reflectable n Int
-      => StepPerProofWitness
+      => Step.PerProofWitness
            n
            StepIPARounds
            WrapIPARounds
-           (F StepField)
-           (Type2 (SplitField (F StepField) Boolean))
+           (F Step.Field)
+           (Type2 (SplitField (F Step.Field) Boolean))
            Boolean
-    dummySlot = StepPerProofWitness
-      { wrapProof: WrapProof
+    dummySlot = Step.PerProofWitness
+      { wrapProof: Step.WrapProof
           { opening: WrapProofOpening
               { lr: Vector.generate
                   ( \_ ->
@@ -404,8 +406,8 @@ buildStepAdvice input =
               , tComm: Vector.generate (\_ -> WeierstrassAffinePoint g0)
               }
           }
-      , proofState: StepProofState
-          { fopState: FopProofState
+      , proofState: Step.ProofState
+          { fopState: Step.FopProofState
               { combinedInnerProduct: unwrap dvFop.combinedInnerProduct
               , b: unwrap dvFop.b
               , zetaToSrsLength: unwrap pFop.zetaToSrsLength
@@ -419,7 +421,7 @@ buildStepAdvice input =
               , xi: UnChecked dvFop.xi
               , bulletproofChallenges: map UnChecked dvFop.bulletproofChallenges
               }
-          , branchData: BranchData
+          , branchData: Step.BranchData
               { domainLog2: dummyBranch.domainLog2
               , mask0: dummyBranch.mask0
               , mask1: dummyBranch.mask1
@@ -456,17 +458,17 @@ buildStepAdvice input =
 -- | Extract sigma/coeff/index point triples from a compiled wrap
 -- | verifier index, in the lightweight `Pickles.VerificationKey.VerificationKey`
 -- | shape the step advice uses (WeierstrassAffinePoint PallasG (F
--- | StepField)). The wrap VK's commitments are Pallas points with
--- | coordinates in Pallas.BaseField = StepField, so no cross-field
+-- | Step.Field)). The wrap VK's commitments are Pallas points with
+-- | coordinates in Pallas.BaseField = Step.Field, so no cross-field
 -- | coercion is needed.
 extractWrapVKCommsAdvice
-  :: VerifierIndex PallasG WrapField
-  -> VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
+  :: VerifierIndex PallasG Wrap.Field
+  -> VerificationKey (WeierstrassAffinePoint PallasG (F Step.Field))
 extractWrapVKCommsAdvice vk =
   let
     comms = vestaVerifierIndexCommitments vk
 
-    wrapPt :: AffinePoint StepField -> WeierstrassAffinePoint PallasG (F StepField)
+    wrapPt :: AffinePoint Step.Field -> WeierstrassAffinePoint PallasG (F Step.Field)
     wrapPt pt = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
   in
     VerificationKey
@@ -475,14 +477,14 @@ extractWrapVKCommsAdvice vk =
       , index: map wrapPt comms.index
       }
 
--- | `StepVK StepField` (the eight named-field VK shape) extracted from
+-- | `StepVK Step.Field` (the eight named-field VK shape) extracted from
 -- | a compiled wrap verifier index. Used for
 -- | `hashMessagesForNextStepProofPure` in the step field — the dummy
 -- | wrap proof's `messages_for_next_step_proof` hash mirrors OCaml's
 -- | `Common.hash_messages_for_next_step_proof` on the real wrap VK.
 extractWrapVKForStepHash
-  :: VerifierIndex PallasG WrapField
-  -> StepVK StepField
+  :: VerifierIndex PallasG Wrap.Field
+  -> StepVK Step.Field
 extractWrapVKForStepHash vk =
   let
     comms = vestaVerifierIndexCommitments vk
@@ -518,12 +520,12 @@ mkDummyMsgWrapHash
   :: Dummy.BaseCaseDummies
   -> CRS PallasG
   -> CRS VestaG
-  -> F StepField
+  -> F Step.Field
 mkDummyMsgWrapHash bcd pallasSrs vestaSrs =
   let
     sgValues = Dummy.computeDummySgValues bcd pallasSrs vestaSrs
 
-    msgWrapHashWrap :: WrapField
+    msgWrapHashWrap :: Wrap.Field
     msgWrapHashWrap = hashMessagesForNextWrapProofPureGeneral
       { sg: sgValues.ipa.step.sg
       , paddedChallenges:
@@ -532,12 +534,12 @@ mkDummyMsgWrapHash bcd pallasSrs vestaSrs =
   in
     F (crossFieldDigest msgWrapHashWrap)
 
--- | Build the `Array WrapField` the FFI oracles call receives.
+-- | Build the `Array Wrap.Field` the FFI oracles call receives.
 -- |
 -- | This MUST produce the same bits as the step circuit's in-circuit
 -- | `packStatement` + `publicInputCommit` on the same dummy advice
 -- | values. Going through `assembleWrapMainInput` (→ cross-field
--- | re-shifting) does NOT do that — it produces `Type1 (F WrapField)`
+-- | re-shifting) does NOT do that — it produces `Type1 (F Wrap.Field)`
 -- | values that are `(v - shift)/2` in the WRAP field, while the step
 -- | circuit's `packStatement` emits `(v - shift)/2` in the STEP field.
 -- | The FFI interprets its input array as wrap-field scalars and calls
@@ -557,14 +559,14 @@ dummyWrapTockPublicInput
   :: forall @n stmt stmtVar
    . Reflectable n Int
   => Compare n 3 LT
-  => CircuitType StepField stmt stmtVar
+  => CircuitType Step.Field stmt stmtVar
   -- The first record field is the prev rule's STEP domain log2
   -- (= `branch_data.domain_log2` of its wrap statement, fed into
   -- `packBranchDataWrap` below). For self-recursive rules with
   -- `override_wrap_domain` this coincides with `wrap_domains.h`; in
   -- general it's the prev's actual step circuit's domain.
   => { stepDomainLog2 :: Int
-     , wrapVK :: VerifierIndex PallasG WrapField
+     , wrapVK :: VerifierIndex PallasG Wrap.Field
      -- | Prev rule's full `StatementIO inputVal outputVal` value
      -- | (matches OCaml's `Previous_proof_statement.public_input ::
      -- | 'prev_var`). Serialized via `valueToFields` for the
@@ -577,31 +579,31 @@ dummyWrapTockPublicInput
      -- | `computeDummySgValues.ipa.wrap.sg`. Used for the previous
      -- | proofs' `challenge_polynomial_commitments` in
      -- | `messagesForNextStepProof` (OCaml `proof.ml:168-171`).
-     , wrapSg :: AffinePoint StepField
+     , wrapSg :: AffinePoint Step.Field
      -- | `Dummy.Ipa.Step.sg` — Ro-derived Vesta point from
      -- | `computeDummySgValues.ipa.step.sg`. Unused inside this
      -- | function now that `msgWrapDigest` is computed once and passed
      -- | in, but kept in the input record so the call site can thread
      -- | both sg values symmetrically.
-     , stepSg :: AffinePoint WrapField
+     , stepSg :: AffinePoint Wrap.Field
      -- | Precomputed `hashMessagesForNextWrapProofPureGeneral` result
      -- | (must be computed with `sg = stepSg`). Threaded in so the
      -- | same value is used both here (as `digests[1]`) and in the
      -- | advice's `messagesForNextWrapProof` slot — eliminates any
      -- | self-consistency risk between the two.
-     , msgWrapDigest :: WrapField
+     , msgWrapDigest :: Wrap.Field
      -- | Pre-computed FOP proof state to serialize. Picks which Ro
      -- | state's plonk values to use (SimpleChain vs Tree_proof_return
      -- | vs module-init). Caller passes e.g.
      -- | `Dummy.simpleChainStepDummyFopProofState { proofsVerified }` or
      -- | `Dummy.treeStepDummyFopProofState { proofsVerified }`.
      , fopProofState ::
-         UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
+         UnfinalizedProof StepIPARounds (F Step.Field) (Type1 (F Step.Field)) Boolean
      }
-  -> Array WrapField
+  -> Array Wrap.Field
 dummyWrapTockPublicInput input =
   let
-    fop :: UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
+    fop :: UnfinalizedProof StepIPARounds (F Step.Field) (Type1 (F Step.Field)) Boolean
     fop = input.fopProofState
 
     dv = fop.deferredValues
@@ -610,25 +612,25 @@ dummyWrapTockPublicInput input =
     -- Bit-level reinterpretation of a step-field scalar as a wrap-field
     -- scalar (Fp → Fq). Step field bits fit in wrap field, so this is
     -- lossless.
-    stepToWrap :: F StepField -> WrapField
+    stepToWrap :: F Step.Field -> Wrap.Field
     stepToWrap (F x) = crossFieldDigest x
 
-    -- Type1 (F StepField) → WrapField by reaching the STORED (shifted)
+    -- Type1 (F Step.Field) → Wrap.Field by reaching the STORED (shifted)
     -- inner value. OCaml's `Wrap.Statement.In_circuit.to_data` places
     -- the stored `t` from `Shifted_value.Type1.Shifted_value t` into
     -- the tock public input — NOT the unshifted original.
-    type1StepBits :: Type1 (F StepField) -> WrapField
+    type1StepBits :: Type1 (F Step.Field) -> Wrap.Field
     type1StepBits (Type1 x) = stepToWrap x
 
-    -- SizedF 128 (F StepField) → WrapField via type-safe bit
+    -- SizedF 128 (F Step.Field) → Wrap.Field via type-safe bit
     -- reinterpretation (`coerceViaBits` is bounded by `Compare 128 m LT`
     -- on both fields' bit widths, so no value can be out of range).
-    sizedStepBits :: SizedF 128 (F StepField) -> WrapField
-    sizedStepBits = SizedF.toField <<< (coerceViaBits :: SizedF 128 StepField -> SizedF 128 WrapField) <<< SizedF.unwrapF
+    sizedStepBits :: SizedF 128 (F Step.Field) -> Wrap.Field
+    sizedStepBits = SizedF.toField <<< (coerceViaBits :: SizedF 128 Step.Field -> SizedF 128 Wrap.Field) <<< SizedF.unwrapF
 
     -- 5 Type1 fp fields, order: cip, b, zetaToSrsLength,
     -- zetaToDomainSize, perm (matches `packStatement`).
-    fpFields :: Array WrapField
+    fpFields :: Array Wrap.Field
     fpFields =
       [ type1StepBits dv.combinedInnerProduct
       , type1StepBits dv.b
@@ -638,11 +640,11 @@ dummyWrapTockPublicInput input =
       ]
 
     -- 2 raw challenges: beta, gamma.
-    challenges2 :: Array WrapField
+    challenges2 :: Array Wrap.Field
     challenges2 = [ sizedStepBits p.beta, sizedStepBits p.gamma ]
 
     -- 3 scalar challenges: alpha, zeta, xi.
-    scalarChallenges3 :: Array WrapField
+    scalarChallenges3 :: Array Wrap.Field
     scalarChallenges3 =
       [ sizedStepBits p.alpha, sizedStepBits p.zeta, sizedStepBits dv.xi ]
 
@@ -654,7 +656,7 @@ dummyWrapTockPublicInput input =
     -- `hashMessagesForNextWrapProofPureGeneral` on `stepSg` so the
     -- same exact value appears both here (as `digests[1]`) and in the
     -- advice's `messagesForNextWrapProof` slot.
-    msgWrapDigestWrapField :: WrapField
+    msgWrapDigestWrapField :: Wrap.Field
     msgWrapDigestWrapField = input.msgWrapDigest
 
     -- messagesForNextStepProof: step-field hash over (real wrap VK +
@@ -662,22 +664,22 @@ dummyWrapTockPublicInput input =
     -- OCaml `proof.ml:168-171` sets
     --   messages_for_next_step_proof.challenge_polynomial_commitments
     --     = Vector.init most_recent_width ~f:(fun _ -> Lazy.force Dummy.Ipa.Wrap.sg)
-    wrapVkStep :: StepVK StepField
+    wrapVkStep :: StepVK Step.Field
     wrapVkStep = extractWrapVKForStepHash input.wrapVK
 
-    stepExpanded :: Vector StepIPARounds StepField
+    stepExpanded :: Vector StepIPARounds Step.Field
     stepExpanded = dummyIpaChallenges.stepExpanded
 
-    singleEntry :: { sg :: AffinePoint StepField, expandedBpChallenges :: Vector StepIPARounds StepField }
+    singleEntry :: { sg :: AffinePoint Step.Field, expandedBpChallenges :: Vector StepIPARounds Step.Field }
     singleEntry = { sg: input.wrapSg, expandedBpChallenges: stepExpanded }
 
     -- `proofs` has `n` entries (type param), matching OCaml
     -- `proof.ml:168-171`:
     --   messages_for_next_step_proof.challenge_polynomial_commitments
     --     = Vector.init most_recent_width (fun _ -> Dummy.Ipa.Wrap.sg)
-    appStateFields = valueToFields @StepField @stmt input.prevStatement
+    appStateFields = valueToFields @Step.Field @stmt input.prevStatement
 
-    msgStepDigestStepField :: StepField
+    msgStepDigestStepField :: Step.Field
     msgStepDigestStepField = hashMessagesForNextStepProofPure
       { stepVk: wrapVkStep
       , appState: appStateFields
@@ -687,10 +689,10 @@ dummyWrapTockPublicInput input =
     -- 3 digests in packStatement order:
     -- [spongeDigest, msgWrap, msgStep]. `fopProofState.spongeDigest`
     -- is already a step-field value; coerce to wrap bits.
-    sponge0 :: F StepField
+    sponge0 :: F Step.Field
     sponge0 = fop.spongeDigestBeforeEvaluations
 
-    digests3 :: Array WrapField
+    digests3 :: Array Wrap.Field
     digests3 =
       [ stepToWrap sponge0
       , msgWrapDigestWrapField -- already wrap field
@@ -698,7 +700,7 @@ dummyWrapTockPublicInput input =
       ]
 
     -- StepIPARounds bulletproof challenges.
-    bpChals :: Array WrapField
+    bpChals :: Array Wrap.Field
     bpChals = map sizedStepBits (Vector.toUnfoldable dv.bulletproofChallenges)
 
     -- Packed branch_data: `4 * domainLog2 + mask[0] + 2 * mask[1]`.
@@ -707,18 +709,18 @@ dummyWrapTockPublicInput input =
     -- the shared `revOnesVector` helper and packed via the shared
     -- `packBranchDataWrap` (same encoder the wrap-side uses through its
     -- own in-circuit mask construction).
-    packedBranchData :: WrapField
+    packedBranchData :: Wrap.Field
     packedBranchData = packBranchDataWrap
-      { domainLog2: Curves.fromInt input.stepDomainLog2 :: StepField
+      { domainLog2: Curves.fromInt input.stepDomainLog2 :: Step.Field
       , proofsVerifiedMask: revOnesVector (reflectType (Proxy @n))
       }
 
     -- Feature flags + lookup slots — all constant zero for vanilla
     -- Mina (`Features.Full.none`).
-    featureFlags :: Array WrapField
+    featureFlags :: Array Wrap.Field
     featureFlags = Array.replicate 8 zero
 
-    lookupSlots :: Array WrapField
+    lookupSlots :: Array Wrap.Field
     lookupSlots = [ zero, zero ]
   in
     fpFields
@@ -751,7 +753,7 @@ dummyWrapTockPublicInput input =
 -- |                      heterogeneous-shaped prevs (e.g.
 -- |                      Tree_proof_return's Unit-input rule verifies
 -- |                      a No_recursion_return prev whose app_state
--- |                      is `F StepField`).
+-- |                      is `F Step.Field`).
 type BuildSlotAdviceInput inputVal stmt =
   { publicInput :: inputVal
   -- | Prev rule's full `StatementIO inputVal outputVal` value (matches
@@ -769,9 +771,9 @@ type BuildSlotAdviceInput inputVal stmt =
   -- | (the wrap VK's own domain) whenever a rule uses `override_wrap_domain`
   -- | or verifies a prev whose step domain differs from its wrap domain.
   , stepDomainLog2 :: Int
-  , wrapVK :: VerifierIndex PallasG WrapField
+  , wrapVK :: VerifierIndex PallasG Wrap.Field
   -- | Previous step proof's opening sg (Vesta point, Fq coords =
-  -- | WrapField). Used by the HELPER's msgForNextWrap hash + its
+  -- | Wrap.Field). Used by the HELPER's msgForNextWrap hash + its
   -- | `wrapChallengePolynomialCommitment` feed into expandProof.
   -- | OCaml wrap.ml:541-556 stores this value as
   -- | `messages_for_next_wrap_proof.challenge_polynomial_commitment`
@@ -779,23 +781,23 @@ type BuildSlotAdviceInput inputVal stmt =
   -- | Base case (no real prev step): `Dummy.Ipa.Step.sg`.
   -- | Inductive / verifying a REAL wrap: the step proof's actual
   -- | opening sg (`pallasProofOpeningSg prev_step_proof`).
-  , stepOpeningSg :: AffinePoint WrapField
+  , stepOpeningSg :: AffinePoint Wrap.Field
   -- | Kimchi-level prev-challenges sg: what the step prover passes
   -- | to `pallasCreateProofWithPrev` in each entry's `sgX/Y`. This
   -- | is kimchi's own prev-IPA-fold reference, which for the base
   -- | case remains the compile-time dummy (`Dummy.Ipa.Step.sg`),
   -- | DISTINCT from `stepOpeningSg` when the helper's caller has
   -- | a real prev wrap proof to verify.
-  , kimchiPrevSg :: AffinePoint WrapField
+  , kimchiPrevSg :: AffinePoint Wrap.Field
   -- | The wrap proof to run oracles on. Base case: `Proof.dummy`.
   -- | Inductive: the real wrap proof from the previous iteration.
-  , wrapProof :: Proof PallasG WrapField
+  , wrapProof :: Proof PallasG Wrap.Field
   -- | Public input of `wrapProof` (serialized wrap statement).
   -- | Base case: `dummyWrapTockPublicInput`. Inductive: the real
   -- | wrap prover's `publicInputs` output. Array because its length
   -- | depends on the circuit configuration and is only known at the
   -- | FFI boundary.
-  , wrapPublicInput :: Array WrapField
+  , wrapPublicInput :: Array Wrap.Field
   -- | Padded accumulator for the oracles call. Wrap_hack.Padded_length = 2.
   -- | Each entry holds sg + expanded bp challenges.
   -- |
@@ -815,29 +817,29 @@ type BuildSlotAdviceInput inputVal stmt =
   -- |   wrap proof's own stored `msg_for_next_step_proof.cpc`.
   , prevChalPolys ::
       Vector PaddedLength
-        { sg :: AffinePoint StepField
-        , challenges :: Vector WrapIPARounds WrapField
+        { sg :: AffinePoint Step.Field
+        , challenges :: Vector WrapIPARounds Wrap.Field
         }
   -- | Raw 128-bit plonk challenges from the wrap STATEMENT's
   -- | `deferred_values.plonk` (OCaml step.ml:150).
   -- | Base case: `simpleChainDummyPlonk`. Inductive: from `wrapDv.plonk`.
   , wrapPlonkRaw ::
-      { alpha :: SizedF 128 StepField
-      , beta :: SizedF 128 StepField
-      , gamma :: SizedF 128 StepField
-      , zeta :: SizedF 128 StepField
+      { alpha :: SizedF 128 Step.Field
+      , beta :: SizedF 128 Step.Field
+      , gamma :: SizedF 128 Step.Field
+      , zeta :: SizedF 128 Step.Field
       }
   -- | Step-field polynomial evaluations from the wrap proof.
   -- | Base case: `simpleChainDummyPrevEvals`. Inductive: extracted
   -- | from the real wrap proof.
-  , wrapPrevEvals :: AllEvals StepField
+  , wrapPrevEvals :: AllEvals Step.Field
   -- | Branch data from the wrap proof's statement.
   -- | Base case: `{ domainLog2: wrapDomainLog2, proofsVerifiedMask: [false, true] }`.
   -- | Inductive: from the real wrap statement.
-  , wrapBranchData :: VT.BranchData StepField Boolean
+  , wrapBranchData :: VT.BranchData Step.Field Boolean
   -- | Sponge digest before evaluations from the wrap proof's statement.
   -- | Base case: zero. Inductive: from the real wrap statement.
-  , wrapSpongeDigest :: StepField
+  , wrapSpongeDigest :: Step.Field
   -- | Whether the step circuit must verify the previous proof (= not base case).
   -- | Controls `challenge_polynomial_commitment` override in expandProof.
   , mustVerify :: Boolean
@@ -859,7 +861,7 @@ type BuildSlotAdviceInput inputVal stmt =
   -- | messages_for_next_wrap_proof. Getting this wrong makes the in-circuit
   -- | IVP on the wrap proof diverge from the advice-computed deferred
   -- | values, triggering `ivp_assert_plonk_beta` at the wrap verifier.
-  , wrapOwnPaddedBpChals :: Vector PaddedLength (Vector WrapIPARounds WrapField)
+  , wrapOwnPaddedBpChals :: Vector PaddedLength (Vector WrapIPARounds Wrap.Field)
   -- | The wrap proof's stored deferred_values, packed into
   -- | `fopProofStates[0]` in the step advice. This gets read by the step
   -- | circuit's `packStatement` to reconstruct the wrap proof's public
@@ -873,7 +875,7 @@ type BuildSlotAdviceInput inputVal stmt =
   -- | Inductive: constructed from the real `wrapDv` produced by
   -- | `wrapComputeDeferredValues` during wrap proving.
   , fopState ::
-      UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
+      UnfinalizedProof StepIPARounds (F Step.Field) (Type1 (F Step.Field)) Boolean
   -- | Step advice's `evals[i]` field value (= per_proof_witness.ml:81-86
   -- | `prev_proof_evals = Plonk_types.All_evals.In_circuit.t`). These are
   -- | the evaluations the step FOP reads to recompute claimed deferred
@@ -886,7 +888,7 @@ type BuildSlotAdviceInput inputVal stmt =
   -- | b1 this must be wrap_b0's actual `prev_evals` field (= step_b0's
   -- | openings + x_hat) so the FOP's recompute matches the fopState
   -- | claims.
-  , stepAdvicePrevEvals :: AllEvals StepField
+  , stepAdvicePrevEvals :: AllEvals Step.Field
   -- | Expanded step-field bp challenges for the single entry of
   -- | `advice.kimchiPrevChallenges` (= kimchi-level prev_challenges fed to
   -- | `pallasCreateProofWithPrev` / stored in `ProverProof.prev_challenges`).
@@ -902,7 +904,7 @@ type BuildSlotAdviceInput inputVal stmt =
   -- |   its `deferred_values.bulletproof_challenges` = `wrapDv.bulletproofPrechallenges`.
   -- |   Expanded = `toFieldPure <$> wrapDv.bulletproofPrechallenges` via
   -- |   step endo scalar.
-  , kimchiPrevChallengesExpanded :: Vector StepIPARounds StepField
+  , kimchiPrevChallengesExpanded :: Vector StepIPARounds Step.Field
   -- | Per-slot expanded step-field bp challenges that feed
   -- | `messagesForNextStepProof` hash AND `stepPrevChallenges` in
   -- | `expandProofInputRec`. Pre-padded to PaddedLength=2 (the caller
@@ -927,7 +929,7 @@ type BuildSlotAdviceInput inputVal stmt =
   -- | Tree b1 slot 1: `[step_b0.unfinalized[0].bp_chals step-expanded,
   -- |   step_b0.unfinalized[1].bp_chals step-expanded]` — two distinct
   -- |   vectors from the REAL unfinalized state of step_b0.
-  , prevChallengesForStepHash :: Vector PaddedLength (Vector StepIPARounds StepField)
+  , prevChallengesForStepHash :: Vector PaddedLength (Vector StepIPARounds Step.Field)
   }
 
 -- | Per-slot output of `buildSlotAdvice`. Mirrors OCaml `expand_proof`'s
@@ -956,26 +958,26 @@ type BuildSlotAdviceInput inputVal stmt =
 -- | per-slot output onto the rest's vectors).
 type SlotAdviceContrib :: Int -> Type
 type SlotAdviceContrib n =
-  { challengePolynomialCommitment :: AffinePoint StepField
+  { challengePolynomialCommitment :: AffinePoint Step.Field
   , slotUnfinalized ::
       PerProofUnfinalized
         WrapIPARounds
-        (Type2 (SplitField (F StepField) Boolean))
-        (F StepField)
+        (Type2 (SplitField (F Step.Field) Boolean))
+        (F Step.Field)
         Boolean
-  , slotMsgWrapHashStep :: F StepField
+  , slotMsgWrapHashStep :: F Step.Field
   , slotKimchiPrevEntry ::
-      { sgX :: WrapField
-      , sgY :: WrapField
-      , challenges :: Vector StepIPARounds StepField
+      { sgX :: Wrap.Field
+      , sgY :: Wrap.Field
+      , challenges :: Vector StepIPARounds Step.Field
       }
   , slotSppw ::
-      StepPerProofWitness
+      Step.PerProofWitness
         n
         StepIPARounds
         WrapIPARounds
-        (F StepField)
-        (Type2 (SplitField (F StepField) Boolean))
+        (F Step.Field)
+        (Type2 (SplitField (F Step.Field) Boolean))
         Boolean
   }
 
@@ -1002,41 +1004,41 @@ buildSlotAdvice
    . Reflectable n Int
   => Reflectable pad Int
   => Add pad n PaddedLength
-  => CircuitType StepField inputVal input
-  => CircuitType StepField prevHeadStmt prevHeadStmtVar
+  => CircuitType Step.Field inputVal input
+  => CircuitType Step.Field prevHeadStmt prevHeadStmtVar
   => BuildSlotAdviceInput inputVal prevHeadStmt
   -> Effect (SlotAdviceContrib n)
 buildSlotAdvice input = do
   let
     -- Wrap_hack-padded bp_chals for the wrap proof's hash AND the
     -- expandProof input. Caller supplies; see input field docs.
-    wrapPadded :: Vector 2 (Vector WrapIPARounds WrapField)
+    wrapPadded :: Vector 2 (Vector WrapIPARounds Wrap.Field)
     wrapPadded = input.wrapOwnPaddedBpChals
 
-    msgWrapHash :: WrapField
+    msgWrapHash :: Wrap.Field
     msgWrapHash = hashMessagesForNextWrapProofPureGeneral
       { sg: input.stepOpeningSg
       , paddedChallenges: wrapPadded
       }
 
-    msgWrapHashStep :: F StepField
+    msgWrapHashStep :: F Step.Field
     msgWrapHashStep = F (crossFieldDigest msgWrapHash)
 
   let
-    wrapVkStep :: StepVK StepField
+    wrapVkStep :: StepVK Step.Field
     wrapVkStep = extractWrapVKForStepHash input.wrapVK
 
     -- Per-slot `prev_challenge_polynomial_commitments :: Vector n` —
     -- derived from the PaddedLength-sized input by dropping
     -- Wrap_hack front-padding. Mirrors OCaml step.ml:513.
-    prevCpcs :: Vector n (AffinePoint StepField)
+    prevCpcs :: Vector n (AffinePoint Step.Field)
     prevCpcs = map _.sg (Vector.drop @pad input.prevChalPolys)
 
     -- Per-slot step-expanded bp_chals — same pattern.
-    prevChalsPerSlot :: Vector n (Vector StepIPARounds StepField)
+    prevChalsPerSlot :: Vector n (Vector StepIPARounds Step.Field)
     prevChalsPerSlot = Vector.drop @pad input.prevChallengesForStepHash
 
-    prevProofsForHash :: Vector n { sg :: AffinePoint StepField, expandedBpChallenges :: Vector StepIPARounds StepField }
+    prevProofsForHash :: Vector n { sg :: AffinePoint Step.Field, expandedBpChallenges :: Vector StepIPARounds Step.Field }
     prevProofsForHash =
       Vector.zipWith (\sg chals -> { sg, expandedBpChallenges: chals })
         prevCpcs
@@ -1044,7 +1046,7 @@ buildSlotAdvice input = do
 
   msgStepDigestStepField <- hashMessagesForNextStepProofPureTraced
     { stepVk: wrapVkStep
-    , appState: valueToFields @StepField @prevHeadStmt input.prevStatement
+    , appState: valueToFields @Step.Field @prevHeadStmt input.prevStatement
     , proofs: prevProofsForHash
     }
 
@@ -1063,7 +1065,7 @@ buildSlotAdvice input = do
   let
     toFFIChalPoly r = { sgX: r.sg.x, sgY: r.sg.y, challenges: Vector.toUnfoldable r.challenges }
 
-    oracles :: ProofFFI.OraclesResult WrapField
+    oracles :: ProofFFI.OraclesResult Wrap.Field
     oracles = vestaProofOracles input.wrapVK
       { proof: input.wrapProof
       , publicInput: input.wrapPublicInput
@@ -1075,15 +1077,15 @@ buildSlotAdvice input = do
   Trace.field "expand_proof.oracles.gamma" (SizedF.toField oracles.gamma)
   Trace.field "expand_proof.oracles.alpha_chal" (SizedF.toField oracles.alphaChal)
   Trace.field "expand_proof.oracles.zeta_chal" (SizedF.toField oracles.zetaChal)
-  Trace.field "expand_proof.plonk0.alpha.raw" (SizedF.toField (SizedF.wrapF input.wrapPlonkRaw.alpha :: SizedF 128 (F StepField)))
-  Trace.field "expand_proof.plonk0.beta" (SizedF.toField (SizedF.wrapF input.wrapPlonkRaw.beta :: SizedF 128 (F StepField)))
-  Trace.field "expand_proof.plonk0.gamma" (SizedF.toField (SizedF.wrapF input.wrapPlonkRaw.gamma :: SizedF 128 (F StepField)))
-  Trace.field "expand_proof.plonk0.zeta.raw" (SizedF.toField (SizedF.wrapF input.wrapPlonkRaw.zeta :: SizedF 128 (F StepField)))
+  Trace.field "expand_proof.plonk0.alpha.raw" (SizedF.toField (SizedF.wrapF input.wrapPlonkRaw.alpha :: SizedF 128 (F Step.Field)))
+  Trace.field "expand_proof.plonk0.beta" (SizedF.toField (SizedF.wrapF input.wrapPlonkRaw.beta :: SizedF 128 (F Step.Field)))
+  Trace.field "expand_proof.plonk0.gamma" (SizedF.toField (SizedF.wrapF input.wrapPlonkRaw.gamma :: SizedF 128 (F Step.Field)))
+  Trace.field "expand_proof.plonk0.zeta.raw" (SizedF.toField (SizedF.wrapF input.wrapPlonkRaw.zeta :: SizedF 128 (F Step.Field)))
   Trace.field "expand_proof.oracles.fq_digest" oracles.fqDigest
   Trace.field "expand_proof.oracles.cip_kimchi" oracles.combinedInnerProduct
 
   let
-    rawPrechalsForTrace :: Array WrapField
+    rawPrechalsForTrace :: Array Wrap.Field
     rawPrechalsForTrace = vestaProofOpeningPrechallenges input.wrapVK
       { proof: input.wrapProof
       , publicInput: input.wrapPublicInput
@@ -1093,21 +1095,21 @@ buildSlotAdvice input = do
     Trace.field ("expand_proof.bp_prechal." <> show i) v
 
   let
-    chalToStep :: SizedF 128 WrapField -> SizedF 128 (F StepField)
+    chalToStep :: SizedF 128 Wrap.Field -> SizedF 128 (F Step.Field)
     chalToStep s = SizedF.wrapF (coerceViaBits s)
 
-    wrapEndoScalar :: WrapField
+    wrapEndoScalar :: Wrap.Field
     wrapEndoScalar =
-      let EndoScalar e = (endoScalar :: EndoScalar WrapField) in e
+      let EndoScalar e = (endoScalar :: EndoScalar Wrap.Field) in e
 
-    stepEndoScalarF :: StepField
+    stepEndoScalarF :: Step.Field
     stepEndoScalarF =
-      let EndoScalar e = (endoScalar :: EndoScalar StepField) in e
+      let EndoScalar e = (endoScalar :: EndoScalar Step.Field) in e
 
-    dummyStepBpChalsRaw :: Vector StepIPARounds (SizedF 128 (F StepField))
+    dummyStepBpChalsRaw :: Vector StepIPARounds (SizedF 128 (F Step.Field))
     dummyStepBpChalsRaw = map SizedF.wrapF dummyIpaChallenges.stepRaw
 
-    plonkMinimalStep :: PlonkMinimal (F StepField)
+    plonkMinimalStep :: PlonkMinimal (F Step.Field)
     plonkMinimalStep =
       { alpha: SizedF.wrapF input.wrapPlonkRaw.alpha
       , beta: SizedF.wrapF input.wrapPlonkRaw.beta
@@ -1115,25 +1117,25 @@ buildSlotAdvice input = do
       , zeta: SizedF.wrapF input.wrapPlonkRaw.zeta
       }
 
-    branchDataStep :: VT.BranchData StepField Boolean
+    branchDataStep :: VT.BranchData Step.Field Boolean
     branchDataStep = input.wrapBranchData
 
-    stepFopGenerator :: StepField
+    stepFopGenerator :: Step.Field
     stepFopGenerator = domainGenerator input.stepDomainLog2
 
-    stepFopShifts :: Vector 7 StepField
+    stepFopShifts :: Vector 7 Step.Field
     stepFopShifts = domainShifts input.stepDomainLog2
 
-    zetaExpandedStep :: StepField
+    zetaExpandedStep :: Step.Field
     zetaExpandedStep =
       toFieldPure (SizedF.unwrapF plonkMinimalStep.zeta) stepEndoScalarF
 
-    stepFopVanishesOnZk :: StepField
+    stepFopVanishesOnZk :: Step.Field
     stepFopVanishesOnZk =
-      (permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: StepField } -> StepField)
+      (permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: Step.Field } -> Step.Field)
         { domainLog2: input.stepDomainLog2, zkRows, pt: zetaExpandedStep }
 
-    wrapAllEvalsW :: AllEvals WrapField
+    wrapAllEvalsW :: AllEvals Wrap.Field
     wrapAllEvalsW =
       { ftEval1: oracles.ftEval1
       , publicEvals:
@@ -1147,15 +1149,15 @@ buildSlotAdvice input = do
       , indexEvals: proofIndexEvals input.wrapProof
       }
 
-    wrapShiftsW :: Vector 7 WrapField
+    wrapShiftsW :: Vector 7 Wrap.Field
     wrapShiftsW = domainShifts input.wrapDomainLog2
 
-    wrapVanishesOnZkW :: WrapField
+    wrapVanishesOnZkW :: Wrap.Field
     wrapVanishesOnZkW =
-      (permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: WrapField } -> WrapField)
+      (permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: Wrap.Field } -> Wrap.Field)
         { domainLog2: input.wrapDomainLog2, zkRows, pt: oracles.zeta }
 
-    wrapPrevEvalsF :: StepAllEvals (F StepField)
+    wrapPrevEvalsF :: StepAllEvals (F Step.Field)
     wrapPrevEvalsF =
       let
         pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
@@ -1191,7 +1193,7 @@ buildSlotAdvice input = do
       , endo: stepEndoScalarF
       , linearizationPoly: Linearization.pallas
       , dlogIndex: extractWrapVKForStepHash input.wrapVK
-      , appStateFields: valueToFields @StepField @prevHeadStmt input.prevStatement
+      , appStateFields: valueToFields @Step.Field @prevHeadStmt input.prevStatement
       , stepPrevSgs: prevCpcs
       , wrapChallengePolynomialCommitment: input.stepOpeningSg
       , wrapPaddedPrevChallenges: wrapPadded
@@ -1224,7 +1226,7 @@ buildSlotAdvice input = do
     type1Inner (Type1 x) = x
   Trace.fieldF "expand_proof.deferred.combined_inner_product" (type1Inner dStep.combinedInnerProduct)
   Trace.fieldF "expand_proof.deferred.b" (type1Inner dStep.b)
-  Trace.fieldF "expand_proof.deferred.xi" (F (toFieldPure (SizedF.unwrapF dStep.xi) stepEndoScalarF) :: F StepField)
+  Trace.fieldF "expand_proof.deferred.xi" (F (toFieldPure (SizedF.unwrapF dStep.xi) stepEndoScalarF) :: F Step.Field)
   Trace.fieldF "expand_proof.deferred.plonk.perm" (type1Inner dStep.plonk.perm)
   Trace.fieldF "expand_proof.deferred.plonk.zetaToSrsLength" (type1Inner dStep.plonk.zetaToSrsLength)
   Trace.fieldF "expand_proof.deferred.plonk.zetaToDomainSize" (type1Inner dStep.plonk.zetaToDomainSize)
@@ -1235,7 +1237,7 @@ buildSlotAdvice input = do
   let
     wDv = expandProofResult.unfinalized.deferredValues
 
-    type2InnerF :: Type2 (F WrapField) -> F WrapField
+    type2InnerF :: Type2 (F Wrap.Field) -> F Wrap.Field
     type2InnerF (Type2 x) = x
   Trace.fieldF "expand_proof.wrap_deferred.combined_inner_product" (type2InnerF wDv.combinedInnerProduct)
   Trace.fieldF "expand_proof.wrap_deferred.b" (type2InnerF wDv.b)
@@ -1247,14 +1249,14 @@ buildSlotAdvice input = do
   let
     -- Convert wrap-field unfinalized → step-field publicUnfinalized slot.
     wrapToStepType2
-      :: Type2 (F WrapField)
-      -> Type2 (SplitField (F StepField) Boolean)
-    wrapToStepType2 t = toShifted (fromShifted t :: F WrapField)
+      :: Type2 (F Wrap.Field)
+      -> Type2 (SplitField (F Step.Field) Boolean)
+    wrapToStepType2 t = toShifted (fromShifted t :: F Wrap.Field)
 
     expandedUnfinalized
       :: PerProofUnfinalized WrapIPARounds
-           (Type2 (SplitField (F StepField) Boolean))
-           (F StepField)
+           (Type2 (SplitField (F Step.Field) Boolean))
+           (F Step.Field)
            Boolean
     expandedUnfinalized =
       let
@@ -1280,11 +1282,11 @@ buildSlotAdvice input = do
           }
 
     fopState
-      :: UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
+      :: UnfinalizedProof StepIPARounds (F Step.Field) (Type1 (F Step.Field)) Boolean
     fopState = input.fopState
 
   let
-    t1Inner :: Type1 (F StepField) -> F StepField
+    t1Inner :: Type1 (F Step.Field) -> F Step.Field
     t1Inner (Type1 x) = x
   Trace.fieldF "diag.fopState.plonk.beta" (SizedF.toField fopState.deferredValues.plonk.beta)
   Trace.fieldF "diag.fopState.plonk.gamma" (SizedF.toField fopState.deferredValues.plonk.gamma)
@@ -1297,34 +1299,34 @@ buildSlotAdvice input = do
   Trace.fieldF "diag.fopState.perm.shifted" (t1Inner fopState.deferredValues.plonk.perm)
 
   let
-    openingSg :: AffinePoint (F StepField)
+    openingSg :: AffinePoint (F Step.Field)
     openingSg = coerce expandProofResult.sg
 
-    mkPt :: AffinePoint StepField -> AffinePoint (F StepField)
+    mkPt :: AffinePoint Step.Field -> AffinePoint (F Step.Field)
     mkPt pt = { x: F pt.x, y: F pt.y }
 
-    openingDelta :: AffinePoint (F StepField)
+    openingDelta :: AffinePoint (F Step.Field)
     openingDelta = mkPt (vestaProofOpeningDelta input.wrapProof)
 
-    openingLr :: Vector WrapIPARounds { l :: AffinePoint (F StepField), r :: AffinePoint (F StepField) }
+    openingLr :: Vector WrapIPARounds { l :: AffinePoint (F Step.Field), r :: AffinePoint (F Step.Field) }
     openingLr = map (\p -> { l: mkPt p.l, r: mkPt p.r })
       (vestaProofOpeningLrVec input.wrapProof)
 
-    openingZ1Raw :: WrapField
+    openingZ1Raw :: Wrap.Field
     openingZ1Raw = vestaProofOpeningZ1 input.wrapProof
 
-    openingZ2Raw :: WrapField
+    openingZ2Raw :: Wrap.Field
     openingZ2Raw = vestaProofOpeningZ2 input.wrapProof
 
-    openingZ1 :: Type2 (SplitField (F StepField) Boolean)
-    openingZ1 = toShifted (F openingZ1Raw :: F WrapField)
+    openingZ1 :: Type2 (SplitField (F Step.Field) Boolean)
+    openingZ1 = toShifted (F openingZ1Raw :: F Wrap.Field)
 
-    openingZ2 :: Type2 (SplitField (F StepField) Boolean)
-    openingZ2 = toShifted (F openingZ2Raw :: F WrapField)
+    openingZ2 :: Type2 (SplitField (F Step.Field) Boolean)
+    openingZ2 = toShifted (F openingZ2Raw :: F Wrap.Field)
 
     wrapCommits = vestaProofCommitments input.wrapProof
 
-    mkPallasAffine :: AffinePoint StepField -> AffinePoint (F StepField)
+    mkPallasAffine :: AffinePoint Step.Field -> AffinePoint (F Step.Field)
     mkPallasAffine pt = { x: F pt.x, y: F pt.y }
     wrapMessages =
       { wComm: map mkPallasAffine wrapCommits.wComm
@@ -1332,10 +1334,10 @@ buildSlotAdvice input = do
       , tComm: map mkPallasAffine (tCommVec wrapCommits)
       }
 
-    wrapPE' :: LFFI.PointEval StepField -> LFFI.PointEval (F StepField)
+    wrapPE' :: LFFI.PointEval Step.Field -> LFFI.PointEval (F Step.Field)
     wrapPE' pe = { zeta: F pe.zeta, omegaTimesZeta: F pe.omegaTimesZeta }
 
-    evalsForAdvice :: ProofWitness (F StepField)
+    evalsForAdvice :: ProofWitness (F Step.Field)
     evalsForAdvice =
       let
         ae = input.stepAdvicePrevEvals
@@ -1366,12 +1368,12 @@ buildSlotAdvice input = do
     -- preserving heterogeneous per-entry values for rules like
     -- Tree_proof_return.
     slotSppw
-      :: StepPerProofWitness n StepIPARounds WrapIPARounds
-           (F StepField)
-           (Type2 (SplitField (F StepField) Boolean))
+      :: Step.PerProofWitness n StepIPARounds WrapIPARounds
+           (F Step.Field)
+           (Type2 (SplitField (F Step.Field) Boolean))
            Boolean
-    slotSppw = StepPerProofWitness
-      { wrapProof: WrapProof
+    slotSppw = Step.PerProofWitness
+      { wrapProof: Step.WrapProof
           { opening: WrapProofOpening
               { lr: map
                   ( \r ->
@@ -1391,8 +1393,8 @@ buildSlotAdvice input = do
               , tComm: map WeierstrassAffinePoint wrapMessages.tComm
               }
           }
-      , proofState: StepProofState
-          { fopState: FopProofState
+      , proofState: Step.ProofState
+          { fopState: Step.FopProofState
               { combinedInnerProduct: unwrap dvFop.combinedInnerProduct
               , b: unwrap dvFop.b
               , zetaToSrsLength: unwrap pFop.zetaToSrsLength
@@ -1406,7 +1408,7 @@ buildSlotAdvice input = do
               , xi: UnChecked dvFop.xi
               , bulletproofChallenges: map UnChecked dvFop.bulletproofChallenges
               }
-          , branchData: BranchData
+          , branchData: Step.BranchData
               { domainLog2: slotBranchData.domainLog2
               , mask0: slotBranchData.mask0
               , mask1: slotBranchData.mask1
@@ -1425,7 +1427,7 @@ buildSlotAdvice input = do
           (\chals -> UnChecked (map F chals))
           (Vector.drop @pad input.prevChallengesForStepHash)
       , prevSgs: map
-          (\e -> WeierstrassAffinePoint (coerce e.sg :: AffinePoint (F StepField)))
+          (\e -> WeierstrassAffinePoint (coerce e.sg :: AffinePoint (F Step.Field)))
           (Vector.drop @pad input.prevChalPolys)
       }
 
@@ -1435,10 +1437,10 @@ buildSlotAdvice input = do
     z2SplitField = case openingZ2 of Type2 sf -> sf
     sDiv2OfSf sf = case sf of SplitField { sDiv2: F d } -> d
   Trace.field ("expand_proof.opening.z1.raw_" <> tag)
-    (crossFieldDigest openingZ1Raw :: StepField)
+    (crossFieldDigest openingZ1Raw :: Step.Field)
   Trace.field ("expand_proof.opening.z1.sDiv2_" <> tag) (sDiv2OfSf z1SplitField)
   Trace.field ("expand_proof.opening.z2.raw_" <> tag)
-    (crossFieldDigest openingZ2Raw :: StepField)
+    (crossFieldDigest openingZ2Raw :: Step.Field)
   Trace.field ("expand_proof.opening.z2.sDiv2_" <> tag) (sDiv2OfSf z2SplitField)
 
   pure
@@ -1489,15 +1491,15 @@ buildSlotAdvice input = do
 -- |   * Tree_proof_return (2):    `valCarrier = Tuple stmt0 (Tuple stmt1 Unit)`
 type StepRule (n :: Int) valCarrier inputVal input outputVal output prevInputVal prevInput =
   forall t m'
-   . CircuitM StepField (KimchiConstraint StepField) t m'
-  => StepWitnessM n StepIPARounds WrapIPARounds PallasG StepField m' inputVal
+   . CircuitM Step.Field (KimchiConstraint Step.Field) t m'
+  => StepWitnessM n StepIPARounds WrapIPARounds PallasG Step.Field m' inputVal
   => StepPrevValuesM m' valCarrier
-  => CircuitType StepField inputVal input
-  => CircuitType StepField outputVal output
-  => CircuitType StepField prevInputVal prevInput
-  => CheckedType StepField (KimchiConstraint StepField) input
+  => CircuitType Step.Field inputVal input
+  => CircuitType Step.Field outputVal output
+  => CircuitType Step.Field prevInputVal prevInput
+  => CheckedType Step.Field (KimchiConstraint Step.Field) input
   => input
-  -> Snarky (KimchiConstraint StepField) t m' (RuleOutput n prevInput output)
+  -> Snarky (KimchiConstraint Step.Field) t m' (RuleOutput n prevInput output)
 
 -- | Ambient data the step prover needs alongside the advice and rule.
 -- |
@@ -1508,7 +1510,7 @@ type StepRule (n :: Int) valCarrier inputVal input outputVal output prevInputVal
 -- | * `crs` — the step circuit's Vesta SRS.
 type StepProveContext len nd blueprints =
   { srsData :: StepMainSrsData len nd blueprints
-  , dummySg :: AffinePoint StepField
+  , dummySg :: AffinePoint Step.Field
   , crs :: CRS VestaG
   -- | When `true`, enables prover-state debug checks and runs a
   -- | `verifyProverIndex` sanity check against the solved witness.
@@ -1525,32 +1527,32 @@ type StepProveContext len nd blueprints =
 -- | `stepSolveAndProve`) because the step VK is what downstream
 -- | `buildWrapMainConfig` needs *before* the solver runs.
 type StepCompileResult =
-  { proverIndex :: ProverIndex VestaG StepField
-  , verifierIndex :: VerifierIndex VestaG StepField
-  , constraintSystem :: ConstraintSystem StepField
-  , builtState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField)
-  , constraints :: Array (KimchiRow StepField)
+  { proverIndex :: ProverIndex VestaG Step.Field
+  , verifierIndex :: VerifierIndex VestaG Step.Field
+  , constraintSystem :: ConstraintSystem Step.Field
+  , builtState :: CircuitBuilderState (KimchiGate Step.Field) (AuxState Step.Field)
+  , constraints :: Array (KimchiRow Step.Field)
   }
 
 -- | Artifacts produced by `stepProve` / `stepSolveAndProve`. Shape mirrors
 -- | `WrapProveResult` so downstream code can retarget with minimal
 -- | glue.
 type StepProveResult (outputSize :: Int) =
-  { proverIndex :: ProverIndex VestaG StepField
-  , verifierIndex :: VerifierIndex VestaG StepField
-  , constraintSystem :: ConstraintSystem StepField
-  , witness :: Vector 15 (Array StepField)
-  , publicInputs :: Array StepField
-  , publicOutputs :: Vector outputSize (F StepField)
-  , proof :: Proof VestaG StepField
-  , assignments :: Map Variable StepField
+  { proverIndex :: ProverIndex VestaG Step.Field
+  , verifierIndex :: VerifierIndex VestaG Step.Field
+  , constraintSystem :: ConstraintSystem Step.Field
+  , witness :: Vector 15 (Array Step.Field)
+  , publicInputs :: Array Step.Field
+  , publicOutputs :: Vector outputSize (F Step.Field)
+  , proof :: Proof VestaG Step.Field
+  , assignments :: Map Variable Step.Field
   -- | Field-flattened representation of the rule's user
   -- | `publicOutput` value, recovered post-solve. Carried as a raw
-  -- | `Array StepField` (not `outputVal`) so that consumers like
-  -- | `runProverBody` apply their own `fieldsToValue @StepField
+  -- | `Array Step.Field` (not `outputVal`) so that consumers like
+  -- | `runProverBody` apply their own `fieldsToValue @Step.Field
   -- | @outputVal` and producers that don't care can ignore it.
   -- | Empty when the rule's output type is `Unit`.
-  , userPublicOutputFields :: Array StepField
+  , userPublicOutputFields :: Array Step.Field
   }
 
 -- | Build a row→label_stack text dump from a compiled constraint list and
@@ -1571,7 +1573,7 @@ type StepProveResult (outputSize :: Int) =
 -- | gives labels that look correct but point at the wrong row.
 dumpRowLabels
   :: Int -- ^ publicInputSize — number of rows kimchi reserves for PI
-  -> Array (Labeled (KimchiGate StepField))
+  -> Array (Labeled (KimchiGate Step.Field))
   -> Effect Unit
 dumpRowLabels = writeRowLabelsTo "/tmp/ps_step_row_labels.txt"
 
@@ -1605,14 +1607,14 @@ bumpStepCsCounter = do
 writeRowLabelsTo
   :: String
   -> Int
-  -> Array (Labeled (KimchiGate StepField))
+  -> Array (Labeled (KimchiGate Step.Field))
   -> Effect Unit
 writeRowLabelsTo path publicInputSize cs = do
   let
     { out, row: finalRow } = Array.foldl
       ( \{ row, out } lc ->
           let
-            nRows = Array.length (toKimchiRows lc.constraint :: Array (KimchiRow StepField))
+            nRows = Array.length (toKimchiRows lc.constraint :: Array (KimchiRow Step.Field))
             endRow = row + nRows - 1
             ctxPath = Array.intercalate "/" lc.context
             line = show row <> ".." <> show endRow <> "\t" <> ctxPath
@@ -1657,19 +1659,19 @@ newtype StepAdvice prevsSpec ds dw inputVal len carrier valCarrier vkCarrier =
         Vector len
           ( PerProofUnfinalized
               dw
-              (Type2 (SplitField (F StepField) Boolean))
-              (F StepField)
+              (Type2 (SplitField (F Step.Field) Boolean))
+              (F Step.Field)
               Boolean
           )
-    , messagesForNextWrapProof :: Vector len (F StepField)
+    , messagesForNextWrapProof :: Vector len (F Step.Field)
     -- | Dummy hash value used to pad `messagesForNextWrapProof` from
     -- | `len` to `mpvMax` at solve time. Mirrors OCaml's
     -- | `Reduced_messages_for_next_proof_over_same_field.Wrap.dummy.hash`
     -- | which the prover supplies for padding positions in
     -- | `Req.Messages_for_next_wrap_proof` (step_main.ml:368-370).
-    , messagesForNextWrapProofDummyHash :: F StepField
+    , messagesForNextWrapProofDummyHash :: F Step.Field
     , wrapVerifierIndex ::
-        VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
+        VerificationKey (WeierstrassAffinePoint PallasG (F Step.Field))
     -- | Kimchi-level prev_challenges threaded to
     -- | `pallasCreateProofWithPrev`. One entry per prev slot of the
     -- | step circuit. Uniform Vector len — each entry's `challenges`
@@ -1678,9 +1680,9 @@ newtype StepAdvice prevsSpec ds dw inputVal len carrier valCarrier vkCarrier =
     -- | carrier).
     , kimchiPrevChallenges ::
         Vector len
-          { sgX :: WrapField
-          , sgY :: WrapField
-          , challenges :: Vector ds StepField
+          { sgX :: Wrap.Field
+          , sgY :: Wrap.Field
+          , challenges :: Vector ds Step.Field
           }
     -- | Heterogeneous per-slot prev statements, in the same nested-tuple
     -- | shape `SlotStatementsCarrier prevsSpec valCarrier` derives:
@@ -1712,7 +1714,7 @@ derive instance
 -- | evaluate them against the assignments map (see `stepSolveAndProve`).
 -- | Kept as a record so future captured values slot in without churn.
 type StepProverCapture =
-  { userPublicOutputFields :: Maybe (Array (FVar StepField))
+  { userPublicOutputFields :: Maybe (Array (FVar Step.Field))
   }
 
 initialStepProverCapture :: StepProverCapture
@@ -1778,8 +1780,8 @@ instance
       prevsSpec
       ds
       dw
-      (F StepField)
-      (Type2 (SplitField (F StepField) Boolean))
+      (F Step.Field)
+      (Type2 (SplitField (F Step.Field) Boolean))
       Boolean
       len
       carrier
@@ -1789,7 +1791,7 @@ instance
     ds
     dw
     PallasG
-    StepField
+    Step.Field
     (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m)
     len
     carrier where
@@ -1815,7 +1817,7 @@ instance
     ds
     dw
     PallasG
-    StepField
+    Step.Field
     (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m)
     inputVal where
 
@@ -1876,8 +1878,8 @@ stepCompile
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
        @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier blueprints
        pad unfsTotal digestPlusUnfs
-   . CircuitGateConstructor StepField VestaG
-  => BuildSlotVkSources (SLVK.VerificationKey (F StepField) Boolean) prevsSpec len blueprints sideloadedVkCarrier
+   . CircuitGateConstructor Step.Field VestaG
+  => BuildSlotVkSources (SLVK.VerificationKey (F Step.Field) Boolean) prevsSpec len blueprints sideloadedVkCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -1889,20 +1891,20 @@ stepCompile
   => Compare 0 nd LT
   => Add pad len PaddedLength
   => MpvPadding.MpvPadding mpvPad len mpvMax
-  => Mul mpvMax UnfinalizedFieldCount unfsTotal
+  => Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
-  => CircuitType StepField inputVal input
-  => CircuitType StepField outputVal output
-  => CircuitType StepField prevInputVal prevInput
-  => CircuitType StepField carrier carrierVar
-  => CheckedType StepField (KimchiConstraint StepField) carrierVar
+  => CircuitType Step.Field inputVal input
+  => CircuitType Step.Field outputVal output
+  => CircuitType Step.Field prevInputVal prevInput
+  => CircuitType Step.Field carrier carrierVar
+  => CheckedType Step.Field (KimchiConstraint Step.Field) carrierVar
   => StepSlotsCarrier
        prevsSpec
        StepIPARounds
        WrapIPARounds
-       (F StepField)
-       (Type2 (SplitField (F StepField) Boolean))
+       (F Step.Field)
+       (Type2 (SplitField (F Step.Field) Boolean))
        Boolean
        len
        carrier
@@ -1910,12 +1912,12 @@ stepCompile
        prevsSpec
        StepIPARounds
        WrapIPARounds
-       (FVar StepField)
-       (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
-       (BoolVar StepField)
+       (FVar Step.Field)
+       (Type2 (SplitField (FVar Step.Field) (BoolVar Step.Field)))
+       (BoolVar Step.Field)
        len
        carrierVar
-  => CheckedType StepField (KimchiConstraint StepField) input
+  => CheckedType Step.Field (KimchiConstraint Step.Field) input
   => StepProveContext len nd blueprints
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Effect StepCompileResult
@@ -1928,8 +1930,8 @@ stepCompile ctx rule = do
   builtState <-
     compile
       (Proxy @Unit)
-      (Proxy @(Vector outputSize (F StepField)))
-      (Proxy @(KimchiConstraint StepField))
+      (Proxy @(Vector outputSize (F Step.Field)))
+      (Proxy @(KimchiConstraint Step.Field))
       ( \_ ->
           stepMain
             @prevsSpec
@@ -1939,32 +1941,32 @@ stepCompile ctx rule = do
             @valCarrier
             @mpvMax
             @nd
-            @(SLVK.VerificationKey (F StepField) Boolean)
+            @(SLVK.VerificationKey (F Step.Field) Boolean)
             rule
             ctx.srsData
             ctx.dummySg
             sideloadedCarrier
       )
-      (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
+      (Kimchi.initialState :: CircuitBuilderState (KimchiGate Step.Field) (AuxState Step.Field))
 
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
-    { constraintSystem, constraints } = makeConstraintSystemWithPrevChallenges @StepField
+    { constraintSystem, constraints } = makeConstraintSystemWithPrevChallenges @Step.Field
       { constraints: kimchiRows
       , publicInputs: builtState.publicInputs
       , unionFind: (un AuxState builtState.aux).wireState.unionFind
       , prevChallengesCount: reflectType (Proxy @len)
       }
 
-    endo :: StepField
+    endo :: Step.Field
     endo =
-      let EndoBase e = (endoBase :: EndoBase StepField) in e
+      let EndoBase e = (endoBase :: EndoBase Step.Field) in e
 
     proverIndex =
-      createProverIndex @StepField @VestaG
+      createProverIndex @Step.Field @VestaG
         { endo, constraintSystem, crs: ctx.crs }
 
-    verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
+    verifierIndex = createVerifierIndex @Step.Field @VestaG proverIndex
 
   -- Optional compile-time dump of the row→label map, gated on the
   -- `KIMCHI_STEP_LABELS_DUMP` env var. Filename template uses `%c`
@@ -2020,11 +2022,11 @@ preComputeStepDomainLog2
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
        @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier blueprints
        pad unfsTotal digestPlusUnfs
-   . CircuitGateConstructor StepField VestaG
+   . CircuitGateConstructor Step.Field VestaG
   -- Side-loaded VK carrier — see stepMain. preComputeStepDomainLog2
   -- runs at compile time; the caller synthesizes a placeholder
   -- carrier (e.g. `mkUnitVkCarrier` for compiled-only specs).
-  => BuildSlotVkSources (SLVK.VerificationKey (F StepField) Boolean) prevsSpec len blueprints sideloadedVkCarrier
+  => BuildSlotVkSources (SLVK.VerificationKey (F Step.Field) Boolean) prevsSpec len blueprints sideloadedVkCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -2036,20 +2038,20 @@ preComputeStepDomainLog2
   => Compare 0 nd LT
   => Add pad len PaddedLength
   => MpvPadding.MpvPadding mpvPad len mpvMax
-  => Mul mpvMax UnfinalizedFieldCount unfsTotal
+  => Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
-  => CircuitType StepField inputVal input
-  => CircuitType StepField outputVal output
-  => CircuitType StepField prevInputVal prevInput
-  => CircuitType StepField carrier carrierVar
-  => CheckedType StepField (KimchiConstraint StepField) carrierVar
+  => CircuitType Step.Field inputVal input
+  => CircuitType Step.Field outputVal output
+  => CircuitType Step.Field prevInputVal prevInput
+  => CircuitType Step.Field carrier carrierVar
+  => CheckedType Step.Field (KimchiConstraint Step.Field) carrierVar
   => StepSlotsCarrier
        prevsSpec
        StepIPARounds
        WrapIPARounds
-       (F StepField)
-       (Type2 (SplitField (F StepField) Boolean))
+       (F Step.Field)
+       (Type2 (SplitField (F Step.Field) Boolean))
        Boolean
        len
        carrier
@@ -2057,12 +2059,12 @@ preComputeStepDomainLog2
        prevsSpec
        StepIPARounds
        WrapIPARounds
-       (FVar StepField)
-       (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
-       (BoolVar StepField)
+       (FVar Step.Field)
+       (Type2 (SplitField (FVar Step.Field) (BoolVar Step.Field)))
+       (BoolVar Step.Field)
        len
        carrierVar
-  => CheckedType StepField (KimchiConstraint StepField) input
+  => CheckedType Step.Field (KimchiConstraint Step.Field) input
   => StepProveContext len nd blueprints
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Effect Int
@@ -2071,8 +2073,8 @@ preComputeStepDomainLog2 ctx rule = do
   builtState <-
     compile
       (Proxy @Unit)
-      (Proxy @(Vector outputSize (F StepField)))
-      (Proxy @(KimchiConstraint StepField))
+      (Proxy @(Vector outputSize (F Step.Field)))
+      (Proxy @(KimchiConstraint Step.Field))
       ( \_ ->
           stepMain
             @prevsSpec
@@ -2082,16 +2084,16 @@ preComputeStepDomainLog2 ctx rule = do
             @valCarrier
             @mpvMax
             @nd
-            @(SLVK.VerificationKey (F StepField) Boolean)
+            @(SLVK.VerificationKey (F Step.Field) Boolean)
             rule
             ctx.srsData
             ctx.dummySg
             sideloadedCarrier
       )
-      (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
+      (Kimchi.initialState :: CircuitBuilderState (KimchiGate Step.Field) (AuxState Step.Field))
 
   let
-    kimchiRows :: Array (KimchiRow StepField)
+    kimchiRows :: Array (KimchiRow Step.Field)
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
     gateCount = Array.length kimchiRows
     piSize = Array.length builtState.publicInputs
@@ -2117,7 +2119,7 @@ stepSolveAndProve
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
        @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier blueprints
        pad unfsTotal digestPlusUnfs m
-   . CircuitGateConstructor StepField VestaG
+   . CircuitGateConstructor Step.Field VestaG
   => BuildSlotVkSources SideloadBundle.Bundle prevsSpec len blueprints sideloadedVkCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
@@ -2130,20 +2132,20 @@ stepSolveAndProve
   => Compare 0 nd LT
   => Add pad len PaddedLength
   => MpvPadding.MpvPadding mpvPad len mpvMax
-  => Mul mpvMax UnfinalizedFieldCount unfsTotal
+  => Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
-  => CircuitType StepField inputVal input
-  => CircuitType StepField outputVal output
-  => CircuitType StepField prevInputVal prevInput
-  => CircuitType StepField carrier carrierVar
-  => CheckedType StepField (KimchiConstraint StepField) carrierVar
+  => CircuitType Step.Field inputVal input
+  => CircuitType Step.Field outputVal output
+  => CircuitType Step.Field prevInputVal prevInput
+  => CircuitType Step.Field carrier carrierVar
+  => CheckedType Step.Field (KimchiConstraint Step.Field) carrierVar
   => StepSlotsCarrier
        prevsSpec
        StepIPARounds
        WrapIPARounds
-       (F StepField)
-       (Type2 (SplitField (F StepField) Boolean))
+       (F Step.Field)
+       (Type2 (SplitField (F Step.Field) Boolean))
        Boolean
        len
        carrier
@@ -2151,12 +2153,12 @@ stepSolveAndProve
        prevsSpec
        StepIPARounds
        WrapIPARounds
-       (FVar StepField)
-       (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
-       (BoolVar StepField)
+       (FVar Step.Field)
+       (Type2 (SplitField (FVar Step.Field) (BoolVar Step.Field)))
+       (BoolVar Step.Field)
        len
        carrierVar
-  => CheckedType StepField (KimchiConstraint StepField) input
+  => CheckedType Step.Field (KimchiConstraint Step.Field) input
   => Monad m
   => SlotStatementsCarrier prevsSpec valCarrier
   => StepProveContext len nd blueprints
@@ -2177,7 +2179,7 @@ stepSolveAndProve ctx rule compileResult advice = do
     sideloadedCarrier = adv.sideloadedVKs
 
     rawSolver
-      :: SolverT StepField (KimchiConstraint StepField)
+      :: SolverT Step.Field (KimchiConstraint Step.Field)
            ( StepProverT prevsSpec StepIPARounds WrapIPARounds inputVal
                len
                carrier
@@ -2186,10 +2188,10 @@ stepSolveAndProve ctx rule compileResult advice = do
                m
            )
            Unit
-           (Vector outputSize (F StepField))
+           (Vector outputSize (F Step.Field))
     rawSolver =
       makeSolver' (emptyProverState { debug = ctx.debug })
-        (Proxy @(KimchiConstraint StepField))
+        (Proxy @(KimchiConstraint Step.Field))
         ( \_ ->
             stepMain
               @prevsSpec
@@ -2223,7 +2225,7 @@ stepSolveAndProve ctx rule compileResult advice = do
           }
       when ctx.debug do
         let
-          csSatisfied = verifyProverIndex @StepField @VestaG
+          csSatisfied = verifyProverIndex @Step.Field @VestaG
             { proverIndex: compileResult.proverIndex, witness, publicInputs }
         when (not csSatisfied) do
           let
@@ -2245,7 +2247,7 @@ stepSolveAndProve ctx rule compileResult advice = do
           throwError (FailedAssertion "stepProve: stepMain did not capture publicOutput FVars (StepProverT.State.userPublicOutputFields was Nothing post-solve)")
         Just fieldVars -> do
           let
-            evalLookup :: Variable -> Either EvaluationError StepField
+            evalLookup :: Variable -> Either EvaluationError Step.Field
             evalLookup v =
               maybe (Left (MissingVariable v)) Right (Map.lookup v assignments)
           case traverse (CVar.eval evalLookup) fieldVars of
@@ -2265,9 +2267,9 @@ stepSolveAndProve ctx rule compileResult advice = do
                 )
                 ( Vector.toUnfoldable adv.kimchiPrevChallenges
                     :: Array
-                         { sgX :: WrapField
-                         , sgY :: WrapField
-                         , challenges :: Vector StepIPARounds StepField
+                         { sgX :: Wrap.Field
+                         , sgY :: Wrap.Field
+                         , challenges :: Vector StepIPARounds Step.Field
                          }
                 )
           }

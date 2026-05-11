@@ -12,7 +12,7 @@ import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.BulletReduce (BulletReduceInput)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
 import Pickles.IPA (bulletReduceCircuit)
-import Pickles.Types (StepField)
+import Pickles.Step.Types (Field)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -21,7 +21,7 @@ import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
-parseBulletReduceStepInput :: Vector 75 (FVar StepField) -> BulletReduceInput 15 StepField
+parseBulletReduceStepInput :: Vector 75 (FVar Field) -> BulletReduceInput 15 Field
 parseBulletReduceStepInput inputs =
   let
     at = unsafeIdx inputs
@@ -34,13 +34,13 @@ parseBulletReduceStepInput inputs =
 
 bulletReduceStepCircuit
   :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
-  => BulletReduceInput 15 StepField
-  -> Snarky (KimchiConstraint StepField) t m { p :: AffinePoint (FVar StepField), isInfinity :: BoolVar StepField }
-bulletReduceStepCircuit = bulletReduceCircuit @StepField @PallasG
+   . CircuitM Field (KimchiConstraint Field) t m
+  => BulletReduceInput 15 Field
+  -> Snarky (KimchiConstraint Field) t m { p :: AffinePoint (FVar Field), isInfinity :: BoolVar Field }
+bulletReduceStepCircuit = bulletReduceCircuit @Field @PallasG
 
-compileBulletReduceStep :: CompiledCircuit StepField
+compileBulletReduceStep :: CompiledCircuit Field
 compileBulletReduceStep =
-  compilePure (Proxy @(Vector 75 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compilePure (Proxy @(Vector 75 (F Field))) (Proxy @Unit) (Proxy @(KimchiConstraint Field))
     (\inputs -> void $ bulletReduceStepCircuit (parseBulletReduceStepInput inputs))
     Kimchi.initialState

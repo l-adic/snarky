@@ -30,7 +30,7 @@ import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Pickles.Types (StepField)
+import Pickles.Step.Types (Field)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, assertEqual_, const_, exists)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
@@ -46,7 +46,7 @@ import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
 type StepMainSideLoadedChildParams =
-  { blindingH :: AffinePoint (F StepField)
+  { blindingH :: AffinePoint (F Field)
   }
 
 -- | Application-specific advice for the side-loaded child rule.
@@ -58,11 +58,11 @@ class Monad m <= SideLoadedChildAdvice m
 
 instance (Monad m) => SideLoadedChildAdvice m
 
--- | Pallas generator's affine coordinates as an `F StepField` pair.
+-- | Pallas generator's affine coordinates as an `F Field` pair.
 -- | Mirrors OCaml `Backend.Tick.Inner_curve.(to_affine_exn one)` (the
 -- | Pallas generator). Coordinates are over `Pallas.BaseField =
--- | Vesta.ScalarField = StepField`.
-innerCurveGen :: { x :: F StepField, y :: F StepField }
+-- | Vesta.ScalarField = Field`.
+innerCurveGen :: { x :: F Field, y :: F Field }
 innerCurveGen =
   let
     { x, y } = unsafePartial $ fromJust $ toAffine (generator :: PallasG)
@@ -76,26 +76,26 @@ innerCurveGen =
 -- |   { previous_proof_statements = [] ; public_output = () ; ... }
 sideLoadedChildRule
   :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+   . CircuitM Field (KimchiConstraint Field) t m
   => SideLoadedChildAdvice m
-  => FVar StepField
-  -> Snarky (KimchiConstraint StepField) t m
+  => FVar Field
+  -> Snarky (KimchiConstraint Field) t m
        (RuleOutput 0 Unit Unit)
 sideLoadedChildRule appState = do
   -- dummy_constraints body — translation of OCaml
   -- dump_side_loaded_main.ml:49-73.
   -- (1) `let x = exists Field.typ ~compute:(fun () -> 3)`
-  x <- exists (pure (F (fromInt 3) :: F StepField))
+  x <- exists (pure (F (fromInt 3) :: F Field))
   -- (2) `let g = exists Step_main_inputs.Inner_curve.typ ~compute:(...)`
   --     Allocate as WeierstrassAffinePoint so `exists` triggers
   --     assert_on_curve (matching OCaml's Inner_curve.typ).
-  WeierstrassAffinePoint g :: WeierstrassAffinePoint PallasG (FVar StepField) <-
+  WeierstrassAffinePoint g :: WeierstrassAffinePoint PallasG (FVar Field) <-
     exists (pure (WeierstrassAffinePoint innerCurveGen))
   -- (3) `Scalar_challenge.to_field_checked' ~num_bits:16 (SC.create x)`.
   --     Emits a single EC_endoscalar (EndoMulScalar) gate over the
   --     16-bit scalar `x` and discards the (a, b, n) accumulators.
   --     `@rows = 1` (rows = 16 bits / 16 bits-per-row).
-  _ <- toFieldChecked' @1 (unsafeCoerce x :: SizedF 16 (FVar StepField))
+  _ <- toFieldChecked' @1 (unsafeCoerce x :: SizedF 16 (FVar Field))
   -- (4) `Step_main_inputs.Ops.scale_fast g ~num_bits:5 (Shifted_value x)` ×2.
   --     OCaml's `Step_main_inputs.Ops.scale_fast` is the Type1 `scale_fast`
   --     (`Plonk_curve_ops.Make(Step.Impl)(Step_main_inputs.Inner_curve).scale_fast`).
@@ -106,7 +106,7 @@ sideLoadedChildRule appState = do
   -- (5) `Step_verifier.Scalar_challenge.endo g ~num_bits:4 (SC.create x)`.
   --     Parameterized `endo @nBits @rows` (Mul 4 rows nBits) — for
   --     num_bits=4 use `@4 @1` (a single 4-bit chunk).
-  _ <- endo @4 @1 g (unsafeCoerce x :: SizedF 4 (FVar StepField))
+  _ <- endo @4 @1 g (unsafeCoerce x :: SizedF 4 (FVar Field))
 
   -- `Field.Assert.equal self Field.zero`
   assertEqual_ appState (const_ zero)
@@ -120,8 +120,8 @@ compileStepMainSideLoadedChild
   :: StepMainSideLoadedChildParams -> Effect StepArtifact
 compileStepMainSideLoadedChild params =
   mkStepArtifact <$>
-    compile (Proxy @Unit) (Proxy @(Vector.Vector 1 (F StepField)))
-      (Proxy @(KimchiConstraint StepField))
+    compile (Proxy @Unit) (Proxy @(Vector.Vector 1 (F Field)))
+      (Proxy @(KimchiConstraint Field))
       -- N=0, Input mode (input is the rule's `self` field). Output is
       -- Unit. Single-rule, no prevs ⇒ mpvMax=0, mpvPad=0,
       -- outputSize = mpvMax*32+1+mpvMax = 1 (just the msgForNextStep
@@ -132,7 +132,7 @@ compileStepMainSideLoadedChild params =
       -- (Mul/Add chain).
       ( \_ -> stepMain
           @Unit
-          @(F StepField)
+          @(F Field)
           @Unit
           @Unit
           @Unit

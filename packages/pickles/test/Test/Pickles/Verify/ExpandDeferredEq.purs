@@ -56,7 +56,8 @@ import Pickles.Prove.Compile
 import Pickles.Prove.Pure.Verify (ExpandDeferredInput, expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput)
 import Pickles.Step.Slots (Compiled, Slot)
-import Pickles.Types (StatementIO(..), StepField, StepIPARounds)
+import Pickles.Step.Types (Field)
+import Pickles.Types (StatementIO(..), StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Pickles.Wrap.Slots (NoSlots, Slots1)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -73,8 +74,8 @@ type NrrRules =
 
 type SimpleChainRules =
   RulesCons 1
-    (Tuple1 (StatementIO (F StepField) Unit))
-    (Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
+    (Tuple1 (StatementIO (F Field) Unit))
+    (Tuple1 (Slot Compiled 1 (StatementIO (F Field) Unit)))
     (Tuple1 SlotWrapKey)
     RulesNil
 
@@ -82,13 +83,13 @@ spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.Pure.Verify" do
   it "expandDeferredForVerify matches wrapComputeDeferredValues (NRR b0, n=0)" \_ -> do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
-    vestaSrs <- liftEffect $ createCRS @StepField
+    vestaSrs <- liftEffect $ createCRS @Field
 
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule unit
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F Field) @Unit nrrRule unit
 
     nrr <- liftEffect $ compileMulti
       @NrrRules
-      @(F StepField)
+      @(F Field)
       @Unit
       @NoSlots
       { srs: { vestaSrs, pallasSrs }, debug: false, wrapDomainOverride: Nothing }
@@ -117,14 +118,14 @@ spec = describe "Pickles.Prove.Pure.Verify" do
 
   it "expandDeferredForVerify matches wrapComputeDeferredValues (Simple_chain b0, n=1)" \_ -> do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
-    vestaSrs <- liftEffect $ createCRS @StepField
+    vestaSrs <- liftEffect $ createCRS @Field
 
-    chainEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) simpleChainRule (tuple1 Self)
+    chainEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F Field) simpleChainRule (tuple1 Self)
 
     chain <- liftEffect $ compileMulti
       @SimpleChainRules
       @Unit
-      @(F StepField)
+      @(F Field)
       @(Slots1 1)
       { srs: { vestaSrs, pallasSrs }, debug: false, wrapDomainOverride: Nothing }
       (tuple1 chainEntry)
@@ -160,7 +161,7 @@ assertExpandDeferredMatches
   :: forall @n
    . { dvProver :: WrapDeferredValuesOutput
      , dvInput :: WrapDeferredValuesInput n
-     , oldBulletproofChallenges :: Vector n (Vector StepIPARounds StepField)
+     , oldBulletproofChallenges :: Vector n (Vector StepIPARounds Field)
      }
   -> Aff Unit
 assertExpandDeferredMatches { dvProver, dvInput, oldBulletproofChallenges } = do
@@ -172,13 +173,13 @@ assertExpandDeferredMatches { dvProver, dvInput, oldBulletproofChallenges } = do
           , beta: dvProver.plonk.beta
           , gamma: dvProver.plonk.gamma
           , zeta: dvProver.plonk.zeta
-          } :: PlonkMinimal (F StepField)
+          } :: PlonkMinimal (F Field)
       , rawBulletproofChallenges:
           dvProver.bulletproofPrechallenges
-            :: Vector StepIPARounds (ScalarChallenge (F StepField))
-      , branchData: dvProver.branchData :: BranchData StepField Boolean
+            :: Vector StepIPARounds (ScalarChallenge (F Field))
+      , branchData: dvProver.branchData :: BranchData Field Boolean
       , spongeDigestBeforeEvaluations: dvProver.spongeDigestBeforeEvaluations
-      , allEvals: dvInput.allEvals :: AllEvals StepField
+      , allEvals: dvInput.allEvals :: AllEvals Field
       , pEval0Chunks: dvInput.pEval0Chunks
       , oldBulletproofChallenges
       , domainLog2: dvInput.domainLog2
@@ -189,7 +190,7 @@ assertExpandDeferredMatches { dvProver, dvInput, oldBulletproofChallenges } = do
       , vanishesOnZk: dvInput.vanishesOnZk
       , omegaForLagrange: dvInput.omegaForLagrange
       , endo: dvInput.endo
-      , linearizationPoly: dvInput.linearizationPoly :: LinearizationPoly StepField
+      , linearizationPoly: dvInput.linearizationPoly :: LinearizationPoly Field
       }
 
     dvVerify = expandDeferredForVerify verifyIn

@@ -57,8 +57,10 @@ import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, frSpongeChallengesPure)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Sponge (initialSponge)
-import Pickles.Types (PerProofUnfinalized(..), StepField, StepIPARounds, WrapField, WrapIPARounds)
+import Pickles.Step.Types as Step
+import Pickles.Types (PerProofUnfinalized(..), StepIPARounds, WrapIPARounds)
 import Pickles.Verify.Types (UnfinalizedProof)
+import Pickles.Wrap.Types as Wrap
 import Prim.Int (class Add)
 import RandomOracle.Sponge as PureSponge
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
@@ -117,14 +119,14 @@ bitsRandomOracle s =
   in
     unsafePartial $ fromJust $ Vector.toVector @n (Array.take n (blake2s256Bits s))
 
-tock :: RoM WrapField
+tock :: RoM Wrap.Field
 tock = do
   ro <- get
   let next = ro.tockCounter + 1
   put $ ro { tockCounter = next }
   pure $ Curves.fromBigInt (bitsToBigInt (bitsRandomOracle @255 ("fq_" <> show next)))
 
-tick :: RoM StepField
+tick :: RoM Step.Field
 tick = do
   ro <- get
   let next = ro.tickCounter + 1
@@ -189,7 +191,7 @@ replicateChal = Vector.reverse <$> Vector.generateA @n (\_ -> chal)
 -------------------------------------------------------------------------------
 
 -- | OCaml `Dummy.evals : Tock.Field.t All_evals.t` (dummy.ml:6-21).
-type DummyEvals = AllEvals WrapField
+type DummyEvals = AllEvals Wrap.Field
 
 -- | OCaml `scalar_chal`/`chal` outputs share the plonk record layout
 -- | in both `Unfinalized.Constant.dummy` and `Proof.dummy.statement`.
@@ -206,9 +208,9 @@ type PlonkChals f =
 -- | `sponge_digest_before_evaluations`, and `plonk.perm/zetaToSrsLength/
 -- | zetaToDomainSize` are pure/derived and reconstructed at consumer level.
 type UnfinalizedConstantDummy =
-  { plonk :: PlonkChals WrapField
-  , combinedInnerProduct :: WrapField -- OCaml: deferred_values.combined_inner_product (raw tock)
-  , b :: WrapField -- OCaml: deferred_values.b (raw tock)
+  { plonk :: PlonkChals Wrap.Field
+  , combinedInnerProduct :: Wrap.Field -- OCaml: deferred_values.combined_inner_product (raw tock)
+  , b :: Wrap.Field -- OCaml: deferred_values.b (raw tock)
   }
 
 -- | OCaml `Proof.dummy : h Nat.t -> r Nat.t -> domain_log2:int -> h t`
@@ -217,10 +219,10 @@ type UnfinalizedConstantDummy =
 -- | `branch_data`, and `g0`-valued commitments are non-Ro and computed
 -- | at consumer level.
 type ProofDummy =
-  { plonk :: PlonkChals StepField
-  , z1 :: WrapField -- OCaml: proof.openings.proof.z_1 (tock)
-  , z2 :: WrapField -- OCaml: proof.openings.proof.z_2 (tock)
-  , prevEvals :: AllEvals StepField
+  { plonk :: PlonkChals Step.Field
+  , z1 :: Wrap.Field -- OCaml: proof.openings.proof.z_1 (tock)
+  , z2 :: Wrap.Field -- OCaml: proof.openings.proof.z_2 (tock)
+  , prevEvals :: AllEvals Step.Field
   }
 
 -- | 89 tocks, matching OCaml `dummy.ml:7-21`:
@@ -238,13 +240,13 @@ type ProofDummy =
 dummyEvals :: RoM DummyEvals
 dummyEvals =
   let
-    pointEval :: RoM (PointEval WrapField)
+    pointEval :: RoM (PointEval Wrap.Field)
     pointEval = do
       oz <- tock -- right tuple element first (OCaml RTL)
       z <- tock
       pure { zeta: z, omegaTimesZeta: oz }
 
-    pointEvalVec :: forall @n. Reflectable n Int => RoM (Vector n (PointEval WrapField))
+    pointEvalVec :: forall @n. Reflectable n Int => RoM (Vector n (PointEval Wrap.Field))
     pointEvalVec = do
       v <- Vector.generateA (const pointEval)
       pure (Vector.reverse v)
@@ -321,16 +323,16 @@ proofDummy = do
 
 -- | Internal: 89 ticks in the same RTL Evals record layout as
 -- | `dummyEvals`. Extracted for clarity.
-proofDummyPrevEvals :: RoM (AllEvals StepField)
+proofDummyPrevEvals :: RoM (AllEvals Step.Field)
 proofDummyPrevEvals =
   let
-    pointEval :: RoM (PointEval StepField)
+    pointEval :: RoM (PointEval Step.Field)
     pointEval = do
       oz <- tick
       z <- tick
       pure { zeta: z, omegaTimesZeta: oz }
 
-    pointEvalVec :: forall @n. Reflectable n Int => RoM (Vector n (PointEval StepField))
+    pointEvalVec :: forall @n. Reflectable n Int => RoM (Vector n (PointEval Step.Field))
     pointEvalVec = do
       v <- Vector.generateA (const pointEval)
       pure (Vector.reverse v)
@@ -355,20 +357,20 @@ proofDummyPrevEvals =
 
 -- | 15 chals — OCaml `Dummy.Ipa.Wrap.challenges` (dummy.ml:28-33),
 -- | eager module init.
-dummyIpaWrapChallenges :: RoM (Vector WrapIPARounds (SizedF 128 WrapField))
+dummyIpaWrapChallenges :: RoM (Vector WrapIPARounds (SizedF 128 Wrap.Field))
 dummyIpaWrapChallenges = replicateChal @WrapIPARounds
 
 -- | 16 chals — OCaml `Dummy.Ipa.Step.challenges` (dummy.ml:44-48),
 -- | eager module init.
-dummyIpaStepChallenges :: RoM (Vector StepIPARounds (SizedF 128 StepField))
+dummyIpaStepChallenges :: RoM (Vector StepIPARounds (SizedF 128 Step.Field))
 dummyIpaStepChallenges = replicateChal @StepIPARounds
 
 -- | Composed base-case dummies. A compile threads its own `Ro` and
 -- | calls `computeBaseCaseDummies` to obtain everything needed to pad
 -- | base-case slots with Ro-derived values.
 type BaseCaseDummies =
-  { ipaWrapChallenges :: Vector WrapIPARounds (SizedF 128 WrapField)
-  , ipaStepChallenges :: Vector StepIPARounds (SizedF 128 StepField)
+  { ipaWrapChallenges :: Vector WrapIPARounds (SizedF 128 Wrap.Field)
+  , ipaStepChallenges :: Vector StepIPARounds (SizedF 128 Step.Field)
   , dummyEvals :: DummyEvals
   , unfinalizedConstantDummy :: UnfinalizedConstantDummy
   , proofDummy :: ProofDummy
@@ -431,32 +433,32 @@ computeBaseCaseDummies cfg = do
 type DummySgValues =
   { ipa ::
       { wrap ::
-          { challengesRaw :: Vector WrapIPARounds (SizedF 128 WrapField)
-          , challengesExpanded :: Vector WrapIPARounds WrapField
-          , sg :: AffinePoint StepField
+          { challengesRaw :: Vector WrapIPARounds (SizedF 128 Wrap.Field)
+          , challengesExpanded :: Vector WrapIPARounds Wrap.Field
+          , sg :: AffinePoint Step.Field
           }
       , step ::
-          { challengesRaw :: Vector StepIPARounds (SizedF 128 StepField)
-          , challengesExpanded :: Vector StepIPARounds StepField
-          , sg :: AffinePoint WrapField
+          { challengesRaw :: Vector StepIPARounds (SizedF 128 Step.Field)
+          , challengesExpanded :: Vector StepIPARounds Step.Field
+          , sg :: AffinePoint Wrap.Field
           }
       }
   , unfinalized ::
-      { alphaRaw :: SizedF 128 WrapField
-      , betaRaw :: SizedF 128 WrapField
-      , gammaRaw :: SizedF 128 WrapField
-      , zetaRaw :: SizedF 128 WrapField
-      , xiRaw :: SizedF 128 WrapField
-      , zetaExpanded :: WrapField
-      , alphaExpanded :: WrapField
+      { alphaRaw :: SizedF 128 Wrap.Field
+      , betaRaw :: SizedF 128 Wrap.Field
+      , gammaRaw :: SizedF 128 Wrap.Field
+      , zetaRaw :: SizedF 128 Wrap.Field
+      , xiRaw :: SizedF 128 Wrap.Field
+      , zetaExpanded :: Wrap.Field
+      , alphaExpanded :: Wrap.Field
       , plonk ::
-          { perm :: Type2 (F WrapField)
-          , zetaToSrsLength :: Type2 (F WrapField)
-          , zetaToDomainSize :: Type2 (F WrapField)
+          { perm :: Type2 (F Wrap.Field)
+          , zetaToSrsLength :: Type2 (F Wrap.Field)
+          , zetaToDomainSize :: Type2 (F Wrap.Field)
           }
-      , combinedInnerProduct :: WrapField
-      , b :: WrapField
-      , spongeDigest :: WrapField
+      , combinedInnerProduct :: Wrap.Field
+      , b :: Wrap.Field
+      , spongeDigest :: Wrap.Field
       }
   }
 
@@ -504,7 +506,7 @@ computeDummySgValues bcd pallasSrs vestaSrs =
         , gammaRaw: u.plonk.gamma
         , zetaRaw: u.plonk.zeta
         , xiRaw: unsafePartial $ fromJust $ SizedF.fromField @128
-            (Curves.fromBigInt (BigInt.fromInt 1 + pow2 64) :: WrapField)
+            (Curves.fromBigInt (BigInt.fromInt 1 + pow2 64) :: Wrap.Field)
         , zetaExpanded: zetaFq
         , alphaExpanded: alphaFq
         , plonk:
@@ -525,10 +527,10 @@ computeDummySgValues bcd pallasSrs vestaSrs =
 -- | that only needs IPA challenges (e.g. wrap main's dummy challenge /
 -- | padding sponge states) doesn't have to thread `BaseCaseDummies`.
 dummyIpaChallenges
-  :: { wrapRaw :: Vector WrapIPARounds (SizedF 128 WrapField)
-     , wrapExpanded :: Vector WrapIPARounds WrapField
-     , stepRaw :: Vector StepIPARounds (SizedF 128 StepField)
-     , stepExpanded :: Vector StepIPARounds StepField
+  :: { wrapRaw :: Vector WrapIPARounds (SizedF 128 Wrap.Field)
+     , wrapExpanded :: Vector WrapIPARounds Wrap.Field
+     , stepRaw :: Vector StepIPARounds (SizedF 128 Step.Field)
+     , stepExpanded :: Vector StepIPARounds Step.Field
      }
 dummyIpaChallenges =
   let
@@ -543,7 +545,7 @@ dummyIpaChallenges =
 -- | `Unfinalized.Constant.dummy` (unfinalized.ml:25-106).
 wrapDummyUnfinalizedProof
   :: BaseCaseDummies
-  -> UnfinalizedProof WrapIPARounds (F WrapField) (Type2 (F WrapField)) Boolean
+  -> UnfinalizedProof WrapIPARounds (F Wrap.Field) (Type2 (F Wrap.Field)) Boolean
 wrapDummyUnfinalizedProof bcd =
   let
     u = bcd.unfinalizedConstantDummy
@@ -551,14 +553,14 @@ wrapDummyUnfinalizedProof bcd =
     Curves.EndoScalar wEndo = (Curves.endoScalar :: Curves.EndoScalar Pallas.ScalarField)
 
     alphaExpanded = toFieldPure u.plonk.alpha wEndo
-    betaExpanded = SizedF.toField u.plonk.beta :: WrapField
-    gammaExpanded = SizedF.toField u.plonk.gamma :: WrapField
+    betaExpanded = SizedF.toField u.plonk.beta :: Wrap.Field
+    gammaExpanded = SizedF.toField u.plonk.gamma :: Wrap.Field
     zetaExpanded = toFieldPure u.plonk.zeta wEndo
 
     -- wrap_domains ~proofs_verified:2 = Pow_2_roots_of_unity 15
     wrapDomainLog2 = 15
     zkRows = 3
-    omega = (domainGenerator wrapDomainLog2 :: WrapField)
+    omega = (domainGenerator wrapDomainLog2 :: Wrap.Field)
     n = pow2 wrapDomainLog2
     zetaToNMinus1 = Curves.pow zetaExpanded n - one
     omegaM1 = recip omega
@@ -571,7 +573,7 @@ wrapDummyUnfinalizedProof bcd =
       { w: map _.zeta (Vector.take @7 evals.witnessEvals)
       , sigma: map _.zeta evals.sigmaEvals
       , z: evals.zEvals
-      , shifts: (domainShifts wrapDomainLog2 :: Vector 7 WrapField)
+      , shifts: (domainShifts wrapDomainLog2 :: Vector 7 Wrap.Field)
       , alpha: alphaExpanded
       , beta: betaExpanded
       , gamma: gammaExpanded
@@ -591,9 +593,9 @@ wrapDummyUnfinalizedProof bcd =
           + pow2 192
       )
 
-    xi :: SizedF 128 (F WrapField)
+    xi :: SizedF 128 (F Wrap.Field)
     xi = SizedF.wrapF $ unsafePartial $ fromJust $ SizedF.fromField @128
-      (Curves.fromBigInt (BigInt.fromInt 1 + pow2 64) :: WrapField)
+      (Curves.fromBigInt (BigInt.fromInt 1 + pow2 64) :: Wrap.Field)
   in
     { deferredValues:
         { plonk:
@@ -622,8 +624,8 @@ mkDummyPerProofUnfinalized
   :: BaseCaseDummies
   -> PerProofUnfinalized
        WrapIPARounds
-       (Type2 (SplitField (F StepField) Boolean))
-       (F StepField)
+       (Type2 (SplitField (F Step.Field) Boolean))
+       (F Step.Field)
        Boolean
 mkDummyPerProofUnfinalized bcd =
   let
@@ -631,13 +633,13 @@ mkDummyPerProofUnfinalized bcd =
     dvDu = du.deferredValues
     pDu = dvDu.plonk
 
-    t2toT2sf :: Type2 (F WrapField) -> Type2 (SplitField (F StepField) Boolean)
-    t2toT2sf t = toShifted (fromShifted t :: F WrapField)
+    t2toT2sf :: Type2 (F Wrap.Field) -> Type2 (SplitField (F Step.Field) Boolean)
+    t2toT2sf t = toShifted (fromShifted t :: F Wrap.Field)
 
-    chalToStep :: SizedF 128 (F WrapField) -> SizedF 128 (F StepField)
+    chalToStep :: SizedF 128 (F Wrap.Field) -> SizedF 128 (F Step.Field)
     chalToStep s = SizedF.wrapF (coerceViaBits (SizedF.unwrapF s))
 
-    digestStep :: F StepField
+    digestStep :: F Step.Field
     digestStep =
       let
         F digestWrap = du.spongeDigestBeforeEvaluations
@@ -674,11 +676,11 @@ mkDummyPerProofUnfinalized bcd =
 stepDummyUnfinalizedProof
   :: forall @n d sf
    . Reflectable n Int
-  => Shifted (F StepField) sf
+  => Shifted (F Step.Field) sf
   => BaseCaseDummies
   -> { domainLog2 :: Int }
-  -> Vector d (SizedF 128 (F StepField))
-  -> UnfinalizedProof d (F StepField) sf Boolean
+  -> Vector d (SizedF 128 (F Step.Field))
+  -> UnfinalizedProof d (F Step.Field) sf Boolean
 stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
   let
     mostRecentWidth = reflectType (Proxy @n)
@@ -687,11 +689,11 @@ stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
     Curves.EndoScalar stepEndoScalar = (Curves.endoScalar :: Curves.EndoScalar Vesta.ScalarField)
 
     alphaExpanded = toFieldPure p.alpha stepEndoScalar
-    betaExpanded = SizedF.toField p.beta :: StepField
-    gammaExpanded = SizedF.toField p.gamma :: StepField
+    betaExpanded = SizedF.toField p.beta :: Step.Field
+    gammaExpanded = SizedF.toField p.gamma :: Step.Field
     zetaExpanded = toFieldPure p.zeta stepEndoScalar
     zkRows = 3
-    omega = (domainGenerator domainLog2 :: StepField)
+    omega = (domainGenerator domainLog2 :: Step.Field)
     n = pow2 domainLog2
     zetaw = zetaExpanded * omega
     zetaToNMinus1 = Curves.pow zetaExpanded n - one
@@ -701,19 +703,19 @@ stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
     zkPoly = (zetaExpanded - omegaM1) * (zetaExpanded - omegaM2) * (zetaExpanded - omegaM3)
     omegaToMinusZkRows = Curves.pow omega (n - BigInt.fromInt zkRows)
 
-    expandedBpChals :: Vector StepIPARounds StepField
+    expandedBpChals :: Vector StepIPARounds Step.Field
     expandedBpChals = map (\c -> toFieldPure c stepEndoScalar) (map coerceViaBits bcd.ipaStepChallenges)
 
-    challengesDigest :: StepField
+    challengesDigest :: Step.Field
     challengesDigest =
       let
-        sponge0 = initialSponge :: PureSponge.Sponge StepField
+        sponge0 = initialSponge :: PureSponge.Sponge Step.Field
         absorbOneCopy s = foldl (\s' c -> PureSponge.absorb c s') s expandedBpChals
         spongeN = Array.foldl (\s _ -> absorbOneCopy s) sponge0 (Array.replicate mostRecentWidth unit)
       in
         (PureSponge.squeeze spongeN).result
 
-    frInput :: FrSpongeInput StepField
+    frInput :: FrSpongeInput Step.Field
     frInput =
       { fqDigest: zero
       , prevChallengeDigest: challengesDigest
@@ -732,7 +734,7 @@ stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
       { w: map _.zeta (Vector.take @7 evals.witnessEvals)
       , sigma: map _.zeta evals.sigmaEvals
       , z: evals.zEvals
-      , shifts: (domainShifts domainLog2 :: Vector 7 StepField)
+      , shifts: (domainShifts domainLog2 :: Vector 7 Step.Field)
       , alpha: alphaExpanded
       , beta: betaExpanded
       , gamma: gammaExpanded
@@ -744,7 +746,7 @@ stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
     perm = permScalar permInput
 
     permContrib = permContribution permInput
-    vanishesOnZk = one :: StepField
+    vanishesOnZk = one :: Step.Field
     lagrangeFalse0 = unnormalizedLagrangeBasis { domainLog2, zkRows: 0, offset: 0, pt: zetaExpanded }
     lagrangeTrue1 = unnormalizedLagrangeBasis { domainLog2, zkRows, offset: -1, pt: zetaExpanded }
     evalPoint = buildEvalPoint
@@ -770,10 +772,10 @@ stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
     -- the Horner-fold degenerates to the value itself.
     ftEval0Value = permContrib - evals.publicEvals.zeta - gateConstraints
 
-    ftPointEval :: PointEval StepField
+    ftPointEval :: PointEval Step.Field
     ftPointEval = { zeta: ftEval0Value, omegaTimesZeta: evals.ftEval1 }
 
-    allEvals45 :: Vector 45 (PointEval StepField)
+    allEvals45 :: Vector 45 (PointEval Step.Field)
     allEvals45 =
       (evals.publicEvals :< ftPointEval :< evals.zEvals :< Vector.nil)
         `Vector.append` evals.indexEvals
@@ -781,7 +783,7 @@ stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
         `Vector.append` evals.coeffEvals
         `Vector.append` evals.sigmaEvals
 
-    sgPointEval :: PointEval StepField
+    sgPointEval :: PointEval Step.Field
     sgPointEval = { zeta: bPoly expandedBpChals zetaExpanded, omegaTimesZeta: bPoly expandedBpChals zetaw }
     cipAllEvals = Array.replicate mostRecentWidth sgPointEval <> Array.fromFoldable allEvals45
     cipStep { result, scale } ev =
@@ -813,7 +815,7 @@ stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
         , b: toShifted (F b)
         }
     , shouldFinalize: false
-    , spongeDigestBeforeEvaluations: F (zero :: StepField)
+    , spongeDigestBeforeEvaluations: F (zero :: Step.Field)
     }
 
 -- | OCaml `common.ml:25-29` — maps max_proofs_verified to the
@@ -829,8 +831,8 @@ wrapDomainLog2ForProofsVerified proofsVerified = case proofsVerified of
 -- | Internal
 -------------------------------------------------------------------------------
 
-wrapEndo :: WrapField
+wrapEndo :: Wrap.Field
 wrapEndo = let Curves.EndoScalar e = Curves.endoScalar @Pallas.BaseField @Pallas.ScalarField in e
 
-stepEndo :: StepField
+stepEndo :: Step.Field
 stepEndo = let Curves.EndoScalar e = Curves.endoScalar @Vesta.BaseField @Vesta.ScalarField in e

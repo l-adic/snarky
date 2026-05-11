@@ -9,8 +9,9 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
-import Pickles.Types (WrapField, WrapIPARounds)
+import Pickles.Types (WrapIPARounds)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofCircuit')
+import Pickles.Wrap.Types (Field)
 import RandomOracle.Sponge (Sponge) as RO
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertEq)
@@ -29,23 +30,23 @@ import Type.Proxy (Proxy(..))
 -- | Reference: mina/src/lib/pickles/wrap_hack.ml:119-142
 hashMessagesWrapCircuit
   :: forall t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
-  => Vector 33 (FVar WrapField)
-  -> Snarky (KimchiConstraint WrapField) t m Unit
+   . CircuitM Field (KimchiConstraint Field) t m
+  => Vector 33 (FVar Field)
+  -> Snarky (KimchiConstraint Field) t m Unit
 hashMessagesWrapCircuit inputs = do
   let
     at = unsafeIdx inputs
 
-    chals0 :: Vector WrapIPARounds (FVar WrapField)
+    chals0 :: Vector WrapIPARounds (FVar Field)
     chals0 = Vector.generate \j -> at (getFinite j)
 
-    chals1 :: Vector WrapIPARounds (FVar WrapField)
+    chals1 :: Vector WrapIPARounds (FVar Field)
     chals1 = Vector.generate \j -> at (15 + getFinite j)
 
     sg = { x: at 30, y: at 31 }
     claimed = at 32
 
-  digest <- evalSpongeM (initialSpongeCircuit :: RO.Sponge (FVar WrapField)) $
+  digest <- evalSpongeM (initialSpongeCircuit :: RO.Sponge (FVar Field)) $
     hashMessagesForNextWrapProofCircuit'
       { sg
       , allChallenges: chals0 :< chals1 :< Vector.nil
@@ -53,8 +54,8 @@ hashMessagesWrapCircuit inputs = do
 
   assertEq digest claimed
 
-compileHashMessagesWrap :: CompiledCircuit WrapField
+compileHashMessagesWrap :: CompiledCircuit Field
 compileHashMessagesWrap =
-  compilePure (Proxy @(Vector 33 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  compilePure (Proxy @(Vector 33 (F Field))) (Proxy @Unit) (Proxy @(KimchiConstraint Field))
     (\inputs -> hashMessagesWrapCircuit inputs)
     Kimchi.initialState

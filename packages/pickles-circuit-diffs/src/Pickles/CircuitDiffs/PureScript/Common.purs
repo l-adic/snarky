@@ -35,8 +35,9 @@ import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Prove.Step (extractWrapVKCommsAdvice)
 import Pickles.Prove.Wrap (extractStepVKComms, stepVkForCircuit)
-import Pickles.Types (StepField, WrapField)
+import Pickles.Step.Types as Step
 import Pickles.VerificationKey (StepVK, VerificationKey)
+import Pickles.Wrap.Types as Wrap
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges)
 import Snarky.Backend.Kimchi.Class (createProverIndex, createVerifierIndex)
@@ -79,21 +80,21 @@ asSizedF10 = unsafeCoerce
 -- | Dummy points
 -------------------------------------------------------------------------------
 
-dummyVestaPt :: AffinePoint (F WrapField)
+dummyVestaPt :: AffinePoint (F Wrap.Field)
 dummyVestaPt =
   let
     g = unsafePartial $ fromJust $ toAffine (generator :: VestaG)
   in
     { x: F g.x, y: F g.y }
 
-dummyPallasPt :: AffinePoint (F StepField)
+dummyPallasPt :: AffinePoint (F Step.Field)
 dummyPallasPt =
   let
     g = unsafePartial $ fromJust $ toAffine (generator :: PallasG)
   in
     { x: F g.x, y: F g.y }
 
-dummyWrapSg :: AffinePoint StepField
+dummyWrapSg :: AffinePoint Step.Field
 dummyWrapSg =
   { x: fromBigInt $ unsafePartial fromJust $ BigInt.fromString "8063668238751197448664615329057427953229339439010717262869116690340613895496"
   , y: fromBigInt $ unsafePartial fromJust $ BigInt.fromString "2694491010813221541025626495812026140144933943906714931997499229912601205355"
@@ -106,11 +107,11 @@ dummyWrapSg =
 domainLog2 :: Int
 domainLog2 = 16
 
-stepEndo :: StepField
-stepEndo = let EndoScalar e = endoScalar @Vesta.BaseField @StepField in e
+stepEndo :: Step.Field
+stepEndo = let EndoScalar e = endoScalar @Vesta.BaseField @Step.Field in e
 
-wrapEndo :: WrapField
-wrapEndo = let EndoScalar e = endoScalar @Pallas.BaseField @WrapField in e
+wrapEndo :: Wrap.Field
+wrapEndo = let EndoScalar e = endoScalar @Pallas.BaseField @Wrap.Field in e
 
 srsLengthLog2 :: Int
 srsLengthLog2 = 16
@@ -126,7 +127,7 @@ wrapSrsLengthLog2 = 15
 --------------------------------------------------------------------------------
 
 -- | Derive a step `VerifierIndex`'s commitments from a compiled step
--- | constraint system. Returns a `StepVK (FVar WrapField)` for use as
+-- | constraint system. Returns a `StepVK (FVar Wrap.Field)` for use as
 -- | the `stepKeys` field in `WrapMainConfig`.
 -- |
 -- | Mirrors `Pickles.Prove.Step.stepCompile`'s
@@ -138,29 +139,29 @@ deriveStepVKFromCompiled
   :: forall @len
    . Reflectable len Int
   => CRS VestaG
-  -> CompiledCircuit StepField
-  -> StepVK (FVar WrapField)
+  -> CompiledCircuit Step.Field
+  -> StepVK (FVar Wrap.Field)
 deriveStepVKFromCompiled vestaSrs builtState =
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
-    { constraintSystem } = makeConstraintSystemWithPrevChallenges @StepField
+    { constraintSystem } = makeConstraintSystemWithPrevChallenges @Step.Field
       { constraints: kimchiRows
       , publicInputs: builtState.publicInputs
       , unionFind: (un AuxState builtState.aux).wireState.unionFind
       , prevChallengesCount: reflectType (Proxy @len)
       }
 
-    endo :: StepField
-    endo = let EndoBase e = (endoBase :: EndoBase StepField) in e
-    proverIndex = createProverIndex @StepField @VestaG
+    endo :: Step.Field
+    endo = let EndoBase e = (endoBase :: EndoBase Step.Field) in e
+    proverIndex = createProverIndex @Step.Field @VestaG
       { endo, constraintSystem, crs: vestaSrs }
-    verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
+    verifierIndex = createVerifierIndex @Step.Field @VestaG proverIndex
   in
     stepVkForCircuit (extractStepVKComms verifierIndex)
 
 -- | Wrap-side analog of `deriveStepVKFromCompiled`. The wrap CS
--- | lives in `WrapField` over Pallas; commitments are Pallas points
--- | with coordinates in `Pallas.BaseField = StepField`, so the
+-- | lives in `Wrap.Field` over Pallas; commitments are Pallas points
+-- | with coordinates in `Pallas.BaseField = Step.Field`, so the
 -- | resulting VK is what a step circuit consumes when verifying the
 -- | wrap proof. Used as a per-slot known wrap key in
 -- | `perSlotVkBlueprints` (e.g. `VkBlueprintConst realNrrWrapVK` for
@@ -169,23 +170,23 @@ deriveWrapVKFromCompiled
   :: forall @len
    . Reflectable len Int
   => CRS PallasG
-  -> CompiledCircuit WrapField
-  -> VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
+  -> CompiledCircuit Wrap.Field
+  -> VerificationKey (WeierstrassAffinePoint PallasG (F Step.Field))
 deriveWrapVKFromCompiled pallasSrs builtState =
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
-    { constraintSystem } = makeConstraintSystemWithPrevChallenges @WrapField
+    { constraintSystem } = makeConstraintSystemWithPrevChallenges @Wrap.Field
       { constraints: kimchiRows
       , publicInputs: builtState.publicInputs
       , unionFind: (un AuxState builtState.aux).wireState.unionFind
       , prevChallengesCount: reflectType (Proxy @len)
       }
 
-    endo :: WrapField
-    endo = let EndoBase e = (endoBase :: EndoBase WrapField) in e
-    proverIndex = createProverIndex @WrapField @PallasG
+    endo :: Wrap.Field
+    endo = let EndoBase e = (endoBase :: EndoBase Wrap.Field) in e
+    proverIndex = createProverIndex @Wrap.Field @PallasG
       { endo, constraintSystem, crs: pallasSrs }
-    verifierIndex = createVerifierIndex @WrapField @PallasG proverIndex
+    verifierIndex = createVerifierIndex @Wrap.Field @PallasG proverIndex
   in
     extractWrapVKCommsAdvice verifierIndex
 
@@ -205,20 +206,20 @@ deriveWrapVKFromCompiled pallasSrs builtState =
 -------------------------------------------------------------------------------
 
 type StepArtifact =
-  { stepCs :: CompiledCircuit StepField
+  { stepCs :: CompiledCircuit Step.Field
   , stepDomainLog2 :: Int
   }
 
 type WrapArtifact =
-  { stepCs :: CompiledCircuit StepField
+  { stepCs :: CompiledCircuit Step.Field
   , stepDomainLog2 :: Int
-  , wrapCs :: CompiledCircuit WrapField
-  , wrapVk :: VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
+  , wrapCs :: CompiledCircuit Wrap.Field
+  , wrapVk :: VerificationKey (WeierstrassAffinePoint PallasG (F Step.Field))
   }
 
 -- | Construct a `StepArtifact` from a compiled step CS, deriving the
 -- | step domain log2 from the row count.
-mkStepArtifact :: CompiledCircuit StepField -> StepArtifact
+mkStepArtifact :: CompiledCircuit Step.Field -> StepArtifact
 mkStepArtifact cs =
   { stepCs: cs
   , stepDomainLog2: domainLog2OfCompiled cs
@@ -227,10 +228,10 @@ mkStepArtifact cs =
 -- | Round up the constraint count to the next power-of-2 log. Mirrors
 -- | OCaml's `Fix_domains.domains` row-count → log2 calculation
 -- | (`compile.ml`), which sets the kimchi prover-index domain size.
-domainLog2OfCompiled :: CompiledCircuit StepField -> Int
+domainLog2OfCompiled :: CompiledCircuit Step.Field -> Int
 domainLog2OfCompiled builtState =
   let
-    kimchiRows :: Array (KimchiRow StepField)
+    kimchiRows :: Array (KimchiRow Step.Field)
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
     n = Array.length kimchiRows
   in
@@ -253,6 +254,6 @@ domainLog2OfCompiled builtState =
 -- | and read only its row count. The placeholder doesn't drift because
 -- | it's never compared to anything.
 preComputeSelfStepDomainLog2
-  :: Effect (CompiledCircuit StepField) -> Effect Int
+  :: Effect (CompiledCircuit Step.Field) -> Effect Int
 preComputeSelfStepDomainLog2 shapeCompile =
   domainLog2OfCompiled <$> shapeCompile

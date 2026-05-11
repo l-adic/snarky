@@ -13,7 +13,7 @@ import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
 import Pickles.PackedStatement (PackedStepPublicInput, fromPackedTuple)
 import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), LagrangeBaseLookup, publicInputCommit)
-import Pickles.Types (WrapField)
+import Pickles.Wrap.Types (Field)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, SizedF, Snarky)
@@ -30,7 +30,7 @@ type XhatParams f =
   , blindingH :: AffinePoint (F f)
   }
 
-parseXhatInput :: Vector 34 (FVar WrapField) -> PackedStepPublicInput 1 15 (FVar WrapField) (BoolVar WrapField)
+parseXhatInput :: Vector 34 (FVar Field) -> PackedStepPublicInput 1 15 (FVar Field) (BoolVar Field)
 parseXhatInput inputs =
   let
     at = unsafeIdx inputs
@@ -49,9 +49,9 @@ parseXhatInput inputs =
             :< Vector.nil
         )
         ( (Vector.generate \j -> asSizedF128 (at (16 + getFinite j)))
-            :: Vector 15 (SizedF 128 (FVar WrapField))
+            :: Vector 15 (SizedF 128 (FVar Field))
         )
-        (coerce (at 31) :: BoolVar WrapField)
+        (coerce (at 31) :: BoolVar Field)
     stmtTuple =
       tuple3
         (perProofTuple :< Vector.nil)
@@ -62,11 +62,11 @@ parseXhatInput inputs =
 
 xhatCircuit
   :: forall pi t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
-  => PublicInputCommit pi WrapField
-  => XhatParams WrapField
+   . CircuitM Field (KimchiConstraint Field) t m
+  => PublicInputCommit pi Field
+  => XhatParams Field
   -> pi
-  -> Snarky (KimchiConstraint WrapField) t m (AffinePoint (FVar WrapField))
+  -> Snarky (KimchiConstraint Field) t m (AffinePoint (FVar Field))
 xhatCircuit { lagrangeAt, blindingH } publicInput =
   publicInputCommit
     { curveParams: curveParams (Proxy @VestaG)
@@ -76,8 +76,8 @@ xhatCircuit { lagrangeAt, blindingH } publicInput =
     }
     publicInput
 
-compileXhat :: XhatParams WrapField -> CompiledCircuit WrapField
+compileXhat :: XhatParams Field -> CompiledCircuit Field
 compileXhat srsData =
-  compilePure (Proxy @(Vector 34 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  compilePure (Proxy @(Vector 34 (F Field))) (Proxy @Unit) (Proxy @(KimchiConstraint Field))
     (\inputs -> void $ xhatCircuit srsData (parseXhatInput inputs))
     Kimchi.initialState

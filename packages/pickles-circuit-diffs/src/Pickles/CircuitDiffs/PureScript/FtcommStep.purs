@@ -15,7 +15,7 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
 import Pickles.FtComm (ftComm) as FtComm
 import Pickles.Step.OtherField as StepOtherField
-import Pickles.Types (StepField)
+import Pickles.Step.Types (Field)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, Snarky, const_)
@@ -34,7 +34,7 @@ type FtcommStepInput f =
   , zetaToDomainSize :: Type2 (SplitField (FVar f) (BoolVar f))
   }
 
-parseFtcommStepInput :: Vector 20 (FVar StepField) -> FtcommStepInput StepField
+parseFtcommStepInput :: Vector 20 (FVar Field) -> FtcommStepInput Field
 parseFtcommStepInput inputs =
   let
     at = unsafeIdx inputs
@@ -49,9 +49,9 @@ parseFtcommStepInput inputs =
 
 ftcommStepCircuit
   :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
-  => FtcommStepInput StepField
-  -> Snarky (KimchiConstraint StepField) t m (AffinePoint (FVar StepField))
+   . CircuitM Field (KimchiConstraint Field) t m
+  => FtcommStepInput Field
+  -> Snarky (KimchiConstraint Field) t m (AffinePoint (FVar Field))
 ftcommStepCircuit input =
   let
     g = unsafePartial $ fromJust $ toAffine (generator :: PallasG)
@@ -65,8 +65,8 @@ ftcommStepCircuit input =
       , zetaToDomainSize: input.zetaToDomainSize
       }
 
-compileFtcommStep :: CompiledCircuit StepField
+compileFtcommStep :: CompiledCircuit Field
 compileFtcommStep =
-  compilePure (Proxy @(Vector 20 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compilePure (Proxy @(Vector 20 (F Field))) (Proxy @Unit) (Proxy @(KimchiConstraint Field))
     (\inputs -> void $ ftcommStepCircuit (parseFtcommStepInput inputs))
     Kimchi.initialState

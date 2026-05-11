@@ -9,7 +9,7 @@ import Prelude
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
-import Pickles.Types (StepField)
+import Pickles.Step.Types (Field)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky)
 import Snarky.Circuit.Kimchi (groupMapCircuit, groupMapParams) as Kimchi
@@ -19,18 +19,18 @@ import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
-parseGroupMapStepInput :: Vector 1 (FVar StepField) -> FVar StepField
+parseGroupMapStepInput :: Vector 1 (FVar Field) -> FVar Field
 parseGroupMapStepInput = Vector.head
 
 groupMapStepCircuit
   :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
-  => FVar StepField
-  -> Snarky (KimchiConstraint StepField) t m (AffinePoint (FVar StepField))
+   . CircuitM Field (KimchiConstraint Field) t m
+  => FVar Field
+  -> Snarky (KimchiConstraint Field) t m (AffinePoint (FVar Field))
 groupMapStepCircuit = Kimchi.groupMapCircuit (Kimchi.groupMapParams (Proxy @PallasG))
 
-compileGroupMapStep :: CompiledCircuit StepField
+compileGroupMapStep :: CompiledCircuit Field
 compileGroupMapStep =
-  compilePure (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compilePure (Proxy @(Vector 1 (F Field))) (Proxy @Unit) (Proxy @(KimchiConstraint Field))
     (\inputs -> void $ groupMapStepCircuit (parseGroupMapStepInput inputs))
     Kimchi.initialState

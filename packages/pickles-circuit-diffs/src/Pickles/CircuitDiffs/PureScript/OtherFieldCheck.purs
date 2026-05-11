@@ -12,7 +12,7 @@ module Pickles.CircuitDiffs.PureScript.OtherFieldCheck
 import Prelude
 
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
-import Pickles.Types (StepField)
+import Pickles.Step.Types (Field)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, F, Snarky, exists)
 import Snarky.Circuit.Kimchi (SplitField, Type2)
@@ -27,18 +27,18 @@ import Unsafe.Coerce (unsafeCoerce)
 -- |   2. Forbidden shifted value check (4 values for Pallas→Vesta)
 otherFieldCheckCircuit
   :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+   . CircuitM Field (KimchiConstraint Field) t m
   => Unit
-  -> Snarky (KimchiConstraint StepField) t m Unit
+  -> Snarky (KimchiConstraint Field) t m Unit
 otherFieldCheckCircuit _ = do
   let
     dummy :: forall a b. Applicative b => b a
     dummy = pure (unsafeCoerce unit)
-  _ <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))
+  _ <- exists (dummy :: _ (Type2 (SplitField (F Field) Boolean)))
   pure unit
 
-compileOtherFieldCheck :: CompiledCircuit StepField
+compileOtherFieldCheck :: CompiledCircuit Field
 compileOtherFieldCheck =
-  compilePure (Proxy @Unit) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compilePure (Proxy @Unit) (Proxy @Unit) (Proxy @(KimchiConstraint Field))
     otherFieldCheckCircuit
     Kimchi.initialState

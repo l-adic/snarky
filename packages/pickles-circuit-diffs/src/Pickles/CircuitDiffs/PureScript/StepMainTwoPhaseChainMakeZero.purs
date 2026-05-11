@@ -26,7 +26,7 @@ import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Pickles.Types (StepField)
+import Pickles.Step.Types (Field)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertEqual_, const_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -35,16 +35,16 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type StepMainTwoPhaseChainMakeZeroParams =
-  { lagrangeAt :: LagrangeBaseLookup StepField
-  , blindingH :: AffinePoint (F StepField)
+  { lagrangeAt :: LagrangeBaseLookup Field
+  , blindingH :: AffinePoint (F Field)
   }
 
 -- | `make_zero` rule: asserts `self_v = 0`. No prevs.
 makeZeroRule
   :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
-  => FVar StepField
-  -> Snarky (KimchiConstraint StepField) t m
+   . CircuitM Field (KimchiConstraint Field) t m
+  => FVar Field
+  -> Snarky (KimchiConstraint Field) t m
        (RuleOutput 0 Unit Unit)
 makeZeroRule appState = do
   assertEqual_ appState (const_ zero)
@@ -62,10 +62,10 @@ compileStepMainTwoPhaseChainMakeZero params =
   -- size = 1*32 + 1 + 1 = 34. `stepMain` derives the front-padding
   -- dummy from `len`.
   mkStepArtifact <$>
-    compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
+    compile (Proxy @Unit) (Proxy @(Vector 34 (F Field))) (Proxy @(KimchiConstraint Field))
       ( \_ -> stepMain
           @Unit
-          @(F StepField)
+          @(F Field)
           @Unit
           @Unit
           @Unit

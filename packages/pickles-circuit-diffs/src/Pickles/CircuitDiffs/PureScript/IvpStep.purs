@@ -18,7 +18,7 @@ import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF10, asSi
 import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.OtherField as StepOtherField
-import Pickles.Types (StepField)
+import Pickles.Step.Types (Field)
 import Pickles.Verify (incrementallyVerifyProof)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
@@ -33,51 +33,51 @@ import Type.Proxy (Proxy(..))
 
 type IvpStepPublicInput =
   Tuple
-    (Vector 5 (FVar StepField))
-    ( Tuple (Vector 2 (SizedF 128 (FVar StepField)))
-        ( Tuple (Vector 3 (SizedF 128 (FVar StepField)))
-            ( Tuple (Vector 3 (FVar StepField))
-                (Tuple (Vector 16 (SizedF 128 (FVar StepField))) (SizedF 10 (FVar StepField)))
+    (Vector 5 (FVar Field))
+    ( Tuple (Vector 2 (SizedF 128 (FVar Field)))
+        ( Tuple (Vector 3 (SizedF 128 (FVar Field)))
+            ( Tuple (Vector 3 (FVar Field))
+                (Tuple (Vector 16 (SizedF 128 (FVar Field))) (SizedF 10 (FVar Field)))
             )
         )
     )
 
 type IvpStepParams =
-  { lagrangeAt :: LagrangeBaseLookup StepField
-  , blindingH :: AffinePoint (F StepField)
+  { lagrangeAt :: LagrangeBaseLookup Field
+  , blindingH :: AffinePoint (F Field)
   }
 
 type IvpStepInput pi =
   { publicInput :: pi
   , deferredValues ::
       { plonk ::
-          { alpha :: SizedF 128 (FVar StepField)
-          , beta :: SizedF 128 (FVar StepField)
-          , gamma :: SizedF 128 (FVar StepField)
-          , zeta :: SizedF 128 (FVar StepField)
-          , perm :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
-          , zetaToSrsLength :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
-          , zetaToDomainSize :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
+          { alpha :: SizedF 128 (FVar Field)
+          , beta :: SizedF 128 (FVar Field)
+          , gamma :: SizedF 128 (FVar Field)
+          , zeta :: SizedF 128 (FVar Field)
+          , perm :: Type2 (SplitField (FVar Field) (BoolVar Field))
+          , zetaToSrsLength :: Type2 (SplitField (FVar Field) (BoolVar Field))
+          , zetaToDomainSize :: Type2 (SplitField (FVar Field) (BoolVar Field))
           }
-      , combinedInnerProduct :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
-      , b :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
-      , xi :: SizedF 128 (FVar StepField)
-      , bulletproofChallenges :: Vector 15 (SizedF 128 (FVar StepField))
+      , combinedInnerProduct :: Type2 (SplitField (FVar Field) (BoolVar Field))
+      , b :: Type2 (SplitField (FVar Field) (BoolVar Field))
+      , xi :: SizedF 128 (FVar Field)
+      , bulletproofChallenges :: Vector 15 (SizedF 128 (FVar Field))
       }
-  , wComm :: Vector 15 (AffinePoint (FVar StepField))
-  , zComm :: AffinePoint (FVar StepField)
-  , tComm :: Vector 7 (AffinePoint (FVar StepField))
+  , wComm :: Vector 15 (AffinePoint (FVar Field))
+  , zComm :: AffinePoint (FVar Field)
+  , tComm :: Vector 7 (AffinePoint (FVar Field))
   , opening ::
-      { delta :: AffinePoint (FVar StepField)
-      , sg :: AffinePoint (FVar StepField)
-      , lr :: Vector 15 { l :: AffinePoint (FVar StepField), r :: AffinePoint (FVar StepField) }
-      , z1 :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
-      , z2 :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
+      { delta :: AffinePoint (FVar Field)
+      , sg :: AffinePoint (FVar Field)
+      , lr :: Vector 15 { l :: AffinePoint (FVar Field), r :: AffinePoint (FVar Field) }
+      , z1 :: Type2 (SplitField (FVar Field) (BoolVar Field))
+      , z2 :: Type2 (SplitField (FVar Field) (BoolVar Field))
       }
-  , claimedDigest :: FVar StepField
+  , claimedDigest :: FVar Field
   }
 
-parseIvpStepInput :: Vector 175 (FVar StepField) -> IvpStepInput IvpStepPublicInput
+parseIvpStepInput :: Vector 175 (FVar Field) -> IvpStepInput IvpStepPublicInput
 parseIvpStepInput inputs =
   let
     at = unsafeIdx inputs
@@ -86,15 +86,15 @@ parseIvpStepInput inputs =
 
     publicInput =
       Tuple
-        ((Vector.generate \j -> at (getFinite j)) :: Vector 5 (FVar StepField))
+        ((Vector.generate \j -> at (getFinite j)) :: Vector 5 (FVar Field))
         ( Tuple
-            ((Vector.generate \j -> asSizedF128 (at (5 + getFinite j))) :: Vector 2 (SizedF 128 (FVar StepField)))
+            ((Vector.generate \j -> asSizedF128 (at (5 + getFinite j))) :: Vector 2 (SizedF 128 (FVar Field)))
             ( Tuple
-                ((Vector.generate \j -> asSizedF128 (at (7 + getFinite j))) :: Vector 3 (SizedF 128 (FVar StepField)))
+                ((Vector.generate \j -> asSizedF128 (at (7 + getFinite j))) :: Vector 3 (SizedF 128 (FVar Field)))
                 ( Tuple
-                    ((Vector.generate \j -> at (10 + getFinite j)) :: Vector 3 (FVar StepField))
+                    ((Vector.generate \j -> at (10 + getFinite j)) :: Vector 3 (FVar Field))
                     ( Tuple
-                        ((Vector.generate \j -> asSizedF128 (at (13 + getFinite j))) :: Vector 16 (SizedF 128 (FVar StepField)))
+                        ((Vector.generate \j -> asSizedF128 (at (13 + getFinite j))) :: Vector 16 (SizedF 128 (FVar Field)))
                         (asSizedF10 (at 29))
                     )
                 )
@@ -135,14 +135,14 @@ parseIvpStepInput inputs =
 
 ivpStepCircuit
   :: forall pi t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
-  => PublicInputCommit pi StepField
+   . CircuitM Field (KimchiConstraint Field) t m
+  => PublicInputCommit pi Field
   => IvpStepParams
   -> IvpStepInput pi
-  -> Snarky (KimchiConstraint StepField) t m Unit
+  -> Snarky (KimchiConstraint Field) t m Unit
 ivpStepCircuit { lagrangeAt, blindingH } input = do
   let
-    constDummySg :: AffinePoint (FVar StepField)
+    constDummySg :: AffinePoint (FVar Field)
     constDummySg = { x: const_ dummyWrapSg.x, y: const_ dummyWrapSg.y }
 
     constDummyPt = let { x: F x', y: F y' } = dummyPallasPt in { x: const_ x', y: const_ y' }
@@ -179,8 +179,8 @@ ivpStepCircuit { lagrangeAt, blindingH } input = do
   for_ (Vector.zip input.deferredValues.bulletproofChallenges output.bulletproofChallenges) \(Tuple c1 c2) ->
     assertEq c1 c2
 
-compileIvpStep :: IvpStepParams -> CompiledCircuit StepField
+compileIvpStep :: IvpStepParams -> CompiledCircuit Field
 compileIvpStep srsData =
-  compilePure (Proxy @(Vector 175 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compilePure (Proxy @(Vector 175 (F Field))) (Proxy @Unit) (Proxy @(KimchiConstraint Field))
     (\inputs -> ivpStepCircuit srsData (parseIvpStepInput inputs))
     Kimchi.initialState

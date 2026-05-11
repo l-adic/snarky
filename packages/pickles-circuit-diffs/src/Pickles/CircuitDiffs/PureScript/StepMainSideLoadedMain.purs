@@ -30,7 +30,8 @@ import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Sideload.VerificationKey (VerificationKey, compileDummy) as SLVK
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Slots (SideLoaded, Slot)
-import Pickles.Types (StatementIO, StepField)
+import Pickles.Step.Types (Field)
+import Pickles.Types (StatementIO)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertAny_, const_, equals_, exists, true_)
@@ -49,10 +50,10 @@ import Type.Proxy (Proxy(..))
 -- |   `actualWrapDomainSize ∈ {N0, N1, N2}`). `Step.Main`
 -- |   one-hot-muxes among them at runtime.
 type StepMainSideLoadedMainParams =
-  { lagrangeAt :: LagrangeBaseLookup StepField
+  { lagrangeAt :: LagrangeBaseLookup Field
   , sideloadedPerDomainLagrangeAt ::
-      Vector 3 (Int -> AffinePoint (F StepField))
-  , blindingH :: AffinePoint (F StepField)
+      Vector 3 (Int -> AffinePoint (F Field))
+  , blindingH :: AffinePoint (F Field)
   }
 
 -- | Application-specific advice for the side-loaded main rule. Same
@@ -60,7 +61,7 @@ type StepMainSideLoadedMainParams =
 -- | previous-proof public-input field. The side-loaded distinction
 -- | shows up in the spec / vkCarrier, not the rule body.
 class Monad m <= SideLoadedMainAdvice m where
-  getSideLoadedMainPrev :: Unit -> m (F StepField)
+  getSideLoadedMainPrev :: Unit -> m (F Field)
 
 -- | Compilation instance: throws if evaluated. `exists` in
 -- | `CircuitBuilderT` discards the `AsProverT` so the throw never
@@ -73,11 +74,11 @@ instance SideLoadedMainAdvice Effect where
 -- | `selfCorrect = (1 + prev == self) || isBaseCase`.
 sideLoadedMainRule
   :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+   . CircuitM Field (KimchiConstraint Field) t m
   => SideLoadedMainAdvice m
-  => FVar StepField
-  -> Snarky (KimchiConstraint StepField) t m
-       (RuleOutput 1 (FVar StepField) Unit)
+  => FVar Field
+  -> Snarky (KimchiConstraint Field) t m
+       (RuleOutput 1 (FVar Field) Unit)
 sideLoadedMainRule appState = do
   prev <- exists $ lift $ getSideLoadedMainPrev unit
   isBaseCase <- equals_ (const_ zero) appState
@@ -97,21 +98,21 @@ compileStepMainSideLoadedMain
   :: StepMainSideLoadedMainParams -> Effect StepArtifact
 compileStepMainSideLoadedMain params =
   mkStepArtifact <$>
-    compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField)))
-      (Proxy @(KimchiConstraint StepField))
+    compile (Proxy @Unit) (Proxy @(Vector 34 (F Field)))
+      (Proxy @(KimchiConstraint Field))
       -- Parent N=1, pi=34 (1 input + 33 output = 1*32 unfp + 1 digest
       -- + 1 msgs_wrap). The spec sizes the slot at the side-loaded
       -- tag's compile-time upper bound (`N2`). vkCarrier =
       -- `VerificationKey /\ Unit` (from `SideloadedVKsCarrier`).
       ( \_ -> stepMain
-          @(Tuple1 (Slot SideLoaded 2 (StatementIO (F StepField) Unit)))
-          @(F StepField)
+          @(Tuple1 (Slot SideLoaded 2 (StatementIO (F Field) Unit)))
+          @(F Field)
           @Unit
-          @(F StepField)
-          @(Tuple1 (StatementIO (F StepField) Unit))
+          @(F Field)
+          @(Tuple1 (StatementIO (F Field) Unit))
           @1
           @1
-          @(SLVK.VerificationKey (F StepField) Boolean)
+          @(SLVK.VerificationKey (F Field) Boolean)
           sideLoadedMainRule
           -- This circuit-diff harness builds `perSlotLagrangeAt` /
           -- `perSlotVkBlueprints` / `perSlotFopDomainLog2s` inline rather

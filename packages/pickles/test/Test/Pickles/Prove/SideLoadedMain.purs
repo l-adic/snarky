@@ -43,7 +43,8 @@ import Pickles.Prove.Step (StepRule)
 import Pickles.Sideload.Bundle (Bundle, mkBundle) as Sideload
 import Pickles.Step.Advice (getPrevAppStates)
 import Pickles.Step.Slots (SideLoaded, Slot)
-import Pickles.Types (StatementIO(..), StepField)
+import Pickles.Step.Types (Field)
+import Pickles.Types (StatementIO(..))
 import Pickles.Wrap.Slots (NoSlots, Slots1)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -61,9 +62,9 @@ import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Unsafe.Coerce (unsafeCoerce)
 
--- | Pallas generator's affine coordinates as `F StepField` (=
+-- | Pallas generator's affine coordinates as `F Field` (=
 -- | `Pallas.BaseField` = `Vesta.ScalarField`).
-innerCurveGen :: { x :: F StepField, y :: F StepField }
+innerCurveGen :: { x :: F Field, y :: F Field }
 innerCurveGen =
   let
     { x, y } = unsafePartial $ fromJust $ toAffine (generator :: PallasG)
@@ -77,23 +78,23 @@ innerCurveGen =
 noRecursionInputRule
   :: StepRule 0
        Unit
-       (F StepField)
-       (FVar StepField)
+       (F Field)
+       (FVar Field)
        Unit
        Unit
-       (F StepField)
-       (FVar StepField)
+       (F Field)
+       (FVar Field)
 noRecursionInputRule self = do
   -- dummy_constraints body (= OCaml `dump_side_loaded_main.ml:49-73`).
-  x <- exists (pure (F (fromInt 3) :: F StepField))
+  x <- exists (pure (F (fromInt 3) :: F Field))
   -- Allocate `g` as WeierstrassAffinePoint so `exists` triggers
   -- assert_on_curve (matching OCaml's Inner_curve.typ).
-  WeierstrassAffinePoint g :: WeierstrassAffinePoint PallasG (FVar StepField) <-
+  WeierstrassAffinePoint g :: WeierstrassAffinePoint PallasG (FVar Field) <-
     exists (pure (WeierstrassAffinePoint innerCurveGen))
-  _ <- toFieldChecked' @1 (unsafeCoerce x :: SizedF 16 (FVar StepField))
+  _ <- toFieldChecked' @1 (unsafeCoerce x :: SizedF 16 (FVar Field))
   _ <- scaleFast1 @1 @5 g (Type1 x)
   _ <- scaleFast1 @1 @5 g (Type1 x)
-  _ <- endo @4 @1 g (unsafeCoerce x :: SizedF 4 (FVar StepField))
+  _ <- endo @4 @1 g (unsafeCoerce x :: SizedF 4 (FVar Field))
   assertEqual_ self (const_ zero)
   pure
     { prevPublicInputs: Vector.nil
@@ -109,8 +110,8 @@ type NoRecursionInputRules =
 -- | 1-rule carrier with a single side-loaded prev slot, `Width.Max = N2`.
 type SideLoadedMainRules =
   RulesCons 1
-    (Tuple1 (StatementIO (F StepField) Unit))
-    (Tuple1 (Slot SideLoaded 2 (StatementIO (F StepField) Unit)))
+    (Tuple1 (StatementIO (F Field) Unit))
+    (Tuple1 (Slot SideLoaded 2 (StatementIO (F Field) Unit)))
     (Tuple1 Unit)
     RulesNil
 
@@ -122,13 +123,13 @@ type SideLoadedMainRules =
 -- | constants. Reference: OCaml `dump_side_loaded_main.ml:179`.
 sideLoadedMainRule
   :: StepRule 1
-       (Tuple1 (StatementIO (F StepField) Unit))
-       (F StepField)
-       (FVar StepField)
+       (Tuple1 (StatementIO (F Field) Unit))
+       (F Field)
+       (FVar Field)
        Unit
        Unit
-       (F StepField)
-       (FVar StepField)
+       (F Field)
+       (FVar Field)
 sideLoadedMainRule self = do
   prev <- exists $ MT.lift do
     stmt /\ _ <- getPrevAppStates unit
@@ -147,19 +148,19 @@ spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.SideLoadedMain" do
   it "parent prove with InductivePrev (PS-compiled child, width-lifted to N2)" \_ -> do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
-    vestaSrs <- liftEffect $ createCRS @StepField
+    vestaSrs <- liftEffect $ createCRS @Field
 
     -- Compile the Input-mode No_recursion child. Its kimchi wrap VK
     -- (at log2 = 13, `mpv = N0` → `wrap_domains.h = 13`) becomes the
     -- runtime `wrapVk` for the side-loaded slot.
-    childEntry <- liftEffect $ mkRuleEntry @0 @Unit @(F StepField)
+    childEntry <- liftEffect $ mkRuleEntry @0 @Unit @(F Field)
       noRecursionInputRule
       unit
 
     child <- liftEffect $ compileMulti
       @NoRecursionInputRules
       @Unit
-      @(F StepField)
+      @(F Field)
       @NoSlots
       { srs: { vestaSrs, pallasSrs }
       , debug: false
@@ -176,7 +177,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       , prevs: unit
       , sideloadedVKs: unit
       }
-    childCp0 :: CompiledProof 0 (StatementIO (F StepField) Unit) Unit Unit <- case eChildCp of
+    childCp0 :: CompiledProof 0 (StatementIO (F Field) Unit) Unit Unit <- case eChildCp of
       Left e -> liftEffect $ Exc.throw ("childProver: " <> show e)
       Right cp -> pure cp
 
@@ -186,10 +187,10 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
     -- actual width (0) is `≤` the new bound (2). PS analog of OCaml
     -- `Side_loaded.Proof.of_proof`.
     let
-      childCp2 :: CompiledProof 2 (StatementIO (F StepField) Unit) Unit Unit
+      childCp2 :: CompiledProof 2 (StatementIO (F Field) Unit) Unit Unit
       childCp2 = coerce childCp0
 
-      childTag2 :: Tag (F StepField) Unit 2
+      childTag2 :: Tag (F Field) Unit 2
       childTag2 = coerce child.tag
 
     -- Assemble the runtime side-loaded VerificationKey. NRR's wrap
@@ -207,14 +208,14 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
     sideLoadedEntry <- liftEffect $ mkRuleEntry
       @1
       @Unit
-      @(F StepField)
+      @(F Field)
       sideLoadedMainRule
       (tuple1 unit)
 
     parent <- liftEffect $ compileMulti
       @SideLoadedMainRules
       @Unit
-      @(F StepField)
+      @(F Field)
       @(Slots1 2)
       { srs: { vestaSrs, pallasSrs }
       , debug: false

@@ -34,7 +34,8 @@ import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStep
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
 import Pickles.Step.Slots (Compiled, Slot)
-import Pickles.Types (StatementIO, StepField)
+import Pickles.Step.Types (Field)
+import Pickles.Types (StatementIO)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertEqual_, const_, exists, true_)
@@ -44,12 +45,12 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type StepMainTwoPhaseChainIncrementParams =
-  { lagrangeAt :: LagrangeBaseLookup StepField
-  , blindingH :: AffinePoint (F StepField)
+  { lagrangeAt :: LagrangeBaseLookup Field
+  , blindingH :: AffinePoint (F Field)
   }
 
 class Monad m <= TwoPhaseChainIncrementAdvice m where
-  getTwoPhaseChainIncrementPrev :: Unit -> m (F StepField)
+  getTwoPhaseChainIncrementPrev :: Unit -> m (F Field)
 
 instance TwoPhaseChainIncrementAdvice Effect where
   getTwoPhaseChainIncrementPrev _ =
@@ -59,11 +60,11 @@ instance TwoPhaseChainIncrementAdvice Effect where
 -- | (unlike SimpleChain), so `proofMustVerify` is a constant `true_`.
 incrementRule
   :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+   . CircuitM Field (KimchiConstraint Field) t m
   => TwoPhaseChainIncrementAdvice m
-  => FVar StepField
-  -> Snarky (KimchiConstraint StepField) t m
-       (RuleOutput 1 (FVar StepField) Unit)
+  => FVar Field
+  -> Snarky (KimchiConstraint Field) t m
+       (RuleOutput 1 (FVar Field) Unit)
 incrementRule appState = do
   prev <- exists $ lift $ getTwoPhaseChainIncrementPrev unit
   assertEqual_ (CVar.add_ (const_ one) prev) appState
@@ -89,15 +90,15 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
   mkStepArtifact <$> runStepCompile makeZeroLog2 selfLog2
   where
   runStepCompile makeZeroLog2 selfLog2 =
-    compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
+    compile (Proxy @Unit) (Proxy @(Vector 34 (F Field))) (Proxy @(KimchiConstraint Field))
       -- mpvMax=1 (matches the multi-branch wrap's max_proofs_verified=N1).
       -- mpvPad=0 (this rule's own n = 1 = mpvMax).
       ( \_ -> stepMain
-          @(Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
-          @(F StepField)
+          @(Tuple1 (Slot Compiled 1 (StatementIO (F Field) Unit)))
+          @(F Field)
           @Unit
-          @(F StepField)
-          @(Tuple1 (StatementIO (F StepField) Unit))
+          @(F Field)
+          @(Tuple1 (StatementIO (F Field) Unit))
           @1
           @2
           incrementRule

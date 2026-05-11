@@ -80,7 +80,8 @@ import Data.Vector (Vector)
 import Effect (Effect)
 import Effect.Exception (throw)
 import Pickles.Step.Slots (class StepSlotsCarrier)
-import Pickles.Types (PerProofUnfinalized, StepField)
+import Pickles.Step.Types (Field)
+import Pickles.Types (PerProofUnfinalized)
 import Pickles.VerificationKey (VerificationKey)
 import Snarky.Circuit.DSL (F, FVar)
 import Snarky.Curves.Class (class WeierstrassCurve)
@@ -95,7 +96,7 @@ import Snarky.Types.Shifted (SplitField, Type2)
 -- | - `dw`: IPA rounds for the Wrap proof being verified (= WrapIPARounds = 15)
 -- | - `g`: Commitment curve of the Wrap proof being verified (= PallasG for Step)
 -- | - `f`: Base field of `g` — uniquely determined via `WeierstrassCurve f g`
--- |        (= Pallas.BaseField = Vesta.ScalarField = StepField)
+-- |        (= Pallas.BaseField = Vesta.ScalarField = Field)
 -- | - `m`: Base monad (Effect for compilation, StepProverM for proving)
 -- |
 -- | The curve `g` is the primary abstraction: it picks which Wrap proof's
@@ -268,7 +269,7 @@ instance StepPrevValuesM Effect valCarrier where
 class
   Monad m <=
   StepUserOutputM (m :: Type -> Type) where
-  setUserPublicOutputFields :: Array (FVar StepField) -> m Unit
+  setUserPublicOutputFields :: Array (FVar Field) -> m Unit
 
 instance StepUserOutputM Effect where
   setUserPublicOutputFields _ = throw "impossible! setUserPublicOutputFields called during compilation"

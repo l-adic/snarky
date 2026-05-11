@@ -23,8 +23,10 @@ import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCom
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn (StepMainTreeProofReturnParams, compileStepMainTreeProofReturn)
 import Pickles.Step.Slots (Compiled, Slot)
-import Pickles.Types (StatementIO, StepField, WrapField)
+import Pickles.Step.Types as Step
+import Pickles.Types (StatementIO)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
+import Pickles.Wrap.Types as Wrap
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Circuit.DSL (F)
@@ -38,8 +40,8 @@ compileWrapMainTreeProofReturn
   -> Effect WrapArtifact
 compileWrapMainTreeProofReturn { lagrangeAt, blindingH } stepParams = do
   stepArt <- compileStepMainTreeProofReturn stepParams
-  vestaSrs <- createCRS @StepField
-  pallasSrs <- createCRS @WrapField
+  vestaSrs <- createCRS @Step.Field
+  pallasSrs <- createCRS @Wrap.Field
   let
     realStepVK = deriveStepVKFromCompiled @2 vestaSrs stepArt.stepCs
 
@@ -58,10 +60,10 @@ compileWrapMainTreeProofReturn { lagrangeAt, blindingH } stepParams = do
       }
   -- TPR: 2 prev slots, [NRR (n=0); self (n=2)]; slots derived from
   -- PrevsSpec via funcdep.
-  wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint Wrap.Field))
     ( \stmt ->
         wrapMainForPrevs @1
-          @(Tuple2 (Slot Compiled 0 (StatementIO Unit (F StepField))) (Slot Compiled 2 (StatementIO Unit (F StepField))))
+          @(Tuple2 (Slot Compiled 0 (StatementIO Unit (F Step.Field))) (Slot Compiled 2 (StatementIO Unit (F Step.Field))))
           config
           stmt
     )

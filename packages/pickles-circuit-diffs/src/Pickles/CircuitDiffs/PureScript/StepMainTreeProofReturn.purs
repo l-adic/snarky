@@ -14,13 +14,13 @@ module Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn
 -- | `public_input` slots are `Field.typ` even though the first prev's
 -- | rule has `max_proofs_verified = N0` (No_recursion_return) and the
 -- | second is `self` with `max_proofs_verified = N2`. Our
--- | `Vector n (FVar StepField)` `prevPublicInputs` field handles this
+-- | `Vector n (FVar Field)` `prevPublicInputs` field handles this
 -- | shape without needing an HList.
 -- |
 -- | Rule body computes `self = if is_base_case then 0 else 1 + prev`
 -- | and exposes it as `publicOutput`. This exercises the Output-mode
 -- | `hashAppFields = varToFields input <> varToFields output` path
--- | where `input = Unit` (contributes `[]`) and `output = FVar StepField`
+-- | where `input = Unit` (contributes `[]`) and `output = FVar Field`
 -- | (contributes `[self]`) — matching OCaml step_main.ml:566-573's
 -- | `Output _ -> ret_var` branch.
 -- |
@@ -44,7 +44,8 @@ import Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn (compileWrapMai
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
 import Pickles.Step.Slots (Compiled, Slot)
-import Pickles.Types (StatementIO, StepField)
+import Pickles.Step.Types (Field)
+import Pickles.Types (StatementIO)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -59,8 +60,8 @@ import Type.Proxy (Proxy(..))
 -- | override_wrap_domain:N1). Each slot needs its own lagrange lookup
 -- | keyed on the slot's domain size.
 type StepMainTreeProofReturnParams =
-  { perSlotLagrangeAt :: Vector 2 (LagrangeBaseLookup StepField)
-  , blindingH :: AffinePoint (F StepField)
+  { perSlotLagrangeAt :: Vector 2 (LagrangeBaseLookup Field)
+  , blindingH :: AffinePoint (F Field)
   -- SRS data for compiling NRR's wrap circuit (used to derive slot 0's
   -- known wrap key). Mirrors `IvpWrapParams` and
   -- `StepMainNoRecursionReturnParams` from
@@ -83,8 +84,8 @@ type StepMainTreeProofReturnParams =
 -- | the rule's `exists` calls request.
 class Monad m <= TreeProofReturnAdvice m where
   getTreeProofReturnIsBaseCase :: Unit -> m Boolean
-  getTreeProofReturnNoRecursiveInput :: Unit -> m (F StepField)
-  getTreeProofReturnPrev :: Unit -> m (F StepField)
+  getTreeProofReturnNoRecursiveInput :: Unit -> m (F Field)
+  getTreeProofReturnPrev :: Unit -> m (F Field)
 
 -- | Compilation instance: throws if evaluated. `exists` discards the
 -- | AsProverT during circuit shape walks, so the throw never fires.
@@ -105,15 +106,15 @@ instance TreeProofReturnAdvice Effect where
 -- | Reference: test_no_sideloaded.ml:354-390
 treeProofReturnRule
   :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+   . CircuitM Field (KimchiConstraint Field) t m
   => TreeProofReturnAdvice m
   => Unit
-  -> Snarky (KimchiConstraint StepField) t m
-       (RuleOutput 2 (FVar StepField) (FVar StepField))
+  -> Snarky (KimchiConstraint Field) t m
+       (RuleOutput 2 (FVar Field) (FVar Field))
 treeProofReturnRule _ = do
   no_recursive_input <- exists $ lift $ getTreeProofReturnNoRecursiveInput unit
   prev <- exists $ lift $ getTreeProofReturnPrev unit
-  (is_base_case :: BoolVar StepField) <- exists $ lift $
+  (is_base_case :: BoolVar Field) <- exists $ lift $
     getTreeProofReturnIsBaseCase unit
   let proofMustVerify = not_ is_base_case
   self <- if_ is_base_case (const_ zero) (CVar.add_ (const_ one) prev)
@@ -122,7 +123,7 @@ treeProofReturnRule _ = do
     -- prev[0] always verifies (Boolean.true_ in OCaml);
     -- prev[1] verifies iff not base case.
     , proofMustVerify:
-        (coerce (const_ one :: FVar StepField) :: BoolVar StepField)
+        (coerce (const_ one :: FVar Field) :: BoolVar Field)
           :< proofMustVerify
           :< Vector.nil
     , publicOutput: self
@@ -146,7 +147,7 @@ compileStepMainTreeProofReturn params = do
   mkStepArtifact <$> runStepCompile nrrArt selfLog2
   where
   runStepCompile nrrArt selfLog2 =
-    compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
+    compile (Proxy @Unit) (Proxy @(Vector 67 (F Field))) (Proxy @(KimchiConstraint Field))
       -- N=2, output size = 33*2 + 1 = 67 (two unfinalized proofs + digest
       -- + two msg_wrap entries). Wrap domain log2 = 14 from
       -- `override_wrap_domain:N1` (common.ml:25-29).
@@ -163,11 +164,11 @@ compileStepMainTreeProofReturn params = do
       --   `exists`-allocated VK inside stepMain.
       -- Single-rule: mpvMax = len = 2, mpvPad = 0.
       ( \_ -> stepMain
-          @(Tuple2 (Slot Compiled 0 (StatementIO Unit (F StepField))) (Slot Compiled 2 (StatementIO Unit (F StepField))))
+          @(Tuple2 (Slot Compiled 0 (StatementIO Unit (F Field))) (Slot Compiled 2 (StatementIO Unit (F Field))))
           @Unit
-          @(F StepField)
-          @(F StepField)
-          @(Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
+          @(F Field)
+          @(F Field)
+          @(Tuple2 (StatementIO Unit (F Field)) (StatementIO Unit (F Field)))
           @2
           @1
           treeProofReturnRule

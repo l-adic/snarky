@@ -41,7 +41,8 @@ import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.Types (PaddedLength, StepPerProofWitness)
+import Pickles.Step.Types (PerProofWitness)
+import Pickles.Types (PaddedLength)
 import Prim.Int (class Add)
 
 -- | Kind for a slot's source: a `Compiled` slot is a previously-
@@ -71,10 +72,10 @@ foreign import data Slot :: SlotKind -> Int -> Type -> Type
 -- | Carrier derivation:
 -- |
 -- | * `Unit` (empty spec) → `Unit`
--- | * `Slot k n stmt /\ rest` → `StepPerProofWitness n … /\ restCarrier`
+-- | * `Slot k n stmt /\ rest` → `PerProofWitness n … /\ restCarrier`
 -- |
 -- | The kind `k` doesn't affect the carrier — both compiled and
--- | side-loaded slots present the same `StepPerProofWitness` shape.
+-- | side-loaded slots present the same `PerProofWitness` shape.
 class StepSlotsCarrier
   :: Type -> Int -> Int -> Type -> Type -> Type -> Int -> Type -> Constraint
 class
@@ -93,7 +94,7 @@ class
          => Reflectable pad Int
          => Add pad n PaddedLength
          => Finite len
-         -> StepPerProofWitness n ds dw f sf b
+         -> PerProofWitness n ds dw f sf b
          -> m result
        )
     -> carrier
@@ -106,7 +107,7 @@ class
           . Reflectable n Int
          => Reflectable pad Int
          => Add pad n PaddedLength
-         => StepPerProofWitness n ds dw f sf b
+         => PerProofWitness n ds dw f sf b
        )
     -> carrier
 
@@ -129,7 +130,7 @@ instance
     sf
     b
     len
-    (StepPerProofWitness n ds dw f sf b /\ rcarrier)
+    (PerProofWitness n ds dw f sf b /\ rcarrier)
   where
   traverseStepSlotsA f (here /\ rest) =
     Vector.cons

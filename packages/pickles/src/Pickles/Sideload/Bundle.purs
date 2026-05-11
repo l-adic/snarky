@@ -24,8 +24,9 @@ import Prelude
 import Pickles.ProofsVerified (ProofsVerified)
 import Pickles.Sideload.VerificationKey (mkVerificationKey)
 import Pickles.Sideload.VerificationKey as SLVK
-import Pickles.Types (StepField, WrapField)
+import Pickles.Step.Types as Step
 import Pickles.VerificationKey (extractWrapVKComms)
+import Pickles.Wrap.Types as Wrap
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
 import Snarky.Circuit.DSL (F)
 import Snarky.Curves.Pallas as Pallas
@@ -33,8 +34,8 @@ import Snarky.Curves.Pallas as Pallas
 -- | Prove-time bundle: side-loaded VK descriptor + kimchi runtime
 -- | handle. See module doc for the role of each half.
 newtype Bundle = Bundle
-  { vk :: SLVK.VerificationKey (F StepField) Boolean
-  , verifierIndex :: VerifierIndex Pallas.G WrapField
+  { vk :: SLVK.VerificationKey (F Step.Field) Boolean
+  , verifierIndex :: VerifierIndex Pallas.G Wrap.Field
   }
 
 -- | Uniformly project the side-loaded VK descriptor out of a carrier
@@ -42,9 +43,9 @@ newtype Bundle = Bundle
 -- | itself) project as identity; prove-time cells (`Bundle`) project
 -- | to the `.vk` field.
 class HasSideLoadedVk cell where
-  projectVk :: cell -> SLVK.VerificationKey (F StepField) Boolean
+  projectVk :: cell -> SLVK.VerificationKey (F Step.Field) Boolean
 
-instance HasSideLoadedVk (SLVK.VerificationKey (F StepField) Boolean) where
+instance HasSideLoadedVk (SLVK.VerificationKey (F Step.Field) Boolean) where
   projectVk = identity
 
 instance HasSideLoadedVk Bundle where
@@ -54,7 +55,7 @@ instance HasSideLoadedVk Bundle where
 -- | `ProofsVerified` tags. Derives `vk`'s commitments from the
 -- | `verifierIndex` so the bundle's two halves are always consistent.
 mkBundle
-  :: { verifierIndex :: VerifierIndex Pallas.G WrapField
+  :: { verifierIndex :: VerifierIndex Pallas.G Wrap.Field
      , maxProofsVerified :: ProofsVerified
      , actualWrapDomainSize :: ProofsVerified
      }
@@ -69,5 +70,5 @@ mkBundle r = Bundle
   }
 
 -- | Access the kimchi runtime handle.
-verifierIndex :: Bundle -> VerifierIndex Pallas.G WrapField
+verifierIndex :: Bundle -> VerifierIndex Pallas.G Wrap.Field
 verifierIndex (Bundle r) = r.verifierIndex

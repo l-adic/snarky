@@ -30,7 +30,7 @@ import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Pickles.Types (StepField)
+import Pickles.Step.Types (Field)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, const_)
@@ -40,8 +40,8 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type StepMainAddOneReturnParams =
-  { lagrangeAt :: LagrangeBaseLookup StepField
-  , blindingH :: AffinePoint (F StepField)
+  { lagrangeAt :: LagrangeBaseLookup Field
+  , blindingH :: AffinePoint (F Field)
   }
 
 -- | Application-specific advice for the Add_one_return rule.
@@ -61,10 +61,10 @@ instance (Monad m) => AddOneReturnAdvice m
 -- | Reference: test_no_sideloaded.ml:440-452
 addOneReturnRule
   :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+   . CircuitM Field (KimchiConstraint Field) t m
   => AddOneReturnAdvice m
-  => FVar StepField
-  -> Snarky (KimchiConstraint StepField) t m (RuleOutput 0 Unit (FVar StepField))
+  => FVar Field
+  -> Snarky (KimchiConstraint Field) t m (RuleOutput 0 Unit (FVar Field))
 addOneReturnRule x = pure
   { prevPublicInputs: Vector.nil
   , proofMustVerify: Vector.nil
@@ -75,14 +75,14 @@ compileStepMainAddOneReturn
   :: StepMainAddOneReturnParams -> Effect StepArtifact
 compileStepMainAddOneReturn params =
   mkStepArtifact <$>
-    compile (Proxy @Unit) (Proxy @(Vector 1 (F StepField))) (Proxy @(KimchiConstraint StepField))
+    compile (Proxy @Unit) (Proxy @(Vector 1 (F Field))) (Proxy @(KimchiConstraint Field))
       -- N=0: output size = 33*0 + 1 = 1 (just the msgForNextStep digest —
       -- no unfinalized_proofs, no messages_for_next_wrap_proof entries).
       -- OCaml step domain log2 = 9 (tiny, no verify_one machinery).
       -- N=0 has no prev proofs, so prevInputVal/prevInput are unused —
       -- pick any concrete CircuitType-havers; Unit works.
       -- Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
-      ( \_ -> stepMain @Unit @(F StepField) @(F StepField) @Unit @Unit @0 @1
+      ( \_ -> stepMain @Unit @(F Field) @(F Field) @Unit @Unit @0 @1
           addOneReturnRule
           { perSlotLagrangeAt: Vector.nil
           , blindingH: params.blindingH

@@ -10,25 +10,25 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
 import Pickles.Step.Domain (pow2PowSquare)
-import Pickles.Types (StepField)
+import Pickles.Step.Types (Field)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Type.Proxy (Proxy(..))
 
-parsePow2PowInput :: Vector 1 (FVar StepField) -> FVar StepField
+parsePow2PowInput :: Vector 1 (FVar Field) -> FVar Field
 parsePow2PowInput = Vector.head
 
 pow2PowCircuit
   :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
-  => FVar StepField
-  -> Snarky (KimchiConstraint StepField) t m (FVar StepField)
+   . CircuitM Field (KimchiConstraint Field) t m
+  => FVar Field
+  -> Snarky (KimchiConstraint Field) t m (FVar Field)
 pow2PowCircuit x = pow2PowSquare x 16
 
-compilePow2Pow :: CompiledCircuit StepField
+compilePow2Pow :: CompiledCircuit Field
 compilePow2Pow =
-  compilePure (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compilePure (Proxy @(Vector 1 (F Field))) (Proxy @Unit) (Proxy @(KimchiConstraint Field))
     (\inputs -> void $ pow2PowCircuit (parsePow2PowInput inputs))
     Kimchi.initialState

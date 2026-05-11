@@ -18,7 +18,7 @@ import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dum
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.OtherField as StepOtherField
-import Pickles.Types (StepField)
+import Pickles.Step.Types (Field)
 import Pickles.Verify (incrementallyVerifyProof, packStatement)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
@@ -46,35 +46,35 @@ import Type.Proxy (Proxy(..))
 -- |   267:     messages_for_next_step_proof
 
 type StepVerifyParams =
-  { lagrangeAt :: LagrangeBaseLookup StepField
-  , blindingH :: AffinePoint (F StepField)
+  { lagrangeAt :: LagrangeBaseLookup Field
+  , blindingH :: AffinePoint (F Field)
   }
 
 stepVerifyCircuit
   :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+   . CircuitM Field (KimchiConstraint Field) t m
   => StepVerifyParams
-  -> Vector 268 (FVar StepField)
-  -> Snarky (KimchiConstraint StepField) t m Unit
+  -> Vector 268 (FVar Field)
+  -> Snarky (KimchiConstraint Field) t m Unit
 stepVerifyCircuit { lagrangeAt, blindingH } inputs = do
   let
     at = unsafeIdx inputs
     readPt i = { x: at i, y: at (i + 1) }
     readOtherField i = Type2 (SplitField { sDiv2: at i, sOdd: coerce (at (i + 1)) })
 
-    constDummySg :: AffinePoint (FVar StepField)
+    constDummySg :: AffinePoint (FVar Field)
     constDummySg = { x: const_ dummyWrapSg.x, y: const_ dummyWrapSg.y }
     constDummyPt = let { x: F x', y: F y' } = dummyPallasPt in { x: const_ x', y: const_ y' }
 
     -- Parse wrap_proof (0-113)
-    wComm :: Vector 15 (AffinePoint (FVar StepField))
+    wComm :: Vector 15 (AffinePoint (FVar Field))
     wComm = Vector.generate \j -> readPt (2 * getFinite j)
     zComm = readPt 30
 
-    tComm :: Vector 7 (AffinePoint (FVar StepField))
+    tComm :: Vector 7 (AffinePoint (FVar Field))
     tComm = Vector.generate \j -> readPt (32 + 2 * getFinite j)
 
-    lr :: Vector 15 { l :: AffinePoint (FVar StepField), r :: AffinePoint (FVar StepField) }
+    lr :: Vector 15 { l :: AffinePoint (FVar Field), r :: AffinePoint (FVar Field) }
     lr = Vector.generate \j ->
       { l: readPt (46 + 4 * getFinite j)
       , r: readPt (46 + 4 * getFinite j + 2)
@@ -102,7 +102,7 @@ stepVerifyCircuit { lagrangeAt, blindingH } inputs = do
                   (Vector.generate \j -> asSizedF128 (at (124 + getFinite j))) :: Vector 16 _
               , branchData:
                   { domainLog2: at 142
-                  , proofsVerifiedMask: (coerce (at 140) :: BoolVar StepField) :< (coerce (at 141) :: BoolVar StepField) :< Vector.nil
+                  , proofsVerifiedMask: (coerce (at 140) :: BoolVar Field) :< (coerce (at 141) :: BoolVar Field) :< Vector.nil
                   }
               }
           , spongeDigestBeforeEvaluations: at 143
@@ -132,7 +132,7 @@ stepVerifyCircuit { lagrangeAt, blindingH } inputs = do
           (Vector.generate \j -> asSizedF128 (at (249 + getFinite j))) :: Vector 15 _
       }
 
-    isBaseCase = coerce (at 265) :: BoolVar StepField
+    isBaseCase = coerce (at 265) :: BoolVar Field
     claimedDigest = at 243
 
     ivpParams =
@@ -180,8 +180,8 @@ stepVerifyCircuit { lagrangeAt, blindingH } inputs = do
     c2' <- if_ isBaseCase c1 c2
     assertEq c1 c2'
 
-compileStepVerify :: StepVerifyParams -> CompiledCircuit StepField
+compileStepVerify :: StepVerifyParams -> CompiledCircuit Field
 compileStepVerify srsData =
-  compilePure (Proxy @(Vector 268 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compilePure (Proxy @(Vector 268 (F Field))) (Proxy @Unit) (Proxy @(KimchiConstraint Field))
     (\inputs -> stepVerifyCircuit srsData inputs)
     Kimchi.initialState

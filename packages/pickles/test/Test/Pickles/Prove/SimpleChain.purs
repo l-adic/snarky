@@ -42,7 +42,8 @@ import Pickles.Prove.Step (StepRule)
 import Pickles.Prove.Verify (verify)
 import Pickles.Step.Advice (getPrevAppStates)
 import Pickles.Step.Slots (Compiled, Slot)
-import Pickles.Types (StatementIO(..), StepField)
+import Pickles.Step.Types (Field)
+import Pickles.Types (StatementIO(..))
 import Pickles.Wrap.Slots (Slots1)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
@@ -62,13 +63,13 @@ import Test.Spec.Assertions (shouldEqual)
 -- | `compiledProof.statement.input` is `b_k`'s self.
 simpleChainRule
   :: StepRule 1
-       (Tuple1 (StatementIO (F StepField) Unit))
-       (F StepField)
-       (FVar StepField)
+       (Tuple1 (StatementIO (F Field) Unit))
+       (F Field)
+       (FVar Field)
        Unit
        Unit
-       (F StepField)
-       (FVar StepField)
+       (F Field)
+       (FVar Field)
 simpleChainRule self = do
   prev <- exists $ MT.lift do
     stmt /\ _ <- getPrevAppStates unit
@@ -88,8 +89,8 @@ simpleChainRule self = do
 -- | rule with mpv=1, one prev slot of width 1.
 type SimpleChainRules =
   RulesCons 1
-    (Tuple1 (StatementIO (F StepField) Unit))
-    (Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
+    (Tuple1 (StatementIO (F Field) Unit))
+    (Tuple1 (Slot Compiled 1 (StatementIO (F Field) Unit)))
     (Tuple1 SlotWrapKey)
     RulesNil
 
@@ -97,19 +98,19 @@ spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.SimpleChain" do
   it "5-iteration step+wrap chain (b0..b4) proves end-to-end" \_ -> do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
-    vestaSrs <- liftEffect $ createCRS @StepField
+    vestaSrs <- liftEffect $ createCRS @Field
 
     -- Build the 1-tuple rules carrier for compileMulti. mpvMax = 1
     -- (one prev slot); since this is the only branch, nd = 1.
     -- outputSize = mpvMax*32 + 1 + mpvMax = 32 + 1 + 1 = 34.
-    chainEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) simpleChainRule (tuple1 Self)
+    chainEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F Field) simpleChainRule (tuple1 Self)
 
     let rules = tuple1 chainEntry
 
     output <- liftEffect $ compileMulti
       @SimpleChainRules
       @Unit
-      @(F StepField)
+      @(F Field)
       @(Slots1 1)
       { srs: { vestaSrs, pallasSrs }
       , debug: false
@@ -121,9 +122,9 @@ spec = describe "Pickles.Prove.SimpleChain" do
 
     let
       runStep
-        :: PrevSlot (F StepField) 1 (StatementIO (F StepField) Unit) Unit
-        -> F StepField
-        -> Aff (CompiledProof 1 (StatementIO (F StepField) Unit) Unit Unit)
+        :: PrevSlot (F Field) 1 (StatementIO (F Field) Unit) Unit
+        -> F Field
+        -> Aff (CompiledProof 1 (StatementIO (F Field) Unit) Unit Unit)
       runStep prevSlot appInput = do
         eRes <- liftEffect $ runExceptT $ chainProver
           { appInput, prevs: tuple1 prevSlot, sideloadedVKs: tuple1 unit }
@@ -136,9 +137,9 @@ spec = describe "Pickles.Prove.SimpleChain" do
 
     b0 <- runStep basePrev (F zero)
     b1 <- runStep (InductivePrev b0 output.tag) (F one)
-    b2 <- runStep (InductivePrev b1 output.tag) (F (fromInt 2 :: StepField))
-    b3 <- runStep (InductivePrev b2 output.tag) (F (fromInt 3 :: StepField))
-    b4 <- runStep (InductivePrev b3 output.tag) (F (fromInt 4 :: StepField))
+    b2 <- runStep (InductivePrev b1 output.tag) (F (fromInt 2 :: Field))
+    b3 <- runStep (InductivePrev b2 output.tag) (F (fromInt 3 :: Field))
+    b4 <- runStep (InductivePrev b3 output.tag) (F (fromInt 4 :: Field))
 
     verify output.verifier [ b0, b1, b2, b3, b4 ] `shouldEqual` true
 
