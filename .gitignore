@@ -65,6 +65,9 @@ deps.svg
 deps.dot
 deps.json
 
+# Generated module-inventory analysis (produced by pickles-inventory.js)
+analysis/
+
 # Presentation
 presentation/
 
