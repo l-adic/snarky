@@ -68,14 +68,14 @@ import Effect (Effect)
 import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
 import Pickles.Constants (roughDomainsLog2, zkRows)
-import Pickles.Dummy
+import Pickles.Dummy (dummyIpaChallenges)
+import Pickles.Step.Dummy
   ( baseCaseDummies
   , computeDummySgValues
-  , dummyIpaChallenges
   , wrapDomainLog2ForProofsVerified
   , wrapDummyUnfinalizedProof
   )
-import Pickles.Dummy as Dummy
+import Pickles.Step.Dummy as Dummy
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
@@ -857,12 +857,12 @@ instance
         BasePrev { dummyStatement } ->
           let
             baseCaseDummyChalPoly =
-              { sg: dummyWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
+              { sg: dummyWrapSg, challenges: dummyIpaChallenges.wrapExpanded }
 
             msgWrapDigest = hashMessagesForNextWrapProofPureGeneral
               { sg: dummyStepSg
               , paddedChallenges:
-                  Vector.replicate @PaddedLength Dummy.dummyIpaChallenges.wrapExpanded
+                  Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
               }
 
             fopProofState = Dummy.stepDummyUnfinalizedProof @n bcd
@@ -904,12 +904,12 @@ instance
             , wrapSpongeDigest: (zero :: Step.Field)
             , mustVerify: false
             , wrapOwnPaddedBpChals:
-                Vector.replicate @PaddedLength Dummy.dummyIpaChallenges.wrapExpanded
+                Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
             , fopState: fopProofState
             , stepAdvicePrevEvals: bcd.proofDummy.prevEvals
-            , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
+            , kimchiPrevChallengesExpanded: dummyIpaChallenges.stepExpanded
             , prevChallengesForStepHash:
-                Vector.replicate Dummy.dummyIpaChallenges.stepExpanded
+                Vector.replicate dummyIpaChallenges.stepExpanded
             }
         InductivePrev prevCp prevTag ->
           let
@@ -1185,7 +1185,7 @@ instance
         BasePrev _ ->
           let
             baseCaseDummyChalPoly =
-              { sg: wrapSgD, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
+              { sg: wrapSgD, challenges: dummyIpaChallenges.wrapExpanded }
             toFFI r =
               { sgX: r.sg.x, sgY: r.sg.y, challenges: Vector.toUnfoldable r.challenges }
             dummyWrapOracles =
@@ -1212,11 +1212,11 @@ instance
               }
           in
             { prevSg: stepSgD
-            , prevStepChals: Dummy.dummyIpaChallenges.stepExpanded
+            , prevStepChals: dummyIpaChallenges.stepExpanded
             , prevStepAcc: WeierstrassAffinePoint { x: F stepSgD.x, y: F stepSgD.y }
             , headPrevEvals
             , headSlotPrevWrapBpChalsVec:
-                Vector.replicate @n (map F Dummy.dummyIpaChallenges.wrapExpanded)
+                Vector.replicate @n (map F dummyIpaChallenges.wrapExpanded)
             }
         InductivePrev prevCp prevTag ->
           let
@@ -1521,12 +1521,12 @@ instance
         BasePrev { dummyStatement } ->
           let
             baseCaseDummyChalPoly =
-              { sg: dummyWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
+              { sg: dummyWrapSg, challenges: dummyIpaChallenges.wrapExpanded }
 
             msgWrapDigest = hashMessagesForNextWrapProofPureGeneral
               { sg: dummyStepSg
               , paddedChallenges:
-                  Vector.replicate @PaddedLength Dummy.dummyIpaChallenges.wrapExpanded
+                  Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
               }
 
             fopProofState = Dummy.stepDummyUnfinalizedProof @mpvMax bcd
@@ -1564,12 +1564,12 @@ instance
             , wrapSpongeDigest: (zero :: Step.Field)
             , mustVerify: false
             , wrapOwnPaddedBpChals:
-                Vector.replicate @PaddedLength Dummy.dummyIpaChallenges.wrapExpanded
+                Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
             , fopState: fopProofState
             , stepAdvicePrevEvals: bcd.proofDummy.prevEvals
-            , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
+            , kimchiPrevChallengesExpanded: dummyIpaChallenges.stepExpanded
             , prevChallengesForStepHash:
-                Vector.replicate Dummy.dummyIpaChallenges.stepExpanded
+                Vector.replicate dummyIpaChallenges.stepExpanded
             }
         InductivePrev prevCp prevTag ->
           let
@@ -1827,7 +1827,7 @@ instance
         BasePrev _ ->
           let
             baseCaseDummyChalPoly =
-              { sg: wrapSgD, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
+              { sg: wrapSgD, challenges: dummyIpaChallenges.wrapExpanded }
             toFFI r =
               { sgX: r.sg.x, sgY: r.sg.y, challenges: Vector.toUnfoldable r.challenges }
             dummyWrapOracles =
@@ -1854,11 +1854,11 @@ instance
               }
           in
             { prevSg: stepSgD
-            , prevStepChals: Dummy.dummyIpaChallenges.stepExpanded
+            , prevStepChals: dummyIpaChallenges.stepExpanded
             , prevStepAcc: WeierstrassAffinePoint { x: F stepSgD.x, y: F stepSgD.y }
             , headPrevEvals
             , headSlotPrevWrapBpChalsVec:
-                Vector.replicate @mpvMax (map F Dummy.dummyIpaChallenges.wrapExpanded)
+                Vector.replicate @mpvMax (map F dummyIpaChallenges.wrapExpanded)
             }
         InductivePrev prevCp prevTag ->
           let
@@ -3538,7 +3538,7 @@ runMultiProverBody
       -- Front-padding dummies for the `Vector PaddedLength` views
       -- mkSomeCompiledProofWidthData precomputes. Match what
       -- mkStepAdvice / shapeProveData's InductivePrev case fills the
-      -- pad slots with: `Dummy.dummyIpaChallenges.stepExpanded` for
+      -- pad slots with: `dummyIpaChallenges.stepExpanded` for
       -- the inner step proof's prev bp-chals, the wrap-side dummy
       -- challenge for the outer wrap-IPA bp-chals, and
       -- `dummyWrapSgInStepField` for the outer step proof's IPA sg.

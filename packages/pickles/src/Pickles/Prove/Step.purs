@@ -82,8 +82,9 @@ import Node.FS.Sync as FS
 import Node.Process as Process
 import Partial.Unsafe (unsafePartial)
 import Pickles.Constants (zkRows)
-import Pickles.Dummy (BaseCaseDummies, computeDummySgValues) as Dummy
-import Pickles.Dummy (baseCaseDummies, dummyIpaChallenges, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified, wrapDummyUnfinalizedProof)
+import Pickles.Step.Dummy (BaseCaseDummies, computeDummySgValues) as Dummy
+import Pickles.Dummy (dummyIpaChallenges)
+import Pickles.Step.Dummy (baseCaseDummies, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified, wrapDummyUnfinalizedProof)
 import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)

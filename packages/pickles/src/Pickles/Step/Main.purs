@@ -46,7 +46,7 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Pickles.Dummy as Dummy
+import Pickles.Step.Dummy as Dummy
 import Pickles.FinalizeOtherProof (DomainMode(..))
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI

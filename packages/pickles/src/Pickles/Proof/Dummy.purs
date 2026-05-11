@@ -31,7 +31,7 @@ import Data.Maybe (fromJust)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Pickles.Dummy (BaseCaseDummies)
+import Pickles.Step.Dummy (BaseCaseDummies)
 import Pickles.ProofFFI (Proof, vestaMakeWireProof)
 import Pickles.Wrap.Types (Field)
 import Snarky.Curves.Class (generator, toAffine)
