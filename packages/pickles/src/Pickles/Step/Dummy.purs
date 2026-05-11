@@ -368,7 +368,7 @@ computeDummySgValues bcd pallasSrs vestaSrs =
     wrapChalExpanded = map (\c -> toFieldPure c wrapEndo) bcd.ipaWrapChallenges
     stepChalExpanded = map (\c -> toFieldPure c stepEndo) bcd.ipaStepChallenges
 
-    alphaFq = toFieldPure u.plonk.alpha wrapEndo
+    alphaExpanded = toFieldPure u.plonk.alpha wrapEndo
     zetaFq = toFieldPure u.plonk.zeta wrapEndo
 
     wrapSg = PallasImpl.pallasSrsBPolyCommitmentPoint pallasSrs
@@ -406,7 +406,7 @@ computeDummySgValues bcd pallasSrs vestaSrs =
         , xiRaw: unsafePartial $ fromJust $ SizedF.fromField @128
             (Curves.fromBigInt (BigInt.fromInt 1 + pow2 64) :: WrapField)
         , zetaExpanded: zetaFq
-        , alphaExpanded: alphaFq
+        , alphaExpanded
         , plonk:
             { perm: (wrapDummyUnfinalizedProof bcd).deferredValues.plonk.perm
             , zetaToSrsLength: toShifted (F zetaPow)

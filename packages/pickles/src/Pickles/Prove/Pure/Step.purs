@@ -787,9 +787,9 @@ expandProof input =
 
     wrapCommits = vestaProofCommitments input.wrapProof
 
-    wrapProofMessages
+    messages
       :: WrapProofMessages (WeierstrassAffinePoint PallasG (F StepField))
-    wrapProofMessages = WrapProofMessages
+    messages = WrapProofMessages
       { wComm: map mkPallasPt wrapCommits.wComm
       , zComm: mkPallasPt wrapCommits.zComm
       , tComm: map mkPallasPt (tCommVec wrapCommits)
@@ -799,12 +799,12 @@ expandProof input =
     -- commitment is replaced with `challengePolynomialCommitment`
     -- (our computed one) to match OCaml step.ml:404-408's
     -- `{ proof.openings.proof with challenge_polynomial_commitment }`.
-    wrapProofOpening
+    opening
       :: WrapProofOpening
            WrapIPARounds
            (WeierstrassAffinePoint PallasG (F StepField))
            (Type2 (SplitField (F StepField) Boolean))
-    wrapProofOpening = WrapProofOpening
+    opening = WrapProofOpening
       { lr: map (\pair -> { l: mkPallasPt pair.l, r: mkPallasPt pair.r })
           (vestaProofOpeningLrVec input.wrapProof)
       , z1: toShifted (F (vestaProofOpeningZ1 input.wrapProof))
@@ -819,8 +819,8 @@ expandProof input =
            (WeierstrassAffinePoint PallasG (F StepField))
            (Type2 (SplitField (F StepField) Boolean))
     wrapProofKimchi = Step.WrapProof
-      { messages: wrapProofMessages
-      , opening: wrapProofOpening
+      { messages
+      , opening
       }
 
     -- `Step.ProofState` = the wrap proof's step-field Type1 deferred
@@ -833,8 +833,8 @@ expandProof input =
     -- `proofsVerifiedMask :: Vector 2 _`) into the
     -- `Pickles.Types.BranchData` newtype (mask0/mask1 named fields,
     -- `F`-wrapped domainLog2). Same data, different packaging.
-    stepBranchData :: Step.BranchData (F StepField) Boolean
-    stepBranchData =
+    branchData :: Step.BranchData (F StepField) Boolean
+    branchData =
       let
         v = deferredStep.branchData.proofsVerifiedMask
       in
@@ -844,8 +844,8 @@ expandProof input =
           , domainLog2: F deferredStep.branchData.domainLog2
           }
 
-    stepProofState :: Step.ProofState StepIPARounds (F StepField) Boolean
-    stepProofState = Step.ProofState
+    proofState :: Step.ProofState StepIPARounds (F StepField) Boolean
+    proofState = Step.ProofState
       -- The 5 fp slots store the **shifted inner** form (matching
       -- OCaml's `Per_proof_witness.proof_state.deferred_values.plonk`
       -- at the var level). See the longer note at the parallel site in
@@ -865,10 +865,10 @@ expandProof input =
           , xi: UnChecked deferredStep.xi
           , bulletproofChallenges: map UnChecked input.rawBulletproofChallenges
           }
-      , branchData: stepBranchData
+      , branchData
       }
 
-    perProofWitnessAssembled
+    perProofWitness
       :: Step.PerProofWitness
            n
            StepIPARounds
@@ -876,9 +876,9 @@ expandProof input =
            (F StepField)
            (Type2 (SplitField (F StepField) Boolean))
            Boolean
-    perProofWitnessAssembled = Step.PerProofWitness
+    perProofWitness = Step.PerProofWitness
       { wrapProof: wrapProofKimchi
-      , proofState: stepProofState
+      , proofState
       , prevEvals: input.stepProofPrevEvals
       , prevChallenges: map UnChecked input.stepPrevChallenges
       , prevSgs: map mkPallasPt input.stepPrevSgsPadded
@@ -892,7 +892,7 @@ expandProof input =
         { zeta: oraclesResult.publicEvalZeta
         , omegaTimesZeta: oraclesResult.publicEvalZetaOmega
         }
-    , perProofWitness: perProofWitnessAssembled
+    , perProofWitness
     -- step.ml:536 reads this from `dlog_vk.domain.log_size_of_group`.
     , actualWrapDomain: input.wrapDomainLog2
     , prevStatementWithHashes:

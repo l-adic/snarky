@@ -3696,7 +3696,7 @@ compileMulti cfg rules = do
     -- consumed by the wrap circuit body anymore (the wrap circuit
     -- now picks per-branch lagrange bases from `perBranchLagrangeAt`,
     -- mirroring OCaml `lagrange_with_correction`).
-    wrapDomainLog2Out =
+    wrapDomainLog2 =
       wrapDomainLog2ForProofsVerified (reflectType (Proxy :: Proxy mpvMax))
 
     verifier :: Verifier
@@ -3713,7 +3713,7 @@ compileMulti cfg rules = do
     , vks:
         { wrap: wrapResult
         , perBranchStep: stepResults
-        , wrapDomainLog2: wrapDomainLog2Out
+        , wrapDomainLog2
         }
     , perBranchVKs: unit
     }

@@ -285,8 +285,8 @@ buildWrapAdvice input =
     -- `WrapProofMessages` shape.
     commits = pallasProofCommitments input.stepProof
 
-    messagesOut :: WrapProofMessages (WeierstrassAffinePoint VestaG (F WrapField))
-    messagesOut = WrapProofMessages
+    messages :: WrapProofMessages (WeierstrassAffinePoint VestaG (F WrapField))
+    messages = WrapProofMessages
       { wComm: map mkVestaPt commits.wComm
       , zComm: mkVestaPt commits.zComm
       , tComm: map mkVestaPt (tCommVec commits)
@@ -319,12 +319,12 @@ buildWrapAdvice input =
     sgPt :: AffinePoint WrapField
     sgPt = pallasProofOpeningSg input.stepProof
 
-    openingOut
+    openingProof
       :: WrapProofOpening
            StepIPARounds
            (WeierstrassAffinePoint VestaG (F WrapField))
            (Type1 (F WrapField))
-    openingOut = WrapProofOpening
+    openingProof = WrapProofOpening
       { lr: lrVec
       , z1: toShifted (F z1Step :: F StepField)
       , z2: toShifted (F z2Step :: F StepField)
@@ -333,21 +333,21 @@ buildWrapAdvice input =
       }
 
     -- ===== Req.Proof_state. =====
-    wrapProofStateOut
+    wrapProofState
       :: Wrap.PrevProofState mpv (Type2 (F WrapField)) (F WrapField) Boolean
-    wrapProofStateOut = Wrap.PrevProofState
+    wrapProofState = Wrap.PrevProofState
       { unfinalizedProofs: input.prevUnfinalizedProofs
       , messagesForNextStepProof: input.prevMessagesForNextStepProofHash
       }
   in
     { whichBranch: input.whichBranch
-    , wrapProofState: wrapProofStateOut
+    , wrapProofState
     , stepAccs: input.prevStepAccs
     , oldBpChals: input.prevOldBpChals
     , evals: input.prevEvals
     , wrapDomainIndices: input.prevWrapDomainIndices
-    , openingProof: openingOut
-    , messages: messagesOut
+    , openingProof
+    , messages
     }
 
 --------------------------------------------------------------------------------

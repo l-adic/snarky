@@ -339,8 +339,8 @@ buildStepAdvice input =
     chalToStep :: SizedF 128 (F WrapField) -> SizedF 128 (F StepField)
     chalToStep s = SizedF.wrapF (coerceViaBits (SizedF.unwrapF s))
 
-    digestStep :: F StepField
-    digestStep =
+    spongeDigest :: F StepField
+    spongeDigest =
       let
         F digestWrap = du.spongeDigestBeforeEvaluations
       in
@@ -361,7 +361,7 @@ buildStepAdvice input =
       , zetaToSrsLength: t2toT2sf pDu.zetaToSrsLength
       , zetaToDomainSize: t2toT2sf pDu.zetaToDomainSize
       , perm: t2toT2sf pDu.perm
-      , spongeDigest: digestStep
+      , spongeDigest
       , beta: UnChecked (chalToStep pDu.beta)
       , gamma: UnChecked (chalToStep pDu.gamma)
       , alpha: UnChecked (chalToStep pDu.alpha)
@@ -396,8 +396,8 @@ buildStepAdvice input =
                       , r: WeierstrassAffinePoint g0
                       }
                   )
-              , z1: z1
-              , z2: z2
+              , z1
+              , z2
               , delta: WeierstrassAffinePoint g0
               , sg: WeierstrassAffinePoint g0
               }
@@ -1118,26 +1118,26 @@ buildSlotAdvice input = do
       , zeta: SizedF.wrapF input.wrapPlonkRaw.zeta
       }
 
-    branchDataStep :: VT.BranchData StepField Boolean
-    branchDataStep = input.wrapBranchData
+    branchData :: VT.BranchData StepField Boolean
+    branchData = input.wrapBranchData
 
-    stepFopGenerator :: StepField
-    stepFopGenerator = domainGenerator input.stepDomainLog2
+    stepGenerator :: StepField
+    stepGenerator = domainGenerator input.stepDomainLog2
 
-    stepFopShifts :: Vector 7 StepField
-    stepFopShifts = domainShifts input.stepDomainLog2
+    stepShifts :: Vector 7 StepField
+    stepShifts = domainShifts input.stepDomainLog2
 
     zetaExpandedStep :: StepField
     zetaExpandedStep =
       toFieldPure (SizedF.unwrapF plonkMinimalStep.zeta) stepEndoScalarF
 
-    stepFopVanishesOnZk :: StepField
-    stepFopVanishesOnZk =
+    stepVanishesOnZk :: StepField
+    stepVanishesOnZk =
       (permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: StepField } -> StepField)
         { domainLog2: input.stepDomainLog2, zkRows, pt: zetaExpandedStep }
 
-    wrapAllEvalsW :: AllEvals WrapField
-    wrapAllEvalsW =
+    wrapAllEvals :: AllEvals WrapField
+    wrapAllEvals =
       { ftEval1: oracles.ftEval1
       , publicEvals:
           { zeta: oracles.publicEvalZeta
@@ -1150,16 +1150,16 @@ buildSlotAdvice input = do
       , indexEvals: proofIndexEvals input.wrapProof
       }
 
-    wrapShiftsW :: Vector 7 WrapField
-    wrapShiftsW = domainShifts input.wrapDomainLog2
+    wrapShifts :: Vector 7 WrapField
+    wrapShifts = domainShifts input.wrapDomainLog2
 
-    wrapVanishesOnZkW :: WrapField
-    wrapVanishesOnZkW =
+    wrapVanishesOnZk :: WrapField
+    wrapVanishesOnZk =
       (permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: WrapField } -> WrapField)
         { domainLog2: input.wrapDomainLog2, zkRows, pt: oracles.zeta }
 
-    wrapPrevEvalsF :: StepAllEvals (F StepField)
-    wrapPrevEvalsF =
+    stepProofPrevEvals :: StepAllEvals (F StepField)
+    stepProofPrevEvals =
       let
         pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
         ae = input.wrapPrevEvals
@@ -1184,12 +1184,12 @@ buildSlotAdvice input = do
       , oldBulletproofChallenges: Vector.replicate @n dummyStepBpChalsRaw
       , plonkMinimal: plonkMinimalStep
       , rawBulletproofChallenges: input.fopState.deferredValues.bulletproofChallenges
-      , branchData: branchDataStep
+      , branchData
       , spongeDigestBeforeEvaluations: input.wrapSpongeDigest
       , stepDomainLog2: input.stepDomainLog2
-      , stepGenerator: stepFopGenerator
-      , stepShifts: stepFopShifts
-      , stepVanishesOnZk: stepFopVanishesOnZk
+      , stepGenerator
+      , stepShifts
+      , stepVanishesOnZk
       , stepOmegaForLagrange: \_ -> one
       , endo: stepEndoScalarF
       , linearizationPoly: Linearization.pallas
@@ -1204,15 +1204,15 @@ buildSlotAdvice input = do
       , wrapOraclesPrevChallenges: map toFFIChalPoly (Vector.toUnfoldable input.prevChalPolys :: Array _)
       , wrapDomainLog2: input.wrapDomainLog2
       , wrapEndo: wrapEndoScalar
-      , wrapAllEvals: wrapAllEvalsW
+      , wrapAllEvals
       , wrapPEval0Chunks: [ oracles.publicEvalZeta ]
-      , wrapShifts: wrapShiftsW
+      , wrapShifts
       , wrapZkRows: zkRows
       , wrapSrsLengthLog2: reflectType (Proxy :: Proxy WrapIPARounds)
-      , wrapVanishesOnZk: wrapVanishesOnZkW
+      , wrapVanishesOnZk
       , wrapOmegaForLagrange: \_ -> one
       , wrapLinearizationPoly: Linearization.vesta
-      , stepProofPrevEvals: wrapPrevEvalsF
+      , stepProofPrevEvals
       , stepPrevChallenges: map (map F) prevChalsPerSlot
       , stepPrevSgsPadded: prevCpcs
       }
@@ -1319,11 +1319,11 @@ buildSlotAdvice input = do
     openingZ2Raw :: WrapField
     openingZ2Raw = vestaProofOpeningZ2 input.wrapProof
 
-    openingZ1 :: Type2 (SplitField (F StepField) Boolean)
-    openingZ1 = toShifted (F openingZ1Raw :: F WrapField)
+    z1 :: Type2 (SplitField (F StepField) Boolean)
+    z1 = toShifted (F openingZ1Raw :: F WrapField)
 
-    openingZ2 :: Type2 (SplitField (F StepField) Boolean)
-    openingZ2 = toShifted (F openingZ2Raw :: F WrapField)
+    z2 :: Type2 (SplitField (F StepField) Boolean)
+    z2 = toShifted (F openingZ2Raw :: F WrapField)
 
     wrapCommits = vestaProofCommitments input.wrapProof
 
@@ -1383,8 +1383,8 @@ buildSlotAdvice input = do
                       }
                   )
                   openingLr
-              , z1: openingZ1
-              , z2: openingZ2
+              , z1
+              , z2
               , delta: WeierstrassAffinePoint openingDelta
               , sg: WeierstrassAffinePoint openingSg
               }
@@ -1434,8 +1434,8 @@ buildSlotAdvice input = do
 
   let
     tag = if input.mustVerify then "real" else "dummy"
-    z1SplitField = case openingZ1 of Type2 sf -> sf
-    z2SplitField = case openingZ2 of Type2 sf -> sf
+    z1SplitField = case z1 of Type2 sf -> sf
+    z2SplitField = case z2 of Type2 sf -> sf
     sDiv2OfSf sf = case sf of SplitField { sDiv2: F d } -> d
   Trace.field ("expand_proof.opening.z1.raw_" <> tag)
     (crossFieldDigest openingZ1Raw :: StepField)

@@ -344,8 +344,8 @@ wrapComputeDeferredValues input =
       }
 
     -- ===== branch_data (wrap.ml:246-260). =====
-    branchDataOut :: BranchData StepField Boolean
-    branchDataOut =
+    branchData :: BranchData StepField Boolean
+    branchData =
       { domainLog2: fromInt input.domainLog2
       , proofsVerifiedMask: input.proofsVerifiedMask
       }
@@ -355,7 +355,7 @@ wrapComputeDeferredValues input =
     , xi: wrapF oraclesResult.vChal
     , bulletproofPrechallenges: map wrapF rawPrechalsVec
     , b: toShifted (F newBpResult.b)
-    , branchData: branchDataOut
+    , branchData
     , xHatEvals
     , spongeDigestBeforeEvaluations: oraclesResult.fqDigest
     , oracles: oraclesResult
