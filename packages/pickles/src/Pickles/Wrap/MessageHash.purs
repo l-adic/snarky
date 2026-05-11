@@ -51,10 +51,8 @@ hashMessagesForNextWrapProofPureGeneral
   -> f
 hashMessagesForNextWrapProofPureGeneral { sg, paddedChallenges } =
   let
-    outer :: Array (Vector d f)
     outer = Vector.toUnfoldable paddedChallenges
 
-    flatChals :: Array f
     flatChals = outer >>= (Vector.toUnfoldable :: Vector d f -> Array f)
   in
     hash (flatChals <> [ sg.x, sg.y ])

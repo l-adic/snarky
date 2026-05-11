@@ -153,7 +153,6 @@ assertExpandDeferredMatches
   -> Aff Unit
 assertExpandDeferredMatches { dvProver, dvInput, oldBulletproofChallenges } = do
   let
-    verifyIn :: ExpandDeferredInput n
     verifyIn =
       { rawPlonk:
           { alpha: dvProver.plonk.alpha

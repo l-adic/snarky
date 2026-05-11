@@ -116,13 +116,11 @@ bPoly :: forall d f. Reflectable d Int => PrimeField f => Vector d f -> f -> f
 bPoly chals x =
   let
     -- powTwos[i] = x^{2^i}
-    powTwos :: Vector d f
     powTwos = Vector.generate \i ->
       pow x (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt (getFinite i)))
 
     -- Reverse to get [x^{2^{d-1}}, ..., x^4, x^2, x]
     -- Then zip with chals to compute (1 + chal * pow) for each pair
-    terms :: Vector d f
     terms = Vector.zipWith (\c p -> one + c * p) chals (Vector.reverse powTwos)
   in
     product terms

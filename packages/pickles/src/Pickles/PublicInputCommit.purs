@@ -274,10 +274,8 @@ sumMaskedAffine
   -> AffinePoint (FVar f)
 sumMaskedAffine bits perBranchPts =
   let
-    boolFvars :: Vector n (FVar f)
     boolFvars = map (coerce :: BoolVar f -> FVar f) bits
 
-    scaledPts :: Vector n (AffinePoint (FVar f))
     scaledPts = Vector.zipWith
       ( \b { x: F x', y: F y' } ->
           { x: CVar.scale_ x' b, y: CVar.scale_ y' b }
@@ -311,10 +309,8 @@ mkSideloadedLagrangeLookup
   -> LagrangeBaseLookup f
 mkSideloadedLagrangeLookup curveP bits perDomainAt i =
   let
-    perDomainPts :: Vector 3 (AffinePoint (F f))
     perDomainPts = map (\at -> at i) perDomainAt
 
-    summed :: AffinePoint (FVar f)
     summed = sumMaskedAffine bits perDomainPts
     correctionAt shift =
       sumMaskedAffine bits

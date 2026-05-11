@@ -285,7 +285,6 @@ buildWrapAdvice input =
     -- `WrapProofMessages` shape.
     commits = pallasProofCommitments input.stepProof
 
-    messages :: WrapProofMessages (WeierstrassAffinePoint VestaG (F WrapField))
     messages = WrapProofMessages
       { wComm: map mkVestaPt commits.wComm
       , zComm: mkVestaPt commits.zComm
@@ -307,16 +306,12 @@ buildWrapAdvice input =
     lrVec = map (\p -> { l: mkVestaPt p.l, r: mkVestaPt p.r })
       (pallasProofOpeningLrVec input.stepProof)
 
-    z1Step :: StepField
     z1Step = pallasProofOpeningZ1 input.stepProof
 
-    z2Step :: StepField
     z2Step = pallasProofOpeningZ2 input.stepProof
 
-    deltaPt :: AffinePoint WrapField
     deltaPt = pallasProofOpeningDelta input.stepProof
 
-    sgPt :: AffinePoint WrapField
     sgPt = pallasProofOpeningSg input.stepProof
 
     openingProof
@@ -496,7 +491,6 @@ wrapCompile ctx = do
     -- `memory/project_simple_chain_max_poly_size_bug.md` and the parallel
     -- step-side fix in `Pickles.Prove.Step.purs:1429-1431` (commit
     -- `20674463`) — same root cause, opposite curve.
-    endo :: WrapField
     endo =
       let EndoBase e = (endoBase :: EndoBase WrapField) in e
 

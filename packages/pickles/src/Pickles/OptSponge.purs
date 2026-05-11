@@ -246,7 +246,6 @@ consume { state: initState, pos: startPos, needsFinalPermuteIfEmpty } input = do
        }
   mkPairs as =
     let
-      as' :: List a
       as' = Array.toUnfoldable as
     in
       go { pairs: [], leftover: Nothing } as'
@@ -292,7 +291,6 @@ runOptSpongeM
 runOptSpongeM computation =
   runStateT (unwrap computation) initialOptState
   where
-  initialOptState :: OptSpongeState f
   initialOptState =
     { state: Vector.replicate (const_ zero)
     , phase: Absorbing { nextIndex: false_, xs: List.Nil }

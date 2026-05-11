@@ -322,7 +322,6 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
   -- totalBases = sgOldN + num_chunks * 45. The combinePolynomials fold would
   -- need inner loops over chunks (see OCaml's Pcs_batch.combine_split_commitments).
   let
-    allBases :: Vector totalBases (AffinePoint (FVar f))
     allBases =
       input.sgOld `Vector.append`
         ( (xHat :< ftCommResult :< input.zComm :< Vector.nil)
@@ -334,14 +333,12 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
 
     -- Per-base masks: sg_old entries use actual_proofs_verified_mask (Maybe keep),
     -- all other bases are unconditional (Nothing). Matches OCaml's Opt.Maybe for sg_old.
-    allBaseMasks :: Vector totalBases (Maybe (BoolVar f))
     allBaseMasks =
       (map (Just <<< coerce) input.sgOldMask) `Vector.append`
         (Vector.replicate @45 Nothing)
 
   -- 6. Build CheckBulletproofInput and run checkBulletproof
   let
-    bpInput :: CheckBulletproofInput d (FVar f) sf
     bpInput =
       { xi: input.deferredValues.xi
       , delta: input.opening.delta
@@ -413,10 +410,8 @@ packStatement { proofState: ps, messagesForNextStepProof } =
     bd = dv.branchData
 
     -- Branch_data.pack: 4*domain_log2 + mask_0 + 2*mask_1
-    m0 :: FVar f
     m0 = coerce (Vector.index bd.proofsVerifiedMask (unsafeFinite @2 0))
 
-    m1 :: FVar f
     m1 = coerce (Vector.index bd.proofsVerifiedMask (unsafeFinite @2 1))
     packedBranchData = unsafePartial $ unsafeFromField $
       CVar.add_ (CVar.scale_ (one + one + one + one) bd.domainLog2)

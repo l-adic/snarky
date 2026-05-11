@@ -174,14 +174,12 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       childCp2 :: CompiledProof 2 (StatementIO (F StepField) Unit) Unit Unit
       childCp2 = coerce childCp0
 
-      childTag2 :: Tag (F StepField) Unit 2
       childTag2 = coerce child.tag
 
     -- Assemble the runtime side-loaded VerificationKey. NRR's wrap
     -- circuit at log2 = 13 → `actualWrapDomainSize = N0`; child mpv =
     -- 0 → `maxProofsVerified = N0`.
     let
-      childVK :: Sideload.Bundle
       childVK = Sideload.mkBundle
         { verifierIndex: child.vks.wrap.verifierIndex
         , maxProofsVerified: N0

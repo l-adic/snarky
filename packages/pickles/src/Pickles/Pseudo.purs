@@ -85,7 +85,6 @@ mask
 mask bits xs = label "pseudo-mask" do
   -- OCaml Vector.map evaluates right-to-left (::  constructor)
   let
-    boolToField :: BoolVar f -> FVar f
     boolToField = coerce
   termsRev <- traverse (\(Tuple b x) -> mul_ (boolToField b) x) $
     Vector.reverse (Vector.zip bits xs)

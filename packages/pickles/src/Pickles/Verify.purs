@@ -321,20 +321,16 @@ verifyOne verifier (CompiledProof p) =
   let
     -- Endo-expand zeta once — needed for `vanishesOnZk` and passed into
     -- `expandDeferredForVerify` internally via its own endo expansion.
-    zetaField :: StepField
     zetaField = coerce (toFieldPure p.rawPlonk.zeta (F verifier.stepEndo))
 
     -- Per-proof step domain (= the proof's branch's step circuit
     -- domain log2). For multi-branch compiled outputs the shared
     -- verifier's `stepDomainLog2` is a placeholder; the proof's own
     -- `stepDomainLog2` is authoritative.
-    pStepGenerator :: StepField
     pStepGenerator = domainGenerator p.stepDomainLog2
 
-    pStepShifts :: Vector 7 StepField
     pStepShifts = domainShifts p.stepDomainLog2
 
-    vanishesOnZkAtZeta :: StepField
     vanishesOnZkAtZeta = permutationVanishingPolynomial
       { domainLog2: p.stepDomainLog2
       , zkRows: verifier.stepZkRows
@@ -347,7 +343,6 @@ verifyOne verifier (CompiledProof p) =
     -- the typed Vector inside the polymorphic continuation; the
     -- result type is `WrapDeferredValuesOutput` (no width
     -- parameter), so the existential boundary is satisfied.
-    dv :: WrapDeferredValuesOutput
     dv = runExists
       ( \(CompiledProofWidthData wd) ->
           expandDeferredForVerify
@@ -374,22 +369,17 @@ verifyOne verifier (CompiledProof p) =
     -- ===== Stage 2: IPA step accumulator check. =====
     -- OCaml `Ipa.Step.accumulator_check`: verify
     -- `compute_sg(expanded bp-chals) == challengePolynomialCommitment`.
-    expandedBpChals :: Array StepField
     expandedBpChals = Array.fromFoldable $
       map (\c -> coerce (toFieldPure c (F verifier.stepEndo)) :: StepField)
         p.rawBulletproofChallenges
 
-    computedSg :: AffinePoint WrapField
     computedSg = vestaSrsBPolyCommitmentPoint verifier.vestaSrs expandedBpChals
 
-    accumulatorOk :: Boolean
     accumulatorOk = computedSg == p.challengePolynomialCommitment
 
     -- ===== Stage 3: kimchi batch_verify on the wrap proof. =====
-    pi :: Array WrapField
     pi = wrapPublicInputOf dv p.messagesForNextStepProofDigest p.messagesForNextWrapProofDigest
 
-    kimchiOk :: Boolean
     kimchiOk = verifyOpeningProof verifier.wrapVK
       { proof: p.wrapProof, publicInput: pi }
   in
@@ -419,16 +409,12 @@ wrapPublicInput
   -> Array WrapField
 wrapPublicInput verifier (CompiledProof p) =
   let
-    zetaField :: StepField
     zetaField = coerce (toFieldPure p.rawPlonk.zeta (F verifier.stepEndo))
 
-    pStepGenerator :: StepField
     pStepGenerator = domainGenerator p.stepDomainLog2
 
-    pStepShifts :: Vector 7 StepField
     pStepShifts = domainShifts p.stepDomainLog2
 
-    vanishesOnZkAtZeta :: StepField
     vanishesOnZkAtZeta = permutationVanishingPolynomial
       { domainLog2: p.stepDomainLog2
       , zkRows: verifier.stepZkRows
@@ -439,7 +425,6 @@ wrapPublicInput verifier (CompiledProof p) =
     -- width is hidden in `widthData`; `runExists` recovers the typed
     -- Vector inside a polymorphic continuation that returns
     -- `WrapDeferredValuesOutput` (no width parameter).
-    dv :: WrapDeferredValuesOutput
     dv = runExists
       ( \(CompiledProofWidthData wd) ->
           expandDeferredForVerify

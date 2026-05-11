@@ -194,7 +194,6 @@ expandDeferred input =
 
     -- Step 1: derive_plonk (Type1 instantiation — return type pins
     -- the Shifted instance).
-    derivePlonkInput :: DerivePlonkInput StepField
     derivePlonkInput =
       { plonkMinimal: input.plonkMinimal
       , w: map _.zeta (Vector.take @7 input.allEvals.witnessEvals)
@@ -209,12 +208,10 @@ expandDeferred input =
       , endo: input.endo
       }
 
-    derivedPlonk :: PlonkInCircuit (F StepField) (Type1 (F StepField))
     derivedPlonk = derivePlonk derivePlonkInput
 
     -- Step 2: ft_eval0 (Type1 instantiation — step field + pallas
     -- linearization).
-    ftEval0Input :: FtEval0Input StepField
     ftEval0Input =
       { plonkMinimal: input.plonkMinimal
       , allEvals: input.allEvals
@@ -230,17 +227,14 @@ expandDeferred input =
       , linearizationPoly: input.linearizationPoly
       }
 
-    stepFtEval0 :: StepField
     stepFtEval0 = ftEval0 ftEval0Input
 
     -- Step 3: expand previous-proof bp challenges (used both for the
     -- challenges_digest sub-sponge and for combined_inner_product's
     -- b_poly inputs).
-    prevExpanded :: Vector n (Vector d StepField)
     prevExpanded = map (map expandChal) input.oldBulletproofChallenges
 
     -- Step 4a: sub-sponge over flattened expanded prev challenges.
-    challengesDigest :: StepField
     challengesDigest = evalPureSpongeM initialSponge do
       for_ prevExpanded \chals -> for_ chals absorb
       squeeze
@@ -269,7 +263,6 @@ expandDeferred input =
 
     -- Step 5: combined_inner_product (field-polymorphic, specialised
     -- here to StepField via the input types).
-    cipInputRec :: CombinedInnerProductBatchInput n d StepField
     cipInputRec =
       { allEvals: input.allEvals
       , publicEvals: input.allEvals.publicEvals
@@ -282,15 +275,12 @@ expandDeferred input =
       , zetaw
       }
 
-    cipActual :: StepField
     cipActual = combinedInnerProductBatch cipInputRec
 
     -- Step 6: this proof's own expanded bp challenges + b_actual via
     -- b_poly at zeta and zetaw.
-    ownExpanded :: Vector d StepField
     ownExpanded = map expandChal input.rawBulletproofChallenges
 
-    bActual :: StepField
     bActual =
       bPoly ownExpanded zetaField
         + rExpanded * bPoly ownExpanded zetaw
@@ -299,7 +289,6 @@ expandDeferred input =
     -- output type expects `SizedF 128 (F StepField)` to match
     -- `ScalarChallenge (F StepField)`. Both are newtypes over `StepField`
     -- so `wrapF` is a zero-cost coercion.
-    xiOutput :: ScalarChallenge (F StepField)
     xiOutput = wrapF mainSqueezes.xiRaw
   in
     { plonk: derivedPlonk
@@ -541,7 +530,6 @@ expandProof input =
     -- step.ml:236-241 (`Wrap_deferred_values.expand_deferred`) into
     -- a single call, because `expandDeferred` internally does the
     -- same `derive_plonk` OCaml redundantly recomputes locally.
-    deferredStep :: ExpandDeferredOutput StepIPARounds
     deferredStep = expandDeferred
       { zkRows: input.zkRows
       , srsLengthLog2: input.srsLengthLog2
@@ -579,7 +567,6 @@ expandProof input =
         input.stepPrevSgs
         input.oldBulletproofChallenges
 
-    messagesForNextStepProofDigest :: StepField
     messagesForNextStepProofDigest = hashMessagesForNextStepProofPure
       { stepVk: input.dlogIndex
       , appState: input.appStateFields
@@ -591,7 +578,6 @@ expandProof input =
     -- Matches OCaml step.ml:288-294 (`Wrap_hack.hash_messages_for_next
     -- _wrap_proof`). Caller pre-expanded and pre-padded the prev bp
     -- challenges (`pad_challenges` lives outside our scope).
-    messagesForNextWrapProofDigest :: WrapField
     messagesForNextWrapProofDigest = hashMessagesForNextWrapProofPureGeneral
       { sg: input.wrapChallengePolynomialCommitment
       , paddedChallenges: input.wrapPaddedPrevChallenges
@@ -605,7 +591,6 @@ expandProof input =
     -- 304-317 from `Wrap_hack.pad_accumulator` of (sg, expanded
     -- wrap-IPA challenges) pairs — caller supplies it via
     -- `wrapOraclesPrevChallenges`.
-    oraclesResult :: OraclesResult WrapField
     oraclesResult = vestaProofOracles input.wrapVerifierIndex
       { proof: input.wrapProof
       , publicInput: input.tockPublicInput
@@ -619,7 +604,6 @@ expandProof input =
     -- each element as a `SizedF 128`. Kimchi's `ScalarChallenge`
     -- contract guarantees the 128-bit bound, so `unsafeFromField` is
     -- safe here.
-    rawPrechalsVec :: Vector WrapIPARounds (SizedF 128 WrapField)
     rawPrechalsVec = map (unsafePartial unsafeFromField)
       ( vestaProofOpeningPrechallengesVec input.wrapVerifierIndex
           { proof: input.wrapProof
@@ -628,13 +612,10 @@ expandProof input =
           }
       )
 
-    wrapGen :: WrapField
     wrapGen = domainGenerator input.wrapDomainLog2
 
-    wrapZetaw :: WrapField
     wrapZetaw = oraclesResult.zeta * wrapGen
 
-    newBpResult :: BulletproofBOutput WrapIPARounds WrapField
     newBpResult = computeBpChalsAndB
       { rawPrechallenges: rawPrechalsVec
       , endo: input.wrapEndo
@@ -648,7 +629,6 @@ expandProof input =
     --     if not must_verify
     --       then Ipa.Wrap.compute_sg new_bulletproof_challenges
     --       else proof.openings.proof.challenge_polynomial_commitment
-    challengePolynomialCommitment :: AffinePoint StepField
     challengePolynomialCommitment =
       if input.mustVerify then
         vestaProofOpeningSg input.wrapProof
@@ -668,7 +648,6 @@ expandProof input =
     -- `O.gamma`, `O.zeta` — all raw 128-bit. Our FFI surfaces them as
     -- bare `SizedF 128 WrapField`; we wrap with `wrapF` to match
     -- `PlonkMinimal (F WrapField)`.
-    wrapPlonkMinimal :: PlonkMinimal (F WrapField)
     wrapPlonkMinimal =
       { alpha: wrapF oraclesResult.alphaChal
       , beta: wrapF oraclesResult.beta
@@ -679,7 +658,6 @@ expandProof input =
     -- derive_plonk for the wrap field (Type2 instantiation via the
     -- same `Common.derivePlonk` body; the `Shifted` instance is
     -- picked by the return-type annotation).
-    wrapDerivePlonkInput :: DerivePlonkInput WrapField
     wrapDerivePlonkInput =
       { plonkMinimal: wrapPlonkMinimal
       , w: map _.zeta (Vector.take @7 input.wrapAllEvals.witnessEvals)
@@ -694,11 +672,9 @@ expandProof input =
       , endo: input.wrapEndo
       }
 
-    wrapPlonkDerived :: PlonkInCircuit (F WrapField) (Type2 (F WrapField))
     wrapPlonkDerived = derivePlonk wrapDerivePlonkInput
 
     -- ft_eval0 for the wrap field — matches step.ml:487-492.
-    wrapFtEval0Input :: FtEval0Input WrapField
     wrapFtEval0Input =
       { plonkMinimal: wrapPlonkMinimal
       , allEvals: input.wrapAllEvals
@@ -714,13 +690,11 @@ expandProof input =
       , linearizationPoly: input.wrapLinearizationPoly
       }
 
-    wrapFtEval0 :: WrapField
     wrapFtEval0 = ftEval0 wrapFtEval0Input
 
     -- Wrap-field combined_inner_product (step.ml:464-496).
     -- `oracles.v` = polyscale (xi), `oracles.u` = evalscale (r). Both
     -- are already endo-expanded by the FFI.
-    wrapCipInput :: CombinedInnerProductBatchInput nwp WrapIPARounds WrapField
     wrapCipInput =
       { allEvals: input.wrapAllEvals
       , publicEvals:
@@ -736,7 +710,6 @@ expandProof input =
       , zetaw: wrapZetaw
       }
 
-    wrapCip :: WrapField
     wrapCip = combinedInnerProductBatch wrapCipInput
 
     -- OCaml `step.ml:583-589` restores the raw 128-bit alpha/beta/
@@ -747,7 +720,6 @@ expandProof input =
     -- `ivp_assert_plonk_*` assertions. Without this override, the
     -- `derive_plonk`-mutated values would diverge from the sponge
     -- output and break the equality checks.
-    wrapPlonkWithRawChals :: PlonkInCircuit (F WrapField) (Type2 (F WrapField))
     wrapPlonkWithRawChals = wrapPlonkDerived
       { alpha = wrapPlonkMinimal.alpha
       , beta = wrapPlonkMinimal.beta
@@ -826,14 +798,12 @@ expandProof input =
     -- `Step.ProofState` = the wrap proof's step-field Type1 deferred
     -- values, flattened into `Step.FopProofState`, plus `Step.BranchData`.
     -- Matches OCaml step.ml:266-285.
-    stepPlonkDerived :: PlonkInCircuit (F StepField) (Type1 (F StepField))
     stepPlonkDerived = deferredStep.plonk
 
     -- Convert the `Verify.Types.BranchData` record (flat with
     -- `proofsVerifiedMask :: Vector 2 _`) into the
     -- `Pickles.Types.BranchData` newtype (mask0/mask1 named fields,
     -- `F`-wrapped domainLog2). Same data, different packaging.
-    branchData :: Step.BranchData (F StepField) Boolean
     branchData =
       let
         v = deferredStep.branchData.proofsVerifiedMask
@@ -844,7 +814,6 @@ expandProof input =
           , domainLog2: F deferredStep.branchData.domainLog2
           }
 
-    proofState :: Step.ProofState StepIPARounds (F StepField) Boolean
     proofState = Step.ProofState
       -- The 5 fp slots store the **shifted inner** form (matching
       -- OCaml's `Per_proof_witness.proof_state.deferred_values.plonk`

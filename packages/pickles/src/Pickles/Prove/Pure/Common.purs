@@ -132,7 +132,6 @@ computeBpChalsAndB
   -> BulletproofBOutput d f
 computeBpChalsAndB input =
   let
-    chals :: Vector d f
     chals = map (\chal -> toFieldPure chal input.endo) input.rawPrechallenges
 
     bAtZeta = bPoly chals input.zeta
@@ -198,7 +197,6 @@ combinedInnerProductBatch
   -> f
 combinedInnerProductBatch input =
   let
-    bPolyEvals :: Array (PointEval f)
     bPolyEvals = map
       ( \chals ->
           { zeta: bPoly chals input.zeta
@@ -207,12 +205,10 @@ combinedInnerProductBatch input =
       )
       (Array.fromFoldable input.oldBulletproofChallenges)
 
-    ftPointEval :: PointEval f
     ftPointEval = { zeta: input.ftEval0, omegaTimesZeta: input.ftEval1 }
 
     all = input.allEvals
 
-    orderedEvals :: Array (PointEval f)
     orderedEvals =
       bPolyEvals
         <> [ input.publicEvals, ftPointEval, all.zEvals ]
@@ -449,7 +445,6 @@ ftEval0 input =
       , defaultVal: zero
       }
 
-    challenges :: Challenges f
     challenges =
       { alpha: expanded.alpha
       , beta: expanded.beta

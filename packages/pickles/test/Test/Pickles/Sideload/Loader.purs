@@ -164,23 +164,18 @@ verifyOcamlProof
   -> Boolean
 verifyOcamlProof verifier (OcamlProof p) =
   let
-    zetaField :: StepField
     zetaField = coerce (toFieldPure p.rawPlonk.zeta (F verifier.stepEndo))
 
-    pStepGenerator :: StepField
     pStepGenerator = domainGenerator p.stepDomainLog2
 
-    pStepShifts :: Vector 7 StepField
     pStepShifts = domainShifts p.stepDomainLog2
 
-    vanishesOnZkAtZeta :: StepField
     vanishesOnZkAtZeta = permutationVanishingPolynomial
       { domainLog2: p.stepDomainLog2
       , zkRows: verifier.stepZkRows
       , pt: zetaField
       }
 
-    dv :: WrapDeferredValuesOutput
     dv = runExists
       ( \(OcamlProofWidthData wd) ->
           expandDeferredForVerify
@@ -204,21 +199,16 @@ verifyOcamlProof verifier (OcamlProof p) =
       )
       p.widthData
 
-    expandedBpChals :: Array StepField
     expandedBpChals = Array.fromFoldable $
       map (\c -> coerce (toFieldPure c (F verifier.stepEndo)) :: StepField)
         p.rawBulletproofChallenges
 
-    computedSg :: AffinePoint WrapField
     computedSg = vestaSrsBPolyCommitmentPoint verifier.vestaSrs expandedBpChals
 
-    accumulatorOk :: Boolean
     accumulatorOk = computedSg == p.challengePolynomialCommitment
 
-    pi :: Array WrapField
     pi = wrapPublicInputOf dv p.messagesForNextStepProofDigest p.messagesForNextWrapProofDigest
 
-    kimchiOk :: Boolean
     kimchiOk = verifyOpeningProof verifier.wrapVK
       { proof: p.wrapProof, publicInput: pi }
   in
@@ -293,7 +283,6 @@ loadFixture cfg dir = do
     appStateFields = cfg.toFields statement
 
     -- Empty width-indexed widthData for `mpv = 0`.
-    widthData :: SomeOcamlProofWidthData
     widthData = mkSomeOcamlProofWidthData @0
       { oldBulletproofChallenges: Vector.nil
       }
@@ -304,7 +293,6 @@ loadFixture cfg dir = do
     -- would go here for mpv > 0.
     wrapVkStep = extractWrapVKForStepHash vk
 
-    msgStep :: StepField
     msgStep = hashMessagesForNextStepProofPure
       { stepVk: wrapVkStep
       , appState: appStateFields
@@ -314,10 +302,8 @@ loadFixture cfg dir = do
     -- For mpv = 0: paddedChallenges = full Vector PaddedLength of dummy
     -- expanded wrap-IPA challenges. Mirrors `msgWrapPadded` construction
     -- in `Pickles.Prove.Compile:2830-2833` with `padMax = PaddedLength`.
-    msgWrapPadded :: Vector PaddedLength (Vector _ WrapField)
     msgWrapPadded = Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
 
-    msgWrap :: WrapField
     msgWrap = hashMessagesForNextWrapProofPureGeneral
       { sg: decoded.challengePolynomialCommitment
       , paddedChallenges: msgWrapPadded
@@ -422,7 +408,6 @@ decodeInt64 j =
 combineLimbsLE :: Array BigInt -> BigInt
 combineLimbsLE limbs =
   let
-    twoTo64 :: BigInt
     twoTo64 = JsBigInt.shl (JsBigInt.fromInt 1) (JsBigInt.fromInt 64)
 
     toUnsigned :: BigInt -> BigInt

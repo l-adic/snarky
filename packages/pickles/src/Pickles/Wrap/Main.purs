@@ -400,7 +400,6 @@ wrapMain config (StatementPacked stmtR) = do
     wrapDomainLog2 = wrapIpaRounds
     wrapSrsLengthLog2 = wrapIpaRounds
 
-    boolToField :: BoolVar WrapField -> FVar WrapField
     boolToField = coerce
 
     -- Project the StatementPacked vectors into named fields, in OCaml
@@ -476,7 +475,6 @@ wrapMain config (StatementPacked stmtR) = do
       --   (matches the old hand-unrolled `maskVal1 + 2*maskVal0`).
       branchDataMaskWidth = 2
 
-      packedMask :: FVar WrapField
       packedMask = foldl
         ( \acc (Tuple slotIdx m) ->
             let
@@ -533,7 +531,6 @@ wrapMain config (StatementPacked stmtR) = do
   slotsValue <- label "old-bp-chals" $ exists $ lift $
     getOldBulletproofChallenges @branches @mpv @slots @VestaG unit
   let
-    dummyChallenge :: Vector WrapIPARounds (FVar WrapField)
     dummyChallenge = map const_ dummyIpaChallenges.wrapExpanded
 
     paddedChalsAll
@@ -573,10 +570,8 @@ wrapMain config (StatementPacked stmtR) = do
     -- Per-slot views projected uniformly. These are pure lets; the
     -- helpers consume the prepared views inside the monadic loops
     -- below, so emission order is determined by the traversals.
-    unfViews :: Vector mpv UnfinalizedView
     unfViews = map unpackUnfinalized prevUnfinalized
 
-    witnesses :: Vector mpv (ProofWitness (FVar WrapField))
     witnesses = map stepAllEvalsToProofWitness rawEvals
 
   -- Pseudo domains — right-to-left, matching OCaml's `Vector.map`
@@ -586,7 +581,6 @@ wrapMain config (StatementPacked stmtR) = do
   -- index (post-reverse), so slot N-1 is emitted first.
   domains <- do
     let
-      revIdxs :: Vector mpv Int
       revIdxs = Vector.reverse (Vector.generate @mpv getFinite)
       revWdis = Vector.reverse wrapDomainIndices
       revInputs = Vector.zip revIdxs revWdis
@@ -608,7 +602,6 @@ wrapMain config (StatementPacked stmtR) = do
   -- record-flat instead of nesting Tuples.
   expandedChalsAll <-
     let
-      idxs :: Vector mpv (Finite mpv)
       idxs = Vector.generate @mpv identity
     in
       traverse
@@ -638,14 +631,12 @@ wrapMain config (StatementPacked stmtR) = do
     -- Real (unpadded) challenges per slot: drop the leading padding
     -- entries from each padded vector. Returns `Array` because the
     -- runtime slot width erases the type-level length.
-    perSlotReal :: Vector mpv (Array (Vector WrapIPARounds (FVar WrapField)))
     perSlotReal = Vector.zipWith
       (\w padded -> Array.drop (paddedLenInt - w) (Vector.toUnfoldable padded))
       slotWidths
       paddedChalsAll
   msgsForWrap <- do
     let
-      idxs :: Vector mpv (Finite mpv)
       idxs = Vector.generate @mpv identity
       revIdxs = Vector.reverse idxs
     revMsgs <- traverse
@@ -725,7 +716,6 @@ wrapMain config (StatementPacked stmtR) = do
       ivpTrace ("wrap.dbg.unf" <> show slotIdx <> ".bpc." <> show (getFinite fj)) (SizedF.toField c)
 
   let
-    publicInput :: PackedStepPublicInput mpv WrapIPARounds (FVar WrapField) (BoolVar WrapField)
     publicInput = PackedStepPublicInput
       { proofState:
           { unfinalizedProofs: splitProofs
@@ -736,7 +726,6 @@ wrapMain config (StatementPacked stmtR) = do
 
   -- 14. Block 6: wrapVerify (IVP + 4 assertions)
   let
-    branchBools :: Vector branches (FVar WrapField)
     branchBools = map boolToField whichBranch
 
     -- 1-hot masked sum of `Vector branches (AffinePoint (F WrapField))`
@@ -749,7 +738,6 @@ wrapMain config (StatementPacked stmtR) = do
       -> AffinePoint (FVar WrapField)
     sumMaskByBranch perBranchPts =
       let
-        scaledPts :: Vector branches (AffinePoint (FVar WrapField))
         scaledPts = Vector.zipWith
           ( \b { x: F x', y: F y' } ->
               { x: CVar.scale_ x' b, y: CVar.scale_ y' b }

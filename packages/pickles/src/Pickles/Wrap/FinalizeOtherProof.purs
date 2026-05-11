@@ -207,10 +207,8 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
       , defaultVal: const_ zero
       }
 
-    w0 :: Vector 15 (FVar f)
     w0 = map _.zeta allEvals.witnessEvals
 
-    s0 :: Vector 6 (FVar f)
     s0 = map _.zeta allEvals.sigmaEvals
 
     zZeta = allEvals.zEvals.zeta
@@ -305,7 +303,6 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
 
     vanishesOnZk = const_ one
 
-    baseEnv :: EnvM f (Snarky (KimchiConstraint f) t m)
     baseEnv = buildCircuitEnvM
       alphaPowers
       zeta
