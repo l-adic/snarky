@@ -145,6 +145,46 @@ const lines = [
   "",
 ];
 
+// Compute the longest common dotted-component prefix shared by all modules
+// in a package. e.g. ["Pickles.Step.Main", "Pickles.Wrap.Main"] -> "Pickles.".
+function commonNamespacePrefix(mods) {
+  if (mods.length === 0) return "";
+  const parts = mods.map((m) => m.split("."));
+  const minLen = Math.min(...parts.map((p) => p.length));
+  let i = 0;
+  while (i < minLen - 1 && parts.every((p) => p[i] === parts[0][i])) i++;
+  // Stop one component short of the shortest module so at least one
+  // component remains as the sub-group key.
+  return parts[0].slice(0, i).join(".") + (i > 0 ? "." : "");
+}
+
+// Group `mods` by their first component AFTER `prefix`. Modules whose
+// remainder is a single component (no sub-namespace) are "loose".
+// Groups with only one module are also flattened to loose.
+function subGroupsForPackage(mods, prefix) {
+  const groups = new Map(); // groupName -> [modules]
+  const loose = [];
+  for (const mod of mods) {
+    const tail = mod.slice(prefix.length);
+    const dotIdx = tail.indexOf(".");
+    if (dotIdx < 0) {
+      loose.push(mod);
+    } else {
+      const key = tail.slice(0, dotIdx);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(mod);
+    }
+  }
+  // Singleton groups collapse to loose.
+  for (const [key, group] of [...groups.entries()]) {
+    if (group.length < 2) {
+      loose.push(...group);
+      groups.delete(key);
+    }
+  }
+  return { groups, loose };
+}
+
 let colorIdx = 0;
 for (const [pkg, mods] of [...byPackage.entries()].sort()) {
   const color = pkgColors[colorIdx++ % pkgColors.length];
@@ -154,9 +194,30 @@ for (const [pkg, mods] of [...byPackage.entries()].sort()) {
   lines.push(`    color="${color}";`);
   lines.push(`    fontsize=14;`);
   lines.push(`    fontname="bold";`);
-  for (const mod of mods.sort()) {
+
+  const prefix = commonNamespacePrefix(mods);
+  const { groups, loose } = subGroupsForPackage(mods, prefix);
+
+  // Loose modules render directly inside the package cluster.
+  for (const mod of loose.sort()) {
     lines.push(`    "${mod}";`);
   }
+
+  // Sub-namespace clusters nest inside the package cluster. Slight
+  // tint variation keeps the package's identity visible.
+  for (const [groupName, groupMods] of [...groups.entries()].sort()) {
+    lines.push(`    subgraph "cluster_${pkg}_${groupName}" {`);
+    lines.push(`      label="${prefix}${groupName}";`);
+    lines.push(`      style="filled,dashed";`);
+    lines.push(`      color="${color.slice(0, 7)}80";`);
+    lines.push(`      fontsize=11;`);
+    lines.push(`      fontname="italic";`);
+    for (const mod of groupMods.sort()) {
+      lines.push(`      "${mod}";`);
+    }
+    lines.push("    }");
+  }
+
   lines.push("  }");
   lines.push("");
 }

@@ -1,4 +1,4 @@
-.PHONY: help all clean build-crypto test-curves test-snarky test-bulletproofs test-groth16 test-pickles-circuit-diffs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint build-ps gen-linearization dep-graph
+.PHONY: help all clean build-crypto test-curves test-snarky test-bulletproofs test-groth16 test-pickles-circuit-diffs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint build-ps gen-linearization dep-graph pickles-inventory
 
 .DEFAULT_GOAL := help
 
@@ -138,6 +138,10 @@ EXCLUDE ?= snarky-bulletproofs,snarky-groth16
 CLOSURE ?=
 dep-graph: ## Generate module dependency graph as deps.svg
 	node workspace-deps.js --exclude $(EXCLUDE) $(if $(CLOSURE),--closure $(CLOSURE))
+
+.PHONY: pickles-inventory
+pickles-inventory: ## Generate analysis/pickles-inventory.md (Phase 1 of module reorg)
+	node pickles-inventory.js
 
 .PHONY: fetch-srs
 fetch-srs: ## Download the srs-cache from github
