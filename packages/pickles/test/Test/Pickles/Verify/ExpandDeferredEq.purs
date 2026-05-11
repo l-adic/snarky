@@ -28,6 +28,7 @@ module Test.Pickles.Verify.ExpandDeferredEq
   ) where
 
 import Prelude
+import Pickles (BranchProver(..), Compiled, CompiledProof(..), compileMulti, mkRuleEntry, NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, Slots1, SlotWrapKey(..), StatementIO(..), StepField)
 
 import Control.Monad.Except (runExceptT)
 import Data.Either (Either(..))
@@ -40,26 +41,13 @@ import Data.Vector (Vector)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles.Field (StepField)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.Prove.Compile
-  ( BranchProver(..)
-  , CompiledProof(..)
-  , CompiledProofWidthData(..)
-  , PrevSlot(..)
-  , RulesCons
-  , RulesNil
-  , SlotWrapKey(..)
-  , compileMulti
-  , mkRuleEntry
-  )
+import Pickles.Prove.Compile (CompiledProofWidthData(..))
 import Pickles.Prove.Pure.Verify (ExpandDeferredInput, expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput)
-import Pickles.Slots (Compiled, Slot)
-import Pickles.Types (StatementIO(..), StepIPARounds)
+import Pickles.Types (StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
-import Pickles.Wrap.Slots (NoSlots, Slots1)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.DSL (F(..))

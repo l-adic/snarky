@@ -38,6 +38,8 @@ module Test.Pickles.Sideload.Loader
   ) where
 
 import Prelude
+import Pickles (StepField, Verifier, WrapField, wrapPublicInputOf)
+import Pickles.Sideload (noOptionalFeatures, vestaHydrateVerifierIndex, vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJson)
 
 import Data.Argonaut.Core (Json)
 import Data.Argonaut.Decode (JsonDecodeError(..), decodeJson, printJsonDecodeError, (.:))
@@ -63,15 +65,12 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Sync (readTextFile)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Pickles.Dummy (dummyIpaChallenges)
-import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.ProofFFI (Proof, permutationVanishingPolynomial, verifyOpeningProof)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput)
 import Pickles.Prove.Step (extractWrapVKForStepHash)
-import Pickles.Prove.Verify (Verifier, wrapPublicInputOf)
-import Pickles.Sideload.FFI (noOptionalFeatures, vestaHydrateVerifierIndex, vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJson)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Step.Types as Step
 import Pickles.Types (PaddedLength, StepIPARounds)

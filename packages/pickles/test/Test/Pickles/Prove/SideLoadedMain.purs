@@ -14,6 +14,7 @@ module Test.Pickles.Prove.SideLoadedMain
   ) where
 
 import Prelude
+import Pickles (BranchProver(..), CompiledProof, compileMulti, getPrevAppStates, mkRuleEntry, NoSlots, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, SideLoaded, Slot, Slots1, StatementIO(..), StepField, StepRule, Tag)
 
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift) as MT
@@ -28,24 +29,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Partial.Unsafe (unsafePartial)
-import Pickles.Field (StepField)
-import Pickles.ProofsVerified (ProofsVerified(..))
-import Pickles.Prove.Compile
-  ( BranchProver(..)
-  , CompiledProof
-  , PrevSlot(..)
-  , RulesCons
-  , RulesNil
-  , Tag
-  , compileMulti
-  , mkRuleEntry
-  )
-import Pickles.Prove.Step (StepRule)
 import Pickles.Sideload.Bundle (Bundle, mkBundle) as Sideload
-import Pickles.Slots (SideLoaded, Slot)
-import Pickles.Step.Advice (getPrevAppStates)
-import Pickles.Types (StatementIO(..))
-import Pickles.Wrap.Slots (NoSlots, Slots1)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl

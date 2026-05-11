@@ -19,6 +19,7 @@ module Test.Pickles.Prove.TwoPhaseChain
   ) where
 
 import Prelude
+import Pickles (BranchProver(..), Compiled, compileMulti, getPrevAppStates, mkRuleEntry, NoSlots, PrevSlot(..), RuleEntry, RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, verify)
 
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift) as MT
@@ -34,25 +35,9 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception as Exc
-import Pickles.Field (StepField)
-import Pickles.Prove.Compile
-  ( BranchProver(..)
-  , PrevSlot(..)
-  , RuleEntry
-  , RulesCons
-  , RulesNil
-  , SlotWrapKey(..)
-  , compileMulti
-  , mkRuleEntry
-  )
-import Pickles.Prove.Step (StepRule)
-import Pickles.Prove.Verify (verify)
-import Pickles.Slots (Compiled, Slot)
-import Pickles.Step.Advice (getPrevAppStates)
 import Pickles.Step.Main (SlotVkBlueprintCompiled)
 import Pickles.Step.Types (PerProofWitness)
-import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
-import Pickles.Wrap.Slots (NoSlots)
+import Pickles.Types (StepIPARounds, WrapIPARounds)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.CVar (add_) as CVar

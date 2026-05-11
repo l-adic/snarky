@@ -5,10 +5,10 @@ module Test.Pickles.Sideload.RoundTripMainChildSpec
   ) where
 
 import Prelude
+import Pickles (StepField)
+import Pickles.Sideload (vestaVerifierIndexToSerdeJson)
 
 import Effect.Aff (Aff)
-import Pickles.Field (StepField)
-import Pickles.Sideload.FFI (vestaVerifierIndexToSerdeJson)
 import Snarky.Curves.Class (fromInt)
 import Test.Pickles.Sideload.Loader (OcamlProof(..), loadNrrFixture)
 import Test.Spec (SpecT, describe, it)

@@ -9,9 +9,14 @@ from the inventory. Curate by hand into `docs/pickles-tiering.md`.
 - M2 strict-AND violations: 0
 - C3 grab-bag splits: 0
 - M1 cohesion-move candidates: 0
-- D2 facade modules: 0
+- D2 facade modules: 2
 - D3 single-binding inline candidates: 2
 - D4 orphan modules: 2
+
+## D2 — facade modules
+
+- `Pickles`
+- `Pickles.Sideload`
 
 ## D3 — single-binding inline candidates
 
@@ -22,5 +27,5 @@ from the inventory. Curate by hand into `docs/pickles-tiering.md`.
 
 Investigate before deleting — these may be the public API surface.
 
-- `Pickles.Prove.Compile`
-- `Pickles.Sideload.FFI`
+- `Pickles`
+- `Pickles.Sideload`
