@@ -16,12 +16,12 @@ import Data.Tuple.Nested (tuple3, tuple6)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyVestaPt, unsafeIdx, wrapEndo)
+import Pickles.Field (WrapField)
 import Pickles.PackedStatement (PackedStepPublicInput, fromPackedTuple)
 import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Verify (incrementallyVerifyProof)
 import Pickles.Wrap.OtherField as WrapOtherField
-import Pickles.Wrap.Types (Field)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, assertEq, assertEqual_, const_)
@@ -34,41 +34,41 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type IvpWrapParams =
-  { lagrangeAt :: LagrangeBaseLookup Field
-  , blindingH :: AffinePoint (F Field)
+  { lagrangeAt :: LagrangeBaseLookup WrapField
+  , blindingH :: AffinePoint (F WrapField)
   }
 
 type IvpWrapInput pi =
   { publicInput :: pi
   , deferredValues ::
       { plonk ::
-          { alpha :: SizedF 128 (FVar Field)
-          , beta :: SizedF 128 (FVar Field)
-          , gamma :: SizedF 128 (FVar Field)
-          , zeta :: SizedF 128 (FVar Field)
-          , perm :: Type1 (FVar Field)
-          , zetaToSrsLength :: Type1 (FVar Field)
-          , zetaToDomainSize :: Type1 (FVar Field)
+          { alpha :: SizedF 128 (FVar WrapField)
+          , beta :: SizedF 128 (FVar WrapField)
+          , gamma :: SizedF 128 (FVar WrapField)
+          , zeta :: SizedF 128 (FVar WrapField)
+          , perm :: Type1 (FVar WrapField)
+          , zetaToSrsLength :: Type1 (FVar WrapField)
+          , zetaToDomainSize :: Type1 (FVar WrapField)
           }
-      , combinedInnerProduct :: Type1 (FVar Field)
-      , b :: Type1 (FVar Field)
-      , xi :: SizedF 128 (FVar Field)
-      , bulletproofChallenges :: Vector 16 (SizedF 128 (FVar Field))
+      , combinedInnerProduct :: Type1 (FVar WrapField)
+      , b :: Type1 (FVar WrapField)
+      , xi :: SizedF 128 (FVar WrapField)
+      , bulletproofChallenges :: Vector 16 (SizedF 128 (FVar WrapField))
       }
-  , wComm :: Vector 15 (AffinePoint (FVar Field))
-  , zComm :: AffinePoint (FVar Field)
-  , tComm :: Vector 7 (AffinePoint (FVar Field))
+  , wComm :: Vector 15 (AffinePoint (FVar WrapField))
+  , zComm :: AffinePoint (FVar WrapField)
+  , tComm :: Vector 7 (AffinePoint (FVar WrapField))
   , opening ::
-      { delta :: AffinePoint (FVar Field)
-      , sg :: AffinePoint (FVar Field)
-      , lr :: Vector 16 { l :: AffinePoint (FVar Field), r :: AffinePoint (FVar Field) }
-      , z1 :: Type1 (FVar Field)
-      , z2 :: Type1 (FVar Field)
+      { delta :: AffinePoint (FVar WrapField)
+      , sg :: AffinePoint (FVar WrapField)
+      , lr :: Vector 16 { l :: AffinePoint (FVar WrapField), r :: AffinePoint (FVar WrapField) }
+      , z1 :: Type1 (FVar WrapField)
+      , z2 :: Type1 (FVar WrapField)
       }
-  , claimedDigest :: FVar Field
+  , claimedDigest :: FVar WrapField
   }
 
-parseIvpWrapInput :: Vector 177 (FVar Field) -> IvpWrapInput (PackedStepPublicInput 1 15 (FVar Field) (BoolVar Field))
+parseIvpWrapInput :: Vector 177 (FVar WrapField) -> IvpWrapInput (PackedStepPublicInput 1 15 (FVar WrapField) (BoolVar WrapField))
 parseIvpWrapInput inputs =
   let
     at = unsafeIdx inputs
@@ -89,9 +89,9 @@ parseIvpWrapInput inputs =
             :< Vector.nil
         )
         ( (Vector.generate \j -> asSizedF128 (at (16 + getFinite j)))
-            :: Vector 15 (SizedF 128 (FVar Field))
+            :: Vector 15 (SizedF 128 (FVar WrapField))
         )
-        (coerce (at 31) :: BoolVar Field)
+        (coerce (at 31) :: BoolVar WrapField)
     stmtTuple =
       tuple3
         (perProofTuple :< Vector.nil)
@@ -132,11 +132,11 @@ parseIvpWrapInput inputs =
 
 ivpWrapCircuit
   :: forall pi t m
-   . CircuitM Field (KimchiConstraint Field) t m
-  => PublicInputCommit pi Field
+   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  => PublicInputCommit pi WrapField
   => IvpWrapParams
   -> IvpWrapInput pi
-  -> Snarky (KimchiConstraint Field) t m Unit
+  -> Snarky (KimchiConstraint WrapField) t m Unit
 ivpWrapCircuit { lagrangeAt, blindingH } input = do
   let
     constDummyPt = let { x: F x', y: F y' } = dummyVestaPt in { x: const_ x', y: const_ y' }
@@ -173,8 +173,8 @@ ivpWrapCircuit { lagrangeAt, blindingH } input = do
   for_ (Vector.zip input.deferredValues.bulletproofChallenges output.bulletproofChallenges) \(Tuple c1 c2) ->
     assertEq c1 c2
 
-compileIvpWrap :: IvpWrapParams -> CompiledCircuit Field
+compileIvpWrap :: IvpWrapParams -> CompiledCircuit WrapField
 compileIvpWrap srsData =
-  compilePure (Proxy @(Vector 177 (F Field))) (Proxy @Unit) (Proxy @(KimchiConstraint Field))
+  compilePure (Proxy @(Vector 177 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> ivpWrapCircuit srsData (parseIvpWrapInput inputs))
     Kimchi.initialState

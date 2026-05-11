@@ -4,7 +4,7 @@
 -- | Two type parameters select between value and var forms via the
 -- | same record:
 -- |
--- | * value: `VerificationKey (F Field) Boolean`
+-- | * value: `VerificationKey (F StepField) Boolean`
 -- | * var:   `VerificationKey (FVar f)     (BoolVar f)`
 -- |
 -- | No kimchi runtime handle here — that lives in
@@ -23,8 +23,8 @@ import Data.Generic.Rep (class Generic)
 import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Pickles.Field (StepField)
 import Pickles.ProofsVerified (ProofsVerified(..), ProofsVerifiedCount, proofsVerifiedToBoolVec)
-import Pickles.Step.Types (Field)
 import Pickles.VerificationKey as VK
 import Snarky.Circuit.DSL (BoolVar, F(..), FVar, assertExactlyOne_, label)
 import Snarky.Circuit.DSL.Monad (class CheckedType, check)
@@ -128,7 +128,7 @@ instance
 -- | bits. Pure construction — feeds `exists` for in-circuit allocation
 -- | of the placeholder; the constraint-system pass never reads the
 -- | point coordinates.
-compileDummy :: VerificationKey (F Field) Boolean
+compileDummy :: VerificationKey (F StepField) Boolean
 compileDummy = mkVerificationKey
   { maxProofsVerified: N2
   , actualWrapDomainSize: N2
@@ -142,16 +142,16 @@ compileDummy = mkVerificationKey
   where
   -- Off-curve placeholder. Mirrors OCaml `Pickles.Side_loaded.dummy`'s
   -- use of `Inner_curve.Constant.zero` for the wrap-VK commitments.
-  g :: WeierstrassAffinePoint Pallas.G (F Field)
+  g :: WeierstrassAffinePoint Pallas.G (F StepField)
   g = WeierstrassAffinePoint { x: F zero, y: F zero }
 
 -- | Smart constructor from the user-friendly `ProofsVerified` enum.
 mkVerificationKey
   :: { maxProofsVerified :: ProofsVerified
      , actualWrapDomainSize :: ProofsVerified
-     , wrapIndex :: VK.VerificationKey (WeierstrassAffinePoint Pallas.G (F Field))
+     , wrapIndex :: VK.VerificationKey (WeierstrassAffinePoint Pallas.G (F StepField))
      }
-  -> VerificationKey (F Field) Boolean
+  -> VerificationKey (F StepField) Boolean
 mkVerificationKey r = VerificationKey
   { maxProofsVerified: proofsVerifiedToBoolVec r.maxProofsVerified
   , actualWrapDomainSize: proofsVerifiedToBoolVec r.actualWrapDomainSize

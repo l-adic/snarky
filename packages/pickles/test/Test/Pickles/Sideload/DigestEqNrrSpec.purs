@@ -22,9 +22,9 @@ import Data.Maybe (Maybe(..))
 import Data.Tuple.Nested (tuple1)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import Pickles.Field (StepField)
 import Pickles.ProofFFI (vestaVerifierIndexDigest)
 import Pickles.Prove.Compile (compileMulti, mkRuleEntry)
-import Pickles.Step.Types (Field)
 import Pickles.Wrap.Slots (NoSlots)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
@@ -39,12 +39,12 @@ spec = describe "Pickles.Sideload.NRR digest equality" do
   it "PS compileMulti VK digest == OCaml compile VK digest" \_ -> do
     -- PureScript-side compile: produce the wrap VK for NRR.
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
-    vestaSrs <- liftEffect $ createCRS @Field
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F Field) @Unit nrrRule unit
+    vestaSrs <- liftEffect $ createCRS @StepField
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule unit
     let rules = tuple1 nrrEntry
     output <- liftEffect $ compileMulti
       @NrrRules
-      @(F Field)
+      @(F StepField)
       @Unit
       @NoSlots
       { srs: { vestaSrs, pallasSrs }
@@ -59,7 +59,7 @@ spec = describe "Pickles.Sideload.NRR digest equality" do
     -- Compare digests. `vestaVerifierIndexDigest` calls kimchi's
     -- `VerifierIndex.digest::<VestaBaseSponge>()` under the hood, hashing
     -- the VK's stable fields via Poseidon in the OTHER curve's scalar field
-    -- (= Fp = Field for the wrap VK on Pallas).
+    -- (= Fp = StepField for the wrap VK on Pallas).
     let psDigest = vestaVerifierIndexDigest output.verifier.wrapVK
     let ocamlDigest = vestaVerifierIndexDigest fixture.vk
     psDigest `shouldEqual` ocamlDigest

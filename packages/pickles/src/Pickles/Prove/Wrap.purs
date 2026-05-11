@@ -53,6 +53,7 @@ import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Node.Process as Process
+import Pickles.Field (StepField, WrapField)
 import Pickles.ProofFFI (Proof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLrVec, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexCommitments, tCommVec, vestaCreateProofWithPrev)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.Types as Step
@@ -96,22 +97,22 @@ import Type.Proxy (Proxy(..))
 -- |   `Pickles.Wrap.Slots` (`NoSlots`, `Slots1 w`, or `Slots2 w0 w1`).
 -- |
 -- | The commitment curve is pinned to `VestaG` (the Step proof's
--- | commitment curve) and the field to `Wrap.Field` (= `Vesta.BaseField`
+-- | commitment curve) and the field to `WrapField` (= `Vesta.BaseField`
 -- | = the native field of the wrap circuit).
 type WrapAdvice (mpv :: Int) (slots :: Type -> Type) =
-  { whichBranch :: F Wrap.Field
+  { whichBranch :: F WrapField
   , wrapProofState ::
-      Wrap.PrevProofState mpv (Type2 (F Wrap.Field)) (F Wrap.Field) Boolean
-  , stepAccs :: Vector mpv (WeierstrassAffinePoint VestaG (F Wrap.Field))
-  , oldBpChals :: slots (Vector WrapIPARounds (F Wrap.Field))
-  , evals :: Vector mpv (StepAllEvals (F Wrap.Field))
-  , wrapDomainIndices :: Vector mpv (F Wrap.Field)
+      Wrap.PrevProofState mpv (Type2 (F WrapField)) (F WrapField) Boolean
+  , stepAccs :: Vector mpv (WeierstrassAffinePoint VestaG (F WrapField))
+  , oldBpChals :: slots (Vector WrapIPARounds (F WrapField))
+  , evals :: Vector mpv (StepAllEvals (F WrapField))
+  , wrapDomainIndices :: Vector mpv (F WrapField)
   , openingProof ::
       WrapProofOpening
         StepIPARounds
-        (WeierstrassAffinePoint VestaG (F Wrap.Field))
-        (Type1 (F Wrap.Field))
-  , messages :: WrapProofMessages (WeierstrassAffinePoint VestaG (F Wrap.Field))
+        (WeierstrassAffinePoint VestaG (F WrapField))
+        (Type1 (F WrapField))
+  , messages :: WrapProofMessages (WeierstrassAffinePoint VestaG (F WrapField))
   }
 
 -- | ReaderT transformer carrying a `WrapAdvice` over a base monad.
@@ -165,7 +166,7 @@ instance
     mpv
     slots
     VestaG
-    Wrap.Field
+    WrapField
     (WrapProverT branches mpv slots m) where
   getWhichBranch _ = WrapProverT $ map _.whichBranch ask
   getWrapProofState _ = WrapProverT $ map _.wrapProofState ask
@@ -202,13 +203,13 @@ instance
 --
 -- Cross-field conversions:
 --
--- * Step proof opening scalars `z1`/`z2` are `Step.Field` values; the
---   wrap statement stores them as `Type1 (F Wrap.Field)`. We go
---   through the cross-field `Shifted (F Step.Field) (Type1 (F Wrap.Field))`
+-- * Step proof opening scalars `z1`/`z2` are `StepField` values; the
+--   wrap statement stores them as `Type1 (F WrapField)`. We go
+--   through the cross-field `Shifted (F StepField) (Type1 (F WrapField))`
 --   instance.
 -- * Step proof commitments are Vesta affine points with coordinates
---   in `Vesta.BaseField = Wrap.Field`, so no cross-field conversion is
---   needed — `WeierstrassAffinePoint VestaG (F Wrap.Field)` wraps
+--   in `Vesta.BaseField = WrapField`, so no cross-field conversion is
+--   needed — `WeierstrassAffinePoint VestaG (F WrapField)` wraps
 --   them directly.
 --------------------------------------------------------------------------------
 
@@ -217,10 +218,10 @@ instance
 -- | for the wrap circuit handler.
 type BuildWrapAdviceInput (mpv :: Int) (slots :: Type -> Type) =
   { -- | The step proof being wrapped (kimchi in-memory form).
-    stepProof :: Proof Vesta.G Step.Field
+    stepProof :: Proof Vesta.G StepField
 
   -- | Selected step-branch index. OCaml: `Req.Which_branch`.
-  , whichBranch :: F Wrap.Field
+  , whichBranch :: F WrapField
 
   -- | mpv unfinalized proofs decoded out of the step proof's public
   -- | input, in wrap-field Type2 form (same-field, not SplitField —
@@ -230,42 +231,42 @@ type BuildWrapAdviceInput (mpv :: Int) (slots :: Type -> Type) =
       Vector mpv
         ( PerProofUnfinalized
             WrapIPARounds
-            (Type2 (F Wrap.Field))
-            (F Wrap.Field)
+            (Type2 (F WrapField))
+            (F WrapField)
             Boolean
         )
 
   -- | The step-field Poseidon digest that sits in the step proof's
   -- | public input under `messages_for_next_step_proof`. Already
-  -- | cross-field coerced to `F Wrap.Field` by the caller (= OCaml's
+  -- | cross-field coerced to `F WrapField` by the caller (= OCaml's
   -- | `Digest.Constant.of_tick_field`).
-  , prevMessagesForNextStepProofHash :: F Wrap.Field
+  , prevMessagesForNextStepProofHash :: F WrapField
 
   -- | The previous wrap proofs' step accumulators (Vesta affines with
   -- | wrap-field coords). Not in the step proof's public input —
   -- | pickles carries these as private prover state. For base case
   -- | supply dummy sgs.
-  , prevStepAccs :: Vector mpv (WeierstrassAffinePoint VestaG (F Wrap.Field))
+  , prevStepAccs :: Vector mpv (WeierstrassAffinePoint VestaG (F WrapField))
 
   -- | Heterogeneous prev wrap bp challenges, in `slots`-shaped form
   -- | (one of `NoSlots`, `Slots1 w`, `Slots2 w0 w1` from
   -- | `Pickles.Wrap.Slots`). Constructed via the smart constructors
   -- | `noSlots` / `slots1` / `slots2`.
-  , prevOldBpChals :: slots (Vector WrapIPARounds (F Wrap.Field))
+  , prevOldBpChals :: slots (Vector WrapIPARounds (F WrapField))
 
   -- | Prev wrap proofs' polynomial evaluations (`StepAllEvals` per
   -- | proof, wrap-field scalars). OCaml's `prev_evals`.
-  , prevEvals :: Vector mpv (StepAllEvals (F Wrap.Field))
+  , prevEvals :: Vector mpv (StepAllEvals (F WrapField))
 
   -- | Domain indices per prev wrap proof (into `all_possible_domains`).
-  , prevWrapDomainIndices :: Vector mpv (F Wrap.Field)
+  , prevWrapDomainIndices :: Vector mpv (F WrapField)
   }
 
--- | `WeierstrassAffinePoint VestaG (F Wrap.Field)` from a raw FFI
--- | `AffinePoint Wrap.Field`.
+-- | `WeierstrassAffinePoint VestaG (F WrapField)` from a raw FFI
+-- | `AffinePoint WrapField`.
 mkVestaPt
-  :: AffinePoint Wrap.Field
-  -> WeierstrassAffinePoint VestaG (F Wrap.Field)
+  :: AffinePoint WrapField
+  -> WeierstrassAffinePoint VestaG (F WrapField)
 mkVestaPt pt = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
 
 -- | Build the wrap-circuit advice record from the step proof + its
@@ -285,7 +286,7 @@ buildWrapAdvice input =
     -- `WrapProofMessages` shape.
     commits = pallasProofCommitments input.stepProof
 
-    messagesOut :: WrapProofMessages (WeierstrassAffinePoint VestaG (F Wrap.Field))
+    messagesOut :: WrapProofMessages (WeierstrassAffinePoint VestaG (F WrapField))
     messagesOut = WrapProofMessages
       { wComm: map mkVestaPt commits.wComm
       , zComm: mkVestaPt commits.zComm
@@ -296,45 +297,45 @@ buildWrapAdvice input =
     --
     -- Step proof's bulletproof opening: lr pairs (length StepIPARounds),
     -- delta / sg curve points, and z1/z2 scalars. The scalars are
-    -- `Step.Field` values; cross-field `toShifted` packs them as
-    -- `Type1 (F Wrap.Field)` via the `Shifted (F Step.Field)
-    -- (Type1 (F Wrap.Field))` instance.
+    -- `StepField` values; cross-field `toShifted` packs them as
+    -- `Type1 (F WrapField)` via the `Shifted (F StepField)
+    -- (Type1 (F WrapField))` instance.
     lrVec
       :: Vector StepIPARounds
-           { l :: WeierstrassAffinePoint VestaG (F Wrap.Field)
-           , r :: WeierstrassAffinePoint VestaG (F Wrap.Field)
+           { l :: WeierstrassAffinePoint VestaG (F WrapField)
+           , r :: WeierstrassAffinePoint VestaG (F WrapField)
            }
     lrVec = map (\p -> { l: mkVestaPt p.l, r: mkVestaPt p.r })
       (pallasProofOpeningLrVec input.stepProof)
 
-    z1Step :: Step.Field
+    z1Step :: StepField
     z1Step = pallasProofOpeningZ1 input.stepProof
 
-    z2Step :: Step.Field
+    z2Step :: StepField
     z2Step = pallasProofOpeningZ2 input.stepProof
 
-    deltaPt :: AffinePoint Wrap.Field
+    deltaPt :: AffinePoint WrapField
     deltaPt = pallasProofOpeningDelta input.stepProof
 
-    sgPt :: AffinePoint Wrap.Field
+    sgPt :: AffinePoint WrapField
     sgPt = pallasProofOpeningSg input.stepProof
 
     openingOut
       :: WrapProofOpening
            StepIPARounds
-           (WeierstrassAffinePoint VestaG (F Wrap.Field))
-           (Type1 (F Wrap.Field))
+           (WeierstrassAffinePoint VestaG (F WrapField))
+           (Type1 (F WrapField))
     openingOut = WrapProofOpening
       { lr: lrVec
-      , z1: toShifted (F z1Step :: F Step.Field)
-      , z2: toShifted (F z2Step :: F Step.Field)
+      , z1: toShifted (F z1Step :: F StepField)
+      , z2: toShifted (F z2Step :: F StepField)
       , delta: mkVestaPt deltaPt
       , sg: mkVestaPt sgPt
       }
 
     -- ===== Req.Proof_state. =====
     wrapProofStateOut
-      :: Wrap.PrevProofState mpv (Type2 (F Wrap.Field)) (F Wrap.Field) Boolean
+      :: Wrap.PrevProofState mpv (Type2 (F WrapField)) (F WrapField) Boolean
     wrapProofStateOut = Wrap.PrevProofState
       { unfinalizedProofs: input.prevUnfinalizedProofs
       , messagesForNextStepProof: input.prevMessagesForNextStepProofHash
@@ -363,7 +364,7 @@ buildWrapAdvice input =
 -- slot0Width slot1Width m` for any `Monad m`. `compile`, `makeSolver`,
 -- and `runSolverT` are all monad-polymorphic; the only thing the
 -- monad needs to satisfy is `WrapWitnessM branches MaxProofsVerified
--- slot0Width slot1Width VestaG Wrap.Field`, which our `WrapProverT`
+-- slot0Width slot1Width VestaG WrapField`, which our `WrapProverT`
 -- instance provides for any base monad.
 --
 -- On a solver failure (`EvaluationError`) we throw an `Error` so the
@@ -385,7 +386,7 @@ type WrapProveContext (branches :: Int) (mpv :: Int) (slots :: Type -> Type) =
   { wrapMainConfig :: WrapMainConfig branches
   , crs :: CRS PallasG
   , publicInput ::
-      Wrap.StatementPacked StepIPARounds (Type1 (F Wrap.Field)) (F Wrap.Field) Boolean
+      Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean
   , advice :: WrapAdvice mpv slots
   -- | When `true`, enables prover-state debug checks, runs
   -- | `verifyProverIndex` against the solved witness, and dumps
@@ -395,14 +396,14 @@ type WrapProveContext (branches :: Int) (mpv :: Int) (slots :: Type -> Type) =
   , debug :: Boolean
   -- | Kimchi-level `prev_challenges` for `ProverProof::create_recursive`.
   -- | Padded to `PaddedLength = 2` entries (via `Wrap_hack.pad_accumulator`).
-  -- | Each entry holds sg (Pallas point, Step.Field coords) + expanded
-  -- | challenges (WrapIPARounds = 15, in Wrap.Field). Converted to Array
+  -- | Each entry holds sg (Pallas point, StepField coords) + expanded
+  -- | challenges (WrapIPARounds = 15, in WrapField). Converted to Array
   -- | at the FFI boundary.
   , kimchiPrevChallenges ::
       Vector PaddedLength
-        { sgX :: Step.Field
-        , sgY :: Step.Field
-        , challenges :: Vector WrapIPARounds Wrap.Field
+        { sgX :: StepField
+        , sgY :: StepField
+        , challenges :: Vector WrapIPARounds WrapField
         }
   }
 
@@ -418,22 +419,22 @@ type WrapCompileContext (branches :: Int) =
 -- | feed the `verifierIndex` into downstream logic (e.g. the step
 -- | prover's `buildSlotAdvice`) before the solver runs.
 type WrapCompileResult =
-  { proverIndex :: ProverIndex PallasG Wrap.Field
-  , verifierIndex :: VerifierIndex PallasG Wrap.Field
-  , constraintSystem :: ConstraintSystem Wrap.Field
-  , builtState :: CircuitBuilderState (KimchiGate Wrap.Field) (AuxState Wrap.Field)
-  , constraints :: Array (KimchiRow Wrap.Field)
+  { proverIndex :: ProverIndex PallasG WrapField
+  , verifierIndex :: VerifierIndex PallasG WrapField
+  , constraintSystem :: ConstraintSystem WrapField
+  , builtState :: CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField)
+  , constraints :: Array (KimchiRow WrapField)
   }
 
 -- | Artifacts produced by `wrapProve`.
 type WrapProveResult =
-  { proverIndex :: ProverIndex PallasG Wrap.Field
-  , verifierIndex :: VerifierIndex PallasG Wrap.Field
-  , constraintSystem :: ConstraintSystem Wrap.Field
-  , witness :: Vector 15 (Array Wrap.Field)
-  , publicInputs :: Array Wrap.Field
-  , proof :: Proof PallasG Wrap.Field
-  , assignments :: Map Variable Wrap.Field
+  { proverIndex :: ProverIndex PallasG WrapField
+  , verifierIndex :: VerifierIndex PallasG WrapField
+  , constraintSystem :: ConstraintSystem WrapField
+  , witness :: Vector 15 (Array WrapField)
+  , publicInputs :: Array WrapField
+  , proof :: Proof PallasG WrapField
+  , assignments :: Map Variable WrapField
   }
 
 -- | Monotonic counter for `KIMCHI_WRAP_CS_DUMP`'s `%c` template. Each
@@ -455,7 +456,7 @@ bumpWrapCsCounter = do
 -- | needed; anything that escapes the throw instance is a bug.
 wrapCompile
   :: forall @branches @slots mpv branchesPred totalBases totalBasesPred
-   . CircuitGateConstructor Wrap.Field PallasG
+   . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Reflectable mpv Int
   => Add 1 branchesPred branches
@@ -463,25 +464,25 @@ wrapCompile
   => Add mpv Wrap.IvpBaseline totalBases
   => Add 1 totalBasesPred totalBases
   => PadSlots slots mpv
-  => CircuitType Wrap.Field
-       (slots (Vector WrapIPARounds (F Wrap.Field)))
-       (slots (Vector WrapIPARounds (FVar Wrap.Field)))
-  => CheckedType Wrap.Field (KimchiConstraint Wrap.Field)
-       (slots (Vector WrapIPARounds (FVar Wrap.Field)))
+  => CircuitType WrapField
+       (slots (Vector WrapIPARounds (F WrapField)))
+       (slots (Vector WrapIPARounds (FVar WrapField)))
+  => CheckedType WrapField (KimchiConstraint WrapField)
+       (slots (Vector WrapIPARounds (FVar WrapField)))
   => WrapCompileContext branches
   -> Effect WrapCompileResult
 wrapCompile ctx = do
   builtState <-
     compile
-      (Proxy @(Wrap.StatementPacked StepIPARounds (Type1 (F Wrap.Field)) (F Wrap.Field) Boolean))
+      (Proxy @(Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean))
       (Proxy @Unit)
-      (Proxy @(KimchiConstraint Wrap.Field))
+      (Proxy @(KimchiConstraint WrapField))
       (wrapMain @branches @slots ctx.wrapMainConfig)
-      (Kimchi.initialState :: CircuitBuilderState (KimchiGate Wrap.Field) (AuxState Wrap.Field))
+      (Kimchi.initialState :: CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField))
 
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
-    { constraintSystem, constraints } = makeConstraintSystemWithPrevChallenges @Wrap.Field
+    { constraintSystem, constraints } = makeConstraintSystemWithPrevChallenges @WrapField
       { constraints: kimchiRows
       , publicInputs: builtState.publicInputs
       , unionFind: (un AuxState builtState.aux).wireState.unionFind
@@ -496,15 +497,15 @@ wrapCompile ctx = do
     -- `memory/project_simple_chain_max_poly_size_bug.md` and the parallel
     -- step-side fix in `Pickles.Prove.Step.purs:1429-1431` (commit
     -- `20674463`) — same root cause, opposite curve.
-    endo :: Wrap.Field
+    endo :: WrapField
     endo =
-      let EndoBase e = (endoBase :: EndoBase Wrap.Field) in e
+      let EndoBase e = (endoBase :: EndoBase WrapField) in e
 
     proverIndex =
-      createProverIndex @Wrap.Field @PallasG
+      createProverIndex @WrapField @PallasG
         { endo, constraintSystem, crs: ctx.crs }
 
-    verifierIndex = createVerifierIndex @Wrap.Field @PallasG proverIndex
+    verifierIndex = createVerifierIndex @WrapField @PallasG proverIndex
 
   -- Optional dump of the wrap constraint system as JSON, gated on
   -- `KIMCHI_WRAP_CS_DUMP`. Mirrors OCaml's `PICKLES_WRAP_CS_DUMP` in
@@ -534,7 +535,7 @@ wrapCompile ctx = do
 -- | reported as `FailedAssertion`.
 wrapSolveAndProve
   :: forall @branches @slots mpv branchesPred totalBases totalBasesPred m
-   . CircuitGateConstructor Wrap.Field PallasG
+   . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Reflectable mpv Int
   => Add 1 branchesPred branches
@@ -542,11 +543,11 @@ wrapSolveAndProve
   => Add mpv Wrap.IvpBaseline totalBases
   => Add 1 totalBasesPred totalBases
   => PadSlots slots mpv
-  => CircuitType Wrap.Field
-       (slots (Vector WrapIPARounds (F Wrap.Field)))
-       (slots (Vector WrapIPARounds (FVar Wrap.Field)))
-  => CheckedType Wrap.Field (KimchiConstraint Wrap.Field)
-       (slots (Vector WrapIPARounds (FVar Wrap.Field)))
+  => CircuitType WrapField
+       (slots (Vector WrapIPARounds (F WrapField)))
+       (slots (Vector WrapIPARounds (FVar WrapField)))
+  => CheckedType WrapField (KimchiConstraint WrapField)
+       (slots (Vector WrapIPARounds (FVar WrapField)))
   => Monad m
   => WrapProveContext branches mpv slots
   -> WrapCompileResult
@@ -554,12 +555,12 @@ wrapSolveAndProve
 wrapSolveAndProve ctx compileResult = do
   let
     rawSolver
-      :: SolverT Wrap.Field (KimchiConstraint Wrap.Field)
+      :: SolverT WrapField (KimchiConstraint WrapField)
            (WrapProverT branches mpv slots m)
-           (Wrap.StatementPacked StepIPARounds (Type1 (F Wrap.Field)) (F Wrap.Field) Boolean)
+           (Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean)
            Unit
     rawSolver =
-      makeSolver' (emptyProverState { debug = ctx.debug }) (Proxy @(KimchiConstraint Wrap.Field))
+      makeSolver' (emptyProverState { debug = ctx.debug }) (Proxy @(KimchiConstraint WrapField))
         (wrapMain @branches @slots ctx.wrapMainConfig)
 
   eRes <- lift $ runWrapProverT ctx.advice (runSolverT rawSolver ctx.publicInput)
@@ -576,7 +577,7 @@ wrapSolveAndProve ctx compileResult = do
       when ctx.debug do
         let _ = unsafePerformEffect (wrapDumpRowLabels compileResult.builtState.constraints)
         let
-          csSatisfied = verifyProverIndex @Wrap.Field @PallasG
+          csSatisfied = verifyProverIndex @WrapField @PallasG
             { proverIndex: compileResult.proverIndex, witness, publicInputs }
         when (not csSatisfied) $
           throwError (FailedAssertion "wrapProve: constraint system not satisfied (wrote row→label map to /tmp/ps_wrap_row_labels.txt)")
@@ -608,13 +609,13 @@ wrapSolveAndProve ctx compileResult = do
 -- | so a `/tmp/ps_wrap_row_labels.txt` file can cross-reference a
 -- | failing row in the kimchi witness diff against the labelled
 -- | constraint source. Only fires when `WrapProveContext.debug`.
-wrapDumpRowLabels :: Array (Labeled (KimchiGate Wrap.Field)) -> Effect Unit
+wrapDumpRowLabels :: Array (Labeled (KimchiGate WrapField)) -> Effect Unit
 wrapDumpRowLabels constraints =
   let
     { out } = Array.foldl
       ( \{ row, out } lc ->
           let
-            nRows = Array.length (toKimchiRows lc.constraint :: Array (KimchiRow Wrap.Field))
+            nRows = Array.length (toKimchiRows lc.constraint :: Array (KimchiRow WrapField))
             endRow = row + nRows - 1
             path = Array.intercalate "/" lc.context
             line = show row <> ".." <> show endRow <> "\t" <> path
@@ -628,8 +629,8 @@ wrapDumpRowLabels constraints =
       (Array.intercalate "\n" out <> "\n")
 
 extractStepVKComms
-  :: VerifierIndex VestaG Step.Field
-  -> StepVK Wrap.Field
+  :: VerifierIndex VestaG StepField
+  -> StepVK WrapField
 extractStepVKComms vk =
   let
     comms = pallasVerifierIndexCommitments vk
@@ -644,14 +645,14 @@ extractStepVKComms vk =
     , endomulScalarComm: Vector.index comms.index (unsafeFinite @6 5)
     }
 
--- | Lift a constant `StepVK Wrap.Field` into a `StepVK (FVar Wrap.Field)`
+-- | Lift a constant `StepVK WrapField` into a `StepVK (FVar WrapField)`
 -- | by `const_`-ing each coordinate. Used by `buildWrapMainConfigN1`
 -- | because `wrapMain`'s config carries step-key commitments as circuit
 -- | variables so the in-circuit `chooseKey` can scale them by a boolean.
-stepVkForCircuit :: StepVK Wrap.Field -> StepVK (FVar Wrap.Field)
+stepVkForCircuit :: StepVK WrapField -> StepVK (FVar WrapField)
 stepVkForCircuit vk =
   let
-    cp :: AffinePoint Wrap.Field -> AffinePoint (FVar Wrap.Field)
+    cp :: AffinePoint WrapField -> AffinePoint (FVar WrapField)
     cp pt = { x: const_ pt.x, y: const_ pt.y }
   in
     { sigmaComm: map cp vk.sigmaComm
@@ -697,7 +698,7 @@ buildWrapMainConfigMulti
          Vector branches
            { mpv :: Int
            , stepDomainLog2 :: Int
-           , stepVK :: VerifierIndex VestaG Step.Field
+           , stepVK :: VerifierIndex VestaG StepField
            }
      }
   -> WrapMainConfig branches
@@ -711,7 +712,7 @@ buildWrapMainConfigMulti vestaSrs { perBranch } =
       map
         ( \b ->
             (coerce (pallasSrsLagrangeCommitmentAt vestaSrs b.stepDomainLog2 i))
-              :: AffinePoint (F Wrap.Field)
+              :: AffinePoint (F WrapField)
         )
         perBranch
   in
@@ -722,10 +723,10 @@ buildWrapMainConfigMulti vestaSrs { perBranch } =
     , lagrangeAt:
         mkConstLagrangeBaseLookup \i ->
           (coerce (pallasSrsLagrangeCommitmentAt vestaSrs headDomainLog2 i))
-            :: AffinePoint (F Wrap.Field)
+            :: AffinePoint (F WrapField)
     , perBranchLagrangeAt:
         if allEqual then Nothing else Just perBranchLookup
-    , blindingH: (coerce $ pallasSrsBlindingGenerator vestaSrs) :: AffinePoint (F Wrap.Field)
+    , blindingH: (coerce $ pallasSrsBlindingGenerator vestaSrs) :: AffinePoint (F WrapField)
     , allPossibleDomainLog2s:
         unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
     }

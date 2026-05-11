@@ -42,6 +42,7 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
+import Pickles.Field (StepField, WrapField)
 import Pickles.Step.Types as Step
 import Pickles.Types (StepIPARounds, WrapIPARounds)
 import Pickles.Wrap.Types as Wrap
@@ -96,14 +97,14 @@ bitsRandomOracle s =
   in
     unsafePartial $ fromJust $ Vector.toVector @n (Array.take n (blake2s256Bits s))
 
-tock :: RoM Wrap.Field
+tock :: RoM WrapField
 tock = do
   ro <- get
   let next = ro.tockCounter + 1
   put $ ro { tockCounter = next }
   pure $ Curves.fromBigInt (bitsToBigInt (bitsRandomOracle @255 ("fq_" <> show next)))
 
-tick :: RoM Step.Field
+tick :: RoM StepField
 tick = do
   ro <- get
   let next = ro.tickCounter + 1
@@ -142,12 +143,12 @@ replicateChal = Vector.reverse <$> Vector.generateA @n (\_ -> chal)
 
 -- | 15 chals — OCaml `Dummy.Ipa.Wrap.challenges` (dummy.ml:28-33),
 -- | eager module init.
-dummyIpaWrapChallenges :: RoM (Vector WrapIPARounds (SizedF 128 Wrap.Field))
+dummyIpaWrapChallenges :: RoM (Vector WrapIPARounds (SizedF 128 WrapField))
 dummyIpaWrapChallenges = replicateChal @WrapIPARounds
 
 -- | 16 chals — OCaml `Dummy.Ipa.Step.challenges` (dummy.ml:44-48),
 -- | eager module init.
-dummyIpaStepChallenges :: RoM (Vector StepIPARounds (SizedF 128 Step.Field))
+dummyIpaStepChallenges :: RoM (Vector StepIPARounds (SizedF 128 StepField))
 dummyIpaStepChallenges = replicateChal @StepIPARounds
 
 -- | IPA challenges are force-order-invariant — `Dummy.Ipa.Wrap.challenges`
@@ -157,10 +158,10 @@ dummyIpaStepChallenges = replicateChal @StepIPARounds
 -- | that only needs IPA challenges (e.g. wrap main's dummy challenge /
 -- | padding sponge states) doesn't have to thread `BaseCaseDummies`.
 dummyIpaChallenges
-  :: { wrapRaw :: Vector WrapIPARounds (SizedF 128 Wrap.Field)
-     , wrapExpanded :: Vector WrapIPARounds Wrap.Field
-     , stepRaw :: Vector StepIPARounds (SizedF 128 Step.Field)
-     , stepExpanded :: Vector StepIPARounds Step.Field
+  :: { wrapRaw :: Vector WrapIPARounds (SizedF 128 WrapField)
+     , wrapExpanded :: Vector WrapIPARounds WrapField
+     , stepRaw :: Vector StepIPARounds (SizedF 128 StepField)
+     , stepExpanded :: Vector StepIPARounds StepField
      }
 dummyIpaChallenges =
   let
@@ -175,8 +176,8 @@ dummyIpaChallenges =
 -- | Endo coefficients (re-used by Pickles.Step.Dummy)
 -------------------------------------------------------------------------------
 
-wrapEndo :: Wrap.Field
+wrapEndo :: WrapField
 wrapEndo = let Curves.EndoScalar e = Curves.endoScalar @Pallas.BaseField @Pallas.ScalarField in e
 
-stepEndo :: Step.Field
+stepEndo :: StepField
 stepEndo = let Curves.EndoScalar e = Curves.endoScalar @Vesta.BaseField @Vesta.ScalarField in e

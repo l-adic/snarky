@@ -7,7 +7,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement
 
 -- | step_main circuit for the `increment` branch of `two_phase_chain`.
 -- |
--- | Configuration: mpv=N1, public_input=Field, prevs=[self], step_domain=2^14.
+-- | Configuration: mpv=N1, public_input=StepField, prevs=[self], step_domain=2^14.
 -- | The rule body asserts `self_v = prev + 1` and unconditionally
 -- | requires the prev proof to verify (`proof_must_verify = Boolean.true_`).
 -- |
@@ -31,10 +31,10 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
+import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Compiled, Slot)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
-import Pickles.Step.Types (Field)
 import Pickles.Types (StatementIO)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -45,12 +45,12 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type StepMainTwoPhaseChainIncrementParams =
-  { lagrangeAt :: LagrangeBaseLookup Field
-  , blindingH :: AffinePoint (F Field)
+  { lagrangeAt :: LagrangeBaseLookup StepField
+  , blindingH :: AffinePoint (F StepField)
   }
 
 class Monad m <= TwoPhaseChainIncrementAdvice m where
-  getTwoPhaseChainIncrementPrev :: Unit -> m (F Field)
+  getTwoPhaseChainIncrementPrev :: Unit -> m (F StepField)
 
 instance TwoPhaseChainIncrementAdvice Effect where
   getTwoPhaseChainIncrementPrev _ =
@@ -60,11 +60,11 @@ instance TwoPhaseChainIncrementAdvice Effect where
 -- | (unlike SimpleChain), so `proofMustVerify` is a constant `true_`.
 incrementRule
   :: forall t m
-   . CircuitM Field (KimchiConstraint Field) t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
   => TwoPhaseChainIncrementAdvice m
-  => FVar Field
-  -> Snarky (KimchiConstraint Field) t m
-       (RuleOutput 1 (FVar Field) Unit)
+  => FVar StepField
+  -> Snarky (KimchiConstraint StepField) t m
+       (RuleOutput 1 (FVar StepField) Unit)
 incrementRule appState = do
   prev <- exists $ lift $ getTwoPhaseChainIncrementPrev unit
   assertEqual_ (CVar.add_ (const_ one) prev) appState
@@ -90,15 +90,15 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
   mkStepArtifact <$> runStepCompile makeZeroLog2 selfLog2
   where
   runStepCompile makeZeroLog2 selfLog2 =
-    compile (Proxy @Unit) (Proxy @(Vector 34 (F Field))) (Proxy @(KimchiConstraint Field))
+    compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
       -- mpvMax=1 (matches the multi-branch wrap's max_proofs_verified=N1).
       -- mpvPad=0 (this rule's own n = 1 = mpvMax).
       ( \_ -> stepMain
-          @(Tuple1 (Slot Compiled 1 (StatementIO (F Field) Unit)))
-          @(F Field)
+          @(Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
+          @(F StepField)
           @Unit
-          @(F Field)
-          @(Tuple1 (StatementIO (F Field) Unit))
+          @(F StepField)
+          @(Tuple1 (StatementIO (F StepField) Unit))
           @1
           @2
           incrementRule

@@ -9,8 +9,8 @@ import Data.Foldable (foldM)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
+import Pickles.Field (StepField)
 import Pickles.Sponge (initialSpongeCircuit)
-import Pickles.Step.Types (Field)
 import Pickles.Types (WrapIPARounds)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertEq)
@@ -37,9 +37,9 @@ import Type.Proxy (Proxy(..))
 -- |   hash_messages_for_next_step_proof (lines 1178-1188)
 hashMessagesStepCircuit
   :: forall t m
-   . CircuitM Field (KimchiConstraint Field) t m
-  => Vector 91 (FVar Field)
-  -> Snarky (KimchiConstraint Field) t m Unit
+   . CircuitM StepField (KimchiConstraint StepField) t m
+  => Vector 91 (FVar StepField)
+  -> Snarky (KimchiConstraint StepField) t m Unit
 hashMessagesStepCircuit inputs = do
   let
     at = unsafeIdx inputs
@@ -48,7 +48,7 @@ hashMessagesStepCircuit inputs = do
     -- Order: sigma_comm(7), coefficients_comm(15), then 6 selectors
     -- Each commitment is [| pt |] where pt = (x, y)
     -- index_to_field_elements flattens: for each comm array, g maps each point to [x, y]
-    vkFields :: Vector 56 (FVar Field)
+    vkFields :: Vector 56 (FVar StepField)
     vkFields = Vector.generate \j -> at (getFinite j)
 
   -- 1. sponge_after_index: absorb all VK field elements
@@ -67,7 +67,7 @@ hashMessagesStepCircuit inputs = do
         sgX = at (56 + proofIdx * 17)
         sgY = at (56 + proofIdx * 17 + 1)
 
-        bpChals :: Vector WrapIPARounds (FVar Field)
+        bpChals :: Vector WrapIPARounds (FVar StepField)
         bpChals = Vector.generate \j -> at (56 + proofIdx * 17 + 2 + getFinite j)
       s1 <- Sponge.absorb sgX s
       s2 <- Sponge.absorb sgY s1
@@ -83,8 +83,8 @@ hashMessagesStepCircuit inputs = do
   let claimed = at 90
   assertEq digest claimed
 
-compileHashMessagesStep :: CompiledCircuit Field
+compileHashMessagesStep :: CompiledCircuit StepField
 compileHashMessagesStep =
-  compilePure (Proxy @(Vector 91 (F Field))) (Proxy @Unit) (Proxy @(KimchiConstraint Field))
+  compilePure (Proxy @(Vector 91 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> hashMessagesStepCircuit inputs)
     Kimchi.initialState

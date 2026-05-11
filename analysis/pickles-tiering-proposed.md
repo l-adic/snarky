@@ -6,11 +6,11 @@ from the inventory. Curate by hand into `docs/pickles-tiering.md`.
 
 ## Summary
 
-- M2 strict-AND violations: 7
+- M2 strict-AND violations: 4
 - C3 grab-bag splits: 3
 - M1 cohesion-move candidates: 0
 - D2 facade modules: 0
-- D3 single-binding inline candidates: 2
+- D3 single-binding inline candidates: 3
 - D4 orphan modules: 3
 
 ## M2 — strict-AND violations
@@ -19,21 +19,12 @@ Bindings that live in a Step.* or Wrap.* module but are imported by the
 opposite side. Each is either (a) a true tier-1 candidate to extract into
 a shared module, or (b) misfiled and should move sideways.
 
-### `Pickles.Step.Domain`
+### `Pickles.Wrap.Types`
 
-- `pow2PowSquare` — importer clusters: CircuitDiffs, Step, Wrap — **promote to tier 1 (strict-AND: Step+Wrap)**
-
-### `Pickles.Step.FinalizeOtherProof`
-
-- `FinalizeOtherProofParams` — importer clusters: CircuitDiffs, Step, Wrap — **promote to tier 1 (strict-AND: Step+Wrap)**
-- `FinalizeOtherProofOutput` — importer clusters: CircuitDiffs, Wrap — **wrong cluster: move to Pickles.Wrap.* (only Wrap importers)**
-- `DomainMode` — importer clusters: CircuitDiffs, Step, Wrap — **promote to tier 1 (strict-AND: Step+Wrap)**
-
-### `Pickles.Step.Slots`
-
-- `Compiled` — importer clusters: CircuitDiffs, Compile, Sideload, Step, Wrap — **promote to tier 1 (strict-AND: Step+Wrap)**
-- `SideLoaded` — importer clusters: CircuitDiffs, Compile, Sideload, Step, Wrap — **promote to tier 1 (strict-AND: Step+Wrap)**
-- `Slot` — importer clusters: CircuitDiffs, Compile, Sideload, Step, Wrap — **promote to tier 1 (strict-AND: Step+Wrap)**
+- `Field` — importer clusters: CircuitDiffs, Compile, Pickles, Proof, Prove, Sideload, Step, Wrap — **promote to tier 1 (strict-AND: Step+Wrap)**
+- `IvpBaseline` — importer clusters: CircuitDiffs, Compile, Pickles, Prove, Sideload, Step, Wrap — **promote to tier 1 (strict-AND: Step+Wrap)**
+- `PrevProofState` — importer clusters: CircuitDiffs, Compile, Pickles, Prove, Sideload, Step, Wrap — **promote to tier 1 (strict-AND: Step+Wrap)**
+- `StatementPacked` — importer clusters: CircuitDiffs, Compile, Pickles, Prove, Sideload, Step, Wrap — **promote to tier 1 (strict-AND: Step+Wrap)**
 
 ## C3 — side-partition splits
 
@@ -43,10 +34,10 @@ shared cells. Extracting a one-sided cell (size ≥3) into
 genuinely-shared core and moves one-sided content to its proper
 namespace.
 
-### `Pickles.Dummy` (25 used bindings)
+### `Pickles.Dummy` (12 used bindings)
 
-- **shared** (1, stays in module): `dummyIpaChallenges`
-- **Step-only** (24, EXTRACT to `Pickles.Step.*`): `DummySgValues`, `computeDummySgValues`, `wrapDummyUnfinalizedProof`, `mkDummyPerProofUnfinalized`, `stepDummyUnfinalizedProof`, `wrapDomainLog2ForProofsVerified`, `Ro`, `mkRo`, `initialRo`, `tick`, `DummyEvals`, `PlonkChals`, `UnfinalizedConstantDummy`, `ProofDummy`, `BaseCaseDummies`, `ForceOrder`, `dummyEvals`, `unfinalizedConstantDummy`, `proofDummy`, `dummyIpaWrapChallenges`, `dummyIpaStepChallenges`, `forceOrderFor`, `computeBaseCaseDummies`, `baseCaseDummies`
+- **Step-only** (11, EXTRACT to `Pickles.Step.*`): `RoM`, `initialRo`, `tick`, `tock`, `chal`, `scalarChal`, `pow2`, `wrapEndo`, `stepEndo`, `dummyIpaWrapChallenges`, `dummyIpaStepChallenges`
+- **Wrap-only** (1, keep to `Pickles.Wrap.*`): `dummyIpaChallenges`
 
 ### `Pickles.PublicInputCommit` (11 used bindings)
 
@@ -57,12 +48,13 @@ namespace.
 
 ### `Pickles.Sponge` (23 used bindings)
 
-- **shared** (5, stays in module): `absorb`, `squeezeScalarChallenge`, `evalSpongeM`, `liftSnarky`, `initialSpongeCircuit`
-- **Wrap-only** (18, EXTRACT to `Pickles.Wrap.*`): `MonadSponge`, `squeeze`, `absorbPoint`, `absorbMany`, `squeezeScalar`, `squeezeScalarChallengePure`, `lowest128Bits`, `lowest128BitsPure`, `SpongeM`, `labelM`, `getSponge`, `putSponge`, `PureSpongeM`, `runPureSpongeM`, `evalPureSpongeM`, `getSpongeState`, `initialSponge`, `spongeFromConstants`
+- **shared** (6, stays in module): `absorb`, `squeezeScalarChallenge`, `evalSpongeM`, `liftSnarky`, `initialSponge`, `initialSpongeCircuit`
+- **Wrap-only** (17, EXTRACT to `Pickles.Wrap.*`): `MonadSponge`, `squeeze`, `absorbPoint`, `absorbMany`, `squeezeScalar`, `squeezeScalarChallengePure`, `lowest128Bits`, `lowest128BitsPure`, `SpongeM`, `labelM`, `getSponge`, `putSponge`, `PureSpongeM`, `runPureSpongeM`, `evalPureSpongeM`, `getSpongeState`, `spongeFromConstants`
 
 ## D3 — single-binding inline candidates
 
 - `Pickles.Hex` (16 LOC) — `parseHex` used only by `Pickles.Linearization.Env`
+- `Pickles.Step.Domain` (38 LOC) — `buildPow2PowsArray` used only by `Pickles.Step.FinalizeOtherProof`
 - `Pickles.Util.Fatal` (48 LOC) — `fromJust'` used only by `Pickles.ProofFFI`
 
 ## D4 — orphans (no in-package importers)

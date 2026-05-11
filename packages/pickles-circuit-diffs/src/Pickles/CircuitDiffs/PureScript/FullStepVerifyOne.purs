@@ -13,11 +13,11 @@ import Data.Fin as Fin
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyPallasPt, dummyWrapSg, stepEndo, unsafeIdx)
+import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (DomainMode(..))
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
-import Pickles.Step.Types (Field)
 import Pickles.Step.VerifyOne (verifyOne)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
@@ -31,16 +31,16 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type FullStepVerifyOneParams =
-  { lagrangeAt :: LagrangeBaseLookup Field
-  , blindingH :: AffinePoint (F Field)
+  { lagrangeAt :: LagrangeBaseLookup StepField
+  , blindingH :: AffinePoint (F StepField)
   }
 
 fullStepVerifyOneCircuit
   :: forall t m
-   . CircuitM Field (KimchiConstraint Field) t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
   => FullStepVerifyOneParams
-  -> Vector 286 (FVar Field)
-  -> Snarky (KimchiConstraint Field) t m Unit
+  -> Vector 286 (FVar StepField)
+  -> Snarky (KimchiConstraint StepField) t m Unit
 fullStepVerifyOneCircuit { lagrangeAt, blindingH } inputs = do
   let
     at = unsafeIdx inputs
@@ -49,13 +49,13 @@ fullStepVerifyOneCircuit { lagrangeAt, blindingH } inputs = do
 
     constDummyPt = let { x: F x', y: F y' } = dummyPallasPt in { x: const_ x', y: const_ y' }
 
-    constDummySg :: AffinePoint (FVar Field)
+    constDummySg :: AffinePoint (FVar StepField)
     constDummySg = { x: const_ dummyWrapSg.x, y: const_ dummyWrapSg.y }
 
     o = 1 -- offset for app_state
 
     -- Parse flat inputs into VerifyOneInput
-    evalPair :: forall n. Int -> Fin.Finite n -> { zeta :: FVar Field, omegaTimesZeta :: FVar Field }
+    evalPair :: forall n. Int -> Fin.Finite n -> { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
     evalPair base j =
       { zeta: at (base + 2 * Fin.getFinite j)
       , omegaTimesZeta: at (base + 2 * Fin.getFinite j + 1)
@@ -127,13 +127,13 @@ fullStepVerifyOneCircuit { lagrangeAt, blindingH } inputs = do
               , bulletproofChallenges:
                   (Vector.generate \j -> asSizedF128 (at (unfBase + 16 + getFinite j))) :: Vector 15 _
               }
-          , shouldFinalize: coerce (at (unfBase + 31)) :: BoolVar Field
+          , shouldFinalize: coerce (at (unfBase + 31)) :: BoolVar StepField
           , claimedDigest: at (unfBase + 10)
           }
       , messagesForNextWrapProof: at 284
-      , mustVerify: coerce (at 285) :: BoolVar Field
+      , mustVerify: coerce (at 285) :: BoolVar StepField
       , branchData: { mask0, mask1, domainLog2Var: at (proofStateBase + 28) }
-      , proofMask: (coerce mask1 :: BoolVar Field) :< Vector.nil
+      , proofMask: (coerce mask1 :: BoolVar StepField) :< Vector.nil
       , vkComms:
           { sigma: (Vector.replicate constDummyPt) :: Vector 6 _
           , sigmaLast: constDummyPt
@@ -146,10 +146,10 @@ fullStepVerifyOneCircuit { lagrangeAt, blindingH } inputs = do
     domainLog2 = 16
     fopParams =
       { domains:
-          { generator: const_ (LinFFI.domainGenerator @Field domainLog2)
+          { generator: const_ (LinFFI.domainGenerator @StepField domainLog2)
           , log2: domainLog2
           } :< Vector.nil
-      , shifts: map const_ (LinFFI.domainShifts @Field domainLog2)
+      , shifts: map const_ (LinFFI.domainShifts @StepField domainLog2)
       , srsLengthLog2: 16
       , endo: stepEndo
       , linearizationPoly: Linearization.pallas
@@ -169,8 +169,8 @@ fullStepVerifyOneCircuit { lagrangeAt, blindingH } inputs = do
   _result <- verifyOne fopParams input ivpParams
   pure unit
 
-compileFullStepVerifyOne :: FullStepVerifyOneParams -> CompiledCircuit Field
+compileFullStepVerifyOne :: FullStepVerifyOneParams -> CompiledCircuit StepField
 compileFullStepVerifyOne params =
-  compilePure (Proxy @(Vector 286 (F Field))) (Proxy @Unit) (Proxy @(KimchiConstraint Field))
+  compilePure (Proxy @(Vector 286 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> fullStepVerifyOneCircuit params inputs)
     Kimchi.initialState

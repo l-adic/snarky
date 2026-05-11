@@ -12,9 +12,9 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt, unsafeIdx, wrapEndo)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams, parseIvpWrapInput)
+import Pickles.Field (WrapField)
 import Pickles.PublicInputCommit (CorrectionMode(..))
 import Pickles.Types (WrapIPARounds)
-import Pickles.Wrap.Types (Field)
 import Pickles.Wrap.Verify (wrapVerify)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_)
@@ -30,10 +30,10 @@ type InputSize = 212
 
 wrapVerifyN2Circuit
   :: forall t m
-   . CircuitM Field (KimchiConstraint Field) t m
+   . CircuitM WrapField (KimchiConstraint WrapField) t m
   => IvpWrapParams
-  -> Vector InputSize (FVar Field)
-  -> Snarky (KimchiConstraint Field) t m Unit
+  -> Vector InputSize (FVar WrapField)
+  -> Snarky (KimchiConstraint WrapField) t m Unit
 wrapVerifyN2Circuit { lagrangeAt, blindingH } inputs = do
   let
     at = unsafeIdx inputs
@@ -81,8 +81,8 @@ wrapVerifyN2Circuit { lagrangeAt, blindingH } inputs = do
 
   wrapVerify ivpParams fullIvpInput verifyInput
 
-compileWrapVerifyN2 :: IvpWrapParams -> CompiledCircuit Field
+compileWrapVerifyN2 :: IvpWrapParams -> CompiledCircuit WrapField
 compileWrapVerifyN2 srsData =
-  compilePure (Proxy @(Vector InputSize (F Field))) (Proxy @Unit) (Proxy @(KimchiConstraint Field))
+  compilePure (Proxy @(Vector InputSize (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> wrapVerifyN2Circuit srsData inputs)
     Kimchi.initialState

@@ -31,9 +31,9 @@ import Data.Maybe (fromJust)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Pickles.Step.Dummy (BaseCaseDummies)
+import Pickles.Field (WrapField)
 import Pickles.ProofFFI (Proof, vestaMakeWireProof)
-import Pickles.Wrap.Types (Field)
+import Pickles.Step.Dummy (BaseCaseDummies)
 import Snarky.Curves.Class (generator, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -86,15 +86,15 @@ dummyWrapProof bcd =
     -- (wrap_wire_proof.ml:107-134 Evaluations.to_kimchi):
     --   witness[0..14] | coefficients[0..14] | z | sigma[0..5]
     --   | generic | poseidon | complete_add | mul | emul | endomul_scalar
-    flattenVec :: forall n. Vector n { zeta :: Field, omegaTimesZeta :: Field } -> Array Field
+    flattenVec :: forall n. Vector n { zeta :: WrapField, omegaTimesZeta :: WrapField } -> Array WrapField
     flattenVec v =
       Array.concatMap (\pe -> [ pe.zeta, pe.omegaTimesZeta ])
         (Vector.toUnfoldable v)
 
-    flattenPe :: { zeta :: Field, omegaTimesZeta :: Field } -> Array Field
+    flattenPe :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> Array WrapField
     flattenPe pe = [ pe.zeta, pe.omegaTimesZeta ]
 
-    evalsFlat :: Array Field
+    evalsFlat :: Array WrapField
     evalsFlat =
       flattenVec evals.witnessEvals
         <> flattenVec evals.coeffEvals

@@ -11,12 +11,12 @@ import Data.Fin (Finite, getFinite)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, domainLog2, srsLengthLog2, stepEndo, unsafeIdx)
+import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (DomainMode(..), Output)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Step.OtherField as StepOtherField
-import Pickles.Step.Types (Field)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, SizedF, Snarky, const_)
@@ -27,39 +27,39 @@ import Type.Proxy (Proxy(..))
 
 type FopStepInput =
   { plonk ::
-      { alpha :: SizedF 128 (FVar Field)
-      , beta :: SizedF 128 (FVar Field)
-      , gamma :: SizedF 128 (FVar Field)
-      , zeta :: SizedF 128 (FVar Field)
-      , zetaToSrsLength :: Type1 (FVar Field)
-      , zetaToDomainSize :: Type1 (FVar Field)
-      , perm :: Type1 (FVar Field)
+      { alpha :: SizedF 128 (FVar StepField)
+      , beta :: SizedF 128 (FVar StepField)
+      , gamma :: SizedF 128 (FVar StepField)
+      , zeta :: SizedF 128 (FVar StepField)
+      , zetaToSrsLength :: Type1 (FVar StepField)
+      , zetaToDomainSize :: Type1 (FVar StepField)
+      , perm :: Type1 (FVar StepField)
       }
-  , combinedInnerProduct :: Type1 (FVar Field)
-  , b :: Type1 (FVar Field)
-  , xi :: SizedF 128 (FVar Field)
-  , bulletproofChallenges :: Vector 16 (SizedF 128 (FVar Field))
-  , mask :: Vector 2 (BoolVar Field)
-  , spongeDigestBeforeEvaluations :: FVar Field
-  , domainLog2Var :: FVar Field
+  , combinedInnerProduct :: Type1 (FVar StepField)
+  , b :: Type1 (FVar StepField)
+  , xi :: SizedF 128 (FVar StepField)
+  , bulletproofChallenges :: Vector 16 (SizedF 128 (FVar StepField))
+  , mask :: Vector 2 (BoolVar StepField)
+  , spongeDigestBeforeEvaluations :: FVar StepField
+  , domainLog2Var :: FVar StepField
   , allEvals ::
-      { ftEval1 :: FVar Field
-      , publicEvals :: { zeta :: FVar Field, omegaTimesZeta :: FVar Field }
-      , witnessEvals :: Vector 15 { zeta :: FVar Field, omegaTimesZeta :: FVar Field }
-      , coeffEvals :: Vector 15 { zeta :: FVar Field, omegaTimesZeta :: FVar Field }
-      , zEvals :: { zeta :: FVar Field, omegaTimesZeta :: FVar Field }
-      , sigmaEvals :: Vector 6 { zeta :: FVar Field, omegaTimesZeta :: FVar Field }
-      , indexEvals :: Vector 6 { zeta :: FVar Field, omegaTimesZeta :: FVar Field }
+      { ftEval1 :: FVar StepField
+      , publicEvals :: { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
+      , witnessEvals :: Vector 15 { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
+      , coeffEvals :: Vector 15 { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
+      , zEvals :: { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
+      , sigmaEvals :: Vector 6 { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
+      , indexEvals :: Vector 6 { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
       }
-  , prevChallenges :: Vector 2 (Vector 16 (FVar Field))
+  , prevChallenges :: Vector 2 (Vector 16 (FVar StepField))
   }
 
-parseFopStepInput :: Vector 151 (FVar Field) -> FopStepInput
+parseFopStepInput :: Vector 151 (FVar StepField) -> FopStepInput
 parseFopStepInput inputs =
   let
     at = unsafeIdx inputs
 
-    evalPair :: forall n. Int -> Finite n -> { zeta :: FVar Field, omegaTimesZeta :: FVar Field }
+    evalPair :: forall n. Int -> Finite n -> { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
     evalPair base j =
       { zeta: at (base + 2 * getFinite j)
       , omegaTimesZeta: at (base + 2 * getFinite j + 1)
@@ -96,9 +96,9 @@ parseFopStepInput inputs =
 
 fopStepCircuit
   :: forall t m
-   . CircuitM Field (KimchiConstraint Field) t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
   => FopStepInput
-  -> Snarky (KimchiConstraint Field) t m (Output 16 Field)
+  -> Snarky (KimchiConstraint StepField) t m (Output 16 StepField)
 fopStepCircuit input =
   let
     unfinalized =
@@ -109,15 +109,15 @@ fopStepCircuit input =
           , xi: input.xi
           , bulletproofChallenges: input.bulletproofChallenges
           }
-      , shouldFinalize: coerce (const_ one :: FVar Field)
+      , shouldFinalize: coerce (const_ one :: FVar StepField)
       , spongeDigestBeforeEvaluations: input.spongeDigestBeforeEvaluations
       }
     params =
       { domains:
-          { generator: const_ (LinFFI.domainGenerator @Field domainLog2)
+          { generator: const_ (LinFFI.domainGenerator @StepField domainLog2)
           , log2: domainLog2
           } :< Vector.nil
-      , shifts: map const_ (LinFFI.domainShifts @Field domainLog2)
+      , shifts: map const_ (LinFFI.domainShifts @StepField domainLog2)
       , srsLengthLog2
       , endo: stepEndo
       , linearizationPoly: Linearization.pallas
@@ -132,8 +132,8 @@ fopStepCircuit input =
       , domainLog2Var: input.domainLog2Var
       }
 
-compileFopStep :: CompiledCircuit Field
+compileFopStep :: CompiledCircuit StepField
 compileFopStep =
-  compilePure (Proxy @(Vector 151 (F Field))) (Proxy @Unit) (Proxy @(KimchiConstraint Field))
+  compilePure (Proxy @(Vector 151 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> void $ fopStepCircuit (parseFopStepInput inputs))
     Kimchi.initialState

@@ -15,8 +15,8 @@ module Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn
 -- | `app_state` (Input mode) or `ret_var` (Output mode).
 -- |
 -- | Reference: mina/src/lib/crypto/pickles/test/test_no_sideloaded.ml:431-470
--- |            (Add_one_return) — `public_input:(Input_and_output (Field.typ, Field.typ))`,
--- |            `max_proofs_verified:N0`, rule `output = Field.(add one x)`.
+-- |            (Add_one_return) — `public_input:(Input_and_output (StepField.typ, StepField.typ))`,
+-- |            `max_proofs_verified:N0`, rule `output = StepField.(add one x)`.
 -- |
 -- | OCaml dump target: `packages/pickles-circuit-diffs/circuits/ocaml/step_main_add_one_return_circuit.json`
 -- | produced by the `step_main_add_one_return` entry in
@@ -28,9 +28,9 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
+import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Pickles.Step.Types (Field)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, const_)
@@ -40,8 +40,8 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type StepMainAddOneReturnParams =
-  { lagrangeAt :: LagrangeBaseLookup Field
-  , blindingH :: AffinePoint (F Field)
+  { lagrangeAt :: LagrangeBaseLookup StepField
+  , blindingH :: AffinePoint (F StepField)
   }
 
 -- | Application-specific advice for the Add_one_return rule.
@@ -61,10 +61,10 @@ instance (Monad m) => AddOneReturnAdvice m
 -- | Reference: test_no_sideloaded.ml:440-452
 addOneReturnRule
   :: forall t m
-   . CircuitM Field (KimchiConstraint Field) t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
   => AddOneReturnAdvice m
-  => FVar Field
-  -> Snarky (KimchiConstraint Field) t m (RuleOutput 0 Unit (FVar Field))
+  => FVar StepField
+  -> Snarky (KimchiConstraint StepField) t m (RuleOutput 0 Unit (FVar StepField))
 addOneReturnRule x = pure
   { prevPublicInputs: Vector.nil
   , proofMustVerify: Vector.nil
@@ -75,14 +75,14 @@ compileStepMainAddOneReturn
   :: StepMainAddOneReturnParams -> Effect StepArtifact
 compileStepMainAddOneReturn params =
   mkStepArtifact <$>
-    compile (Proxy @Unit) (Proxy @(Vector 1 (F Field))) (Proxy @(KimchiConstraint Field))
+    compile (Proxy @Unit) (Proxy @(Vector 1 (F StepField))) (Proxy @(KimchiConstraint StepField))
       -- N=0: output size = 33*0 + 1 = 1 (just the msgForNextStep digest —
       -- no unfinalized_proofs, no messages_for_next_wrap_proof entries).
       -- OCaml step domain log2 = 9 (tiny, no verify_one machinery).
       -- N=0 has no prev proofs, so prevInputVal/prevInput are unused —
       -- pick any concrete CircuitType-havers; Unit works.
       -- Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
-      ( \_ -> stepMain @Unit @(F Field) @(F Field) @Unit @Unit @0 @1
+      ( \_ -> stepMain @Unit @(F StepField) @(F StepField) @Unit @Unit @0 @1
           addOneReturnRule
           { perSlotLagrangeAt: Vector.nil
           , blindingH: params.blindingH

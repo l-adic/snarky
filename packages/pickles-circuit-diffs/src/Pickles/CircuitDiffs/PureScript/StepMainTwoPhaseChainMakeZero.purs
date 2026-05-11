@@ -5,7 +5,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero
 
 -- | step_main circuit for the `make_zero` branch of `two_phase_chain`.
 -- |
--- | Configuration: N=0 in a multi-branch compile with mpv=N1, public_input=Field,
+-- | Configuration: N=0 in a multi-branch compile with mpv=N1, public_input=StepField,
 -- | prevs=[], step_domain=2^9. The rule body asserts `self_v = 0` (single R1CS).
 -- |
 -- | Despite N=0, the wrap CS's `max_proofs_verified=N1` forces the
@@ -24,9 +24,9 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
+import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Pickles.Step.Types (Field)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertEqual_, const_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -35,16 +35,16 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type StepMainTwoPhaseChainMakeZeroParams =
-  { lagrangeAt :: LagrangeBaseLookup Field
-  , blindingH :: AffinePoint (F Field)
+  { lagrangeAt :: LagrangeBaseLookup StepField
+  , blindingH :: AffinePoint (F StepField)
   }
 
 -- | `make_zero` rule: asserts `self_v = 0`. No prevs.
 makeZeroRule
   :: forall t m
-   . CircuitM Field (KimchiConstraint Field) t m
-  => FVar Field
-  -> Snarky (KimchiConstraint Field) t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
+  => FVar StepField
+  -> Snarky (KimchiConstraint StepField) t m
        (RuleOutput 0 Unit Unit)
 makeZeroRule appState = do
   assertEqual_ appState (const_ zero)
@@ -62,10 +62,10 @@ compileStepMainTwoPhaseChainMakeZero params =
   -- size = 1*32 + 1 + 1 = 34. `stepMain` derives the front-padding
   -- dummy from `len`.
   mkStepArtifact <$>
-    compile (Proxy @Unit) (Proxy @(Vector 34 (F Field))) (Proxy @(KimchiConstraint Field))
+    compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
       ( \_ -> stepMain
           @Unit
-          @(F Field)
+          @(F StepField)
           @Unit
           @Unit
           @Unit

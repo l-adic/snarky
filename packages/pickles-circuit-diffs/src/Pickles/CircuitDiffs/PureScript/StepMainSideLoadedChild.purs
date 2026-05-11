@@ -19,7 +19,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainSideLoadedChild
 -- | `x`, an inner-curve generator `g` (allocated via
 -- | `WeierstrassAffinePoint` so on-curve check fires), then four
 -- | gate-emitting calls — `toFieldChecked' @1`, `scaleFast1 @1 @5` ×2,
--- | `endo @4 @1` — and a final `Field.Assert.equal self Field.zero`.
+-- | `endo @4 @1` — and a final `StepField.Assert.equal self StepField.zero`.
 -- | Byte-identical to OCaml (PS=OCaml=447 gates).
 
 import Prelude
@@ -29,8 +29,8 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
+import Pickles.Field (StepField)
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Pickles.Step.Types (Field)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, assertEqual_, const_, exists)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
@@ -46,7 +46,7 @@ import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
 type StepMainSideLoadedChildParams =
-  { blindingH :: AffinePoint (F Field)
+  { blindingH :: AffinePoint (F StepField)
   }
 
 -- | Application-specific advice for the side-loaded child rule.
@@ -58,11 +58,11 @@ class Monad m <= SideLoadedChildAdvice m
 
 instance (Monad m) => SideLoadedChildAdvice m
 
--- | Pallas generator's affine coordinates as an `F Field` pair.
+-- | Pallas generator's affine coordinates as an `F StepField` pair.
 -- | Mirrors OCaml `Backend.Tick.Inner_curve.(to_affine_exn one)` (the
 -- | Pallas generator). Coordinates are over `Pallas.BaseField =
--- | Vesta.ScalarField = Field`.
-innerCurveGen :: { x :: F Field, y :: F Field }
+-- | Vesta.ScalarField = StepField`.
+innerCurveGen :: { x :: F StepField, y :: F StepField }
 innerCurveGen =
   let
     { x, y } = unsafePartial $ fromJust $ toAffine (generator :: PallasG)
@@ -72,30 +72,30 @@ innerCurveGen =
 -- | Side-loaded child rule body. Mirrors
 -- | dump_side_loaded_main.ml:87-94's [No_recursion] rule:
 -- |   dummy_constraints () ;
--- |   Field.Assert.equal self Field.zero ;
+-- |   StepField.Assert.equal self StepField.zero ;
 -- |   { previous_proof_statements = [] ; public_output = () ; ... }
 sideLoadedChildRule
   :: forall t m
-   . CircuitM Field (KimchiConstraint Field) t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
   => SideLoadedChildAdvice m
-  => FVar Field
-  -> Snarky (KimchiConstraint Field) t m
+  => FVar StepField
+  -> Snarky (KimchiConstraint StepField) t m
        (RuleOutput 0 Unit Unit)
 sideLoadedChildRule appState = do
   -- dummy_constraints body — translation of OCaml
   -- dump_side_loaded_main.ml:49-73.
-  -- (1) `let x = exists Field.typ ~compute:(fun () -> 3)`
-  x <- exists (pure (F (fromInt 3) :: F Field))
+  -- (1) `let x = exists StepField.typ ~compute:(fun () -> 3)`
+  x <- exists (pure (F (fromInt 3) :: F StepField))
   -- (2) `let g = exists Step_main_inputs.Inner_curve.typ ~compute:(...)`
   --     Allocate as WeierstrassAffinePoint so `exists` triggers
   --     assert_on_curve (matching OCaml's Inner_curve.typ).
-  WeierstrassAffinePoint g :: WeierstrassAffinePoint PallasG (FVar Field) <-
+  WeierstrassAffinePoint g :: WeierstrassAffinePoint PallasG (FVar StepField) <-
     exists (pure (WeierstrassAffinePoint innerCurveGen))
   -- (3) `Scalar_challenge.to_field_checked' ~num_bits:16 (SC.create x)`.
   --     Emits a single EC_endoscalar (EndoMulScalar) gate over the
   --     16-bit scalar `x` and discards the (a, b, n) accumulators.
   --     `@rows = 1` (rows = 16 bits / 16 bits-per-row).
-  _ <- toFieldChecked' @1 (unsafeCoerce x :: SizedF 16 (FVar Field))
+  _ <- toFieldChecked' @1 (unsafeCoerce x :: SizedF 16 (FVar StepField))
   -- (4) `Step_main_inputs.Ops.scale_fast g ~num_bits:5 (Shifted_value x)` ×2.
   --     OCaml's `Step_main_inputs.Ops.scale_fast` is the Type1 `scale_fast`
   --     (`Plonk_curve_ops.Make(Step.Impl)(Step_main_inputs.Inner_curve).scale_fast`).
@@ -106,9 +106,9 @@ sideLoadedChildRule appState = do
   -- (5) `Step_verifier.Scalar_challenge.endo g ~num_bits:4 (SC.create x)`.
   --     Parameterized `endo @nBits @rows` (Mul 4 rows nBits) — for
   --     num_bits=4 use `@4 @1` (a single 4-bit chunk).
-  _ <- endo @4 @1 g (unsafeCoerce x :: SizedF 4 (FVar Field))
+  _ <- endo @4 @1 g (unsafeCoerce x :: SizedF 4 (FVar StepField))
 
-  -- `Field.Assert.equal self Field.zero`
+  -- `StepField.Assert.equal self StepField.zero`
   assertEqual_ appState (const_ zero)
   pure
     { prevPublicInputs: Vector.nil
@@ -120,8 +120,8 @@ compileStepMainSideLoadedChild
   :: StepMainSideLoadedChildParams -> Effect StepArtifact
 compileStepMainSideLoadedChild params =
   mkStepArtifact <$>
-    compile (Proxy @Unit) (Proxy @(Vector.Vector 1 (F Field)))
-      (Proxy @(KimchiConstraint Field))
+    compile (Proxy @Unit) (Proxy @(Vector.Vector 1 (F StepField)))
+      (Proxy @(KimchiConstraint StepField))
       -- N=0, Input mode (input is the rule's `self` field). Output is
       -- Unit. Single-rule, no prevs ⇒ mpvMax=0, mpvPad=0,
       -- outputSize = mpvMax*32+1+mpvMax = 1 (just the msgForNextStep
@@ -132,7 +132,7 @@ compileStepMainSideLoadedChild params =
       -- (Mul/Add chain).
       ( \_ -> stepMain
           @Unit
-          @(F Field)
+          @(F StepField)
           @Unit
           @Unit
           @Unit

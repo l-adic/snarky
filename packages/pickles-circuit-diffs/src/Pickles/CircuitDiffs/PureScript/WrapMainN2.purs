@@ -24,6 +24,7 @@ import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCompiled, deriveWrapVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2 (StepMainSimpleChainN2Params, compileStepMainSimpleChainN2)
+import Pickles.Field (StepField, WrapField)
 import Pickles.Slots (Compiled, Slot)
 import Pickles.Step.Types as Step
 import Pickles.Types (StatementIO)
@@ -42,8 +43,8 @@ compileWrapMainN2
   -> Effect WrapArtifact
 compileWrapMainN2 { lagrangeAt, blindingH } stepParams = do
   stepArt <- compileStepMainSimpleChainN2 stepParams
-  vestaSrs <- createCRS @Step.Field
-  pallasSrs <- createCRS @Wrap.Field
+  vestaSrs <- createCRS @StepField
+  pallasSrs <- createCRS @WrapField
   let
     realStepVK = deriveStepVKFromCompiled @2 vestaSrs stepArt.stepCs
 
@@ -59,10 +60,10 @@ compileWrapMainN2 { lagrangeAt, blindingH } stepParams = do
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
       }
   -- mpv=2, slots [2; 2]; derived from PrevsSpec via funcdep.
-  wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint Wrap.Field))
+  wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     ( \stmt ->
         wrapMainForPrevs @1
-          @(Tuple2 (Slot Compiled 2 (StatementIO (F Step.Field) Unit)) (Slot Compiled 2 (StatementIO (F Step.Field) Unit)))
+          @(Tuple2 (Slot Compiled 2 (StatementIO (F StepField) Unit)) (Slot Compiled 2 (StatementIO (F StepField) Unit)))
           config
           stmt
     )

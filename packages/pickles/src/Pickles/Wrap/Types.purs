@@ -3,8 +3,7 @@
 -- | `Pickles.Prove.*` / `Pickles.Sideload.*` / circuit-diff fixtures —
 -- | no step-side module imports any of these directly.
 module Pickles.Wrap.Types
-  ( Field
-  , IvpBaseline
+  ( IvpBaseline
   , PrevProofState(..)
   , StatementPacked(..)
   ) where
@@ -20,11 +19,7 @@ import Snarky.Circuit.DSL.Monad (class CheckedType, check)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.Types (class CircuitType, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Curves.Class (class FieldSizeInBits)
-import Snarky.Curves.Pallas as Pallas
 import Type.Proxy (Proxy(..))
-
--- | Wrap circuit f (Fq = Pallas.ScalarField = Vesta.BaseField).
-type Field = Pallas.ScalarField
 
 -- | Wrap circuit's IVP MSM base count minus the per-proof `sg_old`s.
 -- | Used in `Add mpv IvpBaseline totalBases` — `totalBases` is

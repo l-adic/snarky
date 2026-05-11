@@ -2,7 +2,7 @@
 -- | (`mina/src/lib/crypto/pickles/test/test_no_sideloaded.ml:100-126`).
 -- |
 -- | The simplest pickles rule: `max_proofs_verified = N0`, no prevs,
--- | Output mode (input = Unit, output = Field), constant output `0`.
+-- | Output mode (input = Unit, output = StepField), constant output `0`.
 -- | Exercised here via the `Pickles.Prove.CompileMulti` API end-to-end:
 -- | a 1-rule carrier dispatched through `compileMulti` returns one
 -- | `BranchProver`; one invocation produces a single proof; `verify`
@@ -29,6 +29,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
+import Pickles.Field (StepField)
 import Pickles.Prove.Compile
   ( BranchProver(..)
   , RulesCons
@@ -38,7 +39,6 @@ import Pickles.Prove.Compile
   )
 import Pickles.Prove.Step (StepRule)
 import Pickles.Prove.Verify (verify)
-import Pickles.Step.Types (Field)
 import Pickles.Wrap.Slots (NoSlots)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
@@ -48,7 +48,7 @@ import Test.Spec.Assertions (shouldEqual)
 
 -- | The NRR inductive rule — Output mode, N=0, returns `F zero`.
 -- | Reference: `mina/src/lib/crypto/pickles/test/test_no_sideloaded.ml:100-107`.
-nrrRule :: StepRule 0 Unit Unit Unit (F Field) (FVar Field) Unit Unit
+nrrRule :: StepRule 0 Unit Unit Unit (F StepField) (FVar StepField) Unit Unit
 nrrRule _ = pure
   { prevPublicInputs: Vector.nil
   , proofMustVerify: Vector.nil
@@ -65,18 +65,18 @@ spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.NoRecursionReturn" do
   it "compileMulti + prover.step end-to-end verify returns true" \_ -> do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
-    vestaSrs <- liftEffect $ createCRS @Field
+    vestaSrs <- liftEffect $ createCRS @StepField
 
     -- Build the 1-tuple rules carrier for compileMulti. mpvMax = 0
     -- (NRR rule's mpv); since this is the only branch, nd = 1.
     -- outputSize = mpvMax*32 + 1 + mpvMax = 0 + 1 + 0 = 1.
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F Field) @Unit nrrRule unit
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule unit
 
     let rules = tuple1 nrrEntry
 
     output <- liftEffect $ compileMulti
       @NrrRules
-      @(F Field)
+      @(F StepField)
       @Unit
       @NoSlots
       { srs: { vestaSrs, pallasSrs }

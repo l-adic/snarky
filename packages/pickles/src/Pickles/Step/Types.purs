@@ -3,8 +3,7 @@
 -- | `Pickles.Prove.*` / `Pickles.Sideload.*` / circuit-diff fixtures —
 -- | no wrap-side module imports any of these directly.
 module Pickles.Step.Types
-  ( Field
-  , UnfinalizedFieldCount
+  ( UnfinalizedFieldCount
   , BranchData(..)
   , WrapProof(..)
   , FopProofState(..)
@@ -18,6 +17,7 @@ import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (Tuple10, Tuple2, Tuple3, Tuple5, tuple10, tuple2, tuple3, tuple5, uncurry10, uncurry2, uncurry3, uncurry5)
 import Data.Vector (Vector)
 import Partial.Unsafe (unsafePartial)
+import Pickles.Field (StepField)
 import Pickles.Types (PointEval, StepAllEvals, WrapProofMessages, WrapProofOpening)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
@@ -29,12 +29,8 @@ import Snarky.Circuit.Types (class CircuitType, genericFieldsToValue, genericFie
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, EndoScalar(..), endoScalar)
 import Snarky.Curves.Pasta (PallasG)
-import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (WeierstrassAffinePoint)
 import Type.Proxy (Proxy(..))
-
--- | Step circuit f (Fp = Vesta.ScalarField = Pallas.BaseField).
-type Field = Vesta.ScalarField
 
 -- | Number of step-field scalars produced when a per-proof
 -- | `Unfinalized` is laid out into the step circuit's public input.
@@ -55,8 +51,8 @@ type UnfinalizedFieldCount = 32
 -- |   f element through the endo).
 -- |
 -- | The endo constant is determined by `f` via the `HasEndo` class — for
--- | `f = Field` (= Vesta.ScalarField), the base f is Vesta.BaseField
--- | and `endoScalar @Vesta.BaseField @Field` gives the right value.
+-- | `f = StepField` (= Vesta.ScalarField), the base f is Vesta.BaseField
+-- | and `endoScalar @Vesta.BaseField @StepField` gives the right value.
 -- |
 -- | Reference: branch_data.ml, mina/src/lib/crypto/pickles/impls.ml
 newtype BranchData f b = BranchData
@@ -380,16 +376,16 @@ instance
         tup
 
 instance
-  ( CheckedType Field (KimchiConstraint Field) (WrapProof dw (WeierstrassAffinePoint PallasG (FVar Field)) sfvar)
-  , CheckedType Field (KimchiConstraint Field) (ProofState ds (FVar Field) (BoolVar Field))
-  , CheckedType Field (KimchiConstraint Field) (StepAllEvals (FVar Field))
+  ( CheckedType StepField (KimchiConstraint StepField) (WrapProof dw (WeierstrassAffinePoint PallasG (FVar StepField)) sfvar)
+  , CheckedType StepField (KimchiConstraint StepField) (ProofState ds (FVar StepField) (BoolVar StepField))
+  , CheckedType StepField (KimchiConstraint StepField) (StepAllEvals (FVar StepField))
   , Reflectable n Int
   , Reflectable ds Int
   ) =>
-  CheckedType Field (KimchiConstraint Field) (PerProofWitness n ds dw (FVar Field) sfvar (BoolVar Field)) where
+  CheckedType StepField (KimchiConstraint StepField) (PerProofWitness n ds dw (FVar StepField) sfvar (BoolVar StepField)) where
   check (PerProofWitness r) =
     let
-      tup :: PerProofWitnessTuple n ds dw (FVar Field) sfvar (BoolVar Field)
+      tup :: PerProofWitnessTuple n ds dw (FVar StepField) sfvar (BoolVar StepField)
       tup = tuple5 r.wrapProof r.proofState r.prevEvals r.prevChallenges r.prevSgs
     in
       check tup

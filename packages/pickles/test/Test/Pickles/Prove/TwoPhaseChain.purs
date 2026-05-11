@@ -34,6 +34,7 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception as Exc
+import Pickles.Field (StepField)
 import Pickles.Prove.Compile
   ( BranchProver(..)
   , PrevSlot(..)
@@ -49,7 +50,7 @@ import Pickles.Prove.Verify (verify)
 import Pickles.Slots (Compiled, Slot)
 import Pickles.Step.Advice (getPrevAppStates)
 import Pickles.Step.Main (SlotVkBlueprintCompiled)
-import Pickles.Step.Types (Field, PerProofWitness)
+import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
 import Pickles.Wrap.Slots (NoSlots)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -65,8 +66,8 @@ import Test.Spec.Assertions (shouldEqual)
 -- Rule bodies
 --
 -- Mirror dump_two_phase_chain.ml's Inductive_rule.t bodies 1:1.
--- Both rules share inputVal = F Field, outputVal = Unit (Input
--- mode), prevInputVal = F Field (the proof-system's app-state).
+-- Both rules share inputVal = F StepField, outputVal = Unit (Input
+-- mode), prevInputVal = F StepField (the proof-system's app-state).
 --------------------------------------------------------------------------------
 
 -- | Branch 0: assert public_input = 0. No prevs.
@@ -74,12 +75,12 @@ import Test.Spec.Assertions (shouldEqual)
 -- | Mirrors `dump_two_phase_chain.ml`'s `make_zero` rule.
 makeZeroRule
   :: StepRule 0 Unit
-       (F Field)
-       (FVar Field)
+       (F StepField)
+       (FVar StepField)
        Unit
        Unit
-       (F Field)
-       (FVar Field)
+       (F StepField)
+       (FVar StepField)
 makeZeroRule self = do
   assertEqual_ self (const_ zero)
   pure
@@ -96,19 +97,19 @@ makeZeroRule self = do
 -- | THIS is the multi-branch dispatch this whole apparatus exists to
 -- | exercise.
 -- |
--- | `valCarrier = Tuple (StatementIO (F Field) Unit) Unit`
+-- | `valCarrier = Tuple (StatementIO (F StepField) Unit) Unit`
 -- | matches the prev shape: one prev slot whose statement is
--- | `StatementIO (F Field) Unit` (= "an integer counter, no
+-- | `StatementIO (F StepField) Unit` (= "an integer counter, no
 -- | output").
 incrementRule
   :: StepRule 1
-       (Tuple1 (StatementIO (F Field) Unit))
-       (F Field)
-       (FVar Field)
+       (Tuple1 (StatementIO (F StepField) Unit))
+       (F StepField)
+       (FVar StepField)
        Unit
        Unit
-       (F Field)
-       (FVar Field)
+       (F StepField)
+       (FVar StepField)
 incrementRule self = do
   prev <- exists $ MT.lift do
     stmt /\ _ <- getPrevAppStates unit
@@ -133,22 +134,22 @@ incrementRule self = do
 
 -- | `makeZeroRule` packaged: mpv=0, no prevs, valCarrier=Unit.
 mkMakeZeroEntry
-  :: Effect (RuleEntry Unit 0 2 Unit (F Field) Unit 34 Unit Unit Unit)
-mkMakeZeroEntry = mkRuleEntry @1 @Unit @(F Field) makeZeroRule unit
+  :: Effect (RuleEntry Unit 0 2 Unit (F StepField) Unit 34 Unit Unit Unit)
+mkMakeZeroEntry = mkRuleEntry @1 @Unit @(F StepField) makeZeroRule unit
 
 -- | `incrementRule` packaged: mpv=1, one self-referential prev,
 -- | valCarrier carrying the prev's `StatementIO`.
 mkIncrementEntry
   :: Effect
        ( RuleEntry
-           (Tuple1 (Slot Compiled 1 (StatementIO (F Field) Unit)))
+           (Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
            1
            2
-           (Tuple1 (StatementIO (F Field) Unit))
-           (F Field)
+           (Tuple1 (StatementIO (F StepField) Unit))
+           (F StepField)
            ( Tuple1
-               ( PerProofWitness 1 StepIPARounds WrapIPARounds (F Field)
-                   (Type2 (SplitField (F Field) Boolean))
+               ( PerProofWitness 1 StepIPARounds WrapIPARounds (F StepField)
+                   (Type2 (SplitField (F StepField) Boolean))
                    Boolean
                )
            )
@@ -157,23 +158,23 @@ mkIncrementEntry
            (Tuple1 Unit)
            (Tuple1 SlotVkBlueprintCompiled)
        )
-mkIncrementEntry = mkRuleEntry @1 @Unit @(F Field) incrementRule (tuple1 Self)
+mkIncrementEntry = mkRuleEntry @1 @Unit @(F StepField) incrementRule (tuple1 Self)
 
 -- | The full rules carrier `compileMulti` receives — a Tuple chain
 -- | of `RuleEntry`s (one per branch, heterogeneously typed).
 mkRulesCarrier
   :: Effect
        ( Tuple2
-           (RuleEntry Unit 0 2 Unit (F Field) Unit 34 Unit Unit Unit)
+           (RuleEntry Unit 0 2 Unit (F StepField) Unit 34 Unit Unit Unit)
            ( RuleEntry
-               (Tuple1 (Slot Compiled 1 (StatementIO (F Field) Unit)))
+               (Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
                1
                2
-               (Tuple1 (StatementIO (F Field) Unit))
-               (F Field)
+               (Tuple1 (StatementIO (F StepField) Unit))
+               (F StepField)
                ( Tuple1
-                   ( PerProofWitness 1 StepIPARounds WrapIPARounds (F Field)
-                       (Type2 (SplitField (F Field) Boolean))
+                   ( PerProofWitness 1 StepIPARounds WrapIPARounds (F StepField)
+                       (Type2 (SplitField (F StepField) Boolean))
                        Boolean
                    )
                )
@@ -195,8 +196,8 @@ mkRulesCarrier = do
 type TwoPhaseChainRules =
   RulesCons 0 Unit Unit Unit
     ( RulesCons 1
-        (Tuple1 (StatementIO (F Field) Unit))
-        (Tuple1 (Slot Compiled 1 (StatementIO (F Field) Unit)))
+        (Tuple1 (StatementIO (F StepField) Unit))
+        (Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
         (Tuple1 SlotWrapKey)
         RulesNil
     )
@@ -217,7 +218,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
   --     step domain (b0=9, b1..b3=14).
   it "b0..b3 chain prove + verify under shared wrap VK" \_ -> do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
-    vestaSrs <- liftEffect $ createCRS @Field
+    vestaSrs <- liftEffect $ createCRS @StepField
 
     let
       cfg =
@@ -230,7 +231,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     output <- liftEffect $ compileMulti
       @TwoPhaseChainRules
       @Unit
-      @(F Field)
+      @(F StepField)
       @(Product (Vector 1) NoSlots)
       cfg
       rules
@@ -258,7 +259,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       Right p -> pure p
     -- b2 = increment(b1); appInput = 1 + 1 = 2. Same-branch self-prev.
     eB2 <- liftEffect $ runExceptT $ incrementProver
-      { appInput: F (Curves.fromInt 2 :: Field)
+      { appInput: F (Curves.fromInt 2 :: StepField)
       , prevs: tuple1 (InductivePrev b1 output.tag)
       , sideloadedVKs: tuple1 unit
       }
@@ -267,7 +268,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       Right p -> pure p
     -- b3 = increment(b2); appInput = 2 + 1 = 3.
     eB3 <- liftEffect $ runExceptT $ incrementProver
-      { appInput: F (Curves.fromInt 3 :: Field)
+      { appInput: F (Curves.fromInt 3 :: StepField)
       , prevs: tuple1 (InductivePrev b2 output.tag)
       , sideloadedVKs: tuple1 unit
       }

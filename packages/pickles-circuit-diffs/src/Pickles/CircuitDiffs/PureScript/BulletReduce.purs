@@ -11,8 +11,8 @@ import Data.Fin (getFinite)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
+import Pickles.Field (WrapField)
 import Pickles.IPA (bulletReduceCircuit)
-import Pickles.Wrap.Types (Field)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, SizedF, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -26,7 +26,7 @@ type BulletReduceInput n f =
   , challenges :: Vector n (SizedF 128 (FVar f))
   }
 
-parseBulletReduceInput :: Vector 80 (FVar Field) -> BulletReduceInput 16 Field
+parseBulletReduceInput :: Vector 80 (FVar WrapField) -> BulletReduceInput 16 WrapField
 parseBulletReduceInput inputs =
   let
     at = unsafeIdx inputs
@@ -39,13 +39,13 @@ parseBulletReduceInput inputs =
 
 bulletReduceWrapCircuit
   :: forall t m
-   . CircuitM Field (KimchiConstraint Field) t m
-  => BulletReduceInput 16 Field
-  -> Snarky (KimchiConstraint Field) t m { p :: AffinePoint (FVar Field), isInfinity :: BoolVar Field }
-bulletReduceWrapCircuit = bulletReduceCircuit @Field @VestaG
+   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  => BulletReduceInput 16 WrapField
+  -> Snarky (KimchiConstraint WrapField) t m { p :: AffinePoint (FVar WrapField), isInfinity :: BoolVar WrapField }
+bulletReduceWrapCircuit = bulletReduceCircuit @WrapField @VestaG
 
-compileBulletReduce :: CompiledCircuit Field
+compileBulletReduce :: CompiledCircuit WrapField
 compileBulletReduce =
-  compilePure (Proxy @(Vector 80 (F Field))) (Proxy @Unit) (Proxy @(KimchiConstraint Field))
+  compilePure (Proxy @(Vector 80 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ bulletReduceWrapCircuit (parseBulletReduceInput inputs))
     Kimchi.initialState

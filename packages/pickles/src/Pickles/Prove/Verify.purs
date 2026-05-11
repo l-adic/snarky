@@ -50,6 +50,7 @@ import Data.Reflectable (class Reflectable, reflectType)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Constants (zkRows)
+import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.Linearization.Types (LinearizationPoly)
@@ -78,7 +79,7 @@ import Type.Proxy (Proxy(..))
 -- | closes over the wrap VK (small) + Vesta SRS (shared public params)
 -- | + the step-domain constants derived from the compiled step circuit.
 type Verifier =
-  { wrapVK :: VerifierIndex PallasG Wrap.Field
+  { wrapVK :: VerifierIndex PallasG WrapField
   -- | Step SRS, for the stage-2 accumulator MSM (`compute_sg`).
   , vestaSrs :: CRS VestaG
   -- | Step domain log2 (= `stepProverIndex.domain.log_size_of_group`).
@@ -93,13 +94,13 @@ type Verifier =
   -- | the SRS size, which is fixed by the cycle's design.
   , stepSrsLengthLog2 :: Int
   -- | Step domain generator `omega` (= `domain_generator stepDomainLog2`).
-  , stepGenerator :: Step.Field
+  , stepGenerator :: StepField
   -- | Permutation shifts for the step domain.
-  , stepShifts :: Vector 7 Step.Field
-  -- | Step-field scalar endo coefficient (= `endoScalar @Step.Field`).
-  , stepEndo :: Step.Field
+  , stepShifts :: Vector 7 StepField
+  -- | Step-field scalar endo coefficient (= `endoScalar @StepField`).
+  , stepEndo :: StepField
   -- | Tick linearization polynomial (= `Pickles.Linearization.pallas`).
-  , linearizationPoly :: LinearizationPoly Step.Field
+  , linearizationPoly :: LinearizationPoly StepField
   }
 
 -- | Build a `Verifier` from the minimum the caller supplies (a compiled
@@ -107,7 +108,7 @@ type Verifier =
 -- | constants (generator, shifts, endo, linearization) come from the
 -- | standard Pickles setup.
 mkVerifier
-  :: { wrapVK :: VerifierIndex PallasG Wrap.Field
+  :: { wrapVK :: VerifierIndex PallasG WrapField
      , vestaSrs :: CRS VestaG
      , stepDomainLog2 :: Int
      }
@@ -118,9 +119,9 @@ mkVerifier { wrapVK, vestaSrs, stepDomainLog2 } =
   , stepDomainLog2
   , stepZkRows: zkRows
   , stepSrsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
-  , stepGenerator: domainGenerator stepDomainLog2 :: Step.Field
-  , stepShifts: domainShifts stepDomainLog2 :: Vector 7 Step.Field
-  , stepEndo: case (endoScalar :: EndoScalar Step.Field) of EndoScalar e -> e
+  , stepGenerator: domainGenerator stepDomainLog2 :: StepField
+  , stepShifts: domainShifts stepDomainLog2 :: Vector 7 StepField
+  , stepEndo: case (endoScalar :: EndoScalar StepField) of EndoScalar e -> e
   , linearizationPoly: Linearization.pallas
   }
 
@@ -143,16 +144,16 @@ data CompiledProofWidthData width = CompiledProofWidthData
   -- Inner step proof's prev-proof bp challenges (carried by the
   -- wrap proof's `messages_for_next_step_proof` field). Sized at
   -- the rule's actual prev count.
-  , oldBulletproofChallenges :: Vector width (Vector StepIPARounds Step.Field)
+  , oldBulletproofChallenges :: Vector width (Vector StepIPARounds StepField)
 
   -- Per-prev wrap-side bp-challenges that this proof hashed into
   -- `messagesForNextWrapProofDigest`.
-  , msgWrapChallenges :: Vector width (Vector WrapIPARounds Wrap.Field)
+  , msgWrapChallenges :: Vector width (Vector WrapIPARounds WrapField)
 
   -- Per-prev outer-step `expandProof.sg` values used as real-slot
   -- `sgX/sgY` in `kimchiPrevChallenges` when this proof's wrap
   -- proof was generated.
-  , outerStepChalPolyComms :: Vector width (AffinePoint Step.Field)
+  , outerStepChalPolyComms :: Vector width (AffinePoint StepField)
 
   -- | Prover-side `WrapDeferredValuesInput`; carries `prevSgs` and
   -- | `prevChallenges` at the per-rule width. Read only by
@@ -172,9 +173,9 @@ data CompiledProofWidthData width = CompiledProofWidthData
   -- which makes their advice assembly Vector-only (no Array
   -- roundtrip). Mirrors OCaml's `Vector.extend_front` of
   -- `messages_for_next_step_proof.old_bulletproof_challenges` etc.
-  , oldBulletproofChallengesPadded :: Vector PaddedLength (Vector StepIPARounds Step.Field)
-  , msgWrapChallengesPadded :: Vector PaddedLength (Vector WrapIPARounds Wrap.Field)
-  , outerStepChalPolyCommsPadded :: Vector PaddedLength (AffinePoint Step.Field)
+  , oldBulletproofChallengesPadded :: Vector PaddedLength (Vector StepIPARounds StepField)
+  , msgWrapChallengesPadded :: Vector PaddedLength (Vector WrapIPARounds WrapField)
+  , outerStepChalPolyCommsPadded :: Vector PaddedLength (AffinePoint StepField)
   }
 
 -- | Existentially-quantified `CompiledProofWidthData`. PS analog of
@@ -192,16 +193,16 @@ mkSomeCompiledProofWidthData
    . Reflectable width Int
   => Reflectable pad Int
   => Add pad width PaddedLength
-  => { oldBulletproofChallenges :: Vector width (Vector StepIPARounds Step.Field)
-     , msgWrapChallenges :: Vector width (Vector WrapIPARounds Wrap.Field)
-     , outerStepChalPolyComms :: Vector width (AffinePoint Step.Field)
+  => { oldBulletproofChallenges :: Vector width (Vector StepIPARounds StepField)
+     , msgWrapChallenges :: Vector width (Vector WrapIPARounds WrapField)
+     , outerStepChalPolyComms :: Vector width (AffinePoint StepField)
      , wrapDvInput :: WrapDeferredValuesInput width
      -- Front-padding dummies, one per padded view. Used to fill the
      -- `pad` slots prepended to each `Vector width X` to lift it to
      -- `Vector PaddedLength X`.
-     , dummyOldBp :: Vector StepIPARounds Step.Field
-     , dummyMsgWrap :: Vector WrapIPARounds Wrap.Field
-     , dummyChalPolyComm :: AffinePoint Step.Field
+     , dummyOldBp :: Vector StepIPARounds StepField
+     , dummyMsgWrap :: Vector WrapIPARounds WrapField
+     , dummyChalPolyComm :: AffinePoint StepField
      }
   -> SomeCompiledProofWidthData
 mkSomeCompiledProofWidthData rec = mkExists $ CompiledProofWidthData
@@ -238,33 +239,33 @@ newtype CompiledProof mpv stmtVal outputVal auxVal = CompiledProof
   , auxiliaryOutput :: auxVal
 
   -- The actual wrap kimchi proof (commitments on Pallas, eval field = Fq).
-  , wrapProof :: Proof PallasG Wrap.Field
+  , wrapProof :: Proof PallasG WrapField
 
   -- Wrap proof's minimal statement skeleton (input to stage 1 /
   -- `expandDeferredForVerify`). Raw 128-bit scalar challenges — the
   -- endo expansion happens inside the verifier.
-  , rawPlonk :: PlonkMinimal (F Step.Field)
-  , rawBulletproofChallenges :: Vector StepIPARounds (ScalarChallenge (F Step.Field))
-  , branchData :: BranchData Step.Field Boolean
-  , spongeDigestBeforeEvaluations :: Step.Field
+  , rawPlonk :: PlonkMinimal (F StepField)
+  , rawBulletproofChallenges :: Vector StepIPARounds (ScalarChallenge (F StepField))
+  , branchData :: BranchData StepField Boolean
+  , spongeDigestBeforeEvaluations :: StepField
 
   -- Inner step proof's evals (carried by the wrap proof's `prev_evals`
   -- field).
-  , prevEvals :: AllEvals Step.Field
-  , pEval0Chunks :: Array Step.Field
+  , prevEvals :: AllEvals StepField
+  , pEval0Chunks :: Array StepField
 
   -- For stage 2 (accumulator check): the inner step proof's IPA opening
   -- sg, which must equal `compute_sg(rawBulletproofChallenges)` on the
   -- step SRS. Lives in `messages_for_next_wrap_proof.challenge_polynomial_commitment`.
-  , challengePolynomialCommitment :: AffinePoint Wrap.Field
+  , challengePolynomialCommitment :: AffinePoint WrapField
 
   -- Pre-hashed message digests (both ends of the recursion). OCaml's
   -- verify.ml hashes these from the raw messages in the verifier; here
   -- we keep them pre-hashed on the prover side (same value). See
   -- `Pickles.Step.MessageHash.hashMessagesForNextStepProofPure` +
   -- `Pickles.Wrap.MessageHash.hashMessagesForNextWrapProofPureGeneral`.
-  , messagesForNextStepProofDigest :: Step.Field
-  , messagesForNextWrapProofDigest :: Wrap.Field
+  , messagesForNextStepProofDigest :: StepField
+  , messagesForNextWrapProofDigest :: WrapField
 
   -- Per-rule width-dependent fields, hidden via existential. Bundles:
   --   * oldBulletproofChallenges
@@ -302,20 +303,20 @@ verifyOne verifier (CompiledProof p) =
   let
     -- Endo-expand zeta once — needed for `vanishesOnZk` and passed into
     -- `expandDeferredForVerify` internally via its own endo expansion.
-    zetaField :: Step.Field
+    zetaField :: StepField
     zetaField = coerce (toFieldPure p.rawPlonk.zeta (F verifier.stepEndo))
 
     -- Per-proof step domain (= the proof's branch's step circuit
     -- domain log2). For multi-branch compiled outputs the shared
     -- verifier's `stepDomainLog2` is a placeholder; the proof's own
     -- `stepDomainLog2` is authoritative.
-    pStepGenerator :: Step.Field
+    pStepGenerator :: StepField
     pStepGenerator = domainGenerator p.stepDomainLog2
 
-    pStepShifts :: Vector 7 Step.Field
+    pStepShifts :: Vector 7 StepField
     pStepShifts = domainShifts p.stepDomainLog2
 
-    vanishesOnZkAtZeta :: Step.Field
+    vanishesOnZkAtZeta :: StepField
     vanishesOnZkAtZeta = permutationVanishingPolynomial
       { domainLog2: p.stepDomainLog2
       , zkRows: verifier.stepZkRows
@@ -355,19 +356,19 @@ verifyOne verifier (CompiledProof p) =
     -- ===== Stage 2: IPA step accumulator check. =====
     -- OCaml `Ipa.Step.accumulator_check`: verify
     -- `compute_sg(expanded bp-chals) == challengePolynomialCommitment`.
-    expandedBpChals :: Array Step.Field
+    expandedBpChals :: Array StepField
     expandedBpChals = Array.fromFoldable $
-      map (\c -> coerce (toFieldPure c (F verifier.stepEndo)) :: Step.Field)
+      map (\c -> coerce (toFieldPure c (F verifier.stepEndo)) :: StepField)
         p.rawBulletproofChallenges
 
-    computedSg :: AffinePoint Wrap.Field
+    computedSg :: AffinePoint WrapField
     computedSg = vestaSrsBPolyCommitmentPoint verifier.vestaSrs expandedBpChals
 
     accumulatorOk :: Boolean
     accumulatorOk = computedSg == p.challengePolynomialCommitment
 
     -- ===== Stage 3: kimchi batch_verify on the wrap proof. =====
-    pi :: Array Wrap.Field
+    pi :: Array WrapField
     pi = wrapPublicInputOf dv p.messagesForNextStepProofDigest p.messagesForNextWrapProofDigest
 
     kimchiOk :: Boolean
@@ -389,7 +390,7 @@ verify
   -> Boolean
 verify v = Array.all (verifyOne v)
 
--- | Assemble the flat `Array Wrap.Field` that `pallasVerifyOpeningProof`
+-- | Assemble the flat `Array WrapField` that `pallasVerifyOpeningProof`
 -- | accepts as its `publicInput`. Exposed as a public helper so tests
 -- | can cross-check against the prover's assembled `wrapResult.publicInputs`
 -- | without running verification end-to-end.
@@ -397,19 +398,19 @@ wrapPublicInput
   :: forall mpv stmtVal outputVal auxVal
    . Verifier
   -> CompiledProof mpv stmtVal outputVal auxVal
-  -> Array Wrap.Field
+  -> Array WrapField
 wrapPublicInput verifier (CompiledProof p) =
   let
-    zetaField :: Step.Field
+    zetaField :: StepField
     zetaField = coerce (toFieldPure p.rawPlonk.zeta (F verifier.stepEndo))
 
-    pStepGenerator :: Step.Field
+    pStepGenerator :: StepField
     pStepGenerator = domainGenerator p.stepDomainLog2
 
-    pStepShifts :: Vector 7 Step.Field
+    pStepShifts :: Vector 7 StepField
     pStepShifts = domainShifts p.stepDomainLog2
 
-    vanishesOnZkAtZeta :: Step.Field
+    vanishesOnZkAtZeta :: StepField
     vanishesOnZkAtZeta = permutationVanishingPolynomial
       { domainLog2: p.stepDomainLog2
       , zkRows: verifier.stepZkRows
@@ -451,13 +452,13 @@ wrapPublicInput verifier (CompiledProof p) =
 -- | `Wrap.StatementPacked` `CircuitType` instance.
 wrapPublicInputOf
   :: WrapDeferredValuesOutput
-  -> Step.Field
-  -> Wrap.Field
-  -> Array Wrap.Field
+  -> StepField
+  -> WrapField
+  -> Array WrapField
 wrapPublicInputOf dv stepDigest wrapDigest =
   let
     packed
-      :: Wrap.StatementPacked StepIPARounds (Type1 (F Wrap.Field)) (F Wrap.Field) Boolean
+      :: Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean
     packed = assembleWrapMainInput
       { deferredValues: dv
       , messagesForNextStepProofDigest: stepDigest
@@ -465,6 +466,6 @@ wrapPublicInputOf dv stepDigest wrapDigest =
       }
   in
     valueToFields
-      @Wrap.Field
-      @(Wrap.StatementPacked StepIPARounds (Type1 (F Wrap.Field)) (F Wrap.Field) Boolean)
+      @WrapField
+      @(Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean)
       packed

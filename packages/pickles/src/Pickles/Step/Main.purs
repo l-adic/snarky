@@ -46,7 +46,7 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Pickles.Step.Dummy as Dummy
+import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (DomainMode(..))
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
@@ -57,8 +57,9 @@ import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
 import Pickles.Slots (Compiled, SideLoaded, Slot)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM, getMessagesForNextWrapProof, getMessagesForNextWrapProofDummyHash, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex, setUserPublicOutputFields)
+import Pickles.Step.Dummy as Dummy
 import Pickles.Step.Slots (class StepSlotsCarrier, traverseStepSlotsA)
-import Pickles.Step.Types (BranchData(..), Field, FopProofState(..), PerProofWitness(..), ProofState(..), UnfinalizedFieldCount, WrapProof(..))
+import Pickles.Step.Types (BranchData(..), FopProofState(..), PerProofWitness(..), ProofState(..), UnfinalizedFieldCount, WrapProof(..))
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (VerificationKey(..))
@@ -99,7 +100,7 @@ import Unsafe.Coerce (unsafeCoerce)
 -- | in OCaml `Inductive_rule.t`). For self-recursive Input-mode rules
 -- | this coincides with self's own `input` type; for Output-mode or
 -- | heterogeneous recursion it's the prev rules' `public_output` type
--- | (e.g. `FVar Field` for Field-valued outputs). Kept separate from
+-- | (e.g. `FVar StepField` for StepField-valued outputs). Kept separate from
 -- | the self-input parameter because OCaml treats each prev's
 -- | public_input independently via `Types_map.public_input tag` (see
 -- | step_main.ml:318-332).
@@ -110,7 +111,7 @@ import Unsafe.Coerce (unsafeCoerce)
 -- | through `publicOutput` back to the caller.
 type RuleOutput n prevInput output =
   { prevPublicInputs :: Vector n prevInput
-  , proofMustVerify :: Vector n (BoolVar Field)
+  , proofMustVerify :: Vector n (BoolVar StepField)
   , publicOutput :: output
   }
 
@@ -130,7 +131,7 @@ type RuleOutput n prevInput output =
 -- |   The wrap VK is supplied at runtime via
 -- |   `Pickles.Sideload.Advice.SideloadedVKsCarrier` and allocated
 -- |   PER SLOT against `verificationKeyTyp`. The carried `Vector 3
--- |   (Int -> AffinePoint (F Field))` is the three per-domain
+-- |   (Int -> AffinePoint (F StepField))` is the three per-domain
 -- |   lagrange-base lookup tables (one per `wrap_domain ∈ {N0, N1,
 -- |   N2}`); the IVP's `lagrangeAt` for this slot muxes among them
 -- |   via the in-circuit `actualWrapDomainSize` one-hot bits (see
@@ -142,7 +143,7 @@ type RuleOutput n prevInput output =
 -- | the `BuildSlotVkSources` Compiled instance can pattern-match
 -- | exhaustively without an "impossible" fallthrough.
 data SlotVkBlueprintCompiled
-  = VkBlueprintConst (VerificationKey (WeierstrassAffinePoint PallasG (F Field)))
+  = VkBlueprintConst (VerificationKey (WeierstrassAffinePoint PallasG (F StepField)))
   | VkBlueprintShared
 
 -- | Compile-time blueprint for a `Slot SideLoaded` slot — the
@@ -150,7 +151,7 @@ data SlotVkBlueprintCompiled
 -- | circuit by `BuildSlotVkSources` and bundled (alongside this) into
 -- | `SlotVkSource.SideloadedExistsVk`.
 type SlotVkBlueprintSideLoaded =
-  Vector ProofsVerifiedCount (Int -> AffinePoint (F Field))
+  Vector ProofsVerifiedCount (Int -> AffinePoint (F StepField))
 
 -- | Post-walk per-slot wrap-VK dispatch type. `SideloadedExistsVk`
 -- | bundles BOTH the compile-time per-domain lagrange tables and the
@@ -158,11 +159,11 @@ type SlotVkBlueprintSideLoaded =
 -- | dispatch loop has everything in one place — no parallel
 -- | `Vector len (Maybe …)` lookup required.
 data SlotVkSource
-  = ConstVk (VerificationKey (WeierstrassAffinePoint PallasG (F Field)))
+  = ConstVk (VerificationKey (WeierstrassAffinePoint PallasG (F StepField)))
   | SharedExistsVk
   | SideloadedExistsVk
       SlotVkBlueprintSideLoaded
-      (SLVK.VerificationKey (FVar Field) (BoolVar Field))
+      (SLVK.VerificationKey (FVar StepField) (BoolVar StepField))
 
 -- | Walk a spec-indexed blueprint carrier alongside the side-loaded
 -- | VK carrier and produce a `Vector len SlotVkSource` for the
@@ -183,12 +184,12 @@ class
   where
   buildSlotVkSources
     :: forall t m
-     . CircuitM Field (KimchiConstraint Field) t m
-    => CheckedType Field (KimchiConstraint Field)
-         (SLVK.VerificationKey (FVar Field) (BoolVar Field))
+     . CircuitM StepField (KimchiConstraint StepField) t m
+    => CheckedType StepField (KimchiConstraint StepField)
+         (SLVK.VerificationKey (FVar StepField) (BoolVar StepField))
     => blueprints
     -> carrier
-    -> Snarky (KimchiConstraint Field) t m (Vector len SlotVkSource)
+    -> Snarky (KimchiConstraint StepField) t m (Vector len SlotVkSource)
 
 instance BuildSlotVkSources cell Unit 0 Unit Unit where
   buildSlotVkSources _ _ = pure Vector.nil
@@ -243,12 +244,12 @@ type StepMainSrsData len nd blueprints =
     -- | domain 2^14), the lagrange commitments at each index differ
     -- | per slot — same SRS, different domain size, different `i`-th
     -- | lagrange basis point.
-    perSlotLagrangeAt :: Vector len (LagrangeBaseLookup Field)
+    perSlotLagrangeAt :: Vector len (LagrangeBaseLookup StepField)
   -- | Shared Tock SRS h-generator. `Generators.h =
   -- | Kimchi_bindings.Protocol.SRS.Fq.urs_h (Tock URS)`
   -- | (step_main_inputs.ml:182-187); a single SRS-level constant,
   -- | NOT per-slot.
-  , blindingH :: AffinePoint (F Field)
+  , blindingH :: AffinePoint (F StepField)
   -- | Per-slot Vector of all step-domain log2s the slot's prev
   -- | source could have. For single-rule callers (and any slot whose
   -- | source has a single branch) this is `Vector 1 [theLog2]`;
@@ -274,11 +275,11 @@ type StepMainSrsData len nd blueprints =
 -- | Helpers
 -------------------------------------------------------------------------------
 
-unwrapPt :: WeierstrassAffinePoint PallasG (FVar Field) -> AffinePoint (FVar Field)
+unwrapPt :: WeierstrassAffinePoint PallasG (FVar StepField) -> AffinePoint (FVar StepField)
 unwrapPt (WeierstrassAffinePoint pt) = pt
 
-stepEndoVal :: Field
-stepEndoVal = let EndoScalar e = endoScalar @Vesta.BaseField @Field in e
+stepEndoVal :: StepField
+stepEndoVal = let EndoScalar e = endoScalar @Vesta.BaseField @StepField in e
 
 --------------------------------------------------------------------------------
 -- MpvPadding class
@@ -401,50 +402,50 @@ mpvFrontPad mkDummy real =
 -------------------------------------------------------------------------------
 
 type AllocatedPerProofWitness n =
-  { wComm :: Vector 15 (WeierstrassAffinePoint PallasG (FVar Field))
-  , zComm :: WeierstrassAffinePoint PallasG (FVar Field)
-  , tComm :: Vector 7 (WeierstrassAffinePoint PallasG (FVar Field))
-  , lr :: Vector 15 { l :: WeierstrassAffinePoint PallasG (FVar Field), r :: WeierstrassAffinePoint PallasG (FVar Field) }
-  , z1 :: Type2 (SplitField (FVar Field) (BoolVar Field))
-  , z2 :: Type2 (SplitField (FVar Field) (BoolVar Field))
-  , delta :: WeierstrassAffinePoint PallasG (FVar Field)
-  , sg :: WeierstrassAffinePoint PallasG (FVar Field)
+  { wComm :: Vector 15 (WeierstrassAffinePoint PallasG (FVar StepField))
+  , zComm :: WeierstrassAffinePoint PallasG (FVar StepField)
+  , tComm :: Vector 7 (WeierstrassAffinePoint PallasG (FVar StepField))
+  , lr :: Vector 15 { l :: WeierstrassAffinePoint PallasG (FVar StepField), r :: WeierstrassAffinePoint PallasG (FVar StepField) }
+  , z1 :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
+  , z2 :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
+  , delta :: WeierstrassAffinePoint PallasG (FVar StepField)
+  , sg :: WeierstrassAffinePoint PallasG (FVar StepField)
   , fopState ::
       { plonk ::
-          { alpha :: SizedF 128 (FVar Field)
-          , beta :: SizedF 128 (FVar Field)
-          , gamma :: SizedF 128 (FVar Field)
-          , zeta :: SizedF 128 (FVar Field)
-          , perm :: Type1 (FVar Field)
-          , zetaToSrsLength :: Type1 (FVar Field)
-          , zetaToDomainSize :: Type1 (FVar Field)
+          { alpha :: SizedF 128 (FVar StepField)
+          , beta :: SizedF 128 (FVar StepField)
+          , gamma :: SizedF 128 (FVar StepField)
+          , zeta :: SizedF 128 (FVar StepField)
+          , perm :: Type1 (FVar StepField)
+          , zetaToSrsLength :: Type1 (FVar StepField)
+          , zetaToDomainSize :: Type1 (FVar StepField)
           }
-      , combinedInnerProduct :: Type1 (FVar Field)
-      , b :: Type1 (FVar Field)
-      , xi :: SizedF 128 (FVar Field)
-      , bulletproofChallenges :: Vector StepIPARounds (SizedF 128 (FVar Field))
-      , spongeDigest :: FVar Field
+      , combinedInnerProduct :: Type1 (FVar StepField)
+      , b :: Type1 (FVar StepField)
+      , xi :: SizedF 128 (FVar StepField)
+      , bulletproofChallenges :: Vector StepIPARounds (SizedF 128 (FVar StepField))
+      , spongeDigest :: FVar StepField
       }
   , allEvals ::
-      { ftEval1 :: FVar Field
-      , publicEvals :: { zeta :: FVar Field, omegaTimesZeta :: FVar Field }
-      , witnessEvals :: Vector 15 { zeta :: FVar Field, omegaTimesZeta :: FVar Field }
-      , coeffEvals :: Vector 15 { zeta :: FVar Field, omegaTimesZeta :: FVar Field }
-      , zEvals :: { zeta :: FVar Field, omegaTimesZeta :: FVar Field }
-      , sigmaEvals :: Vector 6 { zeta :: FVar Field, omegaTimesZeta :: FVar Field }
-      , indexEvals :: Vector 6 { zeta :: FVar Field, omegaTimesZeta :: FVar Field }
+      { ftEval1 :: FVar StepField
+      , publicEvals :: { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
+      , witnessEvals :: Vector 15 { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
+      , coeffEvals :: Vector 15 { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
+      , zEvals :: { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
+      , sigmaEvals :: Vector 6 { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
+      , indexEvals :: Vector 6 { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
       }
-  , branchData :: { mask0 :: BoolVar Field, mask1 :: BoolVar Field, domainLog2Var :: FVar Field }
-  , prevChallenges :: Vector n (Vector StepIPARounds (FVar Field))
-  , prevSgs :: Vector n (WeierstrassAffinePoint PallasG (FVar Field))
+  , branchData :: { mask0 :: BoolVar StepField, mask1 :: BoolVar StepField, domainLog2Var :: FVar StepField }
+  , prevChallenges :: Vector n (Vector StepIPARounds (FVar StepField))
+  , prevSgs :: Vector n (WeierstrassAffinePoint PallasG (FVar StepField))
   }
 
 allocatePerProofWitness
   :: forall @n t m
-   . CircuitM Field (KimchiConstraint Field) t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
   => Reflectable n Int
-  => PerProofWitness n StepIPARounds WrapIPARounds (FVar Field) (Type2 (SplitField (FVar Field) (BoolVar Field))) (BoolVar Field)
-  -> Snarky (KimchiConstraint Field) t m (AllocatedPerProofWitness n)
+  => PerProofWitness n StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
+  -> Snarky (KimchiConstraint StepField) t m (AllocatedPerProofWitness n)
 allocatePerProofWitness (PerProofWitness ppw) = do
   let
     WrapProof wrapProofRec = ppw.wrapProof
@@ -508,45 +509,45 @@ allocatePerProofWitness (PerProofWitness ppw) = do
 type UnfinalizedProof =
   { deferredValues ::
       { plonk ::
-          { alpha :: SizedF 128 (FVar Field)
-          , beta :: SizedF 128 (FVar Field)
-          , gamma :: SizedF 128 (FVar Field)
-          , zeta :: SizedF 128 (FVar Field)
-          , perm :: Type2 (SplitField (FVar Field) (BoolVar Field))
-          , zetaToSrsLength :: Type2 (SplitField (FVar Field) (BoolVar Field))
-          , zetaToDomainSize :: Type2 (SplitField (FVar Field) (BoolVar Field))
+          { alpha :: SizedF 128 (FVar StepField)
+          , beta :: SizedF 128 (FVar StepField)
+          , gamma :: SizedF 128 (FVar StepField)
+          , zeta :: SizedF 128 (FVar StepField)
+          , perm :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
+          , zetaToSrsLength :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
+          , zetaToDomainSize :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
           }
-      , combinedInnerProduct :: Type2 (SplitField (FVar Field) (BoolVar Field))
-      , b :: Type2 (SplitField (FVar Field) (BoolVar Field))
-      , xi :: SizedF 128 (FVar Field)
-      , bulletproofChallenges :: Vector WrapIPARounds (SizedF 128 (FVar Field))
+      , combinedInnerProduct :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
+      , b :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
+      , xi :: SizedF 128 (FVar StepField)
+      , bulletproofChallenges :: Vector WrapIPARounds (SizedF 128 (FVar StepField))
       }
-  , shouldFinalize :: BoolVar Field
-  , claimedDigest :: FVar Field
+  , shouldFinalize :: BoolVar StepField
+  , claimedDigest :: FVar StepField
   }
 
 -- | Unpack one PerProofUnfinalized (allocated via the advice monad upstream)
 -- | into the legacy `UnfinalizedProof` record shape consumed by `verifyOne`.
 unpackUnfinalized
   :: forall t m
-   . CircuitM Field (KimchiConstraint Field) t m
-  => PerProofUnfinalized WrapIPARounds (Type2 (SplitField (FVar Field) (BoolVar Field))) (FVar Field) (BoolVar Field)
-  -> Snarky (KimchiConstraint Field) t m UnfinalizedProof
+   . CircuitM StepField (KimchiConstraint StepField) t m
+  => PerProofUnfinalized WrapIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
+  -> Snarky (KimchiConstraint StepField) t m UnfinalizedProof
 unpackUnfinalized (PerProofUnfinalized r) = pure
   { deferredValues:
       { plonk:
-          { alpha: coerce r.alpha :: SizedF 128 (FVar Field)
-          , beta: coerce r.beta :: SizedF 128 (FVar Field)
-          , gamma: coerce r.gamma :: SizedF 128 (FVar Field)
-          , zeta: coerce r.zeta :: SizedF 128 (FVar Field)
+          { alpha: coerce r.alpha :: SizedF 128 (FVar StepField)
+          , beta: coerce r.beta :: SizedF 128 (FVar StepField)
+          , gamma: coerce r.gamma :: SizedF 128 (FVar StepField)
+          , zeta: coerce r.zeta :: SizedF 128 (FVar StepField)
           , perm: r.perm
           , zetaToSrsLength: r.zetaToSrsLength
           , zetaToDomainSize: r.zetaToDomainSize
           }
       , combinedInnerProduct: r.combinedInnerProduct
       , b: r.b
-      , xi: coerce r.xi :: SizedF 128 (FVar Field)
-      , bulletproofChallenges: coerce r.bulletproofChallenges :: Vector WrapIPARounds (SizedF 128 (FVar Field))
+      , xi: coerce r.xi :: SizedF 128 (FVar StepField)
+      , bulletproofChallenges: coerce r.bulletproofChallenges :: Vector WrapIPARounds (SizedF 128 (FVar StepField))
       }
   , shouldFinalize: r.shouldFinalize
   , claimedDigest: r.spongeDigest
@@ -559,18 +560,18 @@ unpackUnfinalized (PerProofUnfinalized r) = pure
 liftDummyPerProofUnfinalized
   :: PerProofUnfinalized
        WrapIPARounds
-       (Type2 (SplitField (F Field) Boolean))
-       (F Field)
+       (Type2 (SplitField (F StepField) Boolean))
+       (F StepField)
        Boolean
   -> UnfinalizedProof
 liftDummyPerProofUnfinalized (PerProofUnfinalized r) =
   let
-    liftF (F x) = const_ x :: FVar Field
+    liftF (F x) = const_ x :: FVar StepField
 
     liftSizedF
       :: forall n
-       . SizedF n (F Field)
-      -> SizedF n (FVar Field)
+       . SizedF n (F StepField)
+      -> SizedF n (FVar StepField)
     liftSizedF s =
       let
         F x = toField s
@@ -578,8 +579,8 @@ liftDummyPerProofUnfinalized (PerProofUnfinalized r) =
         unsafePartial $ SizedF.unsafeFromField (const_ x)
 
     liftT2SF
-      :: Type2 (SplitField (F Field) Boolean)
-      -> Type2 (SplitField (FVar Field) (BoolVar Field))
+      :: Type2 (SplitField (F StepField) Boolean)
+      -> Type2 (SplitField (FVar StepField) (BoolVar StepField))
     liftT2SF (Type2 (SplitField { sDiv2: F sd, sOdd })) =
       Type2
         ( SplitField
@@ -620,32 +621,32 @@ buildVerifyOneInput
   => Reflectable pad Int
   => Add pad n PaddedLength
   => AllocatedPerProofWitness n
-  -> Array (FVar Field) -- prev proof's public input, pre-flattened
-  -> BoolVar Field
+  -> Array (FVar StepField) -- prev proof's public input, pre-flattened
+  -> BoolVar StepField
   -> UnfinalizedProof
-  -> FVar Field
-  -> { sigma :: Vector 6 (AffinePoint (FVar Field))
-     , sigmaLast :: AffinePoint (FVar Field)
-     , coeff :: Vector 15 (AffinePoint (FVar Field))
-     , index :: Vector 6 (AffinePoint (FVar Field))
+  -> FVar StepField
+  -> { sigma :: Vector 6 (AffinePoint (FVar StepField))
+     , sigmaLast :: AffinePoint (FVar StepField)
+     , coeff :: Vector 15 (AffinePoint (FVar StepField))
+     , index :: Vector 6 (AffinePoint (FVar StepField))
      }
-  -> AffinePoint (FVar Field) -- dummySg for padding
-  -> VerifyOneInput n WrapIPARounds StepIPARounds (Type2 (SplitField (FVar Field) (BoolVar Field))) (FVar Field) (BoolVar Field)
+  -> AffinePoint (FVar StepField) -- dummySg for padding
+  -> VerifyOneInput n WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
 buildVerifyOneInput pw appStateFields mustVerify unfinalized msgWrap vkComms dummySg =
   let
     -- sgOld: pad prevSgs to PaddedLength (Wrap_hack.Padded_length).
     -- extend_front puts `pad` dummies at the front, where pad + n = PaddedLength.
-    sgPadding :: Vector pad (AffinePoint (FVar Field))
+    sgPadding :: Vector pad (AffinePoint (FVar StepField))
     sgPadding = Vector.replicate dummySg
 
-    sgOld :: Vector PaddedLength (AffinePoint (FVar Field))
+    sgOld :: Vector PaddedLength (AffinePoint (FVar StepField))
     sgOld = Vector.append sgPadding (map unwrapPt pw.prevSgs)
 
     -- proofMask: drop the front `pad` elements of [mask0, mask1] to keep the last `n`.
-    fullMasks :: Vector PaddedLength (BoolVar Field)
+    fullMasks :: Vector PaddedLength (BoolVar StepField)
     fullMasks = pw.branchData.mask0 :< pw.branchData.mask1 :< Vector.nil
 
-    proofMask :: Vector n (BoolVar Field)
+    proofMask :: Vector n (BoolVar StepField)
     proofMask = Vector.drop @pad fullMasks
   in
     { appStateFields
@@ -672,8 +673,8 @@ buildVerifyOneInput pw appStateFields mustVerify unfinalized msgWrap vkComms dum
     , messagesForNextWrapProof: msgWrap
     , mustVerify
     , branchData:
-        { mask0: coerce pw.branchData.mask0 :: FVar Field
-        , mask1: coerce pw.branchData.mask1 :: FVar Field
+        { mask0: coerce pw.branchData.mask0 :: FVar StepField
+        , mask1: coerce pw.branchData.mask1 :: FVar StepField
         , domainLog2Var: pw.branchData.domainLog2Var
         }
     , proofMask
@@ -690,10 +691,10 @@ buildVerifyOneInput pw appStateFields mustVerify unfinalized msgWrap vkComms dum
 -- | Layout (32 fields = 17 + WrapIPARounds):
 -- |   5 × Type2 (10) + digest (1) + 2 challenges + 3 scalar challenges
 -- |   + WrapIPARounds bp challenges (15) + shouldFinalize (1)
-unfFields :: UnfinalizedProof -> Vector 32 (FVar Field)
+unfFields :: UnfinalizedProof -> Vector 32 (FVar StepField)
 unfFields unf =
   let
-    sf2 :: Type2 (SplitField (FVar Field) (BoolVar Field)) -> Vector 2 (FVar Field)
+    sf2 :: Type2 (SplitField (FVar StepField) (BoolVar StepField)) -> Vector 2 (FVar StepField)
     sf2 (Type2 (SplitField { sDiv2, sOdd })) = sDiv2 :< coerce sOdd :< Vector.nil
 
     cipFields = sf2 unf.deferredValues.combinedInnerProduct
@@ -702,24 +703,24 @@ unfFields unf =
     zetaDomFields = sf2 unf.deferredValues.plonk.zetaToDomainSize
     permFields = sf2 unf.deferredValues.plonk.perm
 
-    digestField :: Vector 1 (FVar Field)
+    digestField :: Vector 1 (FVar StepField)
     digestField = unf.claimedDigest :< Vector.nil
 
-    betaGamma :: Vector 2 (FVar Field)
+    betaGamma :: Vector 2 (FVar StepField)
     betaGamma = toField unf.deferredValues.plonk.beta :< toField unf.deferredValues.plonk.gamma :< Vector.nil
 
-    alphaZetaXi :: Vector 3 (FVar Field)
+    alphaZetaXi :: Vector 3 (FVar StepField)
     alphaZetaXi =
       toField unf.deferredValues.plonk.alpha
         :< toField unf.deferredValues.plonk.zeta
         :< toField unf.deferredValues.xi
         :< Vector.nil
 
-    bpFields :: Vector WrapIPARounds (FVar Field)
+    bpFields :: Vector WrapIPARounds (FVar StepField)
     bpFields = map toField unf.deferredValues.bulletproofChallenges
 
-    shouldFinalizeField :: Vector 1 (FVar Field)
-    shouldFinalizeField = (coerce unf.shouldFinalize :: FVar Field) :< Vector.nil
+    shouldFinalizeField :: Vector 1 (FVar StepField)
+    shouldFinalizeField = (coerce unf.shouldFinalize :: FVar StepField) :< Vector.nil
   in
     cipFields
       `Vector.append` bFields
@@ -753,7 +754,7 @@ stepMain
        len carrier carrierVar sideloadedVkCarrier blueprints
        unfsTotal digestPlusUnfs
        t m
-   . CircuitM Field (KimchiConstraint Field) t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
   -- Spec-indexed walk that, for each `Slot SideLoaded` position,
   -- allocates a `SLVK.VerificationKey (FVar _) (BoolVar _)` via `exists` and bundles it
   -- (alongside the compile-time per-domain lagrange tables) into the
@@ -767,25 +768,25 @@ stepMain
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Reflectable nd Int
-  => StepWitnessM len StepIPARounds WrapIPARounds PallasG Field m inputVal
-  => StepSlotsM prevsSpec StepIPARounds WrapIPARounds PallasG Field m len carrier
+  => StepWitnessM len StepIPARounds WrapIPARounds PallasG StepField m inputVal
+  => StepSlotsM prevsSpec StepIPARounds WrapIPARounds PallasG StepField m len carrier
   => StepPrevValuesM m valCarrier
   => StepUserOutputM m
-  => CircuitType Field inputVal input
-  => CircuitType Field outputVal output
-  => CircuitType Field prevInputVal prevInput
-  => CircuitType Field carrier carrierVar
-  => CheckedType Field (KimchiConstraint Field) carrierVar
+  => CircuitType StepField inputVal input
+  => CircuitType StepField outputVal output
+  => CircuitType StepField prevInputVal prevInput
+  => CircuitType StepField carrier carrierVar
+  => CheckedType StepField (KimchiConstraint StepField) carrierVar
   => StepSlotsCarrier
        prevsSpec
        StepIPARounds
        WrapIPARounds
-       (FVar Field)
-       (Type2 (SplitField (FVar Field) (BoolVar Field)))
-       (BoolVar Field)
+       (FVar StepField)
+       (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
+       (BoolVar StepField)
        len
        carrierVar
-  => CheckedType Field (KimchiConstraint Field) input
+  => CheckedType StepField (KimchiConstraint StepField) input
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -798,11 +799,11 @@ stepMain
   => Mul mpvMax UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
-  => (input -> Snarky (KimchiConstraint Field) t m (RuleOutput len prevInput output))
+  => (input -> Snarky (KimchiConstraint StepField) t m (RuleOutput len prevInput output))
   -> StepMainSrsData len nd blueprints
-  -> AffinePoint Field
+  -> AffinePoint StepField
   -> sideloadedVkCarrier
-  -> Snarky (KimchiConstraint Field) t m (Vector outputSize (FVar Field))
+  -> Snarky (KimchiConstraint StepField) t m (Vector outputSize (FVar StepField))
 stepMain
   rule
   { perSlotLagrangeAt
@@ -836,8 +837,8 @@ stepMain
         }
 
   let
-    publicInputFields = varToFields @Field @inputVal publicInput
-    publicOutputFields = varToFields @Field @outputVal publicOutput
+    publicInputFields = varToFields @StepField @inputVal publicInput
+    publicOutputFields = varToFields @StepField @outputVal publicOutput
     hashAppFields = publicInputFields <> publicOutputFields
 
   -- Capture the rule's user `publicOutput` FVars so the prover can
@@ -914,7 +915,7 @@ stepMain
       unit
     pure (Vector.replicate @mpvPad dummyHash)
   let
-    msgsWrap :: Vector mpvMax (FVar Field)
+    msgsWrap :: Vector mpvMax (FVar StepField)
     msgsWrap = mpvFrontPadVec msgsWrapPadding msgsWrapReal
 
   let
@@ -923,15 +924,15 @@ stepMain
     -- the circuit (matches OCaml's `Array.map ~f:Inner_curve.constant`
     -- in `of_compiled_with_known_wrap_key`, types_map.ml:214-215).
     liftConstVk
-      :: VerificationKey (WeierstrassAffinePoint PallasG (F Field))
-      -> VerificationKey (WeierstrassAffinePoint PallasG (FVar Field))
+      :: VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
+      -> VerificationKey (WeierstrassAffinePoint PallasG (FVar StepField))
     liftConstVk (VerificationKey r) = VerificationKey
       { sigma: map liftWaPt r.sigma
       , coeff: map liftWaPt r.coeff
       , index: map liftWaPt r.index
       }
       where
-      liftWaPt :: WeierstrassAffinePoint PallasG (F Field) -> WeierstrassAffinePoint PallasG (FVar Field)
+      liftWaPt :: WeierstrassAffinePoint PallasG (F StepField) -> WeierstrassAffinePoint PallasG (FVar StepField)
       liftWaPt (WeierstrassAffinePoint pt) =
         let
           F x = pt.x
@@ -940,7 +941,7 @@ stepMain
           WeierstrassAffinePoint
             { x: const_ x, y: const_ y }
 
-    constDummySg :: AffinePoint (FVar Field)
+    constDummySg :: AffinePoint (FVar StepField)
     constDummySg = { x: const_ dummySg.x, y: const_ dummySg.y }
 
   -- 8. verify_one × len + Assert.all (inside prevs_verified label).
@@ -1019,11 +1020,11 @@ stepMain
               -- possible source branch. For nd=1 this collapses to a
               -- Vector 1 (byte-identical gate emission as
               -- single-domain). For nd>1 the FOP body emits one
-              -- extra `Field.equal` and one extra mask `Field.mul`
+              -- extra `StepField.equal` and one extra mask `StepField.mul`
               -- per additional branch.
               { domains: map
                   ( \log2 ->
-                      { generator: const_ (LinFFI.domainGenerator @Field log2)
+                      { generator: const_ (LinFFI.domainGenerator @StepField log2)
                       , log2
                       }
                   )
@@ -1031,7 +1032,7 @@ stepMain
               -- shifts are constant across all unique_domains
               -- (`disabled_not_the_same`); any branch's log2 gives the
               -- same answer.
-              , shifts: map const_ (LinFFI.domainShifts @Field slotShiftsLog2)
+              , shifts: map const_ (LinFFI.domainShifts @StepField slotShiftsLog2)
               , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
               , endo: stepEndoVal
               , linearizationPoly: Linearization.pallas
@@ -1056,7 +1057,7 @@ stepMain
 
             prevInputVar = prevPublicInputs !! i
             input = buildVerifyOneInput pw
-              (varToFields @Field @prevInputVal prevInputVar)
+              (varToFields @StepField @prevInputVal prevInputVar)
               (proofMustVerify !! i)
               (unfinalizedProofs !! i)
               (msgsWrapReal !! i)
@@ -1110,7 +1111,7 @@ stepMain
       ivpTrace ("step_main_outer.app_state." <> show i) f
 
     spongeAfterIndex <- do
-      let sponge0 = initialSpongeCircuit :: Sponge.Sponge (FVar Field)
+      let sponge0 = initialSpongeCircuit :: Sponge.Sponge (FVar StepField)
       s1 <- foldM absorbPt sponge0 vk.sigma
       s2 <- absorbPt s1 vk.sigmaLast
       s3 <- foldM absorbPt s2 vk.coeff
@@ -1170,13 +1171,13 @@ stepMain
     unfinalizedProofsPadded :: Vector mpvMax UnfinalizedProof
     unfinalizedProofsPadded = mpvFrontPad dummyUnfp unfinalizedProofs
 
-    unfsFlat :: Vector unfsTotal (FVar Field)
+    unfsFlat :: Vector unfsTotal (FVar StepField)
     unfsFlat = Vector.concat (map unfFields unfinalizedProofsPadded)
 
-    digestVec :: Vector 1 (FVar Field)
+    digestVec :: Vector 1 (FVar StepField)
     digestVec = outerDigest :< Vector.nil
 
-    outputV :: Vector outputSize (FVar Field)
+    outputV :: Vector outputSize (FVar StepField)
     outputV = unfsFlat `Vector.append` digestVec `Vector.append` msgsWrap
 
   pure outputV

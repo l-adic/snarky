@@ -26,13 +26,14 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Dummy (dummyIpaChallenges)
+import Pickles.Field (WrapField)
 import Pickles.PublicInputCommit (class PublicInputCommit)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit, spongeFromConstants)
 import Pickles.Types (WrapIPARounds)
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, incrementallyVerifyProof)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
 import Pickles.Wrap.OtherField as WrapOtherField
-import Pickles.Wrap.Types (Field, IvpBaseline)
+import Pickles.Wrap.Types (IvpBaseline)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEq, assertEqual_, assert_, label)
@@ -64,8 +65,8 @@ type WrapVerifyInput n d fv =
 -- | challenge vectors are absorbed offline into the sponge state.
 wrapVerify
   :: forall publicInput sgOldN totalBases totalBasesPred d dPred n t m r
-   . CircuitM Field (KimchiConstraint Field) t m
-  => PublicInputCommit publicInput Field
+   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  => PublicInputCommit publicInput WrapField
   => Reflectable d Int
   => Reflectable n Int
   => Reflectable sgOldN Int
@@ -73,10 +74,10 @@ wrapVerify
   => Add 1 dPred d
   => Add sgOldN IvpBaseline totalBases
   => Add 1 totalBasesPred totalBases
-  => IncrementallyVerifyProofParams Field r
-  -> IncrementallyVerifyProofInput publicInput sgOldN d (FVar Field) (Type1 (FVar Field))
-  -> WrapVerifyInput n d (FVar Field)
-  -> Snarky (KimchiConstraint Field) t m Unit
+  => IncrementallyVerifyProofParams WrapField r
+  -> IncrementallyVerifyProofInput publicInput sgOldN d (FVar WrapField) (Type1 (FVar WrapField))
+  -> WrapVerifyInput n d (FVar WrapField)
+  -> Snarky (KimchiConstraint WrapField) t m Unit
 wrapVerify ivpParams ivpInput verifyInput = do
   -- Run IVP
   output <- evalSpongeM initialSpongeCircuit $

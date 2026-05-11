@@ -40,6 +40,7 @@ import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector, (!!))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
+import Pickles.Field (StepField, WrapField)
 import Pickles.IPA (bPoly)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals, absorbAllEvals)
@@ -119,37 +120,37 @@ type ExpandDeferredInput n d =
 
   -- Polynomial evals (recombined — caller applied
   -- `Common.evalsOfSplitPoint` upstream).
-  , allEvals :: AllEvals Step.Field
+  , allEvals :: AllEvals StepField
   -- public_input evaluation at zeta, as a chunks array. For non-chunked
   -- circuits (num_chunks = 1), this is a singleton
   -- `[allEvals.publicEvals.zeta]`. Required as-is because `ftEval0`
   -- folds it via zeta_to_srs_length.
-  , pEval0Chunks :: Array Step.Field
+  , pEval0Chunks :: Array StepField
 
   -- Previous-proof bulletproof challenges (raw 128-bit), one vector
   -- per previous proof.
-  , oldBulletproofChallenges :: Vector n (Vector d (SizedF 128 (F Step.Field)))
+  , oldBulletproofChallenges :: Vector n (Vector d (SizedF 128 (F StepField)))
 
   -- Raw deferred-values data from the wrap proof's proof state.
-  , plonkMinimal :: PlonkMinimal (F Step.Field)
-  , rawBulletproofChallenges :: Vector d (SizedF 128 (F Step.Field))
-  , branchData :: BranchData Step.Field Boolean
-  , spongeDigestBeforeEvaluations :: Step.Field
+  , plonkMinimal :: PlonkMinimal (F StepField)
+  , rawBulletproofChallenges :: Vector d (SizedF 128 (F StepField))
+  , branchData :: BranchData StepField Boolean
+  , spongeDigestBeforeEvaluations :: StepField
 
   -- Step domain info (caller derives this from branch_data).
-  , generator :: Step.Field
+  , generator :: StepField
   , domainLog2 :: Int
-  , shifts :: Vector 7 Step.Field
-  , vanishesOnZk :: Step.Field
-  , omegaForLagrange :: { zkRows :: Boolean, offset :: Int } -> Step.Field
+  , shifts :: Vector 7 StepField
+  , vanishesOnZk :: StepField
+  , omegaForLagrange :: { zkRows :: Boolean, offset :: Int } -> StepField
 
   -- Endo scalar for challenge expansion (= Endo.Wrap_inner_curve.scalar
   -- in OCaml, i.e. `endoScalar @Vesta.BaseField @Vesta.ScalarField`).
-  , endo :: Step.Field
+  , endo :: StepField
 
   -- Linearization token stream for the wrap circuit whose proof is
   -- being expanded (Tick linearization = `Pickles.Linearization.pallas`).
-  , linearizationPoly :: LinearizationPoly Step.Field
+  , linearizationPoly :: LinearizationPoly StepField
   }
 
 -- | Output of `expandDeferred`: the Type1-shifted deferred values
@@ -169,12 +170,12 @@ type ExpandDeferredInput n d =
 -- |   b_poly uses the same expanded bp challenges.
 -- | * `branchData` — passed through from the input proof state.
 type ExpandDeferredOutput d =
-  { plonk :: PlonkInCircuit (F Step.Field) (Type1 (F Step.Field))
-  , combinedInnerProduct :: Type1 (F Step.Field)
-  , xi :: ScalarChallenge (F Step.Field)
-  , bulletproofChallenges :: Vector d Step.Field
-  , b :: Type1 (F Step.Field)
-  , branchData :: BranchData Step.Field Boolean
+  { plonk :: PlonkInCircuit (F StepField) (Type1 (F StepField))
+  , combinedInnerProduct :: Type1 (F StepField)
+  , xi :: ScalarChallenge (F StepField)
+  , bulletproofChallenges :: Vector d StepField
+  , b :: Type1 (F StepField)
+  , branchData :: BranchData StepField Boolean
   }
 
 -- | Compute the Type1-shifted deferred values that step_main consumes
@@ -189,12 +190,12 @@ expandDeferred input =
     -- Endo-expand a raw 128-bit SizedF challenge to a full step-field
     -- element. `unwrapF` strips the `F` newtype so `toFieldPure`'s
     -- signature (`SizedF 128 f -> f -> f`) matches.
-    expandChal :: SizedF 128 (F Step.Field) -> Step.Field
+    expandChal :: SizedF 128 (F StepField) -> StepField
     expandChal c = toFieldPure (unwrapF c) input.endo
 
     -- Step 1: derive_plonk (Type1 instantiation — return type pins
     -- the Shifted instance).
-    derivePlonkInput :: DerivePlonkInput Step.Field
+    derivePlonkInput :: DerivePlonkInput StepField
     derivePlonkInput =
       { plonkMinimal: input.plonkMinimal
       , w: map _.zeta (Vector.take @7 input.allEvals.witnessEvals)
@@ -209,12 +210,12 @@ expandDeferred input =
       , endo: input.endo
       }
 
-    derivedPlonk :: PlonkInCircuit (F Step.Field) (Type1 (F Step.Field))
+    derivedPlonk :: PlonkInCircuit (F StepField) (Type1 (F StepField))
     derivedPlonk = derivePlonk derivePlonkInput
 
     -- Step 2: ft_eval0 (Type1 instantiation — step field + pallas
     -- linearization).
-    ftEval0Input :: FtEval0Input Step.Field
+    ftEval0Input :: FtEval0Input StepField
     ftEval0Input =
       { plonkMinimal: input.plonkMinimal
       , allEvals: input.allEvals
@@ -230,17 +231,17 @@ expandDeferred input =
       , linearizationPoly: input.linearizationPoly
       }
 
-    stepFtEval0 :: Step.Field
+    stepFtEval0 :: StepField
     stepFtEval0 = ftEval0 ftEval0Input
 
     -- Step 3: expand previous-proof bp challenges (used both for the
     -- challenges_digest sub-sponge and for combined_inner_product's
     -- b_poly inputs).
-    prevExpanded :: Vector n (Vector d Step.Field)
+    prevExpanded :: Vector n (Vector d StepField)
     prevExpanded = map (map expandChal) input.oldBulletproofChallenges
 
     -- Step 4a: sub-sponge over flattened expanded prev challenges.
-    challengesDigest :: Step.Field
+    challengesDigest :: StepField
     challengesDigest = evalPureSpongeM initialSponge do
       for_ prevExpanded \chals -> for_ chals absorb
       squeeze
@@ -250,7 +251,7 @@ expandDeferred input =
     -- `absorbAllEvals` matches OCaml's `ft_eval1, public, z, index,
     -- witness, coeff, sigma` order in the non-chunked case.
     mainSqueezes
-      :: { xiRaw :: SizedF 128 Step.Field, rRaw :: SizedF 128 Step.Field }
+      :: { xiRaw :: SizedF 128 StepField, rRaw :: SizedF 128 StepField }
     mainSqueezes = evalPureSpongeM initialSponge do
       absorb input.spongeDigestBeforeEvaluations
       absorb challengesDigest
@@ -268,8 +269,8 @@ expandDeferred input =
     zetaw = zetaField * input.generator
 
     -- Step 5: combined_inner_product (field-polymorphic, specialised
-    -- here to Step.Field via the input types).
-    cipInputRec :: CombinedInnerProductBatchInput n d Step.Field
+    -- here to StepField via the input types).
+    cipInputRec :: CombinedInnerProductBatchInput n d StepField
     cipInputRec =
       { allEvals: input.allEvals
       , publicEvals: input.allEvals.publicEvals
@@ -282,24 +283,24 @@ expandDeferred input =
       , zetaw
       }
 
-    cipActual :: Step.Field
+    cipActual :: StepField
     cipActual = combinedInnerProductBatch cipInputRec
 
     -- Step 6: this proof's own expanded bp challenges + b_actual via
     -- b_poly at zeta and zetaw.
-    ownExpanded :: Vector d Step.Field
+    ownExpanded :: Vector d StepField
     ownExpanded = map expandChal input.rawBulletproofChallenges
 
-    bActual :: Step.Field
+    bActual :: StepField
     bActual =
       bPoly ownExpanded zetaField
         + rExpanded * bPoly ownExpanded zetaw
 
-    -- The main sponge returns `SizedF 128 Step.Field` (unwrapped); the
-    -- output type expects `SizedF 128 (F Step.Field)` to match
-    -- `ScalarChallenge (F Step.Field)`. Both are newtypes over `Step.Field`
+    -- The main sponge returns `SizedF 128 StepField` (unwrapped); the
+    -- output type expects `SizedF 128 (F StepField)` to match
+    -- `ScalarChallenge (F StepField)`. Both are newtypes over `StepField`
     -- so `wrapF` is a zero-cost coercion.
-    xiOutput :: ScalarChallenge (F Step.Field)
+    xiOutput :: ScalarChallenge (F StepField)
     xiOutput = wrapF mainSqueezes.xiRaw
   in
     { plonk: derivedPlonk
@@ -368,31 +369,31 @@ type ExpandProofInput n nwp =
 
   -- Polynomial evaluations from the wrap proof, already recombined
   -- via `Common.evalsOfSplitPoint` upstream (non-chunked assumption).
-  , allEvals :: AllEvals Step.Field
-  , pEval0Chunks :: Array Step.Field
+  , allEvals :: AllEvals StepField
+  , pEval0Chunks :: Array StepField
 
   -- Previous-proof bulletproof challenges (raw 128-bit step-field
   -- challenges). Inner length `StepIPARounds` per OCaml `Step_bp_vec.t`.
-  , oldBulletproofChallenges :: Vector n (Vector StepIPARounds (SizedF 128 (F Step.Field)))
+  , oldBulletproofChallenges :: Vector n (Vector StepIPARounds (SizedF 128 (F StepField)))
 
   -- Raw deferred-values data from the wrap proof's statement.
-  , plonkMinimal :: PlonkMinimal (F Step.Field)
-  , rawBulletproofChallenges :: Vector StepIPARounds (SizedF 128 (F Step.Field))
-  , branchData :: BranchData Step.Field Boolean
-  , spongeDigestBeforeEvaluations :: Step.Field
+  , plonkMinimal :: PlonkMinimal (F StepField)
+  , rawBulletproofChallenges :: Vector StepIPARounds (SizedF 128 (F StepField))
+  , branchData :: BranchData StepField Boolean
+  , spongeDigestBeforeEvaluations :: StepField
 
   -- Step domain info derived from branch_data.
   , stepDomainLog2 :: Int
-  , stepGenerator :: Step.Field
-  , stepShifts :: Vector 7 Step.Field
-  , stepVanishesOnZk :: Step.Field
-  , stepOmegaForLagrange :: { zkRows :: Boolean, offset :: Int } -> Step.Field
+  , stepGenerator :: StepField
+  , stepShifts :: Vector 7 StepField
+  , stepVanishesOnZk :: StepField
+  , stepOmegaForLagrange :: { zkRows :: Boolean, offset :: Int } -> StepField
 
   -- Endo scalar for step-field challenge expansion.
-  , endo :: Step.Field
+  , endo :: StepField
 
   -- Linearization token stream for the wrap circuit (Tick linearization).
-  , linearizationPoly :: LinearizationPoly Step.Field
+  , linearizationPoly :: LinearizationPoly StepField
 
   -- ===== `prev_statement_with_hashes` step-side digest =====
   -- These are everything `Common.hash_messages_for_next_step_proof`
@@ -400,80 +401,80 @@ type ExpandProofInput n nwp =
   -- (reduced_messages_for_next_proof_over_same_field.ml:32-43).
 
   -- The wrap circuit's VK commitments (`dlog_plonk_index` in OCaml).
-  , dlogIndex :: StepVK Step.Field
+  , dlogIndex :: StepVK StepField
   -- The predecessor's app-state projected to field elements.
-  , appStateFields :: Array Step.Field
+  , appStateFields :: Array StepField
   -- The previous proofs' challenge-polynomial commitments (each a
   -- wrap-proof `sg` = Pallas point with step-field coordinates). One
   -- per entry in `oldBulletproofChallenges`.
-  , stepPrevSgs :: Vector n (AffinePoint Step.Field)
+  , stepPrevSgs :: Vector n (AffinePoint StepField)
 
   -- ===== `prev_statement_with_hashes` wrap-side digest =====
   -- Inputs to `Wrap_hack.hash_messages_for_next_wrap_proof` (wrap_hack.ml:46-59).
 
   -- The wrap proof's own challenge-polynomial commitment. OCaml type
-  -- `Tick.Curve.Affine.t` = Vesta affine (Vesta.BaseField = Wrap.Field).
-  , wrapChallengePolynomialCommitment :: AffinePoint Wrap.Field
+  -- `Tick.Curve.Affine.t` = Vesta affine (Vesta.BaseField = WrapField).
+  , wrapChallengePolynomialCommitment :: AffinePoint WrapField
   -- Padded previous bp challenges for the wrap-side hash, already
-  -- expanded to Wrap.Field and padded to `nwp = Wrap_hack.Padded_length.n = 2`.
-  , wrapPaddedPrevChallenges :: Vector nwp (Vector WrapIPARounds Wrap.Field)
+  -- expanded to WrapField and padded to `nwp = Wrap_hack.Padded_length.n = 2`.
+  , wrapPaddedPrevChallenges :: Vector nwp (Vector WrapIPARounds WrapField)
 
   -- ===== Wrap-proof oracles (FFI) =====
-  , wrapVerifierIndex :: VerifierIndex PallasG Wrap.Field
-  , wrapProof :: Proof PallasG Wrap.Field
-  , tockPublicInput :: Array Wrap.Field
+  , wrapVerifierIndex :: VerifierIndex PallasG WrapField
+  , wrapProof :: Proof PallasG WrapField
+  , tockPublicInput :: Array WrapField
   -- | OCaml `step.ml:304-317` builds the `Tock.Oracles.create_with_public_evals`
   -- | argument list as `Challenge_polynomial.t list` from `sgs` (Tock.Curve
-  -- | = Pallas affine points with `BaseField = Step.Field` coords) and
-  -- | `prev_challenges` (Tock.Field = Wrap.Field expanded prev wrap-IPA
+  -- | = Pallas affine points with `BaseField = StepField` coords) and
+  -- | `prev_challenges` (Tock.Field = WrapField expanded prev wrap-IPA
   -- | challenges). For Simple_chain N1 base case this is two copies of
   -- | the dummy entry (after `Wrap_hack.pad_accumulator` to
   -- | `Padded_length=2`).
   , wrapOraclesPrevChallenges ::
       Array
-        { sgX :: Step.Field
-        , sgY :: Step.Field
-        , challenges :: Array Wrap.Field
+        { sgX :: StepField
+        , sgY :: StepField
+        , challenges :: Array WrapField
         }
 
   -- ===== New bulletproof challenges + b =====
   , wrapDomainLog2 :: Int
-  , wrapEndo :: Wrap.Field
+  , wrapEndo :: WrapField
 
   -- ===== Wrap-field Type2 deferred values (`unfinalized` output) =====
-  , wrapAllEvals :: AllEvals Wrap.Field
-  , wrapPEval0Chunks :: Array Wrap.Field
-  , wrapShifts :: Vector 7 Wrap.Field
+  , wrapAllEvals :: AllEvals WrapField
+  , wrapPEval0Chunks :: Array WrapField
+  , wrapShifts :: Vector 7 WrapField
   , wrapZkRows :: Int
   , wrapSrsLengthLog2 :: Int
-  , wrapVanishesOnZk :: Wrap.Field
-  , wrapOmegaForLagrange :: { zkRows :: Boolean, offset :: Int } -> Wrap.Field
-  , wrapLinearizationPoly :: LinearizationPoly Wrap.Field
+  , wrapVanishesOnZk :: WrapField
+  , wrapOmegaForLagrange :: { zkRows :: Boolean, offset :: Int } -> WrapField
+  , wrapLinearizationPoly :: LinearizationPoly WrapField
 
   -- ===== `perProofWitness` (`Per_proof_witness.Constant.t`) =====
 
   -- The wrap proof's embedded `prev_evals` — evaluations of the step
   -- proof it wraps, in **step field**. OCaml step.ml:390 reads this
   -- as `t.prev_evals`.
-  , stepProofPrevEvals :: StepAllEvals (F Step.Field)
+  , stepProofPrevEvals :: StepAllEvals (F StepField)
 
   -- Pre-expanded, pre-padded step-side previous bp challenges.
   -- Caller applies `Ipa.Step.compute_challenges` to the raw ones from
   -- `statement.messages_for_next_step_proof.old_bulletproof_challenges`
   -- and extends with `Dummy.Ipa.Step.challenges_computed` to reach
   -- `Local_max_proofs_verified.n = n`.
-  , stepPrevChallenges :: Vector n (Vector StepIPARounds (F Step.Field))
+  , stepPrevChallenges :: Vector n (Vector StepIPARounds (F StepField))
 
   -- Pre-padded step-side previous challenge-polynomial commitments
   -- (sgs). Separate from `stepPrevSgs` (unpadded, used by the hash).
-  , stepPrevSgsPadded :: Vector n (AffinePoint Step.Field)
+  , stepPrevSgsPadded :: Vector n (AffinePoint StepField)
   }
 
 -- | Output of `expandProof` — the witness data the step circuit
 -- | reads for one predecessor slot. Maps to OCaml's return tuple
 -- | from `expand_proof` (step.ml:515-536).
 type ExpandProofOutput n =
-  { sg :: AffinePoint Step.Field
+  { sg :: AffinePoint StepField
   -- | The wrap-field deferred-value record + should_finalize flag +
   -- | sponge digest. Corresponds to OCaml `Unfinalized.Constant.t`.
   -- | Native wrap field + same-field Type2 shifts; cross-field
@@ -482,34 +483,34 @@ type ExpandProofOutput n =
   , unfinalized ::
       UnfinalizedProof
         WrapIPARounds
-        (F Wrap.Field)
-        (Type2 (F Wrap.Field))
+        (F WrapField)
+        (Type2 (F WrapField))
         Boolean
   -- | Step-field Type1 deferred values from `expandDeferred`.
   -- | Exposed for diagnostic tracing (`expand_proof.deferred.*` labels).
   , deferredStep :: ExpandDeferredOutput StepIPARounds
   -- | Public input polynomial evaluation at (zeta, zeta·omega). In
   -- | OCaml (step.ml:319) these are `Tock.Field.t` values from the
-  -- | wrap oracles (= `Wrap.Field`).
-  , rawPrechallenges :: Array Wrap.Field
-  , xHat :: { zeta :: Wrap.Field, omegaTimesZeta :: Wrap.Field }
+  -- | wrap oracles (= `WrapField`).
+  , rawPrechallenges :: Array WrapField
+  , xHat :: { zeta :: WrapField, omegaTimesZeta :: WrapField }
   , perProofWitness ::
       Step.PerProofWitness
         n
         StepIPARounds
         WrapIPARounds
-        (F Step.Field)
-        (Type2 (SplitField (F Step.Field) Boolean))
+        (F StepField)
+        (Type2 (SplitField (F StepField) Boolean))
         Boolean
   , actualWrapDomain :: Int
   -- | The `prev_statement_with_hashes` tuple item from OCaml's
   -- | `expand_proof` return (step.ml:133).
   , prevStatementWithHashes :: PrevStatementWithHashes
   -- | Raw wrap-proof oracle output.
-  , oracles :: OraclesResult Wrap.Field
+  , oracles :: OraclesResult WrapField
   -- | New bulletproof challenges (endo-expanded) + combined opening
   -- | target `b = b_poly(zeta) + r·b_poly(zetaw)`, in the wrap field.
-  , newBulletproofChallenges :: BulletproofBOutput WrapIPARounds Wrap.Field
+  , newBulletproofChallenges :: BulletproofBOutput WrapIPARounds WrapField
   }
 
 -- | The digests that `prev_statement_with_hashes` carries at the
@@ -524,8 +525,8 @@ type ExpandProofOutput n =
 -- |   `Wrap_hack.hash_messages_for_next_wrap_proof` at
 -- |   `wrap_hack.ml:46-59`.
 type PrevStatementWithHashes =
-  { messagesForNextStepProof :: F Step.Field
-  , messagesForNextWrapProof :: F Wrap.Field
+  { messagesForNextStepProof :: F StepField
+  , messagesForNextWrapProof :: F WrapField
   }
 
 -- | The main `expand_proof` port.
@@ -579,7 +580,7 @@ expandProof input =
         input.stepPrevSgs
         input.oldBulletproofChallenges
 
-    messagesForNextStepProofDigest :: Step.Field
+    messagesForNextStepProofDigest :: StepField
     messagesForNextStepProofDigest = hashMessagesForNextStepProofPure
       { stepVk: input.dlogIndex
       , appState: input.appStateFields
@@ -591,7 +592,7 @@ expandProof input =
     -- Matches OCaml step.ml:288-294 (`Wrap_hack.hash_messages_for_next
     -- _wrap_proof`). Caller pre-expanded and pre-padded the prev bp
     -- challenges (`pad_challenges` lives outside our scope).
-    messagesForNextWrapProofDigest :: Wrap.Field
+    messagesForNextWrapProofDigest :: WrapField
     messagesForNextWrapProofDigest = hashMessagesForNextWrapProofPureGeneral
       { sg: input.wrapChallengePolynomialCommitment
       , paddedChallenges: input.wrapPaddedPrevChallenges
@@ -605,7 +606,7 @@ expandProof input =
     -- 304-317 from `Wrap_hack.pad_accumulator` of (sg, expanded
     -- wrap-IPA challenges) pairs — caller supplies it via
     -- `wrapOraclesPrevChallenges`.
-    oraclesResult :: OraclesResult Wrap.Field
+    oraclesResult :: OraclesResult WrapField
     oraclesResult = vestaProofOracles input.wrapVerifierIndex
       { proof: input.wrapProof
       , publicInput: input.tockPublicInput
@@ -619,7 +620,7 @@ expandProof input =
     -- each element as a `SizedF 128`. Kimchi's `ScalarChallenge`
     -- contract guarantees the 128-bit bound, so `unsafeFromField` is
     -- safe here.
-    rawPrechalsVec :: Vector WrapIPARounds (SizedF 128 Wrap.Field)
+    rawPrechalsVec :: Vector WrapIPARounds (SizedF 128 WrapField)
     rawPrechalsVec = map (unsafePartial unsafeFromField)
       ( vestaProofOpeningPrechallengesVec input.wrapVerifierIndex
           { proof: input.wrapProof
@@ -628,13 +629,13 @@ expandProof input =
           }
       )
 
-    wrapGen :: Wrap.Field
+    wrapGen :: WrapField
     wrapGen = domainGenerator input.wrapDomainLog2
 
-    wrapZetaw :: Wrap.Field
+    wrapZetaw :: WrapField
     wrapZetaw = oraclesResult.zeta * wrapGen
 
-    newBpResult :: BulletproofBOutput WrapIPARounds Wrap.Field
+    newBpResult :: BulletproofBOutput WrapIPARounds WrapField
     newBpResult = computeBpChalsAndB
       { rawPrechallenges: rawPrechalsVec
       , endo: input.wrapEndo
@@ -648,7 +649,7 @@ expandProof input =
     --     if not must_verify
     --       then Ipa.Wrap.compute_sg new_bulletproof_challenges
     --       else proof.openings.proof.challenge_polynomial_commitment
-    challengePolynomialCommitment :: AffinePoint Step.Field
+    challengePolynomialCommitment :: AffinePoint StepField
     challengePolynomialCommitment =
       if input.mustVerify then
         vestaProofOpeningSg input.wrapProof
@@ -666,9 +667,9 @@ expandProof input =
     -- Build the wrap-field `PlonkMinimal` from raw oracle outputs.
     -- OCaml step.ml:323-334 assembles this from `O.alpha`, `O.beta`,
     -- `O.gamma`, `O.zeta` — all raw 128-bit. Our FFI surfaces them as
-    -- bare `SizedF 128 Wrap.Field`; we wrap with `wrapF` to match
-    -- `PlonkMinimal (F Wrap.Field)`.
-    wrapPlonkMinimal :: PlonkMinimal (F Wrap.Field)
+    -- bare `SizedF 128 WrapField`; we wrap with `wrapF` to match
+    -- `PlonkMinimal (F WrapField)`.
+    wrapPlonkMinimal :: PlonkMinimal (F WrapField)
     wrapPlonkMinimal =
       { alpha: wrapF oraclesResult.alphaChal
       , beta: wrapF oraclesResult.beta
@@ -679,7 +680,7 @@ expandProof input =
     -- derive_plonk for the wrap field (Type2 instantiation via the
     -- same `Common.derivePlonk` body; the `Shifted` instance is
     -- picked by the return-type annotation).
-    wrapDerivePlonkInput :: DerivePlonkInput Wrap.Field
+    wrapDerivePlonkInput :: DerivePlonkInput WrapField
     wrapDerivePlonkInput =
       { plonkMinimal: wrapPlonkMinimal
       , w: map _.zeta (Vector.take @7 input.wrapAllEvals.witnessEvals)
@@ -694,11 +695,11 @@ expandProof input =
       , endo: input.wrapEndo
       }
 
-    wrapPlonkDerived :: PlonkInCircuit (F Wrap.Field) (Type2 (F Wrap.Field))
+    wrapPlonkDerived :: PlonkInCircuit (F WrapField) (Type2 (F WrapField))
     wrapPlonkDerived = derivePlonk wrapDerivePlonkInput
 
     -- ft_eval0 for the wrap field — matches step.ml:487-492.
-    wrapFtEval0Input :: FtEval0Input Wrap.Field
+    wrapFtEval0Input :: FtEval0Input WrapField
     wrapFtEval0Input =
       { plonkMinimal: wrapPlonkMinimal
       , allEvals: input.wrapAllEvals
@@ -714,13 +715,13 @@ expandProof input =
       , linearizationPoly: input.wrapLinearizationPoly
       }
 
-    wrapFtEval0 :: Wrap.Field
+    wrapFtEval0 :: WrapField
     wrapFtEval0 = ftEval0 wrapFtEval0Input
 
     -- Wrap-field combined_inner_product (step.ml:464-496).
     -- `oracles.v` = polyscale (xi), `oracles.u` = evalscale (r). Both
     -- are already endo-expanded by the FFI.
-    wrapCipInput :: CombinedInnerProductBatchInput nwp WrapIPARounds Wrap.Field
+    wrapCipInput :: CombinedInnerProductBatchInput nwp WrapIPARounds WrapField
     wrapCipInput =
       { allEvals: input.wrapAllEvals
       , publicEvals:
@@ -736,7 +737,7 @@ expandProof input =
       , zetaw: wrapZetaw
       }
 
-    wrapCip :: Wrap.Field
+    wrapCip :: WrapField
     wrapCip = combinedInnerProductBatch wrapCipInput
 
     -- OCaml `step.ml:583-589` restores the raw 128-bit alpha/beta/
@@ -747,7 +748,7 @@ expandProof input =
     -- `ivp_assert_plonk_*` assertions. Without this override, the
     -- `derive_plonk`-mutated values would diverge from the sponge
     -- output and break the equality checks.
-    wrapPlonkWithRawChals :: PlonkInCircuit (F Wrap.Field) (Type2 (F Wrap.Field))
+    wrapPlonkWithRawChals :: PlonkInCircuit (F WrapField) (Type2 (F WrapField))
     wrapPlonkWithRawChals = wrapPlonkDerived
       { alpha = wrapPlonkMinimal.alpha
       , beta = wrapPlonkMinimal.beta
@@ -757,7 +758,7 @@ expandProof input =
 
     -- Assemble the `DeferredValues` + `Unfinalized` records.
     wrapUnfinalized
-      :: UnfinalizedProof WrapIPARounds (F Wrap.Field) (Type2 (F Wrap.Field)) Boolean
+      :: UnfinalizedProof WrapIPARounds (F WrapField) (Type2 (F WrapField)) Boolean
     wrapUnfinalized =
       { deferredValues:
           { plonk: wrapPlonkWithRawChals
@@ -778,17 +779,17 @@ expandProof input =
     -- record via FFI getters; the rest comes from previously
     -- computed values or caller-supplied inputs.
 
-    -- Convert a bare Pallas affine point (coords in Step.Field) to
-    -- `WeierstrassAffinePoint PallasG (F Step.Field)`.
+    -- Convert a bare Pallas affine point (coords in StepField) to
+    -- `WeierstrassAffinePoint PallasG (F StepField)`.
     mkPallasPt
-      :: AffinePoint Step.Field
-      -> WeierstrassAffinePoint PallasG (F Step.Field)
+      :: AffinePoint StepField
+      -> WeierstrassAffinePoint PallasG (F StepField)
     mkPallasPt pt = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
 
     wrapCommits = vestaProofCommitments input.wrapProof
 
     wrapProofMessages
-      :: WrapProofMessages (WeierstrassAffinePoint PallasG (F Step.Field))
+      :: WrapProofMessages (WeierstrassAffinePoint PallasG (F StepField))
     wrapProofMessages = WrapProofMessages
       { wComm: map mkPallasPt wrapCommits.wComm
       , zComm: mkPallasPt wrapCommits.zComm
@@ -802,8 +803,8 @@ expandProof input =
     wrapProofOpening
       :: WrapProofOpening
            WrapIPARounds
-           (WeierstrassAffinePoint PallasG (F Step.Field))
-           (Type2 (SplitField (F Step.Field) Boolean))
+           (WeierstrassAffinePoint PallasG (F StepField))
+           (Type2 (SplitField (F StepField) Boolean))
     wrapProofOpening = WrapProofOpening
       { lr: map (\pair -> { l: mkPallasPt pair.l, r: mkPallasPt pair.r })
           (vestaProofOpeningLrVec input.wrapProof)
@@ -816,8 +817,8 @@ expandProof input =
     wrapProofKimchi
       :: Step.WrapProof
            WrapIPARounds
-           (WeierstrassAffinePoint PallasG (F Step.Field))
-           (Type2 (SplitField (F Step.Field) Boolean))
+           (WeierstrassAffinePoint PallasG (F StepField))
+           (Type2 (SplitField (F StepField) Boolean))
     wrapProofKimchi = Step.WrapProof
       { messages: wrapProofMessages
       , opening: wrapProofOpening
@@ -826,14 +827,14 @@ expandProof input =
     -- `Step.ProofState` = the wrap proof's step-field Type1 deferred
     -- values, flattened into `Step.FopProofState`, plus `Step.BranchData`.
     -- Matches OCaml step.ml:266-285.
-    stepPlonkDerived :: PlonkInCircuit (F Step.Field) (Type1 (F Step.Field))
+    stepPlonkDerived :: PlonkInCircuit (F StepField) (Type1 (F StepField))
     stepPlonkDerived = deferredStep.plonk
 
     -- Convert the `Verify.Types.BranchData` record (flat with
     -- `proofsVerifiedMask :: Vector 2 _`) into the
     -- `Pickles.Types.BranchData` newtype (mask0/mask1 named fields,
     -- `F`-wrapped domainLog2). Same data, different packaging.
-    stepBranchData :: Step.BranchData (F Step.Field) Boolean
+    stepBranchData :: Step.BranchData (F StepField) Boolean
     stepBranchData =
       let
         v = deferredStep.branchData.proofsVerifiedMask
@@ -844,7 +845,7 @@ expandProof input =
           , domainLog2: F deferredStep.branchData.domainLog2
           }
 
-    stepProofState :: Step.ProofState StepIPARounds (F Step.Field) Boolean
+    stepProofState :: Step.ProofState StepIPARounds (F StepField) Boolean
     stepProofState = Step.ProofState
       -- The 5 fp slots store the **shifted inner** form (matching
       -- OCaml's `Per_proof_witness.proof_state.deferred_values.plonk`
@@ -873,8 +874,8 @@ expandProof input =
            n
            StepIPARounds
            WrapIPARounds
-           (F Step.Field)
-           (Type2 (SplitField (F Step.Field) Boolean))
+           (F StepField)
+           (Type2 (SplitField (F StepField) Boolean))
            Boolean
     perProofWitnessAssembled = Step.PerProofWitness
       { wrapProof: wrapProofKimchi

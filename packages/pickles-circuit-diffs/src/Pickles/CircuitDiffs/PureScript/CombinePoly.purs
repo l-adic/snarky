@@ -13,8 +13,8 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
+import Pickles.Field (WrapField)
 import Pickles.IPA (combinePolynomials)
-import Pickles.Wrap.Types (Field)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, SizedF, Snarky, const_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -32,7 +32,7 @@ type CombinePolyInput f =
   , xi :: SizedF 128 (FVar f)
   }
 
-parseCombinePolyInput :: Vector 37 (FVar Field) -> CombinePolyInput Field
+parseCombinePolyInput :: Vector 37 (FVar WrapField) -> CombinePolyInput WrapField
 parseCombinePolyInput inputs =
   let
     at = unsafeIdx inputs
@@ -47,26 +47,26 @@ parseCombinePolyInput inputs =
 
 combinePolyCircuit
   :: forall t m
-   . CircuitM Field (KimchiConstraint Field) t m
-  => CombinePolyInput Field
-  -> Snarky (KimchiConstraint Field) t m (AffinePoint (FVar Field))
+   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  => CombinePolyInput WrapField
+  -> Snarky (KimchiConstraint WrapField) t m (AffinePoint (FVar WrapField))
 combinePolyCircuit input =
   let
     g = unsafePartial $ fromJust $ toAffine (generator :: VestaG)
 
-    dummyPt :: AffinePoint (FVar Field)
+    dummyPt :: AffinePoint (FVar WrapField)
     dummyPt = { x: const_ g.x, y: const_ g.y }
 
-    indexComms :: Vector 6 (AffinePoint (FVar Field))
+    indexComms :: Vector 6 (AffinePoint (FVar WrapField))
     indexComms = Vector.generate \_ -> dummyPt
 
-    coeffComms :: Vector 15 (AffinePoint (FVar Field))
+    coeffComms :: Vector 15 (AffinePoint (FVar WrapField))
     coeffComms = Vector.generate \_ -> dummyPt
 
-    sigmaComms :: Vector 6 (AffinePoint (FVar Field))
+    sigmaComms :: Vector 6 (AffinePoint (FVar WrapField))
     sigmaComms = Vector.generate \_ -> dummyPt
 
-    allBases :: Vector 45 (AffinePoint (FVar Field))
+    allBases :: Vector 45 (AffinePoint (FVar WrapField))
     allBases =
       (input.xHat :< input.ftComm :< input.zComm :< Vector.nil)
         `Vector.append` indexComms
@@ -76,8 +76,8 @@ combinePolyCircuit input =
   in
     combinePolynomials allBases (Vector.replicate Nothing) input.xi
 
-compileCombinePoly :: CompiledCircuit Field
+compileCombinePoly :: CompiledCircuit WrapField
 compileCombinePoly =
-  compilePure (Proxy @(Vector 37 (F Field))) (Proxy @Unit) (Proxy @(KimchiConstraint Field))
+  compilePure (Proxy @(Vector 37 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ combinePolyCircuit (parseCombinePolyInput inputs))
     Kimchi.initialState

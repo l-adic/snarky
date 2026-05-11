@@ -26,10 +26,10 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyPallasPt, stepEndo, unsafeIdx)
+import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.OtherField as StepOtherField
-import Pickles.Step.Types (Field)
 import Pickles.Verify (incrementallyVerifyProof, packStatement)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
@@ -43,16 +43,16 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type StepVerifyN2Params =
-  { lagrangeAt :: LagrangeBaseLookup Field
-  , blindingH :: AffinePoint (F Field)
+  { lagrangeAt :: LagrangeBaseLookup StepField
+  , blindingH :: AffinePoint (F StepField)
   }
 
 stepVerifyN2Circuit
   :: forall t m
-   . CircuitM Field (KimchiConstraint Field) t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
   => StepVerifyN2Params
-  -> Vector 304 (FVar Field)
-  -> Snarky (KimchiConstraint Field) t m Unit
+  -> Vector 304 (FVar StepField)
+  -> Snarky (KimchiConstraint StepField) t m Unit
 stepVerifyN2Circuit { lagrangeAt, blindingH } inputs = do
   let
     at = unsafeIdx inputs
@@ -62,14 +62,14 @@ stepVerifyN2Circuit { lagrangeAt, blindingH } inputs = do
     constDummyPt = let { x: F x', y: F y' } = dummyPallasPt in { x: const_ x', y: const_ y' }
 
     -- Parse wrap_proof (0-113) — same as N0
-    wComm :: Vector 15 (AffinePoint (FVar Field))
+    wComm :: Vector 15 (AffinePoint (FVar StepField))
     wComm = Vector.generate \j -> readPt (2 * getFinite j)
     zComm = readPt 30
 
-    tComm :: Vector 7 (AffinePoint (FVar Field))
+    tComm :: Vector 7 (AffinePoint (FVar StepField))
     tComm = Vector.generate \j -> readPt (32 + 2 * getFinite j)
 
-    lr :: Vector 15 { l :: AffinePoint (FVar Field), r :: AffinePoint (FVar Field) }
+    lr :: Vector 15 { l :: AffinePoint (FVar StepField), r :: AffinePoint (FVar StepField) }
     lr = Vector.generate \j ->
       { l: readPt (46 + 4 * getFinite j)
       , r: readPt (46 + 4 * getFinite j + 2)
@@ -95,7 +95,7 @@ stepVerifyN2Circuit { lagrangeAt, blindingH } inputs = do
                   (Vector.generate \j -> asSizedF128 (at (124 + getFinite j))) :: Vector 16 _
               , branchData:
                   { domainLog2: at 142
-                  , proofsVerifiedMask: (coerce (at 140) :: BoolVar Field) :< (coerce (at 141) :: BoolVar Field) :< Vector.nil
+                  , proofsVerifiedMask: (coerce (at 140) :: BoolVar StepField) :< (coerce (at 141) :: BoolVar StepField) :< Vector.nil
                   }
               }
           , spongeDigestBeforeEvaluations: at 143
@@ -107,7 +107,7 @@ stepVerifyN2Circuit { lagrangeAt, blindingH } inputs = do
     publicInput = packStatement statement
 
     -- Parse prev_challenge_polynomial_commitments (265-268) — N2: 2 real sg points
-    sgOld :: Vector 2 (AffinePoint (FVar Field))
+    sgOld :: Vector 2 (AffinePoint (FVar StepField))
     sgOld = Vector.generate \j -> readPt (265 + 2 * getFinite j)
 
     -- Parse unfinalized (269-300) — same layout as N0 but shifted
@@ -129,7 +129,7 @@ stepVerifyN2Circuit { lagrangeAt, blindingH } inputs = do
           (Vector.generate \j -> asSizedF128 (at (unfBase + 16 + getFinite j))) :: Vector 15 _
       }
 
-    isBaseCase = coerce (at 301) :: BoolVar Field
+    isBaseCase = coerce (at 301) :: BoolVar StepField
     claimedDigest = at (unfBase + 10)
 
     ivpParams =
@@ -177,8 +177,8 @@ stepVerifyN2Circuit { lagrangeAt, blindingH } inputs = do
     c2' <- if_ isBaseCase c1 c2
     assertEq c1 c2'
 
-compileStepVerifyN2 :: StepVerifyN2Params -> CompiledCircuit Field
+compileStepVerifyN2 :: StepVerifyN2Params -> CompiledCircuit StepField
 compileStepVerifyN2 srsData =
-  compilePure (Proxy @(Vector 304 (F Field))) (Proxy @Unit) (Proxy @(KimchiConstraint Field))
+  compilePure (Proxy @(Vector 304 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> stepVerifyN2Circuit srsData inputs)
     Kimchi.initialState

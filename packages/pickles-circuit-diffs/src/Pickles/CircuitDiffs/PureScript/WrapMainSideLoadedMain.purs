@@ -25,6 +25,7 @@ import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCompiled, deriveWrapVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain (StepMainSideLoadedMainParams, compileStepMainSideLoadedMain)
+import Pickles.Field (StepField, WrapField)
 import Pickles.Slots (SideLoaded, Slot)
 import Pickles.Step.Types as Step
 import Pickles.Types (StatementIO)
@@ -43,8 +44,8 @@ compileWrapMainSideLoadedMain
   -> Effect WrapArtifact
 compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
   stepArt <- compileStepMainSideLoadedMain stepParams
-  vestaSrs <- createCRS @Step.Field
-  pallasSrs <- createCRS @Wrap.Field
+  vestaSrs <- createCRS @StepField
+  pallasSrs <- createCRS @WrapField
   let
     realStepVK = deriveStepVKFromCompiled @1 vestaSrs stepArt.stepCs
 
@@ -62,10 +63,10 @@ compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
   -- mpv=1, single side-loaded slot with bound 2 (the side-loaded
   -- prev's `max_proofs_verified = N2` upper bound). Slots derived
   -- from the `Slot SideLoaded` spec via funcdep.
-  wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint Wrap.Field))
+  wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     ( \stmt ->
         wrapMainForPrevs @1
-          @(Tuple1 (Slot SideLoaded 2 (StatementIO (F Step.Field) Unit)))
+          @(Tuple1 (Slot SideLoaded 2 (StatementIO (F StepField) Unit)))
           config
           stmt
     )

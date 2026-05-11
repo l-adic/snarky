@@ -11,11 +11,11 @@ import Data.Fin (Finite, getFinite)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx, wrapDomainLog2, wrapEndo, wrapSrsLengthLog2)
+import Pickles.Field (WrapField)
 import Pickles.FinalizeOtherProof (DomainMode(..), Output)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.Wrap.FinalizeOtherProof (pow2PowMul, wrapFinalizeOtherProofCircuit)
-import Pickles.Wrap.Types (Field)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), F, FVar, SizedF, Snarky, const_, sub_)
@@ -26,37 +26,37 @@ import Type.Proxy (Proxy(..))
 
 type FopWrapInput =
   { plonk ::
-      { alpha :: SizedF 128 (FVar Field)
-      , beta :: SizedF 128 (FVar Field)
-      , gamma :: SizedF 128 (FVar Field)
-      , zeta :: SizedF 128 (FVar Field)
-      , zetaToSrsLength :: Type2 (FVar Field)
-      , zetaToDomainSize :: Type2 (FVar Field)
-      , perm :: Type2 (FVar Field)
+      { alpha :: SizedF 128 (FVar WrapField)
+      , beta :: SizedF 128 (FVar WrapField)
+      , gamma :: SizedF 128 (FVar WrapField)
+      , zeta :: SizedF 128 (FVar WrapField)
+      , zetaToSrsLength :: Type2 (FVar WrapField)
+      , zetaToDomainSize :: Type2 (FVar WrapField)
+      , perm :: Type2 (FVar WrapField)
       }
-  , combinedInnerProduct :: Type2 (FVar Field)
-  , b :: Type2 (FVar Field)
-  , xi :: SizedF 128 (FVar Field)
-  , bulletproofChallenges :: Vector 16 (SizedF 128 (FVar Field))
-  , spongeDigestBeforeEvaluations :: FVar Field
+  , combinedInnerProduct :: Type2 (FVar WrapField)
+  , b :: Type2 (FVar WrapField)
+  , xi :: SizedF 128 (FVar WrapField)
+  , bulletproofChallenges :: Vector 16 (SizedF 128 (FVar WrapField))
+  , spongeDigestBeforeEvaluations :: FVar WrapField
   , allEvals ::
-      { ftEval1 :: FVar Field
-      , publicEvals :: { zeta :: FVar Field, omegaTimesZeta :: FVar Field }
-      , witnessEvals :: Vector 15 { zeta :: FVar Field, omegaTimesZeta :: FVar Field }
-      , coeffEvals :: Vector 15 { zeta :: FVar Field, omegaTimesZeta :: FVar Field }
-      , zEvals :: { zeta :: FVar Field, omegaTimesZeta :: FVar Field }
-      , sigmaEvals :: Vector 6 { zeta :: FVar Field, omegaTimesZeta :: FVar Field }
-      , indexEvals :: Vector 6 { zeta :: FVar Field, omegaTimesZeta :: FVar Field }
+      { ftEval1 :: FVar WrapField
+      , publicEvals :: { zeta :: FVar WrapField, omegaTimesZeta :: FVar WrapField }
+      , witnessEvals :: Vector 15 { zeta :: FVar WrapField, omegaTimesZeta :: FVar WrapField }
+      , coeffEvals :: Vector 15 { zeta :: FVar WrapField, omegaTimesZeta :: FVar WrapField }
+      , zEvals :: { zeta :: FVar WrapField, omegaTimesZeta :: FVar WrapField }
+      , sigmaEvals :: Vector 6 { zeta :: FVar WrapField, omegaTimesZeta :: FVar WrapField }
+      , indexEvals :: Vector 6 { zeta :: FVar WrapField, omegaTimesZeta :: FVar WrapField }
       }
-  , prevChallenges :: Vector 2 (Vector 16 (FVar Field))
+  , prevChallenges :: Vector 2 (Vector 16 (FVar WrapField))
   }
 
-parseFopWrapInput :: Vector 148 (FVar Field) -> FopWrapInput
+parseFopWrapInput :: Vector 148 (FVar WrapField) -> FopWrapInput
 parseFopWrapInput inputs =
   let
     at = unsafeIdx inputs
 
-    evalPair :: forall n. Int -> Finite n -> { zeta :: FVar Field, omegaTimesZeta :: FVar Field }
+    evalPair :: forall n. Int -> Finite n -> { zeta :: FVar WrapField, omegaTimesZeta :: FVar WrapField }
     evalPair base j =
       { zeta: at (base + 2 * getFinite j)
       , omegaTimesZeta: at (base + 2 * getFinite j + 1)
@@ -91,9 +91,9 @@ parseFopWrapInput inputs =
 
 fopWrapCircuit
   :: forall t m
-   . CircuitM Field (KimchiConstraint Field) t m
+   . CircuitM WrapField (KimchiConstraint WrapField) t m
   => FopWrapInput
-  -> Snarky (KimchiConstraint Field) t m (Output 16 Field)
+  -> Snarky (KimchiConstraint WrapField) t m (Output 16 WrapField)
 fopWrapCircuit input =
   let
     unfinalized =
@@ -104,15 +104,15 @@ fopWrapCircuit input =
           , xi: input.xi
           , bulletproofChallenges: input.bulletproofChallenges
           }
-      , shouldFinalize: coerce (const_ one :: FVar Field)
+      , shouldFinalize: coerce (const_ one :: FVar WrapField)
       , spongeDigestBeforeEvaluations: input.spongeDigestBeforeEvaluations
       }
     params =
       { domains:
-          { generator: const_ (LinFFI.domainGenerator @Field wrapDomainLog2)
+          { generator: const_ (LinFFI.domainGenerator @WrapField wrapDomainLog2)
           , log2: wrapDomainLog2
           } :< Vector.nil
-      , shifts: map const_ (LinFFI.domainShifts @Field wrapDomainLog2)
+      , shifts: map const_ (LinFFI.domainShifts @WrapField wrapDomainLog2)
       , srsLengthLog2: wrapSrsLengthLog2
       , endo: wrapEndo
       , linearizationPoly: Linearization.vesta
@@ -128,8 +128,8 @@ fopWrapCircuit input =
       , prevChallenges: input.prevChallenges
       }
 
-compileFopWrap :: CompiledCircuit Field
+compileFopWrap :: CompiledCircuit WrapField
 compileFopWrap =
-  compilePure (Proxy @(Vector 148 (F Field))) (Proxy @Unit) (Proxy @(KimchiConstraint Field))
+  compilePure (Proxy @(Vector 148 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ fopWrapCircuit (parseFopWrapInput inputs))
     Kimchi.initialState

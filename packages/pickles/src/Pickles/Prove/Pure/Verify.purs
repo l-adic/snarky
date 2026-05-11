@@ -26,13 +26,13 @@ import Prelude
 import Data.Foldable (for_)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Pickles.Field (StepField)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.ProofFFI (OraclesResult)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, CombinedInnerProductBatchInput, DerivePlonkInput, FtEval0Input, combinedInnerProductBatch, computeBpChalsAndB, derivePlonk, ftEval0)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput)
 import Pickles.Sponge (PureSpongeM, absorb, evalPureSpongeM, initialSponge, squeeze, squeezeScalarChallengePure)
-import Pickles.Step.Types (Field)
 import Pickles.Types (StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, PlonkMinimal, ScalarChallenge)
 import RandomOracle.Sponge (Sponge)
@@ -57,32 +57,32 @@ import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
 -- | * **Static domain / SRS metadata.** Shared with the prover — read from
 -- |   the step verifier index at runtime: `domainLog2`, `zkRows`,
 -- |   `srsLengthLog2`, `generator`, `shifts`, `vanishesOnZk`,
--- |   `omegaForLagrange`, `endo` (= `endoScalar @Field`),
+-- |   `omegaForLagrange`, `endo` (= `endoScalar @StepField`),
 -- |   `linearizationPoly`.
 type ExpandDeferredInput n =
   { -- Carried (raw) values from the wrap proof's minimal proof state.
-    rawPlonk :: PlonkMinimal (F Field)
-  , rawBulletproofChallenges :: Vector StepIPARounds (ScalarChallenge (F Field))
-  , branchData :: BranchData Field Boolean
-  , spongeDigestBeforeEvaluations :: Field
+    rawPlonk :: PlonkMinimal (F StepField)
+  , rawBulletproofChallenges :: Vector StepIPARounds (ScalarChallenge (F StepField))
+  , branchData :: BranchData StepField Boolean
+  , spongeDigestBeforeEvaluations :: StepField
 
   -- Evals + prev-proof bp chals (= the inner step proof's data, carried
   -- by the wrap proof).
-  , allEvals :: AllEvals Field
-  , pEval0Chunks :: Array Field
-  , oldBulletproofChallenges :: Vector n (Vector StepIPARounds Field)
+  , allEvals :: AllEvals StepField
+  , pEval0Chunks :: Array StepField
+  , oldBulletproofChallenges :: Vector n (Vector StepIPARounds StepField)
 
   -- Static step-domain / SRS metadata (same source as prover — read from
   -- the step verifier index).
   , domainLog2 :: Int
   , zkRows :: Int
   , srsLengthLog2 :: Int
-  , generator :: Field
-  , shifts :: Vector 7 Field
-  , vanishesOnZk :: Field
-  , omegaForLagrange :: { zkRows :: Boolean, offset :: Int } -> Field
-  , endo :: Field
-  , linearizationPoly :: LinearizationPoly Field
+  , generator :: StepField
+  , shifts :: Vector 7 StepField
+  , vanishesOnZk :: StepField
+  , omegaForLagrange :: { zkRows :: Boolean, offset :: Int } -> StepField
+  , endo :: StepField
+  , linearizationPoly :: LinearizationPoly StepField
   }
 
 -- | Compute `challenges_digest = sponge(expanded old_bp_chals flattened)`.
@@ -91,10 +91,10 @@ type ExpandDeferredInput n =
 -- | (outer × inner), then squeezes one field element.
 challengesDigest
   :: forall n
-   . Vector n (Vector StepIPARounds Field)
-  -> Field
+   . Vector n (Vector StepIPARounds StepField)
+  -> StepField
 challengesDigest expandedOldBpChals =
-  evalPureSpongeM (initialSponge :: Sponge Field) do
+  evalPureSpongeM (initialSponge :: Sponge StepField) do
     for_ expandedOldBpChals \inner -> for_ inner absorb
     squeeze
 
@@ -111,10 +111,10 @@ expandDeferredForVerify input =
     -- ===== Step 1. Endo-expand zeta (needed for zetaw + scalars_env in
     -- derivePlonk). alpha is expanded once below for oraclesReconstructed;
     -- beta/gamma stay in their raw 128-bit form.
-    zetaField :: Field
+    zetaField :: StepField
     zetaField = coerce (toFieldPure input.rawPlonk.zeta (F input.endo))
 
-    zetaw :: Field
+    zetaw :: StepField
     zetaw = zetaField * input.generator
 
     -- ===== Step 2. Sponge replay to recover xi, r. ====================
@@ -124,7 +124,7 @@ expandDeferredForVerify input =
     -- `input.oldBulletproofChallenges` is already `Ipa.Step.compute_challenges`-
     -- expanded by the caller (step field elements, not raw 128-bit chals).
     { xiRawSized, rRawSized } =
-      evalPureSpongeM (initialSponge :: Sponge Field) do
+      evalPureSpongeM (initialSponge :: Sponge StepField) do
         absorb input.spongeDigestBeforeEvaluations
         absorb (challengesDigest input.oldBulletproofChallenges)
         absorb input.allEvals.ftEval1
@@ -146,14 +146,14 @@ expandDeferredForVerify input =
         absorb pe.omegaTimesZeta
 
     -- Endo-expand xi and r to full field values.
-    xiField :: Field
+    xiField :: StepField
     xiField = coerce (toFieldPure xiRawSized (F input.endo))
 
-    rField :: Field
+    rField :: StepField
     rField = coerce (toFieldPure rRawSized (F input.endo))
 
     -- ===== Step 3. Type1.derive_plonk (wrap.ml:202-208). ==============
-    derivePlonkInput :: DerivePlonkInput Field
+    derivePlonkInput :: DerivePlonkInput StepField
     derivePlonkInput =
       { plonkMinimal: input.rawPlonk
       , w: map _.zeta (Vector.take @7 input.allEvals.witnessEvals)
@@ -168,11 +168,11 @@ expandDeferredForVerify input =
       , endo: input.endo
       }
 
-    stepPlonkDerived :: PlonkInCircuit (F Field) (Type1 (F Field))
+    stepPlonkDerived :: PlonkInCircuit (F StepField) (Type1 (F StepField))
     stepPlonkDerived = derivePlonk derivePlonkInput
 
     -- ===== Step 4. ft_eval0 for the step field. =======================
-    ftEval0Input :: FtEval0Input Field
+    ftEval0Input :: FtEval0Input StepField
     ftEval0Input =
       { plonkMinimal: input.rawPlonk
       , allEvals: input.allEvals
@@ -188,11 +188,11 @@ expandDeferredForVerify input =
       , linearizationPoly: input.linearizationPoly
       }
 
-    stepFtEval0 :: Field
+    stepFtEval0 :: StepField
     stepFtEval0 = ftEval0 ftEval0Input
 
     -- ===== Step 5. combined_inner_product (wrap.ml:22-62, 235-245). ====
-    cipInput :: CombinedInnerProductBatchInput n StepIPARounds Field
+    cipInput :: CombinedInnerProductBatchInput n StepIPARounds StepField
     cipInput =
       { allEvals: input.allEvals
       , publicEvals: input.allEvals.publicEvals
@@ -205,13 +205,13 @@ expandDeferredForVerify input =
       , zetaw
       }
 
-    cipActual :: Field
+    cipActual :: StepField
     cipActual = combinedInnerProductBatch cipInput
 
     -- ===== Step 6. new bulletproof challenges + b (wrap.ml:209-224). ===
     -- `computeBpChalsAndB` is field-polymorphic; unwrap `F` from raw
-    -- chals so `f = Field` agrees with `endo/zeta/zetaw/r`.
-    newBpResult :: BulletproofBOutput StepIPARounds Field
+    -- chals so `f = StepField` agrees with `endo/zeta/zetaw/r`.
+    newBpResult :: BulletproofBOutput StepIPARounds StepField
     newBpResult = computeBpChalsAndB
       { rawPrechallenges: map unwrapF input.rawBulletproofChallenges
       , endo: input.endo
@@ -225,15 +225,15 @@ expandDeferredForVerify input =
     -- (assembleWrapMainInput) only reads a subset, but
     -- WrapDeferredValuesOutput expects the full record.
     expandedPlonk =
-      { alpha: coerce (toFieldPure input.rawPlonk.alpha (F input.endo)) :: Field
-      , beta: coerce (SizedF.toField input.rawPlonk.beta) :: Field
-      , gamma: coerce (SizedF.toField input.rawPlonk.gamma) :: Field
+      { alpha: coerce (toFieldPure input.rawPlonk.alpha (F input.endo)) :: StepField
+      , beta: coerce (SizedF.toField input.rawPlonk.beta) :: StepField
+      , gamma: coerce (SizedF.toField input.rawPlonk.gamma) :: StepField
       , zeta: zetaField
       }
 
     -- `OraclesResult f` is field-polymorphic; the existing callers use
-    -- `f = Field` (un-F-wrapped). Unwrap F from the raw sized chals.
-    oraclesReconstructed :: OraclesResult Field
+    -- `f = StepField` (un-F-wrapped). Unwrap F from the raw sized chals.
+    oraclesReconstructed :: OraclesResult StepField
     oraclesReconstructed =
       { alpha: expandedPlonk.alpha
       , beta: unwrapF input.rawPlonk.beta
@@ -268,8 +268,8 @@ expandDeferredForVerify input =
     , newBulletproofChallenges: newBpResult
     }
 
--- | Pure squeeze of a 128-bit scalar challenge, wrapped into `F Field`.
+-- | Pure squeeze of a 128-bit scalar challenge, wrapped into `F StepField`.
 -- | `Pickles.Sponge.squeezeScalarChallengePure` returns `SizedF 128 f`;
--- | our `ScalarChallenge (F Field)` type wants `SizedF 128 (F Field)`.
-squeezeScalarChallengePureF :: PureSpongeM Field (SizedF 128 (F Field))
+-- | our `ScalarChallenge (F StepField)` type wants `SizedF 128 (F StepField)`.
+squeezeScalarChallengePureF :: PureSpongeM StepField (SizedF 128 (F StepField))
 squeezeScalarChallengePureF = wrapF <$> squeezeScalarChallengePure

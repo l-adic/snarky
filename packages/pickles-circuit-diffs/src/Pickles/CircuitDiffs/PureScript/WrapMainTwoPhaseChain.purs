@@ -29,6 +29,7 @@ import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCompiled, deriveWrapVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement (StepMainTwoPhaseChainIncrementParams, compileStepMainTwoPhaseChainIncrement)
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero (StepMainTwoPhaseChainMakeZeroParams, compileStepMainTwoPhaseChainMakeZero)
+import Pickles.Field (StepField, WrapField)
 import Pickles.ProofFFI (pallasSrsLagrangeCommitmentAt)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Types as Step
@@ -50,8 +51,8 @@ import Type.Proxy (Proxy(..))
 -- | because the branches' step domains differ.
 type WrapMainTwoPhaseChainParams =
   { vestaSrs :: CRS VestaG
-  , lagrangeAt :: LagrangeBaseLookup Wrap.Field
-  , blindingH :: AffinePoint (F Wrap.Field)
+  , lagrangeAt :: LagrangeBaseLookup WrapField
+  , blindingH :: AffinePoint (F WrapField)
   , makeZeroStepSrsData :: StepMainTwoPhaseChainMakeZeroParams
   , incrementStepSrsData :: StepMainTwoPhaseChainIncrementParams
   }
@@ -63,8 +64,8 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
   -- is available for increment's per-branch FOP domain dispatch).
   makeZeroArt <- compileStepMainTwoPhaseChainMakeZero makeZeroStepSrsData
   incrementArt <- compileStepMainTwoPhaseChainIncrement makeZeroArt incrementStepSrsData
-  vestaSrs' <- createCRS @Step.Field
-  pallasSrs <- createCRS @Wrap.Field
+  vestaSrs' <- createCRS @StepField
+  pallasSrs <- createCRS @WrapField
   let
     -- @0 for make_zero (n=0 prev_challenges), @1 for increment (n=1).
     makeZeroVK = deriveStepVKFromCompiled @0 vestaSrs' makeZeroArt.stepCs
@@ -73,8 +74,8 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
     -- Per-branch lagrange lookup at each branch's step domain log2.
     -- Both values derived from artifacts (no hardcoded 9 / 14).
     perBranchLookup i =
-      ((coerce (pallasSrsLagrangeCommitmentAt vestaSrs makeZeroArt.stepDomainLog2 i)) :: AffinePoint (F Wrap.Field))
-        :< ((coerce (pallasSrsLagrangeCommitmentAt vestaSrs incrementArt.stepDomainLog2 i)) :: AffinePoint (F Wrap.Field))
+      ((coerce (pallasSrsLagrangeCommitmentAt vestaSrs makeZeroArt.stepDomainLog2 i)) :: AffinePoint (F WrapField))
+        :< ((coerce (pallasSrsLagrangeCommitmentAt vestaSrs incrementArt.stepDomainLog2 i)) :: AffinePoint (F WrapField))
         :< Vector.nil
 
     config :: WrapMainConfig 2
@@ -89,7 +90,7 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
       }
   -- Slots1 1: mpv=1, single slot of max width 1.
-  wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint Wrap.Field))
+  wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\stmt -> wrapMain @2 @(Slots1 1) config stmt)
     Kimchi.initialState
   pure
