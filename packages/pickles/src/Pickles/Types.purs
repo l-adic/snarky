@@ -20,7 +20,6 @@ module Pickles.Types
   , WrapStatement
   , PointEval(..)
   , StatementIO(..)
-  , VerificationKey(..)
   , BranchData(..)
   , WrapProofMessages(..)
   , WrapProofOpening(..)
@@ -287,41 +286,6 @@ instance
   ) =>
   CheckedType f c (StatementIO inputVar outputVar) where
   check (StatementIO r) = check (tuple2 r.input r.output)
-
--- | Plonk verification key: sigma(7), coefficients(15), index(6) commitments.
--- |
--- | OCaml hlist order: sigma_comm, coefficients_comm, index commitments
--- | (generic, psm, complete_add, mul, emul, endomul_scalar).
--- |
--- | Parameterized by the element type so the same newtype works for both
--- | value and var representations on either Pasta curve.
--- |
--- | Reference: plonk_verification_key_evals.ml
-newtype VerificationKey pt = VerificationKey
-  { sigma :: Vector 7 pt
-  , coeff :: Vector 15 pt
-  , index :: Vector 6 pt
-  }
-
-instance (CircuitType f a var) => CircuitType f (VerificationKey a) (VerificationKey var) where
-  sizeInFields pf _ = genericSizeInFields pf (Proxy @(Tuple3 (Vector 7 a) (Vector 15 a) (Vector 6 a)))
-  valueToFields (VerificationKey r) = genericValueToFields (tuple3 r.sigma r.coeff r.index)
-  fieldsToValue fs =
-    let
-      tup :: Tuple3 (Vector 7 a) (Vector 15 a) (Vector 6 a)
-      tup = genericFieldsToValue fs
-    in
-      uncurry3 (\sigma coeff index -> VerificationKey { sigma, coeff, index }) tup
-  varToFields (VerificationKey r) = genericVarToFields @(Tuple3 (Vector 7 a) (Vector 15 a) (Vector 6 a)) (tuple3 r.sigma r.coeff r.index)
-  fieldsToVar fs =
-    let
-      tup :: Tuple3 (Vector 7 var) (Vector 15 var) (Vector 6 var)
-      tup = genericFieldsToVar @(Tuple3 (Vector 7 a) (Vector 15 a) (Vector 6 a)) fs
-    in
-      uncurry3 (\sigma coeff index -> VerificationKey { sigma, coeff, index }) tup
-
-instance (CheckedType f c var) => CheckedType f c (VerificationKey var) where
-  check (VerificationKey r) = check (tuple3 r.sigma r.coeff r.index)
 
 -- | Per-proof branch data: which previous proof slot is in use, plus the
 -- | wrap proof's domain log2.

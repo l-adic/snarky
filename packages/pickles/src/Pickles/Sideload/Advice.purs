@@ -2,17 +2,16 @@
 -- |
 -- | Carriers are spec-indexed and phase-aware:
 -- |
--- | * Compile-time path uses `CompilePlaceholderVK` at side-loaded
--- |   slots — synthesised pure from the spec via `MkUnitVkCarrier`.
--- |   Has no `VerifierIndex` because the in-circuit walk
--- |   (`Pickles.Step.Main.BuildSlotVkSources`) only reads the
--- |   `Checked` shape via `cellCircuit`; constructing a real kimchi
--- |   `VerifierIndex` placeholder would require Effect-ful FFI.
+-- | * Compile-time path uses the side-loaded VK descriptor directly at
+-- |   side-loaded slots — synthesised pure from the spec via
+-- |   `MkUnitVkCarrier` (`SLVK.compileDummy`). No kimchi
+-- |   `VerifierIndex` because the in-circuit walk only reads the
+-- |   descriptor; the runtime handle is not needed.
 -- |
--- | * Prove-time path uses `VerificationKey` at side-loaded slots —
--- |   declared by `SideloadedVKsCarrier`. Carries a real hydrated
--- |   `VerifierIndex` (smart-constructor enforced; see
--- |   `Pickles.Sideload.VerificationKey`).
+-- | * Prove-time path uses `Bundle` at side-loaded slots — declared by
+-- |   `SideloadedVKsCarrier`. Carries both halves: the descriptor (for
+-- |   the in-circuit walk) and the hydrated `VerifierIndex` (for the
+-- |   prover machinery).
 -- |
 -- | Reference: OCaml `Pickles.Side_loaded` + `step_main.ml:520-525`.
 module Pickles.Sideload.Advice
@@ -27,9 +26,11 @@ import Prelude
 
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
-import Pickles.Sideload.VerificationKey (VerificationKey)
-import Pickles.Sideload.VerificationKey.Internal (CompilePlaceholderVK, compileDummy)
+import Pickles.Sideload.Bundle (Bundle)
+import Pickles.Sideload.VerificationKey (VerificationKey, compileDummy) as SLVK
 import Pickles.Step.Slots (Compiled, SideLoaded, Slot)
+import Pickles.Types (StepField)
+import Snarky.Circuit.DSL (F)
 
 -- | Prove-time spec-indexed VK carrier shape. Funcdep
 -- | `spec -> carrier` lets the compiler pin the carrier from the spec
@@ -37,7 +38,7 @@ import Pickles.Step.Slots (Compiled, SideLoaded, Slot)
 -- |
 -- | * `Unit` → `Unit`
 -- | * `Slot Compiled n stmt /\ rest` → `Unit /\ restCarrier`
--- | * `Slot SideLoaded mpvMax stmt /\ rest` → `VerificationKey /\ restCarrier`
+-- | * `Slot SideLoaded mpvMax stmt /\ rest` → `Bundle /\ restCarrier`
 class SideloadedVKsCarrier :: Type -> Type -> Constraint
 class SideloadedVKsCarrier spec carrier | spec -> carrier
 
@@ -56,14 +57,14 @@ instance
   SideloadedVKsCarrier rest restCarrier =>
   SideloadedVKsCarrier
     (Slot SideLoaded mpvMax statement /\ rest)
-    (VerificationKey /\ restCarrier)
+    (Bundle /\ restCarrier)
 
 -- | Prover-monad source for the spec-indexed VK carrier.
 -- |
 -- | The carrier shape varies per monad: the `Effect` instance returns
--- | a compile-time placeholder carrier (cells = `CompilePlaceholderVK`,
+-- | a compile-time placeholder carrier (cells = `SLVK.compileDummy`,
 -- | synthesised by `MkUnitVkCarrier`); a prover-monad instance would
--- | return the prove-time carrier (cells = `VerificationKey`).
+-- | return the prove-time carrier (cells = `Bundle`).
 class
   Monad m <=
   SideloadedVKsM (spec :: Type) (m :: Type -> Type) (carrier :: Type)
@@ -81,9 +82,9 @@ instance
 
 -- | Synthesises a compile-time placeholder carrier matching the spec
 -- | shape. Compiled slots become `Unit`; side-loaded slots become
--- | `compileDummy :: CompilePlaceholderVK`. Pure construction — no
--- | kimchi FFI required, because the placeholder cell carries only
--- | the in-circuit `Checked` shape (no `VerifierIndex`).
+-- | `SLVK.compileDummy`. Pure construction — no kimchi FFI required,
+-- | because the placeholder is just the descriptor (the in-circuit
+-- | walk reads no `VerifierIndex`).
 class MkUnitVkCarrier :: Type -> Type -> Constraint
 class MkUnitVkCarrier spec (carrier :: Type) | spec -> carrier where
   mkUnitVkCarrier :: carrier
@@ -100,6 +101,5 @@ instance
   MkUnitVkCarrier rest restCarrier =>
   MkUnitVkCarrier
     (Slot SideLoaded mpvMax statement /\ rest)
-    (CompilePlaceholderVK /\ restCarrier) where
-  mkUnitVkCarrier = compileDummy /\ mkUnitVkCarrier @rest
-
+    (SLVK.VerificationKey (F StepField) Boolean /\ restCarrier) where
+  mkUnitVkCarrier = SLVK.compileDummy /\ mkUnitVkCarrier @rest

@@ -95,16 +95,16 @@ import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
 import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier, class SideloadedVKsM, getSideloadedVKsCarrier)
-import Pickles.Sideload.VerificationKey (VerificationKey) as Sideload
-import Pickles.Sideload.VerificationKey.Internal (CompilePlaceholderVK)
+import Pickles.Sideload.Bundle (Bundle) as SideloadBundle
+import Pickles.Sideload.VerificationKey (VerificationKey) as SLVK
 import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM)
 import Pickles.Step.Main (class BuildSlotVkSources, RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Step.Main as MpvPadding
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
 import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, replicateStepSlotsCarrier)
 import Pickles.Trace as Trace
-import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), UnfinalizedFieldCount, VerificationKey(..), WrapField, WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
-import Pickles.VerificationKey (StepVK)
+import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), UnfinalizedFieldCount, WrapField, WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.VerificationKey (StepVK, VerificationKey(..))
 import Pickles.Verify.Types (BranchData) as VT
 import Pickles.Verify.Types (PlonkMinimal, UnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
@@ -454,7 +454,7 @@ buildStepAdvice input =
       }
 
 -- | Extract sigma/coeff/index point triples from a compiled wrap
--- | verifier index, in the lightweight `Pickles.Types.VerificationKey`
+-- | verifier index, in the lightweight `Pickles.VerificationKey.VerificationKey`
 -- | shape the step advice uses (WeierstrassAffinePoint PallasG (F
 -- | StepField)). The wrap VK's commitments are Pallas points with
 -- | coordinates in Pallas.BaseField = StepField, so no cross-field
@@ -1877,7 +1877,7 @@ stepCompile
        @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier blueprints
        pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
-  => BuildSlotVkSources CompilePlaceholderVK prevsSpec len blueprints sideloadedVkCarrier
+  => BuildSlotVkSources (SLVK.VerificationKey (F StepField) Boolean) prevsSpec len blueprints sideloadedVkCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -1939,7 +1939,7 @@ stepCompile ctx rule = do
             @valCarrier
             @mpvMax
             @nd
-            @CompilePlaceholderVK
+            @(SLVK.VerificationKey (F StepField) Boolean)
             rule
             ctx.srsData
             ctx.dummySg
@@ -2024,7 +2024,7 @@ preComputeStepDomainLog2
   -- Side-loaded VK carrier — see stepMain. preComputeStepDomainLog2
   -- runs at compile time; the caller synthesizes a placeholder
   -- carrier (e.g. `mkUnitVkCarrier` for compiled-only specs).
-  => BuildSlotVkSources CompilePlaceholderVK prevsSpec len blueprints sideloadedVkCarrier
+  => BuildSlotVkSources (SLVK.VerificationKey (F StepField) Boolean) prevsSpec len blueprints sideloadedVkCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -2082,7 +2082,7 @@ preComputeStepDomainLog2 ctx rule = do
             @valCarrier
             @mpvMax
             @nd
-            @CompilePlaceholderVK
+            @(SLVK.VerificationKey (F StepField) Boolean)
             rule
             ctx.srsData
             ctx.dummySg
@@ -2118,7 +2118,7 @@ stepSolveAndProve
        @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier blueprints
        pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
-  => BuildSlotVkSources Sideload.VerificationKey prevsSpec len blueprints sideloadedVkCarrier
+  => BuildSlotVkSources SideloadBundle.Bundle prevsSpec len blueprints sideloadedVkCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -2199,7 +2199,7 @@ stepSolveAndProve ctx rule compileResult advice = do
               @valCarrier
               @mpvMax
               @nd
-              @Sideload.VerificationKey
+              @SideloadBundle.Bundle
               rule
               ctx.srsData
               ctx.dummySg

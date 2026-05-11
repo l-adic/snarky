@@ -103,6 +103,7 @@ import Pickles.ProofFFI
   , vestaSrsBlindingGenerator
   , vestaSrsLagrangeCommitmentAt
   ) as ProofFFI
+import Pickles.ProofsVerified (ProofsVerifiedCount, boolVecToProofsVerified)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap
@@ -150,10 +151,8 @@ import Pickles.Prove.Wrap
   )
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier)
-import Pickles.Sideload.VerificationKey (Checked(..), ProofsVerifiedCount)
-import Pickles.Sideload.VerificationKey (VerificationKey, boolVecToProofsVerified) as Sideload
-import Pickles.Sideload.VerificationKey.Internal (CompilePlaceholderVK)
-import Pickles.Sideload.VerificationKey.Internal (SideloadedVK(..)) as SideloadInternal
+import Pickles.Sideload.Bundle (Bundle, projectVk, verifierIndex) as SideloadBundle
+import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
 import Pickles.Step.Main (class BuildSlotVkSources, SlotVkBlueprintCompiled(..), SlotVkBlueprintSideLoaded)
 import Pickles.Step.Main as MpvPadding
 import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, Compiled, SideLoaded, Slot)
@@ -1397,7 +1396,7 @@ instance
         Boolean
         /\ restCarrier
     )
-    (Sideload.VerificationKey /\ restVkCarrier)
+    (SideloadBundle.Bundle /\ restVkCarrier)
     -- Side-loaded blueprint = the per-domain lagrange tables (one
     -- entry per `wrap_domain ∈ {N0, N1, N2}`). The runtime VK is
     -- bundled in by `buildSlotVkSources` at circuit-build time.
@@ -1481,16 +1480,15 @@ instance
   --       prev's own `stepDomainLog2`.
   mkStepAdvice cfg stepCR wrapCR appInput (headSlot /\ restPrevs) (headVk /\ restVkCarrier) = do
     let
-      SideloadInternal.SideloadedVK headVkR = headVk
-      slotWrapVK = headVkR.wrapVk
+      slotWrapVK = SideloadBundle.verifierIndex headVk
       slotMpvMax = reflectType (Proxy @mpvMax)
       _ /\ restSlotVKs = cfg.perSlotImportedVKs
 
-      -- Decode `actualWrapDomainSize` from the `Checked` shape's
+      -- Decode `actualWrapDomainSize` from the VK descriptor's
       -- length-3 one-hot bool vector.
-      headCheckedRec = case headVkR.circuit of Checked r -> r
+      SLVK.VerificationKey headVkRec = SideloadBundle.projectVk headVk
       headActualWrapDomainSize =
-        Sideload.boolVecToProofsVerified headCheckedRec.actualWrapDomainSize
+        boolVecToProofsVerified headVkRec.actualWrapDomainSize
 
       slotParams =
         { slotWrapVK
@@ -1756,14 +1754,13 @@ instance
       restCfg = cfg { perSlotImportedVKs = restSlotVKs }
       slotMpvMax = reflectType (Proxy @mpvMax)
 
-      -- Decode actualWrapDomainSize from the bundle's `circuit` part
-      -- (a `Checked`); the runtime `wrapVk` is the sibling field.
-      SideloadInternal.SideloadedVK headVkR = headVk
-      headCheckedRec = case headVkR.circuit of Checked r -> r
+      -- Decode actualWrapDomainSize from the bundle's `vk` descriptor;
+      -- the runtime `verifierIndex` is the bundle's sibling half.
+      SLVK.VerificationKey headVkRec = SideloadBundle.projectVk headVk
       headActualWrapDomainSize =
-        Sideload.boolVecToProofsVerified headCheckedRec.actualWrapDomainSize
+        boolVecToProofsVerified headVkRec.actualWrapDomainSize
 
-      slotWrapVK = headVkR.wrapVk
+      slotWrapVK = SideloadBundle.verifierIndex headVk
 
       slotWrapDomainLog2 :: Int
       slotWrapDomainLog2 =
@@ -2956,14 +2953,14 @@ mkRuleEntry
        carrier carrierVar pad unfsTotal digestPlusUnfs
        compileSideloadedVkCarrier sideloadedVkCarrier blueprints
    . CircuitGateConstructor StepField VestaG
-  -- Compile-path carrier: cells = `CompilePlaceholderVK`. Synthesised
+  -- Compile-path carrier: cells = side-loaded VK descriptor. Synthesised
   -- by `MkUnitVkCarrier` for the `getSideloadedVKsCarrier` Effect
   -- instance inside `stepCompile` / `preComputeStepDomainLog2`.
-  => BuildSlotVkSources CompilePlaceholderVK prevsSpec mpv blueprints compileSideloadedVkCarrier
+  => BuildSlotVkSources (SLVK.VerificationKey (F StepField) Boolean) prevsSpec mpv blueprints compileSideloadedVkCarrier
   => MkUnitVkCarrier prevsSpec compileSideloadedVkCarrier
-  -- Prove-path carrier: cells = `Sideload.VerificationKey`. Sourced
-  -- from `StepAdvice.sideloadedVKs` inside `stepSolveAndProve`.
-  => BuildSlotVkSources Sideload.VerificationKey prevsSpec mpv blueprints sideloadedVkCarrier
+  -- Prove-path carrier: cells = `SideloadBundle.Bundle`. Sourced from
+  -- `StepAdvice.sideloadedVKs` inside `stepSolveAndProve`.
+  => BuildSlotVkSources SideloadBundle.Bundle prevsSpec mpv blueprints sideloadedVkCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable mpv Int
   => Reflectable pad Int

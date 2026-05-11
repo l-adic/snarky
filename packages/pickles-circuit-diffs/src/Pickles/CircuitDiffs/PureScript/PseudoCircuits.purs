@@ -32,7 +32,7 @@ import JS.BigInt (fromInt)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt, unsafeIdx)
 import Pickles.Pseudo (choose, oneHotVector)
 import Pickles.Pseudo as Pseudo
-import Pickles.Sideload.VerificationKey.Internal (cellCircuit, compileDummy)
+import Pickles.Sideload.VerificationKey (compileDummy)
 import Pickles.Step.FinalizeOtherProof as FOP
 import Pickles.Types (StepField, WrapField)
 import Pickles.VerificationKey (chooseKey)
@@ -336,11 +336,9 @@ compilePseudoMaskN17Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy 
 -- Side_loaded_verification_key.typ check (step circuit only).
 -- Mirrors the OCaml `exists Side_loaded_verification_key.typ
 -- ~compute:(fun () -> Side_loaded_verification_key.dummy)`. The PS
--- analog allocates a `VerificationKeyVar StepField` (= the parameterized
--- `Checked (BoolVar StepField) (WeierstrassAffinePoint Pallas.G (FVar
--- StepField))`) which fires the `CheckedType` instance: bool checks +
--- exactly_one for each One_hot vec, plus on-curve checks for the 23
--- wrap_index points.
+-- analog allocates a `Sideload.VerificationKey (FVar StepField) (BoolVar StepField)`
+-- which fires the `CheckedType` instance: bool checks + exactly_one for
+-- each One_hot vec, plus on-curve checks for the 23 wrap_index points.
 --------------------------------------------------------------------------------
 
 sideloadedVkTypStepCircuit
@@ -349,7 +347,7 @@ sideloadedVkTypStepCircuit
   => Unit
   -> Snarky (KimchiConstraint StepField) t m Unit
 sideloadedVkTypStepCircuit _ = do
-  _ <- label "sideloaded_vk_typ" $ exists (pure $ cellCircuit compileDummy)
+  _ <- label "sideloaded_vk_typ" $ exists (pure compileDummy)
   pure unit
 
 compileSideloadedVkTypStep :: CompiledCircuit StepField

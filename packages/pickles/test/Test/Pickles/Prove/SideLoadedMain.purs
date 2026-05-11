@@ -28,6 +28,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Partial.Unsafe (unsafePartial)
+import Pickles.ProofsVerified (ProofsVerified(..))
 import Pickles.Prove.Compile
   ( BranchProver(..)
   , CompiledProof
@@ -39,8 +40,7 @@ import Pickles.Prove.Compile
   , mkRuleEntry
   )
 import Pickles.Prove.Step (StepRule)
-import Pickles.Sideload.VerificationKey (ProofsVerified(..), fromCompiledWrap)
-import Pickles.Sideload.VerificationKey (VerificationKey) as Sideload
+import Pickles.Sideload.Bundle (Bundle, mkBundle) as Sideload
 import Pickles.Step.Advice (getPrevAppStates)
 import Pickles.Step.Slots (SideLoaded, Slot)
 import Pickles.Types (StatementIO(..), StepField)
@@ -196,8 +196,8 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
     -- circuit at log2 = 13 → `actualWrapDomainSize = N0`; child mpv =
     -- 0 → `maxProofsVerified = N0`.
     let
-      childVK :: Sideload.VerificationKey
-      childVK = fromCompiledWrap
+      childVK :: Sideload.Bundle
+      childVK = Sideload.mkBundle
         { verifierIndex: child.vks.wrap.verifierIndex
         , maxProofsVerified: N0
         , actualWrapDomainSize: N0

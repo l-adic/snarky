@@ -27,7 +27,7 @@ import Effect (Effect)
 import Effect.Exception (throw)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Sideload.VerificationKey.Internal (CompilePlaceholderVK, compileDummy)
+import Pickles.Sideload.VerificationKey (VerificationKey, compileDummy) as SLVK
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Slots (SideLoaded, Slot)
 import Pickles.Types (StatementIO, StepField)
@@ -111,7 +111,7 @@ compileStepMainSideLoadedMain params =
           @(Tuple1 (StatementIO (F StepField) Unit))
           @1
           @1
-          @CompilePlaceholderVK
+          @(SLVK.VerificationKey (F StepField) Boolean)
           sideLoadedMainRule
           -- This circuit-diff harness builds `perSlotLagrangeAt` /
           -- `perSlotVkBlueprints` / `perSlotFopDomainLog2s` inline rather
@@ -134,6 +134,6 @@ compileStepMainSideLoadedMain params =
           }
           dummyWrapSg
           -- Single side-loaded slot with the dummy VK.
-          (tuple1 compileDummy)
+          (tuple1 SLVK.compileDummy)
       )
       Kimchi.initialState
