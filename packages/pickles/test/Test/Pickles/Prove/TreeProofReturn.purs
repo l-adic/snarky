@@ -58,7 +58,7 @@ import Pickles.Prove.Compile
 import Pickles.Prove.Step (StepRule)
 import Pickles.Prove.Verify (verify)
 import Pickles.Step.Advice (getPrevAppStates)
-import Pickles.Step.Slots (Compiled, Slot)
+import Pickles.Slots (Compiled, Slot)
 import Pickles.Step.Types (Field)
 import Pickles.Types (StatementIO(..))
 import Pickles.Wrap.Slots (NoSlots, Slots2)

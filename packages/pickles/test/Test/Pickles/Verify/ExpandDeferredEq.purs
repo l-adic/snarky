@@ -55,7 +55,7 @@ import Pickles.Prove.Compile
   )
 import Pickles.Prove.Pure.Verify (ExpandDeferredInput, expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput)
-import Pickles.Step.Slots (Compiled, Slot)
+import Pickles.Slots (Compiled, Slot)
 import Pickles.Step.Types (Field)
 import Pickles.Types (StatementIO(..), StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)

@@ -10,7 +10,7 @@ import Data.Const (Const)
 import Data.Functor.Product (Product)
 import Data.Tuple.Nested (type (/\))
 import Data.Vector (Vector)
-import Pickles.Step.Slots (Compiled, SideLoaded, Slot)
+import Pickles.Slots (Compiled, SideLoaded, Slot)
 import Prelude (Unit)
 import Type.Proxy (Proxy(..))
 

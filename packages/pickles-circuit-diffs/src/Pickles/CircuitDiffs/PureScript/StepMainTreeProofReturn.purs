@@ -43,7 +43,7 @@ import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecu
 import Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn (compileWrapMainNoRecursionReturn)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
-import Pickles.Step.Slots (Compiled, Slot)
+import Pickles.Slots (Compiled, Slot)
 import Pickles.Step.Types (Field)
 import Pickles.Types (StatementIO)
 import Safe.Coerce (coerce)

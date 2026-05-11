@@ -22,7 +22,7 @@ import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCompiled, deriveWrapVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn (StepMainTreeProofReturnParams, compileStepMainTreeProofReturn)
-import Pickles.Step.Slots (Compiled, Slot)
+import Pickles.Slots (Compiled, Slot)
 import Pickles.Step.Types as Step
 import Pickles.Types (StatementIO)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)

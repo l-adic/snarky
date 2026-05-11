@@ -7,7 +7,7 @@ from the inventory. Curate by hand into `docs/pickles-tiering.md`.
 ## Summary
 
 - M2 strict-AND violations: 7
-- C3 grab-bag splits: 4
+- C3 grab-bag splits: 3
 - M1 cohesion-move candidates: 0
 - D2 facade modules: 0
 - D3 single-binding inline candidates: 2
@@ -59,13 +59,6 @@ namespace.
 
 - **shared** (5, stays in module): `absorb`, `squeezeScalarChallenge`, `evalSpongeM`, `liftSnarky`, `initialSpongeCircuit`
 - **Wrap-only** (18, EXTRACT to `Pickles.Wrap.*`): `MonadSponge`, `squeeze`, `absorbPoint`, `absorbMany`, `squeezeScalar`, `squeezeScalarChallengePure`, `lowest128Bits`, `lowest128BitsPure`, `SpongeM`, `labelM`, `getSponge`, `putSponge`, `PureSpongeM`, `runPureSpongeM`, `evalPureSpongeM`, `getSpongeState`, `initialSponge`, `spongeFromConstants`
-
-### `Pickles.Types` (26 used bindings)
-
-- **shared** (8, stays in module): `StepIPARounds`, `WrapIPARounds`, `PaddedLength`, `PointEval`, `WrapProofMessages`, `WrapProofOpening`, `StepAllEvals`, `PerProofUnfinalized`
-- **Step-only** (7, EXTRACT to `Pickles.Step.*`): `StepField`, `UnfinalizedFieldCount`, `BranchData`, `WrapProof`, `FopProofState`, `StepProofState`, `StepPerProofWitness`
-- **Wrap-only** (4, EXTRACT to `Pickles.Wrap.*`): `WrapField`, `WrapIvpBaseline`, `WrapPrevProofState`, `WrapStatementPacked`
-- **neither Step nor Wrap** (7, ambiguous): `MaxProofsVerified`, `StepCommitmentCurve`, `WrapCommitmentCurve`, `StepInput`, `StepStatement`, `WrapStatement`, `StatementIO`
 
 ## D3 — single-binding inline candidates
 

@@ -29,7 +29,7 @@ import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStep
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Sideload.VerificationKey (VerificationKey, compileDummy) as SLVK
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Pickles.Step.Slots (SideLoaded, Slot)
+import Pickles.Slots (SideLoaded, Slot)
 import Pickles.Step.Types (Field)
 import Pickles.Types (StatementIO)
 import Snarky.Backend.Compile (compile)

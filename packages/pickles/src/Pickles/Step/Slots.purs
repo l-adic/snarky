@@ -1,16 +1,9 @@
 -- | Heterogeneous per-slot container for `step_main`.
 -- |
 -- | A rule's prev list is encoded at the type level as a tuple chain
--- | of `Slot` descriptors ending in `Unit`:
+-- | of `Slot` descriptors (from `Pickles.Slots`) ending in `Unit`:
 -- |
 -- |   Slot Compiled 1 (StatementIO Stmt) /\ Slot SideLoaded 2 Stmt' /\ Unit
--- |
--- | Each `Slot` carries:
--- |
--- |   * the slot's `SlotKind` (`Compiled` for build-time-baked prevs,
--- |     `SideLoaded` for runtime-supplied wrap VKs);
--- |   * the slot's max-proofs-verified `n` (compile-time `Int`);
--- |   * the slot's statement type.
 -- |
 -- | Heterogeneity matters for rules like `Tree_proof_return` (Ns =
 -- | `[0, 2]`): each slot's `Per_proof_witness.t` is sized by THAT
@@ -24,11 +17,7 @@
 -- | Step-side analog of `Pickles.Wrap.Slots`. Reference: OCaml
 -- | `per_proof_witness.ml`, `step_main.ml`'s `exists_prevs`.
 module Pickles.Step.Slots
-  ( SlotKind
-  , Compiled
-  , SideLoaded
-  , Slot
-  , class StepSlotsCarrier
+  ( class StepSlotsCarrier
   , class SlotStatementsCarrier
   , traverseStepSlotsA
   , replicateStepSlotsCarrier
@@ -41,31 +30,10 @@ import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Pickles.Slots (Slot)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (PaddedLength)
 import Prim.Int (class Add)
-
--- | Kind for a slot's source: a `Compiled` slot is a previously-
--- | compiled rule whose wrap VK is baked into the parent's compile
--- | output; a `SideLoaded` slot's wrap VK is supplied at prove time.
-data SlotKind
-
--- | Phantom inhabitant of `SlotKind` — wrap VK + step-domain log2 are
--- | known at compile time.
-foreign import data Compiled :: SlotKind
-
--- | Phantom inhabitant of `SlotKind` — wrap VK + step-domain log2 are
--- | sourced at runtime from a `Pickles.Sideload.VerificationKey`.
-foreign import data SideLoaded :: SlotKind
-
--- | A type-level slot descriptor: kind tag, `max_proofs_verified` (or
--- | for side-loaded slots, the compile-time upper bound on the
--- | side-loaded tag's mpv), and the prev's statement type.
--- |
--- | Pure phantom; no value-level inhabitants. The spec is the tuple
--- | chain `Slot k₁ n₁ s₁ /\ Slot k₂ n₂ s₂ /\ … /\ Unit` — `Unit`
--- | terminates the chain (the empty-prev list).
-foreign import data Slot :: SlotKind -> Int -> Type -> Type
 
 -- | Spec → (`len`, `carrier`) mapping plus a rank-2 traversal.
 -- |

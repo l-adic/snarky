@@ -28,7 +28,7 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Pickles.Sideload.Bundle (Bundle)
 import Pickles.Sideload.VerificationKey (VerificationKey, compileDummy) as SLVK
-import Pickles.Step.Slots (Compiled, SideLoaded, Slot)
+import Pickles.Slots (Compiled, SideLoaded, Slot)
 import Pickles.Step.Types (Field)
 import Snarky.Circuit.DSL (F)
 

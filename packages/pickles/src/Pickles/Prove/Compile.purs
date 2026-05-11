@@ -155,7 +155,8 @@ import Pickles.Sideload.Bundle (Bundle, projectVk, verifierIndex) as SideloadBun
 import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
 import Pickles.Step.Main (class BuildSlotVkSources, SlotVkBlueprintCompiled(..), SlotVkBlueprintSideLoaded)
 import Pickles.Step.Main as MpvPadding
-import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, Compiled, SideLoaded, Slot)
+import Pickles.Slots (Compiled, SideLoaded, Slot)
+import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier)
 import Pickles.Step.Types as Step
 import Pickles.Types
   ( MaxProofsVerified
