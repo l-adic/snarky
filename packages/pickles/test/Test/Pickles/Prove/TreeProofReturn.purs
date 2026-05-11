@@ -58,7 +58,7 @@ import Pickles.Prove.Compile
 import Pickles.Prove.Step (StepRule)
 import Pickles.Prove.Verify (verify)
 import Pickles.Step.Advice (getPrevAppStates)
-import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
+import Pickles.Step.Slots (Compiled, Slot)
 import Pickles.Types (StatementIO(..), StepField)
 import Pickles.Wrap.Slots (NoSlots, Slots2)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -70,8 +70,9 @@ import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
 type TreeProofReturnPrevsSpec =
-  PrevsSpecCons 0 (StatementIO Unit (F StepField))
-    (PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
+  Tuple2
+    (Slot Compiled 0 (StatementIO Unit (F StepField)))
+    (Slot Compiled 2 (StatementIO Unit (F StepField)))
 
 treeProofReturnRule
   :: StepRule 2
@@ -110,7 +111,7 @@ nrrRule _ = pure
 -- | NRR's 1-rule carrier (same shape as the standalone NRR test). NRR
 -- | output is a Field, so the StepRule's outputVal is `F StepField`.
 type NrrRules =
-  RulesCons 0 Unit PrevsSpecNil Unit
+  RulesCons 0 Unit Unit Unit
     RulesNil
 
 -- | Tree_proof_return's 1-rule carrier. Two prev slots: an NRR external
@@ -129,32 +130,14 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     vestaSrs <- liftEffect $ createCRS @StepField
 
     -- ===== NRR side: 1-rule compileMulti at mpvMax=0. =====
-    nrrEntry <- liftEffect $ mkRuleEntry
-      @PrevsSpecNil
-      @0 -- mpv
-      @0 -- mpvMax
-      @0 -- mpvPad
-      @1 -- nd = topBranches (single branch)
-      @1 -- outputSize = 0*32+1+0 = 1
-      @Unit
-      @Unit
-      @Unit
-      @(F StepField)
-      @(FVar StepField)
-      @Unit
-      @Unit
-      @Unit
-      nrrRule
-      unit
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule unit
 
     let nrrRules = tuple1 nrrEntry
 
     nrr <- liftEffect $ compileMulti
       @NrrRules
-      @Unit
       @(F StepField)
       @Unit
-      @0
       @NoSlots
       { srs: { vestaSrs, pallasSrs }
       , debug: false
@@ -163,7 +146,9 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       nrrRules
 
     let BranchProver nrrProver = fst nrr.provers
-    eNrrCp <- liftEffect $ runExceptT $ nrrProver { appInput: unit, prevs: unit }
+    -- NRR has no prev slots → spec-derived `vkCarrier = Unit`.
+    eNrrCp <- liftEffect $ runExceptT $ nrrProver
+      { appInput: unit, prevs: unit, sideloadedVKs: unit }
     nrrCp <- case eNrrCp of
       Left e -> liftEffect $ Exc.throw ("nrrProver: " <> show e)
       Right p -> pure p
@@ -180,21 +165,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         }
 
     -- ===== Tree side: 1-rule compileMulti at mpvMax=2 with override. =====
-    treeEntry <- liftEffect $ mkRuleEntry
-      @TreeProofReturnPrevsSpec
-      @2 -- mpv
-      @2 -- mpvMax
-      @0 -- mpvPad
-      @1 -- nd = topBranches (single branch)
-      @67 -- outputSize = 2*32+1+2 = 67
-      @(Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
-      @Unit
-      @Unit
-      @(F StepField)
-      @(FVar StepField)
-      @(F StepField)
-      @(FVar StepField)
-      @(Tuple2 SlotWrapKey SlotWrapKey)
+    treeEntry <- liftEffect $ mkRuleEntry @2 @(F StepField) @(F StepField)
       treeProofReturnRule
       (tuple2 (External nrrProverVKs) Self)
 
@@ -202,10 +173,8 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
 
     tree <- liftEffect $ compileMulti
       @TreeRules
-      @Unit
       @(F StepField)
       @(F StepField)
-      @2
       @(Slots2 0 2)
       { srs: { vestaSrs, pallasSrs }
       , debug: false
@@ -224,6 +193,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
           { appInput: unit
           , prevs:
               tuple2 (InductivePrev nrrCp nrr.tag) selfPrev
+          , sideloadedVKs: tuple2 unit unit
           }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("treeProver: " <> show e)

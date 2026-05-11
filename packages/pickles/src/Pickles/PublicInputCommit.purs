@@ -36,6 +36,8 @@ module Pickles.PublicInputCommit
   , LagrangeBaseLookup
   , mkConstLagrangeBase
   , mkConstLagrangeBaseLookup
+  , mkSideloadedLagrangeLookup
+  , sumMaskedAffine
   , wrapPt
   , unwrapPt
   , pow2pow
@@ -53,6 +55,7 @@ import Data.Symbol (class IsSymbol)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
+import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
 import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Add, class Mul)
@@ -60,6 +63,7 @@ import Prim.Row as Row
 import Prim.RowList as RL
 import Record as Record
 import Safe.Coerce (coerce)
+import Snarky.Circuit.CVar (add_, scale_) as CVar
 import Snarky.Circuit.Curves as Curves
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, addConstraint, const_, if_, label)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
@@ -220,6 +224,11 @@ type LagrangeBase f =
   , circuit :: AffinePoint (FVar f)
   , condAddPt :: AffinePoint (FVar f)
   , correctionAt :: Maybe (Int -> AffinePoint (FVar f))
+  -- | Whether the BoolVar `Cond_add` path seals `condAddPt` before
+  -- | use. `true` for step side-loaded (which seals both `lagrange`
+  -- | and `lagrange_with_correction`); `false` for wrap multi-branch
+  -- | (which seals only `lagrange_with_correction`).
+  , sealCondAddPt :: Boolean
   }
 
 -- | Index-based lookup over lagrange bases, mirroring OCaml
@@ -238,6 +247,7 @@ mkConstLagrangeBase pt =
   , circuit: constPt pt
   , condAddPt: constPt pt
   , correctionAt: Nothing
+  , sealCondAddPt: false
   }
 
 -- | Build a lookup closure from a function returning the constant `i`-th
@@ -249,6 +259,83 @@ mkConstLagrangeBaseLookup
   => (Int -> AffinePoint (F f))
   -> LagrangeBaseLookup f
 mkConstLagrangeBaseLookup f i = mkConstLagrangeBase (f i)
+
+-- | Sum-mask a vector of constant affine points against a one-hot
+-- | bitvec, producing an in-circuit affine point. Each coordinate is
+-- | computed as `Σᵢ bᵢ * pᵢ` via pure `CVar.scale_` + `CVar.add_` —
+-- | no R1CS constraints emitted. Mirrors OCaml's
+-- | `select_curve_points`.
+sumMaskedAffine
+  :: forall n m f
+   . PrimeField f
+  => Add 1 m n
+  => Vector n (BoolVar f)
+  -> Vector n (AffinePoint (F f))
+  -> AffinePoint (FVar f)
+sumMaskedAffine bits perBranchPts =
+  let
+    boolFvars :: Vector n (FVar f)
+    boolFvars = map (coerce :: BoolVar f -> FVar f) bits
+
+    scaledPts :: Vector n (AffinePoint (FVar f))
+    scaledPts = Vector.zipWith
+      ( \b { x: F x', y: F y' } ->
+          { x: CVar.scale_ x' b, y: CVar.scale_ y' b }
+      )
+      boolFvars
+      perBranchPts
+    { head: spHead, tail: spTail } = Vector.uncons scaledPts
+  in
+    foldl
+      ( \acc pt ->
+          { x: CVar.add_ acc.x pt.x, y: CVar.add_ acc.y pt.y }
+      )
+      spHead
+      spTail
+
+-- | Build a `LagrangeBaseLookup` for a side-loaded slot that muxes
+-- | among three per-domain lagrange tables (`actualWrapDomainSize ∈
+-- | {N0, N1, N2}`) using a one-hot bitvec. The correction at scale
+-- | `2^shift` is computed in-circuit by sum-masking the same way.
+-- |
+-- | The returned `LagrangeBase` sets `correctionAt = Just …`, which
+-- | routes `scalarMulLeaf` through the per-branch
+-- | (`AddWithCircuitCorrection`) path; callers must use
+-- | `InCircuitCorrections` mode.
+mkSideloadedLagrangeLookup
+  :: forall f
+   . PrimeField f
+  => CurveParams f
+  -> Vector 3 (BoolVar f)
+  -> Vector 3 (Int -> AffinePoint (F f))
+  -> LagrangeBaseLookup f
+mkSideloadedLagrangeLookup curveP bits perDomainAt i =
+  let
+    perDomainPts :: Vector 3 (AffinePoint (F f))
+    perDomainPts = map (\at -> at i) perDomainAt
+
+    summed :: AffinePoint (FVar f)
+    summed = sumMaskedAffine bits perDomainPts
+    correctionAt shift =
+      sumMaskedAffine bits
+        ( map
+            ( \pt ->
+                wrapPt $ EC.negate_ $ unwrapPt
+                  $ pow2pow curveP pt shift
+            )
+            perDomainPts
+        )
+  in
+    { -- `constant` is unused on the per-branch path; carry the head
+      -- domain's point as a placeholder so the record typechecks.
+      constant: (Vector.uncons perDomainPts).head
+    , circuit: summed
+    , condAddPt: summed
+    , correctionAt: Just correctionAt
+    -- Step side-loaded seals each `Cond_add` coordinate before use
+    -- (= OCaml `select_curve_points`).
+    , sealCondAddPt: true
+    }
 
 -- | Intermediate result from walking the structure. The `nextIdx` field is
 -- | the first lagrange-base index the caller has *not yet* consumed.
@@ -302,7 +389,16 @@ instance PublicInputCommit (BoolVar f) f where
   scalarMuls _ bool lookup idx = do
     addConstraint (Basic.boolean (coerce bool :: FVar f))
     let base = lookup idx
-    pure { results: [ CondAdd bool base.condAddPt ], nextIdx: idx + 1 }
+    -- For step side-loaded (sealCondAddPt = true), seal each
+    -- coordinate of the muxed lagrange point before using it in
+    -- Cond_add. Mirrors OCaml `step_verifier.ml:436`'s
+    -- `Double.map ~f:seal`. Compiled rules (single-domain,
+    -- mkConstLagrangeBase) and wrap multi-branch
+    -- (mkPerBranchLagrangeBase) leave the flag false.
+    pt <-
+      if base.sealCondAddPt then sealPoint base.condAddPt
+      else pure base.condAddPt
+    pure { results: [ CondAdd bool pt ], nextIdx: idx + 1 }
 
 -- | Shifted scalar (Type1): single field element, 255 bits → 51 chunks, sDiv2Bits = 254.
 instance (FieldSizeInBits f 255) => PublicInputCommit (Type1 (FVar f)) f where
@@ -317,8 +413,19 @@ instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (SplitField 
     { results: r1, nextIdx: idx1 } <- scalarMulLeaf @51 @254 params sDiv2 lookup idx
     addConstraint (Basic.boolean (coerce sOdd :: FVar f))
     let oddBase = lookup idx1
+    -- For step side-loaded (sealCondAddPt = true), seal the muxed
+    -- lagrange point per coordinate before Cond_add. Mirrors OCaml
+    -- `step_verifier.ml:436`'s `Double.map ~f:Utils.seal` over
+    -- `select_curve_points`. Without this, each side-loaded sOdd
+    -- bit's Cond_add silently uses an unsealed compound CVar where
+    -- OCaml uses a sealed Var — costing 2 R1CS Generic gates per
+    -- bit (×16 bp_chals + ~9 plonk Type1/Type2 fields ≈ 50+
+    -- missing R1CS).
+    pt <-
+      if oddBase.sealCondAddPt then sealPoint oddBase.condAddPt
+      else pure oddBase.condAddPt
     pure
-      { results: r1 <> [ CondAdd sOdd oddBase.condAddPt ]
+      { results: r1 <> [ CondAdd sOdd pt ]
       , nextIdx: idx1 + 1
       }
 

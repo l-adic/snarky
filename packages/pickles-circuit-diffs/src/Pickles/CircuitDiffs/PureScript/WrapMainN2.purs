@@ -1,8 +1,14 @@
--- | N2 wrapper for the wrap_main library circuit.
+-- | N2 wrapper for the `wrap_main` library circuit.
 -- |
--- | Configuration: branches=2, step_widths=[0;2], Max_widths_by_slot=[N2;N2],
--- | Features.none. The slot widths come from the [[0;2]; [0;2]] padded vector
--- | passed to `Wrap_main.wrap_main` in `dump_circuit_impl.ml` for this fixture.
+-- | Configuration: `branches=1`, `step_widths=[2]`,
+-- | `Max_widths_by_slot=[N2;N2]`, `Features.none`. Single rule
+-- | (`prevs = [self; self]`), so `branches = 1`.
+-- |
+-- | `stepKeys` VK constants are derived by compiling the same
+-- | Simple_chain N2 step CS (`step_main_simple_chain_n2_circuit`)
+-- | and running the kimchi commitment pipeline; this produces the
+-- | same baked-in constants OCaml's `Pickles.compile_promise` does.
+-- | Reference: OCaml `dump_simple_chain_n2.ml`.
 module Pickles.CircuitDiffs.PureScript.WrapMainN2
   ( compileWrapMainN2
   ) where
@@ -11,52 +17,57 @@ import Prelude
 
 import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..))
+import Data.Tuple.Nested (Tuple2)
 import Data.Vector ((:<))
 import Data.Vector as Vector
-import Effect.Unsafe (unsafePerformEffect)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt)
+import Effect (Effect)
+import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCompiled, deriveWrapVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
-import Pickles.Types (WrapField)
-import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
-import Pickles.Wrap.Slots (Slots2)
+import Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2 (StepMainSimpleChainN2Params, compileStepMainSimpleChainN2)
+import Pickles.Step.Slots (Compiled, Slot)
+import Pickles.Types (StatementIO, StepField, WrapField)
+import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (F(..), const_)
+import Snarky.Backend.Kimchi.Class (createCRS)
+import Snarky.Circuit.DSL (F)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
-compileWrapMainN2 :: IvpWrapParams -> CompiledCircuit WrapField
-compileWrapMainN2 { lagrangeAt, blindingH } =
+compileWrapMainN2
+  :: IvpWrapParams
+  -> StepMainSimpleChainN2Params
+  -> Effect WrapArtifact
+compileWrapMainN2 { lagrangeAt, blindingH } stepParams = do
+  stepArt <- compileStepMainSimpleChainN2 stepParams
+  vestaSrs <- createCRS @StepField
+  pallasSrs <- createCRS @WrapField
   let
-    { x: F dummyX, y: F dummyY } = dummyVestaPt
+    realStepVK = deriveStepVKFromCompiled @2 vestaSrs stepArt.stepCs
 
-    dummyPt :: AffinePoint _
-    dummyPt = { x: const_ dummyX, y: const_ dummyY }
-    dummyVK =
-      { sigmaComm: Vector.replicate dummyPt :: _ 7 _
-      , coefficientsComm: Vector.replicate dummyPt :: _ 15 _
-      , genericComm: dummyPt
-      , psmComm: dummyPt
-      , completeAddComm: dummyPt
-      , mulComm: dummyPt
-      , emulComm: dummyPt
-      , endomulScalarComm: dummyPt
-      }
-
-    config :: WrapMainConfig 2
+    config :: WrapMainConfig 1
     config =
-      { stepWidths: 0 :< 2 :< Vector.nil
-      , domainLog2s: 16 :< 16 :< Vector.nil
-      , stepKeys: dummyVK :< dummyVK :< Vector.nil
+      { stepWidths: 2 :< Vector.nil
+      , domainLog2s: stepArt.stepDomainLog2 :< Vector.nil
+      , stepKeys: realStepVK :< Vector.nil
       , lagrangeAt
       , perBranchLagrangeAt: Nothing
       , blindingH
       , allPossibleDomainLog2s:
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
       }
-  in
-    unsafePerformEffect $
-      compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-        (\stmt -> wrapMain @2 @(Slots2 2 2) config stmt)
-        Kimchi.initialState
+  -- mpv=2, slots [2; 2]; derived from PrevsSpec via funcdep.
+  wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+    ( \stmt ->
+        wrapMainForPrevs @1
+          @(Tuple2 (Slot Compiled 2 (StatementIO (F StepField) Unit)) (Slot Compiled 2 (StatementIO (F StepField) Unit)))
+          config
+          stmt
+    )
+    Kimchi.initialState
+  pure
+    { stepCs: stepArt.stepCs
+    , stepDomainLog2: stepArt.stepDomainLog2
+    , wrapCs
+    , wrapVk: deriveWrapVKFromCompiled @2 pallasSrs wrapCs
+    }

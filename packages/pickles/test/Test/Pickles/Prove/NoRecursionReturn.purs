@@ -12,7 +12,8 @@
 -- | reuses it to build a real NRR `CompiledProof` and feed
 -- | `compiledProof.wrapDv` / `wrapDvInput` to its self-consistency check.
 module Test.Pickles.Prove.NoRecursionReturn
-  ( nrrRule
+  ( NrrRules
+  , nrrRule
   , spec
   ) where
 
@@ -37,7 +38,6 @@ import Pickles.Prove.Compile
   )
 import Pickles.Prove.Step (StepRule)
 import Pickles.Prove.Verify (verify)
-import Pickles.Step.Prevs (PrevsSpecNil)
 import Pickles.Types (StepField)
 import Pickles.Wrap.Slots (NoSlots)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -58,7 +58,7 @@ nrrRule _ = pure
 -- | NRR's 1-rule carrier shape: a single `RulesCons` for the no-prev
 -- | rule, terminated by `RulesNil`.
 type NrrRules =
-  RulesCons 0 Unit PrevsSpecNil Unit
+  RulesCons 0 Unit Unit Unit
     RulesNil
 
 spec :: SpecT Aff Unit Aff Unit
@@ -70,32 +70,14 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
     -- Build the 1-tuple rules carrier for compileMulti. mpvMax = 0
     -- (NRR rule's mpv); since this is the only branch, nd = 1.
     -- outputSize = mpvMax*32 + 1 + mpvMax = 0 + 1 + 0 = 1.
-    nrrEntry <- liftEffect $ mkRuleEntry
-      @PrevsSpecNil
-      @0 -- mpv (rule's own)
-      @0 -- mpvMax (single rule, = mpv)
-      @0 -- mpvPad
-      @1 -- nd = topBranches (single branch)
-      @1 -- outputSize
-      @Unit
-      @Unit
-      @Unit
-      @(F StepField)
-      @(FVar StepField)
-      @Unit
-      @Unit
-      @Unit
-      nrrRule
-      unit
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule unit
 
     let rules = tuple1 nrrEntry
 
     output <- liftEffect $ compileMulti
       @NrrRules
-      @Unit
       @(F StepField)
       @Unit
-      @0
       @NoSlots
       { srs: { vestaSrs, pallasSrs }
       , debug: false
@@ -104,7 +86,12 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
       rules
 
     let BranchProver nrrProver = fst output.provers
-    eResult <- liftEffect $ runExceptT $ nrrProver { appInput: unit, prevs: unit }
+    -- Compiled-only spec (Unit) → spec-derived `vkCarrier =
+    -- Unit`. Mirrors OCaml's `~handler:None` for non-side-loaded
+    -- branches. Threading the field uniformly keeps the
+    -- `BranchProver` API consistent with side-loaded specs.
+    eResult <- liftEffect $ runExceptT $ nrrProver
+      { appInput: unit, prevs: unit, sideloadedVKs: unit }
     case eResult of
       Left e -> liftEffect $ Exc.throw ("nrrProver: " <> show e)
       Right compiledProof ->

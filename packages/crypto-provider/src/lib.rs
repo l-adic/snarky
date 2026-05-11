@@ -55,12 +55,6 @@ pub mod bulletproofs_types;
 pub use bulletproofs_circuit::*;
 pub use bulletproofs_types::*;
 
-/// Initialize the bulletproofs module (no-op, for API consistency).
-#[napi]
-pub fn bulletproofs_init() -> Result<()> {
-    Ok(())
-}
-
 // ============================================================================
 // GROTH16 MODULE
 // zkSNARK proving system using the Groth16 protocol over BN254.

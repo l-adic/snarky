@@ -15,55 +15,60 @@ import Prelude
 
 import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..))
+import Data.Tuple.Nested (Tuple2)
 import Data.Vector ((:<))
 import Data.Vector as Vector
-import Effect.Unsafe (unsafePerformEffect)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt)
+import Effect (Effect)
+import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCompiled, deriveWrapVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
-import Pickles.Types (WrapField)
-import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
-import Pickles.Wrap.Slots (Slots2)
+import Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn (StepMainTreeProofReturnParams, compileStepMainTreeProofReturn)
+import Pickles.Step.Slots (Compiled, Slot)
+import Pickles.Types (StatementIO, StepField, WrapField)
+import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (F(..), const_)
+import Snarky.Backend.Kimchi.Class (createCRS)
+import Snarky.Circuit.DSL (F)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
-compileWrapMainTreeProofReturn :: IvpWrapParams -> CompiledCircuit WrapField
-compileWrapMainTreeProofReturn { lagrangeAt, blindingH } =
+compileWrapMainTreeProofReturn
+  :: IvpWrapParams
+  -> StepMainTreeProofReturnParams
+  -> Effect WrapArtifact
+compileWrapMainTreeProofReturn { lagrangeAt, blindingH } stepParams = do
+  stepArt <- compileStepMainTreeProofReturn stepParams
+  vestaSrs <- createCRS @StepField
+  pallasSrs <- createCRS @WrapField
   let
-    { x: F dummyX, y: F dummyY } = dummyVestaPt
-
-    dummyPt :: AffinePoint _
-    dummyPt = { x: const_ dummyX, y: const_ dummyY }
-    dummyVK =
-      { sigmaComm: Vector.replicate dummyPt :: _ 7 _
-      , coefficientsComm: Vector.replicate dummyPt :: _ 15 _
-      , genericComm: dummyPt
-      , psmComm: dummyPt
-      , completeAddComm: dummyPt
-      , mulComm: dummyPt
-      , emulComm: dummyPt
-      , endomulScalarComm: dummyPt
-      }
+    realStepVK = deriveStepVKFromCompiled @2 vestaSrs stepArt.stepCs
 
     config :: WrapMainConfig 1
     config =
-      -- N=2 Tree_proof_return: single branch, step_widths=[2], wrap
-      -- domain 2^13 (from compile.wrap_domains.h.log2 in
-      -- dump_tree_proof_return).
+      -- N=2 Tree_proof_return: single branch, step_widths=[2].
+      -- `domainLog2s` is derived from the step artifact (= 15 for TPR).
       { stepWidths: 2 :< Vector.nil
-      , domainLog2s: 13 :< Vector.nil
-      , stepKeys: dummyVK :< Vector.nil
+      , domainLog2s: stepArt.stepDomainLog2 :< Vector.nil
+      , stepKeys: realStepVK :< Vector.nil
       , lagrangeAt
       , perBranchLagrangeAt: Nothing
       , blindingH
       , allPossibleDomainLog2s:
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
       }
-  in
-    unsafePerformEffect $
-      compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-        (\stmt -> wrapMain @1 @(Slots2 0 2) config stmt)
-        Kimchi.initialState
+  -- TPR: 2 prev slots, [NRR (n=0); self (n=2)]; slots derived from
+  -- PrevsSpec via funcdep.
+  wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+    ( \stmt ->
+        wrapMainForPrevs @1
+          @(Tuple2 (Slot Compiled 0 (StatementIO Unit (F StepField))) (Slot Compiled 2 (StatementIO Unit (F StepField))))
+          config
+          stmt
+    )
+    Kimchi.initialState
+  pure
+    { stepCs: stepArt.stepCs
+    , stepDomainLog2: stepArt.stepDomainLog2
+    , wrapCs
+    , wrapVk: deriveWrapVKFromCompiled @2 pallasSrs wrapCs
+    }

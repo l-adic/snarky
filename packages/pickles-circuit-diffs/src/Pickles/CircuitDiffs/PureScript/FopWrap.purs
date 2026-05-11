@@ -13,7 +13,7 @@ import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx, wrapDomainLog2, wrapEndo, wrapSrsLengthLog2)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
-import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput)
+import Pickles.Step.FinalizeOtherProof (DomainMode(..), FinalizeOtherProofOutput)
 import Pickles.Types (WrapField)
 import Pickles.Wrap.FinalizeOtherProof (pow2PowMul, wrapFinalizeOtherProofCircuit)
 import Safe.Coerce (coerce)
@@ -116,6 +116,7 @@ fopWrapCircuit input =
       , srsLengthLog2: wrapSrsLengthLog2
       , endo: wrapEndo
       , linearizationPoly: Linearization.vesta
+      , domainMode: KnownDomainsMode
       }
     vanishingPoly z = do
       zetaToN <- pow2PowMul z wrapDomainLog2

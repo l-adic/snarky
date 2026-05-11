@@ -32,28 +32,26 @@ module Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Maybe (Maybe(..), fromJust)
-import Data.Tuple (Tuple)
+import Data.Tuple.Nested (Tuple2, tuple2, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
-import Partial.Unsafe (unsafeCrashWith, unsafePartial)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
+import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
+import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
+import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecursionReturnParams)
+import Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn (compileWrapMainNoRecursionReturn)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Step.Main (RuleOutput, stepMain)
-import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
-import Pickles.Types (StatementIO, StepField, VerificationKey(..))
+import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
+import Pickles.Step.Slots (Compiled, Slot)
+import Pickles.Types (StatementIO, StepField)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, const_, exists, if_, not_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, Snarky, const_, exists, if_, not_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class as Curves
-import Snarky.Curves.Pallas as Pallas
-import Snarky.Curves.Pasta (PallasG)
-import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
+import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 -- | Tree_proof_return has HETEROGENEOUS prev wrap_domains (slot 0: 2^13
@@ -63,6 +61,12 @@ import Type.Proxy (Proxy(..))
 type StepMainTreeProofReturnParams =
   { perSlotLagrangeAt :: Vector 2 (LagrangeBaseLookup StepField)
   , blindingH :: AffinePoint (F StepField)
+  -- SRS data for compiling NRR's wrap circuit (used to derive slot 0's
+  -- known wrap key). Mirrors `IvpWrapParams` and
+  -- `StepMainNoRecursionReturnParams` from
+  -- `compileWrapMainNoRecursionReturn`.
+  , nrrWrapSrsData :: IvpWrapParams
+  , nrrStepSrsData :: StepMainNoRecursionReturnParams
   }
 
 -- | Application-specific advice for the Tree_proof_return rule.
@@ -125,87 +129,59 @@ treeProofReturnRule _ = do
     }
 
 compileStepMainTreeProofReturn
-  :: StepMainTreeProofReturnParams -> Effect (CompiledCircuit StepField)
-compileStepMainTreeProofReturn params =
-  compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
-    -- N=2, output size = 33*2 + 1 = 67 (two unfinalized proofs + digest
-    -- + two msg_wrap entries). Wrap domain log2 = 14 from
-    -- `override_wrap_domain:N1` (common.ml:25-29).
-    -- Self: input=Unit (Output mode), output=Field. Prevs: both
-    -- public_input slots are Field (prev[0]=No_recursion_return's
-    -- output, prev[1]=self's output), so prevInputVal=F StepField.
-    -- Heterogeneous spec: slot 0 is No_recursion_return (n=0), slot 1 is
-    -- self (n=2). With stepMain's spec-indexed carrier, slot 0's SPPW
-    -- has empty prev_challenges / prev_sgs (correctly reflecting that a
-    -- N=0 prev verified zero prior proofs). The v1 path over-allocated
-    -- slot 0 to size 2, producing ~4 extra on-curve-check rows vs OCaml.
-    -- Per-slot FOP domain_log2 — `finalize_other_proof ~step_domains`
-    -- uses the prev's STEP_DOMAINS (NOT wrap_domains):
-    -- * slot 0: no_rec_data.step_domains[0].h = 2^13
-    --   (dump_circuit_impl.ml:3902-3906).
-    -- * slot 1: self's step_domains[0].h = 2^16
-    --   (dump_circuit_impl.ml:3974). Note: self's wrap_domains.h is
-    --   2^14 (override_wrap_domain:N1), but that's used for the IVP
-    --   lagrange lookup, not the FOP domain.
-    --
-    -- Per-slot known wrap keys:
-    -- * slot 0: Just noRecKnownWrapKey — matches OCaml's
-    --   `Some no_rec_known` in dump_circuit_impl.ml:4017. The VK's
-    --   commitments are all `Pallas.generator` (placeholder; OCaml
-    --   uses `Tick.Inner_curve.one` at dump_circuit_impl.ml:3999-4009).
-    -- * slot 1: Nothing — slot's prev is SELF, uses the shared
-    --   `exists`-allocated VK inside stepMain.
-    -- Single-rule: mpvMax = len = 2, mpvPad = 0.
-    ( \_ -> stepMain
-        @( PrevsSpecCons 0 (StatementIO Unit (F StepField))
-            (PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
-        )
-        @67
-        @Unit
-        @Unit
-        @(F StepField)
-        @(FVar StepField)
-        @(F StepField)
-        @(FVar StepField)
-        @( Tuple (StatementIO Unit (F StepField))
-            (Tuple (StatementIO Unit (F StepField)) Unit)
-        )
-        @2
-        @0
-        treeProofReturnRule
-        { perSlotLagrangeAt: params.perSlotLagrangeAt
-        , blindingH: params.blindingH
-        , perSlotFopDomainLog2s:
-            (13 :< Vector.nil) :< (16 :< Vector.nil) :< Vector.nil
-        , perSlotKnownWrapKeys: Just noRecKnownWrapKey :< Nothing :< Vector.nil
-        -- Phase 2b.31a: thunks for mpvMax-padding dummies. Single-rule
-        -- callers have mpvPad=0 so `mpvFrontPad` short-circuits and the
-        -- thunks never fire — `unsafeCrashWith` is fine.
-        , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
-        }
-        dummyWrapSg
-    )
-    Kimchi.initialState
-
--- | Placeholder wrap VK for slot 0's No_recursion_return prev.
--- |
--- | OCaml (dump_circuit_impl.ml:3999-4010) fills the
--- | `Optional_wrap_key.known.wrap_key` with `Tick.Inner_curve.one`
--- | (Pallas generator) in all 28 commitment slots — not a real VK, just
--- | a constant placeholder. We do the same here so the compiled circuit
--- | has the same compile-time constants as the OCaml fixture.
-noRecKnownWrapKey
-  :: VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
-noRecKnownWrapKey =
-  let
-    g :: AffinePoint StepField
-    g = unsafePartial $ fromJust $ Curves.toAffine (Curves.generator :: Pallas.G)
-
-    pt :: WeierstrassAffinePoint PallasG (F StepField)
-    pt = WeierstrassAffinePoint { x: F g.x, y: F g.y }
-  in
-    VerificationKey
-      { sigma: Vector.generate (const pt)
-      , coeff: Vector.generate (const pt)
-      , index: Vector.generate (const pt)
-      }
+  :: StepMainTreeProofReturnParams -> Effect StepArtifact
+compileStepMainTreeProofReturn params = do
+  -- Compile NRR's wrap artifact up-front. The artifact bundles
+  -- NRR's step CS + wrap CS + derived wrap VK + step domain log2 —
+  -- everything TPR's slot 0 needs as compile-time constants.
+  -- Mirrors OCaml `dump_tree_proof_return.ml:50-83`'s NRR-first
+  -- compile order, with `Lazy.force compiled.wrap_key` and
+  -- `compiled.step_domains` exposed via the artifact record.
+  nrrArt <- compileWrapMainNoRecursionReturn
+    params.nrrWrapSrsData
+    params.nrrStepSrsData
+  -- Slot 1 is self → its FOP domain log2 = TPR's own step domain
+  -- log2. Resolved via shape pass (mirrors OCaml `Fix_domains.domains`).
+  selfLog2 <- preComputeSelfStepDomainLog2 (runStepCompile nrrArt 1)
+  mkStepArtifact <$> runStepCompile nrrArt selfLog2
+  where
+  runStepCompile nrrArt selfLog2 =
+    compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
+      -- N=2, output size = 33*2 + 1 = 67 (two unfinalized proofs + digest
+      -- + two msg_wrap entries). Wrap domain log2 = 14 from
+      -- `override_wrap_domain:N1` (common.ml:25-29).
+      -- Heterogeneous spec: slot 0 is No_recursion_return (n=0), slot 1
+      -- is self (n=2). Per-slot FOP domain_log2 (`finalize_other_proof
+      -- ~step_domains`) uses the prev's STEP_DOMAINS (NOT wrap_domains):
+      -- * slot 0: NRR's step_domain.h, derived from `nrrArt.stepDomainLog2`.
+      -- * slot 1: self's step_domain.h, derived via shape pass.
+      -- Per-slot known wrap keys:
+      -- * slot 0: VkBlueprintConst nrrArt.wrapVk — derived from compiled NRR
+      --   wrap CS. Mirrors OCaml `Lazy.force compiled.wrap_key` at
+      --   `step_branch_data.ml:164`.
+      -- * slot 1: VkBlueprintShared — slot's prev is SELF, uses the
+      --   `exists`-allocated VK inside stepMain.
+      -- Single-rule: mpvMax = len = 2, mpvPad = 0.
+      ( \_ -> stepMain
+          @(Tuple2 (Slot Compiled 0 (StatementIO Unit (F StepField))) (Slot Compiled 2 (StatementIO Unit (F StepField))))
+          @Unit
+          @(F StepField)
+          @(F StepField)
+          @(Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
+          @2
+          @1
+          treeProofReturnRule
+          { perSlotLagrangeAt: params.perSlotLagrangeAt
+          , blindingH: params.blindingH
+          , perSlotFopDomainLog2s:
+              (nrrArt.stepDomainLog2 :< Vector.nil)
+                :< (selfLog2 :< Vector.nil)
+                :< Vector.nil
+          , perSlotVkBlueprints:
+              VkBlueprintConst nrrArt.wrapVk /\ VkBlueprintShared /\ unit
+          }
+          dummyWrapSg
+          -- Side-loaded VK carrier: two Cons slots, both compiled.
+          (tuple2 unit unit)
+      )
+      Kimchi.initialState

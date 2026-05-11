@@ -47,8 +47,9 @@ import Pickles.Prove.Compile
 import Pickles.Prove.Step (StepRule)
 import Pickles.Prove.Verify (verify)
 import Pickles.Step.Advice (getPrevAppStates)
-import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil, StepSlot)
-import Pickles.Types (StatementIO(..), StepField, StepIPARounds, WrapIPARounds)
+import Pickles.Step.Main (SlotVkBlueprintCompiled)
+import Pickles.Step.Slots (Compiled, Slot)
+import Pickles.Types (StatementIO(..), StepField, StepIPARounds, StepPerProofWitness, WrapIPARounds)
 import Pickles.Wrap.Slots (NoSlots)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
@@ -131,84 +132,54 @@ incrementRule self = do
 
 -- | `makeZeroRule` packaged: mpv=0, no prevs, valCarrier=Unit.
 mkMakeZeroEntry
-  :: Effect (RuleEntry PrevsSpecNil 0 2 Unit (F StepField) Unit 34 Unit)
-mkMakeZeroEntry =
-  mkRuleEntry
-    @PrevsSpecNil
-    @0 -- mpv (rule's own)
-    @1 -- mpvMax (TwoPhaseChain wrap circuit's mpvMax)
-    @1 -- mpvPad = mpvMax - mpv = 1
-    @2 -- nd = topBranches (TwoPhaseChain has 2 branches: makeZero, increment)
-    @34 -- outputSize = mpvMax*32 + 1 + mpvMax = 1*32+1+1
-    @Unit
-    @(F StepField)
-    @(FVar StepField)
-    @Unit
-    @Unit
-    @(F StepField)
-    @(FVar StepField)
-    @Unit
-    makeZeroRule
-    unit
+  :: Effect (RuleEntry Unit 0 2 Unit (F StepField) Unit 34 Unit Unit Unit)
+mkMakeZeroEntry = mkRuleEntry @1 @Unit @(F StepField) makeZeroRule unit
 
 -- | `incrementRule` packaged: mpv=1, one self-referential prev,
 -- | valCarrier carrying the prev's `StatementIO`.
 mkIncrementEntry
   :: Effect
        ( RuleEntry
-           (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+           (Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
            1
            2
            (Tuple1 (StatementIO (F StepField) Unit))
            (F StepField)
            ( Tuple1
-               ( StepSlot 1 StepIPARounds WrapIPARounds (F StepField)
+               ( StepPerProofWitness 1 StepIPARounds WrapIPARounds (F StepField)
                    (Type2 (SplitField (F StepField) Boolean))
                    Boolean
                )
            )
            34
            (Tuple1 SlotWrapKey)
+           (Tuple1 Unit)
+           (Tuple1 SlotVkBlueprintCompiled)
        )
-mkIncrementEntry =
-  mkRuleEntry
-    @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
-    @1 -- mpv
-    @1 -- mpvMax (= mpv, identity)
-    @0 -- mpvPad = 0
-    @2 -- nd = topBranches (TwoPhaseChain has 2 branches)
-    @34
-    @(Tuple1 (StatementIO (F StepField) Unit))
-    @(F StepField)
-    @(FVar StepField)
-    @Unit
-    @Unit
-    @(F StepField)
-    @(FVar StepField)
-    @(Tuple1 SlotWrapKey)
-    incrementRule
-    (tuple1 Self)
+mkIncrementEntry = mkRuleEntry @1 @Unit @(F StepField) incrementRule (tuple1 Self)
 
 -- | The full rules carrier `compileMulti` receives — a Tuple chain
 -- | of `RuleEntry`s (one per branch, heterogeneously typed).
 mkRulesCarrier
   :: Effect
        ( Tuple2
-           (RuleEntry PrevsSpecNil 0 2 Unit (F StepField) Unit 34 Unit)
+           (RuleEntry Unit 0 2 Unit (F StepField) Unit 34 Unit Unit Unit)
            ( RuleEntry
-               (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+               (Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
                1
                2
                (Tuple1 (StatementIO (F StepField) Unit))
                (F StepField)
                ( Tuple1
-                   ( StepSlot 1 StepIPARounds WrapIPARounds (F StepField)
+                   ( StepPerProofWitness 1 StepIPARounds WrapIPARounds (F StepField)
                        (Type2 (SplitField (F StepField) Boolean))
                        Boolean
                    )
                )
                34
                (Tuple1 SlotWrapKey)
+               (Tuple1 Unit)
+               (Tuple1 SlotVkBlueprintCompiled)
            )
        )
 mkRulesCarrier = do
@@ -221,10 +192,10 @@ mkRulesCarrier = do
 -- |   * branch 0: makeZero (mpv=0, no prevs)
 -- |   * branch 1: increment (mpv=1, one self-prev)
 type TwoPhaseChainRules =
-  RulesCons 0 Unit PrevsSpecNil Unit
+  RulesCons 0 Unit Unit Unit
     ( RulesCons 1
         (Tuple1 (StatementIO (F StepField) Unit))
-        (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+        (Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
         (Tuple1 SlotWrapKey)
         RulesNil
     )
@@ -257,10 +228,8 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     rules <- liftEffect mkRulesCarrier
     output <- liftEffect $ compileMulti
       @TwoPhaseChainRules
-      @(F StepField)
       @Unit
       @(F StepField)
-      @1
       @(Product (Vector 1) NoSlots)
       cfg
       rules
@@ -268,8 +237,11 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     let
       BranchProver makeZeroProver = fst output.provers
       BranchProver incrementProver = fst (snd output.provers)
+    -- Branch 0 (makeZero) has no prevs → spec-derived `vkCarrier =
+    -- Unit`. Branch 1 (increment) has one compiled prev slot →
+    -- `vkCarrier = Tuple1 Unit`.
     eRes <- liftEffect $ runExceptT $ makeZeroProver
-      { appInput: F zero, prevs: unit }
+      { appInput: F zero, prevs: unit, sideloadedVKs: unit }
     b0 <- case eRes of
       Left e -> liftEffect $ Exc.throw ("makeZeroProver: " <> show e)
       Right p -> pure p
@@ -278,6 +250,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     eB1 <- liftEffect $ runExceptT $ incrementProver
       { appInput: F one
       , prevs: tuple1 (InductivePrev b0 output.tag)
+      , sideloadedVKs: tuple1 unit
       }
     b1 <- case eB1 of
       Left e -> liftEffect $ Exc.throw ("incrementProver: " <> show e)
@@ -286,6 +259,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     eB2 <- liftEffect $ runExceptT $ incrementProver
       { appInput: F (Curves.fromInt 2 :: StepField)
       , prevs: tuple1 (InductivePrev b1 output.tag)
+      , sideloadedVKs: tuple1 unit
       }
     b2 <- case eB2 of
       Left e -> liftEffect $ Exc.throw ("incrementProver b2: " <> show e)
@@ -294,6 +268,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     eB3 <- liftEffect $ runExceptT $ incrementProver
       { appInput: F (Curves.fromInt 3 :: StepField)
       , prevs: tuple1 (InductivePrev b2 output.tag)
+      , sideloadedVKs: tuple1 unit
       }
     b3 <- case eB3 of
       Left e -> liftEffect $ Exc.throw ("incrementProver b3: " <> show e)

@@ -14,8 +14,10 @@
 //     ref nodes (they are dispatched via constraints). Instance-only
 //     bindings will not be detected as live and may show as "dead" if
 //     they are never called directly; filter those out manually.
-//   - FFI: foreign declarations marked `IsForeign` whose JS symbols are
-//     consumed directly from external JS (rare) are invisible here.
+//   - Foreign imports (`mod.foreign`) ARE tracked alongside `mod.decls` —
+//     unused FFI bindings are flagged. JS symbols consumed directly
+//     from external JS (i.e. never referenced from PS) still appear as
+//     dead, which is usually the correct call.
 //
 // Usage: node tools/dead-code.mjs [--json]
 
@@ -282,6 +284,12 @@ function main() {
     if (PACKAGE_FILTER && origin.pkg !== PACKAGE_FILTER) continue;
 
     const decls = declMap(mod);
+    // Foreign imports live in `mod.foreign` (an array of identifier
+    // strings), separate from `mod.decls`. They're still exportable
+    // values and reachability via `Var` refs already accounts for them
+    // — include them in the candidate set so unused FFI bindings are
+    // flagged.
+    const foreignSet = new Set(mod.foreign || []);
     // Pre-index class-method accessors for filtering
     const classMethods = new Set();
     for (const d of mod.decls) {
@@ -290,7 +298,7 @@ function main() {
     let totalExports = 0;
     const dead = [];
     for (const exp of mod.exports) {
-      if (!decls.has(exp)) continue;
+      if (!decls.has(exp) && !foreignSet.has(exp)) continue;
       totalExports++;
       if (!reachable.has(keyOf(modName, exp))) {
         if (!INCLUDE_ALL && (looksLikeInstance(exp, extraInstancePrefixes) || classMethods.has(exp))) continue;

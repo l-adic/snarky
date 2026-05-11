@@ -43,7 +43,7 @@ bulletReduceOneStepCircuit
   -> Snarky (KimchiConstraint StepField) t m { p :: AffinePoint (FVar StepField), isInfinity :: BoolVar StepField }
 bulletReduceOneStepCircuit input = do
   lScaled <- endoInv @StepField @Pallas.ScalarField @PallasG input.l input.u
-  rScaled <- endo input.r input.u
+  rScaled <- endo @128 @32 input.r input.u
   addComplete lScaled rScaled
 
 compileBulletReduceOneStep :: CompiledCircuit StepField

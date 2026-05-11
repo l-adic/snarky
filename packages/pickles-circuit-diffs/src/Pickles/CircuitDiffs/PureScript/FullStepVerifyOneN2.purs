@@ -26,6 +26,7 @@ import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dum
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
+import Pickles.Step.FinalizeOtherProof (DomainMode(..))
 import Pickles.Step.VerifyOne (verifyOne)
 import Pickles.Types (StepField)
 import Safe.Coerce (coerce)
@@ -167,6 +168,7 @@ fullStepVerifyOneN2Circuit { lagrangeAt, blindingH } inputs = do
       , srsLengthLog2: 16
       , endo: stepEndo
       , linearizationPoly: Linearization.pallas
+      , domainMode: KnownDomainsMode
       }
 
     ivpParams =

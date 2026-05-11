@@ -104,9 +104,27 @@ run_dumper() {
 
 if $want_nrr; then
   OUT="$FIXTURE_DIR/no_recursion_return_base_case.trace"
+  # NRR has 2 kimchi proves per run (counters 0 = step_b0, 1 = wrap_b0).
+  rm -f /tmp/regen_nrr_*.witness
   run_dumper "src/lib/crypto/pickles/dump_no_recursion_return/dump_no_recursion_return.exe" \
-    "export PICKLES_TRACE_FILE=$OUT"
+    "export PICKLES_TRACE_FILE=$OUT
+     export KIMCHI_WITNESS_DUMP=/tmp/regen_nrr_%c.witness
+     export KIMCHI_WITNESS_DUMP_SIDE=oc"
   echo "  -> $OUT ($(wc -l <"$OUT") lines)" >&2
+
+  WITNESS_NRR_DIR="$FIXTURE_DIR/witness_nrr"
+  mkdir -p "$WITNESS_NRR_DIR"
+  for src in 0:step_b0 1:wrap_b0; do
+    counter="${src%%:*}"
+    name="${src##*:}"
+    dst="$WITNESS_NRR_DIR/ocaml_${name}.txt"
+    if [ ! -f "/tmp/regen_nrr_${counter}.witness" ]; then
+      echo "FATAL: dump_no_recursion_return did not emit /tmp/regen_nrr_${counter}.witness" >&2
+      exit 3
+    fi
+    cp "/tmp/regen_nrr_${counter}.witness" "$dst"
+    echo "  -> $dst ($(wc -l <"$dst") lines)" >&2
+  done
 fi
 
 if $want_simple; then

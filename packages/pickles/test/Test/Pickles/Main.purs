@@ -5,9 +5,14 @@ import Prelude
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Test.Pickles.Prove.NoRecursionReturn as NoRecursionReturn
+import Test.Pickles.Prove.SideLoadedMain as SideLoadedMain
 import Test.Pickles.Prove.SimpleChain as SimpleChain
 import Test.Pickles.Prove.TreeProofReturn as TreeProofReturn
 import Test.Pickles.Prove.TwoPhaseChain as TwoPhaseChain
+import Test.Pickles.Sideload.DigestEqNrrSpec as SideloadDigestEqNrr
+import Test.Pickles.Sideload.RoundTripMainChildSpec as SideloadRoundTripMainChild
+import Test.Pickles.Sideload.RoundTripNrrSpec as SideloadRoundTripNrr
+import Test.Pickles.Sideload.VerifyNrrSpec as SideloadVerifyNrr
 import Test.Pickles.Verify.ExpandDeferredEq as ExpandDeferredEq
 import Test.Spec (SpecT)
 import Test.Spec.Reporter.Console (consoleReporter)
@@ -32,9 +37,14 @@ spec :: SpecT Aff Unit Aff Unit
 spec = do
   NoRecursionReturn.spec
   SimpleChain.spec
+  SideLoadedMain.spec
   TreeProofReturn.spec
   TwoPhaseChain.spec
   ExpandDeferredEq.spec
+  SideloadRoundTripNrr.spec
+  SideloadRoundTripMainChild.spec
+  SideloadDigestEqNrr.spec
+  SideloadVerifyNrr.spec
 
 main :: Effect Unit
 main = runSpecAndExitProcess'

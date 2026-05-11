@@ -13,7 +13,6 @@ module Pickles.Step.VerifyOne
 import Prelude
 
 import Data.Fin (getFinite) as Data.Fin
-import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
@@ -282,9 +281,10 @@ verifyOne fopParams input ivpParams = do
   -- Step 8: Assert bp challenges (step_verifier.ml:1296-1311)
   let isBaseCase = not_ input.mustVerify
   label "step8_assert_bp" $
-    for_ (Vector.zip input.unfinalized.deferredValues.bulletproofChallenges output.bulletproofChallenges) \(Tuple c1 c2) -> do
-      c2' <- if_ isBaseCase c1 c2
-      assertEq c1 c2'
+    forWithIndex_ (Vector.zip input.unfinalized.deferredValues.bulletproofChallenges output.bulletproofChallenges) \i (Tuple c1 c2) -> do
+      let idx = Data.Fin.getFinite i
+      c2' <- label ("bp_assert_iter_" <> show idx <> "_if") $ if_ isBaseCase c1 c2
+      label ("bp_assert_iter_" <> show idx <> "_eq") $ assertEq c1 c2'
 
   -- Step 9: Final result (step_main.ml:148)
   result <- label "step9_final" do

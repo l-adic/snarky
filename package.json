@@ -26,6 +26,7 @@
   },
   "homepage": "https://github.com/l-adic/snarky#readme",
   "dependencies": {
+    "json-bigint": "^1.0.0",
     "snarky-crypto": "file:./packages/crypto-provider"
   },
   "devDependencies": {

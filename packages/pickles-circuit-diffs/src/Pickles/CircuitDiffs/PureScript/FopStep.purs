@@ -13,7 +13,7 @@ import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, domainLog2, srsLengthLog2, stepEndo, unsafeIdx)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
-import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, finalizeOtherProofCircuit)
+import Pickles.Step.FinalizeOtherProof (DomainMode(..), FinalizeOtherProofOutput, finalizeOtherProofCircuit)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepField)
 import Safe.Coerce (coerce)
@@ -120,6 +120,7 @@ fopStepCircuit input =
       , srsLengthLog2
       , endo: stepEndo
       , linearizationPoly: Linearization.pallas
+      , domainMode: KnownDomainsMode
       }
   in
     finalizeOtherProofCircuit StepOtherField.fopShiftOps params

@@ -41,7 +41,7 @@ import Pickles.Prove.Compile
 import Pickles.Prove.Step (StepRule)
 import Pickles.Prove.Verify (verify)
 import Pickles.Step.Advice (getPrevAppStates)
-import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
+import Pickles.Step.Slots (Compiled, Slot)
 import Pickles.Types (StatementIO(..), StepField)
 import Pickles.Wrap.Slots (Slots1)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -89,7 +89,7 @@ simpleChainRule self = do
 type SimpleChainRules =
   RulesCons 1
     (Tuple1 (StatementIO (F StepField) Unit))
-    (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+    (Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
     (Tuple1 SlotWrapKey)
     RulesNil
 
@@ -102,32 +102,14 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- Build the 1-tuple rules carrier for compileMulti. mpvMax = 1
     -- (one prev slot); since this is the only branch, nd = 1.
     -- outputSize = mpvMax*32 + 1 + mpvMax = 32 + 1 + 1 = 34.
-    chainEntry <- liftEffect $ mkRuleEntry
-      @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
-      @1 -- mpv
-      @1 -- mpvMax
-      @0 -- mpvPad
-      @1 -- nd = topBranches (single branch)
-      @34 -- outputSize
-      @(Tuple1 (StatementIO (F StepField) Unit))
-      @(F StepField)
-      @(FVar StepField)
-      @Unit
-      @Unit
-      @(F StepField)
-      @(FVar StepField)
-      @(Tuple1 SlotWrapKey)
-      simpleChainRule
-      (tuple1 Self)
+    chainEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) simpleChainRule (tuple1 Self)
 
     let rules = tuple1 chainEntry
 
     output <- liftEffect $ compileMulti
       @SimpleChainRules
-      @(F StepField)
       @Unit
       @(F StepField)
-      @1
       @(Slots1 1)
       { srs: { vestaSrs, pallasSrs }
       , debug: false
@@ -144,7 +126,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
         -> Aff (CompiledProof 1 (StatementIO (F StepField) Unit) Unit Unit)
       runStep prevSlot appInput = do
         eRes <- liftEffect $ runExceptT $ chainProver
-          { appInput, prevs: tuple1 prevSlot }
+          { appInput, prevs: tuple1 prevSlot, sideloadedVKs: tuple1 unit }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("chainProver: " <> show e)
           Right p -> pure p

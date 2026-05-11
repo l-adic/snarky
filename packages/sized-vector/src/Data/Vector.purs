@@ -26,6 +26,7 @@ module Data.Vector
   ( Vector
   , nil
   , toUnfoldable
+  , toUnfoldable1
   , cons
   , snoc
   , (:<)
@@ -141,6 +142,9 @@ nil = Vector mempty
 -- | Convert a `Vector` to any `Unfoldable` structure.
 toUnfoldable :: forall f n. Unfoldable f => Vector n ~> f
 toUnfoldable (Vector xs) = Array.toUnfoldable xs
+
+toUnfoldable1 :: forall f n _n. Add 1 _n n => Unfoldable1 f => Vector n ~> f
+toUnfoldable1 xs = NEA.toUnfoldable1 $ NEA.fromFoldable1 xs
 
 -- | Attach an element to the front of a vector.
 -- |

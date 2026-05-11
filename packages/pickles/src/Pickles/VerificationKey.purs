@@ -1,9 +1,12 @@
--- | Step verification key and choose_key.
+-- | Wrap verification key shape (Plonk_verification_key_evals) plus
+-- | Step VK helpers (`StepVK` named-field shape, `chooseKey`).
 -- |
 -- | Reference: mina/src/lib/crypto/kimchi_backend/common/plonk_verification_key_evals.ml
 -- |            mina/src/lib/crypto/pickles/wrap_verifier.ml:212-310
 module Pickles.VerificationKey
-  ( StepVK
+  ( VerificationKey(..)
+  , extractWrapVKComms
+  , StepVK
   , chooseKey
   ) where
 
@@ -13,15 +16,79 @@ import Data.Reflectable (class Reflectable)
 import Data.Semigroup.Foldable (foldl1)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
+import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Pickles.ProofFFI (vestaVerifierIndexCommitments)
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
+import Snarky.Backend.Kimchi.Types (VerifierIndex)
 import Snarky.Circuit.CVar (add_)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, label, mul_, seal)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, label, mul_, seal)
+import Snarky.Circuit.DSL.Monad (class CheckedType, check)
+import Snarky.Circuit.Types (class CircuitType, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Vesta as Vesta
+import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
+import Type.Proxy (Proxy(..))
+
+-- | Plonk verification key: sigma(7), coefficients(15), index(6) commitments.
+-- |
+-- | OCaml hlist order: sigma_comm, coefficients_comm, index commitments
+-- | (generic, psm, complete_add, mul, emul, endomul_scalar).
+-- |
+-- | Parameterized by the element type so the same newtype works for both
+-- | value and var representations on either Pasta curve.
+-- |
+-- | Reference: plonk_verification_key_evals.ml
+newtype VerificationKey pt = VerificationKey
+  { sigma :: Vector 7 pt
+  , coeff :: Vector 15 pt
+  , index :: Vector 6 pt
+  }
+
+instance (CircuitType f a var) => CircuitType f (VerificationKey a) (VerificationKey var) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(Tuple3 (Vector 7 a) (Vector 15 a) (Vector 6 a)))
+  valueToFields (VerificationKey r) = genericValueToFields (tuple3 r.sigma r.coeff r.index)
+  fieldsToValue fs =
+    let
+      tup :: Tuple3 (Vector 7 a) (Vector 15 a) (Vector 6 a)
+      tup = genericFieldsToValue fs
+    in
+      uncurry3 (\sigma coeff index -> VerificationKey { sigma, coeff, index }) tup
+  varToFields (VerificationKey r) = genericVarToFields @(Tuple3 (Vector 7 a) (Vector 15 a) (Vector 6 a)) (tuple3 r.sigma r.coeff r.index)
+  fieldsToVar fs =
+    let
+      tup :: Tuple3 (Vector 7 var) (Vector 15 var) (Vector 6 var)
+      tup = genericFieldsToVar @(Tuple3 (Vector 7 a) (Vector 15 a) (Vector 6 a)) fs
+    in
+      uncurry3 (\sigma coeff index -> VerificationKey { sigma, coeff, index }) tup
+
+instance (CheckedType f c var) => CheckedType f c (VerificationKey var) where
+  check (VerificationKey r) = check (tuple3 r.sigma r.coeff r.index)
+
+-- | Project σ / coeff / index commitments out of a hydrated kimchi
+-- | wrap `VerifierIndex` into the in-circuit-shaped `VerificationKey`.
+-- | The wrap VK's commitments are Pallas points with coordinates in
+-- | Pallas.BaseField = Vesta.ScalarField (= the step circuit's field),
+-- | so no cross-field coercion is needed.
+extractWrapVKComms
+  :: VerifierIndex Pallas.G Pallas.ScalarField
+  -> VerificationKey (WeierstrassAffinePoint Pallas.G (F Vesta.ScalarField))
+extractWrapVKComms vk =
+  let
+    comms = vestaVerifierIndexCommitments vk
+
+    wrapPt :: AffinePoint Vesta.ScalarField -> WeierstrassAffinePoint Pallas.G (F Vesta.ScalarField)
+    wrapPt pt = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
+  in
+    VerificationKey
+      { sigma: map wrapPt comms.sigma
+      , coeff: map wrapPt comms.coeff
+      , index: map wrapPt comms.index
+      }
 
 -- | Plonk_verification_key_evals.t
 -- | Non-optional fields only (optional are all Opt.Nothing for Features.none).

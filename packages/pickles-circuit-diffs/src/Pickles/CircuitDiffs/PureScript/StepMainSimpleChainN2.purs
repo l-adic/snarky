@@ -14,17 +14,15 @@ module Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Maybe (Maybe(..))
-import Data.Tuple (Tuple)
+import Data.Tuple.Nested (Tuple2, tuple2, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
-import Partial.Unsafe (unsafeCrashWith)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
+import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Step.Main (RuleOutput, stepMain)
-import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
+import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
+import Pickles.Step.Slots (Compiled, Slot)
 import Pickles.Types (StatementIO, StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -78,39 +76,36 @@ simpleChainN2Rule appState = do
     }
 
 compileStepMainSimpleChainN2
-  :: StepMainSimpleChainN2Params -> Effect (CompiledCircuit StepField)
-compileStepMainSimpleChainN2 params =
-  compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
-    -- Step domain log2 = 16 (OCaml: dump_circuit_impl.ml
-    -- `step_domains = Pow_2_roots_of_unity 16` in step_main_simple_chain_n2).
-    -- Single-rule: mpvMax = len = 2, mpvPad = 0.
-    ( \_ -> stepMain
-        @( PrevsSpecCons 2 (StatementIO (F StepField) Unit)
-            (PrevsSpecCons 2 (StatementIO (F StepField) Unit) PrevsSpecNil)
-        )
-        @67
-        @(F StepField)
-        @(FVar StepField)
-        @Unit
-        @Unit
-        @(F StepField)
-        @(FVar StepField)
-        @( Tuple (StatementIO (F StepField) Unit)
-            (Tuple (StatementIO (F StepField) Unit) Unit)
-        )
-        @2
-        @0
-        simpleChainN2Rule
-        { perSlotLagrangeAt: params.lagrangeAt :< params.lagrangeAt :< Vector.nil
-        , blindingH: params.blindingH
-        , perSlotFopDomainLog2s:
-            (16 :< Vector.nil) :< (16 :< Vector.nil) :< Vector.nil
-        , perSlotKnownWrapKeys: Nothing :< Nothing :< Vector.nil
-        -- Phase 2b.31a: thunks for mpvMax-padding dummies. Single-rule
-        -- callers have mpvPad=0 so `mpvFrontPad` short-circuits and the
-        -- thunks never fire — `unsafeCrashWith` is fine.
-        , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
-        }
-        dummyWrapSg
-    )
-    Kimchi.initialState
+  :: StepMainSimpleChainN2Params -> Effect StepArtifact
+compileStepMainSimpleChainN2 params = do
+  -- Both prev slots are self → both FOP domain log2s = this rule's own
+  -- step domain log2. Resolved via two-pass compile (mirrors OCaml
+  -- `Fix_domains.domains`).
+  selfLog2 <- preComputeSelfStepDomainLog2 (runStepCompile 1)
+  mkStepArtifact <$> runStepCompile selfLog2
+  where
+  runStepCompile selfLog2 =
+    compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
+      -- Single-rule: mpvMax = len = 2, mpvPad = 0.
+      ( \_ -> stepMain
+          @(Tuple2 (Slot Compiled 2 (StatementIO (F StepField) Unit)) (Slot Compiled 2 (StatementIO (F StepField) Unit)))
+          @(F StepField)
+          @Unit
+          @(F StepField)
+          @( Tuple2 (StatementIO (F StepField) Unit) (StatementIO (F StepField) Unit)
+          )
+          @2
+          @1
+          simpleChainN2Rule
+          { perSlotLagrangeAt: params.lagrangeAt :< params.lagrangeAt :< Vector.nil
+          , blindingH: params.blindingH
+          , perSlotFopDomainLog2s:
+              (selfLog2 :< Vector.nil) :< (selfLog2 :< Vector.nil) :< Vector.nil
+          , perSlotVkBlueprints: VkBlueprintShared /\ VkBlueprintShared /\ unit
+          }
+          dummyWrapSg
+          -- Side-loaded VK carrier: two Cons slots,
+          -- both compiled; carrier = `Unit /\ Unit /\ Unit`.
+          (tuple2 unit unit)
+      )
+      Kimchi.initialState
