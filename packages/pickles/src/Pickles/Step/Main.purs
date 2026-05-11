@@ -827,13 +827,13 @@ stepMain
   -- `buildSlotVkSources` emits no `exists` calls.
   { prevPublicInputs, proofMustVerify, publicOutput, perSlotVkSources } <-
     label "rule_main" do
-      vks <- buildSlotVkSources @cell @prevsSpec perSlotVkBlueprints sideloadedVkCarrier
+      perSlotVkSources <- buildSlotVkSources @cell @prevsSpec perSlotVkBlueprints sideloadedVkCarrier
       result <- rule publicInput
       pure
         { prevPublicInputs: result.prevPublicInputs
         , proofMustVerify: result.proofMustVerify
         , publicOutput: result.publicOutput
-        , perSlotVkSources: vks
+        , perSlotVkSources
         }
 
   let
