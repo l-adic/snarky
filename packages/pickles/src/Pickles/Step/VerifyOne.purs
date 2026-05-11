@@ -167,11 +167,11 @@ verifyOne fopParams input ivpParams = do
 
   -- DIAG: emit each of the 4 FOP sub-check booleans to identify which
   -- false one causes the "1 != 2" assertion downstream.
-  ivpTrace "diag.fop.xiCorrect" (coerce xiCorrect :: FVar StepField)
-  ivpTrace "diag.fop.bCorrect" (coerce bCorrect :: FVar StepField)
-  ivpTrace "diag.fop.cipCorrect" (coerce cipCorrect :: FVar StepField)
-  ivpTrace "diag.fop.plonkOk" (coerce plonkOk :: FVar StepField)
-  ivpTrace "diag.fop.finalized" (coerce finalized :: FVar StepField)
+  ivpTrace "diag.fop.xiCorrect" (coerce xiCorrect)
+  ivpTrace "diag.fop.bCorrect" (coerce bCorrect)
+  ivpTrace "diag.fop.cipCorrect" (coerce cipCorrect)
+  ivpTrace "diag.fop.plonkOk" (coerce plonkOk)
+  ivpTrace "diag.fop.finalized" (coerce finalized)
 
   -- Steps 3-4: sponge_after_index + message hash (step_main.ml:76-104)
   -- Build per-proof data for the opt_sponge message hash.
@@ -205,7 +205,7 @@ verifyOne fopParams input ivpParams = do
               , b: input.proofState.b
               , branchData:
                   { domainLog2: input.branchData.domainLog2Var
-                  , proofsVerifiedMask: (coerce input.branchData.mask0 :: BoolVar StepField) :< (coerce input.branchData.mask1 :: BoolVar StepField) :< Vector.nil
+                  , proofsVerifiedMask: (coerce input.branchData.mask0) :< (coerce input.branchData.mask1) :< Vector.nil
                   }
               }
           , spongeDigestBeforeEvaluations: input.proofState.spongeDigest
@@ -274,7 +274,7 @@ verifyOne fopParams input ivpParams = do
 
   -- DIAG: emit IVP success for each slot — complements diag.fop.* to
   -- localize the failing sub-check in verify_one's final result.
-  ivpTrace "diag.ivp.success" (coerce output.success :: FVar StepField)
+  ivpTrace "diag.ivp.success" (coerce output.success)
 
   -- Step 7: Assert sponge digest (step_verifier.ml:1293-1294, unconditional)
   label "step7_assert_digest" $

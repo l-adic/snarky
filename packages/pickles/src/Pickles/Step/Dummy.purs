@@ -427,7 +427,7 @@ wrapDummyUnfinalizedProof bcd =
   let
     u = bcd.unfinalizedConstantDummy
     evals = bcd.dummyEvals
-    Curves.EndoScalar wEndo = (Curves.endoScalar :: Curves.EndoScalar Pallas.ScalarField)
+    Curves.EndoScalar wEndo = (Curves.endoScalar)
 
     alphaExpanded = toFieldPure u.plonk.alpha wEndo
     betaExpanded = SizedF.toField u.plonk.beta :: WrapField
@@ -437,7 +437,7 @@ wrapDummyUnfinalizedProof bcd =
     -- wrap_domains ~proofs_verified:2 = Pow_2_roots_of_unity 15
     wrapDomainLog2 = 15
     zkRows = 3
-    omega = (domainGenerator wrapDomainLog2 :: WrapField)
+    omega = (domainGenerator wrapDomainLog2)
     n = pow2 wrapDomainLog2
     zetaToNMinus1 = Curves.pow zetaExpanded n - one
     omegaM1 = recip omega
@@ -450,7 +450,7 @@ wrapDummyUnfinalizedProof bcd =
       { w: map _.zeta (Vector.take @7 evals.witnessEvals)
       , sigma: map _.zeta evals.sigmaEvals
       , z: evals.zEvals
-      , shifts: (domainShifts wrapDomainLog2 :: Vector 7 WrapField)
+      , shifts: (domainShifts wrapDomainLog2)
       , alpha: alphaExpanded
       , beta: betaExpanded
       , gamma: gammaExpanded
@@ -563,14 +563,14 @@ stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
     mostRecentWidth = reflectType (Proxy @n)
     p = bcd.proofDummy.plonk
     evals = bcd.proofDummy.prevEvals
-    Curves.EndoScalar stepEndoScalar = (Curves.endoScalar :: Curves.EndoScalar Vesta.ScalarField)
+    Curves.EndoScalar stepEndoScalar = (Curves.endoScalar)
 
     alphaExpanded = toFieldPure p.alpha stepEndoScalar
     betaExpanded = SizedF.toField p.beta :: StepField
     gammaExpanded = SizedF.toField p.gamma :: StepField
     zetaExpanded = toFieldPure p.zeta stepEndoScalar
     zkRows = 3
-    omega = (domainGenerator domainLog2 :: StepField)
+    omega = (domainGenerator domainLog2)
     n = pow2 domainLog2
     zetaw = zetaExpanded * omega
     zetaToNMinus1 = Curves.pow zetaExpanded n - one
@@ -611,7 +611,7 @@ stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
       { w: map _.zeta (Vector.take @7 evals.witnessEvals)
       , sigma: map _.zeta evals.sigmaEvals
       , z: evals.zEvals
-      , shifts: (domainShifts domainLog2 :: Vector 7 StepField)
+      , shifts: (domainShifts domainLog2)
       , alpha: alphaExpanded
       , beta: betaExpanded
       , gamma: gammaExpanded
@@ -692,7 +692,7 @@ stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
         , b: toShifted (F b)
         }
     , shouldFinalize: false
-    , spongeDigestBeforeEvaluations: F (zero :: StepField)
+    , spongeDigestBeforeEvaluations: F (zero)
     }
 
 -- | OCaml `common.ml:25-29` — maps max_proofs_verified to the

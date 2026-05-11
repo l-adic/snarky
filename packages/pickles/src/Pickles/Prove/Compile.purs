@@ -3373,8 +3373,8 @@ runMultiProverBody
       , domainLog2: selfStepDomainLog2
       , zkRows
       , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
-      , generator: (domainGenerator selfStepDomainLog2 :: StepField)
-      , shifts: (domainShifts selfStepDomainLog2 :: Vector 7 StepField)
+      , generator: (domainGenerator selfStepDomainLog2)
+      , shifts: (domainShifts selfStepDomainLog2)
       , vanishesOnZk: permutationVanishingPolynomial
           { domainLog2: selfStepDomainLog2
           , zkRows

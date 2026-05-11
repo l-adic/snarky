@@ -313,7 +313,7 @@ buildStepAdvice input =
       --   N0 → [F, F]
       --   N1 → [F, T]
       --   N2 → [T, T]
-      { domainLog2: F (Curves.fromInt input.stepDomainLog2 :: StepField)
+      { domainLog2: F (Curves.fromInt input.stepDomainLog2)
       , mask0: mrw >= 2
       , mask1: mrw >= 1
       }
@@ -617,7 +617,7 @@ dummyWrapTockPublicInput input =
     -- SizedF 128 (F StepField) → WrapField via type-safe bit
     -- reinterpretation (`coerceViaBits` is bounded by `Compare 128 m LT`
     -- on both fields' bit widths, so no value can be out of range).
-    sizedStepBits = SizedF.toField <<< (coerceViaBits :: SizedF 128 StepField -> SizedF 128 WrapField) <<< SizedF.unwrapF
+    sizedStepBits = SizedF.toField <<< (coerceViaBits) <<< SizedF.unwrapF
 
     -- 5 Type1 fp fields, order: cip, b, zetaToSrsLength,
     -- zetaToDomainSize, perm (matches `packStatement`).
@@ -1038,7 +1038,7 @@ buildSlotAdvice input = do
     oracles = vestaProofOracles input.wrapVK
       { proof: input.wrapProof
       , publicInput: input.wrapPublicInput
-      , prevChallenges: map toFFIChalPoly (Vector.toUnfoldable input.prevChalPolys :: Array _)
+      , prevChallenges: map toFFIChalPoly (Vector.toUnfoldable input.prevChalPolys)
       }
 
   Trace.field "expand_proof.wrap_vk_digest" (vestaVerifierIndexDigest input.wrapVK)
@@ -1057,7 +1057,7 @@ buildSlotAdvice input = do
     rawPrechalsForTrace = vestaProofOpeningPrechallenges input.wrapVK
       { proof: input.wrapProof
       , publicInput: input.wrapPublicInput
-      , prevChallenges: map toFFIChalPoly (Vector.toUnfoldable input.prevChalPolys :: Array _)
+      , prevChallenges: map toFFIChalPoly (Vector.toUnfoldable input.prevChalPolys)
       }
   for_ (Array.mapWithIndex Tuple rawPrechalsForTrace) \(Tuple i v) ->
     Trace.field ("expand_proof.bp_prechal." <> show i) v
@@ -1067,10 +1067,10 @@ buildSlotAdvice input = do
     chalToStep s = SizedF.wrapF (coerceViaBits s)
 
     wrapEndoScalar =
-      let EndoScalar e = (endoScalar :: EndoScalar WrapField) in e
+      let EndoScalar e = (endoScalar) in e
 
     stepEndoScalarF =
-      let EndoScalar e = (endoScalar :: EndoScalar StepField) in e
+      let EndoScalar e = (endoScalar) in e
 
     dummyStepBpChalsRaw = map SizedF.wrapF dummyIpaChallenges.stepRaw
 
@@ -1154,7 +1154,7 @@ buildSlotAdvice input = do
       , wrapVerifierIndex: input.wrapVK
       , wrapProof: input.wrapProof
       , tockPublicInput: input.wrapPublicInput
-      , wrapOraclesPrevChallenges: map toFFIChalPoly (Vector.toUnfoldable input.prevChalPolys :: Array _)
+      , wrapOraclesPrevChallenges: map toFFIChalPoly (Vector.toUnfoldable input.prevChalPolys)
       , wrapDomainLog2: input.wrapDomainLog2
       , wrapEndo: wrapEndoScalar
       , wrapAllEvals
@@ -1266,9 +1266,9 @@ buildSlotAdvice input = do
 
     openingZ2Raw = vestaProofOpeningZ2 input.wrapProof
 
-    z1 = toShifted (F openingZ1Raw :: F WrapField)
+    z1 = toShifted (F openingZ1Raw)
 
-    z2 = toShifted (F openingZ2Raw :: F WrapField)
+    z2 = toShifted (F openingZ2Raw)
 
     wrapCommits = vestaProofCommitments input.wrapProof
 
@@ -1904,7 +1904,7 @@ stepCompile ctx rule = do
       }
 
     endo =
-      let EndoBase e = (endoBase :: EndoBase StepField) in e
+      let EndoBase e = (endoBase) in e
 
     proverIndex =
       createProverIndex @StepField @VestaG

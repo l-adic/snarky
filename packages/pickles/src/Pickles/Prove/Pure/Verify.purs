@@ -94,7 +94,7 @@ challengesDigest
    . Vector n (Vector StepIPARounds StepField)
   -> StepField
 challengesDigest expandedOldBpChals =
-  evalPureSpongeM (initialSponge :: Sponge StepField) do
+  evalPureSpongeM (initialSponge) do
     for_ expandedOldBpChals \inner -> for_ inner absorb
     squeeze
 
@@ -122,7 +122,7 @@ expandDeferredForVerify input =
     -- `input.oldBulletproofChallenges` is already `Ipa.Step.compute_challenges`-
     -- expanded by the caller (step field elements, not raw 128-bit chals).
     { xiRawSized, rRawSized } =
-      evalPureSpongeM (initialSponge :: Sponge StepField) do
+      evalPureSpongeM (initialSponge) do
         absorb input.spongeDigestBeforeEvaluations
         absorb (challengesDigest input.oldBulletproofChallenges)
         absorb input.allEvals.ftEval1

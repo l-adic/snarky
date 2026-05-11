@@ -274,7 +274,7 @@ sumMaskedAffine
   -> AffinePoint (FVar f)
 sumMaskedAffine bits perBranchPts =
   let
-    boolFvars = map (coerce :: BoolVar f -> FVar f) bits
+    boolFvars = map (coerce) bits
 
     scaledPts = Vector.zipWith
       ( \b { x: F x', y: F y' } ->

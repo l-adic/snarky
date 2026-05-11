@@ -139,7 +139,7 @@ mkVerifier { wrapVK, vestaSrs, stepDomainLog2 } =
   , stepSrsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
   , stepGenerator: domainGenerator stepDomainLog2 :: StepField
   , stepShifts: domainShifts stepDomainLog2 :: Vector 7 StepField
-  , stepEndo: case (endoScalar :: EndoScalar StepField) of EndoScalar e -> e
+  , stepEndo: case (endoScalar) of EndoScalar e -> e
   , linearizationPoly: Linearization.pallas
   }
 

@@ -177,7 +177,7 @@ buildPow2Pows
   -> Snarky (KimchiConstraint f) t m (Vector k (FVar f))
 buildPow2Pows x = do
   -- Use the tail of a k-sized vector (k-1 elements) to drive k-1 squarings
-  let { tail: drivers } = Vector.uncons (Vector.generate identity :: Vector k _)
+  let { tail: drivers } = Vector.uncons (Vector.generate identity)
   Tuple rest _ <- mapAccumM
     ( \prev _ -> do
         sq <- square_ prev

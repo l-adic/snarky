@@ -308,7 +308,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
     pending = Array.concat $ Vector.toUnfoldable $
       Vector.zipWith
         ( \keep chals ->
-            map (Tuple keep) (Vector.toUnfoldable chals :: Array _)
+            map (Tuple keep) (Vector.toUnfoldable chals)
         )
         mask
         prevChallenges
@@ -316,7 +316,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   { xi, r, xiCorrect } <- evalSpongeM initialSpongeCircuit do
     absorb unfinalized.spongeDigestBeforeEvaluations
     challengeDigest <- liftSnarky $
-      OptSponge.squeeze (OptSponge.create :: OptSponge.OptSponge f) pending
+      OptSponge.squeeze (OptSponge.create) pending
     absorb challengeDigest
     absorbAllEvals allEvals
     xiActual <- squeezeScalarChallenge { endo: endoVar }

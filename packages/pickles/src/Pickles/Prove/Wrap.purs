@@ -321,8 +321,8 @@ buildWrapAdvice input =
            (Type1 (F WrapField))
     openingProof = WrapProofOpening
       { lr: lrVec
-      , z1: toShifted (F z1Step :: F StepField)
-      , z2: toShifted (F z2Step :: F StepField)
+      , z1: toShifted (F z1Step)
+      , z2: toShifted (F z2Step)
       , delta: mkVestaPt deltaPt
       , sg: mkVestaPt sgPt
       }
@@ -492,7 +492,7 @@ wrapCompile ctx = do
     -- step-side fix in `Pickles.Prove.Step.purs:1429-1431` (commit
     -- `20674463`) — same root cause, opposite curve.
     endo =
-      let EndoBase e = (endoBase :: EndoBase WrapField) in e
+      let EndoBase e = (endoBase) in e
 
     proverIndex =
       createProverIndex @WrapField @PallasG
@@ -586,7 +586,7 @@ wrapSolveAndProve ctx compileResult = do
                     , challenges: Vector.toUnfoldable r.challenges
                     }
                 )
-                (Vector.toUnfoldable ctx.kimchiPrevChallenges :: Array _)
+                (Vector.toUnfoldable ctx.kimchiPrevChallenges)
           }
       pure
         { proverIndex: compileResult.proverIndex
@@ -700,7 +700,7 @@ buildWrapMainConfigMulti vestaSrs { perBranch } =
     domainLog2s = map _.stepDomainLog2 perBranch
     headDomainLog2 = (Vector.uncons perBranch).head.stepDomainLog2
     allEqual = Array.all (_ == headDomainLog2)
-      (Vector.toUnfoldable domainLog2s :: Array Int)
+      (Vector.toUnfoldable domainLog2s)
     perBranchLookup i =
       map
         ( \b ->

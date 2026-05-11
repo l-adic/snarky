@@ -480,7 +480,7 @@ wrapMain config (StatementPacked stmtR) = do
             let
               bitIdx = branchDataMaskWidth - 1 - slotIdx
               scaled = CVar.scale_ (fromInt (Int.pow 2 bitIdx) :: WrapField)
-                (coerce m :: FVar WrapField)
+                (coerce m)
             in
               add_ acc scaled
         )

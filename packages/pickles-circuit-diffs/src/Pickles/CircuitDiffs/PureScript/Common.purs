@@ -151,7 +151,7 @@ deriveStepVKFromCompiled vestaSrs builtState =
       }
 
     endo :: StepField
-    endo = let EndoBase e = (endoBase :: EndoBase StepField) in e
+    endo = let EndoBase e = (endoBase) in e
     proverIndex = createProverIndex @StepField @VestaG
       { endo, constraintSystem, crs: vestaSrs }
     verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
@@ -182,7 +182,7 @@ deriveWrapVKFromCompiled pallasSrs builtState =
       }
 
     endo :: WrapField
-    endo = let EndoBase e = (endoBase :: EndoBase WrapField) in e
+    endo = let EndoBase e = (endoBase) in e
     proverIndex = createProverIndex @WrapField @PallasG
       { endo, constraintSystem, crs: pallasSrs }
     verifierIndex = createVerifierIndex @WrapField @PallasG proverIndex

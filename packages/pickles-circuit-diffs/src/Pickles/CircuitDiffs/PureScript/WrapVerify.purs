@@ -38,7 +38,7 @@ wrapVerifyCircuit { lagrangeAt, blindingH } inputs = do
   let
     at = unsafeIdx inputs
     readPt i = { x: at i, y: at (i + 1) }
-    ivpInput = parseIvpWrapInput (Vector.take inputs :: Vector 177 _)
+    ivpInput = parseIvpWrapInput (Vector.take inputs)
     constDummyPt = let { x: F x', y: F y' } = dummyVestaPt in { x: const_ x', y: const_ y' }
 
     ivpParams =

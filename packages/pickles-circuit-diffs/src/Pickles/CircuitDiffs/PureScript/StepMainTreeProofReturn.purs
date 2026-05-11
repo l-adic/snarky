@@ -114,7 +114,7 @@ treeProofReturnRule
 treeProofReturnRule _ = do
   no_recursive_input <- exists $ lift $ getTreeProofReturnNoRecursiveInput unit
   prev <- exists $ lift $ getTreeProofReturnPrev unit
-  (is_base_case :: BoolVar StepField) <- exists $ lift $
+  (is_base_case) <- exists $ lift $
     getTreeProofReturnIsBaseCase unit
   let proofMustVerify = not_ is_base_case
   self <- if_ is_base_case (const_ zero) (CVar.add_ (const_ one) prev)

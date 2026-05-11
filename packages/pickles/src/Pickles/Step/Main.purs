@@ -380,7 +380,7 @@ mpvFrontPad mkDummy real =
         dummy = mkDummy unit
         arr =
           Array.replicate n dummy
-            <> (Vector.toUnfoldable real :: Array a)
+            <> (Vector.toUnfoldable real)
       in
         unsafePartial $ fromJust $ Vector.toVector @mpvMax arr
 
@@ -720,7 +720,7 @@ unfFields unf =
     bpFields = map toField unf.deferredValues.bulletproofChallenges
 
     shouldFinalizeField :: Vector 1 (FVar StepField)
-    shouldFinalizeField = (coerce unf.shouldFinalize :: FVar StepField) :< Vector.nil
+    shouldFinalizeField = (coerce unf.shouldFinalize) :< Vector.nil
   in
     cipFields
       `Vector.append` bFields
@@ -817,7 +817,7 @@ stepMain
   let
     requestInput :: m inputVal
     requestInput = getStepPublicInput @len @StepIPARounds @WrapIPARounds @PallasG unit
-  (publicInput :: input) <- exists $ lift requestInput
+  (publicInput) <- exists $ lift requestInput
 
   -- 2. rule_main — wraps both the user's rule body AND the side-loaded VK
   -- exists. Mirrors OCaml's `with_label "rule_main" (fun () -> rule.main ...)`
