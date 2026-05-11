@@ -484,3 +484,264 @@ for (const mod of pickleMods) {
 
 fs.writeFileSync(OUTPUT, out.join("\n"));
 console.log(`Wrote ${OUTPUT} (${pickleMods.length} modules, ${totalEdges} edges).`);
+
+// ---------- 8. Phase 2: rule-scanner output ---------------------------
+
+const PROPOSED = path.join(OUTPUT_DIR, "pickles-tiering-proposed.md");
+
+// Helper — extract just the binding names from a module's export list,
+// dropping facade entries and partial-comment noise.
+function bindingNames(mod) {
+  const p = parsed[mod];
+  if (!p.exports) return [];
+  return p.exports
+    .map(classifyExportEntry)
+    .filter((e) => e.form !== "module")
+    .map((e) => e.name);
+}
+
+// For each binding, return its cluster set (from importers).
+function bindingClusterSet(mod, name) {
+  const set = bindingImporters[mod].get(name);
+  if (!set) return new Set();
+  return new Set([...set].map(clusterOf));
+}
+
+// Partition a module's bindings by their cluster-set signature.
+function partitionByClusters(mod) {
+  const partition = new Map(); // key: sorted-cluster-string, value: [names]
+  for (const name of bindingNames(mod)) {
+    const cs = bindingClusterSet(mod, name);
+    if (cs.size === 0) {
+      // unused — its own bucket
+      const k = "(unused)";
+      if (!partition.has(k)) partition.set(k, []);
+      partition.get(k).push(name);
+      continue;
+    }
+    const key = [...cs].sort().join(",");
+    if (!partition.has(key)) partition.set(key, []);
+    partition.get(key).push(name);
+  }
+  return partition;
+}
+
+// --- M2: strict-AND violation (Step or Wrap module exports binding(s) used by the other side)
+const m2 = [];
+for (const mod of pickleMods) {
+  const nat = naturalTier(mod);
+  if (!nat.startsWith("2a") && !nat.startsWith("2b")) continue;
+  const mySide = nat.startsWith("2a") ? "Step" : "Wrap";
+  const otherSide = mySide === "Step" ? "Wrap" : "Step";
+  for (const name of bindingNames(mod)) {
+    const cs = bindingClusterSet(mod, name);
+    if (cs.has(otherSide)) {
+      const otherOnly = !cs.has(mySide);
+      m2.push({
+        mod, name,
+        clusters: [...cs].sort(),
+        mySide, otherSide,
+        suggestion: otherOnly
+          ? `wrong cluster: move to Pickles.${otherSide}.* (only ${otherSide} importers)`
+          : `promote to tier 1 (strict-AND: ${[...cs].filter((c) => c === "Step" || c === "Wrap").join("+")})`,
+      });
+    }
+  }
+}
+
+// --- C3: side-partition split. Group a module's bindings into four
+// cells by their (Step?, Wrap?) flags:
+//   both:     binding used by Step AND Wrap          → stays in shared module
+//   stepOnly: binding used by Step, not Wrap          → extract to Pickles.Step.*
+//   wrapOnly: binding used by Wrap, not Step          → extract to Pickles.Wrap.*
+//   neither:  no Step or Wrap importer (Prove/Compile only) → ambiguous, keep
+// A split candidate has ≥3 bindings in stepOnly or wrapOnly (= an
+// extractable cell). Fires regardless of natural tier — applies to
+// any module with this side-asymmetry, including Step.* / Wrap.*
+// (where stepOnly+wrapOnly together indicate misfile or shared).
+const c3 = [];
+for (const mod of pickleMods) {
+  // C3 targets non-Step/Wrap modules — Step/Wrap mis-clustering is M2's job.
+  const nat = naturalTier(mod);
+  if (nat.startsWith("2a") || nat.startsWith("2b")) continue;
+  const cells = { both: [], stepOnly: [], wrapOnly: [], neither: [] };
+  for (const name of bindingNames(mod)) {
+    const cs = bindingClusterSet(mod, name);
+    if (cs.size === 0) continue;
+    const hasS = cs.has("Step"), hasW = cs.has("Wrap");
+    if (hasS && hasW) cells.both.push(name);
+    else if (hasS) cells.stepOnly.push(name);
+    else if (hasW) cells.wrapOnly.push(name);
+    else cells.neither.push(name);
+  }
+  const extractable = (cells.stepOnly.length >= 3 ? 1 : 0)
+                    + (cells.wrapOnly.length >= 3 ? 1 : 0);
+  if (extractable === 0) continue;
+  // Only useful as a "split" if there's something to leave behind.
+  const remaining = cells.both.length + cells.neither.length
+                  + (cells.stepOnly.length < 3 ? cells.stepOnly.length : 0)
+                  + (cells.wrapOnly.length < 3 ? cells.wrapOnly.length : 0);
+  if (remaining === 0 && extractable < 2) continue;
+  c3.push({ mod, cells, totalUsed: cells.both.length + cells.stepOnly.length + cells.wrapOnly.length + cells.neither.length });
+}
+
+// --- M1: module is misfiled — its tier-0/1 placement is unjustified
+// because no binding satisfies strict-AND (Step AND Wrap) and the
+// majority of bindings are one-sided.
+const m1 = [];
+for (const mod of pickleMods) {
+  const nat = naturalTier(mod);
+  if (nat !== "0" && nat !== "1") continue;
+  let stepOnly = 0, wrapOnly = 0, both = 0, neither = 0;
+  for (const name of bindingNames(mod)) {
+    const cs = bindingClusterSet(mod, name);
+    if (cs.size === 0) continue;
+    if (cs.has("Step") && cs.has("Wrap")) both++;
+    else if (cs.has("Step")) stepOnly++;
+    else if (cs.has("Wrap")) wrapOnly++;
+    else neither++;
+  }
+  // Any single binding shared between Step and Wrap means tier-0/1 is
+  // justified — don't flag.
+  if (both > 0) continue;
+  const used = stepOnly + wrapOnly + neither;
+  if (used < 4) continue;
+  if (stepOnly >= 3 && wrapOnly === 0) {
+    m1.push({ mod, side: "Step", stepOnly, wrapOnly, both, neither, used });
+  } else if (wrapOnly >= 3 && stepOnly === 0) {
+    m1.push({ mod, side: "Wrap", stepOnly, wrapOnly, both, neither, used });
+  }
+}
+
+// --- D2: facade (already detected)
+const d2 = pickleMods.filter((m) => parsed[m].body_kind === "facade");
+
+// --- D3: single-binding single-caller, ≤50 LOC
+const d3 = [];
+for (const mod of pickleMods) {
+  const p = parsed[mod];
+  if (p.loc > 50) continue;
+  const exps = bindingNames(mod);
+  if (exps.length !== 1) continue;
+  if (importers[mod].length !== 1) continue;
+  d3.push({ mod, loc: p.loc, binding: exps[0], caller: importers[mod][0].importer });
+}
+
+// --- D4: orphan (no in-package importers)
+const d4 = pickleMods.filter((m) => importers[m].length === 0);
+
+// --- Emit
+const lines = [];
+lines.push("# Pickles tiering: proposed moves");
+lines.push("");
+lines.push("Auto-generated by `pickles-inventory.js` (Phase 2 scan). Each entry");
+lines.push("cites the rule that fired, the source/target, and the importer evidence");
+lines.push("from the inventory. Curate by hand into `docs/pickles-tiering.md`.");
+lines.push("");
+lines.push("## Summary");
+lines.push("");
+lines.push(`- M2 strict-AND violations: ${m2.length}`);
+lines.push(`- C3 grab-bag splits: ${c3.length}`);
+lines.push(`- M1 cohesion-move candidates: ${m1.length}`);
+lines.push(`- D2 facade modules: ${d2.length}`);
+lines.push(`- D3 single-binding inline candidates: ${d3.length}`);
+lines.push(`- D4 orphan modules: ${d4.length}`);
+lines.push("");
+
+if (m2.length > 0) {
+  lines.push("## M2 — strict-AND violations");
+  lines.push("");
+  lines.push("Bindings that live in a Step.* or Wrap.* module but are imported by the");
+  lines.push("opposite side. Each is either (a) a true tier-1 candidate to extract into");
+  lines.push("a shared module, or (b) misfiled and should move sideways.");
+  lines.push("");
+  // group by source module
+  const byMod = new Map();
+  for (const e of m2) {
+    if (!byMod.has(e.mod)) byMod.set(e.mod, []);
+    byMod.get(e.mod).push(e);
+  }
+  for (const [mod, entries] of [...byMod.entries()].sort()) {
+    lines.push(`### \`${mod}\``);
+    lines.push("");
+    for (const e of entries) {
+      lines.push(`- \`${e.name}\` — importer clusters: ${e.clusters.join(", ")} — **${e.suggestion}**`);
+    }
+    lines.push("");
+  }
+}
+
+if (c3.length > 0) {
+  lines.push("## C3 — side-partition splits");
+  lines.push("");
+  lines.push("Modules whose bindings partition into Step-only, Wrap-only, and");
+  lines.push("shared cells. Extracting a one-sided cell (size ≥3) into");
+  lines.push("`Pickles.Step.*` or `Pickles.Wrap.*` shrinks the source module to its");
+  lines.push("genuinely-shared core and moves one-sided content to its proper");
+  lines.push("namespace.");
+  lines.push("");
+  for (const e of [...c3].sort((a, b) => a.mod.localeCompare(b.mod))) {
+    const c = e.cells;
+    lines.push(`### \`${e.mod}\` (${e.totalUsed} used bindings)`);
+    lines.push("");
+    if (c.both.length > 0) {
+      lines.push(`- **shared** (${c.both.length}, stays in module): ${c.both.map((n) => "`" + n + "`").join(", ")}`);
+    }
+    if (c.stepOnly.length > 0) {
+      const tag = c.stepOnly.length >= 3 ? "EXTRACT" : "keep";
+      lines.push(`- **Step-only** (${c.stepOnly.length}, ${tag} to \`Pickles.Step.*\`): ${c.stepOnly.map((n) => "`" + n + "`").join(", ")}`);
+    }
+    if (c.wrapOnly.length > 0) {
+      const tag = c.wrapOnly.length >= 3 ? "EXTRACT" : "keep";
+      lines.push(`- **Wrap-only** (${c.wrapOnly.length}, ${tag} to \`Pickles.Wrap.*\`): ${c.wrapOnly.map((n) => "`" + n + "`").join(", ")}`);
+    }
+    if (c.neither.length > 0) {
+      lines.push(`- **neither Step nor Wrap** (${c.neither.length}, ambiguous): ${c.neither.map((n) => "`" + n + "`").join(", ")}`);
+    }
+    lines.push("");
+  }
+}
+
+if (m1.length > 0) {
+  lines.push("## M1 — misfiled modules (whole-module relocation)");
+  lines.push("");
+  lines.push("Tier-0/1 modules whose bindings are overwhelmingly one-sided. The");
+  lines.push("module itself is a candidate to relocate into `Pickles.Step.*` or");
+  lines.push("`Pickles.Wrap.*` since no shared usage exists. Lower priority than");
+  lines.push("M2/C3 — these don't break tier consistency, they just improve");
+  lines.push("namespace fidelity.");
+  lines.push("");
+  for (const e of [...m1].sort((a, b) => a.mod.localeCompare(b.mod))) {
+    const oneSided = e.side === "Step" ? e.stepOnly : e.wrapOnly;
+    lines.push(`- \`${e.mod}\` → \`Pickles.${e.side}.*\` (${e.side}-only: ${oneSided}, both: 0, neither: ${e.neither}, total used: ${e.used})`);
+  }
+  lines.push("");
+}
+
+if (d2.length > 0) {
+  lines.push("## D2 — facade modules");
+  lines.push("");
+  for (const m of d2) lines.push(`- \`${m}\``);
+  lines.push("");
+}
+
+if (d3.length > 0) {
+  lines.push("## D3 — single-binding inline candidates");
+  lines.push("");
+  for (const e of d3) {
+    lines.push(`- \`${e.mod}\` (${e.loc} LOC) — \`${e.binding}\` used only by \`${e.caller}\``);
+  }
+  lines.push("");
+}
+
+if (d4.length > 0) {
+  lines.push("## D4 — orphans (no in-package importers)");
+  lines.push("");
+  lines.push("Investigate before deleting — these may be the public API surface.");
+  lines.push("");
+  for (const m of d4) lines.push(`- \`${m}\``);
+  lines.push("");
+}
+
+fs.writeFileSync(PROPOSED, lines.join("\n"));
+console.log(`Wrote ${PROPOSED} (M2=${m2.length}, C3=${c3.length}, M1=${m1.length}, D2=${d2.length}, D3=${d3.length}, D4=${d4.length})`);
