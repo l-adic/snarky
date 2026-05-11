@@ -11,9 +11,9 @@ import Data.Fin (Finite, getFinite)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx, wrapDomainLog2, wrapEndo, wrapSrsLengthLog2)
+import Pickles.FinalizeOtherProof (DomainMode(..), Output)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
-import Pickles.Step.FinalizeOtherProof (DomainMode(..), FinalizeOtherProofOutput)
 import Pickles.Wrap.FinalizeOtherProof (pow2PowMul, wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.Types (Field)
 import Safe.Coerce (coerce)
@@ -93,7 +93,7 @@ fopWrapCircuit
   :: forall t m
    . CircuitM Field (KimchiConstraint Field) t m
   => FopWrapInput
-  -> Snarky (KimchiConstraint Field) t m (FinalizeOtherProofOutput 16 Field)
+  -> Snarky (KimchiConstraint Field) t m (Output 16 Field)
 fopWrapCircuit input =
   let
     unfinalized =

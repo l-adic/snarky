@@ -19,8 +19,9 @@ import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Pickles.FinalizeOtherProof (Params) as FOP
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
-import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams, finalizeOtherProofCircuit)
+import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofOpt)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Step.Types (Field)
@@ -136,7 +137,7 @@ verifyOne
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Reflectable nd Int
-  => FinalizeOtherProofParams nd Field r1
+  => FOP.Params nd Field r1
   -> VerifyOneInput n WrapIPARounds StepIPARounds (Type2 (SplitField (FVar Field) (BoolVar Field))) (FVar Field) (BoolVar Field)
   -> IncrementallyVerifyProofParams Field ()
   -> Snarky (KimchiConstraint Field) t m (VerifyOneResult StepIPARounds (FVar Field))

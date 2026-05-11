@@ -23,10 +23,10 @@ import Data.Fin as Fin
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyPallasPt, stepEndo, unsafeIdx)
+import Pickles.FinalizeOtherProof (DomainMode(..))
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
-import Pickles.Step.FinalizeOtherProof (DomainMode(..))
 import Pickles.Step.Types (Field)
 import Pickles.Step.VerifyOne (verifyOne)
 import Safe.Coerce (coerce)

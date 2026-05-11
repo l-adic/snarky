@@ -41,8 +41,8 @@ import Pickles.Prove.Compile
   )
 import Pickles.Prove.Step (StepRule)
 import Pickles.Sideload.Bundle (Bundle, mkBundle) as Sideload
-import Pickles.Step.Advice (getPrevAppStates)
 import Pickles.Slots (SideLoaded, Slot)
+import Pickles.Step.Advice (getPrevAppStates)
 import Pickles.Step.Types (Field)
 import Pickles.Types (StatementIO(..))
 import Pickles.Wrap.Slots (NoSlots, Slots1)
