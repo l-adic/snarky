@@ -128,7 +128,7 @@ function accumulateParens(lines, startLine, startCol) {
 function parseSource(mod) {
   const text = readModuleSource(mod);
   if (text === null) {
-    return { loc: 0, exports: null, imports: [], body_kind: "missing" };
+    return { loc: 0, exports: null, imports: [], body_kind: "missing", bodyText: "" };
   }
   const lines = text.split("\n");
   const loc = lines.length;
@@ -165,21 +165,33 @@ function parseSource(mod) {
   }
 
   // ---- Imports ----
+  // Three import shapes we care about:
+  //   `import X (a, b)`         → explicit names. attribute those.
+  //   `import X as Q`           → qualified bare. attribute by scanning body for Q.<name>.
+  //   `import X (a, b) as Q`    → qualified subset. attribute those, but body uses Q.a / Q.b.
+  //   `import X`                → open implicit (rare; e.g. Prelude). attribute all (lossy).
   const imports = [];
   for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/^import\s+([\w.]+)(?:\s+as\s+\w+)?(\s|\()/);
+    const m = lines[i].match(/^import\s+([\w.]+)((?:\s+as\s+\w+)?\s*\(?|\s+as\s+\w+|\s*$|\s*--)/);
     if (!m) continue;
     const target = m[1];
+    // Determine alias (if any).
+    const aliasMatch = lines[i].match(/^import\s+[\w.]+\s+as\s+(\w+)/);
+    const alias = aliasMatch ? aliasMatch[1] : null;
     const parenIdx = lines[i].indexOf("(", m[0].length - 1);
     if (parenIdx < 0) {
-      // implicit import: take everything
-      imports.push({ target, names: null });
+      // No name list. Either qualified bare (`import X as Q`) or open (`import X`).
+      imports.push({ target, alias, names: null });
       continue;
     }
     const { list } = accumulateParens(lines, i, parenIdx);
     const names = splitTopLevelCommas(list).map((s) => s.trim()).filter(Boolean);
-    imports.push({ target, names });
+    imports.push({ target, alias, names });
   }
+
+  // Stash body text (with module header/imports stripped, for `Q.<name>`
+  // attribution on qualified-bare imports).
+  const bodyText = text;
 
   // ---- Body classification ----
   let body_kind = "real";
@@ -189,7 +201,7 @@ function parseSource(mod) {
     }
   }
 
-  return { loc, exports, imports, body_kind };
+  return { loc, exports, imports, body_kind, bodyText };
 }
 
 // ---------- 3. Build per-module parse cache ---------------------------
@@ -238,27 +250,82 @@ for (const [importer, p] of Object.entries(parsed)) {
   }
 }
 
+// Build (importer, target) -> {alias, names} lookup so the binding-
+// importer construction below can find a qualified-bare import's alias
+// in O(1).
+const importerEdgeMeta = new Map(); // key: `${importer}\0${target}` -> {alias, names}
+for (const [importer, p] of Object.entries(parsed)) {
+  for (const imp of p.imports || []) {
+    if (!pickleModSet.has(imp.target)) continue;
+    importerEdgeMeta.set(`${importer}\0${imp.target}`, { alias: imp.alias, names: imp.names });
+  }
+}
+
 // For each module's binding, who imports it (by name)?
 // Returns Map<bindingName, Set<importerMod>> for each module.
+//
+// Attribution rules (tightened from the original "attribute all on
+// implicit import"):
+//   - import X (a, b)           → attribute exactly a, b.
+//   - import X (a, b) as Q      → attribute a, b (the names listed).
+//   - import X as Q             → grep the importer's body for
+//                                 `Q.<exportedName>` and attribute only
+//                                 those names actually mentioned. This
+//                                 was the bug that produced spurious M2
+//                                 flags on `Pickles.Wrap.Types`'s
+//                                 IvpBaseline/PrevProofState/StatementPacked.
+//   - import X                  → no `as`, no list. Pure open. Cannot
+//                                 reliably attribute — fall back to all
+//                                 exports. (Rare in practice.)
 const bindingImporters = {};
 for (const mod of pickleMods) {
   const map = new Map();
-  for (const { importer, names } of importers[mod]) {
-    if (names === null) {
-      // Implicit: attribute all exports
-      const exps = parsed[mod].exports;
-      if (exps === null) continue; // can't attribute
-      for (const e of exps) {
-        const { name } = classifyExportEntry(e);
+  const exps = parsed[mod].exports;
+  const exportNames = exps === null
+    ? null
+    : exps.map((e) => classifyExportEntry(e).name);
+
+  for (const { importer, names, cluster } of importers[mod]) {
+    const meta = importerEdgeMeta.get(`${importer}\0${mod}`);
+    const alias = meta ? meta.alias : null;
+    const importerBody = parsed[importer] && parsed[importer].bodyText;
+
+    if (names !== null) {
+      // Explicit name list — attribute exactly these.
+      for (const n of names) {
+        const { name } = classifyExportEntry(n);
         if (!map.has(name)) map.set(name, new Set());
         map.get(name).add(importer);
       }
       continue;
     }
-    for (const n of names) {
-      const { name } = classifyExportEntry(n);
-      if (!map.has(name)) map.set(name, new Set());
-      map.get(name).add(importer);
+    // names === null: qualified bare or open implicit.
+    if (alias && importerBody && exportNames) {
+      // Qualified bare — grep body for `Alias.<Name>` references.
+      // The alias may itself contain dots if the importer wrote
+      // `import Foo as Bar.Baz` (not idiomatic but legal); escape it.
+      const aliasPat = new RegExp(
+        "\\b" + alias.replace(/\./g, "\\.") + "\\.(\\w+)",
+        "g",
+      );
+      const mentioned = new Set();
+      let mAlias;
+      while ((mAlias = aliasPat.exec(importerBody)) !== null) {
+        mentioned.add(mAlias[1]);
+      }
+      for (const name of exportNames) {
+        if (!mentioned.has(name)) continue;
+        if (!map.has(name)) map.set(name, new Set());
+        map.get(name).add(importer);
+      }
+      continue;
+    }
+    // Open implicit (no alias, no name list). Fall back to "all exports".
+    if (exportNames) {
+      for (const name of exportNames) {
+        if (!map.has(name)) map.set(name, new Set());
+        map.get(name).add(importer);
+      }
     }
   }
   bindingImporters[mod] = map;
@@ -501,6 +568,128 @@ function bindingNames(mod) {
 }
 
 // For each binding, return its cluster set (from importers).
+// Build a map { mod -> { bindingName -> Set<other-binding-names referenced in body> } }
+// by walking the module body line-by-line, tracking which top-level
+// declaration owns each line, and emitting (owner, ref) pairs for every
+// occurrence of another exported name. This catches "if I extract X, Y
+// breaks" feasibility issues that pure cluster-set partitioning misses.
+function computeIntraModuleRefs(mod) {
+  const p = parsed[mod];
+  if (!p.bodyText || !p.exports) return new Map();
+  const names = p.exports.map((e) => classifyExportEntry(e).name);
+  const nameSet = new Set(names);
+  // Top-level definition / declaration start regex. Matches:
+  //   `foo ::` / `foo =` / `data Foo` / `newtype Foo` / `type Foo` /
+  //   `class Foo` / `instance ...` / `foreign import ...`.
+  // Returns the bound name, or null for anonymous (e.g. `else instance`).
+  function startsTopLevel(line) {
+    if (line.length === 0 || /^\s/.test(line) || line.startsWith("--")) return null;
+    let m;
+    if ((m = line.match(/^(?:data|newtype|type)(?:\s+role)?\s+(\w+)/))) return m[1];
+    if ((m = line.match(/^class\s+(?:[^=>]*?=>\s+)?(\w+)/))) return m[1];
+    if ((m = line.match(/^instance(?:\s+(\w+))?/))) return m[1] || "__instance";
+    if ((m = line.match(/^foreign\s+import\s+(?:data\s+)?(\w+)/))) return m[1];
+    if ((m = line.match(/^(\w+)\s*(?:::|=|\|)/))) return m[1];
+    // Multi-line signature: name alone on a line, continued by `::` or
+    // `=` on the next indented line. Common pattern in this codebase
+    // for long type signatures. Empirically required so the
+    // intra-module reference detector doesn't attribute signature
+    // tokens to the PREVIOUS top-level binding.
+    if ((m = line.match(/^(\w+)\s*$/))) return m[1];
+    return null;
+  }
+  const lines = p.bodyText.split("\n");
+  const refs = new Map(); // bindingName -> Set<otherNames>
+  for (const n of names) refs.set(n, new Set());
+  let currentOwner = null;
+  for (const line of lines) {
+    const owner = startsTopLevel(line);
+    if (owner !== null) {
+      // Switch owner. Only track owners that are exported binding names
+      // (so internal helpers don't drive false suppressions).
+      currentOwner = nameSet.has(owner) ? owner : null;
+    }
+    if (!currentOwner) continue;
+    // Scan this line for references to OTHER exported names.
+    const pat = /\b([a-zA-Z_][\w']*)\b/g;
+    let m2;
+    while ((m2 = pat.exec(line)) !== null) {
+      const word = m2[1];
+      if (word === currentOwner) continue;
+      if (nameSet.has(word)) refs.get(currentOwner).add(word);
+    }
+  }
+  return refs;
+}
+
+const intraModRefs = {};
+for (const mod of pickleMods) intraModRefs[mod] = computeIntraModuleRefs(mod);
+
+// Extract each binding's type signature (or data/newtype/type/class
+// header) and check whether it mentions side-specific tokens. A
+// binding whose signature is fully field-polymorphic — no
+// `StepField`/`WrapField`/`Pallas`/`Vesta`/`Step.X`/`Wrap.X` — is
+// "generic by design" and should not be flagged as a C3 extraction
+// candidate even if its current callers are all on one side. Empirically
+// added after the rule false-positive'd on Pseudo's `oneHotVector` /
+// `choose` / `PlonkDomain` / `toDomain` and Sponge's `absorbMany` /
+// `runPureSpongeM` / `getSpongeState` / `spongeFromConstants`.
+const SIDE_SPECIFIC_TOKEN = /\b(?:StepField|WrapField|Pallas\b|Vesta\b|PallasG|VestaG|Pallas\.|Vesta\.|Step\.[A-Z]|Wrap\.[A-Z])/;
+
+function computeGenericBindings(mod) {
+  const p = parsed[mod];
+  if (!p.bodyText || !p.exports) return new Set();
+  const names = p.exports.map((e) => classifyExportEntry(e).name);
+  const nameSet = new Set(names);
+  const lines = p.bodyText.split("\n");
+  // For each top-level start, accumulate the "header" — lines from
+  // the start up to (but not including) the first `=` (the value
+  // definition), or up to the next top-level start. This captures
+  // type signatures and data/newtype/type/class headers.
+  const headers = new Map(); // bindingName -> header text
+  let cur = null;
+  let buf = [];
+  function flush() {
+    if (cur && !headers.has(cur)) headers.set(cur, buf.join("\n"));
+    buf = [];
+  }
+  function startsTopLevel(line) {
+    if (line.length === 0 || /^\s/.test(line) || line.startsWith("--")) return null;
+    let m;
+    if ((m = line.match(/^(?:data|newtype|type)(?:\s+role)?\s+(\w+)/))) return m[1];
+    if ((m = line.match(/^class\s+(?:[^=>]*?=>\s+)?(\w+)/))) return m[1];
+    if ((m = line.match(/^instance(?:\s+(\w+))?/))) return m[1] || "__instance";
+    if ((m = line.match(/^foreign\s+import\s+(?:data\s+)?(\w+)/))) return m[1];
+    if ((m = line.match(/^(\w+)\s*(?:::|=|\|)/))) return m[1];
+    if ((m = line.match(/^(\w+)\s*$/))) return m[1];
+    return null;
+  }
+  for (const line of lines) {
+    const owner = startsTopLevel(line);
+    if (owner !== null) {
+      flush();
+      cur = nameSet.has(owner) ? owner : null;
+    }
+    if (cur) buf.push(line);
+    // Stop accumulating once we hit `=` (the value def body) — only
+    // the signature/header matters.
+    if (cur && /\s=\s|^[^=]*=\s/.test(line) && headers.has(cur) === false && buf.length > 1) {
+      headers.set(cur, buf.join("\n"));
+      buf = [];
+      cur = null;
+    }
+  }
+  flush();
+  const generic = new Set();
+  for (const [name, header] of headers.entries()) {
+    if (!SIDE_SPECIFIC_TOKEN.test(header)) generic.add(name);
+  }
+  return generic;
+}
+
+const genericBindings = {};
+for (const mod of pickleMods) genericBindings[mod] = computeGenericBindings(mod);
+
 function bindingClusterSet(mod, name) {
   const set = bindingImporters[mod].get(name);
   if (!set) return new Set();
@@ -550,60 +739,137 @@ for (const mod of pickleMods) {
 }
 
 // --- C3: side-partition split. Group a module's bindings into four
-// cells by their (Step?, Wrap?) flags:
-//   both:     binding used by Step AND Wrap          → stays in shared module
-//   stepOnly: binding used by Step, not Wrap          → extract to Pickles.Step.*
-//   wrapOnly: binding used by Wrap, not Step          → extract to Pickles.Wrap.*
-//   neither:  no Step or Wrap importer (Prove/Compile only) → ambiguous, keep
+// cells by their importer-cluster shape:
+//
+//   shared:   used by both Step AND Wrap, OR used by any tier-1 shared
+//             cluster (Pickles / Verify / PlonkChecks / Linearization).
+//             A tier-1 importer is evidence the binding is generic by
+//             design — moving it to Step.* / Wrap.* would force tier-1
+//             modules into tier inversions.
+//   stepOnly: used by Step, NOT Wrap, NOT any tier-1 shared cluster.
+//             Genuine "side-specific by current use".
+//   wrapOnly: mirror of stepOnly.
+//   neither:  only Prove/Compile/Test/CircuitDiffs/Sideload importers.
+//             Generally orchestration-only; ambiguous from a tier-1
+//             perspective.
+//
+// The "shared tier-1" supercluster fix was added after the C3 rule
+// repeatedly false-positive'd on bindings used by Pickles.IPA,
+// Pickles.Verify, Pickles.PlonkChecks, etc. — those modules sit at
+// tier 1 and don't tick Step/Wrap, so the old partition classified
+// their consumers as "Wrap-only" or "Step-only" when those consumers
+// are in fact generic by design.
+//
 // A split candidate has ≥3 bindings in stepOnly or wrapOnly (= an
 // extractable cell). Fires regardless of natural tier — applies to
 // any module with this side-asymmetry, including Step.* / Wrap.*
 // (where stepOnly+wrapOnly together indicate misfile or shared).
+const TIER1_SHARED_CLUSTERS = new Set([
+  "Pickles", // flat namespace (Pickles.IPA, Pickles.FtComm, Pickles.Pseudo, …)
+  "Verify",  // Pickles.Verify.* — used by both step and wrap finalizers
+  "PlonkChecks", // Pickles.PlonkChecks.*
+  "Linearization", // Pickles.Linearization.*
+]);
+
+function hasSharedTier1(clusters) {
+  for (const c of clusters) if (TIER1_SHARED_CLUSTERS.has(c)) return true;
+  return false;
+}
+
 const c3 = [];
 for (const mod of pickleMods) {
   // C3 targets non-Step/Wrap modules — Step/Wrap mis-clustering is M2's job.
   const nat = naturalTier(mod);
   if (nat.startsWith("2a") || nat.startsWith("2b")) continue;
-  const cells = { both: [], stepOnly: [], wrapOnly: [], neither: [] };
+  const cells = { shared: [], stepOnly: [], wrapOnly: [], neither: [] };
   for (const name of bindingNames(mod)) {
     const cs = bindingClusterSet(mod, name);
     if (cs.size === 0) continue;
     const hasS = cs.has("Step"), hasW = cs.has("Wrap");
-    if (hasS && hasW) cells.both.push(name);
+    const hasShared = hasSharedTier1(cs);
+    // Any tier-1 cluster importer counts the binding as shared by design.
+    if (hasShared || (hasS && hasW)) cells.shared.push(name);
     else if (hasS) cells.stepOnly.push(name);
     else if (hasW) cells.wrapOnly.push(name);
     else cells.neither.push(name);
   }
-  const extractable = (cells.stepOnly.length >= 3 ? 1 : 0)
-                    + (cells.wrapOnly.length >= 3 ? 1 : 0);
+  // Feasibility check: an extraction is INFEASIBLE if any binding in
+  // the staying cells (shared/neither) references — by name in its
+  // body — a binding in the cell being proposed for extraction. Moving
+  // the extracted bindings to a Step/Wrap module would force the
+  // residual to reach back into that module, creating a tier
+  // inversion. The check empirically prevents repeating the
+  // false-positive pattern we hit on Pickles.Dummy where the residual
+  // `dummyIpaChallenges` uses the Ro monad bindings being proposed for
+  // extraction.
+  const refs = intraModRefs[mod] || new Map();
+  function isFeasibleExtract(extractCell) {
+    const extractSet = new Set(extractCell);
+    // Every binding not in the extract cell is a "stayer" — if any
+    // such binding references an extracted one in its body, the
+    // residual module would have to import the extracted module back,
+    // creating a tier inversion. Includes the OTHER one-sided cell
+    // (e.g. Pickles.Dummy: wrap-only dummyIpaChallenges depends on
+    // step-only Ro infrastructure).
+    const allBindings = [
+      ...cells.shared, ...cells.stepOnly, ...cells.wrapOnly, ...cells.neither,
+    ];
+    for (const stayer of allBindings) {
+      if (extractSet.has(stayer)) continue;
+      const stayerRefs = refs.get(stayer);
+      if (!stayerRefs) continue;
+      for (const r of stayerRefs) if (extractSet.has(r)) return false;
+    }
+    return true;
+  }
+  // Filter out generic-by-signature bindings from the extraction cells.
+  // A binding whose type signature is fully field-polymorphic isn't
+  // "wrap-specific by design" even if its current callers are all on
+  // one side — extracting it would miscategorize it.
+  const gset = genericBindings[mod] || new Set();
+  const stepExtract = cells.stepOnly.filter((n) => !gset.has(n));
+  const wrapExtract = cells.wrapOnly.filter((n) => !gset.has(n));
+  const stepFeasible = stepExtract.length >= 3 && isFeasibleExtract(stepExtract);
+  const wrapFeasible = wrapExtract.length >= 3 && isFeasibleExtract(wrapExtract);
+  const extractable = (stepFeasible ? 1 : 0) + (wrapFeasible ? 1 : 0);
   if (extractable === 0) continue;
   // Only useful as a "split" if there's something to leave behind.
-  const remaining = cells.both.length + cells.neither.length
+  const remaining = cells.shared.length + cells.neither.length
                   + (cells.stepOnly.length < 3 ? cells.stepOnly.length : 0)
                   + (cells.wrapOnly.length < 3 ? cells.wrapOnly.length : 0);
   if (remaining === 0 && extractable < 2) continue;
-  c3.push({ mod, cells, totalUsed: cells.both.length + cells.stepOnly.length + cells.wrapOnly.length + cells.neither.length });
+  // Record which cells survived feasibility so the emitter can mark
+  // the report accurately.
+  c3.push({
+    mod,
+    cells,
+    totalUsed: cells.shared.length + cells.stepOnly.length + cells.wrapOnly.length + cells.neither.length,
+    stepFeasible,
+    wrapFeasible,
+  });
 }
 
 // --- M1: module is misfiled — its tier-0/1 placement is unjustified
-// because no binding satisfies strict-AND (Step AND Wrap) and the
-// majority of bindings are one-sided.
+// because no binding has any "shared" evidence (Step+Wrap importers OR
+// a tier-1 shared cluster importer) and the majority of bindings are
+// one-sided.
 const m1 = [];
 for (const mod of pickleMods) {
   const nat = naturalTier(mod);
   if (nat !== "0" && nat !== "1") continue;
-  let stepOnly = 0, wrapOnly = 0, both = 0, neither = 0;
+  let stepOnly = 0, wrapOnly = 0, shared = 0, neither = 0;
   for (const name of bindingNames(mod)) {
     const cs = bindingClusterSet(mod, name);
     if (cs.size === 0) continue;
-    if (cs.has("Step") && cs.has("Wrap")) both++;
-    else if (cs.has("Step")) stepOnly++;
-    else if (cs.has("Wrap")) wrapOnly++;
+    const hasS = cs.has("Step"), hasW = cs.has("Wrap");
+    if ((hasS && hasW) || hasSharedTier1(cs)) shared++;
+    else if (hasS) stepOnly++;
+    else if (hasW) wrapOnly++;
     else neither++;
   }
-  // Any single binding shared between Step and Wrap means tier-0/1 is
-  // justified — don't flag.
-  if (both > 0) continue;
+  // Any binding with shared-evidence means tier-0/1 is justified.
+  if (shared > 0) continue;
+  const both = 0;
   const used = stepOnly + wrapOnly + neither;
   if (used < 4) continue;
   if (stepOnly >= 3 && wrapOnly === 0) {
@@ -684,16 +950,20 @@ if (c3.length > 0) {
     const c = e.cells;
     lines.push(`### \`${e.mod}\` (${e.totalUsed} used bindings)`);
     lines.push("");
-    if (c.both.length > 0) {
-      lines.push(`- **shared** (${c.both.length}, stays in module): ${c.both.map((n) => "`" + n + "`").join(", ")}`);
+    if (c.shared.length > 0) {
+      lines.push(`- **shared** (${c.shared.length}, stays in module — used by both sides or by tier-1 shared modules): ${c.shared.map((n) => "`" + n + "`").join(", ")}`);
     }
     if (c.stepOnly.length > 0) {
-      const tag = c.stepOnly.length >= 3 ? "EXTRACT" : "keep";
-      lines.push(`- **Step-only** (${c.stepOnly.length}, ${tag} to \`Pickles.Step.*\`): ${c.stepOnly.map((n) => "`" + n + "`").join(", ")}`);
+      const tag = e.stepFeasible
+        ? "EXTRACT"
+        : (c.stepOnly.length >= 3 ? "INFEASIBLE (residual refs)" : "keep");
+      lines.push(`- **Step-only** (${c.stepOnly.length}, ${tag} → \`Pickles.Step.*\`): ${c.stepOnly.map((n) => "`" + n + "`").join(", ")}`);
     }
     if (c.wrapOnly.length > 0) {
-      const tag = c.wrapOnly.length >= 3 ? "EXTRACT" : "keep";
-      lines.push(`- **Wrap-only** (${c.wrapOnly.length}, ${tag} to \`Pickles.Wrap.*\`): ${c.wrapOnly.map((n) => "`" + n + "`").join(", ")}`);
+      const tag = e.wrapFeasible
+        ? "EXTRACT"
+        : (c.wrapOnly.length >= 3 ? "INFEASIBLE (residual refs)" : "keep");
+      lines.push(`- **Wrap-only** (${c.wrapOnly.length}, ${tag} → \`Pickles.Wrap.*\`): ${c.wrapOnly.map((n) => "`" + n + "`").join(", ")}`);
     }
     if (c.neither.length > 0) {
       lines.push(`- **neither Step nor Wrap** (${c.neither.length}, ambiguous): ${c.neither.map((n) => "`" + n + "`").join(", ")}`);

@@ -6,50 +6,12 @@ from the inventory. Curate by hand into `docs/pickles-tiering.md`.
 
 ## Summary
 
-- M2 strict-AND violations: 4
-- C3 grab-bag splits: 3
+- M2 strict-AND violations: 0
+- C3 grab-bag splits: 0
 - M1 cohesion-move candidates: 0
 - D2 facade modules: 0
 - D3 single-binding inline candidates: 3
-- D4 orphan modules: 3
-
-## M2 — strict-AND violations
-
-Bindings that live in a Step.* or Wrap.* module but are imported by the
-opposite side. Each is either (a) a true tier-1 candidate to extract into
-a shared module, or (b) misfiled and should move sideways.
-
-### `Pickles.Wrap.Types`
-
-- `Field` — importer clusters: CircuitDiffs, Compile, Pickles, Proof, Prove, Sideload, Step, Wrap — **promote to tier 1 (strict-AND: Step+Wrap)**
-- `IvpBaseline` — importer clusters: CircuitDiffs, Compile, Pickles, Prove, Sideload, Step, Wrap — **promote to tier 1 (strict-AND: Step+Wrap)**
-- `PrevProofState` — importer clusters: CircuitDiffs, Compile, Pickles, Prove, Sideload, Step, Wrap — **promote to tier 1 (strict-AND: Step+Wrap)**
-- `StatementPacked` — importer clusters: CircuitDiffs, Compile, Pickles, Prove, Sideload, Step, Wrap — **promote to tier 1 (strict-AND: Step+Wrap)**
-
-## C3 — side-partition splits
-
-Modules whose bindings partition into Step-only, Wrap-only, and
-shared cells. Extracting a one-sided cell (size ≥3) into
-`Pickles.Step.*` or `Pickles.Wrap.*` shrinks the source module to its
-genuinely-shared core and moves one-sided content to its proper
-namespace.
-
-### `Pickles.Dummy` (12 used bindings)
-
-- **Step-only** (11, EXTRACT to `Pickles.Step.*`): `RoM`, `initialRo`, `tick`, `tock`, `chal`, `scalarChal`, `pow2`, `wrapEndo`, `stepEndo`, `dummyIpaWrapChallenges`, `dummyIpaStepChallenges`
-- **Wrap-only** (1, keep to `Pickles.Wrap.*`): `dummyIpaChallenges`
-
-### `Pickles.PublicInputCommit` (11 used bindings)
-
-- **shared** (2, stays in module): `CorrectionMode`, `LagrangeBaseLookup`
-- **Step-only** (1, keep to `Pickles.Step.*`): `mkSideloadedLagrangeLookup`
-- **Wrap-only** (4, EXTRACT to `Pickles.Wrap.*`): `PublicInputCommit`, `wrapPt`, `unwrapPt`, `pow2pow`
-- **neither Step nor Wrap** (4, ambiguous): `ScalarMulResult`, `scalarMuls`, `publicInputCommit`, `mkConstLagrangeBaseLookup`
-
-### `Pickles.Sponge` (23 used bindings)
-
-- **shared** (6, stays in module): `absorb`, `squeezeScalarChallenge`, `evalSpongeM`, `liftSnarky`, `initialSponge`, `initialSpongeCircuit`
-- **Wrap-only** (17, EXTRACT to `Pickles.Wrap.*`): `MonadSponge`, `squeeze`, `absorbPoint`, `absorbMany`, `squeezeScalar`, `squeezeScalarChallengePure`, `lowest128Bits`, `lowest128BitsPure`, `SpongeM`, `labelM`, `getSponge`, `putSponge`, `PureSpongeM`, `runPureSpongeM`, `evalPureSpongeM`, `getSpongeState`, `spongeFromConstants`
+- D4 orphan modules: 2
 
 ## D3 — single-binding inline candidates
 
@@ -62,5 +24,4 @@ namespace.
 Investigate before deleting — these may be the public API surface.
 
 - `Pickles.Prove.Compile`
-- `Pickles.Prove.Verify`
 - `Pickles.Sideload.FFI`

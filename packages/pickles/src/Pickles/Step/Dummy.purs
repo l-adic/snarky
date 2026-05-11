@@ -54,7 +54,6 @@ import Pickles.Sponge (initialSponge)
 import Pickles.Step.Types as Step
 import Pickles.Types (PerProofUnfinalized(..), StepIPARounds, WrapIPARounds)
 import Pickles.Verify.Types (UnfinalizedProof)
-import Pickles.Wrap.Types as Wrap
 import Prim.Int (class Add)
 import RandomOracle.Sponge as PureSponge
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
