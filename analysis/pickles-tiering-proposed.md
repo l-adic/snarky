@@ -10,13 +10,12 @@ from the inventory. Curate by hand into `docs/pickles-tiering.md`.
 - C3 grab-bag splits: 0
 - M1 cohesion-move candidates: 0
 - D2 facade modules: 0
-- D3 single-binding inline candidates: 3
+- D3 single-binding inline candidates: 2
 - D4 orphan modules: 2
 
 ## D3 — single-binding inline candidates
 
 - `Pickles.Hex` (16 LOC) — `parseHex` used only by `Pickles.Linearization.Env`
-- `Pickles.Step.Domain` (38 LOC) — `buildPow2PowsArray` used only by `Pickles.Step.FinalizeOtherProof`
 - `Pickles.Util.Fatal` (48 LOC) — `fromJust'` used only by `Pickles.ProofFFI`
 
 ## D4 — orphans (no in-package importers)
