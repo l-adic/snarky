@@ -71,13 +71,13 @@ wrapVerify
   => Reflectable sgOldN Int
   => Compare n 3 LT
   => Add 1 dPred d
-  -- numChunks pinned to 1 here so the chunked Add chain in IVP resolves
-  -- concretely (totalBases = sgOldN + 45). Widen when FFI/WrapProof
-  -- support num_chunks > 1.
+  -- numChunks pinned to 1, tCommLen pinned to 7 here so the chunked Add
+  -- chain in IVP resolves concretely (totalBases = sgOldN + 45). Widen
+  -- when FFI/WrapProof support num_chunks > 1.
   => Add sgOldN 45 totalBases
   => Add 1 totalBasesPred totalBases
   => IncrementallyVerifyProofParams WrapField r
-  -> IncrementallyVerifyProofInput publicInput sgOldN 1 d (FVar WrapField) (Type1 (FVar WrapField))
+  -> IncrementallyVerifyProofInput publicInput sgOldN 1 7 d (FVar WrapField) (Type1 (FVar WrapField))
   -> WrapVerifyInput n d (FVar WrapField)
   -> Snarky (KimchiConstraint WrapField) t m Unit
 wrapVerify ivpParams ivpInput verifyInput = do

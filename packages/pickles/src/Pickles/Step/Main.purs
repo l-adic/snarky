@@ -401,10 +401,11 @@ mpvFrontPad mkDummy real =
 -- |   + branch_data(mask0,mask1,domLog2) at end
 -------------------------------------------------------------------------------
 
-type AllocatedPerProofWitness n numChunks =
+type AllocatedPerProofWitness n numChunks tCommLen =
   { wComm :: Vector 15 (Vector numChunks (WeierstrassAffinePoint PallasG (FVar StepField)))
   , zComm :: Vector numChunks (WeierstrassAffinePoint PallasG (FVar StepField))
-  , tComm :: Vector 7 (WeierstrassAffinePoint PallasG (FVar StepField))
+  -- Flat tComm: tCommLen = 7 * numChunks pieces of the quotient poly.
+  , tComm :: Vector tCommLen (WeierstrassAffinePoint PallasG (FVar StepField))
   , lr :: Vector 15 { l :: WeierstrassAffinePoint PallasG (FVar StepField), r :: WeierstrassAffinePoint PallasG (FVar StepField) }
   , z1 :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
   , z2 :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
@@ -445,9 +446,9 @@ allocatePerProofWitness
    . CircuitM StepField (KimchiConstraint StepField) t m
   => Reflectable n Int
   => PerProofWitness n StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
-  -- WrapProof currently pins numChunks=1 internally; widens when the
-  -- step-verifies-wrap boundary supports chunking.
-  -> Snarky (KimchiConstraint StepField) t m (AllocatedPerProofWitness n 1)
+  -- WrapProof currently pins numChunks=1 internally → tCommLen = 7*1 = 7.
+  -- Widens when the step-verifies-wrap boundary supports chunking.
+  -> Snarky (KimchiConstraint StepField) t m (AllocatedPerProofWitness n 1 7)
 allocatePerProofWitness (PerProofWitness ppw) = do
   let
     WrapProof wrapProofRec = ppw.wrapProof
@@ -485,11 +486,11 @@ allocatePerProofWitness (PerProofWitness ppw) = do
       , indexEvals: map unwrapPointEval evalsRec.indexEvals
       }
   pure
-    -- TODO(num_chunks): wComm/zComm now flow through chunked; tComm still
-    -- head-collapses (IVP `tComm :: Vector 7 pt`, no FFI t-chunking yet).
+    -- wComm/zComm carry chunks through; tComm flattens Vector 7 (Vector 1 pt)
+    -- to flat Vector 7 pt via Vector.concat (= 7 * numChunks pieces).
     { wComm: msgRec.wComm
     , zComm: msgRec.zComm
-    , tComm: map Vector.head msgRec.tComm
+    , tComm: Vector.concat msgRec.tComm
     , lr: openRec.lr
     , z1: openRec.z1
     , z2: openRec.z2
@@ -620,11 +621,11 @@ liftDummyPerProofUnfinalized (PerProofUnfinalized r) =
 -------------------------------------------------------------------------------
 
 buildVerifyOneInput
-  :: forall @n @numChunks pad
+  :: forall @n @numChunks @tCommLen pad
    . Reflectable n Int
   => Reflectable pad Int
   => Add pad n PaddedLength
-  => AllocatedPerProofWitness n numChunks
+  => AllocatedPerProofWitness n numChunks tCommLen
   -> Array (FVar StepField) -- prev proof's public input, pre-flattened
   -> BoolVar StepField
   -> UnfinalizedProof
@@ -635,7 +636,7 @@ buildVerifyOneInput
      , index :: Vector 6 (AffinePoint (FVar StepField))
      }
   -> AffinePoint (FVar StepField) -- dummySg for padding
-  -> VerifyOneInput n numChunks WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
+  -> VerifyOneInput n numChunks tCommLen WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
 buildVerifyOneInput pw appStateFields mustVerify unfinalized msgWrap vkComms dummySg =
   let
     -- sgOld: pad prevSgs to PaddedLength (Wrap_hack.Padded_length).

@@ -86,7 +86,7 @@ type IncrementallyVerifyProofParams f r =
 -- | `exists ~request:(fun () -> Req.Wrap_index)` (step_main.ml:345-348).
 -- | In the Wrap circuit they are constants (wrap_main.ml:209 Inner_curve.constant).
 -- | Either way, by the time they reach this function they are `fv` (FVar f).
-type IncrementallyVerifyProofInput publicInput sgOldN numChunks d fv sf =
+type IncrementallyVerifyProofInput publicInput sgOldN numChunks tCommLen d fv sf =
   { publicInput :: publicInput
   , sgOld :: Vector sgOldN (AffinePoint fv)
   , sgOldMask :: Vector sgOldN fv
@@ -100,12 +100,15 @@ type IncrementallyVerifyProofInput publicInput sgOldN numChunks d fv sf =
       , sigma :: Vector 6 (AffinePoint fv)
       }
   -- Protocol messages and opening proof.
-  -- wComm is 15 polynomials each split into `numChunks` commitments;
-  -- zComm is one polynomial split into `numChunks` commitments.
-  -- tComm is currently a flat `Vector 7` (FFI does not yet chunk t).
+  -- wComm/zComm: per-polynomial chunks (15 and 1 polys, each numChunks chunks).
+  -- tComm: the quotient polynomial commitment, flat-split into `tCommLen =
+  -- 7 * numChunks` pieces (kimchi splits t at degree `7 * domain_size`,
+  -- then each of those 7 sub-polys further into numChunks chunks of
+  -- max_poly_size). Reference: `kimchi/src/verifier_index.rs` and
+  -- OCaml `common.ml:ft_comm` (one flat Horner over zeta_to_srs_len).
   , wComm :: Vector 15 (Vector numChunks (AffinePoint fv))
   , zComm :: Vector numChunks (AffinePoint fv)
-  , tComm :: Vector 7 (AffinePoint fv)
+  , tComm :: Vector tCommLen (AffinePoint fv)
   , opening ::
       { delta :: AffinePoint fv
       , sg :: AffinePoint fv
@@ -165,7 +168,7 @@ ivpTrace labelStr v = do
   pure unit
 
 incrementallyVerifyProof
-  :: forall publicInput sgOldN numChunks wCommN chunkBases nonSgBases sg1 sg2 sg3 sg4 totalBases totalBasesPred d dPred f f' @g sf t m r
+  :: forall publicInput sgOldN numChunks tCommLen tCommLenPred wCommN chunkBases nonSgBases sg1 sg2 sg3 sg4 totalBases totalBasesPred d dPred f f' @g sf t m r
    . PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
@@ -179,9 +182,14 @@ incrementallyVerifyProof
   => Reflectable d Int
   => Reflectable sgOldN Int
   => Reflectable numChunks Int
+  => Reflectable tCommLen Int
   => Reflectable nonSgBases Int
   => Compare 0 numChunks LT
   => Add 1 dPred d
+  -- tComm shape: flat `Vector tCommLen` with tCommLen = 7 * numChunks.
+  -- ftComm's Horner over zeta_to_srs_len treats this as a single flat list.
+  => Mul 7 numChunks tCommLen
+  => Add 1 tCommLenPred tCommLen
   -- Chunked-base layout (mirrors Pcs_batch.combine_split_commitments at
   -- step_verifier.ml:256 with reduce_without_degree_bound = Array.to_list):
   -- flat = sgOld(N) :: xHat :: ftComm :: zComm(numChunks) :: index(6)
@@ -202,7 +210,7 @@ incrementallyVerifyProof
   => Add 1 totalBasesPred totalBases
   => IpaScalarOps f t m sf
   -> IncrementallyVerifyProofParams f r
-  -> IncrementallyVerifyProofInput publicInput sgOldN numChunks d (FVar f) sf
+  -> IncrementallyVerifyProofInput publicInput sgOldN numChunks tCommLen d (FVar f) sf
   -> Maybe (Sponge (FVar f)) -- ^ Pre-computed sponge_after_index. Nothing = compute internally.
   -> SpongeM f (KimchiConstraint f) t m (IncrementallyVerifyProofOutput d f)
 incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incrementally-verify-proof" do

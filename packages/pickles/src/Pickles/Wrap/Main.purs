@@ -675,12 +675,12 @@ wrapMain config (StatementPacked stmtR) = do
   WrapProofMessages messagesRec <- label "messages" $ exists $ lift $
     getMessages @branches @mpv @slots @VestaG unit
   let
-    -- TODO(num_chunks): wComm/zComm now flow through chunked; tComm still
-    -- head-collapses (IVP `tComm :: Vector 7 pt`, no FFI t-chunking yet).
+    -- wComm/zComm carry chunks through; tComm flattens Vector 7 (Vector 1 pt)
+    -- to flat Vector 7 pt via Vector.concat (= 7 * numChunks pieces).
     messages =
       { wComm: map (map unwrapPt) messagesRec.wComm
       , zComm: map unwrapPt messagesRec.zComm
-      , tComm: map (unwrapPt <<< Vector.head) messagesRec.tComm
+      , tComm: Vector.concat (map (map unwrapPt) messagesRec.tComm)
       }
 
   -- 13. pack_statement + split_field per Type1 (wrap_main.ml:542-548)

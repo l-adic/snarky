@@ -40,16 +40,16 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 
 -- | Input to verify_one. All fields from Per_proof_witness + unfinalized + extras.
 -- | Specialized to StepField (Vesta scalar field = Fp).
-type VerifyOneInput n numChunks d tickD sf fv bv =
+type VerifyOneInput n numChunks tCommLen d tickD sf fv bv =
   { -- Per_proof_witness.app_state (flattened via CircuitType upstream).
     -- For Input-mode rules with a single `FVar f` this is `[x]`; for
     -- multi-field inputs it's the full field-list produced by the
     -- input type's `varToFields`.
     appStateFields :: Array fv
-  -- Per_proof_witness.wrap_proof
+  -- Per_proof_witness.wrap_proof. `tCommLen = 7 * numChunks` (flat).
   , wComm :: Vector 15 (Vector numChunks (AffinePoint fv))
   , zComm :: Vector numChunks (AffinePoint fv)
-  , tComm :: Vector 7 (AffinePoint fv)
+  , tComm :: Vector tCommLen (AffinePoint fv)
   , lr :: Vector d { l :: AffinePoint fv, r :: AffinePoint fv }
   , z1 :: sf
   , z2 :: sf
@@ -138,10 +138,11 @@ verifyOne
   => Compare 0 nd LT
   => Reflectable nd Int
   => FOP.Params nd StepField r1
-  -- VerifyOneInput's `numChunks` is currently pinned to 1 here; the IVP
-  -- call site below threads `@1` so the chunked Add chain inside IVP
-  -- resolves concretely. Widen when FFI/WrapProof support num_chunks > 1.
-  -> VerifyOneInput n 1 WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
+  -- VerifyOneInput's `numChunks` is currently pinned to 1 (and tCommLen=7)
+  -- here; the IVP call site below threads concrete values so the chunked
+  -- Add chain inside IVP resolves. Widen when FFI/WrapProof support
+  -- num_chunks > 1.
+  -> VerifyOneInput n 1 7 WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
   -> IncrementallyVerifyProofParams StepField ()
   -> Snarky (KimchiConstraint StepField) t m (VerifyOneResult StepIPARounds (FVar StepField))
 verifyOne fopParams input ivpParams = do
