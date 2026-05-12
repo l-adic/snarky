@@ -425,17 +425,28 @@ mod generic {
     }
 
     /// Extract sigma polynomial evaluations from a proof.
-    /// Returns 12 values: 6 sigma columns × 2 points (zeta, zeta*omega).
+    /// Returns `(PERMUTS - 1) * 2 * num_chunks` values in polynomial-major,
+    /// within-poly chunk-major order. At `n=1` length is 12 (current
+    /// single-chunk behavior); callers indexing the first 12 positions
+    /// see no change.
+    ///
+    /// Chunk-order convention: same as `proof_z_evals` / `proof_witness_evals`.
+    /// See `docs/chunking-ffi-audit.md`.
     pub fn proof_sigma_evals<G: KimchiCurve>(
         proof: &ProverProof<G, OpeningProof<G>>,
     ) -> Vec<G::ScalarField>
     where
         G::BaseField: PrimeField,
     {
-        let mut result = Vec::with_capacity((PERMUTS - 1) * 2);
+        let n = proof.evals.s[0].zeta.len();
+        let mut result = Vec::with_capacity((PERMUTS - 1) * 2 * n);
         for s_eval in &proof.evals.s {
-            result.push(s_eval.zeta[0]);
-            result.push(s_eval.zeta_omega[0]);
+            debug_assert_eq!(s_eval.zeta.len(), n, "PointEvaluations chunk count invariant");
+            debug_assert_eq!(s_eval.zeta_omega.len(), n, "PointEvaluations chunk count invariant");
+            for i in 0..n {
+                result.push(s_eval.zeta[i]);
+                result.push(s_eval.zeta_omega[i]);
+            }
         }
         result
     }
