@@ -72,3 +72,12 @@ analysis/
 presentation/
 
 tools/__pycache__/
+
+# Chunked-circuit fixtures — too large for git (chunks2 step CS alone is ~56MB).
+# Regenerate locally via `tools/regen_chunks_fixtures.sh`. See docs/chunking.md.
+packages/pickles-circuit-diffs/circuits/ocaml/chunks2_*.json
+packages/pickles-circuit-diffs/circuits/ocaml/chunks2_*.jsonl
+packages/pickles-circuit-diffs/circuits/ocaml/chunks4_*.json
+packages/pickles-circuit-diffs/circuits/ocaml/chunks4_*.jsonl
+packages/pickles-circuit-diffs/circuits/ocaml/chunks8_*.json
+packages/pickles-circuit-diffs/circuits/ocaml/chunks8_*.jsonl
