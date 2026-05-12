@@ -113,3 +113,64 @@ sense of security for the n>1 work that follows.
 
 After FFI 1-4, the original Phase 1 (`NumChunks` type-level threading)
 can land cleanly without lurking shape mismatches.
+
+## Progress tracker
+
+The eval-extractor widening (FFI-1) is being done one function per
+commit. Each commit is structurally chunk-aware in Rust but leaves the
+JS shim + PS binding chunk-blind by design — at n=1 byte-equivalence
+holds because the loop iterates once. The JS/PS widening is deferred
+to a single coordinated commit that updates all extractors together.
+
+### Per-extractor status
+
+| Function | Rust widened | JS shim chunk-aware | PS binding chunk-aware | Commit |
+|---|---|---|---|---|
+| `proof_z_evals` | ✓ | ✗ (reads `flat[0]`/`flat[1]`) | ✗ (returns `PointEval f`) | 9dd4b29f |
+| `proof_witness_evals` | ✓ | ✗ (`pairEvals` ok at n=1, would over-pack at n>1) | ✗ (returns `Vector 15 (PointEval f)`) | c89edba1 |
+| `proof_sigma_evals` | ✗ | ✗ | ✗ | — |
+| `proof_coefficient_evals` | ✗ | ✗ | ✗ | — |
+| `proof_index_evals` | ✗ | ✗ | ✗ | — |
+| `oracles` (`public_evals[0/1].first()`) | ✗ | n/a | n/a | — |
+
+### Deferred work (must land before n>1 can run)
+
+1. **Finish Rust eval-extractor widening** — remaining 3 functions
+   (sigma, coefficient, index) + the `oracles` `public_evals` site.
+   Same `[0] → 0..num_chunks` pattern; each commit n=1-equivalent.
+2. **JS shim chunk-awareness** — update `packages/pickles/src/Pickles/ProofFFI.js`:
+   * `pallas/vestaProofZEvals` — read all `2n` elements as `Array<PointEval>`
+   * `pallas/vestaProofWitnessEvals` — group flat `30n` array into 15
+     polynomials × n chunks each (NOT chunk-blind `pairEvals`)
+   * `pallas/vestaProofSigmaEvals` — same shape (6 polynomials × n chunks)
+   * `pallas/vestaProofCoefficientEvals` — same shape (15 × n)
+   * `pallas/vestaProofIndexEvals` — same shape (6 selectors × n)
+3. **PS binding type widening** in `packages/pickles/src/Pickles/ProofFFI.purs`:
+   * Choose the chunk-aware shape — likely `PointEval (Vector n a)` per
+     the `docs/chunking.md` Phase 3 plan, NOT `Array (PointEval a)`,
+     because the OCaml-side type is `'a PointEvaluations` where `'a`
+     becomes the chunked-vector type at n>1.
+   * Cascade through all 4 PS callers of `proofZEvals`,
+     `proofWitnessEvals`, etc. (Prove/Step.purs, Prove/Compile.purs).
+4. **`ProofCommitments` chunk-awareness** — separate from the eval
+   extractors. `ProofCommitments.wComm` / `zComm` shape widening; the
+   Rust side already returns chunked w-/z-comm arrays of length
+   `15n` / `n` (proof_commitments at circuit.rs:842 iterates
+   `w.chunks`). PS-side type and JS-side parsing both need updates.
+5. **Oracles `public_evals` widening** — Rust + JS + PS. The output is
+   currently packed into the same flat vec as alpha/beta/gamma/zeta,
+   so widening shifts every downstream offset.
+6. **End-to-end smoke test at n=2** — use `dump_chunks2.exe` fixtures
+   to drive a chunked-proof verify path through the FFI. This is the
+   "FFI-4" verification step.
+
+### Why this approach (not vertical-slice-per-function)
+
+Per-function vertical slice (Rust + JS + PS at once) would require
+deciding the chunk-aware PS shape NOW and migrating each function's
+callers. The chunked `PointEval` shape isn't free to choose — it
+should mirror the OCaml-side `'a PointEvaluations` parameterization
+(Phase 3 of `docs/chunking.md`). Locking that in across all 5
+extractors at once is cheaper than choosing it once-per-function and
+maybe revising later. Hence Rust-only steps preserve optionality.
+
