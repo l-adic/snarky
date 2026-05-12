@@ -478,8 +478,13 @@ mod generic {
     }
 
     /// Extract index (selector) polynomial evaluations from a proof.
-    /// Returns 12 values: 6 selectors × 2 points (zeta, zeta*omega).
-    /// Order: generic, poseidon, complete_add, mul, emul, endomul_scalar.
+    /// Returns `6 * 2 * num_chunks` values in selector-major,
+    /// within-selector chunk-major order.
+    /// Selector order: generic, poseidon, complete_add, mul, emul, endomul_scalar.
+    /// At `n=1` length is 12 (current behavior).
+    ///
+    /// Chunk-order convention: same as `proof_z_evals` / `proof_witness_evals`.
+    /// See `docs/chunking-ffi-audit.md`.
     pub fn proof_index_evals<G: KimchiCurve>(
         proof: &ProverProof<G, OpeningProof<G>>,
     ) -> Vec<G::ScalarField>
@@ -487,20 +492,25 @@ mod generic {
         G::BaseField: PrimeField,
     {
         let e = &proof.evals;
-        vec![
-            e.generic_selector.zeta[0],
-            e.generic_selector.zeta_omega[0],
-            e.poseidon_selector.zeta[0],
-            e.poseidon_selector.zeta_omega[0],
-            e.complete_add_selector.zeta[0],
-            e.complete_add_selector.zeta_omega[0],
-            e.mul_selector.zeta[0],
-            e.mul_selector.zeta_omega[0],
-            e.emul_selector.zeta[0],
-            e.emul_selector.zeta_omega[0],
-            e.endomul_scalar_selector.zeta[0],
-            e.endomul_scalar_selector.zeta_omega[0],
-        ]
+        let n = e.generic_selector.zeta.len();
+        let selectors: [&kimchi::proof::PointEvaluations<Vec<G::ScalarField>>; 6] = [
+            &e.generic_selector,
+            &e.poseidon_selector,
+            &e.complete_add_selector,
+            &e.mul_selector,
+            &e.emul_selector,
+            &e.endomul_scalar_selector,
+        ];
+        let mut result = Vec::with_capacity(6 * 2 * n);
+        for sel in selectors {
+            debug_assert_eq!(sel.zeta.len(), n, "PointEvaluations chunk count invariant");
+            debug_assert_eq!(sel.zeta_omega.len(), n, "PointEvaluations chunk count invariant");
+            for i in 0..n {
+                result.push(sel.zeta[i]);
+                result.push(sel.zeta_omega[i]);
+            }
+        }
+        result
     }
 
     /// Helper: compute oracles result from verifier index and proof.
