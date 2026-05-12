@@ -76,6 +76,7 @@ import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
+import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.ProofFFI
   ( firstChunk
@@ -1175,6 +1176,9 @@ instance
                 , publicInput: headBaseCaseWrapPI
                 , prevChallenges: map toFFI [ baseCaseDummyChalPoly, baseCaseDummyChalPoly ]
                 }
+            -- TODO chunking: at n > 1 the dummy itself needs to be
+            -- chunk-shaped; using `firstChunk` here is n=1-correct only.
+            -- Migrating requires reshaping `dummyWrapProof` first.
             dummyWrapXhat = ProofFFI.firstChunk dummyWrapOracles.publicEvals
             de = bcd.dummyEvals
             pe = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
@@ -1252,20 +1256,25 @@ instance
                         }
 
                     peWF = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
+                    prevWrapCollapse = Chunks.collapsePointEval
+                      { rounds: reflectType (Proxy :: Proxy WrapIPARounds)
+                      , zeta: prevWrapOracles.zeta
+                      , zetaOmega: prevWrapOracles.zeta * domainGenerator slotWrapDomainLog2
+                      }
                     prevHeadPrevEvals = StepAllEvals
                       { ftEval1: F prevWrapOracles.ftEval1
                       , publicEvals:
-                          let pew = ProofFFI.firstChunk prevWrapOracles.publicEvals in
+                          let pew = prevWrapCollapse prevWrapOracles.publicEvals in
                             PointEval { zeta: F pew.zeta, omegaTimesZeta: F pew.omegaTimesZeta }
-                      , zEvals: peWF (ProofFFI.firstChunk (ProofFFI.proofZEvals prev.wrapProof))
+                      , zEvals: peWF (prevWrapCollapse (ProofFFI.proofZEvals prev.wrapProof))
                       , witnessEvals:
-                          map (peWF <<< ProofFFI.firstChunk) (ProofFFI.proofWitnessEvals prev.wrapProof)
+                          map (peWF <<< prevWrapCollapse) (ProofFFI.proofWitnessEvals prev.wrapProof)
                       , coeffEvals:
-                          map (peWF <<< ProofFFI.firstChunk) (ProofFFI.proofCoefficientEvals prev.wrapProof)
+                          map (peWF <<< prevWrapCollapse) (ProofFFI.proofCoefficientEvals prev.wrapProof)
                       , sigmaEvals:
-                          map (peWF <<< ProofFFI.firstChunk) (ProofFFI.proofSigmaEvals prev.wrapProof)
+                          map (peWF <<< prevWrapCollapse) (ProofFFI.proofSigmaEvals prev.wrapProof)
                       , indexEvals:
-                          map (peWF <<< ProofFFI.firstChunk) (ProofFFI.proofIndexEvals prev.wrapProof)
+                          map (peWF <<< prevWrapCollapse) (ProofFFI.proofIndexEvals prev.wrapProof)
                       }
 
                     -- Take the slot's `Vector n` view by dropping the
@@ -1800,6 +1809,9 @@ instance
                 , publicInput: headBaseCaseWrapPI
                 , prevChallenges: map toFFI [ baseCaseDummyChalPoly, baseCaseDummyChalPoly ]
                 }
+            -- TODO chunking: at n > 1 the dummy itself needs to be
+            -- chunk-shaped; using `firstChunk` here is n=1-correct only.
+            -- Migrating requires reshaping `dummyWrapProof` first.
             dummyWrapXhat = ProofFFI.firstChunk dummyWrapOracles.publicEvals
             de = bcd.dummyEvals
             pe = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
@@ -1866,20 +1878,25 @@ instance
                         }
 
                     peWF = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
+                    prevWrapCollapse = Chunks.collapsePointEval
+                      { rounds: reflectType (Proxy :: Proxy WrapIPARounds)
+                      , zeta: prevWrapOracles.zeta
+                      , zetaOmega: prevWrapOracles.zeta * domainGenerator slotWrapDomainLog2
+                      }
                     prevHeadPrevEvals = StepAllEvals
                       { ftEval1: F prevWrapOracles.ftEval1
                       , publicEvals:
-                          let pew = ProofFFI.firstChunk prevWrapOracles.publicEvals in
+                          let pew = prevWrapCollapse prevWrapOracles.publicEvals in
                             PointEval { zeta: F pew.zeta, omegaTimesZeta: F pew.omegaTimesZeta }
-                      , zEvals: peWF (ProofFFI.firstChunk (ProofFFI.proofZEvals prev.wrapProof))
+                      , zEvals: peWF (prevWrapCollapse (ProofFFI.proofZEvals prev.wrapProof))
                       , witnessEvals:
-                          map (peWF <<< ProofFFI.firstChunk) (ProofFFI.proofWitnessEvals prev.wrapProof)
+                          map (peWF <<< prevWrapCollapse) (ProofFFI.proofWitnessEvals prev.wrapProof)
                       , coeffEvals:
-                          map (peWF <<< ProofFFI.firstChunk) (ProofFFI.proofCoefficientEvals prev.wrapProof)
+                          map (peWF <<< prevWrapCollapse) (ProofFFI.proofCoefficientEvals prev.wrapProof)
                       , sigmaEvals:
-                          map (peWF <<< ProofFFI.firstChunk) (ProofFFI.proofSigmaEvals prev.wrapProof)
+                          map (peWF <<< prevWrapCollapse) (ProofFFI.proofSigmaEvals prev.wrapProof)
                       , indexEvals:
-                          map (peWF <<< ProofFFI.firstChunk) (ProofFFI.proofIndexEvals prev.wrapProof)
+                          map (peWF <<< prevWrapCollapse) (ProofFFI.proofIndexEvals prev.wrapProof)
                       }
 
                     headSlotPrevWrapBpChalsVec
@@ -3335,14 +3352,21 @@ runMultiProverBody
       , prevChallenges: stepOraclesPrevChals
       }
 
+    stepGenSelf = domainGenerator selfStepDomainLog2
+    stepCollapse = Chunks.collapsePointEval
+      { rounds: reflectType (Proxy :: Proxy StepIPARounds)
+      , zeta: stepOracles.zeta
+      , zetaOmega: stepOracles.zeta * stepGenSelf
+      }
+
     allEvals =
       { ftEval1: stepOracles.ftEval1
-      , publicEvals: firstChunk stepOracles.publicEvals
-      , zEvals: firstChunk (proofZEvals stepResult.proof)
-      , witnessEvals: map firstChunk (proofWitnessEvals stepResult.proof)
-      , coeffEvals: map firstChunk (proofCoefficientEvals stepResult.proof)
-      , sigmaEvals: map firstChunk (proofSigmaEvals stepResult.proof)
-      , indexEvals: map firstChunk (proofIndexEvals stepResult.proof)
+      , publicEvals: stepCollapse stepOracles.publicEvals
+      , zEvals: stepCollapse (proofZEvals stepResult.proof)
+      , witnessEvals: map stepCollapse (proofWitnessEvals stepResult.proof)
+      , coeffEvals: map stepCollapse (proofCoefficientEvals stepResult.proof)
+      , sigmaEvals: map stepCollapse (proofSigmaEvals stepResult.proof)
+      , indexEvals: map stepCollapse (proofIndexEvals stepResult.proof)
       }
 
     outerMpv = reflectType (Proxy @mpv)

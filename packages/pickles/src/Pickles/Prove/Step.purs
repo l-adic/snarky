@@ -88,8 +88,9 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
+import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.ProofFFI (Proof, firstChunk, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, tCommVec, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallenges, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaVerifierIndexCommitments, vestaVerifierIndexDigest)
+import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, tCommVec, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallenges, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaVerifierIndexCommitments, vestaVerifierIndexDigest)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
@@ -1093,14 +1094,20 @@ buildSlotAdvice input = do
       (permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: StepField } -> StepField)
         { domainLog2: input.stepDomainLog2, zkRows, pt: zetaExpandedStep }
 
+    wrapGen = domainGenerator input.wrapDomainLog2
+    wrapZetaw = oracles.zeta * wrapGen
+    wrapSrsLog2 = reflectType (Proxy :: Proxy WrapIPARounds)
+    wrapCollapse = Chunks.collapsePointEval
+      { rounds: wrapSrsLog2, zeta: oracles.zeta, zetaOmega: wrapZetaw }
+
     wrapAllEvals =
       { ftEval1: oracles.ftEval1
-      , publicEvals: firstChunk oracles.publicEvals
-      , zEvals: firstChunk (proofZEvals input.wrapProof)
-      , witnessEvals: map firstChunk (proofWitnessEvals input.wrapProof)
-      , coeffEvals: map firstChunk (proofCoefficientEvals input.wrapProof)
-      , sigmaEvals: map firstChunk (proofSigmaEvals input.wrapProof)
-      , indexEvals: map firstChunk (proofIndexEvals input.wrapProof)
+      , publicEvals: wrapCollapse oracles.publicEvals
+      , zEvals: wrapCollapse (proofZEvals input.wrapProof)
+      , witnessEvals: map wrapCollapse (proofWitnessEvals input.wrapProof)
+      , coeffEvals: map wrapCollapse (proofCoefficientEvals input.wrapProof)
+      , sigmaEvals: map wrapCollapse (proofSigmaEvals input.wrapProof)
+      , indexEvals: map wrapCollapse (proofIndexEvals input.wrapProof)
       }
 
     wrapShifts = domainShifts input.wrapDomainLog2
