@@ -395,9 +395,9 @@ buildStepAdvice input =
               , sg: WeierstrassAffinePoint g0
               }
           , messages: WrapProofMessages
-              { wComm: Vector.generate (\_ -> WeierstrassAffinePoint g0)
-              , zComm: WeierstrassAffinePoint g0
-              , tComm: Vector.generate (\_ -> WeierstrassAffinePoint g0)
+              { wComm: Vector.generate (\_ -> Vector.singleton (WeierstrassAffinePoint g0))
+              , zComm: Vector.singleton (WeierstrassAffinePoint g0)
+              , tComm: Vector.generate (\_ -> Vector.singleton (WeierstrassAffinePoint g0))
               }
           }
       , proofState: Step.ProofState
@@ -1335,9 +1335,9 @@ buildSlotAdvice input = do
               , sg: WeierstrassAffinePoint openingSg
               }
           , messages: WrapProofMessages
-              { wComm: map WeierstrassAffinePoint wrapMessages.wComm
-              , zComm: WeierstrassAffinePoint wrapMessages.zComm
-              , tComm: map WeierstrassAffinePoint wrapMessages.tComm
+              { wComm: map (Vector.singleton <<< WeierstrassAffinePoint) wrapMessages.wComm
+              , zComm: Vector.singleton (WeierstrassAffinePoint wrapMessages.zComm)
+              , tComm: map (Vector.singleton <<< WeierstrassAffinePoint) wrapMessages.tComm
               }
           }
       , proofState: Step.ProofState

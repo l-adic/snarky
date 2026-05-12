@@ -675,10 +675,13 @@ wrapMain config (StatementPacked stmtR) = do
   WrapProofMessages messagesRec <- label "messages" $ exists $ lift $
     getMessages @branches @mpv @slots @VestaG unit
   let
+    -- TODO chunking: collapse Vector 1 inner dimension via Vector.head.
+    -- At n=1 this is the only chunk; widen the downstream `messages`
+    -- shape when chunking lands in the wrap-side IVP.
     messages =
-      { wComm: map unwrapPt messagesRec.wComm
-      , zComm: unwrapPt messagesRec.zComm
-      , tComm: map unwrapPt messagesRec.tComm
+      { wComm: map (unwrapPt <<< Vector.head) messagesRec.wComm
+      , zComm: unwrapPt (Vector.head messagesRec.zComm)
+      , tComm: map (unwrapPt <<< Vector.head) messagesRec.tComm
       }
 
   -- 13. pack_statement + split_field per Type1 (wrap_main.ml:542-548)

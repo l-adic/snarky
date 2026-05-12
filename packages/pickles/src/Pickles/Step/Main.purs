@@ -483,9 +483,12 @@ allocatePerProofWitness (PerProofWitness ppw) = do
       , indexEvals: map unwrapPointEval evalsRec.indexEvals
       }
   pure
-    { wComm: msgRec.wComm
-    , zComm: msgRec.zComm
-    , tComm: msgRec.tComm
+    -- TODO chunking: collapse Vector n inner dimension to a single point.
+    -- At n=1 `Vector.head` is the only chunk; at n>1 the downstream
+    -- AllocatedPerProofWitness shape needs to widen to carry chunks.
+    { wComm: map Vector.head msgRec.wComm
+    , zComm: Vector.head msgRec.zComm
+    , tComm: map Vector.head msgRec.tComm
     , lr: openRec.lr
     , z1: openRec.z1
     , z2: openRec.z2

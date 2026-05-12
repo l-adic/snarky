@@ -249,30 +249,46 @@ instance
 -- |
 -- | OCaml hlist order: w_comm (15), z_comm (1), t_comm (7).
 -- | Reference: kimchi_types.ml prover_proof.commitments
-newtype WrapProofMessages pt = WrapProofMessages
-  { wComm :: Vector 15 pt
-  , zComm :: pt
-  , tComm :: Vector 7 pt
+-- |
+-- | Carries `n :: Int = num_chunks` (`docs/chunking.md`). At n=1 every
+-- | inner `Vector n` collapses to a singleton, which is byte-equivalent
+-- | to the pre-chunking flat shapes (Vector 15 pt / pt / Vector 7 pt).
+-- |   * `wComm` — 15 polynomials × n chunks each.
+-- |   * `zComm` — 1 polynomial with n chunks.
+-- |   * `tComm` — quotient poly's 7-chunk overhead, each sub-split into
+-- |     n chunks (total `7 * n` group elements). Nested for type clarity;
+-- |     CircuitType flattens to a single 7n-long vector.
+newtype WrapProofMessages :: Int -> Type -> Type
+newtype WrapProofMessages n pt = WrapProofMessages
+  { wComm :: Vector 15 (Vector n pt)
+  , zComm :: Vector n pt
+  , tComm :: Vector 7 (Vector n pt)
   }
 
-instance (CircuitType f a var) => CircuitType f (WrapProofMessages a) (WrapProofMessages var) where
-  sizeInFields pf _ = genericSizeInFields pf (Proxy @(Tuple3 (Vector 15 a) a (Vector 7 a)))
+instance
+  ( CircuitType f a var
+  , Reflectable n Int
+  ) =>
+  CircuitType f (WrapProofMessages n a) (WrapProofMessages n var) where
+  sizeInFields pf _ =
+    genericSizeInFields pf (Proxy @(Tuple3 (Vector 15 (Vector n a)) (Vector n a) (Vector 7 (Vector n a))))
   valueToFields (WrapProofMessages r) = genericValueToFields (tuple3 r.wComm r.zComm r.tComm)
   fieldsToValue fs =
     let
-      tup :: Tuple3 (Vector 15 a) a (Vector 7 a)
+      tup :: Tuple3 (Vector 15 (Vector n a)) (Vector n a) (Vector 7 (Vector n a))
       tup = genericFieldsToValue fs
     in
       uncurry3 (\wComm zComm tComm -> WrapProofMessages { wComm, zComm, tComm }) tup
-  varToFields (WrapProofMessages r) = genericVarToFields @(Tuple3 (Vector 15 a) a (Vector 7 a)) (tuple3 r.wComm r.zComm r.tComm)
+  varToFields (WrapProofMessages r) =
+    genericVarToFields @(Tuple3 (Vector 15 (Vector n a)) (Vector n a) (Vector 7 (Vector n a))) (tuple3 r.wComm r.zComm r.tComm)
   fieldsToVar fs =
     let
-      tup :: Tuple3 (Vector 15 var) var (Vector 7 var)
-      tup = genericFieldsToVar @(Tuple3 (Vector 15 a) a (Vector 7 a)) fs
+      tup :: Tuple3 (Vector 15 (Vector n var)) (Vector n var) (Vector 7 (Vector n var))
+      tup = genericFieldsToVar @(Tuple3 (Vector 15 (Vector n a)) (Vector n a) (Vector 7 (Vector n a))) fs
     in
       uncurry3 (\wComm zComm tComm -> WrapProofMessages { wComm, zComm, tComm }) tup
 
-instance (CheckedType f c var) => CheckedType f c (WrapProofMessages var) where
+instance (CheckedType f c var) => CheckedType f c (WrapProofMessages n var) where
   check (WrapProofMessages r) = check (tuple3 r.wComm r.zComm r.tComm)
 
 -- | Wrap proof opening: bulletproof opening data allocated in the per-proof witness.

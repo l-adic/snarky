@@ -145,7 +145,7 @@ class
   getMessages
     :: Unit
     -> m
-         ( WrapProofMessages
+         ( WrapProofMessages 1
              (WeierstrassAffinePoint g (F f))
          )
 

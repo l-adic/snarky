@@ -105,7 +105,9 @@ instance
 -- | `of_hlistable` which gives field order (messages first, then opening).
 newtype WrapProof :: Int -> Type -> Type -> Type
 newtype WrapProof n pt sf = WrapProof
-  { messages :: WrapProofMessages pt
+  -- | num_chunks pinned to 1 for now; widens when chunking lands at the
+  -- | step-verifies-wrap boundary. See `docs/chunking.md` Checkpoint 3.
+  { messages :: WrapProofMessages 1 pt
   , opening :: WrapProofOpening n pt sf
   }
 
@@ -115,19 +117,19 @@ instance
   , Reflectable n Int
   ) =>
   CircuitType f (WrapProof n a b) (WrapProof n avar bvar) where
-  sizeInFields pf _ = genericSizeInFields pf (Proxy @(Tuple2 (WrapProofMessages a) (WrapProofOpening n a b)))
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(Tuple2 (WrapProofMessages 1 a) (WrapProofOpening n a b)))
   valueToFields (WrapProof r) = genericValueToFields (tuple2 r.messages r.opening)
   fieldsToValue fs =
     let
-      tup :: Tuple2 (WrapProofMessages a) (WrapProofOpening n a b)
+      tup :: Tuple2 (WrapProofMessages 1 a) (WrapProofOpening n a b)
       tup = genericFieldsToValue fs
     in
       uncurry2 (\messages opening -> WrapProof { messages, opening }) tup
-  varToFields (WrapProof r) = genericVarToFields @(Tuple2 (WrapProofMessages a) (WrapProofOpening n a b)) (tuple2 r.messages r.opening)
+  varToFields (WrapProof r) = genericVarToFields @(Tuple2 (WrapProofMessages 1 a) (WrapProofOpening n a b)) (tuple2 r.messages r.opening)
   fieldsToVar fs =
     let
-      tup :: Tuple2 (WrapProofMessages avar) (WrapProofOpening n avar bvar)
-      tup = genericFieldsToVar @(Tuple2 (WrapProofMessages a) (WrapProofOpening n a b)) fs
+      tup :: Tuple2 (WrapProofMessages 1 avar) (WrapProofOpening n avar bvar)
+      tup = genericFieldsToVar @(Tuple2 (WrapProofMessages 1 a) (WrapProofOpening n a b)) fs
     in
       uncurry2 (\messages opening -> WrapProof { messages, opening }) tup
 

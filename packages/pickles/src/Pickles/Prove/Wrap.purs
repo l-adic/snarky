@@ -111,7 +111,7 @@ type WrapAdvice (mpv :: Int) (slots :: Type -> Type) =
         StepIPARounds
         (WeierstrassAffinePoint VestaG (F WrapField))
         (Type1 (F WrapField))
-  , messages :: WrapProofMessages (WeierstrassAffinePoint VestaG (F WrapField))
+  , messages :: WrapProofMessages 1 (WeierstrassAffinePoint VestaG (F WrapField))
   }
 
 -- | ReaderT transformer carrying a `WrapAdvice` over a base monad.
@@ -285,10 +285,11 @@ buildWrapAdvice input =
     -- `WrapProofMessages` shape.
     commits = pallasProofCommitments input.stepProof
 
+    -- At n=1, each pt becomes a Vector 1 singleton. TODO: widen for n>1.
     messages = WrapProofMessages
-      { wComm: map mkVestaPt commits.wComm
-      , zComm: mkVestaPt commits.zComm
-      , tComm: map mkVestaPt (tCommVec commits)
+      { wComm: map (Vector.singleton <<< mkVestaPt) commits.wComm
+      , zComm: Vector.singleton (mkVestaPt commits.zComm)
+      , tComm: map (Vector.singleton <<< mkVestaPt) (tCommVec commits)
       }
 
     -- ===== Req.Openings_proof. =====

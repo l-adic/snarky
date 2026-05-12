@@ -25,6 +25,7 @@
 module Data.Vector
   ( Vector
   , nil
+  , singleton
   , toUnfoldable
   , toUnfoldable1
   , cons
@@ -138,6 +139,10 @@ instance (Reflectable n Int, Arbitrary a) => Arbitrary (Vector n a) where
 -- | The empty vector.
 nil :: forall a. Vector 0 a
 nil = Vector mempty
+
+-- | The one-element vector.
+singleton :: forall a. a -> Vector 1 a
+singleton a = Vector (Array.singleton a)
 
 -- | Convert a `Vector` to any `Unfoldable` structure.
 toUnfoldable :: forall f n. Unfoldable f => Vector n ~> f

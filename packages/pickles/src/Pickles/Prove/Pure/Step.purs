@@ -763,11 +763,11 @@ expandProof input =
     wrapCommits = vestaProofCommitments input.wrapProof
 
     messages
-      :: WrapProofMessages (WeierstrassAffinePoint PallasG (F StepField))
+      :: WrapProofMessages 1 (WeierstrassAffinePoint PallasG (F StepField))
     messages = WrapProofMessages
-      { wComm: map mkPallasPt wrapCommits.wComm
-      , zComm: mkPallasPt wrapCommits.zComm
-      , tComm: map mkPallasPt (tCommVec wrapCommits)
+      { wComm: map (Vector.singleton <<< mkPallasPt) wrapCommits.wComm
+      , zComm: Vector.singleton (mkPallasPt wrapCommits.zComm)
+      , tComm: map (Vector.singleton <<< mkPallasPt) (tCommVec wrapCommits)
       }
 
     -- Wrap proof's opening proof from the kimchi form. The `sg`
