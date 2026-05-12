@@ -131,7 +131,7 @@ to a single coordinated commit that updates all extractors together.
 | `proof_sigma_evals` | ✓ | ✓ (`polyChunksToPointEvals(_, 6)`) | ✓ (returns `Vector 6 (NonEmptyArray (PointEval f))`) | 30feb8dc + sweep |
 | `proof_coefficient_evals` | ✓ | ✓ (`polyChunksToPointEvals(_, 15)`) | ✓ (returns `Vector 15 (NonEmptyArray (PointEval f))`) | c8eb8785 + sweep |
 | `proof_index_evals` | ✓ | ✓ (`polyChunksToPointEvals(_, 6)`) | ✓ (returns `Vector 6 (NonEmptyArray (PointEval f))`) | 6e3799bb + sweep |
-| `oracles` `public_evals[0/1]` | ✓ (append chunks 1..n-1 at end) | ✓ (`unpackOracles`) | ✓ (`publicEvals :: NonEmptyArray (PointEval f)`) | oracles-sweep |
+| `oracles` `public_evals[0/1]` | ✓ (chunks inline; tail offset derived) | ✓ (`unpackOracles`) | ✓ (`publicEvals :: NonEmptyArray (PointEval f)`) | oracles-sweep |
 
 The JS+PS sweep uses `NonEmptyArray` from `Data.Array.NonEmpty` to
 encode the non-emptiness invariant (kimchi always emits ≥1 chunk per
@@ -150,11 +150,20 @@ widening to `actualEvaluation`-Horner-combine is Phase 2/3 of
 
 ### How `oracles` public_evals was widened (RESOLVED)
 
-The "Rust-only widening is incompatible" obstacle was real but the
-**append-at-end** strategy sidestepped it. Original concern below
-documents the issue that was eventually solved by NOT shifting the
-flat-vec layout; instead appending chunks 1..n-1 at positions 16+
-(only at n>1, vec stays length 16 at n=1 = byte-identical).
+Layout after the widening (length `14 + 2n`):
+  * positions 0..8 — `alpha, beta, gamma, zeta, ft_eval0, v, u, cip, ft_eval1`
+  * positions 9..9+2n-1 — interleaved `[pez[0], pezo[0], pez[1], pezo[1], ..., pez[n-1], pezo[n-1]]`
+  * positions 9+2n..9+2n+4 — `fq_digest, alpha_chal, zeta_chal, v_chal, u_chal`
+
+At n=1 length is 16 with `fq_digest` at position 11 — byte-identical
+to the pre-chunking layout. JS shim derives n from total length
+(`n = (length - 14) / 2`) and reads tail fields at `tailStart = 9 + 2n`.
+
+The earlier concern that this requires offset-shifting and breaks the
+JS shim was real but tractable: deriving n once and reading positions
+relative to `tailStart` is a few extra lines in the JS shim. The
+"append at end" alternative we considered first preserved fixed
+positions 0..15 verbatim but at the cost of a weirder layout.
 
 ### Original obstacle (now resolved)
 

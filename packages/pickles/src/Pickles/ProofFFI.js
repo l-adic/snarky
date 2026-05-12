@@ -127,21 +127,29 @@ export const vestaProofIndexEvals = (proof) =>
 // `prevChallenges` is an array of `{ sgX, sgY, challenges }` records
 // (one per previous proof); we split into the three parallel arrays
 // that the napi binding expects.
-// Rust returns a flat Vec<F> of length `16 + 2*(n-1)` where n = num_chunks.
-// Positions 0..15 are fixed (alpha, beta, ..., public_evals chunk 0, ..., u_chal),
-// positions 16+ are the remaining public_evals chunks interleaved as
-// [pez[1], pezo[1], pez[2], pezo[2], ..., pez[n-1], pezo[n-1]].
+// Rust returns a flat Vec<F> of length `14 + 2n` where n = num_chunks.
+// Layout (in order):
+//   positions 0..8:         alpha, beta, gamma, zeta, ft_eval0, v, u, cip, ft_eval1
+//   positions 9..9+2n-1:    [pez[0], pezo[0], pez[1], pezo[1], ..., pez[n-1], pezo[n-1]]
+//   positions 9+2n..9+2n+4: fq_digest, alpha_chal, zeta_chal, v_chal, u_chal
 //
-// We assemble `publicEvals` as a NonEmptyArray (PointEval f) of length n,
-// validated non-empty at the boundary. PS-side `firstChunk` extracts the
-// only chunk at n=1; future n>1 callers consume the full chunks array.
+// At n=1 length is 16 with fq_digest at position 11 — same as the
+// pre-chunking layout, so n=1 byte-equivalence is preserved.
+//
+// We derive n from length, build `publicEvals` as a NonEmptyArray
+// (PointEval f) validated non-empty, and read tail fields at the
+// computed offset.
 const unpackOracles = (flat) => {
-  if (flat.length < 16 || (flat.length - 16) % 2 !== 0) {
-    throw new Error(`unpackOracles: invalid length ${flat.length} (expected 16 + 2k)`);
+  if (flat.length < 16 || (flat.length - 14) % 2 !== 0) {
+    throw new Error(`unpackOracles: invalid length ${flat.length} (expected 14 + 2n)`);
   }
-  const publicEvals = [{ zeta: flat[9], omegaTimesZeta: flat[10] }];
-  for (let i = 16; i < flat.length; i += 2) {
-    publicEvals.push({ zeta: flat[i], omegaTimesZeta: flat[i + 1] });
+  const n = (flat.length - 14) / 2;
+  const evalsStart = 9;
+  const tailStart = evalsStart + 2 * n;
+
+  const publicEvals = [];
+  for (let c = 0; c < n; c++) {
+    publicEvals.push({ zeta: flat[evalsStart + c * 2], omegaTimesZeta: flat[evalsStart + c * 2 + 1] });
   }
   return {
     alpha: flat[0],
@@ -154,11 +162,11 @@ const unpackOracles = (flat) => {
     combinedInnerProduct: flat[7],
     ftEval1: flat[8],
     publicEvals,
-    fqDigest: flat[11],
-    alphaChal: flat[12],
-    zetaChal: flat[13],
-    vChal: flat[14],
-    uChal: flat[15]
+    fqDigest: flat[tailStart],
+    alphaChal: flat[tailStart + 1],
+    zetaChal: flat[tailStart + 2],
+    vChal: flat[tailStart + 3],
+    uChal: flat[tailStart + 4]
   };
 };
 

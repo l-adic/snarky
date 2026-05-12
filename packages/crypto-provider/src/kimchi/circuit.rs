@@ -614,13 +614,17 @@ mod generic {
         let oracles_result =
             compute_oracles::<G, EFqSponge, EFrSponge>(verifier_index, proof_ref, public_input)?;
 
-        // public_evals[0] = evaluation at zeta, public_evals[1] = evaluation at zeta*omega
-        // Each is a Vec<F> of length num_chunks. Chunk 0 stays at fixed positions
-        // 9, 10 (existing layout); chunks 1..n-1 are appended at the end after
-        // position 15, interleaved as [pez[1], pezo[1], pez[2], pezo[2], ...].
+        // Flat Vec layout, length = 14 + 2 * num_chunks:
+        //   positions 0..8:        alpha, beta, gamma, zeta, ft_eval0,
+        //                          v, u, cip, ft_eval1                          (9 elements)
+        //   positions 9..9+2n-1:   pez[0], pezo[0], pez[1], pezo[1], ...,
+        //                          pez[n-1], pezo[n-1]                          (2n elements)
+        //   positions 9+2n..end:   fq_digest, alpha_chal, zeta_chal,
+        //                          v_chal, u_chal                                (5 elements)
         //
-        // This preserves the n=1 layout exactly (vec length 16 unchanged) while
-        // making chunked public_evals available to chunk-aware JS shim consumers.
+        // At n=1 length is 16 with fq_digest at position 11 — byte-identical
+        // to the pre-chunking layout. JS shim derives n from total length.
+        //
         // See `docs/chunking-ffi-audit.md`.
         let pez = &oracles_result.public_evals[0];
         let pezo = &oracles_result.public_evals[1];
@@ -630,32 +634,30 @@ mod generic {
             pezo.len(),
             "kimchi public_evals zeta/omega chunk count invariant"
         );
-        let public_eval_zeta = pez[0];
-        let public_eval_zeta_omega = pezo[0];
+        let n = pez.len();
 
-        let mut result = vec![
-            oracles_result.oracles.alpha,
-            oracles_result.oracles.beta,
-            oracles_result.oracles.gamma,
-            oracles_result.oracles.zeta,
-            oracles_result.ft_eval0,
-            oracles_result.oracles.v,
-            oracles_result.oracles.u,
-            oracles_result.combined_inner_product,
-            proof_ref.ft_eval1,
-            public_eval_zeta,       // chunk 0
-            public_eval_zeta_omega, // chunk 0
-            oracles_result.digest,
-            oracles_result.oracles.alpha_chal.0,
-            oracles_result.oracles.zeta_chal.0,
-            oracles_result.oracles.v_chal.0,
-            oracles_result.oracles.u_chal.0,
-        ];
-        // Append chunks 1..n-1 (interleaved zeta, omega).
-        for c in 1..pez.len() {
+        let mut result = Vec::with_capacity(14 + 2 * n);
+        // Head (positions 0..8)
+        result.push(oracles_result.oracles.alpha);
+        result.push(oracles_result.oracles.beta);
+        result.push(oracles_result.oracles.gamma);
+        result.push(oracles_result.oracles.zeta);
+        result.push(oracles_result.ft_eval0);
+        result.push(oracles_result.oracles.v);
+        result.push(oracles_result.oracles.u);
+        result.push(oracles_result.combined_inner_product);
+        result.push(proof_ref.ft_eval1);
+        // Chunked public_evals (positions 9..9+2n-1, interleaved zeta/omega)
+        for c in 0..n {
             result.push(pez[c]);
             result.push(pezo[c]);
         }
+        // Tail (positions 9+2n..9+2n+4)
+        result.push(oracles_result.digest);
+        result.push(oracles_result.oracles.alpha_chal.0);
+        result.push(oracles_result.oracles.zeta_chal.0);
+        result.push(oracles_result.oracles.v_chal.0);
+        result.push(oracles_result.oracles.u_chal.0);
         Ok(result)
     }
 
