@@ -725,6 +725,7 @@ instance
     (StatementIO prevHeadInput prevHeadOutput /\ restValCarrier)
     ( Step.PerProofWitness
         n
+        1
         StepIPARounds
         WrapIPARounds
         (F StepField)
@@ -1372,6 +1373,7 @@ instance
     (StatementIO prevHeadInput prevHeadOutput /\ restValCarrier)
     ( Step.PerProofWitness
         mpvMax
+        1
         StepIPARounds
         WrapIPARounds
         (F StepField)
@@ -2241,6 +2243,7 @@ instance
   , Add restBranches 1 branches
   , StepSlotsCarrier
       prevsSpec
+      1
       StepIPARounds
       WrapIPARounds
       (F StepField)
@@ -2955,6 +2958,7 @@ mkRuleEntry
   => CheckedType StepField (KimchiConstraint StepField) carrierVar
   => StepSlotsCarrier
        prevsSpec
+       1
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -2964,6 +2968,7 @@ mkRuleEntry
        carrier
   => StepSlotsCarrier
        prevsSpec
+       1
        StepIPARounds
        WrapIPARounds
        (FVar StepField)

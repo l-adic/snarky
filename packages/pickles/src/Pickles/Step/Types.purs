@@ -103,11 +103,12 @@ instance
 -- |
 -- | Reference: wrap_proof.ml — `{ messages; opening }` allocated via
 -- | `of_hlistable` which gives field order (messages first, then opening).
-newtype WrapProof :: Int -> Type -> Type -> Type
-newtype WrapProof n pt sf = WrapProof
-  -- | num_chunks pinned to 1 for now; widens when chunking lands at the
-  -- | step-verifies-wrap boundary. See `docs/chunking.md` Checkpoint 3.
-  { messages :: WrapProofMessages 1 pt
+newtype WrapProof :: Int -> Int -> Type -> Type -> Type
+newtype WrapProof n numChunks pt sf = WrapProof
+  -- | `numChunks` reflects kimchi's `num_chunks` for the inner wrap
+  -- | proof's polynomial commitments. Top-level call sites pin it to 1
+  -- | until the Rust FFI emits chunked output.
+  { messages :: WrapProofMessages numChunks pt
   , opening :: WrapProofOpening n pt sf
   }
 
@@ -115,21 +116,22 @@ instance
   ( CircuitType f a avar
   , CircuitType f b bvar
   , Reflectable n Int
+  , Reflectable numChunks Int
   ) =>
-  CircuitType f (WrapProof n a b) (WrapProof n avar bvar) where
-  sizeInFields pf _ = genericSizeInFields pf (Proxy @(Tuple2 (WrapProofMessages 1 a) (WrapProofOpening n a b)))
+  CircuitType f (WrapProof n numChunks a b) (WrapProof n numChunks avar bvar) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(Tuple2 (WrapProofMessages numChunks a) (WrapProofOpening n a b)))
   valueToFields (WrapProof r) = genericValueToFields (tuple2 r.messages r.opening)
   fieldsToValue fs =
     let
-      tup :: Tuple2 (WrapProofMessages 1 a) (WrapProofOpening n a b)
+      tup :: Tuple2 (WrapProofMessages numChunks a) (WrapProofOpening n a b)
       tup = genericFieldsToValue fs
     in
       uncurry2 (\messages opening -> WrapProof { messages, opening }) tup
-  varToFields (WrapProof r) = genericVarToFields @(Tuple2 (WrapProofMessages 1 a) (WrapProofOpening n a b)) (tuple2 r.messages r.opening)
+  varToFields (WrapProof r) = genericVarToFields @(Tuple2 (WrapProofMessages numChunks a) (WrapProofOpening n a b)) (tuple2 r.messages r.opening)
   fieldsToVar fs =
     let
-      tup :: Tuple2 (WrapProofMessages 1 avar) (WrapProofOpening n avar bvar)
-      tup = genericFieldsToVar @(Tuple2 (WrapProofMessages 1 a) (WrapProofOpening n a b)) fs
+      tup :: Tuple2 (WrapProofMessages numChunks avar) (WrapProofOpening n avar bvar)
+      tup = genericFieldsToVar @(Tuple2 (WrapProofMessages numChunks a) (WrapProofOpening n a b)) fs
     in
       uncurry2 (\messages opening -> WrapProof { messages, opening }) tup
 
@@ -138,7 +140,7 @@ instance
   , CheckedType f c bvar
   , Reflectable n Int
   ) =>
-  CheckedType f c (WrapProof n avar bvar) where
+  CheckedType f c (WrapProof n numChunks avar bvar) where
   check (WrapProof r) = check (tuple2 r.messages r.opening)
 
 -- | FOP proof state: deferred values + sponge digest, in OCaml's to_data order.
@@ -318,8 +320,8 @@ instance
 -- | type as a separate parameter (see `composition_types.ml:188`). The
 -- | Pasta protocol constants only appear at top-level bindings that
 -- | instantiate the type.
-newtype PerProofWitness (n :: Int) (ds :: Int) (dw :: Int) f sf b = PerProofWitness
-  { wrapProof :: WrapProof dw (WeierstrassAffinePoint PallasG f) sf
+newtype PerProofWitness (n :: Int) (numChunks :: Int) (ds :: Int) (dw :: Int) f sf b = PerProofWitness
+  { wrapProof :: WrapProof dw numChunks (WeierstrassAffinePoint PallasG f) sf
   , proofState :: ProofState ds f b
   , prevEvals :: StepAllEvals f
   , prevChallenges :: Vector n (UnChecked (Vector ds f))
@@ -327,13 +329,13 @@ newtype PerProofWitness (n :: Int) (ds :: Int) (dw :: Int) f sf b = PerProofWitn
   }
 
 -- | Tuple shape for PerProofWitness, parameterized by:
--- |   - n / ds / dw : vector lengths (propagated from the newtype)
+-- |   - n / numChunks / ds / dw : vector lengths (propagated from the newtype)
 -- |   - x           : field element type (F f or FVar f)
 -- |   - sf          : shifted-f type
 -- |   - b           : boolean type
-type PerProofWitnessTuple n ds dw x sf b =
+type PerProofWitnessTuple n numChunks ds dw x sf b =
   Tuple5
-    (WrapProof dw (WeierstrassAffinePoint PallasG x) sf)
+    (WrapProof dw numChunks (WeierstrassAffinePoint PallasG x) sf)
     (ProofState ds x b)
     (StepAllEvals x)
     (Vector n (UnChecked (Vector ds x)))
@@ -343,19 +345,20 @@ instance
   ( FieldSizeInBits f m
   , CircuitType f sf sfvar
   , Reflectable n Int
+  , Reflectable numChunks Int
   , Reflectable ds Int
   , Reflectable dw Int
   ) =>
   CircuitType f
-    (PerProofWitness n ds dw (F f) sf Boolean)
-    (PerProofWitness n ds dw (FVar f) sfvar (BoolVar f)) where
+    (PerProofWitness n numChunks ds dw (F f) sf Boolean)
+    (PerProofWitness n numChunks ds dw (FVar f) sfvar (BoolVar f)) where
   sizeInFields pf _ = genericSizeInFields pf
-    (Proxy @(PerProofWitnessTuple n ds dw (F f) sf Boolean))
+    (Proxy @(PerProofWitnessTuple n numChunks ds dw (F f) sf Boolean))
   valueToFields (PerProofWitness r) = genericValueToFields
     (tuple5 r.wrapProof r.proofState r.prevEvals r.prevChallenges r.prevSgs)
   fieldsToValue fs =
     let
-      tup :: PerProofWitnessTuple n ds dw (F f) sf Boolean
+      tup :: PerProofWitnessTuple n numChunks ds dw (F f) sf Boolean
       tup = genericFieldsToValue fs
     in
       uncurry5
@@ -364,12 +367,12 @@ instance
         )
         tup
   varToFields (PerProofWitness r) = genericVarToFields
-    @(PerProofWitnessTuple n ds dw (F f) sf Boolean)
+    @(PerProofWitnessTuple n numChunks ds dw (F f) sf Boolean)
     (tuple5 r.wrapProof r.proofState r.prevEvals r.prevChallenges r.prevSgs)
   fieldsToVar fs =
     let
-      tup :: PerProofWitnessTuple n ds dw (FVar f) sfvar (BoolVar f)
-      tup = genericFieldsToVar @(PerProofWitnessTuple n ds dw (F f) sf Boolean) fs
+      tup :: PerProofWitnessTuple n numChunks ds dw (FVar f) sfvar (BoolVar f)
+      tup = genericFieldsToVar @(PerProofWitnessTuple n numChunks ds dw (F f) sf Boolean) fs
     in
       uncurry5
         ( \wrapProof proofState prevEvals prevChallenges prevSgs ->
@@ -378,16 +381,16 @@ instance
         tup
 
 instance
-  ( CheckedType StepField (KimchiConstraint StepField) (WrapProof dw (WeierstrassAffinePoint PallasG (FVar StepField)) sfvar)
+  ( CheckedType StepField (KimchiConstraint StepField) (WrapProof dw numChunks (WeierstrassAffinePoint PallasG (FVar StepField)) sfvar)
   , CheckedType StepField (KimchiConstraint StepField) (ProofState ds (FVar StepField) (BoolVar StepField))
   , CheckedType StepField (KimchiConstraint StepField) (StepAllEvals (FVar StepField))
   , Reflectable n Int
   , Reflectable ds Int
   ) =>
-  CheckedType StepField (KimchiConstraint StepField) (PerProofWitness n ds dw (FVar StepField) sfvar (BoolVar StepField)) where
+  CheckedType StepField (KimchiConstraint StepField) (PerProofWitness n numChunks ds dw (FVar StepField) sfvar (BoolVar StepField)) where
   check (PerProofWitness r) =
     let
-      tup :: PerProofWitnessTuple n ds dw (FVar StepField) sfvar (BoolVar StepField)
+      tup :: PerProofWitnessTuple n numChunks ds dw (FVar StepField) sfvar (BoolVar StepField)
       tup = tuple5 r.wrapProof r.proofState r.prevEvals r.prevChallenges r.prevSgs
     in
       check tup

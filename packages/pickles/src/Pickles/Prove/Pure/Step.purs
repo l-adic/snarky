@@ -486,6 +486,7 @@ type ExpandProofOutput n =
   , perProofWitness ::
       Step.PerProofWitness
         n
+        1
         StepIPARounds
         WrapIPARounds
         (F StepField)
@@ -791,6 +792,7 @@ expandProof input =
     wrapProofKimchi
       :: Step.WrapProof
            WrapIPARounds
+           1
            (WeierstrassAffinePoint PallasG (F StepField))
            (Type2 (SplitField (F StepField) Boolean))
     wrapProofKimchi = Step.WrapProof
@@ -843,6 +845,7 @@ expandProof input =
     perProofWitness
       :: Step.PerProofWitness
            n
+           1
            StepIPARounds
            WrapIPARounds
            (F StepField)

@@ -445,7 +445,7 @@ allocatePerProofWitness
   :: forall @n t m
    . CircuitM StepField (KimchiConstraint StepField) t m
   => Reflectable n Int
-  => PerProofWitness n StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
+  => PerProofWitness n 1 StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
   -- WrapProof currently pins numChunks=1 internally → tCommLen = 7*1 = 7.
   -- Widens when the step-verifies-wrap boundary supports chunking.
   -> Snarky (KimchiConstraint StepField) t m (AllocatedPerProofWitness n 1 7)
@@ -784,6 +784,7 @@ stepMain
   => CheckedType StepField (KimchiConstraint StepField) carrierVar
   => StepSlotsCarrier
        prevsSpec
+       1
        StepIPARounds
        WrapIPARounds
        (FVar StepField)

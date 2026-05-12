@@ -240,6 +240,7 @@ buildStepAdvice
    . Reflectable len Int
   => StepSlotsCarrier
        prevsSpec
+       1
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -375,6 +376,7 @@ buildStepAdvice input =
        . Reflectable n Int
       => Step.PerProofWitness
            n
+           1
            StepIPARounds
            WrapIPARounds
            (F StepField)
@@ -951,6 +953,7 @@ type SlotAdviceContrib n =
   , slotSppw ::
       Step.PerProofWitness
         n
+        1
         StepIPARounds
         WrapIPARounds
         (F StepField)
@@ -1316,7 +1319,7 @@ buildSlotAdvice input = do
     -- preserving heterogeneous per-entry values for rules like
     -- Tree_proof_return.
     slotSppw
-      :: Step.PerProofWitness n StepIPARounds WrapIPARounds
+      :: Step.PerProofWitness n 1 StepIPARounds WrapIPARounds
            (F StepField)
            (Type2 (SplitField (F StepField) Boolean))
            Boolean
@@ -1726,6 +1729,7 @@ instance
   ( Monad m
   , StepSlotsCarrier
       prevsSpec
+      1
       ds
       dw
       (F StepField)
@@ -1849,6 +1853,7 @@ stepCompile
   => CheckedType StepField (KimchiConstraint StepField) carrierVar
   => StepSlotsCarrier
        prevsSpec
+       1
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -1858,6 +1863,7 @@ stepCompile
        carrier
   => StepSlotsCarrier
        prevsSpec
+       1
        StepIPARounds
        WrapIPARounds
        (FVar StepField)
@@ -1996,6 +2002,7 @@ preComputeStepDomainLog2
   => CheckedType StepField (KimchiConstraint StepField) carrierVar
   => StepSlotsCarrier
        prevsSpec
+       1
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -2005,6 +2012,7 @@ preComputeStepDomainLog2
        carrier
   => StepSlotsCarrier
        prevsSpec
+       1
        StepIPARounds
        WrapIPARounds
        (FVar StepField)
@@ -2090,6 +2098,7 @@ stepSolveAndProve
   => CheckedType StepField (KimchiConstraint StepField) carrierVar
   => StepSlotsCarrier
        prevsSpec
+       1
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -2099,6 +2108,7 @@ stepSolveAndProve
        carrier
   => StepSlotsCarrier
        prevsSpec
+       1
        StepIPARounds
        WrapIPARounds
        (FVar StepField)

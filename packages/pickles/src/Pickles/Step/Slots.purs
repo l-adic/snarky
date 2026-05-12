@@ -45,10 +45,10 @@ import Prim.Int (class Add)
 -- | The kind `k` doesn't affect the carrier — both compiled and
 -- | side-loaded slots present the same `PerProofWitness` shape.
 class StepSlotsCarrier
-  :: Type -> Int -> Int -> Type -> Type -> Type -> Int -> Type -> Constraint
+  :: Type -> Int -> Int -> Int -> Type -> Type -> Type -> Int -> Type -> Constraint
 class
-  StepSlotsCarrier spec ds dw f sf b len carrier
-  | spec ds dw f sf b -> len carrier
+  StepSlotsCarrier spec numChunks ds dw f sf b len carrier
+  | spec numChunks ds dw f sf b -> len carrier
   where
   -- | Walk the carrier in slot order. The callback's `forall n. ...`
   -- | prefix gives each invocation access to its slot's `n_i`. The
@@ -62,7 +62,7 @@ class
          => Reflectable pad Int
          => Add pad n PaddedLength
          => Finite len
-         -> PerProofWitness n ds dw f sf b
+         -> PerProofWitness n numChunks ds dw f sf b
          -> m result
        )
     -> carrier
@@ -75,16 +75,16 @@ class
           . Reflectable n Int
          => Reflectable pad Int
          => Add pad n PaddedLength
-         => PerProofWitness n ds dw f sf b
+         => PerProofWitness n numChunks ds dw f sf b
        )
     -> carrier
 
-instance StepSlotsCarrier Unit ds dw f sf b 0 Unit where
+instance StepSlotsCarrier Unit numChunks ds dw f sf b 0 Unit where
   traverseStepSlotsA _ _ = pure Vector.nil
   replicateStepSlotsCarrier _ = unit
 
 instance
-  ( StepSlotsCarrier rest ds dw f sf b restLen rcarrier
+  ( StepSlotsCarrier rest numChunks ds dw f sf b restLen rcarrier
   , Add restLen 1 len
   , Reflectable n Int
   , Add pad n PaddedLength
@@ -92,13 +92,14 @@ instance
   ) =>
   StepSlotsCarrier
     (Slot k n statement /\ rest)
+    numChunks
     ds
     dw
     f
     sf
     b
     len
-    (PerProofWitness n ds dw f sf b /\ rcarrier)
+    (PerProofWitness n numChunks ds dw f sf b /\ rcarrier)
   where
   traverseStepSlotsA f (here /\ rest) =
     Vector.cons
