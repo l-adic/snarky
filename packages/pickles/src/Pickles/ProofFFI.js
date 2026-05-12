@@ -390,32 +390,44 @@ export const vestaSigmaCommLast = (verifierIndex) => {
 export const vestaVerifierIndexDigest = (verifierIndex) =>
   crypto.vestaVerifierIndexDigest(verifierIndex);
 
-// Proof commitments from a Pallas proof (Vesta/Fq circuits).
-// At num_chunks > 1 each polynomial's commitment is a chunked group:
-// wComm becomes a 15-array of length-numChunks arrays, zComm a
-// length-numChunks array. The Rust FFI currently emits the flat
-// num_chunks=1 layout, so we wrap each polynomial in a singleton array
-// here to give downstream consumers a stable chunked shape.
-export const vestaProofCommitments = (proof) => {
-  const flat = crypto.vestaProofCommitments(proof);
+// Parse the Rust FFI's flat coord array (Vec<Field>) into the chunked
+// PS-side `ProofCommitments` shape. Rust emits the layout
+//   [w0_chunk0.x, w0_chunk0.y, ..., w0_chunk{nc-1}, w1_chunk0, ..., w14_chunk{nc-1},
+//    z_chunk0, ..., z_chunk{nc-1},
+//    t_chunk0, ..., t_chunk{7*nc-1}]
+// — 23 points × num_chunks = 46 * num_chunks coords. We derive
+// num_chunks from total length; in vanilla Mina chunks=1 and the
+// layout collapses to the previous flat shape.
+const unpackProofCommitments = (flat) => {
+  const numChunks = (flat.length / 46) | 0;
   const wComm = [];
-  for (let i = 0; i < 30; i += 2) wComm.push([{ x: flat[i], y: flat[i+1] }]);
-  const zComm = [{ x: flat[30], y: flat[31] }];
+  for (let i = 0; i < 15; i++) {
+    const polyChunks = [];
+    for (let j = 0; j < numChunks; j++) {
+      const off = (i * numChunks + j) * 2;
+      polyChunks.push({ x: flat[off], y: flat[off + 1] });
+    }
+    wComm.push(polyChunks);
+  }
+  const zComm = [];
+  const zOff = 15 * numChunks * 2;
+  for (let j = 0; j < numChunks; j++) {
+    zComm.push({ x: flat[zOff + j * 2], y: flat[zOff + j * 2 + 1] });
+  }
   const tComm = [];
-  for (let i = 32; i < flat.length; i += 2) tComm.push({ x: flat[i], y: flat[i+1] });
+  const tOff = 16 * numChunks * 2;
+  const tLen = 7 * numChunks;
+  for (let j = 0; j < tLen; j++) {
+    tComm.push({ x: flat[tOff + j * 2], y: flat[tOff + j * 2 + 1] });
+  }
   return { wComm, zComm, tComm };
 };
 
-// Proof commitments: 15 w-poly chunks, 1 z-poly chunked, 1+ t-poly pieces
-export const pallasProofCommitments = (proof) => {
-  const flat = crypto.pallasProofCommitments(proof);
-  const wComm = [];
-  for (let i = 0; i < 30; i += 2) wComm.push([{ x: flat[i], y: flat[i+1] }]);
-  const zComm = [{ x: flat[30], y: flat[31] }];
-  const tComm = [];
-  for (let i = 32; i < flat.length; i += 2) tComm.push({ x: flat[i], y: flat[i+1] });
-  return { wComm, zComm, tComm };
-};
+export const vestaProofCommitments = (proof) =>
+  unpackProofCommitments(crypto.vestaProofCommitments(proof));
+
+export const pallasProofCommitments = (proof) =>
+  unpackProofCommitments(crypto.pallasProofCommitments(proof));
 
 // Construct a Pallas-committed kimchi proof from flat component data.
 // PureScript-side uses `vestaMakeWireProof` in ProofFFI.purs — see that
