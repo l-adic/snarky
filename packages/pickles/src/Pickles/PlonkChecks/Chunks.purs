@@ -19,11 +19,15 @@
 -- | `docs/chunking-ffi-audit.md`.
 module Pickles.PlonkChecks.Chunks
   ( actualEvaluation
+  , actualEvaluationArr
+  , collapsePointEval
   ) where
 
 import Prelude
 
 import Data.Array as Array
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NonEmptyArray
 import Data.Foldable (foldl)
 import Data.Maybe (Maybe(..))
 import Data.Vector (Vector)
@@ -51,14 +55,50 @@ actualEvaluation
   -> f
   -> Int
   -> f
-actualEvaluation xs pt rounds =
+actualEvaluation xs = actualEvaluationArr (Vector.toUnfoldable xs)
+
+-- | `Array`-input version. Host-side use only — for in-circuit use, take
+-- | the static-vector `actualEvaluation` above so the circuit's chunked
+-- | slot allocation has a type-level width to match.
+actualEvaluationArr
+  :: forall f
+   . Semiring f
+  => Array f
+  -> f
+  -> Int
+  -> f
+actualEvaluationArr xs pt rounds =
   let
     ptN = squareN rounds pt
-    xsRev = Array.reverse (Vector.toUnfoldable xs)
+    xsRev = Array.reverse xs
   in
     case Array.uncons xsRev of
       Just { head, tail } -> foldl (\acc fx -> fx + ptN * acc) head tail
       Nothing -> zero
+
+-- | Collapse a chunked PointEval (one {zeta, omegaTimesZeta} per chunk)
+-- | into a scalar PointEval by Horner-combining each component at its
+-- | respective evaluation point.
+-- |
+-- | At `num_chunks = 1` returns the only chunk's value verbatim
+-- | (Horner-of-1 = identity). At `n > 1` produces the polynomial's
+-- | combined evaluation `Σ_{i=0..n-1} chunk[i] * pt^(2^rounds * i)`.
+-- |
+-- | This is the host-side analog of OCaml's `evals_of_split_evals`
+-- | (`plonk_checks.ml:102`).
+collapsePointEval
+  :: forall f
+   . Semiring f
+  => { rounds :: Int, zeta :: f, zetaOmega :: f }
+  -> NonEmptyArray { zeta :: f, omegaTimesZeta :: f }
+  -> { zeta :: f, omegaTimesZeta :: f }
+collapsePointEval { rounds, zeta, zetaOmega } chunks =
+  let
+    arr = NonEmptyArray.toArray chunks
+  in
+    { zeta: actualEvaluationArr (map _.zeta arr) zeta rounds
+    , omegaTimesZeta: actualEvaluationArr (map _.omegaTimesZeta arr) zetaOmega rounds
+    }
 
 -- | `squareN n x = x^(2^n)`. n=0 → x, n=1 → x*x, n=2 → (x*x)^2 = x^4, etc.
 squareN :: forall f. Semiring f => Int -> f -> f

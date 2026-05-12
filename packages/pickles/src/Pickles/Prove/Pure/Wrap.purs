@@ -43,7 +43,8 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.ProofFFI (OraclesResult, Proof, firstChunk, pallasProofOpeningPrechallengesVec, pallasProofOracles)
+import Pickles.PlonkChecks.Chunks as Chunks
+import Pickles.ProofFFI (OraclesResult, Proof, pallasProofOpeningPrechallengesVec, pallasProofOracles)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatch, computeBpChalsAndB, crossFieldDigest, derivePlonk, ftEval0)
 import Pickles.Types (StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, ScalarChallenge)
@@ -229,8 +230,17 @@ wrapComputeDeferredValues input =
       , prevChallenges: prevChallengeList
       }
 
-    -- x_hat: single chunk per side (non-chunked assumption).
-    xHatEvals = firstChunk oraclesResult.publicEvals
+    -- x_hat: Horner-collapse the chunked public evals into a single
+    -- (zeta, zetaw) PointEval. At num_chunks = 1 this returns the only
+    -- chunk verbatim (byte-identical to `firstChunk`); at n > 1 it
+    -- performs the combined-eval Horner per OCaml `evals_of_split_evals`
+    -- (`plonk_checks.ml:102`).
+    xHatEvals = Chunks.collapsePointEval
+      { rounds: input.srsLengthLog2
+      , zeta: oraclesResult.zeta
+      , zetaOmega: oraclesResult.zeta * input.generator
+      }
+      oraclesResult.publicEvals
 
     -- ===== plonk0 / tick_plonk_minimal. =====
     --
