@@ -51,17 +51,17 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 -- | `chunks` is the number of t_comm chunks (= 7 * ceil(domain_size / max_poly_size)).
 -------------------------------------------------------------------------------
 
--- | TODO(num_chunks): When num_chunks > 1, each commitment becomes
--- | Vector numChunks (AffinePoint f). The `chunks` parameter here is the
--- | total number of tComm points (currently 7 = num_chunks * 7).
--- | wComm and zComm would similarly need chunking.
-type FqSpongeInput sgOldN chunks f =
+-- | Polynomial commitments enter chunked: `wComm` is 15 polynomials each
+-- | with `numChunks` sub-commitments, `zComm` is one polynomial with
+-- | `numChunks` sub-commitments. `tComm` is the t-poly's flat chunk list
+-- | of length `tCommLen = 7 * numChunks` (at n=1, tCommLen = 7).
+type FqSpongeInput sgOldN numChunks tCommLen f =
   { indexDigest :: f
   , sgOld :: Vector sgOldN (AffinePoint f)
   , publicComm :: AffinePoint f
-  , wComm :: Vector 15 (AffinePoint f)
-  , zComm :: AffinePoint f
-  , tComm :: Vector chunks (AffinePoint f)
+  , wComm :: Vector 15 (Vector numChunks (AffinePoint f))
+  , zComm :: Vector numChunks (AffinePoint f)
+  , tComm :: Vector tCommLen (AffinePoint f)
   }
 
 type FqSpongeOutput f =
@@ -73,14 +73,14 @@ type FqSpongeOutput f =
   }
 
 spongeTranscriptOptCircuit
-  :: forall f sgOldN chunks t m r
+  :: forall f sgOldN numChunks tCommLen t m r
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
   => { endo :: FVar f | r }
   -> Vector sgOldN (Bool (FVar f)) -- actual_proofs_verified_mask
-  -> FqSpongeInput sgOldN chunks (FVar f)
+  -> FqSpongeInput sgOldN numChunks tCommLen (FVar f)
   -> SpongeM f (KimchiConstraint f) t m (FqSpongeOutput (FVar f))
 spongeTranscriptOptCircuit params sgOldMask input = do
   -- Run the Opt sponge transcript in Snarky (not SpongeM)
@@ -96,8 +96,8 @@ spongeTranscriptOptCircuit params sgOldMask input = do
         OptSponge.optAbsorb (Tuple keep sg.y)
       -- 3. Absorb public_comm point
       OptSponge.optAbsorbPoint input.publicComm
-      -- 4. Absorb w_comm points
-      for_ input.wComm OptSponge.optAbsorbPoint
+      -- 4. Absorb w_comm points (per-polynomial, per-chunk)
+      for_ input.wComm \chunks -> for_ chunks OptSponge.optAbsorbPoint
       -- DIAG iter 2aa: dump circuit sponge state before beta squeeze for
       -- direct comparison to kimchi-native ground truth. First divergence
       -- point localizes whether mismatch is in absorb data or sponge math.
@@ -116,8 +116,8 @@ spongeTranscriptOptCircuit params sgOldMask input = do
       beta <- OptSponge.optChallenge params.endo
       -- 6. Squeeze gamma
       gamma <- OptSponge.optChallenge params.endo
-      -- 7. Absorb z_comm
-      OptSponge.optAbsorbPoint input.zComm
+      -- 7. Absorb z_comm chunks
+      for_ input.zComm OptSponge.optAbsorbPoint
       -- 8. Squeeze alpha (scalar_challenge = lowest_128_bits ~constrain_low_bits:false)
       alphaChal <- OptSponge.optScalarChallenge params.endo
       -- 9. Absorb t_comm

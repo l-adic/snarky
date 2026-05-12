@@ -401,9 +401,9 @@ mpvFrontPad mkDummy real =
 -- |   + branch_data(mask0,mask1,domLog2) at end
 -------------------------------------------------------------------------------
 
-type AllocatedPerProofWitness n =
-  { wComm :: Vector 15 (WeierstrassAffinePoint PallasG (FVar StepField))
-  , zComm :: WeierstrassAffinePoint PallasG (FVar StepField)
+type AllocatedPerProofWitness n numChunks =
+  { wComm :: Vector 15 (Vector numChunks (WeierstrassAffinePoint PallasG (FVar StepField)))
+  , zComm :: Vector numChunks (WeierstrassAffinePoint PallasG (FVar StepField))
   , tComm :: Vector 7 (WeierstrassAffinePoint PallasG (FVar StepField))
   , lr :: Vector 15 { l :: WeierstrassAffinePoint PallasG (FVar StepField), r :: WeierstrassAffinePoint PallasG (FVar StepField) }
   , z1 :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
@@ -445,7 +445,9 @@ allocatePerProofWitness
    . CircuitM StepField (KimchiConstraint StepField) t m
   => Reflectable n Int
   => PerProofWitness n StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
-  -> Snarky (KimchiConstraint StepField) t m (AllocatedPerProofWitness n)
+  -- WrapProof currently pins numChunks=1 internally; widens when the
+  -- step-verifies-wrap boundary supports chunking.
+  -> Snarky (KimchiConstraint StepField) t m (AllocatedPerProofWitness n 1)
 allocatePerProofWitness (PerProofWitness ppw) = do
   let
     WrapProof wrapProofRec = ppw.wrapProof
@@ -483,11 +485,10 @@ allocatePerProofWitness (PerProofWitness ppw) = do
       , indexEvals: map unwrapPointEval evalsRec.indexEvals
       }
   pure
-    -- TODO chunking: collapse Vector n inner dimension to a single point.
-    -- At n=1 `Vector.head` is the only chunk; at n>1 the downstream
-    -- AllocatedPerProofWitness shape needs to widen to carry chunks.
-    { wComm: map Vector.head msgRec.wComm
-    , zComm: Vector.head msgRec.zComm
+    -- TODO(num_chunks): wComm/zComm now flow through chunked; tComm still
+    -- head-collapses (IVP `tComm :: Vector 7 pt`, no FFI t-chunking yet).
+    { wComm: msgRec.wComm
+    , zComm: msgRec.zComm
     , tComm: map Vector.head msgRec.tComm
     , lr: openRec.lr
     , z1: openRec.z1
@@ -619,11 +620,11 @@ liftDummyPerProofUnfinalized (PerProofUnfinalized r) =
 -------------------------------------------------------------------------------
 
 buildVerifyOneInput
-  :: forall @n pad
+  :: forall @n @numChunks pad
    . Reflectable n Int
   => Reflectable pad Int
   => Add pad n PaddedLength
-  => AllocatedPerProofWitness n
+  => AllocatedPerProofWitness n numChunks
   -> Array (FVar StepField) -- prev proof's public input, pre-flattened
   -> BoolVar StepField
   -> UnfinalizedProof
@@ -634,7 +635,7 @@ buildVerifyOneInput
      , index :: Vector 6 (AffinePoint (FVar StepField))
      }
   -> AffinePoint (FVar StepField) -- dummySg for padding
-  -> VerifyOneInput n WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
+  -> VerifyOneInput n numChunks WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
 buildVerifyOneInput pw appStateFields mustVerify unfinalized msgWrap vkComms dummySg =
   let
     -- sgOld: pad prevSgs to PaddedLength (Wrap_hack.Padded_length).
@@ -653,8 +654,8 @@ buildVerifyOneInput pw appStateFields mustVerify unfinalized msgWrap vkComms dum
     proofMask = Vector.drop @pad fullMasks
   in
     { appStateFields
-    , wComm: map unwrapPt pw.wComm
-    , zComm: unwrapPt pw.zComm
+    , wComm: map (map unwrapPt) pw.wComm
+    , zComm: map unwrapPt pw.zComm
     , tComm: map unwrapPt pw.tComm
     , lr: map (\r -> { l: unwrapPt r.l, r: unwrapPt r.r }) pw.lr
     , z1: pw.z1

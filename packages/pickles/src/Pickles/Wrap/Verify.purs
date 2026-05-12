@@ -64,18 +64,20 @@ type WrapVerifyInput n d fv =
 -- | Wrap_hack.Checked approach: for n < MaxProofsVerified, (2-n) dummy
 -- | challenge vectors are absorbed offline into the sponge state.
 wrapVerify
-  :: forall publicInput sgOldN totalBases totalBasesPred d dPred n t m r
+  :: forall publicInput sgOldN numChunks totalBases totalBasesPred d dPred n t m r
    . CircuitM WrapField (KimchiConstraint WrapField) t m
   => PublicInputCommit publicInput WrapField
   => Reflectable d Int
   => Reflectable n Int
   => Reflectable sgOldN Int
+  => Reflectable numChunks Int
   => Compare n 3 LT
+  => Compare 0 numChunks LT
   => Add 1 dPred d
   => Add sgOldN IvpBaseline totalBases
   => Add 1 totalBasesPred totalBases
   => IncrementallyVerifyProofParams WrapField r
-  -> IncrementallyVerifyProofInput publicInput sgOldN d (FVar WrapField) (Type1 (FVar WrapField))
+  -> IncrementallyVerifyProofInput publicInput sgOldN numChunks d (FVar WrapField) (Type1 (FVar WrapField))
   -> WrapVerifyInput n d (FVar WrapField)
   -> Snarky (KimchiConstraint WrapField) t m Unit
 wrapVerify ivpParams ivpInput verifyInput = do

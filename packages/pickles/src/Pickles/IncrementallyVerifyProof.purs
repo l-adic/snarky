@@ -40,7 +40,8 @@ import Pickles.Trace as Trace
 import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, WrapDeferredValues, toPlonkMinimal)
 import Pickles.Wrap.Types (IvpBaseline)
 import Poseidon (class PoseidonField)
-import Prim.Int (class Add)
+import Prim.Int (class Add, class Compare)
+import Prim.Ordering (LT)
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar as CVar
@@ -84,7 +85,7 @@ type IncrementallyVerifyProofParams f r =
 -- | `exists ~request:(fun () -> Req.Wrap_index)` (step_main.ml:345-348).
 -- | In the Wrap circuit they are constants (wrap_main.ml:209 Inner_curve.constant).
 -- | Either way, by the time they reach this function they are `fv` (FVar f).
-type IncrementallyVerifyProofInput publicInput sgOldN d fv sf =
+type IncrementallyVerifyProofInput publicInput sgOldN numChunks d fv sf =
   { publicInput :: publicInput
   , sgOld :: Vector sgOldN (AffinePoint fv)
   , sgOldMask :: Vector sgOldN fv
@@ -97,12 +98,12 @@ type IncrementallyVerifyProofInput publicInput sgOldN d fv sf =
       , coeff :: Vector 15 (AffinePoint fv)
       , sigma :: Vector 6 (AffinePoint fv)
       }
-  -- Protocol messages and opening proof
-  -- TODO(num_chunks): When num_chunks > 1, each commitment point becomes
-  -- Vector numChunks (AffinePoint fv). The tComm size (currently 7) is
-  -- ceil(domain_size / max_poly_size) * 7. For num_chunks = 1 this is just 7.
-  , wComm :: Vector 15 (AffinePoint fv)
-  , zComm :: AffinePoint fv
+  -- Protocol messages and opening proof.
+  -- wComm is 15 polynomials each split into `numChunks` commitments;
+  -- zComm is one polynomial split into `numChunks` commitments.
+  -- tComm is currently a flat `Vector 7` (FFI does not yet chunk t).
+  , wComm :: Vector 15 (Vector numChunks (AffinePoint fv))
+  , zComm :: Vector numChunks (AffinePoint fv)
   , tComm :: Vector 7 (AffinePoint fv)
   , opening ::
       { delta :: AffinePoint fv
@@ -163,7 +164,7 @@ ivpTrace labelStr v = do
   pure unit
 
 incrementallyVerifyProof
-  :: forall publicInput sgOldN totalBases totalBasesPred d dPred f f' @g sf t m r
+  :: forall publicInput sgOldN numChunks totalBases totalBasesPred d dPred f f' @g sf t m r
    . PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
@@ -176,12 +177,14 @@ incrementallyVerifyProof
   => PublicInputCommit publicInput f
   => Reflectable d Int
   => Reflectable sgOldN Int
+  => Reflectable numChunks Int
+  => Compare 0 numChunks LT
   => Add 1 dPred d
   => Add sgOldN IvpBaseline totalBases
   => Add 1 totalBasesPred totalBases
   => IpaScalarOps f t m sf
   -> IncrementallyVerifyProofParams f r
-  -> IncrementallyVerifyProofInput publicInput sgOldN d (FVar f) sf
+  -> IncrementallyVerifyProofInput publicInput sgOldN numChunks d (FVar f) sf
   -> Maybe (Sponge (FVar f)) -- ^ Pre-computed sponge_after_index. Nothing = compute internally.
   -> SpongeM f (KimchiConstraint f) t m (IncrementallyVerifyProofOutput d f)
 incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incrementally-verify-proof" do
@@ -234,10 +237,12 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
           let i = getFinite fi
           ivpTrace ("ivp.trace.wrap.sg_old." <> show i <> ".x") pt.x
           ivpTrace ("ivp.trace.wrap.sg_old." <> show i <> ".y") pt.y
-        forWithIndex_ input.wComm \fi pt -> do
-          let i = getFinite fi
-          ivpTrace ("ivp.trace.wrap.w_comm." <> show i <> ".x") pt.x
-          ivpTrace ("ivp.trace.wrap.w_comm." <> show i <> ".y") pt.y
+        forWithIndex_ input.wComm \fi chunks ->
+          forWithIndex_ chunks \fj pt -> do
+            let i = getFinite fi
+            let j = getFinite fj
+            ivpTrace ("ivp.trace.wrap.w_comm." <> show i <> "." <> show j <> ".x") pt.x
+            ivpTrace ("ivp.trace.wrap.w_comm." <> show i <> "." <> show j <> ".y") pt.y
       let
         spongeInput = { indexDigest, sgOld: input.sgOld, publicComm: xHat, wComm: input.wComm, zComm: input.zComm, tComm: input.tComm }
         mask = map (coerce :: FVar f -> Bool (FVar f)) input.sgOldMask
@@ -264,20 +269,24 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
       -- Continue sponge transcript: absorb x_hat, w_comm, squeeze beta/gamma, etc.
       -- step_verifier.ml:551-568
       Sponge.absorbPoint xHat
-      liftSnarky $ forWithIndex_ input.wComm \fi pt -> do
-        let i = getFinite fi
-        ivpTrace ("ivp.trace.w_comm." <> show i <> ".x") pt.x
-        ivpTrace ("ivp.trace.w_comm." <> show i <> ".y") pt.y
-      for_ input.wComm Sponge.absorbPoint
+      liftSnarky $ forWithIndex_ input.wComm \fi chunks ->
+        forWithIndex_ chunks \fj pt -> do
+          let i = getFinite fi
+          let j = getFinite fj
+          ivpTrace ("ivp.trace.w_comm." <> show i <> "." <> show j <> ".x") pt.x
+          ivpTrace ("ivp.trace.w_comm." <> show i <> "." <> show j <> ".y") pt.y
+      for_ input.wComm \chunks -> for_ chunks Sponge.absorbPoint
       -- beta/gamma: squeeze_challenge (constrain_low_bits:true)
       beta <- Sponge.squeezeScalarChallenge endoParams
       liftSnarky $ ivpTrace "ivp.trace.beta_squeezed" (SizedF.toField beta)
       gamma <- Sponge.squeezeScalarChallenge endoParams
       liftSnarky $ ivpTrace "ivp.trace.gamma_squeezed" (SizedF.toField gamma)
-      -- z_comm: receive
-      liftSnarky $ ivpTrace "ivp.trace.zcomm.x" input.zComm.x
-      liftSnarky $ ivpTrace "ivp.trace.zcomm.y" input.zComm.y
-      Sponge.absorbPoint input.zComm
+      -- z_comm: receive (per-chunk)
+      liftSnarky $ forWithIndex_ input.zComm \fj pt -> do
+        let j = getFinite fj
+        ivpTrace ("ivp.trace.zcomm." <> show j <> ".x") pt.x
+        ivpTrace ("ivp.trace.zcomm." <> show j <> ".y") pt.y
+      for_ input.zComm Sponge.absorbPoint
       -- alpha: squeeze_scalar (constrain_low_bits:false)
       alphaChal <- Sponge.squeezeScalar endoParams
       liftSnarky $ ivpTrace "ivp.trace.alpha_squeezed" (SizedF.toField alphaChal)
@@ -317,16 +326,20 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
 
   -- 5. Assemble commitment bases: sg_old + 45 fixed bases (to_batch order)
   -- Matches OCaml: sg_old[0..1], x_hat, ft_comm, z_comm, index(6), w_comm(15), coeff(15), sigma(6)
-  -- TODO(num_chunks): With num_chunks > 1, each commitment is an array of chunk
-  -- points. The allBases vector would grow by a factor of num_chunks, and
-  -- totalBases = sgOldN + num_chunks * 45. The combinePolynomials fold would
-  -- need inner loops over chunks (see OCaml's Pcs_batch.combine_split_commitments).
+  -- TODO(num_chunks): chunked wComm/zComm currently collapse to the first
+  -- chunk via Vector.head. At numChunks=1 this is exact. At n>1, the MSM
+  -- needs to grow allBases to sgOldN + numChunks * (15 + 1) + 30 + 7 and
+  -- combine via OCaml's Pcs_batch.combine_split_commitments (Horner over
+  -- chunks per polynomial). For now the type carries chunks but the
+  -- numChunksPred constraint guards `Vector.head`.
   let
+    wCommCollapsed = map Vector.head input.wComm
+    zCommCollapsed = Vector.head input.zComm
     allBases =
       input.sgOld `Vector.append`
-        ( (xHat :< ftCommResult :< input.zComm :< Vector.nil)
+        ( (xHat :< ftCommResult :< zCommCollapsed :< Vector.nil)
             `Vector.append` input.columnComms.index
-            `Vector.append` input.wComm
+            `Vector.append` wCommCollapsed
             `Vector.append` input.columnComms.coeff
             `Vector.append` input.columnComms.sigma
         )

@@ -40,15 +40,15 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 
 -- | Input to verify_one. All fields from Per_proof_witness + unfinalized + extras.
 -- | Specialized to StepField (Vesta scalar field = Fp).
-type VerifyOneInput n d tickD sf fv bv =
+type VerifyOneInput n numChunks d tickD sf fv bv =
   { -- Per_proof_witness.app_state (flattened via CircuitType upstream).
     -- For Input-mode rules with a single `FVar f` this is `[x]`; for
     -- multi-field inputs it's the full field-list produced by the
     -- input type's `varToFields`.
     appStateFields :: Array fv
   -- Per_proof_witness.wrap_proof
-  , wComm :: Vector 15 (AffinePoint fv)
-  , zComm :: AffinePoint fv
+  , wComm :: Vector 15 (Vector numChunks (AffinePoint fv))
+  , zComm :: Vector numChunks (AffinePoint fv)
   , tComm :: Vector 7 (AffinePoint fv)
   , lr :: Vector d { l :: AffinePoint fv, r :: AffinePoint fv }
   , z1 :: sf
@@ -132,13 +132,15 @@ type VerifyOneResult tickD fv =
 -- | Full verify_one matching OCaml step_main.ml:17-148.
 -- | Specialized to the Step field (Vesta scalar field = Fp).
 verifyOne
-  :: forall nd ndPred n t m r1
+  :: forall nd ndPred n numChunks t m r1
    . CircuitM StepField (KimchiConstraint StepField) t m
   => Add 1 ndPred nd
   => Compare 0 nd LT
+  => Compare 0 numChunks LT
   => Reflectable nd Int
+  => Reflectable numChunks Int
   => FOP.Params nd StepField r1
-  -> VerifyOneInput n WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
+  -> VerifyOneInput n numChunks WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
   -> IncrementallyVerifyProofParams StepField ()
   -> Snarky (KimchiConstraint StepField) t m (VerifyOneResult StepIPARounds (FVar StepField))
 verifyOne fopParams input ivpParams = do
