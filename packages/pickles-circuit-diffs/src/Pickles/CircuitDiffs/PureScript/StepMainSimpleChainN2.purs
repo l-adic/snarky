@@ -20,10 +20,11 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
+import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
+import Pickles.Slots (Compiled, Slot)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
-import Pickles.Step.Slots (Compiled, Slot)
-import Pickles.Types (StatementIO, StepField)
+import Pickles.Types (StatementIO)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertAny_, const_, equals_, exists, not_)
@@ -40,7 +41,7 @@ type StepMainSimpleChainN2Params =
 -- | Application-specific advice for the Simple_Chain N2 rule.
 -- |
 -- | The rule allocates two previous-proof app_state fields. In OCaml each
--- | is `exists Field.typ ~compute:(fun () -> Field.Constant.zero)`. We
+-- | is `exists StepField.typ ~compute:(fun () -> StepField.Constant.zero)`. We
 -- | route them through this typeclass so the SAME rule definition serves
 -- | both compilation (Effect throws) and proving.
 class Monad m <= SimpleChainN2Advice m where

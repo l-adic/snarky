@@ -26,12 +26,14 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Dummy (dummyIpaChallenges)
+import Pickles.Field (WrapField)
+import Pickles.IncrementallyVerifyProof (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, incrementallyVerifyProof)
 import Pickles.PublicInputCommit (class PublicInputCommit)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit, spongeFromConstants)
-import Pickles.Types (WrapField, WrapIPARounds, WrapIvpBaseline)
-import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, incrementallyVerifyProof)
+import Pickles.Types (WrapIPARounds)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
 import Pickles.Wrap.OtherField as WrapOtherField
+import Pickles.Wrap.Types (IvpBaseline)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEq, assertEqual_, assert_, label)
@@ -70,7 +72,7 @@ wrapVerify
   => Reflectable sgOldN Int
   => Compare n 3 LT
   => Add 1 dPred d
-  => Add sgOldN WrapIvpBaseline totalBases
+  => Add sgOldN IvpBaseline totalBases
   => Add 1 totalBasesPred totalBases
   => IncrementallyVerifyProofParams WrapField r
   -> IncrementallyVerifyProofInput publicInput sgOldN d (FVar WrapField) (Type1 (FVar WrapField))

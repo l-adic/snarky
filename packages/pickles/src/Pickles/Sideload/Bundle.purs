@@ -21,10 +21,10 @@ module Pickles.Sideload.Bundle
 
 import Prelude
 
+import Pickles.Field (StepField, WrapField)
 import Pickles.ProofsVerified (ProofsVerified)
 import Pickles.Sideload.VerificationKey (mkVerificationKey)
 import Pickles.Sideload.VerificationKey as SLVK
-import Pickles.Types (StepField, WrapField)
 import Pickles.VerificationKey (extractWrapVKComms)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
 import Snarky.Circuit.DSL (F)

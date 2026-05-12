@@ -19,7 +19,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainSideLoadedChild
 -- | `x`, an inner-curve generator `g` (allocated via
 -- | `WeierstrassAffinePoint` so on-curve check fires), then four
 -- | gate-emitting calls — `toFieldChecked' @1`, `scaleFast1 @1 @5` ×2,
--- | `endo @4 @1` — and a final `Field.Assert.equal self Field.zero`.
+-- | `endo @4 @1` — and a final `StepField.Assert.equal self StepField.zero`.
 -- | Byte-identical to OCaml (PS=OCaml=447 gates).
 
 import Prelude
@@ -29,8 +29,8 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
+import Pickles.Field (StepField)
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, assertEqual_, const_, exists)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
@@ -72,7 +72,7 @@ innerCurveGen =
 -- | Side-loaded child rule body. Mirrors
 -- | dump_side_loaded_main.ml:87-94's [No_recursion] rule:
 -- |   dummy_constraints () ;
--- |   Field.Assert.equal self Field.zero ;
+-- |   StepField.Assert.equal self StepField.zero ;
 -- |   { previous_proof_statements = [] ; public_output = () ; ... }
 sideLoadedChildRule
   :: forall t m
@@ -84,7 +84,7 @@ sideLoadedChildRule
 sideLoadedChildRule appState = do
   -- dummy_constraints body — translation of OCaml
   -- dump_side_loaded_main.ml:49-73.
-  -- (1) `let x = exists Field.typ ~compute:(fun () -> 3)`
+  -- (1) `let x = exists StepField.typ ~compute:(fun () -> 3)`
   x <- exists (pure (F (fromInt 3) :: F StepField))
   -- (2) `let g = exists Step_main_inputs.Inner_curve.typ ~compute:(...)`
   --     Allocate as WeierstrassAffinePoint so `exists` triggers
@@ -108,7 +108,7 @@ sideLoadedChildRule appState = do
   --     num_bits=4 use `@4 @1` (a single 4-bit chunk).
   _ <- endo @4 @1 g (unsafeCoerce x :: SizedF 4 (FVar StepField))
 
-  -- `Field.Assert.equal self Field.zero`
+  -- `StepField.Assert.equal self StepField.zero`
   assertEqual_ appState (const_ zero)
   pure
     { prevPublicInputs: Vector.nil

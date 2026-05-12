@@ -8,8 +8,9 @@ import Data.Fin (getFinite)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
+import Pickles.Field (WrapField)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
-import Pickles.Types (WrapField, WrapIPARounds)
+import Pickles.Types (WrapIPARounds)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofCircuit')
 import RandomOracle.Sponge (Sponge) as RO
 import Snarky.Backend.Compile (compilePure)

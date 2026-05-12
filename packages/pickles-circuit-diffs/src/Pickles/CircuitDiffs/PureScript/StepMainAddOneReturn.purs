@@ -15,8 +15,8 @@ module Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn
 -- | `app_state` (Input mode) or `ret_var` (Output mode).
 -- |
 -- | Reference: mina/src/lib/crypto/pickles/test/test_no_sideloaded.ml:431-470
--- |            (Add_one_return) — `public_input:(Input_and_output (Field.typ, Field.typ))`,
--- |            `max_proofs_verified:N0`, rule `output = Field.(add one x)`.
+-- |            (Add_one_return) — `public_input:(Input_and_output (StepField.typ, StepField.typ))`,
+-- |            `max_proofs_verified:N0`, rule `output = StepField.(add one x)`.
 -- |
 -- | OCaml dump target: `packages/pickles-circuit-diffs/circuits/ocaml/step_main_add_one_return_circuit.json`
 -- | produced by the `step_main_add_one_return` entry in
@@ -28,9 +28,9 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
+import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, const_)

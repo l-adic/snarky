@@ -11,11 +11,12 @@ import Data.Fin (Finite, getFinite)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, domainLog2, srsLengthLog2, stepEndo, unsafeIdx)
+import Pickles.Field (StepField)
+import Pickles.FinalizeOtherProof (DomainMode(..), Output)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
-import Pickles.Step.FinalizeOtherProof (DomainMode(..), FinalizeOtherProofOutput, finalizeOtherProofCircuit)
+import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Step.OtherField as StepOtherField
-import Pickles.Types (StepField)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, SizedF, Snarky, const_)
@@ -97,7 +98,7 @@ fopStepCircuit
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
   => FopStepInput
-  -> Snarky (KimchiConstraint StepField) t m (FinalizeOtherProofOutput 16 StepField)
+  -> Snarky (KimchiConstraint StepField) t m (Output 16 StepField)
 fopStepCircuit input =
   let
     unfinalized =

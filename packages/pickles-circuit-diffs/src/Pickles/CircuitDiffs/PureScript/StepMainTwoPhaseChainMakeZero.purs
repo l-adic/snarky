@@ -5,7 +5,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero
 
 -- | step_main circuit for the `make_zero` branch of `two_phase_chain`.
 -- |
--- | Configuration: N=0 in a multi-branch compile with mpv=N1, public_input=Field,
+-- | Configuration: N=0 in a multi-branch compile with mpv=N1, public_input=StepField,
 -- | prevs=[], step_domain=2^9. The rule body asserts `self_v = 0` (single R1CS).
 -- |
 -- | Despite N=0, the wrap CS's `max_proofs_verified=N1` forces the
@@ -24,9 +24,9 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
+import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertEqual_, const_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)

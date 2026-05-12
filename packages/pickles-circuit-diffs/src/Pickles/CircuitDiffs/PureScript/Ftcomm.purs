@@ -13,8 +13,8 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
+import Pickles.Field (WrapField)
 import Pickles.FtComm (ftComm) as FtComm
-import Pickles.Types (WrapField)
 import Pickles.Wrap.OtherField as WrapOtherField
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, const_)

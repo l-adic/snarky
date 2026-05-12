@@ -19,12 +19,14 @@ import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Pickles.Field (StepField)
+import Pickles.FinalizeOtherProof (Params) as FOP
+import Pickles.IncrementallyVerifyProof (IncrementallyVerifyProofParams, incrementallyVerifyProof, ivpTrace, packStatement)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
-import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams, finalizeOtherProofCircuit)
+import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofOpt)
 import Pickles.Step.OtherField as StepOtherField
-import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
-import Pickles.Verify (IncrementallyVerifyProofParams, incrementallyVerifyProof, ivpTrace, packStatement)
+import Pickles.Types (StepIPARounds, WrapIPARounds)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
@@ -135,7 +137,7 @@ verifyOne
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Reflectable nd Int
-  => FinalizeOtherProofParams nd StepField r1
+  => FOP.Params nd StepField r1
   -> VerifyOneInput n WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
   -> IncrementallyVerifyProofParams StepField ()
   -> Snarky (KimchiConstraint StepField) t m (VerifyOneResult StepIPARounds (FVar StepField))
@@ -165,11 +167,11 @@ verifyOne fopParams input ivpParams = do
 
   -- DIAG: emit each of the 4 FOP sub-check booleans to identify which
   -- false one causes the "1 != 2" assertion downstream.
-  ivpTrace "diag.fop.xiCorrect" (coerce xiCorrect :: FVar StepField)
-  ivpTrace "diag.fop.bCorrect" (coerce bCorrect :: FVar StepField)
-  ivpTrace "diag.fop.cipCorrect" (coerce cipCorrect :: FVar StepField)
-  ivpTrace "diag.fop.plonkOk" (coerce plonkOk :: FVar StepField)
-  ivpTrace "diag.fop.finalized" (coerce finalized :: FVar StepField)
+  ivpTrace "diag.fop.xiCorrect" (coerce xiCorrect)
+  ivpTrace "diag.fop.bCorrect" (coerce bCorrect)
+  ivpTrace "diag.fop.cipCorrect" (coerce cipCorrect)
+  ivpTrace "diag.fop.plonkOk" (coerce plonkOk)
+  ivpTrace "diag.fop.finalized" (coerce finalized)
 
   -- Steps 3-4: sponge_after_index + message hash (step_main.ml:76-104)
   -- Build per-proof data for the opt_sponge message hash.
@@ -203,7 +205,7 @@ verifyOne fopParams input ivpParams = do
               , b: input.proofState.b
               , branchData:
                   { domainLog2: input.branchData.domainLog2Var
-                  , proofsVerifiedMask: (coerce input.branchData.mask0 :: BoolVar StepField) :< (coerce input.branchData.mask1 :: BoolVar StepField) :< Vector.nil
+                  , proofsVerifiedMask: (coerce input.branchData.mask0) :< (coerce input.branchData.mask1) :< Vector.nil
                   }
               }
           , spongeDigestBeforeEvaluations: input.proofState.spongeDigest
@@ -272,7 +274,7 @@ verifyOne fopParams input ivpParams = do
 
   -- DIAG: emit IVP success for each slot — complements diag.fop.* to
   -- localize the failing sub-check in verify_one's final result.
-  ivpTrace "diag.ivp.success" (coerce output.success :: FVar StepField)
+  ivpTrace "diag.ivp.success" (coerce output.success)
 
   -- Step 7: Assert sponge digest (step_verifier.ml:1293-1294, unconditional)
   label "step7_assert_digest" $

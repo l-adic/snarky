@@ -28,23 +28,8 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Partial.Unsafe (unsafePartial)
-import Pickles.ProofsVerified (ProofsVerified(..))
-import Pickles.Prove.Compile
-  ( BranchProver(..)
-  , CompiledProof
-  , PrevSlot(..)
-  , RulesCons
-  , RulesNil
-  , Tag
-  , compileMulti
-  , mkRuleEntry
-  )
-import Pickles.Prove.Step (StepRule)
-import Pickles.Sideload.Bundle (Bundle, mkBundle) as Sideload
-import Pickles.Step.Advice (getPrevAppStates)
-import Pickles.Step.Slots (SideLoaded, Slot)
-import Pickles.Types (StatementIO(..), StepField)
-import Pickles.Wrap.Slots (NoSlots, Slots1)
+import Pickles (BranchProver(..), CompiledProof, NoSlots, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, SideLoaded, Slot, Slots1, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry)
+import Pickles.Sideload (mkBundle) as Sideload
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
@@ -189,14 +174,12 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       childCp2 :: CompiledProof 2 (StatementIO (F StepField) Unit) Unit Unit
       childCp2 = coerce childCp0
 
-      childTag2 :: Tag (F StepField) Unit 2
       childTag2 = coerce child.tag
 
     -- Assemble the runtime side-loaded VerificationKey. NRR's wrap
     -- circuit at log2 = 13 → `actualWrapDomainSize = N0`; child mpv =
     -- 0 → `maxProofsVerified = N0`.
     let
-      childVK :: Sideload.Bundle
       childVK = Sideload.mkBundle
         { verifierIndex: child.vks.wrap.verifierIndex
         , maxProofsVerified: N0

@@ -30,11 +30,11 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt (fromInt)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt, unsafeIdx)
+import Pickles.Field (StepField, WrapField)
 import Pickles.Pseudo (choose, oneHotVector)
 import Pickles.Pseudo as Pseudo
 import Pickles.Sideload.VerificationKey (compileDummy)
 import Pickles.Step.FinalizeOtherProof as FOP
-import Pickles.Types (StepField, WrapField)
 import Pickles.VerificationKey (chooseKey)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_, exists, label)

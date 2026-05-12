@@ -40,12 +40,14 @@ import Data.Fin (getFinite, unsafeFinite)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
+import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.ProofFFI (OraclesResult, Proof, pallasProofOpeningPrechallengesVec, pallasProofOracles)
-import Pickles.Prove.Pure.Common (BulletproofBOutput, CombinedInnerProductBatchInput, DerivePlonkInput, FtEval0Input, combinedInnerProductBatch, computeBpChalsAndB, crossFieldDigest, derivePlonk, ftEval0)
-import Pickles.Types (StepField, StepIPARounds, WrapField, WrapStatementPacked(..))
-import Pickles.Verify.Types (BranchData, PlonkInCircuit, PlonkMinimal, ScalarChallenge)
+import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatch, computeBpChalsAndB, crossFieldDigest, derivePlonk, ftEval0)
+import Pickles.Types (StepIPARounds)
+import Pickles.Verify.Types (BranchData, PlonkInCircuit, ScalarChallenge)
+import Pickles.Wrap.Types as Wrap
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
 import Snarky.Circuit.DSL (F(..), UnChecked(..))
 import Snarky.Circuit.DSL.SizedF (SizedF, coerceViaBits, unsafeFromField, unwrapF, wrapF)
@@ -132,7 +134,7 @@ type WrapDeferredValuesInput n =
 -- |
 -- | * `plonk` / `combinedInnerProduct` / `xi` / `bulletproofPrechallenges` /
 -- |   `b` / `branchData` together form
--- |   `Types.Wrap.Proof_state.Deferred_values.t` (Type1 instantiation,
+-- |   `Types.Proof_state.Deferred_values.t` (Type1 instantiation,
 -- |   step-field values). Matches OCaml's storage convention —
 -- |   `bulletproof_challenges` is stored as `Bulletproof_challenge.t =
 -- |   { prechallenge : Scalar_challenge.t }`, i.e. **raw 128-bit**,
@@ -221,7 +223,6 @@ wrapComputeDeferredValues input =
             input.prevChallenges
         )
 
-    oraclesResult :: OraclesResult StepField
     oraclesResult = pallasProofOracles input.verifierIndex
       { proof: input.proof
       , publicInput: input.publicInput
@@ -229,7 +230,6 @@ wrapComputeDeferredValues input =
       }
 
     -- x_hat: single chunk per side (non-chunked assumption).
-    xHatEvals :: { zeta :: StepField, omegaTimesZeta :: StepField }
     xHatEvals =
       { zeta: oraclesResult.publicEvalZeta
       , omegaTimesZeta: oraclesResult.publicEvalZetaOmega
@@ -240,7 +240,6 @@ wrapComputeDeferredValues input =
     -- wrap.ml:118-132 assembles `plonk0` with raw 128-bit challenges.
     -- `Common.derivePlonk` does the endo expansion internally via
     -- `expandPlonkMinimal`, so we just carry the raw values here.
-    stepPlonkMinimal :: PlonkMinimal (F StepField)
     stepPlonkMinimal =
       { alpha: wrapF oraclesResult.alphaChal
       , beta: wrapF oraclesResult.beta
@@ -248,14 +247,11 @@ wrapComputeDeferredValues input =
       , zeta: wrapF oraclesResult.zetaChal
       }
 
-    zetaField :: StepField
     zetaField = oraclesResult.zeta
 
-    zetaw :: StepField
     zetaw = zetaField * input.generator
 
     -- ===== Type1.derive_plonk (wrap.ml:202-208). =====
-    derivePlonkInput :: DerivePlonkInput StepField
     derivePlonkInput =
       { plonkMinimal: stepPlonkMinimal
       , w: map _.zeta (Vector.take @7 input.allEvals.witnessEvals)
@@ -270,7 +266,6 @@ wrapComputeDeferredValues input =
       , endo: input.endo
       }
 
-    stepPlonkDerived :: PlonkInCircuit (F StepField) (Type1 (F StepField))
     stepPlonkDerived = derivePlonk derivePlonkInput
 
     -- ===== ft_eval0 for the step field (via Common). =====
@@ -278,7 +273,6 @@ wrapComputeDeferredValues input =
     -- OCaml inlines this inside `combined_inner_product` (wrap.ml:33-39),
     -- sharing it with the scalars_env built for `derive_plonk`. In PS
     -- the helper is stand-alone.
-    ftEval0Input :: FtEval0Input StepField
     ftEval0Input =
       { plonkMinimal: stepPlonkMinimal
       , allEvals: input.allEvals
@@ -294,14 +288,12 @@ wrapComputeDeferredValues input =
       , linearizationPoly: input.linearizationPoly
       }
 
-    stepFtEval0 :: StepField
     stepFtEval0 = ftEval0 ftEval0Input
 
     -- ===== combined_inner_product (wrap.ml:22-62, 235-245). =====
     --
     -- `oracles.v` = xi, `oracles.u` = r — both already endo-expanded
     -- by the kimchi FFI.
-    cipInput :: CombinedInnerProductBatchInput n StepIPARounds StepField
     cipInput =
       { allEvals: input.allEvals
       , publicEvals: input.allEvals.publicEvals
@@ -314,7 +306,6 @@ wrapComputeDeferredValues input =
       , zetaw
       }
 
-    cipActual :: StepField
     cipActual = combinedInnerProductBatch cipInput
 
     -- ===== new bulletproof challenges + b (wrap.ml:209-224). =====
@@ -323,7 +314,6 @@ wrapComputeDeferredValues input =
     -- challenges from the IPA round loop. We wrap each into a
     -- `SizedF 128` and feed through `computeBpChalsAndB`, which endo-
     -- expands them and evaluates `b_poly(zeta) + r·b_poly(zetaw)`.
-    rawPrechalsVec :: Vector StepIPARounds (SizedF 128 StepField)
     rawPrechalsVec = map (unsafePartial unsafeFromField)
       ( pallasProofOpeningPrechallengesVec input.verifierIndex
           { proof: input.proof
@@ -332,7 +322,6 @@ wrapComputeDeferredValues input =
           }
       )
 
-    newBpResult :: BulletproofBOutput StepIPARounds StepField
     newBpResult = computeBpChalsAndB
       { rawPrechallenges: rawPrechalsVec
       , endo: input.endo
@@ -342,8 +331,7 @@ wrapComputeDeferredValues input =
       }
 
     -- ===== branch_data (wrap.ml:246-260). =====
-    branchDataOut :: BranchData StepField Boolean
-    branchDataOut =
+    branchData =
       { domainLog2: fromInt input.domainLog2
       , proofsVerifiedMask: input.proofsVerifiedMask
       }
@@ -353,7 +341,7 @@ wrapComputeDeferredValues input =
     , xi: wrapF oraclesResult.vChal
     , bulletproofPrechallenges: map wrapF rawPrechalsVec
     , b: toShifted (F newBpResult.b)
-    , branchData: branchDataOut
+    , branchData
     , xHatEvals
     , spongeDigestBeforeEvaluations: oraclesResult.fqDigest
     , oracles: oraclesResult
@@ -362,7 +350,7 @@ wrapComputeDeferredValues input =
 
 --------------------------------------------------------------------------------
 -- Statement assembly — cross-field pack the deferred values into the
--- wrap circuit's public input (`WrapStatementPacked`).
+-- wrap circuit's public input (`Wrap.StatementPacked`).
 --------------------------------------------------------------------------------
 
 -- | Input to `assembleWrapMainInput`.
@@ -452,19 +440,14 @@ packBranchDataWrap { domainLog2, proofsVerifiedMask } =
     boolToField :: Boolean -> WrapField
     boolToField b = if b then one else zero
 
-    m0 :: WrapField
     m0 = boolToField (proofsVerifiedMask !! unsafeFinite @2 0)
 
-    m1 :: WrapField
     m1 = boolToField (proofsVerifiedMask !! unsafeFinite @2 1)
 
-    two :: WrapField
     two = fromInt 2
 
-    four :: WrapField
     four = fromInt 4
 
-    log2W :: WrapField
     log2W = crossFieldDigest domainLog2
   in
     four * log2W + m0 + two * m1
@@ -494,13 +477,12 @@ packBranchDataWrap { domainLog2, proofsVerifiedMask } =
 -- | * `lookupOptFlag` (1, zero) + `lookupOptScalarChallenge` (1, zero)
 assembleWrapMainInput
   :: AssembleWrapMainInputInput
-  -> WrapStatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean
+  -> Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean
 assembleWrapMainInput input =
   let
     dv = input.deferredValues
 
     -- ===== 5 Type1 fp fields (cross-field from StepField) =====
-    fpFields :: Vector 5 (Type1 (F WrapField))
     fpFields =
       crossFieldType1Step dv.combinedInnerProduct
         :< crossFieldType1Step dv.b
@@ -512,14 +494,12 @@ assembleWrapMainInput input =
     -- ===== Raw 128-bit challenges (cross-field via bit coercion) =====
     --
     -- beta / gamma: OCaml `challenges` vector, in `to_data` order.
-    challenges :: Vector 2 (UnChecked (SizedF 128 (F WrapField)))
     challenges =
       UnChecked (crossFieldSized128 dv.plonk.beta)
         :< UnChecked (crossFieldSized128 dv.plonk.gamma)
         :< Vector.nil
 
     -- alpha / zeta / xi: `scalar_challenges` vector.
-    scalarChallenges :: Vector 3 (UnChecked (SizedF 128 (F WrapField)))
     scalarChallenges =
       UnChecked (crossFieldSized128 dv.plonk.alpha)
         :< UnChecked (crossFieldSized128 dv.plonk.zeta)
@@ -530,7 +510,6 @@ assembleWrapMainInput input =
     --
     -- Order matches OCaml's `to_data`:
     --   (sponge_digest, msg_for_next_wrap, msg_for_next_step)
-    digests :: Vector 3 (F WrapField)
     digests = map F
       ( crossFieldDigest dv.spongeDigestBeforeEvaluations
           :< input.messagesForNextWrapProofDigest
@@ -545,7 +524,6 @@ assembleWrapMainInput input =
       map (UnChecked <<< crossFieldSized128) dv.bulletproofPrechallenges
 
     -- ===== Branch data (packed into a single wrap-field element) =====
-    branchData :: F WrapField
     branchData = F (packBranchDataWrap dv.branchData)
 
     -- ===== Feature flag + lookup slots — constant zeros =====
@@ -553,10 +531,9 @@ assembleWrapMainInput input =
     -- OCaml's `Spec.T.Constant` in `wrap_packed_typ` still allocates
     -- these as field elements (with the check skipped). For
     -- `Features.Full.none` + `lookup.use = No`, all slots are zero.
-    featureFlags :: Vector 8 (F WrapField)
     featureFlags = Vector.replicate zero
   in
-    WrapStatementPacked
+    Wrap.StatementPacked
       { fpFields
       , challenges
       , scalarChallenges

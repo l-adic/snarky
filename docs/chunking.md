@@ -28,7 +28,7 @@
   diffs all 10 pairs. PS-side files will not exist yet → all 10 pairs report
   SKIP (the script tolerates missing PS witnesses).
   4. 0.d — Capture the 10 OCaml fixtures and commit a small subset (b0_step +
-  b0_wrap line counts, sigma columns of gate 0..N) for reference. Don't commit
+  b0_wrap line counts, sigma columns of gate 0..N) for reference. Don't commit
   the multi-MB witness files themselves.
 
   Acceptance:
@@ -110,7 +110,7 @@
 
   Acceptance:
   - New unit tests pass.
-  - Witness diffs still byte-identical (no production code touched).
+  - witness diffs still byte-identical (no production code touched).
 
   Why standalone first: it's the math kernel. Get it right in isolation before
   the Type-level surgery in Checkpoint 3 changes the data shapes that feed it.
@@ -234,40 +234,6 @@
   multi-branch convergence. It scales.
   - The math kernels are pure: actual_evaluation, evals_of_split_evals,
   combine_split_evaluations, vanishes_on_zk_and_previous_rows are all field
-
-  Will fill in after Checkpoint 4 surfaces the real ordering of bugs. Probable order based on
-   OCaml-side dependency graph:
-
-  5. Commitment_lengths: widen tComm, wComm, zComm. Cascade through sponge order.
-  6. zk_rows = (16n+5)/7: replace constant; expand
-  vanishes_on_zero_knowledge_and_previous_rows polynomial.
-  7. Wrap_verifier.combine: Horner over chunked commitment arrays in IVP MSM. Cascade
-  WrapIvpBaseline formula 45 → f(num_chunks).
-  8. Repeat witness-diff on chunks=4 and chunks=8 fixtures (to catch off-by-one in formulas
-  that worked for n=2).
-  9. End-to-end recursion: port the chunks2.ml recursive-over-chunks pattern and verify a
-  wrapped chunked proof.
-  Will fill in after Checkpoint 4 surfaces the real ordering of bugs. Probable order based on OCaml-side dependency graph:
-
-  5. Commitment_lengths: widen tComm, wComm, zComm. Cascade through sponge order.
-  6. zk_rows = (16n+5)/7: replace constant; expand vanishes_on_zero_knowledge_and_previous_rows polynomial.
-
-  Will fill in after Checkpoint 4 surfaces the real ordering of bugs. Probable order based on OCaml-side dependency graph:
-
-  5. Commitment_lengths: widen tComm, wComm, zComm. Cascade through sponge order.
-  6. zk_rows = (16n+5)/7: replace constant; expand vanishes_on_zero_knowledge_and_previous_rows polynomial.
-  7. Wrap_verifier.combine: Horner over chunked commitment arrays in IVP MSM. Cascade WrapIvpBaseline formula 45 → f(num_chunks).
-  8. Repeat witness-diff on chunks=4 and chunks=8 fixtures (to catch off-by-one in formulas that worked for n=2).
-  9. End-to-end recursion: port the chunks2.ml recursive-over-chunks pattern and verify a wrapped chunked proof.
-
-  ---
-  Why I'm comfortable this can be incremental
-
-  - Every checkpoint has a hard, byte-level acceptance criterion, not "it builds + I think it's right".
-  - Checkpoints 0-3 cannot regress existing tests: Type widenings at NumChunks=1 are structurally identity. The compiler enforces it.
-  - OCaml fixtures are already authored: chunks{2,4,8}.ml exist; we just need to wrap each in a dump_*.ml analogue.
-  - Witness-diff tooling is proven: we used it through 197 micro-iterations of multi-branch convergence. It scales.
-  - The math kernels are pure: actual_evaluation, evals_of_split_evals, combine_split_evaluations, vanishes_on_zk_and_previous_rows are all field
   arithmetic. Test in isolation.
 
   Suggested start
@@ -275,3 +241,51 @@
   Just Checkpoint 0 and 1 in their own PRs. ~4 days total. After 1 lands, we have NumChunks plumbed and an OCaml fixture waiting; from there the rate is
   bounded by how fast we can move on per-divergence fixes, not by infrastructure friction.
 
+  ---
+  ## Detailed Analysis of the Plan
+
+  ### Architecture and Data Flow
+
+  The primary challenge in implementing chunking is the shift from scalar polynomial evaluations to vector-based evaluations. In Kimchi, when the circuit size exceeds the SRS degree, polynomials are split into $n$ chunks. These chunks must be recombined using a Horner-like scheme at verification time.
+
+  **1. The Horner Kernel (`actual_evaluation`)**
+  The mathematical core is:
+  $E = e_0 + e_1 \cdot \zeta^N + e_2 \cdot \zeta^{2N} + \dots + e_{n-1} \cdot \zeta^{(n-1)N}$
+  where $N$ is the SRS size ($2^{16}$ for Step, $2^{15}$ for Wrap).
+  Our PureScript implementation must exactly match OCaml's `actual_evaluation` to maintain byte-compatibility.
+
+  **2. Type-Level Widening**
+  We use a phantom type parameter `n` for `NumChunks`.
+  ```purescript
+  newtype PointEval n a = PointEval
+    { zeta :: Vector n a
+    , omegaTimesZeta :: Vector n a
+    }
+  ```
+  By default, $n=1$. This ensures that all existing logic (Mina standard) remains unchanged until $n$ is explicitly widened. The "cascading" nature of this change means that `StepAllEvals`, `PlonkInCircuit`, and `WrapDeferredValues` all become chunk-aware.
+
+  **3. Sponge Absorption**
+  Kimchi's sponge absorbs each chunk of a commitment individually. At $n=1$, this is a single `absorb`. At $n > 1$, we must iterate over the `Vector n` and absorb each element. The PureScript `FqSpongeTranscript` must be updated to handle this iteration.
+
+  **4. `zk_rows` Dependency**
+  The number of zero-knowledge rows in the witness matrix depends on `num_chunks`:
+  $zk\_rows = \lfloor \frac{16n + 5}{7} \rfloor$
+  For $n=1$, $zk\_rows=3$. For $n=2$, $zk\_rows=5$. This constant affects the vanishing polynomial calculation (`vanishes_on_zk_and_previous_rows`), which is a critical part of the PLONK checks.
+
+  ### Validation Strategy
+
+  **Empirical Oracle (OCaml Fixtures)**
+  We do not guess the correctness of our implementation. We generate "Ground Truth" witnesses from the OCaml implementation using a dedicated dump tool (`dump_chunks2_simple_chain.exe`).
+
+  **Bit-Identical Convergence**
+  Every PureScript change is validated against the OCaml oracle using a witness-diff script. A "success" is defined as a 0-byte difference between the PureScript-generated witness and the OCaml-generated witness.
+
+  **Incremental Risk Mitigation**
+  *   **Phase 1 (Checkpoints 0-3)**: Pure infrastructure. We widen types but keep $n=1$. If existing tests pass, we know we haven't broken the base case.
+  *   **Phase 2 (Checkpoint 4+)**: Behavioral change. We switch to $n=2$ and use the diff tool to "whack-a-mole" each divergence until we hit identity.
+
+  ### Critical Path and Risks
+
+  *   **FFI Boundary**: We must verify that the Rust `kimchi-stubs` already return chunked arrays. If they don't, we need to update the Rust FFI bindings.
+  *   **Sponge State**: Small offsets in absorption order (e.g., absorbing chunks in the wrong order) will cause immediate and total divergence. The `peekPreSqueezeState` traces are our best tool for localizing these errors.
+  *   **Circuit Complexity**: Widening $n$ increases gate counts. We must monitor the `spago build` time and gate counts to ensure the PureScript circuit remains within reasonable bounds.

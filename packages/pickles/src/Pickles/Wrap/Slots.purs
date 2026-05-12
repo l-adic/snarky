@@ -191,7 +191,6 @@ padSlotDummy
   -> Vector PaddedLength a
 padSlotDummy dummy slot =
   let
-    padding :: Vector pad a
     padding = Vector.replicate dummy
   in
     Vector.append padding slot

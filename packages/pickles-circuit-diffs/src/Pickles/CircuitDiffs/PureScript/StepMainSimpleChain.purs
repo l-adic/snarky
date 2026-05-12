@@ -19,10 +19,11 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
+import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
+import Pickles.Slots (Compiled, Slot)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
-import Pickles.Step.Slots (Compiled, Slot)
-import Pickles.Types (StatementIO, StepField)
+import Pickles.Types (StatementIO)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertAny_, const_, equals_, exists, not_)
@@ -39,7 +40,7 @@ type StepMainSimpleChainParams =
 -- | Application-specific advice for the Simple_Chain N1 rule.
 -- |
 -- | The rule allocates one previous-proof app_state field. In OCaml this is
--- | done via `exists Field.typ ~compute:(fun () -> Field.Constant.zero)`.
+-- | done via `exists StepField.typ ~compute:(fun () -> StepField.Constant.zero)`.
 -- | In PureScript we route it through this typeclass so the SAME rule
 -- | definition can be used for both compilation (Effect throws) and
 -- | proving (a ReaderT-based instance returns the real previous proof's

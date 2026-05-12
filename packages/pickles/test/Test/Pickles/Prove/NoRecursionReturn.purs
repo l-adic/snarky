@@ -2,7 +2,7 @@
 -- | (`mina/src/lib/crypto/pickles/test/test_no_sideloaded.ml:100-126`).
 -- |
 -- | The simplest pickles rule: `max_proofs_verified = N0`, no prevs,
--- | Output mode (input = Unit, output = Field), constant output `0`.
+-- | Output mode (input = Unit, output = StepField), constant output `0`.
 -- | Exercised here via the `Pickles.Prove.CompileMulti` API end-to-end:
 -- | a 1-rule carrier dispatched through `compileMulti` returns one
 -- | `BranchProver`; one invocation produces a single proof; `verify`
@@ -29,17 +29,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles.Prove.Compile
-  ( BranchProver(..)
-  , RulesCons
-  , RulesNil
-  , compileMulti
-  , mkRuleEntry
-  )
-import Pickles.Prove.Step (StepRule)
-import Pickles.Prove.Verify (verify)
-import Pickles.Types (StepField)
-import Pickles.Wrap.Slots (NoSlots)
+import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, verify)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.DSL (F, FVar, const_)

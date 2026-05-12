@@ -1,6 +1,6 @@
 -- | Self-consistency tests for `Pickles.Prove.Pure.Verify.expandDeferredForVerify`.
 -- |
--- | At the chain terminus, the out-of-circuit verifier (`Pickles.Prove.Verify`)
+-- | At the chain terminus, the out-of-circuit verifier (`Pickles.Verify`)
 -- | has to discharge the deferred IPA accumulator check that an inner step
 -- | circuit would otherwise have done. To do that it reconstructs the full
 -- | `Wrap_deferred_values.t` from the wrap proof's stored *minimal skeleton*
@@ -40,25 +40,13 @@ import Data.Vector (Vector)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
+import Pickles (BranchProver(..), Compiled, CompiledProof(..), NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots1, StatementIO(..), StepField, StepIPARounds, compileMulti, mkRuleEntry)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.Prove.Compile
-  ( BranchProver(..)
-  , CompiledProof(..)
-  , CompiledProofWidthData(..)
-  , PrevSlot(..)
-  , RulesCons
-  , RulesNil
-  , SlotWrapKey(..)
-  , compileMulti
-  , mkRuleEntry
-  )
-import Pickles.Prove.Pure.Verify (ExpandDeferredInput, expandDeferredForVerify)
+import Pickles.Prove.Compile (CompiledProofWidthData(..))
+import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput)
-import Pickles.Step.Slots (Compiled, Slot)
-import Pickles.Types (StatementIO(..), StepField, StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
-import Pickles.Wrap.Slots (NoSlots, Slots1)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.DSL (F(..))
@@ -165,7 +153,6 @@ assertExpandDeferredMatches
   -> Aff Unit
 assertExpandDeferredMatches { dvProver, dvInput, oldBulletproofChallenges } = do
   let
-    verifyIn :: ExpandDeferredInput n
     verifyIn =
       { rawPlonk:
           { alpha: dvProver.plonk.alpha

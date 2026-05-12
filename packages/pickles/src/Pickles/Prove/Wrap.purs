@@ -53,13 +53,15 @@ import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Node.Process as Process
+import Pickles.Field (StepField, WrapField)
 import Pickles.ProofFFI (Proof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLrVec, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexCommitments, tCommVec, vestaCreateProofWithPrev)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
-import Pickles.Types (PaddedLength, PerProofUnfinalized, StepAllEvals, StepField, StepIPARounds, WrapField, WrapIPARounds, WrapIvpBaseline, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked)
+import Pickles.Types (PaddedLength, PerProofUnfinalized, StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK)
 import Pickles.Wrap.Advice (class WrapWitnessM)
 import Pickles.Wrap.Main (WrapMainConfig, wrapMain)
 import Pickles.Wrap.Slots (class PadSlots)
+import Pickles.Wrap.Types as Wrap
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
@@ -99,7 +101,7 @@ import Type.Proxy (Proxy(..))
 type WrapAdvice (mpv :: Int) (slots :: Type -> Type) =
   { whichBranch :: F WrapField
   , wrapProofState ::
-      WrapPrevProofState mpv (Type2 (F WrapField)) (F WrapField) Boolean
+      Wrap.PrevProofState mpv (Type2 (F WrapField)) (F WrapField) Boolean
   , stepAccs :: Vector mpv (WeierstrassAffinePoint VestaG (F WrapField))
   , oldBpChals :: slots (Vector WrapIPARounds (F WrapField))
   , evals :: Vector mpv (StepAllEvals (F WrapField))
@@ -188,7 +190,7 @@ instance
 --   (which the caller decoded upstream) are threaded through as
 --   direct parameters — `prevUnfinalizedProofs`,
 --   `prevMessagesForNextStepProofHash`. These are effectively the
---   step proof's own committed `Types.Step.Statement` contents.
+--   step proof's own committed `Types.Statement` contents.
 -- * Advice pieces that come from the step prover's **private state**
 --   (= *not* committed by the step proof's public input) are also
 --   direct parameters — `prevStepAccs`, `prevOldBpChals`, `prevEvals`,
@@ -283,8 +285,7 @@ buildWrapAdvice input =
     -- `WrapProofMessages` shape.
     commits = pallasProofCommitments input.stepProof
 
-    messagesOut :: WrapProofMessages (WeierstrassAffinePoint VestaG (F WrapField))
-    messagesOut = WrapProofMessages
+    messages = WrapProofMessages
       { wComm: map mkVestaPt commits.wComm
       , zComm: mkVestaPt commits.zComm
       , tComm: map mkVestaPt (tCommVec commits)
@@ -305,47 +306,43 @@ buildWrapAdvice input =
     lrVec = map (\p -> { l: mkVestaPt p.l, r: mkVestaPt p.r })
       (pallasProofOpeningLrVec input.stepProof)
 
-    z1Step :: StepField
     z1Step = pallasProofOpeningZ1 input.stepProof
 
-    z2Step :: StepField
     z2Step = pallasProofOpeningZ2 input.stepProof
 
-    deltaPt :: AffinePoint WrapField
     deltaPt = pallasProofOpeningDelta input.stepProof
 
-    sgPt :: AffinePoint WrapField
     sgPt = pallasProofOpeningSg input.stepProof
 
-    openingOut
+    openingProof
       :: WrapProofOpening
            StepIPARounds
            (WeierstrassAffinePoint VestaG (F WrapField))
            (Type1 (F WrapField))
-    openingOut = WrapProofOpening
+    openingProof = WrapProofOpening
       { lr: lrVec
-      , z1: toShifted (F z1Step :: F StepField)
-      , z2: toShifted (F z2Step :: F StepField)
+      , z1: toShifted (F z1Step)
+      , z2: toShifted (F z2Step)
       , delta: mkVestaPt deltaPt
       , sg: mkVestaPt sgPt
       }
 
     -- ===== Req.Proof_state. =====
-    wrapProofStateOut
-      :: WrapPrevProofState mpv (Type2 (F WrapField)) (F WrapField) Boolean
-    wrapProofStateOut = WrapPrevProofState
+    wrapProofState
+      :: Wrap.PrevProofState mpv (Type2 (F WrapField)) (F WrapField) Boolean
+    wrapProofState = Wrap.PrevProofState
       { unfinalizedProofs: input.prevUnfinalizedProofs
       , messagesForNextStepProof: input.prevMessagesForNextStepProofHash
       }
   in
     { whichBranch: input.whichBranch
-    , wrapProofState: wrapProofStateOut
+    , wrapProofState
     , stepAccs: input.prevStepAccs
     , oldBpChals: input.prevOldBpChals
     , evals: input.prevEvals
     , wrapDomainIndices: input.prevWrapDomainIndices
-    , openingProof: openingOut
-    , messages: messagesOut
+    , openingProof
+    , messages
     }
 
 --------------------------------------------------------------------------------
@@ -383,7 +380,7 @@ type WrapProveContext (branches :: Int) (mpv :: Int) (slots :: Type -> Type) =
   { wrapMainConfig :: WrapMainConfig branches
   , crs :: CRS PallasG
   , publicInput ::
-      WrapStatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean
+      Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean
   , advice :: WrapAdvice mpv slots
   -- | When `true`, enables prover-state debug checks, runs
   -- | `verifyProverIndex` against the solved witness, and dumps
@@ -458,7 +455,7 @@ wrapCompile
   => Reflectable mpv Int
   => Add 1 branchesPred branches
   => Compare mpv 3 LT
-  => Add mpv WrapIvpBaseline totalBases
+  => Add mpv Wrap.IvpBaseline totalBases
   => Add 1 totalBasesPred totalBases
   => PadSlots slots mpv
   => CircuitType WrapField
@@ -471,7 +468,7 @@ wrapCompile
 wrapCompile ctx = do
   builtState <-
     compile
-      (Proxy @(WrapStatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean))
+      (Proxy @(Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean))
       (Proxy @Unit)
       (Proxy @(KimchiConstraint WrapField))
       (wrapMain @branches @slots ctx.wrapMainConfig)
@@ -494,9 +491,8 @@ wrapCompile ctx = do
     -- `memory/project_simple_chain_max_poly_size_bug.md` and the parallel
     -- step-side fix in `Pickles.Prove.Step.purs:1429-1431` (commit
     -- `20674463`) — same root cause, opposite curve.
-    endo :: WrapField
     endo =
-      let EndoBase e = (endoBase :: EndoBase WrapField) in e
+      let EndoBase e = (endoBase) in e
 
     proverIndex =
       createProverIndex @WrapField @PallasG
@@ -537,7 +533,7 @@ wrapSolveAndProve
   => Reflectable mpv Int
   => Add 1 branchesPred branches
   => Compare mpv 3 LT
-  => Add mpv WrapIvpBaseline totalBases
+  => Add mpv Wrap.IvpBaseline totalBases
   => Add 1 totalBasesPred totalBases
   => PadSlots slots mpv
   => CircuitType WrapField
@@ -554,7 +550,7 @@ wrapSolveAndProve ctx compileResult = do
     rawSolver
       :: SolverT WrapField (KimchiConstraint WrapField)
            (WrapProverT branches mpv slots m)
-           (WrapStatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean)
+           (Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean)
            Unit
     rawSolver =
       makeSolver' (emptyProverState { debug = ctx.debug }) (Proxy @(KimchiConstraint WrapField))
@@ -590,7 +586,7 @@ wrapSolveAndProve ctx compileResult = do
                     , challenges: Vector.toUnfoldable r.challenges
                     }
                 )
-                (Vector.toUnfoldable ctx.kimchiPrevChallenges :: Array _)
+                (Vector.toUnfoldable ctx.kimchiPrevChallenges)
           }
       pure
         { proverIndex: compileResult.proverIndex
@@ -704,7 +700,7 @@ buildWrapMainConfigMulti vestaSrs { perBranch } =
     domainLog2s = map _.stepDomainLog2 perBranch
     headDomainLog2 = (Vector.uncons perBranch).head.stepDomainLog2
     allEqual = Array.all (_ == headDomainLog2)
-      (Vector.toUnfoldable domainLog2s :: Array Int)
+      (Vector.toUnfoldable domainLog2s)
     perBranchLookup i =
       map
         ( \b ->

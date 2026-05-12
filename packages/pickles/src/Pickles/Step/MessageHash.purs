@@ -126,7 +126,6 @@ hashMessagesForNextStepProofPure { stepVk, appState, proofs } =
     ptFields :: AffinePoint f -> Array f
     ptFields pt = [ pt.x, pt.y ]
 
-    vkFields :: Array f
     vkFields =
       Array.concatMap ptFields (Array.fromFoldable stepVk.sigmaComm)
         <> Array.concatMap ptFields (Array.fromFoldable stepVk.coefficientsComm)
@@ -137,7 +136,6 @@ hashMessagesForNextStepProofPure { stepVk, appState, proofs } =
         <> ptFields stepVk.emulComm
         <> ptFields stepVk.endomulScalarComm
 
-    proofFields :: Array f
     proofFields = Array.concatMap
       ( \p ->
           ptFields p.sg

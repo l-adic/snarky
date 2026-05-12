@@ -20,8 +20,8 @@ module Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn
 -- | so getting No_recursion_return circuit-identical is the first rung.
 -- |
 -- | Reference: mina/src/lib/crypto/pickles/test/test_no_sideloaded.ml:89-126
--- |            (No_recursion_return) — `public_input:(Output Field.typ)`,
--- |            `max_proofs_verified:N0`, rule `output = Field.zero`.
+-- |            (No_recursion_return) — `public_input:(Output StepField.typ)`,
+-- |            `max_proofs_verified:N0`, rule `output = StepField.zero`.
 -- |
 -- | OCaml dump target: `packages/pickles-circuit-diffs/circuits/ocaml/step_main_no_recursion_return_circuit.json`
 -- | produced by the `step_main_no_recursion_return` entry in
@@ -33,9 +33,9 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
+import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, const_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)

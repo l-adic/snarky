@@ -15,10 +15,7 @@
 -- | Reference: step_verifier.ml:823-1165 `finalize_other_proof`
 module Pickles.Step.FinalizeOtherProof
   ( -- * Types
-    FinalizeOtherProofParams
-  , FinalizeOtherProofInput
-  , FinalizeOtherProofOutput
-  , DomainMode(..)
+    Input
   -- * Circuit
   , finalizeOtherProofCircuit
   -- * Helpers (exported for use by Pickles.Step.Main's side-loaded slot dispatch)
@@ -45,11 +42,12 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, zipWith, (!!))
 import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
+import Pickles.FinalizeOtherProof (DomainMode(..), Output, Params)
 import Pickles.IPA (bCorrectCircuit, bPolyCircuit)
 import Pickles.Linearization.Env (AlphaPowersLen, EnvM, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI, domainGenerator)
 import Pickles.Linearization.Interpreter (evaluateM)
-import Pickles.Linearization.Types (LinearizationPoly, runLinearizationPoly)
+import Pickles.Linearization.Types (runLinearizationPoly)
 import Pickles.OptSponge as OptSponge
 import Pickles.PlonkChecks (absorbAllEvals) as PlonkChecks
 import Pickles.PlonkChecks (absorbAllEvals, extractEvalFields)
@@ -58,8 +56,8 @@ import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Pseudo as Pseudo
 import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, liftSnarky, squeezeScalarChallenge)
-import Pickles.Step.Domain (buildPow2PowsArray, pow2PowSquare)
-import Pickles.Verify.Types (BulletproofChallenges, UnfinalizedProof, toPlonkMinimal)
+import Pickles.Util.Pow2 (pow2PowSquare)
+import Pickles.Verify.Types (UnfinalizedProof, toPlonkMinimal)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
@@ -74,42 +72,6 @@ import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeFie
 -- | Types
 -------------------------------------------------------------------------------
 
--- | Compile-time parameters for finalizing another proof.
--- |
--- | These come from the verification key / are known at circuit compile time.
--- |
--- | - `domains`: Per-branch `{ generator, log2 }` over the `nd` possible
--- |   step-domain sizes the prev proof could have. For single-rule
--- |   callers `nd = 1`. Multi-rule (e.g. TwoPhaseChain Self prev)
--- |   passes the deduped Vector of all possible per-branch step domains.
--- |   Mirrors OCaml `domain_for_compiled`'s `unique_domains`.
--- | - `shifts`: kimchi permutation argument shifts. Single Vector
--- |   because OCaml's `Pseudo.Domain.shifts` asserts shifts are
--- |   identical across all unique domains
--- |   (`disabled_not_the_same`).
--- | - `srsLengthLog2`: Log2 of SRS length (e.g. 16)
--- | - `endo`: Endomorphism coefficient for scalar challenge conversion
--- | - `linearizationPoly`: The linearization polynomial for gate constraints
--- |
--- | Domain-resolution mode for `finalize_other_proof`.
--- |
--- | * `KnownDomainsMode` — compiled-rule path. `params.domains` is
--- |   the compile-time `unique_domains` Vector (typically `Vector 1`
--- |   for single-rule, larger for multi-branch self prevs). Vanishing
--- |   polynomial uses `pow2_pows` + `Pseudo.mask`.
--- | * `SideLoadedMode` — side-loaded prev. The candidate-log2
--- |   universe `Vector 17` (log2s ∈ [0..16]) is synthesized
--- |   internally from `input.domainLog2Var`; `params.domains` is
--- |   ignored. The FOP body emits 17 `equals_` gates +
--- |   `Boolean.Assert.any` for the one-hot mask and uses iterative
--- |   `if_(mask[i], square, …)` for the vanishing polynomial.
--- |
--- | Reference: OCaml `step_verifier.ml`'s `finalize_other_proof` +
--- | `side_loaded_domain`.
-data DomainMode
-  = KnownDomainsMode
-  | SideLoadedMode
-
 -- | Side-loaded domain universe size: 17 covers log2s [0..16] (= the
 -- | `max_domains.h` upper bound from
 -- | `Side_loaded_verification_key`).
@@ -118,17 +80,6 @@ type SideLoadedDomainCount = 17
 -- | Maximum log2 in the side-loaded universe (= 16).
 sideLoadedDomainLog2Max :: Int
 sideLoadedDomainLog2Max = 16
-
-type FinalizeOtherProofParams :: Int -> Type -> Row Type -> Type
-type FinalizeOtherProofParams nd f r =
-  { domains :: Vector nd { generator :: FVar f, log2 :: Int }
-  , shifts :: Vector 7 (FVar f)
-  , srsLengthLog2 :: Int
-  , endo :: f -- ^ EndoScalar coefficient (= Wrap_inner_curve.scalar = Vesta.endo_scalar for Step)
-  , linearizationPoly :: LinearizationPoly f
-  , domainMode :: DomainMode
-  | r
-  }
 
 -- | Input for finalizing another proof.
 -- |
@@ -139,7 +90,7 @@ type FinalizeOtherProofParams nd f r =
 -- | - `prevChallenges`: Old bulletproof challenges from all previous proofs
 -- |     (already expanded to full field, used for CIP sg_evals and challenge_digest)
 -- | - `domainLog2Var`: Runtime domain_log2 variable from public input
-type FinalizeOtherProofInput n d f sf b =
+type Input n d f sf b =
   { -- | Unfinalized proof from public input
     unfinalized :: UnfinalizedProof d f sf b
   -- | Private witness data (polynomial evaluations)
@@ -150,22 +101,6 @@ type FinalizeOtherProofInput n d f sf b =
   , prevChallenges :: Vector n (Vector d f)
   -- | Runtime domain_log2 variable from public input
   , domainLog2Var :: f
-  }
-
--- | Output from finalizing another proof.
--- |
--- | Returns:
--- | - `finalized`: Boolean indicating whether all checks passed
--- | - `challenges`: The raw bulletproof challenges (128-bit scalar challenges)
--- | - `expandedChallenges`: The expanded bulletproof challenges (full field via endo)
-type FinalizeOtherProofOutput d f =
-  { finalized :: BoolVar f
-  , xiCorrect :: BoolVar f
-  , bCorrect :: BoolVar f
-  , cipCorrect :: BoolVar f
-  , plonkOk :: BoolVar f
-  , challenges :: BulletproofChallenges d (FVar f)
-  , expandedChallenges :: Vector d (FVar f)
   }
 
 -------------------------------------------------------------------------------
@@ -223,9 +158,9 @@ finalizeOtherProofCircuit
      , shiftedEqual :: sf -> FVar f -> Snarky (KimchiConstraint f) t m (BoolVar f)
      | r1
      }
-  -> FinalizeOtherProofParams nd f r2
-  -> FinalizeOtherProofInput n d (FVar f) sf (BoolVar f)
-  -> Snarky (KimchiConstraint f) t m (FinalizeOtherProofOutput d f)
+  -> Params nd f r2
+  -> Input n d (FVar f) sf (BoolVar f)
+  -> Snarky (KimchiConstraint f) t m (Output d f)
 finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenges, domainLog2Var } = label "finalize-other-proof" do
   -- Multi-domain compile-time dispatch via Pseudo (mirrors OCaml
   -- `Pseudo.Domain.to_domain`, `pseudo.ml:103-128`). For nd=1
@@ -373,7 +308,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
     pending = Array.concat $ Vector.toUnfoldable $
       Vector.zipWith
         ( \keep chals ->
-            map (Tuple keep) (Vector.toUnfoldable chals :: Array _)
+            map (Tuple keep) (Vector.toUnfoldable chals)
         )
         mask
         prevChallenges
@@ -381,7 +316,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   { xi, r, xiCorrect } <- evalSpongeM initialSpongeCircuit do
     absorb unfinalized.spongeDigestBeforeEvaluations
     challengeDigest <- liftSnarky $
-      OptSponge.squeeze (OptSponge.create :: OptSponge.OptSponge f) pending
+      OptSponge.squeeze (OptSponge.create) pending
     absorb challengeDigest
     absorbAllEvals allEvals
     xiActual <- squeezeScalarChallenge { endo: endoVar }
@@ -733,3 +668,27 @@ mkSideLoadedOnesPrefixMask first_zero = label "ones_prefix_mask" do
         indices
     )
     true_
+
+-- | Build the runtime `pow2_pows` table = `[x, x^2, x^4, ..., x^(2^maxLog2)]`
+-- | as an Array of length `maxLog2 + 1`. Emits exactly `maxLog2`
+-- | Square constraints (one per consecutive squaring step).
+-- |
+-- | Mirrors OCaml `Pseudo.Domain.to_domain`'s `vanishing_polynomial`'s
+-- | pow2_pows array build (`pseudo.ml:119-123`). Used by multi-domain
+-- | dispatch where the runtime `maxLog2` is determined by the maximum
+-- | log2 across the slot's possible domains.
+buildPow2PowsArray
+  :: forall f c t m
+   . CircuitM f c t m
+  => FVar f
+  -> Int
+  -> Snarky c t m (Array (FVar f))
+buildPow2PowsArray x maxLog2 = go [ x ] maxLog2
+  where
+  go acc i
+    | i <= 0 = pure acc
+    | otherwise = case Array.last acc of
+        Nothing -> pure acc -- unreachable: acc is non-empty
+        Just lastV -> do
+          sq <- square_ lastV
+          go (Array.snoc acc sq) (i - 1)

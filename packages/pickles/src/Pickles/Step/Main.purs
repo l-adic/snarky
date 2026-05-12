@@ -46,21 +46,24 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Pickles.Dummy as Dummy
+import Pickles.Field (StepField)
+import Pickles.FinalizeOtherProof (DomainMode(..))
+import Pickles.IncrementallyVerifyProof (ivpTrace)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.ProofsVerified (ProofsVerifiedCount)
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, mkSideloadedLagrangeLookup)
 import Pickles.Sideload.Bundle (class HasSideLoadedVk, projectVk)
 import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
+import Pickles.Slots (Compiled, SideLoaded, Slot)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM, getMessagesForNextWrapProof, getMessagesForNextWrapProofDummyHash, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex, setUserPublicOutputFields)
-import Pickles.Step.FinalizeOtherProof (DomainMode(..))
-import Pickles.Step.Slots (class StepSlotsCarrier, Compiled, SideLoaded, Slot, traverseStepSlotsA)
+import Pickles.Step.Dummy as Dummy
+import Pickles.Step.Slots (class StepSlotsCarrier, traverseStepSlotsA)
+import Pickles.Step.Types (BranchData(..), FopProofState(..), PerProofWitness(..), ProofState(..), UnfinalizedFieldCount, WrapProof(..))
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
-import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), UnfinalizedFieldCount, WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (VerificationKey(..))
-import Pickles.Verify (ivpTrace)
 import Prim.Boolean (False, True)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
@@ -97,7 +100,7 @@ import Unsafe.Coerce (unsafeCoerce)
 -- | in OCaml `Inductive_rule.t`). For self-recursive Input-mode rules
 -- | this coincides with self's own `input` type; for Output-mode or
 -- | heterogeneous recursion it's the prev rules' `public_output` type
--- | (e.g. `FVar StepField` for Field-valued outputs). Kept separate from
+-- | (e.g. `FVar StepField` for StepField-valued outputs). Kept separate from
 -- | the self-input parameter because OCaml treats each prev's
 -- | public_input independently via `Types_map.public_input tag` (see
 -- | step_main.ml:318-332).
@@ -377,7 +380,7 @@ mpvFrontPad mkDummy real =
         dummy = mkDummy unit
         arr =
           Array.replicate n dummy
-            <> (Vector.toUnfoldable real :: Array a)
+            <> (Vector.toUnfoldable real)
       in
         unsafePartial $ fromJust $ Vector.toVector @mpvMax arr
 
@@ -398,7 +401,7 @@ mpvFrontPad mkDummy real =
 -- |   + branch_data(mask0,mask1,domLog2) at end
 -------------------------------------------------------------------------------
 
-type PerProofWitness n =
+type AllocatedPerProofWitness n =
   { wComm :: Vector 15 (WeierstrassAffinePoint PallasG (FVar StepField))
   , zComm :: WeierstrassAffinePoint PallasG (FVar StepField)
   , tComm :: Vector 7 (WeierstrassAffinePoint PallasG (FVar StepField))
@@ -441,14 +444,14 @@ allocatePerProofWitness
   :: forall @n t m
    . CircuitM StepField (KimchiConstraint StepField) t m
   => Reflectable n Int
-  => StepPerProofWitness n StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
-  -> Snarky (KimchiConstraint StepField) t m (PerProofWitness n)
-allocatePerProofWitness (StepPerProofWitness ppw) = do
+  => PerProofWitness n StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
+  -> Snarky (KimchiConstraint StepField) t m (AllocatedPerProofWitness n)
+allocatePerProofWitness (PerProofWitness ppw) = do
   let
     WrapProof wrapProofRec = ppw.wrapProof
     WrapProofMessages msgRec = wrapProofRec.messages
     WrapProofOpening openRec = wrapProofRec.opening
-    StepProofState psRec = ppw.proofState
+    ProofState psRec = ppw.proofState
     FopProofState fopRec = psRec.fopState
     BranchData branchDataRec = psRec.branchData
     StepAllEvals evalsRec = ppw.prevEvals
@@ -617,7 +620,7 @@ buildVerifyOneInput
    . Reflectable n Int
   => Reflectable pad Int
   => Add pad n PaddedLength
-  => PerProofWitness n
+  => AllocatedPerProofWitness n
   -> Array (FVar StepField) -- prev proof's public input, pre-flattened
   -> BoolVar StepField
   -> UnfinalizedProof
@@ -717,7 +720,7 @@ unfFields unf =
     bpFields = map toField unf.deferredValues.bulletproofChallenges
 
     shouldFinalizeField :: Vector 1 (FVar StepField)
-    shouldFinalizeField = (coerce unf.shouldFinalize :: FVar StepField) :< Vector.nil
+    shouldFinalizeField = (coerce unf.shouldFinalize) :< Vector.nil
   in
     cipFields
       `Vector.append` bFields
@@ -814,7 +817,7 @@ stepMain
   let
     requestInput :: m inputVal
     requestInput = getStepPublicInput @len @StepIPARounds @WrapIPARounds @PallasG unit
-  (publicInput :: input) <- exists $ lift requestInput
+  (publicInput) <- exists $ lift requestInput
 
   -- 2. rule_main — wraps both the user's rule body AND the side-loaded VK
   -- exists. Mirrors OCaml's `with_label "rule_main" (fun () -> rule.main ...)`
@@ -824,13 +827,13 @@ stepMain
   -- `buildSlotVkSources` emits no `exists` calls.
   { prevPublicInputs, proofMustVerify, publicOutput, perSlotVkSources } <-
     label "rule_main" do
-      vks <- buildSlotVkSources @cell @prevsSpec perSlotVkBlueprints sideloadedVkCarrier
+      perSlotVkSources <- buildSlotVkSources @cell @prevsSpec perSlotVkBlueprints sideloadedVkCarrier
       result <- rule publicInput
       pure
         { prevPublicInputs: result.prevPublicInputs
         , proofMustVerify: result.proofMustVerify
         , publicOutput: result.publicOutput
-        , perSlotVkSources: vks
+        , perSlotVkSources
         }
 
   let
@@ -1017,7 +1020,7 @@ stepMain
               -- possible source branch. For nd=1 this collapses to a
               -- Vector 1 (byte-identical gate emission as
               -- single-domain). For nd>1 the FOP body emits one
-              -- extra `Field.equal` and one extra mask `Field.mul`
+              -- extra `StepField.equal` and one extra mask `StepField.mul`
               -- per additional branch.
               { domains: map
                   ( \log2 ->

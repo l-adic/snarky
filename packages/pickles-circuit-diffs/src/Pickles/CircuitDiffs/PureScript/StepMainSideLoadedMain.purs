@@ -26,11 +26,12 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
+import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Sideload.VerificationKey (VerificationKey, compileDummy) as SLVK
+import Pickles.Slots (SideLoaded, Slot)
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Pickles.Step.Slots (SideLoaded, Slot)
-import Pickles.Types (StatementIO, StepField)
+import Pickles.Types (StatementIO)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertAny_, const_, equals_, exists, true_)

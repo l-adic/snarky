@@ -51,11 +51,9 @@ hashMessagesForNextWrapProofPureGeneral
   -> f
 hashMessagesForNextWrapProofPureGeneral { sg, paddedChallenges } =
   let
-    outer :: Array (Vector d f)
     outer = Vector.toUnfoldable paddedChallenges
 
-    flatChals :: Array f
-    flatChals = outer >>= (Vector.toUnfoldable :: Vector d f -> Array f)
+    flatChals = outer >>= (Vector.toUnfoldable)
   in
     hash (flatChals <> [ sg.x, sg.y ])
 
@@ -100,7 +98,7 @@ dummyPaddingSpongeStates dummyChallenges =
     go sponge = runPureSpongeM sponge do
       absorbMany dummyChallenges
       getSpongeState
-    Tuple _ s0 = runPureSpongeM (initialSponge :: Sponge f) getSpongeState
+    Tuple _ s0 = runPureSpongeM (initialSponge) getSpongeState
     Tuple _ s1 = go s0
     Tuple _ s2 = go s1
   in

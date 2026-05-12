@@ -49,6 +49,9 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.Dummy (dummyIpaChallenges)
+import Pickles.Field (WrapField)
+import Pickles.FinalizeOtherProof (DomainMode(..))
+import Pickles.IncrementallyVerifyProof (ivpTrace)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.Linearization.Types (LinearizationPoly)
@@ -59,16 +62,15 @@ import Pickles.Pseudo as Pseudo
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, pow2pow)
 import Pickles.PublicInputCommit (unwrapPt, wrapPt) as PIC
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
-import Pickles.Step.FinalizeOtherProof (DomainMode(..))
-import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapField, WrapIPARounds, WrapIvpBaseline, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked(..))
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK, chooseKey)
-import Pickles.Verify (ivpTrace)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOldBulletproofChallenges, getOpeningProof, getStepAccs, getWhichBranch, getWrapDomainIndices, getWrapProofState)
 import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
 import Pickles.Wrap.Slots (class PadSlots, padAllSlots, slotWidthsOf)
 import Pickles.Wrap.SlotsFromSpec (class SlotsFromSpec)
+import Pickles.Wrap.Types (IvpBaseline, PrevProofState(..), StatementPacked(..))
 import Pickles.Wrap.Verify (wrapVerify)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
@@ -90,10 +92,10 @@ import Snarky.Data.EllipticCurve as EC
 import Snarky.Types.Shifted (splitFieldCircuit)
 import Type.Proxy (Proxy(..))
 
--- | Public input to `wrapMain` at value level. The `WrapStatementPacked`
+-- | Public input to `wrapMain` at value level. The `StatementPacked`
 -- | newtype is the OCaml-allocation-faithful representation: challenge fields
 -- | are `UnChecked (SizedF 128 ...)` (matching `Spec.wrap_packed_typ` which
--- | allocates them via plain `Field.typ`), Type1 fp fields keep their
+-- | allocates them via plain `WrapField.typ`), Type1 fp fields keep their
 -- | forbidden_shifted_values check, and the field order matches OCaml's
 -- | `Wrap.Statement.In_circuit.to_data` hlist layout.
 -- |
@@ -103,12 +105,12 @@ import Type.Proxy (Proxy(..))
 -- | step proof, so its public input contains the step proof's challenges).
 type WrapMainInput :: Type
 type WrapMainInput =
-  WrapStatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean
+  StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean
 
 -- | Public input to `wrapMain` at var level (what the circuit body operates on).
 type WrapMainInputVar :: Type
 type WrapMainInputVar =
-  WrapStatementPacked StepIPARounds (Type1 (FVar WrapField)) (FVar WrapField) (BoolVar WrapField)
+  StatementPacked StepIPARounds (Type1 (FVar WrapField)) (FVar WrapField) (BoolVar WrapField)
 
 -- | Compile-time configuration for `wrapMain`.
 -- |
@@ -383,28 +385,27 @@ wrapMain
   => Add 1 branchesPred branches
   => Compare mpv 3 LT
   -- Forwarded to `wrapVerify` (which needs
-  -- `Add sgOldN WrapIvpBaseline totalBases` and
+  -- `Add sgOldN IvpBaseline totalBases` and
   -- `Add 1 totalBasesPred totalBases`). With `sgOldN = mpv`, these
   -- collapse to the constraints below.
-  => Add mpv WrapIvpBaseline totalBases
+  => Add mpv IvpBaseline totalBases
   => Add 1 totalBasesPred totalBases
   => WrapMainConfig branches
   -> WrapMainInputVar
   -> Snarky (KimchiConstraint WrapField) t m Unit
-wrapMain config (WrapStatementPacked stmtR) = do
+wrapMain config (StatementPacked stmtR) = do
   let
     wrapEndo = let Curves.EndoScalar e = Curves.endoScalar @Pallas.BaseField @WrapField in e
     wrapIpaRounds = reflectType (Proxy @WrapIPARounds)
     wrapDomainLog2 = wrapIpaRounds
     wrapSrsLengthLog2 = wrapIpaRounds
 
-    boolToField :: BoolVar WrapField -> FVar WrapField
     boolToField = coerce
 
-    -- Project the WrapStatementPacked vectors into named fields, in OCaml
+    -- Project the StatementPacked vectors into named fields, in OCaml
     -- `to_data` order. The `coerce` calls strip the `UnChecked` wrapper —
     -- this is the explicit "trusted from public input" boundary the
-    -- conceptually-pure design exposes (see WrapStatementPacked docs).
+    -- conceptually-pure design exposes (see StatementPacked docs).
     fpVec = stmtR.fpFields
     chalVec = stmtR.challenges
     scalarChalVec = stmtR.scalarChallenges
@@ -474,13 +475,12 @@ wrapMain config (WrapStatementPacked stmtR) = do
       --   (matches the old hand-unrolled `maskVal1 + 2*maskVal0`).
       branchDataMaskWidth = 2
 
-      packedMask :: FVar WrapField
       packedMask = foldl
         ( \acc (Tuple slotIdx m) ->
             let
               bitIdx = branchDataMaskWidth - 1 - slotIdx
               scaled = CVar.scale_ (fromInt (Int.pow 2 bitIdx) :: WrapField)
-                (coerce m :: FVar WrapField)
+                (coerce m)
             in
               add_ acc scaled
         )
@@ -496,7 +496,7 @@ wrapMain config (WrapStatementPacked stmtR) = do
     assertEqual_ stmt.branchData packedBranchData
 
   -- 3. Req.Proof_state (wrap_main.ml:257-267)
-  WrapPrevProofState pps <- label "proof-state" $ exists $ lift $
+  PrevProofState pps <- label "proof-state" $ exists $ lift $
     getWrapProofState @branches @mpv @slots @VestaG unit
   let
     prevUnfinalized = pps.unfinalizedProofs
@@ -531,7 +531,6 @@ wrapMain config (WrapStatementPacked stmtR) = do
   slotsValue <- label "old-bp-chals" $ exists $ lift $
     getOldBulletproofChallenges @branches @mpv @slots @VestaG unit
   let
-    dummyChallenge :: Vector WrapIPARounds (FVar WrapField)
     dummyChallenge = map const_ dummyIpaChallenges.wrapExpanded
 
     paddedChalsAll
@@ -571,10 +570,8 @@ wrapMain config (WrapStatementPacked stmtR) = do
     -- Per-slot views projected uniformly. These are pure lets; the
     -- helpers consume the prepared views inside the monadic loops
     -- below, so emission order is determined by the traversals.
-    unfViews :: Vector mpv UnfinalizedView
     unfViews = map unpackUnfinalized prevUnfinalized
 
-    witnesses :: Vector mpv (ProofWitness (FVar WrapField))
     witnesses = map stepAllEvalsToProofWitness rawEvals
 
   -- Pseudo domains — right-to-left, matching OCaml's `Vector.map`
@@ -584,7 +581,6 @@ wrapMain config (WrapStatementPacked stmtR) = do
   -- index (post-reverse), so slot N-1 is emitted first.
   domains <- do
     let
-      revIdxs :: Vector mpv Int
       revIdxs = Vector.reverse (Vector.generate @mpv getFinite)
       revWdis = Vector.reverse wrapDomainIndices
       revInputs = Vector.zip revIdxs revWdis
@@ -606,7 +602,6 @@ wrapMain config (WrapStatementPacked stmtR) = do
   -- record-flat instead of nesting Tuples.
   expandedChalsAll <-
     let
-      idxs :: Vector mpv (Finite mpv)
       idxs = Vector.generate @mpv identity
     in
       traverse
@@ -636,14 +631,12 @@ wrapMain config (WrapStatementPacked stmtR) = do
     -- Real (unpadded) challenges per slot: drop the leading padding
     -- entries from each padded vector. Returns `Array` because the
     -- runtime slot width erases the type-level length.
-    perSlotReal :: Vector mpv (Array (Vector WrapIPARounds (FVar WrapField)))
     perSlotReal = Vector.zipWith
       (\w padded -> Array.drop (paddedLenInt - w) (Vector.toUnfoldable padded))
       slotWidths
       paddedChalsAll
   msgsForWrap <- do
     let
-      idxs :: Vector mpv (Finite mpv)
       idxs = Vector.generate @mpv identity
       revIdxs = Vector.reverse idxs
     revMsgs <- traverse
@@ -723,7 +716,6 @@ wrapMain config (WrapStatementPacked stmtR) = do
       ivpTrace ("wrap.dbg.unf" <> show slotIdx <> ".bpc." <> show (getFinite fj)) (SizedF.toField c)
 
   let
-    publicInput :: PackedStepPublicInput mpv WrapIPARounds (FVar WrapField) (BoolVar WrapField)
     publicInput = PackedStepPublicInput
       { proofState:
           { unfinalizedProofs: splitProofs
@@ -734,7 +726,6 @@ wrapMain config (WrapStatementPacked stmtR) = do
 
   -- 14. Block 6: wrapVerify (IVP + 4 assertions)
   let
-    branchBools :: Vector branches (FVar WrapField)
     branchBools = map boolToField whichBranch
 
     -- 1-hot masked sum of `Vector branches (AffinePoint (F WrapField))`
@@ -747,7 +738,6 @@ wrapMain config (WrapStatementPacked stmtR) = do
       -> AffinePoint (FVar WrapField)
     sumMaskByBranch perBranchPts =
       let
-        scaledPts :: Vector branches (AffinePoint (FVar WrapField))
         scaledPts = Vector.zipWith
           ( \b { x: F x', y: F y' } ->
               { x: CVar.scale_ x' b, y: CVar.scale_ y' b }
@@ -871,7 +861,7 @@ wrapMainForPrevs
   => Reflectable mpv Int
   => Add 1 branchesPred branches
   => Compare mpv 3 LT
-  => Add mpv WrapIvpBaseline totalBases
+  => Add mpv IvpBaseline totalBases
   => Add 1 totalBasesPred totalBases
   => WrapMainConfig branches
   -> WrapMainInputVar

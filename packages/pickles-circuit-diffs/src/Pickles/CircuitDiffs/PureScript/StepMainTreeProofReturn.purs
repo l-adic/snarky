@@ -11,7 +11,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn
 -- |
 -- | **N = 2**, **Output mode**, **heterogeneous prevs** at the rule
 -- | level but homogeneous at the value-type level: both prev
--- | `public_input` slots are `Field.typ` even though the first prev's
+-- | `public_input` slots are `StepField.typ` even though the first prev's
 -- | rule has `max_proofs_verified = N0` (No_recursion_return) and the
 -- | second is `self` with `max_proofs_verified = N2`. Our
 -- | `Vector n (FVar StepField)` `prevPublicInputs` field handles this
@@ -41,10 +41,11 @@ import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStep
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecursionReturnParams)
 import Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn (compileWrapMainNoRecursionReturn)
+import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
+import Pickles.Slots (Compiled, Slot)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
-import Pickles.Step.Slots (Compiled, Slot)
-import Pickles.Types (StatementIO, StepField)
+import Pickles.Types (StatementIO)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -113,7 +114,7 @@ treeProofReturnRule
 treeProofReturnRule _ = do
   no_recursive_input <- exists $ lift $ getTreeProofReturnNoRecursiveInput unit
   prev <- exists $ lift $ getTreeProofReturnPrev unit
-  (is_base_case :: BoolVar StepField) <- exists $ lift $
+  (is_base_case) <- exists $ lift $
     getTreeProofReturnIsBaseCase unit
   let proofMustVerify = not_ is_base_case
   self <- if_ is_base_case (const_ zero) (CVar.add_ (const_ one) prev)

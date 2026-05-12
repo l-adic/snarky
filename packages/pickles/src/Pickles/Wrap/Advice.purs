@@ -44,8 +44,9 @@ import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Effect (Effect)
 import Effect.Exception (throw)
-import Pickles.Types (StepAllEvals, StepIPARounds, WrapIPARounds, WrapPrevProofState, WrapProofMessages, WrapProofOpening)
+import Pickles.Types (StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages, WrapProofOpening)
 import Pickles.Wrap.Slots (class PadSlots)
+import Pickles.Wrap.Types (PrevProofState)
 import Snarky.Circuit.DSL (F)
 import Snarky.Circuit.Kimchi (Type1, Type2)
 import Snarky.Curves.Class (class WeierstrassCurve)
@@ -62,7 +63,7 @@ import Snarky.Data.EllipticCurve (WeierstrassAffinePoint)
 -- |          determining the shape of `Req.Old_bulletproof_challenges`.
 -- | - `g`: commitment curve of the Step proof being verified (= `VestaG`)
 -- | - `f`: base field of `g` — uniquely determined via `WeierstrassCurve f g`
--- |        (= `Vesta.BaseField` = `WrapField`)
+-- |        (= `Vesta.BaseField` = `Field`)
 -- | - `slots`: the slot-list shape, a higher-kinded type constructor
 -- |        (`Type -> Type`) from `Pickles.Wrap.Slots`. Concretely one of
 -- |        `NoSlots`, `Slots1 w`, or `Slots2 w0 w1` per library use.
@@ -94,7 +95,7 @@ class
   getWrapProofState
     :: Unit
     -> m
-         ( WrapPrevProofState
+         ( PrevProofState
              mpv
              (Type2 (F f))
              (F f)

@@ -23,12 +23,12 @@ import Data.Fin as Fin
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyPallasPt, stepEndo, unsafeIdx)
+import Pickles.Field (StepField)
+import Pickles.FinalizeOtherProof (DomainMode(..))
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
-import Pickles.Step.FinalizeOtherProof (DomainMode(..))
 import Pickles.Step.VerifyOne (verifyOne)
-import Pickles.Types (StepField)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, const_)
@@ -147,7 +147,7 @@ fullStepVerifyOneN2Circuit { lagrangeAt, blindingH } inputs = do
       , mustVerify: coerce (at 303) :: BoolVar StepField
       , branchData: { mask0, mask1, domainLog2Var: at (proofStateBase + 28) }
       -- N2: trim_front [mask0, mask1] with lte N2 N2 = identity (both mask entries)
-      , proofMask: (coerce mask0 :: BoolVar StepField) :< (coerce mask1 :: BoolVar StepField) :< Vector.nil
+      , proofMask: (coerce mask0) :< (coerce mask1) :< Vector.nil
       , vkComms:
           { sigma: (Vector.replicate constDummyPt) :: Vector 6 _
           , sigmaLast: constDummyPt

@@ -7,7 +7,7 @@
 -- |   max_proofs_verified = N2
 -- |   per-slot widths      = [0, 2]
 -- |   override_wrap_domain = N1  → wrap_domains.h = 2^14
--- |   public_input         = Output Field
+-- |   public_input         = Output StepField
 -- |
 -- | Compile-API driven via `compileMulti` + `BranchProver` closures:
 -- | one 1-rule compile for NRR, one 1-rule compile for the Tree rule
@@ -45,22 +45,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles.Prove.Compile
-  ( BranchProver(..)
-  , CompiledProof(..)
-  , PrevSlot(..)
-  , RulesCons
-  , RulesNil
-  , SlotWrapKey(..)
-  , compileMulti
-  , mkRuleEntry
-  )
-import Pickles.Prove.Step (StepRule)
-import Pickles.Prove.Verify (verify)
-import Pickles.Step.Advice (getPrevAppStates)
-import Pickles.Step.Slots (Compiled, Slot)
-import Pickles.Types (StatementIO(..), StepField)
-import Pickles.Wrap.Slots (NoSlots, Slots2)
+import Pickles (BranchProver(..), Compiled, CompiledProof(..), NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots2, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, verify)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.CVar (add_) as CVar
@@ -109,7 +94,7 @@ nrrRule _ = pure
   }
 
 -- | NRR's 1-rule carrier (same shape as the standalone NRR test). NRR
--- | output is a Field, so the StepRule's outputVal is `F StepField`.
+-- | output is a StepField, so the StepRule's outputVal is `F StepField`.
 type NrrRules =
   RulesCons 0 Unit Unit Unit
     RulesNil

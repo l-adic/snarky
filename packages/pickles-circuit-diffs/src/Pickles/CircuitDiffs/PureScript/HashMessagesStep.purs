@@ -9,8 +9,9 @@ import Data.Foldable (foldM)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
+import Pickles.Field (StepField)
 import Pickles.Sponge (initialSpongeCircuit)
-import Pickles.Types (StepField, WrapIPARounds)
+import Pickles.Types (WrapIPARounds)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertEq)
 import Snarky.Circuit.RandomOracle.Sponge as Sponge

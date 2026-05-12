@@ -12,7 +12,7 @@
 -- |
 -- | Reference: wrap_verifier.ml:1511-1783 `finalize_other_proof`
 module Pickles.Wrap.FinalizeOtherProof
-  ( WrapFinalizeOtherProofInput
+  ( Input
   , wrapFinalizeOtherProofCircuit
   , pow2PowMul
   ) where
@@ -27,8 +27,10 @@ import Data.Traversable (for, traverse, traverse_)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, zipWith, (!!))
 import Data.Vector as Vector
+import Pickles.FinalizeOtherProof (Output, Params)
 import Pickles.IPA (bCorrectCircuit, bPolyCircuit)
-import Pickles.Linearization.Env (AlphaPowersLen, EnvM, buildCircuitEnvM, precomputeAlphaPowers)
+import Pickles.IncrementallyVerifyProof (ivpTrace)
+import Pickles.Linearization.Env (AlphaPowersLen, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (runLinearizationPoly)
@@ -37,9 +39,7 @@ import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalListUnmasked, hornerCo
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, labelM, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallenge)
-import Pickles.Step.Domain (pow2PowSquare)
-import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherProofParams)
-import Pickles.Verify (ivpTrace)
+import Pickles.Util.Pow2 (pow2PowSquare)
 import Pickles.Verify.Types (UnfinalizedProof, toPlonkMinimal)
 import Pickles.Wrap.OtherField as WrapOtherField
 import Poseidon (class PoseidonField)
@@ -64,7 +64,7 @@ import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeFie
 -- | - No `domainLog2Var`: domain is fixed at compile time
 -- |
 -- | Reference: wrap_verifier.ml:1511-1520
-type WrapFinalizeOtherProofInput n d fv b =
+type Input n d fv b =
   { unfinalized :: UnfinalizedProof d fv (Type2 fv) b
   , witness :: ProofWitness fv
   , prevChallenges :: Vector n (Vector d fv)
@@ -91,10 +91,10 @@ wrapFinalizeOtherProofCircuit
   => CircuitM f (KimchiConstraint f) t m
   => LinearizationFFI f g
   => Reflectable d Int
-  => FinalizeOtherProofParams nd f r2
+  => Params nd f r2
   -> (FVar f -> Snarky (KimchiConstraint f) t m (FVar f))
-  -> WrapFinalizeOtherProofInput n d (FVar f) (BoolVar f)
-  -> Snarky (KimchiConstraint f) t m (FinalizeOtherProofOutput d f)
+  -> Input n d (FVar f) (BoolVar f)
+  -> Snarky (KimchiConstraint f) t m (Output d f)
 wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness, prevChallenges } = label "wrap-finalize-other-proof" do
   -- Wrap is currently single-domain; access via Vector.head. Multi-
   -- domain wrap dispatch (if ever needed) would mirror Step's
@@ -207,10 +207,8 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
       , defaultVal: const_ zero
       }
 
-    w0 :: Vector 15 (FVar f)
     w0 = map _.zeta allEvals.witnessEvals
 
-    s0 :: Vector 6 (FVar f)
     s0 = map _.zeta allEvals.sigmaEvals
 
     zZeta = allEvals.zEvals.zeta
@@ -305,7 +303,6 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
 
     vanishesOnZk = const_ one
 
-    baseEnv :: EnvM f (Snarky (KimchiConstraint f) t m)
     baseEnv = buildCircuitEnvM
       alphaPowers
       zeta

@@ -48,7 +48,7 @@ module Pickles.Prove.Compile
   , class IntMaxOrd
   , runMultiCompile
   , buildBranchProvers
-  , module Pickles.Prove.Verify
+  , module Pickles.Verify
   ) where
 
 import Prelude
@@ -68,17 +68,10 @@ import Effect (Effect)
 import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
 import Pickles.Constants (roughDomainsLog2, zkRows)
-import Pickles.Dummy
-  ( baseCaseDummies
-  , computeDummySgValues
-  , dummyIpaChallenges
-  , wrapDomainLog2ForProofsVerified
-  , wrapDummyUnfinalizedProof
-  )
-import Pickles.Dummy as Dummy
+import Pickles.Dummy (dummyIpaChallenges)
+import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
-import Pickles.PlonkChecks (AllEvals)
 import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.ProofFFI
   ( pallasProofOpeningSg
@@ -106,11 +99,7 @@ import Pickles.ProofFFI
 import Pickles.ProofsVerified (ProofsVerifiedCount, boolVecToProofsVerified)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
-import Pickles.Prove.Pure.Wrap
-  ( WrapDeferredValuesInput
-  , assembleWrapMainInput
-  , wrapComputeDeferredValues
-  )
+import Pickles.Prove.Pure.Wrap (assembleWrapMainInput, wrapComputeDeferredValues)
 import Pickles.Prove.Step
   ( StepAdvice(..)
   , StepCompileResult
@@ -131,17 +120,6 @@ import Pickles.Prove.Step
   , extractWrapVKCommsAdvice
   , mkDummyMsgWrapHash
   )
-import Pickles.Prove.Verify
-  ( CompiledProof(..)
-  , CompiledProofWidthData(..)
-  , SomeCompiledProofWidthData
-  , Verifier
-  , mkSomeCompiledProofWidthData
-  , mkVerifier
-  , verify
-  , verifyOne
-  , wrapPublicInput
-  )
 import Pickles.Prove.Wrap
   ( WrapCompileResult
   , buildWrapAdvice
@@ -153,28 +131,35 @@ import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier)
 import Pickles.Sideload.Bundle (Bundle, projectVk, verifierIndex) as SideloadBundle
 import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
+import Pickles.Slots (Compiled, SideLoaded, Slot)
+import Pickles.Step.Dummy
+  ( baseCaseDummies
+  , computeDummySgValues
+  , wrapDomainLog2ForProofsVerified
+  , wrapDummyUnfinalizedProof
+  )
+import Pickles.Step.Dummy as Dummy
 import Pickles.Step.Main (class BuildSlotVkSources, SlotVkBlueprintCompiled(..), SlotVkBlueprintSideLoaded)
 import Pickles.Step.Main as MpvPadding
-import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, Compiled, SideLoaded, Slot)
-import Pickles.Types
-  ( MaxProofsVerified
-  , PaddedLength
-  , PerProofUnfinalized(..)
-  , PointEval(..)
-  , StatementIO(..)
-  , StepAllEvals(..)
-  , StepField
-  , StepIPARounds
-  , StepPerProofWitness
-  , UnfinalizedFieldCount
-  , WrapField
-  , WrapIPARounds
-  , WrapIvpBaseline
-  )
+import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier)
+import Pickles.Step.Types as Step
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StatementIO(..), StepAllEvals(..), StepIPARounds, WrapIPARounds)
 import Pickles.Util.Unique (Unique, newUnique)
+import Pickles.Verify
+  ( CompiledProof(..)
+  , CompiledProofWidthData(..)
+  , SomeCompiledProofWidthData
+  , Verifier
+  , mkSomeCompiledProofWidthData
+  , mkVerifier
+  , verify
+  , verifyOne
+  , wrapPublicInput
+  )
 import Pickles.Verify.Types (toPlonkMinimal)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Slots (class PadSlots, NoSlots, noSlots, replicateSlots)
+import Pickles.Wrap.Types as Wrap
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (EQ, GT, LT)
 import Prim.Ordering as PrimOrdering
@@ -731,7 +716,7 @@ instance
     mpv
     (Product (Vector n) restSlots)
     (StatementIO prevHeadInput prevHeadOutput /\ restValCarrier)
-    ( StepPerProofWitness
+    ( Step.PerProofWitness
         n
         StepIPARounds
         WrapIPARounds
@@ -848,10 +833,8 @@ instance
       dummyWrapSg = dummySgs.ipa.wrap.sg
       dummyStepSg = dummySgs.ipa.step.sg
 
-      proofsVerifiedMask :: Vector MaxProofsVerified Boolean
       proofsVerifiedMask = (slotN >= 2) :< (slotN >= 1) :< Vector.nil
 
-      stepEndoScalarF :: StepField
       stepEndoScalarF =
         let EndoScalar e = (endoScalar :: EndoScalar StepField) in e
 
@@ -859,12 +842,12 @@ instance
         BasePrev { dummyStatement } ->
           let
             baseCaseDummyChalPoly =
-              { sg: dummyWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
+              { sg: dummyWrapSg, challenges: dummyIpaChallenges.wrapExpanded }
 
             msgWrapDigest = hashMessagesForNextWrapProofPureGeneral
               { sg: dummyStepSg
               , paddedChallenges:
-                  Vector.replicate @PaddedLength Dummy.dummyIpaChallenges.wrapExpanded
+                  Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
               }
 
             fopProofState = Dummy.stepDummyUnfinalizedProof @n bcd
@@ -906,19 +889,18 @@ instance
             , wrapSpongeDigest: (zero :: StepField)
             , mustVerify: false
             , wrapOwnPaddedBpChals:
-                Vector.replicate @PaddedLength Dummy.dummyIpaChallenges.wrapExpanded
+                Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
             , fopState: fopProofState
             , stepAdvicePrevEvals: bcd.proofDummy.prevEvals
-            , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
+            , kimchiPrevChallengesExpanded: dummyIpaChallenges.stepExpanded
             , prevChallengesForStepHash:
-                Vector.replicate Dummy.dummyIpaChallenges.stepExpanded
+                Vector.replicate dummyIpaChallenges.stepExpanded
             }
         InductivePrev prevCp prevTag ->
           let
             CompiledProof prev = prevCp
             Tag { verifier: prevVerifier } = prevTag
 
-            prevStepBpChalsExpanded :: Vector StepIPARounds StepField
             prevStepBpChalsExpanded =
               map
                 ( \sc ->
@@ -927,13 +909,11 @@ instance
                 )
                 prev.rawBulletproofChallenges
 
-            wrapPI :: Array WrapField
             wrapPI = wrapPublicInput prevVerifier prevCp
           in
             runExists
               ( \(CompiledProofWidthData wd) ->
                   let
-                    prevZetaField :: StepField
                     prevZetaField =
                       coerce
                         (toFieldPure prev.rawPlonk.zeta (F prevVerifier.stepEndo))
@@ -944,13 +924,10 @@ instance
                     -- multi-branch dispatch picks the right domain for each
                     -- prev. Mirrors OCaml `branch_data.domain_log2` driving
                     -- `step_domain` inside `expand_deferred`.
-                    prevStepGenerator :: StepField
                     prevStepGenerator = domainGenerator prev.stepDomainLog2
 
-                    prevStepShifts :: Vector 7 StepField
                     prevStepShifts = domainShifts prev.stepDomainLog2
 
-                    prevVanishesOnZk :: StepField
                     prevVanishesOnZk = ProofFFI.permutationVanishingPolynomial
                       { domainLog2: prev.stepDomainLog2
                       , zkRows: prevVerifier.stepZkRows
@@ -1116,7 +1093,6 @@ instance
         Just o -> o
         Nothing -> Dummy.wrapDomainLog2ForProofsVerified slotN
 
-      slotWrapDomainLog2 :: Int
       slotWrapDomainLog2 = case headSlotWrapKey of
         External vks -> vks.wrapDomainLog2
         _ -> outerOverridenWrapDomainLog2
@@ -1167,11 +1143,9 @@ instance
 
       -- msgForNextWrap real challenges, computed by endo-expanding the
       -- head slot's raw bp challenges via the wrap endo scalar.
-      wrapEndoScalar :: WrapField
       wrapEndoScalar =
         let EndoScalar e = (endoScalar :: EndoScalar WrapField) in e
 
-      msgForNextWrapRealChals :: Vector WrapIPARounds WrapField
       msgForNextWrapRealChals =
         map
           ( \(UnChecked v) ->
@@ -1179,7 +1153,6 @@ instance
           )
           headUnfRaw.bulletproofChallenges
 
-      stepEndoScalarF :: StepField
       stepEndoScalarF =
         let EndoScalar e = (endoScalar :: EndoScalar StepField) in e
 
@@ -1187,7 +1160,7 @@ instance
         BasePrev _ ->
           let
             baseCaseDummyChalPoly =
-              { sg: wrapSgD, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
+              { sg: wrapSgD, challenges: dummyIpaChallenges.wrapExpanded }
             toFFI r =
               { sgX: r.sg.x, sgY: r.sg.y, challenges: Vector.toUnfoldable r.challenges }
             dummyWrapOracles =
@@ -1214,18 +1187,17 @@ instance
               }
           in
             { prevSg: stepSgD
-            , prevStepChals: Dummy.dummyIpaChallenges.stepExpanded
+            , prevStepChals: dummyIpaChallenges.stepExpanded
             , prevStepAcc: WeierstrassAffinePoint { x: F stepSgD.x, y: F stepSgD.y }
             , headPrevEvals
             , headSlotPrevWrapBpChalsVec:
-                Vector.replicate @n (map F Dummy.dummyIpaChallenges.wrapExpanded)
+                Vector.replicate @n (map F dummyIpaChallenges.wrapExpanded)
             }
         InductivePrev prevCp prevTag ->
           let
             CompiledProof prev = prevCp
             Tag { verifier: prevVerifier } = prevTag
 
-            prevStepBpChalsExpanded :: Vector StepIPARounds StepField
             prevStepBpChalsExpanded =
               map
                 ( \sc ->
@@ -1234,7 +1206,6 @@ instance
                 )
                 prev.rawBulletproofChallenges
 
-            prevWrapPI :: Array WrapField
             prevWrapPI = wrapPublicInput prevVerifier prevCp
           in
             -- Reference: OCaml `step_main`'s
@@ -1314,7 +1285,6 @@ instance
               prev.widthData
 
       -- Recurse into rest.
-      restSideInfo :: ShapeProveSideInfo restMpv
       restSideInfo =
         { challengePolynomialCommitments: tailChalPolyComms
         , unfinalizedSlots: tailUnfinalized
@@ -1387,7 +1357,7 @@ instance
     mpv
     (Product (Vector mpvMax) restSlots)
     (StatementIO prevHeadInput prevHeadOutput /\ restValCarrier)
-    ( StepPerProofWitness
+    ( Step.PerProofWitness
         mpvMax
         StepIPARounds
         WrapIPARounds
@@ -1511,11 +1481,9 @@ instance
       dummyWrapSg = dummySgs.ipa.wrap.sg
       dummyStepSg = dummySgs.ipa.step.sg
 
-      proofsVerifiedMask :: Vector MaxProofsVerified Boolean
       proofsVerifiedMask =
         (slotMpvMax >= 2) :< (slotMpvMax >= 1) :< Vector.nil
 
-      stepEndoScalarF :: StepField
       stepEndoScalarF =
         let EndoScalar e = (endoScalar :: EndoScalar StepField) in e
 
@@ -1523,12 +1491,12 @@ instance
         BasePrev { dummyStatement } ->
           let
             baseCaseDummyChalPoly =
-              { sg: dummyWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
+              { sg: dummyWrapSg, challenges: dummyIpaChallenges.wrapExpanded }
 
             msgWrapDigest = hashMessagesForNextWrapProofPureGeneral
               { sg: dummyStepSg
               , paddedChallenges:
-                  Vector.replicate @PaddedLength Dummy.dummyIpaChallenges.wrapExpanded
+                  Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
               }
 
             fopProofState = Dummy.stepDummyUnfinalizedProof @mpvMax bcd
@@ -1566,19 +1534,18 @@ instance
             , wrapSpongeDigest: (zero :: StepField)
             , mustVerify: false
             , wrapOwnPaddedBpChals:
-                Vector.replicate @PaddedLength Dummy.dummyIpaChallenges.wrapExpanded
+                Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
             , fopState: fopProofState
             , stepAdvicePrevEvals: bcd.proofDummy.prevEvals
-            , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
+            , kimchiPrevChallengesExpanded: dummyIpaChallenges.stepExpanded
             , prevChallengesForStepHash:
-                Vector.replicate Dummy.dummyIpaChallenges.stepExpanded
+                Vector.replicate dummyIpaChallenges.stepExpanded
             }
         InductivePrev prevCp prevTag ->
           let
             CompiledProof prev = prevCp
             Tag { verifier: prevVerifier } = prevTag
 
-            prevStepBpChalsExpanded :: Vector StepIPARounds StepField
             prevStepBpChalsExpanded =
               map
                 ( \sc ->
@@ -1587,24 +1554,19 @@ instance
                 )
                 prev.rawBulletproofChallenges
 
-            wrapPI :: Array WrapField
             wrapPI = wrapPublicInput prevVerifier prevCp
           in
             runExists
               ( \(CompiledProofWidthData wd) ->
                   let
-                    prevZetaField :: StepField
                     prevZetaField =
                       coerce
                         (toFieldPure prev.rawPlonk.zeta (F prevVerifier.stepEndo))
 
-                    prevStepGenerator :: StepField
                     prevStepGenerator = domainGenerator prev.stepDomainLog2
 
-                    prevStepShifts :: Vector 7 StepField
                     prevStepShifts = domainShifts prev.stepDomainLog2
 
-                    prevVanishesOnZk :: StepField
                     prevVanishesOnZk = ProofFFI.permutationVanishingPolynomial
                       { domainLog2: prev.stepDomainLog2
                       , zkRows: prevVerifier.stepZkRows
@@ -1762,7 +1724,6 @@ instance
 
       slotWrapVK = SideloadBundle.verifierIndex headVk
 
-      slotWrapDomainLog2 :: Int
       slotWrapDomainLog2 =
         Dummy.wrapDomainLog2ForProofsVerified
           (fromEnum headActualWrapDomainSize)
@@ -1802,11 +1763,9 @@ instance
         , shouldFinalize: headUnfRaw.shouldFinalize
         }
 
-      wrapEndoScalar :: WrapField
       wrapEndoScalar =
         let EndoScalar e = (endoScalar :: EndoScalar WrapField) in e
 
-      msgForNextWrapRealChals :: Vector WrapIPARounds WrapField
       msgForNextWrapRealChals =
         map
           ( \(UnChecked v) ->
@@ -1814,7 +1773,6 @@ instance
           )
           headUnfRaw.bulletproofChallenges
 
-      stepEndoScalarF :: StepField
       stepEndoScalarF =
         let EndoScalar e = (endoScalar :: EndoScalar StepField) in e
 
@@ -1829,7 +1787,7 @@ instance
         BasePrev _ ->
           let
             baseCaseDummyChalPoly =
-              { sg: wrapSgD, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
+              { sg: wrapSgD, challenges: dummyIpaChallenges.wrapExpanded }
             toFFI r =
               { sgX: r.sg.x, sgY: r.sg.y, challenges: Vector.toUnfoldable r.challenges }
             dummyWrapOracles =
@@ -1856,18 +1814,17 @@ instance
               }
           in
             { prevSg: stepSgD
-            , prevStepChals: Dummy.dummyIpaChallenges.stepExpanded
+            , prevStepChals: dummyIpaChallenges.stepExpanded
             , prevStepAcc: WeierstrassAffinePoint { x: F stepSgD.x, y: F stepSgD.y }
             , headPrevEvals
             , headSlotPrevWrapBpChalsVec:
-                Vector.replicate @mpvMax (map F Dummy.dummyIpaChallenges.wrapExpanded)
+                Vector.replicate @mpvMax (map F dummyIpaChallenges.wrapExpanded)
             }
         InductivePrev prevCp prevTag ->
           let
             CompiledProof prev = prevCp
             Tag { verifier: prevVerifier } = prevTag
 
-            prevStepBpChalsExpanded :: Vector StepIPARounds StepField
             prevStepBpChalsExpanded =
               map
                 ( \sc ->
@@ -1876,7 +1833,6 @@ instance
                 )
                 prev.rawBulletproofChallenges
 
-            prevWrapPI :: Array WrapField
             prevWrapPI = wrapPublicInput prevVerifier prevCp
           in
             runExists
@@ -1942,7 +1898,6 @@ instance
               )
               prev.widthData
 
-      restSideInfo :: ShapeProveSideInfo restMpv
       restSideInfo =
         { challengePolynomialCommitments: tailChalPolyComms
         , unfinalizedSlots: tailUnfinalized
@@ -2277,7 +2232,7 @@ instance
   -- outputSize derives from mpvMax (the wrap circuit's max), not the
   -- rule's mpv: step PI is mpvMax-shaped (mirrors OCaml
   -- step.ml:783-787).
-  , Mul mpvMax UnfinalizedFieldCount unfsTotal
+  , Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
   , Add unfsTotal 1 digestPlusUnfs
   , Add digestPlusUnfs mpvMax outputSize
   , Reflectable ruleMpv Int
@@ -2560,7 +2515,6 @@ runMultiCompileFull
        }
 runMultiCompileFull cfg rules = do
   let
-    placeholder :: Vector topBranches Int
     placeholder = Vector.replicate roughDomainsLog2
   log2s <- prePassDomainLog2s
     @rs
@@ -2654,7 +2608,7 @@ instance
   -- outputSize derives from mpvMax (the wrap circuit's max).
   , Reflectable mpvPad Int
   , MpvPadding.MpvPadding mpvPad ruleMpv mpvMax
-  , Mul mpvMax UnfinalizedFieldCount unfsTotal
+  , Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
   , Add unfsTotal 1 digestPlusUnfs
   , Add digestPlusUnfs mpvMax outputSize
   , PadSlots slots ruleMpv
@@ -2665,7 +2619,7 @@ instance
   , Reflectable padMax Int
   , Add padMax mpvMax PaddedLength
   , Compare mpvMax 3 LT
-  , Add mpvMax WrapIvpBaseline totalBasesMax
+  , Add mpvMax Wrap.IvpBaseline totalBasesMax
   , Add 1 totalBasesMaxPred totalBasesMax
   , PadSlots slotsMax mpvMax
   , PadProveDataMpv ruleMpv slots mpvMax slotsMax
@@ -2972,7 +2926,7 @@ mkRuleEntry
   => Reflectable outputSize Int
   => Add pad mpv PaddedLength
   => MpvPadding.MpvPadding mpvPad mpv mpvMax
-  => Mul mpvMax UnfinalizedFieldCount unfsTotal
+  => Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
   => CircuitType StepField inputVal inputVar
@@ -3162,7 +3116,7 @@ runMultiProverBody
   => Reflectable outputSize Int
   => Add pad mpv PaddedLength
   => MpvPadding.MpvPadding mpvPad mpv mpvMax
-  => Mul mpvMax UnfinalizedFieldCount unfsTotal
+  => Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
   -- Step-half constraints reference the rule's own `mpv`. The wrap
@@ -3173,7 +3127,7 @@ runMultiProverBody
   => Reflectable padMax Int
   => Add padMax mpvMax PaddedLength
   => Compare mpvMax 3 LT
-  => Add mpvMax WrapIvpBaseline totalBasesMax
+  => Add mpvMax Wrap.IvpBaseline totalBasesMax
   => Add 1 totalBasesMaxPred totalBasesMax
   => PadSlots slotsMax mpvMax
   => PadProveDataMpv mpv slots mpvMax slotsMax
@@ -3250,7 +3204,6 @@ runMultiProverBody
   let
     PProveStep.StepAdvice sa = stepAdvice
 
-    proveDataSideInfo :: ShapeProveSideInfo mpv
     proveDataSideInfo =
       { challengePolynomialCommitments
       , unfinalizedSlots: sa.publicUnfinalizedProofs
@@ -3298,7 +3251,6 @@ runMultiProverBody
     dummyUnfDv = dummyUnfRaw.deferredValues
     dummyPlonk = dummyUnfDv.plonk
 
-    dummyPpu :: PerProofUnfinalized WrapIPARounds (Type2 (F WrapField)) (F WrapField) Boolean
     dummyPpu = PerProofUnfinalized
       { combinedInnerProduct: dummyUnfDv.combinedInnerProduct
       , b: dummyUnfDv.b
@@ -3324,7 +3276,6 @@ runMultiProverBody
     de = bcdMax.dummyEvals
     pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
 
-    dummyPrevEvalsMax :: StepAllEvals (F WrapField)
     dummyPrevEvalsMax = StepAllEvals
       { ftEval1: F de.ftEval1
       , publicEvals: pe de.publicEvals
@@ -3335,7 +3286,6 @@ runMultiProverBody
       , indexEvals: map pe de.indexEvals
       }
 
-    padDummies :: PadProveDataDummies
     padDummies =
       { dummyPrevSg: dummyStepSgInWrapField
       , dummyPrevStepChals: dummyIpaChallenges.stepExpanded
@@ -3360,7 +3310,6 @@ runMultiProverBody
       , dummySlotChal: map F dummyIpaChallenges.wrapExpanded
       }
 
-    proveDataMax :: ShapeProveData mpvMax slotsMax
     proveDataMax = padShapeProveData padDummies proveData
 
   stepResult <- r.stepProveFn shape.stepProveCtx stepCR stepAdvice
@@ -3384,7 +3333,6 @@ runMultiProverBody
       , prevChallenges: stepOraclesPrevChals
       }
 
-    allEvals :: AllEvals StepField
     allEvals =
       { ftEval1: stepOracles.ftEval1
       , publicEvals:
@@ -3400,10 +3348,8 @@ runMultiProverBody
 
     outerMpv = reflectType (Proxy @mpv)
 
-    proofsVerifiedMask :: Vector MaxProofsVerified Boolean
     proofsVerifiedMask = (outerMpv >= 2) :< (outerMpv >= 1) :< Vector.nil
 
-    wrapDvInput :: WrapDeferredValuesInput mpv
     wrapDvInput =
       { proof: stepResult.proof
       , verifierIndex: stepCR.verifierIndex
@@ -3413,8 +3359,8 @@ runMultiProverBody
       , domainLog2: selfStepDomainLog2
       , zkRows
       , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
-      , generator: (domainGenerator selfStepDomainLog2 :: StepField)
-      , shifts: (domainShifts selfStepDomainLog2 :: Vector 7 StepField)
+      , generator: (domainGenerator selfStepDomainLog2)
+      , shifts: (domainShifts selfStepDomainLog2)
       , vanishesOnZk: permutationVanishingPolynomial
           { domainLog2: selfStepDomainLog2
           , zkRows
@@ -3437,7 +3383,6 @@ runMultiProverBody
     -- 32 unfsTotal`, `Add unfsTotal 1 digestPlusUnfs`, `Add
     -- digestPlusUnfs mpvMax outputSize`); enforced at runtime via
     -- `unsafeFinite`.
-    msgStep :: StepField
     msgStep =
       let
         F f = Vector.index stepResult.publicOutputs
@@ -3445,10 +3390,8 @@ runMultiProverBody
       in
         f
 
-    stepProofSg :: AffinePoint WrapField
     stepProofSg = pallasProofOpeningSg stepResult.proof
 
-    dummyWrapExpanded :: Vector WrapIPARounds WrapField
     dummyWrapExpanded = dummyIpaChallenges.wrapExpanded
 
     -- Use the wrap circuit's `mpvMax`-derived bcd (same one feeding
@@ -3467,7 +3410,6 @@ runMultiProverBody
       , challenges: dummyIpaChallenges.wrapExpanded
       }
 
-    msgWrapPadded :: Vector PaddedLength (Vector WrapIPARounds WrapField)
     msgWrapPadded =
       Vector.append (Vector.replicate @padMax dummyWrapExpanded)
         proveDataMax.msgWrapChallenges
@@ -3482,7 +3424,6 @@ runMultiProverBody
       Vector.append (Vector.replicate @padMax dummyKimchiEntry)
         proveDataMax.kimchiPrevEntries
 
-    msgWrap :: WrapField
     msgWrap = hashMessagesForNextWrapProofPureGeneral
       { sg: stepProofSg
       , paddedChallenges: msgWrapPadded
@@ -3530,7 +3471,6 @@ runMultiProverBody
       fieldsToValue @StepField stepResult.userPublicOutputFields
 
   let
-    widthData :: SomeCompiledProofWidthData
     widthData = mkSomeCompiledProofWidthData @mpv @pad
       { oldBulletproofChallenges: proveData.prevStepChallenges
       , msgWrapChallenges: proveData.msgWrapChallenges
@@ -3540,7 +3480,7 @@ runMultiProverBody
       -- Front-padding dummies for the `Vector PaddedLength` views
       -- mkSomeCompiledProofWidthData precomputes. Match what
       -- mkStepAdvice / shapeProveData's InductivePrev case fills the
-      -- pad slots with: `Dummy.dummyIpaChallenges.stepExpanded` for
+      -- pad slots with: `dummyIpaChallenges.stepExpanded` for
       -- the inner step proof's prev bp-chals, the wrap-side dummy
       -- challenge for the outer wrap-IPA bp-chals, and
       -- `dummyWrapSgInStepField` for the outer step proof's IPA sg.
@@ -3596,7 +3536,7 @@ compileMulti
   => Add 1 branchesPred branches
   => Compare 0 branches LT
   => Compare mpvMax 3 LT
-  => Add mpvMax WrapIvpBaseline totalBases
+  => Add mpvMax Wrap.IvpBaseline totalBases
   => Add 1 totalBasesPred totalBases
   => PadSlots slots mpvMax
   -- Strict-equality enforcement: `mpvMax = max(ruleMpv across rs)`,
@@ -3697,10 +3637,9 @@ compileMulti cfg rules = do
     -- consumed by the wrap circuit body anymore (the wrap circuit
     -- now picks per-branch lagrange bases from `perBranchLagrangeAt`,
     -- mirroring OCaml `lagrange_with_correction`).
-    wrapDomainLog2Out =
+    wrapDomainLog2 =
       wrapDomainLog2ForProofsVerified (reflectType (Proxy :: Proxy mpvMax))
 
-    verifier :: Verifier
     verifier = mkVerifier
       { wrapVK: wrapResult.verifierIndex
       , vestaSrs: cfg.srs.vestaSrs
@@ -3714,7 +3653,7 @@ compileMulti cfg rules = do
     , vks:
         { wrap: wrapResult
         , perBranchStep: stepResults
-        , wrapDomainLog2: wrapDomainLog2Out
+        , wrapDomainLog2
         }
     , perBranchVKs: unit
     }

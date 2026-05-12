@@ -150,7 +150,6 @@ evaluate tokens env =
       state { position = state.position + 1 + count }
 
   -- Evaluate a constant term
-  evalConstant :: ConstantTerm -> a
   evalConstant = case _ of
     EndoCoefficient -> env.endoCoefficient
     Mds { row, col } -> env.mds { row, col }
@@ -335,7 +334,6 @@ evaluateM tokens env = do
       pure $ state { position = state.position + 1 + count }
 
   -- Evaluate a constant term (pure)
-  evalConstantM :: ConstantTerm -> FVar f
   evalConstantM = case _ of
     EndoCoefficient -> env.endoCoefficient
     Mds { row, col } -> env.mds { row, col }

@@ -12,8 +12,9 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt, unsafeIdx, wrapEndo)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams, parseIvpWrapInput)
+import Pickles.Field (WrapField)
 import Pickles.PublicInputCommit (CorrectionMode(..))
-import Pickles.Types (WrapField, WrapIPARounds)
+import Pickles.Types (WrapIPARounds)
 import Pickles.Wrap.Verify (wrapVerify)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_)
@@ -37,7 +38,7 @@ wrapVerifyCircuit { lagrangeAt, blindingH } inputs = do
   let
     at = unsafeIdx inputs
     readPt i = { x: at i, y: at (i + 1) }
-    ivpInput = parseIvpWrapInput (Vector.take inputs :: Vector 177 _)
+    ivpInput = parseIvpWrapInput (Vector.take inputs)
     constDummyPt = let { x: F x', y: F y' } = dummyVestaPt in { x: const_ x', y: const_ y' }
 
     ivpParams =

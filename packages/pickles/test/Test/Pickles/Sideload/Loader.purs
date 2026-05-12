@@ -62,17 +62,15 @@ import JS.BigInt as JsBigInt
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync (readTextFile)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Pickles (PaddedLength, StepField, StepIPARounds, Verifier, WrapField, wrapPublicInputOf)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.ProofFFI (Proof, permutationVanishingPolynomial, verifyOpeningProof)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
-import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput)
 import Pickles.Prove.Step (extractWrapVKForStepHash)
-import Pickles.Prove.Verify (Verifier, wrapPublicInputOf)
-import Pickles.Sideload.FFI (noOptionalFeatures, vestaHydrateVerifierIndex, vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJson)
+import Pickles.Sideload (noOptionalFeatures, vestaHydrateVerifierIndex, vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJson)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
-import Pickles.Types (PaddedLength, StepField, StepIPARounds, WrapField)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Safe.Coerce (coerce)
@@ -110,7 +108,7 @@ wrapSrsDepthLog2 = 15
 --------------------------------------------------------------------------------
 
 -- | Width-existential carrier for `OcamlProof`'s prev-bulletproof
--- | challenges. Parallel to `Pickles.Prove.Verify.CompiledProofWidthData`
+-- | challenges. Parallel to `Pickles.Verify.CompiledProofWidthData`
 -- | but lacks the prover-trace fields (`wrapDvInput`, padded views) —
 -- | JSON fixtures only ship verify-readable data.
 data OcamlProofWidthData :: Int -> Type
@@ -133,7 +131,7 @@ mkSomeOcamlProofWidthData rec = mkExists $ OcamlProofWidthData
   }
 
 -- | An OCaml-produced wrap proof loaded from JSON. Distinct from
--- | `Pickles.Prove.Verify.CompiledProof`: PS-compiled proofs include
+-- | `Pickles.Verify.CompiledProof`: PS-compiled proofs include
 -- | prover-trace fields (`wrapDvInput`, `wrapDv`) that JSON fixtures
 -- | don't carry. `verifyOcamlProof` consumes this directly; converting
 -- | to a `CompiledProof` would require re-running the prover.
@@ -155,7 +153,7 @@ newtype OcamlProof mpv stmtVal = OcamlProof
   }
 
 -- | Verify an OCaml-loaded proof. Same three stages as
--- | `Pickles.Prove.Verify.verifyOne`: stage 1 deferred-values
+-- | `Pickles.Verify.verifyOne`: stage 1 deferred-values
 -- | expansion, stage 2 IPA accumulator check, stage 3 kimchi
 -- | `batch_verify`.
 verifyOcamlProof
@@ -165,23 +163,18 @@ verifyOcamlProof
   -> Boolean
 verifyOcamlProof verifier (OcamlProof p) =
   let
-    zetaField :: StepField
     zetaField = coerce (toFieldPure p.rawPlonk.zeta (F verifier.stepEndo))
 
-    pStepGenerator :: StepField
     pStepGenerator = domainGenerator p.stepDomainLog2
 
-    pStepShifts :: Vector 7 StepField
     pStepShifts = domainShifts p.stepDomainLog2
 
-    vanishesOnZkAtZeta :: StepField
     vanishesOnZkAtZeta = permutationVanishingPolynomial
       { domainLog2: p.stepDomainLog2
       , zkRows: verifier.stepZkRows
       , pt: zetaField
       }
 
-    dv :: WrapDeferredValuesOutput
     dv = runExists
       ( \(OcamlProofWidthData wd) ->
           expandDeferredForVerify
@@ -205,21 +198,16 @@ verifyOcamlProof verifier (OcamlProof p) =
       )
       p.widthData
 
-    expandedBpChals :: Array StepField
     expandedBpChals = Array.fromFoldable $
       map (\c -> coerce (toFieldPure c (F verifier.stepEndo)) :: StepField)
         p.rawBulletproofChallenges
 
-    computedSg :: AffinePoint WrapField
     computedSg = vestaSrsBPolyCommitmentPoint verifier.vestaSrs expandedBpChals
 
-    accumulatorOk :: Boolean
     accumulatorOk = computedSg == p.challengePolynomialCommitment
 
-    pi :: Array WrapField
     pi = wrapPublicInputOf dv p.messagesForNextStepProofDigest p.messagesForNextWrapProofDigest
 
-    kimchiOk :: Boolean
     kimchiOk = verifyOpeningProof verifier.wrapVK
       { proof: p.wrapProof, publicInput: pi }
   in
@@ -294,7 +282,6 @@ loadFixture cfg dir = do
     appStateFields = cfg.toFields statement
 
     -- Empty width-indexed widthData for `mpv = 0`.
-    widthData :: SomeOcamlProofWidthData
     widthData = mkSomeOcamlProofWidthData @0
       { oldBulletproofChallenges: Vector.nil
       }
@@ -305,7 +292,6 @@ loadFixture cfg dir = do
     -- would go here for mpv > 0.
     wrapVkStep = extractWrapVKForStepHash vk
 
-    msgStep :: StepField
     msgStep = hashMessagesForNextStepProofPure
       { stepVk: wrapVkStep
       , appState: appStateFields
@@ -315,10 +301,8 @@ loadFixture cfg dir = do
     -- For mpv = 0: paddedChallenges = full Vector PaddedLength of dummy
     -- expanded wrap-IPA challenges. Mirrors `msgWrapPadded` construction
     -- in `Pickles.Prove.Compile:2830-2833` with `padMax = PaddedLength`.
-    msgWrapPadded :: Vector PaddedLength (Vector _ WrapField)
     msgWrapPadded = Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
 
-    msgWrap :: WrapField
     msgWrap = hashMessagesForNextWrapProofPureGeneral
       { sg: decoded.challengePolynomialCommitment
       , paddedChallenges: msgWrapPadded
@@ -423,7 +407,6 @@ decodeInt64 j =
 combineLimbsLE :: Array BigInt -> BigInt
 combineLimbsLE limbs =
   let
-    twoTo64 :: BigInt
     twoTo64 = JsBigInt.shl (JsBigInt.fromInt 1) (JsBigInt.fromInt 64)
 
     toUnsigned :: BigInt -> BigInt

@@ -9,7 +9,7 @@ import Prelude
 
 import Data.Vector (Vector)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
-import Pickles.Types (WrapField)
+import Pickles.Field (WrapField)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, SizedF, Snarky)
 import Snarky.Circuit.Kimchi (addComplete, endo, endoInv)

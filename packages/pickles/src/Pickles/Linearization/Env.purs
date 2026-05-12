@@ -107,7 +107,7 @@ fieldEnv evalPoint challenges =
   , var: \col row -> lookupCell evalPoint col row
   , cell: identity
   , alphaPow: \n -> pow challenges.alpha (fromInt n)
-  , mds: \{ row, col } -> lookupMds (Proxy :: Proxy f) row col
+  , mds: \{ row, col } -> lookupMds (Proxy) row col
   , endoCoefficient:
       let
         EndoBase eb = endoBase @f @f'
@@ -203,7 +203,7 @@ buildCircuitEnvM alphaPowers zeta domainLog2 omegaForLagrange evalPoint vanishes
   , var: \col row -> lookupCell evalPoint col row
   , cell: identity
   , alphaPow: \n -> Vector.index alphaPowers (unsafeFinite @AlphaPowersLen n)
-  , mds: \{ row, col } -> const_ $ lookupMds (Proxy :: Proxy f) row col
+  , mds: \{ row, col } -> const_ $ lookupMds (Proxy) row col
   , endoCoefficient:
       let
         EndoBase eb = endoBase @f @f'

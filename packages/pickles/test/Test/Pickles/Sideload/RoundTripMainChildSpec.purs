@@ -7,8 +7,8 @@ module Test.Pickles.Sideload.RoundTripMainChildSpec
 import Prelude
 
 import Effect.Aff (Aff)
-import Pickles.Sideload.FFI (vestaVerifierIndexToSerdeJson)
-import Pickles.Types (StepField)
+import Pickles (StepField)
+import Pickles.Sideload (vestaVerifierIndexToSerdeJson)
 import Snarky.Curves.Class (fromInt)
 import Test.Pickles.Sideload.Loader (OcamlProof(..), loadNrrFixture)
 import Test.Spec (SpecT, describe, it)
@@ -23,5 +23,5 @@ spec = describe "Pickles.Sideload.MainChild roundtrip" do
       reSerializedVk = vestaVerifierIndexToSerdeJson fixture.vk
       OcamlProof p = fixture.ocamlProof
     reSerializedVk `shouldEqual` fixture.vkJson
-    -- The side-loaded child's public input is `Field.Constant.zero`.
+    -- The side-loaded child's public input is `StepField.Constant.zero`.
     p.statement `shouldEqual` (fromInt 0 :: StepField)

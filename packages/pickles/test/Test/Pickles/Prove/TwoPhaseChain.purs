@@ -27,36 +27,18 @@ import Data.Functor.Product (Product)
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst, snd)
-import Data.Tuple.Nested (Tuple1, Tuple2, tuple1, tuple2, (/\))
+import Data.Tuple.Nested (Tuple1, tuple1, tuple2, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception as Exc
-import Pickles.Prove.Compile
-  ( BranchProver(..)
-  , PrevSlot(..)
-  , RuleEntry
-  , RulesCons
-  , RulesNil
-  , SlotWrapKey(..)
-  , compileMulti
-  , mkRuleEntry
-  )
-import Pickles.Prove.Step (StepRule)
-import Pickles.Prove.Verify (verify)
-import Pickles.Step.Advice (getPrevAppStates)
-import Pickles.Step.Main (SlotVkBlueprintCompiled)
-import Pickles.Step.Slots (Compiled, Slot)
-import Pickles.Types (StatementIO(..), StepField, StepIPARounds, StepPerProofWitness, WrapIPARounds)
-import Pickles.Wrap.Slots (NoSlots)
+import Pickles (BranchProver(..), Compiled, NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, verify)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertEqual_, const_, exists, true_)
 import Snarky.Curves.Class (fromInt) as Curves
-import Snarky.Types.Shifted (SplitField, Type2)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
@@ -130,63 +112,6 @@ incrementRule self = do
 -- the increment rule's prev statement plus its self slotVK.
 --------------------------------------------------------------------------------
 
--- | `makeZeroRule` packaged: mpv=0, no prevs, valCarrier=Unit.
-mkMakeZeroEntry
-  :: Effect (RuleEntry Unit 0 2 Unit (F StepField) Unit 34 Unit Unit Unit)
-mkMakeZeroEntry = mkRuleEntry @1 @Unit @(F StepField) makeZeroRule unit
-
--- | `incrementRule` packaged: mpv=1, one self-referential prev,
--- | valCarrier carrying the prev's `StatementIO`.
-mkIncrementEntry
-  :: Effect
-       ( RuleEntry
-           (Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
-           1
-           2
-           (Tuple1 (StatementIO (F StepField) Unit))
-           (F StepField)
-           ( Tuple1
-               ( StepPerProofWitness 1 StepIPARounds WrapIPARounds (F StepField)
-                   (Type2 (SplitField (F StepField) Boolean))
-                   Boolean
-               )
-           )
-           34
-           (Tuple1 SlotWrapKey)
-           (Tuple1 Unit)
-           (Tuple1 SlotVkBlueprintCompiled)
-       )
-mkIncrementEntry = mkRuleEntry @1 @Unit @(F StepField) incrementRule (tuple1 Self)
-
--- | The full rules carrier `compileMulti` receives — a Tuple chain
--- | of `RuleEntry`s (one per branch, heterogeneously typed).
-mkRulesCarrier
-  :: Effect
-       ( Tuple2
-           (RuleEntry Unit 0 2 Unit (F StepField) Unit 34 Unit Unit Unit)
-           ( RuleEntry
-               (Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
-               1
-               2
-               (Tuple1 (StatementIO (F StepField) Unit))
-               (F StepField)
-               ( Tuple1
-                   ( StepPerProofWitness 1 StepIPARounds WrapIPARounds (F StepField)
-                       (Type2 (SplitField (F StepField) Boolean))
-                       Boolean
-                   )
-               )
-               34
-               (Tuple1 SlotWrapKey)
-               (Tuple1 Unit)
-               (Tuple1 SlotVkBlueprintCompiled)
-           )
-       )
-mkRulesCarrier = do
-  zero <- mkMakeZeroEntry
-  inc <- mkIncrementEntry
-  pure (tuple2 zero inc)
-
 -- | Two-branch `RulesSpec`:
 -- |
 -- |   * branch 0: makeZero (mpv=0, no prevs)
@@ -225,7 +150,9 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
         , wrapDomainOverride: Nothing
         }
 
-    rules <- liftEffect mkRulesCarrier
+    makeZeroEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) makeZeroRule unit
+    incrementEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) incrementRule (tuple1 Self)
+    let rules = tuple2 makeZeroEntry incrementEntry
     output <- liftEffect $ compileMulti
       @TwoPhaseChainRules
       @Unit

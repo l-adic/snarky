@@ -7,7 +7,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement
 
 -- | step_main circuit for the `increment` branch of `two_phase_chain`.
 -- |
--- | Configuration: mpv=N1, public_input=Field, prevs=[self], step_domain=2^14.
+-- | Configuration: mpv=N1, public_input=StepField, prevs=[self], step_domain=2^14.
 -- | The rule body asserts `self_v = prev + 1` and unconditionally
 -- | requires the prev proof to verify (`proof_must_verify = Boolean.true_`).
 -- |
@@ -31,10 +31,11 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
+import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
+import Pickles.Slots (Compiled, Slot)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
-import Pickles.Step.Slots (Compiled, Slot)
-import Pickles.Types (StatementIO, StepField)
+import Pickles.Types (StatementIO)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertEqual_, const_, exists, true_)

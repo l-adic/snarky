@@ -31,13 +31,12 @@ import Data.Maybe (fromJust)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Pickles.Dummy (BaseCaseDummies)
+import Pickles.Field (WrapField)
 import Pickles.ProofFFI (Proof, vestaMakeWireProof)
-import Pickles.Types (WrapField)
+import Pickles.Step.Dummy (BaseCaseDummies)
 import Snarky.Curves.Class (generator, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint)
 
 -- | Build the kimchi-level wrap proof body from a `BaseCaseDummies`.
 -- | Consumes `bcd.proofDummy.{z1, z2}` and `bcd.dummyEvals` — the exact
@@ -54,32 +53,24 @@ dummyWrapProof bcd =
     -- Pallas generator g0 = Tock.Curve.(to_affine_exn one). Pallas points
     -- have coordinates in Pallas.BaseField = Vesta.ScalarField.
     -- Generator is never the point-at-infinity, so `toAffine` is always `Just`.
-    g0 :: AffinePoint Vesta.ScalarField
     g0 = unsafePartial $ fromJust (toAffine (generator :: Pallas.G))
 
-    g0XY :: Array Vesta.ScalarField
     g0XY = [ g0.x, g0.y ]
 
     -- w_comm: 15 copies of g0 as (x, y) pairs
-    wComm :: Array Vesta.ScalarField
     wComm = Array.concat (Array.replicate 15 g0XY)
 
     -- z_comm: 1 copy of g0
-    zComm :: Array Vesta.ScalarField
     zComm = g0XY
 
     -- t_comm: 7 copies of g0 (one per quotient-poly chunk)
-    tComm :: Array Vesta.ScalarField
     tComm = Array.concat (Array.replicate 7 g0XY)
 
     -- Opening proof lr: 15 (g0, g0) pairs laid out as l.x,l.y,r.x,r.y
-    lr :: Array Vesta.ScalarField
     lr = Array.concat (Array.replicate 15 (g0XY <> g0XY))
 
-    delta :: Array Vesta.ScalarField
     delta = g0XY
 
-    sg :: Array Vesta.ScalarField
     sg = g0XY
 
     -- Flatten dummyEvals into kimchi eval order
@@ -94,7 +85,6 @@ dummyWrapProof bcd =
     flattenPe :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> Array WrapField
     flattenPe pe = [ pe.zeta, pe.omegaTimesZeta ]
 
-    evalsFlat :: Array WrapField
     evalsFlat =
       flattenVec evals.witnessEvals
         <> flattenVec evals.coeffEvals

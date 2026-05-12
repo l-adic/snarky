@@ -4,7 +4,7 @@
 -- | * `loadNrrFixture` parses the OCaml-emitted files without error.
 -- | * The kimchi `VerifierIndex` re-serialises byte-identically via
 -- |   Rust serde (same kimchi crate on both ends).
--- | * The NRR statement is `Field.zero` (NRR's hard-coded
+-- | * The NRR statement is `StepField.zero` (NRR's hard-coded
 -- |   `public_output`).
 -- | * The wire proof handle was constructed without crashing.
 -- |
@@ -19,8 +19,8 @@ module Test.Pickles.Sideload.RoundTripNrrSpec
 import Prelude
 
 import Effect.Aff (Aff)
-import Pickles.Sideload.FFI (vestaVerifierIndexToSerdeJson)
-import Pickles.Types (StepField)
+import Pickles (StepField)
+import Pickles.Sideload (vestaVerifierIndexToSerdeJson)
 import Snarky.Curves.Class (fromInt)
 import Test.Pickles.Sideload.Loader (OcamlProof(..), loadNrrFixture)
 import Test.Spec (SpecT, describe, it)
@@ -36,5 +36,5 @@ spec = describe "Pickles.Sideload.NRR roundtrip" do
       reSerializedVk = vestaVerifierIndexToSerdeJson fixture.vk
       OcamlProof p = fixture.ocamlProof
     reSerializedVk `shouldEqual` fixture.vkJson
-    -- NRR's public_output is hard-coded to `Field.zero`.
+    -- NRR's public_output is hard-coded to `StepField.zero`.
     p.statement `shouldEqual` (fromInt 0 :: StepField)

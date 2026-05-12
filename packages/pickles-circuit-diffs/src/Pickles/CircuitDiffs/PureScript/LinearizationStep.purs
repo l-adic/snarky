@@ -5,8 +5,8 @@ module Pickles.CircuitDiffs.PureScript.LinearizationStep
 import Data.Vector (Vector)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, domainLog2)
 import Pickles.CircuitDiffs.PureScript.LinearizationCommon (linearizationCircuitM)
+import Pickles.Field (StepField)
 import Pickles.Linearization.Pallas as PallasTokens
-import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (F)
 import Snarky.Constraint.Kimchi (KimchiConstraint)

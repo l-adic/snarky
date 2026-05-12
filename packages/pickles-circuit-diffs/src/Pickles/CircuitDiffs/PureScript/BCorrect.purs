@@ -12,8 +12,8 @@ import Data.Traversable (for)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, stepEndo, unsafeIdx)
+import Pickles.Field (StepField)
 import Pickles.IPA (bCorrectCircuit) as IPA
-import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, SizedF, Snarky, const_)
 import Snarky.Circuit.Kimchi (Type1(..), fromShiftedType1Circuit, toField)

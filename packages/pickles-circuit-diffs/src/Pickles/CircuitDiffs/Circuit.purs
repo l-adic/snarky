@@ -176,7 +176,7 @@ fromCompiledCircuit s =
                 , value: fieldVal
                 }
             )
-        $ (Map.toUnfoldable aux.wireState.cachedConstants :: Array _)
+        $ (Map.toUnfoldable aux.wireState.cachedConstants)
   in
     { publicInputSize: gd.publicInputSize
     , gates

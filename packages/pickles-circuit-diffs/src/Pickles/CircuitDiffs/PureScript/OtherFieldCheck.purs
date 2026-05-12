@@ -6,13 +6,13 @@ module Pickles.CircuitDiffs.PureScript.OtherFieldCheck
 -- | Matches OCaml's other_field_check_step_circuit (19 gates).
 -- |
 -- | OCaml: exists Other_field.typ ~compute:(fun () -> zero)
--- | where Other_field.typ = (Field.t, Boolean.var) with check that
+-- | where Other_field.typ = (StepField.t, Boolean.var) with check that
 -- | verifies sOdd is boolean + asserts no forbidden shifted values.
 
 import Prelude
 
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
-import Pickles.Types (StepField)
+import Pickles.Field (StepField)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, F, Snarky, exists)
 import Snarky.Circuit.Kimchi (SplitField, Type2)

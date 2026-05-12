@@ -5,8 +5,8 @@ module Pickles.CircuitDiffs.PureScript.LinearizationWrap
 import Data.Vector (Vector)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, wrapDomainLog2)
 import Pickles.CircuitDiffs.PureScript.LinearizationCommon (linearizationCircuitM)
+import Pickles.Field (WrapField)
 import Pickles.Linearization.Vesta as VestaTokens
-import Pickles.Types (WrapField)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (F)
 import Snarky.Constraint.Kimchi (KimchiConstraint)

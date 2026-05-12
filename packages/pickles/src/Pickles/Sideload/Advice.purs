@@ -26,10 +26,10 @@ import Prelude
 
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
+import Pickles.Field (StepField)
 import Pickles.Sideload.Bundle (Bundle)
 import Pickles.Sideload.VerificationKey (VerificationKey, compileDummy) as SLVK
-import Pickles.Step.Slots (Compiled, SideLoaded, Slot)
-import Pickles.Types (StepField)
+import Pickles.Slots (Compiled, SideLoaded, Slot)
 import Snarky.Circuit.DSL (F)
 
 -- | Prove-time spec-indexed VK carrier shape. Funcdep
