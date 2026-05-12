@@ -452,17 +452,27 @@ mod generic {
     }
 
     /// Extract coefficient polynomial evaluations from a proof.
-    /// Returns 30 values: 15 coefficient columns × 2 points (zeta, zeta*omega).
+    /// Returns `COLUMNS * 2 * num_chunks` values in polynomial-major,
+    /// within-poly chunk-major order. At `n=1` length is 30 (current
+    /// behavior).
+    ///
+    /// Chunk-order convention: same as `proof_z_evals` / `proof_witness_evals`.
+    /// See `docs/chunking-ffi-audit.md`.
     pub fn proof_coefficient_evals<G: KimchiCurve>(
         proof: &ProverProof<G, OpeningProof<G>>,
     ) -> Vec<G::ScalarField>
     where
         G::BaseField: PrimeField,
     {
-        let mut result = Vec::with_capacity(COLUMNS * 2);
+        let n = proof.evals.coefficients[0].zeta.len();
+        let mut result = Vec::with_capacity(COLUMNS * 2 * n);
         for c_eval in &proof.evals.coefficients {
-            result.push(c_eval.zeta[0]);
-            result.push(c_eval.zeta_omega[0]);
+            debug_assert_eq!(c_eval.zeta.len(), n, "PointEvaluations chunk count invariant");
+            debug_assert_eq!(c_eval.zeta_omega.len(), n, "PointEvaluations chunk count invariant");
+            for i in 0..n {
+                result.push(c_eval.zeta[i]);
+                result.push(c_eval.zeta_omega[i]);
+            }
         }
         result
     }
