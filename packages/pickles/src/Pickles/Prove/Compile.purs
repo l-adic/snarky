@@ -54,8 +54,10 @@ module Pickles.Prove.Compile
 import Prelude
 
 import Control.Monad.Except (ExceptT)
+import Data.Array as Array
 import Data.Array.NonEmpty as NonEmptyArray
 import Data.Enum (fromEnum)
+import Data.Int.Bits as Int.Bits
 import Data.Exists (runExists)
 import Data.Fin (unsafeFinite)
 import Data.Functor.Product (Product, product)
@@ -67,6 +69,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (liftEffect)
+import Effect.Exception as Exc
 import JS.BigInt as BigInt
 import Pickles.Constants (roughDomainsLog2, zkRows)
 import Pickles.Dummy (dummyIpaChallenges)
@@ -3505,7 +3508,7 @@ runMultiProverBody
     }
 
 compileMulti
-  :: forall @rs @outputVal @prevInputVal @slots
+  :: forall @rs @outputVal @prevInputVal @slots @numChunks
        inputVal mpvMax
        branches
        rulesCarrier
@@ -3529,6 +3532,7 @@ compileMulti
   => CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Reflectable mpvMax Int
+  => Reflectable numChunks Int
   => Add 1 branchesPred branches
   => Compare 0 branches LT
   => Compare mpvMax 3 LT
@@ -3576,6 +3580,30 @@ compileMulti cfg rules = do
     @slots
     cfg
     rules
+
+  -- Validate declared @numChunks against per-branch num_chunks
+  -- computed from the actual step domain sizes. kimchi formula
+  -- (constraints.rs:974-978): `if domain_size < max_poly_size then 1
+  -- else domain_size / max_poly_size`. With log2s: at step_log2 <=
+  -- StepIPARounds (= 16, i.e. 2^16 = max_poly_size), the branch needs
+  -- 1 chunk; otherwise `2^(log2 - 16)` chunks. Every branch must agree
+  -- with the user's declaration.
+  let
+    declaredNumChunks = reflectType (Proxy :: Proxy numChunks)
+    stepMaxPolyLog2 = reflectType (Proxy :: Proxy StepIPARounds)
+    branchNumChunks log2 =
+      if log2 <= stepMaxPolyLog2 then 1
+      else 1 `Int.Bits.shl` (log2 - stepMaxPolyLog2)
+    perBranchActualVec = map branchNumChunks log2s
+    perBranchActual = Vector.toUnfoldable perBranchActualVec :: Array Int
+  case Array.find (_ /= declaredNumChunks) perBranchActual of
+    Just bad ->
+      Exc.throw $ "compileMulti: declared numChunks=" <> show declaredNumChunks
+        <> " but branch step circuit computes num_chunks=" <> show bad
+        <> " (per-branch step domain log2s: "
+        <> show (Vector.toUnfoldable log2s :: Array Int)
+        <> ", StepIPARounds (max_poly_log2)=" <> show stepMaxPolyLog2 <> ")"
+    Nothing -> pure unit
 
   let
     perBranchVec = buildWrapPerBranchVec

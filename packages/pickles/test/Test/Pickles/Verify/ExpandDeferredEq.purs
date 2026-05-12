@@ -79,6 +79,7 @@ spec = describe "Pickles.Prove.Pure.Verify" do
       @(F StepField)
       @Unit
       @NoSlots
+      @1
       { srs: { vestaSrs, pallasSrs }, debug: false, wrapDomainOverride: Nothing }
       (tuple1 nrrEntry)
 
@@ -114,6 +115,7 @@ spec = describe "Pickles.Prove.Pure.Verify" do
       @Unit
       @(F StepField)
       @(Slots1 1)
+      @1
       { srs: { vestaSrs, pallasSrs }, debug: false, wrapDomainOverride: Nothing }
       (tuple1 chainEntry)
 

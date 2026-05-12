@@ -96,6 +96,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       @Unit
       @(F StepField)
       @(Slots1 1)
+      @1
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing

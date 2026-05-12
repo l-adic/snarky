@@ -158,6 +158,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       @Unit
       @(F StepField)
       @(Product (Vector 1) NoSlots)
+      @1
       cfg
       rules
 

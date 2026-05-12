@@ -69,6 +69,7 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
       @(F StepField)
       @Unit
       @NoSlots
+      @1
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing

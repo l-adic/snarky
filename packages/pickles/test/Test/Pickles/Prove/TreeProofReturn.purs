@@ -124,6 +124,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       @(F StepField)
       @Unit
       @NoSlots
+      @1
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
@@ -161,6 +162,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       @(F StepField)
       @(F StepField)
       @(Slots2 0 2)
+      @1
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14

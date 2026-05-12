@@ -146,6 +146,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       @Unit
       @(F StepField)
       @NoSlots
+      @1
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
@@ -199,6 +200,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       @Unit
       @(F StepField)
       @(Slots1 2)
+      @1
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing

@@ -45,6 +45,7 @@ spec = describe "Pickles.Sideload.NRR digest equality" do
       @(F StepField)
       @Unit
       @NoSlots
+      @1
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
