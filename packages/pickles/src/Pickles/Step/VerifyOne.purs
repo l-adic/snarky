@@ -27,7 +27,7 @@ import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofOpt)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepIPARounds, WrapIPARounds)
-import Prim.Int (class Add, class Compare)
+import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, and_, assertEq, const_, if_, label, not_, or_)
@@ -132,17 +132,31 @@ type VerifyOneResult tickD fv =
 -- | Full verify_one matching OCaml step_main.ml:17-148.
 -- | Specialized to the Step field (Vesta scalar field = Fp).
 verifyOne
-  :: forall nd ndPred n t m r1
+  :: forall nd ndPred n numChunks tCommLen tCommLenPred wCommN chunkBases nonSgBases sg1 sg2 sg3 sg4 totalBases totalBasesPred t m r1
    . CircuitM StepField (KimchiConstraint StepField) t m
   => Add 1 ndPred nd
   => Compare 0 nd LT
+  => Compare 0 numChunks LT
   => Reflectable nd Int
+  => Reflectable numChunks Int
+  => Reflectable tCommLen Int
+  => Reflectable nonSgBases Int
+  -- Chunked base layout chain (mirrors IVP). sgOldN at the step IVP
+  -- is the fixed `PaddedLength` (= 2) baked into the input shape.
+  => Mul 7 numChunks tCommLen
+  => Add 1 tCommLenPred tCommLen
+  => Mul 15 numChunks wCommN
+  => Mul 16 numChunks chunkBases
+  => Add 29 chunkBases nonSgBases
+  => Add 2 nonSgBases totalBases
+  => Add 2 numChunks sg1
+  => Add sg1 6 sg2
+  => Add sg2 wCommN sg3
+  => Add sg3 15 sg4
+  => Add sg4 6 nonSgBases
+  => Add 1 totalBasesPred totalBases
   => FOP.Params nd StepField r1
-  -- VerifyOneInput's `numChunks` is currently pinned to 1 (and tCommLen=7)
-  -- here; the IVP call site below threads concrete values so the chunked
-  -- Add chain inside IVP resolves. Widen when FFI/WrapProof support
-  -- num_chunks > 1.
-  -> VerifyOneInput n 1 7 WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
+  -> VerifyOneInput n numChunks tCommLen WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
   -> IncrementallyVerifyProofParams StepField ()
   -> Snarky (KimchiConstraint StepField) t m (VerifyOneResult StepIPARounds (FVar StepField))
 verifyOne fopParams input ivpParams = do

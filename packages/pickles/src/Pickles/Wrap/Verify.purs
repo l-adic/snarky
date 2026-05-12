@@ -33,7 +33,7 @@ import Pickles.Sponge (evalSpongeM, initialSpongeCircuit, spongeFromConstants)
 import Pickles.Types (WrapIPARounds)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
 import Pickles.Wrap.OtherField as WrapOtherField
-import Prim.Int (class Add, class Compare)
+import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEq, assertEqual_, assert_, label)
 import Snarky.Circuit.DSL.SizedF (SizedF)
@@ -63,21 +63,33 @@ type WrapVerifyInput n d fv =
 -- | Wrap_hack.Checked approach: for n < MaxProofsVerified, (2-n) dummy
 -- | challenge vectors are absorbed offline into the sponge state.
 wrapVerify
-  :: forall publicInput sgOldN totalBases totalBasesPred d dPred n t m r
+  :: forall publicInput sgOldN numChunks tCommLen tCommLenPred wCommN chunkBases nonSgBases sg1 sg2 sg3 sg4 totalBases totalBasesPred d dPred n t m r
    . CircuitM WrapField (KimchiConstraint WrapField) t m
   => PublicInputCommit publicInput WrapField
   => Reflectable d Int
   => Reflectable n Int
   => Reflectable sgOldN Int
+  => Reflectable numChunks Int
+  => Reflectable tCommLen Int
+  => Reflectable nonSgBases Int
   => Compare n 3 LT
+  => Compare 0 numChunks LT
   => Add 1 dPred d
-  -- numChunks pinned to 1, tCommLen pinned to 7 here so the chunked Add
-  -- chain in IVP resolves concretely (totalBases = sgOldN + 45). Widen
-  -- when FFI/WrapProof support num_chunks > 1.
-  => Add sgOldN 45 totalBases
+  -- Chunked base layout chain (mirrors IVP).
+  => Mul 7 numChunks tCommLen
+  => Add 1 tCommLenPred tCommLen
+  => Mul 15 numChunks wCommN
+  => Mul 16 numChunks chunkBases
+  => Add 29 chunkBases nonSgBases
+  => Add sgOldN nonSgBases totalBases
+  => Add 2 numChunks sg1
+  => Add sg1 6 sg2
+  => Add sg2 wCommN sg3
+  => Add sg3 15 sg4
+  => Add sg4 6 nonSgBases
   => Add 1 totalBasesPred totalBases
   => IncrementallyVerifyProofParams WrapField r
-  -> IncrementallyVerifyProofInput publicInput sgOldN 1 7 d (FVar WrapField) (Type1 (FVar WrapField))
+  -> IncrementallyVerifyProofInput publicInput sgOldN numChunks tCommLen d (FVar WrapField) (Type1 (FVar WrapField))
   -> WrapVerifyInput n d (FVar WrapField)
   -> Snarky (KimchiConstraint WrapField) t m Unit
 wrapVerify ivpParams ivpInput verifyInput = do
