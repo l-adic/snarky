@@ -127,17 +127,44 @@ to a single coordinated commit that updates all extractors together.
 | Function | Rust widened | JS shim chunk-aware | PS binding chunk-aware | Commit |
 |---|---|---|---|---|
 | `proof_z_evals` | ✓ | ✗ (reads `flat[0]`/`flat[1]`) | ✗ (returns `PointEval f`) | 9dd4b29f |
-| `proof_witness_evals` | ✓ | ✗ (`pairEvals` ok at n=1, would over-pack at n>1) | ✗ (returns `Vector 15 (PointEval f)`) | c89edba1 |
-| `proof_sigma_evals` | ✗ | ✗ | ✗ | — |
-| `proof_coefficient_evals` | ✗ | ✗ | ✗ | — |
-| `proof_index_evals` | ✗ | ✗ | ✗ | — |
-| `oracles` (`public_evals[0/1].first()`) | ✗ | n/a | n/a | — |
+| `proof_witness_evals` | ✓ | ✗ (`pairEvals` ok at n=1, over-packs at n>1) | ✗ (returns `Vector 15 (PointEval f)`) | c89edba1 |
+| `proof_sigma_evals` | ✓ | ✗ | ✗ | 30feb8dc |
+| `proof_coefficient_evals` | ✓ | ✗ | ✗ | c8eb8785 |
+| `proof_index_evals` | ✓ | ✗ | ✗ | 6e3799bb |
+| `oracles` `public_evals[0/1].first()` | **deferred — see below** | n/a | n/a | — |
+
+### Why `oracles` public_evals can't be Rust-only widened
+
+Unlike the 5 eval extractors above, the `oracles` function packs many
+oracle outputs into a single flat `Vec<F>` of length 16 (alpha, beta,
+gamma, zeta, ft_eval0, v, u, combined_inner_product, ft_eval1,
+public_eval_zeta, public_eval_zeta_omega, digest, …4 raw chals).
+`public_eval_zeta` / `public_eval_zeta_omega` are at fixed positions 9
+and 10.
+
+Widening them to multi-chunk requires either:
+* Shifting every downstream field's offset (positions 11+ would move
+  by `2*(n-1)`) — silently breaks every PS-side caller that indexes
+  by position.
+* Splitting the return type into a struct — breaks the existing flat
+  `Vec<F>` API.
+
+Neither is "drop-in n=1 byte-equivalent" — n=1 returns 16 elements
+unchanged in BOTH cases above, so a regression test wouldn't catch a
+shift-introducing bug until n>1.
+
+Right approach: pair this Rust change with the JS/PS coordinated
+widening (deferred items 2 and 3 below). At that point we have the
+opportunity to redesign the API (e.g., a typed struct) at the same
+time we propagate chunk-aware shapes to PS.
 
 ### Deferred work (must land before n>1 can run)
 
-1. **Finish Rust eval-extractor widening** — remaining 3 functions
-   (sigma, coefficient, index) + the `oracles` `public_evals` site.
-   Same `[0] → 0..num_chunks` pattern; each commit n=1-equivalent.
+1. **`oracles` `public_evals` widening** — done together with the
+   JS/PS coordinated widening (item 2 below), not as a Rust-only step,
+   because the existing flat `Vec<F>` packing prevents a drop-in n=1
+   equivalent rewrite. See "Why `oracles` public_evals can't be
+   Rust-only widened" above.
 2. **JS shim chunk-awareness** — update `packages/pickles/src/Pickles/ProofFFI.js`:
    * `pallas/vestaProofZEvals` — read all `2n` elements as `Array<PointEval>`
    * `pallas/vestaProofWitnessEvals` — group flat `30n` array into 15
