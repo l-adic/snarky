@@ -38,9 +38,10 @@ import Pickles.Sponge (SpongeM, initialSpongeCircuit, labelM, liftSnarky)
 import Pickles.Sponge as Sponge
 import Pickles.Trace as Trace
 import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, WrapDeferredValues, toPlonkMinimal)
-import Pickles.Wrap.Types (IvpBaseline)
+-- IvpBaseline (= 45) is the numChunks=1 base count; here we derive the
+-- chunked count from `numChunks` via `Mul`/`Add` constraints.
 import Poseidon (class PoseidonField)
-import Prim.Int (class Add, class Compare)
+import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
@@ -164,7 +165,7 @@ ivpTrace labelStr v = do
   pure unit
 
 incrementallyVerifyProof
-  :: forall publicInput sgOldN numChunks totalBases totalBasesPred d dPred f f' @g sf t m r
+  :: forall publicInput sgOldN numChunks wCommN chunkBases nonSgBases sg1 sg2 sg3 sg4 totalBases totalBasesPred d dPred f f' @g sf t m r
    . PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
@@ -178,9 +179,26 @@ incrementallyVerifyProof
   => Reflectable d Int
   => Reflectable sgOldN Int
   => Reflectable numChunks Int
+  => Reflectable nonSgBases Int
   => Compare 0 numChunks LT
   => Add 1 dPred d
-  => Add sgOldN IvpBaseline totalBases
+  -- Chunked-base layout (mirrors Pcs_batch.combine_split_commitments at
+  -- step_verifier.ml:256 with reduce_without_degree_bound = Array.to_list):
+  -- flat = sgOld(N) :: xHat :: ftComm :: zComm(numChunks) :: index(6)
+  --        :: wComm(15*numChunks) :: coeff(15) :: sigma(6).
+  -- Total = sgOldN + 29 + 16*numChunks. At numChunks=1 this is sgOldN + 45.
+  => Mul 15 numChunks wCommN
+  => Mul 16 numChunks chunkBases
+  => Add 29 chunkBases nonSgBases
+  => Add sgOldN nonSgBases totalBases
+  -- Chained append fundeps for the non-sgOld base group (each `++` is an Add).
+  -- Group terminates at nonSgBases; outer append (sgOld ++ group) is the
+  -- `Add sgOldN nonSgBases totalBases` constraint above.
+  => Add 2 numChunks sg1
+  => Add sg1 6 sg2
+  => Add sg2 wCommN sg3
+  => Add sg3 15 sg4
+  => Add sg4 6 nonSgBases
   => Add 1 totalBasesPred totalBases
   => IpaScalarOps f t m sf
   -> IncrementallyVerifyProofParams f r
@@ -324,22 +342,20 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
     , zetaToDomainSize: input.deferredValues.plonk.zetaToDomainSize
     }
 
-  -- 5. Assemble commitment bases: sg_old + 45 fixed bases (to_batch order)
-  -- Matches OCaml: sg_old[0..1], x_hat, ft_comm, z_comm, index(6), w_comm(15), coeff(15), sigma(6)
-  -- TODO(num_chunks): chunked wComm/zComm currently collapse to the first
-  -- chunk via Vector.head. At numChunks=1 this is exact. At n>1, the MSM
-  -- needs to grow allBases to sgOldN + numChunks * (15 + 1) + 30 + 7 and
-  -- combine via OCaml's Pcs_batch.combine_split_commitments (Horner over
-  -- chunks per polynomial). For now the type carries chunks but the
-  -- numChunksPred constraint guards `Vector.head`.
+  -- 5. Assemble commitment bases: sg_old + (29 + 16*numChunks) chunked bases.
+  -- Matches OCaml Pcs_batch.combine_split_commitments + step_verifier.ml's
+  -- check_bulletproof call with `reduce_without_degree_bound:Array.to_list`:
+  -- each polynomial's chunks become adjacent flat bases in xi-Horner order.
+  -- Flat layout: sg_old, x_hat, ft_comm, z_comm chunks (numChunks),
+  -- index(6), w_comm chunks (15*numChunks), coeff(15), sigma(6).
   let
-    wCommCollapsed = map Vector.head input.wComm
-    zCommCollapsed = Vector.head input.zComm
+    wCommFlat = Vector.concat input.wComm
     allBases =
       input.sgOld `Vector.append`
-        ( (xHat :< ftCommResult :< zCommCollapsed :< Vector.nil)
+        ( (xHat :< ftCommResult :< Vector.nil)
+            `Vector.append` input.zComm
             `Vector.append` input.columnComms.index
-            `Vector.append` wCommCollapsed
+            `Vector.append` wCommFlat
             `Vector.append` input.columnComms.coeff
             `Vector.append` input.columnComms.sigma
         )
@@ -348,7 +364,7 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
     -- all other bases are unconditional (Nothing). Matches OCaml's Opt.Maybe for sg_old.
     allBaseMasks =
       (map (Just <<< coerce) input.sgOldMask) `Vector.append`
-        (Vector.replicate @45 Nothing)
+        (Vector.replicate @nonSgBases Nothing)
 
   -- 6. Build CheckBulletproofInput and run checkBulletproof
   let

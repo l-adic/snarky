@@ -132,15 +132,16 @@ type VerifyOneResult tickD fv =
 -- | Full verify_one matching OCaml step_main.ml:17-148.
 -- | Specialized to the Step field (Vesta scalar field = Fp).
 verifyOne
-  :: forall nd ndPred n numChunks t m r1
+  :: forall nd ndPred n t m r1
    . CircuitM StepField (KimchiConstraint StepField) t m
   => Add 1 ndPred nd
   => Compare 0 nd LT
-  => Compare 0 numChunks LT
   => Reflectable nd Int
-  => Reflectable numChunks Int
   => FOP.Params nd StepField r1
-  -> VerifyOneInput n numChunks WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
+  -- VerifyOneInput's `numChunks` is currently pinned to 1 here; the IVP
+  -- call site below threads `@1` so the chunked Add chain inside IVP
+  -- resolves concretely. Widen when FFI/WrapProof support num_chunks > 1.
+  -> VerifyOneInput n 1 WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
   -> IncrementallyVerifyProofParams StepField ()
   -> Snarky (KimchiConstraint StepField) t m (VerifyOneResult StepIPARounds (FVar StepField))
 verifyOne fopParams input ivpParams = do

@@ -33,7 +33,6 @@ import Pickles.Sponge (evalSpongeM, initialSpongeCircuit, spongeFromConstants)
 import Pickles.Types (WrapIPARounds)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
 import Pickles.Wrap.OtherField as WrapOtherField
-import Pickles.Wrap.Types (IvpBaseline)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEq, assertEqual_, assert_, label)
@@ -64,20 +63,21 @@ type WrapVerifyInput n d fv =
 -- | Wrap_hack.Checked approach: for n < MaxProofsVerified, (2-n) dummy
 -- | challenge vectors are absorbed offline into the sponge state.
 wrapVerify
-  :: forall publicInput sgOldN numChunks totalBases totalBasesPred d dPred n t m r
+  :: forall publicInput sgOldN totalBases totalBasesPred d dPred n t m r
    . CircuitM WrapField (KimchiConstraint WrapField) t m
   => PublicInputCommit publicInput WrapField
   => Reflectable d Int
   => Reflectable n Int
   => Reflectable sgOldN Int
-  => Reflectable numChunks Int
   => Compare n 3 LT
-  => Compare 0 numChunks LT
   => Add 1 dPred d
-  => Add sgOldN IvpBaseline totalBases
+  -- numChunks pinned to 1 here so the chunked Add chain in IVP resolves
+  -- concretely (totalBases = sgOldN + 45). Widen when FFI/WrapProof
+  -- support num_chunks > 1.
+  => Add sgOldN 45 totalBases
   => Add 1 totalBasesPred totalBases
   => IncrementallyVerifyProofParams WrapField r
-  -> IncrementallyVerifyProofInput publicInput sgOldN numChunks d (FVar WrapField) (Type1 (FVar WrapField))
+  -> IncrementallyVerifyProofInput publicInput sgOldN 1 d (FVar WrapField) (Type1 (FVar WrapField))
   -> WrapVerifyInput n d (FVar WrapField)
   -> Snarky (KimchiConstraint WrapField) t m Unit
 wrapVerify ivpParams ivpInput verifyInput = do
