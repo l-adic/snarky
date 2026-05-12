@@ -124,14 +124,29 @@ to a single coordinated commit that updates all extractors together.
 
 ### Per-extractor status
 
-| Function | Rust widened | JS shim chunk-aware | PS binding chunk-aware | Commit |
+| Function | Rust widened | JS shim chunk-aware | PS binding chunk-aware | Commits |
 |---|---|---|---|---|
-| `proof_z_evals` | ✓ | ✗ (reads `flat[0]`/`flat[1]`) | ✗ (returns `PointEval f`) | 9dd4b29f |
-| `proof_witness_evals` | ✓ | ✗ (`pairEvals` ok at n=1, over-packs at n>1) | ✗ (returns `Vector 15 (PointEval f)`) | c89edba1 |
-| `proof_sigma_evals` | ✓ | ✗ | ✗ | 30feb8dc |
-| `proof_coefficient_evals` | ✓ | ✗ | ✗ | c8eb8785 |
-| `proof_index_evals` | ✓ | ✗ | ✗ | 6e3799bb |
+| `proof_z_evals` | ✓ | ✓ (`chunksToPointEvals`) | ✓ (returns `NonEmptyArray (PointEval f)`) | 9dd4b29f + sweep |
+| `proof_witness_evals` | ✓ | ✓ (`polyChunksToPointEvals(_, 15)`) | ✓ (returns `Vector 15 (NonEmptyArray (PointEval f))`) | c89edba1 + sweep |
+| `proof_sigma_evals` | ✓ | ✓ (`polyChunksToPointEvals(_, 6)`) | ✓ (returns `Vector 6 (NonEmptyArray (PointEval f))`) | 30feb8dc + sweep |
+| `proof_coefficient_evals` | ✓ | ✓ (`polyChunksToPointEvals(_, 15)`) | ✓ (returns `Vector 15 (NonEmptyArray (PointEval f))`) | c8eb8785 + sweep |
+| `proof_index_evals` | ✓ | ✓ (`polyChunksToPointEvals(_, 6)`) | ✓ (returns `Vector 6 (NonEmptyArray (PointEval f))`) | 6e3799bb + sweep |
 | `oracles` `public_evals[0/1].first()` | **deferred — see below** | n/a | n/a | — |
+
+The JS+PS sweep uses `NonEmptyArray` from `Data.Array.NonEmpty` to
+encode the non-emptiness invariant (kimchi always emits ≥1 chunk per
+polynomial). Conversion happens in the JS shim, which validates
+non-empty at the boundary and throws on violation. PS-side `firstChunk`
+extracts the first chunk via `NonEmptyArray.head` (total). The newtype
+representation of `NonEmptyArray a = NonEmptyArray (Array a)` ensures
+zero runtime cost at the FFI boundary.
+
+The downstream PS shape (`PlonkChecks.PointEval f` / `Linearization.FFI.PointEval f`)
+is **NOT** chunk-aware — `firstChunk` discards chunks > 0 silently.
+At n=1 this is byte-identical (only one chunk). At n>1 the discard
+breaks every proof's combined-eval computation; the downstream
+widening to `actualEvaluation`-Horner-combine is Phase 2/3 of
+`docs/chunking.md`.
 
 ### Why `oracles` public_evals can't be Rust-only widened
 

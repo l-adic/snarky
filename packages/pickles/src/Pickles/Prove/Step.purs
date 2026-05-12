@@ -88,7 +88,7 @@ import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, tCommVec, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallenges, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaVerifierIndexCommitments, vestaVerifierIndexDigest)
+import Pickles.ProofFFI (Proof, firstChunk, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, tCommVec, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallenges, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaVerifierIndexCommitments, vestaVerifierIndexDigest)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
@@ -1098,11 +1098,11 @@ buildSlotAdvice input = do
           { zeta: oracles.publicEvalZeta
           , omegaTimesZeta: oracles.publicEvalZetaOmega
           }
-      , zEvals: proofZEvals input.wrapProof
-      , witnessEvals: proofWitnessEvals input.wrapProof
-      , coeffEvals: proofCoefficientEvals input.wrapProof
-      , sigmaEvals: proofSigmaEvals input.wrapProof
-      , indexEvals: proofIndexEvals input.wrapProof
+      , zEvals: firstChunk (proofZEvals input.wrapProof)
+      , witnessEvals: map firstChunk (proofWitnessEvals input.wrapProof)
+      , coeffEvals: map firstChunk (proofCoefficientEvals input.wrapProof)
+      , sigmaEvals: map firstChunk (proofSigmaEvals input.wrapProof)
+      , indexEvals: map firstChunk (proofIndexEvals input.wrapProof)
       }
 
     wrapShifts = domainShifts input.wrapDomainLog2

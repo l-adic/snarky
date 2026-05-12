@@ -74,7 +74,8 @@ import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.ProofFFI
-  ( pallasProofOpeningSg
+  ( firstChunk
+  , pallasProofOpeningSg
   , pallasProofOracles
   , pallasProverIndexDomainLog2
   , permutationVanishingPolynomial
@@ -85,7 +86,8 @@ import Pickles.ProofFFI
   , proofZEvals
   )
 import Pickles.ProofFFI
-  ( pallasProverIndexDomainLog2
+  ( firstChunk
+  , pallasProverIndexDomainLog2
   , permutationVanishingPolynomial
   , proofCoefficientEvals
   , proofIndexEvals
@@ -1253,15 +1255,15 @@ instance
                           { zeta: F prevWrapOracles.publicEvalZeta
                           , omegaTimesZeta: F prevWrapOracles.publicEvalZetaOmega
                           }
-                      , zEvals: peWF (ProofFFI.proofZEvals prev.wrapProof)
+                      , zEvals: peWF (ProofFFI.firstChunk (ProofFFI.proofZEvals prev.wrapProof))
                       , witnessEvals:
-                          map peWF (ProofFFI.proofWitnessEvals prev.wrapProof)
+                          map (peWF <<< ProofFFI.firstChunk) (ProofFFI.proofWitnessEvals prev.wrapProof)
                       , coeffEvals:
-                          map peWF (ProofFFI.proofCoefficientEvals prev.wrapProof)
+                          map (peWF <<< ProofFFI.firstChunk) (ProofFFI.proofCoefficientEvals prev.wrapProof)
                       , sigmaEvals:
-                          map peWF (ProofFFI.proofSigmaEvals prev.wrapProof)
+                          map (peWF <<< ProofFFI.firstChunk) (ProofFFI.proofSigmaEvals prev.wrapProof)
                       , indexEvals:
-                          map peWF (ProofFFI.proofIndexEvals prev.wrapProof)
+                          map (peWF <<< ProofFFI.firstChunk) (ProofFFI.proofIndexEvals prev.wrapProof)
                       }
 
                     -- Take the slot's `Vector n` view by dropping the
@@ -1869,15 +1871,15 @@ instance
                           { zeta: F prevWrapOracles.publicEvalZeta
                           , omegaTimesZeta: F prevWrapOracles.publicEvalZetaOmega
                           }
-                      , zEvals: peWF (ProofFFI.proofZEvals prev.wrapProof)
+                      , zEvals: peWF (ProofFFI.firstChunk (ProofFFI.proofZEvals prev.wrapProof))
                       , witnessEvals:
-                          map peWF (ProofFFI.proofWitnessEvals prev.wrapProof)
+                          map (peWF <<< ProofFFI.firstChunk) (ProofFFI.proofWitnessEvals prev.wrapProof)
                       , coeffEvals:
-                          map peWF (ProofFFI.proofCoefficientEvals prev.wrapProof)
+                          map (peWF <<< ProofFFI.firstChunk) (ProofFFI.proofCoefficientEvals prev.wrapProof)
                       , sigmaEvals:
-                          map peWF (ProofFFI.proofSigmaEvals prev.wrapProof)
+                          map (peWF <<< ProofFFI.firstChunk) (ProofFFI.proofSigmaEvals prev.wrapProof)
                       , indexEvals:
-                          map peWF (ProofFFI.proofIndexEvals prev.wrapProof)
+                          map (peWF <<< ProofFFI.firstChunk) (ProofFFI.proofIndexEvals prev.wrapProof)
                       }
 
                     headSlotPrevWrapBpChalsVec
@@ -3339,11 +3341,11 @@ runMultiProverBody
           { zeta: stepOracles.publicEvalZeta
           , omegaTimesZeta: stepOracles.publicEvalZetaOmega
           }
-      , zEvals: proofZEvals stepResult.proof
-      , witnessEvals: proofWitnessEvals stepResult.proof
-      , coeffEvals: proofCoefficientEvals stepResult.proof
-      , sigmaEvals: proofSigmaEvals stepResult.proof
-      , indexEvals: proofIndexEvals stepResult.proof
+      , zEvals: firstChunk (proofZEvals stepResult.proof)
+      , witnessEvals: map firstChunk (proofWitnessEvals stepResult.proof)
+      , coeffEvals: map firstChunk (proofCoefficientEvals stepResult.proof)
+      , sigmaEvals: map firstChunk (proofSigmaEvals stepResult.proof)
+      , indexEvals: map firstChunk (proofIndexEvals stepResult.proof)
       }
 
     outerMpv = reflectType (Proxy @mpv)

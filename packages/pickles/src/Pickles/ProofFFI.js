@@ -2,11 +2,55 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const crypto = require('snarky-crypto');
 
-// Helper: restructure flat paired array into [{zeta, omegaTimesZeta}, ...]
-const pairEvals = (flat) => {
+// Helper: restructure a Rust flat array into a chunks-array of PointEvals.
+//
+// Rust layout for a single polynomial (chunk-major, interleaved zeta/omega):
+//   [zeta[0], zeta_omega[0], zeta[1], zeta_omega[1], ..., zeta[n-1], zeta_omega[n-1]]
+//
+// Result: n PointEvals, one per chunk. Validated non-empty so the PS side
+// can read it as NonEmptyArray (which is a newtype wrapper over Array
+// with identical runtime representation).
+//
+// At n=1 the result is a one-element array; at n>1, length n.
+const chunksToPointEvals = (flat) => {
+  if (flat.length === 0) {
+    throw new Error("chunksToPointEvals: empty (num_chunks=0?)");
+  }
+  if (flat.length % 2 !== 0) {
+    throw new Error(`chunksToPointEvals: flat length ${flat.length} not even`);
+  }
+  const n = flat.length / 2;
   const result = [];
-  for (let i = 0; i < flat.length; i += 2) {
-    result.push({ zeta: flat[i], omegaTimesZeta: flat[i + 1] });
+  for (let c = 0; c < n; c++) {
+    result.push({ zeta: flat[c * 2], omegaTimesZeta: flat[c * 2 + 1] });
+  }
+  return result;
+};
+
+// Multi-polynomial variant. Rust layout (polynomial-major, within-poly chunk-major):
+//   [p0.zeta[0], p0.zeta_omega[0], ..., p0.zeta_omega[n-1],
+//    p1.zeta[0], p1.zeta_omega[0], ..., p_{P-1}.zeta_omega[n-1]]
+//
+// Result: P chunks-arrays, one per polynomial. Each inner array is
+// validated non-empty (NonEmptyArray on the PS side).
+const polyChunksToPointEvals = (flat, numPolys) => {
+  if (flat.length === 0) {
+    throw new Error(`polyChunksToPointEvals(${numPolys}): empty (num_chunks=0?)`);
+  }
+  if (flat.length % (numPolys * 2) !== 0) {
+    throw new Error(
+      `polyChunksToPointEvals(${numPolys}): flat length ${flat.length} not divisible by ${numPolys * 2}`
+    );
+  }
+  const n = flat.length / (numPolys * 2);
+  const result = [];
+  for (let p = 0; p < numPolys; p++) {
+    const polyBase = p * 2 * n;
+    const chunks = [];
+    for (let c = 0; c < n; c++) {
+      chunks.push({ zeta: flat[polyBase + c * 2], omegaTimesZeta: flat[polyBase + c * 2 + 1] });
+    }
+    result.push(chunks);
   }
   return result;
 };
@@ -40,44 +84,40 @@ export const vestaCreateProofWithPrev = ({ proverIndex, witness, prevChallenges 
   return crypto.vestaCreateProofWithPrev(proverIndex, witness, prevSgXs, prevSgYs, chalsList);
 };
 
-// Proof evaluations - witness
+// Proof evaluations - witness (15 polys × n chunks × 2 points)
 export const pallasProofWitnessEvals = (proof) =>
-  pairEvals(crypto.pallasProofWitnessEvals(proof));
+  polyChunksToPointEvals(crypto.pallasProofWitnessEvals(proof), 15);
 
 export const vestaProofWitnessEvals = (proof) =>
-  pairEvals(crypto.vestaProofWitnessEvals(proof));
+  polyChunksToPointEvals(crypto.vestaProofWitnessEvals(proof), 15);
 
-// Proof evaluations - z (permutation polynomial)
-export const pallasProofZEvals = (proof) => {
-  const flat = crypto.pallasProofZEvals(proof);
-  return { zeta: flat[0], omegaTimesZeta: flat[1] };
-};
+// Proof evaluations - z (permutation polynomial, 1 poly × n chunks × 2 points)
+export const pallasProofZEvals = (proof) =>
+  chunksToPointEvals(crypto.pallasProofZEvals(proof));
 
-export const vestaProofZEvals = (proof) => {
-  const flat = crypto.vestaProofZEvals(proof);
-  return { zeta: flat[0], omegaTimesZeta: flat[1] };
-};
+export const vestaProofZEvals = (proof) =>
+  chunksToPointEvals(crypto.vestaProofZEvals(proof));
 
-// Proof evaluations - sigma
+// Proof evaluations - sigma (6 polys × n chunks × 2 points)
 export const pallasProofSigmaEvals = (proof) =>
-  pairEvals(crypto.pallasProofSigmaEvals(proof));
+  polyChunksToPointEvals(crypto.pallasProofSigmaEvals(proof), 6);
 
 export const vestaProofSigmaEvals = (proof) =>
-  pairEvals(crypto.vestaProofSigmaEvals(proof));
+  polyChunksToPointEvals(crypto.vestaProofSigmaEvals(proof), 6);
 
-// Proof evaluations - coefficient
+// Proof evaluations - coefficient (15 polys × n chunks × 2 points)
 export const pallasProofCoefficientEvals = (proof) =>
-  pairEvals(crypto.pallasProofCoefficientEvals(proof));
+  polyChunksToPointEvals(crypto.pallasProofCoefficientEvals(proof), 15);
 
 export const vestaProofCoefficientEvals = (proof) =>
-  pairEvals(crypto.vestaProofCoefficientEvals(proof));
+  polyChunksToPointEvals(crypto.vestaProofCoefficientEvals(proof), 15);
 
-// Proof evaluations - index (selector)
+// Proof evaluations - index (6 selectors × n chunks × 2 points)
 export const pallasProofIndexEvals = (proof) =>
-  pairEvals(crypto.pallasProofIndexEvals(proof));
+  polyChunksToPointEvals(crypto.pallasProofIndexEvals(proof), 6);
 
 export const vestaProofIndexEvals = (proof) =>
-  pairEvals(crypto.vestaProofIndexEvals(proof));
+  polyChunksToPointEvals(crypto.vestaProofIndexEvals(proof), 6);
 
 // Proof oracles (Fiat-Shamir)
 // Returns 16 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,

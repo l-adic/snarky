@@ -56,6 +56,7 @@ module Pickles.ProofFFI
   , Proof
   , OraclesResult
   , PointEval
+  , firstChunk
   , SpongeCheckpoint
   , LrPair
   -- Typed wrappers: length-checked at the FFI boundary
@@ -72,6 +73,8 @@ module Pickles.ProofFFI
 import Prelude
 
 import Data.Array as Array
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NonEmptyArray
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Types (StepIPARounds, WrapIPARounds)
@@ -85,8 +88,21 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 -- | Opaque proof type, parameterized by curve group and scalar field.
 foreign import data Proof :: Type -> Type -> Type
 
--- | Polynomial evaluation at two points: zeta and zeta*omega
+-- | Polynomial evaluation at two points: zeta and zeta*omega.
 type PointEval f = { zeta :: f, omegaTimesZeta :: f }
+
+-- | Extract the first chunk from a chunked-eval array. Total because
+-- | kimchi always emits at least one chunk per polynomial (witnessed
+-- | by the `NonEmptyArray` type — the conversion from the JS-returned
+-- | array happens in the FFI shim, validated to be non-empty there).
+-- |
+-- | At `num_chunks = 1` this is the only chunk; at `n > 1` it silently
+-- | drops chunks > 0 (chunk-blind, must be replaced by
+-- | `actualEvaluation` Horner-combine in Phase 2 / 3 of chunking.md).
+-- |
+-- | See `docs/chunking-ffi-audit.md`.
+firstChunk :: forall f. NonEmptyArray (PointEval f) -> PointEval f
+firstChunk = NonEmptyArray.head
 
 -- | Result of running the Fiat-Shamir oracle computation on a proof.
 type OraclesResult f =
@@ -126,11 +142,11 @@ type LrPair f = { l :: AffinePoint f, r :: AffinePoint f }
 class ProofFFI f g | f -> g where
   proverIndexShifts :: ProverIndex g f -> Vector 7 f
   createProof :: { proverIndex :: ProverIndex g f, witness :: Vector 15 (Array f) } -> Proof g f
-  proofWitnessEvals :: Proof g f -> Vector 15 (PointEval f)
-  proofZEvals :: Proof g f -> PointEval f
-  proofSigmaEvals :: Proof g f -> Vector 6 (PointEval f)
-  proofCoefficientEvals :: Proof g f -> Vector 15 (PointEval f)
-  proofIndexEvals :: Proof g f -> Vector 6 (PointEval f)
+  proofWitnessEvals :: Proof g f -> Vector 15 (NonEmptyArray (PointEval f))
+  proofZEvals :: Proof g f -> NonEmptyArray (PointEval f)
+  proofSigmaEvals :: Proof g f -> Vector 6 (NonEmptyArray (PointEval f))
+  proofCoefficientEvals :: Proof g f -> Vector 15 (NonEmptyArray (PointEval f))
+  proofIndexEvals :: Proof g f -> Vector 6 (NonEmptyArray (PointEval f))
   -- | Non-recursive variant of `{pallas,vesta}ProofOracles` — passes
   -- | `prevChallenges: []` behind the scenes. Use this from
   -- | curve-polymorphic code that only handles standalone proofs (e.g.
@@ -191,20 +207,20 @@ foreign import vestaCreateProofWithPrev
      }
   -> Proof Pallas.G Vesta.BaseField
 
-foreign import pallasProofWitnessEvals :: Proof Vesta.G Pallas.BaseField -> Vector 15 (PointEval Pallas.BaseField)
-foreign import vestaProofWitnessEvals :: Proof Pallas.G Vesta.BaseField -> Vector 15 (PointEval Vesta.BaseField)
+foreign import pallasProofWitnessEvals :: Proof Vesta.G Pallas.BaseField -> Vector 15 (NonEmptyArray (PointEval Pallas.BaseField))
+foreign import vestaProofWitnessEvals :: Proof Pallas.G Vesta.BaseField -> Vector 15 (NonEmptyArray (PointEval Vesta.BaseField))
 
-foreign import pallasProofZEvals :: Proof Vesta.G Pallas.BaseField -> PointEval Pallas.BaseField
-foreign import vestaProofZEvals :: Proof Pallas.G Vesta.BaseField -> PointEval Vesta.BaseField
+foreign import pallasProofZEvals :: Proof Vesta.G Pallas.BaseField -> NonEmptyArray (PointEval Pallas.BaseField)
+foreign import vestaProofZEvals :: Proof Pallas.G Vesta.BaseField -> NonEmptyArray (PointEval Vesta.BaseField)
 
-foreign import pallasProofSigmaEvals :: Proof Vesta.G Pallas.BaseField -> Vector 6 (PointEval Pallas.BaseField)
-foreign import vestaProofSigmaEvals :: Proof Pallas.G Vesta.BaseField -> Vector 6 (PointEval Vesta.BaseField)
+foreign import pallasProofSigmaEvals :: Proof Vesta.G Pallas.BaseField -> Vector 6 (NonEmptyArray (PointEval Pallas.BaseField))
+foreign import vestaProofSigmaEvals :: Proof Pallas.G Vesta.BaseField -> Vector 6 (NonEmptyArray (PointEval Vesta.BaseField))
 
-foreign import pallasProofCoefficientEvals :: Proof Vesta.G Pallas.BaseField -> Vector 15 (PointEval Pallas.BaseField)
-foreign import vestaProofCoefficientEvals :: Proof Pallas.G Vesta.BaseField -> Vector 15 (PointEval Vesta.BaseField)
+foreign import pallasProofCoefficientEvals :: Proof Vesta.G Pallas.BaseField -> Vector 15 (NonEmptyArray (PointEval Pallas.BaseField))
+foreign import vestaProofCoefficientEvals :: Proof Pallas.G Vesta.BaseField -> Vector 15 (NonEmptyArray (PointEval Vesta.BaseField))
 
-foreign import pallasProofIndexEvals :: Proof Vesta.G Pallas.BaseField -> Vector 6 (PointEval Pallas.BaseField)
-foreign import vestaProofIndexEvals :: Proof Pallas.G Vesta.BaseField -> Vector 6 (PointEval Vesta.BaseField)
+foreign import pallasProofIndexEvals :: Proof Vesta.G Pallas.BaseField -> Vector 6 (NonEmptyArray (PointEval Pallas.BaseField))
+foreign import vestaProofIndexEvals :: Proof Pallas.G Vesta.BaseField -> Vector 6 (NonEmptyArray (PointEval Vesta.BaseField))
 
 -- | `prevChallenges` carries the recursive `Challenge_polynomial.t`
 -- | data that kimchi's Fiat-Shamir transcript absorbs before the
