@@ -375,14 +375,36 @@ mod generic {
     }
 
     /// Extract permutation polynomial (z) evaluations from a proof.
-    /// Returns 2 values: z(zeta), z(zeta*omega).
+    /// Returns `2 * num_chunks` values, ordered as:
+    ///   [z.zeta[0], z.zeta_omega[0], z.zeta[1], z.zeta_omega[1], ...,
+    ///    z.zeta[n-1], z.zeta_omega[n-1]]
+    /// for `num_chunks = n`. At `n=1` length is 2 (current single-chunk
+    /// behavior); callers indexing `[0]`/`[1]` see no change. Chunk-aware
+    /// callers added later for chunked proofs (`docs/chunking.md` Phase 4+)
+    /// will read positions `2*i`/`2*i+1` to recover the i-th chunk.
+    ///
+    /// Chunk-order convention (interleaved zeta/omega pairs, low-chunk
+    /// first) is shared with the other `proof_*_evals` extractors below.
+    /// See `docs/chunking-ffi-audit.md`.
     pub fn proof_z_evals<G: KimchiCurve>(
         proof: &ProverProof<G, OpeningProof<G>>,
     ) -> Vec<G::ScalarField>
     where
         G::BaseField: PrimeField,
     {
-        vec![proof.evals.z.zeta[0], proof.evals.z.zeta_omega[0]]
+        let z = &proof.evals.z;
+        let n = z.zeta.len();
+        debug_assert_eq!(
+            z.zeta_omega.len(),
+            n,
+            "kimchi PointEvaluations invariant: zeta and zeta_omega have the same chunk count"
+        );
+        let mut result = Vec::with_capacity(2 * n);
+        for i in 0..n {
+            result.push(z.zeta[i]);
+            result.push(z.zeta_omega[i]);
+        }
+        result
     }
 
     /// Extract sigma polynomial evaluations from a proof.
