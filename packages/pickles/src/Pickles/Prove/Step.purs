@@ -59,6 +59,7 @@ import Control.Monad.State as State
 import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
 import Data.Array as Array
+import Data.Array.NonEmpty as NonEmptyArray
 import Data.Either (Either(..))
 import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
@@ -1094,10 +1095,7 @@ buildSlotAdvice input = do
 
     wrapAllEvals =
       { ftEval1: oracles.ftEval1
-      , publicEvals:
-          { zeta: oracles.publicEvalZeta
-          , omegaTimesZeta: oracles.publicEvalZetaOmega
-          }
+      , publicEvals: firstChunk oracles.publicEvals
       , zEvals: firstChunk (proofZEvals input.wrapProof)
       , witnessEvals: map firstChunk (proofWitnessEvals input.wrapProof)
       , coeffEvals: map firstChunk (proofCoefficientEvals input.wrapProof)
@@ -1156,7 +1154,7 @@ buildSlotAdvice input = do
       , wrapDomainLog2: input.wrapDomainLog2
       , wrapEndo: wrapEndoScalar
       , wrapAllEvals
-      , wrapPEval0Chunks: [ oracles.publicEvalZeta ]
+      , wrapPEval0Chunks: map _.zeta (NonEmptyArray.toArray oracles.publicEvals)
       , wrapShifts
       , wrapZkRows: zkRows
       , wrapSrsLengthLog2: reflectType (Proxy :: Proxy WrapIPARounds)

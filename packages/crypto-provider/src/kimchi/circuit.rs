@@ -615,17 +615,25 @@ mod generic {
             compute_oracles::<G, EFqSponge, EFrSponge>(verifier_index, proof_ref, public_input)?;
 
         // public_evals[0] = evaluation at zeta, public_evals[1] = evaluation at zeta*omega
-        // Each is a Vec because of chunking, but for non-chunked we just take [0]
-        let public_eval_zeta = oracles_result.public_evals[0]
-            .first()
-            .copied()
-            .unwrap_or(G::ScalarField::zero());
-        let public_eval_zeta_omega = oracles_result.public_evals[1]
-            .first()
-            .copied()
-            .unwrap_or(G::ScalarField::zero());
+        // Each is a Vec<F> of length num_chunks. Chunk 0 stays at fixed positions
+        // 9, 10 (existing layout); chunks 1..n-1 are appended at the end after
+        // position 15, interleaved as [pez[1], pezo[1], pez[2], pezo[2], ...].
+        //
+        // This preserves the n=1 layout exactly (vec length 16 unchanged) while
+        // making chunked public_evals available to chunk-aware JS shim consumers.
+        // See `docs/chunking-ffi-audit.md`.
+        let pez = &oracles_result.public_evals[0];
+        let pezo = &oracles_result.public_evals[1];
+        debug_assert!(!pez.is_empty(), "kimchi public_evals[0] empty (num_chunks=0?)");
+        debug_assert_eq!(
+            pez.len(),
+            pezo.len(),
+            "kimchi public_evals zeta/omega chunk count invariant"
+        );
+        let public_eval_zeta = pez[0];
+        let public_eval_zeta_omega = pezo[0];
 
-        Ok(vec![
+        let mut result = vec![
             oracles_result.oracles.alpha,
             oracles_result.oracles.beta,
             oracles_result.oracles.gamma,
@@ -635,14 +643,20 @@ mod generic {
             oracles_result.oracles.u,
             oracles_result.combined_inner_product,
             proof_ref.ft_eval1,
-            public_eval_zeta,
-            public_eval_zeta_omega,
-            oracles_result.digest, // fq_digest: Fq-sponge state before Fr-sponge
-            oracles_result.oracles.alpha_chal.0, // raw 128-bit alpha challenge
-            oracles_result.oracles.zeta_chal.0, // raw 128-bit zeta challenge
-            oracles_result.oracles.v_chal.0, // raw 128-bit polyscale challenge
-            oracles_result.oracles.u_chal.0, // raw 128-bit evalscale challenge
-        ])
+            public_eval_zeta,       // chunk 0
+            public_eval_zeta_omega, // chunk 0
+            oracles_result.digest,
+            oracles_result.oracles.alpha_chal.0,
+            oracles_result.oracles.zeta_chal.0,
+            oracles_result.oracles.v_chal.0,
+            oracles_result.oracles.u_chal.0,
+        ];
+        // Append chunks 1..n-1 (interleaved zeta, omega).
+        for c in 1..pez.len() {
+            result.push(pez[c]);
+            result.push(pezo[c]);
+        }
+        Ok(result)
     }
 
     /// Extract the raw opening prechallenges (128-bit scalar challenges

@@ -23,6 +23,7 @@ module Pickles.Prove.Pure.Verify
 
 import Prelude
 
+import Data.Array.NonEmpty as NonEmptyArray
 import Data.Foldable (for_)
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -230,8 +231,7 @@ expandDeferredForVerify input =
       , u: rField
       , combinedInnerProduct: cipActual
       , ftEval1: input.allEvals.ftEval1
-      , publicEvalZeta: input.allEvals.publicEvals.zeta
-      , publicEvalZetaOmega: input.allEvals.publicEvals.omegaTimesZeta
+      , publicEvals: NonEmptyArray.singleton input.allEvals.publicEvals
       , fqDigest: input.spongeDigestBeforeEvaluations
       , alphaChal: unwrapF input.rawPlonk.alpha
       , zetaChal: unwrapF input.rawPlonk.zeta

@@ -131,7 +131,7 @@ to a single coordinated commit that updates all extractors together.
 | `proof_sigma_evals` | ✓ | ✓ (`polyChunksToPointEvals(_, 6)`) | ✓ (returns `Vector 6 (NonEmptyArray (PointEval f))`) | 30feb8dc + sweep |
 | `proof_coefficient_evals` | ✓ | ✓ (`polyChunksToPointEvals(_, 15)`) | ✓ (returns `Vector 15 (NonEmptyArray (PointEval f))`) | c8eb8785 + sweep |
 | `proof_index_evals` | ✓ | ✓ (`polyChunksToPointEvals(_, 6)`) | ✓ (returns `Vector 6 (NonEmptyArray (PointEval f))`) | 6e3799bb + sweep |
-| `oracles` `public_evals[0/1].first()` | **deferred — see below** | n/a | n/a | — |
+| `oracles` `public_evals[0/1]` | ✓ (append chunks 1..n-1 at end) | ✓ (`unpackOracles`) | ✓ (`publicEvals :: NonEmptyArray (PointEval f)`) | oracles-sweep |
 
 The JS+PS sweep uses `NonEmptyArray` from `Data.Array.NonEmpty` to
 encode the non-emptiness invariant (kimchi always emits ≥1 chunk per
@@ -148,7 +148,15 @@ breaks every proof's combined-eval computation; the downstream
 widening to `actualEvaluation`-Horner-combine is Phase 2/3 of
 `docs/chunking.md`.
 
-### Why `oracles` public_evals can't be Rust-only widened
+### How `oracles` public_evals was widened (RESOLVED)
+
+The "Rust-only widening is incompatible" obstacle was real but the
+**append-at-end** strategy sidestepped it. Original concern below
+documents the issue that was eventually solved by NOT shifting the
+flat-vec layout; instead appending chunks 1..n-1 at positions 16+
+(only at n>1, vec stays length 16 at n=1 = byte-identical).
+
+### Original obstacle (now resolved)
 
 Unlike the 5 eval extractors above, the `oracles` function packs many
 oracle outputs into a single flat `Vec<F>` of length 16 (alpha, beta,

@@ -43,7 +43,7 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.ProofFFI (OraclesResult, Proof, pallasProofOpeningPrechallengesVec, pallasProofOracles)
+import Pickles.ProofFFI (OraclesResult, Proof, firstChunk, pallasProofOpeningPrechallengesVec, pallasProofOracles)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatch, computeBpChalsAndB, crossFieldDigest, derivePlonk, ftEval0)
 import Pickles.Types (StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, ScalarChallenge)
@@ -230,10 +230,7 @@ wrapComputeDeferredValues input =
       }
 
     -- x_hat: single chunk per side (non-chunked assumption).
-    xHatEvals =
-      { zeta: oraclesResult.publicEvalZeta
-      , omegaTimesZeta: oraclesResult.publicEvalZetaOmega
-      }
+    xHatEvals = firstChunk oraclesResult.publicEvals
 
     -- ===== plonk0 / tick_plonk_minimal. =====
     --

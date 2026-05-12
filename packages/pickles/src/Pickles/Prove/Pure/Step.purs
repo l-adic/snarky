@@ -44,7 +44,7 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.IPA (bPoly)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals, absorbAllEvals)
-import Pickles.ProofFFI (OraclesResult, Proof, domainGenerator, tCommVec, vestaChallengePolyCommitment, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallengesVec, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles)
+import Pickles.ProofFFI (OraclesResult, Proof, domainGenerator, firstChunk, tCommVec, vestaChallengePolyCommitment, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallengesVec, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatch, computeBpChalsAndB, derivePlonk, ftEval0)
 import Pickles.Sponge (absorb, evalPureSpongeM, initialSponge, squeeze, squeezeScalarChallengePure)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
@@ -697,10 +697,7 @@ expandProof input =
     -- are already endo-expanded by the FFI.
     wrapCipInput =
       { allEvals: input.wrapAllEvals
-      , publicEvals:
-          { zeta: oraclesResult.publicEvalZeta
-          , omegaTimesZeta: oraclesResult.publicEvalZetaOmega
-          }
+      , publicEvals: firstChunk oraclesResult.publicEvals
       , ftEval0: wrapFtEval0
       , ftEval1: oraclesResult.ftEval1
       , oldBulletproofChallenges: input.wrapPaddedPrevChallenges
@@ -857,10 +854,7 @@ expandProof input =
     , unfinalized: wrapUnfinalized
     , deferredStep: deferredStep
     , rawPrechallenges: Vector.toUnfoldable (map SizedF.toField rawPrechalsVec)
-    , xHat:
-        { zeta: oraclesResult.publicEvalZeta
-        , omegaTimesZeta: oraclesResult.publicEvalZetaOmega
-        }
+    , xHat: firstChunk oraclesResult.publicEvals
     , perProofWitness
     -- step.ml:536 reads this from `dlog_vk.domain.log_size_of_group`.
     , actualWrapDomain: input.wrapDomainLog2

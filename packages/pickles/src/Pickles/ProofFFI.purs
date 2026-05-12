@@ -115,8 +115,10 @@ type OraclesResult f =
   , u :: f -- evalscale
   , combinedInnerProduct :: f
   , ftEval1 :: f
-  , publicEvalZeta :: f
-  , publicEvalZetaOmega :: f
+  -- | Chunked public-input evaluations at zeta / zeta*omega.
+  -- | `NonEmptyArray` of length `num_chunks` (≥1 by construction);
+  -- | use `firstChunk` to get the n=1 single-PointEval view.
+  , publicEvals :: NonEmptyArray (PointEval f)
   , fqDigest :: f -- Fq-sponge digest before Fr-sponge (for xi derivation)
   , alphaChal :: SizedF 128 f -- raw 128-bit alpha challenge (pre-endo-expansion)
   , zetaChal :: SizedF 128 f -- raw 128-bit zeta challenge (pre-endo-expansion)

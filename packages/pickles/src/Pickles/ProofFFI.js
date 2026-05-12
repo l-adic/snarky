@@ -127,24 +127,40 @@ export const vestaProofIndexEvals = (proof) =>
 // `prevChallenges` is an array of `{ sgX, sgY, challenges }` records
 // (one per previous proof); we split into the three parallel arrays
 // that the napi binding expects.
-const unpackOracles = (flat) => ({
-  alpha: flat[0],
-  beta: flat[1],
-  gamma: flat[2],
-  zeta: flat[3],
-  ftEval0: flat[4],
-  v: flat[5],
-  u: flat[6],
-  combinedInnerProduct: flat[7],
-  ftEval1: flat[8],
-  publicEvalZeta: flat[9],
-  publicEvalZetaOmega: flat[10],
-  fqDigest: flat[11],
-  alphaChal: flat[12],
-  zetaChal: flat[13],
-  vChal: flat[14],
-  uChal: flat[15]
-});
+// Rust returns a flat Vec<F> of length `16 + 2*(n-1)` where n = num_chunks.
+// Positions 0..15 are fixed (alpha, beta, ..., public_evals chunk 0, ..., u_chal),
+// positions 16+ are the remaining public_evals chunks interleaved as
+// [pez[1], pezo[1], pez[2], pezo[2], ..., pez[n-1], pezo[n-1]].
+//
+// We assemble `publicEvals` as a NonEmptyArray (PointEval f) of length n,
+// validated non-empty at the boundary. PS-side `firstChunk` extracts the
+// only chunk at n=1; future n>1 callers consume the full chunks array.
+const unpackOracles = (flat) => {
+  if (flat.length < 16 || (flat.length - 16) % 2 !== 0) {
+    throw new Error(`unpackOracles: invalid length ${flat.length} (expected 16 + 2k)`);
+  }
+  const publicEvals = [{ zeta: flat[9], omegaTimesZeta: flat[10] }];
+  for (let i = 16; i < flat.length; i += 2) {
+    publicEvals.push({ zeta: flat[i], omegaTimesZeta: flat[i + 1] });
+  }
+  return {
+    alpha: flat[0],
+    beta: flat[1],
+    gamma: flat[2],
+    zeta: flat[3],
+    ftEval0: flat[4],
+    v: flat[5],
+    u: flat[6],
+    combinedInnerProduct: flat[7],
+    ftEval1: flat[8],
+    publicEvals,
+    fqDigest: flat[11],
+    alphaChal: flat[12],
+    zetaChal: flat[13],
+    vChal: flat[14],
+    uChal: flat[15]
+  };
+};
 
 export const pallasProofOracles = (verifierIndex) => ({ proof, publicInput, prevChallenges }) => {
   const prevSgXs = prevChallenges.map(p => p.sgX);

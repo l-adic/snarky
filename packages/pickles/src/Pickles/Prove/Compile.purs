@@ -54,6 +54,7 @@ module Pickles.Prove.Compile
 import Prelude
 
 import Control.Monad.Except (ExceptT)
+import Data.Array.NonEmpty as NonEmptyArray
 import Data.Enum (fromEnum)
 import Data.Exists (runExists)
 import Data.Fin (unsafeFinite)
@@ -1171,15 +1172,14 @@ instance
                 , publicInput: headBaseCaseWrapPI
                 , prevChallenges: map toFFI [ baseCaseDummyChalPoly, baseCaseDummyChalPoly ]
                 }
-            dummyWrapXhatZeta = dummyWrapOracles.publicEvalZeta
-            dummyWrapXhatOmegaZeta = dummyWrapOracles.publicEvalZetaOmega
+            dummyWrapXhat = ProofFFI.firstChunk dummyWrapOracles.publicEvals
             de = bcd.dummyEvals
             pe = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
             headPrevEvals = StepAllEvals
               { ftEval1: F de.ftEval1
               , publicEvals: PointEval
-                  { zeta: F dummyWrapXhatZeta
-                  , omegaTimesZeta: F dummyWrapXhatOmegaZeta
+                  { zeta: F dummyWrapXhat.zeta
+                  , omegaTimesZeta: F dummyWrapXhat.omegaTimesZeta
                   }
               , zEvals: pe de.zEvals
               , witnessEvals: map pe de.witnessEvals
@@ -1251,10 +1251,9 @@ instance
                     peWF = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
                     prevHeadPrevEvals = StepAllEvals
                       { ftEval1: F prevWrapOracles.ftEval1
-                      , publicEvals: PointEval
-                          { zeta: F prevWrapOracles.publicEvalZeta
-                          , omegaTimesZeta: F prevWrapOracles.publicEvalZetaOmega
-                          }
+                      , publicEvals:
+                          let pew = ProofFFI.firstChunk prevWrapOracles.publicEvals in
+                            PointEval { zeta: F pew.zeta, omegaTimesZeta: F pew.omegaTimesZeta }
                       , zEvals: peWF (ProofFFI.firstChunk (ProofFFI.proofZEvals prev.wrapProof))
                       , witnessEvals:
                           map (peWF <<< ProofFFI.firstChunk) (ProofFFI.proofWitnessEvals prev.wrapProof)
@@ -1798,15 +1797,14 @@ instance
                 , publicInput: headBaseCaseWrapPI
                 , prevChallenges: map toFFI [ baseCaseDummyChalPoly, baseCaseDummyChalPoly ]
                 }
-            dummyWrapXhatZeta = dummyWrapOracles.publicEvalZeta
-            dummyWrapXhatOmegaZeta = dummyWrapOracles.publicEvalZetaOmega
+            dummyWrapXhat = ProofFFI.firstChunk dummyWrapOracles.publicEvals
             de = bcd.dummyEvals
             pe = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
             headPrevEvals = StepAllEvals
               { ftEval1: F de.ftEval1
               , publicEvals: PointEval
-                  { zeta: F dummyWrapXhatZeta
-                  , omegaTimesZeta: F dummyWrapXhatOmegaZeta
+                  { zeta: F dummyWrapXhat.zeta
+                  , omegaTimesZeta: F dummyWrapXhat.omegaTimesZeta
                   }
               , zEvals: pe de.zEvals
               , witnessEvals: map pe de.witnessEvals
@@ -1867,10 +1865,9 @@ instance
                     peWF = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
                     prevHeadPrevEvals = StepAllEvals
                       { ftEval1: F prevWrapOracles.ftEval1
-                      , publicEvals: PointEval
-                          { zeta: F prevWrapOracles.publicEvalZeta
-                          , omegaTimesZeta: F prevWrapOracles.publicEvalZetaOmega
-                          }
+                      , publicEvals:
+                          let pew = ProofFFI.firstChunk prevWrapOracles.publicEvals in
+                            PointEval { zeta: F pew.zeta, omegaTimesZeta: F pew.omegaTimesZeta }
                       , zEvals: peWF (ProofFFI.firstChunk (ProofFFI.proofZEvals prev.wrapProof))
                       , witnessEvals:
                           map (peWF <<< ProofFFI.firstChunk) (ProofFFI.proofWitnessEvals prev.wrapProof)
@@ -3337,10 +3334,7 @@ runMultiProverBody
 
     allEvals =
       { ftEval1: stepOracles.ftEval1
-      , publicEvals:
-          { zeta: stepOracles.publicEvalZeta
-          , omegaTimesZeta: stepOracles.publicEvalZetaOmega
-          }
+      , publicEvals: firstChunk stepOracles.publicEvals
       , zEvals: firstChunk (proofZEvals stepResult.proof)
       , witnessEvals: map firstChunk (proofWitnessEvals stepResult.proof)
       , coeffEvals: map firstChunk (proofCoefficientEvals stepResult.proof)
@@ -3357,7 +3351,7 @@ runMultiProverBody
       , verifierIndex: stepCR.verifierIndex
       , publicInput: stepResult.publicInputs
       , allEvals
-      , pEval0Chunks: [ stepOracles.publicEvalZeta ]
+      , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepOracles.publicEvals)
       , domainLog2: selfStepDomainLog2
       , zkRows
       , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
@@ -3501,7 +3495,7 @@ runMultiProverBody
     , branchData: wrapDv.branchData
     , spongeDigestBeforeEvaluations: wrapDv.spongeDigestBeforeEvaluations
     , prevEvals: allEvals
-    , pEval0Chunks: [ stepOracles.publicEvalZeta ]
+    , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepOracles.publicEvals)
     , challengePolynomialCommitment: stepProofSg
     , messagesForNextStepProofDigest: msgStep
     , messagesForNextWrapProofDigest: msgWrap
