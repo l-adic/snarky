@@ -359,17 +359,34 @@ mod generic {
     }
 
     /// Extract witness polynomial evaluations from a proof.
-    /// Returns 30 values: 15 columns × 2 points (zeta, zeta*omega).
+    /// Returns `15 * 2 * num_chunks` values in polynomial-major,
+    /// within-poly chunk-major order:
+    ///   [w[0].zeta[0], w[0].zeta_omega[0], w[0].zeta[1], w[0].zeta_omega[1], ...,
+    ///    w[0].zeta[n-1], w[0].zeta_omega[n-1],
+    ///    w[1].zeta[0], w[1].zeta_omega[0], ..., w[14].zeta_omega[n-1]]
+    /// At `n=1` length is 30 (current behavior); callers indexing the
+    /// first 30 positions see no change. Chunk-aware callers added
+    /// later read positions `30*chunk + 2*poly + {0,1}` to recover the
+    /// (poly, chunk, point) triple.
+    ///
+    /// Chunk-order convention: same as `proof_z_evals` (interleaved
+    /// zeta/omega within each polynomial's chunks, low-chunk first).
+    /// See `docs/chunking-ffi-audit.md`.
     pub fn proof_witness_evals<G: KimchiCurve>(
         proof: &ProverProof<G, OpeningProof<G>>,
     ) -> Vec<G::ScalarField>
     where
         G::BaseField: PrimeField,
     {
-        let mut result = Vec::with_capacity(COLUMNS * 2);
+        let n = proof.evals.w[0].zeta.len();
+        let mut result = Vec::with_capacity(COLUMNS * 2 * n);
         for w_eval in &proof.evals.w {
-            result.push(w_eval.zeta[0]);
-            result.push(w_eval.zeta_omega[0]);
+            debug_assert_eq!(w_eval.zeta.len(), n, "PointEvaluations chunk count invariant");
+            debug_assert_eq!(w_eval.zeta_omega.len(), n, "PointEvaluations chunk count invariant");
+            for i in 0..n {
+                result.push(w_eval.zeta[i]);
+                result.push(w_eval.zeta_omega[i]);
+            }
         }
         result
     }
