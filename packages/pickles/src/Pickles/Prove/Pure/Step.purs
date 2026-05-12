@@ -45,7 +45,7 @@ import Pickles.IPA (bPoly)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals, absorbAllEvals)
 import Pickles.PlonkChecks.Chunks as Chunks
-import Pickles.ProofFFI (OraclesResult, Proof, domainGenerator, tCommVec, vestaChallengePolyCommitment, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallengesVec, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles)
+import Pickles.ProofFFI (OraclesResult, Proof, domainGenerator, tCommVec, vestaChallengePolyCommitment, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallengesVec, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, wCommChunked, zCommChunked)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatch, computeBpChalsAndB, derivePlonk, ftEval0)
 import Pickles.Sponge (absorb, evalPureSpongeM, initialSponge, squeeze, squeezeScalarChallengePure)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
@@ -765,8 +765,8 @@ expandProof input =
     messages
       :: WrapProofMessages 1 (WeierstrassAffinePoint PallasG (F StepField))
     messages = WrapProofMessages
-      { wComm: map (Vector.singleton <<< mkPallasPt) wrapCommits.wComm
-      , zComm: Vector.singleton (mkPallasPt wrapCommits.zComm)
+      { wComm: map (map mkPallasPt) (wCommChunked @1 wrapCommits)
+      , zComm: map mkPallasPt (zCommChunked @1 wrapCommits)
       , tComm: map (Vector.singleton <<< mkPallasPt) (tCommVec wrapCommits)
       }
 

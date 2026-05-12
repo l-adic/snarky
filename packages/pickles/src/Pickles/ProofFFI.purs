@@ -68,6 +68,8 @@ module Pickles.ProofFFI
   , pallasProofOpeningLrVec
   , vestaProofOpeningLrVec
   , tCommVec
+  , wCommChunked
+  , zCommChunked
   ) where
 
 import Prelude
@@ -75,6 +77,7 @@ import Prelude
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NonEmptyArray
+import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Types (StepIPARounds, WrapIPARounds)
@@ -429,13 +432,21 @@ foreign import vestaVerifierIndexColumnComms :: VerifierIndex Pallas.G Vesta.Bas
 foreign import vestaChallengePolyCommitment :: VerifierIndex Pallas.G Vesta.BaseField -> Array Vesta.BaseField -> AffinePoint Vesta.ScalarField
 
 -- | Proof commitments structured for Fq-sponge absorption.
+-- |
+-- | Each polynomial's commitment is a chunked group of points: at
+-- | `num_chunks = 1` every inner `Array` has length 1. The PS-side FFI
+-- | leaves these as plain `Array`s because num_chunks is decided by the
+-- | prover/SRS at runtime and is not known at the type level here; use
+-- | `wCommChunked`/`zCommChunked` to project into typed `Vector numChunks`
+-- | at consumer sites that know the value statically.
 type ProofCommitments f =
-  { wComm :: Vector 15 (AffinePoint f)
-  , zComm :: AffinePoint f
+  { wComm :: Vector 15 (Array (AffinePoint f))
+  , zComm :: Array (AffinePoint f)
   , tComm :: Array (AffinePoint f)
   }
 
--- Proof commitments: w_comm (15 points), z_comm (1 point), t_comm (1+ points) in Fq
+-- Proof commitments: 15 w-poly chunked commitments + z-poly chunked
+-- commitment + t-poly's `7 * num_chunks` flat pieces in Fq.
 foreign import pallasProofCommitments :: Proof Vesta.G Pallas.BaseField -> ProofCommitments Pallas.ScalarField
 
 -- Proof commitments from a Pallas proof (Vesta/Fq circuits)
@@ -622,3 +633,29 @@ tCommVec
 tCommVec c =
   fromJust' "ProofCommitments.tComm: expected Vector 7 (num_chunks=1)"
     (Vector.toVector @7 c.tComm)
+
+-- | Project the per-polynomial chunked `wComm` array into a typed
+-- | `Vector numChunks` per polynomial. Errors if any polynomial's
+-- | chunk count differs from `numChunks`.
+wCommChunked
+  :: forall @numChunks f
+   . Reflectable numChunks Int
+  => ProofCommitments f
+  -> Vector 15 (Vector numChunks (AffinePoint f))
+wCommChunked c =
+  map
+    ( \chunks ->
+        fromJust' "ProofCommitments.wComm: chunk count mismatch with @numChunks"
+          (Vector.toVector @numChunks chunks)
+    )
+    c.wComm
+
+-- | Project the chunked `zComm` array into a typed `Vector numChunks`.
+zCommChunked
+  :: forall @numChunks f
+   . Reflectable numChunks Int
+  => ProofCommitments f
+  -> Vector numChunks (AffinePoint f)
+zCommChunked c =
+  fromJust' "ProofCommitments.zComm: chunk count mismatch with @numChunks"
+    (Vector.toVector @numChunks c.zComm)

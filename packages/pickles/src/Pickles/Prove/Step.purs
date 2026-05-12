@@ -90,7 +90,7 @@ import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, tCommVec, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallenges, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaVerifierIndexCommitments, vestaVerifierIndexDigest)
+import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, tCommVec, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallenges, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaVerifierIndexCommitments, vestaVerifierIndexDigest, wCommChunked, zCommChunked)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
@@ -1278,8 +1278,9 @@ buildSlotAdvice input = do
     mkPallasAffine :: AffinePoint StepField -> AffinePoint (F StepField)
     mkPallasAffine pt = { x: F pt.x, y: F pt.y }
     wrapMessages =
-      { wComm: map mkPallasAffine wrapCommits.wComm
-      , zComm: mkPallasAffine wrapCommits.zComm
+      -- At num_chunks=1, project chunked FFI shape into singleton-per-poly Vectors.
+      { wComm: map (map mkPallasAffine) (wCommChunked @1 wrapCommits)
+      , zComm: map mkPallasAffine (zCommChunked @1 wrapCommits)
       , tComm: map mkPallasAffine (tCommVec wrapCommits)
       }
 
@@ -1335,8 +1336,8 @@ buildSlotAdvice input = do
               , sg: WeierstrassAffinePoint openingSg
               }
           , messages: WrapProofMessages
-              { wComm: map (Vector.singleton <<< WeierstrassAffinePoint) wrapMessages.wComm
-              , zComm: Vector.singleton (WeierstrassAffinePoint wrapMessages.zComm)
+              { wComm: map (map WeierstrassAffinePoint) wrapMessages.wComm
+              , zComm: map WeierstrassAffinePoint wrapMessages.zComm
               , tComm: map (Vector.singleton <<< WeierstrassAffinePoint) wrapMessages.tComm
               }
           }

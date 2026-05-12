@@ -54,7 +54,7 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Node.Process as Process
 import Pickles.Field (StepField, WrapField)
-import Pickles.ProofFFI (Proof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLrVec, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexCommitments, tCommVec, vestaCreateProofWithPrev)
+import Pickles.ProofFFI (Proof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLrVec, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexCommitments, tCommVec, vestaCreateProofWithPrev, wCommChunked, zCommChunked)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Types (PaddedLength, PerProofUnfinalized, StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK)
@@ -280,15 +280,15 @@ buildWrapAdvice input =
   let
     -- ===== Req.Messages (step.ml commitments → wrap witness). =====
     --
-    -- `pallasProofCommitments` returns wComm (Vector 15) + zComm
-    -- (single) + tComm (Array). Length-pin tComm at 7 to match the
-    -- `WrapProofMessages` shape.
+    -- `pallasProofCommitments` returns chunked w/z (Array per polynomial)
+    -- and flat tComm. Project into typed Vector numChunks via
+    -- wCommChunked/zCommChunked. tComm is still pinned to Vector 7 here
+    -- (FFI does not yet emit chunked t).
     commits = pallasProofCommitments input.stepProof
 
-    -- At n=1, each pt becomes a Vector 1 singleton. TODO: widen for n>1.
     messages = WrapProofMessages
-      { wComm: map (Vector.singleton <<< mkVestaPt) commits.wComm
-      , zComm: Vector.singleton (mkVestaPt commits.zComm)
+      { wComm: map (map mkVestaPt) (wCommChunked @1 commits)
+      , zComm: map mkVestaPt (zCommChunked @1 commits)
       , tComm: map (Vector.singleton <<< mkVestaPt) (tCommVec commits)
       }
 

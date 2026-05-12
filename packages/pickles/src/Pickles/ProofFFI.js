@@ -390,23 +390,28 @@ export const vestaSigmaCommLast = (verifierIndex) => {
 export const vestaVerifierIndexDigest = (verifierIndex) =>
   crypto.vestaVerifierIndexDigest(verifierIndex);
 
-// Proof commitments from a Pallas proof (Vesta/Fq circuits)
+// Proof commitments from a Pallas proof (Vesta/Fq circuits).
+// At num_chunks > 1 each polynomial's commitment is a chunked group:
+// wComm becomes a 15-array of length-numChunks arrays, zComm a
+// length-numChunks array. The Rust FFI currently emits the flat
+// num_chunks=1 layout, so we wrap each polynomial in a singleton array
+// here to give downstream consumers a stable chunked shape.
 export const vestaProofCommitments = (proof) => {
   const flat = crypto.vestaProofCommitments(proof);
   const wComm = [];
-  for (let i = 0; i < 30; i += 2) wComm.push({ x: flat[i], y: flat[i+1] });
-  const zComm = { x: flat[30], y: flat[31] };
+  for (let i = 0; i < 30; i += 2) wComm.push([{ x: flat[i], y: flat[i+1] }]);
+  const zComm = [{ x: flat[30], y: flat[31] }];
   const tComm = [];
   for (let i = 32; i < flat.length; i += 2) tComm.push({ x: flat[i], y: flat[i+1] });
   return { wComm, zComm, tComm };
 };
 
-// Proof commitments: w_comm (15 points), z_comm (1 point), t_comm (1+ points)
+// Proof commitments: 15 w-poly chunks, 1 z-poly chunked, 1+ t-poly pieces
 export const pallasProofCommitments = (proof) => {
   const flat = crypto.pallasProofCommitments(proof);
   const wComm = [];
-  for (let i = 0; i < 30; i += 2) wComm.push({ x: flat[i], y: flat[i+1] });
-  const zComm = { x: flat[30], y: flat[31] };
+  for (let i = 0; i < 30; i += 2) wComm.push([{ x: flat[i], y: flat[i+1] }]);
+  const zComm = [{ x: flat[30], y: flat[31] }];
   const tComm = [];
   for (let i = 32; i < flat.length; i += 2) tComm.push({ x: flat[i], y: flat[i+1] });
   return { wComm, zComm, tComm };
