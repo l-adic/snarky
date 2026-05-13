@@ -149,10 +149,10 @@ fullStepVerifyOneN2Circuit { lagrangeAt, blindingH } inputs = do
       -- N2: trim_front [mask0, mask1] with lte N2 N2 = identity (both mask entries)
       , proofMask: (coerce mask0) :< (coerce mask1) :< Vector.nil
       , vkComms:
-          { sigma: (Vector.replicate constDummyPt) :: Vector 6 _
-          , sigmaLast: constDummyPt
-          , coeff: (Vector.replicate constDummyPt) :: Vector 15 _
-          , index: (Vector.replicate constDummyPt) :: Vector 6 _
+          { sigma: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 6 _
+          , sigmaLast: Vector.singleton constDummyPt
+          , coeff: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 15 _
+          , index: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 6 _
           }
       -- N2: sgOld = both sg points from input (extend_front_exn is identity for N2)
       , sgOld: readPt prevSgBase :< readPt (prevSgBase + 2) :< Vector.nil

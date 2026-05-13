@@ -112,7 +112,8 @@ compileStepMainSideLoadedMain params =
           @(Tuple1 (StatementIO (F StepField) Unit))
           @1
           @1
-          @(SLVK.VerificationKey (F StepField) Boolean)
+          @(SLVK.VerificationKey 1 (F StepField) Boolean)
+          @1
           sideLoadedMainRule
           -- This circuit-diff harness builds `perSlotLagrangeAt` /
           -- `perSlotVkBlueprints` / `perSlotFopDomainLog2s` inline rather

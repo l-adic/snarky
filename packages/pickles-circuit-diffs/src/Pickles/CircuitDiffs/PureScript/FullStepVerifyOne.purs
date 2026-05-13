@@ -135,10 +135,10 @@ fullStepVerifyOneCircuit { lagrangeAt, blindingH } inputs = do
       , branchData: { mask0, mask1, domainLog2Var: at (proofStateBase + 28) }
       , proofMask: (coerce mask1) :< Vector.nil
       , vkComms:
-          { sigma: (Vector.replicate constDummyPt) :: Vector 6 _
-          , sigmaLast: constDummyPt
-          , coeff: (Vector.replicate constDummyPt) :: Vector 15 _
-          , index: (Vector.replicate constDummyPt) :: Vector 6 _
+          { sigma: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 6 _
+          , sigmaLast: Vector.singleton constDummyPt
+          , coeff: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 15 _
+          , index: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 6 _
           }
       , sgOld: constDummySg :< readPt 250 :< Vector.nil
       }

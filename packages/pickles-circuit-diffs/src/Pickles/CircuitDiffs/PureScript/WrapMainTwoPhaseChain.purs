@@ -66,8 +66,8 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
   pallasSrs <- createCRS @WrapField
   let
     -- @0 for make_zero (n=0 prev_challenges), @1 for increment (n=1).
-    makeZeroVK = deriveStepVKFromCompiled @0 vestaSrs' makeZeroArt.stepCs
-    incrementVK = deriveStepVKFromCompiled @1 vestaSrs' incrementArt.stepCs
+    makeZeroVK = deriveStepVKFromCompiled @1 @0 vestaSrs' makeZeroArt.stepCs
+    incrementVK = deriveStepVKFromCompiled @1 @1 vestaSrs' incrementArt.stepCs
 
     -- Per-branch lagrange lookup at each branch's step domain log2.
     -- Both values derived from artifacts (no hardcoded 9 / 14).
@@ -76,7 +76,7 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
         :< ((coerce (pallasSrsLagrangeCommitmentAt vestaSrs incrementArt.stepDomainLog2 i)) :: AffinePoint (F WrapField))
         :< Vector.nil
 
-    config :: WrapMainConfig 2
+    config :: WrapMainConfig 2 1
     config =
       { stepWidths: 0 :< 1 :< Vector.nil
       , domainLog2s: makeZeroArt.stepDomainLog2 :< incrementArt.stepDomainLog2 :< Vector.nil
@@ -95,5 +95,5 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
     { stepCs: incrementArt.stepCs
     , stepDomainLog2: incrementArt.stepDomainLog2
     , wrapCs
-    , wrapVk: deriveWrapVKFromCompiled @2 pallasSrs wrapCs
+    , wrapVk: deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
     }

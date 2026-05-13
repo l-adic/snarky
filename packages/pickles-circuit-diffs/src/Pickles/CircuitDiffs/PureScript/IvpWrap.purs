@@ -155,11 +155,11 @@ ivpWrapCircuit { lagrangeAt, blindingH } input = do
       , sgOld: Vector.nil
       , sgOldMask: Vector.nil
       -- VK data as circuit variables (dummy constants for circuit-diff test)
-      , sigmaCommLast: constDummyPt
+      , sigmaCommLast: Vector.singleton constDummyPt
       , columnComms:
-          { index: (Vector.replicate constDummyPt) :: Vector 6 _
-          , coeff: (Vector.replicate constDummyPt) :: Vector 15 _
-          , sigma: (Vector.replicate constDummyPt) :: Vector 6 _
+          { index: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 6 _
+          , coeff: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 15 _
+          , sigma: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 6 _
           }
       , deferredValues: input.deferredValues
       , wComm: map Vector.singleton input.wComm

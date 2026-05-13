@@ -161,11 +161,11 @@ ivpStepCircuit { lagrangeAt, blindingH } input = do
       , sgOld: constDummySg :< constDummySg :< Vector.nil
       , sgOldMask: Vector.replicate ((const_ one))
       -- VK data as circuit variables (dummy constants for circuit-diff test)
-      , sigmaCommLast: constDummyPt
+      , sigmaCommLast: Vector.singleton constDummyPt
       , columnComms:
-          { index: (Vector.replicate constDummyPt) :: Vector 6 _
-          , coeff: (Vector.replicate constDummyPt) :: Vector 15 _
-          , sigma: (Vector.replicate constDummyPt) :: Vector 6 _
+          { index: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 6 _
+          , coeff: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 15 _
+          , sigma: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 6 _
           }
       , deferredValues: input.deferredValues
       , wComm: map Vector.singleton input.wComm

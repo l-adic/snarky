@@ -595,8 +595,11 @@ class
     -> prevsCarrier
     -> vkCarrier
     -> Effect
-         { stepAdvice ::
-             StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal mpv
+         { -- wrapVkChunks pinned to 1 here per OCaml
+           -- `step_main.ml:347` `num_chunks_by_default = 1`. Lift
+           -- this when the OCaml TODO is relaxed.
+           stepAdvice ::
+             StepAdvice prevsSpec StepIPARounds WrapIPARounds 1 inputVal mpv
                carrier
                valCarrier
                vkCarrier
@@ -652,7 +655,10 @@ instance CompilableSpec Unit Unit Unit 0 NoSlots Unit Unit Unit Unit where
       -- Nil has no prev slots, so `stepDomainLog2` is dead — the
       -- per-slot dummy that consumes it gets replicated to a
       -- `Vector 0` (= empty). `0` is a sentinel; any value works.
-      StepAdvice base = buildStepAdvice @Unit
+      -- Nil base case: wrap-VK chunks pinned to 1 per OCaml
+      -- `step_main.ml:347` `num_chunks_by_default`. No prev slots so
+      -- the dimension doesn't propagate anywhere.
+      StepAdvice base = buildStepAdvice @Unit @1
         { publicInput: appInput
         , stepDomainLog2: 0
         , prevAppStates: unit
@@ -662,7 +668,7 @@ instance CompilableSpec Unit Unit Unit 0 NoSlots Unit Unit Unit Unit where
       dummyHash = mkDummyMsgWrapHash bcd cfg.srs.pallasSrs cfg.srs.vestaSrs
       stepAdvice = StepAdvice
         ( base
-            { wrapVerifierIndex = extractWrapVKCommsAdvice wrapCR.verifierIndex
+            { wrapVerifierIndex = extractWrapVKCommsAdvice @1 wrapCR.verifierIndex
             , messagesForNextWrapProofDummyHash = dummyHash
             }
         )
@@ -741,7 +747,7 @@ instance
     -- becomes `VkBlueprintShared`; `External` becomes `VkBlueprintConst`.
     -- Bundled into the post-walk `SlotVkSource` by
     -- `buildSlotVkSources` at circuit-build time.
-    (SlotVkBlueprintCompiled /\ restScaffolds)
+    (SlotVkBlueprintCompiled nc /\ restScaffolds)
   where
   shapeCompileData cfg selfStepDomainLog2s =
     let
@@ -1381,7 +1387,7 @@ instance
         Boolean
         /\ restCarrier
     )
-    (SideloadBundle.Bundle /\ restVkCarrier)
+    (SideloadBundle.Bundle nc /\ restVkCarrier)
     -- Side-loaded blueprint = the per-domain lagrange tables (one
     -- entry per `wrap_domain ∈ {N0, N1, N2}`). The runtime VK is
     -- bundled in by `buildSlotVkSources` at circuit-build time.
@@ -2250,6 +2256,7 @@ instance
       Boolean
       ruleMpv
       carrier
+      vkSourcesCarrier
   -- outputSize derives from mpvMax (the wrap circuit's max), not the
   -- rule's mpv: step PI is mpvMax-shaped (mirrors OCaml
   -- step.ml:783-787).
@@ -2481,23 +2488,25 @@ class
   -- |   * step results / rules carriers — per-branch Tuple
   -- |     chains walked in sync with the recursion.
   buildBranchProvers
-    :: forall numChunks vecLen vecLenPred tCommLen tCommLenPred wCommN chunkBases nonSgBases sg1 sg2 sg3 sg4 totalBasesMax totalBasesMaxPred
+    :: forall numChunks numChunksPred vecLen vecLenPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 totalBasesMax totalBasesMaxPred
      . Reflectable vecLen Int
     => Add 1 vecLenPred vecLen
     => Reflectable numChunks Int
     => Reflectable tCommLen Int
     => Reflectable nonSgBases Int
     => Compare 0 numChunks LT
+    => Add 1 numChunksPred numChunks
     => Mul 7 numChunks tCommLen
     => Add 1 tCommLenPred tCommLen
-    => Mul 15 numChunks wCommN
-    => Mul 16 numChunks chunkBases
-    => Add 29 chunkBases nonSgBases
+    => Mul 15 numChunks wCoeffN
+    => Mul 6 numChunks indexSigmaN
+    => Mul 43 numChunks chunkBases
+    => Add 2 chunkBases nonSgBases
     => Add 2 numChunks sg1
-    => Add sg1 6 sg2
-    => Add sg2 wCommN sg3
-    => Add sg3 15 sg4
-    => Add sg4 6 nonSgBases
+    => Add sg1 indexSigmaN sg2
+    => Add sg2 wCoeffN sg3
+    => Add sg3 wCoeffN sg4
+    => Add sg4 indexSigmaN nonSgBases
     => Add mpvMax nonSgBases totalBasesMax
     => Add 1 totalBasesMaxPred totalBasesMax
     => Proxy numChunks
@@ -2945,21 +2954,29 @@ mkRuleEntry
        inputVal inputVar outputVar prevInputVar slotVKs
        carrier carrierVar pad unfsTotal digestPlusUnfs
        compileSideloadedVkCarrier sideloadedVkCarrier blueprints
+       vkSourcesCarrier nc
    . CircuitGateConstructor StepField VestaG
+  -- `vkSourcesCarrier` is uniquely determined by `prevsSpec` (see the
+  -- `prevsSpec -> vkCarrier` fundep on `BuildSlotVkSources`), so compile-
+  -- and prove-path constraints share one binder. The two BuildSlotVkSources
+  -- constraints differ only in their `cell` argument (compile-time VK
+  -- descriptor vs prove-time `SideloadBundle.Bundle`).
+  --
   -- Compile-path carrier: cells = side-loaded VK descriptor. Synthesised
   -- by `MkUnitVkCarrier` for the `getSideloadedVKsCarrier` Effect
   -- instance inside `stepCompile` / `preComputeStepDomainLog2`.
-  => BuildSlotVkSources (SLVK.VerificationKey (F StepField) Boolean) prevsSpec mpv blueprints compileSideloadedVkCarrier
+  => BuildSlotVkSources (SLVK.VerificationKey nc (F StepField) Boolean) prevsSpec mpv blueprints compileSideloadedVkCarrier vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec compileSideloadedVkCarrier
   -- Prove-path carrier: cells = `SideloadBundle.Bundle`. Sourced from
   -- `StepAdvice.sideloadedVKs` inside `stepSolveAndProve`.
-  => BuildSlotVkSources SideloadBundle.Bundle prevsSpec mpv blueprints sideloadedVkCarrier
+  => BuildSlotVkSources (SideloadBundle.Bundle nc) prevsSpec mpv blueprints sideloadedVkCarrier vkSourcesCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable mpv Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
   => Reflectable mpvPad Int
   => Reflectable nd Int
+  => Reflectable nc Int
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Reflectable outputSize Int
@@ -2982,6 +2999,7 @@ mkRuleEntry
        Boolean
        mpv
        carrier
+       vkSourcesCarrier
   => StepSlotsCarrier
        prevsSpec
        StepIPARounds
@@ -2991,6 +3009,7 @@ mkRuleEntry
        (BoolVar StepField)
        mpv
        carrierVar
+       vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) inputVar
   => SlotStatementsCarrier prevsSpec valCarrier
   => PStepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
@@ -3010,6 +3029,8 @@ mkRuleEntry rule slotVKs = pure $ RuleEntry
         @prevInputVar
         @mpvMax
         @mpvPad
+        @nd
+        @nc
         ctx
         rule
   , stepCompileFn: \ctx ->
@@ -3025,6 +3046,9 @@ mkRuleEntry rule slotVKs = pure $ RuleEntry
         @prevInputVar
         @mpvMax
         @mpvPad
+        @nd
+        @nc
+        @1
         ctx
         rule
   , stepProveFn: \ctx compileResult advice ->
@@ -3040,6 +3064,9 @@ mkRuleEntry rule slotVKs = pure $ RuleEntry
         @prevInputVar
         @mpvMax
         @mpvPad
+        @nd
+        @nc
+        @1
         ctx
         rule
         compileResult
@@ -3129,11 +3156,11 @@ runMultiProverBody
   :: forall @prevsSpec slotVKs prevsCarrier @mpv @slots @valCarrier @carrier
        @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar
        @topBranches
-       @mpvMax @slotsMax @mpvPad @numChunks
+       @mpvMax @slotsMax @mpvPad @numChunks numChunksPred
        branches branchesPred topBranchesPred
        pad unfsTotal digestPlusUnfs outputSize carrierFVar
        padMax totalBasesMax totalBasesMaxPred
-       tCommLen tCommLenPred wCommN chunkBases nonSgBases sg1 sg2 sg3 sg4
+       tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4
        vkCarrier blueprints
    . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier vkCarrier blueprints
   => SlotStatementsCarrier prevsSpec valCarrier
@@ -3169,16 +3196,18 @@ runMultiProverBody
   => Reflectable tCommLen Int
   => Reflectable nonSgBases Int
   => Compare 0 numChunks LT
+  => Add 1 numChunksPred numChunks
   => Mul 7 numChunks tCommLen
   => Add 1 tCommLenPred tCommLen
-  => Mul 15 numChunks wCommN
-  => Mul 16 numChunks chunkBases
-  => Add 29 chunkBases nonSgBases
+  => Mul 15 numChunks wCoeffN
+  => Mul 6 numChunks indexSigmaN
+  => Mul 43 numChunks chunkBases
+  => Add 2 chunkBases nonSgBases
   => Add 2 numChunks sg1
-  => Add sg1 6 sg2
-  => Add sg2 wCommN sg3
-  => Add sg3 15 sg4
-  => Add sg4 6 nonSgBases
+  => Add sg1 indexSigmaN sg2
+  => Add sg2 wCoeffN sg3
+  => Add sg3 wCoeffN sg4
+  => Add sg4 indexSigmaN nonSgBases
   => Add padMax mpvMax PaddedLength
   => Compare mpvMax 3 LT
   => Add mpvMax nonSgBases totalBasesMax
@@ -3569,7 +3598,7 @@ runMultiProverBody
     }
 
 compileMulti
-  :: forall @rs @outputVal @prevInputVal @slots @numChunks
+  :: forall @rs @outputVal @prevInputVal @slots @numChunks numChunksPred
        inputVal mpvMax
        branches
        rulesCarrier
@@ -3579,7 +3608,7 @@ compileMulti
        stepProveFnsCarrier
        proversCarrier
        branchesPred totalBases totalBasesPred
-       tCommLen tCommLenPred wCommN chunkBases nonSgBases sg1 sg2 sg3 sg4
+       tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4
    . CompilableRulesSpecShape rs inputVal outputVal prevInputVal
        branches
        branches
@@ -3598,16 +3627,18 @@ compileMulti
   => Reflectable tCommLen Int
   => Reflectable nonSgBases Int
   => Compare 0 numChunks LT
+  => Add 1 numChunksPred numChunks
   => Mul 7 numChunks tCommLen
   => Add 1 tCommLenPred tCommLen
-  => Mul 15 numChunks wCommN
-  => Mul 16 numChunks chunkBases
-  => Add 29 chunkBases nonSgBases
+  => Mul 15 numChunks wCoeffN
+  => Mul 6 numChunks indexSigmaN
+  => Mul 43 numChunks chunkBases
+  => Add 2 chunkBases nonSgBases
   => Add 2 numChunks sg1
-  => Add sg1 6 sg2
-  => Add sg2 wCommN sg3
-  => Add sg3 15 sg4
-  => Add sg4 6 nonSgBases
+  => Add sg1 indexSigmaN sg2
+  => Add sg2 wCoeffN sg3
+  => Add sg3 wCoeffN sg4
+  => Add sg4 indexSigmaN nonSgBases
   => Add 1 branchesPred branches
   => Compare 0 branches LT
   => Compare mpvMax 3 LT

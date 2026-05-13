@@ -146,11 +146,11 @@ stepVerifyN2Circuit { lagrangeAt, blindingH } inputs = do
       { publicInput
       , sgOld
       , sgOldMask: Vector.replicate ((const_ one))
-      , sigmaCommLast: constDummyPt
+      , sigmaCommLast: Vector.singleton constDummyPt
       , columnComms:
-          { index: (Vector.replicate constDummyPt) :: Vector 6 _
-          , coeff: (Vector.replicate constDummyPt) :: Vector 15 _
-          , sigma: (Vector.replicate constDummyPt) :: Vector 6 _
+          { index: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 6 _
+          , coeff: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 15 _
+          , sigma: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 6 _
           }
       , deferredValues
       , wComm: map Vector.singleton wComm

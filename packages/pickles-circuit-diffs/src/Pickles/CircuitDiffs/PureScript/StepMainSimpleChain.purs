@@ -96,6 +96,8 @@ compileStepMainSimpleChain params = do
           @(Tuple1 (StatementIO (F StepField) Unit))
           @1
           @1
+          @Unit
+          @1
           simpleChainRule
           { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
           , blindingH: params.blindingH

@@ -411,7 +411,8 @@ type WrapProveContext (branches :: Int) (mpv :: Int) (numChunks :: Int) (slots :
 
 -- | Ambient data `wrapCompile` needs — a subset of `WrapProveContext`
 -- | without the solver-only fields (`publicInput`, `advice`).
-type WrapCompileContext (branches :: Int) =
+type WrapCompileContext :: Int -> Int -> Type
+type WrapCompileContext branches numChunks =
   { wrapMainConfig :: WrapMainConfig branches numChunks
   , crs :: CRS PallasG
   }
@@ -457,7 +458,7 @@ bumpWrapCsCounter = do
 -- | are never inspected during compile, so no caller placeholder is
 -- | needed; anything that escapes the throw instance is a bug.
 wrapCompile
-  :: forall @branches @slots @numChunks mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCommN chunkBases nonSgBases sg1 sg2 sg3 sg4
+  :: forall @branches @slots @numChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4
    . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Reflectable mpv Int
@@ -465,16 +466,18 @@ wrapCompile
   => Reflectable tCommLen Int
   => Reflectable nonSgBases Int
   => Compare 0 numChunks LT
+  => Add 1 numChunksPred numChunks
   => Mul 7 numChunks tCommLen
   => Add 1 tCommLenPred tCommLen
-  => Mul 15 numChunks wCommN
-  => Mul 16 numChunks chunkBases
-  => Add 29 chunkBases nonSgBases
+  => Mul 15 numChunks wCoeffN
+  => Mul 6 numChunks indexSigmaN
+  => Mul 43 numChunks chunkBases
+  => Add 2 chunkBases nonSgBases
   => Add 2 numChunks sg1
-  => Add sg1 6 sg2
-  => Add sg2 wCommN sg3
-  => Add sg3 15 sg4
-  => Add sg4 6 nonSgBases
+  => Add sg1 indexSigmaN sg2
+  => Add sg2 wCoeffN sg3
+  => Add sg3 wCoeffN sg4
+  => Add sg4 indexSigmaN nonSgBases
   => Add 1 branchesPred branches
   => Compare mpv 3 LT
   => Add mpv nonSgBases totalBases
@@ -485,7 +488,7 @@ wrapCompile
        (slots (Vector WrapIPARounds (FVar WrapField)))
   => CheckedType WrapField (KimchiConstraint WrapField)
        (slots (Vector WrapIPARounds (FVar WrapField)))
-  => WrapCompileContext branches
+  => WrapCompileContext branches numChunks
   -> Effect WrapCompileResult
 wrapCompile ctx = do
   builtState <-
@@ -550,7 +553,7 @@ wrapCompile ctx = do
 -- | `SolverT` uses. Constraint-system-unsatisfied failures are
 -- | reported as `FailedAssertion`.
 wrapSolveAndProve
-  :: forall @branches @slots @numChunks mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCommN chunkBases nonSgBases sg1 sg2 sg3 sg4 m
+  :: forall @branches @slots @numChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 m
    . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Reflectable mpv Int
@@ -558,16 +561,18 @@ wrapSolveAndProve
   => Reflectable tCommLen Int
   => Reflectable nonSgBases Int
   => Compare 0 numChunks LT
+  => Add 1 numChunksPred numChunks
   => Mul 7 numChunks tCommLen
   => Add 1 tCommLenPred tCommLen
-  => Mul 15 numChunks wCommN
-  => Mul 16 numChunks chunkBases
-  => Add 29 chunkBases nonSgBases
+  => Mul 15 numChunks wCoeffN
+  => Mul 6 numChunks indexSigmaN
+  => Mul 43 numChunks chunkBases
+  => Add 2 chunkBases nonSgBases
   => Add 2 numChunks sg1
-  => Add sg1 6 sg2
-  => Add sg2 wCommN sg3
-  => Add sg3 15 sg4
-  => Add sg4 6 nonSgBases
+  => Add sg1 indexSigmaN sg2
+  => Add sg2 wCoeffN sg3
+  => Add sg3 wCoeffN sg4
+  => Add sg4 indexSigmaN nonSgBases
   => Add 1 branchesPred branches
   => Compare mpv 3 LT
   => Add mpv nonSgBases totalBases
@@ -659,11 +664,13 @@ wrapDumpRowLabels constraints =
       (Array.intercalate "\n" out <> "\n")
 
 extractStepVKComms
-  :: VerifierIndex VestaG StepField
-  -> StepVK WrapField
+  :: forall @numChunks
+   . Reflectable numChunks Int
+  => VerifierIndex VestaG StepField
+  -> StepVK numChunks WrapField
 extractStepVKComms vk =
   let
-    comms = pallasVerifierIndexCommitments vk
+    comms = pallasVerifierIndexCommitments @numChunks vk
   in
     { sigmaComm: comms.sigma
     , coefficientsComm: comms.coeff
@@ -679,20 +686,23 @@ extractStepVKComms vk =
 -- | by `const_`-ing each coordinate. Used by `buildWrapMainConfigN1`
 -- | because `wrapMain`'s config carries step-key commitments as circuit
 -- | variables so the in-circuit `chooseKey` can scale them by a boolean.
-stepVkForCircuit :: StepVK WrapField -> StepVK (FVar WrapField)
+stepVkForCircuit
+  :: forall numChunks
+   . StepVK numChunks WrapField
+  -> StepVK numChunks (FVar WrapField)
 stepVkForCircuit vk =
   let
     cp :: AffinePoint WrapField -> AffinePoint (FVar WrapField)
     cp pt = { x: const_ pt.x, y: const_ pt.y }
   in
-    { sigmaComm: map cp vk.sigmaComm
-    , coefficientsComm: map cp vk.coefficientsComm
-    , genericComm: cp vk.genericComm
-    , psmComm: cp vk.psmComm
-    , completeAddComm: cp vk.completeAddComm
-    , mulComm: cp vk.mulComm
-    , emulComm: cp vk.emulComm
-    , endomulScalarComm: cp vk.endomulScalarComm
+    { sigmaComm: map (map cp) vk.sigmaComm
+    , coefficientsComm: map (map cp) vk.coefficientsComm
+    , genericComm: map cp vk.genericComm
+    , psmComm: map cp vk.psmComm
+    , completeAddComm: map cp vk.completeAddComm
+    , mulComm: map cp vk.mulComm
+    , emulComm: map cp vk.emulComm
+    , endomulScalarComm: map cp vk.endomulScalarComm
     }
 
 -- | Multi-branch wrap main config. Takes per-branch data
@@ -720,8 +730,9 @@ stepVkForCircuit vk =
 -- |     `perBranchLagrangeAt` from this; `lagrangeAt` is unused but
 -- |     populated from the head branch's domain to satisfy the type.
 buildWrapMainConfigMulti
-  :: forall @branches branchesPred
+  :: forall @branches @numChunks branchesPred
    . Reflectable branches Int
+  => Reflectable numChunks Int
   => Add 1 branchesPred branches
   => CRS VestaG
   -> { perBranch ::

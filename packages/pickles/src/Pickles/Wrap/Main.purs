@@ -360,7 +360,7 @@ splitPerProofUnfinalized (PerProofUnfinalized r) = do
 -------------------------------------------------------------------------------
 
 wrapMain
-  :: forall @branches @slots @numChunks mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCommN chunkBases nonSgBases sg1 sg2 sg3 sg4 t m
+  :: forall @branches @slots @numChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 t m
    . CircuitM WrapField (KimchiConstraint WrapField) t m
   -- `slots` carries the per-slot widths; `mpv` is derived via the
   -- `slots -> mpv` fundep on `PadSlots`. Concrete instantiations
@@ -373,17 +373,21 @@ wrapMain
   => Reflectable tCommLen Int
   => Reflectable nonSgBases Int
   => Compare 0 numChunks LT
-  -- Chunked base layout chain (forwarded to wrapVerify).
+  => Add 1 numChunksPred numChunks
+  -- Chunked base layout chain (forwarded to wrapVerify). Shared
+  -- `wCoeffN` / `indexSigmaN` mirror the IVP's collapsing because
+  -- Mul's fundep would unify same-RHS counts otherwise.
   => Mul 7 numChunks tCommLen
   => Add 1 tCommLenPred tCommLen
-  => Mul 15 numChunks wCommN
-  => Mul 16 numChunks chunkBases
-  => Add 29 chunkBases nonSgBases
+  => Mul 15 numChunks wCoeffN
+  => Mul 6 numChunks indexSigmaN
+  => Mul 43 numChunks chunkBases
+  => Add 2 chunkBases nonSgBases
   => Add 2 numChunks sg1
-  => Add sg1 6 sg2
-  => Add sg2 wCommN sg3
-  => Add sg3 15 sg4
-  => Add sg4 6 nonSgBases
+  => Add sg1 indexSigmaN sg2
+  => Add sg2 wCoeffN sg3
+  => Add sg3 wCoeffN sg4
+  => Add sg4 indexSigmaN nonSgBases
   -- `exists` on the result of `getOldBulletproofChallenges` needs
   -- both `CircuitType` and `CheckedType` instances for the `slots`
   -- shape. They exist for concrete `Slots1` / `Slots2` via the
@@ -864,7 +868,7 @@ wrapMain config (StatementPacked stmtR) = do
 -- | doesn't compose across rules) and call `wrapMain @branches @slots`
 -- | directly.
 wrapMainForPrevs
-  :: forall @branches @prevsSpec @numChunks slots mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCommN chunkBases nonSgBases sg1 sg2 sg3 sg4 t m
+  :: forall @branches @prevsSpec @numChunks numChunksPred slots mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 t m
    . CircuitM WrapField (KimchiConstraint WrapField) t m
   => SlotsFromSpec prevsSpec slots
   => PadSlots slots mpv
@@ -873,16 +877,18 @@ wrapMainForPrevs
   => Reflectable tCommLen Int
   => Reflectable nonSgBases Int
   => Compare 0 numChunks LT
+  => Add 1 numChunksPred numChunks
   => Mul 7 numChunks tCommLen
   => Add 1 tCommLenPred tCommLen
-  => Mul 15 numChunks wCommN
-  => Mul 16 numChunks chunkBases
-  => Add 29 chunkBases nonSgBases
+  => Mul 15 numChunks wCoeffN
+  => Mul 6 numChunks indexSigmaN
+  => Mul 43 numChunks chunkBases
+  => Add 2 chunkBases nonSgBases
   => Add 2 numChunks sg1
-  => Add sg1 6 sg2
-  => Add sg2 wCommN sg3
-  => Add sg3 15 sg4
-  => Add sg4 6 nonSgBases
+  => Add sg1 indexSigmaN sg2
+  => Add sg2 wCoeffN sg3
+  => Add sg3 wCoeffN sg4
+  => Add sg4 indexSigmaN nonSgBases
   => CircuitType WrapField
        (slots (Vector WrapIPARounds (F WrapField)))
        (slots (Vector WrapIPARounds (FVar WrapField)))

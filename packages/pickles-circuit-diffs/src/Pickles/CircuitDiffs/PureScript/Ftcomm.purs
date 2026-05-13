@@ -53,7 +53,7 @@ ftcommWrapCircuit
 ftcommWrapCircuit input =
   let
     g = unsafePartial $ fromJust $ toAffine (generator :: VestaG)
-    sigmaLast = { x: const_ g.x, y: const_ g.y }
+    sigmaLast = Vector.singleton { x: const_ g.x, y: const_ g.y }
   in
     FtComm.ftComm WrapOtherField.ipaScalarOps
       { sigmaLast

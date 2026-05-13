@@ -39,9 +39,9 @@ compileWrapMainChunks2 { lagrangeAt, blindingH } stepParams = do
   vestaSrs <- createCRS @StepField
   pallasSrs <- createCRS @WrapField
   let
-    realStepVK = deriveStepVKFromCompiled @0 vestaSrs stepArt.stepCs
+    realStepVK = deriveStepVKFromCompiled @2 @0 vestaSrs stepArt.stepCs
 
-    config :: WrapMainConfig 1
+    config :: WrapMainConfig 1 2
     config =
       { stepWidths: 0 :< Vector.nil
       -- WrapMainConfig.domainLog2s is the STEP proof's domain log2,
@@ -66,5 +66,5 @@ compileWrapMainChunks2 { lagrangeAt, blindingH } stepParams = do
     { stepCs: stepArt.stepCs
     , stepDomainLog2: stepArt.stepDomainLog2
     , wrapCs
-    , wrapVk: deriveWrapVKFromCompiled @2 pallasSrs wrapCs
+    , wrapVk: deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
     }

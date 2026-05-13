@@ -236,8 +236,9 @@ type BuildStepAdviceInput inputVal valCarrier vkCarrier =
 -- | `Vector.replicate` at `n=0` produces nil, so slots with `n_i=0`
 -- | have empty `prevChallenges` / `prevSgs` automatically.
 buildStepAdvice
-  :: forall @prevsSpec inputVal len carrier valCarrier vkCarrier
+  :: forall @prevsSpec @wrapVkChunks inputVal len carrier valCarrier vkCarrier vkSourcesCarrier
    . Reflectable len Int
+  => Reflectable wrapVkChunks Int
   => StepSlotsCarrier
        prevsSpec
        StepIPARounds
@@ -437,10 +438,12 @@ buildStepAdvice input =
       , messagesForNextWrapProof: Vector.replicate (F zero)
       , messagesForNextWrapProofDummyHash: F zero
       , wrapVerifierIndex:
+          -- wrapVkChunks is universally quantified at buildStepAdvice;
+          -- each commitment is a `Vector wrapVkChunks` of placeholders.
           VerificationKey
-            { sigma: Vector.generate (const g0w)
-            , coeff: Vector.generate (const g0w)
-            , index: Vector.generate (const g0w)
+            { sigma: Vector.generate (\_ -> Vector.replicate g0w)
+            , coeff: Vector.generate (\_ -> Vector.replicate g0w)
+            , index: Vector.generate (\_ -> Vector.replicate g0w)
             }
       , kimchiPrevChallenges:
           Vector.replicate
@@ -666,7 +669,7 @@ dummyWrapTockPublicInput input =
     -- OCaml `proof.ml:168-171` sets
     --   messages_for_next_step_proof.challenge_polynomial_commitments
     --     = Vector.init most_recent_width ~f:(fun _ -> Lazy.force Dummy.Ipa.Wrap.sg)
-    wrapVkStep = extractWrapVKForStepHash input.wrapVK
+    wrapVkStep = extractWrapVKForStepHash @1 input.wrapVK
 
     stepExpanded = dummyIpaChallenges.stepExpanded
 
@@ -1016,7 +1019,7 @@ buildSlotAdvice input = do
     msgWrapHashStep = F (crossFieldDigest msgWrapHash)
 
   let
-    wrapVkStep = extractWrapVKForStepHash input.wrapVK
+    wrapVkStep = extractWrapVKForStepHash @1 input.wrapVK
 
     -- Per-slot `prev_challenge_polynomial_commitments :: Vector n` —
     -- derived from the PaddedLength-sized input by dropping
@@ -1166,7 +1169,7 @@ buildSlotAdvice input = do
       , stepOmegaForLagrange: \_ -> one
       , endo: stepEndoScalarF
       , linearizationPoly: Linearization.pallas
-      , dlogIndex: extractWrapVKForStepHash input.wrapVK
+      , dlogIndex: extractWrapVKForStepHash @1 input.wrapVK
       , appStateFields: valueToFields @StepField @prevHeadStmt input.prevStatement
       , stepPrevSgs: prevCpcs
       , wrapChallengePolynomialCommitment: input.stepOpeningSg
@@ -1734,9 +1737,9 @@ derive newtype instance
 -- | caller can read whatever the rule body wrote (e.g. the user's
 -- | `publicOutput` FVars).
 runStepProverT
-  :: forall prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m a
+  :: forall prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m a
    . Monad m
-  => StepAdvice prevsSpec ds dw inputVal len carrier valCarrier vkCarrier
+  => StepAdvice prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier
   -> StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m a
   -> m (Tuple a StepProverCapture)
 runStepProverT advice (StepProverT m) =
@@ -1847,7 +1850,8 @@ instance
 -- | haven't introduced yet.
 stepCompile
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier blueprints
+       @mpvMax @mpvPad @nd @nc @wrapVkChunks
+       ndPred len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
   => BuildSlotVkSources (SLVK.VerificationKey nc (F StepField) Boolean) prevsSpec len blueprints sideloadedVkCarrier vkSourcesCarrier
@@ -1857,6 +1861,8 @@ stepCompile
   => Reflectable mpvMax Int
   => Reflectable mpvPad Int
   => Reflectable nd Int
+  => Reflectable nc Int
+  => Reflectable wrapVkChunks Int
   => Reflectable outputSize Int
   => Add 1 ndPred nd
   => Compare 0 nd LT
@@ -1889,7 +1895,7 @@ stepCompile
        (BoolVar StepField)
        len
        carrierVar
-       vkSourcesCarrierVar
+       vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
   => StepProveContext len nd blueprints
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
@@ -1915,6 +1921,7 @@ stepCompile ctx rule = do
             @mpvMax
             @nd
             @(SLVK.VerificationKey nc (F StepField) Boolean)
+            @wrapVkChunks
             rule
             ctx.srsData
             ctx.dummySg
@@ -1994,9 +2001,9 @@ stepCompile ctx rule = do
 -- | `range_check` / `xor` / `lookup` / `runtime_tables` gates.
 preComputeStepDomainLog2
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier vkSourcesCarrierVar blueprints
+       @mpvMax @mpvPad @nd @nc
+       ndPred len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        pad unfsTotal digestPlusUnfs
-       nc
    . CircuitGateConstructor StepField VestaG
   -- Side-loaded VK carrier — see stepMain. preComputeStepDomainLog2
   -- runs at compile time; the caller synthesizes a placeholder
@@ -2008,6 +2015,7 @@ preComputeStepDomainLog2
   => Reflectable mpvMax Int
   => Reflectable mpvPad Int
   => Reflectable nd Int
+  => Reflectable nc Int
   => Reflectable outputSize Int
   => Add 1 ndPred nd
   => Compare 0 nd LT
@@ -2040,7 +2048,7 @@ preComputeStepDomainLog2
        (BoolVar StepField)
        len
        carrierVar
-       vkSourcesCarrierVar
+       vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
   => StepProveContext len nd blueprints
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
@@ -2062,6 +2070,7 @@ preComputeStepDomainLog2 ctx rule = do
             @mpvMax
             @nd
             @(SLVK.VerificationKey nc (F StepField) Boolean)
+            @1
             rule
             ctx.srsData
             ctx.dummySg
@@ -2094,16 +2103,19 @@ preComputeStepDomainLog2 ctx rule = do
 -- | unsatisfied failures are reported as `FailedAssertion`.
 stepSolveAndProve
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier blueprints
+       @mpvMax @mpvPad @nd @nc @wrapVkChunks
+       ndPred len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
-  => BuildSlotVkSources SideloadBundle.Bundle prevsSpec len blueprints sideloadedVkCarrier
+  => BuildSlotVkSources (SideloadBundle.Bundle nc) prevsSpec len blueprints sideloadedVkCarrier vkSourcesCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
   => Reflectable mpvPad Int
   => Reflectable nd Int
+  => Reflectable nc Int
+  => Reflectable wrapVkChunks Int
   => Reflectable outputSize Int
   => Add 1 ndPred nd
   => Compare 0 nd LT
@@ -2136,7 +2148,7 @@ stepSolveAndProve
        (BoolVar StepField)
        len
        carrierVar
-       vkSourcesCarrierVar
+       vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
   => SlotStatementsCarrier prevsSpec valCarrier
@@ -2159,7 +2171,7 @@ stepSolveAndProve ctx rule compileResult advice = do
 
     rawSolver
       :: SolverT StepField (KimchiConstraint StepField)
-           ( StepProverT prevsSpec StepIPARounds WrapIPARounds inputVal
+           ( StepProverT prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal
                len
                carrier
                valCarrier
@@ -2180,7 +2192,8 @@ stepSolveAndProve ctx rule compileResult advice = do
               @valCarrier
               @mpvMax
               @nd
-              @SideloadBundle.Bundle
+              @(SideloadBundle.Bundle nc)
+              @wrapVkChunks
               rule
               ctx.srsData
               ctx.dummySg

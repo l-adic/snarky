@@ -101,6 +101,8 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
           @(Tuple1 (StatementIO (F StepField) Unit))
           @1
           @2
+          @Unit
+          @1
           incrementRule
           { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
           , blindingH: params.blindingH

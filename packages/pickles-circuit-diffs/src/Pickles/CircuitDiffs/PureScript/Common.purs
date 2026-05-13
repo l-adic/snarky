@@ -135,11 +135,12 @@ wrapSrsLengthLog2 = 15
 -- | stepVkForCircuit`. Byte-identical to OCaml's
 -- | `Pickles.compile_promise` for the same step CS + SRS.
 deriveStepVKFromCompiled
-  :: forall @len
-   . Reflectable len Int
+  :: forall @numChunks @len
+   . Reflectable numChunks Int
+  => Reflectable len Int
   => CRS VestaG
   -> CompiledCircuit StepField
-  -> StepVK (FVar WrapField)
+  -> StepVK numChunks (FVar WrapField)
 deriveStepVKFromCompiled vestaSrs builtState =
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
@@ -157,7 +158,7 @@ deriveStepVKFromCompiled vestaSrs builtState =
       { endo, constraintSystem, crs: vestaSrs }
     verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
   in
-    stepVkForCircuit (extractStepVKComms verifierIndex)
+    stepVkForCircuit (extractStepVKComms @numChunks verifierIndex)
 
 -- | Wrap-side analog of `deriveStepVKFromCompiled`. The wrap CS
 -- | lives in `WrapField` over Pallas; commitments are Pallas points
@@ -167,11 +168,12 @@ deriveStepVKFromCompiled vestaSrs builtState =
 -- | `perSlotVkBlueprints` (e.g. `VkBlueprintConst realNrrWrapVK` for
 -- | Tree_proof_return's slot 0).
 deriveWrapVKFromCompiled
-  :: forall @len
-   . Reflectable len Int
+  :: forall @wrapVkChunks @len
+   . Reflectable wrapVkChunks Int
+  => Reflectable len Int
   => CRS PallasG
   -> CompiledCircuit WrapField
-  -> VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
+  -> VerificationKey wrapVkChunks (WeierstrassAffinePoint PallasG (F StepField))
 deriveWrapVKFromCompiled pallasSrs builtState =
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
@@ -189,7 +191,7 @@ deriveWrapVKFromCompiled pallasSrs builtState =
       { endo, constraintSystem, crs: pallasSrs }
     verifierIndex = createVerifierIndex @WrapField @PallasG proverIndex
   in
-    extractWrapVKCommsAdvice verifierIndex
+    extractWrapVKCommsAdvice @wrapVkChunks verifierIndex
 
 -------------------------------------------------------------------------------
 -- | Compile-result artifacts
@@ -215,7 +217,7 @@ type WrapArtifact =
   { stepCs :: CompiledCircuit StepField
   , stepDomainLog2 :: Int
   , wrapCs :: CompiledCircuit WrapField
-  , wrapVk :: VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
+  , wrapVk :: VerificationKey 1 (WeierstrassAffinePoint PallasG (F StepField))
   }
 
 -- | Construct a `StepArtifact` from a compiled step CS, deriving the

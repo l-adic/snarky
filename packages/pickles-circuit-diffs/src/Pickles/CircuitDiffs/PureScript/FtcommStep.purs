@@ -55,7 +55,7 @@ ftcommStepCircuit
 ftcommStepCircuit input =
   let
     g = unsafePartial $ fromJust $ toAffine (generator :: PallasG)
-    sigmaLast = { x: const_ g.x, y: const_ g.y }
+    sigmaLast = Vector.singleton { x: const_ g.x, y: const_ g.y }
   in
     FtComm.ftComm StepOtherField.ipaScalarOps
       { sigmaLast

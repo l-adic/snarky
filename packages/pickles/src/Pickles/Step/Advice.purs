@@ -113,7 +113,7 @@ class
   ) <=
   StepWitnessM (n :: Int) (ds :: Int) (dw :: Int) (wrapVkChunks :: Int) g f m inputVal
   | g -> f
-  , m -> inputVal where
+  , m -> inputVal wrapVkChunks where
   -- | Digests for the next Wrap proof (one per previous proof).
   -- | In OCaml this is loaded via exists from Req.Messages_for_next_wrap_proof
   -- | (step_main.ml:362-364), NOT computed in-circuit.

@@ -71,6 +71,8 @@ compileStepMainTwoPhaseChainMakeZero params =
           @Unit
           @1
           @1
+          @Unit
+          @1
           makeZeroRule
           { perSlotLagrangeAt: Vector.nil
           , blindingH: params.blindingH

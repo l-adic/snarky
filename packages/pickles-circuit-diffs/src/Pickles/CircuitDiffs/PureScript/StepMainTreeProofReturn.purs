@@ -171,6 +171,8 @@ compileStepMainTreeProofReturn params = do
           @(Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
           @2
           @1
+          @Unit
+          @1
           treeProofReturnRule
           { perSlotLagrangeAt: params.perSlotLagrangeAt
           , blindingH: params.blindingH

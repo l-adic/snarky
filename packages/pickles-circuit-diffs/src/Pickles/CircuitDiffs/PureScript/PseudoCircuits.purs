@@ -34,6 +34,7 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.Pseudo (choose, oneHotVector)
 import Pickles.Pseudo as Pseudo
 import Pickles.Sideload.VerificationKey (compileDummy)
+import Pickles.Sideload.VerificationKey as SLVK
 import Pickles.Step.FinalizeOtherProof as FOP
 import Pickles.VerificationKey (chooseKey)
 import Snarky.Backend.Compile (compilePure)
@@ -218,15 +219,16 @@ chooseKeyN1WrapCircuit inputs = do
     at = unsafeIdx inputs
     { x: F dummyX, y: F dummyY } = dummyVestaPt
     dummyPt = { x: const_ dummyX, y: const_ dummyY } :: AffinePoint (FVar WrapField)
+    dummyPtChunks = Vector.singleton dummyPt
     dummyVK =
-      { sigmaComm: Vector.replicate dummyPt :: Vector 7 _
-      , coefficientsComm: Vector.replicate dummyPt :: Vector 15 _
-      , genericComm: dummyPt
-      , psmComm: dummyPt
-      , completeAddComm: dummyPt
-      , mulComm: dummyPt
-      , emulComm: dummyPt
-      , endomulScalarComm: dummyPt
+      { sigmaComm: Vector.replicate dummyPtChunks :: Vector 7 _
+      , coefficientsComm: Vector.replicate dummyPtChunks :: Vector 15 _
+      , genericComm: dummyPtChunks
+      , psmComm: dummyPtChunks
+      , completeAddComm: dummyPtChunks
+      , mulComm: dummyPtChunks
+      , emulComm: dummyPtChunks
+      , endomulScalarComm: dummyPtChunks
       }
   whichBranch <- label "one_hot" $ (oneHotVector :: _ -> _ (Vector 1 _)) (at 0)
   _ <- chooseKey whichBranch (dummyVK :< Vector.nil)
@@ -347,7 +349,7 @@ sideloadedVkTypStepCircuit
   => Unit
   -> Snarky (KimchiConstraint StepField) t m Unit
 sideloadedVkTypStepCircuit _ = do
-  _ <- label "sideloaded_vk_typ" $ exists (pure compileDummy)
+  _ <- label "sideloaded_vk_typ" $ exists (pure (compileDummy :: SLVK.VerificationKey 1 (F StepField) Boolean))
   pure unit
 
 compileSideloadedVkTypStep :: CompiledCircuit StepField

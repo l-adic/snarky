@@ -155,7 +155,8 @@ class BuildSlotVkSources
   :: Type -> Type -> Int -> Type -> Type -> Type -> Constraint
 class
   BuildSlotVkSources cell prevsSpec len blueprints cellCarrier vkCarrier
-  | cell prevsSpec -> len blueprints cellCarrier vkCarrier
+  | cell prevsSpec -> len blueprints cellCarrier
+  , prevsSpec -> vkCarrier
   where
   buildSlotVkSources
     :: forall t m
@@ -737,10 +738,9 @@ unfFields unf =
 
 stepMain
   :: forall @prevsSpec pad outputSize @inputVal input @outputVal output @prevInputVal prevInput
-       @valCarrier @mpvMax mpvPad @nd ndPred @cell
+       @valCarrier @mpvMax mpvPad @nd ndPred @cell @wrapVkChunks
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        unfsTotal digestPlusUnfs
-       wrapVkChunks
        t m
    . CircuitM StepField (KimchiConstraint StepField) t m
   -- Spec-indexed walk that, for each `Slot SideLoaded` position,

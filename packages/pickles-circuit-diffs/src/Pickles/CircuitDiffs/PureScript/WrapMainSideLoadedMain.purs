@@ -45,9 +45,9 @@ compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
   vestaSrs <- createCRS @StepField
   pallasSrs <- createCRS @WrapField
   let
-    realStepVK = deriveStepVKFromCompiled @1 vestaSrs stepArt.stepCs
+    realStepVK = deriveStepVKFromCompiled @1 @1 vestaSrs stepArt.stepCs
 
-    config :: WrapMainConfig 1
+    config :: WrapMainConfig 1 1
     config =
       { stepWidths: 1 :< Vector.nil
       , domainLog2s: stepArt.stepDomainLog2 :< Vector.nil
@@ -74,5 +74,5 @@ compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
     { stepCs: stepArt.stepCs
     , stepDomainLog2: stepArt.stepDomainLog2
     , wrapCs
-    , wrapVk: deriveWrapVKFromCompiled @2 pallasSrs wrapCs
+    , wrapVk: deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
     }

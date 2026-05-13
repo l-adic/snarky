@@ -97,6 +97,8 @@ compileStepMainSimpleChainN2 params = do
           )
           @2
           @1
+          @Unit
+          @1
           simpleChainN2Rule
           { perSlotLagrangeAt: params.lagrangeAt :< params.lagrangeAt :< Vector.nil
           , blindingH: params.blindingH

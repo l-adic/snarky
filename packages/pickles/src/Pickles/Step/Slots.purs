@@ -26,6 +26,7 @@
 module Pickles.Step.Slots
   ( class StepSlotsCarrier
   , class SlotStatementsCarrier
+  , class SlotVkCarrier
   , traverseStepSlotsA
   , traverseStepSlotsAWithVk
   , replicateStepSlotsCarrier
@@ -45,6 +46,24 @@ import Pickles.Types (PaddedLength)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 
+-- | `vkCarrier` derivation from `spec` (independent of `f`/`sf`/`b`).
+-- | `SlotVkSource nc` doesn't carry the value/var field-element
+-- | parameter, so the vk-carrier shape is shared across the
+-- | compile-time (`F StepField`/`Boolean`) and in-circuit
+-- | (`FVar StepField`/`BoolVar StepField`) instances of
+-- | `StepSlotsCarrier`. Splitting it out into its own class with a
+-- | tighter fundep prevents PS from inferring two distinct vkCarrier
+-- | type variables across the two `StepSlotsCarrier` constraints in
+-- | callers that need both.
+class SlotVkCarrier :: Type -> Type -> Constraint
+class SlotVkCarrier spec vkCarrier | spec -> vkCarrier
+
+instance SlotVkCarrier Unit Unit
+
+instance
+  SlotVkCarrier rest restVk =>
+  SlotVkCarrier (Slot k n nc statement /\ rest) (SlotVkSource nc /\ restVk)
+
 -- | Spec → (`len`, `pwCarrier`, `vkCarrier`) mapping plus two
 -- | traversals: one over `pwCarrier` alone (legacy), one zipping
 -- | `pwCarrier` with `vkCarrier` (each slot's `pw` and `vkSrc`
@@ -58,12 +77,16 @@ import Prim.Ordering (LT)
 -- |
 -- | The kind `k` doesn't affect either carrier — both compiled and
 -- | side-loaded slots present the same `PerProofWitness` and
--- | `SlotVkSource` shapes.
+-- | `SlotVkSource` shapes. `vkCarrier` is determined by `spec` alone
+-- | (see `SlotVkCarrier` superclass) so it stays consistent across
+-- | the value-side and var-side `StepSlotsCarrier` dictionaries.
 class StepSlotsCarrier
   :: Type -> Int -> Int -> Type -> Type -> Type -> Int -> Type -> Type -> Constraint
 class
+  SlotVkCarrier spec vkCarrier <=
   StepSlotsCarrier spec ds dw f sf b len pwCarrier vkCarrier
-  | spec ds dw f sf b -> len pwCarrier vkCarrier
+  | spec ds dw f sf b -> len pwCarrier
+  , spec -> vkCarrier
   where
   -- | Walk the per-proof-witness carrier in slot order. Legacy
   -- | traversal that ignores the VK carrier — kept for paths that

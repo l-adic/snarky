@@ -88,7 +88,7 @@ compileStepMainChunks2 params =
       -- entries). Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
       -- inputVal/outputVal both Unit — chunks2 is `Input Typ.unit`
       -- (degenerate Input mode) with `~auxiliary_typ:Typ.unit`.
-      ( \_ -> stepMain @Unit @Unit @Unit @Unit @Unit @0 @1
+      ( \_ -> stepMain @Unit @Unit @Unit @Unit @Unit @0 @1 @Unit @1
           chunks2Rule
           { perSlotLagrangeAt: Vector.nil
           , blindingH: params.blindingH
