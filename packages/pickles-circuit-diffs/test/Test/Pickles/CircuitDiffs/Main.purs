@@ -470,17 +470,19 @@ runChunks2AppWitnessProve = do
       (Proxy @(KimchiConstraint Fp)) chunks2AppCircuit
       (initialState :: CircuitBuilderState (KimchiGate Fp) (AuxState Fp))
     kimchiRows = Array.concatMap (toKimchiRows <<< _.constraint) builtState.constraints
+    -- max_poly_size = 2^16 (mirrors OCaml's default Tick.set_urs_info []).
+    -- With our ~65538-row circuit the domain rounds up to 2^17,
+    -- triggering num_chunks = 2.
+    maxPolySize = 1 `Bits.shl` 16
+    crs = vestaCrsCreate maxPolySize
     csResult = makeConstraintSystemWithPrevChallenges @Fp
       { constraints: kimchiRows
       , publicInputs: builtState.publicInputs
       , unionFind: (un AuxState builtState.aux).wireState.unionFind
       , prevChallengesCount: 0
+      , maxPolySize
       }
     endo = let EndoBase e = (endoBase :: EndoBase Fp) in e
-    -- max_poly_size = 2^16 (mirrors OCaml's default Tick.set_urs_info []).
-    -- With our ~65538-row circuit the domain rounds up to 2^17,
-    -- triggering num_chunks = 2.
-    crs = vestaCrsCreate (1 `Bits.shl` 16)
     proverIndex = createProverIndex @Fp @VestaG
       { endo, constraintSystem: csResult.constraintSystem, crs }
     rawSolver :: Solver Fp (KimchiConstraint Fp) Unit Unit

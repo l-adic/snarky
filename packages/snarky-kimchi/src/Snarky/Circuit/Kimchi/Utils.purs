@@ -21,7 +21,7 @@ import Effect.Exception (error)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (Solver, SolverT, runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
-import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, createProverIndex, verifyProverIndex)
+import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, createProverIndex, crsSize, verifyProverIndex)
 import Snarky.Constraint.Kimchi (KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
 import Snarky.Curves.Class (class HasEndo, EndoBase(..), endoBase)
@@ -78,6 +78,7 @@ verifyCircuitM { gen, solver, s } = do
           { constraints: concatMap (toKimchiRows <<< _.constraint) s.constraints
           , publicInputs: s.publicInputs
           , unionFind: (un AuxState s.aux).wireState.unionFind
+          , maxPolySize: crsSize crs
           }
         { witness, publicInputs } = makeWitness
           { assignments

@@ -39,7 +39,7 @@ import Pickles.Prove.Wrap (extractStepVKComms, stepVkForCircuit)
 import Pickles.VerificationKey (StepVK, VerificationKey)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges)
-import Snarky.Backend.Kimchi.Class (createProverIndex, createVerifierIndex)
+import Snarky.Backend.Kimchi.Class (createProverIndex, createVerifierIndex, crsSize)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (F(..), FVar, SizedF)
 import Snarky.Constraint.Kimchi (KimchiGate)
@@ -148,6 +148,7 @@ deriveStepVKFromCompiled vestaSrs builtState =
       , publicInputs: builtState.publicInputs
       , unionFind: (un AuxState builtState.aux).wireState.unionFind
       , prevChallengesCount: reflectType (Proxy @len)
+      , maxPolySize: crsSize vestaSrs
       }
 
     endo :: StepField
@@ -179,6 +180,7 @@ deriveWrapVKFromCompiled pallasSrs builtState =
       , publicInputs: builtState.publicInputs
       , unionFind: (un AuxState builtState.aux).wireState.unionFind
       , prevChallengesCount: reflectType (Proxy @len)
+      , maxPolySize: crsSize pallasSrs
       }
 
     endo :: WrapField

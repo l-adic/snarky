@@ -95,9 +95,11 @@ mod generic {
     pub fn constraint_system_create<F: PrimeField>(
         gates: Vec<CircuitGate<F>>,
         public_inputs_count: usize,
+        max_poly_size: usize,
     ) -> Result<ConstraintSystem<F>> {
         ConstraintSystem::create(gates)
             .public(public_inputs_count)
+            .max_poly_size(Some(max_poly_size))
             .build()
             .map_err(|e| {
                 Error::new(
@@ -115,10 +117,12 @@ mod generic {
         gates: Vec<CircuitGate<F>>,
         public_inputs_count: usize,
         prev_challenges_count: usize,
+        max_poly_size: usize,
     ) -> Result<ConstraintSystem<F>> {
         ConstraintSystem::create(gates)
             .public(public_inputs_count)
             .prev_challenges(prev_challenges_count)
+            .max_poly_size(Some(max_poly_size))
             .build()
             .map_err(|e| {
                 Error::new(
@@ -1194,13 +1198,18 @@ pub fn vesta_circuit_gate_get_coeff(
 pub fn pallas_constraint_system_create(
     gates: Vec<&PallasCircuitGateExternal>,
     public_inputs_count: u32,
+    max_poly_size: u32,
 ) -> Result<PallasConstraintSystemExternal> {
     let internal_gates: Vec<CircuitGate<PallasScalarField>> = gates
         .into_iter()
         .map(|gate_ext| (**gate_ext).clone())
         .collect();
 
-    let cs = generic::constraint_system_create(internal_gates, public_inputs_count as usize)?;
+    let cs = generic::constraint_system_create(
+        internal_gates,
+        public_inputs_count as usize,
+        max_poly_size as usize,
+    )?;
     Ok(External::new(cs))
 }
 
@@ -1208,13 +1217,18 @@ pub fn pallas_constraint_system_create(
 pub fn vesta_constraint_system_create(
     gates: Vec<&VestaCircuitGateExternal>,
     public_inputs_count: u32,
+    max_poly_size: u32,
 ) -> Result<VestaConstraintSystemExternal> {
     let internal_gates: Vec<CircuitGate<VestaScalarField>> = gates
         .into_iter()
         .map(|gate_ext| (**gate_ext).clone())
         .collect();
 
-    let cs = generic::constraint_system_create(internal_gates, public_inputs_count as usize)?;
+    let cs = generic::constraint_system_create(
+        internal_gates,
+        public_inputs_count as usize,
+        max_poly_size as usize,
+    )?;
     Ok(External::new(cs))
 }
 
@@ -1223,6 +1237,7 @@ pub fn pallas_constraint_system_create_with_prev_challenges(
     gates: Vec<&PallasCircuitGateExternal>,
     public_inputs_count: u32,
     prev_challenges_count: u32,
+    max_poly_size: u32,
 ) -> Result<PallasConstraintSystemExternal> {
     let internal_gates: Vec<CircuitGate<PallasScalarField>> = gates
         .into_iter()
@@ -1233,6 +1248,7 @@ pub fn pallas_constraint_system_create_with_prev_challenges(
         internal_gates,
         public_inputs_count as usize,
         prev_challenges_count as usize,
+        max_poly_size as usize,
     )?;
     Ok(External::new(cs))
 }
@@ -1242,6 +1258,7 @@ pub fn vesta_constraint_system_create_with_prev_challenges(
     gates: Vec<&VestaCircuitGateExternal>,
     public_inputs_count: u32,
     prev_challenges_count: u32,
+    max_poly_size: u32,
 ) -> Result<VestaConstraintSystemExternal> {
     let internal_gates: Vec<CircuitGate<VestaScalarField>> = gates
         .into_iter()
@@ -1252,6 +1269,7 @@ pub fn vesta_constraint_system_create_with_prev_challenges(
         internal_gates,
         public_inputs_count as usize,
         prev_challenges_count as usize,
+        max_poly_size as usize,
     )?;
     Ok(External::new(cs))
 }

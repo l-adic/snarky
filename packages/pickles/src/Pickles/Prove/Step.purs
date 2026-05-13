@@ -117,7 +117,7 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
-import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, verifyProverIndex)
+import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, verifyProverIndex)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaConstraintSystemToJson)
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, ProverIndex, VerifierIndex)
 import Snarky.Backend.Prover (emptyProverState)
@@ -1911,6 +1911,7 @@ stepCompile ctx rule = do
       , publicInputs: builtState.publicInputs
       , unionFind: (un AuxState builtState.aux).wireState.unionFind
       , prevChallengesCount: reflectType (Proxy @len)
+      , maxPolySize: crsSize ctx.crs
       }
 
     endo =
