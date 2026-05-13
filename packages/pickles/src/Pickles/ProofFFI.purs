@@ -41,6 +41,8 @@ module Pickles.ProofFFI
   , vestaVerifierIndexDigest
   , pallasSrsLagrangeCommitmentAt
   , vestaSrsLagrangeCommitmentAt
+  , pallasSrsLagrangeCommitmentChunksAt
+  , vestaSrsLagrangeCommitmentChunksAt
   , pallasSrsBlindingGenerator
   , vestaSrsBlindingGenerator
   , pallasProofCommitments
@@ -409,11 +411,26 @@ foreign import pallasProverIndexDomainLog2 :: ProverIndex Vesta.G Pallas.BaseFie
 -- | (used in `step_verifier.ml:360-368`). Kimchi caches the full basis on
 -- | first access, so per-index calls are O(1) after warmup. Lets callers
 -- | avoid pre-sizing a `numPublic` buffer.
+-- | Returns the FIRST chunk of the `i`-th lagrange commitment. For nc=1
+-- | domains (everything except chunks2) this is the only chunk. For chunked
+-- | domains use `pallasSrsLagrangeCommitmentChunksAt` instead.
 foreign import pallasSrsLagrangeCommitmentAt
   :: CRS Vesta.G -> Int -> Int -> AffinePoint Pallas.ScalarField
 
 foreign import vestaSrsLagrangeCommitmentAt
   :: CRS Pallas.G -> Int -> Int -> AffinePoint Vesta.ScalarField
+
+-- | Returns ALL chunks of the `i`-th lagrange commitment as an `Array` of
+-- | points. For domains ≤ SRS max_poly_size the array has length 1; for
+-- | chunked domains (e.g. step domain > wrap SRS depth at chunks2) it has
+-- | length `ceil(domain_size / max_poly_size)`. Callers reshape into a
+-- | `Vector numChunks (AffinePoint)` at the use site. Mirrors OCaml's
+-- | `lagrange_commitment srs d i .unshifted` array (`wrap_verifier.ml:336`).
+foreign import pallasSrsLagrangeCommitmentChunksAt
+  :: CRS Vesta.G -> Int -> Int -> Array (AffinePoint Pallas.ScalarField)
+
+foreign import vestaSrsLagrangeCommitmentChunksAt
+  :: CRS Pallas.G -> Int -> Int -> Array (AffinePoint Vesta.ScalarField)
 
 -- Blinding generator H directly from SRS
 foreign import pallasSrsBlindingGenerator :: CRS Vesta.G -> AffinePoint Pallas.ScalarField

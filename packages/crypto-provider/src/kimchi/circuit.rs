@@ -2321,11 +2321,18 @@ pub fn vesta_proof_opening_z2(proof: &PallasProofExternal) -> PallasFieldExterna
 // it needs as it visits the public-input structure, matching OCaml's
 // `lagrange_commitment srs i` closure.
 
-fn srs_lagrange_commitment_at_impl<G>(
+// Returns ALL chunks of the i-th lagrange commitment as a flat Vec of
+// `2 * num_chunks` coordinates (x0, y0, x1, y1, ...). For domains larger
+// than the SRS max_poly_size, the commitment splits into multiple chunks;
+// PS callers reshape the flat result into a `Vector num_chunks (AffinePoint
+// f)`. Mirrors OCaml's `lagrange_commitment srs d i .unshifted` array
+// which the wrap-verifier iterates over chunkwise in the public-input
+// commit (`wrap_verifier.ml:336-385`, `:981-1027`).
+fn srs_lagrange_commitment_chunks_impl<G>(
     srs: &SRS<G>,
     domain_log2: u32,
     i: u32,
-) -> Result<(G::BaseField, G::BaseField)>
+) -> Result<Vec<G::BaseField>>
 where
     G: kimchi::curve::KimchiCurve + CommitmentCurve,
     G::BaseField: PrimeField,
@@ -2345,18 +2352,18 @@ where
             format!("lagrange commitment index {i} out of range (domain size {domain_size})"),
         )
     })?;
-    let pt = comm.chunks.first().ok_or_else(|| {
-        Error::new(
-            Status::GenericFailure,
-            format!("lagrange commitment {i} has no chunks"),
-        )
-    })?;
-    pt.to_coordinates().ok_or_else(|| {
-        Error::new(
-            Status::GenericFailure,
-            format!("lagrange commitment {i} is the point at infinity"),
-        )
-    })
+    let mut out = Vec::with_capacity(comm.chunks.len() * 2);
+    for (k, pt) in comm.chunks.iter().enumerate() {
+        let (x, y) = pt.to_coordinates().ok_or_else(|| {
+            Error::new(
+                Status::GenericFailure,
+                format!("lagrange commitment {i} chunk {k} is the point at infinity"),
+            )
+        })?;
+        out.push(x);
+        out.push(y);
+    }
+    Ok(out)
 }
 
 /// Fetch the `i`-th lagrange commitment from a Vesta SRS (for Pallas/Step
@@ -2370,8 +2377,8 @@ pub fn pallas_srs_lagrange_commitment_at(
     domain_log2: u32,
     i: u32,
 ) -> Result<Vec<PallasFieldExternal>> {
-    let (x, y) = srs_lagrange_commitment_at_impl::<VestaGroup>(&**srs, domain_log2, i)?;
-    Ok(vec![External::new(x), External::new(y)])
+    let coords = srs_lagrange_commitment_chunks_impl::<VestaGroup>(&**srs, domain_log2, i)?;
+    Ok(coords.into_iter().map(External::new).collect())
 }
 
 /// Fetch the `i`-th lagrange commitment from a Pallas SRS (for Vesta/Wrap
@@ -2385,8 +2392,8 @@ pub fn vesta_srs_lagrange_commitment_at(
     domain_log2: u32,
     i: u32,
 ) -> Result<Vec<VestaFieldExternal>> {
-    let (x, y) = srs_lagrange_commitment_at_impl::<PallasGroup>(&**srs, domain_log2, i)?;
-    Ok(vec![External::new(x), External::new(y)])
+    let coords = srs_lagrange_commitment_chunks_impl::<PallasGroup>(&**srs, domain_log2, i)?;
+    Ok(coords.into_iter().map(External::new).collect())
 }
 
 // ============================================================================

@@ -315,11 +315,13 @@ export const vestaProofOpeningZ2 = (proof) =>
 export const pallasProverIndexDomainLog2 = (proverIndex) =>
   crypto.pallasProverIndexDomainLog2(proverIndex);
 
-// Lagrange commitments from SRS
-// Returns array of {x, y} points
-// Lagrange commitments directly from SRS (no verifier index needed)
-// Index-based lagrange commitment lookup (OCaml-parity for
-// `Kimchi_bindings.Protocol.SRS.Fq/Fp.lagrange_commitment`).
+// Lagrange commitments from SRS.
+// The Rust FFI returns ALL chunks as a flat `[x0,y0,x1,y1,…]` array (length
+// 2*numChunks). The `*ChunksAt` variants reshape into an array-of-points so
+// PS can wrap as `Vector numChunks (AffinePoint)`. The non-`Chunks` variants
+// take only the first chunk for backward compatibility with nc=1 callers.
+//
+// Mirrors OCaml `lagrange_commitment srs d i .unshifted` (wrap_verifier.ml:336).
 export const pallasSrsLagrangeCommitmentAt = (srs) => (domainLog2) => (i) => {
   const flat = crypto.pallasSrsLagrangeCommitmentAt(srs, domainLog2, i);
   return { x: flat[0], y: flat[1] };
@@ -328,6 +330,22 @@ export const pallasSrsLagrangeCommitmentAt = (srs) => (domainLog2) => (i) => {
 export const vestaSrsLagrangeCommitmentAt = (srs) => (domainLog2) => (i) => {
   const flat = crypto.vestaSrsLagrangeCommitmentAt(srs, domainLog2, i);
   return { x: flat[0], y: flat[1] };
+};
+
+export const pallasSrsLagrangeCommitmentChunksAt = (srs) => (domainLog2) => (i) => {
+  const flat = crypto.pallasSrsLagrangeCommitmentAt(srs, domainLog2, i);
+  const nc = flat.length / 2;
+  const chunks = new Array(nc);
+  for (let k = 0; k < nc; k++) chunks[k] = { x: flat[2 * k], y: flat[2 * k + 1] };
+  return chunks;
+};
+
+export const vestaSrsLagrangeCommitmentChunksAt = (srs) => (domainLog2) => (i) => {
+  const flat = crypto.vestaSrsLagrangeCommitmentAt(srs, domainLog2, i);
+  const nc = flat.length / 2;
+  const chunks = new Array(nc);
+  for (let k = 0; k < nc; k++) chunks[k] = { x: flat[2 * k], y: flat[2 * k + 1] };
+  return chunks;
 };
 
 // Blinding generator H directly from SRS
