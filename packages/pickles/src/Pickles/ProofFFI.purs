@@ -419,14 +419,20 @@ foreign import vestaSrsLagrangeCommitmentAt
 foreign import pallasSrsBlindingGenerator :: CRS Vesta.G -> AffinePoint Pallas.ScalarField
 foreign import vestaSrsBlindingGenerator :: CRS Pallas.G -> AffinePoint Vesta.ScalarField
 
--- ft_comm: the chunked commitment of the linearized constraint polynomial (in Fq)
--- perm_scalar: the scalar multiplier for sigma_comm_last in the linearization (in Fp)
--- sigma_comm[PERMUTS-1] from verifier index (in Fq)
-foreign import pallasSigmaCommLast :: VerifierIndex Vesta.G Pallas.BaseField -> AffinePoint Pallas.ScalarField
+-- sigma_comm[PERMUTS-1] (the last sigma commitment), ALL chunks.
+-- The raw inner Array length = num_chunks (1 for nc=1 callers, 2+ when
+-- chunked). FFI doesn't know `numChunks` at the type level; consumers
+-- project to `Vector numChunks` via `verifierIndexCommitments`.
+foreign import pallasSigmaCommLast :: VerifierIndex Vesta.G Pallas.BaseField -> Array (AffinePoint Pallas.ScalarField)
 
--- VK column commitments: 27 points (6 index + 15 coefficient + 6 sigma) in to_batch order
-foreign import pallasVerifierIndexColumnComms :: VerifierIndex Vesta.G Pallas.BaseField -> Array (AffinePoint Pallas.ScalarField)
-foreign import vestaVerifierIndexColumnComms :: VerifierIndex Pallas.G Vesta.BaseField -> Array (AffinePoint Vesta.ScalarField)
+-- VK column commitments: 27 commitments (6 index + 15 coefficient + 6
+-- sigma) in to_batch order, each entry an Array of chunk points
+-- (length = num_chunks). The total flat byte count returned by the
+-- Rust FFI is `27 * num_chunks * 2` field elements, reshaped here.
+-- The outer 27 is checked via `Vector.toVector @6 / @15 / @6` at the
+-- typed wrapper.
+foreign import pallasVerifierIndexColumnComms :: VerifierIndex Vesta.G Pallas.BaseField -> Array (Array (AffinePoint Pallas.ScalarField))
+foreign import vestaVerifierIndexColumnComms :: VerifierIndex Pallas.G Vesta.BaseField -> Array (Array (AffinePoint Vesta.ScalarField))
 
 -- Challenge polynomial commitment: MSM of b_poly_coefficients against SRS
 -- Challenges are in the commitment curve's scalar field (= circuit field)
@@ -454,10 +460,10 @@ foreign import pallasProofCommitments :: Proof Vesta.G Pallas.BaseField -> Proof
 -- Proof commitments from a Pallas proof (Vesta/Fq circuits)
 foreign import vestaProofCommitments :: Proof Pallas.G Vesta.BaseField -> ProofCommitments Vesta.ScalarField
 
--- ft_comm for Vesta/Fq circuits
--- perm_scalar for Vesta/Fq circuits
--- sigma_comm[PERMUTS-1] from Vesta verifier index
-foreign import vestaSigmaCommLast :: VerifierIndex Pallas.G Vesta.BaseField -> AffinePoint Vesta.ScalarField
+-- sigma_comm[PERMUTS-1] (the last sigma commitment) for Vesta/Fq
+-- verifier indices, returned chunk-aware (inner Array length = num_chunks).
+-- See note on `pallasSigmaCommLast`.
+foreign import vestaSigmaCommLast :: VerifierIndex Pallas.G Vesta.BaseField -> Array (AffinePoint Vesta.ScalarField)
 
 -- Verifier index digest for Vesta/Fq circuits (returns Fp element)
 foreign import vestaVerifierIndexDigest :: VerifierIndex Pallas.G Vesta.BaseField -> Vesta.ScalarField
@@ -522,48 +528,77 @@ instance ProofFFI Vesta.BaseField Pallas.G where
 -- |   `coeff`  = 15 coefficient commitments
 -- |   `sigma`  = 7 sigma commitments (6 from `*VerifierIndexColumnComms`
 -- |              + 1 from `*SigmaCommLast`, snoc'd into a Vector 7)
-type VerifierIndexCommitments f =
-  { index :: Vector 6 (AffinePoint f)
-  , coeff :: Vector 15 (AffinePoint f)
-  , sigma :: Vector 7 (AffinePoint f)
+-- | Verifier-index commitments — 7 sigma + 15 coefficient + 6 index
+-- | commitments, each carrying `numChunks` curve points. Both outer
+-- | Vector sizes AND the inner chunk count are static.
+-- |
+-- | Wrap-side consumers (where OCaml currently hardcodes
+-- | `num_chunks_by_default = 1` per `step_main.ml:347`) call with
+-- | `@1`; step-side consumers (`wrap_main.ml:80`'s `~num_chunks`)
+-- | pass the user-supplied compile param. The specialization is
+-- | pushed all the way to the consumer so the wrapper stays a
+-- | one-line projection.
+type VerifierIndexCommitments :: Int -> Type -> Type
+type VerifierIndexCommitments numChunks f =
+  { index :: Vector 6 (Vector numChunks (AffinePoint f))
+  , coeff :: Vector 15 (Vector numChunks (AffinePoint f))
+  , sigma :: Vector 7 (Vector numChunks (AffinePoint f))
   }
 
 -- | Vector-typed split of `pallasVerifierIndexColumnComms` +
--- | `pallasSigmaCommLast` into `VerifierIndexCommitments`.
+-- | `pallasSigmaCommLast`. Used for step VK extraction (consumed by
+-- | the wrap circuit). Pass `@numChunks` matching kimchi's
+-- | `comm.chunks.len()`.
 pallasVerifierIndexCommitments
-  :: VerifierIndex Vesta.G Pallas.BaseField
-  -> VerifierIndexCommitments Pallas.ScalarField
+  :: forall @numChunks
+   . Reflectable numChunks Int
+  => VerifierIndex Vesta.G Pallas.BaseField
+  -> VerifierIndexCommitments numChunks Pallas.ScalarField
 pallasVerifierIndexCommitments vk =
-  splitVkCommitments (pallasVerifierIndexColumnComms vk) (pallasSigmaCommLast vk)
+  splitVkCommitments @numChunks (pallasVerifierIndexColumnComms vk) (pallasSigmaCommLast vk)
 
 -- | Vector-typed split of `vestaVerifierIndexColumnComms` +
--- | `vestaSigmaCommLast` into `VerifierIndexCommitments`.
+-- | `vestaSigmaCommLast`. Used for wrap VK extraction (consumed by
+-- | the step circuit). OCaml fixes this to `@1` at
+-- | `step_main.ml:347` (TODO in OCaml flags future extensibility);
+-- | callers here also pass `@1` until that invariant changes.
 vestaVerifierIndexCommitments
-  :: VerifierIndex Pallas.G Vesta.BaseField
-  -> VerifierIndexCommitments Vesta.ScalarField
+  :: forall @numChunks
+   . Reflectable numChunks Int
+  => VerifierIndex Pallas.G Vesta.BaseField
+  -> VerifierIndexCommitments numChunks Vesta.ScalarField
 vestaVerifierIndexCommitments vk =
-  splitVkCommitments (vestaVerifierIndexColumnComms vk) (vestaSigmaCommLast vk)
+  splitVkCommitments @numChunks (vestaVerifierIndexColumnComms vk) (vestaSigmaCommLast vk)
 
 -- | Shared splitter. Raw layout:
--- |   [ index(6) ; coeff(15) ; sigma-except-last(6) ]  = 27 points
--- | `sigmaLast` is snoc'd onto `sigma6` to produce the exported `Vector 7`.
+-- |   [ index(6) ; coeff(15) ; sigma-except-last(6) ]  = 27 commitments,
+-- |   each entry an `Array (AffinePoint f)` of length numChunks.
+-- | `sigmaLast` (also chunked) is snoc'd onto `sigma6` to produce
+-- | the exported `Vector 7`. Inner Arrays reshape to
+-- | `Vector numChunks` — a length mismatch panics via `fromJust'`.
 splitVkCommitments
-  :: forall f
-   . Array (AffinePoint f)
-  -> AffinePoint f
-  -> VerifierIndexCommitments f
+  :: forall @numChunks f
+   . Reflectable numChunks Int
+  => Array (Array (AffinePoint f))
+  -> Array (AffinePoint f)
+  -> VerifierIndexCommitments numChunks f
 splitVkCommitments raw sigmaLast =
   let
-    mkIndex = fromJust' "VerifierIndex index commits (6 points)"
+    toChunks :: Array (AffinePoint f) -> Vector numChunks (AffinePoint f)
+    toChunks = fromJust' "VerifierIndex commitment chunks length mismatch with @numChunks"
+      <<< Vector.toVector @numChunks
+    mkIndex = fromJust' "VerifierIndex index commits (6 entries)"
       <<< Vector.toVector @6
-    mkCoeff = fromJust' "VerifierIndex coeff commits (15 points)"
+    mkCoeff = fromJust' "VerifierIndex coeff commits (15 entries)"
       <<< Vector.toVector @15
-    mkSigma6 = fromJust' "VerifierIndex sigma commits (6 points, pre-sigmaLast)"
+    mkSigma6 = fromJust' "VerifierIndex sigma commits (6 entries, pre-sigmaLast)"
       <<< Vector.toVector @6
+    rawChunked = map toChunks raw
+    sigmaLastChunked = toChunks sigmaLast
   in
-    { index: mkIndex (Array.take 6 raw)
-    , coeff: mkCoeff (Array.take 15 (Array.drop 6 raw))
-    , sigma: Vector.snoc (mkSigma6 (Array.drop 21 raw)) sigmaLast
+    { index: mkIndex (Array.take 6 rawChunked)
+    , coeff: mkCoeff (Array.take 15 (Array.drop 6 rawChunked))
+    , sigma: Vector.snoc (mkSigma6 (Array.drop 21 rawChunked)) sigmaLastChunked
     }
 
 -- | Vector-typed wrapper for `pallasProofOpeningPrechallenges`. The raw

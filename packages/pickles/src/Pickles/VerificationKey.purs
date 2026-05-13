@@ -34,39 +34,57 @@ import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Type.Proxy (Proxy(..))
 
--- | Plonk verification key: sigma(7), coefficients(15), index(6) commitments.
+-- | Plonk verification key: sigma(7), coefficients(15), index(6)
+-- | commitments. Each commitment carries `numChunks` curve points
+-- | (kimchi splits each polynomial commitment into `numChunks` slices
+-- | of `max_poly_size`; OCaml mirrors this with `'comm = Inner_curve.t
+-- | array`).
 -- |
 -- | OCaml hlist order: sigma_comm, coefficients_comm, index commitments
 -- | (generic, psm, complete_add, mul, emul, endomul_scalar).
 -- |
--- | Parameterized by the element type so the same newtype works for both
--- | value and var representations on either Pasta curve.
+-- | The element type `pt` lets the same newtype serve both value and var
+-- | representations on either Pasta curve; `numChunks` matches kimchi's
+-- | `comm.chunks.len()`. The wrap-VK consumer side currently fixes
+-- | `numChunks = 1` per OCaml `step_main.ml:347`
+-- | (`num_chunks_by_default`), but we keep it polymorphic so the type
+-- | tracks the future-extensibility flagged by the OCaml TODO.
 -- |
 -- | Reference: plonk_verification_key_evals.ml
-newtype VerificationKey pt = VerificationKey
-  { sigma :: Vector 7 pt
-  , coeff :: Vector 15 pt
-  , index :: Vector 6 pt
+newtype VerificationKey :: Int -> Type -> Type
+newtype VerificationKey numChunks pt = VerificationKey
+  { sigma :: Vector 7 (Vector numChunks pt)
+  , coeff :: Vector 15 (Vector numChunks pt)
+  , index :: Vector 6 (Vector numChunks pt)
   }
 
-instance (CircuitType f a var) => CircuitType f (VerificationKey a) (VerificationKey var) where
-  sizeInFields pf _ = genericSizeInFields pf (Proxy @(Tuple3 (Vector 7 a) (Vector 15 a) (Vector 6 a)))
+instance
+  ( CircuitType f a var
+  , Reflectable numChunks Int
+  ) =>
+  CircuitType f (VerificationKey numChunks a) (VerificationKey numChunks var) where
+  sizeInFields pf _ = genericSizeInFields pf
+    (Proxy @(Tuple3 (Vector 7 (Vector numChunks a)) (Vector 15 (Vector numChunks a)) (Vector 6 (Vector numChunks a))))
   valueToFields (VerificationKey r) = genericValueToFields (tuple3 r.sigma r.coeff r.index)
   fieldsToValue fs =
     let
-      tup :: Tuple3 (Vector 7 a) (Vector 15 a) (Vector 6 a)
+      tup :: Tuple3 (Vector 7 (Vector numChunks a)) (Vector 15 (Vector numChunks a)) (Vector 6 (Vector numChunks a))
       tup = genericFieldsToValue fs
     in
       uncurry3 (\sigma coeff index -> VerificationKey { sigma, coeff, index }) tup
-  varToFields (VerificationKey r) = genericVarToFields @(Tuple3 (Vector 7 a) (Vector 15 a) (Vector 6 a)) (tuple3 r.sigma r.coeff r.index)
+  varToFields (VerificationKey r) = genericVarToFields
+    @(Tuple3 (Vector 7 (Vector numChunks a)) (Vector 15 (Vector numChunks a)) (Vector 6 (Vector numChunks a)))
+    (tuple3 r.sigma r.coeff r.index)
   fieldsToVar fs =
     let
-      tup :: Tuple3 (Vector 7 var) (Vector 15 var) (Vector 6 var)
-      tup = genericFieldsToVar @(Tuple3 (Vector 7 a) (Vector 15 a) (Vector 6 a)) fs
+      tup :: Tuple3 (Vector 7 (Vector numChunks var)) (Vector 15 (Vector numChunks var)) (Vector 6 (Vector numChunks var))
+      tup = genericFieldsToVar
+        @(Tuple3 (Vector 7 (Vector numChunks a)) (Vector 15 (Vector numChunks a)) (Vector 6 (Vector numChunks a)))
+        fs
     in
       uncurry3 (\sigma coeff index -> VerificationKey { sigma, coeff, index }) tup
 
-instance (CheckedType f c var) => CheckedType f c (VerificationKey var) where
+instance (CheckedType f c var) => CheckedType f c (VerificationKey numChunks var) where
   check (VerificationKey r) = check (tuple3 r.sigma r.coeff r.index)
 
 -- | Project σ / coeff / index commitments out of a hydrated kimchi
@@ -74,41 +92,52 @@ instance (CheckedType f c var) => CheckedType f c (VerificationKey var) where
 -- | The wrap VK's commitments are Pallas points with coordinates in
 -- | Pallas.BaseField = Vesta.ScalarField (= the step circuit's field),
 -- | so no cross-field coercion is needed.
+-- |
+-- | Polymorphic on `wrapVkChunks` — the chunk count carried by THIS
+-- | wrap VK (a property of the producing compile, not the consuming
+-- | circuit). Distinct from the wrap circuit's own `numChunks`
+-- | (Dim 1, = the step proof's chunks) and from a side-loaded slot's
+-- | chunks (Dim 3, = the slot's `nc`). Callers pass `@wrapVkChunks`
+-- | from whichever compile produced this VK. OCaml fixes the wrap-VK
+-- | consumer to `num_chunks_by_default = 1` (see `step_main.ml:347`).
 extractWrapVKComms
-  :: VerifierIndex Pallas.G Pallas.ScalarField
-  -> VerificationKey (WeierstrassAffinePoint Pallas.G (F Vesta.ScalarField))
+  :: forall @wrapVkChunks
+   . Reflectable wrapVkChunks Int
+  => VerifierIndex Pallas.G Pallas.ScalarField
+  -> VerificationKey wrapVkChunks (WeierstrassAffinePoint Pallas.G (F Vesta.ScalarField))
 extractWrapVKComms vk =
   let
-    comms = vestaVerifierIndexCommitments vk
-
+    comms = vestaVerifierIndexCommitments @wrapVkChunks vk
     wrapPt :: AffinePoint Vesta.ScalarField -> WeierstrassAffinePoint Pallas.G (F Vesta.ScalarField)
     wrapPt pt = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
   in
     VerificationKey
-      { sigma: map wrapPt comms.sigma
-      , coeff: map wrapPt comms.coeff
-      , index: map wrapPt comms.index
+      { sigma: map (map wrapPt) comms.sigma
+      , coeff: map (map wrapPt) comms.coeff
+      , index: map (map wrapPt) comms.index
       }
 
--- | Plonk_verification_key_evals.t
+-- | Plonk_verification_key_evals.Step.t
 -- | Non-optional fields only (optional are all Opt.Nothing for Features.none).
--- | Each field is a single commitment (curve point).
--- | OCaml: 'comm t where 'comm is instantiated to a curve point.
 -- |
--- | TODO(num_chunks): When num_chunks > 1 (circuits exceeding SRS degree),
--- | each commitment becomes an array of chunk points. This type would need
--- | a @numChunks parameter: each field becomes Vector numChunks (AffinePoint f).
--- | The chooseKey operations (scalePt, sealPt, addPt) would need to map over
--- | chunks. See OCaml's wrap_verifier.ml:296-310 which uses Array.map over chunks.
-type StepVK f =
-  { sigmaComm :: Vector 7 (AffinePoint f)
-  , coefficientsComm :: Vector 15 (AffinePoint f)
-  , genericComm :: AffinePoint f
-  , psmComm :: AffinePoint f
-  , completeAddComm :: AffinePoint f
-  , mulComm :: AffinePoint f
-  , emulComm :: AffinePoint f
-  , endomulScalarComm :: AffinePoint f
+-- | At num_chunks > 1 (circuit domain > SRS max_poly_size), each polynomial
+-- | commitment splits into `numChunks` curve points (each chunk commits to
+-- | one slice of the polynomial). OCaml mirrors this with
+-- | `'comm = Inner_curve.t array`. We parameterize `StepVK` by `numChunks`
+-- | so chooseKey / chunked-MSM operations propagate per chunk.
+-- |
+-- | Reference: OCaml `Plonk_verification_key_evals.Step` and
+-- | `wrap_verifier.ml:290-313`'s `Array.map g ~f:(Double.map …)` per chunk.
+type StepVK :: Int -> Type -> Type
+type StepVK numChunks f =
+  { sigmaComm :: Vector 7 (Vector numChunks (AffinePoint f))
+  , coefficientsComm :: Vector 15 (Vector numChunks (AffinePoint f))
+  , genericComm :: Vector numChunks (AffinePoint f)
+  , psmComm :: Vector numChunks (AffinePoint f)
+  , completeAddComm :: Vector numChunks (AffinePoint f)
+  , mulComm :: Vector numChunks (AffinePoint f)
+  , emulComm :: Vector numChunks (AffinePoint f)
+  , endomulScalarComm :: Vector numChunks (AffinePoint f)
   }
 
 -- | Wrap_verifier.choose_key
@@ -117,16 +146,22 @@ type StepVK f =
 -- | Then reduces across branches by pointwise addition.
 -- | Optional commitments resolve to Opt.Nothing for Features.none (0 constraints).
 -- |
+-- | At `numChunks > 1` each commitment is `Vector numChunks (AffinePoint f)`
+-- | and the scale / add / seal operations map over the chunk dimension
+-- | (mirroring OCaml `wrap_verifier.ml:296-310`'s
+-- | `Array.map g ~f:(Double.map ~f:((*) b))`).
+-- |
 -- | Reference: wrap_verifier.ml:212-310
 chooseKey
-  :: forall n nPred f t m
+  :: forall numChunks n nPred f t m
    . CircuitM f (KimchiConstraint f) t m
   => PrimeField f
   => Reflectable n Int
+  => Reflectable numChunks Int
   => Add 1 nPred n
   => Vector n (BoolVar f)
-  -> Vector n (StepVK (FVar f))
-  -> Snarky (KimchiConstraint f) t m (StepVK (FVar f))
+  -> Vector n (StepVK numChunks (FVar f))
+  -> Snarky (KimchiConstraint f) t m (StepVK numChunks (FVar f))
 chooseKey bools keys = label "choose-key" do
   -- OCaml Vector.map2 evaluates right-to-left via :: constructor
   scaledRev <- traverse (\(Tuple b key) -> scaleVK b key) $
@@ -136,27 +171,40 @@ chooseKey bools keys = label "choose-key" do
   -- wrap_verifier.ml:321-322: Step.map ~f:(Double.map ~f:seal)
   sealVK reduced
   where
-  -- Scale each commitment point by the branch boolean.
-  -- OCaml: Double.map g ~f:((*) (b :> t)) — evaluates y first (right-to-left)
+  -- Scale a single curve point by the branch boolean. OCaml
+  -- `Double.map g ~f:((*) (b :> t))` evaluates y first (right-to-left).
   scalePt :: FVar f -> AffinePoint (FVar f) -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
   scalePt bf { x, y } = do
     y' <- mul_ bf y
     x' <- mul_ bf x
     pure { x: x', y: y' }
 
-  scaleVK :: BoolVar f -> StepVK (FVar f) -> Snarky (KimchiConstraint f) t m (StepVK (FVar f))
+  -- Scale every chunk of a chunked commitment. OCaml
+  -- `Array.map g ~f:(Double.map ~f:((*) b))` maps over the chunk array.
+  -- PureScript `traverse` is left-to-right; the OCaml `Array.map`
+  -- direction is unspecified for arrays of length-1, but for nc > 1
+  -- this must mirror OCaml's iteration order. OCaml's `Array.map` is
+  -- LEFT-TO-RIGHT (unlike List/Vector.map which are right-to-left via
+  -- `::`), so straight `traverse` is correct.
+  scalePtChunks
+    :: FVar f
+    -> Vector numChunks (AffinePoint (FVar f))
+    -> Snarky (KimchiConstraint f) t m (Vector numChunks (AffinePoint (FVar f)))
+  scalePtChunks bf = traverse (scalePt bf)
+
+  scaleVK :: BoolVar f -> StepVK numChunks (FVar f) -> Snarky (KimchiConstraint f) t m (StepVK numChunks (FVar f))
   scaleVK b vk = do
     let bf = coerce b :: FVar f
     -- OCaml record fields evaluate right-to-left
-    endomulScalarComm <- scalePt bf vk.endomulScalarComm
-    emulComm <- scalePt bf vk.emulComm
-    mulComm <- scalePt bf vk.mulComm
-    completeAddComm <- scalePt bf vk.completeAddComm
-    psmComm <- scalePt bf vk.psmComm
-    genericComm <- scalePt bf vk.genericComm
+    endomulScalarComm <- scalePtChunks bf vk.endomulScalarComm
+    emulComm <- scalePtChunks bf vk.emulComm
+    mulComm <- scalePtChunks bf vk.mulComm
+    completeAddComm <- scalePtChunks bf vk.completeAddComm
+    psmComm <- scalePtChunks bf vk.psmComm
+    genericComm <- scalePtChunks bf vk.genericComm
     -- Vector.map ~f also evaluates right-to-left
-    coefficientsComm <- traverseRev (scalePt bf) vk.coefficientsComm
-    sigmaComm <- traverseRev (scalePt bf) vk.sigmaComm
+    coefficientsComm <- traverseRev (scalePtChunks bf) vk.coefficientsComm
+    sigmaComm <- traverseRev (scalePtChunks bf) vk.sigmaComm
     pure
       { sigmaComm
       , coefficientsComm
@@ -181,16 +229,21 @@ chooseKey bools keys = label "choose-key" do
     x' <- seal x
     pure { x: x', y: y' }
 
-  sealVK :: StepVK (FVar f) -> Snarky (KimchiConstraint f) t m (StepVK (FVar f))
+  sealPtChunks
+    :: Vector numChunks (AffinePoint (FVar f))
+    -> Snarky (KimchiConstraint f) t m (Vector numChunks (AffinePoint (FVar f)))
+  sealPtChunks = traverse sealPt
+
+  sealVK :: StepVK numChunks (FVar f) -> Snarky (KimchiConstraint f) t m (StepVK numChunks (FVar f))
   sealVK vk = do
-    endomulScalarComm <- sealPt vk.endomulScalarComm
-    emulComm <- sealPt vk.emulComm
-    mulComm <- sealPt vk.mulComm
-    completeAddComm <- sealPt vk.completeAddComm
-    psmComm <- sealPt vk.psmComm
-    genericComm <- sealPt vk.genericComm
-    coefficientsComm <- traverseRev sealPt vk.coefficientsComm
-    sigmaComm <- traverseRev sealPt vk.sigmaComm
+    endomulScalarComm <- sealPtChunks vk.endomulScalarComm
+    emulComm <- sealPtChunks vk.emulComm
+    mulComm <- sealPtChunks vk.mulComm
+    completeAddComm <- sealPtChunks vk.completeAddComm
+    psmComm <- sealPtChunks vk.psmComm
+    genericComm <- sealPtChunks vk.genericComm
+    coefficientsComm <- traverseRev sealPtChunks vk.coefficientsComm
+    sigmaComm <- traverseRev sealPtChunks vk.sigmaComm
     pure
       { sigmaComm
       , coefficientsComm
@@ -202,17 +255,23 @@ chooseKey bools keys = label "choose-key" do
       , endomulScalarComm
       }
 
-  addVK :: StepVK (FVar f) -> StepVK (FVar f) -> StepVK (FVar f)
+  addVK :: StepVK numChunks (FVar f) -> StepVK numChunks (FVar f) -> StepVK numChunks (FVar f)
   addVK a b_ =
-    { sigmaComm: Vector.zipWith addPt a.sigmaComm b_.sigmaComm
-    , coefficientsComm: Vector.zipWith addPt a.coefficientsComm b_.coefficientsComm
-    , genericComm: addPt a.genericComm b_.genericComm
-    , psmComm: addPt a.psmComm b_.psmComm
-    , completeAddComm: addPt a.completeAddComm b_.completeAddComm
-    , mulComm: addPt a.mulComm b_.mulComm
-    , emulComm: addPt a.emulComm b_.emulComm
-    , endomulScalarComm: addPt a.endomulScalarComm b_.endomulScalarComm
+    { sigmaComm: Vector.zipWith addPtChunks a.sigmaComm b_.sigmaComm
+    , coefficientsComm: Vector.zipWith addPtChunks a.coefficientsComm b_.coefficientsComm
+    , genericComm: addPtChunks a.genericComm b_.genericComm
+    , psmComm: addPtChunks a.psmComm b_.psmComm
+    , completeAddComm: addPtChunks a.completeAddComm b_.completeAddComm
+    , mulComm: addPtChunks a.mulComm b_.mulComm
+    , emulComm: addPtChunks a.emulComm b_.emulComm
+    , endomulScalarComm: addPtChunks a.endomulScalarComm b_.endomulScalarComm
     }
+
+  addPtChunks
+    :: Vector numChunks (AffinePoint (FVar f))
+    -> Vector numChunks (AffinePoint (FVar f))
+    -> Vector numChunks (AffinePoint (FVar f))
+  addPtChunks = Vector.zipWith addPt
 
   addPt :: AffinePoint (FVar f) -> AffinePoint (FVar f) -> AffinePoint (FVar f)
   addPt p1 p2 = { x: add_ p1.x p2.x, y: add_ p1.y p2.y }

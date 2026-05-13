@@ -348,41 +348,52 @@ export const vestaChallengePolyCommitment = (verifierIndex) => (challenges) => {
   return { x: coords[0], y: coords[1] };
 };
 
-// ft_comm: the chunked commitment of the linearized constraint polynomial
-// Returns { x, y } coordinates in Fq
-// perm_scalar: the scalar multiplier for sigma_comm[PERMUTS-1] in the linearization
-// Returns a single Fp element
+// sigma_comm[PERMUTS-1] (the last sigma commitment). Rust emits ALL
+// chunks contiguous as [chunk0.x, chunk0.y, chunk1.x, chunk1.y, ...].
+// Returns Array<{x, y}> of length numChunks (= 1 for unchunked VKs).
 export const pallasSigmaCommLast = (verifierIndex) => {
-  const coords = crypto.pallasVerifierIndexSigmaCommLast(verifierIndex);
-  return { x: coords[0], y: coords[1] };
+  const flat = crypto.pallasVerifierIndexSigmaCommLast(verifierIndex);
+  const chunks = [];
+  for (let i = 0; i < flat.length; i += 2) {
+    chunks.push({ x: flat[i], y: flat[i + 1] });
+  }
+  return chunks;
 };
 
-// VK column commitments: 27 points (6 index + 15 coefficient + 6 sigma) in to_batch order
-export const pallasVerifierIndexColumnComms = (verifierIndex) => {
-  const flat = crypto.pallasVerifierIndexColumnComms(verifierIndex);
+// VK column commitments: 27 commitments (6 index + 15 coefficient + 6
+// sigma) in to_batch order. Rust emits ALL chunks per commitment
+// contiguously: [comm0_chunk0.x, comm0_chunk0.y, comm0_chunk1.x, ...,
+// comm1_chunk0, ...]. Total flat length = 27 * numChunks * 2.
+// Returns Array<Array<{x, y}>> shaped [27][numChunks]{x,y}.
+const unpackVerifierIndexColumnComms = (flat) => {
+  const numChunks = (flat.length / (27 * 2)) | 0;
   const result = [];
-  for (let i = 0; i < flat.length; i += 2) {
-    result.push({ x: flat[i], y: flat[i + 1] });
+  for (let i = 0; i < 27; i++) {
+    const chunks = [];
+    for (let j = 0; j < numChunks; j++) {
+      const off = (i * numChunks + j) * 2;
+      chunks.push({ x: flat[off], y: flat[off + 1] });
+    }
+    result.push(chunks);
   }
   return result;
 };
 
-export const vestaVerifierIndexColumnComms = (verifierIndex) => {
-  const flat = crypto.vestaVerifierIndexColumnComms(verifierIndex);
-  const result = [];
-  for (let i = 0; i < flat.length; i += 2) {
-    result.push({ x: flat[i], y: flat[i + 1] });
-  }
-  return result;
-};
+export const pallasVerifierIndexColumnComms = (verifierIndex) =>
+  unpackVerifierIndexColumnComms(crypto.pallasVerifierIndexColumnComms(verifierIndex));
 
-// ft_comm: the chunked commitment of the linearized constraint polynomial (Vesta/Fq circuits)
-// Returns { x, y } coordinates in Fp
-// perm_scalar: the scalar multiplier for sigma_comm[PERMUTS-1] in the linearization (Vesta/Fq circuits)
-// Returns a single Fq element
+export const vestaVerifierIndexColumnComms = (verifierIndex) =>
+  unpackVerifierIndexColumnComms(crypto.vestaVerifierIndexColumnComms(verifierIndex));
+
+// sigma_comm[PERMUTS-1] for Vesta/Fq circuits. Same chunked layout as
+// pallasSigmaCommLast.
 export const vestaSigmaCommLast = (verifierIndex) => {
-  const coords = crypto.vestaVerifierIndexSigmaCommLast(verifierIndex);
-  return { x: coords[0], y: coords[1] };
+  const flat = crypto.vestaVerifierIndexSigmaCommLast(verifierIndex);
+  const chunks = [];
+  for (let i = 0; i < flat.length; i += 2) {
+    chunks.push({ x: flat[i], y: flat[i + 1] });
+  }
+  return chunks;
 };
 
 // Verifier index digest for Vesta/Fq circuits

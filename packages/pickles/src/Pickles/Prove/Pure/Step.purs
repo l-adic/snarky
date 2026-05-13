@@ -345,7 +345,11 @@ expandDeferred input =
 -- | Inner bp-challenge vector lengths are fixed at the concrete
 -- | `StepIPARounds` / `WrapIPARounds` type aliases per field, based
 -- | on which IPA the challenges came from (see each field's doc).
-type ExpandProofInput n nwp =
+-- | `wrapVkChunks` = chunk count of the step's wrap VK (`dlogIndex`).
+-- | OCaml hardcodes this to `Plonk_checks.num_chunks_by_default = 1`
+-- | at `step_main.ml:347`; we keep it polymorphic so the type tracks
+-- | the future-extensibility flagged by the OCaml `TODO`.
+type ExpandProofInput n nwp wrapVkChunks =
   { -- Runtime flag: false for dummy predecessors the step circuit
     -- elides verification of.
     mustVerify :: Boolean
@@ -390,7 +394,8 @@ type ExpandProofInput n nwp =
   -- (reduced_messages_for_next_proof_over_same_field.ml:32-43).
 
   -- The wrap circuit's VK commitments (`dlog_plonk_index` in OCaml).
-  , dlogIndex :: StepVK StepField
+  -- See type-doc comment above on `wrapVkChunks`.
+  , dlogIndex :: StepVK wrapVkChunks StepField
   -- The predecessor's app-state projected to field elements.
   , appStateFields :: Array StepField
   -- The previous proofs' challenge-polynomial commitments (each a
@@ -521,9 +526,10 @@ type PrevStatementWithHashes =
 
 -- | The main `expand_proof` port.
 expandProof
-  :: forall @numChunks n nwp
+  :: forall @numChunks n nwp wrapVkChunks
    . Reflectable numChunks Int
-  => ExpandProofInput n nwp
+  => Reflectable wrapVkChunks Int
+  => ExpandProofInput n nwp wrapVkChunks
   -> ExpandProofOutput n numChunks
 expandProof input =
   let

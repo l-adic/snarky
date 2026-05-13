@@ -142,8 +142,12 @@ type RuleOutput n prevInput output =
 -- | inhabitants only — there is no `Slot SideLoaded` arm here, so
 -- | the `BuildSlotVkSources` Compiled instance can pattern-match
 -- | exhaustively without an "impossible" fallthrough.
-data SlotVkBlueprintCompiled
-  = VkBlueprintConst (VerificationKey (WeierstrassAffinePoint PallasG (F StepField)))
+-- |
+-- | `nc` is the chunks count of the producing compile's wrap VK
+-- | (Dim 2 viewed per-slot, = the slot's wrap-VK chunks).
+data SlotVkBlueprintCompiled :: Int -> Type
+data SlotVkBlueprintCompiled nc
+  = VkBlueprintConst (VerificationKey nc (WeierstrassAffinePoint PallasG (F StepField)))
   | VkBlueprintShared
 
 -- | Compile-time blueprint for a `Slot SideLoaded` slot — the
@@ -158,12 +162,19 @@ type SlotVkBlueprintSideLoaded =
 -- | in-circuit-allocated side-loaded VK descriptor so the Step.Main
 -- | dispatch loop has everything in one place — no parallel
 -- | `Vector len (Maybe …)` lookup required.
-data SlotVkSource
-  = ConstVk (VerificationKey (WeierstrassAffinePoint PallasG (F StepField)))
+-- | The chunks count on these VerificationKey / SLVK entries is the
+-- | wrap VK's own chunks (Dim 2 / `wrapVkChunks` / `nc` for side-loaded
+-- | slots). For compiled slots (`ConstVk`) the chunks count is the
+-- | producing compile's wrap VK chunks. For side-loaded slots
+-- | (`SideloadedExistsVk`) the slot's `nc` from `Slot SideLoaded mpv nc`
+-- | applies.
+data SlotVkSource :: Int -> Type
+data SlotVkSource nc
+  = ConstVk (VerificationKey nc (WeierstrassAffinePoint PallasG (F StepField)))
   | SharedExistsVk
   | SideloadedExistsVk
       SlotVkBlueprintSideLoaded
-      (SLVK.VerificationKey (FVar StepField) (BoolVar StepField))
+      (SLVK.VerificationKey nc (FVar StepField) (BoolVar StepField))
 
 -- | Walk a spec-indexed blueprint carrier alongside the side-loaded
 -- | VK carrier and produce a `Vector len SlotVkSource` for the
@@ -176,32 +187,47 @@ data SlotVkSource
 -- | the spec kind dictates — there is no fallthrough arm. The class
 -- | encodes the protocol invariant that compiled and side-loaded
 -- | slots carry different compile-time data.
+-- | The Vector-based per-slot VK source carrier forces every slot to
+-- | share a single chunks count for its wrap VK. OCaml fixes this to
+-- | `num_chunks_by_default = 1` across all callers of
+-- | `step_main.ml:347`'s `exists Req.Wrap_index` and its side-loaded
+-- | analogue, so all `SlotVkSource` / `SlotVkBlueprintCompiled` /
+-- | `SLVK.VerificationKey` entries in the carrier pin `nc = 1` here.
+-- |
+-- | Per-slot heterogeneous chunks (= lifting the OCaml hardcode at
+-- | `step_main.ml:347`'s TODO) would require a spec-indexed Tuple
+-- | carrier here; we defer that until OCaml relaxes the invariant.
+-- |
+-- | `slotNc` is exposed as a class parameter (always passed `1` by
+-- | call sites) rather than baked in so the `1` literal lives in one
+-- | place: the chunks2-style `@1` at compileMulti's call site, not
+-- | scattered across this module.
 class BuildSlotVkSources
-  :: Type -> Type -> Int -> Type -> Type -> Constraint
+  :: Int -> Type -> Type -> Int -> Type -> Type -> Constraint
 class
-  BuildSlotVkSources cell prevsSpec len blueprints carrier
+  BuildSlotVkSources slotNc cell prevsSpec len blueprints carrier
   | cell prevsSpec -> len blueprints carrier
   where
   buildSlotVkSources
     :: forall t m
      . CircuitM StepField (KimchiConstraint StepField) t m
     => CheckedType StepField (KimchiConstraint StepField)
-         (SLVK.VerificationKey (FVar StepField) (BoolVar StepField))
+         (SLVK.VerificationKey slotNc (FVar StepField) (BoolVar StepField))
     => blueprints
     -> carrier
-    -> Snarky (KimchiConstraint StepField) t m (Vector len SlotVkSource)
+    -> Snarky (KimchiConstraint StepField) t m (Vector len (SlotVkSource slotNc))
 
-instance BuildSlotVkSources cell Unit 0 Unit Unit where
+instance BuildSlotVkSources slotNc cell Unit 0 Unit Unit where
   buildSlotVkSources _ _ = pure Vector.nil
 
 instance
-  ( BuildSlotVkSources cell rest restLen restScaffolds restCarrier
+  ( BuildSlotVkSources slotNc cell rest restLen restScaffolds restCarrier
   , Add restLen 1 len
   ) =>
-  BuildSlotVkSources cell
+  BuildSlotVkSources slotNc cell
     (Slot Compiled n nc stmt /\ rest)
     len
-    (SlotVkBlueprintCompiled /\ restScaffolds)
+    (SlotVkBlueprintCompiled slotNc /\ restScaffolds)
     (Unit /\ restCarrier)
   where
   buildSlotVkSources (headScaffold /\ restScaffolds) (_ /\ restCarrier) = do
@@ -209,15 +235,16 @@ instance
       headSrc = case headScaffold of
         VkBlueprintConst v -> ConstVk v
         VkBlueprintShared -> SharedExistsVk
-    restSrcs <- buildSlotVkSources @cell @rest restScaffolds restCarrier
+    restSrcs <- buildSlotVkSources @slotNc @cell @rest restScaffolds restCarrier
     pure (headSrc :< restSrcs)
 
 instance
-  ( BuildSlotVkSources cell rest restLen restScaffolds restCarrier
-  , HasSideLoadedVk cell
+  ( BuildSlotVkSources slotNc cell rest restLen restScaffolds restCarrier
+  , HasSideLoadedVk slotNc cell
+  , Reflectable slotNc Int
   , Add restLen 1 len
   ) =>
-  BuildSlotVkSources cell
+  BuildSlotVkSources slotNc cell
     (Slot SideLoaded mpvMax nc stmt /\ rest)
     len
     (SlotVkBlueprintSideLoaded /\ restScaffolds)
@@ -226,7 +253,7 @@ instance
   buildSlotVkSources (headLagrange /\ restScaffolds) (headCell /\ restCarrier) = do
     headVar <- exists (pure (projectVk headCell))
     let headSrc = SideloadedExistsVk headLagrange headVar
-    restSrcs <- buildSlotVkSources @cell @rest restScaffolds restCarrier
+    restSrcs <- buildSlotVkSources @slotNc @cell @rest restScaffolds restCarrier
     pure (headSrc :< restSrcs)
 
 -- | SRS data for `stepMain`. Carries per-slot FOP domain-log2s
@@ -620,6 +647,10 @@ liftDummyPerProofUnfinalized (PerProofUnfinalized r) =
 -- | Build verify_one input from allocated witnesses
 -------------------------------------------------------------------------------
 
+-- | At the per-slot level there's ONE chunks dimension: the slot's
+-- | wrap proof / wrap VK chunks count (must agree by protocol).
+-- | OCaml `step_main.ml:347`'s `num_chunks_by_default = 1` pins this
+-- | to 1 today; we keep it polymorphic and let call sites specify.
 buildVerifyOneInput
   :: forall @n @numChunks @tCommLen pad
    . Reflectable n Int
@@ -630,10 +661,10 @@ buildVerifyOneInput
   -> BoolVar StepField
   -> UnfinalizedProof
   -> FVar StepField
-  -> { sigma :: Vector 6 (AffinePoint (FVar StepField))
-     , sigmaLast :: AffinePoint (FVar StepField)
-     , coeff :: Vector 15 (AffinePoint (FVar StepField))
-     , index :: Vector 6 (AffinePoint (FVar StepField))
+  -> { sigma :: Vector 6 (Vector numChunks (AffinePoint (FVar StepField)))
+     , sigmaLast :: Vector numChunks (AffinePoint (FVar StepField))
+     , coeff :: Vector 15 (Vector numChunks (AffinePoint (FVar StepField)))
+     , index :: Vector 6 (Vector numChunks (AffinePoint (FVar StepField)))
      }
   -> AffinePoint (FVar StepField) -- dummySg for padding
   -> VerifyOneInput n numChunks tCommLen WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
@@ -755,7 +786,7 @@ unfFields unf =
 
 stepMain
   :: forall @prevsSpec pad outputSize @inputVal input @outputVal output @prevInputVal prevInput
-       @valCarrier @mpvMax mpvPad @nd ndPred @cell
+       @valCarrier @mpvMax mpvPad @nd ndPred @cell @slotNc
        len carrier carrierVar sideloadedVkCarrier blueprints
        unfsTotal digestPlusUnfs
        t m
@@ -769,11 +800,14 @@ stepMain
   -- `ConstVk`/`SharedExistsVk`. The cell type — compile-placeholder
   -- vs prove-time `VerificationKey` — is supplied by the caller via
   -- `@cell` and matched by the `sideloadedVkCarrier` value's shape.
-  => BuildSlotVkSources cell prevsSpec len blueprints sideloadedVkCarrier
+  -- `slotNc` is the shared per-slot wrap-VK chunks count (Dim 2
+  -- viewed across all slots). OCaml hardcodes this to 1
+  -- (`step_main.ml:347` `num_chunks_by_default`); call sites pass `@1`.
+  => BuildSlotVkSources slotNc cell prevsSpec len blueprints sideloadedVkCarrier
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Reflectable nd Int
-  => StepWitnessM len StepIPARounds WrapIPARounds PallasG StepField m inputVal
+  => StepWitnessM len StepIPARounds WrapIPARounds slotNc PallasG StepField m inputVal
   => StepSlotsM prevsSpec StepIPARounds WrapIPARounds PallasG StepField m len carrier
   => StepPrevValuesM m valCarrier
   => StepUserOutputM m
@@ -821,7 +855,7 @@ stepMain
   -- 1. exists: public input via Req.App_state.
   let
     requestInput :: m inputVal
-    requestInput = getStepPublicInput @len @StepIPARounds @WrapIPARounds @PallasG unit
+    requestInput = getStepPublicInput @len @StepIPARounds @WrapIPARounds @slotNc @PallasG unit
   (publicInput) <- exists $ lift requestInput
 
   -- 2. rule_main — wraps both the user's rule body AND the side-loaded VK
@@ -832,7 +866,7 @@ stepMain
   -- `buildSlotVkSources` emits no `exists` calls.
   { prevPublicInputs, proofMustVerify, publicOutput, perSlotVkSources } <-
     label "rule_main" do
-      perSlotVkSources <- buildSlotVkSources @cell @prevsSpec perSlotVkBlueprints sideloadedVkCarrier
+      perSlotVkSources <- buildSlotVkSources @slotNc @cell @prevsSpec perSlotVkBlueprints sideloadedVkCarrier
       result <- rule publicInput
       pure
         { prevPublicInputs: result.prevPublicInputs
@@ -873,7 +907,7 @@ stepMain
   VerificationKey sharedVkRec <- label "exists_wrap_index"
     $ exists
     $ lift
-    $ getWrapVerifierIndex @len @StepIPARounds @WrapIPARounds @PallasG unit
+    $ getWrapVerifierIndex @len @StepIPARounds @WrapIPARounds @slotNc @PallasG unit
   let
     vk =
       { sigma: Vector.take @6 sharedVkRec.sigma
@@ -894,7 +928,7 @@ stepMain
   rawUnfinalizedProofs <- label "exists_unfinalized"
     $ exists
     $ lift
-    $ getStepUnfinalizedProofs @len @StepIPARounds @WrapIPARounds @PallasG unit
+    $ getStepUnfinalizedProofs @len @StepIPARounds @WrapIPARounds @slotNc @PallasG unit
   unfinalizedProofs <- traverse unpackUnfinalized rawUnfinalizedProofs
 
   -- 6. exists: messages_for_next_wrap_proof.
@@ -910,12 +944,13 @@ stepMain
   --    count is `len + mpvPad = mpvMax`, matching OCaml's single
   --    mpvMax allocation.
   msgsWrapReal <- exists $ lift
-    $ getMessagesForNextWrapProof @len @StepIPARounds @WrapIPARounds @PallasG unit
+    $ getMessagesForNextWrapProof @len @StepIPARounds @WrapIPARounds @slotNc @PallasG unit
   msgsWrapPadding <- exists $ lift do
     dummyHash <- getMessagesForNextWrapProofDummyHash
       @len
       @StepIPARounds
       @WrapIPARounds
+      @slotNc
       @PallasG
       unit
     pure (Vector.replicate @mpvPad dummyHash)
@@ -929,12 +964,12 @@ stepMain
     -- the circuit (matches OCaml's `Array.map ~f:Inner_curve.constant`
     -- in `of_compiled_with_known_wrap_key`, types_map.ml:214-215).
     liftConstVk
-      :: VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
-      -> VerificationKey (WeierstrassAffinePoint PallasG (FVar StepField))
+      :: VerificationKey slotNc (WeierstrassAffinePoint PallasG (F StepField))
+      -> VerificationKey slotNc (WeierstrassAffinePoint PallasG (FVar StepField))
     liftConstVk (VerificationKey r) = VerificationKey
-      { sigma: map liftWaPt r.sigma
-      , coeff: map liftWaPt r.coeff
-      , index: map liftWaPt r.index
+      { sigma: map (map liftWaPt) r.sigma
+      , coeff: map (map liftWaPt) r.coeff
+      , index: map (map liftWaPt) r.index
       }
       where
       liftWaPt :: WeierstrassAffinePoint PallasG (F StepField) -> WeierstrassAffinePoint PallasG (FVar StepField)
@@ -1053,11 +1088,13 @@ stepMain
               , index: slotVkRec.index
               }
 
+            -- Map over both outer Vector 7/15/6 and the inner chunks
+            -- Vector slotNc, since each VK commitment is chunked.
             slotVkComms =
-              { sigma: map unwrapPt slotVk.sigma
-              , sigmaLast: unwrapPt slotVk.sigmaLast
-              , coeff: map unwrapPt slotVk.coeff
-              , index: map unwrapPt slotVk.index
+              { sigma: map (map unwrapPt) slotVk.sigma
+              , sigmaLast: map unwrapPt slotVk.sigmaLast
+              , coeff: map (map unwrapPt) slotVk.coeff
+              , index: map (map unwrapPt) slotVk.index
               }
 
             prevInputVar = prevPublicInputs !! i

@@ -129,10 +129,10 @@ type WrapMainInputVar =
 -- |   * `16` is the `Finite` bound = `1 + WrapIPARounds`: each log2
 -- |     fits in `[0, wrap_SRS_log2 + 1) = [0, 16)` because wrap
 -- |     domain size ≤ wrap SRS size = 2^WrapIPARounds.
-type WrapMainConfig branches =
+type WrapMainConfig branches numChunks =
   { stepWidths :: Vector branches Int
   , domainLog2s :: Vector branches Int
-  , stepKeys :: Vector branches (StepVK (FVar WrapField))
+  , stepKeys :: Vector branches (StepVK numChunks (FVar WrapField))
   -- | Single-domain lagrange basis. Used in the "all branches share
   -- | the same step domain" fast path (mirrors OCaml
   -- | `wrap_verifier.ml:426-428`). Always populated; for the
@@ -405,7 +405,7 @@ wrapMain
   -- collapse to the constraints below.
   => Add mpv nonSgBases totalBases
   => Add 1 totalBasesPred totalBases
-  => WrapMainConfig branches
+  => WrapMainConfig branches numChunks
   -> WrapMainInputVar
   -> Snarky (KimchiConstraint WrapField) t m Unit
 wrapMain config (StatementPacked stmtR) = do
@@ -894,7 +894,7 @@ wrapMainForPrevs
   => Compare mpv 3 LT
   => Add mpv nonSgBases totalBases
   => Add 1 totalBasesPred totalBases
-  => WrapMainConfig branches
+  => WrapMainConfig branches numChunks
   -> WrapMainInputVar
   -> Snarky (KimchiConstraint WrapField) t m Unit
 wrapMainForPrevs = wrapMain @branches @slots @numChunks

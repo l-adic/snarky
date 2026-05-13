@@ -249,7 +249,7 @@ buildStepAdvice
        carrier
   => SlotStatementsCarrier prevsSpec valCarrier
   => BuildStepAdviceInput inputVal valCarrier vkCarrier
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier valCarrier vkCarrier
+  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier vkCarrier
 buildStepAdvice input =
   let
     -- Pallas generator (= OCaml `Tock.Curve.one`). Never the
@@ -457,33 +457,45 @@ buildStepAdvice input =
 -- | StepField)). The wrap VK's commitments are Pallas points with
 -- | coordinates in Pallas.BaseField = StepField, so no cross-field
 -- | coercion is needed.
+-- | Polymorphic on `wrapVkChunks` — the wrap VK's own chunk count
+-- | (Dim 2). Distinct from the wrap circuit's `numChunks` (Dim 1)
+-- | and from a side-loaded slot's chunks (Dim 3 / `nc`).
 extractWrapVKCommsAdvice
-  :: VerifierIndex PallasG WrapField
-  -> VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
+  :: forall @wrapVkChunks
+   . Reflectable wrapVkChunks Int
+  => VerifierIndex PallasG WrapField
+  -> VerificationKey wrapVkChunks (WeierstrassAffinePoint PallasG (F StepField))
 extractWrapVKCommsAdvice vk =
   let
-    comms = vestaVerifierIndexCommitments vk
+    comms = vestaVerifierIndexCommitments @wrapVkChunks vk
 
     wrapPt :: AffinePoint StepField -> WeierstrassAffinePoint PallasG (F StepField)
     wrapPt pt = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
   in
     VerificationKey
-      { sigma: map wrapPt comms.sigma
-      , coeff: map wrapPt comms.coeff
-      , index: map wrapPt comms.index
+      { sigma: map (map wrapPt) comms.sigma
+      , coeff: map (map wrapPt) comms.coeff
+      , index: map (map wrapPt) comms.index
       }
 
--- | `StepVK StepField` (the eight named-field VK shape) extracted from
--- | a compiled wrap verifier index. Used for
--- | `hashMessagesForNextStepProofPure` in the step field — the dummy
--- | wrap proof's `messages_for_next_step_proof` hash mirrors OCaml's
+-- | `StepVK wrapVkChunks StepField` extracted from a compiled wrap
+-- | verifier index. Used for `hashMessagesForNextStepProofPure` in
+-- | the step field — the dummy wrap proof's
+-- | `messages_for_next_step_proof` hash mirrors OCaml's
 -- | `Common.hash_messages_for_next_step_proof` on the real wrap VK.
+-- |
+-- | `wrapVkChunks` is the wrap VK's own chunk count (Dim 2); distinct
+-- | from the wrap circuit's `numChunks` (Dim 1). OCaml fixes
+-- | `wrapVkChunks = num_chunks_by_default = 1` at `step_main.ml:347`;
+-- | callers pass `@1` at the specialization boundary.
 extractWrapVKForStepHash
-  :: VerifierIndex PallasG WrapField
-  -> StepVK StepField
+  :: forall @wrapVkChunks
+   . Reflectable wrapVkChunks Int
+  => VerifierIndex PallasG WrapField
+  -> StepVK wrapVkChunks StepField
 extractWrapVKForStepHash vk =
   let
-    comms = vestaVerifierIndexCommitments vk
+    comms = vestaVerifierIndexCommitments @wrapVkChunks vk
   in
     { sigmaComm: comms.sigma
     , coefficientsComm: comms.coeff
@@ -1441,9 +1453,9 @@ buildSlotAdvice input = do
 -- |   * Simple_chain (1 prev):    `valCarrier = Tuple (StatementIO …) Unit`
 -- |   * Tree_proof_return (2):    `valCarrier = Tuple stmt0 (Tuple stmt1 Unit)`
 type StepRule (n :: Int) valCarrier inputVal input outputVal output prevInputVal prevInput =
-  forall t m'
+  forall t m' wrapVkChunks
    . CircuitM StepField (KimchiConstraint StepField) t m'
-  => StepWitnessM n StepIPARounds WrapIPARounds PallasG StepField m' inputVal
+  => StepWitnessM n StepIPARounds WrapIPARounds wrapVkChunks PallasG StepField m' inputVal
   => StepPrevValuesM m' valCarrier
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
@@ -1600,9 +1612,13 @@ writeRowLabelsTo path publicInputSize cs = do
 -- |   `messagesForNextWrapProof`) are plain `Vector len` — their
 -- |   element types don't depend on per-slot `n_i`.
 -- | * Singletons (`wrapVerifierIndex`, `publicInput`) stand alone.
+-- | `wrapVkChunks` (Dim 2) is the chunks count of THIS compile's
+-- | wrap VK as carried by `wrapVerifierIndex`. OCaml hardcodes this
+-- | to 1 at `step_main.ml:347` (`num_chunks_by_default`); the type
+-- | stays polymorphic so the parameter tracks the OCaml TODO.
 newtype StepAdvice
-  :: Type -> Int -> Int -> Type -> Int -> Type -> Type -> Type -> Type
-newtype StepAdvice prevsSpec ds dw inputVal len carrier valCarrier vkCarrier =
+  :: Type -> Int -> Int -> Int -> Type -> Int -> Type -> Type -> Type -> Type
+newtype StepAdvice prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier =
   StepAdvice
     { perProofSlotsCarrier :: carrier
     , publicInput :: inputVal
@@ -1622,7 +1638,7 @@ newtype StepAdvice prevsSpec ds dw inputVal len carrier valCarrier vkCarrier =
     -- | `Req.Messages_for_next_wrap_proof` (step_main.ml:368-370).
     , messagesForNextWrapProofDummyHash :: F StepField
     , wrapVerifierIndex ::
-        VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
+        VerificationKey wrapVkChunks (WeierstrassAffinePoint PallasG (F StepField))
     -- | Kimchi-level prev_challenges threaded to
     -- | `pallasCreateProofWithPrev`. One entry per prev slot of the
     -- | step circuit. Uniform Vector len — each entry's `challenges`
@@ -2116,7 +2132,7 @@ stepSolveAndProve
   => StepProveContext len nd blueprints
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> StepCompileResult
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier valCarrier sideloadedVkCarrier
+  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
   -> ExceptT EvaluationError m (StepProveResult outputSize)
 stepSolveAndProve ctx rule compileResult advice = do
   -- Source the side-loaded VK carrier directly from the StepAdvice.

@@ -103,11 +103,15 @@ import Snarky.Types.Shifted (SplitField, Type2)
 -- | commitments the Step circuit verifies, and determines the circuit's
 -- | native field via `WeierstrassCurve f g | g -> f`. Call sites concretize
 -- | `g = PallasG` for the Pasta cycle.
+-- | `wrapVkChunks` (Dim 2) is the wrap VK's own chunks count, carried
+-- | by `getWrapVerifierIndex`'s `VerificationKey wrapVkChunks ...`
+-- | return shape. Distinct from the wrap circuit's own `numChunks`
+-- | (Dim 1) and from per-slot side-loaded chunks (`nc`, Dim 3).
 class
   ( Monad m
   , WeierstrassCurve f g
   ) <=
-  StepWitnessM (n :: Int) (ds :: Int) (dw :: Int) g f m inputVal
+  StepWitnessM (n :: Int) (ds :: Int) (dw :: Int) (wrapVkChunks :: Int) g f m inputVal
   | g -> f
   , m -> inputVal where
   -- | Digests for the next Wrap proof (one per previous proof).
@@ -130,7 +134,7 @@ class
   -- | In OCaml this enters via exists ~request:(Req.Wrap_index) (step_main.ml:345-348).
   -- | Wrapped in `WeierstrassAffinePoint g` so the on-curve checks run during
   -- | `exists`, matching OCaml's `Step_verifier.Inner_curve.typ`.
-  getWrapVerifierIndex :: Unit -> m (VerificationKey (WeierstrassAffinePoint g (F f)))
+  getWrapVerifierIndex :: Unit -> m (VerificationKey wrapVkChunks (WeierstrassAffinePoint g (F f)))
 
   -- | The rule's public input. For OCaml Input-mode rules this is the
   -- | application-specific `a_var` passed via `exists Req.App_state`
@@ -158,7 +162,7 @@ instance
   ( WeierstrassCurve f g
   , Reflectable n Int
   ) =>
-  StepWitnessM n ds dw g f Effect inputVal where
+  StepWitnessM n ds dw wrapVkChunks g f Effect inputVal where
   getMessagesForNextWrapProof _ = throw "impossible! getMessagesForNextWrapProof called during compilation"
   getMessagesForNextWrapProofDummyHash _ = throw "impossible! getMessagesForNextWrapProofDummyHash called during compilation"
   getWrapVerifierIndex _ = throw "impossible! getWrapVerifierIndex called during compilation"

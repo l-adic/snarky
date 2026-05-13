@@ -596,7 +596,7 @@ class
     -> vkCarrier
     -> Effect
          { stepAdvice ::
-             StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal mpv
+             StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal mpv
                carrier
                valCarrier
                vkCarrier
@@ -2284,7 +2284,7 @@ instance
     (PProveStep.StepCompileResult /\ restStepCompileResults)
     ( ( PProveStep.StepProveContext ruleMpv topBranches blueprints
         -> PProveStep.StepCompileResult
-        -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
+        -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds 1
              inputVal
              ruleMpv
              carrier
@@ -2696,7 +2696,7 @@ instance
       (PProveStep.StepCompileResult /\ restStepCompileResults)
       ( ( PProveStep.StepProveContext ruleMpv topBranches blueprints
           -> PProveStep.StepCompileResult
-          -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
+          -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds 1
                inputVal
                ruleMpv
                carrier
@@ -2734,7 +2734,7 @@ instance
     (PProveStep.StepCompileResult /\ restStepCompileResults)
     ( ( PProveStep.StepProveContext ruleMpv topBranches blueprints
         -> PProveStep.StepCompileResult
-        -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
+        -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds 1
              inputVal
              ruleMpv
              carrier
@@ -2925,7 +2925,7 @@ data RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs v
   , stepProveFn ::
       PProveStep.StepProveContext mpv nd blueprints
       -> PProveStep.StepCompileResult
-      -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
+      -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds 1
            inputVal
            mpv
            carrier

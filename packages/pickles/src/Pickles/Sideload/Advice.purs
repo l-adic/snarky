@@ -24,6 +24,7 @@ module Pickles.Sideload.Advice
 
 import Prelude
 
+import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Pickles.Field (StepField)
@@ -52,12 +53,14 @@ instance
     (Slot Compiled n nc statement /\ rest)
     (Unit /\ restCarrier)
 
--- | Side-loaded slot — runtime VK supplied via the prover input.
+-- | Side-loaded slot — runtime VK supplied via the prover input. The
+-- | `Bundle nc` carries the slot's chunks count as Dim 3 (the slot's
+-- | own `nc` from `Slot SideLoaded mpvMax nc statement`).
 instance
   SideloadedVKsCarrier rest restCarrier =>
   SideloadedVKsCarrier
     (Slot SideLoaded mpvMax nc statement /\ rest)
-    (Bundle /\ restCarrier)
+    (Bundle nc /\ restCarrier)
 
 -- | Prover-monad source for the spec-indexed VK carrier.
 -- |
@@ -98,8 +101,10 @@ instance
   mkUnitVkCarrier = unit /\ mkUnitVkCarrier @rest
 
 instance
-  MkUnitVkCarrier rest restCarrier =>
+  ( MkUnitVkCarrier rest restCarrier
+  , Reflectable nc Int
+  ) =>
   MkUnitVkCarrier
     (Slot SideLoaded mpvMax nc statement /\ rest)
-    (SLVK.VerificationKey (F StepField) Boolean /\ restCarrier) where
+    (SLVK.VerificationKey nc (F StepField) Boolean /\ restCarrier) where
   mkUnitVkCarrier = SLVK.compileDummy /\ mkUnitVkCarrier @rest

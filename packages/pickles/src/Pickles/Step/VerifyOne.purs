@@ -40,15 +40,15 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 
 -- | Input to verify_one. All fields from Per_proof_witness + unfinalized + extras.
 -- | Specialized to StepField (Vesta scalar field = Fp).
-type VerifyOneInput n numChunks tCommLen d tickD sf fv bv =
+type VerifyOneInput n wrapVkChunks tCommLen d tickD sf fv bv =
   { -- Per_proof_witness.app_state (flattened via CircuitType upstream).
     -- For Input-mode rules with a single `FVar f` this is `[x]`; for
     -- multi-field inputs it's the full field-list produced by the
     -- input type's `varToFields`.
     appStateFields :: Array fv
-  -- Per_proof_witness.wrap_proof. `tCommLen = 7 * numChunks` (flat).
-  , wComm :: Vector 15 (Vector numChunks (AffinePoint fv))
-  , zComm :: Vector numChunks (AffinePoint fv)
+  -- Per_proof_witness.wrap_proof. `tCommLen = 7 * wrapVkChunks` (flat).
+  , wComm :: Vector 15 (Vector wrapVkChunks (AffinePoint fv))
+  , zComm :: Vector wrapVkChunks (AffinePoint fv)
   , tComm :: Vector tCommLen (AffinePoint fv)
   , lr :: Vector d { l :: AffinePoint fv, r :: AffinePoint fv }
   , z1 :: sf
@@ -113,11 +113,17 @@ type VerifyOneInput n numChunks tCommLen d tickD sf fv bv =
   -- Mask for this proof (trimmed proofs_verified_mask, Vector n)
   , proofMask :: Vector n bv
   -- VK commitments for sponge_after_index and IVP
+  -- VK commitments (wrap VK consumed by step). At wrapVkChunks > 1 each
+  -- commitment is `Vector wrapVkChunks (AffinePoint fv)`. From the IVP's
+  -- perspective `wrapVkChunks` is the chunks of the proof being verified;
+  -- step verifies a wrap proof, so this is the wrap VK's chunks
+  -- (Dim 2 / `wrapVkChunks`). OCaml fixes this to 1 at
+  -- `step_main.ml:347` but the type stays polymorphic.
   , vkComms ::
-      { sigma :: Vector 6 (AffinePoint fv)
-      , sigmaLast :: AffinePoint fv
-      , coeff :: Vector 15 (AffinePoint fv)
-      , index :: Vector 6 (AffinePoint fv)
+      { sigma :: Vector 6 (Vector wrapVkChunks (AffinePoint fv))
+      , sigmaLast :: Vector wrapVkChunks (AffinePoint fv)
+      , coeff :: Vector 15 (Vector wrapVkChunks (AffinePoint fv))
+      , index :: Vector 6 (Vector wrapVkChunks (AffinePoint fv))
       }
   -- Padded sgOld (Wrap_hack.Padded_length = 2, dummy first)
   , sgOld :: Vector 2 (AffinePoint fv)
@@ -132,31 +138,35 @@ type VerifyOneResult tickD fv =
 -- | Full verify_one matching OCaml step_main.ml:17-148.
 -- | Specialized to the Step field (Vesta scalar field = Fp).
 verifyOne
-  :: forall nd ndPred n numChunks tCommLen tCommLenPred wCommN chunkBases nonSgBases sg1 sg2 sg3 sg4 totalBases totalBasesPred t m r1
+  :: forall nd ndPred n wrapVkChunks wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 totalBases totalBasesPred t m r1
    . CircuitM StepField (KimchiConstraint StepField) t m
   => Add 1 ndPred nd
   => Compare 0 nd LT
-  => Compare 0 numChunks LT
+  => Compare 0 wrapVkChunks LT
+  => Add 1 wrapVkChunksPred wrapVkChunks
   => Reflectable nd Int
-  => Reflectable numChunks Int
+  => Reflectable wrapVkChunks Int
   => Reflectable tCommLen Int
   => Reflectable nonSgBases Int
-  -- Chunked base layout chain (mirrors IVP). sgOldN at the step IVP
-  -- is the fixed `PaddedLength` (= 2) baked into the input shape.
-  => Mul 7 numChunks tCommLen
+  -- Chunked base layout chain (mirrors IVP). sgOldN at the step IVP is
+  -- the fixed `PaddedLength` (= 2) baked into the input shape.
+  -- Shared `wCoeffN` / `indexSigmaN` mirror the IVP's collapsing
+  -- because Mul's fundep would unify same-RHS counts.
+  => Mul 7 wrapVkChunks tCommLen
   => Add 1 tCommLenPred tCommLen
-  => Mul 15 numChunks wCommN
-  => Mul 16 numChunks chunkBases
-  => Add 29 chunkBases nonSgBases
+  => Mul 15 wrapVkChunks wCoeffN
+  => Mul 6 wrapVkChunks indexSigmaN
+  => Mul 43 wrapVkChunks chunkBases
+  => Add 2 chunkBases nonSgBases
   => Add 2 nonSgBases totalBases
-  => Add 2 numChunks sg1
-  => Add sg1 6 sg2
-  => Add sg2 wCommN sg3
-  => Add sg3 15 sg4
-  => Add sg4 6 nonSgBases
+  => Add 2 wrapVkChunks sg1
+  => Add sg1 indexSigmaN sg2
+  => Add sg2 wCoeffN sg3
+  => Add sg3 wCoeffN sg4
+  => Add sg4 indexSigmaN nonSgBases
   => Add 1 totalBasesPred totalBases
   => FOP.Params nd StepField r1
-  -> VerifyOneInput n numChunks tCommLen WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
+  -> VerifyOneInput n wrapVkChunks tCommLen WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
   -> IncrementallyVerifyProofParams StepField ()
   -> Snarky (KimchiConstraint StepField) t m (VerifyOneResult StepIPARounds (FVar StepField))
 verifyOne fopParams input ivpParams = do

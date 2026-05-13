@@ -29,41 +29,39 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 -- |
 -- | Reference: mina/src/lib/pickles/common.ml:227-246
 ftComm
-  :: forall numChunks n1 f t m sf r
+  :: forall numChunks numChunksPred tCommLen tCommLenPred f t m sf r
    . CircuitM f (KimchiConstraint f) t m
-  => Add 1 n1 numChunks
+  => Add 1 numChunksPred numChunks
+  => Add 1 tCommLenPred tCommLen
   => { scaleByShifted :: AffinePoint (FVar f) -> sf -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
      | r
      }
-  -> { sigmaLast :: AffinePoint (FVar f)
-     , tComm :: Vector numChunks (AffinePoint (FVar f))
+  -> { sigmaLast :: Vector numChunks (AffinePoint (FVar f))
+     , tComm :: Vector tCommLen (AffinePoint (FVar f))
      , perm :: sf
      , zetaToSrsLength :: sf
      , zetaToDomainSize :: sf
      }
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
 ftComm { scaleByShifted } { sigmaLast, tComm, perm, zetaToSrsLength, zetaToDomainSize } = label "ft-comm" do
-  -- OCaml order (common.ml:195-214):
-  --   1. f_comm = scale sigma_comm_last perm
-  --   2. chunked_t_comm = reduce_chunks t_comm (Horner)
-  --   3. Expression: f_comm + chunked_t_comm + negate(scale chunked_t_comm zeta_to_domain)
-  --      Due to right-to-left evaluation:
+  -- OCaml order (common.ml:307-326): both `sigma_comm_last` and `t_comm`
+  -- are chunk arrays. Each one is collapsed via `reduce_chunks` (xi-Horner
+  -- with `zeta_to_srs_length`), THEN scaled / combined:
+  --   1. sigma_comm_last_reduced = reduce_chunks sigma_comm_last
+  --   2. f_comm                  = scale sigma_comm_last_reduced plonk.perm
+  --   3. chunked_t_comm          = reduce_chunks t_comm
+  --   4. Expression: f_comm + chunked_t_comm + negate(scale chunked_t_comm zeta_to_domain)
+  --      Due to right-to-left OCaml argument evaluation:
   --        a. negate(scale chunked_t_comm zeta_to_domain)  [right arg of outer +]
   --        b. f_comm + chunked_t_comm                      [left arg of outer +]
   --        c. result + negated                              [outer +]
 
-  -- Step 1: scale(σ_last, perm)
-  fComm <- scaleByShifted sigmaLast perm
+  -- Step 0: reduce_chunks sigmaLast (Horner over zetaToSrsLength).
+  reducedSigmaLast <- hornerReduce sigmaLast
+  -- Step 1: scale(σ_last_reduced, perm)
+  fComm <- scaleByShifted reducedSigmaLast perm
   -- Step 2: Horner reduction of t_comm chunks
-  let { last, init } = Vector.unsnoc tComm
-  chunkedTComm <- foldM
-    ( \acc chunk -> do
-        scaled <- scaleByShifted acc zetaToSrsLength
-        { p } <- addComplete chunk scaled
-        pure p
-    )
-    last
-    (Vector.reverse init)
+  chunkedTComm <- hornerReduce tComm
   -- Step 3a: negate(scale(chunked_t_comm, zeta_to_domain)) [right-to-left: evaluated first]
   zetaDomTerm <- scaleByShifted chunkedTComm zetaToDomainSize
   negZetaDomTerm <- Curves.negate zetaDomTerm
@@ -72,3 +70,22 @@ ftComm { scaleByShifted } { sigmaLast, tComm, perm, zetaToSrsLength, zetaToDomai
   -- Step 3c: result + negated
   { p: result } <- addComplete r1 negZetaDomTerm
   pure result
+  where
+  -- `reduce_chunks` from OCaml `common.ml:311-318`:
+  -- res = comm[n-1]; for i = n-2 downto 0: res = comm[i] + scale res zetaToSrsLength
+  hornerReduce
+    :: forall k kPred
+     . Add 1 kPred k
+    => Vector k (AffinePoint (FVar f))
+    -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
+  hornerReduce v =
+    let { last, init } = Vector.unsnoc v
+    in
+      foldM
+        ( \acc chunk -> do
+            scaled <- scaleByShifted acc zetaToSrsLength
+            { p } <- addComplete chunk scaled
+            pure p
+        )
+        last
+        (Vector.reverse init)

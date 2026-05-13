@@ -20,6 +20,7 @@ module Pickles.Sideload.VerificationKey
 import Prelude
 
 import Data.Generic.Rep (class Generic)
+import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -51,13 +52,14 @@ import Type.Proxy (Proxy(..))
 -- | Both are stored as one-hot `Vector ProofsVerifiedCount b` because
 -- | the in-circuit form has Boolean wires and cannot pattern-match on
 -- | an enum.
-newtype VerificationKey f b = VerificationKey
+newtype VerificationKey :: Int -> Type -> Type -> Type
+newtype VerificationKey nc f b = VerificationKey
   { maxProofsVerified :: Vector ProofsVerifiedCount b
   , actualWrapDomainSize :: Vector ProofsVerifiedCount b
-  , wrapIndex :: VK.VerificationKey (WeierstrassAffinePoint Pallas.G f)
+  , wrapIndex :: VK.VerificationKey nc (WeierstrassAffinePoint Pallas.G f)
   }
 
-derive instance Generic (VerificationKey f b) _
+derive instance Generic (VerificationKey nc f b) _
 
 -- | Bridges the value saturation `(F g, Boolean)` to the var
 -- | saturation `(FVar g, BoolVar g)`. Concrete-headed (rather than
@@ -65,18 +67,20 @@ derive instance Generic (VerificationKey f b) _
 -- | `WeierstrassAffinePoint`'s `CircuitType` instance is itself keyed
 -- | on `(F f) -> (FVar f)`, not on arbitrary `a -> var`.
 instance
-  PrimeField g =>
+  ( PrimeField g
+  , Reflectable nc Int
+  ) =>
   CircuitType g
-    (VerificationKey (F g) Boolean)
-    (VerificationKey (FVar g) (BoolVar g)) where
+    (VerificationKey nc (F g) Boolean)
+    (VerificationKey nc (FVar g) (BoolVar g)) where
   sizeInFields pf _ =
     genericSizeInFields pf
-      (Proxy @(Tuple3 (Vector ProofsVerifiedCount Boolean) (Vector ProofsVerifiedCount Boolean) (VK.VerificationKey (WeierstrassAffinePoint Pallas.G (F g)))))
+      (Proxy @(Tuple3 (Vector ProofsVerifiedCount Boolean) (Vector ProofsVerifiedCount Boolean) (VK.VerificationKey nc (WeierstrassAffinePoint Pallas.G (F g)))))
   valueToFields (VerificationKey r) =
     genericValueToFields (tuple3 r.maxProofsVerified r.actualWrapDomainSize r.wrapIndex)
   fieldsToValue fs =
     let
-      tup :: Tuple3 (Vector ProofsVerifiedCount Boolean) (Vector ProofsVerifiedCount Boolean) (VK.VerificationKey (WeierstrassAffinePoint Pallas.G (F g)))
+      tup :: Tuple3 (Vector ProofsVerifiedCount Boolean) (Vector ProofsVerifiedCount Boolean) (VK.VerificationKey nc (WeierstrassAffinePoint Pallas.G (F g)))
       tup = genericFieldsToValue fs
     in
       uncurry3
@@ -86,13 +90,13 @@ instance
         tup
   varToFields (VerificationKey r) =
     genericVarToFields
-      @(Tuple3 (Vector ProofsVerifiedCount Boolean) (Vector ProofsVerifiedCount Boolean) (VK.VerificationKey (WeierstrassAffinePoint Pallas.G (F g))))
+      @(Tuple3 (Vector ProofsVerifiedCount Boolean) (Vector ProofsVerifiedCount Boolean) (VK.VerificationKey nc (WeierstrassAffinePoint Pallas.G (F g))))
       (tuple3 r.maxProofsVerified r.actualWrapDomainSize r.wrapIndex)
   fieldsToVar fs =
     let
-      tup :: Tuple3 (Vector ProofsVerifiedCount (BoolVar g)) (Vector ProofsVerifiedCount (BoolVar g)) (VK.VerificationKey (WeierstrassAffinePoint Pallas.G (FVar g)))
+      tup :: Tuple3 (Vector ProofsVerifiedCount (BoolVar g)) (Vector ProofsVerifiedCount (BoolVar g)) (VK.VerificationKey nc (WeierstrassAffinePoint Pallas.G (FVar g)))
       tup = genericFieldsToVar
-        @(Tuple3 (Vector ProofsVerifiedCount Boolean) (Vector ProofsVerifiedCount Boolean) (VK.VerificationKey (WeierstrassAffinePoint Pallas.G (F g))))
+        @(Tuple3 (Vector ProofsVerifiedCount Boolean) (Vector ProofsVerifiedCount Boolean) (VK.VerificationKey nc (WeierstrassAffinePoint Pallas.G (F g))))
         fs
     in
       uncurry3
@@ -110,7 +114,7 @@ instance
   , CheckedType g c (BoolVar g)
   , PrimeField g
   ) =>
-  CheckedType g c (VerificationKey (FVar g) (BoolVar g)) where
+  CheckedType g c (VerificationKey nc (FVar g) (BoolVar g)) where
   check (VerificationKey r) = do
     label "vk_max_proofs_verified" do
       label "boolean_checks" $ check r.maxProofsVerified
@@ -127,16 +131,21 @@ instance
 -- | runtime VKs mask down via their own `actualWrapDomainSize` one-hot
 -- | bits. Pure construction — feeds `exists` for in-circuit allocation
 -- | of the placeholder; the constraint-system pass never reads the
--- | point coordinates.
-compileDummy :: VerificationKey (F StepField) Boolean
+-- | point coordinates. Polymorphic on `nc` (the side-loaded slot's
+-- | chunks count, Dim 3); the in-circuit shape replicates the
+-- | off-curve placeholder `nc` times per commitment slot.
+compileDummy
+  :: forall nc
+   . Reflectable nc Int
+  => VerificationKey nc (F StepField) Boolean
 compileDummy = mkVerificationKey
   { maxProofsVerified: N2
   , actualWrapDomainSize: N2
   , wrapIndex:
       VK.VerificationKey
-        { sigma: Vector.replicate g
-        , coeff: Vector.replicate g
-        , index: Vector.replicate g
+        { sigma: Vector.replicate (Vector.replicate g)
+        , coeff: Vector.replicate (Vector.replicate g)
+        , index: Vector.replicate (Vector.replicate g)
         }
   }
   where
@@ -147,11 +156,12 @@ compileDummy = mkVerificationKey
 
 -- | Smart constructor from the user-friendly `ProofsVerified` enum.
 mkVerificationKey
-  :: { maxProofsVerified :: ProofsVerified
+  :: forall nc
+   . { maxProofsVerified :: ProofsVerified
      , actualWrapDomainSize :: ProofsVerified
-     , wrapIndex :: VK.VerificationKey (WeierstrassAffinePoint Pallas.G (F StepField))
+     , wrapIndex :: VK.VerificationKey nc (WeierstrassAffinePoint Pallas.G (F StepField))
      }
-  -> VerificationKey (F StepField) Boolean
+  -> VerificationKey nc (F StepField) Boolean
 mkVerificationKey r = VerificationKey
   { maxProofsVerified: proofsVerifiedToBoolVec r.maxProofsVerified
   , actualWrapDomainSize: proofsVerifiedToBoolVec r.actualWrapDomainSize

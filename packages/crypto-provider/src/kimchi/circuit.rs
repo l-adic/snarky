@@ -963,7 +963,8 @@ mod generic {
     }
 
     /// Extract sigma_comm[PERMUTS-1] from verifier index (the last sigma commitment).
-    /// Returns [x, y] coordinates in G::BaseField.
+    /// Returns ALL chunks: [chunk0.x, chunk0.y, chunk1.x, chunk1.y, ...]. For
+    /// nc=1 callers this is a 2-element vec, matching the prior behaviour.
     pub fn verifier_index_sigma_comm_last<G: KimchiCurve>(
         verifier_index: &VerifierIndex<G, OpeningProof<G>>,
     ) -> Vec<G::BaseField>
@@ -971,19 +972,34 @@ mod generic {
         G::BaseField: PrimeField,
     {
         let sigma_last = &verifier_index.sigma_comm[PERMUTS - 1];
-        if let Some(pt) = sigma_last.chunks.first() {
+        let mut result = Vec::with_capacity(sigma_last.chunks.len() * 2);
+        for pt in &sigma_last.chunks {
             if let Some((x, y)) = pt.to_coordinates() {
-                return vec![x, y];
+                result.push(x);
+                result.push(y);
+            } else {
+                result.push(G::BaseField::zero());
+                result.push(G::BaseField::zero());
             }
         }
-        vec![G::BaseField::zero(), G::BaseField::zero()]
+        if result.is_empty() {
+            result.push(G::BaseField::zero());
+            result.push(G::BaseField::zero());
+        }
+        result
     }
 
     /// Extract VK column commitments needed for combine_commitments.
-    /// Returns flat [x0, y0, x1, y1, ...] for 27 points in to_batch order:
-    ///   6 index comms (Generic, Poseidon, CompleteAdd, VarBaseMul, EndoMul, EndoMulScalar)
-    ///   15 coefficient comms
-    ///   6 sigma comms (sigma_comm[0..PERMUTS-1])
+    /// Returns flat [chunk0.x, chunk0.y, chunk1.x, ...] for each of 27
+    /// commitments in to_batch order, with ALL chunks per commitment
+    /// emitted contiguously. Layout:
+    ///   for each of 6 index comms (Generic, Poseidon, CompleteAdd, VarBaseMul,
+    ///     EndoMul, EndoMulScalar): nc * (x, y)
+    ///   for each of 15 coefficient comms: nc * (x, y)
+    ///   for each of 6 sigma comms (sigma_comm[0..PERMUTS-1]): nc * (x, y)
+    /// Total: 27 * nc * 2 field elements. Callers derive nc from
+    /// total_len / (27 * 2) or pass it independently. nc is uniform across
+    /// all commitments in a kimchi `VerifierIndex`.
     pub fn verifier_index_column_comms<G: KimchiCurve>(
         verifier_index: &VerifierIndex<G, OpeningProof<G>>,
     ) -> Vec<G::BaseField>
@@ -994,15 +1010,15 @@ mod generic {
 
         let push_comm = |result: &mut Vec<G::BaseField>,
                          comm: &poly_commitment::commitment::PolyComm<G>| {
-            if let Some(pt) = comm.chunks.first() {
+            for pt in &comm.chunks {
                 if let Some((x, y)) = pt.to_coordinates() {
                     result.push(x);
                     result.push(y);
-                    return;
+                } else {
+                    result.push(G::BaseField::zero());
+                    result.push(G::BaseField::zero());
                 }
             }
-            result.push(G::BaseField::zero());
-            result.push(G::BaseField::zero());
         };
 
         // Index commitments (6) in to_batch order

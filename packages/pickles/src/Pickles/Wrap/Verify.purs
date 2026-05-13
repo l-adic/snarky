@@ -63,7 +63,7 @@ type WrapVerifyInput n d fv =
 -- | Wrap_hack.Checked approach: for n < MaxProofsVerified, (2-n) dummy
 -- | challenge vectors are absorbed offline into the sponge state.
 wrapVerify
-  :: forall publicInput sgOldN numChunks tCommLen tCommLenPred wCommN chunkBases nonSgBases sg1 sg2 sg3 sg4 totalBases totalBasesPred d dPred n t m r
+  :: forall publicInput sgOldN numChunks numChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 totalBases totalBasesPred d dPred n t m r
    . CircuitM WrapField (KimchiConstraint WrapField) t m
   => PublicInputCommit publicInput WrapField
   => Reflectable d Int
@@ -74,19 +74,23 @@ wrapVerify
   => Reflectable nonSgBases Int
   => Compare n 3 LT
   => Compare 0 numChunks LT
+  => Add 1 numChunksPred numChunks
   => Add 1 dPred d
-  -- Chunked base layout chain (mirrors IVP).
+  -- Chunked base layout chain (mirrors IVP). Shared `wCoeffN` /
+  -- `indexSigmaN` mirror the IVP's collapsing because Mul's fundep
+  -- would unify same-RHS counts otherwise.
   => Mul 7 numChunks tCommLen
   => Add 1 tCommLenPred tCommLen
-  => Mul 15 numChunks wCommN
-  => Mul 16 numChunks chunkBases
-  => Add 29 chunkBases nonSgBases
+  => Mul 15 numChunks wCoeffN
+  => Mul 6 numChunks indexSigmaN
+  => Mul 43 numChunks chunkBases
+  => Add 2 chunkBases nonSgBases
   => Add sgOldN nonSgBases totalBases
   => Add 2 numChunks sg1
-  => Add sg1 6 sg2
-  => Add sg2 wCommN sg3
-  => Add sg3 15 sg4
-  => Add sg4 6 nonSgBases
+  => Add sg1 indexSigmaN sg2
+  => Add sg2 wCoeffN sg3
+  => Add sg3 wCoeffN sg4
+  => Add sg4 indexSigmaN nonSgBases
   => Add 1 totalBasesPred totalBases
   => IncrementallyVerifyProofParams WrapField r
   -> IncrementallyVerifyProofInput publicInput sgOldN numChunks tCommLen d (FVar WrapField) (Type1 (FVar WrapField))

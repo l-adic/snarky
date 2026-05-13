@@ -385,7 +385,7 @@ buildWrapAdvice input =
 -- |   check (via `CircuitType`) and the solver input.
 -- | * `advice` — the `WrapAdvice` record from `buildWrapAdvice`.
 type WrapProveContext (branches :: Int) (mpv :: Int) (numChunks :: Int) (slots :: Type -> Type) =
-  { wrapMainConfig :: WrapMainConfig branches
+  { wrapMainConfig :: WrapMainConfig branches numChunks
   , crs :: CRS PallasG
   , publicInput ::
       Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean
@@ -412,7 +412,7 @@ type WrapProveContext (branches :: Int) (mpv :: Int) (numChunks :: Int) (slots :
 -- | Ambient data `wrapCompile` needs — a subset of `WrapProveContext`
 -- | without the solver-only fields (`publicInput`, `advice`).
 type WrapCompileContext (branches :: Int) =
-  { wrapMainConfig :: WrapMainConfig branches
+  { wrapMainConfig :: WrapMainConfig branches numChunks
   , crs :: CRS PallasG
   }
 
@@ -731,7 +731,7 @@ buildWrapMainConfigMulti
            , stepVK :: VerifierIndex VestaG StepField
            }
      }
-  -> WrapMainConfig branches
+  -> WrapMainConfig branches numChunks
 buildWrapMainConfigMulti vestaSrs { perBranch } =
   let
     domainLog2s = map _.stepDomainLog2 perBranch
