@@ -156,8 +156,8 @@ stepVerifyCircuit { lagrangeAt, blindingH } inputs = do
           , sigma: (Vector.replicate constDummyPt) :: Vector 6 _
           }
       , deferredValues
-      , wComm
-      , zComm
+      , wComm: map Vector.singleton wComm
+      , zComm: Vector.singleton zComm
       , tComm
       , opening:
           { delta: readPt 110

@@ -162,8 +162,8 @@ ivpWrapCircuit { lagrangeAt, blindingH } input = do
           , sigma: (Vector.replicate constDummyPt) :: Vector 6 _
           }
       , deferredValues: input.deferredValues
-      , wComm: input.wComm
-      , zComm: input.zComm
+      , wComm: map Vector.singleton input.wComm
+      , zComm: Vector.singleton input.zComm
       , tComm: input.tComm
       , opening: input.opening
       }

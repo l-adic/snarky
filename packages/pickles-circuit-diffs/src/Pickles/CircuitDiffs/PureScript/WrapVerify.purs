@@ -69,8 +69,8 @@ wrapVerifyCircuit { lagrangeAt, blindingH } inputs = do
           , sigma: (Vector.replicate constDummyPt) :: Vector 6 _
           }
       , deferredValues: ivpInput.deferredValues
-      , wComm: ivpInput.wComm
-      , zComm: ivpInput.zComm
+      , wComm: map Vector.singleton ivpInput.wComm
+      , zComm: Vector.singleton ivpInput.zComm
       , tComm: ivpInput.tComm
       , opening: ivpInput.opening
       }

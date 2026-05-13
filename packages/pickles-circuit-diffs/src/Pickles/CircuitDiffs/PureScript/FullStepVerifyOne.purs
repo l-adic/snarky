@@ -69,8 +69,8 @@ fullStepVerifyOneCircuit { lagrangeAt, blindingH } inputs = do
 
     input =
       { appStateFields: [ at 0 ]
-      , wComm: (Vector.generate \j -> readPt (o + 2 * getFinite j)) :: Vector 15 _
-      , zComm: readPt (o + 30)
+      , wComm: (Vector.generate \j -> Vector.singleton (readPt (o + 2 * getFinite j))) :: Vector 15 (Vector 1 _)
+      , zComm: Vector.singleton (readPt (o + 30))
       , tComm: (Vector.generate \j -> readPt (o + 32 + 2 * getFinite j)) :: Vector 7 _
       , lr:
           ( Vector.generate \j ->
