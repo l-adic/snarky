@@ -42,6 +42,8 @@ import Pickles.CircuitDiffs.PureScript.OtherFieldCheck (compileOtherFieldCheck)
 import Pickles.CircuitDiffs.PureScript.Pow2Pow (compilePow2Pow)
 import Pickles.CircuitDiffs.PureScript.PseudoCircuits (compileChooseKeyN1Wrap, compileOneHotN17Step, compileOneHotN17Wrap, compileOneHotN1Step, compileOneHotN1Wrap, compileOneHotN3Step, compileOneHotN3Wrap, compilePseudoChooseN1Step, compilePseudoChooseN1Wrap, compilePseudoChooseN3Step, compilePseudoChooseN3Wrap, compilePseudoMaskN17Step, compilePseudoMaskN17Wrap, compilePseudoMaskN1Step, compilePseudoMaskN1Wrap, compilePseudoMaskN3Step, compilePseudoMaskN3Wrap, compileSideloadedVkTypStep, compileUtilsOnesVectorN16Step, compileUtilsOnesVectorN16Wrap)
 import Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn (compileStepMainAddOneReturn)
+import Pickles.CircuitDiffs.PureScript.StepMainChunks2 (compileStepMainChunks2)
+import Pickles.CircuitDiffs.PureScript.WrapMainChunks2 (compileWrapMainChunks2)
 import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecursionReturnParams, compileStepMainNoRecursionReturn)
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedChild (compileStepMainSideLoadedChild)
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain (compileStepMainSideLoadedMain)
@@ -715,6 +717,21 @@ spec =
             }
         exactMatchEff "wrap_main_add_one_return_circuit"
           (fromCompiledCircuit <<< _.wrapCs <$> compileWrapMainAddOneReturn wrapMainAddOneReturnSrsData aorStepSrsData)
+        -- N=0, num_chunks=2 wrap. Same branch/widths/Max_widths layout
+        -- as `wrap_main_add_one_return_circuit` but with `numChunks=2`
+        -- at `wrapMainForPrevs`, so the IVP MSM walks 2 chunks per
+        -- w/z/t_comm. Step domain log2 = 17 (driven by the chunks2 step
+        -- body's 2^17 mul fillers); wrap domain log2 = 14 (= N1
+        -- override). Step SRS, lagrange, blindingH match the chunks2
+        -- step-only fixture above. Mirrors `dump_chunks2.ml` wrap-side.
+        let
+          chunks2WrapSrsData =
+            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 17 i)
+            , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
+            }
+        exactMatchEff "chunks2_wrap_main_circuit"
+          (fromCompiledCircuit <<< _.wrapCs <$> compileWrapMainChunks2 chunks2WrapSrsData aorStepSrsData)
         -- N=2 Output mode (Tree_proof_return). Single branch with
         -- heterogeneous prev slots [0; 2] (No_recursion_return at
         -- slot 0, self at slot 1). step_widths=[2], padded=[[0];[2]].
@@ -867,6 +884,15 @@ spec =
         -- proof-level byte-for-byte test, which consumes a real
         -- No_recursion_return proof in slot 0.
         exactMatchEff "step_main_no_recursion_return_circuit" (fromCompiledCircuit <<< _.stepCs <$> compileStepMainNoRecursionReturn stepMainSrsData)
+        -- N=0, num_chunks=2, override_wrap_domain=N1 (= log2 14).
+        -- Same shape as NRR but with 2^17+1 mul fillers + a 7-wire Raw
+        -- Generic gate so the step domain rounds to 2^17 and kimchi's
+        -- PCS commits at num_chunks=2. Mirrors `dump_chunks2.exe`.
+        -- See `mina/.../dump_chunks2/dump_chunks2.ml`. The CS itself is
+        -- not affected by `num_chunks` directly — it's purely a function
+        -- of the rule body's gate count — but this fixture is the
+        -- byte-equality gate for the chunks2 witness diff loop.
+        exactMatchEff "chunks2_step_main_circuit" (fromCompiledCircuit <<< _.stepCs <$> compileStepMainChunks2 stepMainSrsData)
         -- N=2, Output mode, HETEROGENEOUS prevs (No_recursion_return @ N0,
         -- self @ N2). All four layers of heterogeneity wired up:
         -- * per-slot SPPW sizing  (`Slot Compiled 0 (Slot Compiled 2 …)`)
