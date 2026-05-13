@@ -71,14 +71,16 @@ import Snarky.Backend.Kimchi.Impl.Pallas (pallasCrsCreate)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaCrsCreate)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (BoolVar, F(..), FVar, SizedF, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, pow_, unpack_, xor_)
+import Data.Foldable (foldM)
+import Data.Int.Bits as Bits
+import Snarky.Circuit.DSL (BoolVar, F(..), FVar, SizedF, addConstraint, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, pow_, unpack_, xor_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky)
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
 import Snarky.Circuit.Kimchi.EndoScalar (toField)
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2')
-import Snarky.Constraint.Kimchi (KimchiConstraint, initialState)
+import Snarky.Constraint.Kimchi (KimchiConstraint(..), initialState)
 import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoScalar(..), endoScalar)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
@@ -152,6 +154,10 @@ compileFB circuit = fromCompiledCircuit $
 compileFU :: (forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit) -> Circuit Fp
 compileFU circuit = fromCompiledCircuit $
   compilePure (Proxy @(F Fp)) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit initialState
+
+compileUU :: (forall t m. CircuitM Fp (KimchiConstraint Fp) t m => Unit -> Snarky (KimchiConstraint Fp) t m Unit) -> Circuit Fp
+compileUU circuit = fromCompiledCircuit $
+  compilePure (Proxy @Unit) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit initialState
 
 compileBB :: (forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m (BoolVar Fp)) -> Circuit Fp
 compileBB circuit = fromCompiledCircuit $
@@ -265,6 +271,27 @@ incrementAppCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t 
 incrementAppCircuit x = do
   prev <- exists (pure (zero :: F Fp))
   assertEqual_ x (CVar.add_ (const_ one) prev)
+
+-- | PS mirror of `app_circuit_chunks2` in `dump_circuit_impl.ml`: fill
+-- | 2^16 rows with `Field.mul (fresh_zero) (fresh_zero)` (each R1CS
+-- | counts as half a row, so 2^17 + 1 iterations match OCaml's
+-- | `for _ = 0 to 1 lsl 17 do`), then a raw 7-wire Generic row with zero
+-- | coeffs to bump the 7th permuted column's polynomial degree above
+-- | 2^16.
+chunks2AppCircuit :: forall t m. CircuitM Fp (KimchiConstraint Fp) t m => Unit -> Snarky (KimchiConstraint Fp) t m Unit
+chunks2AppCircuit _ = do
+  let
+    freshZero = exists (pure (zero :: F Fp))
+    iters = (1 `Bits.shl` 17) + 1
+    mulOne _ = do
+      z1 <- freshZero
+      z2 <- freshZero
+      _ <- mul_ z1 z2
+      pure unit
+  foldM (\_ i -> mulOne i) unit (Array.range 0 (iters - 1))
+  z <- freshZero
+  addConstraint $ KimchiRawGeneric7
+    (z :< z :< z :< z :< z :< z :< z :< Vector.nil)
 
 assertSquareCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit
 assertSquareCircuit x = do
@@ -467,6 +494,7 @@ spec =
         -- multi-branch compile.
         exactMatch "app_circuit_two_phase_chain_make_zero" (compileFU makeZeroAppCircuit)
         exactMatch "app_circuit_two_phase_chain_increment" (compileFU incrementAppCircuit)
+        exactMatch "app_circuit_chunks2" (compileUU chunks2AppCircuit)
       describe "Kimchi gates" do
         exactMatch "add_complete_step_circuit" (compilePP addCompleteCircuit)
         exactMatch "endo_scalar_step_circuit" (compileKFF endoScalarCircuit)
