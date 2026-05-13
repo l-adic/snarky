@@ -581,7 +581,7 @@ spec =
           stepSrs = pallasCrsCreate (2 `Int.pow` 16)
           stepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt stepSrs 16 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepSrs 16 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "xhat_step_circuit" (fromCompiledCircuit $ compileXhatStep stepSrsData)
@@ -597,7 +597,7 @@ spec =
           srs = vestaCrsCreate (2 `Int.pow` 16)
           wrapSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                coerce (pallasSrsLagrangeCommitmentAt srs 16 i)
+                Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt srs 16 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator srs
             }
         exactMatch "xhat_wrap_circuit" (fromCompiledCircuit $ compileXhat wrapSrsData)
@@ -606,7 +606,7 @@ spec =
           wrapSrs = vestaCrsCreate (2 `Int.pow` 16)
           wrapSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 16 i)
+                Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 16 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
         exactMatch "ivp_wrap_circuit" (fromCompiledCircuit $ compileIvpWrap wrapSrsData)
@@ -622,7 +622,7 @@ spec =
           -- return commitments at domain size 2^14 to match.
           wrapMainSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 14 i)
+                Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 14 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
           -- N=1 step CS commits over the Vesta SRS at log2=14. The
@@ -631,7 +631,7 @@ spec =
           wrapMainN1StepSrs = pallasCrsCreate (2 `Int.pow` 15)
           wrapMainN1StepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator wrapMainN1StepSrs) :: AffinePoint (F Fp)
             }
         -- N=1 Input mode (Simple_chain). step_widths=[1], padded=[[0];[1]].
@@ -653,7 +653,7 @@ spec =
           -- per-domain lagrange tables at log2 ∈ {13, 14, 15}.
           wrapMainSlmStepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 14 i)) :: AffinePoint (F Fp))
             , sideloadedPerDomainLagrangeAt:
                 (\i -> (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 13 i)) :: AffinePoint (F Fp))
                   :< (\i -> (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 14 i)) :: AffinePoint (F Fp))
@@ -676,13 +676,13 @@ spec =
         let
           wrapMainN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 15 i)
+                Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 15 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
           wrapMainN2StepSrs = pallasCrsCreate (2 `Int.pow` 15)
           wrapMainN2StepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt wrapMainN2StepSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt wrapMainN2StepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator wrapMainN2StepSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "wrap_main_n2_circuit"
@@ -702,7 +702,7 @@ spec =
           -- log2 matches `domainLog2s` (the step proof's domain).
           wrapMainAddOneReturnSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 9 i)
+                Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 9 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
           -- Step CS params for Add_one_return (mpv=0, no prev proofs).
@@ -712,7 +712,7 @@ spec =
           aorStepSrs = pallasCrsCreate (2 `Int.pow` 15)
           aorStepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt aorStepSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt aorStepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator aorStepSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "wrap_main_add_one_return_circuit"
@@ -727,7 +727,7 @@ spec =
         let
           chunks2WrapSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 17 i)
+                Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 17 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
         exactMatchEff "chunks2_wrap_main_circuit"
@@ -743,7 +743,7 @@ spec =
         let
           wrapMainTprSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 15 i)
+                Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 15 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
           -- Step CS params for TPR (mpv=2, heterogeneous prevs [N0,N2]).
@@ -752,9 +752,9 @@ spec =
           -- by `step_main_tree_proof_return_circuit`'s direct test.
           tprStepSrs = pallasCrsCreate (2 `Int.pow` 15)
           tprLagrangeAtD13 = mkConstLagrangeBaseLookup \i ->
-            (coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 13 i)) :: AffinePoint (F Fp)
+            Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 13 i)) :: AffinePoint (F Fp))
           tprLagrangeAtD14 = mkConstLagrangeBaseLookup \i ->
-            (coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 14 i)) :: AffinePoint (F Fp)
+            Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 14 i)) :: AffinePoint (F Fp))
 
           -- NRR wrap+step SRS data for the chained NRR compile inside
           -- compileStepMainTreeProofReturn (the wrap fixture goes through
@@ -762,14 +762,14 @@ spec =
           wrapTprNrrWrapSrsData :: IvpWrapParams
           wrapTprNrrWrapSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 9 i)
+                Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 9 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
 
           wrapTprNrrStepSrsData :: StepMainNoRecursionReturnParams
           wrapTprNrrStepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator tprStepSrs) :: AffinePoint (F Fp)
             }
           tprStepSrsData =
@@ -791,12 +791,12 @@ spec =
           tpcStepSrs = pallasCrsCreate (2 `Int.pow` 15)
           tpcMakeZeroSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt tpcStepSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt tpcStepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator tpcStepSrs) :: AffinePoint (F Fp)
             }
           tpcIncrementSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt tpcStepSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt tpcStepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator tpcStepSrs) :: AffinePoint (F Fp)
             }
           wrapMainTpcParams =
@@ -813,7 +813,7 @@ spec =
           stepSrs = pallasCrsCreate (2 `Int.pow` 15)
           stepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt stepSrs 15 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepSrs 15 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "ivp_step_circuit" (fromCompiledCircuit $ compileIvpStep stepSrsData)
@@ -823,14 +823,14 @@ spec =
           stepVerifySrs = pallasCrsCreate (2 `Int.pow` 15)
           stepVerifySrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt stepVerifySrs 15 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepVerifySrs 15 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepVerifySrs) :: AffinePoint (F Fp)
             }
         exactMatch "step_verify_circuit" (fromCompiledCircuit $ compileStepVerify stepVerifySrsData)
         let
           stepVerifyN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt stepVerifySrs 15 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepVerifySrs 15 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepVerifySrs) :: AffinePoint (F Fp)
             }
         exactMatch "step_verify_n2_circuit" (fromCompiledCircuit $ compileStepVerifyN2 stepVerifyN2SrsData)
@@ -839,14 +839,14 @@ spec =
           fullStepSrs = pallasCrsCreate (2 `Int.pow` 15)
           fullStepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt fullStepSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt fullStepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "full_step_verify_one_circuit" (fromCompiledCircuit $ compileFullStepVerifyOne fullStepSrsData)
         let
           fullStepN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt fullStepSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt fullStepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "full_step_verify_one_n2_circuit" (fromCompiledCircuit $ compileFullStepVerifyOneN2 fullStepN2SrsData)
@@ -858,7 +858,7 @@ spec =
           stepMainSrs = pallasCrsCreate (2 `Int.pow` 15)
           stepMainSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
         -- N=1, Input mode. Public input layout is input field only.
@@ -866,7 +866,7 @@ spec =
         let
           stepMainN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
         -- N=2, Input mode. Two prev proofs verified by verify_one.
@@ -902,10 +902,10 @@ spec =
         let
           lagrangeAtD13 =
             mkConstLagrangeBaseLookup \i ->
-              (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 13 i)) :: AffinePoint (F Fp)
+              Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 13 i)) :: AffinePoint (F Fp))
           lagrangeAtD14 =
             mkConstLagrangeBaseLookup \i ->
-              (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+              Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp))
           -- SRS data for compiling NRR's wrap CS up-front, used to
           -- derive slot 0's known wrap key (replacing the prior
           -- 28-copies-of-Pallas-generator placeholder). Mirrors
@@ -916,7 +916,7 @@ spec =
           tprNrrWrapSrsData :: IvpWrapParams
           tprNrrWrapSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                coerce (pallasSrsLagrangeCommitmentAt tprNrrWrapSrs 9 i)
+                Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt tprNrrWrapSrs 9 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator tprNrrWrapSrs
             }
 
@@ -927,7 +927,7 @@ spec =
           tprNrrStepSrsData :: StepMainNoRecursionReturnParams
           tprNrrStepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
           treeProofReturnSrsData =
@@ -945,7 +945,7 @@ spec =
         let
           lagrangeAtD15 =
             mkConstLagrangeBaseLookup \i ->
-              (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 15 i)) :: AffinePoint (F Fp)
+              Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 15 i)) :: AffinePoint (F Fp))
           sideLoadedMainSrsData =
             { lagrangeAt: lagrangeAtD14
             , sideloadedPerDomainLagrangeAt:
@@ -1001,12 +1001,12 @@ spec =
         let
           twoPhaseChainMakeZeroSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
           twoPhaseChainIncrementSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
         -- Increment standalone test compiles BOTH branches: make_zero
