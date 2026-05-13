@@ -62,7 +62,7 @@ type NrrRules =
 type SimpleChainRules =
   RulesCons 1
     (Tuple1 (StatementIO (F StepField) Unit))
-    (Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
+    (Tuple1 (Slot Compiled 1 1 (StatementIO (F StepField) Unit)))
     (Tuple1 SlotWrapKey)
     RulesNil
 

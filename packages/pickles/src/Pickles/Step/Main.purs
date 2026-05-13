@@ -199,7 +199,7 @@ instance
   , Add restLen 1 len
   ) =>
   BuildSlotVkSources cell
-    (Slot Compiled n stmt /\ rest)
+    (Slot Compiled n nc stmt /\ rest)
     len
     (SlotVkBlueprintCompiled /\ restScaffolds)
     (Unit /\ restCarrier)
@@ -218,7 +218,7 @@ instance
   , Add restLen 1 len
   ) =>
   BuildSlotVkSources cell
-    (Slot SideLoaded mpvMax stmt /\ rest)
+    (Slot SideLoaded mpvMax nc stmt /\ rest)
     len
     (SlotVkBlueprintSideLoaded /\ restScaffolds)
     (cell /\ restCarrier)
@@ -442,13 +442,13 @@ type AllocatedPerProofWitness n numChunks tCommLen =
   }
 
 allocatePerProofWitness
-  :: forall @n t m
+  :: forall @n @numChunks tCommLen t m
    . CircuitM StepField (KimchiConstraint StepField) t m
   => Reflectable n Int
-  => PerProofWitness n 1 StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
-  -- WrapProof currently pins numChunks=1 internally → tCommLen = 7*1 = 7.
-  -- Widens when the step-verifies-wrap boundary supports chunking.
-  -> Snarky (KimchiConstraint StepField) t m (AllocatedPerProofWitness n 1 7)
+  => Reflectable numChunks Int
+  => Mul 7 numChunks tCommLen
+  => PerProofWitness n numChunks StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
+  -> Snarky (KimchiConstraint StepField) t m (AllocatedPerProofWitness n numChunks tCommLen)
 allocatePerProofWitness (PerProofWitness ppw) = do
   let
     WrapProof wrapProofRec = ppw.wrapProof
@@ -784,7 +784,6 @@ stepMain
   => CheckedType StepField (KimchiConstraint StepField) carrierVar
   => StepSlotsCarrier
        prevsSpec
-       1
        StepIPARounds
        WrapIPARounds
        (FVar StepField)

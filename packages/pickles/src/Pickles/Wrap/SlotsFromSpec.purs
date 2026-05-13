@@ -28,12 +28,12 @@ instance SlotsFromSpec Unit (Const Unit) where
 
 instance
   SlotsFromSpec rest restSlots =>
-  SlotsFromSpec (Slot Compiled n stmt /\ rest) (Product (Vector n) restSlots)
+  SlotsFromSpec (Slot Compiled n nc stmt /\ rest) (Product (Vector n) restSlots)
   where
   slotsProxy _ = Proxy
 
 instance
   SlotsFromSpec rest restSlots =>
-  SlotsFromSpec (Slot SideLoaded n stmt /\ rest) (Product (Vector n) restSlots)
+  SlotsFromSpec (Slot SideLoaded n nc stmt /\ rest) (Product (Vector n) restSlots)
   where
   slotsProxy _ = Proxy

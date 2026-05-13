@@ -192,7 +192,6 @@ class
   , WeierstrassCurve f g
   , StepSlotsCarrier
       prevsSpec
-      1
       ds
       dw
       (F f)
@@ -215,7 +214,6 @@ instance
   ( WeierstrassCurve f g
   , StepSlotsCarrier
       prevsSpec
-      1
       ds
       dw
       (F f)

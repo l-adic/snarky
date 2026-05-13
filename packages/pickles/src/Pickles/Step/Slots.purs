@@ -33,7 +33,8 @@ import Data.Vector as Vector
 import Pickles.Slots (Slot)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (PaddedLength)
-import Prim.Int (class Add)
+import Prim.Int (class Add, class Compare, class Mul)
+import Prim.Ordering (LT)
 
 -- | Spec → (`len`, `carrier`) mapping plus a rank-2 traversal.
 -- |
@@ -45,61 +46,109 @@ import Prim.Int (class Add)
 -- | The kind `k` doesn't affect the carrier — both compiled and
 -- | side-loaded slots present the same `PerProofWitness` shape.
 class StepSlotsCarrier
-  :: Type -> Int -> Int -> Int -> Type -> Type -> Type -> Int -> Type -> Constraint
+  :: Type -> Int -> Int -> Type -> Type -> Type -> Int -> Type -> Constraint
 class
-  StepSlotsCarrier spec numChunks ds dw f sf b len carrier
-  | spec numChunks ds dw f sf b -> len carrier
+  StepSlotsCarrier spec ds dw f sf b len carrier
+  | spec ds dw f sf b -> len carrier
   where
-  -- | Walk the carrier in slot order. The callback's `forall n. ...`
-  -- | prefix gives each invocation access to its slot's `n_i`. The
-  -- | `Finite len` index is the absolute slot position (lifted via
-  -- | `shiftSucc` at each recursive layer).
+  -- | Walk the carrier in slot order. The callback's `forall n nc. ...`
+  -- | prefix gives each invocation access to its slot's `n_i` AND its
+  -- | slot's `nc_i` (num_chunks of the prev's compile — per-slot, not
+  -- | shared). The `Finite len` index is the absolute slot position
+  -- | (lifted via `shiftSucc` at each recursive layer).
   traverseStepSlotsA
     :: forall m result
      . Applicative m
-    => ( forall n pad
+    => ( forall n nc tCommLen tCommLenPred pad nonSgBases chunkBases wCommN sg1 sg2 sg3 sg4 totalBases totalBasesPred
           . Reflectable n Int
+         => Reflectable nc Int
+         => Reflectable tCommLen Int
+         => Reflectable nonSgBases Int
          => Reflectable pad Int
+         => Compare 0 nc LT
+         => Mul 7 nc tCommLen
+         => Add 1 tCommLenPred tCommLen
+         => Mul 15 nc wCommN
+         => Mul 16 nc chunkBases
+         => Add 29 chunkBases nonSgBases
+         => Add 2 nonSgBases totalBases
+         => Add 2 nc sg1
+         => Add sg1 6 sg2
+         => Add sg2 wCommN sg3
+         => Add sg3 15 sg4
+         => Add sg4 6 nonSgBases
+         => Add 1 totalBasesPred totalBases
          => Add pad n PaddedLength
          => Finite len
-         -> PerProofWitness n numChunks ds dw f sf b
+         -> PerProofWitness n nc ds dw f sf b
          -> m result
        )
     -> carrier
     -> m (Vector len result)
 
   -- | Build a carrier from a rank-2 polymorphic dummy slot. Each slot
-  -- | auto-specialises the dummy to its own `n_i`.
+  -- | auto-specialises the dummy to its own `n_i` and `nc_i`.
   replicateStepSlotsCarrier
-    :: ( forall n pad
+    :: ( forall n nc tCommLen tCommLenPred pad nonSgBases chunkBases wCommN sg1 sg2 sg3 sg4 totalBases totalBasesPred
           . Reflectable n Int
+         => Reflectable nc Int
+         => Reflectable tCommLen Int
+         => Reflectable nonSgBases Int
          => Reflectable pad Int
+         => Compare 0 nc LT
+         => Mul 7 nc tCommLen
+         => Add 1 tCommLenPred tCommLen
+         => Mul 15 nc wCommN
+         => Mul 16 nc chunkBases
+         => Add 29 chunkBases nonSgBases
+         => Add 2 nonSgBases totalBases
+         => Add 2 nc sg1
+         => Add sg1 6 sg2
+         => Add sg2 wCommN sg3
+         => Add sg3 15 sg4
+         => Add sg4 6 nonSgBases
+         => Add 1 totalBasesPred totalBases
          => Add pad n PaddedLength
-         => PerProofWitness n numChunks ds dw f sf b
+         => PerProofWitness n nc ds dw f sf b
        )
     -> carrier
 
-instance StepSlotsCarrier Unit numChunks ds dw f sf b 0 Unit where
+instance StepSlotsCarrier Unit ds dw f sf b 0 Unit where
   traverseStepSlotsA _ _ = pure Vector.nil
   replicateStepSlotsCarrier _ = unit
 
 instance
-  ( StepSlotsCarrier rest numChunks ds dw f sf b restLen rcarrier
+  ( StepSlotsCarrier rest ds dw f sf b restLen rcarrier
   , Add restLen 1 len
   , Reflectable n Int
+  , Reflectable nc Int
+  , Reflectable tCommLen Int
+  , Reflectable nonSgBases Int
+  , Compare 0 nc LT
+  , Mul 7 nc tCommLen
+  , Add 1 tCommLenPred tCommLen
+  , Mul 15 nc wCommN
+  , Mul 16 nc chunkBases
+  , Add 29 chunkBases nonSgBases
+  , Add 2 nonSgBases totalBases
+  , Add 2 nc sg1
+  , Add sg1 6 sg2
+  , Add sg2 wCommN sg3
+  , Add sg3 15 sg4
+  , Add sg4 6 nonSgBases
+  , Add 1 totalBasesPred totalBases
   , Add pad n PaddedLength
   , Reflectable pad Int
   ) =>
   StepSlotsCarrier
-    (Slot k n statement /\ rest)
-    numChunks
+    (Slot k n nc statement /\ rest)
     ds
     dw
     f
     sf
     b
     len
-    (PerProofWitness n numChunks ds dw f sf b /\ rcarrier)
+    (PerProofWitness n nc ds dw f sf b /\ rcarrier)
   where
   traverseStepSlotsA f (here /\ rest) =
     Vector.cons
@@ -120,5 +169,5 @@ instance SlotStatementsCarrier Unit Unit
 instance
   SlotStatementsCarrier rest restValCarrier =>
   SlotStatementsCarrier
-    (Slot k n statement /\ rest)
+    (Slot k n nc statement /\ rest)
     (statement /\ restValCarrier)

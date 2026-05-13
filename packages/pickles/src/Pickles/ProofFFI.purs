@@ -68,6 +68,7 @@ module Pickles.ProofFFI
   , pallasProofOpeningLrVec
   , vestaProofOpeningLrVec
   , tCommVec
+  , tCommChunked
   , wCommChunked
   , zCommChunked
   ) where
@@ -77,7 +78,8 @@ import Prelude
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NonEmptyArray
-import Data.Reflectable (class Reflectable)
+import Data.Reflectable (class Reflectable, reflectType)
+import Type.Proxy (Proxy(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Types (StepIPARounds, WrapIPARounds)
@@ -659,3 +661,26 @@ zCommChunked
 zCommChunked c =
   fromJust' "ProofCommitments.zComm: chunk count mismatch with @numChunks"
     (Vector.toVector @numChunks c.zComm)
+
+-- | Reshape the flat `tComm :: Array (AffinePoint f)` (length `7 *
+-- | numChunks`) into the kimchi-faithful 2D shape
+-- | `Vector 7 (Vector numChunks pt)` — outer = quotient sub-poly index,
+-- | inner = chunk index. Errors if the array's length doesn't match
+-- | `7 * numChunks`.
+tCommChunked
+  :: forall @numChunks f
+   . Reflectable numChunks Int
+  => ProofCommitments f
+  -> Vector 7 (Vector numChunks (AffinePoint f))
+tCommChunked c =
+  let
+    nc = reflectType (Proxy @numChunks)
+    perPiece i =
+      fromJust'
+        "ProofCommitments.tComm: per-piece chunk count mismatch with @numChunks"
+        (Vector.toVector @numChunks (Array.slice (i * nc) ((i + 1) * nc) c.tComm))
+    pieces = map perPiece (Array.range 0 6)
+  in
+    fromJust'
+      "ProofCommitments.tComm: expected 7 quotient pieces"
+      (Vector.toVector @7 pieces)

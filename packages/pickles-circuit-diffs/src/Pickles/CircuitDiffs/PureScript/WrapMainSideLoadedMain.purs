@@ -64,7 +64,8 @@ compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     ( \stmt ->
         wrapMainForPrevs @1
-          @(Tuple1 (Slot SideLoaded 2 (StatementIO (F StepField) Unit)))
+          @(Tuple1 (Slot SideLoaded 2 1 (StatementIO (F StepField) Unit)))
+          @1
           config
           stmt
     )

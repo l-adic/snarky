@@ -45,7 +45,7 @@ import Pickles.IPA (bPoly)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals, absorbAllEvals)
 import Pickles.PlonkChecks.Chunks as Chunks
-import Pickles.ProofFFI (OraclesResult, Proof, domainGenerator, tCommVec, vestaChallengePolyCommitment, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallengesVec, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, wCommChunked, zCommChunked)
+import Pickles.ProofFFI (OraclesResult, Proof, domainGenerator, tCommChunked, vestaChallengePolyCommitment, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallengesVec, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, wCommChunked, zCommChunked)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatch, computeBpChalsAndB, derivePlonk, ftEval0)
 import Pickles.Sponge (absorb, evalPureSpongeM, initialSponge, squeeze, squeezeScalarChallengePure)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
@@ -462,7 +462,7 @@ type ExpandProofInput n nwp =
 -- | Output of `expandProof` — the witness data the step circuit
 -- | reads for one predecessor slot. Maps to OCaml's return tuple
 -- | from `expand_proof` (step.ml:515-536).
-type ExpandProofOutput n =
+type ExpandProofOutput n numChunks =
   { sg :: AffinePoint StepField
   -- | The wrap-field deferred-value record + should_finalize flag +
   -- | sponge digest. Corresponds to OCaml `Unfinalized.Constant.t`.
@@ -486,7 +486,7 @@ type ExpandProofOutput n =
   , perProofWitness ::
       Step.PerProofWitness
         n
-        1
+        numChunks
         StepIPARounds
         WrapIPARounds
         (F StepField)
@@ -521,9 +521,10 @@ type PrevStatementWithHashes =
 
 -- | The main `expand_proof` port.
 expandProof
-  :: forall n nwp
-   . ExpandProofInput n nwp
-  -> ExpandProofOutput n
+  :: forall @numChunks n nwp
+   . Reflectable numChunks Int
+  => ExpandProofInput n nwp
+  -> ExpandProofOutput n numChunks
 expandProof input =
   let
     -- ===== Step-field Type1 deferred values. =====
@@ -764,11 +765,11 @@ expandProof input =
     wrapCommits = vestaProofCommitments input.wrapProof
 
     messages
-      :: WrapProofMessages 1 (WeierstrassAffinePoint PallasG (F StepField))
+      :: WrapProofMessages numChunks (WeierstrassAffinePoint PallasG (F StepField))
     messages = WrapProofMessages
-      { wComm: map (map mkPallasPt) (wCommChunked @1 wrapCommits)
-      , zComm: map mkPallasPt (zCommChunked @1 wrapCommits)
-      , tComm: map (Vector.singleton <<< mkPallasPt) (tCommVec wrapCommits)
+      { wComm: map (map mkPallasPt) (wCommChunked @numChunks wrapCommits)
+      , zComm: map mkPallasPt (zCommChunked @numChunks wrapCommits)
+      , tComm: map (map mkPallasPt) (tCommChunked @numChunks wrapCommits)
       }
 
     -- Wrap proof's opening proof from the kimchi form. The `sg`
@@ -792,7 +793,7 @@ expandProof input =
     wrapProofKimchi
       :: Step.WrapProof
            WrapIPARounds
-           1
+           numChunks
            (WeierstrassAffinePoint PallasG (F StepField))
            (Type2 (SplitField (F StepField) Boolean))
     wrapProofKimchi = Step.WrapProof
@@ -845,7 +846,7 @@ expandProof input =
     perProofWitness
       :: Step.PerProofWitness
            n
-           1
+           numChunks
            StepIPARounds
            WrapIPARounds
            (F StepField)

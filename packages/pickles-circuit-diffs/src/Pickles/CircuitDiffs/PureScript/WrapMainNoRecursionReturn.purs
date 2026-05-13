@@ -58,7 +58,7 @@ compileWrapMainNoRecursionReturn { lagrangeAt, blindingH } stepParams = do
       }
   -- mpv=0, no per_proofs; slots derived from Unit via funcdep.
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\stmt -> wrapMainForPrevs @1 @Unit config stmt)
+    (\stmt -> wrapMainForPrevs @1 @Unit @1 config stmt)
     Kimchi.initialState
   pure
     { stepCs: stepArt.stepCs

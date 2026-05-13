@@ -52,7 +52,7 @@ compileWrapMainAddOneReturn { lagrangeAt, blindingH } stepParams = do
       }
   -- `slots` derived from `@Unit` via `SlotsFromSpec` funcdep.
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\stmt -> wrapMainForPrevs @1 @Unit config stmt)
+    (\stmt -> wrapMainForPrevs @1 @Unit @1 config stmt)
     Kimchi.initialState
   pure
     { stepCs: stepArt.stepCs

@@ -89,7 +89,7 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
       }
   -- Slots1 1: mpv=1, single slot of max width 1.
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\stmt -> wrapMain @2 @(Slots1 1) config stmt)
+    (\stmt -> wrapMain @2 @(Slots1 1) @1 config stmt)
     Kimchi.initialState
   pure
     { stepCs: incrementArt.stepCs

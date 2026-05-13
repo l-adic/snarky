@@ -79,8 +79,7 @@ import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.ProofFFI
-  ( firstChunk
-  , pallasProofOpeningSg
+  ( pallasProofOpeningSg
   , pallasProofOracles
   , pallasProverIndexDomainLog2
   , permutationVanishingPolynomial
@@ -166,7 +165,6 @@ import Pickles.Verify
 import Pickles.Verify.Types (toPlonkMinimal)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Slots (class PadSlots, NoSlots, noSlots, replicateSlots)
-import Pickles.Wrap.Types as Wrap
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (EQ, GT, LT)
 import Prim.Ordering as PrimOrdering
@@ -703,6 +701,7 @@ instance
   , Add 1 restMpv mpv
   , Add pad mpv PaddedLength
   , Reflectable n Int
+  , Reflectable nc Int
   , Reflectable mpv Int
   , Reflectable pad Int
   , Add slotPad n PaddedLength
@@ -715,7 +714,7 @@ instance
   , SlotStatementsCarrier rest restValCarrier
   ) =>
   CompilableSpec
-    (Slot Compiled n (StatementIO prevHeadInput prevHeadOutput) /\ rest)
+    (Slot Compiled n nc (StatementIO prevHeadInput prevHeadOutput) /\ rest)
     (SlotWrapKey /\ restSlotVKs)
     ( PrevSlot prevHeadInput n (StatementIO prevHeadInput prevHeadOutput) prevHeadOutput
         /\ restPrevsCarrier
@@ -725,7 +724,7 @@ instance
     (StatementIO prevHeadInput prevHeadOutput /\ restValCarrier)
     ( Step.PerProofWitness
         n
-        1
+        nc
         StepIPARounds
         WrapIPARounds
         (F StepField)
@@ -1021,7 +1020,7 @@ instance
     -- OCaml `expand_proof` at `step.ml:122-150`). Mirrors OCaml's
     -- `expand_proof dlog_vk dlog_index app_state p data ~must_verify`
     -- per-slot call inside the `go` recursion (`step.ml:736-770`).
-    contrib <- buildSlotAdvice @n
+    contrib <- buildSlotAdvice @n @nc
       { publicInput: appInput
       , prevStatement: slotData.prevStatement
       , wrapDomainLog2: slotParams.slotWrapDomainLog2
@@ -1347,6 +1346,7 @@ instance
   , Add 1 restMpv mpv
   , Add pad mpv PaddedLength
   , Reflectable mpvMax Int
+  , Reflectable nc Int
   , Reflectable mpv Int
   , Reflectable pad Int
   , Add slotPad mpvMax PaddedLength
@@ -1359,7 +1359,7 @@ instance
   , SlotStatementsCarrier rest restValCarrier
   ) =>
   CompilableSpec
-    (Slot SideLoaded mpvMax (StatementIO prevHeadInput prevHeadOutput) /\ rest)
+    (Slot SideLoaded mpvMax nc (StatementIO prevHeadInput prevHeadOutput) /\ rest)
     -- Side-loaded slots have NO compile-time wrap key; the head entry
     -- of `slotVKs` is `Unit`. Mirrors the `vkCarrier` head being
     -- `VerificationKey` (the runtime VK takes the place of the
@@ -1373,7 +1373,7 @@ instance
     (StatementIO prevHeadInput prevHeadOutput /\ restValCarrier)
     ( Step.PerProofWitness
         mpvMax
-        1
+        nc
         StepIPARounds
         WrapIPARounds
         (F StepField)
@@ -1664,7 +1664,7 @@ instance
               )
               prev.widthData
 
-    contrib <- buildSlotAdvice @mpvMax
+    contrib <- buildSlotAdvice @mpvMax @nc
       { publicInput: appInput
       , prevStatement: slotData.prevStatement
       , wrapDomainLog2: slotParams.slotWrapDomainLog2
@@ -2243,7 +2243,6 @@ instance
   , Add restBranches 1 branches
   , StepSlotsCarrier
       prevsSpec
-      1
       StepIPARounds
       WrapIPARounds
       (F StepField)
@@ -2482,10 +2481,27 @@ class
   -- |   * step results / rules carriers — per-branch Tuple
   -- |     chains walked in sync with the recursion.
   buildBranchProvers
-    :: forall vecLen vecLenPred
+    :: forall numChunks vecLen vecLenPred tCommLen tCommLenPred wCommN chunkBases nonSgBases sg1 sg2 sg3 sg4 totalBasesMax totalBasesMaxPred
      . Reflectable vecLen Int
     => Add 1 vecLenPred vecLen
-    => Int
+    => Reflectable numChunks Int
+    => Reflectable tCommLen Int
+    => Reflectable nonSgBases Int
+    => Compare 0 numChunks LT
+    => Mul 7 numChunks tCommLen
+    => Add 1 tCommLenPred tCommLen
+    => Mul 15 numChunks wCommN
+    => Mul 16 numChunks chunkBases
+    => Add 29 chunkBases nonSgBases
+    => Add 2 numChunks sg1
+    => Add sg1 6 sg2
+    => Add sg2 wCommN sg3
+    => Add sg3 15 sg4
+    => Add sg4 6 nonSgBases
+    => Add mpvMax nonSgBases totalBasesMax
+    => Add 1 totalBasesMaxPred totalBasesMax
+    => Proxy numChunks
+    -> Int
     -> CompileMultiConfig
     -> WrapCompileResult
     -> Vector vecLen
@@ -2601,7 +2617,7 @@ instance
   where
   prePassDomainLog2s _ _ _ = pure Vector.nil
   runMultiCompile _ _ _ = pure unit
-  buildBranchProvers _ _ _ _ _ _ _ = pure unit
+  buildBranchProvers _ _ _ _ _ _ _ _ = pure unit
 
 instance
   ( CompilableRulesSpecShape rest inputVal outputVal prevInputVal
@@ -2641,8 +2657,6 @@ instance
   , Reflectable padMax Int
   , Add padMax mpvMax PaddedLength
   , Compare mpvMax 3 LT
-  , Add mpvMax Wrap.IvpBaseline totalBasesMax
-  , Add 1 totalBasesMaxPred totalBasesMax
   , PadSlots slotsMax mpvMax
   , PadProveDataMpv ruleMpv slots mpvMax slotsMax
   -- `topBranches` stays fixed across the recursion; required by
@@ -2788,6 +2802,7 @@ instance
       restEntries
     pure (headResult /\ tailResults)
   buildBranchProvers
+    ncProxy
     branchIdx
     cfg
     wrapResult
@@ -2826,6 +2841,7 @@ instance
           @mpvMax
           @slotsMax
           @mpvPad
+          ncProxy
           thisBranch
           cfg
           wrapResult
@@ -2850,6 +2866,7 @@ instance
       @restStepCompileResults
       @restStepProveFns
       @restProvers
+      ncProxy
       (branchIdx + 1)
       cfg
       wrapResult
@@ -2958,7 +2975,6 @@ mkRuleEntry
   => CheckedType StepField (KimchiConstraint StepField) carrierVar
   => StepSlotsCarrier
        prevsSpec
-       1
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -2968,7 +2984,6 @@ mkRuleEntry
        carrier
   => StepSlotsCarrier
        prevsSpec
-       1
        StepIPARounds
        WrapIPARounds
        (FVar StepField)
@@ -3114,10 +3129,11 @@ runMultiProverBody
   :: forall @prevsSpec slotVKs prevsCarrier @mpv @slots @valCarrier @carrier
        @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar
        @topBranches
-       @mpvMax @slotsMax @mpvPad
+       @mpvMax @slotsMax @mpvPad @numChunks
        branches branchesPred topBranchesPred
        pad unfsTotal digestPlusUnfs outputSize carrierFVar
        padMax totalBasesMax totalBasesMaxPred
+       tCommLen tCommLenPred wCommN chunkBases nonSgBases sg1 sg2 sg3 sg4
        vkCarrier blueprints
    . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier vkCarrier blueprints
   => SlotStatementsCarrier prevsSpec valCarrier
@@ -3149,9 +3165,23 @@ runMultiProverBody
   -- the rule's `mpv` / `slots`.
   => Reflectable mpvMax Int
   => Reflectable padMax Int
+  => Reflectable numChunks Int
+  => Reflectable tCommLen Int
+  => Reflectable nonSgBases Int
+  => Compare 0 numChunks LT
+  => Mul 7 numChunks tCommLen
+  => Add 1 tCommLenPred tCommLen
+  => Mul 15 numChunks wCommN
+  => Mul 16 numChunks chunkBases
+  => Add 29 chunkBases nonSgBases
+  => Add 2 numChunks sg1
+  => Add sg1 6 sg2
+  => Add sg2 wCommN sg3
+  => Add sg3 15 sg4
+  => Add sg4 6 nonSgBases
   => Add padMax mpvMax PaddedLength
   => Compare mpvMax 3 LT
-  => Add mpvMax Wrap.IvpBaseline totalBasesMax
+  => Add mpvMax nonSgBases totalBasesMax
   => Add 1 totalBasesMaxPred totalBasesMax
   => PadSlots slotsMax mpvMax
   => PadProveDataMpv mpv slots mpvMax slotsMax
@@ -3166,7 +3196,8 @@ runMultiProverBody
        (slotsMax (Vector WrapIPARounds (FVar WrapField)))
   => CheckedType WrapField (KimchiConstraint WrapField)
        (slotsMax (Vector WrapIPARounds (FVar WrapField)))
-  => Int
+  => Proxy numChunks
+  -> Int
   -- ^ branchIdx — baked into the wrap statement's `whichBranch`.
   -> CompileMultiConfig
   -> WrapCompileResult
@@ -3192,6 +3223,7 @@ runMultiProverBody
   -> ExceptT ProveError Effect
        (CompiledProof mpvMax (StatementIO inputVal outputVal) outputVal Unit)
 runMultiProverBody
+  _ncProxy
   branchIdx
   cfg
   wrapResult
@@ -3472,7 +3504,7 @@ runMultiProverBody
           , messagesForNextStepProofDigest: msgStep
           , messagesForNextWrapProofDigest: msgWrap
           }
-      , advice: buildWrapAdvice
+      , advice: buildWrapAdvice @numChunks
           { stepProof: stepResult.proof
           , whichBranch: F (fromBigInt (BigInt.fromInt branchIdx) :: WrapField)
           , prevUnfinalizedProofs: proveDataMax.prevUnfinalizedProofs
@@ -3487,7 +3519,7 @@ runMultiProverBody
       , kimchiPrevChallenges: kimchiPrevPadded
       }
 
-  wrapProveResult <- wrapSolveAndProve @branches @slotsMax wrapCtx wrapResult
+  wrapProveResult <- wrapSolveAndProve @branches @slotsMax @numChunks wrapCtx wrapResult
 
   let
     -- Recover the rule's user-defined `publicOutput` from
@@ -3547,6 +3579,7 @@ compileMulti
        stepProveFnsCarrier
        proversCarrier
        branchesPred totalBases totalBasesPred
+       tCommLen tCommLenPred wCommN chunkBases nonSgBases sg1 sg2 sg3 sg4
    . CompilableRulesSpecShape rs inputVal outputVal prevInputVal
        branches
        branches
@@ -3562,10 +3595,23 @@ compileMulti
   => Reflectable branches Int
   => Reflectable mpvMax Int
   => Reflectable numChunks Int
+  => Reflectable tCommLen Int
+  => Reflectable nonSgBases Int
+  => Compare 0 numChunks LT
+  => Mul 7 numChunks tCommLen
+  => Add 1 tCommLenPred tCommLen
+  => Mul 15 numChunks wCommN
+  => Mul 16 numChunks chunkBases
+  => Add 29 chunkBases nonSgBases
+  => Add 2 numChunks sg1
+  => Add sg1 6 sg2
+  => Add sg2 wCommN sg3
+  => Add sg3 15 sg4
+  => Add sg4 6 nonSgBases
   => Add 1 branchesPred branches
   => Compare 0 branches LT
   => Compare mpvMax 3 LT
-  => Add mpvMax Wrap.IvpBaseline totalBases
+  => Add mpvMax nonSgBases totalBases
   => Add 1 totalBasesPred totalBases
   => PadSlots slots mpvMax
   -- Strict-equality enforcement: `mpvMax = max(ruleMpv across rs)`,
@@ -3647,7 +3693,7 @@ compileMulti cfg rules = do
       stepResults
 
   -- Step 2: shared wrap compile across all branches.
-  wrapResult <- wrapCompile @branches @slots
+  wrapResult <- wrapCompile @branches @slots @numChunks
     { wrapMainConfig:
         buildWrapMainConfigMulti @branches cfg.srs.vestaSrs
           { perBranch: perBranchVec }
@@ -3668,6 +3714,7 @@ compileMulti cfg rules = do
     @branches
     @mpvMax
     @slots
+    (Proxy :: Proxy numChunks)
     0
     cfg
     wrapResult

@@ -95,7 +95,7 @@ type NoRecursionInputRules =
 type SideLoadedMainRules =
   RulesCons 1
     (Tuple1 (StatementIO (F StepField) Unit))
-    (Tuple1 (Slot SideLoaded 2 (StatementIO (F StepField) Unit)))
+    (Tuple1 (Slot SideLoaded 2 1 (StatementIO (F StepField) Unit)))
     (Tuple1 Unit)
     RulesNil
 

@@ -120,7 +120,7 @@ type TwoPhaseChainRules =
   RulesCons 0 Unit Unit Unit
     ( RulesCons 1
         (Tuple1 (StatementIO (F StepField) Unit))
-        (Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
+        (Tuple1 (Slot Compiled 1 1 (StatementIO (F StepField) Unit)))
         (Tuple1 SlotWrapKey)
         RulesNil
     )

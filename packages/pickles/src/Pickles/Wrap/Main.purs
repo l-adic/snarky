@@ -70,9 +70,9 @@ import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
 import Pickles.Wrap.Slots (class PadSlots, padAllSlots, slotWidthsOf)
 import Pickles.Wrap.SlotsFromSpec (class SlotsFromSpec)
-import Pickles.Wrap.Types (IvpBaseline, PrevProofState(..), StatementPacked(..))
+import Pickles.Wrap.Types (PrevProofState(..), StatementPacked(..))
 import Pickles.Wrap.Verify (wrapVerify)
-import Prim.Int (class Add, class Compare)
+import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
@@ -360,7 +360,7 @@ splitPerProofUnfinalized (PerProofUnfinalized r) = do
 -------------------------------------------------------------------------------
 
 wrapMain
-  :: forall @branches @slots mpv branchesPred totalBases totalBasesPred t m
+  :: forall @branches @slots @numChunks mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCommN chunkBases nonSgBases sg1 sg2 sg3 sg4 t m
    . CircuitM WrapField (KimchiConstraint WrapField) t m
   -- `slots` carries the per-slot widths; `mpv` is derived via the
   -- `slots -> mpv` fundep on `PadSlots`. Concrete instantiations
@@ -368,7 +368,22 @@ wrapMain
   -- `Slots2 w0 w1` (mpv=2). The `Compare mpv 3 LT` constraint
   -- propagates into `wrapVerify`; today's pickles caps `mpv` at 2.
   => PadSlots slots mpv
-  => WrapWitnessM branches mpv slots VestaG WrapField m
+  => WrapWitnessM branches mpv numChunks slots VestaG WrapField m
+  => Reflectable numChunks Int
+  => Reflectable tCommLen Int
+  => Reflectable nonSgBases Int
+  => Compare 0 numChunks LT
+  -- Chunked base layout chain (forwarded to wrapVerify).
+  => Mul 7 numChunks tCommLen
+  => Add 1 tCommLenPred tCommLen
+  => Mul 15 numChunks wCommN
+  => Mul 16 numChunks chunkBases
+  => Add 29 chunkBases nonSgBases
+  => Add 2 numChunks sg1
+  => Add sg1 6 sg2
+  => Add sg2 wCommN sg3
+  => Add sg3 15 sg4
+  => Add sg4 6 nonSgBases
   -- `exists` on the result of `getOldBulletproofChallenges` needs
   -- both `CircuitType` and `CheckedType` instances for the `slots`
   -- shape. They exist for concrete `Slots1` / `Slots2` via the
@@ -388,7 +403,7 @@ wrapMain
   -- `Add sgOldN IvpBaseline totalBases` and
   -- `Add 1 totalBasesPred totalBases`). With `sgOldN = mpv`, these
   -- collapse to the constraints below.
-  => Add mpv IvpBaseline totalBases
+  => Add mpv nonSgBases totalBases
   => Add 1 totalBasesPred totalBases
   => WrapMainConfig branches
   -> WrapMainInputVar
@@ -434,7 +449,7 @@ wrapMain config (StatementPacked stmtR) = do
 
   -- 1. Req.Which_branch  (wrap_main.ml:223)
   whichBranchField <- label "which-branch" $ exists $ lift $
-    getWhichBranch @branches @mpv @slots @VestaG unit
+    getWhichBranch @branches @mpv @numChunks @slots @VestaG unit
 
   -- 2. In-circuit derivation: one-hot vector, ones_vector, branch_data assert
   --    (wrap_main.ml:228-256)
@@ -497,7 +512,7 @@ wrapMain config (StatementPacked stmtR) = do
 
   -- 3. Req.Proof_state (wrap_main.ml:257-267)
   PrevProofState pps <- label "proof-state" $ exists $ lift $
-    getWrapProofState @branches @mpv @slots @VestaG unit
+    getWrapProofState @branches @mpv @numChunks @slots @VestaG unit
   let
     prevUnfinalized = pps.unfinalizedProofs
     prevMsgForNextStep = pps.messagesForNextStepProof
@@ -519,7 +534,7 @@ wrapMain config (StatementPacked stmtR) = do
 
   -- 5. Req.Step_accs (wrap_main.ml:367-371)
   stepAccs <- label "step-accs" $ exists $ lift $
-    getStepAccs @branches @mpv @slots @VestaG unit
+    getStepAccs @branches @mpv @numChunks @slots @VestaG unit
   let stepAccsAffine = map unwrapPt stepAccs
 
   -- 6. Req.Old_bulletproof_challenges (wrap_main.ml:372-404).
@@ -529,7 +544,7 @@ wrapMain config (StatementPacked stmtR) = do
   -- right number of dummy bp-challenge stacks per slot to mirror
   -- OCaml's `Wrap_hack.Checked.pad_challenges`.
   slotsValue <- label "old-bp-chals" $ exists $ lift $
-    getOldBulletproofChallenges @branches @mpv @slots @VestaG unit
+    getOldBulletproofChallenges @branches @mpv @numChunks @slots @VestaG unit
   let
     dummyChallenge = map const_ dummyIpaChallenges.wrapExpanded
 
@@ -539,11 +554,11 @@ wrapMain config (StatementPacked stmtR) = do
 
   -- 7. Req.Evals (wrap_main.ml:405-415)
   rawEvals <- label "evals" $ exists $ lift $
-    getEvals @branches @mpv @slots @VestaG unit
+    getEvals @branches @mpv @numChunks @slots @VestaG unit
 
   -- 8. Req.Wrap_domain_indices (wrap_main.ml:418-424)
   wrapDomainIndices <- label "wrap-domain-indices" $ exists $ lift $
-    getWrapDomainIndices @branches @mpv @slots @VestaG unit
+    getWrapDomainIndices @branches @mpv @numChunks @slots @VestaG unit
 
   -- 9. FOP loop (wrap_main.ml:435-487).
   --
@@ -661,7 +676,7 @@ wrapMain config (StatementPacked stmtR) = do
 
   -- 11. Req.Openings_proof (wrap_main.ml:506-532)
   WrapProofOpening openingProofRec <- label "openings-proof" $ exists $ lift $
-    getOpeningProof @branches @mpv @slots @VestaG unit
+    getOpeningProof @branches @mpv @numChunks @slots @VestaG unit
   let
     openingProof =
       { lr: map (\r -> { l: unwrapPt r.l, r: unwrapPt r.r }) openingProofRec.lr
@@ -673,7 +688,7 @@ wrapMain config (StatementPacked stmtR) = do
 
   -- 12. Req.Messages (wrap_main.ml:533-541)
   WrapProofMessages messagesRec <- label "messages" $ exists $ lift $
-    getMessages @branches @mpv @slots @VestaG unit
+    getMessages @branches @mpv @numChunks @slots @VestaG unit
   let
     -- wComm/zComm carry chunks through; tComm flattens Vector 7 (Vector 1 pt)
     -- to flat Vector 7 pt via Vector.concat (= 7 * numChunks pieces).
@@ -849,11 +864,25 @@ wrapMain config (StatementPacked stmtR) = do
 -- | doesn't compose across rules) and call `wrapMain @branches @slots`
 -- | directly.
 wrapMainForPrevs
-  :: forall @branches @prevsSpec slots mpv branchesPred totalBases totalBasesPred t m
+  :: forall @branches @prevsSpec @numChunks slots mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCommN chunkBases nonSgBases sg1 sg2 sg3 sg4 t m
    . CircuitM WrapField (KimchiConstraint WrapField) t m
   => SlotsFromSpec prevsSpec slots
   => PadSlots slots mpv
-  => WrapWitnessM branches mpv slots VestaG WrapField m
+  => WrapWitnessM branches mpv numChunks slots VestaG WrapField m
+  => Reflectable numChunks Int
+  => Reflectable tCommLen Int
+  => Reflectable nonSgBases Int
+  => Compare 0 numChunks LT
+  => Mul 7 numChunks tCommLen
+  => Add 1 tCommLenPred tCommLen
+  => Mul 15 numChunks wCommN
+  => Mul 16 numChunks chunkBases
+  => Add 29 chunkBases nonSgBases
+  => Add 2 numChunks sg1
+  => Add sg1 6 sg2
+  => Add sg2 wCommN sg3
+  => Add sg3 15 sg4
+  => Add sg4 6 nonSgBases
   => CircuitType WrapField
        (slots (Vector WrapIPARounds (F WrapField)))
        (slots (Vector WrapIPARounds (FVar WrapField)))
@@ -863,9 +892,9 @@ wrapMainForPrevs
   => Reflectable mpv Int
   => Add 1 branchesPred branches
   => Compare mpv 3 LT
-  => Add mpv IvpBaseline totalBases
+  => Add mpv nonSgBases totalBases
   => Add 1 totalBasesPred totalBases
   => WrapMainConfig branches
   -> WrapMainInputVar
   -> Snarky (KimchiConstraint WrapField) t m Unit
-wrapMainForPrevs = wrapMain @branches @slots
+wrapMainForPrevs = wrapMain @branches @slots @numChunks

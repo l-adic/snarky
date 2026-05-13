@@ -37,8 +37,8 @@ import Snarky.Circuit.DSL (F)
 -- | alone.
 -- |
 -- | * `Unit` → `Unit`
--- | * `Slot Compiled n stmt /\ rest` → `Unit /\ restCarrier`
--- | * `Slot SideLoaded mpvMax stmt /\ rest` → `Bundle /\ restCarrier`
+-- | * `Slot Compiled n nc stmt /\ rest` → `Unit /\ restCarrier`
+-- | * `Slot SideLoaded mpvMax nc stmt /\ rest` → `Bundle /\ restCarrier`
 class SideloadedVKsCarrier :: Type -> Type -> Constraint
 class SideloadedVKsCarrier spec carrier | spec -> carrier
 
@@ -49,14 +49,14 @@ instance SideloadedVKsCarrier Unit Unit
 instance
   SideloadedVKsCarrier rest restCarrier =>
   SideloadedVKsCarrier
-    (Slot Compiled n statement /\ rest)
+    (Slot Compiled n nc statement /\ rest)
     (Unit /\ restCarrier)
 
 -- | Side-loaded slot — runtime VK supplied via the prover input.
 instance
   SideloadedVKsCarrier rest restCarrier =>
   SideloadedVKsCarrier
-    (Slot SideLoaded mpvMax statement /\ rest)
+    (Slot SideLoaded mpvMax nc statement /\ rest)
     (Bundle /\ restCarrier)
 
 -- | Prover-monad source for the spec-indexed VK carrier.
@@ -94,12 +94,12 @@ instance MkUnitVkCarrier Unit Unit where
 
 instance
   MkUnitVkCarrier rest restCarrier =>
-  MkUnitVkCarrier (Slot Compiled n statement /\ rest) (Unit /\ restCarrier) where
+  MkUnitVkCarrier (Slot Compiled n nc statement /\ rest) (Unit /\ restCarrier) where
   mkUnitVkCarrier = unit /\ mkUnitVkCarrier @rest
 
 instance
   MkUnitVkCarrier rest restCarrier =>
   MkUnitVkCarrier
-    (Slot SideLoaded mpvMax statement /\ rest)
+    (Slot SideLoaded mpvMax nc statement /\ rest)
     (SLVK.VerificationKey (F StepField) Boolean /\ restCarrier) where
   mkUnitVkCarrier = SLVK.compileDummy /\ mkUnitVkCarrier @rest

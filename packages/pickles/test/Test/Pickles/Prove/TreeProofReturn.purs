@@ -56,8 +56,8 @@ import Test.Spec.Assertions (shouldEqual)
 
 type TreeProofReturnPrevsSpec =
   Tuple2
-    (Slot Compiled 0 (StatementIO Unit (F StepField)))
-    (Slot Compiled 2 (StatementIO Unit (F StepField)))
+    (Slot Compiled 0 1 (StatementIO Unit (F StepField)))
+    (Slot Compiled 2 1 (StatementIO Unit (F StepField)))
 
 treeProofReturnRule
   :: StepRule 2

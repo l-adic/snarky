@@ -90,7 +90,7 @@ import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, tCommVec, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallenges, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaVerifierIndexCommitments, vestaVerifierIndexDigest, wCommChunked, zCommChunked)
+import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, tCommChunked, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallenges, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaVerifierIndexCommitments, vestaVerifierIndexDigest, wCommChunked, zCommChunked)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
@@ -240,7 +240,6 @@ buildStepAdvice
    . Reflectable len Int
   => StepSlotsCarrier
        prevsSpec
-       1
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -372,11 +371,12 @@ buildStepAdvice input =
     -- NB: the `UnChecked <$>` on `bulletproofChallenges` etc. matches
     -- OCaml's in-circuit wrapping at the FOP state construction site.
     dummySlot
-      :: forall n
+      :: forall n nc
        . Reflectable n Int
+      => Reflectable nc Int
       => Step.PerProofWitness
            n
-           1
+           nc
            StepIPARounds
            WrapIPARounds
            (F StepField)
@@ -397,9 +397,9 @@ buildStepAdvice input =
               , sg: WeierstrassAffinePoint g0
               }
           , messages: WrapProofMessages
-              { wComm: Vector.generate (\_ -> Vector.singleton (WeierstrassAffinePoint g0))
-              , zComm: Vector.singleton (WeierstrassAffinePoint g0)
-              , tComm: Vector.generate (\_ -> Vector.singleton (WeierstrassAffinePoint g0))
+              { wComm: Vector.generate (\_ -> Vector.replicate (WeierstrassAffinePoint g0))
+              , zComm: Vector.replicate (WeierstrassAffinePoint g0)
+              , tComm: Vector.generate (\_ -> Vector.replicate (WeierstrassAffinePoint g0))
               }
           }
       , proofState: Step.ProofState
@@ -935,8 +935,8 @@ type BuildSlotAdviceInput inputVal stmt =
 -- | Reference: mina/src/lib/crypto/pickles/step.ml:131-150 (`expand_proof`
 -- | signature) + step.ml:736-770 (the `go` recursion that conses each
 -- | per-slot output onto the rest's vectors).
-type SlotAdviceContrib :: Int -> Type
-type SlotAdviceContrib n =
+type SlotAdviceContrib :: Int -> Int -> Type
+type SlotAdviceContrib n nc =
   { challengePolynomialCommitment :: AffinePoint StepField
   , slotUnfinalized ::
       PerProofUnfinalized
@@ -953,7 +953,7 @@ type SlotAdviceContrib n =
   , slotSppw ::
       Step.PerProofWitness
         n
-        1
+        nc
         StepIPARounds
         WrapIPARounds
         (F StepField)
@@ -980,14 +980,15 @@ type SlotAdviceContrib n =
 --------------------------------------------------------------------------------
 
 buildSlotAdvice
-  :: forall @n inputVal input prevHeadStmt prevHeadStmtVar pad
+  :: forall @n @nc inputVal input prevHeadStmt prevHeadStmtVar pad
    . Reflectable n Int
+  => Reflectable nc Int
   => Reflectable pad Int
   => Add pad n PaddedLength
   => CircuitType StepField inputVal input
   => CircuitType StepField prevHeadStmt prevHeadStmtVar
   => BuildSlotAdviceInput inputVal prevHeadStmt
-  -> Effect (SlotAdviceContrib n)
+  -> Effect (SlotAdviceContrib n nc)
 buildSlotAdvice input = do
   let
     -- Wrap_hack-padded bp_chals for the wrap proof's hash AND the
@@ -1176,7 +1177,7 @@ buildSlotAdvice input = do
       , stepPrevSgsPadded: prevCpcs
       }
 
-    expandProofResult = PureStep.expandProof expandProofInputRec
+    expandProofResult = PureStep.expandProof @nc expandProofInputRec
 
   let
     dStep = expandProofResult.deferredStep
@@ -1281,10 +1282,9 @@ buildSlotAdvice input = do
     mkPallasAffine :: AffinePoint StepField -> AffinePoint (F StepField)
     mkPallasAffine pt = { x: F pt.x, y: F pt.y }
     wrapMessages =
-      -- At num_chunks=1, project chunked FFI shape into singleton-per-poly Vectors.
-      { wComm: map (map mkPallasAffine) (wCommChunked @1 wrapCommits)
-      , zComm: map mkPallasAffine (zCommChunked @1 wrapCommits)
-      , tComm: map mkPallasAffine (tCommVec wrapCommits)
+      { wComm: map (map mkPallasAffine) (wCommChunked @nc wrapCommits)
+      , zComm: map mkPallasAffine (zCommChunked @nc wrapCommits)
+      , tComm: map (map mkPallasAffine) (tCommChunked @nc wrapCommits)
       }
 
     wrapPE' :: LFFI.PointEval StepField -> LFFI.PointEval (F StepField)
@@ -1319,7 +1319,7 @@ buildSlotAdvice input = do
     -- preserving heterogeneous per-entry values for rules like
     -- Tree_proof_return.
     slotSppw
-      :: Step.PerProofWitness n 1 StepIPARounds WrapIPARounds
+      :: Step.PerProofWitness n nc StepIPARounds WrapIPARounds
            (F StepField)
            (Type2 (SplitField (F StepField) Boolean))
            Boolean
@@ -1341,7 +1341,7 @@ buildSlotAdvice input = do
           , messages: WrapProofMessages
               { wComm: map (map WeierstrassAffinePoint) wrapMessages.wComm
               , zComm: map WeierstrassAffinePoint wrapMessages.zComm
-              , tComm: map (Vector.singleton <<< WeierstrassAffinePoint) wrapMessages.tComm
+              , tComm: map (map WeierstrassAffinePoint) wrapMessages.tComm
               }
           }
       , proofState: Step.ProofState
@@ -1729,7 +1729,6 @@ instance
   ( Monad m
   , StepSlotsCarrier
       prevsSpec
-      1
       ds
       dw
       (F StepField)
@@ -1853,7 +1852,6 @@ stepCompile
   => CheckedType StepField (KimchiConstraint StepField) carrierVar
   => StepSlotsCarrier
        prevsSpec
-       1
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -1863,7 +1861,6 @@ stepCompile
        carrier
   => StepSlotsCarrier
        prevsSpec
-       1
        StepIPARounds
        WrapIPARounds
        (FVar StepField)
@@ -2003,7 +2000,6 @@ preComputeStepDomainLog2
   => CheckedType StepField (KimchiConstraint StepField) carrierVar
   => StepSlotsCarrier
        prevsSpec
-       1
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -2013,7 +2009,6 @@ preComputeStepDomainLog2
        carrier
   => StepSlotsCarrier
        prevsSpec
-       1
        StepIPARounds
        WrapIPARounds
        (FVar StepField)
@@ -2099,7 +2094,6 @@ stepSolveAndProve
   => CheckedType StepField (KimchiConstraint StepField) carrierVar
   => StepSlotsCarrier
        prevsSpec
-       1
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -2109,7 +2103,6 @@ stepSolveAndProve
        carrier
   => StepSlotsCarrier
        prevsSpec
-       1
        StepIPARounds
        WrapIPARounds
        (FVar StepField)

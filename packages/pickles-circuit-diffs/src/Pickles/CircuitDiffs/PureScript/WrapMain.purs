@@ -53,7 +53,7 @@ compileWrapMainN1 { lagrangeAt, blindingH } stepParams = do
       }
   -- mpv=1, slot 0 width=1; slots derived from PrevsSpec via funcdep.
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\stmt -> wrapMainForPrevs @1 @(Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit))) config stmt)
+    (\stmt -> wrapMainForPrevs @1 @(Tuple1 (Slot Compiled 1 1 (StatementIO (F StepField) Unit))) @1 config stmt)
     Kimchi.initialState
   pure
     { stepCs: stepArt.stepCs
