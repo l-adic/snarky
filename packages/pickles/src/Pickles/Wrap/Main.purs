@@ -39,6 +39,7 @@ import Control.Monad.State.Trans (evalStateT, get, put)
 import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.Fin (Finite, getFinite, unsafeFinite)
+import Unsafe.Coerce (unsafeCoerce)
 import Data.Foldable (foldl)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int as Int
@@ -46,7 +47,7 @@ import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector, (:<))
+import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (WrapField)
@@ -138,7 +139,12 @@ type WrapMainConfig branches numChunks =
   -- | `wrap_verifier.ml:426-428`). Always populated; for the
   -- | per-branch path, it carries the head domain's basis as a
   -- | placeholder (only `perBranchLagrangeAt` is consulted).
-  , lagrangeAt :: LagrangeBaseLookup WrapField
+  -- Chunked lookup. `numChunks` here is the STEP proof's chunks count
+  -- (Dim 1): the wrap circuit verifies a step proof whose wrap_domain
+  -- determines how the lagrange basis splits over the wrap SRS. At
+  -- chunks2 wrap, step's wrap_domain > wrap SRS max_poly_size so
+  -- numChunks > 1 and the PI commit accumulator runs chunkwise.
+  , lagrangeAt :: LagrangeBaseLookup numChunks WrapField
   -- | Per-branch lagrange constants per index. `Nothing` for the
   -- | shared-domain fast path. `Just f` when branch domains differ:
   -- | `f i` returns one constant lagrange point per branch (each at
@@ -360,7 +366,7 @@ splitPerProofUnfinalized (PerProofUnfinalized r) = do
 -------------------------------------------------------------------------------
 
 wrapMain
-  :: forall @branches @slots @numChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 t m
+  :: forall @branches @slots @numChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 t m
    . CircuitM WrapField (KimchiConstraint WrapField) t m
   -- `slots` carries the per-slot widths; `mpv` is derived via the
   -- `slots -> mpv` fundep on `PadSlots`. Concrete instantiations
@@ -376,18 +382,21 @@ wrapMain
   => Add 1 numChunksPred numChunks
   -- Chunked base layout chain (forwarded to wrapVerify). Shared
   -- `wCoeffN` / `indexSigmaN` mirror the IVP's collapsing because
-  -- Mul's fundep would unify same-RHS counts otherwise.
+  -- Mul's fundep would unify same-RHS counts otherwise. Layout:
+  -- xHat(nc) :: ftComm :: zComm(nc) :: index(6nc) :: wComm(15nc) ::
+  -- coeff(15nc) :: sigma(6nc); total non-sg = 1 + 44*nc.
   => Mul 7 numChunks tCommLen
   => Add 1 tCommLenPred tCommLen
   => Mul 15 numChunks wCoeffN
   => Mul 6 numChunks indexSigmaN
-  => Mul 43 numChunks chunkBases
-  => Add 2 chunkBases nonSgBases
-  => Add 2 numChunks sg1
-  => Add sg1 indexSigmaN sg2
-  => Add sg2 wCoeffN sg3
+  => Mul 44 numChunks chunkBases
+  => Add 1 chunkBases nonSgBases
+  => Add numChunks 1 sg1
+  => Add sg1 numChunks sg2
+  => Add sg2 indexSigmaN sg3
   => Add sg3 wCoeffN sg4
-  => Add sg4 indexSigmaN nonSgBases
+  => Add sg4 wCoeffN sg5
+  => Add sg5 indexSigmaN nonSgBases
   -- `exists` on the result of `getOldBulletproofChallenges` needs
   -- both `CircuitType` and `CheckedType` instances for the `slots`
   -- shape. They exist for concrete `Slots1` / `Slots2` via the
@@ -790,7 +799,19 @@ wrapMain config (StatementPacked stmtR) = do
     -- unlike `lagrange_with_correction`); the `Just` arm carries an
     -- unused `constant: head` to satisfy the record. `sealCondAddPt
     -- = false` in both arms — only step side-loaded seals.
-    maskedLagrangeAt :: LagrangeBaseLookup WrapField
+    -- Run `sumMaskByBranch` per chunk index. Maps over numChunks
+    -- (the inner Vector) and at each chunk position pulls one point
+    -- from each branch into a `Vector branches` for the single-chunk
+    -- 1-hot mux. For numChunks=1 this collapses to one mux of a
+    -- branches-sized vector — bit-identical to pre-chunk behavior.
+    sumMaskByBranchChunked
+      :: Vector branches (Vector numChunks (AffinePoint (F WrapField)))
+      -> Vector numChunks (AffinePoint (FVar WrapField))
+    sumMaskByBranchChunked perBranchChunkedPts =
+      Vector.generate \fi ->
+        sumMaskByBranch (map (\vc -> vc !! fi) perBranchChunkedPts)
+
+    maskedLagrangeAt :: LagrangeBaseLookup numChunks WrapField
     maskedLagrangeAt i = case config.perBranchLagrangeAt of
       Nothing ->
         let
@@ -799,15 +820,25 @@ wrapMain config (StatementPacked stmtR) = do
         in
           { constant: lb.constant
           , circuit: lb.circuit
-          , condAddPt: sumMaskByBranch replicatedConst
+          , condAddPt: sumMaskByBranchChunked replicatedConst
           , correctionAt: Nothing
           , sealCondAddPt: false
           }
       Just perBranchAt ->
+        -- NOTE: this path (different branch domains) currently
+        -- receives single-point per-branch lagrange tables. Extending
+        -- `perBranchLagrangeAt`'s shape to chunked per-branch tables
+        -- is task #51 (along with side-loaded chunking). Today's
+        -- nc>1 fixture (chunks2_wrap_main_circuit) uses Slots1
+        -- (single branch), which fires the `Nothing` arm above. The
+        -- Just arm is only exercised by multi-branch fixtures
+        -- (TwoPhaseChain), all of which are nc=1. We coerce the nc=1
+        -- result to `Vector numChunks` to satisfy the case-join — sound
+        -- as long as no chunked-AND-multi-branch fixture is built.
         let
           perBranchPts = perBranchAt i
-          summed = sumMaskByBranch perBranchPts
-          correctionAt shift =
+          singleSummed = sumMaskByBranch perBranchPts
+          singleCorrectionAt shift =
             sumMaskByBranch
               ( map
                   ( \pt ->
@@ -817,10 +848,10 @@ wrapMain config (StatementPacked stmtR) = do
                   perBranchPts
               )
         in
-          { constant: (Vector.uncons perBranchPts).head
-          , circuit: summed
-          , condAddPt: summed
-          , correctionAt: Just correctionAt
+          { constant: unsafeCoerce (Vector.singleton (Vector.uncons perBranchPts).head)
+          , circuit: unsafeCoerce (Vector.singleton singleSummed)
+          , condAddPt: unsafeCoerce (Vector.singleton singleSummed)
+          , correctionAt: Just (\shift -> unsafeCoerce (Vector.singleton (singleCorrectionAt shift)))
           , sealCondAddPt: false
           }
     ivpParams =
@@ -868,7 +899,7 @@ wrapMain config (StatementPacked stmtR) = do
 -- | doesn't compose across rules) and call `wrapMain @branches @slots`
 -- | directly.
 wrapMainForPrevs
-  :: forall @branches @prevsSpec @numChunks numChunksPred slots mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 t m
+  :: forall @branches @prevsSpec @numChunks numChunksPred slots mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 t m
    . CircuitM WrapField (KimchiConstraint WrapField) t m
   => SlotsFromSpec prevsSpec slots
   => PadSlots slots mpv
@@ -882,13 +913,14 @@ wrapMainForPrevs
   => Add 1 tCommLenPred tCommLen
   => Mul 15 numChunks wCoeffN
   => Mul 6 numChunks indexSigmaN
-  => Mul 43 numChunks chunkBases
-  => Add 2 chunkBases nonSgBases
-  => Add 2 numChunks sg1
-  => Add sg1 indexSigmaN sg2
-  => Add sg2 wCoeffN sg3
+  => Mul 44 numChunks chunkBases
+  => Add 1 chunkBases nonSgBases
+  => Add numChunks 1 sg1
+  => Add sg1 numChunks sg2
+  => Add sg2 indexSigmaN sg3
   => Add sg3 wCoeffN sg4
-  => Add sg4 indexSigmaN nonSgBases
+  => Add sg4 wCoeffN sg5
+  => Add sg5 indexSigmaN nonSgBases
   => CircuitType WrapField
        (slots (Vector WrapIPARounds (F WrapField)))
        (slots (Vector WrapIPARounds (FVar WrapField)))

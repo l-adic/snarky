@@ -58,7 +58,12 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 type FqSpongeInput sgOldN numChunks tCommLen f =
   { indexDigest :: f
   , sgOld :: Vector sgOldN (AffinePoint f)
-  , publicComm :: AffinePoint f
+  -- | Chunked public-input commitment. At nc=1 this is a 1-element
+  -- | vector (legacy behavior); at nc>1 each chunk is absorbed
+  -- | separately, matching OCaml `Array.iter x_hat ~f:(absorb sponge PC)`
+  -- | (wrap_verifier.ml:1042). Reuses `numChunks` from w_comm/z_comm
+  -- | since both derive from the same step-domain-over-wrap-SRS ratio.
+  , publicComm :: Vector numChunks (AffinePoint f)
   , wComm :: Vector 15 (Vector numChunks (AffinePoint f))
   , zComm :: Vector numChunks (AffinePoint f)
   , tComm :: Vector tCommLen (AffinePoint f)
@@ -94,8 +99,9 @@ spongeTranscriptOptCircuit params sgOldMask input = do
         let keep = coerce bKeep :: BoolVar f
         OptSponge.optAbsorb (Tuple keep sg.x)
         OptSponge.optAbsorb (Tuple keep sg.y)
-      -- 3. Absorb public_comm point
-      OptSponge.optAbsorbPoint input.publicComm
+      -- 3. Absorb public_comm chunks. OCaml: `Array.iter x_hat ~f:(absorb
+      -- sponge PC)` (wrap_verifier.ml:1042). For nc=1 this is one absorb.
+      for_ input.publicComm OptSponge.optAbsorbPoint
       -- 4. Absorb w_comm points (per-polynomial, per-chunk)
       for_ input.wComm \chunks -> for_ chunks OptSponge.optAbsorbPoint
       -- DIAG iter 2aa: dump circuit sponge state before beta squeeze for

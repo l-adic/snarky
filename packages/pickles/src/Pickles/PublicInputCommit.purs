@@ -52,7 +52,7 @@ import Data.Foldable (foldM, foldl)
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Symbol (class IsSymbol)
-import Data.Traversable (for)
+import Data.Traversable (for, sequence)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -163,10 +163,18 @@ data CorrectionMode = PureCorrections | InCircuitCorrections
 -- | This lets scalarMulLeaf store the computation without executing it,
 -- | so publicInputCommit can interleave scale_fast2' and add_fast inline
 -- | during the fold (matching OCaml's step_verifier.ml:468-475).
-newtype DeferredScaleMul f = DeferredScaleMul
+-- |
+-- | Returns a `Vector numChunks (AffinePoint (FVar f))` — one curve point
+-- | per chunk of the lagrange basis. For nc=1 this is a 1-element vector
+-- | producing identical gates to a single scaleFast2'; for chunks2 (step
+-- | domain > wrap SRS max_poly_size) it emits numChunks scaleFast2' calls
+-- | per PI slot. Mirrors OCaml's
+-- | `Array.map2_exn acc chunks ~f:(... scale_fast2' g x ~num_bits ...)`
+-- | (wrap_verifier.ml:1019-1023).
+newtype DeferredScaleMul (numChunks :: Int) f = DeferredScaleMul
   ( forall t m
      . CircuitM f (KimchiConstraint f) t m
-    => Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
+    => Snarky (KimchiConstraint f) t m (Vector numChunks (AffinePoint (FVar f)))
   )
 
 -- | A single term from walking the public input structure.
@@ -190,10 +198,14 @@ newtype DeferredScaleMul f = DeferredScaleMul
 -- |     (wrap_verifier.ml:429-443).
 -- |
 -- | CondAdd's Lagrange point is masked (OCaml's `lagrange` always masks).
-data MsmTerm f
-  = AddWithCorrection { scaleMul :: DeferredScaleMul f, correction :: AffinePoint (F f) }
-  | AddWithCircuitCorrection { scaleMul :: DeferredScaleMul f, correction :: AffinePoint (FVar f) }
-  | CondAdd (BoolVar f) (AffinePoint (FVar f))
+-- |
+-- | All variants carry chunked points: each field is a `Vector numChunks`
+-- | so the PI commit fold can run a parallel accumulator per chunk
+-- | (matching OCaml's `Array.map2_exn acc chunks`).
+data MsmTerm (numChunks :: Int) f
+  = AddWithCorrection { scaleMul :: DeferredScaleMul numChunks f, correction :: Vector numChunks (AffinePoint (F f)) }
+  | AddWithCircuitCorrection { scaleMul :: DeferredScaleMul numChunks f, correction :: Vector numChunks (AffinePoint (FVar f)) }
+  | CondAdd (BoolVar f) (Vector numChunks (AffinePoint (FVar f)))
 
 -- | A Lagrange base point.
 -- |
@@ -219,11 +231,17 @@ data MsmTerm f
 -- |     correction `-sum_b which_branch[b] * [2^shift] * lagrange(domain[b], i)`.
 -- |     Set by `mkPerBranchLagrangeBase`; mirrors OCaml's per-branch
 -- |     `lagrange_with_correction`.
-type LagrangeBase f =
-  { constant :: AffinePoint (F f)
-  , circuit :: AffinePoint (FVar f)
-  , condAddPt :: AffinePoint (FVar f)
-  , correctionAt :: Maybe (Int -> AffinePoint (FVar f))
+-- | Chunked: each field is a `Vector numChunks` of points. For nc=1 this
+-- | is structurally identical to the pre-chunk single-point shape (a
+-- | length-1 Vector). For nc>1 (chunks2 step domain) each PI slot's
+-- | lagrange basis has multiple chunks and the PI commit accumulator
+-- | runs chunkwise.
+type LagrangeBase :: Int -> Type -> Type
+type LagrangeBase numChunks f =
+  { constant :: Vector numChunks (AffinePoint (F f))
+  , circuit :: Vector numChunks (AffinePoint (FVar f))
+  , condAddPt :: Vector numChunks (AffinePoint (FVar f))
+  , correctionAt :: Maybe (Int -> Vector numChunks (AffinePoint (FVar f)))
   -- | Whether the BoolVar `Cond_add` path seals `condAddPt` before
   -- | use. `true` for step side-loaded (which seals both `lagrange`
   -- | and `lagrange_with_correction`); `false` for wrap multi-branch
@@ -236,28 +254,35 @@ type LagrangeBase f =
 -- | in `publicInputCommit` fetches bases on demand by index instead of
 -- | consuming a pre-sized array, which removes the need for a "numPublic"
 -- | parameter at call sites.
-type LagrangeBaseLookup f = Int -> LagrangeBase f
+type LagrangeBaseLookup :: Int -> Type -> Type
+type LagrangeBaseLookup numChunks f = Int -> LagrangeBase numChunks f
 
 -- | Construct a LagrangeBase where both constant and circuit are the same
--- | value. Used in single-branch / all-domains-equal contexts where there's
--- | no per-branch dispatch needed.
-mkConstLagrangeBase :: forall f. PrimeField f => AffinePoint (F f) -> LagrangeBase f
-mkConstLagrangeBase pt =
-  { constant: pt
-  , circuit: constPt pt
-  , condAddPt: constPt pt
+-- | chunked value. Used in single-branch / all-domains-equal contexts
+-- | where there's no per-branch dispatch needed.
+mkConstLagrangeBase
+  :: forall numChunks f
+   . PrimeField f
+  => Vector numChunks (AffinePoint (F f))
+  -> LagrangeBase numChunks f
+mkConstLagrangeBase pts =
+  { constant: pts
+  , circuit: map constPt pts
+  , condAddPt: map constPt pts
   , correctionAt: Nothing
   , sealCondAddPt: false
   }
 
--- | Build a lookup closure from a function returning the constant `i`-th
+-- | Build a lookup closure from a function returning the chunked `i`-th
 -- | lagrange commitment. The most common shape at call sites: wrap an FFI
--- | `*SrsLagrangeCommitmentAt srs domainLog2` partial application.
+-- | `*SrsLagrangeCommitmentChunksAt srs domainLog2` partial application
+-- | (which returns an `Array` of nc chunks; callers reshape into the
+-- | fixed-size `Vector numChunks`).
 mkConstLagrangeBaseLookup
-  :: forall f
+  :: forall numChunks f
    . PrimeField f
-  => (Int -> AffinePoint (F f))
-  -> LagrangeBaseLookup f
+  => (Int -> Vector numChunks (AffinePoint (F f)))
+  -> LagrangeBaseLookup numChunks f
 mkConstLagrangeBaseLookup f i = mkConstLagrangeBase (f i)
 
 -- | Sum-mask a vector of constant affine points against a one-hot
@@ -306,7 +331,7 @@ mkSideloadedLagrangeLookup
   => CurveParams f
   -> Vector 3 (BoolVar f)
   -> Vector 3 (Int -> AffinePoint (F f))
-  -> LagrangeBaseLookup f
+  -> LagrangeBaseLookup 1 f
 mkSideloadedLagrangeLookup curveP bits perDomainAt i =
   let
     perDomainPts = map (\at -> at i) perDomainAt
@@ -322,12 +347,21 @@ mkSideloadedLagrangeLookup curveP bits perDomainAt i =
             perDomainPts
         )
   in
+    -- NOTE: pinning this side-loaded lookup to `numChunks = 1` is a
+    -- temporary scaffold. `perDomainAt` currently carries a single
+    -- `AffinePoint` per domain (not chunked), so we can't faithfully
+    -- thread a real `numChunks` through here. A side-loaded slot whose
+    -- inner proof is chunked (e.g. an nc=2 step) would need chunked
+    -- per-domain tables; that's a follow-up to this PI commit refactor.
+    -- For the immediate chunks2_wrap target the fixture's slots are
+    -- all compiled, not side-loaded — so nothing in flight hits this
+    -- branch with nc>1.
     { -- `constant` is unused on the per-branch path; carry the head
       -- domain's point as a placeholder so the record typechecks.
-      constant: (Vector.uncons perDomainPts).head
-    , circuit: summed
-    , condAddPt: summed
-    , correctionAt: Just correctionAt
+      constant: Vector.singleton (Vector.uncons perDomainPts).head
+    , circuit: Vector.singleton summed
+    , condAddPt: Vector.singleton summed
+    , correctionAt: Just (\shift -> Vector.singleton (correctionAt shift))
     -- Step side-loaded seals each `Cond_add` coordinate before use
     -- (= OCaml `select_curve_points`).
     , sealCondAddPt: true
@@ -335,8 +369,9 @@ mkSideloadedLagrangeLookup curveP bits perDomainAt i =
 
 -- | Intermediate result from walking the structure. The `nextIdx` field is
 -- | the first lagrange-base index the caller has *not yet* consumed.
-type ScalarMulResult f =
-  { results :: Array (MsmTerm f)
+type ScalarMulResult :: Int -> Type -> Type
+type ScalarMulResult numChunks f =
+  { results :: Array (MsmTerm numChunks f)
   , nextIdx :: Int
   }
 
@@ -352,13 +387,14 @@ type ScalarMulResult f =
 -- | position (threaded through the instances).
 class PublicInputCommit a f where
   scalarMuls
-    :: forall t m
+    :: forall @numChunks t m
      . CircuitM f (KimchiConstraint f) t m
+    => Reflectable numChunks Int
     => CurveParams f
     -> a
-    -> LagrangeBaseLookup f
+    -> LagrangeBaseLookup numChunks f
     -> Int
-    -> Snarky (KimchiConstraint f) t m (ScalarMulResult f)
+    -> Snarky (KimchiConstraint f) t m (ScalarMulResult numChunks f)
 
 -------------------------------------------------------------------------------
 -- | Leaf instances
@@ -385,14 +421,14 @@ instance PublicInputCommit (BoolVar f) f where
   scalarMuls _ bool lookup idx = do
     addConstraint (Basic.boolean (coerce bool :: FVar f))
     let base = lookup idx
-    -- For step side-loaded (sealCondAddPt = true), seal each
+    -- For step side-loaded (sealCondAddPt = true), seal each chunk's
     -- coordinate of the muxed lagrange point before using it in
     -- Cond_add. Mirrors OCaml `step_verifier.ml:436`'s
     -- `Double.map ~f:seal`. Compiled rules (single-domain,
     -- mkConstLagrangeBase) and wrap multi-branch
     -- (mkPerBranchLagrangeBase) leave the flag false.
     pt <-
-      if base.sealCondAddPt then sealPoint base.condAddPt
+      if base.sealCondAddPt then for base.condAddPt sealPoint
       else pure base.condAddPt
     pure { results: [ CondAdd bool pt ], nextIdx: idx + 1 }
 
@@ -409,16 +445,12 @@ instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (SplitField 
     { results: r1, nextIdx: idx1 } <- scalarMulLeaf @51 @254 params sDiv2 lookup idx
     addConstraint (Basic.boolean (coerce sOdd :: FVar f))
     let oddBase = lookup idx1
-    -- For step side-loaded (sealCondAddPt = true), seal the muxed
-    -- lagrange point per coordinate before Cond_add. Mirrors OCaml
+    -- For step side-loaded (sealCondAddPt = true), seal each chunk of
+    -- the muxed lagrange point before Cond_add. Mirrors OCaml
     -- `step_verifier.ml:436`'s `Double.map ~f:Utils.seal` over
-    -- `select_curve_points`. Without this, each side-loaded sOdd
-    -- bit's Cond_add silently uses an unsealed compound CVar where
-    -- OCaml uses a sealed Var — costing 2 R1CS Generic gates per
-    -- bit (×16 bp_chals + ~9 plonk Type1/Type2 fields ≈ 50+
-    -- missing R1CS).
+    -- `select_curve_points`.
     pt <-
-      if oddBase.sealCondAddPt then sealPoint oddBase.condAddPt
+      if oddBase.sealCondAddPt then for oddBase.condAddPt sealPoint
       else pure oddBase.condAddPt
     pure
       { results: r1 <> [ CondAdd sOdd pt ]
@@ -474,13 +506,14 @@ instance
 
 class RPublicInputCommit (rl :: RL.RowList Type) f (r :: Row Type) | rl -> r where
   rScalarMuls
-    :: forall t m
+    :: forall @numChunks t m
      . CircuitM f (KimchiConstraint f) t m
+    => Reflectable numChunks Int
     => CurveParams f
     -> Record r
-    -> LagrangeBaseLookup f
+    -> LagrangeBaseLookup numChunks f
     -> Int
-    -> Snarky (KimchiConstraint f) t m (ScalarMulResult f)
+    -> Snarky (KimchiConstraint f) t m (ScalarMulResult numChunks f)
 
 instance RPublicInputCommit RL.Nil f () where
   rScalarMuls _ _ _ idx = pure { results: [], nextIdx: idx }
@@ -511,33 +544,35 @@ instance
 -- |
 -- | where MSM = sum([s_i] * B_i) after shift correction.
 publicInputCommit
-  :: forall a f t m r
+  :: forall @numChunks a f t m r
    . PublicInputCommit a f
   => PrimeField f
+  => Reflectable numChunks Int
   => CircuitM f (KimchiConstraint f) t m
   => { curveParams :: CurveParams f
-     , lagrangeAt :: LagrangeBaseLookup f
+     , lagrangeAt :: LagrangeBaseLookup numChunks f
      , blindingH :: AffinePoint (F f)
      , correctionMode :: CorrectionMode
      | r
      }
   -> a
-  -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
+  -> Snarky (KimchiConstraint f) t m (Vector numChunks (AffinePoint (FVar f)))
 publicInputCommit params input = label "public-input-commit" do
   { results } <- scalarMuls params.curveParams input params.lagrangeAt 0
   case NEA.fromArray results of
-    Nothing -> pure (constPt params.blindingH)
+    Nothing -> pure (Vector.replicate (constPt params.blindingH))
     Just results' -> unsafePartial do
       case params.correctionMode of
         PureCorrections -> do
-          -- OCaml's step verifier: corrections are compile-time constants,
-          -- summed via pure curve arithmetic (no seal gates), with the
-          -- final CompleteAdd deferred to the end.
-          --
-          -- Per-branch (in-circuit) corrections are not expected here —
-          -- the step circuit isn't multi-branch.
+          -- OCaml's step verifier: corrections are compile-time constants
+          -- per chunk, summed via pure curve arithmetic (no seal gates),
+          -- with the final CompleteAdd deferred to the end. Per chunk,
+          -- run an independent accumulator. Per-branch (in-circuit)
+          -- corrections are not expected here — the step circuit isn't
+          -- multi-branch.
           let
-            rawCorrectionPts = Array.mapMaybe
+            -- `Vector numChunks (AffinePoint (F f))` per term
+            rawCorrectionVecs = Array.mapMaybe
               ( case _ of
                   AddWithCorrection r -> Just r.correction
                   AddWithCircuitCorrection _ ->
@@ -545,14 +580,15 @@ publicInputCommit params input = label "public-input-commit" do
                   CondAdd _ _ -> Nothing
               )
               (NEA.toArray results')
-          correctionPtsN <- case NEA.fromArray rawCorrectionPts of
+          correctionPtsN <- case NEA.fromArray rawCorrectionVecs of
             Just nea -> pure nea
             Nothing -> unsafeThrow "PublicInputCommit: rawCorrectionPts non-empty (≥1 AddWithCorrection expected in results')"
           let corrHead = NEA.head correctionPtsN
           let corrTail = NEA.tail correctionPtsN
 
-          -- Phase 1: Execute all scaleFast2' calls, collecting results.
-          --   This generates VarBaseMul + internal CompleteAdd gates.
+          -- Phase 1: Execute all scaleFast2' calls, collecting chunked
+          -- results. This generates numChunks * VarBaseMul + internal
+          -- CompleteAdd gates per AddWithCorrection term.
           evaluated <- for results' \term -> case term of
             AddWithCorrection { scaleMul: DeferredScaleMul doScaleMul } ->
               Left <$> doScaleMul
@@ -561,69 +597,105 @@ publicInputCommit params input = label "public-input-commit" do
             CondAdd b lagrangePt ->
               pure (Right { b, lagrangePt })
 
-          -- Phase 2: Reduce results pairwise with addComplete.
-          --   Matches OCaml's List.reduce_exn ~f:(fun (_,b1) (_,b2) -> (_, add_fast b1 b2)).
-          --   Corrections are summed as pure constants in parallel.
+          -- Phase 2: Reduce results pairwise with addComplete, chunkwise.
+          -- Each PI term contributes either:
+          --   * a chunked point Vector numChunks (FVar) — accumulator gets
+          --     per-chunk addComplete onto it (OCaml `Array.map2_exn acc
+          --     point`); OR
+          --   * a Cond_add — per-chunk addComplete + if_-mux per chunk.
           let { head: first, tail: rest } = NEA.uncons evaluated
+          let initAcc = fromLeft (map constPt corrHead) first
           acc <- foldM
             ( \acc result -> case result of
-                Left point -> _.p <$> addComplete acc point
-                Right { b, lagrangePt } -> do
-                  added <- _.p <$> addComplete lagrangePt acc
-                  y' <- if_ b added.y acc.y
-                  x' <- if_ b added.x acc.x
-                  pure { x: x', y: y' }
+                Left chunkedPt ->
+                  zipWithA
+                    (\a p -> _.p <$> addComplete a p)
+                    acc
+                    chunkedPt
+                Right { b, lagrangePt } ->
+                  zipWithA
+                    ( \a lp -> do
+                        added <- _.p <$> addComplete lp a
+                        y' <- if_ b added.y a.y
+                        x' <- if_ b added.x a.x
+                        pure { x: x', y: y' }
+                    )
+                    acc
+                    lagrangePt
             )
-            (fromLeft (constPt corrHead) first)
+            initAcc
             rest
 
-          -- Phase 3: Add total correction (constant) to accumulator.
-          let correctionPt = constPt $ foldl (addPurePt params.curveParams) corrHead corrTail
-          accWithCorr <- _.p <$> addComplete acc correctionPt
+          -- Phase 3: Add total correction (constant, summed chunkwise)
+          -- to accumulator. `foldl` over the (head, tail) of constant
+          -- correction chunks per chunk-index produces a Vector
+          -- numChunks AffinePoint.
+          let
+            correctionPtsChunked :: Vector numChunks (AffinePoint (F f))
+            correctionPtsChunked = foldl
+              (Vector.zipWith (addPurePt params.curveParams))
+              corrHead
+              corrTail
+          accWithCorr <- zipWithA
+            (\a c -> _.p <$> addComplete a (constPt c))
+            acc
+            correctionPtsChunked
 
-          -- Negate and add blinding generator
-          negAcc <- Curves.negate accWithCorr
-          _.p <$> addComplete negAcc (constPt params.blindingH)
+          -- Negate each chunk and add blinding generator (OCaml line 1029:
+          -- `Array.map x_hat ~f:(fun x_hat -> add_fast x_hat (H))`).
+          for accWithCorr \pt -> do
+            negPt <- Curves.negate pt
+            _.p <$> addComplete negPt (constPt params.blindingH)
 
         InCircuitCorrections -> do
           -- Wrap verifier: corrections summed in-circuit, fold interleaved.
-          -- Constant corrections (`AddWithCorrection`) get lifted via `constPt`
-          -- to FVar form; per-branch corrections (`AddWithCircuitCorrection`)
-          -- are already FVar (1-hot summed across branches).
+          -- Constant corrections (`AddWithCorrection`) get lifted via
+          -- `constPt` to FVar form per chunk; per-branch corrections
+          -- (`AddWithCircuitCorrection`) are already FVar per chunk
+          -- (1-hot summed across branches).
           let
-            rawCorrectionPts = Array.mapMaybe
+            rawCorrectionVecs = Array.mapMaybe
               ( case _ of
-                  AddWithCorrection r -> Just (constPt r.correction)
+                  AddWithCorrection r -> Just (map constPt r.correction)
                   AddWithCircuitCorrection r -> Just r.correction
                   CondAdd _ _ -> Nothing
               )
               (NEA.toArray results')
-          correctionPtsN <- case NEA.fromArray rawCorrectionPts of
+          correctionPtsN <- case NEA.fromArray rawCorrectionVecs of
             Just nea -> pure nea
             Nothing -> unsafeThrow "PublicInputCommit: rawCorrectionPts non-empty (≥1 AddWithCorrection expected in results')"
           let ch = NEA.head correctionPtsN
           let ct = NEA.tail correctionPtsN
-          init <- foldM (\acc c -> _.p <$> addComplete acc c) ch ct
+          init <- foldM
+            (\acc c -> zipWithA (\a x -> _.p <$> addComplete a x) acc c)
+            ch
+            ct
 
           acc <- foldM
             ( \acc term -> case term of
                 AddWithCorrection { scaleMul: DeferredScaleMul doScaleMul } -> do
-                  point <- doScaleMul
-                  _.p <$> addComplete acc point
+                  chunkedPt <- doScaleMul
+                  zipWithA (\a p -> _.p <$> addComplete a p) acc chunkedPt
                 AddWithCircuitCorrection { scaleMul: DeferredScaleMul doScaleMul } -> do
-                  point <- doScaleMul
-                  _.p <$> addComplete acc point
-                CondAdd b lagrangePt -> do
-                  added <- _.p <$> addComplete lagrangePt acc
-                  y' <- if_ b added.y acc.y
-                  x' <- if_ b added.x acc.x
-                  pure { x: x', y: y' }
+                  chunkedPt <- doScaleMul
+                  zipWithA (\a p -> _.p <$> addComplete a p) acc chunkedPt
+                CondAdd b lagrangePt ->
+                  zipWithA
+                    ( \a lp -> do
+                        added <- _.p <$> addComplete lp a
+                        y' <- if_ b added.y a.y
+                        x' <- if_ b added.x a.x
+                        pure { x: x', y: y' }
+                    )
+                    acc
+                    lagrangePt
             )
             init
             results'
 
-          negAcc <- Curves.negate acc
-          _.p <$> addComplete negAcc (constPt params.blindingH)
+          for acc \pt -> do
+            negPt <- Curves.negate pt
+            _.p <$> addComplete negPt (constPt params.blindingH)
 
 -------------------------------------------------------------------------------
 -- | Helpers
@@ -637,20 +709,21 @@ publicInputCommit params input = label "public-input-commit" do
 -- | The correction is [2^bitsUsed] * base, matching OCaml's
 -- | `lagrange_with_correction ~input_length`.
 scalarMulLeaf
-  :: forall @nChunks @sDiv2Bits f n bitsUsed bitsRemaining sDiv2Remaining t m
+  :: forall @nChunks @sDiv2Bits f n bitsUsed bitsRemaining sDiv2Remaining numChunks t m
    . FieldSizeInBits f n
   => Add bitsUsed bitsRemaining n
   => Add sDiv2Bits sDiv2Remaining n
   => Mul 5 nChunks bitsUsed
   => Reflectable bitsUsed Int
   => Reflectable sDiv2Bits Int
+  => Reflectable numChunks Int
   => CircuitM f (KimchiConstraint f) t m
   => PrimeField f
   => CurveParams f
   -> FVar f
-  -> LagrangeBaseLookup f
+  -> LagrangeBaseLookup numChunks f
   -> Int
-  -> Snarky (KimchiConstraint f) t m (ScalarMulResult f)
+  -> Snarky (KimchiConstraint f) t m (ScalarMulResult numChunks f)
 scalarMulLeaf params scalar lookup idx = do
   let
     base = lookup idx
@@ -658,14 +731,25 @@ scalarMulLeaf params scalar lookup idx = do
   term <- case base.correctionAt of
     Nothing ->
       let
-        scaleMul = DeferredScaleMul (scaleFast2' @nChunks @sDiv2Bits base.circuit scalar)
-        correction = wrapPt $ EC.negate_ $ unwrapPt
-          $ pow2pow params base.constant actualShift
+        -- For each lagrange chunk, emit one scaleFast2'(g_k, scalar).
+        -- Same scalar across chunks; bases differ. Matches OCaml
+        -- `Array.map2_exn acc chunks ~f:(fun acc (g, _) -> ... scale_fast2' g x)`
+        -- at wrap_verifier.ml:1019. For nc=1 this is a single
+        -- traverse, producing the same gate stream as the pre-chunk
+        -- single-point scaleFast2' call.
+        scaleMul = DeferredScaleMul
+          (for base.circuit \chunkPt -> scaleFast2' @nChunks @sDiv2Bits chunkPt scalar)
+        correction = map
+          ( \chunkConst ->
+              wrapPt $ EC.negate_ $ unwrapPt
+                $ pow2pow params chunkConst actualShift
+          )
+          base.constant
       in
         pure $ AddWithCorrection { scaleMul, correction }
     Just corrFn -> do
-      -- Seal BOTH the per-branch base and correction here, eagerly.
-      -- Mirrors OCaml `lagrange_with_correction`'s final
+      -- Seal BOTH the per-branch base and correction here, eagerly,
+      -- per chunk. Mirrors OCaml `lagrange_with_correction`'s final
       -- `Array.map ~f:(Double.map ~f:(Double.map ~f:Util.Wrap.seal))`
       -- pass (wrap_verifier.ml:443) which seals the (base, correction)
       -- × (x, y) tuple per chunk. The seal happens DURING the PI
@@ -673,19 +757,32 @@ scalarMulLeaf params scalar lookup idx = do
       -- calls from sibling Cond_add entries — without this, PS clusters
       -- all Cond_add booleans together first and all correction seals
       -- after, mismatching OCaml's gate packing order.
-      -- Seal correction BEFORE base. Mirrors OCaml's right-to-left
-      -- `Double.map ~f:(Double.map ~f:seal)` over the (base, correction)
-      -- tuple at wrap_verifier.ml:443 — Tuple_lib.Double.map evaluates
-      -- the second component first, so correction.y/correction.x seal
-      -- before base.y/base.x.
-      sealedCorrection <- label "seal-correction" $ sealPoint (corrFn actualShift)
-      sealedBase <- label "seal-base" $ sealPoint base.circuit
-      let scaleMul = DeferredScaleMul (scaleFast2' @nChunks @sDiv2Bits sealedBase scalar)
+      -- Seal correction BEFORE base per chunk. Mirrors OCaml's
+      -- right-to-left `Double.map ~f:(Double.map ~f:seal)` evaluation
+      -- of the (base, correction) tuple.
+      sealedCorrection <- for (corrFn actualShift) \chunkPt ->
+        label "seal-correction" (sealPoint chunkPt)
+      sealedBase <- for base.circuit \chunkPt ->
+        label "seal-base" (sealPoint chunkPt)
+      let scaleMul = DeferredScaleMul
+            (for sealedBase \chunkPt -> scaleFast2' @nChunks @sDiv2Bits chunkPt scalar)
       pure $ AddWithCircuitCorrection { scaleMul, correction: sealedCorrection }
   pure
     { results: [ term ]
     , nextIdx: idx + 1
     }
+
+-- | Applicative `zipWith` for `Vector n`. Used by the chunked PI commit
+-- | accumulator: every `addComplete`/`if_` operation that previously ran
+-- | over a single point now runs chunkwise via `zipWithA`.
+zipWithA
+  :: forall n a b c m
+   . Applicative m
+  => (a -> b -> m c)
+  -> Vector n a
+  -> Vector n b
+  -> m (Vector n c)
+zipWithA f xs ys = sequence (Vector.zipWith f xs ys)
 
 constPt :: forall f. PrimeField f => AffinePoint (F f) -> AffinePoint (FVar f)
 constPt { x: F x', y: F y' } = { x: const_ x', y: const_ y' }

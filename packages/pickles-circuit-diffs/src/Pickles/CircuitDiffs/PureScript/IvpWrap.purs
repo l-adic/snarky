@@ -34,7 +34,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type IvpWrapParams =
-  { lagrangeAt :: LagrangeBaseLookup WrapField
+  { lagrangeAt :: LagrangeBaseLookup 1 WrapField
   , blindingH :: AffinePoint (F WrapField)
   }
 

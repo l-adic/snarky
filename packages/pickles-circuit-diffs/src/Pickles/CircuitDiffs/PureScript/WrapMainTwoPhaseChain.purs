@@ -49,7 +49,7 @@ import Type.Proxy (Proxy(..))
 -- | because the branches' step domains differ.
 type WrapMainTwoPhaseChainParams =
   { vestaSrs :: CRS VestaG
-  , lagrangeAt :: LagrangeBaseLookup WrapField
+  , lagrangeAt :: LagrangeBaseLookup 1 WrapField
   , blindingH :: AffinePoint (F WrapField)
   , makeZeroStepSrsData :: StepMainTwoPhaseChainMakeZeroParams
   , incrementStepSrsData :: StepMainTwoPhaseChainIncrementParams

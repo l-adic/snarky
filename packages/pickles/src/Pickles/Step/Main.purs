@@ -213,7 +213,7 @@ instance
 -- | self-recursive rules share one value across slots, heterogeneous
 -- | prevs differ per slot) and per-slot wrap-VK sources (see
 -- | `SlotVkSource`).
-type StepMainSrsData len nd blueprints =
+type StepMainSrsData wrapVkChunks len nd blueprints =
   { -- | Per-slot lagrange commitments. In OCaml
     -- | `x_hat = Σᵢ x[i] * lagrange_commitment(~domain:d.wrap_domain, srs, i)`
     -- | (step_verifier.ml:564-571) uses the PREV's `wrap_domain`, read
@@ -223,7 +223,13 @@ type StepMainSrsData len nd blueprints =
     -- | domain 2^14), the lagrange commitments at each index differ
     -- | per slot — same SRS, different domain size, different `i`-th
     -- | lagrange basis point.
-    perSlotLagrangeAt :: Vector len (LagrangeBaseLookup StepField)
+    -- Per-slot lagrange lookup, generic over `wrapVkChunks` so the same
+    -- type works whether the slot's prev wrap proof is single- or
+    -- multi-chunk. At Mina's current top-level compile this collapses to
+    -- nc=1 (`num_chunks_by_default` at `step_main.ml:347`), but the type
+    -- stays open so a future chunked wrap (or heterogeneous-nc prev
+    -- slots, via task #51) doesn't force a refactor.
+    perSlotLagrangeAt :: Vector len (LagrangeBaseLookup wrapVkChunks StepField)
   -- | Shared Tock SRS h-generator. `Generators.h =
   -- | Kimchi_bindings.Protocol.SRS.Fq.urs_h (Tock URS)`
   -- | (step_main_inputs.ml:182-187); a single SRS-level constant,
@@ -739,6 +745,8 @@ unfFields unf =
 stepMain
   :: forall @prevsSpec pad outputSize @inputVal input @outputVal output @prevInputVal prevInput
        @valCarrier @mpvMax mpvPad @nd ndPred @cell @wrapVkChunks
+       wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases totalBases totalBasesPred
+       sg1 sg2 sg3 sg4 sg5
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        unfsTotal digestPlusUnfs
        t m
@@ -783,6 +791,29 @@ stepMain
   => CheckedType StepField (KimchiConstraint StepField) input
   => Reflectable len Int
   => Reflectable wrapVkChunks Int
+  -- verifyOne layout-chain prereqs threaded through stepMain. The
+  -- intermediate types (wrapVkChunksPred, tCommLen, wCoeffN, etc.) are
+  -- all functionally determined by `wrapVkChunks` via the Mul/Add
+  -- class fundeps, so concrete `wrapVkChunks` callers can omit them
+  -- and the compiler will infer.
+  => Compare 0 wrapVkChunks LT
+  => Add 1 wrapVkChunksPred wrapVkChunks
+  => Mul 7 wrapVkChunks tCommLen
+  => Add 1 tCommLenPred tCommLen
+  => Mul 15 wrapVkChunks wCoeffN
+  => Mul 6 wrapVkChunks indexSigmaN
+  => Mul 44 wrapVkChunks chunkBases
+  => Add 1 chunkBases nonSgBases
+  => Add wrapVkChunks 1 sg1
+  => Add sg1 wrapVkChunks sg2
+  => Add sg2 indexSigmaN sg3
+  => Add sg3 wCoeffN sg4
+  => Add sg4 wCoeffN sg5
+  => Add sg5 indexSigmaN nonSgBases
+  => Add 2 nonSgBases totalBases
+  => Add 1 totalBasesPred totalBases
+  => Reflectable tCommLen Int
+  => Reflectable nonSgBases Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
   => Reflectable mpvPad Int
@@ -795,7 +826,7 @@ stepMain
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
   => (input -> Snarky (KimchiConstraint StepField) t m (RuleOutput len prevInput output))
-  -> StepMainSrsData len nd blueprints
+  -> StepMainSrsData wrapVkChunks len nd blueprints
   -> AffinePoint StepField
   -> sideloadedVkCarrier
   -> Snarky (KimchiConstraint StepField) t m (Vector outputSize (FVar StepField))
@@ -1001,7 +1032,16 @@ stepMain
                 , vkRec: unsafeCoerce sharedVkRec
                 }
               SideloadedExistsVk perDomainLagrangeAts (SLVK.VerificationKey sl) ->
-                { lagrangeAt: mkSideloadedLagrangeLookup
+                -- `mkSideloadedLagrangeLookup` is currently pinned to
+                -- `LagrangeBaseLookup 1 _` (see task #51 — the per-domain
+                -- input shape is a single-point Vector 3, not chunked).
+                -- The compiled branches above produce
+                -- `LagrangeBaseLookup wrapVkChunks _`, so we coerce here
+                -- to satisfy the join type of the case. Sound today (all
+                -- top-level wrap proofs are nc=1, so wrapVkChunks=1 in
+                -- practice); will become unsound when a chunked inner
+                -- proof is side-loaded — task #51 covers that.
+                { lagrangeAt: unsafeCoerce $ mkSideloadedLagrangeLookup
                     (curveParams (Proxy @PallasG))
                     sl.actualWrapDomainSize
                     perDomainLagrangeAts
@@ -1012,7 +1052,13 @@ stepMain
 
             slotIvpParams =
               { curveParams: curveParams (Proxy @PallasG)
-              , lagrangeAt: slotConfig.lagrangeAt
+              -- `slotConfig.lagrangeAt` carries the outer `wrapVkChunks`
+              -- but verifyOne expects the slot's own `nc` (from
+              -- `PerProofWitness n nc ...`). For every fixture today
+              -- these coincide (all slots share the same wrap-VK chunks
+              -- count). Heterogenizing — having each slot's nc be
+              -- independent — is task #51. Coerce until then.
+              , lagrangeAt: unsafeCoerce slotConfig.lagrangeAt
               , blindingH
               , correctionMode: slotConfig.correctionMode
               , endo: stepEndoVal
@@ -1071,7 +1117,14 @@ stepMain
               slotVkComms
               constDummySg
           r <- label ("slot_" <> show (getFinite i)) $
-            verifyOne slotFopParams input slotIvpParams
+            -- Pin verifyOne's wrapVkChunks to the outer wrapVkChunks
+            -- forall var. Same protocol invariant as the unsafeCoerce
+            -- on slotIvpParams.lagrangeAt above: today, every slot's
+            -- prev wrap proof shares the outer rule's wrapVkChunks
+            -- (heterogeneous per-slot nc is task #51). `input` carries
+            -- the slot's own nc on its vkComms field; coerce it to the
+            -- outer wrapVkChunks here.
+            verifyOne @wrapVkChunks slotFopParams (unsafeCoerce input) slotIvpParams
           -- Carry pw.sg out alongside the verify_one result so the
           -- outer hash can absorb it.
           pure { sg: pw.sg, expandedChallenges: r.expandedChallenges, result: r.result }

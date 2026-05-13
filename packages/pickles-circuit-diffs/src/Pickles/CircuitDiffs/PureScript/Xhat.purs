@@ -26,7 +26,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type XhatParams f =
-  { lagrangeAt :: LagrangeBaseLookup f
+  { lagrangeAt :: LagrangeBaseLookup 1 f
   , blindingH :: AffinePoint (F f)
   }
 
@@ -66,9 +66,9 @@ xhatCircuit
   => PublicInputCommit pi WrapField
   => XhatParams WrapField
   -> pi
-  -> Snarky (KimchiConstraint WrapField) t m (AffinePoint (FVar WrapField))
+  -> Snarky (KimchiConstraint WrapField) t m (Vector 1 (AffinePoint (FVar WrapField)))
 xhatCircuit { lagrangeAt, blindingH } publicInput =
-  publicInputCommit
+  publicInputCommit @1
     { curveParams: curveParams (Proxy @VestaG)
     , lagrangeAt
     , blindingH

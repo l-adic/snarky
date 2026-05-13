@@ -40,6 +40,7 @@ module Pickles.PackedStatement
 import Prelude
 
 import Data.Fin (unsafeFinite)
+import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (Tuple3, Tuple6, tuple3, tuple6, uncurry3, uncurry6)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
@@ -178,12 +179,13 @@ instance
   ) =>
   PublicInputCommit (PackedStepPublicInput n dw (FVar f) (BoolVar f)) f where
   scalarMuls
-    :: forall t m
+    :: forall @numChunks t m
      . CircuitM f (KimchiConstraint f) t m
+    => Reflectable numChunks Int
     => CurveParams f
     -> PackedStepPublicInput n dw (FVar f) (BoolVar f)
-    -> LagrangeBaseLookup f
+    -> LagrangeBaseLookup numChunks f
     -> Int
-    -> Snarky (KimchiConstraint f) t m (ScalarMulResult f)
+    -> Snarky (KimchiConstraint f) t m (ScalarMulResult numChunks f)
   scalarMuls params x lookup idx =
     scalarMuls @(StmtTuple n dw (FVar f) (BoolVar f)) @f params (toPackedTuple x) lookup idx

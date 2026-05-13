@@ -46,7 +46,7 @@ import Type.Proxy (Proxy(..))
 -- |   267:     messages_for_next_step_proof
 
 type StepVerifyParams =
-  { lagrangeAt :: LagrangeBaseLookup StepField
+  { lagrangeAt :: LagrangeBaseLookup 1 StepField
   , blindingH :: AffinePoint (F StepField)
   }
 

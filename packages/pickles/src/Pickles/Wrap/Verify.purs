@@ -63,7 +63,7 @@ type WrapVerifyInput n d fv =
 -- | Wrap_hack.Checked approach: for n < MaxProofsVerified, (2-n) dummy
 -- | challenge vectors are absorbed offline into the sponge state.
 wrapVerify
-  :: forall publicInput sgOldN numChunks numChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 totalBases totalBasesPred d dPred n t m r
+  :: forall publicInput sgOldN numChunks numChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred d dPred n t m r
    . CircuitM WrapField (KimchiConstraint WrapField) t m
   => PublicInputCommit publicInput WrapField
   => Reflectable d Int
@@ -78,21 +78,24 @@ wrapVerify
   => Add 1 dPred d
   -- Chunked base layout chain (mirrors IVP). Shared `wCoeffN` /
   -- `indexSigmaN` mirror the IVP's collapsing because Mul's fundep
-  -- would unify same-RHS counts otherwise.
+  -- would unify same-RHS counts otherwise. Layout: xHat(nc) ::
+  -- ftComm :: zComm(nc) :: index(6nc) :: wComm(15nc) :: coeff(15nc) ::
+  -- sigma(6nc); total non-sg = 1 + 44*nc.
   => Mul 7 numChunks tCommLen
   => Add 1 tCommLenPred tCommLen
   => Mul 15 numChunks wCoeffN
   => Mul 6 numChunks indexSigmaN
-  => Mul 43 numChunks chunkBases
-  => Add 2 chunkBases nonSgBases
+  => Mul 44 numChunks chunkBases
+  => Add 1 chunkBases nonSgBases
   => Add sgOldN nonSgBases totalBases
-  => Add 2 numChunks sg1
-  => Add sg1 indexSigmaN sg2
-  => Add sg2 wCoeffN sg3
+  => Add numChunks 1 sg1
+  => Add sg1 numChunks sg2
+  => Add sg2 indexSigmaN sg3
   => Add sg3 wCoeffN sg4
-  => Add sg4 indexSigmaN nonSgBases
+  => Add sg4 wCoeffN sg5
+  => Add sg5 indexSigmaN nonSgBases
   => Add 1 totalBasesPred totalBases
-  => IncrementallyVerifyProofParams WrapField r
+  => IncrementallyVerifyProofParams numChunks WrapField r
   -> IncrementallyVerifyProofInput publicInput sgOldN numChunks tCommLen d (FVar WrapField) (Type1 (FVar WrapField))
   -> WrapVerifyInput n d (FVar WrapField)
   -> Snarky (KimchiConstraint WrapField) t m Unit

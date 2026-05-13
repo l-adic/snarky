@@ -50,7 +50,7 @@ import Type.Proxy (Proxy(..))
 -- |   `actualWrapDomainSize ∈ {N0, N1, N2}`). `Step.Main`
 -- |   one-hot-muxes among them at runtime.
 type StepMainSideLoadedMainParams =
-  { lagrangeAt :: LagrangeBaseLookup StepField
+  { lagrangeAt :: LagrangeBaseLookup 1 StepField
   , sideloadedPerDomainLagrangeAt ::
       Vector 3 (Int -> AffinePoint (F StepField))
   , blindingH :: AffinePoint (F StepField)

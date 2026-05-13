@@ -42,6 +42,7 @@ import Data.Map (Map)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, un)
 import Data.Reflectable (class Reflectable, reflectType)
+import Effect.Exception.Unsafe (unsafeThrow)
 import Data.String (Pattern(..), Replacement(..))
 import Data.String as String
 import Data.Tuple (Tuple(..))
@@ -54,7 +55,7 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Node.Process as Process
 import Pickles.Field (StepField, WrapField)
-import Pickles.ProofFFI (Proof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLrVec, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexCommitments, tCommChunked, vestaCreateProofWithPrev, wCommChunked, zCommChunked)
+import Pickles.ProofFFI (Proof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLrVec, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasSrsLagrangeCommitmentChunksAt, pallasVerifierIndexCommitments, tCommChunked, vestaCreateProofWithPrev, wCommChunked, zCommChunked)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Types (PaddedLength, PerProofUnfinalized, StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK)
@@ -458,7 +459,7 @@ bumpWrapCsCounter = do
 -- | are never inspected during compile, so no caller placeholder is
 -- | needed; anything that escapes the throw instance is a bug.
 wrapCompile
-  :: forall @branches @slots @numChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4
+  :: forall @branches @slots @numChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
    . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Reflectable mpv Int
@@ -471,13 +472,14 @@ wrapCompile
   => Add 1 tCommLenPred tCommLen
   => Mul 15 numChunks wCoeffN
   => Mul 6 numChunks indexSigmaN
-  => Mul 43 numChunks chunkBases
-  => Add 2 chunkBases nonSgBases
-  => Add 2 numChunks sg1
-  => Add sg1 indexSigmaN sg2
-  => Add sg2 wCoeffN sg3
+  => Mul 44 numChunks chunkBases
+  => Add 1 chunkBases nonSgBases
+  => Add numChunks 1 sg1
+  => Add sg1 numChunks sg2
+  => Add sg2 indexSigmaN sg3
   => Add sg3 wCoeffN sg4
-  => Add sg4 indexSigmaN nonSgBases
+  => Add sg4 wCoeffN sg5
+  => Add sg5 indexSigmaN nonSgBases
   => Add 1 branchesPred branches
   => Compare mpv 3 LT
   => Add mpv nonSgBases totalBases
@@ -553,7 +555,7 @@ wrapCompile ctx = do
 -- | `SolverT` uses. Constraint-system-unsatisfied failures are
 -- | reported as `FailedAssertion`.
 wrapSolveAndProve
-  :: forall @branches @slots @numChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 m
+  :: forall @branches @slots @numChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 m
    . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Reflectable mpv Int
@@ -566,13 +568,14 @@ wrapSolveAndProve
   => Add 1 tCommLenPred tCommLen
   => Mul 15 numChunks wCoeffN
   => Mul 6 numChunks indexSigmaN
-  => Mul 43 numChunks chunkBases
-  => Add 2 chunkBases nonSgBases
-  => Add 2 numChunks sg1
-  => Add sg1 indexSigmaN sg2
-  => Add sg2 wCoeffN sg3
+  => Mul 44 numChunks chunkBases
+  => Add 1 chunkBases nonSgBases
+  => Add numChunks 1 sg1
+  => Add sg1 numChunks sg2
+  => Add sg2 indexSigmaN sg3
   => Add sg3 wCoeffN sg4
-  => Add sg4 indexSigmaN nonSgBases
+  => Add sg4 wCoeffN sg5
+  => Add sg5 indexSigmaN nonSgBases
   => Add 1 branchesPred branches
   => Compare mpv 3 LT
   => Add mpv nonSgBases totalBases
@@ -762,9 +765,22 @@ buildWrapMainConfigMulti vestaSrs { perBranch } =
     , stepKeys:
         map (\b -> stepVkForCircuit (extractStepVKComms b.stepVK)) perBranch
     , lagrangeAt:
+        -- Wrap-side lagrange: chunked at chunks2. For each PI slot the
+        -- basis splits into `numChunks = ceil(2^stepDomainLog2 /
+        -- 2^wrapMaxPolySize)` pieces. The chunked FFI returns an Array
+        -- of length numChunks; reshape into `Vector numChunks` here.
+        -- For nc=1 (non-chunks2 fixtures) the array has length 1 and
+        -- this is gate-identical to the pre-chunk single-point path.
         mkConstLagrangeBaseLookup \i ->
-          (coerce (pallasSrsLagrangeCommitmentAt vestaSrs headDomainLog2 i))
-            :: AffinePoint (F WrapField)
+          let
+            chunksArr = pallasSrsLagrangeCommitmentChunksAt vestaSrs headDomainLog2 i
+          in
+            case Vector.toVector @numChunks (map coerce chunksArr) of
+              Just v -> (v :: Vector _ (AffinePoint (F WrapField)))
+              Nothing -> unsafeThrow
+                $ "buildWrapMainConfigMulti: lagrange chunks size mismatch "
+                <> "(got " <> show (Array.length chunksArr)
+                <> ", expected numChunks=" <> show (reflectType (Proxy @numChunks)) <> ")"
     , perBranchLagrangeAt:
         if allEqual then Nothing else Just perBranchLookup
     , blindingH: (coerce $ pallasSrsBlindingGenerator vestaSrs) :: AffinePoint (F WrapField)

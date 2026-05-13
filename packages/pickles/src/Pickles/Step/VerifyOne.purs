@@ -138,7 +138,7 @@ type VerifyOneResult tickD fv =
 -- | Full verify_one matching OCaml step_main.ml:17-148.
 -- | Specialized to the Step field (Vesta scalar field = Fp).
 verifyOne
-  :: forall nd ndPred n wrapVkChunks wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 totalBases totalBasesPred t m r1
+  :: forall @wrapVkChunks nd ndPred n wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred t m r1
    . CircuitM StepField (KimchiConstraint StepField) t m
   => Add 1 ndPred nd
   => Compare 0 nd LT
@@ -151,23 +151,26 @@ verifyOne
   -- Chunked base layout chain (mirrors IVP). sgOldN at the step IVP is
   -- the fixed `PaddedLength` (= 2) baked into the input shape.
   -- Shared `wCoeffN` / `indexSigmaN` mirror the IVP's collapsing
-  -- because Mul's fundep would unify same-RHS counts.
+  -- because Mul's fundep would unify same-RHS counts. Layout:
+  -- xHat(nc) :: ftComm :: zComm(nc) :: index(6nc) :: wComm(15nc) ::
+  -- coeff(15nc) :: sigma(6nc); total non-sg = 1 + 44*nc.
   => Mul 7 wrapVkChunks tCommLen
   => Add 1 tCommLenPred tCommLen
   => Mul 15 wrapVkChunks wCoeffN
   => Mul 6 wrapVkChunks indexSigmaN
-  => Mul 43 wrapVkChunks chunkBases
-  => Add 2 chunkBases nonSgBases
+  => Mul 44 wrapVkChunks chunkBases
+  => Add 1 chunkBases nonSgBases
   => Add 2 nonSgBases totalBases
-  => Add 2 wrapVkChunks sg1
-  => Add sg1 indexSigmaN sg2
-  => Add sg2 wCoeffN sg3
+  => Add wrapVkChunks 1 sg1
+  => Add sg1 wrapVkChunks sg2
+  => Add sg2 indexSigmaN sg3
   => Add sg3 wCoeffN sg4
-  => Add sg4 indexSigmaN nonSgBases
+  => Add sg4 wCoeffN sg5
+  => Add sg5 indexSigmaN nonSgBases
   => Add 1 totalBasesPred totalBases
   => FOP.Params nd StepField r1
   -> VerifyOneInput n wrapVkChunks tCommLen WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
-  -> IncrementallyVerifyProofParams StepField ()
+  -> IncrementallyVerifyProofParams wrapVkChunks StepField ()
   -> Snarky (KimchiConstraint StepField) t m (VerifyOneResult StepIPARounds (FVar StepField))
 verifyOne fopParams input ivpParams = do
   -- Step 1: assert should_finalize == must_verify (step_main.ml:28)

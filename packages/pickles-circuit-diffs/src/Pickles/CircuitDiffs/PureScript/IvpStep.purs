@@ -43,7 +43,7 @@ type IvpStepPublicInput =
     )
 
 type IvpStepParams =
-  { lagrangeAt :: LagrangeBaseLookup StepField
+  { lagrangeAt :: LagrangeBaseLookup 1 StepField
   , blindingH :: AffinePoint (F StepField)
   }
 

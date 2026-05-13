@@ -138,6 +138,7 @@ import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (SplitField(..), Type1(..), Type2(..), fromShifted, toShifted)
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 --------------------------------------------------------------------------------
 -- Advice
@@ -1475,8 +1476,17 @@ type StepRule (n :: Int) valCarrier inputVal input outputVal output prevInputVal
 -- |   known wrap keys) that `stepMain` consumes.
 -- | * `dummySg` — dummy sg point for sg_old padding in verify_one.
 -- | * `crs` — the step circuit's Vesta SRS.
-type StepProveContext len nd blueprints =
-  { srsData :: StepMainSrsData len nd blueprints
+-- NOTE: `wrapVkChunks` is structurally a parameter of
+-- `StepMainSrsData`, but at the prover-entry layer we pin it to
+-- `1` (= OCaml's `num_chunks_by_default`, `step_main.ml:347`). Keeping
+-- this type *itself* generic on `wrapVkChunks` would force every
+-- caller of `stepCompile` / `stepSolveAndProve` / `preComputeStepDomainLog2`
+-- to thread it, but no current caller has anything other than 1 to
+-- pass. The mid-tier (`Pickles.Step.Main`) stays generic, so a future
+-- chunked-wrap world can specialize `StepProveContext` per-rule
+-- without revisiting the mid-tier types.
+type StepProveContext wrapVkChunks len nd blueprints =
+  { srsData :: StepMainSrsData wrapVkChunks len nd blueprints
   , dummySg :: AffinePoint StepField
   , crs :: CRS VestaG
   -- | When `true`, enables prover-state debug checks and runs a
@@ -1897,7 +1907,7 @@ stepCompile
        carrierVar
        vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
-  => StepProveContext len nd blueprints
+  => StepProveContext 1 len nd blueprints
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Effect StepCompileResult
 stepCompile ctx rule = do
@@ -1921,7 +1931,8 @@ stepCompile ctx rule = do
             @mpvMax
             @nd
             @(SLVK.VerificationKey nc (F StepField) Boolean)
-            @wrapVkChunks
+            -- ctx is `StepProveContext 1 ...` (prover layer pinned).
+            @1
             rule
             ctx.srsData
             ctx.dummySg
@@ -2050,7 +2061,11 @@ preComputeStepDomainLog2
        carrierVar
        vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
-  => StepProveContext len nd blueprints
+  -- preComputeStepDomainLog2 is the compile-time pre-pass; the
+  -- ctx's `wrapVkChunks` is unused here (we just need the gate count
+  -- to derive the domain log2). Keeping ctx polymorphic on
+  -- `anyWrapVkChunks` so callers from mkRuleEntry don't need to pin.
+  => StepProveContext 1 len nd blueprints
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Effect Int
 preComputeStepDomainLog2 ctx rule = do
@@ -2101,9 +2116,15 @@ preComputeStepDomainLog2 ctx rule = do
 -- | Errors surface through `ExceptT EvaluationError m` — the same
 -- | error type the underlying `SolverT` uses. Constraint-system-
 -- | unsatisfied failures are reported as `FailedAssertion`.
+-- NOTE: pins `wrapVkChunks = 1` (= OCaml `num_chunks_by_default` at
+-- `step_main.ml:347`). The mid-tier `Pickles.Step.Main.stepMain` and
+-- `Pickles.Step.Main.StepMainSrsData` stay generic on `wrapVkChunks`,
+-- but at the prover entry point we pin so that the advice's
+-- `StepAdvice` field can carry concrete VK commitment shapes without
+-- threading the type variable through every call site.
 stepSolveAndProve
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd @nc @wrapVkChunks
+       @mpvMax @mpvPad @nd @nc
        ndPred len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
@@ -2115,7 +2136,6 @@ stepSolveAndProve
   => Reflectable mpvPad Int
   => Reflectable nd Int
   => Reflectable nc Int
-  => Reflectable wrapVkChunks Int
   => Reflectable outputSize Int
   => Add 1 ndPred nd
   => Compare 0 nd LT
@@ -2152,10 +2172,10 @@ stepSolveAndProve
   => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
   => SlotStatementsCarrier prevsSpec valCarrier
-  => StepProveContext len nd blueprints
+  => StepProveContext 1 len nd blueprints
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> StepCompileResult
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
+  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds 1 inputVal len carrier valCarrier sideloadedVkCarrier
   -> ExceptT EvaluationError m (StepProveResult outputSize)
 stepSolveAndProve ctx rule compileResult advice = do
   -- Source the side-loaded VK carrier directly from the StepAdvice.
@@ -2171,7 +2191,7 @@ stepSolveAndProve ctx rule compileResult advice = do
 
     rawSolver
       :: SolverT StepField (KimchiConstraint StepField)
-           ( StepProverT prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal
+           ( StepProverT prevsSpec StepIPARounds WrapIPARounds 1 inputVal
                len
                carrier
                valCarrier
@@ -2193,7 +2213,12 @@ stepSolveAndProve ctx rule compileResult advice = do
               @mpvMax
               @nd
               @(SideloadBundle.Bundle nc)
-              @wrapVkChunks
+              -- stepSolveAndProve's `ctx :: StepProveContext 1 ...` pins
+              -- the wrap-VK chunk count to 1 (= OCaml
+              -- `num_chunks_by_default`), so we pin stepMain's
+              -- @wrapVkChunks parameter to match ctx.srsData here.
+              -- (Mid-tier stepMain stays generic on wrapVkChunks.)
+              @1
               rule
               ctx.srsData
               ctx.dummySg
