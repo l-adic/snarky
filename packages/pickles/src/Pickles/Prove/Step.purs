@@ -247,6 +247,7 @@ buildStepAdvice
        Boolean
        len
        carrier
+       vkSourcesCarrier
   => SlotStatementsCarrier prevsSpec valCarrier
   => BuildStepAdviceInput inputVal valCarrier vkCarrier
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier vkCarrier
@@ -1673,7 +1674,7 @@ newtype StepAdvice prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier 
 
 derive instance
   Newtype
-    (StepAdvice prevsSpec ds dw inputVal len carrier valCarrier vkCarrier)
+    (StepAdvice prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier)
     _
 
 -- | Mutable side-state captured during the rule body's structural pass.
@@ -1695,38 +1696,38 @@ initialStepProverCapture =
 -- | from inside the rule body (so far: `setUserPublicOutputFields`,
 -- | the OCaml `Req.Return_value` analog).
 newtype StepProverT
-  :: Type -> Int -> Int -> Type -> Int -> Type -> Type -> Type -> (Type -> Type) -> Type -> Type
-newtype StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m a =
+  :: Type -> Int -> Int -> Int -> Type -> Int -> Type -> Type -> Type -> (Type -> Type) -> Type -> Type
+newtype StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m a =
   StepProverT
-    ( ReaderT (StepAdvice prevsSpec ds dw inputVal len carrier valCarrier vkCarrier)
+    ( ReaderT (StepAdvice prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier)
         (StateT StepProverCapture m)
         a
     )
 
 derive instance
   Newtype
-    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m a)
+    (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m a)
     _
 
 derive newtype instance
   Functor m =>
-  Functor (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m)
+  Functor (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
 
 derive newtype instance
   Monad m =>
-  Apply (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m)
+  Apply (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
 
 derive newtype instance
   Monad m =>
-  Applicative (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m)
+  Applicative (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
 
 derive newtype instance
   Monad m =>
-  Bind (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m)
+  Bind (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
 
 derive newtype instance
   Monad m =>
-  Monad (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m)
+  Monad (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
 
 -- | Run a `StepProverT` action with the supplied advice. Returns both
 -- | the action's result AND the post-run `StepProverCapture` so the
@@ -1736,7 +1737,7 @@ runStepProverT
   :: forall prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m a
    . Monad m
   => StepAdvice prevsSpec ds dw inputVal len carrier valCarrier vkCarrier
-  -> StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m a
+  -> StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m a
   -> m (Tuple a StepProverCapture)
 runStepProverT advice (StepProverT m) =
   runStateT (runReaderT m advice) initialStepProverCapture
@@ -1752,6 +1753,7 @@ instance
       Boolean
       len
       carrier
+      vkSourcesCarrier
   ) =>
   StepSlotsM
     prevsSpec
@@ -1759,9 +1761,10 @@ instance
     dw
     PallasG
     StepField
-    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m)
+    (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
     len
-    carrier where
+    carrier
+    vkSourcesCarrier where
   getStepSlotsCarrier _ =
     StepProverT $ map (\(StepAdvice r) -> r.perProofSlotsCarrier) ask
 
@@ -1783,9 +1786,10 @@ instance
     --   len matches what StepWitnessM's methods expect.
     ds
     dw
+    wrapVkChunks
     PallasG
     StepField
-    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m)
+    (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
     inputVal where
 
   getMessagesForNextWrapProof _ =
@@ -1802,7 +1806,7 @@ instance
 instance
   Monad m =>
   StepPrevValuesM
-    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m)
+    (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
     valCarrier where
   getPrevAppStates _ =
     StepProverT $ map (\(StepAdvice r) -> r.prevAppStates) ask
@@ -1813,7 +1817,7 @@ instance
 instance
   Monad m =>
   StepUserOutputM
-    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m) where
+    (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m) where
   setUserPublicOutputFields fields =
     StepProverT $ lift $ State.modify_ \s ->
       s { userPublicOutputFields = Just fields }
@@ -1826,7 +1830,7 @@ instance
   ) =>
   SideloadedVKsM
     prevsSpec
-    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m)
+    (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
     vkCarrier
   where
   getSideloadedVKsCarrier _ =
@@ -1846,7 +1850,7 @@ stepCompile
        @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier blueprints
        pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
-  => BuildSlotVkSources (SLVK.VerificationKey (F StepField) Boolean) prevsSpec len blueprints sideloadedVkCarrier
+  => BuildSlotVkSources (SLVK.VerificationKey nc (F StepField) Boolean) prevsSpec len blueprints sideloadedVkCarrier vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -1875,6 +1879,7 @@ stepCompile
        Boolean
        len
        carrier
+       vkSourcesCarrier
   => StepSlotsCarrier
        prevsSpec
        StepIPARounds
@@ -1884,6 +1889,7 @@ stepCompile
        (BoolVar StepField)
        len
        carrierVar
+       vkSourcesCarrierVar
   => CheckedType StepField (KimchiConstraint StepField) input
   => StepProveContext len nd blueprints
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
@@ -1908,7 +1914,7 @@ stepCompile ctx rule = do
             @valCarrier
             @mpvMax
             @nd
-            @(SLVK.VerificationKey (F StepField) Boolean)
+            @(SLVK.VerificationKey nc (F StepField) Boolean)
             rule
             ctx.srsData
             ctx.dummySg
@@ -1988,13 +1994,14 @@ stepCompile ctx rule = do
 -- | `range_check` / `xor` / `lookup` / `runtime_tables` gates.
 preComputeStepDomainLog2
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier blueprints
+       @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier vkSourcesCarrierVar blueprints
        pad unfsTotal digestPlusUnfs
+       nc
    . CircuitGateConstructor StepField VestaG
   -- Side-loaded VK carrier — see stepMain. preComputeStepDomainLog2
   -- runs at compile time; the caller synthesizes a placeholder
   -- carrier (e.g. `mkUnitVkCarrier` for compiled-only specs).
-  => BuildSlotVkSources (SLVK.VerificationKey (F StepField) Boolean) prevsSpec len blueprints sideloadedVkCarrier
+  => BuildSlotVkSources (SLVK.VerificationKey nc (F StepField) Boolean) prevsSpec len blueprints sideloadedVkCarrier vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -2023,6 +2030,7 @@ preComputeStepDomainLog2
        Boolean
        len
        carrier
+       vkSourcesCarrier
   => StepSlotsCarrier
        prevsSpec
        StepIPARounds
@@ -2032,6 +2040,7 @@ preComputeStepDomainLog2
        (BoolVar StepField)
        len
        carrierVar
+       vkSourcesCarrierVar
   => CheckedType StepField (KimchiConstraint StepField) input
   => StepProveContext len nd blueprints
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
@@ -2052,7 +2061,7 @@ preComputeStepDomainLog2 ctx rule = do
             @valCarrier
             @mpvMax
             @nd
-            @(SLVK.VerificationKey (F StepField) Boolean)
+            @(SLVK.VerificationKey nc (F StepField) Boolean)
             rule
             ctx.srsData
             ctx.dummySg
@@ -2117,6 +2126,7 @@ stepSolveAndProve
        Boolean
        len
        carrier
+       vkSourcesCarrier
   => StepSlotsCarrier
        prevsSpec
        StepIPARounds
@@ -2126,6 +2136,7 @@ stepSolveAndProve
        (BoolVar StepField)
        len
        carrierVar
+       vkSourcesCarrierVar
   => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
   => SlotStatementsCarrier prevsSpec valCarrier

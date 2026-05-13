@@ -203,11 +203,12 @@ class
       Boolean
       len
       carrier
+      vkCarrier
   ) <=
-  StepSlotsM prevsSpec (ds :: Int) (dw :: Int) g f m len carrier
+  StepSlotsM prevsSpec (ds :: Int) (dw :: Int) g f m len carrier vkCarrier
   | g -> f
   , m -> prevsSpec
-  , prevsSpec ds dw g f -> len carrier
+  , prevsSpec ds dw g f -> len carrier vkCarrier
   where
   getStepSlotsCarrier :: Unit -> m carrier
 
@@ -225,8 +226,9 @@ instance
       Boolean
       len
       carrier
+      vkCarrier
   ) =>
-  StepSlotsM prevsSpec ds dw g f Effect len carrier where
+  StepSlotsM prevsSpec ds dw g f Effect len carrier vkCarrier where
   getStepSlotsCarrier _ = throw "impossible! getStepSlotsCarrier called during compilation"
 
 --------------------------------------------------------------------------------
