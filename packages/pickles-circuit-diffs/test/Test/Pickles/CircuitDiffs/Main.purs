@@ -73,14 +73,23 @@ import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (add_) as CVar
 import Data.Foldable (foldM)
 import Data.Int.Bits as Bits
+import Data.Newtype (un)
+import Node.Process as Process
+import Pickles.ProofFFI (pallasCreateProofWithPrev)
+import Snarky.Backend.Compile (Solver, makeSolver, runSolver)
+import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
+import Snarky.Backend.Kimchi.Class (createProverIndex)
 import Snarky.Circuit.DSL (BoolVar, F(..), FVar, SizedF, addConstraint, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, pow_, unpack_, xor_)
+import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
+import Snarky.Curves.Class (EndoBase(..), endoBase)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky)
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
 import Snarky.Circuit.Kimchi.EndoScalar (toField)
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2')
-import Snarky.Constraint.Kimchi (KimchiConstraint(..), initialState)
+import Snarky.Backend.Builder (CircuitBuilderState)
+import Snarky.Constraint.Kimchi (KimchiConstraint(..), KimchiGate, initialState)
 import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoScalar(..), endoScalar)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
@@ -449,6 +458,50 @@ exactMatchEff name effPs =
       psNoCtx `shouldEqual` ocamlNoCtx
 
 --------------------------------------------------------------------------------
+-- Standalone kimchi prover for chunks2 app body — invokes the kimchi
+-- prover directly (no pickles step/wrap wrapping) so that
+-- `KIMCHI_WITNESS_DUMP=<path>` captures only the app body's witness
+-- assignments. The OCaml side is
+-- `dump_app_circuit_chunks2_witness.exe`.
+runChunks2AppWitnessProve :: Effect Unit
+runChunks2AppWitnessProve = do
+  let
+    builtState = compilePure @Fp (Proxy @Unit) (Proxy @Unit)
+      (Proxy @(KimchiConstraint Fp)) chunks2AppCircuit
+      (initialState :: CircuitBuilderState (KimchiGate Fp) (AuxState Fp))
+    kimchiRows = Array.concatMap (toKimchiRows <<< _.constraint) builtState.constraints
+    csResult = makeConstraintSystemWithPrevChallenges @Fp
+      { constraints: kimchiRows
+      , publicInputs: builtState.publicInputs
+      , unionFind: (un AuxState builtState.aux).wireState.unionFind
+      , prevChallengesCount: 0
+      }
+    endo = let EndoBase e = (endoBase :: EndoBase Fp) in e
+    -- max_poly_size = 2^16 (mirrors OCaml's default Tick.set_urs_info []).
+    -- With our ~65538-row circuit the domain rounds up to 2^17,
+    -- triggering num_chunks = 2.
+    crs = vestaCrsCreate (1 `Bits.shl` 16)
+    proverIndex = createProverIndex @Fp @VestaG
+      { endo, constraintSystem: csResult.constraintSystem, crs }
+    rawSolver :: Solver Fp (KimchiConstraint Fp) Unit Unit
+    rawSolver = makeSolver (Proxy @(KimchiConstraint Fp)) chunks2AppCircuit
+  case runSolver rawSolver unit of
+    Left e -> throw $ "chunks2 app solver: " <> show e
+    Right (Tuple _publicOutputs assignments) -> do
+      let
+        { witness } = makeWitness
+          { assignments
+          , constraints: map _.variables csResult.constraints
+          , publicInputs: builtState.publicInputs
+          }
+        _proof = pallasCreateProofWithPrev
+          { proverIndex
+          , witness
+          , prevChallenges: []
+          }
+      pure unit
+
+--------------------------------------------------------------------------------
 -- Test spec
 
 main :: Effect Unit
@@ -495,6 +548,15 @@ spec =
         exactMatch "app_circuit_two_phase_chain_make_zero" (compileFU makeZeroAppCircuit)
         exactMatch "app_circuit_two_phase_chain_increment" (compileFU incrementAppCircuit)
         exactMatch "app_circuit_chunks2" (compileUU chunks2AppCircuit)
+      describe "Witness dump" $
+        -- | Gated on `KIMCHI_WITNESS_DUMP` env var. When set, runs the
+        -- | standalone kimchi prover for chunks2 app body so the dump
+        -- | fires; otherwise no-op. Paired with OCaml's
+        -- | `dump_app_circuit_chunks2_witness.exe`.
+        it "app_circuit_chunks2 witness" do
+          liftEffect (Process.lookupEnv "KIMCHI_WITNESS_DUMP") >>= case _ of
+            Nothing -> pure unit
+            Just _ -> liftEffect runChunks2AppWitnessProve
       describe "Kimchi gates" do
         exactMatch "add_complete_step_circuit" (compilePP addCompleteCircuit)
         exactMatch "endo_scalar_step_circuit" (compileKFF endoScalarCircuit)
