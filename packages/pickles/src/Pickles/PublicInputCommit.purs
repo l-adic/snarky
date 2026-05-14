@@ -25,6 +25,7 @@ module Pickles.PublicInputCommit
   , PackedField
   , CorrectionMode(..)
   , DeferredScaleMul(..)
+  , DeferredScaleMul1(..)
   , MsmTerm(..)
   , ScalarMulResult
   , packFields
@@ -177,6 +178,17 @@ newtype DeferredScaleMul (numChunks :: Int) f = DeferredScaleMul
     => Snarky (KimchiConstraint f) t m (Vector numChunks (AffinePoint (FVar f)))
   )
 
+-- | Per-chunk deferred scalar multiplication. Used by `InCircuitCorrections`
+-- | to interleave scale_fast2'+add_fast per chunk (matching OCaml's
+-- | `Array.map2_exn acc chunks ~f:(fun acc (g, _) -> add_fast acc (scale_fast2' g x))`).
+-- | At nc=1 the chunked vector has length 1 and the per-chunk loop runs once —
+-- | emission is gate-identical to the pre-chunk single-point path.
+newtype DeferredScaleMul1 f = DeferredScaleMul1
+  ( forall t m
+     . CircuitM f (KimchiConstraint f) t m
+    => Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
+  )
+
 -- | A single term from walking the public input structure.
 -- | Matches OCaml's `Add_with_correction` and `Cond_add` variants.
 -- |
@@ -202,9 +214,15 @@ newtype DeferredScaleMul (numChunks :: Int) f = DeferredScaleMul
 -- | All variants carry chunked points: each field is a `Vector numChunks`
 -- | so the PI commit fold can run a parallel accumulator per chunk
 -- | (matching OCaml's `Array.map2_exn acc chunks`).
+-- `scaleMuls` is per-chunk so callers can either run them all-at-once
+-- (PureCorrections's Phase 1 batched path) OR interleave sf+af per chunk
+-- (InCircuitCorrections's main fold). At nc=1 both styles emit identical
+-- gate streams; at nc>1 the chunked PI commit needs per-chunk sf+af
+-- interleaving to match OCaml `Array.map2_exn acc chunks ~f:(fun acc (g, _) ->
+-- add_fast acc (scale_fast2' g x))` (wrap_verifier.ml:1019).
 data MsmTerm (numChunks :: Int) f
-  = AddWithCorrection { scaleMul :: DeferredScaleMul numChunks f, correction :: Vector numChunks (AffinePoint (F f)) }
-  | AddWithCircuitCorrection { scaleMul :: DeferredScaleMul numChunks f, correction :: Vector numChunks (AffinePoint (FVar f)) }
+  = AddWithCorrection { scaleMuls :: Vector numChunks (DeferredScaleMul1 f), correction :: Vector numChunks (AffinePoint (F f)) }
+  | AddWithCircuitCorrection { scaleMuls :: Vector numChunks (DeferredScaleMul1 f), correction :: Vector numChunks (AffinePoint (FVar f)) }
   | CondAdd (BoolVar f) (Vector numChunks (AffinePoint (FVar f)))
 
 -- | A Lagrange base point.
@@ -588,10 +606,12 @@ publicInputCommit params input = label "public-input-commit" do
 
           -- Phase 1: Execute all scaleFast2' calls, collecting chunked
           -- results. This generates numChunks * VarBaseMul + internal
-          -- CompleteAdd gates per AddWithCorrection term.
+          -- CompleteAdd gates per AddWithCorrection term. Per-term
+          -- emission is `for scaleMuls (run each chunk)` — at nc=1
+          -- this is a single run, gate-identical to pre-chunk.
           evaluated <- for results' \term -> case term of
-            AddWithCorrection { scaleMul: DeferredScaleMul doScaleMul } ->
-              Left <$> doScaleMul
+            AddWithCorrection { scaleMuls } ->
+              Left <$> for scaleMuls (\(DeferredScaleMul1 doScaleMul) -> doScaleMul)
             AddWithCircuitCorrection _ ->
               unsafeThrow "PublicInputCommit: AddWithCircuitCorrection not supported in PureCorrections mode"
             CondAdd b lagrangePt ->
@@ -671,14 +691,29 @@ publicInputCommit params input = label "public-input-commit" do
             ch
             ct
 
+          -- Per-term, per-chunk interleaved fold. For each AwC/AwCC term,
+          -- iterate chunks: scaleFast2'(chunk_k) THEN add_fast(acc_k, .)
+          -- before moving to chunk k+1. Matches OCaml at
+          -- wrap_verifier.ml:1019. At nc=1 zipWithA over Vector 1 runs
+          -- once — emission is gate-identical to pre-chunk.
           acc <- foldM
             ( \acc term -> case term of
-                AddWithCorrection { scaleMul: DeferredScaleMul doScaleMul } -> do
-                  chunkedPt <- doScaleMul
-                  zipWithA (\a p -> _.p <$> addComplete a p) acc chunkedPt
-                AddWithCircuitCorrection { scaleMul: DeferredScaleMul doScaleMul } -> do
-                  chunkedPt <- doScaleMul
-                  zipWithA (\a p -> _.p <$> addComplete a p) acc chunkedPt
+                AddWithCorrection { scaleMuls } ->
+                  zipWithA
+                    ( \a (DeferredScaleMul1 doScaleMul) -> do
+                        pt <- doScaleMul
+                        _.p <$> addComplete a pt
+                    )
+                    acc
+                    scaleMuls
+                AddWithCircuitCorrection { scaleMuls } ->
+                  zipWithA
+                    ( \a (DeferredScaleMul1 doScaleMul) -> do
+                        pt <- doScaleMul
+                        _.p <$> addComplete a pt
+                    )
+                    acc
+                    scaleMuls
                 CondAdd b lagrangePt ->
                   zipWithA
                     ( \a lp -> do
@@ -731,14 +766,14 @@ scalarMulLeaf params scalar lookup idx = do
   term <- case base.correctionAt of
     Nothing ->
       let
-        -- For each lagrange chunk, emit one scaleFast2'(g_k, scalar).
-        -- Same scalar across chunks; bases differ. Matches OCaml
-        -- `Array.map2_exn acc chunks ~f:(fun acc (g, _) -> ... scale_fast2' g x)`
-        -- at wrap_verifier.ml:1019. For nc=1 this is a single
-        -- traverse, producing the same gate stream as the pre-chunk
-        -- single-point scaleFast2' call.
-        scaleMul = DeferredScaleMul
-          (for base.circuit \chunkPt -> scaleFast2' @nChunks @sDiv2Bits chunkPt scalar)
+        -- Per-chunk deferred scaleFast2'. Each chunk gets its own
+        -- DeferredScaleMul1 so the PI commit fold can pull one chunk
+        -- at a time and interleave with add_fast (matching OCaml
+        -- `Array.map2_exn acc chunks ~f:(fun acc (g, _) -> add_fast acc
+        -- (scale_fast2' g x ...))` at wrap_verifier.ml:1019).
+        scaleMuls = map
+          (\chunkPt -> DeferredScaleMul1 (scaleFast2' @nChunks @sDiv2Bits chunkPt scalar))
+          base.circuit
         correction = map
           ( \chunkConst ->
               wrapPt $ EC.negate_ $ unwrapPt
@@ -746,27 +781,19 @@ scalarMulLeaf params scalar lookup idx = do
           )
           base.constant
       in
-        pure $ AddWithCorrection { scaleMul, correction }
+        pure $ AddWithCorrection { scaleMuls, correction }
     Just corrFn -> do
       -- Seal BOTH the per-branch base and correction here, eagerly,
-      -- per chunk. Mirrors OCaml `lagrange_with_correction`'s final
-      -- `Array.map ~f:(Double.map ~f:(Double.map ~f:Util.Wrap.seal))`
-      -- pass (wrap_verifier.ml:443) which seals the (base, correction)
-      -- × (x, y) tuple per chunk. The seal happens DURING the PI
-      -- iteration so seal gates interleave with `assert_(boolean b)`
-      -- calls from sibling Cond_add entries — without this, PS clusters
-      -- all Cond_add booleans together first and all correction seals
-      -- after, mismatching OCaml's gate packing order.
-      -- Seal correction BEFORE base per chunk. Mirrors OCaml's
-      -- right-to-left `Double.map ~f:(Double.map ~f:seal)` evaluation
-      -- of the (base, correction) tuple.
+      -- per chunk. See pre-chunk implementation for rationale on
+      -- seal ordering (right-to-left correction-then-base per chunk).
       sealedCorrection <- for (corrFn actualShift) \chunkPt ->
         label "seal-correction" (sealPoint chunkPt)
       sealedBase <- for base.circuit \chunkPt ->
         label "seal-base" (sealPoint chunkPt)
-      let scaleMul = DeferredScaleMul
-            (for sealedBase \chunkPt -> scaleFast2' @nChunks @sDiv2Bits chunkPt scalar)
-      pure $ AddWithCircuitCorrection { scaleMul, correction: sealedCorrection }
+      let scaleMuls = map
+            (\chunkPt -> DeferredScaleMul1 (scaleFast2' @nChunks @sDiv2Bits chunkPt scalar))
+            sealedBase
+      pure $ AddWithCircuitCorrection { scaleMuls, correction: sealedCorrection }
   pure
     { results: [ term ]
     , nextIdx: idx + 1
