@@ -20,6 +20,7 @@ package:
     - quickcheck
     - record
     - safe-coerce
+    - tailrec
     - transformers
     - tuples
     - unfoldable
