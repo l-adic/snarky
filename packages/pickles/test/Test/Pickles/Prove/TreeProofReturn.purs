@@ -148,6 +148,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         { stepCompileResult: fst nrr.vks.perBranchStep
         , wrapCompileResult: nrr.vks.wrap
         , wrapDomainLog2: nrr.vks.wrapDomainLog2
+        , stepNumChunks: nrr.vks.numChunks
         }
 
     -- ===== Tree side: 1-rule compileMulti at mpvMax=2 with override. =====

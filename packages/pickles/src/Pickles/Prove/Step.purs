@@ -82,7 +82,7 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Node.Process as Process
 import Partial.Unsafe (unsafePartial)
-import Pickles.Constants (zkRows)
+import Pickles.Constants (zkRowsForNumChunks)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas, vesta) as Linearization
@@ -767,6 +767,15 @@ type BuildSlotAdviceInput inputVal stmt =
   -- | (the wrap VK's own domain) whenever a rule uses `override_wrap_domain`
   -- | or verifies a prev whose step domain differs from its wrap domain.
   , stepDomainLog2 :: Int
+  -- | Kimchi `zk_rows` for the prev STEP proof being verified. Derived
+  -- | from prev's `num_chunks` via `zkRowsForNumChunks` and threaded by
+  -- | the caller — distinct from the wrap circuit's zk_rows whenever
+  -- | the prev step circuit has nc != wrap's nc.
+  , stepZkRows :: Int
+  -- | Kimchi `zk_rows` for the WRAP proof being verified. Currently
+  -- | `wrapVkChunks` is universally pinned to 1 so this is 3, but
+  -- | threaded explicitly to mirror the step-side wiring.
+  , wrapZkRows :: Int
   , wrapVK :: VerifierIndex PallasG WrapField
   -- | Previous step proof's opening sg (Vesta point, Fq coords =
   -- | WrapField). Used by the HELPER's msgForNextWrap hash + its
@@ -1113,7 +1122,7 @@ buildSlotAdvice input = do
 
     stepVanishesOnZk =
       (permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: StepField } -> StepField)
-        { domainLog2: input.stepDomainLog2, zkRows, pt: zetaExpandedStep }
+        { domainLog2: input.stepDomainLog2, zkRows: input.stepZkRows, pt: zetaExpandedStep }
 
     wrapGen = domainGenerator input.wrapDomainLog2
     wrapZetaw = oracles.zeta * wrapGen
@@ -1135,7 +1144,7 @@ buildSlotAdvice input = do
 
     wrapVanishesOnZk =
       (permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: WrapField } -> WrapField)
-        { domainLog2: input.wrapDomainLog2, zkRows, pt: oracles.zeta }
+        { domainLog2: input.wrapDomainLog2, zkRows: input.wrapZkRows, pt: oracles.zeta }
 
     stepProofPrevEvals =
       let
@@ -1154,7 +1163,7 @@ buildSlotAdvice input = do
 
     expandProofInputRec =
       { mustVerify: input.mustVerify
-      , zkRows
+      , zkRows: input.stepZkRows
       , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
       , allEvals: input.wrapPrevEvals
       , pEval0Chunks: [ input.wrapPrevEvals.publicEvals.zeta ]
@@ -1184,7 +1193,7 @@ buildSlotAdvice input = do
       , wrapAllEvals
       , wrapPEval0Chunks: map _.zeta (NonEmptyArray.toArray oracles.publicEvals)
       , wrapShifts
-      , wrapZkRows: zkRows
+      , wrapZkRows: input.wrapZkRows
       , wrapSrsLengthLog2: reflectType (Proxy :: Proxy WrapIPARounds)
       , wrapVanishesOnZk
       , wrapOmegaForLagrange: \_ -> one
@@ -2101,7 +2110,7 @@ preComputeStepDomainLog2 ctx rule = do
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
     gateCount = Array.length kimchiRows
     piSize = Array.length builtState.publicInputs
-    zkRows = 3
+    zkRows = zkRowsForNumChunks (reflectType (Proxy :: Proxy nc))
     rows = zkRows + piSize + gateCount
   pure (ceilLog2 rows)
   where

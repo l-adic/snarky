@@ -17,7 +17,7 @@ import Prelude
 import Data.Array as Array
 import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..))
-import Data.Vector (Vector, (:<))
+import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception.Unsafe (unsafeThrow)
@@ -27,7 +27,6 @@ import Pickles.CircuitDiffs.PureScript.StepMainChunks2 (StepMainChunks2Params, c
 import Pickles.Field (StepField, WrapField)
 import Pickles.ProofFFI (pallasSrsLagrangeCommitmentChunksAt)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
-import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
@@ -41,7 +40,7 @@ compileWrapMainChunks2
   :: IvpWrapParams
   -> StepMainChunks2Params
   -> Effect WrapArtifact
-compileWrapMainChunks2 { lagrangeAt, blindingH } stepParams = do
+compileWrapMainChunks2 { blindingH } stepParams = do
   stepArt <- compileStepMainChunks2 stepParams
   vestaSrs <- createCRS @StepField
   pallasSrs <- createCRS @WrapField

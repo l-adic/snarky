@@ -3,19 +3,11 @@
 -- | `WrapIPARounds`, etc.); this module covers values that don't fit
 -- | naturally as type-level naturals.
 module Pickles.Constants
-  ( zkRows
-  , zkRowsForNumChunks
+  ( zkRowsForNumChunks
   , roughDomainsLog2
   ) where
 
 import Prelude
-
--- | Kimchi's zero-knowledge masking row count for `num_chunks = 1`.
--- | Mirrors OCaml's `Plonk_checks.zk_rows_by_default`. For chunked
--- | circuits (`num_chunks > 1`) use `zkRowsForNumChunks` — kimchi
--- | bumps zk_rows for chunked proofs (formula in `constraints.rs`).
-zkRows :: Int
-zkRows = 3
 
 -- | Kimchi's `zk_rows` derived from `num_chunks`. Mirrors the formula
 -- | in `kimchi/src/circuits/constraints.rs:759-761`:

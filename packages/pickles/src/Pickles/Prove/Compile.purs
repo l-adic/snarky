@@ -230,6 +230,11 @@ type ProverVKs =
   { stepCompileResult :: StepCompileResult
   , wrapCompileResult :: WrapCompileResult
   , wrapDomainLog2 :: Int
+  -- | The imported rule's compile-time `@numChunks`. Propagated from
+  -- | the producer so the consumer (e.g. `mkStepAdvice`'s per-slot
+  -- | `External` case) reads the declared value directly instead of
+  -- | back-deriving it from the realized step domain log2.
+  , stepNumChunks :: Int
   }
 
 -- | Per-slot wrap-key info supplied at compile time. Mirrors the
@@ -839,12 +844,22 @@ instance
             , slotWrapDomainLog2: outerOverridenWrapDomainLog2
             , slotStepDomainLog2:
                 ProofFFI.pallasProverIndexDomainLog2 stepCR.proverIndex
+            -- `Self`'s prev step circuit is the outer rule itself, so its
+            -- num_chunks is the compile-wide `@nc` type param. Wrap is
+            -- universally nc=1 (`num_chunks_by_default`).
+            , slotStepZkRows: zkRowsForNumChunks (reflectType (Proxy @nc))
+            , slotWrapZkRows: zkRowsForNumChunks 1
             }
           External vks ->
             { slotWrapVK: vks.wrapCompileResult.verifierIndex
             , slotWrapDomainLog2: vks.wrapDomainLog2
             , slotStepDomainLog2:
                 ProofFFI.pallasProverIndexDomainLog2 vks.stepCompileResult.proverIndex
+            -- External: read the imported rule's declared `@numChunks`
+            -- directly from `ProverVKs.stepNumChunks` (propagated by the
+            -- imported compileMulti). Wrap is universally nc=1.
+            , slotStepZkRows: zkRowsForNumChunks vks.stepNumChunks
+            , slotWrapZkRows: zkRowsForNumChunks 1
             }
 
       -- Slot-specific dummies sized by this slot's prev rule's mpv (= n),
@@ -1039,6 +1054,8 @@ instance
       , prevStatement: slotData.prevStatement
       , wrapDomainLog2: slotParams.slotWrapDomainLog2
       , stepDomainLog2: slotParams.slotStepDomainLog2
+      , stepZkRows: slotParams.slotStepZkRows
+      , wrapZkRows: slotParams.slotWrapZkRows
       , wrapVK: slotParams.slotWrapVK
       , stepOpeningSg: slotData.stepOpeningSg
       , kimchiPrevSg: slotData.kimchiPrevSg
@@ -1518,6 +1535,11 @@ instance
             -- masks its downstream effect; InductivePrev reads
             -- `prev.stepDomainLog2`.
             Dummy.wrapDomainLog2ForProofsVerified slotMpvMax
+        -- Side-loaded inner proofs in current pickles are universally
+        -- `num_chunks_by_default = 1`, so step zk_rows = 3. (The
+        -- `side_loaded_domain` Pseudo varies the domain log2, not nc.)
+        , slotStepZkRows: zkRowsForNumChunks 1
+        , slotWrapZkRows: zkRowsForNumChunks 1
         }
 
       bcd = Dummy.baseCaseDummies { maxProofsVerified: slotMpvMax }
@@ -1698,6 +1720,8 @@ instance
       , prevStatement: slotData.prevStatement
       , wrapDomainLog2: slotParams.slotWrapDomainLog2
       , stepDomainLog2: slotParams.slotStepDomainLog2
+      , stepZkRows: slotParams.slotStepZkRows
+      , wrapZkRows: slotParams.slotWrapZkRows
       , wrapVK: slotParams.slotWrapVK
       , stepOpeningSg: slotData.stepOpeningSg
       , kimchiPrevSg: slotData.kimchiPrevSg
@@ -2076,6 +2100,11 @@ type MultiVKs perBranchStepCarrier =
   { wrap :: WrapCompileResult
   , perBranchStep :: perBranchStepCarrier
   , wrapDomainLog2 :: Int
+  -- | The compile's declared `@numChunks`. Propagated so consumers
+  -- | constructing `ProverVKs` for an `External` slot can read the
+  -- | imported rule's nc without back-deriving it from the step
+  -- | circuit's realized domain log2.
+  , numChunks :: Int
   }
 
 -- | Output of `compileMulti`. The multi-branch invariant in types:
@@ -3827,6 +3856,7 @@ compileMulti cfg rules = do
         { wrap: wrapResult
         , perBranchStep: stepResults
         , wrapDomainLog2
+        , numChunks: reflectType (Proxy :: Proxy numChunks)
         }
     , perBranchVKs: unit
     }
