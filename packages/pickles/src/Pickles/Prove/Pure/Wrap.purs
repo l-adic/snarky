@@ -45,7 +45,7 @@ import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.ProofFFI (OraclesResult, Proof, pallasProofOpeningPrechallengesVec, pallasProofOracles)
 import Pickles.PlonkChecks (ChunkedAllEvals)
-import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatchChunked, computeBpChalsAndB, crossFieldDigest, derivePlonk, ftEval0)
+import Pickles.Prove.Pure.Common (BulletproofBOutput, computeBpChalsAndB, crossFieldDigest, derivePlonk)
 import Pickles.Types (StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, ScalarChallenge)
 import Pickles.Wrap.Types as Wrap
@@ -293,27 +293,14 @@ wrapComputeDeferredValues input =
 
     stepPlonkDerived = derivePlonk derivePlonkInput
 
-    -- ===== ft_eval0 for the step field (via Common). =====
-    --
-    -- OCaml inlines this inside `combined_inner_product` (wrap.ml:33-39),
-    -- sharing it with the scalars_env built for `derive_plonk`. In PS
-    -- the helper is stand-alone.
-    ftEval0Input =
-      { plonkMinimal: stepPlonkMinimal
-      , allEvals: collapsedAllEvals
-      , pEval0Chunks: input.pEval0Chunks
-      , shifts: input.shifts
-      , generator: input.generator
-      , domainLog2: input.domainLog2
-      , zkRows: input.zkRows
-      , srsLengthLog2: input.srsLengthLog2
-      , endo: input.endo
-      , vanishesOnZk: input.vanishesOnZk
-      , omegaForLagrange: input.omegaForLagrange
-      , linearizationPoly: input.linearizationPoly
-      }
-
-    stepFtEval0 = ftEval0 ftEval0Input
+    -- NOTE: previously `stepFtEval0 = ftEval0 ftEval0Input` was used
+    -- as input to the manual `combinedInnerProductBatchChunked`. Now
+    -- that we use `oraclesResult.combinedInnerProduct` directly (see
+    -- below), `ftEval0` is no longer needed in this hot path. The
+    -- standalone `ftEval0` helper in `Pickles.Prove.Pure.Common` is
+    -- retained — it's still used by the verifier path
+    -- (`expandDeferredForVerify`) which doesn't have the kimchi FFI
+    -- value handy.
 
     -- ===== combined_inner_product (wrap.ml:22-62, 235-245). =====
     --
@@ -324,19 +311,17 @@ wrapComputeDeferredValues input =
     -- chunks of each polynomial. For inner proofs at num_chunks=1 each
     -- chunked array has length 1 and this collapses to the same value
     -- the legacy single-eval CIP produced.
-    cipInput =
-      { allEvals: input.chunkedAllEvals
-      , publicEvals: input.chunkedAllEvals.publicEvals
-      , ftEval0: stepFtEval0
-      , ftEval1: input.chunkedAllEvals.ftEval1
-      , oldBulletproofChallenges: input.prevChallenges
-      , xi: oraclesResult.v
-      , r: oraclesResult.u
-      , zeta: zetaField
-      , zetaw
-      }
-
-    cipActual = combinedInnerProductBatchChunked cipInput
+    -- WORKAROUND (task #63): use the kimchi-FFI authoritative CIP value
+    -- instead of our manual `combinedInnerProductBatchChunked`. At nc=1
+    -- the manual and FFI values agree byte-for-byte (verified by
+    -- SimpleChain end-to-end verify), but at nc>1 (chunks2) the manual
+    -- value diverges. Bisecting showed: feeding FFI's `ftEval0` INTO
+    -- the manual chunked CIP recovers FFI's CIP exactly — so the
+    -- chunked CIP combine is correct, but PS's `ftEval0` (in
+    -- `Pickles.Prove.Pure.Common`) has a chunk-dependent bug. Pin the
+    -- value to FFI's here so chunks2 can converge end-to-end while the
+    -- root cause in `ftEval0` is tracked separately.
+    cipActual = oraclesResult.combinedInnerProduct
 
     -- ===== new bulletproof challenges + b (wrap.ml:209-224). =====
     --

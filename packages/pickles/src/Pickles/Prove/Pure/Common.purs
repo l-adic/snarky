@@ -318,6 +318,7 @@ combinedInnerProductBatchChunked input =
       case Array.uncons (Array.reverse flat) of
         Just { head, tail } -> foldl (\acc fx -> fx + input.xi * acc) head tail
         Nothing -> zero
+
   in
     combine (flatAt _.zeta input.ftEval0 bPolyZeta)
       + input.r * combine (flatAt _.omegaTimesZeta input.ftEval1 bPolyZetaw)
