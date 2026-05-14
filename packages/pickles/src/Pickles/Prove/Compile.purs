@@ -72,7 +72,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception as Exc
 import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
-import Pickles.Constants (roughDomainsLog2, zkRows)
+import Pickles.Constants (roughDomainsLog2, zkRowsForNumChunks)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
@@ -3476,6 +3476,8 @@ runMultiProverBody
 
     proofsVerifiedMask = (outerMpv >= 2) :< (outerMpv >= 1) :< Vector.nil
 
+    selfZkRows = zkRowsForNumChunks (reflectType (Proxy :: Proxy numChunks))
+
     wrapDvInput =
       { proof: stepResult.proof
       , verifierIndex: stepCR.verifierIndex
@@ -3483,13 +3485,13 @@ runMultiProverBody
       , chunkedAllEvals
       , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepOracles.publicEvals)
       , domainLog2: selfStepDomainLog2
-      , zkRows
+      , zkRows: selfZkRows
       , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
       , generator: (domainGenerator selfStepDomainLog2)
       , shifts: (domainShifts selfStepDomainLog2)
       , vanishesOnZk: permutationVanishingPolynomial
           { domainLog2: selfStepDomainLog2
-          , zkRows
+          , zkRows: selfZkRows
           , pt: stepOracles.zeta
           }
       , omegaForLagrange: \_ -> one
@@ -3814,6 +3816,7 @@ compileMulti cfg rules = do
       { wrapVK: wrapResult.verifierIndex
       , vestaSrs: cfg.srs.vestaSrs
       , stepDomainLog2: firstBranchStepDomainLog2
+      , stepNumChunks: reflectType (Proxy :: Proxy numChunks)
       }
 
   pure

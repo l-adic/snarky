@@ -68,7 +68,7 @@ import Data.Exists (Exists, mkExists, runExists)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.Constants (zkRows)
+import Pickles.Constants (zkRowsForNumChunks)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
@@ -129,13 +129,14 @@ mkVerifier
   :: { wrapVK :: VerifierIndex PallasG WrapField
      , vestaSrs :: CRS VestaG
      , stepDomainLog2 :: Int
+     , stepNumChunks :: Int
      }
   -> Verifier
-mkVerifier { wrapVK, vestaSrs, stepDomainLog2 } =
+mkVerifier { wrapVK, vestaSrs, stepDomainLog2, stepNumChunks } =
   { wrapVK
   , vestaSrs
   , stepDomainLog2
-  , stepZkRows: zkRows
+  , stepZkRows: zkRowsForNumChunks stepNumChunks
   , stepSrsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
   , stepGenerator: domainGenerator stepDomainLog2 :: StepField
   , stepShifts: domainShifts stepDomainLog2 :: Vector 7 StepField
