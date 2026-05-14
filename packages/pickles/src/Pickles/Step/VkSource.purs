@@ -16,6 +16,7 @@ module Pickles.Step.VkSource
   , SlotVkSource(..)
   ) where
 
+import Data.Vector (Vector)
 import Pickles.Field (StepField)
 import Pickles.ProofsVerified (ProofsVerifiedCount)
 import Pickles.Sideload.VerificationKey as SLVK
@@ -23,7 +24,6 @@ import Pickles.VerificationKey (VerificationKey)
 import Snarky.Circuit.DSL (BoolVar, F, FVar)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint)
-import Data.Vector (Vector)
 
 -- | Compile-time blueprint for a `Slot Compiled` slot. Two inhabitants
 -- | only — `BuildSlotVkSources`'s Compiled instance pattern-matches

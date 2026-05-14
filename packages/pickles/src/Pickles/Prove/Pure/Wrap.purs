@@ -42,9 +42,9 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization.Types (LinearizationPoly)
+import Pickles.PlonkChecks (ChunkedAllEvals)
 import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.ProofFFI (OraclesResult, Proof, pallasProofOpeningPrechallengesVec, pallasProofOracles)
-import Pickles.PlonkChecks (ChunkedAllEvals)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, computeBpChalsAndB, crossFieldDigest, derivePlonk)
 import Pickles.Types (StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, ScalarChallenge)

@@ -81,7 +81,6 @@ import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NonEmptyArray
 import Data.Reflectable (class Reflectable, reflectType)
-import Type.Proxy (Proxy(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Types (StepIPARounds, WrapIPARounds)
@@ -91,6 +90,7 @@ import Snarky.Circuit.DSL (SizedF)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Type.Proxy (Proxy(..))
 
 -- | Opaque proof type, parameterized by curve group and scalar field.
 foreign import data Proof :: Type -> Type -> Type

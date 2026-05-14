@@ -57,10 +57,10 @@ import Control.Monad.Except (ExceptT)
 import Data.Array as Array
 import Data.Array.NonEmpty as NonEmptyArray
 import Data.Enum (fromEnum)
-import Data.Int.Bits as Int.Bits
 import Data.Exists (runExists)
 import Data.Fin (unsafeFinite)
 import Data.Functor.Product (Product, product)
+import Data.Int.Bits as Int.Bits
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, over, wrap)
 import Data.Reflectable (class Reflectable, reflectType)
@@ -80,17 +80,6 @@ import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.ProofFFI
-  ( pallasProofOpeningSg
-  , pallasProofOracles
-  , pallasProverIndexDomainLog2
-  , permutationVanishingPolynomial
-  , proofCoefficientEvals
-  , proofIndexEvals
-  , proofSigmaEvals
-  , proofWitnessEvals
-  , proofZEvals
-  )
-import Pickles.ProofFFI
   ( firstChunk
   , pallasProverIndexDomainLog2
   , permutationVanishingPolynomial
@@ -104,6 +93,17 @@ import Pickles.ProofFFI
   , vestaSrsLagrangeCommitmentAt
   , vestaSrsLagrangeCommitmentChunksAt
   ) as ProofFFI
+import Pickles.ProofFFI
+  ( pallasProofOpeningSg
+  , pallasProofOracles
+  , pallasProverIndexDomainLog2
+  , permutationVanishingPolynomial
+  , proofCoefficientEvals
+  , proofIndexEvals
+  , proofSigmaEvals
+  , proofWitnessEvals
+  , proofZEvals
+  )
 import Pickles.ProofsVerified (ProofsVerifiedCount, boolVecToProofsVerified)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
@@ -1295,7 +1295,9 @@ instance
                     prevHeadPrevEvals = StepAllEvals
                       { ftEval1: F prevWrapOracles.ftEval1
                       , publicEvals:
-                          let pew = prevWrapCollapse prevWrapOracles.publicEvals in
+                          let
+                            pew = prevWrapCollapse prevWrapOracles.publicEvals
+                          in
                             PointEval { zeta: F pew.zeta, omegaTimesZeta: F pew.omegaTimesZeta }
                       , zEvals: peWF (prevWrapCollapse (ProofFFI.proofZEvals prev.wrapProof))
                       , witnessEvals:
@@ -1460,14 +1462,20 @@ instance
         ( \log2 i ->
             let
               chunksArr = ProofFFI.vestaSrsLagrangeCommitmentChunksAt
-                cfg.srs.pallasSrs log2 i
+                cfg.srs.pallasSrs
+                log2
+                i
             in
               case Vector.toVector @nc (map coerce chunksArr) of
                 Just v -> (v :: Vector _ (AffinePoint (F StepField)))
                 Nothing -> unsafeThrow
                   $ "sideloadedPerDomainLagrangeAts: lagrange chunks size mismatch (log2="
-                  <> show log2 <> ", got " <> show (Array.length chunksArr)
-                  <> ", expected nc=" <> show (reflectType (Proxy @nc)) <> ")"
+                      <> show log2
+                      <> ", got "
+                      <> show (Array.length chunksArr)
+                      <> ", expected nc="
+                      <> show (reflectType (Proxy @nc))
+                      <> ")"
         )
         (13 :< 14 :< 15 :< Vector.nil)
 
@@ -1941,7 +1949,9 @@ instance
                     prevHeadPrevEvals = StepAllEvals
                       { ftEval1: F prevWrapOracles.ftEval1
                       , publicEvals:
-                          let pew = prevWrapCollapse prevWrapOracles.publicEvals in
+                          let
+                            pew = prevWrapCollapse prevWrapOracles.publicEvals
+                          in
                             PointEval { zeta: F pew.zeta, omegaTimesZeta: F pew.omegaTimesZeta }
                       , zEvals: peWF (prevWrapCollapse (ProofFFI.proofZEvals prev.wrapProof))
                       , witnessEvals:
@@ -3775,10 +3785,13 @@ compileMulti cfg rules = do
   case Array.find (_ /= declaredNumChunks) perBranchActual of
     Just bad ->
       Exc.throw $ "compileMulti: declared numChunks=" <> show declaredNumChunks
-        <> " but branch step circuit computes num_chunks=" <> show bad
+        <> " but branch step circuit computes num_chunks="
+        <> show bad
         <> " (per-branch step domain log2s: "
         <> show (Vector.toUnfoldable log2s :: Array Int)
-        <> ", StepIPARounds (max_poly_log2)=" <> show stepMaxPolyLog2 <> ")"
+        <> ", StepIPARounds (max_poly_log2)="
+        <> show stepMaxPolyLog2
+        <> ")"
     Nothing -> pure unit
 
   let

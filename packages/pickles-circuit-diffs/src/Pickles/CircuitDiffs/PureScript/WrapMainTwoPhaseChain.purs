@@ -21,17 +21,17 @@ module Pickles.CircuitDiffs.PureScript.WrapMainTwoPhaseChain
 
 import Prelude
 
+import Data.Array as Array
 import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
+import Effect.Exception.Unsafe (unsafeThrow)
 import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCompiled, deriveWrapVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement (StepMainTwoPhaseChainIncrementParams, compileStepMainTwoPhaseChainIncrement)
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero (StepMainTwoPhaseChainMakeZeroParams, compileStepMainTwoPhaseChainMakeZero)
 import Pickles.Field (StepField, WrapField)
-import Data.Array as Array
-import Effect.Exception.Unsafe (unsafeThrow)
 import Pickles.ProofFFI (pallasSrsLagrangeCommitmentChunksAt)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
@@ -84,7 +84,8 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
           Just v -> (v :: Vector 1 (AffinePoint (F WrapField)))
           Nothing -> unsafeThrow
             $ "WrapMainTwoPhaseChain: lagrange chunks size mismatch (got "
-            <> show (Array.length chunksArr) <> ", expected 1)"
+                <> show (Array.length chunksArr)
+                <> ", expected 1)"
     perBranchLookup i =
       chunked makeZeroArt.stepDomainLog2 i
         :< chunked incrementArt.stepDomainLog2 i

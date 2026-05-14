@@ -58,8 +58,8 @@ import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepU
 import Pickles.Step.Dummy as Dummy
 import Pickles.Step.Slots (class StepSlotsCarrier, traverseStepSlotsAWithVk)
 import Pickles.Step.Types (BranchData(..), FopProofState(..), PerProofWitness(..), ProofState(..), UnfinalizedFieldCount, WrapProof(..))
-import Pickles.Step.VkSource (SlotVkBlueprintCompiled(..), SlotVkBlueprintSideLoaded, SlotVkSource(..))
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
+import Pickles.Step.VkSource (SlotVkBlueprintCompiled(..), SlotVkBlueprintSideLoaded, SlotVkSource(..))
 import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (VerificationKey(..))
 import Prim.Boolean (False, True)

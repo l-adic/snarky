@@ -221,12 +221,12 @@ incrementallyVerifyProof
   -- xHat(nc) :: ftComm(1) :: zComm(nc) :: index(6nc) :: wComm(15nc) ::
   -- coeff(15nc) :: sigma(6nc). The append-chain `Add` constraints below
   -- spell out the running total at each step. Total = 1 + 44*nc.
-  => Add numChunks 1 sg1        -- xHat + ftComm = nc + 1
-  => Add sg1 numChunks sg2      -- + zComm = 1 + 2nc
-  => Add sg2 indexSigmaN sg3    -- + index = 1 + 8nc
-  => Add sg3 wCoeffN sg4        -- + wComm = 1 + 23nc
-  => Add sg4 wCoeffN sg5        -- + coeff = 1 + 38nc
-  => Add sg5 indexSigmaN nonSgBases  -- + sigma = 1 + 44nc
+  => Add numChunks 1 sg1 -- xHat + ftComm = nc + 1
+  => Add sg1 numChunks sg2 -- + zComm = 1 + 2nc
+  => Add sg2 indexSigmaN sg3 -- + index = 1 + 8nc
+  => Add sg3 wCoeffN sg4 -- + wComm = 1 + 23nc
+  => Add sg4 wCoeffN sg5 -- + coeff = 1 + 38nc
+  => Add sg5 indexSigmaN nonSgBases -- + sigma = 1 + 44nc
   => Add 1 totalBasesPred totalBases
   => IpaScalarOps f t m sf
   -> IncrementallyVerifyProofParams numChunks f r

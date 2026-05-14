@@ -20,8 +20,8 @@ import Effect.Class (liftEffect)
 import Effect.Exception as Exc
 import Pickles (NoSlots, StepField, compileMulti, mkRuleEntry)
 import Snarky.Backend.Kimchi.Class (createCRS)
-import Snarky.Circuit.DSL (F)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
+import Snarky.Circuit.DSL (F)
 import Test.Pickles.Prove.NoRecursionReturn (NrrRules, nrrRule)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (fail)
@@ -54,7 +54,9 @@ spec = describe "Pickles.Prove.Compile.validateNumChunks" do
         fail "expected compileMulti to throw NumChunksMismatch (declared 2, actual 1)"
       Left err -> do
         let msg = Exc.message err
-        when (not (contains (Pattern "declared numChunks=2") msg)) $
-          fail $ "error did not mention 'declared numChunks=2': " <> msg
-        when (not (contains (Pattern "num_chunks=1") msg)) $
-          fail $ "error did not mention computed 'num_chunks=1': " <> msg
+        when (not (contains (Pattern "declared numChunks=2") msg))
+          $ fail
+          $ "error did not mention 'declared numChunks=2': " <> msg
+        when (not (contains (Pattern "num_chunks=1") msg))
+          $ fail
+          $ "error did not mention computed 'num_chunks=1': " <> msg

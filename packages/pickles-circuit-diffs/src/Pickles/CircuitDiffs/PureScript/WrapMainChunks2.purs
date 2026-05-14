@@ -27,13 +27,13 @@ import Pickles.CircuitDiffs.PureScript.StepMainChunks2 (StepMainChunks2Params, c
 import Pickles.Field (StepField, WrapField)
 import Pickles.ProofFFI (pallasSrsLagrangeCommitmentChunksAt)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
-import Snarky.Circuit.DSL (F(..))
-import Snarky.Data.EllipticCurve (AffinePoint)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
+import Snarky.Circuit.DSL (F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 compileWrapMainChunks2
@@ -64,7 +64,10 @@ compileWrapMainChunks2 { blindingH } stepParams = do
       , lagrangeAt: mkConstLagrangeBaseLookup \i ->
           let
             chunksArr = pallasSrsLagrangeCommitmentChunksAt
-              vestaSrs stepArt.stepDomainLog2 i
+              vestaSrs
+              stepArt.stepDomainLog2
+              i
+
             -- Wrap each {x,y} record (coords in Pallas.ScalarField =
             -- WrapField) into the F newtype so the type lines up with
             -- `Vector numChunks (AffinePoint (F WrapField))`. The
@@ -78,7 +81,8 @@ compileWrapMainChunks2 { blindingH } stepParams = do
               Just v -> v
               Nothing -> unsafeThrow
                 $ "chunks2 wrap: lagrange chunks mismatch (got "
-                <> show (Array.length chunksArr) <> ", expected 2)"
+                    <> show (Array.length chunksArr)
+                    <> ", expected 2)"
       , perBranchLagrangeAt: Nothing
       , blindingH
       , allPossibleDomainLog2s:

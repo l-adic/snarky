@@ -723,10 +723,11 @@ decodePointEvalChunked j = do
         Nothing ->
           Left (TypeMismatch "decodePointEvalChunked: empty chunks array")
         Just zetaNea -> do
-          let mkChunk zJ oJ = do
-                zeta <- decodeHex zJ
-                omegaTimesZeta <- decodeHex oJ
-                pure { zeta, omegaTimesZeta }
+          let
+            mkChunk zJ oJ = do
+              zeta <- decodeHex zJ
+              omegaTimesZeta <- decodeHex oJ
+              pure { zeta, omegaTimesZeta }
           -- Pair element-wise; safe because lengths match (checked above).
           let pairs = Array.zip (NEA.toArray zetaNea) omegaArr
           chunksArr <- traverse (\(Tuple z o) -> mkChunk z o) pairs

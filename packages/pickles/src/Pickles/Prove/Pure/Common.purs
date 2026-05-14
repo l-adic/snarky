@@ -45,6 +45,8 @@ module Pickles.Prove.Pure.Common
 import Prelude
 
 import Data.Array as Array
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NEA
 import Data.Foldable (foldl, foldr)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
@@ -56,8 +58,6 @@ import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval)
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Types (LinearizationPoly, runLinearizationPoly)
-import Data.Array.NonEmpty (NonEmptyArray)
-import Data.Array.NonEmpty as NEA
 import Pickles.PlonkChecks (AllEvals, ChunkedAllEvals)
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
 import Pickles.PlonkChecks.Permutation (permContribution, permScalar)

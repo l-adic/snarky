@@ -244,9 +244,9 @@ instance
     Vector.cons
       <$> f (finZero :: Finite len) pwHere vkHere
       <*> traverseStepSlotsAWithVk @rest
-            (\i' pw vk -> f (shiftSucc i') pw vk)
-            pwRest
-            vkRest
+        (\i' pw vk -> f (shiftSucc i') pw vk)
+        pwRest
+        vkRest
 
   replicateStepSlotsCarrier dummyPPW =
     dummyPPW /\ replicateStepSlotsCarrier @rest dummyPPW

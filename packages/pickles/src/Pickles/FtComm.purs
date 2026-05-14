@@ -79,7 +79,8 @@ ftComm { scaleByShifted } { sigmaLast, tComm, perm, zetaToSrsLength, zetaToDomai
     => Vector k (AffinePoint (FVar f))
     -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
   hornerReduce v =
-    let { last, init } = Vector.unsnoc v
+    let
+      { last, init } = Vector.unsnoc v
     in
       foldM
         ( \acc chunk -> do

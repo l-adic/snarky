@@ -799,9 +799,10 @@ scalarMulLeaf params scalar lookup idx = do
         label "seal-correction" (sealPoint chunkPt)
       sealedBase <- for base.circuit \chunkPt ->
         label "seal-base" (sealPoint chunkPt)
-      let scaleMuls = map
-            (\chunkPt -> DeferredScaleMul1 (scaleFast2' @nChunks @sDiv2Bits chunkPt scalar))
-            sealedBase
+      let
+        scaleMuls = map
+          (\chunkPt -> DeferredScaleMul1 (scaleFast2' @nChunks @sDiv2Bits chunkPt scalar))
+          sealedBase
       pure $ AddWithCircuitCorrection { scaleMuls, correction: sealedCorrection }
   pure
     { results: [ term ]

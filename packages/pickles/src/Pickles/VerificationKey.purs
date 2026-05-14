@@ -108,6 +108,7 @@ extractWrapVKComms
 extractWrapVKComms vk =
   let
     comms = vestaVerifierIndexCommitments @wrapVkChunks vk
+
     wrapPt :: AffinePoint Vesta.ScalarField -> WeierstrassAffinePoint Pallas.G (F Vesta.ScalarField)
     wrapPt pt = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
   in

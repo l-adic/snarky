@@ -89,8 +89,8 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
-import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.PlonkChecks (AllEvals)
+import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, tCommChunked, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallenges, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaVerifierIndexCommitments, vestaVerifierIndexDigest, wCommChunked, zCommChunked)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep

@@ -43,13 +43,13 @@ import Data.Map (Map)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, un)
 import Data.Reflectable (class Reflectable, reflectType)
-import Effect.Exception.Unsafe (unsafeThrow)
 import Data.String (Pattern(..), Replacement(..))
 import Data.String as String
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
+import Effect.Exception.Unsafe (unsafeThrow)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
@@ -768,8 +768,11 @@ buildWrapMainConfigMulti vestaSrs { perBranch } =
                 Just v -> (v :: Vector _ (AffinePoint (F WrapField)))
                 Nothing -> unsafeThrow
                   $ "buildWrapMainConfigMulti.perBranchLookup: lagrange chunks size mismatch "
-                  <> "(got " <> show (Array.length chunksArr)
-                  <> ", expected numChunks=" <> show (reflectType (Proxy @numChunks)) <> ")"
+                      <> "(got "
+                      <> show (Array.length chunksArr)
+                      <> ", expected numChunks="
+                      <> show (reflectType (Proxy @numChunks))
+                      <> ")"
         )
         perBranch
   in
@@ -792,8 +795,11 @@ buildWrapMainConfigMulti vestaSrs { perBranch } =
               Just v -> (v :: Vector _ (AffinePoint (F WrapField)))
               Nothing -> unsafeThrow
                 $ "buildWrapMainConfigMulti: lagrange chunks size mismatch "
-                <> "(got " <> show (Array.length chunksArr)
-                <> ", expected numChunks=" <> show (reflectType (Proxy @numChunks)) <> ")"
+                    <> "(got "
+                    <> show (Array.length chunksArr)
+                    <> ", expected numChunks="
+                    <> show (reflectType (Proxy @numChunks))
+                    <> ")"
     , perBranchLagrangeAt:
         if allEqual then Nothing else Just perBranchLookup
     , blindingH: (coerce $ pallasSrsBlindingGenerator vestaSrs) :: AffinePoint (F WrapField)

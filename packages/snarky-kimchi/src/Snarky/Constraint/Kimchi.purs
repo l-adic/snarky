@@ -18,9 +18,9 @@ import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (over, un)
 import Data.Set as Set
 import Data.Traversable (for, traverse)
-import Data.Vector (Vector)
 import Data.Tuple (Tuple(..))
 import Data.UnionFind (equivalenceClasses)
+import Data.Vector (Vector)
 import Poseidon (class PoseidonField)
 import Snarky.Backend.Builder (class CompileCircuit, class Finalizer, CircuitBuilderState, CircuitBuilderT, Labeled)
 import Snarky.Backend.Builder as CircuitBuilder

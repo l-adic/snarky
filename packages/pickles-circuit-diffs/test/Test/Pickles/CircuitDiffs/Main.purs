@@ -2,10 +2,13 @@ module Test.Pickles.CircuitDiffs.Main where
 
 import Prelude
 
+import Control.Monad.Rec.Class (Step(..), tailRecM)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Int as Int
+import Data.Int.Bits as Bits
 import Data.Maybe (Maybe(..))
+import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -17,6 +20,7 @@ import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
 import Node.FS.Perms (all, mkPerms)
 import Node.FS.Sync as FS
+import Node.Process as Process
 import Pickles.CircuitDiffs.Circuit (Circuit, ComparableCircuit, comparable, fromCompiledCircuit, parseOcamlFixtures)
 import Pickles.CircuitDiffs.PureScript.BCorrect (compileBCorrect)
 import Pickles.CircuitDiffs.PureScript.BulletReduce (compileBulletReduce)
@@ -43,7 +47,6 @@ import Pickles.CircuitDiffs.PureScript.Pow2Pow (compilePow2Pow)
 import Pickles.CircuitDiffs.PureScript.PseudoCircuits (compileChooseKeyN1Wrap, compileOneHotN17Step, compileOneHotN17Wrap, compileOneHotN1Step, compileOneHotN1Wrap, compileOneHotN3Step, compileOneHotN3Wrap, compilePseudoChooseN1Step, compilePseudoChooseN1Wrap, compilePseudoChooseN3Step, compilePseudoChooseN3Wrap, compilePseudoMaskN17Step, compilePseudoMaskN17Wrap, compilePseudoMaskN1Step, compilePseudoMaskN1Wrap, compilePseudoMaskN3Step, compilePseudoMaskN3Wrap, compileSideloadedVkTypStep, compileUtilsOnesVectorN16Step, compileUtilsOnesVectorN16Wrap)
 import Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn (compileStepMainAddOneReturn)
 import Pickles.CircuitDiffs.PureScript.StepMainChunks2 (compileStepMainChunks2)
-import Pickles.CircuitDiffs.PureScript.WrapMainChunks2 (compileWrapMainChunks2)
 import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecursionReturnParams, compileStepMainNoRecursionReturn)
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedChild (compileStepMainSideLoadedChild)
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain (compileStepMainSideLoadedMain)
@@ -56,6 +59,7 @@ import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
 import Pickles.CircuitDiffs.PureScript.StepVerifyN2 (compileStepVerifyN2)
 import Pickles.CircuitDiffs.PureScript.WrapMain (compileWrapMainN1)
 import Pickles.CircuitDiffs.PureScript.WrapMainAddOneReturn (compileWrapMainAddOneReturn)
+import Pickles.CircuitDiffs.PureScript.WrapMainChunks2 (compileWrapMainChunks2)
 import Pickles.CircuitDiffs.PureScript.WrapMainN2 (compileWrapMainN2)
 import Pickles.CircuitDiffs.PureScript.WrapMainSideLoadedMain (compileWrapMainSideLoadedMain)
 import Pickles.CircuitDiffs.PureScript.WrapMainTreeProofReturn (compileWrapMainTreeProofReturn)
@@ -65,32 +69,28 @@ import Pickles.CircuitDiffs.PureScript.WrapVerifyN2 (compileWrapVerifyN2)
 import Pickles.CircuitDiffs.PureScript.Xhat (compileXhat)
 import Pickles.CircuitDiffs.PureScript.XhatStep (compileXhatStep)
 import Pickles.CircuitDiffs.Types (CircuitComparison)
+import Pickles.ProofFFI (pallasCreateProofWithPrev)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Safe.Coerce (coerce)
 import Simple.JSON (writeJSON)
+import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (Solver, compilePure, makeSolver, runSolver)
+import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
+import Snarky.Backend.Kimchi.Class (createProverIndex)
 import Snarky.Backend.Kimchi.Impl.Pallas (pallasCrsCreate)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaCrsCreate)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (add_) as CVar
-import Control.Monad.Rec.Class (Step(..), tailRecM)
-import Data.Int.Bits as Bits
-import Data.Newtype (un)
-import Node.Process as Process
-import Pickles.ProofFFI (pallasCreateProofWithPrev)
-import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
-import Snarky.Backend.Kimchi.Class (createProverIndex)
 import Snarky.Circuit.DSL (BoolVar, F(..), FVar, SizedF, addConstraint, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, pow_, unpack_, xor_)
-import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
-import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoBase(..), EndoScalar(..), endoBase, endoScalar)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky)
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
 import Snarky.Circuit.Kimchi.EndoScalar (toField)
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2')
-import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..), KimchiGate, initialState)
+import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
+import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoBase(..), EndoScalar(..), endoBase, endoScalar)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
@@ -472,7 +472,8 @@ runChunks2AppWitnessProve :: Effect Unit
 runChunks2AppWitnessProve = do
   let
     builtState = compilePure @Fp (Proxy @Unit) (Proxy @Unit)
-      (Proxy @(KimchiConstraint Fp)) chunks2AppCircuit
+      (Proxy @(KimchiConstraint Fp))
+      chunks2AppCircuit
       (initialState :: CircuitBuilderState (KimchiGate Fp) (AuxState Fp))
     kimchiRows = Array.concatMap (toKimchiRows <<< _.constraint) builtState.constraints
     -- max_poly_size = 2^16 (mirrors OCaml's default Tick.set_urs_info []).
@@ -490,6 +491,7 @@ runChunks2AppWitnessProve = do
     endo = let EndoBase e = (endoBase :: EndoBase Fp) in e
     proverIndex = createProverIndex @Fp @VestaG
       { endo, constraintSystem: csResult.constraintSystem, crs }
+
     rawSolver :: Solver Fp (KimchiConstraint Fp) Unit Unit
     rawSolver = makeSolver (Proxy @(KimchiConstraint Fp)) chunks2AppCircuit
   case runSolver rawSolver unit of
