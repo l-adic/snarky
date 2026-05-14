@@ -27,6 +27,7 @@ module Snarky.Backend.Builder
 
 import Prelude
 
+import Control.Monad.Rec.Class (class MonadRec)
 import Control.Monad.State (StateT, execStateT, get, modify_, put, runStateT)
 import Control.Monad.Trans.Class (class MonadTrans)
 import Data.Array (snoc)
@@ -75,6 +76,7 @@ derive newtype instance Monad m => Apply (CircuitBuilderT c r m)
 derive newtype instance Monad m => Bind (CircuitBuilderT c r m)
 derive newtype instance Monad m => Applicative (CircuitBuilderT c r m)
 derive newtype instance Monad m => Monad (CircuitBuilderT c r m)
+derive newtype instance MonadRec m => MonadRec (CircuitBuilderT c r m)
 derive newtype instance MonadTrans (CircuitBuilderT c r)
 
 class Finalizer c r where
@@ -143,6 +145,7 @@ initialState =
 
 instance
   ( Monad m
+  , MonadRec m
   , PrimeField f
   , BasicSystem f c'
   , ConstraintM (CircuitBuilderT c r) c'

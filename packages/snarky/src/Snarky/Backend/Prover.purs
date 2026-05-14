@@ -22,6 +22,7 @@ module Snarky.Backend.Prover
 import Prelude
 
 import Control.Monad.Except (ExceptT(..), catchError, lift, runExceptT, throwError)
+import Control.Monad.Rec.Class (class MonadRec)
 import Control.Monad.State (StateT, get, gets, modify_, put, runStateT)
 import Control.Monad.Trans.Class (class MonadTrans)
 import Data.Array (foldl, zip)
@@ -61,6 +62,7 @@ derive newtype instance Monad m => Apply (ProverT f m)
 derive newtype instance Monad m => Bind (ProverT f m)
 derive newtype instance Monad m => Applicative (ProverT f m)
 derive newtype instance Monad m => Monad (ProverT f m)
+derive newtype instance MonadRec m => MonadRec (ProverT f m)
 
 -- TODO: why is this not newtype derivable
 instance MonadTrans (ProverT f) where
@@ -102,6 +104,7 @@ instance PrimeField f => SolveCircuit f (Basic f)
 
 instance
   ( Monad m
+  , MonadRec m
   , PrimeField f
   , BasicSystem f c
   , ConstraintM (ProverT f) c

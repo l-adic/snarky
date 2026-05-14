@@ -21,8 +21,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainChunks2
 
 import Prelude
 
-import Data.Array as Array
-import Data.Foldable (foldM)
+import Control.Monad.Rec.Class (Step(..), tailRecM)
 import Data.Int.Bits as Bits
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -63,12 +62,17 @@ chunks2Rule _ = do
   let
     freshZero = exists (pure (zero :: F StepField))
     iters = (1 `Bits.shl` 17) + 1
-    mulOne _ = do
+    mulOne = do
       z1 <- freshZero
       z2 <- freshZero
       _ <- mul_ z1 z2
       pure unit
-  foldM (\_ i -> mulOne i) unit (Array.range 0 (iters - 1))
+  tailRecM
+    ( \i ->
+        if i >= iters then pure (Done unit)
+        else mulOne *> pure (Loop (i + 1))
+    )
+    0
   z <- freshZero
   addConstraint $ KimchiRawGeneric7
     (z :< z :< z :< z :< z :< z :< z :< Vector.nil)
