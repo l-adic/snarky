@@ -33,6 +33,7 @@ import Prelude
 
 import Control.Monad.Except (ExceptT, throwError)
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
+import Control.Monad.Rec.Class (class MonadRec)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
 import Data.Array as Array
@@ -147,6 +148,7 @@ derive newtype instance Apply m => Apply (WrapProverT branches mpv numChunks slo
 derive newtype instance Applicative m => Applicative (WrapProverT branches mpv numChunks slots m)
 derive newtype instance Bind m => Bind (WrapProverT branches mpv numChunks slots m)
 derive newtype instance Monad m => Monad (WrapProverT branches mpv numChunks slots m)
+derive newtype instance MonadRec m => MonadRec (WrapProverT branches mpv numChunks slots m)
 
 -- | Supply the advice record and run the prover computation in the
 -- | base monad.
@@ -587,6 +589,7 @@ wrapSolveAndProve
   => CheckedType WrapField (KimchiConstraint WrapField)
        (slots (Vector WrapIPARounds (FVar WrapField)))
   => Monad m
+  => MonadRec m
   => WrapProveContext branches mpv numChunks slots
   -> WrapCompileResult
   -> ExceptT EvaluationError m WrapProveResult

@@ -54,6 +54,7 @@ import Prelude
 
 import Control.Monad.Except (ExceptT, throwError)
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
+import Control.Monad.Rec.Class (class MonadRec)
 import Control.Monad.State (StateT, runStateT)
 import Control.Monad.State as State
 import Control.Monad.Trans.Class (lift)
@@ -1751,6 +1752,10 @@ derive newtype instance
   Monad m =>
   Monad (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
 
+derive newtype instance
+  MonadRec m =>
+  MonadRec (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
+
 -- | Run a `StepProverT` action with the supplied advice. Returns both
 -- | the action's result AND the post-run `StepProverCapture` so the
 -- | caller can read whatever the rule body wrote (e.g. the user's
@@ -2184,6 +2189,7 @@ stepSolveAndProve
        vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
+  => MonadRec m
   => SlotStatementsCarrier prevsSpec valCarrier
   => StepProveContext 1 len nd blueprints
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput

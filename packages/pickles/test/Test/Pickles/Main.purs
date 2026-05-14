@@ -5,6 +5,7 @@ import Prelude
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Test.Pickles.Prove.Chunks2 as Chunks2
+import Test.Pickles.Prove.Chunks4 as Chunks4
 import Test.Pickles.Prove.CompileValidation as CompileValidation
 import Test.Pickles.Prove.NoRecursionReturn as NoRecursionReturn
 import Test.Pickles.Prove.SideLoadedMain as SideLoadedMain
@@ -41,6 +42,7 @@ spec = do
   NoRecursionReturn.spec
   SimpleChain.spec
   Chunks2.spec
+  Chunks4.spec
   SideLoadedMain.spec
   TreeProofReturn.spec
   TwoPhaseChain.spec

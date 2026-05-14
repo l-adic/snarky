@@ -3,6 +3,7 @@ module Test.Snarky.Circuit.Utils where
 import Prelude
 
 import Control.Monad.Except (Except, runExcept, throwError)
+import Control.Monad.Rec.Class (class MonadRec)
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Either (Either(..))
@@ -220,6 +221,7 @@ circuitTestM'
   => Eq b
   => Show b
   => Monad m
+  => MonadRec m
   => (m ~> Effect)
   -> TestConfig f c r
   -> NonEmptyArray { testFunction :: a -> Expectation b, input :: TestInput a }
