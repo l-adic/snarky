@@ -115,7 +115,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     vestaSrs <- liftEffect $ createCRS @StepField
 
     -- ===== NRR side: 1-rule compileMulti at mpvMax=0. =====
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule unit
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 nrrRule unit
 
     let nrrRules = tuple1 nrrEntry
 
@@ -151,7 +151,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         }
 
     -- ===== Tree side: 1-rule compileMulti at mpvMax=2 with override. =====
-    treeEntry <- liftEffect $ mkRuleEntry @2 @(F StepField) @(F StepField)
+    treeEntry <- liftEffect $ mkRuleEntry @2 @(F StepField) @(F StepField) @1
       treeProofReturnRule
       (tuple2 (External nrrProverVKs) Self)
 

@@ -23,14 +23,16 @@ import Prelude
 
 import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..))
-import Data.Vector ((:<))
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCompiled, deriveWrapVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement (StepMainTwoPhaseChainIncrementParams, compileStepMainTwoPhaseChainIncrement)
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero (StepMainTwoPhaseChainMakeZeroParams, compileStepMainTwoPhaseChainMakeZero)
 import Pickles.Field (StepField, WrapField)
-import Pickles.ProofFFI (pallasSrsLagrangeCommitmentAt)
+import Data.Array as Array
+import Effect.Exception.Unsafe (unsafeThrow)
+import Pickles.ProofFFI (pallasSrsLagrangeCommitmentChunksAt)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Pickles.Wrap.Slots (Slots1)
@@ -69,11 +71,23 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
     makeZeroVK = deriveStepVKFromCompiled @1 @0 vestaSrs' makeZeroArt.stepCs
     incrementVK = deriveStepVKFromCompiled @1 @1 vestaSrs' incrementArt.stepCs
 
-    -- Per-branch lagrange lookup at each branch's step domain log2.
-    -- Both values derived from artifacts (no hardcoded 9 / 14).
+    -- Per-branch chunked lagrange lookup at each branch's step domain log2.
+    -- Both values derived from artifacts (no hardcoded 9 / 14). At
+    -- numChunks=1 the chunks array has length 1 — preserves gate-identity
+    -- with the pre-chunk single-point path. Reshape via `Vector.toVector
+    -- @1`; mismatch only fires if SRS/domain pairing yields nc≠1 here.
+    chunked log2 i =
+      let
+        chunksArr = pallasSrsLagrangeCommitmentChunksAt vestaSrs log2 i
+      in
+        case Vector.toVector @1 (map coerce chunksArr) of
+          Just v -> (v :: Vector 1 (AffinePoint (F WrapField)))
+          Nothing -> unsafeThrow
+            $ "WrapMainTwoPhaseChain: lagrange chunks size mismatch (got "
+            <> show (Array.length chunksArr) <> ", expected 1)"
     perBranchLookup i =
-      ((coerce (pallasSrsLagrangeCommitmentAt vestaSrs makeZeroArt.stepDomainLog2 i)) :: AffinePoint (F WrapField))
-        :< ((coerce (pallasSrsLagrangeCommitmentAt vestaSrs incrementArt.stepDomainLog2 i)) :: AffinePoint (F WrapField))
+      chunked makeZeroArt.stepDomainLog2 i
+        :< chunked incrementArt.stepDomainLog2 i
         :< Vector.nil
 
     config :: WrapMainConfig 2 1

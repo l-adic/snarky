@@ -70,6 +70,7 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception as Exc
+import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
 import Pickles.Constants (roughDomainsLog2, zkRows)
 import Pickles.Dummy (dummyIpaChallenges)
@@ -101,6 +102,7 @@ import Pickles.ProofFFI
   , vestaProofOracles
   , vestaSrsBlindingGenerator
   , vestaSrsLagrangeCommitmentAt
+  , vestaSrsLagrangeCommitmentChunksAt
   ) as ProofFFI
 import Pickles.ProofsVerified (ProofsVerifiedCount, boolVecToProofsVerified)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
@@ -959,7 +961,7 @@ instance
                       , branchData: prev.branchData
                       , spongeDigestBeforeEvaluations:
                           prev.spongeDigestBeforeEvaluations
-                      , allEvals: prev.prevEvals
+                      , chunkedAllEvals: prev.prevEvalsChunked
                       , pEval0Chunks: prev.pEval0Chunks
                       , oldBulletproofChallenges: wd.oldBulletproofChallenges
                       , domainLog2: prev.stepDomainLog2
@@ -1397,7 +1399,7 @@ instance
     -- Side-loaded blueprint = the per-domain lagrange tables (one
     -- entry per `wrap_domain ∈ {N0, N1, N2}`). The runtime VK is
     -- bundled in by `buildSlotVkSources` at circuit-build time.
-    (SlotVkBlueprintSideLoaded /\ restScaffolds)
+    (SlotVkBlueprintSideLoaded nc /\ restScaffolds)
   where
   -- Structural mirror of the `Slot Compiled` `shapeCompileData`. The
   -- slot's compile-time `slotWrapDomainLog2` and `slotLagrange` are
@@ -1428,14 +1430,27 @@ instance
           Vector.singleton
             (coerce (ProofFFI.vestaSrsLagrangeCommitmentAt cfg.srs.pallasSrs slotWrapDomainLog2 i))
 
-      -- Per-domain lagrange tables for the side-loaded VK's
-      -- `actualWrapDomainSize` ∈ {N0=13, N1=14, N2=15}. Step.Main
-      -- one-hot-muxes among these via `mkSideloadedLagrangeLookup`.
+      -- Per-domain × per-chunk lagrange tables for the side-loaded
+      -- VK's `actualWrapDomainSize` ∈ {N0=13, N1=14, N2=15}. Step.Main
+      -- one-hot-muxes among these per-chunk via
+      -- `mkSideloadedLagrangeLookup`. `nc` here is the slot's wrap-VK
+      -- chunks count (the parameter on `Slot SideLoaded mpvMax nc stmt`);
+      -- the chunked FFI returns a length-nc array per domain per index.
       sideloadedPerDomainLagrangeAts
-        :: Vector ProofsVerifiedCount (Int -> AffinePoint (F StepField))
+        :: Vector ProofsVerifiedCount
+             (Int -> Vector nc (AffinePoint (F StepField)))
       sideloadedPerDomainLagrangeAts = map
         ( \log2 i ->
-            coerce (ProofFFI.vestaSrsLagrangeCommitmentAt cfg.srs.pallasSrs log2 i)
+            let
+              chunksArr = ProofFFI.vestaSrsLagrangeCommitmentChunksAt
+                cfg.srs.pallasSrs log2 i
+            in
+              case Vector.toVector @nc (map coerce chunksArr) of
+                Just v -> (v :: Vector _ (AffinePoint (F StepField)))
+                Nothing -> unsafeThrow
+                  $ "sideloadedPerDomainLagrangeAts: lagrange chunks size mismatch (log2="
+                  <> show log2 <> ", got " <> show (Array.length chunksArr)
+                  <> ", expected nc=" <> show (reflectType (Proxy @nc)) <> ")"
         )
         (13 :< 14 :< 15 :< Vector.nil)
 
@@ -1608,7 +1623,7 @@ instance
                       , branchData: prev.branchData
                       , spongeDigestBeforeEvaluations:
                           prev.spongeDigestBeforeEvaluations
-                      , allEvals: prev.prevEvals
+                      , chunkedAllEvals: prev.prevEvalsChunked
                       , pEval0Chunks: prev.pEval0Chunks
                       , oldBulletproofChallenges: wd.oldBulletproofChallenges
                       , domainLog2: prev.stepDomainLog2
@@ -2958,12 +2973,12 @@ data RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs v
 -- | body invokes the captured rule against `stepCompile` /
 -- | `stepSolveAndProve`.
 mkRuleEntry
-  :: forall @mpvMax @outputVal @prevInputVal
+  :: forall @mpvMax @outputVal @prevInputVal @nc
        prevsSpec mpv mpvPad nd ndPred outputSize valCarrier
        inputVal inputVar outputVar prevInputVar slotVKs
        carrier carrierVar pad unfsTotal digestPlusUnfs
        compileSideloadedVkCarrier sideloadedVkCarrier blueprints
-       vkSourcesCarrier nc
+       vkSourcesCarrier
    . CircuitGateConstructor StepField VestaG
   -- `vkSourcesCarrier` is uniquely determined by `prevsSpec` (see the
   -- `prevsSpec -> vkCarrier` fundep on `BuildSlotVkSources`), so compile-
@@ -2974,11 +2989,14 @@ mkRuleEntry
   -- Compile-path carrier: cells = side-loaded VK descriptor. Synthesised
   -- by `MkUnitVkCarrier` for the `getSideloadedVKsCarrier` Effect
   -- instance inside `stepCompile` / `preComputeStepDomainLog2`.
-  => BuildSlotVkSources (SLVK.VerificationKey nc (F StepField) Boolean) prevsSpec mpv blueprints compileSideloadedVkCarrier vkSourcesCarrier
+  -- wrapVkChunks pinned to 1 (step-side prev verification is always
+  -- nc=1; the chunks2 numChunks ∈ {1,2} parameter applies to the WRAP
+  -- circuit, not step's per-slot prev wrap verification).
+  => BuildSlotVkSources (SLVK.VerificationKey nc (F StepField) Boolean) prevsSpec 1 mpv blueprints compileSideloadedVkCarrier vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec compileSideloadedVkCarrier
   -- Prove-path carrier: cells = `SideloadBundle.Bundle`. Sourced from
   -- `StepAdvice.sideloadedVKs` inside `stepSolveAndProve`.
-  => BuildSlotVkSources (SideloadBundle.Bundle nc) prevsSpec mpv blueprints sideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources (SideloadBundle.Bundle nc) prevsSpec 1 mpv blueprints sideloadedVkCarrier vkSourcesCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable mpv Int
   => Reflectable pad Int
@@ -3057,7 +3075,6 @@ mkRuleEntry rule slotVKs = pure $ RuleEntry
         @mpvPad
         @nd
         @nc
-        @1
         ctx
         rule
   , stepProveFn: \ctx compileResult advice ->
@@ -3427,22 +3444,33 @@ runMultiProverBody
       , prevChallenges: stepOraclesPrevChals
       }
 
+    -- Chunked step-proof evaluations: one `PointEval` per polynomial
+    -- per chunk. Wrap prover consumes this directly via the chunked
+    -- CIP / chunked sponge replay.
+    chunkedAllEvals =
+      { ftEval1: stepOracles.ftEval1
+      , publicEvals: stepOracles.publicEvals
+      , zEvals: proofZEvals stepResult.proof
+      , witnessEvals: proofWitnessEvals stepResult.proof
+      , coeffEvals: proofCoefficientEvals stepResult.proof
+      , sigmaEvals: proofSigmaEvals stepResult.proof
+      , indexEvals: proofIndexEvals stepResult.proof
+      }
+
+    -- Collapsed (Horner-combined) view of `chunkedAllEvals`, kept on
+    -- the `CompiledProof` as a transitional shim for recursive-step
+    -- consumers that still take a single-eval `AllEvals`
+    -- (`Pickles.Prove.Step`'s `wrapPrevEvals` / `stepAdvicePrevEvals`).
+    -- At step num_chunks=1 this is byte-identical to the only chunk;
+    -- at num_chunks>1 it is the correct Horner combine. The chunked
+    -- refactor of those consumers is the next phase of task #63.
     stepGenSelf = domainGenerator selfStepDomainLog2
-    stepCollapse = Chunks.collapsePointEval
+    allEvals = Chunks.collapseChunkedAllEvals
       { rounds: reflectType (Proxy :: Proxy StepIPARounds)
       , zeta: stepOracles.zeta
       , zetaOmega: stepOracles.zeta * stepGenSelf
       }
-
-    allEvals =
-      { ftEval1: stepOracles.ftEval1
-      , publicEvals: stepCollapse stepOracles.publicEvals
-      , zEvals: stepCollapse (proofZEvals stepResult.proof)
-      , witnessEvals: map stepCollapse (proofWitnessEvals stepResult.proof)
-      , coeffEvals: map stepCollapse (proofCoefficientEvals stepResult.proof)
-      , sigmaEvals: map stepCollapse (proofSigmaEvals stepResult.proof)
-      , indexEvals: map stepCollapse (proofIndexEvals stepResult.proof)
-      }
+      chunkedAllEvals
 
     outerMpv = reflectType (Proxy @mpv)
 
@@ -3452,7 +3480,7 @@ runMultiProverBody
       { proof: stepResult.proof
       , verifierIndex: stepCR.verifierIndex
       , publicInput: stepResult.publicInputs
-      , allEvals
+      , chunkedAllEvals
       , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepOracles.publicEvals)
       , domainLog2: selfStepDomainLog2
       , zkRows
@@ -3597,6 +3625,7 @@ runMultiProverBody
     , branchData: wrapDv.branchData
     , spongeDigestBeforeEvaluations: wrapDv.spongeDigestBeforeEvaluations
     , prevEvals: allEvals
+    , prevEvalsChunked: chunkedAllEvals
     , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepOracles.publicEvals)
     , challengePolynomialCommitment: stepProofSg
     , messagesForNextStepProofDigest: msgStep

@@ -151,10 +151,33 @@ type RuleOutput n prevInput output =
 -- | slots.
 -- |
 -- | Reference: OCaml `step_main.ml`'s tag-kind dispatch.
+-- |
+-- | `wrapVkChunks` is the outer compile's wrap-VK chunks count. Both
+-- | Compiled and SideLoaded instance heads STRUCTURALLY UNIFY the
+-- | slot's nc with `wrapVkChunks` (by reusing the same type variable
+-- | name in the slot's `nc` position). If a caller's spec writes
+-- | `Slot Compiled n 2 stmt` while `wrapVkChunks = 1` is in scope, the
+-- | instance does not resolve and the user gets a compile-time type
+-- | error — not a silent runtime coerce.
+-- |
+-- | The dispatch in `stepMain` still needs a few `unsafeCoerce` calls
+-- | because PS can't propagate the instance-head unification into the
+-- | case-arm body (the rank-2 callback rebinds `nc` as an abstract
+-- | local). Those coerces are syntactic bridges for an equality
+-- | already proven at instance-resolution time; the soundness lemma
+-- | is documented at each site.
+-- |
+-- | This is conservative vs OCaml, which allows heterogeneous per-slot
+-- | ncs in principle (each prev's wrap_domain → its own chunks count).
+-- | In practice every Mina top-level compile uses `num_chunks_by_default
+-- | = 1` for ALL prev slots; chunks2 is the only nc>1 fixture and has
+-- | no prev slots (mpvMax=0). Lifting this constraint requires
+-- | restructuring `perSlotLagrangeAt` from `Vector len
+-- | (LagrangeBaseLookup wrapVkChunks _)` into a per-slot type carrier.
 class BuildSlotVkSources
-  :: Type -> Type -> Int -> Type -> Type -> Type -> Constraint
+  :: Type -> Type -> Int -> Int -> Type -> Type -> Type -> Constraint
 class
-  BuildSlotVkSources cell prevsSpec len blueprints cellCarrier vkCarrier
+  BuildSlotVkSources cell prevsSpec wrapVkChunks len blueprints cellCarrier vkCarrier
   | cell prevsSpec -> len blueprints cellCarrier
   , prevsSpec -> vkCarrier
   where
@@ -165,47 +188,49 @@ class
     -> cellCarrier
     -> Snarky (KimchiConstraint StepField) t m vkCarrier
 
-instance BuildSlotVkSources cell Unit 0 Unit Unit Unit where
+instance BuildSlotVkSources cell Unit wrapVkChunks 0 Unit Unit Unit where
   buildSlotVkSources _ _ = pure unit
 
 instance
-  ( BuildSlotVkSources cell rest restLen restScaffolds restCellCarrier restVkCarrier
+  ( BuildSlotVkSources cell rest wrapVkChunks restLen restScaffolds restCellCarrier restVkCarrier
   , Add restLen 1 len
   ) =>
   BuildSlotVkSources cell
-    (Slot Compiled n nc stmt /\ rest)
+    (Slot Compiled n wrapVkChunks stmt /\ rest)
+    wrapVkChunks
     len
-    (SlotVkBlueprintCompiled nc /\ restScaffolds)
+    (SlotVkBlueprintCompiled wrapVkChunks /\ restScaffolds)
     (Unit /\ restCellCarrier)
-    (SlotVkSource nc /\ restVkCarrier)
+    (SlotVkSource wrapVkChunks /\ restVkCarrier)
   where
   buildSlotVkSources (headScaffold /\ restScaffolds) (_ /\ restCellCarrier) = do
     let
       headSrc = case headScaffold of
         VkBlueprintConst v -> ConstVk v
         VkBlueprintShared -> SharedExistsVk
-    restSrcs <- buildSlotVkSources @cell @rest restScaffolds restCellCarrier
+    restSrcs <- buildSlotVkSources @cell @rest @wrapVkChunks restScaffolds restCellCarrier
     pure (headSrc /\ restSrcs)
 
 instance
-  ( BuildSlotVkSources cell rest restLen restScaffolds restCellCarrier restVkCarrier
-  , HasSideLoadedVk nc cell
-  , Reflectable nc Int
+  ( BuildSlotVkSources cell rest wrapVkChunks restLen restScaffolds restCellCarrier restVkCarrier
+  , HasSideLoadedVk wrapVkChunks cell
+  , Reflectable wrapVkChunks Int
   , CheckedType StepField (KimchiConstraint StepField)
-      (SLVK.VerificationKey nc (FVar StepField) (BoolVar StepField))
+      (SLVK.VerificationKey wrapVkChunks (FVar StepField) (BoolVar StepField))
   , Add restLen 1 len
   ) =>
   BuildSlotVkSources cell
-    (Slot SideLoaded mpvMax nc stmt /\ rest)
+    (Slot SideLoaded mpvMax wrapVkChunks stmt /\ rest)
+    wrapVkChunks
     len
-    (SlotVkBlueprintSideLoaded /\ restScaffolds)
+    (SlotVkBlueprintSideLoaded wrapVkChunks /\ restScaffolds)
     (cell /\ restCellCarrier)
-    (SlotVkSource nc /\ restVkCarrier)
+    (SlotVkSource wrapVkChunks /\ restVkCarrier)
   where
   buildSlotVkSources (headLagrange /\ restScaffolds) (headCell /\ restCellCarrier) = do
     headVar <- exists (pure (projectVk headCell))
     let headSrc = SideloadedExistsVk headLagrange headVar
-    restSrcs <- buildSlotVkSources @cell @rest restScaffolds restCellCarrier
+    restSrcs <- buildSlotVkSources @cell @rest @wrapVkChunks restScaffolds restCellCarrier
     pure (headSrc /\ restSrcs)
 
 -- | SRS data for `stepMain`. Carries per-slot FOP domain-log2s
@@ -765,7 +790,7 @@ stepMain
   -- per-slot `nc` values, distinct from the wrap circuit's
   -- `numChunks` / Dim 1). OCaml fixes this to 1
   -- (`step_main.ml:347` `num_chunks_by_default`).
-  => BuildSlotVkSources cell prevsSpec len blueprints sideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources cell prevsSpec wrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Reflectable nd Int
@@ -853,7 +878,7 @@ stepMain
   -- `buildSlotVkSources` emits no `exists` calls.
   { prevPublicInputs, proofMustVerify, publicOutput, perSlotVkSources } <-
     label "rule_main" do
-      perSlotVkSources <- buildSlotVkSources @cell @prevsSpec perSlotVkBlueprints sideloadedVkCarrier
+      perSlotVkSources <- buildSlotVkSources @cell @prevsSpec @wrapVkChunks perSlotVkBlueprints sideloadedVkCarrier
       result <- rule publicInput
       pure
         { prevPublicInputs: result.prevPublicInputs
@@ -1021,26 +1046,31 @@ stepMain
                 , vkRec: let VerificationKey r = liftConstVk constVk in r
                 }
               SharedExistsVk ->
-                -- SharedExistsVk fires only for `Self` slots, where the
-                -- slot's wrap VK IS this compile's dlog_plonk_index, so
-                -- slot's `nc` = the outer rule's `wrapVkChunks`. PS
-                -- can't see that equality from the constructor alone;
-                -- coerce here is sound by the protocol invariant.
+                -- Soundness lemma: the BuildSlotVkSources Compiled
+                -- instance has structural head
+                -- `Slot Compiled n wrapVkChunks stmt /\ rest`, which
+                -- only matches when the slot's nc IS wrapVkChunks.
+                -- `SharedExistsVk` is ONLY constructed from that
+                -- instance, so when this arm fires we have
+                -- nc ~ wrapVkChunks. PureScript's type checker
+                -- can't propagate the instance-head unification
+                -- into the case-body's local `nc` variable, hence
+                -- the coerce — purely a syntactic bridge for an
+                -- equality that's structurally enforced at the
+                -- instance site.
                 { lagrangeAt: perSlotLagrangeAt !! i
                 , correctionMode: PureCorrections
                 , fopDomainMode: KnownDomainsMode
                 , vkRec: unsafeCoerce sharedVkRec
                 }
               SideloadedExistsVk perDomainLagrangeAts (SLVK.VerificationKey sl) ->
-                -- `mkSideloadedLagrangeLookup` is currently pinned to
-                -- `LagrangeBaseLookup 1 _` (see task #51 — the per-domain
-                -- input shape is a single-point Vector 3, not chunked).
-                -- The compiled branches above produce
-                -- `LagrangeBaseLookup wrapVkChunks _`, so we coerce here
-                -- to satisfy the join type of the case. Sound today (all
-                -- top-level wrap proofs are nc=1, so wrapVkChunks=1 in
-                -- practice); will become unsound when a chunked inner
-                -- proof is side-loaded — task #51 covers that.
+                -- `mkSideloadedLagrangeLookup` now returns
+                -- `LagrangeBaseLookup nc _` at the slot's own nc (the
+                -- per-domain blueprint is chunked properly via the new
+                -- `SlotVkBlueprintSideLoaded nc`). Same soundness lemma
+                -- as the ConstVk/SharedExistsVk arms: nc ~ wrapVkChunks
+                -- by the BuildSlotVkSources SideLoaded instance head;
+                -- the coerce here just unifies the case-join.
                 { lagrangeAt: unsafeCoerce $ mkSideloadedLagrangeLookup
                     (curveParams (Proxy @PallasG))
                     sl.actualWrapDomainSize
@@ -1052,12 +1082,11 @@ stepMain
 
             slotIvpParams =
               { curveParams: curveParams (Proxy @PallasG)
-              -- `slotConfig.lagrangeAt` carries the outer `wrapVkChunks`
-              -- but verifyOne expects the slot's own `nc` (from
-              -- `PerProofWitness n nc ...`). For every fixture today
-              -- these coincide (all slots share the same wrap-VK chunks
-              -- count). Heterogenizing — having each slot's nc be
-              -- independent — is task #51. Coerce until then.
+              -- Same soundness lemma as SharedExistsVk: BuildSlotVkSources's
+              -- instance head structurally unifies `nc ~ wrapVkChunks`,
+              -- but PS doesn't propagate that to the dispatch body. The
+              -- coerce is the syntactic bridge for an equality enforced
+              -- at instance-resolution time.
               , lagrangeAt: unsafeCoerce slotConfig.lagrangeAt
               , blindingH
               , correctionMode: slotConfig.correctionMode
@@ -1117,13 +1146,11 @@ stepMain
               slotVkComms
               constDummySg
           r <- label ("slot_" <> show (getFinite i)) $
-            -- Pin verifyOne's wrapVkChunks to the outer wrapVkChunks
-            -- forall var. Same protocol invariant as the unsafeCoerce
-            -- on slotIvpParams.lagrangeAt above: today, every slot's
-            -- prev wrap proof shares the outer rule's wrapVkChunks
-            -- (heterogeneous per-slot nc is task #51). `input` carries
-            -- the slot's own nc on its vkComms field; coerce it to the
-            -- outer wrapVkChunks here.
+            -- Same soundness lemma: `nc ~ wrapVkChunks` is structurally
+            -- enforced by the BuildSlotVkSources instance head, but PS
+            -- doesn't propagate it to the dispatch body. Pin verifyOne
+            -- at `wrapVkChunks` (matching perSlotLagrangeAt-derived
+            -- slotConfig) and coerce `input`'s vkComms to bridge.
             verifyOne @wrapVkChunks slotFopParams (unsafeCoerce input) slotIvpParams
           -- Carry pw.sg out alongside the verify_one result so the
           -- outer hash can absorb it.

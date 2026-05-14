@@ -55,7 +55,7 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Node.Process as Process
 import Pickles.Field (StepField, WrapField)
-import Pickles.ProofFFI (Proof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLrVec, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasSrsLagrangeCommitmentChunksAt, pallasVerifierIndexCommitments, tCommChunked, vestaCreateProofWithPrev, wCommChunked, zCommChunked)
+import Pickles.ProofFFI (Proof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLrVec, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentChunksAt, pallasVerifierIndexCommitments, tCommChunked, vestaCreateProofWithPrev, wCommChunked, zCommChunked)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Types (PaddedLength, PerProofUnfinalized, StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK)
@@ -755,8 +755,18 @@ buildWrapMainConfigMulti vestaSrs { perBranch } =
     perBranchLookup i =
       map
         ( \b ->
-            (coerce (pallasSrsLagrangeCommitmentAt vestaSrs b.stepDomainLog2 i))
-              :: AffinePoint (F WrapField)
+            let
+              chunksArr = pallasSrsLagrangeCommitmentChunksAt
+                vestaSrs
+                b.stepDomainLog2
+                i
+            in
+              case Vector.toVector @numChunks (map coerce chunksArr) of
+                Just v -> (v :: Vector _ (AffinePoint (F WrapField)))
+                Nothing -> unsafeThrow
+                  $ "buildWrapMainConfigMulti.perBranchLookup: lagrange chunks size mismatch "
+                  <> "(got " <> show (Array.length chunksArr)
+                  <> ", expected numChunks=" <> show (reflectType (Proxy @numChunks)) <> ")"
         )
         perBranch
   in

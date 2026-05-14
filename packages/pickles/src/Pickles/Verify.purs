@@ -73,7 +73,7 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.PlonkChecks (AllEvals)
+import Pickles.PlonkChecks (AllEvals, ChunkedAllEvals)
 import Pickles.ProofFFI (Proof, permutationVanishingPolynomial, verifyOpeningProof)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput, assembleWrapMainInput)
@@ -269,7 +269,21 @@ newtype CompiledProof mpv stmtVal outputVal auxVal = CompiledProof
 
   -- Inner step proof's evals (carried by the wrap proof's `prev_evals`
   -- field).
+  --
+  -- `prevEvalsChunked` is the authoritative form — `NonEmptyArray
+  -- (PointEval _)` per polynomial, one entry per chunk. CIP consumes
+  -- this directly via `combinedInnerProductBatchChunked`.
+  --
+  -- `prevEvals` is the COLLAPSED form (chunks Horner-recombined at the
+  -- step proof's oracle zeta/zetaw). Kept on the record as a
+  -- transitional back-compat shim for the recursive-step
+  -- `wrapPrevEvals`/`stepAdvicePrevEvals` plumbing (`Pickles.Prove.Step`)
+  -- that still consumes the single-eval form. At step num_chunks=1 it
+  -- is byte-identical to the only chunk; at num_chunks>1 it is the
+  -- correct Horner combine. The fully-chunked refactor of those
+  -- recursive consumers is task #63's follow-up.
   , prevEvals :: AllEvals StepField
+  , prevEvalsChunked :: ChunkedAllEvals StepField
   , pEval0Chunks :: Array StepField
 
   -- For stage 2 (accumulator check): the inner step proof's IPA opening
@@ -350,7 +364,7 @@ verifyOne verifier (CompiledProof p) =
             , rawBulletproofChallenges: p.rawBulletproofChallenges
             , branchData: p.branchData
             , spongeDigestBeforeEvaluations: p.spongeDigestBeforeEvaluations
-            , allEvals: p.prevEvals
+            , chunkedAllEvals: p.prevEvalsChunked
             , pEval0Chunks: p.pEval0Chunks
             , oldBulletproofChallenges: wd.oldBulletproofChallenges
             , domainLog2: p.stepDomainLog2
@@ -432,7 +446,7 @@ wrapPublicInput verifier (CompiledProof p) =
             , rawBulletproofChallenges: p.rawBulletproofChallenges
             , branchData: p.branchData
             , spongeDigestBeforeEvaluations: p.spongeDigestBeforeEvaluations
-            , allEvals: p.prevEvals
+            , chunkedAllEvals: p.prevEvalsChunked
             , pEval0Chunks: p.pEval0Chunks
             , oldBulletproofChallenges: wd.oldBulletproofChallenges
             , domainLog2: p.stepDomainLog2

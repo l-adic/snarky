@@ -10,6 +10,7 @@
 module Pickles.PlonkChecks
   ( -- * Evaluation Types
     AllEvals
+  , ChunkedAllEvals
   , extractEvalFields
   , absorbAllEvals
   , absorbPointEval
@@ -18,6 +19,7 @@ module Pickles.PlonkChecks
 
 import Prelude
 
+import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Foldable (traverse_)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -39,6 +41,15 @@ import Pickles.Sponge (class MonadSponge, absorb)
 -- | - 15 coefficient columns
 -- | - 6 sigma polynomials (PERMUTS - 1)
 -- |
+-- | Each `PointEval` here is the COLLAPSED (single-chunk) form produced
+-- | by `Pickles.PlonkChecks.Chunks.collapsePointEval` — chunks recombined
+-- | via Horner at `pt^(2^rounds)`. Used by ftEval0, derivePlonk, and any
+-- | other code path that consumes a polynomial's value at zeta / zetaw.
+-- |
+-- | For the COMBINED INNER PRODUCT specifically, the original CHUNKED
+-- | evals must be xi-batched (`Pcs_batch.combine_split_evaluations`);
+-- | see `ChunkedAllEvals` below.
+-- |
 -- | Reference: Plonk_types.All_evals in composition_types.ml
 type AllEvals f =
   { ftEval1 :: f -- ft polynomial eval at zeta*omega (ftEval0 is computed)
@@ -48,6 +59,27 @@ type AllEvals f =
   , witnessEvals :: Vector 15 (PointEval f)
   , coeffEvals :: Vector 15 (PointEval f)
   , sigmaEvals :: Vector 6 (PointEval f)
+  }
+
+-- | The CHUNKED form of `AllEvals`: each polynomial's evaluation at zeta
+-- | / zeta·omega is a `NonEmptyArray (PointEval f)` with one entry per
+-- | chunk. For an inner proof at num_chunks=1 each array has length 1
+-- | (and `combinedInnerProductBatchChunked` collapses to the same result
+-- | as the legacy single-eval `combinedInnerProductBatch`); for chunks2
+-- | (step num_chunks=2) each polynomial contributes 2 chunks.
+-- |
+-- | OCaml stores these as `(f array * f array)` per polynomial inside
+-- | `Plonk_types.Evals.t` (`wrap.ml:25-26`). The xi-batching
+-- | `Pcs_batch.combine_split_evaluations` flattens the chunk arrays and
+-- | folds right-to-left with `acc' = chunk + xi * acc`.
+type ChunkedAllEvals f =
+  { ftEval1 :: f
+  , publicEvals :: NonEmptyArray (PointEval f)
+  , zEvals :: NonEmptyArray (PointEval f)
+  , indexEvals :: Vector 6 (NonEmptyArray (PointEval f))
+  , witnessEvals :: Vector 15 (NonEmptyArray (PointEval f))
+  , coeffEvals :: Vector 15 (NonEmptyArray (PointEval f))
+  , sigmaEvals :: Vector 6 (NonEmptyArray (PointEval f))
   }
 
 -- | Extract the 43 always-present evaluation fields in CIP order:

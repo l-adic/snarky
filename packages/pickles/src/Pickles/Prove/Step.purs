@@ -1860,11 +1860,12 @@ instance
 -- | haven't introduced yet.
 stepCompile
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd @nc @wrapVkChunks
+       @mpvMax @mpvPad @nd @nc
        ndPred len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
-  => BuildSlotVkSources (SLVK.VerificationKey nc (F StepField) Boolean) prevsSpec len blueprints sideloadedVkCarrier vkSourcesCarrier
+  -- wrapVkChunks pinned to 1: step verifies prev wraps at nc=1.
+  => BuildSlotVkSources (SLVK.VerificationKey nc (F StepField) Boolean) prevsSpec 1 len blueprints sideloadedVkCarrier vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -1872,7 +1873,6 @@ stepCompile
   => Reflectable mpvPad Int
   => Reflectable nd Int
   => Reflectable nc Int
-  => Reflectable wrapVkChunks Int
   => Reflectable outputSize Int
   => Add 1 ndPred nd
   => Compare 0 nd LT
@@ -2019,7 +2019,10 @@ preComputeStepDomainLog2
   -- Side-loaded VK carrier — see stepMain. preComputeStepDomainLog2
   -- runs at compile time; the caller synthesizes a placeholder
   -- carrier (e.g. `mkUnitVkCarrier` for compiled-only specs).
-  => BuildSlotVkSources (SLVK.VerificationKey nc (F StepField) Boolean) prevsSpec len blueprints sideloadedVkCarrier vkSourcesCarrier
+  -- wrapVkChunks pinned to 1 here: step-side prev wraps are always
+  -- nc=1 in Mina (`num_chunks_by_default`); chunks>1 only applies to
+  -- the OUTER wrap circuit, not to step's per-slot verification.
+  => BuildSlotVkSources (SLVK.VerificationKey nc (F StepField) Boolean) prevsSpec 1 len blueprints sideloadedVkCarrier vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -2128,7 +2131,8 @@ stepSolveAndProve
        ndPred len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
-  => BuildSlotVkSources (SideloadBundle.Bundle nc) prevsSpec len blueprints sideloadedVkCarrier vkSourcesCarrier
+  -- wrapVkChunks pinned to 1: step verifies prev wraps at nc=1.
+  => BuildSlotVkSources (SideloadBundle.Bundle nc) prevsSpec 1 len blueprints sideloadedVkCarrier vkSourcesCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int

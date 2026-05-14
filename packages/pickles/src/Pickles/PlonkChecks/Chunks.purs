@@ -21,6 +21,7 @@ module Pickles.PlonkChecks.Chunks
   ( actualEvaluation
   , actualEvaluationArr
   , collapsePointEval
+  , collapseChunkedAllEvals
   ) where
 
 import Prelude
@@ -32,6 +33,7 @@ import Data.Foldable (foldl)
 import Data.Maybe (Maybe(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Pickles.PlonkChecks (AllEvals, ChunkedAllEvals)
 
 -- | Horner combine for `n` chunked evaluations at point `pt^(2^rounds)`.
 -- |
@@ -98,6 +100,33 @@ collapsePointEval { rounds, zeta, zetaOmega } chunks =
   in
     { zeta: actualEvaluationArr (map _.zeta arr) zeta rounds
     , omegaTimesZeta: actualEvaluationArr (map _.omegaTimesZeta arr) zetaOmega rounds
+    }
+
+-- | Collapse every `NonEmptyArray (PointEval f)` in a `ChunkedAllEvals f`
+-- | into a single `PointEval f` via `collapsePointEval`. Mirrors OCaml
+-- | `Plonk_checks.evals_of_split_evals` applied to a whole `Evals.t`.
+-- |
+-- | The result feeds `ftEval0`, `derivePlonk`, and any other downstream
+-- | code that wants a single value per polynomial. CIP itself does NOT
+-- | go through here — it consumes the chunked form directly via
+-- | `combinedInnerProductBatchChunked` (= OCaml `Pcs_batch.combine_split_evaluations`).
+collapseChunkedAllEvals
+  :: forall f
+   . Semiring f
+  => { rounds :: Int, zeta :: f, zetaOmega :: f }
+  -> ChunkedAllEvals f
+  -> AllEvals f
+collapseChunkedAllEvals ctx chunked =
+  let
+    collapse = collapsePointEval ctx
+  in
+    { ftEval1: chunked.ftEval1
+    , publicEvals: collapse chunked.publicEvals
+    , zEvals: collapse chunked.zEvals
+    , indexEvals: map collapse chunked.indexEvals
+    , witnessEvals: map collapse chunked.witnessEvals
+    , coeffEvals: map collapse chunked.coeffEvals
+    , sigmaEvals: map collapse chunked.sigmaEvals
     }
 
 -- | `squareN n x = x^(2^n)`. n=0 → x, n=1 → x*x, n=2 → (x*x)^2 = x^4, etc.

@@ -43,6 +43,8 @@ import Data.Argonaut.Core (Json)
 import Data.Argonaut.Decode (JsonDecodeError(..), decodeJson, printJsonDecodeError, (.:))
 import Data.Argonaut.Parser (jsonParser)
 import Data.Array as Array
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (lmap)
 import Data.Char (toCharCode)
 import Data.Either (Either(..), either)
@@ -65,7 +67,7 @@ import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Pickles (PaddedLength, StepField, StepIPARounds, Verifier, WrapField, wrapPublicInputOf)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts)
-import Pickles.PlonkChecks (AllEvals)
+import Pickles.PlonkChecks (ChunkedAllEvals)
 import Pickles.ProofFFI (Proof, permutationVanishingPolynomial, verifyOpeningProof)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Step (extractWrapVKForStepHash)
@@ -145,7 +147,7 @@ newtype OcamlProof mpv stmtVal = OcamlProof
   , spongeDigestBeforeEvaluations :: StepField
   , challengePolynomialCommitment :: AffinePoint WrapField
   , stepDomainLog2 :: Int
-  , prevEvals :: AllEvals StepField
+  , prevEvalsChunked :: ChunkedAllEvals StepField
   , pEval0Chunks :: Array StepField
   , messagesForNextStepProofDigest :: StepField
   , messagesForNextWrapProofDigest :: WrapField
@@ -182,7 +184,7 @@ verifyOcamlProof verifier (OcamlProof p) =
             , rawBulletproofChallenges: p.rawBulletproofChallenges
             , branchData: p.branchData
             , spongeDigestBeforeEvaluations: p.spongeDigestBeforeEvaluations
-            , allEvals: p.prevEvals
+            , chunkedAllEvals: p.prevEvalsChunked
             , pEval0Chunks: p.pEval0Chunks
             , oldBulletproofChallenges: wd.oldBulletproofChallenges
             , domainLog2: p.stepDomainLog2
@@ -290,7 +292,7 @@ loadFixture cfg dir = do
     -- Mirrors `extractWrapVKForStepHash input.wrapVK` from
     -- `Pickles.Prove.Step:701`. The real prev (sg, expandedBpChals) entries
     -- would go here for mpv > 0.
-    wrapVkStep = extractWrapVKForStepHash vk
+    wrapVkStep = extractWrapVKForStepHash @1 vk
 
     msgStep = hashMessagesForNextStepProofPure
       { stepVk: wrapVkStep
@@ -321,7 +323,7 @@ loadFixture cfg dir = do
         , spongeDigestBeforeEvaluations: decoded.spongeDigestBeforeEvaluations
         , challengePolynomialCommitment: decoded.challengePolynomialCommitment
         , stepDomainLog2: decoded.stepDomainLog2
-        , prevEvals: decoded.prevEvals
+        , prevEvalsChunked: decoded.prevEvalsChunked
         , pEval0Chunks: decoded.pEval0Chunks
         , messagesForNextStepProofDigest: msgStep
         , messagesForNextWrapProofDigest: msgWrap
@@ -450,7 +452,7 @@ type DecodedPickles =
   , spongeDigestBeforeEvaluations :: StepField
   , challengePolynomialCommitment :: AffinePoint WrapField
   , stepDomainLog2 :: Int
-  , prevEvals :: AllEvals StepField
+  , prevEvalsChunked :: ChunkedAllEvals StepField
   , pEval0Chunks :: Array StepField
   }
 
@@ -482,10 +484,11 @@ decodePicklesJson j = do
   cpcJ <- msgWrap .: "challenge_polynomial_commitment"
   cpc <- decodeAffinePoint cpcJ :: Either JsonDecodeError (AffinePoint WrapField)
 
-  -- prev_evals
+  -- prev_evals — natively chunked. `pEval0Chunks` collects the zeta
+  -- evaluation of every public-input chunk (sized by num_chunks).
   prevEvalsJ <- (obj .: "prev_evals") >>= decodeJson
-  prevEvals <- decodeAllEvals prevEvalsJ
-  let pEval0Chunks = [ prevEvals.publicEvals.zeta ]
+  prevEvalsChunked <- decodeAllEvals prevEvalsJ
+  let pEval0Chunks = map _.zeta (NEA.toArray prevEvalsChunked.publicEvals)
 
   pure
     { rawPlonk
@@ -494,7 +497,7 @@ decodePicklesJson j = do
     , spongeDigestBeforeEvaluations: sponge
     , challengePolynomialCommitment: cpc
     , stepDomainLog2
-    , prevEvals
+    , prevEvalsChunked
     , pEval0Chunks
     }
 
@@ -635,7 +638,7 @@ decodeOcamlByte j = do
 -- | OCaml absorption order (`generic`, `poseidon`, `complete_add`, `mul`,
 -- | `emul`, `endomul_scalar` — matching `extractEvalFields` in
 -- | `Pickles.PlonkChecks`).
-decodeAllEvals :: Json -> Either JsonDecodeError (AllEvals StepField)
+decodeAllEvals :: Json -> Either JsonDecodeError (ChunkedAllEvals StepField)
 decodeAllEvals j = do
   obj <- decodeJson j
   ftJ <- obj .: "ft_eval1"
@@ -643,7 +646,12 @@ decodeAllEvals j = do
 
   evalsObj <- (obj .: "evals") >>= decodeJson
   publicJ <- evalsObj .: "public_input"
-  publicEvals <- decodePointEvalFlat publicJ
+  -- Public input in OCaml's prev_evals dump is flat `[zeta, omega]` — a
+  -- length-1 chunk. Wrap as a singleton NEA to fit the ChunkedAllEvals
+  -- shape. If a future fixture format encodes chunked public_input
+  -- (length > 1), switch to decodePointEvalChunked here.
+  publicEvalsFlat <- decodePointEvalFlat publicJ
+  let publicEvals = NEA.singleton publicEvalsFlat
 
   innerEvals <- (evalsObj .: "evals") >>= decodeJson
 
@@ -690,29 +698,42 @@ decodePointEvalFlat j = do
       pure { zeta, omegaTimesZeta }
     _ -> Left (TypeMismatch ("decodePointEvalFlat: expected 2-elem array"))
 
--- | Decode a chunked-singleton point eval: `[[zeta_hex], [omega_zeta_hex]]`.
+-- | Decode a chunked point eval: `[[zeta_hex...], [omega_zeta_hex...]]`.
 -- | Used for the kimchi `proof_evaluations` inside `prev_evals.evals.evals`.
--- | For num_chunks=1, each chunk array has length 1.
-decodePointEvalChunked :: Json -> Either JsonDecodeError (PointEval StepField)
+-- | At num_chunks=N each inner array has length N; both arrays must
+-- | agree on N. Returns one `PointEval` per chunk index.
+decodePointEvalChunked
+  :: Json -> Either JsonDecodeError (NonEmptyArray (PointEval StepField))
 decodePointEvalChunked j = do
   arr <- decodeJson j :: Either JsonDecodeError (Array Json)
   case arr of
     [ zetaArrJ, omegaArrJ ] -> do
       zetaArr :: Array Json <- decodeJson zetaArrJ
       omegaArr :: Array Json <- decodeJson omegaArrJ
-      case zetaArr, omegaArr of
-        [ zJ ], [ oJ ] -> do
-          zeta <- decodeHex zJ
-          omegaTimesZeta <- decodeHex oJ
-          pure { zeta, omegaTimesZeta }
-        _, _ -> Left
-          ( TypeMismatch
-              ( "decodePointEvalChunked: expected singleton chunks, got "
-                  <> show (Array.length zetaArr)
-                  <> "/"
-                  <> show (Array.length omegaArr)
-              )
-          )
+      when (Array.length zetaArr /= Array.length omegaArr) $ Left
+        ( TypeMismatch
+            ( "decodePointEvalChunked: zeta/omega chunk count mismatch ("
+                <> show (Array.length zetaArr)
+                <> "/"
+                <> show (Array.length omegaArr)
+                <> ")"
+            )
+        )
+      case NEA.fromArray zetaArr of
+        Nothing ->
+          Left (TypeMismatch "decodePointEvalChunked: empty chunks array")
+        Just zetaNea -> do
+          let mkChunk zJ oJ = do
+                zeta <- decodeHex zJ
+                omegaTimesZeta <- decodeHex oJ
+                pure { zeta, omegaTimesZeta }
+          -- Pair element-wise; safe because lengths match (checked above).
+          let pairs = Array.zip (NEA.toArray zetaNea) omegaArr
+          chunksArr <- traverse (\(Tuple z o) -> mkChunk z o) pairs
+          case NEA.fromArray chunksArr of
+            Just nea -> pure nea
+            Nothing ->
+              Left (TypeMismatch "decodePointEvalChunked: lost non-empty invariant")
     _ -> Left (TypeMismatch ("decodePointEvalChunked: expected [zeta_chunks, omega_chunks]"))
 
 toFixedVec :: forall @n a. Reflectable n Int => String -> Array a -> Either JsonDecodeError (Vector n a)

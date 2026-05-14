@@ -55,7 +55,7 @@ import Data.Reflectable (class Reflectable, reflectType)
 import Data.Symbol (class IsSymbol)
 import Data.Traversable (for, sequence)
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector)
+import Data.Vector (Vector, (!!))
 import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
 import Partial.Unsafe (unsafePartial)
@@ -344,42 +344,51 @@ sumMaskedAffine bits perBranchPts =
 -- | (`AddWithCircuitCorrection`) path; callers must use
 -- | `InCircuitCorrections` mode.
 mkSideloadedLagrangeLookup
-  :: forall f
+  :: forall @nc f
    . PrimeField f
+  => Reflectable nc Int
   => CurveParams f
   -> Vector 3 (BoolVar f)
-  -> Vector 3 (Int -> AffinePoint (F f))
-  -> LagrangeBaseLookup 1 f
+  -> Vector 3 (Int -> Vector nc (AffinePoint (F f)))
+  -> LagrangeBaseLookup nc f
 mkSideloadedLagrangeLookup curveP bits perDomainAt i =
   let
-    perDomainPts = map (\at -> at i) perDomainAt
+    -- `perDomainChunks :: Vector 3 (Vector nc (AffinePoint _))` — for
+    -- each candidate `actualWrapDomainSize ∈ {N0, N1, N2}` the full
+    -- chunked lagrange commitment at index `i`.
+    perDomainChunks = map (\at -> at i) perDomainAt
 
-    summed = sumMaskedAffine bits perDomainPts
+    -- For each chunk index, 1-hot mux across the 3 domains.
+    -- Mirrors OCaml `wrap_verifier.ml:354-356,442-443` which reduces
+    -- `Array.map2_exn` per-chunk after a `Vector.map2` 1-hot scale.
+    chunkedSumMask
+      :: Vector 3 (Vector nc (AffinePoint (F f)))
+      -> Vector nc (AffinePoint (FVar f))
+    chunkedSumMask v3 =
+      Vector.generate \ci ->
+        sumMaskedAffine bits (map (\vc -> vc !! ci) v3)
+
+    summed = chunkedSumMask perDomainChunks
     correctionAt shift =
-      sumMaskedAffine bits
+      chunkedSumMask
         ( map
-            ( \pt ->
-                wrapPt $ EC.negate_ $ unwrapPt
-                  $ pow2pow curveP pt shift
+            ( map
+                ( \pt ->
+                    wrapPt $ EC.negate_ $ unwrapPt
+                      $ pow2pow curveP pt shift
+                )
             )
-            perDomainPts
+            perDomainChunks
         )
   in
-    -- NOTE: pinning this side-loaded lookup to `numChunks = 1` is a
-    -- temporary scaffold. `perDomainAt` currently carries a single
-    -- `AffinePoint` per domain (not chunked), so we can't faithfully
-    -- thread a real `numChunks` through here. A side-loaded slot whose
-    -- inner proof is chunked (e.g. an nc=2 step) would need chunked
-    -- per-domain tables; that's a follow-up to this PI commit refactor.
-    -- For the immediate chunks2_wrap target the fixture's slots are
-    -- all compiled, not side-loaded — so nothing in flight hits this
-    -- branch with nc>1.
     { -- `constant` is unused on the per-branch path; carry the head
-      -- domain's point as a placeholder so the record typechecks.
-      constant: Vector.singleton (Vector.uncons perDomainPts).head
-    , circuit: Vector.singleton summed
-    , condAddPt: Vector.singleton summed
-    , correctionAt: Just (\shift -> Vector.singleton (correctionAt shift))
+      -- domain's chunked points as a placeholder so the record
+      -- typechecks. The active value-side data isn't read; only
+      -- `circuit` / `condAddPt` / `correctionAt` drive PI commit.
+      constant: (Vector.uncons perDomainChunks).head
+    , circuit: summed
+    , condAddPt: summed
+    , correctionAt: Just correctionAt
     -- Step side-loaded seals each `Cond_add` coordinate before use
     -- (= OCaml `select_curve_points`).
     , sealCondAddPt: true

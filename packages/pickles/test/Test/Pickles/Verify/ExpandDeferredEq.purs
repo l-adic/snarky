@@ -42,7 +42,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Pickles (BranchProver(..), Compiled, CompiledProof(..), NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots1, StatementIO(..), StepField, StepIPARounds, compileMulti, mkRuleEntry)
 import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.PlonkChecks (AllEvals)
+import Pickles.PlonkChecks (ChunkedAllEvals)
 import Pickles.Prove.Compile (CompiledProofWidthData(..))
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput)
@@ -72,7 +72,7 @@ spec = describe "Pickles.Prove.Pure.Verify" do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule unit
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 nrrRule unit
 
     nrr <- liftEffect $ compileMulti
       @NrrRules
@@ -108,7 +108,7 @@ spec = describe "Pickles.Prove.Pure.Verify" do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
-    chainEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) simpleChainRule (tuple1 Self)
+    chainEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) @1 simpleChainRule (tuple1 Self)
 
     chain <- liftEffect $ compileMulti
       @SimpleChainRules
@@ -167,7 +167,7 @@ assertExpandDeferredMatches { dvProver, dvInput, oldBulletproofChallenges } = do
             :: Vector StepIPARounds (ScalarChallenge (F StepField))
       , branchData: dvProver.branchData :: BranchData StepField Boolean
       , spongeDigestBeforeEvaluations: dvProver.spongeDigestBeforeEvaluations
-      , allEvals: dvInput.allEvals :: AllEvals StepField
+      , chunkedAllEvals: dvInput.chunkedAllEvals :: ChunkedAllEvals StepField
       , pEval0Chunks: dvInput.pEval0Chunks
       , oldBulletproofChallenges
       , domainLog2: dvInput.domainLog2

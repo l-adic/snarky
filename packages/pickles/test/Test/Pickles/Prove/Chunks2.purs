@@ -71,12 +71,21 @@ type Chunks2Rules =
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.Chunks2" do
   it "base case (b0) — chunks=2 step+wrap proves end-to-end" \_ -> do
-    -- max_poly_size = 2^16. With chunks2's 2^16-row step circuit, the
-    -- step domain rounds to 2^17 → num_chunks = 2.
-    let pallasSrs = PallasImpl.pallasCrsCreate (1 `Bits.shl` 16)
+    -- Step kimchi uses `vestaSrs` (depth 2^16 by default cache load).
+    -- With chunks2's 2^16-row step circuit, the step domain rounds to
+    -- 2^17 → num_chunks = 2 (= 2^17 / 2^16). Wrap kimchi uses
+    -- `pallasSrs` at depth 2^15 — matches OCaml's Tock URS
+    -- (`Backend.Tock.Keypair.load_urs ()` at `Tock.Rounds.n = N15`,
+    -- `kimchi_pasta_basic.ml:6`). Wrap domain is 2^14 (override) so
+    -- num_chunks at wrap = 1; the smaller SRS gives the correct
+    -- max_poly_size = 32768 byte-for-byte with OCaml.
+    let pallasSrs = PallasImpl.pallasCrsCreate (1 `Bits.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
-    chunks2Entry <- liftEffect $ mkRuleEntry @0 @Unit @Unit chunks2Rule unit
+    -- @nc=1 is a placeholder for the side-loaded-slot chunks count
+    -- (no side-loaded slots here; nc is irrelevant but must be pinned
+    -- for `Reflectable nc Int` to resolve at module-load time).
+    chunks2Entry <- liftEffect $ mkRuleEntry @0 @Unit @Unit @1 chunks2Rule unit
     let rules = tuple1 chunks2Entry
 
     output <- liftEffect $ compileMulti

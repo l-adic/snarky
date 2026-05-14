@@ -29,8 +29,9 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Field (StepField)
 import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.PlonkChecks (AllEvals)
-import Pickles.Prove.Pure.Common (combinedInnerProductBatch, computeBpChalsAndB, derivePlonk, ftEval0)
+import Pickles.PlonkChecks (ChunkedAllEvals)
+import Pickles.PlonkChecks.Chunks as Chunks
+import Pickles.Prove.Pure.Common (combinedInnerProductBatchChunked, computeBpChalsAndB, derivePlonk, ftEval0)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput)
 import Pickles.Sponge (PureSpongeM, absorb, evalPureSpongeM, initialSponge, squeeze, squeezeScalarChallengePure)
 import Pickles.Types (StepIPARounds)
@@ -66,8 +67,11 @@ type ExpandDeferredInput n =
   , spongeDigestBeforeEvaluations :: StepField
 
   -- Evals + prev-proof bp chals (= the inner step proof's data, carried
-  -- by the wrap proof).
-  , allEvals :: AllEvals StepField
+  -- by the wrap proof). Chunked form (`NonEmptyArray (PointEval f)`
+  -- per polynomial); collapsed form derived internally via
+  -- `collapseChunkedAllEvals` once zeta/zetaw are known. CIP consumes
+  -- chunked directly via `combinedInnerProductBatchChunked`.
+  , chunkedAllEvals :: ChunkedAllEvals StepField
   , pEval0Chunks :: Array StepField
   , oldBulletproofChallenges :: Vector n (Vector StepIPARounds StepField)
 
@@ -114,6 +118,24 @@ expandDeferredForVerify input =
 
     zetaw = zetaField * input.generator
 
+    -- Collapsed evals (= OCaml `Plonk_checks.evals_of_split_evals`)
+    -- derived from the chunked form via Horner at `zeta^(2^srsLengthLog2)`.
+    -- Used by derivePlonk / ftEval0; the CIP step below consumes the
+    -- chunked form directly. NOTE: the sponge absorb just below uses
+    -- the collapsed form, which is correct only for inner proofs at
+    -- num_chunks=1 (every NEA has length 1 → collapsed equals the only
+    -- chunk). For inner proofs with num_chunks > 1 the kimchi prover's
+    -- FS sponge absorbs each chunk separately and this replay would
+    -- diverge — a separate fix (out of scope for the immediate
+    -- chunks2 prover witness convergence, which depends on the wrap
+    -- PROVER's CIP only).
+    collapsedAllEvals = Chunks.collapseChunkedAllEvals
+      { rounds: input.srsLengthLog2
+      , zeta: zetaField
+      , zetaOmega: zetaw
+      }
+      input.chunkedAllEvals
+
     -- ===== Step 2. Sponge replay to recover xi, r. ====================
     -- OCaml: create sponge, absorb sponge_digest_before_evaluations;
     -- then absorb challenges_digest, ft_eval1, and evals (in
@@ -124,16 +146,16 @@ expandDeferredForVerify input =
       evalPureSpongeM (initialSponge) do
         absorb input.spongeDigestBeforeEvaluations
         absorb (challengesDigest input.oldBulletproofChallenges)
-        absorb input.allEvals.ftEval1
+        absorb input.chunkedAllEvals.ftEval1
         -- public_input absorb: (zeta, zeta*omega) as single-element "arrays"
-        absorb input.allEvals.publicEvals.zeta
-        absorb input.allEvals.publicEvals.omegaTimesZeta
+        absorb collapsedAllEvals.publicEvals.zeta
+        absorb collapsedAllEvals.publicEvals.omegaTimesZeta
         -- to_absorption_sequence order: z, 6 index, 15 w, 15 coeff, 6 sigma
-        absorbPointEval input.allEvals.zEvals
-        for_ input.allEvals.indexEvals absorbPointEval
-        for_ input.allEvals.witnessEvals absorbPointEval
-        for_ input.allEvals.coeffEvals absorbPointEval
-        for_ input.allEvals.sigmaEvals absorbPointEval
+        absorbPointEval collapsedAllEvals.zEvals
+        for_ collapsedAllEvals.indexEvals absorbPointEval
+        for_ collapsedAllEvals.witnessEvals absorbPointEval
+        for_ collapsedAllEvals.coeffEvals absorbPointEval
+        for_ collapsedAllEvals.sigmaEvals absorbPointEval
         xiChal <- squeezeScalarChallengePureF
         rChal <- squeezeScalarChallengePureF
         pure { xiRawSized: xiChal, rRawSized: rChal }
@@ -150,10 +172,10 @@ expandDeferredForVerify input =
     -- ===== Step 3. Type1.derive_plonk (wrap.ml:202-208). ==============
     derivePlonkInput =
       { plonkMinimal: input.rawPlonk
-      , w: map _.zeta (Vector.take @7 input.allEvals.witnessEvals)
-      , sigma: map _.zeta input.allEvals.sigmaEvals
-      , zZeta: input.allEvals.zEvals.zeta
-      , zOmegaTimesZeta: input.allEvals.zEvals.omegaTimesZeta
+      , w: map _.zeta (Vector.take @7 collapsedAllEvals.witnessEvals)
+      , sigma: map _.zeta collapsedAllEvals.sigmaEvals
+      , zZeta: collapsedAllEvals.zEvals.zeta
+      , zOmegaTimesZeta: collapsedAllEvals.zEvals.omegaTimesZeta
       , shifts: input.shifts
       , generator: input.generator
       , domainLog2: input.domainLog2
@@ -167,7 +189,7 @@ expandDeferredForVerify input =
     -- ===== Step 4. ft_eval0 for the step field. =======================
     ftEval0Input =
       { plonkMinimal: input.rawPlonk
-      , allEvals: input.allEvals
+      , allEvals: collapsedAllEvals
       , pEval0Chunks: input.pEval0Chunks
       , shifts: input.shifts
       , generator: input.generator
@@ -183,11 +205,13 @@ expandDeferredForVerify input =
     stepFtEval0 = ftEval0 ftEval0Input
 
     -- ===== Step 5. combined_inner_product (wrap.ml:22-62, 235-245). ====
+    -- Uses chunked evals for CIP to match OCaml's
+    -- `Pcs_batch.combine_split_evaluations` xi-batching across chunks.
     cipInput =
-      { allEvals: input.allEvals
-      , publicEvals: input.allEvals.publicEvals
+      { allEvals: input.chunkedAllEvals
+      , publicEvals: input.chunkedAllEvals.publicEvals
       , ftEval0: stepFtEval0
-      , ftEval1: input.allEvals.ftEval1
+      , ftEval1: input.chunkedAllEvals.ftEval1
       , oldBulletproofChallenges: input.oldBulletproofChallenges
       , xi: xiField
       , r: rField
@@ -195,7 +219,7 @@ expandDeferredForVerify input =
       , zetaw
       }
 
-    cipActual = combinedInnerProductBatch cipInput
+    cipActual = combinedInnerProductBatchChunked cipInput
 
     -- ===== Step 6. new bulletproof challenges + b (wrap.ml:209-224). ===
     -- `computeBpChalsAndB` is field-polymorphic; unwrap `F` from raw
@@ -230,8 +254,8 @@ expandDeferredForVerify input =
       , v: xiField
       , u: rField
       , combinedInnerProduct: cipActual
-      , ftEval1: input.allEvals.ftEval1
-      , publicEvals: NonEmptyArray.singleton input.allEvals.publicEvals
+      , ftEval1: input.chunkedAllEvals.ftEval1
+      , publicEvals: input.chunkedAllEvals.publicEvals
       , fqDigest: input.spongeDigestBeforeEvaluations
       , alphaChal: unwrapF input.rawPlonk.alpha
       , zetaChal: unwrapF input.rawPlonk.zeta
@@ -246,8 +270,8 @@ expandDeferredForVerify input =
     , b: toShifted (F newBpResult.b)
     , branchData: input.branchData
     , xHatEvals:
-        { zeta: input.allEvals.publicEvals.zeta
-        , omegaTimesZeta: input.allEvals.publicEvals.omegaTimesZeta
+        { zeta: collapsedAllEvals.publicEvals.zeta
+        , omegaTimesZeta: collapsedAllEvals.publicEvals.omegaTimesZeta
         }
     , spongeDigestBeforeEvaluations: input.spongeDigestBeforeEvaluations
     , oracles: oraclesReconstructed

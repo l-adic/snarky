@@ -52,7 +52,7 @@ import Type.Proxy (Proxy(..))
 type StepMainSideLoadedMainParams =
   { lagrangeAt :: LagrangeBaseLookup 1 StepField
   , sideloadedPerDomainLagrangeAt ::
-      Vector 3 (Int -> AffinePoint (F StepField))
+      Vector 3 (Int -> Vector 1 (AffinePoint (F StepField)))
   , blindingH :: AffinePoint (F StepField)
   }
 

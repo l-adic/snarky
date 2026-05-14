@@ -150,8 +150,8 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
         , wrapDomainOverride: Nothing
         }
 
-    makeZeroEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) makeZeroRule unit
-    incrementEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) incrementRule (tuple1 Self)
+    makeZeroEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) @1 makeZeroRule unit
+    incrementEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) @1 incrementRule (tuple1 Self)
     let rules = tuple2 makeZeroEntry incrementEntry
     output <- liftEffect $ compileMulti
       @TwoPhaseChainRules

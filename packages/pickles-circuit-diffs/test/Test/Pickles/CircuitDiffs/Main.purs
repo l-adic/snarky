@@ -655,9 +655,9 @@ spec =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 14 i)) :: AffinePoint (F Fp))
             , sideloadedPerDomainLagrangeAt:
-                (\i -> (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 13 i)) :: AffinePoint (F Fp))
-                  :< (\i -> (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 14 i)) :: AffinePoint (F Fp))
-                  :< (\i -> (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 15 i)) :: AffinePoint (F Fp))
+                (\i -> Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 13 i)) :: AffinePoint (F Fp)))
+                  :< (\i -> Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 14 i)) :: AffinePoint (F Fp)))
+                  :< (\i -> Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 15 i)) :: AffinePoint (F Fp)))
                   :< Vector.nil
             , blindingH: (coerce $ vestaSrsBlindingGenerator wrapMainN1StepSrs) :: AffinePoint (F Fp)
             }
@@ -950,15 +950,15 @@ spec =
             { lagrangeAt: lagrangeAtD14
             , sideloadedPerDomainLagrangeAt:
                 ( \i ->
-                    (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 13 i)) :: AffinePoint (F Fp)
+                    Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 13 i)) :: AffinePoint (F Fp))
                 )
                   :<
                     ( \i ->
-                        (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+                        Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp))
                     )
                   :<
                     ( \i ->
-                        (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 15 i)) :: AffinePoint (F Fp)
+                        Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 15 i)) :: AffinePoint (F Fp))
                     )
                   :< Vector.nil
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)

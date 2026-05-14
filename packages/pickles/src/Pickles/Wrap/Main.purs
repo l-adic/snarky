@@ -39,7 +39,6 @@ import Control.Monad.State.Trans (evalStateT, get, put)
 import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.Fin (Finite, getFinite, unsafeFinite)
-import Unsafe.Coerce (unsafeCoerce)
 import Data.Foldable (foldl)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int as Int
@@ -147,11 +146,14 @@ type WrapMainConfig branches numChunks =
   , lagrangeAt :: LagrangeBaseLookup numChunks WrapField
   -- | Per-branch lagrange constants per index. `Nothing` for the
   -- | shared-domain fast path. `Just f` when branch domains differ:
-  -- | `f i` returns one constant lagrange point per branch (each at
-  -- | its branch's `stepDomainLog2`). The wrap circuit performs the
-  -- | 1-hot summation against `whichBranch` in-circuit, mirroring
-  -- | OCaml `lagrange_with_correction` (wrap_verifier.ml:382-443).
-  , perBranchLagrangeAt :: Maybe (Int -> Vector branches (AffinePoint (F WrapField)))
+  -- | `f i` returns one `Vector numChunks` of constant lagrange chunks
+  -- | per branch (each at its branch's `stepDomainLog2`). The wrap
+  -- | circuit performs the 1-hot summation against `whichBranch`
+  -- | per-chunk in-circuit, mirroring OCaml `lagrange_with_correction`
+  -- | (wrap_verifier.ml:382-443) where `Array.map2_exn` reduces across
+  -- | branches at each chunk index.
+  , perBranchLagrangeAt ::
+      Maybe (Int -> Vector branches (Vector numChunks (AffinePoint (F WrapField))))
   , blindingH :: AffinePoint (F WrapField)
   , allPossibleDomainLog2s :: Vector 3 (Finite 16)
   }
@@ -825,33 +827,32 @@ wrapMain config (StatementPacked stmtR) = do
           , sealCondAddPt: false
           }
       Just perBranchAt ->
-        -- NOTE: this path (different branch domains) currently
-        -- receives single-point per-branch lagrange tables. Extending
-        -- `perBranchLagrangeAt`'s shape to chunked per-branch tables
-        -- is task #51 (along with side-loaded chunking). Today's
-        -- nc>1 fixture (chunks2_wrap_main_circuit) uses Slots1
-        -- (single branch), which fires the `Nothing` arm above. The
-        -- Just arm is only exercised by multi-branch fixtures
-        -- (TwoPhaseChain), all of which are nc=1. We coerce the nc=1
-        -- result to `Vector numChunks` to satisfy the case-join — sound
-        -- as long as no chunked-AND-multi-branch fixture is built.
+        -- Per-branch chunked lagrange path (different branch step
+        -- domains). `perBranchPts :: Vector branches (Vector numChunks
+        -- (AffinePoint _))` — each branch contributes its full chunk
+        -- array. `sumMaskByBranchChunked` does the 1-hot fold across
+        -- branches PER CHUNK, mirroring OCaml's `Array.map2_exn` reduction
+        -- pattern at `wrap_verifier.ml:354-356,442-443`. Correctness
+        -- holds uniformly across numChunks values.
         let
           perBranchPts = perBranchAt i
-          singleSummed = sumMaskByBranch perBranchPts
-          singleCorrectionAt shift =
-            sumMaskByBranch
+          summed = sumMaskByBranchChunked perBranchPts
+          correctionAtShift shift =
+            sumMaskByBranchChunked
               ( map
-                  ( \pt ->
-                      PIC.wrapPt $ EC.negate_ $ PIC.unwrapPt
-                        $ pow2pow (curveParams (Proxy @VestaG)) pt shift
+                  ( map
+                      ( \pt ->
+                          PIC.wrapPt $ EC.negate_ $ PIC.unwrapPt
+                            $ pow2pow (curveParams (Proxy @VestaG)) pt shift
+                      )
                   )
                   perBranchPts
               )
         in
-          { constant: unsafeCoerce (Vector.singleton (Vector.uncons perBranchPts).head)
-          , circuit: unsafeCoerce (Vector.singleton singleSummed)
-          , condAddPt: unsafeCoerce (Vector.singleton singleSummed)
-          , correctionAt: Just (\shift -> unsafeCoerce (Vector.singleton (singleCorrectionAt shift)))
+          { constant: (Vector.uncons perBranchPts).head
+          , circuit: summed
+          , condAddPt: summed
+          , correctionAt: Just correctionAtShift
           , sealCondAddPt: false
           }
     ivpParams =

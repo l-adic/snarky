@@ -31,6 +31,8 @@ module Pickles.Prove.Pure.Common
   -- * Combined inner product
   , CombinedInnerProductBatchInput
   , combinedInnerProductBatch
+  , CombinedInnerProductBatchChunkedInput
+  , combinedInnerProductBatchChunked
   -- * Scalar derivations (unified Type1+Type2)
   , DerivePlonkInput
   , derivePlonk
@@ -44,6 +46,7 @@ import Prelude
 
 import Data.Array as Array
 import Data.Foldable (foldl, foldr)
+import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -53,7 +56,9 @@ import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval)
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Types (LinearizationPoly, runLinearizationPoly)
-import Pickles.PlonkChecks (AllEvals)
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NEA
+import Pickles.PlonkChecks (AllEvals, ChunkedAllEvals)
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
 import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
 import Pickles.Verify.Types (PlonkInCircuit, PlonkMinimal, expandPlonkMinimal)
@@ -226,6 +231,96 @@ combinedInnerProductBatch input =
         }
   in
     (foldl step { result: zero, scale: one } orderedEvals).result
+
+-- | Input to `combinedInnerProductBatchChunked` — the chunk-aware CIP.
+-- |
+-- | Identical to `CombinedInnerProductBatchInput` except `allEvals` and
+-- | `publicEvals` carry `NonEmptyArray (PointEval f)` per polynomial
+-- | (= one PointEval per chunk). `ftEval0`, `ftEval1`, and the bp
+-- | challenge polynomials remain single-valued (they have no chunked
+-- | structure in OCaml either).
+type CombinedInnerProductBatchChunkedInput n d f =
+  { allEvals :: ChunkedAllEvals f
+  , publicEvals :: NonEmptyArray (PointEval f)
+  , ftEval0 :: f
+  , ftEval1 :: f
+  , oldBulletproofChallenges :: Vector n (Vector d f)
+  , xi :: f
+  , r :: f
+  , zeta :: f
+  , zetaw :: f
+  }
+
+-- | Chunk-aware CIP. Mirrors OCaml `wrap.ml:22-62 combined_inner_product`
+-- | which uses `Pcs_batch.combine_split_evaluations` to flatten chunked
+-- | evaluations across all polynomials and xi-fold right-to-left:
+-- |
+-- |   `combine pt = sum_i xi^i * flat[i]`
+-- |
+-- |   where `flat = [bp_polys at pt] ++ public_input_chunks ++ [ft]
+-- |              ++ z_chunks ++ index_chunks ++ witness_chunks
+-- |              ++ coeff_chunks ++ sigma_chunks`
+-- |
+-- | The total CIP is `combine zeta + r * combine zetaw`.
+-- |
+-- | For inner proofs at num_chunks=1 each NonEmptyArray has length 1 and
+-- | this collapses to the legacy single-eval `combinedInnerProductBatch`
+-- | (byte-identical output). For chunks2 (step num_chunks=2) the extra
+-- | chunks contribute additional xi-weighted terms.
+-- |
+-- | Reference: `Pcs_batch.combine_split_evaluations`
+-- | (`pcs_batch.ml:42-51`).
+combinedInnerProductBatchChunked
+  :: forall n d f
+   . Reflectable d Int
+  => PrimeField f
+  => CombinedInnerProductBatchChunkedInput n d f
+  -> f
+combinedInnerProductBatchChunked input =
+  let
+    -- bp polynomials evaluated at zeta and zetaw — single-valued (no chunking).
+    -- Each contributes one element to the flat list per `pt`.
+    bPolyZeta = map (\chals -> bPoly chals input.zeta)
+      (Array.fromFoldable input.oldBulletproofChallenges)
+    bPolyZetaw = map (\chals -> bPoly chals input.zetaw)
+      (Array.fromFoldable input.oldBulletproofChallenges)
+
+    all = input.allEvals
+
+    -- Flatten all chunked PointEvals projecting `proj` (either `_.zeta`
+    -- or `_.omegaTimesZeta`) across the polynomial list. Each polynomial
+    -- contributes its full chunk array (length `num_chunks`).
+    extractChunks
+      :: (PointEval f -> f) -> NonEmptyArray (PointEval f) -> Array f
+    extractChunks proj nea = map proj (NEA.toArray nea)
+
+    -- Build the flat list for one evaluation point. Matches OCaml's
+    -- ordering at `wrap.ml:46-54`:
+    --   bp_polys (singletons) ++ public_input chunks ++ [ft]
+    --   ++ z chunks ++ index chunks ++ witness chunks ++ coeff chunks
+    --   ++ sigma chunks
+    flatAt :: (PointEval f -> f) -> f -> Array f -> Array f
+    flatAt proj ftValue bpValues =
+      bpValues
+        <> extractChunks proj input.publicEvals
+        <> [ ftValue ]
+        <> extractChunks proj all.zEvals
+        <> Array.concatMap (extractChunks proj) (Vector.toUnfoldable all.indexEvals)
+        <> Array.concatMap (extractChunks proj) (Vector.toUnfoldable all.witnessEvals)
+        <> Array.concatMap (extractChunks proj) (Vector.toUnfoldable all.coeffEvals)
+        <> Array.concatMap (extractChunks proj) (Vector.toUnfoldable all.sigmaEvals)
+
+    -- Pcs_batch.combine_split_evaluations: reverse and xi-fold with
+    --   acc' = fx + xi * acc
+    -- (= horner with xi). For empty input returns zero.
+    combine :: Array f -> f
+    combine flat =
+      case Array.uncons (Array.reverse flat) of
+        Just { head, tail } -> foldl (\acc fx -> fx + input.xi * acc) head tail
+        Nothing -> zero
+  in
+    combine (flatAt _.zeta input.ftEval0 bPolyZeta)
+      + input.r * combine (flatAt _.omegaTimesZeta input.ftEval1 bPolyZetaw)
 
 --------------------------------------------------------------------------------
 -- Scalar derivations — `derivePlonk` / `ftEval0` (Type1+Type2 unified)

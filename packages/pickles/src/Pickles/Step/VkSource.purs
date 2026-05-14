@@ -36,11 +36,19 @@ data SlotVkBlueprintCompiled nc
   | VkBlueprintShared
 
 -- | Compile-time blueprint for a `Slot SideLoaded` slot — the
--- | per-domain lagrange tables. The runtime VK is allocated in-circuit
--- | by `BuildSlotVkSources` and bundled alongside this into
--- | `SlotVkSource.SideloadedExistsVk`.
-type SlotVkBlueprintSideLoaded =
-  Vector ProofsVerifiedCount (Int -> AffinePoint (F StepField))
+-- | per-domain × per-chunk lagrange tables. Each domain entry returns
+-- | a `Vector nc (AffinePoint _)` (the SRS lagrange commitment split
+-- | over `nc` chunks), and `Step.Main` muxes 1-hot over domains
+-- | per-chunk to produce the chunked `LagrangeBaseLookup nc _`.
+-- |
+-- | Mirrors OCaml's `wrap_verifier.ml:334-356` pattern where each
+-- | domain contributes a full chunks-array.
+-- |
+-- | The runtime VK is allocated in-circuit by `BuildSlotVkSources`
+-- | and bundled alongside this into `SlotVkSource.SideloadedExistsVk`.
+type SlotVkBlueprintSideLoaded :: Int -> Type
+type SlotVkBlueprintSideLoaded nc =
+  Vector ProofsVerifiedCount (Int -> Vector nc (AffinePoint (F StepField)))
 
 -- | Post-walk per-slot wrap-VK dispatch type. `SideloadedExistsVk`
 -- | bundles BOTH the compile-time per-domain lagrange tables and the
@@ -55,5 +63,5 @@ data SlotVkSource nc
   = ConstVk (VerificationKey nc (WeierstrassAffinePoint PallasG (F StepField)))
   | SharedExistsVk
   | SideloadedExistsVk
-      SlotVkBlueprintSideLoaded
+      (SlotVkBlueprintSideLoaded nc)
       (SLVK.VerificationKey nc (FVar StepField) (BoolVar StepField))
