@@ -504,12 +504,16 @@ ftEval0 input =
 
     omegaToMinus1 = one / input.generator
     omegaToMinusZkRows = pow omegaToMinus1 (BigInt.fromInt input.zkRows)
-    omegaToZkPlus1 = pow omegaToMinus1 (BigInt.fromInt (input.zkRows - 1))
 
-    zkPolynomial =
-      (expanded.zeta - omegaToMinus1)
-        * (expanded.zeta - omegaToZkPlus1)
-        * (expanded.zeta - omegaToMinusZkRows)
+    -- `zkPolynomial` is the full `vanishes_on_last_n_rows(domain, zkRows)`
+    -- = `Π_{i=1}^{zkRows} (zeta - ω^-i)`. For `zkRows = 3` (nc=1) this is
+    -- a 3-factor product; for `zkRows = 5` (nc=2) it's 5 factors, etc.
+    -- Read directly from the FFI's `permutationVanishingPolynomial`
+    -- (already passed in as `input.vanishesOnZk`) so the formula stays
+    -- correct at any `zkRows`. The earlier hardcoded 3-factor product
+    -- (`(zeta - ω^-1)(zeta - ω^-(zkRows-1))(zeta - ω^-zkRows)`) was
+    -- only valid at `zkRows = 3` — diverged on chunked proofs.
+    zkPolynomial = input.vanishesOnZk
 
     zetaToNMinus1 =
       pow expanded.zeta

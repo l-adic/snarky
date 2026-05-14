@@ -98,6 +98,15 @@ export const pallasProofZEvals = (proof) =>
 export const vestaProofZEvals = (proof) =>
   chunksToPointEvals(crypto.vestaProofZEvals(proof));
 
+// Proof - ft_eval1 (prover-supplied evaluation of the linearization
+// polynomial at zeta·omega). Lives in `proof.ft_eval1`; the verifier
+// reads it directly without recomputation.
+export const pallasProofFtEval1 = (proof) =>
+  crypto.pallasProofFtEval1(proof);
+
+export const vestaProofFtEval1 = (proof) =>
+  crypto.vestaProofFtEval1(proof);
+
 // Proof evaluations - sigma (6 polys × n chunks × 2 points)
 export const pallasProofSigmaEvals = (proof) =>
   polyChunksToPointEvals(crypto.pallasProofSigmaEvals(proof), 6);

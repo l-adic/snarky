@@ -38,6 +38,8 @@ module Pickles.ProofFFI
   , pallasProofOpeningPrechallenges
   , vestaProofOpeningPrechallenges
   , pallasProverIndexDomainLog2
+  , pallasProofFtEval1
+  , vestaProofFtEval1
   , vestaVerifierIndexDigest
   , pallasSrsLagrangeCommitmentAt
   , vestaSrsLagrangeCommitmentAt
@@ -83,7 +85,7 @@ import Data.Array.NonEmpty as NonEmptyArray
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.Types (StepIPARounds, WrapIPARounds)
+import Pickles.Types (ChunkedCommitment(..), StepIPARounds, WrapIPARounds)
 import Pickles.Util.Fatal (fromJust')
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
 import Snarky.Circuit.DSL (SizedF)
@@ -221,6 +223,17 @@ foreign import vestaProofWitnessEvals :: Proof Pallas.G Vesta.BaseField -> Vecto
 
 foreign import pallasProofZEvals :: Proof Vesta.G Pallas.BaseField -> NonEmptyArray (PointEval Pallas.BaseField)
 foreign import vestaProofZEvals :: Proof Pallas.G Vesta.BaseField -> NonEmptyArray (PointEval Vesta.BaseField)
+
+-- | Direct accessor for `proof.ft_eval1` — the prover-supplied
+-- | evaluation of the linearization polynomial at `zeta·omega`.
+-- |
+-- | Kimchi's verifier does not recompute `ft_eval1`; it reads this
+-- | value directly from the proof and uses it as one of the openings
+-- | in the CIP check. Use this in place of `oraclesResult.ftEval1` to
+-- | avoid the redundant kimchi-FS-replay round trip for what is, at
+-- | the end of the day, a single field projection.
+foreign import pallasProofFtEval1 :: Proof Vesta.G Pallas.BaseField -> Pallas.BaseField
+foreign import vestaProofFtEval1 :: Proof Pallas.G Vesta.BaseField -> Vesta.BaseField
 
 foreign import pallasProofSigmaEvals :: Proof Vesta.G Pallas.BaseField -> Vector 6 (NonEmptyArray (PointEval Pallas.BaseField))
 foreign import vestaProofSigmaEvals :: Proof Pallas.G Vesta.BaseField -> Vector 6 (NonEmptyArray (PointEval Vesta.BaseField))
@@ -557,9 +570,9 @@ instance ProofFFI Vesta.BaseField Pallas.G where
 -- | one-line projection.
 type VerifierIndexCommitments :: Int -> Type -> Type
 type VerifierIndexCommitments numChunks f =
-  { index :: Vector 6 (Vector numChunks (AffinePoint f))
-  , coeff :: Vector 15 (Vector numChunks (AffinePoint f))
-  , sigma :: Vector 7 (Vector numChunks (AffinePoint f))
+  { index :: Vector 6 (ChunkedCommitment numChunks (AffinePoint f))
+  , coeff :: Vector 15 (ChunkedCommitment numChunks (AffinePoint f))
+  , sigma :: Vector 7 (ChunkedCommitment numChunks (AffinePoint f))
   }
 
 -- | Vector-typed split of `pallasVerifierIndexColumnComms` +
@@ -601,8 +614,8 @@ splitVkCommitments
   -> VerifierIndexCommitments numChunks f
 splitVkCommitments raw sigmaLast =
   let
-    toChunks :: Array (AffinePoint f) -> Vector numChunks (AffinePoint f)
-    toChunks = fromJust' "VerifierIndex commitment chunks length mismatch with @numChunks"
+    toChunks :: Array (AffinePoint f) -> ChunkedCommitment numChunks (AffinePoint f)
+    toChunks = ChunkedCommitment <<< fromJust' "VerifierIndex commitment chunks length mismatch with @numChunks"
       <<< Vector.toVector @numChunks
     mkIndex = fromJust' "VerifierIndex index commits (6 entries)"
       <<< Vector.toVector @6
@@ -695,24 +708,26 @@ wCommChunked
   :: forall @numChunks f
    . Reflectable numChunks Int
   => ProofCommitments f
-  -> Vector 15 (Vector numChunks (AffinePoint f))
+  -> Vector 15 (ChunkedCommitment numChunks (AffinePoint f))
 wCommChunked c =
   map
     ( \chunks ->
-        fromJust' "ProofCommitments.wComm: chunk count mismatch with @numChunks"
-          (Vector.toVector @numChunks chunks)
+        ChunkedCommitment $
+          fromJust' "ProofCommitments.wComm: chunk count mismatch with @numChunks"
+            (Vector.toVector @numChunks chunks)
     )
     c.wComm
 
--- | Project the chunked `zComm` array into a typed `Vector numChunks`.
+-- | Project the chunked `zComm` array into a typed `ChunkedCommitment numChunks`.
 zCommChunked
   :: forall @numChunks f
    . Reflectable numChunks Int
   => ProofCommitments f
-  -> Vector numChunks (AffinePoint f)
+  -> ChunkedCommitment numChunks (AffinePoint f)
 zCommChunked c =
-  fromJust' "ProofCommitments.zComm: chunk count mismatch with @numChunks"
-    (Vector.toVector @numChunks c.zComm)
+  ChunkedCommitment $
+    fromJust' "ProofCommitments.zComm: chunk count mismatch with @numChunks"
+      (Vector.toVector @numChunks c.zComm)
 
 -- | Reshape the flat `tComm :: Array (AffinePoint f)` (length `7 *
 -- | numChunks`) into the kimchi-faithful 2D shape
@@ -723,11 +738,11 @@ tCommChunked
   :: forall @numChunks f
    . Reflectable numChunks Int
   => ProofCommitments f
-  -> Vector 7 (Vector numChunks (AffinePoint f))
+  -> Vector 7 (ChunkedCommitment numChunks (AffinePoint f))
 tCommChunked c =
   let
     nc = reflectType (Proxy @numChunks)
-    perPiece i =
+    perPiece i = ChunkedCommitment $
       fromJust'
         "ProofCommitments.tComm: per-piece chunk count mismatch with @numChunks"
         (Vector.toVector @numChunks (Array.slice (i * nc) ((i + 1) * nc) c.tComm))

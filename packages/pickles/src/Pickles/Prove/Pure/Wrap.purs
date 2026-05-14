@@ -44,8 +44,8 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (ChunkedAllEvals)
 import Pickles.PlonkChecks.Chunks as Chunks
-import Pickles.ProofFFI (OraclesResult, Proof, pallasProofOpeningPrechallengesVec, pallasProofOracles)
-import Pickles.Prove.Pure.Common (BulletproofBOutput, computeBpChalsAndB, crossFieldDigest, derivePlonk)
+import Pickles.ProofFFI (OraclesResult, Proof, pallasProofFtEval1, pallasProofOpeningPrechallengesVec, pallasProofOracles)
+import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatchChunked, computeBpChalsAndB, crossFieldDigest, derivePlonk, ftEval0)
 import Pickles.Types (StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, ScalarChallenge)
 import Pickles.Wrap.Types as Wrap
@@ -293,14 +293,27 @@ wrapComputeDeferredValues input =
 
     stepPlonkDerived = derivePlonk derivePlonkInput
 
-    -- NOTE: previously `stepFtEval0 = ftEval0 ftEval0Input` was used
-    -- as input to the manual `combinedInnerProductBatchChunked`. Now
-    -- that we use `oraclesResult.combinedInnerProduct` directly (see
-    -- below), `ftEval0` is no longer needed in this hot path. The
-    -- standalone `ftEval0` helper in `Pickles.Prove.Pure.Common` is
-    -- retained — it's still used by the verifier path
-    -- (`expandDeferredForVerify`) which doesn't have the kimchi FFI
-    -- value handy.
+    -- ===== ft_eval0 (wrap.ml::ft_eval0 via Plonk_checks.ft_eval0). =====
+    -- Computed in the step field over the collapsed evals (CIP itself
+    -- uses the chunked form below). `ftEval0` reads `vanishesOnZk` from
+    -- `input.vanishesOnZk` (the FFI's `permutation_vanishing_polynomial`)
+    -- so the zk_polynomial term stays correct at any `zk_rows`.
+    ftEval0Input =
+      { plonkMinimal: stepPlonkMinimal
+      , allEvals: collapsedAllEvals
+      , pEval0Chunks: input.pEval0Chunks
+      , shifts: input.shifts
+      , generator: input.generator
+      , domainLog2: input.domainLog2
+      , zkRows: input.zkRows
+      , srsLengthLog2: input.srsLengthLog2
+      , endo: input.endo
+      , vanishesOnZk: input.vanishesOnZk
+      , omegaForLagrange: input.omegaForLagrange
+      , linearizationPoly: input.linearizationPoly
+      }
+
+    stepFtEval0 = ftEval0 ftEval0Input
 
     -- ===== combined_inner_product (wrap.ml:22-62, 235-245). =====
     --
@@ -310,18 +323,25 @@ wrapComputeDeferredValues input =
     -- `Pcs_batch.combine_split_evaluations` xi-batches across all
     -- chunks of each polynomial. For inner proofs at num_chunks=1 each
     -- chunked array has length 1 and this collapses to the same value
-    -- the legacy single-eval CIP produced.
-    -- WORKAROUND (task #63): use the kimchi-FFI authoritative CIP value
-    -- instead of our manual `combinedInnerProductBatchChunked`. At nc=1
-    -- the manual and FFI values agree byte-for-byte (verified by
-    -- SimpleChain end-to-end verify), but at nc>1 (chunks2) the manual
-    -- value diverges. Bisecting showed: feeding FFI's `ftEval0` INTO
-    -- the manual chunked CIP recovers FFI's CIP exactly — so the
-    -- chunked CIP combine is correct, but PS's `ftEval0` (in
-    -- `Pickles.Prove.Pure.Common`) has a chunk-dependent bug. Pin the
-    -- value to FFI's here so chunks2 can converge end-to-end while the
-    -- root cause in `ftEval0` is tracked separately.
-    cipActual = oraclesResult.combinedInnerProduct
+    -- the legacy single-eval CIP produced; at nc>1 the extra chunks
+    -- contribute additional xi-weighted terms.
+    cipInput =
+      { allEvals: input.chunkedAllEvals
+      , publicEvals: input.chunkedAllEvals.publicEvals
+      , ftEval0: stepFtEval0
+      -- Read prover-supplied `ft(zeta·omega)` directly from the proof
+      -- via the `pallasProofFtEval1` accessor. The kimchi FFI's
+      -- `oraclesResult.ftEval1` returns the same value but does so as a
+      -- side-effect of the full FS-replay; this avoids that round-trip.
+      , ftEval1: pallasProofFtEval1 input.proof
+      , oldBulletproofChallenges: input.prevChallenges
+      , xi: oraclesResult.v
+      , r: oraclesResult.u
+      , zeta: zetaField
+      , zetaw
+      }
+
+    cipActual = combinedInnerProductBatchChunked cipInput
 
     -- ===== new bulletproof challenges + b (wrap.ml:209-224). =====
     --

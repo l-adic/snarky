@@ -1868,6 +1868,26 @@ pub fn vesta_proof_witness_evals(proof: &PallasProofExternal) -> Vec<PallasField
         .collect()
 }
 
+/// Extract `ft_eval1` (linearization polynomial evaluation at `zeta·omega`)
+/// from a Vesta proof. This value is prover-supplied — kimchi's verifier
+/// does not recompute it; it reads it directly from `proof.ft_eval1` and
+/// uses it as one of the openings in the CIP check.
+///
+/// PureScript consumers should prefer this direct accessor over the
+/// `pallasProofOracles` projection: `oraclesResult.ftEval1` returns the
+/// same value but funnels it through the full kimchi Fiat-Shamir oracles
+/// computation. This bypass avoids that redundant round-trip.
+#[napi]
+pub fn pallas_proof_ft_eval1(proof: &VestaProofExternal) -> VestaFieldExternal {
+    External::new(proof.ft_eval1)
+}
+
+/// Extract `ft_eval1` from a Pallas proof. See `pallas_proof_ft_eval1`.
+#[napi]
+pub fn vesta_proof_ft_eval1(proof: &PallasProofExternal) -> PallasFieldExternal {
+    External::new(proof.ft_eval1)
+}
+
 /// Extract z (permutation polynomial) evaluations from a Vesta proof.
 /// Returns 2 values: z(zeta), z(zeta*omega).
 #[napi]
