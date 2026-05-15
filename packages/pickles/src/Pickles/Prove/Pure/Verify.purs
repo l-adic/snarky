@@ -23,7 +23,8 @@ module Pickles.Prove.Pure.Verify
 
 import Prelude
 
-import Data.Array.NonEmpty as NonEmptyArray
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NEA
 import Data.Foldable (for_)
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -147,22 +148,31 @@ expandDeferredForVerify input =
         absorb input.spongeDigestBeforeEvaluations
         absorb (challengesDigest input.oldBulletproofChallenges)
         absorb input.chunkedAllEvals.ftEval1
-        -- public_input absorb: (zeta, zeta*omega) as single-element "arrays"
-        absorb collapsedAllEvals.publicEvals.zeta
-        absorb collapsedAllEvals.publicEvals.omegaTimesZeta
+        -- Absorb chunked evaluations in the order kimchi's FrSponge does:
+        -- `absorb_multiple(&public_evals[0])` then `absorb_multiple(&public_evals[1])`
+        -- then `absorb_evaluations(&evals)` which per polynomial absorbs
+        -- `absorb(&p.zeta)` (all chunks) then `absorb(&p.zeta_omega)` (all
+        -- chunks). For nc=1 this matches the old collapsed single-value path;
+        -- for nc>1 it absorbs each chunk, keeping the sponge state in sync
+        -- with the prover's FrSponge (which also absorbed each chunk).
+        absorbChunked input.chunkedAllEvals.publicEvals
         -- to_absorption_sequence order: z, 6 index, 15 w, 15 coeff, 6 sigma
-        absorbPointEval collapsedAllEvals.zEvals
-        for_ collapsedAllEvals.indexEvals absorbPointEval
-        for_ collapsedAllEvals.witnessEvals absorbPointEval
-        for_ collapsedAllEvals.coeffEvals absorbPointEval
-        for_ collapsedAllEvals.sigmaEvals absorbPointEval
+        absorbChunked input.chunkedAllEvals.zEvals
+        for_ input.chunkedAllEvals.indexEvals absorbChunked
+        for_ input.chunkedAllEvals.witnessEvals absorbChunked
+        for_ input.chunkedAllEvals.coeffEvals absorbChunked
+        for_ input.chunkedAllEvals.sigmaEvals absorbChunked
         xiChal <- squeezeScalarChallengePureF
         rChal <- squeezeScalarChallengePureF
         pure { xiRawSized: xiChal, rRawSized: rChal }
       where
-      absorbPointEval pe = do
-        absorb pe.zeta
-        absorb pe.omegaTimesZeta
+      -- Absorb all-zeta chunks then all-zetaw chunks for one polynomial,
+      -- matching Rust `absorb(&p.zeta); absorb(&p.zeta_omega)` where each
+      -- is a Vec of length num_chunks.
+      absorbChunked :: NonEmptyArray _ -> _
+      absorbChunked chunks = do
+        for_ (NEA.toArray chunks) \pe -> absorb pe.zeta
+        for_ (NEA.toArray chunks) \pe -> absorb pe.omegaTimesZeta
 
     -- Endo-expand xi and r to full field values.
     xiField = coerce (toFieldPure xiRawSized (F input.endo))
