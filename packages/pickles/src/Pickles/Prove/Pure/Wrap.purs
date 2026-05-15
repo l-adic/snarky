@@ -293,11 +293,7 @@ wrapComputeDeferredValues input =
 
     stepPlonkDerived = derivePlonk derivePlonkInput
 
-    -- ===== ft_eval0 (wrap.ml::ft_eval0 via Plonk_checks.ft_eval0). =====
-    -- Computed in the step field over the collapsed evals (CIP itself
-    -- uses the chunked form below). `ftEval0` reads `vanishesOnZk` from
-    -- `input.vanishesOnZk` (the FFI's `permutation_vanishing_polynomial`)
-    -- so the zk_polynomial term stays correct at any `zk_rows`.
+    -- ===== ft_eval0 (instrumented for chunks2 byte-diff diagnosis). =====
     ftEval0Input =
       { plonkMinimal: stepPlonkMinimal
       , allEvals: collapsedAllEvals
@@ -315,24 +311,11 @@ wrapComputeDeferredValues input =
 
     stepFtEval0 = ftEval0 ftEval0Input
 
-    -- ===== combined_inner_product (wrap.ml:22-62, 235-245). =====
-    --
-    -- `oracles.v` = xi, `oracles.u` = r — both already endo-expanded
-    -- by the kimchi FFI. CIP runs over the CHUNKED evaluations
-    -- (`chunkedAllEvals`) because OCaml's
-    -- `Pcs_batch.combine_split_evaluations` xi-batches across all
-    -- chunks of each polynomial. For inner proofs at num_chunks=1 each
-    -- chunked array has length 1 and this collapses to the same value
-    -- the legacy single-eval CIP produced; at nc>1 the extra chunks
-    -- contribute additional xi-weighted terms.
+    -- ===== combined_inner_product (wrap.ml:22-62). =====
     cipInput =
       { allEvals: input.chunkedAllEvals
       , publicEvals: input.chunkedAllEvals.publicEvals
       , ftEval0: stepFtEval0
-      -- Read prover-supplied `ft(zeta·omega)` directly from the proof
-      -- via the `pallasProofFtEval1` accessor. The kimchi FFI's
-      -- `oraclesResult.ftEval1` returns the same value but does so as a
-      -- side-effect of the full FS-replay; this avoids that round-trip.
       , ftEval1: pallasProofFtEval1 input.proof
       , oldBulletproofChallenges: input.prevChallenges
       , xi: oraclesResult.v

@@ -61,6 +61,8 @@ import Pickles.Linearization.Types (LinearizationPoly, runLinearizationPoly)
 import Pickles.PlonkChecks (AllEvals, ChunkedAllEvals)
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
 import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
+import Pickles.Trace as Trace
+import Effect.Unsafe (unsafePerformEffect)
 import Pickles.Verify.Types (PlonkInCircuit, PlonkMinimal, expandPlonkMinimal)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Compare)
@@ -504,16 +506,12 @@ ftEval0 input =
 
     omegaToMinus1 = one / input.generator
     omegaToMinusZkRows = pow omegaToMinus1 (BigInt.fromInt input.zkRows)
+    omegaToZkPlus1 = pow omegaToMinus1 (BigInt.fromInt (input.zkRows - 1))
 
-    -- `zkPolynomial` is the full `vanishes_on_last_n_rows(domain, zkRows)`
-    -- = `Π_{i=1}^{zkRows} (zeta - ω^-i)`. For `zkRows = 3` (nc=1) this is
-    -- a 3-factor product; for `zkRows = 5` (nc=2) it's 5 factors, etc.
-    -- Read directly from the FFI's `permutationVanishingPolynomial`
-    -- (already passed in as `input.vanishesOnZk`) so the formula stays
-    -- correct at any `zkRows`. The earlier hardcoded 3-factor product
-    -- (`(zeta - ω^-1)(zeta - ω^-(zkRows-1))(zeta - ω^-zkRows)`) was
-    -- only valid at `zkRows = 3` — diverged on chunked proofs.
-    zkPolynomial = input.vanishesOnZk
+    zkPolynomial =
+      (expanded.zeta - omegaToMinus1)
+        * (expanded.zeta - omegaToZkPlus1)
+        * (expanded.zeta - omegaToMinusZkRows)
 
     zetaToNMinus1 =
       pow expanded.zeta
@@ -557,8 +555,43 @@ ftEval0 input =
 
     env = fieldEnv evalPoint challenges
     constantTerm = evaluate (runLinearizationPoly input.linearizationPoly) env
+
+    result = permRaw - pEval0Folded - constantTerm
+
+    -- ===== DIAGNOSTIC TRACE (chunks2 nc=2 byte-diff) =====
+    -- Mirror labels emitted by OCaml `plonk_checks.ml` instrumentation;
+    -- both sides write to `PICKLES_TRACE_FILE`. Strip these once the
+    -- residual nc-dependent bug is found.
+    traceArr lbl arr = Array.foldM
+      (\i v -> Trace.field (lbl <> show i) v *> pure (i + 1))
+      (0 :: Int) arr
+    _ = unsafePerformEffect $ do
+      Trace.field "ft_eval0.input.alpha" expanded.alpha
+      Trace.field "ft_eval0.input.beta" expanded.beta
+      Trace.field "ft_eval0.input.gamma" expanded.gamma
+      Trace.field "ft_eval0.input.zeta" expanded.zeta
+      Trace.field "ft_eval0.input.generator" input.generator
+      Trace.field "ft_eval0.input.endo" input.endo
+      Trace.field "ft_eval0.env.omega_to_minus_1" omegaToMinus1
+      Trace.field "ft_eval0.env.omega_to_zk_plus_1" omegaToZkPlus1
+      Trace.field "ft_eval0.env.omega_to_minus_zk_rows" omegaToMinusZkRows
+      Trace.field "ft_eval0.env.zk_polynomial" zkPolynomial
+      Trace.field "ft_eval0.env.zeta_to_n_minus_1" zetaToNMinus1
+      _ <- traceArr "ft_eval0.input.w." (Vector.toUnfoldable (map _.zeta input.allEvals.witnessEvals))
+      _ <- traceArr "ft_eval0.input.w_omega." (Vector.toUnfoldable (map _.omegaTimesZeta input.allEvals.witnessEvals))
+      _ <- traceArr "ft_eval0.input.sigma." (Vector.toUnfoldable (map _.zeta input.allEvals.sigmaEvals))
+      _ <- traceArr "ft_eval0.input.coeff." (Vector.toUnfoldable (map _.zeta input.allEvals.coeffEvals))
+      _ <- traceArr "ft_eval0.input.index." (Vector.toUnfoldable (map _.zeta input.allEvals.indexEvals))
+      Trace.field "ft_eval0.input.z.zeta" input.allEvals.zEvals.zeta
+      Trace.field "ft_eval0.input.z.omegaTimesZeta" input.allEvals.zEvals.omegaTimesZeta
+      _ <- traceArr "ft_eval0.input.shifts." (Vector.toUnfoldable input.shifts)
+      _ <- traceArr "ft_eval0.peval0_chunks." input.pEval0Chunks
+      Trace.field "ft_eval0.peval0_folded" pEval0Folded
+      Trace.field "ft_eval0.perm.raw" permRaw
+      Trace.field "ft_eval0.constant_term" constantTerm
+      Trace.field "ft_eval0.result" result
   in
-    permRaw - pEval0Folded - constantTerm
+    result
 
 --------------------------------------------------------------------------------
 -- Cross-field reinterpretation
