@@ -43,6 +43,7 @@ import Data.Foldable (foldl)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int as Int
 import Data.Maybe (Maybe(..))
+import Data.Newtype (over)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
@@ -62,7 +63,7 @@ import Pickles.Pseudo as Pseudo
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, pow2pow)
 import Pickles.PublicInputCommit (unwrapPt, wrapPt) as PIC
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
-import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK, chooseKey)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOldBulletproofChallenges, getOpeningProof, getStepAccs, getWhichBranch, getWrapDomainIndices, getWrapProofState)
@@ -705,12 +706,14 @@ wrapMain config (StatementPacked stmtR) = do
   WrapProofMessages messagesRec <- label "messages" $ exists $ lift $
     getMessages @branches @mpv @numChunks @slots @VestaG unit
   let
-    -- wComm/zComm carry chunks through; tComm flattens Vector 7 (Vector 1 pt)
-    -- to flat Vector 7 pt via Vector.concat (= 7 * numChunks pieces).
+    -- wComm/zComm carry chunks through; tComm flattens Vector 7 (ChunkedCommitment nc pt)
+    -- to flat Vector tCommLen pt via Vector.concat (= 7 * numChunks pieces).
+    tCommChunked :: Vector 7 (ChunkedCommitment numChunks (AffinePoint (FVar WrapField)))
+    tCommChunked = map (over ChunkedCommitment (map unwrapPt)) messagesRec.tComm
     messages =
-      { wComm: map (map unwrapPt) messagesRec.wComm
-      , zComm: map unwrapPt messagesRec.zComm
-      , tComm: Vector.concat (map (map unwrapPt) messagesRec.tComm)
+      { wComm: map (over ChunkedCommitment (map unwrapPt)) messagesRec.wComm
+      , zComm: over ChunkedCommitment (map unwrapPt) messagesRec.zComm
+      , tComm: Vector.concat (coerce tCommChunked :: Vector 7 (Vector numChunks (AffinePoint (FVar WrapField))))
       }
 
   -- 13. pack_statement + split_field per Type1 (wrap_main.ml:542-548)

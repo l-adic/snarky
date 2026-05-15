@@ -31,6 +31,7 @@ import Pickles.IncrementallyVerifyProof (incrementallyVerifyProof, packStatement
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.OtherField as StepOtherField
+import Pickles.Types (ChunkedCommitment(..))
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, assertEq, const_, if_)
@@ -146,15 +147,15 @@ stepVerifyN2Circuit { lagrangeAt, blindingH } inputs = do
       { publicInput
       , sgOld
       , sgOldMask: Vector.replicate ((const_ one))
-      , sigmaCommLast: Vector.singleton constDummyPt
+      , sigmaCommLast: ChunkedCommitment (Vector.singleton constDummyPt)
       , columnComms:
-          { index: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 6 _
-          , coeff: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 15 _
-          , sigma: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 6 _
+          { index: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 6 _
+          , coeff: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 15 _
+          , sigma: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 6 _
           }
       , deferredValues
-      , wComm: map Vector.singleton wComm
-      , zComm: Vector.singleton zComm
+      , wComm: map (ChunkedCommitment <<< Vector.singleton) wComm
+      , zComm: ChunkedCommitment (Vector.singleton zComm)
       , tComm
       , opening:
           { delta: readPt 110

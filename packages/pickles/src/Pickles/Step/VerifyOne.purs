@@ -26,7 +26,7 @@ import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofOpt)
 import Pickles.Step.OtherField as StepOtherField
-import Pickles.Types (StepIPARounds, WrapIPARounds)
+import Pickles.Types (ChunkedCommitment, StepIPARounds, WrapIPARounds)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
@@ -47,8 +47,8 @@ type VerifyOneInput n wrapVkChunks tCommLen d tickD sf fv bv =
     -- input type's `varToFields`.
     appStateFields :: Array fv
   -- Per_proof_witness.wrap_proof. `tCommLen = 7 * wrapVkChunks` (flat).
-  , wComm :: Vector 15 (Vector wrapVkChunks (AffinePoint fv))
-  , zComm :: Vector wrapVkChunks (AffinePoint fv)
+  , wComm :: Vector 15 (ChunkedCommitment wrapVkChunks (AffinePoint fv))
+  , zComm :: ChunkedCommitment wrapVkChunks (AffinePoint fv)
   , tComm :: Vector tCommLen (AffinePoint fv)
   , lr :: Vector d { l :: AffinePoint fv, r :: AffinePoint fv }
   , z1 :: sf
@@ -120,10 +120,10 @@ type VerifyOneInput n wrapVkChunks tCommLen d tickD sf fv bv =
   -- (Dim 2 / `wrapVkChunks`). OCaml fixes this to 1 at
   -- `step_main.ml:347` but the type stays polymorphic.
   , vkComms ::
-      { sigma :: Vector 6 (Vector wrapVkChunks (AffinePoint fv))
-      , sigmaLast :: Vector wrapVkChunks (AffinePoint fv)
-      , coeff :: Vector 15 (Vector wrapVkChunks (AffinePoint fv))
-      , index :: Vector 6 (Vector wrapVkChunks (AffinePoint fv))
+      { sigma :: Vector 6 (ChunkedCommitment wrapVkChunks (AffinePoint fv))
+      , sigmaLast :: ChunkedCommitment wrapVkChunks (AffinePoint fv)
+      , coeff :: Vector 15 (ChunkedCommitment wrapVkChunks (AffinePoint fv))
+      , index :: Vector 6 (ChunkedCommitment wrapVkChunks (AffinePoint fv))
       }
   -- Padded sgOld (Wrap_hack.Padded_length = 2, dummy first)
   , sgOld :: Vector 2 (AffinePoint fv)

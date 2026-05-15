@@ -68,7 +68,7 @@ import Data.FoldableWithIndex (forWithIndex_)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromJust, maybe)
-import Data.Newtype (class Newtype, un, unwrap)
+import Data.Newtype (class Newtype, over, un, unwrap)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.String (Pattern(..), Replacement(..))
 import Data.String as String
@@ -107,7 +107,7 @@ import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesF
 import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, replicateStepSlotsCarrier)
 import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
-import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK, VerificationKey(..))
 import Pickles.Verify.Types (BranchData) as VT
 import Pickles.Verify.Types (UnfinalizedProof)
@@ -139,7 +139,6 @@ import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (SplitField(..), Type1(..), Type2(..), fromShifted, toShifted)
 import Type.Proxy (Proxy(..))
-import Unsafe.Coerce (unsafeCoerce)
 
 --------------------------------------------------------------------------------
 -- Advice
@@ -401,9 +400,9 @@ buildStepAdvice input =
               , sg: WeierstrassAffinePoint g0
               }
           , messages: WrapProofMessages
-              { wComm: Vector.generate (\_ -> Vector.replicate (WeierstrassAffinePoint g0))
-              , zComm: Vector.replicate (WeierstrassAffinePoint g0)
-              , tComm: Vector.generate (\_ -> Vector.replicate (WeierstrassAffinePoint g0))
+              { wComm: Vector.generate (\_ -> ChunkedCommitment (Vector.replicate (WeierstrassAffinePoint g0)))
+              , zComm: ChunkedCommitment (Vector.replicate (WeierstrassAffinePoint g0))
+              , tComm: Vector.generate (\_ -> ChunkedCommitment (Vector.replicate (WeierstrassAffinePoint g0)))
               }
           }
       , proofState: Step.ProofState
@@ -443,9 +442,9 @@ buildStepAdvice input =
           -- wrapVkChunks is universally quantified at buildStepAdvice;
           -- each commitment is a `Vector wrapVkChunks` of placeholders.
           VerificationKey
-            { sigma: Vector.generate (\_ -> Vector.replicate g0w)
-            , coeff: Vector.generate (\_ -> Vector.replicate g0w)
-            , index: Vector.generate (\_ -> Vector.replicate g0w)
+            { sigma: Vector.generate (\_ -> ChunkedCommitment (Vector.replicate g0w))
+            , coeff: Vector.generate (\_ -> ChunkedCommitment (Vector.replicate g0w))
+            , index: Vector.generate (\_ -> ChunkedCommitment (Vector.replicate g0w))
             }
       , kimchiPrevChallenges:
           Vector.replicate
@@ -479,9 +478,9 @@ extractWrapVKCommsAdvice vk =
     wrapPt pt = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
   in
     VerificationKey
-      { sigma: map (map wrapPt) comms.sigma
-      , coeff: map (map wrapPt) comms.coeff
-      , index: map (map wrapPt) comms.index
+      { sigma: map (over ChunkedCommitment (map wrapPt)) comms.sigma
+      , coeff: map (over ChunkedCommitment (map wrapPt)) comms.coeff
+      , index: map (over ChunkedCommitment (map wrapPt)) comms.index
       }
 
 -- | `StepVK wrapVkChunks StepField` extracted from a compiled wrap
@@ -1309,9 +1308,9 @@ buildSlotAdvice input = do
     mkPallasAffine :: AffinePoint StepField -> AffinePoint (F StepField)
     mkPallasAffine pt = { x: F pt.x, y: F pt.y }
     wrapMessages =
-      { wComm: map (map mkPallasAffine) (wCommChunked @nc wrapCommits)
-      , zComm: map mkPallasAffine (zCommChunked @nc wrapCommits)
-      , tComm: map (map mkPallasAffine) (tCommChunked @nc wrapCommits)
+      { wComm: map (over ChunkedCommitment (map mkPallasAffine)) (wCommChunked @nc wrapCommits)
+      , zComm: over ChunkedCommitment (map mkPallasAffine) (zCommChunked @nc wrapCommits)
+      , tComm: map (over ChunkedCommitment (map mkPallasAffine)) (tCommChunked @nc wrapCommits)
       }
 
     wrapPE' :: LFFI.PointEval StepField -> LFFI.PointEval (F StepField)
@@ -1366,9 +1365,9 @@ buildSlotAdvice input = do
               , sg: WeierstrassAffinePoint openingSg
               }
           , messages: WrapProofMessages
-              { wComm: map (map WeierstrassAffinePoint) wrapMessages.wComm
-              , zComm: map WeierstrassAffinePoint wrapMessages.zComm
-              , tComm: map (map WeierstrassAffinePoint) wrapMessages.tComm
+              { wComm: map (over ChunkedCommitment (map WeierstrassAffinePoint)) wrapMessages.wComm
+              , zComm: over ChunkedCommitment (map WeierstrassAffinePoint) wrapMessages.zComm
+              , tComm: map (over ChunkedCommitment (map WeierstrassAffinePoint)) wrapMessages.tComm
               }
           }
       , proofState: Step.ProofState

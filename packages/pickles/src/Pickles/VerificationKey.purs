@@ -12,6 +12,7 @@ module Pickles.VerificationKey
 
 import Prelude
 
+import Data.Newtype (over, over2)
 import Data.Reflectable (class Reflectable)
 import Data.Semigroup.Foldable (foldl1)
 import Data.Traversable (traverse)
@@ -20,6 +21,7 @@ import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.ProofFFI (vestaVerifierIndexCommitments)
+import Pickles.Types (ChunkedCommitment(..))
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
@@ -53,9 +55,9 @@ import Type.Proxy (Proxy(..))
 -- | Reference: plonk_verification_key_evals.ml
 newtype VerificationKey :: Int -> Type -> Type
 newtype VerificationKey numChunks pt = VerificationKey
-  { sigma :: Vector 7 (Vector numChunks pt)
-  , coeff :: Vector 15 (Vector numChunks pt)
-  , index :: Vector 6 (Vector numChunks pt)
+  { sigma :: Vector 7 (ChunkedCommitment numChunks pt)
+  , coeff :: Vector 15 (ChunkedCommitment numChunks pt)
+  , index :: Vector 6 (ChunkedCommitment numChunks pt)
   }
 
 instance
@@ -64,22 +66,22 @@ instance
   ) =>
   CircuitType f (VerificationKey numChunks a) (VerificationKey numChunks var) where
   sizeInFields pf _ = genericSizeInFields pf
-    (Proxy @(Tuple3 (Vector 7 (Vector numChunks a)) (Vector 15 (Vector numChunks a)) (Vector 6 (Vector numChunks a))))
+    (Proxy @(Tuple3 (Vector 7 (ChunkedCommitment numChunks a)) (Vector 15 (ChunkedCommitment numChunks a)) (Vector 6 (ChunkedCommitment numChunks a))))
   valueToFields (VerificationKey r) = genericValueToFields (tuple3 r.sigma r.coeff r.index)
   fieldsToValue fs =
     let
-      tup :: Tuple3 (Vector 7 (Vector numChunks a)) (Vector 15 (Vector numChunks a)) (Vector 6 (Vector numChunks a))
+      tup :: Tuple3 (Vector 7 (ChunkedCommitment numChunks a)) (Vector 15 (ChunkedCommitment numChunks a)) (Vector 6 (ChunkedCommitment numChunks a))
       tup = genericFieldsToValue fs
     in
       uncurry3 (\sigma coeff index -> VerificationKey { sigma, coeff, index }) tup
   varToFields (VerificationKey r) = genericVarToFields
-    @(Tuple3 (Vector 7 (Vector numChunks a)) (Vector 15 (Vector numChunks a)) (Vector 6 (Vector numChunks a)))
+    @(Tuple3 (Vector 7 (ChunkedCommitment numChunks a)) (Vector 15 (ChunkedCommitment numChunks a)) (Vector 6 (ChunkedCommitment numChunks a)))
     (tuple3 r.sigma r.coeff r.index)
   fieldsToVar fs =
     let
-      tup :: Tuple3 (Vector 7 (Vector numChunks var)) (Vector 15 (Vector numChunks var)) (Vector 6 (Vector numChunks var))
+      tup :: Tuple3 (Vector 7 (ChunkedCommitment numChunks var)) (Vector 15 (ChunkedCommitment numChunks var)) (Vector 6 (ChunkedCommitment numChunks var))
       tup = genericFieldsToVar
-        @(Tuple3 (Vector 7 (Vector numChunks a)) (Vector 15 (Vector numChunks a)) (Vector 6 (Vector numChunks a)))
+        @(Tuple3 (Vector 7 (ChunkedCommitment numChunks a)) (Vector 15 (ChunkedCommitment numChunks a)) (Vector 6 (ChunkedCommitment numChunks a)))
         fs
     in
       uncurry3 (\sigma coeff index -> VerificationKey { sigma, coeff, index }) tup
@@ -113,9 +115,9 @@ extractWrapVKComms vk =
     wrapPt pt = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
   in
     VerificationKey
-      { sigma: map (map wrapPt) comms.sigma
-      , coeff: map (map wrapPt) comms.coeff
-      , index: map (map wrapPt) comms.index
+      { sigma: map (over ChunkedCommitment (map wrapPt)) comms.sigma
+      , coeff: map (over ChunkedCommitment (map wrapPt)) comms.coeff
+      , index: map (over ChunkedCommitment (map wrapPt)) comms.index
       }
 
 -- | Plonk_verification_key_evals.Step.t
@@ -131,14 +133,14 @@ extractWrapVKComms vk =
 -- | `wrap_verifier.ml:290-313`'s `Array.map g ~f:(Double.map …)` per chunk.
 type StepVK :: Int -> Type -> Type
 type StepVK numChunks f =
-  { sigmaComm :: Vector 7 (Vector numChunks (AffinePoint f))
-  , coefficientsComm :: Vector 15 (Vector numChunks (AffinePoint f))
-  , genericComm :: Vector numChunks (AffinePoint f)
-  , psmComm :: Vector numChunks (AffinePoint f)
-  , completeAddComm :: Vector numChunks (AffinePoint f)
-  , mulComm :: Vector numChunks (AffinePoint f)
-  , emulComm :: Vector numChunks (AffinePoint f)
-  , endomulScalarComm :: Vector numChunks (AffinePoint f)
+  { sigmaComm :: Vector 7 (ChunkedCommitment numChunks (AffinePoint f))
+  , coefficientsComm :: Vector 15 (ChunkedCommitment numChunks (AffinePoint f))
+  , genericComm :: ChunkedCommitment numChunks (AffinePoint f)
+  , psmComm :: ChunkedCommitment numChunks (AffinePoint f)
+  , completeAddComm :: ChunkedCommitment numChunks (AffinePoint f)
+  , mulComm :: ChunkedCommitment numChunks (AffinePoint f)
+  , emulComm :: ChunkedCommitment numChunks (AffinePoint f)
+  , endomulScalarComm :: ChunkedCommitment numChunks (AffinePoint f)
   }
 
 -- | Wrap_verifier.choose_key
@@ -189,9 +191,9 @@ chooseKey bools keys = label "choose-key" do
   -- `::`), so straight `traverse` is correct.
   scalePtChunks
     :: FVar f
-    -> Vector numChunks (AffinePoint (FVar f))
-    -> Snarky (KimchiConstraint f) t m (Vector numChunks (AffinePoint (FVar f)))
-  scalePtChunks bf = traverse (scalePt bf)
+    -> ChunkedCommitment numChunks (AffinePoint (FVar f))
+    -> Snarky (KimchiConstraint f) t m (ChunkedCommitment numChunks (AffinePoint (FVar f)))
+  scalePtChunks bf cc = ChunkedCommitment <$> traverse (scalePt bf) (coerce cc)
 
   scaleVK :: BoolVar f -> StepVK numChunks (FVar f) -> Snarky (KimchiConstraint f) t m (StepVK numChunks (FVar f))
   scaleVK b vk = do
@@ -231,9 +233,9 @@ chooseKey bools keys = label "choose-key" do
     pure { x: x', y: y' }
 
   sealPtChunks
-    :: Vector numChunks (AffinePoint (FVar f))
-    -> Snarky (KimchiConstraint f) t m (Vector numChunks (AffinePoint (FVar f)))
-  sealPtChunks = traverse sealPt
+    :: ChunkedCommitment numChunks (AffinePoint (FVar f))
+    -> Snarky (KimchiConstraint f) t m (ChunkedCommitment numChunks (AffinePoint (FVar f)))
+  sealPtChunks cc = ChunkedCommitment <$> traverse sealPt (coerce cc)
 
   sealVK :: StepVK numChunks (FVar f) -> Snarky (KimchiConstraint f) t m (StepVK numChunks (FVar f))
   sealVK vk = do
@@ -269,10 +271,10 @@ chooseKey bools keys = label "choose-key" do
     }
 
   addPtChunks
-    :: Vector numChunks (AffinePoint (FVar f))
-    -> Vector numChunks (AffinePoint (FVar f))
-    -> Vector numChunks (AffinePoint (FVar f))
-  addPtChunks = Vector.zipWith addPt
+    :: ChunkedCommitment numChunks (AffinePoint (FVar f))
+    -> ChunkedCommitment numChunks (AffinePoint (FVar f))
+    -> ChunkedCommitment numChunks (AffinePoint (FVar f))
+  addPtChunks = over2 ChunkedCommitment (Vector.zipWith addPt)
 
   addPt :: AffinePoint (FVar f) -> AffinePoint (FVar f) -> AffinePoint (FVar f)
   addPt p1 p2 = { x: add_ p1.x p2.x, y: add_ p1.y p2.y }

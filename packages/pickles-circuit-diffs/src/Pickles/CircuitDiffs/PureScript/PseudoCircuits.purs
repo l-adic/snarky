@@ -36,6 +36,7 @@ import Pickles.Pseudo as Pseudo
 import Pickles.Sideload.VerificationKey (compileDummy)
 import Pickles.Sideload.VerificationKey as SLVK
 import Pickles.Step.FinalizeOtherProof as FOP
+import Pickles.Types (ChunkedCommitment(..))
 import Pickles.VerificationKey (chooseKey)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_, exists, label)
@@ -219,7 +220,7 @@ chooseKeyN1WrapCircuit inputs = do
     at = unsafeIdx inputs
     { x: F dummyX, y: F dummyY } = dummyVestaPt
     dummyPt = { x: const_ dummyX, y: const_ dummyY } :: AffinePoint (FVar WrapField)
-    dummyPtChunks = Vector.singleton dummyPt
+    dummyPtChunks = ChunkedCommitment (Vector.singleton dummyPt)
     dummyVK =
       { sigmaComm: Vector.replicate dummyPtChunks :: Vector 7 _
       , coefficientsComm: Vector.replicate dummyPtChunks :: Vector 15 _

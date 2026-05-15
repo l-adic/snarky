@@ -38,6 +38,7 @@ import Data.Fin (getFinite)
 import Data.Foldable (foldM)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Maybe (fromJust)
+import Data.Newtype (over, unwrap)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Tuple.Nested (type (/\), (/\))
@@ -60,7 +61,7 @@ import Pickles.Step.Slots (class StepSlotsCarrier, traverseStepSlotsAWithVk)
 import Pickles.Step.Types (BranchData(..), FopProofState(..), PerProofWitness(..), ProofState(..), UnfinalizedFieldCount, WrapProof(..))
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Step.VkSource (SlotVkBlueprintCompiled(..), SlotVkBlueprintSideLoaded, SlotVkSource(..))
-import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (VerificationKey(..))
 import Prim.Boolean (False, True)
 import Prim.Int (class Add, class Compare, class Mul)
@@ -412,8 +413,8 @@ mpvFrontPad mkDummy real =
 -------------------------------------------------------------------------------
 
 type AllocatedPerProofWitness n numChunks tCommLen =
-  { wComm :: Vector 15 (Vector numChunks (WeierstrassAffinePoint PallasG (FVar StepField)))
-  , zComm :: Vector numChunks (WeierstrassAffinePoint PallasG (FVar StepField))
+  { wComm :: Vector 15 (ChunkedCommitment numChunks (WeierstrassAffinePoint PallasG (FVar StepField)))
+  , zComm :: ChunkedCommitment numChunks (WeierstrassAffinePoint PallasG (FVar StepField))
   -- Flat tComm: tCommLen = 7 * numChunks pieces of the quotient poly.
   , tComm :: Vector tCommLen (WeierstrassAffinePoint PallasG (FVar StepField))
   , lr :: Vector 15 { l :: WeierstrassAffinePoint PallasG (FVar StepField), r :: WeierstrassAffinePoint PallasG (FVar StepField) }
@@ -495,12 +496,15 @@ allocatePerProofWitness (PerProofWitness ppw) = do
       , sigmaEvals: map unwrapPointEval evalsRec.sigmaEvals
       , indexEvals: map unwrapPointEval evalsRec.indexEvals
       }
+  let
+    tCommFlat :: Vector tCommLen (WeierstrassAffinePoint PallasG (FVar StepField))
+    tCommFlat = Vector.concat (coerce msgRec.tComm :: Vector 7 (Vector numChunks (WeierstrassAffinePoint PallasG (FVar StepField))))
   pure
-    -- wComm/zComm carry chunks through; tComm flattens Vector 7 (Vector 1 pt)
-    -- to flat Vector 7 pt via Vector.concat (= 7 * numChunks pieces).
+    -- wComm/zComm carry chunks through; tComm flattens Vector 7 (ChunkedCommitment nc pt)
+    -- to flat Vector tCommLen pt via Vector.concat (= 7 * numChunks pieces).
     { wComm: msgRec.wComm
     , zComm: msgRec.zComm
-    , tComm: Vector.concat msgRec.tComm
+    , tComm: tCommFlat
     , lr: openRec.lr
     , z1: openRec.z1
     , z2: openRec.z2
@@ -644,10 +648,10 @@ buildVerifyOneInput
   -> BoolVar StepField
   -> UnfinalizedProof
   -> FVar StepField
-  -> { sigma :: Vector 6 (Vector numChunks (AffinePoint (FVar StepField)))
-     , sigmaLast :: Vector numChunks (AffinePoint (FVar StepField))
-     , coeff :: Vector 15 (Vector numChunks (AffinePoint (FVar StepField)))
-     , index :: Vector 6 (Vector numChunks (AffinePoint (FVar StepField)))
+  -> { sigma :: Vector 6 (ChunkedCommitment numChunks (AffinePoint (FVar StepField)))
+     , sigmaLast :: ChunkedCommitment numChunks (AffinePoint (FVar StepField))
+     , coeff :: Vector 15 (ChunkedCommitment numChunks (AffinePoint (FVar StepField)))
+     , index :: Vector 6 (ChunkedCommitment numChunks (AffinePoint (FVar StepField)))
      }
   -> AffinePoint (FVar StepField) -- dummySg for padding
   -> VerifyOneInput n numChunks tCommLen WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
@@ -669,8 +673,8 @@ buildVerifyOneInput pw appStateFields mustVerify unfinalized msgWrap vkComms dum
     proofMask = Vector.drop @pad fullMasks
   in
     { appStateFields
-    , wComm: map (map unwrapPt) pw.wComm
-    , zComm: map unwrapPt pw.zComm
+    , wComm: map (over ChunkedCommitment (map unwrapPt)) pw.wComm
+    , zComm: over ChunkedCommitment (map unwrapPt) pw.zComm
     , tComm: map unwrapPt pw.tComm
     , lr: map (\r -> { l: unwrapPt r.l, r: unwrapPt r.r }) pw.lr
     , z1: pw.z1
@@ -981,9 +985,9 @@ stepMain
        . VerificationKey nc (WeierstrassAffinePoint PallasG (F StepField))
       -> VerificationKey nc (WeierstrassAffinePoint PallasG (FVar StepField))
     liftConstVk (VerificationKey r) = VerificationKey
-      { sigma: map (map liftWaPt) r.sigma
-      , coeff: map (map liftWaPt) r.coeff
-      , index: map (map liftWaPt) r.index
+      { sigma: map (over ChunkedCommitment (map liftWaPt)) r.sigma
+      , coeff: map (over ChunkedCommitment (map liftWaPt)) r.coeff
+      , index: map (over ChunkedCommitment (map liftWaPt)) r.index
       }
       where
       liftWaPt :: WeierstrassAffinePoint PallasG (F StepField) -> WeierstrassAffinePoint PallasG (FVar StepField)
@@ -1129,12 +1133,12 @@ stepMain
               }
 
             -- Map over both outer Vector 7/15/6 and the inner chunks
-            -- Vector slotNc, since each VK commitment is chunked.
+            -- ChunkedCommitment slotNc, since each VK commitment is chunked.
             slotVkComms =
-              { sigma: map (map unwrapPt) slotVk.sigma
-              , sigmaLast: map unwrapPt slotVk.sigmaLast
-              , coeff: map (map unwrapPt) slotVk.coeff
-              , index: map (map unwrapPt) slotVk.index
+              { sigma: map (over ChunkedCommitment (map unwrapPt)) slotVk.sigma
+              , sigmaLast: over ChunkedCommitment (map unwrapPt) slotVk.sigmaLast
+              , coeff: map (over ChunkedCommitment (map unwrapPt)) slotVk.coeff
+              , index: map (over ChunkedCommitment (map unwrapPt)) slotVk.index
               }
 
             prevInputVar = prevPublicInputs !! i
@@ -1172,9 +1176,9 @@ stepMain
         let { x, y } = unwrapPt pt
         s1 <- Sponge.absorb x s
         Sponge.absorb y s1
-      absorbChunks = foldM absorbPt
-      traceChunks lbl chunks =
-        case Vector.toUnfoldable chunks of
+      absorbChunks s = foldM absorbPt s <<< unwrap
+      traceChunks lbl cc =
+        case Vector.toUnfoldable (unwrap cc) of
           [ pt ] -> do
             let { x, y } = unwrapPt pt
             ivpTrace (lbl <> ".x") x

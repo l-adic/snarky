@@ -16,6 +16,7 @@ import Data.Array as Array
 import Data.Fin (getFinite)
 import Data.Foldable (foldM, for_)
 import Data.FoldableWithIndex (forWithIndex_)
+import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
@@ -24,6 +25,7 @@ import Effect (Effect)
 import Pickles.OptSponge as OptSponge
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Trace as Trace
+import Pickles.Types (ChunkedCommitment)
 import Pickles.VerificationKey (StepVK)
 import Poseidon (class PoseidonField, hash)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, label)
@@ -43,10 +45,10 @@ hashMessagesForNextStepProofOpt
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
   => { vkComms ::
-         { sigma :: Vector 6 (Vector wrapVkChunks (AffinePoint (FVar f)))
-         , sigmaLast :: Vector wrapVkChunks (AffinePoint (FVar f))
-         , coeff :: Vector 15 (Vector wrapVkChunks (AffinePoint (FVar f)))
-         , index :: Vector 6 (Vector wrapVkChunks (AffinePoint (FVar f)))
+         { sigma :: Vector 6 (ChunkedCommitment wrapVkChunks (AffinePoint (FVar f)))
+         , sigmaLast :: ChunkedCommitment wrapVkChunks (AffinePoint (FVar f))
+         , coeff :: Vector 15 (ChunkedCommitment wrapVkChunks (AffinePoint (FVar f)))
+         , index :: Vector 6 (ChunkedCommitment wrapVkChunks (AffinePoint (FVar f)))
          }
      , appStateFields :: Array (FVar f)
      , proofs ::
@@ -62,7 +64,7 @@ hashMessagesForNextStepProofOpt { vkComms, appStateFields, proofs } = do
     absorbPt s { x, y } = do
       s1 <- Sponge.absorb x s
       Sponge.absorb y s1
-    absorbChunks = foldM absorbPt
+    absorbChunks s = foldM absorbPt s <<< unwrap
 
   -- 1. sponge_after_index: absorb all VK fields, one chunk at a time
   spongeAfterIndex <- label "sponge_after_index" do
@@ -141,8 +143,8 @@ hashMessagesForNextStepProofPure { stepVk, appState, proofs } =
     ptFields pt = [ pt.x, pt.y ]
 
     -- Flatten chunks: each commitment contributes `2 * wrapVkChunks` fields.
-    chunkedFields :: Vector wrapVkChunks (AffinePoint f) -> Array f
-    chunkedFields = Array.concatMap ptFields <<< Vector.toUnfoldable
+    chunkedFields :: ChunkedCommitment wrapVkChunks (AffinePoint f) -> Array f
+    chunkedFields = Array.concatMap ptFields <<< Vector.toUnfoldable <<< unwrap
 
     vkFields =
       Array.concatMap chunkedFields (Array.fromFoldable stepVk.sigmaComm)
@@ -208,9 +210,9 @@ hashMessagesForNextStepProofPureTraced inp@{ stepVk, appState, proofs } = do
   -- `label.i.y` per chunk i. This collapses to the legacy unchunked labels
   -- at wrapVkChunks=1 (no behavioural change for non-chunked tests).
   let
-    traceChunks :: String -> Vector wrapVkChunks (AffinePoint f) -> Effect Unit
-    traceChunks lbl chunks =
-      case Vector.toUnfoldable chunks of
+    traceChunks :: String -> ChunkedCommitment wrapVkChunks (AffinePoint f) -> Effect Unit
+    traceChunks lbl cc =
+      case Vector.toUnfoldable (unwrap cc) of
         [ pt ] -> do
           Trace.field (lbl <> ".x") pt.x
           Trace.field (lbl <> ".y") pt.y

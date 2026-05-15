@@ -23,6 +23,7 @@ import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Maybe (Maybe(..))
+import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
@@ -37,6 +38,7 @@ import Pickles.ShiftOps (IpaScalarOps)
 import Pickles.Sponge (SpongeM, initialSpongeCircuit, labelM, liftSnarky)
 import Pickles.Sponge as Sponge
 import Pickles.Trace as Trace
+import Pickles.Types (ChunkedCommitment(..))
 import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, WrapDeferredValues, toPlonkMinimal)
 -- IvpBaseline (= 45) is the numChunks=1 base count; here we derive the
 -- chunked count from `numChunks` via `Mul`/`Add` constraints.
@@ -96,11 +98,11 @@ type IncrementallyVerifyProofInput publicInput sgOldN numChunks tCommLen d fv sf
   -- All commitments share the verified proof's `numChunks` dimension
   -- (Dim 1 — the chunks count of the step CS this wrap is verifying;
   -- the step VK commitments must agree with the step proof's chunks).
-  , sigmaCommLast :: Vector numChunks (AffinePoint fv)
+  , sigmaCommLast :: ChunkedCommitment numChunks (AffinePoint fv)
   , columnComms ::
-      { index :: Vector 6 (Vector numChunks (AffinePoint fv))
-      , coeff :: Vector 15 (Vector numChunks (AffinePoint fv))
-      , sigma :: Vector 6 (Vector numChunks (AffinePoint fv))
+      { index :: Vector 6 (ChunkedCommitment numChunks (AffinePoint fv))
+      , coeff :: Vector 15 (ChunkedCommitment numChunks (AffinePoint fv))
+      , sigma :: Vector 6 (ChunkedCommitment numChunks (AffinePoint fv))
       }
   -- Protocol messages and opening proof.
   -- wComm/zComm: per-polynomial chunks (15 and 1 polys, each numChunks chunks).
@@ -109,8 +111,8 @@ type IncrementallyVerifyProofInput publicInput sgOldN numChunks tCommLen d fv sf
   -- then each of those 7 sub-polys further into numChunks chunks of
   -- max_poly_size). Reference: `kimchi/src/verifier_index.rs` and
   -- OCaml `common.ml:ft_comm` (one flat Horner over zeta_to_srs_len).
-  , wComm :: Vector 15 (Vector numChunks (AffinePoint fv))
-  , zComm :: Vector numChunks (AffinePoint fv)
+  , wComm :: Vector 15 (ChunkedCommitment numChunks (AffinePoint fv))
+  , zComm :: ChunkedCommitment numChunks (AffinePoint fv)
   , tComm :: Vector tCommLen (AffinePoint fv)
   , opening ::
       { delta :: AffinePoint fv
@@ -256,7 +258,7 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
           absorbPt { x, y } = do
             Sponge.absorb x
             Sponge.absorb y
-          absorbChunks chunks = for_ chunks absorbPt
+          absorbChunks cc = for_ (unwrap cc) absorbPt
         -- sigma_comm: sigma (6 chunked) + sigmaCommLast (1 chunked) = 7
         for_ input.columnComms.sigma absorbChunks
         absorbChunks input.sigmaCommLast
@@ -298,14 +300,14 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
           let i = getFinite fi
           ivpTrace ("ivp.trace.wrap.sg_old." <> show i <> ".x") pt.x
           ivpTrace ("ivp.trace.wrap.sg_old." <> show i <> ".y") pt.y
-        forWithIndex_ input.wComm \fi chunks ->
-          forWithIndex_ chunks \fj pt -> do
+        forWithIndex_ input.wComm \fi cc ->
+          forWithIndex_ (unwrap cc) \fj pt -> do
             let i = getFinite fi
             let j = getFinite fj
             ivpTrace ("ivp.trace.wrap.w_comm." <> show i <> "." <> show j <> ".x") pt.x
             ivpTrace ("ivp.trace.wrap.w_comm." <> show i <> "." <> show j <> ".y") pt.y
       let
-        spongeInput = { indexDigest, sgOld: input.sgOld, publicComm: xHat, wComm: input.wComm, zComm: input.zComm, tComm: input.tComm }
+        spongeInput = { indexDigest, sgOld: input.sgOld, publicComm: ChunkedCommitment xHat, wComm: input.wComm, zComm: input.zComm, tComm: input.tComm }
         mask = map (coerce :: FVar f -> Bool (FVar f)) input.sgOldMask
       result <- labelM "ivp_opt_sponge" $ spongeTranscriptOptCircuit endoParams mask spongeInput
       liftSnarky $ ivpTrace "ivp.trace.wrap.beta_squeezed" (SizedF.toField result.beta)
@@ -340,24 +342,24 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
       -- Continue sponge transcript: absorb x_hat (per chunk), w_comm,
       -- squeeze beta/gamma, etc. step_verifier.ml:551-568.
       for_ xHat Sponge.absorbPoint
-      liftSnarky $ forWithIndex_ input.wComm \fi chunks ->
-        forWithIndex_ chunks \fj pt -> do
+      liftSnarky $ forWithIndex_ input.wComm \fi cc ->
+        forWithIndex_ (unwrap cc) \fj pt -> do
           let i = getFinite fi
           let j = getFinite fj
           ivpTrace ("ivp.trace.w_comm." <> show i <> "." <> show j <> ".x") pt.x
           ivpTrace ("ivp.trace.w_comm." <> show i <> "." <> show j <> ".y") pt.y
-      for_ input.wComm \chunks -> for_ chunks Sponge.absorbPoint
+      for_ input.wComm \cc -> for_ (unwrap cc) Sponge.absorbPoint
       -- beta/gamma: squeeze_challenge (constrain_low_bits:true)
       beta <- Sponge.squeezeScalarChallenge endoParams
       liftSnarky $ ivpTrace "ivp.trace.beta_squeezed" (SizedF.toField beta)
       gamma <- Sponge.squeezeScalarChallenge endoParams
       liftSnarky $ ivpTrace "ivp.trace.gamma_squeezed" (SizedF.toField gamma)
       -- z_comm: receive (per-chunk)
-      liftSnarky $ forWithIndex_ input.zComm \fj pt -> do
+      liftSnarky $ forWithIndex_ (unwrap input.zComm) \fj pt -> do
         let j = getFinite fj
         ivpTrace ("ivp.trace.zcomm." <> show j <> ".x") pt.x
         ivpTrace ("ivp.trace.zcomm." <> show j <> ".y") pt.y
-      for_ input.zComm Sponge.absorbPoint
+      for_ (unwrap input.zComm) Sponge.absorbPoint
       -- alpha: squeeze_scalar (constrain_low_bits:false)
       alphaChal <- Sponge.squeezeScalar endoParams
       liftSnarky $ ivpTrace "ivp.trace.alpha_squeezed" (SizedF.toField alphaChal)
@@ -388,7 +390,7 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
   -- 4. Compute ft_comm
   ftCommResult <- liftSnarky $ label "ivp_ftcomm" $ ftComm
     scalarOps
-    { sigmaLast: input.sigmaCommLast
+    { sigmaLast: unwrap input.sigmaCommLast
     , tComm: input.tComm
     , perm: input.deferredValues.plonk.perm
     , zetaToSrsLength: input.deferredValues.plonk.zetaToSrsLength
@@ -409,10 +411,10 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
   -- sigmaCommLast is NOT in this list (per OCaml — it's only in the
   -- index-digest sponge absorb).
   let
-    wCommFlat = Vector.concat input.wComm
-    indexFlat = Vector.concat input.columnComms.index
-    coeffFlat = Vector.concat input.columnComms.coeff
-    sigmaFlat = Vector.concat input.columnComms.sigma
+    wCommFlat = Vector.concat (coerce input.wComm :: Vector 15 (Vector numChunks (AffinePoint (FVar f))))
+    indexFlat = Vector.concat (coerce input.columnComms.index :: Vector 6 (Vector numChunks (AffinePoint (FVar f))))
+    coeffFlat = Vector.concat (coerce input.columnComms.coeff :: Vector 15 (Vector numChunks (AffinePoint (FVar f))))
+    sigmaFlat = Vector.concat (coerce input.columnComms.sigma :: Vector 6 (Vector numChunks (AffinePoint (FVar f))))
     allBases =
       input.sgOld `Vector.append`
         -- xHat is now chunked (Vector numChunks); flatten as the
@@ -421,7 +423,7 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
         -- OCaml's `Array.concat [...; x_hat; [| ft_comm |]; z_comm; ...]`.
         ( xHat
             `Vector.append` (ftCommResult :< Vector.nil)
-            `Vector.append` input.zComm
+            `Vector.append` unwrap input.zComm
             `Vector.append` indexFlat
             `Vector.append` wCommFlat
             `Vector.append` coeffFlat

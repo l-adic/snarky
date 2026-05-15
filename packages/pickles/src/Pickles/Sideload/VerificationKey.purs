@@ -26,6 +26,7 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Field (StepField)
 import Pickles.ProofsVerified (ProofsVerified(..), ProofsVerifiedCount, proofsVerifiedToBoolVec)
+import Pickles.Types (ChunkedCommitment(..))
 import Pickles.VerificationKey as VK
 import Snarky.Circuit.DSL (BoolVar, F(..), FVar, assertExactlyOne_, label)
 import Snarky.Circuit.DSL.Monad (class CheckedType, check)
@@ -143,9 +144,9 @@ compileDummy = mkVerificationKey
   , actualWrapDomainSize: N2
   , wrapIndex:
       VK.VerificationKey
-        { sigma: Vector.replicate (Vector.replicate g)
-        , coeff: Vector.replicate (Vector.replicate g)
-        , index: Vector.replicate (Vector.replicate g)
+        { sigma: Vector.replicate (ChunkedCommitment (Vector.replicate g))
+        , coeff: Vector.replicate (ChunkedCommitment (Vector.replicate g))
+        , index: Vector.replicate (ChunkedCommitment (Vector.replicate g))
         }
   }
   where

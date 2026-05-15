@@ -31,6 +31,7 @@ import Prelude
 
 import Data.Fin (unsafeFinite)
 import Data.Foldable (for_)
+import Data.Newtype (unwrap)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -39,6 +40,7 @@ import Pickles.OptSponge as OptSponge
 import Pickles.Sponge (SpongeM, getSponge, putSponge)
 import Pickles.Sponge as Sponge
 import Pickles.Trace as Trace
+import Pickles.Types (ChunkedCommitment)
 import Poseidon (class PoseidonField)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, SizedF, exists, readCVar, true_)
@@ -63,9 +65,9 @@ type FqSpongeInput sgOldN numChunks tCommLen f =
   -- | separately, matching OCaml `Array.iter x_hat ~f:(absorb sponge PC)`
   -- | (wrap_verifier.ml:1042). Reuses `numChunks` from w_comm/z_comm
   -- | since both derive from the same step-domain-over-wrap-SRS ratio.
-  , publicComm :: Vector numChunks (AffinePoint f)
-  , wComm :: Vector 15 (Vector numChunks (AffinePoint f))
-  , zComm :: Vector numChunks (AffinePoint f)
+  , publicComm :: ChunkedCommitment numChunks (AffinePoint f)
+  , wComm :: Vector 15 (ChunkedCommitment numChunks (AffinePoint f))
+  , zComm :: ChunkedCommitment numChunks (AffinePoint f)
   , tComm :: Vector tCommLen (AffinePoint f)
   }
 
@@ -101,9 +103,9 @@ spongeTranscriptOptCircuit params sgOldMask input = do
         OptSponge.optAbsorb (Tuple keep sg.y)
       -- 3. Absorb public_comm chunks. OCaml: `Array.iter x_hat ~f:(absorb
       -- sponge PC)` (wrap_verifier.ml:1042). For nc=1 this is one absorb.
-      for_ input.publicComm OptSponge.optAbsorbPoint
+      for_ (unwrap input.publicComm) OptSponge.optAbsorbPoint
       -- 4. Absorb w_comm points (per-polynomial, per-chunk)
-      for_ input.wComm \chunks -> for_ chunks OptSponge.optAbsorbPoint
+      for_ input.wComm \chunks -> for_ (unwrap chunks) OptSponge.optAbsorbPoint
       -- DIAG iter 2aa: dump circuit sponge state before beta squeeze for
       -- direct comparison to kimchi-native ground truth. First divergence
       -- point localizes whether mismatch is in absorb data or sponge math.
@@ -123,7 +125,7 @@ spongeTranscriptOptCircuit params sgOldMask input = do
       -- 6. Squeeze gamma
       gamma <- OptSponge.optChallenge params.endo
       -- 7. Absorb z_comm chunks
-      for_ input.zComm OptSponge.optAbsorbPoint
+      for_ (unwrap input.zComm) OptSponge.optAbsorbPoint
       -- 8. Squeeze alpha (scalar_challenge = lowest_128_bits ~constrain_low_bits:false)
       alphaChal <- OptSponge.optScalarChallenge params.endo
       -- 9. Absorb t_comm

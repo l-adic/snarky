@@ -41,7 +41,7 @@ import Data.Either (Either(..))
 import Data.Fin (unsafeFinite)
 import Data.Map (Map)
 import Data.Maybe (Maybe(..))
-import Data.Newtype (class Newtype, un)
+import Data.Newtype (class Newtype, over, un)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.String (Pattern(..), Replacement(..))
 import Data.String as String
@@ -58,7 +58,7 @@ import Node.Process as Process
 import Pickles.Field (StepField, WrapField)
 import Pickles.ProofFFI (Proof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLrVec, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentChunksAt, pallasVerifierIndexCommitments, tCommChunked, vestaCreateProofWithPrev, wCommChunked, zCommChunked)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
-import Pickles.Types (PaddedLength, PerProofUnfinalized, StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized, StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK)
 import Pickles.Wrap.Advice (class WrapWitnessM)
 import Pickles.Wrap.Main (WrapMainConfig, wrapMain)
@@ -297,9 +297,9 @@ buildWrapAdvice input =
     commits = pallasProofCommitments input.stepProof
 
     messages = WrapProofMessages
-      { wComm: map (map mkVestaPt) (wCommChunked @numChunks commits)
-      , zComm: map mkVestaPt (zCommChunked @numChunks commits)
-      , tComm: map (map mkVestaPt) (tCommChunked @numChunks commits)
+      { wComm: map (over ChunkedCommitment (map mkVestaPt)) (wCommChunked @numChunks commits)
+      , zComm: over ChunkedCommitment (map mkVestaPt) (zCommChunked @numChunks commits)
+      , tComm: map (over ChunkedCommitment (map mkVestaPt)) (tCommChunked @numChunks commits)
       }
 
     -- ===== Req.Openings_proof. =====
@@ -700,15 +700,16 @@ stepVkForCircuit vk =
   let
     cp :: AffinePoint WrapField -> AffinePoint (FVar WrapField)
     cp pt = { x: const_ pt.x, y: const_ pt.y }
+    cpChunk = over ChunkedCommitment (map cp)
   in
-    { sigmaComm: map (map cp) vk.sigmaComm
-    , coefficientsComm: map (map cp) vk.coefficientsComm
-    , genericComm: map cp vk.genericComm
-    , psmComm: map cp vk.psmComm
-    , completeAddComm: map cp vk.completeAddComm
-    , mulComm: map cp vk.mulComm
-    , emulComm: map cp vk.emulComm
-    , endomulScalarComm: map cp vk.endomulScalarComm
+    { sigmaComm: map cpChunk vk.sigmaComm
+    , coefficientsComm: map cpChunk vk.coefficientsComm
+    , genericComm: cpChunk vk.genericComm
+    , psmComm: cpChunk vk.psmComm
+    , completeAddComm: cpChunk vk.completeAddComm
+    , mulComm: cpChunk vk.mulComm
+    , emulComm: cpChunk vk.emulComm
+    , endomulScalarComm: cpChunk vk.endomulScalarComm
     }
 
 -- | Multi-branch wrap main config. Takes per-branch data

@@ -14,7 +14,7 @@ import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt, un
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams, parseIvpWrapInput)
 import Pickles.Field (WrapField)
 import Pickles.PublicInputCommit (CorrectionMode(..))
-import Pickles.Types (WrapIPARounds)
+import Pickles.Types (ChunkedCommitment(..), WrapIPARounds)
 import Pickles.Wrap.Verify (wrapVerify)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_)
@@ -62,15 +62,15 @@ wrapVerifyCircuit { lagrangeAt, blindingH } inputs = do
       { publicInput: ivpInput.publicInput
       , sgOld: readPt 194 :< Vector.nil
       , sgOldMask: (const_ one) :< Vector.nil
-      , sigmaCommLast: Vector.singleton constDummyPt
+      , sigmaCommLast: ChunkedCommitment (Vector.singleton constDummyPt)
       , columnComms:
-          { index: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 6 _
-          , coeff: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 15 _
-          , sigma: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 6 _
+          { index: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 6 _
+          , coeff: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 15 _
+          , sigma: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 6 _
           }
       , deferredValues: ivpInput.deferredValues
-      , wComm: map Vector.singleton ivpInput.wComm
-      , zComm: Vector.singleton ivpInput.zComm
+      , wComm: map (ChunkedCommitment <<< Vector.singleton) ivpInput.wComm
+      , zComm: ChunkedCommitment (Vector.singleton ivpInput.zComm)
       , tComm: ivpInput.tComm
       , opening: ivpInput.opening
       }

@@ -35,7 +35,7 @@ import Prelude
 
 import Data.Fin (unsafeFinite)
 import Data.Foldable (for_)
-import Data.Newtype (unwrap)
+import Data.Newtype (over, unwrap)
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector, (!!))
 import Data.Vector as Vector
@@ -50,7 +50,7 @@ import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatch,
 import Pickles.Sponge (absorb, evalPureSpongeM, initialSponge, squeeze, squeezeScalarChallengePure)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Step.Types as Step
-import Pickles.Types (StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (ChunkedCommitment(..), StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK)
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
@@ -773,9 +773,9 @@ expandProof input =
     messages
       :: WrapProofMessages numChunks (WeierstrassAffinePoint PallasG (F StepField))
     messages = WrapProofMessages
-      { wComm: map (map mkPallasPt) (wCommChunked @numChunks wrapCommits)
-      , zComm: map mkPallasPt (zCommChunked @numChunks wrapCommits)
-      , tComm: map (map mkPallasPt) (tCommChunked @numChunks wrapCommits)
+      { wComm: map (over ChunkedCommitment (map mkPallasPt)) (wCommChunked @numChunks wrapCommits)
+      , zComm: over ChunkedCommitment (map mkPallasPt) (zCommChunked @numChunks wrapCommits)
+      , tComm: map (over ChunkedCommitment (map mkPallasPt)) (tCommChunked @numChunks wrapCommits)
       }
 
     -- Wrap proof's opening proof from the kimchi form. The `sg`

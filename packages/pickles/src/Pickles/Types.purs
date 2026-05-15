@@ -20,16 +20,19 @@ module Pickles.Types
   , WrapProofOpening(..)
   , StepAllEvals(..)
   , PerProofUnfinalized(..)
+  , ChunkedCommitment(..)
   ) where
 
+import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (Tuple10, Tuple2, Tuple3, Tuple5, Tuple7, tuple10, tuple2, tuple3, tuple5, tuple7, uncurry10, uncurry2, uncurry3, uncurry5, uncurry7)
 import Data.Vector (Vector)
 import Pickles.Verify.Types (UnfinalizedProof, WrapDeferredValues)
+import Prelude ((<<<))
 import Snarky.Circuit.DSL (F, FVar, UnChecked)
 import Snarky.Circuit.DSL.Monad (class CheckedType, check)
 import Snarky.Circuit.DSL.SizedF (SizedF)
-import Snarky.Circuit.Types (class CircuitType, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Snarky.Circuit.Types (class CircuitType, fieldsToValue, fieldsToVar, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, sizeInFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class FieldSizeInBits)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -245,6 +248,31 @@ instance
   CheckedType f c (StatementIO inputVar outputVar) where
   check (StatementIO r) = check (tuple2 r.input r.output)
 
+-- | Single polynomial-commitment as a vector of `nc` chunks. Wraps
+-- | `Vector nc pt` so that the two axes — outer "which commitment" vs
+-- | inner "which chunk of one commitment" — stay distinguishable at use
+-- | sites. The runtime representation is identical to the underlying
+-- | Vector; consumers use `Data.Newtype` combinators (`over`, `under`,
+-- | `over2`, `un`, `coerce`) instead of manual wrap/unwrap chains.
+newtype ChunkedCommitment :: Int -> Type -> Type
+newtype ChunkedCommitment nc pt = ChunkedCommitment (Vector nc pt)
+
+derive instance Newtype (ChunkedCommitment nc pt) _
+
+instance
+  ( CircuitType f a var
+  , Reflectable nc Int
+  ) =>
+  CircuitType f (ChunkedCommitment nc a) (ChunkedCommitment nc var) where
+  sizeInFields pf _ = sizeInFields pf (Proxy @(Vector nc a))
+  valueToFields = valueToFields @f @(Vector nc a) <<< unwrap
+  fieldsToValue = wrap <<< fieldsToValue @f @(Vector nc a)
+  varToFields = varToFields @f @(Vector nc a) <<< unwrap
+  fieldsToVar = wrap <<< fieldsToVar @f @(Vector nc a)
+
+instance CheckedType f c (Vector nc var) => CheckedType f c (ChunkedCommitment nc var) where
+  check = check <<< unwrap
+
 -- | Wrap proof messages: protocol commitments allocated in the per-proof witness.
 -- |
 -- | OCaml hlist order: w_comm (15), z_comm (1), t_comm (7).
@@ -260,9 +288,9 @@ instance
 -- |     CircuitType flattens to a single 7n-long vector.
 newtype WrapProofMessages :: Int -> Type -> Type
 newtype WrapProofMessages n pt = WrapProofMessages
-  { wComm :: Vector 15 (Vector n pt)
-  , zComm :: Vector n pt
-  , tComm :: Vector 7 (Vector n pt)
+  { wComm :: Vector 15 (ChunkedCommitment n pt)
+  , zComm :: ChunkedCommitment n pt
+  , tComm :: Vector 7 (ChunkedCommitment n pt)
   }
 
 instance
@@ -271,20 +299,20 @@ instance
   ) =>
   CircuitType f (WrapProofMessages n a) (WrapProofMessages n var) where
   sizeInFields pf _ =
-    genericSizeInFields pf (Proxy @(Tuple3 (Vector 15 (Vector n a)) (Vector n a) (Vector 7 (Vector n a))))
+    genericSizeInFields pf (Proxy @(Tuple3 (Vector 15 (ChunkedCommitment n a)) (ChunkedCommitment n a) (Vector 7 (ChunkedCommitment n a))))
   valueToFields (WrapProofMessages r) = genericValueToFields (tuple3 r.wComm r.zComm r.tComm)
   fieldsToValue fs =
     let
-      tup :: Tuple3 (Vector 15 (Vector n a)) (Vector n a) (Vector 7 (Vector n a))
+      tup :: Tuple3 (Vector 15 (ChunkedCommitment n a)) (ChunkedCommitment n a) (Vector 7 (ChunkedCommitment n a))
       tup = genericFieldsToValue fs
     in
       uncurry3 (\wComm zComm tComm -> WrapProofMessages { wComm, zComm, tComm }) tup
   varToFields (WrapProofMessages r) =
-    genericVarToFields @(Tuple3 (Vector 15 (Vector n a)) (Vector n a) (Vector 7 (Vector n a))) (tuple3 r.wComm r.zComm r.tComm)
+    genericVarToFields @(Tuple3 (Vector 15 (ChunkedCommitment n a)) (ChunkedCommitment n a) (Vector 7 (ChunkedCommitment n a))) (tuple3 r.wComm r.zComm r.tComm)
   fieldsToVar fs =
     let
-      tup :: Tuple3 (Vector 15 (Vector n var)) (Vector n var) (Vector 7 (Vector n var))
-      tup = genericFieldsToVar @(Tuple3 (Vector 15 (Vector n a)) (Vector n a) (Vector 7 (Vector n a))) fs
+      tup :: Tuple3 (Vector 15 (ChunkedCommitment n var)) (ChunkedCommitment n var) (Vector 7 (ChunkedCommitment n var))
+      tup = genericFieldsToVar @(Tuple3 (Vector 15 (ChunkedCommitment n a)) (ChunkedCommitment n a) (Vector 7 (ChunkedCommitment n a))) fs
     in
       uncurry3 (\wComm zComm tComm -> WrapProofMessages { wComm, zComm, tComm }) tup
 

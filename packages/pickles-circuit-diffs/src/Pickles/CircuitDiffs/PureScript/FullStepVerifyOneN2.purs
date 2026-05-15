@@ -29,6 +29,7 @@ import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Step.VerifyOne (verifyOne)
+import Pickles.Types (ChunkedCommitment(..))
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, const_)
@@ -77,8 +78,8 @@ fullStepVerifyOneN2Circuit { lagrangeAt, blindingH } inputs = do
 
     input =
       { appStateFields: [ at 0 ]
-      , wComm: (Vector.generate \j -> Vector.singleton (readPt (o + 2 * getFinite j))) :: Vector 15 (Vector 1 _)
-      , zComm: Vector.singleton (readPt (o + 30))
+      , wComm: (Vector.generate \j -> ChunkedCommitment (Vector.singleton (readPt (o + 2 * getFinite j)))) :: Vector 15 (ChunkedCommitment 1 _)
+      , zComm: ChunkedCommitment (Vector.singleton (readPt (o + 30)))
       , tComm: (Vector.generate \j -> readPt (o + 32 + 2 * getFinite j)) :: Vector 7 _
       , lr:
           ( Vector.generate \j ->
@@ -149,10 +150,10 @@ fullStepVerifyOneN2Circuit { lagrangeAt, blindingH } inputs = do
       -- N2: trim_front [mask0, mask1] with lte N2 N2 = identity (both mask entries)
       , proofMask: (coerce mask0) :< (coerce mask1) :< Vector.nil
       , vkComms:
-          { sigma: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 6 _
-          , sigmaLast: Vector.singleton constDummyPt
-          , coeff: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 15 _
-          , index: (Vector.replicate (Vector.singleton constDummyPt)) :: Vector 6 _
+          { sigma: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 6 _
+          , sigmaLast: ChunkedCommitment (Vector.singleton constDummyPt)
+          , coeff: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 15 _
+          , index: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 6 _
           }
       -- N2: sgOld = both sg points from input (extend_front_exn is identity for N2)
       , sgOld: readPt prevSgBase :< readPt (prevSgBase + 2) :< Vector.nil
