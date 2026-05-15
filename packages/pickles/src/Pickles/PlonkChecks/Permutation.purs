@@ -114,6 +114,7 @@ permContribution input =
     w6 = input.w !! unsafeFinite @7 6
     term1Init = (w6 + input.gamma) * input.z.omegaTimesZeta * alphaPow21 * input.zkPolynomial
     wSigma = zipWith Tuple (Vector.take @6 input.w) input.sigma
+
     -- Trace per-iteration accumulator. Final value = same as `term1`
     -- computed via `foldl` below; we use the array version so we can
     -- capture intermediates.
@@ -128,6 +129,7 @@ permContribution input =
 
     term2Init = alphaPow21 * input.zkPolynomial * input.z.zeta
     wShifts = zipWith Tuple input.w input.shifts
+
     term2Stages :: Array f
     term2Stages = Array.scanl
       (\acc (Tuple wi si) -> acc * (input.gamma + input.beta * input.zeta * si + wi))
@@ -152,7 +154,8 @@ permContribution input =
     -- ===== DIAGNOSTIC TRACE (chunks2 nc=2 byte-diff) =====
     traceArr lbl arr = Array.foldM
       (\i v -> Trace.field (lbl <> show i) v *> pure (i + 1))
-      (0 :: Int) arr
+      (0 :: Int)
+      arr
     _ = unsafePerformEffect $ do
       Trace.field "perm.alpha_pow21" alphaPow21
       Trace.field "perm.alpha_pow22" alphaPow22

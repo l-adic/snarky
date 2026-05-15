@@ -52,6 +52,7 @@ import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Effect.Unsafe (unsafePerformEffect)
 import JS.BigInt as BigInt
 import Pickles.IPA (bPoly)
 import Pickles.Linearization.Env (fieldEnv)
@@ -62,7 +63,6 @@ import Pickles.PlonkChecks (AllEvals, ChunkedAllEvals)
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
 import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
 import Pickles.Trace as Trace
-import Effect.Unsafe (unsafePerformEffect)
 import Pickles.Verify.Types (PlonkInCircuit, PlonkMinimal, expandPlonkMinimal)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Compare)
@@ -564,7 +564,8 @@ ftEval0 input =
     -- residual nc-dependent bug is found.
     traceArr lbl arr = Array.foldM
       (\i v -> Trace.field (lbl <> show i) v *> pure (i + 1))
-      (0 :: Int) arr
+      (0 :: Int)
+      arr
     _ = unsafePerformEffect $ do
       Trace.field "ft_eval0.input.alpha" expanded.alpha
       Trace.field "ft_eval0.input.beta" expanded.beta
