@@ -385,8 +385,16 @@ mod generic {
         let n = proof.evals.w[0].zeta.len();
         let mut result = Vec::with_capacity(COLUMNS * 2 * n);
         for w_eval in &proof.evals.w {
-            debug_assert_eq!(w_eval.zeta.len(), n, "PointEvaluations chunk count invariant");
-            debug_assert_eq!(w_eval.zeta_omega.len(), n, "PointEvaluations chunk count invariant");
+            debug_assert_eq!(
+                w_eval.zeta.len(),
+                n,
+                "PointEvaluations chunk count invariant"
+            );
+            debug_assert_eq!(
+                w_eval.zeta_omega.len(),
+                n,
+                "PointEvaluations chunk count invariant"
+            );
             for i in 0..n {
                 result.push(w_eval.zeta[i]);
                 result.push(w_eval.zeta_omega[i]);
@@ -445,8 +453,16 @@ mod generic {
         let n = proof.evals.s[0].zeta.len();
         let mut result = Vec::with_capacity((PERMUTS - 1) * 2 * n);
         for s_eval in &proof.evals.s {
-            debug_assert_eq!(s_eval.zeta.len(), n, "PointEvaluations chunk count invariant");
-            debug_assert_eq!(s_eval.zeta_omega.len(), n, "PointEvaluations chunk count invariant");
+            debug_assert_eq!(
+                s_eval.zeta.len(),
+                n,
+                "PointEvaluations chunk count invariant"
+            );
+            debug_assert_eq!(
+                s_eval.zeta_omega.len(),
+                n,
+                "PointEvaluations chunk count invariant"
+            );
             for i in 0..n {
                 result.push(s_eval.zeta[i]);
                 result.push(s_eval.zeta_omega[i]);
@@ -471,8 +487,16 @@ mod generic {
         let n = proof.evals.coefficients[0].zeta.len();
         let mut result = Vec::with_capacity(COLUMNS * 2 * n);
         for c_eval in &proof.evals.coefficients {
-            debug_assert_eq!(c_eval.zeta.len(), n, "PointEvaluations chunk count invariant");
-            debug_assert_eq!(c_eval.zeta_omega.len(), n, "PointEvaluations chunk count invariant");
+            debug_assert_eq!(
+                c_eval.zeta.len(),
+                n,
+                "PointEvaluations chunk count invariant"
+            );
+            debug_assert_eq!(
+                c_eval.zeta_omega.len(),
+                n,
+                "PointEvaluations chunk count invariant"
+            );
             for i in 0..n {
                 result.push(c_eval.zeta[i]);
                 result.push(c_eval.zeta_omega[i]);
@@ -508,7 +532,11 @@ mod generic {
         let mut result = Vec::with_capacity(6 * 2 * n);
         for sel in selectors {
             debug_assert_eq!(sel.zeta.len(), n, "PointEvaluations chunk count invariant");
-            debug_assert_eq!(sel.zeta_omega.len(), n, "PointEvaluations chunk count invariant");
+            debug_assert_eq!(
+                sel.zeta_omega.len(),
+                n,
+                "PointEvaluations chunk count invariant"
+            );
             for i in 0..n {
                 result.push(sel.zeta[i]);
                 result.push(sel.zeta_omega[i]);
@@ -632,7 +660,10 @@ mod generic {
         // See `docs/chunking-ffi-audit.md`.
         let pez = &oracles_result.public_evals[0];
         let pezo = &oracles_result.public_evals[1];
-        debug_assert!(!pez.is_empty(), "kimchi public_evals[0] empty (num_chunks=0?)");
+        debug_assert!(
+            !pez.is_empty(),
+            "kimchi public_evals[0] empty (num_chunks=0?)"
+        );
         debug_assert_eq!(
             pez.len(),
             pezo.len(),
