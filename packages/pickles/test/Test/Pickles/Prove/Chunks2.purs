@@ -89,7 +89,7 @@ spec = describe "Pickles.Prove.Chunks2" do
     -- @nc=1 is a placeholder for the side-loaded-slot chunks count
     -- (no side-loaded slots here; nc is irrelevant but must be pinned
     -- for `Reflectable nc Int` to resolve at module-load time).
-    chunks2Entry <- liftEffect $ mkRuleEntry @0 @Unit @Unit @1 chunks2Rule unit
+    chunks2Entry <- liftEffect $ mkRuleEntry @0 @Unit @Unit @1 @1 chunks2Rule unit
     let rules = tuple1 chunks2Entry
 
     output <- liftEffect $ compileMulti

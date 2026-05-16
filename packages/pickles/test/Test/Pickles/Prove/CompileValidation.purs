@@ -36,7 +36,7 @@ spec = describe "Pickles.Prove.Compile.validateNumChunks" do
   it "throws when @numChunks=2 but the circuit only needs 1" \_ -> do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 nrrRule unit
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
     let rules = tuple1 nrrEntry
     result <- liftEffect $ Exc.try $ compileMulti
       @NrrRules

@@ -72,7 +72,7 @@ spec = describe "Pickles.Prove.Pure.Verify" do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 nrrRule unit
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
 
     nrr <- liftEffect $ compileMulti
       @NrrRules
@@ -108,7 +108,7 @@ spec = describe "Pickles.Prove.Pure.Verify" do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
-    chainEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) @1 simpleChainRule (tuple1 Self)
+    chainEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) @1 @1 simpleChainRule (tuple1 Self)
 
     chain <- liftEffect $ compileMulti
       @SimpleChainRules

@@ -87,7 +87,7 @@ spec = describe "Pickles.Prove.Chunks4" do
 
     -- @nc=1 placeholder for side-loaded-slot chunks count
     -- (no side-loaded slots here).
-    chunks4Entry <- liftEffect $ mkRuleEntry @0 @Unit @Unit @1 chunks4Rule unit
+    chunks4Entry <- liftEffect $ mkRuleEntry @0 @Unit @Unit @1 @1 chunks4Rule unit
     let rules = tuple1 chunks4Entry
 
     output <- liftEffect $ compileMulti

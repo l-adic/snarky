@@ -1873,13 +1873,39 @@ instance
 -- | haven't introduced yet.
 stepCompile
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd @nc
-       ndPred len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
+       @mpvMax @mpvPad @nd @nc @wrapVkChunks
+       ndPred wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN
+       chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred
+       len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
-  -- wrapVkChunks pinned to 1: step verifies prev wraps at nc=1.
-  => BuildSlotVkSources (SLVK.VerificationKey nc (F StepField) Boolean) prevsSpec 1 len blueprints sideloadedVkCarrier vkSourcesCarrier
+  -- `wrapVkChunks` is the wrap VK's own chunk count (Dim 2), a free
+  -- compile-wide parameter. Callers pin it (`@1`, protocol-guaranteed
+  -- since the wrap domain never exceeds the wrap SRS). The Mul/Add
+  -- layout chain below is functionally determined by `wrapVkChunks`
+  -- (mirrors `stepMain`'s signature); threaded here because
+  -- `stepCompile` stays generic over `wrapVkChunks`.
+  => BuildSlotVkSources (SLVK.VerificationKey nc (F StepField) Boolean) prevsSpec wrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
+  => Reflectable wrapVkChunks Int
+  => Compare 0 wrapVkChunks LT
+  => Add 1 wrapVkChunksPred wrapVkChunks
+  => Mul 7 wrapVkChunks tCommLen
+  => Add 1 tCommLenPred tCommLen
+  => Mul 15 wrapVkChunks wCoeffN
+  => Mul 6 wrapVkChunks indexSigmaN
+  => Mul 44 wrapVkChunks chunkBases
+  => Add 1 chunkBases nonSgBases
+  => Add wrapVkChunks 1 sg1
+  => Add sg1 wrapVkChunks sg2
+  => Add sg2 indexSigmaN sg3
+  => Add sg3 wCoeffN sg4
+  => Add sg4 wCoeffN sg5
+  => Add sg5 indexSigmaN nonSgBases
+  => Add 2 nonSgBases totalBases
+  => Add 1 totalBasesPred totalBases
+  => Reflectable tCommLen Int
+  => Reflectable nonSgBases Int
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -1920,7 +1946,7 @@ stepCompile
        carrierVar
        vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
-  => StepProveContext 1 len nd blueprints
+  => StepProveContext wrapVkChunks len nd blueprints
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Effect StepCompileResult
 stepCompile ctx rule = do
@@ -1944,8 +1970,8 @@ stepCompile ctx rule = do
             @mpvMax
             @nd
             @(SLVK.VerificationKey nc (F StepField) Boolean)
-            -- ctx is `StepProveContext 1 ...` (prover layer pinned).
-            @1
+            -- ctx is `StepProveContext wrapVkChunks ...` (free; callers pin).
+            @wrapVkChunks
             rule
             ctx.srsData
             ctx.dummySg
@@ -2025,18 +2051,38 @@ stepCompile ctx rule = do
 -- | `range_check` / `xor` / `lookup` / `runtime_tables` gates.
 preComputeStepDomainLog2
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd @nc
-       ndPred len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
+       @mpvMax @mpvPad @nd @nc @wrapVkChunks
+       ndPred wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN
+       chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred
+       len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
   -- Side-loaded VK carrier — see stepMain. preComputeStepDomainLog2
   -- runs at compile time; the caller synthesizes a placeholder
   -- carrier (e.g. `mkUnitVkCarrier` for compiled-only specs).
-  -- wrapVkChunks pinned to 1 here: step-side prev wraps are always
-  -- nc=1 in Mina (`num_chunks_by_default`); chunks>1 only applies to
-  -- the OUTER wrap circuit, not to step's per-slot verification.
-  => BuildSlotVkSources (SLVK.VerificationKey nc (F StepField) Boolean) prevsSpec 1 len blueprints sideloadedVkCarrier vkSourcesCarrier
+  -- `wrapVkChunks` is the compile-wide wrap-VK chunk count (Dim 2),
+  -- a free parameter; the Mul/Add chain mirrors `stepMain`'s.
+  => BuildSlotVkSources (SLVK.VerificationKey nc (F StepField) Boolean) prevsSpec wrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
+  => Reflectable wrapVkChunks Int
+  => Compare 0 wrapVkChunks LT
+  => Add 1 wrapVkChunksPred wrapVkChunks
+  => Mul 7 wrapVkChunks tCommLen
+  => Add 1 tCommLenPred tCommLen
+  => Mul 15 wrapVkChunks wCoeffN
+  => Mul 6 wrapVkChunks indexSigmaN
+  => Mul 44 wrapVkChunks chunkBases
+  => Add 1 chunkBases nonSgBases
+  => Add wrapVkChunks 1 sg1
+  => Add sg1 wrapVkChunks sg2
+  => Add sg2 indexSigmaN sg3
+  => Add sg3 wCoeffN sg4
+  => Add sg4 wCoeffN sg5
+  => Add sg5 indexSigmaN nonSgBases
+  => Add 2 nonSgBases totalBases
+  => Add 1 totalBasesPred totalBases
+  => Reflectable tCommLen Int
+  => Reflectable nonSgBases Int
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -2077,11 +2123,10 @@ preComputeStepDomainLog2
        carrierVar
        vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
-  -- preComputeStepDomainLog2 is the compile-time pre-pass; the
-  -- ctx's `wrapVkChunks` is unused here (we just need the gate count
-  -- to derive the domain log2). Keeping ctx polymorphic on
-  -- `anyWrapVkChunks` so callers from mkRuleEntry don't need to pin.
-  => StepProveContext 1 len nd blueprints
+  -- preComputeStepDomainLog2 is the compile-time pre-pass (gate
+  -- count → domain log2); `wrapVkChunks` only sizes the discarded
+  -- wrap-VK placeholder. Free parameter; callers pin (tests `@1`).
+  => StepProveContext wrapVkChunks len nd blueprints
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Effect Int
 preComputeStepDomainLog2 ctx rule = do
@@ -2101,7 +2146,7 @@ preComputeStepDomainLog2 ctx rule = do
             @mpvMax
             @nd
             @(SLVK.VerificationKey nc (F StepField) Boolean)
-            @1
+            @wrapVkChunks
             rule
             ctx.srsData
             ctx.dummySg
@@ -2140,13 +2185,35 @@ preComputeStepDomainLog2 ctx rule = do
 -- threading the type variable through every call site.
 stepSolveAndProve
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd @nc
-       ndPred len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
+       @mpvMax @mpvPad @nd @nc @wrapVkChunks
+       ndPred wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN
+       chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred
+       len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
-  -- wrapVkChunks pinned to 1: step verifies prev wraps at nc=1.
-  => BuildSlotVkSources (SideloadBundle.Bundle nc) prevsSpec 1 len blueprints sideloadedVkCarrier vkSourcesCarrier
+  -- `wrapVkChunks` is the compile-wide wrap-VK chunk count (Dim 2),
+  -- a free parameter (callers pin `@1`). Mul/Add chain mirrors stepMain.
+  => BuildSlotVkSources (SideloadBundle.Bundle nc) prevsSpec wrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
+  => Reflectable wrapVkChunks Int
+  => Compare 0 wrapVkChunks LT
+  => Add 1 wrapVkChunksPred wrapVkChunks
+  => Mul 7 wrapVkChunks tCommLen
+  => Add 1 tCommLenPred tCommLen
+  => Mul 15 wrapVkChunks wCoeffN
+  => Mul 6 wrapVkChunks indexSigmaN
+  => Mul 44 wrapVkChunks chunkBases
+  => Add 1 chunkBases nonSgBases
+  => Add wrapVkChunks 1 sg1
+  => Add sg1 wrapVkChunks sg2
+  => Add sg2 indexSigmaN sg3
+  => Add sg3 wCoeffN sg4
+  => Add sg4 wCoeffN sg5
+  => Add sg5 indexSigmaN nonSgBases
+  => Add 2 nonSgBases totalBases
+  => Add 1 totalBasesPred totalBases
+  => Reflectable tCommLen Int
+  => Reflectable nonSgBases Int
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -2190,10 +2257,10 @@ stepSolveAndProve
   => Monad m
   => MonadRec m
   => SlotStatementsCarrier prevsSpec valCarrier
-  => StepProveContext 1 len nd blueprints
+  => StepProveContext wrapVkChunks len nd blueprints
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> StepCompileResult
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds 1 inputVal len carrier valCarrier sideloadedVkCarrier
+  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
   -> ExceptT EvaluationError m (StepProveResult outputSize)
 stepSolveAndProve ctx rule compileResult advice = do
   -- Source the side-loaded VK carrier directly from the StepAdvice.
@@ -2209,7 +2276,7 @@ stepSolveAndProve ctx rule compileResult advice = do
 
     rawSolver
       :: SolverT StepField (KimchiConstraint StepField)
-           ( StepProverT prevsSpec StepIPARounds WrapIPARounds 1 inputVal
+           ( StepProverT prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal
                len
                carrier
                valCarrier
@@ -2231,12 +2298,10 @@ stepSolveAndProve ctx rule compileResult advice = do
               @mpvMax
               @nd
               @(SideloadBundle.Bundle nc)
-              -- stepSolveAndProve's `ctx :: StepProveContext 1 ...` pins
-              -- the wrap-VK chunk count to 1 (= OCaml
-              -- `num_chunks_by_default`), so we pin stepMain's
-              -- @wrapVkChunks parameter to match ctx.srsData here.
-              -- (Mid-tier stepMain stays generic on wrapVkChunks.)
-              @1
+              -- ctx is `StepProveContext wrapVkChunks ...`; thread the
+              -- compile-wide `wrapVkChunks` into stepMain to match
+              -- ctx.srsData. (Mid-tier stepMain stays generic.)
+              @wrapVkChunks
               rule
               ctx.srsData
               ctx.dummySg
