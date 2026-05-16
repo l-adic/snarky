@@ -327,20 +327,9 @@ export const pallasProverIndexDomainLog2 = (proverIndex) =>
 // Lagrange commitments from SRS.
 // The Rust FFI returns ALL chunks as a flat `[x0,y0,x1,y1,…]` array (length
 // 2*numChunks). The `*ChunksAt` variants reshape into an array-of-points so
-// PS can wrap as `Vector numChunks (AffinePoint)`. The non-`Chunks` variants
-// take only the first chunk for backward compatibility with nc=1 callers.
+// PS can wrap as `Vector stepChunks (AffinePoint)`.
 //
 // Mirrors OCaml `lagrange_commitment srs d i .unshifted` (wrap_verifier.ml:336).
-export const pallasSrsLagrangeCommitmentAt = (srs) => (domainLog2) => (i) => {
-  const flat = crypto.pallasSrsLagrangeCommitmentAt(srs, domainLog2, i);
-  return { x: flat[0], y: flat[1] };
-};
-
-export const vestaSrsLagrangeCommitmentAt = (srs) => (domainLog2) => (i) => {
-  const flat = crypto.vestaSrsLagrangeCommitmentAt(srs, domainLog2, i);
-  return { x: flat[0], y: flat[1] };
-};
-
 export const pallasSrsLagrangeCommitmentChunksAt = (srs) => (domainLog2) => (i) => {
   const flat = crypto.pallasSrsLagrangeCommitmentAt(srs, domainLog2, i);
   const nc = flat.length / 2;
