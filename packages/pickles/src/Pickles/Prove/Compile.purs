@@ -90,7 +90,6 @@ import Pickles.ProofFFI
   , proofZEvals
   , vestaProofOracles
   , vestaSrsBlindingGenerator
-  , vestaSrsLagrangeCommitmentAt
   , vestaSrsLagrangeCommitmentChunksAt
   ) as ProofFFI
 import Pickles.ProofFFI

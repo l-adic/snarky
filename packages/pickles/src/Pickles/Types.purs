@@ -248,29 +248,60 @@ instance
   CheckedType f c (StatementIO inputVar outputVar) where
   check (StatementIO r) = check (tuple2 r.input r.output)
 
--- | Single polynomial-commitment as a vector of `nc` chunks. Wraps
--- | `Vector nc pt` so that the two axes — outer "which commitment" vs
--- | inner "which chunk of one commitment" — stay distinguishable at use
--- | sites. The runtime representation is identical to the underlying
--- | Vector; consumers use `Data.Newtype` combinators (`over`, `under`,
--- | `over2`, `un`, `coerce`) instead of manual wrap/unwrap chains.
+-- | ## Chunk-count dimensions (naming convention — read this first)
+-- |
+-- | A kimchi polynomial commitment splits into `ceil(domain_size /
+-- | SRS_max_poly_size)` curve-point chunks. Three *distinct* such
+-- | counts appear throughout Pickles; they are NOT interchangeable.
+-- | The type-variable names encode which one:
+-- |
+-- |   * `stepChunks`   — Dim 1, **compile-wide**. Chunks of the step
+-- |     proof the wrap circuit verifies (step domain vs wrap SRS).
+-- |     `compileMulti @stepChunks` validates every branch matches it.
+-- |     Sites: `WrapMainConfig`, IVP, `FqSpongeInput`.
+-- |
+-- |   * `wrapVkChunks` — Dim 2, **compile-wide**. This compile's own
+-- |     wrap VK, embedded in the step circuit (OCaml
+-- |     `num_chunks_by_default`, `step_main.ml:347`; protocol-pinned
+-- |     to 1 since the wrap domain never exceeds the wrap SRS).
+-- |     Sites: `StepAdvice.wrapVerifierIndex`, `StepVK`.
+-- |
+-- |   * `slotVkChunks` — Dim 3, **per-slot**. A side-loaded slot's
+-- |     own VK chunk count — a parameter of an individual
+-- |     `Slot SideLoaded mpv slotVkChunks stmt`, so distinct slots in
+-- |     one compile may differ. Sites: `SLVK.VerificationKey`,
+-- |     `mkRuleEntry @… @slotVkChunks`.
+-- |
+-- | The generic container below (`ChunkedCommitment`) is
+-- | dimension-*agnostic*: its parameter is the neutral `chunks` (used
+-- | at all three dimensions), never one of the names above.
+-- |
+-- | ## ChunkedCommitment
+-- |
+-- | Single polynomial-commitment as a vector of `chunks` chunks. Wraps
+-- | `Vector chunks pt` so that the two axes — outer "which commitment"
+-- | vs inner "which chunk of one commitment" — stay distinguishable at
+-- | use sites. The runtime representation is identical to the
+-- | underlying Vector; consumers use `Data.Newtype` combinators
+-- | (`over`, `under`, `over2`, `un`, `coerce`) instead of manual
+-- | wrap/unwrap chains.
 newtype ChunkedCommitment :: Int -> Type -> Type
-newtype ChunkedCommitment nc pt = ChunkedCommitment (Vector nc pt)
+newtype ChunkedCommitment chunks pt = ChunkedCommitment (Vector chunks pt)
 
-derive instance Newtype (ChunkedCommitment nc pt) _
+derive instance Newtype (ChunkedCommitment chunks pt) _
 
 instance
   ( CircuitType f a var
-  , Reflectable nc Int
+  , Reflectable chunks Int
   ) =>
-  CircuitType f (ChunkedCommitment nc a) (ChunkedCommitment nc var) where
-  sizeInFields pf _ = sizeInFields pf (Proxy @(Vector nc a))
-  valueToFields = valueToFields @f @(Vector nc a) <<< unwrap
-  fieldsToValue = wrap <<< fieldsToValue @f @(Vector nc a)
-  varToFields = varToFields @f @(Vector nc a) <<< unwrap
-  fieldsToVar = wrap <<< fieldsToVar @f @(Vector nc a)
+  CircuitType f (ChunkedCommitment chunks a) (ChunkedCommitment chunks var) where
+  sizeInFields pf _ = sizeInFields pf (Proxy @(Vector chunks a))
+  valueToFields = valueToFields @f @(Vector chunks a) <<< unwrap
+  fieldsToValue = wrap <<< fieldsToValue @f @(Vector chunks a)
+  varToFields = varToFields @f @(Vector chunks a) <<< unwrap
+  fieldsToVar = wrap <<< fieldsToVar @f @(Vector chunks a)
 
-instance CheckedType f c (Vector nc var) => CheckedType f c (ChunkedCommitment nc var) where
+instance CheckedType f c (Vector chunks var) => CheckedType f c (ChunkedCommitment chunks var) where
   check = check <<< unwrap
 
 -- | Wrap proof messages: protocol commitments allocated in the per-proof witness.
