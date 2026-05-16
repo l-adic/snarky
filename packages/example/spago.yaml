@@ -32,4 +32,5 @@ package:
       - snarky-test-utils
       - spec
       - spec-node
+      - tailrec
       - tuples

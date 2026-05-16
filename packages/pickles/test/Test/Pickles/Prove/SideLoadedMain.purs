@@ -95,7 +95,7 @@ type NoRecursionInputRules =
 type SideLoadedMainRules =
   RulesCons 1
     (Tuple1 (StatementIO (F StepField) Unit))
-    (Tuple1 (Slot SideLoaded 2 (StatementIO (F StepField) Unit)))
+    (Tuple1 (Slot SideLoaded 2 1 (StatementIO (F StepField) Unit)))
     (Tuple1 Unit)
     RulesNil
 
@@ -137,7 +137,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
     -- Compile the Input-mode No_recursion child. Its kimchi wrap VK
     -- (at log2 = 13, `mpv = N0` → `wrap_domains.h = 13`) becomes the
     -- runtime `wrapVk` for the side-loaded slot.
-    childEntry <- liftEffect $ mkRuleEntry @0 @Unit @(F StepField)
+    childEntry <- liftEffect $ mkRuleEntry @0 @Unit @(F StepField) @1 @1
       noRecursionInputRule
       unit
 
@@ -146,6 +146,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       @Unit
       @(F StepField)
       @NoSlots
+      @1
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
@@ -191,6 +192,8 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       @1
       @Unit
       @(F StepField)
+      @1
+      @1
       sideLoadedMainRule
       (tuple1 unit)
 
@@ -199,6 +202,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       @Unit
       @(F StepField)
       @(Slots1 2)
+      @1
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing

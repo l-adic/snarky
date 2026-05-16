@@ -70,6 +70,7 @@
             "snarky-test-utils",
             "spec",
             "spec-node",
+            "tailrec",
             "tuples"
           ]
         }
@@ -116,6 +117,7 @@
             "snarky-test-utils",
             "spec",
             "spec-node",
+            "tailrec",
             "transformers",
             "tuples"
           ]
@@ -158,6 +160,7 @@
             "snarky-curves",
             "snarky-kimchi",
             "strings",
+            "tailrec",
             "transformers",
             "tuples",
             "unsafe-coerce",
@@ -206,6 +209,7 @@
             "snarky-curves",
             "snarky-kimchi",
             "strings",
+            "tailrec",
             "transformers",
             "tuples",
             "unsafe-coerce",
@@ -219,6 +223,7 @@
             "exceptions",
             "node-buffer",
             "node-fs",
+            "node-process",
             "spec",
             "spec-node"
           ]
@@ -399,6 +404,7 @@
             "quickcheck",
             "record",
             "safe-coerce",
+            "tailrec",
             "transformers",
             "tuples",
             "unfoldable",
@@ -585,6 +591,7 @@
             "snarky",
             "spec",
             "spec-quickcheck",
+            "tailrec",
             "transformers",
             "tuples",
             "vector-sized"

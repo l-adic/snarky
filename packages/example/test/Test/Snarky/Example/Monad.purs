@@ -11,6 +11,7 @@ import Prelude
 
 import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
+import Control.Monad.Rec.Class (class MonadRec)
 import Data.Identity (Identity(..))
 import Data.Map (Map)
 import Data.Map as Map
@@ -59,6 +60,7 @@ derive newtype instance Apply (TransferRefM d f)
 derive newtype instance Applicative (TransferRefM d f)
 derive newtype instance Bind (TransferRefM d f)
 derive newtype instance Monad (TransferRefM d f)
+derive newtype instance MonadRec (TransferRefM d f)
 derive newtype instance MonadEffect (TransferRefM d f)
 derive newtype instance MonadThrow Error (TransferRefM d f)
 
@@ -123,6 +125,7 @@ derive newtype instance Apply (TransferCompileM d f)
 derive newtype instance Applicative (TransferCompileM d f)
 derive newtype instance Bind (TransferCompileM d f)
 derive newtype instance Monad (TransferCompileM d f)
+derive newtype instance MonadRec (TransferCompileM d f)
 
 runTransferCompileM :: forall d f a. TransferCompileM d f a -> a
 runTransferCompileM (TransferCompileM m) = un Identity m

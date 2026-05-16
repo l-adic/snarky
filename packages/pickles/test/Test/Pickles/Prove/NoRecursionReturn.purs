@@ -60,7 +60,7 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
     -- Build the 1-tuple rules carrier for compileMulti. mpvMax = 0
     -- (NRR rule's mpv); since this is the only branch, nd = 1.
     -- outputSize = mpvMax*32 + 1 + mpvMax = 0 + 1 + 0 = 1.
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule unit
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
 
     let rules = tuple1 nrrEntry
 
@@ -69,6 +69,7 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
       @(F StepField)
       @Unit
       @NoSlots
+      @1
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing

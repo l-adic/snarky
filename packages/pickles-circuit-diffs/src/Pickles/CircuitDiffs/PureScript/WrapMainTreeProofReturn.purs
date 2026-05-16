@@ -42,9 +42,9 @@ compileWrapMainTreeProofReturn { lagrangeAt, blindingH } stepParams = do
   vestaSrs <- createCRS @StepField
   pallasSrs <- createCRS @WrapField
   let
-    realStepVK = deriveStepVKFromCompiled @2 vestaSrs stepArt.stepCs
+    realStepVK = deriveStepVKFromCompiled @1 @2 vestaSrs stepArt.stepCs
 
-    config :: WrapMainConfig 1
+    config :: WrapMainConfig 1 1
     config =
       -- N=2 Tree_proof_return: single branch, step_widths=[2].
       -- `domainLog2s` is derived from the step artifact (= 15 for TPR).
@@ -62,7 +62,8 @@ compileWrapMainTreeProofReturn { lagrangeAt, blindingH } stepParams = do
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     ( \stmt ->
         wrapMainForPrevs @1
-          @(Tuple2 (Slot Compiled 0 (StatementIO Unit (F StepField))) (Slot Compiled 2 (StatementIO Unit (F StepField))))
+          @(Tuple2 (Slot Compiled 0 1 (StatementIO Unit (F StepField))) (Slot Compiled 2 1 (StatementIO Unit (F StepField))))
+          @1
           config
           stmt
     )
@@ -71,5 +72,5 @@ compileWrapMainTreeProofReturn { lagrangeAt, blindingH } stepParams = do
     { stepCs: stepArt.stepCs
     , stepDomainLog2: stepArt.stepDomainLog2
     , wrapCs
-    , wrapVk: deriveWrapVKFromCompiled @2 pallasSrs wrapCs
+    , wrapVk: deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
     }

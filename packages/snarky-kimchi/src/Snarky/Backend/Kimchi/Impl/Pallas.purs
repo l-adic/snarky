@@ -21,10 +21,10 @@ foreign import pallasCircuitGateCoeffCount :: Gate Pallas.ScalarField -> Int
 -- Get a coefficient at the specified index
 foreign import pallasCircuitGateGetCoeff :: Gate Pallas.ScalarField -> Int -> Pallas.ScalarField
 
-foreign import pallasConstraintSystemCreate :: Array (Gate Pallas.ScalarField) -> Int -> ConstraintSystem Pallas.ScalarField
+foreign import pallasConstraintSystemCreate :: Array (Gate Pallas.ScalarField) -> Int -> Int -> ConstraintSystem Pallas.ScalarField
 
 foreign import pallasConstraintSystemCreateWithPrevChallenges
-  :: Array (Gate Pallas.ScalarField) -> Int -> Int -> ConstraintSystem Pallas.ScalarField
+  :: Array (Gate Pallas.ScalarField) -> Int -> Int -> Int -> ConstraintSystem Pallas.ScalarField
 
 foreign import pallasConstraintSystemToJson :: ConstraintSystem Pallas.ScalarField -> String
 foreign import pallasGatesToJson :: Array (Gate Pallas.ScalarField) -> Int -> String

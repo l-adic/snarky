@@ -18,13 +18,17 @@ module Pickles.PlonkChecks.Permutation
 
 import Prelude
 
+import Data.Array as Array
 import Data.Fin (unsafeFinite)
 import Data.Foldable (foldl)
+import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, zipWith, (!!))
 import Data.Vector as Vector
+import Effect.Unsafe (unsafePerformEffect)
 import JS.BigInt (fromInt)
 import Pickles.Linearization.FFI (PointEval)
+import Pickles.Trace as Trace
 import Snarky.Curves.Class (class PrimeField, pow)
 
 -------------------------------------------------------------------------------
@@ -107,31 +111,34 @@ permContribution input =
     alphaPow22 = alphaPow21 * input.alpha
     alphaPow23 = alphaPow22 * input.alpha
 
-    -- Term 1: product with sigma evaluations
-    -- init = (w[6] + gamma) * z(zeta*omega) * alpha^21 * zkp
-    -- fold: ∏_{i=0}^{5}(beta*sigma_i + w_i + gamma) * init
     w6 = input.w !! unsafeFinite @7 6
     term1Init = (w6 + input.gamma) * input.z.omegaTimesZeta * alphaPow21 * input.zkPolynomial
     wSigma = zipWith Tuple (Vector.take @6 input.w) input.sigma
-    term1 = foldl
+
+    -- Trace per-iteration accumulator. Final value = same as `term1`
+    -- computed via `foldl` below; we use the array version so we can
+    -- capture intermediates.
+    term1Stages :: Array f
+    term1Stages = Array.scanl
       (\acc (Tuple wi si) -> (input.beta * si + wi + input.gamma) * acc)
       term1Init
-      wSigma
+      (Array.fromFoldable (Vector.toUnfoldable wSigma :: Array _))
+    term1 = case Array.last term1Stages of
+      Just v -> v
+      Nothing -> term1Init
 
-    -- Term 2: product with shifts (subtracted)
-    -- init = alpha^21 * zkp * z(zeta)
-    -- fold: ∏_{i=0}^{6}(gamma + beta*zeta*shift_i + w_i) * init
     term2Init = alphaPow21 * input.zkPolynomial * input.z.zeta
     wShifts = zipWith Tuple input.w input.shifts
-    term2 = foldl
+
+    term2Stages :: Array f
+    term2Stages = Array.scanl
       (\acc (Tuple wi si) -> acc * (input.gamma + input.beta * input.zeta * si + wi))
       term2Init
-      wShifts
+      (Array.fromFoldable (Vector.toUnfoldable wShifts :: Array _))
+    term2 = case Array.last term2Stages of
+      Just v -> v
+      Nothing -> term2Init
 
-    -- Boundary quotient:
-    -- nominator = ((zeta^n-1) * alpha^22 * (zeta - omega^{-zkRows})
-    --           + (zeta^n-1) * alpha^23 * (zeta - 1)) * (1 - z(zeta))
-    -- denominator = (zeta - omega^{-zkRows}) * (zeta - 1)
     zetaMinusOmega = input.zeta - input.omegaToMinusZkRows
     zetaMinus1 = input.zeta - one
     nominator =
@@ -141,6 +148,30 @@ permContribution input =
         * (one - input.z.zeta)
     denominator = zetaMinusOmega * zetaMinus1
     boundary = nominator / denominator
+
+    result = term1 - term2 + boundary
+
+    -- ===== DIAGNOSTIC TRACE (chunks2 nc=2 byte-diff) =====
+    traceArr lbl arr = Array.foldM
+      (\i v -> Trace.field (lbl <> show i) v *> pure (i + 1))
+      (0 :: Int)
+      arr
+    _ = unsafePerformEffect $ do
+      Trace.field "perm.alpha_pow21" alphaPow21
+      Trace.field "perm.alpha_pow22" alphaPow22
+      Trace.field "perm.alpha_pow23" alphaPow23
+      Trace.field "perm.term1.init" term1Init
+      _ <- traceArr "perm.term1.after_i" term1Stages
+      Trace.field "perm.term1.final" term1
+      Trace.field "perm.term2.init" term2Init
+      _ <- traceArr "perm.term2.after_i" term2Stages
+      Trace.field "perm.term2.final" term2
+      Trace.field "perm.zeta_minus_omega" zetaMinusOmega
+      Trace.field "perm.zeta_minus_1" zetaMinus1
+      Trace.field "perm.boundary.nominator" nominator
+      Trace.field "perm.boundary.denominator" denominator
+      Trace.field "perm.boundary" boundary
+      Trace.field "perm.result" result
   in
-    term1 - term2 + boundary
+    result
 

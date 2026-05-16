@@ -20,16 +20,19 @@ module Pickles.Types
   , WrapProofOpening(..)
   , StepAllEvals(..)
   , PerProofUnfinalized(..)
+  , ChunkedCommitment(..)
   ) where
 
+import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (Tuple10, Tuple2, Tuple3, Tuple5, Tuple7, tuple10, tuple2, tuple3, tuple5, tuple7, uncurry10, uncurry2, uncurry3, uncurry5, uncurry7)
 import Data.Vector (Vector)
 import Pickles.Verify.Types (UnfinalizedProof, WrapDeferredValues)
+import Prelude ((<<<))
 import Snarky.Circuit.DSL (F, FVar, UnChecked)
 import Snarky.Circuit.DSL.Monad (class CheckedType, check)
 import Snarky.Circuit.DSL.SizedF (SizedF)
-import Snarky.Circuit.Types (class CircuitType, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Snarky.Circuit.Types (class CircuitType, fieldsToValue, fieldsToVar, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, sizeInFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class FieldSizeInBits)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -245,34 +248,106 @@ instance
   CheckedType f c (StatementIO inputVar outputVar) where
   check (StatementIO r) = check (tuple2 r.input r.output)
 
+-- | ## Chunk-count dimensions (naming convention — read this first)
+-- |
+-- | A kimchi polynomial commitment splits into `ceil(domain_size /
+-- | SRS_max_poly_size)` curve-point chunks. Three *distinct* such
+-- | counts appear throughout Pickles; they are NOT interchangeable.
+-- | The type-variable names encode which one:
+-- |
+-- |   * `stepChunks`   — Dim 1, **compile-wide**. Chunks of the step
+-- |     proof the wrap circuit verifies (step domain vs wrap SRS).
+-- |     `compileMulti @stepChunks` validates every branch matches it.
+-- |     Sites: `WrapMainConfig`, IVP, `FqSpongeInput`.
+-- |
+-- |   * `wrapVkChunks` — Dim 2, **compile-wide**. This compile's own
+-- |     wrap VK, embedded in the step circuit (OCaml
+-- |     `num_chunks_by_default`, `step_main.ml:347`; protocol-pinned
+-- |     to 1 since the wrap domain never exceeds the wrap SRS).
+-- |     Sites: `StepAdvice.wrapVerifierIndex`, `StepVK`.
+-- |
+-- |   * `slotVkChunks` — Dim 3, **per-slot**. A side-loaded slot's
+-- |     own VK chunk count — a parameter of an individual
+-- |     `Slot SideLoaded mpv slotVkChunks stmt`, so distinct slots in
+-- |     one compile may differ. Sites: `SLVK.VerificationKey`,
+-- |     `mkRuleEntry @… @slotVkChunks`.
+-- |
+-- | The generic container below (`ChunkedCommitment`) is
+-- | dimension-*agnostic*: its parameter is the neutral `chunks` (used
+-- | at all three dimensions), never one of the names above.
+-- |
+-- | ## ChunkedCommitment
+-- |
+-- | Single polynomial-commitment as a vector of `chunks` chunks. Wraps
+-- | `Vector chunks pt` so that the two axes — outer "which commitment"
+-- | vs inner "which chunk of one commitment" — stay distinguishable at
+-- | use sites. The runtime representation is identical to the
+-- | underlying Vector; consumers use `Data.Newtype` combinators
+-- | (`over`, `under`, `over2`, `un`, `coerce`) instead of manual
+-- | wrap/unwrap chains.
+newtype ChunkedCommitment :: Int -> Type -> Type
+newtype ChunkedCommitment chunks pt = ChunkedCommitment (Vector chunks pt)
+
+derive instance Newtype (ChunkedCommitment chunks pt) _
+
+instance
+  ( CircuitType f a var
+  , Reflectable chunks Int
+  ) =>
+  CircuitType f (ChunkedCommitment chunks a) (ChunkedCommitment chunks var) where
+  sizeInFields pf _ = sizeInFields pf (Proxy @(Vector chunks a))
+  valueToFields = valueToFields @f @(Vector chunks a) <<< unwrap
+  fieldsToValue = wrap <<< fieldsToValue @f @(Vector chunks a)
+  varToFields = varToFields @f @(Vector chunks a) <<< unwrap
+  fieldsToVar = wrap <<< fieldsToVar @f @(Vector chunks a)
+
+instance CheckedType f c (Vector chunks var) => CheckedType f c (ChunkedCommitment chunks var) where
+  check = check <<< unwrap
+
 -- | Wrap proof messages: protocol commitments allocated in the per-proof witness.
 -- |
 -- | OCaml hlist order: w_comm (15), z_comm (1), t_comm (7).
 -- | Reference: kimchi_types.ml prover_proof.commitments
-newtype WrapProofMessages pt = WrapProofMessages
-  { wComm :: Vector 15 pt
-  , zComm :: pt
-  , tComm :: Vector 7 pt
+-- |
+-- | Carries `n :: Int = num_chunks` (`docs/chunking.md`). At n=1 every
+-- | inner `Vector n` collapses to a singleton, which is byte-equivalent
+-- | to the pre-chunking flat shapes (Vector 15 pt / pt / Vector 7 pt).
+-- |   * `wComm` — 15 polynomials × n chunks each.
+-- |   * `zComm` — 1 polynomial with n chunks.
+-- |   * `tComm` — quotient poly's 7-chunk overhead, each sub-split into
+-- |     n chunks (total `7 * n` group elements). Nested for type clarity;
+-- |     CircuitType flattens to a single 7n-long vector.
+newtype WrapProofMessages :: Int -> Type -> Type
+newtype WrapProofMessages n pt = WrapProofMessages
+  { wComm :: Vector 15 (ChunkedCommitment n pt)
+  , zComm :: ChunkedCommitment n pt
+  , tComm :: Vector 7 (ChunkedCommitment n pt)
   }
 
-instance (CircuitType f a var) => CircuitType f (WrapProofMessages a) (WrapProofMessages var) where
-  sizeInFields pf _ = genericSizeInFields pf (Proxy @(Tuple3 (Vector 15 a) a (Vector 7 a)))
+instance
+  ( CircuitType f a var
+  , Reflectable n Int
+  ) =>
+  CircuitType f (WrapProofMessages n a) (WrapProofMessages n var) where
+  sizeInFields pf _ =
+    genericSizeInFields pf (Proxy @(Tuple3 (Vector 15 (ChunkedCommitment n a)) (ChunkedCommitment n a) (Vector 7 (ChunkedCommitment n a))))
   valueToFields (WrapProofMessages r) = genericValueToFields (tuple3 r.wComm r.zComm r.tComm)
   fieldsToValue fs =
     let
-      tup :: Tuple3 (Vector 15 a) a (Vector 7 a)
+      tup :: Tuple3 (Vector 15 (ChunkedCommitment n a)) (ChunkedCommitment n a) (Vector 7 (ChunkedCommitment n a))
       tup = genericFieldsToValue fs
     in
       uncurry3 (\wComm zComm tComm -> WrapProofMessages { wComm, zComm, tComm }) tup
-  varToFields (WrapProofMessages r) = genericVarToFields @(Tuple3 (Vector 15 a) a (Vector 7 a)) (tuple3 r.wComm r.zComm r.tComm)
+  varToFields (WrapProofMessages r) =
+    genericVarToFields @(Tuple3 (Vector 15 (ChunkedCommitment n a)) (ChunkedCommitment n a) (Vector 7 (ChunkedCommitment n a))) (tuple3 r.wComm r.zComm r.tComm)
   fieldsToVar fs =
     let
-      tup :: Tuple3 (Vector 15 var) var (Vector 7 var)
-      tup = genericFieldsToVar @(Tuple3 (Vector 15 a) a (Vector 7 a)) fs
+      tup :: Tuple3 (Vector 15 (ChunkedCommitment n var)) (ChunkedCommitment n var) (Vector 7 (ChunkedCommitment n var))
+      tup = genericFieldsToVar @(Tuple3 (Vector 15 (ChunkedCommitment n a)) (ChunkedCommitment n a) (Vector 7 (ChunkedCommitment n a))) fs
     in
       uncurry3 (\wComm zComm tComm -> WrapProofMessages { wComm, zComm, tComm }) tup
 
-instance (CheckedType f c var) => CheckedType f c (WrapProofMessages var) where
+instance (CheckedType f c var) => CheckedType f c (WrapProofMessages n var) where
   check (WrapProofMessages r) = check (tuple3 r.wComm r.zComm r.tComm)
 
 -- | Wrap proof opening: bulletproof opening data allocated in the per-proof witness.

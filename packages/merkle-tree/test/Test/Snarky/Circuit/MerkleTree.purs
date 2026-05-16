@@ -5,6 +5,7 @@ module Test.Snarky.Circuit.MerkleTree
 import Prelude
 
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
+import Control.Monad.Rec.Class (class MonadRec)
 import Data.Array.NonEmpty as NEA
 import Data.Generic.Rep (class Generic)
 import Data.Identity (Identity)
@@ -58,6 +59,7 @@ derive newtype instance Apply (MerkleRefM d f v)
 derive newtype instance Applicative (MerkleRefM d f v)
 derive newtype instance Bind (MerkleRefM d f v)
 derive newtype instance Monad (MerkleRefM d f v)
+derive newtype instance MonadRec (MerkleRefM d f v)
 derive newtype instance MonadEffect (MerkleRefM d f v)
 
 runMerkleRefM :: forall d f v. TreeRef d f v -> MerkleRefM d f v ~> Effect

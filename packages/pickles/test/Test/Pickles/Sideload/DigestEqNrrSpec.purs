@@ -38,13 +38,14 @@ spec = describe "Pickles.Sideload.NRR digest equality" do
     -- PureScript-side compile: produce the wrap VK for NRR.
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule unit
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
     let rules = tuple1 nrrEntry
     output <- liftEffect $ compileMulti
       @NrrRules
       @(F StepField)
       @Unit
       @NoSlots
+      @1
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing

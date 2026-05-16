@@ -35,7 +35,7 @@ import Prelude
 
 import Data.Fin (unsafeFinite)
 import Data.Foldable (for_)
-import Data.Newtype (unwrap)
+import Data.Newtype (over, unwrap)
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector, (!!))
 import Data.Vector as Vector
@@ -44,12 +44,13 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.IPA (bPoly)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals, absorbAllEvals)
-import Pickles.ProofFFI (OraclesResult, Proof, domainGenerator, tCommVec, vestaChallengePolyCommitment, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallengesVec, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles)
+import Pickles.PlonkChecks.Chunks as Chunks
+import Pickles.ProofFFI (OraclesResult, Proof, domainGenerator, tCommChunked, vestaChallengePolyCommitment, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallengesVec, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, wCommChunked, zCommChunked)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatch, computeBpChalsAndB, derivePlonk, ftEval0)
 import Pickles.Sponge (absorb, evalPureSpongeM, initialSponge, squeeze, squeezeScalarChallengePure)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Step.Types as Step
-import Pickles.Types (StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (ChunkedCommitment(..), StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK)
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
@@ -344,7 +345,11 @@ expandDeferred input =
 -- | Inner bp-challenge vector lengths are fixed at the concrete
 -- | `StepIPARounds` / `WrapIPARounds` type aliases per field, based
 -- | on which IPA the challenges came from (see each field's doc).
-type ExpandProofInput n nwp =
+-- | `wrapVkChunks` = chunk count of the step's wrap VK (`dlogIndex`).
+-- | OCaml hardcodes this to `Plonk_checks.num_chunks_by_default = 1`
+-- | at `step_main.ml:347`; we keep it polymorphic so the type tracks
+-- | the future-extensibility flagged by the OCaml `TODO`.
+type ExpandProofInput n nwp wrapVkChunks =
   { -- Runtime flag: false for dummy predecessors the step circuit
     -- elides verification of.
     mustVerify :: Boolean
@@ -389,7 +394,8 @@ type ExpandProofInput n nwp =
   -- (reduced_messages_for_next_proof_over_same_field.ml:32-43).
 
   -- The wrap circuit's VK commitments (`dlog_plonk_index` in OCaml).
-  , dlogIndex :: StepVK StepField
+  -- See type-doc comment above on `wrapVkChunks`.
+  , dlogIndex :: StepVK wrapVkChunks StepField
   -- The predecessor's app-state projected to field elements.
   , appStateFields :: Array StepField
   -- The previous proofs' challenge-polynomial commitments (each a
@@ -461,7 +467,7 @@ type ExpandProofInput n nwp =
 -- | Output of `expandProof` — the witness data the step circuit
 -- | reads for one predecessor slot. Maps to OCaml's return tuple
 -- | from `expand_proof` (step.ml:515-536).
-type ExpandProofOutput n =
+type ExpandProofOutput n stepChunks =
   { sg :: AffinePoint StepField
   -- | The wrap-field deferred-value record + should_finalize flag +
   -- | sponge digest. Corresponds to OCaml `Unfinalized.Constant.t`.
@@ -485,6 +491,7 @@ type ExpandProofOutput n =
   , perProofWitness ::
       Step.PerProofWitness
         n
+        stepChunks
         StepIPARounds
         WrapIPARounds
         (F StepField)
@@ -519,9 +526,11 @@ type PrevStatementWithHashes =
 
 -- | The main `expand_proof` port.
 expandProof
-  :: forall n nwp
-   . ExpandProofInput n nwp
-  -> ExpandProofOutput n
+  :: forall @stepChunks n nwp wrapVkChunks
+   . Reflectable stepChunks Int
+  => Reflectable wrapVkChunks Int
+  => ExpandProofInput n nwp wrapVkChunks
+  -> ExpandProofOutput n stepChunks
 expandProof input =
   let
     -- ===== Step-field Type1 deferred values. =====
@@ -697,10 +706,12 @@ expandProof input =
     -- are already endo-expanded by the FFI.
     wrapCipInput =
       { allEvals: input.wrapAllEvals
-      , publicEvals:
-          { zeta: oraclesResult.publicEvalZeta
-          , omegaTimesZeta: oraclesResult.publicEvalZetaOmega
+      , publicEvals: Chunks.collapsePointEval
+          { rounds: input.wrapSrsLengthLog2
+          , zeta: oraclesResult.zeta
+          , zetaOmega: wrapZetaw
           }
+          oraclesResult.publicEvals
       , ftEval0: wrapFtEval0
       , ftEval1: oraclesResult.ftEval1
       , oldBulletproofChallenges: input.wrapPaddedPrevChallenges
@@ -760,11 +771,11 @@ expandProof input =
     wrapCommits = vestaProofCommitments input.wrapProof
 
     messages
-      :: WrapProofMessages (WeierstrassAffinePoint PallasG (F StepField))
+      :: WrapProofMessages stepChunks (WeierstrassAffinePoint PallasG (F StepField))
     messages = WrapProofMessages
-      { wComm: map mkPallasPt wrapCommits.wComm
-      , zComm: mkPallasPt wrapCommits.zComm
-      , tComm: map mkPallasPt (tCommVec wrapCommits)
+      { wComm: map (over ChunkedCommitment (map mkPallasPt)) (wCommChunked @stepChunks wrapCommits)
+      , zComm: over ChunkedCommitment (map mkPallasPt) (zCommChunked @stepChunks wrapCommits)
+      , tComm: map (over ChunkedCommitment (map mkPallasPt)) (tCommChunked @stepChunks wrapCommits)
       }
 
     -- Wrap proof's opening proof from the kimchi form. The `sg`
@@ -788,6 +799,7 @@ expandProof input =
     wrapProofKimchi
       :: Step.WrapProof
            WrapIPARounds
+           stepChunks
            (WeierstrassAffinePoint PallasG (F StepField))
            (Type2 (SplitField (F StepField) Boolean))
     wrapProofKimchi = Step.WrapProof
@@ -840,6 +852,7 @@ expandProof input =
     perProofWitness
       :: Step.PerProofWitness
            n
+           stepChunks
            StepIPARounds
            WrapIPARounds
            (F StepField)
@@ -857,10 +870,12 @@ expandProof input =
     , unfinalized: wrapUnfinalized
     , deferredStep: deferredStep
     , rawPrechallenges: Vector.toUnfoldable (map SizedF.toField rawPrechalsVec)
-    , xHat:
-        { zeta: oraclesResult.publicEvalZeta
-        , omegaTimesZeta: oraclesResult.publicEvalZetaOmega
+    , xHat: Chunks.collapsePointEval
+        { rounds: input.wrapSrsLengthLog2
+        , zeta: oraclesResult.zeta
+        , zetaOmega: wrapZetaw
         }
+        oraclesResult.publicEvals
     , perProofWitness
     -- step.ml:536 reads this from `dlog_vk.domain.log_size_of_group`.
     , actualWrapDomain: input.wrapDomainLog2

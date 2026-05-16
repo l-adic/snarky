@@ -33,6 +33,7 @@ import Prelude
 
 import Control.Monad.Except (ExceptT, throwError)
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
+import Control.Monad.Rec.Class (class MonadRec)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
 import Data.Array as Array
@@ -40,7 +41,7 @@ import Data.Either (Either(..))
 import Data.Fin (unsafeFinite)
 import Data.Map (Map)
 import Data.Maybe (Maybe(..))
-import Data.Newtype (class Newtype, un)
+import Data.Newtype (class Newtype, over, un)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.String (Pattern(..), Replacement(..))
 import Data.String as String
@@ -48,27 +49,28 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
+import Effect.Exception.Unsafe (unsafeThrow)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Node.Process as Process
 import Pickles.Field (StepField, WrapField)
-import Pickles.ProofFFI (Proof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLrVec, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexCommitments, tCommVec, vestaCreateProofWithPrev)
+import Pickles.ProofFFI (Proof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLrVec, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentChunksAt, pallasVerifierIndexCommitments, tCommChunked, vestaCreateProofWithPrev, wCommChunked, zCommChunked)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
-import Pickles.Types (PaddedLength, PerProofUnfinalized, StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized, StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK)
 import Pickles.Wrap.Advice (class WrapWitnessM)
 import Pickles.Wrap.Main (WrapMainConfig, wrapMain)
 import Pickles.Wrap.Slots (class PadSlots)
 import Pickles.Wrap.Types as Wrap
-import Prim.Int (class Add, class Compare)
+import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
-import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, verifyProverIndex)
+import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, verifyProverIndex)
 import Snarky.Backend.Kimchi.Impl.Pallas (pallasConstraintSystemToJson)
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, ProverIndex, VerifierIndex)
 import Snarky.Backend.Prover (emptyProverState)
@@ -98,7 +100,7 @@ import Type.Proxy (Proxy(..))
 -- | The commitment curve is pinned to `VestaG` (the Step proof's
 -- | commitment curve) and the field to `WrapField` (= `Vesta.BaseField`
 -- | = the native field of the wrap circuit).
-type WrapAdvice (mpv :: Int) (slots :: Type -> Type) =
+type WrapAdvice (mpv :: Int) (stepChunks :: Int) (slots :: Type -> Type) =
   { whichBranch :: F WrapField
   , wrapProofState ::
       Wrap.PrevProofState mpv (Type2 (F WrapField)) (F WrapField) Boolean
@@ -111,7 +113,10 @@ type WrapAdvice (mpv :: Int) (slots :: Type -> Type) =
         StepIPARounds
         (WeierstrassAffinePoint VestaG (F WrapField))
         (Type1 (F WrapField))
-  , messages :: WrapProofMessages (WeierstrassAffinePoint VestaG (F WrapField))
+  -- | `stepChunks` here is THIS compile's own num_chunks — the wrap is
+  -- | wrapping a step proof from the current compile, whose commitments
+  -- | are at the current compile's chunk count.
+  , messages :: WrapProofMessages stepChunks (WeierstrassAffinePoint VestaG (F WrapField))
   }
 
 -- | ReaderT transformer carrying a `WrapAdvice` over a base monad.
@@ -124,6 +129,7 @@ type WrapAdvice (mpv :: Int) (slots :: Type -> Type) =
 newtype WrapProverT
   :: Int
   -> Int
+  -> Int
   -> (Type -> Type)
   -> (Type -> Type)
   -> Type
@@ -131,23 +137,25 @@ newtype WrapProverT
 newtype WrapProverT
   branches
   mpv
+  stepChunks
   slots
   m
-  a = WrapProverT (ReaderT (WrapAdvice mpv slots) m a)
+  a = WrapProverT (ReaderT (WrapAdvice mpv stepChunks slots) m a)
 
-derive instance Newtype (WrapProverT branches mpv slots m a) _
-derive newtype instance Functor m => Functor (WrapProverT branches mpv slots m)
-derive newtype instance Apply m => Apply (WrapProverT branches mpv slots m)
-derive newtype instance Applicative m => Applicative (WrapProverT branches mpv slots m)
-derive newtype instance Bind m => Bind (WrapProverT branches mpv slots m)
-derive newtype instance Monad m => Monad (WrapProverT branches mpv slots m)
+derive instance Newtype (WrapProverT branches mpv stepChunks slots m a) _
+derive newtype instance Functor m => Functor (WrapProverT branches mpv stepChunks slots m)
+derive newtype instance Apply m => Apply (WrapProverT branches mpv stepChunks slots m)
+derive newtype instance Applicative m => Applicative (WrapProverT branches mpv stepChunks slots m)
+derive newtype instance Bind m => Bind (WrapProverT branches mpv stepChunks slots m)
+derive newtype instance Monad m => Monad (WrapProverT branches mpv stepChunks slots m)
+derive newtype instance MonadRec m => MonadRec (WrapProverT branches mpv stepChunks slots m)
 
 -- | Supply the advice record and run the prover computation in the
 -- | base monad.
 runWrapProverT
-  :: forall branches mpv slots m a
-   . WrapAdvice mpv slots
-  -> WrapProverT branches mpv slots m a
+  :: forall branches mpv stepChunks slots m a
+   . WrapAdvice mpv stepChunks slots
+  -> WrapProverT branches mpv stepChunks slots m a
   -> m a
 runWrapProverT advice (WrapProverT m) = runReaderT m advice
 
@@ -163,10 +171,11 @@ instance
   WrapWitnessM
     branches
     mpv
+    stepChunks
     slots
     VestaG
     WrapField
-    (WrapProverT branches mpv slots m) where
+    (WrapProverT branches mpv stepChunks slots m) where
   getWhichBranch _ = WrapProverT $ map _.whichBranch ask
   getWrapProofState _ = WrapProverT $ map _.wrapProofState ask
   getStepAccs _ = WrapProverT $ map _.stepAccs ask
@@ -273,22 +282,24 @@ mkVestaPt pt = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
 -- | deterministic `pallas*` helpers exposed as non-effectful in
 -- | `Pickles.ProofFFI`.
 buildWrapAdvice
-  :: forall mpv slots
-   . BuildWrapAdviceInput mpv slots
-  -> WrapAdvice mpv slots
+  :: forall @stepChunks mpv slots
+   . Reflectable stepChunks Int
+  => BuildWrapAdviceInput mpv slots
+  -> WrapAdvice mpv stepChunks slots
 buildWrapAdvice input =
   let
     -- ===== Req.Messages (step.ml commitments → wrap witness). =====
     --
-    -- `pallasProofCommitments` returns wComm (Vector 15) + zComm
-    -- (single) + tComm (Array). Length-pin tComm at 7 to match the
-    -- `WrapProofMessages` shape.
+    -- `pallasProofCommitments` returns chunked w/z (Array per polynomial)
+    -- and flat tComm. Project into typed Vector stepChunks via
+    -- wCommChunked/zCommChunked. tComm is still pinned to Vector 7 here
+    -- (FFI does not yet emit chunked t).
     commits = pallasProofCommitments input.stepProof
 
     messages = WrapProofMessages
-      { wComm: map mkVestaPt commits.wComm
-      , zComm: mkVestaPt commits.zComm
-      , tComm: map mkVestaPt (tCommVec commits)
+      { wComm: map (over ChunkedCommitment (map mkVestaPt)) (wCommChunked @stepChunks commits)
+      , zComm: over ChunkedCommitment (map mkVestaPt) (zCommChunked @stepChunks commits)
+      , tComm: map (over ChunkedCommitment (map mkVestaPt)) (tCommChunked @stepChunks commits)
       }
 
     -- ===== Req.Openings_proof. =====
@@ -376,12 +387,12 @@ buildWrapAdvice input =
 -- |   `assembleWrapMainInput`). Drives both the compile-time shape
 -- |   check (via `CircuitType`) and the solver input.
 -- | * `advice` — the `WrapAdvice` record from `buildWrapAdvice`.
-type WrapProveContext (branches :: Int) (mpv :: Int) (slots :: Type -> Type) =
-  { wrapMainConfig :: WrapMainConfig branches
+type WrapProveContext (branches :: Int) (mpv :: Int) (stepChunks :: Int) (slots :: Type -> Type) =
+  { wrapMainConfig :: WrapMainConfig branches stepChunks
   , crs :: CRS PallasG
   , publicInput ::
       Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean
-  , advice :: WrapAdvice mpv slots
+  , advice :: WrapAdvice mpv stepChunks slots
   -- | When `true`, enables prover-state debug checks, runs
   -- | `verifyProverIndex` against the solved witness, and dumps
   -- | `/tmp/ps_wrap_row_labels.txt` for debugging witness
@@ -403,8 +414,9 @@ type WrapProveContext (branches :: Int) (mpv :: Int) (slots :: Type -> Type) =
 
 -- | Ambient data `wrapCompile` needs — a subset of `WrapProveContext`
 -- | without the solver-only fields (`publicInput`, `advice`).
-type WrapCompileContext (branches :: Int) =
-  { wrapMainConfig :: WrapMainConfig branches
+type WrapCompileContext :: Int -> Int -> Type
+type WrapCompileContext branches stepChunks =
+  { wrapMainConfig :: WrapMainConfig branches stepChunks
   , crs :: CRS PallasG
   }
 
@@ -449,13 +461,30 @@ bumpWrapCsCounter = do
 -- | are never inspected during compile, so no caller placeholder is
 -- | needed; anything that escapes the throw instance is a bug.
 wrapCompile
-  :: forall @branches @slots mpv branchesPred totalBases totalBasesPred
+  :: forall @branches @slots @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
    . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Reflectable mpv Int
+  => Reflectable stepChunks Int
+  => Reflectable tCommLen Int
+  => Reflectable nonSgBases Int
+  => Compare 0 stepChunks LT
+  => Add 1 numChunksPred stepChunks
+  => Mul 7 stepChunks tCommLen
+  => Add 1 tCommLenPred tCommLen
+  => Mul 15 stepChunks wCoeffN
+  => Mul 6 stepChunks indexSigmaN
+  => Mul 44 stepChunks chunkBases
+  => Add 1 chunkBases nonSgBases
+  => Add stepChunks 1 sg1
+  => Add sg1 stepChunks sg2
+  => Add sg2 indexSigmaN sg3
+  => Add sg3 wCoeffN sg4
+  => Add sg4 wCoeffN sg5
+  => Add sg5 indexSigmaN nonSgBases
   => Add 1 branchesPred branches
   => Compare mpv 3 LT
-  => Add mpv Wrap.IvpBaseline totalBases
+  => Add mpv nonSgBases totalBases
   => Add 1 totalBasesPred totalBases
   => PadSlots slots mpv
   => CircuitType WrapField
@@ -463,7 +492,7 @@ wrapCompile
        (slots (Vector WrapIPARounds (FVar WrapField)))
   => CheckedType WrapField (KimchiConstraint WrapField)
        (slots (Vector WrapIPARounds (FVar WrapField)))
-  => WrapCompileContext branches
+  => WrapCompileContext branches stepChunks
   -> Effect WrapCompileResult
 wrapCompile ctx = do
   builtState <-
@@ -471,7 +500,7 @@ wrapCompile ctx = do
       (Proxy @(Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean))
       (Proxy @Unit)
       (Proxy @(KimchiConstraint WrapField))
-      (wrapMain @branches @slots ctx.wrapMainConfig)
+      (wrapMain @branches @slots @stepChunks ctx.wrapMainConfig)
       (Kimchi.initialState :: CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField))
 
   let
@@ -481,6 +510,7 @@ wrapCompile ctx = do
       , publicInputs: builtState.publicInputs
       , unionFind: (un AuxState builtState.aux).wireState.unionFind
       , prevChallengesCount: reflectType (Proxy @PaddedLength)
+      , maxPolySize: crsSize ctx.crs
       }
 
     -- The wrap prover index's `cs.endo` field must be the WRAP curve's
@@ -527,13 +557,30 @@ wrapCompile ctx = do
 -- | `SolverT` uses. Constraint-system-unsatisfied failures are
 -- | reported as `FailedAssertion`.
 wrapSolveAndProve
-  :: forall @branches @slots mpv branchesPred totalBases totalBasesPred m
+  :: forall @branches @slots @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 m
    . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Reflectable mpv Int
+  => Reflectable stepChunks Int
+  => Reflectable tCommLen Int
+  => Reflectable nonSgBases Int
+  => Compare 0 stepChunks LT
+  => Add 1 numChunksPred stepChunks
+  => Mul 7 stepChunks tCommLen
+  => Add 1 tCommLenPred tCommLen
+  => Mul 15 stepChunks wCoeffN
+  => Mul 6 stepChunks indexSigmaN
+  => Mul 44 stepChunks chunkBases
+  => Add 1 chunkBases nonSgBases
+  => Add stepChunks 1 sg1
+  => Add sg1 stepChunks sg2
+  => Add sg2 indexSigmaN sg3
+  => Add sg3 wCoeffN sg4
+  => Add sg4 wCoeffN sg5
+  => Add sg5 indexSigmaN nonSgBases
   => Add 1 branchesPred branches
   => Compare mpv 3 LT
-  => Add mpv Wrap.IvpBaseline totalBases
+  => Add mpv nonSgBases totalBases
   => Add 1 totalBasesPred totalBases
   => PadSlots slots mpv
   => CircuitType WrapField
@@ -542,19 +589,20 @@ wrapSolveAndProve
   => CheckedType WrapField (KimchiConstraint WrapField)
        (slots (Vector WrapIPARounds (FVar WrapField)))
   => Monad m
-  => WrapProveContext branches mpv slots
+  => MonadRec m
+  => WrapProveContext branches mpv stepChunks slots
   -> WrapCompileResult
   -> ExceptT EvaluationError m WrapProveResult
 wrapSolveAndProve ctx compileResult = do
   let
     rawSolver
       :: SolverT WrapField (KimchiConstraint WrapField)
-           (WrapProverT branches mpv slots m)
+           (WrapProverT branches mpv stepChunks slots m)
            (Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean)
            Unit
     rawSolver =
       makeSolver' (emptyProverState { debug = ctx.debug }) (Proxy @(KimchiConstraint WrapField))
-        (wrapMain @branches @slots ctx.wrapMainConfig)
+        (wrapMain @branches @slots @stepChunks ctx.wrapMainConfig)
 
   eRes <- lift $ runWrapProverT ctx.advice (runSolverT rawSolver ctx.publicInput)
 
@@ -622,11 +670,13 @@ wrapDumpRowLabels constraints =
       (Array.intercalate "\n" out <> "\n")
 
 extractStepVKComms
-  :: VerifierIndex VestaG StepField
-  -> StepVK WrapField
+  :: forall @stepChunks
+   . Reflectable stepChunks Int
+  => VerifierIndex VestaG StepField
+  -> StepVK stepChunks WrapField
 extractStepVKComms vk =
   let
-    comms = pallasVerifierIndexCommitments vk
+    comms = pallasVerifierIndexCommitments @stepChunks vk
   in
     { sigmaComm: comms.sigma
     , coefficientsComm: comms.coeff
@@ -642,20 +692,24 @@ extractStepVKComms vk =
 -- | by `const_`-ing each coordinate. Used by `buildWrapMainConfigN1`
 -- | because `wrapMain`'s config carries step-key commitments as circuit
 -- | variables so the in-circuit `chooseKey` can scale them by a boolean.
-stepVkForCircuit :: StepVK WrapField -> StepVK (FVar WrapField)
+stepVkForCircuit
+  :: forall stepChunks
+   . StepVK stepChunks WrapField
+  -> StepVK stepChunks (FVar WrapField)
 stepVkForCircuit vk =
   let
     cp :: AffinePoint WrapField -> AffinePoint (FVar WrapField)
     cp pt = { x: const_ pt.x, y: const_ pt.y }
+    cpChunk = over ChunkedCommitment (map cp)
   in
-    { sigmaComm: map cp vk.sigmaComm
-    , coefficientsComm: map cp vk.coefficientsComm
-    , genericComm: cp vk.genericComm
-    , psmComm: cp vk.psmComm
-    , completeAddComm: cp vk.completeAddComm
-    , mulComm: cp vk.mulComm
-    , emulComm: cp vk.emulComm
-    , endomulScalarComm: cp vk.endomulScalarComm
+    { sigmaComm: map cpChunk vk.sigmaComm
+    , coefficientsComm: map cpChunk vk.coefficientsComm
+    , genericComm: cpChunk vk.genericComm
+    , psmComm: cpChunk vk.psmComm
+    , completeAddComm: cpChunk vk.completeAddComm
+    , mulComm: cpChunk vk.mulComm
+    , emulComm: cpChunk vk.emulComm
+    , endomulScalarComm: cpChunk vk.endomulScalarComm
     }
 
 -- | Multi-branch wrap main config. Takes per-branch data
@@ -683,8 +737,9 @@ stepVkForCircuit vk =
 -- |     `perBranchLagrangeAt` from this; `lagrangeAt` is unused but
 -- |     populated from the head branch's domain to satisfy the type.
 buildWrapMainConfigMulti
-  :: forall @branches branchesPred
+  :: forall @branches @stepChunks branchesPred
    . Reflectable branches Int
+  => Reflectable stepChunks Int
   => Add 1 branchesPred branches
   => CRS VestaG
   -> { perBranch ::
@@ -694,7 +749,7 @@ buildWrapMainConfigMulti
            , stepVK :: VerifierIndex VestaG StepField
            }
      }
-  -> WrapMainConfig branches
+  -> WrapMainConfig branches stepChunks
 buildWrapMainConfigMulti vestaSrs { perBranch } =
   let
     domainLog2s = map _.stepDomainLog2 perBranch
@@ -704,8 +759,21 @@ buildWrapMainConfigMulti vestaSrs { perBranch } =
     perBranchLookup i =
       map
         ( \b ->
-            (coerce (pallasSrsLagrangeCommitmentAt vestaSrs b.stepDomainLog2 i))
-              :: AffinePoint (F WrapField)
+            let
+              chunksArr = pallasSrsLagrangeCommitmentChunksAt
+                vestaSrs
+                b.stepDomainLog2
+                i
+            in
+              case Vector.toVector @stepChunks (map coerce chunksArr) of
+                Just v -> (v :: Vector _ (AffinePoint (F WrapField)))
+                Nothing -> unsafeThrow
+                  $ "buildWrapMainConfigMulti.perBranchLookup: lagrange chunks size mismatch "
+                      <> "(got "
+                      <> show (Array.length chunksArr)
+                      <> ", expected stepChunks="
+                      <> show (reflectType (Proxy @stepChunks))
+                      <> ")"
         )
         perBranch
   in
@@ -714,9 +782,25 @@ buildWrapMainConfigMulti vestaSrs { perBranch } =
     , stepKeys:
         map (\b -> stepVkForCircuit (extractStepVKComms b.stepVK)) perBranch
     , lagrangeAt:
+        -- Wrap-side lagrange: chunked at chunks2. For each PI slot the
+        -- basis splits into `stepChunks = ceil(2^stepDomainLog2 /
+        -- 2^wrapMaxPolySize)` pieces. The chunked FFI returns an Array
+        -- of length stepChunks; reshape into `Vector stepChunks` here.
+        -- For nc=1 (non-chunks2 fixtures) the array has length 1 and
+        -- this is gate-identical to the pre-chunk single-point path.
         mkConstLagrangeBaseLookup \i ->
-          (coerce (pallasSrsLagrangeCommitmentAt vestaSrs headDomainLog2 i))
-            :: AffinePoint (F WrapField)
+          let
+            chunksArr = pallasSrsLagrangeCommitmentChunksAt vestaSrs headDomainLog2 i
+          in
+            case Vector.toVector @stepChunks (map coerce chunksArr) of
+              Just v -> (v :: Vector _ (AffinePoint (F WrapField)))
+              Nothing -> unsafeThrow
+                $ "buildWrapMainConfigMulti: lagrange chunks size mismatch "
+                    <> "(got "
+                    <> show (Array.length chunksArr)
+                    <> ", expected stepChunks="
+                    <> show (reflectType (Proxy @stepChunks))
+                    <> ")"
     , perBranchLagrangeAt:
         if allEqual then Nothing else Just perBranchLookup
     , blindingH: (coerce $ pallasSrsBlindingGenerator vestaSrs) :: AffinePoint (F WrapField)

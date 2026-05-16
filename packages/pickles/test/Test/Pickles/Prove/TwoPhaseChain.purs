@@ -120,7 +120,7 @@ type TwoPhaseChainRules =
   RulesCons 0 Unit Unit Unit
     ( RulesCons 1
         (Tuple1 (StatementIO (F StepField) Unit))
-        (Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
+        (Tuple1 (Slot Compiled 1 1 (StatementIO (F StepField) Unit)))
         (Tuple1 SlotWrapKey)
         RulesNil
     )
@@ -150,14 +150,15 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
         , wrapDomainOverride: Nothing
         }
 
-    makeZeroEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) makeZeroRule unit
-    incrementEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) incrementRule (tuple1 Self)
+    makeZeroEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) @1 @1 makeZeroRule unit
+    incrementEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) @1 @1 incrementRule (tuple1 Self)
     let rules = tuple2 makeZeroEntry incrementEntry
     output <- liftEffect $ compileMulti
       @TwoPhaseChainRules
       @Unit
       @(F StepField)
       @(Product (Vector 1) NoSlots)
+      @1
       cfg
       rules
 

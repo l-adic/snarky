@@ -77,6 +77,7 @@ class
   WrapWitnessM
     (branches :: Int)
     (mpv :: Int)
+    (stepChunks :: Int)
     (slots :: Type -> Type)
     g
     f
@@ -145,7 +146,7 @@ class
   getMessages
     :: Unit
     -> m
-         ( WrapProofMessages
+         ( WrapProofMessages stepChunks
              (WeierstrassAffinePoint g (F f))
          )
 
@@ -158,7 +159,7 @@ instance
   , Reflectable mpv Int
   , PadSlots slots mpv
   ) =>
-  WrapWitnessM branches mpv slots g f Effect where
+  WrapWitnessM branches mpv stepChunks slots g f Effect where
   getWhichBranch _ = throw "impossible! getWhichBranch called during compilation"
   getWrapProofState _ = throw "impossible! getWrapProofState called during compilation"
   getStepAccs _ = throw "impossible! getStepAccs called during compilation"

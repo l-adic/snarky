@@ -34,6 +34,7 @@ package:
     - snarky-curves
     - snarky-kimchi
     - strings
+    - tailrec
     - transformers
     - tuples
     - unsafe-coerce

@@ -24,6 +24,7 @@ module Pickles.Sideload.Advice
 
 import Prelude
 
+import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Pickles.Field (StepField)
@@ -37,8 +38,8 @@ import Snarky.Circuit.DSL (F)
 -- | alone.
 -- |
 -- | * `Unit` → `Unit`
--- | * `Slot Compiled n stmt /\ rest` → `Unit /\ restCarrier`
--- | * `Slot SideLoaded mpvMax stmt /\ rest` → `Bundle /\ restCarrier`
+-- | * `Slot Compiled n nc stmt /\ rest` → `Unit /\ restCarrier`
+-- | * `Slot SideLoaded mpvMax nc stmt /\ rest` → `Bundle /\ restCarrier`
 class SideloadedVKsCarrier :: Type -> Type -> Constraint
 class SideloadedVKsCarrier spec carrier | spec -> carrier
 
@@ -49,15 +50,17 @@ instance SideloadedVKsCarrier Unit Unit
 instance
   SideloadedVKsCarrier rest restCarrier =>
   SideloadedVKsCarrier
-    (Slot Compiled n statement /\ rest)
+    (Slot Compiled n slotVkChunks statement /\ rest)
     (Unit /\ restCarrier)
 
--- | Side-loaded slot — runtime VK supplied via the prover input.
+-- | Side-loaded slot — runtime VK supplied via the prover input. The
+-- | `Bundle nc` carries the slot's chunks count as Dim 3 (the slot's
+-- | own `nc` from `Slot SideLoaded mpvMax nc statement`).
 instance
   SideloadedVKsCarrier rest restCarrier =>
   SideloadedVKsCarrier
-    (Slot SideLoaded mpvMax statement /\ rest)
-    (Bundle /\ restCarrier)
+    (Slot SideLoaded mpvMax slotVkChunks statement /\ rest)
+    (Bundle slotVkChunks /\ restCarrier)
 
 -- | Prover-monad source for the spec-indexed VK carrier.
 -- |
@@ -94,12 +97,14 @@ instance MkUnitVkCarrier Unit Unit where
 
 instance
   MkUnitVkCarrier rest restCarrier =>
-  MkUnitVkCarrier (Slot Compiled n statement /\ rest) (Unit /\ restCarrier) where
+  MkUnitVkCarrier (Slot Compiled n slotVkChunks statement /\ rest) (Unit /\ restCarrier) where
   mkUnitVkCarrier = unit /\ mkUnitVkCarrier @rest
 
 instance
-  MkUnitVkCarrier rest restCarrier =>
+  ( MkUnitVkCarrier rest restCarrier
+  , Reflectable slotVkChunks Int
+  ) =>
   MkUnitVkCarrier
-    (Slot SideLoaded mpvMax statement /\ rest)
-    (SLVK.VerificationKey (F StepField) Boolean /\ restCarrier) where
+    (Slot SideLoaded mpvMax slotVkChunks statement /\ rest)
+    (SLVK.VerificationKey slotVkChunks (F StepField) Boolean /\ restCarrier) where
   mkUnitVkCarrier = SLVK.compileDummy /\ mkUnitVkCarrier @rest

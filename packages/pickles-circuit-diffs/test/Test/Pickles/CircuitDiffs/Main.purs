@@ -2,10 +2,13 @@ module Test.Pickles.CircuitDiffs.Main where
 
 import Prelude
 
+import Control.Monad.Rec.Class (Step(..), tailRecM)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Int as Int
+import Data.Int.Bits as Bits
 import Data.Maybe (Maybe(..))
+import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -17,6 +20,7 @@ import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
 import Node.FS.Perms (all, mkPerms)
 import Node.FS.Sync as FS
+import Node.Process as Process
 import Pickles.CircuitDiffs.Circuit (Circuit, ComparableCircuit, comparable, fromCompiledCircuit, parseOcamlFixtures)
 import Pickles.CircuitDiffs.PureScript.BCorrect (compileBCorrect)
 import Pickles.CircuitDiffs.PureScript.BulletReduce (compileBulletReduce)
@@ -42,6 +46,7 @@ import Pickles.CircuitDiffs.PureScript.OtherFieldCheck (compileOtherFieldCheck)
 import Pickles.CircuitDiffs.PureScript.Pow2Pow (compilePow2Pow)
 import Pickles.CircuitDiffs.PureScript.PseudoCircuits (compileChooseKeyN1Wrap, compileOneHotN17Step, compileOneHotN17Wrap, compileOneHotN1Step, compileOneHotN1Wrap, compileOneHotN3Step, compileOneHotN3Wrap, compilePseudoChooseN1Step, compilePseudoChooseN1Wrap, compilePseudoChooseN3Step, compilePseudoChooseN3Wrap, compilePseudoMaskN17Step, compilePseudoMaskN17Wrap, compilePseudoMaskN1Step, compilePseudoMaskN1Wrap, compilePseudoMaskN3Step, compilePseudoMaskN3Wrap, compileSideloadedVkTypStep, compileUtilsOnesVectorN16Step, compileUtilsOnesVectorN16Wrap)
 import Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn (compileStepMainAddOneReturn)
+import Pickles.CircuitDiffs.PureScript.StepMainChunks2 (compileStepMainChunks2)
 import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecursionReturnParams, compileStepMainNoRecursionReturn)
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedChild (compileStepMainSideLoadedChild)
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain (compileStepMainSideLoadedMain)
@@ -54,6 +59,7 @@ import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
 import Pickles.CircuitDiffs.PureScript.StepVerifyN2 (compileStepVerifyN2)
 import Pickles.CircuitDiffs.PureScript.WrapMain (compileWrapMainN1)
 import Pickles.CircuitDiffs.PureScript.WrapMainAddOneReturn (compileWrapMainAddOneReturn)
+import Pickles.CircuitDiffs.PureScript.WrapMainChunks2 (compileWrapMainChunks2)
 import Pickles.CircuitDiffs.PureScript.WrapMainN2 (compileWrapMainN2)
 import Pickles.CircuitDiffs.PureScript.WrapMainSideLoadedMain (compileWrapMainSideLoadedMain)
 import Pickles.CircuitDiffs.PureScript.WrapMainTreeProofReturn (compileWrapMainTreeProofReturn)
@@ -63,23 +69,28 @@ import Pickles.CircuitDiffs.PureScript.WrapVerifyN2 (compileWrapVerifyN2)
 import Pickles.CircuitDiffs.PureScript.Xhat (compileXhat)
 import Pickles.CircuitDiffs.PureScript.XhatStep (compileXhatStep)
 import Pickles.CircuitDiffs.Types (CircuitComparison)
+import Pickles.ProofFFI (pallasCreateProofWithPrev)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Safe.Coerce (coerce)
 import Simple.JSON (writeJSON)
-import Snarky.Backend.Compile (compilePure)
+import Snarky.Backend.Builder (CircuitBuilderState)
+import Snarky.Backend.Compile (Solver, compilePure, makeSolver, runSolver)
+import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
+import Snarky.Backend.Kimchi.Class (createProverIndex)
 import Snarky.Backend.Kimchi.Impl.Pallas (pallasCrsCreate)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaCrsCreate)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (BoolVar, F(..), FVar, SizedF, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, pow_, unpack_, xor_)
+import Snarky.Circuit.DSL (BoolVar, F(..), FVar, SizedF, addConstraint, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, pow_, unpack_, xor_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky)
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
 import Snarky.Circuit.Kimchi.EndoScalar (toField)
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2')
-import Snarky.Constraint.Kimchi (KimchiConstraint, initialState)
-import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoScalar(..), endoScalar)
+import Snarky.Constraint.Kimchi (KimchiConstraint(..), KimchiGate, initialState)
+import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
+import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoBase(..), EndoScalar(..), endoBase, endoScalar)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
@@ -152,6 +163,10 @@ compileFB circuit = fromCompiledCircuit $
 compileFU :: (forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit) -> Circuit Fp
 compileFU circuit = fromCompiledCircuit $
   compilePure (Proxy @(F Fp)) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit initialState
+
+compileUU :: (forall t m. CircuitM Fp (KimchiConstraint Fp) t m => Unit -> Snarky (KimchiConstraint Fp) t m Unit) -> Circuit Fp
+compileUU circuit = fromCompiledCircuit $
+  compilePure (Proxy @Unit) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit initialState
 
 compileBB :: (forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m (BoolVar Fp)) -> Circuit Fp
 compileBB circuit = fromCompiledCircuit $
@@ -265,6 +280,32 @@ incrementAppCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t 
 incrementAppCircuit x = do
   prev <- exists (pure (zero :: F Fp))
   assertEqual_ x (CVar.add_ (const_ one) prev)
+
+-- | PS mirror of `app_circuit_chunks2` in `dump_circuit_impl.ml`: fill
+-- | 2^16 rows with `Field.mul (fresh_zero) (fresh_zero)` (each R1CS
+-- | counts as half a row, so 2^17 + 1 iterations match OCaml's
+-- | `for _ = 0 to 1 lsl 17 do`), then a raw 7-wire Generic row with zero
+-- | coeffs to bump the 7th permuted column's polynomial degree above
+-- | 2^16.
+chunks2AppCircuit :: forall t m. CircuitM Fp (KimchiConstraint Fp) t m => Unit -> Snarky (KimchiConstraint Fp) t m Unit
+chunks2AppCircuit _ = do
+  let
+    freshZero = exists (pure (zero :: F Fp))
+    iters = (1 `Bits.shl` 17) + 1
+    mulOne = do
+      z1 <- freshZero
+      z2 <- freshZero
+      _ <- mul_ z1 z2
+      pure unit
+  tailRecM
+    ( \i ->
+        if i >= iters then pure (Done unit)
+        else mulOne *> pure (Loop (i + 1))
+    )
+    0
+  z <- freshZero
+  addConstraint $ KimchiRawGeneric7
+    (z :< z :< z :< z :< z :< z :< z :< Vector.nil)
 
 assertSquareCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit
 assertSquareCircuit x = do
@@ -422,6 +463,54 @@ exactMatchEff name effPs =
       psNoCtx `shouldEqual` ocamlNoCtx
 
 --------------------------------------------------------------------------------
+-- Standalone kimchi prover for chunks2 app body — invokes the kimchi
+-- prover directly (no pickles step/wrap wrapping) so that
+-- `KIMCHI_WITNESS_DUMP=<path>` captures only the app body's witness
+-- assignments. The OCaml side is
+-- `dump_app_circuit_chunks2_witness.exe`.
+runChunks2AppWitnessProve :: Effect Unit
+runChunks2AppWitnessProve = do
+  let
+    builtState = compilePure @Fp (Proxy @Unit) (Proxy @Unit)
+      (Proxy @(KimchiConstraint Fp))
+      chunks2AppCircuit
+      (initialState :: CircuitBuilderState (KimchiGate Fp) (AuxState Fp))
+    kimchiRows = Array.concatMap (toKimchiRows <<< _.constraint) builtState.constraints
+    -- max_poly_size = 2^16 (mirrors OCaml's default Tick.set_urs_info []).
+    -- With our ~65538-row circuit the domain rounds up to 2^17,
+    -- triggering num_chunks = 2.
+    maxPolySize = 1 `Bits.shl` 16
+    crs = vestaCrsCreate maxPolySize
+    csResult = makeConstraintSystemWithPrevChallenges @Fp
+      { constraints: kimchiRows
+      , publicInputs: builtState.publicInputs
+      , unionFind: (un AuxState builtState.aux).wireState.unionFind
+      , prevChallengesCount: 0
+      , maxPolySize
+      }
+    endo = let EndoBase e = (endoBase :: EndoBase Fp) in e
+    proverIndex = createProverIndex @Fp @VestaG
+      { endo, constraintSystem: csResult.constraintSystem, crs }
+
+    rawSolver :: Solver Fp (KimchiConstraint Fp) Unit Unit
+    rawSolver = makeSolver (Proxy @(KimchiConstraint Fp)) chunks2AppCircuit
+  case runSolver rawSolver unit of
+    Left e -> throw $ "chunks2 app solver: " <> show e
+    Right (Tuple _publicOutputs assignments) -> do
+      let
+        { witness } = makeWitness
+          { assignments
+          , constraints: map _.variables csResult.constraints
+          , publicInputs: builtState.publicInputs
+          }
+        _proof = pallasCreateProofWithPrev
+          { proverIndex
+          , witness
+          , prevChallenges: []
+          }
+      pure unit
+
+--------------------------------------------------------------------------------
 -- Test spec
 
 main :: Effect Unit
@@ -467,6 +556,16 @@ spec =
         -- multi-branch compile.
         exactMatch "app_circuit_two_phase_chain_make_zero" (compileFU makeZeroAppCircuit)
         exactMatch "app_circuit_two_phase_chain_increment" (compileFU incrementAppCircuit)
+        exactMatch "app_circuit_chunks2" (compileUU chunks2AppCircuit)
+      describe "Witness dump" $
+        -- | Gated on `KIMCHI_WITNESS_DUMP` env var. When set, runs the
+        -- | standalone kimchi prover for chunks2 app body so the dump
+        -- | fires; otherwise no-op. Paired with OCaml's
+        -- | `dump_app_circuit_chunks2_witness.exe`.
+        it "app_circuit_chunks2 witness" do
+          liftEffect (Process.lookupEnv "KIMCHI_WITNESS_DUMP") >>= case _ of
+            Nothing -> pure unit
+            Just _ -> liftEffect runChunks2AppWitnessProve
       describe "Kimchi gates" do
         exactMatch "add_complete_step_circuit" (compilePP addCompleteCircuit)
         exactMatch "endo_scalar_step_circuit" (compileKFF endoScalarCircuit)
@@ -487,7 +586,7 @@ spec =
           stepSrs = pallasCrsCreate (2 `Int.pow` 16)
           stepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt stepSrs 16 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepSrs 16 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "xhat_step_circuit" (fromCompiledCircuit $ compileXhatStep stepSrsData)
@@ -503,7 +602,7 @@ spec =
           srs = vestaCrsCreate (2 `Int.pow` 16)
           wrapSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                coerce (pallasSrsLagrangeCommitmentAt srs 16 i)
+                Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt srs 16 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator srs
             }
         exactMatch "xhat_wrap_circuit" (fromCompiledCircuit $ compileXhat wrapSrsData)
@@ -512,7 +611,7 @@ spec =
           wrapSrs = vestaCrsCreate (2 `Int.pow` 16)
           wrapSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 16 i)
+                Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 16 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
         exactMatch "ivp_wrap_circuit" (fromCompiledCircuit $ compileIvpWrap wrapSrsData)
@@ -528,7 +627,7 @@ spec =
           -- return commitments at domain size 2^14 to match.
           wrapMainSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 14 i)
+                Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 14 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
           -- N=1 step CS commits over the Vesta SRS at log2=14. The
@@ -537,7 +636,7 @@ spec =
           wrapMainN1StepSrs = pallasCrsCreate (2 `Int.pow` 15)
           wrapMainN1StepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator wrapMainN1StepSrs) :: AffinePoint (F Fp)
             }
         -- N=1 Input mode (Simple_chain). step_widths=[1], padded=[[0];[1]].
@@ -559,11 +658,11 @@ spec =
           -- per-domain lagrange tables at log2 ∈ {13, 14, 15}.
           wrapMainSlmStepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 14 i)) :: AffinePoint (F Fp))
             , sideloadedPerDomainLagrangeAt:
-                (\i -> (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 13 i)) :: AffinePoint (F Fp))
-                  :< (\i -> (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 14 i)) :: AffinePoint (F Fp))
-                  :< (\i -> (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 15 i)) :: AffinePoint (F Fp))
+                (\i -> Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 13 i)) :: AffinePoint (F Fp)))
+                  :< (\i -> Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 14 i)) :: AffinePoint (F Fp)))
+                  :< (\i -> Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 15 i)) :: AffinePoint (F Fp)))
                   :< Vector.nil
             , blindingH: (coerce $ vestaSrsBlindingGenerator wrapMainN1StepSrs) :: AffinePoint (F Fp)
             }
@@ -582,13 +681,13 @@ spec =
         let
           wrapMainN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 15 i)
+                Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 15 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
           wrapMainN2StepSrs = pallasCrsCreate (2 `Int.pow` 15)
           wrapMainN2StepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt wrapMainN2StepSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt wrapMainN2StepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator wrapMainN2StepSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "wrap_main_n2_circuit"
@@ -608,7 +707,7 @@ spec =
           -- log2 matches `domainLog2s` (the step proof's domain).
           wrapMainAddOneReturnSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 9 i)
+                Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 9 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
           -- Step CS params for Add_one_return (mpv=0, no prev proofs).
@@ -618,11 +717,26 @@ spec =
           aorStepSrs = pallasCrsCreate (2 `Int.pow` 15)
           aorStepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt aorStepSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt aorStepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator aorStepSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "wrap_main_add_one_return_circuit"
           (fromCompiledCircuit <<< _.wrapCs <$> compileWrapMainAddOneReturn wrapMainAddOneReturnSrsData aorStepSrsData)
+        -- N=0, num_chunks=2 wrap. Same branch/widths/Max_widths layout
+        -- as `wrap_main_add_one_return_circuit` but with `stepChunks=2`
+        -- at `wrapMainForPrevs`, so the IVP MSM walks 2 chunks per
+        -- w/z/t_comm. Step domain log2 = 17 (driven by the chunks2 step
+        -- body's 2^17 mul fillers); wrap domain log2 = 14 (= N1
+        -- override). Step SRS, lagrange, blindingH match the chunks2
+        -- step-only fixture above. Mirrors `dump_chunks2.ml` wrap-side.
+        let
+          chunks2WrapSrsData =
+            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+                Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 17 i))
+            , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
+            }
+        exactMatchEff "chunks2_wrap_main_circuit"
+          (fromCompiledCircuit <<< _.wrapCs <$> compileWrapMainChunks2 chunks2WrapSrsData aorStepSrsData)
         -- N=2 Output mode (Tree_proof_return). Single branch with
         -- heterogeneous prev slots [0; 2] (No_recursion_return at
         -- slot 0, self at slot 1). step_widths=[2], padded=[[0];[2]].
@@ -634,7 +748,7 @@ spec =
         let
           wrapMainTprSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 15 i)
+                Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 15 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
           -- Step CS params for TPR (mpv=2, heterogeneous prevs [N0,N2]).
@@ -643,9 +757,9 @@ spec =
           -- by `step_main_tree_proof_return_circuit`'s direct test.
           tprStepSrs = pallasCrsCreate (2 `Int.pow` 15)
           tprLagrangeAtD13 = mkConstLagrangeBaseLookup \i ->
-            (coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 13 i)) :: AffinePoint (F Fp)
+            Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 13 i)) :: AffinePoint (F Fp))
           tprLagrangeAtD14 = mkConstLagrangeBaseLookup \i ->
-            (coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 14 i)) :: AffinePoint (F Fp)
+            Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 14 i)) :: AffinePoint (F Fp))
 
           -- NRR wrap+step SRS data for the chained NRR compile inside
           -- compileStepMainTreeProofReturn (the wrap fixture goes through
@@ -653,14 +767,14 @@ spec =
           wrapTprNrrWrapSrsData :: IvpWrapParams
           wrapTprNrrWrapSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 9 i)
+                Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 9 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
 
           wrapTprNrrStepSrsData :: StepMainNoRecursionReturnParams
           wrapTprNrrStepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator tprStepSrs) :: AffinePoint (F Fp)
             }
           tprStepSrsData =
@@ -682,12 +796,12 @@ spec =
           tpcStepSrs = pallasCrsCreate (2 `Int.pow` 15)
           tpcMakeZeroSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt tpcStepSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt tpcStepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator tpcStepSrs) :: AffinePoint (F Fp)
             }
           tpcIncrementSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt tpcStepSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt tpcStepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator tpcStepSrs) :: AffinePoint (F Fp)
             }
           wrapMainTpcParams =
@@ -704,7 +818,7 @@ spec =
           stepSrs = pallasCrsCreate (2 `Int.pow` 15)
           stepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt stepSrs 15 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepSrs 15 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "ivp_step_circuit" (fromCompiledCircuit $ compileIvpStep stepSrsData)
@@ -714,14 +828,14 @@ spec =
           stepVerifySrs = pallasCrsCreate (2 `Int.pow` 15)
           stepVerifySrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt stepVerifySrs 15 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepVerifySrs 15 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepVerifySrs) :: AffinePoint (F Fp)
             }
         exactMatch "step_verify_circuit" (fromCompiledCircuit $ compileStepVerify stepVerifySrsData)
         let
           stepVerifyN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt stepVerifySrs 15 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepVerifySrs 15 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepVerifySrs) :: AffinePoint (F Fp)
             }
         exactMatch "step_verify_n2_circuit" (fromCompiledCircuit $ compileStepVerifyN2 stepVerifyN2SrsData)
@@ -730,14 +844,14 @@ spec =
           fullStepSrs = pallasCrsCreate (2 `Int.pow` 15)
           fullStepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt fullStepSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt fullStepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "full_step_verify_one_circuit" (fromCompiledCircuit $ compileFullStepVerifyOne fullStepSrsData)
         let
           fullStepN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt fullStepSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt fullStepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "full_step_verify_one_n2_circuit" (fromCompiledCircuit $ compileFullStepVerifyOneN2 fullStepN2SrsData)
@@ -749,7 +863,7 @@ spec =
           stepMainSrs = pallasCrsCreate (2 `Int.pow` 15)
           stepMainSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
         -- N=1, Input mode. Public input layout is input field only.
@@ -757,7 +871,7 @@ spec =
         let
           stepMainN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
         -- N=2, Input mode. Two prev proofs verified by verify_one.
@@ -775,6 +889,15 @@ spec =
         -- proof-level byte-for-byte test, which consumes a real
         -- No_recursion_return proof in slot 0.
         exactMatchEff "step_main_no_recursion_return_circuit" (fromCompiledCircuit <<< _.stepCs <$> compileStepMainNoRecursionReturn stepMainSrsData)
+        -- N=0, num_chunks=2, override_wrap_domain=N1 (= log2 14).
+        -- Same shape as NRR but with 2^17+1 mul fillers + a 7-wire Raw
+        -- Generic gate so the step domain rounds to 2^17 and kimchi's
+        -- PCS commits at num_chunks=2. Mirrors `dump_chunks2.exe`.
+        -- See `mina/.../dump_chunks2/dump_chunks2.ml`. The CS itself is
+        -- not affected by `num_chunks` directly — it's purely a function
+        -- of the rule body's gate count — but this fixture is the
+        -- byte-equality gate for the chunks2 witness diff loop.
+        exactMatchEff "chunks2_step_main_circuit" (fromCompiledCircuit <<< _.stepCs <$> compileStepMainChunks2 stepMainSrsData)
         -- N=2, Output mode, HETEROGENEOUS prevs (No_recursion_return @ N0,
         -- self @ N2). All four layers of heterogeneity wired up:
         -- * per-slot SPPW sizing  (`Slot Compiled 0 (Slot Compiled 2 …)`)
@@ -784,10 +907,10 @@ spec =
         let
           lagrangeAtD13 =
             mkConstLagrangeBaseLookup \i ->
-              (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 13 i)) :: AffinePoint (F Fp)
+              Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 13 i)) :: AffinePoint (F Fp))
           lagrangeAtD14 =
             mkConstLagrangeBaseLookup \i ->
-              (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+              Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp))
           -- SRS data for compiling NRR's wrap CS up-front, used to
           -- derive slot 0's known wrap key (replacing the prior
           -- 28-copies-of-Pallas-generator placeholder). Mirrors
@@ -798,7 +921,7 @@ spec =
           tprNrrWrapSrsData :: IvpWrapParams
           tprNrrWrapSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                coerce (pallasSrsLagrangeCommitmentAt tprNrrWrapSrs 9 i)
+                Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt tprNrrWrapSrs 9 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator tprNrrWrapSrs
             }
 
@@ -809,7 +932,7 @@ spec =
           tprNrrStepSrsData :: StepMainNoRecursionReturnParams
           tprNrrStepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
           treeProofReturnSrsData =
@@ -827,20 +950,20 @@ spec =
         let
           lagrangeAtD15 =
             mkConstLagrangeBaseLookup \i ->
-              (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 15 i)) :: AffinePoint (F Fp)
+              Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 15 i)) :: AffinePoint (F Fp))
           sideLoadedMainSrsData =
             { lagrangeAt: lagrangeAtD14
             , sideloadedPerDomainLagrangeAt:
                 ( \i ->
-                    (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 13 i)) :: AffinePoint (F Fp)
+                    Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 13 i)) :: AffinePoint (F Fp))
                 )
                   :<
                     ( \i ->
-                        (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+                        Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp))
                     )
                   :<
                     ( \i ->
-                        (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 15 i)) :: AffinePoint (F Fp)
+                        Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 15 i)) :: AffinePoint (F Fp))
                     )
                   :< Vector.nil
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
@@ -883,12 +1006,12 @@ spec =
         let
           twoPhaseChainMakeZeroSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
           twoPhaseChainIncrementSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+                Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
         -- Increment standalone test compiles BOTH branches: make_zero

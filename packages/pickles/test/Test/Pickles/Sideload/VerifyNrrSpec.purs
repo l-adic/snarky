@@ -28,5 +28,6 @@ spec = describe "Pickles.Sideload.NRR verify" do
         { wrapVK: fixture.vk
         , vestaSrs: fixture.vestaSrs
         , stepDomainLog2: p.stepDomainLog2
+        , stepNumChunks: 1
         }
     verifyOcamlProof verifier fixture.ocamlProof `shouldEqual` true

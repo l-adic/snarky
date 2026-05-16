@@ -75,6 +75,7 @@ import Prelude
 import Control.Apply (lift2)
 import Control.Monad.Except (ExceptT, runExceptT, throwError)
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
+import Control.Monad.Rec.Class (class MonadRec)
 import Control.Monad.Trans.Class (class MonadTrans, lift)
 import Data.Const (Const)
 import Data.Either (Either)
@@ -213,6 +214,7 @@ derive newtype instance (Apply (t m)) => Apply (Snarky c t m)
 derive newtype instance (Applicative (t m)) => Applicative (Snarky c t m)
 derive newtype instance (Bind (t m)) => Bind (Snarky c t m)
 derive newtype instance (Monad (t m)) => Monad (Snarky c t m)
+derive newtype instance (MonadRec (t m)) => MonadRec (Snarky c t m)
 derive newtype instance (MonadFresh (t m)) => MonadFresh (Snarky c t m)
 derive newtype instance (MonadTrans t) => MonadTrans (Snarky c t)
 
@@ -223,7 +225,7 @@ runSnarky (Snarky m) = m
 -- | `exists`, which introduces witness variables with prover-side computation.
 -- | The functional dependencies ensure the field type is determined by either
 -- | the transformer `t` or the constraint type `c`.
-class (Monad m, MonadFresh (t m), BasicSystem f c, ConstraintM t c, WithLabel t) <= CircuitM f c t m | t -> f, c -> f where
+class (Monad m, MonadRec (t m), MonadFresh (t m), BasicSystem f c, ConstraintM t c, WithLabel t) <= CircuitM f c t m | t -> f, c -> f where
   exists :: forall a var. CircuitType f a var => CheckedType f c var => ConstraintM t c => AsProverT f m a -> Snarky c t m var
 
 throwAsProver :: forall f m a. Monad m => EvaluationError -> AsProverT f m a

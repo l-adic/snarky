@@ -60,7 +60,7 @@ import Type.Proxy (Proxy(..))
 -- | override_wrap_domain:N1). Each slot needs its own lagrange lookup
 -- | keyed on the slot's domain size.
 type StepMainTreeProofReturnParams =
-  { perSlotLagrangeAt :: Vector 2 (LagrangeBaseLookup StepField)
+  { perSlotLagrangeAt :: Vector 2 (LagrangeBaseLookup 1 StepField)
   , blindingH :: AffinePoint (F StepField)
   -- SRS data for compiling NRR's wrap circuit (used to derive slot 0's
   -- known wrap key). Mirrors `IvpWrapParams` and
@@ -164,12 +164,14 @@ compileStepMainTreeProofReturn params = do
       --   `exists`-allocated VK inside stepMain.
       -- Single-rule: mpvMax = len = 2, mpvPad = 0.
       ( \_ -> stepMain
-          @(Tuple2 (Slot Compiled 0 (StatementIO Unit (F StepField))) (Slot Compiled 2 (StatementIO Unit (F StepField))))
+          @(Tuple2 (Slot Compiled 0 1 (StatementIO Unit (F StepField))) (Slot Compiled 2 1 (StatementIO Unit (F StepField))))
           @Unit
           @(F StepField)
           @(F StepField)
           @(Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
           @2
+          @1
+          @Unit
           @1
           treeProofReturnRule
           { perSlotLagrangeAt: params.perSlotLagrangeAt

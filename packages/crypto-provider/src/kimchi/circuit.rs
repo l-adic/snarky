@@ -95,9 +95,11 @@ mod generic {
     pub fn constraint_system_create<F: PrimeField>(
         gates: Vec<CircuitGate<F>>,
         public_inputs_count: usize,
+        max_poly_size: usize,
     ) -> Result<ConstraintSystem<F>> {
         ConstraintSystem::create(gates)
             .public(public_inputs_count)
+            .max_poly_size(Some(max_poly_size))
             .build()
             .map_err(|e| {
                 Error::new(
@@ -115,10 +117,12 @@ mod generic {
         gates: Vec<CircuitGate<F>>,
         public_inputs_count: usize,
         prev_challenges_count: usize,
+        max_poly_size: usize,
     ) -> Result<ConstraintSystem<F>> {
         ConstraintSystem::create(gates)
             .public(public_inputs_count)
             .prev_challenges(prev_challenges_count)
+            .max_poly_size(Some(max_poly_size))
             .build()
             .map_err(|e| {
                 Error::new(
@@ -359,67 +363,156 @@ mod generic {
     }
 
     /// Extract witness polynomial evaluations from a proof.
-    /// Returns 30 values: 15 columns × 2 points (zeta, zeta*omega).
+    /// Returns `15 * 2 * num_chunks` values in polynomial-major,
+    /// within-poly chunk-major order:
+    ///   [w[0].zeta[0], w[0].zeta_omega[0], w[0].zeta[1], w[0].zeta_omega[1], ...,
+    ///    w[0].zeta[n-1], w[0].zeta_omega[n-1],
+    ///    w[1].zeta[0], w[1].zeta_omega[0], ..., w[14].zeta_omega[n-1]]
+    /// At `n=1` length is 30 (current behavior); callers indexing the
+    /// first 30 positions see no change. Chunk-aware callers added
+    /// later read positions `30*chunk + 2*poly + {0,1}` to recover the
+    /// (poly, chunk, point) triple.
+    ///
+    /// Chunk-order convention: same as `proof_z_evals` (interleaved
+    /// zeta/omega within each polynomial's chunks, low-chunk first).
+    /// See `docs/chunking-ffi-audit.md`.
     pub fn proof_witness_evals<G: KimchiCurve>(
         proof: &ProverProof<G, OpeningProof<G>>,
     ) -> Vec<G::ScalarField>
     where
         G::BaseField: PrimeField,
     {
-        let mut result = Vec::with_capacity(COLUMNS * 2);
+        let n = proof.evals.w[0].zeta.len();
+        let mut result = Vec::with_capacity(COLUMNS * 2 * n);
         for w_eval in &proof.evals.w {
-            result.push(w_eval.zeta[0]);
-            result.push(w_eval.zeta_omega[0]);
+            debug_assert_eq!(
+                w_eval.zeta.len(),
+                n,
+                "PointEvaluations chunk count invariant"
+            );
+            debug_assert_eq!(
+                w_eval.zeta_omega.len(),
+                n,
+                "PointEvaluations chunk count invariant"
+            );
+            for i in 0..n {
+                result.push(w_eval.zeta[i]);
+                result.push(w_eval.zeta_omega[i]);
+            }
         }
         result
     }
 
     /// Extract permutation polynomial (z) evaluations from a proof.
-    /// Returns 2 values: z(zeta), z(zeta*omega).
+    /// Returns `2 * num_chunks` values, ordered as:
+    ///   [z.zeta[0], z.zeta_omega[0], z.zeta[1], z.zeta_omega[1], ...,
+    ///    z.zeta[n-1], z.zeta_omega[n-1]]
+    /// for `num_chunks = n`. At `n=1` length is 2 (current single-chunk
+    /// behavior); callers indexing `[0]`/`[1]` see no change. Chunk-aware
+    /// callers added later for chunked proofs (`docs/chunking.md` Phase 4+)
+    /// will read positions `2*i`/`2*i+1` to recover the i-th chunk.
+    ///
+    /// Chunk-order convention (interleaved zeta/omega pairs, low-chunk
+    /// first) is shared with the other `proof_*_evals` extractors below.
+    /// See `docs/chunking-ffi-audit.md`.
     pub fn proof_z_evals<G: KimchiCurve>(
         proof: &ProverProof<G, OpeningProof<G>>,
     ) -> Vec<G::ScalarField>
     where
         G::BaseField: PrimeField,
     {
-        vec![proof.evals.z.zeta[0], proof.evals.z.zeta_omega[0]]
+        let z = &proof.evals.z;
+        let n = z.zeta.len();
+        debug_assert_eq!(
+            z.zeta_omega.len(),
+            n,
+            "kimchi PointEvaluations invariant: zeta and zeta_omega have the same chunk count"
+        );
+        let mut result = Vec::with_capacity(2 * n);
+        for i in 0..n {
+            result.push(z.zeta[i]);
+            result.push(z.zeta_omega[i]);
+        }
+        result
     }
 
     /// Extract sigma polynomial evaluations from a proof.
-    /// Returns 12 values: 6 sigma columns × 2 points (zeta, zeta*omega).
+    /// Returns `(PERMUTS - 1) * 2 * num_chunks` values in polynomial-major,
+    /// within-poly chunk-major order. At `n=1` length is 12 (current
+    /// single-chunk behavior); callers indexing the first 12 positions
+    /// see no change.
+    ///
+    /// Chunk-order convention: same as `proof_z_evals` / `proof_witness_evals`.
+    /// See `docs/chunking-ffi-audit.md`.
     pub fn proof_sigma_evals<G: KimchiCurve>(
         proof: &ProverProof<G, OpeningProof<G>>,
     ) -> Vec<G::ScalarField>
     where
         G::BaseField: PrimeField,
     {
-        let mut result = Vec::with_capacity((PERMUTS - 1) * 2);
+        let n = proof.evals.s[0].zeta.len();
+        let mut result = Vec::with_capacity((PERMUTS - 1) * 2 * n);
         for s_eval in &proof.evals.s {
-            result.push(s_eval.zeta[0]);
-            result.push(s_eval.zeta_omega[0]);
+            debug_assert_eq!(
+                s_eval.zeta.len(),
+                n,
+                "PointEvaluations chunk count invariant"
+            );
+            debug_assert_eq!(
+                s_eval.zeta_omega.len(),
+                n,
+                "PointEvaluations chunk count invariant"
+            );
+            for i in 0..n {
+                result.push(s_eval.zeta[i]);
+                result.push(s_eval.zeta_omega[i]);
+            }
         }
         result
     }
 
     /// Extract coefficient polynomial evaluations from a proof.
-    /// Returns 30 values: 15 coefficient columns × 2 points (zeta, zeta*omega).
+    /// Returns `COLUMNS * 2 * num_chunks` values in polynomial-major,
+    /// within-poly chunk-major order. At `n=1` length is 30 (current
+    /// behavior).
+    ///
+    /// Chunk-order convention: same as `proof_z_evals` / `proof_witness_evals`.
+    /// See `docs/chunking-ffi-audit.md`.
     pub fn proof_coefficient_evals<G: KimchiCurve>(
         proof: &ProverProof<G, OpeningProof<G>>,
     ) -> Vec<G::ScalarField>
     where
         G::BaseField: PrimeField,
     {
-        let mut result = Vec::with_capacity(COLUMNS * 2);
+        let n = proof.evals.coefficients[0].zeta.len();
+        let mut result = Vec::with_capacity(COLUMNS * 2 * n);
         for c_eval in &proof.evals.coefficients {
-            result.push(c_eval.zeta[0]);
-            result.push(c_eval.zeta_omega[0]);
+            debug_assert_eq!(
+                c_eval.zeta.len(),
+                n,
+                "PointEvaluations chunk count invariant"
+            );
+            debug_assert_eq!(
+                c_eval.zeta_omega.len(),
+                n,
+                "PointEvaluations chunk count invariant"
+            );
+            for i in 0..n {
+                result.push(c_eval.zeta[i]);
+                result.push(c_eval.zeta_omega[i]);
+            }
         }
         result
     }
 
     /// Extract index (selector) polynomial evaluations from a proof.
-    /// Returns 12 values: 6 selectors × 2 points (zeta, zeta*omega).
-    /// Order: generic, poseidon, complete_add, mul, emul, endomul_scalar.
+    /// Returns `6 * 2 * num_chunks` values in selector-major,
+    /// within-selector chunk-major order.
+    /// Selector order: generic, poseidon, complete_add, mul, emul, endomul_scalar.
+    /// At `n=1` length is 12 (current behavior).
+    ///
+    /// Chunk-order convention: same as `proof_z_evals` / `proof_witness_evals`.
+    /// See `docs/chunking-ffi-audit.md`.
     pub fn proof_index_evals<G: KimchiCurve>(
         proof: &ProverProof<G, OpeningProof<G>>,
     ) -> Vec<G::ScalarField>
@@ -427,20 +520,29 @@ mod generic {
         G::BaseField: PrimeField,
     {
         let e = &proof.evals;
-        vec![
-            e.generic_selector.zeta[0],
-            e.generic_selector.zeta_omega[0],
-            e.poseidon_selector.zeta[0],
-            e.poseidon_selector.zeta_omega[0],
-            e.complete_add_selector.zeta[0],
-            e.complete_add_selector.zeta_omega[0],
-            e.mul_selector.zeta[0],
-            e.mul_selector.zeta_omega[0],
-            e.emul_selector.zeta[0],
-            e.emul_selector.zeta_omega[0],
-            e.endomul_scalar_selector.zeta[0],
-            e.endomul_scalar_selector.zeta_omega[0],
-        ]
+        let n = e.generic_selector.zeta.len();
+        let selectors: [&kimchi::proof::PointEvaluations<Vec<G::ScalarField>>; 6] = [
+            &e.generic_selector,
+            &e.poseidon_selector,
+            &e.complete_add_selector,
+            &e.mul_selector,
+            &e.emul_selector,
+            &e.endomul_scalar_selector,
+        ];
+        let mut result = Vec::with_capacity(6 * 2 * n);
+        for sel in selectors {
+            debug_assert_eq!(sel.zeta.len(), n, "PointEvaluations chunk count invariant");
+            debug_assert_eq!(
+                sel.zeta_omega.len(),
+                n,
+                "PointEvaluations chunk count invariant"
+            );
+            for i in 0..n {
+                result.push(sel.zeta[i]);
+                result.push(sel.zeta_omega[i]);
+            }
+        }
+        result
     }
 
     /// Helper: compute oracles result from verifier index and proof.
@@ -544,35 +646,54 @@ mod generic {
         let oracles_result =
             compute_oracles::<G, EFqSponge, EFrSponge>(verifier_index, proof_ref, public_input)?;
 
-        // public_evals[0] = evaluation at zeta, public_evals[1] = evaluation at zeta*omega
-        // Each is a Vec because of chunking, but for non-chunked we just take [0]
-        let public_eval_zeta = oracles_result.public_evals[0]
-            .first()
-            .copied()
-            .unwrap_or(G::ScalarField::zero());
-        let public_eval_zeta_omega = oracles_result.public_evals[1]
-            .first()
-            .copied()
-            .unwrap_or(G::ScalarField::zero());
+        // Flat Vec layout, length = 14 + 2 * num_chunks:
+        //   positions 0..8:        alpha, beta, gamma, zeta, ft_eval0,
+        //                          v, u, cip, ft_eval1                          (9 elements)
+        //   positions 9..9+2n-1:   pez[0], pezo[0], pez[1], pezo[1], ...,
+        //                          pez[n-1], pezo[n-1]                          (2n elements)
+        //   positions 9+2n..end:   fq_digest, alpha_chal, zeta_chal,
+        //                          v_chal, u_chal                                (5 elements)
+        //
+        // At n=1 length is 16 with fq_digest at position 11 — byte-identical
+        // to the pre-chunking layout. JS shim derives n from total length.
+        //
+        // See `docs/chunking-ffi-audit.md`.
+        let pez = &oracles_result.public_evals[0];
+        let pezo = &oracles_result.public_evals[1];
+        debug_assert!(
+            !pez.is_empty(),
+            "kimchi public_evals[0] empty (num_chunks=0?)"
+        );
+        debug_assert_eq!(
+            pez.len(),
+            pezo.len(),
+            "kimchi public_evals zeta/omega chunk count invariant"
+        );
+        let n = pez.len();
 
-        Ok(vec![
-            oracles_result.oracles.alpha,
-            oracles_result.oracles.beta,
-            oracles_result.oracles.gamma,
-            oracles_result.oracles.zeta,
-            oracles_result.ft_eval0,
-            oracles_result.oracles.v,
-            oracles_result.oracles.u,
-            oracles_result.combined_inner_product,
-            proof_ref.ft_eval1,
-            public_eval_zeta,
-            public_eval_zeta_omega,
-            oracles_result.digest, // fq_digest: Fq-sponge state before Fr-sponge
-            oracles_result.oracles.alpha_chal.0, // raw 128-bit alpha challenge
-            oracles_result.oracles.zeta_chal.0, // raw 128-bit zeta challenge
-            oracles_result.oracles.v_chal.0, // raw 128-bit polyscale challenge
-            oracles_result.oracles.u_chal.0, // raw 128-bit evalscale challenge
-        ])
+        let mut result = Vec::with_capacity(14 + 2 * n);
+        // Head (positions 0..8)
+        result.push(oracles_result.oracles.alpha);
+        result.push(oracles_result.oracles.beta);
+        result.push(oracles_result.oracles.gamma);
+        result.push(oracles_result.oracles.zeta);
+        result.push(oracles_result.ft_eval0);
+        result.push(oracles_result.oracles.v);
+        result.push(oracles_result.oracles.u);
+        result.push(oracles_result.combined_inner_product);
+        result.push(proof_ref.ft_eval1);
+        // Chunked public_evals (positions 9..9+2n-1, interleaved zeta/omega)
+        for c in 0..n {
+            result.push(pez[c]);
+            result.push(pezo[c]);
+        }
+        // Tail (positions 9+2n..9+2n+4)
+        result.push(oracles_result.digest);
+        result.push(oracles_result.oracles.alpha_chal.0);
+        result.push(oracles_result.oracles.zeta_chal.0);
+        result.push(oracles_result.oracles.v_chal.0);
+        result.push(oracles_result.oracles.u_chal.0);
+        Ok(result)
     }
 
     /// Extract the raw opening prechallenges (128-bit scalar challenges
@@ -873,7 +994,8 @@ mod generic {
     }
 
     /// Extract sigma_comm[PERMUTS-1] from verifier index (the last sigma commitment).
-    /// Returns [x, y] coordinates in G::BaseField.
+    /// Returns ALL chunks: [chunk0.x, chunk0.y, chunk1.x, chunk1.y, ...]. For
+    /// nc=1 callers this is a 2-element vec, matching the prior behaviour.
     pub fn verifier_index_sigma_comm_last<G: KimchiCurve>(
         verifier_index: &VerifierIndex<G, OpeningProof<G>>,
     ) -> Vec<G::BaseField>
@@ -881,19 +1003,34 @@ mod generic {
         G::BaseField: PrimeField,
     {
         let sigma_last = &verifier_index.sigma_comm[PERMUTS - 1];
-        if let Some(pt) = sigma_last.chunks.first() {
+        let mut result = Vec::with_capacity(sigma_last.chunks.len() * 2);
+        for pt in &sigma_last.chunks {
             if let Some((x, y)) = pt.to_coordinates() {
-                return vec![x, y];
+                result.push(x);
+                result.push(y);
+            } else {
+                result.push(G::BaseField::zero());
+                result.push(G::BaseField::zero());
             }
         }
-        vec![G::BaseField::zero(), G::BaseField::zero()]
+        if result.is_empty() {
+            result.push(G::BaseField::zero());
+            result.push(G::BaseField::zero());
+        }
+        result
     }
 
     /// Extract VK column commitments needed for combine_commitments.
-    /// Returns flat [x0, y0, x1, y1, ...] for 27 points in to_batch order:
-    ///   6 index comms (Generic, Poseidon, CompleteAdd, VarBaseMul, EndoMul, EndoMulScalar)
-    ///   15 coefficient comms
-    ///   6 sigma comms (sigma_comm[0..PERMUTS-1])
+    /// Returns flat [chunk0.x, chunk0.y, chunk1.x, ...] for each of 27
+    /// commitments in to_batch order, with ALL chunks per commitment
+    /// emitted contiguously. Layout:
+    ///   for each of 6 index comms (Generic, Poseidon, CompleteAdd, VarBaseMul,
+    ///     EndoMul, EndoMulScalar): nc * (x, y)
+    ///   for each of 15 coefficient comms: nc * (x, y)
+    ///   for each of 6 sigma comms (sigma_comm[0..PERMUTS-1]): nc * (x, y)
+    /// Total: 27 * nc * 2 field elements. Callers derive nc from
+    /// total_len / (27 * 2) or pass it independently. nc is uniform across
+    /// all commitments in a kimchi `VerifierIndex`.
     pub fn verifier_index_column_comms<G: KimchiCurve>(
         verifier_index: &VerifierIndex<G, OpeningProof<G>>,
     ) -> Vec<G::BaseField>
@@ -904,15 +1041,15 @@ mod generic {
 
         let push_comm = |result: &mut Vec<G::BaseField>,
                          comm: &poly_commitment::commitment::PolyComm<G>| {
-            if let Some(pt) = comm.chunks.first() {
+            for pt in &comm.chunks {
                 if let Some((x, y)) = pt.to_coordinates() {
                     result.push(x);
                     result.push(y);
-                    return;
+                } else {
+                    result.push(G::BaseField::zero());
+                    result.push(G::BaseField::zero());
                 }
             }
-            result.push(G::BaseField::zero());
-            result.push(G::BaseField::zero());
         };
 
         // Index commitments (6) in to_batch order
@@ -1108,13 +1245,18 @@ pub fn vesta_circuit_gate_get_coeff(
 pub fn pallas_constraint_system_create(
     gates: Vec<&PallasCircuitGateExternal>,
     public_inputs_count: u32,
+    max_poly_size: u32,
 ) -> Result<PallasConstraintSystemExternal> {
     let internal_gates: Vec<CircuitGate<PallasScalarField>> = gates
         .into_iter()
         .map(|gate_ext| (**gate_ext).clone())
         .collect();
 
-    let cs = generic::constraint_system_create(internal_gates, public_inputs_count as usize)?;
+    let cs = generic::constraint_system_create(
+        internal_gates,
+        public_inputs_count as usize,
+        max_poly_size as usize,
+    )?;
     Ok(External::new(cs))
 }
 
@@ -1122,13 +1264,18 @@ pub fn pallas_constraint_system_create(
 pub fn vesta_constraint_system_create(
     gates: Vec<&VestaCircuitGateExternal>,
     public_inputs_count: u32,
+    max_poly_size: u32,
 ) -> Result<VestaConstraintSystemExternal> {
     let internal_gates: Vec<CircuitGate<VestaScalarField>> = gates
         .into_iter()
         .map(|gate_ext| (**gate_ext).clone())
         .collect();
 
-    let cs = generic::constraint_system_create(internal_gates, public_inputs_count as usize)?;
+    let cs = generic::constraint_system_create(
+        internal_gates,
+        public_inputs_count as usize,
+        max_poly_size as usize,
+    )?;
     Ok(External::new(cs))
 }
 
@@ -1137,6 +1284,7 @@ pub fn pallas_constraint_system_create_with_prev_challenges(
     gates: Vec<&PallasCircuitGateExternal>,
     public_inputs_count: u32,
     prev_challenges_count: u32,
+    max_poly_size: u32,
 ) -> Result<PallasConstraintSystemExternal> {
     let internal_gates: Vec<CircuitGate<PallasScalarField>> = gates
         .into_iter()
@@ -1147,6 +1295,7 @@ pub fn pallas_constraint_system_create_with_prev_challenges(
         internal_gates,
         public_inputs_count as usize,
         prev_challenges_count as usize,
+        max_poly_size as usize,
     )?;
     Ok(External::new(cs))
 }
@@ -1156,6 +1305,7 @@ pub fn vesta_constraint_system_create_with_prev_challenges(
     gates: Vec<&VestaCircuitGateExternal>,
     public_inputs_count: u32,
     prev_challenges_count: u32,
+    max_poly_size: u32,
 ) -> Result<VestaConstraintSystemExternal> {
     let internal_gates: Vec<CircuitGate<VestaScalarField>> = gates
         .into_iter()
@@ -1166,6 +1316,7 @@ pub fn vesta_constraint_system_create_with_prev_challenges(
         internal_gates,
         public_inputs_count as usize,
         prev_challenges_count as usize,
+        max_poly_size as usize,
     )?;
     Ok(External::new(cs))
 }
@@ -1748,6 +1899,26 @@ pub fn vesta_proof_witness_evals(proof: &PallasProofExternal) -> Vec<PallasField
         .collect()
 }
 
+/// Extract `ft_eval1` (linearization polynomial evaluation at `zeta·omega`)
+/// from a Vesta proof. This value is prover-supplied — kimchi's verifier
+/// does not recompute it; it reads it directly from `proof.ft_eval1` and
+/// uses it as one of the openings in the CIP check.
+///
+/// PureScript consumers should prefer this direct accessor over the
+/// `pallasProofOracles` projection: `oraclesResult.ftEval1` returns the
+/// same value but funnels it through the full kimchi Fiat-Shamir oracles
+/// computation. This bypass avoids that redundant round-trip.
+#[napi]
+pub fn pallas_proof_ft_eval1(proof: &VestaProofExternal) -> VestaFieldExternal {
+    External::new(proof.ft_eval1)
+}
+
+/// Extract `ft_eval1` from a Pallas proof. See `pallas_proof_ft_eval1`.
+#[napi]
+pub fn vesta_proof_ft_eval1(proof: &PallasProofExternal) -> PallasFieldExternal {
+    External::new(proof.ft_eval1)
+}
+
 /// Extract z (permutation polynomial) evaluations from a Vesta proof.
 /// Returns 2 values: z(zeta), z(zeta*omega).
 #[napi]
@@ -2201,11 +2372,18 @@ pub fn vesta_proof_opening_z2(proof: &PallasProofExternal) -> PallasFieldExterna
 // it needs as it visits the public-input structure, matching OCaml's
 // `lagrange_commitment srs i` closure.
 
-fn srs_lagrange_commitment_at_impl<G>(
+// Returns ALL chunks of the i-th lagrange commitment as a flat Vec of
+// `2 * num_chunks` coordinates (x0, y0, x1, y1, ...). For domains larger
+// than the SRS max_poly_size, the commitment splits into multiple chunks;
+// PS callers reshape the flat result into a `Vector num_chunks (AffinePoint
+// f)`. Mirrors OCaml's `lagrange_commitment srs d i .unshifted` array
+// which the wrap-verifier iterates over chunkwise in the public-input
+// commit (`wrap_verifier.ml:336-385`, `:981-1027`).
+fn srs_lagrange_commitment_chunks_impl<G>(
     srs: &SRS<G>,
     domain_log2: u32,
     i: u32,
-) -> Result<(G::BaseField, G::BaseField)>
+) -> Result<Vec<G::BaseField>>
 where
     G: kimchi::curve::KimchiCurve + CommitmentCurve,
     G::BaseField: PrimeField,
@@ -2225,18 +2403,18 @@ where
             format!("lagrange commitment index {i} out of range (domain size {domain_size})"),
         )
     })?;
-    let pt = comm.chunks.first().ok_or_else(|| {
-        Error::new(
-            Status::GenericFailure,
-            format!("lagrange commitment {i} has no chunks"),
-        )
-    })?;
-    pt.to_coordinates().ok_or_else(|| {
-        Error::new(
-            Status::GenericFailure,
-            format!("lagrange commitment {i} is the point at infinity"),
-        )
-    })
+    let mut out = Vec::with_capacity(comm.chunks.len() * 2);
+    for (k, pt) in comm.chunks.iter().enumerate() {
+        let (x, y) = pt.to_coordinates().ok_or_else(|| {
+            Error::new(
+                Status::GenericFailure,
+                format!("lagrange commitment {i} chunk {k} is the point at infinity"),
+            )
+        })?;
+        out.push(x);
+        out.push(y);
+    }
+    Ok(out)
 }
 
 /// Fetch the `i`-th lagrange commitment from a Vesta SRS (for Pallas/Step
@@ -2250,8 +2428,8 @@ pub fn pallas_srs_lagrange_commitment_at(
     domain_log2: u32,
     i: u32,
 ) -> Result<Vec<PallasFieldExternal>> {
-    let (x, y) = srs_lagrange_commitment_at_impl::<VestaGroup>(&**srs, domain_log2, i)?;
-    Ok(vec![External::new(x), External::new(y)])
+    let coords = srs_lagrange_commitment_chunks_impl::<VestaGroup>(&**srs, domain_log2, i)?;
+    Ok(coords.into_iter().map(External::new).collect())
 }
 
 /// Fetch the `i`-th lagrange commitment from a Pallas SRS (for Vesta/Wrap
@@ -2265,8 +2443,8 @@ pub fn vesta_srs_lagrange_commitment_at(
     domain_log2: u32,
     i: u32,
 ) -> Result<Vec<VestaFieldExternal>> {
-    let (x, y) = srs_lagrange_commitment_at_impl::<PallasGroup>(&**srs, domain_log2, i)?;
-    Ok(vec![External::new(x), External::new(y)])
+    let coords = srs_lagrange_commitment_chunks_impl::<PallasGroup>(&**srs, domain_log2, i)?;
+    Ok(coords.into_iter().map(External::new).collect())
 }
 
 // ============================================================================

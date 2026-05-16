@@ -138,6 +138,8 @@ compileStepMainSideLoadedChild params =
           @Unit
           @0
           @1
+          @Unit
+          @1
           sideLoadedChildRule
           { perSlotLagrangeAt: Vector.nil
           , blindingH: params.blindingH

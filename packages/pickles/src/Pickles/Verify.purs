@@ -68,12 +68,12 @@ import Data.Exists (Exists, mkExists, runExists)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.Constants (zkRows)
+import Pickles.Constants (zkRowsForNumChunks)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.PlonkChecks (AllEvals)
+import Pickles.PlonkChecks (AllEvals, ChunkedAllEvals)
 import Pickles.ProofFFI (Proof, permutationVanishingPolynomial, verifyOpeningProof)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput, assembleWrapMainInput)
@@ -129,13 +129,14 @@ mkVerifier
   :: { wrapVK :: VerifierIndex PallasG WrapField
      , vestaSrs :: CRS VestaG
      , stepDomainLog2 :: Int
+     , stepNumChunks :: Int
      }
   -> Verifier
-mkVerifier { wrapVK, vestaSrs, stepDomainLog2 } =
+mkVerifier { wrapVK, vestaSrs, stepDomainLog2, stepNumChunks } =
   { wrapVK
   , vestaSrs
   , stepDomainLog2
-  , stepZkRows: zkRows
+  , stepZkRows: zkRowsForNumChunks stepNumChunks
   , stepSrsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
   , stepGenerator: domainGenerator stepDomainLog2 :: StepField
   , stepShifts: domainShifts stepDomainLog2 :: Vector 7 StepField
@@ -269,7 +270,21 @@ newtype CompiledProof mpv stmtVal outputVal auxVal = CompiledProof
 
   -- Inner step proof's evals (carried by the wrap proof's `prev_evals`
   -- field).
+  --
+  -- `prevEvalsChunked` is the authoritative form — `NonEmptyArray
+  -- (PointEval _)` per polynomial, one entry per chunk. CIP consumes
+  -- this directly via `combinedInnerProductBatchChunked`.
+  --
+  -- `prevEvals` is the COLLAPSED form (chunks Horner-recombined at the
+  -- step proof's oracle zeta/zetaw). Kept on the record as a
+  -- transitional back-compat shim for the recursive-step
+  -- `wrapPrevEvals`/`stepAdvicePrevEvals` plumbing (`Pickles.Prove.Step`)
+  -- that still consumes the single-eval form. At step num_chunks=1 it
+  -- is byte-identical to the only chunk; at num_chunks>1 it is the
+  -- correct Horner combine. The fully-chunked refactor of those
+  -- recursive consumers is task #63's follow-up.
   , prevEvals :: AllEvals StepField
+  , prevEvalsChunked :: ChunkedAllEvals StepField
   , pEval0Chunks :: Array StepField
 
   -- For stage 2 (accumulator check): the inner step proof's IPA opening
@@ -350,7 +365,7 @@ verifyOne verifier (CompiledProof p) =
             , rawBulletproofChallenges: p.rawBulletproofChallenges
             , branchData: p.branchData
             , spongeDigestBeforeEvaluations: p.spongeDigestBeforeEvaluations
-            , allEvals: p.prevEvals
+            , chunkedAllEvals: p.prevEvalsChunked
             , pEval0Chunks: p.pEval0Chunks
             , oldBulletproofChallenges: wd.oldBulletproofChallenges
             , domainLog2: p.stepDomainLog2
@@ -432,7 +447,7 @@ wrapPublicInput verifier (CompiledProof p) =
             , rawBulletproofChallenges: p.rawBulletproofChallenges
             , branchData: p.branchData
             , spongeDigestBeforeEvaluations: p.spongeDigestBeforeEvaluations
-            , allEvals: p.prevEvals
+            , chunkedAllEvals: p.prevEvalsChunked
             , pEval0Chunks: p.pEval0Chunks
             , oldBulletproofChallenges: wd.oldBulletproofChallenges
             , domainLog2: p.stepDomainLog2

@@ -23,6 +23,7 @@ import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Maybe (Maybe(..))
+import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
@@ -37,10 +38,13 @@ import Pickles.ShiftOps (IpaScalarOps)
 import Pickles.Sponge (SpongeM, initialSpongeCircuit, labelM, liftSnarky)
 import Pickles.Sponge as Sponge
 import Pickles.Trace as Trace
+import Pickles.Types (ChunkedCommitment(..))
 import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, WrapDeferredValues, toPlonkMinimal)
-import Pickles.Wrap.Types (IvpBaseline)
+-- IvpBaseline (= 45) is the stepChunks=1 base count; here we derive the
+-- chunked count from `stepChunks` via `Mul`/`Add` constraints.
 import Poseidon (class PoseidonField)
-import Prim.Int (class Add)
+import Prim.Int (class Add, class Compare, class Mul)
+import Prim.Ordering (LT)
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar as CVar
@@ -62,10 +66,10 @@ import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 -- | The verifier index data (columnComms, sigmaCommLast) is NOT here — in OCaml
 -- | it enters the Step circuit via `exists ~request:(fun () -> Req.Wrap_index)`
 -- | as circuit variables (step_main.ml:345-348). It lives in the input instead.
-type IncrementallyVerifyProofParams :: Type -> Row Type -> Type
-type IncrementallyVerifyProofParams f r =
+type IncrementallyVerifyProofParams :: Int -> Type -> Row Type -> Type
+type IncrementallyVerifyProofParams stepChunks f r =
   { curveParams :: CurveParams f
-  , lagrangeAt :: LagrangeBaseLookup f
+  , lagrangeAt :: LagrangeBaseLookup stepChunks f
   , blindingH :: AffinePoint (F f)
   , endo :: f -- ^ EndoScalar constant for challenge expansion
   , groupMapParams :: GroupMapParams f
@@ -84,26 +88,32 @@ type IncrementallyVerifyProofParams f r =
 -- | `exists ~request:(fun () -> Req.Wrap_index)` (step_main.ml:345-348).
 -- | In the Wrap circuit they are constants (wrap_main.ml:209 Inner_curve.constant).
 -- | Either way, by the time they reach this function they are `fv` (FVar f).
-type IncrementallyVerifyProofInput publicInput sgOldN d fv sf =
+type IncrementallyVerifyProofInput publicInput sgOldN stepChunks tCommLen d fv sf =
   { publicInput :: publicInput
   , sgOld :: Vector sgOldN (AffinePoint fv)
   , sgOldMask :: Vector sgOldN fv
   -- ^ actual_proofs_verified_mask (OCaml absorbs sg_old with keep flags).
   , deferredValues :: DeferredValues d fv sf
-  -- Verifier index (VK) data — circuit variables in Step, constants in Wrap
-  , sigmaCommLast :: AffinePoint fv
+  -- Verifier index (VK) data — circuit variables in Step, constants in Wrap.
+  -- All commitments share the verified proof's `stepChunks` dimension
+  -- (Dim 1 — the chunks count of the step CS this wrap is verifying;
+  -- the step VK commitments must agree with the step proof's chunks).
+  , sigmaCommLast :: ChunkedCommitment stepChunks (AffinePoint fv)
   , columnComms ::
-      { index :: Vector 6 (AffinePoint fv)
-      , coeff :: Vector 15 (AffinePoint fv)
-      , sigma :: Vector 6 (AffinePoint fv)
+      { index :: Vector 6 (ChunkedCommitment stepChunks (AffinePoint fv))
+      , coeff :: Vector 15 (ChunkedCommitment stepChunks (AffinePoint fv))
+      , sigma :: Vector 6 (ChunkedCommitment stepChunks (AffinePoint fv))
       }
-  -- Protocol messages and opening proof
-  -- TODO(num_chunks): When num_chunks > 1, each commitment point becomes
-  -- Vector numChunks (AffinePoint fv). The tComm size (currently 7) is
-  -- ceil(domain_size / max_poly_size) * 7. For num_chunks = 1 this is just 7.
-  , wComm :: Vector 15 (AffinePoint fv)
-  , zComm :: AffinePoint fv
-  , tComm :: Vector 7 (AffinePoint fv)
+  -- Protocol messages and opening proof.
+  -- wComm/zComm: per-polynomial chunks (15 and 1 polys, each stepChunks chunks).
+  -- tComm: the quotient polynomial commitment, flat-split into `tCommLen =
+  -- 7 * stepChunks` pieces (kimchi splits t at degree `7 * domain_size`,
+  -- then each of those 7 sub-polys further into stepChunks chunks of
+  -- max_poly_size). Reference: `kimchi/src/verifier_index.rs` and
+  -- OCaml `common.ml:ft_comm` (one flat Horner over zeta_to_srs_len).
+  , wComm :: Vector 15 (ChunkedCommitment stepChunks (AffinePoint fv))
+  , zComm :: ChunkedCommitment stepChunks (AffinePoint fv)
+  , tComm :: Vector tCommLen (AffinePoint fv)
   , opening ::
       { delta :: AffinePoint fv
       , sg :: AffinePoint fv
@@ -163,7 +173,7 @@ ivpTrace labelStr v = do
   pure unit
 
 incrementallyVerifyProof
-  :: forall publicInput sgOldN totalBases totalBasesPred d dPred f f' @g sf t m r
+  :: forall publicInput sgOldN stepChunks numChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred d dPred f f' @g sf t m r
    . PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
@@ -176,12 +186,53 @@ incrementallyVerifyProof
   => PublicInputCommit publicInput f
   => Reflectable d Int
   => Reflectable sgOldN Int
+  => Reflectable stepChunks Int
+  => Reflectable tCommLen Int
+  => Reflectable nonSgBases Int
+  => Compare 0 stepChunks LT
+  => Add 1 numChunksPred stepChunks
   => Add 1 dPred d
-  => Add sgOldN IvpBaseline totalBases
+  -- tComm shape: flat `Vector tCommLen` with tCommLen = 7 * stepChunks.
+  -- ftComm's Horner over zeta_to_srs_len treats this as a single flat list.
+  => Mul 7 stepChunks tCommLen
+  => Add 1 tCommLenPred tCommLen
+  -- Chunked-base layout (mirrors OCaml `step_verifier.ml:743-756`'s
+  -- `without_degree_bound` with `reduce_without_degree_bound:Array.to_list`):
+  -- flat = sgOld(N) :: xHat(nc) :: ftComm :: zComm(nc) :: index(6*nc)
+  --        :: wComm(15*nc) :: coeff(15*nc) :: sigma(6*nc).
+  -- Total non-sgOld = 1 + 44*stepChunks. At stepChunks=1 this is 45 (same as
+  -- pre-chunk path). xHat is chunked because at chunks2 wrap, step's
+  -- wrap_domain exceeds wrap SRS max_poly_size and the PI commitment
+  -- splits into stepChunks pieces (OCaml `Array.iter x_hat ~f:absorb_g`
+  -- at wrap_verifier.ml:1042).
+  -- sigma_comm_init = sigma_comm[0..PERMUTS-2] = `sigma` (6 entries);
+  -- sigmaCommLast (= sigma_comm[PERMUTS-1]) is NOT in the IVP MSM, only in
+  -- the index-digest sponge absorb. We share a single `indexSigmaN` for
+  -- both index (6*nc) and sigma (6*nc), and a single `wCoeffN` for both
+  -- wComm (15*nc) and coeff (15*nc), because `Mul` is functionally
+  -- determined and reusing different binders would force a length-mismatch
+  -- unification.
+  => Mul 15 stepChunks wCoeffN
+  => Mul 6 stepChunks indexSigmaN
+  => Mul 44 stepChunks chunkBases
+  => Add 1 chunkBases nonSgBases
+  => Add sgOldN nonSgBases totalBases
+  -- Chained append fundeps for the non-sgOld base group (each `++` is an Add).
+  -- Group terminates at nonSgBases; outer append (sgOld ++ group) is the
+  -- `Add sgOldN nonSgBases totalBases` constraint above.
+  -- xHat(nc) :: ftComm(1) :: zComm(nc) :: index(6nc) :: wComm(15nc) ::
+  -- coeff(15nc) :: sigma(6nc). The append-chain `Add` constraints below
+  -- spell out the running total at each step. Total = 1 + 44*nc.
+  => Add stepChunks 1 sg1 -- xHat + ftComm = nc + 1
+  => Add sg1 stepChunks sg2 -- + zComm = 1 + 2nc
+  => Add sg2 indexSigmaN sg3 -- + index = 1 + 8nc
+  => Add sg3 wCoeffN sg4 -- + wComm = 1 + 23nc
+  => Add sg4 wCoeffN sg5 -- + coeff = 1 + 38nc
+  => Add sg5 indexSigmaN nonSgBases -- + sigma = 1 + 44nc
   => Add 1 totalBasesPred totalBases
   => IpaScalarOps f t m sf
-  -> IncrementallyVerifyProofParams f r
-  -> IncrementallyVerifyProofInput publicInput sgOldN d (FVar f) sf
+  -> IncrementallyVerifyProofParams stepChunks f r
+  -> IncrementallyVerifyProofInput publicInput sgOldN stepChunks tCommLen d (FVar f) sf
   -> Maybe (Sponge (FVar f)) -- ^ Pre-computed sponge_after_index. Nothing = compute internally.
   -> SpongeM f (KimchiConstraint f) t m (IncrementallyVerifyProofOutput d f)
 incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incrementally-verify-proof" do
@@ -199,18 +250,22 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
     Nothing ->
       Sponge.evalSpongeM (initialSpongeCircuit :: Sponge (FVar f)) do
         -- Absorption order matches OCaml's index_to_field_elements:
-        -- sigma_comm (7) → coefficients_comm (15) → index comms (6)
+        -- sigma_comm (7) → coefficients_comm (15) → index comms (6).
+        -- Each commitment is a chunk array; absorb every chunk's (x, y)
+        -- in chunk order (mirrors OCaml `Plonk_verification_key_evals
+        -- .to_field_elements`'s flat traversal).
         let
           absorbPt { x, y } = do
             Sponge.absorb x
             Sponge.absorb y
-        -- sigma_comm: sigma (6) + sigmaCommLast (1) = 7
-        for_ input.columnComms.sigma absorbPt
-        absorbPt input.sigmaCommLast
-        -- coefficients_comm: 15
-        for_ input.columnComms.coeff absorbPt
-        -- index comms: generic, psm, complete_add, mul, emul, endomul_scalar = 6
-        for_ input.columnComms.index absorbPt
+          absorbChunks cc = for_ (unwrap cc) absorbPt
+        -- sigma_comm: sigma (6 chunked) + sigmaCommLast (1 chunked) = 7
+        for_ input.columnComms.sigma absorbChunks
+        absorbChunks input.sigmaCommLast
+        -- coefficients_comm: 15 chunked
+        for_ input.columnComms.coeff absorbChunks
+        -- index comms: generic, psm, complete_add, mul, emul, endomul_scalar (6 chunked)
+        for_ input.columnComms.index absorbChunks
         -- Squeeze digest
         Sponge.squeeze
 
@@ -227,19 +282,32 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
       -- within the same file).
       liftSnarky $ ivpTrace "ivp.trace.wrap.index_digest" indexDigest
       xHat <- liftSnarky $ label "ivp_xhat" $ publicInputCommit params input.publicInput
-      liftSnarky $ ivpTrace "ivp.trace.wrap.xhat.x" xHat.x
-      liftSnarky $ ivpTrace "ivp.trace.wrap.xhat.y" xHat.y
+      -- xHat is `Vector stepChunks (AffinePoint (FVar f))`. Trace per
+      -- chunk. The pre-chunk path used `xhat.x` / `xhat.y` (no chunk
+      -- index); for nc=1 this collapses to one entry. To preserve the
+      -- legacy single-chunk trace key the i=0 entry is named without an
+      -- index suffix (matching OCaml's wrap_verifier.ml:1037 comment).
+      liftSnarky $ forWithIndex_ xHat \fi pt -> do
+        let i = getFinite fi
+        if i == 0 then do
+          ivpTrace "ivp.trace.wrap.xhat.x" pt.x
+          ivpTrace "ivp.trace.wrap.xhat.y" pt.y
+        else do
+          ivpTrace ("ivp.trace.wrap.xhat." <> show i <> ".x") pt.x
+          ivpTrace ("ivp.trace.wrap.xhat." <> show i <> ".y") pt.y
       liftSnarky do
         forWithIndex_ input.sgOld \fi pt -> do
           let i = getFinite fi
           ivpTrace ("ivp.trace.wrap.sg_old." <> show i <> ".x") pt.x
           ivpTrace ("ivp.trace.wrap.sg_old." <> show i <> ".y") pt.y
-        forWithIndex_ input.wComm \fi pt -> do
-          let i = getFinite fi
-          ivpTrace ("ivp.trace.wrap.w_comm." <> show i <> ".x") pt.x
-          ivpTrace ("ivp.trace.wrap.w_comm." <> show i <> ".y") pt.y
+        forWithIndex_ input.wComm \fi cc ->
+          forWithIndex_ (unwrap cc) \fj pt -> do
+            let i = getFinite fi
+            let j = getFinite fj
+            ivpTrace ("ivp.trace.wrap.w_comm." <> show i <> "." <> show j <> ".x") pt.x
+            ivpTrace ("ivp.trace.wrap.w_comm." <> show i <> "." <> show j <> ".y") pt.y
       let
-        spongeInput = { indexDigest, sgOld: input.sgOld, publicComm: xHat, wComm: input.wComm, zComm: input.zComm, tComm: input.tComm }
+        spongeInput = { indexDigest, sgOld: input.sgOld, publicComm: ChunkedCommitment xHat, wComm: input.wComm, zComm: input.zComm, tComm: input.tComm }
         mask = map (coerce :: FVar f -> Bool (FVar f)) input.sgOldMask
       result <- labelM "ivp_opt_sponge" $ spongeTranscriptOptCircuit endoParams mask spongeInput
       liftSnarky $ ivpTrace "ivp.trace.wrap.beta_squeezed" (SizedF.toField result.beta)
@@ -259,25 +327,39 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
           labelM "ivp_sg_y" $ Sponge.absorb pt.y
       -- Compute x_hat
       xHat <- liftSnarky $ label "ivp_xhat" $ publicInputCommit params input.publicInput
-      liftSnarky $ ivpTrace "ivp.trace.xhat.x" xHat.x
-      liftSnarky $ ivpTrace "ivp.trace.xhat.y" xHat.y
-      -- Continue sponge transcript: absorb x_hat, w_comm, squeeze beta/gamma, etc.
-      -- step_verifier.ml:551-568
-      Sponge.absorbPoint xHat
-      liftSnarky $ forWithIndex_ input.wComm \fi pt -> do
+      -- Step path: per-chunk trace + sponge absorb. At step every prev
+      -- being verified is a wrap proof, and wrap's lagrange basis fits
+      -- in 1 chunk by default, so xHat is `Vector 1` here and this
+      -- collapses to the legacy single-point absorb.
+      liftSnarky $ forWithIndex_ xHat \fi pt -> do
         let i = getFinite fi
-        ivpTrace ("ivp.trace.w_comm." <> show i <> ".x") pt.x
-        ivpTrace ("ivp.trace.w_comm." <> show i <> ".y") pt.y
-      for_ input.wComm Sponge.absorbPoint
+        if i == 0 then do
+          ivpTrace "ivp.trace.xhat.x" pt.x
+          ivpTrace "ivp.trace.xhat.y" pt.y
+        else do
+          ivpTrace ("ivp.trace.xhat." <> show i <> ".x") pt.x
+          ivpTrace ("ivp.trace.xhat." <> show i <> ".y") pt.y
+      -- Continue sponge transcript: absorb x_hat (per chunk), w_comm,
+      -- squeeze beta/gamma, etc. step_verifier.ml:551-568.
+      for_ xHat Sponge.absorbPoint
+      liftSnarky $ forWithIndex_ input.wComm \fi cc ->
+        forWithIndex_ (unwrap cc) \fj pt -> do
+          let i = getFinite fi
+          let j = getFinite fj
+          ivpTrace ("ivp.trace.w_comm." <> show i <> "." <> show j <> ".x") pt.x
+          ivpTrace ("ivp.trace.w_comm." <> show i <> "." <> show j <> ".y") pt.y
+      for_ input.wComm \cc -> for_ (unwrap cc) Sponge.absorbPoint
       -- beta/gamma: squeeze_challenge (constrain_low_bits:true)
       beta <- Sponge.squeezeScalarChallenge endoParams
       liftSnarky $ ivpTrace "ivp.trace.beta_squeezed" (SizedF.toField beta)
       gamma <- Sponge.squeezeScalarChallenge endoParams
       liftSnarky $ ivpTrace "ivp.trace.gamma_squeezed" (SizedF.toField gamma)
-      -- z_comm: receive
-      liftSnarky $ ivpTrace "ivp.trace.zcomm.x" input.zComm.x
-      liftSnarky $ ivpTrace "ivp.trace.zcomm.y" input.zComm.y
-      Sponge.absorbPoint input.zComm
+      -- z_comm: receive (per-chunk)
+      liftSnarky $ forWithIndex_ (unwrap input.zComm) \fj pt -> do
+        let j = getFinite fj
+        ivpTrace ("ivp.trace.zcomm." <> show j <> ".x") pt.x
+        ivpTrace ("ivp.trace.zcomm." <> show j <> ".y") pt.y
+      for_ (unwrap input.zComm) Sponge.absorbPoint
       -- alpha: squeeze_scalar (constrain_low_bits:false)
       alphaChal <- Sponge.squeezeScalar endoParams
       liftSnarky $ ivpTrace "ivp.trace.alpha_squeezed" (SizedF.toField alphaChal)
@@ -308,34 +390,51 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
   -- 4. Compute ft_comm
   ftCommResult <- liftSnarky $ label "ivp_ftcomm" $ ftComm
     scalarOps
-    { sigmaLast: input.sigmaCommLast
+    { sigmaLast: unwrap input.sigmaCommLast
     , tComm: input.tComm
     , perm: input.deferredValues.plonk.perm
     , zetaToSrsLength: input.deferredValues.plonk.zetaToSrsLength
     , zetaToDomainSize: input.deferredValues.plonk.zetaToDomainSize
     }
 
-  -- 5. Assemble commitment bases: sg_old + 45 fixed bases (to_batch order)
-  -- Matches OCaml: sg_old[0..1], x_hat, ft_comm, z_comm, index(6), w_comm(15), coeff(15), sigma(6)
-  -- TODO(num_chunks): With num_chunks > 1, each commitment is an array of chunk
-  -- points. The allBases vector would grow by a factor of num_chunks, and
-  -- totalBases = sgOldN + num_chunks * 45. The combinePolynomials fold would
-  -- need inner loops over chunks (see OCaml's Pcs_batch.combine_split_commitments).
+  -- 5. Assemble commitment bases: sg_old + (2 + 43*stepChunks) chunked bases.
+  -- Matches OCaml `step_verifier.ml:743-756`'s `without_degree_bound`
+  -- with `reduce_without_degree_bound:Array.to_list`: each polynomial's
+  -- chunks become adjacent flat bases in xi-Horner order.
+  -- Flat layout (in xi-Horner emission order, which mirrors OCaml):
+  --   sg_old, x_hat, ft_comm,
+  --   z_comm chunks (stepChunks),
+  --   index_comms chunks (6 polys × stepChunks),
+  --   w_comm chunks (15 polys × stepChunks),
+  --   coeff_comms chunks (15 polys × stepChunks),
+  --   sigma_comm[0..PERMUTS-2] chunks (6 polys × stepChunks).
+  -- sigmaCommLast is NOT in this list (per OCaml — it's only in the
+  -- index-digest sponge absorb).
   let
+    wCommFlat = Vector.concat (coerce input.wComm :: Vector 15 (Vector stepChunks (AffinePoint (FVar f))))
+    indexFlat = Vector.concat (coerce input.columnComms.index :: Vector 6 (Vector stepChunks (AffinePoint (FVar f))))
+    coeffFlat = Vector.concat (coerce input.columnComms.coeff :: Vector 15 (Vector stepChunks (AffinePoint (FVar f))))
+    sigmaFlat = Vector.concat (coerce input.columnComms.sigma :: Vector 6 (Vector stepChunks (AffinePoint (FVar f))))
     allBases =
       input.sgOld `Vector.append`
-        ( (xHat :< ftCommResult :< input.zComm :< Vector.nil)
-            `Vector.append` input.columnComms.index
-            `Vector.append` input.wComm
-            `Vector.append` input.columnComms.coeff
-            `Vector.append` input.columnComms.sigma
+        -- xHat is now chunked (Vector stepChunks); flatten as the
+        -- xHat-prefix of the non-sg-bases, followed by single-point
+        -- ftCommResult and the rest of the chunked bases. Matches
+        -- OCaml's `Array.concat [...; x_hat; [| ft_comm |]; z_comm; ...]`.
+        ( xHat
+            `Vector.append` (ftCommResult :< Vector.nil)
+            `Vector.append` unwrap input.zComm
+            `Vector.append` indexFlat
+            `Vector.append` wCommFlat
+            `Vector.append` coeffFlat
+            `Vector.append` sigmaFlat
         )
 
     -- Per-base masks: sg_old entries use actual_proofs_verified_mask (Maybe keep),
     -- all other bases are unconditional (Nothing). Matches OCaml's Opt.Maybe for sg_old.
     allBaseMasks =
       (map (Just <<< coerce) input.sgOldMask) `Vector.append`
-        (Vector.replicate @45 Nothing)
+        (Vector.replicate @nonSgBases Nothing)
 
   -- 6. Build CheckBulletproofInput and run checkBulletproof
   let

@@ -29,9 +29,9 @@ chooseBigInt' range =
     Nothing -> do
       let
         numBits = bitLength range
-        numChunks = (numBits + 30) / 31 -- 31 bits per chunk (safe Int)
+        stepChunks = (numBits + 30) / 31 -- 31 bits per chunk (safe Int)
       -- Generate random 31-bit chunks
-      chunks <- for (1 .. numChunks) \_ -> BigInt.fromInt <$> chooseInt 0 0x7FFFFFFF
+      chunks <- for (1 .. stepChunks) \_ -> BigInt.fromInt <$> chooseInt 0 0x7FFFFFFF
       -- Combine chunks into a single BigInt
       let randomBits = foldlChunks chunks
       -- Mod by (range + 1) to get value in [0, range]

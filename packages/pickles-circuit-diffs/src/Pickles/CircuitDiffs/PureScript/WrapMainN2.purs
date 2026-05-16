@@ -44,9 +44,9 @@ compileWrapMainN2 { lagrangeAt, blindingH } stepParams = do
   vestaSrs <- createCRS @StepField
   pallasSrs <- createCRS @WrapField
   let
-    realStepVK = deriveStepVKFromCompiled @2 vestaSrs stepArt.stepCs
+    realStepVK = deriveStepVKFromCompiled @1 @2 vestaSrs stepArt.stepCs
 
-    config :: WrapMainConfig 1
+    config :: WrapMainConfig 1 1
     config =
       { stepWidths: 2 :< Vector.nil
       , domainLog2s: stepArt.stepDomainLog2 :< Vector.nil
@@ -61,7 +61,8 @@ compileWrapMainN2 { lagrangeAt, blindingH } stepParams = do
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     ( \stmt ->
         wrapMainForPrevs @1
-          @(Tuple2 (Slot Compiled 2 (StatementIO (F StepField) Unit)) (Slot Compiled 2 (StatementIO (F StepField) Unit)))
+          @(Tuple2 (Slot Compiled 2 1 (StatementIO (F StepField) Unit)) (Slot Compiled 2 1 (StatementIO (F StepField) Unit)))
+          @1
           config
           stmt
     )
@@ -70,5 +71,5 @@ compileWrapMainN2 { lagrangeAt, blindingH } stepParams = do
     { stepCs: stepArt.stepCs
     , stepDomainLog2: stepArt.stepDomainLog2
     , wrapCs
-    , wrapVk: deriveWrapVKFromCompiled @2 pallasSrs wrapCs
+    , wrapVk: deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
     }

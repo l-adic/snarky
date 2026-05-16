@@ -16,6 +16,7 @@ import Data.Array as Array
 import Data.Fin (getFinite)
 import Data.Foldable (foldM, for_)
 import Data.FoldableWithIndex (forWithIndex_)
+import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
@@ -24,6 +25,7 @@ import Effect (Effect)
 import Pickles.OptSponge as OptSponge
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Trace as Trace
+import Pickles.Types (ChunkedCommitment)
 import Pickles.VerificationKey (StepVK)
 import Poseidon (class PoseidonField, hash)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, label)
@@ -33,16 +35,20 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
+-- | `wrapVkChunks` is the wrap VK's own chunk count (Dim 2) — this is
+-- | the step circuit consuming the wrap VK's per-commitment chunks.
+-- | The sponge absorbs each chunk's `(x, y)` in chunk order, mirroring
+-- | OCaml `Plonk_verification_key_evals.to_field_elements`.
 hashMessagesForNextStepProofOpt
-  :: forall n d f t m
+  :: forall n wrapVkChunks d f t m
    . PrimeField f
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
   => { vkComms ::
-         { sigma :: Vector 6 (AffinePoint (FVar f))
-         , sigmaLast :: AffinePoint (FVar f)
-         , coeff :: Vector 15 (AffinePoint (FVar f))
-         , index :: Vector 6 (AffinePoint (FVar f))
+         { sigma :: Vector 6 (ChunkedCommitment wrapVkChunks (AffinePoint (FVar f)))
+         , sigmaLast :: ChunkedCommitment wrapVkChunks (AffinePoint (FVar f))
+         , coeff :: Vector 15 (ChunkedCommitment wrapVkChunks (AffinePoint (FVar f)))
+         , index :: Vector 6 (ChunkedCommitment wrapVkChunks (AffinePoint (FVar f)))
          }
      , appStateFields :: Array (FVar f)
      , proofs ::
@@ -58,14 +64,15 @@ hashMessagesForNextStepProofOpt { vkComms, appStateFields, proofs } = do
     absorbPt s { x, y } = do
       s1 <- Sponge.absorb x s
       Sponge.absorb y s1
+    absorbChunks s = foldM absorbPt s <<< unwrap
 
-  -- 1. sponge_after_index: absorb all VK fields
+  -- 1. sponge_after_index: absorb all VK fields, one chunk at a time
   spongeAfterIndex <- label "sponge_after_index" do
     let sponge0 = initialSpongeCircuit :: Sponge (FVar f)
-    s1 <- foldM absorbPt sponge0 vkComms.sigma
-    s2 <- absorbPt s1 vkComms.sigmaLast
-    s3 <- foldM absorbPt s2 vkComms.coeff
-    foldM absorbPt s3 vkComms.index
+    s1 <- foldM absorbChunks sponge0 vkComms.sigma
+    s2 <- absorbChunks s1 vkComms.sigmaLast
+    s3 <- foldM absorbChunks s2 vkComms.coeff
+    foldM absorbChunks s3 vkComms.index
 
   -- 2. Copy sponge_after_index, absorb app_state with regular sponge
   digest <- label "msg_hash" do
@@ -107,12 +114,21 @@ hashMessagesForNextStepProofOpt { vkComms, appStateFields, proofs } = do
 -- | 5. For each previous proof: `sg.x, sg.y` then all expanded `bpChallenges`
 -- |
 -- | For `num_chunks = 1` (standard Mina) each VK commitment is a single
--- | curve point. When chunked support lands, this signature will need
--- | updating.
+-- | Mirrors OCaml `Common.hash_messages_for_next_step_proof`
+-- | (`common.ml:45-52`). For each commitment OCaml absorbs
+-- | `Array.concat_map x ~f:(fun (x,y) -> [|x;y|])` — i.e. iterates
+-- | over chunks and emits `(x, y)` per chunk. At wrapVkChunks=1 that
+-- | collapses to two fields per commitment (the legacy unchunked
+-- | behaviour); at wrapVkChunks=2+ each commitment contributes
+-- | `2 * wrapVkChunks` fields.
+-- |
+-- | `wrapVkChunks` is the wrap VK's own chunks (Dim 2) — this is the
+-- | step circuit absorbing the wrap VK's bytes for the
+-- | `messages_for_next_step_proof` digest.
 hashMessagesForNextStepProofPure
-  :: forall n d f
+  :: forall n wrapVkChunks d f
    . PoseidonField f
-  => { stepVk :: StepVK f
+  => { stepVk :: StepVK wrapVkChunks f
      , appState :: Array f
      , proofs ::
          Vector n
@@ -126,15 +142,19 @@ hashMessagesForNextStepProofPure { stepVk, appState, proofs } =
     ptFields :: AffinePoint f -> Array f
     ptFields pt = [ pt.x, pt.y ]
 
+    -- Flatten chunks: each commitment contributes `2 * wrapVkChunks` fields.
+    chunkedFields :: ChunkedCommitment wrapVkChunks (AffinePoint f) -> Array f
+    chunkedFields = Array.concatMap ptFields <<< Vector.toUnfoldable <<< unwrap
+
     vkFields =
-      Array.concatMap ptFields (Array.fromFoldable stepVk.sigmaComm)
-        <> Array.concatMap ptFields (Array.fromFoldable stepVk.coefficientsComm)
-        <> ptFields stepVk.genericComm
-        <> ptFields stepVk.psmComm
-        <> ptFields stepVk.completeAddComm
-        <> ptFields stepVk.mulComm
-        <> ptFields stepVk.emulComm
-        <> ptFields stepVk.endomulScalarComm
+      Array.concatMap chunkedFields (Array.fromFoldable stepVk.sigmaComm)
+        <> Array.concatMap chunkedFields (Array.fromFoldable stepVk.coefficientsComm)
+        <> chunkedFields stepVk.genericComm
+        <> chunkedFields stepVk.psmComm
+        <> chunkedFields stepVk.completeAddComm
+        <> chunkedFields stepVk.mulComm
+        <> chunkedFields stepVk.emulComm
+        <> chunkedFields stepVk.endomulScalarComm
 
     proofFields = Array.concatMap
       ( \p ->
@@ -169,12 +189,13 @@ hashMessagesForNextStepProofPure { stepVk, appState, proofs } =
 -- |   msgForNextStep.prev.{i}.bp_chal.{0..15}
 -- |   msgForNextStep.final_digest
 hashMessagesForNextStepProofPureTraced
-  :: forall n d f
+  :: forall n wrapVkChunks d f
    . PoseidonField f
   => PrimeField f
   => Reflectable n Int
+  => Reflectable wrapVkChunks Int
   => Reflectable d Int
-  => { stepVk :: StepVK f
+  => { stepVk :: StepVK wrapVkChunks f
      , appState :: Array f
      , proofs ::
          Vector n
@@ -184,27 +205,33 @@ hashMessagesForNextStepProofPureTraced
      }
   -> Effect f
 hashMessagesForNextStepProofPureTraced inp@{ stepVk, appState, proofs } = do
-  -- sigma_comm: 7 points
-  forWithIndex_ (Array.fromFoldable stepVk.sigmaComm) \i pt -> do
-    Trace.field ("msgForNextStep.vk.sigma." <> show i <> ".x") pt.x
-    Trace.field ("msgForNextStep.vk.sigma." <> show i <> ".y") pt.y
-  -- coefficients_comm: 15 points
-  forWithIndex_ (Array.fromFoldable stepVk.coefficientsComm) \i pt -> do
-    Trace.field ("msgForNextStep.vk.coeff." <> show i <> ".x") pt.x
-    Trace.field ("msgForNextStep.vk.coeff." <> show i <> ".y") pt.y
+  -- Trace label format mirrors OCaml `common.ml:103-112` `trace_point_arr`:
+  -- single-chunk array → `label.x` / `label.y`; multi-chunk → `label.i.x` /
+  -- `label.i.y` per chunk i. This collapses to the legacy unchunked labels
+  -- at wrapVkChunks=1 (no behavioural change for non-chunked tests).
+  let
+    traceChunks :: String -> ChunkedCommitment wrapVkChunks (AffinePoint f) -> Effect Unit
+    traceChunks lbl cc =
+      case Vector.toUnfoldable (unwrap cc) of
+        [ pt ] -> do
+          Trace.field (lbl <> ".x") pt.x
+          Trace.field (lbl <> ".y") pt.y
+        cs -> forWithIndex_ cs \j pt -> do
+          Trace.field (lbl <> "." <> show j <> ".x") pt.x
+          Trace.field (lbl <> "." <> show j <> ".y") pt.y
+  -- sigma_comm: 7 chunked commitments
+  forWithIndex_ (Array.fromFoldable stepVk.sigmaComm) \i chunks ->
+    traceChunks ("msgForNextStep.vk.sigma." <> show i) chunks
+  -- coefficients_comm: 15 chunked commitments
+  forWithIndex_ (Array.fromFoldable stepVk.coefficientsComm) \i chunks ->
+    traceChunks ("msgForNextStep.vk.coeff." <> show i) chunks
   -- 6 individual index comms
-  Trace.field "msgForNextStep.vk.generic.x" stepVk.genericComm.x
-  Trace.field "msgForNextStep.vk.generic.y" stepVk.genericComm.y
-  Trace.field "msgForNextStep.vk.psm.x" stepVk.psmComm.x
-  Trace.field "msgForNextStep.vk.psm.y" stepVk.psmComm.y
-  Trace.field "msgForNextStep.vk.complete_add.x" stepVk.completeAddComm.x
-  Trace.field "msgForNextStep.vk.complete_add.y" stepVk.completeAddComm.y
-  Trace.field "msgForNextStep.vk.mul.x" stepVk.mulComm.x
-  Trace.field "msgForNextStep.vk.mul.y" stepVk.mulComm.y
-  Trace.field "msgForNextStep.vk.emul.x" stepVk.emulComm.x
-  Trace.field "msgForNextStep.vk.emul.y" stepVk.emulComm.y
-  Trace.field "msgForNextStep.vk.endomul_scalar.x" stepVk.endomulScalarComm.x
-  Trace.field "msgForNextStep.vk.endomul_scalar.y" stepVk.endomulScalarComm.y
+  traceChunks "msgForNextStep.vk.generic" stepVk.genericComm
+  traceChunks "msgForNextStep.vk.psm" stepVk.psmComm
+  traceChunks "msgForNextStep.vk.complete_add" stepVk.completeAddComm
+  traceChunks "msgForNextStep.vk.mul" stepVk.mulComm
+  traceChunks "msgForNextStep.vk.emul" stepVk.emulComm
+  traceChunks "msgForNextStep.vk.endomul_scalar" stepVk.endomulScalarComm
   -- app_state fields
   forWithIndex_ appState \i v ->
     Trace.field ("msgForNextStep.app_state." <> show i) v

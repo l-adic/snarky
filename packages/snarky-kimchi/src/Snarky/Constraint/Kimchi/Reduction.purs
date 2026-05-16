@@ -6,6 +6,7 @@ module Snarky.Constraint.Kimchi.Reduction
   , createInternalVariable
   , finalizeGateQueue
   , getRows
+  , mkRawGeneric7Row
   , reduceAffineExpression
   , reduceAsBuilder
   , reduceAsProver
@@ -121,6 +122,14 @@ getRows (Rows x) = x
 
 instance ToKimchiRows f (Rows f) where
   toKimchiRows (Rows as) = Array.singleton as
+
+mkRawGeneric7Row :: forall f. Vector.Vector 7 Variable -> Rows f
+mkRawGeneric7Row vs =
+  let
+    paddedVars :: Vector.Vector 15 (Maybe Variable)
+    paddedVars = map Just vs `Vector.append` Vector.generate (const Nothing)
+  in
+    Rows { kind: GenericPlonkGate, variables: paddedVars, coeffs: [] }
 
 reduceAsBuilder
   :: forall f a r
