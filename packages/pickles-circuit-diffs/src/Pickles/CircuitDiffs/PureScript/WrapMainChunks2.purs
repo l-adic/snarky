@@ -70,7 +70,7 @@ compileWrapMainChunks2 { blindingH } stepParams = do
 
             -- Wrap each {x,y} record (coords in Pallas.ScalarField =
             -- WrapField) into the F newtype so the type lines up with
-            -- `Vector numChunks (AffinePoint (F WrapField))`. The
+            -- `Vector stepChunks (AffinePoint (F WrapField))`. The
             -- non-chunked call sites do this implicitly via
             -- `coerce (... :: AffinePoint ScalarField)`; the chunked
             -- shape needs an explicit per-element rewrap.
@@ -89,7 +89,7 @@ compileWrapMainChunks2 { blindingH } stepParams = do
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
       }
   -- `slots` derived from `@Unit` via `SlotsFromSpec` funcdep. The
-  -- @2 numChunks type-app drives the wrap IVP's chunked w/z/t MSM
+  -- @2 stepChunks type-app drives the wrap IVP's chunked w/z/t MSM
   -- (Pcs_batch.combine_split_commitments with num_chunks=2).
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\stmt -> wrapMainForPrevs @1 @Unit @2 config stmt)

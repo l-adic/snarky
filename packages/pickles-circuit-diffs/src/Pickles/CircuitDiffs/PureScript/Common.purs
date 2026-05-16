@@ -135,12 +135,12 @@ wrapSrsLengthLog2 = 15
 -- | stepVkForCircuit`. Byte-identical to OCaml's
 -- | `Pickles.compile_promise` for the same step CS + SRS.
 deriveStepVKFromCompiled
-  :: forall @numChunks @len
-   . Reflectable numChunks Int
+  :: forall @stepChunks @len
+   . Reflectable stepChunks Int
   => Reflectable len Int
   => CRS VestaG
   -> CompiledCircuit StepField
-  -> StepVK numChunks (FVar WrapField)
+  -> StepVK stepChunks (FVar WrapField)
 deriveStepVKFromCompiled vestaSrs builtState =
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
@@ -158,7 +158,7 @@ deriveStepVKFromCompiled vestaSrs builtState =
       { endo, constraintSystem, crs: vestaSrs }
     verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
   in
-    stepVkForCircuit (extractStepVKComms @numChunks verifierIndex)
+    stepVkForCircuit (extractStepVKComms @stepChunks verifierIndex)
 
 -- | Wrap-side analog of `deriveStepVKFromCompiled`. The wrap CS
 -- | lives in `WrapField` over Pallas; commitments are Pallas points

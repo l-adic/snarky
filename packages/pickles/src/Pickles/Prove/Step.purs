@@ -463,7 +463,7 @@ buildStepAdvice input =
 -- | coordinates in Pallas.BaseField = StepField, so no cross-field
 -- | coercion is needed.
 -- | Polymorphic on `wrapVkChunks` — the wrap VK's own chunk count
--- | (Dim 2). Distinct from the wrap circuit's `numChunks` (Dim 1)
+-- | (Dim 2). Distinct from the wrap circuit's `stepChunks` (Dim 1)
 -- | and from a side-loaded slot's chunks (Dim 3 / `nc`).
 extractWrapVKCommsAdvice
   :: forall @wrapVkChunks
@@ -490,7 +490,7 @@ extractWrapVKCommsAdvice vk =
 -- | `Common.hash_messages_for_next_step_proof` on the real wrap VK.
 -- |
 -- | `wrapVkChunks` is the wrap VK's own chunk count (Dim 2); distinct
--- | from the wrap circuit's `numChunks` (Dim 1). OCaml fixes
+-- | from the wrap circuit's `stepChunks` (Dim 1). OCaml fixes
 -- | `wrapVkChunks = num_chunks_by_default = 1` at `step_main.ml:347`;
 -- | callers pass `@1` at the specialization boundary.
 extractWrapVKForStepHash

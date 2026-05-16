@@ -165,17 +165,17 @@ data CorrectionMode = PureCorrections | InCircuitCorrections
 -- | so publicInputCommit can interleave scale_fast2' and add_fast inline
 -- | during the fold (matching OCaml's step_verifier.ml:468-475).
 -- |
--- | Returns a `Vector numChunks (AffinePoint (FVar f))` — one curve point
+-- | Returns a `Vector stepChunks (AffinePoint (FVar f))` — one curve point
 -- | per chunk of the lagrange basis. For nc=1 this is a 1-element vector
 -- | producing identical gates to a single scaleFast2'; for chunks2 (step
--- | domain > wrap SRS max_poly_size) it emits numChunks scaleFast2' calls
+-- | domain > wrap SRS max_poly_size) it emits stepChunks scaleFast2' calls
 -- | per PI slot. Mirrors OCaml's
 -- | `Array.map2_exn acc chunks ~f:(... scale_fast2' g x ~num_bits ...)`
 -- | (wrap_verifier.ml:1019-1023).
-newtype DeferredScaleMul (numChunks :: Int) f = DeferredScaleMul
+newtype DeferredScaleMul (stepChunks :: Int) f = DeferredScaleMul
   ( forall t m
      . CircuitM f (KimchiConstraint f) t m
-    => Snarky (KimchiConstraint f) t m (Vector numChunks (AffinePoint (FVar f)))
+    => Snarky (KimchiConstraint f) t m (Vector stepChunks (AffinePoint (FVar f)))
   )
 
 -- | Per-chunk deferred scalar multiplication. Used by `InCircuitCorrections`
@@ -211,7 +211,7 @@ newtype DeferredScaleMul1 f = DeferredScaleMul1
 -- |
 -- | CondAdd's Lagrange point is masked (OCaml's `lagrange` always masks).
 -- |
--- | All variants carry chunked points: each field is a `Vector numChunks`
+-- | All variants carry chunked points: each field is a `Vector stepChunks`
 -- | so the PI commit fold can run a parallel accumulator per chunk
 -- | (matching OCaml's `Array.map2_exn acc chunks`).
 -- `scaleMuls` is per-chunk so callers can either run them all-at-once
@@ -220,10 +220,10 @@ newtype DeferredScaleMul1 f = DeferredScaleMul1
 -- gate streams; at nc>1 the chunked PI commit needs per-chunk sf+af
 -- interleaving to match OCaml `Array.map2_exn acc chunks ~f:(fun acc (g, _) ->
 -- add_fast acc (scale_fast2' g x))` (wrap_verifier.ml:1019).
-data MsmTerm (numChunks :: Int) f
-  = AddWithCorrection { scaleMuls :: Vector numChunks (DeferredScaleMul1 f), correction :: Vector numChunks (AffinePoint (F f)) }
-  | AddWithCircuitCorrection { scaleMuls :: Vector numChunks (DeferredScaleMul1 f), correction :: Vector numChunks (AffinePoint (FVar f)) }
-  | CondAdd (BoolVar f) (Vector numChunks (AffinePoint (FVar f)))
+data MsmTerm (stepChunks :: Int) f
+  = AddWithCorrection { scaleMuls :: Vector stepChunks (DeferredScaleMul1 f), correction :: Vector stepChunks (AffinePoint (F f)) }
+  | AddWithCircuitCorrection { scaleMuls :: Vector stepChunks (DeferredScaleMul1 f), correction :: Vector stepChunks (AffinePoint (FVar f)) }
+  | CondAdd (BoolVar f) (Vector stepChunks (AffinePoint (FVar f)))
 
 -- | A Lagrange base point.
 -- |
@@ -249,17 +249,17 @@ data MsmTerm (numChunks :: Int) f
 -- |     correction `-sum_b which_branch[b] * [2^shift] * lagrange(domain[b], i)`.
 -- |     Set by `mkPerBranchLagrangeBase`; mirrors OCaml's per-branch
 -- |     `lagrange_with_correction`.
--- | Chunked: each field is a `Vector numChunks` of points. For nc=1 this
+-- | Chunked: each field is a `Vector stepChunks` of points. For nc=1 this
 -- | is structurally identical to the pre-chunk single-point shape (a
 -- | length-1 Vector). For nc>1 (chunks2 step domain) each PI slot's
 -- | lagrange basis has multiple chunks and the PI commit accumulator
 -- | runs chunkwise.
 type LagrangeBase :: Int -> Type -> Type
-type LagrangeBase numChunks f =
-  { constant :: Vector numChunks (AffinePoint (F f))
-  , circuit :: Vector numChunks (AffinePoint (FVar f))
-  , condAddPt :: Vector numChunks (AffinePoint (FVar f))
-  , correctionAt :: Maybe (Int -> Vector numChunks (AffinePoint (FVar f)))
+type LagrangeBase stepChunks f =
+  { constant :: Vector stepChunks (AffinePoint (F f))
+  , circuit :: Vector stepChunks (AffinePoint (FVar f))
+  , condAddPt :: Vector stepChunks (AffinePoint (FVar f))
+  , correctionAt :: Maybe (Int -> Vector stepChunks (AffinePoint (FVar f)))
   -- | Whether the BoolVar `Cond_add` path seals `condAddPt` before
   -- | use. `true` for step side-loaded (which seals both `lagrange`
   -- | and `lagrange_with_correction`); `false` for wrap multi-branch
@@ -273,16 +273,16 @@ type LagrangeBase numChunks f =
 -- | consuming a pre-sized array, which removes the need for a "numPublic"
 -- | parameter at call sites.
 type LagrangeBaseLookup :: Int -> Type -> Type
-type LagrangeBaseLookup numChunks f = Int -> LagrangeBase numChunks f
+type LagrangeBaseLookup stepChunks f = Int -> LagrangeBase stepChunks f
 
 -- | Construct a LagrangeBase where both constant and circuit are the same
 -- | chunked value. Used in single-branch / all-domains-equal contexts
 -- | where there's no per-branch dispatch needed.
 mkConstLagrangeBase
-  :: forall numChunks f
+  :: forall stepChunks f
    . PrimeField f
-  => Vector numChunks (AffinePoint (F f))
-  -> LagrangeBase numChunks f
+  => Vector stepChunks (AffinePoint (F f))
+  -> LagrangeBase stepChunks f
 mkConstLagrangeBase pts =
   { constant: pts
   , circuit: map constPt pts
@@ -295,12 +295,12 @@ mkConstLagrangeBase pts =
 -- | lagrange commitment. The most common shape at call sites: wrap an FFI
 -- | `*SrsLagrangeCommitmentChunksAt srs domainLog2` partial application
 -- | (which returns an `Array` of nc chunks; callers reshape into the
--- | fixed-size `Vector numChunks`).
+-- | fixed-size `Vector stepChunks`).
 mkConstLagrangeBaseLookup
-  :: forall numChunks f
+  :: forall stepChunks f
    . PrimeField f
-  => (Int -> Vector numChunks (AffinePoint (F f)))
-  -> LagrangeBaseLookup numChunks f
+  => (Int -> Vector stepChunks (AffinePoint (F f)))
+  -> LagrangeBaseLookup stepChunks f
 mkConstLagrangeBaseLookup f i = mkConstLagrangeBase (f i)
 
 -- | Sum-mask a vector of constant affine points against a one-hot
@@ -397,8 +397,8 @@ mkSideloadedLagrangeLookup curveP bits perDomainAt i =
 -- | Intermediate result from walking the structure. The `nextIdx` field is
 -- | the first lagrange-base index the caller has *not yet* consumed.
 type ScalarMulResult :: Int -> Type -> Type
-type ScalarMulResult numChunks f =
-  { results :: Array (MsmTerm numChunks f)
+type ScalarMulResult stepChunks f =
+  { results :: Array (MsmTerm stepChunks f)
   , nextIdx :: Int
   }
 
@@ -414,14 +414,14 @@ type ScalarMulResult numChunks f =
 -- | position (threaded through the instances).
 class PublicInputCommit a f where
   scalarMuls
-    :: forall @numChunks t m
+    :: forall @stepChunks t m
      . CircuitM f (KimchiConstraint f) t m
-    => Reflectable numChunks Int
+    => Reflectable stepChunks Int
     => CurveParams f
     -> a
-    -> LagrangeBaseLookup numChunks f
+    -> LagrangeBaseLookup stepChunks f
     -> Int
-    -> Snarky (KimchiConstraint f) t m (ScalarMulResult numChunks f)
+    -> Snarky (KimchiConstraint f) t m (ScalarMulResult stepChunks f)
 
 -------------------------------------------------------------------------------
 -- | Leaf instances
@@ -533,14 +533,14 @@ instance
 
 class RPublicInputCommit (rl :: RL.RowList Type) f (r :: Row Type) | rl -> r where
   rScalarMuls
-    :: forall @numChunks t m
+    :: forall @stepChunks t m
      . CircuitM f (KimchiConstraint f) t m
-    => Reflectable numChunks Int
+    => Reflectable stepChunks Int
     => CurveParams f
     -> Record r
-    -> LagrangeBaseLookup numChunks f
+    -> LagrangeBaseLookup stepChunks f
     -> Int
-    -> Snarky (KimchiConstraint f) t m (ScalarMulResult numChunks f)
+    -> Snarky (KimchiConstraint f) t m (ScalarMulResult stepChunks f)
 
 instance RPublicInputCommit RL.Nil f () where
   rScalarMuls _ _ _ idx = pure { results: [], nextIdx: idx }
@@ -571,19 +571,19 @@ instance
 -- |
 -- | where MSM = sum([s_i] * B_i) after shift correction.
 publicInputCommit
-  :: forall @numChunks a f t m r
+  :: forall @stepChunks a f t m r
    . PublicInputCommit a f
   => PrimeField f
-  => Reflectable numChunks Int
+  => Reflectable stepChunks Int
   => CircuitM f (KimchiConstraint f) t m
   => { curveParams :: CurveParams f
-     , lagrangeAt :: LagrangeBaseLookup numChunks f
+     , lagrangeAt :: LagrangeBaseLookup stepChunks f
      , blindingH :: AffinePoint (F f)
      , correctionMode :: CorrectionMode
      | r
      }
   -> a
-  -> Snarky (KimchiConstraint f) t m (Vector numChunks (AffinePoint (FVar f)))
+  -> Snarky (KimchiConstraint f) t m (Vector stepChunks (AffinePoint (FVar f)))
 publicInputCommit params input = label "public-input-commit" do
   { results } <- scalarMuls params.curveParams input params.lagrangeAt 0
   case NEA.fromArray results of
@@ -598,7 +598,7 @@ publicInputCommit params input = label "public-input-commit" do
           -- corrections are not expected here — the step circuit isn't
           -- multi-branch.
           let
-            -- `Vector numChunks (AffinePoint (F f))` per term
+            -- `Vector stepChunks (AffinePoint (F f))` per term
             rawCorrectionVecs = Array.mapMaybe
               ( case _ of
                   AddWithCorrection r -> Just r.correction
@@ -614,7 +614,7 @@ publicInputCommit params input = label "public-input-commit" do
           let corrTail = NEA.tail correctionPtsN
 
           -- Phase 1: Execute all scaleFast2' calls, collecting chunked
-          -- results. This generates numChunks * VarBaseMul + internal
+          -- results. This generates stepChunks * VarBaseMul + internal
           -- CompleteAdd gates per AddWithCorrection term. Per-term
           -- emission is `for scaleMuls (run each chunk)` — at nc=1
           -- this is a single run, gate-identical to pre-chunk.
@@ -628,7 +628,7 @@ publicInputCommit params input = label "public-input-commit" do
 
           -- Phase 2: Reduce results pairwise with addComplete, chunkwise.
           -- Each PI term contributes either:
-          --   * a chunked point Vector numChunks (FVar) — accumulator gets
+          --   * a chunked point Vector stepChunks (FVar) — accumulator gets
           --     per-chunk addComplete onto it (OCaml `Array.map2_exn acc
           --     point`); OR
           --   * a Cond_add — per-chunk addComplete + if_-mux per chunk.
@@ -658,9 +658,9 @@ publicInputCommit params input = label "public-input-commit" do
           -- Phase 3: Add total correction (constant, summed chunkwise)
           -- to accumulator. `foldl` over the (head, tail) of constant
           -- correction chunks per chunk-index produces a Vector
-          -- numChunks AffinePoint.
+          -- stepChunks AffinePoint.
           let
-            correctionPtsChunked :: Vector numChunks (AffinePoint (F f))
+            correctionPtsChunked :: Vector stepChunks (AffinePoint (F f))
             correctionPtsChunked = foldl
               (Vector.zipWith (addPurePt params.curveParams))
               corrHead
@@ -753,21 +753,21 @@ publicInputCommit params input = label "public-input-commit" do
 -- | The correction is [2^bitsUsed] * base, matching OCaml's
 -- | `lagrange_with_correction ~input_length`.
 scalarMulLeaf
-  :: forall @nChunks @sDiv2Bits f n bitsUsed bitsRemaining sDiv2Remaining numChunks t m
+  :: forall @nChunks @sDiv2Bits f n bitsUsed bitsRemaining sDiv2Remaining stepChunks t m
    . FieldSizeInBits f n
   => Add bitsUsed bitsRemaining n
   => Add sDiv2Bits sDiv2Remaining n
   => Mul 5 nChunks bitsUsed
   => Reflectable bitsUsed Int
   => Reflectable sDiv2Bits Int
-  => Reflectable numChunks Int
+  => Reflectable stepChunks Int
   => CircuitM f (KimchiConstraint f) t m
   => PrimeField f
   => CurveParams f
   -> FVar f
-  -> LagrangeBaseLookup numChunks f
+  -> LagrangeBaseLookup stepChunks f
   -> Int
-  -> Snarky (KimchiConstraint f) t m (ScalarMulResult numChunks f)
+  -> Snarky (KimchiConstraint f) t m (ScalarMulResult stepChunks f)
 scalarMulLeaf params scalar lookup idx = do
   let
     base = lookup idx

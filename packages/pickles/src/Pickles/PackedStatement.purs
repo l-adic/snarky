@@ -179,13 +179,13 @@ instance
   ) =>
   PublicInputCommit (PackedStepPublicInput n dw (FVar f) (BoolVar f)) f where
   scalarMuls
-    :: forall @numChunks t m
+    :: forall @stepChunks t m
      . CircuitM f (KimchiConstraint f) t m
-    => Reflectable numChunks Int
+    => Reflectable stepChunks Int
     => CurveParams f
     -> PackedStepPublicInput n dw (FVar f) (BoolVar f)
-    -> LagrangeBaseLookup numChunks f
+    -> LagrangeBaseLookup stepChunks f
     -> Int
-    -> Snarky (KimchiConstraint f) t m (ScalarMulResult numChunks f)
+    -> Snarky (KimchiConstraint f) t m (ScalarMulResult stepChunks f)
   scalarMuls params x lookup idx =
     scalarMuls @(StmtTuple n dw (FVar f) (BoolVar f)) @f params (toPackedTuple x) lookup idx

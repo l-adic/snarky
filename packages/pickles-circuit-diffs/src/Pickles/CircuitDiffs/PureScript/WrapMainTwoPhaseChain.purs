@@ -73,7 +73,7 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
 
     -- Per-branch chunked lagrange lookup at each branch's step domain log2.
     -- Both values derived from artifacts (no hardcoded 9 / 14). At
-    -- numChunks=1 the chunks array has length 1 — preserves gate-identity
+    -- stepChunks=1 the chunks array has length 1 — preserves gate-identity
     -- with the pre-chunk single-point path. Reshape via `Vector.toVector
     -- @1`; mismatch only fires if SRS/domain pairing yields nc≠1 here.
     chunked log2 i =

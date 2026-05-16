@@ -54,20 +54,20 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 -------------------------------------------------------------------------------
 
 -- | Polynomial commitments enter chunked: `wComm` is 15 polynomials each
--- | with `numChunks` sub-commitments, `zComm` is one polynomial with
--- | `numChunks` sub-commitments. `tComm` is the t-poly's flat chunk list
--- | of length `tCommLen = 7 * numChunks` (at n=1, tCommLen = 7).
-type FqSpongeInput sgOldN numChunks tCommLen f =
+-- | with `stepChunks` sub-commitments, `zComm` is one polynomial with
+-- | `stepChunks` sub-commitments. `tComm` is the t-poly's flat chunk list
+-- | of length `tCommLen = 7 * stepChunks` (at n=1, tCommLen = 7).
+type FqSpongeInput sgOldN stepChunks tCommLen f =
   { indexDigest :: f
   , sgOld :: Vector sgOldN (AffinePoint f)
   -- | Chunked public-input commitment. At nc=1 this is a 1-element
   -- | vector (legacy behavior); at nc>1 each chunk is absorbed
   -- | separately, matching OCaml `Array.iter x_hat ~f:(absorb sponge PC)`
-  -- | (wrap_verifier.ml:1042). Reuses `numChunks` from w_comm/z_comm
+  -- | (wrap_verifier.ml:1042). Reuses `stepChunks` from w_comm/z_comm
   -- | since both derive from the same step-domain-over-wrap-SRS ratio.
-  , publicComm :: ChunkedCommitment numChunks (AffinePoint f)
-  , wComm :: Vector 15 (ChunkedCommitment numChunks (AffinePoint f))
-  , zComm :: ChunkedCommitment numChunks (AffinePoint f)
+  , publicComm :: ChunkedCommitment stepChunks (AffinePoint f)
+  , wComm :: Vector 15 (ChunkedCommitment stepChunks (AffinePoint f))
+  , zComm :: ChunkedCommitment stepChunks (AffinePoint f)
   , tComm :: Vector tCommLen (AffinePoint f)
   }
 
@@ -80,14 +80,14 @@ type FqSpongeOutput f =
   }
 
 spongeTranscriptOptCircuit
-  :: forall f sgOldN numChunks tCommLen t m r
+  :: forall f sgOldN stepChunks tCommLen t m r
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
   => { endo :: FVar f | r }
   -> Vector sgOldN (Bool (FVar f)) -- actual_proofs_verified_mask
-  -> FqSpongeInput sgOldN numChunks tCommLen (FVar f)
+  -> FqSpongeInput sgOldN stepChunks tCommLen (FVar f)
   -> SpongeM f (KimchiConstraint f) t m (FqSpongeOutput (FVar f))
 spongeTranscriptOptCircuit params sgOldMask input = do
   -- Run the Opt sponge transcript in Snarky (not SpongeM)

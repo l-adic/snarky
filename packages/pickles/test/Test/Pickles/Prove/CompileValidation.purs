@@ -1,6 +1,6 @@
 -- | Negative-path tests for `compileMulti`'s structural validation
 -- | checks. These confirm that the user-declared compile-time
--- | parameters (currently just `@numChunks`) are validated against
+-- | parameters (currently just `@stepChunks`) are validated against
 -- | what the actual circuit needs, with a clear error message when
 -- | they disagree.
 module Test.Pickles.Prove.CompileValidation
@@ -28,12 +28,12 @@ import Test.Spec.Assertions (fail)
 
 -- | Re-uses the `Test.Pickles.Prove.NoRecursionReturn` rule (smallest
 -- | available — N=0, no prev slots, ~447 gate step CS) and tries to
--- | compile it with `@numChunks = 2`. Since the step domain log2 for
+-- | compile it with `@stepChunks = 2`. Since the step domain log2 for
 -- | this tiny rule is well below `StepIPARounds = 16`, the per-branch
 -- | num_chunks is 1, and the validation must throw.
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.Compile.validateNumChunks" do
-  it "throws when @numChunks=2 but the circuit only needs 1" \_ -> do
+  it "throws when @stepChunks=2 but the circuit only needs 1" \_ -> do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
     nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
@@ -54,9 +54,9 @@ spec = describe "Pickles.Prove.Compile.validateNumChunks" do
         fail "expected compileMulti to throw NumChunksMismatch (declared 2, actual 1)"
       Left err -> do
         let msg = Exc.message err
-        when (not (contains (Pattern "declared numChunks=2") msg))
+        when (not (contains (Pattern "declared stepChunks=2") msg))
           $ fail
-          $ "error did not mention 'declared numChunks=2': " <> msg
+          $ "error did not mention 'declared stepChunks=2': " <> msg
         when (not (contains (Pattern "num_chunks=1") msg))
           $ fail
           $ "error did not mention computed 'num_chunks=1': " <> msg

@@ -29,14 +29,14 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 -- |
 -- | Reference: mina/src/lib/pickles/common.ml:227-246
 ftComm
-  :: forall numChunks numChunksPred tCommLen tCommLenPred f t m sf r
+  :: forall stepChunks numChunksPred tCommLen tCommLenPred f t m sf r
    . CircuitM f (KimchiConstraint f) t m
-  => Add 1 numChunksPred numChunks
+  => Add 1 numChunksPred stepChunks
   => Add 1 tCommLenPred tCommLen
   => { scaleByShifted :: AffinePoint (FVar f) -> sf -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
      | r
      }
-  -> { sigmaLast :: Vector numChunks (AffinePoint (FVar f))
+  -> { sigmaLast :: Vector stepChunks (AffinePoint (FVar f))
      , tComm :: Vector tCommLen (AffinePoint (FVar f))
      , perm :: sf
      , zetaToSrsLength :: sf

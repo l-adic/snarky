@@ -41,13 +41,13 @@ foreign import data SideLoaded :: SlotKind
 -- | side-loaded tag's mpv), `num_chunks` of the prev's compile, and
 -- | the prev's statement type.
 -- |
--- | `numChunks` is the third axis because `num_chunks` is per-compile
+-- | `stepChunks` is the third axis because `num_chunks` is per-compile
 -- | in OCaml Pickles — each prev tag was produced by some
 -- | `Pickles.compile_promise ~num_chunks:N` call, and the step circuit
 -- | that verifies that prev needs to allocate FFI commitments at THAT
--- | num_chunks. Self-recursive prevs in a compile with `@numChunks:k`
--- | conventionally have `numChunks=k`. External-tag prevs can have a
--- | different `numChunks` than the current compile.
+-- | num_chunks. Self-recursive prevs in a compile with `@stepChunks:k`
+-- | conventionally have `stepChunks=k`. External-tag prevs can have a
+-- | different `stepChunks` than the current compile.
 -- |
 -- | Pure phantom; no value-level inhabitants. The spec is the tuple
 -- | chain `Slot k₁ n₁ nc₁ s₁ /\ Slot k₂ n₂ nc₂ s₂ /\ … /\ Unit` — `Unit`

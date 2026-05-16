@@ -467,7 +467,7 @@ type ExpandProofInput n nwp wrapVkChunks =
 -- | Output of `expandProof` — the witness data the step circuit
 -- | reads for one predecessor slot. Maps to OCaml's return tuple
 -- | from `expand_proof` (step.ml:515-536).
-type ExpandProofOutput n numChunks =
+type ExpandProofOutput n stepChunks =
   { sg :: AffinePoint StepField
   -- | The wrap-field deferred-value record + should_finalize flag +
   -- | sponge digest. Corresponds to OCaml `Unfinalized.Constant.t`.
@@ -491,7 +491,7 @@ type ExpandProofOutput n numChunks =
   , perProofWitness ::
       Step.PerProofWitness
         n
-        numChunks
+        stepChunks
         StepIPARounds
         WrapIPARounds
         (F StepField)
@@ -526,11 +526,11 @@ type PrevStatementWithHashes =
 
 -- | The main `expand_proof` port.
 expandProof
-  :: forall @numChunks n nwp wrapVkChunks
-   . Reflectable numChunks Int
+  :: forall @stepChunks n nwp wrapVkChunks
+   . Reflectable stepChunks Int
   => Reflectable wrapVkChunks Int
   => ExpandProofInput n nwp wrapVkChunks
-  -> ExpandProofOutput n numChunks
+  -> ExpandProofOutput n stepChunks
 expandProof input =
   let
     -- ===== Step-field Type1 deferred values. =====
@@ -771,11 +771,11 @@ expandProof input =
     wrapCommits = vestaProofCommitments input.wrapProof
 
     messages
-      :: WrapProofMessages numChunks (WeierstrassAffinePoint PallasG (F StepField))
+      :: WrapProofMessages stepChunks (WeierstrassAffinePoint PallasG (F StepField))
     messages = WrapProofMessages
-      { wComm: map (over ChunkedCommitment (map mkPallasPt)) (wCommChunked @numChunks wrapCommits)
-      , zComm: over ChunkedCommitment (map mkPallasPt) (zCommChunked @numChunks wrapCommits)
-      , tComm: map (over ChunkedCommitment (map mkPallasPt)) (tCommChunked @numChunks wrapCommits)
+      { wComm: map (over ChunkedCommitment (map mkPallasPt)) (wCommChunked @stepChunks wrapCommits)
+      , zComm: over ChunkedCommitment (map mkPallasPt) (zCommChunked @stepChunks wrapCommits)
+      , tComm: map (over ChunkedCommitment (map mkPallasPt)) (tCommChunked @stepChunks wrapCommits)
       }
 
     -- Wrap proof's opening proof from the kimchi form. The `sg`
@@ -799,7 +799,7 @@ expandProof input =
     wrapProofKimchi
       :: Step.WrapProof
            WrapIPARounds
-           numChunks
+           stepChunks
            (WeierstrassAffinePoint PallasG (F StepField))
            (Type2 (SplitField (F StepField) Boolean))
     wrapProofKimchi = Step.WrapProof
@@ -852,7 +852,7 @@ expandProof input =
     perProofWitness
       :: Step.PerProofWitness
            n
-           numChunks
+           stepChunks
            StepIPARounds
            WrapIPARounds
            (F StepField)

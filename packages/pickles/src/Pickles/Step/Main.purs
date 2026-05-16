@@ -412,10 +412,10 @@ mpvFrontPad mkDummy real =
 -- |   + branch_data(mask0,mask1,domLog2) at end
 -------------------------------------------------------------------------------
 
-type AllocatedPerProofWitness n numChunks tCommLen =
-  { wComm :: Vector 15 (ChunkedCommitment numChunks (WeierstrassAffinePoint PallasG (FVar StepField)))
-  , zComm :: ChunkedCommitment numChunks (WeierstrassAffinePoint PallasG (FVar StepField))
-  -- Flat tComm: tCommLen = 7 * numChunks pieces of the quotient poly.
+type AllocatedPerProofWitness n stepChunks tCommLen =
+  { wComm :: Vector 15 (ChunkedCommitment stepChunks (WeierstrassAffinePoint PallasG (FVar StepField)))
+  , zComm :: ChunkedCommitment stepChunks (WeierstrassAffinePoint PallasG (FVar StepField))
+  -- Flat tComm: tCommLen = 7 * stepChunks pieces of the quotient poly.
   , tComm :: Vector tCommLen (WeierstrassAffinePoint PallasG (FVar StepField))
   , lr :: Vector 15 { l :: WeierstrassAffinePoint PallasG (FVar StepField), r :: WeierstrassAffinePoint PallasG (FVar StepField) }
   , z1 :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
@@ -453,13 +453,13 @@ type AllocatedPerProofWitness n numChunks tCommLen =
   }
 
 allocatePerProofWitness
-  :: forall @n @numChunks tCommLen t m
+  :: forall @n @stepChunks tCommLen t m
    . CircuitM StepField (KimchiConstraint StepField) t m
   => Reflectable n Int
-  => Reflectable numChunks Int
-  => Mul 7 numChunks tCommLen
-  => PerProofWitness n numChunks StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
-  -> Snarky (KimchiConstraint StepField) t m (AllocatedPerProofWitness n numChunks tCommLen)
+  => Reflectable stepChunks Int
+  => Mul 7 stepChunks tCommLen
+  => PerProofWitness n stepChunks StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
+  -> Snarky (KimchiConstraint StepField) t m (AllocatedPerProofWitness n stepChunks tCommLen)
 allocatePerProofWitness (PerProofWitness ppw) = do
   let
     WrapProof wrapProofRec = ppw.wrapProof
@@ -498,10 +498,10 @@ allocatePerProofWitness (PerProofWitness ppw) = do
       }
   let
     tCommFlat :: Vector tCommLen (WeierstrassAffinePoint PallasG (FVar StepField))
-    tCommFlat = Vector.concat (coerce msgRec.tComm :: Vector 7 (Vector numChunks (WeierstrassAffinePoint PallasG (FVar StepField))))
+    tCommFlat = Vector.concat (coerce msgRec.tComm :: Vector 7 (Vector stepChunks (WeierstrassAffinePoint PallasG (FVar StepField))))
   pure
     -- wComm/zComm carry chunks through; tComm flattens Vector 7 (ChunkedCommitment nc pt)
-    -- to flat Vector tCommLen pt via Vector.concat (= 7 * numChunks pieces).
+    -- to flat Vector tCommLen pt via Vector.concat (= 7 * stepChunks pieces).
     { wComm: msgRec.wComm
     , zComm: msgRec.zComm
     , tComm: tCommFlat
@@ -639,22 +639,22 @@ liftDummyPerProofUnfinalized (PerProofUnfinalized r) =
 -- | OCaml `step_main.ml:347`'s `num_chunks_by_default = 1` pins this
 -- | to 1 today; we keep it polymorphic and let call sites specify.
 buildVerifyOneInput
-  :: forall @n @numChunks @tCommLen pad
+  :: forall @n @stepChunks @tCommLen pad
    . Reflectable n Int
   => Reflectable pad Int
   => Add pad n PaddedLength
-  => AllocatedPerProofWitness n numChunks tCommLen
+  => AllocatedPerProofWitness n stepChunks tCommLen
   -> Array (FVar StepField) -- prev proof's public input, pre-flattened
   -> BoolVar StepField
   -> UnfinalizedProof
   -> FVar StepField
-  -> { sigma :: Vector 6 (ChunkedCommitment numChunks (AffinePoint (FVar StepField)))
-     , sigmaLast :: ChunkedCommitment numChunks (AffinePoint (FVar StepField))
-     , coeff :: Vector 15 (ChunkedCommitment numChunks (AffinePoint (FVar StepField)))
-     , index :: Vector 6 (ChunkedCommitment numChunks (AffinePoint (FVar StepField)))
+  -> { sigma :: Vector 6 (ChunkedCommitment stepChunks (AffinePoint (FVar StepField)))
+     , sigmaLast :: ChunkedCommitment stepChunks (AffinePoint (FVar StepField))
+     , coeff :: Vector 15 (ChunkedCommitment stepChunks (AffinePoint (FVar StepField)))
+     , index :: Vector 6 (ChunkedCommitment stepChunks (AffinePoint (FVar StepField)))
      }
   -> AffinePoint (FVar StepField) -- dummySg for padding
-  -> VerifyOneInput n numChunks tCommLen WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
+  -> VerifyOneInput n stepChunks tCommLen WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
 buildVerifyOneInput pw appStateFields mustVerify unfinalized msgWrap vkComms dummySg =
   let
     -- sgOld: pad prevSgs to PaddedLength (Wrap_hack.Padded_length).
@@ -792,7 +792,7 @@ stepMain
   -- `wrapVkChunks` is the chunks count of THIS compile's own
   -- wrap VK (Dim 2 viewed at the outer rule level — distinct from
   -- per-slot `nc` values, distinct from the wrap circuit's
-  -- `numChunks` / Dim 1). OCaml fixes this to 1
+  -- `stepChunks` / Dim 1). OCaml fixes this to 1
   -- (`step_main.ml:347` `num_chunks_by_default`).
   => BuildSlotVkSources cell prevsSpec wrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
   => Add 1 ndPred nd

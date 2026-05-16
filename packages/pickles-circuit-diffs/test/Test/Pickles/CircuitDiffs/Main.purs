@@ -723,7 +723,7 @@ spec =
         exactMatchEff "wrap_main_add_one_return_circuit"
           (fromCompiledCircuit <<< _.wrapCs <$> compileWrapMainAddOneReturn wrapMainAddOneReturnSrsData aorStepSrsData)
         -- N=0, num_chunks=2 wrap. Same branch/widths/Max_widths layout
-        -- as `wrap_main_add_one_return_circuit` but with `numChunks=2`
+        -- as `wrap_main_add_one_return_circuit` but with `stepChunks=2`
         -- at `wrapMainForPrevs`, so the IVP MSM walks 2 chunks per
         -- w/z/t_comm. Step domain log2 = 17 (driven by the chunks2 step
         -- body's 2^17 mul fillers); wrap domain log2 = 14 (= N1

@@ -105,7 +105,7 @@ import Snarky.Types.Shifted (SplitField, Type2)
 -- | `g = PallasG` for the Pasta cycle.
 -- | `wrapVkChunks` (Dim 2) is the wrap VK's own chunks count, carried
 -- | by `getWrapVerifierIndex`'s `VerificationKey wrapVkChunks ...`
--- | return shape. Distinct from the wrap circuit's own `numChunks`
+-- | return shape. Distinct from the wrap circuit's own `stepChunks`
 -- | (Dim 1) and from per-slot side-loaded chunks (`nc`, Dim 3).
 class
   ( Monad m

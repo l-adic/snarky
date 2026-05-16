@@ -229,7 +229,7 @@ type ProverVKs =
   { stepCompileResult :: StepCompileResult
   , wrapCompileResult :: WrapCompileResult
   , wrapDomainLog2 :: Int
-  -- | The imported rule's compile-time `@numChunks`. Propagated from
+  -- | The imported rule's compile-time `@stepChunks`. Propagated from
   -- | the producer so the consumer (e.g. `mkStepAdvice`'s per-slot
   -- | `External` case) reads the declared value directly instead of
   -- | back-deriving it from the realized step domain log2.
@@ -883,7 +883,7 @@ instance
             , slotWrapDomainLog2: vks.wrapDomainLog2
             , slotStepDomainLog2:
                 ProofFFI.pallasProverIndexDomainLog2 vks.stepCompileResult.proverIndex
-            -- External: read the imported rule's declared `@numChunks`
+            -- External: read the imported rule's declared `@stepChunks`
             -- directly from `ProverVKs.stepNumChunks` (propagated by the
             -- imported compileMulti). Wrap is universally nc=1.
             , slotStepZkRows: zkRowsForNumChunks vks.stepNumChunks
@@ -2161,11 +2161,11 @@ type MultiVKs perBranchStepCarrier =
   { wrap :: WrapCompileResult
   , perBranchStep :: perBranchStepCarrier
   , wrapDomainLog2 :: Int
-  -- | The compile's declared `@numChunks`. Propagated so consumers
+  -- | The compile's declared `@stepChunks`. Propagated so consumers
   -- | constructing `ProverVKs` for an `External` slot can read the
   -- | imported rule's nc without back-deriving it from the step
   -- | circuit's realized domain log2.
-  , numChunks :: Int
+  , stepChunks :: Int
   }
 
 -- | Output of `compileMulti`. The multi-branch invariant in types:
@@ -2613,29 +2613,29 @@ class
   -- |   * step results / rules carriers — per-branch Tuple
   -- |     chains walked in sync with the recursion.
   buildBranchProvers
-    :: forall numChunks numChunksPred vecLen vecLenPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBasesMax totalBasesMaxPred
+    :: forall stepChunks numChunksPred vecLen vecLenPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBasesMax totalBasesMaxPred
      . Reflectable vecLen Int
     => Add 1 vecLenPred vecLen
-    => Reflectable numChunks Int
+    => Reflectable stepChunks Int
     => Reflectable tCommLen Int
     => Reflectable nonSgBases Int
-    => Compare 0 numChunks LT
-    => Add 1 numChunksPred numChunks
-    => Mul 7 numChunks tCommLen
+    => Compare 0 stepChunks LT
+    => Add 1 numChunksPred stepChunks
+    => Mul 7 stepChunks tCommLen
     => Add 1 tCommLenPred tCommLen
-    => Mul 15 numChunks wCoeffN
-    => Mul 6 numChunks indexSigmaN
-    => Mul 44 numChunks chunkBases
+    => Mul 15 stepChunks wCoeffN
+    => Mul 6 stepChunks indexSigmaN
+    => Mul 44 stepChunks chunkBases
     => Add 1 chunkBases nonSgBases
-    => Add numChunks 1 sg1
-    => Add sg1 numChunks sg2
+    => Add stepChunks 1 sg1
+    => Add sg1 stepChunks sg2
     => Add sg2 indexSigmaN sg3
     => Add sg3 wCoeffN sg4
     => Add sg4 wCoeffN sg5
     => Add sg5 indexSigmaN nonSgBases
     => Add mpvMax nonSgBases totalBasesMax
     => Add 1 totalBasesMaxPred totalBasesMax
-    => Proxy numChunks
+    => Proxy stepChunks
     -> Int
     -> CompileMultiConfig
     -> WrapCompileResult
@@ -3152,7 +3152,7 @@ mkRuleEntry
   -- `wrapVkChunks` is the compile-wide wrap-VK chunk count (Dim 2),
   -- a free parameter (callers pin `@1`, protocol-guaranteed). Distinct
   -- from `nc` (the chunks2/side-loaded slot's own count, Dim 3) and
-  -- the wrap circuit's `numChunks` (Dim 1).
+  -- the wrap circuit's `stepChunks` (Dim 1).
   => BuildSlotVkSources (SLVK.VerificationKey slotVkChunks (F StepField) Boolean) prevsSpec wrapVkChunks mpv blueprints compileSideloadedVkCarrier vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec compileSideloadedVkCarrier
   -- Prove-path carrier: cells = `SideloadBundle.Bundle`. Sourced from
@@ -3346,7 +3346,7 @@ runMultiProverBody
   :: forall @prevsSpec slotVKs prevsCarrier @mpv @slots @valCarrier @carrier
        @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar
        @topBranches
-       @mpvMax @slotsMax @mpvPad @wrapVkChunks @numChunks numChunksPred wrapVkChunksPred
+       @mpvMax @slotsMax @mpvPad @wrapVkChunks @stepChunks numChunksPred wrapVkChunksPred
        branches branchesPred topBranchesPred
        pad unfsTotal digestPlusUnfs outputSize carrierFVar
        padMax totalBasesMax totalBasesMaxPred
@@ -3385,19 +3385,19 @@ runMultiProverBody
   -- the rule's `mpv` / `slots`.
   => Reflectable mpvMax Int
   => Reflectable padMax Int
-  => Reflectable numChunks Int
+  => Reflectable stepChunks Int
   => Reflectable tCommLen Int
   => Reflectable nonSgBases Int
-  => Compare 0 numChunks LT
-  => Add 1 numChunksPred numChunks
-  => Mul 7 numChunks tCommLen
+  => Compare 0 stepChunks LT
+  => Add 1 numChunksPred stepChunks
+  => Mul 7 stepChunks tCommLen
   => Add 1 tCommLenPred tCommLen
-  => Mul 15 numChunks wCoeffN
-  => Mul 6 numChunks indexSigmaN
-  => Mul 44 numChunks chunkBases
+  => Mul 15 stepChunks wCoeffN
+  => Mul 6 stepChunks indexSigmaN
+  => Mul 44 stepChunks chunkBases
   => Add 1 chunkBases nonSgBases
-  => Add numChunks 1 sg1
-  => Add sg1 numChunks sg2
+  => Add stepChunks 1 sg1
+  => Add sg1 stepChunks sg2
   => Add sg2 indexSigmaN sg3
   => Add sg3 wCoeffN sg4
   => Add sg4 wCoeffN sg5
@@ -3419,7 +3419,7 @@ runMultiProverBody
        (slotsMax (Vector WrapIPARounds (FVar WrapField)))
   => CheckedType WrapField (KimchiConstraint WrapField)
        (slotsMax (Vector WrapIPARounds (FVar WrapField)))
-  => Proxy numChunks
+  => Proxy stepChunks
   -> Int
   -- ^ branchIdx — baked into the wrap statement's `whichBranch`.
   -> CompileMultiConfig
@@ -3644,7 +3644,7 @@ runMultiProverBody
 
     proofsVerifiedMask = (outerMpv >= 2) :< (outerMpv >= 1) :< Vector.nil
 
-    selfZkRows = zkRowsForNumChunks (reflectType (Proxy :: Proxy numChunks))
+    selfZkRows = zkRowsForNumChunks (reflectType (Proxy :: Proxy stepChunks))
 
     wrapDvInput =
       { proof: stepResult.proof
@@ -3740,7 +3740,7 @@ runMultiProverBody
           , messagesForNextStepProofDigest: msgStep
           , messagesForNextWrapProofDigest: msgWrap
           }
-      , advice: buildWrapAdvice @numChunks
+      , advice: buildWrapAdvice @stepChunks
           { stepProof: stepResult.proof
           , whichBranch: F (fromBigInt (BigInt.fromInt branchIdx) :: WrapField)
           , prevUnfinalizedProofs: proveDataMax.prevUnfinalizedProofs
@@ -3755,7 +3755,7 @@ runMultiProverBody
       , kimchiPrevChallenges: kimchiPrevPadded
       }
 
-  wrapProveResult <- wrapSolveAndProve @branches @slotsMax @numChunks wrapCtx wrapResult
+  wrapProveResult <- wrapSolveAndProve @branches @slotsMax @stepChunks wrapCtx wrapResult
 
   let
     -- Recover the rule's user-defined `publicOutput` from
@@ -3806,7 +3806,7 @@ runMultiProverBody
     }
 
 compileMulti
-  :: forall @rs @outputVal @prevInputVal @slots @numChunks @wrapVkChunks numChunksPred
+  :: forall @rs @outputVal @prevInputVal @slots @stepChunks @wrapVkChunks numChunksPred
        inputVal mpvMax
        branches
        rulesCarrier
@@ -3834,19 +3834,19 @@ compileMulti
   => Compare 0 wrapVkChunks LT
   => Reflectable branches Int
   => Reflectable mpvMax Int
-  => Reflectable numChunks Int
+  => Reflectable stepChunks Int
   => Reflectable tCommLen Int
   => Reflectable nonSgBases Int
-  => Compare 0 numChunks LT
-  => Add 1 numChunksPred numChunks
-  => Mul 7 numChunks tCommLen
+  => Compare 0 stepChunks LT
+  => Add 1 numChunksPred stepChunks
+  => Mul 7 stepChunks tCommLen
   => Add 1 tCommLenPred tCommLen
-  => Mul 15 numChunks wCoeffN
-  => Mul 6 numChunks indexSigmaN
-  => Mul 44 numChunks chunkBases
+  => Mul 15 stepChunks wCoeffN
+  => Mul 6 stepChunks indexSigmaN
+  => Mul 44 stepChunks chunkBases
   => Add 1 chunkBases nonSgBases
-  => Add numChunks 1 sg1
-  => Add sg1 numChunks sg2
+  => Add stepChunks 1 sg1
+  => Add sg1 stepChunks sg2
   => Add sg2 indexSigmaN sg3
   => Add sg3 wCoeffN sg4
   => Add sg4 wCoeffN sg5
@@ -3900,7 +3900,7 @@ compileMulti cfg rules = do
     cfg
     rules
 
-  -- Validate declared @numChunks against per-branch num_chunks
+  -- Validate declared @stepChunks against per-branch num_chunks
   -- computed from the actual step domain sizes. kimchi formula
   -- (constraints.rs:974-978): `if domain_size < max_poly_size then 1
   -- else domain_size / max_poly_size`. With log2s: at step_log2 <=
@@ -3908,7 +3908,7 @@ compileMulti cfg rules = do
   -- 1 chunk; otherwise `2^(log2 - 16)` chunks. Every branch must agree
   -- with the user's declaration.
   let
-    declaredNumChunks = reflectType (Proxy :: Proxy numChunks)
+    declaredNumChunks = reflectType (Proxy :: Proxy stepChunks)
     stepMaxPolyLog2 = reflectType (Proxy :: Proxy StepIPARounds)
     branchNumChunks log2 =
       if log2 <= stepMaxPolyLog2 then 1
@@ -3917,7 +3917,7 @@ compileMulti cfg rules = do
     perBranchActual = Vector.toUnfoldable perBranchActualVec :: Array Int
   case Array.find (_ /= declaredNumChunks) perBranchActual of
     Just bad ->
-      Exc.throw $ "compileMulti: declared numChunks=" <> show declaredNumChunks
+      Exc.throw $ "compileMulti: declared stepChunks=" <> show declaredNumChunks
         <> " but branch step circuit computes num_chunks="
         <> show bad
         <> " (per-branch step domain log2s: "
@@ -3941,7 +3941,7 @@ compileMulti cfg rules = do
       stepResults
 
   -- Step 2: shared wrap compile across all branches.
-  wrapResult <- wrapCompile @branches @slots @numChunks
+  wrapResult <- wrapCompile @branches @slots @stepChunks
     { wrapMainConfig:
         buildWrapMainConfigMulti @branches cfg.srs.vestaSrs
           { perBranch: perBranchVec }
@@ -3963,7 +3963,7 @@ compileMulti cfg rules = do
     @mpvMax
     @slots
     @wrapVkChunks
-    (Proxy :: Proxy numChunks)
+    (Proxy :: Proxy stepChunks)
     0
     cfg
     wrapResult
@@ -3993,7 +3993,7 @@ compileMulti cfg rules = do
       { wrapVK: wrapResult.verifierIndex
       , vestaSrs: cfg.srs.vestaSrs
       , stepDomainLog2: firstBranchStepDomainLog2
-      , stepNumChunks: reflectType (Proxy :: Proxy numChunks)
+      , stepNumChunks: reflectType (Proxy :: Proxy stepChunks)
       }
 
   pure
@@ -4004,7 +4004,7 @@ compileMulti cfg rules = do
         { wrap: wrapResult
         , perBranchStep: stepResults
         , wrapDomainLog2
-        , numChunks: reflectType (Proxy :: Proxy numChunks)
+        , stepChunks: reflectType (Proxy :: Proxy stepChunks)
         }
     , perBranchVKs: unit
     }

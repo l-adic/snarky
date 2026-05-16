@@ -437,7 +437,7 @@ foreign import vestaSrsLagrangeCommitmentAt
 -- | points. For domains ≤ SRS max_poly_size the array has length 1; for
 -- | chunked domains (e.g. step domain > wrap SRS depth at chunks2) it has
 -- | length `ceil(domain_size / max_poly_size)`. Callers reshape into a
--- | `Vector numChunks (AffinePoint)` at the use site. Mirrors OCaml's
+-- | `Vector stepChunks (AffinePoint)` at the use site. Mirrors OCaml's
 -- | `lagrange_commitment srs d i .unshifted` array (`wrap_verifier.ml:336`).
 foreign import pallasSrsLagrangeCommitmentChunksAt
   :: CRS Vesta.G -> Int -> Int -> Array (AffinePoint Pallas.ScalarField)
@@ -451,8 +451,8 @@ foreign import vestaSrsBlindingGenerator :: CRS Pallas.G -> AffinePoint Vesta.Sc
 
 -- sigma_comm[PERMUTS-1] (the last sigma commitment), ALL chunks.
 -- The raw inner Array length = num_chunks (1 for nc=1 callers, 2+ when
--- chunked). FFI doesn't know `numChunks` at the type level; consumers
--- project to `Vector numChunks` via `verifierIndexCommitments`.
+-- chunked). FFI doesn't know `stepChunks` at the type level; consumers
+-- project to `Vector stepChunks` via `verifierIndexCommitments`.
 foreign import pallasSigmaCommLast :: VerifierIndex Vesta.G Pallas.BaseField -> Array (AffinePoint Pallas.ScalarField)
 
 -- VK column commitments: 27 commitments (6 index + 15 coefficient + 6
@@ -475,7 +475,7 @@ foreign import vestaChallengePolyCommitment :: VerifierIndex Pallas.G Vesta.Base
 -- | `num_chunks = 1` every inner `Array` has length 1. The PS-side FFI
 -- | leaves these as plain `Array`s because num_chunks is decided by the
 -- | prover/SRS at runtime and is not known at the type level here; use
--- | `wCommChunked`/`zCommChunked` to project into typed `Vector numChunks`
+-- | `wCommChunked`/`zCommChunked` to project into typed `Vector stepChunks`
 -- | at consumer sites that know the value statically.
 type ProofCommitments f =
   { wComm :: Vector 15 (Array (AffinePoint f))
@@ -559,7 +559,7 @@ instance ProofFFI Vesta.BaseField Pallas.G where
 -- |   `sigma`  = 7 sigma commitments (6 from `*VerifierIndexColumnComms`
 -- |              + 1 from `*SigmaCommLast`, snoc'd into a Vector 7)
 -- | Verifier-index commitments — 7 sigma + 15 coefficient + 6 index
--- | commitments, each carrying `numChunks` curve points. Both outer
+-- | commitments, each carrying `stepChunks` curve points. Both outer
 -- | Vector sizes AND the inner chunk count are static.
 -- |
 -- | Wrap-side consumers (where OCaml currently hardcodes
@@ -569,23 +569,23 @@ instance ProofFFI Vesta.BaseField Pallas.G where
 -- | pushed all the way to the consumer so the wrapper stays a
 -- | one-line projection.
 type VerifierIndexCommitments :: Int -> Type -> Type
-type VerifierIndexCommitments numChunks f =
-  { index :: Vector 6 (ChunkedCommitment numChunks (AffinePoint f))
-  , coeff :: Vector 15 (ChunkedCommitment numChunks (AffinePoint f))
-  , sigma :: Vector 7 (ChunkedCommitment numChunks (AffinePoint f))
+type VerifierIndexCommitments stepChunks f =
+  { index :: Vector 6 (ChunkedCommitment stepChunks (AffinePoint f))
+  , coeff :: Vector 15 (ChunkedCommitment stepChunks (AffinePoint f))
+  , sigma :: Vector 7 (ChunkedCommitment stepChunks (AffinePoint f))
   }
 
 -- | Vector-typed split of `pallasVerifierIndexColumnComms` +
 -- | `pallasSigmaCommLast`. Used for step VK extraction (consumed by
--- | the wrap circuit). Pass `@numChunks` matching kimchi's
+-- | the wrap circuit). Pass `@stepChunks` matching kimchi's
 -- | `comm.chunks.len()`.
 pallasVerifierIndexCommitments
-  :: forall @numChunks
-   . Reflectable numChunks Int
+  :: forall @stepChunks
+   . Reflectable stepChunks Int
   => VerifierIndex Vesta.G Pallas.BaseField
-  -> VerifierIndexCommitments numChunks Pallas.ScalarField
+  -> VerifierIndexCommitments stepChunks Pallas.ScalarField
 pallasVerifierIndexCommitments vk =
-  splitVkCommitments @numChunks (pallasVerifierIndexColumnComms vk) (pallasSigmaCommLast vk)
+  splitVkCommitments @stepChunks (pallasVerifierIndexColumnComms vk) (pallasSigmaCommLast vk)
 
 -- | Vector-typed split of `vestaVerifierIndexColumnComms` +
 -- | `vestaSigmaCommLast`. Used for wrap VK extraction (consumed by
@@ -593,30 +593,30 @@ pallasVerifierIndexCommitments vk =
 -- | `step_main.ml:347` (TODO in OCaml flags future extensibility);
 -- | callers here also pass `@1` until that invariant changes.
 vestaVerifierIndexCommitments
-  :: forall @numChunks
-   . Reflectable numChunks Int
+  :: forall @stepChunks
+   . Reflectable stepChunks Int
   => VerifierIndex Pallas.G Vesta.BaseField
-  -> VerifierIndexCommitments numChunks Vesta.ScalarField
+  -> VerifierIndexCommitments stepChunks Vesta.ScalarField
 vestaVerifierIndexCommitments vk =
-  splitVkCommitments @numChunks (vestaVerifierIndexColumnComms vk) (vestaSigmaCommLast vk)
+  splitVkCommitments @stepChunks (vestaVerifierIndexColumnComms vk) (vestaSigmaCommLast vk)
 
 -- | Shared splitter. Raw layout:
 -- |   [ index(6) ; coeff(15) ; sigma-except-last(6) ]  = 27 commitments,
--- |   each entry an `Array (AffinePoint f)` of length numChunks.
+-- |   each entry an `Array (AffinePoint f)` of length stepChunks.
 -- | `sigmaLast` (also chunked) is snoc'd onto `sigma6` to produce
 -- | the exported `Vector 7`. Inner Arrays reshape to
--- | `Vector numChunks` — a length mismatch panics via `fromJust'`.
+-- | `Vector stepChunks` — a length mismatch panics via `fromJust'`.
 splitVkCommitments
-  :: forall @numChunks f
-   . Reflectable numChunks Int
+  :: forall @stepChunks f
+   . Reflectable stepChunks Int
   => Array (Array (AffinePoint f))
   -> Array (AffinePoint f)
-  -> VerifierIndexCommitments numChunks f
+  -> VerifierIndexCommitments stepChunks f
 splitVkCommitments raw sigmaLast =
   let
-    toChunks :: Array (AffinePoint f) -> ChunkedCommitment numChunks (AffinePoint f)
-    toChunks = ChunkedCommitment <<< fromJust' "VerifierIndex commitment chunks length mismatch with @numChunks"
-      <<< Vector.toVector @numChunks
+    toChunks :: Array (AffinePoint f) -> ChunkedCommitment stepChunks (AffinePoint f)
+    toChunks = ChunkedCommitment <<< fromJust' "VerifierIndex commitment chunks length mismatch with @stepChunks"
+      <<< Vector.toVector @stepChunks
     mkIndex = fromJust' "VerifierIndex index commits (6 entries)"
       <<< Vector.toVector @6
     mkCoeff = fromJust' "VerifierIndex coeff commits (15 entries)"
@@ -702,50 +702,50 @@ tCommVec c =
     (Vector.toVector @7 c.tComm)
 
 -- | Project the per-polynomial chunked `wComm` array into a typed
--- | `Vector numChunks` per polynomial. Errors if any polynomial's
--- | chunk count differs from `numChunks`.
+-- | `Vector stepChunks` per polynomial. Errors if any polynomial's
+-- | chunk count differs from `stepChunks`.
 wCommChunked
-  :: forall @numChunks f
-   . Reflectable numChunks Int
+  :: forall @stepChunks f
+   . Reflectable stepChunks Int
   => ProofCommitments f
-  -> Vector 15 (ChunkedCommitment numChunks (AffinePoint f))
+  -> Vector 15 (ChunkedCommitment stepChunks (AffinePoint f))
 wCommChunked c =
   map
     ( \chunks ->
         ChunkedCommitment $
-          fromJust' "ProofCommitments.wComm: chunk count mismatch with @numChunks"
-            (Vector.toVector @numChunks chunks)
+          fromJust' "ProofCommitments.wComm: chunk count mismatch with @stepChunks"
+            (Vector.toVector @stepChunks chunks)
     )
     c.wComm
 
--- | Project the chunked `zComm` array into a typed `ChunkedCommitment numChunks`.
+-- | Project the chunked `zComm` array into a typed `ChunkedCommitment stepChunks`.
 zCommChunked
-  :: forall @numChunks f
-   . Reflectable numChunks Int
+  :: forall @stepChunks f
+   . Reflectable stepChunks Int
   => ProofCommitments f
-  -> ChunkedCommitment numChunks (AffinePoint f)
+  -> ChunkedCommitment stepChunks (AffinePoint f)
 zCommChunked c =
   ChunkedCommitment $
-    fromJust' "ProofCommitments.zComm: chunk count mismatch with @numChunks"
-      (Vector.toVector @numChunks c.zComm)
+    fromJust' "ProofCommitments.zComm: chunk count mismatch with @stepChunks"
+      (Vector.toVector @stepChunks c.zComm)
 
 -- | Reshape the flat `tComm :: Array (AffinePoint f)` (length `7 *
--- | numChunks`) into the kimchi-faithful 2D shape
--- | `Vector 7 (Vector numChunks pt)` — outer = quotient sub-poly index,
+-- | stepChunks`) into the kimchi-faithful 2D shape
+-- | `Vector 7 (Vector stepChunks pt)` — outer = quotient sub-poly index,
 -- | inner = chunk index. Errors if the array's length doesn't match
--- | `7 * numChunks`.
+-- | `7 * stepChunks`.
 tCommChunked
-  :: forall @numChunks f
-   . Reflectable numChunks Int
+  :: forall @stepChunks f
+   . Reflectable stepChunks Int
   => ProofCommitments f
-  -> Vector 7 (ChunkedCommitment numChunks (AffinePoint f))
+  -> Vector 7 (ChunkedCommitment stepChunks (AffinePoint f))
 tCommChunked c =
   let
-    nc = reflectType (Proxy @numChunks)
+    nc = reflectType (Proxy @stepChunks)
     perPiece i = ChunkedCommitment $
       fromJust'
-        "ProofCommitments.tComm: per-piece chunk count mismatch with @numChunks"
-        (Vector.toVector @numChunks (Array.slice (i * nc) ((i + 1) * nc) c.tComm))
+        "ProofCommitments.tComm: per-piece chunk count mismatch with @stepChunks"
+        (Vector.toVector @stepChunks (Array.slice (i * nc) ((i + 1) * nc) c.tComm))
     pieces = map perPiece (Array.range 0 6)
   in
     fromJust'

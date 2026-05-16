@@ -63,40 +63,40 @@ type WrapVerifyInput n d fv =
 -- | Wrap_hack.Checked approach: for n < MaxProofsVerified, (2-n) dummy
 -- | challenge vectors are absorbed offline into the sponge state.
 wrapVerify
-  :: forall publicInput sgOldN numChunks numChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred d dPred n t m r
+  :: forall publicInput sgOldN stepChunks numChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred d dPred n t m r
    . CircuitM WrapField (KimchiConstraint WrapField) t m
   => PublicInputCommit publicInput WrapField
   => Reflectable d Int
   => Reflectable n Int
   => Reflectable sgOldN Int
-  => Reflectable numChunks Int
+  => Reflectable stepChunks Int
   => Reflectable tCommLen Int
   => Reflectable nonSgBases Int
   => Compare n 3 LT
-  => Compare 0 numChunks LT
-  => Add 1 numChunksPred numChunks
+  => Compare 0 stepChunks LT
+  => Add 1 numChunksPred stepChunks
   => Add 1 dPred d
   -- Chunked base layout chain (mirrors IVP). Shared `wCoeffN` /
   -- `indexSigmaN` mirror the IVP's collapsing because Mul's fundep
   -- would unify same-RHS counts otherwise. Layout: xHat(nc) ::
   -- ftComm :: zComm(nc) :: index(6nc) :: wComm(15nc) :: coeff(15nc) ::
   -- sigma(6nc); total non-sg = 1 + 44*nc.
-  => Mul 7 numChunks tCommLen
+  => Mul 7 stepChunks tCommLen
   => Add 1 tCommLenPred tCommLen
-  => Mul 15 numChunks wCoeffN
-  => Mul 6 numChunks indexSigmaN
-  => Mul 44 numChunks chunkBases
+  => Mul 15 stepChunks wCoeffN
+  => Mul 6 stepChunks indexSigmaN
+  => Mul 44 stepChunks chunkBases
   => Add 1 chunkBases nonSgBases
   => Add sgOldN nonSgBases totalBases
-  => Add numChunks 1 sg1
-  => Add sg1 numChunks sg2
+  => Add stepChunks 1 sg1
+  => Add sg1 stepChunks sg2
   => Add sg2 indexSigmaN sg3
   => Add sg3 wCoeffN sg4
   => Add sg4 wCoeffN sg5
   => Add sg5 indexSigmaN nonSgBases
   => Add 1 totalBasesPred totalBases
-  => IncrementallyVerifyProofParams numChunks WrapField r
-  -> IncrementallyVerifyProofInput publicInput sgOldN numChunks tCommLen d (FVar WrapField) (Type1 (FVar WrapField))
+  => IncrementallyVerifyProofParams stepChunks WrapField r
+  -> IncrementallyVerifyProofInput publicInput sgOldN stepChunks tCommLen d (FVar WrapField) (Type1 (FVar WrapField))
   -> WrapVerifyInput n d (FVar WrapField)
   -> Snarky (KimchiConstraint WrapField) t m Unit
 wrapVerify ivpParams ivpInput verifyInput = do
