@@ -60,7 +60,7 @@ module Pickles.ProofFFI
   , Proof
   , OraclesResult
   , PointEval
-  , firstChunk
+  , publicEvalsChunked
   , SpongeCheckpoint
   , LrPair
   -- Typed wrappers: length-checked at the FFI boundary
@@ -100,19 +100,6 @@ foreign import data Proof :: Type -> Type -> Type
 -- | Polynomial evaluation at two points: zeta and zeta*omega.
 type PointEval f = { zeta :: f, omegaTimesZeta :: f }
 
--- | Extract the first chunk from a chunked-eval array. Total because
--- | kimchi always emits at least one chunk per polynomial (witnessed
--- | by the `NonEmptyArray` type — the conversion from the JS-returned
--- | array happens in the FFI shim, validated to be non-empty there).
--- |
--- | At `num_chunks = 1` this is the only chunk; at `n > 1` it silently
--- | drops chunks > 0 (chunk-blind, must be replaced by
--- | `actualEvaluation` Horner-combine in Phase 2 / 3 of chunking.md).
--- |
--- | See `docs/chunking-ffi-audit.md`.
-firstChunk :: forall f. NonEmptyArray (PointEval f) -> PointEval f
-firstChunk = NonEmptyArray.head
-
 -- | Result of running the Fiat-Shamir oracle computation on a proof.
 type OraclesResult f =
   { alpha :: f
@@ -126,7 +113,7 @@ type OraclesResult f =
   , ftEval1 :: f
   -- | Chunked public-input evaluations at zeta / zeta*omega.
   -- | `NonEmptyArray` of length `num_chunks` (≥1 by construction);
-  -- | use `firstChunk` to get the n=1 single-PointEval view.
+  -- | use `publicEvalsChunked @n` for the chunk-typed view.
   , publicEvals :: NonEmptyArray (PointEval f)
   , fqDigest :: f -- Fq-sponge digest before Fr-sponge (for xi derivation)
   , alphaChal :: SizedF 128 f -- raw 128-bit alpha challenge (pre-endo-expansion)
@@ -751,3 +738,27 @@ tCommChunked c =
     fromJust'
       "ProofCommitments.tComm: expected 7 quotient pieces"
       (Vector.toVector @7 pieces)
+
+-- | Boundary projector for the chunked public-input evaluations.
+-- |
+-- | `OraclesResult.publicEvals` is the raw `NonEmptyArray (PointEval
+-- | f)` (one entry per PCS chunk). This reshapes it into a chunk-typed
+-- | `Vector n` with the length check at the FFI boundary (same pattern
+-- | as `wCommChunked` / `tCommChunked`), so the chunk count is encoded
+-- | in the type instead of silently assumed.
+-- |
+-- | For a WRAP proof's oracles the chunk count is Dim 2
+-- | (`wrapVkChunks`), protocol-pinned to 1 (wrap domain ≤ wrap SRS),
+-- | so callers pass `@1` and extract the sole chunk via a total
+-- | `Vector.head`. A step-proof consumer would pass `@stepChunks` and
+-- | is thereby forced to handle real chunking rather than dropping
+-- | chunks. See the chunk taxonomy in `Pickles.Types`.
+publicEvalsChunked
+  :: forall @n f
+   . Reflectable n Int
+  => OraclesResult f
+  -> Vector n (PointEval f)
+publicEvalsChunked o =
+  fromJust'
+    "OraclesResult.publicEvals: chunk count mismatch with @n"
+    (Vector.toVector @n (NonEmptyArray.toArray o.publicEvals))

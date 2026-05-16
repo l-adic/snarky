@@ -80,19 +80,6 @@ import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.ProofFFI
-  ( firstChunk
-  , pallasProverIndexDomainLog2
-  , permutationVanishingPolynomial
-  , proofCoefficientEvals
-  , proofIndexEvals
-  , proofSigmaEvals
-  , proofWitnessEvals
-  , proofZEvals
-  , vestaProofOracles
-  , vestaSrsBlindingGenerator
-  , vestaSrsLagrangeCommitmentChunksAt
-  ) as ProofFFI
-import Pickles.ProofFFI
   ( pallasProofOpeningSg
   , pallasProofOracles
   , pallasProverIndexDomainLog2
@@ -103,6 +90,19 @@ import Pickles.ProofFFI
   , proofWitnessEvals
   , proofZEvals
   )
+import Pickles.ProofFFI
+  ( pallasProverIndexDomainLog2
+  , permutationVanishingPolynomial
+  , proofCoefficientEvals
+  , proofIndexEvals
+  , proofSigmaEvals
+  , proofWitnessEvals
+  , proofZEvals
+  , publicEvalsChunked
+  , vestaProofOracles
+  , vestaSrsBlindingGenerator
+  , vestaSrsLagrangeCommitmentChunksAt
+  ) as ProofFFI
 import Pickles.ProofsVerified (ProofsVerifiedCount, boolVecToProofsVerified)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
@@ -1241,10 +1241,16 @@ instance
                 , publicInput: headBaseCaseWrapPI
                 , prevChallenges: map toFFI [ baseCaseDummyChalPoly, baseCaseDummyChalPoly ]
                 }
-            -- TODO chunking: at n > 1 the dummy itself needs to be
-            -- chunk-shaped; using `firstChunk` here is n=1-correct only.
-            -- Migrating requires reshaping `dummyWrapProof` first.
-            dummyWrapXhat = ProofFFI.firstChunk dummyWrapOracles.publicEvals
+            -- `dummyWrapProof` is a WRAP proof: its publicEvals chunk
+            -- count is Dim 2 (`wrapVkChunks`), protocol-pinned to 1
+            -- (wrap domain ≤ wrap SRS — same invariant as
+            -- `num_chunks_by_default`). `@1` encodes that; the sole
+            -- chunk is extracted by a total `Vector.head` (Vector 1 is
+            -- the proof there is exactly one), and the FFI boundary
+            -- fails loud if it is ever violated. Not an n=1 shortcut —
+            -- unreachable otherwise. See chunk taxonomy in Pickles.Types.
+            dummyWrapXhat =
+              Vector.head (ProofFFI.publicEvalsChunked @1 dummyWrapOracles)
             de = bcd.dummyEvals
             pe = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
             headPrevEvals = StepAllEvals
@@ -1923,10 +1929,16 @@ instance
                 , publicInput: headBaseCaseWrapPI
                 , prevChallenges: map toFFI [ baseCaseDummyChalPoly, baseCaseDummyChalPoly ]
                 }
-            -- TODO chunking: at n > 1 the dummy itself needs to be
-            -- chunk-shaped; using `firstChunk` here is n=1-correct only.
-            -- Migrating requires reshaping `dummyWrapProof` first.
-            dummyWrapXhat = ProofFFI.firstChunk dummyWrapOracles.publicEvals
+            -- `dummyWrapProof` is a WRAP proof: its publicEvals chunk
+            -- count is Dim 2 (`wrapVkChunks`), protocol-pinned to 1
+            -- (wrap domain ≤ wrap SRS — same invariant as
+            -- `num_chunks_by_default`). `@1` encodes that; the sole
+            -- chunk is extracted by a total `Vector.head` (Vector 1 is
+            -- the proof there is exactly one), and the FFI boundary
+            -- fails loud if it is ever violated. Not an n=1 shortcut —
+            -- unreachable otherwise. See chunk taxonomy in Pickles.Types.
+            dummyWrapXhat =
+              Vector.head (ProofFFI.publicEvalsChunked @1 dummyWrapOracles)
             de = bcd.dummyEvals
             pe = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
             headPrevEvals = StepAllEvals
