@@ -344,13 +344,13 @@ sumMaskedAffine bits perBranchPts =
 -- | (`AddWithCircuitCorrection`) path; callers must use
 -- | `InCircuitCorrections` mode.
 mkSideloadedLagrangeLookup
-  :: forall @nc f
+  :: forall @slotVkChunks f
    . PrimeField f
-  => Reflectable nc Int
+  => Reflectable slotVkChunks Int
   => CurveParams f
   -> Vector 3 (BoolVar f)
-  -> Vector 3 (Int -> Vector nc (AffinePoint (F f)))
-  -> LagrangeBaseLookup nc f
+  -> Vector 3 (Int -> Vector slotVkChunks (AffinePoint (F f)))
+  -> LagrangeBaseLookup slotVkChunks f
 mkSideloadedLagrangeLookup curveP bits perDomainAt i =
   let
     -- `perDomainChunks :: Vector 3 (Vector nc (AffinePoint _))` — for
@@ -362,8 +362,8 @@ mkSideloadedLagrangeLookup curveP bits perDomainAt i =
     -- Mirrors OCaml `wrap_verifier.ml:354-356,442-443` which reduces
     -- `Array.map2_exn` per-chunk after a `Vector.map2` 1-hot scale.
     chunkedSumMask
-      :: Vector 3 (Vector nc (AffinePoint (F f)))
-      -> Vector nc (AffinePoint (FVar f))
+      :: Vector 3 (Vector slotVkChunks (AffinePoint (F f)))
+      -> Vector slotVkChunks (AffinePoint (FVar f))
     chunkedSumMask v3 =
       Vector.generate \ci ->
         sumMaskedAffine bits (map (\vc -> vc !! ci) v3)

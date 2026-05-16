@@ -36,8 +36,8 @@ import Snarky.Curves.Pallas as Pallas
 -- | `nc` so the bundle's circuit-side VK shape tracks the
 -- | child's compile-time chunk count.
 newtype Bundle :: Int -> Type
-newtype Bundle nc = Bundle
-  { vk :: SLVK.VerificationKey nc (F StepField) Boolean
+newtype Bundle slotVkChunks = Bundle
+  { vk :: SLVK.VerificationKey slotVkChunks (F StepField) Boolean
   , verifierIndex :: VerifierIndex Pallas.G WrapField
   }
 
@@ -46,35 +46,35 @@ newtype Bundle nc = Bundle
 -- | itself) project as identity; prove-time cells (`Bundle`) project
 -- | to the `.vk` field. `nc` is the chunk count of the
 -- | wrapped child's VK.
-class HasSideLoadedVk nc cell | cell -> nc where
-  projectVk :: cell -> SLVK.VerificationKey nc (F StepField) Boolean
+class HasSideLoadedVk slotVkChunks cell | cell -> slotVkChunks where
+  projectVk :: cell -> SLVK.VerificationKey slotVkChunks (F StepField) Boolean
 
-instance HasSideLoadedVk nc (SLVK.VerificationKey nc (F StepField) Boolean) where
+instance HasSideLoadedVk slotVkChunks (SLVK.VerificationKey slotVkChunks (F StepField) Boolean) where
   projectVk = identity
 
-instance HasSideLoadedVk nc (Bundle nc) where
+instance HasSideLoadedVk slotVkChunks (Bundle slotVkChunks) where
   projectVk (Bundle r) = r.vk
 
 -- | Build a `Bundle` from a kimchi `VerifierIndex` and the user-side
 -- | `ProofsVerified` tags. Derives `vk`'s commitments from the
 -- | `verifierIndex` so the bundle's two halves are always consistent.
 mkBundle
-  :: forall @nc
-   . Reflectable nc Int
+  :: forall @slotVkChunks
+   . Reflectable slotVkChunks Int
   => { verifierIndex :: VerifierIndex Pallas.G WrapField
      , maxProofsVerified :: ProofsVerified
      , actualWrapDomainSize :: ProofsVerified
      }
-  -> Bundle nc
+  -> Bundle slotVkChunks
 mkBundle r = Bundle
   { vk: mkVerificationKey
       { maxProofsVerified: r.maxProofsVerified
       , actualWrapDomainSize: r.actualWrapDomainSize
-      , wrapIndex: extractWrapVKComms @nc r.verifierIndex
+      , wrapIndex: extractWrapVKComms @slotVkChunks r.verifierIndex
       }
   , verifierIndex: r.verifierIndex
   }
 
 -- | Access the kimchi runtime handle.
-verifierIndex :: forall nc. Bundle nc -> VerifierIndex Pallas.G WrapField
+verifierIndex :: forall slotVkChunks. Bundle slotVkChunks -> VerifierIndex Pallas.G WrapField
 verifierIndex (Bundle r) = r.verifierIndex

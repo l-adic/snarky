@@ -31,8 +31,8 @@ import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint)
 -- |
 -- | `nc` is the chunks count of the producing compile's wrap VK.
 data SlotVkBlueprintCompiled :: Int -> Type
-data SlotVkBlueprintCompiled nc
-  = VkBlueprintConst (VerificationKey nc (WeierstrassAffinePoint PallasG (F StepField)))
+data SlotVkBlueprintCompiled slotVkChunks
+  = VkBlueprintConst (VerificationKey slotVkChunks (WeierstrassAffinePoint PallasG (F StepField)))
   | VkBlueprintShared
 
 -- | Compile-time blueprint for a `Slot SideLoaded` slot — the
@@ -47,8 +47,8 @@ data SlotVkBlueprintCompiled nc
 -- | The runtime VK is allocated in-circuit by `BuildSlotVkSources`
 -- | and bundled alongside this into `SlotVkSource.SideloadedExistsVk`.
 type SlotVkBlueprintSideLoaded :: Int -> Type
-type SlotVkBlueprintSideLoaded nc =
-  Vector ProofsVerifiedCount (Int -> Vector nc (AffinePoint (F StepField)))
+type SlotVkBlueprintSideLoaded slotVkChunks =
+  Vector ProofsVerifiedCount (Int -> Vector slotVkChunks (AffinePoint (F StepField)))
 
 -- | Post-walk per-slot wrap-VK dispatch type. `SideloadedExistsVk`
 -- | bundles BOTH the compile-time per-domain lagrange tables and the
@@ -59,9 +59,9 @@ type SlotVkBlueprintSideLoaded nc =
 -- | `nc` is the slot's own wrap-VK chunks count (heterogeneous —
 -- | each slot in a rule's spec can carry its own chunks count).
 data SlotVkSource :: Int -> Type
-data SlotVkSource nc
-  = ConstVk (VerificationKey nc (WeierstrassAffinePoint PallasG (F StepField)))
+data SlotVkSource slotVkChunks
+  = ConstVk (VerificationKey slotVkChunks (WeierstrassAffinePoint PallasG (F StepField)))
   | SharedExistsVk
   | SideloadedExistsVk
-      (SlotVkBlueprintSideLoaded nc)
-      (SLVK.VerificationKey nc (FVar StepField) (BoolVar StepField))
+      (SlotVkBlueprintSideLoaded slotVkChunks)
+      (SLVK.VerificationKey slotVkChunks (FVar StepField) (BoolVar StepField))

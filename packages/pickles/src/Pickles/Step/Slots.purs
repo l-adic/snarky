@@ -62,7 +62,7 @@ instance SlotVkCarrier Unit Unit
 
 instance
   SlotVkCarrier rest restVk =>
-  SlotVkCarrier (Slot k n nc statement /\ rest) (SlotVkSource nc /\ restVk)
+  SlotVkCarrier (Slot k n slotVkChunks statement /\ rest) (SlotVkSource slotVkChunks /\ restVk)
 
 -- | Spec → (`len`, `pwCarrier`, `vkCarrier`) mapping plus two
 -- | traversals: one over `pwCarrier` alone (legacy), one zipping
@@ -94,23 +94,23 @@ class
   traverseStepSlotsA
     :: forall m result
      . Applicative m
-    => ( forall n nc ncPred tCommLen tCommLenPred pad nonSgBases chunkBases wCoeffN indexSigmaN sg1 sg2 sg3 sg4 totalBases totalBasesPred
+    => ( forall n slotVkChunks ncPred tCommLen tCommLenPred pad nonSgBases chunkBases wCoeffN indexSigmaN sg1 sg2 sg3 sg4 totalBases totalBasesPred
           . Reflectable n Int
-         => Reflectable nc Int
+         => Reflectable slotVkChunks Int
          => Reflectable tCommLen Int
          => Reflectable nonSgBases Int
          => Reflectable pad Int
-         => Compare 0 nc LT
-         => Add 1 ncPred nc
-         => Mul 7 nc tCommLen
+         => Compare 0 slotVkChunks LT
+         => Add 1 ncPred slotVkChunks
+         => Mul 7 slotVkChunks tCommLen
          => Add 1 tCommLenPred tCommLen
          -- Shared bindings (Mul fundep collapses same-RHS counts).
-         => Mul 15 nc wCoeffN
-         => Mul 6 nc indexSigmaN
-         => Mul 43 nc chunkBases
+         => Mul 15 slotVkChunks wCoeffN
+         => Mul 6 slotVkChunks indexSigmaN
+         => Mul 43 slotVkChunks chunkBases
          => Add 2 chunkBases nonSgBases
          => Add 2 nonSgBases totalBases
-         => Add 2 nc sg1
+         => Add 2 slotVkChunks sg1
          => Add sg1 indexSigmaN sg2
          => Add sg2 wCoeffN sg3
          => Add sg3 wCoeffN sg4
@@ -118,7 +118,7 @@ class
          => Add 1 totalBasesPred totalBases
          => Add pad n PaddedLength
          => Finite len
-         -> PerProofWitness n nc ds dw f sf b
+         -> PerProofWitness n slotVkChunks ds dw f sf b
          -> m result
        )
     -> pwCarrier
@@ -132,23 +132,23 @@ class
   traverseStepSlotsAWithVk
     :: forall m result
      . Applicative m
-    => ( forall n nc ncPred tCommLen tCommLenPred pad nonSgBases chunkBases wCoeffN indexSigmaN sg1 sg2 sg3 sg4 totalBases totalBasesPred
+    => ( forall n slotVkChunks ncPred tCommLen tCommLenPred pad nonSgBases chunkBases wCoeffN indexSigmaN sg1 sg2 sg3 sg4 totalBases totalBasesPred
           . Reflectable n Int
-         => Reflectable nc Int
+         => Reflectable slotVkChunks Int
          => Reflectable tCommLen Int
          => Reflectable nonSgBases Int
          => Reflectable pad Int
-         => Compare 0 nc LT
-         => Add 1 ncPred nc
-         => Mul 7 nc tCommLen
+         => Compare 0 slotVkChunks LT
+         => Add 1 ncPred slotVkChunks
+         => Mul 7 slotVkChunks tCommLen
          => Add 1 tCommLenPred tCommLen
          -- Shared bindings (Mul fundep collapses same-RHS counts).
-         => Mul 15 nc wCoeffN
-         => Mul 6 nc indexSigmaN
-         => Mul 43 nc chunkBases
+         => Mul 15 slotVkChunks wCoeffN
+         => Mul 6 slotVkChunks indexSigmaN
+         => Mul 43 slotVkChunks chunkBases
          => Add 2 chunkBases nonSgBases
          => Add 2 nonSgBases totalBases
-         => Add 2 nc sg1
+         => Add 2 slotVkChunks sg1
          => Add sg1 indexSigmaN sg2
          => Add sg2 wCoeffN sg3
          => Add sg3 wCoeffN sg4
@@ -156,8 +156,8 @@ class
          => Add 1 totalBasesPred totalBases
          => Add pad n PaddedLength
          => Finite len
-         -> PerProofWitness n nc ds dw f sf b
-         -> SlotVkSource nc
+         -> PerProofWitness n slotVkChunks ds dw f sf b
+         -> SlotVkSource slotVkChunks
          -> m result
        )
     -> pwCarrier
@@ -167,30 +167,30 @@ class
   -- | Build a `pwCarrier` from a rank-2 polymorphic dummy slot. Each
   -- | slot auto-specialises the dummy to its own `n_i` and `nc_i`.
   replicateStepSlotsCarrier
-    :: ( forall n nc ncPred tCommLen tCommLenPred pad nonSgBases chunkBases wCoeffN indexSigmaN sg1 sg2 sg3 sg4 totalBases totalBasesPred
+    :: ( forall n slotVkChunks ncPred tCommLen tCommLenPred pad nonSgBases chunkBases wCoeffN indexSigmaN sg1 sg2 sg3 sg4 totalBases totalBasesPred
           . Reflectable n Int
-         => Reflectable nc Int
+         => Reflectable slotVkChunks Int
          => Reflectable tCommLen Int
          => Reflectable nonSgBases Int
          => Reflectable pad Int
-         => Compare 0 nc LT
-         => Add 1 ncPred nc
-         => Mul 7 nc tCommLen
+         => Compare 0 slotVkChunks LT
+         => Add 1 ncPred slotVkChunks
+         => Mul 7 slotVkChunks tCommLen
          => Add 1 tCommLenPred tCommLen
          -- Shared bindings (Mul fundep collapses same-RHS counts).
-         => Mul 15 nc wCoeffN
-         => Mul 6 nc indexSigmaN
-         => Mul 43 nc chunkBases
+         => Mul 15 slotVkChunks wCoeffN
+         => Mul 6 slotVkChunks indexSigmaN
+         => Mul 43 slotVkChunks chunkBases
          => Add 2 chunkBases nonSgBases
          => Add 2 nonSgBases totalBases
-         => Add 2 nc sg1
+         => Add 2 slotVkChunks sg1
          => Add sg1 indexSigmaN sg2
          => Add sg2 wCoeffN sg3
          => Add sg3 wCoeffN sg4
          => Add sg4 indexSigmaN nonSgBases
          => Add 1 totalBasesPred totalBases
          => Add pad n PaddedLength
-         => PerProofWitness n nc ds dw f sf b
+         => PerProofWitness n slotVkChunks ds dw f sf b
        )
     -> pwCarrier
 
@@ -203,19 +203,19 @@ instance
   ( StepSlotsCarrier rest ds dw f sf b restLen restPw restVk
   , Add restLen 1 len
   , Reflectable n Int
-  , Reflectable nc Int
+  , Reflectable slotVkChunks Int
   , Reflectable tCommLen Int
   , Reflectable nonSgBases Int
-  , Compare 0 nc LT
-  , Add 1 ncPred nc
-  , Mul 7 nc tCommLen
+  , Compare 0 slotVkChunks LT
+  , Add 1 ncPred slotVkChunks
+  , Mul 7 slotVkChunks tCommLen
   , Add 1 tCommLenPred tCommLen
-  , Mul 15 nc wCoeffN
-  , Mul 6 nc indexSigmaN
-  , Mul 43 nc chunkBases
+  , Mul 15 slotVkChunks wCoeffN
+  , Mul 6 slotVkChunks indexSigmaN
+  , Mul 43 slotVkChunks chunkBases
   , Add 2 chunkBases nonSgBases
   , Add 2 nonSgBases totalBases
-  , Add 2 nc sg1
+  , Add 2 slotVkChunks sg1
   , Add sg1 indexSigmaN sg2
   , Add sg2 wCoeffN sg3
   , Add sg3 wCoeffN sg4
@@ -225,15 +225,15 @@ instance
   , Reflectable pad Int
   ) =>
   StepSlotsCarrier
-    (Slot k n nc statement /\ rest)
+    (Slot k n slotVkChunks statement /\ rest)
     ds
     dw
     f
     sf
     b
     len
-    (PerProofWitness n nc ds dw f sf b /\ restPw)
-    (SlotVkSource nc /\ restVk)
+    (PerProofWitness n slotVkChunks ds dw f sf b /\ restPw)
+    (SlotVkSource slotVkChunks /\ restVk)
   where
   traverseStepSlotsA f (here /\ rest) =
     Vector.cons
@@ -262,5 +262,5 @@ instance SlotStatementsCarrier Unit Unit
 instance
   SlotStatementsCarrier rest restValCarrier =>
   SlotStatementsCarrier
-    (Slot k n nc statement /\ rest)
+    (Slot k n slotVkChunks statement /\ rest)
     (statement /\ restValCarrier)

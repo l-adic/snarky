@@ -50,7 +50,7 @@ instance SideloadedVKsCarrier Unit Unit
 instance
   SideloadedVKsCarrier rest restCarrier =>
   SideloadedVKsCarrier
-    (Slot Compiled n nc statement /\ rest)
+    (Slot Compiled n slotVkChunks statement /\ rest)
     (Unit /\ restCarrier)
 
 -- | Side-loaded slot — runtime VK supplied via the prover input. The
@@ -59,8 +59,8 @@ instance
 instance
   SideloadedVKsCarrier rest restCarrier =>
   SideloadedVKsCarrier
-    (Slot SideLoaded mpvMax nc statement /\ rest)
-    (Bundle nc /\ restCarrier)
+    (Slot SideLoaded mpvMax slotVkChunks statement /\ rest)
+    (Bundle slotVkChunks /\ restCarrier)
 
 -- | Prover-monad source for the spec-indexed VK carrier.
 -- |
@@ -97,14 +97,14 @@ instance MkUnitVkCarrier Unit Unit where
 
 instance
   MkUnitVkCarrier rest restCarrier =>
-  MkUnitVkCarrier (Slot Compiled n nc statement /\ rest) (Unit /\ restCarrier) where
+  MkUnitVkCarrier (Slot Compiled n slotVkChunks statement /\ rest) (Unit /\ restCarrier) where
   mkUnitVkCarrier = unit /\ mkUnitVkCarrier @rest
 
 instance
   ( MkUnitVkCarrier rest restCarrier
-  , Reflectable nc Int
+  , Reflectable slotVkChunks Int
   ) =>
   MkUnitVkCarrier
-    (Slot SideLoaded mpvMax nc statement /\ rest)
-    (SLVK.VerificationKey nc (F StepField) Boolean /\ restCarrier) where
+    (Slot SideLoaded mpvMax slotVkChunks statement /\ rest)
+    (SLVK.VerificationKey slotVkChunks (F StepField) Boolean /\ restCarrier) where
   mkUnitVkCarrier = SLVK.compileDummy /\ mkUnitVkCarrier @rest

@@ -981,9 +981,9 @@ stepMain
     -- the circuit (matches OCaml's `Array.map ~f:Inner_curve.constant`
     -- in `of_compiled_with_known_wrap_key`, types_map.ml:214-215).
     liftConstVk
-      :: forall nc
-       . VerificationKey nc (WeierstrassAffinePoint PallasG (F StepField))
-      -> VerificationKey nc (WeierstrassAffinePoint PallasG (FVar StepField))
+      :: forall slotVkChunks
+       . VerificationKey slotVkChunks (WeierstrassAffinePoint PallasG (F StepField))
+      -> VerificationKey slotVkChunks (WeierstrassAffinePoint PallasG (FVar StepField))
     liftConstVk (VerificationKey r) = VerificationKey
       { sigma: map (over ChunkedCommitment (map liftWaPt)) r.sigma
       , coeff: map (over ChunkedCommitment (map liftWaPt)) r.coeff

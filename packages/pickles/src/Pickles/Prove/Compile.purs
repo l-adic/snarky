@@ -730,7 +730,7 @@ instance
   , Add 1 restMpv mpv
   , Add pad mpv PaddedLength
   , Reflectable n Int
-  , Reflectable nc Int
+  , Reflectable slotVkChunks Int
   , Reflectable mpv Int
   , Reflectable pad Int
   , Add slotPad n PaddedLength
@@ -743,7 +743,7 @@ instance
   , SlotStatementsCarrier rest restValCarrier
   ) =>
   CompilableSpec
-    (Slot Compiled n nc (StatementIO prevHeadInput prevHeadOutput) /\ rest)
+    (Slot Compiled n slotVkChunks (StatementIO prevHeadInput prevHeadOutput) /\ rest)
     (SlotWrapKey /\ restSlotVKs)
     ( PrevSlot prevHeadInput n (StatementIO prevHeadInput prevHeadOutput) prevHeadOutput
         /\ restPrevsCarrier
@@ -753,7 +753,7 @@ instance
     (StatementIO prevHeadInput prevHeadOutput /\ restValCarrier)
     ( Step.PerProofWitness
         n
-        nc
+        slotVkChunks
         StepIPARounds
         WrapIPARounds
         (F StepField)
@@ -770,7 +770,7 @@ instance
     -- becomes `VkBlueprintShared`; `External` becomes `VkBlueprintConst`.
     -- Bundled into the post-walk `SlotVkSource` by
     -- `buildSlotVkSources` at circuit-build time.
-    (SlotVkBlueprintCompiled nc /\ restScaffolds)
+    (SlotVkBlueprintCompiled slotVkChunks /\ restScaffolds)
   where
   shapeCompileData cfg selfStepDomainLog2s =
     let
@@ -875,7 +875,7 @@ instance
             -- `Self`'s prev step circuit is the outer rule itself, so its
             -- num_chunks is the compile-wide `@nc` type param. Wrap is
             -- universally nc=1 (`num_chunks_by_default`).
-            , slotStepZkRows: zkRowsForNumChunks (reflectType (Proxy @nc))
+            , slotStepZkRows: zkRowsForNumChunks (reflectType (Proxy @slotVkChunks))
             , slotWrapZkRows: zkRowsForNumChunks 1
             }
           External vks ->
@@ -1077,7 +1077,7 @@ instance
     -- OCaml `expand_proof` at `step.ml:122-150`). Mirrors OCaml's
     -- `expand_proof dlog_vk dlog_index app_state p data ~must_verify`
     -- per-slot call inside the `go` recursion (`step.ml:736-770`).
-    contrib <- buildSlotAdvice @n @nc
+    contrib <- buildSlotAdvice @n @slotVkChunks
       { publicInput: appInput
       , prevStatement: slotData.prevStatement
       , wrapDomainLog2: slotParams.slotWrapDomainLog2
@@ -1413,7 +1413,7 @@ instance
   , Add 1 restMpv mpv
   , Add pad mpv PaddedLength
   , Reflectable mpvMax Int
-  , Reflectable nc Int
+  , Reflectable slotVkChunks Int
   , Reflectable mpv Int
   , Reflectable pad Int
   , Add slotPad mpvMax PaddedLength
@@ -1426,7 +1426,7 @@ instance
   , SlotStatementsCarrier rest restValCarrier
   ) =>
   CompilableSpec
-    (Slot SideLoaded mpvMax nc (StatementIO prevHeadInput prevHeadOutput) /\ rest)
+    (Slot SideLoaded mpvMax slotVkChunks (StatementIO prevHeadInput prevHeadOutput) /\ rest)
     -- Side-loaded slots have NO compile-time wrap key; the head entry
     -- of `slotVKs` is `Unit`. Mirrors the `vkCarrier` head being
     -- `VerificationKey` (the runtime VK takes the place of the
@@ -1440,7 +1440,7 @@ instance
     (StatementIO prevHeadInput prevHeadOutput /\ restValCarrier)
     ( Step.PerProofWitness
         mpvMax
-        nc
+        slotVkChunks
         StepIPARounds
         WrapIPARounds
         (F StepField)
@@ -1448,11 +1448,11 @@ instance
         Boolean
         /\ restCarrier
     )
-    (SideloadBundle.Bundle nc /\ restVkCarrier)
+    (SideloadBundle.Bundle slotVkChunks /\ restVkCarrier)
     -- Side-loaded blueprint = the per-domain lagrange tables (one
     -- entry per `wrap_domain ∈ {N0, N1, N2}`). The runtime VK is
     -- bundled in by `buildSlotVkSources` at circuit-build time.
-    (SlotVkBlueprintSideLoaded nc /\ restScaffolds)
+    (SlotVkBlueprintSideLoaded slotVkChunks /\ restScaffolds)
   where
   -- Structural mirror of the `Slot Compiled` `shapeCompileData`. The
   -- slot's compile-time `slotWrapDomainLog2` and `slotLagrange` are
@@ -1506,7 +1506,7 @@ instance
       -- the chunked FFI returns a length-nc array per domain per index.
       sideloadedPerDomainLagrangeAts
         :: Vector ProofsVerifiedCount
-             (Int -> Vector nc (AffinePoint (F StepField)))
+             (Int -> Vector slotVkChunks (AffinePoint (F StepField)))
       sideloadedPerDomainLagrangeAts = map
         ( \log2 i ->
             let
@@ -1515,15 +1515,15 @@ instance
                 log2
                 i
             in
-              case Vector.toVector @nc (map coerce chunksArr) of
+              case Vector.toVector @slotVkChunks (map coerce chunksArr) of
                 Just v -> (v :: Vector _ (AffinePoint (F StepField)))
                 Nothing -> unsafeThrow
                   $ "sideloadedPerDomainLagrangeAts: lagrange chunks size mismatch (log2="
                       <> show log2
                       <> ", got "
                       <> show (Array.length chunksArr)
-                      <> ", expected nc="
-                      <> show (reflectType (Proxy @nc))
+                      <> ", expected slotVkChunks="
+                      <> show (reflectType (Proxy @slotVkChunks))
                       <> ")"
         )
         (13 :< 14 :< 15 :< Vector.nil)
@@ -1772,7 +1772,7 @@ instance
               )
               prev.widthData
 
-    contrib <- buildSlotAdvice @mpvMax @nc
+    contrib <- buildSlotAdvice @mpvMax @slotVkChunks
       { publicInput: appInput
       , prevStatement: slotData.prevStatement
       , wrapDomainLog2: slotParams.slotWrapDomainLog2
@@ -3111,7 +3111,7 @@ data RuleEntry prevsSpec mpv nd wrapVkChunks valCarrier inputVal carrier outputS
 -- | body invokes the captured rule against `stepCompile` /
 -- | `stepSolveAndProve`.
 mkRuleEntry
-  :: forall @mpvMax @outputVal @prevInputVal @nc @wrapVkChunks
+  :: forall @mpvMax @outputVal @prevInputVal @slotVkChunks @wrapVkChunks
        prevsSpec mpv mpvPad nd ndPred outputSize valCarrier
        wrapVkChunksPred wvcTCommLen wvcTCommLenPred wvcWCoeffN wvcIndexSigmaN
        wvcChunkBases wvcNonSgBases wvcSg1 wvcSg2 wvcSg3 wvcSg4 wvcSg5
@@ -3153,18 +3153,18 @@ mkRuleEntry
   -- a free parameter (callers pin `@1`, protocol-guaranteed). Distinct
   -- from `nc` (the chunks2/side-loaded slot's own count, Dim 3) and
   -- the wrap circuit's `numChunks` (Dim 1).
-  => BuildSlotVkSources (SLVK.VerificationKey nc (F StepField) Boolean) prevsSpec wrapVkChunks mpv blueprints compileSideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources (SLVK.VerificationKey slotVkChunks (F StepField) Boolean) prevsSpec wrapVkChunks mpv blueprints compileSideloadedVkCarrier vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec compileSideloadedVkCarrier
   -- Prove-path carrier: cells = `SideloadBundle.Bundle`. Sourced from
   -- `StepAdvice.sideloadedVKs` inside `stepSolveAndProve`.
-  => BuildSlotVkSources (SideloadBundle.Bundle nc) prevsSpec wrapVkChunks mpv blueprints sideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources (SideloadBundle.Bundle slotVkChunks) prevsSpec wrapVkChunks mpv blueprints sideloadedVkCarrier vkSourcesCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable mpv Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
   => Reflectable mpvPad Int
   => Reflectable nd Int
-  => Reflectable nc Int
+  => Reflectable slotVkChunks Int
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Reflectable outputSize Int
@@ -3218,7 +3218,7 @@ mkRuleEntry rule slotVKs = pure $ RuleEntry
         @mpvMax
         @mpvPad
         @nd
-        @nc
+        @slotVkChunks
         @wrapVkChunks
         ctx
         rule
@@ -3236,7 +3236,7 @@ mkRuleEntry rule slotVKs = pure $ RuleEntry
         @mpvMax
         @mpvPad
         @nd
-        @nc
+        @slotVkChunks
         @wrapVkChunks
         ctx
         rule
@@ -3254,7 +3254,7 @@ mkRuleEntry rule slotVKs = pure $ RuleEntry
         @mpvMax
         @mpvPad
         @nd
-        @nc
+        @slotVkChunks
         @wrapVkChunks
         ctx
         rule
