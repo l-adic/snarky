@@ -73,7 +73,7 @@ import Pickles.ProofFFI (pallasCreateProofWithPrev)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Safe.Coerce (coerce)
 import Simple.JSON (writeJSON)
-import Snarky.Backend.Builder (CircuitBuilderState)
+import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray)
 import Snarky.Backend.Compile (Solver, compilePure, makeSolver, runSolver)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (createProverIndex)
@@ -475,7 +475,7 @@ runChunks2AppWitnessProve = do
       (Proxy @(KimchiConstraint Fp))
       chunks2AppCircuit
       (initialState :: CircuitBuilderState (KimchiGate Fp) (AuxState Fp))
-    kimchiRows = Array.concatMap (toKimchiRows <<< _.constraint) builtState.constraints
+    kimchiRows = Array.concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
     -- max_poly_size = 2^16 (mirrors OCaml's default Tick.set_urs_info []).
     -- With our ~65538-row circuit the domain rounds up to 2^17,
     -- triggering num_chunks = 2.

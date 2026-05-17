@@ -37,7 +37,7 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.Prove.Step (extractWrapVKCommsAdvice)
 import Pickles.Prove.Wrap (extractStepVKComms, stepVkForCircuit)
 import Pickles.VerificationKey (StepVK, VerificationKey)
-import Snarky.Backend.Builder (CircuitBuilderState)
+import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges)
 import Snarky.Backend.Kimchi.Class (createProverIndex, createVerifierIndex, crsSize)
 import Snarky.Backend.Kimchi.Types (CRS)
@@ -143,7 +143,7 @@ deriveStepVKFromCompiled
   -> StepVK stepChunks (FVar WrapField)
 deriveStepVKFromCompiled vestaSrs builtState =
   let
-    kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
+    kimchiRows = concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
     { constraintSystem } = makeConstraintSystemWithPrevChallenges @StepField
       { constraints: kimchiRows
       , publicInputs: builtState.publicInputs
@@ -176,7 +176,7 @@ deriveWrapVKFromCompiled
   -> VerificationKey wrapVkChunks (WeierstrassAffinePoint PallasG (F StepField))
 deriveWrapVKFromCompiled pallasSrs builtState =
   let
-    kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
+    kimchiRows = concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
     { constraintSystem } = makeConstraintSystemWithPrevChallenges @WrapField
       { constraints: kimchiRows
       , publicInputs: builtState.publicInputs
@@ -235,7 +235,7 @@ domainLog2OfCompiled :: CompiledCircuit StepField -> Int
 domainLog2OfCompiled builtState =
   let
     kimchiRows :: Array (KimchiRow StepField)
-    kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
+    kimchiRows = concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
     n = Array.length kimchiRows
   in
     ceilLog2 n

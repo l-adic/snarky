@@ -84,7 +84,7 @@ instance PrimeField f => Finalizer (KimchiGate f) (AuxState f) where
       lbl = s.labelStack
     in
       s
-        { constraints = maybe s.constraints (\r -> s.constraints `Array.snoc` { constraint: KimchiGatePlonk r, context: lbl }) mRow
+        { constraints = maybe s.constraints (\r -> CircuitBuilder.snocConstraint { constraint: KimchiGatePlonk r, context: lbl } s.constraints) mRow
         , aux = over AuxState
             ( \st ->
                 st
@@ -139,7 +139,12 @@ instance
         labelGate g = { constraint: g, context: lbl }
       CircuitBuilder.putState s
         { nextVar = res.nextVariable
-        , constraints = s.constraints <> map (labelGate <<< KimchiGatePlonk) res.constraints `Array.snoc` labelGate (wrap rows)
+        , constraints =
+            CircuitBuilder.snocConstraint (labelGate (wrap rows))
+              ( CircuitBuilder.appendConstraintsBatch
+                  (map (labelGate <<< KimchiGatePlonk) res.constraints)
+                  s.constraints
+              )
         , aux = res.aux
         }
 
@@ -200,7 +205,7 @@ instance (KimchiVerify f f') => ConstraintM (ProverT f) (KimchiConstraint f) whe
 initialState :: forall f. CircuitBuilderState (KimchiGate f) (AuxState f)
 initialState =
   { nextVar: v0
-  , constraints: mempty
+  , constraints: CircuitBuilder.emptyConstraints
   , publicInputs: mempty
   , aux: initialAuxState
   , labelStack: []

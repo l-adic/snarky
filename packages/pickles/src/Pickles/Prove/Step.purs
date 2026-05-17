@@ -115,7 +115,7 @@ import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
-import Snarky.Backend.Builder (CircuitBuilderState, Labeled)
+import Snarky.Backend.Builder (CircuitBuilderState, Labeled, constraintsToArray)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, verifyProverIndex)
@@ -1981,7 +1981,7 @@ stepCompile ctx rule = do
 
   let
     kimchiRows :: Array (KimchiRow StepField)
-    kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
+    kimchiRows = concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
     { constraintSystem, constraints } = makeConstraintSystemWithPrevChallenges @StepField
       { constraints: kimchiRows
       , publicInputs: builtState.publicInputs
@@ -2012,7 +2012,7 @@ stepCompile ctx rule = do
       let
         path = String.replaceAll (Pattern "%c") (Replacement (show counter)) pathTmpl
         publicInputSize = Array.length builtState.publicInputs
-      writeRowLabelsTo path publicInputSize builtState.constraints
+      writeRowLabelsTo path publicInputSize (constraintsToArray builtState.constraints)
 
   -- Optional dump of the step constraint system as JSON, gated on
   -- `KIMCHI_STEP_CS_DUMP`. Mirrors the wrap-side `KIMCHI_WRAP_CS_DUMP`
@@ -2156,7 +2156,7 @@ preComputeStepDomainLog2 ctx rule = do
 
   let
     kimchiRows :: Array (KimchiRow StepField)
-    kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
+    kimchiRows = concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
     gateCount = Array.length kimchiRows
     piSize = Array.length builtState.publicInputs
     zkRows = zkRowsForNumChunks (reflectType (Proxy :: Proxy slotVkChunks))
@@ -2332,7 +2332,7 @@ stepSolveAndProve ctx rule compileResult advice = do
             _ = unsafePerformEffect $
               dumpRowLabels
                 (Array.length compileResult.builtState.publicInputs)
-                compileResult.builtState.constraints
+                (constraintsToArray compileResult.builtState.constraints)
           throwError (FailedAssertion "stepProve: constraint system not satisfied (wrote row→label map to /tmp/ps_step_row_labels.txt)")
       -- Evaluate the rule's user `publicOutput` FVars (captured by
       -- `setUserPublicOutputFields` in the StepProverT State) against

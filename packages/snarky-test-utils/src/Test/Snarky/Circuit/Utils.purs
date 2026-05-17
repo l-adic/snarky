@@ -19,7 +19,7 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Unsafe (unsafePerformEffect)
-import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState)
+import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, constraintsToArray)
 import Snarky.Backend.Compile (Checker, Solver, SolverT, compile, compilePure, makeSolver', runSolverT)
 import Snarky.Backend.Prover (class SolveCircuit, emptyProverState)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, EvaluationError(..), Snarky, Variable)
@@ -169,7 +169,7 @@ checkResult builtState checker postCondition testFunction inputs = case _ of
 
       checks = foldM (\acc c -> conj acc <$> checker lookup c.constraint) true
       satisfiedRes = do
-        constraintsResult <- checks builtState.constraints
+        constraintsResult <- checks (constraintsToArray builtState.constraints)
         postConditionResult <- postCondition lookup builtState
         pure { constraintsResult, postConditionResult }
     in

@@ -10,7 +10,7 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (error, throw)
-import Snarky.Backend.Builder (initialState)
+import Snarky.Backend.Builder (constraintsToArray, initialState)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver)
 import Snarky.Backend.Groth16.Class (class Groth16, circuitIsSatisfiedBy, prove, setup, verify)
 import Snarky.Backend.Groth16.Gate (makeGates, makeGatesWitness, satisfies)
@@ -82,7 +82,7 @@ factorsSpec (_ :: Proxy g) (_ :: Proxy f) pc name = describe (name <> " Factors 
         factorsCircuit
         initialState
     let
-      constraints = map _.constraint cs
+      constraints = map _.constraint (constraintsToArray cs)
       gates = makeGates { publicInputs, constraints }
 
       solver :: SolverT f (R1CS f) Gen (F f) Unit

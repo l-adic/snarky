@@ -11,7 +11,7 @@ import Data.Newtype (class Newtype, un)
 import Data.Show.Generic (genericShow)
 import Data.Tuple (snd)
 import Safe.Coerce (coerce)
-import Snarky.Backend.Builder (CircuitBuilderT, initialState, runCircuitBuilder)
+import Snarky.Backend.Builder (CircuitBuilderT, constraintsToArray, initialState, runCircuitBuilder)
 import Snarky.Circuit.CVar (CVar(..))
 import Snarky.Circuit.DSL (class CheckedType, Basic, Bool, BoolVar, FVar, Snarky(..), UnChecked(..), Variable, check, const_, genericCheck)
 import Snarky.Curves.Class (class PrimeField)
@@ -22,7 +22,7 @@ import Test.Spec.QuickCheck (quickCheck')
 import Type.Proxy (Proxy)
 
 runM :: forall f a. Snarky (Basic f) (CircuitBuilderT (Basic f) Unit) Identity a -> Array (Basic f)
-runM (Snarky m) = map _.constraint <<< _.constraints <<< snd $ runCircuitBuilder m initialState
+runM (Snarky m) = map _.constraint <<< constraintsToArray <<< _.constraints <<< snd $ runCircuitBuilder m initialState
 
 newtype ValidBVar f = ValidBVar (BoolVar f)
 

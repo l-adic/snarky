@@ -18,10 +18,10 @@ import Prelude
 import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.Except (ExceptT, runExceptT)
 import Control.Monad.State (class MonadState, State, execState, get, gets, modify_, runState)
-import Data.Array as A
 import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
+import Data.List (reverse) as List
 import Data.List.NonEmpty (fromFoldable)
 import Data.List.Types (List(..), NonEmptyList(..))
 import Data.Map (Map)
@@ -150,7 +150,11 @@ reduceAsBuilder { nextVariable, aux } m =
     initState = { nextVariable, constraints: mempty, aux }
     Tuple a s = runState (un PlonkBuilder m) initState
   in
-    Tuple a (Record.set (Proxy @"constraints") (map Rows s.constraints) s)
+    Tuple a
+      ( Record.set (Proxy @"constraints")
+          (map Rows (Array.fromFoldable (List.reverse s.constraints)))
+          s
+      )
 
 reduceAsProver
   :: forall f a
@@ -174,8 +178,12 @@ reduceAsProver s m =
 
 --------------------------------------------------------------------------------
 
+-- `constraints` is accumulated as a reversed `List` (newest first):
+-- `Cons` is O(1) with tail sharing, vs `Array.snoc`'s O(n) full
+-- `slice()` copy → O(n²) over a reduction. Materialised forward
+-- exactly once in `reduceAsBuilder` (O(m)).
 type BuilderReductionState f =
-  { constraints :: Array (KimchiRow f)
+  { constraints :: List (KimchiRow f)
   , nextVariable :: Variable
   , aux :: AuxState f
   }
@@ -289,7 +297,7 @@ instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
     case mconstraint of
       Nothing -> pure unit
       Just c' -> modify_ \s ->
-        s { constraints = s.constraints `A.snoc` c' }
+        s { constraints = Cons c' s.constraints }
   createInternalVariable _ = do
     nextVariable <- gets _.nextVariable
     void $ find nextVariable

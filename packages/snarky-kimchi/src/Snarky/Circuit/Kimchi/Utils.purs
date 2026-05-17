@@ -18,7 +18,7 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Exception (error)
-import Snarky.Backend.Builder (CircuitBuilderState)
+import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray)
 import Snarky.Backend.Compile (Solver, SolverT, runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, createProverIndex, crsSize, verifyProverIndex)
@@ -75,7 +75,7 @@ verifyCircuitM { gen, solver, s } = do
     Right (Tuple _ assignments) -> do
       let
         { constraintSystem, constraints } = makeConstraintSystem @f
-          { constraints: concatMap (toKimchiRows <<< _.constraint) s.constraints
+          { constraints: concatMap (toKimchiRows <<< _.constraint) (constraintsToArray s.constraints)
           , publicInputs: s.publicInputs
           , unionFind: (un AuxState s.aux).wireState.unionFind
           , maxPolySize: crsSize crs

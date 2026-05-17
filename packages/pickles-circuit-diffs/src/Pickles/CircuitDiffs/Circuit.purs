@@ -32,7 +32,7 @@ import Partial.Unsafe (unsafeCrashWith)
 import Pickles.CircuitDiffs.Types (CircuitComparison, ComparableCircuit, ComparableGate) as ReExports
 import Pickles.CircuitDiffs.Types (ComparableCircuit)
 import Simple.JSON (class ReadForeign, readJSON)
-import Snarky.Backend.Builder (CircuitBuilderState)
+import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray)
 import Snarky.Backend.Kimchi (makeGateData)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateGetWires)
 import Snarky.Backend.Kimchi.Types (gateWiresGetWire, wireGetCol, wireGetRow)
@@ -128,7 +128,7 @@ fromCompiledCircuit
 fromCompiledCircuit s =
   let
     gd = makeGateData @f
-      { constraints: concatMap (toKimchiRows <<< _.constraint) s.constraints
+      { constraints: concatMap (toKimchiRows <<< _.constraint) (constraintsToArray s.constraints)
       , publicInputs: s.publicInputs
       , unionFind: (un AuxState s.aux).wireState.unionFind
       }
@@ -138,7 +138,7 @@ fromCompiledCircuit s =
       piContexts = replicate (Array.length s.publicInputs) []
       gateContexts = concatMap
         (\lc -> replicate (Array.length (toKimchiRows lc.constraint :: Array (KimchiRow f))) lc.context)
-        s.constraints
+        (constraintsToArray s.constraints)
 
     gates = Array.mapWithIndex
       ( \i row ->
