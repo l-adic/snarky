@@ -1,4 +1,4 @@
-name: Test
+name: CI
 
 on:
   push:
@@ -6,13 +6,53 @@ on:
   pull_request:
     branches: [ main ]
 
+# Pages deploy needs these; test jobs only read. Set workflow-wide to
+# match the proven deploy config (slightly over-privileged for the test
+# jobs, but avoids Pages-permission breakage).
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
-  test:
+  # ---- parallel test jobs (no `needs:` => run concurrently) ----------
+
+  format-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Check PureScript formatting
+      run: npx purs-tidy check "packages/**/*.purs"
+
+    - name: Check Rust formatting
+      run: cargo fmt --all --check
+
+    - name: Run Rust clippy
+      run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test-libs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-
     steps:
     - uses: actions/checkout@v4
       with:
@@ -22,10 +62,10 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '23'
-    
+
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
-    
+
     - name: Cache Rust dependencies
       uses: actions/cache@v3
       with:
@@ -37,7 +77,7 @@ jobs:
           target/
           packages/crypto-provider/target/
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
-    
+
     - name: Cache SRS files
       uses: actions/cache@v3
       with:
@@ -49,9 +89,56 @@ jobs:
 
     - name: Populate SRS cache
       run: make fetch-srs
-    
-    - name: Build and test
-      run: npm test
+
+    - name: Test all libraries (excludes pickles-circuit-diffs)
+      run: make test-libs
+      env:
+        NODE_OPTIONS: "--max-old-space-size=8192"
+
+  test-circuit-diffs:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '23'
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+          packages/crypto-provider/target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+
+    - name: Cache SRS files
+      uses: actions/cache@v3
+      with:
+        path: srs-cache/
+        key: ${{ runner.os }}-srs-${{ hashFiles('mina/src/lib/crypto/proof-systems/srs/*.srs') }}
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Populate SRS cache
+      run: make fetch-srs
+
+    - name: Unpack circuit-diff fixtures
+      run: make fixtures-unpack
+
+    - name: Test pickles-circuit-diffs
+      run: make test-pickles-circuit-diffs
       env:
         NODE_OPTIONS: "--max-old-space-size=8192"
 
@@ -62,6 +149,7 @@ jobs:
         npm run build
       env:
         NODE_OPTIONS: "--max-old-space-size=8192"
+        PUBLIC_URL: /snarky/
 
     - name: Verify visualizer build output
       run: |
@@ -69,30 +157,28 @@ jobs:
         test -f packages/pickles-circuit-diffs/visualizer/dist/results/manifest.jsonl
         echo "Visualizer build verified: $(ls packages/pickles-circuit-diffs/visualizer/dist/*.js | wc -l) JS bundle(s), $(ls packages/pickles-circuit-diffs/visualizer/dist/*.css | wc -l) CSS bundle(s), $(ls packages/pickles-circuit-diffs/visualizer/dist/results/*.json | wc -l) circuit result(s)"
 
-  format-check:
+    - name: Setup Pages
+      uses: actions/configure-pages@v5
+
+    - name: Upload Pages artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: packages/pickles-circuit-diffs/visualizer/dist
+
+  # ---- synchronization point: deploy ONLY if every test job passed ---
+  # `needs:` is satisfied only on success of all listed jobs. Combined
+  # with the push-to-main guard, the site deploys iff the full suite is
+  # green. On pull_request the guard is false, so deploy is skipped
+  # while all test jobs still run as required checks.
+
+  deploy:
+    needs: [format-check, test-libs, test-circuit-diffs]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: recursive
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-    
-    - name: Setup Rust
-      uses: dtolnay/rust-toolchain@stable
-    
-    - name: Install dependencies
-      run: npm install
-    
-    - name: Check PureScript formatting
-      run: npx purs-tidy check "packages/**/*.purs"
-    
-    - name: Check Rust formatting
-      run: cargo fmt --all --check
-    
-    - name: Run Rust clippy
-      run: cargo clippy --workspace --all-targets -- -D warnings
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4

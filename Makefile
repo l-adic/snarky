@@ -1,4 +1,4 @@
-.PHONY: help all clean build-crypto test-curves test-snarky test-bulletproofs test-groth16 test-pickles-circuit-diffs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint build-ps gen-linearization dep-graph pickles-inventory
+.PHONY: help all clean build-crypto test-curves test-snarky test-bulletproofs test-groth16 test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint build-ps gen-linearization dep-graph pickles-inventory
 
 .DEFAULT_GOAL := help
 
@@ -63,32 +63,35 @@ test-example: build-crypto ## Test example package
 test-pickles: build-crypto gen-linearization ## Test pickles package (requires codegen)
 	cd packages/pickles && npx spago test
 
-test-pickles-circuit-diffs: build-crypto gen-linearization ## Test pickles circuit diffs package (requires codegen)
+test-pickles-circuit-diffs: build-crypto gen-linearization fixtures-unpack ## Test pickles circuit diffs package (requires codegen)
 	cd packages/pickles-circuit-diffs && npx spago test
 
-test-all: ## Test all packages with proper crypto provider
+test-libs: ## Test every package EXCEPT pickles-circuit-diffs (CI parallel job)
 	@echo "=== Generating Linearization Code ==="
 	$(MAKE) gen-linearization
 	$(MAKE) build-ps
-	@echo "=== Testing Core Packages (curves + snarky) ====" 
+	@echo "=== Testing Core Packages (curves + snarky) ===="
 	$(MAKE) test-curves
 	$(MAKE) test-snarky
 	@echo "=== Testing Poseidon Hash Package ==="
 	$(MAKE) test-poseidon
-	@echo "=== Testing Kimchi Backend ===" 
+	@echo "=== Testing Kimchi Backend ==="
 	$(MAKE) test-kimchi
-	@echo "=== Testing Random Oracle ===" 
+	@echo "=== Testing Random Oracle ==="
 	$(MAKE) test-random-oracle
-	@echo "=== Testing merkle-tree ===" 
+	@echo "=== Testing merkle-tree ==="
 	$(MAKE) test-merkle-tree
 	@echo "=== Testing Example ==="
 	$(MAKE) test-example
 	@echo "=== Testing Bulletproofs Backend ==="
-	$(MAKE) test-bulletproofs  
+	$(MAKE) test-bulletproofs
 	@echo "=== Testing Groth16 Backend ==="
 	$(MAKE) test-groth16
 	@echo "=== Testing Pickles ==="
 	$(MAKE) test-pickles
+	@echo "=== Library tests completed successfully ==="
+
+test-all: test-libs ## Test all packages with proper crypto provider
 	@echo "=== Testing Pickles Circuit Diffs ==="
 	$(MAKE) test-pickles-circuit-diffs
 	@echo "=== All tests completed successfully ==="
@@ -146,3 +149,11 @@ pickles-inventory: ## Generate analysis/pickles-inventory.md (Phase 1 of module 
 .PHONY: fetch-srs
 fetch-srs: ## Download the srs-cache from github
 	sh ./scripts/fetch-srs.sh
+
+.PHONY: fixtures-unpack
+fixtures-unpack: ## Decompress committed chunk fixtures (idempotent; prereq of circuit-diff tests)
+	bash ./scripts/fixtures.sh unpack
+
+.PHONY: fixtures-pack
+fixtures-pack: ## Compress chunk fixtures after regen, before committing the *.gz
+	bash ./scripts/fixtures.sh pack
