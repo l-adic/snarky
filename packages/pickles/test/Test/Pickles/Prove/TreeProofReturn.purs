@@ -45,6 +45,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
+import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), Compiled, CompiledProof(..), NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots2, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, verify)
 import Pickles.ProofCache (mkProofCache)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -112,6 +113,7 @@ type TreeRules =
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.TreeProofReturn" do
   it "5-iteration heterogeneous chain (b0..b4): NRR external slot + self-recursive slot, end-to-end verify" \_ -> do
+    cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/TreeProofReturn.json")
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
@@ -129,7 +131,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
-      , proofCache: Just (mkProofCache "packages/pickles/test/fixtures/proof-cache/TreeProofReturn.json")
+      , proofCache: cache
       }
       nrrRules
 
@@ -169,7 +171,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14
-      , proofCache: Just (mkProofCache "packages/pickles/test/fixtures/proof-cache/TreeProofReturn.json")
+      , proofCache: cache
       }
       treeRules
 

@@ -29,6 +29,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
+import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, verify)
 import Pickles.ProofCache (mkProofCache)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -55,6 +56,7 @@ type NrrRules =
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.NoRecursionReturn" do
   it "compileMulti + prover.step end-to-end verify returns true" \_ -> do
+    cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/NoRecursionReturn.json")
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
@@ -74,7 +76,7 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
-      , proofCache: Just (mkProofCache "packages/pickles/test/fixtures/proof-cache/NoRecursionReturn.json")
+      , proofCache: cache
       }
       rules
 

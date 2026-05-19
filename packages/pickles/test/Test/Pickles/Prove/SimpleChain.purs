@@ -28,6 +28,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
+import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), Compiled, CompiledProof(..), PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots1, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, verify)
 import Pickles.ProofCache (mkProofCache)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -82,6 +83,7 @@ type SimpleChainRules =
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.SimpleChain" do
   it "5-iteration step+wrap chain (b0..b4) proves end-to-end" \_ -> do
+    cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/SimpleChain.json")
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
@@ -101,7 +103,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
-      , proofCache: Just (mkProofCache "packages/pickles/test/fixtures/proof-cache/SimpleChain.json")
+      , proofCache: cache
       }
       rules
 

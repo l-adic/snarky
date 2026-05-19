@@ -2,6 +2,15 @@
 
 .DEFAULT_GOAL := help
 
+# Disk proof-cache root for the pickles tests. Absolute (via CURDIR =
+# repo root) so it resolves regardless of spago's cwd — tests run both
+# as `spago test -p pickles` (repo root) and `cd packages/pickles &&
+# spago test` (the recipes below / CI). The pickles tests read this via
+# `lookupEnv "PICKLES_PROOF_CACHE_DIR"`; unset => caching disabled
+# (every prove runs for real). Override on the CLI to relocate it.
+PICKLES_PROOF_CACHE_DIR ?= $(CURDIR)/packages/pickles/test/fixtures/proof-cache
+export PICKLES_PROOF_CACHE_DIR
+
 help: ## Show available commands and their descriptions
 	@echo ""
 	@echo "Snarky PureScript Zero-Knowledge Circuit Library"
@@ -160,4 +169,4 @@ fixtures-pack: ## Compress chunk fixtures after regen, before committing the *.g
 
 .PHONY: clean-proof-cache
 clean-proof-cache: ## Wipe the disk proof-cache (forces regeneration of cached step/wrap proofs)
-	rm -rf packages/pickles/test/fixtures/proof-cache
+	rm -rf "$(PICKLES_PROOF_CACHE_DIR)"

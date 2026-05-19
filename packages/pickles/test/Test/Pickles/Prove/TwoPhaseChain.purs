@@ -33,6 +33,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception as Exc
+import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), Compiled, NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, verify)
 import Pickles.ProofCache (mkProofCache)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -141,6 +142,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
   --     proof's deferred-values reconstruction uses its own branch's
   --     step domain (b0=9, b1..b3=14).
   it "b0..b3 chain prove + verify under shared wrap VK" \_ -> do
+    cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/TwoPhaseChain.json")
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
@@ -149,7 +151,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
         { srs: { vestaSrs, pallasSrs }
         , debug: false
         , wrapDomainOverride: Nothing
-        , proofCache: Just (mkProofCache "packages/pickles/test/fixtures/proof-cache/TwoPhaseChain.json")
+        , proofCache: cache
         }
 
     makeZeroEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) @1 @1 makeZeroRule unit

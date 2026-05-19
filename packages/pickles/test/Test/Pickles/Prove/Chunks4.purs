@@ -28,6 +28,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
+import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, verify)
 import Pickles.ProofCache (mkProofCache)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -76,6 +77,7 @@ type Chunks4Rules =
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.Chunks4" do
   it "base case (b0) — chunks=4 step+wrap proves end-to-end" \_ -> do
+    cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/Chunks4.json")
     -- Step kimchi uses `vestaSrs` (depth 2^16 via cache load). With
     -- chunks4's 2^17-row step circuit, the step domain rounds to
     -- 2^18 → num_chunks = 4 (= 2^18 / 2^16). Wrap kimchi uses
@@ -100,7 +102,7 @@ spec = describe "Pickles.Prove.Chunks4" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14
-      , proofCache: Just (mkProofCache "packages/pickles/test/fixtures/proof-cache/Chunks4.json")
+      , proofCache: cache
       }
       rules
 
