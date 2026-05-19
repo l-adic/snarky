@@ -882,6 +882,58 @@ mod generic {
         }
     }
 
+    /// Batched verification: one kimchi `batch_verify` over many proofs
+    /// that share a single wrap verifier index. This is the homogeneous
+    /// specialization of pickles' `verify_heterogenous` (all proofs of
+    /// the same tag) — the amortized final MSM is the whole point of
+    /// batching, so this must be one call, not a fold of single
+    /// verifications.
+    pub fn verify_opening_proofs_batch<G, EFqSponge, EFrSponge>(
+        verifier_index: &VerifierIndex<G, OpeningProof<G>>,
+        proofs: &[&ProverProof<G, OpeningProof<G>>],
+        public_inputs: &[Vec<G::ScalarField>],
+    ) -> bool
+    where
+        G: KimchiCurve,
+        G::BaseField: PrimeField,
+        EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
+        EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
+        VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        if proofs.len() != public_inputs.len() {
+            eprintln!(
+                "verify_opening_proofs_batch: proofs/public_inputs length mismatch ({} vs {})",
+                proofs.len(),
+                public_inputs.len()
+            );
+            return false;
+        }
+        // Empty batch is vacuously valid (matches `Array.all` on []).
+        if proofs.is_empty() {
+            return true;
+        }
+        let group_map = <G as CommitmentCurve>::Map::setup();
+        let contexts: Vec<kimchi::verifier::Context<G, OpeningProof<G>>> = proofs
+            .iter()
+            .zip(public_inputs.iter())
+            .map(|(proof, public_input)| kimchi::verifier::Context {
+                verifier_index,
+                proof: *proof,
+                public_input: public_input.as_slice(),
+            })
+            .collect();
+
+        match kimchi::verifier::batch_verify::<G, EFqSponge, EFrSponge, OpeningProof<G>>(
+            &group_map, &contexts,
+        ) {
+            Ok(()) => true,
+            Err(e) => {
+                eprintln!("Batched opening proof verification failed: {e:?}");
+                false
+            }
+        }
+    }
+
     /// Compute b0 = sum_i (evalscale^i * b_poly(challenges, evaluation_points[i]))
     /// For our case with two evaluation points (zeta, zeta_omega):
     ///   b0 = b_poly(challenges, zeta) + evalscale * b_poly(challenges, zeta_omega)
@@ -2225,6 +2277,50 @@ pub fn vesta_verify_opening_proof(
         &**verifier_index,
         &**proof,
         &public,
+    )
+}
+
+/// Batched verification of many Vesta proofs (Pallas/Fp circuits)
+/// sharing one wrap verifier index. One amortized kimchi
+/// `batch_verify` call. Returns true iff all proofs verify.
+#[napi]
+pub fn pallas_verify_opening_proofs_batch(
+    verifier_index: &PallasVerifierIndexExternal,
+    proofs: Vec<&VestaProofExternal>,
+    public_inputs: Vec<Vec<&VestaFieldExternal>>,
+) -> bool {
+    let proof_refs: Vec<&ProverProof<VestaGroup, OpeningProof<VestaGroup>>> =
+        proofs.iter().map(|p| &***p).collect();
+    let publics: Vec<Vec<VestaScalarField>> = public_inputs
+        .iter()
+        .map(|pi| pi.iter().map(|f| ***f).collect())
+        .collect();
+    generic::verify_opening_proofs_batch::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
+        &**verifier_index,
+        &proof_refs,
+        &publics,
+    )
+}
+
+/// Batched verification of many Pallas proofs (Vesta/Fq circuits)
+/// sharing one wrap verifier index. One amortized kimchi
+/// `batch_verify` call. Returns true iff all proofs verify.
+#[napi]
+pub fn vesta_verify_opening_proofs_batch(
+    verifier_index: &VestaVerifierIndexExternal,
+    proofs: Vec<&PallasProofExternal>,
+    public_inputs: Vec<Vec<&PallasFieldExternal>>,
+) -> bool {
+    let proof_refs: Vec<&ProverProof<PallasGroup, OpeningProof<PallasGroup>>> =
+        proofs.iter().map(|p| &***p).collect();
+    let publics: Vec<Vec<PallasScalarField>> = public_inputs
+        .iter()
+        .map(|pi| pi.iter().map(|f| ***f).collect())
+        .collect();
+    generic::verify_opening_proofs_batch::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
+        &**verifier_index,
+        &proof_refs,
+        &publics,
     )
 }
 

@@ -18,6 +18,7 @@ module Pickles.ProofFFI
   , proofOracles
   , proofBulletproofChallenges
   , verifyOpeningProof
+  , verifyOpeningProofsBatch
   , computeB0
   , permutationVanishingPolynomial
   , domainGenerator
@@ -165,6 +166,11 @@ class ProofFFI f g | f -> g where
   -- / `vestaProofOpeningPrechallenges` directly.
   proofBulletproofChallenges :: VerifierIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> Array f
   verifyOpeningProof :: VerifierIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> Boolean
+  -- | Batched stage-3 kimchi verify: one amortized `batch_verify` over
+  -- | many proofs that share this wrap verifier index. The homogeneous
+  -- | specialization of OCaml `Verify.verify_heterogenous`'s final
+  -- | `batch_verify` (all proofs of one tag). `[]` is vacuously `true`.
+  verifyOpeningProofsBatch :: VerifierIndex g f -> Array { proof :: Proof g f, publicInput :: Array f } -> Boolean
   permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: f } -> f
   domainGenerator :: Int -> f
   computeB0 :: { challenges :: Array f, zeta :: f, zetaOmega :: f, evalscale :: f } -> f
@@ -341,6 +347,9 @@ foreign import vestaProofOpeningPrechallenges
 foreign import pallasVerifyOpeningProof :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Boolean
 foreign import vestaVerifyOpeningProof :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Boolean
 
+foreign import pallasVerifyOpeningProofsBatch :: VerifierIndex Vesta.G Pallas.BaseField -> Array { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Boolean
+foreign import vestaVerifyOpeningProofsBatch :: VerifierIndex Pallas.G Vesta.BaseField -> Array { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Boolean
+
 -- NOTE: `u_t` is the sponge output AFTER absorbing shifted CIP and BEFORE
 -- `group_map`. It is squeezed in the commitment curve's BASE field (=
 -- the OTHER scalar field in the 2-cycle): for a Vesta proof it's Fq =
@@ -497,6 +506,7 @@ instance ProofFFI Pallas.BaseField Vesta.G where
     pallasProofOracles vk { proof, publicInput, prevChallenges: [] }
   proofBulletproofChallenges = pallasProofBulletproofChallenges
   verifyOpeningProof = pallasVerifyOpeningProof
+  verifyOpeningProofsBatch = pallasVerifyOpeningProofsBatch
   permutationVanishingPolynomial = pallasPermutationVanishingPolynomial
   domainGenerator = pallasDomainGenerator
   computeB0 = pallasComputeB0
@@ -514,6 +524,7 @@ instance ProofFFI Vesta.BaseField Pallas.G where
     vestaProofOracles vk { proof, publicInput, prevChallenges: [] }
   proofBulletproofChallenges = vestaProofBulletproofChallenges
   verifyOpeningProof = vestaVerifyOpeningProof
+  verifyOpeningProofsBatch = vestaVerifyOpeningProofsBatch
   permutationVanishingPolynomial = vestaPermutationVanishingPolynomial
   domainGenerator = vestaDomainGenerator
   computeB0 = vestaComputeB0

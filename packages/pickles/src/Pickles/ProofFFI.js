@@ -225,6 +225,23 @@ export const pallasVerifyOpeningProof = (verifierIndex) => ({ proof, publicInput
 export const vestaVerifyOpeningProof = (verifierIndex) => ({ proof, publicInput }) =>
   crypto.vestaVerifyOpeningProof(verifierIndex, proof, publicInput);
 
+// Batched stage-3 verify: split the array of {proof, publicInput} into the
+// two parallel arrays the napi `*_verify_opening_proofs_batch(vi, proofs,
+// publicInputs)` expects (one amortized kimchi batch_verify).
+export const pallasVerifyOpeningProofsBatch = (verifierIndex) => (entries) =>
+  crypto.pallasVerifyOpeningProofsBatch(
+    verifierIndex,
+    entries.map((e) => e.proof),
+    entries.map((e) => e.publicInput),
+  );
+
+export const vestaVerifyOpeningProofsBatch = (verifierIndex) => (entries) =>
+  crypto.vestaVerifyOpeningProofsBatch(
+    verifierIndex,
+    entries.map((e) => e.proof),
+    entries.map((e) => e.publicInput),
+  );
+
 // Permutation vanishing polynomial
 export const pallasPermutationVanishingPolynomial = ({ domainLog2, zkRows, pt }) =>
   crypto.pallasPermutationVanishingPolynomial(domainLog2, zkRows, pt);

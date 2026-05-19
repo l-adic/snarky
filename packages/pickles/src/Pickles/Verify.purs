@@ -74,7 +74,7 @@ import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals, ChunkedAllEvals)
-import Pickles.ProofFFI (Proof, permutationVanishingPolynomial, verifyOpeningProof)
+import Pickles.ProofFFI (Proof, permutationVanishingPolynomial, verifyOpeningProofsBatch)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput, assembleWrapMainInput)
 import Pickles.Types (PaddedLength, StepIPARounds, WrapIPARounds)
@@ -309,13 +309,21 @@ newtype CompiledProof mpv stmtVal outputVal = CompiledProof
   , stepDomainLog2 :: Int
   }
 
--- | Verify one proof. Returns `true` iff all three stages pass.
-verifyOne
+-- | Per-proof verification: stage 1 (expand deferred values) and
+-- | stage 2 (IPA step accumulator check), plus assembly of the wrap
+-- | proof's kimchi public input. Stage 3 (the kimchi opening-proof
+-- | check) is deliberately NOT done here — `verify` batches it across
+-- | all proofs into ONE amortized `batch_verify`. Mirrors OCaml
+-- | `Verify.verify_heterogenous` (per-instance expand + accumulator
+-- | term, then a single batched dlog check).
+perProof
   :: forall mpv stmtVal outputVal
    . Verifier
   -> CompiledProof mpv stmtVal outputVal
-  -> Boolean
-verifyOne verifier (CompiledProof p) =
+  -> { accumulatorOk :: Boolean
+     , ctx :: { proof :: Proof PallasG WrapField, publicInput :: Array WrapField }
+     }
+perProof verifier (CompiledProof p) =
   let
     -- Endo-expand zeta once — needed for `vanishesOnZk` and passed into
     -- `expandDeferredForVerify` internally via its own endo expansion.
@@ -375,26 +383,44 @@ verifyOne verifier (CompiledProof p) =
 
     accumulatorOk = computedSg == p.challengePolynomialCommitment
 
-    -- ===== Stage 3: kimchi batch_verify on the wrap proof. =====
+    -- Wrap proof's kimchi public input. Stage 3 (the opening-proof
+    -- check) is intentionally deferred to `verify`, which runs it for
+    -- every proof in ONE amortized `verifyOpeningProofsBatch`.
     pi = wrapPublicInputOf dv p.messagesForNextStepProofDigest p.messagesForNextWrapProofDigest
-
-    kimchiOk = verifyOpeningProof verifier.wrapVK
-      { proof: p.wrapProof, publicInput: pi }
   in
-    accumulatorOk && kimchiOk
+    { accumulatorOk
+    , ctx: { proof: p.wrapProof, publicInput: pi }
+    }
 
--- | Batch-verify an array of compiled proofs (all of the same tag).
+-- | Verify one proof. (= `verify` on a singleton — stage 3 becomes a
+-- | 1-element `batch_verify`, exactly what kimchi did before.)
+verifyOne
+  :: forall mpv stmtVal outputVal
+   . Verifier
+  -> CompiledProof mpv stmtVal outputVal
+  -> Boolean
+verifyOne v p = verify v [ p ]
+
+-- | Verify an array of compiled proofs (all of the same tag).
 -- |
--- | Currently folds single-proof kimchi verification; kimchi's real
--- | amortized `batch_verify` is exposed via the Rust side but not yet
--- | wired through as a multi-proof FFI function. Functionally correct
--- | regardless.
+-- | Stages 1-2 are independent per proof → run per-proof and
+-- | AND-folded (`Array.all`). Stage 3 (the expensive kimchi
+-- | opening-proof check) is AMORTIZED: a SINGLE
+-- | `verifyOpeningProofsBatch` over every proof's `(wrapVK,
+-- | wrapProof, publicInput)` rather than one kimchi verify per
+-- | proof. Homogeneous specialization of OCaml
+-- | `Verify.verify_heterogenous`'s final `batch_verify`.
 verify
   :: forall mpv stmtVal outputVal
    . Verifier
   -> Array (CompiledProof mpv stmtVal outputVal)
   -> Boolean
-verify v = Array.all (verifyOne v)
+verify v ps =
+  let
+    rs = map (perProof v) ps
+  in
+    Array.all _.accumulatorOk rs
+      && verifyOpeningProofsBatch v.wrapVK (map _.ctx rs)
 
 -- | Assemble the flat `Array WrapField` that `pallasVerifyOpeningProof`
 -- | accepts as its `publicInput`. Exposed as a public helper so tests
