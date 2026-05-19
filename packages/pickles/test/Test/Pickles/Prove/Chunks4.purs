@@ -29,6 +29,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, verify)
+import Pickles.ProofCache (mkProofCache)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.DSL (F, addConstraint, exists, mul_)
@@ -99,7 +100,7 @@ spec = describe "Pickles.Prove.Chunks4" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14
-      , proofCache: Nothing
+      , proofCache: Just (mkProofCache "packages/pickles/test/fixtures/proof-cache/Chunks4.json")
       }
       rules
 

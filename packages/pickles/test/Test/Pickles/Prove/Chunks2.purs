@@ -29,6 +29,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, verify)
+import Pickles.ProofCache (mkProofCache)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.DSL (F, addConstraint, exists, mul_)
@@ -103,7 +104,7 @@ spec = describe "Pickles.Prove.Chunks2" do
       -- N1 wrap_domain override (= log2 14), matching chunks2.ml's
       -- `~override_wrap_domain:N1`.
       , wrapDomainOverride: Just 14
-      , proofCache: Nothing
+      , proofCache: Just (mkProofCache "packages/pickles/test/fixtures/proof-cache/Chunks2.json")
       }
       rules
 

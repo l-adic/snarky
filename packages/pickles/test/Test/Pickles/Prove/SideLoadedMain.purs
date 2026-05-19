@@ -29,6 +29,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Partial.Unsafe (unsafePartial)
 import Pickles (BranchProver(..), CompiledProof, NoSlots, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, SideLoaded, Slot, Slots1, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry)
+import Pickles.ProofCache (mkProofCache)
 import Pickles.Sideload (mkBundle) as Sideload
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -150,7 +151,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
-      , proofCache: Nothing
+      , proofCache: Just (mkProofCache "packages/pickles/test/fixtures/proof-cache/SideLoadedMain.json")
       }
       (tuple1 childEntry)
 
@@ -207,7 +208,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
-      , proofCache: Nothing
+      , proofCache: Just (mkProofCache "packages/pickles/test/fixtures/proof-cache/SideLoadedMain.json")
       }
       (tuple1 sideLoadedEntry)
 

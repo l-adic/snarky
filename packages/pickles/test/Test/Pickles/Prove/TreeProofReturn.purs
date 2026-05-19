@@ -46,6 +46,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Pickles (BranchProver(..), Compiled, CompiledProof(..), NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots2, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, verify)
+import Pickles.ProofCache (mkProofCache)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.CVar (add_) as CVar
@@ -128,7 +129,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
-      , proofCache: Nothing
+      , proofCache: Just (mkProofCache "packages/pickles/test/fixtures/proof-cache/TreeProofReturn.json")
       }
       nrrRules
 
@@ -168,7 +169,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14
-      , proofCache: Nothing
+      , proofCache: Just (mkProofCache "packages/pickles/test/fixtures/proof-cache/TreeProofReturn.json")
       }
       treeRules
 

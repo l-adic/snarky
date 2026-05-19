@@ -34,6 +34,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception as Exc
 import Pickles (BranchProver(..), Compiled, NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, verify)
+import Pickles.ProofCache (mkProofCache)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.CVar (add_) as CVar
@@ -148,7 +149,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
         { srs: { vestaSrs, pallasSrs }
         , debug: false
         , wrapDomainOverride: Nothing
-        , proofCache: Nothing
+        , proofCache: Just (mkProofCache "packages/pickles/test/fixtures/proof-cache/TwoPhaseChain.json")
         }
 
     makeZeroEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) @1 @1 makeZeroRule unit

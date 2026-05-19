@@ -30,6 +30,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, verify)
+import Pickles.ProofCache (mkProofCache)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.DSL (F, FVar, const_)
@@ -73,7 +74,7 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
-      , proofCache: Nothing
+      , proofCache: Just (mkProofCache "packages/pickles/test/fixtures/proof-cache/NoRecursionReturn.json")
       }
       rules
 
