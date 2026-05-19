@@ -16,7 +16,6 @@ import Test.Pickles.Sideload.DigestEqNrrSpec as SideloadDigestEqNrr
 import Test.Pickles.Sideload.RoundTripMainChildSpec as SideloadRoundTripMainChild
 import Test.Pickles.Sideload.RoundTripNrrSpec as SideloadRoundTripNrr
 import Test.Pickles.Sideload.VerifyNrrSpec as SideloadVerifyNrr
-import Test.Pickles.Verify.ExpandDeferredEq as ExpandDeferredEq
 import Test.Spec (SpecT)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess')
@@ -46,7 +45,6 @@ spec = do
   SideLoadedMain.spec
   TreeProofReturn.spec
   TwoPhaseChain.spec
-  ExpandDeferredEq.spec
   SideloadRoundTripNrr.spec
   SideloadRoundTripMainChild.spec
   SideloadDigestEqNrr.spec

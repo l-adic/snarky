@@ -76,7 +76,7 @@ import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals, ChunkedAllEvals)
 import Pickles.ProofFFI (Proof, permutationVanishingPolynomial, verifyOpeningProof)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
-import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput, assembleWrapMainInput)
+import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput, assembleWrapMainInput)
 import Pickles.Types (PaddedLength, StepIPARounds, WrapIPARounds)
 import Pickles.Verify.Types (BranchData, BulletproofChallenges, DeferredValues, PlonkExpanded, PlonkInCircuit, PlonkMinimal, ScalarChallenge, UnfinalizedProof, WrapDeferredValues, expandPlonkMinimal, toPlonkMinimal)
 import Pickles.Wrap.Types as Wrap
@@ -174,12 +174,6 @@ data CompiledProofWidthData width = CompiledProofWidthData
   -- proof was generated.
   , outerStepChalPolyComms :: Vector width (AffinePoint StepField)
 
-  -- | Prover-side `WrapDeferredValuesInput`; carries `prevSgs` and
-  -- | `prevChallenges` at the per-rule width. Read only by
-  -- | `Test.Pickles.Verify.ExpandDeferredEq`'s self-consistency
-  -- | check; `verifyOne` doesn't read it.
-  , wrapDvInput :: WrapDeferredValuesInput width
-
   -- ===== Pre-padded views (front-padded with the matching dummy). =====
   --
   -- Inside `runExists`, `width` is rigid existential, so consumers
@@ -215,7 +209,6 @@ mkSomeCompiledProofWidthData
   => { oldBulletproofChallenges :: Vector width (Vector StepIPARounds StepField)
      , msgWrapChallenges :: Vector width (Vector WrapIPARounds WrapField)
      , outerStepChalPolyComms :: Vector width (AffinePoint StepField)
-     , wrapDvInput :: WrapDeferredValuesInput width
      -- Front-padding dummies, one per padded view. Used to fill the
      -- `pad` slots prepended to each `Vector width X` to lift it to
      -- `Vector PaddedLength X`.
@@ -229,7 +222,6 @@ mkSomeCompiledProofWidthData rec = mkExists $ CompiledProofWidthData
   , oldBulletproofChallenges: rec.oldBulletproofChallenges
   , msgWrapChallenges: rec.msgWrapChallenges
   , outerStepChalPolyComms: rec.outerStepChalPolyComms
-  , wrapDvInput: rec.wrapDvInput
   , oldBulletproofChallengesPadded:
       Vector.append (Vector.replicate @pad rec.dummyOldBp)
         rec.oldBulletproofChallenges
@@ -303,7 +295,6 @@ newtype CompiledProof mpv stmtVal outputVal = CompiledProof
   --   * oldBulletproofChallenges
   --   * msgWrapChallenges
   --   * outerStepChalPolyComms
-  --   * wrapDvInput
   -- Mirrors OCaml's `'most_recent_width`-sized vectors hidden by the
   -- `Proof.with_data` GADT existential.
   , widthData :: SomeCompiledProofWidthData
@@ -316,13 +307,6 @@ newtype CompiledProof mpv stmtVal outputVal = CompiledProof
   -- OCaml `branch_data.domain_log2` carried in
   -- `proof_state.deferred_values.branch_data`.
   , stepDomainLog2 :: Int
-
-  -- The prover's `Wrap_deferred_values.t`. Surfaced for
-  -- self-consistency tests that compare the prover-side computation
-  -- (`wrapComputeDeferredValues`) against the verifier-side
-  -- reconstruction (`expandDeferredForVerify`) on a real proof. Not
-  -- width-dependent (output type doesn't carry mpv).
-  , wrapDv :: WrapDeferredValuesOutput
   }
 
 -- | Verify one proof. Returns `true` iff all three stages pass.

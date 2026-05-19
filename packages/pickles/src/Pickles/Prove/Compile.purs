@@ -3797,7 +3797,6 @@ runMultiProverBody
       , msgWrapChallenges: proveData.msgWrapChallenges
       , outerStepChalPolyComms:
           map (\e -> { x: e.sgX, y: e.sgY }) proveData.kimchiPrevEntries
-      , wrapDvInput
       -- Front-padding dummies for the `Vector PaddedLength` views
       -- mkSomeCompiledProofWidthData precomputes. Match what
       -- mkStepAdvice / shapeProveData's InductivePrev case fills the
@@ -3826,7 +3825,6 @@ runMultiProverBody
     , messagesForNextWrapProofDigest: msgWrap
     , widthData
     , stepDomainLog2: selfStepDomainLog2
-    , wrapDv
     }
 
 compileMulti

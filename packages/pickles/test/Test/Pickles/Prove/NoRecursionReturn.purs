@@ -8,9 +8,9 @@
 -- | `BranchProver`; one invocation produces a single proof; `verify`
 -- | checks it.
 -- |
--- | `nrrRule` is exported because `Test.Pickles.Verify.ExpandDeferredEq`
--- | reuses it to build a real NRR `CompiledProof` and feed
--- | `compiledProof.wrapDv` / `wrapDvInput` to its self-consistency check.
+-- | `nrrRule` is exported because `Test.Pickles.Prove.CompileValidation`
+-- | and `Test.Pickles.Sideload.DigestEqNrrSpec` reuse it to build a
+-- | real NRR `CompiledProof`.
 module Test.Pickles.Prove.NoRecursionReturn
   ( NrrRules
   , nrrRule
