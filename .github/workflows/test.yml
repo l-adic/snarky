@@ -51,7 +51,7 @@ jobs:
   test-libs:
     strategy:
       matrix:
-        os: [ubuntu-latest-large, arm-large-runner]
+        os: [ubuntu-latest-large]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
