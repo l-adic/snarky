@@ -28,14 +28,18 @@ export function pallasCircuitGateGetCoeff(gate) {
 
 export function pallasConstraintSystemCreate(gates) {
     return function(publicInputsCount) {
-        return napi.pallasConstraintSystemCreate(gates, publicInputsCount);
+        return function(maxPolySize) {
+            return napi.pallasConstraintSystemCreate(gates, publicInputsCount, Number(maxPolySize));
+        };
     };
 }
 
 export function pallasConstraintSystemCreateWithPrevChallenges(gates) {
     return function(publicInputsCount) {
         return function(prevChallengesCount) {
-            return napi.pallasConstraintSystemCreateWithPrevChallenges(gates, publicInputsCount, prevChallengesCount);
+            return function(maxPolySize) {
+                return napi.pallasConstraintSystemCreateWithPrevChallenges(gates, publicInputsCount, prevChallengesCount, Number(maxPolySize));
+            };
         };
     };
 }

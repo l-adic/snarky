@@ -167,6 +167,12 @@ makeConstraintSystem
   => { constraints :: Array (KimchiRow f)
      , publicInputs :: Array Variable
      , unionFind :: UnionFindData Variable
+     , maxPolySize :: Int
+     -- ^ SRS's `max_poly_size`. Kimchi needs it at CS-build time to
+     -- compute `num_chunks = ceil(domain_size / max_poly_size)` and
+     -- pick the matching `zk_rows = (16 * num_chunks + 5) / 7`.
+     -- Mirrors OCaml's kimchi-stubs `caml_pasta_fp_plonk_index_create
+     -- ~max_poly_size:(srs.max_poly_size())`.
      }
   -> { constraintSystem :: ConstraintSystem f
      , constraints :: Array (KimchiRow f)
@@ -175,9 +181,13 @@ makeConstraintSystem
      }
 makeConstraintSystem arg =
   let
-    gd = makeGateData @f arg
+    gd = makeGateData @f
+      { constraints: arg.constraints
+      , publicInputs: arg.publicInputs
+      , unionFind: arg.unionFind
+      }
   in
-    { constraintSystem: constraintSystemCreate @f gd.gates gd.publicInputSize
+    { constraintSystem: constraintSystemCreate @f gd.gates gd.publicInputSize arg.maxPolySize
     , constraints: gd.constraints
     , gates: gd.gates
     , publicInputSize: gd.publicInputSize
@@ -197,6 +207,8 @@ makeConstraintSystemWithPrevChallenges
      , publicInputs :: Array Variable
      , unionFind :: UnionFindData Variable
      , prevChallengesCount :: Int
+     , maxPolySize :: Int
+     -- ^ SRS's `max_poly_size`; see `makeConstraintSystem` for why.
      }
   -> { constraintSystem :: ConstraintSystem f
      , constraints :: Array (KimchiRow f)
@@ -216,6 +228,7 @@ makeConstraintSystemWithPrevChallenges arg =
           gd.gates
           gd.publicInputSize
           arg.prevChallengesCount
+          arg.maxPolySize
     , constraints: gd.constraints
     , gates: gd.gates
     , publicInputSize: gd.publicInputSize

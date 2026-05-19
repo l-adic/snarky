@@ -21,10 +21,10 @@ foreign import vestaCircuitGateCoeffCount :: Gate Vesta.ScalarField -> Int
 -- Get a coefficient at the specified index
 foreign import vestaCircuitGateGetCoeff :: Gate Vesta.ScalarField -> Int -> Vesta.ScalarField
 
-foreign import vestaConstraintSystemCreate :: Array (Gate Vesta.ScalarField) -> Int -> ConstraintSystem Vesta.ScalarField
+foreign import vestaConstraintSystemCreate :: Array (Gate Vesta.ScalarField) -> Int -> Int -> ConstraintSystem Vesta.ScalarField
 
 foreign import vestaConstraintSystemCreateWithPrevChallenges
-  :: Array (Gate Vesta.ScalarField) -> Int -> Int -> ConstraintSystem Vesta.ScalarField
+  :: Array (Gate Vesta.ScalarField) -> Int -> Int -> Int -> ConstraintSystem Vesta.ScalarField
 
 foreign import vestaConstraintSystemToJson :: ConstraintSystem Vesta.ScalarField -> String
 foreign import vestaGatesToJson :: Array (Gate Vesta.ScalarField) -> Int -> String

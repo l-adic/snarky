@@ -72,3 +72,13 @@ analysis/
 presentation/
 
 tools/__pycache__/
+
+# Circuit-diff OCaml fixtures: committed in gzipped form ONLY (~13MB vs
+# ~325MB raw). The plain .json/.jsonl are local working copies,
+# materialised by `make fixtures-unpack` (a prerequisite of
+# `make test-pickles-circuit-diffs`). Regenerate via the OCaml dump
+# drivers / tools/regen_chunks_fixtures.sh, then `make fixtures-pack`
+# and commit the *.gz. (`*.json` does not match `*.json.gz`, so the
+# compressed artifacts stay tracked.)
+packages/pickles-circuit-diffs/circuits/ocaml/*.json
+packages/pickles-circuit-diffs/circuits/ocaml/*.jsonl

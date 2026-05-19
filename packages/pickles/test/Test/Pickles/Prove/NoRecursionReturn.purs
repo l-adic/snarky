@@ -8,9 +8,9 @@
 -- | `BranchProver`; one invocation produces a single proof; `verify`
 -- | checks it.
 -- |
--- | `nrrRule` is exported because `Test.Pickles.Verify.ExpandDeferredEq`
--- | reuses it to build a real NRR `CompiledProof` and feed
--- | `compiledProof.wrapDv` / `wrapDvInput` to its self-consistency check.
+-- | `nrrRule` is exported because `Test.Pickles.Prove.CompileValidation`
+-- | and `Test.Pickles.Sideload.DigestEqNrrSpec` reuse it to build a
+-- | real NRR `CompiledProof`.
 module Test.Pickles.Prove.NoRecursionReturn
   ( NrrRules
   , nrrRule
@@ -29,7 +29,9 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
+import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, verify)
+import Pickles.ProofCache (mkProofCache)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.DSL (F, FVar, const_)
@@ -54,13 +56,14 @@ type NrrRules =
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.NoRecursionReturn" do
   it "compileMulti + prover.step end-to-end verify returns true" \_ -> do
+    cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/NoRecursionReturn.json")
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
     -- Build the 1-tuple rules carrier for compileMulti. mpvMax = 0
     -- (NRR rule's mpv); since this is the only branch, nd = 1.
     -- outputSize = mpvMax*32 + 1 + mpvMax = 0 + 1 + 0 = 1.
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule unit
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
 
     let rules = tuple1 nrrEntry
 
@@ -69,9 +72,11 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
       @(F StepField)
       @Unit
       @NoSlots
+      @1
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
+      , proofCache: cache
       }
       rules
 

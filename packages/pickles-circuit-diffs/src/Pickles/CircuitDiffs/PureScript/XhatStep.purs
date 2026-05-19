@@ -24,7 +24,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type XhatStepParams f =
-  { lagrangeAt :: LagrangeBaseLookup f
+  { lagrangeAt :: LagrangeBaseLookup 1 f
   , blindingH :: AffinePoint (F f)
   }
 
@@ -66,9 +66,9 @@ xhatStepCircuit
   => PublicInputCommit pi StepField
   => XhatStepParams StepField
   -> pi
-  -> Snarky (KimchiConstraint StepField) t m (AffinePoint (FVar StepField))
+  -> Snarky (KimchiConstraint StepField) t m (Vector 1 (AffinePoint (FVar StepField)))
 xhatStepCircuit { lagrangeAt, blindingH } publicInput =
-  publicInputCommit
+  publicInputCommit @1
     { curveParams: curveParams (Proxy @PallasG)
     , lagrangeAt
     , blindingH

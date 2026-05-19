@@ -4,6 +4,9 @@ import Prelude
 
 import Effect (Effect)
 import Effect.Aff (Aff)
+import Test.Pickles.Prove.Chunks2 as Chunks2
+import Test.Pickles.Prove.Chunks4 as Chunks4
+import Test.Pickles.Prove.CompileValidation as CompileValidation
 import Test.Pickles.Prove.NoRecursionReturn as NoRecursionReturn
 import Test.Pickles.Prove.SideLoadedMain as SideLoadedMain
 import Test.Pickles.Prove.SimpleChain as SimpleChain
@@ -13,7 +16,6 @@ import Test.Pickles.Sideload.DigestEqNrrSpec as SideloadDigestEqNrr
 import Test.Pickles.Sideload.RoundTripMainChildSpec as SideloadRoundTripMainChild
 import Test.Pickles.Sideload.RoundTripNrrSpec as SideloadRoundTripNrr
 import Test.Pickles.Sideload.VerifyNrrSpec as SideloadVerifyNrr
-import Test.Pickles.Verify.ExpandDeferredEq as ExpandDeferredEq
 import Test.Spec (SpecT)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess')
@@ -35,12 +37,14 @@ import Test.Spec.Runner.Node.Config as Cfg
 -- | scripts in `tools/`. Tests don't depend on any `.trace` files.
 spec :: SpecT Aff Unit Aff Unit
 spec = do
+  CompileValidation.spec
   NoRecursionReturn.spec
   SimpleChain.spec
+  Chunks2.spec
+  Chunks4.spec
   SideLoadedMain.spec
   TreeProofReturn.spec
   TwoPhaseChain.spec
-  ExpandDeferredEq.spec
   SideloadRoundTripNrr.spec
   SideloadRoundTripMainChild.spec
   SideloadDigestEqNrr.spec

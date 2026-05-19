@@ -42,9 +42,10 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.PlonkChecks (AllEvals)
-import Pickles.ProofFFI (OraclesResult, Proof, pallasProofOpeningPrechallengesVec, pallasProofOracles)
-import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatch, computeBpChalsAndB, crossFieldDigest, derivePlonk, ftEval0)
+import Pickles.PlonkChecks (ChunkedAllEvals)
+import Pickles.PlonkChecks.Chunks as Chunks
+import Pickles.ProofFFI (OraclesResult, Proof, pallasProofFtEval1, pallasProofOpeningPrechallengesVec, pallasProofOracles)
+import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatchChunked, computeBpChalsAndB, crossFieldDigest, derivePlonk, ftEval0)
 import Pickles.Types (StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, ScalarChallenge)
 import Pickles.Wrap.Types as Wrap
@@ -81,11 +82,18 @@ type WrapDeferredValuesInput n =
   , verifierIndex :: VerifierIndex Vesta.G StepField
   , publicInput :: Array StepField
 
-  -- ===== Polynomial evaluations from the step proof (recombined). =====
+  -- ===== Polynomial evaluations from the step proof. =====
   --
   -- Caller builds this from `proof{Z,Witness,Coefficient,Sigma,Index}Evals`
-  -- and oracle public evals.
-  , allEvals :: AllEvals StepField
+  -- and oracle public evals. Carries the CHUNKED form (`NonEmptyArray
+  -- (PointEval f)` per polynomial); the collapsed form needed by
+  -- ftEval0 / derivePlonk is derived internally via
+  -- `collapseChunkedAllEvals` once zeta/zetaw are in scope. For inner
+  -- proofs at num_chunks=1 every NEA has length 1 and the derivation is
+  -- the identity. For chunks2 (step num_chunks=2) the collapse recombines
+  -- chunks via Horner at `zeta^(2^rounds)`, mirroring OCaml
+  -- `evals_of_split_evals`.
+  , chunkedAllEvals :: ChunkedAllEvals StepField
   , pEval0Chunks :: Array StepField
 
   -- ===== Step domain info. =====
@@ -229,11 +237,17 @@ wrapComputeDeferredValues input =
       , prevChallenges: prevChallengeList
       }
 
-    -- x_hat: single chunk per side (non-chunked assumption).
-    xHatEvals =
-      { zeta: oraclesResult.publicEvalZeta
-      , omegaTimesZeta: oraclesResult.publicEvalZetaOmega
+    -- x_hat: Horner-collapse the chunked public evals into a single
+    -- (zeta, zetaw) PointEval. At num_chunks = 1 this returns the only
+    -- chunk verbatim (byte-identical to `firstChunk`); at n > 1 it
+    -- performs the combined-eval Horner per OCaml `evals_of_split_evals`
+    -- (`plonk_checks.ml:102`).
+    xHatEvals = Chunks.collapsePointEval
+      { rounds: input.srsLengthLog2
+      , zeta: oraclesResult.zeta
+      , zetaOmega: oraclesResult.zeta * input.generator
       }
+      oraclesResult.publicEvals
 
     -- ===== plonk0 / tick_plonk_minimal. =====
     --
@@ -251,13 +265,24 @@ wrapComputeDeferredValues input =
 
     zetaw = zetaField * input.generator
 
+    -- Collapsed evals (= OCaml `Plonk_checks.evals_of_split_evals`)
+    -- derived from the chunked form via Horner at `zeta^(2^srsLengthLog2)`.
+    -- Consumed by ftEval0 / derivePlonk; CIP uses the chunked form
+    -- directly below.
+    collapsedAllEvals = Chunks.collapseChunkedAllEvals
+      { rounds: input.srsLengthLog2
+      , zeta: zetaField
+      , zetaOmega: zetaw
+      }
+      input.chunkedAllEvals
+
     -- ===== Type1.derive_plonk (wrap.ml:202-208). =====
     derivePlonkInput =
       { plonkMinimal: stepPlonkMinimal
-      , w: map _.zeta (Vector.take @7 input.allEvals.witnessEvals)
-      , sigma: map _.zeta input.allEvals.sigmaEvals
-      , zZeta: input.allEvals.zEvals.zeta
-      , zOmegaTimesZeta: input.allEvals.zEvals.omegaTimesZeta
+      , w: map _.zeta (Vector.take @7 collapsedAllEvals.witnessEvals)
+      , sigma: map _.zeta collapsedAllEvals.sigmaEvals
+      , zZeta: collapsedAllEvals.zEvals.zeta
+      , zOmegaTimesZeta: collapsedAllEvals.zEvals.omegaTimesZeta
       , shifts: input.shifts
       , generator: input.generator
       , domainLog2: input.domainLog2
@@ -268,14 +293,10 @@ wrapComputeDeferredValues input =
 
     stepPlonkDerived = derivePlonk derivePlonkInput
 
-    -- ===== ft_eval0 for the step field (via Common). =====
-    --
-    -- OCaml inlines this inside `combined_inner_product` (wrap.ml:33-39),
-    -- sharing it with the scalars_env built for `derive_plonk`. In PS
-    -- the helper is stand-alone.
+    -- ===== ft_eval0 (instrumented for chunks2 byte-diff diagnosis). =====
     ftEval0Input =
       { plonkMinimal: stepPlonkMinimal
-      , allEvals: input.allEvals
+      , allEvals: collapsedAllEvals
       , pEval0Chunks: input.pEval0Chunks
       , shifts: input.shifts
       , generator: input.generator
@@ -290,15 +311,12 @@ wrapComputeDeferredValues input =
 
     stepFtEval0 = ftEval0 ftEval0Input
 
-    -- ===== combined_inner_product (wrap.ml:22-62, 235-245). =====
-    --
-    -- `oracles.v` = xi, `oracles.u` = r — both already endo-expanded
-    -- by the kimchi FFI.
+    -- ===== combined_inner_product (wrap.ml:22-62). =====
     cipInput =
-      { allEvals: input.allEvals
-      , publicEvals: input.allEvals.publicEvals
+      { allEvals: input.chunkedAllEvals
+      , publicEvals: input.chunkedAllEvals.publicEvals
       , ftEval0: stepFtEval0
-      , ftEval1: input.allEvals.ftEval1
+      , ftEval1: pallasProofFtEval1 input.proof
       , oldBulletproofChallenges: input.prevChallenges
       , xi: oraclesResult.v
       , r: oraclesResult.u
@@ -306,7 +324,7 @@ wrapComputeDeferredValues input =
       , zetaw
       }
 
-    cipActual = combinedInnerProductBatch cipInput
+    cipActual = combinedInnerProductBatchChunked cipInput
 
     -- ===== new bulletproof challenges + b (wrap.ml:209-224). =====
     --

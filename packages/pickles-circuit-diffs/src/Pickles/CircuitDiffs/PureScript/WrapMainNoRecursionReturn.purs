@@ -40,9 +40,9 @@ compileWrapMainNoRecursionReturn { lagrangeAt, blindingH } stepParams = do
   vestaSrs <- createCRS @StepField
   pallasSrs <- createCRS @WrapField
   let
-    realStepVK = deriveStepVKFromCompiled @0 vestaSrs stepArt.stepCs
+    realStepVK = deriveStepVKFromCompiled @1 @0 vestaSrs stepArt.stepCs
 
-    config :: WrapMainConfig 1
+    config :: WrapMainConfig 1 1
     config =
       -- N=0 NRR: single branch, step_widths=[0]. `domainLog2s` is the
       -- STEP CS's evaluation-domain log2, derived from the step
@@ -58,11 +58,11 @@ compileWrapMainNoRecursionReturn { lagrangeAt, blindingH } stepParams = do
       }
   -- mpv=0, no per_proofs; slots derived from Unit via funcdep.
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\stmt -> wrapMainForPrevs @1 @Unit config stmt)
+    (\stmt -> wrapMainForPrevs @1 @Unit @1 config stmt)
     Kimchi.initialState
   pure
     { stepCs: stepArt.stepCs
     , stepDomainLog2: stepArt.stepDomainLog2
     , wrapCs
-    , wrapVk: deriveWrapVKFromCompiled @2 pallasSrs wrapCs
+    , wrapVk: deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
     }

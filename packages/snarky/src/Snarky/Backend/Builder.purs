@@ -23,15 +23,22 @@ module Snarky.Backend.Builder
   , labeled
   , unlabel
   , context
+  , Constraints
+  , emptyConstraints
+  , snocConstraint
+  , appendConstraintsBatch
+  , constraintsToArray
   ) where
 
 import Prelude
 
+import Control.Monad.Rec.Class (class MonadRec)
 import Control.Monad.State (StateT, execStateT, get, modify_, put, runStateT)
 import Control.Monad.Trans.Class (class MonadTrans)
-import Data.Array (snoc)
 import Data.Array as Array
+import Data.Foldable (foldl) as F
 import Data.Identity (Identity(..))
+import Data.List (List(..), reverse) as L
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (fromMaybe)
@@ -56,12 +63,43 @@ labeled ctx c = { constraint: c, context: ctx }
 unlabel :: forall c. Labeled c -> c
 unlabel = _.constraint
 
+-- | Append-efficient constraint accumulator.
+-- |
+-- | Stored as a `List` in **reverse** emission order (newest first), so
+-- | a single append is O(1) `Cons` (with tail sharing — PureScript
+-- | linked lists share structure, unlike `Array` whose every
+-- | `snoc`/`cons` does a full `slice()` copy → O(n²) over a build).
+-- | Materialised to a forward-order `Array` exactly once at the end
+-- | via `constraintsToArray` (O(m)). The observable constraint order
+-- | is identical to the old `Array.snoc` accumulation.
+newtype Constraints c = Constraints (L.List (Labeled c))
+
+emptyConstraints :: forall c. Constraints c
+emptyConstraints = Constraints L.Nil
+
+-- | O(1) single append (to the logical end of the sequence).
+snocConstraint :: forall c. Labeled c -> Constraints c -> Constraints c
+snocConstraint x (Constraints xs) = Constraints (L.Cons x xs)
+
+-- | Append a batch to the logical end, preserving the batch's own
+-- | order. O(|batch|) — touches only the new elements, never copies
+-- | the accumulated prefix. Equivalent to `acc <> batch` on the
+-- | materialised arrays.
+appendConstraintsBatch
+  :: forall c. Array (Labeled c) -> Constraints c -> Constraints c
+appendConstraintsBatch batch (Constraints xs) =
+  Constraints (F.foldl (\acc x -> L.Cons x acc) xs batch)
+
+-- | Materialise to forward (emission) order. O(m), once.
+constraintsToArray :: forall c. Constraints c -> Array (Labeled c)
+constraintsToArray (Constraints xs) = Array.fromFoldable (L.reverse xs)
+
 context :: forall c. Labeled c -> Array String
 context = _.context
 
 type CircuitBuilderState c r =
   { nextVar :: Variable
-  , constraints :: Array (Labeled c)
+  , constraints :: Constraints c
   , publicInputs :: Array Variable
   , aux :: r
   , labelStack :: Array String
@@ -75,6 +113,7 @@ derive newtype instance Monad m => Apply (CircuitBuilderT c r m)
 derive newtype instance Monad m => Bind (CircuitBuilderT c r m)
 derive newtype instance Monad m => Applicative (CircuitBuilderT c r m)
 derive newtype instance Monad m => Monad (CircuitBuilderT c r m)
+derive newtype instance MonadRec m => MonadRec (CircuitBuilderT c r m)
 derive newtype instance MonadTrans (CircuitBuilderT c r)
 
 class Finalizer c r where
@@ -134,7 +173,7 @@ instance PrimeField f => CompileCircuit f (Basic f) (Basic f) r
 initialState :: forall c. CircuitBuilderState c Unit
 initialState =
   { nextVar: v0
-  , constraints: mempty
+  , constraints: emptyConstraints
   , publicInputs: mempty
   , aux: unit
   , labelStack: []
@@ -143,6 +182,7 @@ initialState =
 
 instance
   ( Monad m
+  , MonadRec m
   , PrimeField f
   , BasicSystem f c'
   , ConstraintM (CircuitBuilderT c r) c'
@@ -176,7 +216,7 @@ appendConstraint
   => c
   -> CircuitBuilderT c r m Unit
 appendConstraint c = CircuitBuilderT $ modify_ \s ->
-  s { constraints = s.constraints `snoc` { constraint: c, context: s.labelStack } }
+  s { constraints = snocConstraint { constraint: c, context: s.labelStack } s.constraints }
 
 getState
   :: forall m c r

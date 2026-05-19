@@ -21,6 +21,7 @@ package:
     - snarky
     - spec
     - spec-quickcheck
+    - tailrec
     - transformers
     - tuples
     - vector-sized

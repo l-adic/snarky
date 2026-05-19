@@ -22,6 +22,7 @@ package:
     - node-fs
     - node-process
     - ordered-collections
+    - foreign-object
     - partial
     - pickles-linearization-types
     - poseidon
@@ -30,10 +31,12 @@ package:
     - record
     - refs
     - safe-coerce
+    - simple-json
     - snarky
     - snarky-curves
     - snarky-kimchi
     - strings
+    - tailrec
     - transformers
     - tuples
     - unsafe-coerce

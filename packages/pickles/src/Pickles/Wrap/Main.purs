@@ -43,10 +43,11 @@ import Data.Foldable (foldl)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int as Int
 import Data.Maybe (Maybe(..))
+import Data.Newtype (over)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector, (:<))
+import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (WrapField)
@@ -62,7 +63,7 @@ import Pickles.Pseudo as Pseudo
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, pow2pow)
 import Pickles.PublicInputCommit (unwrapPt, wrapPt) as PIC
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
-import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK, chooseKey)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOldBulletproofChallenges, getOpeningProof, getStepAccs, getWhichBranch, getWrapDomainIndices, getWrapProofState)
@@ -70,9 +71,9 @@ import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
 import Pickles.Wrap.Slots (class PadSlots, padAllSlots, slotWidthsOf)
 import Pickles.Wrap.SlotsFromSpec (class SlotsFromSpec)
-import Pickles.Wrap.Types (IvpBaseline, PrevProofState(..), StatementPacked(..))
+import Pickles.Wrap.Types (PrevProofState(..), StatementPacked(..))
 import Pickles.Wrap.Verify (wrapVerify)
-import Prim.Int (class Add, class Compare)
+import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
@@ -129,23 +130,31 @@ type WrapMainInputVar =
 -- |   * `16` is the `Finite` bound = `1 + WrapIPARounds`: each log2
 -- |     fits in `[0, wrap_SRS_log2 + 1) = [0, 16)` because wrap
 -- |     domain size ≤ wrap SRS size = 2^WrapIPARounds.
-type WrapMainConfig branches =
+type WrapMainConfig branches stepChunks =
   { stepWidths :: Vector branches Int
   , domainLog2s :: Vector branches Int
-  , stepKeys :: Vector branches (StepVK (FVar WrapField))
+  , stepKeys :: Vector branches (StepVK stepChunks (FVar WrapField))
   -- | Single-domain lagrange basis. Used in the "all branches share
   -- | the same step domain" fast path (mirrors OCaml
   -- | `wrap_verifier.ml:426-428`). Always populated; for the
   -- | per-branch path, it carries the head domain's basis as a
   -- | placeholder (only `perBranchLagrangeAt` is consulted).
-  , lagrangeAt :: LagrangeBaseLookup WrapField
+  -- Chunked lookup. `stepChunks` here is the STEP proof's chunks count
+  -- (Dim 1): the wrap circuit verifies a step proof whose wrap_domain
+  -- determines how the lagrange basis splits over the wrap SRS. At
+  -- chunks2 wrap, step's wrap_domain > wrap SRS max_poly_size so
+  -- stepChunks > 1 and the PI commit accumulator runs chunkwise.
+  , lagrangeAt :: LagrangeBaseLookup stepChunks WrapField
   -- | Per-branch lagrange constants per index. `Nothing` for the
   -- | shared-domain fast path. `Just f` when branch domains differ:
-  -- | `f i` returns one constant lagrange point per branch (each at
-  -- | its branch's `stepDomainLog2`). The wrap circuit performs the
-  -- | 1-hot summation against `whichBranch` in-circuit, mirroring
-  -- | OCaml `lagrange_with_correction` (wrap_verifier.ml:382-443).
-  , perBranchLagrangeAt :: Maybe (Int -> Vector branches (AffinePoint (F WrapField)))
+  -- | `f i` returns one `Vector stepChunks` of constant lagrange chunks
+  -- | per branch (each at its branch's `stepDomainLog2`). The wrap
+  -- | circuit performs the 1-hot summation against `whichBranch`
+  -- | per-chunk in-circuit, mirroring OCaml `lagrange_with_correction`
+  -- | (wrap_verifier.ml:382-443) where `Array.map2_exn` reduces across
+  -- | branches at each chunk index.
+  , perBranchLagrangeAt ::
+      Maybe (Int -> Vector branches (Vector stepChunks (AffinePoint (F WrapField))))
   , blindingH :: AffinePoint (F WrapField)
   , allPossibleDomainLog2s :: Vector 3 (Finite 16)
   }
@@ -360,7 +369,7 @@ splitPerProofUnfinalized (PerProofUnfinalized r) = do
 -------------------------------------------------------------------------------
 
 wrapMain
-  :: forall @branches @slots mpv branchesPred totalBases totalBasesPred t m
+  :: forall @branches @slots @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 t m
    . CircuitM WrapField (KimchiConstraint WrapField) t m
   -- `slots` carries the per-slot widths; `mpv` is derived via the
   -- `slots -> mpv` fundep on `PadSlots`. Concrete instantiations
@@ -368,7 +377,29 @@ wrapMain
   -- `Slots2 w0 w1` (mpv=2). The `Compare mpv 3 LT` constraint
   -- propagates into `wrapVerify`; today's pickles caps `mpv` at 2.
   => PadSlots slots mpv
-  => WrapWitnessM branches mpv slots VestaG WrapField m
+  => WrapWitnessM branches mpv stepChunks slots VestaG WrapField m
+  => Reflectable stepChunks Int
+  => Reflectable tCommLen Int
+  => Reflectable nonSgBases Int
+  => Compare 0 stepChunks LT
+  => Add 1 numChunksPred stepChunks
+  -- Chunked base layout chain (forwarded to wrapVerify). Shared
+  -- `wCoeffN` / `indexSigmaN` mirror the IVP's collapsing because
+  -- Mul's fundep would unify same-RHS counts otherwise. Layout:
+  -- xHat(nc) :: ftComm :: zComm(nc) :: index(6nc) :: wComm(15nc) ::
+  -- coeff(15nc) :: sigma(6nc); total non-sg = 1 + 44*nc.
+  => Mul 7 stepChunks tCommLen
+  => Add 1 tCommLenPred tCommLen
+  => Mul 15 stepChunks wCoeffN
+  => Mul 6 stepChunks indexSigmaN
+  => Mul 44 stepChunks chunkBases
+  => Add 1 chunkBases nonSgBases
+  => Add stepChunks 1 sg1
+  => Add sg1 stepChunks sg2
+  => Add sg2 indexSigmaN sg3
+  => Add sg3 wCoeffN sg4
+  => Add sg4 wCoeffN sg5
+  => Add sg5 indexSigmaN nonSgBases
   -- `exists` on the result of `getOldBulletproofChallenges` needs
   -- both `CircuitType` and `CheckedType` instances for the `slots`
   -- shape. They exist for concrete `Slots1` / `Slots2` via the
@@ -388,9 +419,9 @@ wrapMain
   -- `Add sgOldN IvpBaseline totalBases` and
   -- `Add 1 totalBasesPred totalBases`). With `sgOldN = mpv`, these
   -- collapse to the constraints below.
-  => Add mpv IvpBaseline totalBases
+  => Add mpv nonSgBases totalBases
   => Add 1 totalBasesPred totalBases
-  => WrapMainConfig branches
+  => WrapMainConfig branches stepChunks
   -> WrapMainInputVar
   -> Snarky (KimchiConstraint WrapField) t m Unit
 wrapMain config (StatementPacked stmtR) = do
@@ -434,7 +465,7 @@ wrapMain config (StatementPacked stmtR) = do
 
   -- 1. Req.Which_branch  (wrap_main.ml:223)
   whichBranchField <- label "which-branch" $ exists $ lift $
-    getWhichBranch @branches @mpv @slots @VestaG unit
+    getWhichBranch @branches @mpv @stepChunks @slots @VestaG unit
 
   -- 2. In-circuit derivation: one-hot vector, ones_vector, branch_data assert
   --    (wrap_main.ml:228-256)
@@ -497,7 +528,7 @@ wrapMain config (StatementPacked stmtR) = do
 
   -- 3. Req.Proof_state (wrap_main.ml:257-267)
   PrevProofState pps <- label "proof-state" $ exists $ lift $
-    getWrapProofState @branches @mpv @slots @VestaG unit
+    getWrapProofState @branches @mpv @stepChunks @slots @VestaG unit
   let
     prevUnfinalized = pps.unfinalizedProofs
     prevMsgForNextStep = pps.messagesForNextStepProof
@@ -519,7 +550,7 @@ wrapMain config (StatementPacked stmtR) = do
 
   -- 5. Req.Step_accs (wrap_main.ml:367-371)
   stepAccs <- label "step-accs" $ exists $ lift $
-    getStepAccs @branches @mpv @slots @VestaG unit
+    getStepAccs @branches @mpv @stepChunks @slots @VestaG unit
   let stepAccsAffine = map unwrapPt stepAccs
 
   -- 6. Req.Old_bulletproof_challenges (wrap_main.ml:372-404).
@@ -529,7 +560,7 @@ wrapMain config (StatementPacked stmtR) = do
   -- right number of dummy bp-challenge stacks per slot to mirror
   -- OCaml's `Wrap_hack.Checked.pad_challenges`.
   slotsValue <- label "old-bp-chals" $ exists $ lift $
-    getOldBulletproofChallenges @branches @mpv @slots @VestaG unit
+    getOldBulletproofChallenges @branches @mpv @stepChunks @slots @VestaG unit
   let
     dummyChallenge = map const_ dummyIpaChallenges.wrapExpanded
 
@@ -539,11 +570,11 @@ wrapMain config (StatementPacked stmtR) = do
 
   -- 7. Req.Evals (wrap_main.ml:405-415)
   rawEvals <- label "evals" $ exists $ lift $
-    getEvals @branches @mpv @slots @VestaG unit
+    getEvals @branches @mpv @stepChunks @slots @VestaG unit
 
   -- 8. Req.Wrap_domain_indices (wrap_main.ml:418-424)
   wrapDomainIndices <- label "wrap-domain-indices" $ exists $ lift $
-    getWrapDomainIndices @branches @mpv @slots @VestaG unit
+    getWrapDomainIndices @branches @mpv @stepChunks @slots @VestaG unit
 
   -- 9. FOP loop (wrap_main.ml:435-487).
   --
@@ -661,7 +692,7 @@ wrapMain config (StatementPacked stmtR) = do
 
   -- 11. Req.Openings_proof (wrap_main.ml:506-532)
   WrapProofOpening openingProofRec <- label "openings-proof" $ exists $ lift $
-    getOpeningProof @branches @mpv @slots @VestaG unit
+    getOpeningProof @branches @mpv @stepChunks @slots @VestaG unit
   let
     openingProof =
       { lr: map (\r -> { l: unwrapPt r.l, r: unwrapPt r.r }) openingProofRec.lr
@@ -673,12 +704,16 @@ wrapMain config (StatementPacked stmtR) = do
 
   -- 12. Req.Messages (wrap_main.ml:533-541)
   WrapProofMessages messagesRec <- label "messages" $ exists $ lift $
-    getMessages @branches @mpv @slots @VestaG unit
+    getMessages @branches @mpv @stepChunks @slots @VestaG unit
   let
+    -- wComm/zComm carry chunks through; tComm flattens Vector 7 (ChunkedCommitment nc pt)
+    -- to flat Vector tCommLen pt via Vector.concat (= 7 * stepChunks pieces).
+    tCommChunked :: Vector 7 (ChunkedCommitment stepChunks (AffinePoint (FVar WrapField)))
+    tCommChunked = map (over ChunkedCommitment (map unwrapPt)) messagesRec.tComm
     messages =
-      { wComm: map unwrapPt messagesRec.wComm
-      , zComm: unwrapPt messagesRec.zComm
-      , tComm: map unwrapPt messagesRec.tComm
+      { wComm: map (over ChunkedCommitment (map unwrapPt)) messagesRec.wComm
+      , zComm: over ChunkedCommitment (map unwrapPt) messagesRec.zComm
+      , tComm: Vector.concat (coerce tCommChunked :: Vector 7 (Vector stepChunks (AffinePoint (FVar WrapField))))
       }
 
   -- 13. pack_statement + split_field per Type1 (wrap_main.ml:542-548)
@@ -769,7 +804,19 @@ wrapMain config (StatementPacked stmtR) = do
     -- unlike `lagrange_with_correction`); the `Just` arm carries an
     -- unused `constant: head` to satisfy the record. `sealCondAddPt
     -- = false` in both arms — only step side-loaded seals.
-    maskedLagrangeAt :: LagrangeBaseLookup WrapField
+    -- Run `sumMaskByBranch` per chunk index. Maps over stepChunks
+    -- (the inner Vector) and at each chunk position pulls one point
+    -- from each branch into a `Vector branches` for the single-chunk
+    -- 1-hot mux. For stepChunks=1 this collapses to one mux of a
+    -- branches-sized vector — bit-identical to pre-chunk behavior.
+    sumMaskByBranchChunked
+      :: Vector branches (Vector stepChunks (AffinePoint (F WrapField)))
+      -> Vector stepChunks (AffinePoint (FVar WrapField))
+    sumMaskByBranchChunked perBranchChunkedPts =
+      Vector.generate \fi ->
+        sumMaskByBranch (map (\vc -> vc !! fi) perBranchChunkedPts)
+
+    maskedLagrangeAt :: LagrangeBaseLookup stepChunks WrapField
     maskedLagrangeAt i = case config.perBranchLagrangeAt of
       Nothing ->
         let
@@ -778,20 +825,29 @@ wrapMain config (StatementPacked stmtR) = do
         in
           { constant: lb.constant
           , circuit: lb.circuit
-          , condAddPt: sumMaskByBranch replicatedConst
+          , condAddPt: sumMaskByBranchChunked replicatedConst
           , correctionAt: Nothing
           , sealCondAddPt: false
           }
       Just perBranchAt ->
+        -- Per-branch chunked lagrange path (different branch step
+        -- domains). `perBranchPts :: Vector branches (Vector stepChunks
+        -- (AffinePoint _))` — each branch contributes its full chunk
+        -- array. `sumMaskByBranchChunked` does the 1-hot fold across
+        -- branches PER CHUNK, mirroring OCaml's `Array.map2_exn` reduction
+        -- pattern at `wrap_verifier.ml:354-356,442-443`. Correctness
+        -- holds uniformly across stepChunks values.
         let
           perBranchPts = perBranchAt i
-          summed = sumMaskByBranch perBranchPts
-          correctionAt shift =
-            sumMaskByBranch
+          summed = sumMaskByBranchChunked perBranchPts
+          correctionAtShift shift =
+            sumMaskByBranchChunked
               ( map
-                  ( \pt ->
-                      PIC.wrapPt $ EC.negate_ $ PIC.unwrapPt
-                        $ pow2pow (curveParams (Proxy @VestaG)) pt shift
+                  ( map
+                      ( \pt ->
+                          PIC.wrapPt $ EC.negate_ $ PIC.unwrapPt
+                            $ pow2pow (curveParams (Proxy @VestaG)) pt shift
+                      )
                   )
                   perBranchPts
               )
@@ -799,7 +855,7 @@ wrapMain config (StatementPacked stmtR) = do
           { constant: (Vector.uncons perBranchPts).head
           , circuit: summed
           , condAddPt: summed
-          , correctionAt: Just correctionAt
+          , correctionAt: Just correctionAtShift
           , sealCondAddPt: false
           }
     ivpParams =
@@ -847,11 +903,28 @@ wrapMain config (StatementPacked stmtR) = do
 -- | doesn't compose across rules) and call `wrapMain @branches @slots`
 -- | directly.
 wrapMainForPrevs
-  :: forall @branches @prevsSpec slots mpv branchesPred totalBases totalBasesPred t m
+  :: forall @branches @prevsSpec @stepChunks numChunksPred slots mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 t m
    . CircuitM WrapField (KimchiConstraint WrapField) t m
   => SlotsFromSpec prevsSpec slots
   => PadSlots slots mpv
-  => WrapWitnessM branches mpv slots VestaG WrapField m
+  => WrapWitnessM branches mpv stepChunks slots VestaG WrapField m
+  => Reflectable stepChunks Int
+  => Reflectable tCommLen Int
+  => Reflectable nonSgBases Int
+  => Compare 0 stepChunks LT
+  => Add 1 numChunksPred stepChunks
+  => Mul 7 stepChunks tCommLen
+  => Add 1 tCommLenPred tCommLen
+  => Mul 15 stepChunks wCoeffN
+  => Mul 6 stepChunks indexSigmaN
+  => Mul 44 stepChunks chunkBases
+  => Add 1 chunkBases nonSgBases
+  => Add stepChunks 1 sg1
+  => Add sg1 stepChunks sg2
+  => Add sg2 indexSigmaN sg3
+  => Add sg3 wCoeffN sg4
+  => Add sg4 wCoeffN sg5
+  => Add sg5 indexSigmaN nonSgBases
   => CircuitType WrapField
        (slots (Vector WrapIPARounds (F WrapField)))
        (slots (Vector WrapIPARounds (FVar WrapField)))
@@ -861,9 +934,9 @@ wrapMainForPrevs
   => Reflectable mpv Int
   => Add 1 branchesPred branches
   => Compare mpv 3 LT
-  => Add mpv IvpBaseline totalBases
+  => Add mpv nonSgBases totalBases
   => Add 1 totalBasesPred totalBases
-  => WrapMainConfig branches
+  => WrapMainConfig branches stepChunks
   -> WrapMainInputVar
   -> Snarky (KimchiConstraint WrapField) t m Unit
-wrapMainForPrevs = wrapMain @branches @slots
+wrapMainForPrevs = wrapMain @branches @slots @stepChunks

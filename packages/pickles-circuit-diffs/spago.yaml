@@ -26,6 +26,7 @@ package:
     - snarky-curves
     - snarky-kimchi
     - strings
+    - tailrec
     - transformers
     - tuples
     - unsafe-coerce
@@ -38,5 +39,6 @@ package:
       - exceptions
       - node-buffer
       - node-fs
+      - node-process
       - spec
       - spec-node

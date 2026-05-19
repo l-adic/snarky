@@ -21,6 +21,7 @@ import Pickles.IncrementallyVerifyProof (incrementallyVerifyProof)
 import Pickles.PackedStatement (PackedStepPublicInput, fromPackedTuple)
 import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
+import Pickles.Types (ChunkedCommitment(..))
 import Pickles.Wrap.OtherField as WrapOtherField
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
@@ -34,7 +35,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type IvpWrapParams =
-  { lagrangeAt :: LagrangeBaseLookup WrapField
+  { lagrangeAt :: LagrangeBaseLookup 1 WrapField
   , blindingH :: AffinePoint (F WrapField)
   }
 
@@ -155,15 +156,15 @@ ivpWrapCircuit { lagrangeAt, blindingH } input = do
       , sgOld: Vector.nil
       , sgOldMask: Vector.nil
       -- VK data as circuit variables (dummy constants for circuit-diff test)
-      , sigmaCommLast: constDummyPt
+      , sigmaCommLast: ChunkedCommitment (Vector.singleton constDummyPt)
       , columnComms:
-          { index: (Vector.replicate constDummyPt) :: Vector 6 _
-          , coeff: (Vector.replicate constDummyPt) :: Vector 15 _
-          , sigma: (Vector.replicate constDummyPt) :: Vector 6 _
+          { index: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 6 _
+          , coeff: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 15 _
+          , sigma: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 6 _
           }
       , deferredValues: input.deferredValues
-      , wComm: input.wComm
-      , zComm: input.zComm
+      , wComm: map (ChunkedCommitment <<< Vector.singleton) input.wComm
+      , zComm: ChunkedCommitment (Vector.singleton input.zComm)
       , tComm: input.tComm
       , opening: input.opening
       }

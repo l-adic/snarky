@@ -28,7 +28,9 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
+import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), Compiled, CompiledProof(..), PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots1, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, verify)
+import Pickles.ProofCache (mkProofCache)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.CVar (add_) as CVar
@@ -74,20 +76,21 @@ simpleChainRule self = do
 type SimpleChainRules =
   RulesCons 1
     (Tuple1 (StatementIO (F StepField) Unit))
-    (Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
+    (Tuple1 (Slot Compiled 1 1 (StatementIO (F StepField) Unit)))
     (Tuple1 SlotWrapKey)
     RulesNil
 
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.SimpleChain" do
   it "5-iteration step+wrap chain (b0..b4) proves end-to-end" \_ -> do
+    cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/SimpleChain.json")
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
     -- Build the 1-tuple rules carrier for compileMulti. mpvMax = 1
     -- (one prev slot); since this is the only branch, nd = 1.
     -- outputSize = mpvMax*32 + 1 + mpvMax = 32 + 1 + 1 = 34.
-    chainEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) simpleChainRule (tuple1 Self)
+    chainEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) @1 @1 simpleChainRule (tuple1 Self)
 
     let rules = tuple1 chainEntry
 
@@ -96,9 +99,11 @@ spec = describe "Pickles.Prove.SimpleChain" do
       @Unit
       @(F StepField)
       @(Slots1 1)
+      @1
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
+      , proofCache: cache
       }
       rules
 
@@ -108,7 +113,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       runStep
         :: PrevSlot (F StepField) 1 (StatementIO (F StepField) Unit) Unit
         -> F StepField
-        -> Aff (CompiledProof 1 (StatementIO (F StepField) Unit) Unit Unit)
+        -> Aff (CompiledProof 1 (StatementIO (F StepField) Unit) Unit)
       runStep prevSlot appInput = do
         eRes <- liftEffect $ runExceptT $ chainProver
           { appInput, prevs: tuple1 prevSlot, sideloadedVKs: tuple1 unit }

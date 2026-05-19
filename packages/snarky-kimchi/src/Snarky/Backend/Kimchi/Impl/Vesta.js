@@ -28,14 +28,18 @@ export function vestaCircuitGateGetCoeff(gate) {
 
 export function vestaConstraintSystemCreate(gates) {
     return function(publicInputsCount) {
-        return napi.vestaConstraintSystemCreate(gates, publicInputsCount);
+        return function(maxPolySize) {
+            return napi.vestaConstraintSystemCreate(gates, publicInputsCount, Number(maxPolySize));
+        };
     };
 }
 
 export function vestaConstraintSystemCreateWithPrevChallenges(gates) {
     return function(publicInputsCount) {
         return function(prevChallengesCount) {
-            return napi.vestaConstraintSystemCreateWithPrevChallenges(gates, publicInputsCount, prevChallengesCount);
+            return function(maxPolySize) {
+                return napi.vestaConstraintSystemCreateWithPrevChallenges(gates, publicInputsCount, prevChallengesCount, Number(maxPolySize));
+            };
         };
     };
 }

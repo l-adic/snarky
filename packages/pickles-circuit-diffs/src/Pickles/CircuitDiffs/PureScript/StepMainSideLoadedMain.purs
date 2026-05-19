@@ -50,9 +50,9 @@ import Type.Proxy (Proxy(..))
 -- |   `actualWrapDomainSize ∈ {N0, N1, N2}`). `Step.Main`
 -- |   one-hot-muxes among them at runtime.
 type StepMainSideLoadedMainParams =
-  { lagrangeAt :: LagrangeBaseLookup StepField
+  { lagrangeAt :: LagrangeBaseLookup 1 StepField
   , sideloadedPerDomainLagrangeAt ::
-      Vector 3 (Int -> AffinePoint (F StepField))
+      Vector 3 (Int -> Vector 1 (AffinePoint (F StepField)))
   , blindingH :: AffinePoint (F StepField)
   }
 
@@ -105,14 +105,15 @@ compileStepMainSideLoadedMain params =
       -- tag's compile-time upper bound (`N2`). vkCarrier =
       -- `VerificationKey /\ Unit` (from `SideloadedVKsCarrier`).
       ( \_ -> stepMain
-          @(Tuple1 (Slot SideLoaded 2 (StatementIO (F StepField) Unit)))
+          @(Tuple1 (Slot SideLoaded 2 1 (StatementIO (F StepField) Unit)))
           @(F StepField)
           @Unit
           @(F StepField)
           @(Tuple1 (StatementIO (F StepField) Unit))
           @1
           @1
-          @(SLVK.VerificationKey (F StepField) Boolean)
+          @(SLVK.VerificationKey 1 (F StepField) Boolean)
+          @1
           sideLoadedMainRule
           -- This circuit-diff harness builds `perSlotLagrangeAt` /
           -- `perSlotVkBlueprints` / `perSlotFopDomainLog2s` inline rather

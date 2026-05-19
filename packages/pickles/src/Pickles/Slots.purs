@@ -38,9 +38,18 @@ foreign import data SideLoaded :: SlotKind
 
 -- | A type-level slot descriptor: kind tag, `max_proofs_verified` (or
 -- | for side-loaded slots, the compile-time upper bound on the
--- | side-loaded tag's mpv), and the prev's statement type.
+-- | side-loaded tag's mpv), `num_chunks` of the prev's compile, and
+-- | the prev's statement type.
+-- |
+-- | `stepChunks` is the third axis because `num_chunks` is per-compile
+-- | in OCaml Pickles — each prev tag was produced by some
+-- | `Pickles.compile_promise ~num_chunks:N` call, and the step circuit
+-- | that verifies that prev needs to allocate FFI commitments at THAT
+-- | num_chunks. Self-recursive prevs in a compile with `@stepChunks:k`
+-- | conventionally have `stepChunks=k`. External-tag prevs can have a
+-- | different `stepChunks` than the current compile.
 -- |
 -- | Pure phantom; no value-level inhabitants. The spec is the tuple
--- | chain `Slot k₁ n₁ s₁ /\ Slot k₂ n₂ s₂ /\ … /\ Unit` — `Unit`
+-- | chain `Slot k₁ n₁ nc₁ s₁ /\ Slot k₂ n₂ nc₂ s₂ /\ … /\ Unit` — `Unit`
 -- | terminates the chain (the empty-prev list).
-foreign import data Slot :: SlotKind -> Int -> Type -> Type
+foreign import data Slot :: SlotKind -> Int -> Int -> Type -> Type

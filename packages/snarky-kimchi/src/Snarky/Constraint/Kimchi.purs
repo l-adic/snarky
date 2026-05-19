@@ -20,6 +20,7 @@ import Data.Set as Set
 import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..))
 import Data.UnionFind (equivalenceClasses)
+import Data.Vector (Vector)
 import Poseidon (class PoseidonField)
 import Snarky.Backend.Builder (class CompileCircuit, class Finalizer, CircuitBuilderState, CircuitBuilderT, Labeled)
 import Snarky.Backend.Builder as CircuitBuilder
@@ -38,7 +39,7 @@ import Snarky.Constraint.Kimchi.GenericPlonk (class GenericPlonkVerifiable)
 import Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonk
 import Snarky.Constraint.Kimchi.Poseidon (class PoseidonVerifiable, PoseidonConstraint)
 import Snarky.Constraint.Kimchi.Poseidon as Poseidon
-import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, finalizeGateQueue, reduceAsBuilder, reduceAsProver)
+import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, Rows, finalizeGateQueue, mkRawGeneric7Row, reduceAsBuilder, reduceAsProver, reduceToVariable)
 import Snarky.Constraint.Kimchi.Reduction as Reduction
 import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, AuxState(..), KimchiRow, initialAuxState, toKimchiRows)
 import Snarky.Constraint.Kimchi.VarBaseMul (class VarBaseMulVerifiable, VarBaseMul)
@@ -55,6 +56,7 @@ data KimchiConstraint f
   | KimchiVarBaseMul (VarBaseMul f)
   | KimchiEndoScalar (EndoScalar f)
   | KimchiEndoMul (EndoMul (FVar f))
+  | KimchiRawGeneric7 (Vector 7 (FVar f))
 
 data KimchiGate f
   = KimchiGatePlonk (Reduction.Rows f)
@@ -82,7 +84,7 @@ instance PrimeField f => Finalizer (KimchiGate f) (AuxState f) where
       lbl = s.labelStack
     in
       s
-        { constraints = maybe s.constraints (\r -> s.constraints `Array.snoc` { constraint: KimchiGatePlonk r, context: lbl }) mRow
+        { constraints = maybe s.constraints (\r -> CircuitBuilder.snocConstraint { constraint: KimchiGatePlonk r, context: lbl } s.constraints) mRow
         , aux = over AuxState
             ( \st ->
                 st
@@ -91,6 +93,15 @@ instance PrimeField f => Finalizer (KimchiGate f) (AuxState f) where
             )
             s.aux
         }
+
+reduceRawGeneric7
+  :: forall n f
+   . PlonkReductionM n f
+  => Vector 7 (FVar f)
+  -> n (Rows f)
+reduceRawGeneric7 vs = do
+  varsReduced <- traverse reduceToVariable vs
+  pure (mkRawGeneric7Row varsReduced)
 
 instance PoseidonField f => CompileCircuit f (KimchiGate f) (KimchiConstraint f) (AuxState f)
 
@@ -105,6 +116,7 @@ instance
     KimchiVarBaseMul c -> go VarBaseMul.reduce KimchiGateVarBaseMul c
     KimchiEndoScalar c -> go EndoScalar.reduce KimchiGateEndoScalar c
     KimchiEndoMul c -> go EndoMul.reduce KimchiGateEndoMul c
+    KimchiRawGeneric7 vs -> go reduceRawGeneric7 KimchiGatePlonk vs
     where
     go
       :: forall a c m
@@ -127,7 +139,12 @@ instance
         labelGate g = { constraint: g, context: lbl }
       CircuitBuilder.putState s
         { nextVar = res.nextVariable
-        , constraints = s.constraints <> map (labelGate <<< KimchiGatePlonk) res.constraints `Array.snoc` labelGate (wrap rows)
+        , constraints =
+            CircuitBuilder.snocConstraint (labelGate (wrap rows))
+              ( CircuitBuilder.appendConstraintsBatch
+                  (map (labelGate <<< KimchiGatePlonk) res.constraints)
+                  s.constraints
+              )
         , aux = res.aux
         }
 
@@ -141,6 +158,7 @@ instance (KimchiVerify f f') => ConstraintM (ProverT f) (KimchiConstraint f) whe
     KimchiVarBaseMul c -> goDebug VarBaseMul.reduce VarBaseMul.eval c
     KimchiEndoScalar c -> goDebug EndoScalar.reduce EndoScalar.eval c
     KimchiEndoMul c -> goDebug EndoMul.reduce (EndoMul.eval @f @f') c
+    KimchiRawGeneric7 vs -> goDebug reduceRawGeneric7 (\_ _ -> pure true) vs
     where
     -- Reduce and optionally debug-check the gate equation
     goDebug
@@ -187,7 +205,7 @@ instance (KimchiVerify f f') => ConstraintM (ProverT f) (KimchiConstraint f) whe
 initialState :: forall f. CircuitBuilderState (KimchiGate f) (AuxState f)
 initialState =
   { nextVar: v0
-  , constraints: mempty
+  , constraints: CircuitBuilder.emptyConstraints
   , publicInputs: mempty
   , aux: initialAuxState
   , labelStack: []

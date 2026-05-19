@@ -11,9 +11,7 @@
 -- | Reference: mina/src/lib/crypto/pickles/step_main.ml
 -- |            mina/src/lib/crypto/pickles/dump_circuit_impl.ml
 module Pickles.Step.Main
-  ( SlotVkBlueprintCompiled(..)
-  , SlotVkBlueprintSideLoaded
-  , SlotVkSource(..)
+  ( module Pickles.Step.VkSource
   , class BuildSlotVkSources
   , buildSlotVkSources
   -- * Rule abstraction
@@ -40,6 +38,7 @@ import Data.Fin (getFinite)
 import Data.Foldable (foldM)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Maybe (fromJust)
+import Data.Newtype (over, unwrap)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Tuple.Nested (type (/\), (/\))
@@ -51,7 +50,6 @@ import Pickles.FinalizeOtherProof (DomainMode(..))
 import Pickles.IncrementallyVerifyProof (ivpTrace)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
-import Pickles.ProofsVerified (ProofsVerifiedCount)
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, mkSideloadedLagrangeLookup)
 import Pickles.Sideload.Bundle (class HasSideLoadedVk, projectVk)
 import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
@@ -59,10 +57,11 @@ import Pickles.Slots (Compiled, SideLoaded, Slot)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM, getMessagesForNextWrapProof, getMessagesForNextWrapProofDummyHash, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex, setUserPublicOutputFields)
 import Pickles.Step.Dummy as Dummy
-import Pickles.Step.Slots (class StepSlotsCarrier, traverseStepSlotsA)
+import Pickles.Step.Slots (class StepSlotsCarrier, traverseStepSlotsAWithVk)
 import Pickles.Step.Types (BranchData(..), FopProofState(..), PerProofWitness(..), ProofState(..), UnfinalizedFieldCount, WrapProof(..))
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
-import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Step.VkSource (SlotVkBlueprintCompiled(..), SlotVkBlueprintSideLoaded, SlotVkSource(..))
+import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (VerificationKey(..))
 import Prim.Boolean (False, True)
 import Prim.Int (class Add, class Compare, class Mul)
@@ -137,104 +136,110 @@ type RuleOutput n prevInput output =
 -- |   via the in-circuit `actualWrapDomainSize` one-hot bits (see
 -- |   `Pickles.PublicInputCommit.mkSideloadedLagrangeLookup`).
 -- |
--- | Reference: OCaml `step_main.ml`'s tag-kind dispatch.
--- | Compile-time blueprint for a `Slot Compiled` slot. Two
--- | inhabitants only — there is no `Slot SideLoaded` arm here, so
--- | the `BuildSlotVkSources` Compiled instance can pattern-match
--- | exhaustively without an "impossible" fallthrough.
-data SlotVkBlueprintCompiled
-  = VkBlueprintConst (VerificationKey (WeierstrassAffinePoint PallasG (F StepField)))
-  | VkBlueprintShared
-
--- | Compile-time blueprint for a `Slot SideLoaded` slot — the
--- | per-domain lagrange tables. The runtime VK is allocated in-
--- | circuit by `BuildSlotVkSources` and bundled (alongside this) into
--- | `SlotVkSource.SideloadedExistsVk`.
-type SlotVkBlueprintSideLoaded =
-  Vector ProofsVerifiedCount (Int -> AffinePoint (F StepField))
-
--- | Post-walk per-slot wrap-VK dispatch type. `SideloadedExistsVk`
--- | bundles BOTH the compile-time per-domain lagrange tables and the
--- | in-circuit-allocated side-loaded VK descriptor so the Step.Main
--- | dispatch loop has everything in one place — no parallel
--- | `Vector len (Maybe …)` lookup required.
-data SlotVkSource
-  = ConstVk (VerificationKey (WeierstrassAffinePoint PallasG (F StepField)))
-  | SharedExistsVk
-  | SideloadedExistsVk
-      SlotVkBlueprintSideLoaded
-      (SLVK.VerificationKey (FVar StepField) (BoolVar StepField))
-
--- | Walk a spec-indexed blueprint carrier alongside the side-loaded
--- | VK carrier and produce a `Vector len SlotVkSource` for the
--- | dispatch loop. For each `Slot SideLoaded` position the runtime
--- | VK is allocated in-circuit via `exists` and bundled (with the
--- | compile-time per-domain lagrange tables) into the
--- | `SideloadedExistsVk` constructor.
+-- | Build a heterogeneous per-slot wrap-VK carrier by walking the
+-- | spec-indexed blueprint carrier alongside the (also spec-indexed)
+-- | side-loaded VK cell carrier. The output is a Tuple-chain mirroring
+-- | `Pickles.Step.Slots`'s `vkCarrier` — each slot's `SlotVkSource nc`
+-- | is sized by *that slot's* `nc` from `Slot k n nc statement`.
 -- |
--- | Each instance pattern-matches exhaustively on the blueprint type
--- | the spec kind dictates — there is no fallthrough arm. The class
--- | encodes the protocol invariant that compiled and side-loaded
--- | slots carry different compile-time data.
+-- | For each `Slot SideLoaded` position the runtime VK is allocated
+-- | in-circuit via `exists` and bundled (with the compile-time
+-- | per-domain lagrange tables) into the `SideloadedExistsVk`
+-- | constructor. For `Slot Compiled` positions the blueprint's
+-- | `VkBlueprintConst`/`VkBlueprintShared` passes straight through
+-- | to `ConstVk`/`SharedExistsVk`. The cell carrier supplies the
+-- | runtime descriptors for side-loaded slots and `Unit` for compiled
+-- | slots.
+-- |
+-- | Reference: OCaml `step_main.ml`'s tag-kind dispatch.
+-- |
+-- | `wrapVkChunks` is the outer compile's wrap-VK chunks count. Both
+-- | Compiled and SideLoaded instance heads STRUCTURALLY UNIFY the
+-- | slot's nc with `wrapVkChunks` (by reusing the same type variable
+-- | name in the slot's `nc` position). If a caller's spec writes
+-- | `Slot Compiled n 2 stmt` while `wrapVkChunks = 1` is in scope, the
+-- | instance does not resolve and the user gets a compile-time type
+-- | error — not a silent runtime coerce.
+-- |
+-- | The dispatch in `stepMain` still needs a few `unsafeCoerce` calls
+-- | because PS can't propagate the instance-head unification into the
+-- | case-arm body (the rank-2 callback rebinds `nc` as an abstract
+-- | local). Those coerces are syntactic bridges for an equality
+-- | already proven at instance-resolution time; the soundness lemma
+-- | is documented at each site.
+-- |
+-- | This is conservative vs OCaml, which allows heterogeneous per-slot
+-- | ncs in principle (each prev's wrap_domain → its own chunks count).
+-- | In practice every Mina top-level compile uses `num_chunks_by_default
+-- | = 1` for ALL prev slots; chunks2 is the only nc>1 fixture and has
+-- | no prev slots (mpvMax=0). Lifting this constraint requires
+-- | restructuring `perSlotLagrangeAt` from `Vector len
+-- | (LagrangeBaseLookup wrapVkChunks _)` into a per-slot type carrier.
 class BuildSlotVkSources
-  :: Type -> Type -> Int -> Type -> Type -> Constraint
+  :: Type -> Type -> Int -> Int -> Type -> Type -> Type -> Constraint
 class
-  BuildSlotVkSources cell prevsSpec len blueprints carrier
-  | cell prevsSpec -> len blueprints carrier
+  BuildSlotVkSources cell prevsSpec wrapVkChunks len blueprints cellCarrier vkCarrier
+  | cell prevsSpec -> len blueprints cellCarrier
+  , prevsSpec -> vkCarrier
   where
   buildSlotVkSources
     :: forall t m
      . CircuitM StepField (KimchiConstraint StepField) t m
-    => CheckedType StepField (KimchiConstraint StepField)
-         (SLVK.VerificationKey (FVar StepField) (BoolVar StepField))
     => blueprints
-    -> carrier
-    -> Snarky (KimchiConstraint StepField) t m (Vector len SlotVkSource)
+    -> cellCarrier
+    -> Snarky (KimchiConstraint StepField) t m vkCarrier
 
-instance BuildSlotVkSources cell Unit 0 Unit Unit where
-  buildSlotVkSources _ _ = pure Vector.nil
+instance BuildSlotVkSources cell Unit wrapVkChunks 0 Unit Unit Unit where
+  buildSlotVkSources _ _ = pure unit
 
 instance
-  ( BuildSlotVkSources cell rest restLen restScaffolds restCarrier
+  ( BuildSlotVkSources cell rest wrapVkChunks restLen restScaffolds restCellCarrier restVkCarrier
   , Add restLen 1 len
   ) =>
   BuildSlotVkSources cell
-    (Slot Compiled n stmt /\ rest)
+    (Slot Compiled n wrapVkChunks stmt /\ rest)
+    wrapVkChunks
     len
-    (SlotVkBlueprintCompiled /\ restScaffolds)
-    (Unit /\ restCarrier)
+    (SlotVkBlueprintCompiled wrapVkChunks /\ restScaffolds)
+    (Unit /\ restCellCarrier)
+    (SlotVkSource wrapVkChunks /\ restVkCarrier)
   where
-  buildSlotVkSources (headScaffold /\ restScaffolds) (_ /\ restCarrier) = do
+  buildSlotVkSources (headScaffold /\ restScaffolds) (_ /\ restCellCarrier) = do
     let
       headSrc = case headScaffold of
         VkBlueprintConst v -> ConstVk v
         VkBlueprintShared -> SharedExistsVk
-    restSrcs <- buildSlotVkSources @cell @rest restScaffolds restCarrier
-    pure (headSrc :< restSrcs)
+    restSrcs <- buildSlotVkSources @cell @rest @wrapVkChunks restScaffolds restCellCarrier
+    pure (headSrc /\ restSrcs)
 
 instance
-  ( BuildSlotVkSources cell rest restLen restScaffolds restCarrier
-  , HasSideLoadedVk cell
+  ( BuildSlotVkSources cell rest wrapVkChunks restLen restScaffolds restCellCarrier restVkCarrier
+  , HasSideLoadedVk wrapVkChunks cell
+  , Reflectable wrapVkChunks Int
+  , CheckedType StepField (KimchiConstraint StepField)
+      (SLVK.VerificationKey wrapVkChunks (FVar StepField) (BoolVar StepField))
   , Add restLen 1 len
   ) =>
   BuildSlotVkSources cell
-    (Slot SideLoaded mpvMax stmt /\ rest)
+    (Slot SideLoaded mpvMax wrapVkChunks stmt /\ rest)
+    wrapVkChunks
     len
-    (SlotVkBlueprintSideLoaded /\ restScaffolds)
-    (cell /\ restCarrier)
+    (SlotVkBlueprintSideLoaded wrapVkChunks /\ restScaffolds)
+    (cell /\ restCellCarrier)
+    (SlotVkSource wrapVkChunks /\ restVkCarrier)
   where
-  buildSlotVkSources (headLagrange /\ restScaffolds) (headCell /\ restCarrier) = do
+  buildSlotVkSources (headLagrange /\ restScaffolds) (headCell /\ restCellCarrier) = do
     headVar <- exists (pure (projectVk headCell))
     let headSrc = SideloadedExistsVk headLagrange headVar
-    restSrcs <- buildSlotVkSources @cell @rest restScaffolds restCarrier
-    pure (headSrc :< restSrcs)
+    restSrcs <- buildSlotVkSources @cell @rest @wrapVkChunks restScaffolds restCellCarrier
+    pure (headSrc /\ restSrcs)
 
 -- | SRS data for `stepMain`. Carries per-slot FOP domain-log2s
 -- | (`finalize_other_proof` consumes the prev's `step_domains` Vector;
 -- | self-recursive rules share one value across slots, heterogeneous
 -- | prevs differ per slot) and per-slot wrap-VK sources (see
 -- | `SlotVkSource`).
-type StepMainSrsData len nd blueprints =
+type StepMainSrsData wrapVkChunks len nd blueprints =
   { -- | Per-slot lagrange commitments. In OCaml
     -- | `x_hat = Σᵢ x[i] * lagrange_commitment(~domain:d.wrap_domain, srs, i)`
     -- | (step_verifier.ml:564-571) uses the PREV's `wrap_domain`, read
@@ -244,7 +249,13 @@ type StepMainSrsData len nd blueprints =
     -- | domain 2^14), the lagrange commitments at each index differ
     -- | per slot — same SRS, different domain size, different `i`-th
     -- | lagrange basis point.
-    perSlotLagrangeAt :: Vector len (LagrangeBaseLookup StepField)
+    -- Per-slot lagrange lookup, generic over `wrapVkChunks` so the same
+    -- type works whether the slot's prev wrap proof is single- or
+    -- multi-chunk. At Mina's current top-level compile this collapses to
+    -- nc=1 (`num_chunks_by_default` at `step_main.ml:347`), but the type
+    -- stays open so a future chunked wrap (or heterogeneous-nc prev
+    -- slots, via task #51) doesn't force a refactor.
+    perSlotLagrangeAt :: Vector len (LagrangeBaseLookup wrapVkChunks StepField)
   -- | Shared Tock SRS h-generator. `Generators.h =
   -- | Kimchi_bindings.Protocol.SRS.Fq.urs_h (Tock URS)`
   -- | (step_main_inputs.ml:182-187); a single SRS-level constant,
@@ -401,10 +412,11 @@ mpvFrontPad mkDummy real =
 -- |   + branch_data(mask0,mask1,domLog2) at end
 -------------------------------------------------------------------------------
 
-type AllocatedPerProofWitness n =
-  { wComm :: Vector 15 (WeierstrassAffinePoint PallasG (FVar StepField))
-  , zComm :: WeierstrassAffinePoint PallasG (FVar StepField)
-  , tComm :: Vector 7 (WeierstrassAffinePoint PallasG (FVar StepField))
+type AllocatedPerProofWitness n stepChunks tCommLen =
+  { wComm :: Vector 15 (ChunkedCommitment stepChunks (WeierstrassAffinePoint PallasG (FVar StepField)))
+  , zComm :: ChunkedCommitment stepChunks (WeierstrassAffinePoint PallasG (FVar StepField))
+  -- Flat tComm: tCommLen = 7 * stepChunks pieces of the quotient poly.
+  , tComm :: Vector tCommLen (WeierstrassAffinePoint PallasG (FVar StepField))
   , lr :: Vector 15 { l :: WeierstrassAffinePoint PallasG (FVar StepField), r :: WeierstrassAffinePoint PallasG (FVar StepField) }
   , z1 :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
   , z2 :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
@@ -441,11 +453,13 @@ type AllocatedPerProofWitness n =
   }
 
 allocatePerProofWitness
-  :: forall @n t m
+  :: forall @n @stepChunks tCommLen t m
    . CircuitM StepField (KimchiConstraint StepField) t m
   => Reflectable n Int
-  => PerProofWitness n StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
-  -> Snarky (KimchiConstraint StepField) t m (AllocatedPerProofWitness n)
+  => Reflectable stepChunks Int
+  => Mul 7 stepChunks tCommLen
+  => PerProofWitness n stepChunks StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
+  -> Snarky (KimchiConstraint StepField) t m (AllocatedPerProofWitness n stepChunks tCommLen)
 allocatePerProofWitness (PerProofWitness ppw) = do
   let
     WrapProof wrapProofRec = ppw.wrapProof
@@ -482,10 +496,15 @@ allocatePerProofWitness (PerProofWitness ppw) = do
       , sigmaEvals: map unwrapPointEval evalsRec.sigmaEvals
       , indexEvals: map unwrapPointEval evalsRec.indexEvals
       }
+  let
+    tCommFlat :: Vector tCommLen (WeierstrassAffinePoint PallasG (FVar StepField))
+    tCommFlat = Vector.concat (coerce msgRec.tComm :: Vector 7 (Vector stepChunks (WeierstrassAffinePoint PallasG (FVar StepField))))
   pure
+    -- wComm/zComm carry chunks through; tComm flattens Vector 7 (ChunkedCommitment nc pt)
+    -- to flat Vector tCommLen pt via Vector.concat (= 7 * stepChunks pieces).
     { wComm: msgRec.wComm
     , zComm: msgRec.zComm
-    , tComm: msgRec.tComm
+    , tComm: tCommFlat
     , lr: openRec.lr
     , z1: openRec.z1
     , z2: openRec.z2
@@ -615,23 +634,27 @@ liftDummyPerProofUnfinalized (PerProofUnfinalized r) =
 -- | Build verify_one input from allocated witnesses
 -------------------------------------------------------------------------------
 
+-- | At the per-slot level there's ONE chunks dimension: the slot's
+-- | wrap proof / wrap VK chunks count (must agree by protocol).
+-- | OCaml `step_main.ml:347`'s `num_chunks_by_default = 1` pins this
+-- | to 1 today; we keep it polymorphic and let call sites specify.
 buildVerifyOneInput
-  :: forall @n pad
+  :: forall @n @stepChunks @tCommLen pad
    . Reflectable n Int
   => Reflectable pad Int
   => Add pad n PaddedLength
-  => AllocatedPerProofWitness n
+  => AllocatedPerProofWitness n stepChunks tCommLen
   -> Array (FVar StepField) -- prev proof's public input, pre-flattened
   -> BoolVar StepField
   -> UnfinalizedProof
   -> FVar StepField
-  -> { sigma :: Vector 6 (AffinePoint (FVar StepField))
-     , sigmaLast :: AffinePoint (FVar StepField)
-     , coeff :: Vector 15 (AffinePoint (FVar StepField))
-     , index :: Vector 6 (AffinePoint (FVar StepField))
+  -> { sigma :: Vector 6 (ChunkedCommitment stepChunks (AffinePoint (FVar StepField)))
+     , sigmaLast :: ChunkedCommitment stepChunks (AffinePoint (FVar StepField))
+     , coeff :: Vector 15 (ChunkedCommitment stepChunks (AffinePoint (FVar StepField)))
+     , index :: Vector 6 (ChunkedCommitment stepChunks (AffinePoint (FVar StepField)))
      }
   -> AffinePoint (FVar StepField) -- dummySg for padding
-  -> VerifyOneInput n WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
+  -> VerifyOneInput n stepChunks tCommLen WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
 buildVerifyOneInput pw appStateFields mustVerify unfinalized msgWrap vkComms dummySg =
   let
     -- sgOld: pad prevSgs to PaddedLength (Wrap_hack.Padded_length).
@@ -650,8 +673,8 @@ buildVerifyOneInput pw appStateFields mustVerify unfinalized msgWrap vkComms dum
     proofMask = Vector.drop @pad fullMasks
   in
     { appStateFields
-    , wComm: map unwrapPt pw.wComm
-    , zComm: unwrapPt pw.zComm
+    , wComm: map (over ChunkedCommitment (map unwrapPt)) pw.wComm
+    , zComm: over ChunkedCommitment (map unwrapPt) pw.zComm
     , tComm: map unwrapPt pw.tComm
     , lr: map (\r -> { l: unwrapPt r.l, r: unwrapPt r.r }) pw.lr
     , z1: pw.z1
@@ -750,26 +773,33 @@ unfFields unf =
 
 stepMain
   :: forall @prevsSpec pad outputSize @inputVal input @outputVal output @prevInputVal prevInput
-       @valCarrier @mpvMax mpvPad @nd ndPred @cell
-       len carrier carrierVar sideloadedVkCarrier blueprints
+       @valCarrier @mpvMax mpvPad @nd ndPred @cell @wrapVkChunks
+       wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases totalBases totalBasesPred
+       sg1 sg2 sg3 sg4 sg5
+       len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        unfsTotal digestPlusUnfs
        t m
    . CircuitM StepField (KimchiConstraint StepField) t m
   -- Spec-indexed walk that, for each `Slot SideLoaded` position,
-  -- allocates a `SLVK.VerificationKey (FVar _) (BoolVar _)` via `exists` and bundles it
-  -- (alongside the compile-time per-domain lagrange tables) into the
-  -- post-walk `SideloadedExistsVk` constructor of `SlotVkSource`.
-  -- For `Slot Compiled` positions, walks the blueprint's
-  -- `VkBlueprintConst`/`VkBlueprintShared` straight through to
-  -- `ConstVk`/`SharedExistsVk`. The cell type — compile-placeholder
-  -- vs prove-time `VerificationKey` — is supplied by the caller via
-  -- `@cell` and matched by the `sideloadedVkCarrier` value's shape.
-  => BuildSlotVkSources cell prevsSpec len blueprints sideloadedVkCarrier
+  -- allocates a `SLVK.VerificationKey (FVar _) (BoolVar _)` via
+  -- `exists` and bundles it (alongside the compile-time per-domain
+  -- lagrange tables) into the per-slot `SlotVkSource nc`. For each
+  -- `Slot Compiled` position, walks the blueprint's
+  -- `VkBlueprintConst`/`VkBlueprintShared` straight through. The
+  -- output is a heterogeneous Tuple-chain `vkSourcesCarrier` with
+  -- each cell sized by *that slot's* `nc`.
+  --
+  -- `wrapVkChunks` is the chunks count of THIS compile's own
+  -- wrap VK (Dim 2 viewed at the outer rule level — distinct from
+  -- per-slot `nc` values, distinct from the wrap circuit's
+  -- `stepChunks` / Dim 1). OCaml fixes this to 1
+  -- (`step_main.ml:347` `num_chunks_by_default`).
+  => BuildSlotVkSources cell prevsSpec wrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Reflectable nd Int
-  => StepWitnessM len StepIPARounds WrapIPARounds PallasG StepField m inputVal
-  => StepSlotsM prevsSpec StepIPARounds WrapIPARounds PallasG StepField m len carrier
+  => StepWitnessM len StepIPARounds WrapIPARounds wrapVkChunks PallasG StepField m inputVal
+  => StepSlotsM prevsSpec StepIPARounds WrapIPARounds PallasG StepField m len carrier vkSourcesCarrier
   => StepPrevValuesM m valCarrier
   => StepUserOutputM m
   => CircuitType StepField inputVal input
@@ -786,8 +816,33 @@ stepMain
        (BoolVar StepField)
        len
        carrierVar
+       vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
   => Reflectable len Int
+  => Reflectable wrapVkChunks Int
+  -- verifyOne layout-chain prereqs threaded through stepMain. The
+  -- intermediate types (wrapVkChunksPred, tCommLen, wCoeffN, etc.) are
+  -- all functionally determined by `wrapVkChunks` via the Mul/Add
+  -- class fundeps, so concrete `wrapVkChunks` callers can omit them
+  -- and the compiler will infer.
+  => Compare 0 wrapVkChunks LT
+  => Add 1 wrapVkChunksPred wrapVkChunks
+  => Mul 7 wrapVkChunks tCommLen
+  => Add 1 tCommLenPred tCommLen
+  => Mul 15 wrapVkChunks wCoeffN
+  => Mul 6 wrapVkChunks indexSigmaN
+  => Mul 44 wrapVkChunks chunkBases
+  => Add 1 chunkBases nonSgBases
+  => Add wrapVkChunks 1 sg1
+  => Add sg1 wrapVkChunks sg2
+  => Add sg2 indexSigmaN sg3
+  => Add sg3 wCoeffN sg4
+  => Add sg4 wCoeffN sg5
+  => Add sg5 indexSigmaN nonSgBases
+  => Add 2 nonSgBases totalBases
+  => Add 1 totalBasesPred totalBases
+  => Reflectable tCommLen Int
+  => Reflectable nonSgBases Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
   => Reflectable mpvPad Int
@@ -800,7 +855,7 @@ stepMain
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
   => (input -> Snarky (KimchiConstraint StepField) t m (RuleOutput len prevInput output))
-  -> StepMainSrsData len nd blueprints
+  -> StepMainSrsData wrapVkChunks len nd blueprints
   -> AffinePoint StepField
   -> sideloadedVkCarrier
   -> Snarky (KimchiConstraint StepField) t m (Vector outputSize (FVar StepField))
@@ -816,7 +871,7 @@ stepMain
   -- 1. exists: public input via Req.App_state.
   let
     requestInput :: m inputVal
-    requestInput = getStepPublicInput @len @StepIPARounds @WrapIPARounds @PallasG unit
+    requestInput = getStepPublicInput @len @StepIPARounds @WrapIPARounds @wrapVkChunks @PallasG unit
   (publicInput) <- exists $ lift requestInput
 
   -- 2. rule_main — wraps both the user's rule body AND the side-loaded VK
@@ -827,7 +882,7 @@ stepMain
   -- `buildSlotVkSources` emits no `exists` calls.
   { prevPublicInputs, proofMustVerify, publicOutput, perSlotVkSources } <-
     label "rule_main" do
-      perSlotVkSources <- buildSlotVkSources @cell @prevsSpec perSlotVkBlueprints sideloadedVkCarrier
+      perSlotVkSources <- buildSlotVkSources @cell @prevsSpec @wrapVkChunks perSlotVkBlueprints sideloadedVkCarrier
       result <- rule publicInput
       pure
         { prevPublicInputs: result.prevPublicInputs
@@ -865,10 +920,11 @@ stepMain
   -- Also used directly by the outer hash (step 9) — the
   -- hash_messages_for_next_step_proof sponge absorbs self's wrap VK
   -- commitments (= `dlog_plonk_index`) once, NOT per-slot.
-  VerificationKey sharedVkRec <- label "exists_wrap_index"
-    $ exists
-    $ lift
-    $ getWrapVerifierIndex @len @StepIPARounds @WrapIPARounds @PallasG unit
+  (VerificationKey sharedVkRec :: VerificationKey wrapVkChunks (WeierstrassAffinePoint PallasG (FVar StepField))) <-
+    label "exists_wrap_index"
+      $ exists
+      $ lift
+      $ getWrapVerifierIndex @len @StepIPARounds @WrapIPARounds @wrapVkChunks @PallasG unit
   let
     vk =
       { sigma: Vector.take @6 sharedVkRec.sigma
@@ -889,7 +945,7 @@ stepMain
   rawUnfinalizedProofs <- label "exists_unfinalized"
     $ exists
     $ lift
-    $ getStepUnfinalizedProofs @len @StepIPARounds @WrapIPARounds @PallasG unit
+    $ getStepUnfinalizedProofs @len @StepIPARounds @WrapIPARounds @wrapVkChunks @PallasG unit
   unfinalizedProofs <- traverse unpackUnfinalized rawUnfinalizedProofs
 
   -- 6. exists: messages_for_next_wrap_proof.
@@ -905,12 +961,13 @@ stepMain
   --    count is `len + mpvPad = mpvMax`, matching OCaml's single
   --    mpvMax allocation.
   msgsWrapReal <- exists $ lift
-    $ getMessagesForNextWrapProof @len @StepIPARounds @WrapIPARounds @PallasG unit
+    $ getMessagesForNextWrapProof @len @StepIPARounds @WrapIPARounds @wrapVkChunks @PallasG unit
   msgsWrapPadding <- exists $ lift do
     dummyHash <- getMessagesForNextWrapProofDummyHash
       @len
       @StepIPARounds
       @WrapIPARounds
+      @wrapVkChunks
       @PallasG
       unit
     pure (Vector.replicate @mpvPad dummyHash)
@@ -924,12 +981,13 @@ stepMain
     -- the circuit (matches OCaml's `Array.map ~f:Inner_curve.constant`
     -- in `of_compiled_with_known_wrap_key`, types_map.ml:214-215).
     liftConstVk
-      :: VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
-      -> VerificationKey (WeierstrassAffinePoint PallasG (FVar StepField))
+      :: forall slotVkChunks
+       . VerificationKey slotVkChunks (WeierstrassAffinePoint PallasG (F StepField))
+      -> VerificationKey slotVkChunks (WeierstrassAffinePoint PallasG (FVar StepField))
     liftConstVk (VerificationKey r) = VerificationKey
-      { sigma: map liftWaPt r.sigma
-      , coeff: map liftWaPt r.coeff
-      , index: map liftWaPt r.index
+      { sigma: map (over ChunkedCommitment (map liftWaPt)) r.sigma
+      , coeff: map (over ChunkedCommitment (map liftWaPt)) r.coeff
+      , index: map (over ChunkedCommitment (map liftWaPt)) r.index
       }
       where
       liftWaPt :: WeierstrassAffinePoint PallasG (F StepField) -> WeierstrassAffinePoint PallasG (FVar StepField)
@@ -953,8 +1011,8 @@ stepMain
   -- and the `of_compiled_with_known_wrap_key` / `self_data` dispatch
   -- at step_main.ml:513-528).
   results <- label "prevs_verified" do
-    rs <- traverseStepSlotsA @prevsSpec
-      ( \i sppw -> do
+    rs <- traverseStepSlotsAWithVk @prevsSpec
+      ( \i sppw slotVkSrc -> do
           pw <- allocatePerProofWitness sppw
           let
             -- Per-slot Vector nd of all possible source-branch step domains.
@@ -979,10 +1037,12 @@ stepMain
             -- `InCircuitCorrections` mode (PureCorrections rejects
             -- `AddWithCircuitCorrection`).
             --
-            -- The `SideloadedExistsVk` case carries the runtime VK
-            -- directly (bundled by `buildSlotVkSources`) — no parallel
-            -- vector lookup, no Maybe to discharge.
-            slotConfig = case perSlotVkSources !! i of
+            -- `slotVkSrc :: SlotVkSource nc` shares the slot's `nc`
+            -- with `sppw :: PerProofWitness n nc …` via the parallel
+            -- `traverseStepSlotsAWithVk` lockstep walk — the type
+            -- system enforces the protocol invariant that the wrap
+            -- proof's chunks count equals its VK's chunks count.
+            slotConfig = case slotVkSrc of
               ConstVk constVk ->
                 { lagrangeAt: perSlotLagrangeAt !! i
                 , correctionMode: PureCorrections
@@ -990,13 +1050,32 @@ stepMain
                 , vkRec: let VerificationKey r = liftConstVk constVk in r
                 }
               SharedExistsVk ->
+                -- Soundness lemma: the BuildSlotVkSources Compiled
+                -- instance has structural head
+                -- `Slot Compiled n wrapVkChunks stmt /\ rest`, which
+                -- only matches when the slot's nc IS wrapVkChunks.
+                -- `SharedExistsVk` is ONLY constructed from that
+                -- instance, so when this arm fires we have
+                -- nc ~ wrapVkChunks. PureScript's type checker
+                -- can't propagate the instance-head unification
+                -- into the case-body's local `nc` variable, hence
+                -- the coerce — purely a syntactic bridge for an
+                -- equality that's structurally enforced at the
+                -- instance site.
                 { lagrangeAt: perSlotLagrangeAt !! i
                 , correctionMode: PureCorrections
                 , fopDomainMode: KnownDomainsMode
-                , vkRec: sharedVkRec
+                , vkRec: unsafeCoerce sharedVkRec
                 }
               SideloadedExistsVk perDomainLagrangeAts (SLVK.VerificationKey sl) ->
-                { lagrangeAt: mkSideloadedLagrangeLookup
+                -- `mkSideloadedLagrangeLookup` now returns
+                -- `LagrangeBaseLookup nc _` at the slot's own nc (the
+                -- per-domain blueprint is chunked properly via the new
+                -- `SlotVkBlueprintSideLoaded nc`). Same soundness lemma
+                -- as the ConstVk/SharedExistsVk arms: nc ~ wrapVkChunks
+                -- by the BuildSlotVkSources SideLoaded instance head;
+                -- the coerce here just unifies the case-join.
+                { lagrangeAt: unsafeCoerce $ mkSideloadedLagrangeLookup
                     (curveParams (Proxy @PallasG))
                     sl.actualWrapDomainSize
                     perDomainLagrangeAts
@@ -1007,7 +1086,12 @@ stepMain
 
             slotIvpParams =
               { curveParams: curveParams (Proxy @PallasG)
-              , lagrangeAt: slotConfig.lagrangeAt
+              -- Same soundness lemma as SharedExistsVk: BuildSlotVkSources's
+              -- instance head structurally unifies `nc ~ wrapVkChunks`,
+              -- but PS doesn't propagate that to the dispatch body. The
+              -- coerce is the syntactic bridge for an equality enforced
+              -- at instance-resolution time.
+              , lagrangeAt: unsafeCoerce slotConfig.lagrangeAt
               , blindingH
               , correctionMode: slotConfig.correctionMode
               , endo: stepEndoVal
@@ -1048,11 +1132,13 @@ stepMain
               , index: slotVkRec.index
               }
 
+            -- Map over both outer Vector 7/15/6 and the inner chunks
+            -- ChunkedCommitment slotNc, since each VK commitment is chunked.
             slotVkComms =
-              { sigma: map unwrapPt slotVk.sigma
-              , sigmaLast: unwrapPt slotVk.sigmaLast
-              , coeff: map unwrapPt slotVk.coeff
-              , index: map unwrapPt slotVk.index
+              { sigma: map (over ChunkedCommitment (map unwrapPt)) slotVk.sigma
+              , sigmaLast: over ChunkedCommitment (map unwrapPt) slotVk.sigmaLast
+              , coeff: map (over ChunkedCommitment (map unwrapPt)) slotVk.coeff
+              , index: map (over ChunkedCommitment (map unwrapPt)) slotVk.index
               }
 
             prevInputVar = prevPublicInputs !! i
@@ -1064,58 +1150,68 @@ stepMain
               slotVkComms
               constDummySg
           r <- label ("slot_" <> show (getFinite i)) $
-            verifyOne slotFopParams input slotIvpParams
+            -- Same soundness lemma: `nc ~ wrapVkChunks` is structurally
+            -- enforced by the BuildSlotVkSources instance head, but PS
+            -- doesn't propagate it to the dispatch body. Pin verifyOne
+            -- at `wrapVkChunks` (matching perSlotLagrangeAt-derived
+            -- slotConfig) and coerce `input`'s vkComms to bridge.
+            verifyOne @wrapVkChunks slotFopParams (unsafeCoerce input) slotIvpParams
           -- Carry pw.sg out alongside the verify_one result so the
           -- outer hash can absorb it.
           pure { sg: pw.sg, expandedChallenges: r.expandedChallenges, result: r.result }
       )
       slotsCarrier
+      perSlotVkSources
     assertAll_ (Vector.toUnfoldable $ map _.result rs)
     pure rs
 
-  -- 9. Outer hash: hash_messages_for_next_step_proof (identical to v1).
+  -- 9. Outer hash: hash_messages_for_next_step_proof. Mirrors
+  -- OCaml `common.ml:45-52` / `common.ml:103-112`'s
+  -- `trace_point_arr` shape: each VK commitment is a chunk array;
+  -- single-chunk arrays trace as `label.x` / `label.y`, multi-chunk
+  -- ones trace as `label.{i}.x` / `label.{i}.y` per chunk.
   outerDigest <- label "hash_messages_for_next_step_proof" do
     let
       absorbPt s pt = do
         let { x, y } = unwrapPt pt
         s1 <- Sponge.absorb x s
         Sponge.absorb y s1
+      absorbChunks s = foldM absorbPt s <<< unwrap
+      traceChunks lbl cc =
+        case Vector.toUnfoldable (unwrap cc) of
+          [ pt ] -> do
+            let { x, y } = unwrapPt pt
+            ivpTrace (lbl <> ".x") x
+            ivpTrace (lbl <> ".y") y
+          cs -> forWithIndex_ cs \j pt -> do
+            let { x, y } = unwrapPt pt
+            ivpTrace (lbl <> "." <> show j <> ".x") x
+            ivpTrace (lbl <> "." <> show j <> ".y") y
 
     -- Emit all 7 sigmas under a contiguous `sigma.0..6` index to match
     -- OCaml's `Vector.iter dlog_plonk_index.sigma_comm`. Internally PS
     -- splits into `sigma` (Vector 6) + `sigmaLast` for the sponge path,
     -- but the trace labels stay contiguous.
-    forWithIndex_ vk.sigma \fi pt -> do
-      let i = getFinite fi
-      let { x, y } = unwrapPt pt
-      ivpTrace ("step_main_outer.vk.sigma." <> show i <> ".x") x
-      ivpTrace ("step_main_outer.vk.sigma." <> show i <> ".y") y
-    let { x: slX, y: slY } = unwrapPt vk.sigmaLast
-    ivpTrace "step_main_outer.vk.sigma.6.x" slX
-    ivpTrace "step_main_outer.vk.sigma.6.y" slY
-    forWithIndex_ vk.coeff \fi pt -> do
-      let i = getFinite fi
-      let { x, y } = unwrapPt pt
-      ivpTrace ("step_main_outer.vk.coeff." <> show i <> ".x") x
-      ivpTrace ("step_main_outer.vk.coeff." <> show i <> ".y") y
+    forWithIndex_ vk.sigma \fi chunks ->
+      traceChunks ("step_main_outer.vk.sigma." <> show (getFinite fi)) chunks
+    traceChunks "step_main_outer.vk.sigma.6" vk.sigmaLast
+    forWithIndex_ vk.coeff \fi chunks ->
+      traceChunks ("step_main_outer.vk.coeff." <> show (getFinite fi)) chunks
     -- Emit the 6 "idx" commitments by OCaml's name order (generic, psm,
     -- complete_add, mul, emul, endomul_scalar) to match `List.iter
     -- idx_pts` in step_main.ml.
     let idxNames = "generic" :< "psm" :< "complete_add" :< "mul" :< "emul" :< "endomul_scalar" :< Vector.nil
-    forWithIndex_ vk.index \fi pt -> do
-      let { x, y } = unwrapPt pt
-      let name = Vector.index idxNames fi
-      ivpTrace ("step_main_outer.vk.idx." <> name <> ".x") x
-      ivpTrace ("step_main_outer.vk.idx." <> name <> ".y") y
+    forWithIndex_ vk.index \fi chunks ->
+      traceChunks ("step_main_outer.vk.idx." <> Vector.index idxNames fi) chunks
     forWithIndex_ hashAppFields \i f ->
       ivpTrace ("step_main_outer.app_state." <> show i) f
 
     spongeAfterIndex <- do
       let sponge0 = initialSpongeCircuit :: Sponge.Sponge (FVar StepField)
-      s1 <- foldM absorbPt sponge0 vk.sigma
-      s2 <- absorbPt s1 vk.sigmaLast
-      s3 <- foldM absorbPt s2 vk.coeff
-      foldM absorbPt s3 vk.index
+      s1 <- foldM absorbChunks sponge0 vk.sigma
+      s2 <- absorbChunks s1 vk.sigmaLast
+      s3 <- foldM absorbChunks s2 vk.coeff
+      foldM absorbChunks s3 vk.index
 
     s1 <- foldM (flip Sponge.absorb) spongeAfterIndex hashAppFields
 

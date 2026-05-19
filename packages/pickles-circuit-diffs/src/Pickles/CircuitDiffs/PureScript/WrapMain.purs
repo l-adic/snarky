@@ -38,9 +38,9 @@ compileWrapMainN1 { lagrangeAt, blindingH } stepParams = do
   vestaSrs <- createCRS @StepField
   pallasSrs <- createCRS @WrapField
   let
-    realStepVK = deriveStepVKFromCompiled @1 vestaSrs stepArt.stepCs
+    realStepVK = deriveStepVKFromCompiled @1 @1 vestaSrs stepArt.stepCs
 
-    config :: WrapMainConfig 1
+    config :: WrapMainConfig 1 1
     config =
       { stepWidths: 1 :< Vector.nil
       , domainLog2s: stepArt.stepDomainLog2 :< Vector.nil
@@ -53,11 +53,11 @@ compileWrapMainN1 { lagrangeAt, blindingH } stepParams = do
       }
   -- mpv=1, slot 0 width=1; slots derived from PrevsSpec via funcdep.
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\stmt -> wrapMainForPrevs @1 @(Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit))) config stmt)
+    (\stmt -> wrapMainForPrevs @1 @(Tuple1 (Slot Compiled 1 1 (StatementIO (F StepField) Unit))) @1 config stmt)
     Kimchi.initialState
   pure
     { stepCs: stepArt.stepCs
     , stepDomainLog2: stepArt.stepDomainLog2
     , wrapCs
-    , wrapVk: deriveWrapVKFromCompiled @2 pallasSrs wrapCs
+    , wrapVk: deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
     }

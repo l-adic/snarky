@@ -26,8 +26,8 @@ import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofOpt)
 import Pickles.Step.OtherField as StepOtherField
-import Pickles.Types (StepIPARounds, WrapIPARounds)
-import Prim.Int (class Add, class Compare)
+import Pickles.Types (ChunkedCommitment, StepIPARounds, WrapIPARounds)
+import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, and_, assertEq, const_, if_, label, not_, or_)
@@ -40,16 +40,16 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 
 -- | Input to verify_one. All fields from Per_proof_witness + unfinalized + extras.
 -- | Specialized to StepField (Vesta scalar field = Fp).
-type VerifyOneInput n d tickD sf fv bv =
+type VerifyOneInput n wrapVkChunks tCommLen d tickD sf fv bv =
   { -- Per_proof_witness.app_state (flattened via CircuitType upstream).
     -- For Input-mode rules with a single `FVar f` this is `[x]`; for
     -- multi-field inputs it's the full field-list produced by the
     -- input type's `varToFields`.
     appStateFields :: Array fv
-  -- Per_proof_witness.wrap_proof
-  , wComm :: Vector 15 (AffinePoint fv)
-  , zComm :: AffinePoint fv
-  , tComm :: Vector 7 (AffinePoint fv)
+  -- Per_proof_witness.wrap_proof. `tCommLen = 7 * wrapVkChunks` (flat).
+  , wComm :: Vector 15 (ChunkedCommitment wrapVkChunks (AffinePoint fv))
+  , zComm :: ChunkedCommitment wrapVkChunks (AffinePoint fv)
+  , tComm :: Vector tCommLen (AffinePoint fv)
   , lr :: Vector d { l :: AffinePoint fv, r :: AffinePoint fv }
   , z1 :: sf
   , z2 :: sf
@@ -113,11 +113,17 @@ type VerifyOneInput n d tickD sf fv bv =
   -- Mask for this proof (trimmed proofs_verified_mask, Vector n)
   , proofMask :: Vector n bv
   -- VK commitments for sponge_after_index and IVP
+  -- VK commitments (wrap VK consumed by step). At wrapVkChunks > 1 each
+  -- commitment is `Vector wrapVkChunks (AffinePoint fv)`. From the IVP's
+  -- perspective `wrapVkChunks` is the chunks of the proof being verified;
+  -- step verifies a wrap proof, so this is the wrap VK's chunks
+  -- (Dim 2 / `wrapVkChunks`). OCaml fixes this to 1 at
+  -- `step_main.ml:347` but the type stays polymorphic.
   , vkComms ::
-      { sigma :: Vector 6 (AffinePoint fv)
-      , sigmaLast :: AffinePoint fv
-      , coeff :: Vector 15 (AffinePoint fv)
-      , index :: Vector 6 (AffinePoint fv)
+      { sigma :: Vector 6 (ChunkedCommitment wrapVkChunks (AffinePoint fv))
+      , sigmaLast :: ChunkedCommitment wrapVkChunks (AffinePoint fv)
+      , coeff :: Vector 15 (ChunkedCommitment wrapVkChunks (AffinePoint fv))
+      , index :: Vector 6 (ChunkedCommitment wrapVkChunks (AffinePoint fv))
       }
   -- Padded sgOld (Wrap_hack.Padded_length = 2, dummy first)
   , sgOld :: Vector 2 (AffinePoint fv)
@@ -132,14 +138,39 @@ type VerifyOneResult tickD fv =
 -- | Full verify_one matching OCaml step_main.ml:17-148.
 -- | Specialized to the Step field (Vesta scalar field = Fp).
 verifyOne
-  :: forall nd ndPred n t m r1
+  :: forall @wrapVkChunks nd ndPred n wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred t m r1
    . CircuitM StepField (KimchiConstraint StepField) t m
   => Add 1 ndPred nd
   => Compare 0 nd LT
+  => Compare 0 wrapVkChunks LT
+  => Add 1 wrapVkChunksPred wrapVkChunks
   => Reflectable nd Int
+  => Reflectable wrapVkChunks Int
+  => Reflectable tCommLen Int
+  => Reflectable nonSgBases Int
+  -- Chunked base layout chain (mirrors IVP). sgOldN at the step IVP is
+  -- the fixed `PaddedLength` (= 2) baked into the input shape.
+  -- Shared `wCoeffN` / `indexSigmaN` mirror the IVP's collapsing
+  -- because Mul's fundep would unify same-RHS counts. Layout:
+  -- xHat(nc) :: ftComm :: zComm(nc) :: index(6nc) :: wComm(15nc) ::
+  -- coeff(15nc) :: sigma(6nc); total non-sg = 1 + 44*nc.
+  => Mul 7 wrapVkChunks tCommLen
+  => Add 1 tCommLenPred tCommLen
+  => Mul 15 wrapVkChunks wCoeffN
+  => Mul 6 wrapVkChunks indexSigmaN
+  => Mul 44 wrapVkChunks chunkBases
+  => Add 1 chunkBases nonSgBases
+  => Add 2 nonSgBases totalBases
+  => Add wrapVkChunks 1 sg1
+  => Add sg1 wrapVkChunks sg2
+  => Add sg2 indexSigmaN sg3
+  => Add sg3 wCoeffN sg4
+  => Add sg4 wCoeffN sg5
+  => Add sg5 indexSigmaN nonSgBases
+  => Add 1 totalBasesPred totalBases
   => FOP.Params nd StepField r1
-  -> VerifyOneInput n WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
-  -> IncrementallyVerifyProofParams StepField ()
+  -> VerifyOneInput n wrapVkChunks tCommLen WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
+  -> IncrementallyVerifyProofParams wrapVkChunks StepField ()
   -> Snarky (KimchiConstraint StepField) t m (VerifyOneResult StepIPARounds (FVar StepField))
 verifyOne fopParams input ivpParams = do
   -- Step 1: assert should_finalize == must_verify (step_main.ml:28)

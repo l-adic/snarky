@@ -68,15 +68,15 @@ import Data.Exists (Exists, mkExists, runExists)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.Constants (zkRows)
+import Pickles.Constants (zkRowsForNumChunks)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.PlonkChecks (AllEvals)
-import Pickles.ProofFFI (Proof, permutationVanishingPolynomial, verifyOpeningProof)
+import Pickles.PlonkChecks (AllEvals, ChunkedAllEvals)
+import Pickles.ProofFFI (Proof, permutationVanishingPolynomial, verifyOpeningProofsBatch)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
-import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput, assembleWrapMainInput)
+import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput, assembleWrapMainInput)
 import Pickles.Types (PaddedLength, StepIPARounds, WrapIPARounds)
 import Pickles.Verify.Types (BranchData, BulletproofChallenges, DeferredValues, PlonkExpanded, PlonkInCircuit, PlonkMinimal, ScalarChallenge, UnfinalizedProof, WrapDeferredValues, expandPlonkMinimal, toPlonkMinimal)
 import Pickles.Wrap.Types as Wrap
@@ -129,13 +129,14 @@ mkVerifier
   :: { wrapVK :: VerifierIndex PallasG WrapField
      , vestaSrs :: CRS VestaG
      , stepDomainLog2 :: Int
+     , stepNumChunks :: Int
      }
   -> Verifier
-mkVerifier { wrapVK, vestaSrs, stepDomainLog2 } =
+mkVerifier { wrapVK, vestaSrs, stepDomainLog2, stepNumChunks } =
   { wrapVK
   , vestaSrs
   , stepDomainLog2
-  , stepZkRows: zkRows
+  , stepZkRows: zkRowsForNumChunks stepNumChunks
   , stepSrsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
   , stepGenerator: domainGenerator stepDomainLog2 :: StepField
   , stepShifts: domainShifts stepDomainLog2 :: Vector 7 StepField
@@ -173,12 +174,6 @@ data CompiledProofWidthData width = CompiledProofWidthData
   -- proof was generated.
   , outerStepChalPolyComms :: Vector width (AffinePoint StepField)
 
-  -- | Prover-side `WrapDeferredValuesInput`; carries `prevSgs` and
-  -- | `prevChallenges` at the per-rule width. Read only by
-  -- | `Test.Pickles.Verify.ExpandDeferredEq`'s self-consistency
-  -- | check; `verifyOne` doesn't read it.
-  , wrapDvInput :: WrapDeferredValuesInput width
-
   -- ===== Pre-padded views (front-padded with the matching dummy). =====
   --
   -- Inside `runExists`, `width` is rigid existential, so consumers
@@ -214,7 +209,6 @@ mkSomeCompiledProofWidthData
   => { oldBulletproofChallenges :: Vector width (Vector StepIPARounds StepField)
      , msgWrapChallenges :: Vector width (Vector WrapIPARounds WrapField)
      , outerStepChalPolyComms :: Vector width (AffinePoint StepField)
-     , wrapDvInput :: WrapDeferredValuesInput width
      -- Front-padding dummies, one per padded view. Used to fill the
      -- `pad` slots prepended to each `Vector width X` to lift it to
      -- `Vector PaddedLength X`.
@@ -228,7 +222,6 @@ mkSomeCompiledProofWidthData rec = mkExists $ CompiledProofWidthData
   , oldBulletproofChallenges: rec.oldBulletproofChallenges
   , msgWrapChallenges: rec.msgWrapChallenges
   , outerStepChalPolyComms: rec.outerStepChalPolyComms
-  , wrapDvInput: rec.wrapDvInput
   , oldBulletproofChallengesPadded:
       Vector.append (Vector.replicate @pad rec.dummyOldBp)
         rec.oldBulletproofChallenges
@@ -249,12 +242,11 @@ mkSomeCompiledProofWidthData rec = mkExists $ CompiledProofWidthData
 -- | identity); per-rule width-dependent fields are hidden inside
 -- | `widthData :: SomeCompiledProofWidthData` to mirror OCaml's
 -- | `'most_recent_width` GADT existential (`proof.mli:97-110`).
-newtype CompiledProof :: Int -> Type -> Type -> Type -> Type
-newtype CompiledProof mpv stmtVal outputVal auxVal = CompiledProof
+newtype CompiledProof :: Int -> Type -> Type -> Type
+newtype CompiledProof mpv stmtVal outputVal = CompiledProof
   { -- Application-level data.
     statement :: stmtVal
   , publicOutput :: outputVal
-  , auxiliaryOutput :: auxVal
 
   -- The actual wrap kimchi proof (commitments on Pallas, eval field = Fq).
   , wrapProof :: Proof PallasG WrapField
@@ -269,7 +261,21 @@ newtype CompiledProof mpv stmtVal outputVal auxVal = CompiledProof
 
   -- Inner step proof's evals (carried by the wrap proof's `prev_evals`
   -- field).
+  --
+  -- `prevEvalsChunked` is the authoritative form — `NonEmptyArray
+  -- (PointEval _)` per polynomial, one entry per chunk. CIP consumes
+  -- this directly via `combinedInnerProductBatchChunked`.
+  --
+  -- `prevEvals` is the COLLAPSED form (chunks Horner-recombined at the
+  -- step proof's oracle zeta/zetaw). Kept on the record as a
+  -- transitional back-compat shim for the recursive-step
+  -- `wrapPrevEvals`/`stepAdvicePrevEvals` plumbing (`Pickles.Prove.Step`)
+  -- that still consumes the single-eval form. At step num_chunks=1 it
+  -- is byte-identical to the only chunk; at num_chunks>1 it is the
+  -- correct Horner combine. The fully-chunked refactor of those
+  -- recursive consumers is task #63's follow-up.
   , prevEvals :: AllEvals StepField
+  , prevEvalsChunked :: ChunkedAllEvals StepField
   , pEval0Chunks :: Array StepField
 
   -- For stage 2 (accumulator check): the inner step proof's IPA opening
@@ -289,7 +295,6 @@ newtype CompiledProof mpv stmtVal outputVal auxVal = CompiledProof
   --   * oldBulletproofChallenges
   --   * msgWrapChallenges
   --   * outerStepChalPolyComms
-  --   * wrapDvInput
   -- Mirrors OCaml's `'most_recent_width`-sized vectors hidden by the
   -- `Proof.with_data` GADT existential.
   , widthData :: SomeCompiledProofWidthData
@@ -302,22 +307,23 @@ newtype CompiledProof mpv stmtVal outputVal auxVal = CompiledProof
   -- OCaml `branch_data.domain_log2` carried in
   -- `proof_state.deferred_values.branch_data`.
   , stepDomainLog2 :: Int
-
-  -- The prover's `Wrap_deferred_values.t`. Surfaced for
-  -- self-consistency tests that compare the prover-side computation
-  -- (`wrapComputeDeferredValues`) against the verifier-side
-  -- reconstruction (`expandDeferredForVerify`) on a real proof. Not
-  -- width-dependent (output type doesn't carry mpv).
-  , wrapDv :: WrapDeferredValuesOutput
   }
 
--- | Verify one proof. Returns `true` iff all three stages pass.
-verifyOne
-  :: forall mpv stmtVal outputVal auxVal
+-- | Per-proof verification: stage 1 (expand deferred values) and
+-- | stage 2 (IPA step accumulator check), plus assembly of the wrap
+-- | proof's kimchi public input. Stage 3 (the kimchi opening-proof
+-- | check) is deliberately NOT done here — `verify` batches it across
+-- | all proofs into ONE amortized `batch_verify`. Mirrors OCaml
+-- | `Verify.verify_heterogenous` (per-instance expand + accumulator
+-- | term, then a single batched dlog check).
+perProof
+  :: forall mpv stmtVal outputVal
    . Verifier
-  -> CompiledProof mpv stmtVal outputVal auxVal
-  -> Boolean
-verifyOne verifier (CompiledProof p) =
+  -> CompiledProof mpv stmtVal outputVal
+  -> { accumulatorOk :: Boolean
+     , ctx :: { proof :: Proof PallasG WrapField, publicInput :: Array WrapField }
+     }
+perProof verifier (CompiledProof p) =
   let
     -- Endo-expand zeta once — needed for `vanishesOnZk` and passed into
     -- `expandDeferredForVerify` internally via its own endo expansion.
@@ -350,7 +356,7 @@ verifyOne verifier (CompiledProof p) =
             , rawBulletproofChallenges: p.rawBulletproofChallenges
             , branchData: p.branchData
             , spongeDigestBeforeEvaluations: p.spongeDigestBeforeEvaluations
-            , allEvals: p.prevEvals
+            , chunkedAllEvals: p.prevEvalsChunked
             , pEval0Chunks: p.pEval0Chunks
             , oldBulletproofChallenges: wd.oldBulletproofChallenges
             , domainLog2: p.stepDomainLog2
@@ -377,35 +383,53 @@ verifyOne verifier (CompiledProof p) =
 
     accumulatorOk = computedSg == p.challengePolynomialCommitment
 
-    -- ===== Stage 3: kimchi batch_verify on the wrap proof. =====
+    -- Wrap proof's kimchi public input. Stage 3 (the opening-proof
+    -- check) is intentionally deferred to `verify`, which runs it for
+    -- every proof in ONE amortized `verifyOpeningProofsBatch`.
     pi = wrapPublicInputOf dv p.messagesForNextStepProofDigest p.messagesForNextWrapProofDigest
-
-    kimchiOk = verifyOpeningProof verifier.wrapVK
-      { proof: p.wrapProof, publicInput: pi }
   in
-    accumulatorOk && kimchiOk
+    { accumulatorOk
+    , ctx: { proof: p.wrapProof, publicInput: pi }
+    }
 
--- | Batch-verify an array of compiled proofs (all of the same tag).
--- |
--- | Currently folds single-proof kimchi verification; kimchi's real
--- | amortized `batch_verify` is exposed via the Rust side but not yet
--- | wired through as a multi-proof FFI function. Functionally correct
--- | regardless.
-verify
-  :: forall mpv stmtVal outputVal auxVal
+-- | Verify one proof. (= `verify` on a singleton — stage 3 becomes a
+-- | 1-element `batch_verify`, exactly what kimchi did before.)
+verifyOne
+  :: forall mpv stmtVal outputVal
    . Verifier
-  -> Array (CompiledProof mpv stmtVal outputVal auxVal)
+  -> CompiledProof mpv stmtVal outputVal
   -> Boolean
-verify v = Array.all (verifyOne v)
+verifyOne v p = verify v [ p ]
+
+-- | Verify an array of compiled proofs (all of the same tag).
+-- |
+-- | Stages 1-2 are independent per proof → run per-proof and
+-- | AND-folded (`Array.all`). Stage 3 (the expensive kimchi
+-- | opening-proof check) is AMORTIZED: a SINGLE
+-- | `verifyOpeningProofsBatch` over every proof's `(wrapVK,
+-- | wrapProof, publicInput)` rather than one kimchi verify per
+-- | proof. Homogeneous specialization of OCaml
+-- | `Verify.verify_heterogenous`'s final `batch_verify`.
+verify
+  :: forall mpv stmtVal outputVal
+   . Verifier
+  -> Array (CompiledProof mpv stmtVal outputVal)
+  -> Boolean
+verify v ps =
+  let
+    rs = map (perProof v) ps
+  in
+    Array.all _.accumulatorOk rs
+      && verifyOpeningProofsBatch v.wrapVK (map _.ctx rs)
 
 -- | Assemble the flat `Array WrapField` that `pallasVerifyOpeningProof`
 -- | accepts as its `publicInput`. Exposed as a public helper so tests
 -- | can cross-check against the prover's assembled `wrapResult.publicInputs`
 -- | without running verification end-to-end.
 wrapPublicInput
-  :: forall mpv stmtVal outputVal auxVal
+  :: forall mpv stmtVal outputVal
    . Verifier
-  -> CompiledProof mpv stmtVal outputVal auxVal
+  -> CompiledProof mpv stmtVal outputVal
   -> Array WrapField
 wrapPublicInput verifier (CompiledProof p) =
   let
@@ -432,7 +456,7 @@ wrapPublicInput verifier (CompiledProof p) =
             , rawBulletproofChallenges: p.rawBulletproofChallenges
             , branchData: p.branchData
             , spongeDigestBeforeEvaluations: p.spongeDigestBeforeEvaluations
-            , allEvals: p.prevEvals
+            , chunkedAllEvals: p.prevEvalsChunked
             , pEval0Chunks: p.pEval0Chunks
             , oldBulletproofChallenges: wd.oldBulletproofChallenges
             , domainLog2: p.stepDomainLog2

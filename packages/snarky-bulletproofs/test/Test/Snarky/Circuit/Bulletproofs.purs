@@ -13,7 +13,7 @@ import Data.Tuple (Tuple(..), snd)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (error, throw)
-import Snarky.Backend.Builder (initialState)
+import Snarky.Backend.Builder (constraintsToArray, initialState)
 import Snarky.Backend.Bulletproof.Class (class Bulletproof, circuitIsSatisfiedBy, createCircuit, createCrs, createProof, createStatement, createWitness, verify)
 import Snarky.Backend.Bulletproof.Gate (makeGates, makeGatesWitness, satisfies, sortR1CS)
 import Snarky.Backend.Bulletproof.Types (Circuit, Witness)
@@ -94,7 +94,7 @@ factorsSpec (_ :: Proxy g) (_ :: Proxy f) pc name = describe (name <> " Factors 
         factorsCircuit
         initialState
     let
-      constraints = sortR1CS (map _.constraint cs)
+      constraints = sortR1CS (map _.constraint (constraintsToArray cs))
       gates = makeGates { publicInputs, constraints }
 
       solver :: SolverT f (R1CS f) Gen (F f) Unit
@@ -205,7 +205,7 @@ dlogSpec (_ :: Proxy curve) (_ :: Proxy f) pg pc name = describe (name <> " DLog
         (dlog16Circuit cp)
         initialState
     let
-      constraints = sortR1CS (map _.constraint cs)
+      constraints = sortR1CS (map _.constraint (constraintsToArray cs))
       gates = makeGates { publicInputs, constraints }
 
       solver :: SolverT f (R1CS f) (ReaderT (Env f) Effect) (AffinePoint (F f)) Unit

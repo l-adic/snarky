@@ -44,7 +44,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type StepMainNoRecursionReturnParams =
-  { lagrangeAt :: LagrangeBaseLookup StepField
+  { lagrangeAt :: LagrangeBaseLookup 1 StepField
   , blindingH :: AffinePoint (F StepField)
   }
 
@@ -94,7 +94,7 @@ compileStepMainNoRecursionReturn params =
       -- nd (from perSlotFopDomainLog2s shape).
       -- Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
       -- outputSize = mpvMax*32 + 1 + mpvMax = 1.
-      ( \_ -> stepMain @Unit @Unit @(F StepField) @Unit @Unit @0 @1
+      ( \_ -> stepMain @Unit @Unit @(F StepField) @Unit @Unit @0 @1 @Unit @1
           noRecursionReturnRule
           { perSlotLagrangeAt: Vector.nil
           , blindingH: params.blindingH

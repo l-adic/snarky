@@ -35,7 +35,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type StepMainTwoPhaseChainMakeZeroParams =
-  { lagrangeAt :: LagrangeBaseLookup StepField
+  { lagrangeAt :: LagrangeBaseLookup 1 StepField
   , blindingH :: AffinePoint (F StepField)
   }
 
@@ -70,6 +70,8 @@ compileStepMainTwoPhaseChainMakeZero params =
           @Unit
           @Unit
           @1
+          @1
+          @Unit
           @1
           makeZeroRule
           { perSlotLagrangeAt: Vector.nil

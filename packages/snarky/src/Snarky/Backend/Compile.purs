@@ -21,6 +21,7 @@ import Prelude
 
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Except (Except, ExceptT, lift, runExceptT)
+import Control.Monad.Rec.Class (class MonadRec)
 import Data.Array (zip)
 import Data.Array as Array
 import Data.Either (Either(..))
@@ -59,6 +60,7 @@ compile
   => CircuitType f a avar
   => CircuitType f b bvar
   => Monad m
+  => MonadRec m
   => Proxy a
   -> Proxy b
   -> Proxy c'
@@ -92,6 +94,7 @@ makeSolver'
   => CircuitType f a avar
   => CircuitType f b bvar
   => Monad m
+  => MonadRec m
   => ProverState f
   -> Proxy c
   -> (forall t. CircuitM f c t m => avar -> Snarky c t m bvar)
@@ -128,6 +131,7 @@ makeSolver
   => CircuitType f a avar
   => CircuitType f b bvar
   => Monad m
+  => MonadRec m
   => Proxy c
   -> (forall t. CircuitM f c t m => avar -> Snarky c t m bvar)
   -> SolverT f c m a b

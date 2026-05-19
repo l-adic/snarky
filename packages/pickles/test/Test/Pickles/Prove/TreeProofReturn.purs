@@ -45,7 +45,9 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
+import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), Compiled, CompiledProof(..), NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots2, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, verify)
+import Pickles.ProofCache (mkProofCache)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.CVar (add_) as CVar
@@ -56,8 +58,8 @@ import Test.Spec.Assertions (shouldEqual)
 
 type TreeProofReturnPrevsSpec =
   Tuple2
-    (Slot Compiled 0 (StatementIO Unit (F StepField)))
-    (Slot Compiled 2 (StatementIO Unit (F StepField)))
+    (Slot Compiled 0 1 (StatementIO Unit (F StepField)))
+    (Slot Compiled 2 1 (StatementIO Unit (F StepField)))
 
 treeProofReturnRule
   :: StepRule 2
@@ -111,11 +113,12 @@ type TreeRules =
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.TreeProofReturn" do
   it "5-iteration heterogeneous chain (b0..b4): NRR external slot + self-recursive slot, end-to-end verify" \_ -> do
+    cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/TreeProofReturn.json")
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
     -- ===== NRR side: 1-rule compileMulti at mpvMax=0. =====
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule unit
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
 
     let nrrRules = tuple1 nrrEntry
 
@@ -124,9 +127,11 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       @(F StepField)
       @Unit
       @NoSlots
+      @1
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
+      , proofCache: cache
       }
       nrrRules
 
@@ -147,10 +152,11 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         { stepCompileResult: fst nrr.vks.perBranchStep
         , wrapCompileResult: nrr.vks.wrap
         , wrapDomainLog2: nrr.vks.wrapDomainLog2
+        , stepNumChunks: nrr.vks.stepChunks
         }
 
     -- ===== Tree side: 1-rule compileMulti at mpvMax=2 with override. =====
-    treeEntry <- liftEffect $ mkRuleEntry @2 @(F StepField) @(F StepField)
+    treeEntry <- liftEffect $ mkRuleEntry @2 @(F StepField) @(F StepField) @1 @1
       treeProofReturnRule
       (tuple2 (External nrrProverVKs) Self)
 
@@ -161,9 +167,11 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       @(F StepField)
       @(F StepField)
       @(Slots2 0 2)
+      @1
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14
+      , proofCache: cache
       }
       treeRules
 
@@ -172,7 +180,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     let
       runStep
         :: PrevSlot Unit 2 (StatementIO Unit (F StepField)) (F StepField)
-        -> Aff (CompiledProof 2 (StatementIO Unit (F StepField)) (F StepField) Unit)
+        -> Aff (CompiledProof 2 (StatementIO Unit (F StepField)) (F StepField))
       runStep selfPrev = do
         eRes <- liftEffect $ runExceptT $ treeProver
           { appInput: unit

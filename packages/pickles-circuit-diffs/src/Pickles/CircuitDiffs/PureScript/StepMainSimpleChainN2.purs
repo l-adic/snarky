@@ -34,7 +34,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type StepMainSimpleChainN2Params =
-  { lagrangeAt :: LagrangeBaseLookup StepField
+  { lagrangeAt :: LagrangeBaseLookup 1 StepField
   , blindingH :: AffinePoint (F StepField)
   }
 
@@ -89,13 +89,15 @@ compileStepMainSimpleChainN2 params = do
     compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
       -- Single-rule: mpvMax = len = 2, mpvPad = 0.
       ( \_ -> stepMain
-          @(Tuple2 (Slot Compiled 2 (StatementIO (F StepField) Unit)) (Slot Compiled 2 (StatementIO (F StepField) Unit)))
+          @(Tuple2 (Slot Compiled 2 1 (StatementIO (F StepField) Unit)) (Slot Compiled 2 1 (StatementIO (F StepField) Unit)))
           @(F StepField)
           @Unit
           @(F StepField)
           @( Tuple2 (StatementIO (F StepField) Unit) (StatementIO (F StepField) Unit)
           )
           @2
+          @1
+          @Unit
           @1
           simpleChainN2Rule
           { perSlotLagrangeAt: params.lagrangeAt :< params.lagrangeAt :< Vector.nil

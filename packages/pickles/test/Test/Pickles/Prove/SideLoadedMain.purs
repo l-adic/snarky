@@ -27,8 +27,10 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
+import Node.Process (lookupEnv)
 import Partial.Unsafe (unsafePartial)
 import Pickles (BranchProver(..), CompiledProof, NoSlots, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, SideLoaded, Slot, Slots1, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry)
+import Pickles.ProofCache (mkProofCache)
 import Pickles.Sideload (mkBundle) as Sideload
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -95,7 +97,7 @@ type NoRecursionInputRules =
 type SideLoadedMainRules =
   RulesCons 1
     (Tuple1 (StatementIO (F StepField) Unit))
-    (Tuple1 (Slot SideLoaded 2 (StatementIO (F StepField) Unit)))
+    (Tuple1 (Slot SideLoaded 2 1 (StatementIO (F StepField) Unit)))
     (Tuple1 Unit)
     RulesNil
 
@@ -131,13 +133,14 @@ sideLoadedMainRule self = do
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.SideLoadedMain" do
   it "parent prove with InductivePrev (PS-compiled child, width-lifted to N2)" \_ -> do
+    cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/SideLoadedMain.json")
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
     -- Compile the Input-mode No_recursion child. Its kimchi wrap VK
     -- (at log2 = 13, `mpv = N0` → `wrap_domains.h = 13`) becomes the
     -- runtime `wrapVk` for the side-loaded slot.
-    childEntry <- liftEffect $ mkRuleEntry @0 @Unit @(F StepField)
+    childEntry <- liftEffect $ mkRuleEntry @0 @Unit @(F StepField) @1 @1
       noRecursionInputRule
       unit
 
@@ -146,9 +149,11 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       @Unit
       @(F StepField)
       @NoSlots
+      @1
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
+      , proofCache: cache
       }
       (tuple1 childEntry)
 
@@ -161,7 +166,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       , prevs: unit
       , sideloadedVKs: unit
       }
-    childCp0 :: CompiledProof 0 (StatementIO (F StepField) Unit) Unit Unit <- case eChildCp of
+    childCp0 :: CompiledProof 0 (StatementIO (F StepField) Unit) Unit <- case eChildCp of
       Left e -> liftEffect $ Exc.throw ("childProver: " <> show e)
       Right cp -> pure cp
 
@@ -171,7 +176,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
     -- actual width (0) is `≤` the new bound (2). PS analog of OCaml
     -- `Side_loaded.Proof.of_proof`.
     let
-      childCp2 :: CompiledProof 2 (StatementIO (F StepField) Unit) Unit Unit
+      childCp2 :: CompiledProof 2 (StatementIO (F StepField) Unit) Unit
       childCp2 = coerce childCp0
 
       childTag2 = coerce child.tag
@@ -191,6 +196,8 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       @1
       @Unit
       @(F StepField)
+      @1
+      @1
       sideLoadedMainRule
       (tuple1 unit)
 
@@ -199,9 +206,11 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       @Unit
       @(F StepField)
       @(Slots1 2)
+      @1
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
+      , proofCache: cache
       }
       (tuple1 sideLoadedEntry)
 

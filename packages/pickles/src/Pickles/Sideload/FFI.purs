@@ -1,8 +1,10 @@
--- | Side-loading FFI wrappers for kimchi VK + proof JSON serialization.
+-- | FFI wrappers for kimchi VK + proof serde-JSON.
 -- |
--- | Vesta-protocol only (Pickles wrap proofs are always
--- | `Proof Pallas.G Vesta.BaseField`); the Pallas-protocol family was
--- | never used.
+-- | VK serde is wrap-only (`Proof Pallas.G Vesta.BaseField`). Proof
+-- | serde covers both the WRAP proof (`Proof Pallas.G Vesta.BaseField`,
+-- | `vesta*`) and the STEP proof (`Proof Vesta.G Pallas.BaseField`,
+-- | `pallas*`) — the disk proof-cache round-trips both, mirroring OCaml
+-- | `Backend.Tock/Tick.Proof.{to,of}_yojson`.
 module Pickles.Sideload.FFI
   ( VkFeatureFlags
   , vestaVerifierIndexToSerdeJson
@@ -10,6 +12,9 @@ module Pickles.Sideload.FFI
   , vestaHydrateVerifierIndex
   , noOptionalFeatures
   , vestaProofFromSerdeJson
+  , vestaProofToSerdeJson
+  , pallasProofFromSerdeJson
+  , pallasProofToSerdeJson
   ) where
 
 import Pickles.ProofFFI (Dehydrated, Proof)
@@ -67,3 +72,12 @@ foreign import vestaHydrateVerifierIndex
 -- | Vesta-protocol kimchi `ProverProof` serde JSON. Public input is
 -- | NOT included; callers serialize it separately.
 foreign import vestaProofFromSerdeJson :: String -> Proof Pallas.G Vesta.BaseField
+
+-- | Wrap-proof serialize — inverse of `vestaProofFromSerdeJson`
+-- | (= OCaml `Backend.Tock.Proof.to_yojson`).
+foreign import vestaProofToSerdeJson :: Proof Pallas.G Vesta.BaseField -> String
+
+-- | Step-proof (Vesta-curve commitments) serde JSON, both directions
+-- | (= OCaml `Backend.Tick.Proof.{to,of}_yojson`).
+foreign import pallasProofToSerdeJson :: Proof Vesta.G Pallas.BaseField -> String
+foreign import pallasProofFromSerdeJson :: String -> Proof Vesta.G Pallas.BaseField

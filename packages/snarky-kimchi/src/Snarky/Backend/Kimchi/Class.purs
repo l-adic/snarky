@@ -15,8 +15,13 @@ class CircuitGateConstructor f g | f -> g, g -> f where
   circuitGateGetWires :: Gate f -> GateWires
   circuitGateCoeffCount :: Gate f -> Int
   circuitGateGetCoeff :: Gate f -> Int -> f
-  constraintSystemCreate :: Array (Gate f) -> Int -> (ConstraintSystem f)
-  constraintSystemCreateWithPrevChallenges :: Array (Gate f) -> Int -> Int -> (ConstraintSystem f)
+  -- | `Array (Gate f) -> publicInputCount -> maxPolySize -> CS`. The
+  -- | last arg is the SRS's `max_poly_size`; kimchi uses it to compute
+  -- | `num_chunks = ceil(domain_size / max_poly_size)` and pick the
+  -- | matching `zk_rows = (16 * num_chunks + 5) / 7`. Without it, kimchi
+  -- | defaults to `zk_rows = 3` (correct only at num_chunks = 1).
+  constraintSystemCreate :: Array (Gate f) -> Int -> Int -> (ConstraintSystem f)
+  constraintSystemCreateWithPrevChallenges :: Array (Gate f) -> Int -> Int -> Int -> (ConstraintSystem f)
   createCRS :: Effect (CRS g)
   crsCreate :: Int -> CRS g
   crsSize :: CRS g -> Int

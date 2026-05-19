@@ -21,6 +21,7 @@ module Pickles.Sideload.Bundle
 
 import Prelude
 
+import Data.Reflectable (class Reflectable)
 import Pickles.Field (StepField, WrapField)
 import Pickles.ProofsVerified (ProofsVerified)
 import Pickles.Sideload.VerificationKey (mkVerificationKey)
@@ -31,43 +32,49 @@ import Snarky.Circuit.DSL (F)
 import Snarky.Curves.Pallas as Pallas
 
 -- | Prove-time bundle: side-loaded VK descriptor + kimchi runtime
--- | handle. See module doc for the role of each half.
-newtype Bundle = Bundle
-  { vk :: SLVK.VerificationKey (F StepField) Boolean
+-- | handle. See module doc for the role of each half. Polymorphic on
+-- | `nc` so the bundle's circuit-side VK shape tracks the
+-- | child's compile-time chunk count.
+newtype Bundle :: Int -> Type
+newtype Bundle slotVkChunks = Bundle
+  { vk :: SLVK.VerificationKey slotVkChunks (F StepField) Boolean
   , verifierIndex :: VerifierIndex Pallas.G WrapField
   }
 
 -- | Uniformly project the side-loaded VK descriptor out of a carrier
 -- | cell regardless of phase: compile-time cells (the VK descriptor
 -- | itself) project as identity; prove-time cells (`Bundle`) project
--- | to the `.vk` field.
-class HasSideLoadedVk cell where
-  projectVk :: cell -> SLVK.VerificationKey (F StepField) Boolean
+-- | to the `.vk` field. `nc` is the chunk count of the
+-- | wrapped child's VK.
+class HasSideLoadedVk slotVkChunks cell | cell -> slotVkChunks where
+  projectVk :: cell -> SLVK.VerificationKey slotVkChunks (F StepField) Boolean
 
-instance HasSideLoadedVk (SLVK.VerificationKey (F StepField) Boolean) where
+instance HasSideLoadedVk slotVkChunks (SLVK.VerificationKey slotVkChunks (F StepField) Boolean) where
   projectVk = identity
 
-instance HasSideLoadedVk Bundle where
+instance HasSideLoadedVk slotVkChunks (Bundle slotVkChunks) where
   projectVk (Bundle r) = r.vk
 
 -- | Build a `Bundle` from a kimchi `VerifierIndex` and the user-side
 -- | `ProofsVerified` tags. Derives `vk`'s commitments from the
 -- | `verifierIndex` so the bundle's two halves are always consistent.
 mkBundle
-  :: { verifierIndex :: VerifierIndex Pallas.G WrapField
+  :: forall @slotVkChunks
+   . Reflectable slotVkChunks Int
+  => { verifierIndex :: VerifierIndex Pallas.G WrapField
      , maxProofsVerified :: ProofsVerified
      , actualWrapDomainSize :: ProofsVerified
      }
-  -> Bundle
+  -> Bundle slotVkChunks
 mkBundle r = Bundle
   { vk: mkVerificationKey
       { maxProofsVerified: r.maxProofsVerified
       , actualWrapDomainSize: r.actualWrapDomainSize
-      , wrapIndex: extractWrapVKComms r.verifierIndex
+      , wrapIndex: extractWrapVKComms @slotVkChunks r.verifierIndex
       }
   , verifierIndex: r.verifierIndex
   }
 
 -- | Access the kimchi runtime handle.
-verifierIndex :: Bundle -> VerifierIndex Pallas.G WrapField
+verifierIndex :: forall slotVkChunks. Bundle slotVkChunks -> VerifierIndex Pallas.G WrapField
 verifierIndex (Bundle r) = r.verifierIndex
