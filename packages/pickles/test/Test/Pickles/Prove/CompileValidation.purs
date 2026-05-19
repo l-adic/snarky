@@ -47,6 +47,7 @@ spec = describe "Pickles.Prove.Compile.validateNumChunks" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
+      , proofCache: Nothing
       }
       rules
     case result of

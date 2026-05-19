@@ -148,6 +148,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
         { srs: { vestaSrs, pallasSrs }
         , debug: false
         , wrapDomainOverride: Nothing
+        , proofCache: Nothing
         }
 
     makeZeroEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) @1 @1 makeZeroRule unit

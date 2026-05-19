@@ -103,6 +103,7 @@ spec = describe "Pickles.Prove.Chunks2" do
       -- N1 wrap_domain override (= log2 14), matching chunks2.ml's
       -- `~override_wrap_domain:N1`.
       , wrapDomainOverride: Just 14
+      , proofCache: Nothing
       }
       rules
 

@@ -39,6 +39,7 @@ import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Fin (unsafeFinite)
+import Data.Lazy as Lazy
 import Data.Map (Map)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, over, un)
@@ -49,6 +50,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
+import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Exception.Unsafe (unsafeThrow)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
@@ -56,6 +58,7 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Node.Process as Process
 import Pickles.Field (StepField, WrapField)
+import Pickles.ProofCache (ProofCache, getWrapProof, setWrapProof)
 import Pickles.ProofFFI (Proof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLrVec, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentChunksAt, pallasVerifierIndexCommitments, tCommChunked, vestaCreateProofWithPrev, wCommChunked, zCommChunked)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized, StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
@@ -399,6 +402,9 @@ type WrapProveContext (branches :: Int) (mpv :: Int) (stepChunks :: Int) (slots 
   -- | mismatches. Off by default — these checks are redundant once
   -- | the wrap prover is known to be correct.
   , debug :: Boolean
+  -- | Optional disk proof-cache (test/dev). Threaded from
+  -- | `CompileMultiConfig`. `Nothing` = no caching.
+  , proofCache :: Maybe ProofCache
   -- | Kimchi-level `prev_challenges` for `ProverProof::create_recursive`.
   -- | Padded to `PaddedLength = 2` entries (via `Wrap_hack.pad_accumulator`).
   -- | Each entry holds sg (Pallas point, StepField coords) + expanded
@@ -589,6 +595,7 @@ wrapSolveAndProve
   => CheckedType WrapField (KimchiConstraint WrapField)
        (slots (Vector WrapIPARounds (FVar WrapField)))
   => Monad m
+  => MonadEffect m
   => MonadRec m
   => WrapProveContext branches mpv stepChunks slots
   -> WrapCompileResult
@@ -623,7 +630,7 @@ wrapSolveAndProve ctx compileResult = do
         when (not csSatisfied) $
           throwError (FailedAssertion "wrapProve: constraint system not satisfied (wrote row→label map to /tmp/ps_wrap_row_labels.txt)")
       let
-        proof = vestaCreateProofWithPrev
+        p = Lazy.defer \_ -> vestaCreateProofWithPrev
           { proverIndex: compileResult.proverIndex
           , witness
           , prevChallenges:
@@ -636,6 +643,17 @@ wrapSolveAndProve ctx compileResult = do
                 )
                 (Vector.toUnfoldable ctx.kimchiPrevChallenges)
           }
+      proof <-
+        case ctx.proofCache of
+          Nothing -> pure $ Lazy.force p
+          Just cache -> do
+            mp <- liftEffect $ getWrapProof cache compileResult.verifierIndex publicInputs
+            case mp of
+              Just proof -> pure proof
+              Nothing -> do
+                let proof = Lazy.force p
+                liftEffect $ setWrapProof cache compileResult.verifierIndex publicInputs proof
+                pure proof
       pure
         { proverIndex: compileResult.proverIndex
         , verifierIndex: compileResult.verifierIndex

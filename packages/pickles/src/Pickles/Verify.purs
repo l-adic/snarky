@@ -250,12 +250,11 @@ mkSomeCompiledProofWidthData rec = mkExists $ CompiledProofWidthData
 -- | identity); per-rule width-dependent fields are hidden inside
 -- | `widthData :: SomeCompiledProofWidthData` to mirror OCaml's
 -- | `'most_recent_width` GADT existential (`proof.mli:97-110`).
-newtype CompiledProof :: Int -> Type -> Type -> Type -> Type
-newtype CompiledProof mpv stmtVal outputVal auxVal = CompiledProof
+newtype CompiledProof :: Int -> Type -> Type -> Type
+newtype CompiledProof mpv stmtVal outputVal = CompiledProof
   { -- Application-level data.
     statement :: stmtVal
   , publicOutput :: outputVal
-  , auxiliaryOutput :: auxVal
 
   -- The actual wrap kimchi proof (commitments on Pallas, eval field = Fq).
   , wrapProof :: Proof PallasG WrapField
@@ -328,9 +327,9 @@ newtype CompiledProof mpv stmtVal outputVal auxVal = CompiledProof
 
 -- | Verify one proof. Returns `true` iff all three stages pass.
 verifyOne
-  :: forall mpv stmtVal outputVal auxVal
+  :: forall mpv stmtVal outputVal
    . Verifier
-  -> CompiledProof mpv stmtVal outputVal auxVal
+  -> CompiledProof mpv stmtVal outputVal
   -> Boolean
 verifyOne verifier (CompiledProof p) =
   let
@@ -407,9 +406,9 @@ verifyOne verifier (CompiledProof p) =
 -- | wired through as a multi-proof FFI function. Functionally correct
 -- | regardless.
 verify
-  :: forall mpv stmtVal outputVal auxVal
+  :: forall mpv stmtVal outputVal
    . Verifier
-  -> Array (CompiledProof mpv stmtVal outputVal auxVal)
+  -> Array (CompiledProof mpv stmtVal outputVal)
   -> Boolean
 verify v = Array.all (verifyOne v)
 
@@ -418,9 +417,9 @@ verify v = Array.all (verifyOne v)
 -- | can cross-check against the prover's assembled `wrapResult.publicInputs`
 -- | without running verification end-to-end.
 wrapPublicInput
-  :: forall mpv stmtVal outputVal auxVal
+  :: forall mpv stmtVal outputVal
    . Verifier
-  -> CompiledProof mpv stmtVal outputVal auxVal
+  -> CompiledProof mpv stmtVal outputVal
   -> Array WrapField
 wrapPublicInput verifier (CompiledProof p) =
   let

@@ -417,6 +417,9 @@ export const vestaSigmaCommLast = (verifierIndex) => {
 export const vestaVerifierIndexDigest = (verifierIndex) =>
   crypto.vestaVerifierIndexDigest(verifierIndex);
 
+export const pallasVerifierIndexDigest = (verifierIndex) =>
+  crypto.pallasVerifierIndexDigest(verifierIndex);
+
 // Parse the Rust FFI's flat coord array (Vec<Field>) into the chunked
 // PS-side `ProofCommitments` shape. Rust emits the layout
 //   [w0_chunk0.x, w0_chunk0.y, ..., w0_chunk{nc-1}, w1_chunk0, ..., w14_chunk{nc-1},

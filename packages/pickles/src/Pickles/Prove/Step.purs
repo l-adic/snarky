@@ -65,6 +65,7 @@ import Data.Either (Either(..))
 import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
+import Data.Lazy as Lazy
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromJust, maybe)
@@ -77,6 +78,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
+import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
@@ -91,6 +93,7 @@ import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.PlonkChecks.Chunks as Chunks
+import Pickles.ProofCache (ProofCache, getStepProof, setStepProof)
 import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, tCommChunked, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallenges, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaVerifierIndexCommitments, vestaVerifierIndexDigest, wCommChunked, zCommChunked)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
@@ -1503,6 +1506,9 @@ type StepProveContext wrapVkChunks len nd blueprints =
   -- | On failure, the row → label map for the step circuit gets
   -- | written to `/tmp/ps_step_row_labels.txt`. Off by default.
   , debug :: Boolean
+  -- | Optional disk proof-cache (test/dev). Threaded from
+  -- | `CompileMultiConfig`. `Nothing` = no caching.
+  , proofCache :: Maybe ProofCache
   }
 
 -- | Artifacts produced by `stepCompile`. These are the pieces the
@@ -2255,6 +2261,7 @@ stepSolveAndProve
        vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
+  => MonadEffect m
   => MonadRec m
   => SlotStatementsCarrier prevsSpec valCarrier
   => StepProveContext wrapVkChunks len nd blueprints
@@ -2354,7 +2361,7 @@ stepSolveAndProve ctx rule compileResult advice = do
             Left e -> throwError e
             Right fieldVals -> pure fieldVals
       let
-        proof = pallasCreateProofWithPrev
+        p = Lazy.defer \_ -> pallasCreateProofWithPrev
           { proverIndex: compileResult.proverIndex
           , witness
           , prevChallenges:
@@ -2373,6 +2380,17 @@ stepSolveAndProve ctx rule compileResult advice = do
                          }
                 )
           }
+      proof <-
+        case ctx.proofCache of
+          Nothing -> pure $ Lazy.force p
+          Just cache -> do
+            mp <- liftEffect $ getStepProof cache compileResult.verifierIndex publicInputs
+            case mp of
+              Just proof -> pure proof
+              Nothing -> do
+                let proof = Lazy.force p
+                liftEffect $ setStepProof cache compileResult.verifierIndex publicInputs proof
+                pure proof
       pure
         { proverIndex: compileResult.proverIndex
         , verifierIndex: compileResult.verifierIndex

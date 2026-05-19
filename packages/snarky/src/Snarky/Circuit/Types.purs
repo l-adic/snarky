@@ -51,6 +51,8 @@ module Snarky.Circuit.Types
   , UnChecked(..)
   , FVar
   , BoolVar
+  , NoInput(..)
+  , NoOutput(..)
   , class CircuitType
   , valueToFields
   , fieldsToValue
@@ -215,6 +217,36 @@ instance CircuitType f Unit Unit where
   sizeInFields _ _ = 0
   varToFields _ = mempty
   fieldsToVar _ = unit
+
+-- | Trivial single-constructor statement markers — size-0 circuit
+-- | values, exactly mirroring `Unit`. Used as application statement
+-- | input/output when a rule has no meaningful input/output. Distinct
+-- | nominal types (vs. reusing `Unit`) so call sites read clearly.
+data NoInput = NoInput
+data NoOutput = NoOutput
+
+derive instance Eq NoInput
+derive instance Eq NoOutput
+
+instance Show NoInput where
+  show _ = "NoInput"
+
+instance Show NoOutput where
+  show _ = "NoOutput"
+
+instance CircuitType f NoInput NoInput where
+  valueToFields _ = mempty
+  fieldsToValue _ = NoInput
+  sizeInFields _ _ = 0
+  varToFields _ = mempty
+  fieldsToVar _ = NoInput
+
+instance CircuitType f NoOutput NoOutput where
+  valueToFields _ = mempty
+  fieldsToValue _ = NoOutput
+  sizeInFields _ _ = 0
+  varToFields _ = mempty
+  fieldsToVar _ = NoOutput
 
 instance CircuitType f (F f) (FVar f) where
   valueToFields = Array.singleton <<< coerce

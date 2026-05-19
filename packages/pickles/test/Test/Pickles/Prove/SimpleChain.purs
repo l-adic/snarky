@@ -29,6 +29,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Pickles (BranchProver(..), Compiled, CompiledProof(..), PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots1, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, verify)
+import Pickles.ProofCache (mkProofCache)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.CVar (add_) as CVar
@@ -100,6 +101,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
+      , proofCache: Just (mkProofCache "packages/pickles/test/fixtures/proof-cache/SimpleChain.json")
       }
       rules
 
@@ -109,7 +111,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       runStep
         :: PrevSlot (F StepField) 1 (StatementIO (F StepField) Unit) Unit
         -> F StepField
-        -> Aff (CompiledProof 1 (StatementIO (F StepField) Unit) Unit Unit)
+        -> Aff (CompiledProof 1 (StatementIO (F StepField) Unit) Unit)
       runStep prevSlot appInput = do
         eRes <- liftEffect $ runExceptT $ chainProver
           { appInput, prevs: tuple1 prevSlot, sideloadedVKs: tuple1 unit }

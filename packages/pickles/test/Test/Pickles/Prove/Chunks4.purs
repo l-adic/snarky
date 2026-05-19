@@ -99,6 +99,7 @@ spec = describe "Pickles.Prove.Chunks4" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14
+      , proofCache: Nothing
       }
       rules
 

@@ -41,6 +41,7 @@ module Pickles.ProofFFI
   , pallasProofFtEval1
   , vestaProofFtEval1
   , vestaVerifierIndexDigest
+  , pallasVerifierIndexDigest
   , pallasSrsLagrangeCommitmentChunksAt
   , vestaSrsLagrangeCommitmentChunksAt
   , pallasSrsBlindingGenerator
@@ -473,6 +474,12 @@ foreign import vestaSigmaCommLast :: VerifierIndex Pallas.G Vesta.BaseField -> A
 
 -- Verifier index digest for Vesta/Fq circuits (returns Fp element)
 foreign import vestaVerifierIndexDigest :: VerifierIndex Pallas.G Vesta.BaseField -> Vesta.ScalarField
+
+-- Verifier index digest for Pallas/Fp circuits — the STEP VK (returns
+-- Fq element). Mirrors `vestaVerifierIndexDigest`; the disk
+-- proof-cache keys step proofs by this (OCaml `Proof_cache` keys by
+-- the step keypair's VK).
+foreign import pallasVerifierIndexDigest :: VerifierIndex Vesta.G Pallas.BaseField -> Pallas.ScalarField
 
 --------------------------------------------------------------------------------
 -- Instances

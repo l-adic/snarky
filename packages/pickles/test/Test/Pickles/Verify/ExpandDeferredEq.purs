@@ -80,7 +80,7 @@ spec = describe "Pickles.Prove.Pure.Verify" do
       @Unit
       @NoSlots
       @1
-      { srs: { vestaSrs, pallasSrs }, debug: false, wrapDomainOverride: Nothing }
+      { srs: { vestaSrs, pallasSrs }, debug: false, wrapDomainOverride: Nothing, proofCache: Nothing }
       (tuple1 nrrEntry)
 
     let BranchProver nrrProver = fst nrr.provers
@@ -116,7 +116,7 @@ spec = describe "Pickles.Prove.Pure.Verify" do
       @(F StepField)
       @(Slots1 1)
       @1
-      { srs: { vestaSrs, pallasSrs }, debug: false, wrapDomainOverride: Nothing }
+      { srs: { vestaSrs, pallasSrs }, debug: false, wrapDomainOverride: Nothing, proofCache: Nothing }
       (tuple1 chainEntry)
 
     let

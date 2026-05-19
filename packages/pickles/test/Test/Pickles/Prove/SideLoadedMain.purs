@@ -150,6 +150,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
+      , proofCache: Nothing
       }
       (tuple1 childEntry)
 
@@ -162,7 +163,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       , prevs: unit
       , sideloadedVKs: unit
       }
-    childCp0 :: CompiledProof 0 (StatementIO (F StepField) Unit) Unit Unit <- case eChildCp of
+    childCp0 :: CompiledProof 0 (StatementIO (F StepField) Unit) Unit <- case eChildCp of
       Left e -> liftEffect $ Exc.throw ("childProver: " <> show e)
       Right cp -> pure cp
 
@@ -172,7 +173,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
     -- actual width (0) is `≤` the new bound (2). PS analog of OCaml
     -- `Side_loaded.Proof.of_proof`.
     let
-      childCp2 :: CompiledProof 2 (StatementIO (F StepField) Unit) Unit Unit
+      childCp2 :: CompiledProof 2 (StatementIO (F StepField) Unit) Unit
       childCp2 = coerce childCp0
 
       childTag2 = coerce child.tag
@@ -206,6 +207,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
+      , proofCache: Nothing
       }
       (tuple1 sideLoadedEntry)
 

@@ -128,6 +128,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
+      , proofCache: Nothing
       }
       nrrRules
 
@@ -167,6 +168,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14
+      , proofCache: Nothing
       }
       treeRules
 
@@ -175,7 +177,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     let
       runStep
         :: PrevSlot Unit 2 (StatementIO Unit (F StepField)) (F StepField)
-        -> Aff (CompiledProof 2 (StatementIO Unit (F StepField)) (F StepField) Unit)
+        -> Aff (CompiledProof 2 (StatementIO Unit (F StepField)) (F StepField))
       runStep selfPrev = do
         eRes <- liftEffect $ runExceptT $ treeProver
           { appInput: unit

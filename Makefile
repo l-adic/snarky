@@ -157,3 +157,7 @@ fixtures-unpack: ## Decompress committed chunk fixtures (idempotent; prereq of c
 .PHONY: fixtures-pack
 fixtures-pack: ## Compress chunk fixtures after regen, before committing the *.gz
 	bash ./scripts/fixtures.sh pack
+
+.PHONY: clean-proof-cache
+clean-proof-cache: ## Wipe the disk proof-cache (forces regeneration of cached step/wrap proofs)
+	rm -rf packages/pickles/test/fixtures/proof-cache

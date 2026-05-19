@@ -36,3 +36,15 @@ export function vestaHydrateVerifierIndex(vk) {
 export function vestaProofFromSerdeJson(json) {
     return napi.vestaProofFromSerdeJson(json);
 }
+
+export function vestaProofToSerdeJson(proof) {
+    return napi.vestaProofToSerdeJson(proof);
+}
+
+export function pallasProofToSerdeJson(proof) {
+    return napi.pallasProofToSerdeJson(proof);
+}
+
+export function pallasProofFromSerdeJson(json) {
+    return napi.pallasProofFromSerdeJson(json);
+}

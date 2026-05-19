@@ -73,6 +73,7 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
+      , proofCache: Nothing
       }
       rules
 

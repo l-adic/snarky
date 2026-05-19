@@ -79,6 +79,7 @@ import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.Proof.Dummy (dummyWrapProof)
+import Pickles.ProofCache (ProofCache)
 import Pickles.ProofFFI
   ( pallasProofOpeningSg
   , pallasProofOracles
@@ -304,7 +305,7 @@ data PrevSlot :: Type -> Int -> Type -> Type -> Type
 data PrevSlot inputVal n stmt outputVal
   = BasePrev { dummyStatement :: stmt }
   | InductivePrev
-      (CompiledProof n stmt outputVal Unit)
+      (CompiledProof n stmt outputVal)
       (Tag inputVal outputVal n)
 
 type CompileConfig :: Type -> Type -> Type
@@ -319,6 +320,9 @@ type CompileConfig prevsSpec slotVKs =
   -- | the wrap circuit's own kimchi domain. Tree_proof_return uses
   -- | `Just 14` (override:N1) per OCaml `dump_tree_proof_return.ml`.
   , wrapDomainOverride :: Maybe Int
+  -- | Optional disk proof-cache (test/dev). `Nothing` = no caching
+  -- | (always prove). Mirrors OCaml `compile`'s `?proof_cache`.
+  , proofCache :: Maybe ProofCache
   }
 
 -- | Shape-constant compile-time data, provided by the `CompilableSpec`
@@ -647,6 +651,7 @@ instance CompilableSpec Unit Unit Unit 0 NoSlots Unit Unit Unit Unit where
         , dummySg: nrrDummyWrapSg cfg.srs.pallasSrs cfg.srs.vestaSrs
         , crs: cfg.srs.vestaSrs
         , debug: cfg.debug
+        , proofCache: cfg.proofCache
         }
     , wrapDomainLog2: Dummy.wrapDomainLog2ForProofsVerified 0
     }
@@ -850,6 +855,7 @@ instance
           , dummySg: outerDummySgs.ipa.wrap.sg
           , crs: cfg.srs.vestaSrs
           , debug: cfg.debug
+          , proofCache: cfg.proofCache
           }
       , wrapDomainLog2: outerWrapDomainLog2
       }
@@ -1556,6 +1562,7 @@ instance
           , dummySg: outerDummySgs.ipa.wrap.sg
           , crs: cfg.srs.vestaSrs
           , debug: cfg.debug
+          , proofCache: cfg.proofCache
           }
       , wrapDomainLog2: outerWrapDomainLog2
       }
@@ -2146,6 +2153,9 @@ type CompileMultiConfig =
   { srs :: { vestaSrs :: CRS VestaG, pallasSrs :: CRS PallasG }
   , debug :: Boolean
   , wrapDomainOverride :: Maybe Int
+  -- | Optional disk proof-cache (test/dev). `Nothing` = no caching
+  -- | (always prove). Mirrors OCaml `compile`'s `?proof_cache`.
+  , proofCache :: Maybe ProofCache
   }
 
 -- | Per-branch prover for ONE branch. Each `RulesCons` slot in the
@@ -2156,7 +2166,7 @@ newtype BranchProver prevsSpec mpv prevsCarrier vkCarrier inputVal outputVal m =
   BranchProver
     ( StepInputs prevsSpec inputVal prevsCarrier vkCarrier
       -> ExceptT ProveError m
-           (CompiledProof mpv (StatementIO inputVal outputVal) outputVal Unit)
+           (CompiledProof mpv (StatementIO inputVal outputVal) outputVal)
     )
 
 -- | Shared verification keys for a multi-branch compile.
@@ -3330,6 +3340,7 @@ buildStepProveCtx cfg slotVKs selfStepDomainLog2s =
       { srs: cfg.srs
       , perSlotImportedVKs: slotVKs
       , debug: cfg.debug
+      , proofCache: cfg.proofCache
       , wrapDomainOverride: cfg.wrapDomainOverride
       }
     shape = shapeCompileData @prevsSpec perRuleCfg selfStepDomainLog2s
@@ -3456,7 +3467,7 @@ runMultiProverBody
   -> RuleEntry prevsSpec mpv topBranches wrapVkChunks valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints
   -> StepInputs prevsSpec inputVal prevsCarrier vkCarrier
   -> ExceptT ProveError Effect
-       (CompiledProof mpvMax (StatementIO inputVal outputVal) outputVal Unit)
+       (CompiledProof mpvMax (StatementIO inputVal outputVal) outputVal)
 runMultiProverBody
   _ncProxy
   branchIdx
@@ -3473,6 +3484,7 @@ runMultiProverBody
       { srs: cfg.srs
       , perSlotImportedVKs: r.slotVKs
       , debug: cfg.debug
+      , proofCache: cfg.proofCache
       , wrapDomainOverride: cfg.wrapDomainOverride
       }
     -- Pass the FULL `Vector topBranches Int` of all branches' step
@@ -3764,6 +3776,7 @@ runMultiProverBody
           , prevWrapDomainIndices: proveDataMax.prevWrapDomainIndices
           }
       , debug: cfg.debug
+      , proofCache: cfg.proofCache
       , kimchiPrevChallenges: kimchiPrevPadded
       }
 
@@ -3800,7 +3813,6 @@ runMultiProverBody
   pure $ CompiledProof
     { statement: StatementIO { input: appInput, output: publicOutput }
     , publicOutput
-    , auxiliaryOutput: unit
     , wrapProof: wrapProveResult.proof
     , rawPlonk: toPlonkMinimal wrapDv.plonk
     , rawBulletproofChallenges: wrapDv.bulletproofPrechallenges

@@ -49,6 +49,7 @@ spec = describe "Pickles.Sideload.NRR digest equality" do
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
+      , proofCache: Nothing
       }
       rules
 

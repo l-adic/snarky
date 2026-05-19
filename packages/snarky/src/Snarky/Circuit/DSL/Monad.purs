@@ -99,7 +99,7 @@ import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), Variable, add_, const_, sub_)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.Types (class CircuitType, Bool(..), BoolVar, F(..), FVar, UnChecked, fieldsToValue, varToFields)
+import Snarky.Circuit.Types (class CircuitType, Bool(..), BoolVar, F(..), FVar, NoInput, NoOutput, UnChecked, fieldsToValue, varToFields)
 import Snarky.Constraint.Basic (class BasicSystem, boolean, r1cs)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
@@ -384,6 +384,12 @@ class CheckedType f c var | c -> f, var -> f where
     -> Snarky c t m Unit
 
 instance CheckedType f c Unit where
+  check _ = pure mempty
+
+instance CheckedType f c NoInput where
+  check _ = pure mempty
+
+instance CheckedType f c NoOutput where
   check _ = pure mempty
 
 instance CheckedType f c (FVar f) where

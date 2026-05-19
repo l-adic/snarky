@@ -1600,6 +1600,30 @@ pub fn vesta_proof_from_serde_json(json: String) -> Result<PallasProofExternal> 
     Ok(External::new(proof))
 }
 
+// Inverse of `vesta_proof_from_serde_json`: serialize the WRAP proof
+// (Pallas-curve commitments). Used by the disk proof-cache, mirroring
+// OCaml `Backend.Tock.Proof.to_yojson`.
+#[napi]
+pub fn vesta_proof_to_serde_json(proof: &PallasProofExternal) -> Result<String> {
+    serde_json::to_string(&**proof)
+        .map_err(|e| Error::from_reason(format!("vesta_proof_to_serde_json: {e}")))
+}
+
+// STEP proof (Vesta-curve commitments → `VestaProofExternal`) serde
+// JSON, both directions. Mirrors OCaml `Backend.Tick.Proof.{to,of}_yojson`.
+#[napi]
+pub fn pallas_proof_to_serde_json(proof: &VestaProofExternal) -> Result<String> {
+    serde_json::to_string(&**proof)
+        .map_err(|e| Error::from_reason(format!("pallas_proof_to_serde_json: {e}")))
+}
+
+#[napi]
+pub fn pallas_proof_from_serde_json(json: String) -> Result<VestaProofExternal> {
+    let proof: ProverProof<VestaGroup, OpeningProof<VestaGroup>> = serde_json::from_str(&json)
+        .map_err(|e| Error::from_reason(format!("pallas_proof_from_serde_json: {e}")))?;
+    Ok(External::new(proof))
+}
+
 #[napi]
 pub fn pallas_prover_index_verify(
     prover_index: &PallasProverIndexExternal,
@@ -2549,6 +2573,17 @@ pub fn vesta_verifier_index_digest(
         PallasGroup,
         PallasBaseSponge,
     >(&**verifier_index))
+}
+
+/// Get the verifier index digest (Pallas/Fp circuits — the STEP VK).
+/// Mirror of `vesta_verifier_index_digest`; used by the disk
+/// proof-cache to key the step proof by its circuit identity (OCaml
+/// `Proof_cache` keys step proofs by the step keypair's VK).
+#[napi]
+pub fn pallas_verifier_index_digest(
+    verifier_index: &PallasVerifierIndexExternal,
+) -> PallasFieldExternal {
+    External::new(generic::verifier_index_digest::<VestaGroup, VestaBaseSponge>(&**verifier_index))
 }
 
 /// Extract proof commitments from a Vesta proof (Pallas/Fp circuits).
