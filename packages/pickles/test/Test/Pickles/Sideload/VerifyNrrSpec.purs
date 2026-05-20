@@ -29,12 +29,12 @@ import Effect.Aff (Aff)
 import Pickles (mkVerifier)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Pickles.Sideload.Loader (OcamlProof(..), loadNrrFixture, verifyOcamlProof)
-import Test.Spec (SpecT, describe, pending)
+import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
 spec :: SpecT Aff SharedSrs Aff Unit
 spec = describe "Pickles.Sideload.NRR verify" do
-  pending "verifyOcamlProof accepts the OCaml-produced NRR wrap proof (deferred: slice 3.5 sideload serde)"
+  it "verifyOcamlProof accepts the OCaml-produced NRR wrap proof" _verifyNrrBody
 
 -- | Preserved body for the deferred spec above. Underscore prefix
 -- | silences the unused-name warning. Restore by replacing `pending` with

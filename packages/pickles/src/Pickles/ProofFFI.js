@@ -275,23 +275,40 @@ export const vestaCreateProofWithPrev = ({ proverIndex, witness, prevChallenges 
 // match the bytes already inside the proof.
 // ---------------------------------------------------------------------------
 
-export const pallasVerifyOpeningProof = (verifierIndex) => ({ proof }) =>
-  k.caml_pasta_fp_plonk_proof_verify(verifierIndex, proof);
+// Both verify paths take `publicInput` alongside the proof. The napi
+// `caml_pasta_f{p,q}_plonk_proof_verify` reads the public input from
+// `proof.public_` directly, so callers must inject the caller-supplied
+// input (cloning the proof first to avoid mutating the caller's handle).
+// Same pattern as `pallas/vestaProofOracles`; see `withInjectedInputs`
+// above. Without this, a proof loaded via `*_plonk_proof_from_json`
+// carries `public_=[]` (the field is `#[serde(skip)]` on
+// kimchi's `ProverProof` derive) and verify silently runs against the
+// wrong commitment.
+export const pallasVerifyOpeningProof = (verifierIndex) => ({ proof, publicInput }) => {
+  const p = withInjectedInputs(proof, publicInput, [],
+    k.WasmFpPolyComm, fpToBytes, fqToBytes, k.caml_pasta_fp_plonk_proof_deep_copy);
+  return k.caml_pasta_fp_plonk_proof_verify(verifierIndex, p);
+};
 
-export const vestaVerifyOpeningProof = (verifierIndex) => ({ proof }) =>
-  k.caml_pasta_fq_plonk_proof_verify(verifierIndex, proof);
+export const vestaVerifyOpeningProof = (verifierIndex) => ({ proof, publicInput }) => {
+  const p = withInjectedInputs(proof, publicInput, [],
+    k.WasmFqPolyComm, fqToBytes, fpToBytes, k.caml_pasta_fq_plonk_proof_deep_copy);
+  return k.caml_pasta_fq_plonk_proof_verify(verifierIndex, p);
+};
 
 export const pallasVerifyOpeningProofsBatch = (verifierIndex) => (entries) => {
   if (entries.length === 0) return true;
   const indexes = entries.map(() => verifierIndex);
-  const proofs = entries.map((e) => e.proof);
+  const proofs = entries.map((e) => withInjectedInputs(e.proof, e.publicInput, [],
+    k.WasmFpPolyComm, fpToBytes, fqToBytes, k.caml_pasta_fp_plonk_proof_deep_copy));
   return k.caml_pasta_fp_plonk_proof_batch_verify(indexes, proofs);
 };
 
 export const vestaVerifyOpeningProofsBatch = (verifierIndex) => (entries) => {
   if (entries.length === 0) return true;
   const indexes = entries.map(() => verifierIndex);
-  const proofs = entries.map((e) => e.proof);
+  const proofs = entries.map((e) => withInjectedInputs(e.proof, e.publicInput, [],
+    k.WasmFqPolyComm, fqToBytes, fpToBytes, k.caml_pasta_fq_plonk_proof_deep_copy));
   return k.caml_pasta_fq_plonk_proof_batch_verify(indexes, proofs);
 };
 

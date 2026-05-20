@@ -19,12 +19,12 @@ import Pickles.Sideload (vestaVerifierIndexToSerdeJson)
 import Snarky.Curves.Class (fromInt)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Pickles.Sideload.Loader (OcamlProof(..), loadNrrFixture)
-import Test.Spec (SpecT, describe, pending)
+import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
 spec :: SpecT Aff SharedSrs Aff Unit
 spec = describe "Pickles.Sideload.MainChild roundtrip" do
-  pending "loads + parses + round-trips VK byte-identical (deferred: slice 3.5 sideload serde)"
+  it "loads + parses + round-trips VK byte-identical" _roundTripMainChildBody
 
 _roundTripMainChildBody :: SharedSrs -> Aff Unit
 _roundTripMainChildBody { pallasSrs, vestaSrs } = do

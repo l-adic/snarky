@@ -42,12 +42,12 @@ import Snarky.Circuit.DSL (F)
 import Test.Pickles.Prove.NoRecursionReturn (NrrRules, nrrRule)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Pickles.Sideload.Loader (loadNrrFixture)
-import Test.Spec (SpecT, describe, pending)
+import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
 spec :: SpecT Aff SharedSrs Aff Unit
 spec = describe "Pickles.Sideload.NRR VK equality" do
-  pending "PS compileMulti VK == OCaml compile VK (full-JSON key) (deferred: slice 3.5 sideload serde)"
+  it "PS compileMulti VK == OCaml compile VK (full-JSON key)" _digestEqNrrBody
 
 _digestEqNrrBody :: SharedSrs -> Aff Unit
 _digestEqNrrBody { pallasSrs, vestaSrs } = do
