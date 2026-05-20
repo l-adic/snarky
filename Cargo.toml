@@ -11,16 +11,11 @@ exclude = [
 ]
 
 [workspace.dependencies]
-# arkworks (minimal for bn254/groth16 support only)
+# arkworks (used by Pasta field BigInt conversion + kimchi)
 ark-ff = "0.5.0"
 ark-ec = "0.5.0"
-ark-bn254 = "0.5.0"
 ark-std = "0.5.0"
-ark-groth16 = "0.5.0"
-ark-r1cs-std = "0.5.0"
-ark-relations = "0.5.0"
 ark-serialize = "0.5.0"
-ark-snark = "0.5.0"
 ark-poly = "0.5.0"
 rand = { version = "0.8", features = ["std_rng"] }
 rand_chacha = "0.3"
@@ -30,19 +25,14 @@ hex = "0.4"
 napi = { version = "3.4.0", features = ["napi6"] }
 napi-derive = "3.3.0"
 napi-build = "2.2.4"
-bulletproofs = { git = "https://github.com/l-adic/bulletproofs" , rev = "8267344186b388129187f5c78e1a2ced8a4fb30a" }
-spongefish = {git = "https://github.com/arkworks-rs/spongefish" , rev = "cda8c90", features = ["derive", "ark-ff", "ark-ec"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rmp-serde = "1.0"
 
-kimchi = { path = "mina/src/lib/crypto/proof-systems/kimchi", features = ["bn254"] }
+kimchi = { path = "mina/src/lib/crypto/proof-systems/kimchi" }
 mina-curves = { path = "mina/src/lib/crypto/proof-systems/curves" }
 mina-poseidon = { path = "mina/src/lib/crypto/proof-systems/poseidon" }
 poly-commitment = { path = "mina/src/lib/crypto/proof-systems/poly-commitment" }
-
-[workspace.dependencies.proptest]
-version = "1.0"
 
 [profile.release]
 opt-level = "s"

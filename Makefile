@@ -1,4 +1,4 @@
-.PHONY: help all clean build-crypto test-curves test-snarky test-bulletproofs test-groth16 test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint build-ps gen-linearization dep-graph pickles-inventory
+.PHONY: help all clean build-crypto test-curves test-snarky test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint build-ps gen-linearization dep-graph pickles-inventory
 
 .DEFAULT_GOAL := help
 
@@ -17,8 +17,8 @@ help: ## Show available commands and their descriptions
 	@echo "==============================================="
 	@echo ""
 	@echo "Unified Crypto Provider:"
-	@echo "  Single crypto-provider crate provides all curve operations,"
-	@echo "  bulletproofs proving, and groth16 proving functionality."
+	@echo "  Single crypto-provider crate provides Pasta curve operations,"
+	@echo "  Poseidon hashing, and Kimchi gate verification helpers."
 	@echo ""
 	@echo "Pasta Curves: Uses mina-curves from proof-systems (kimchi ecosystem)"
 	@echo ""
@@ -47,12 +47,6 @@ test-snarky: build-crypto ## Test snarky core package
 
 run-snarky: build-crypto ## Run snarky main
 	cd packages/snarky && npx spago run
-
-test-bulletproofs: build-crypto ## Test snarky-bulletproofs package
-	cd packages/snarky-bulletproofs && npx spago test
-
-test-groth16: build-crypto ## Test snarky-groth16 package
-	cd packages/snarky-groth16 && npx spago test
 
 test-poseidon: build-crypto ## Test poseidon hash package
 	cd packages/poseidon && npx spago test
@@ -92,10 +86,6 @@ test-libs: ## Test every package EXCEPT pickles-circuit-diffs (CI parallel job)
 	$(MAKE) test-merkle-tree
 	@echo "=== Testing Example ==="
 	$(MAKE) test-example
-	@echo "=== Testing Bulletproofs Backend ==="
-	$(MAKE) test-bulletproofs
-	@echo "=== Testing Groth16 Backend ==="
-	$(MAKE) test-groth16
 	@echo "=== Testing Pickles ==="
 	$(MAKE) test-pickles
 	@echo "=== Library tests completed successfully ==="
@@ -136,17 +126,15 @@ clean: ## Clean everything
 	cd packages/crypto-provider && cargo clean && rm -f *.node
 	cd packages/curves && rm -rf output
 	cd packages/snarky && rm -rf output
-	-cd packages/snarky-bulletproofs && rm -rf output
-	-cd packages/snarky-groth16 && rm -rf output
 	rm -rf output node_modules target
 	rm -f package-lock.json
 
 # Generate workspace module dependency graph (requires deps.json + graphviz)
 # Usage:
 #   make dep-graph                                          # all workspace packages
-#   make dep-graph EXCLUDE=snarky-bulletproofs,snarky-groth16  # exclude packages (comma-separated)
+#   make dep-graph EXCLUDE=<pkg1>,<pkg2>                    # exclude packages (comma-separated)
 #   make dep-graph CLOSURE=pickles                          # only pickles and its transitive deps
-EXCLUDE ?= snarky-bulletproofs,snarky-groth16
+EXCLUDE ?=
 CLOSURE ?=
 dep-graph: ## Generate module dependency graph as deps.svg
 	node workspace-deps.js --exclude $(EXCLUDE) $(if $(CLOSURE),--closure $(CLOSURE))

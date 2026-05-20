@@ -423,41 +423,6 @@
           ]
         }
       },
-      "snarky-bulletproofs": {
-        "path": "packages/snarky-bulletproofs",
-        "core": {
-          "dependencies": [
-            "arrays",
-            "curves",
-            "exceptions",
-            "foldable-traversable",
-            "foreign",
-            "functions",
-            "lists",
-            "maybe",
-            "newtype",
-            "ordered-collections",
-            "prelude",
-            "quickcheck",
-            "simple-json",
-            "snarky",
-            "transformers",
-            "tuples"
-          ]
-        },
-        "test": {
-          "dependencies": [
-            "effect",
-            "either",
-            "exceptions",
-            "partial",
-            "snarky-curves",
-            "snarky-test-utils",
-            "spec",
-            "spec-node"
-          ]
-        }
-      },
       "snarky-curves": {
         "path": "packages/snarky-curves",
         "core": {
@@ -481,38 +446,6 @@
             "spec",
             "spec-node",
             "tuples"
-          ]
-        }
-      },
-      "snarky-groth16": {
-        "path": "packages/snarky-groth16",
-        "core": {
-          "dependencies": [
-            "arrays",
-            "curves",
-            "foldable-traversable",
-            "foreign",
-            "functions",
-            "maybe",
-            "newtype",
-            "ordered-collections",
-            "prelude",
-            "quickcheck",
-            "simple-json",
-            "snarky",
-            "transformers",
-            "tuples"
-          ]
-        },
-        "test": {
-          "dependencies": [
-            "effect",
-            "either",
-            "exceptions",
-            "partial",
-            "snarky-test-utils",
-            "spec",
-            "spec-node"
           ]
         }
       },

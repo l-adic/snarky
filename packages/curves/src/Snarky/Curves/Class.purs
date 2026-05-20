@@ -6,8 +6,7 @@
 -- | - `FrModule`: Scalar multiplication on curve groups
 -- | - `WeierstrassCurve`: Curves in short Weierstrass form (y² = x³ + ax + b)
 -- |
--- | These classes are implemented by concrete curve types in `Snarky.Curves.Pasta`
--- | and `Snarky.Curves.BN254`.
+-- | These classes are implemented by concrete curve types in `Snarky.Curves.Pasta`.
 -- |
 -- | ```purescript
 -- | import Snarky.Curves.Pallas as Pallas
