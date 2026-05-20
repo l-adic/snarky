@@ -1,42 +1,18 @@
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const napi = require('snarky-crypto');
+// Vesta-base Poseidon FFI — host-side hash + granular permutation ops
+// over Fq (Vesta.BaseField = Pallas.ScalarField). Routes through the
+// pure-JS `pasta-runtime` Poseidon spec parameterized by
+// `poseidonParamsKimchiFq`. Constants are extracted from
+// `mina_poseidon::pasta::fq_kimchi`; permutation parity vs
+// `caml_pasta_fq_poseidon_block_cipher` byte-for-byte verified.
+//
+// PS-side type: `PoseidonField Vesta.BaseField`.
 
-// FIELD-REP COMPAT SHIM — Vesta Poseidon's field is Vesta.BaseField = Fq
-// (= PallasScalarField in snarky-crypto naming).
-const toFq = (b) => napi.pallasScalarfieldFromBigint(b);
-const fromFq = (e) => napi.pallasScalarfieldToBigint(e);
+import { PoseidonFq } from 'pasta-runtime';
 
-// ============================================================================
-// VESTA POSEIDON FFI
-// ============================================================================
-
-export function sbox(x) {
-    return fromFq(napi.vestaPoseidonSbox(toFq(x)));
-}
-
-export function applyMds(state) {
-    return napi.vestaPoseidonApplyMds(state.map(toFq)).map(fromFq);
-}
-
-export function fullRound(state) {
-    return function(roundIndex) {
-        return napi.vestaPoseidonFullRound(state.map(toFq), roundIndex).map(fromFq);
-    };
-}
-
-export function getRoundConstants(roundIndex) {
-    return napi.vestaPoseidonGetRoundConstants(roundIndex).map(fromFq);
-}
-
-export function getNumRounds() {
-    return napi.vestaPoseidonGetNumRounds();
-}
-
-export function getMdsMatrix() {
-    return napi.vestaPoseidonGetMdsMatrix().map((row) => row.map(fromFq));
-}
-
-export function hash(inputs) {
-    return fromFq(napi.vestaPoseidonHash(inputs.map(toFq)));
-}
+export function sbox(x) { return PoseidonFq.sbox(x); }
+export function applyMds(state) { return PoseidonFq.applyMds(state); }
+export function fullRound(state) { return (i) => PoseidonFq.fullRound(state, i); }
+export function getRoundConstants(i) { return PoseidonFq.getRoundConstants(i); }
+export function getNumRounds() { return PoseidonFq.getNumRounds(); }
+export function getMdsMatrix() { return PoseidonFq.getMdsMatrix(); }
+export function hash(inputs) { return PoseidonFq.hash(inputs); }

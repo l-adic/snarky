@@ -1,42 +1,16 @@
 module Snarky.Constraint.Kimchi.GenericPlonk
-  ( class GenericPlonkVerifiable
-  , verifyGenericPlonk
-  , reduce
-  , eval
+  ( reduce
   ) where
 
 import Prelude
 
-import Data.Maybe (Maybe(..), maybe)
-import Data.Traversable (traverse)
+import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector)
 import Effect.Exception (error)
 import Effect.Exception.Unsafe (unsafeThrowException)
 import Snarky.Circuit.CVar (reduceToAffineExpression)
-import Snarky.Circuit.DSL (Basic(..), Variable)
-import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, Rows, addEqualsConstraint, addGenericPlonkConstraint, getRows, reduceAffineExpression)
-import Snarky.Curves.Class (class PrimeField)
-import Snarky.Curves.Pallas as Pallas
-import Snarky.Curves.Vesta as Vesta
-
-class GenericPlonkVerifiable f where
-  verifyGenericPlonk :: { coeffs :: Array f, variables :: Vector 15 f } -> Boolean
-
-eval
-  :: forall f m
-   . PrimeField f
-  => Applicative m
-  => GenericPlonkVerifiable f
-  => (Variable -> m f)
-  -> Rows f
-  -> m Boolean
-eval lookup rows = ado
-  variables <- traverse lookup' x.variables
-  in verifyGenericPlonk { variables, coeffs: x.coeffs }
-  where
-  x = getRows rows
-  lookup' = maybe (pure zero) lookup
+import Snarky.Circuit.DSL (Basic(..))
+import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, addEqualsConstraint, addGenericPlonkConstraint, reduceAffineExpression)
 
 reduce
   :: forall f m
@@ -120,12 +94,3 @@ reduce = case _ of
       Just v -> do
         addGenericPlonkConstraint { vl: Just v, cl: -c, vr: Just v, cr: zero, co: zero, vo: Nothing, m: c * c, c: zero }
 
-foreign import verifyPallasGeneric :: Array Pallas.ScalarField -> Vector 15 Pallas.ScalarField -> Boolean
-
-foreign import verifyVestaGeneric :: Array Vesta.ScalarField -> Vector 15 Vesta.ScalarField -> Boolean
-
-instance GenericPlonkVerifiable Pallas.ScalarField where
-  verifyGenericPlonk { coeffs, variables } = verifyPallasGeneric coeffs variables
-
-instance GenericPlonkVerifiable Vesta.ScalarField where
-  verifyGenericPlonk { coeffs, variables } = verifyVestaGeneric coeffs variables

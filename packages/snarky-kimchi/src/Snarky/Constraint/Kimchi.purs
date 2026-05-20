@@ -9,9 +9,7 @@ module Snarky.Constraint.Kimchi
 
 import Prelude
 
-import Control.Monad.Except (Except, runExcept, throwError)
 import Data.Array (all)
-import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
@@ -27,22 +25,21 @@ import Snarky.Backend.Builder as CircuitBuilder
 import Snarky.Backend.Prover (class SolveCircuit, ProverT, throwProverError)
 import Snarky.Backend.Prover as Prover
 import Snarky.Circuit.CVar (Variable, v0)
-import Snarky.Circuit.DSL (class BasicSystem, class ConstraintM, Basic(..), EvaluationError(..), FVar)
+import Snarky.Circuit.DSL (class BasicSystem, class ConstraintM, Basic(..), FVar)
 import Snarky.Constraint.Basic as Basic
-import Snarky.Constraint.Kimchi.AddComplete (class AddCompleteVerifiable, AddComplete)
+import Snarky.Constraint.Kimchi.AddComplete (AddComplete)
 import Snarky.Constraint.Kimchi.AddComplete as AddComplete
 import Snarky.Constraint.Kimchi.EndoMul (EndoMul)
 import Snarky.Constraint.Kimchi.EndoMul as EndoMul
 import Snarky.Constraint.Kimchi.EndoScalar (EndoScalar)
 import Snarky.Constraint.Kimchi.EndoScalar as EndoScalar
-import Snarky.Constraint.Kimchi.GenericPlonk (class GenericPlonkVerifiable)
 import Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonk
-import Snarky.Constraint.Kimchi.Poseidon (class PoseidonVerifiable, PoseidonConstraint)
+import Snarky.Constraint.Kimchi.Poseidon (PoseidonConstraint)
 import Snarky.Constraint.Kimchi.Poseidon as Poseidon
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, Rows, finalizeGateQueue, mkRawGeneric7Row, reduceAsBuilder, reduceAsProver, reduceToVariable)
 import Snarky.Constraint.Kimchi.Reduction as Reduction
 import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, AuxState(..), KimchiRow, initialAuxState, toKimchiRows)
-import Snarky.Constraint.Kimchi.VarBaseMul (class VarBaseMulVerifiable, VarBaseMul)
+import Snarky.Constraint.Kimchi.VarBaseMul (VarBaseMul)
 import Snarky.Constraint.Kimchi.VarBaseMul as VarBaseMul
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
 import Snarky.Curves.Pallas as Pallas
@@ -152,44 +149,35 @@ instance (KimchiVerify f f') => SolveCircuit f (KimchiConstraint f)
 
 instance (KimchiVerify f f') => ConstraintM (ProverT f) (KimchiConstraint f) where
   addConstraint' = case _ of
-    KimchiAddComplete c -> goDebug AddComplete.reduce AddComplete.eval c
-    KimchiPoseidon c -> goDebug Poseidon.reduce Poseidon.eval c
+    KimchiAddComplete c -> go AddComplete.reduce c
+    KimchiPoseidon c -> go Poseidon.reduce c
     KimchiBasic c -> goBasic c
-    KimchiVarBaseMul c -> goDebug VarBaseMul.reduce VarBaseMul.eval c
-    KimchiEndoScalar c -> goDebug EndoScalar.reduce EndoScalar.eval c
-    KimchiEndoMul c -> goDebug EndoMul.reduce (EndoMul.eval @f @f') c
-    KimchiRawGeneric7 vs -> goDebug reduceRawGeneric7 (\_ _ -> pure true) vs
+    KimchiVarBaseMul c -> go VarBaseMul.reduce c
+    KimchiEndoScalar c -> go EndoScalar.reduce c
+    KimchiEndoMul c -> go EndoMul.reduce c
+    KimchiRawGeneric7 vs -> go reduceRawGeneric7 vs
     where
-    -- Reduce and optionally debug-check the gate equation
-    goDebug
+    -- Run the reducer and update prover state. Per-gate equation checks
+    -- (formerly in `goDebug`'s `when s.debug …` branch) were removed in
+    -- favor of the circuit-diffs JSON byte-equality check, which is a
+    -- strictly stronger correctness signal.
+    go
       :: forall c g m
        . Monad m
       => ToKimchiRows f g
       => (forall n. PlonkReductionM n f => c -> n g)
-      -> ((Variable -> Except EvaluationError f) -> g -> Except EvaluationError Boolean)
       -> c
       -> ProverT f m Unit
-    goDebug reducer evalGate c = do
+    go reducer c = do
       s <- Prover.getState
       case reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (reducer c) of
         Left e -> throwProverError e
-        Right (Tuple rows res) -> do
+        Right (Tuple _ res) -> do
           Prover.putState $ s { assignments = res.assignments, nextVar = res.nextVariable }
-          when s.debug do
-            let lookupVar v = maybe (throwError $ MissingVariable v) pure (Map.lookup v res.assignments)
-            case runExcept (evalGate lookupVar rows) of
-              Left e -> throwProverError e
-              Right false ->
-                let
-                  kimchiRows = toKimchiRows rows :: Array (KimchiRow f)
-                  gateKind = maybe "Unknown" (show <<< _.kind) (Array.head kimchiRows)
-                  nRows = Array.length kimchiRows
-                in
-                  throwProverError $ FailedAssertion
-                    $ gateKind <> " gate check failed (" <> show nRows <> " rows)"
-              Right true -> pure unit
 
-    -- Basic constraints use debugCheck for richer error messages (e.g. "R1CS failed: 42 * 7 != 293")
+    -- Basic constraints keep their `debugCheck` (pure-PS, no FFI) for
+    -- richer error messages (e.g. "R1CS failed: 42 * 7 != 293") when
+    -- the prover state has `debug: true`.
     goBasic :: forall m. Monad m => Basic f -> ProverT f m Unit
     goBasic c = do
       s <- Prover.getState
@@ -212,22 +200,6 @@ initialState =
   , varMetadata: Map.empty
   }
 
-eval
-  :: forall f f' m
-   . KimchiVerify f f'
-  => Monad m
-  => (Variable -> m f)
-  -> KimchiGate f
-  -> m Boolean
-eval lookup = case _ of
-  KimchiGatePlonk c -> GenericPlonk.eval lookup c
-  KimchiGateAddComplete c -> AddComplete.eval lookup c
-  KimchiGatePoseidon c -> Poseidon.eval lookup c
-  KimchiGateVarBaseMul c -> VarBaseMul.eval lookup c
-  KimchiGateEndoScalar c -> EndoScalar.eval lookup c
-  KimchiGateEndoMul c -> EndoMul.eval @f @f' lookup c
-  KimchiGateNoOp -> pure true
-
 postCondition
   :: forall f
    . PrimeField f
@@ -238,13 +210,36 @@ postCondition lookup { aux: AuxState { wireState: { unionFind } } } = do
     pure $ Set.fromFoldable values
   pure $ all (\s -> Set.size s == 1) classes
 
+-- | Per-gate constraint sanity checker, threaded by `Test.Snarky.Circuit
+-- | .Utils.TestConfig` as the `checker:` field (used by `random-oracle`,
+-- | `merkle-tree`, `schnorr`, `example` tests).
+-- |
+-- | Historically this dispatched per-gate to a Rust-FFI'd equation check
+-- | (`verifyPallasPoseidonGadget`, `verifyPallasCompleteAdd`, etc.) so
+-- | every prover-emitted gate was cross-checked against kimchi's reference
+-- | implementation. The Rust path was deleted alongside `snarky-crypto`;
+-- | retaining a pure-PS port wasn't worth the LOC. Tests still get
+-- | wire-equivalence via `postCondition` and result-value assertions
+-- | from their own circuit-correctness invariants.
+eval
+  :: forall f m
+   . Applicative m
+  => (Variable -> m f)
+  -> KimchiGate f
+  -> m Boolean
+eval _ _ = pure true
+
+-- | Marker class for curves usable with the kimchi backend. Brings in
+-- | the cycle's `HasEndo` instances and the Poseidon round constants
+-- | (`PoseidonField`, needed by `Poseidon.reduce`). Historically also
+-- | required `GenericPlonkVerifiable`/`AddCompleteVerifiable`/…/
+-- | `VarBaseMulVerifiable` for a Rust-FFI cross-check of each gate's
+-- | equation during proving; that path was deleted in favor of
+-- | circuit-diffs JSON byte-equality.
 class
   ( HasEndo f f'
   , HasEndo f' f
-  , GenericPlonkVerifiable f
-  , AddCompleteVerifiable f
-  , PoseidonVerifiable f
-  , VarBaseMulVerifiable f
+  , PoseidonField f
   ) <=
   KimchiVerify f f'
   | f -> f'

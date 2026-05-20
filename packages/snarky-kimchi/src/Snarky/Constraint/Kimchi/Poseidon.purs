@@ -1,18 +1,14 @@
 module Snarky.Constraint.Kimchi.Poseidon
   ( PoseidonConstraint
   , Rows
-  , class PoseidonVerifiable
-  , verifyPoseidon
-  , eval
   , reduce
   ) where
 
 import Prelude hiding (append)
 
 import Data.Fin (Finite, getFinite, unsafeFinite)
-import Data.Function.Uncurried (Fn2, runFn2)
 import Data.FunctorWithIndex (mapWithIndex)
-import Data.Maybe (Maybe(..), maybe)
+import Data.Maybe (Maybe(..))
 import Data.Traversable (traverse)
 import Data.Vector (Vector, append, head, (!!))
 import Data.Vector as Vector
@@ -20,36 +16,16 @@ import Poseidon (class PoseidonField, getRoundConstants)
 import Snarky.Circuit.DSL (FVar, Variable)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
 import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, GateKind(..), KimchiRow)
-import Snarky.Curves.Class (class PrimeField)
-import Snarky.Curves.Pallas as Pallas
-import Snarky.Curves.Vesta as Vesta
 import Type.Proxy (Proxy(..))
 
 type PoseidonConstraint f =
   { state :: Vector 56 (Vector 3 (FVar f))
   }
 
-class PoseidonField f <= PoseidonVerifiable f where
-  verifyPoseidon :: Vector 12 (Vector 15 f) -> Boolean
-
 newtype Rows f = Rows (Vector 12 (KimchiRow f))
 
 instance ToKimchiRows f (Rows f) where
   toKimchiRows (Rows as) = Vector.toUnfoldable as
-
-eval
-  :: forall f m
-   . PrimeField f
-  => PoseidonVerifiable f
-  => Applicative m
-  => (Variable -> m f)
-  -> Rows f
-  -> m Boolean
-eval lookup (Rows rows) =
-  let
-    lookup' = maybe (pure zero) lookup
-  in
-    verifyPoseidon <$> traverse (\r -> traverse lookup' r.variables) rows
 
 reduce
   :: forall f m
@@ -88,14 +64,3 @@ reduce c = Rows <$> do
     in
       { kind: PoseidonGate, coeffs: Vector.toUnfoldable coeffs, variables }
 
-foreign import verifyPallasPoseidonGadget
-  :: Fn2 Int (Vector 12 (Vector 15 Pallas.ScalarField)) Boolean
-
-foreign import verifyVestaPoseidonGadget
-  :: Fn2 Int (Vector 12 (Vector 15 Vesta.ScalarField)) Boolean
-
-instance PoseidonVerifiable Pallas.ScalarField where
-  verifyPoseidon = runFn2 verifyPallasPoseidonGadget 12
-
-instance PoseidonVerifiable Vesta.ScalarField where
-  verifyPoseidon = runFn2 verifyVestaPoseidonGadget 12

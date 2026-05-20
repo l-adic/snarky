@@ -10,18 +10,28 @@
 // Parity verified against kimchi-napi's `caml_pasta_fp_poseidon_block_cipher`
 // in test/poseidon-parity-harness.mjs.
 
-import { Fp } from "./PastaField.js";
+import { Fp, Fq } from "./PastaField.js";
 import { GroupMapPallas } from "./PastaCurve.js";
-import { poseidonParamsKimchiFp } from "./PastaPoseidonConstants.js";
+import {
+  poseidonParamsKimchiFp,
+  poseidonParamsKimchiFq,
+} from "./PastaPoseidonConstants.js";
 
-const PoseidonSpec = createPoseidon(Fp, poseidonParamsKimchiFp);
+const PoseidonFpSpec = createPoseidon(Fp, poseidonParamsKimchiFp);
+const PoseidonFqSpec = createPoseidon(Fq, poseidonParamsKimchiFq);
 
+// Pallas-base Poseidon (= Fp; the Mina application-level hash).
+// `hashToGroup` is only defined for the Fp side because GroupMapPallas
+// maps to Pallas points (whose coordinates live in Fp).
 const Poseidon = {
-  ...PoseidonSpec,
-  hashToGroup: makeHashToGroup(PoseidonSpec.hash),
+  ...PoseidonFpSpec,
+  hashToGroup: makeHashToGroup(PoseidonFpSpec.hash),
 };
 
-export { Poseidon };
+// Vesta-base Poseidon (= Fq; used by the wrap circuit's sponge).
+const PoseidonFq = { ...PoseidonFqSpec };
+
+export { Poseidon, PoseidonFq };
 
 // ============================================================================
 // Hash-to-group: feeds the field digest through GroupMapPallas. Matches o1js's
@@ -149,7 +159,56 @@ function createPoseidon(Fp, params) {
     }
   }
 
-  return { initialState, update, hash, permutation };
+  // -----------------------------------------------------------------
+  // Granular ops — the `Poseidon.FFI.{Pallas,Vesta}` PS classes expose
+  // these for callers that want to roll their own permutation (e.g.
+  // `RandomOracle.Sponge.fullRound`, `Pickles.Linearization.Env`'s
+  // hand-rolled MDS multiply). Kept separate from `hash`/`permutation`
+  // to avoid recomputing the BigInt-converted constants per call.
+  // -----------------------------------------------------------------
+
+  // S-box: x^power. The `power` parameter is the only thing that
+  // changes between Poseidon variants; for Mina-Kimchi it's 7.
+  function sbox(x) {
+    return Fp.power(x, power);
+  }
+
+  // MDS multiply: row-by-row dot product of `mds` with `state`.
+  function applyMds(state) {
+    const out = new Array(stateSize);
+    for (let i = 0; i < stateSize; i++) out[i] = Fp.dot(mds[i], state);
+    return out;
+  }
+
+  // One full round: `S-box -> MDS -> ARK[round + offset]`. Matches the
+  // inner loop of `permutation` (above) but exposed per-round so
+  // callers can fold over it. `round` is 0-indexed.
+  function fullRound(state, round) {
+    const sboxed = state.map((x) => Fp.power(x, power));
+    const out = new Array(stateSize);
+    const ark = roundConstants[round + (hasInitialRoundConstant ? 1 : 0)];
+    for (let i = 0; i < stateSize; i++) {
+      out[i] = Fp.add(Fp.dot(mds[i], sboxed), ark[i]);
+    }
+    return out;
+  }
+
+  function getRoundConstants(i) {
+    return roundConstants[i + (hasInitialRoundConstant ? 1 : 0)];
+  }
+
+  return {
+    initialState,
+    update,
+    hash,
+    permutation,
+    sbox,
+    applyMds,
+    fullRound,
+    getRoundConstants,
+    getNumRounds: () => fullRounds,
+    getMdsMatrix: () => mds,
+  };
 }
 
 // Tiny replacement for o1js's `assertPositiveInteger` — kept local to avoid

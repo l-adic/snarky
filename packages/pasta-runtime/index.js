@@ -8,5 +8,8 @@
 export * from './PastaField.js';
 export * from './PastaCurve.js';
 export * from './PastaPoseidon.js';
-export { poseidonParamsKimchiFp } from './PastaPoseidonConstants.js';
+export {
+  poseidonParamsKimchiFp,
+  poseidonParamsKimchiFq,
+} from './PastaPoseidonConstants.js';
 export * from './poly.js';

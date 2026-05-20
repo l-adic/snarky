@@ -14,7 +14,6 @@ import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGat
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class HasBW19, class HasSqrt)
 import Snarky.Curves.Pallas as Pallas
-import Snarky.Curves.Pasta (pallasGroupMap, vestaGroupMap)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.QuickCheck (arbitrary, quickCheck')
@@ -35,21 +34,10 @@ testValidCurvePoints params (F t) =
   in
     y * y == x * x * x + params.b
 
--- | Test that groupMap matches the Rust FFI implementation
-testMatchesRustFFI
-  :: forall f
-   . HasSqrt f
-  => Eq f
-  => GroupMapParams f
-  -> (f -> { x :: f, y :: f })
-  -> F f
-  -> Boolean
-testMatchesRustFFI params rustGroupMap (F t) =
-  let
-    psResult = groupMap params t
-    rustResult = rustGroupMap t
-  in
-    psResult.x == rustResult.x && psResult.y == rustResult.y
+-- (`testMatchesRustFFI` removed alongside snarky-crypto's BW19 hash-to-curve.
+-- That parity test compared PastaCurve's Shallue–vdW `groupMap` against
+-- snarky-crypto's Brier–Williams 2019 — two different algorithms; the test
+-- never could have passed and was test-only scaffolding.)
 
 spec'
   :: forall f f' g g'
@@ -95,19 +83,6 @@ spec' cfg proxyG curveName = do
         circuit'
 
 spec :: (forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)) -> Spec Unit
-spec cfg = do
-  describe "GroupMap" do
-    spec' cfg (Proxy @Pallas.G) "Pallas"
-    spec' cfg (Proxy @Vesta.G) "Vesta"
-
-    it "Pallas groupMap matches Rust FFI"
-      $ liftEffect
-      $ quickCheck' 100
-      $
-        testMatchesRustFFI (groupMapParams (Proxy @Pallas.G)) pallasGroupMap
-
-    it "Vesta groupMap matches Rust FFI"
-      $ liftEffect
-      $ quickCheck' 100
-      $
-        testMatchesRustFFI (groupMapParams (Proxy @Vesta.G)) vestaGroupMap
+spec cfg = describe "GroupMap" do
+  spec' cfg (Proxy @Pallas.G) "Pallas"
+  spec' cfg (Proxy @Vesta.G) "Vesta"

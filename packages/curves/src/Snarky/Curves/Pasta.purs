@@ -29,9 +29,6 @@ module Snarky.Curves.Pasta
   , pallasScalarFieldToHexLe
   , vestaScalarFieldFromHexLe
   , vestaScalarFieldToHexLe
-  , -- Group map FFI (for testing against Rust implementation)
-    pallasGroupMap
-  , vestaGroupMap
   ) where
 
 import Prelude
@@ -411,36 +408,3 @@ instance HasBW19 VestaBaseField VestaG where
       , inv3U2: unsafePartial $ fromJust $ arr Array.!! 4
       }
 
--- ============================================================================
--- GROUP MAP (Hash-to-Curve)
--- Reference FFI implementations for testing PureScript hash-to-curve code.
--- ============================================================================
-
-foreign import _pallasGroupMap :: PallasBaseField -> Array PallasBaseField
-foreign import _vestaGroupMap :: VestaBaseField -> Array VestaBaseField
-
--- | Hash a field element to a point on the Pallas curve.
--- |
--- | Uses the BW19 algorithm via Rust FFI. This is a reference implementation
--- | for testing the PureScript `GroupMap` implementation.
-pallasGroupMap :: PallasBaseField -> { x :: PallasBaseField, y :: PallasBaseField }
-pallasGroupMap t =
-  let
-    arr = _pallasGroupMap t
-  in
-    { x: unsafePartial $ fromJust $ arr Array.!! 0
-    , y: unsafePartial $ fromJust $ arr Array.!! 1
-    }
-
--- | Hash a field element to a point on the Vesta curve.
--- |
--- | Uses the BW19 algorithm via Rust FFI. This is a reference implementation
--- | for testing the PureScript `GroupMap` implementation.
-vestaGroupMap :: VestaBaseField -> { x :: VestaBaseField, y :: VestaBaseField }
-vestaGroupMap t =
-  let
-    arr = _vestaGroupMap t
-  in
-    { x: unsafePartial $ fromJust $ arr Array.!! 0
-    , y: unsafePartial $ fromJust $ arr Array.!! 1
-    }
