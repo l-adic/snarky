@@ -45,7 +45,7 @@ import Pickles.IPA (bPoly)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals, absorbAllEvals)
 import Pickles.PlonkChecks.Chunks as Chunks
-import Pickles.ProofFFI (OraclesResult, Proof, domainGenerator, tCommChunked, vestaChallengePolyCommitment, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallengesVec, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, wCommChunked, zCommChunked)
+import Pickles.ProofFFI (OraclesResult, Proof, domainGenerator, proofData, tCommChunked, vestaChallengePolyCommitment, vestaProofOpeningPrechallengesVec, vestaProofOracles, wCommChunked, zCommChunked)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatch, computeBpChalsAndB, derivePlonk, ftEval0)
 import Pickles.Sponge (absorb, evalPureSpongeM, initialSponge, squeeze, squeezeScalarChallengePure)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
@@ -638,9 +638,11 @@ expandProof input =
     --     if not must_verify
     --       then Ipa.Wrap.compute_sg new_bulletproof_challenges
     --       else proof.openings.proof.challenge_polynomial_commitment
+    wrapProofData = proofData input.wrapProof
+
     challengePolynomialCommitment =
       if input.mustVerify then
-        vestaProofOpeningSg input.wrapProof
+        wrapProofData.opening.sg
       else
         vestaChallengePolyCommitment input.wrapVerifierIndex
           (Vector.toUnfoldable newBpResult.chals)
@@ -711,7 +713,7 @@ expandProof input =
           , zeta: oraclesResult.zeta
           , zetaOmega: wrapZetaw
           }
-          oraclesResult.publicEvals
+          wrapProofData.evals.public
       , ftEval0: wrapFtEval0
       , ftEval1: oraclesResult.ftEval1
       , oldBulletproofChallenges: input.wrapPaddedPrevChallenges
@@ -768,7 +770,7 @@ expandProof input =
       -> WeierstrassAffinePoint PallasG (F StepField)
     mkPallasPt pt = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
 
-    wrapCommits = vestaProofCommitments input.wrapProof
+    wrapCommits = wrapProofData.commitments
 
     messages
       :: WrapProofMessages stepChunks (WeierstrassAffinePoint PallasG (F StepField))
@@ -789,10 +791,10 @@ expandProof input =
            (Type2 (SplitField (F StepField) Boolean))
     opening = WrapProofOpening
       { lr: map (\pair -> { l: mkPallasPt pair.l, r: mkPallasPt pair.r })
-          (vestaProofOpeningLrVec input.wrapProof)
-      , z1: toShifted (F (vestaProofOpeningZ1 input.wrapProof))
-      , z2: toShifted (F (vestaProofOpeningZ2 input.wrapProof))
-      , delta: mkPallasPt (vestaProofOpeningDelta input.wrapProof)
+          wrapProofData.opening.lr
+      , z1: toShifted (F wrapProofData.opening.z1)
+      , z2: toShifted (F wrapProofData.opening.z2)
+      , delta: mkPallasPt wrapProofData.opening.delta
       , sg: mkPallasPt challengePolynomialCommitment
       }
 
@@ -875,7 +877,7 @@ expandProof input =
         , zeta: oraclesResult.zeta
         , zetaOmega: wrapZetaw
         }
-        oraclesResult.publicEvals
+        wrapProofData.evals.public
     , perProofWitness
     -- step.ml:536 reads this from `dlog_vk.domain.log_size_of_group`.
     , actualWrapDomain: input.wrapDomainLog2

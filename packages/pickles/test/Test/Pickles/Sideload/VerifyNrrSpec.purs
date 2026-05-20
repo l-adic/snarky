@@ -14,14 +14,15 @@ import Prelude
 
 import Effect.Aff (Aff)
 import Pickles (mkVerifier)
+import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Pickles.Sideload.Loader (OcamlProof(..), loadNrrFixture, verifyOcamlProof)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
-spec :: SpecT Aff Unit Aff Unit
+spec :: SpecT Aff SharedSrs Aff Unit
 spec = describe "Pickles.Sideload.NRR verify" do
-  it "verifyOcamlProof accepts the OCaml-produced NRR wrap proof" \_ -> do
-    fixture <- loadNrrFixture "packages/pickles/test/fixtures/sideload/nrr"
+  it "verifyOcamlProof accepts the OCaml-produced NRR wrap proof" \{ pallasSrs, vestaSrs } -> do
+    fixture <- loadNrrFixture { pallasSrs, vestaSrs } "packages/pickles/test/fixtures/sideload/nrr"
     let
       OcamlProof p = fixture.ocamlProof
       verifier = mkVerifier

@@ -42,7 +42,7 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Perms (permsAll)
 import Node.FS.Sync (exists, mkdir', readTextFile, writeTextFile)
 import Pickles.Field (StepField, WrapField)
-import Pickles.ProofFFI (Proof, pallasVerifierIndexDigest, vestaVerifierIndexDigest)
+import Pickles.ProofFFI (Proof, pallasVerifierIndexJsonKey, vestaVerifierIndexJsonKey)
 import Pickles.Sideload.FFI (pallasProofFromSerdeJson, pallasProofToSerdeJson, vestaProofFromSerdeJson, vestaProofToSerdeJson)
 import Simple.JSON as JSON
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
@@ -104,11 +104,16 @@ fieldStr = show <<< toBigInt
 piKey :: forall f. PrimeField f => Array f -> String
 piKey = joinWith "," <<< map fieldStr
 
+-- | Step / wrap VK lookup key. Mirrors OCaml `Proof_cache` semantics
+-- | (`proof_cache.ml:185`): the full VK JSON serves as the bucket key
+-- | rather than a digest. OCaml never materializes a host-side VK digest;
+-- | we follow suit instead of porting kimchi's `PlonkSpongeConstantsKimchi`
+-- | sponge to JS.
 stepVkKey :: VerifierIndex Vesta.G Pallas.BaseField -> String
-stepVkKey vk = "step:" <> fieldStr (pallasVerifierIndexDigest vk)
+stepVkKey vk = "step:" <> pallasVerifierIndexJsonKey vk
 
 wrapVkKey :: VerifierIndex Pallas.G Vesta.BaseField -> String
-wrapVkKey vk = "wrap:" <> fieldStr (vestaVerifierIndexDigest vk)
+wrapVkKey vk = "wrap:" <> vestaVerifierIndexJsonKey vk
 
 -- | Step proof lookup / store (= OCaml `get/set_step_proof`).
 getStepProof

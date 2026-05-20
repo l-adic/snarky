@@ -1,0 +1,16 @@
+{
+  "name": "pasta-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Vendored pure-JS Pasta finite-field, elliptic-curve, and Poseidon implementations (from o1js).",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./field": "./PastaField.js",
+    "./curve": "./PastaCurve.js",
+    "./poseidon": "./PastaPoseidon.js",
+    "./poseidon-constants": "./PastaPoseidonConstants.js",
+    "./poly": "./poly.js"
+  }
+}

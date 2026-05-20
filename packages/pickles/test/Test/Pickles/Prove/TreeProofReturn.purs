@@ -36,7 +36,6 @@ import Prelude
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift) as MT
 import Data.Either (Either(..))
-import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
 import Data.Tuple.Nested (Tuple2, tuple1, tuple2, (/\))
@@ -48,11 +47,10 @@ import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), Compiled, CompiledProof(..), NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots2, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, verify)
 import Pickles.ProofCache (mkProofCache)
-import Snarky.Backend.Kimchi.Class (createCRS)
-import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, const_, exists, if_, not_, true_)
 import Snarky.Curves.Class (fromInt)
+import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
@@ -110,12 +108,10 @@ type TreeRules =
     (Tuple2 SlotWrapKey SlotWrapKey)
     RulesNil
 
-spec :: SpecT Aff Unit Aff Unit
+spec :: SpecT Aff SharedSrs Aff Unit
 spec = describe "Pickles.Prove.TreeProofReturn" do
-  it "5-iteration heterogeneous chain (b0..b4): NRR external slot + self-recursive slot, end-to-end verify" \_ -> do
+  it "5-iteration heterogeneous chain (b0..b4): NRR external slot + self-recursive slot, end-to-end verify" \{ pallasSrs, vestaSrs } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/TreeProofReturn.json")
-    let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
-    vestaSrs <- liftEffect $ createCRS @StepField
 
     -- ===== NRR side: 1-rule compileMulti at mpvMax=0. =====
     nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit

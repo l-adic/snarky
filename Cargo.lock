@@ -609,11 +609,10 @@ dependencies = [
 
 [[package]]
 name = "groupmap"
-version = "0.1.0"
+version = "0.4.1"
 dependencies = [
  "ark-ec",
  "ark-ff",
- "rand",
 ]
 
 [[package]]
@@ -707,7 +706,7 @@ dependencies = [
 
 [[package]]
 name = "internal-tracing"
-version = "0.1.0"
+version = "0.4.1"
 
 [[package]]
 name = "itertools"
@@ -745,7 +744,7 @@ dependencies = [
 
 [[package]]
 name = "kimchi"
-version = "0.1.0"
+version = "0.4.1"
 dependencies = [
  "ark-ec",
  "ark-ff",
@@ -773,7 +772,6 @@ dependencies = [
  "strum",
  "strum_macros",
  "thiserror 2.0.17",
- "turshi",
 ]
 
 [[package]]
@@ -806,17 +804,18 @@ checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
 
 [[package]]
 name = "mina-curves"
-version = "0.1.0"
+version = "0.4.1"
 dependencies = [
  "ark-bn254",
  "ark-ec",
  "ark-ff",
+ "ark-std",
  "num-bigint",
 ]
 
 [[package]]
 name = "mina-poseidon"
-version = "0.1.0"
+version = "0.4.1"
 dependencies = [
  "ark-ec",
  "ark-ff",
@@ -932,7 +931,7 @@ dependencies = [
 
 [[package]]
 name = "o1-utils"
-version = "0.1.0"
+version = "0.4.1"
 dependencies = [
  "ark-ec",
  "ark-ff",
@@ -946,6 +945,7 @@ dependencies = [
  "rand_core",
  "rayon",
  "rmp-serde",
+ "rustversion",
  "serde",
  "serde_json",
  "serde_with",
@@ -979,7 +979,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "poly-commitment"
-version = "0.1.0"
+version = "0.4.1"
 dependencies = [
  "ark-ec",
  "ark-ff",
@@ -993,7 +993,6 @@ dependencies = [
  "mina-poseidon",
  "num-bigint",
  "o1-utils",
- "once_cell",
  "rand",
  "rand_core",
  "rayon",
@@ -1001,6 +1000,7 @@ dependencies = [
  "serde",
  "serde_with",
  "thiserror 2.0.17",
+ "zeroize",
 ]
 
 [[package]]
@@ -1281,9 +1281,9 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "strum"
-version = "0.26.3"
+version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fec0f0aef304996cf250b31b5a10dee7980c85da9d759361292b8bca5a18f06"
+checksum = "af23d6f6c1a224baef9d3f61e287d2761385a5b88fdab4eb4c6f11aeb54c4bcf"
 
 [[package]]
 name = "strum_macros"
@@ -1384,15 +1384,6 @@ checksum = "30cfb0125f12d9c277f35663a0a33f8c30190f4e4574868a330595412d34ebf3"
 dependencies = [
  "num-conv",
  "time-core",
-]
-
-[[package]]
-name = "turshi"
-version = "0.1.0"
-dependencies = [
- "ark-ff",
- "hex",
- "o1-utils",
 ]
 
 [[package]]

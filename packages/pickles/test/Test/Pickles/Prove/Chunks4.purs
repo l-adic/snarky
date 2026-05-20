@@ -31,10 +31,9 @@ import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, verify)
 import Pickles.ProofCache (mkProofCache)
-import Snarky.Backend.Kimchi.Class (createCRS)
-import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.DSL (F, addConstraint, exists, mul_)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
+import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
@@ -74,9 +73,9 @@ type Chunks4Rules =
   RulesCons 0 Unit Unit Unit
     RulesNil
 
-spec :: SpecT Aff Unit Aff Unit
+spec :: SpecT Aff SharedSrs Aff Unit
 spec = describe "Pickles.Prove.Chunks4" do
-  it "base case (b0) — chunks=4 step+wrap proves end-to-end" \_ -> do
+  it "base case (b0) — chunks=4 step+wrap proves end-to-end" \{ pallasSrs, vestaSrs } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/Chunks4.json")
     -- Step kimchi uses `vestaSrs` (depth 2^16 via cache load). With
     -- chunks4's 2^17-row step circuit, the step domain rounds to
@@ -85,8 +84,6 @@ spec = describe "Pickles.Prove.Chunks4" do
     -- (`Backend.Tock.Keypair.load_urs ()` at `Tock.Rounds.n = N15`,
     -- `kimchi_pasta_basic.ml:6`). Wrap domain is 2^14 (override) so
     -- num_chunks at wrap = 1.
-    let pallasSrs = PallasImpl.pallasCrsCreate (1 `Bits.shl` 15)
-    vestaSrs <- liftEffect $ createCRS @StepField
 
     -- @nc=1 placeholder for side-loaded-slot chunks count
     -- (no side-loaded slots here).

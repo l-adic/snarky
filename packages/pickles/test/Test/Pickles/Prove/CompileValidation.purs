@@ -10,7 +10,6 @@ module Test.Pickles.Prove.CompileValidation
 import Prelude
 
 import Data.Either (Either(..))
-import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
 import Data.String (contains)
 import Data.String.Pattern (Pattern(..))
@@ -19,10 +18,9 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception as Exc
 import Pickles (NoSlots, StepField, compileMulti, mkRuleEntry)
-import Snarky.Backend.Kimchi.Class (createCRS)
-import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.DSL (F)
 import Test.Pickles.Prove.NoRecursionReturn (NrrRules, nrrRule)
+import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (fail)
 
@@ -31,11 +29,9 @@ import Test.Spec.Assertions (fail)
 -- | compile it with `@stepChunks = 2`. Since the step domain log2 for
 -- | this tiny rule is well below `StepIPARounds = 16`, the per-branch
 -- | num_chunks is 1, and the validation must throw.
-spec :: SpecT Aff Unit Aff Unit
+spec :: SpecT Aff SharedSrs Aff Unit
 spec = describe "Pickles.Prove.Compile.validateNumChunks" do
-  it "throws when @stepChunks=2 but the circuit only needs 1" \_ -> do
-    let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
-    vestaSrs <- liftEffect $ createCRS @StepField
+  it "throws when @stepChunks=2 but the circuit only needs 1" \{ pallasSrs, vestaSrs } -> do
     nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
     let rules = tuple1 nrrEntry
     result <- liftEffect $ Exc.try $ compileMulti

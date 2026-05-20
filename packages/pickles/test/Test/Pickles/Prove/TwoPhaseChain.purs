@@ -24,7 +24,6 @@ import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift) as MT
 import Data.Either (Either(..))
 import Data.Functor.Product (Product)
-import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested (Tuple1, tuple1, tuple2, (/\))
@@ -36,11 +35,10 @@ import Effect.Exception as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), Compiled, NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, verify)
 import Pickles.ProofCache (mkProofCache)
-import Snarky.Backend.Kimchi.Class (createCRS)
-import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertEqual_, const_, exists, true_)
 import Snarky.Curves.Class (fromInt) as Curves
+import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
@@ -131,7 +129,7 @@ type TwoPhaseChainRules =
 -- Test spec
 --------------------------------------------------------------------------------
 
-spec :: SpecT Aff Unit Aff Unit
+spec :: SpecT Aff SharedSrs Aff Unit
 spec = describe "Pickles.Prove.TwoPhaseChain" do
   -- Multi-branch chain b0..b3 prove + verify under the shared wrap VK.
   --   * `compileMulti` end-to-end (multi-branch step+wrap compile)
@@ -141,10 +139,8 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
   --     shared verifier — relies on per-proof `stepDomainLog2` so each
   --     proof's deferred-values reconstruction uses its own branch's
   --     step domain (b0=9, b1..b3=14).
-  it "b0..b3 chain prove + verify under shared wrap VK" \_ -> do
+  it "b0..b3 chain prove + verify under shared wrap VK" \{ pallasSrs, vestaSrs } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/TwoPhaseChain.json")
-    let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
-    vestaSrs <- liftEffect $ createCRS @StepField
 
     let
       cfg =

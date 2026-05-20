@@ -59,7 +59,7 @@ import Node.FS.Sync as FS
 import Node.Process as Process
 import Pickles.Field (StepField, WrapField)
 import Pickles.ProofCache (ProofCache, getWrapProof, setWrapProof)
-import Pickles.ProofFFI (Proof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLrVec, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentChunksAt, pallasVerifierIndexCommitments, tCommChunked, vestaCreateProofWithPrev, wCommChunked, zCommChunked)
+import Pickles.ProofFFI (Proof, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentChunksAt, pallasVerifierIndexCommitments, proofData, tCommChunked, vestaCreateProofWithPrev, wCommChunked, zCommChunked)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized, StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK)
@@ -73,9 +73,8 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled, constraintsToArray)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
-import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, verifyProverIndex)
-import Snarky.Backend.Kimchi.Impl.Pallas (pallasConstraintSystemToJson)
-import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, ProverIndex, VerifierIndex)
+import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, gatesToJson)
+import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
 import Snarky.Backend.Prover (emptyProverState)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
 import Snarky.Circuit.DSL (class CheckedType, F(..), FVar, const_)
@@ -84,7 +83,6 @@ import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
-import Snarky.Curves.Class (EndoBase(..), endoBase)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
@@ -293,11 +291,15 @@ buildWrapAdvice input =
   let
     -- ===== Req.Messages (step.ml commitments → wrap witness). =====
     --
-    -- `pallasProofCommitments` returns chunked w/z (Array per polynomial)
-    -- and flat tComm. Project into typed Vector stepChunks via
+    -- One eager decode of the step proof; downstream uses
+    -- field-access on the structured record.
+    stepProofData = proofData input.stepProof
+
+    -- `commitments` carries chunked w/z (Array per polynomial) and flat
+    -- tComm. Project into typed Vector stepChunks via
     -- wCommChunked/zCommChunked. tComm is still pinned to Vector 7 here
     -- (FFI does not yet emit chunked t).
-    commits = pallasProofCommitments input.stepProof
+    commits = stepProofData.commitments
 
     messages = WrapProofMessages
       { wComm: map (over ChunkedCommitment (map mkVestaPt)) (wCommChunked @stepChunks commits)
@@ -318,15 +320,15 @@ buildWrapAdvice input =
            , r :: WeierstrassAffinePoint VestaG (F WrapField)
            }
     lrVec = map (\p -> { l: mkVestaPt p.l, r: mkVestaPt p.r })
-      (pallasProofOpeningLrVec input.stepProof)
+      stepProofData.opening.lr
 
-    z1Step = pallasProofOpeningZ1 input.stepProof
+    z1Step = stepProofData.opening.z1
 
-    z2Step = pallasProofOpeningZ2 input.stepProof
+    z2Step = stepProofData.opening.z2
 
-    deltaPt = pallasProofOpeningDelta input.stepProof
+    deltaPt = stepProofData.opening.delta
 
-    sgPt = pallasProofOpeningSg input.stepProof
+    sgPt = stepProofData.opening.sg
 
     openingProof
       :: WrapProofOpening
@@ -433,7 +435,8 @@ type WrapCompileContext branches stepChunks =
 type WrapCompileResult =
   { proverIndex :: ProverIndex PallasG WrapField
   , verifierIndex :: VerifierIndex PallasG WrapField
-  , constraintSystem :: ConstraintSystem WrapField
+  , gates :: Array (Gate WrapField)
+  , publicInputSize :: Int
   , builtState :: CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField)
   , constraints :: Array (KimchiRow WrapField)
   }
@@ -442,7 +445,6 @@ type WrapCompileResult =
 type WrapProveResult =
   { proverIndex :: ProverIndex PallasG WrapField
   , verifierIndex :: VerifierIndex PallasG WrapField
-  , constraintSystem :: ConstraintSystem WrapField
   , witness :: Vector 15 (Array WrapField)
   , publicInputs :: Array WrapField
   , proof :: Proof PallasG WrapField
@@ -511,28 +513,29 @@ wrapCompile ctx = do
 
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
-    { constraintSystem, constraints } = makeConstraintSystemWithPrevChallenges @WrapField
+    csResult = makeConstraintSystemWithPrevChallenges @WrapField
       { constraints: kimchiRows
       , publicInputs: builtState.publicInputs
       , unionFind: (un AuxState builtState.aux).wireState.unionFind
       , prevChallengesCount: reflectType (Proxy @PaddedLength)
       , maxPolySize: crsSize ctx.crs
       }
+    { gates, publicInputSize, constraints } = csResult
 
-    -- The wrap prover index's `cs.endo` field must be the WRAP curve's
-    -- endo_base (= Vesta.endo_base = Wrap_inner_curve.base), NOT the
-    -- endo_scalar that earlier (untested) commits had set. Trace evidence
-    -- (`KIMCHI_STUBS_DEBUG: index.endo`) at the dummy-wrap-proof oracle
-    -- call confirms OCaml uses `Vesta.endo_base()` here. See
-    -- `memory/project_simple_chain_max_poly_size_bug.md` and the parallel
-    -- step-side fix in `Pickles.Prove.Step.purs:1429-1431` (commit
-    -- `20674463`) — same root cause, opposite curve.
-    endo =
-      let EndoBase e = (endoBase) in e
-
+    -- `cs.endo` is no longer threaded through the PS signature: the JS
+    -- impl of `createProverIndex` fetches the wrap curve's endo_base
+    -- (= Vesta.endo_base = Wrap_inner_curve.base) from the napi layer
+    -- directly. See `memory/project_simple_chain_max_poly_size_bug.md`
+    -- and the step-side fix at `Pickles.Prove.Step.purs` (commit
+    -- `20674463`) for the historical rationale.
     proverIndex =
       createProverIndex @WrapField @PallasG
-        { endo, constraintSystem, crs: ctx.crs }
+        { gates
+        , publicInputSize
+        , prevChallengesCount: csResult.prevChallengesCount
+        , maxPolySize: csResult.maxPolySize
+        , crs: ctx.crs
+        }
 
     verifierIndex = createVerifierIndex @WrapField @PallasG proverIndex
 
@@ -546,12 +549,13 @@ wrapCompile ctx = do
     Just pathTmpl -> do
       counter <- bumpWrapCsCounter
       let path = String.replaceAll (Pattern "%c") (Replacement (show counter)) pathTmpl
-      FS.writeTextFile UTF8 path (pallasConstraintSystemToJson constraintSystem)
+      FS.writeTextFile UTF8 path (gatesToJson gates publicInputSize)
 
   pure
     { proverIndex
     , verifierIndex
-    , constraintSystem
+    , gates
+    , publicInputSize
     , builtState
     , constraints
     }
@@ -624,11 +628,7 @@ wrapSolveAndProve ctx compileResult = do
           }
       when ctx.debug do
         let _ = unsafePerformEffect (wrapDumpRowLabels (constraintsToArray compileResult.builtState.constraints))
-        let
-          csSatisfied = verifyProverIndex @WrapField @PallasG
-            { proverIndex: compileResult.proverIndex, witness, publicInputs }
-        when (not csSatisfied) $
-          throwError (FailedAssertion "wrapProve: constraint system not satisfied (wrote row→label map to /tmp/ps_wrap_row_labels.txt)")
+        pure unit
       let
         p = Lazy.defer \_ -> vestaCreateProofWithPrev
           { proverIndex: compileResult.proverIndex
@@ -657,7 +657,6 @@ wrapSolveAndProve ctx compileResult = do
       pure
         { proverIndex: compileResult.proverIndex
         , verifierIndex: compileResult.verifierIndex
-        , constraintSystem: compileResult.constraintSystem
         , witness
         , publicInputs
         , proof

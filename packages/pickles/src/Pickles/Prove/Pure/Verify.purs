@@ -260,12 +260,9 @@ expandDeferredForVerify input =
       , beta: unwrapF input.rawPlonk.beta
       , gamma: unwrapF input.rawPlonk.gamma
       , zeta: zetaField
-      , ftEval0: stepFtEval0
       , v: xiField
       , u: rField
-      , combinedInnerProduct: cipActual
       , ftEval1: input.chunkedAllEvals.ftEval1
-      , publicEvals: input.chunkedAllEvals.publicEvals
       , fqDigest: input.spongeDigestBeforeEvaluations
       , alphaChal: unwrapF input.rawPlonk.alpha
       , zetaChal: unwrapF input.rawPlonk.zeta

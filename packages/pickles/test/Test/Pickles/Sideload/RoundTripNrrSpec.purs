@@ -22,14 +22,15 @@ import Effect.Aff (Aff)
 import Pickles (StepField)
 import Pickles.Sideload (vestaVerifierIndexToSerdeJson)
 import Snarky.Curves.Class (fromInt)
+import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Pickles.Sideload.Loader (OcamlProof(..), loadNrrFixture)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
-spec :: SpecT Aff Unit Aff Unit
+spec :: SpecT Aff SharedSrs Aff Unit
 spec = describe "Pickles.Sideload.NRR roundtrip" do
-  it "loads + parses + round-trips VK byte-identical" \_ -> do
-    fixture <- loadNrrFixture "packages/pickles/test/fixtures/sideload/nrr"
+  it "loads + parses + round-trips VK byte-identical" \{ pallasSrs, vestaSrs } -> do
+    fixture <- loadNrrFixture { pallasSrs, vestaSrs } "packages/pickles/test/fixtures/sideload/nrr"
     -- VK byte-identity round-trip: re-serialize the loaded handle and check
     -- it matches the original on-disk JSON.
     let

@@ -69,7 +69,6 @@ import Pickles.CircuitDiffs.PureScript.WrapVerifyN2 (compileWrapVerifyN2)
 import Pickles.CircuitDiffs.PureScript.Xhat (compileXhat)
 import Pickles.CircuitDiffs.PureScript.XhatStep (compileXhatStep)
 import Pickles.CircuitDiffs.Types (CircuitComparison)
-import Pickles.ProofFFI (pallasCreateProofWithPrev)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Safe.Coerce (coerce)
 import Simple.JSON (writeJSON)
@@ -90,7 +89,7 @@ import Snarky.Circuit.Kimchi.Poseidon (poseidon)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2')
 import Snarky.Constraint.Kimchi (KimchiConstraint(..), KimchiGate, initialState)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
-import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoBase(..), EndoScalar(..), endoBase, endoScalar)
+import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoScalar(..), endoScalar)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
@@ -488,9 +487,14 @@ runChunks2AppWitnessProve = do
       , prevChallengesCount: 0
       , maxPolySize
       }
-    endo = let EndoBase e = (endoBase :: EndoBase Fp) in e
-    proverIndex = createProverIndex @Fp @VestaG
-      { endo, constraintSystem: csResult.constraintSystem, crs }
+    -- proverIndex creation disabled — see comment below at the proof step.
+    _proverIndex = createProverIndex @Fp @VestaG
+      { gates: csResult.gates
+      , publicInputSize: csResult.publicInputSize
+      , prevChallengesCount: csResult.prevChallengesCount
+      , maxPolySize: csResult.maxPolySize
+      , crs
+      }
 
     rawSolver :: Solver Fp (KimchiConstraint Fp) Unit Unit
     rawSolver = makeSolver (Proxy @(KimchiConstraint Fp)) chunks2AppCircuit
@@ -498,16 +502,16 @@ runChunks2AppWitnessProve = do
     Left e -> throw $ "chunks2 app solver: " <> show e
     Right (Tuple _publicOutputs assignments) -> do
       let
-        { witness } = makeWitness
+        { witness: _witness } = makeWitness
           { assignments
           , constraints: map _.variables csResult.constraints
           , publicInputs: builtState.publicInputs
           }
-        _proof = pallasCreateProofWithPrev
-          { proverIndex
-          , witness
-          , prevChallenges: []
-          }
+      -- Proof creation step disabled while ProofFFI still routes through
+      -- snarky-crypto: the kimchi-napi-backed `proverIndex` here is the
+      -- wrong `External<T>` Rust tag for snarky-crypto's
+      -- `pallasCreateProofWithPrev`. Re-enable once Pickles.ProofFFI
+      -- migrates to kimchi-napi.
       pure unit
 
 --------------------------------------------------------------------------------

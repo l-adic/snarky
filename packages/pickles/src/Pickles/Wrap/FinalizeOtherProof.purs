@@ -89,7 +89,7 @@ wrapFinalizeOtherProofCircuit
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
-  => LinearizationFFI f g
+  => LinearizationFFI f
   => Reflectable d Int
   => Params nd f r2
   -> (FVar f -> Snarky (KimchiConstraint f) t m (FVar f))

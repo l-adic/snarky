@@ -18,7 +18,6 @@ import Prelude
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift) as MT
 import Data.Either (Either(..))
-import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Tuple (fst)
 import Data.Tuple.Nested (Tuple1, tuple1, (/\))
@@ -33,8 +32,6 @@ import Pickles (BranchProver(..), CompiledProof, NoSlots, PrevSlot(..), ProofsVe
 import Pickles.ProofCache (mkProofCache)
 import Pickles.Sideload (mkBundle) as Sideload
 import Safe.Coerce (coerce)
-import Snarky.Backend.Kimchi.Class (createCRS)
-import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, SizedF, assertAny_, assertEqual_, const_, equals_, exists, true_)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
@@ -44,6 +41,7 @@ import Snarky.Curves.Class (fromInt, generator, toAffine)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (Type1(..))
+import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Unsafe.Coerce (unsafeCoerce)
@@ -130,12 +128,10 @@ sideLoadedMainRule self = do
     , publicOutput: unit
     }
 
-spec :: SpecT Aff Unit Aff Unit
+spec :: SpecT Aff SharedSrs Aff Unit
 spec = describe "Pickles.Prove.SideLoadedMain" do
-  it "parent prove with InductivePrev (PS-compiled child, width-lifted to N2)" \_ -> do
+  it "parent prove with InductivePrev (PS-compiled child, width-lifted to N2)" \{ pallasSrs, vestaSrs } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/SideLoadedMain.json")
-    let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
-    vestaSrs <- liftEffect $ createCRS @StepField
 
     -- Compile the Input-mode No_recursion child. Its kimchi wrap VK
     -- (at log2 = 13, `mpv = N0` → `wrap_domains.h = 13`) becomes the

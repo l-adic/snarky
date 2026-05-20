@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "workspaces": [
-    "packages/crypto-provider"
+    "packages/crypto-provider",
+    "packages/kimchi-napi",
+    "packages/pasta-runtime"
   ],
   "scripts": {
     "test": "make test",
@@ -27,7 +29,9 @@
   "homepage": "https://github.com/l-adic/snarky#readme",
   "dependencies": {
     "json-bigint": "^1.0.0",
-    "snarky-crypto": "file:./packages/crypto-provider"
+    "snarky-crypto": "file:./packages/crypto-provider",
+    "kimchi-napi": "file:./packages/kimchi-napi",
+    "pasta-runtime": "file:./packages/pasta-runtime"
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.4.1",

@@ -12,11 +12,12 @@ import Test.Pickles.Prove.SideLoadedMain as SideLoadedMain
 import Test.Pickles.Prove.SimpleChain as SimpleChain
 import Test.Pickles.Prove.TreeProofReturn as TreeProofReturn
 import Test.Pickles.Prove.TwoPhaseChain as TwoPhaseChain
+import Test.Pickles.SharedSrs (buildSharedSrs)
 import Test.Pickles.Sideload.DigestEqNrrSpec as SideloadDigestEqNrr
 import Test.Pickles.Sideload.RoundTripMainChildSpec as SideloadRoundTripMainChild
 import Test.Pickles.Sideload.RoundTripNrrSpec as SideloadRoundTripNrr
 import Test.Pickles.Sideload.VerifyNrrSpec as SideloadVerifyNrr
-import Test.Spec (SpecT)
+import Test.Spec (SpecT, beforeAll)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess')
 import Test.Spec.Runner.Node.Config as Cfg
@@ -35,8 +36,13 @@ import Test.Spec.Runner.Node.Config as Cfg
 -- | trace fixtures live outside the git tree, regenerable via
 -- | `tools/regen-fixtures.sh`, and only consumed by the manual diff
 -- | scripts in `tools/`. Tests don't depend on any `.trace` files.
+-- | Specs that take a `SharedSrs` per-test value get the SRS built once
+-- | via `beforeAll buildSharedSrs` (memoized for the whole pickles suite —
+-- | the lagrange-basis cache attached to each SRS is then populated once
+-- | and reused across every test, saving ~tens of seconds per run).
+-- | Specs that don't need the SRS sit outside the `beforeAll` block.
 spec :: SpecT Aff Unit Aff Unit
-spec = do
+spec = beforeAll buildSharedSrs do
   CompileValidation.spec
   NoRecursionReturn.spec
   SimpleChain.spec

@@ -39,9 +39,12 @@ import Prelude
 import Data.Array as Array
 import Data.Function.Uncurried (Fn3, runFn3)
 import Data.Maybe (Maybe(..), fromJust)
+import Data.Maybe (fromJust)
 import JS.BigInt (BigInt)
+import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasBW19, class HasEndo, class HasSqrt, class PrimeField, class SerdeHex, class WeierstrassCurve, EndoBase(..), EndoScalar(..), toBigInt)
+import Partial.Unsafe (unsafePartial)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasBW19, class HasEndo, class HasSqrt, class PrimeField, class SerdeHex, class TwoAdicField, class WeierstrassCurve, EndoBase(..), EndoScalar(..), toBigInt)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 
 -- ============================================================================
@@ -110,6 +113,19 @@ instance PrimeField PallasScalarField where
   toBigInt = _pallasToBigInt
   modulus = _pallasModulus unit
   pow = _pallasPow
+
+-- | Pasta primes both have 2-adicity 32 with field-specific 2-adic roots
+-- | (taken from o1js's `bindings/crypto/finite-field.ts` / our vendored
+-- | `pasta-runtime/PastaField.js`). The constants are primitive
+-- | 2^32-th roots of unity in the respective field.
+instance TwoAdicField PallasScalarField where
+  -- 0x2de6a9b8746d3f589e5c4dfd492ae26e9bb97ea3c106f049a70e2c1102b6d05f, the
+  -- canonical 2^32-th root of unity in Fq (= PallasScalarField). Sourced from
+  -- arkworks `mina_curves::pasta::fields::fq::FrConfig::TWO_ADIC_ROOT_OF_UNITY`,
+  -- mirrored in `pasta-runtime/PastaField.js` as `TWOADIC_ROOT_FQ`.
+  twoAdicRoot = _pallasFromBigInt $ unsafePartial $ fromJust $ BigInt.fromString
+    "20761624379169977859705911634190121761503565370703356079647768903521299517535"
+  twoAdicity = 32
 
 instance FieldSizeInBits PallasScalarField 255
 
@@ -264,6 +280,15 @@ instance PrimeField VestaScalarField where
   toBigInt = _vestaScalarFieldToBigInt
   pow = _vestaScalarFieldPow
   modulus = _vestaScalarFieldModulus unit
+
+instance TwoAdicField VestaScalarField where
+  -- 0x2bce74deac30ebda362120830561f81aea322bf2b7bb7584bdad6fabd87ea32f, the
+  -- canonical 2^32-th root of unity in Fp (= VestaScalarField). Sourced from
+  -- arkworks `mina_curves::pasta::fields::fp::FrConfig::TWO_ADIC_ROOT_OF_UNITY`,
+  -- mirrored in `pasta-runtime/PastaField.js` as `TWOADIC_ROOT_FP`.
+  twoAdicRoot = _vestaScalarFieldFromBigInt $ unsafePartial $ fromJust $ BigInt.fromString
+    "19814229590243028906643993866117402072516588566294623396325693409366934201135"
+  twoAdicity = 32
 
 instance FieldSizeInBits VestaScalarField 255
 

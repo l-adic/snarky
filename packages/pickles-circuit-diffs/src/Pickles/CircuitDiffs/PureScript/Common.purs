@@ -44,7 +44,7 @@ import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (F(..), FVar, SizedF)
 import Snarky.Constraint.Kimchi (KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
-import Snarky.Curves.Class (EndoBase(..), EndoScalar(..), endoBase, endoScalar, fromBigInt, generator, toAffine)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, generator, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
@@ -144,7 +144,7 @@ deriveStepVKFromCompiled
 deriveStepVKFromCompiled vestaSrs builtState =
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
-    { constraintSystem } = makeConstraintSystemWithPrevChallenges @StepField
+    csResult = makeConstraintSystemWithPrevChallenges @StepField
       { constraints: kimchiRows
       , publicInputs: builtState.publicInputs
       , unionFind: (un AuxState builtState.aux).wireState.unionFind
@@ -152,10 +152,13 @@ deriveStepVKFromCompiled vestaSrs builtState =
       , maxPolySize: crsSize vestaSrs
       }
 
-    endo :: StepField
-    endo = let EndoBase e = (endoBase) in e
     proverIndex = createProverIndex @StepField @VestaG
-      { endo, constraintSystem, crs: vestaSrs }
+      { gates: csResult.gates
+      , publicInputSize: csResult.publicInputSize
+      , prevChallengesCount: csResult.prevChallengesCount
+      , maxPolySize: csResult.maxPolySize
+      , crs: vestaSrs
+      }
     verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
   in
     stepVkForCircuit (extractStepVKComms @stepChunks verifierIndex)
@@ -177,7 +180,7 @@ deriveWrapVKFromCompiled
 deriveWrapVKFromCompiled pallasSrs builtState =
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
-    { constraintSystem } = makeConstraintSystemWithPrevChallenges @WrapField
+    csResult = makeConstraintSystemWithPrevChallenges @WrapField
       { constraints: kimchiRows
       , publicInputs: builtState.publicInputs
       , unionFind: (un AuxState builtState.aux).wireState.unionFind
@@ -185,10 +188,13 @@ deriveWrapVKFromCompiled pallasSrs builtState =
       , maxPolySize: crsSize pallasSrs
       }
 
-    endo :: WrapField
-    endo = let EndoBase e = (endoBase) in e
     proverIndex = createProverIndex @WrapField @PallasG
-      { endo, constraintSystem, crs: pallasSrs }
+      { gates: csResult.gates
+      , publicInputSize: csResult.publicInputSize
+      , prevChallengesCount: csResult.prevChallengesCount
+      , maxPolySize: csResult.maxPolySize
+      , crs: pallasSrs
+      }
     verifierIndex = createVerifierIndex @WrapField @PallasG proverIndex
   in
     extractWrapVKCommsAdvice @wrapVkChunks verifierIndex

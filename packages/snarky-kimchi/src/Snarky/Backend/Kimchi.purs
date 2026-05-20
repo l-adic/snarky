@@ -1,6 +1,5 @@
 module Snarky.Backend.Kimchi
-  ( makeConstraintSystem
-  , makeConstraintSystemWithPrevChallenges
+  ( makeConstraintSystemWithPrevChallenges
   , makeGateData
   , makePublicInputRows
   , makeWitness
@@ -24,8 +23,8 @@ import Data.UnionFind (UnionFindData, find)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
-import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateNew, constraintSystemCreate, constraintSystemCreateWithPrevChallenges)
-import Snarky.Backend.Kimchi.Types (ConstraintSystem, Gate, Wire, gateWiresNewFromWires, wireNew)
+import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateNew)
+import Snarky.Backend.Kimchi.Types (Gate, Wire, gateWiresNewFromWires, wireNew)
 import Snarky.Circuit.DSL (Variable)
 import Snarky.Constraint.Kimchi.Types (GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
@@ -160,45 +159,19 @@ makeGateData arg =
     , publicInputSize
     }
 
-makeConstraintSystem
-  :: forall @f g
-   . CircuitGateConstructor f g
-  => PrimeField f
-  => { constraints :: Array (KimchiRow f)
-     , publicInputs :: Array Variable
-     , unionFind :: UnionFindData Variable
-     , maxPolySize :: Int
-     -- ^ SRS's `max_poly_size`. Kimchi needs it at CS-build time to
-     -- compute `num_chunks = ceil(domain_size / max_poly_size)` and
-     -- pick the matching `zk_rows = (16 * num_chunks + 5) / 7`.
-     -- Mirrors OCaml's kimchi-stubs `caml_pasta_fp_plonk_index_create
-     -- ~max_poly_size:(srs.max_poly_size())`.
-     }
-  -> { constraintSystem :: ConstraintSystem f
-     , constraints :: Array (KimchiRow f)
-     , gates :: Array (Gate f)
-     , publicInputSize :: Int
-     }
-makeConstraintSystem arg =
-  let
-    gd = makeGateData @f
-      { constraints: arg.constraints
-      , publicInputs: arg.publicInputs
-      , unionFind: arg.unionFind
-      }
-  in
-    { constraintSystem: constraintSystemCreate @f gd.gates gd.publicInputSize arg.maxPolySize
-    , constraints: gd.constraints
-    , gates: gd.gates
-    , publicInputSize: gd.publicInputSize
-    }
-
--- | Variant of `makeConstraintSystem` that declares a non-zero
--- | `prev_challenges` count (= number of inductive hypotheses this
--- | circuit verifies recursively at the kimchi layer, injected via
--- | `ProverProof::create_recursive` during proving). Mirrors OCaml's
+-- | Build the raw circuit data (`gates` + `constraints` rows +
+-- | `publicInputSize`) and carry the `prevChallengesCount` /
+-- | `maxPolySize` parameters through to the caller. Previously this
+-- | also called `constraintSystemCreate(WithPrevChallenges)` to produce
+-- | an intermediate `ConstraintSystem` value, but that PS-level type
+-- | has been collapsed away — `createProverIndex` now takes the raw
+-- | data and does CS-creation internally. `prevChallengesCount` is the
+-- | number of inductive hypotheses this circuit verifies recursively
+-- | at the kimchi layer (mirrors OCaml's
 -- | `Kimchi_bindings.Protocol.Constraint_system.create` which takes
--- | the count as part of the gate vector.
+-- | the count as part of the gate vector). `maxPolySize` is the SRS's
+-- | `max_poly_size`, needed at index-create time to compute
+-- | `num_chunks` and `zk_rows`.
 makeConstraintSystemWithPrevChallenges
   :: forall @f g
    . CircuitGateConstructor f g
@@ -208,12 +181,12 @@ makeConstraintSystemWithPrevChallenges
      , unionFind :: UnionFindData Variable
      , prevChallengesCount :: Int
      , maxPolySize :: Int
-     -- ^ SRS's `max_poly_size`; see `makeConstraintSystem` for why.
      }
-  -> { constraintSystem :: ConstraintSystem f
-     , constraints :: Array (KimchiRow f)
+  -> { constraints :: Array (KimchiRow f)
      , gates :: Array (Gate f)
      , publicInputSize :: Int
+     , prevChallengesCount :: Int
+     , maxPolySize :: Int
      }
 makeConstraintSystemWithPrevChallenges arg =
   let
@@ -223,15 +196,11 @@ makeConstraintSystemWithPrevChallenges arg =
       , unionFind: arg.unionFind
       }
   in
-    { constraintSystem:
-        constraintSystemCreateWithPrevChallenges @f
-          gd.gates
-          gd.publicInputSize
-          arg.prevChallengesCount
-          arg.maxPolySize
-    , constraints: gd.constraints
+    { constraints: gd.constraints
     , gates: gd.gates
     , publicInputSize: gd.publicInputSize
+    , prevChallengesCount: arg.prevChallengesCount
+    , maxPolySize: arg.maxPolySize
     }
 
 makeWitness

@@ -44,7 +44,7 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (ChunkedAllEvals)
 import Pickles.PlonkChecks.Chunks as Chunks
-import Pickles.ProofFFI (OraclesResult, Proof, pallasProofFtEval1, pallasProofOpeningPrechallengesVec, pallasProofOracles)
+import Pickles.ProofFFI (OraclesResult, Proof, pallasProofOpeningPrechallengesVec, pallasProofOracles, proofData)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatchChunked, computeBpChalsAndB, crossFieldDigest, derivePlonk, ftEval0)
 import Pickles.Types (StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, ScalarChallenge)
@@ -247,7 +247,7 @@ wrapComputeDeferredValues input =
       , zeta: oraclesResult.zeta
       , zetaOmega: oraclesResult.zeta * input.generator
       }
-      oraclesResult.publicEvals
+      (proofData input.proof).evals.public
 
     -- ===== plonk0 / tick_plonk_minimal. =====
     --
@@ -316,7 +316,7 @@ wrapComputeDeferredValues input =
       { allEvals: input.chunkedAllEvals
       , publicEvals: input.chunkedAllEvals.publicEvals
       , ftEval0: stepFtEval0
-      , ftEval1: pallasProofFtEval1 input.proof
+      , ftEval1: (proofData input.proof).evals.ftEval1
       , oldBulletproofChallenges: input.prevChallenges
       , xi: oraclesResult.v
       , r: oraclesResult.u

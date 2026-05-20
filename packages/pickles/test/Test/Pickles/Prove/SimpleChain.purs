@@ -19,7 +19,6 @@ import Prelude
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift) as MT
 import Data.Either (Either(..))
-import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
 import Data.Tuple.Nested (Tuple1, tuple1, (/\))
@@ -31,11 +30,10 @@ import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), Compiled, CompiledProof(..), PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots1, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, verify)
 import Pickles.ProofCache (mkProofCache)
-import Snarky.Backend.Kimchi.Class (createCRS)
-import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertAny_, const_, equals_, exists, not_)
 import Snarky.Curves.Class (fromInt)
+import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
@@ -80,12 +78,10 @@ type SimpleChainRules =
     (Tuple1 SlotWrapKey)
     RulesNil
 
-spec :: SpecT Aff Unit Aff Unit
+spec :: SpecT Aff SharedSrs Aff Unit
 spec = describe "Pickles.Prove.SimpleChain" do
-  it "5-iteration step+wrap chain (b0..b4) proves end-to-end" \_ -> do
+  it "5-iteration step+wrap chain (b0..b4) proves end-to-end" \{ pallasSrs, vestaSrs } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/SimpleChain.json")
-    let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
-    vestaSrs <- liftEffect $ createCRS @StepField
 
     -- Build the 1-tuple rules carrier for compileMulti. mpvMax = 1
     -- (one prev slot); since this is the only branch, nd = 1.

@@ -31,10 +31,9 @@ import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, verify)
 import Pickles.ProofCache (mkProofCache)
-import Snarky.Backend.Kimchi.Class (createCRS)
-import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.DSL (F, addConstraint, exists, mul_)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
+import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
@@ -74,9 +73,9 @@ type Chunks2Rules =
   RulesCons 0 Unit Unit Unit
     RulesNil
 
-spec :: SpecT Aff Unit Aff Unit
+spec :: SpecT Aff SharedSrs Aff Unit
 spec = describe "Pickles.Prove.Chunks2" do
-  it "base case (b0) — chunks=2 step+wrap proves end-to-end" \_ -> do
+  it "base case (b0) — chunks=2 step+wrap proves end-to-end" \{ pallasSrs, vestaSrs } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/Chunks2.json")
     -- Step kimchi uses `vestaSrs` (depth 2^16 by default cache load).
     -- With chunks2's 2^16-row step circuit, the step domain rounds to
@@ -86,8 +85,6 @@ spec = describe "Pickles.Prove.Chunks2" do
     -- `kimchi_pasta_basic.ml:6`). Wrap domain is 2^14 (override) so
     -- num_chunks at wrap = 1; the smaller SRS gives the correct
     -- max_poly_size = 32768 byte-for-byte with OCaml.
-    let pallasSrs = PallasImpl.pallasCrsCreate (1 `Bits.shl` 15)
-    vestaSrs <- liftEffect $ createCRS @StepField
 
     -- @nc=1 is a placeholder for the side-loaded-slot chunks count
     -- (no side-loaded slots here; nc is irrelevant but must be pinned

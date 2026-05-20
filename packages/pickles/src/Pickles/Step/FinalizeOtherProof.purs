@@ -152,7 +152,7 @@ finalizeOtherProofCircuit
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
-  => LinearizationFFI f g
+  => LinearizationFFI f
   => Reflectable d Int
   => { unshift :: sf -> FVar f
      , shiftedEqual :: sf -> FVar f -> Snarky (KimchiConstraint f) t m (BoolVar f)
