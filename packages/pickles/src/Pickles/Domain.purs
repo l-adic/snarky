@@ -4,7 +4,7 @@
 -- | `kimchi/src/circuits/expr.rs:132 unnormalized_lagrange_basis`.
 -- |
 -- | Previously these were foreign-imported FFI calls into snarky-crypto
--- | (`pallas_*` / `vesta_*` variants in `Pickles.ProofFFI` and
+-- | (`pallas_*` / `vesta_*` variants in `Pickles.Prove.FFI` and
 -- | `Pickles.Linearization.FFI`). They are pure field arithmetic, so they
 -- | belong in PureScript — the typeclass + `PrimeField` ops + the new
 -- | `TwoAdicField` constants (`twoAdicRoot`, `twoAdicity`) are sufficient.
@@ -15,7 +15,6 @@ module Pickles.Domain
   ( domainGenerator
   , evalVanishesOnLastNRows
   , permutationVanishingPolynomial
-  , vanishesOnZkAndPreviousRows
   , unnormalizedLagrangeBasis
   , bPoly
   , computeB0
@@ -88,18 +87,6 @@ permutationVanishingPolynomial
   -> f
 permutationVanishingPolynomial { domainLog2, zkRows, pt } =
   evalVanishesOnLastNRows @f domainLog2 zkRows pt
-
--- | The `VanishesOnZeroKnowledgeAndPreviousRows` term used in the
--- | linearization. Equals
--- |   `eval_vanishes_on_last_n_rows(log2, zk_rows + 1, pt)`
--- | — note the `+ 1`, in contrast to `permutationVanishingPolynomial`.
-vanishesOnZkAndPreviousRows
-  :: forall @f
-   . TwoAdicField f
-  => { domainLog2 :: Int, zkRows :: Int, pt :: f }
-  -> f
-vanishesOnZkAndPreviousRows { domainLog2, zkRows, pt } =
-  evalVanishesOnLastNRows @f domainLog2 (zkRows + 1) pt
 
 -- | Unnormalized i-th Lagrange basis polynomial evaluated at `pt`:
 -- |   (pt^n - 1) / (pt - ω^i),   n = 2^domainLog2

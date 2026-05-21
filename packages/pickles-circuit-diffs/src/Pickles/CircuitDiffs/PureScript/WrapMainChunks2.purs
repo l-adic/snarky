@@ -25,7 +25,7 @@ import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCom
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainChunks2 (StepMainChunks2Params, compileStepMainChunks2)
 import Pickles.Field (StepField, WrapField)
-import Pickles.ProofFFI (pallasSrsLagrangeCommitmentChunksAt)
+import Pickles.Prove.FFI (srsLagrangeCommitmentChunksAt)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
 import Snarky.Backend.Compile (compile)
@@ -58,12 +58,12 @@ compileWrapMainChunks2 { blindingH } stepParams = do
       , stepKeys: realStepVK :< Vector.nil
       -- chunks2 wrap: the step domain (2^17) exceeds Tock SRS depth
       -- (2^15), so each PI slot's lagrange basis splits into 2 chunks.
-      -- Build a chunked lookup using the new `pallasSrsLagrangeCommitmentChunksAt`
+      -- Build a chunked lookup using the new `srsLagrangeCommitmentChunksAt`
       -- FFI; the supplied `lagrangeAt` from IvpWrapParams is nc=1 and
       -- can't be used here.
       , lagrangeAt: mkConstLagrangeBaseLookup \i ->
           let
-            chunksArr = pallasSrsLagrangeCommitmentChunksAt
+            chunksArr = srsLagrangeCommitmentChunksAt
               vestaSrs
               stepArt.stepDomainLog2
               i

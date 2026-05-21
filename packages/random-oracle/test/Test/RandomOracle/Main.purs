@@ -12,7 +12,7 @@ import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reifyType)
 import Data.Traversable (for_)
 import Data.Tuple (Tuple(..), uncurry)
-import Data.Vector (Vector, (:<))
+import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Aff (Aff)

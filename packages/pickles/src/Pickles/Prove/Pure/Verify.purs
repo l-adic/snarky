@@ -3,9 +3,9 @@
 -- | `Wrap_deferred_values.expand_deferred`.
 -- |
 -- | This is the companion of `Pickles.Prove.Pure.Wrap.wrapComputeDeferredValues`,
--- | which is the PROVER side (takes a step proof + calls `pallasProofOracles`
+-- | which is the PROVER side (takes a step proof + calls `proofOraclesRec`
 -- | to sample the Fiat–Shamir challenges). The verifier cannot call
--- | `pallasProofOracles` because it doesn't have the step proof — the
+-- | `proofOraclesRec` because it doesn't have the step proof — the
 -- | carried wrap statement only contains the MINIMAL skeleton plus the
 -- | `sponge_digest_before_evaluations` checkpoint. This module replays the
 -- | sponge from that checkpoint to recover `xi` and `r`, pulls the raw

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export const blake2s256Bytes = (str) => {
+const blake2s256Bytes = (str) => {
   const h = createHash("blake2s256");
   h.update(str);
   return Array.from(h.digest());

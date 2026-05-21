@@ -25,9 +25,7 @@ module Snarky.Curves.Pasta
   , VestaBaseField
   , VestaG
   , -- Hex serialization (for test vectors / circuit JSON)
-    pallasScalarFieldFromHexLe
-  , pallasScalarFieldToHexLe
-  , vestaScalarFieldFromHexLe
+    vestaScalarFieldFromHexLe
   , vestaScalarFieldToHexLe
   ) where
 
@@ -36,10 +34,8 @@ import Prelude
 import Data.Array as Array
 import Data.Function.Uncurried (Fn3, runFn3)
 import Data.Maybe (Maybe(..), fromJust)
-import Data.Maybe (fromJust)
 import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
-import Partial.Unsafe (unsafePartial)
 import Partial.Unsafe (unsafePartial)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasBW19, class HasEndo, class HasSqrt, class PrimeField, class SerdeHex, class TwoAdicField, class WeierstrassCurve, EndoBase(..), EndoScalar(..), toBigInt)
 import Test.QuickCheck (class Arbitrary, arbitrary)
@@ -296,14 +292,6 @@ instance HasSqrt VestaScalarField where
 instance SerdeHex VestaScalarField where
   fromHexLe = _vestaScalarFieldFromHexLe
   toHexLe = _vestaScalarFieldToHexLe
-
--- | Parse a PallasScalarField (= VestaBaseField) from little-endian hex string
-pallasScalarFieldFromHexLe :: String -> PallasScalarField
-pallasScalarFieldFromHexLe = _pallasScalarFieldFromHexLe
-
--- | Serialize a PallasScalarField (= VestaBaseField) to little-endian hex string
-pallasScalarFieldToHexLe :: PallasScalarField -> String
-pallasScalarFieldToHexLe = _pallasScalarFieldToHexLe
 
 -- | Parse a VestaScalarField (= PallasBaseField) from little-endian hex string
 vestaScalarFieldFromHexLe :: String -> VestaScalarField

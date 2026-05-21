@@ -142,7 +142,7 @@ type Input n d f sf b =
 -- |
 -- | Reference: step_verifier.ml:823-1165
 finalizeOtherProofCircuit
-  :: forall d dPred nd ndPred n f f' g t m sf r1 r2
+  :: forall d dPred nd ndPred n f f' t m sf r1 r2
    . Add 1 dPred d
   => Add 1 ndPred nd
   => Compare 0 nd LT

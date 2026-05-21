@@ -1,13 +1,16 @@
 -- | FFI bindings for proof creation, oracle computation, and other
--- | kimchi proof-systems operations.
+-- | kimchi proof-systems operations — the core logic for computing
+-- | relevant proof values.
 -- |
--- | This module was originally `Test.Pickles.ProofFFI` — lifted into
--- | `packages/pickles/src/` so the prover library (`Pickles.Prove.*`)
--- | can consume `proofOracles`, `createProof`, etc. directly.
-module Pickles.ProofFFI
+-- | JSON encode/decode (the disk-proof-cache VK key) lives in the
+-- | sibling `Pickles.Prove.Codecs`. This module owns the `Proof` type,
+-- | the `proofData` decoder, and every prove/verify/oracle/SRS binding.
+module Pickles.Prove.FFI
   ( class ProofFFI
   , class HasProofData
   , proofData
+  , pallasProofCommitments
+  , vestaProofCommitments
   , ProofData
   , ProofCommitments
   , OpeningProofData
@@ -16,65 +19,38 @@ module Pickles.ProofFFI
   , pallasCreateProofWithPrev
   , vestaCreateProofWithPrev
   , proofOracles
+  , proofOraclesRec
   , proofBulletproofChallenges
+  , proofOpeningPrechallenges
   , verifyOpeningProof
   , verifyOpeningProofsBatch
   , computeB0
   , permutationVanishingPolynomial
   , domainGenerator
-  -- Curve-specific helpers — the prevChallenges sg-coord field type
-  -- depends on the curve, so these can't go through the curve-polymorphic
-  -- class.
-  , pallasProofOracles
-  , vestaProofOracles
-  , pallasProofOpeningPrechallenges
-  , vestaProofOpeningPrechallenges
-  , pallasProverIndexDomainLog2
-  , vestaVerifierIndexJsonKey
-  , pallasVerifierIndexJsonKey
-  , pallasSrsLagrangeCommitmentChunksAt
-  , vestaSrsLagrangeCommitmentChunksAt
-  , pallasSrsBlindingGenerator
-  , vestaSrsBlindingGenerator
-  , pallasSigmaCommLast
-  , vestaSigmaCommLast
-  , pallasVerifierIndexColumnComms
-  , vestaVerifierIndexColumnComms
+  , proverIndexDomainLog2
+  , srsLagrangeCommitmentChunksAt
+  , srsBlindingGenerator
+  , sigmaCommLast
+  , verifierIndexColumnComms
+  -- Genuinely wrap-only (no step-side analog), so they stay standalone
+  -- rather than forcing a bogus second class instance.
   , vestaChallengePolyCommitment
   , vestaMakeWireProof
   , Proof
   , OraclesResult
   , PointEval
-  , publicEvalsChunked
   , SpongeCheckpoint
   , LrPair
-  -- Typed wrappers: length-checked at the FFI boundary
-  , VerifierIndexCommitments
-  , pallasVerifierIndexCommitments
-  , vestaVerifierIndexCommitments
-  , pallasProofOpeningPrechallengesVec
-  , vestaProofOpeningPrechallengesVec
-  , tCommChunked
-  , wCommChunked
-  , zCommChunked
   ) where
 
 import Prelude
 
-import Data.Argonaut.Core (Json, stringify)
-import Data.Argonaut.Core (fromArray, fromNumber, fromObject, fromString, jsonNull) as Argonaut
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NonEmptyArray
-import Data.Int (toNumber)
-import Data.Maybe (Maybe(..))
-import Data.Nullable (Nullable)
-import Data.Nullable as Nullable
 import Data.Reflectable (class Reflectable, reflectType)
-import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Foreign.Object as FO
 import Pickles.Domain as Domain
 import Pickles.Types (ChunkedCommitment(..), StepIPARounds, WrapIPARounds)
 import Pickles.Util.Fatal (fromJust')
@@ -106,12 +82,18 @@ foreign import data Proof :: Type -> Type -> Type
 --   g = Pallas.G → c = Pallas.BaseField = Vesta.ScalarField   = Fp
 --------------------------------------------------------------------------------
 
--- | All commitments produced by a kimchi prover, in PS-record form.
--- | Each polynomial's commitment is chunked: one curve point per chunk.
-type ProofCommitments c =
-  { wComm :: Vector 15 (Array (AffinePoint c)) -- 15 witness polys × num_chunks chunks
-  , zComm :: Array (AffinePoint c) -- permutation poly × num_chunks chunks
-  , tComm :: Array (AffinePoint c) -- quotient poly × 7 * num_chunks chunks
+-- | All commitments produced by a kimchi prover, in PS-record form, with
+-- | the per-polynomial chunk count `nc` reflected in the type — each
+-- | commitment carries exactly `nc` curve points (kimchi splits each
+-- | polynomial commitment into `nc` slices of `max_poly_size`). Decoded +
+-- | length-validated once by `proofCommitments @nc`; obtained separately
+-- | from `proofData` because the chunk count is `nc`-dependent whereas the
+-- | opening/evals are not (the many evals-only consumers stay chunk-agnostic).
+type ProofCommitments :: Int -> Type -> Type
+type ProofCommitments nc c =
+  { wComm :: Vector 15 (ChunkedCommitment nc (AffinePoint c)) -- 15 witness polys, nc chunks each
+  , zComm :: ChunkedCommitment nc (AffinePoint c) -- permutation poly, nc chunks
+  , tComm :: Vector 7 (ChunkedCommitment nc (AffinePoint c)) -- quotient poly, 7 pieces × nc chunks
   }
 
 -- | Opening (IPA) proof: lr round pairs + delta + sg curve points, plus the
@@ -150,13 +132,14 @@ type ProofEvaluations f =
   , ftEval1 :: f
   }
 
--- | Top-level structured proof record. `rounds` is the IPA round count
+-- | Top-level structured proof record — the `nc`-agnostic half of a
+-- | decoded proof (`opening` + `evals`). `rounds` is the IPA round count
 -- | for this proof's commitment curve: `StepIPARounds` (= 16) for
 -- | Vesta-committed (step) proofs, `WrapIPARounds` (= 15) for Pallas-committed
--- | (wrap) proofs.
+-- | (wrap) proofs. Commitments live in the separate, `nc`-typed
+-- | `ProofCommitments` record returned by `proofCommitments @nc`.
 type ProofData rounds c f =
-  { commitments :: ProofCommitments c
-  , opening :: OpeningProofData rounds c f
+  { opening :: OpeningProofData rounds c f
   , evals :: ProofEvaluations f
   }
 
@@ -221,7 +204,12 @@ type LrPair f = { l :: AffinePoint f, r :: AffinePoint f }
 -- | (`permutationVanishingPolynomial`, `domainGenerator`, `computeB0`)
 -- | are kept as class methods but their bodies now bind directly to
 -- | `Pickles.Domain` PS implementations.
-class ProofFFI f g | f -> g where
+-- | `c` is the commitment curve's coordinate field (where a proof's curve
+-- | points live). The Pasta cycle makes `f`/`g`/`c` a three-way bijection,
+-- | so all are mutually determined — `g -> f c` in particular lets methods
+-- | whose signature mentions only `g` (e.g. `srsBlindingGenerator :: CRS g
+-- | -> AffinePoint c`) resolve their instance and pin `c`.
+class ProofFFI f g c | f -> g c, g -> f c where
   createProof :: { proverIndex :: ProverIndex g f, witness :: Vector 15 (Array f) } -> Proof g f
   -- | Non-recursive variant of `{pallas,vesta}ProofOracles` — passes
   -- | `prevChallenges: []` behind the scenes. Use this from
@@ -239,6 +227,30 @@ class ProofFFI f g | f -> g where
   permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: f } -> f
   domainGenerator :: Int -> f
   computeB0 :: { challenges :: Array f, zeta :: f, zetaOmega :: f, evalscale :: f } -> f
+  -- | Recursive oracles: like `proofOracles` but absorbs the prior proofs'
+  -- | `prevChallenges` into the Fiat-Shamir transcript. `c` is the
+  -- | commitment curve's coord field — where the prev proofs' `sg`
+  -- | commitments live.
+  proofOraclesRec
+    :: VerifierIndex g f
+    -> { proof :: Proof g f, publicInput :: Array f, prevChallenges :: Array { sgX :: c, sgY :: c, challenges :: Array f } }
+    -> OraclesResult f
+  -- | Raw 128-bit IPA opening prechallenges (pre-endo-expansion), recursive.
+  proofOpeningPrechallenges
+    :: VerifierIndex g f
+    -> { proof :: Proof g f, publicInput :: Array f, prevChallenges :: Array { sgX :: c, sgY :: c, challenges :: Array f } }
+    -> Array f
+  -- | `log_size_of_group` of the prover index's d1 evaluation domain.
+  proverIndexDomainLog2 :: ProverIndex g f -> Int
+  -- | All chunks of the `i`-th SRS lagrange commitment at a given domain log2.
+  srsLagrangeCommitmentChunksAt :: CRS g -> Int -> Int -> Array (AffinePoint c)
+  -- | SRS blinding generator H (coords in the commitment curve's base field).
+  srsBlindingGenerator :: CRS g -> AffinePoint c
+  -- | `sigma_comm[PERMUTS-1]` (the last sigma commitment), all chunks.
+  sigmaCommLast :: VerifierIndex g f -> Array (AffinePoint c)
+  -- | 27 VK column commitments (6 index + 15 coeff + 6 sigma) in to_batch
+  -- | order, each entry chunked.
+  verifierIndexColumnComms :: VerifierIndex g f -> Array (Array (AffinePoint c))
 
 --------------------------------------------------------------------------------
 -- Private foreign imports
@@ -270,29 +282,6 @@ foreign import vestaCreateProofWithPrev
            }
      }
   -> Proof Pallas.G Vesta.BaseField
-
--- | Eager-decode the whole proof to the structured `ProofData` record.
--- | Implementation reads the per-component FFI getters and assembles the
--- | record once; consumers should call this once per proof and pattern-match
--- | the result rather than calling the legacy per-component accessors. The
--- | per-component accessors are kept for backward compat during the
--- | migration and will be removed once all consumers switch.
--- | Raw FFI-returned record: identical to `ProofData` except `opening.lr`
--- | is an unsized `Array` (since the JS decoder doesn't know the type-level
--- | IPA round count). The PS-side `pallasProofData` / `vestaProofData`
--- | wrappers below project it into a `Vector rounds (LrPair c)` using the
--- | `Reflectable rounds Int` length pulled from the type parameter.
-type RawProofData c f =
-  { commitments :: ProofCommitments c
-  , opening ::
-      { lr :: Array (LrPair c)
-      , delta :: AffinePoint c
-      , sg :: AffinePoint c
-      , z1 :: f
-      , z2 :: f
-      }
-  , evals :: ProofEvaluations f
-  }
 
 -- | Typed foreign-record view of kimchi-napi's `WasmF{p,q}ProverProof`.
 -- | The proof handle IS this object at runtime (snake/camel napi labels
@@ -352,26 +341,26 @@ type NapiProof =
 -- | is fully type-checked PS.
 foreign import asNapiProof :: forall g f. Proof g f -> NapiProof
 
--- | Structural decode of the napi proof tree into `RawProofData`. `decF`
--- | decodes scalar/eval leaves (the circuit's witness field `f`); `decC`
--- | decodes curve-point coords (the commitment curve's base field `c`,
--- | the opposite cycle-half). The `to_batch` selector order
--- | `[generic, poseidon, completeAdd, mul, emul, endomulScalar]` is
--- | preserved in `indexEvals`.
-decodeRawProofData
-  :: forall c f
-   . (NapiBytes -> f)
+-- | Structural decode of the napi proof tree into the typed `ProofData`.
+-- | `decF` decodes scalar/eval leaves (the circuit's witness field `f`);
+-- | `decC` decodes curve-point coords (the commitment curve's base field
+-- | `c`, the opposite cycle-half). `@rounds` fixes the IPA round count, so
+-- | the opening's `lr` is length-checked here at the boundary — a mismatch
+-- | means the prover's SRS depth disagrees with the type-level expectation
+-- | (loud `fromJust'` rather than silent corruption). The `to_batch`
+-- | selector order `[generic, poseidon, completeAdd, mul, emul,
+-- | endomulScalar]` is preserved in `indexEvals`.
+decodeProofData
+  :: forall @rounds c f
+   . Reflectable rounds Int
+  => (NapiBytes -> f)
   -> (NapiBytes -> c)
   -> NapiProof
-  -> RawProofData c f
-decodeRawProofData decF decC p =
-  { commitments:
-      { wComm: toVec @15 "commitments.wComm" (map polyComm p.commitments.w_comm)
-      , zComm: polyComm p.commitments.z_comm
-      , tComm: polyComm p.commitments.t_comm
-      }
-  , opening:
-      { lr: Array.zipWith (\l r -> { l: point l, r: point r }) p.proof.lr_0 p.proof.lr_1
+  -> ProofData rounds c f
+decodeProofData decF decC p =
+  { opening:
+      { lr: toVec @rounds "opening.lr (IPA round count — check SRS depth)"
+          (Array.zipWith (\l r -> { l: point l, r: point r }) p.proof.lr_0 p.proof.lr_1)
       , delta: point p.proof.delta
       , sg: point p.proof.sg
       , z1: decF p.proof.z1
@@ -398,9 +387,6 @@ decodeRawProofData decF decC p =
   point :: NapiG -> AffinePoint c
   point g = { x: decC g.x, y: decC g.y }
 
-  polyComm :: NapiPolyComm -> Array (AffinePoint c)
-  polyComm pc = map point pc.unshifted
-
   pointEvals :: NapiPointEvals -> NonEmptyArray (PointEval f)
   pointEvals ev =
     fromJust' "ProofData.evals: empty chunk array"
@@ -411,64 +397,81 @@ decodeRawProofData decF decC p =
   toVec lbl arr =
     fromJust' ("ProofData." <> lbl <> ": unexpected chunk/array length") (Vector.toVector @n arr)
 
-pallasProofDataRaw
-  :: Proof Vesta.G Pallas.BaseField
-  -> RawProofData Pallas.ScalarField Pallas.BaseField
-pallasProofDataRaw = decodeRawProofData fpFromBytesLE fqFromBytesLE <<< asNapiProof
-
-vestaProofDataRaw
-  :: Proof Pallas.G Vesta.BaseField
-  -> RawProofData Vesta.ScalarField Vesta.BaseField
-vestaProofDataRaw = decodeRawProofData fqFromBytesLE fpFromBytesLE <<< asNapiProof
-
--- | Promote a raw decoder result to the typed `ProofData rounds c f` by
--- | applying `Vector.toVector @rounds` once to the lr array. Failure here
--- | indicates a mismatch between the prover's SRS depth and the PS-side
--- | type-level expectation — surfaces as a clear `fromJust'` crash rather
--- | than silent corruption.
-projectProofData
-  :: forall @rounds c f
-   . Reflectable rounds Int
-  => RawProofData c f
-  -> ProofData rounds c f
-projectProofData raw =
-  let
-    expected = reflectType (Proxy :: Proxy rounds)
-    actual = Array.length raw.opening.lr
-    lrVec = fromJust'
-      ( "ProofData.opening.lr: expected Vector of length " <> show expected
-          <> " (= IPA rounds for this proof's commitment curve), got "
-          <> show actual
-      )
-      (Vector.toVector @rounds raw.opening.lr)
-  in
-    { commitments: raw.commitments
-    , opening:
-        { lr: lrVec
-        , delta: raw.opening.delta
-        , sg: raw.opening.sg
-        , z1: raw.opening.z1
-        , z2: raw.opening.z2
-        }
-    , evals: raw.evals
-    }
-
 pallasProofData
   :: Proof Vesta.G Pallas.BaseField
   -> ProofData StepIPARounds Pallas.ScalarField Pallas.BaseField
-pallasProofData = projectProofData <<< pallasProofDataRaw
+pallasProofData = decodeProofData @StepIPARounds fpFromBytesLE fqFromBytesLE <<< asNapiProof
 
 vestaProofData
   :: Proof Pallas.G Vesta.BaseField
   -> ProofData WrapIPARounds Vesta.ScalarField Vesta.BaseField
-vestaProofData = projectProofData <<< vestaProofDataRaw
+vestaProofData = decodeProofData @WrapIPARounds fqFromBytesLE fpFromBytesLE <<< asNapiProof
+
+-- | Structural decode of just the proof's commitments, `nc`-typed. `decC`
+-- | decodes curve-point coords (the commitment curve's base field `c`).
+-- | Each polynomial commitment is reshaped to `ChunkedCommitment nc`, and
+-- | the flat `t_comm` (length `7 * nc`) into `Vector 7 (ChunkedCommitment
+-- | nc)` (outer = quotient sub-poly, inner = chunk). Chunk-count
+-- | mismatches with `@nc` panic at the boundary via `fromJust'`.
+decodeProofCommitments
+  :: forall @nc c
+   . Reflectable nc Int
+  => (NapiBytes -> c)
+  -> NapiProof
+  -> ProofCommitments nc c
+decodeProofCommitments decC p =
+  { wComm: toVec @15 "wComm" (map (chunked <<< polyComm) p.commitments.w_comm)
+  , zComm: chunked (polyComm p.commitments.z_comm)
+  , tComm: tCommReshape (polyComm p.commitments.t_comm)
+  }
+  where
+  point :: NapiG -> AffinePoint c
+  point g = { x: decC g.x, y: decC g.y }
+
+  polyComm :: NapiPolyComm -> Array (AffinePoint c)
+  polyComm pc = map point pc.unshifted
+
+  chunked :: Array (AffinePoint c) -> ChunkedCommitment nc (AffinePoint c)
+  chunked =
+    ChunkedCommitment <<< fromJust' "ProofCommitments: chunk count mismatch with @nc"
+      <<< Vector.toVector @nc
+
+  -- Flat `t_comm` (7 * nc points) → `Vector 7 (ChunkedCommitment nc)`.
+  tCommReshape :: Array (AffinePoint c) -> Vector 7 (ChunkedCommitment nc (AffinePoint c))
+  tCommReshape flat =
+    let
+      nc = reflectType (Proxy @nc)
+      perPiece i = ChunkedCommitment $
+        fromJust' "ProofCommitments.tComm: per-piece chunk count mismatch with @nc"
+          (Vector.toVector @nc (Array.slice (i * nc) ((i + 1) * nc) flat))
+      pieces = map perPiece (Array.range 0 6)
+    in
+      fromJust' "ProofCommitments.tComm: expected 7 quotient pieces" (Vector.toVector @7 pieces)
+
+  toVec :: forall @n a. Reflectable n Int => String -> Array a -> Vector n a
+  toVec lbl arr =
+    fromJust' ("ProofCommitments." <> lbl <> ": unexpected length") (Vector.toVector @n arr)
+
+pallasProofCommitments
+  :: forall @nc
+   . Reflectable nc Int
+  => Proof Vesta.G Pallas.BaseField
+  -> ProofCommitments nc Pallas.ScalarField
+pallasProofCommitments = decodeProofCommitments @nc fqFromBytesLE <<< asNapiProof
+
+vestaProofCommitments
+  :: forall @nc
+   . Reflectable nc Int
+  => Proof Pallas.G Vesta.BaseField
+  -> ProofCommitments nc Vesta.ScalarField
+vestaProofCommitments = decodeProofCommitments @nc fpFromBytesLE <<< asNapiProof
 
 -- The 13 per-component foreign imports (`pallasProofWitnessEvals`,
 -- `vestaProofWitnessEvals`, `pallasProofZEvals`, …, `pallasProofIpaRounds`,
 -- `vestaProofIpaRounds`) were removed in the Phase D kimchi-napi
 -- migration. All component access goes through `proofData :: Proof g f ->
--- ProofData rounds c f`, whose JS impl walks `WasmFpProverProof`
--- directly. See `pallasProofDataRaw` / `vestaProofDataRaw` above.
+-- ProofData rounds c f`, decoded once by `decodeProofData` (see
+-- `pallasProofData` / `vestaProofData` above).
 
 -- | `prevChallenges` carries the recursive `Challenge_polynomial.t`
 -- | data that kimchi's Fiat-Shamir transcript absorbs before the
@@ -599,6 +602,7 @@ foreign import vestaVerifyOpeningProofsBatch :: VerifierIndex Pallas.G Vesta.Bas
 -- | use `pallasProverIndexDomainLog2`. For wrap-circuit prover indices
 -- | (Pallas commitments, Vesta.BaseField = Fq), use `vestaProverIndexDomainLog2`.
 foreign import pallasProverIndexDomainLog2 :: ProverIndex Vesta.G Pallas.BaseField -> Int
+foreign import vestaProverIndexDomainLog2 :: ProverIndex Pallas.G Vesta.BaseField -> Int
 -- Fq-sponge transcript helpers
 -- VK digest: returns Fq element (Pallas.ScalarField)
 -- Public input polynomial commitment: returns array of {x, y} points in Fq (one per chunk)
@@ -650,127 +654,6 @@ foreign import vestaChallengePolyCommitment :: VerifierIndex Pallas.G Vesta.Base
 -- See note on `pallasSigmaCommLast`.
 foreign import vestaSigmaCommLast :: VerifierIndex Pallas.G Vesta.BaseField -> Array (AffinePoint Vesta.ScalarField)
 
--- | Deterministic, full-VK string used as the disk-proof-cache key.
--- |
--- | Mirrors OCaml `Pickles.Proof_cache`'s keying scheme (`proof_cache.ml:185`):
--- | the OCaml cache is `verifier_key_yojson -> public_input_yojson -> proof`,
--- | so two VKs share a bucket iff they serialize identically. OCaml never
--- | materializes a host-side VK digest — the only "VK digest" in pickles is
--- | the in-circuit `Sponge.copy sponge_after_index` inside step/wrap
--- | verifier. We adopt the same full-VK-as-key approach so we don't have to
--- | port that sponge to JS.
--- |
--- | The string covers exactly the fields OCaml's `[%to_yojson:
--- | verifier_index]` does (`proof_cache.ml:152-163`): `domain`,
--- | `max_poly_size`, `public`, `prev_challenges`, `evals`, `shifts`,
--- | `zk_rows` (we skip `srs` because OCaml renders it as `null`, and the
--- | optional `lookup_index`, which is `None` for vanilla pickles VKs).
--- |
--- | Implementation note: the JS side does exactly one thing — decompose
--- | the napi `VerifierIndex` object into a typed PS record (`VkRaw`),
--- | preserving optional commitments via `Nullable`. All hex encoding +
--- | JSON structure assembly happens in PS via Argonaut. The helpers
--- | (`VkRaw`, `_vkRaw`, `bytesToHex`, `vkRawToJson`, …) stay private to
--- | this module; only the two `*VerifierIndexJsonKey` names are
--- | exported.
-pallasVerifierIndexJsonKey :: VerifierIndex Vesta.G Pallas.BaseField -> String
-pallasVerifierIndexJsonKey = stringify <<< vkRawToJson <<< _vkRaw
-
-vestaVerifierIndexJsonKey :: VerifierIndex Pallas.G Vesta.BaseField -> String
-vestaVerifierIndexJsonKey = stringify <<< vkRawToJson <<< _vkRaw
-
---------------------------------------------------------------------------------
--- VK json-key internals (private; not exported)
---------------------------------------------------------------------------------
-
--- | Raw decomposition of a kimchi `VerifierIndex` napi-object into PS.
--- | Bytes come pre-hex-encoded — the JS-side decompose includes a tiny
--- | byte→hex loop so we don't have to drag a `Uint8Array` PS binding
--- | into pickles' deps. Optional gate-commitments are `Nullable`
--- | (napi-rs renders `Option<X>` as `X | null | undefined`;
--- | `Nullable.toMaybe` collapses both to `Nothing`).
-type VkPolyCommRaw = { unshifted :: Array { x :: String, y :: String } }
-
-type VkEvalsRaw =
-  { sigmaComm :: Array VkPolyCommRaw
-  , coefficientsComm :: Array VkPolyCommRaw
-  , genericComm :: VkPolyCommRaw
-  , psmComm :: VkPolyCommRaw
-  , completeAddComm :: VkPolyCommRaw
-  , mulComm :: VkPolyCommRaw
-  , emulComm :: VkPolyCommRaw
-  , endomulScalarComm :: VkPolyCommRaw
-  , xorComm :: Nullable VkPolyCommRaw
-  , rangeCheck0Comm :: Nullable VkPolyCommRaw
-  , rangeCheck1Comm :: Nullable VkPolyCommRaw
-  , foreignFieldAddComm :: Nullable VkPolyCommRaw
-  , foreignFieldMulComm :: Nullable VkPolyCommRaw
-  , rotComm :: Nullable VkPolyCommRaw
-  }
-
-type VkRaw =
-  { domain :: { logSizeOfGroup :: Int, groupGen :: String }
-  , maxPolySize :: Int
-  , publicInputs :: Int
-  , prevChallenges :: Int
-  , zkRows :: Int
-  , shifts :: Array String -- 7 elements (s0..s6), each hex-encoded
-  , evals :: VkEvalsRaw
-  }
-
-foreign import _vkRaw :: forall g f. VerifierIndex g f -> VkRaw
-
-affineToJson :: { x :: String, y :: String } -> Json
-affineToJson p = Argonaut.fromArray [ Argonaut.fromString p.x, Argonaut.fromString p.y ]
-
-polyCommToJson :: VkPolyCommRaw -> Json
-polyCommToJson pc = Argonaut.fromArray (map affineToJson pc.unshifted)
-
-maybePolyCommToJson :: Nullable VkPolyCommRaw -> Json
-maybePolyCommToJson n = case Nullable.toMaybe n of
-  Nothing -> Argonaut.jsonNull
-  Just pc -> polyCommToJson pc
-
--- Insertion-ordered field list — Argonaut's `Foreign.Object` preserves
--- insertion order, matching V8 `JSON.stringify(...)` semantics so the
--- output stays stable across runs.
-obj :: Array (Tuple String Json) -> Json
-obj = Argonaut.fromObject <<< FO.fromFoldable
-
-evalsToJson :: VkEvalsRaw -> Json
-evalsToJson e = obj
-  [ Tuple "sigmaComm" (Argonaut.fromArray (map polyCommToJson e.sigmaComm))
-  , Tuple "coefficientsComm" (Argonaut.fromArray (map polyCommToJson e.coefficientsComm))
-  , Tuple "genericComm" (polyCommToJson e.genericComm)
-  , Tuple "psmComm" (polyCommToJson e.psmComm)
-  , Tuple "completeAddComm" (polyCommToJson e.completeAddComm)
-  , Tuple "mulComm" (polyCommToJson e.mulComm)
-  , Tuple "emulComm" (polyCommToJson e.emulComm)
-  , Tuple "endomulScalarComm" (polyCommToJson e.endomulScalarComm)
-  , Tuple "xorComm" (maybePolyCommToJson e.xorComm)
-  , Tuple "rangeCheck0Comm" (maybePolyCommToJson e.rangeCheck0Comm)
-  , Tuple "rangeCheck1Comm" (maybePolyCommToJson e.rangeCheck1Comm)
-  , Tuple "foreignFieldAddComm" (maybePolyCommToJson e.foreignFieldAddComm)
-  , Tuple "foreignFieldMulComm" (maybePolyCommToJson e.foreignFieldMulComm)
-  , Tuple "rotComm" (maybePolyCommToJson e.rotComm)
-  ]
-
-vkRawToJson :: VkRaw -> Json
-vkRawToJson r = obj
-  [ Tuple "domain"
-      ( obj
-          [ Tuple "logSizeOfGroup" (Argonaut.fromNumber (toNumber r.domain.logSizeOfGroup))
-          , Tuple "groupGen" (Argonaut.fromString r.domain.groupGen)
-          ]
-      )
-  , Tuple "maxPolySize" (Argonaut.fromNumber (toNumber r.maxPolySize))
-  , Tuple "public" (Argonaut.fromNumber (toNumber r.publicInputs))
-  , Tuple "prevChallenges" (Argonaut.fromNumber (toNumber r.prevChallenges))
-  , Tuple "evals" (evalsToJson r.evals)
-  , Tuple "shifts" (Argonaut.fromArray (map Argonaut.fromString r.shifts))
-  , Tuple "zkRows" (Argonaut.fromNumber (toNumber r.zkRows))
-  ]
-
 --------------------------------------------------------------------------------
 -- Instances
 --------------------------------------------------------------------------------
@@ -781,7 +664,7 @@ instance HasProofData Vesta.G Pallas.BaseField Pallas.ScalarField StepIPARounds 
 instance HasProofData Pallas.G Vesta.BaseField Vesta.ScalarField WrapIPARounds where
   proofData = vestaProofData
 
-instance ProofFFI Pallas.BaseField Vesta.G where
+instance ProofFFI Pallas.BaseField Vesta.G Pallas.ScalarField where
   createProof = pallasCreateProof
   proofOracles vk { proof, publicInput } =
     pallasProofOracles vk { proof, publicInput, prevChallenges: [] }
@@ -791,8 +674,15 @@ instance ProofFFI Pallas.BaseField Vesta.G where
   permutationVanishingPolynomial = Domain.permutationVanishingPolynomial @Pallas.BaseField
   domainGenerator = Domain.domainGenerator @Pallas.BaseField
   computeB0 = Domain.computeB0
+  proofOraclesRec = pallasProofOracles
+  proofOpeningPrechallenges = pallasProofOpeningPrechallenges
+  proverIndexDomainLog2 = pallasProverIndexDomainLog2
+  srsLagrangeCommitmentChunksAt = pallasSrsLagrangeCommitmentChunksAt
+  srsBlindingGenerator = pallasSrsBlindingGenerator
+  sigmaCommLast = pallasSigmaCommLast
+  verifierIndexColumnComms = pallasVerifierIndexColumnComms
 
-instance ProofFFI Vesta.BaseField Pallas.G where
+instance ProofFFI Vesta.BaseField Pallas.G Vesta.ScalarField where
   createProof = vestaCreateProof
   proofOracles vk { proof, publicInput } =
     vestaProofOracles vk { proof, publicInput, prevChallenges: [] }
@@ -802,6 +692,13 @@ instance ProofFFI Vesta.BaseField Pallas.G where
   permutationVanishingPolynomial = Domain.permutationVanishingPolynomial @Vesta.BaseField
   domainGenerator = Domain.domainGenerator @Vesta.BaseField
   computeB0 = Domain.computeB0
+  proofOraclesRec = vestaProofOracles
+  proofOpeningPrechallenges = vestaProofOpeningPrechallenges
+  proverIndexDomainLog2 = vestaProverIndexDomainLog2
+  srsLagrangeCommitmentChunksAt = vestaSrsLagrangeCommitmentChunksAt
+  srsBlindingGenerator = vestaSrsBlindingGenerator
+  sigmaCommLast = vestaSigmaCommLast
+  verifierIndexColumnComms = vestaVerifierIndexColumnComms
 
 --------------------------------------------------------------------------------
 -- Typed wrappers
@@ -817,201 +714,9 @@ instance ProofFFI Vesta.BaseField Pallas.G where
 -- shape invariant.
 --------------------------------------------------------------------------------
 
--- | Verifier-index polynomial commitments, split into the three groups
--- | Pickles consumers actually work with. Layout (matches OCaml
--- | `Plonk_verification_key_evals`):
--- |   `index`  = 6 selector commitments (generic, psm, complete_add, mul,
--- |              emul, endomul_scalar)
--- |   `coeff`  = 15 coefficient commitments
--- |   `sigma`  = 7 sigma commitments (6 from `*VerifierIndexColumnComms`
--- |              + 1 from `*SigmaCommLast`, snoc'd into a Vector 7)
--- | Verifier-index commitments — 7 sigma + 15 coefficient + 6 index
--- | commitments, each carrying `stepChunks` curve points. Both outer
--- | Vector sizes AND the inner chunk count are static.
--- |
--- | Wrap-side consumers (where OCaml currently hardcodes
--- | `num_chunks_by_default = 1` per `step_main.ml:347`) call with
--- | `@1`; step-side consumers (`wrap_main.ml:80`'s `~num_chunks`)
--- | pass the user-supplied compile param. The specialization is
--- | pushed all the way to the consumer so the wrapper stays a
--- | one-line projection.
-type VerifierIndexCommitments :: Int -> Type -> Type
-type VerifierIndexCommitments stepChunks f =
-  { index :: Vector 6 (ChunkedCommitment stepChunks (AffinePoint f))
-  , coeff :: Vector 15 (ChunkedCommitment stepChunks (AffinePoint f))
-  , sigma :: Vector 7 (ChunkedCommitment stepChunks (AffinePoint f))
-  }
-
--- | Vector-typed split of `pallasVerifierIndexColumnComms` +
--- | `pallasSigmaCommLast`. Used for step VK extraction (consumed by
--- | the wrap circuit). Pass `@stepChunks` matching kimchi's
--- | `comm.chunks.len()`.
-pallasVerifierIndexCommitments
-  :: forall @stepChunks
-   . Reflectable stepChunks Int
-  => VerifierIndex Vesta.G Pallas.BaseField
-  -> VerifierIndexCommitments stepChunks Pallas.ScalarField
-pallasVerifierIndexCommitments vk =
-  splitVkCommitments @stepChunks (pallasVerifierIndexColumnComms vk) (pallasSigmaCommLast vk)
-
--- | Vector-typed split of `vestaVerifierIndexColumnComms` +
--- | `vestaSigmaCommLast`. Used for wrap VK extraction (consumed by
--- | the step circuit). OCaml fixes this to `@1` at
--- | `step_main.ml:347` (TODO in OCaml flags future extensibility);
--- | callers here also pass `@1` until that invariant changes.
-vestaVerifierIndexCommitments
-  :: forall @stepChunks
-   . Reflectable stepChunks Int
-  => VerifierIndex Pallas.G Vesta.BaseField
-  -> VerifierIndexCommitments stepChunks Vesta.ScalarField
-vestaVerifierIndexCommitments vk =
-  splitVkCommitments @stepChunks (vestaVerifierIndexColumnComms vk) (vestaSigmaCommLast vk)
-
--- | Shared splitter. Raw layout:
--- |   [ index(6) ; coeff(15) ; sigma-except-last(6) ]  = 27 commitments,
--- |   each entry an `Array (AffinePoint f)` of length stepChunks.
--- | `sigmaLast` (also chunked) is snoc'd onto `sigma6` to produce
--- | the exported `Vector 7`. Inner Arrays reshape to
--- | `Vector stepChunks` — a length mismatch panics via `fromJust'`.
-splitVkCommitments
-  :: forall @stepChunks f
-   . Reflectable stepChunks Int
-  => Array (Array (AffinePoint f))
-  -> Array (AffinePoint f)
-  -> VerifierIndexCommitments stepChunks f
-splitVkCommitments raw sigmaLast =
-  let
-    toChunks :: Array (AffinePoint f) -> ChunkedCommitment stepChunks (AffinePoint f)
-    toChunks = ChunkedCommitment <<< fromJust' "VerifierIndex commitment chunks length mismatch with @stepChunks"
-      <<< Vector.toVector @stepChunks
-    mkIndex = fromJust' "VerifierIndex index commits (6 entries)"
-      <<< Vector.toVector @6
-    mkCoeff = fromJust' "VerifierIndex coeff commits (15 entries)"
-      <<< Vector.toVector @15
-    mkSigma6 = fromJust' "VerifierIndex sigma commits (6 entries, pre-sigmaLast)"
-      <<< Vector.toVector @6
-    rawChunked = map toChunks raw
-    sigmaLastChunked = toChunks sigmaLast
-  in
-    { index: mkIndex (Array.take 6 rawChunked)
-    , coeff: mkCoeff (Array.take 15 (Array.drop 6 rawChunked))
-    , sigma: Vector.snoc (mkSigma6 (Array.drop 21 rawChunked)) sigmaLastChunked
-    }
-
--- | Vector-typed wrapper for `pallasProofOpeningPrechallenges`. The raw
--- | FFI produces an array of StepIPARounds (= 16) 128-bit scalar
--- | prechallenges for a Pallas (step-commitment) proof.
-pallasProofOpeningPrechallengesVec
-  :: VerifierIndex Vesta.G Pallas.BaseField
-  -> { proof :: Proof Vesta.G Pallas.BaseField
-     , publicInput :: Array Pallas.BaseField
-     , prevChallenges ::
-         Array
-           { sgX :: Pallas.ScalarField
-           , sgY :: Pallas.ScalarField
-           , challenges :: Array Pallas.BaseField
-           }
-     }
-  -> Vector StepIPARounds Pallas.BaseField
-pallasProofOpeningPrechallengesVec vk input =
-  fromJust' "pallasProofOpeningPrechallenges: expected Vector StepIPARounds (=16)"
-    (Vector.toVector @StepIPARounds (pallasProofOpeningPrechallenges vk input))
-
--- | Vector-typed wrapper for `vestaProofOpeningPrechallenges`. The raw
--- | FFI produces an array of WrapIPARounds (= 15) 128-bit scalar
--- | prechallenges for a Vesta (wrap-commitment) proof.
-vestaProofOpeningPrechallengesVec
-  :: VerifierIndex Pallas.G Vesta.BaseField
-  -> { proof :: Proof Pallas.G Vesta.BaseField
-     , publicInput :: Array Vesta.BaseField
-     , prevChallenges ::
-         Array
-           { sgX :: Vesta.ScalarField
-           , sgY :: Vesta.ScalarField
-           , challenges :: Array Vesta.BaseField
-           }
-     }
-  -> Vector WrapIPARounds Vesta.BaseField
-vestaProofOpeningPrechallengesVec vk input =
-  fromJust' "vestaProofOpeningPrechallenges: expected Vector WrapIPARounds (=15)"
-    (Vector.toVector @WrapIPARounds (vestaProofOpeningPrechallenges vk input))
-
 -- The `pallasProofOpeningLrVec` / `vestaProofOpeningLrVec` helpers were
 -- dropped in Phase D — the equivalent `Vector rounds (LrPair c)` is now
--- the `opening.lr` field on the `ProofData` record (see `projectProofData`
+-- the `opening.lr` field on the `ProofData` record (see `decodeProofData`
 -- and the `OpeningProofData rounds c f` shape above), which does the
 -- length check once at the FFI boundary via `Reflectable rounds Int`.
 
--- | Project the per-polynomial chunked `wComm` array into a typed
--- | `Vector stepChunks` per polynomial. Errors if any polynomial's
--- | chunk count differs from `stepChunks`.
-wCommChunked
-  :: forall @stepChunks f
-   . Reflectable stepChunks Int
-  => ProofCommitments f
-  -> Vector 15 (ChunkedCommitment stepChunks (AffinePoint f))
-wCommChunked c =
-  map
-    ( \chunks ->
-        ChunkedCommitment $
-          fromJust' "ProofCommitments.wComm: chunk count mismatch with @stepChunks"
-            (Vector.toVector @stepChunks chunks)
-    )
-    c.wComm
-
--- | Project the chunked `zComm` array into a typed `ChunkedCommitment stepChunks`.
-zCommChunked
-  :: forall @stepChunks f
-   . Reflectable stepChunks Int
-  => ProofCommitments f
-  -> ChunkedCommitment stepChunks (AffinePoint f)
-zCommChunked c =
-  ChunkedCommitment $
-    fromJust' "ProofCommitments.zComm: chunk count mismatch with @stepChunks"
-      (Vector.toVector @stepChunks c.zComm)
-
--- | Reshape the flat `tComm :: Array (AffinePoint f)` (length `7 *
--- | stepChunks`) into the kimchi-faithful 2D shape
--- | `Vector 7 (Vector stepChunks pt)` — outer = quotient sub-poly index,
--- | inner = chunk index. Errors if the array's length doesn't match
--- | `7 * stepChunks`.
-tCommChunked
-  :: forall @stepChunks f
-   . Reflectable stepChunks Int
-  => ProofCommitments f
-  -> Vector 7 (ChunkedCommitment stepChunks (AffinePoint f))
-tCommChunked c =
-  let
-    nc = reflectType (Proxy @stepChunks)
-    perPiece i = ChunkedCommitment $
-      fromJust'
-        "ProofCommitments.tComm: per-piece chunk count mismatch with @stepChunks"
-        (Vector.toVector @stepChunks (Array.slice (i * nc) ((i + 1) * nc) c.tComm))
-    pieces = map perPiece (Array.range 0 6)
-  in
-    fromJust'
-      "ProofCommitments.tComm: expected 7 quotient pieces"
-      (Vector.toVector @7 pieces)
-
--- | Boundary projector for the chunked public-input evaluations.
--- |
--- | Takes the chunked `NonEmptyArray (PointEval f)` from
--- | `(proofData proof).evals.public` (kimchi/OCaml-pickles convention —
--- | `kimchi/src/prover.rs:996-1002` unconditionally populates
--- | `proof.evals.public` with one entry per PCS chunk) and reshapes it
--- | into a chunk-typed `Vector n`, length-checked at the boundary.
--- |
--- | For a WRAP proof the chunk count is protocol-pinned to 1 (wrap
--- | domain ≤ wrap SRS depth), so callers pass `@1` and extract the
--- | sole chunk via a total `Vector.head`. A step-proof consumer
--- | passes `@stepChunks` and is forced to handle real chunking
--- | rather than dropping chunks.
-publicEvalsChunked
-  :: forall @n f
-   . Reflectable n Int
-  => NonEmptyArray (PointEval f)
-  -> Vector n (PointEval f)
-publicEvalsChunked pe =
-  fromJust'
-    "publicEvalsChunked: chunk count mismatch with @n"
-    (Vector.toVector @n (NonEmptyArray.toArray pe))

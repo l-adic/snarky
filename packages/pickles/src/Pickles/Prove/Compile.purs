@@ -80,21 +80,20 @@ import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.ProofCache (ProofCache)
-import Pickles.ProofFFI
-  ( pallasProofOracles
-  , pallasProverIndexDomainLog2
-  , permutationVanishingPolynomial
-  , proofData
-  )
-import Pickles.ProofFFI
-  ( pallasProverIndexDomainLog2
-  , permutationVanishingPolynomial
-  , publicEvalsChunked
-  , vestaProofOracles
-  , vestaSrsBlindingGenerator
-  , vestaSrsLagrangeCommitmentChunksAt
-  ) as ProofFFI
 import Pickles.ProofsVerified (ProofsVerifiedCount, boolVecToProofsVerified)
+import Pickles.Prove.FFI
+  ( permutationVanishingPolynomial
+  , proofData
+  , proofOraclesRec
+  , proverIndexDomainLog2
+  )
+import Pickles.Prove.FFI
+  ( permutationVanishingPolynomial
+  , proofOraclesRec
+  , proverIndexDomainLog2
+  , srsBlindingGenerator
+  , srsLagrangeCommitmentChunksAt
+  ) as ProofFFI
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (assembleWrapMainInput, wrapComputeDeferredValues)
@@ -151,7 +150,6 @@ import Pickles.Verify
   , mkSomeCompiledProofWidthData
   , mkVerifier
   , verify
-  , verifyOne
   , wrapPublicInput
   )
 import Pickles.Verify.Types (toPlonkMinimal)
@@ -344,7 +342,7 @@ type ShapeCompileData wrapVkChunks mpv nd blueprints slots =
 -- |   Type1→Type2 coerced in `shapeProveData` to build
 -- |   `prevUnfinalizedProofs`.
 -- | * `baseCaseWrapPublicInputs` — per-slot serialized
--- |   `dummyWrapTockPublicInput` arrays, passed to `vestaProofOracles`
+-- |   `dummyWrapTockPublicInput` arrays, passed to `proofOraclesRec`
 -- |   so `shapeProveData`'s `dummyWrapXhat` evals match what the step
 -- |   circuit sees. Per-slot because Tree's heterogeneous slots have
 -- |   distinct prev-rule wrap statements with distinct serializations.
@@ -634,7 +632,7 @@ instance CompilableSpec Unit Unit Unit 0 NoSlots Unit Unit Unit Unit where
         { srsData:
             { perSlotLagrangeAt: Vector.nil
             , blindingH:
-                coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs
+                coerce (ProofFFI.srsBlindingGenerator cfg.srs.pallasSrs :: AffinePoint StepField)
             , perSlotFopDomainLog2s: Vector.nil
             , perSlotVkBlueprints: unit
             }
@@ -797,7 +795,7 @@ instance
         Self -> selfStepDomainLog2s
         External vks ->
           Vector.replicate
-            (ProofFFI.pallasProverIndexDomainLog2 vks.stepCompileResult.proverIndex)
+            (ProofFFI.proverIndexDomainLog2 vks.stepCompileResult.proverIndex)
 
       slotLagrange =
         -- Per-slot wrap-VK lagrange basis at the compile-wide
@@ -811,7 +809,7 @@ instance
         mkConstLagrangeBaseLookup \i ->
           let
             chunksArr =
-              ProofFFI.vestaSrsLagrangeCommitmentChunksAt cfg.srs.pallasSrs slotWrapDomainLog2 i
+              ProofFFI.srsLagrangeCommitmentChunksAt cfg.srs.pallasSrs slotWrapDomainLog2 i
           in
             case Vector.toVector (map coerce chunksArr) of
               Just v -> v
@@ -835,7 +833,7 @@ instance
               { perSlotLagrangeAt:
                   slotLagrange :< restShape.stepProveCtx.srsData.perSlotLagrangeAt
               , blindingH:
-                  coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs
+                  coerce (ProofFFI.srsBlindingGenerator cfg.srs.pallasSrs :: AffinePoint StepField)
               , perSlotFopDomainLog2s:
                   slotFopDomainLog2s
                     :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
@@ -867,7 +865,7 @@ instance
             { slotWrapVK: wrapCR.verifierIndex
             , slotWrapDomainLog2: outerOverridenWrapDomainLog2
             , slotStepDomainLog2:
-                ProofFFI.pallasProverIndexDomainLog2 stepCR.proverIndex
+                ProofFFI.proverIndexDomainLog2 stepCR.proverIndex
             -- `Self`'s prev step circuit is the outer rule itself, so its
             -- num_chunks is the compile-wide `@nc` type param. Wrap is
             -- universally nc=1 (`num_chunks_by_default`).
@@ -878,7 +876,7 @@ instance
             { slotWrapVK: vks.wrapCompileResult.verifierIndex
             , slotWrapDomainLog2: vks.wrapDomainLog2
             , slotStepDomainLog2:
-                ProofFFI.pallasProverIndexDomainLog2 vks.stepCompileResult.proverIndex
+                ProofFFI.proverIndexDomainLog2 vks.stepCompileResult.proverIndex
             -- External: read the imported rule's declared `@stepChunks`
             -- directly from `ProverVKs.stepNumChunks` (propagated by the
             -- imported compileMulti). Wrap is universally nc=1.
@@ -1235,7 +1233,7 @@ instance
             -- fails loud if it is ever violated. Not an n=1 shortcut —
             -- unreachable otherwise. See chunk taxonomy in Pickles.Types.
             dummyWrapXhat =
-              Vector.head (ProofFFI.publicEvalsChunked @1 (proofData (dummyWrapProof bcd)).evals.public)
+              NonEmptyArray.head (proofData (dummyWrapProof bcd)).evals.public
             de = bcd.dummyEvals
             pe = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
             headPrevEvals = StepAllEvals
@@ -1305,7 +1303,7 @@ instance
                         wd.msgWrapChallengesPadded
 
                     prevWrapOracles =
-                      ProofFFI.vestaProofOracles slotWrapVK
+                      ProofFFI.proofOraclesRec slotWrapVK
                         { proof: prev.wrapProof
                         , publicInput: prevWrapPI
                         , prevChallenges: prevWrapKimchiPrevChals
@@ -1480,7 +1478,7 @@ instance
         mkConstLagrangeBaseLookup \i ->
           let
             chunksArr =
-              ProofFFI.vestaSrsLagrangeCommitmentChunksAt cfg.srs.pallasSrs slotWrapDomainLog2 i
+              ProofFFI.srsLagrangeCommitmentChunksAt cfg.srs.pallasSrs slotWrapDomainLog2 i
           in
             case Vector.toVector (map coerce chunksArr) of
               Just v -> v
@@ -1502,7 +1500,7 @@ instance
       sideloadedPerDomainLagrangeAts = map
         ( \log2 i ->
             let
-              chunksArr = ProofFFI.vestaSrsLagrangeCommitmentChunksAt
+              chunksArr = ProofFFI.srsLagrangeCommitmentChunksAt
                 cfg.srs.pallasSrs
                 log2
                 i
@@ -1528,7 +1526,7 @@ instance
               { perSlotLagrangeAt:
                   slotLagrange :< restShape.stepProveCtx.srsData.perSlotLagrangeAt
               , blindingH:
-                  coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs
+                  coerce (ProofFFI.srsBlindingGenerator cfg.srs.pallasSrs :: AffinePoint StepField)
               , perSlotFopDomainLog2s:
                   -- Side-loaded slots have no compile-time step domain;
                   -- placeholder fills the vector shape (real dispatch
@@ -1914,7 +1912,7 @@ instance
             -- fails loud if it is ever violated. Not an n=1 shortcut —
             -- unreachable otherwise. See chunk taxonomy in Pickles.Types.
             dummyWrapXhat =
-              Vector.head (ProofFFI.publicEvalsChunked @1 (proofData (dummyWrapProof bcd)).evals.public)
+              NonEmptyArray.head (proofData (dummyWrapProof bcd)).evals.public
             de = bcd.dummyEvals
             pe = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
             headPrevEvals = StepAllEvals
@@ -1973,7 +1971,7 @@ instance
                         wd.msgWrapChallengesPadded
 
                     prevWrapOracles =
-                      ProofFFI.vestaProofOracles slotWrapVK
+                      ProofFFI.proofOraclesRec slotWrapVK
                         { proof: prev.wrapProof
                         , publicInput: prevWrapPI
                         , prevChallenges: prevWrapKimchiPrevChals
@@ -2301,7 +2299,7 @@ class
   -- |   * `mpv` — reflected from the rule's type-level mpv (each Cons
   -- |     instance has `Reflectable ruleMpv Int`).
   -- |   * `stepDomainLog2` — extracted from the proverIndex via
-  -- |     `pallasProverIndexDomainLog2`.
+  -- |     `proverIndexDomainLog2`.
   -- |   * `stepVK` — the StepCompileResult's `verifierIndex` field.
   -- |
   -- | The Tuple → Vector accumulation is via `Vector.cons`. Each Cons
@@ -2472,7 +2470,7 @@ instance
     let
       headRecord =
         { mpv: reflectType (Proxy :: Proxy ruleMpv)
-        , stepDomainLog2: pallasProverIndexDomainLog2 headResult.proverIndex
+        , stepDomainLog2: proverIndexDomainLog2 headResult.proverIndex
         , stepVK: headResult.verifierIndex
         }
       restVec = buildWrapPerBranchVec
@@ -3600,7 +3598,7 @@ runMultiProverBody
         proveData.prevSgs
         proveData.prevStepChallenges
 
-    stepOracles = pallasProofOracles stepCR.verifierIndex
+    stepOracles = proofOraclesRec stepCR.verifierIndex
       { proof: stepResult.proof
       , publicInput: stepResult.publicInputs
       , prevChallenges: stepOraclesPrevChals

@@ -18,8 +18,7 @@
 -- | divergence at the byte level vs OCaml). See `docs/chunking.md` and
 -- | `docs/chunking-ffi-audit.md`.
 module Pickles.PlonkChecks.Chunks
-  ( actualEvaluation
-  , actualEvaluationArr
+  ( actualEvaluationArr
   , collapsePointEval
   , collapseChunkedAllEvals
   ) where
@@ -31,8 +30,6 @@ import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NonEmptyArray
 import Data.Foldable (foldl)
 import Data.Maybe (Maybe(..))
-import Data.Vector (Vector)
-import Data.Vector as Vector
 import Pickles.PlonkChecks (AllEvals, ChunkedAllEvals)
 
 -- | Horner combine for `n` chunked evaluations at point `pt^(2^rounds)`.
@@ -47,18 +44,6 @@ import Pickles.PlonkChecks (AllEvals, ChunkedAllEvals)
 -- |   1. Compute `ptN` via `rounds` rounds of squaring `pt`.
 -- |   2. Reverse the input array.
 -- |   3. Fold from the new head with accumulator update `acc' = fx + ptN * acc`.
--- | At `n=0` (no chunks) returns `zero` — this branch is unreachable
--- | in practice because kimchi always emits ≥1 chunk per polynomial, but
--- | the total type signature requires it.
-actualEvaluation
-  :: forall @n f
-   . Semiring f
-  => Vector n f
-  -> f
-  -> Int
-  -> f
-actualEvaluation xs = actualEvaluationArr (Vector.toUnfoldable xs)
-
 -- | `Array`-input version. Host-side use only — for in-circuit use, take
 -- | the static-vector `actualEvaluation` above so the circuit's chunked
 -- | slot allocation has a type-level width to match.

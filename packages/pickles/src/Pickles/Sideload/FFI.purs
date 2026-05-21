@@ -24,7 +24,7 @@ module Pickles.Sideload.FFI
   , pallasProofToSerdeJson
   ) where
 
-import Pickles.ProofFFI (Proof)
+import Pickles.Prove.FFI (Proof)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta

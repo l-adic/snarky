@@ -38,7 +38,7 @@ import Snarky.Constraint.Kimchi.Poseidon (PoseidonConstraint)
 import Snarky.Constraint.Kimchi.Poseidon as Poseidon
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, Rows, finalizeGateQueue, mkRawGeneric7Row, reduceAsBuilder, reduceAsProver, reduceToVariable)
 import Snarky.Constraint.Kimchi.Reduction as Reduction
-import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, AuxState(..), KimchiRow, initialAuxState, toKimchiRows)
+import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, AuxState(..), initialAuxState, toKimchiRows)
 import Snarky.Constraint.Kimchi.VarBaseMul (VarBaseMul)
 import Snarky.Constraint.Kimchi.VarBaseMul as VarBaseMul
 import Snarky.Curves.Class (class HasEndo, class PrimeField)

@@ -44,9 +44,10 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (ChunkedAllEvals)
 import Pickles.PlonkChecks.Chunks as Chunks
-import Pickles.ProofFFI (OraclesResult, Proof, pallasProofOpeningPrechallengesVec, pallasProofOracles, proofData)
+import Pickles.Prove.FFI (OraclesResult, Proof, proofData, proofOpeningPrechallenges, proofOraclesRec)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatchChunked, computeBpChalsAndB, crossFieldDigest, derivePlonk, ftEval0)
 import Pickles.Types (StepIPARounds)
+import Pickles.Util.Fatal (fromJust')
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, ScalarChallenge)
 import Pickles.Wrap.Types as Wrap
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
@@ -186,7 +187,7 @@ type WrapDeferredValuesOutput =
 -- |
 -- | Internal structure (OCaml line → PS wiring):
 -- |
--- | * 97-107  `O.create_with_public_evals`                 → `pallasProofOracles`
+-- | * 97-107  `O.create_with_public_evals`                 → `proofOraclesRec`
 -- | * 108-114 `x_hat` from public_evals / oracle p_eval    → `oracles.publicEval{Zeta,ZetaOmega}`
 -- | * 118-132 plonk0 (raw 128-bit challenges)              → `wrapPlonkMinimal`
 -- | * 133-148 expand raw chals via `SC.to_field_constant`  → done inside `Common.derivePlonk`
@@ -231,7 +232,7 @@ wrapComputeDeferredValues input =
             input.prevChallenges
         )
 
-    oraclesResult = pallasProofOracles input.verifierIndex
+    oraclesResult = proofOraclesRec input.verifierIndex
       { proof: input.proof
       , publicInput: input.publicInput
       , prevChallenges: prevChallengeList
@@ -333,11 +334,15 @@ wrapComputeDeferredValues input =
     -- `SizedF 128` and feed through `computeBpChalsAndB`, which endo-
     -- expands them and evaluates `b_poly(zeta) + r·b_poly(zetaw)`.
     rawPrechalsVec = map (unsafePartial unsafeFromField)
-      ( pallasProofOpeningPrechallengesVec input.verifierIndex
-          { proof: input.proof
-          , publicInput: input.publicInput
-          , prevChallenges: prevChallengeList
-          }
+      ( fromJust' "proofOpeningPrechallenges: expected Vector StepIPARounds (=16)"
+          ( Vector.toVector @StepIPARounds
+              ( proofOpeningPrechallenges input.verifierIndex
+                  { proof: input.proof
+                  , publicInput: input.publicInput
+                  , prevChallenges: prevChallengeList
+                  }
+              )
+          )
       )
 
     newBpResult = computeBpChalsAndB

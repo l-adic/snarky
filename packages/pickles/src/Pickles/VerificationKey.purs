@@ -8,10 +8,14 @@ module Pickles.VerificationKey
   , extractWrapVKComms
   , StepVK
   , chooseKey
+  , VerifierIndexCommitments
+  , pallasVerifierIndexCommitments
+  , vestaVerifierIndexCommitments
   ) where
 
 import Prelude
 
+import Data.Array as Array
 import Data.Newtype (over, over2)
 import Data.Reflectable (class Reflectable)
 import Data.Semigroup.Foldable (foldl1)
@@ -20,8 +24,9 @@ import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.ProofFFI (vestaVerifierIndexCommitments)
+import Pickles.Prove.FFI (sigmaCommLast, verifierIndexColumnComms)
 import Pickles.Types (ChunkedCommitment(..))
+import Pickles.Util.Fatal (fromJust')
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
@@ -119,6 +124,87 @@ extractWrapVKComms vk =
       , coeff: map (over ChunkedCommitment (map wrapPt)) comms.coeff
       , index: map (over ChunkedCommitment (map wrapPt)) comms.index
       }
+
+-- | Verifier-index polynomial commitments, split into the three groups
+-- | Pickles consumers actually work with. Layout (matches OCaml
+-- | `Plonk_verification_key_evals`):
+-- |   `index`  = 6 selector commitments (generic, psm, complete_add, mul,
+-- |              emul, endomul_scalar)
+-- |   `coeff`  = 15 coefficient commitments
+-- |   `sigma`  = 7 sigma commitments (6 from `*VerifierIndexColumnComms`
+-- |              + 1 from `*SigmaCommLast`, snoc'd into a Vector 7)
+-- |
+-- | Each commitment carries `stepChunks` curve points; both the outer
+-- | Vector sizes AND the inner chunk count are static.
+-- |
+-- | Wrap-side consumers (where OCaml currently hardcodes
+-- | `num_chunks_by_default = 1` per `step_main.ml:347`) call with
+-- | `@1`; step-side consumers (`wrap_main.ml:80`'s `~num_chunks`)
+-- | pass the user-supplied compile param. The specialization is
+-- | pushed all the way to the consumer so the projection stays a
+-- | one-liner over the raw `Pickles.Prove.FFI` bindings.
+type VerifierIndexCommitments :: Int -> Type -> Type
+type VerifierIndexCommitments stepChunks f =
+  { index :: Vector 6 (ChunkedCommitment stepChunks (AffinePoint f))
+  , coeff :: Vector 15 (ChunkedCommitment stepChunks (AffinePoint f))
+  , sigma :: Vector 7 (ChunkedCommitment stepChunks (AffinePoint f))
+  }
+
+-- | Vector-typed split of `verifierIndexColumnComms` +
+-- | `sigmaCommLast`. Used for step VK extraction (consumed by
+-- | the wrap circuit). Pass `@stepChunks` matching kimchi's
+-- | `comm.chunks.len()`.
+pallasVerifierIndexCommitments
+  :: forall @stepChunks
+   . Reflectable stepChunks Int
+  => VerifierIndex Vesta.G Pallas.BaseField
+  -> VerifierIndexCommitments stepChunks Pallas.ScalarField
+pallasVerifierIndexCommitments vk =
+  splitVkCommitments @stepChunks (verifierIndexColumnComms vk) (sigmaCommLast vk)
+
+-- | Vector-typed split of `verifierIndexColumnComms` +
+-- | `sigmaCommLast`. Used for wrap VK extraction (consumed by
+-- | the step circuit). OCaml fixes this to `@1` at
+-- | `step_main.ml:347` (TODO in OCaml flags future extensibility);
+-- | callers here also pass `@1` until that invariant changes.
+vestaVerifierIndexCommitments
+  :: forall @stepChunks
+   . Reflectable stepChunks Int
+  => VerifierIndex Pallas.G Vesta.BaseField
+  -> VerifierIndexCommitments stepChunks Vesta.ScalarField
+vestaVerifierIndexCommitments vk =
+  splitVkCommitments @stepChunks (verifierIndexColumnComms vk) (sigmaCommLast vk)
+
+-- | Shared splitter. Raw layout:
+-- |   [ index(6) ; coeff(15) ; sigma-except-last(6) ]  = 27 commitments,
+-- |   each entry an `Array (AffinePoint f)` of length stepChunks.
+-- | `sigmaLast` (also chunked) is snoc'd onto `sigma6` to produce
+-- | the exported `Vector 7`. Inner Arrays reshape to
+-- | `Vector stepChunks` — a length mismatch panics via `fromJust'`.
+splitVkCommitments
+  :: forall @stepChunks f
+   . Reflectable stepChunks Int
+  => Array (Array (AffinePoint f))
+  -> Array (AffinePoint f)
+  -> VerifierIndexCommitments stepChunks f
+splitVkCommitments raw sigmaLast =
+  let
+    toChunks :: Array (AffinePoint f) -> ChunkedCommitment stepChunks (AffinePoint f)
+    toChunks = ChunkedCommitment <<< fromJust' "VerifierIndex commitment chunks length mismatch with @stepChunks"
+      <<< Vector.toVector @stepChunks
+    mkIndex = fromJust' "VerifierIndex index commits (6 entries)"
+      <<< Vector.toVector @6
+    mkCoeff = fromJust' "VerifierIndex coeff commits (15 entries)"
+      <<< Vector.toVector @15
+    mkSigma6 = fromJust' "VerifierIndex sigma commits (6 entries, pre-sigmaLast)"
+      <<< Vector.toVector @6
+    rawChunked = map toChunks raw
+    sigmaLastChunked = toChunks sigmaLast
+  in
+    { index: mkIndex (Array.take 6 rawChunked)
+    , coeff: mkCoeff (Array.take 15 (Array.drop 6 rawChunked))
+    , sigma: Vector.snoc (mkSigma6 (Array.drop 21 rawChunked)) sigmaLastChunked
+    }
 
 -- | Plonk_verification_key_evals.Step.t
 -- | Non-optional fields only (optional are all Opt.Nothing for Features.none).

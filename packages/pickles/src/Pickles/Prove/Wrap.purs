@@ -59,10 +59,10 @@ import Node.FS.Sync as FS
 import Node.Process as Process
 import Pickles.Field (StepField, WrapField)
 import Pickles.ProofCache (ProofCache, getWrapProof, setWrapProof)
-import Pickles.ProofFFI (Proof, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentChunksAt, pallasVerifierIndexCommitments, proofData, tCommChunked, vestaCreateProofWithPrev, wCommChunked, zCommChunked)
+import Pickles.Prove.FFI (Proof, pallasProofCommitments, proofData, srsBlindingGenerator, srsLagrangeCommitmentChunksAt, vestaCreateProofWithPrev)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized, StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
-import Pickles.VerificationKey (StepVK)
+import Pickles.VerificationKey (StepVK, pallasVerifierIndexCommitments)
 import Pickles.Wrap.Advice (class WrapWitnessM)
 import Pickles.Wrap.Main (WrapMainConfig, wrapMain)
 import Pickles.Wrap.Slots (class PadSlots)
@@ -281,7 +281,7 @@ mkVestaPt pt = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
 -- | Build the wrap-circuit advice record from the step proof + its
 -- | surrounding pickles context. Pure: all FFI calls go through
 -- | deterministic `pallas*` helpers exposed as non-effectful in
--- | `Pickles.ProofFFI`.
+-- | `Pickles.Prove.FFI`.
 buildWrapAdvice
   :: forall @stepChunks mpv slots
    . Reflectable stepChunks Int
@@ -295,16 +295,13 @@ buildWrapAdvice input =
     -- field-access on the structured record.
     stepProofData = proofData input.stepProof
 
-    -- `commitments` carries chunked w/z (Array per polynomial) and flat
-    -- tComm. Project into typed Vector stepChunks via
-    -- wCommChunked/zCommChunked. tComm is still pinned to Vector 7 here
-    -- (FFI does not yet emit chunked t).
-    commits = stepProofData.commitments
+    -- `nc`-typed commitments, decoded + chunk-validated once at @stepChunks.
+    commits = pallasProofCommitments @stepChunks input.stepProof
 
     messages = WrapProofMessages
-      { wComm: map (over ChunkedCommitment (map mkVestaPt)) (wCommChunked @stepChunks commits)
-      , zComm: over ChunkedCommitment (map mkVestaPt) (zCommChunked @stepChunks commits)
-      , tComm: map (over ChunkedCommitment (map mkVestaPt)) (tCommChunked @stepChunks commits)
+      { wComm: map (over ChunkedCommitment (map mkVestaPt)) commits.wComm
+      , zComm: over ChunkedCommitment (map mkVestaPt) commits.zComm
+      , tComm: map (over ChunkedCommitment (map mkVestaPt)) commits.tComm
       }
 
     -- ===== Req.Openings_proof. =====
@@ -777,7 +774,7 @@ buildWrapMainConfigMulti vestaSrs { perBranch } =
       map
         ( \b ->
             let
-              chunksArr = pallasSrsLagrangeCommitmentChunksAt
+              chunksArr = srsLagrangeCommitmentChunksAt
                 vestaSrs
                 b.stepDomainLog2
                 i
@@ -807,7 +804,7 @@ buildWrapMainConfigMulti vestaSrs { perBranch } =
         -- this is gate-identical to the pre-chunk single-point path.
         mkConstLagrangeBaseLookup \i ->
           let
-            chunksArr = pallasSrsLagrangeCommitmentChunksAt vestaSrs headDomainLog2 i
+            chunksArr = srsLagrangeCommitmentChunksAt vestaSrs headDomainLog2 i
           in
             case Vector.toVector @stepChunks (map coerce chunksArr) of
               Just v -> (v :: Vector _ (AffinePoint (F WrapField)))
@@ -820,7 +817,7 @@ buildWrapMainConfigMulti vestaSrs { perBranch } =
                     <> ")"
     , perBranchLagrangeAt:
         if allEqual then Nothing else Just perBranchLookup
-    , blindingH: (coerce $ pallasSrsBlindingGenerator vestaSrs) :: AffinePoint (F WrapField)
+    , blindingH: (coerce (srsBlindingGenerator vestaSrs :: AffinePoint WrapField)) :: AffinePoint (F WrapField)
     , allPossibleDomainLog2s:
         unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
     }

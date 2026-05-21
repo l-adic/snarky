@@ -94,7 +94,7 @@ import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.ProofCache (ProofCache, getStepProof, setStepProof)
-import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofData, tCommChunked, vestaProofOpeningPrechallenges, vestaProofOracles, vestaVerifierIndexCommitments, wCommChunked, zCommChunked)
+import Pickles.Prove.FFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofData, proofOpeningPrechallenges, proofOraclesRec, vestaProofCommitments)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
@@ -111,7 +111,7 @@ import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, 
 import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
 import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
-import Pickles.VerificationKey (StepVK, VerificationKey(..))
+import Pickles.VerificationKey (StepVK, VerificationKey(..), vestaVerifierIndexCommitments)
 import Pickles.Verify.Types (BranchData) as VT
 import Pickles.Verify.Types (UnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
@@ -860,7 +860,7 @@ type BuildSlotAdviceInput inputVal stmt =
   -- | Base case: both slots are `dummyIpaChallenges.wrapExpanded` (since
   -- | the dummy wrap proof has dummy bp chals).
   -- | Inductive: slot 0 = dummy (padding), slot 1 = the REAL wrap proof's
-  -- | new bp chals obtained via `vestaProofOpeningPrechallenges` expanded
+  -- | new bp chals obtained via `proofOpeningPrechallenges` expanded
   -- | via Pallas.endo_scalar.
   -- |
   -- | Used by `expandProof` for (a) computing the wrap CIP (CIP batch
@@ -998,7 +998,7 @@ type SlotAdviceContrib n slotVkChunks =
 -- prev list to assemble the multi-slot `StepAdvice`, mirroring OCaml's
 -- `go` recursion at `step.ml:736-770`.
 --
--- Runs `vestaProofOracles` on the caller-supplied wrap proof + public
+-- Runs `proofOraclesRec` on the caller-supplied wrap proof + public
 -- input, feeds the result through `expandProof`, and packs the
 -- resulting per-slot data into the `StepSlot n` record + scalar
 -- companion fields. No multi-slot wrapping is introduced — the
@@ -1067,7 +1067,7 @@ buildSlotAdvice input = do
   let
     toFFIChalPoly r = { sgX: r.sg.x, sgY: r.sg.y, challenges: Vector.toUnfoldable r.challenges }
 
-    oracles = vestaProofOracles input.wrapVK
+    oracles = proofOraclesRec input.wrapVK
       { proof: input.wrapProof
       , publicInput: input.wrapPublicInput
       , prevChallenges: map toFFIChalPoly (Vector.toUnfoldable input.prevChalPolys)
@@ -1092,7 +1092,7 @@ buildSlotAdvice input = do
   -- on that side covers the production-path value).
 
   let
-    rawPrechalsForTrace = vestaProofOpeningPrechallenges input.wrapVK
+    rawPrechalsForTrace = proofOpeningPrechallenges input.wrapVK
       { proof: input.wrapProof
       , publicInput: input.wrapPublicInput
       , prevChallenges: map toFFIChalPoly (Vector.toUnfoldable input.prevChalPolys)
@@ -1314,14 +1314,14 @@ buildSlotAdvice input = do
 
     z2 = toShifted (F openingZ2Raw)
 
-    wrapCommits = wrapProofData.commitments
+    wrapCommits = vestaProofCommitments @slotVkChunks input.wrapProof
 
     mkPallasAffine :: AffinePoint StepField -> AffinePoint (F StepField)
     mkPallasAffine pt = { x: F pt.x, y: F pt.y }
     wrapMessages =
-      { wComm: map (over ChunkedCommitment (map mkPallasAffine)) (wCommChunked @slotVkChunks wrapCommits)
-      , zComm: over ChunkedCommitment (map mkPallasAffine) (zCommChunked @slotVkChunks wrapCommits)
-      , tComm: map (over ChunkedCommitment (map mkPallasAffine)) (tCommChunked @slotVkChunks wrapCommits)
+      { wComm: map (over ChunkedCommitment (map mkPallasAffine)) wrapCommits.wComm
+      , zComm: over ChunkedCommitment (map mkPallasAffine) wrapCommits.zComm
+      , tComm: map (over ChunkedCommitment (map mkPallasAffine)) wrapCommits.tComm
       }
 
     wrapPE' :: LFFI.PointEval StepField -> LFFI.PointEval (F StepField)

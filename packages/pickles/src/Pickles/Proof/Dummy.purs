@@ -32,7 +32,7 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.Field (WrapField)
-import Pickles.ProofFFI (Proof, vestaMakeWireProof)
+import Pickles.Prove.FFI (Proof, vestaMakeWireProof)
 import Pickles.Step.Dummy (BaseCaseDummies)
 import Snarky.Curves.Class (generator, toAffine)
 import Snarky.Curves.Pallas as Pallas
