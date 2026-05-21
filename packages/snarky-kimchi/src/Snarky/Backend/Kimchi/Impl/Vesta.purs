@@ -2,6 +2,7 @@ module Snarky.Backend.Kimchi.Impl.Vesta where
 
 import Data.Array as Array
 import Data.Maybe (Maybe(..))
+import Data.Unit (Unit)
 import Effect (Effect)
 import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, GateWires, ProverIndex, VerifierIndex)
@@ -28,6 +29,12 @@ foreign import vestaGatesToJson :: Array (Gate Vesta.ScalarField) -> Int -> Stri
 foreign import vestaCrsLoadFromCache :: Effect (CRS Vesta.G)
 foreign import vestaCrsCreate :: Int -> CRS Vesta.G
 foreign import vestaCrsSize :: CRS Vesta.G -> Int
+
+-- | Pre-warm the lagrange-basis cache of the (shared) SRS for the domain
+-- | of size `2^log2`. Effectful: mutates the SRS in place, so later
+-- | index/proof creation over that domain hits the cache.
+foreign import vestaSrsAddLagrangeBasis :: CRS Vesta.G -> Int -> Effect Unit
+
 -- | Compute challenge polynomial commitment from Vesta SRS.
 -- | Vesta scalar field = Fp, result coords in Fq (= Pallas.ScalarField).
 -- | OCaml: SRS.Fp.b_poly_commitment (Dummy.Ipa.Step.compute_sg)

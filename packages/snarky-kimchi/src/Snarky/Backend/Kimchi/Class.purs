@@ -1,8 +1,9 @@
 module Snarky.Backend.Kimchi.Class where
 
+import Data.Unit (Unit)
 import Effect (Effect)
-import Snarky.Backend.Kimchi.Impl.Pallas (createCRS, createProverIndex, createVerifierIndex, pallasCircuitGateCoeffCount, pallasCircuitGateGetCoeff, pallasCircuitGateGetWires, pallasCircuitGateNew, pallasCrsCreate, pallasCrsSize, pallasGatesToJson) as Pallas
-import Snarky.Backend.Kimchi.Impl.Vesta (createCRS, createProverIndex, createVerifierIndex, vestaCircuitGateCoeffCount, vestaCircuitGateGetCoeff, vestaCircuitGateGetWires, vestaCircuitGateNew, vestaCrsCreate, vestaCrsSize, vestaGatesToJson) as Vesta
+import Snarky.Backend.Kimchi.Impl.Pallas (createCRS, createProverIndex, createVerifierIndex, pallasCircuitGateCoeffCount, pallasCircuitGateGetCoeff, pallasCircuitGateGetWires, pallasCircuitGateNew, pallasCrsCreate, pallasCrsSize, pallasGatesToJson, pallasSrsAddLagrangeBasis) as Pallas
+import Snarky.Backend.Kimchi.Impl.Vesta (createCRS, createProverIndex, createVerifierIndex, vestaCircuitGateCoeffCount, vestaCircuitGateGetCoeff, vestaCircuitGateGetWires, vestaCircuitGateNew, vestaCrsCreate, vestaCrsSize, vestaGatesToJson, vestaSrsAddLagrangeBasis) as Vesta
 import Snarky.Backend.Kimchi.Types (CRS, Gate, GateWires, ProverIndex, VerifierIndex, gateKindToString)
 import Snarky.Constraint.Kimchi.Types (GateKind)
 import Snarky.Curves.Pallas (G, ScalarField) as Pallas
@@ -29,6 +30,9 @@ class CircuitGateConstructor f g | f -> g, g -> f where
   createCRS :: Effect (CRS g)
   crsCreate :: Int -> CRS g
   crsSize :: CRS g -> Int
+  -- | Pre-warm the lagrange-basis cache for the domain of size `2^log2`.
+  -- | Effectful: mutates the (shared) SRS in place.
+  addLagrangeBasis :: CRS g -> Int -> Effect Unit
   createProverIndex
     :: { crs :: CRS g
        , gates :: Array (Gate f)
@@ -48,6 +52,7 @@ instance CircuitGateConstructor Pallas.ScalarField Pallas.G where
   createCRS = Pallas.createCRS
   crsCreate = Pallas.pallasCrsCreate
   crsSize = Pallas.pallasCrsSize
+  addLagrangeBasis = Pallas.pallasSrsAddLagrangeBasis
   createProverIndex = Pallas.createProverIndex
   createVerifierIndex = Pallas.createVerifierIndex
   gatesToJson = Pallas.pallasGatesToJson
@@ -60,6 +65,7 @@ instance CircuitGateConstructor Vesta.ScalarField Vesta.G where
   createCRS = Vesta.createCRS
   crsCreate = Vesta.vestaCrsCreate
   crsSize = Vesta.vestaCrsSize
+  addLagrangeBasis = Vesta.vestaSrsAddLagrangeBasis
   createProverIndex = Vesta.createProverIndex
   createVerifierIndex = Vesta.createVerifierIndex
   gatesToJson = Vesta.vestaGatesToJson

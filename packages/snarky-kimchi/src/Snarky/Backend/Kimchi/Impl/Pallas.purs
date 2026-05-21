@@ -2,6 +2,7 @@ module Snarky.Backend.Kimchi.Impl.Pallas where
 
 import Data.Array as Array
 import Data.Maybe (Maybe(..))
+import Data.Unit (Unit)
 import Effect (Effect)
 import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, GateWires, ProverIndex, VerifierIndex)
@@ -28,6 +29,12 @@ foreign import pallasGatesToJson :: Array (Gate Pallas.ScalarField) -> Int -> St
 foreign import pallasCrsLoadFromCache :: Effect (CRS Pallas.G)
 foreign import pallasCrsCreate :: Int -> CRS Pallas.G
 foreign import pallasCrsSize :: CRS Pallas.G -> Int
+
+-- | Pre-warm the lagrange-basis cache of the (shared) SRS for the domain
+-- | of size `2^log2`. Effectful: mutates the SRS in place, so later
+-- | index/proof creation over that domain hits the cache.
+foreign import pallasSrsAddLagrangeBasis :: CRS Pallas.G -> Int -> Effect Unit
+
 -- | Compute challenge polynomial commitment from Pallas SRS.
 -- | Pallas scalar field = Fq, result coords in Fp (= Vesta.ScalarField).
 -- | OCaml: SRS.Fq.b_poly_commitment (Dummy.Ipa.Wrap.compute_sg)

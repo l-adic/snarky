@@ -23,11 +23,13 @@ module Test.Pickles.SharedSrs
 
 import Prelude
 
+import Data.Array as Array
+import Data.Foldable (for_)
 import Data.Int.Bits as Int
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Pickles (StepField)
-import Snarky.Backend.Kimchi.Class (createCRS)
+import Snarky.Backend.Kimchi.Class (addLagrangeBasis, createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Curves.Pasta (PallasG, VestaG)
@@ -48,4 +50,12 @@ buildSharedSrs :: Aff SharedSrs
 buildSharedSrs = liftEffect do
   let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` wrapSrsDepthLog2)
   vestaSrs <- createCRS @StepField
+  -- Pre-warm the lagrange-basis cache (log2 domain sizes) for every
+  -- domain the suite's circuits touch, so the first spec to hit each
+  -- domain doesn't pay the basis computation — it's front-loaded here,
+  -- once, into the shared SRS every spec reuses. Step (Vesta/Fp) domains
+  -- run up to 2^16 (Tick URS); wrap (Pallas/Fq) up to 2^15 (Tock URS,
+  -- = `wrapSrsDepthLog2`). Warming a domain no spec uses is harmless.
+  for_ (Array.range 9 16) (addLagrangeBasis vestaSrs)
+  for_ (Array.range 12 wrapSrsDepthLog2) (addLagrangeBasis pallasSrs)
   pure { pallasSrs, vestaSrs }

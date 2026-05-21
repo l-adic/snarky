@@ -113,6 +113,18 @@ export function vestaCrsSize(crs) {
     return crs.size;
 }
 
+// Pre-warm the lagrange-basis cache for the domain of size `2^log2Size`.
+// The cache lives inside the shared SRS object (interior mutability), so
+// later `index_create` / `proof_create` over that domain hit the cache
+// instead of recomputing the basis. Effectful: mutates the SRS in place.
+export function vestaSrsAddLagrangeBasis(crs) {
+    return function(log2Size) {
+        return function() {
+            k.caml_fp_srs_add_lagrange_basis(crs.srs, log2Size);
+        };
+    };
+}
+
 // Vesta b_poly commitment: inputs in Fp, outputs Vesta points (coords in Fq).
 export function vestaSrsBPolyCommitment(crs) {
     return function(challenges) {

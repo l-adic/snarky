@@ -132,6 +132,18 @@ export function pallasCrsSize(crs) {
     return crs.size;
 }
 
+// Pre-warm the lagrange-basis cache for the domain of size `2^log2Size`.
+// The cache lives inside the shared SRS object (interior mutability), so
+// later `index_create` / `proof_create` over that domain hit the cache
+// instead of recomputing the basis. Effectful: mutates the SRS in place.
+export function pallasSrsAddLagrangeBasis(crs) {
+    return function(log2Size) {
+        return function() {
+            k.caml_fq_srs_add_lagrange_basis(crs.srs, log2Size);
+        };
+    };
+}
+
 // b_poly commitment: takes Pallas scalars (Fq), returns a `PolyComm<Pallas>`
 // whose points have Fp coords. PS-side currently expects a flat
 // `Array Pallas.BaseField` of length 2 (x, y); we expose the first
