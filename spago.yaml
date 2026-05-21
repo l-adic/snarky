@@ -2,3 +2,10 @@ workspace:
   packageSet:
     registry: 71.0.0
   extraPackages: {}
+  # No `backend:` here on purpose. The root workspace stays on the
+  # plain JS backend so normal library development keeps its simple,
+  # fast build (`spago build` = `purs compile` only). The
+  # purs-backend-es optimizer is confined to the separate pickles-bench
+  # workspace (packages/pickles-bench/spago.yaml), which is ignored by
+  # this workspace per spago's rule that a nested spago.yaml with its
+  # own `workspace:` section establishes a separate workspace.

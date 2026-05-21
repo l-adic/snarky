@@ -42,7 +42,6 @@ module Pickles.ProofFFI
   , vestaVerifierIndexColumnComms
   , vestaChallengePolyCommitment
   , vestaMakeWireProof
-  , Dehydrated(..)
   , Proof
   , OraclesResult
   , PointEval
@@ -62,12 +61,20 @@ module Pickles.ProofFFI
 
 import Prelude
 
+import Data.Argonaut.Core (Json, stringify)
+import Data.Argonaut.Core (fromArray, fromNumber, fromObject, fromString, jsonNull) as Argonaut
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NonEmptyArray
+import Data.Int (toNumber)
+import Data.Maybe (Maybe(..))
+import Data.Nullable (Nullable)
+import Data.Nullable as Nullable
 import Data.Reflectable (class Reflectable, reflectType)
+import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Foreign.Object as FO
 import Pickles.Domain as Domain
 import Pickles.Types (ChunkedCommitment(..), StepIPARounds, WrapIPARounds)
 import Pickles.Util.Fatal (fromJust')
@@ -287,13 +294,132 @@ type RawProofData c f =
   , evals :: ProofEvaluations f
   }
 
-foreign import pallasProofDataRaw
+-- | Typed foreign-record view of kimchi-napi's `WasmF{p,q}ProverProof`.
+-- | The proof handle IS this object at runtime (snake/camel napi labels
+-- | mirrored exactly), so `asNapiProof` is a zero-cost `unsafeCoerce`.
+-- | Leaves are opaque `NapiBytes` (napi `Buffer`s), decoded per-curve by
+-- | `fpFromBytesLE` / `fqFromBytesLE`. This is the single point where the
+-- | napi shape is asserted; the structural walk below is fully typed PS.
+foreign import data NapiBytes :: Type
+
+-- | f = Pasta `Fp` (= `Vesta.ScalarField` = `Pallas.BaseField`).
+foreign import fpFromBytesLE :: NapiBytes -> Vesta.ScalarField
+
+-- | f = Pasta `Fq` (= `Pallas.ScalarField` = `Vesta.BaseField`).
+foreign import fqFromBytesLE :: NapiBytes -> Pallas.ScalarField
+
+type NapiG = { x :: NapiBytes, y :: NapiBytes }
+
+-- | `NapiPolyComm { unshifted, shifted }`; pickles never sets `shifted`.
+type NapiPolyComm = { unshifted :: Array NapiG }
+
+-- | `NapiPointEvaluations { zeta, zetaOmega }`; parallel chunk arrays.
+type NapiPointEvals = { zeta :: Array NapiBytes, zetaOmega :: Array NapiBytes }
+
+type NapiProof =
+  { commitments ::
+      { w_comm :: Array NapiPolyComm
+      , z_comm :: NapiPolyComm
+      , t_comm :: NapiPolyComm
+      }
+  , proof ::
+      { lr_0 :: Array NapiG -- L points
+      , lr_1 :: Array NapiG -- R points (parallel to lr_0)
+      , delta :: NapiG
+      , sg :: NapiG
+      , z1 :: NapiBytes
+      , z2 :: NapiBytes
+      }
+  , evals ::
+      { w :: Array NapiPointEvals
+      , z :: NapiPointEvals
+      , s :: Array NapiPointEvals
+      , coefficients :: Array NapiPointEvals
+      , genericSelector :: NapiPointEvals
+      , poseidonSelector :: NapiPointEvals
+      , completeAddSelector :: NapiPointEvals
+      , mulSelector :: NapiPointEvals
+      , emulSelector :: NapiPointEvals
+      , endomulScalarSelector :: NapiPointEvals
+      , public :: NapiPointEvals
+      }
+  , ft_eval1 :: NapiBytes
+  }
+
+-- | Reinterpret the opaque proof handle as its napi-record view. The JS
+-- | impl is identity — the handle IS this object — so this is the one
+-- | typed FFI boundary that asserts the napi shape; everything downstream
+-- | is fully type-checked PS.
+foreign import asNapiProof :: forall g f. Proof g f -> NapiProof
+
+-- | Structural decode of the napi proof tree into `RawProofData`. `decF`
+-- | decodes scalar/eval leaves (the circuit's witness field `f`); `decC`
+-- | decodes curve-point coords (the commitment curve's base field `c`,
+-- | the opposite cycle-half). The `to_batch` selector order
+-- | `[generic, poseidon, completeAdd, mul, emul, endomulScalar]` is
+-- | preserved in `indexEvals`.
+decodeRawProofData
+  :: forall c f
+   . (NapiBytes -> f)
+  -> (NapiBytes -> c)
+  -> NapiProof
+  -> RawProofData c f
+decodeRawProofData decF decC p =
+  { commitments:
+      { wComm: toVec @15 "commitments.wComm" (map polyComm p.commitments.w_comm)
+      , zComm: polyComm p.commitments.z_comm
+      , tComm: polyComm p.commitments.t_comm
+      }
+  , opening:
+      { lr: Array.zipWith (\l r -> { l: point l, r: point r }) p.proof.lr_0 p.proof.lr_1
+      , delta: point p.proof.delta
+      , sg: point p.proof.sg
+      , z1: decF p.proof.z1
+      , z2: decF p.proof.z2
+      }
+  , evals:
+      { w: toVec @15 "evals.w" (map pointEvals p.evals.w)
+      , z: pointEvals p.evals.z
+      , s: toVec @6 "evals.s" (map pointEvals p.evals.s)
+      , coefficients: toVec @15 "evals.coefficients" (map pointEvals p.evals.coefficients)
+      , indexEvals: toVec @6 "evals.indexEvals"
+          [ pointEvals p.evals.genericSelector
+          , pointEvals p.evals.poseidonSelector
+          , pointEvals p.evals.completeAddSelector
+          , pointEvals p.evals.mulSelector
+          , pointEvals p.evals.emulSelector
+          , pointEvals p.evals.endomulScalarSelector
+          ]
+      , public: pointEvals p.evals.public
+      , ftEval1: decF p.ft_eval1
+      }
+  }
+  where
+  point :: NapiG -> AffinePoint c
+  point g = { x: decC g.x, y: decC g.y }
+
+  polyComm :: NapiPolyComm -> Array (AffinePoint c)
+  polyComm pc = map point pc.unshifted
+
+  pointEvals :: NapiPointEvals -> NonEmptyArray (PointEval f)
+  pointEvals ev =
+    fromJust' "ProofData.evals: empty chunk array"
+      $ NonEmptyArray.fromArray
+      $ Array.zipWith (\z zo -> { zeta: decF z, omegaTimesZeta: decF zo }) ev.zeta ev.zetaOmega
+
+  toVec :: forall @n a. Reflectable n Int => String -> Array a -> Vector n a
+  toVec lbl arr =
+    fromJust' ("ProofData." <> lbl <> ": unexpected chunk/array length") (Vector.toVector @n arr)
+
+pallasProofDataRaw
   :: Proof Vesta.G Pallas.BaseField
   -> RawProofData Pallas.ScalarField Pallas.BaseField
+pallasProofDataRaw = decodeRawProofData fpFromBytesLE fqFromBytesLE <<< asNapiProof
 
-foreign import vestaProofDataRaw
+vestaProofDataRaw
   :: Proof Pallas.G Vesta.BaseField
   -> RawProofData Vesta.ScalarField Vesta.BaseField
+vestaProofDataRaw = decodeRawProofData fqFromBytesLE fpFromBytesLE <<< asNapiProof
 
 -- | Promote a raw decoder result to the typed `ProofData rounds c f` by
 -- | applying `Vector.toVector @rounds` once to the lr array. Failure here
@@ -414,14 +540,6 @@ foreign import vestaMakeWireProof
      , ftEval1 :: Pallas.ScalarField
      }
   -> Proof Pallas.G Vesta.BaseField
-
--- | Tag marking a freshly-deserialized kimchi value (currently used only
--- | for `VerifierIndex` — see `Pickles.Sideload.FFI`) whose runtime
--- | needs further setup before use. Same runtime rep as the underlying
--- | value; the wrapper exists only as a type-level forcing function so
--- | callers must go through the matching `*HydrateX` step before passing
--- | the value to verify.
-newtype Dehydrated a = Dehydrated a
 
 foreign import pallasProofBulletproofChallenges :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Array Pallas.BaseField
 foreign import vestaProofBulletproofChallenges :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Array Vesta.BaseField
@@ -547,9 +665,111 @@ foreign import vestaSigmaCommLast :: VerifierIndex Pallas.G Vesta.BaseField -> A
 -- | `max_poly_size`, `public`, `prev_challenges`, `evals`, `shifts`,
 -- | `zk_rows` (we skip `srs` because OCaml renders it as `null`, and the
 -- | optional `lookup_index`, which is `None` for vanilla pickles VKs).
-foreign import vestaVerifierIndexJsonKey :: VerifierIndex Pallas.G Vesta.BaseField -> String
+-- |
+-- | Implementation note: the JS side does exactly one thing — decompose
+-- | the napi `VerifierIndex` object into a typed PS record (`VkRaw`),
+-- | preserving optional commitments via `Nullable`. All hex encoding +
+-- | JSON structure assembly happens in PS via Argonaut. The helpers
+-- | (`VkRaw`, `_vkRaw`, `bytesToHex`, `vkRawToJson`, …) stay private to
+-- | this module; only the two `*VerifierIndexJsonKey` names are
+-- | exported.
+pallasVerifierIndexJsonKey :: VerifierIndex Vesta.G Pallas.BaseField -> String
+pallasVerifierIndexJsonKey = stringify <<< vkRawToJson <<< _vkRaw
 
-foreign import pallasVerifierIndexJsonKey :: VerifierIndex Vesta.G Pallas.BaseField -> String
+vestaVerifierIndexJsonKey :: VerifierIndex Pallas.G Vesta.BaseField -> String
+vestaVerifierIndexJsonKey = stringify <<< vkRawToJson <<< _vkRaw
+
+--------------------------------------------------------------------------------
+-- VK json-key internals (private; not exported)
+--------------------------------------------------------------------------------
+
+-- | Raw decomposition of a kimchi `VerifierIndex` napi-object into PS.
+-- | Bytes come pre-hex-encoded — the JS-side decompose includes a tiny
+-- | byte→hex loop so we don't have to drag a `Uint8Array` PS binding
+-- | into pickles' deps. Optional gate-commitments are `Nullable`
+-- | (napi-rs renders `Option<X>` as `X | null | undefined`;
+-- | `Nullable.toMaybe` collapses both to `Nothing`).
+type VkPolyCommRaw = { unshifted :: Array { x :: String, y :: String } }
+
+type VkEvalsRaw =
+  { sigmaComm :: Array VkPolyCommRaw
+  , coefficientsComm :: Array VkPolyCommRaw
+  , genericComm :: VkPolyCommRaw
+  , psmComm :: VkPolyCommRaw
+  , completeAddComm :: VkPolyCommRaw
+  , mulComm :: VkPolyCommRaw
+  , emulComm :: VkPolyCommRaw
+  , endomulScalarComm :: VkPolyCommRaw
+  , xorComm :: Nullable VkPolyCommRaw
+  , rangeCheck0Comm :: Nullable VkPolyCommRaw
+  , rangeCheck1Comm :: Nullable VkPolyCommRaw
+  , foreignFieldAddComm :: Nullable VkPolyCommRaw
+  , foreignFieldMulComm :: Nullable VkPolyCommRaw
+  , rotComm :: Nullable VkPolyCommRaw
+  }
+
+type VkRaw =
+  { domain :: { logSizeOfGroup :: Int, groupGen :: String }
+  , maxPolySize :: Int
+  , publicInputs :: Int
+  , prevChallenges :: Int
+  , zkRows :: Int
+  , shifts :: Array String -- 7 elements (s0..s6), each hex-encoded
+  , evals :: VkEvalsRaw
+  }
+
+foreign import _vkRaw :: forall g f. VerifierIndex g f -> VkRaw
+
+affineToJson :: { x :: String, y :: String } -> Json
+affineToJson p = Argonaut.fromArray [ Argonaut.fromString p.x, Argonaut.fromString p.y ]
+
+polyCommToJson :: VkPolyCommRaw -> Json
+polyCommToJson pc = Argonaut.fromArray (map affineToJson pc.unshifted)
+
+maybePolyCommToJson :: Nullable VkPolyCommRaw -> Json
+maybePolyCommToJson n = case Nullable.toMaybe n of
+  Nothing -> Argonaut.jsonNull
+  Just pc -> polyCommToJson pc
+
+-- Insertion-ordered field list — Argonaut's `Foreign.Object` preserves
+-- insertion order, matching V8 `JSON.stringify(...)` semantics so the
+-- output stays stable across runs.
+obj :: Array (Tuple String Json) -> Json
+obj = Argonaut.fromObject <<< FO.fromFoldable
+
+evalsToJson :: VkEvalsRaw -> Json
+evalsToJson e = obj
+  [ Tuple "sigmaComm" (Argonaut.fromArray (map polyCommToJson e.sigmaComm))
+  , Tuple "coefficientsComm" (Argonaut.fromArray (map polyCommToJson e.coefficientsComm))
+  , Tuple "genericComm" (polyCommToJson e.genericComm)
+  , Tuple "psmComm" (polyCommToJson e.psmComm)
+  , Tuple "completeAddComm" (polyCommToJson e.completeAddComm)
+  , Tuple "mulComm" (polyCommToJson e.mulComm)
+  , Tuple "emulComm" (polyCommToJson e.emulComm)
+  , Tuple "endomulScalarComm" (polyCommToJson e.endomulScalarComm)
+  , Tuple "xorComm" (maybePolyCommToJson e.xorComm)
+  , Tuple "rangeCheck0Comm" (maybePolyCommToJson e.rangeCheck0Comm)
+  , Tuple "rangeCheck1Comm" (maybePolyCommToJson e.rangeCheck1Comm)
+  , Tuple "foreignFieldAddComm" (maybePolyCommToJson e.foreignFieldAddComm)
+  , Tuple "foreignFieldMulComm" (maybePolyCommToJson e.foreignFieldMulComm)
+  , Tuple "rotComm" (maybePolyCommToJson e.rotComm)
+  ]
+
+vkRawToJson :: VkRaw -> Json
+vkRawToJson r = obj
+  [ Tuple "domain"
+      ( obj
+          [ Tuple "logSizeOfGroup" (Argonaut.fromNumber (toNumber r.domain.logSizeOfGroup))
+          , Tuple "groupGen" (Argonaut.fromString r.domain.groupGen)
+          ]
+      )
+  , Tuple "maxPolySize" (Argonaut.fromNumber (toNumber r.maxPolySize))
+  , Tuple "public" (Argonaut.fromNumber (toNumber r.publicInputs))
+  , Tuple "prevChallenges" (Argonaut.fromNumber (toNumber r.prevChallenges))
+  , Tuple "evals" (evalsToJson r.evals)
+  , Tuple "shifts" (Argonaut.fromArray (map Argonaut.fromString r.shifts))
+  , Tuple "zkRows" (Argonaut.fromNumber (toNumber r.zkRows))
+  ]
 
 --------------------------------------------------------------------------------
 -- Instances

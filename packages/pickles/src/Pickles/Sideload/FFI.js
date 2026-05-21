@@ -33,16 +33,6 @@ export function vestaVerifierIndexFromSerdeJson(json) {
   };
 }
 
-// Hydration is automatic in the napi conversion; this is a no-op kept
-// for ABI stability with `Pickles.Sideload.FFI.purs`. Args ignored.
-export function vestaHydrateVerifierIndex(vk) {
-  return function (_flags) {
-    return function (_generic) {
-      return vk;
-    };
-  };
-}
-
 // Wrap-side (Pallas-curve commitments) proof serde.
 export function vestaProofFromSerdeJson(json) {
   return k.caml_pasta_fq_plonk_proof_from_json(json);

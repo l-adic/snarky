@@ -29,6 +29,21 @@ const fqFromBytes = (b) => Fq.fromBytesLE(b instanceof Uint8Array ? b : new Uint
 const fpToBytes = (n) => Fp.toBytesLE(n);
 const fqToBytes = (n) => Fq.toBytesLE(n);
 
+// Narrow leaf decoders: the only irreducible byte→field primitives the
+// PS-side proof walk needs. PS reads the napi `WasmF{p,q}ProverProof`
+// tree directly (typed foreign-record view — see `Pickles.ProofFFI`'s
+// `NapiProof` + `decodeRawProofData`) and applies these per leaf, so the
+// napi field-name surface is type-checked rather than scattered across
+// untyped `.map` chains. `fp`/`fq` map to the Pasta cycle's two coord
+// fields; PS picks the right one per curve-half.
+export const fpFromBytesLE = (b) => fpFromBytes(b);
+export const fqFromBytesLE = (b) => fqFromBytes(b);
+
+// Identity: the napi proof handle already IS the record the PS-side
+// `NapiProof` view describes. This is the one typed FFI boundary that
+// asserts the napi shape; the structural decode is PS-driven from here.
+export const asNapiProof = (x) => x;
+
 // FlatVector<F> wire layout: a single Uint8Array of n*32 bytes.
 function fpFlat(arr) {
   const out = new Uint8Array(arr.length * 32);
@@ -40,97 +55,6 @@ function fqFlat(arr) {
   for (let i = 0; i < arr.length; i++) out.set(fqToBytes(arr[i]), i * 32);
   return out;
 }
-
-// PS `{x, y}` ↔ kimchi-napi `NapiG {x, y, infinity}`.
-const napiPoint = (encodeCoord) => (pt) => ({
-  x: encodeCoord(pt.x),
-  y: encodeCoord(pt.y),
-  infinity: false,
-});
-const decodePoint = (decodeCoord) => (p) => ({
-  x: decodeCoord(p.x),
-  y: decodeCoord(p.y),
-});
-
-// `NapiPolyComm { unshifted: NapiG[], shifted: Option<NapiG> }` → flat
-// `Array<AffinePoint>` (PS-side `ProofCommitments` shape uses arrays for
-// chunks; one element per chunk).
-const decodePolyComm = (decodeCoord) => (pc) => pc.unshifted.map(decodePoint(decodeCoord));
-
-// `NapiPointEvaluations { zeta: Buffer[], zetaOmega: Buffer[] }` → chunked
-// `Array<PointEval>`. Each chunk is `{zeta, omegaTimesZeta}`.
-function decodePointEvals(decodeField, pe) {
-  const n = pe.zeta.length;
-  const out = new Array(n);
-  for (let i = 0; i < n; i++) {
-    out[i] = { zeta: decodeField(pe.zeta[i]), omegaTimesZeta: decodeField(pe.zetaOmega[i]) };
-  }
-  return out;
-}
-
-// ---------------------------------------------------------------------------
-// Proof decoder — walks `WasmFpProverProof` / `WasmFqProverProof` and
-// produces the structured `ProofData` PS record. Single eager decode at
-// the FFI boundary (`Pickles.ProofFFI.proofData`).
-//
-// `fieldDecode` decodes scalar/eval fields (matches the circuit's witness
-// field); `coordDecode` decodes curve-point coords (in the commitment
-// curve's base field — opposite cycle-half from `fieldDecode`).
-// ---------------------------------------------------------------------------
-
-function decodeProofData(proof, fieldDecode, coordDecode) {
-  const c = proof.commitments;
-  const o = proof.proof;
-  const e = proof.evals;
-  return {
-    commitments: {
-      wComm: c.w_comm.map(decodePolyComm(coordDecode)),
-      zComm: decodePolyComm(coordDecode)(c.z_comm),
-      tComm: decodePolyComm(coordDecode)(c.t_comm),
-    },
-    opening: {
-      // kimchi-napi exposes `lr_0` (L points) and `lr_1` (R points) as two
-      // parallel arrays; PS expects an array of `{l, r}` pairs.
-      lr: o.lr_0.map((l, i) => ({
-        l: decodePoint(coordDecode)(l),
-        r: decodePoint(coordDecode)(o.lr_1[i]),
-      })),
-      delta: decodePoint(coordDecode)(o.delta),
-      sg: decodePoint(coordDecode)(o.sg),
-      z1: fieldDecode(o.z1),
-      z2: fieldDecode(o.z2),
-    },
-    evals: {
-      w: e.w.map((pe) => decodePointEvals(fieldDecode, pe)),
-      z: decodePointEvals(fieldDecode, e.z),
-      s: e.s.map((pe) => decodePointEvals(fieldDecode, pe)),
-      coefficients: e.coefficients.map((pe) => decodePointEvals(fieldDecode, pe)),
-      // `to_batch` order — see snarky-crypto's `proof_index_evals` for the
-      // 6-tuple ordering: generic, poseidon, completeAdd, mul, emul,
-      // endomulScalar.
-      indexEvals: [
-        e.genericSelector,
-        e.poseidonSelector,
-        e.completeAddSelector,
-        e.mulSelector,
-        e.emulSelector,
-        e.endomulScalarSelector,
-      ].map((pe) => decodePointEvals(fieldDecode, pe)),
-      // `evals.public` is always `Some(...)` for kimchi-prover-created
-      // proofs (`kimchi/src/prover.rs:996-1002` unconditionally populates).
-      // If a caller hands us a `proof_dummy`-style object with `None`
-      // here, the property access throws naturally — no defensive guard.
-      public: decodePointEvals(fieldDecode, e.public),
-      ftEval1: fieldDecode(proof.ft_eval1),
-    },
-  };
-}
-
-// pallas* = step circuit (Fp witness, Vesta commitments → Fq coords).
-export const pallasProofDataRaw = (proof) => decodeProofData(proof, fpFromBytes, fqFromBytes);
-
-// vesta* = wrap circuit (Fq witness, Pallas commitments → Fp coords).
-export const vestaProofDataRaw = (proof) => decodeProofData(proof, fqFromBytes, fpFromBytes);
 
 // ---------------------------------------------------------------------------
 // Proof creation
@@ -607,79 +531,60 @@ export const vestaVerifierIndexColumnComms = (verifierIndex) =>
   extractColumnComms(verifierIndex, fpFromBytes);
 
 // ---------------------------------------------------------------------------
-// VerifierIndex JSON key (proof-cache bucket)
+// VerifierIndex JSON-key decompose — peel a kimchi napi `VerifierIndex`
+// into a typed PS-side record (`VkRaw` in `Pickles.ProofFFI.purs`). PS
+// owns the structural assembly + Argonaut JSON-stringification; this
+// JS side does exactly two irreducible bits:
+//   (1) reach into the napi object's snake_case fields, and
+//   (2) hex-encode the 32-byte `NapiPasta*` buffers.
 //
-// OCaml `Pickles.Proof_cache` keys cached proofs by the full VK serialized
-// to YoJSON (`proof_cache.ml:185, 168-181`). It never materializes a
-// host-side VK digest — the only "VK digest" in pickles is the in-circuit
-// `Sponge.copy sponge_after_index` inside step/wrap verifier (`step_verifier
-// .ml:533`, `wrap_verifier.ml:850`). We follow the OCaml approach instead
-// of porting kimchi's `PlonkSpongeConstantsKimchi` sponge to JS.
-//
-// Stringification rules: deterministic, structural, scoped to the same
-// fields as OCaml's `[%to_yojson: verifier_index]`. Bytes don't have to
-// match OCaml's output (our cache fixtures are PS-only and regen'd on
-// demand) — only stability across runs matters. We use a fixed-shape
-// `JSON.stringify` over a normalized tree.
-//
-// Field elements: hex-LE byte string (kimchi-napi already hands us
-// 32-byte Buffers). Points: `[x_hex, y_hex]`. PolyComm: `[pt, …]`
-// (we drop the deprecated `shifted` slot — always None for non-degenerate
-// commitments, see `mina#14628`).
+// All policy decisions about WHICH fields enter the key, optionality
+// handling, and JSON-shape live in PS — same selectable export
+// discipline (only `pallas/vestaVerifierIndexJsonKey` exported; the
+// `VkRaw`/helper types are module-private).
 // ---------------------------------------------------------------------------
 
 function bytesHex(buf) {
-  // Hex-encode a Uint8Array / Buffer. Stable across hosts (Node's
-  // `Buffer.toString("hex")` is also stable but we avoid Buffer coupling).
   const b = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
   let s = "";
   for (let i = 0; i < b.length; i++) s += b[i].toString(16).padStart(2, "0");
   return s;
 }
 
-function affineKey(p) {
-  return [bytesHex(p.x), bytesHex(p.y)];
-}
+const _affine = (p) => ({ x: bytesHex(p.x), y: bytesHex(p.y) });
+const _polyComm = (pc) => ({ unshifted: pc.unshifted.map(_affine) });
+const _optPolyComm = (pc) => (pc == null ? null : _polyComm(pc));
 
-function polyCommKey(pc) {
-  return pc.unshifted.map(affineKey);
-}
-
-function evalsKey(ev) {
+export function _vkRaw(vi) {
+  const ev = vi.evals;
   return {
-    sigmaComm: ev.sigma_comm.map(polyCommKey),
-    coefficientsComm: ev.coefficients_comm.map(polyCommKey),
-    genericComm: polyCommKey(ev.generic_comm),
-    psmComm: polyCommKey(ev.psm_comm),
-    completeAddComm: polyCommKey(ev.complete_add_comm),
-    mulComm: polyCommKey(ev.mul_comm),
-    emulComm: polyCommKey(ev.emul_comm),
-    endomulScalarComm: polyCommKey(ev.endomul_scalar_comm),
-    // Optional gates absent from vanilla pickles VKs; included for
-    // disambiguation if a future VK enables them.
-    xorComm: ev.xor_comm ? polyCommKey(ev.xor_comm) : null,
-    rangeCheck0Comm: ev.range_check0_comm ? polyCommKey(ev.range_check0_comm) : null,
-    rangeCheck1Comm: ev.range_check1_comm ? polyCommKey(ev.range_check1_comm) : null,
-    foreignFieldAddComm: ev.foreign_field_add_comm ? polyCommKey(ev.foreign_field_add_comm) : null,
-    foreignFieldMulComm: ev.foreign_field_mul_comm ? polyCommKey(ev.foreign_field_mul_comm) : null,
-    rotComm: ev.rot_comm ? polyCommKey(ev.rot_comm) : null,
+    domain: {
+      logSizeOfGroup: vi.domain.log_size_of_group,
+      groupGen: bytesHex(vi.domain.group_gen),
+    },
+    maxPolySize: vi.max_poly_size,
+    publicInputs: vi.public_,
+    prevChallenges: vi.prev_challenges,
+    zkRows: vi.zk_rows,
+    shifts: [vi.shifts.s0, vi.shifts.s1, vi.shifts.s2, vi.shifts.s3, vi.shifts.s4, vi.shifts.s5, vi.shifts.s6].map(bytesHex),
+    evals: {
+      sigmaComm: ev.sigma_comm.map(_polyComm),
+      coefficientsComm: ev.coefficients_comm.map(_polyComm),
+      genericComm: _polyComm(ev.generic_comm),
+      psmComm: _polyComm(ev.psm_comm),
+      completeAddComm: _polyComm(ev.complete_add_comm),
+      mulComm: _polyComm(ev.mul_comm),
+      emulComm: _polyComm(ev.emul_comm),
+      endomulScalarComm: _polyComm(ev.endomul_scalar_comm),
+      xorComm: _optPolyComm(ev.xor_comm),
+      rangeCheck0Comm: _optPolyComm(ev.range_check0_comm),
+      rangeCheck1Comm: _optPolyComm(ev.range_check1_comm),
+      foreignFieldAddComm: _optPolyComm(ev.foreign_field_add_comm),
+      foreignFieldMulComm: _optPolyComm(ev.foreign_field_mul_comm),
+      rotComm: _optPolyComm(ev.rot_comm),
+    },
   };
 }
-
-function verifierIndexKey(vi) {
-  return JSON.stringify({
-    domain: { logSizeOfGroup: vi.domain.log_size_of_group, groupGen: bytesHex(vi.domain.group_gen) },
-    maxPolySize: vi.max_poly_size,
-    public: vi.public_,
-    prevChallenges: vi.prev_challenges,
-    evals: evalsKey(vi.evals),
-    shifts: [vi.shifts.s0, vi.shifts.s1, vi.shifts.s2, vi.shifts.s3, vi.shifts.s4, vi.shifts.s5, vi.shifts.s6].map(bytesHex),
-    zkRows: vi.zk_rows,
-  });
-}
-
-export const pallasVerifierIndexJsonKey = verifierIndexKey;
-export const vestaVerifierIndexJsonKey = verifierIndexKey;
 
 // `vestaMakeWireProof` — assembles a `WasmFqProverProof` from PS-supplied
 // flat coordinate / scalar arrays. PureScript analog of OCaml

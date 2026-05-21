@@ -75,7 +75,7 @@ jobs:
           ~/.cargo/registry/cache/
           ~/.cargo/git/db/
           target/
-          packages/crypto-provider/target/
+          packages/kimchi-napi/target/
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
 
     - name: Cache SRS files
@@ -119,7 +119,7 @@ jobs:
           ~/.cargo/registry/cache/
           ~/.cargo/git/db/
           target/
-          packages/crypto-provider/target/
+          packages/kimchi-napi/target/
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
 
     - name: Cache SRS files

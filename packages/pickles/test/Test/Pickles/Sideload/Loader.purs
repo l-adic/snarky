@@ -70,7 +70,7 @@ import Pickles.PlonkChecks (ChunkedAllEvals)
 import Pickles.ProofFFI (Proof, permutationVanishingPolynomial, verifyOpeningProof)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Step (extractWrapVKForStepHash)
-import Pickles.Sideload (noOptionalFeatures, vestaHydrateVerifierIndex, vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJson)
+import Pickles.Sideload (vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJson)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
@@ -255,13 +255,15 @@ loadFixture cfg sharedSrs dir = do
 
     srs = sharedSrs.pallasSrs
     -- Deserialize → hydrate. The serde codec leaves `linearization` and
-    -- `powers_of_alpha` empty (`#[serde(skip)]`); without re-attaching
-    -- them, kimchi's verify panics with "constraint Permutation was not
-    -- registered". Pickles wrap circuits enable no optional gates and
-    -- always have the Generic gate, so `noOptionalFeatures` + `generic
-    -- = true` is the right pair for any Pickles-produced wrap VK.
-    dehydratedVk = vestaVerifierIndexFromSerdeJson vkJson srs
-    vk = vestaHydrateVerifierIndex dehydratedVk noOptionalFeatures true
+    -- `powers_of_alpha` empty (`#[serde(skip)]`). Hydration — rebuilding
+    -- those caches from the VK's feature-flag bits — is automatic on
+    -- conversion (`From<NapiPlonkVerifierIndex> for VerifierIndex` at
+    -- `kimchi-napi/src/plonk_verifier_index.rs:340` recomputes
+    -- `linearization`, `powers_of_alpha`, `w`, and
+    -- `permutation_vanishing_polynomial_m` from the deserialized
+    -- optional-comm `is_some()` shape), so no explicit hydrate step
+    -- is needed.
+    vk = vestaVerifierIndexFromSerdeJson vkJson srs
 
     -- Kimchi proof: load via the same Rust serde codec OCaml wrote it
     -- with. `prev_challenges` is already populated (OCaml passed the

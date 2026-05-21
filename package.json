@@ -4,7 +4,6 @@
   "description": "",
   "main": "index.js",
   "workspaces": [
-    "packages/crypto-provider",
     "packages/kimchi-napi",
     "packages/pasta-runtime"
   ],
@@ -12,7 +11,6 @@
     "test": "make test",
     "build:ps": "spago install && spago build",
     "build:napi": "npm run build --workspaces",
-    "build:crypto": "npm run build -w crypto-provider",
     "clean:napi": "npm run clean --workspaces --if-present"
   },
   "repository": {
@@ -29,13 +27,13 @@
   "homepage": "https://github.com/l-adic/snarky#readme",
   "dependencies": {
     "json-bigint": "^1.0.0",
-    "snarky-crypto": "file:./packages/crypto-provider",
     "kimchi-napi": "file:./packages/kimchi-napi",
     "pasta-runtime": "file:./packages/pasta-runtime"
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.4.1",
     "purescript": "^0.15.15",
+    "purs-backend-es": "^1.4.3",
     "purs-tidy": "^0.11.1",
     "spago": "1.0.3"
   }

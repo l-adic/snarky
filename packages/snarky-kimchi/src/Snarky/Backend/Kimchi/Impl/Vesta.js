@@ -23,10 +23,6 @@ const k = require('kimchi-napi');
 // Codec helpers
 // ---------------------------------------------------------------------------
 
-function fpFromBytes(bufLike) {
-    return Fp.fromBytesLE(bufLike instanceof Uint8Array ? bufLike : new Uint8Array(bufLike));
-}
-
 function fqFromBytes(bufLike) {
     return Fq.fromBytesLE(bufLike instanceof Uint8Array ? bufLike : new Uint8Array(bufLike));
 }
@@ -169,6 +165,3 @@ export function vestaProverIndexCreate({
 
 export const pallasVerifierIndex = (proverIndex) =>
     k.caml_pasta_fp_plonk_verifier_index_create(proverIndex);
-
-// Silence unused warning if not exercised.
-void fpFromBytes;

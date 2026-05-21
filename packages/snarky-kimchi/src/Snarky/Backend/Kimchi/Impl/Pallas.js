@@ -27,40 +27,10 @@ const k = require('kimchi-napi');
 // Codec helpers — bigint <-> 32-byte LE buffer / array
 // ---------------------------------------------------------------------------
 
-// Single field element. `coeffs` on a NapiFqGate uses a `Vec<u8>` (flat
-// bytes) which crosses as a JS Array<number> (one byte per element).
-function fqByteArray(b) {
-    const bytes = Fq.toBytesLE(b);
-    // Spread into a regular Array<number> — napi-rs expects Array, not Buffer.
-    return Array.from(bytes);
-}
-
-function fqFromBytes(bufLike) {
-    // `bufLike` is whatever napi-rs hands back for `Vec<u8>` — either
-    // a plain Array or a typed buffer. Coerce to Uint8Array for
-    // `Fq.fromBytesLE`.
-    return Fq.fromBytesLE(bufLike instanceof Uint8Array ? bufLike : new Uint8Array(bufLike));
-}
-
-// Curve coords (Pallas points live in Fp).
-function fpByteArray(b) {
-    const bytes = Fp.toBytesLE(b);
-    return Array.from(bytes);
-}
-
+// Curve coords (Pallas points live in Fp). Decodes the 32-byte LE buffer
+// kimchi-napi hands back for a point coordinate.
 function fpFromBytes(bufLike) {
     return Fp.fromBytesLE(bufLike instanceof Uint8Array ? bufLike : new Uint8Array(bufLike));
-}
-
-// NapiPolyComm <-> {unshifted: [{x, y, infinity}], shifted?}
-// `unshifted[i].{x, y}` are 32-byte LE buffers; convert to bigints.
-function decodePolyComm(pc) {
-    const points = pc.unshifted.map((p) => ({
-        x: fpFromBytes(p.x),
-        y: fpFromBytes(p.y),
-        infinity: p.infinity,
-    }));
-    return { unshifted: points, shifted: pc.shifted };
 }
 
 // FlatVector<NapiPastaFq> wire layout: a single Uint8Array of n*32 bytes.
@@ -228,9 +198,3 @@ export function pallasProverIndexCreate({
 // the opaque `VerifierIndex Pallas.G PallasScalarField` type.
 export const vestaVerifierIndex = (proverIndex) =>
     k.caml_pasta_fq_plonk_verifier_index_create(proverIndex);
-
-// Silence unused-warning while shim helpers live.
-void fqByteArray;
-void fpByteArray;
-void fqFromBytes;
-void decodePolyComm;
