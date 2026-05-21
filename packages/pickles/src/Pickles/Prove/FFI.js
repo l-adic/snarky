@@ -343,6 +343,15 @@ function decodeOracles(o, fieldDecode) {
     vChal: fieldDecode(o.o.v_chal),
     uChal: fieldDecode(o.o.u_chal),
     fqDigest: fieldDecode(o.digest_before_evaluations),
+    // `publicEvals` = the public-input polynomial evaluated at zeta / zeta·ω,
+    // as the FrSponge actually absorbed them (kimchi `verifier.rs:332-393`):
+    // the proof's `evals.public` when `Some`, else recomputed from the public
+    // input via lagrange. The napi oracle exposes these as `p_eval0`/`p_eval1`
+    // (oracles.rs `public_evals`). Pickles consumes them as the OCaml
+    // `O.p_eval_1 o`/`p_eval_2 o` fallback (`wrap.ml:110-116`) — the source of
+    // truth for a dummy wrap proof's in-circuit public eval, where the wire
+    // proof's `evals.public` is `None`.
+    publicEvals: { zeta: fieldDecode(o.p_eval0), omegaTimesZeta: fieldDecode(o.p_eval1) },
     // `ftEval1` is also on the proof; we copy it from the proof's
     // `ft_eval1` field at the consumer site (pallasProofOracles below).
     // Keeping it on `OraclesResult` for back-compat with the PS API.
@@ -553,10 +562,16 @@ export const vestaVerifierIndexColumnComms = (verifierIndex) =>
 //             entry is the `(zeta, zetaOmega)` pair interleaved.
 //   ftEval1 : Fq scalar
 //
-// `evals.public` is set to a single-chunk zero PointEvaluations: the
-// kimchi `proof.oracles` call expects `Some(...)` (the prover unconditionally
-// populates `public`), and zero matches the empty-public-input case in
-// kimchi's `verifier.rs:351-352`.
+// `evals.public` is left `None` (`undefined`), matching OCaml's
+// `Wrap_wire_proof.Evaluations.to_kimchi`, which never populates `public`.
+// This is load-bearing: when the dummy proof is fed to `fq_oracles_create`
+// with a non-empty injected `public_` (the wrap VK's public input), kimchi's
+// `verifier.rs:332` uses `evals.public` directly IF it is `Some`, otherwise
+// (the `None` branch, `verifier.rs:336`) it RECOMPUTES the public evals from
+// the public input via lagrange. Forcing `Some(zero)` here makes the FrSponge
+// absorb zero public evals instead of the recomputed values, diverging the
+// `v` polyscale challenge (and hence `combined_inner_product`, `b`, and the
+// bulletproof challenges) from OCaml.
 export const vestaMakeWireProof = (c) => {
   // Build a single Pallas point from two flat-array entries (x, y).
   const pt = (arr, i) => ({ x: fpToBytes(arr[i]), y: fpToBytes(arr[i + 1]), infinity: false });
@@ -600,13 +615,12 @@ export const vestaMakeWireProof = (c) => {
   const idx = new Array(6);
   for (let i = 0; i < 6; i++) idx[i] = pe();
 
-  const zeroPe = () => ({ zeta: [fqToBytes(0n)], zetaOmega: [fqToBytes(0n)] });
   // napi-rs `Option<T>` on an `#[napi(object)]` field requires `undefined`
   // for None — passing `null` fails with "Cannot convert undefined or null
   // to object". `lookup_sorted` is a non-optional NapiVector of Options;
   // `[]` works (an empty vector). Field names are camelCase by napi default.
   const evalsObj = {
-    public: zeroPe(),
+    public: undefined,
     w: wEvals,
     z: zEval,
     s: sigmaEvals,

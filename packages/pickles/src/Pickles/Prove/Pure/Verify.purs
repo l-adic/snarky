@@ -263,6 +263,10 @@ expandDeferredForVerify input =
       , v: xiField
       , u: rField
       , ftEval1: input.chunkedAllEvals.ftEval1
+      , publicEvals:
+          { zeta: collapsedAllEvals.publicEvals.zeta
+          , omegaTimesZeta: collapsedAllEvals.publicEvals.omegaTimesZeta
+          }
       , fqDigest: input.spongeDigestBeforeEvaluations
       , alphaChal: unwrapF input.rawPlonk.alpha
       , zetaChal: unwrapF input.rawPlonk.zeta

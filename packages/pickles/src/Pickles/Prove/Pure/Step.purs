@@ -44,7 +44,6 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.IPA (bPoly)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals, absorbAllEvals)
-import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.Prove.FFI (OraclesResult, Proof, domainGenerator, proofData, proofOpeningPrechallenges, proofOraclesRec, vestaChallengePolyCommitment, vestaProofCommitments)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatch, computeBpChalsAndB, derivePlonk, ftEval0)
 import Pickles.Sponge (absorb, evalPureSpongeM, initialSponge, squeeze, squeezeScalarChallengePure)
@@ -713,12 +712,12 @@ expandProof input =
     -- are already endo-expanded by the FFI.
     wrapCipInput =
       { allEvals: input.wrapAllEvals
-      , publicEvals: Chunks.collapsePointEval
-          { rounds: input.wrapSrsLengthLog2
-          , zeta: oraclesResult.zeta
-          , zetaOmega: wrapZetaw
-          }
-          wrapProofData.evals.public
+      -- OCaml `step.ml:464-491` folds `x_hat` (the oracle's recomputed
+      -- public eval) into the combined_inner_product. Use the oracle's
+      -- `publicEvals` (== the wire proof's `evals.public` for a real proof,
+      -- == recomputed for the dummy whose wire eval is `None`) rather than
+      -- `proofData.evals.public`, which is a placeholder for the dummy.
+      , publicEvals: oraclesResult.publicEvals
       , ftEval0: wrapFtEval0
       , ftEval1: oraclesResult.ftEval1
       , oldBulletproofChallenges: input.wrapPaddedPrevChallenges
@@ -877,12 +876,9 @@ expandProof input =
     , unfinalized: wrapUnfinalized
     , deferredStep: deferredStep
     , rawPrechallenges: Vector.toUnfoldable (map SizedF.toField rawPrechalsVec)
-    , xHat: Chunks.collapsePointEval
-        { rounds: input.wrapSrsLengthLog2
-        , zeta: oraclesResult.zeta
-        , zetaOmega: wrapZetaw
-        }
-        wrapProofData.evals.public
+    -- `x_hat` for the prev_evals (OCaml `step.ml:892`) = the oracle's
+    -- recomputed public eval (see `wrapCipInput.publicEvals`).
+    , xHat: oraclesResult.publicEvals
     , perProofWitness
     -- step.ml:536 reads this from `dlog_vk.domain.log_size_of_group`.
     , actualWrapDomain: input.wrapDomainLog2

@@ -60,7 +60,6 @@ import Control.Monad.State as State
 import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
 import Data.Array as Array
-import Data.Array.NonEmpty as NonEmptyArray
 import Data.Either (Either(..))
 import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
@@ -1141,7 +1140,14 @@ buildSlotAdvice input = do
     wrapProofData' = proofData input.wrapProof
     wrapAllEvals =
       { ftEval1: oracles.ftEval1
-      , publicEvals: wrapCollapse wrapProofData'.evals.public
+      -- OCaml `wrap.ml:110-116`: `x_hat = match proof.public_evals with
+      -- Some x -> x | None -> O.(p_eval_1 o, p_eval_2 o)`. The oracle's
+      -- `publicEvals` already encodes exactly that fold (kimchi
+      -- `verifier.rs:332`), so it is correct for BOTH a real wrap proof
+      -- (== its stored `evals.public`) and the dummy (whose wire
+      -- `evals.public` is `None` → recomputed). Sourcing it from the oracle
+      -- (not `proofData.evals.public`) is the dummy-base-case fix.
+      , publicEvals: oracles.publicEvals
       , zEvals: wrapCollapse wrapProofData'.evals.z
       , witnessEvals: map wrapCollapse wrapProofData'.evals.w
       , coeffEvals: map wrapCollapse wrapProofData'.evals.coefficients
@@ -1200,7 +1206,9 @@ buildSlotAdvice input = do
       , wrapDomainLog2: input.wrapDomainLog2
       , wrapEndo: wrapEndoScalar
       , wrapAllEvals
-      , wrapPEval0Chunks: map _.zeta (NonEmptyArray.toArray wrapProofData'.evals.public)
+      -- Single-chunk public eval (the public-input poly has degree < domain),
+      -- sourced from the oracle's recomputed `x_hat` (see `wrapAllEvals`).
+      , wrapPEval0Chunks: [ oracles.publicEvals.zeta ]
       , wrapShifts
       , wrapZkRows: input.wrapZkRows
       , wrapSrsLengthLog2: reflectType (Proxy :: Proxy WrapIPARounds)

@@ -1175,7 +1175,7 @@ instance
         Vector.uncons sideInfo.unfinalizedSlots
       { head: headChalPolyComm, tail: tailChalPolyComms } =
         Vector.uncons sideInfo.challengePolynomialCommitments
-      { tail: tailBaseCaseWrapPIs } =
+      { head: headBaseCaseWrapPI, tail: tailBaseCaseWrapPIs } =
         Vector.uncons sideInfo.baseCaseWrapPublicInputs
 
       -- Type1→Type2 cross-field coerce of the raw step-advice unfinalized
@@ -1232,8 +1232,30 @@ instance
             -- the proof there is exactly one), and the FFI boundary
             -- fails loud if it is ever violated. Not an n=1 shortcut —
             -- unreachable otherwise. See chunk taxonomy in Pickles.Types.
+            -- The dummy wrap proof's public eval = the oracle's recomputed
+            -- x_hat (OCaml `wrap.ml:110-116` `None` branch), NOT
+            -- `proofData(dummy).evals.public` — the dummy wire proof carries
+            -- `evals.public = None`, which decodes to a placeholder. Run the
+            -- oracle on the dummy with its wrap PI + base-case dummy
+            -- prev-challenges (the same inputs the step finalize uses);
+            -- mirrors the InductivePrev oracle below.
             dummyWrapXhat =
-              NonEmptyArray.head (proofData (dummyWrapProof bcd)).evals.public
+              ( ProofFFI.proofOraclesRec slotWrapVK
+                  { proof: dummyWrapProof bcd
+                  , publicInput: headBaseCaseWrapPI
+                  , prevChallenges:
+                      Vector.toUnfoldable
+                        ( Vector.replicate @PaddedLength
+                            { sgX: (dummySgs.ipa.wrap.sg).x
+                            , sgY: (dummySgs.ipa.wrap.sg).y
+                            , challenges:
+                                ( Vector.toUnfoldable dummyIpaChallenges.wrapExpanded
+                                    :: Array WrapField
+                                )
+                            }
+                        )
+                  }
+              ).publicEvals
             de = bcd.dummyEvals
             pe = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
             headPrevEvals = StepAllEvals
@@ -1320,7 +1342,7 @@ instance
                       { ftEval1: F prevWrapOracles.ftEval1
                       , publicEvals:
                           let
-                            pew = prevWrapCollapse prevWrapData.evals.public
+                            pew = prevWrapOracles.publicEvals
                           in
                             PointEval { zeta: F pew.zeta, omegaTimesZeta: F pew.omegaTimesZeta }
                       , zEvals: peWF (prevWrapCollapse prevWrapData.evals.z)
@@ -1854,7 +1876,7 @@ instance
         Vector.uncons sideInfo.unfinalizedSlots
       { head: headChalPolyComm, tail: tailChalPolyComms } =
         Vector.uncons sideInfo.challengePolynomialCommitments
-      { tail: tailBaseCaseWrapPIs } =
+      { head: headBaseCaseWrapPI, tail: tailBaseCaseWrapPIs } =
         Vector.uncons sideInfo.baseCaseWrapPublicInputs
 
       headUnfinalizedWrap
@@ -1911,8 +1933,30 @@ instance
             -- the proof there is exactly one), and the FFI boundary
             -- fails loud if it is ever violated. Not an n=1 shortcut —
             -- unreachable otherwise. See chunk taxonomy in Pickles.Types.
+            -- The dummy wrap proof's public eval = the oracle's recomputed
+            -- x_hat (OCaml `wrap.ml:110-116` `None` branch), NOT
+            -- `proofData(dummy).evals.public` — the dummy wire proof carries
+            -- `evals.public = None`, which decodes to a placeholder. Run the
+            -- oracle on the dummy with its wrap PI + base-case dummy
+            -- prev-challenges (the same inputs the step finalize uses);
+            -- mirrors the InductivePrev oracle below.
             dummyWrapXhat =
-              NonEmptyArray.head (proofData (dummyWrapProof bcd)).evals.public
+              ( ProofFFI.proofOraclesRec slotWrapVK
+                  { proof: dummyWrapProof bcd
+                  , publicInput: headBaseCaseWrapPI
+                  , prevChallenges:
+                      Vector.toUnfoldable
+                        ( Vector.replicate @PaddedLength
+                            { sgX: (dummySgs.ipa.wrap.sg).x
+                            , sgY: (dummySgs.ipa.wrap.sg).y
+                            , challenges:
+                                ( Vector.toUnfoldable dummyIpaChallenges.wrapExpanded
+                                    :: Array WrapField
+                                )
+                            }
+                        )
+                  }
+              ).publicEvals
             de = bcd.dummyEvals
             pe = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
             headPrevEvals = StepAllEvals
@@ -1988,7 +2032,7 @@ instance
                       { ftEval1: F prevWrapOracles.ftEval1
                       , publicEvals:
                           let
-                            pew = prevWrapCollapse prevWrapData.evals.public
+                            pew = prevWrapOracles.publicEvals
                           in
                             PointEval { zeta: F pew.zeta, omegaTimesZeta: F pew.omegaTimesZeta }
                       , zEvals: peWF (prevWrapCollapse prevWrapData.evals.z)
@@ -3610,7 +3654,10 @@ runMultiProverBody
     stepProofData = proofData stepResult.proof
     chunkedAllEvals =
       { ftEval1: stepOracles.ftEval1
-      , publicEvals: stepProofData.evals.public
+      -- public eval from the oracle's recomputed x_hat (= main), NOT
+      -- `stepProofData.evals.public` (napi createProof leaves it None →
+      -- decode placeholder); single-chunk so a singleton NEA.
+      , publicEvals: NonEmptyArray.singleton stepOracles.publicEvals
       , zEvals: stepProofData.evals.z
       , witnessEvals: stepProofData.evals.w
       , coeffEvals: stepProofData.evals.coefficients
@@ -3644,7 +3691,7 @@ runMultiProverBody
       , verifierIndex: stepCR.verifierIndex
       , publicInput: stepResult.publicInputs
       , chunkedAllEvals
-      , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepProofData.evals.public)
+      , pEval0Chunks: [ stepOracles.publicEvals.zeta ]
       , domainLog2: selfStepDomainLog2
       , zkRows: selfZkRows
       , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
@@ -3788,7 +3835,7 @@ runMultiProverBody
     , spongeDigestBeforeEvaluations: wrapDv.spongeDigestBeforeEvaluations
     , prevEvals: allEvals
     , prevEvalsChunked: chunkedAllEvals
-    , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepProofData.evals.public)
+    , pEval0Chunks: [ stepOracles.publicEvals.zeta ]
     , challengePolynomialCommitment: stepProofSg
     , messagesForNextStepProofDigest: msgStep
     , messagesForNextWrapProofDigest: msgWrap

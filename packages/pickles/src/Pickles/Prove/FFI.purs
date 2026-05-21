@@ -48,6 +48,8 @@ import Prelude
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NonEmptyArray
+import Data.Maybe (Maybe(..))
+import Data.Nullable (Nullable, toMaybe)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -172,6 +174,12 @@ type OraclesResult f =
   , v :: f -- polyscale (xi)
   , u :: f -- evalscale
   , ftEval1 :: f
+  -- | Public-input polynomial eval at zeta / zeta·ω as the FrSponge absorbed
+  -- | it (kimchi `verifier.rs:332-393`): the proof's `evals.public` when
+  -- | `Some`, else recomputed from the public input. This is OCaml's
+  -- | `O.p_eval_1/p_eval_2` (`wrap.ml:110-116`) — the correct in-circuit
+  -- | public eval for a dummy wrap proof, whose wire `evals.public` is `None`.
+  , publicEvals :: PointEval f
   , fqDigest :: f -- Fq-sponge digest before Fr-sponge (for xi derivation)
   , alphaChal :: SizedF 128 f -- raw 128-bit alpha challenge (pre-endo-expansion)
   , zetaChal :: SizedF 128 f -- raw 128-bit zeta challenge (pre-endo-expansion)
@@ -330,7 +338,12 @@ type NapiProof =
       , mulSelector :: NapiPointEvals
       , emulSelector :: NapiPointEvals
       , endomulScalarSelector :: NapiPointEvals
-      , public :: NapiPointEvals
+      -- | `Nullable`: a kimchi prover always populates `public`, but the
+      -- | hand-built dummy wrap proof (`vestaMakeWireProof`) leaves it `None`
+      -- | to match OCaml `Wrap_wire_proof` — so consumers must source the
+      -- | dummy's public eval from the oracle (`OraclesResult.publicEvals` =
+      -- | the recomputed `x_hat`), never from this field.
+      , public :: Nullable NapiPointEvals
       }
   , ft_eval1 :: NapiBytes
   }
@@ -353,6 +366,7 @@ foreign import asNapiProof :: forall g f. Proof g f -> NapiProof
 decodeProofData
   :: forall @rounds c f
    . Reflectable rounds Int
+  => Semiring f
   => (NapiBytes -> f)
   -> (NapiBytes -> c)
   -> NapiProof
@@ -379,7 +393,12 @@ decodeProofData decF decC p =
           , pointEvals p.evals.emulSelector
           , pointEvals p.evals.endomulScalarSelector
           ]
-      , public: pointEvals p.evals.public
+      -- A `None` here is the dummy wrap proof (see the `public` field note
+      -- above): its real public eval is the oracle's recomputed `x_hat`, so
+      -- this placeholder is never read. Real proofs always carry `Some`.
+      , public: case toMaybe p.evals.public of
+          Just ev -> pointEvals ev
+          Nothing -> NonEmptyArray.singleton { zeta: zero, omegaTimesZeta: zero }
       , ftEval1: decF p.ft_eval1
       }
   }

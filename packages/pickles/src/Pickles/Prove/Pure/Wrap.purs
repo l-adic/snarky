@@ -238,17 +238,13 @@ wrapComputeDeferredValues input =
       , prevChallenges: prevChallengeList
       }
 
-    -- x_hat: Horner-collapse the chunked public evals into a single
-    -- (zeta, zetaw) PointEval. At num_chunks = 1 this returns the only
-    -- chunk verbatim (byte-identical to `firstChunk`); at n > 1 it
-    -- performs the combined-eval Horner per OCaml `evals_of_split_evals`
-    -- (`plonk_checks.ml:102`).
-    xHatEvals = Chunks.collapsePointEval
-      { rounds: input.srsLengthLog2
-      , zeta: oraclesResult.zeta
-      , zetaOmega: oraclesResult.zeta * input.generator
-      }
-      (proofData input.proof).evals.public
+    -- x_hat from the oracle's recomputed public eval (= main's
+    -- `oraclesResult.publicEvals`; OCaml `wrap.ml:110-116`). The napi oracle
+    -- returns the single-chunk public eval (`p_eval0`/`p_eval1`) — the public
+    -- poly has degree < domain, so it is never split — hence no chunk collapse.
+    -- NOT `proofData.evals.public`: that was the kimchi-napi regression
+    -- (`main` has zero such reads).
+    xHatEvals = oraclesResult.publicEvals
 
     -- ===== plonk0 / tick_plonk_minimal. =====
     --
