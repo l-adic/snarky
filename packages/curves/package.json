@@ -3,5 +3,5 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Curve / field FFI bindings used by the PureScript snarky library. The .js files here are ES modules (matching the `export ...` syntax already in use); this declaration lets Node load them directly (e.g. for the parity harness in test/)."
+  "description": "Curve / field FFI bindings used by the PureScript snarky library. The .js files here are ES modules (matching the `export ...` syntax already in use); the `type: module` declaration lets Node load them directly."
 }
