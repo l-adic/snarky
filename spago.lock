@@ -175,6 +175,7 @@
             "argonaut-codecs",
             "argonaut-core",
             "bifunctors",
+            "colog",
             "effect",
             "prelude",
             "spec",
@@ -1158,7 +1159,18 @@
         "zipperarray": "2.0.0"
       }
     },
-    "extra_packages": {}
+    "extra_packages": {
+      "colog": {
+        "git": "https://github.com/l-adic/purescript-colog.git",
+        "ref": "36636ecf70dbb1ae67ed6dee7fa7922f10deb578",
+        "subdir": "packages/colog"
+      },
+      "colog-core": {
+        "git": "https://github.com/l-adic/purescript-colog.git",
+        "ref": "36636ecf70dbb1ae67ed6dee7fa7922f10deb578",
+        "subdir": "packages/colog-core"
+      }
+    }
   },
   "packages": {
     "aff": {
@@ -1298,6 +1310,47 @@
         "prelude",
         "tuples",
         "unfoldable"
+      ]
+    },
+    "colog": {
+      "type": "git",
+      "url": "https://github.com/l-adic/purescript-colog.git",
+      "rev": "36636ecf70dbb1ae67ed6dee7fa7922f10deb578",
+      "subdir": "packages/colog",
+      "dependencies": [
+        "aff",
+        "ansi",
+        "colog-core",
+        "console",
+        "contravariant",
+        "datetime",
+        "effect",
+        "either",
+        "foldable-traversable",
+        "formatters",
+        "maybe",
+        "newtype",
+        "now",
+        "prelude",
+        "transformers"
+      ]
+    },
+    "colog-core": {
+      "type": "git",
+      "url": "https://github.com/l-adic/purescript-colog.git",
+      "rev": "36636ecf70dbb1ae67ed6dee7fa7922f10deb578",
+      "subdir": "packages/colog-core",
+      "dependencies": [
+        "console",
+        "contravariant",
+        "effect",
+        "either",
+        "foldable-traversable",
+        "maybe",
+        "node-fs",
+        "prelude",
+        "transformers",
+        "tuples"
       ]
     },
     "console": {
@@ -1521,6 +1574,32 @@
         "aff",
         "prelude",
         "transformers"
+      ]
+    },
+    "formatters": {
+      "type": "registry",
+      "version": "7.0.0",
+      "integrity": "sha256-ViGY8XoXmPFDPnuFHfgJzq8+UJshr8erfDOcY6fofRk=",
+      "dependencies": [
+        "arrays",
+        "bifunctors",
+        "control",
+        "datetime",
+        "either",
+        "enums",
+        "foldable-traversable",
+        "integers",
+        "lists",
+        "maybe",
+        "newtype",
+        "numbers",
+        "ordered-collections",
+        "parsing",
+        "partial",
+        "prelude",
+        "strings",
+        "transformers",
+        "tuples"
       ]
     },
     "free": {
@@ -1998,6 +2077,38 @@
         "profunctor",
         "refs",
         "transformers"
+      ]
+    },
+    "parsing": {
+      "type": "registry",
+      "version": "11.0.0",
+      "integrity": "sha256-N88gb/XbM29vw/Uop83shuMFT4wieQCz4wlQAct5eMs=",
+      "dependencies": [
+        "arrays",
+        "control",
+        "effect",
+        "either",
+        "enums",
+        "foldable-traversable",
+        "functions",
+        "identity",
+        "integers",
+        "lazy",
+        "lists",
+        "maybe",
+        "newtype",
+        "nullable",
+        "numbers",
+        "partial",
+        "prelude",
+        "st",
+        "strings",
+        "tailrec",
+        "transformers",
+        "tuples",
+        "unfoldable",
+        "unicode",
+        "unsafe-coerce"
       ]
     },
     "partial": {

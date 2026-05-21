@@ -33,6 +33,7 @@ module Test.Pickles.Prove.TreeProofReturn
 
 import Prelude
 
+import Colog (LoggerT, Message, logInfo, withSpan)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift) as MT
 import Data.Either (Either(..))
@@ -42,8 +43,8 @@ import Data.Tuple.Nested (Tuple2, tuple1, tuple2, (/\))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
+import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
-import Effect.Console (log)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), Compiled, CompiledProof(..), NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots2, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, verify)
@@ -109,7 +110,7 @@ type TreeRules =
     (Tuple2 SlotWrapKey SlotWrapKey)
     RulesNil
 
-spec :: SpecT Aff SharedSrs Aff Unit
+spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.TreeProofReturn" do
   it "5-iteration heterogeneous chain (b0..b4): NRR external slot + self-recursive slot, end-to-end verify" \{ pallasSrs, vestaSrs } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/TreeProofReturn.json")
@@ -119,8 +120,8 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
 
     let nrrRules = tuple1 nrrEntry
 
-    liftEffect $ log "[TreeProofReturn] compiling nrr…"
-    nrr <- liftEffect $ compileMulti
+    logInfo "[TreeProofReturn] compiling nrr…"
+    nrr <- withSpan "[TreeProofReturn] compile nrr" $ liftEffect $ compileMulti
       @NrrRules
       @(F StepField)
       @Unit
@@ -132,12 +133,11 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       , proofCache: cache
       }
       nrrRules
-    liftEffect $ log "[TreeProofReturn] nrr compilation complete"
 
     let BranchProver nrrProver = fst nrr.provers
     -- NRR has no prev slots → spec-derived `vkCarrier = Unit`.
-    liftEffect $ log "[TreeProofReturn] proving nrr"
-    eNrrCp <- liftEffect $ runExceptT $ nrrProver
+    logInfo "[TreeProofReturn] proving nrr"
+    eNrrCp <- withSpan "[TreeProofReturn] prove nrr" $ liftEffect $ runExceptT $ nrrProver
       { appInput: unit, prevs: unit, sideloadedVKs: unit }
     nrrCp <- case eNrrCp of
       Left e -> liftEffect $ Exc.throw ("nrrProver: " <> show e)
@@ -162,8 +162,8 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
 
     let treeRules = tuple1 treeEntry
 
-    liftEffect $ log "[TreeProofReturn] compiling tree…"
-    tree <- liftEffect $ compileMulti
+    logInfo "[TreeProofReturn] compiling tree…"
+    tree <- withSpan "[TreeProofReturn] compile tree" $ liftEffect $ compileMulti
       @TreeRules
       @(F StepField)
       @(F StepField)
@@ -175,7 +175,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       , proofCache: cache
       }
       treeRules
-    liftEffect $ log "[TreeProofReturn] tree compilation complete"
 
     let BranchProver treeProver = fst tree.provers
 
@@ -198,20 +197,20 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         { dummyStatement: StatementIO { input: unit, output: F (negate one) :: F StepField }
         }
 
-    liftEffect $ log "[TreeProofReturn] proving b0"
-    b0 <- runStep basePrevSelf
-    liftEffect $ log "[TreeProofReturn] proving b1"
-    b1 <- runStep (InductivePrev b0 tree.tag)
-    liftEffect $ log "[TreeProofReturn] proving b2"
-    b2 <- runStep (InductivePrev b1 tree.tag)
-    liftEffect $ log "[TreeProofReturn] proving b3"
-    b3 <- runStep (InductivePrev b2 tree.tag)
-    liftEffect $ log "[TreeProofReturn] proving b4"
-    b4 <- runStep (InductivePrev b3 tree.tag)
+    logInfo "[TreeProofReturn] proving [step0, wrap0]"
+    b0 <- withSpan "[TreeProofReturn] prove b0" $ liftAff $ runStep basePrevSelf
+    logInfo "[TreeProofReturn] proving [step1, wrap1]"
+    b1 <- withSpan "[TreeProofReturn] prove b1" $ liftAff $ runStep (InductivePrev b0 tree.tag)
+    logInfo "[TreeProofReturn] proving [step2, wrap2]"
+    b2 <- withSpan "[TreeProofReturn] prove b2" $ liftAff $ runStep (InductivePrev b1 tree.tag)
+    logInfo "[TreeProofReturn] proving [step3, wrap3]"
+    b3 <- withSpan "[TreeProofReturn] prove b3" $ liftAff $ runStep (InductivePrev b2 tree.tag)
+    logInfo "[TreeProofReturn] proving [step4, wrap4]"
+    b4 <- withSpan "[TreeProofReturn] prove b4" $ liftAff $ runStep (InductivePrev b3 tree.tag)
 
-    liftEffect $ log "[TreeProofReturn] verifying 5-proof chain…"
+    logInfo "[TreeProofReturn] verifying 5-proof chain…"
     verify tree.verifier [ b0, b1, b2, b3, b4 ] `shouldEqual` true
-    liftEffect $ log "[TreeProofReturn] verification complete"
+    logInfo "[TreeProofReturn] verification complete"
 
     -- The rule body computes `selfVal = if isBaseCase then 0 else
     -- 1 + prevInput`, exposed as `publicOutput`. Base case b0 takes

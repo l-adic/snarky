@@ -13,7 +13,9 @@ module Test.Pickles.Sideload.RoundTripMainChildSpec
 
 import Prelude
 
+import Colog (LoggerT, Message)
 import Effect.Aff (Aff)
+import Effect.Aff.Class (liftAff)
 import Pickles (StepField)
 import Pickles.Sideload (vestaVerifierIndexToSerdeJson)
 import Snarky.Curves.Class (fromInt)
@@ -22,9 +24,9 @@ import Test.Pickles.Sideload.Loader (OcamlProof(..), loadNrrFixture)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
-spec :: SpecT Aff SharedSrs Aff Unit
+spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Sideload.MainChild roundtrip" do
-  it "loads + parses + round-trips VK byte-identical" _roundTripMainChildBody
+  it "loads + parses + round-trips VK byte-identical" (liftAff <<< _roundTripMainChildBody)
 
 _roundTripMainChildBody :: SharedSrs -> Aff Unit
 _roundTripMainChildBody { pallasSrs, vestaSrs } = do

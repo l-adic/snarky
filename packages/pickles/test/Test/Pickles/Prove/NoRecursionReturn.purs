@@ -19,6 +19,7 @@ module Test.Pickles.Prove.NoRecursionReturn
 
 import Prelude
 
+import Colog (LoggerT, Message, logInfo, withSpan)
 import Control.Monad.Except (runExceptT)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
@@ -27,7 +28,6 @@ import Data.Tuple.Nested (tuple1)
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Effect.Console (log)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, verify)
@@ -52,7 +52,7 @@ type NrrRules =
   RulesCons 0 Unit Unit Unit
     RulesNil
 
-spec :: SpecT Aff SharedSrs Aff Unit
+spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.NoRecursionReturn" do
   it "compileMulti + prover.step end-to-end verify returns true" \{ pallasSrs, vestaSrs } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/NoRecursionReturn.json")
@@ -64,8 +64,8 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
 
     let rules = tuple1 nrrEntry
 
-    liftEffect $ log "[NoRecursionReturn] compiling…"
-    output <- liftEffect $ compileMulti
+    logInfo "[NoRecursionReturn] compiling…"
+    output <- withSpan "[NoRecursionReturn] compile" $ liftEffect $ compileMulti
       @NrrRules
       @(F StepField)
       @Unit
@@ -77,19 +77,18 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
       , proofCache: cache
       }
       rules
-    liftEffect $ log "[NoRecursionReturn] compilation complete"
 
     let BranchProver nrrProver = fst output.provers
     -- Compiled-only spec (Unit) → spec-derived `vkCarrier =
     -- Unit`. Mirrors OCaml's `~handler:None` for non-side-loaded
     -- branches. Threading the field uniformly keeps the
     -- `BranchProver` API consistent with side-loaded specs.
-    liftEffect $ log "[NoRecursionReturn] proving"
-    eResult <- liftEffect $ runExceptT $ nrrProver
+    logInfo "[NoRecursionReturn] proving"
+    eResult <- withSpan "[NoRecursionReturn] prove" $ liftEffect $ runExceptT $ nrrProver
       { appInput: unit, prevs: unit, sideloadedVKs: unit }
     case eResult of
       Left e -> liftEffect $ Exc.throw ("nrrProver: " <> show e)
       Right compiledProof -> do
-        liftEffect $ log "[NoRecursionReturn] verifying proof…"
+        logInfo "[NoRecursionReturn] verifying proof…"
         verify output.verifier [ compiledProof ] `shouldEqual` true
-        liftEffect $ log "[NoRecursionReturn] verification complete"
+        logInfo "[NoRecursionReturn] verification complete"

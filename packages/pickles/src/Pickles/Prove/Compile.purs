@@ -3654,10 +3654,15 @@ runMultiProverBody
     stepProofData = proofData stepResult.proof
     chunkedAllEvals =
       { ftEval1: stepOracles.ftEval1
-      -- public eval from the oracle's recomputed x_hat (= main), NOT
-      -- `stepProofData.evals.public` (napi createProof leaves it None →
-      -- decode placeholder); single-chunk so a singleton NEA.
-      , publicEvals: NonEmptyArray.singleton stepOracles.publicEvals
+      -- Public eval from the proof's own `evals.public`. The kimchi prover
+      -- always populates it (`prover.rs:996`, chunked via
+      -- `to_chunked_polynomial num_chunks`), and the chunked verifier
+      -- *requires* `Some` (`verifier.rs:334` errors otherwise). This carries
+      -- the full `nc` chunks (= OCaml `wrap.ml:111` `proof.public_evals`).
+      -- The oracle binding (`oracles.rs:113`) collapses to chunk-0 only, so
+      -- using `stepOracles.publicEvals` silently dropped the higher chunks
+      -- and broke the chunked CIP fold (`ft_eval0.pEval0Folded`).
+      , publicEvals: stepProofData.evals.public
       , zEvals: stepProofData.evals.z
       , witnessEvals: stepProofData.evals.w
       , coeffEvals: stepProofData.evals.coefficients
@@ -3691,7 +3696,7 @@ runMultiProverBody
       , verifierIndex: stepCR.verifierIndex
       , publicInput: stepResult.publicInputs
       , chunkedAllEvals
-      , pEval0Chunks: [ stepOracles.publicEvals.zeta ]
+      , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepProofData.evals.public)
       , domainLog2: selfStepDomainLog2
       , zkRows: selfZkRows
       , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
@@ -3835,7 +3840,9 @@ runMultiProverBody
     , spongeDigestBeforeEvaluations: wrapDv.spongeDigestBeforeEvaluations
     , prevEvals: allEvals
     , prevEvalsChunked: chunkedAllEvals
-    , pEval0Chunks: [ stepOracles.publicEvals.zeta ]
+    -- Full `nc`-chunk public eval from the proof (see `chunkedAllEvals`
+    -- note above); recursive consumers read this via `prev.pEval0Chunks`.
+    , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepProofData.evals.public)
     , challengePolynomialCommitment: stepProofSg
     , messagesForNextStepProofDigest: msgStep
     , messagesForNextWrapProofDigest: msgWrap

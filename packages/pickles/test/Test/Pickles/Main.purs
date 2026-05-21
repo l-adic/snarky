@@ -2,6 +2,7 @@ module Test.Pickles.Main where
 
 import Prelude
 
+import Colog (LoggerT, Message, richMessageStdout, usingLoggerT)
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Test.Pickles.Prove.Chunks2 as Chunks2
@@ -17,7 +18,7 @@ import Test.Pickles.Sideload.DigestEqNrrSpec as SideloadDigestEqNrr
 import Test.Pickles.Sideload.RoundTripMainChildSpec as SideloadRoundTripMainChild
 import Test.Pickles.Sideload.RoundTripNrrSpec as SideloadRoundTripNrr
 import Test.Pickles.Sideload.VerifyNrrSpec as SideloadVerifyNrr
-import Test.Spec (SpecT, beforeAll)
+import Test.Spec (SpecT, beforeAll, hoistSpec)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess')
 import Test.Spec.Runner.Node.Config as Cfg
@@ -41,7 +42,7 @@ import Test.Spec.Runner.Node.Config as Cfg
 -- | the lagrange-basis cache attached to each SRS is then populated once
 -- | and reused across every test, saving ~tens of seconds per run).
 -- | Specs that don't need the SRS sit outside the `beforeAll` block.
-spec :: SpecT Aff Unit Aff Unit
+spec :: SpecT (LoggerT Message Aff) Unit Aff Unit
 spec = beforeAll buildSharedSrs do
   CompileValidation.spec
   NoRecursionReturn.spec
@@ -60,4 +61,6 @@ main :: Effect Unit
 main = runSpecAndExitProcess'
   { defaultConfig: Cfg.defaultConfig, parseCLIOptions: true }
   [ consoleReporter ]
-  spec
+  -- Run the whole suite in `LoggerT Message Aff`, lowering it to `Aff` here
+  -- (once) by providing the console logger via `usingLoggerT`.
+  (hoistSpec identity (\_ -> usingLoggerT richMessageStdout) spec)

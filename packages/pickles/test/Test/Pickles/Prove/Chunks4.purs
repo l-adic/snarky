@@ -16,6 +16,7 @@ module Test.Pickles.Prove.Chunks4
 
 import Prelude
 
+import Colog (LoggerT, Message, logInfo, withSpan)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Rec.Class (Step(..), tailRecM)
 import Data.Either (Either(..))
@@ -27,7 +28,6 @@ import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Effect.Console (log)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, verify)
@@ -74,7 +74,7 @@ type Chunks4Rules =
   RulesCons 0 Unit Unit Unit
     RulesNil
 
-spec :: SpecT Aff SharedSrs Aff Unit
+spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.Chunks4" do
   it "base case (b0) — chunks=4 step+wrap proves end-to-end" \{ pallasSrs, vestaSrs } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/Chunks4.json")
@@ -91,8 +91,8 @@ spec = describe "Pickles.Prove.Chunks4" do
     chunks4Entry <- liftEffect $ mkRuleEntry @0 @Unit @Unit @1 @1 chunks4Rule unit
     let rules = tuple1 chunks4Entry
 
-    liftEffect $ log "[Chunks4] compiling…"
-    output <- liftEffect $ compileMulti
+    logInfo "[Chunks4] compiling…"
+    output <- withSpan "[Chunks4] compile" $ liftEffect $ compileMulti
       @Chunks4Rules
       @Unit
       @Unit
@@ -104,15 +104,14 @@ spec = describe "Pickles.Prove.Chunks4" do
       , proofCache: cache
       }
       rules
-    liftEffect $ log "[Chunks4] compilation complete"
 
     let BranchProver chunks4Prover = fst output.provers
-    liftEffect $ log "[Chunks4] proving"
-    eResult <- liftEffect $ runExceptT $ chunks4Prover
+    logInfo "[Chunks4] proving"
+    eResult <- withSpan "[Chunks4] prove" $ liftEffect $ runExceptT $ chunks4Prover
       { appInput: unit, prevs: unit, sideloadedVKs: unit }
     case eResult of
       Left e -> liftEffect $ Exc.throw ("chunks4Prover: " <> show e)
       Right compiledProof -> do
-        liftEffect $ log "[Chunks4] verifying proof…"
+        logInfo "[Chunks4] verifying proof…"
         verify output.verifier [ compiledProof ] `shouldEqual` true
-        liftEffect $ log "[Chunks4] verification complete"
+        logInfo "[Chunks4] verification complete"

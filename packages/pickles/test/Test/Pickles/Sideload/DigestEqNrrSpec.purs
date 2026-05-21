@@ -32,9 +32,11 @@ module Test.Pickles.Sideload.DigestEqNrrSpec
 
 import Prelude
 
+import Colog (LoggerT, Message, withSpan)
 import Data.Maybe (Maybe(..))
 import Data.Tuple.Nested (tuple1)
 import Effect.Aff (Aff)
+import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Pickles (NoSlots, StepField, compileMulti, mkRuleEntry)
 import Pickles.ProofCache (vestaVerifierIndexJsonKey)
@@ -45,16 +47,16 @@ import Test.Pickles.Sideload.Loader (loadNrrFixture)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
-spec :: SpecT Aff SharedSrs Aff Unit
+spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Sideload.NRR VK equality" do
   it "PS compileMulti VK == OCaml compile VK (full-JSON key)" _digestEqNrrBody
 
-_digestEqNrrBody :: SharedSrs -> Aff Unit
+_digestEqNrrBody :: SharedSrs -> LoggerT Message Aff Unit
 _digestEqNrrBody { pallasSrs, vestaSrs } = do
   -- PureScript-side compile: produce the wrap VK for NRR.
   nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
   let rules = tuple1 nrrEntry
-  output <- liftEffect $ compileMulti
+  output <- withSpan "[DigestEqNrr] compile" $ liftEffect $ compileMulti
     @NrrRules
     @(F StepField)
     @Unit
@@ -68,7 +70,7 @@ _digestEqNrrBody { pallasSrs, vestaSrs } = do
     rules
 
   -- OCaml-side fixture: load the wrap VK from the dumped serde JSON.
-  fixture <- loadNrrFixture { pallasSrs, vestaSrs } "packages/pickles/test/fixtures/sideload/nrr"
+  fixture <- liftAff $ loadNrrFixture { pallasSrs, vestaSrs } "packages/pickles/test/fixtures/sideload/nrr"
 
   -- Compare full-VK JSON keys. `vestaVerifierIndexJsonKey` serializes
   -- every stable kimchi `VerifierIndex` field (domain, evals, shifts,

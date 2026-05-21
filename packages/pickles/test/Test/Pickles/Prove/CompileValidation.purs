@@ -9,6 +9,7 @@ module Test.Pickles.Prove.CompileValidation
 
 import Prelude
 
+import Colog (LoggerT, Message, withSpan)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.String (contains)
@@ -29,12 +30,12 @@ import Test.Spec.Assertions (fail)
 -- | compile it with `@stepChunks = 2`. Since the step domain log2 for
 -- | this tiny rule is well below `StepIPARounds = 16`, the per-branch
 -- | num_chunks is 1, and the validation must throw.
-spec :: SpecT Aff SharedSrs Aff Unit
+spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.Compile.validateNumChunks" do
   it "throws when @stepChunks=2 but the circuit only needs 1" \{ pallasSrs, vestaSrs } -> do
     nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
     let rules = tuple1 nrrEntry
-    result <- liftEffect $ Exc.try $ compileMulti
+    result <- withSpan "[CompileValidation] compile" $ liftEffect $ Exc.try $ compileMulti
       @NrrRules
       @(F StepField)
       @Unit
