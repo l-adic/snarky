@@ -27,6 +27,7 @@ import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import Effect.Console (log)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, verify)
@@ -90,6 +91,7 @@ spec = describe "Pickles.Prove.Chunks4" do
     chunks4Entry <- liftEffect $ mkRuleEntry @0 @Unit @Unit @1 @1 chunks4Rule unit
     let rules = tuple1 chunks4Entry
 
+    liftEffect $ log "[Chunks4] compiling…"
     output <- liftEffect $ compileMulti
       @Chunks4Rules
       @Unit
@@ -102,11 +104,15 @@ spec = describe "Pickles.Prove.Chunks4" do
       , proofCache: cache
       }
       rules
+    liftEffect $ log "[Chunks4] compilation complete"
 
     let BranchProver chunks4Prover = fst output.provers
+    liftEffect $ log "[Chunks4] proving"
     eResult <- liftEffect $ runExceptT $ chunks4Prover
       { appInput: unit, prevs: unit, sideloadedVKs: unit }
     case eResult of
       Left e -> liftEffect $ Exc.throw ("chunks4Prover: " <> show e)
-      Right compiledProof ->
+      Right compiledProof -> do
+        liftEffect $ log "[Chunks4] verifying proof…"
         verify output.verifier [ compiledProof ] `shouldEqual` true
+        liftEffect $ log "[Chunks4] verification complete"

@@ -31,6 +31,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import Effect.Console (log)
 import Effect.Exception as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), Compiled, NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, verify)
@@ -153,6 +154,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     makeZeroEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) @1 @1 makeZeroRule unit
     incrementEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) @1 @1 incrementRule (tuple1 Self)
     let rules = tuple2 makeZeroEntry incrementEntry
+    liftEffect $ log "[TwoPhaseChain] compiling…"
     output <- liftEffect $ compileMulti
       @TwoPhaseChainRules
       @Unit
@@ -161,6 +163,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       @1
       cfg
       rules
+    liftEffect $ log "[TwoPhaseChain] compilation complete"
 
     let
       BranchProver makeZeroProver = fst output.provers
@@ -168,6 +171,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     -- Branch 0 (makeZero) has no prevs → spec-derived `vkCarrier =
     -- Unit`. Branch 1 (increment) has one compiled prev slot →
     -- `vkCarrier = Tuple1 Unit`.
+    liftEffect $ log "[TwoPhaseChain] proving b0"
     eRes <- liftEffect $ runExceptT $ makeZeroProver
       { appInput: F zero, prevs: unit, sideloadedVKs: unit }
     b0 <- case eRes of
@@ -175,6 +179,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       Right p -> pure p
 
     -- b1 = increment(b0); appInput = 0 + 1 = 1. Prev is b0 (branch 0).
+    liftEffect $ log "[TwoPhaseChain] proving b1"
     eB1 <- liftEffect $ runExceptT $ incrementProver
       { appInput: F one
       , prevs: tuple1 (InductivePrev b0 output.tag)
@@ -184,6 +189,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       Left e -> liftEffect $ Exc.throw ("incrementProver: " <> show e)
       Right p -> pure p
     -- b2 = increment(b1); appInput = 1 + 1 = 2. Same-branch self-prev.
+    liftEffect $ log "[TwoPhaseChain] proving b2"
     eB2 <- liftEffect $ runExceptT $ incrementProver
       { appInput: F (Curves.fromInt 2 :: StepField)
       , prevs: tuple1 (InductivePrev b1 output.tag)
@@ -193,6 +199,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       Left e -> liftEffect $ Exc.throw ("incrementProver b2: " <> show e)
       Right p -> pure p
     -- b3 = increment(b2); appInput = 2 + 1 = 3.
+    liftEffect $ log "[TwoPhaseChain] proving b3"
     eB3 <- liftEffect $ runExceptT $ incrementProver
       { appInput: F (Curves.fromInt 3 :: StepField)
       , prevs: tuple1 (InductivePrev b2 output.tag)
@@ -207,4 +214,6 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     -- `stepDomainLog2` carried by `CompiledProof` lets each proof's
     -- deferred-values reconstruction pick the right branch's step
     -- domain.
+    liftEffect $ log "[TwoPhaseChain] verifying 4-proof chain…"
     verify output.verifier [ b0, b1, b2, b3 ] `shouldEqual` true
+    liftEffect $ log "[TwoPhaseChain] verification complete"

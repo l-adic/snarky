@@ -27,6 +27,7 @@ import Data.Tuple.Nested (tuple1)
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import Effect.Console (log)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, verify)
@@ -63,6 +64,7 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
 
     let rules = tuple1 nrrEntry
 
+    liftEffect $ log "[NoRecursionReturn] compiling…"
     output <- liftEffect $ compileMulti
       @NrrRules
       @(F StepField)
@@ -75,15 +77,19 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
       , proofCache: cache
       }
       rules
+    liftEffect $ log "[NoRecursionReturn] compilation complete"
 
     let BranchProver nrrProver = fst output.provers
     -- Compiled-only spec (Unit) → spec-derived `vkCarrier =
     -- Unit`. Mirrors OCaml's `~handler:None` for non-side-loaded
     -- branches. Threading the field uniformly keeps the
     -- `BranchProver` API consistent with side-loaded specs.
+    liftEffect $ log "[NoRecursionReturn] proving"
     eResult <- liftEffect $ runExceptT $ nrrProver
       { appInput: unit, prevs: unit, sideloadedVKs: unit }
     case eResult of
       Left e -> liftEffect $ Exc.throw ("nrrProver: " <> show e)
-      Right compiledProof ->
+      Right compiledProof -> do
+        liftEffect $ log "[NoRecursionReturn] verifying proof…"
         verify output.verifier [ compiledProof ] `shouldEqual` true
+        liftEffect $ log "[NoRecursionReturn] verification complete"

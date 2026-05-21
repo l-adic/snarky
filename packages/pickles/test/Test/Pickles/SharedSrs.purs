@@ -28,6 +28,7 @@ import Data.Foldable (for_)
 import Data.Int.Bits as Int
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import Effect.Console (log)
 import Pickles (StepField)
 import Snarky.Backend.Kimchi.Class (addLagrangeBasis, createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
@@ -56,6 +57,8 @@ buildSharedSrs = liftEffect do
   -- once, into the shared SRS every spec reuses. Step (Vesta/Fp) domains
   -- run up to 2^16 (Tick URS); wrap (Pallas/Fq) up to 2^15 (Tock URS,
   -- = `wrapSrsDepthLog2`). Warming a domain no spec uses is harmless.
+  log "[SharedSrs] pre-warming lagrange-basis cache (step 2^9..2^16, wrap 2^12..2^15)…"
   for_ (Array.range 9 16) (addLagrangeBasis vestaSrs)
   for_ (Array.range 12 wrapSrsDepthLog2) (addLagrangeBasis pallasSrs)
+  log "[SharedSrs] lagrange-basis cache warmed"
   pure { pallasSrs, vestaSrs }

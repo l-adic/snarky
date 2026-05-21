@@ -26,6 +26,7 @@ import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import Effect.Console (log)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), Compiled, CompiledProof(..), PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots1, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, verify)
@@ -90,6 +91,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
 
     let rules = tuple1 chainEntry
 
+    liftEffect $ log "[SimpleChain] compiling…"
     output <- liftEffect $ compileMulti
       @SimpleChainRules
       @Unit
@@ -102,6 +104,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       , proofCache: cache
       }
       rules
+    liftEffect $ log "[SimpleChain] compilation complete"
 
     let BranchProver chainProver = fst output.provers
 
@@ -120,13 +123,20 @@ spec = describe "Pickles.Prove.SimpleChain" do
       basePrev = BasePrev
         { dummyStatement: StatementIO { input: F (negate one), output: unit } }
 
+    liftEffect $ log "[SimpleChain] proving b0"
     b0 <- runStep basePrev (F zero)
+    liftEffect $ log "[SimpleChain] proving b1"
     b1 <- runStep (InductivePrev b0 output.tag) (F one)
+    liftEffect $ log "[SimpleChain] proving b2"
     b2 <- runStep (InductivePrev b1 output.tag) (F (fromInt 2 :: StepField))
+    liftEffect $ log "[SimpleChain] proving b3"
     b3 <- runStep (InductivePrev b2 output.tag) (F (fromInt 3 :: StepField))
+    liftEffect $ log "[SimpleChain] proving b4"
     b4 <- runStep (InductivePrev b3 output.tag) (F (fromInt 4 :: StepField))
 
+    liftEffect $ log "[SimpleChain] verifying 5-proof chain…"
     verify output.verifier [ b0, b1, b2, b3, b4 ] `shouldEqual` true
+    liftEffect $ log "[SimpleChain] verification complete"
 
     -- Each iteration's app-state input must equal the value we
     -- supplied as `appInput` to the prover. The rule asserts
