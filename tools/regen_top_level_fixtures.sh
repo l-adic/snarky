@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Regenerate top-level step_main_* / wrap_main_* circuit-diff fixtures
-# from the production OCaml compile path.
+# Regenerate the OCaml-side circuit-diff / dummy / side-load fixtures from
+# the production OCaml compile path:
+#   - top-level step_main_* / wrap_main_* circuit-diff fixtures (per driver),
+#   - gadget sub-circuits (dump_circuit),
+#   - dummy-value text fixtures (dump_dummy, dump_simple_chain_dummy),
+#   - side-loaded NRR serde fixtures (dump_nrr_fixtures).
 #
 # Each `dump_*.exe` driver in `mina/src/lib/crypto/pickles/dump_*` runs
 # the same `Pickles.compile_promise` call the production code does.
@@ -122,9 +126,50 @@ copy_fixture "${TMP}/dump_side_loaded_main_step_1"  step_main_side_loaded_main_c
 copy_fixture "${TMP}/dump_side_loaded_main_wrap_1"  wrap_main_side_loaded_main_circuit
 # (wrap_0 is the child wrap CS; not currently in the test set)
 
-# step_main_simple_chain_n2_circuit and wrap_main_n2_circuit have NO
-# corresponding production driver yet. They remain whatever was
-# previously committed (= synthetic-vs-synthetic). Add a
-# `dump_simple_chain_n2` driver in mina to migrate them.
+# ---------------------------------------------------------------------------
+# Gadget sub-circuits (dump_circuit → Dump_circuit_impl.run): add_complete,
+# assert_*, bool_*, bullet_reduce, ftcomm, linearization, *_verify_one, etc.
+# dump_circuit writes every gadget's {.json,_cached_constants.json,
+# _gate_labels.jsonl,_labels.jsonl} quad straight into the fixtures dir
+# (output_dir = argv[1]); no PICKLES_*_CS_DUMP env needed.
+# ---------------------------------------------------------------------------
+echo ">> Gadget sub-circuits (dump_circuit)..."
+( cd mina && dune build src/lib/crypto/pickles/dump_circuit/dump_circuit.exe )
+KIMCHI_DETERMINISTIC_SEED=42 \
+  "${DRIVER_BIN_DIR}/dump_circuit/dump_circuit.exe" "${FIXTURES_DIR}"
+
+# ---------------------------------------------------------------------------
+# Dummy-value text fixtures (consumed by Pickles.Dummy.* / the circuit-diff
+# dummy tests). Each driver prints the fixture to stdout (Ro trace → stderr,
+# discarded).
+# ---------------------------------------------------------------------------
+DUMMY_FIX="${SNARKY_ROOT}/packages/pickles-circuit-diffs/test/fixtures"
+echo ">> Dummy values (dump_dummy, dump_simple_chain_dummy)..."
+( cd mina && dune build \
+    src/lib/crypto/pickles/dump_dummy/dump_dummy.exe \
+    src/lib/crypto/pickles/dump_simple_chain_dummy/dump_simple_chain_dummy.exe )
+KIMCHI_DETERMINISTIC_SEED=42 \
+  "${DRIVER_BIN_DIR}/dump_dummy/dump_dummy.exe" \
+  > "${DUMMY_FIX}/dummy_values.txt" 2>/dev/null
+KIMCHI_DETERMINISTIC_SEED=42 \
+  "${DRIVER_BIN_DIR}/dump_simple_chain_dummy/dump_simple_chain_dummy.exe" \
+  > "${DUMMY_FIX}/simple_chain_dummy.txt" 2>/dev/null
+
+# ---------------------------------------------------------------------------
+# Side-loaded No_recursion_return serde fixtures (vk/proof/wrapping/statement
+# JSON) consumed by the Pickles.Sideload.NRR tests. dump_nrr_fixtures takes
+# its output dir as argv[1].
+# ---------------------------------------------------------------------------
+NRR_FIX="${SNARKY_ROOT}/packages/pickles/test/fixtures/sideload/nrr"
+echo ">> Side-load NRR serde fixtures (dump_nrr_fixtures)..."
+mkdir -p "${NRR_FIX}"
+( cd mina && dune build src/lib/crypto/pickles/dump_nrr_fixtures/dump_nrr_fixtures.exe )
+KIMCHI_DETERMINISTIC_SEED=42 \
+  "${DRIVER_BIN_DIR}/dump_nrr_fixtures/dump_nrr_fixtures.exe" "${NRR_FIX}"
+
+# Note: dump_spec_pack (stdout debug dump of Spec.pack + x_hat) and
+# dump_app_circuit_chunks2_witness (KIMCHI_WITNESS_DUMP; local witness-diff
+# only — gitignored) produce no committed fixture, so they are intentionally
+# not driven here.
 
 echo ">> Done. Fixtures regenerated in ${FIXTURES_DIR}"
