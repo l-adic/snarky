@@ -50,7 +50,7 @@ echo ">> Building drivers in mina..."
 
 echo ">> Running drivers into ${TMP}..."
 rm -rf "${TMP}"
-mkdir -p "${TMP}"
+mkdir -p "${TMP}" "${FIXTURES_DIR}"
 for d in "${DRIVERS[@]}"; do
   echo "   - ${d}"
   PICKLES_STEP_CS_DUMP="${TMP}/${d}_step_%c" \
