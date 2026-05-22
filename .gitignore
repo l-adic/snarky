@@ -58,10 +58,9 @@ packages/pickles-codegen/rust/output/
 # `tools/regen-fixtures.sh`. Consumed only by the manual convergence
 # diff scripts in `tools/`, not by the automated test suite.
 packages/pickles/test/fixtures/*.trace
-packages/pickles/test/fixtures/witness/
-packages/pickles/test/fixtures/witness_nrr/
-packages/pickles/test/fixtures/witness_chunks2
-packages/pickles/test/fixtures/witness_chunks4
+# All OCaml/PS witness dumps are local convergence artifacts (witness/,
+# witness_nrr/, witness_chunks2/, witness_chunks4/, witness_sideload/, ...).
+packages/pickles/test/fixtures/witness*/
 
 # Generated dependency graph
 deps.svg
