@@ -21,8 +21,20 @@ esac
 
 PS_DIR="../../mina/src/lib/crypto/proof-systems"
 
-echo "==> cargo build -p kimchi-napi --release (in $PS_DIR)"
-( cd "$PS_DIR" && cargo build -p kimchi-napi --release )
+# Build with the rustc that proof-systems/rust-toolchain.toml pins (currently
+# 1.92), not whatever `cargo` is first on PATH. Some environments (notably the
+# mina nix dev shell) put an older cargo ahead of the rustup shim; napi-derive
+# pulls convert_case 0.8.0, which fails to compile on the nix 1.82 cargo
+# (E0599: no method `graphemes` on &str). `rustup which cargo`, run from
+# PS_DIR, reads the toolchain file and hands back the matching cargo.
+if command -v rustup >/dev/null 2>&1; then
+  CARGO="$(cd "$PS_DIR" && rustup which cargo)"
+else
+  CARGO="cargo"
+fi
+
+echo "==> $CARGO build -p kimchi-napi --release (in $PS_DIR)"
+( cd "$PS_DIR" && "$CARGO" build -p kimchi-napi --release )
 
 SRC="$PS_DIR/target/release/$LIB"
 [ -f "$SRC" ] || { echo "expected artifact missing: $SRC" >&2; exit 1; }
