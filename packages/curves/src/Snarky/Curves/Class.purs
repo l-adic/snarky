@@ -6,8 +6,7 @@
 -- | - `FrModule`: Scalar multiplication on curve groups
 -- | - `WeierstrassCurve`: Curves in short Weierstrass form (y² = x³ + ax + b)
 -- |
--- | These classes are implemented by concrete curve types in `Snarky.Curves.Pasta`
--- | and `Snarky.Curves.BN254`.
+-- | These classes are implemented by concrete curve types in `Snarky.Curves.Pasta`.
 -- |
 -- | ```purescript
 -- | import Snarky.Curves.Pallas as Pallas
@@ -29,6 +28,9 @@ module Snarky.Curves.Class
   , toBigInt
   , modulus
   , pow
+  , class TwoAdicField
+  , twoAdicRoot
+  , twoAdicity
   , class FrModule
   , scalarMul
   , inverse
@@ -82,6 +84,19 @@ class (Eq f, Ord f, Show f, Field f, Arbitrary f) <= PrimeField f where
 -- | Convert an `Int` to a field element.
 fromInt :: forall @f. PrimeField f => Int -> f
 fromInt x = fromBigInt $ JS.BigInt.fromInt x
+
+-- | A prime field whose multiplicative group has 2-adic structure: there
+-- | exists a primitive 2^k-th root of unity, where `k = twoAdicity`. From
+-- | `twoAdicRoot` (a 2^twoAdicity-th root of unity) one can derive a 2^n-th
+-- | root for any `n <= twoAdicity` by repeated squaring.
+-- |
+-- | Both Pasta primes have `twoAdicity = 32`, with field-specific
+-- | `twoAdicRoot` constants (see `Snarky.Curves.Pasta`).
+class PrimeField f <= TwoAdicField f where
+  -- | A primitive 2^`twoAdicity`-th root of unity in `f`.
+  twoAdicRoot :: f
+  -- | The 2-adicity of `f - {0}`: the largest `k` such that `2^k | (p - 1)`.
+  twoAdicity :: Int
 
 -- | A module over a scalar field, representing scalar multiplication on groups.
 -- |

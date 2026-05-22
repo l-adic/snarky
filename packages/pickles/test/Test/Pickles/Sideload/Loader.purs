@@ -29,7 +29,6 @@ module Test.Pickles.Sideload.Loader
   , loadNrrFixture
   , fromHexBe
   , parseJsonPreserveBigInts
-  , wrapSrsDepthLog2
   , OcamlProof(..)
   , OcamlProofWidthData(..)
   , SomeOcamlProofWidthData
@@ -68,16 +67,14 @@ import Pickles (PaddedLength, StepField, StepIPARounds, Verifier, WrapField, wra
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts)
 import Pickles.PlonkChecks (ChunkedAllEvals)
-import Pickles.ProofFFI (Proof, permutationVanishingPolynomial, verifyOpeningProof)
+import Pickles.Prove.FFI (Proof, permutationVanishingPolynomial, verifyOpeningProof)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Step (extractWrapVKForStepHash)
-import Pickles.Sideload (noOptionalFeatures, vestaHydrateVerifierIndex, vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJson)
+import Pickles.Sideload (vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJson)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Safe.Coerce (coerce)
-import Snarky.Backend.Kimchi.Class (createCRS)
-import Snarky.Backend.Kimchi.Impl.Pallas (pallasCrsCreate)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaSrsBPolyCommitmentPoint)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
 import Snarky.Circuit.DSL (F(..))
@@ -85,6 +82,7 @@ import Snarky.Circuit.DSL.SizedF (SizedF, unsafeFromField, wrapF)
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
 import Snarky.Curves.Class (class PrimeField, fromBigInt)
 import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Pasta (PallasG, VestaG) as PV
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
@@ -100,10 +98,6 @@ import Type.Proxy (Proxy(..))
 -- | emits 19-digit numbers that exceed JS Number's 53-bit mantissa; this
 -- | helper sidesteps that by quoting them before argonaut sees them.
 foreign import parseJsonPreserveBigInts :: String -> String
-
--- | The wrap-side SRS depth (matching OCaml's `Backend.Tock.Rounds.n` = 15).
-wrapSrsDepthLog2 :: Int
-wrapSrsDepthLog2 = 15
 
 --------------------------------------------------------------------------------
 -- OcamlProof: an OCaml-produced wrap proof loaded from JSON
@@ -244,9 +238,10 @@ loadFixture
    . { decode :: Json -> Either JsonDecodeError stmtVal
      , toFields :: stmtVal -> Array StepField
      }
+  -> { pallasSrs :: CRS PV.PallasG, vestaSrs :: CRS PV.VestaG }
   -> String
   -> Aff (LoadedFixture stmtVal)
-loadFixture cfg dir = do
+loadFixture cfg sharedSrs dir = do
   vkJson <- liftEffect $ readTextFile UTF8 (dir <> "/vk.serde.json")
   proofSerdeJson <- liftEffect $ readTextFile UTF8 (dir <> "/proof.serde.json")
   wrappingText <- liftEffect $ readTextFile UTF8 (dir <> "/wrapping.json")
@@ -256,15 +251,17 @@ loadFixture cfg dir = do
     -- Re-encode int64s as JSON strings so argonaut doesn't lose precision.
     wrappingTextSafe = parseJsonPreserveBigInts wrappingText
 
-    srs = pallasCrsCreate (1 `shl` wrapSrsDepthLog2)
+    srs = sharedSrs.pallasSrs
     -- Deserialize → hydrate. The serde codec leaves `linearization` and
-    -- `powers_of_alpha` empty (`#[serde(skip)]`); without re-attaching
-    -- them, kimchi's verify panics with "constraint Permutation was not
-    -- registered". Pickles wrap circuits enable no optional gates and
-    -- always have the Generic gate, so `noOptionalFeatures` + `generic
-    -- = true` is the right pair for any Pickles-produced wrap VK.
-    dehydratedVk = vestaVerifierIndexFromSerdeJson vkJson srs
-    vk = vestaHydrateVerifierIndex dehydratedVk noOptionalFeatures true
+    -- `powers_of_alpha` empty (`#[serde(skip)]`). Hydration — rebuilding
+    -- those caches from the VK's feature-flag bits — is automatic on
+    -- conversion (`From<NapiPlonkVerifierIndex> for VerifierIndex` at
+    -- `kimchi-napi/src/plonk_verifier_index.rs:340` recomputes
+    -- `linearization`, `powers_of_alpha`, `w`, and
+    -- `permutation_vanishing_polynomial_m` from the deserialized
+    -- optional-comm `is_some()` shape), so no explicit hydrate step
+    -- is needed.
+    vk = vestaVerifierIndexFromSerdeJson vkJson srs
 
     -- Kimchi proof: load via the same Rust serde codec OCaml wrote it
     -- with. `prev_challenges` is already populated (OCaml passed the
@@ -275,12 +272,12 @@ loadFixture cfg dir = do
   statement <- liftEffectThrow $ parseStatement cfg.decode statementText
   decoded <- liftEffectThrow $ decodePickles wrappingTextSafe
 
-  -- Vesta SRS for `mkSomeCompiledProofWidthData`'s `dummyChalPolyComm`
-  -- filler — verifier internals don't read it for NRR (mpv = 0) but
-  -- the existential needs *some* value at construction time.
-  vestaSrs <- liftEffect $ createCRS @StepField
-
+  -- Vesta SRS comes from the shared per-suite cache (see
+  -- `Test.Pickles.SharedSrs`). Verifier internals don't read it for NRR
+  -- (mpv = 0) but the existential needs *some* value at construction
+  -- time; sharing avoids rebuilding the lagrange basis per fixture.
   let
+    vestaSrs = sharedSrs.vestaSrs
     appStateFields = cfg.toFields statement
 
     -- Empty width-indexed widthData for `mpv = 0`.
@@ -334,18 +331,14 @@ loadFixture cfg dir = do
 -- | NRR convenience: NRR's `Output Field.typ` makes the statement a single
 -- | hex-encoded `StepField`. `toFields` wraps it in a singleton array — the
 -- | shape `hashMessagesForNextStepProofPure` expects for `appState`.
-loadNrrFixture :: String -> Aff (LoadedFixture StepField)
+loadNrrFixture
+  :: { pallasSrs :: CRS PV.PallasG, vestaSrs :: CRS PV.VestaG }
+  -> String
+  -> Aff (LoadedFixture StepField)
 loadNrrFixture = loadFixture
   { decode: decodeHex
   , toFields: \x -> [ x ]
   }
-
-shl :: Int -> Int -> Int
-shl x n = x * pow2 n
-  where
-  pow2 :: Int -> Int
-  pow2 0 = 1
-  pow2 k = 2 * pow2 (k - 1)
 
 liftEffectThrow :: forall a. Either String a -> Aff a
 liftEffectThrow = either (\msg -> liftEffect (throw msg)) pure

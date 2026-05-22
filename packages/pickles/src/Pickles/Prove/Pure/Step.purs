@@ -44,13 +44,13 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.IPA (bPoly)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals, absorbAllEvals)
-import Pickles.PlonkChecks.Chunks as Chunks
-import Pickles.ProofFFI (OraclesResult, Proof, domainGenerator, tCommChunked, vestaChallengePolyCommitment, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallengesVec, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, wCommChunked, zCommChunked)
+import Pickles.Prove.FFI (OraclesResult, Proof, domainGenerator, proofData, proofOpeningPrechallenges, proofOraclesRec, vestaChallengePolyCommitment, vestaProofCommitments)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatch, computeBpChalsAndB, derivePlonk, ftEval0)
 import Pickles.Sponge (absorb, evalPureSpongeM, initialSponge, squeeze, squeezeScalarChallengePure)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Step.Types as Step
 import Pickles.Types (ChunkedCommitment(..), StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Util.Fatal (fromJust')
 import Pickles.VerificationKey (StepVK)
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
@@ -311,7 +311,7 @@ expandDeferred input =
 -- ftEval0, combinedInnerProductBatch, computeBpChalsAndB), the
 -- step-field `expandDeferred` from this module, the
 -- message-hash helpers in `Pickles.{Step,Wrap}.MessageHash`, and the
--- wrap-proof FFI in `Pickles.ProofFFI`.
+-- wrap-proof FFI in `Pickles.Prove.FFI`.
 --
 -- OCaml body structure (step.ml line → PS wiring):
 --
@@ -321,7 +321,7 @@ expandDeferred input =
 -- * 230-235 prev_challenges (expand)        → inline `toFieldPure` fold
 -- * 236-241 `expand_deferred` call          → `expandDeferred`
 -- * 242-297 prev_statement_with_hashes      → `hashMessagesForNext{Step,Wrap}Proof*`
--- * 298-317 wrap oracles FFI                → `vestaProofOracles`
+-- * 298-317 wrap oracles FFI                → `proofOraclesRec`
 -- * 319-343 extract oracle outputs          → field projections
 -- * 359-379 new bp challenges + b           → `computeBpChalsAndB`
 -- * 380-383 challenge_polynomial_commitment → `vestaProofOpeningSg` / `vestaChallengePolyCommitment`
@@ -600,7 +600,7 @@ expandProof input =
     -- 304-317 from `Wrap_hack.pad_accumulator` of (sg, expanded
     -- wrap-IPA challenges) pairs — caller supplies it via
     -- `wrapOraclesPrevChallenges`.
-    oraclesResult = vestaProofOracles input.wrapVerifierIndex
+    oraclesResult = proofOraclesRec input.wrapVerifierIndex
       { proof: input.wrapProof
       , publicInput: input.tockPublicInput
       , prevChallenges: input.wrapOraclesPrevChallenges
@@ -614,11 +614,15 @@ expandProof input =
     -- contract guarantees the 128-bit bound, so `unsafeFromField` is
     -- safe here.
     rawPrechalsVec = map (unsafePartial unsafeFromField)
-      ( vestaProofOpeningPrechallengesVec input.wrapVerifierIndex
-          { proof: input.wrapProof
-          , publicInput: input.tockPublicInput
-          , prevChallenges: input.wrapOraclesPrevChallenges
-          }
+      ( fromJust' "proofOpeningPrechallenges: expected Vector WrapIPARounds (=15)"
+          ( Vector.toVector @WrapIPARounds
+              ( proofOpeningPrechallenges input.wrapVerifierIndex
+                  { proof: input.wrapProof
+                  , publicInput: input.tockPublicInput
+                  , prevChallenges: input.wrapOraclesPrevChallenges
+                  }
+              )
+          )
       )
 
     wrapGen = domainGenerator input.wrapDomainLog2
@@ -638,9 +642,11 @@ expandProof input =
     --     if not must_verify
     --       then Ipa.Wrap.compute_sg new_bulletproof_challenges
     --       else proof.openings.proof.challenge_polynomial_commitment
+    wrapProofData = proofData input.wrapProof
+
     challengePolynomialCommitment =
       if input.mustVerify then
-        vestaProofOpeningSg input.wrapProof
+        wrapProofData.opening.sg
       else
         vestaChallengePolyCommitment input.wrapVerifierIndex
           (Vector.toUnfoldable newBpResult.chals)
@@ -706,12 +712,12 @@ expandProof input =
     -- are already endo-expanded by the FFI.
     wrapCipInput =
       { allEvals: input.wrapAllEvals
-      , publicEvals: Chunks.collapsePointEval
-          { rounds: input.wrapSrsLengthLog2
-          , zeta: oraclesResult.zeta
-          , zetaOmega: wrapZetaw
-          }
-          oraclesResult.publicEvals
+      -- OCaml `step.ml:464-491` folds `x_hat` (the oracle's recomputed
+      -- public eval) into the combined_inner_product. Use the oracle's
+      -- `publicEvals` (== the wire proof's `evals.public` for a real proof,
+      -- == recomputed for the dummy whose wire eval is `None`) rather than
+      -- `proofData.evals.public`, which is a placeholder for the dummy.
+      , publicEvals: oraclesResult.publicEvals
       , ftEval0: wrapFtEval0
       , ftEval1: oraclesResult.ftEval1
       , oldBulletproofChallenges: input.wrapPaddedPrevChallenges
@@ -768,14 +774,14 @@ expandProof input =
       -> WeierstrassAffinePoint PallasG (F StepField)
     mkPallasPt pt = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
 
-    wrapCommits = vestaProofCommitments input.wrapProof
+    wrapCommits = vestaProofCommitments @stepChunks input.wrapProof
 
     messages
       :: WrapProofMessages stepChunks (WeierstrassAffinePoint PallasG (F StepField))
     messages = WrapProofMessages
-      { wComm: map (over ChunkedCommitment (map mkPallasPt)) (wCommChunked @stepChunks wrapCommits)
-      , zComm: over ChunkedCommitment (map mkPallasPt) (zCommChunked @stepChunks wrapCommits)
-      , tComm: map (over ChunkedCommitment (map mkPallasPt)) (tCommChunked @stepChunks wrapCommits)
+      { wComm: map (over ChunkedCommitment (map mkPallasPt)) wrapCommits.wComm
+      , zComm: over ChunkedCommitment (map mkPallasPt) wrapCommits.zComm
+      , tComm: map (over ChunkedCommitment (map mkPallasPt)) wrapCommits.tComm
       }
 
     -- Wrap proof's opening proof from the kimchi form. The `sg`
@@ -789,10 +795,10 @@ expandProof input =
            (Type2 (SplitField (F StepField) Boolean))
     opening = WrapProofOpening
       { lr: map (\pair -> { l: mkPallasPt pair.l, r: mkPallasPt pair.r })
-          (vestaProofOpeningLrVec input.wrapProof)
-      , z1: toShifted (F (vestaProofOpeningZ1 input.wrapProof))
-      , z2: toShifted (F (vestaProofOpeningZ2 input.wrapProof))
-      , delta: mkPallasPt (vestaProofOpeningDelta input.wrapProof)
+          wrapProofData.opening.lr
+      , z1: toShifted (F wrapProofData.opening.z1)
+      , z2: toShifted (F wrapProofData.opening.z2)
+      , delta: mkPallasPt wrapProofData.opening.delta
       , sg: mkPallasPt challengePolynomialCommitment
       }
 
@@ -870,12 +876,9 @@ expandProof input =
     , unfinalized: wrapUnfinalized
     , deferredStep: deferredStep
     , rawPrechallenges: Vector.toUnfoldable (map SizedF.toField rawPrechalsVec)
-    , xHat: Chunks.collapsePointEval
-        { rounds: input.wrapSrsLengthLog2
-        , zeta: oraclesResult.zeta
-        , zetaOmega: wrapZetaw
-        }
-        oraclesResult.publicEvals
+    -- `x_hat` for the prev_evals (OCaml `step.ml:892`) = the oracle's
+    -- recomputed public eval (see `wrapCipInput.publicEvals`).
+    , xHat: oraclesResult.publicEvals
     , perProofWitness
     -- step.ml:536 reads this from `dlog_vk.domain.log_size_of_group`.
     , actualWrapDomain: input.wrapDomainLog2

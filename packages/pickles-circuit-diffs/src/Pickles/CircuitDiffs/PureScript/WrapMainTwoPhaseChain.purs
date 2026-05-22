@@ -32,7 +32,7 @@ import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCom
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement (StepMainTwoPhaseChainIncrementParams, compileStepMainTwoPhaseChainIncrement)
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero (StepMainTwoPhaseChainMakeZeroParams, compileStepMainTwoPhaseChainMakeZero)
 import Pickles.Field (StepField, WrapField)
-import Pickles.ProofFFI (pallasSrsLagrangeCommitmentChunksAt)
+import Pickles.Prove.FFI (srsLagrangeCommitmentChunksAt)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Pickles.Wrap.Slots (Slots1)
@@ -78,7 +78,7 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
     -- @1`; mismatch only fires if SRS/domain pairing yields nc≠1 here.
     chunked log2 i =
       let
-        chunksArr = pallasSrsLagrangeCommitmentChunksAt vestaSrs log2 i
+        chunksArr = srsLagrangeCommitmentChunksAt vestaSrs log2 i
       in
         case Vector.toVector @1 (map coerce chunksArr) of
           Just v -> (v :: Vector 1 (AffinePoint (F WrapField)))

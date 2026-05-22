@@ -10,7 +10,7 @@ PureScript zero-knowledge circuit library with a Rust cryptography backend.
 ## Project Initialization
 
 ```bash
-# Install dependencies and build crypto-provider
+# Install dependencies and build the kimchi-napi native binding
 npm install
 
 # Download SRS files (required for snarky-kimchi and pickles tests)
@@ -73,7 +73,7 @@ node_modules/spago/README.md
 ## Project Structure
 
 ### Crypto Backend
-- **crypto-provider** — Rust napi-rs crate exposing arkworks/proof-systems as `snarky-crypto` node module
+- **kimchi-napi** — Rust napi-rs crate exposing upstream proof-systems (kimchi/arkworks) as the `kimchi-napi` node module
 
 ### Core
 - **snarky** — Circuit-building DSL

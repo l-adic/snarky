@@ -44,9 +44,10 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (ChunkedAllEvals)
 import Pickles.PlonkChecks.Chunks as Chunks
-import Pickles.ProofFFI (OraclesResult, Proof, pallasProofFtEval1, pallasProofOpeningPrechallengesVec, pallasProofOracles)
+import Pickles.Prove.FFI (OraclesResult, Proof, proofData, proofOpeningPrechallenges, proofOraclesRec)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatchChunked, computeBpChalsAndB, crossFieldDigest, derivePlonk, ftEval0)
 import Pickles.Types (StepIPARounds)
+import Pickles.Util.Fatal (fromJust')
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, ScalarChallenge)
 import Pickles.Wrap.Types as Wrap
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
@@ -186,7 +187,7 @@ type WrapDeferredValuesOutput =
 -- |
 -- | Internal structure (OCaml line → PS wiring):
 -- |
--- | * 97-107  `O.create_with_public_evals`                 → `pallasProofOracles`
+-- | * 97-107  `O.create_with_public_evals`                 → `proofOraclesRec`
 -- | * 108-114 `x_hat` from public_evals / oracle p_eval    → `oracles.publicEval{Zeta,ZetaOmega}`
 -- | * 118-132 plonk0 (raw 128-bit challenges)              → `wrapPlonkMinimal`
 -- | * 133-148 expand raw chals via `SC.to_field_constant`  → done inside `Common.derivePlonk`
@@ -231,23 +232,19 @@ wrapComputeDeferredValues input =
             input.prevChallenges
         )
 
-    oraclesResult = pallasProofOracles input.verifierIndex
+    oraclesResult = proofOraclesRec input.verifierIndex
       { proof: input.proof
       , publicInput: input.publicInput
       , prevChallenges: prevChallengeList
       }
 
-    -- x_hat: Horner-collapse the chunked public evals into a single
-    -- (zeta, zetaw) PointEval. At num_chunks = 1 this returns the only
-    -- chunk verbatim (byte-identical to `firstChunk`); at n > 1 it
-    -- performs the combined-eval Horner per OCaml `evals_of_split_evals`
-    -- (`plonk_checks.ml:102`).
-    xHatEvals = Chunks.collapsePointEval
-      { rounds: input.srsLengthLog2
-      , zeta: oraclesResult.zeta
-      , zetaOmega: oraclesResult.zeta * input.generator
-      }
-      oraclesResult.publicEvals
+    -- x_hat from the oracle's recomputed public eval (= main's
+    -- `oraclesResult.publicEvals`; OCaml `wrap.ml:110-116`). The napi oracle
+    -- returns the single-chunk public eval (`p_eval0`/`p_eval1`) — the public
+    -- poly has degree < domain, so it is never split — hence no chunk collapse.
+    -- NOT `proofData.evals.public`: that was the kimchi-napi regression
+    -- (`main` has zero such reads).
+    xHatEvals = oraclesResult.publicEvals
 
     -- ===== plonk0 / tick_plonk_minimal. =====
     --
@@ -316,7 +313,7 @@ wrapComputeDeferredValues input =
       { allEvals: input.chunkedAllEvals
       , publicEvals: input.chunkedAllEvals.publicEvals
       , ftEval0: stepFtEval0
-      , ftEval1: pallasProofFtEval1 input.proof
+      , ftEval1: (proofData input.proof).evals.ftEval1
       , oldBulletproofChallenges: input.prevChallenges
       , xi: oraclesResult.v
       , r: oraclesResult.u
@@ -333,11 +330,15 @@ wrapComputeDeferredValues input =
     -- `SizedF 128` and feed through `computeBpChalsAndB`, which endo-
     -- expands them and evaluates `b_poly(zeta) + r·b_poly(zetaw)`.
     rawPrechalsVec = map (unsafePartial unsafeFromField)
-      ( pallasProofOpeningPrechallengesVec input.verifierIndex
-          { proof: input.proof
-          , publicInput: input.publicInput
-          , prevChallenges: prevChallengeList
-          }
+      ( fromJust' "proofOpeningPrechallenges: expected Vector StepIPARounds (=16)"
+          ( Vector.toVector @StepIPARounds
+              ( proofOpeningPrechallenges input.verifierIndex
+                  { proof: input.proof
+                  , publicInput: input.publicInput
+                  , prevChallenges: prevChallengeList
+                  }
+              )
+          )
       )
 
     newBpResult = computeBpChalsAndB

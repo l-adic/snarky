@@ -18,7 +18,6 @@ import Test.Snarky.Circuit.Kimchi.GroupMap as GroupMapTests
 import Test.Snarky.Circuit.Kimchi.Poseidon as PoseidonTests
 import Test.Snarky.Circuit.Kimchi.VarBaseMul as VarBaseMulTests
 import Test.Snarky.Circuit.Utils (TestConfig)
-import Test.Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonkSpec
 import Test.Snarky.Types.Shifted as ShiftedTests
 import Test.Spec (Spec, describe)
 import Test.Spec.Reporter.Console (consoleReporter)
@@ -44,7 +43,8 @@ circuitSpec = do
 spec :: Spec Unit
 spec = do
   circuitSpec
-  GenericPlonkSpec.spec
+  -- `Test.Snarky.Constraint.Kimchi.GenericPlonk` was deleted alongside the
+  -- snarky-crypto Rust-FFI'd gate verifier it cross-checked against.
   PoseidonTests.spec kimchiTestConfig
   AddCompleteTests.spec kimchiTestConfig
   GenericTests.spec kimchiTestConfig

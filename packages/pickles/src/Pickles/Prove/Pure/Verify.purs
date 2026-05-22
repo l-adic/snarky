@@ -3,9 +3,9 @@
 -- | `Wrap_deferred_values.expand_deferred`.
 -- |
 -- | This is the companion of `Pickles.Prove.Pure.Wrap.wrapComputeDeferredValues`,
--- | which is the PROVER side (takes a step proof + calls `pallasProofOracles`
+-- | which is the PROVER side (takes a step proof + calls `proofOraclesRec`
 -- | to sample the Fiat–Shamir challenges). The verifier cannot call
--- | `pallasProofOracles` because it doesn't have the step proof — the
+-- | `proofOraclesRec` because it doesn't have the step proof — the
 -- | carried wrap statement only contains the MINIMAL skeleton plus the
 -- | `sponge_digest_before_evaluations` checkpoint. This module replays the
 -- | sponge from that checkpoint to recover `xi` and `r`, pulls the raw
@@ -260,12 +260,13 @@ expandDeferredForVerify input =
       , beta: unwrapF input.rawPlonk.beta
       , gamma: unwrapF input.rawPlonk.gamma
       , zeta: zetaField
-      , ftEval0: stepFtEval0
       , v: xiField
       , u: rField
-      , combinedInnerProduct: cipActual
       , ftEval1: input.chunkedAllEvals.ftEval1
-      , publicEvals: input.chunkedAllEvals.publicEvals
+      , publicEvals:
+          { zeta: collapsedAllEvals.publicEvals.zeta
+          , omegaTimesZeta: collapsedAllEvals.publicEvals.omegaTimesZeta
+          }
       , fqDigest: input.spongeDigestBeforeEvaluations
       , alphaChal: unwrapF input.rawPlonk.alpha
       , zetaChal: unwrapF input.rawPlonk.zeta

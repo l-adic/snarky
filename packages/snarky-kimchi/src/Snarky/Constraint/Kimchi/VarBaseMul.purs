@@ -2,28 +2,21 @@ module Snarky.Constraint.Kimchi.VarBaseMul
   ( VarBaseMul
   , ScaleRound
   , Rows
-  , class VarBaseMulVerifiable
-  , verifyVarBaseMul
-  , eval
   , reduce
   ) where
 
 import Prelude
 
-import Data.Array (all, concatMap)
+import Data.Array (concatMap)
 import Data.Fin (unsafeFinite)
-import Data.Function.Uncurried (Fn1, runFn1)
-import Data.Maybe (Maybe(..), maybe)
-import Data.Traversable (for, traverse)
+import Data.Maybe (Maybe(..))
+import Data.Traversable (traverse)
 import Data.Vector (Vector, index, nil, (:<))
 import Data.Vector as Vector
-import Snarky.Circuit.DSL (FVar, Variable)
+import Snarky.Circuit.DSL (FVar)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
 import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, KimchiRow)
 import Snarky.Constraint.Kimchi.Types as GateKind
-import Snarky.Curves.Class (class PrimeField)
-import Snarky.Curves.Pallas as Pallas
-import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 
 type ScaleRound f =
@@ -41,24 +34,6 @@ newtype Rows f = Rows (Array (Vector 2 (KimchiRow f)))
 
 instance ToKimchiRows f (Rows f) where
   toKimchiRows (Rows as) = concatMap Vector.toUnfoldable as
-
-class VarBaseMulVerifiable f where
-  verifyVarBaseMul :: Vector 2 (Vector 15 f) -> Boolean
-
-eval
-  :: forall f m
-   . PrimeField f
-  => VarBaseMulVerifiable f
-  => Applicative m
-  => (Variable -> m f)
-  -> Rows f
-  -> m Boolean
-eval lookup (Rows rounds) = do
-  let
-    f round = for round \r ->
-      for r.variables \var ->
-        maybe (pure zero) lookup var
-  all verifyVarBaseMul <$> traverse f rounds
 
 reduce
   :: forall f m
@@ -131,14 +106,3 @@ reduce c = Rows <$>
         :<
           nil
 
-foreign import verifyPallasVarBaseMulGadget
-  :: Fn1 (Vector 2 (Vector 15 Pallas.ScalarField)) Boolean
-
-foreign import verifyVestaVarBaseMulGadget
-  :: Fn1 (Vector 2 (Vector 15 Vesta.ScalarField)) Boolean
-
-instance VarBaseMulVerifiable Pallas.ScalarField where
-  verifyVarBaseMul = runFn1 verifyPallasVarBaseMulGadget
-
-instance VarBaseMulVerifiable Vesta.ScalarField where
-  verifyVarBaseMul = runFn1 verifyVestaVarBaseMulGadget

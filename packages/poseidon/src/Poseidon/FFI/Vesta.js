@@ -1,37 +1,18 @@
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const napi = require('snarky-crypto');
+// Vesta-base Poseidon FFI — host-side hash + granular permutation ops
+// over Fq (Vesta.BaseField = Pallas.ScalarField). Routes through the
+// pure-JS `pasta-runtime` Poseidon spec parameterized by
+// `poseidonParamsKimchiFq`. Constants are extracted from
+// `mina_poseidon::pasta::fq_kimchi`; permutation parity vs
+// `caml_pasta_fq_poseidon_block_cipher` byte-for-byte verified.
+//
+// PS-side type: `PoseidonField Vesta.BaseField`.
 
-// ============================================================================
-// VESTA POSEIDON FFI
-// ============================================================================
+import { PoseidonFq } from 'pasta-runtime';
 
-export function sbox(x) {
-    return napi.vestaPoseidonSbox(x);
-}
-
-export function applyMds(state) {
-    return napi.vestaPoseidonApplyMds(state);
-}
-
-export function fullRound(state) {
-    return function(roundIndex) {
-        return napi.vestaPoseidonFullRound(state, roundIndex);
-    };
-}
-
-export function getRoundConstants(roundIndex) {
-    return napi.vestaPoseidonGetRoundConstants(roundIndex);
-}
-
-export function getNumRounds() {
-    return napi.vestaPoseidonGetNumRounds();
-}
-
-export function getMdsMatrix() {
-    return napi.vestaPoseidonGetMdsMatrix();
-}
-
-export function hash(inputs) {
-    return napi.vestaPoseidonHash(inputs);
-}
+export function sbox(x) { return PoseidonFq.sbox(x); }
+export function applyMds(state) { return PoseidonFq.applyMds(state); }
+export function fullRound(state) { return (i) => PoseidonFq.fullRound(state, i); }
+export function getRoundConstants(i) { return PoseidonFq.getRoundConstants(i); }
+export function getNumRounds() { return PoseidonFq.getNumRounds(); }
+export function getMdsMatrix() { return PoseidonFq.getMdsMatrix(); }
+export function hash(inputs) { return PoseidonFq.hash(inputs); }

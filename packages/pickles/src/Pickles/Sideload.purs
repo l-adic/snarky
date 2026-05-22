@@ -12,4 +12,4 @@ module Pickles.Sideload
   ) where
 
 import Pickles.Sideload.Bundle (Bundle, mkBundle, verifierIndex)
-import Pickles.Sideload.FFI (VkFeatureFlags, noOptionalFeatures, vestaHydrateVerifierIndex, vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJson, vestaVerifierIndexToSerdeJson)
+import Pickles.Sideload.FFI (vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJson, vestaVerifierIndexToSerdeJson)

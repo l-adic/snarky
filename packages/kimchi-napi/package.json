@@ -1,0 +1,15 @@
+{
+  "name": "kimchi-napi",
+  "version": "0.1.0",
+  "description": "Local wrapper around the upstream kimchi-napi crate (built from the in-tree proof-systems submodule)",
+  "main": "index.js",
+  "scripts": {
+    "build": "bash build.sh"
+  },
+  "files": [
+    "index.js",
+    "*.node"
+  ],
+  "license": "MIT OR Apache-2.0",
+  "private": true
+}

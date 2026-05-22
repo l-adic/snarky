@@ -3,7 +3,6 @@ module Test.Snarky.Curves.Main where
 import Prelude
 
 import Effect (Effect)
-import Snarky.Curves.BN254 as BN254
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Snarky.Curves.BaseField as BaseField
@@ -16,8 +15,6 @@ import Type.Proxy (Proxy(..))
 
 main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] do
-  describe "Bn254.ScalarField" $
-    Field.spec (Proxy @BN254.ScalarField)
   describe "Pallas.ScalarField" $
     Field.spec (Proxy @Pallas.ScalarField)
   describe "Pallas.BaseField" $

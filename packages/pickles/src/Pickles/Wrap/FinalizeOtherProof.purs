@@ -78,7 +78,7 @@ type Input n d fv b =
 -- |
 -- | Reference: wrap_verifier.ml:1511-1783
 wrapFinalizeOtherProofCircuit
-  :: forall d dPred n nPred nd ndPred f f' g t m r2
+  :: forall d dPred n nPred nd ndPred f f' t m r2
    . Add 1 dPred d
   => Add 1 nPred n
   => Add 1 ndPred nd
@@ -89,7 +89,7 @@ wrapFinalizeOtherProofCircuit
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
-  => LinearizationFFI f g
+  => LinearizationFFI f
   => Reflectable d Int
   => Params nd f r2
   -> (FVar f -> Snarky (KimchiConstraint f) t m (FVar f))

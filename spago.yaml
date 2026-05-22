@@ -1,4 +1,19 @@
 workspace:
   packageSet:
     registry: 71.0.0
-  extraPackages: {}
+  extraPackages:
+    colog-core:
+      git: https://github.com/l-adic/purescript-colog.git
+      ref: 36636ecf70dbb1ae67ed6dee7fa7922f10deb578
+      subdir: packages/colog-core
+    colog:
+      git: https://github.com/l-adic/purescript-colog.git
+      ref: 36636ecf70dbb1ae67ed6dee7fa7922f10deb578
+      subdir: packages/colog
+  # No `backend:` here on purpose. The root workspace stays on the
+  # plain JS backend so normal library development keeps its simple,
+  # fast build (`spago build` = `purs compile` only). The
+  # purs-backend-es optimizer is confined to the separate pickles-bench
+  # workspace (packages/pickles-bench/spago.yaml), which is ignored by
+  # this workspace per spago's rule that a nested spago.yaml with its
+  # own `workspace:` section establishes a separate workspace.

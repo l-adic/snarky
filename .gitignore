@@ -1,5 +1,6 @@
 # Build outputs
 output/
+output-es/
 .spago/
 .pulp-cache/
 bower_components/
@@ -59,6 +60,8 @@ packages/pickles-codegen/rust/output/
 packages/pickles/test/fixtures/*.trace
 packages/pickles/test/fixtures/witness/
 packages/pickles/test/fixtures/witness_nrr/
+packages/pickles/test/fixtures/witness_chunks2
+packages/pickles/test/fixtures/witness_chunks4
 
 # Generated dependency graph
 deps.svg

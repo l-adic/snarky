@@ -25,12 +25,12 @@ import Snarky.Curves.Class (class HasEndo, class PrimeField)
 -- | - Domain values computed from zeta (omega constants for lagrange basis)
 -- | - Monadic interpreter (evaluateM) with peephole alpha optimization
 linearizationCircuitM
-  :: forall f f' g t m
+  :: forall f f' t m
    . PrimeField f
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
-  => LinearizationFFI f g
+  => LinearizationFFI f
   => Int -- ^ domainLog2
   -> Array PolishToken
   -> Vector 90 (FVar f)

@@ -2,25 +2,20 @@ module Snarky.Constraint.Kimchi.EndoMul
   ( Round
   , EndoMul
   , Rows
-  , eval
   , reduce
   ) where
 
 import Prelude
 
-import Data.Array (zip)
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
-import Data.Fin (unsafeFinite)
-import Data.Maybe (Maybe(..), maybe)
-import Data.Traversable (all, traverse)
-import Data.Tuple (Tuple(..))
-import Data.Vector (Vector, (!!), (:<))
+import Data.Maybe (Maybe(..))
+import Data.Traversable (traverse)
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Snarky.Circuit.DSL (FVar, Variable)
+import Snarky.Circuit.DSL (FVar)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
 import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, GateKind(..), KimchiRow)
-import Snarky.Curves.Class (class HasEndo, EndoBase(..), endoBase)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
 type Round f =
@@ -45,94 +40,6 @@ newtype Rows f = Rows (NonEmptyArray (KimchiRow f))
 
 instance ToKimchiRows f (Rows f) where
   toKimchiRows (Rows as) = NEA.toUnfoldable as
-
-eval
-  :: forall @f @f' m
-   . HasEndo f f'
-  => Monad m
-  => (Variable -> m f)
-  -> Rows f
-  -> m Boolean
-eval lookup (Rows rs) = do
-  let rs' = map _.variables rs
-  let
-    { init: before } = NEA.unsnoc rs'
-    { tail: after } = NEA.uncons rs'
-    roundPairs = zip before after
-  all identity <$> traverse lookupRound roundPairs
-  where
-  lookup' = maybe (pure zero) lookup
-
-  lookupRound
-    :: Tuple
-         (Vector 15 (Maybe Variable))
-         (Vector 15 (Maybe Variable))
-    -> m Boolean
-  lookupRound (Tuple round _next) = do
-    { before, after: bits } <- Vector.splitAt @11 <$> traverse lookup' round
-    next <- traverse lookup' _next
-    let
-      b1 = bits !! unsafeFinite 0
-      b2 = bits !! unsafeFinite 1
-      b3 = bits !! unsafeFinite 2
-      b4 = bits !! unsafeFinite 3
-
-      xt = before !! unsafeFinite 0
-      yt = before !! unsafeFinite 1
-
-      xs = next !! unsafeFinite 4
-      ys = next !! unsafeFinite 5
-
-      xp = before !! unsafeFinite 4
-      yp = before !! unsafeFinite 5
-
-      xr = before !! unsafeFinite 7
-      yr = before !! unsafeFinite 8
-
-      s1 = before !! unsafeFinite 9
-      s3 = before !! unsafeFinite 10
-
-      endoMinus1 =
-        let
-          EndoBase eb = endoBase @f @f'
-        in
-          eb - one
-      xq1 = (one + b1 * endoMinus1) * xt
-      xq2 = (one + b3 * endoMinus1) * xt
-
-      yq1 = (double b2 - one) * yt
-      yq2 = (double b4 - one) * yt
-
-      s1Squared = square s1
-      s3Squared = square s3
-
-      n = before !! unsafeFinite 6
-      nNext = next !! unsafeFinite 6
-      nConstraint = double (double (double (double n + b1) + b2) + b3) + b4 - nNext
-
-      xpXr = xp - xr
-      xrXs = xr - xs
-
-      ysYr = ys + yr
-      yrYp = yr + yp
-
-    pure $ all (\x -> x == zero)
-      [ boolean b1
-      , boolean b2
-      , boolean b3
-      , boolean b4
-      , (xq1 - xp) * s1 - (yq1 - yp)
-      , (double xp - s1Squared + xq1) * (xpXr * s1 + yrYp) - double yp * xpXr
-      , square yrYp - (square xpXr * (s1Squared - xq1 + xr))
-      , (xq2 - xr) * s3 - (yq2 - yr)
-      , (double xr - s3Squared + xq2) * (xrXs * s3 + ysYr) - double yr * xrXs
-      , square ysYr - (square xrXs * (s3Squared - xq2 + xs))
-      , nConstraint
-      ]
-    where
-    double x = x + x
-    square x = x * x
-    boolean b = b * b - b
 
 reduce
   :: forall f m

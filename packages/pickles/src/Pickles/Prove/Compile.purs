@@ -80,31 +80,20 @@ import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.ProofCache (ProofCache)
-import Pickles.ProofFFI
-  ( pallasProofOpeningSg
-  , pallasProofOracles
-  , pallasProverIndexDomainLog2
-  , permutationVanishingPolynomial
-  , proofCoefficientEvals
-  , proofIndexEvals
-  , proofSigmaEvals
-  , proofWitnessEvals
-  , proofZEvals
-  )
-import Pickles.ProofFFI
-  ( pallasProverIndexDomainLog2
-  , permutationVanishingPolynomial
-  , proofCoefficientEvals
-  , proofIndexEvals
-  , proofSigmaEvals
-  , proofWitnessEvals
-  , proofZEvals
-  , publicEvalsChunked
-  , vestaProofOracles
-  , vestaSrsBlindingGenerator
-  , vestaSrsLagrangeCommitmentChunksAt
-  ) as ProofFFI
 import Pickles.ProofsVerified (ProofsVerifiedCount, boolVecToProofsVerified)
+import Pickles.Prove.FFI
+  ( permutationVanishingPolynomial
+  , proofData
+  , proofOraclesRec
+  , proverIndexDomainLog2
+  )
+import Pickles.Prove.FFI
+  ( permutationVanishingPolynomial
+  , proofOraclesRec
+  , proverIndexDomainLog2
+  , srsBlindingGenerator
+  , srsLagrangeCommitmentChunksAt
+  ) as ProofFFI
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (assembleWrapMainInput, wrapComputeDeferredValues)
@@ -161,7 +150,6 @@ import Pickles.Verify
   , mkSomeCompiledProofWidthData
   , mkVerifier
   , verify
-  , verifyOne
   , wrapPublicInput
   )
 import Pickles.Verify.Types (toPlonkMinimal)
@@ -354,7 +342,7 @@ type ShapeCompileData wrapVkChunks mpv nd blueprints slots =
 -- |   Type1→Type2 coerced in `shapeProveData` to build
 -- |   `prevUnfinalizedProofs`.
 -- | * `baseCaseWrapPublicInputs` — per-slot serialized
--- |   `dummyWrapTockPublicInput` arrays, passed to `vestaProofOracles`
+-- |   `dummyWrapTockPublicInput` arrays, passed to `proofOraclesRec`
 -- |   so `shapeProveData`'s `dummyWrapXhat` evals match what the step
 -- |   circuit sees. Per-slot because Tree's heterogeneous slots have
 -- |   distinct prev-rule wrap statements with distinct serializations.
@@ -644,7 +632,7 @@ instance CompilableSpec Unit Unit Unit 0 NoSlots Unit Unit Unit Unit where
         { srsData:
             { perSlotLagrangeAt: Vector.nil
             , blindingH:
-                coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs
+                coerce (ProofFFI.srsBlindingGenerator cfg.srs.pallasSrs :: AffinePoint StepField)
             , perSlotFopDomainLog2s: Vector.nil
             , perSlotVkBlueprints: unit
             }
@@ -807,7 +795,7 @@ instance
         Self -> selfStepDomainLog2s
         External vks ->
           Vector.replicate
-            (ProofFFI.pallasProverIndexDomainLog2 vks.stepCompileResult.proverIndex)
+            (ProofFFI.proverIndexDomainLog2 vks.stepCompileResult.proverIndex)
 
       slotLagrange =
         -- Per-slot wrap-VK lagrange basis at the compile-wide
@@ -821,7 +809,7 @@ instance
         mkConstLagrangeBaseLookup \i ->
           let
             chunksArr =
-              ProofFFI.vestaSrsLagrangeCommitmentChunksAt cfg.srs.pallasSrs slotWrapDomainLog2 i
+              ProofFFI.srsLagrangeCommitmentChunksAt cfg.srs.pallasSrs slotWrapDomainLog2 i
           in
             case Vector.toVector (map coerce chunksArr) of
               Just v -> v
@@ -845,7 +833,7 @@ instance
               { perSlotLagrangeAt:
                   slotLagrange :< restShape.stepProveCtx.srsData.perSlotLagrangeAt
               , blindingH:
-                  coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs
+                  coerce (ProofFFI.srsBlindingGenerator cfg.srs.pallasSrs :: AffinePoint StepField)
               , perSlotFopDomainLog2s:
                   slotFopDomainLog2s
                     :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
@@ -877,7 +865,7 @@ instance
             { slotWrapVK: wrapCR.verifierIndex
             , slotWrapDomainLog2: outerOverridenWrapDomainLog2
             , slotStepDomainLog2:
-                ProofFFI.pallasProverIndexDomainLog2 stepCR.proverIndex
+                ProofFFI.proverIndexDomainLog2 stepCR.proverIndex
             -- `Self`'s prev step circuit is the outer rule itself, so its
             -- num_chunks is the compile-wide `@nc` type param. Wrap is
             -- universally nc=1 (`num_chunks_by_default`).
@@ -888,7 +876,7 @@ instance
             { slotWrapVK: vks.wrapCompileResult.verifierIndex
             , slotWrapDomainLog2: vks.wrapDomainLog2
             , slotStepDomainLog2:
-                ProofFFI.pallasProverIndexDomainLog2 vks.stepCompileResult.proverIndex
+                ProofFFI.proverIndexDomainLog2 vks.stepCompileResult.proverIndex
             -- External: read the imported rule's declared `@stepChunks`
             -- directly from `ProverVKs.stepNumChunks` (propagated by the
             -- imported compileMulti). Wrap is universally nc=1.
@@ -1181,7 +1169,6 @@ instance
       -- n=2) uses N=2-shaped dummies.
       bcd = Dummy.baseCaseDummies { maxProofsVerified: slotN }
       dummySgs = Dummy.computeDummySgValues bcd cfg.srs.pallasSrs cfg.srs.vestaSrs
-      wrapSgD = dummySgs.ipa.wrap.sg -- AffinePoint StepField
       stepSgD = dummySgs.ipa.step.sg -- AffinePoint WrapField
 
       { head: PerProofUnfinalized headUnfRaw, tail: tailUnfinalized } =
@@ -1237,16 +1224,6 @@ instance
       slotData = case headSlot of
         BasePrev _ ->
           let
-            baseCaseDummyChalPoly =
-              { sg: wrapSgD, challenges: dummyIpaChallenges.wrapExpanded }
-            toFFI r =
-              { sgX: r.sg.x, sgY: r.sg.y, challenges: Vector.toUnfoldable r.challenges }
-            dummyWrapOracles =
-              ProofFFI.vestaProofOracles slotWrapVK
-                { proof: dummyWrapProof bcd
-                , publicInput: headBaseCaseWrapPI
-                , prevChallenges: map toFFI [ baseCaseDummyChalPoly, baseCaseDummyChalPoly ]
-                }
             -- `dummyWrapProof` is a WRAP proof: its publicEvals chunk
             -- count is Dim 2 (`wrapVkChunks`), protocol-pinned to 1
             -- (wrap domain ≤ wrap SRS — same invariant as
@@ -1255,8 +1232,30 @@ instance
             -- the proof there is exactly one), and the FFI boundary
             -- fails loud if it is ever violated. Not an n=1 shortcut —
             -- unreachable otherwise. See chunk taxonomy in Pickles.Types.
+            -- The dummy wrap proof's public eval = the oracle's recomputed
+            -- x_hat (OCaml `wrap.ml:110-116` `None` branch), NOT
+            -- `proofData(dummy).evals.public` — the dummy wire proof carries
+            -- `evals.public = None`, which decodes to a placeholder. Run the
+            -- oracle on the dummy with its wrap PI + base-case dummy
+            -- prev-challenges (the same inputs the step finalize uses);
+            -- mirrors the InductivePrev oracle below.
             dummyWrapXhat =
-              Vector.head (ProofFFI.publicEvalsChunked @1 dummyWrapOracles)
+              ( ProofFFI.proofOraclesRec slotWrapVK
+                  { proof: dummyWrapProof bcd
+                  , publicInput: headBaseCaseWrapPI
+                  , prevChallenges:
+                      Vector.toUnfoldable
+                        ( Vector.replicate @PaddedLength
+                            { sgX: (dummySgs.ipa.wrap.sg).x
+                            , sgY: (dummySgs.ipa.wrap.sg).y
+                            , challenges:
+                                ( Vector.toUnfoldable dummyIpaChallenges.wrapExpanded
+                                    :: Array WrapField
+                                )
+                            }
+                        )
+                  }
+              ).publicEvals
             de = bcd.dummyEvals
             pe = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
             headPrevEvals = StepAllEvals
@@ -1326,7 +1325,7 @@ instance
                         wd.msgWrapChallengesPadded
 
                     prevWrapOracles =
-                      ProofFFI.vestaProofOracles slotWrapVK
+                      ProofFFI.proofOraclesRec slotWrapVK
                         { proof: prev.wrapProof
                         , publicInput: prevWrapPI
                         , prevChallenges: prevWrapKimchiPrevChals
@@ -1338,22 +1337,23 @@ instance
                       , zeta: prevWrapOracles.zeta
                       , zetaOmega: prevWrapOracles.zeta * domainGenerator slotWrapDomainLog2
                       }
+                    prevWrapData = proofData prev.wrapProof
                     prevHeadPrevEvals = StepAllEvals
                       { ftEval1: F prevWrapOracles.ftEval1
                       , publicEvals:
                           let
-                            pew = prevWrapCollapse prevWrapOracles.publicEvals
+                            pew = prevWrapOracles.publicEvals
                           in
                             PointEval { zeta: F pew.zeta, omegaTimesZeta: F pew.omegaTimesZeta }
-                      , zEvals: peWF (prevWrapCollapse (ProofFFI.proofZEvals prev.wrapProof))
+                      , zEvals: peWF (prevWrapCollapse prevWrapData.evals.z)
                       , witnessEvals:
-                          map (peWF <<< prevWrapCollapse) (ProofFFI.proofWitnessEvals prev.wrapProof)
+                          map (peWF <<< prevWrapCollapse) prevWrapData.evals.w
                       , coeffEvals:
-                          map (peWF <<< prevWrapCollapse) (ProofFFI.proofCoefficientEvals prev.wrapProof)
+                          map (peWF <<< prevWrapCollapse) prevWrapData.evals.coefficients
                       , sigmaEvals:
-                          map (peWF <<< prevWrapCollapse) (ProofFFI.proofSigmaEvals prev.wrapProof)
+                          map (peWF <<< prevWrapCollapse) prevWrapData.evals.s
                       , indexEvals:
-                          map (peWF <<< prevWrapCollapse) (ProofFFI.proofIndexEvals prev.wrapProof)
+                          map (peWF <<< prevWrapCollapse) prevWrapData.evals.indexEvals
                       }
 
                     -- Take the slot's `Vector n` view by dropping the
@@ -1500,7 +1500,7 @@ instance
         mkConstLagrangeBaseLookup \i ->
           let
             chunksArr =
-              ProofFFI.vestaSrsLagrangeCommitmentChunksAt cfg.srs.pallasSrs slotWrapDomainLog2 i
+              ProofFFI.srsLagrangeCommitmentChunksAt cfg.srs.pallasSrs slotWrapDomainLog2 i
           in
             case Vector.toVector (map coerce chunksArr) of
               Just v -> v
@@ -1522,7 +1522,7 @@ instance
       sideloadedPerDomainLagrangeAts = map
         ( \log2 i ->
             let
-              chunksArr = ProofFFI.vestaSrsLagrangeCommitmentChunksAt
+              chunksArr = ProofFFI.srsLagrangeCommitmentChunksAt
                 cfg.srs.pallasSrs
                 log2
                 i
@@ -1548,7 +1548,7 @@ instance
               { perSlotLagrangeAt:
                   slotLagrange :< restShape.stepProveCtx.srsData.perSlotLagrangeAt
               , blindingH:
-                  coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs
+                  coerce (ProofFFI.srsBlindingGenerator cfg.srs.pallasSrs :: AffinePoint StepField)
               , perSlotFopDomainLog2s:
                   -- Side-loaded slots have no compile-time step domain;
                   -- placeholder fills the vector shape (real dispatch
@@ -1870,7 +1870,6 @@ instance
 
       bcd = Dummy.baseCaseDummies { maxProofsVerified: slotMpvMax }
       dummySgs = Dummy.computeDummySgValues bcd cfg.srs.pallasSrs cfg.srs.vestaSrs
-      wrapSgD = dummySgs.ipa.wrap.sg
       stepSgD = dummySgs.ipa.step.sg
 
       { head: PerProofUnfinalized headUnfRaw, tail: tailUnfinalized } =
@@ -1926,16 +1925,6 @@ instance
       slotData = case headSlot of
         BasePrev _ ->
           let
-            baseCaseDummyChalPoly =
-              { sg: wrapSgD, challenges: dummyIpaChallenges.wrapExpanded }
-            toFFI r =
-              { sgX: r.sg.x, sgY: r.sg.y, challenges: Vector.toUnfoldable r.challenges }
-            dummyWrapOracles =
-              ProofFFI.vestaProofOracles slotWrapVK
-                { proof: dummyWrapProof bcd
-                , publicInput: headBaseCaseWrapPI
-                , prevChallenges: map toFFI [ baseCaseDummyChalPoly, baseCaseDummyChalPoly ]
-                }
             -- `dummyWrapProof` is a WRAP proof: its publicEvals chunk
             -- count is Dim 2 (`wrapVkChunks`), protocol-pinned to 1
             -- (wrap domain ≤ wrap SRS — same invariant as
@@ -1944,8 +1933,30 @@ instance
             -- the proof there is exactly one), and the FFI boundary
             -- fails loud if it is ever violated. Not an n=1 shortcut —
             -- unreachable otherwise. See chunk taxonomy in Pickles.Types.
+            -- The dummy wrap proof's public eval = the oracle's recomputed
+            -- x_hat (OCaml `wrap.ml:110-116` `None` branch), NOT
+            -- `proofData(dummy).evals.public` — the dummy wire proof carries
+            -- `evals.public = None`, which decodes to a placeholder. Run the
+            -- oracle on the dummy with its wrap PI + base-case dummy
+            -- prev-challenges (the same inputs the step finalize uses);
+            -- mirrors the InductivePrev oracle below.
             dummyWrapXhat =
-              Vector.head (ProofFFI.publicEvalsChunked @1 dummyWrapOracles)
+              ( ProofFFI.proofOraclesRec slotWrapVK
+                  { proof: dummyWrapProof bcd
+                  , publicInput: headBaseCaseWrapPI
+                  , prevChallenges:
+                      Vector.toUnfoldable
+                        ( Vector.replicate @PaddedLength
+                            { sgX: (dummySgs.ipa.wrap.sg).x
+                            , sgY: (dummySgs.ipa.wrap.sg).y
+                            , challenges:
+                                ( Vector.toUnfoldable dummyIpaChallenges.wrapExpanded
+                                    :: Array WrapField
+                                )
+                            }
+                        )
+                  }
+              ).publicEvals
             de = bcd.dummyEvals
             pe = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
             headPrevEvals = StepAllEvals
@@ -2004,7 +2015,7 @@ instance
                         wd.msgWrapChallengesPadded
 
                     prevWrapOracles =
-                      ProofFFI.vestaProofOracles slotWrapVK
+                      ProofFFI.proofOraclesRec slotWrapVK
                         { proof: prev.wrapProof
                         , publicInput: prevWrapPI
                         , prevChallenges: prevWrapKimchiPrevChals
@@ -2016,22 +2027,23 @@ instance
                       , zeta: prevWrapOracles.zeta
                       , zetaOmega: prevWrapOracles.zeta * domainGenerator slotWrapDomainLog2
                       }
+                    prevWrapData = proofData prev.wrapProof
                     prevHeadPrevEvals = StepAllEvals
                       { ftEval1: F prevWrapOracles.ftEval1
                       , publicEvals:
                           let
-                            pew = prevWrapCollapse prevWrapOracles.publicEvals
+                            pew = prevWrapOracles.publicEvals
                           in
                             PointEval { zeta: F pew.zeta, omegaTimesZeta: F pew.omegaTimesZeta }
-                      , zEvals: peWF (prevWrapCollapse (ProofFFI.proofZEvals prev.wrapProof))
+                      , zEvals: peWF (prevWrapCollapse prevWrapData.evals.z)
                       , witnessEvals:
-                          map (peWF <<< prevWrapCollapse) (ProofFFI.proofWitnessEvals prev.wrapProof)
+                          map (peWF <<< prevWrapCollapse) prevWrapData.evals.w
                       , coeffEvals:
-                          map (peWF <<< prevWrapCollapse) (ProofFFI.proofCoefficientEvals prev.wrapProof)
+                          map (peWF <<< prevWrapCollapse) prevWrapData.evals.coefficients
                       , sigmaEvals:
-                          map (peWF <<< prevWrapCollapse) (ProofFFI.proofSigmaEvals prev.wrapProof)
+                          map (peWF <<< prevWrapCollapse) prevWrapData.evals.s
                       , indexEvals:
-                          map (peWF <<< prevWrapCollapse) (ProofFFI.proofIndexEvals prev.wrapProof)
+                          map (peWF <<< prevWrapCollapse) prevWrapData.evals.indexEvals
                       }
 
                     headSlotPrevWrapBpChalsVec
@@ -2331,7 +2343,7 @@ class
   -- |   * `mpv` — reflected from the rule's type-level mpv (each Cons
   -- |     instance has `Reflectable ruleMpv Int`).
   -- |   * `stepDomainLog2` — extracted from the proverIndex via
-  -- |     `pallasProverIndexDomainLog2`.
+  -- |     `proverIndexDomainLog2`.
   -- |   * `stepVK` — the StepCompileResult's `verifierIndex` field.
   -- |
   -- | The Tuple → Vector accumulation is via `Vector.cons`. Each Cons
@@ -2502,7 +2514,7 @@ instance
     let
       headRecord =
         { mpv: reflectType (Proxy :: Proxy ruleMpv)
-        , stepDomainLog2: pallasProverIndexDomainLog2 headResult.proverIndex
+        , stepDomainLog2: proverIndexDomainLog2 headResult.proverIndex
         , stepVK: headResult.verifierIndex
         }
       restVec = buildWrapPerBranchVec
@@ -3630,7 +3642,7 @@ runMultiProverBody
         proveData.prevSgs
         proveData.prevStepChallenges
 
-    stepOracles = pallasProofOracles stepCR.verifierIndex
+    stepOracles = proofOraclesRec stepCR.verifierIndex
       { proof: stepResult.proof
       , publicInput: stepResult.publicInputs
       , prevChallenges: stepOraclesPrevChals
@@ -3639,14 +3651,23 @@ runMultiProverBody
     -- Chunked step-proof evaluations: one `PointEval` per polynomial
     -- per chunk. Wrap prover consumes this directly via the chunked
     -- CIP / chunked sponge replay.
+    stepProofData = proofData stepResult.proof
     chunkedAllEvals =
       { ftEval1: stepOracles.ftEval1
-      , publicEvals: stepOracles.publicEvals
-      , zEvals: proofZEvals stepResult.proof
-      , witnessEvals: proofWitnessEvals stepResult.proof
-      , coeffEvals: proofCoefficientEvals stepResult.proof
-      , sigmaEvals: proofSigmaEvals stepResult.proof
-      , indexEvals: proofIndexEvals stepResult.proof
+      -- Public eval from the proof's own `evals.public`. The kimchi prover
+      -- always populates it (`prover.rs:996`, chunked via
+      -- `to_chunked_polynomial num_chunks`), and the chunked verifier
+      -- *requires* `Some` (`verifier.rs:334` errors otherwise). This carries
+      -- the full `nc` chunks (= OCaml `wrap.ml:111` `proof.public_evals`).
+      -- The oracle binding (`oracles.rs:113`) collapses to chunk-0 only, so
+      -- using `stepOracles.publicEvals` silently dropped the higher chunks
+      -- and broke the chunked CIP fold (`ft_eval0.pEval0Folded`).
+      , publicEvals: stepProofData.evals.public
+      , zEvals: stepProofData.evals.z
+      , witnessEvals: stepProofData.evals.w
+      , coeffEvals: stepProofData.evals.coefficients
+      , sigmaEvals: stepProofData.evals.s
+      , indexEvals: stepProofData.evals.indexEvals
       }
 
     -- Collapsed (Horner-combined) view of `chunkedAllEvals`, kept on
@@ -3675,7 +3696,7 @@ runMultiProverBody
       , verifierIndex: stepCR.verifierIndex
       , publicInput: stepResult.publicInputs
       , chunkedAllEvals
-      , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepOracles.publicEvals)
+      , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepProofData.evals.public)
       , domainLog2: selfStepDomainLog2
       , zkRows: selfZkRows
       , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
@@ -3710,7 +3731,7 @@ runMultiProverBody
       in
         f
 
-    stepProofSg = pallasProofOpeningSg stepResult.proof
+    stepProofSg = (proofData stepResult.proof).opening.sg
 
     dummyWrapExpanded = dummyIpaChallenges.wrapExpanded
 
@@ -3819,7 +3840,9 @@ runMultiProverBody
     , spongeDigestBeforeEvaluations: wrapDv.spongeDigestBeforeEvaluations
     , prevEvals: allEvals
     , prevEvalsChunked: chunkedAllEvals
-    , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepOracles.publicEvals)
+    -- Full `nc`-chunk public eval from the proof (see `chunkedAllEvals`
+    -- note above); recursive consumers read this via `prev.pEval0Chunks`.
+    , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepProofData.evals.public)
     , challengePolynomialCommitment: stepProofSg
     , messagesForNextStepProofDigest: msgStep
     , messagesForNextWrapProofDigest: msgWrap

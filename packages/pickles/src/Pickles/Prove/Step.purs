@@ -60,7 +60,6 @@ import Control.Monad.State as State
 import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
 import Data.Array as Array
-import Data.Array.NonEmpty as NonEmptyArray
 import Data.Either (Either(..))
 import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
@@ -94,7 +93,7 @@ import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.ProofCache (ProofCache, getStepProof, setStepProof)
-import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, tCommChunked, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallenges, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaVerifierIndexCommitments, vestaVerifierIndexDigest, wCommChunked, zCommChunked)
+import Pickles.Prove.FFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofData, proofOpeningPrechallenges, proofOraclesRec, vestaProofCommitments)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
@@ -111,7 +110,7 @@ import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, 
 import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
 import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
-import Pickles.VerificationKey (StepVK, VerificationKey(..))
+import Pickles.VerificationKey (StepVK, VerificationKey(..), vestaVerifierIndexCommitments)
 import Pickles.Verify.Types (BranchData) as VT
 import Pickles.Verify.Types (UnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
@@ -121,9 +120,8 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled, constraintsToArray)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
-import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, verifyProverIndex)
-import Snarky.Backend.Kimchi.Impl.Vesta (vestaConstraintSystemToJson)
-import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, ProverIndex, VerifierIndex)
+import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, gatesToJson)
+import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
 import Snarky.Backend.Prover (emptyProverState)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
 import Snarky.Circuit.CVar as CVar
@@ -135,7 +133,7 @@ import Snarky.Circuit.Types (class CircuitType, valueToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
-import Snarky.Curves.Class (EndoBase(..), EndoScalar(..), endoBase, endoScalar)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar)
 import Snarky.Curves.Class (fromInt, generator, toAffine) as Curves
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
@@ -861,7 +859,7 @@ type BuildSlotAdviceInput inputVal stmt =
   -- | Base case: both slots are `dummyIpaChallenges.wrapExpanded` (since
   -- | the dummy wrap proof has dummy bp chals).
   -- | Inductive: slot 0 = dummy (padding), slot 1 = the REAL wrap proof's
-  -- | new bp chals obtained via `vestaProofOpeningPrechallenges` expanded
+  -- | new bp chals obtained via `proofOpeningPrechallenges` expanded
   -- | via Pallas.endo_scalar.
   -- |
   -- | Used by `expandProof` for (a) computing the wrap CIP (CIP batch
@@ -999,7 +997,7 @@ type SlotAdviceContrib n slotVkChunks =
 -- prev list to assemble the multi-slot `StepAdvice`, mirroring OCaml's
 -- `go` recursion at `step.ml:736-770`.
 --
--- Runs `vestaProofOracles` on the caller-supplied wrap proof + public
+-- Runs `proofOraclesRec` on the caller-supplied wrap proof + public
 -- input, feeds the result through `expandProof`, and packs the
 -- resulting per-slot data into the `StepSlot n` record + scalar
 -- companion fields. No multi-slot wrapping is introduced — the
@@ -1068,13 +1066,14 @@ buildSlotAdvice input = do
   let
     toFFIChalPoly r = { sgX: r.sg.x, sgY: r.sg.y, challenges: Vector.toUnfoldable r.challenges }
 
-    oracles = vestaProofOracles input.wrapVK
+    oracles = proofOraclesRec input.wrapVK
       { proof: input.wrapProof
       , publicInput: input.wrapPublicInput
       , prevChallenges: map toFFIChalPoly (Vector.toUnfoldable input.prevChalPolys)
       }
 
-  Trace.field "expand_proof.wrap_vk_digest" (vestaVerifierIndexDigest input.wrapVK)
+  -- (`expand_proof.wrap_vk_digest` removed in slice 3.5 — OCaml never
+  -- materializes a host-side VK digest; the cache now keys by full-VK JSON.)
   Trace.field "expand_proof.oracles.beta" (SizedF.toField oracles.beta)
   Trace.field "expand_proof.oracles.gamma" (SizedF.toField oracles.gamma)
   Trace.field "expand_proof.oracles.alpha_chal" (SizedF.toField oracles.alphaChal)
@@ -1084,10 +1083,15 @@ buildSlotAdvice input = do
   Trace.field "expand_proof.plonk0.gamma" (SizedF.toField (SizedF.wrapF input.wrapPlonkRaw.gamma :: SizedF 128 (F StepField)))
   Trace.field "expand_proof.plonk0.zeta.raw" (SizedF.toField (SizedF.wrapF input.wrapPlonkRaw.zeta :: SizedF 128 (F StepField)))
   Trace.field "expand_proof.oracles.fq_digest" oracles.fqDigest
-  Trace.field "expand_proof.oracles.cip_kimchi" oracles.combinedInnerProduct
+  -- `oracles.combinedInnerProduct` Trace dropped in Phase D kimchi-napi
+  -- migration: `NapiOracles` doesn't expose CIP (kimchi computes it
+  -- internally but the wrapper only returns RandomOracles + p_eval0/1 +
+  -- digest + opening_prechallenges). Pickles' PS-side CIP is computed
+  -- via `Pickles.PlonkChecks.combinedInnerProductBatchChunked` (Trace.field
+  -- on that side covers the production-path value).
 
   let
-    rawPrechalsForTrace = vestaProofOpeningPrechallenges input.wrapVK
+    rawPrechalsForTrace = proofOpeningPrechallenges input.wrapVK
       { proof: input.wrapProof
       , publicInput: input.wrapPublicInput
       , prevChallenges: map toFFIChalPoly (Vector.toUnfoldable input.prevChalPolys)
@@ -1133,14 +1137,22 @@ buildSlotAdvice input = do
     wrapCollapse = Chunks.collapsePointEval
       { rounds: wrapSrsLog2, zeta: oracles.zeta, zetaOmega: wrapZetaw }
 
+    wrapProofData' = proofData input.wrapProof
     wrapAllEvals =
       { ftEval1: oracles.ftEval1
-      , publicEvals: wrapCollapse oracles.publicEvals
-      , zEvals: wrapCollapse (proofZEvals input.wrapProof)
-      , witnessEvals: map wrapCollapse (proofWitnessEvals input.wrapProof)
-      , coeffEvals: map wrapCollapse (proofCoefficientEvals input.wrapProof)
-      , sigmaEvals: map wrapCollapse (proofSigmaEvals input.wrapProof)
-      , indexEvals: map wrapCollapse (proofIndexEvals input.wrapProof)
+      -- OCaml `wrap.ml:110-116`: `x_hat = match proof.public_evals with
+      -- Some x -> x | None -> O.(p_eval_1 o, p_eval_2 o)`. The oracle's
+      -- `publicEvals` already encodes exactly that fold (kimchi
+      -- `verifier.rs:332`), so it is correct for BOTH a real wrap proof
+      -- (== its stored `evals.public`) and the dummy (whose wire
+      -- `evals.public` is `None` → recomputed). Sourcing it from the oracle
+      -- (not `proofData.evals.public`) is the dummy-base-case fix.
+      , publicEvals: oracles.publicEvals
+      , zEvals: wrapCollapse wrapProofData'.evals.z
+      , witnessEvals: map wrapCollapse wrapProofData'.evals.w
+      , coeffEvals: map wrapCollapse wrapProofData'.evals.coefficients
+      , sigmaEvals: map wrapCollapse wrapProofData'.evals.s
+      , indexEvals: map wrapCollapse wrapProofData'.evals.indexEvals
       }
 
     wrapShifts = domainShifts input.wrapDomainLog2
@@ -1194,7 +1206,9 @@ buildSlotAdvice input = do
       , wrapDomainLog2: input.wrapDomainLog2
       , wrapEndo: wrapEndoScalar
       , wrapAllEvals
-      , wrapPEval0Chunks: map _.zeta (NonEmptyArray.toArray oracles.publicEvals)
+      -- Single-chunk public eval (the public-input poly has degree < domain),
+      -- sourced from the oracle's recomputed `x_hat` (see `wrapAllEvals`).
+      , wrapPEval0Chunks: [ oracles.publicEvals.zeta ]
       , wrapShifts
       , wrapZkRows: input.wrapZkRows
       , wrapSrsLengthLog2: reflectType (Proxy :: Proxy WrapIPARounds)
@@ -1293,27 +1307,29 @@ buildSlotAdvice input = do
     mkPt :: AffinePoint StepField -> AffinePoint (F StepField)
     mkPt pt = { x: F pt.x, y: F pt.y }
 
-    openingDelta = mkPt (vestaProofOpeningDelta input.wrapProof)
+    wrapProofData = proofData input.wrapProof
+
+    openingDelta = mkPt wrapProofData.opening.delta
 
     openingLr = map (\p -> { l: mkPt p.l, r: mkPt p.r })
-      (vestaProofOpeningLrVec input.wrapProof)
+      wrapProofData.opening.lr
 
-    openingZ1Raw = vestaProofOpeningZ1 input.wrapProof
+    openingZ1Raw = wrapProofData.opening.z1
 
-    openingZ2Raw = vestaProofOpeningZ2 input.wrapProof
+    openingZ2Raw = wrapProofData.opening.z2
 
     z1 = toShifted (F openingZ1Raw)
 
     z2 = toShifted (F openingZ2Raw)
 
-    wrapCommits = vestaProofCommitments input.wrapProof
+    wrapCommits = vestaProofCommitments @slotVkChunks input.wrapProof
 
     mkPallasAffine :: AffinePoint StepField -> AffinePoint (F StepField)
     mkPallasAffine pt = { x: F pt.x, y: F pt.y }
     wrapMessages =
-      { wComm: map (over ChunkedCommitment (map mkPallasAffine)) (wCommChunked @slotVkChunks wrapCommits)
-      , zComm: over ChunkedCommitment (map mkPallasAffine) (zCommChunked @slotVkChunks wrapCommits)
-      , tComm: map (over ChunkedCommitment (map mkPallasAffine)) (tCommChunked @slotVkChunks wrapCommits)
+      { wComm: map (over ChunkedCommitment (map mkPallasAffine)) wrapCommits.wComm
+      , zComm: over ChunkedCommitment (map mkPallasAffine) wrapCommits.zComm
+      , tComm: map (over ChunkedCommitment (map mkPallasAffine)) wrapCommits.tComm
       }
 
     wrapPE' :: LFFI.PointEval StepField -> LFFI.PointEval (F StepField)
@@ -1521,7 +1537,8 @@ type StepProveContext wrapVkChunks len nd blueprints =
 type StepCompileResult =
   { proverIndex :: ProverIndex VestaG StepField
   , verifierIndex :: VerifierIndex VestaG StepField
-  , constraintSystem :: ConstraintSystem StepField
+  , gates :: Array (Gate StepField)
+  , publicInputSize :: Int
   , builtState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField)
   , constraints :: Array (KimchiRow StepField)
   }
@@ -1532,7 +1549,6 @@ type StepCompileResult =
 type StepProveResult (outputSize :: Int) =
   { proverIndex :: ProverIndex VestaG StepField
   , verifierIndex :: VerifierIndex VestaG StepField
-  , constraintSystem :: ConstraintSystem StepField
   , witness :: Vector 15 (Array StepField)
   , publicInputs :: Array StepField
   , publicOutputs :: Vector outputSize (F StepField)
@@ -1988,20 +2004,29 @@ stepCompile ctx rule = do
   let
     kimchiRows :: Array (KimchiRow StepField)
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
-    { constraintSystem, constraints } = makeConstraintSystemWithPrevChallenges @StepField
+    csResult = makeConstraintSystemWithPrevChallenges @StepField
       { constraints: kimchiRows
       , publicInputs: builtState.publicInputs
       , unionFind: (un AuxState builtState.aux).wireState.unionFind
       , prevChallengesCount: reflectType (Proxy @len)
       , maxPolySize: crsSize ctx.crs
       }
+    { gates, publicInputSize, constraints } = csResult
 
-    endo =
-      let EndoBase e = (endoBase) in e
-
+    -- `cs.endo` is no longer threaded through the PS signature: the JS
+    -- impl of `createProverIndex` fetches the step curve's endo_base
+    -- (= Pallas.endo_base = Step_inner_curve.base) from the napi layer.
+    -- See `MEMORY.md` "Endo Coefficients" + commit `20674463` for the
+    -- historical rationale (was dormant until SimpleChain N1 hit
+    -- `Bad endo equation 7`).
     proverIndex =
       createProverIndex @StepField @VestaG
-        { endo, constraintSystem, crs: ctx.crs }
+        { gates
+        , publicInputSize
+        , prevChallengesCount: csResult.prevChallengesCount
+        , maxPolySize: csResult.maxPolySize
+        , crs: ctx.crs
+        }
 
     verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
 
@@ -2029,12 +2054,13 @@ stepCompile ctx rule = do
     Just pathTmpl -> do
       counter <- bumpStepCsCounter
       let path = String.replaceAll (Pattern "%c") (Replacement (show counter)) pathTmpl
-      FS.writeTextFile UTF8 path (vestaConstraintSystemToJson constraintSystem)
+      FS.writeTextFile UTF8 path (gatesToJson gates publicInputSize)
 
   pure
     { proverIndex
     , verifierIndex
-    , constraintSystem
+    , gates
+    , publicInputSize
     , builtState
     , constraints
     }
@@ -2332,15 +2358,11 @@ stepSolveAndProve ctx rule compileResult advice = do
           }
       when ctx.debug do
         let
-          csSatisfied = verifyProverIndex @StepField @VestaG
-            { proverIndex: compileResult.proverIndex, witness, publicInputs }
-        when (not csSatisfied) do
-          let
-            _ = unsafePerformEffect $
-              dumpRowLabels
-                (Array.length compileResult.builtState.publicInputs)
-                (constraintsToArray compileResult.builtState.constraints)
-          throwError (FailedAssertion "stepProve: constraint system not satisfied (wrote row→label map to /tmp/ps_step_row_labels.txt)")
+          _ = unsafePerformEffect $
+            dumpRowLabels
+              (Array.length compileResult.builtState.publicInputs)
+              (constraintsToArray compileResult.builtState.constraints)
+        pure unit
       -- Evaluate the rule's user `publicOutput` FVars (captured by
       -- `setUserPublicOutputFields` in the StepProverT State) against
       -- the post-solve assignments map. If the State slot is empty,
@@ -2394,7 +2416,6 @@ stepSolveAndProve ctx rule compileResult advice = do
       pure
         { proverIndex: compileResult.proverIndex
         , verifierIndex: compileResult.verifierIndex
-        , constraintSystem: compileResult.constraintSystem
         , witness
         , publicInputs
         , publicOutputs

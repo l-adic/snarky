@@ -5,7 +5,6 @@
 module RandomOracle
   ( State
   , hash
-  , hashWithInit
   , update
   , digest
   , initialState
@@ -80,7 +79,3 @@ digest st = Vector.index st (unsafeFinite 0)
 -- | Hash an array of field elements with default initial state
 hash :: forall f. PoseidonField f => Array f -> Digest f
 hash inputs = digest (update initialState inputs)
-
--- | Hash an array of field elements with custom initial state
-hashWithInit :: forall f. PoseidonField f => State f -> Array f -> Digest f
-hashWithInit init inputs = digest (update init inputs)

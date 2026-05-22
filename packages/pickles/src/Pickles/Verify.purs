@@ -55,7 +55,6 @@ module Pickles.Verify
   , mkSomeCompiledProofWidthData
   , Verifier
   , mkVerifier
-  , verifyOne
   , verify
   , wrapPublicInput
   , wrapPublicInputOf
@@ -74,7 +73,7 @@ import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals, ChunkedAllEvals)
-import Pickles.ProofFFI (Proof, permutationVanishingPolynomial, verifyOpeningProofsBatch)
+import Pickles.Prove.FFI (Proof, permutationVanishingPolynomial, verifyOpeningProofsBatch)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput, assembleWrapMainInput)
 import Pickles.Types (PaddedLength, StepIPARounds, WrapIPARounds)
@@ -102,7 +101,7 @@ type Verifier =
   , vestaSrs :: CRS VestaG
   -- | Step domain log2 (= `stepProverIndex.domain.log_size_of_group`).
   -- | Per-compiled-circuit — varies depending on constraint count;
-  -- | read via `pallasProverIndexDomainLog2` at `mkVerifier` time.
+  -- | read via `proverIndexDomainLog2` at `mkVerifier` time.
   , stepDomainLog2 :: Int
   -- | Kimchi `zkRows` (`Pickles.Constants.zkRows`).
   , stepZkRows :: Int
@@ -391,15 +390,6 @@ perProof verifier (CompiledProof p) =
     { accumulatorOk
     , ctx: { proof: p.wrapProof, publicInput: pi }
     }
-
--- | Verify one proof. (= `verify` on a singleton — stage 3 becomes a
--- | 1-element `batch_verify`, exactly what kimchi did before.)
-verifyOne
-  :: forall mpv stmtVal outputVal
-   . Verifier
-  -> CompiledProof mpv stmtVal outputVal
-  -> Boolean
-verifyOne v p = verify v [ p ]
 
 -- | Verify an array of compiled proofs (all of the same tag).
 -- |

@@ -1,0 +1,7 @@
+{
+  "name": "snarky-curves",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Curve / field FFI bindings used by the PureScript snarky library. The .js files here are ES modules (matching the `export ...` syntax already in use); the `type: module` declaration lets Node load them directly."
+}

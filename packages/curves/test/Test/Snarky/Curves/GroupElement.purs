@@ -10,7 +10,6 @@ import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Console (log)
 import JS.BigInt as BigInt
-import Snarky.Curves.BN254 as BN254
 import Snarky.Curves.Class (class FrModule, class WeierstrassCurve, curveParams, fromBigInt, inverse, scalarMul, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -133,13 +132,6 @@ spec = describe "Elliptic Curve" do
       let five = fromBigInt (BigInt.fromInt 5) :: Pallas.BaseField
       (curveParams (Proxy @Pallas.G)).b `shouldEqual` five
 
-    it "BN254 coefficient A should be 1" do
-      (curveParams (Proxy @BN254.G)).a `shouldEqual` (zero :: BN254.BaseField)
-
-    it "BN254 coefficient B should be 3" do
-      let three = fromBigInt (BigInt.fromInt 3) :: BN254.BaseField
-      (curveParams (Proxy @BN254.G)).b `shouldEqual` three
-
   describe "Fr Module" do
     it "Vesta" $ liftEffect $ checkLaws "" do
       frModuleLaws (Proxy @Vesta.ScalarField) (Proxy @Vesta.G)
@@ -147,15 +139,9 @@ spec = describe "Elliptic Curve" do
     it "Pallas" $ liftEffect $ checkLaws "" do
       frModuleLaws (Proxy @Pallas.ScalarField) (Proxy @Pallas.G)
 
-    it "BN254" $ liftEffect $ checkLaws "" do
-      frModuleLaws (Proxy @BN254.ScalarField) (Proxy @BN254.G)
-
   describe "toAffine" do
     it "Vesta" $ liftEffect do
       toAffineLaws (Proxy @Vesta.BaseField) (Proxy @Vesta.G)
 
     it "Pallas" $ liftEffect do
       toAffineLaws (Proxy @Pallas.BaseField) (Proxy @Pallas.G)
-
-    it "BN254" $ liftEffect do
-      toAffineLaws (Proxy @BN254.BaseField) (Proxy @BN254.G)

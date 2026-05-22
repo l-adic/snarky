@@ -12,29 +12,43 @@
 -- | of truth on the OCaml side is yojson (Pickles' hand-written
 -- | shape), which encodes the same data as Rust serde but differs
 -- | structurally.
+-- |
+-- | DEFERRED — see `VerifyNrrSpec` for the full explanation. The body
+-- | below is preserved verbatim; restore by swapping `pending` for
+-- | `it "<name>" _roundTripNrrBody` once the slice 3.5 sideload-serde
+-- | port lands.
 module Test.Pickles.Sideload.RoundTripNrrSpec
   ( spec
+  -- Preserved test body; restore by swapping `pending` for
+  -- `it "<name>" _roundTripNrrBody` once the deferred work lands.
+  , _roundTripNrrBody
   ) where
 
 import Prelude
 
+import Colog (LoggerT, Message)
 import Effect.Aff (Aff)
+import Effect.Aff.Class (liftAff)
 import Pickles (StepField)
 import Pickles.Sideload (vestaVerifierIndexToSerdeJson)
 import Snarky.Curves.Class (fromInt)
+import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Pickles.Sideload.Loader (OcamlProof(..), loadNrrFixture)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
-spec :: SpecT Aff Unit Aff Unit
+spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Sideload.NRR roundtrip" do
-  it "loads + parses + round-trips VK byte-identical" \_ -> do
-    fixture <- loadNrrFixture "packages/pickles/test/fixtures/sideload/nrr"
-    -- VK byte-identity round-trip: re-serialize the loaded handle and check
-    -- it matches the original on-disk JSON.
-    let
-      reSerializedVk = vestaVerifierIndexToSerdeJson fixture.vk
-      OcamlProof p = fixture.ocamlProof
-    reSerializedVk `shouldEqual` fixture.vkJson
-    -- NRR's public_output is hard-coded to `StepField.zero`.
-    p.statement `shouldEqual` (fromInt 0 :: StepField)
+  it "loads + parses + round-trips VK byte-identical" (liftAff <<< _roundTripNrrBody)
+
+_roundTripNrrBody :: SharedSrs -> Aff Unit
+_roundTripNrrBody { pallasSrs, vestaSrs } = do
+  fixture <- loadNrrFixture { pallasSrs, vestaSrs } "packages/pickles/test/fixtures/sideload/nrr"
+  -- VK byte-identity round-trip: re-serialize the loaded handle and check
+  -- it matches the original on-disk JSON.
+  let
+    reSerializedVk = vestaVerifierIndexToSerdeJson fixture.vk
+    OcamlProof p = fixture.ocamlProof
+  reSerializedVk `shouldEqual` fixture.vkJson
+  -- NRR's public_output is hard-coded to `StepField.zero`.
+  p.statement `shouldEqual` (fromInt 0 :: StepField)

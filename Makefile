@@ -1,4 +1,4 @@
-.PHONY: help all clean build-crypto test-curves test-snarky test-bulletproofs test-groth16 test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint build-ps gen-linearization dep-graph pickles-inventory
+.PHONY: help all clean build-napi test-curves test-snarky test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint build-ps gen-linearization dep-graph pickles-inventory
 
 .DEFAULT_GOAL := help
 
@@ -16,63 +16,58 @@ help: ## Show available commands and their descriptions
 	@echo "Snarky PureScript Zero-Knowledge Circuit Library"
 	@echo "==============================================="
 	@echo ""
-	@echo "Unified Crypto Provider:"
-	@echo "  Single crypto-provider crate provides all curve operations,"
-	@echo "  bulletproofs proving, and groth16 proving functionality."
-	@echo ""
-	@echo "Pasta Curves: Uses mina-curves from proof-systems (kimchi ecosystem)"
+	@echo "Native crypto backend: kimchi-napi (upstream proof-systems via"
+	@echo "napi-rs). Field/curve/Poseidon primitives live in pasta-runtime"
+	@echo "(vendored from o1js). The legacy `snarky-crypto` (crypto-provider)"
+	@echo "shim is gone; nothing in production routes through Rust except"
+	@echo "the kimchi-napi prove/verify path."
 	@echo ""
 	@echo "Available commands:"
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
 
-all: cargo-build build-crypto ## Build everything
+all: cargo-build build-napi ## Build everything
 
-# Unified crypto provider build
-build-crypto: ## Build unified crypto-provider
-	@echo "Building crypto-provider with mina-curves backend"
-	cd packages/crypto-provider && npm run build
+# kimchi-napi rebuild (the only Rust-backed npm workspace package after
+# the snarky-crypto cleanup).
+build-napi: ## Build kimchi-napi native binding
+	@echo "Building kimchi-napi"
+	cd packages/kimchi-napi && npm run build
 	npm install
 
-build-ps: ## Build ass the purescript packages
+build-ps: ## Build all the purescript packages
 	@echo "building PS packages"
 	npm run build:ps
 
 # PureScript package testing
-test-curves: build-crypto ## Test curves package
+test-curves: build-napi ## Test curves package
 	cd packages/curves && npx spago build && npx spago run --main Test.Snarky.Curves.Main
 
-test-snarky: build-crypto ## Test snarky core package  
+test-snarky: build-napi ## Test snarky core package
 	cd packages/snarky && npx spago test
 
-run-snarky: build-crypto ## Run snarky main
+run-snarky: build-napi ## Run snarky main
 	cd packages/snarky && npx spago run
 
-test-bulletproofs: build-crypto ## Test snarky-bulletproofs package
-	cd packages/snarky-bulletproofs && npx spago test
-
-test-groth16: build-crypto ## Test snarky-groth16 package
-	cd packages/snarky-groth16 && npx spago test
-
-test-poseidon: build-crypto ## Test poseidon hash package
+test-poseidon: build-napi ## Test poseidon hash package
 	cd packages/poseidon && npx spago test
 
-test-kimchi: build-crypto ## Test poseidon hash package
+test-kimchi: build-napi ## Test poseidon hash package
 	cd packages/snarky-kimchi && npx spago test
 
-test-random-oracle: build-crypto ## Test random-oracle package
+test-random-oracle: build-napi ## Test random-oracle package
 	cd packages/random-oracle && npx spago test
 
-test-merkle-tree: build-crypto ## Test merkle-tree package
+test-merkle-tree: build-napi ## Test merkle-tree package
 	cd packages/merkle-tree && npx spago test
 
-test-example: build-crypto ## Test example package
+test-example: build-napi ## Test example package
 	cd packages/example && npx spago test
 
-test-pickles: build-crypto gen-linearization ## Test pickles package (requires codegen)
+test-pickles: build-napi gen-linearization ## Test pickles package (requires codegen)
 	cd packages/pickles && npx spago test
 
-test-pickles-circuit-diffs: build-crypto gen-linearization fixtures-unpack ## Test pickles circuit diffs package (requires codegen)
+test-pickles-circuit-diffs: build-napi gen-linearization fixtures-unpack ## Test pickles circuit diffs package (requires codegen)
 	cd packages/pickles-circuit-diffs && npx spago test
 
 test-libs: ## Test every package EXCEPT pickles-circuit-diffs (CI parallel job)
@@ -92,10 +87,6 @@ test-libs: ## Test every package EXCEPT pickles-circuit-diffs (CI parallel job)
 	$(MAKE) test-merkle-tree
 	@echo "=== Testing Example ==="
 	$(MAKE) test-example
-	@echo "=== Testing Bulletproofs Backend ==="
-	$(MAKE) test-bulletproofs
-	@echo "=== Testing Groth16 Backend ==="
-	$(MAKE) test-groth16
 	@echo "=== Testing Pickles ==="
 	$(MAKE) test-pickles
 	@echo "=== Library tests completed successfully ==="
@@ -111,7 +102,7 @@ test: test-all ## Test everything
 cargo-check: ## Check all Rust packages in workspace
 	cargo check --workspace
 
-cargo-build: ## Build all Rust packages in workspace  
+cargo-build: ## Build all Rust packages in workspace
 	cargo build --workspace
 
 cargo-test: ## Test all Rust packages in workspace
@@ -123,7 +114,7 @@ cargo-fmt: ## Format all Rust code in workspace
 cargo-clippy: ## Run clippy lints on workspace
 	cargo clippy --workspace -- -D warnings
 
-gen-linearization: build-crypto ## Generate Kimchi linearization PureScript modules
+gen-linearization: build-napi ## Generate Kimchi linearization PureScript modules
 	cd packages/pickles-codegen && $(MAKE) generate
 
 lint: ## Format, tidy, and lint all code (Rust + PureScript)
@@ -133,20 +124,18 @@ lint: ## Format, tidy, and lint all code (Rust + PureScript)
 
 clean: ## Clean everything
 	cargo clean
-	cd packages/crypto-provider && cargo clean && rm -f *.node
+	cd packages/kimchi-napi && rm -f *.node
 	cd packages/curves && rm -rf output
 	cd packages/snarky && rm -rf output
-	-cd packages/snarky-bulletproofs && rm -rf output
-	-cd packages/snarky-groth16 && rm -rf output
 	rm -rf output node_modules target
 	rm -f package-lock.json
 
 # Generate workspace module dependency graph (requires deps.json + graphviz)
 # Usage:
 #   make dep-graph                                          # all workspace packages
-#   make dep-graph EXCLUDE=snarky-bulletproofs,snarky-groth16  # exclude packages (comma-separated)
+#   make dep-graph EXCLUDE=<pkg1>,<pkg2>                    # exclude packages (comma-separated)
 #   make dep-graph CLOSURE=pickles                          # only pickles and its transitive deps
-EXCLUDE ?= snarky-bulletproofs,snarky-groth16
+EXCLUDE ?=
 CLOSURE ?=
 dep-graph: ## Generate module dependency graph as deps.svg
 	node workspace-deps.js --exclude $(EXCLUDE) $(if $(CLOSURE),--closure $(CLOSURE))

@@ -2,10 +2,10 @@ module Snarky.Backend.Kimchi.Impl.Vesta where
 
 import Data.Array as Array
 import Data.Maybe (Maybe(..))
-import Data.Vector (Vector)
+import Data.Unit (Unit)
 import Effect (Effect)
 import Partial.Unsafe (unsafeCrashWith)
-import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, ProverIndex, VerifierIndex)
+import Snarky.Backend.Kimchi.Types (CRS, Gate, GateWires, ProverIndex, VerifierIndex)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 
@@ -21,17 +21,20 @@ foreign import vestaCircuitGateCoeffCount :: Gate Vesta.ScalarField -> Int
 -- Get a coefficient at the specified index
 foreign import vestaCircuitGateGetCoeff :: Gate Vesta.ScalarField -> Int -> Vesta.ScalarField
 
-foreign import vestaConstraintSystemCreate :: Array (Gate Vesta.ScalarField) -> Int -> Int -> ConstraintSystem Vesta.ScalarField
-
-foreign import vestaConstraintSystemCreateWithPrevChallenges
-  :: Array (Gate Vesta.ScalarField) -> Int -> Int -> Int -> ConstraintSystem Vesta.ScalarField
-
-foreign import vestaConstraintSystemToJson :: ConstraintSystem Vesta.ScalarField -> String
+-- Debug helper: serialize the gate array to JSON (replaces the old
+-- vestaConstraintSystemToJson which required the now-removed
+-- ConstraintSystem type).
 foreign import vestaGatesToJson :: Array (Gate Vesta.ScalarField) -> Int -> String
 
 foreign import vestaCrsLoadFromCache :: Effect (CRS Vesta.G)
 foreign import vestaCrsCreate :: Int -> CRS Vesta.G
 foreign import vestaCrsSize :: CRS Vesta.G -> Int
+
+-- | Pre-warm the lagrange-basis cache of the (shared) SRS for the domain
+-- | of size `2^log2`. Effectful: mutates the SRS in place, so later
+-- | index/proof creation over that domain hits the cache.
+foreign import vestaSrsAddLagrangeBasis :: CRS Vesta.G -> Int -> Effect Unit
+
 -- | Compute challenge polynomial commitment from Vesta SRS.
 -- | Vesta scalar field = Fp, result coords in Fq (= Pallas.ScalarField).
 -- | OCaml: SRS.Fp.b_poly_commitment (Dummy.Ipa.Step.compute_sg)
@@ -53,20 +56,32 @@ vestaSrsBPolyCommitmentPoint srs chals =
       _, _ -> unsafeCrashWith
         "vestaSrsBPolyCommitmentPoint: FFI returned unexpected length (must be [x, y])"
 
-foreign import vestaProverIndexCreate :: ConstraintSystem Vesta.ScalarField -> Vesta.ScalarField -> CRS Vesta.G -> ProverIndex Vesta.G Vesta.ScalarField
-
-foreign import vestaProverIndexVerify :: ProverIndex Vesta.G Vesta.ScalarField -> Vector 15 (Array Vesta.ScalarField) -> Array Vesta.ScalarField -> Boolean
+-- | Collapsed prover-index creation; see `Impl/Pallas.purs` for the
+-- | rationale. JS impl glues snarky-crypto's two-step CS+Index until
+-- | the kimchi-napi swap lands.
+foreign import vestaProverIndexCreate
+  :: { gates :: Array (Gate Vesta.ScalarField)
+     , publicInputSize :: Int
+     , prevChallengesCount :: Int
+     , maxPolySize :: Int
+     , crs :: CRS Vesta.G
+     }
+  -> ProverIndex Vesta.G Vesta.ScalarField
 
 foreign import pallasVerifierIndex :: ProverIndex Vesta.G Vesta.ScalarField -> VerifierIndex Vesta.G Vesta.ScalarField
 
 createCRS :: Effect (CRS Vesta.G)
 createCRS = vestaCrsLoadFromCache
 
-createProverIndex :: ConstraintSystem Vesta.ScalarField -> Vesta.ScalarField -> CRS Vesta.G -> ProverIndex Vesta.G Vesta.ScalarField
+createProverIndex
+  :: { gates :: Array (Gate Vesta.ScalarField)
+     , publicInputSize :: Int
+     , prevChallengesCount :: Int
+     , maxPolySize :: Int
+     , crs :: CRS Vesta.G
+     }
+  -> ProverIndex Vesta.G Vesta.ScalarField
 createProverIndex = vestaProverIndexCreate
 
 createVerifierIndex :: ProverIndex Vesta.G Vesta.ScalarField -> VerifierIndex Vesta.G Vesta.ScalarField
 createVerifierIndex = pallasVerifierIndex
-
-verifyProverIndex :: ProverIndex Vesta.G Vesta.ScalarField -> Vector 15 (Array Vesta.ScalarField) -> Array Vesta.ScalarField -> Boolean
-verifyProverIndex = vestaProverIndexVerify

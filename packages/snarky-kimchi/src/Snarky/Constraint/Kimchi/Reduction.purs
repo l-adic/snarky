@@ -5,7 +5,6 @@ module Snarky.Constraint.Kimchi.Reduction
   , class PlonkReductionM
   , createInternalVariable
   , finalizeGateQueue
-  , getRows
   , mkRawGeneric7Row
   , reduceAffineExpression
   , reduceAsBuilder
@@ -116,9 +115,6 @@ reduceToVariable var = do
         pure c_times_v
 
 newtype Rows f = Rows (KimchiRow f)
-
-getRows :: forall f. Rows f -> KimchiRow f
-getRows (Rows x) = x
 
 instance ToKimchiRows f (Rows f) where
   toKimchiRows (Rows as) = Array.singleton as

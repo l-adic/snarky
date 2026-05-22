@@ -2,10 +2,10 @@ module Snarky.Backend.Kimchi.Impl.Pallas where
 
 import Data.Array as Array
 import Data.Maybe (Maybe(..))
-import Data.Vector (Vector)
+import Data.Unit (Unit)
 import Effect (Effect)
 import Partial.Unsafe (unsafeCrashWith)
-import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, ProverIndex, VerifierIndex)
+import Snarky.Backend.Kimchi.Types (CRS, Gate, GateWires, ProverIndex, VerifierIndex)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.EllipticCurve (AffinePoint)
 
@@ -21,17 +21,20 @@ foreign import pallasCircuitGateCoeffCount :: Gate Pallas.ScalarField -> Int
 -- Get a coefficient at the specified index
 foreign import pallasCircuitGateGetCoeff :: Gate Pallas.ScalarField -> Int -> Pallas.ScalarField
 
-foreign import pallasConstraintSystemCreate :: Array (Gate Pallas.ScalarField) -> Int -> Int -> ConstraintSystem Pallas.ScalarField
-
-foreign import pallasConstraintSystemCreateWithPrevChallenges
-  :: Array (Gate Pallas.ScalarField) -> Int -> Int -> Int -> ConstraintSystem Pallas.ScalarField
-
-foreign import pallasConstraintSystemToJson :: ConstraintSystem Pallas.ScalarField -> String
+-- Debug helper: serialize the gate array to JSON (replaces the old
+-- pallasConstraintSystemToJson which required the now-removed
+-- ConstraintSystem type).
 foreign import pallasGatesToJson :: Array (Gate Pallas.ScalarField) -> Int -> String
 
 foreign import pallasCrsLoadFromCache :: Effect (CRS Pallas.G)
 foreign import pallasCrsCreate :: Int -> CRS Pallas.G
 foreign import pallasCrsSize :: CRS Pallas.G -> Int
+
+-- | Pre-warm the lagrange-basis cache of the (shared) SRS for the domain
+-- | of size `2^log2`. Effectful: mutates the SRS in place, so later
+-- | index/proof creation over that domain hits the cache.
+foreign import pallasSrsAddLagrangeBasis :: CRS Pallas.G -> Int -> Effect Unit
+
 -- | Compute challenge polynomial commitment from Pallas SRS.
 -- | Pallas scalar field = Fq, result coords in Fp (= Vesta.ScalarField).
 -- | OCaml: SRS.Fq.b_poly_commitment (Dummy.Ipa.Wrap.compute_sg)
@@ -53,20 +56,35 @@ pallasSrsBPolyCommitmentPoint srs chals =
       _, _ -> unsafeCrashWith
         "pallasSrsBPolyCommitmentPoint: FFI returned unexpected length (must be [x, y])"
 
-foreign import pallasProverIndexCreate :: ConstraintSystem Pallas.ScalarField -> Pallas.ScalarField -> CRS Pallas.G -> ProverIndex Pallas.G Pallas.ScalarField
-
-foreign import pallasProverIndexVerify :: ProverIndex Pallas.G Pallas.ScalarField -> Vector 15 (Array Pallas.ScalarField) -> Array Pallas.ScalarField -> Boolean
+-- | Collapsed prover-index creation. Takes the raw circuit data
+-- | (gates + publicInputSize + prevChallengesCount + maxPolySize) plus
+-- | the SRS; the JS impl glues the snarky-crypto two-step CS-then-Index
+-- | internally. The previous PS-level `ConstraintSystem` type is gone
+-- | (no separate intermediate). `endo` is also dropped from the PS
+-- | signature — it's a curve constant the JS layer fetches itself.
+foreign import pallasProverIndexCreate
+  :: { gates :: Array (Gate Pallas.ScalarField)
+     , publicInputSize :: Int
+     , prevChallengesCount :: Int
+     , maxPolySize :: Int
+     , crs :: CRS Pallas.G
+     }
+  -> ProverIndex Pallas.G Pallas.ScalarField
 
 foreign import vestaVerifierIndex :: ProverIndex Pallas.G Pallas.ScalarField -> VerifierIndex Pallas.G Pallas.ScalarField
 
 createCRS :: Effect (CRS Pallas.G)
 createCRS = pallasCrsLoadFromCache
 
-createProverIndex :: ConstraintSystem Pallas.ScalarField -> Pallas.ScalarField -> CRS Pallas.G -> ProverIndex Pallas.G Pallas.ScalarField
+createProverIndex
+  :: { gates :: Array (Gate Pallas.ScalarField)
+     , publicInputSize :: Int
+     , prevChallengesCount :: Int
+     , maxPolySize :: Int
+     , crs :: CRS Pallas.G
+     }
+  -> ProverIndex Pallas.G Pallas.ScalarField
 createProverIndex = pallasProverIndexCreate
 
 createVerifierIndex :: ProverIndex Pallas.G Pallas.ScalarField -> VerifierIndex Pallas.G Pallas.ScalarField
 createVerifierIndex = vestaVerifierIndex
-
-verifyProverIndex :: ProverIndex Pallas.G Pallas.ScalarField -> Vector 15 (Array Pallas.ScalarField) -> Array Pallas.ScalarField -> Boolean
-verifyProverIndex = pallasProverIndexVerify

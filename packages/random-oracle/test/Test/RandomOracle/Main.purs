@@ -12,7 +12,7 @@ import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reifyType)
 import Data.Traversable (for_)
 import Data.Tuple (Tuple(..), uncurry)
-import Data.Vector (Vector, (:<))
+import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Aff (Aff)
@@ -36,8 +36,6 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (arbitrary, (===))
 import Test.QuickCheck.Gen (randomSample', randomSampleOne)
-import Test.RandomOracle.FFI.Pallas as PallasSpongeFFI
-import Test.RandomOracle.FFI.Vesta as VestaSpongeFFI
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, before, describe, it)
 import Test.Spec.Assertions (shouldEqual, shouldNotEqual)
@@ -48,14 +46,6 @@ import Type.Proxy (Proxy(..))
 
 kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
 kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
-
--- | Record type to abstract over sponge FFI operations
-type SpongeFFI f sponge =
-  { permute :: Vector 3 f -> Vector 3 f
-  , spongeCreate :: Effect sponge
-  , spongeAbsorb :: sponge -> f -> Effect Unit
-  , spongeSqueeze :: sponge -> Effect f
-  }
 
 main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] spec
@@ -101,88 +91,14 @@ spec = do
       describe "circuit sponge" do
         circuitSpongeTests (Proxy :: Proxy Vesta.BaseField)
 
-    -- Test that our PureScript sponge matches Rust ArithmeticSponge via FFI
-    describe "Sponge matches Rust FFI" do
-      describe "Pallas" do
-        spongeFFITests (Proxy @Pallas.BaseField) pallasSpongeFFI
-      describe "Vesta" do
-        spongeFFITests (Proxy @Vesta.BaseField) vestaSpongeFFI
+  -- (`Sponge matches Rust FFI` describe block + `spongeFFITests` helper
+  -- removed alongside `snarky-crypto` — that suite was a parity check
+  -- against the Rust `mina_poseidon::ArithmeticSponge` FFI. The PS-side
+  -- sponge has its own correctness specs above; permutation byte-parity
+  -- against kimchi-napi's `caml_pasta_f{p,q}_poseidon_block_cipher`
+  -- lives in `packages/curves/test/poseidon-parity-harness.mjs`.)
 
   where
-  pallasSpongeFFI :: SpongeFFI Pallas.BaseField PallasSpongeFFI.PallasSponge
-  pallasSpongeFFI =
-    { permute: PallasSpongeFFI.permute
-    , spongeCreate: PallasSpongeFFI.spongeCreate
-    , spongeAbsorb: PallasSpongeFFI.spongeAbsorb
-    , spongeSqueeze: PallasSpongeFFI.spongeSqueeze
-    }
-
-  vestaSpongeFFI :: SpongeFFI Vesta.BaseField VestaSpongeFFI.VestaSponge
-  vestaSpongeFFI =
-    { permute: VestaSpongeFFI.permute
-    , spongeCreate: VestaSpongeFFI.spongeCreate
-    , spongeAbsorb: VestaSpongeFFI.spongeAbsorb
-    , spongeSqueeze: VestaSpongeFFI.spongeSqueeze
-    }
-
-  spongeFFITests
-    :: forall f sponge
-     . Poseidon.PoseidonField f
-    => Eq f
-    => Show f
-    => Proxy f
-    -> SpongeFFI f sponge
-    -> Spec Unit
-  spongeFFITests _ ffi = do
-    describe "permute" do
-      it "PureScript permute matches Rust FFI" do
-        quickCheck \(a :: f) (b :: f) (c :: f) ->
-          let
-            state :: Vector 3 f
-            state = a :< b :< c :< Vector.nil
-            psResult = Sponge.permute state
-            ffiResult = ffi.permute state
-          in
-            psResult === ffiResult
-
-    describe "absorb/squeeze" do
-      it "absorb then squeeze matches Rust sponge" do
-        a <- liftEffect $ randomSampleOne (arbitrary @f)
-        b <- liftEffect $ randomSampleOne arbitrary
-        let
-          psSponge = Sponge.create Sponge.initialState
-          psSponge1 = Sponge.absorb a psSponge
-          psSponge2 = Sponge.absorb b psSponge1
-          { result: psResult } = Sponge.squeeze psSponge2
-        rustResult <- liftEffect do
-          rustSponge <- ffi.spongeCreate
-          ffi.spongeAbsorb rustSponge a
-          ffi.spongeAbsorb rustSponge b
-          ffi.spongeSqueeze rustSponge
-        psResult `shouldEqual` rustResult
-
-      it "multiple absorb/squeeze cycles match Rust" do
-        a <- liftEffect $ randomSampleOne (arbitrary @f)
-        b <- liftEffect $ randomSampleOne arbitrary
-        c <- liftEffect $ randomSampleOne arbitrary
-        let
-          psSponge = Sponge.create Sponge.initialState
-          psSponge1 = Sponge.absorb a psSponge
-          psSponge2 = Sponge.absorb b psSponge1
-          psSponge3 = Sponge.absorb c psSponge2
-          { result: psR1, sponge: psSponge4 } = Sponge.squeeze psSponge3
-          { result: psR2 } = Sponge.squeeze psSponge4
-        { r1: rustR1, r2: rustR2 } <- liftEffect do
-          rustSponge <- ffi.spongeCreate
-          ffi.spongeAbsorb rustSponge a
-          ffi.spongeAbsorb rustSponge b
-          ffi.spongeAbsorb rustSponge c
-          r1 <- ffi.spongeSqueeze rustSponge
-          r2 <- ffi.spongeSqueeze rustSponge
-          pure { r1, r2 }
-        psR1 `shouldEqual` rustR1
-        psR2 `shouldEqual` rustR2
-
   checkEdgeCases
     :: forall f f'
      . Poseidon.PoseidonField f

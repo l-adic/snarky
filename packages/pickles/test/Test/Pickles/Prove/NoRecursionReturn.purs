@@ -19,9 +19,9 @@ module Test.Pickles.Prove.NoRecursionReturn
 
 import Prelude
 
+import Colog (LoggerT, Message, logInfo, withSpan)
 import Control.Monad.Except (runExceptT)
 import Data.Either (Either(..))
-import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
 import Data.Tuple.Nested (tuple1)
@@ -32,9 +32,8 @@ import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, verify)
 import Pickles.ProofCache (mkProofCache)
-import Snarky.Backend.Kimchi.Class (createCRS)
-import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.DSL (F, FVar, const_)
+import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
@@ -53,12 +52,10 @@ type NrrRules =
   RulesCons 0 Unit Unit Unit
     RulesNil
 
-spec :: SpecT Aff Unit Aff Unit
+spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.NoRecursionReturn" do
-  it "compileMulti + prover.step end-to-end verify returns true" \_ -> do
+  it "compileMulti + prover.step end-to-end verify returns true" \{ pallasSrs, vestaSrs } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/NoRecursionReturn.json")
-    let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
-    vestaSrs <- liftEffect $ createCRS @StepField
 
     -- Build the 1-tuple rules carrier for compileMulti. mpvMax = 0
     -- (NRR rule's mpv); since this is the only branch, nd = 1.
@@ -67,7 +64,8 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
 
     let rules = tuple1 nrrEntry
 
-    output <- liftEffect $ compileMulti
+    logInfo "[NoRecursionReturn] compiling…"
+    output <- withSpan "[NoRecursionReturn] compile" $ liftEffect $ compileMulti
       @NrrRules
       @(F StepField)
       @Unit
@@ -85,9 +83,12 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
     -- Unit`. Mirrors OCaml's `~handler:None` for non-side-loaded
     -- branches. Threading the field uniformly keeps the
     -- `BranchProver` API consistent with side-loaded specs.
-    eResult <- liftEffect $ runExceptT $ nrrProver
+    logInfo "[NoRecursionReturn] proving"
+    eResult <- withSpan "[NoRecursionReturn] prove" $ liftEffect $ runExceptT $ nrrProver
       { appInput: unit, prevs: unit, sideloadedVKs: unit }
     case eResult of
       Left e -> liftEffect $ Exc.throw ("nrrProver: " <> show e)
-      Right compiledProof ->
+      Right compiledProof -> do
+        logInfo "[NoRecursionReturn] verifying proof…"
         verify output.verifier [ compiledProof ] `shouldEqual` true
+        logInfo "[NoRecursionReturn] verification complete"

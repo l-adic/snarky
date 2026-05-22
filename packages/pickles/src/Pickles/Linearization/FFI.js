@@ -1,89 +1,30 @@
+// Single remaining foreign import: `domainShifts(log2)` backed by
+// kimchi-napi's `caml_pasta_f{p,q}_plonk_verifier_index_shifts(log2)`.
+//
+// `domainGenerator` and `unnormalizedLagrangeBasis` are now pure PureScript
+// in `Pickles.Domain` (running on `TwoAdicField` + `PrimeField`) — no JS
+// codegen needed for them anymore.
+
 import { createRequire } from 'module';
+import { Fp, Fq } from 'pasta-runtime';
+
 const require = createRequire(import.meta.url);
-const crypto = require('snarky-crypto');
+const k = require('kimchi-napi');
 
-// Helper: restructure flat paired array into [{zeta, omegaTimesZeta}, ...]
-const pairEvals = (flat) => {
-  const result = [];
-  for (let i = 0; i < flat.length; i += 2) {
-    result.push({ zeta: flat[i], omegaTimesZeta: flat[i + 1] });
-  }
-  return result;
-};
+const fpFromBytes = (b) => Fp.fromBytesLE(b instanceof Uint8Array ? b : new Uint8Array(b));
+const fqFromBytes = (b) => Fq.fromBytesLE(b instanceof Uint8Array ? b : new Uint8Array(b));
 
-// Helper: flatten a PointEval record to [zeta, omegaTimesZeta]
-const flattenPointEval = (pe) => [pe.zeta, pe.omegaTimesZeta];
+// kimchi-napi returns a `NapiShifts { s0..s6: Buffer(32) }`; PS expects a
+// `Vector 7 BaseField` (a 7-element JS Array at runtime).
+function shiftsToArray(shifts, decode) {
+    return [
+        decode(shifts.s0), decode(shifts.s1), decode(shifts.s2), decode(shifts.s3),
+        decode(shifts.s4), decode(shifts.s5), decode(shifts.s6),
+    ];
+}
 
-// Linearization evaluation
-export const evaluatePallasLinearization = (input) =>
-  crypto.evaluatePallasLinearization(
-    input.alpha, input.beta, input.gamma, input.jointCombiner,
-    input.witnessEvals.flatMap(flattenPointEval), input.coefficientEvals,
-    flattenPointEval(input.poseidonIndex), flattenPointEval(input.genericIndex),
-    flattenPointEval(input.varbasemulIndex), flattenPointEval(input.endomulIndex),
-    flattenPointEval(input.endomulScalarIndex), flattenPointEval(input.completeAddIndex),
-    input.vanishesOnZk, input.zeta, input.domainLog2
-  );
+export const pallasDomainShifts = (log2) =>
+    shiftsToArray(k.caml_pasta_fp_plonk_verifier_index_shifts(log2), fpFromBytes);
 
-export const evaluateVestaLinearization = (input) =>
-  crypto.evaluateVestaLinearization(
-    input.alpha, input.beta, input.gamma, input.jointCombiner,
-    input.witnessEvals.flatMap(flattenPointEval), input.coefficientEvals,
-    flattenPointEval(input.poseidonIndex), flattenPointEval(input.genericIndex),
-    flattenPointEval(input.varbasemulIndex), flattenPointEval(input.endomulIndex),
-    flattenPointEval(input.endomulScalarIndex), flattenPointEval(input.completeAddIndex),
-    input.vanishesOnZk, input.zeta, input.domainLog2
-  );
-
-// Domain polynomial functions
-export const pallasUnnormalizedLagrangeBasis = ({ domainLog2, zkRows, offset, pt }) =>
-  crypto.pallasUnnormalizedLagrangeBasis(domainLog2, zkRows, offset, pt);
-
-export const vestaUnnormalizedLagrangeBasis = ({ domainLog2, zkRows, offset, pt }) =>
-  crypto.vestaUnnormalizedLagrangeBasis(domainLog2, zkRows, offset, pt);
-
-export const pallasVanishesOnZkAndPreviousRows = ({ domainLog2, zkRows, pt }) =>
-  crypto.pallasVanishesOnZkAndPreviousRows(domainLog2, zkRows, pt);
-
-export const vestaVanishesOnZkAndPreviousRows = ({ domainLog2, zkRows, pt }) =>
-  crypto.vestaVanishesOnZkAndPreviousRows(domainLog2, zkRows, pt);
-
-// Prover index domain
-export const pallasProverIndexDomainLog2 = (proverIndex) =>
-  crypto.pallasProverIndexDomainLog2(proverIndex);
-
-export const vestaProverIndexDomainLog2 = (proverIndex) =>
-  crypto.vestaProverIndexDomainLog2(proverIndex);
-
-// Prover index polynomial evaluations
-export const pallasProverIndexWitnessEvaluations = (proverIndex) => (witnessColumns) => (zeta) =>
-  pairEvals(crypto.pallasProverIndexWitnessEvaluations(proverIndex, witnessColumns, zeta));
-
-export const pallasProverIndexCoefficientEvaluations = (proverIndex) => (zeta) =>
-  crypto.pallasProverIndexCoefficientEvaluations(proverIndex, zeta);
-
-export const pallasProverIndexSelectorEvaluations = (proverIndex) => (zeta) =>
-  pairEvals(crypto.pallasProverIndexSelectorEvaluations(proverIndex, zeta));
-
-export const vestaProverIndexWitnessEvaluations = (proverIndex) => (witnessColumns) => (zeta) =>
-  pairEvals(crypto.vestaProverIndexWitnessEvaluations(proverIndex, witnessColumns, zeta));
-
-export const vestaProverIndexCoefficientEvaluations = (proverIndex) => (zeta) =>
-  crypto.vestaProverIndexCoefficientEvaluations(proverIndex, zeta);
-
-export const vestaProverIndexSelectorEvaluations = (proverIndex) => (zeta) =>
-  pairEvals(crypto.vestaProverIndexSelectorEvaluations(proverIndex, zeta));
-
-// Domain generators
-export const pallasDomainGenerator = (domainLog2) =>
-  crypto.pallasDomainGenerator(domainLog2);
-
-export const vestaDomainGenerator = (domainLog2) =>
-  crypto.vestaDomainGenerator(domainLog2);
-
-// Domain shifts (7 permutation shifts, computed from domain_log2 alone)
-export const pallasDomainShifts = (domainLog2) =>
-  crypto.pallasDomainShifts(domainLog2);
-
-export const vestaDomainShifts = (domainLog2) =>
-  crypto.vestaDomainShifts(domainLog2);
+export const vestaDomainShifts = (log2) =>
+    shiftsToArray(k.caml_pasta_fq_plonk_verifier_index_shifts(log2), fqFromBytes);

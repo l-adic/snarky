@@ -16,6 +16,7 @@ module Test.Pickles.Prove.Chunks2
 
 import Prelude
 
+import Colog (LoggerT, Message, logInfo, withSpan)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Rec.Class (Step(..), tailRecM)
 import Data.Either (Either(..))
@@ -31,10 +32,9 @@ import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, verify)
 import Pickles.ProofCache (mkProofCache)
-import Snarky.Backend.Kimchi.Class (createCRS)
-import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.DSL (F, addConstraint, exists, mul_)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
+import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
@@ -74,9 +74,9 @@ type Chunks2Rules =
   RulesCons 0 Unit Unit Unit
     RulesNil
 
-spec :: SpecT Aff Unit Aff Unit
+spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.Chunks2" do
-  it "base case (b0) — chunks=2 step+wrap proves end-to-end" \_ -> do
+  it "base case (b0) — chunks=2 step+wrap proves end-to-end" \{ pallasSrs, vestaSrs } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/Chunks2.json")
     -- Step kimchi uses `vestaSrs` (depth 2^16 by default cache load).
     -- With chunks2's 2^16-row step circuit, the step domain rounds to
@@ -86,8 +86,6 @@ spec = describe "Pickles.Prove.Chunks2" do
     -- `kimchi_pasta_basic.ml:6`). Wrap domain is 2^14 (override) so
     -- num_chunks at wrap = 1; the smaller SRS gives the correct
     -- max_poly_size = 32768 byte-for-byte with OCaml.
-    let pallasSrs = PallasImpl.pallasCrsCreate (1 `Bits.shl` 15)
-    vestaSrs <- liftEffect $ createCRS @StepField
 
     -- @nc=1 is a placeholder for the side-loaded-slot chunks count
     -- (no side-loaded slots here; nc is irrelevant but must be pinned
@@ -95,7 +93,8 @@ spec = describe "Pickles.Prove.Chunks2" do
     chunks2Entry <- liftEffect $ mkRuleEntry @0 @Unit @Unit @1 @1 chunks2Rule unit
     let rules = tuple1 chunks2Entry
 
-    output <- liftEffect $ compileMulti
+    logInfo "[Chunks2] compiling…"
+    output <- withSpan "[Chunks2] compile" $ liftEffect $ compileMulti
       @Chunks2Rules
       @Unit
       @Unit
@@ -111,9 +110,12 @@ spec = describe "Pickles.Prove.Chunks2" do
       rules
 
     let BranchProver chunks2Prover = fst output.provers
-    eResult <- liftEffect $ runExceptT $ chunks2Prover
+    logInfo "[Chunks2] proving"
+    eResult <- withSpan "[Chunks2] prove" $ liftEffect $ runExceptT $ chunks2Prover
       { appInput: unit, prevs: unit, sideloadedVKs: unit }
     case eResult of
       Left e -> liftEffect $ Exc.throw ("chunks2Prover: " <> show e)
-      Right compiledProof ->
+      Right compiledProof -> do
+        logInfo "[Chunks2] verifying proof…"
         verify output.verifier [ compiledProof ] `shouldEqual` true
+        logInfo "[Chunks2] verification complete"
