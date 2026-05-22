@@ -34,7 +34,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), Compiled, NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, verify)
+import Pickles (BranchProver(..), Compiled, NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, toVerifiable, verifyBatch)
 import Pickles.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertEqual_, const_, exists, true_)
@@ -214,5 +214,5 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     -- deferred-values reconstruction pick the right branch's step
     -- domain.
     logInfo "[TwoPhaseChain] verifying 4-proof chain…"
-    verify output.verifier [ b0, b1, b2, b3 ] `shouldEqual` true
+    verifyBatch output.verifier (map toVerifiable [ b0, b1, b2, b3 ]) `shouldEqual` true
     logInfo "[TwoPhaseChain] verification complete"

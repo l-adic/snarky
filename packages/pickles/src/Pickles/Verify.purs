@@ -54,8 +54,11 @@ module Pickles.Verify
   , SomeCompiledProofWidthData
   , mkSomeCompiledProofWidthData
   , Verifier
+  , VerifiableProof
   , mkVerifier
+  , toVerifiable
   , verify
+  , verifyBatch
   , wrapPublicInput
   , wrapPublicInputOf
   ) where
@@ -308,6 +311,91 @@ newtype CompiledProof mpv stmtVal outputVal = CompiledProof
   , stepDomainLog2 :: Int
   }
 
+-- | The minimal, serializable proof an out-of-circuit verifier actually
+-- | consumes: the wrap kimchi proof plus the carried statement skeleton.
+-- | Everything else a `CompiledProof` carries — the recursive-step
+-- | bookkeeping hidden in `widthData`, the collapsed `prevEvals`, the
+-- | application `statement`/`publicOutput` — is irrelevant to
+-- | verification, so it isn't here. The per-rule prev-proof width is
+-- | erased to a plain `Array`: verification only iterates
+-- | `oldBulletproofChallenges`.
+type VerifiableProof =
+  { wrapProof :: Proof PallasG WrapField
+  , rawPlonk :: PlonkMinimal (F StepField)
+  , rawBulletproofChallenges :: Vector StepIPARounds (ScalarChallenge (F StepField))
+  , branchData :: BranchData StepField Boolean
+  , spongeDigestBeforeEvaluations :: StepField
+  , prevEvalsChunked :: ChunkedAllEvals StepField
+  , pEval0Chunks :: Array StepField
+  , oldBulletproofChallenges :: Array (Vector StepIPARounds StepField)
+  , challengePolynomialCommitment :: AffinePoint WrapField
+  , messagesForNextStepProofDigest :: StepField
+  , messagesForNextWrapProofDigest :: WrapField
+  , stepDomainLog2 :: Int
+  }
+
+-- | Project a prover-produced `CompiledProof` to the `VerifiableProof` the
+-- | verifier needs, erasing the per-rule width existential (its
+-- | `oldBulletproofChallenges` is the only `widthData` field verification
+-- | reads).
+toVerifiable
+  :: forall mpv stmtVal outputVal
+   . CompiledProof mpv stmtVal outputVal
+  -> VerifiableProof
+toVerifiable (CompiledProof p) =
+  runExists
+    ( \(CompiledProofWidthData wd) ->
+        { wrapProof: p.wrapProof
+        , rawPlonk: p.rawPlonk
+        , rawBulletproofChallenges: p.rawBulletproofChallenges
+        , branchData: p.branchData
+        , spongeDigestBeforeEvaluations: p.spongeDigestBeforeEvaluations
+        , prevEvalsChunked: p.prevEvalsChunked
+        , pEval0Chunks: p.pEval0Chunks
+        , oldBulletproofChallenges: Array.fromFoldable wd.oldBulletproofChallenges
+        , challengePolynomialCommitment: p.challengePolynomialCommitment
+        , messagesForNextStepProofDigest: p.messagesForNextStepProofDigest
+        , messagesForNextWrapProofDigest: p.messagesForNextWrapProofDigest
+        , stepDomainLog2: p.stepDomainLog2
+        }
+    )
+    p.widthData
+
+-- | Stage 1 for a `VerifiableProof`: reconstruct the expanded wrap deferred
+-- | values from the carried minimal skeleton. The prev-proof bp-challenge
+-- | width is reified back from the array length (`Vector.reifyVector`).
+-- | Shared by `perProof` and `wrapPublicInput`.
+expandDv :: Verifier -> VerifiableProof -> WrapDeferredValuesOutput
+expandDv verifier vp =
+  let
+    zetaField = coerce (toFieldPure vp.rawPlonk.zeta (F verifier.stepEndo))
+
+    vanishesOnZkAtZeta = permutationVanishingPolynomial
+      { domainLog2: vp.stepDomainLog2
+      , zkRows: verifier.stepZkRows
+      , pt: zetaField
+      }
+  in
+    Vector.reifyVector vp.oldBulletproofChallenges \oldBpChals ->
+      expandDeferredForVerify
+        { rawPlonk: vp.rawPlonk
+        , rawBulletproofChallenges: vp.rawBulletproofChallenges
+        , branchData: vp.branchData
+        , spongeDigestBeforeEvaluations: vp.spongeDigestBeforeEvaluations
+        , chunkedAllEvals: vp.prevEvalsChunked
+        , pEval0Chunks: vp.pEval0Chunks
+        , oldBulletproofChallenges: oldBpChals
+        , domainLog2: vp.stepDomainLog2
+        , zkRows: verifier.stepZkRows
+        , srsLengthLog2: verifier.stepSrsLengthLog2
+        , generator: domainGenerator vp.stepDomainLog2
+        , shifts: domainShifts vp.stepDomainLog2
+        , vanishesOnZk: vanishesOnZkAtZeta
+        , omegaForLagrange: \_ -> one
+        , endo: verifier.stepEndo
+        , linearizationPoly: verifier.linearizationPoly
+        }
+
 -- | Per-proof verification: stage 1 (expand deferred values) and
 -- | stage 2 (IPA step accumulator check), plus assembly of the wrap
 -- | proof's kimchi public input. Stage 3 (the kimchi opening-proof
@@ -316,82 +404,37 @@ newtype CompiledProof mpv stmtVal outputVal = CompiledProof
 -- | `Verify.verify_heterogenous` (per-instance expand + accumulator
 -- | term, then a single batched dlog check).
 perProof
-  :: forall mpv stmtVal outputVal
-   . Verifier
-  -> CompiledProof mpv stmtVal outputVal
+  :: Verifier
+  -> VerifiableProof
   -> { accumulatorOk :: Boolean
      , ctx :: { proof :: Proof PallasG WrapField, publicInput :: Array WrapField }
      }
-perProof verifier (CompiledProof p) =
+perProof verifier vp =
   let
-    -- Endo-expand zeta once — needed for `vanishesOnZk` and passed into
-    -- `expandDeferredForVerify` internally via its own endo expansion.
-    zetaField = coerce (toFieldPure p.rawPlonk.zeta (F verifier.stepEndo))
-
-    -- Per-proof step domain (= the proof's branch's step circuit
-    -- domain log2). For multi-branch compiled outputs the shared
-    -- verifier's `stepDomainLog2` is a placeholder; the proof's own
-    -- `stepDomainLog2` is authoritative.
-    pStepGenerator = domainGenerator p.stepDomainLog2
-
-    pStepShifts = domainShifts p.stepDomainLog2
-
-    vanishesOnZkAtZeta = permutationVanishingPolynomial
-      { domainLog2: p.stepDomainLog2
-      , zkRows: verifier.stepZkRows
-      , pt: zetaField
-      }
-
     -- ===== Stage 1: expand deferred values. =====
-    -- `oldBulletproofChallenges` is sized at the per-rule width
-    -- (hidden by `widthData`'s existential). `runExists` recovers
-    -- the typed Vector inside the polymorphic continuation; the
-    -- result type is `WrapDeferredValuesOutput` (no width
-    -- parameter), so the existential boundary is satisfied.
-    dv = runExists
-      ( \(CompiledProofWidthData wd) ->
-          expandDeferredForVerify
-            { rawPlonk: p.rawPlonk
-            , rawBulletproofChallenges: p.rawBulletproofChallenges
-            , branchData: p.branchData
-            , spongeDigestBeforeEvaluations: p.spongeDigestBeforeEvaluations
-            , chunkedAllEvals: p.prevEvalsChunked
-            , pEval0Chunks: p.pEval0Chunks
-            , oldBulletproofChallenges: wd.oldBulletproofChallenges
-            , domainLog2: p.stepDomainLog2
-            , zkRows: verifier.stepZkRows
-            , srsLengthLog2: verifier.stepSrsLengthLog2
-            , generator: pStepGenerator
-            , shifts: pStepShifts
-            , vanishesOnZk: vanishesOnZkAtZeta
-            , omegaForLagrange: \_ -> one
-            , endo: verifier.stepEndo
-            , linearizationPoly: verifier.linearizationPoly
-            }
-      )
-      p.widthData
+    dv = expandDv verifier vp
 
     -- ===== Stage 2: IPA step accumulator check. =====
     -- OCaml `Ipa.Step.accumulator_check`: verify
     -- `compute_sg(expanded bp-chals) == challengePolynomialCommitment`.
     expandedBpChals = Array.fromFoldable $
       map (\c -> coerce (toFieldPure c (F verifier.stepEndo)) :: StepField)
-        p.rawBulletproofChallenges
+        vp.rawBulletproofChallenges
 
     computedSg = vestaSrsBPolyCommitmentPoint verifier.vestaSrs expandedBpChals
 
-    accumulatorOk = computedSg == p.challengePolynomialCommitment
+    accumulatorOk = computedSg == vp.challengePolynomialCommitment
 
     -- Wrap proof's kimchi public input. Stage 3 (the opening-proof
-    -- check) is intentionally deferred to `verify`, which runs it for
+    -- check) is intentionally deferred to `verifyBatch`, which runs it for
     -- every proof in ONE amortized `verifyOpeningProofsBatch`.
-    pi = wrapPublicInputOf dv p.messagesForNextStepProofDigest p.messagesForNextWrapProofDigest
+    pi = wrapPublicInputOf dv vp.messagesForNextStepProofDigest vp.messagesForNextWrapProofDigest
   in
     { accumulatorOk
-    , ctx: { proof: p.wrapProof, publicInput: pi }
+    , ctx: { proof: vp.wrapProof, publicInput: pi }
     }
 
--- | Verify an array of compiled proofs (all of the same tag).
+-- | Verify an array of proofs (all of the same tag).
 -- |
 -- | Stages 1-2 are independent per proof → run per-proof and
 -- | AND-folded (`Array.all`). Stage 3 (the expensive kimchi
@@ -400,69 +443,41 @@ perProof verifier (CompiledProof p) =
 -- | wrapProof, publicInput)` rather than one kimchi verify per
 -- | proof. Homogeneous specialization of OCaml
 -- | `Verify.verify_heterogenous`'s final `batch_verify`.
-verify
-  :: forall mpv stmtVal outputVal
-   . Verifier
-  -> Array (CompiledProof mpv stmtVal outputVal)
+verifyBatch
+  :: Verifier
+  -> Array VerifiableProof
   -> Boolean
-verify v ps =
+verifyBatch v ps =
   let
     rs = map (perProof v) ps
   in
     Array.all _.accumulatorOk rs
       && verifyOpeningProofsBatch v.wrapVK (map _.ctx rs)
 
+-- | Verify a single proof. The public surface: `Verifier → proof → yes/no`.
+-- | Defined via `verifyBatch` on a singleton.
+verify :: Verifier -> VerifiableProof -> Boolean
+verify v p = verifyBatch v [ p ]
+
 -- | Assemble the flat `Array WrapField` that `pallasVerifyOpeningProof`
 -- | accepts as its `publicInput`. Exposed as a public helper so tests
 -- | can cross-check against the prover's assembled `wrapResult.publicInputs`
 -- | without running verification end-to-end.
+-- |
+-- | Kept on `CompiledProof` for the in-circuit recursive-step advice path
+-- | (`Pickles.Prove.Compile`); it just projects via `toVerifiable`.
 wrapPublicInput
   :: forall mpv stmtVal outputVal
    . Verifier
   -> CompiledProof mpv stmtVal outputVal
   -> Array WrapField
-wrapPublicInput verifier (CompiledProof p) =
-  let
-    zetaField = coerce (toFieldPure p.rawPlonk.zeta (F verifier.stepEndo))
+wrapPublicInput v cp = wrapPublicInputVP v (toVerifiable cp)
 
-    pStepGenerator = domainGenerator p.stepDomainLog2
-
-    pStepShifts = domainShifts p.stepDomainLog2
-
-    vanishesOnZkAtZeta = permutationVanishingPolynomial
-      { domainLog2: p.stepDomainLog2
-      , zkRows: verifier.stepZkRows
-      , pt: zetaField
-      }
-
-    -- Same existential-unwrap pattern as `verifyOne`: the per-rule
-    -- width is hidden in `widthData`; `runExists` recovers the typed
-    -- Vector inside a polymorphic continuation that returns
-    -- `WrapDeferredValuesOutput` (no width parameter).
-    dv = runExists
-      ( \(CompiledProofWidthData wd) ->
-          expandDeferredForVerify
-            { rawPlonk: p.rawPlonk
-            , rawBulletproofChallenges: p.rawBulletproofChallenges
-            , branchData: p.branchData
-            , spongeDigestBeforeEvaluations: p.spongeDigestBeforeEvaluations
-            , chunkedAllEvals: p.prevEvalsChunked
-            , pEval0Chunks: p.pEval0Chunks
-            , oldBulletproofChallenges: wd.oldBulletproofChallenges
-            , domainLog2: p.stepDomainLog2
-            , zkRows: verifier.stepZkRows
-            , srsLengthLog2: verifier.stepSrsLengthLog2
-            , generator: pStepGenerator
-            , shifts: pStepShifts
-            , vanishesOnZk: vanishesOnZkAtZeta
-            , omegaForLagrange: \_ -> one
-            , endo: verifier.stepEndo
-            , linearizationPoly: verifier.linearizationPoly
-            }
-      )
-      p.widthData
-  in
-    wrapPublicInputOf dv p.messagesForNextStepProofDigest p.messagesForNextWrapProofDigest
+wrapPublicInputVP :: Verifier -> VerifiableProof -> Array WrapField
+wrapPublicInputVP v vp =
+  wrapPublicInputOf (expandDv v vp)
+    vp.messagesForNextStepProofDigest
+    vp.messagesForNextWrapProofDigest
 
 -- | Flatten an expanded `WrapDeferredValuesOutput` + both message digests
 -- | into the kimchi public-input array via `assembleWrapMainInput` + the

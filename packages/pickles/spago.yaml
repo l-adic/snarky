@@ -11,6 +11,7 @@ package:
     - exceptions
     - exists
     - foldable-traversable
+    - foreign
     - functors
     - identity
     - integers

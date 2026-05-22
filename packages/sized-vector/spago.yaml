@@ -5,10 +5,12 @@ package:
     - enums
     - exceptions
     - foldable-traversable
+    - foreign
     - gen
     - maybe
     - partial
     - prelude
     - quickcheck
+    - simple-json
     - tuples
     - unfoldable

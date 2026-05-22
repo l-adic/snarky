@@ -99,6 +99,7 @@ import Prim.RowList (class RowToList)
 import Prim.RowList as RL
 import Record as Record
 import Safe.Coerce (coerce)
+import Simple.JSON (class ReadForeign, class WriteForeign)
 import Snarky.Circuit.CVar (CVar, Variable)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, EndoBase(..), EndoScalar(..), endoBase, endoScalar, fromBigInt, modulus, pow, toBigInt)
 import Test.QuickCheck (class Arbitrary)
@@ -133,6 +134,8 @@ derive newtype instance Ring f => Ring (F f)
 derive newtype instance EuclideanRing f => EuclideanRing (F f)
 derive newtype instance CommutativeRing f => CommutativeRing (F f)
 derive newtype instance DivisionRing f => DivisionRing (F f)
+derive newtype instance WriteForeign f => WriteForeign (F f)
+derive newtype instance ReadForeign f => ReadForeign (F f)
 instance HasEndo f f' => HasEndo (F f) (F f') where
   endoBase =
     let

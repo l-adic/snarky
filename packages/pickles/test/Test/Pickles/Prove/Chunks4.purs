@@ -30,7 +30,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, verify)
+import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verify)
 import Pickles.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F, addConstraint, exists, mul_)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
@@ -113,5 +113,5 @@ spec = describe "Pickles.Prove.Chunks4" do
       Left e -> liftEffect $ Exc.throw ("chunks4Prover: " <> show e)
       Right compiledProof -> do
         logInfo "[Chunks4] verifying proof…"
-        verify output.verifier [ compiledProof ] `shouldEqual` true
+        verify output.verifier (toVerifiable compiledProof) `shouldEqual` true
         logInfo "[Chunks4] verification complete"

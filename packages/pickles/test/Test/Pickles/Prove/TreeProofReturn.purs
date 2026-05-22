@@ -47,7 +47,7 @@ import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), Compiled, CompiledProof(..), NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots2, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, verify)
+import Pickles (BranchProver(..), Compiled, CompiledProof(..), NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots2, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, toVerifiable, verifyBatch)
 import Pickles.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, const_, exists, if_, not_, true_)
@@ -209,7 +209,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     b4 <- withSpan "[TreeProofReturn] prove b4" $ liftAff $ runStep (InductivePrev b3 tree.tag)
 
     logInfo "[TreeProofReturn] verifying 5-proof chain…"
-    verify tree.verifier [ b0, b1, b2, b3, b4 ] `shouldEqual` true
+    verifyBatch tree.verifier (map toVerifiable [ b0, b1, b2, b3, b4 ]) `shouldEqual` true
     logInfo "[TreeProofReturn] verification complete"
 
     -- The rule body computes `selfVal = if isBaseCase then 0 else

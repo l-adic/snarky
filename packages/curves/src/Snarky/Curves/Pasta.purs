@@ -34,10 +34,12 @@ import Prelude
 import Data.Array as Array
 import Data.Function.Uncurried (Fn3, runFn3)
 import Data.Maybe (Maybe(..), fromJust)
+import Foreign (F)
 import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasBW19, class HasEndo, class HasSqrt, class PrimeField, class SerdeHex, class TwoAdicField, class WeierstrassCurve, EndoBase(..), EndoScalar(..), toBigInt)
+import Simple.JSON (class ReadForeign, class WriteForeign, readImpl, writeImpl)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasBW19, class HasEndo, class HasSqrt, class PrimeField, class SerdeHex, class TwoAdicField, class WeierstrassCurve, EndoBase(..), EndoScalar(..), fromHexLe, toBigInt, toHexLe)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 
 -- ============================================================================
@@ -292,6 +294,21 @@ instance HasSqrt VestaScalarField where
 instance SerdeHex VestaScalarField where
   fromHexLe = _vestaScalarFieldFromHexLe
   toHexLe = _vestaScalarFieldToHexLe
+
+-- | JSON leaf codecs: field elements serialize as their little-endian hex
+-- | string (the same encoding `SerdeHex` uses for circuit JSON), so any
+-- | record built from these fields gets a simple-json codec for free.
+instance WriteForeign PallasScalarField where
+  writeImpl = writeImpl <<< toHexLe
+
+instance ReadForeign PallasScalarField where
+  readImpl f = fromHexLe <$> (readImpl f :: F String)
+
+instance WriteForeign VestaScalarField where
+  writeImpl = writeImpl <<< toHexLe
+
+instance ReadForeign VestaScalarField where
+  readImpl f = fromHexLe <$> (readImpl f :: F String)
 
 -- | Parse a VestaScalarField (= PallasBaseField) from little-endian hex string
 vestaScalarFieldFromHexLe :: String -> VestaScalarField

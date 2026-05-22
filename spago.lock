@@ -15,12 +15,14 @@
         "core": {
           "dependencies": [
             "arrays",
+            "foreign",
             "functions",
             "js-bigints",
             "maybe",
             "partial",
             "prelude",
-            "quickcheck"
+            "quickcheck",
+            "simple-json"
           ]
         },
         "test": {
@@ -137,6 +139,7 @@
             "exceptions",
             "exists",
             "foldable-traversable",
+            "foreign",
             "foreign-object",
             "functors",
             "identity",
@@ -407,6 +410,7 @@
             "quickcheck",
             "record",
             "safe-coerce",
+            "simple-json",
             "tailrec",
             "transformers",
             "tuples",
@@ -569,11 +573,13 @@
             "enums",
             "exceptions",
             "foldable-traversable",
+            "foreign",
             "gen",
             "maybe",
             "partial",
             "prelude",
             "quickcheck",
+            "simple-json",
             "tuples",
             "unfoldable"
           ]
