@@ -30,7 +30,7 @@ import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), Compiled, CompiledProof(..), PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots1, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, verify)
+import Pickles (BranchProver(..), Compiled, CompiledProof(..), PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots1, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, toVerifiable, verifyBatch)
 import Pickles.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertAny_, const_, equals_, exists, not_)
@@ -135,7 +135,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
     b4 <- withSpan "[SimpleChain] prove b4" $ liftAff $ runStep (InductivePrev b3 output.tag) (F (fromInt 4 :: StepField))
 
     logInfo "[SimpleChain] verifying 5-proof chain…"
-    verify output.verifier [ b0, b1, b2, b3, b4 ] `shouldEqual` true
+    verifyBatch output.verifier (map toVerifiable [ b0, b1, b2, b3, b4 ]) `shouldEqual` true
     logInfo "[SimpleChain] verification complete"
 
     -- Each iteration's app-state input must equal the value we

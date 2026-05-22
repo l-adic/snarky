@@ -26,6 +26,7 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
+import Simple.JSON (class ReadForeign, class WriteForeign)
 import Snarky.Circuit.DSL.Assert (class AssertEqual, assertEq, assert_, isEqual)
 import Snarky.Circuit.DSL.Bits (packPure, unpackPure, unpack_)
 import Snarky.Circuit.DSL.Boolean (class IfThenElse, if_)
@@ -42,6 +43,8 @@ newtype SizedF n f = SizedF f
 derive instance Eq f => Eq (SizedF n f)
 derive instance Ord f => Ord (SizedF n f)
 derive newtype instance Show f => Show (SizedF n f)
+derive newtype instance WriteForeign f => WriteForeign (SizedF n f)
+derive newtype instance ReadForeign f => ReadForeign (SizedF n f)
 
 wrapF :: forall n f. SizedF n f -> SizedF n (F f)
 wrapF (SizedF a) = SizedF $ F a

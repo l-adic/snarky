@@ -2,12 +2,14 @@ package:
   name: curves
   dependencies:
     - arrays
+    - foreign
     - functions
     - js-bigints
     - maybe
     - partial
     - prelude
     - quickcheck
+    - simple-json
   test:
     main: Test.Snarky.Curves.Main
     dependencies:

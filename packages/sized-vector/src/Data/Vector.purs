@@ -34,6 +34,7 @@ module Data.Vector
   , length
   , toVector
   , toVector'
+  , reifyVector
   , generator
   , concat
   , flatten
@@ -76,15 +77,17 @@ import Data.Foldable (class Foldable)
 import Data.FoldableWithIndex (class FoldableWithIndex, foldMapWithIndex, foldlWithIndex, foldrWithIndex)
 import Data.FunctorWithIndex (class FunctorWithIndex, mapWithIndex)
 import Data.Maybe (Maybe(..), fromJust)
-import Data.Reflectable (class Reflectable, reflectType)
+import Data.Reflectable (class Reflectable, reflectType, reifyType)
 import Data.Semigroup.Foldable (class Foldable1, foldr1)
 import Data.Traversable (class Traversable, traverse)
 import Data.TraversableWithIndex (class TraversableWithIndex, traverseWithIndex)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (class Unfoldable, class Unfoldable1, replicateA)
+import Foreign (F, ForeignError(..), fail)
 import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
+import Simple.JSON (class ReadForeign, class WriteForeign, readImpl)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Type.Proxy (Proxy(..))
 
@@ -101,6 +104,20 @@ derive newtype instance Unfoldable1 (Vector n)
 derive newtype instance Unfoldable (Vector n)
 derive newtype instance Foldable (Vector n)
 derive newtype instance Traversable (Vector n)
+
+-- | JSON: a `Vector n a` serializes as a plain JSON array; on read, the array
+-- | length is checked against the type-level `n` (via `toVector`).
+derive newtype instance WriteForeign a => WriteForeign (Vector n a)
+
+instance (ReadForeign a, Reflectable n Int) => ReadForeign (Vector n a) where
+  readImpl f = do
+    arr <- (readImpl f :: F (Array a))
+    case toVector arr of
+      Just v -> pure v
+      Nothing -> fail $ ForeignError $
+        "Vector: expected length " <> show (reflectType (Proxy @n))
+          <> ", got "
+          <> show (Array.length arr)
 
 instance (Reflectable n Int) => FoldableWithIndex (Finite n) (Vector n) where
   foldrWithIndex f init (Vector as) =
@@ -191,6 +208,16 @@ toVector as =
 -- | Variant of `toVector` that takes the length as a proxy argument.
 toVector' :: forall n a. Reflectable n Int => Proxy n -> Array a -> (Maybe (Vector n a))
 toVector' _ = toVector
+
+-- | Reify an array's runtime length to the type level: run the continuation
+-- | with the array wrapped as a `Vector n a` whose `n` equals the array's
+-- | length. Total (no `Maybe`): `n` is reified *from* `length as`, so the
+-- | wrap is exact by construction.
+reifyVector :: forall a r. Array a -> (forall n. Reflectable n Int => Vector n a -> r) -> r
+reifyVector as f = reifyType (A.length as) (\p -> f (atProxy p))
+  where
+  atProxy :: forall n. Proxy n -> Vector n a
+  atProxy _ = Vector as
 
 -- | Flatten a vector of vectors into a single vector.
 -- |

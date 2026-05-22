@@ -20,6 +20,7 @@ package:
     - quickcheck
     - record
     - safe-coerce
+    - simple-json
     - tailrec
     - transformers
     - tuples

@@ -30,7 +30,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, verify)
+import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verify)
 import Pickles.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F, FVar, const_)
 import Test.Pickles.SharedSrs (SharedSrs)
@@ -90,5 +90,5 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
       Left e -> liftEffect $ Exc.throw ("nrrProver: " <> show e)
       Right compiledProof -> do
         logInfo "[NoRecursionReturn] verifying proof…"
-        verify output.verifier [ compiledProof ] `shouldEqual` true
+        verify output.verifier (toVerifiable compiledProof) `shouldEqual` true
         logInfo "[NoRecursionReturn] verification complete"
