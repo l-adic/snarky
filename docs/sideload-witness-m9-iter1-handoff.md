@@ -5,7 +5,8 @@ convergence loop.
 
 ## State after iter 1 (2026-05-06)
 
-Loop tool: `tools/sideload_witness_diff.sh`. 4-counter run:
+Loop tool: `tools/witness_diff.sh sideload` (consolidated; was the
+since-removed `tools/sideload_witness_diff.sh`). 4-counter run:
 
 | Counter | Tag         | Result               |
 |---------|-------------|----------------------|
@@ -103,7 +104,7 @@ Key files to inspect:
 
 Run the loop:
 ```
-bash tools/sideload_witness_diff.sh
+bash tools/witness_diff.sh sideload
 ```
 Expected: child_step, child_wrap match; main_step, main_wrap diverge.
 First divergence is at `(col=0, row=32)`. If a different row diverges,

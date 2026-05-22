@@ -1,5 +1,12 @@
 ● Chunking incremental plan
 
+  > NOTE (historical): this plan predates the tooling consolidation. The
+  > per-circuit `tools/<circuit>_witness_diff.sh` scripts referenced below
+  > (including the planned `chunks2_simple_chain_witness_diff.sh`) no longer
+  > exist — they were merged into a single `tools/witness_diff.sh <circuit>`
+  > CLI. The standalone chunked circuits are `tools/witness_diff.sh chunks2`
+  > and `chunks4`.
+
   The thesis: no checkpoint adds chunking semantics without first having an
   OCaml fixture and a witness-diff script that fails on it. Every PS change is
   then driven by a concrete byte-divergence, the way we drove the multi-branch
