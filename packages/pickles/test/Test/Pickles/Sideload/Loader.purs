@@ -1,23 +1,25 @@
 -- | Test-only loader for OCaml-emitted Pickles side-load fixtures.
 -- |
--- | Reads three files written by an OCaml-side `dump_*_fixtures.exe` tool
+-- | Reads the files written by an OCaml-side `dump_*_fixtures.exe` tool
 -- | (see `mina/src/lib/crypto/pickles/dump_nrr_fixtures/` for the NRR
 -- | example):
--- |   * `vk.serde.json`   — kimchi `VerifierIndex` Rust serde JSON
--- |   * `proof.json`      — full Pickles `Proof.t` via OCaml `to_yojson_full`
--- |   * `statement.json`  — the application's public input/output
+-- |   * `vk.serde.json`     — kimchi `VerifierIndex` Rust serde JSON
+-- |   * `proof.serde.json`  — kimchi wrap `ProverProof` Rust serde JSON
+-- |   * `wrapping.json`     — the Pickles `proof_state` (OCaml yojson)
+-- |   * `statement.json`    — the application's public input/output
 -- |
--- | Returns a `LoadedFixture stmtVal` containing:
--- |   * Opaque VK + wire proof FFI handles
--- |   * Native PS records for the Pickles wrapping (rawPlonk,
--- |     rawBulletproofChallenges, branchData, spongeDigest,
--- |     challengePolynomialCommitment, stepDomainLog2)
--- |   * AllEvals (= prev_evals) and pEval0Chunks
--- |   * The application statement, decoded by a caller-supplied function
+-- | Architecture (mirrors `Pickles.Prove.Codecs`):
 -- |
--- | The `stmtVal` parameter generalises across applications: NRR's
--- | statement is a single `StepField`; richer apps (Simple_chain,
--- | Two_phase_chain, Tree_proof_return) supply their own decoder.
+-- |   * The kimchi wrap proof + VK round-trip through the **Rust serde**
+-- |     codecs (`vestaProofFromSerdeJson`, `vestaVerifierIndexFromSerdeJson`)
+-- |     — same kimchi crate on both ends, language-neutral.
+-- |   * OCaml's `proof_state` is yojson with its own shape (Hex64 limb
+-- |     vectors, scalar-challenge wrappers, BE hex, variant tags). We parse
+-- |     it into a typed `OcamlProofWire` (the argonaut decoders below — the
+-- |     OCaml-format adapter), then `ocamlProofWireToVerifiable` converts it
+-- |     to the canonical `Pickles.Verify.VerifiableProof`.
+-- |   * Verification is then the canonical `Pickles.Verify.verify` — there is
+-- |     no bespoke verifier here.
 -- |
 -- | OCaml-yojson encodes 128-bit `Hex64` values as JSON int64 pairs that
 -- | exceed JS Number precision (2^53). We use `json-bigint` via
@@ -29,11 +31,9 @@ module Test.Pickles.Sideload.Loader
   , loadNrrFixture
   , fromHexBe
   , parseJsonPreserveBigInts
-  , OcamlProof(..)
-  , OcamlProofWidthData(..)
-  , SomeOcamlProofWidthData
-  , mkSomeOcamlProofWidthData
-  , verifyOcamlProof
+  , OcamlProofWire
+  , decodeOcamlProofWire
+  , ocamlProofWireToVerifiable
   ) where
 
 import Prelude
@@ -47,7 +47,6 @@ import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (lmap)
 import Data.Char (toCharCode)
 import Data.Either (Either(..), either)
-import Data.Exists (Exists, mkExists, runExists)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.String.CodeUnits (charAt)
@@ -63,27 +62,22 @@ import JS.BigInt as JsBigInt
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync (readTextFile)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
-import Pickles (PaddedLength, StepField, StepIPARounds, Verifier, WrapField, wrapPublicInputOf)
+import Pickles (PaddedLength, StepField, StepIPARounds, VerifiableProof, Verifier, WrapField, mkVerifier)
 import Pickles.Dummy (dummyIpaChallenges)
-import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts)
+import Pickles.Linearization.FFI (PointEval)
 import Pickles.PlonkChecks (ChunkedAllEvals)
-import Pickles.Prove.FFI (Proof, permutationVanishingPolynomial, verifyOpeningProof)
-import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
+import Pickles.Prove.FFI (Proof)
 import Pickles.Prove.Step (extractWrapVKForStepHash)
 import Pickles.Sideload (vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJson)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
-import Safe.Coerce (coerce)
-import Snarky.Backend.Kimchi.Impl.Vesta (vestaSrsBPolyCommitmentPoint)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
-import Snarky.Circuit.DSL (F(..))
+import Snarky.Circuit.DSL (F)
 import Snarky.Circuit.DSL.SizedF (SizedF, unsafeFromField, wrapF)
-import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
 import Snarky.Curves.Class (class PrimeField, fromBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG) as PV
-import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
@@ -100,42 +94,22 @@ import Type.Proxy (Proxy(..))
 foreign import parseJsonPreserveBigInts :: String -> String
 
 --------------------------------------------------------------------------------
--- OcamlProof: an OCaml-produced wrap proof loaded from JSON
+-- OcamlProofWire: the typed parse of OCaml's `proof_state` yojson
 --------------------------------------------------------------------------------
 
--- | Width-existential carrier for `OcamlProof`'s prev-bulletproof
--- | challenges. Parallel to `Pickles.Verify.CompiledProofWidthData`
--- | but lacks the prover-trace fields (`wrapDvInput`, padded views) —
--- | JSON fixtures only ship verify-readable data.
-data OcamlProofWidthData :: Int -> Type
-data OcamlProofWidthData width = OcamlProofWidthData
-  { width :: Int
-  , oldBulletproofChallenges :: Vector width (Vector StepIPARounds StepField)
-  }
-
-type SomeOcamlProofWidthData = Exists OcamlProofWidthData
-
-mkSomeOcamlProofWidthData
-  :: forall @width
-   . Reflectable width Int
-  => { oldBulletproofChallenges :: Vector width (Vector StepIPARounds StepField)
-     }
-  -> SomeOcamlProofWidthData
-mkSomeOcamlProofWidthData rec = mkExists $ OcamlProofWidthData
-  { width: reflectType (Proxy @width)
-  , oldBulletproofChallenges: rec.oldBulletproofChallenges
-  }
-
--- | An OCaml-produced wrap proof loaded from JSON. Distinct from
--- | `Pickles.Verify.CompiledProof`: PS-compiled proofs include
--- | prover-trace fields (`wrapDvInput`, `wrapDv`) that JSON fixtures
--- | don't carry. `verifyOcamlProof` consumes this directly; converting
--- | to a `CompiledProof` would require re-running the prover.
-newtype OcamlProof :: Int -> Type -> Type
-newtype OcamlProof mpv stmtVal = OcamlProof
-  { statement :: stmtVal
-  , wrapProof :: Proof Pallas.G WrapField
-  , rawPlonk :: PlonkMinimal (F StepField)
+-- | Typed view of the Pickles `proof_state` an OCaml `dump_*_fixtures` tool
+-- | emits in `wrapping.json`. This is the OCaml-format counterpart of the
+-- | carried statement skeleton in `Pickles.Verify.VerifiableProof`; the
+-- | bespoke argonaut decoders below are its codec (OCaml limb vectors /
+-- | scalar-challenge wrappers / BE hex → PS field elements).
+-- |
+-- | It deliberately omits everything that is NOT in the OCaml proof_state
+-- | JSON: the kimchi wrap proof (separate `proof.serde.json`, Rust serde),
+-- | the two message digests (recomputed), and the prev-proof bp-challenges
+-- | (empty for the mpv=0 NRR fixtures). `ocamlProofWireToVerifiable`
+-- | supplies those.
+type OcamlProofWire =
+  { rawPlonk :: PlonkMinimal (F StepField)
   , rawBulletproofChallenges :: Vector StepIPARounds (ScalarChallenge (F StepField))
   , branchData :: BranchData StepField Boolean
   , spongeDigestBeforeEvaluations :: StepField
@@ -143,84 +117,49 @@ newtype OcamlProof mpv stmtVal = OcamlProof
   , stepDomainLog2 :: Int
   , prevEvalsChunked :: ChunkedAllEvals StepField
   , pEval0Chunks :: Array StepField
-  , messagesForNextStepProofDigest :: StepField
-  , messagesForNextWrapProofDigest :: WrapField
-  , widthData :: SomeOcamlProofWidthData
   }
 
--- | Verify an OCaml-loaded proof. Same three stages as
--- | `Pickles.Verify.verifyOne`: stage 1 deferred-values
--- | expansion, stage 2 IPA accumulator check, stage 3 kimchi
--- | `batch_verify`.
-verifyOcamlProof
-  :: forall mpv stmtVal
-   . Verifier
-  -> OcamlProof mpv stmtVal
-  -> Boolean
-verifyOcamlProof verifier (OcamlProof p) =
-  let
-    zetaField = coerce (toFieldPure p.rawPlonk.zeta (F verifier.stepEndo))
-
-    pStepGenerator = domainGenerator p.stepDomainLog2
-
-    pStepShifts = domainShifts p.stepDomainLog2
-
-    vanishesOnZkAtZeta = permutationVanishingPolynomial
-      { domainLog2: p.stepDomainLog2
-      , zkRows: verifier.stepZkRows
-      , pt: zetaField
-      }
-
-    dv = runExists
-      ( \(OcamlProofWidthData wd) ->
-          expandDeferredForVerify
-            { rawPlonk: p.rawPlonk
-            , rawBulletproofChallenges: p.rawBulletproofChallenges
-            , branchData: p.branchData
-            , spongeDigestBeforeEvaluations: p.spongeDigestBeforeEvaluations
-            , chunkedAllEvals: p.prevEvalsChunked
-            , pEval0Chunks: p.pEval0Chunks
-            , oldBulletproofChallenges: wd.oldBulletproofChallenges
-            , domainLog2: p.stepDomainLog2
-            , zkRows: verifier.stepZkRows
-            , srsLengthLog2: verifier.stepSrsLengthLog2
-            , generator: pStepGenerator
-            , shifts: pStepShifts
-            , vanishesOnZk: vanishesOnZkAtZeta
-            , omegaForLagrange: \_ -> one
-            , endo: verifier.stepEndo
-            , linearizationPoly: verifier.linearizationPoly
-            }
-      )
-      p.widthData
-
-    expandedBpChals = Array.fromFoldable $
-      map (\c -> coerce (toFieldPure c (F verifier.stepEndo)) :: StepField)
-        p.rawBulletproofChallenges
-
-    computedSg = vestaSrsBPolyCommitmentPoint verifier.vestaSrs expandedBpChals
-
-    accumulatorOk = computedSg == p.challengePolynomialCommitment
-
-    pi = wrapPublicInputOf dv p.messagesForNextStepProofDigest p.messagesForNextWrapProofDigest
-
-    kimchiOk = verifyOpeningProof verifier.wrapVK
-      { proof: p.wrapProof, publicInput: pi }
-  in
-    accumulatorOk && kimchiOk
+-- | Assemble a canonical `VerifiableProof` from an `OcamlProofWire` plus the
+-- | data that lives outside OCaml's proof_state JSON: the serde-decoded
+-- | kimchi wrap proof, the two recomputed message digests, and the
+-- | prev-proof bp-challenges (`[]` for mpv=0). Verification is then the
+-- | ordinary `Pickles.Verify.verify`.
+ocamlProofWireToVerifiable
+  :: { wrapProof :: Proof Pallas.G WrapField
+     , messagesForNextStepProofDigest :: StepField
+     , messagesForNextWrapProofDigest :: WrapField
+     , oldBulletproofChallenges :: Array (Vector StepIPARounds StepField)
+     }
+  -> OcamlProofWire
+  -> VerifiableProof
+ocamlProofWireToVerifiable extra w =
+  { wrapProof: extra.wrapProof
+  , rawPlonk: w.rawPlonk
+  , rawBulletproofChallenges: w.rawBulletproofChallenges
+  , branchData: w.branchData
+  , spongeDigestBeforeEvaluations: w.spongeDigestBeforeEvaluations
+  , prevEvalsChunked: w.prevEvalsChunked
+  , pEval0Chunks: w.pEval0Chunks
+  , oldBulletproofChallenges: extra.oldBulletproofChallenges
+  , challengePolynomialCommitment: w.challengePolynomialCommitment
+  , messagesForNextStepProofDigest: extra.messagesForNextStepProofDigest
+  , messagesForNextWrapProofDigest: extra.messagesForNextWrapProofDigest
+  , stepDomainLog2: w.stepDomainLog2
+  }
 
 --------------------------------------------------------------------------------
 -- Fixture surface
 --------------------------------------------------------------------------------
 
--- | An OCaml-loaded NRR fixture: the kimchi `VerifierIndex` (+ its
--- | original JSON for round-trip checks) plus an `OcamlProof 0` for
--- | verification.
+-- | An OCaml-loaded NRR fixture: the kimchi `VerifierIndex` (+ its original
+-- | JSON for round-trip checks), a ready-built `Verifier`, and a canonical
+-- | `VerifiableProof` (verify via `Pickles.Verify.verify`).
 type LoadedFixture stmtVal =
   { vk :: VerifierIndex Pallas.G WrapField
   , vkJson :: String
-  , vestaSrs :: CRS Vesta.G
-  , ocamlProof :: OcamlProof 0 stmtVal
+  , verifier :: Verifier
+  , verifiableProof :: VerifiableProof
+  , statement :: stmtVal
   }
 
 -- | Generic fixture loader. Caller supplies:
@@ -230,9 +169,8 @@ type LoadedFixture stmtVal =
 -- |     `messagesForNextStepProofDigest`).
 -- |
 -- | Currently specialised for max_proofs_verified = 0 (NRR-shape): the
--- | message digests are computed assuming there are no previous proofs.
--- | Generalising to mpv > 0 would thread real prev-proof data through
--- | the digest computation here.
+-- | message digests are computed assuming there are no previous proofs, and
+-- | `oldBulletproofChallenges` is empty.
 loadFixture
   :: forall stmtVal
    . { decode :: Json -> Either JsonDecodeError stmtVal
@@ -253,42 +191,22 @@ loadFixture cfg sharedSrs dir = do
 
     srs = sharedSrs.pallasSrs
     -- Deserialize → hydrate. The serde codec leaves `linearization` and
-    -- `powers_of_alpha` empty (`#[serde(skip)]`). Hydration — rebuilding
-    -- those caches from the VK's feature-flag bits — is automatic on
-    -- conversion (`From<NapiPlonkVerifierIndex> for VerifierIndex` at
-    -- `kimchi-napi/src/plonk_verifier_index.rs:340` recomputes
-    -- `linearization`, `powers_of_alpha`, `w`, and
-    -- `permutation_vanishing_polynomial_m` from the deserialized
-    -- optional-comm `is_some()` shape), so no explicit hydrate step
-    -- is needed.
+    -- `powers_of_alpha` empty (`#[serde(skip)]`); hydration is automatic on
+    -- conversion (`From<NapiPlonkVerifierIndex> for VerifierIndex` recomputes
+    -- those caches from the deserialized optional-comm shape).
     vk = vestaVerifierIndexFromSerdeJson vkJson srs
 
-    -- Kimchi proof: load via the same Rust serde codec OCaml wrote it
-    -- with. `prev_challenges` is already populated (OCaml passed the
-    -- `Wrap_hack.pad_accumulator` chal_polys at dump time), so we
-    -- never reconstruct it on the PS side.
+    -- Kimchi proof via the same Rust serde codec OCaml wrote it with.
     wireProof = vestaProofFromSerdeJson proofSerdeJson
 
   statement <- liftEffectThrow $ parseStatement cfg.decode statementText
-  decoded <- liftEffectThrow $ decodePickles wrappingTextSafe
+  wire <- liftEffectThrow $ decodeOcamlProofWire wrappingTextSafe
 
-  -- Vesta SRS comes from the shared per-suite cache (see
-  -- `Test.Pickles.SharedSrs`). Verifier internals don't read it for NRR
-  -- (mpv = 0) but the existential needs *some* value at construction
-  -- time; sharing avoids rebuilding the lagrange basis per fixture.
   let
     vestaSrs = sharedSrs.vestaSrs
     appStateFields = cfg.toFields statement
 
-    -- Empty width-indexed widthData for `mpv = 0`.
-    widthData = mkSomeOcamlProofWidthData @0
-      { oldBulletproofChallenges: Vector.nil
-      }
-
-    -- For mpv = 0: no previous proofs, so the proofs vector is empty.
-    -- Mirrors `extractWrapVKForStepHash input.wrapVK` from
-    -- `Pickles.Prove.Step:701`. The real prev (sg, expandedBpChals) entries
-    -- would go here for mpv > 0.
+    -- mpv = 0: no previous proofs.
     wrapVkStep = extractWrapVKForStepHash @1 vk
 
     msgStep = hashMessagesForNextStepProofPure
@@ -297,36 +215,31 @@ loadFixture cfg sharedSrs dir = do
       , proofs: Vector.nil :: Vector 0 _
       }
 
-    -- For mpv = 0: paddedChallenges = full Vector PaddedLength of dummy
-    -- expanded wrap-IPA challenges. Mirrors `msgWrapPadded` construction
-    -- in `Pickles.Prove.Compile:2830-2833` with `padMax = PaddedLength`.
+    -- mpv = 0: paddedChallenges = full Vector PaddedLength of dummy expanded
+    -- wrap-IPA challenges.
     msgWrapPadded = Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
 
     msgWrap = hashMessagesForNextWrapProofPureGeneral
-      { sg: decoded.challengePolynomialCommitment
+      { sg: wire.challengePolynomialCommitment
       , paddedChallenges: msgWrapPadded
       }
 
-  pure
-    { vk
-    , vkJson
-    , vestaSrs
-    , ocamlProof: OcamlProof
-        { statement
-        , wrapProof: wireProof
-        , rawPlonk: decoded.rawPlonk
-        , rawBulletproofChallenges: decoded.rawBulletproofChallenges
-        , branchData: decoded.branchData
-        , spongeDigestBeforeEvaluations: decoded.spongeDigestBeforeEvaluations
-        , challengePolynomialCommitment: decoded.challengePolynomialCommitment
-        , stepDomainLog2: decoded.stepDomainLog2
-        , prevEvalsChunked: decoded.prevEvalsChunked
-        , pEval0Chunks: decoded.pEval0Chunks
-        , messagesForNextStepProofDigest: msgStep
-        , messagesForNextWrapProofDigest: msgWrap
-        , widthData
-        }
-    }
+    verifiableProof = ocamlProofWireToVerifiable
+      { wrapProof: wireProof
+      , messagesForNextStepProofDigest: msgStep
+      , messagesForNextWrapProofDigest: msgWrap
+      , oldBulletproofChallenges: [] -- NRR: mpv = 0, no prev proofs
+      }
+      wire
+
+    verifier = mkVerifier
+      { wrapVK: vk
+      , vestaSrs
+      , stepDomainLog2: wire.stepDomainLog2
+      , stepNumChunks: 1
+      }
+
+  pure { vk, vkJson, verifier, verifiableProof, statement }
 
 -- | NRR convenience: NRR's `Output Field.typ` makes the statement a single
 -- | hex-encoded `StepField`. `toFields` wraps it in a singleton array — the
@@ -371,15 +284,7 @@ decodeAffinePoint j = do
 
 -- | Decode a JSON int64. After `parseJsonPreserveBigInts` rewrites
 -- | numbers above ±2^53 as strings, smaller integers stay as JSON
--- | numbers. We try three forms in order:
--- |   * `String` — produced by `parseJsonPreserveBigInts` for ints
--- |     above ±2^53 (and for OCaml-string-encoded fields).
--- |   * `Number` — JSON numbers in the safe-integer range. Covers
--- |     ints up to ±2^53; PureScript `Int` only covers ±2^31, so we
--- |     can't decode as Int directly without losing medium-sized
--- |     values (e.g. OCaml `802613802914978`).
--- |   * `Int` — final fallback for the narrow ±2^31 case (kept for
--- |     backwards compatibility; `Number` covers a strict superset).
+-- | numbers. We try three forms in order: String, Number, Int.
 decodeInt64 :: Json -> Either JsonDecodeError BigInt
 decodeInt64 j =
   case decodeJson j :: Either JsonDecodeError String of
@@ -435,27 +340,16 @@ parseStatement decode raw = do
   lmap show (decode json)
 
 --------------------------------------------------------------------------------
--- Pickles wrapping decoders
+-- OcamlProofWire decoder (the OCaml proof_state yojson adapter)
 --------------------------------------------------------------------------------
 
-type DecodedPickles =
-  { rawPlonk :: PlonkMinimal (F StepField)
-  , rawBulletproofChallenges :: Vector StepIPARounds (ScalarChallenge (F StepField))
-  , branchData :: BranchData StepField Boolean
-  , spongeDigestBeforeEvaluations :: StepField
-  , challengePolynomialCommitment :: AffinePoint WrapField
-  , stepDomainLog2 :: Int
-  , prevEvalsChunked :: ChunkedAllEvals StepField
-  , pEval0Chunks :: Array StepField
-  }
-
-decodePickles :: String -> Either String DecodedPickles
-decodePickles raw = do
+decodeOcamlProofWire :: String -> Either String OcamlProofWire
+decodeOcamlProofWire raw = do
   json <- jsonParser raw
-  lmap printJsonDecodeError (decodePicklesJson json)
+  lmap printJsonDecodeError (decodeOcamlProofWireJson json)
 
-decodePicklesJson :: Json -> Either JsonDecodeError DecodedPickles
-decodePicklesJson j = do
+decodeOcamlProofWireJson :: Json -> Either JsonDecodeError OcamlProofWire
+decodeOcamlProofWireJson j = do
   obj <- decodeJson j
   statement <- (obj .: "statement") >>= decodeJson
   proofState <- (statement .: "proof_state") >>= decodeJson
@@ -606,31 +500,10 @@ decodeOcamlByte j = do
 --------------------------------------------------------------------------------
 
 -- | Decode `prev_evals :: Plonk_types.All_evals.t` from
--- | `proof.json/prev_evals`.
--- |
--- | The JSON shape is:
--- |   { "ft_eval1": "0x..."
--- |   , "evals":
--- |       { "public_input": [zeta_hex, omega_zeta_hex]   -- flat point eval
--- |       , "evals":   -- kimchi proof_evaluations, chunked-singleton format
--- |           { "w": [[[zeta_hex],[omega_zeta_hex]], × 15]
--- |           , "coefficients": [[[..],[..]], × 15]
--- |           , "z": [[zeta],[omega_zeta]]
--- |           , "s": [[[..],[..]], × 6]
--- |           , "generic_selector": [[..],[..]]
--- |           , "poseidon_selector": [[..],[..]]
--- |           , "complete_add_selector": [[..],[..]]
--- |           , "mul_selector": [[..],[..]]
--- |           , "emul_selector": [[..],[..]]
--- |           , "endomul_scalar_selector": [[..],[..]]
--- |           , "range_check{0,1}_selector": null
--- |           , ... 16 optional selectors all null for Features.none
--- |           } } }
--- |
--- | We read the 6 always-on selectors as the `indexEvals` vector in the
--- | OCaml absorption order (`generic`, `poseidon`, `complete_add`, `mul`,
--- | `emul`, `endomul_scalar` — matching `extractEvalFields` in
--- | `Pickles.PlonkChecks`).
+-- | `proof.json/prev_evals`. See the original NRR fixture for the JSON shape:
+-- | a flat `[zeta, omega_zeta]` `public_input` plus the kimchi
+-- | `proof_evaluations` (chunked-singleton) for the 6 always-on selectors,
+-- | `z`, `w` (15), `coefficients` (15) and `s` (6).
 decodeAllEvals :: Json -> Either JsonDecodeError (ChunkedAllEvals StepField)
 decodeAllEvals j = do
   obj <- decodeJson j
@@ -641,8 +514,7 @@ decodeAllEvals j = do
   publicJ <- evalsObj .: "public_input"
   -- Public input in OCaml's prev_evals dump is flat `[zeta, omega]` — a
   -- length-1 chunk. Wrap as a singleton NEA to fit the ChunkedAllEvals
-  -- shape. If a future fixture format encodes chunked public_input
-  -- (length > 1), switch to decodePointEvalChunked here.
+  -- shape.
   publicEvalsFlat <- decodePointEvalFlat publicJ
   let publicEvals = NEA.singleton publicEvalsFlat
 
@@ -741,4 +613,3 @@ toFixedVec label arr =
               <> show (Array.length arr)
           )
       )
-
