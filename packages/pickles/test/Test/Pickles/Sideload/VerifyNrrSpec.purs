@@ -14,7 +14,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Pickles (verify)
 import Test.Pickles.SharedSrs (SharedSrs)
-import Test.Pickles.Sideload.Loader (loadNrrFixture)
+import Test.Pickles.Sideload.Loader (decodeHex, loadFixture)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
@@ -24,6 +24,6 @@ spec = describe "Pickles.Sideload.NRR verify" do
   where
   body :: SharedSrs -> Aff Unit
   body { pallasSrs, vestaSrs } = do
-    fixture <- loadNrrFixture { pallasSrs, vestaSrs }
+    fixture <- loadFixture { decodeStatement: decodeHex, statementToFields: \f -> [ f ] } { pallasSrs, vestaSrs }
       "packages/pickles/test/fixtures/sideload/nrr"
     verify fixture.verifier fixture.verifiableProof `shouldEqual` true

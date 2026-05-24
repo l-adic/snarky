@@ -26,7 +26,7 @@ import Pickles.ProofCache (vestaVerifierIndexJsonKey)
 import Snarky.Circuit.DSL (F)
 import Test.Pickles.Prove.NoRecursionReturn (NrrRules, nrrRule)
 import Test.Pickles.SharedSrs (SharedSrs)
-import Test.Pickles.Sideload.Loader (loadNrrFixture)
+import Test.Pickles.Sideload.Loader (decodeHex, loadFixture)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
@@ -53,7 +53,7 @@ spec = describe "Pickles.Sideload.NRR VK equality" do
       rules
 
     -- OCaml-side fixture: load the wrap VK from the dumped serde JSON.
-    fixture <- liftAff $ loadNrrFixture { pallasSrs, vestaSrs }
+    fixture <- liftAff $ loadFixture { decodeStatement: decodeHex, statementToFields: \f -> [ f ] } { pallasSrs, vestaSrs }
       "packages/pickles/test/fixtures/sideload/nrr"
 
     -- Compare full-VK JSON keys; string equality ⇒ bit-equivalent VKs.

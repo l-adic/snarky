@@ -26,10 +26,10 @@ step ~handler:(handler No_recursion.example_input
                        with `prev_challenges` already populated via
                        `Wrap_hack.pad_accumulator`. Loaded by PS via
                        `vestaProofFromSerdeJson`; no reconstruction.
-- `wrapping.json`    — Pickles wrapping fields not in the kimchi proof:
+- `public_input_skeleton.json`    — Pickles wrapping fields not in the kimchi proof:
                        deferred-values, branch_data, sponge digest,
                        prev_evals, redundant wire_proof bytes. yojson_full.
-- `statement.json`   — public state: a single field encoded as a hex string.
+- `app_statement.json`   — public state: a single field encoded as a hex string.
                        For this fixture, the value is `Field.Constant.zero`
                        (= the public input passed to `step` per
                        `dump_side_loaded_main.ml:103`).

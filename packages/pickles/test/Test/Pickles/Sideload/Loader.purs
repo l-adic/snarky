@@ -5,8 +5,8 @@
 -- | example):
 -- |   * `vk.serde.json`     — kimchi `VerifierIndex` Rust serde JSON
 -- |   * `proof.serde.json`  — kimchi wrap `ProverProof` Rust serde JSON
--- |   * `wrapping.json`     — the Pickles `proof_state` (OCaml yojson)
--- |   * `statement.json`    — the application's public input/output
+-- |   * `public_input_skeleton.json`     — the Pickles `proof_state` (OCaml yojson)
+-- |   * `app_statement.json`    — the application's public input/output
 -- |
 -- | Architecture (mirrors `Pickles.Prove.Codecs`):
 -- |
@@ -27,13 +27,9 @@
 -- | argonaut decoding.
 module Test.Pickles.Sideload.Loader
   ( LoadedFixture
-  , loadFixture
-  , loadNrrFixture
-  , fromHexBe
-  , parseJsonPreserveBigInts
   , OcamlProofWire
-  , decodeOcamlProofWire
-  , ocamlProofWireToVerifiable
+  , loadFixture
+  , decodeHex
   ) where
 
 import Prelude
@@ -62,8 +58,8 @@ import JS.BigInt as JsBigInt
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync (readTextFile)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
-import Pickles (PaddedLength, StepField, StepIPARounds, VerifiableProof, Verifier, WrapField, mkVerifier)
-import Pickles.Dummy (dummyIpaChallenges)
+import Pickles (PaddedLength, StepField, StepIPARounds, VerifiableProof, Verifier, WrapField, WrapIPARounds, mkVerifier)
+import Pickles.Dummy (dummyIpaChallenges, stepEndo, wrapEndo)
 import Pickles.Linearization.FFI (PointEval)
 import Pickles.PlonkChecks (ChunkedAllEvals)
 import Pickles.Prove.FFI (Proof)
@@ -72,9 +68,11 @@ import Pickles.Sideload (vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJso
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
+import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
-import Snarky.Circuit.DSL (F)
+import Snarky.Circuit.DSL (F(..))
 import Snarky.Circuit.DSL.SizedF (SizedF, unsafeFromField, wrapF)
+import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
 import Snarky.Curves.Class (class PrimeField, fromBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG) as PV
@@ -98,16 +96,17 @@ foreign import parseJsonPreserveBigInts :: String -> String
 --------------------------------------------------------------------------------
 
 -- | Typed view of the Pickles `proof_state` an OCaml `dump_*_fixtures` tool
--- | emits in `wrapping.json`. This is the OCaml-format counterpart of the
+-- | emits in `public_input_skeleton.json`. This is the OCaml-format counterpart of the
 -- | carried statement skeleton in `Pickles.Verify.VerifiableProof`; the
 -- | bespoke argonaut decoders below are its codec (OCaml limb vectors /
 -- | scalar-challenge wrappers / BE hex → PS field elements).
 -- |
--- | It deliberately omits everything that is NOT in the OCaml proof_state
--- | JSON: the kimchi wrap proof (separate `proof.serde.json`, Rust serde),
--- | the two message digests (recomputed), and the prev-proof bp-challenges
--- | (empty for the mpv=0 NRR fixtures). `ocamlProofWireToVerifiable`
--- | supplies those.
+-- | It deliberately omits the kimchi wrap proof (separate `proof.serde.json`,
+-- | Rust serde) and the two message digests (recomputed). The prev-proof
+-- | data IS carried (the `mpv`-many `prev*` arrays below) — at mpv=0 (NRR /
+-- | chunks2) they're empty, at mpv≥1 (SimpleChain, N2) they hold the carried
+-- | previous-proof commitments + bullet challenges from
+-- | `messages_for_next_{step,wrap}_proof`. `loadFixture` expands them.
 type OcamlProofWire =
   { rawPlonk :: PlonkMinimal (F StepField)
   , rawBulletproofChallenges :: Vector StepIPARounds (ScalarChallenge (F StepField))
@@ -117,6 +116,14 @@ type OcamlProofWire =
   , stepDomainLog2 :: Int
   , prevEvalsChunked :: ChunkedAllEvals StepField
   , pEval0Chunks :: Array StepField
+  -- mpv-many previous-proof data, carried in the proof's own statement.
+  -- `prevStepSgs` + `prevStepChalsRaw` come from
+  -- `messages_for_next_step_proof` (16-round, step IPA); `prevWrapChalsRaw`
+  -- from `messages_for_next_wrap_proof` (15-round, wrap IPA). Each is
+  -- length `mpv` (0, 1 or 2).
+  , prevStepSgs :: Array (AffinePoint StepField)
+  , prevStepChalsRaw :: Array (Vector StepIPARounds (ScalarChallenge (F StepField)))
+  , prevWrapChalsRaw :: Array (Vector WrapIPARounds (ScalarChallenge (F WrapField)))
   }
 
 -- | Assemble a canonical `VerifiableProof` from an `OcamlProofWire` plus the
@@ -162,19 +169,24 @@ type LoadedFixture stmtVal =
   , statement :: stmtVal
   }
 
--- | Generic fixture loader. Caller supplies:
--- |   * `decode`: parse the application's statement JSON
--- |   * `toFields`: flatten the statement value to field elements (used by
--- |     `hashMessagesForNextStepProofPure` to build the
--- |     `messagesForNextStepProofDigest`).
+-- | Generic fixture loader. Caller supplies the application-statement codec:
+-- |   * `decodeStatement`: parse `app_statement.json` into the statement value
+-- |   * `statementToFields`: encode the statement value as its field-element
+-- |     vector — OCaml's `Statement_value.to_field_elements`, i.e. the
+-- |     `app_state` absorbed by `hashMessagesForNextStepProofPure` into the
+-- |     `messagesForNextStepProofDigest`.
 -- |
--- | Currently specialised for max_proofs_verified = 0 (NRR-shape): the
--- | message digests are computed assuming there are no previous proofs, and
--- | `oldBulletproofChallenges` is empty.
+-- | Generic over max_proofs_verified: the carried prev-proof data
+-- | (`prevStepSgs` / `prev*ChalsRaw`, length `mpv`) is read from the
+-- | statement and the two message digests + `oldBulletproofChallenges` are
+-- | rebuilt from it. mpv=0 (NRR / chunks2) → empty prev data (all-dummy wrap
+-- | padding, no step proofs); mpv≥1 (SimpleChain) → the real prev proofs.
+-- | num_chunks is derived from the dumped `prev_evals`, so chunked proofs
+-- | load too.
 loadFixture
   :: forall stmtVal
-   . { decode :: Json -> Either JsonDecodeError stmtVal
-     , toFields :: stmtVal -> Array StepField
+   . { decodeStatement :: Json -> Either JsonDecodeError stmtVal
+     , statementToFields :: stmtVal -> Array StepField
      }
   -> { pallasSrs :: CRS PV.PallasG, vestaSrs :: CRS PV.VestaG }
   -> String
@@ -182,8 +194,8 @@ loadFixture
 loadFixture cfg sharedSrs dir = do
   vkJson <- liftEffect $ readTextFile UTF8 (dir <> "/vk.serde.json")
   proofSerdeJson <- liftEffect $ readTextFile UTF8 (dir <> "/proof.serde.json")
-  wrappingText <- liftEffect $ readTextFile UTF8 (dir <> "/wrapping.json")
-  statementText <- liftEffect $ readTextFile UTF8 (dir <> "/statement.json")
+  wrappingText <- liftEffect $ readTextFile UTF8 (dir <> "/public_input_skeleton.json")
+  statementText <- liftEffect $ readTextFile UTF8 (dir <> "/app_statement.json")
 
   let
     -- Re-encode int64s as JSON strings so argonaut doesn't lose precision.
@@ -199,62 +211,79 @@ loadFixture cfg sharedSrs dir = do
     -- Kimchi proof via the same Rust serde codec OCaml wrote it with.
     wireProof = vestaProofFromSerdeJson proofSerdeJson
 
-  statement <- liftEffectThrow $ parseStatement cfg.decode statementText
-  wire <- liftEffectThrow $ decodeOcamlProofWire wrappingTextSafe
+  statement <- either (liftEffect <<< throw) pure $ parseStatement cfg.decodeStatement statementText
+  wire <- either (liftEffect <<< throw) pure $ decodeOcamlProofWire wrappingTextSafe
 
   let
     vestaSrs = sharedSrs.vestaSrs
-    appStateFields = cfg.toFields statement
+    -- appState = the app's statement fields. The step-message digest absorbs
+    -- the proof's own app_state, which equals the application statement
+    -- (`app_statement.json`). The dumped `messages_for_next_step_proof.app_state`
+    -- is unusable: the proof-cache `Repr` erases it to `unit` (→ JSON null).
+    appStateFields = cfg.statementToFields statement
 
-    -- mpv = 0: no previous proofs.
     wrapVkStep = extractWrapVKForStepHash @1 vk
 
-    msgStep = hashMessagesForNextStepProofPure
-      { stepVk: wrapVkStep
-      , appState: appStateFields
-      , proofs: Vector.nil :: Vector 0 _
-      }
+    -- Expand the carried prev-proof bullet challenges (mpv-many; empty at
+    -- mpv=0). Step challenges (16-round) via the step endo, wrap challenges
+    -- (15-round) via the wrap endo — same `toFieldPure ... endo` the prover
+    -- uses (Prove.Pure.Step / Compile).
+    expandStep c = coerce (toFieldPure c (F stepEndo)) :: StepField
+    expandWrap c = coerce (toFieldPure c (F wrapEndo)) :: WrapField
 
-    -- mpv = 0: paddedChallenges = full Vector PaddedLength of dummy expanded
-    -- wrap-IPA challenges.
-    msgWrapPadded = Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
+    prevStepExpanded :: Array (Vector StepIPARounds StepField)
+    prevStepExpanded = map (map expandStep) wire.prevStepChalsRaw
 
-    msgWrap = hashMessagesForNextWrapProofPureGeneral
-      { sg: wire.challengePolynomialCommitment
-      , paddedChallenges: msgWrapPadded
-      }
+    prevWrapExpanded :: Array (Vector WrapIPARounds WrapField)
+    prevWrapExpanded = map (map expandWrap) wire.prevWrapChalsRaw
+
+    -- messages_for_next_step_proof digest: one {sg, expandedBpChallenges} per
+    -- prev proof. `reifyVector` handles any mpv width (0/1/2).
+    stepProofs = Array.zipWith
+      (\sg expandedBpChallenges -> { sg, expandedBpChallenges })
+      wire.prevStepSgs
+      prevStepExpanded
+
+    msgStep = Vector.reifyVector stepProofs \proofs ->
+      hashMessagesForNextStepProofPure
+        { stepVk: wrapVkStep, appState: appStateFields, proofs }
+
+    -- messages_for_next_wrap_proof digest: front-pad the prev wrap challenges
+    -- with dummies up to PaddedLength (OCaml `Wrap_hack.pad_challenges`
+    -- prepends dummies — wrap_hack.ml:19-28). At mpv=0 this is all dummies.
+    paddedLen = reflectType (Proxy :: Proxy PaddedLength)
+    msgWrapPaddedArr =
+      Array.replicate (paddedLen - Array.length prevWrapExpanded)
+        dummyIpaChallenges.wrapExpanded
+        <> prevWrapExpanded
+
+    msgWrap = Vector.reifyVector msgWrapPaddedArr \paddedChallenges ->
+      hashMessagesForNextWrapProofPureGeneral
+        { sg: wire.challengePolynomialCommitment, paddedChallenges }
 
     verifiableProof = ocamlProofWireToVerifiable
       { wrapProof: wireProof
       , messagesForNextStepProofDigest: msgStep
       , messagesForNextWrapProofDigest: msgWrap
-      , oldBulletproofChallenges: [] -- NRR: mpv = 0, no prev proofs
+      , oldBulletproofChallenges: prevStepExpanded
       }
       wire
+
+    -- num_chunks is carried by the dumped prev_evals: every chunked
+    -- evaluation (here `z`) has exactly one entry per chunk, so the chunk
+    -- count is the length of that vector. (For the current NRR/SimpleChain
+    -- fixtures this is 1; deriving it keeps the loader correct for chunked
+    -- proofs without a hardcoded assumption.)
+    stepNumChunks = NEA.length wire.prevEvalsChunked.zEvals
 
     verifier = mkVerifier
       { wrapVK: vk
       , vestaSrs
       , stepDomainLog2: wire.stepDomainLog2
-      , stepNumChunks: 1
+      , stepNumChunks
       }
 
   pure { vk, vkJson, verifier, verifiableProof, statement }
-
--- | NRR convenience: NRR's `Output Field.typ` makes the statement a single
--- | hex-encoded `StepField`. `toFields` wraps it in a singleton array — the
--- | shape `hashMessagesForNextStepProofPure` expects for `appState`.
-loadNrrFixture
-  :: { pallasSrs :: CRS PV.PallasG, vestaSrs :: CRS PV.VestaG }
-  -> String
-  -> Aff (LoadedFixture StepField)
-loadNrrFixture = loadFixture
-  { decode: decodeHex
-  , toFields: \x -> [ x ]
-  }
-
-liftEffectThrow :: forall a. Either String a -> Aff a
-liftEffectThrow = either (\msg -> liftEffect (throw msg)) pure
 
 --------------------------------------------------------------------------------
 -- Hex / int64 / BigInt helpers
@@ -371,6 +400,24 @@ decodeOcamlProofWireJson j = do
   cpcJ <- msgWrap .: "challenge_polynomial_commitment"
   cpc <- decodeAffinePoint cpcJ :: Either JsonDecodeError (AffinePoint WrapField)
 
+  -- Previous-proof data carried in this proof's own statement (mpv-many;
+  -- empty at mpv=0). `messages_for_next_step_proof` carries the prev sgs +
+  -- 16-round step bullet challenges; `messages_for_next_wrap_proof` carries
+  -- the 15-round wrap bullet challenges (for the wrap-message digest).
+  msgStep <- (statement .: "messages_for_next_step_proof") >>= decodeJson
+  prevStepSgsJ :: Array Json <- msgStep .: "challenge_polynomial_commitments"
+  prevStepSgs <-
+    traverse decodeAffinePoint prevStepSgsJ
+      :: Either JsonDecodeError (Array (AffinePoint StepField))
+  prevStepObcJ :: Array Json <- msgStep .: "old_bulletproof_challenges"
+  prevStepChalsRaw <- traverse
+    (\jj -> (decodeJson jj :: Either JsonDecodeError (Array Json)) >>= decodeBulletproofVec)
+    prevStepObcJ
+  prevWrapObcJ :: Array Json <- msgWrap .: "old_bulletproof_challenges"
+  prevWrapChalsRaw <- traverse
+    (\jj -> (decodeJson jj :: Either JsonDecodeError (Array Json)) >>= decodeBulletproofVecWrap)
+    prevWrapObcJ
+
   -- prev_evals — natively chunked. `pEval0Chunks` collects the zeta
   -- evaluation of every public-input chunk (sized by num_chunks).
   prevEvalsJ <- (obj .: "prev_evals") >>= decodeJson
@@ -386,6 +433,9 @@ decodeOcamlProofWireJson j = do
     , stepDomainLog2
     , prevEvalsChunked
     , pEval0Chunks
+    , prevStepSgs
+    , prevStepChalsRaw
+    , prevWrapChalsRaw
     }
 
 -- | OCaml's 128-bit Hex64 vector → BigInt. Handles two yojson shapes:
@@ -442,6 +492,33 @@ decodeBPChallenge j = do
   prech <- obj .: "prechallenge"
   decodeChallengeSized prech
 
+-- | WrapField variants of the challenge decoders, for the 15-round
+-- | `messages_for_next_wrap_proof.old_bulletproof_challenges` (the prev
+-- | proof's WRAP IPA challenges, used in the wrap-message digest). Same
+-- | wire shape as the step ones, just the other field.
+mkScalarChallengeWrap :: BigInt -> SizedF 128 (F WrapField)
+mkScalarChallengeWrap bi =
+  let
+    f = fromBigInt bi :: WrapField
+    sized = unsafePartial $ unsafeFromField f :: SizedF 128 WrapField
+  in
+    wrapF sized
+
+decodeBPChallengeWrap :: Json -> Either JsonDecodeError (SizedF 128 (F WrapField))
+decodeBPChallengeWrap j = do
+  obj <- decodeJson j
+  prech <- obj .: "prechallenge"
+  mkScalarChallengeWrap <$> decodeChallengeBI prech
+
+decodeBulletproofVecWrap
+  :: Array Json
+  -> Either JsonDecodeError (Vector WrapIPARounds (ScalarChallenge (F WrapField)))
+decodeBulletproofVecWrap arr = do
+  vals <- traverse decodeBPChallengeWrap arr
+  case Vector.toVector @WrapIPARounds vals of
+    Just v -> pure v
+    Nothing -> Left (TypeMismatch ("expected 15 wrap bulletproof challenges, got " <> show (Array.length vals)))
+
 -- | Decode `proof_state.sponge_digest_before_evaluations` which is a
 -- | `Digest.Constant.t = Hex64 vector of 4 limbs` = 256-bit value.
 decodeDigestField :: Json -> Either JsonDecodeError StepField
@@ -466,9 +543,18 @@ decodeBranchDataAndLog2 j = do
     domLog2
 
 -- | OCaml polymorphic-variant `N0 | N1 | N2` is yojson-encoded as a single-
--- | element array `["N0"]` etc. Map to the PS `Vector 2 Boolean` mask using
--- | the prefix-mask convention from `pickles_base/proofs_verified.ml:24-28`:
--- |   N0 → [false, false], N1 → [true, false], N2 → [true, true].
+-- | element array `["N0"]` etc. Map to the PS `Vector 2 Boolean` mask.
+-- |
+-- | This is the CONSTANT branch_data packing, which OCaml's `Branch_data.pack`
+-- | (`branch_data.ml:62-73`) does via `project (Proofs_verified.to_bool_vec …)`
+-- | — NOT the prefix-mask used by the in-circuit `proofs_verified_mask`. Per
+-- | `pickles_base/proofs_verified.ml:70-76` `to_bool_vec` is:
+-- |   N0 → [false, false], N1 → [false, true], N2 → [true, true].
+-- | LSB-first `project` then gives N0→0, N1→2, N2→3 — matching the wrap
+-- | public input. (`packBranchDataWrap` packs `m0 + 2·m1`, and the in-circuit
+-- | path reaches the same values via `revOnesVector`, which also produces the
+-- | `to_bool_vec` shape — so this decode must use `to_bool_vec`, not the
+-- | prefix mask. N0/N2 coincide between the two conventions; only N1 differs.)
 decodeProofsVerified :: Json -> Either JsonDecodeError (Vector 2 Boolean)
 decodeProofsVerified j = do
   arr :: Array Json <- decodeJson j
@@ -477,7 +563,7 @@ decodeProofsVerified j = do
       tag <- decodeJson tagJ :: Either JsonDecodeError String
       case tag of
         "N0" -> pure (mkMask false false)
-        "N1" -> pure (mkMask true false)
+        "N1" -> pure (mkMask false true)
         "N2" -> pure (mkMask true true)
         _ -> Left (TypeMismatch ("expected N0|N1|N2, got " <> tag))
     _ -> Left (TypeMismatch "expected single-element variant tag")

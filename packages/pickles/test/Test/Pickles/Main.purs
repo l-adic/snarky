@@ -18,6 +18,7 @@ import Test.Pickles.SharedSrs (buildSharedSrs)
 import Test.Pickles.Sideload.DigestEqNrrSpec as SideloadDigestEqNrr
 import Test.Pickles.Sideload.RoundTripMainChildSpec as SideloadRoundTripMainChild
 import Test.Pickles.Sideload.RoundTripNrrSpec as SideloadRoundTripNrr
+import Test.Pickles.Sideload.VerifyFixturesSpec as SideloadVerifyFixtures
 import Test.Pickles.Sideload.VerifyNrrSpec as SideloadVerifyNrr
 import Test.Spec (SpecT, beforeAll, hoistSpec)
 import Test.Spec.Reporter.Console (consoleReporter)
@@ -58,6 +59,7 @@ spec = beforeAll buildSharedSrs do
   SideloadRoundTripMainChild.spec
   SideloadDigestEqNrr.spec
   SideloadVerifyNrr.spec
+  SideloadVerifyFixtures.spec
 
 main :: Effect Unit
 main = runSpecAndExitProcess'
