@@ -59,6 +59,7 @@ module Pickles.Verify
   , toVerifiable
   , verify
   , verifyBatch
+  , verifyStages
   , wrapPublicInput
   , wrapPublicInputOf
   ) where
@@ -458,6 +459,18 @@ verifyBatch v ps =
 -- | Defined via `verifyBatch` on a singleton.
 verify :: Verifier -> VerifiableProof -> Boolean
 verify v p = verifyBatch v [ p ]
+
+-- | Diagnostic: the two verify stages reported separately, so a failure can
+-- | be localized to the IPA accumulator check (stage 2) vs the kimchi
+-- | opening-proof / public-input check (stage 3).
+verifyStages :: Verifier -> VerifiableProof -> { accumulatorOk :: Boolean, kimchiOk :: Boolean }
+verifyStages v vp =
+  let
+    r = perProof v vp
+  in
+    { accumulatorOk: r.accumulatorOk
+    , kimchiOk: verifyOpeningProofsBatch v.wrapVK [ r.ctx ]
+    }
 
 -- | Assemble the flat `Array WrapField` that `pallasVerifyOpeningProof`
 -- | accepts as its `publicInput`. Exposed as a public helper so tests
