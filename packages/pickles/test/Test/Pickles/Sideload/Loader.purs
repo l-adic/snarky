@@ -279,7 +279,6 @@ loadFixture cfg sharedSrs dir = do
     verifier = mkVerifier
       { wrapVK: vk
       , vestaSrs
-      , stepDomainLog2: wire.stepDomainLog2
       , stepNumChunks
       }
 

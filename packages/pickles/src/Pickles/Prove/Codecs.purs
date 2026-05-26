@@ -87,11 +87,8 @@ type VerifiableProofWire =
 -- | the two SRSes are NOT here — they're reconstructed/supplied on decode.
 type VerifierWire =
   { wrapVK :: String
-  , stepDomainLog2 :: Int
   , stepZkRows :: Int
   , stepSrsLengthLog2 :: Int
-  , stepGenerator :: StepField
-  , stepShifts :: Vector 7 StepField
   , stepEndo :: StepField
   }
 
@@ -174,11 +171,8 @@ decodeVerifiableProof s = (readJSON s :: Either MultipleErrors VerifiableProofWi
 encodeVerifier :: Verifier -> String
 encodeVerifier v = writeJSON
   ( { wrapVK: vestaVerifierIndexToSerdeJson v.wrapVK
-    , stepDomainLog2: v.stepDomainLog2
     , stepZkRows: v.stepZkRows
     , stepSrsLengthLog2: v.stepSrsLengthLog2
-    , stepGenerator: v.stepGenerator
-    , stepShifts: v.stepShifts
     , stepEndo: v.stepEndo
     } :: VerifierWire
   )
@@ -195,11 +189,8 @@ decodeVerifier srs s = do
   pure
     { wrapVK: vestaVerifierIndexFromSerdeJson w.wrapVK srs.pallasSrs
     , vestaSrs: srs.vestaSrs
-    , stepDomainLog2: w.stepDomainLog2
     , stepZkRows: w.stepZkRows
     , stepSrsLengthLog2: w.stepSrsLengthLog2
-    , stepGenerator: w.stepGenerator
-    , stepShifts: w.stepShifts
     , stepEndo: w.stepEndo
     , linearizationPoly: Linearization.pallas
     }

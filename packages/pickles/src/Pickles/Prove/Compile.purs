@@ -976,12 +976,12 @@ instance
                       coerce
                         (toFieldPure prev.rawPlonk.zeta (F prevVerifier.stepEndo))
 
-                    -- The prev's branch-specific step domain. The shared
-                    -- `prevVerifier.stepDomainLog2` is a placeholder (first
-                    -- branch's); use the proof's own `stepDomainLog2` so
-                    -- multi-branch dispatch picks the right domain for each
-                    -- prev. Mirrors OCaml `branch_data.domain_log2` driving
-                    -- `step_domain` inside `expand_deferred`.
+                    -- The prev's branch-specific step domain. The `Verifier`
+                    -- no longer carries a step domain log2 (it's per-branch);
+                    -- use the proof's own `stepDomainLog2` so multi-branch
+                    -- dispatch picks the right domain for each prev. Mirrors
+                    -- OCaml `branch_data.domain_log2` driving `step_domain`
+                    -- inside `expand_deferred`.
                     prevStepGenerator = domainGenerator prev.stepDomainLog2
 
                     prevStepShifts = domainShifts prev.stepDomainLog2
@@ -4020,12 +4020,6 @@ compileMulti cfg rules = do
   -- Step 4: shared verifier + tag.
   unique <- newUnique
   let
-    -- Placeholder: uses the pre-pass log2 of the FIRST branch as
-    -- the verifier's stepDomainLog2. Multi-branch verification will
-    -- need a per-branch shape; deferred to a Verifier refactor.
-    firstBranchStepDomainLog2 =
-      (Vector.uncons perBranchVec).head.stepDomainLog2
-
     -- Wrap circuit's own domain log2 (= wrap_domains[mpvMax]).
     -- Used by the verifier for wrap-side proof validation; not
     -- consumed by the wrap circuit body anymore (the wrap circuit
@@ -4037,7 +4031,6 @@ compileMulti cfg rules = do
     verifier = mkVerifier
       { wrapVK: wrapResult.verifierIndex
       , vestaSrs: cfg.srs.vestaSrs
-      , stepDomainLog2: firstBranchStepDomainLog2
       , stepNumChunks: reflectType (Proxy :: Proxy stepChunks)
       }
 
