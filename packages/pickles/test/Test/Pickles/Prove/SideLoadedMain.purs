@@ -163,17 +163,17 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       , prevs: unit
       , sideloadedVKs: unit
       }
-    childCp0 :: CompiledProof 0 (StatementIO (F StepField) Unit) Unit <- case eChildCp of
+    childCp0 :: CompiledProof 0 (StatementIO (F StepField) Unit) <- case eChildCp of
       Left e -> liftEffect $ Exc.throw ("childProver: " <> show e)
       Right cp -> pure cp
 
     -- Width-lift the child to the side-loaded tag's bound. The slot
-    -- expects `CompiledProof 2` and `Tag _ _ 2`; the outer `mpv` is
+    -- expects `CompiledProof 2` and `Tag _ 2`; the outer `mpv` is
     -- phantom on both, so `coerce` repacks the bound. Sound when the
     -- actual width (0) is `≤` the new bound (2). PS analog of OCaml
     -- `Side_loaded.Proof.of_proof`.
     let
-      childCp2 :: CompiledProof 2 (StatementIO (F StepField) Unit) Unit
+      childCp2 :: CompiledProof 2 (StatementIO (F StepField) Unit)
       childCp2 = coerce childCp0
 
       childTag2 = coerce child.tag

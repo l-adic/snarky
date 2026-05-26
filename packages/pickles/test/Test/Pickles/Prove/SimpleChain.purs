@@ -110,9 +110,9 @@ spec = describe "Pickles.Prove.SimpleChain" do
 
     let
       runStep
-        :: PrevSlot (F StepField) 1 (StatementIO (F StepField) Unit) Unit
+        :: PrevSlot (F StepField) 1 (StatementIO (F StepField) Unit)
         -> F StepField
-        -> Aff (CompiledProof 1 (StatementIO (F StepField) Unit) Unit)
+        -> Aff (CompiledProof 1 (StatementIO (F StepField) Unit))
       runStep prevSlot appInput = do
         eRes <- liftEffect $ runExceptT $ chainProver
           { appInput, prevs: tuple1 prevSlot, sideloadedVKs: tuple1 unit }

@@ -197,21 +197,23 @@ type ProveError = EvaluationError
 -- |   (stepDomainLog2, stepEndo, etc.) for InductivePrev's wrap PI
 -- |   reconstruction.
 -- |
--- | The phantom `(inputVal, outputVal, mpv)` parameters provide
--- | structural type safety — different-shape rules' tags can't be
--- | substituted for each other. Same-shape collisions surface at
--- | runtime (mismatched `unique` → wrong VK in proof).
+-- | The phantom `(stmt, mpv)` parameters provide structural type
+-- | safety — different-shape rules' tags can't be substituted for each
+-- | other. Same-shape collisions surface at runtime (mismatched
+-- | `unique` → wrong VK in proof). The production prover instantiates
+-- | `stmt = StatementIO inputVal outputVal`, so the bundled statement
+-- | type discriminates on both the rule's input and output types.
 -- |
 -- | Mirrors OCaml's `Tag.t` (`pickles/tag.mli`): the `unique` is the
 -- | analog of `Type_equal.Id.uid`, the phantom params analog of the
 -- | OCaml type parameters.
-newtype Tag :: Type -> Type -> Int -> Type
-newtype Tag inputVal outputVal mpv = Tag
+newtype Tag :: Type -> Int -> Type
+newtype Tag stmt mpv = Tag
   { unique :: Unique
   , verifier :: Verifier
   }
 
-derive instance Newtype (Tag inputVal outputVal mpv) _
+derive instance Newtype (Tag stmt mpv) _
 
 -- | VK bundle downstream compiles consume as `perSlotImportedVKs`.
 type ProverVKs =
@@ -289,12 +291,12 @@ type StepInputs prevsSpec inputVal prevsCarrier vkCarrier =
 -- | `CompiledProof`, the prev's actual width is hidden inside
 -- | `CompiledProof.widthData`, so the slot's `n` matches uniformly
 -- | across all branches' proofs.
-data PrevSlot :: Type -> Int -> Type -> Type -> Type
-data PrevSlot inputVal n stmt outputVal
+data PrevSlot :: Type -> Int -> Type -> Type
+data PrevSlot inputVal n stmt
   = BasePrev { dummyStatement :: stmt }
   | InductivePrev
-      (CompiledProof n stmt outputVal)
-      (Tag inputVal outputVal n)
+      (CompiledProof n stmt)
+      (Tag stmt n)
 
 type CompileConfig :: Type -> Type -> Type
 type CompileConfig prevsSpec slotVKs =
@@ -738,7 +740,7 @@ instance
   CompilableSpec
     (Slot Compiled n slotVkChunks (StatementIO prevHeadInput prevHeadOutput) /\ rest)
     (SlotWrapKey /\ restSlotVKs)
-    ( PrevSlot prevHeadInput n (StatementIO prevHeadInput prevHeadOutput) prevHeadOutput
+    ( PrevSlot prevHeadInput n (StatementIO prevHeadInput prevHeadOutput)
         /\ restPrevsCarrier
     )
     mpv
@@ -976,12 +978,12 @@ instance
                       coerce
                         (toFieldPure prev.rawPlonk.zeta (F prevVerifier.stepEndo))
 
-                    -- The prev's branch-specific step domain. The shared
-                    -- `prevVerifier.stepDomainLog2` is a placeholder (first
-                    -- branch's); use the proof's own `stepDomainLog2` so
-                    -- multi-branch dispatch picks the right domain for each
-                    -- prev. Mirrors OCaml `branch_data.domain_log2` driving
-                    -- `step_domain` inside `expand_deferred`.
+                    -- The prev's branch-specific step domain. The `Verifier`
+                    -- no longer carries a step domain log2 (it's per-branch);
+                    -- use the proof's own `stepDomainLog2` so multi-branch
+                    -- dispatch picks the right domain for each prev. Mirrors
+                    -- OCaml `branch_data.domain_log2` driving `step_domain`
+                    -- inside `expand_deferred`.
                     prevStepGenerator = domainGenerator prev.stepDomainLog2
 
                     prevStepShifts = domainShifts prev.stepDomainLog2
@@ -1444,7 +1446,7 @@ instance
     -- `VerificationKey` (the runtime VK takes the place of the
     -- compile-time `SlotWrapKey`).
     (Unit /\ restSlotVKs)
-    ( PrevSlot prevHeadInput mpvMax (StatementIO prevHeadInput prevHeadOutput) prevHeadOutput
+    ( PrevSlot prevHeadInput mpvMax (StatementIO prevHeadInput prevHeadOutput)
         /\ restPrevsCarrier
     )
     mpv
@@ -2178,7 +2180,7 @@ newtype BranchProver prevsSpec mpv prevsCarrier vkCarrier inputVal outputVal m =
   BranchProver
     ( StepInputs prevsSpec inputVal prevsCarrier vkCarrier
       -> ExceptT ProveError m
-           (CompiledProof mpv (StatementIO inputVal outputVal) outputVal)
+           (CompiledProof mpv (StatementIO inputVal outputVal))
     )
 
 -- | Shared verification keys for a multi-branch compile.
@@ -2215,7 +2217,7 @@ type MultiOutput
   -> Type
 type MultiOutput proversCarrier perBranchStepCarrier mpvMax inputVal outputVal perBranchVKsCarrier =
   { provers :: proversCarrier
-  , tag :: Tag inputVal outputVal mpvMax
+  , tag :: Tag (StatementIO inputVal outputVal) mpvMax
   , verifier :: Verifier
   , vks :: MultiVKs perBranchStepCarrier
   -- | Per-branch `ProverVKs` handles, in case the caller wants to
@@ -3479,7 +3481,7 @@ runMultiProverBody
   -> RuleEntry prevsSpec mpv topBranches wrapVkChunks valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints
   -> StepInputs prevsSpec inputVal prevsCarrier vkCarrier
   -> ExceptT ProveError Effect
-       (CompiledProof mpvMax (StatementIO inputVal outputVal) outputVal)
+       (CompiledProof mpvMax (StatementIO inputVal outputVal))
 runMultiProverBody
   _ncProxy
   branchIdx
@@ -3832,7 +3834,6 @@ runMultiProverBody
 
   pure $ CompiledProof
     { statement: StatementIO { input: appInput, output: publicOutput }
-    , publicOutput
     , wrapProof: wrapProveResult.proof
     , rawPlonk: toPlonkMinimal wrapDv.plonk
     , rawBulletproofChallenges: wrapDv.bulletproofPrechallenges
@@ -4020,12 +4021,6 @@ compileMulti cfg rules = do
   -- Step 4: shared verifier + tag.
   unique <- newUnique
   let
-    -- Placeholder: uses the pre-pass log2 of the FIRST branch as
-    -- the verifier's stepDomainLog2. Multi-branch verification will
-    -- need a per-branch shape; deferred to a Verifier refactor.
-    firstBranchStepDomainLog2 =
-      (Vector.uncons perBranchVec).head.stepDomainLog2
-
     -- Wrap circuit's own domain log2 (= wrap_domains[mpvMax]).
     -- Used by the verifier for wrap-side proof validation; not
     -- consumed by the wrap circuit body anymore (the wrap circuit
@@ -4037,7 +4032,6 @@ compileMulti cfg rules = do
     verifier = mkVerifier
       { wrapVK: wrapResult.verifierIndex
       , vestaSrs: cfg.srs.vestaSrs
-      , stepDomainLog2: firstBranchStepDomainLog2
       , stepNumChunks: reflectType (Proxy :: Proxy stepChunks)
       }
 

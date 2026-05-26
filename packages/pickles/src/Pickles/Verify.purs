@@ -103,10 +103,6 @@ type Verifier =
   { wrapVK :: VerifierIndex PallasG WrapField
   -- | Step SRS, for the stage-2 accumulator MSM (`compute_sg`).
   , vestaSrs :: CRS VestaG
-  -- | Step domain log2 (= `stepProverIndex.domain.log_size_of_group`).
-  -- | Per-compiled-circuit — varies depending on constraint count;
-  -- | read via `proverIndexDomainLog2` at `mkVerifier` time.
-  , stepDomainLog2 :: Int
   -- | Kimchi `zkRows` (`Pickles.Constants.zkRows`).
   , stepZkRows :: Int
   -- | Step SRS size log2. Protocol constant for the Pasta/Pickles cycle
@@ -114,10 +110,6 @@ type Verifier =
   -- | per-circuit value — every step proof's IPA rounds are bounded by
   -- | the SRS size, which is fixed by the cycle's design.
   , stepSrsLengthLog2 :: Int
-  -- | Step domain generator `omega` (= `domain_generator stepDomainLog2`).
-  , stepGenerator :: StepField
-  -- | Permutation shifts for the step domain.
-  , stepShifts :: Vector 7 StepField
   -- | Step-field scalar endo coefficient (= `endoScalar @StepField`).
   , stepEndo :: StepField
   -- | Tick linearization polynomial (= `Pickles.Linearization.pallas`).
@@ -125,24 +117,22 @@ type Verifier =
   }
 
 -- | Build a `Verifier` from the minimum the caller supplies (a compiled
--- | wrap VK, a Vesta SRS, and the step domain log2). All derived
--- | constants (generator, shifts, endo, linearization) come from the
--- | standard Pickles setup.
+-- | wrap VK, a Vesta SRS, and the step `numChunks` driving zk_rows). All
+-- | derived constants (endo, linearization) come from the standard
+-- | Pickles setup. The per-proof step domain log2 (= generator + shifts)
+-- | is carried by each `VerifiableProof`'s `stepDomainLog2` and rebuilt
+-- | at verify time — see [`verifyOne`].
 mkVerifier
   :: { wrapVK :: VerifierIndex PallasG WrapField
      , vestaSrs :: CRS VestaG
-     , stepDomainLog2 :: Int
      , stepNumChunks :: Int
      }
   -> Verifier
-mkVerifier { wrapVK, vestaSrs, stepDomainLog2, stepNumChunks } =
+mkVerifier { wrapVK, vestaSrs, stepNumChunks } =
   { wrapVK
   , vestaSrs
-  , stepDomainLog2
   , stepZkRows: zkRowsForNumChunks stepNumChunks
   , stepSrsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
-  , stepGenerator: domainGenerator stepDomainLog2 :: StepField
-  , stepShifts: domainShifts stepDomainLog2 :: Vector 7 StepField
   , stepEndo: case (endoScalar) of EndoScalar e -> e
   , linearizationPoly: Linearization.pallas
   }
@@ -241,15 +231,17 @@ mkSomeCompiledProofWidthData rec = mkExists $ CompiledProofWidthData
 -- | carried-statement bundle + the actual kimchi opening proof).
 -- |
 -- | `mpv` is the proof system's *outer* `Max_proofs_verified.n` — the
--- | OCaml `'mlmb` parameter. It pins `Tag _ _ mpv` (= proof system
+-- | OCaml `'mlmb` parameter. It pins `Tag _ mpv` (= proof system
 -- | identity); per-rule width-dependent fields are hidden inside
 -- | `widthData :: SomeCompiledProofWidthData` to mirror OCaml's
 -- | `'most_recent_width` GADT existential (`proof.mli:97-110`).
-newtype CompiledProof :: Int -> Type -> Type -> Type
-newtype CompiledProof mpv stmtVal outputVal = CompiledProof
-  { -- Application-level data.
+newtype CompiledProof :: Int -> Type -> Type
+newtype CompiledProof mpv stmtVal = CompiledProof
+  { -- Application-level data. The statement bundles the rule's
+    -- application input + output (the production prover uses
+    -- `StatementIO inputVal outputVal`); reach the output via
+    -- `(unwrap cp.statement).output` at consumer sites.
     statement :: stmtVal
-  , publicOutput :: outputVal
 
   -- The actual wrap kimchi proof (commitments on Pallas, eval field = Fq).
   , wrapProof :: Proof PallasG WrapField
@@ -303,11 +295,11 @@ newtype CompiledProof mpv stmtVal outputVal = CompiledProof
   , widthData :: SomeCompiledProofWidthData
 
   -- This proof's actual STEP domain log2 (= the proof's branch's
-  -- step circuit domain log2). For multi-branch compiled outputs the
-  -- shared `Verifier`'s `stepDomainLog2` is a placeholder (the first
-  -- branch's), but verifying / re-expanding deferred values for a
-  -- specific proof requires its branch's domain log2. Mirrors
-  -- OCaml `branch_data.domain_log2` carried in
+  -- step circuit domain log2). Verifying / re-expanding deferred values
+  -- requires the proof's own branch's domain log2; the `Verifier` is
+  -- shared across branches and rebuilds domain constants (generator,
+  -- shifts) from this value at verify time. Mirrors OCaml
+  -- `branch_data.domain_log2` carried in
   -- `proof_state.deferred_values.branch_data`.
   , stepDomainLog2 :: Int
   }
@@ -340,8 +332,8 @@ type VerifiableProof =
 -- | `oldBulletproofChallenges` is the only `widthData` field verification
 -- | reads).
 toVerifiable
-  :: forall mpv stmtVal outputVal
-   . CompiledProof mpv stmtVal outputVal
+  :: forall mpv stmtVal
+   . CompiledProof mpv stmtVal
   -> VerifiableProof
 toVerifiable (CompiledProof p) =
   runExists
@@ -480,9 +472,9 @@ verifyStages v vp =
 -- | Kept on `CompiledProof` for the in-circuit recursive-step advice path
 -- | (`Pickles.Prove.Compile`); it just projects via `toVerifiable`.
 wrapPublicInput
-  :: forall mpv stmtVal outputVal
+  :: forall mpv stmtVal
    . Verifier
-  -> CompiledProof mpv stmtVal outputVal
+  -> CompiledProof mpv stmtVal
   -> Array WrapField
 wrapPublicInput v cp = wrapPublicInputVP v (toVerifiable cp)
 
