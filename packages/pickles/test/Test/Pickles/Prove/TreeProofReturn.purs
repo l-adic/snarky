@@ -180,8 +180,8 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
 
     let
       runStep
-        :: PrevSlot Unit 2 (StatementIO Unit (F StepField)) (F StepField)
-        -> Aff (CompiledProof 2 (StatementIO Unit (F StepField)) (F StepField))
+        :: PrevSlot Unit 2 (StatementIO Unit (F StepField))
+        -> Aff (CompiledProof 2 (StatementIO Unit (F StepField)))
       runStep selfPrev = do
         eRes <- liftEffect $ runExceptT $ treeProver
           { appInput: unit
@@ -217,6 +217,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     -- `BasePrev { output = -1 }` which trips `isBaseCase` → output 0.
     -- Each subsequent b_k+1 reads b_k's output and increments,
     -- producing 0..4 as the running counter.
-    let outputOf (CompiledProof p) = p.publicOutput
+    let outputOf (CompiledProof p) = let StatementIO s = p.statement in s.output
     map outputOf [ b0, b1, b2, b3, b4 ] `shouldEqual`
       [ F zero, F one, F (fromInt 2), F (fromInt 3), F (fromInt 4) ]

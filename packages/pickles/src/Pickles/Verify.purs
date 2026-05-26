@@ -231,15 +231,17 @@ mkSomeCompiledProofWidthData rec = mkExists $ CompiledProofWidthData
 -- | carried-statement bundle + the actual kimchi opening proof).
 -- |
 -- | `mpv` is the proof system's *outer* `Max_proofs_verified.n` — the
--- | OCaml `'mlmb` parameter. It pins `Tag _ _ mpv` (= proof system
+-- | OCaml `'mlmb` parameter. It pins `Tag _ mpv` (= proof system
 -- | identity); per-rule width-dependent fields are hidden inside
 -- | `widthData :: SomeCompiledProofWidthData` to mirror OCaml's
 -- | `'most_recent_width` GADT existential (`proof.mli:97-110`).
-newtype CompiledProof :: Int -> Type -> Type -> Type
-newtype CompiledProof mpv stmtVal outputVal = CompiledProof
-  { -- Application-level data.
+newtype CompiledProof :: Int -> Type -> Type
+newtype CompiledProof mpv stmtVal = CompiledProof
+  { -- Application-level data. The statement bundles the rule's
+    -- application input + output (the production prover uses
+    -- `StatementIO inputVal outputVal`); reach the output via
+    -- `(unwrap cp.statement).output` at consumer sites.
     statement :: stmtVal
-  , publicOutput :: outputVal
 
   -- The actual wrap kimchi proof (commitments on Pallas, eval field = Fq).
   , wrapProof :: Proof PallasG WrapField
@@ -330,8 +332,8 @@ type VerifiableProof =
 -- | `oldBulletproofChallenges` is the only `widthData` field verification
 -- | reads).
 toVerifiable
-  :: forall mpv stmtVal outputVal
-   . CompiledProof mpv stmtVal outputVal
+  :: forall mpv stmtVal
+   . CompiledProof mpv stmtVal
   -> VerifiableProof
 toVerifiable (CompiledProof p) =
   runExists
@@ -470,9 +472,9 @@ verifyStages v vp =
 -- | Kept on `CompiledProof` for the in-circuit recursive-step advice path
 -- | (`Pickles.Prove.Compile`); it just projects via `toVerifiable`.
 wrapPublicInput
-  :: forall mpv stmtVal outputVal
+  :: forall mpv stmtVal
    . Verifier
-  -> CompiledProof mpv stmtVal outputVal
+  -> CompiledProof mpv stmtVal
   -> Array WrapField
 wrapPublicInput v cp = wrapPublicInputVP v (toVerifiable cp)
 
