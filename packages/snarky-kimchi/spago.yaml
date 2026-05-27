@@ -1,6 +1,7 @@
 package:
   name: snarky-kimchi
   dependencies:
+    - argonaut-core
     - arrays
     - bifunctors
     - control
@@ -9,12 +10,15 @@ package:
     - either
     - exceptions
     - foldable-traversable
+    - foreign-object
     - identity
+    - integers
     - js-bigints
     - lists
     - maybe
     - mmorph
     - newtype
+    - node-fs
     - nonempty
     - nullable
     - ordered-collections
@@ -24,9 +28,11 @@ package:
     - quickcheck
     - record
     - safe-coerce
+    - simple-json
     - snarky
     - snarky-curves
     - snarky-test-utils
+    - strings
     - transformers
     - tuples
     - unfoldable
@@ -36,8 +42,11 @@ package:
     main: Test.Snarky.Circuit.Kimchi.Main
     dependencies:
       - effect
+      - exceptions
       - gen
       - identity
+      - integers
+      - node-fs
       - partial
       - quickcheck
       - snarky-test-utils

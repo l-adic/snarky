@@ -79,21 +79,7 @@ import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.Proof.Dummy (dummyWrapProof)
-import Pickles.ProofCache (ProofCache)
 import Pickles.ProofsVerified (ProofsVerifiedCount, boolVecToProofsVerified)
-import Snarky.Backend.Kimchi.Proof
-  ( permutationVanishingPolynomial
-  , proofData
-  , proofOraclesRec
-  , proverIndexDomainLog2
-  )
-import Snarky.Backend.Kimchi.Proof
-  ( permutationVanishingPolynomial
-  , proofOraclesRec
-  , proverIndexDomainLog2
-  , srsBlindingGenerator
-  , srsLagrangeCommitmentChunksAt
-  ) as ProofFFI
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (assembleWrapMainInput, wrapComputeDeferredValues)
@@ -160,6 +146,20 @@ import Prim.Ordering (EQ, GT, LT)
 import Prim.Ordering as PrimOrdering
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
+import Snarky.Backend.Kimchi.Proof
+  ( permutationVanishingPolynomial
+  , proofData
+  , proofOraclesRec
+  , proverIndexDomainLog2
+  )
+import Snarky.Backend.Kimchi.Proof
+  ( permutationVanishingPolynomial
+  , proofOraclesRec
+  , proverIndexDomainLog2
+  , srsBlindingGenerator
+  , srsLagrangeCommitmentChunksAt
+  ) as ProofFFI
+import Snarky.Backend.Kimchi.ProofCache (ProofCache)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError)
 import Snarky.Circuit.DSL (BoolVar, F(..), FVar, UnChecked(..), coerceViaBits)

@@ -92,8 +92,6 @@ import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.PlonkChecks.Chunks as Chunks
-import Pickles.ProofCache (ProofCache, getStepProof, setStepProof)
-import Snarky.Backend.Kimchi.Proof (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofData, proofOpeningPrechallenges, proofOraclesRec, vestaProofCommitments)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
@@ -121,6 +119,8 @@ import Snarky.Backend.Builder (CircuitBuilderState, Labeled, constraintsToArray)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, gatesToJson)
+import Snarky.Backend.Kimchi.Proof (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofData, proofOpeningPrechallenges, proofOraclesRec, vestaProofCommitments)
+import Snarky.Backend.Kimchi.ProofCache (ProofCache, getStepProof, setStepProof)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
 import Snarky.Backend.Prover (emptyProverState)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)

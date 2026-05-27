@@ -68,10 +68,10 @@ import Data.Nullable (Nullable, toMaybe)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Snarky.Backend.Kimchi.Domain as Domain
 import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment(..), StepIPARounds, WrapIPARounds)
-import Snarky.Backend.Kimchi.Util.Fatal (fromJust')
+import Snarky.Backend.Kimchi.Domain as Domain
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
+import Snarky.Backend.Kimchi.Util.Fatal (fromJust')
 import Snarky.Circuit.DSL (SizedF)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -753,7 +753,6 @@ instance ProofFFI Vesta.BaseField Pallas.G Vesta.ScalarField where
 -- the `opening.lr` field on the `ProofData` record (see `decodeProofData`
 -- and the `OpeningProofData rounds c f` shape above), which does the
 -- length check once at the FFI boundary via `Reflectable rounds Int`.
-
 
 --------------------------------------------------------------------------------
 -- Serde JSON codecs (formerly Pickles.Sideload.FFI)

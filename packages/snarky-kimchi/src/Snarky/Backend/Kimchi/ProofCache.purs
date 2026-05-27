@@ -21,7 +21,7 @@
 -- | `Object (Object String)` (= `vk -> public_input -> proof`). Decode
 -- | is graceful (any drift => empty store => miss => regenerate), per
 -- | `proof_cache.ml`.
-module Pickles.ProofCache
+module Snarky.Backend.Kimchi.ProofCache
   ( ProofCache
   , mkProofCache
   , getStepProof
@@ -48,13 +48,20 @@ import Foreign.Object as Object
 import Node.Encoding (Encoding(..))
 import Node.FS.Perms (permsAll)
 import Node.FS.Sync (exists, mkdir', readTextFile, writeTextFile)
-import Pickles.Field (StepField, WrapField)
-import Snarky.Backend.Kimchi.Proof (Proof, pallasProofFromSerdeJson, pallasProofToSerdeJson, vestaProofFromSerdeJson, vestaProofToSerdeJson)
 import Simple.JSON as JSON
+import Snarky.Backend.Kimchi.Proof (Proof, pallasProofFromSerdeJson, pallasProofToSerdeJson, vestaProofFromSerdeJson, vestaProofToSerdeJson)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
 import Snarky.Curves.Class (class PrimeField, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
+
+-- | Step-side scalar field (= Vesta's scalar = Pallas's base field).
+-- | Inlined here rather than imported from `Pickles.Field` to keep
+-- | snarky-kimchi free of any pickles dependency.
+type StepField = Vesta.ScalarField
+
+-- | Wrap-side scalar field (= Pallas's scalar = Vesta's base field).
+type WrapField = Pallas.ScalarField
 
 -- | Handle to a per-test cache file. The on-disk document is the source
 -- | of truth (mirrors OCaml's `ref`); each `get`/`set` reads it fresh

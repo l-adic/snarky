@@ -18,11 +18,10 @@ module Snarky.Backend.Kimchi.Commitment
   , ChunkedCommitment(..)
   ) where
 
-import Prelude ((<<<))
-
 import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
+import Prelude ((<<<))
 import Snarky.Circuit.DSL.Monad (class CheckedType, check)
 import Snarky.Circuit.Types (class CircuitType, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Type.Proxy (Proxy(..))
