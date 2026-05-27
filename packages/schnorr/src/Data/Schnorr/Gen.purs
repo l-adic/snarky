@@ -47,10 +47,11 @@ type VerifyInput n a =
 genValidSignature
   :: forall n
    . Reflectable n Int
-  => Proxy PallasG
+  => Vector 3 Pallas.BaseField
+  -> Proxy PallasG
   -> Proxy n
   -> Gen (VerifyInput n (F Pallas.BaseField))
-genValidSignature _pg _pn = go
+genValidSignature spongePrefix _pg _pn = go
   where
   go = do
     privateKey :: Pallas.ScalarField <- arbitrary
@@ -58,7 +59,8 @@ genValidSignature _pg _pn = go
     message :: Vector n Pallas.BaseField <- Vector.generateA (const arbitrary)
     case
       Schnorr.sign
-        { privateKey
+        { spongePrefix
+        , privateKey
         , nonce
         , message: Vector.toUnfoldable message
         }

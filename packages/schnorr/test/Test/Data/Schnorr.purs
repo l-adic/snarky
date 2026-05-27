@@ -7,6 +7,7 @@ import Prelude
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Schnorr (Signature(..))
 import Data.Schnorr as Schnorr
+import Data.Schnorr.ChainId (ChainId(..), signaturePrefix)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
 import Snarky.Curves.Class (generator, scalarMul, toAffine)
@@ -37,7 +38,8 @@ genSignedMessage message =
       pure
         { privateKey
         , nonce
-        , maybeSig: Schnorr.sign { privateKey, nonce, message }
+        , maybeSig: Schnorr.sign
+            { spongePrefix: signaturePrefix Mainnet, privateKey, nonce, message }
         }
   in
     do
@@ -58,7 +60,7 @@ spec = describe "Data.Schnorr (Pallas curve, kimchi-circuit convention)" do
       msg :: PallasBaseField <- arbitrary
       { signature, publicKey } <- genSignedMessage [ msg ]
       pure $ withHelp
-        (Schnorr.verify signature publicKey [ msg ])
+        (Schnorr.verify (signaturePrefix Mainnet) signature publicKey [ msg ])
         "Signature should verify"
 
   it "verify rejects wrong message" do
@@ -67,7 +69,7 @@ spec = describe "Data.Schnorr (Pallas curve, kimchi-circuit convention)" do
       msg2 :: PallasBaseField <- arbitrary `suchThat` (_ /= msg1)
       { signature, publicKey } <- genSignedMessage [ msg1 ]
       pure $ withHelp
-        (not $ Schnorr.verify signature publicKey [ msg2 ])
+        (not $ Schnorr.verify (signaturePrefix Mainnet) signature publicKey [ msg2 ])
         "Signature should NOT verify with different message"
 
   it "verify rejects wrong public key" do
@@ -79,7 +81,7 @@ spec = describe "Data.Schnorr (Pallas curve, kimchi-circuit convention)" do
         wrongPk = unsafePartial fromJust $ toAffine
           (scalarMul wrongSk (generator :: PallasG))
       pure $ withHelp
-        (not $ Schnorr.verify signature wrongPk [ msg ])
+        (not $ Schnorr.verify (signaturePrefix Mainnet) signature wrongPk [ msg ])
         "Signature should NOT verify with wrong public key"
 
   it "verify rejects tampered r" do
@@ -88,7 +90,7 @@ spec = describe "Data.Schnorr (Pallas curve, kimchi-circuit convention)" do
       { signature: Signature { r, s }, publicKey } <- genSignedMessage [ msg ]
       tamperedR :: PallasBaseField <- arbitrary `suchThat` (_ /= r)
       pure $ withHelp
-        (not $ Schnorr.verify (Signature { r: tamperedR, s }) publicKey [ msg ])
+        (not $ Schnorr.verify (signaturePrefix Mainnet) (Signature { r: tamperedR, s }) publicKey [ msg ])
         "Signature should NOT verify with tampered r"
 
   it "verify rejects tampered s" do
@@ -97,5 +99,5 @@ spec = describe "Data.Schnorr (Pallas curve, kimchi-circuit convention)" do
       { signature: Signature { r, s }, publicKey } <- genSignedMessage [ msg ]
       tamperedS :: PallasBaseField <- arbitrary `suchThat` (_ /= s)
       pure $ withHelp
-        (not $ Schnorr.verify (Signature { r, s: tamperedS }) publicKey [ msg ])
+        (not $ Schnorr.verify (signaturePrefix Mainnet) (Signature { r, s: tamperedS }) publicKey [ msg ])
         "Signature should NOT verify with tampered s"

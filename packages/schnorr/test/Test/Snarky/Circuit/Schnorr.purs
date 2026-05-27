@@ -10,6 +10,7 @@ import Data.Maybe (fromJust)
 import Data.Newtype (un)
 import Data.Reflectable (class Reflectable)
 import Data.Schnorr as Schnorr
+import Data.Schnorr.ChainId (ChainId(..), signaturePrefix)
 import Data.Schnorr.Gen (VerifyInput, genValidSignature)
 import Data.Vector as Vector
 import Effect.Aff (Aff)
@@ -53,7 +54,7 @@ verifySpec cfg _pn = do
         publicKey = { x: un F pk.x, y: un F pk.y }
         msgArr = un F <$> Vector.toUnfoldable message
       in
-        Schnorr.verify (Schnorr.Signature { r, s }) publicKey msgArr
+        Schnorr.verify (signaturePrefix Mainnet) (Schnorr.Signature { r, s }) publicKey msgArr
 
     circuit'
       :: forall t
@@ -61,9 +62,9 @@ verifySpec cfg _pn = do
       => VerifyInput n (FVar Pallas.BaseField)
       -> Snarky (KimchiConstraint Pallas.BaseField) t Identity (BoolVar Pallas.BaseField)
     circuit' { signature: { r, s }, publicKey, message } =
-      verifies genPointVar { publicKey, signature: Signature { r, s }, message }
+      verifies (signaturePrefix Mainnet) genPointVar { publicKey, signature: Signature { r, s }, message }
 
-    gen = genValidSignature (Proxy @PallasG) _pn
+    gen = genValidSignature (signaturePrefix Mainnet) (Proxy @PallasG) _pn
 
   { builtState, solver } <- circuitTest' @Pallas.BaseField
     cfg
@@ -94,10 +95,10 @@ verifyWithAssertSpec cfg _pn = do
       => VerifyInput n (FVar Pallas.BaseField)
       -> Snarky (KimchiConstraint Pallas.BaseField) t Identity Unit
     circuit' { signature: { r, s }, publicKey, message } = do
-      verified <- verifies genPointVar { publicKey, signature: Signature { r, s }, message }
+      verified <- verifies (signaturePrefix Mainnet) genPointVar { publicKey, signature: Signature { r, s }, message }
       assert_ verified
 
-    gen = genValidSignature (Proxy @PallasG) _pn
+    gen = genValidSignature (signaturePrefix Mainnet) (Proxy @PallasG) _pn
 
   void $ circuitTest' @Pallas.BaseField
     cfg

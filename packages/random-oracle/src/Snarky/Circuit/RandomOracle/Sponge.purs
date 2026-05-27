@@ -12,6 +12,8 @@ module Snarky.Circuit.RandomOracle.Sponge
   ( absorb
   , squeeze
   , initialState
+  , initialSpongeCircuit
+  , spongeFromConstants
   , module ReExports
   ) where
 
@@ -35,6 +37,24 @@ import Snarky.Curves.Class (class PrimeField)
 -- | Initial state: all zeros (lifted from pure initialState)
 initialState :: forall f. PrimeField f => Vector 3 (FVar f)
 initialState = map const_ Sponge.initialState
+
+-- | Zero-state sponge ready for `absorb`. Equivalent to
+-- | `create initialState`.
+initialSpongeCircuit :: forall f. PrimeField f => Sponge (FVar f)
+initialSpongeCircuit = Sponge.create initialState
+
+-- | Build a sponge from a value-level state + mode. Used to seed the
+-- | sponge from a `Hash_prefix_states.*` constant (or any other
+-- | pre-computed restore point).
+spongeFromConstants
+  :: forall f
+   . PrimeField f
+  => { state :: Vector 3 f, spongeState :: SpongeState }
+  -> Sponge (FVar f)
+spongeFromConstants { state: s, spongeState: ss } =
+  { state: map const_ s
+  , spongeState: ss
+  }
 
 -- | Absorb a single field element into the sponge.
 -- |

@@ -10,6 +10,11 @@
 -- | top-bit-zero constraint (`< 2^254`) or where the nonce produces an
 -- | odd `R.y`.
 -- |
+-- | `hashMessage` / `sign` / `verify` take a 3-element sponge prefix
+-- | state as their first argument. Pass
+-- | `Data.Schnorr.ChainId.signaturePrefix` for a Mina-compatible chain
+-- | seed, or `Vector.replicate 0` for the ad-hoc zero-seed.
+-- |
 -- | Reference: `mina/src/lib/crypto/pickles/dump_circuit_impl.ml`
 -- | `schnorr_verify_circuit`, plus `Ops.scale_fast2'` semantics in
 -- | `plonk_curve_ops.ml` (`actual_bits_used = 255` ⇒ `2^255` shift).
@@ -25,13 +30,14 @@ module Data.Schnorr
 
 import Prelude
 
-import Data.Array ((:))
+import Data.Foldable (foldl)
 import Data.Generic.Rep (class Generic)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
+import Data.Vector (Vector)
 import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
-import Poseidon as Poseidon
+import RandomOracle.Sponge (absorb, create, squeeze) as Sponge
 import Snarky.Curves.Class (fromAffine, fromBigInt, generator, inverse, scalarMul, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
@@ -41,7 +47,8 @@ import Snarky.Curves.Pasta (PallasG)
 -- |
 -- |   - `r` is the x-coordinate of the commitment point `R = k·G`.
 -- |   - `s` is a 254-bit value such that `(s + 2^255)·G = R + (e + 2^255)·pk`
--- |     in the Pallas scalar field, where `e = Poseidon(pk.x, pk.y, r, msg)`.
+-- |     in the Pallas scalar field, where `e = Poseidon(msg, pk.x, pk.y, r)`
+-- |     seeded with the chain prefix.
 newtype Signature f = Signature
   { r :: f
   , s :: f
@@ -68,16 +75,31 @@ twoTo255Pallas = fromBigInt (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 255))
 isEven :: Pallas.BaseField -> Boolean
 isEven x = not $ BigInt.odd (toBigInt x)
 
--- | Zero-seed Poseidon hash: `e = Poseidon(pk.x, pk.y, r, ...msg)`.
--- | Mirrors the in-circuit `Sponge.absorb`-then-`squeeze` shape used by
--- | `Snarky.Circuit.Schnorr.verifies`.
+-- | Schnorr message hash:
+-- |
+-- |   `e = squeeze ( absorb (msg…, pk.x, pk.y, r) (sponge_init spongePrefix) )`
+-- |
+-- | Mirrors Mina's `Schnorr.Chunked.Message.hash` shape — caller-supplied
+-- | 3-element sponge prefix state, absorb the
+-- | `Random_oracle.Input.Chunked.append message {pk; r}` field sequence
+-- | (message first), squeeze. The same `(spongePrefix, absorb_order)`
+-- | choice is used by `Snarky.Circuit.Schnorr.verifies`, so the value
+-- | and circuit hash match by construction.
 hashMessage
-  :: { x :: Pallas.BaseField, y :: Pallas.BaseField }
+  :: Vector 3 Pallas.BaseField
+  -> { x :: Pallas.BaseField, y :: Pallas.BaseField }
   -> Pallas.BaseField
   -> Array Pallas.BaseField
   -> Pallas.BaseField
-hashMessage { x: px, y: py } r message =
-  Poseidon.hash $ px : py : r : message
+hashMessage spongePrefix { x: px, y: py } r message =
+  let
+    sponge0 = Sponge.create spongePrefix
+    spongeMsg = foldl (\sp x -> Sponge.absorb x sp) sponge0 message
+    sponge1 = Sponge.absorb px spongeMsg
+    sponge2 = Sponge.absorb py sponge1
+    sponge3 = Sponge.absorb r sponge2
+  in
+    (Sponge.squeeze sponge3).result
 
 -- | Try to sign `message` with `privateKey` using the supplied `nonce`.
 -- | Returns `Nothing` on a rejection condition; caller rotates the
@@ -90,18 +112,19 @@ hashMessage { x: px, y: py } r message =
 -- |     the top 2 bits of `s_div_2`).
 -- |   - `s_bigint ≥ 2^254` (same constraint, this time on `s`).
 sign
-  :: { privateKey :: Pallas.ScalarField
+  :: { spongePrefix :: Vector 3 Pallas.BaseField
+     , privateKey :: Pallas.ScalarField
      , nonce :: Pallas.ScalarField
      , message :: Array Pallas.BaseField
      }
   -> Maybe (Signature Pallas.BaseField)
-sign { privateKey: d, nonce: k, message } = do
+sign { spongePrefix, privateKey: d, nonce: k, message } = do
   publicKey <- toAffine (scalarMul d (generator :: PallasG))
   { x: r, y: ry } <- toAffine (scalarMul k (generator :: PallasG))
   if not (isEven ry) then Nothing
   else do
     let
-      eTick = hashMessage publicKey r message
+      eTick = hashMessage spongePrefix publicKey r message
       eBigint = toBigInt eTick
     if eBigint >= twoTo254 then Nothing
     else
@@ -120,14 +143,15 @@ sign { privateKey: d, nonce: k, message } = do
 -- | constraint, the reconstructed `R'` lands at infinity, `R'.y` is
 -- | odd, or `R'.x ≠ r`.
 verify
-  :: Signature Pallas.BaseField
+  :: Vector 3 Pallas.BaseField
+  -> Signature Pallas.BaseField
   -> { x :: Pallas.BaseField, y :: Pallas.BaseField }
   -> Array Pallas.BaseField
   -> Boolean
-verify (Signature { r, s }) publicKey message =
+verify spongePrefix (Signature { r, s }) publicKey message =
   let
     sBigint = toBigInt s
-    eTick = hashMessage publicKey r message
+    eTick = hashMessage spongePrefix publicKey r message
     eBigint = toBigInt eTick
   in
     if sBigint >= twoTo254 || eBigint >= twoTo254 then false

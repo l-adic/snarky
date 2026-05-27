@@ -10,6 +10,7 @@ import Data.Maybe (fromJust)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
+import Data.Schnorr.ChainId (ChainId(..), signaturePrefix)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
 import Pickles.Field (StepField)
 import Snarky.Backend.Compile (compilePure)
@@ -57,7 +58,7 @@ compileSchnorrVerify =
         let
           { pk, r, s, message } = parseSchnorrVerifyInput inputs
         in
-          verifies generatorPallas
+          verifies (signaturePrefix Mainnet) generatorPallas
             { publicKey: pk
             , signature: Signature { r, s }
             , message
