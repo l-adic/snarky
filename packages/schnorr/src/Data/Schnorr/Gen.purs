@@ -56,11 +56,13 @@ genValidSignature _pg _pn = go
     privateKey :: Pallas.ScalarField <- arbitrary
     nonce :: Pallas.ScalarField <- arbitrary
     message :: Vector n Pallas.BaseField <- Vector.generateA (const arbitrary)
-    case Schnorr.sign
-      { privateKey
-      , nonce
-      , message: Vector.toUnfoldable message
-      } of
+    case
+      Schnorr.sign
+        { privateKey
+        , nonce
+        , message: Vector.toUnfoldable message
+        }
+      of
       Nothing -> go
       Just (Schnorr.Signature { r, s }) ->
         let

@@ -137,6 +137,7 @@ verify (Signature { r, s }) publicKey message =
         sPallas = fromBigInt sBigint :: Pallas.ScalarField
         eEff = ePallas + twoTo255Pallas
         sEff = sPallas + twoTo255Pallas
+
         pkPoint :: PallasG
         pkPoint = fromAffine publicKey
         sG = scalarMul sEff (generator :: PallasG)

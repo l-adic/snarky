@@ -44,8 +44,9 @@ spec = describe "Snarky.Circuit.Schnorr.Verify (kimchi-only fixture)" do
       Right xs -> pure xs
       Left e -> liftEffect $ throw $
         "parse public_input.json: " <> show e
-    let publicInput :: Array Pallas.BaseField
-        publicInput = map fromHexLe publicInputHex
+    let
+      publicInput :: Array Pallas.BaseField
+      publicInput = map fromHexLe publicInputHex
 
     -- Reconstruct the step-side Vesta SRS (the OCaml dumper uses the
     -- default Tick URS, which is 2^16 = `Pickles.Backend.Tick`'s

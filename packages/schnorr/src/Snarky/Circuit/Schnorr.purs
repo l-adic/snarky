@@ -35,6 +35,7 @@ import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Poseidon (class PoseidonField)
+import RandomOracle.Sponge (create) as Sponge
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, and_, equals_, negate_, not_, unpack_)
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast2')
@@ -43,7 +44,6 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
-import RandomOracle.Sponge (create) as Sponge
 
 -- | Schnorr signature variables in-circuit. Both `r` and `s` are
 -- | native-field variables (`Pallas.BaseField`).

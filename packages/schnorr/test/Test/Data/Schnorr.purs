@@ -75,8 +75,9 @@ spec = describe "Data.Schnorr (Pallas curve, kimchi-circuit convention)" do
       msg :: PallasBaseField <- arbitrary
       { signature, privateKey } <- genSignedMessage [ msg ]
       wrongSk :: PallasScalarField <- arbitrary `suchThat` (_ /= privateKey)
-      let wrongPk = unsafePartial fromJust $ toAffine
-            (scalarMul wrongSk (generator :: PallasG))
+      let
+        wrongPk = unsafePartial fromJust $ toAffine
+          (scalarMul wrongSk (generator :: PallasG))
       pure $ withHelp
         (not $ Schnorr.verify signature wrongPk [ msg ])
         "Signature should NOT verify with wrong public key"
