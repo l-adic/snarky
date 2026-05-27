@@ -20,9 +20,15 @@ package:
     dependencies:
       - aff
       - effect
+      - either
+      - exceptions
       - identity
+      - integers
+      - node-buffer
+      - node-fs
       - partial
       - quickcheck
+      - simple-json
       - snarky-test-utils
       - spec
       - spec-node

@@ -1,19 +1,26 @@
--- | Pure Schnorr signature implementation.
+-- | Out-of-circuit Schnorr signature signer/verifier matching the
+-- | kimchi-circuit verifier in `Snarky.Circuit.Schnorr.verifies`.
 -- |
--- | This module provides the pure (non-circuit) implementation of
--- | Schnorr signatures over elliptic curves with Poseidon hash.
+-- | Both `r` and `s` live in `Pallas.BaseField` (= `Vesta.ScalarField`,
+-- | the native circuit field), not in the curve's scalar field. The
+-- | verifier interprets `(s + 2^255)` and `(e + 2^255)` as Pallas
+-- | scalars and computes `R' = [s+2^255]·G − [e+2^255]·pk`. The signer
+-- | solves the matching equation modulo the Pallas scalar order, then
+-- | rejects samples where `s` or `e` would overflow the circuit's
+-- | top-bit-zero constraint (`< 2^254`) or where the nonce produces an
+-- | odd `R.y`.
 -- |
--- | The base field and scalar field are different,
--- | so this implementation uses separate type parameters for each:
--- | - fb: base field (for coordinates and message hashing)
--- | - fs: scalar field (for private keys and scalar s)
+-- | Reference: `mina/src/lib/crypto/pickles/dump_circuit_impl.ml`
+-- | `schnorr_verify_circuit`, plus `Ops.scale_fast2'` semantics in
+-- | `plonk_curve_ops.ml` (`actual_bits_used = 255` ⇒ `2^255` shift).
 module Data.Schnorr
   ( Signature(..)
-  , sign
-  , verify
   , isEven
   , hashMessage
-  , truncateFieldCoerce
+  , sign
+  , verify
+  , twoTo254
+  , twoTo255Pallas
   ) where
 
 import Prelude
@@ -22,149 +29,120 @@ import Data.Array ((:))
 import Data.Generic.Rep (class Generic)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
-import Data.Vector as Vector
+import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
-import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
-import Snarky.Circuit.DSL (packPure, unpackPure)
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, fromAffine, fromBigInt, generator, inverse, scalarMul, toAffine, toBigInt)
-import Type.Proxy (Proxy(..))
+import Snarky.Curves.Class (fromAffine, fromBigInt, generator, inverse, scalarMul, toAffine, toBigInt)
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Pasta (PallasG)
 
--- | Truncating coercion between 255-bit fields.
--- | WARNING: This truncates to 254 bits, discarding the MSB. For values >= 2^254,
--- | the result will differ from the input. Only use when:
--- | - You know the value is < 2^254, or
--- | - You don't care about truncation (e.g., nonce derivation where any 254-bit value works)
-truncateFieldCoerce
-  :: forall f f'
-   . PrimeField f
-  => PrimeField f'
-  => FieldSizeInBits f 255
-  => FieldSizeInBits f' 255
-  => f
-  -> f'
-truncateFieldCoerce x =
-  let
-    bits = unpackPure x (Proxy @255) -- Vector 255 Boolean, LSB first
-    truncated = Vector.take @254 bits -- Vector 254 Boolean (lower 254 bits)
-    padded = Vector.snoc truncated false -- Vector 255 Boolean with MSB = 0
-  in
-    packPure padded
-
--- | Schnorr signature: (r, s) where:
--- | - r is an x-coordinate (base field element)
--- | - s is the scalar component (scalar field element)
-newtype Signature fb fs = Signature
-  { r :: fb
-  , s :: fs
+-- | Schnorr signature: both components are circuit-field values
+-- | (`Pallas.BaseField`).
+-- |
+-- |   - `r` is the x-coordinate of the commitment point `R = k·G`.
+-- |   - `s` is a 254-bit value such that `(s + 2^255)·G = R + (e + 2^255)·pk`
+-- |     in the Pallas scalar field, where `e = Poseidon(pk.x, pk.y, r, msg)`.
+newtype Signature f = Signature
+  { r :: f
+  , s :: f
   }
 
-derive instance Newtype (Signature fb fs) _
-derive instance Generic (Signature fb fs) _
-derive newtype instance (Show fb, Show fs) => Show (Signature fb fs)
-derive newtype instance (Eq fb, Eq fs) => Eq (Signature fb fs)
+derive instance Newtype (Signature f) _
+derive instance Generic (Signature f) _
+derive newtype instance Show f => Show (Signature f)
+derive newtype instance Eq f => Eq (Signature f)
 
--- | Check if a field element is even (LSB is 0).
-isEven :: forall f. PrimeField f => f -> Boolean
+-- | 2^254 as a `BigInt` — the upper bound the circuit enforces on both
+-- | `s_field` and `e_field` (via the top-bit-zero constraint inside
+-- | `scaleFast2'`).
+twoTo254 :: BigInt
+twoTo254 = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 254)
+
+-- | 2^255 reduced into `Pallas.ScalarField`. The verifier circuit
+-- | computes `(s + 2^255)·G`, where `2^255 mod q` is this constant.
+-- | (Note: `2^255 > q`, so this reduces to `2^255 - q ≈ 2^254`.)
+twoTo255Pallas :: Pallas.ScalarField
+twoTo255Pallas = fromBigInt (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 255))
+
+-- | LSB-is-0 check on a field element (matches the circuit's `y_even`).
+isEven :: Pallas.BaseField -> Boolean
 isEven x = not $ BigInt.odd (toBigInt x)
 
--- | Hash the message for signature verification.
--- |
--- | e = H(pk_x, pk_y, r, message)
--- | where (pk_x, pk_y) is the public key and r is the signature's r component.
+-- | Zero-seed Poseidon hash: `e = Poseidon(pk.x, pk.y, r, ...msg)`.
+-- | Mirrors the in-circuit `Sponge.absorb`-then-`squeeze` shape used by
+-- | `Snarky.Circuit.Schnorr.verifies`.
 hashMessage
-  :: forall fb
-   . PoseidonField fb
-  => { x :: fb, y :: fb }
-  -> fb
-  -> Array fb
-  -> fb
+  :: { x :: Pallas.BaseField, y :: Pallas.BaseField }
+  -> Pallas.BaseField
+  -> Array Pallas.BaseField
+  -> Pallas.BaseField
 hashMessage { x: px, y: py } r message =
   Poseidon.hash $ px : py : r : message
 
--- | Sign a message with a private key.
+-- | Try to sign `message` with `privateKey` using the supplied `nonce`.
+-- | Returns `Nothing` on a rejection condition; caller rotates the
+-- | nonce and retries.
 -- |
--- | Algorithm:
--- | 1. Compute public key: pk = [d] * G
--- | 2. Derive nonce: k' = H(pk_x, pk_y, message) truncated to 254 bits
--- | 3. Compute R = [k'] * G
--- | 4. r = x-coordinate of R
--- | 5. If y-coordinate of R is odd, k = -k', else k = k'
--- | 6. e = H(pk_x, pk_y, r, message) (in base field, coerced to scalar)
--- | 7. s = k + e * d (in scalar field)
--- | 8. Return (r, s)
--- |
--- | Note: The nonce is truncated to 254 bits to ensure it fits in both Pasta
--- | field primes without modular reduction.
+-- | Rejection conditions (all happen with probability ~½ each, so a
+-- | random nonce succeeds in ~8 tries on average):
+-- |   - `R.y` is odd (the verifier asserts `y_even`).
+-- |   - `e_bigint ≥ 2^254` (the circuit's `scaleFast2' @51 @253` zeros
+-- |     the top 2 bits of `s_div_2`).
+-- |   - `s_bigint ≥ 2^254` (same constraint, this time on `s`).
 sign
-  :: forall fb fs g
-   . PoseidonField fb
-  => PrimeField fb
-  => PrimeField fs
-  => FieldSizeInBits fb 255
-  => FieldSizeInBits fs 255
-  => WeierstrassCurve fb g
-  => FrModule fs g
-  => fs
-  -> Array fb
-  -> Maybe (Signature fb fs)
-sign privateKey message = do
-  publicKey <- toAffine $ scalarMul privateKey (generator @_ @g)
-  let
-    -- Convert base field to scalar field via bit truncation (254 bits)
-    -- This ensures the value fits in both fields without modular reduction.
-    kPrime =
-      let
-        kPrimeBase = Poseidon.hash $ publicKey.x : publicKey.y : message
-      in
-        truncateFieldCoerce kPrimeBase
-
-  if kPrime == zero then Nothing
+  :: { privateKey :: Pallas.ScalarField
+     , nonce :: Pallas.ScalarField
+     , message :: Array Pallas.BaseField
+     }
+  -> Maybe (Signature Pallas.BaseField)
+sign { privateKey: d, nonce: k, message } = do
+  publicKey <- toAffine (scalarMul d (generator :: PallasG))
+  { x: r, y: ry } <- toAffine (scalarMul k (generator :: PallasG))
+  if not (isEven ry) then Nothing
   else do
-    { x: r, y: ry } <- toAffine $ scalarMul kPrime (generator @_ @g)
     let
-      k = if isEven ry then kPrime else negate kPrime
+      eTick = hashMessage publicKey r message
+      eBigint = toBigInt eTick
+    if eBigint >= twoTo254 then Nothing
+    else
+      let
+        ePallas = fromBigInt eBigint :: Pallas.ScalarField
+        eEff = ePallas + twoTo255Pallas
+        sEff = k + d * eEff
+        sPallas = sEff - twoTo255Pallas
+        sBigint = toBigInt sPallas
+      in
+        if sBigint >= twoTo254 then Nothing
+        else Just $ Signature { r, s: fromBigInt sBigint }
 
-      e =
-        let
-          eBase = hashMessage publicKey r message
-        in
-          fromBigInt (toBigInt eBase)
-      s = k + e * privateKey
-    pure $ Signature { r, s }
-
--- | Verify a Schnorr signature.
--- |
--- | Algorithm:
--- | 1. e = H(pk_x, pk_y, r, H(message))
--- | 2. R' = [s] * G - [e] * pk
--- | 3. Return: y-coordinate of R' is even AND x-coordinate of R' == r
+-- | Verify a Schnorr signature out-of-circuit, mirroring the circuit
+-- | math. Returns `false` if either component overflows the 254-bit
+-- | constraint, the reconstructed `R'` lands at infinity, `R'.y` is
+-- | odd, or `R'.x ≠ r`.
 verify
-  :: forall fb fs g
-   . PoseidonField fb
-  => PrimeField fb
-  => PrimeField fs
-  => WeierstrassCurve fb g
-  => FrModule fs g
-  => Signature fb fs
-  -> { x :: fb, y :: fb }
-  -> Array fb
+  :: Signature Pallas.BaseField
+  -> { x :: Pallas.BaseField, y :: Pallas.BaseField }
+  -> Array Pallas.BaseField
   -> Boolean
 verify (Signature { r, s }) publicKey message =
   let
-    e =
-      let
-        eBase = hashMessage publicKey r message
-      in
-        fromBigInt (toBigInt eBase)
-
-    pkPoint :: g
-    pkPoint = fromAffine publicKey
-
-    sG = scalarMul s generator
-    ePk = scalarMul e pkPoint
-    rPoint = sG <> inverse ePk
+    sBigint = toBigInt s
+    eTick = hashMessage publicKey r message
+    eBigint = toBigInt eTick
   in
-    case toAffine rPoint of
-      Nothing -> false
-      Just { x: rx, y: ry } -> isEven ry && rx == r
+    if sBigint >= twoTo254 || eBigint >= twoTo254 then false
+    else
+      let
+        ePallas = fromBigInt eBigint :: Pallas.ScalarField
+        sPallas = fromBigInt sBigint :: Pallas.ScalarField
+        eEff = ePallas + twoTo255Pallas
+        sEff = sPallas + twoTo255Pallas
+        pkPoint :: PallasG
+        pkPoint = fromAffine publicKey
+        sG = scalarMul sEff (generator :: PallasG)
+        ePk = scalarMul eEff pkPoint
+        rPoint = sG <> inverse ePk
+      in
+        case toAffine rPoint of
+          Nothing -> false
+          Just { x: rx, y: ry } -> isEven ry && rx == r

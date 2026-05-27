@@ -159,3 +159,10 @@ fixtures-pack: ## Compress chunk fixtures after regen, before committing the *.g
 .PHONY: clean-proof-cache
 clean-proof-cache: ## Wipe the disk proof-cache (forces regeneration of cached step/wrap proofs)
 	rm -rf "$(PICKLES_PROOF_CACHE_DIR)"
+
+.PHONY: dump-schnorr-signature-proof
+dump-schnorr-signature-proof: ## Generate a fresh Schnorr signature kimchi proof fixture under packages/schnorr/test/fixtures/schnorr_signature_proof
+	mkdir -p packages/schnorr/test/fixtures/schnorr_signature_proof
+	cd mina && nix develop "git+file://$$PWD?submodules=1" --command \
+	  dune exec src/lib/crypto/pickles/dump_schnorr_signature_proof/dump_schnorr_signature_proof.exe -- \
+	  ../packages/schnorr/test/fixtures/schnorr_signature_proof

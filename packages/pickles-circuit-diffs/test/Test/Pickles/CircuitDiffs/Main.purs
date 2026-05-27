@@ -45,6 +45,7 @@ import Pickles.CircuitDiffs.PureScript.LinearizationWrap (compileLinearizationWr
 import Pickles.CircuitDiffs.PureScript.OtherFieldCheck (compileOtherFieldCheck)
 import Pickles.CircuitDiffs.PureScript.Pow2Pow (compilePow2Pow)
 import Pickles.CircuitDiffs.PureScript.PseudoCircuits (compileChooseKeyN1Wrap, compileOneHotN17Step, compileOneHotN17Wrap, compileOneHotN1Step, compileOneHotN1Wrap, compileOneHotN3Step, compileOneHotN3Wrap, compilePseudoChooseN1Step, compilePseudoChooseN1Wrap, compilePseudoChooseN3Step, compilePseudoChooseN3Wrap, compilePseudoMaskN17Step, compilePseudoMaskN17Wrap, compilePseudoMaskN1Step, compilePseudoMaskN1Wrap, compilePseudoMaskN3Step, compilePseudoMaskN3Wrap, compileSideloadedVkTypStep, compileUtilsOnesVectorN16Step, compileUtilsOnesVectorN16Wrap)
+import Pickles.CircuitDiffs.PureScript.SchnorrVerify (compileSchnorrVerify)
 import Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn (compileStepMainAddOneReturn)
 import Pickles.CircuitDiffs.PureScript.StepMainChunks2 (compileStepMainChunks2)
 import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecursionReturnParams, compileStepMainNoRecursionReturn)
@@ -570,6 +571,13 @@ spec =
           liftEffect (Process.lookupEnv "KIMCHI_WITNESS_DUMP") >>= case _ of
             Nothing -> pure unit
             Just _ -> liftEffect runChunks2AppWitnessProve
+      describe "Schnorr signature" do
+        -- Iteration 1 fixture: zero-seed sponge (matches PS
+        -- `Snarky.Circuit.RandomOracle.Sponge` initial state). 5 public
+        -- inputs (pk_x, pk_y, r, s, message[0]) + 1 boolean output.
+        -- OCaml source: `schnorr_verify_circuit` in
+        -- `mina/src/lib/crypto/pickles/dump_circuit_impl.ml`.
+        exactMatch "schnorr_verify_step_circuit" (fromCompiledCircuit compileSchnorrVerify)
       describe "Kimchi gates" do
         exactMatch "add_complete_step_circuit" (compilePP addCompleteCircuit)
         exactMatch "endo_scalar_step_circuit" (compileKFF endoScalarCircuit)
