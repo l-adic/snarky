@@ -119,8 +119,8 @@ import Snarky.Backend.Builder (CircuitBuilderState, Labeled, constraintsToArray)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, gatesToJson)
-import Snarky.Backend.Kimchi.Proof (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofData, proofOpeningPrechallenges, proofOraclesRec, vestaProofCommitments)
-import Snarky.Backend.Kimchi.ProofCache (ProofCache, getStepProof, setStepProof)
+import Snarky.Backend.Kimchi.Proof (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofOpeningPrechallenges, proofOraclesRec, vestaProofCommitments, vestaProofData)
+import Snarky.Backend.Kimchi.ProofCache (ProofCache, getPallasProof, setPallasProof)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
 import Snarky.Backend.Prover (emptyProverState)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
@@ -1137,7 +1137,7 @@ buildSlotAdvice input = do
     wrapCollapse = Chunks.collapsePointEval
       { rounds: wrapSrsLog2, zeta: oracles.zeta, zetaOmega: wrapZetaw }
 
-    wrapProofData' = proofData input.wrapProof
+    wrapProofData' = vestaProofData @WrapIPARounds input.wrapProof
     wrapAllEvals =
       { ftEval1: oracles.ftEval1
       -- OCaml `wrap.ml:110-116`: `x_hat = match proof.public_evals with
@@ -1307,7 +1307,7 @@ buildSlotAdvice input = do
     mkPt :: AffinePoint StepField -> AffinePoint (F StepField)
     mkPt pt = { x: F pt.x, y: F pt.y }
 
-    wrapProofData = proofData input.wrapProof
+    wrapProofData = vestaProofData @WrapIPARounds input.wrapProof
 
     openingDelta = mkPt wrapProofData.opening.delta
 
@@ -2406,12 +2406,12 @@ stepSolveAndProve ctx rule compileResult advice = do
         case ctx.proofCache of
           Nothing -> pure $ Lazy.force p
           Just cache -> do
-            mp <- liftEffect $ getStepProof cache compileResult.verifierIndex publicInputs
+            mp <- liftEffect $ getPallasProof cache compileResult.verifierIndex publicInputs
             case mp of
               Just proof -> pure proof
               Nothing -> do
                 let proof = Lazy.force p
-                liftEffect $ setStepProof cache compileResult.verifierIndex publicInputs proof
+                liftEffect $ setPallasProof cache compileResult.verifierIndex publicInputs proof
                 pure proof
       pure
         { proverIndex: compileResult.proverIndex

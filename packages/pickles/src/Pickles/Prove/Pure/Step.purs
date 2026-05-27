@@ -52,7 +52,7 @@ import Pickles.Types (ChunkedCommitment(..), StepAllEvals, StepIPARounds, WrapIP
 import Pickles.VerificationKey (StepVK)
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
-import Snarky.Backend.Kimchi.Proof (OraclesResult, Proof, domainGenerator, proofData, proofOpeningPrechallenges, proofOraclesRec, vestaChallengePolyCommitment, vestaProofCommitments)
+import Snarky.Backend.Kimchi.Proof (OraclesResult, Proof, domainGenerator, proofOpeningPrechallenges, proofOraclesRec, vestaChallengePolyCommitment, vestaProofCommitments, vestaProofData)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
 import Snarky.Backend.Kimchi.Util.Fatal (fromJust')
 import Snarky.Circuit.DSL (F(..), UnChecked(..))
@@ -642,7 +642,7 @@ expandProof input =
     --     if not must_verify
     --       then Ipa.Wrap.compute_sg new_bulletproof_challenges
     --       else proof.openings.proof.challenge_polynomial_commitment
-    wrapProofData = proofData input.wrapProof
+    wrapProofData = vestaProofData @WrapIPARounds input.wrapProof
 
     challengePolynomialCommitment =
       if input.mustVerify then

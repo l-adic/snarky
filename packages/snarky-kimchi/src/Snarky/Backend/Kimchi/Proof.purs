@@ -9,8 +9,8 @@
 -- | (formerly in `Pickles.Sideload.FFI`, now folded in below).
 module Snarky.Backend.Kimchi.Proof
   ( class ProofFFI
-  , class HasProofData
-  , proofData
+  , pallasProofData
+  , vestaProofData
   , pallasProofCommitments
   , vestaProofCommitments
   , ProofData
@@ -68,7 +68,7 @@ import Data.Nullable (Nullable, toMaybe)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment(..), StepIPARounds, WrapIPARounds)
+import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment(..))
 import Snarky.Backend.Kimchi.Domain as Domain
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
 import Snarky.Backend.Kimchi.Util.Fatal (fromJust')
@@ -151,24 +151,14 @@ type ProofEvaluations f =
 
 -- | Top-level structured proof record — the `nc`-agnostic half of a
 -- | decoded proof (`opening` + `evals`). `rounds` is the IPA round count
--- | for this proof's commitment curve: `StepIPARounds` (= 16) for
--- | Vesta-committed (step) proofs, `WrapIPARounds` (= 15) for Pallas-committed
+-- | for this proof's commitment curve: 16 (= log2 Tick SRS) for
+-- | Vesta-committed proofs, 15 (= log2 Tock SRS) for Pallas-committed
 -- | (wrap) proofs. Commitments live in the separate, `nc`-typed
 -- | `ProofCommitments` record returned by `proofCommitments @nc`.
 type ProofData rounds c f =
   { opening :: OpeningProofData rounds c f
   , evals :: ProofEvaluations f
   }
-
--- | Curve-polymorphic decoder. The functional dependency `g -> f c rounds`
--- | lets the instance be picked from the `Proof g f` argument alone; the
--- | coord field `c` and IPA round count `rounds` flow out via the result
--- | type. See `WeierstrassCurve f g` for the underlying curve ↔ base-field
--- | mapping, and `Pickles.Types.{StepIPARounds, WrapIPARounds}` for the
--- | per-curve IPA round constants.
-class HasProofData :: Type -> Type -> Type -> Int -> Constraint
-class HasProofData g f c rounds | g -> f c rounds where
-  proofData :: Proof g f -> ProofData rounds c f
 
 -- | Polynomial evaluation at two points: zeta and zeta*omega.
 type PointEval f = { zeta :: f, omegaTimesZeta :: f }
@@ -431,15 +421,25 @@ decodeProofData decF decC p =
   toVec lbl arr =
     fromJust' ("ProofData." <> lbl <> ": unexpected chunk/array length") (Vector.toVector @n arr)
 
+-- | Curve-specialised proof decoders. The IPA round count `rounds` is
+-- | left polymorphic — callers fix it via type application according
+-- | to the SRS depth they're verifying against. Pickles consumers
+-- | typically write `pallasProofData @StepIPARounds proof` /
+-- | `vestaProofData @WrapIPARounds proof`; lower-level callers can pick
+-- | any `Reflectable rounds Int`.
 pallasProofData
-  :: Proof Vesta.G Pallas.BaseField
-  -> ProofData StepIPARounds Pallas.ScalarField Pallas.BaseField
-pallasProofData = decodeProofData @StepIPARounds fpFromBytesLE fqFromBytesLE <<< asNapiProof
+  :: forall @rounds
+   . Reflectable rounds Int
+  => Proof Vesta.G Pallas.BaseField
+  -> ProofData rounds Pallas.ScalarField Pallas.BaseField
+pallasProofData = decodeProofData @rounds fpFromBytesLE fqFromBytesLE <<< asNapiProof
 
 vestaProofData
-  :: Proof Pallas.G Vesta.BaseField
-  -> ProofData WrapIPARounds Vesta.ScalarField Vesta.BaseField
-vestaProofData = decodeProofData @WrapIPARounds fqFromBytesLE fpFromBytesLE <<< asNapiProof
+  :: forall @rounds
+   . Reflectable rounds Int
+  => Proof Pallas.G Vesta.BaseField
+  -> ProofData rounds Vesta.ScalarField Vesta.BaseField
+vestaProofData = decodeProofData @rounds fqFromBytesLE fpFromBytesLE <<< asNapiProof
 
 -- | Structural decode of just the proof's commitments, `nc`-typed. `decC`
 -- | decodes curve-point coords (the commitment curve's base field `c`).
@@ -553,7 +553,7 @@ foreign import vestaProofOracles
 -- | (wrap_wire_proof.ml:202-210), used by `Pickles.Proof.Dummy` to build
 -- | the PS equivalent of `Proof.dummy` (proof.ml:115-208).
 -- |
--- | Field layout (all non-chunked, WrapIPARounds = 15):
+-- | Field layout (all non-chunked, 15 IPA rounds):
 -- | - `wComm`: 30 Fp coords = 15 × (x,y)   (Pallas base field = Vesta.ScalarField)
 -- | - `zComm`: 2 Fp coords = 1 point
 -- | - `tComm`: 14 Fp coords = 7 quotient-poly chunks
@@ -691,12 +691,6 @@ foreign import vestaSigmaCommLast :: VerifierIndex Pallas.G Vesta.BaseField -> A
 --------------------------------------------------------------------------------
 -- Instances
 --------------------------------------------------------------------------------
-
-instance HasProofData Vesta.G Pallas.BaseField Pallas.ScalarField StepIPARounds where
-  proofData = pallasProofData
-
-instance HasProofData Pallas.G Vesta.BaseField Vesta.ScalarField WrapIPARounds where
-  proofData = vestaProofData
 
 instance ProofFFI Pallas.BaseField Vesta.G Pallas.ScalarField where
   createProof = pallasCreateProof

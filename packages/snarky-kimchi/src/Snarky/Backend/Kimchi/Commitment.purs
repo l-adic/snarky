@@ -1,21 +1,12 @@
--- | Polynomial-commitment shapes used by kimchi proofs.
+-- | Generic polynomial-commitment container used by kimchi proofs.
 -- |
 -- | A kimchi polynomial commitment splits into
 -- | `ceil(domain_size / SRS_max_poly_size)` curve-point chunks. The
 -- | generic `ChunkedCommitment` container holds one such commitment;
--- | its parameter is the neutral `chunks` (used at all three pickles
--- | "chunk-count dimensions" — see the longer Pickles-internal note in
--- | the pickles consumer modules for the disambiguation).
--- |
--- | The IPA-rounds aliases capture the Pasta-cycle protocol constants
--- | (`Rounds.Step = 16`, `Rounds.Wrap = 15`) — they live here rather
--- | than in pickles because the proof-system FFI (`Snarky.Backend.Kimchi.Proof`)
--- | uses them in instance heads, and the kimchi proof system is the
--- | natural home for protocol-level constants of this kind.
+-- | its `chunks` parameter is dimension-agnostic at this layer (callers
+-- | instantiate it to the appropriate per-dimension chunk count).
 module Snarky.Backend.Kimchi.Commitment
-  ( StepIPARounds
-  , WrapIPARounds
-  , ChunkedCommitment(..)
+  ( ChunkedCommitment(..)
   ) where
 
 import Data.Newtype (class Newtype, unwrap, wrap)
@@ -25,12 +16,6 @@ import Prelude ((<<<))
 import Snarky.Circuit.DSL.Monad (class CheckedType, check)
 import Snarky.Circuit.Types (class CircuitType, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Type.Proxy (Proxy(..))
-
--- | IPA rounds in a Step proof (= log2 of Vesta SRS size = `Rounds.Step` = 16).
-type StepIPARounds = 16
-
--- | IPA rounds in a Wrap proof (= log2 of Pallas SRS size = `Rounds.Wrap` = 15).
-type WrapIPARounds = 15
 
 -- | Single polynomial-commitment as a vector of `chunks` chunks. Wraps
 -- | `Vector chunks pt` so that the two axes — outer "which commitment"

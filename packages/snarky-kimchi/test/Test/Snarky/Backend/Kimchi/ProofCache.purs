@@ -1,13 +1,13 @@
 -- | End-to-end smoke test for `Snarky.Backend.Kimchi.ProofCache`:
 -- |
--- |   1. Empty store — `getStepProof` ⇒ `Nothing` (cache miss).
+-- |   1. Empty store — `getPallasProof` ⇒ `Nothing` (cache miss).
 -- |   2. Build a real kimchi proof (same `y = x²` shape as the
--- |      Proof-FFI test), store it via `setStepProof`, retrieve via
--- |      `getStepProof`, and verify the retrieved proof actually
+-- |      Proof-FFI test), store it via `setPallasProof`, retrieve via
+-- |      `getPallasProof`, and verify the retrieved proof actually
 -- |      verifies (round-trip is byte-faithful w.r.t. the kimchi
 -- |      verifier).
 -- |   3. Garbled-JSON resilience — overwrite the cache file with
--- |      non-JSON, confirm `getStepProof` quietly returns `Nothing`
+-- |      non-JSON, confirm `getPallasProof` quietly returns `Nothing`
 -- |      (mirrors OCaml `proof_cache.ml`'s graceful-degrade contract).
 module Test.Snarky.Backend.Kimchi.ProofCache
   ( spec
@@ -33,7 +33,7 @@ import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitnes
 import Snarky.Backend.Kimchi.Class (createProverIndex, createVerifierIndex)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaCrsCreate)
 import Snarky.Backend.Kimchi.Proof (createProof, verifyOpeningProof)
-import Snarky.Backend.Kimchi.ProofCache (getStepProof, mkProofCache, setStepProof)
+import Snarky.Backend.Kimchi.ProofCache (getPallasProof, mkProofCache, setPallasProof)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, assertSquare_, exists, readCVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate, initialState)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
@@ -123,12 +123,12 @@ spec = describe "Snarky.Backend.Kimchi.ProofCache (round-trip)" do
               { proverIndex, witness }
 
           -- 1. Cold cache ⇒ miss.
-          missBefore <- getStepProof cache verifierIndex publicInputs
+          missBefore <- getPallasProof cache verifierIndex publicInputs
           isNothing missBefore `shouldEqual` true
 
           -- 2. Set then get ⇒ hit, and the retrieved proof verifies.
-          setStepProof cache verifierIndex publicInputs proof
-          hit <- getStepProof cache verifierIndex publicInputs
+          setPallasProof cache verifierIndex publicInputs proof
+          hit <- getPallasProof cache verifierIndex publicInputs
           isJust hit `shouldEqual` true
           case hit of
             Nothing -> throw "cache hit promised by isJust but pattern was Nothing"
@@ -142,7 +142,7 @@ spec = describe "Snarky.Backend.Kimchi.ProofCache (round-trip)" do
           -- 3. Garbled store ⇒ silent miss (mirrors OCaml proof_cache.ml
           --    "any decode drift => empty store").
           FS.writeTextFile UTF8 cachePath "{ not valid json"
-          garbled <- getStepProof cache verifierIndex publicInputs
+          garbled <- getPallasProof cache verifierIndex publicInputs
           isNothing garbled `shouldEqual` true
 
           removeIfExists cachePath

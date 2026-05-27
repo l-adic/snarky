@@ -5,7 +5,9 @@
 -- |
 -- | Reference: mina/src/lib/pickles/common/nat.ml, kimchi_pasta_basic.ml
 module Pickles.Types
-  ( module ChunkedCommitmentReExports
+  ( StepIPARounds
+  , WrapIPARounds
+  , module ChunkedCommitmentReExports
   , MaxProofsVerified
   , PaddedLength
   , StepCommitmentCurve
@@ -25,7 +27,7 @@ import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (Tuple10, Tuple2, Tuple3, Tuple5, Tuple7, tuple10, tuple2, tuple3, tuple5, tuple7, uncurry10, uncurry2, uncurry3, uncurry5, uncurry7)
 import Data.Vector (Vector)
 import Pickles.Verify.Types (UnfinalizedProof, WrapDeferredValues)
-import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment(..), StepIPARounds, WrapIPARounds) as ChunkedCommitmentReExports
+import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment(..)) as ChunkedCommitmentReExports
 import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment)
 import Snarky.Circuit.DSL (F, FVar, UnChecked)
 import Snarky.Circuit.DSL.Monad (class CheckedType, check)
@@ -35,6 +37,15 @@ import Snarky.Curves.Class (class FieldSizeInBits)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Type.Proxy (Proxy(..))
+
+-- | IPA rounds in a Step (Tick / Vesta-committed) proof. Equal to
+-- | `log2` of the Tick SRS size — `Rounds.Step = 16` in mina's pickles
+-- | (`kimchi_pasta_basic.ml`). Step/Wrap is a pickles-protocol notion,
+-- | hence the constant lives here rather than in `snarky-kimchi`.
+type StepIPARounds = 16
+
+-- | IPA rounds in a Wrap (Tock / Pallas-committed) proof — `Rounds.Wrap = 15`.
+type WrapIPARounds = 15
 
 -- | Maximum number of previous proofs verified per step. In Pickles
 -- | this is the **per-compile-circuit** `max_proofs_verified` parameter

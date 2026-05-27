@@ -48,7 +48,7 @@ import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatchC
 import Pickles.Types (StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, ScalarChallenge)
 import Pickles.Wrap.Types as Wrap
-import Snarky.Backend.Kimchi.Proof (OraclesResult, Proof, proofData, proofOpeningPrechallenges, proofOraclesRec)
+import Snarky.Backend.Kimchi.Proof (OraclesResult, Proof, pallasProofData, proofOpeningPrechallenges, proofOraclesRec)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
 import Snarky.Backend.Kimchi.Util.Fatal (fromJust')
 import Snarky.Circuit.DSL (F(..), UnChecked(..))
@@ -313,7 +313,7 @@ wrapComputeDeferredValues input =
       { allEvals: input.chunkedAllEvals
       , publicEvals: input.chunkedAllEvals.publicEvals
       , ftEval0: stepFtEval0
-      , ftEval1: (proofData input.proof).evals.ftEval1
+      , ftEval1: (pallasProofData @StepIPARounds input.proof).evals.ftEval1
       , oldBulletproofChallenges: input.prevChallenges
       , xi: oraclesResult.v
       , r: oraclesResult.u
