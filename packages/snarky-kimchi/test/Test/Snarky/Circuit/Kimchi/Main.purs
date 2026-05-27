@@ -8,6 +8,8 @@ import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
+import Test.Snarky.Backend.Kimchi.Proof as ProofTests
+import Test.Snarky.Backend.Kimchi.ProofCache as ProofCacheTests
 import Test.Snarky.Circuit as CircuitTests
 import Test.Snarky.Circuit.Kimchi.AddComplete as AddCompleteTests
 import Test.Snarky.Circuit.Kimchi.Debugger as DebuggerTests
@@ -54,3 +56,10 @@ spec = do
   ShiftedTests.spec kimchiTestConfig
   GroupMapTests.spec kimchiTestConfig
   DebuggerTests.spec
+  -- End-to-end kimchi FFI smoke tests (proof create/verify + on-disk
+  -- proof cache round-trip). These live in `snarky-kimchi/test`
+  -- rather than `pickles/test` because they exercise only the kimchi
+  -- proof system surface — no recursive / Pickles-specific
+  -- scaffolding required.
+  ProofTests.spec
+  ProofCacheTests.spec

@@ -79,21 +79,7 @@ import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.Proof.Dummy (dummyWrapProof)
-import Pickles.ProofCache (ProofCache)
 import Pickles.ProofsVerified (ProofsVerifiedCount, boolVecToProofsVerified)
-import Pickles.Prove.FFI
-  ( permutationVanishingPolynomial
-  , proofData
-  , proofOraclesRec
-  , proverIndexDomainLog2
-  )
-import Pickles.Prove.FFI
-  ( permutationVanishingPolynomial
-  , proofOraclesRec
-  , proverIndexDomainLog2
-  , srsBlindingGenerator
-  , srsLagrangeCommitmentChunksAt
-  ) as ProofFFI
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (assembleWrapMainInput, wrapComputeDeferredValues)
@@ -160,6 +146,21 @@ import Prim.Ordering (EQ, GT, LT)
 import Prim.Ordering as PrimOrdering
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
+import Snarky.Backend.Kimchi.Proof
+  ( pallasProofData
+  , permutationVanishingPolynomial
+  , proofOraclesRec
+  , proverIndexDomainLog2
+  , vestaProofData
+  )
+import Snarky.Backend.Kimchi.Proof
+  ( permutationVanishingPolynomial
+  , proofOraclesRec
+  , proverIndexDomainLog2
+  , srsBlindingGenerator
+  , srsLagrangeCommitmentChunksAt
+  ) as ProofFFI
+import Snarky.Backend.Kimchi.ProofCache (ProofCache)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError)
 import Snarky.Circuit.DSL (BoolVar, F(..), FVar, UnChecked(..), coerceViaBits)
@@ -1339,7 +1340,7 @@ instance
                       , zeta: prevWrapOracles.zeta
                       , zetaOmega: prevWrapOracles.zeta * domainGenerator slotWrapDomainLog2
                       }
-                    prevWrapData = proofData prev.wrapProof
+                    prevWrapData = vestaProofData @WrapIPARounds prev.wrapProof
                     prevHeadPrevEvals = StepAllEvals
                       { ftEval1: F prevWrapOracles.ftEval1
                       , publicEvals:
@@ -2029,7 +2030,7 @@ instance
                       , zeta: prevWrapOracles.zeta
                       , zetaOmega: prevWrapOracles.zeta * domainGenerator slotWrapDomainLog2
                       }
-                    prevWrapData = proofData prev.wrapProof
+                    prevWrapData = vestaProofData @WrapIPARounds prev.wrapProof
                     prevHeadPrevEvals = StepAllEvals
                       { ftEval1: F prevWrapOracles.ftEval1
                       , publicEvals:
@@ -3653,7 +3654,7 @@ runMultiProverBody
     -- Chunked step-proof evaluations: one `PointEval` per polynomial
     -- per chunk. Wrap prover consumes this directly via the chunked
     -- CIP / chunked sponge replay.
-    stepProofData = proofData stepResult.proof
+    stepProofData = pallasProofData @StepIPARounds stepResult.proof
     chunkedAllEvals =
       { ftEval1: stepOracles.ftEval1
       -- Public eval from the proof's own `evals.public`. The kimchi prover
@@ -3733,7 +3734,7 @@ runMultiProverBody
       in
         f
 
-    stepProofSg = (proofData stepResult.proof).opening.sg
+    stepProofSg = (pallasProofData @StepIPARounds stepResult.proof).opening.sg
 
     dummyWrapExpanded = dummyIpaChallenges.wrapExpanded
 

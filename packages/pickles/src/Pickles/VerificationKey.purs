@@ -24,12 +24,12 @@ import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.Prove.FFI (sigmaCommLast, verifierIndexColumnComms)
 import Pickles.Types (ChunkedCommitment(..))
-import Pickles.Util.Fatal (fromJust')
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
+import Snarky.Backend.Kimchi.Proof (sigmaCommLast, verifierIndexColumnComms)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
+import Snarky.Backend.Kimchi.Util.Fatal (fromJust')
 import Snarky.Circuit.CVar (add_)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, label, mul_, seal)
 import Snarky.Circuit.DSL.Monad (class CheckedType, check)
@@ -142,7 +142,7 @@ extractWrapVKComms vk =
 -- | `@1`; step-side consumers (`wrap_main.ml:80`'s `~num_chunks`)
 -- | pass the user-supplied compile param. The specialization is
 -- | pushed all the way to the consumer so the projection stays a
--- | one-liner over the raw `Pickles.Prove.FFI` bindings.
+-- | one-liner over the raw `Snarky.Backend.Kimchi.Proof` bindings.
 type VerifierIndexCommitments :: Int -> Type -> Type
 type VerifierIndexCommitments stepChunks f =
   { index :: Vector 6 (ChunkedCommitment stepChunks (AffinePoint f))

@@ -44,13 +44,13 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (ChunkedAllEvals)
 import Pickles.PlonkChecks.Chunks as Chunks
-import Pickles.Prove.FFI (OraclesResult, Proof, proofData, proofOpeningPrechallenges, proofOraclesRec)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatchChunked, computeBpChalsAndB, crossFieldDigest, derivePlonk, ftEval0)
 import Pickles.Types (StepIPARounds)
-import Pickles.Util.Fatal (fromJust')
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, ScalarChallenge)
 import Pickles.Wrap.Types as Wrap
+import Snarky.Backend.Kimchi.Proof (OraclesResult, Proof, pallasProofData, proofOpeningPrechallenges, proofOraclesRec)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
+import Snarky.Backend.Kimchi.Util.Fatal (fromJust')
 import Snarky.Circuit.DSL (F(..), UnChecked(..))
 import Snarky.Circuit.DSL.SizedF (SizedF, coerceViaBits, unsafeFromField, unwrapF, wrapF)
 import Snarky.Circuit.Kimchi (Type1, fromShifted, toShifted)
@@ -313,7 +313,7 @@ wrapComputeDeferredValues input =
       { allEvals: input.chunkedAllEvals
       , publicEvals: input.chunkedAllEvals.publicEvals
       , ftEval0: stepFtEval0
-      , ftEval1: (proofData input.proof).evals.ftEval1
+      , ftEval1: (pallasProofData @StepIPARounds input.proof).evals.ftEval1
       , oldBulletproofChallenges: input.prevChallenges
       , xi: oraclesResult.v
       , r: oraclesResult.u

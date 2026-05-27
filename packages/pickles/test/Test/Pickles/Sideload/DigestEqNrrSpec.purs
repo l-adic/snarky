@@ -2,7 +2,7 @@
 -- |
 -- | Compiles the NRR rule on the PureScript side via `compileMulti` and
 -- | loads the OCaml-emitted NRR fixture's wrap VK, then compares the two
--- | via the full-VK JSON key used by `Pickles.ProofCache` (covers every
+-- | via the full-VK JSON key used by `Snarky.Backend.Kimchi.ProofCache` (covers every
 -- | stable kimchi `VerifierIndex` field — domain, evals, shifts,
 -- | max_poly_size, public, prev_challenges, zk_rows). Stringwise equality
 -- | of the JSON key implies bit-equivalent VKs at the kimchi level.
@@ -22,7 +22,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Pickles (NoSlots, StepField, compileMulti, mkRuleEntry)
-import Pickles.ProofCache (vestaVerifierIndexJsonKey)
+import Snarky.Backend.Kimchi.ProofCache (vestaVerifierIndexJsonKey)
 import Snarky.Circuit.DSL (F)
 import Test.Pickles.Prove.NoRecursionReturn (NrrRules, nrrRule)
 import Test.Pickles.SharedSrs (SharedSrs)

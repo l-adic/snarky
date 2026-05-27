@@ -3,13 +3,13 @@
 -- |
 -- | This module is a thin re-export facade. Consumers should
 -- | `import Pickles.Sideload` rather than reaching into
--- | `Pickles.Sideload.Bundle` / `Pickles.Sideload.FFI` directly.
+-- | `Pickles.Sideload.Bundle` / `Snarky.Backend.Kimchi.Proof` directly.
 -- | Internal side-loading machinery
 -- | (`Pickles.Sideload.{Advice,VerificationKey}`) is not re-exported.
 module Pickles.Sideload
   ( module Pickles.Sideload.Bundle
-  , module Pickles.Sideload.FFI
+  , module Snarky.Backend.Kimchi.Proof
   ) where
 
 import Pickles.Sideload.Bundle (Bundle, mkBundle, verifierIndex)
-import Pickles.Sideload.FFI (vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJson, vestaVerifierIndexToSerdeJson)
+import Snarky.Backend.Kimchi.Proof (vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJson, vestaVerifierIndexToSerdeJson)

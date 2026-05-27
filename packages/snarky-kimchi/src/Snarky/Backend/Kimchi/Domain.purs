@@ -4,14 +4,14 @@
 -- | `kimchi/src/circuits/expr.rs:132 unnormalized_lagrange_basis`.
 -- |
 -- | Previously these were foreign-imported FFI calls into snarky-crypto
--- | (`pallas_*` / `vesta_*` variants in `Pickles.Prove.FFI` and
+-- | (`pallas_*` / `vesta_*` variants in `Snarky.Backend.Kimchi.Proof` and
 -- | `Pickles.Linearization.FFI`). They are pure field arithmetic, so they
 -- | belong in PureScript — the typeclass + `PrimeField` ops + the new
 -- | `TwoAdicField` constants (`twoAdicRoot`, `twoAdicity`) are sufficient.
 -- |
 -- | Each helper is generic over the field `f`. Pickles' wrap-circuit math
 -- | runs in `WrapField` (= Fq), step-circuit math in `StepField` (= Fp).
-module Pickles.Domain
+module Snarky.Backend.Kimchi.Domain
   ( domainGenerator
   , evalVanishesOnLastNRows
   , permutationVanishingPolynomial

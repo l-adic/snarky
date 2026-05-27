@@ -7,6 +7,7 @@
 module Pickles.Types
   ( StepIPARounds
   , WrapIPARounds
+  , module ChunkedCommitmentReExports
   , MaxProofsVerified
   , PaddedLength
   , StepCommitmentCurve
@@ -20,28 +21,30 @@ module Pickles.Types
   , WrapProofOpening(..)
   , StepAllEvals(..)
   , PerProofUnfinalized(..)
-  , ChunkedCommitment(..)
   ) where
 
-import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (Tuple10, Tuple2, Tuple3, Tuple5, Tuple7, tuple10, tuple2, tuple3, tuple5, tuple7, uncurry10, uncurry2, uncurry3, uncurry5, uncurry7)
 import Data.Vector (Vector)
 import Pickles.Verify.Types (UnfinalizedProof, WrapDeferredValues)
-import Prelude ((<<<))
+import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment(..)) as ChunkedCommitmentReExports
+import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment)
 import Snarky.Circuit.DSL (F, FVar, UnChecked)
 import Snarky.Circuit.DSL.Monad (class CheckedType, check)
 import Snarky.Circuit.DSL.SizedF (SizedF)
-import Snarky.Circuit.Types (class CircuitType, fieldsToValue, fieldsToVar, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, sizeInFields, valueToFields, varToFields)
+import Snarky.Circuit.Types (class CircuitType, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Curves.Class (class FieldSizeInBits)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Type.Proxy (Proxy(..))
 
--- | IPA rounds in a Step proof (= log2 of Vesta SRS size = Rounds.Step = 16).
+-- | IPA rounds in a Step (Tick / Vesta-committed) proof. Equal to
+-- | `log2` of the Tick SRS size — `Rounds.Step = 16` in mina's pickles
+-- | (`kimchi_pasta_basic.ml`). Step/Wrap is a pickles-protocol notion,
+-- | hence the constant lives here rather than in `snarky-kimchi`.
 type StepIPARounds = 16
 
--- | IPA rounds in a Wrap proof (= log2 of Pallas SRS size = Rounds.Wrap = 15).
+-- | IPA rounds in a Wrap (Tock / Pallas-committed) proof — `Rounds.Wrap = 15`.
 type WrapIPARounds = 15
 
 -- | Maximum number of previous proofs verified per step. In Pickles
@@ -272,37 +275,10 @@ instance
 -- |     one compile may differ. Sites: `SLVK.VerificationKey`,
 -- |     `mkRuleEntry @… @slotVkChunks`.
 -- |
--- | The generic container below (`ChunkedCommitment`) is
+-- | The generic `ChunkedCommitment` container — now defined in
+-- | `Snarky.Backend.Kimchi.Commitment` (re-exported above) — is
 -- | dimension-*agnostic*: its parameter is the neutral `chunks` (used
 -- | at all three dimensions), never one of the names above.
--- |
--- | ## ChunkedCommitment
--- |
--- | Single polynomial-commitment as a vector of `chunks` chunks. Wraps
--- | `Vector chunks pt` so that the two axes — outer "which commitment"
--- | vs inner "which chunk of one commitment" — stay distinguishable at
--- | use sites. The runtime representation is identical to the
--- | underlying Vector; consumers use `Data.Newtype` combinators
--- | (`over`, `under`, `over2`, `un`, `coerce`) instead of manual
--- | wrap/unwrap chains.
-newtype ChunkedCommitment :: Int -> Type -> Type
-newtype ChunkedCommitment chunks pt = ChunkedCommitment (Vector chunks pt)
-
-derive instance Newtype (ChunkedCommitment chunks pt) _
-
-instance
-  ( CircuitType f a var
-  , Reflectable chunks Int
-  ) =>
-  CircuitType f (ChunkedCommitment chunks a) (ChunkedCommitment chunks var) where
-  sizeInFields pf _ = sizeInFields pf (Proxy @(Vector chunks a))
-  valueToFields = valueToFields @f @(Vector chunks a) <<< unwrap
-  fieldsToValue = wrap <<< fieldsToValue @f @(Vector chunks a)
-  varToFields = varToFields @f @(Vector chunks a) <<< unwrap
-  fieldsToVar = wrap <<< fieldsToVar @f @(Vector chunks a)
-
-instance CheckedType f c (Vector chunks var) => CheckedType f c (ChunkedCommitment chunks var) where
-  check = check <<< unwrap
 
 -- | Wrap proof messages: protocol commitments allocated in the per-proof witness.
 -- |

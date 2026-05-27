@@ -21,13 +21,13 @@
 -- | `Object (Object String)` (= `vk -> public_input -> proof`). Decode
 -- | is graceful (any drift => empty store => miss => regenerate), per
 -- | `proof_cache.ml`.
-module Pickles.ProofCache
+module Snarky.Backend.Kimchi.ProofCache
   ( ProofCache
   , mkProofCache
-  , getStepProof
-  , setStepProof
-  , getWrapProof
-  , setWrapProof
+  , getPallasProof
+  , setPallasProof
+  , getVestaProof
+  , setVestaProof
   , vestaVerifierIndexJsonKey
   ) where
 
@@ -48,10 +48,8 @@ import Foreign.Object as Object
 import Node.Encoding (Encoding(..))
 import Node.FS.Perms (permsAll)
 import Node.FS.Sync (exists, mkdir', readTextFile, writeTextFile)
-import Pickles.Field (StepField, WrapField)
-import Pickles.Prove.FFI (Proof)
-import Pickles.Sideload.FFI (pallasProofFromSerdeJson, pallasProofToSerdeJson, vestaProofFromSerdeJson, vestaProofToSerdeJson)
 import Simple.JSON as JSON
+import Snarky.Backend.Kimchi.Proof (Proof, pallasProofFromSerdeJson, pallasProofToSerdeJson, vestaProofFromSerdeJson, vestaProofToSerdeJson)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
 import Snarky.Curves.Class (class PrimeField, toBigInt)
 import Snarky.Curves.Pallas as Pallas
@@ -111,54 +109,57 @@ fieldStr = show <<< toBigInt
 piKey :: forall f. PrimeField f => Array f -> String
 piKey = joinWith "," <<< map fieldStr
 
--- | Step / wrap VK lookup key. Mirrors OCaml `Proof_cache` semantics
+-- | VK lookup keys, namespaced by curve to avoid Pallas/Vesta collisions
+-- | sharing a bucket. Mirrors OCaml `Proof_cache` semantics
 -- | (`proof_cache.ml:185`): the full VK JSON serves as the bucket key
 -- | rather than a digest. OCaml never materializes a host-side VK digest;
 -- | we follow suit instead of porting kimchi's `PlonkSpongeConstantsKimchi`
 -- | sponge to JS.
-stepVkKey :: VerifierIndex Vesta.G Pallas.BaseField -> String
-stepVkKey vk = "step:" <> pallasVerifierIndexJsonKey vk
+pallasProofVkKey :: VerifierIndex Vesta.G Pallas.BaseField -> String
+pallasProofVkKey vk = "pallas:" <> pallasVerifierIndexJsonKey vk
 
-wrapVkKey :: VerifierIndex Pallas.G Vesta.BaseField -> String
-wrapVkKey vk = "wrap:" <> vestaVerifierIndexJsonKey vk
+vestaProofVkKey :: VerifierIndex Pallas.G Vesta.BaseField -> String
+vestaProofVkKey vk = "vesta:" <> vestaVerifierIndexJsonKey vk
 
--- | Step proof lookup / store (= OCaml `get/set_step_proof`).
-getStepProof
+-- | Cache lookup / store for `pallas*` proofs (Vesta.G commitments,
+-- | Pallas-base-field scalars — what pickles' Tick / Step side produces).
+getPallasProof
   :: ProofCache
   -> VerifierIndex Vesta.G Pallas.BaseField
-  -> Array StepField
+  -> Array Pallas.BaseField
   -> Effect (Maybe (Proof Vesta.G Pallas.BaseField))
-getStepProof cache vk pis = do
-  m <- getStr cache (stepVkKey vk) (piKey pis)
+getPallasProof cache vk pis = do
+  m <- getStr cache (pallasProofVkKey vk) (piKey pis)
   pure (pallasProofFromSerdeJson <$> m)
 
-setStepProof
+setPallasProof
   :: ProofCache
   -> VerifierIndex Vesta.G Pallas.BaseField
-  -> Array StepField
+  -> Array Pallas.BaseField
   -> Proof Vesta.G Pallas.BaseField
   -> Effect Unit
-setStepProof cache vk pis proof =
-  setStr cache (stepVkKey vk) (piKey pis) (pallasProofToSerdeJson proof)
+setPallasProof cache vk pis proof =
+  setStr cache (pallasProofVkKey vk) (piKey pis) (pallasProofToSerdeJson proof)
 
--- | Wrap proof lookup / store (= OCaml `get/set_wrap_proof`).
-getWrapProof
+-- | Cache lookup / store for `vesta*` proofs (Pallas.G commitments,
+-- | Vesta-base-field scalars — what pickles' Tock / Wrap side produces).
+getVestaProof
   :: ProofCache
   -> VerifierIndex Pallas.G Vesta.BaseField
-  -> Array WrapField
+  -> Array Vesta.BaseField
   -> Effect (Maybe (Proof Pallas.G Vesta.BaseField))
-getWrapProof cache vk pis = do
-  m <- getStr cache (wrapVkKey vk) (piKey pis)
+getVestaProof cache vk pis = do
+  m <- getStr cache (vestaProofVkKey vk) (piKey pis)
   pure (vestaProofFromSerdeJson <$> m)
 
-setWrapProof
+setVestaProof
   :: ProofCache
   -> VerifierIndex Pallas.G Vesta.BaseField
-  -> Array WrapField
+  -> Array Vesta.BaseField
   -> Proof Pallas.G Vesta.BaseField
   -> Effect Unit
-setWrapProof cache vk pis proof =
-  setStr cache (wrapVkKey vk) (piKey pis) (vestaProofToSerdeJson proof)
+setVestaProof cache vk pis proof =
+  setStr cache (vestaProofVkKey vk) (piKey pis) (vestaProofToSerdeJson proof)
 
 --------------------------------------------------------------------------------
 -- VK json-key: the deterministic full-VK string used as the bucket key.

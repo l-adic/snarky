@@ -2,7 +2,7 @@
 // kimchi-napi's `caml_pasta_f{p,q}_plonk_verifier_index_shifts(log2)`.
 //
 // `domainGenerator` and `unnormalizedLagrangeBasis` are now pure PureScript
-// in `Pickles.Domain` (running on `TwoAdicField` + `PrimeField`) — no JS
+// in `Snarky.Backend.Kimchi.Domain` (running on `TwoAdicField` + `PrimeField`) — no JS
 // codegen needed for them anymore.
 
 import { createRequire } from 'module';

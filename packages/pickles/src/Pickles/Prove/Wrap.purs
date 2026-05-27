@@ -58,8 +58,6 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Node.Process as Process
 import Pickles.Field (StepField, WrapField)
-import Pickles.ProofCache (ProofCache, getWrapProof, setWrapProof)
-import Pickles.Prove.FFI (Proof, pallasProofCommitments, proofData, srsBlindingGenerator, srsLagrangeCommitmentChunksAt, vestaCreateProofWithPrev)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized, StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK, pallasVerifierIndexCommitments)
@@ -74,6 +72,8 @@ import Snarky.Backend.Builder (CircuitBuilderState, Labeled, constraintsToArray)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, gatesToJson)
+import Snarky.Backend.Kimchi.Proof (Proof, pallasProofCommitments, pallasProofData, srsBlindingGenerator, srsLagrangeCommitmentChunksAt, vestaCreateProofWithPrev)
+import Snarky.Backend.Kimchi.ProofCache (ProofCache, getVestaProof, setVestaProof)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
 import Snarky.Backend.Prover (emptyProverState)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
@@ -281,7 +281,7 @@ mkVestaPt pt = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
 -- | Build the wrap-circuit advice record from the step proof + its
 -- | surrounding pickles context. Pure: all FFI calls go through
 -- | deterministic `pallas*` helpers exposed as non-effectful in
--- | `Pickles.Prove.FFI`.
+-- | `Snarky.Backend.Kimchi.Proof`.
 buildWrapAdvice
   :: forall @stepChunks mpv slots
    . Reflectable stepChunks Int
@@ -293,7 +293,7 @@ buildWrapAdvice input =
     --
     -- One eager decode of the step proof; downstream uses
     -- field-access on the structured record.
-    stepProofData = proofData input.stepProof
+    stepProofData = pallasProofData @StepIPARounds input.stepProof
 
     -- `nc`-typed commitments, decoded + chunk-validated once at @stepChunks.
     commits = pallasProofCommitments @stepChunks input.stepProof
@@ -644,12 +644,12 @@ wrapSolveAndProve ctx compileResult = do
         case ctx.proofCache of
           Nothing -> pure $ Lazy.force p
           Just cache -> do
-            mp <- liftEffect $ getWrapProof cache compileResult.verifierIndex publicInputs
+            mp <- liftEffect $ getVestaProof cache compileResult.verifierIndex publicInputs
             case mp of
               Just proof -> pure proof
               Nothing -> do
                 let proof = Lazy.force p
-                liftEffect $ setWrapProof cache compileResult.verifierIndex publicInputs proof
+                liftEffect $ setVestaProof cache compileResult.verifierIndex publicInputs proof
                 pure proof
       pure
         { proverIndex: compileResult.proverIndex

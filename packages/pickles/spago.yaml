@@ -1,6 +1,7 @@
 package:
   name: pickles
   dependencies:
+    - argonaut-core
     - arrays
     - blake2
     - const
@@ -12,18 +13,20 @@ package:
     - exists
     - foldable-traversable
     - foreign
+    - foreign-object
     - functors
     - identity
     - integers
     - js-bigints
+    - lazy
     - lists
     - maybe
     - newtype
     - node-buffer
     - node-fs
     - node-process
+    - nullable
     - ordered-collections
-    - foreign-object
     - partial
     - pickles-linearization-types
     - poseidon
