@@ -4,7 +4,7 @@
 -- | The other helpers that used to live here — `domainGenerator`,
 -- | `unnormalizedLagrangeBasis`, plus the dead `evalLinearization` /
 -- | `evalWitnessPolys` / `evalCoefficientPolys` / `evalSelectorPolys` /
--- | `proverIndexDomainLog2` — moved to `Pickles.Domain` (pure PureScript)
+-- | `proverIndexDomainLog2` — moved to `Snarky.Backend.Kimchi.Domain` (pure PureScript)
 -- | or were removed (no PS consumer) as part of the kimchi-napi migration.
 module Pickles.Linearization.FFI
   ( class LinearizationFFI
@@ -15,7 +15,7 @@ module Pickles.Linearization.FFI
   ) where
 
 import Data.Vector (Vector)
-import Pickles.Domain as Domain
+import Snarky.Backend.Kimchi.Domain as Domain
 import Snarky.Curves.Class (class TwoAdicField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -40,11 +40,11 @@ class TwoAdicField f <= LinearizationFFI f where
   -- | arithmetic (the sampling reads bytes from a hash).
   domainShifts :: Int -> Vector 7 f
 
--- | 2^log2-th primitive root of unity in `f`. Pure PS via `Pickles.Domain`.
+-- | 2^log2-th primitive root of unity in `f`. Pure PS via `Snarky.Backend.Kimchi.Domain`.
 domainGenerator :: forall @f. TwoAdicField f => Int -> f
 domainGenerator = Domain.domainGenerator @f
 
--- | Unnormalized i-th Lagrange basis polynomial. Pure PS via `Pickles.Domain`.
+-- | Unnormalized i-th Lagrange basis polynomial. Pure PS via `Snarky.Backend.Kimchi.Domain`.
 unnormalizedLagrangeBasis
   :: forall @f
    . TwoAdicField f

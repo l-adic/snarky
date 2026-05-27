@@ -659,3 +659,54 @@ export const vestaMakeWireProof = (c) => {
     [],
   );
 };
+
+// ---------------------------------------------------------------------------
+// Serde JSON codecs (formerly Pickles.Sideload.FFI)
+//
+// Both ends — kimchi-stubs OCaml and kimchi-napi here — use the same
+// upstream `ProverProof<G>` / `VerifierIndex<G>` serde derives, so the
+// wire format is cross-stack-compatible. Public input is `#[serde(skip)]`
+// on ProverProof and is threaded separately at verify time via
+// `withInjectedInputs`. SRS is `#[serde(skip)]` on VerifierIndex; we
+// re-attach the caller-supplied CRS on deserialize.
+// ---------------------------------------------------------------------------
+
+// Step-side (Fp / Vesta.G commitments) VK serde.
+export function pallasVerifierIndexToSerdeJson(vi) {
+  return k.caml_pasta_fp_plonk_verifier_index_to_json(vi);
+}
+
+export function pallasVerifierIndexFromSerdeJson(json) {
+  return function (crs) {
+    return k.caml_pasta_fp_plonk_verifier_index_from_json(json, crs.srs);
+  };
+}
+
+// Wrap-side (Fq / Pallas.G commitments) VK serde.
+export function vestaVerifierIndexToSerdeJson(vi) {
+  return k.caml_pasta_fq_plonk_verifier_index_to_json(vi);
+}
+
+export function vestaVerifierIndexFromSerdeJson(json) {
+  return function (crs) {
+    return k.caml_pasta_fq_plonk_verifier_index_from_json(json, crs.srs);
+  };
+}
+
+// Wrap-side (Pallas-curve commitments) proof serde.
+export function vestaProofFromSerdeJson(json) {
+  return k.caml_pasta_fq_plonk_proof_from_json(json);
+}
+
+export function vestaProofToSerdeJson(proof) {
+  return k.caml_pasta_fq_plonk_proof_to_json(proof);
+}
+
+// Step-side (Vesta-curve commitments) proof serde.
+export function pallasProofToSerdeJson(proof) {
+  return k.caml_pasta_fp_plonk_proof_to_json(proof);
+}
+
+export function pallasProofFromSerdeJson(json) {
+  return k.caml_pasta_fp_plonk_proof_from_json(json);
+}

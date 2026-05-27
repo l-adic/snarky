@@ -81,13 +81,13 @@ import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.ProofCache (ProofCache)
 import Pickles.ProofsVerified (ProofsVerifiedCount, boolVecToProofsVerified)
-import Pickles.Prove.FFI
+import Snarky.Backend.Kimchi.Proof
   ( permutationVanishingPolynomial
   , proofData
   , proofOraclesRec
   , proverIndexDomainLog2
   )
-import Pickles.Prove.FFI
+import Snarky.Backend.Kimchi.Proof
   ( permutationVanishingPolynomial
   , proofOraclesRec
   , proverIndexDomainLog2

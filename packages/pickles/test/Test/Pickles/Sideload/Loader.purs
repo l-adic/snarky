@@ -62,7 +62,7 @@ import Pickles (PaddedLength, StepField, StepIPARounds, VerifiableProof, Verifie
 import Pickles.Dummy (dummyIpaChallenges, stepEndo, wrapEndo)
 import Pickles.Linearization.FFI (PointEval)
 import Pickles.PlonkChecks (ChunkedAllEvals)
-import Pickles.Prove.FFI (Proof)
+import Snarky.Backend.Kimchi.Proof (Proof)
 import Pickles.Prove.Step (extractWrapVKForStepHash)
 import Pickles.Sideload (vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJson)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)

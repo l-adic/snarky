@@ -27,7 +27,7 @@
 -- | ```
 -- | fromJust' "wrap VK coeff (15 points)" (Vector.toVector @15 coeff15Raw)
 -- | ```
-module Pickles.Util.Fatal
+module Snarky.Backend.Kimchi.Util.Fatal
   ( fromJust'
   ) where
 
@@ -44,4 +44,4 @@ fromJust' :: forall a. String -> Maybe a -> a
 fromJust' _ (Just a) = a
 fromJust' label Nothing =
   unsafeCrashWith
-    ("Pickles.Util.Fatal.fromJust': Nothing at label " <> show label)
+    ("Snarky.Backend.Kimchi.Util.Fatal.fromJust': Nothing at label " <> show label)

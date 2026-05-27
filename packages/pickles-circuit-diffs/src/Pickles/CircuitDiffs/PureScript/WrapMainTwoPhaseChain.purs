@@ -32,7 +32,7 @@ import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCom
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement (StepMainTwoPhaseChainIncrementParams, compileStepMainTwoPhaseChainIncrement)
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero (StepMainTwoPhaseChainMakeZeroParams, compileStepMainTwoPhaseChainMakeZero)
 import Pickles.Field (StepField, WrapField)
-import Pickles.Prove.FFI (srsLagrangeCommitmentChunksAt)
+import Snarky.Backend.Kimchi.Proof (srsLagrangeCommitmentChunksAt)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Pickles.Wrap.Slots (Slots1)

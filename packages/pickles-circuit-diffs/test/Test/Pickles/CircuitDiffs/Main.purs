@@ -510,7 +510,7 @@ runChunks2AppWitnessProve = do
       -- Proof creation step disabled while ProofFFI still routes through
       -- snarky-crypto: the kimchi-napi-backed `proverIndex` here is the
       -- wrong `External<T>` Rust tag for snarky-crypto's
-      -- `pallasCreateProofWithPrev`. Re-enable once Pickles.Prove.FFI
+      -- `pallasCreateProofWithPrev`. Re-enable once Snarky.Backend.Kimchi.Proof
       -- migrates to kimchi-napi.
       pure unit
 

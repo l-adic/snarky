@@ -59,7 +59,7 @@ import Node.FS.Sync as FS
 import Node.Process as Process
 import Pickles.Field (StepField, WrapField)
 import Pickles.ProofCache (ProofCache, getWrapProof, setWrapProof)
-import Pickles.Prove.FFI (Proof, pallasProofCommitments, proofData, srsBlindingGenerator, srsLagrangeCommitmentChunksAt, vestaCreateProofWithPrev)
+import Snarky.Backend.Kimchi.Proof (Proof, pallasProofCommitments, proofData, srsBlindingGenerator, srsLagrangeCommitmentChunksAt, vestaCreateProofWithPrev)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized, StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK, pallasVerifierIndexCommitments)
@@ -281,7 +281,7 @@ mkVestaPt pt = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
 -- | Build the wrap-circuit advice record from the step proof + its
 -- | surrounding pickles context. Pure: all FFI calls go through
 -- | deterministic `pallas*` helpers exposed as non-effectful in
--- | `Pickles.Prove.FFI`.
+-- | `Snarky.Backend.Kimchi.Proof`.
 buildWrapAdvice
   :: forall @stepChunks mpv slots
    . Reflectable stepChunks Int

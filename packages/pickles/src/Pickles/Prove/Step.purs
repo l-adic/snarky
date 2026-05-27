@@ -93,7 +93,7 @@ import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.ProofCache (ProofCache, getStepProof, setStepProof)
-import Pickles.Prove.FFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofData, proofOpeningPrechallenges, proofOraclesRec, vestaProofCommitments)
+import Snarky.Backend.Kimchi.Proof (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofData, proofOpeningPrechallenges, proofOraclesRec, vestaProofCommitments)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)

@@ -44,13 +44,13 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.IPA (bPoly)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals, absorbAllEvals)
-import Pickles.Prove.FFI (OraclesResult, Proof, domainGenerator, proofData, proofOpeningPrechallenges, proofOraclesRec, vestaChallengePolyCommitment, vestaProofCommitments)
+import Snarky.Backend.Kimchi.Proof (OraclesResult, Proof, domainGenerator, proofData, proofOpeningPrechallenges, proofOraclesRec, vestaChallengePolyCommitment, vestaProofCommitments)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatch, computeBpChalsAndB, derivePlonk, ftEval0)
 import Pickles.Sponge (absorb, evalPureSpongeM, initialSponge, squeeze, squeezeScalarChallengePure)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Step.Types as Step
 import Pickles.Types (ChunkedCommitment(..), StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
-import Pickles.Util.Fatal (fromJust')
+import Snarky.Backend.Kimchi.Util.Fatal (fromJust')
 import Pickles.VerificationKey (StepVK)
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
@@ -311,7 +311,7 @@ expandDeferred input =
 -- ftEval0, combinedInnerProductBatch, computeBpChalsAndB), the
 -- step-field `expandDeferred` from this module, the
 -- message-hash helpers in `Pickles.{Step,Wrap}.MessageHash`, and the
--- wrap-proof FFI in `Pickles.Prove.FFI`.
+-- wrap-proof FFI in `Snarky.Backend.Kimchi.Proof`.
 --
 -- OCaml body structure (step.ml line → PS wiring):
 --

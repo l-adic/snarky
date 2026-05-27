@@ -44,10 +44,10 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (ChunkedAllEvals)
 import Pickles.PlonkChecks.Chunks as Chunks
-import Pickles.Prove.FFI (OraclesResult, Proof, proofData, proofOpeningPrechallenges, proofOraclesRec)
+import Snarky.Backend.Kimchi.Proof (OraclesResult, Proof, proofData, proofOpeningPrechallenges, proofOraclesRec)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatchChunked, computeBpChalsAndB, crossFieldDigest, derivePlonk, ftEval0)
 import Pickles.Types (StepIPARounds)
-import Pickles.Util.Fatal (fromJust')
+import Snarky.Backend.Kimchi.Util.Fatal (fromJust')
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, ScalarChallenge)
 import Pickles.Wrap.Types as Wrap
 import Snarky.Backend.Kimchi.Types (VerifierIndex)

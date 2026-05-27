@@ -77,7 +77,7 @@ import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals, ChunkedAllEvals)
-import Pickles.Prove.FFI (Proof, permutationVanishingPolynomial, verifyOpeningProofsBatch)
+import Snarky.Backend.Kimchi.Proof (Proof, permutationVanishingPolynomial, verifyOpeningProofsBatch)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput, assembleWrapMainInput)
 import Pickles.Types (PaddedLength, StepIPARounds, WrapIPARounds)

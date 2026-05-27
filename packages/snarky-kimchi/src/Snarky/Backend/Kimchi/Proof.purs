@@ -2,10 +2,12 @@
 -- | kimchi proof-systems operations — the core logic for computing
 -- | relevant proof values.
 -- |
--- | JSON encode/decode (the disk-proof-cache VK key) lives in the
--- | sibling `Pickles.Prove.Codecs`. This module owns the `Proof` type,
--- | the `proofData` decoder, and every prove/verify/oracle/SRS binding.
-module Pickles.Prove.FFI
+-- | Higher-level disk-proof-cache codec helpers (the VK-keyed JSON store)
+-- | live in `Pickles.Prove.Codecs`. This module owns the `Proof` type,
+-- | the `proofData` decoder, and every prove/verify/oracle/SRS binding,
+-- | plus the kimchi `ProverProof<G>` / `VerifierIndex<G>` serde codecs
+-- | (formerly in `Pickles.Sideload.FFI`, now folded in below).
+module Snarky.Backend.Kimchi.Proof
   ( class ProofFFI
   , class HasProofData
   , proofData
@@ -41,6 +43,19 @@ module Pickles.Prove.FFI
   , PointEval
   , SpongeCheckpoint
   , LrPair
+  -- Serde JSON codecs (formerly in `Pickles.Sideload.FFI`). The wire
+  -- format is `serde_json::{to_string,from_str}` on kimchi's
+  -- `ProverProof<G>` / `VerifierIndex<G>` derives — cross-stack-
+  -- compatible with OCaml-emitted fixtures by construction. Public input
+  -- is `#[serde(skip)]`; callers thread it separately.
+  , vestaVerifierIndexToSerdeJson
+  , vestaVerifierIndexFromSerdeJson
+  , pallasVerifierIndexToSerdeJson
+  , pallasVerifierIndexFromSerdeJson
+  , vestaProofFromSerdeJson
+  , vestaProofToSerdeJson
+  , pallasProofFromSerdeJson
+  , pallasProofToSerdeJson
   ) where
 
 import Prelude
@@ -53,9 +68,9 @@ import Data.Nullable (Nullable, toMaybe)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.Domain as Domain
-import Pickles.Types (ChunkedCommitment(..), StepIPARounds, WrapIPARounds)
-import Pickles.Util.Fatal (fromJust')
+import Snarky.Backend.Kimchi.Domain as Domain
+import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment(..), StepIPARounds, WrapIPARounds)
+import Snarky.Backend.Kimchi.Util.Fatal (fromJust')
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
 import Snarky.Circuit.DSL (SizedF)
 import Snarky.Curves.Pallas as Pallas
@@ -739,3 +754,41 @@ instance ProofFFI Vesta.BaseField Pallas.G Vesta.ScalarField where
 -- and the `OpeningProofData rounds c f` shape above), which does the
 -- length check once at the FFI boundary via `Reflectable rounds Int`.
 
+
+--------------------------------------------------------------------------------
+-- Serde JSON codecs (formerly Pickles.Sideload.FFI)
+--
+-- Cross-stack-compatible with OCaml-emitted fixtures: same kimchi-side
+-- Rust struct, same serde derive on both ends. VK hydration
+-- (linearization / powers_of_alpha / w / permutation_vanishing_polynomial_m)
+-- is automatic in kimchi-napi's `From<NapiPlonkVerifierIndex>`
+-- conversion, so no explicit hydrate step on the PS side.
+
+-- | Vesta-protocol (Pallas.G commitments) VK serde JSON. SRS is
+-- | `#[serde(skip)]`; deserialize re-attaches the supplied CRS.
+foreign import vestaVerifierIndexToSerdeJson :: VerifierIndex Pallas.G Vesta.BaseField -> String
+
+foreign import vestaVerifierIndexFromSerdeJson
+  :: String
+  -> CRS Pallas.G
+  -> VerifierIndex Pallas.G Vesta.BaseField
+
+-- | Step-protocol (Vesta.G commitments) VK serde JSON. Symmetric to
+-- | the wrap variant.
+foreign import pallasVerifierIndexToSerdeJson :: VerifierIndex Vesta.G Pallas.BaseField -> String
+
+foreign import pallasVerifierIndexFromSerdeJson
+  :: String
+  -> CRS Vesta.G
+  -> VerifierIndex Vesta.G Pallas.BaseField
+
+-- | Wrap proof (Pallas.G commitments) serde JSON. Public input is
+-- | `#[serde(skip)]`; callers thread it separately at verify time.
+foreign import vestaProofFromSerdeJson :: String -> Proof Pallas.G Vesta.BaseField
+
+foreign import vestaProofToSerdeJson :: Proof Pallas.G Vesta.BaseField -> String
+
+-- | Step proof (Vesta.G commitments) serde JSON.
+foreign import pallasProofToSerdeJson :: Proof Vesta.G Pallas.BaseField -> String
+
+foreign import pallasProofFromSerdeJson :: String -> Proof Vesta.G Pallas.BaseField

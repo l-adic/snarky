@@ -25,7 +25,7 @@ import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCom
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainChunks2 (StepMainChunks2Params, compileStepMainChunks2)
 import Pickles.Field (StepField, WrapField)
-import Pickles.Prove.FFI (srsLagrangeCommitmentChunksAt)
+import Snarky.Backend.Kimchi.Proof (srsLagrangeCommitmentChunksAt)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
 import Snarky.Backend.Compile (compile)

@@ -40,7 +40,7 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (PointEval)
 import Pickles.PlonkChecks (ChunkedAllEvals)
-import Pickles.Sideload.FFI (vestaProofFromSerdeJson, vestaProofToSerdeJson, vestaVerifierIndexFromSerdeJson, vestaVerifierIndexToSerdeJson)
+import Snarky.Backend.Kimchi.Proof (vestaProofFromSerdeJson, vestaProofToSerdeJson, vestaVerifierIndexFromSerdeJson, vestaVerifierIndexToSerdeJson)
 import Pickles.Types (StepIPARounds)
 import Pickles.Verify (VerifiableProof, Verifier)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)

@@ -9,7 +9,6 @@ package:
     - either
     - exceptions
     - foldable-traversable
-    - functions
     - identity
     - js-bigints
     - lists
@@ -17,6 +16,7 @@ package:
     - mmorph
     - newtype
     - nonempty
+    - nullable
     - ordered-collections
     - partial
     - poseidon
@@ -27,7 +27,6 @@ package:
     - snarky
     - snarky-curves
     - snarky-test-utils
-    - spec
     - transformers
     - tuples
     - unfoldable
