@@ -34,12 +34,21 @@ spec = describe "Snarky.Circuit.Schnorr.Verify (kimchi-only fixture)" do
   it "verifies the OCaml-emitted Schnorr signature proof" do
     -- Load fixture files written by
     -- `mina/src/lib/crypto/pickles/dump_schnorr_signature_proof.exe`.
+    -- The dumper compiles the production
+    -- `Signature_lib.Schnorr.Chunked.Checked.verifies` (via
+    -- `Dump_schnorr_circuit_lib.schnorr_verify_circuit`), signs a
+    -- fixed-constant message with `Signature_lib.Schnorr.Chunked.sign
+    -- ~signature_kind:Mainnet`, and emits a kimchi proof.
     vkJson <- readFile (fixtureDir <> "/vk.serde.json")
     proofJson <- readFile (fixtureDir <> "/proof.serde.json")
     publicInputJson <- readFile (fixtureDir <> "/public_input.json")
 
-    -- Parse the 6-element LE-hex public-input array (pk_x, pk_y, r, s,
-    -- message[0], boolean output = 1).
+    -- Parse the 260-element LE-hex public-input array:
+    --   [pk.x, pk.y,            -- 2
+    --    r,                     -- 1
+    --    s_bits[0..254],        -- 255
+    --    msg,                   -- 1
+    --    output_bool]           -- 1
     publicInputHex :: Array String <- case readJSON publicInputJson of
       Right xs -> pure xs
       Left e -> liftEffect $ throw $
