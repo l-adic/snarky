@@ -125,6 +125,7 @@ deriveNonce { networkId, privateKey, publicKey: { x, y }, message } =
   let
     idBits = stringToBitsLE networkId
     idLength = Array.length idBits
+
     idField :: Pallas.BaseField
     idField = projectBitsLE idBits
 

@@ -20,7 +20,7 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Circuit.DSL.Bits (unpackPure)
-import Snarky.Curves.Class (generator, scalarMul, toAffine, toBigInt, fromBigInt)
+import Snarky.Curves.Class (fromBigInt, generator, scalarMul, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint)

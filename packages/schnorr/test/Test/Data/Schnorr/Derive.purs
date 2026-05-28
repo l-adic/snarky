@@ -68,8 +68,10 @@ spec = describe "Data.Schnorr.Derive" do
         sk = fromHexLe entry.private_key
         pkx = fromHexLe entry.public_key_x :: Pallas.BaseField
         pky = fromHexLe entry.public_key_y :: Pallas.BaseField
+
         message :: Array Pallas.BaseField
         message = map fromHexLe entry.message
+
         expected :: Pallas.ScalarField
         expected = fromHexLe entry.expected_nonce
         got = deriveNonce

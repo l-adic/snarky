@@ -38,6 +38,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
+import Partial.Unsafe (unsafePartial)
 import Prim.Row as Row
 import Prim.RowList (class RowToList)
 import Prim.RowList as RL
@@ -47,9 +48,8 @@ import Snarky.Circuit.CVar (CVar(Const), const_, sub_)
 import Snarky.Circuit.DSL.Field (equals_, sum_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, and_, inv_)
 import Snarky.Circuit.Types (Bool(..), BoolVar, FVar)
-import Snarky.Curves.Class (class PrimeField, fromInt)
-import Partial.Unsafe (unsafePartial)
 import Snarky.Constraint.Basic (equal, square)
+import Snarky.Curves.Class (class PrimeField, fromInt)
 import Snarky.Curves.Class (class PrimeField, fromInt)
 import Type.Proxy (Proxy(..))
 

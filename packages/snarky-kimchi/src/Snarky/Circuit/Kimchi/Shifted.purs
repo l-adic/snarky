@@ -44,8 +44,8 @@ import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, and_, a
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Types (Bool(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, fromAffine, fromInt, scalarMul, toAffine) as C
 import Snarky.Curves.Class (class PrimeField)
+import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, fromAffine, fromInt, scalarMul, toAffine) as C
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 import Type.Proxy (Proxy)
 
@@ -283,6 +283,7 @@ scaleKnown ops t bits init = do
     bs = List.fromFoldable (Vector.toUnfoldable bits :: Array (BoolVar f))
     n = List.length bs
     sigmaCount = (n + 1) / 2
+
     -- Precompute the 4-entry tables for each 2-bit window.
     toTermPoints :: g -> g -> _
     toTermPoints twoToI twoToIPlus1 =
@@ -313,11 +314,15 @@ scaleKnown ops t bits init = do
   let
     negSigmaPt :: g
     negSigmaPt =
-      let s = sigma
-      in C.fromAffine { x: s.x, y: zero - s.y }
+      let
+        s = sigma
+      in
+        C.fromAffine { x: s.x, y: zero - s.y }
+
     unshiftPt :: g
     unshiftPt = intScale sigmaCount negSigmaPt
     unshiftAffine = unsafePartial fromJust (C.toAffine unshiftPt)
+
     unshiftConstVar :: AffinePoint (FVar f)
     unshiftConstVar = { x: const_ unshiftAffine.x, y: const_ unshiftAffine.y }
   ops.add resultWithShift unshiftConstVar

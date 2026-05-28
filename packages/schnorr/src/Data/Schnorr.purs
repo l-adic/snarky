@@ -136,6 +136,7 @@ verify spongePrefix (Signature { r, s }) publicKey message =
     eBase = hashMessage spongePrefix publicKey r message
     eScalar = toScalar eBase
     sScalar = toScalar s
+
     pkPoint :: PallasG
     pkPoint = fromAffine publicKey
     sG = scalarMul sScalar (generator :: PallasG)

@@ -46,9 +46,9 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
 import RandomOracle.Sponge (SpongeState(..))
-import Snarky.Circuit.Kimchi.Shifted (ShiftedOps, scale, scaleKnown)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, and_, equals_, negate_, not_, unpack_)
 import Snarky.Circuit.DSL.UnpackFull (unpackFull)
+import Snarky.Circuit.Kimchi.Shifted (ShiftedOps, scale, scaleKnown)
 import Snarky.Circuit.RandomOracle.Sponge (absorb, spongeFromConstants, squeeze) as Sponge
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (curveParams, generator, toAffine)
@@ -88,8 +88,10 @@ pallasParams = curveParams (Proxy :: Proxy PallasG)
 -- | doesn't enter any constraint).
 shiftConst :: AffinePoint Pallas.BaseField
 shiftConst =
-  let g = generator :: PallasG
-  in unsafePartial fromJust $ toAffine (g <> g)
+  let
+    g = generator :: PallasG
+  in
+    unsafePartial fromJust $ toAffine (g <> g)
 
 -- | Verify a Schnorr signature in the circuit, returning the accept
 -- | boolean.
