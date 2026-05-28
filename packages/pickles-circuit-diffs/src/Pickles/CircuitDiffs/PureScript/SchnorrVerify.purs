@@ -20,7 +20,7 @@ import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.CVar (Variable(..))
 import Snarky.Circuit.DSL (BoolVar, F, FVar, const_)
 import Snarky.Circuit.DSL.Monad (check) as DSL
-import Snarky.Circuit.Kimchi.Shifted (assertOnCurveConst, createShifted)
+import Snarky.Circuit.Schnorr.Shifted (assertOnCurveConst, createShifted)
 import Snarky.Circuit.Schnorr (Signature(..), pallasParams, shiftConst, verifies)
 import Snarky.Circuit.Types (Bool(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)

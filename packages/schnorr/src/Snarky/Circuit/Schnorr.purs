@@ -48,7 +48,7 @@ import Poseidon (class PoseidonField)
 import RandomOracle.Sponge (SpongeState(..))
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, and_, equals_, negate_, not_, unpack_)
 import Snarky.Circuit.DSL.UnpackFull (unpackFull)
-import Snarky.Circuit.Kimchi.Shifted (ShiftedOps, scale, scaleKnown)
+import Snarky.Circuit.Schnorr.Shifted (ShiftedOps, scale, scaleKnown)
 import Snarky.Circuit.RandomOracle.Sponge (absorb, spongeFromConstants, squeeze) as Sponge
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (curveParams, generator, toAffine)

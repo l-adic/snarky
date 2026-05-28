@@ -19,7 +19,7 @@
 -- | The shift is `exists`-allocated; its witness is supplied as a
 -- | caller-provided constant (OCaml uses `Curve.random ()`; witness
 -- | value doesn't enter the constraint system either way).
-module Snarky.Circuit.Kimchi.Shifted
+module Snarky.Circuit.Schnorr.Shifted
   ( Shifted
   , ShiftedOps
   , assertOnCurveConst

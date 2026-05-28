@@ -369,6 +369,7 @@
             "enums",
             "foldable-traversable",
             "js-bigints",
+            "lists",
             "maybe",
             "newtype",
             "partial",
@@ -376,10 +377,12 @@
             "prelude",
             "quickcheck",
             "random-oracle",
+            "safe-coerce",
             "snarky",
             "snarky-curves",
             "snarky-kimchi",
             "strings",
+            "tuples",
             "vector-sized"
           ]
         },
