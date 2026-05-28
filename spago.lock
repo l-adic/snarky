@@ -329,6 +329,7 @@
             "enums",
             "foldable-traversable",
             "integers",
+            "js-bigints",
             "maybe",
             "newtype",
             "partial",
@@ -336,6 +337,7 @@
             "prelude",
             "snarky",
             "snarky-kimchi",
+            "tuples",
             "vector-sized"
           ]
         },
@@ -362,7 +364,10 @@
         "core": {
           "dependencies": [
             "arrays",
+            "blake2",
             "curves",
+            "enums",
+            "foldable-traversable",
             "js-bigints",
             "maybe",
             "newtype",
@@ -374,6 +379,7 @@
             "snarky",
             "snarky-curves",
             "snarky-kimchi",
+            "strings",
             "vector-sized"
           ]
         },

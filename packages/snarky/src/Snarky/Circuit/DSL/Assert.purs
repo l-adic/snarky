@@ -12,6 +12,7 @@ module Snarky.Circuit.DSL.Assert
   , assertAny_
   , assertAll_
   , assertExactlyOne_
+  , allBools
   , class AssertEqual
   , assertEq
   , isEqual
@@ -46,6 +47,8 @@ import Snarky.Circuit.CVar (CVar(Const), const_, sub_)
 import Snarky.Circuit.DSL.Field (equals_, sum_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, and_, inv_)
 import Snarky.Circuit.Types (Bool(..), BoolVar, FVar)
+import Snarky.Curves.Class (class PrimeField, fromInt)
+import Partial.Unsafe (unsafePartial)
 import Snarky.Constraint.Basic (equal, square)
 import Snarky.Curves.Class (class PrimeField, fromInt)
 import Type.Proxy (Proxy(..))
@@ -137,16 +140,36 @@ assertAll_ bs = assertEqual_ (sum_ (map boolToField bs)) (const_ (fromInt (Array
   boolToField :: BoolVar f -> FVar f
   boolToField = coerce
 
--- | AND all booleans together. Empty array returns true.
+-- | AND all booleans together. Mirrors OCaml `Boolean.all`
+-- | (`mina/src/lib/snarky/src/base/utils.ml:245-256`):
+-- |   * empty → `true_` (constant, no constraint)
+-- |   * `[b]` → `b` (no constraint)
+-- |   * `[b1; b2]` → `b1 && b2` (1 R1CS)
+-- |   * `bs (n ≥ 3)` → `equal (sum bs) (constant n)` (~3 R1CS)
+-- |
+-- | The n≥3 path uses a single `Field.equal` instead of n-1 `and_`
+-- | calls, so n=255 costs ~3 R1CS not 254.
 allBools
   :: forall f c t m
    . CircuitM f c t m
+  => PrimeField f
   => Array (BoolVar f)
   -> Snarky c t m (BoolVar f)
-allBools bs = case Array.uncons bs of
-  Nothing -> pure $ Const one
-  Just { head, tail } ->
-    Array.foldM (\acc b -> and_ acc b) head tail
+allBools bs = case Array.length bs of
+  0 -> pure $ Const one
+  1 -> pure $ unsafePartial (Array.unsafeIndex bs 0)
+  2 ->
+    let
+      b1 = unsafePartial (Array.unsafeIndex bs 0)
+      b2 = unsafePartial (Array.unsafeIndex bs 1)
+    in
+      and_ b1 b2
+  n ->
+    -- OCaml `Boolean.all bs = equal (Cvar.constant (length bs)) (Cvar.sum bs)`
+    -- (utils.ml:253-255). Constant-first, sum-second — matters for the
+    -- equal constraint's coefficient signs.
+    equals_ (const_ (fromInt n))
+      (sum_ (map (coerce :: BoolVar f -> FVar f) bs))
 
 --------------------------------------------------------------------------------
 -- | Generic AssertEqual class for asserting equality of circuit variables

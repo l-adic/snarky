@@ -11,8 +11,10 @@ package:
     - partial
     - poseidon
     - prelude
+    - js-bigints
     - snarky
     - snarky-kimchi
+    - tuples
     - vector-sized
   test:
     main: Test.RandomOracle.Main

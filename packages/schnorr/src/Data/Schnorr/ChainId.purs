@@ -13,6 +13,7 @@
 module Data.Schnorr.ChainId
   ( ChainId(..)
   , signaturePrefix
+  , networkId
   ) where
 
 import Prelude
@@ -47,3 +48,11 @@ signaturePrefix = case _ of
       :< fromHexLe "f1a03a60a27687f42330c6cf91acad27ad12b1739f229ba5c2b7f1debf171031"
       :< fromHexLe "1dfa8ba1eab55bbb8c3912f2f9c5a323fc8583af0979a499d5c4dc59b3a1f521"
       :< Vector.nil
+
+-- | The 1-byte chain-id tag fed to `Data.Schnorr.Derive.derive`. Mirrors
+-- | `Message.network_id_{mainnet,testnet}` in
+-- | `mina/src/lib/crypto/signature_lib/schnorr.ml:308`.
+networkId :: ChainId -> String
+networkId = case _ of
+  Mainnet -> "\x01"
+  Testnet -> "\x00"

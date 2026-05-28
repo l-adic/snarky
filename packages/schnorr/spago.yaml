@@ -2,7 +2,10 @@ package:
   name: schnorr
   dependencies:
     - arrays
+    - blake2
     - curves
+    - enums
+    - foldable-traversable
     - js-bigints
     - maybe
     - newtype
@@ -14,6 +17,7 @@ package:
     - snarky
     - snarky-curves
     - snarky-kimchi
+    - strings
     - vector-sized
   test:
     main: Test.Schnorr.Main

@@ -7,7 +7,7 @@ module Snarky.Circuit.Curves
 
 import Prelude
 
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, UnChecked(..), addConstraint, assertEqual_, assertSquare_, const_, div_, exists, mul_, negate_, pow_, r1cs, readCVar, scale_, sub_)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, UnChecked(..), addConstraint, assertEqual_, assertSquare_, const_, div_, exists, mul_, negate_, pow_, r1cs, readCVar, scale_, square_, sub_)
 import Snarky.Circuit.DSL as Snarky
 import Snarky.Curves.Class (class PrimeField, fromInt)
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
@@ -76,8 +76,16 @@ double
   => CurveParams f
   -> AffinePoint (FVar f)
   -> Snarky c t m (AffinePoint (FVar f))
+-- | Mirror of OCaml `Snarky_curves.Make_weierstrass_checked.double`
+-- | (`snarky_curves.ml:277-313`). Uses `square_` for `x²` (Square
+-- | gate) — NOT `mul_ ax ax` (R1CS gate). Constraint emission order
+-- | matches OCaml byte-for-byte:
+-- |   1. `square ax` (Square gate, x² alloc)
+-- |   2. `assert_r1cs (2λ) ay (3x² + a)` (R1CS gate)
+-- |   3. `assert_square λ (bx + 2ax)` (Square gate)
+-- |   4. `assert_r1cs λ (ax - bx) (by + ay)` (R1CS gate)
 double { a } { x: ax, y: ay } = do
-  xSquared <- mul_ ax ax
+  xSquared <- square_ ax
 
   lambda <- exists do
     xSquaredVal <- readCVar xSquared
@@ -88,8 +96,6 @@ double { a } { x: ax, y: ay } = do
     lambdaVal <- readCVar lambda
     axVal <- readCVar ax
     pure $ UnChecked $ (lambdaVal * lambdaVal) - (axVal + axVal)
-
-  assertSquare_ lambda (Snarky.add_ bx (scale_ (fromInt 2) ax))
 
   UnChecked by <- exists do
     lambdaVal <- readCVar lambda
@@ -105,6 +111,8 @@ double { a } { x: ax, y: ay } = do
     , right: ay
     , output: Snarky.add_ (scale_ (fromInt 3) xSquared) aConst
     }
+
+  assertSquare_ lambda (Snarky.add_ bx (scale_ (fromInt 2) ax))
 
   addConstraint $ r1cs
     { left: lambda

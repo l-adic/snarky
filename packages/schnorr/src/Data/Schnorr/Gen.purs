@@ -14,36 +14,43 @@ import Prelude
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Reflectable (class Reflectable)
 import Data.Schnorr as Schnorr
+import Data.Schnorr.ChainId (ChainId(..), networkId)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Snarky.Circuit.DSL (F(..))
-import Snarky.Curves.Class (generator, scalarMul, toAffine)
+import Snarky.Circuit.DSL.Bits (unpackPure)
+import Snarky.Curves.Class (generator, scalarMul, toAffine, toBigInt, fromBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen)
-import Type.Proxy (Proxy)
+import Type.Proxy (Proxy(..))
 
 -- | Flat input to the kimchi Schnorr verifier circuit. Mirrors the
--- | OCaml fixture's `Typ` layout: pk_x, pk_y, r, s, message…
+-- | OCaml production `Signature.var = Field.Var.t * Curve.Scalar.var`
+-- | shape: `r` is a base-field value, `s_bits` is the 255-bit LSB-first
+-- | decomposition of the Pallas-scalar `s` (Booleans).
 type VerifyInput n a =
   { signature ::
       { r :: a
-      , s :: a
+      , sBits :: Vector 255 Boolean
       }
   , publicKey :: AffinePoint a
   , message :: Vector n a
   }
 
--- | Generate a verifying Schnorr signature for QuickCheck. Loops over
--- | random nonces until `Data.Schnorr.sign` accepts one (rejection
--- | probability ~7/8 per attempt — `ry` even, `e < 2^254`, `s < 2^254`).
+-- | Generate a verifying Schnorr signature for QuickCheck. Nonce is
+-- | now derived deterministically from `(networkId, sk, pk, message)`
+-- | so the generator just rotates `(privateKey, message)` until
+-- | `Data.Schnorr.sign` accepts (rejection probability ~3/4 per
+-- | attempt — `e < 2^254` and `s < 2^254` each fail with ~½).
 -- |
 -- | Caller passes `Proxy @PallasG` and the message-length proxy so the
 -- | type-application surface mirrors the older `Data.Schnorr.Gen` API
--- | used by `Test.Snarky.Circuit.Schnorr`.
+-- | used by `Test.Snarky.Circuit.Schnorr`. The chain-id tag is hard-wired
+-- | to Mainnet here — tests can lift this if they need Testnet coverage.
 genValidSignature
   :: forall n
    . Reflectable n Int
@@ -55,13 +62,12 @@ genValidSignature spongePrefix _pg _pn = go
   where
   go = do
     privateKey :: Pallas.ScalarField <- arbitrary
-    nonce :: Pallas.ScalarField <- arbitrary
     message :: Vector n Pallas.BaseField <- Vector.generateA (const arbitrary)
     case
       Schnorr.sign
         { spongePrefix
+        , networkId: networkId Mainnet
         , privateKey
-        , nonce
         , message: Vector.toUnfoldable message
         }
       of
@@ -71,9 +77,14 @@ genValidSignature spongePrefix _pg _pn = go
           publicKey = unsafePartial fromJust
             $ toAffine
             $ scalarMul privateKey (generator :: PallasG)
+          -- `s` is the base-field re-embedding of the Pallas scalar;
+          -- decompose to 255 LSB-first bits to match the production
+          -- `Signature.var` shape.
+          sScalar = fromBigInt (toBigInt s) :: Pallas.ScalarField
+          sBits = unpackPure sScalar (Proxy @255)
         in
           pure
-            { signature: { r: F r, s: F s }
+            { signature: { r: F r, sBits }
             , publicKey: { x: F publicKey.x, y: F publicKey.y }
             , message: map F message
             }

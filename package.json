@@ -26,6 +26,7 @@
   },
   "homepage": "https://github.com/l-adic/snarky#readme",
   "dependencies": {
+    "blakejs": "^1.2.1",
     "json-bigint": "^1.0.0",
     "kimchi-napi": "file:./packages/kimchi-napi",
     "pasta-runtime": "file:./packages/pasta-runtime"

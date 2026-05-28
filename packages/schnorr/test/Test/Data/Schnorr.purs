@@ -7,7 +7,7 @@ import Prelude
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Schnorr (Signature(..))
 import Data.Schnorr as Schnorr
-import Data.Schnorr.ChainId (ChainId(..), signaturePrefix)
+import Data.Schnorr.ChainId (ChainId(..), networkId, signaturePrefix)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
 import Snarky.Curves.Class (generator, scalarMul, toAffine)
@@ -16,13 +16,11 @@ import Test.QuickCheck (arbitrary, quickCheckGen, withHelp)
 import Test.QuickCheck.Gen (Gen, suchThat)
 import Test.Spec (Spec, describe, it)
 
--- | A QuickCheck-friendly sign that rotates nonces until acceptance.
--- |
--- | The new circuit-matching `Data.Schnorr.sign` rejection-samples
--- | (`ry` even, `e < 2^254`, `s < 2^254`). Tests need a deterministic
--- | "always-success" sign for the round-trip property — this generator
--- | composes the raw sign with QuickCheck's `suchThat` so the inner
--- | generator only emits succeeding `(privateKey, nonce)` triples.
+-- | A QuickCheck-friendly sign that rotates over private keys until
+-- | acceptance. With the deterministic derive, the nonce is a pure
+-- | function of `(networkId, sk, pk, message)`, so rotating `sk` is
+-- | the simplest way to escape the (still-present) `e < 2^254` /
+-- | `s < 2^254` rejection branches.
 type SignAndKey =
   { privateKey :: PallasScalarField
   , signature :: Schnorr.Signature PallasBaseField
@@ -34,12 +32,14 @@ genSignedMessage message =
   let
     tryOne = do
       privateKey :: PallasScalarField <- arbitrary
-      nonce :: PallasScalarField <- arbitrary
       pure
         { privateKey
-        , nonce
         , maybeSig: Schnorr.sign
-            { spongePrefix: signaturePrefix Mainnet, privateKey, nonce, message }
+            { spongePrefix: signaturePrefix Mainnet
+            , networkId: networkId Mainnet
+            , privateKey
+            , message
+            }
         }
   in
     do
