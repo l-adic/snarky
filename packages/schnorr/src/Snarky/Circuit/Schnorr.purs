@@ -48,8 +48,8 @@ import Poseidon (class PoseidonField)
 import RandomOracle.Sponge (SpongeState(..))
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, and_, equals_, negate_, not_, unpack_)
 import Snarky.Circuit.DSL.UnpackFull (unpackFull)
-import Snarky.Circuit.Schnorr.Shifted (ShiftedOps, scale, scaleKnown)
 import Snarky.Circuit.RandomOracle.Sponge (absorb, spongeFromConstants, squeeze) as Sponge
+import Snarky.Circuit.Schnorr.Shifted (ShiftedOps, scale, scaleKnown)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (curveParams, generator, toAffine)
 import Snarky.Curves.Pallas as Pallas
@@ -116,9 +116,7 @@ verifies spongePrefix shifted gen { publicKey: pk, signature: Signature { r, s: 
       { state: spongePrefix
       , spongeState: Squeezed (unsafeFinite 0)
       }
-  spongeMsg <- foldM (\sp x -> Sponge.absorb x sp)
-    sponge0
-    (Vector.toUnfoldable message :: Array _)
+  spongeMsg <- foldM (\sp x -> Sponge.absorb x sp) sponge0 message
   sponge1 <- Sponge.absorb pk.x spongeMsg
   sponge2 <- Sponge.absorb pk.y sponge1
   sponge3 <- Sponge.absorb r sponge2
@@ -137,7 +135,7 @@ verifies spongePrefix shifted gen { publicKey: pk, signature: Signature { r, s: 
   -- then take LSB. Mirrors production `is_even` (schnorr.ml:264-266 →
   -- Field.Checked.unpack_full → snark0.ml:470).
   yBits <- unpackFull rPt.y
-  let yEven = not_ (Vector.index yBits (unsafeFinite 0))
+  let yEven = not_ (Vector.head yBits)
   -- 8. r_correct. OCaml: `equal r rx` (r first, rx second);
   -- the arg order affects the generated coefficient signs in
   -- `addEqualsConstraint`'s two-variable case.

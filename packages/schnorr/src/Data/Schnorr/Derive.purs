@@ -23,6 +23,7 @@ import Data.Array as Array
 import Data.Blake2b (blake2b256Bits)
 import Data.Enum (fromEnum, toEnum)
 import Data.Foldable (foldl)
+import Data.Int as Int
 import Data.Maybe (fromMaybe)
 import Data.Reflectable (reflectType)
 import Data.String.CodeUnits as String
@@ -76,7 +77,7 @@ stringToBitsLE s = Array.concatMap charToBits (String.toCharArray s)
   charToBits c =
     let
       code = fromEnum c `mod` 256
-      bitAt i = ((code `div` pow2 i) `mod` 2) == 1
+      bitAt i = ((code `div` Int.pow 2 i) `mod` 2) == 1
     in
       map bitAt (Array.range 0 7)
 
@@ -89,7 +90,7 @@ bitsToString bits =
     byteAt j =
       foldl
         ( \acc i ->
-            if fromMaybe false (Array.index bits (8 * j + i)) then acc + pow2 i
+            if fromMaybe false (Array.index bits (8 * j + i)) then acc + Int.pow 2 i
             else acc
         )
         0
@@ -99,18 +100,6 @@ bitsToString bits =
     String.fromCharArray chars
   where
   intToChar n = fromMaybe '\x00' (toEnum n)
-
--- | Power of two for `i` in `[0..7]`.
-pow2 :: Int -> Int
-pow2 i = case i of
-  0 -> 1
-  1 -> 2
-  2 -> 4
-  3 -> 8
-  4 -> 16
-  5 -> 32
-  6 -> 64
-  _ -> 128
 
 -- | Derive a deterministic Pallas-scalar nonce from `(networkId, sk,
 -- | pk, message)`. Byte-compat with OCaml `Schnorr.Chunked.Message.derive`.
@@ -146,7 +135,7 @@ deriveNonce { networkId, privateKey, publicKey: { x, y }, message } =
     packed = Input.packToFields input
 
     allBits :: Array Boolean
-    allBits = Array.concat (map fieldToBitsLE packed)
+    allBits = Array.concatMap fieldToBitsLE packed
 
     bytes :: String
     bytes = bitsToString allBits

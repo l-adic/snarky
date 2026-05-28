@@ -6,10 +6,8 @@ import Prelude
 
 import Data.Either (Either(..))
 import Data.Int as Int
-import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
-import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Simple.JSON (readJSON)
@@ -23,11 +21,6 @@ import Test.Spec.Assertions (shouldEqual)
 fixtureDir :: String
 fixtureDir = "packages/schnorr/test/fixtures/schnorr_signature_proof"
 
-readFile :: String -> Aff String
-readFile path = liftEffect do
-  buf <- FS.readFile path
-  Buffer.toString UTF8 buf
-
 spec :: Spec Unit
 spec = describe "Snarky.Circuit.Schnorr.Verify (kimchi-only fixture)" do
 
@@ -39,9 +32,9 @@ spec = describe "Snarky.Circuit.Schnorr.Verify (kimchi-only fixture)" do
     -- `Dump_schnorr_circuit_lib.schnorr_verify_circuit`), signs a
     -- fixed-constant message with `Signature_lib.Schnorr.Chunked.sign
     -- ~signature_kind:Mainnet`, and emits a kimchi proof.
-    vkJson <- readFile (fixtureDir <> "/vk.serde.json")
-    proofJson <- readFile (fixtureDir <> "/proof.serde.json")
-    publicInputJson <- readFile (fixtureDir <> "/public_input.json")
+    vkJson <- liftEffect $ FS.readTextFile UTF8 (fixtureDir <> "/vk.serde.json")
+    proofJson <- liftEffect $ FS.readTextFile UTF8 (fixtureDir <> "/proof.serde.json")
+    publicInputJson <- liftEffect $ FS.readTextFile UTF8 (fixtureDir <> "/public_input.json")
 
     -- Parse the 260-element LE-hex public-input array:
     --   [pk.x, pk.y,            -- 2

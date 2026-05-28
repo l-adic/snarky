@@ -94,8 +94,8 @@ toScalar = fromBigInt <<< toBigInt
 toBase :: Pallas.ScalarField -> Pallas.BaseField
 toBase = fromBigInt <<< toBigInt
 
--- | Sign `message` with `privateKey` using the iter-2c convention:
--- | deterministic nonce + negate-k. Total — no rejection branches.
+-- | Sign `message` with `privateKey`: deterministic nonce + negate-k
+-- | (so `R.y` is always even). Total — no rejection branches.
 sign
   :: { spongePrefix :: Vector 3 Pallas.BaseField
      , networkId :: String
@@ -122,9 +122,9 @@ sign { spongePrefix, networkId, privateKey: d, message } = do
     sScalar = k + d * eScalar
   pure $ Signature { r, s: toBase sScalar }
 
--- | Verify a Schnorr signature out-of-circuit, mirroring the new
--- | iter-2c circuit math: `R' = s·G − e·pk`, accept iff `R'.y` even
--- | and `R'.x == r`. No 2^254 caps.
+-- | Verify a Schnorr signature out-of-circuit, mirroring the circuit
+-- | math: `R' = s·G − e·pk`, accept iff `R'.y` even and `R'.x == r`.
+-- | No 2^254 caps.
 verify
   :: Vector 3 Pallas.BaseField
   -> Signature Pallas.BaseField

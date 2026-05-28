@@ -16,7 +16,6 @@ import Data.Traversable (for_)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
-import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import RandomOracle.Input as Input
@@ -41,11 +40,6 @@ fixturePath :: String
 fixturePath =
   "packages/schnorr/test/fixtures/schnorr_derive/derive_fixtures.json"
 
-readFile :: String -> Aff String
-readFile path = liftEffect do
-  buf <- FS.readFile path
-  Buffer.toString UTF8 buf
-
 parseChain :: String -> Aff ChainId
 parseChain = case _ of
   "Mainnet" -> pure Mainnet
@@ -55,7 +49,7 @@ parseChain = case _ of
 spec :: Spec Unit
 spec = describe "Data.Schnorr.Derive" do
   it "deriveNonce matches Mina Schnorr.Chunked.Message.derive byte-for-byte" do
-    jsonText <- readFile fixturePath
+    jsonText <- liftEffect $ FS.readTextFile UTF8 fixturePath
     file :: FixtureFile <- case readJSON jsonText of
       Right f -> pure f
       Left e -> liftEffect $ throw $ "parse derive_fixtures.json: " <> show e

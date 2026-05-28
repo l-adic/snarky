@@ -18,7 +18,6 @@
 -- | and evaluates leaves-first via `allBools`/`anyBools`.
 module Snarky.Circuit.DSL.UnpackFull
   ( unpackFull
-  , ltBitstringValue
   ) where
 
 import Prelude
