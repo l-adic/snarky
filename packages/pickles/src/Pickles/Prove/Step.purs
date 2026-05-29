@@ -33,6 +33,7 @@ module Pickles.Prove.Step
   , extractWrapVKForStepHash
   , dummyWrapTockPublicInput
   , StepRule
+  , StepRuleM
   , StepCompileResult
   , StepProveResult
   , StepAdvice(..)
@@ -95,7 +96,7 @@ import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
-import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier, class SideloadedVKsM, getSideloadedVKsCarrier)
+import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier, class SideloadedVKsM, mkUnitVkCarrier)
 import Pickles.Sideload.Bundle (Bundle) as SideloadBundle
 import Pickles.Sideload.VerificationKey (VerificationKey) as SLVK
 import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM)
@@ -140,6 +141,7 @@ import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (SplitField(..), Type1(..), Type2(..), fromShifted, toShifted)
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 --------------------------------------------------------------------------------
 -- Advice
@@ -1488,6 +1490,7 @@ buildSlotAdvice input = do
 type StepRule (n :: Int) valCarrier inputVal input outputVal output prevInputVal prevInput =
   forall t m' wrapVkChunks
    . CircuitM StepField (KimchiConstraint StepField) t m'
+  => MonadEffect m'
   => StepWitnessM n StepIPARounds WrapIPARounds wrapVkChunks PallasG StepField m' inputVal
   => StepPrevValuesM m' valCarrier
   => CircuitType StepField inputVal input
@@ -1496,6 +1499,63 @@ type StepRule (n :: Int) valCarrier inputVal input outputVal output prevInputVal
   => CheckedType StepField (KimchiConstraint StepField) input
   => input
   -> Snarky (KimchiConstraint StepField) t m' (RuleOutput n prevInput output)
+
+-- | Concrete-advice-monad form of `StepRule`: instead of universally
+-- | quantifying the advice monad `m'`, it pins it to the specific shape
+-- | `StepProverT … m` over a caller-supplied base monad `m`. This lets
+-- | application rules (which carry app-level advice constraints like
+-- | `AccountMapM m`) be written at a concrete monad and discharge those
+-- | constraints via lift-through-`StepProverT` instances — something a
+-- | rank-2 `StepRule` (universal `m'`) cannot express.
+-- |
+-- | Existing rank-2 `StepRule` values pass here unchanged: PureScript
+-- | instantiates their `m' := StepProverT … m` and discharges their
+-- | `StepWitnessM`/`StepPrevValuesM`/`MonadEffect` obligations from the
+-- | global `StepProverT` instances at the call site. So this is a strict
+-- | generalization — no existing rule definition needs to change.
+-- |
+-- | The constraint set mirrors `StepRule`'s exactly, with the advice
+-- | monad fixed to `StepProverT … m`. This is load-bearing for the
+-- | subsumption that lets a rank-2 `StepRule` be passed here: the
+-- | skolemized `forall t` constraints become *givens*, against which the
+-- | passed rule's obligations (`CircuitM t (StepProverT…m)`,
+-- | `StepWitnessM (StepProverT…m)`, …) discharge. Inside `stepCompile`
+-- | the same constraints discharge against `compile`'s `CircuitM t m`
+-- | given. (Dropping them and relying on instance resolution fails:
+-- | there is no `CircuitM` instance for a rigid skolem `t`.)
+type StepRuleM
+  prevsSpec
+  wrapVkChunks
+  inputVal
+  len
+  carrier
+  valCarrier
+  vkCarrier
+  m
+  input
+  outputVal
+  output
+  prevInputVal
+  prevInput =
+  forall t
+   . CircuitM StepField (KimchiConstraint StepField) t
+       (StepProverT prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
+  => MonadEffect
+       (StepProverT prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
+  => StepWitnessM len StepIPARounds WrapIPARounds wrapVkChunks PallasG StepField
+       (StepProverT prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
+       inputVal
+  => StepPrevValuesM
+       (StepProverT prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
+       valCarrier
+  => CircuitType StepField inputVal input
+  => CircuitType StepField outputVal output
+  => CircuitType StepField prevInputVal prevInput
+  => CheckedType StepField (KimchiConstraint StepField) input
+  => input
+  -> Snarky (KimchiConstraint StepField) t
+       (StepProverT prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
+       (RuleOutput len prevInput output)
 
 -- | Ambient data the step prover needs alongside the advice and rule.
 -- |
@@ -1777,6 +1837,10 @@ derive newtype instance
   MonadRec m =>
   MonadRec (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
 
+derive newtype instance
+  MonadEffect m =>
+  MonadEffect (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
+
 -- | Run a `StepProverT` action with the supplied advice. Returns both
 -- | the action's result AND the post-run `StepProverCapture` so the
 -- | caller can read whatever the rule body wrote (e.g. the user's
@@ -1899,7 +1963,7 @@ stepCompile
        ndPred wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN
        chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
-       pad unfsTotal digestPlusUnfs
+       pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
   -- `wrapVkChunks` is the wrap VK's own chunk count (Dim 2), a free
   -- compile-wide parameter. Callers pin it (`@1`, protocol-guaranteed
@@ -1968,38 +2032,67 @@ stepCompile
        carrierVar
        vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
+  => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
+  => Monad m
+  => MonadEffect m
+  => MonadRec m
   => StepProveContext wrapVkChunks len nd blueprints
-  -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
-  -> Effect StepCompileResult
+  -> StepRuleM prevsSpec wrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier m
+       input
+       outputVal
+       output
+       prevInputVal
+       prevInput
+  -> m StepCompileResult
 stepCompile ctx rule = do
-  -- For compiled-only specs the Effect `SideloadedVKsM` instance
-  -- synthesises an all-Unit chain via `mkUnitVkCarrier`; specs with
-  -- side-loaded slots won't resolve unless a prover monad with a
-  -- real runtime-VK source is in scope.
-  sideloadedCarrier <- getSideloadedVKsCarrier @prevsSpec unit
-  builtState <-
-    compile
-      (Proxy @Unit)
-      (Proxy @(Vector outputSize (F StepField)))
-      (Proxy @(KimchiConstraint StepField))
-      ( \_ ->
-          stepMain
-            @prevsSpec
-            @inputVal
-            @outputVal
-            @prevInputVal
-            @valCarrier
-            @mpvMax
-            @nd
-            @(SLVK.VerificationKey slotVkChunks (F StepField) Boolean)
-            -- ctx is `StepProveContext wrapVkChunks ...` (free; callers pin).
-            @wrapVkChunks
-            rule
-            ctx.srsData
-            ctx.dummySg
-            sideloadedCarrier
-      )
-      (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
+  -- For compiled-only specs the side-loaded VK carrier is the all-Unit
+  -- chain `mkUnitVkCarrier` synthesises (= what the `SideloadedVKsM`
+  -- Effect instance used to return). The circuit shape only depends on
+  -- `prevsSpec`/`len`/`carrier`, so the real runtime VKs are irrelevant
+  -- at compile.
+  let
+    sideloadedCarrier = mkUnitVkCarrier @prevsSpec
+  -- Run the rule's circuit in `StepProverT … m` with a dummy advice
+  -- instead of the bare-`Effect` throwing stubs. At compile every
+  -- advice method lives inside an `exists` body, which `compile`
+  -- discards, so the advice record is never deconstructed — the
+  -- `unsafeCoerce unit` bottom below is never forced. This keeps
+  -- pickles fully generic over the base monad `m` (no concrete
+  -- `Effect`), so app-level advice (e.g. `AccountMapM`) resolves via
+  -- `m`'s own instances lifted through `StepProverT`.
+  let
+    dummyAdvice
+      :: StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks
+           inputVal
+           len
+           carrier
+           valCarrier
+           sideloadedVkCarrier
+    dummyAdvice = unsafeCoerce unit
+  Tuple builtState _ <-
+    runStepProverT dummyAdvice $
+      compile
+        (Proxy @Unit)
+        (Proxy @(Vector outputSize (F StepField)))
+        (Proxy @(KimchiConstraint StepField))
+        ( \_ ->
+            stepMain
+              @prevsSpec
+              @inputVal
+              @outputVal
+              @prevInputVal
+              @valCarrier
+              @mpvMax
+              @nd
+              @(SLVK.VerificationKey slotVkChunks (F StepField) Boolean)
+              -- ctx is `StepProveContext wrapVkChunks ...` (free; callers pin).
+              @wrapVkChunks
+              rule
+              ctx.srsData
+              ctx.dummySg
+              sideloadedCarrier
+        )
+        (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
 
   let
     kimchiRows :: Array (KimchiRow StepField)
@@ -2036,7 +2129,7 @@ stepCompile ctx rule = do
   -- writes one file per branch — same convention as
   -- `KIMCHI_WITNESS_DUMP` / `KIMCHI_CS_DUMP`. Useful for localizing
   -- multi-rule per-branch CS divergences without going through prove.
-  Process.lookupEnv "KIMCHI_STEP_LABELS_DUMP" >>= case _ of
+  liftEffect $ Process.lookupEnv "KIMCHI_STEP_LABELS_DUMP" >>= case _ of
     Nothing -> pure unit
     Just pathTmpl -> do
       counter <- bumpStepLabelsCounter
@@ -2049,7 +2142,7 @@ stepCompile ctx rule = do
   -- `KIMCHI_STEP_CS_DUMP`. Mirrors the wrap-side `KIMCHI_WRAP_CS_DUMP`
   -- in `Pickles.Prove.Wrap`. Filename template uses `%c` (replaced
   -- with a monotonic counter independent of `KIMCHI_STEP_LABELS_DUMP`'s).
-  Process.lookupEnv "KIMCHI_STEP_CS_DUMP" >>= case _ of
+  liftEffect $ Process.lookupEnv "KIMCHI_STEP_CS_DUMP" >>= case _ of
     Nothing -> pure unit
     Just pathTmpl -> do
       counter <- bumpStepCsCounter
@@ -2087,7 +2180,7 @@ preComputeStepDomainLog2
        ndPred wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN
        chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
-       pad unfsTotal digestPlusUnfs
+       pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
   -- Side-loaded VK carrier — see stepMain. preComputeStepDomainLog2
   -- runs at compile time; the caller synthesizes a placeholder
@@ -2158,33 +2251,55 @@ preComputeStepDomainLog2
   -- preComputeStepDomainLog2 is the compile-time pre-pass (gate
   -- count → domain log2); `wrapVkChunks` only sizes the discarded
   -- wrap-VK placeholder. Free parameter; callers pin (tests `@1`).
+  => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
+  => Monad m
+  => MonadEffect m
+  => MonadRec m
   => StepProveContext wrapVkChunks len nd blueprints
-  -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
-  -> Effect Int
+  -> StepRuleM prevsSpec wrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier m
+       input
+       outputVal
+       output
+       prevInputVal
+       prevInput
+  -> m Int
 preComputeStepDomainLog2 ctx rule = do
-  sideloadedCarrier <- getSideloadedVKsCarrier @prevsSpec unit
-  builtState <-
-    compile
-      (Proxy @Unit)
-      (Proxy @(Vector outputSize (F StepField)))
-      (Proxy @(KimchiConstraint StepField))
-      ( \_ ->
-          stepMain
-            @prevsSpec
-            @inputVal
-            @outputVal
-            @prevInputVal
-            @valCarrier
-            @mpvMax
-            @nd
-            @(SLVK.VerificationKey slotVkChunks (F StepField) Boolean)
-            @wrapVkChunks
-            rule
-            ctx.srsData
-            ctx.dummySg
-            sideloadedCarrier
-      )
-      (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
+  -- See `stepCompile` for why the rule runs in `StepProverT … m` with
+  -- an `unsafeCoerce unit` dummy advice (never deconstructed at compile).
+  let
+    sideloadedCarrier = mkUnitVkCarrier @prevsSpec
+
+    dummyAdvice
+      :: StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks
+           inputVal
+           len
+           carrier
+           valCarrier
+           sideloadedVkCarrier
+    dummyAdvice = unsafeCoerce unit
+  Tuple builtState _ <-
+    runStepProverT dummyAdvice $
+      compile
+        (Proxy @Unit)
+        (Proxy @(Vector outputSize (F StepField)))
+        (Proxy @(KimchiConstraint StepField))
+        ( \_ ->
+            stepMain
+              @prevsSpec
+              @inputVal
+              @outputVal
+              @prevInputVal
+              @valCarrier
+              @mpvMax
+              @nd
+              @(SLVK.VerificationKey slotVkChunks (F StepField) Boolean)
+              @wrapVkChunks
+              rule
+              ctx.srsData
+              ctx.dummySg
+              sideloadedCarrier
+        )
+        (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
 
   let
     kimchiRows :: Array (KimchiRow StepField)
@@ -2291,7 +2406,12 @@ stepSolveAndProve
   => MonadRec m
   => SlotStatementsCarrier prevsSpec valCarrier
   => StepProveContext wrapVkChunks len nd blueprints
-  -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
+  -> StepRuleM prevsSpec wrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier m
+       input
+       outputVal
+       output
+       prevInputVal
+       prevInput
   -> StepCompileResult
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
   -> ExceptT EvaluationError m (StepProveResult outputSize)

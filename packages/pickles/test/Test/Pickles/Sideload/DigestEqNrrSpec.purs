@@ -18,6 +18,7 @@ import Prelude
 import Colog (LoggerT, Message, withSpan)
 import Data.Maybe (Maybe(..))
 import Data.Tuple.Nested (tuple1)
+import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
@@ -37,7 +38,7 @@ spec = describe "Pickles.Sideload.NRR VK equality" do
   body :: SharedSrs -> LoggerT Message Aff Unit
   body { pallasSrs, vestaSrs } = do
     -- PureScript-side compile: produce the wrap VK for NRR.
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 @Effect nrrRule unit
     let rules = tuple1 nrrEntry
     output <- withSpan "[DigestEqNrr] compile" $ liftEffect $ compileMulti
       @NrrRules

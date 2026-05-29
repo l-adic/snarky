@@ -15,6 +15,7 @@ import Data.Maybe (Maybe(..))
 import Data.String (contains)
 import Data.String.Pattern (Pattern(..))
 import Data.Tuple.Nested (tuple1)
+import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception as Exc
@@ -33,7 +34,7 @@ import Test.Spec.Assertions (fail)
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.Compile.validateNumChunks" do
   it "throws when @stepChunks=2 but the circuit only needs 1" \{ pallasSrs, vestaSrs } -> do
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 @Effect nrrRule unit
     let rules = tuple1 nrrEntry
     result <- withSpan "[CompileValidation] compile" $ liftEffect $ Exc.try $ compileMulti
       @NrrRules

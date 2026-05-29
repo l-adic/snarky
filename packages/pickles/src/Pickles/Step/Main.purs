@@ -44,6 +44,7 @@ import Data.Traversable (traverse)
 import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
+import Effect.Class (class MonadEffect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (DomainMode(..))
@@ -798,6 +799,7 @@ stepMain
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Reflectable nd Int
+  => MonadEffect m
   => StepWitnessM len StepIPARounds WrapIPARounds wrapVkChunks PallasG StepField m inputVal
   => StepSlotsM prevsSpec StepIPARounds WrapIPARounds PallasG StepField m len carrier vkSourcesCarrier
   => StepPrevValuesM m valCarrier

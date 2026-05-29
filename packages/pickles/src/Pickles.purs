@@ -21,7 +21,7 @@ module Pickles
 
 import Pickles.Field (StepField, WrapField)
 import Pickles.ProofsVerified (ProofsVerified(..))
-import Pickles.Prove.Compile (BranchProver(..), CompiledProof(..), PrevSlot(..), RuleEntry, RulesCons, RulesNil, SlotWrapKey(..), Tag(..), compileMulti, mkRuleEntry)
+import Pickles.Prove.Compile (BranchProver(..), CompiledProof(..), PrevSlot(..), RuleEntry, RulesCons, RulesNil, SlotWrapKey(..), Tag(..), compileMulti, mkRuleEntry, mkRuleEntryM)
 import Pickles.Prove.Step (StepRule)
 import Pickles.Slots (Compiled, SideLoaded, Slot, SlotKind)
 import Pickles.Step.Advice (getPrevAppStates)
