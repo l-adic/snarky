@@ -29,8 +29,8 @@ import Data.Foldable (class Foldable)
 import Data.List (List(..), (:))
 import Data.List as List
 import Data.Maybe (Maybe(..))
-import Data.MerkleTree.Hashable (class Hashable, class MergeHash, class MerkleHashable, FreeHash(..), defaultHash, hash, merge) as ReExports
-import Data.MerkleTree.Hashable (class MergeHash, class MerkleHashable, FreeHash(..), defaultHash, hash, merge)
+import Data.MerkleTree.Hashable (class HashInput, class Hashable, class MergeHash, class MerkleHashable, FreeHash(..), defaultHash, hashInput, hashLeaf, merge, toHashInput) as ReExports
+import Data.MerkleTree.Hashable (class MergeHash, class MerkleHashable, FreeHash(..), defaultHash, hashLeaf, merge)
 import Data.Traversable (class Traversable)
 import Data.Unfoldable (class Unfoldable, class Unfoldable1)
 import Effect.Exception.Unsafe (unsafeThrow)
@@ -91,7 +91,7 @@ create
   -> MerkleTree hash a
 create value =
   MerkleTree
-    { tree: Leaf (hash (Just value)) value
+    { tree: Leaf (hashLeaf (Just value)) value
     , depth: 0
     , count: one
     }
@@ -112,7 +112,7 @@ leftTree
   -> { hash :: hash, tree :: NonEmptyTree hash a }
 leftTree targetDepth v =
   let
-    leafHash = hash @a (Just v)
+    leafHash = hashLeaf @a (Just v)
 
     go :: Int -> hash -> NonEmptyTree hash a -> { hash :: hash, tree :: NonEmptyTree hash a }
     go i h acc =
@@ -173,7 +173,7 @@ insert tree0 mask0 (Address address) v =
     go mask tree =
       if mask == zero then
         case tree of
-          Empty -> Leaf (hash (Just v)) v
+          Empty -> Leaf (hashLeaf (Just v)) v
           NonEmpty _ -> unsafeThrow "impossible: cannot insert new leaf in occupied slot"
       else
         let
@@ -299,7 +299,7 @@ addMany _tree xs =
     -> MerkleTree hash a
   merkelize (MerkleTree t) =
     let
-      default = hash @a Nothing
+      default = hashLeaf @a Nothing
 
       recomputeTree :: Tree hash a -> Tree hash a
       recomputeTree = case _ of
@@ -308,7 +308,7 @@ addMany _tree xs =
 
       recomputeNonEmpty :: NonEmptyTree hash a -> NonEmptyTree hash a
       recomputeNonEmpty = case _ of
-        Leaf _ x -> Leaf (hash @a (Just x)) x
+        Leaf _ x -> Leaf (hashLeaf @a (Just x)) x
         Node _ l r ->
           let
             l' = recomputeTree l
@@ -372,7 +372,7 @@ set (MerkleTree t) (Address addr0) newValue
           case tree of
             Leaf _ _
               -- Only replace the leaf if we've consumed all address bits
-              | i < 0 -> Just $ Leaf (hash (Just newValue)) newValue
+              | i < 0 -> Just $ Leaf (hashLeaf (Just newValue)) newValue
               -- Address requires more depth than tree has - invalid address
               | otherwise -> Nothing
             Node _ l r ->
@@ -560,7 +560,7 @@ checkNonEmpty
 checkNonEmpty = case _ of
   Leaf h x ->
     let
-      expected = hash @a (Just x)
+      expected = hashLeaf @a (Just x)
     in
       if h == expected then Just h
       else Nothing

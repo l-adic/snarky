@@ -10,7 +10,7 @@ import Data.Generic.Rep (class Generic)
 import Data.Identity (Identity)
 import Data.Int (pow)
 import Data.Maybe (Maybe(..))
-import Data.MerkleTree.Hashable (class Hashable, class MerkleHashable, defaultHash, hash)
+import Data.MerkleTree.Hashable (class Hashable, class MerkleHashable, defaultHash, hashLeaf)
 import Data.MerkleTree.Sized (Address(..), AddressVar, Path(..))
 import Data.MerkleTree.Sized as Sized
 import Data.MerkleTree.Sparse as Sparse
@@ -25,13 +25,12 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import Effect.Ref (Ref, read, write)
 import JS.BigInt as BigInt
 import Poseidon (class PoseidonField)
-import Poseidon as Poseidon
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, const_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, F, FVar, Snarky, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Circuit.Kimchi (verifyCircuit)
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.MerkleTree.Sparse as SparseCircuit
-import Snarky.Circuit.RandomOracle (Digest(..), hash2)
+import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState)
@@ -138,32 +137,10 @@ instance CircuitType f (Account (F f)) (Account (FVar f)) where
 instance CheckedType f c (Account (FVar f)) where
   check = genericCheck
 
--- | Pure Hashable instance for Account (F f)
-instance PoseidonField f => Hashable (Account (F f)) (Digest (F f)) where
-  hash = case _ of
-    Nothing -> Digest $ F $ Poseidon.hash []
-    Just (Account { publicKey: F pk, tokenBalance: F tb }) ->
-      Digest $ F $ Poseidon.hash [ pk, tb ]
-
--- | Circuit Hashable instance for Account (FVar f)
-instance
-  ( CircuitM f (KimchiConstraint f) t m
-  , PoseidonField f
-  ) =>
-  Hashable (Account (FVar f)) (Snarky (KimchiConstraint f) t m (Digest (FVar f))) where
-  hash = case _ of
-    Nothing -> hash2 (const_ zero) (const_ zero)
-    Just (Account { publicKey, tokenBalance }) -> hash2 publicKey tokenBalance
-
--- | MerkleHashable instance for pure Account
-instance PoseidonField f => MerkleHashable (Account (F f)) (Digest (F f))
-
--- | MerkleHashable instance for circuit Account
-instance
-  ( CircuitM f (KimchiConstraint f) t m
-  , PoseidonField f
-  ) =>
-  MerkleHashable (Account (FVar f)) (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
+-- | Flatten an account to its leaf field elements; the merkle layer's
+-- | `hashLeaf` turns this into a digest (and `MerkleHashable` is derived).
+instance Hashable (Account a) a where
+  toHashInput (Account { publicKey, tokenBalance }) = [ publicKey, tokenBalance ]
 
 --------------------------------------------------------------------------------
 
@@ -226,7 +203,7 @@ sparseImpliedRootSpec cfg _ pd = do
         sparseAddr = toSparseAddr addr
         melem = Sparse.get tree sparseAddr
         entryHash = case melem of
-          Just v -> hash (Just v)
+          Just v -> hashLeaf (Just v)
           Nothing -> defaultHash @(Account (F f))
         path = fromSparsePath $ Sparse.getWitness sparseAddr tree
       pure $ Tuple addr (Tuple entryHash path)
@@ -288,9 +265,9 @@ sparseCheckAndUpdateSpec cfg _ pd = do
         sparseAddr = toSparseAddr addr
         melem = Sparse.get tree sparseAddr
         oldValueHash = case melem of
-          Just v -> hash (Just v)
+          Just v -> hashLeaf (Just v)
           Nothing -> defaultHash @(Account (F f))
-        newValueHash = hash (Just newValue)
+        newValueHash = hashLeaf (Just newValue)
         path = fromSparsePath $ Sparse.getWitness sparseAddr tree
         oldRoot = Sparse.root tree
       pure { addr, oldValueHash, newValueHash, path, oldRoot }

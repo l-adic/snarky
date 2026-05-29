@@ -33,7 +33,7 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.MerkleTree (ithBit)
-import Data.MerkleTree.Hashable (class MergeHash, class MerkleHashable, defaultHash, hash, merge)
+import Data.MerkleTree.Hashable (class MergeHash, class MerkleHashable, defaultHash, hashLeaf, merge)
 import Data.MerkleTree.Sized (Address(..), Path(..)) as Sized
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
@@ -166,7 +166,7 @@ root tree@(SparseMerkleTree state) =
       -- Special case: depth 0 tree has a single leaf at address 0
       case Map.lookup zero state.values of
         Nothing -> defaultHash @a
-        Just v -> hash (Just v)
+        Just v -> hashLeaf (Just v)
     else
       computeRoot @a treeDepth state.values state.emptyHashes
 
@@ -214,7 +214,7 @@ computeRoot treeDepth values emptyHashes =
         -- Leaf level with a value
         case Map.lookup addr values of
           Nothing -> emptyHash 0
-          Just v -> hash @a (Just v)
+          Just v -> hashLeaf @a (Just v)
       else
         -- Internal node with at least one value somewhere below
         let
@@ -262,7 +262,7 @@ getWitness (Sized.Address addr) tree@(SparseMerkleTree state) =
       else if subDepth == 0 then
         case Map.lookup subAddr state.values of
           Nothing -> emptyHash 0
-          Just v -> hash @a (Just v)
+          Just v -> hashLeaf @a (Just v)
       else
         let
           halfSize = BigInt.shl one (BigInt.fromInt (subDepth - 1))
