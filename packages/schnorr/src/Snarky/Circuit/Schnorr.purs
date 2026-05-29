@@ -96,9 +96,9 @@ shiftConst =
 -- | Verify a Schnorr signature in the circuit, returning the accept
 -- | boolean.
 -- |
--- | The constant `gen` argument is the curve generator as a value-level
--- | `PallasG`; we use `scaleKnown` for the `s*G` term (matches
--- | production `Curve.Checked.scale_known shifted Curve.one s_bits`).
+-- | The `s*G` term uses `scaleKnown` against the curve generator
+-- | (`generator :: PallasG` from `WeierstrassCurve`), matching production
+-- | `Curve.Checked.scale_known shifted Curve.one s_bits`.
 verifies
   :: forall t m n
    . Reflectable n Int
@@ -106,10 +106,9 @@ verifies
   => CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t m
   => Vector 3 Pallas.BaseField
   -> ShiftedOps Pallas.BaseField t m
-  -> PallasG
   -> VerifyInput n Pallas.BaseField
   -> Snarky (KimchiConstraint Pallas.BaseField) t m (BoolVar Pallas.BaseField)
-verifies spongePrefix shifted gen { publicKey: pk, signature: Signature { r, s: sBits }, message } = do
+verifies spongePrefix shifted { publicKey: pk, signature: Signature { r, s: sBits }, message } = do
   -- 1. e = Poseidon(message…, pk.x, pk.y, r) seeded with spongePrefix.
   let
     sponge0 = Sponge.spongeFromConstants
@@ -128,7 +127,7 @@ verifies spongePrefix shifted gen { publicKey: pk, signature: Signature { r, s: 
   ePkShifted <- scale pallasParams shifted shifted.zero negPk eBits
   -- 5. Chain via init: scale_known for s*G (fixed-base optimization,
   -- ~2× fewer kimchi gates than plain `scale` for 255-bit s).
-  rShifted <- scaleKnown shifted gen sBits ePkShifted
+  rShifted <- scaleKnown shifted (generator :: PallasG) sBits ePkShifted
   -- 6. Unshift_nonzero at the end.
   rPt <- shifted.unshiftNonzero rShifted
   -- 7. y_even: unpack_full + lt_bitstring_value canonical-form check,

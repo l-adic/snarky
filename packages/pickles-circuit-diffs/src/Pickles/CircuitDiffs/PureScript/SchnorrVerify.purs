@@ -25,8 +25,7 @@ import Snarky.Circuit.Schnorr.Shifted (assertOnCurveConst, createShifted)
 import Snarky.Circuit.Types (Bool(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (generator, toAffine)
-import Snarky.Curves.Pasta (PallasG)
+import Snarky.Curves.Class (toAffine)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
@@ -72,7 +71,7 @@ compileSchnorrVerify =
         --   let%bind (module S) = Inner_curve.Checked.Shifted.create ()
         --   in Schnorr.Chunked.Checked.verifies (module S) sig pk msg
         shifted <- createShifted pallasParams shiftConst
-        verifies (signaturePrefix Mainnet) shifted (generator :: PallasG)
+        verifies (signaturePrefix Mainnet) shifted
           { publicKey: pk
           , signature: Signature { r, s: sBits }
           , message

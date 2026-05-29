@@ -14,7 +14,6 @@ import Snarky.Circuit.Schnorr (Signature(..), pallasParams, shiftConst, verifies
 import Snarky.Circuit.Schnorr.Shifted (createShifted)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
-import Snarky.Curves.Class (generator)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -51,7 +50,6 @@ spec cfg = describe "Snarky.Circuit.Schnorr" do
       circuit' { signature: { r, sBits }, publicKey, message } = do
         shifted <- createShifted pallasParams shiftConst
         verified <- verifies (signaturePrefix Mainnet) shifted
-          (generator :: PallasG)
           { publicKey, signature: Signature { r, s: sBits }, message }
         assert_ verified
 
