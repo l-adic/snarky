@@ -21,6 +21,7 @@ package:
     - prelude
     - random-oracle
     - safe-coerce
+    - schnorr
     - simple-json
     - snarky
     - snarky-curves

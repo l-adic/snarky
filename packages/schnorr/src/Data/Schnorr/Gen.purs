@@ -1,4 +1,9 @@
--- | Test generators for Schnorr signatures
+-- | QuickCheck generators for Schnorr signatures matching the new
+-- | kimchi-circuit verifier (`Snarky.Circuit.Schnorr.verifies`).
+-- |
+-- | Pallas-specific: both `r` and `s` are `Pallas.BaseField` (the
+-- | native circuit field). The generator rejection-samples a fresh
+-- | nonce until `Data.Schnorr.sign` accepts it.
 module Data.Schnorr.Gen
   ( VerifyInput
   , genValidSignature
@@ -6,110 +11,72 @@ module Data.Schnorr.Gen
 
 import Prelude
 
-import Data.Array ((:))
-import Data.Maybe (Maybe(..), fromJust, isJust)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Reflectable (class Reflectable)
-import Data.Schnorr (isEven, truncateFieldCoerce)
+import Data.Schnorr as Schnorr
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import JS.BigInt as BigInt
+import Mina.ChainId (ChainId(..), networkId)
 import Partial.Unsafe (unsafePartial)
-import Poseidon (class PoseidonField)
-import Poseidon as Poseidon
 import Snarky.Circuit.DSL (F(..))
-import Snarky.Circuit.Kimchi (fieldSizeBits)
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, fromBigInt, generator, scalarMul, toAffine, toBigInt)
+import Snarky.Circuit.DSL.Bits (unpackPure)
+import Snarky.Curves.Class (fromBigInt, generator, scalarMul, toAffine, toBigInt)
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.QuickCheck (arbitrary)
-import Test.QuickCheck.Gen (Gen, suchThat)
+import Test.QuickCheck.Gen (Gen)
 import Type.Proxy (Proxy(..))
 
--- | Input type for Schnorr verification circuit.
--- | All values are in the circuit field f (base field of curve g).
--- | The signature's s component is a raw field element — the circuit's
--- | scaleFast2' handles the parity split and shift internally.
--- | Uses a type alias since CircuitType has a generic instance for records.
+-- | Flat input to the kimchi Schnorr verifier circuit. Mirrors the
+-- | OCaml production `Signature.var = Field.Var.t * Curve.Scalar.var`
+-- | shape: `r` is a base-field value, `s_bits` is the 255-bit LSB-first
+-- | decomposition of the Pallas-scalar `s` (Booleans).
 type VerifyInput n a =
   { signature ::
       { r :: a
-      , s :: a
+      , sBits :: Vector 255 Boolean
       }
   , publicKey :: AffinePoint a
   , message :: Vector n a
   }
 
--- | Generate a valid signature for testing using the library's sign function.
--- | Returns VerifyInput with all values in the circuit field (base field).
--- | f = base field of curve g (circuit field)
--- | f' = scalar field of curve g
+-- | Generate a verifying Schnorr signature for QuickCheck. The nonce is
+-- | derived deterministically from `(networkId, sk, pk, message)` and
+-- | `Data.Schnorr.sign` is total, so we just sample `(privateKey,
+-- | message)` and sign once.
+-- |
+-- | Caller passes `Proxy @PallasG` and the message-length proxy so the
+-- | type-application surface mirrors the older `Data.Schnorr.Gen` API
+-- | used by `Test.Snarky.Circuit.Schnorr`. The chain-id tag is hard-wired
+-- | to Mainnet here — tests can lift this if they need Testnet coverage.
 genValidSignature
-  :: forall f f' g n
-   . PoseidonField f
-  => PrimeField f'
-  => Reflectable n Int
-  => WeierstrassCurve f g
-  => FrModule f' g
-  => PrimeField f
-  => FieldSizeInBits f 255
-  => FieldSizeInBits f' 255
-  => Proxy g
+  :: forall n
+   . Reflectable n Int
+  => Vector 3 Pallas.BaseField
+  -> Proxy PallasG
   -> Proxy n
-  -> Gen (VerifyInput n (F f))
-genValidSignature pg pn = do
-  -- Generate random private key (in scalar field f')
-  privateKey <- arbitrary @f' `suchThat` \sk ->
-    isJust $ toAffine $ scalarMul sk (generator @_ @g)
+  -> Gen (VerifyInput n (F Pallas.BaseField))
+genValidSignature spongePrefix _pg _pn = do
+  privateKey :: Pallas.ScalarField <- arbitrary
+  message :: Vector n Pallas.BaseField <- Vector.generateA (const arbitrary)
   let
+    Schnorr.Signature { r, s } = Schnorr.sign
+      { spongePrefix
+      , networkId: networkId Mainnet
+      , privateKey
+      , message: Vector.toUnfoldable message
+      }
     publicKey = unsafePartial fromJust
       $ toAffine
-      $ scalarMul privateKey (generator @_ @g)
-  -- Generate random message field element (in base field f)
-  message <- Vector.generateA @n (const arbitrary)
-
-  let
-    kPrimeBase = Poseidon.hash $ publicKey.x : publicKey.y : Vector.toUnfoldable message
-
-    kPrime :: f'
-    kPrime = truncateFieldCoerce kPrimeBase
-
-  if kPrime == zero then
-    genValidSignature pg pn
-  else
-    case toAffine $ scalarMul kPrime (generator @_ @g) of
-      Nothing -> genValidSignature pg pn
-      Just { x: r, y: ry } -> do
-        let
-          k = if isEven ry then kPrime else negate kPrime
-          eBase = Poseidon.hash $ publicKey.x : publicKey.y : r : Vector.toUnfoldable message
-
-          -- The circuit uses scaleFast2' which computes [value + 2^n] * base.
-          -- For Schnorr verification: sG - ePk = R
-          -- Circuit computes: [s + 2^n]*G - [e + 2^n]*Pk
-          -- For this to equal R = k*G, we need:
-          --   s + 2^n - (e + 2^n)*d = k
-          --   s = k + (e + 2^n)*d - 2^n
-          --
-          -- e is the hash output (base field) reinterpreted in the scalar field
-          -- with 2^n added (from scaleFast2's internal shift).
-          e :: f'
-          e = fromBigInt (toBigInt eBase) + twoToN
-
-          -- Compute 2^n in scalar field for shift compensation
-          n = fieldSizeBits (Proxy @f)
-
-          twoToN :: f'
-          twoToN = fromBigInt $ BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)
-
-          -- s in scalar field, then convert to circuit field for the circuit input
-          sScalar :: f'
-          sScalar = k + e * privateKey - twoToN
-
-          -- Convert scalar field s to circuit field representation via BigInt
-          sCircuit :: F f
-          sCircuit = F $ fromBigInt $ toBigInt sScalar
-
-        pure
-          { signature: { r: F r, s: sCircuit }
-          , publicKey: { x: F publicKey.x, y: F publicKey.y }
-          , message: map F message
-          }
+      $ scalarMul privateKey (generator :: PallasG)
+    -- `s` is the base-field re-embedding of the Pallas scalar;
+    -- decompose to 255 LSB-first bits to match the production
+    -- `Signature.var` shape.
+    sScalar = fromBigInt (toBigInt s) :: Pallas.ScalarField
+    sBits = unpackPure sScalar (Proxy @255)
+  pure
+    { signature: { r: F r, sBits }
+    , publicKey: { x: F publicKey.x, y: F publicKey.y }
+    , message: map F message
+    }

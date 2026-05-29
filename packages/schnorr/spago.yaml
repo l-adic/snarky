@@ -2,8 +2,14 @@ package:
   name: schnorr
   dependencies:
     - arrays
+    - blake2
     - curves
+    - enums
+    - exceptions
+    - foldable-traversable
+    - integers
     - js-bigints
+    - lists
     - maybe
     - newtype
     - partial
@@ -11,18 +17,27 @@ package:
     - prelude
     - quickcheck
     - random-oracle
+    - safe-coerce
     - snarky
     - snarky-curves
     - snarky-kimchi
+    - strings
+    - tuples
     - vector-sized
   test:
     main: Test.Schnorr.Main
     dependencies:
       - aff
       - effect
+      - either
+      - exceptions
       - identity
+      - integers
+      - node-buffer
+      - node-fs
       - partial
       - quickcheck
+      - simple-json
       - snarky-test-utils
       - spec
       - spec-node

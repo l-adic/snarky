@@ -109,17 +109,18 @@ fieldStr = show <<< toBigInt
 piKey :: forall f. PrimeField f => Array f -> String
 piKey = joinWith "," <<< map fieldStr
 
--- | VK lookup keys, namespaced by curve to avoid Pallas/Vesta collisions
--- | sharing a bucket. Mirrors OCaml `Proof_cache` semantics
--- | (`proof_cache.ml:185`): the full VK JSON serves as the bucket key
--- | rather than a digest. OCaml never materializes a host-side VK digest;
--- | we follow suit instead of porting kimchi's `PlonkSpongeConstantsKimchi`
--- | sponge to JS.
+-- | VK lookup key = the full VK JSON, exactly as OCaml `Proof_cache`
+-- | keys it (`proof_cache.ml:185`): a single `verification_key ->
+-- | public_input -> proof` map keyed by the raw VK yojson — no digest
+-- | and no curve prefix. Step (Pallas-base) and wrap (Vesta-base) VKs
+-- | share the one store but can't collide: their JSON differs (distinct
+-- | curve, domain, commitments). OCaml never materializes a host-side VK
+-- | digest and never namespaces by curve; we follow suit.
 pallasProofVkKey :: VerifierIndex Vesta.G Pallas.BaseField -> String
-pallasProofVkKey vk = "pallas:" <> pallasVerifierIndexJsonKey vk
+pallasProofVkKey = pallasVerifierIndexJsonKey
 
 vestaProofVkKey :: VerifierIndex Pallas.G Vesta.BaseField -> String
-vestaProofVkKey vk = "vesta:" <> vestaVerifierIndexJsonKey vk
+vestaProofVkKey = vestaVerifierIndexJsonKey
 
 -- | Cache lookup / store for `pallas*` proofs (Vesta.G commitments,
 -- | Pallas-base-field scalars — what pickles' Tick / Step side produces).

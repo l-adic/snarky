@@ -159,3 +159,19 @@ fixtures-pack: ## Compress chunk fixtures after regen, before committing the *.g
 .PHONY: clean-proof-cache
 clean-proof-cache: ## Wipe the disk proof-cache (forces regeneration of cached step/wrap proofs)
 	rm -rf "$(PICKLES_PROOF_CACHE_DIR)"
+
+.PHONY: dump-schnorr-signature-proof
+dump-schnorr-signature-proof: ## Generate fresh Schnorr kimchi proof fixtures (3 deterministic cases) under packages/schnorr/test/fixtures/schnorr_signature_proof{,_2,_3}
+	mkdir -p packages/schnorr/test/fixtures/schnorr_signature_proof \
+	         packages/schnorr/test/fixtures/schnorr_signature_proof_2 \
+	         packages/schnorr/test/fixtures/schnorr_signature_proof_3
+	cd mina && KIMCHI_DETERMINISTIC_SEED=42 nix develop "git+file://$$PWD?submodules=1" --command \
+	  dune exec src/lib/crypto/pickles/dump_schnorr_signature_proof/dump_schnorr_signature_proof.exe -- \
+	  ../packages/schnorr/test/fixtures/schnorr_signature_proof
+
+.PHONY: dump-schnorr-signatures
+dump-schnorr-signatures: ## Generate raw Schnorr signature test vectors (pure-verify) under packages/schnorr/test/fixtures/schnorr_signatures
+	mkdir -p packages/schnorr/test/fixtures/schnorr_signatures
+	cd mina && nix develop "git+file://$$PWD?submodules=1" --command \
+	  dune exec src/lib/crypto/pickles/dump_schnorr_signatures/dump_schnorr_signatures.exe -- \
+	  ../packages/schnorr/test/fixtures/schnorr_signatures

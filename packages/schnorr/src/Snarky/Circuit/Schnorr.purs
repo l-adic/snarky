@@ -1,171 +1,143 @@
--- | Circuit implementation of Schnorr signature verification.
+-- | In-circuit Schnorr signature verifier — first-order port of
+-- | `Signature_lib.Schnorr.Make.Checked.verifier`
+-- | (`mina/src/lib/crypto/signature_lib/schnorr.ml:271-292`).
 -- |
--- | This module provides the circuit (constraint-system) implementation
--- | of Schnorr signature verification for use in zero-knowledge proofs.
+-- | The signature is `(r :: Field, s :: 255-bit scalar)`, matching
+-- | production `Signature.var = Field.Var.t * Curve.Scalar.var`
+-- | where `Curve.Scalar.var = Boolean.var Bitstring.Lsb_first.t`
+-- | (a 255-bool list). `r` is the x-coordinate of the commitment
+-- | (a base-field value); `s` is the Pallas scalar transported as
+-- | its LSB-first bit decomposition.
 -- |
--- | In circuits, both signature components (r and s) are represented as
--- | elements of the native circuit field, even though mathematically they
--- | may come from different fields (base vs scalar).
+-- | Algorithm:
 -- |
--- | The verifier is parameterized by `ScalarOps` which provides the operations
--- | for converting field elements to scalars and performing scalar multiplication.
--- | This allows the code to work with different scalar representations.
+-- |   1. `e_bits = Poseidon(message…, pk.x, pk.y, r) → unpack 255 bits`
+-- |      seeded with `spongePrefix`.
+-- |   2. `shifted = Shifted.create()`.
+-- |   3. `e_pk = scale shifted (-pk) e_bits init=Shifted.zero`
+-- |      (= `shift + e * (-pk)` in the shifted representation).
+-- |   4. `s_g_e_pk = scale shifted G s_bits init=e_pk`
+-- |      (= `shift + s * G + e * (-pk)`).
+-- |   5. `(rx, ry) = Shifted.unshiftNonzero s_g_e_pk` (= `s*G - e*pk`).
+-- |   6. `y_even = LSB(unpack ry) == 0`.
+-- |   7. `r_correct = (rx == r)`.
+-- |   8. Accept iff both.
+-- |
+-- | Defers `scale_known` (production uses it for `s*G`); we use plain
+-- | `scale` for both bases. Convergence loop will close that gap.
 module Snarky.Circuit.Schnorr
-  ( SignatureVar(..)
-  , ScalarOps
-  , sigR
-  , sigS
-  , isEven
-  , hashMessage
+  ( Signature(..)
+  , VerifyInput
+  , pallasParams
+  , shiftConst
   , verifies
-  -- Curve-specific ops
-  , pallasScalarOps
-  , vestaScalarOps
   ) where
 
 import Prelude
 
-import Data.Array ((:))
 import Data.Fin (unsafeFinite)
+import Data.Foldable (foldM)
 import Data.Generic.Rep (class Generic)
+import Data.Maybe (fromJust)
 import Data.Newtype (class Newtype)
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
-import Prim.Int (class Mul)
-import Snarky.Circuit.Curves as EllipticCurve
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, check, equals_, not_, unpack_)
-import Snarky.Circuit.Kimchi (Type1(..), addComplete, scaleFast1, scaleFast2')
-import Snarky.Circuit.RandomOracle (Digest(..), hashVec)
+import RandomOracle.Sponge (SpongeState(..))
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, and_, equals_, negate_, not_, unpack_)
+import Snarky.Circuit.RandomOracle.Sponge (absorb, spongeFromConstants, squeeze) as Sponge
+import Snarky.Circuit.Schnorr.Shifted (ShiftedOps, scale, scaleKnown)
+import Snarky.Circuit.Schnorr.UnpackFull (unpackFull)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits)
+import Snarky.Curves.Class (curveParams, generator, toAffine)
 import Snarky.Curves.Pallas as Pallas
-import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Curves.Pasta (PallasG)
+import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 import Type.Proxy (Proxy(..))
 
--- | Operations for scalar multiplication in circuits.
--- |
--- | This record captures the operations needed for scalar multiplication with
--- | a specific scalar representation. By passing these operations explicitly,
--- | the verifier function can remain generic while supporting different
--- | scalar types (e.g., Type2 for cross-field arithmetic).
--- |
--- | Type parameters:
--- | - f: the circuit field
--- | - c: the constraint type
--- | - scalar: the scalar representation (e.g., Type2 (FVar f) (BoolVar f))
-type ScalarOps f c scalar =
-  { -- | Convert a field variable to a scalar representation
-    toScalar :: forall t m. CircuitM f c t m => FVar f -> Snarky c t m scalar
-  -- | Multiply a point by a scalar
-  , scalarMul :: forall t m. CircuitM f c t m => AffinePoint (FVar f) -> scalar -> Snarky c t m (AffinePoint (FVar f))
-  }
-
--- | This is the configuration for Pallas circuits where
--- | the scalar field is larger than the circuit field.
--- | Uses scaleFast2' which splits the field element and adds the 2^n shift internally.
-pallasScalarOps
-  :: forall @nChunks
-   . Mul 5 nChunks 255
-  => Reflectable nChunks Int
-  => ScalarOps Pallas.BaseField (KimchiConstraint Pallas.BaseField) (FVar Pallas.BaseField)
-pallasScalarOps =
-  { toScalar: pure
-  , scalarMul: scaleFast2' @nChunks @254
-  }
-
--- | ScalarOps for Vesta.BaseField using Type1 and scaleFast1.
--- |
--- | This is the configuration for Vesta circuits where
--- | the scalar field is smaller than the circuit field.
-vestaScalarOps
-  :: forall @nChunks
-   . Mul 5 nChunks 255
-  => Reflectable nChunks Int
-  => ScalarOps Vesta.BaseField (KimchiConstraint Vesta.BaseField) (Type1 (FVar Vesta.BaseField))
-vestaScalarOps =
-  { toScalar: \fvar -> do
-      let t1 = Type1 fvar
-      check t1
-      pure t1
-  , scalarMul: scaleFast1 @nChunks
-  }
-
--- | Circuit variable type for Schnorr signatures.
--- | r is the x-coordinate of R (circuit field element).
--- | scalar is the representation of the s component (e.g., Type2 for foreign field case).
-newtype SignatureVar f scalar = SignatureVar
+-- | Schnorr signature in-circuit. `r` is `R.x` (Pallas base-field).
+-- | `s` is the Pallas scalar carried as its 255-bit LSB-first
+-- | decomposition — same shape as production
+-- | `Signature.var = Field.Var.t * Curve.Scalar.var`.
+newtype Signature f = Signature
   { r :: FVar f
-  , s :: scalar
+  , s :: Vector 255 (BoolVar f)
   }
 
-derive instance Newtype (SignatureVar f scalar) _
-derive instance Generic (SignatureVar f scalar) _
+derive instance Newtype (Signature f) _
+derive instance Generic (Signature f) _
 
--- | Extract the r component from a SignatureVar.
-sigR :: forall f scalar. SignatureVar f scalar -> FVar f
-sigR (SignatureVar { r }) = r
+-- | Inputs the verifier consumes — bundled so the public-input
+-- | flattening (pk_x, pk_y, r, s_bits[0..254], msg…) is the only
+-- | place the order is hard-coded.
+type VerifyInput n f =
+  { publicKey :: AffinePoint (FVar f)
+  , signature :: Signature f
+  , message :: Vector n (FVar f)
+  }
 
--- | Extract the s component from a SignatureVar.
-sigS :: forall f scalar. SignatureVar f scalar -> scalar
-sigS (SignatureVar { s }) = s
+-- | Pallas curve params (a=0, b=5) for `double` inside `scale`.
+pallasParams :: CurveParams Pallas.BaseField
+pallasParams = curveParams (Proxy :: Proxy PallasG)
 
--- | Check if a field element is even (LSB is 0) in a circuit.
-isEven
-  :: forall f t m n
-   . CircuitM f (KimchiConstraint f) t m
-  => FieldSizeInBits f n
-  => FVar f
-  -> Snarky (KimchiConstraint f) t m (BoolVar f)
-isEven y = do
-  bits <- unpack_ y (Proxy @n)
-  pure $ not_ $ Vector.index bits (unsafeFinite 0)
-
--- | Hash the message for signature verification in a circuit.
--- | e = H(pk_x, pk_y, r, message)
-hashMessage
-  :: forall f t m @n
-   . PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
-  => Reflectable n Int
-  => AffinePoint (FVar f)
-  -> FVar f
-  -> Vector n (FVar f)
-  -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
-hashMessage { x: px, y: py } r message = do
+-- | The shift point fed to `Shifted.create`. OCaml uses
+-- | `Curve.random ()`; we use a constant. CS shape is identical
+-- | either way (the shift is `exists`-allocated; its witness value
+-- | doesn't enter any constraint).
+shiftConst :: AffinePoint Pallas.BaseField
+shiftConst =
   let
-    inputs = px : py : r : (Vector.toUnfoldable message)
-  hashVec inputs
+    g = generator :: PallasG
+  in
+    unsafePartial fromJust $ toAffine (g <> g)
 
--- | Verify a Schnorr signature in a circuit, returning a boolean.
+-- | Verify a Schnorr signature in the circuit, returning the accept
+-- | boolean.
 -- |
--- | Algorithm:
--- | 1. e = H(pk_x, pk_y, r, message)
--- | 2. R' = [s] * G - [e] * pk
--- | 3. Return: y-coordinate of R' is even AND x-coordinate of R' == r
--- |
--- | The ScalarOps parameter provides toScalar and scalarMul operations,
--- | allowing this function to work with different scalar representations.
+-- | The constant `gen` argument is the curve generator as a value-level
+-- | `PallasG`; we use `scaleKnown` for the `s*G` term (matches
+-- | production `Curve.Checked.scale_known shifted Curve.one s_bits`).
 verifies
-  :: forall f t m n l scalar
-   . PoseidonField f
-  => Reflectable l Int
-  => FieldSizeInBits f n
-  => CircuitM f (KimchiConstraint f) t m
-  => ScalarOps f (KimchiConstraint f) scalar
-  -> AffinePoint (FVar f)
-  -> { signature :: SignatureVar f scalar
-     , publicKey :: AffinePoint (FVar f)
-     , message :: Vector l (FVar f)
-     }
-  -> Snarky (KimchiConstraint f) t m (BoolVar f)
-verifies ops gen { signature: SignatureVar { r, s }, publicKey, message } = do
-  Digest e <- hashMessage @l publicKey r message
-  eScalar <- ops.toScalar e
-  sG <- ops.scalarMul gen s
-  ePk <- ops.scalarMul publicKey eScalar
-  negEPk <- EllipticCurve.negate ePk
-  { p: rPoint } <- addComplete sG negEPk
-  isEven rPoint.y && equals_ rPoint.x r
+  :: forall t m n
+   . Reflectable n Int
+  => PoseidonField Pallas.BaseField
+  => CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t m
+  => Vector 3 Pallas.BaseField
+  -> ShiftedOps Pallas.BaseField t m
+  -> PallasG
+  -> VerifyInput n Pallas.BaseField
+  -> Snarky (KimchiConstraint Pallas.BaseField) t m (BoolVar Pallas.BaseField)
+verifies spongePrefix shifted gen { publicKey: pk, signature: Signature { r, s: sBits }, message } = do
+  -- 1. e = Poseidon(message…, pk.x, pk.y, r) seeded with spongePrefix.
+  let
+    sponge0 = Sponge.spongeFromConstants
+      { state: spongePrefix
+      , spongeState: Squeezed (unsafeFinite 0)
+      }
+  spongeMsg <- foldM (\sp x -> Sponge.absorb x sp) sponge0 message
+  sponge1 <- Sponge.absorb pk.x spongeMsg
+  sponge2 <- Sponge.absorb pk.y sponge1
+  sponge3 <- Sponge.absorb r sponge2
+  { result: e } <- Sponge.squeeze sponge3
+  -- 2. neg_pk = (pk.x, -pk.y), no constraint.
+  let negPk = { x: pk.x, y: negate_ pk.y }
+  -- 3. Unpack e to 255 LSB-first bits and scale.
+  eBits <- unpack_ e (Proxy @255)
+  ePkShifted <- scale pallasParams shifted shifted.zero negPk eBits
+  -- 5. Chain via init: scale_known for s*G (fixed-base optimization,
+  -- ~2× fewer kimchi gates than plain `scale` for 255-bit s).
+  rShifted <- scaleKnown shifted gen sBits ePkShifted
+  -- 6. Unshift_nonzero at the end.
+  rPt <- shifted.unshiftNonzero rShifted
+  -- 7. y_even: unpack_full + lt_bitstring_value canonical-form check,
+  -- then take LSB. Mirrors production `is_even` (schnorr.ml:264-266 →
+  -- Field.Checked.unpack_full → snark0.ml:470).
+  yBits <- unpackFull rPt.y
+  let yEven = not_ (Vector.head yBits)
+  -- 8. r_correct. OCaml: `equal r rx` (r first, rx second);
+  -- the arg order affects the generated coefficient signs in
+  -- `addEqualsConstraint`'s two-variable case.
+  rCorrect <- equals_ r rPt.x
+  and_ rCorrect yEven
