@@ -16,7 +16,7 @@
 -- | of bit comparisons (one node per bit, structured by the modulus
 -- | bit pattern), folds adjacent same-typed nodes into N-ary lists,
 -- | and evaluates leaves-first via `allBools`/`anyBools`.
-module Snarky.Circuit.DSL.UnpackFull
+module Snarky.Circuit.Schnorr.UnpackFull
   ( unpackFull
   ) where
 

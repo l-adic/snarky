@@ -5,7 +5,9 @@ package:
     - blake2
     - curves
     - enums
+    - exceptions
     - foldable-traversable
+    - integers
     - js-bigints
     - lists
     - maybe
