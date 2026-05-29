@@ -10,7 +10,7 @@
 -- |   `dune exec src/lib/crypto/pickles/dump_schnorr_prefix_states/
 -- |     dump_schnorr_prefix_states.exe`
 -- | so it stays byte-identical to Mina's deployed prefix.
-module Data.Schnorr.ChainId
+module Mina.ChainId
   ( ChainId(..)
   , signaturePrefix
   , networkId

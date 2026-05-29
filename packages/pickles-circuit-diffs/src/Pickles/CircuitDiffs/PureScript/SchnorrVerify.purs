@@ -9,7 +9,7 @@ import Prelude
 import Data.Fin (getFinite)
 import Data.Foldable (traverse_)
 import Data.Maybe (fromJust)
-import Data.Schnorr.ChainId (ChainId(..), signaturePrefix)
+import Mina.ChainId (ChainId(..), signaturePrefix)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)

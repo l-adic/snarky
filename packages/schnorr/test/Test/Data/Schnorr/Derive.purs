@@ -10,7 +10,7 @@ import Prelude
 
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Schnorr.ChainId (ChainId(..), networkId)
+import Mina.ChainId (ChainId(..), networkId)
 import Data.Schnorr.Derive (deriveNonce)
 import Data.Traversable (for_)
 import Effect.Aff (Aff)

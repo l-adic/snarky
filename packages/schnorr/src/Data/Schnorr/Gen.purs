@@ -14,7 +14,7 @@ import Prelude
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Reflectable (class Reflectable)
 import Data.Schnorr as Schnorr
-import Data.Schnorr.ChainId (ChainId(..), networkId)
+import Mina.ChainId (ChainId(..), networkId)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
