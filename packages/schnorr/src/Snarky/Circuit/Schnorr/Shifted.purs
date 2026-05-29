@@ -49,11 +49,6 @@ import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, fromAffine
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 import Type.Proxy (Proxy)
 
--- Bring the Bool newtype constructor into scope for the
--- BoolVar→FVar coercion below (Coercible needs the ctor visible).
-_unusedBool :: forall a. Bool a -> Bool a
-_unusedBool b = case b of Bool _ -> b
-
 -- | Shifted accumulator. The wrapped point is `shift + (partial
 -- | sum)`; the actual sum is recovered via `unshiftNonzero`.
 newtype Shifted f = Shifted (AffinePoint (FVar f))

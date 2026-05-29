@@ -16,11 +16,9 @@ import Test.QuickCheck (arbitrary, quickCheckGen, withHelp)
 import Test.QuickCheck.Gen (Gen, suchThat)
 import Test.Spec (Spec, describe, it)
 
--- | A QuickCheck-friendly sign that rotates over private keys until
--- | acceptance. With the deterministic derive, the nonce is a pure
--- | function of `(networkId, sk, pk, message)`, so rotating `sk` is
--- | the simplest way to escape the (still-present) `e < 2^254` /
--- | `s < 2^254` rejection branches.
+-- | Sample a `(privateKey, message)` and sign once — `Data.Schnorr.sign`
+-- | is total (deterministic nonce, no rejection branches), so there's
+-- | nothing to retry.
 type SignAndKey =
   { privateKey :: PallasScalarField
   , signature :: Schnorr.Signature PallasBaseField
@@ -28,29 +26,18 @@ type SignAndKey =
   }
 
 genSignedMessage :: Array PallasBaseField -> Gen SignAndKey
-genSignedMessage message =
+genSignedMessage message = do
+  privateKey :: PallasScalarField <- arbitrary
   let
-    tryOne = do
-      privateKey :: PallasScalarField <- arbitrary
-      pure
-        { privateKey
-        , maybeSig: Schnorr.sign
-            { spongePrefix: signaturePrefix Mainnet
-            , networkId: networkId Mainnet
-            , privateKey
-            , message
-            }
-        }
-  in
-    do
-      { privateKey, maybeSig } <- tryOne `suchThat` \r -> case r.maybeSig of
-        Just _ -> true
-        Nothing -> false
-      let
-        signature = unsafePartial fromJust maybeSig
-        publicKey = unsafePartial fromJust $ toAffine
-          (scalarMul privateKey (generator :: PallasG))
-      pure { privateKey, signature, publicKey }
+    signature = Schnorr.sign
+      { spongePrefix: signaturePrefix Mainnet
+      , networkId: networkId Mainnet
+      , privateKey
+      , message
+      }
+    publicKey = unsafePartial fromJust $ toAffine
+      (scalarMul privateKey (generator :: PallasG))
+  pure { privateKey, signature, publicKey }
 
 spec :: Spec Unit
 spec = describe "Data.Schnorr (Pallas curve, kimchi-circuit convention)" do

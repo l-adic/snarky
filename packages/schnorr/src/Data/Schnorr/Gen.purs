@@ -41,11 +41,10 @@ type VerifyInput n a =
   , message :: Vector n a
   }
 
--- | Generate a verifying Schnorr signature for QuickCheck. Nonce is
--- | now derived deterministically from `(networkId, sk, pk, message)`
--- | so the generator just rotates `(privateKey, message)` until
--- | `Data.Schnorr.sign` accepts (rejection probability ~3/4 per
--- | attempt — `e < 2^254` and `s < 2^254` each fail with ~½).
+-- | Generate a verifying Schnorr signature for QuickCheck. The nonce is
+-- | derived deterministically from `(networkId, sk, pk, message)` and
+-- | `Data.Schnorr.sign` is total, so we just sample `(privateKey,
+-- | message)` and sign once.
 -- |
 -- | Caller passes `Proxy @PallasG` and the message-length proxy so the
 -- | type-application surface mirrors the older `Data.Schnorr.Gen` API
@@ -58,33 +57,26 @@ genValidSignature
   -> Proxy PallasG
   -> Proxy n
   -> Gen (VerifyInput n (F Pallas.BaseField))
-genValidSignature spongePrefix _pg _pn = go
-  where
-  go = do
-    privateKey :: Pallas.ScalarField <- arbitrary
-    message :: Vector n Pallas.BaseField <- Vector.generateA (const arbitrary)
-    case
-      Schnorr.sign
-        { spongePrefix
-        , networkId: networkId Mainnet
-        , privateKey
-        , message: Vector.toUnfoldable message
-        }
-      of
-      Nothing -> go
-      Just (Schnorr.Signature { r, s }) ->
-        let
-          publicKey = unsafePartial fromJust
-            $ toAffine
-            $ scalarMul privateKey (generator :: PallasG)
-          -- `s` is the base-field re-embedding of the Pallas scalar;
-          -- decompose to 255 LSB-first bits to match the production
-          -- `Signature.var` shape.
-          sScalar = fromBigInt (toBigInt s) :: Pallas.ScalarField
-          sBits = unpackPure sScalar (Proxy @255)
-        in
-          pure
-            { signature: { r: F r, sBits }
-            , publicKey: { x: F publicKey.x, y: F publicKey.y }
-            , message: map F message
-            }
+genValidSignature spongePrefix _pg _pn = do
+  privateKey :: Pallas.ScalarField <- arbitrary
+  message :: Vector n Pallas.BaseField <- Vector.generateA (const arbitrary)
+  let
+    Schnorr.Signature { r, s } = Schnorr.sign
+      { spongePrefix
+      , networkId: networkId Mainnet
+      , privateKey
+      , message: Vector.toUnfoldable message
+      }
+    publicKey = unsafePartial fromJust
+      $ toAffine
+      $ scalarMul privateKey (generator :: PallasG)
+    -- `s` is the base-field re-embedding of the Pallas scalar;
+    -- decompose to 255 LSB-first bits to match the production
+    -- `Signature.var` shape.
+    sScalar = fromBigInt (toBigInt s) :: Pallas.ScalarField
+    sBits = unpackPure sScalar (Proxy @255)
+  pure
+    { signature: { r: F r, sBits }
+    , publicKey: { x: F publicKey.x, y: F publicKey.y }
+    , message: map F message
+    }

@@ -25,13 +25,15 @@ import Data.Enum (fromEnum, toEnum)
 import Data.Foldable (foldl)
 import Data.Int as Int
 import Data.Maybe (fromMaybe)
-import Data.Reflectable (reflectType)
 import Data.String.CodeUnits as String
+import Data.Vector as Vector
 import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
 import RandomOracle.Input as Input
+import Snarky.Circuit.DSL.Bits (unpackPure)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)
 import Snarky.Curves.Pallas as Pallas
+import Type.Proxy (Proxy(..))
 import Type.Proxy (Proxy(..))
 
 -- | LSB-first bit unpacking of a field element, padded to
@@ -42,14 +44,7 @@ fieldToBitsLE
   => FieldSizeInBits f n
   => f
   -> Array Boolean
-fieldToBitsLE x =
-  let
-    n = reflectType (Proxy :: Proxy n)
-    big = toBigInt x
-    one' = BigInt.fromInt 1
-    bitAt i = BigInt.and (BigInt.shr big (BigInt.fromInt i)) one' == one'
-  in
-    map bitAt (Array.range 0 (n - 1))
+fieldToBitsLE x = Vector.toUnfoldable (unpackPure x (Proxy :: Proxy n))
 
 -- | LSB-first bit packing of a bit array, reduced into `f`. Equivalent
 -- | to OCaml `Field.project`: `Σ bits[i] * 2^i mod p`.
@@ -77,7 +72,7 @@ stringToBitsLE s = Array.concatMap charToBits (String.toCharArray s)
   charToBits c =
     let
       code = fromEnum c `mod` 256
-      bitAt i = ((code `div` Int.pow 2 i) `mod` 2) == 1
+      bitAt i = Int.odd (code `div` Int.pow 2 i)
     in
       map bitAt (Array.range 0 7)
 

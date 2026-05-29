@@ -1,6 +1,5 @@
 -- | Out-of-circuit Schnorr signature signer/verifier matching the
--- | iteration-2c kimchi-circuit verifier in
--- | `Snarky.Circuit.Schnorr.verifies`.
+-- | kimchi-circuit verifier in `Snarky.Circuit.Schnorr.verifies`.
 -- |
 -- | The signature is `(r :: Pallas.BaseField, s :: Pallas.BaseField)`.
 -- | `r = R.x` (so it naturally lives in the base field). `s` is
@@ -31,6 +30,7 @@ import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
 import Data.Schnorr.Derive (deriveNonce)
 import Data.Vector (Vector)
+import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
 import RandomOracle.Input as Input
 import RandomOracle.Sponge (absorb, create, squeeze) as Sponge
@@ -102,25 +102,36 @@ sign
      , privateKey :: Pallas.ScalarField
      , message :: Array Pallas.BaseField
      }
-  -> Maybe (Signature Pallas.BaseField)
-sign { spongePrefix, networkId, privateKey: d, message } = do
-  publicKey <- toAffine (scalarMul d (generator :: PallasG))
+  -> Signature Pallas.BaseField
+sign { spongePrefix, networkId, privateKey: d, message } =
   let
+    publicKey = affineOrThrow "public key [sk]·G"
+      (scalarMul d (generator :: PallasG))
     kPrime = deriveNonce
       { networkId
       , privateKey: d
       , publicKey
       , message: Input.fieldElements message
       }
-  { x: r, y: ry } <- toAffine (scalarMul kPrime (generator :: PallasG))
-  let
+    { x: r, y: ry } = affineOrThrow "nonce commitment R = [k]·G"
+      (scalarMul kPrime (generator :: PallasG))
     -- `negate kPrime` flips R.y's sign; since p is odd, `p - ry` has
     -- opposite parity to `ry`, so this always produces an even `R.y`.
     k = if isEven ry then kPrime else zero - kPrime
     eBase = hashMessage spongePrefix publicKey r message
     eScalar = toScalar eBase
     sScalar = k + d * eScalar
-  pure $ Signature { r, s: toBase sScalar }
+  in
+    Signature { r, s: toBase sScalar }
+  where
+  -- Both points are `[scalar]·G`; the scalar is ~0 only on a 255-bit
+  -- hash collision, so the point at infinity (`Nothing`) is
+  -- cryptographically unreachable. Surface it as a hard error rather
+  -- than threading `Maybe` through every caller.
+  affineOrThrow what p = case toAffine p of
+    Just a -> a
+    Nothing -> unsafeThrow
+      ("Data.Schnorr.sign: " <> what <> " is the point at infinity")
 
 -- | Verify a Schnorr signature out-of-circuit, mirroring the circuit
 -- | math: `R' = s·G − e·pk`, accept iff `R'.y` even and `R'.x == r`.
