@@ -11,7 +11,7 @@ module Data.Schnorr.Gen
 
 import Prelude
 
-import Data.Maybe (Maybe(..), fromJust)
+import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable)
 import Data.Schnorr as Schnorr
 import Data.Vector (Vector)
