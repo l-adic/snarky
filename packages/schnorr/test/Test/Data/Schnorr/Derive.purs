@@ -10,12 +10,12 @@ import Prelude
 
 import Data.Array as Array
 import Data.Either (Either(..))
-import Mina.ChainId (ChainId(..), networkId)
 import Data.Schnorr.Derive (deriveNonce)
 import Data.Traversable (for_)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
+import Mina.ChainId (ChainId(..), networkId)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import RandomOracle.Input as Input

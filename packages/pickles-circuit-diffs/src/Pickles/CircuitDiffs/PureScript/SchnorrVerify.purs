@@ -9,9 +9,9 @@ import Prelude
 import Data.Fin (getFinite)
 import Data.Foldable (traverse_)
 import Data.Maybe (fromJust)
-import Mina.ChainId (ChainId(..), signaturePrefix)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Mina.ChainId (ChainId(..), signaturePrefix)
 import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
 import Pickles.Field (StepField)
@@ -20,8 +20,8 @@ import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.CVar (Variable(..))
 import Snarky.Circuit.DSL (BoolVar, F, FVar, const_)
 import Snarky.Circuit.DSL.Monad (check) as DSL
-import Snarky.Circuit.Schnorr.Shifted (assertOnCurveConst, createShifted)
 import Snarky.Circuit.Schnorr (Signature(..), pallasParams, shiftConst, verifies)
+import Snarky.Circuit.Schnorr.Shifted (assertOnCurveConst, createShifted)
 import Snarky.Circuit.Types (Bool(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi

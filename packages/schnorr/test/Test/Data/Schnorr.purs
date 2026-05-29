@@ -7,8 +7,8 @@ import Prelude
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Schnorr (Signature(..))
 import Data.Schnorr as Schnorr
-import Mina.ChainId (ChainId(..), networkId, signaturePrefix)
 import Effect.Class (liftEffect)
+import Mina.ChainId (ChainId(..), networkId, signaturePrefix)
 import Partial.Unsafe (unsafePartial)
 import Snarky.Curves.Class (generator, scalarMul, toAffine)
 import Snarky.Curves.Pasta (PallasBaseField, PallasG, PallasScalarField)

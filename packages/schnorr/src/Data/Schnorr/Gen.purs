@@ -14,9 +14,9 @@ import Prelude
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Reflectable (class Reflectable)
 import Data.Schnorr as Schnorr
-import Mina.ChainId (ChainId(..), networkId)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Mina.ChainId (ChainId(..), networkId)
 import Partial.Unsafe (unsafePartial)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Circuit.DSL.Bits (unpackPure)
