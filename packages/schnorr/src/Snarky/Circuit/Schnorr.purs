@@ -40,7 +40,6 @@ import Data.Foldable (foldM)
 import Data.Generic.Rep (class Generic)
 import Data.Maybe (fromJust)
 import Data.Newtype (class Newtype)
-import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
@@ -61,21 +60,21 @@ import Type.Proxy (Proxy(..))
 -- | `s` is the Pallas scalar carried as its 255-bit LSB-first
 -- | decomposition — same shape as production
 -- | `Signature.var = Field.Var.t * Curve.Scalar.var`.
-newtype Signature f = Signature
+newtype Signature f b = Signature
   { r :: FVar f
-  , s :: Vector 255 (BoolVar f)
+  , s :: Vector 255 b
   }
 
-derive instance Newtype (Signature f) _
-derive instance Generic (Signature f) _
+derive instance Newtype (Signature f b) _
+derive instance Generic (Signature f b) _
 
 -- | Inputs the verifier consumes — bundled so the public-input
 -- | flattening (pk_x, pk_y, r, s_bits[0..254], msg…) is the only
 -- | place the order is hard-coded.
-type VerifyInput n f =
+type VerifyInput f =
   { publicKey :: AffinePoint (FVar f)
-  , signature :: Signature f
-  , message :: Vector n (FVar f)
+  , signature :: Signature f (BoolVar f)
+  , message :: Array (FVar f)
   }
 
 -- | Pallas curve params (a=0, b=5) for `double` inside `scale`.
@@ -100,13 +99,12 @@ shiftConst =
 -- | (`generator :: PallasG` from `WeierstrassCurve`), matching production
 -- | `Curve.Checked.scale_known shifted Curve.one s_bits`.
 verifies
-  :: forall t m n
-   . Reflectable n Int
-  => PoseidonField Pallas.BaseField
+  :: forall t m
+   . PoseidonField Pallas.BaseField
   => CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t m
   => Vector 3 Pallas.BaseField
   -> ShiftedOps Pallas.BaseField t m
-  -> VerifyInput n Pallas.BaseField
+  -> VerifyInput Pallas.BaseField
   -> Snarky (KimchiConstraint Pallas.BaseField) t m (BoolVar Pallas.BaseField)
 verifies spongePrefix shifted { publicKey: pk, signature: Signature { r, s: sBits }, message } = do
   -- 1. e = Poseidon(message…, pk.x, pk.y, r) seeded with spongePrefix.

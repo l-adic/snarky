@@ -1,26 +1,26 @@
 module Snarky.Example.Circuits
   ( class AccountMapM
   , getAccountId
-  , transfer
+  , processTransaction
   ) where
 
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Array as Array
-import Data.MerkleTree.Hashable (class MerkleHashable)
+import Data.MerkleTree.Hashable (toHashInput)
 import Data.MerkleTree.Sized (Address)
+import Data.Newtype (un)
 import Data.Reflectable (class Reflectable)
-import Data.Vector as Vector
-import Poseidon (class PoseidonField)
-import Prim.Int (class Add)
-import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), F(..), FVar, Snarky, assertEq, assertEqual_, const_, exists, read, sum_, unpack_)
+import Data.Schnorr (Signature(..)) as Schnorr
+import Mina.ChainId (ChainId, signaturePrefix)
+import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, add_, assertEq, assert_, const_, exists, not_, read, unpack_)
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.RandomOracle (Digest)
+import Snarky.Circuit.Schnorr (Signature(..), verifies)
+import Snarky.Circuit.Schnorr.Shifted as Shifted
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits)
-import Snarky.Example.Types (Account(..), PublicKey(..), TokenAmount(..), Transaction)
+import Snarky.Curves.Vesta as Vesta
+import Snarky.Example.Types (Account(..), PublicKey(..), SignedTransaction(..), Transaction(..), Transfer(..), addWithOverflow, subWithUnderflow)
 import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
@@ -33,26 +33,6 @@ class Monad m <= AccountMapM m f (d :: Int) | m -> f d where
 
 --------------------------------------------------------------------------------
 
--- | Assert that a field element is a valid unsigned 64-bit integer (0 to 2^64 - 1).
--- | This unpacks the field element to its bit representation and checks that
--- | all bits above position 63 are zero.
-assertU64
-  :: forall f c t m n rest
-   . CircuitM f c t m
-  => FieldSizeInBits f n
-  => Add 64 rest n
-  => TokenAmount (FVar f)
-  -> Snarky c t m Unit
-assertU64 (TokenAmount v) = do
-  -- Unpack to n bits (255 for pasta curves)
-  allBits <- unpack_ v (Proxy @n)
-  -- Drop the lower 64 bits, keeping the higher (n - 64) bits
-  let higherBits = Vector.drop @64 allBits
-  -- Check that the sum of higher bits is zero (i.e., all are false)
-  -- Convert Vector to Array and coerce BoolVar to FVar for sum_
-  let higherBitsArray = Array.fromFoldable higherBits
-  assertEqual_ (sum_ (coerce higherBitsArray)) (const_ zero)
-
 -- | Transfer tokens between accounts.
 -- |
 -- | This circuit:
@@ -64,45 +44,60 @@ assertU64 (TokenAmount v) = do
 -- |
 -- | Note: Addresses are assigned sequentially in Mina (not derived from public keys).
 -- | The circuit verifies the account at each address has the expected public key.
-transfer
-  :: forall t m f @d n _k
+processTransaction
+  :: forall t m @d
    . Reflectable d Int
-  => PoseidonField f
-  => FieldSizeInBits f n
-  => Add 64 _k n
-  => AccountMapM m f d
-  => CMT.MerkleRequestM m f (Account (F f)) d (Account (FVar f))
-  => MerkleHashable (Account (FVar f)) (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
-  => CircuitM f (KimchiConstraint f) t m
-  => Digest (FVar f)
-  -> Transaction (FVar f)
-  -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
-transfer root { from, to, amount } = do
-  -- Look up addresses from public keys (via advice/witness)
-  -- The `exists` block witnesses the Address value as AddressVar circuit variables
-  fromAddr <- exists do
-    PublicKey (F fromPk) <- read from
-    lift $ getAccountId (PublicKey (F fromPk))
-  toAddr <- exists do
-    PublicKey (F toPk) <- read to
-    lift $ getAccountId (PublicKey (F toPk))
+  => AccountMapM m Vesta.ScalarField d
+  => CMT.MerkleRequestM m Vesta.ScalarField (Account (F Vesta.ScalarField)) d (Account (FVar Vesta.ScalarField))
+  => CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
+  => ChainId
+  -> Digest (FVar Vesta.ScalarField)
+  -> SignedTransaction (FVar Vesta.ScalarField)
+  -> Snarky (KimchiConstraint Vesta.ScalarField) t m (Digest (FVar Vesta.ScalarField))
+processTransaction chainId root (SignedTransaction { signature, transaction }) = do
+  let
+    Transaction { nonce, transfer: Transfer { from, to, amount } } = transaction
+    Schnorr.Signature { r, s } = signature
+  -- Verify the sender's signature over the transaction in-circuit. The
+  -- pure signature carries `s` as a field; unpack it into the 255-bit
+  -- form the circuit verifier consumes.
+
+  signatureVerifies <- do
+    sBits <- unpack_ s (Proxy @255)
+    scalarOps <- Shifted.pallasScalarOps
+    verifies (signaturePrefix chainId) scalarOps
+      { publicKey: un PublicKey from
+      , signature: Signature { r, s: sBits }
+      , message: toHashInput transaction
+      }
+  assert_ signatureVerifies
 
   -- Debit sender: verify ownership and subtract amount
-  { root: root' } <- CMT.fetchAndUpdate fromAddr root \(Account acc) -> do
-    -- Verify sender owns this account
-    assertEq acc.publicKey from
-    -- Debit the amount
-    newBalance <- pure acc.tokenBalance - pure amount
-    assertU64 newBalance
-    pure $ Account acc { tokenBalance = newBalance }
+  { root: root' } <- do
+    fromAddr <- exists do
+      fromPk <- read from
+      lift $ getAccountId fromPk
+    CMT.fetchAndUpdate fromAddr root \(Account acc) -> do
+      -- Verify sender owns this account
+      assertEq acc.publicKey from
+      assertEq acc.nonce nonce
+      -- Debit the amount
+      { result: newBalance, underflow } <- acc.tokenBalance `subWithUnderflow` amount
+      assert_ (not_ underflow)
+      pure $ Account acc { tokenBalance = newBalance, nonce = add_ nonce (const_ one) }
 
   -- Credit receiver: verify ownership and add amount
-  { root: root'' } <- CMT.fetchAndUpdate toAddr root' \(Account acc) -> do
-    -- Verify receiver owns this account
-    assertEq acc.publicKey to
-    -- Credit the amount
-    newBalance <- pure acc.tokenBalance + pure amount
-    assertU64 newBalance
-    pure $ Account acc { tokenBalance = newBalance }
+  { root: root'' } <- do
+    toAddr <- exists do
+      toPk <- read to
+      lift $ getAccountId toPk
+
+    CMT.fetchAndUpdate toAddr root' \(Account acc) -> do
+      -- Verify receiver owns this account
+      assertEq acc.publicKey to
+      -- Credit the amount
+      { result: newBalance, overflow } <- acc.tokenBalance `addWithOverflow` amount
+      assert_ (not_ overflow)
+      pure $ Account acc { tokenBalance = newBalance }
 
   pure root''

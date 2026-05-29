@@ -1,7 +1,6 @@
 package:
   name: pickles
   dependencies:
-    - argonaut-core
     - arrays
     - blake2
     - const
@@ -13,7 +12,6 @@ package:
     - exists
     - foldable-traversable
     - foreign
-    - foreign-object
     - functors
     - identity
     - integers
@@ -25,7 +23,6 @@ package:
     - node-buffer
     - node-fs
     - node-process
-    - nullable
     - ordered-collections
     - partial
     - pickles-linearization-types

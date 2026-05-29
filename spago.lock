@@ -40,25 +40,28 @@
         "path": "packages/example",
         "core": {
           "dependencies": [
-            "arrays",
             "curves",
+            "js-bigints",
             "maybe",
             "merkle-tree",
             "newtype",
-            "poseidon",
+            "partial",
             "prelude",
             "quickcheck",
             "random-oracle",
             "safe-coerce",
+            "schnorr",
             "snarky",
+            "snarky-curves",
             "snarky-kimchi",
             "transformers",
-            "vector-sized"
+            "tuples"
           ]
         },
         "test": {
           "dependencies": [
             "aff",
+            "arrays",
             "console",
             "effect",
             "exceptions",
@@ -68,12 +71,12 @@
             "js-bigints",
             "ordered-collections",
             "partial",
+            "poseidon",
             "refs",
             "snarky-test-utils",
             "spec",
             "spec-node",
-            "tailrec",
-            "tuples"
+            "tailrec"
           ]
         }
       },
@@ -129,7 +132,6 @@
         "path": "packages/pickles",
         "core": {
           "dependencies": [
-            "argonaut-core",
             "arrays",
             "blake2",
             "const",
@@ -141,7 +143,6 @@
             "exists",
             "foldable-traversable",
             "foreign",
-            "foreign-object",
             "functors",
             "identity",
             "integers",
@@ -153,7 +154,6 @@
             "node-buffer",
             "node-fs",
             "node-process",
-            "nullable",
             "ordered-collections",
             "partial",
             "pickles-linearization-types",
@@ -335,6 +335,7 @@
             "partial",
             "poseidon",
             "prelude",
+            "safe-coerce",
             "snarky",
             "snarky-kimchi",
             "tuples",
@@ -495,6 +496,7 @@
             "maybe",
             "mmorph",
             "newtype",
+            "node-buffer",
             "node-fs",
             "nonempty",
             "nullable",

@@ -1,24 +1,27 @@
 package:
   name: example
   dependencies:
-    - arrays
     - curves
+    - js-bigints
     - maybe
     - merkle-tree
     - newtype
-    - poseidon
+    - partial
     - prelude
     - quickcheck
     - random-oracle
     - safe-coerce
+    - schnorr
     - snarky
+    - snarky-curves
     - snarky-kimchi
     - transformers
-    - vector-sized
+    - tuples
   test:
     main: Test.Example.Main
     dependencies:
       - aff
+      - arrays
       - console
       - effect
       - exceptions
@@ -28,9 +31,9 @@ package:
       - js-bigints
       - ordered-collections
       - partial
+      - poseidon
       - refs
       - snarky-test-utils
       - spec
       - spec-node
       - tailrec
-      - tuples

@@ -16,7 +16,7 @@ import Prelude
 
 import Data.Array as Array
 import Data.Foldable (foldl)
-import Data.Reflectable (class Reflectable, reflectType)
+import Data.Reflectable (reflectType)
 import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt, pow)

@@ -34,7 +34,6 @@ import Snarky.Circuit.DSL.Bits (unpackPure)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Type.Proxy (Proxy(..))
-import Type.Proxy (Proxy(..))
 
 -- | LSB-first bit unpacking of a field element, padded to
 -- | `size_in_bits` (mirrors OCaml `Field.unpack`).

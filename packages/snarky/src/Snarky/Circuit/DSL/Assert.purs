@@ -31,7 +31,6 @@ import Prelude
 import Data.Array as Array
 import Data.Foldable (for_)
 import Data.Generic.Rep (class Generic, Argument(..), Constructor(..), NoArguments, Product(..), from)
-import Data.Maybe (Maybe(..))
 import Data.Symbol (class IsSymbol)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
@@ -49,7 +48,6 @@ import Snarky.Circuit.DSL.Field (equals_, sum_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, and_, inv_)
 import Snarky.Circuit.Types (Bool(..), BoolVar, FVar)
 import Snarky.Constraint.Basic (equal, square)
-import Snarky.Curves.Class (class PrimeField, fromInt)
 import Snarky.Curves.Class (class PrimeField, fromInt)
 import Type.Proxy (Proxy(..))
 
