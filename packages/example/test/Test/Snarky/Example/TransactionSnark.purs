@@ -4,6 +4,12 @@
 -- | as a pickles rule at the concrete app monad `TransferRefM`. That this
 -- | type-checks is the whole point of the StepProverT deletion: app
 -- | advice resolves on the bare app monad, no orphan, no `mkRuleEntryM`.
+-- |
+-- | TODO: the full single application program — both branches under one
+-- | `compileMulti` (base mpv=0 + merge mpv=2 Self), then prove a base
+-- | transaction and a merge of two base proofs, and `verifyBatch`. Wiring
+-- | mirrors TwoPhaseChain (2-branch compileMulti) × TreeProofReturn
+-- | (mpv=2 Self-recursive prover with BasePrev/InductivePrev).
 module Test.Snarky.Example.TransactionSnark
   ( spec
   ) where
@@ -31,13 +37,13 @@ spec =
       -- The mere fact that this elaborates proves app advice
       -- (AccountMapM/MerkleRequestM/TransactionM) discharges on the bare
       -- app monad — no StepProverT, no orphan, no mkRuleEntryM.
-      -- `prevsSpec = Unit` (mpv = 0, no prev slots) is pinned via the
+      -- `prevsSpec = Unit` (mpv=0, no prev slots) is pinned via the
       -- RuleEntry annotation so `BuildSlotVkSources` resolves.
       _entry :: RuleEntry Unit 0 1 1 Unit (Stmt (F SF)) _ _ Unit _ _ (TransferRefM D SF) <-
         liftEffect $ mkRuleEntry
           @0
           @Unit
-          @Unit
+          @(Stmt (F SF))
           @1
           @1
           @(TransferRefM D SF)
