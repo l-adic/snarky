@@ -29,7 +29,7 @@ import Prelude
 
 import Control.Monad.Trans.Class (lift)
 import Data.Reflectable (class Reflectable)
-import Data.Tuple (Tuple(..), fst, snd)
+import Data.Tuple (Tuple, fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector ((:<))
 import Data.Vector as Vector
@@ -43,7 +43,7 @@ import Snarky.Circuit.RandomOracle (Digest(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Example.Circuits (class AccountMapM, class TransactionM, getCurrentTransaction, processTransaction)
-import Snarky.Example.Types (Account, SignedTransaction)
+import Snarky.Example.Types (Account)
 
 type SF = Vesta.ScalarField
 

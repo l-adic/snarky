@@ -2,6 +2,7 @@ package:
   name: example
   dependencies:
     - curves
+    - effect
     - js-bigints
     - maybe
     - merkle-tree
@@ -18,6 +19,7 @@ package:
     - snarky-kimchi
     - transformers
     - tuples
+    - vector-sized
   test:
     main: Test.Example.Main
     dependencies:
@@ -25,6 +27,7 @@ package:
       - arrays
       - console
       - effect
+      - either
       - exceptions
       - foldable-traversable
       - gen
