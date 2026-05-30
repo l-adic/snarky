@@ -22,7 +22,6 @@ import Prelude
 
 import Colog (LoggerT, Message, logInfo, withSpan)
 import Control.Monad.Except (runExceptT)
-import Control.Monad.Trans.Class (lift) as MT
 import Data.Either (Either(..))
 import Data.Functor.Product (Product)
 import Data.Maybe (Maybe(..))
@@ -34,7 +33,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), Compiled, NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), Compiled, NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertEqual_, const_, exists, true_)
@@ -62,7 +61,7 @@ makeZeroRule
        Unit
        (F StepField)
        (FVar StepField)
-makeZeroRule self = do
+makeZeroRule _ self = do
   assertEqual_ self (const_ zero)
   pure
     { prevPublicInputs: Vector.nil
@@ -91,11 +90,8 @@ incrementRule
        Unit
        (F StepField)
        (FVar StepField)
-incrementRule self = do
-  prev <- exists $ MT.lift do
-    stmt /\ _ <- getPrevAppStates unit
-    let StatementIO { input } = stmt
-    pure input
+incrementRule getPrevStates self = do
+  prev <- exists $ getPrevStates <#> \(StatementIO { input } /\ _) -> input
   assertEqual_ self (CVar.add_ (const_ one) prev)
   pure
     { prevPublicInputs: prev :< Vector.nil

@@ -17,7 +17,6 @@ import Prelude
 
 import Colog (LoggerT, Message, withSpan)
 import Control.Monad.Except (runExceptT)
-import Control.Monad.Trans.Class (lift) as MT
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Tuple (fst)
@@ -29,7 +28,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Partial.Unsafe (unsafePartial)
-import Pickles (BranchProver(..), CompiledProof, NoSlots, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, SideLoaded, Slot, Slots1, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry)
+import Pickles (BranchProver(..), CompiledProof, NoSlots, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, SideLoaded, Slot, Slots1, StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry)
 import Pickles.Sideload (mkBundle) as Sideload
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
@@ -69,7 +68,7 @@ noRecursionInputRule
        Unit
        (F StepField)
        (FVar StepField)
-noRecursionInputRule self = do
+noRecursionInputRule _ self = do
   -- dummy_constraints body (= OCaml `dump_side_loaded_main.ml:49-73`).
   x <- exists (pure (F (fromInt 3) :: F StepField))
   -- Allocate `g` as WeierstrassAffinePoint so `exists` triggers
@@ -115,11 +114,8 @@ sideLoadedMainRule
        Unit
        (F StepField)
        (FVar StepField)
-sideLoadedMainRule self = do
-  prev <- exists $ MT.lift do
-    stmt /\ _ <- getPrevAppStates unit
-    let StatementIO { input } = stmt
-    pure input
+sideLoadedMainRule getPrevStates self = do
+  prev <- exists $ getPrevStates <#> \(StatementIO { input } /\ _) -> input
   isBaseCase <- equals_ (const_ zero) self
   selfCorrect <- equals_ (CVar.add_ (const_ one) prev) self
   assertAny_ [ selfCorrect, isBaseCase ]

@@ -40,7 +40,7 @@ import Test.Spec.Assertions (shouldEqual)
 -- | The NRR inductive rule — Output mode, N=0, returns `F zero`.
 -- | Reference: `mina/src/lib/crypto/pickles/test/test_no_sideloaded.ml:100-107`.
 nrrRule :: StepRule 0 Unit Unit Unit (F StepField) (FVar StepField) Unit Unit
-nrrRule _ = pure
+nrrRule _ _ = pure
   { prevPublicInputs: Vector.nil
   , proofMustVerify: Vector.nil
   , publicOutput: const_ zero
