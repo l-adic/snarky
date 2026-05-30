@@ -32,8 +32,8 @@ import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pallas as Pallas
-import Snarky.Example.Circuits (class AccountMapM)
-import Snarky.Example.Types (Account, PublicKey, TokenAmount)
+import Snarky.Example.Circuits (class AccountMapM, class TransactionM)
+import Snarky.Example.Types (Account, PublicKey, SignedTransaction, TokenAmount)
 
 --------------------------------------------------------------------------------
 -- Test monad types
@@ -45,6 +45,9 @@ type TransferState d f =
   , accountMap :: Map (PublicKey (F f)) (Sparse.Address d) -- public key -> address
   , privateKeys :: Map (PublicKey (F f)) Pallas.ScalarField -- public key -> signing key
   , nextAddress :: BigInt -- next address to assign
+  -- | The transaction currently being proven (set before each base
+  -- | prove). Served to the pickled base rule via `TransactionM`.
+  , currentTransaction :: Maybe (SignedTransaction (F f))
   }
 
 -- | Look up the address for a public key
@@ -116,6 +119,17 @@ instance Ord f => AccountMapM (TransferRefM d f) f d where
     case lookupAddress state pk of
       Just addr -> pure addr
       Nothing -> throwError $ error "getAccountId: public key not found in account map"
+
+-- | TransactionM instance — serves the `currentTransaction` set on the
+-- | state before each base prove. This (with AccountMapM + MerkleRequestM
+-- | above) is what lets the pickled base rule run at bare `TransferRefM`:
+-- | all three are ordinary non-orphan instances on the app monad.
+instance TransactionM (TransferRefM d f) f where
+  getCurrentTransaction = do
+    state <- getStateRef
+    case state.currentTransaction of
+      Just tx -> pure tx
+      Nothing -> throwError $ error "getCurrentTransaction: no current transaction set"
 
 --------------------------------------------------------------------------------
 -- Compile-time monad (throws on any request)

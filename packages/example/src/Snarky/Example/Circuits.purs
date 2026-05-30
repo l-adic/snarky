@@ -1,6 +1,8 @@
 module Snarky.Example.Circuits
   ( class AccountMapM
   , getAccountId
+  , class TransactionM
+  , getCurrentTransaction
   , processTransaction
   ) where
 
@@ -30,6 +32,14 @@ import Type.Proxy (Proxy(..))
 -- | during witness generation. The prover provides the mapping externally.
 class Monad m <= AccountMapM m f (d :: Int) | m -> f d where
   getAccountId :: PublicKey (F f) -> m (Address d)
+
+--------------------------------------------------------------------------------
+-- | Advice monad for supplying the transaction being proven as a private
+-- | witness. The pickled {source, target} statement does not carry the
+-- | `SignedTransaction`; the prover conjures it in-circuit via `exists`,
+-- | reading it from the witness monad's own instance.
+class Monad m <= TransactionM m f | m -> f where
+  getCurrentTransaction :: m (SignedTransaction (F f))
 
 --------------------------------------------------------------------------------
 

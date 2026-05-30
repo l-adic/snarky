@@ -7,7 +7,7 @@ import Prelude
 import Data.Array (length, (!!), (..))
 import Data.Foldable (foldl, for_)
 import Data.Map as Map
-import Data.Maybe (fromJust)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.MerkleTree.Sparse as Sparse
 import Data.Newtype (un)
 import Data.Reflectable (class Reflectable, reifyType)
@@ -200,6 +200,7 @@ genTreeWithAccounts = do
       , accountMap: Map.empty
       , privateKeys: Map.empty
       , nextAddress: zero
+      , currentTransaction: Nothing
       }
 
   pure $ foldl insertAccount initialSt accounts

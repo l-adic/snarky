@@ -7,6 +7,7 @@ package:
     - merkle-tree
     - newtype
     - partial
+    - pickles
     - prelude
     - quickcheck
     - random-oracle
