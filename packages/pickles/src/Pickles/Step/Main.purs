@@ -37,14 +37,16 @@ import Data.Array as Array
 import Data.Fin (getFinite)
 import Data.Foldable (foldM)
 import Data.FoldableWithIndex (forWithIndex_)
-import Data.Maybe (fromJust)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (over, unwrap)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
-import Effect.Class (class MonadEffect)
+import Effect.Class (class MonadEffect, liftEffect)
+import Effect.Ref (Ref)
+import Effect.Ref as Ref
 import Partial.Unsafe (unsafePartial)
 import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (DomainMode(..))
@@ -56,7 +58,7 @@ import Pickles.Sideload.Bundle (class HasSideLoadedVk, projectVk)
 import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
 import Pickles.Slots (Compiled, SideLoaded, Slot)
 import Pickles.Sponge (initialSpongeCircuit)
-import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM, getMessagesForNextWrapProof, getMessagesForNextWrapProofDummyHash, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex, setUserPublicOutputFields)
+import Pickles.Step.Advice (StepAdvice(..))
 import Pickles.Step.Dummy as Dummy
 import Pickles.Step.Slots (class StepSlotsCarrier, traverseStepSlotsAWithVk)
 import Pickles.Step.Types (BranchData(..), FopProofState(..), PerProofWitness(..), ProofState(..), UnfinalizedFieldCount, WrapProof(..))
@@ -68,7 +70,7 @@ import Prim.Boolean (False, True)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), assertAll_, const_, exists, false_, label, true_)
+import Snarky.Circuit.DSL (class CircuitM, AsProverT, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), assertAll_, const_, exists, false_, label, true_)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
 import Snarky.Circuit.DSL.SizedF (unsafeFromField) as SizedF
@@ -800,10 +802,6 @@ stepMain
   => Compare 0 nd LT
   => Reflectable nd Int
   => MonadEffect m
-  => StepWitnessM len StepIPARounds WrapIPARounds wrapVkChunks PallasG StepField m inputVal
-  => StepSlotsM prevsSpec StepIPARounds WrapIPARounds PallasG StepField m len carrier vkSourcesCarrier
-  => StepPrevValuesM m valCarrier
-  => StepUserOutputM m
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => CircuitType StepField prevInputVal prevInput
@@ -856,10 +854,15 @@ stepMain
   => Mul mpvMax UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
-  => (input -> Snarky (KimchiConstraint StepField) t m (RuleOutput len prevInput output))
+  => ( AsProverT StepField m valCarrier
+       -> input
+       -> Snarky (KimchiConstraint StepField) t m (RuleOutput len prevInput output)
+     )
   -> StepMainSrsData wrapVkChunks len nd blueprints
   -> AffinePoint StepField
   -> sideloadedVkCarrier
+  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
+  -> Ref (Maybe (Array (FVar StepField)))
   -> Snarky (KimchiConstraint StepField) t m (Vector outputSize (FVar StepField))
 stepMain
   rule
@@ -869,12 +872,14 @@ stepMain
   , perSlotVkBlueprints
   }
   dummySg
-  sideloadedVkCarrier = do
-  -- 1. exists: public input via Req.App_state.
-  let
-    requestInput :: m inputVal
-    requestInput = getStepPublicInput @len @StepIPARounds @WrapIPARounds @wrapVkChunks @PallasG unit
-  (publicInput) <- exists $ lift requestInput
+  sideloadedVkCarrier
+  advice
+  captureRef = do
+  -- 1. exists: public input via Req.App_state. Projected from the
+  -- advice value through the functor so the read defers to solve time
+  -- (compile discards the `exists` body, so the dummy advice is never
+  -- projected).
+  publicInput <- exists (pure advice <#> \(StepAdvice r) -> r.publicInput)
 
   -- 2. rule_main — wraps both the user's rule body AND the side-loaded VK
   -- exists. Mirrors OCaml's `with_label "rule_main" (fun () -> rule.main ...)`
@@ -885,7 +890,10 @@ stepMain
   { prevPublicInputs, proofMustVerify, publicOutput, perSlotVkSources } <-
     label "rule_main" do
       perSlotVkSources <- buildSlotVkSources @cell @prevsSpec @wrapVkChunks perSlotVkBlueprints sideloadedVkCarrier
-      result <- rule publicInput
+      -- The rule reads previous proofs' statements through this deferred
+      -- getter (projected from advice; forced only inside the rule's own
+      -- `exists` bodies, so compile never touches the dummy advice).
+      result <- rule (pure advice <#> \(StepAdvice r) -> r.prevAppStates) publicInput
       pure
         { prevPublicInputs: result.prevPublicInputs
         , proofMustVerify: result.proofMustVerify
@@ -899,18 +907,15 @@ stepMain
     hashAppFields = publicInputFields <> publicOutputFields
 
   -- Capture the rule's user `publicOutput` FVars so the prover can
-  -- evaluate them post-solve. Dispatched through the same `exists +
-  -- m`-action pattern as the other advice methods, mirroring how
-  -- OCaml sends `Req.Return_value` from inside an `exists` block
-  -- (mina/src/lib/crypto/pickles/step.ml:896-898). At compile time
-  -- `exists` skips the witness body so the `Effect` `throw` instance
-  -- never fires; at solve time the `StepProverT` instance writes to
-  -- its `StepProverCapture` State slot, which `stepSolveAndProve`
-  -- reads after the solver completes. The `exists` allocates a fresh
-  -- `Unit` var (`sizeInFields = 0`, no actual circuit slot
-  -- allocated), so this introduces no constraints.
+  -- evaluate them post-solve. Written to `captureRef` from inside an
+  -- `exists` body (OCaml's `Req.Return_value`,
+  -- mina/src/lib/crypto/pickles/step.ml:896-898). At compile time
+  -- `exists` skips the witness body so the write never fires; at solve
+  -- time `stepSolveAndProve` reads the Ref after the solver completes.
+  -- The `exists` allocates a fresh `Unit` var (`sizeInFields = 0`, no
+  -- actual circuit slot allocated), so this introduces no constraints.
   _ :: Unit <- exists $ lift do
-    setUserPublicOutputFields publicOutputFields
+    liftEffect (Ref.write (Just publicOutputFields) captureRef)
     pure unit
 
   -- 3. exists: SHARED VK via Req.Wrap_index.
@@ -924,9 +929,7 @@ stepMain
   -- commitments (= `dlog_plonk_index`) once, NOT per-slot.
   (VerificationKey sharedVkRec :: VerificationKey wrapVkChunks (WeierstrassAffinePoint PallasG (FVar StepField))) <-
     label "exists_wrap_index"
-      $ exists
-      $ lift
-      $ getWrapVerifierIndex @len @StepIPARounds @WrapIPARounds @wrapVkChunks @PallasG unit
+      $ exists (pure advice <#> \(StepAdvice r) -> r.wrapVerifierIndex)
   let
     vk =
       { sigma: Vector.take @6 sharedVkRec.sigma
@@ -939,15 +942,11 @@ stepMain
   --    spec-indexed variant. Each slot of the carrier holds a
   --    `StepSlot n_i ds dw …` typed with its own per-slot n_i.
   slotsCarrier <- label "exists_prevs"
-    $ exists
-    $ lift
-    $ getStepSlotsCarrier @prevsSpec @StepIPARounds @WrapIPARounds @PallasG unit
+    $ exists (pure advice <#> \(StepAdvice r) -> r.perProofSlotsCarrier)
 
   -- 5. exists: unfinalized proofs (uniform Vector len).
   rawUnfinalizedProofs <- label "exists_unfinalized"
-    $ exists
-    $ lift
-    $ getStepUnfinalizedProofs @len @StepIPARounds @WrapIPARounds @wrapVkChunks @PallasG unit
+    $ exists (pure advice <#> \(StepAdvice r) -> r.publicUnfinalizedProofs)
   unfinalizedProofs <- traverse unpackUnfinalized rawUnfinalizedProofs
 
   -- 6. exists: messages_for_next_wrap_proof.
@@ -962,17 +961,9 @@ stepMain
   --    slots permutation-ties (no extra Generic gate). Total Var
   --    count is `len + mpvPad = mpvMax`, matching OCaml's single
   --    mpvMax allocation.
-  msgsWrapReal <- exists $ lift
-    $ getMessagesForNextWrapProof @len @StepIPARounds @WrapIPARounds @wrapVkChunks @PallasG unit
-  msgsWrapPadding <- exists $ lift do
-    dummyHash <- getMessagesForNextWrapProofDummyHash
-      @len
-      @StepIPARounds
-      @WrapIPARounds
-      @wrapVkChunks
-      @PallasG
-      unit
-    pure (Vector.replicate @mpvPad dummyHash)
+  msgsWrapReal <- exists (pure advice <#> \(StepAdvice r) -> r.messagesForNextWrapProof)
+  msgsWrapPadding <- exists
+    (pure advice <#> \(StepAdvice r) -> Vector.replicate @mpvPad r.messagesForNextWrapProofDummyHash)
   let
     msgsWrap :: Vector mpvMax (FVar StepField)
     msgsWrap = mpvFrontPadVec msgsWrapPadding msgsWrapReal

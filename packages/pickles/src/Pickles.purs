@@ -13,7 +13,6 @@ module Pickles
   , module Pickles.Slots
   , module Pickles.Wrap.Slots
   , module Pickles.Types
-  , module Pickles.Step.Advice
   , module Pickles.Prove.Step
   , module Pickles.Prove.Compile
   , module Pickles.Verify
@@ -21,10 +20,9 @@ module Pickles
 
 import Pickles.Field (StepField, WrapField)
 import Pickles.ProofsVerified (ProofsVerified(..))
-import Pickles.Prove.Compile (BranchProver(..), CompiledProof(..), PrevSlot(..), RuleEntry, RulesCons, RulesNil, SlotWrapKey(..), Tag(..), compileMulti, mkRuleEntry, mkRuleEntryM)
+import Pickles.Prove.Compile (BranchProver(..), CompiledProof(..), PrevSlot(..), RuleEntry, RulesCons, RulesNil, SlotWrapKey(..), Tag(..), compileMulti, mkRuleEntry)
 import Pickles.Prove.Step (StepRule)
 import Pickles.Slots (Compiled, SideLoaded, Slot, SlotKind)
-import Pickles.Step.Advice (getPrevAppStates)
 import Pickles.Types (PaddedLength, StatementIO(..), StepIPARounds, WrapIPARounds)
 import Pickles.Verify (VerifiableProof, Verifier, mkVerifier, toVerifiable, verify, verifyBatch, wrapPublicInputOf)
 import Pickles.Wrap.Slots (NoSlots, Slots1, Slots2)

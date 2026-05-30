@@ -1,281 +1,82 @@
--- | Advisory monad for the Step circuit's private witness data.
+-- | The Step circuit's private witness data ("advice").
 -- |
--- | In OCaml Pickles (requests.ml Step module), the Step circuit uses 9
--- | request types. The types and usage are derived from:
--- |   - mina/src/lib/pickles/requests.ml (Step module, lines 120-141)
--- |   - mina/src/lib/pickles/step_main.ml (lines 281-374, exists calls)
--- |   - mina/src/lib/pickles/per_proof_witness.ml (Proof_with_datas type)
+-- | In OCaml Pickles (`requests.ml` Step module) the Step circuit pulls
+-- | this data via `exists ~request:(Req…)` answered by a handler stack.
+-- | The PureScript port models it as a plain record (`StepAdvice`)
+-- | computed by the prover (`buildStepAdvice`) and passed by value into
+-- | `stepMain`, which projects each field inside an `exists` body. There
+-- | is no bespoke prover transformer and no advice typeclass on the
+-- | witness monad — the witness monad is the caller's own `m`.
 -- |
--- | Request inventory:
--- |
--- |   Req.App_state : statement
--- |     The application-specific input (e.g., Schnorr verification data).
--- |     step_main.ml:281: `exists input_typ ~request:(fun () -> Req.App_state)`
--- |
--- |   Req.Compute_prev_proof_parts : previous_proof_statements -> unit Promise.t
--- |     Triggers async pre-computation of previous proof data before the
--- |     prover requests it. step_main.ml:306: async unit request.
--- |
--- |   Req.Proof_with_datas : Per_proof_witness.Constant.No_app_state.t (per proof)
--- |     The main per-proof witness. Contains (per_proof_witness.ml:52-95):
--- |       - wrap_proof: polynomial commitments, evaluations, opening proof
--- |       - proof_state: deferred_values, sponge_digest, messages_for_next_wrap_proof
--- |       - prev_proof_evals: All_evals from the inner step proof
--- |       - prev_challenges: IPA challenges from each previously verified proof
--- |       - prev_challenge_polynomial_commitments: sg points for each previous proof
--- |     step_main.ml:358: `exists ... ~request:(fun () -> Req.Proof_with_datas)`
--- |
--- |   Req.Wrap_index : Plonk_verification_key_evals.t
--- |     Verification key polynomial commitments for the Wrap circuit being verified.
--- |     step_main.ml:354: `exists ... ~request:(fun () -> Req.Wrap_index)`
--- |
--- |   Req.Unfinalized_proofs : (Unfinalized.t, proofs_verified) Vector.t
--- |     Deferred values + shouldFinalize for each previous proof.
--- |     step_main.ml:367: `exists ... ~request:(fun () -> Req.Unfinalized_proofs)`
--- |
--- |   Req.Messages_for_next_wrap_proof : (Digest.t, max_proofs_verified) Vector.t
--- |     Digests for the next Wrap proof (hash of bp challenges + sg).
--- |     step_main.ml:370: `exists ... ~request:(fun () -> Req.Messages_for_next_wrap_proof)`
--- |
--- |   Req.Wrap_domain_indices : (Proofs_verified.t, proofs_verified) Vector.t
--- |     Domain size selection for each wrapped proof.
--- |     step_main.ml:374: `exists ... ~request:(fun () -> Req.Wrap_domain_indices)`
--- |
--- |   Req.Return_value : return_value -> unit
--- |     Prover-side extraction of the application's return value.
--- |     step_main.ml:293: `exists Typ.unit ~request:...`
--- |
--- |   Req.Auxiliary_value : auxiliary_value -> unit
--- |     Prover-side extraction of auxiliary (private) output.
--- |     step_main.ml:298: `exists Typ.unit ~request:...`
--- |
--- | CURRENT STATUS:
--- |   Our getProofWitnesses provides a subset of Proof_with_datas — just the
--- |   polynomial evaluations and domain values needed by finalizeOtherProof.
--- |   The remaining fields (wrap_proof, proof_state, prev_challenges, etc.)
--- |   are not yet part of our circuit.
+-- | Request → field inventory (step_main.ml):
+-- |   Req.App_state                    → publicInput
+-- |   Req.Proof_with_datas             → perProofSlotsCarrier
+-- |   Req.Wrap_index                   → wrapVerifierIndex
+-- |   Req.Unfinalized_proofs           → publicUnfinalizedProofs
+-- |   Req.Messages_for_next_wrap_proof → messagesForNextWrapProof (+ dummy hash for padding)
+-- |   previous_proof_statements        → prevAppStates
+-- |   per-prove ~handler                → sideloadedVKs
+-- | plus `kimchiPrevChallenges` (threaded to the kimchi prover).
 module Pickles.Step.Advice
-  ( class StepWitnessM
-  , getMessagesForNextWrapProof
-  , getMessagesForNextWrapProofDummyHash
-  , getWrapVerifierIndex
-  , getStepPublicInput
-  , getStepUnfinalizedProofs
-  -- Parallel v2 class: provides the spec-indexed per-slot carrier.
-  , class StepSlotsM
-  , getStepSlotsCarrier
-  -- Prev-statement values for the rule body's `exists` calls.
-  , class StepPrevValuesM
-  , getPrevAppStates
-  -- Capture the rule's user `publicOutput` FVars so the prover can
-  -- evaluate them post-solve against the assignments map.
-  , class StepUserOutputM
-  , setUserPublicOutputFields
+  ( StepAdvice(..)
   ) where
 
 import Prelude
 
-import Data.Reflectable (class Reflectable)
+import Data.Newtype (class Newtype)
 import Data.Vector (Vector)
-import Effect (Effect)
-import Effect.Exception (throw)
-import Pickles.Field (StepField)
-import Pickles.Step.Slots (class StepSlotsCarrier)
+import Pickles.Field (StepField, WrapField)
 import Pickles.Types (PerProofUnfinalized)
 import Pickles.VerificationKey (VerificationKey)
-import Snarky.Circuit.DSL (F, FVar)
-import Snarky.Curves.Class (class WeierstrassCurve)
+import Snarky.Circuit.DSL (F)
+import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (WeierstrassAffinePoint)
 import Snarky.Types.Shifted (SplitField, Type2)
 
--- | Advisory monad for the Step circuit.
--- |
--- | Parameters:
--- | - `n`: Number of previous proofs being verified (max_proofs_verified)
--- | - `ds`: IPA rounds for the inner Step proof (= StepIPARounds = 16)
--- | - `dw`: IPA rounds for the Wrap proof being verified (= WrapIPARounds = 15)
--- | - `g`: Commitment curve of the Wrap proof being verified (= PallasG for Step)
--- | - `f`: Base field of `g` — uniquely determined via `WeierstrassCurve f g`
--- |        (= Pallas.BaseField = Vesta.ScalarField = StepField)
--- | - `m`: Base monad (Effect for compilation, StepProverM for proving)
--- |
--- | The curve `g` is the primary abstraction: it picks which Wrap proof's
--- | commitments the Step circuit verifies, and determines the circuit's
--- | native field via `WeierstrassCurve f g | g -> f`. Call sites concretize
--- | `g = PallasG` for the Pasta cycle.
--- | `wrapVkChunks` (Dim 2) is the wrap VK's own chunks count, carried
--- | by `getWrapVerifierIndex`'s `VerificationKey wrapVkChunks ...`
--- | return shape. Distinct from the wrap circuit's own `stepChunks`
--- | (Dim 1) and from per-slot side-loaded chunks (`nc`, Dim 3).
-class
-  ( Monad m
-  , WeierstrassCurve f g
-  ) <=
-  StepWitnessM (n :: Int) (ds :: Int) (dw :: Int) (wrapVkChunks :: Int) g f m inputVal
-  | g -> f
-  , m -> inputVal wrapVkChunks where
-  -- | Digests for the next Wrap proof (one per previous proof).
-  -- | In OCaml this is loaded via exists from Req.Messages_for_next_wrap_proof
-  -- | (step_main.ml:362-364), NOT computed in-circuit.
-  -- | Each digest is a hash of (sg, expanded bp_challenges) for that proof.
-  getMessagesForNextWrapProof :: Unit -> m (Vector n (F f))
+newtype StepAdvice
+  :: Type -> Int -> Int -> Int -> Type -> Int -> Type -> Type -> Type -> Type
+newtype StepAdvice prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier =
+  StepAdvice
+    { perProofSlotsCarrier :: carrier
+    , publicInput :: inputVal
+    , publicUnfinalizedProofs ::
+        Vector len
+          ( PerProofUnfinalized
+              dw
+              (Type2 (SplitField (F StepField) Boolean))
+              (F StepField)
+              Boolean
+          )
+    , messagesForNextWrapProof :: Vector len (F StepField)
+    -- | Dummy hash value used to pad `messagesForNextWrapProof` from
+    -- | `len` to `mpvMax` at solve time (OCaml
+    -- | `Reduced_messages_for_next_proof_over_same_field.Wrap.dummy.hash`,
+    -- | step_main.ml:368-370).
+    , messagesForNextWrapProofDummyHash :: F StepField
+    , wrapVerifierIndex ::
+        VerificationKey wrapVkChunks (WeierstrassAffinePoint PallasG (F StepField))
+    -- | Kimchi-level prev_challenges threaded to
+    -- | `pallasCreateProofWithPrev`. One entry per prev slot; each
+    -- | entry's `challenges` is sized by `ds` (step IPA rounds).
+    , kimchiPrevChallenges ::
+        Vector len
+          { sgX :: WrapField
+          , sgY :: WrapField
+          , challenges :: Vector ds StepField
+          }
+    -- | Heterogeneous per-slot prev statements (shape derived from
+    -- | `prevsSpec` by `Pickles.Step.Slots.SlotStatementsCarrier`).
+    -- | Mirrors OCaml's `previous_proof_statements`. The rule body reads
+    -- | slot-specific values out inside its `exists` calls via the
+    -- | deferred getter `stepMain` hands it.
+    , prevAppStates :: valCarrier
+    -- | Runtime side-loaded VK carrier (shape derived from `prevsSpec` by
+    -- | `Pickles.Sideload.Advice.SideloadedVKsCarrier`). PS analog of
+    -- | OCaml's per-prove `~handler`.
+    , sideloadedVKs :: vkCarrier
+    }
 
-  -- | Dummy hash value used to PRE-PAD `messages_for_next_wrap_proof`
-  -- | from the rule's actual prev count `len` up to `mpvMax`. Mirrors
-  -- | OCaml `step_main.ml:368-370` where the messages_for_next_wrap_proof
-  -- | vector is exists-allocated at full Max_proofs_verified.n size and
-  -- | the prover supplies dummy values for padding positions. We return
-  -- | a single field value here (not a vector) and let the caller
-  -- | replicate it `mpvPad` times via `Vector.replicate` — keeps the
-  -- | class's type axes minimal.
-  getMessagesForNextWrapProofDummyHash :: Unit -> m (F f)
-
-  -- | Wrap verifier index (VK) as circuit variables.
-  -- | In OCaml this enters via exists ~request:(Req.Wrap_index) (step_main.ml:345-348).
-  -- | Wrapped in `WeierstrassAffinePoint g` so the on-curve checks run during
-  -- | `exists`, matching OCaml's `Step_verifier.Inner_curve.typ`.
-  getWrapVerifierIndex :: Unit -> m (VerificationKey wrapVkChunks (WeierstrassAffinePoint g (F f)))
-
-  -- | The rule's public input. For OCaml Input-mode rules this is the
-  -- | application-specific `a_var` passed via `exists Req.App_state`
-  -- | (step_main.ml:275). The circuit-side `input` var type is paired with
-  -- | `inputVal` through the `CircuitType` constraint at `stepMain`.
-  getStepPublicInput :: Unit -> m inputVal
-
-  -- | The composed unfinalized proofs Vector — ONE allocation matching
-  -- | OCaml's `exists (Vector.typ' ...) ~request:Req.Unfinalized_proofs`.
-  getStepUnfinalizedProofs
-    :: Unit
-    -> m
-         ( Vector n
-             ( PerProofUnfinalized
-                 dw
-                 (Type2 (SplitField (F f) Boolean))
-                 (F f)
-                 Boolean
-             )
-         )
-
--- | Compilation instance: never called, exists only to satisfy the constraint
--- | during `compile` which uses Effect as the base monad.
-instance
-  ( WeierstrassCurve f g
-  , Reflectable n Int
-  ) =>
-  StepWitnessM n ds dw wrapVkChunks g f Effect inputVal where
-  getMessagesForNextWrapProof _ = throw "impossible! getMessagesForNextWrapProof called during compilation"
-  getMessagesForNextWrapProofDummyHash _ = throw "impossible! getMessagesForNextWrapProofDummyHash called during compilation"
-  getWrapVerifierIndex _ = throw "impossible! getWrapVerifierIndex called during compilation"
-  getStepPublicInput _ = throw "impossible! getStepPublicInput called during compilation"
-  getStepUnfinalizedProofs _ = throw "impossible! getStepUnfinalizedProofs called during compilation"
-
---------------------------------------------------------------------------------
--- Parallel v2 class: spec-indexed per-slot carrier
---
--- Sits alongside `StepWitnessM`. During the migration to spec-indexed
--- per-slot witnesses, callers can depend on this class to obtain the
--- `StepSlot`-tuple carrier (matching OCaml's heterogeneous
--- `H3.T(Per_proof_witness.No_app_state).t`) while still using the
--- existing `StepWitnessM` for the homogeneous methods they haven't
--- migrated yet. Once all callers migrate, `StepWitnessM`'s
--- `getStepPerProofWitnesses` can be dropped.
---------------------------------------------------------------------------------
-
--- | Produces a spec-indexed nested-tuple carrier where each slot holds
--- | one `StepSlot n_i ds dw …` with its OWN per-slot `n_i`. Matches
--- | OCaml's `exists (Prev_typ.f prev_proof_typs)` — an hlist-typed
--- | allocation per prev, each slot carrying a `Per_proof_witness`
--- | sized by that prev's own `max_proofs_verified`.
--- |
--- | The curve/field type params mirror `StepWitnessM`'s so an instance
--- | can be piggybacked on an existing `StepProverT`-like monad. The
--- | `prevsSpec` / `len` / `carrier` fundep from `StepSlotsCarrier` pins
--- | the carrier's concrete shape.
-class
-  ( Monad m
-  , WeierstrassCurve f g
-  , StepSlotsCarrier
-      prevsSpec
-      ds
-      dw
-      (F f)
-      (Type2 (SplitField (F f) Boolean))
-      Boolean
-      len
-      carrier
-      vkCarrier
-  ) <=
-  StepSlotsM prevsSpec (ds :: Int) (dw :: Int) g f m len carrier vkCarrier
-  | g -> f
-  , m -> prevsSpec
-  , prevsSpec ds dw g f -> len carrier vkCarrier
-  where
-  getStepSlotsCarrier :: Unit -> m carrier
-
--- | Compilation instance (Effect) — never actually called; stepMain's
--- | `exists $ lift (getStepSlotsCarrier unit)` discards the AsProverT
--- | body during circuit compilation.
-instance
-  ( WeierstrassCurve f g
-  , StepSlotsCarrier
-      prevsSpec
-      ds
-      dw
-      (F f)
-      (Type2 (SplitField (F f) Boolean))
-      Boolean
-      len
-      carrier
-      vkCarrier
-  ) =>
-  StepSlotsM prevsSpec ds dw g f Effect len carrier vkCarrier where
-  getStepSlotsCarrier _ = throw "impossible! getStepSlotsCarrier called during compilation"
-
---------------------------------------------------------------------------------
--- Prev-statement values for the rule body's `exists` calls.
---
--- Mirrors OCaml's `previous_proof_statements` argument to
--- `Inductive_rule.t.main`: the rule reads the prev's statement out of
--- this carrier (input for Input-mode prevs, output for Output-mode)
--- when allocating the prev's app-state circuit variable. Sourcing the
--- value via this method instead of a closure parameter is what lets
--- the same compiled rule produce different inductive iterations —
--- compile-time captures the rule once, prove-time supplies a fresh
--- carrier per `prover.step` invocation.
---
--- The `valCarrier` shape is determined by `prevsSpec` via
--- `Pickles.Step.Slots.SlotStatementsCarrier`. The compile-time `Effect`
--- instance throws — Snarky's compile mode discards the witness
--- computation, so `exists $ MT.lift $ getPrevAppStates …` is never
--- actually evaluated when building the constraint system.
---------------------------------------------------------------------------------
-
-class
-  ( Monad m
-  ) <=
-  StepPrevValuesM (m :: Type -> Type) valCarrier
-  | m -> valCarrier where
-  getPrevAppStates :: Unit -> m valCarrier
-
-instance StepPrevValuesM Effect valCarrier where
-  getPrevAppStates _ = throw "impossible! getPrevAppStates called during compilation"
-
--- | Side-channel for the rule's user-defined `publicOutput`. The step
--- | circuit's kimchi public-output vector is the digest+unfinalized
--- | payload — the user's `publicOutput :: outputVar` is hashed into
--- | the outer digest but never appears there directly. To recover its
--- | runtime value, the prover must capture the FVars and evaluate
--- | them against the post-solve assignments map. This class is the
--- | OCaml `Req.Return_value` analog (mina/src/lib/crypto/pickles/step.ml:692,
--- | 829, 896-898) — a write request alongside the existing `get*`
--- | reads, dispatched through the same `exists + m`-action pattern.
--- | At compile time `exists` skips the witness body so the `Effect`
--- | throw never fires; at solve time the `StepProverT` instance
--- | writes to its `StepProverCapture` State slot.
-class
-  Monad m <=
-  StepUserOutputM (m :: Type -> Type) where
-  setUserPublicOutputFields :: Array (FVar StepField) -> m Unit
-
-instance StepUserOutputM Effect where
-  setUserPublicOutputFields _ = throw "impossible! setUserPublicOutputFields called during compilation"
+derive instance
+  Newtype
+    (StepAdvice prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier)
+    _

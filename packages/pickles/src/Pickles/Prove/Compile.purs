@@ -24,7 +24,6 @@ module Pickles.Prove.Compile
   , RulesCons
   , RuleEntry
   , mkRuleEntry
-  , mkRuleEntryM
   , compileMulti
   -- Internal classes re-exported because instance resolution at user
   -- call sites needs them in scope. Not directly callable.
@@ -91,7 +90,6 @@ import Pickles.Prove.Step
   , StepProveContext
   , StepProveResult
   , StepRule
-  , StepRuleM
   , preComputeStepDomainLog2
   , stepCompile
   , stepSolveAndProve
@@ -3279,34 +3277,10 @@ mkRuleEntry
   -> slotVKs
   -> Effect (RuleEntry prevsSpec mpv nd wrapVkChunks valCarrier inputVal carrier outputSize slotVKs sideloadedVkCarrier blueprints m)
 mkRuleEntry rule slotVKs =
-  let
-    -- Pin the rank-2 `rule` to the concrete `StepRuleM` shape the step
-    -- functions now expect. The explicit annotation is load-bearing:
-    -- PureScript will not instantiate a rank-2 `StepRule` into a
-    -- `StepRuleM` argument position by itself (it fails to skolemize the
-    -- `forall t`), but binding it to a `StepRuleM`-annotated local forces
-    -- the right elaboration. Two bindings because compile-time and
-    -- prove-time use different side-loaded VK carriers
-    -- (`compileSideloadedVkCarrier` vs `sideloadedVkCarrier`).
-    ruleCompile
-      :: PProveStep.StepRuleM prevsSpec wrapVkChunks inputVal mpv carrier valCarrier compileSideloadedVkCarrier m
-           inputVar
-           outputVal
-           outputVar
-           prevInputVal
-           prevInputVar
-    ruleCompile = rule
-
-    ruleProve
-      :: PProveStep.StepRuleM prevsSpec wrapVkChunks inputVal mpv carrier valCarrier sideloadedVkCarrier m
-           inputVar
-           outputVal
-           outputVar
-           prevInputVal
-           prevInputVar
-    ruleProve = rule
-  in
-    pure $ RuleEntry
+  -- The rule already has the bare-`m` `StepRule` shape the step
+  -- functions expect — pass it straight through (compile and prove use
+  -- the same rule value).
+  pure $ RuleEntry
       { preComputeStepDomainLog2Fn: \ctx ->
           PProveStep.preComputeStepDomainLog2
             @prevsSpec
@@ -3324,7 +3298,7 @@ mkRuleEntry rule slotVKs =
             @slotVkChunks
             @wrapVkChunks
             ctx
-            ruleCompile
+            rule
       , stepCompileFn: \ctx ->
           PProveStep.stepCompile
             @prevsSpec
@@ -3342,7 +3316,7 @@ mkRuleEntry rule slotVKs =
             @slotVkChunks
             @wrapVkChunks
             ctx
-            ruleCompile
+            rule
       , stepProveFn: \ctx compileResult advice ->
           PProveStep.stepSolveAndProve
             @prevsSpec
@@ -3360,206 +3334,7 @@ mkRuleEntry rule slotVKs =
             @slotVkChunks
             @wrapVkChunks
             ctx
-            ruleProve
-            compileResult
-            advice
-      , slotVKs
-      }
-
--- | Like `mkRuleEntry`, but accepts an APPLICATION rule already at the
--- | concrete advice monad `StepProverT … m` (the `StepRuleM` form),
--- | polymorphic only over the side-loaded VK carrier so it can serve
--- | both the compile-time and prove-time carriers. Use this for rules
--- | whose bodies carry app-level advice constraints (e.g. `AccountMapM m`)
--- | that a rank-2 `StepRule` cannot express; the app discharges those at
--- | its own rule-definition site, so the value reaching here is the bare
--- | `StepRuleM` shape.
-mkRuleEntryM
-  :: forall @mpvMax @outputVal @prevInputVal @slotVkChunks @wrapVkChunks @m
-       prevsSpec mpv mpvPad nd ndPred outputSize valCarrier
-       wrapVkChunksPred wvcTCommLen wvcTCommLenPred wvcWCoeffN wvcIndexSigmaN
-       wvcChunkBases wvcNonSgBases wvcSg1 wvcSg2 wvcSg3 wvcSg4 wvcSg5
-       wvcTotalBases wvcTotalBasesPred
-       inputVal inputVar outputVar prevInputVar slotVKs
-       carrier carrierVar pad unfsTotal digestPlusUnfs
-       compileSideloadedVkCarrier sideloadedVkCarrier blueprints
-       vkSourcesCarrier
-   . CircuitGateConstructor StepField VestaG
-  => Reflectable wrapVkChunks Int
-  => Compare 0 wrapVkChunks LT
-  => Add 1 wrapVkChunksPred wrapVkChunks
-  => Mul 7 wrapVkChunks wvcTCommLen
-  => Add 1 wvcTCommLenPred wvcTCommLen
-  => Mul 15 wrapVkChunks wvcWCoeffN
-  => Mul 6 wrapVkChunks wvcIndexSigmaN
-  => Mul 44 wrapVkChunks wvcChunkBases
-  => Add 1 wvcChunkBases wvcNonSgBases
-  => Add wrapVkChunks 1 wvcSg1
-  => Add wvcSg1 wrapVkChunks wvcSg2
-  => Add wvcSg2 wvcIndexSigmaN wvcSg3
-  => Add wvcSg3 wvcWCoeffN wvcSg4
-  => Add wvcSg4 wvcWCoeffN wvcSg5
-  => Add wvcSg5 wvcIndexSigmaN wvcNonSgBases
-  => Add 2 wvcNonSgBases wvcTotalBases
-  => Add 1 wvcTotalBasesPred wvcTotalBases
-  => Reflectable wvcTCommLen Int
-  => Reflectable wvcNonSgBases Int
-  -- `vkSourcesCarrier` is uniquely determined by `prevsSpec` (see the
-  -- `prevsSpec -> vkCarrier` fundep on `BuildSlotVkSources`), so compile-
-  -- and prove-path constraints share one binder. The two BuildSlotVkSources
-  -- constraints differ only in their `cell` argument (compile-time VK
-  -- descriptor vs prove-time `SideloadBundle.Bundle`).
-  --
-  -- Compile-path carrier: cells = side-loaded VK descriptor. Synthesised
-  -- by `MkUnitVkCarrier` for the `getSideloadedVKsCarrier` Effect
-  -- instance inside `stepCompile` / `preComputeStepDomainLog2`.
-  -- `wrapVkChunks` is the compile-wide wrap-VK chunk count (Dim 2),
-  -- a free parameter (callers pin `@1`, protocol-guaranteed). Distinct
-  -- from `nc` (the chunks2/side-loaded slot's own count, Dim 3) and
-  -- the wrap circuit's `stepChunks` (Dim 1).
-  => BuildSlotVkSources (SLVK.VerificationKey slotVkChunks (F StepField) Boolean) prevsSpec wrapVkChunks mpv blueprints compileSideloadedVkCarrier vkSourcesCarrier
-  => MkUnitVkCarrier prevsSpec compileSideloadedVkCarrier
-  -- Prove-path carrier: cells = `SideloadBundle.Bundle`. Sourced from
-  -- `StepAdvice.sideloadedVKs` inside `stepSolveAndProve`.
-  => BuildSlotVkSources (SideloadBundle.Bundle slotVkChunks) prevsSpec wrapVkChunks mpv blueprints sideloadedVkCarrier vkSourcesCarrier
-  => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
-  => Reflectable mpv Int
-  => Reflectable pad Int
-  => Reflectable mpvMax Int
-  => Reflectable mpvPad Int
-  => Reflectable nd Int
-  => Reflectable slotVkChunks Int
-  => Add 1 ndPred nd
-  => Compare 0 nd LT
-  => Reflectable outputSize Int
-  => Add pad mpv PaddedLength
-  => MpvPadding.MpvPadding mpvPad mpv mpvMax
-  => Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
-  => Add unfsTotal 1 digestPlusUnfs
-  => Add digestPlusUnfs mpvMax outputSize
-  => CircuitType StepField inputVal inputVar
-  => CircuitType StepField outputVal outputVar
-  => CircuitType StepField prevInputVal prevInputVar
-  => CircuitType StepField carrier carrierVar
-  => CheckedType StepField (KimchiConstraint StepField) carrierVar
-  => StepSlotsCarrier
-       prevsSpec
-       StepIPARounds
-       WrapIPARounds
-       (F StepField)
-       (Type2 (SplitField (F StepField) Boolean))
-       Boolean
-       mpv
-       carrier
-       vkSourcesCarrier
-  => StepSlotsCarrier
-       prevsSpec
-       StepIPARounds
-       WrapIPARounds
-       (FVar StepField)
-       (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
-       (BoolVar StepField)
-       mpv
-       carrierVar
-       vkSourcesCarrier
-  => CheckedType StepField (KimchiConstraint StepField) inputVar
-  => SlotStatementsCarrier prevsSpec valCarrier
-  => Monad m
-  => MonadEffect m
-  => MonadRec m
-  => ( forall vkCarrier
-        . PProveStep.StepRuleM prevsSpec wrapVkChunks inputVal mpv carrier valCarrier vkCarrier m
-            inputVar
-            outputVal
-            outputVar
-            prevInputVal
-            prevInputVar
-     )
-  -> slotVKs
-  -> Effect (RuleEntry prevsSpec mpv nd wrapVkChunks valCarrier inputVal carrier outputSize slotVKs sideloadedVkCarrier blueprints m)
-mkRuleEntryM rule slotVKs =
-  let
-    -- Pin the rank-2 `rule` to the concrete `StepRuleM` shape the step
-    -- functions now expect. The explicit annotation is load-bearing:
-    -- PureScript will not instantiate a rank-2 `StepRule` into a
-    -- `StepRuleM` argument position by itself (it fails to skolemize the
-    -- `forall t`), but binding it to a `StepRuleM`-annotated local forces
-    -- the right elaboration. Two bindings because compile-time and
-    -- prove-time use different side-loaded VK carriers
-    -- (`compileSideloadedVkCarrier` vs `sideloadedVkCarrier`).
-    ruleCompile
-      :: PProveStep.StepRuleM prevsSpec wrapVkChunks inputVal mpv carrier valCarrier compileSideloadedVkCarrier m
-           inputVar
-           outputVal
-           outputVar
-           prevInputVal
-           prevInputVar
-    ruleCompile = rule
-
-    ruleProve
-      :: PProveStep.StepRuleM prevsSpec wrapVkChunks inputVal mpv carrier valCarrier sideloadedVkCarrier m
-           inputVar
-           outputVal
-           outputVar
-           prevInputVal
-           prevInputVar
-    ruleProve = rule
-  in
-    pure $ RuleEntry
-      { preComputeStepDomainLog2Fn: \ctx ->
-          PProveStep.preComputeStepDomainLog2
-            @prevsSpec
-            @outputSize
-            @valCarrier
-            @inputVal
-            @inputVar
-            @outputVal
-            @outputVar
-            @prevInputVal
-            @prevInputVar
-            @mpvMax
-            @mpvPad
-            @nd
-            @slotVkChunks
-            @wrapVkChunks
-            ctx
-            ruleCompile
-      , stepCompileFn: \ctx ->
-          PProveStep.stepCompile
-            @prevsSpec
-            @outputSize
-            @valCarrier
-            @inputVal
-            @inputVar
-            @outputVal
-            @outputVar
-            @prevInputVal
-            @prevInputVar
-            @mpvMax
-            @mpvPad
-            @nd
-            @slotVkChunks
-            @wrapVkChunks
-            ctx
-            ruleCompile
-      , stepProveFn: \ctx compileResult advice ->
-          PProveStep.stepSolveAndProve
-            @prevsSpec
-            @outputSize
-            @valCarrier
-            @inputVal
-            @inputVar
-            @outputVal
-            @outputVar
-            @prevInputVal
-            @prevInputVar
-            @mpvMax
-            @mpvPad
-            @nd
-            @slotVkChunks
-            @wrapVkChunks
-            ctx
-            ruleProve
+            rule
             compileResult
             advice
       , slotVKs
