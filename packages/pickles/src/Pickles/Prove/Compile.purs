@@ -3281,64 +3281,64 @@ mkRuleEntry rule slotVKs =
   -- functions expect — pass it straight through (compile and prove use
   -- the same rule value).
   pure $ RuleEntry
-      { preComputeStepDomainLog2Fn: \ctx ->
-          PProveStep.preComputeStepDomainLog2
-            @prevsSpec
-            @outputSize
-            @valCarrier
-            @inputVal
-            @inputVar
-            @outputVal
-            @outputVar
-            @prevInputVal
-            @prevInputVar
-            @mpvMax
-            @mpvPad
-            @nd
-            @slotVkChunks
-            @wrapVkChunks
-            ctx
-            rule
-      , stepCompileFn: \ctx ->
-          PProveStep.stepCompile
-            @prevsSpec
-            @outputSize
-            @valCarrier
-            @inputVal
-            @inputVar
-            @outputVal
-            @outputVar
-            @prevInputVal
-            @prevInputVar
-            @mpvMax
-            @mpvPad
-            @nd
-            @slotVkChunks
-            @wrapVkChunks
-            ctx
-            rule
-      , stepProveFn: \ctx compileResult advice ->
-          PProveStep.stepSolveAndProve
-            @prevsSpec
-            @outputSize
-            @valCarrier
-            @inputVal
-            @inputVar
-            @outputVal
-            @outputVar
-            @prevInputVal
-            @prevInputVar
-            @mpvMax
-            @mpvPad
-            @nd
-            @slotVkChunks
-            @wrapVkChunks
-            ctx
-            rule
-            compileResult
-            advice
-      , slotVKs
-      }
+    { preComputeStepDomainLog2Fn: \ctx ->
+        PProveStep.preComputeStepDomainLog2
+          @prevsSpec
+          @outputSize
+          @valCarrier
+          @inputVal
+          @inputVar
+          @outputVal
+          @outputVar
+          @prevInputVal
+          @prevInputVar
+          @mpvMax
+          @mpvPad
+          @nd
+          @slotVkChunks
+          @wrapVkChunks
+          ctx
+          rule
+    , stepCompileFn: \ctx ->
+        PProveStep.stepCompile
+          @prevsSpec
+          @outputSize
+          @valCarrier
+          @inputVal
+          @inputVar
+          @outputVal
+          @outputVar
+          @prevInputVal
+          @prevInputVar
+          @mpvMax
+          @mpvPad
+          @nd
+          @slotVkChunks
+          @wrapVkChunks
+          ctx
+          rule
+    , stepProveFn: \ctx compileResult advice ->
+        PProveStep.stepSolveAndProve
+          @prevsSpec
+          @outputSize
+          @valCarrier
+          @inputVal
+          @inputVar
+          @outputVal
+          @outputVar
+          @prevInputVal
+          @prevInputVar
+          @mpvMax
+          @mpvPad
+          @nd
+          @slotVkChunks
+          @wrapVkChunks
+          ctx
+          rule
+          compileResult
+          advice
+    , slotVKs
+    }
 
 -- Type synonym for `StepRule`, used to avoid an import-cycle in the
 -- `RuleEntry` field types.
