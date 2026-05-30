@@ -33,6 +33,7 @@ module Pickles.Prove.Step
   , extractWrapVKForStepHash
   , dummyWrapTockPublicInput
   , StepRule
+  , StepRuleAt
   , StepCompileResult
   , StepProveResult
   , module Pickles.Step.Advice
@@ -1505,6 +1506,28 @@ type StepRule (n :: Int) valCarrier inputVal input outputVal output prevInputVal
   -> input
   -> Snarky (KimchiConstraint StepField) t m' (RuleOutput n prevInput output)
 
+-- | `StepRule` pinned to a specific witness monad `m` — the shape the
+-- | step runner functions and `mkRuleEntry` actually accept. A universal
+-- | `StepRule` value subsumes into this (`m' := m`).
+-- |
+-- | Application rules add their advice constraints (`MerkleRequestM m`,
+-- | `AccountMapM m`, `TransactionM m`, …) on top of this shape. Those
+-- | discharge at the concrete `m` the entry is built at (`mkRuleEntry @m`
+-- | with `m` = the app monad), where the app monad's own instances are in
+-- | scope — there is no rank-2 skolem to defeat them (which is exactly why
+-- | the runner rule param can no longer be universal in `m`).
+type StepRuleAt m (n :: Int) valCarrier inputVal input outputVal output prevInputVal prevInput =
+  forall t
+   . CircuitM StepField (KimchiConstraint StepField) t m
+  => MonadEffect m
+  => CircuitType StepField inputVal input
+  => CircuitType StepField outputVal output
+  => CircuitType StepField prevInputVal prevInput
+  => CheckedType StepField (KimchiConstraint StepField) input
+  => AsProverT StepField m valCarrier
+  -> input
+  -> Snarky (KimchiConstraint StepField) t m (RuleOutput n prevInput output)
+
 -- | Ambient data the step prover needs alongside the advice and rule.
 -- |
 -- | * `srsData` — `StepMainSrsData len` with per-slot FOP domain log2
@@ -1736,7 +1759,7 @@ stepCompile
   => MonadEffect m
   => MonadRec m
   => StepProveContext wrapVkChunks len nd blueprints
-  -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
+  -> StepRuleAt m len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> m StepCompileResult
 stepCompile ctx rule = do
   -- For compiled-only specs the side-loaded VK carrier is the all-Unit
@@ -1952,7 +1975,7 @@ preComputeStepDomainLog2
   => MonadEffect m
   => MonadRec m
   => StepProveContext wrapVkChunks len nd blueprints
-  -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
+  -> StepRuleAt m len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> m Int
 preComputeStepDomainLog2 ctx rule = do
   -- See `stepCompile` for why the rule runs in `StepProverT … m` with
@@ -2099,7 +2122,7 @@ stepSolveAndProve
   => MonadRec m
   => SlotStatementsCarrier prevsSpec valCarrier
   => StepProveContext wrapVkChunks len nd blueprints
-  -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
+  -> StepRuleAt m len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> StepCompileResult
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
   -> ExceptT EvaluationError m (StepProveResult outputSize)
