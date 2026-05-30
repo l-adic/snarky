@@ -21,8 +21,6 @@ module Pickles.Step.Advice
   ( StepAdvice(..)
   ) where
 
-import Prelude
-
 import Data.Newtype (class Newtype)
 import Data.Vector (Vector)
 import Pickles.Field (StepField, WrapField)

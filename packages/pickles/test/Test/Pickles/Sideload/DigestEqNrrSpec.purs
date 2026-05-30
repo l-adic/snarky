@@ -18,7 +18,6 @@ import Prelude
 import Colog (LoggerT, Message, withSpan)
 import Data.Maybe (Maybe(..))
 import Data.Tuple.Nested (tuple1)
-import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
