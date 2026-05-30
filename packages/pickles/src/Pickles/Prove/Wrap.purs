@@ -5,17 +5,11 @@
 -- | module provides the **effectful** glue that feeds `wrapMain`'s
 -- | `Req.*` advice during witness generation:
 -- |
--- | * `WrapAdvice` — a record holding all 8 advice pieces (one per
--- |   OCaml `Req.*` request) with concrete, already-computed values.
--- | * `WrapProverT` — a `ReaderT` transformer serving `WrapAdvice` to
--- |   the circuit body. Instances below implement `WrapWitnessM` so
--- |   the `wrapMain` circuit body can `ask` for each advice piece.
--- | * `runWrapProverT` — runner that supplies the advice and unwraps
--- |   to the base monad (`Effect`).
+-- | * `WrapAdvice` (re-exported from `Pickles.Wrap.Advice`) — a record
+-- |   holding all 8 advice pieces (one per OCaml `Req.*` request) with
+-- |   concrete, already-computed values, passed by value into `wrapMain`.
 module Pickles.Prove.Wrap
-  ( WrapAdvice
-  , WrapProverT(..)
-  , runWrapProverT
+  ( module Pickles.Wrap.Advice
   , BuildWrapAdviceInput
   , buildWrapAdvice
   , WrapProveContext
@@ -32,7 +26,6 @@ module Pickles.Prove.Wrap
 import Prelude
 
 import Control.Monad.Except (ExceptT, throwError)
-import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Control.Monad.Rec.Class (class MonadRec)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
@@ -42,7 +35,7 @@ import Data.Fin (unsafeFinite)
 import Data.Lazy as Lazy
 import Data.Map (Map)
 import Data.Maybe (Maybe(..))
-import Data.Newtype (class Newtype, over, un)
+import Data.Newtype (over, un)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.String (Pattern(..), Replacement(..))
 import Data.String as String
@@ -61,13 +54,14 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized, StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK, pallasVerifierIndexCommitments)
-import Pickles.Wrap.Advice (class WrapWitnessM)
+import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, wrapMain)
 import Pickles.Wrap.Slots (class PadSlots)
 import Pickles.Wrap.Types as Wrap
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
+import Unsafe.Coerce (unsafeCoerce)
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled, constraintsToArray)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
@@ -87,104 +81,6 @@ import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Type.Proxy (Proxy(..))
-
--- | Private witness data the wrap prover supplies to `wrapMain`. One
--- | field per `Req.*` request, in the same order `wrap_main.ml`
--- | consumes them.
--- |
--- | Type parameters mirror `WrapWitnessM`:
--- |
--- | * `mpv` — max_proofs_verified (varies per compile: N0, N1, or N2).
--- | * `slots` — the slot-list shape, a `Type -> Type` from
--- |   `Pickles.Wrap.Slots` (`NoSlots`, `Slots1 w`, or `Slots2 w0 w1`).
--- |
--- | The commitment curve is pinned to `VestaG` (the Step proof's
--- | commitment curve) and the field to `WrapField` (= `Vesta.BaseField`
--- | = the native field of the wrap circuit).
-type WrapAdvice (mpv :: Int) (stepChunks :: Int) (slots :: Type -> Type) =
-  { whichBranch :: F WrapField
-  , wrapProofState ::
-      Wrap.PrevProofState mpv (Type2 (F WrapField)) (F WrapField) Boolean
-  , stepAccs :: Vector mpv (WeierstrassAffinePoint VestaG (F WrapField))
-  , oldBpChals :: slots (Vector WrapIPARounds (F WrapField))
-  , evals :: Vector mpv (StepAllEvals (F WrapField))
-  , wrapDomainIndices :: Vector mpv (F WrapField)
-  , openingProof ::
-      WrapProofOpening
-        StepIPARounds
-        (WeierstrassAffinePoint VestaG (F WrapField))
-        (Type1 (F WrapField))
-  -- | `stepChunks` here is THIS compile's own num_chunks — the wrap is
-  -- | wrapping a step proof from the current compile, whose commitments
-  -- | are at the current compile's chunk count.
-  , messages :: WrapProofMessages stepChunks (WeierstrassAffinePoint VestaG (F WrapField))
-  }
-
--- | ReaderT transformer carrying a `WrapAdvice` over a base monad.
--- |
--- | At compile time the base monad is typically `Effect` (matching how
--- | `compile` and the witness-generation path work across the rest of
--- | the pickles package). The `branches` parameter is a phantom — it's
--- | only there so the `WrapWitnessM` instance can pin it for the
--- | caller; the ReaderT body never inspects it.
-newtype WrapProverT
-  :: Int
-  -> Int
-  -> Int
-  -> (Type -> Type)
-  -> (Type -> Type)
-  -> Type
-  -> Type
-newtype WrapProverT
-  branches
-  mpv
-  stepChunks
-  slots
-  m
-  a = WrapProverT (ReaderT (WrapAdvice mpv stepChunks slots) m a)
-
-derive instance Newtype (WrapProverT branches mpv stepChunks slots m a) _
-derive newtype instance Functor m => Functor (WrapProverT branches mpv stepChunks slots m)
-derive newtype instance Apply m => Apply (WrapProverT branches mpv stepChunks slots m)
-derive newtype instance Applicative m => Applicative (WrapProverT branches mpv stepChunks slots m)
-derive newtype instance Bind m => Bind (WrapProverT branches mpv stepChunks slots m)
-derive newtype instance Monad m => Monad (WrapProverT branches mpv stepChunks slots m)
-derive newtype instance MonadRec m => MonadRec (WrapProverT branches mpv stepChunks slots m)
-
--- | Supply the advice record and run the prover computation in the
--- | base monad.
-runWrapProverT
-  :: forall branches mpv stepChunks slots m a
-   . WrapAdvice mpv stepChunks slots
-  -> WrapProverT branches mpv stepChunks slots m a
-  -> m a
-runWrapProverT advice (WrapProverT m) = runReaderT m advice
-
--- | `WrapWitnessM` instance serving each advice piece from the
--- | reader. One method per `Req.*` request; all of them are plain
--- | record projections via `ask`.
-instance
-  ( Monad m
-  , Reflectable branches Int
-  , Reflectable mpv Int
-  , PadSlots slots mpv
-  ) =>
-  WrapWitnessM
-    branches
-    mpv
-    stepChunks
-    slots
-    VestaG
-    WrapField
-    (WrapProverT branches mpv stepChunks slots m) where
-  getWhichBranch _ = WrapProverT $ map _.whichBranch ask
-  getWrapProofState _ = WrapProverT $ map _.wrapProofState ask
-  getStepAccs _ = WrapProverT $ map _.stepAccs ask
-  getOldBulletproofChallenges _ = WrapProverT $ map _.oldBpChals ask
-  getEvals _ = WrapProverT $ map _.evals ask
-  getWrapDomainIndices _ = WrapProverT $ map _.wrapDomainIndices ask
-  getOpeningProof _ = WrapProverT $ map _.openingProof ask
-  getMessages _ = WrapProverT $ map _.messages ask
 
 --------------------------------------------------------------------------------
 -- Advice builder
@@ -363,16 +259,14 @@ buildWrapAdvice input =
 --
 -- Analog of OCaml `Wrap.wrap` (top-level entry point at `wrap.ml:279`).
 -- Mirrors the structure of the test harness's `createTestContext'`
--- but bound to `wrapMain`, serving advice through `WrapProverT`, and
--- using the production endo choice (`endoScalar @f' @f`) rather than
--- the constraint-only `endoBase @f @f'` path used in tests.
+-- but bound to `wrapMain`, passing the `WrapAdvice` record by value,
+-- and using the production endo choice (`endoScalar @f' @f`) rather
+-- than the constraint-only `endoBase @f @f'` path used in tests.
 --
--- The whole path threads through `WrapProverT branches MaxProofsVerified
--- slot0Width slot1Width m` for any `Monad m`. `compile`, `makeSolver`,
--- and `runSolverT` are all monad-polymorphic; the only thing the
--- monad needs to satisfy is `WrapWitnessM branches MaxProofsVerified
--- slot0Width slot1Width VestaG WrapField`, which our `WrapProverT`
--- instance provides for any base monad.
+-- The whole path runs `wrapMain` in the caller's bare monad `m`: there
+-- is no bespoke prover transformer. `compile`, `makeSolver`, and
+-- `runSolverT` are all monad-polymorphic; `wrapMain` reads each advice
+-- piece by projecting the `WrapAdvice` value inside an `exists` body.
 --
 -- On a solver failure (`EvaluationError`) we throw an `Error` so the
 -- driver's caller gets a standard exception instead of having to
@@ -461,10 +355,10 @@ bumpWrapCsCounter = do
   pure n
 
 -- | Compile phase of the wrap prover. Walks `wrapMain`'s circuit
--- | shape in `Effect`, which dispatches to the `WrapWitnessM Effect`
--- | instance — every advice method there throws. The advice values
--- | are never inspected during compile, so no caller placeholder is
--- | needed; anything that escapes the throw instance is a bug.
+-- | shape in `Effect` with a dummy `WrapAdvice` value. Every advice
+-- | read lives inside an `exists` body, which `compile` discards, so
+-- | the advice record is never projected — the dummy value is never
+-- | forced.
 wrapCompile
   :: forall @branches @slots @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
    . CircuitGateConstructor WrapField PallasG
@@ -500,12 +394,20 @@ wrapCompile
   => WrapCompileContext branches stepChunks
   -> Effect WrapCompileResult
 wrapCompile ctx = do
+  -- Run `wrapMain`'s circuit in the bare base monad (`Effect`) with a
+  -- dummy advice value. At compile every advice read lives inside an
+  -- `exists` body, which `compile` discards, so the advice record is
+  -- never projected — the `unsafeCoerce unit` bottom below is never
+  -- forced.
+  let
+    dummyAdvice :: WrapAdvice mpv stepChunks slots
+    dummyAdvice = unsafeCoerce unit
   builtState <-
     compile
       (Proxy @(Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean))
       (Proxy @Unit)
       (Proxy @(KimchiConstraint WrapField))
-      (wrapMain @branches @slots @stepChunks ctx.wrapMainConfig)
+      (\stmt -> wrapMain @branches @slots @stepChunks ctx.wrapMainConfig stmt dummyAdvice)
       (Kimchi.initialState :: CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField))
 
   let
@@ -605,14 +507,14 @@ wrapSolveAndProve ctx compileResult = do
   let
     rawSolver
       :: SolverT WrapField (KimchiConstraint WrapField)
-           (WrapProverT branches mpv stepChunks slots m)
+           m
            (Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean)
            Unit
     rawSolver =
       makeSolver' (emptyProverState { debug = ctx.debug }) (Proxy @(KimchiConstraint WrapField))
-        (wrapMain @branches @slots @stepChunks ctx.wrapMainConfig)
+        (\stmt -> wrapMain @branches @slots @stepChunks ctx.wrapMainConfig stmt ctx.advice)
 
-  eRes <- lift $ runWrapProverT ctx.advice (runSolverT rawSolver ctx.publicInput)
+  eRes <- lift $ runSolverT rawSolver ctx.publicInput
 
   case eRes of
     Left e -> throwError (WithContext "wrapProve solver" e)

@@ -66,7 +66,7 @@ import Pickles.Sponge (evalSpongeM, spongeFromConstants)
 import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK, chooseKey)
 import Pickles.Verify.Types (UnfinalizedProof)
-import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOldBulletproofChallenges, getOpeningProof, getStepAccs, getWhichBranch, getWrapDomainIndices, getWrapProofState)
+import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
 import Pickles.Wrap.Slots (class PadSlots, padAllSlots, slotWidthsOf)
@@ -377,7 +377,6 @@ wrapMain
   -- `Slots2 w0 w1` (mpv=2). The `Compare mpv 3 LT` constraint
   -- propagates into `wrapVerify`; today's pickles caps `mpv` at 2.
   => PadSlots slots mpv
-  => WrapWitnessM branches mpv stepChunks slots VestaG WrapField m
   => Reflectable stepChunks Int
   => Reflectable tCommLen Int
   => Reflectable nonSgBases Int
@@ -400,7 +399,7 @@ wrapMain
   => Add sg3 wCoeffN sg4
   => Add sg4 wCoeffN sg5
   => Add sg5 indexSigmaN nonSgBases
-  -- `exists` on the result of `getOldBulletproofChallenges` needs
+  -- `exists` on the `oldBpChals` advice field needs
   -- both `CircuitType` and `CheckedType` instances for the `slots`
   -- shape. They exist for concrete `Slots1` / `Slots2` via the
   -- `Product` / `Const Unit` instances in `Snarky.Circuit.Types`
@@ -423,8 +422,9 @@ wrapMain
   => Add 1 totalBasesPred totalBases
   => WrapMainConfig branches stepChunks
   -> WrapMainInputVar
+  -> WrapAdvice mpv stepChunks slots
   -> Snarky (KimchiConstraint WrapField) t m Unit
-wrapMain config (StatementPacked stmtR) = do
+wrapMain config (StatementPacked stmtR) advice = do
   let
     wrapEndo = let Curves.EndoScalar e = Curves.endoScalar @Pallas.BaseField @WrapField in e
     wrapIpaRounds = reflectType (Proxy @WrapIPARounds)
@@ -464,8 +464,8 @@ wrapMain config (StatementPacked stmtR) = do
       }
 
   -- 1. Req.Which_branch  (wrap_main.ml:223)
-  whichBranchField <- label "which-branch" $ exists $ lift $
-    getWhichBranch @branches @mpv @stepChunks @slots @VestaG unit
+  whichBranchField <- label "which-branch" $ exists $
+    pure advice <#> \r -> r.whichBranch
 
   -- 2. In-circuit derivation: one-hot vector, ones_vector, branch_data assert
   --    (wrap_main.ml:228-256)
@@ -527,8 +527,8 @@ wrapMain config (StatementPacked stmtR) = do
     assertEqual_ stmt.branchData packedBranchData
 
   -- 3. Req.Proof_state (wrap_main.ml:257-267)
-  PrevProofState pps <- label "proof-state" $ exists $ lift $
-    getWrapProofState @branches @mpv @stepChunks @slots @VestaG unit
+  PrevProofState pps <- label "proof-state" $ exists $
+    pure advice <#> \r -> r.wrapProofState
   let
     prevUnfinalized = pps.unfinalizedProofs
     prevMsgForNextStep = pps.messagesForNextStepProof
@@ -549,8 +549,8 @@ wrapMain config (StatementPacked stmtR) = do
       }
 
   -- 5. Req.Step_accs (wrap_main.ml:367-371)
-  stepAccs <- label "step-accs" $ exists $ lift $
-    getStepAccs @branches @mpv @stepChunks @slots @VestaG unit
+  stepAccs <- label "step-accs" $ exists $
+    pure advice <#> \r -> r.stepAccs
   let stepAccsAffine = map unwrapPt stepAccs
 
   -- 6. Req.Old_bulletproof_challenges (wrap_main.ml:372-404).
@@ -559,8 +559,8 @@ wrapMain config (StatementPacked stmtR) = do
   -- uniform `Vector mpv (Vector PaddedLength a)`, prepending the
   -- right number of dummy bp-challenge stacks per slot to mirror
   -- OCaml's `Wrap_hack.Checked.pad_challenges`.
-  slotsValue <- label "old-bp-chals" $ exists $ lift $
-    getOldBulletproofChallenges @branches @mpv @stepChunks @slots @VestaG unit
+  slotsValue <- label "old-bp-chals" $ exists $
+    pure advice <#> \r -> r.oldBpChals
   let
     dummyChallenge = map const_ dummyIpaChallenges.wrapExpanded
 
@@ -569,12 +569,12 @@ wrapMain config (StatementPacked stmtR) = do
     paddedChalsAll = padAllSlots dummyChallenge slotsValue
 
   -- 7. Req.Evals (wrap_main.ml:405-415)
-  rawEvals <- label "evals" $ exists $ lift $
-    getEvals @branches @mpv @stepChunks @slots @VestaG unit
+  rawEvals <- label "evals" $ exists $
+    pure advice <#> \r -> r.evals
 
   -- 8. Req.Wrap_domain_indices (wrap_main.ml:418-424)
-  wrapDomainIndices <- label "wrap-domain-indices" $ exists $ lift $
-    getWrapDomainIndices @branches @mpv @stepChunks @slots @VestaG unit
+  wrapDomainIndices <- label "wrap-domain-indices" $ exists $
+    pure advice <#> \r -> r.wrapDomainIndices
 
   -- 9. FOP loop (wrap_main.ml:435-487).
   --
@@ -691,8 +691,8 @@ wrapMain config (StatementPacked stmtR) = do
     assertEqual_ stmt.messagesForNextStepProof prevMsgForNextStep
 
   -- 11. Req.Openings_proof (wrap_main.ml:506-532)
-  WrapProofOpening openingProofRec <- label "openings-proof" $ exists $ lift $
-    getOpeningProof @branches @mpv @stepChunks @slots @VestaG unit
+  WrapProofOpening openingProofRec <- label "openings-proof" $ exists $
+    pure advice <#> \r -> r.openingProof
   let
     openingProof =
       { lr: map (\r -> { l: unwrapPt r.l, r: unwrapPt r.r }) openingProofRec.lr
@@ -703,8 +703,8 @@ wrapMain config (StatementPacked stmtR) = do
       }
 
   -- 12. Req.Messages (wrap_main.ml:533-541)
-  WrapProofMessages messagesRec <- label "messages" $ exists $ lift $
-    getMessages @branches @mpv @stepChunks @slots @VestaG unit
+  WrapProofMessages messagesRec <- label "messages" $ exists $
+    pure advice <#> \r -> r.messages
   let
     -- wComm/zComm carry chunks through; tComm flattens Vector 7 (ChunkedCommitment nc pt)
     -- to flat Vector tCommLen pt via Vector.concat (= 7 * stepChunks pieces).
@@ -907,7 +907,6 @@ wrapMainForPrevs
    . CircuitM WrapField (KimchiConstraint WrapField) t m
   => SlotsFromSpec prevsSpec slots
   => PadSlots slots mpv
-  => WrapWitnessM branches mpv stepChunks slots VestaG WrapField m
   => Reflectable stepChunks Int
   => Reflectable tCommLen Int
   => Reflectable nonSgBases Int
@@ -938,5 +937,6 @@ wrapMainForPrevs
   => Add 1 totalBasesPred totalBases
   => WrapMainConfig branches stepChunks
   -> WrapMainInputVar
+  -> WrapAdvice mpv stepChunks slots
   -> Snarky (KimchiConstraint WrapField) t m Unit
 wrapMainForPrevs = wrapMain @branches @slots @stepChunks

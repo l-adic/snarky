@@ -63,3 +63,22 @@ treeProofReturnRule getPrevStates _ = do
 4. Then example txn app: app advice resolves on bare AppM with a single `lift`; build base+merge rules (no StepRuleM).
 
 ## Node: `nvm use 23`. Type-check loop excludes other pkgs' test files.
+
+---
+
+# PART 2: same refactor for the WRAP side (WrapProverT → bare m)
+
+Mirror of the step refactor (committed `7491b691`). The wrap side is SIMPLER:
+WrapProverT is ReaderT-ONLY (no StateT) → NO capture Ref needed; the wrap
+circuit has NO user rule → NO getter arg. `WrapAdvice` is a plain RECORD
+(type synonym), so projection is `_.field` directly (no newtype unwrap).
+
+## Files
+- `Pickles.Prove.Wrap`: DELETE `WrapProverT` newtype + derives + `runWrapProverT` + the `WrapWitnessM` instance (lines ~130-187). `wrapCompile` + the wrap solve fn run `wrapMain` at bare `m` (no runWrapProverT; pass `advice :: WrapAdvice mpv stepChunks slots`). Keep the `WrapAdvice` record + `buildWrapAdvice` — but MOVE the `WrapAdvice` type synonym to a shared module (see cycle note).
+- `Pickles.Wrap.Main`: `wrapMain` drops `WrapWitnessM` constraint, gains a `WrapAdvice mpv stepChunks slots` param (place after config/statement). Each `exists $ lift $ getX @… unit` → `exists (pure advice <#> \r -> r.FIELD)`. Field map: getWhichBranch→whichBranch, getWrapProofState→wrapProofState, getStepAccs→stepAccs, getOldBulletproofChallenges→oldBpChals, getEvals→evals, getWrapDomainIndices→wrapDomainIndices, getOpeningProof→openingProof, getMessages→messages. `wrapMainForPrevs = wrapMain @… advice` (thread the arg; drop its WrapWitnessM constraint).
+- `Pickles.Wrap.Advice`: DELETE the `WrapWitnessM` class + Effect throw instance(s); becomes home of the `WrapAdvice` record (moved from Prove.Wrap to break the cycle — Prove.Wrap imports wrapMain from Wrap.Main, so Wrap.Main can't import WrapAdvice back from Prove.Wrap). Prove.Wrap re-exports it via `module Pickles.Wrap.Advice`.
+- `Compile.purs`: check for WrapProverT/runWrapProverT refs (likely none — wrap has no rule).
+
+## CYCLE: `WrapAdvice` must live in a module both `Wrap.Main` and `Prove.Wrap` import → put it in `Pickles.Wrap.Advice` (exactly like StepAdvice→Pickles.Step.Advice).
+
+## Validation: `spago build -p pickles` (strict, 0 warn) then SimpleChain prove+verify (cache off). Wrap circuit unchanged → byte-exact.
