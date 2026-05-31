@@ -12,6 +12,7 @@ import Test.Pickles.Prove.CompileValidation as CompileValidation
 import Test.Pickles.Prove.NoRecursionReturn as NoRecursionReturn
 import Test.Pickles.Prove.SideLoadedMain as SideLoadedMain
 import Test.Pickles.Prove.SimpleChain as SimpleChain
+import Test.Pickles.Prove.SimpleChainN2 as SimpleChainN2
 import Test.Pickles.Prove.TreeProofReturn as TreeProofReturn
 import Test.Pickles.Prove.TwoPhaseChain as TwoPhaseChain
 import Test.Pickles.SharedSrs (buildSharedSrs)
@@ -50,6 +51,7 @@ spec = beforeAll buildSharedSrs do
   NoRecursionReturn.spec
   Codecs.spec
   SimpleChain.spec
+  SimpleChainN2.spec
   Chunks2.spec
   Chunks4.spec
   SideLoadedMain.spec
