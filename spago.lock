@@ -216,6 +216,7 @@
             "poseidon",
             "prelude",
             "random-oracle",
+            "refs",
             "safe-coerce",
             "schnorr",
             "simple-json",
@@ -224,7 +225,6 @@
             "snarky-kimchi",
             "strings",
             "tailrec",
-            "transformers",
             "tuples",
             "unsafe-coerce",
             "vector-sized"

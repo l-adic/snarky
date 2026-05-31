@@ -21,12 +21,15 @@ import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCom
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn (StepMainAddOneReturnParams, compileStepMainAddOneReturn)
 import Pickles.Field (StepField, WrapField)
+import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
+import Pickles.Wrap.Slots (NoSlots)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 compileWrapMainAddOneReturn
   :: IvpWrapParams
@@ -51,8 +54,11 @@ compileWrapMainAddOneReturn { lagrangeAt, blindingH } stepParams = do
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
       }
   -- `slots` derived from `@Unit` via `SlotsFromSpec` funcdep.
+  let
+    dummyAdvice :: WrapAdvice 0 1 NoSlots
+    dummyAdvice = unsafeCoerce unit
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\stmt -> wrapMainForPrevs @1 @Unit @1 config stmt)
+    (\stmt -> wrapMainForPrevs @1 @Unit @1 config stmt dummyAdvice)
     Kimchi.initialState
   pure
     { stepCs: stepArt.stepCs

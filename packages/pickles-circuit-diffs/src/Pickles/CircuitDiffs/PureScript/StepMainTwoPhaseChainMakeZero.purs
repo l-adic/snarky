@@ -20,19 +20,23 @@ module Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero
 
 import Prelude
 
+import Data.Maybe (Maybe(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
+import Effect.Ref as Ref
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
+import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertEqual_, const_)
+import Snarky.Circuit.DSL (class CircuitM, AsProverT, F, FVar, Snarky, assertEqual_, const_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 type StepMainTwoPhaseChainMakeZeroParams =
   { lagrangeAt :: LagrangeBaseLookup 1 StepField
@@ -43,10 +47,11 @@ type StepMainTwoPhaseChainMakeZeroParams =
 makeZeroRule
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => FVar StepField
+  => AsProverT StepField m Unit
+  -> FVar StepField
   -> Snarky (KimchiConstraint StepField) t m
        (RuleOutput 0 Unit Unit)
-makeZeroRule appState = do
+makeZeroRule _ appState = do
   assertEqual_ appState (const_ zero)
   pure
     { prevPublicInputs: Vector.nil
@@ -56,7 +61,14 @@ makeZeroRule appState = do
 
 compileStepMainTwoPhaseChainMakeZero
   :: StepMainTwoPhaseChainMakeZeroParams -> Effect StepArtifact
-compileStepMainTwoPhaseChainMakeZero params =
+compileStepMainTwoPhaseChainMakeZero params = do
+  throwawayCaptureRef <- Ref.new Nothing
+  -- `carrier` (value-side per-proof witness carrier) is not determined
+  -- by `stepMain`'s var-side `StepSlotsCarrier` constraint; pin it here
+  -- (mpv=0 ⇒ empty `Unit` carrier).
+  let
+    dummyAdvice :: StepAdvice _ _ _ _ _ _ Unit _ _
+    dummyAdvice = unsafeCoerce unit
   -- mpvMax=1, mpvPad=1: rule has n=0 prevs but the wrap is mpv=N1,
   -- so step PI front-pads 1 dummy unfinalized_proof slot. Output
   -- size = 1*32 + 1 + 1 = 34. `stepMain` derives the front-padding
@@ -81,5 +93,7 @@ compileStepMainTwoPhaseChainMakeZero params =
           }
           dummyWrapSg
           unit
+          dummyAdvice
+          throwawayCaptureRef
       )
       Kimchi.initialState

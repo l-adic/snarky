@@ -27,13 +27,16 @@ import Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2 (StepMainSimpleChai
 import Pickles.Field (StepField, WrapField)
 import Pickles.Slots (Compiled, Slot)
 import Pickles.Types (StatementIO)
+import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
+import Pickles.Wrap.Slots (Slots2)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Circuit.DSL (F)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 compileWrapMainN2
   :: IvpWrapParams
@@ -58,6 +61,9 @@ compileWrapMainN2 { lagrangeAt, blindingH } stepParams = do
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
       }
   -- mpv=2, slots [2; 2]; derived from PrevsSpec via funcdep.
+  let
+    dummyAdvice :: WrapAdvice 2 1 (Slots2 2 2)
+    dummyAdvice = unsafeCoerce unit
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     ( \stmt ->
         wrapMainForPrevs @1
@@ -65,6 +71,7 @@ compileWrapMainN2 { lagrangeAt, blindingH } stepParams = do
           @1
           config
           stmt
+          dummyAdvice
     )
     Kimchi.initialState
   pure

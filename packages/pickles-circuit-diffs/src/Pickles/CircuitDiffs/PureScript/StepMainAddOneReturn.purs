@@ -1,7 +1,6 @@
 module Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn
   ( compileStepMainAddOneReturn
   , StepMainAddOneReturnParams
-  , class AddOneReturnAdvice
   ) where
 
 -- | step_main circuit for the Add_one_return rule.
@@ -24,48 +23,39 @@ module Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn
 
 import Prelude
 
+import Data.Maybe (Maybe(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
+import Effect.Ref as Ref
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
+import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, const_)
+import Snarky.Circuit.DSL (class CircuitM, AsProverT, F, FVar, Snarky, const_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 type StepMainAddOneReturnParams =
   { lagrangeAt :: LagrangeBaseLookup 1 StepField
   , blindingH :: AffinePoint (F StepField)
   }
 
--- | Application-specific advice for the Add_one_return rule.
--- |
--- | The rule allocates NO witness values — `output = 1 + input` is a
--- | pure in-circuit computation. The class exists only so the stepMain
--- | constraint stays uniform with the other rules; no methods to
--- | implement. The `Effect` instance is automatically satisfied (empty).
-class Monad m <= AddOneReturnAdvice m
-
--- | Compilation instance: no-op (class has no methods). Kept as an
--- | explicit instance for symmetry with SimpleChainAdvice and to make
--- | it clear the rule requires no advice plumbing at all.
-instance (Monad m) => AddOneReturnAdvice m
-
 -- | Add_one_return rule: `output = 1 + input`, N = 0 prev proofs.
 -- | Reference: test_no_sideloaded.ml:440-452
 addOneReturnRule
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => AddOneReturnAdvice m
-  => FVar StepField
+  => AsProverT StepField m Unit
+  -> FVar StepField
   -> Snarky (KimchiConstraint StepField) t m (RuleOutput 0 Unit (FVar StepField))
-addOneReturnRule x = pure
+addOneReturnRule _ x = pure
   { prevPublicInputs: Vector.nil
   , proofMustVerify: Vector.nil
   , publicOutput: CVar.add_ (const_ one) x
@@ -73,7 +63,14 @@ addOneReturnRule x = pure
 
 compileStepMainAddOneReturn
   :: StepMainAddOneReturnParams -> Effect StepArtifact
-compileStepMainAddOneReturn params =
+compileStepMainAddOneReturn params = do
+  throwawayCaptureRef <- Ref.new Nothing
+  -- `carrier` (value-side per-proof witness carrier) is not determined
+  -- by `stepMain`'s var-side `StepSlotsCarrier` constraint; pin it here
+  -- (mpv=0 ⇒ empty `Unit` carrier).
+  let
+    dummyAdvice :: StepAdvice _ _ _ _ _ _ Unit _ _
+    dummyAdvice = unsafeCoerce unit
   mkStepArtifact <$>
     compile (Proxy @Unit) (Proxy @(Vector 1 (F StepField))) (Proxy @(KimchiConstraint StepField))
       -- N=0: output size = 33*0 + 1 = 1 (just the msgForNextStep digest —
@@ -93,5 +90,7 @@ compileStepMainAddOneReturn params =
           -- Side-loaded VK carrier: no side-loaded
           -- slots in Unit, so the carrier is `Unit`.
           unit
+          dummyAdvice
+          throwawayCaptureRef
       )
       Kimchi.initialState

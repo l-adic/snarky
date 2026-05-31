@@ -1,7 +1,6 @@
 module Pickles.CircuitDiffs.PureScript.StepMainSideLoadedChild
   ( compileStepMainSideLoadedChild
   , StepMainSideLoadedChildParams
-  , class SideLoadedChildAdvice
   ) where
 
 -- | step_main circuit for the side-loaded CHILD (No_recursion + dummy_constraints).
@@ -24,15 +23,17 @@ module Pickles.CircuitDiffs.PureScript.StepMainSideLoadedChild
 
 import Prelude
 
-import Data.Maybe (fromJust)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Vector as Vector
 import Effect (Effect)
+import Effect.Ref as Ref
 import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.Field (StepField)
+import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, assertEqual_, const_, exists)
+import Snarky.Circuit.DSL (class CircuitM, AsProverT, F(..), FVar, SizedF, Snarky, assertEqual_, const_, exists)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldChecked')
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1)
@@ -48,15 +49,6 @@ import Unsafe.Coerce (unsafeCoerce)
 type StepMainSideLoadedChildParams =
   { blindingH :: AffinePoint (F StepField)
   }
-
--- | Application-specific advice for the side-loaded child rule.
--- |
--- | The rule allocates two witnesses inside `dummy_constraints` (a
--- | scalar `x` and the inner-curve generator `g`); these are pure
--- | constants so the class is empty.
-class Monad m <= SideLoadedChildAdvice m
-
-instance (Monad m) => SideLoadedChildAdvice m
 
 -- | Pallas generator's affine coordinates as an `F StepField` pair.
 -- | Mirrors OCaml `Backend.Tick.Inner_curve.(to_affine_exn one)` (the
@@ -77,11 +69,11 @@ innerCurveGen =
 sideLoadedChildRule
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => SideLoadedChildAdvice m
-  => FVar StepField
+  => AsProverT StepField m Unit
+  -> FVar StepField
   -> Snarky (KimchiConstraint StepField) t m
        (RuleOutput 0 Unit Unit)
-sideLoadedChildRule appState = do
+sideLoadedChildRule _ appState = do
   -- dummy_constraints body — translation of OCaml
   -- dump_side_loaded_main.ml:49-73.
   -- (1) `let x = exists StepField.typ ~compute:(fun () -> 3)`
@@ -118,7 +110,14 @@ sideLoadedChildRule appState = do
 
 compileStepMainSideLoadedChild
   :: StepMainSideLoadedChildParams -> Effect StepArtifact
-compileStepMainSideLoadedChild params =
+compileStepMainSideLoadedChild params = do
+  throwawayCaptureRef <- Ref.new Nothing
+  -- `carrier` (value-side per-proof witness carrier) is not determined
+  -- by `stepMain`'s var-side `StepSlotsCarrier` constraint; pin it here
+  -- (mpv=0 ⇒ empty `Unit` carrier).
+  let
+    dummyAdvice :: StepAdvice _ _ _ _ _ _ Unit _ _
+    dummyAdvice = unsafeCoerce unit
   mkStepArtifact <$>
     compile (Proxy @Unit) (Proxy @(Vector.Vector 1 (F StepField)))
       (Proxy @(KimchiConstraint StepField))
@@ -148,5 +147,7 @@ compileStepMainSideLoadedChild params =
           }
           dummyWrapSg
           unit
+          dummyAdvice
+          throwawayCaptureRef
       )
       Kimchi.initialState

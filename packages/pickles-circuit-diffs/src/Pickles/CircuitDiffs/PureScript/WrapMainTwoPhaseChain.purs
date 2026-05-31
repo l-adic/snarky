@@ -33,6 +33,7 @@ import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement (StepMainT
 import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero (StepMainTwoPhaseChainMakeZeroParams, compileStepMainTwoPhaseChainMakeZero)
 import Pickles.Field (StepField, WrapField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
+import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Pickles.Wrap.Slots (Slots1)
 import Safe.Coerce (coerce)
@@ -46,6 +47,7 @@ import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 -- | Two_phase_chain needs per-branch SRS access (not just `lagrangeAt`)
 -- | because the branches' step domains differ.
@@ -103,8 +105,11 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
       }
   -- Slots1 1: mpv=1, single slot of max width 1.
+  let
+    dummyAdvice :: WrapAdvice 1 1 (Slots1 1)
+    dummyAdvice = unsafeCoerce unit
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\stmt -> wrapMain @2 @(Slots1 1) @1 config stmt)
+    (\stmt -> wrapMain @2 @(Slots1 1) @1 config stmt dummyAdvice)
     Kimchi.initialState
   pure
     { stepCs: incrementArt.stepCs

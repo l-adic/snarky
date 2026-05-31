@@ -26,7 +26,9 @@ import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainChunks2 (StepMainChunks2Params, compileStepMainChunks2)
 import Pickles.Field (StepField, WrapField)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
+import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
+import Pickles.Wrap.Slots (NoSlots)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Proof (srsLagrangeCommitmentChunksAt)
@@ -35,6 +37,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 compileWrapMainChunks2
   :: IvpWrapParams
@@ -91,8 +94,11 @@ compileWrapMainChunks2 { blindingH } stepParams = do
   -- `slots` derived from `@Unit` via `SlotsFromSpec` funcdep. The
   -- @2 stepChunks type-app drives the wrap IVP's chunked w/z/t MSM
   -- (Pcs_batch.combine_split_commitments with num_chunks=2).
+  let
+    dummyAdvice :: WrapAdvice 0 2 NoSlots
+    dummyAdvice = unsafeCoerce unit
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\stmt -> wrapMainForPrevs @1 @Unit @2 config stmt)
+    (\stmt -> wrapMainForPrevs @1 @Unit @2 config stmt dummyAdvice)
     Kimchi.initialState
   pure
     { stepCs: stepArt.stepCs
