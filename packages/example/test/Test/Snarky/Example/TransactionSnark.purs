@@ -81,24 +81,10 @@ buildSrs = liftEffect do
   for_ (range 12 15) (addLagrangeBasis pallasSrs)
   pure { pallasSrs, vestaSrs }
 
--- | Whether to exercise the merge branch. Currently the merge proof fails
--- | in-circuit at `ivp_assert_plonk_beta` for `slot_0`: the merge's step
--- | circuit re-squeezes a Plonk `beta` for the previous proof that diverges
--- | from that proof's stored deferred `beta` — even though both base proofs
--- | verify standalone (asserted below). This is the cross-branch case (a
--- | base-branch, mpv=0 proof verified through a `Self` slot) at the
--- | program's mpvMax=2, which the existing fixtures don't cover
--- | (TreeProofReturn's `Self` only ever holds same-branch proofs;
--- | TwoPhaseChain exercises cross-branch but at mpv=1). Resolving it needs
--- | witness-diff convergence of the step IVP transcript against an OCaml
--- | reference. Flip to `true` to run the merge during that work.
-tryMerge :: Boolean
-tryMerge = false
-
 spec :: SpecT Aff Unit Aff Unit
 spec =
   describe "Snarky.Example.TransactionSnark" do
-    it "compiles the base+merge program and proves + verifies two base transitions" do
+    it "proves two base transitions + a merge of them, and batch-verifies the chain" do
       { pallasSrs, vestaSrs } <- buildSrs
 
       -- Initial ledger L0, held in the app monad's state ref. The base
@@ -112,7 +98,12 @@ spec =
         cfg =
           { srs: { vestaSrs, pallasSrs }
           , debug: false
-          , wrapDomainOverride: Nothing
+          -- `override_wrap_domain: N1` (2^14), the canonical N2 setting
+          -- (Mina's transaction_snark and every N2 pickles fixture use it).
+          -- Required so each Self slot's wrap-domain lagrange basis matches
+          -- the wrap proofs the merge recurses on; omitting it (default N2 =
+          -- 2^15) makes the merge's slot-0 xhat/IVP transcript diverge.
+          , wrapDomainOverride: Just 14
           , proofCache: Nothing
           }
 
@@ -180,19 +171,16 @@ spec =
 
       -- merge(b0, b1): connects L0 → L1 → L2 into one L0 → L2 statement.
       -- Both prevs are real `InductivePrev` proofs (base proofs are valid
-      -- Self-prevs — same wrap VK), so no base-case dummy is needed. Gated
-      -- on `tryMerge` (see its note) while the slot_0 IVP beta divergence is
-      -- being resolved.
-      when tryMerge do
-        Console.log "[TxnSnark] proving merge…"
-        let mergedStmt = Tuple source0 target1
-        eMerge <- liftEffect $ runTransferRefM ref $ runExceptT $ mergeProver
-          { appInput: mergedStmt
-          , prevs: tuple2 (InductivePrev b0 out.tag) (InductivePrev b1 out.tag)
-          , sideloadedVKs: tuple2 unit unit
-          }
-        merge <- case eMerge of
-          Left err -> liftEffect $ Exc.throw ("mergeProver: " <> show err)
-          Right p -> pure p
-        Console.log "[TxnSnark] merge proved; batch-verifying…"
-        verifyBatch out.verifier (map toVerifiable [ b0, b1, merge ]) `shouldEqual` true
+      -- Self-prevs — same wrap VK), so no base-case dummy is needed.
+      Console.log "[TxnSnark] proving merge…"
+      let mergedStmt = Tuple source0 target1
+      eMerge <- liftEffect $ runTransferRefM ref $ runExceptT $ mergeProver
+        { appInput: mergedStmt
+        , prevs: tuple2 (InductivePrev b0 out.tag) (InductivePrev b1 out.tag)
+        , sideloadedVKs: tuple2 unit unit
+        }
+      merge <- case eMerge of
+        Left err -> liftEffect $ Exc.throw ("mergeProver: " <> show err)
+        Right p -> pure p
+      Console.log "[TxnSnark] merge proved; batch-verifying full chain…"
+      verifyBatch out.verifier (map toVerifiable [ b0, b1, merge ]) `shouldEqual` true
