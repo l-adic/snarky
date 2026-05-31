@@ -32,13 +32,15 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SEED="${KIMCHI_DETERMINISTIC_SEED:-42}"
 export PATH="$HOME/.nvm/versions/node/v23.11.1/bin:$PATH"
 
-ALL="simple_chain nrr tree_proof_return two_phase_chain sideload chunks2 chunks4 app_circuit_chunks2"
+ALL="simple_chain simple_chain_n2 nrr tree_proof_return two_phase_chain sideload chunks2 chunks4 app_circuit_chunks2"
 
 # circuit -> "dumper|ps_pkg|ps_main|ps_example|<space-separated counter-ordered labels>"
 cfg() {
   case "$1" in
     simple_chain)
       echo "dump_simple_chain|pickles|Test.Pickles.Main|SimpleChain|b0_step b0_wrap b1_step b1_wrap b2_step b2_wrap b3_step b3_wrap b4_step b4_wrap" ;;
+    simple_chain_n2)
+      echo "dump_simple_chain_n2_fixtures|pickles|Test.Pickles.Main|SimpleChainN2|b0_step b0_wrap b1_step b1_wrap b2_step b2_wrap" ;;
     nrr)
       echo "dump_no_recursion_return|pickles|Test.Pickles.Main|NoRecursionReturn|step_b0 wrap_b0" ;;
     tree_proof_return)
