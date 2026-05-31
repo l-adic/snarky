@@ -26,7 +26,7 @@ import Data.Either (Either(..))
 import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
 import Data.MerkleTree.Sparse as Sparse
-import Data.Tuple (Tuple(..), fst, snd)
+import Data.Tuple (fst, snd)
 import Data.Tuple.Nested (type (/\), tuple2)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
@@ -41,7 +41,7 @@ import Snarky.Circuit.DSL (F)
 import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Example.TransactionSnark (Stmt, baseRule, mergeRule)
+import Snarky.Example.TransactionSnark (Statement(..), baseRule, mergeRule)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
 import Test.Snarky.Example.Ledger (applyTransfer, genTreeWithAccounts, genValidSignedTransaction)
 import Test.Snarky.Example.Monad (TransferRefM, TransferState, runTransferRefM)
@@ -55,7 +55,7 @@ type D = 4
 
 -- | The shared statement type carried as each branch's public input: a
 -- | {source, target} ledger-digest pair with no public output.
-type TxnStmt = StatementIO (Stmt (F SF)) Unit
+type TxnStmt = StatementIO (Statement (F SF)) Unit
 
 -- | The two-branch program. Branch 0 (base) has no prev slots; branch 1
 -- | (merge) has two `Self` slots, each width 2 (a proof of THIS mpv=2
@@ -107,10 +107,10 @@ spec =
           , proofCache: Nothing
           }
 
-      baseEntry <- liftEffect $ mkRuleEntry @2 @Unit @(Stmt (F SF)) @1 @1 @(TransferRefM D SF)
+      baseEntry <- liftEffect $ mkRuleEntry @2 @Unit @(Statement (F SF)) @1 @1 @(TransferRefM D SF)
         (baseRule @D)
         unit
-      mergeEntry <- liftEffect $ mkRuleEntry @2 @Unit @(Stmt (F SF)) @1 @1 @(TransferRefM D SF)
+      mergeEntry <- liftEffect $ mkRuleEntry @2 @Unit @(Statement (F SF)) @1 @1 @(TransferRefM D SF)
         mergeRule
         (tuple2 Self Self)
 
@@ -119,7 +119,7 @@ spec =
       out <- liftEffect $ runTransferRefM ref $ compileMulti
         @TxnSnarkRules
         @Unit
-        @(Stmt (F SF))
+        @(Statement (F SF))
         @(Slots2 2 2)
         @1
         cfg
@@ -130,7 +130,7 @@ spec =
         BranchProver mergeProver = fst (snd out.provers)
 
         runBase
-          :: Stmt (F SF)
+          :: Statement (F SF)
           -> Aff (CompiledProof 2 TxnStmt)
         runBase appInput = do
           e <- liftEffect $ runTransferRefM ref $ runExceptT $ baseProver
@@ -149,7 +149,7 @@ spec =
       let
         target0 = Sparse.root (applyTransfer l0 tx0).tree
       liftEffect $ Ref.modify_ (_ { currentTransaction = Just tx0 }) ref
-      b0 <- runBase (Tuple source0 target0)
+      b0 <- runBase (Statement { source: source0, target: target0 })
       Console.log "[TxnSnark] base0 proved; proving base1…"
 
       -- base1: L1 → L2. Read the ref's actual post-b0 state (the base
@@ -160,7 +160,7 @@ spec =
       let
         target1 = Sparse.root (applyTransfer l1 tx1).tree
       liftEffect $ Ref.modify_ (_ { currentTransaction = Just tx1 }) ref
-      b1 <- runBase (Tuple source1 target1)
+      b1 <- runBase (Statement { source: source1, target: target1 })
       Console.log "[TxnSnark] base1 proved; verifying [b0, b1] standalone…"
 
       -- Milestone check: the two base proofs verify on their own. This
@@ -173,7 +173,7 @@ spec =
       -- Both prevs are real `InductivePrev` proofs (base proofs are valid
       -- Self-prevs — same wrap VK), so no base-case dummy is needed.
       Console.log "[TxnSnark] proving merge…"
-      let mergedStmt = Tuple source0 target1
+      let mergedStmt = Statement { source: source0, target: target1 }
       eMerge <- liftEffect $ runTransferRefM ref $ runExceptT $ mergeProver
         { appInput: mergedStmt
         , prevs: tuple2 (InductivePrev b0 out.tag) (InductivePrev b1 out.tag)

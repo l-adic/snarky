@@ -18,9 +18,7 @@
 -- | entry is built (`mkRuleEntry @AppM`). `processTransaction` is reused
 -- | verbatim.
 module Snarky.Example.TransactionSnark
-  ( Stmt
-  , source
-  , target
+  ( Statement(..)
   , baseRule
   , mergeRule
   ) where
@@ -29,43 +27,59 @@ import Prelude
 
 import Control.Monad.Trans.Class (lift)
 import Data.Reflectable (class Reflectable)
-import Data.Tuple (Tuple, fst, snd)
-import Data.Tuple.Nested (type (/\), (/\))
+import Data.Tuple (Tuple)
+import Data.Tuple.Nested (Tuple2, (/\))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Class (class MonadEffect)
 import Mina.ChainId (ChainId(..))
 import Pickles (StatementIO(..))
 import Pickles.Step.Main (RuleOutput)
-import Snarky.Circuit.DSL (class CircuitM, AsProverT, F, FVar, Snarky, assertEqual_, exists, true_)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, AsProverT, F, FVar, Snarky, assertEq, check, exists, fieldsToValue, fieldsToVar, sizeInFields, true_, valueToFields, varToFields)
 import Snarky.Circuit.MerkleTree as CMT
-import Snarky.Circuit.RandomOracle (Digest(..))
+import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Example.Circuits (class AccountMapM, class TransactionM, getCurrentTransaction, processTransaction)
 import Snarky.Example.Types (Account)
-
-type SF = Vesta.ScalarField
+import Type.Proxy (Proxy(..))
 
 -- | A transaction-snark statement: the ledger digest before (`source`)
 -- | and after (`target`) the transition. Mina's `Statement` additionally
 -- | carries fee_excess / sok_digest / pending_coinbase; this example keeps
 -- | just the two ledger hashes.
-type Stmt f = Tuple (Digest f) (Digest f)
+newtype Statement f = Statement
+  { source :: Digest f
+  , target :: Digest f
+  }
 
-source :: forall f. Stmt f -> Digest f
-source = fst
+-- | `Statement`'s circuit representation is just its two `Digest` fields,
+-- | so both instances mediate through the existing `Tuple` instances:
+-- | a `Statement` is converted to/from `source /\ target` and the
+-- | `(Tuple a b)` `CircuitType`/`CheckedType` instances do the rest
+-- | (which in turn delegate to `Digest`'s instances).
+instance CircuitType f (Statement (F f)) (Statement (FVar f)) where
+  valueToFields (Statement { source, target }) = valueToFields (source /\ target)
+  fieldsToValue fields =
+    let
+      source /\ target = fieldsToValue fields
+    in
+      Statement { source, target }
+  -- `varToFields`/`fieldsToVar` only mention the variable type, so the
+  -- Tuple instance's value type must be pinned explicitly (mirrors
+  -- `Digest`'s `genericVarToFields @(Digest (F f))`).
+  sizeInFields pf _ =
+    sizeInFields pf (Proxy :: Proxy (Tuple (Digest (F f)) (Digest (F f))))
+  varToFields (Statement { source, target }) =
+    varToFields @f @(Tuple (Digest (F f)) (Digest (F f))) (source /\ target)
+  fieldsToVar fields =
+    let
+      source /\ target = fieldsToVar @f @(Tuple (Digest (F f)) (Digest (F f))) fields
+    in
+      Statement { source, target }
 
-target :: forall f. Stmt f -> Digest f
-target = snd
-
-assertDigestEq
-  :: forall t m
-   . CircuitM SF (KimchiConstraint SF) t m
-  => Digest (FVar SF)
-  -> Digest (FVar SF)
-  -> Snarky (KimchiConstraint SF) t m Unit
-assertDigestEq (Digest a) (Digest b) = assertEqual_ a b
+instance CheckedType f c (Statement (FVar f)) where
+  check (Statement { source, target }) = check (source /\ target)
 
 -- | Base "prove-transaction" rule (mpv = 0). The statement's `target` must
 -- | be the digest produced by applying the (private) signed transfer to
@@ -75,20 +89,24 @@ assertDigestEq (Digest a) (Digest b) = assertEqual_ a b
 baseRule
   :: forall @d t m
    . Reflectable d Int
-  => CircuitM SF (KimchiConstraint SF) t m
+  => CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
   => MonadEffect m
-  => AccountMapM m SF d
-  => CMT.MerkleRequestM m SF (Account (F SF)) d (Account (FVar SF))
-  => TransactionM m SF
-  => AsProverT SF m Unit
-  -> Stmt (FVar SF)
+  => AccountMapM m Vesta.ScalarField d
+  => CMT.MerkleRequestM m Vesta.ScalarField (Account (F Vesta.ScalarField)) d (Account (FVar Vesta.ScalarField))
+  => TransactionM m Vesta.ScalarField
+  => AsProverT Vesta.ScalarField m Unit
+  -> Statement (FVar Vesta.ScalarField)
   -- `prevInput = Stmt` is shared across the program's branches (the merge
   -- branch's prev statements); it is phantom here (0 prevs).
-  -> Snarky (KimchiConstraint SF) t m (RuleOutput 0 (Stmt (FVar SF)) Unit)
-baseRule _ s = do
+  -> Snarky
+       (KimchiConstraint Vesta.ScalarField)
+       t
+       m
+       (RuleOutput 0 (Statement (FVar Vesta.ScalarField)) Unit)
+baseRule _ (Statement { source, target }) = do
   tx <- exists (lift getCurrentTransaction)
-  computedTarget <- processTransaction @d Mainnet (source s) tx
-  assertDigestEq (target s) computedTarget
+  computedTarget <- processTransaction @d Mainnet source tx
+  assertEq target computedTarget
   pure
     { prevPublicInputs: Vector.nil
     , proofMustVerify: Vector.nil
@@ -100,27 +118,30 @@ baseRule _ s = do
 -- | no app/ledger advice — so its `m` stays free (an ordinary `StepRule`).
 mergeRule
   :: forall t m
-   . CircuitM SF (KimchiConstraint SF) t m
+   . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
   => MonadEffect m
-  => AsProverT SF m
-       ( StatementIO (Stmt (F SF)) Unit
-           /\ StatementIO (Stmt (F SF)) Unit
-           /\ Unit
+  => AsProverT Vesta.ScalarField m
+       ( Tuple2
+           (StatementIO (Statement (F Vesta.ScalarField)) Unit)
+           (StatementIO (Statement (F Vesta.ScalarField)) Unit)
        )
-  -> Stmt (FVar SF)
-  -> Snarky (KimchiConstraint SF) t m
-       (RuleOutput 2 (Stmt (FVar SF)) Unit)
-mergeRule getPrevStates s = do
+  -> Statement (FVar Vesta.ScalarField)
+  -> Snarky
+       (KimchiConstraint Vesta.ScalarField)
+       t
+       m
+       (RuleOutput 2 (Statement (FVar Vesta.ScalarField)) Unit)
+mergeRule getPrevStates (Statement { source, target }) = do
   -- The two sub-statements are the verified prev proofs' public inputs;
   -- witness them from the deferred prev-states getter.
-  s1 <- exists $ getPrevStates <#> \(StatementIO p1 /\ _) -> p1.input
-  s2 <- exists $ getPrevStates <#> \(_ /\ StatementIO p2 /\ _) -> p2.input
+  s1@(Statement { source: source1, target: target1 }) <- exists $ getPrevStates <#> \(StatementIO p1 /\ _) -> p1.input
+  s2@(Statement { source: source2, target: target2 }) <- exists $ getPrevStates <#> \(_ /\ StatementIO p2 /\ _) -> p2.input
   -- Merge relation (Mina `Merge.main`): the outer statement's source is
   -- s1's source, its target is s2's target, and s1's target connects to
   -- s2's source.
-  assertDigestEq (source s) (source s1)
-  assertDigestEq (target s) (target s2)
-  assertDigestEq (target s1) (source s2)
+  assertEq source source1
+  assertEq target target2
+  assertEq target1 source2
   pure
     { prevPublicInputs: s1 :< s2 :< Vector.nil
     , proofMustVerify: true_ :< true_ :< Vector.nil
