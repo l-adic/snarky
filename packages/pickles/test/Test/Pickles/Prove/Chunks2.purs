@@ -44,7 +44,7 @@ import Test.Spec.Assertions (shouldEqual)
 -- | permuted column's polynomial degree above 2^16). Mirrors the
 -- | `main` field of the OCaml `chunks2.ml` choice at lines 18-48.
 chunks2Rule :: StepRule 0 Unit Unit Unit Unit Unit Unit Unit
-chunks2Rule _ = do
+chunks2Rule _ _ = do
   let
     freshZero = exists (pure (zero :: F StepField))
     iters = (1 `Bits.shl` 17) + 1

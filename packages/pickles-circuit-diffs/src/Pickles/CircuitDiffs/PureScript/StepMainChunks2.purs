@@ -1,7 +1,6 @@
 module Pickles.CircuitDiffs.PureScript.StepMainChunks2
   ( compileStepMainChunks2
   , StepMainChunks2Params
-  , class Chunks2Advice
   ) where
 
 -- | step_main circuit for the chunks2 leaf rule (N = 0, num_chunks = 2,
@@ -23,31 +22,28 @@ import Prelude
 
 import Control.Monad.Rec.Class (Step(..), tailRecM)
 import Data.Int.Bits as Bits
+import Data.Maybe (Maybe(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
+import Effect.Ref as Ref
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
+import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (class CircuitM, F, Snarky, addConstraint, exists, mul_)
+import Snarky.Circuit.DSL (class CircuitM, AsProverT, F, Snarky, addConstraint, exists, mul_)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 type StepMainChunks2Params =
   { lagrangeAt :: LagrangeBaseLookup 1 StepField
   , blindingH :: AffinePoint (F StepField)
   }
-
--- | Chunks2 rule allocates only `exists` witnesses for the `fresh_zero`
--- | inputs; no further plumbing is needed. The class stays uniform with
--- | the other rules so `stepMain`'s typeclass dictionary resolves.
-class Monad m <= Chunks2Advice m
-
-instance (Monad m) => Chunks2Advice m
 
 -- | Chunks2 leaf rule body. Verbatim PS analog of `dump_chunks2.ml`'s
 -- | choice body — `2^17 + 1` `mul_ fresh_zero fresh_zero` half-rows
@@ -55,10 +51,10 @@ instance (Monad m) => Chunks2Advice m
 chunks2Rule
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => Chunks2Advice m
-  => Unit
+  => AsProverT StepField m Unit
+  -> Unit
   -> Snarky (KimchiConstraint StepField) t m (RuleOutput 0 Unit Unit)
-chunks2Rule _ = do
+chunks2Rule _ _ = do
   let
     freshZero = exists (pure (zero :: F StepField))
     iters = (1 `Bits.shl` 17) + 1
@@ -84,7 +80,14 @@ chunks2Rule _ = do
 
 compileStepMainChunks2
   :: StepMainChunks2Params -> Effect StepArtifact
-compileStepMainChunks2 params =
+compileStepMainChunks2 params = do
+  throwawayCaptureRef <- Ref.new Nothing
+  -- `carrier` (value-side per-proof witness carrier) is not determined
+  -- by `stepMain`'s var-side `StepSlotsCarrier` constraint; pin it here
+  -- (mpv=0 ⇒ empty `Unit` carrier).
+  let
+    dummyAdvice :: StepAdvice _ _ _ _ _ _ Unit _ _
+    dummyAdvice = unsafeCoerce unit
   mkStepArtifact <$>
     compile (Proxy @Unit) (Proxy @(Vector 1 (F StepField))) (Proxy @(KimchiConstraint StepField))
       -- N=0: output size = 32*0 + 1 + 0 = 1 (just the msgForNextStep
@@ -102,5 +105,7 @@ compileStepMainChunks2 params =
           dummyWrapSg
           -- Side-loaded VK carrier: no slots, carrier = Unit.
           unit
+          dummyAdvice
+          throwawayCaptureRef
       )
       Kimchi.initialState

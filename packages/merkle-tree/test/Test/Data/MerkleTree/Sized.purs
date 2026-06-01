@@ -163,7 +163,7 @@ pathValidationLaw _ xs =
               Nothing -> false -- Path should exist for valid index
               Just path ->
                 let
-                  leafHash = SMT.hash $ Just element
+                  leafHash = SMT.hashLeaf $ Just element
                   computedRoot = SMT.impliedRoot addr leafHash path
                 in
                   computedRoot == rootHash
@@ -237,7 +237,7 @@ setUpdatesRootLaw _ xs setIndex newValue =
             Nothing -> withHelp false "getPath returned Nothing after set"
             Just path ->
               let
-                leafHash = SMT.hash $ Just newValue
+                leafHash = SMT.hashLeaf $ Just newValue
                 computedRoot = SMT.impliedRoot addr leafHash path
               in
                 withHelp (computedRoot == newRoot)

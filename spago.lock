@@ -40,27 +40,34 @@
         "path": "packages/example",
         "core": {
           "dependencies": [
-            "arrays",
             "curves",
+            "effect",
+            "js-bigints",
             "maybe",
             "merkle-tree",
             "newtype",
-            "poseidon",
+            "partial",
+            "pickles",
             "prelude",
             "quickcheck",
             "random-oracle",
             "safe-coerce",
+            "schnorr",
             "snarky",
+            "snarky-curves",
             "snarky-kimchi",
             "transformers",
+            "tuples",
             "vector-sized"
           ]
         },
         "test": {
           "dependencies": [
             "aff",
+            "arrays",
             "console",
             "effect",
+            "either",
             "exceptions",
             "foldable-traversable",
             "gen",
@@ -68,12 +75,12 @@
             "js-bigints",
             "ordered-collections",
             "partial",
+            "poseidon",
             "refs",
             "snarky-test-utils",
             "spec",
             "spec-node",
-            "tailrec",
-            "tuples"
+            "tailrec"
           ]
         }
       },
@@ -129,7 +136,6 @@
         "path": "packages/pickles",
         "core": {
           "dependencies": [
-            "argonaut-core",
             "arrays",
             "blake2",
             "const",
@@ -141,7 +147,6 @@
             "exists",
             "foldable-traversable",
             "foreign",
-            "foreign-object",
             "functors",
             "identity",
             "integers",
@@ -153,7 +158,6 @@
             "node-buffer",
             "node-fs",
             "node-process",
-            "nullable",
             "ordered-collections",
             "partial",
             "pickles-linearization-types",
@@ -212,6 +216,7 @@
             "poseidon",
             "prelude",
             "random-oracle",
+            "refs",
             "safe-coerce",
             "schnorr",
             "simple-json",
@@ -220,7 +225,6 @@
             "snarky-kimchi",
             "strings",
             "tailrec",
-            "transformers",
             "tuples",
             "unsafe-coerce",
             "vector-sized"
@@ -335,6 +339,7 @@
             "partial",
             "poseidon",
             "prelude",
+            "safe-coerce",
             "snarky",
             "snarky-kimchi",
             "tuples",
@@ -495,6 +500,7 @@
             "maybe",
             "mmorph",
             "newtype",
+            "node-buffer",
             "node-fs",
             "nonempty",
             "nullable",

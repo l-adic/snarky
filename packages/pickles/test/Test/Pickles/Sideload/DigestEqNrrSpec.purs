@@ -21,7 +21,7 @@ import Data.Tuple.Nested (tuple1)
 import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
-import Pickles (NoSlots, StepField, compileMulti, mkRuleEntry)
+import Pickles (NoSlots, RuleEntry, StepField, compileMulti, mkRuleEntry)
 import Snarky.Backend.Kimchi.ProofCache (vestaVerifierIndexJsonKey)
 import Snarky.Circuit.DSL (F)
 import Test.Pickles.Prove.NoRecursionReturn (NrrRules, nrrRule)
@@ -37,7 +37,8 @@ spec = describe "Pickles.Sideload.NRR VK equality" do
   body :: SharedSrs -> LoggerT Message Aff Unit
   body { pallasSrs, vestaSrs } = do
     -- PureScript-side compile: produce the wrap VK for NRR.
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
+    nrrEntry :: RuleEntry _ _ _ _ _ Unit _ _ _ _ _ _ <-
+      liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
     let rules = tuple1 nrrEntry
     output <- withSpan "[DigestEqNrr] compile" $ liftEffect $ compileMulti
       @NrrRules

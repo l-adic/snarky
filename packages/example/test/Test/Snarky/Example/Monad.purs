@@ -27,12 +27,13 @@ import Effect.Ref (Ref, read, write)
 import JS.BigInt (BigInt)
 import Partial.Unsafe (unsafeCrashWith)
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (class CircuitType, F(..), FVar)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F, FVar)
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.RandomOracle (Digest)
-import Snarky.Curves.Class (class PrimeField, toBigInt)
-import Snarky.Example.Circuits (class AccountMapM)
-import Snarky.Example.Types (Account, PublicKey(..))
+import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Example.Circuits (class AccountMapM, class TransactionM)
+import Snarky.Example.Types (Account, PublicKey, SignedTransaction, TokenAmount)
 
 --------------------------------------------------------------------------------
 -- Test monad types
@@ -41,13 +42,17 @@ import Snarky.Example.Types (Account, PublicKey(..))
 -- | Like Mina, we maintain a separate map from public key to address
 type TransferState d f =
   { tree :: Sparse.SparseMerkleTree d (Digest (F f)) (Account (F f))
-  , accountMap :: Map BigInt (Sparse.Address d) -- public key (as BigInt) -> address
+  , accountMap :: Map (PublicKey (F f)) (Sparse.Address d) -- public key -> address
+  , privateKeys :: Map (PublicKey (F f)) Pallas.ScalarField -- public key -> signing key
   , nextAddress :: BigInt -- next address to assign
+  -- | The transaction currently being proven (set before each base
+  -- | prove). Served to the pickled base rule via `TransactionM`.
+  , currentTransaction :: Maybe (SignedTransaction (F f))
   }
 
 -- | Look up the address for a public key
-lookupAddress :: forall d f. PrimeField f => TransferState d f -> PublicKey (F f) -> Maybe (Sparse.Address d)
-lookupAddress state (PublicKey (F pk)) = Map.lookup (toBigInt pk) state.accountMap
+lookupAddress :: forall d f. Ord f => TransferState d f -> PublicKey (F f) -> Maybe (Sparse.Address d)
+lookupAddress state pk = Map.lookup pk state.accountMap
 
 -- | Ref to the transfer state
 type TransferStateRef d f = Ref (TransferState d f)
@@ -83,6 +88,7 @@ instance
   ( Reflectable d Int
   , PoseidonField f
   , CircuitType f (Account (F f)) (Account (FVar f))
+  , CheckedType f (KimchiConstraint f) (TokenAmount (FVar f))
   , MerkleHashable (Account (F f)) (Digest (F f))
   ) =>
   CMT.MerkleRequestM (TransferRefM d f) f (Account (F f)) d (Account (FVar f)) where
@@ -107,12 +113,23 @@ instance
       Nothing -> throwError $ error "setValue: invalid address"
 
 -- | AccountMapM instance for TransferRefM - looks up address from accountMap
-instance PrimeField f => AccountMapM (TransferRefM d f) f d where
+instance Ord f => AccountMapM (TransferRefM d f) f d where
   getAccountId pk = do
     state <- getStateRef
     case lookupAddress state pk of
       Just addr -> pure addr
       Nothing -> throwError $ error "getAccountId: public key not found in account map"
+
+-- | TransactionM instance — serves the `currentTransaction` set on the
+-- | state before each base prove. This (with AccountMapM + MerkleRequestM
+-- | above) is what lets the pickled base rule run at bare `TransferRefM`:
+-- | all three are ordinary non-orphan instances on the app monad.
+instance TransactionM (TransferRefM d f) f where
+  getCurrentTransaction = do
+    state <- getStateRef
+    case state.currentTransaction of
+      Just tx -> pure tx
+      Nothing -> throwError $ error "getCurrentTransaction: no current transaction set"
 
 --------------------------------------------------------------------------------
 -- Compile-time monad (throws on any request)
@@ -135,6 +152,7 @@ instance
   ( Reflectable d Int
   , PoseidonField f
   , CircuitType f (Account (F f)) (Account (FVar f))
+  , CheckedType f (KimchiConstraint f) (TokenAmount (FVar f))
   ) =>
   CMT.MerkleRequestM (TransferCompileM d f) f (Account (F f)) d (Account (FVar f)) where
   getElement _ = unsafeCrashWith "the impossible happened! unhandled request: getElement"

@@ -34,24 +34,21 @@ import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (foldM)
 import Data.List (List)
 import Data.List as List
-import Data.Maybe (Maybe(..), fromJust)
+import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import JS.BigInt as BigInt
-import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
 import RandomOracle.Sponge as RegSponge
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (sub_)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, UnChecked(..), addConstraint, add_, all_, and_, any_, assertEqual_, const_, exists, false_, if_, mul_, not_, or_, read, readCVar, scale_, true_, xor_)
-import Snarky.Circuit.DSL as SizedF
-import Snarky.Circuit.Kimchi.EndoScalar as EndoScalar
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, SizedF, Snarky, addConstraint, all_, and_, any_, const_, exists, false_, if_, mul_, not_, or_, read, readCVar, true_, xor_)
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
+import Snarky.Circuit.Kimchi.RangeCheck (lowest128Bits')
 import Snarky.Constraint.Basic (r1cs)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
 type OptSponge f =
@@ -417,7 +414,7 @@ optChallenge
   -> OptSpongeM f (KimchiConstraint f) t m (SizedF 128 (FVar f))
 optChallenge endo = do
   x <- optSqueeze
-  liftSnarky $ lowest128BitsInternal true endo x
+  liftSnarky $ lowest128Bits' true endo x
 
 -- | Squeeze a scalar challenge (lowest 128 bits, constrain_low_bits:false).
 -- | Matches OCaml's Opt.scalar_challenge.
@@ -431,7 +428,7 @@ optScalarChallenge
   -> OptSpongeM f (KimchiConstraint f) t m (SizedF 128 (FVar f))
 optScalarChallenge endo = do
   x <- optSqueeze
-  liftSnarky $ lowest128BitsInternal false endo x
+  liftSnarky $ lowest128Bits' false endo x
 
 -- | Convert OptSponge state to a regular Sponge for continuation (e.g., bulletproof check).
 -- | Only valid when the OptSponge is in Squeezed state.
@@ -487,32 +484,3 @@ ofSponge sponge = case sponge.spongeState of
         , needsFinalPermuteIfEmpty: false
         }
 
--- Internal: lowest128Bits for use within OptSponge.
--- Inlined from Sponge.lowest128Bits' to avoid circular dependency.
-lowest128BitsInternal
-  :: forall f t m
-   . PrimeField f
-  => FieldSizeInBits f 255
-  => CircuitM f (KimchiConstraint f) t m
-  => Boolean
-  -> FVar f -- ^ endo constant
-  -> FVar f -- ^ x
-  -> Snarky (KimchiConstraint f) t m (SizedF 128 (FVar f))
-lowest128BitsInternal constrainLowBits endo x = do
-  UnChecked (Tuple lo hi) <- exists do
-    F xVal <- read x
-    let
-      xBig = toBigInt xVal
-
-      lo :: SizedF 128 (F f)
-      lo = unsafePartial $ fromJust $ SizedF.fromField @128 (fromBigInt (mod xBig two128))
-
-      hi :: SizedF 128 (F f)
-      hi = unsafePartial $ fromJust $ SizedF.fromField @128 (fromBigInt (div xBig two128))
-    pure $ UnChecked (Tuple lo hi)
-  void $ EndoScalar.toField @8 hi endo
-  when constrainLowBits $ void $ EndoScalar.toField @8 lo endo
-  assertEqual_ x (add_ (SizedF.toField lo) (scale_ (fromBigInt two128) $ SizedF.toField hi))
-  pure lo
-  where
-  two128 = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 128)

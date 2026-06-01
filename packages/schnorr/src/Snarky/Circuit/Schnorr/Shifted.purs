@@ -24,6 +24,8 @@ module Snarky.Circuit.Schnorr.Shifted
   , ShiftedOps
   , assertOnCurveConst
   , createShifted
+  , pallasScalarOps
+  , vestaScalarOps
   , scale
   , scaleKnown
   ) where
@@ -40,14 +42,17 @@ import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (add_, scale_) as CVar
 import Snarky.Circuit.Curves (double, negate) as Curves
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, and_, assertSquare_, const_, exists, if_, label, mul_, square_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, and_, assertSquare_, const_, exists, if_, mul_, square_)
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Types (Bool(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
-import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, fromAffine, fromInt, scalarMul, toAffine) as C
+import Snarky.Curves.Class (class WeierstrassCurve, curveParams, fromAffine, generator, toAffine) as C
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Pasta (PallasG, VestaG)
+import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
-import Type.Proxy (Proxy)
+import Type.Proxy (Proxy(..))
 
 -- | Shifted accumulator. The wrapped point is `shift + (partial
 -- | sum)`; the actual sum is recovered via `unshiftNonzero`.
@@ -144,6 +149,36 @@ createShifted curveParams shiftConst = do
       pure p
   pure { zero, add, if_: ifS, unshiftNonzero }
 
+-- | A constant on-curve, non-identity shift point (2·G) for the given
+-- | curve — its witness value never enters the constraint system, so any
+-- | fixed point works; `2·G` is a convenient choice.
+shiftFor
+  :: forall f g
+   . C.WeierstrassCurve f g
+  => Semigroup g
+  => g
+  -> AffinePoint f
+shiftFor g = unsafePartial fromJust $ C.toAffine (g <> g)
+
+-- | Ready-to-use shifted scalar-mul ops for the Pallas curve (point
+-- | coordinates in `Pallas.BaseField`), with the curve params and a
+-- | standard shift baked in.
+pallasScalarOps
+  :: forall t m
+   . CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t m
+  => Snarky (KimchiConstraint Pallas.BaseField) t m (ShiftedOps Pallas.BaseField t m)
+pallasScalarOps =
+  createShifted (C.curveParams (Proxy :: Proxy PallasG)) (shiftFor (C.generator :: PallasG))
+
+-- | Ready-to-use shifted scalar-mul ops for the Vesta curve (point
+-- | coordinates in `Vesta.BaseField`).
+vestaScalarOps
+  :: forall t m
+   . CircuitM Vesta.BaseField (KimchiConstraint Vesta.BaseField) t m
+  => Snarky (KimchiConstraint Vesta.BaseField) t m (ShiftedOps Vesta.BaseField t m)
+vestaScalarOps =
+  createShifted (C.curveParams (Proxy :: Proxy VestaG)) (shiftFor (C.generator :: VestaG))
+
 -- | LSB-first unbounded double-and-add. Direct port of
 -- | `Snarky_curves.Make_weierstrass_checked.scale`
 -- | (`snarky_curves.ml:326-345`):
@@ -176,23 +211,6 @@ scale params ops init base bits = do
     acc' <- ops.if_ b addPt acc
     pt' <- Curves.double params pt
     pure $ Tuple acc' pt'
-
--- | Affine sum of two precomputed-constant Weierstrass points.
-sumAffine
-  :: forall f g
-   . C.WeierstrassCurve f g
-  => Semigroup g
-  => Partial
-  => Proxy g
-  -> AffinePoint f
-  -> AffinePoint f
-  -> AffinePoint f
-sumAffine _ p q =
-  let
-    pG = C.fromAffine p :: g
-    qG = C.fromAffine q :: g
-  in
-    fromJust $ C.toAffine (pG <> qG)
 
 -- | `lookup_point (b0, b1) (t1, t2, t3, t4)` — 2-bit table lookup over
 -- | 4 constant curve points. Returns

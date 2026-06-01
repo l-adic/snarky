@@ -1,8 +1,6 @@
 module Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain
   ( compileStepMainSideLoadedMain
   , StepMainSideLoadedMainParams
-  , class SideLoadedMainAdvice
-  , getSideLoadedMainPrev
   ) where
 
 -- | step_main circuit for the side-loaded variant of Simple_chain
@@ -19,26 +17,31 @@ module Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain
 
 import Prelude
 
-import Control.Monad.Trans.Class (lift)
+import Data.Maybe (Maybe(..))
+import Data.Tuple (Tuple)
 import Data.Tuple.Nested (Tuple1, tuple1, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Effect.Exception (throw)
+import Effect.Ref as Ref
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Sideload.VerificationKey (VerificationKey, compileDummy) as SLVK
 import Pickles.Slots (SideLoaded, Slot)
+import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Pickles.Types (StatementIO)
+import Pickles.Step.Types (PerProofWitness)
+import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertAny_, const_, equals_, exists, true_)
+import Snarky.Circuit.DSL (class CircuitM, AsProverT, F, FVar, Snarky, assertAny_, const_, equals_, exists, true_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Types.Shifted (SplitField, Type2)
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 -- | Parameters for the side-loaded main fixture.
 -- |
@@ -56,31 +59,18 @@ type StepMainSideLoadedMainParams =
   , blindingH :: AffinePoint (F StepField)
   }
 
--- | Application-specific advice for the side-loaded main rule. Same
--- | shape as `StepMainSimpleChain.SimpleChainAdvice`: one
--- | previous-proof public-input field. The side-loaded distinction
--- | shows up in the spec / vkCarrier, not the rule body.
-class Monad m <= SideLoadedMainAdvice m where
-  getSideLoadedMainPrev :: Unit -> m (F StepField)
-
--- | Compilation instance: throws if evaluated. `exists` in
--- | `CircuitBuilderT` discards the `AsProverT` so the throw never
--- | fires.
-instance SideLoadedMainAdvice Effect where
-  getSideLoadedMainPrev _ =
-    throw "SideLoadedMainAdvice.getSideLoadedMainPrev: not available during compilation"
-
 -- | Side-loaded main rule body: same as `simpleChainRule` —
--- | `selfCorrect = (1 + prev == self) || isBaseCase`.
+-- | `selfCorrect = (1 + prev == self) || isBaseCase`. The side-loaded
+-- | distinction shows up in the spec / vkCarrier, not the rule body.
 sideLoadedMainRule
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => SideLoadedMainAdvice m
-  => FVar StepField
+  => AsProverT StepField m (Tuple1 (StatementIO (F StepField) Unit))
+  -> FVar StepField
   -> Snarky (KimchiConstraint StepField) t m
        (RuleOutput 1 (FVar StepField) Unit)
-sideLoadedMainRule appState = do
-  prev <- exists $ lift $ getSideLoadedMainPrev unit
+sideLoadedMainRule getPrevStates appState = do
+  prev <- exists $ getPrevStates <#> \(StatementIO p1 /\ _) -> p1.input
   isBaseCase <- equals_ (const_ zero) appState
   selfCorrect <- equals_ (CVar.add_ (const_ one) prev) appState
   assertAny_ [ selfCorrect, isBaseCase ]
@@ -96,7 +86,24 @@ sideLoadedMainRule appState = do
 
 compileStepMainSideLoadedMain
   :: StepMainSideLoadedMainParams -> Effect StepArtifact
-compileStepMainSideLoadedMain params =
+compileStepMainSideLoadedMain params = do
+  throwawayCaptureRef <- Ref.new Nothing
+  -- `carrier` (value-side per-proof witness carrier) is not determined
+  -- by `stepMain`'s var-side `StepSlotsCarrier` constraint; pin it here.
+  -- Side-loaded slot's compile-time upper bound is N2 ⇒ `PerProofWitness 2 …`.
+  let
+    dummyAdvice
+      :: StepAdvice _ _ _ _ _ _
+           ( Tuple
+               ( PerProofWitness 2 1 StepIPARounds WrapIPARounds (F StepField)
+                   (Type2 (SplitField (F StepField) Boolean))
+                   Boolean
+               )
+               Unit
+           )
+           _
+           _
+    dummyAdvice = unsafeCoerce unit
   mkStepArtifact <$>
     compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField)))
       (Proxy @(KimchiConstraint StepField))
@@ -137,5 +144,7 @@ compileStepMainSideLoadedMain params =
           dummyWrapSg
           -- Single side-loaded slot with the dummy VK.
           (tuple1 SLVK.compileDummy)
+          dummyAdvice
+          throwawayCaptureRef
       )
       Kimchi.initialState

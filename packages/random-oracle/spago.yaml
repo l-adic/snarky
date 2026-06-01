@@ -12,6 +12,7 @@ package:
     - poseidon
     - prelude
     - js-bigints
+    - safe-coerce
     - snarky
     - snarky-kimchi
     - tuples

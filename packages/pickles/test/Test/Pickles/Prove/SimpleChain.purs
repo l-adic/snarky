@@ -18,7 +18,6 @@ import Prelude
 
 import Colog (LoggerT, Message, logInfo, withSpan)
 import Control.Monad.Except (runExceptT)
-import Control.Monad.Trans.Class (lift) as MT
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
@@ -30,7 +29,7 @@ import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), Compiled, CompiledProof(..), PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots1, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), Compiled, CompiledProof(..), PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots1, StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertAny_, const_, equals_, exists, not_)
@@ -56,11 +55,8 @@ simpleChainRule
        Unit
        (F StepField)
        (FVar StepField)
-simpleChainRule self = do
-  prev <- exists $ MT.lift do
-    stmt /\ _ <- getPrevAppStates unit
-    let StatementIO { input } = stmt
-    pure input
+simpleChainRule getPrevStates self = do
+  prev <- exists $ getPrevStates <#> \(StatementIO { input } /\ _) -> input
   isBaseCase <- equals_ (const_ zero) self
   let proofMustVerify = not_ isBaseCase
   selfCorrect <- equals_ (CVar.add_ (const_ one) prev) self

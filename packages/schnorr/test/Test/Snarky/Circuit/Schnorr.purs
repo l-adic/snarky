@@ -8,13 +8,13 @@ import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
 import Data.Schnorr.Gen (genValidSignature)
 import Data.Vector (Vector)
+import Data.Vector as Vector
 import Mina.ChainId (ChainId(..), signaturePrefix)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assert_)
 import Snarky.Circuit.Schnorr (Signature(..), pallasParams, shiftConst, verifies)
 import Snarky.Circuit.Schnorr.Shifted (createShifted)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
-import Snarky.Curves.Class (generator)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -51,8 +51,7 @@ spec cfg = describe "Snarky.Circuit.Schnorr" do
       circuit' { signature: { r, sBits }, publicKey, message } = do
         shifted <- createShifted pallasParams shiftConst
         verified <- verifies (signaturePrefix Mainnet) shifted
-          (generator :: PallasG)
-          { publicKey, signature: Signature { r, s: sBits }, message }
+          { publicKey, signature: Signature { r, s: sBits }, message: Vector.toUnfoldable message }
         assert_ verified
 
       gen = genValidSignature (signaturePrefix Mainnet) (Proxy @PallasG)

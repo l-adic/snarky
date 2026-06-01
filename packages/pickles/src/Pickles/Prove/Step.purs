@@ -33,12 +33,10 @@ module Pickles.Prove.Step
   , extractWrapVKForStepHash
   , dummyWrapTockPublicInput
   , StepRule
+  , StepRuleAt
   , StepCompileResult
   , StepProveResult
-  , StepAdvice(..)
-  , StepProverT(..)
-  , StepProverCapture
-  , runStepProverT
+  , module Pickles.Step.Advice
   , StepProveContext
   , SlotAdviceContrib
   , buildSlotAdvice
@@ -53,10 +51,7 @@ module Pickles.Prove.Step
 import Prelude
 
 import Control.Monad.Except (ExceptT, throwError)
-import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Control.Monad.Rec.Class (class MonadRec)
-import Control.Monad.State (StateT, runStateT)
-import Control.Monad.State as State
 import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
 import Data.Array as Array
@@ -68,7 +63,7 @@ import Data.Lazy as Lazy
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromJust, maybe)
-import Data.Newtype (class Newtype, over, un, unwrap)
+import Data.Newtype (over, un, unwrap)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.String (Pattern(..), Replacement(..))
 import Data.String as String
@@ -95,10 +90,10 @@ import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
-import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier, class SideloadedVKsM, getSideloadedVKsCarrier)
+import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier, mkUnitVkCarrier)
 import Pickles.Sideload.Bundle (Bundle) as SideloadBundle
 import Pickles.Sideload.VerificationKey (VerificationKey) as SLVK
-import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM)
+import Pickles.Step.Advice (StepAdvice(..))
 import Pickles.Step.Dummy (BaseCaseDummies, computeDummySgValues) as Dummy
 import Pickles.Step.Dummy (baseCaseDummies, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified, wrapDummyUnfinalizedProof)
 import Pickles.Step.Main (class BuildSlotVkSources, RuleOutput, StepMainSrsData, stepMain)
@@ -125,7 +120,7 @@ import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
 import Snarky.Backend.Prover (emptyProverState)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, UnChecked(..), coerceViaBits)
+import Snarky.Circuit.DSL (class CircuitM, AsProverT, BoolVar, F(..), FVar, SizedF, Snarky, UnChecked(..), coerceViaBits)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (toField, unwrapF, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
@@ -140,6 +135,7 @@ import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (SplitField(..), Type1(..), Type2(..), fromShifted, toShifted)
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 --------------------------------------------------------------------------------
 -- Advice
@@ -1485,17 +1481,52 @@ buildSlotAdvice input = do
 -- |   * NRR (no prevs):           `valCarrier = Unit`
 -- |   * Simple_chain (1 prev):    `valCarrier = Tuple (StatementIO …) Unit`
 -- |   * Tree_proof_return (2):    `valCarrier = Tuple stmt0 (Tuple stmt1 Unit)`
+-- | The rule runs in the caller's bare witness monad `m'` (no bespoke
+-- | prover transformer). Pickles advice is NOT a typeclass on `m'`
+-- | anymore: the rule's only advice need — the previous proofs'
+-- | statements — arrives as an explicit, deferred getter argument
+-- | (`AsProverT StepField m' valCarrier`) that `stepMain` builds by
+-- | projecting the `StepAdvice` value. The getter is consumed inside the
+-- | rule's `exists` bodies, so at compile (which discards `exists`
+-- | bodies) it is never forced.
+-- |
+-- | Because `m'` is the caller's own monad, application rules just add
+-- | their advice constraints (e.g. `MerkleRequestM m'`, `AccountMapM m'`)
+-- | to this shape — ordinary instances on the app monad, no orphan, no
+-- | concrete-advice-monad (`StepRuleM`) form needed.
 type StepRule (n :: Int) valCarrier inputVal input outputVal output prevInputVal prevInput =
-  forall t m' wrapVkChunks
+  forall t m'
    . CircuitM StepField (KimchiConstraint StepField) t m'
-  => StepWitnessM n StepIPARounds WrapIPARounds wrapVkChunks PallasG StepField m' inputVal
-  => StepPrevValuesM m' valCarrier
+  => MonadEffect m'
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => CircuitType StepField prevInputVal prevInput
   => CheckedType StepField (KimchiConstraint StepField) input
-  => input
+  => AsProverT StepField m' valCarrier
+  -> input
   -> Snarky (KimchiConstraint StepField) t m' (RuleOutput n prevInput output)
+
+-- | `StepRule` pinned to a specific witness monad `m` — the shape the
+-- | step runner functions and `mkRuleEntry` actually accept. A universal
+-- | `StepRule` value subsumes into this (`m' := m`).
+-- |
+-- | Application rules add their advice constraints (`MerkleRequestM m`,
+-- | `AccountMapM m`, `TransactionM m`, …) on top of this shape. Those
+-- | discharge at the concrete `m` the entry is built at (`mkRuleEntry @m`
+-- | with `m` = the app monad), where the app monad's own instances are in
+-- | scope — there is no rank-2 skolem to defeat them (which is exactly why
+-- | the runner rule param can no longer be universal in `m`).
+type StepRuleAt m (n :: Int) valCarrier inputVal input outputVal output prevInputVal prevInput =
+  forall t
+   . CircuitM StepField (KimchiConstraint StepField) t m
+  => MonadEffect m
+  => CircuitType StepField inputVal input
+  => CircuitType StepField outputVal output
+  => CircuitType StepField prevInputVal prevInput
+  => CheckedType StepField (KimchiConstraint StepField) input
+  => AsProverT StepField m valCarrier
+  -> input
+  -> Snarky (KimchiConstraint StepField) t m (RuleOutput n prevInput output)
 
 -- | Ambient data the step prover needs alongside the advice and rule.
 -- |
@@ -1639,251 +1670,6 @@ writeRowLabelsTo path publicInputSize cs = do
   FS.writeTextFile UTF8 path
     (header <> "\n" <> Array.intercalate "\n" out <> "\n")
 
---------------------------------------------------------------------------------
--- Spec-indexed advice stack
---
--- `StepAdvice` keys advice pieces on a `prevsSpec` type-level list so
--- heterogeneous-prev rules (Tree_proof_return style) can express
--- per-slot `max_proofs_verified` distinctly. `StepProverT` serves
--- that advice to the circuit body via `StepWitnessM` and
--- `StepSlotsM`.
---------------------------------------------------------------------------------
-
--- | Advice record keyed on a spec-indexed per-slot carrier.
--- |
--- | * `perProofSlotsCarrier` — nested-tuple of per-slot `StepSlot`s
--- |   (sized by `prevsSpec`). Heterogeneous per-slot data lives here.
--- | * Uniform-per-slot fields (`publicUnfinalizedProofs`,
--- |   `messagesForNextWrapProof`) are plain `Vector len` — their
--- |   element types don't depend on per-slot `n_i`.
--- | * Singletons (`wrapVerifierIndex`, `publicInput`) stand alone.
--- | `wrapVkChunks` (Dim 2) is the chunks count of THIS compile's
--- | wrap VK as carried by `wrapVerifierIndex`. OCaml hardcodes this
--- | to 1 at `step_main.ml:347` (`num_chunks_by_default`); the type
--- | stays polymorphic so the parameter tracks the OCaml TODO.
-newtype StepAdvice
-  :: Type -> Int -> Int -> Int -> Type -> Int -> Type -> Type -> Type -> Type
-newtype StepAdvice prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier =
-  StepAdvice
-    { perProofSlotsCarrier :: carrier
-    , publicInput :: inputVal
-    , publicUnfinalizedProofs ::
-        Vector len
-          ( PerProofUnfinalized
-              dw
-              (Type2 (SplitField (F StepField) Boolean))
-              (F StepField)
-              Boolean
-          )
-    , messagesForNextWrapProof :: Vector len (F StepField)
-    -- | Dummy hash value used to pad `messagesForNextWrapProof` from
-    -- | `len` to `mpvMax` at solve time. Mirrors OCaml's
-    -- | `Reduced_messages_for_next_proof_over_same_field.Wrap.dummy.hash`
-    -- | which the prover supplies for padding positions in
-    -- | `Req.Messages_for_next_wrap_proof` (step_main.ml:368-370).
-    , messagesForNextWrapProofDummyHash :: F StepField
-    , wrapVerifierIndex ::
-        VerificationKey wrapVkChunks (WeierstrassAffinePoint PallasG (F StepField))
-    -- | Kimchi-level prev_challenges threaded to
-    -- | `pallasCreateProofWithPrev`. One entry per prev slot of the
-    -- | step circuit. Uniform Vector len — each entry's `challenges`
-    -- | is sized by `ds` (step IPA rounds, fixed), NOT by per-slot
-    -- | `n_i`, so this stays a plain Vector (not a spec-indexed
-    -- | carrier).
-    , kimchiPrevChallenges ::
-        Vector len
-          { sgX :: WrapField
-          , sgY :: WrapField
-          , challenges :: Vector ds StepField
-          }
-    -- | Heterogeneous per-slot prev statements, in the same nested-tuple
-    -- | shape `SlotStatementsCarrier prevsSpec valCarrier` derives:
-    -- |   Unit                            → Unit
-    -- |   Slot Compiled n stmt /\ rest               → Tuple stmt restValCarrier
-    -- | Each `stmt` is the prev rule's `StatementIO inputVal outputVal`
-    -- | (the same type bundled in `Slot Compiled`'s second parameter).
-    -- | Mirrors OCaml's `previous_proof_statements` argument flowing into
-    -- | the rule's `main` — the rule body reads slot-specific values out
-    -- | (input for Input-mode prevs, output for Output-mode) inside its
-    -- | `exists` calls so the witness for the prev's app-state circuit
-    -- | variable is sourced from advice rather than baked into a closure.
-    , prevAppStates :: valCarrier
-    -- | Runtime side-loaded VK carrier, shape derived from `prevsSpec`
-    -- | by `Pickles.Sideload.Advice.SideloadedVKsCarrier` (compiled
-    -- | slots contribute `Unit`, side-loaded slots contribute a
-    -- | `Pickles.Sideload.VerificationKey`). PS analog of OCaml's
-    -- | per-prove `~handler`.
-    , sideloadedVKs :: vkCarrier
-    }
-
-derive instance
-  Newtype
-    (StepAdvice prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier)
-    _
-
--- | Mutable side-state captured during the rule body's structural pass.
--- | Currently just the user's `publicOutput` FVars; callers post-run
--- | evaluate them against the assignments map (see `stepSolveAndProve`).
--- | Kept as a record so future captured values slot in without churn.
-type StepProverCapture =
-  { userPublicOutputFields :: Maybe (Array (FVar StepField))
-  }
-
-initialStepProverCapture :: StepProverCapture
-initialStepProverCapture =
-  { userPublicOutputFields: Nothing
-  }
-
--- | ReaderT-over-StateT transformer for the v2 prover stack. The Reader
--- | layer carries the read-only `StepAdvice` (advice methods like
--- | `getStepPublicInput`); the State layer captures values written
--- | from inside the rule body (so far: `setUserPublicOutputFields`,
--- | the OCaml `Req.Return_value` analog).
-newtype StepProverT
-  :: Type -> Int -> Int -> Int -> Type -> Int -> Type -> Type -> Type -> (Type -> Type) -> Type -> Type
-newtype StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m a =
-  StepProverT
-    ( ReaderT (StepAdvice prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier)
-        (StateT StepProverCapture m)
-        a
-    )
-
-derive instance
-  Newtype
-    (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m a)
-    _
-
-derive newtype instance
-  Functor m =>
-  Functor (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
-
-derive newtype instance
-  Monad m =>
-  Apply (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
-
-derive newtype instance
-  Monad m =>
-  Applicative (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
-
-derive newtype instance
-  Monad m =>
-  Bind (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
-
-derive newtype instance
-  Monad m =>
-  Monad (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
-
-derive newtype instance
-  MonadRec m =>
-  MonadRec (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
-
--- | Run a `StepProverT` action with the supplied advice. Returns both
--- | the action's result AND the post-run `StepProverCapture` so the
--- | caller can read whatever the rule body wrote (e.g. the user's
--- | `publicOutput` FVars).
-runStepProverT
-  :: forall prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m a
-   . Monad m
-  => StepAdvice prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier
-  -> StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m a
-  -> m (Tuple a StepProverCapture)
-runStepProverT advice (StepProverT m) =
-  runStateT (runReaderT m advice) initialStepProverCapture
-
-instance
-  ( Monad m
-  , StepSlotsCarrier
-      prevsSpec
-      ds
-      dw
-      (F StepField)
-      (Type2 (SplitField (F StepField) Boolean))
-      Boolean
-      len
-      carrier
-      vkSourcesCarrier
-  ) =>
-  StepSlotsM
-    prevsSpec
-    ds
-    dw
-    PallasG
-    StepField
-    (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
-    len
-    carrier
-    vkSourcesCarrier where
-  getStepSlotsCarrier _ =
-    StepProverT $ map (\(StepAdvice r) -> r.perProofSlotsCarrier) ask
-
--- | `StepWitnessM` instance on `StepProverT`. Implements the uniform
--- | methods `stepMain` actually calls (getStepPublicInput,
--- | getStepUnfinalizedProofs, getMessagesForNextWrapProof,
--- | getWrapVerifierIndex) via direct field access. The remaining
--- | legacy methods (getProofWitnesses, getPrevChallenges,
--- | getStepPerProofWitnesses, etc.) throw — v2 code uses
--- | `getStepSlotsCarrier` instead, and the legacy per-slot methods
--- | are dead code from the deleted `Step.Circuit` path.
-instance
-  ( Monad m
-  , Reflectable len Int
-  ) =>
-  StepWitnessM
-    len -- ← n in StepWitnessM's class header. For the v2 stack the
-    --   advice's outer `Vector len` fields are sized by len, and
-    --   len matches what StepWitnessM's methods expect.
-    ds
-    dw
-    wrapVkChunks
-    PallasG
-    StepField
-    (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
-    inputVal where
-
-  getMessagesForNextWrapProof _ =
-    StepProverT $ map (\(StepAdvice r) -> r.messagesForNextWrapProof) ask
-  getMessagesForNextWrapProofDummyHash _ =
-    StepProverT $ map (\(StepAdvice r) -> r.messagesForNextWrapProofDummyHash) ask
-  getWrapVerifierIndex _ =
-    StepProverT $ map (\(StepAdvice r) -> r.wrapVerifierIndex) ask
-  getStepPublicInput _ =
-    StepProverT $ map (\(StepAdvice r) -> r.publicInput) ask
-  getStepUnfinalizedProofs _ =
-    StepProverT $ map (\(StepAdvice r) -> r.publicUnfinalizedProofs) ask
-
-instance
-  Monad m =>
-  StepPrevValuesM
-    (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
-    valCarrier where
-  getPrevAppStates _ =
-    StepProverT $ map (\(StepAdvice r) -> r.prevAppStates) ask
-
--- | Write to the State layer of the StepProverT stack. The OCaml
--- | analog is the `Req.Return_value` handler at step.ml:896-898 which
--- | does `return_value := Some res`.
-instance
-  Monad m =>
-  StepUserOutputM
-    (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m) where
-  setUserPublicOutputFields fields =
-    StepProverT $ lift $ State.modify_ \s ->
-      s { userPublicOutputFields = Just fields }
-
--- | `SideloadedVKsM` instance for `StepProverT`. Reads the runtime
--- | side-loaded VK carrier out of the `StepAdvice` Reader payload.
-instance
-  ( Monad m
-  , SideloadedVKsCarrier prevsSpec vkCarrier
-  ) =>
-  SideloadedVKsM
-    prevsSpec
-    (StepProverT prevsSpec ds dw wrapVkChunks inputVal len carrier valCarrier vkCarrier m)
-    vkCarrier
-  where
-  getSideloadedVKsCarrier _ =
-    StepProverT $ map (\(StepAdvice r) -> r.sideloadedVKs) ask
-
 -- | V2 compile phase — parallel to `stepCompile` but runs `stepMain`
 -- | in `Effect`, which dispatches to the `StepWitnessM`/`StepSlotsM`
 -- | `Effect` instances — every advice method there throws. The
@@ -1899,7 +1685,7 @@ stepCompile
        ndPred wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN
        chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
-       pad unfsTotal digestPlusUnfs
+       pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
   -- `wrapVkChunks` is the wrap VK's own chunk count (Dim 2), a free
   -- compile-wide parameter. Callers pin it (`@1`, protocol-guaranteed
@@ -1968,15 +1754,39 @@ stepCompile
        carrierVar
        vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
+  => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
+  => Monad m
+  => MonadEffect m
+  => MonadRec m
   => StepProveContext wrapVkChunks len nd blueprints
-  -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
-  -> Effect StepCompileResult
+  -> StepRuleAt m len valCarrier inputVal input outputVal output prevInputVal prevInput
+  -> m StepCompileResult
 stepCompile ctx rule = do
-  -- For compiled-only specs the Effect `SideloadedVKsM` instance
-  -- synthesises an all-Unit chain via `mkUnitVkCarrier`; specs with
-  -- side-loaded slots won't resolve unless a prover monad with a
-  -- real runtime-VK source is in scope.
-  sideloadedCarrier <- getSideloadedVKsCarrier @prevsSpec unit
+  -- For compiled-only specs the side-loaded VK carrier is the all-Unit
+  -- chain `mkUnitVkCarrier` synthesises (= what the `SideloadedVKsM`
+  -- Effect instance used to return). The circuit shape only depends on
+  -- `prevsSpec`/`len`/`carrier`, so the real runtime VKs are irrelevant
+  -- at compile.
+  let
+    sideloadedCarrier = mkUnitVkCarrier @prevsSpec
+  -- Run the rule's circuit in the bare base monad `m` with a dummy
+  -- advice value. At compile every advice read lives inside an `exists`
+  -- body, which `compile` discards, so the advice record is never
+  -- projected — the `unsafeCoerce unit` bottom below is never forced.
+  -- pickles is generic over `m`, so app-level advice (e.g.
+  -- `AccountMapM m`) resolves via `m`'s own instances directly.
+  let
+    dummyAdvice
+      :: StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks
+           inputVal
+           len
+           carrier
+           valCarrier
+           sideloadedVkCarrier
+    dummyAdvice = unsafeCoerce unit
+  -- A throwaway capture Ref — `compile` discards the `exists` body that
+  -- would write it, so it stays `Nothing`.
+  throwawayCaptureRef <- liftEffect (Ref.new Nothing)
   builtState <-
     compile
       (Proxy @Unit)
@@ -1998,6 +1808,8 @@ stepCompile ctx rule = do
             ctx.srsData
             ctx.dummySg
             sideloadedCarrier
+            dummyAdvice
+            throwawayCaptureRef
       )
       (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
 
@@ -2036,7 +1848,7 @@ stepCompile ctx rule = do
   -- writes one file per branch — same convention as
   -- `KIMCHI_WITNESS_DUMP` / `KIMCHI_CS_DUMP`. Useful for localizing
   -- multi-rule per-branch CS divergences without going through prove.
-  Process.lookupEnv "KIMCHI_STEP_LABELS_DUMP" >>= case _ of
+  liftEffect $ Process.lookupEnv "KIMCHI_STEP_LABELS_DUMP" >>= case _ of
     Nothing -> pure unit
     Just pathTmpl -> do
       counter <- bumpStepLabelsCounter
@@ -2049,7 +1861,7 @@ stepCompile ctx rule = do
   -- `KIMCHI_STEP_CS_DUMP`. Mirrors the wrap-side `KIMCHI_WRAP_CS_DUMP`
   -- in `Pickles.Prove.Wrap`. Filename template uses `%c` (replaced
   -- with a monotonic counter independent of `KIMCHI_STEP_LABELS_DUMP`'s).
-  Process.lookupEnv "KIMCHI_STEP_CS_DUMP" >>= case _ of
+  liftEffect $ Process.lookupEnv "KIMCHI_STEP_CS_DUMP" >>= case _ of
     Nothing -> pure unit
     Just pathTmpl -> do
       counter <- bumpStepCsCounter
@@ -2087,7 +1899,7 @@ preComputeStepDomainLog2
        ndPred wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN
        chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
-       pad unfsTotal digestPlusUnfs
+       pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
   -- Side-loaded VK carrier — see stepMain. preComputeStepDomainLog2
   -- runs at compile time; the caller synthesizes a placeholder
@@ -2158,11 +1970,28 @@ preComputeStepDomainLog2
   -- preComputeStepDomainLog2 is the compile-time pre-pass (gate
   -- count → domain log2); `wrapVkChunks` only sizes the discarded
   -- wrap-VK placeholder. Free parameter; callers pin (tests `@1`).
+  => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
+  => Monad m
+  => MonadEffect m
+  => MonadRec m
   => StepProveContext wrapVkChunks len nd blueprints
-  -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
-  -> Effect Int
+  -> StepRuleAt m len valCarrier inputVal input outputVal output prevInputVal prevInput
+  -> m Int
 preComputeStepDomainLog2 ctx rule = do
-  sideloadedCarrier <- getSideloadedVKsCarrier @prevsSpec unit
+  -- See `stepCompile` for why the rule runs in `StepProverT … m` with
+  -- an `unsafeCoerce unit` dummy advice (never deconstructed at compile).
+  let
+    sideloadedCarrier = mkUnitVkCarrier @prevsSpec
+
+    dummyAdvice
+      :: StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks
+           inputVal
+           len
+           carrier
+           valCarrier
+           sideloadedVkCarrier
+    dummyAdvice = unsafeCoerce unit
+  throwawayCaptureRef <- liftEffect (Ref.new Nothing)
   builtState <-
     compile
       (Proxy @Unit)
@@ -2183,6 +2012,8 @@ preComputeStepDomainLog2 ctx rule = do
             ctx.srsData
             ctx.dummySg
             sideloadedCarrier
+            dummyAdvice
+            throwawayCaptureRef
       )
       (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
 
@@ -2291,31 +2122,27 @@ stepSolveAndProve
   => MonadRec m
   => SlotStatementsCarrier prevsSpec valCarrier
   => StepProveContext wrapVkChunks len nd blueprints
-  -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
+  -> StepRuleAt m len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> StepCompileResult
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
   -> ExceptT EvaluationError m (StepProveResult outputSize)
 stepSolveAndProve ctx rule compileResult advice = do
-  -- Source the side-loaded VK carrier directly from the StepAdvice.
-  -- The advice was constructed by `mkStepAdvice` from the same
-  -- spec-indexed runtime carrier the prover monad would have served;
-  -- pulling it from the field here keeps `m` arbitrary (no
-  -- `SideloadedVKsM` constraint required) and lets `StepProverT`'s
-  -- instance for `SideloadedVKsM` route any in-rule call to
-  -- `getSideloadedVKsCarrier` to the same field.
+  -- Capture channel for the rule's user `publicOutput` FVars. The
+  -- solver makes `stepMain`'s whole return value public, so the
+  -- captured FVars (which must NOT be public) ride a Ref instead: a
+  -- plain value passed into `stepMain`, written inside an `exists`
+  -- body at solve time, read back here. This is the ONLY mutable
+  -- channel; the read-only advice flows as a plain argument.
+  captureRef <- liftEffect (Ref.new Nothing)
+  -- Source the side-loaded VK carrier directly from the StepAdvice;
+  -- keeps `m` arbitrary (no `SideloadedVKsM` constraint required).
   let
     StepAdvice adv = advice
     sideloadedCarrier = adv.sideloadedVKs
 
     rawSolver
       :: SolverT StepField (KimchiConstraint StepField)
-           ( StepProverT prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal
-               len
-               carrier
-               valCarrier
-               sideloadedVkCarrier
-               m
-           )
+           m
            Unit
            (Vector outputSize (F StepField))
     rawSolver =
@@ -2339,13 +2166,11 @@ stepSolveAndProve ctx rule compileResult advice = do
               ctx.srsData
               ctx.dummySg
               sideloadedCarrier
+              advice
+              captureRef
         )
 
-  -- `runStepProverT` returns the solver result paired with the
-  -- `StepProverCapture` State accumulated by the rule body — in
-  -- particular the FVars `setUserPublicOutputFields` wrote.
-  Tuple eRes capturedState <- lift $
-    runStepProverT advice (runSolverT rawSolver unit)
+  eRes <- lift (runSolverT rawSolver unit)
 
   case eRes of
     Left e -> throwError (WithContext "stepProve solver" e)
@@ -2363,17 +2188,18 @@ stepSolveAndProve ctx rule compileResult advice = do
               (Array.length compileResult.builtState.publicInputs)
               (constraintsToArray compileResult.builtState.constraints)
         pure unit
-      -- Evaluate the rule's user `publicOutput` FVars (captured by
-      -- `setUserPublicOutputFields` in the StepProverT State) against
-      -- the post-solve assignments map. If the State slot is empty,
+      -- Evaluate the rule's user `publicOutput` FVars (written to
+      -- `captureRef` inside `stepMain`'s rule_main `exists`) against
+      -- the post-solve assignments map. If the Ref is still empty,
       -- `stepMain`'s rule_main block didn't run — that's a bug; we
       -- surface it as a FailedAssertion rather than silently
       -- producing zeros. Raw field values are returned;
       -- `runProverBody` applies `fieldsToValue` against the rule's
       -- specific `outputVal`.
-      userPublicOutputFields <- case capturedState.userPublicOutputFields of
+      captured <- liftEffect (Ref.read captureRef)
+      userPublicOutputFields <- case captured of
         Nothing ->
-          throwError (FailedAssertion "stepProve: stepMain did not capture publicOutput FVars (StepProverT.State.userPublicOutputFields was Nothing post-solve)")
+          throwError (FailedAssertion "stepProve: stepMain did not capture publicOutput FVars (captureRef was Nothing post-solve)")
         Just fieldVars -> do
           let
             evalLookup :: Variable -> Either EvaluationError StepField

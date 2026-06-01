@@ -1,8 +1,6 @@
 module Pickles.CircuitDiffs.PureScript.StepMainSimpleChain
   ( compileStepMainSimpleChain
   , StepMainSimpleChainParams
-  , class SimpleChainAdvice
-  , getSimpleChainPrev
   ) where
 
 -- | step_main circuit for the Simple_Chain inductive rule (N1, 1 previous proof).
@@ -12,57 +10,46 @@ module Pickles.CircuitDiffs.PureScript.StepMainSimpleChain
 
 import Prelude
 
-import Control.Monad.Trans.Class (lift)
+import Data.Maybe (Maybe(..))
+import Data.Tuple (Tuple)
 import Data.Tuple.Nested (Tuple1, tuple1, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Effect.Exception (throw)
+import Effect.Ref as Ref
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Compiled, Slot)
+import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
-import Pickles.Types (StatementIO)
+import Pickles.Step.Types (PerProofWitness)
+import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertAny_, const_, equals_, exists, not_)
+import Snarky.Circuit.DSL (class CircuitM, AsProverT, F, FVar, Snarky, assertAny_, const_, equals_, exists, not_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Types.Shifted (SplitField, Type2)
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 type StepMainSimpleChainParams =
   { lagrangeAt :: LagrangeBaseLookup 1 StepField
   , blindingH :: AffinePoint (F StepField)
   }
 
--- | Application-specific advice for the Simple_Chain N1 rule.
--- |
--- | The rule allocates one previous-proof app_state field. In OCaml this is
--- | done via `exists StepField.typ ~compute:(fun () -> StepField.Constant.zero)`.
--- | In PureScript we route it through this typeclass so the SAME rule
--- | definition can be used for both compilation (Effect throws) and
--- | proving (a ReaderT-based instance returns the real previous proof's
--- | app_state).
-class Monad m <= SimpleChainAdvice m where
-  getSimpleChainPrev :: Unit -> m (F StepField)
-
--- | Compilation instance: throws if evaluated. `exists` in CircuitBuilderT
--- | discards the AsProverT entirely so the throw never fires.
-instance SimpleChainAdvice Effect where
-  getSimpleChainPrev _ = throw "SimpleChainAdvice.getSimpleChainPrev: not available during compilation"
-
 -- | Simple_Chain N1 rule: self_correct = (1 + prev == self)
 -- | Reference: dump_circuit_impl.ml:4390-4413
 simpleChainRule
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => SimpleChainAdvice m
-  => FVar StepField
+  => AsProverT StepField m (Tuple1 (StatementIO (F StepField) Unit))
+  -> FVar StepField
   -> Snarky (KimchiConstraint StepField) t m (RuleOutput 1 (FVar StepField) Unit)
-simpleChainRule appState = do
-  prev <- exists $ lift $ getSimpleChainPrev unit
+simpleChainRule getPrevStates appState = do
+  prev <- exists $ getPrevStates <#> \(StatementIO p1 /\ _) -> p1.input
   isBaseCase <- equals_ (const_ zero) appState
   let proofMustVerify = not_ isBaseCase
   selfCorrect <- equals_ (CVar.add_ (const_ one) prev) appState
@@ -83,7 +70,25 @@ compileStepMainSimpleChain params = do
   selfLog2 <- preComputeSelfStepDomainLog2 (runStepCompile 1)
   mkStepArtifact <$> runStepCompile selfLog2
   where
-  runStepCompile selfLog2 =
+  runStepCompile selfLog2 = do
+    throwawayCaptureRef <- Ref.new Nothing
+    -- `carrier` (the value-side per-proof witness carrier) is not
+    -- determined by `stepMain`'s var-side `StepSlotsCarrier` constraint
+    -- (CircuitType has no var→value fundep), so we pin it here. Mirrors
+    -- the value-side `StepSlotsCarrier` constraint in `Prove.Step.stepCompile`.
+    let
+      dummyAdvice
+        :: StepAdvice _ _ _ _ _ _
+             ( Tuple
+                 ( PerProofWitness 1 1 StepIPARounds WrapIPARounds (F StepField)
+                     (Type2 (SplitField (F StepField) Boolean))
+                     Boolean
+                 )
+                 Unit
+             )
+             _
+             _
+      dummyAdvice = unsafeCoerce unit
     compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
       -- Axes: @prevsSpec @outputSize @inputVal @input @outputVal @output
       --       @prevInputVal @prevInput @valCarrier @mpvMax @mpvPad.
@@ -108,5 +113,7 @@ compileStepMainSimpleChain params = do
           -- Side-loaded VK carrier: one Cons slot,
           -- compiled (Unit), no side-loaded position; carrier = `Unit /\ Unit`.
           (tuple1 unit)
+          dummyAdvice
+          throwawayCaptureRef
       )
       Kimchi.initialState

@@ -1,5 +1,6 @@
 module Data.MerkleTree.Hashable
   ( class MerkleHashable
+  , hashLeaf
   , class MergeHash
   , merge
   , module RO
@@ -17,7 +18,7 @@ import Data.Newtype (un)
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_)
-import Snarky.Circuit.RandomOracle (class Hashable, hash) as RO
+import Snarky.Circuit.RandomOracle (class HashInput, class Hashable, hashInput, toHashInput) as RO
 import Snarky.Circuit.RandomOracle (Digest(..), hash2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 
@@ -36,21 +37,24 @@ instance
   MergeHash (Snarky (KimchiConstraint f) t m (Digest (FVar f))) where
   merge a b = join $ lift2 hash2 (map (un Digest) a) (map (un Digest) b)
 
--- | The default/empty hash for a type
-defaultHash :: forall @a hash. RO.Hashable a hash => hash
-defaultHash = RO.hash @a @hash Nothing
+-- | The default/empty hash for a type — hashing the "empty" leaf.
+defaultHash :: forall @a hash. MerkleHashable a hash => hash
+defaultHash = hashLeaf (Nothing :: Maybe a)
 
--- | Combined constraint for merkle tree operations.
--- | Requires both hashing elements and merging hashes.
-class (MergeHash hash, RO.Hashable a hash) <= MerkleHashable a hash
+-- | Combined capability for merkle tree operations: hash a (possibly
+-- | empty) leaf to a digest, and merge two digests.
+-- |
+-- | The empty/`Maybe` handling lives here, not in the structural
+-- | `Hashable`/`toHashInput` class — a leaf is hashed by flattening it
+-- | (`toHashInput`) and hashing the result (`hashInput`), with `Nothing`
+-- | hashing the empty input.
+class MergeHash hash <= MerkleHashable a hash where
+  hashLeaf :: Maybe a -> hash
 
-instance PoseidonField f => MerkleHashable (F f) (Digest (F f))
-
-instance
-  ( CircuitM f (KimchiConstraint f) t m
-  , PoseidonField f
-  ) =>
-  MerkleHashable (FVar f) (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
+instance (MergeHash hash, RO.Hashable a b, RO.HashInput b hash) => MerkleHashable a hash where
+  hashLeaf = case _ of
+    Nothing -> RO.hashInput ([] :: Array b)
+    Just x -> RO.hashInput (RO.toHashInput x)
 
 -- | Free hash type for lazy/symbolic hash computation
 data FreeHash a

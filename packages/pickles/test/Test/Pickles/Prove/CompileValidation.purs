@@ -18,7 +18,7 @@ import Data.Tuple.Nested (tuple1)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception as Exc
-import Pickles (NoSlots, StepField, compileMulti, mkRuleEntry)
+import Pickles (NoSlots, RuleEntry, StepField, compileMulti, mkRuleEntry)
 import Snarky.Circuit.DSL (F)
 import Test.Pickles.Prove.NoRecursionReturn (NrrRules, nrrRule)
 import Test.Pickles.SharedSrs (SharedSrs)
@@ -33,7 +33,8 @@ import Test.Spec.Assertions (fail)
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.Compile.validateNumChunks" do
   it "throws when @stepChunks=2 but the circuit only needs 1" \{ pallasSrs, vestaSrs } -> do
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
+    nrrEntry :: RuleEntry _ _ _ _ _ Unit _ _ _ _ _ _ <-
+      liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
     let rules = tuple1 nrrEntry
     result <- withSpan "[CompileValidation] compile" $ liftEffect $ Exc.try $ compileMulti
       @NrrRules

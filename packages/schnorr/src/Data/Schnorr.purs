@@ -29,14 +29,17 @@ import Data.Generic.Rep (class Generic)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
 import Data.Schnorr.Derive (deriveNonce)
+import Data.Tuple.Nested (Tuple2, tuple2, uncurry2)
 import Data.Vector (Vector)
 import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
 import RandomOracle.Input as Input
 import RandomOracle.Sponge (absorb, create, squeeze) as Sponge
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, check, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Curves.Class (fromAffine, fromBigInt, generator, inverse, scalarMul, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
+import Type.Proxy (Proxy(..))
 
 -- | Schnorr signature components, both in the native circuit field
 -- | (`Pallas.BaseField`). `r = R.x` is naturally a base-field value;
@@ -51,6 +54,21 @@ derive instance Newtype (Signature f) _
 derive instance Generic (Signature f) _
 derive newtype instance Show f => Show (Signature f)
 derive newtype instance Eq f => Eq (Signature f)
+
+-- | `CircuitType`/`CheckedType` for embedding a signature in a circuit.
+-- | The instances delegate to an explicit `Tuple2 (r, s)` rather than the
+-- | record's alphabetical RowList order, fixing the field order at
+-- | `(r, s)` (the pickles house style). `r` and `s` are both single field
+-- | elements; a circuit verifier `unpack_`s the scalar `s` to bits.
+instance CircuitType f a var => CircuitType f (Signature a) (Signature var) where
+  sizeInFields pf _ = sizeInFields pf (Proxy @(Tuple2 a a))
+  valueToFields (Signature sig) = valueToFields (tuple2 sig.r sig.s)
+  fieldsToValue fs = uncurry2 (\r s -> Signature { r, s }) (fieldsToValue @_ @(Tuple2 a a) fs)
+  varToFields (Signature sig) = varToFields @_ @(Tuple2 a a) (tuple2 sig.r sig.s)
+  fieldsToVar fs = uncurry2 (\r s -> Signature { r, s }) (fieldsToVar @_ @(Tuple2 a a) fs)
+
+instance CheckedType f c var => CheckedType f c (Signature var) where
+  check (Signature sig) = check (tuple2 sig.r sig.s)
 
 -- | LSB-is-0 check on a field element (matches the circuit's `y_even`).
 isEven :: Pallas.BaseField -> Boolean

@@ -52,15 +52,12 @@ wrapF (SizedF a) = SizedF $ F a
 unwrapF :: forall n f. SizedF n (F f) -> SizedF n f
 unwrapF (SizedF (F f)) = SizedF f
 
-instance
-  ( FieldSizeInBits f m
-  ) =>
-  CircuitType f (SizedF n (F f)) (SizedF n (FVar f)) where
+instance (CircuitType f a var) => CircuitType f (SizedF n a) (SizedF n var) where
   valueToFields (SizedF x) = valueToFields x
   fieldsToValue = SizedF <<< fieldsToValue
   sizeInFields pf _ = sizeInFields pf (Proxy @(F f))
-  varToFields (SizedF x) = varToFields @f @(F f) x
-  fieldsToVar = SizedF <<< fieldsToVar @f @(F f)
+  varToFields (SizedF x) = varToFields @f @a x
+  fieldsToVar = SizedF <<< fieldsToVar @f @a
 
 instance
   ( FieldSizeInBits f k

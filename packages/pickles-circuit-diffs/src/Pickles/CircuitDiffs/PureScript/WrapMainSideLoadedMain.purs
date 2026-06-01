@@ -28,13 +28,16 @@ import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain (StepMainSideLoade
 import Pickles.Field (StepField, WrapField)
 import Pickles.Slots (SideLoaded, Slot)
 import Pickles.Types (StatementIO)
+import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
+import Pickles.Wrap.Slots (Slots1)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Circuit.DSL (F)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 compileWrapMainSideLoadedMain
   :: IvpWrapParams
@@ -61,6 +64,9 @@ compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
   -- mpv=1, single side-loaded slot with bound 2 (the side-loaded
   -- prev's `max_proofs_verified = N2` upper bound). Slots derived
   -- from the `Slot SideLoaded` spec via funcdep.
+  let
+    dummyAdvice :: WrapAdvice 1 1 (Slots1 2)
+    dummyAdvice = unsafeCoerce unit
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     ( \stmt ->
         wrapMainForPrevs @1
@@ -68,6 +74,7 @@ compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
           @1
           config
           stmt
+          dummyAdvice
     )
     Kimchi.initialState
   pure

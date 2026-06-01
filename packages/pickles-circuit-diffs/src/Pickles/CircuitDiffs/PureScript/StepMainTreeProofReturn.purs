@@ -1,10 +1,6 @@
 module Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn
   ( compileStepMainTreeProofReturn
   , StepMainTreeProofReturnParams
-  , class TreeProofReturnAdvice
-  , getTreeProofReturnIsBaseCase
-  , getTreeProofReturnNoRecursiveInput
-  , getTreeProofReturnPrev
   ) where
 
 -- | step_main circuit for the Tree_proof_return rule.
@@ -18,25 +14,21 @@ module Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn
 -- | shape without needing an HList.
 -- |
 -- | Rule body computes `self = if is_base_case then 0 else 1 + prev`
--- | and exposes it as `publicOutput`. This exercises the Output-mode
--- | `hashAppFields = varToFields input <> varToFields output` path
--- | where `input = Unit` (contributes `[]`) and `output = FVar StepField`
--- | (contributes `[self]`) — matching OCaml step_main.ml:566-573's
--- | `Output _ -> ret_var` branch.
+-- | and exposes it as `publicOutput`.
 -- |
 -- | Reference: mina/src/lib/crypto/pickles/test/test_no_sideloaded.ml:315-392
 -- |            (Tree_proof_return).
--- | OCaml dump target: `step_main_tree_proof_return_circuit.json`
--- |            produced by `mina/src/lib/crypto/pickles/dump_circuit_impl.ml`.
+-- | OCaml dump target: `step_main_tree_proof_return_circuit.json`.
 
 import Prelude
 
-import Control.Monad.Trans.Class (lift)
+import Data.Maybe (Maybe(..))
+import Data.Tuple (Tuple)
 import Data.Tuple.Nested (Tuple2, tuple2, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Effect.Exception (throw)
+import Effect.Ref as Ref
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecursionReturnParams)
@@ -44,16 +36,20 @@ import Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn (compileWrapMai
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Compiled, Slot)
+import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
-import Pickles.Types (StatementIO)
+import Pickles.Step.Types (PerProofWitness)
+import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, Snarky, const_, exists, if_, not_)
+import Snarky.Circuit.DSL (class CircuitM, AsProverT, Bool(..), BoolVar, F(..), FVar, Snarky, const_, exists, if_, not_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Types.Shifted (SplitField, Type2)
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 -- | Tree_proof_return has HETEROGENEOUS prev wrap_domains (slot 0: 2^13
 -- | from No_recursion_return; slot 1: 2^14 from self @
@@ -63,39 +59,10 @@ type StepMainTreeProofReturnParams =
   { perSlotLagrangeAt :: Vector 2 (LagrangeBaseLookup 1 StepField)
   , blindingH :: AffinePoint (F StepField)
   -- SRS data for compiling NRR's wrap circuit (used to derive slot 0's
-  -- known wrap key). Mirrors `IvpWrapParams` and
-  -- `StepMainNoRecursionReturnParams` from
-  -- `compileWrapMainNoRecursionReturn`.
+  -- known wrap key).
   , nrrWrapSrsData :: IvpWrapParams
   , nrrStepSrsData :: StepMainNoRecursionReturnParams
   }
-
--- | Application-specific advice for the Tree_proof_return rule.
--- |
--- | Three requests from the OCaml test fixture:
--- | * `Is_base_case` — boolean controlling the base-vs-inductive branch.
--- | * `No_recursion_input` — the prev[0] public_input value (the
--- |   No_recursion_return proof's output field).
--- | * `Recursive_input` — the prev[1] public_input value (the parent
--- |   Tree_proof_return proof's output field).
--- |
--- | The proof witnesses themselves are tracked abstractly via the step
--- | advice monad; this class only supplies the field / boolean values
--- | the rule's `exists` calls request.
-class Monad m <= TreeProofReturnAdvice m where
-  getTreeProofReturnIsBaseCase :: Unit -> m Boolean
-  getTreeProofReturnNoRecursiveInput :: Unit -> m (F StepField)
-  getTreeProofReturnPrev :: Unit -> m (F StepField)
-
--- | Compilation instance: throws if evaluated. `exists` discards the
--- | AsProverT during circuit shape walks, so the throw never fires.
-instance TreeProofReturnAdvice Effect where
-  getTreeProofReturnIsBaseCase _ =
-    throw "TreeProofReturnAdvice.getTreeProofReturnIsBaseCase: not available during compilation"
-  getTreeProofReturnNoRecursiveInput _ =
-    throw "TreeProofReturnAdvice.getTreeProofReturnNoRecursiveInput: not available during compilation"
-  getTreeProofReturnPrev _ =
-    throw "TreeProofReturnAdvice.getTreeProofReturnPrev: not available during compilation"
 
 -- | Tree_proof_return rule:
 -- |   `self = if is_base_case then 0 else 1 + prev`
@@ -103,19 +70,23 @@ instance TreeProofReturnAdvice Effect where
 -- |   prev[1].public_input = prev (verified unless base case)
 -- |   public_output = self
 -- |
--- | Reference: test_no_sideloaded.ml:354-390
+-- | Both prev app-states are read from the deferred prev-states getter
+-- | (the prevs' `output` fields — Output mode); `is_base_case` is the
+-- | `prev[1].output == -1` sentinel, matching the migrated
+-- | `Test.Pickles.Prove.TreeProofReturn` rule. Reference:
+-- | test_no_sideloaded.ml:354-390.
 treeProofReturnRule
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => TreeProofReturnAdvice m
-  => Unit
+  => AsProverT StepField m
+       (Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
+  -> Unit
   -> Snarky (KimchiConstraint StepField) t m
        (RuleOutput 2 (FVar StepField) (FVar StepField))
-treeProofReturnRule _ = do
-  no_recursive_input <- exists $ lift $ getTreeProofReturnNoRecursiveInput unit
-  prev <- exists $ lift $ getTreeProofReturnPrev unit
-  (is_base_case) <- exists $ lift $
-    getTreeProofReturnIsBaseCase unit
+treeProofReturnRule getPrevStates _ = do
+  no_recursive_input <- exists $ getPrevStates <#> \(StatementIO p1 /\ _) -> p1.output
+  prev <- exists $ getPrevStates <#> \(_ /\ StatementIO p2 /\ _) -> p2.output
+  is_base_case <- exists $ getPrevStates <#> \(_ /\ StatementIO p2 /\ _) -> p2.output == F (negate one)
   let proofMustVerify = not_ is_base_case
   self <- if_ is_base_case (const_ zero) (CVar.add_ (const_ one) prev)
   pure
@@ -132,37 +103,34 @@ treeProofReturnRule _ = do
 compileStepMainTreeProofReturn
   :: StepMainTreeProofReturnParams -> Effect StepArtifact
 compileStepMainTreeProofReturn params = do
-  -- Compile NRR's wrap artifact up-front. The artifact bundles
-  -- NRR's step CS + wrap CS + derived wrap VK + step domain log2 —
-  -- everything TPR's slot 0 needs as compile-time constants.
-  -- Mirrors OCaml `dump_tree_proof_return.ml:50-83`'s NRR-first
-  -- compile order, with `Lazy.force compiled.wrap_key` and
-  -- `compiled.step_domains` exposed via the artifact record.
   nrrArt <- compileWrapMainNoRecursionReturn
     params.nrrWrapSrsData
     params.nrrStepSrsData
-  -- Slot 1 is self → its FOP domain log2 = TPR's own step domain
-  -- log2. Resolved via shape pass (mirrors OCaml `Fix_domains.domains`).
   selfLog2 <- preComputeSelfStepDomainLog2 (runStepCompile nrrArt 1)
   mkStepArtifact <$> runStepCompile nrrArt selfLog2
   where
-  runStepCompile nrrArt selfLog2 =
+  runStepCompile nrrArt selfLog2 = do
+    throwawayCaptureRef <- Ref.new Nothing
+    let
+      dummyAdvice
+        :: StepAdvice _ _ _ _ _ _
+             ( Tuple
+                 ( PerProofWitness 0 1 StepIPARounds WrapIPARounds (F StepField)
+                     (Type2 (SplitField (F StepField) Boolean))
+                     Boolean
+                 )
+                 ( Tuple
+                     ( PerProofWitness 2 1 StepIPARounds WrapIPARounds (F StepField)
+                         (Type2 (SplitField (F StepField) Boolean))
+                         Boolean
+                     )
+                     Unit
+                 )
+             )
+             _
+             _
+      dummyAdvice = unsafeCoerce unit
     compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
-      -- N=2, output size = 33*2 + 1 = 67 (two unfinalized proofs + digest
-      -- + two msg_wrap entries). Wrap domain log2 = 14 from
-      -- `override_wrap_domain:N1` (common.ml:25-29).
-      -- Heterogeneous spec: slot 0 is No_recursion_return (n=0), slot 1
-      -- is self (n=2). Per-slot FOP domain_log2 (`finalize_other_proof
-      -- ~step_domains`) uses the prev's STEP_DOMAINS (NOT wrap_domains):
-      -- * slot 0: NRR's step_domain.h, derived from `nrrArt.stepDomainLog2`.
-      -- * slot 1: self's step_domain.h, derived via shape pass.
-      -- Per-slot known wrap keys:
-      -- * slot 0: VkBlueprintConst nrrArt.wrapVk — derived from compiled NRR
-      --   wrap CS. Mirrors OCaml `Lazy.force compiled.wrap_key` at
-      --   `step_branch_data.ml:164`.
-      -- * slot 1: VkBlueprintShared — slot's prev is SELF, uses the
-      --   `exists`-allocated VK inside stepMain.
-      -- Single-rule: mpvMax = len = 2, mpvPad = 0.
       ( \_ -> stepMain
           @(Tuple2 (Slot Compiled 0 1 (StatementIO Unit (F StepField))) (Slot Compiled 2 1 (StatementIO Unit (F StepField))))
           @Unit
@@ -184,7 +152,8 @@ compileStepMainTreeProofReturn params = do
               VkBlueprintConst nrrArt.wrapVk /\ VkBlueprintShared /\ unit
           }
           dummyWrapSg
-          -- Side-loaded VK carrier: two Cons slots, both compiled.
           (tuple2 unit unit)
+          dummyAdvice
+          throwawayCaptureRef
       )
       Kimchi.initialState

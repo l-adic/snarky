@@ -6,7 +6,10 @@
 module Snarky.Circuit.RandomOracle
   ( Digest(..)
   , class Hashable
-  , hash
+  , toHashInput
+  , class HashInput
+  , hashInput
+  , hashOf
   , hashVec
   , hash2
   , update
@@ -19,7 +22,7 @@ import Data.Fin (unsafeFinite)
 import Data.Foldable (foldM)
 import Data.Generic.Rep (class Generic)
 import Data.Int (odd)
-import Data.Maybe (Maybe(..), fromJust)
+import Data.Maybe (fromJust)
 import Data.Newtype (class Newtype)
 import Data.Traversable (traverse)
 import Data.Vector (Vector)
@@ -27,7 +30,8 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, add_, const_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Safe.Coerce (coerce)
+import Snarky.Circuit.DSL (class AssertEqual, class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, add_, assertEqGeneric, const_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, isEqualGeneric)
 import Snarky.Circuit.Kimchi (poseidon)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
@@ -86,6 +90,10 @@ instance CircuitType f (Digest (F f)) (Digest (FVar f)) where
 
 instance CheckedType f c (Digest (FVar f)) where
   check = genericCheck
+
+instance AssertEqual f c (Digest (FVar f)) where
+  assertEq = assertEqGeneric
+  isEqual = isEqualGeneric
 
 -- | Hash exactly 2 field elements.
 -- |
@@ -152,25 +160,41 @@ hashVec inputs = do
   pure $ Digest $ Vector.index finalState (unsafeFinite 0)
 
 --------------------------------------------------------------------------------
--- | Type class for hashing values to digests.
+-- | Flatten a structured value into the field-element leaves that feed
+-- | the hash — the analogue of Mina's `Random_oracle.Input` / `to_input`.
 -- |
--- | This is used by merkle trees to hash leaf elements. The `Maybe` wrapper
--- | allows distinguishing between hashing a value vs hashing "empty" (Nothing).
-class Hashable a hash where
-  hash :: Maybe a -> hash
+-- | Total and compositional: composites concatenate their children's
+-- | inputs. `a` is the structure; `b` is its leaf field representation
+-- | (`F f` out of circuit, `FVar f` in circuit). `a` determines `b`.
+class Hashable a b | a -> b where
+  toHashInput :: a -> Array b
 
--- | Value-level hashing using Poseidon
-instance PoseidonField f => Hashable (F f) (Digest (F f)) where
-  hash = case _ of
-    Nothing -> Digest $ F $ Poseidon.hash []
-    Just (F a) -> Digest $ F $ Poseidon.hash [ a ]
+-- | A field element is its own singleton input (the leaf base cases).
+instance Hashable (F f) (F f) where
+  toHashInput x = [ x ]
 
--- | Circuit-level hashing using Poseidon constraints
+instance Hashable (FVar f) (FVar f) where
+  toHashInput x = [ x ]
+
+--------------------------------------------------------------------------------
+-- | Hash a flat array of leaf field elements into a `Digest` — the
+-- | analogue of `Random_oracle.hash`. Representation-specific: pure
+-- | values hash directly, circuit variables hash inside `Snarky`.
+class HashInput b h where
+  hashInput :: Array b -> h
+
+instance PoseidonField f => HashInput (F f) (Digest (F f)) where
+  hashInput xs = Digest (F (Poseidon.hash (coerce xs)))
+
 instance
   ( CircuitM f (KimchiConstraint f) t m
   , PoseidonField f
   ) =>
-  Hashable (FVar f) (Snarky (KimchiConstraint f) t m (Digest (FVar f))) where
-  hash = case _ of
-    Nothing -> hash2 (const_ zero) (const_ zero)
-    Just a -> hash2 a (const_ zero)
+  HashInput (FVar f) (Snarky (KimchiConstraint f) t m (Digest (FVar f))) where
+  hashInput = hashVec
+
+-- | Hash a value directly: flatten it (`toHashInput`) then hash the
+-- | leaves (`hashInput`). The non-`Maybe` counterpart of the merkle
+-- | layer's `hashLeaf`.
+hashOf :: forall a b h. Hashable a b => HashInput b h => a -> h
+hashOf = hashInput <<< toHashInput

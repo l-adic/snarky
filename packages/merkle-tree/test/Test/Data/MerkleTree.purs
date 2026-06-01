@@ -102,7 +102,7 @@ pathValidationLaw _ (NonEmptyList (NonEmpty a as)) =
               Nothing -> false -- Path should exist for valid index
               Just path ->
                 let
-                  leafHash = MT.hash $ Just element
+                  leafHash = MT.hashLeaf $ Just element
                   computedRoot = MT.impliedRoot addr leafHash path
                 in
                   computedRoot == rootHash
@@ -206,7 +206,7 @@ setUpdatesRootLaw depth = do
           Nothing -> withHelp false "getPath returned Nothing after set"
           Just path ->
             let
-              leafHash = MT.hash $ Just newValue
+              leafHash = MT.hashLeaf $ Just newValue
               computedRoot = MT.impliedRoot addr leafHash path
             in
               withHelp (computedRoot == newRoot)

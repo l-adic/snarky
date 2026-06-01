@@ -6,7 +6,7 @@ import Data.Array as Array
 import Data.Foldable (for_)
 import Data.Int (pow)
 import Data.Maybe (Maybe(..), isJust, isNothing)
-import Data.MerkleTree.Hashable (defaultHash, hash)
+import Data.MerkleTree.Hashable (defaultHash, hashLeaf)
 import Data.MerkleTree.Sparse as Sparse
 import Data.Reflectable (class Reflectable, reflectType, reifyType)
 import Effect.Class (liftEffect)
@@ -308,7 +308,7 @@ witnessValidationLaw _ tree addrInt value =
         let
           witness = Sparse.getWitness addr tree'
           actualRoot = Sparse.root tree'
-          valueHash = hash @(F f) (Just value)
+          valueHash = hashLeaf @(F f) (Just value)
           impliedRoot_ = Sparse.impliedRoot addr valueHash witness
         in
           impliedRoot_ === actualRoot
@@ -356,7 +356,7 @@ impliedRootLaw _ tree addrInt value =
         let
           witness = Sparse.getWitness addr tree'
           actualRoot = Sparse.root tree'
-          valueHash = hash @(F f) (Just value)
+          valueHash = hashLeaf @(F f) (Just value)
           computed = Sparse.impliedRoot addr valueHash witness
         in
           computed === actualRoot

@@ -12,7 +12,7 @@ import Data.Identity (Identity)
 import Data.Int (pow)
 import Data.List as List
 import Data.Maybe (Maybe(..), fromJust)
-import Data.MerkleTree.Hashable (class Hashable, class MerkleHashable, hash)
+import Data.MerkleTree.Hashable (class Hashable, class MerkleHashable, hashLeaf)
 import Data.MerkleTree.Sized (Address(..))
 import Data.MerkleTree.Sized as SMT
 import Data.Newtype (class Newtype)
@@ -28,12 +28,11 @@ import Effect.Ref as Ref
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
-import Poseidon as Poseidon
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, const_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Circuit.Kimchi (verifyCircuit, verifyCircuitM)
 import Snarky.Circuit.MerkleTree as CMT
-import Snarky.Circuit.RandomOracle (Digest(..), hash2)
+import Snarky.Circuit.RandomOracle (Digest(..))
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState)
@@ -134,32 +133,10 @@ instance CircuitType f (Account (F f)) (Account (FVar f)) where
 instance CheckedType f c (Account (FVar f)) where
   check = genericCheck
 
--- | Pure Hashable instance for Account (F f)
-instance PoseidonField f => Hashable (Account (F f)) (Digest (F f)) where
-  hash = case _ of
-    Nothing -> Digest $ F $ Poseidon.hash []
-    Just (Account { publicKey: F pk, tokenBalance: F tb }) ->
-      Digest $ F $ Poseidon.hash [ pk, tb ]
-
--- | Circuit Hashable instance for Account (FVar f)
-instance
-  ( CircuitM f (KimchiConstraint f) t m
-  , PoseidonField f
-  ) =>
-  Hashable (Account (FVar f)) (Snarky (KimchiConstraint f) t m (Digest (FVar f))) where
-  hash = case _ of
-    Nothing -> hash2 (const_ zero) (const_ zero)
-    Just (Account { publicKey, tokenBalance }) -> hash2 publicKey tokenBalance
-
--- | MerkleHashable instance for pure Account
-instance PoseidonField f => MerkleHashable (Account (F f)) (Digest (F f))
-
--- | MerkleHashable instance for circuit Account
-instance
-  ( CircuitM f (KimchiConstraint f) t m
-  , PoseidonField f
-  ) =>
-  MerkleHashable (Account (FVar f)) (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
+-- | Flatten an account to its leaf field elements; the merkle layer's
+-- | `hashLeaf` turns this into a digest (and `MerkleHashable` is derived).
+instance Hashable (Account a) a where
+  toHashInput (Account { publicKey, tokenBalance }) = [ publicKey, tokenBalance ]
 
 -- | Generate a random filled merkle tree of depth d (with Account leaves)
 genTree
@@ -216,7 +193,7 @@ impliedRootSpec cfg _ pd = do
       let
         addr = Address $ BigInt.fromInt addrInt
         elem = unsafePartial fromJust $ SMT.get tree addr
-        entryHash = hash (Just elem)
+        entryHash = hashLeaf (Just elem)
         path = unsafePartial fromJust $ SMT.getPath tree addr
       pure $ Tuple addr (Tuple entryHash path)
 

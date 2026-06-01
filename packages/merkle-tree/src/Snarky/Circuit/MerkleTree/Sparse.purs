@@ -19,7 +19,7 @@ import Prelude
 import Control.Monad.Trans.Class (lift)
 import Data.Foldable (foldM)
 import Data.Maybe (Maybe(..))
-import Data.MerkleTree.Hashable (class MerkleHashable, hash, mergeCircuit)
+import Data.MerkleTree.Hashable (class MerkleHashable, hashLeaf, mergeCircuit)
 import Data.MerkleTree.Sized (AddressVar(..), Path(..)) as Sized
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
@@ -73,7 +73,7 @@ get addr (Digest root_) = do
   { value, path } <- exists do
     a <- read addr
     lift $ getElement @_ @f @v @d a
-  h <- hash $ Just value
+  h <- hashLeaf $ Just value
   impliedRoot addr h path >>= \(Digest d) ->
     assertEqual_ root_ d
   pure value
@@ -135,7 +135,7 @@ update addr (Digest root_) prev next = do
     a <- read addr
     lift $ getPath @m @_ @v @d a
   -- Hash old element and verify against root
-  prevHash <- hash $ Just prev
+  prevHash <- hashLeaf $ Just prev
   impliedRoot addr prevHash path >>= \(Digest d) ->
     assertEqual_ root_ d
   -- Update the tree with the new value
@@ -144,5 +144,5 @@ update addr (Digest root_) prev next = do
     n <- read @v next
     lift $ setValue @_ @f @v @d a n
   -- Hash new element and compute new root
-  nextHash <- hash $ Just next
+  nextHash <- hashLeaf $ Just next
   impliedRoot addr nextHash path

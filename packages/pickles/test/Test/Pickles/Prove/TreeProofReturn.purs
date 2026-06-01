@@ -35,7 +35,6 @@ import Prelude
 
 import Colog (LoggerT, Message, logInfo, withSpan)
 import Control.Monad.Except (runExceptT)
-import Control.Monad.Trans.Class (lift) as MT
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
@@ -47,7 +46,7 @@ import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), Compiled, CompiledProof(..), NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots2, StatementIO(..), StepField, StepRule, compileMulti, getPrevAppStates, mkRuleEntry, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), Compiled, CompiledProof(..), NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots2, StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, const_, exists, if_, not_, true_)
@@ -70,16 +69,10 @@ treeProofReturnRule
        (FVar StepField)
        (F StepField)
        (FVar StepField)
-treeProofReturnRule _ = do
-  nrrInput <- exists $ MT.lift do
-    StatementIO { output: nrrOut } /\ _ <- getPrevAppStates unit
-    pure nrrOut
-  prevInput <- exists $ MT.lift do
-    _ /\ StatementIO { output: prevOut } /\ _ <- getPrevAppStates unit
-    pure prevOut
-  isBaseCase <- exists $ MT.lift do
-    _ /\ StatementIO { output: prevOut } /\ _ <- getPrevAppStates unit
-    pure (prevOut == F (negate one))
+treeProofReturnRule getPrevStates _ = do
+  nrrInput <- exists $ getPrevStates <#> \(StatementIO { output: nrrOut } /\ _) -> nrrOut
+  prevInput <- exists $ getPrevStates <#> \(_ /\ StatementIO { output: prevOut } /\ _) -> prevOut
+  isBaseCase <- exists $ getPrevStates <#> \(_ /\ StatementIO { output: prevOut } /\ _) -> prevOut == F (negate one)
   let proofMustVerifySlot1 = not_ isBaseCase
   selfVal <- if_ isBaseCase (const_ zero) (CVar.add_ (const_ one) prevInput)
   pure
@@ -89,7 +82,7 @@ treeProofReturnRule _ = do
     }
 
 nrrRule :: StepRule 0 Unit Unit Unit (F StepField) (FVar StepField) Unit Unit
-nrrRule _ = pure
+nrrRule _ _ = pure
   { prevPublicInputs: Vector.nil
   , proofMustVerify: Vector.nil
   , publicOutput: const_ zero

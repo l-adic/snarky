@@ -4,7 +4,7 @@ module Test.Data.Schnorr
 
 import Prelude
 
-import Data.Maybe (Maybe(..), fromJust)
+import Data.Maybe (fromJust)
 import Data.Schnorr (Signature(..))
 import Data.Schnorr as Schnorr
 import Effect.Class (liftEffect)
