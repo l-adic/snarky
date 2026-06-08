@@ -12,36 +12,43 @@
 -- |     `s1.target = s2.source` (the connecting ledger).
 -- |
 -- | This is the first app to exercise app advice (`MerkleRequestM`,
--- | `AccountMapM`, `TransactionM`) inside a pickles rule. Because pickles
+-- | `AccountMapM`, `TransferM`) inside a pickles rule. Because pickles
 -- | now runs rules in the caller's bare monad `m`, those are ordinary
 -- | constraints on `m`, discharged at the concrete app monad when the
 -- | entry is built (`mkRuleEntry @AppM`). `processTransaction` is reused
 -- | verbatim.
-module Snarky.Example.TransactionSnark
+module Snarky.Example.Transaction.Checked
   ( Statement(..)
   , baseRule
   , mergeRule
+  , applyTxChecked
   ) where
 
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
+import Data.MerkleTree.Hashable (toHashInput)
+import Data.Newtype (un)
 import Data.Reflectable (class Reflectable)
+import Data.Schnorr (Signature(..)) as Schnorr
 import Data.Tuple (Tuple)
 import Data.Tuple.Nested (Tuple2, (/\))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Class (class MonadEffect)
-import Mina.ChainId (ChainId(..))
+import Mina.ChainId (ChainId, signaturePrefix)
 import Pickles (StatementIO(..))
 import Pickles.Step.Main (RuleOutput)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, AsProverT, F, FVar, Snarky, assertEq, check, exists, fieldsToValue, fieldsToVar, sizeInFields, true_, valueToFields, varToFields)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, AsProverT, F, FVar, Snarky, add_, assertEq, assert_, check, const_, exists, fieldsToValue, fieldsToVar, not_, read, sizeInFields, true_, unpack_, valueToFields, varToFields)
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.RandomOracle (Digest)
+import Snarky.Circuit.Schnorr (Signature(..), verifies)
+import Snarky.Circuit.Schnorr.Shifted as Shifted
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Example.Circuits (class AccountMapM, class TransactionM, getCurrentTransaction, processTransaction)
-import Snarky.Example.Types (Account)
+import Snarky.Example.Transaction.Monad (class AccountMapM, class TransactionM, getAccountId, getCurrentTransaction)
+import Snarky.Example.Transaction.Types (SignedTransaction(..), Transaction(..), Transfer(..))
+import Snarky.Example.Types (Account(..), PublicKey(..), addWithOverflow, subWithUnderflow)
 import Type.Proxy (Proxy(..))
 
 -- | A transaction-snark statement: the ledger digest before (`source`)
@@ -84,7 +91,7 @@ instance CheckedType f c (Statement (FVar f)) where
 -- | Base "prove-transaction" rule (mpv = 0). The statement's `target` must
 -- | be the digest produced by applying the (private) signed transfer to
 -- | its `source`. The `SignedTransaction` is conjured via `exists` from
--- | the witness monad's `TransactionM` instance; the prev-states getter is
+-- | the witness monad's `TransferM` instance; the prev-states getter is
 -- | unused (no previous proofs).
 baseRule
   :: forall @d t m
@@ -94,7 +101,8 @@ baseRule
   => AccountMapM m Vesta.ScalarField d
   => CMT.MerkleRequestM m Vesta.ScalarField (Account (F Vesta.ScalarField)) d (Account (FVar Vesta.ScalarField))
   => TransactionM m Vesta.ScalarField
-  => AsProverT Vesta.ScalarField m Unit
+  => ChainId
+  -> AsProverT Vesta.ScalarField m Unit
   -> Statement (FVar Vesta.ScalarField)
   -- `prevInput = Stmt` is shared across the program's branches (the merge
   -- branch's prev statements); it is phantom here (0 prevs).
@@ -103,9 +111,9 @@ baseRule
        t
        m
        (RuleOutput 0 (Statement (FVar Vesta.ScalarField)) Unit)
-baseRule _ (Statement { source, target }) = do
+baseRule chainId _ (Statement { source, target }) = do
   tx <- exists (lift getCurrentTransaction)
-  computedTarget <- processTransaction @d Mainnet source tx
+  computedTarget <- applyTxChecked @d chainId source tx
   assertEq target computedTarget
   pure
     { prevPublicInputs: Vector.nil
@@ -147,3 +155,74 @@ mergeRule getPrevStates (Statement { source, target }) = do
     , proofMustVerify: true_ :< true_ :< Vector.nil
     , publicOutput: unit
     }
+
+--------------------------------------------------------------------------------
+
+-- | Transfer tokens between accounts.
+-- |
+-- | This circuit:
+-- | 1. Takes a transaction (public keys + amount)
+-- | 2. Looks up addresses from public keys via AccountMapM
+-- | 3. Fetches sender account, verifies ownership, debits the amount
+-- | 4. Fetches receiver account, verifies ownership, credits the amount
+-- | 5. Returns the new merkle root
+-- |
+-- | Note: Addresses are assigned sequentially in Mina (not derived from public keys).
+-- | The circuit verifies the account at each address has the expected public key.
+applyTxChecked
+  :: forall t m @d
+   . Reflectable d Int
+  => AccountMapM m Vesta.ScalarField d
+  => CMT.MerkleRequestM m Vesta.ScalarField (Account (F Vesta.ScalarField)) d (Account (FVar Vesta.ScalarField))
+  => CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
+  => ChainId
+  -> Digest (FVar Vesta.ScalarField)
+  -> SignedTransaction (FVar Vesta.ScalarField)
+  -> Snarky (KimchiConstraint Vesta.ScalarField) t m (Digest (FVar Vesta.ScalarField))
+applyTxChecked chainId root (SignedTransaction { signature, transaction }) = do
+  let
+    Transaction { nonce, transfer: Transfer { from, to, amount } } = transaction
+    Schnorr.Signature { r, s } = signature
+  -- Verify the sender's signature over the transaction in-circuit. The
+  -- pure signature carries `s` as a field; unpack it into the 255-bit
+  -- form the circuit verifier consumes.
+
+  signatureVerifies <- do
+    sBits <- unpack_ s (Proxy @255)
+    scalarOps <- Shifted.pallasScalarOps
+    verifies (signaturePrefix chainId) scalarOps
+      { publicKey: un PublicKey from
+      , signature: Signature { r, s: sBits }
+      , message: toHashInput transaction
+      }
+  assert_ signatureVerifies
+
+  -- Debit sender: verify ownership and subtract amount
+  { root: root' } <- do
+    fromAddr <- exists do
+      fromPk <- read from
+      lift $ getAccountId fromPk
+    CMT.fetchAndUpdate fromAddr root \(Account acc) -> do
+      -- Verify sender owns this account
+      assertEq acc.publicKey from
+      assertEq acc.nonce nonce
+      -- Debit the amount
+      { result: newBalance, underflow } <- acc.tokenBalance `subWithUnderflow` amount
+      assert_ (not_ underflow)
+      pure $ Account acc { tokenBalance = newBalance, nonce = add_ nonce (const_ one) }
+
+  -- Credit receiver: verify ownership and add amount
+  { root: root'' } <- do
+    toAddr <- exists do
+      toPk <- read to
+      lift $ getAccountId toPk
+
+    CMT.fetchAndUpdate toAddr root' \(Account acc) -> do
+      -- Verify receiver owns this account
+      assertEq acc.publicKey to
+      -- Credit the amount
+      { result: newBalance, overflow } <- acc.tokenBalance `addWithOverflow` amount
+      assert_ (not_ overflow)
+      pure $ Account acc { tokenBalance = newBalance }
+
+  pure root''

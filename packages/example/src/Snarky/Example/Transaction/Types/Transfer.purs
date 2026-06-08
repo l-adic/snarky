@@ -1,4 +1,4 @@
-module Snarky.Example.Types.Transfer
+module Snarky.Example.Transaction.Types.Transfer
   ( Transfer(..)
   ) where
 

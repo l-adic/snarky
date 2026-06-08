@@ -1,4 +1,4 @@
-module Snarky.Example.Types.Transaction
+module Snarky.Example.Transaction.Types.Transaction
   ( Transaction(..)
   ) where
 
@@ -12,8 +12,8 @@ import Prim.Ordering (LT)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F(..), FVar, check, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Circuit.RandomOracle (class Hashable)
 import Snarky.Curves.Class (class FieldSizeInBits)
+import Snarky.Example.Transaction.Types.Transfer (Transfer)
 import Snarky.Example.Types.TokenAmount (TokenAmount)
-import Snarky.Example.Types.Transfer (Transfer)
 import Test.QuickCheck (class Arbitrary)
 import Type.Proxy (Proxy(..))
 

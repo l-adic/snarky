@@ -4,8 +4,8 @@
 -- |
 -- |   * branch 0 — `baseRule` (mpv = 0): proves a single signed transfer
 -- |     `target = processTransaction(source, tx)`. Exercises app advice
--- |     (`AccountMapM` / `MerkleRequestM` / `TransactionM`) on the bare app
--- |     monad `TransferRefM`.
+-- |     (`AccountMapM` / `MerkleRequestM` / `TransferM`) on the bare app
+-- |     monad `TransferM`.
 -- |   * branch 1 — `mergeRule` (mpv = 2, Self): verifies two proofs of THIS
 -- |     program (base or merge, interchangeably — same wrap VK) and composes
 -- |     their statements.
@@ -41,21 +41,16 @@ import Snarky.Circuit.DSL (F)
 import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Example.TransactionSnark (Statement(..), baseRule, mergeRule)
-import Test.QuickCheck.Gen (Gen, randomSampleOne)
-import Test.Snarky.Example.Ledger (applyTransfer, genTreeWithAccounts, genValidSignedTransaction)
-import Test.Snarky.Example.Monad (TransferRefM, TransferState, runTransferRefM)
+import Snarky.Example.Transaction (SignedTransaction, Statement(..), TransferM, applyTx, baseRule, mergeRule, runTransferM)
+import Test.QuickCheck.Gen (randomSampleOne)
+import Test.Snarky.Example.Config (Depth, chainId)
+import Test.Snarky.Example.Generators (genLedger, genValidSignedTransaction)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
-type SF = Vesta.ScalarField
-
--- | Tree depth for this test.
-type D = 4
-
 -- | The shared statement type carried as each branch's public input: a
 -- | {source, target} ledger-digest pair with no public output.
-type TxnStmt = StatementIO (Statement (F SF)) Unit
+type TxnStmt = StatementIO (Statement (F Vesta.ScalarField)) Unit
 
 -- | The two-branch program. Branch 0 (base) has no prev slots; branch 1
 -- | (merge) has two `Self` slots, each width 2 (a proof of THIS mpv=2
@@ -87,11 +82,11 @@ spec =
     it "proves two base transitions + a merge of them, and batch-verifies the chain" do
       { pallasSrs, vestaSrs } <- buildSrs
 
-      -- Initial ledger L0, held in the app monad's state ref. The base
-      -- rule's `processTransaction` reads accounts from and mutates this
-      -- tree, so after each base prove the ref tree advances by one
-      -- transition.
-      l0 <- liftEffect $ randomSampleOne (genTreeWithAccounts :: Gen (TransferState D SF))
+      -- Initial ledger L0, held in the prover monad's ledger ref (with the
+      -- wallet `keys` to sign transfers). The base rule's `processTransaction`
+      -- reads accounts from and mutates this tree, so after each base prove
+      -- the ref's ledger advances by one transition.
+      { ledger: l0, keys } <- liftEffect $ randomSampleOne (genLedger 10)
       ref <- liftEffect $ Ref.new l0
 
       let
@@ -107,19 +102,19 @@ spec =
           , proofCache: Nothing
           }
 
-      baseEntry <- liftEffect $ mkRuleEntry @2 @Unit @(Statement (F SF)) @1 @1 @(TransferRefM D SF)
-        (baseRule @D)
+      baseEntry <- liftEffect $ mkRuleEntry @2 @Unit @(Statement (F Vesta.ScalarField)) @1 @1 @(TransferM Depth Vesta.ScalarField)
+        (baseRule @Depth chainId)
         unit
-      mergeEntry <- liftEffect $ mkRuleEntry @2 @Unit @(Statement (F SF)) @1 @1 @(TransferRefM D SF)
+      mergeEntry <- liftEffect $ mkRuleEntry @2 @Unit @(Statement (F Vesta.ScalarField)) @1 @1 @(TransferM Depth Vesta.ScalarField)
         mergeRule
         (tuple2 Self Self)
 
       let rules = tuple2 baseEntry mergeEntry
 
-      out <- liftEffect $ runTransferRefM ref $ compileMulti
+      out <- liftEffect $ runTransferM { currentTransaction: Nothing, ledger: ref } $ compileMulti
         @TxnSnarkRules
         @Unit
-        @(Statement (F SF))
+        @(Statement (F Vesta.ScalarField))
         @(Slots2 2 2)
         @1
         cfg
@@ -130,10 +125,11 @@ spec =
         BranchProver mergeProver = fst (snd out.provers)
 
         runBase
-          :: Statement (F SF)
+          :: SignedTransaction (F Vesta.ScalarField)
+          -> Statement (F Vesta.ScalarField)
           -> Aff (CompiledProof 2 TxnStmt)
-        runBase appInput = do
-          e <- liftEffect $ runTransferRefM ref $ runExceptT $ baseProver
+        runBase tx appInput = do
+          e <- liftEffect $ runTransferM { currentTransaction: Just tx, ledger: ref } $ runExceptT $ baseProver
             { appInput, prevs: unit, sideloadedVKs: unit }
           case e of
             Left err -> liftEffect $ Exc.throw ("baseProver: " <> show err)
@@ -144,23 +140,21 @@ spec =
       -- base0: L0 → L1 with a fresh valid transfer. `source0` is the
       -- pre-state root; `target0` is the pure post-transfer root (the same
       -- value `processTransaction` computes in-circuit).
-      let source0 = Sparse.root l0.tree :: Digest (F SF)
-      tx0 <- liftEffect $ randomSampleOne (genValidSignedTransaction l0)
-      let
-        target0 = Sparse.root (applyTransfer l0 tx0).tree
-      liftEffect $ Ref.modify_ (_ { currentTransaction = Just tx0 }) ref
-      b0 <- runBase (Statement { source: source0, target: target0 })
+      let source0 = Sparse.root l0.tree :: Digest (F Vesta.ScalarField)
+      tx0 <- liftEffect $ randomSampleOne (genValidSignedTransaction chainId l0 keys)
+      postState0 <- liftEffect $ applyTx chainId tx0 l0
+      let target0 = Sparse.root postState0.tree
+      b0 <- runBase tx0 (Statement { source: source0, target: target0 })
       Console.log "[TxnSnark] base0 proved; proving base1…"
 
       -- base1: L1 → L2. Read the ref's actual post-b0 state (the base
       -- rule mutated it to L1) and transfer from there.
       l1 <- liftEffect $ Ref.read ref
-      let source1 = Sparse.root l1.tree :: Digest (F SF)
-      tx1 <- liftEffect $ randomSampleOne (genValidSignedTransaction l1)
-      let
-        target1 = Sparse.root (applyTransfer l1 tx1).tree
-      liftEffect $ Ref.modify_ (_ { currentTransaction = Just tx1 }) ref
-      b1 <- runBase (Statement { source: source1, target: target1 })
+      let source1 = Sparse.root l1.tree :: Digest (F Vesta.ScalarField)
+      tx1 <- liftEffect $ randomSampleOne (genValidSignedTransaction chainId l1 keys)
+      postState1 <- liftEffect $ applyTx chainId tx1 l1
+      let target1 = Sparse.root postState1.tree
+      b1 <- runBase tx1 (Statement { source: source1, target: target1 })
       Console.log "[TxnSnark] base1 proved; verifying [b0, b1] standalone…"
 
       -- Milestone check: the two base proofs verify on their own. This
@@ -174,7 +168,7 @@ spec =
       -- Self-prevs — same wrap VK), so no base-case dummy is needed.
       Console.log "[TxnSnark] proving merge…"
       let mergedStmt = Statement { source: source0, target: target1 }
-      eMerge <- liftEffect $ runTransferRefM ref $ runExceptT $ mergeProver
+      eMerge <- liftEffect $ runTransferM { currentTransaction: Nothing, ledger: ref } $ runExceptT $ mergeProver
         { appInput: mergedStmt
         , prevs: tuple2 (InductivePrev b0 out.tag) (InductivePrev b1 out.tag)
         , sideloadedVKs: tuple2 unit unit
