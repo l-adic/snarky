@@ -41,6 +41,7 @@ import Snarky.Curves.Class (fromInt, generator, toAffine)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (Type1(..))
+import Test.Pickles.SerializeRoundTrip (mkWidthDummies, roundTripAndVerify)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -209,12 +210,19 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
 
     let BranchProver chainProver = fst parent.provers
 
+    let dummies = mkWidthDummies pallasSrs vestaSrs
+
+    -- Round-trip the side-loaded child prev through SerializeProof and assert
+    -- the reconstruction still verifies (against the child's own verifier),
+    -- then use it as the parent's prev.
+    childCp2' <- roundTripAndVerify dummies child.verifier childCp2
+
     -- Drive the parent prove with `InductivePrev`: parent self = 1,
     -- prev = (child input = 0, wrapped child proof, child VK). The
     -- rule's `selfCorrect = 1 + 0 == 1` holds.
     eParentCp <- withSpan "[SideLoadedMain] prove parent" $ liftEffect $ runExceptT $ chainProver
       { appInput: F one
-      , prevs: tuple1 (InductivePrev childCp2 childTag2)
+      , prevs: tuple1 (InductivePrev childCp2' childTag2)
       , sideloadedVKs: childVK /\ unit
       }
     case eParentCp of
