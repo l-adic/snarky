@@ -60,7 +60,7 @@ import Snarky.Circuit.DSL.SizedF (SizedF, unsafeFromField, unwrapF, wrapF)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (SplitField, Type1, Type2, toFieldPure, toShifted)
 import Snarky.Curves.Pasta (PallasG)
-import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
+import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 
 --------------------------------------------------------------------------------
 -- expandDeferred
@@ -772,7 +772,7 @@ expandProof input =
     mkPallasPt
       :: AffinePoint StepField
       -> WeierstrassAffinePoint PallasG (F StepField)
-    mkPallasPt pt = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
+    mkPallasPt (AffinePoint pt) = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
 
     wrapCommits = vestaProofCommitments @stepChunks input.wrapProof
 

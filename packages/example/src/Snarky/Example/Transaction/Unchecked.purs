@@ -22,10 +22,11 @@ import Effect.Exception (throw)
 import Mina.ChainId (ChainId, networkId, signaturePrefix)
 import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (F(..), valueToFields)
+import Snarky.Circuit.DSL (valueToFields)
 import Snarky.Curves.Class (toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Snarky.Example.Ledger (Ledger, balanceOf, getAccount, lookupAddress)
 import Snarky.Example.Transaction.Types (SignedTransaction(..), Transaction(..), Transfer(..))
 import Snarky.Example.Types (Account(..), PublicKey(..), TokenAmount, mkAmount)
@@ -36,7 +37,7 @@ import Snarky.Example.Types.Account as Account
 
 verifySignature
   :: ChainId
-  -> SignedTransaction (F Vesta.ScalarField)
+  -> SignedTransaction Vesta.ScalarField
   -> Boolean
 verifySignature chainId (SignedTransaction { transaction, signature }) =
   let
@@ -50,18 +51,18 @@ verifySignature chainId (SignedTransaction { transaction, signature }) =
 -- | `[sk]·G`). `nonce` is the sender's current account nonce. Curve-bound by
 -- | the Schnorr signature, hence pinned to `Vesta.ScalarField` / Pallas.
 sign
-  :: F Pallas.ScalarField
+  :: Pallas.ScalarField
   -> ChainId
-  -> F Vesta.ScalarField
-  -> { amount :: TokenAmount (F Vesta.ScalarField)
-     , to :: PublicKey (F Vesta.ScalarField)
+  -> Vesta.ScalarField
+  -> { amount :: TokenAmount Vesta.ScalarField
+     , to :: PublicKey Vesta.ScalarField
      }
-  -> SignedTransaction (F Vesta.ScalarField)
+  -> SignedTransaction Vesta.ScalarField
 sign privateKey chainId nonce txData =
   let
-    fromPk = unsafePartial fromJust $ toAffine $ toPublicKey (coerce privateKey)
+    fromPk = unsafePartial fromJust $ toAffine $ toPublicKey privateKey
 
-    transaction :: Transaction (F Vesta.ScalarField)
+    transaction :: Transaction Vesta.ScalarField
     transaction = Transaction
       { nonce
       , transfer: Transfer { from: PublicKey (coerce fromPk), to: txData.to, amount: txData.amount }
@@ -70,7 +71,7 @@ sign privateKey chainId nonce txData =
     signature =
       Schnorr.sign
         { message: valueToFields transaction
-        , privateKey: coerce privateKey
+        , privateKey
         , networkId: networkId chainId
         , spongePrefix: signaturePrefix chainId
         }
@@ -93,7 +94,7 @@ applyTx
   :: forall d
    . Reflectable d Int
   => ChainId
-  -> SignedTransaction (F Vesta.ScalarField)
+  -> SignedTransaction Vesta.ScalarField
   -> Ledger d Vesta.ScalarField
   -> Effect (Ledger d Vesta.ScalarField)
 applyTx chainId tx ledger = do

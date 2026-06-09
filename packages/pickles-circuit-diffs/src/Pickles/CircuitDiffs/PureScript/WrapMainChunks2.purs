@@ -35,7 +35,7 @@ import Snarky.Backend.Kimchi.Proof (srsLagrangeCommitmentChunksAt)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -78,7 +78,7 @@ compileWrapMainChunks2 { blindingH } stepParams = do
             -- `coerce (... :: AffinePoint ScalarField)`; the chunked
             -- shape needs an explicit per-element rewrap.
             chunksCoerced :: Array (AffinePoint (F WrapField))
-            chunksCoerced = map (\pt -> { x: F pt.x, y: F pt.y }) chunksArr
+            chunksCoerced = map (\(AffinePoint pt) -> AffinePoint { x: F pt.x, y: F pt.y }) chunksArr
           in
             case Vector.toVector @2 chunksCoerced of
               Just v -> v

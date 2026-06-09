@@ -17,6 +17,7 @@ import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertEq)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
 -- | hash_messages_for_next_wrap_proof circuit.
@@ -43,7 +44,7 @@ hashMessagesWrapCircuit inputs = do
     chals1 :: Vector WrapIPARounds (FVar WrapField)
     chals1 = Vector.generate \j -> at (15 + getFinite j)
 
-    sg = { x: at 30, y: at 31 }
+    sg = AffinePoint { x: at 30, y: at 31 }
     claimed = at 32
 
   digest <- evalSpongeM (initialSpongeCircuit :: RO.Sponge (FVar WrapField)) $

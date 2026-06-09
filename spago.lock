@@ -40,22 +40,30 @@
         "path": "packages/example",
         "core": {
           "dependencies": [
+            "arrays",
             "curves",
             "effect",
+            "exceptions",
+            "foldable-traversable",
+            "identity",
             "js-bigints",
             "maybe",
             "merkle-tree",
             "newtype",
+            "ordered-collections",
             "partial",
             "pickles",
+            "poseidon",
             "prelude",
             "quickcheck",
             "random-oracle",
+            "refs",
             "safe-coerce",
             "schnorr",
             "snarky",
             "snarky-curves",
             "snarky-kimchi",
+            "tailrec",
             "transformers",
             "tuples",
             "vector-sized"
@@ -462,6 +470,7 @@
             "partial",
             "prelude",
             "quickcheck",
+            "simple-json",
             "snarky"
           ]
         },

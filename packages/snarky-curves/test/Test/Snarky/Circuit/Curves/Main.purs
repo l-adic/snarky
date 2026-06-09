@@ -18,7 +18,7 @@ import Snarky.Circuit.DSL (class CircuitM, Basic, BoolVar, F(..), FVar, Snarky, 
 import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint, CurveParams, addAffine, genAffinePoint, toAffine)
+import Snarky.Data.EllipticCurve (AffinePoint(..), CurveParams, addAffine, genAffinePoint, toAffine)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, frequency)
 import Test.Snarky.Circuit.Utils (Expectation, TestConfig, TestInput(..), circuitTest', nullPostCondition, satisfied, satisfied_, unsatisfied)
@@ -59,15 +59,15 @@ spec pg _pc =
         circuit' = uncurry assertOnCurve
 
         onCurve = do
-          p :: AffinePoint (F f) <- genAffinePoint pg
+          p :: AffinePoint f <- genAffinePoint pg
           pure $ Tuple { a: F a, b: F b } p
 
-        offCurve :: Gen (Tuple (CurveParams (F f)) (AffinePoint (F f)))
+        offCurve :: Gen (Tuple (CurveParams (F f)) (AffinePoint f))
         offCurve = do
           let { a, b } = curveParams pg
           x <- arbitrary
-          y <- arbitrary `suchThat` \_y -> _y * _y /= x * x * x + F a * x + F b
-          pure $ Tuple { a: F a, b: F b } { x, y }
+          y <- arbitrary `suchThat` \_y -> _y * _y /= x * x * x + a * x + b
+          pure $ Tuple { a: F a, b: F b } (AffinePoint { x, y })
 
       void $ circuitTest' @f
         basicTestConfig
@@ -92,10 +92,10 @@ spec pg _pc =
         circuit' = uncurry assertEq
 
         same = do
-          p :: AffinePoint (F f) <- genAffinePoint pg
+          p :: AffinePoint f <- genAffinePoint pg
           pure $ Tuple p p
         distinct = do
-          p1 :: AffinePoint (F f) <- genAffinePoint pg
+          p1 :: AffinePoint f <- genAffinePoint pg
           p2 <- genAffinePoint pg `suchThat` \p -> p /= p1
           pure $ Tuple p1 p2
 
@@ -114,8 +114,8 @@ spec pg _pc =
 
     it "negate Circuit is Valid" do
       let
-        pureNegate :: AffinePoint (F f) -> AffinePoint (F f)
-        pureNegate { x, y } = { x, y: negate y }
+        pureNegate :: AffinePoint f -> AffinePoint f
+        pureNegate (AffinePoint { x, y }) = AffinePoint { x, y: negate y }
 
         circuit'
           :: forall t
@@ -137,7 +137,7 @@ spec pg _pc =
 
     it "if_ Circuit is Valid" do
       let
-        pureIf :: Tuple3 Boolean (AffinePoint (F f)) (AffinePoint (F f)) -> AffinePoint (F f)
+        pureIf :: Tuple3 Boolean (AffinePoint f) (AffinePoint f) -> AffinePoint f
         pureIf = uncurry3 \b then_ else_ -> if b then then_ else else_
 
         circuit'
@@ -186,8 +186,8 @@ spec pg _pc =
           p1 <- genAffinePoint pg
           p2 <- genAffinePoint pg `suchThat` \p ->
             let
-              { x: x1, y: y1 } = p1
-              { x: x2, y: y2 } = p
+              AffinePoint { x: x1, y: y1 } = p1
+              AffinePoint { x: x2, y: y2 } = p
             in
               x1 /= x2 && y1 /= negate y2
           pure $ Tuple p1 p2
@@ -203,17 +203,17 @@ spec pg _pc =
 
     it "double Circuit is Valid" do
       let
-        pureDouble :: AffinePoint (F f) -> AffinePoint (F f)
-        pureDouble { x, y } =
+        pureDouble :: AffinePoint f -> AffinePoint f
+        pureDouble (AffinePoint { x, y }) =
           let
             { a } = curveParams pg
-            lambda = (three * x * x + F a) / (two * y)
+            lambda = (three * x * x + a) / (two * y)
             x' = lambda * lambda - two * x
             y' = lambda * (x - x') - y
-            two = F (one + one)
-            three = F (one + one + one)
+            two = one + one
+            three = one + one + one
           in
-            { x: x', y: y' }
+            AffinePoint { x: x', y: y' }
 
         circuit'
           :: forall t
@@ -223,7 +223,7 @@ spec pg _pc =
         circuit' = double (curveParams pg)
 
         -- Generate points where y ≠ 0 to avoid division by zero in doubling
-        gen = genAffinePoint pg `suchThat` \{ y } -> y /= zero
+        gen = genAffinePoint pg `suchThat` \(AffinePoint { y }) -> y /= zero
 
       void $ circuitTest' @f
         basicTestConfig

@@ -23,7 +23,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (generator, toAffine)
 import Snarky.Curves.Pasta (VestaG)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
 type FtcommInput f =
@@ -37,7 +37,7 @@ parseFtcommInput :: Vector 17 (FVar WrapField) -> FtcommInput WrapField
 parseFtcommInput inputs =
   let
     at = unsafeIdx inputs
-    readPt i = { x: at i, y: at (i + 1) }
+    readPt i = AffinePoint { x: at i, y: at (i + 1) }
   in
     { tComm: Vector.generate \j -> readPt (2 * getFinite j)
     , perm: Type1 (at 14)
@@ -53,7 +53,7 @@ ftcommWrapCircuit
 ftcommWrapCircuit input =
   let
     g = unsafePartial $ fromJust $ toAffine (generator :: VestaG)
-    sigmaLast = Vector.singleton { x: const_ g.x, y: const_ g.y }
+    sigmaLast = Vector.singleton (AffinePoint { x: const_ g.x, y: const_ g.y })
   in
     FtComm.ftComm WrapOtherField.ipaScalarOps
       { sigmaLast

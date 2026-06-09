@@ -7,7 +7,7 @@ import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, UnChecked(..), addConstraint, exists, false_, label, read, readCVar, seal)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Curves.Class (fromInt)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 
 -- | Seal an affine point: reduce each coordinate to a single variable if complex.
 sealPoint
@@ -15,12 +15,12 @@ sealPoint
    . CircuitM f c t m
   => AffinePoint (FVar f)
   -> Snarky c t m (AffinePoint (FVar f))
-sealPoint p = label "seal_point" do
+sealPoint (AffinePoint p) = label "seal_point" do
   -- OCaml's seal = Tuple_lib.Double.map ~f:Utils.seal evaluates y before x
   -- (right-to-left tuple construction), so we must seal y first to match.
   y <- label "seal_y" $ seal p.y
   x <- label "seal_x" $ seal p.x
-  pure { x, y }
+  pure (AffinePoint { x, y })
 
 -- | OCaml: add_fast ?(check_finite = true/false)
 -- |   CheckFinite (= true):  inf is constant zero, no witness needed
@@ -53,8 +53,8 @@ addFast
        , isInfinity :: BoolVar f
        }
 addFast finiteness p1' p2' = label "add_fast" do
-  p1 <- sealPoint p1'
-  p2 <- sealPoint p2'
+  AffinePoint p1 <- sealPoint p1'
+  AffinePoint p2 <- sealPoint p2'
   UnChecked sameX <- exists $ UnChecked <$>
     lift2 eq (readCVar p1.x) (readCVar p2.x)
   inf <- case finiteness of
@@ -93,6 +93,6 @@ addFast finiteness p1' p2' = label "add_fast" do
   addConstraint $ KimchiAddComplete
     { p1, p2, sameX: coerce sameX, inf: coerce inf, infZ, x21Inv, s, p3: { x: x3, y: y3 } }
   pure
-    { p: { x: x3, y: y3 }
+    { p: AffinePoint { x: x3, y: y3 }
     , isInfinity: inf
     }

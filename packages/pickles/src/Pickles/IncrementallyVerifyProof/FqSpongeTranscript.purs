@@ -46,7 +46,7 @@ import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, SizedF, exists, readCVar, true_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 
 -------------------------------------------------------------------------------
 -- | Statically-sized circuit input for the sponge transcript.
@@ -97,7 +97,7 @@ spongeTranscriptOptCircuit params sgOldMask input = do
       OptSponge.optAbsorb (Tuple true_ input.indexDigest)
       -- 2. Absorb sg_old points with actual_proofs_verified_mask
       -- OCaml: Vector.iter ~f:(absorb sponge PC) sg_old where sg_old = map2 mask sg ~f:(keep, sg)
-      for_ (Vector.zip sgOldMask input.sgOld) \(Tuple bKeep sg) -> do
+      for_ (Vector.zip sgOldMask input.sgOld) \(Tuple bKeep (AffinePoint sg)) -> do
         let keep = coerce bKeep :: BoolVar f
         OptSponge.optAbsorb (Tuple keep sg.x)
         OptSponge.optAbsorb (Tuple keep sg.y)

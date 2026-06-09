@@ -15,7 +15,7 @@ import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class HasBW19, class HasSqrt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Test.QuickCheck (arbitrary, quickCheck')
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
@@ -30,7 +30,7 @@ testValidCurvePoints
   -> Boolean
 testValidCurvePoints params (F t) =
   let
-    { x, y } = groupMap params t
+    AffinePoint { x, y } = groupMap params t
   in
     y * y == x * x * x + params.b
 
@@ -59,12 +59,12 @@ spec' cfg proxyG curveName = do
 
     it "circuit matches groupMap and satisfies constraints" do
       let
-        f :: F f -> AffinePoint (F f)
+        f :: F f -> AffinePoint f
         f (F t) =
           let
-            { x, y } = groupMap params t
+            AffinePoint { x, y } = groupMap params t
           in
-            { x: F x, y: F y }
+            AffinePoint { x, y }
 
         circuit'
           :: forall t

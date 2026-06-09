@@ -63,7 +63,7 @@ import Data.Fin (unsafeFinite)
 import Data.Functor.Product (Product, product)
 import Data.Int.Bits as Int.Bits
 import Data.Maybe (Maybe(..))
-import Data.Newtype (class Newtype, over, wrap)
+import Data.Newtype (class Newtype, over, unwrap, wrap)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector, (:<))
@@ -175,7 +175,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, toBigInt)
 import Snarky.Curves.Class (fromInt) as Curves
 import Snarky.Curves.Pasta (PallasG, VestaG)
-import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
+import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (SplitField, Type2)
 import Type.Proxy (Proxy(..))
 
@@ -1250,8 +1250,8 @@ instance
                   , prevChallenges:
                       Vector.toUnfoldable
                         ( Vector.replicate @PaddedLength
-                            { sgX: (dummySgs.ipa.wrap.sg).x
-                            , sgY: (dummySgs.ipa.wrap.sg).y
+                            { sgX: (unwrap dummySgs.ipa.wrap.sg).x
+                            , sgY: (unwrap dummySgs.ipa.wrap.sg).y
                             , challenges:
                                 ( Vector.toUnfoldable dummyIpaChallenges.wrapExpanded
                                     :: Array WrapField
@@ -1277,7 +1277,7 @@ instance
           in
             { prevSg: stepSgD
             , prevStepChals: dummyIpaChallenges.stepExpanded
-            , prevStepAcc: WeierstrassAffinePoint { x: F stepSgD.x, y: F stepSgD.y }
+            , prevStepAcc: WeierstrassAffinePoint { x: F (unwrap stepSgD).x, y: F (unwrap stepSgD).y }
             , headPrevEvals
             , headSlotPrevWrapBpChalsVec:
                 Vector.replicate @n (map F dummyIpaChallenges.wrapExpanded)
@@ -1319,7 +1319,7 @@ instance
                            }
                     prevWrapKimchiPrevChals = Vector.toUnfoldable $
                       Vector.zipWith
-                        ( \sg ch ->
+                        ( \(AffinePoint sg) ch ->
                             { sgX: sg.x
                             , sgY: sg.y
                             , challenges: Vector.toUnfoldable ch
@@ -1371,8 +1371,8 @@ instance
                     { prevSg: prev.challengePolynomialCommitment
                     , prevStepChals: prevStepBpChalsExpanded
                     , prevStepAcc: WeierstrassAffinePoint
-                        { x: F prev.challengePolynomialCommitment.x
-                        , y: F prev.challengePolynomialCommitment.y
+                        { x: F (unwrap prev.challengePolynomialCommitment).x
+                        , y: F (unwrap prev.challengePolynomialCommitment).y
                         }
                     , headPrevEvals: prevHeadPrevEvals
                     , headSlotPrevWrapBpChalsVec
@@ -1403,8 +1403,8 @@ instance
           F (Curves.fromInt (slotWrapDomainLog2 - 13) :: WrapField)
             :< restProveData.prevWrapDomainIndices
       , kimchiPrevEntries:
-          { sgX: headChalPolyComm.x
-          , sgY: headChalPolyComm.y
+          { sgX: (unwrap headChalPolyComm).x
+          , sgY: (unwrap headChalPolyComm).y
           , challenges: msgForNextWrapRealChals
           } :< restProveData.kimchiPrevEntries
       , slotsValue:
@@ -1951,8 +1951,8 @@ instance
                   , prevChallenges:
                       Vector.toUnfoldable
                         ( Vector.replicate @PaddedLength
-                            { sgX: (dummySgs.ipa.wrap.sg).x
-                            , sgY: (dummySgs.ipa.wrap.sg).y
+                            { sgX: (unwrap dummySgs.ipa.wrap.sg).x
+                            , sgY: (unwrap dummySgs.ipa.wrap.sg).y
                             , challenges:
                                 ( Vector.toUnfoldable dummyIpaChallenges.wrapExpanded
                                     :: Array WrapField
@@ -1978,7 +1978,7 @@ instance
           in
             { prevSg: stepSgD
             , prevStepChals: dummyIpaChallenges.stepExpanded
-            , prevStepAcc: WeierstrassAffinePoint { x: F stepSgD.x, y: F stepSgD.y }
+            , prevStepAcc: WeierstrassAffinePoint { x: F (unwrap stepSgD).x, y: F (unwrap stepSgD).y }
             , headPrevEvals
             , headSlotPrevWrapBpChalsVec:
                 Vector.replicate @mpvMax (map F dummyIpaChallenges.wrapExpanded)
@@ -2009,7 +2009,7 @@ instance
                            }
                     prevWrapKimchiPrevChals = Vector.toUnfoldable $
                       Vector.zipWith
-                        ( \sg ch ->
+                        ( \(AffinePoint sg) ch ->
                             { sgX: sg.x
                             , sgY: sg.y
                             , challenges: Vector.toUnfoldable ch
@@ -2059,8 +2059,8 @@ instance
                     { prevSg: prev.challengePolynomialCommitment
                     , prevStepChals: prevStepBpChalsExpanded
                     , prevStepAcc: WeierstrassAffinePoint
-                        { x: F prev.challengePolynomialCommitment.x
-                        , y: F prev.challengePolynomialCommitment.y
+                        { x: F (unwrap prev.challengePolynomialCommitment).x
+                        , y: F (unwrap prev.challengePolynomialCommitment).y
                         }
                     , headPrevEvals: prevHeadPrevEvals
                     , headSlotPrevWrapBpChalsVec
@@ -2087,8 +2087,8 @@ instance
           F (Curves.fromInt (slotWrapDomainLog2 - 13) :: WrapField)
             :< restProveData.prevWrapDomainIndices
       , kimchiPrevEntries:
-          { sgX: headChalPolyComm.x
-          , sgY: headChalPolyComm.y
+          { sgX: (unwrap headChalPolyComm).x
+          , sgY: (unwrap headChalPolyComm).y
           , challenges: msgForNextWrapRealChals
           } :< restProveData.kimchiPrevEntries
       , slotsValue:
@@ -3655,7 +3655,7 @@ runMultiProverBody
       , dummyPrevUnfinalizedProof: dummyPpu
       , dummyPrevStepAcc:
           WeierstrassAffinePoint
-            { x: F dummyStepSgInWrapField.x, y: F dummyStepSgInWrapField.y }
+            { x: F (unwrap dummyStepSgInWrapField).x, y: F (unwrap dummyStepSgInWrapField).y }
       , dummyPrevEvals: dummyPrevEvalsMax
       -- OCaml `wrap.ml:412-414` pads `wrap_domain_indices` with
       -- `Tock.Field.one` (NOT zero) when actualProofsVerified <
@@ -3665,8 +3665,8 @@ runMultiProverBody
       -- domain, all_possible_domains[1]).
       , dummyPrevWrapDomainIdx: F one
       , dummyKimchiPrevEntry:
-          { sgX: dummyWrapSgInStepField.x
-          , sgY: dummyWrapSgInStepField.y
+          { sgX: (unwrap dummyWrapSgInStepField).x
+          , sgY: (unwrap dummyWrapSgInStepField).y
           , challenges: dummyIpaChallenges.wrapExpanded
           }
       , dummySlotChal: map F dummyIpaChallenges.wrapExpanded
@@ -3680,7 +3680,7 @@ runMultiProverBody
     -- FFI-shaped `prevChallenges` for the step proof's oracles.
     stepOraclesPrevChals = Vector.toUnfoldable $
       Vector.zipWith
-        ( \sg chals ->
+        ( \(AffinePoint sg) chals ->
             { sgX: sg.x
             , sgY: sg.y
             , challenges: Vector.toUnfoldable chals
@@ -3793,8 +3793,8 @@ runMultiProverBody
          , challenges :: Vector WrapIPARounds WrapField
          }
     dummyKimchiEntry =
-      { sgX: dummyWrapSgInStepField.x
-      , sgY: dummyWrapSgInStepField.y
+      { sgX: (unwrap dummyWrapSgInStepField).x
+      , sgY: (unwrap dummyWrapSgInStepField).y
       , challenges: dummyIpaChallenges.wrapExpanded
       }
 
@@ -3864,7 +3864,7 @@ runMultiProverBody
       { oldBulletproofChallenges: proveData.prevStepChallenges
       , msgWrapChallenges: proveData.msgWrapChallenges
       , outerStepChalPolyComms:
-          map (\e -> { x: e.sgX, y: e.sgY }) proveData.kimchiPrevEntries
+          map (\e -> AffinePoint { x: e.sgX, y: e.sgY }) proveData.kimchiPrevEntries
       -- Front-padding dummies for the `Vector PaddedLength` views
       -- mkSomeCompiledProofWidthData precomputes. Match what
       -- mkStepAdvice / shapeProveData's InductivePrev case fills the

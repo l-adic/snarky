@@ -18,7 +18,7 @@ import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, SizedF, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pasta (VestaG)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
 type BulletReduceInput n f =
@@ -30,7 +30,7 @@ parseBulletReduceInput :: Vector 80 (FVar WrapField) -> BulletReduceInput 16 Wra
 parseBulletReduceInput inputs =
   let
     at = unsafeIdx inputs
-    readPt i = { x: at i, y: at (i + 1) }
+    readPt i = AffinePoint { x: at i, y: at (i + 1) }
   in
     { pairs: Vector.generate \j ->
         { l: readPt (4 * getFinite j), r: readPt (4 * getFinite j + 2) }

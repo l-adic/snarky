@@ -8,7 +8,8 @@ import Data.Generic.Rep (class Generic)
 import Data.Newtype (class Newtype)
 import Data.Schnorr (Signature)
 import Data.Tuple.Nested (Tuple2, tuple2, uncurry2)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitType, check, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
+import Safe.Coerce (coerce)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F(..), FVar, check, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Example.Transaction.Types.Transaction (Transaction)
 import Snarky.Example.Types.TokenAmount (TokenAmount)
 import Type.Proxy (Proxy(..))
@@ -26,18 +27,18 @@ derive instance Generic (SignedTransaction f) _
 derive newtype instance Show f => Show (SignedTransaction f)
 derive instance Eq f => Eq (SignedTransaction f)
 
-instance CircuitType f a var => CircuitType f (SignedTransaction a) (SignedTransaction var) where
-  sizeInFields pf _ = sizeInFields pf (Proxy @(Tuple2 (Signature a) (Transaction a)))
-  valueToFields (SignedTransaction st) = valueToFields (tuple2 st.signature st.transaction)
+instance CircuitType f (SignedTransaction f) (SignedTransaction (FVar f)) where
+  sizeInFields pf _ = sizeInFields pf (Proxy @(Tuple2 (Signature (F f)) (Transaction f)))
+  valueToFields (SignedTransaction st) = valueToFields (tuple2 (coerce st.signature :: Signature (F f)) st.transaction)
   fieldsToValue fs =
-    uncurry2 (\signature transaction -> SignedTransaction { signature, transaction })
-      (fieldsToValue @_ @(Tuple2 (Signature a) (Transaction a)) fs)
+    uncurry2 (\signature transaction -> SignedTransaction { signature: coerce signature, transaction })
+      (fieldsToValue @_ @(Tuple2 (Signature (F f)) (Transaction f)) fs)
   varToFields (SignedTransaction st) =
-    varToFields @_ @(Tuple2 (Signature a) (Transaction a))
+    varToFields @_ @(Tuple2 (Signature (F f)) (Transaction f))
       (tuple2 st.signature st.transaction)
   fieldsToVar fs =
     uncurry2 (\signature transaction -> SignedTransaction { signature, transaction })
-      (fieldsToVar @_ @(Tuple2 (Signature a) (Transaction a)) fs)
+      (fieldsToVar @_ @(Tuple2 (Signature (F f)) (Transaction f)) fs)
 
 instance
   ( CheckedType f c var

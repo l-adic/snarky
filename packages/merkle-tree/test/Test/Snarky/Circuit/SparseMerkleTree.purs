@@ -25,8 +25,9 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import Effect.Ref (Ref, read, write)
 import JS.BigInt as BigInt
 import Poseidon (class PoseidonField)
+import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, F, FVar, Snarky, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Circuit.Kimchi (verifyCircuit)
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.MerkleTree.Sparse as SparseCircuit
@@ -45,7 +46,7 @@ import Type.Proxy (Proxy(..))
 --------------------------------------------------------------------------------
 
 -- | Sparse tree reference type alias
-type SparseTreeRef d f v = Ref (Sparse.SparseMerkleTree d (Digest (F f)) v)
+type SparseTreeRef d f v = Ref (Sparse.SparseMerkleTree d (Digest f) v)
 
 -- | Monad that reads sparse tree from a Ref
 newtype SparseMerkleRefM d f v a = SparseMerkleRefM (ReaderT (SparseTreeRef d f v) Effect a)
@@ -58,12 +59,12 @@ derive newtype instance Bind (SparseMerkleRefM d f v)
 derive newtype instance Monad (SparseMerkleRefM d f v)
 derive newtype instance MonadEffect (SparseMerkleRefM d f v)
 
-getSparseTreeRef :: forall d f v. SparseMerkleRefM d f v (Sparse.SparseMerkleTree d (Digest (F f)) v)
+getSparseTreeRef :: forall d f v. SparseMerkleRefM d f v (Sparse.SparseMerkleTree d (Digest f) v)
 getSparseTreeRef = SparseMerkleRefM $ ask >>= \ref -> liftEffect $ read ref
 
 modifySparseTreeRef
   :: forall d f v
-   . (Sparse.SparseMerkleTree d (Digest (F f)) v -> Sparse.SparseMerkleTree d (Digest (F f)) v)
+   . (Sparse.SparseMerkleTree d (Digest f) v -> Sparse.SparseMerkleTree d (Digest f) v)
   -> SparseMerkleRefM d f v Unit
 modifySparseTreeRef f = SparseMerkleRefM $ ask >>= \ref -> liftEffect do
   tree <- read ref
@@ -81,11 +82,9 @@ fromSparsePath (Sparse.Path v) = Path v
 instance
   ( Reflectable d Int
   , PoseidonField f
-  , CircuitType f v var
-  , CheckedType f (KimchiConstraint f) var
-  , MerkleHashable v (Digest (F f))
+  , MerkleHashable v (Digest f)
   ) =>
-  CMT.MerkleRequestM (SparseMerkleRefM d f v) f v d var where
+  CMT.MerkleRequestM (SparseMerkleRefM d f v) f v d where
   getElement (Address addr) = do
     tree <- getSparseTreeRef
     let
@@ -126,11 +125,12 @@ instance Show f => Show (Account f) where
 instance Arbitrary f => Arbitrary (Account f) where
   arbitrary = Account <$> ({ publicKey: _, tokenBalance: _ } <$> arbitrary <*> arbitrary)
 
--- | CircuitType instance: Account (F f) <-> Account (FVar f)
-instance CircuitType f (Account (F f)) (Account (FVar f)) where
-  valueToFields = genericValueToFields
-  fieldsToValue = genericFieldsToValue
-  sizeInFields = genericSizeInFields
+-- | CircuitType instance: value side is raw `f`; `F f` is the internal
+-- | leaf marker the generic deriving needs (reached by `coerce`).
+instance CircuitType f (Account f) (Account (FVar f)) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy :: Proxy (Account (F f)))
+  valueToFields a = genericValueToFields (coerce a :: Account (F f))
+  fieldsToValue fs = coerce (genericFieldsToValue fs :: Account (F f))
   varToFields = genericVarToFields @(Account (F f))
   fieldsToVar = genericFieldsToVar @(Account (F f))
 
@@ -150,14 +150,14 @@ genSparseTree
    . Reflectable d Int
   => PoseidonField f
   => Proxy d
-  -> Gen (Sparse.SparseMerkleTree d (Digest (F f)) (Account (F f)))
+  -> Gen (Sparse.SparseMerkleTree d (Digest f) (Account f))
 genSparseTree _ = go 0 Sparse.empty
   where
   go i tree
     | i >= 10 = pure tree
     | otherwise = do
         addr <- chooseInt 0 ((2 `pow` (reflectType (Proxy @d))) - 1)
-        value <- arbitrary @(Account (F f))
+        value <- arbitrary @(Account f)
         let
           tree' = case Sparse.set (Sparse.Address $ BigInt.fromInt addr) value tree of
             Just t -> t
@@ -182,8 +182,8 @@ sparseImpliedRootSpec cfg _ pd = do
   let
     -- Expected: use pure impliedRoot from Sized
     testFunction
-      :: Tuple (Address d) (Tuple (Digest (F f)) (Path d (Digest (F f))))
-      -> Digest (F f)
+      :: Tuple (Address d) (Tuple (Digest f) (Path d (Digest f)))
+      -> Digest f
     testFunction (Tuple addr (Tuple entryHash path)) =
       Sized.impliedRoot addr entryHash path
 
@@ -204,7 +204,7 @@ sparseImpliedRootSpec cfg _ pd = do
         melem = Sparse.get tree sparseAddr
         entryHash = case melem of
           Just v -> hashLeaf (Just v)
-          Nothing -> defaultHash @(Account (F f))
+          Nothing -> defaultHash @(Account f)
         path = fromSparsePath $ Sparse.getWitness sparseAddr tree
       pure $ Tuple addr (Tuple entryHash path)
 
@@ -234,12 +234,12 @@ sparseCheckAndUpdateSpec cfg _ pd = do
     -- Test function: given (addr, oldHash, newHash, path, oldRoot), compute new root
     testFunction
       :: { addr :: Address d
-         , oldValueHash :: Digest (F f)
-         , newValueHash :: Digest (F f)
-         , path :: Path d (Digest (F f))
-         , oldRoot :: Digest (F f)
+         , oldValueHash :: Digest f
+         , newValueHash :: Digest f
+         , path :: Path d (Digest f)
+         , oldRoot :: Digest f
          }
-      -> Digest (F f)
+      -> Digest f
     testFunction { addr, newValueHash, path } =
       Sized.impliedRoot addr newValueHash path
 
@@ -259,14 +259,14 @@ sparseCheckAndUpdateSpec cfg _ pd = do
     -- Generator: produce valid inputs
     gen = do
       addrInt <- chooseInt 0 ((2 `pow` reflectType pd) - 1)
-      newValue <- arbitrary @(Account (F f))
+      newValue <- arbitrary @(Account f)
       let
         addr = Address $ BigInt.fromInt addrInt
         sparseAddr = toSparseAddr addr
         melem = Sparse.get tree sparseAddr
         oldValueHash = case melem of
           Just v -> hashLeaf (Just v)
-          Nothing -> defaultHash @(Account (F f))
+          Nothing -> defaultHash @(Account f)
         newValueHash = hashLeaf (Just newValue)
         path = fromSparsePath $ Sparse.getWitness sparseAddr tree
         oldRoot = Sparse.root tree

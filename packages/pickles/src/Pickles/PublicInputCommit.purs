@@ -73,7 +73,7 @@ import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast2')
 import Snarky.Constraint.Basic (boolean) as Basic
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
-import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
+import Snarky.Data.EllipticCurve (AffinePoint(..), CurveParams)
 import Snarky.Data.EllipticCurve as EC
 import Snarky.Types.Shifted (SplitField(..), Type1(..), Type2(..))
 import Type.Proxy (Proxy(..))
@@ -320,19 +320,21 @@ sumMaskedAffine bits perBranchPts =
     boolFvars = map (coerce) bits
 
     scaledPts = Vector.zipWith
-      ( \b { x: F x', y: F y' } ->
+      ( \b (AffinePoint { x: F x', y: F y' }) ->
           { x: CVar.scale_ x' b, y: CVar.scale_ y' b }
       )
       boolFvars
       perBranchPts
     { head: spHead, tail: spTail } = Vector.uncons scaledPts
   in
-    foldl
-      ( \acc pt ->
-          { x: CVar.add_ acc.x pt.x, y: CVar.add_ acc.y pt.y }
+    AffinePoint
+      ( foldl
+          ( \acc pt ->
+              { x: CVar.add_ acc.x pt.x, y: CVar.add_ acc.y pt.y }
+          )
+          spHead
+          spTail
       )
-      spHead
-      spTail
 
 -- | Build a `LagrangeBaseLookup` for a side-loaded slot that muxes
 -- | among three per-domain lagrange tables (`actualWrapDomainSize ∈
@@ -644,10 +646,11 @@ publicInputCommit params input = label "public-input-commit" do
                 Right { b, lagrangePt } ->
                   zipWithA
                     ( \a lp -> do
-                        added <- _.p <$> addComplete lp a
-                        y' <- if_ b added.y a.y
-                        x' <- if_ b added.x a.x
-                        pure { x: x', y: y' }
+                        AffinePoint added <- _.p <$> addComplete lp a
+                        let AffinePoint a' = a
+                        y' <- if_ b added.y a'.y
+                        x' <- if_ b added.x a'.x
+                        pure (AffinePoint { x: x', y: y' })
                     )
                     acc
                     lagrangePt
@@ -726,10 +729,11 @@ publicInputCommit params input = label "public-input-commit" do
                 CondAdd b lagrangePt ->
                   zipWithA
                     ( \a lp -> do
-                        added <- _.p <$> addComplete lp a
-                        y' <- if_ b added.y a.y
-                        x' <- if_ b added.x a.x
-                        pure { x: x', y: y' }
+                        AffinePoint added <- _.p <$> addComplete lp a
+                        let AffinePoint a' = a
+                        y' <- if_ b added.y a'.y
+                        x' <- if_ b added.x a'.x
+                        pure (AffinePoint { x: x', y: y' })
                     )
                     acc
                     lagrangePt
@@ -822,13 +826,13 @@ zipWithA
 zipWithA f xs ys = sequence (Vector.zipWith f xs ys)
 
 constPt :: forall f. PrimeField f => AffinePoint (F f) -> AffinePoint (FVar f)
-constPt { x: F x', y: F y' } = { x: const_ x', y: const_ y' }
+constPt (AffinePoint { x: F x', y: F y' }) = AffinePoint { x: const_ x', y: const_ y' }
 
 unwrapPt :: forall f. AffinePoint (F f) -> AffinePoint f
-unwrapPt { x: F x', y: F y' } = { x: x', y: y' }
+unwrapPt (AffinePoint { x: F x', y: F y' }) = AffinePoint { x: x', y: y' }
 
 wrapPt :: forall f. AffinePoint f -> AffinePoint (F f)
-wrapPt { x, y } = { x: F x, y: F y }
+wrapPt (AffinePoint { x, y }) = AffinePoint { x: F x, y: F y }
 
 -- | Pure affine addition for summing constant correction points.
 -- | Handles the doubling case (same point) via EC.double.

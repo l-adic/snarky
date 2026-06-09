@@ -219,8 +219,8 @@ hash2CircuitTests
 hash2CircuitTests _ = do
   let
     -- Reference: pure hash of 2 elements
-    referenceHash :: Tuple (F f) (F f) -> Digest (F f)
-    referenceHash (Tuple (F a) (F b)) = Digest $ F $ hash [ a, b ]
+    referenceHash :: Tuple (F f) (F f) -> Digest f
+    referenceHash (Tuple (F a) (F b)) = Digest $ hash [ a, b ]
 
     circuit'
       :: forall t
@@ -247,13 +247,13 @@ hashVecCircuitTests
   -> Aff Unit
 hashVecCircuitTests _ pn = do
   let
-    referenceHash :: Vector n (F f) -> Digest (F f)
+    referenceHash :: Vector n (F f) -> Digest f
     referenceHash inputs =
       let
         xs :: Array f
         xs = coerce (Vector.toUnfoldable inputs :: Array (F f))
       in
-        Digest $ F $ hash xs
+        Digest $ hash xs
 
     circuit'
       :: forall t
@@ -281,13 +281,13 @@ hashVecEdgeCase
   -> Aff Unit
 hashVecEdgeCase _ input = do
   let
-    referenceHash :: Vector n (F f) -> Digest (F f)
+    referenceHash :: Vector n (F f) -> Digest f
     referenceHash xs =
       let
         xs' :: Array f
         xs' = coerce (Vector.toUnfoldable xs :: Array (F f))
       in
-        Digest $ F $ hash xs'
+        Digest $ hash xs'
 
     circuit'
       :: forall t

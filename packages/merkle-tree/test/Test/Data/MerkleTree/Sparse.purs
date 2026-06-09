@@ -6,7 +6,7 @@ import Data.Array as Array
 import Data.Foldable (for_)
 import Data.Int (pow)
 import Data.Maybe (Maybe(..), isJust, isNothing)
-import Data.MerkleTree.Hashable (defaultHash, hashLeaf)
+import Data.MerkleTree.Hashable (class Hashable, defaultHash, hashLeaf)
 import Data.MerkleTree.Sparse as Sparse
 import Data.Reflectable (class Reflectable, reflectType, reifyType)
 import Effect.Class (liftEffect)
@@ -30,8 +30,9 @@ genSparseTree
   :: forall @f d
    . Reflectable d Int
   => PoseidonField f
+  => Hashable f f
   => Proxy d
-  -> Gen (Sparse.SparseMerkleTree d (Digest (F f)) (F f))
+  -> Gen (Sparse.SparseMerkleTree d (Digest f) f)
 genSparseTree pd =
   let
     d = reflectType pd
@@ -42,7 +43,7 @@ genSparseTree pd =
     | i >= 10 = pure tree
     | otherwise = do
         addr <- chooseInt 0 ((2 `pow` d) - 1)
-        value <- arbitrary @(F f)
+        value <- arbitrary @f
         let
           tree' = case Sparse.set (Sparse.Address $ BigInt.fromInt addr) value tree of
             Just t -> t
@@ -78,7 +79,7 @@ spec = describe "Sparse MerkleTree Property Laws" do
           reifyType depth \pd -> do
             tree <- genSparseTree @Pallas.ScalarField pd
             addr <- chooseInt 0 ((2 `pow` depth) - 1)
-            value <- arbitrary @(F Pallas.ScalarField)
+            value <- arbitrary @Pallas.ScalarField
             pure $ setGetLaw pd tree addr value
 
     it "set at arbitrary address works" $ liftEffect do
@@ -87,7 +88,7 @@ spec = describe "Sparse MerkleTree Property Laws" do
           reifyType depth \pd -> do
             tree <- genSparseTree @Vesta.ScalarField pd
             addr <- chooseInt 0 ((2 `pow` depth) - 1)
-            value <- arbitrary @(F Vesta.ScalarField)
+            value <- arbitrary @Vesta.ScalarField
             pure $ setArbitraryAddressLaw pd tree addr value
 
     it "set returns Nothing for out-of-bounds address" $ liftEffect do
@@ -95,7 +96,7 @@ spec = describe "Sparse MerkleTree Property Laws" do
         quickCheckGen $ do
           -- Address beyond capacity
           invalidAddr <- chooseInt (2 `pow` depth) (2 `pow` (depth + 1))
-          value <- arbitrary @(F Pallas.ScalarField)
+          value <- arbitrary @Pallas.ScalarField
           reifyType depth \pd ->
             pure $ setOutOfBoundsLaw pd invalidAddr value
 
@@ -106,8 +107,8 @@ spec = describe "Sparse MerkleTree Property Laws" do
             tree <- genSparseTree @Vesta.ScalarField pd
             addr1 <- chooseInt 0 ((2 `pow` depth) - 1)
             addr2 <- chooseInt 0 ((2 `pow` depth) - 1)
-            value1 <- arbitrary @(F Vesta.ScalarField)
-            value2 <- arbitrary @(F Vesta.ScalarField)
+            value1 <- arbitrary @Vesta.ScalarField
+            value2 <- arbitrary @Vesta.ScalarField
             pure $ multipleSetLaw pd tree addr1 addr2 value1 value2
 
   describe "Witness/Path properties" do
@@ -118,7 +119,7 @@ spec = describe "Sparse MerkleTree Property Laws" do
           reifyType depth \pd -> do
             tree <- genSparseTree @Pallas.ScalarField pd
             addr <- chooseInt 0 ((2 `pow` depth) - 1)
-            value <- arbitrary @(F Pallas.ScalarField)
+            value <- arbitrary @Pallas.ScalarField
             pure $ witnessValidationLaw pd tree addr value
 
     it "witness for empty address uses default hashes" $ liftEffect do
@@ -126,7 +127,7 @@ spec = describe "Sparse MerkleTree Property Laws" do
         quickCheckGen $ do
           addr <- chooseInt 0 ((2 `pow` depth) - 1)
           -- Generate dummy value to fix the field type
-          _ <- arbitrary @(F Vesta.ScalarField)
+          _ <- arbitrary @Pallas.ScalarField
           reifyType depth \pd ->
             pure $ emptyWitnessLaw (Proxy @Vesta.ScalarField) pd addr
 
@@ -136,7 +137,7 @@ spec = describe "Sparse MerkleTree Property Laws" do
           reifyType depth \pd -> do
             tree <- genSparseTree @Pallas.ScalarField pd
             addr <- chooseInt 0 ((2 `pow` depth) - 1)
-            value <- arbitrary @(F Pallas.ScalarField)
+            value <- arbitrary @Pallas.ScalarField
             pure $ impliedRootLaw pd tree addr value
 
   describe "Root computation" do
@@ -145,7 +146,7 @@ spec = describe "Sparse MerkleTree Property Laws" do
       for_ (treeDepths) \depth ->
         quickCheckGen $ do
           addr <- chooseInt 0 ((2 `pow` depth) - 1)
-          value <- arbitrary @(F Vesta.ScalarField)
+          value <- arbitrary @Vesta.ScalarField
           reifyType depth \pd ->
             pure $ idempotentSetLaw pd addr value
 
@@ -153,8 +154,8 @@ spec = describe "Sparse MerkleTree Property Laws" do
       for_ (treeDepths) \depth ->
         quickCheckGen $ do
           addr <- chooseInt 0 ((2 `pow` depth) - 1)
-          value1 <- arbitrary @(F Pallas.ScalarField)
-          value2 <- arbitrary @(F Pallas.ScalarField)
+          value1 <- arbitrary @Pallas.ScalarField
+          value2 <- arbitrary @Pallas.ScalarField
           reifyType depth \pd ->
             pure $ overwriteLaw pd addr value1 value2
 
@@ -163,12 +164,13 @@ emptyTreeRootLaw
   :: forall f n
    . Reflectable n Int
   => PoseidonField f
+  => Hashable f f
   => Proxy f
   -> Proxy n
   -> Result
 emptyTreeRootLaw _ _ =
   let
-    tree :: Sparse.SparseMerkleTree n (Digest (F f)) (F f)
+    tree :: Sparse.SparseMerkleTree n (Digest f) f
     tree = Sparse.empty
     r = Sparse.root tree
   in
@@ -180,13 +182,14 @@ emptyTreeGetLaw
   :: forall f n
    . Reflectable n Int
   => PoseidonField f
+  => Hashable f f
   => Proxy f
   -> Proxy n
   -> Int
   -> Result
 emptyTreeGetLaw _ _ addrInt =
   let
-    tree :: Sparse.SparseMerkleTree n (Digest (F f)) (F f)
+    tree :: Sparse.SparseMerkleTree n (Digest f) f
     tree = Sparse.empty
     addr = Sparse.Address (BigInt.fromInt addrInt)
   in
@@ -197,10 +200,11 @@ setGetLaw
   :: forall n f
    . Reflectable n Int
   => PoseidonField f
+  => Hashable f f
   => Proxy n
-  -> Sparse.SparseMerkleTree n (Digest (F f)) (F f)
+  -> Sparse.SparseMerkleTree n (Digest f) f
   -> Int
-  -> F f
+  -> f
   -> Result
 setGetLaw _ tree addrInt value =
   let
@@ -217,10 +221,11 @@ setArbitraryAddressLaw
   :: forall n f
    . Reflectable n Int
   => PoseidonField f
+  => Hashable f f
   => Proxy n
-  -> Sparse.SparseMerkleTree n (Digest (F f)) (F f)
+  -> Sparse.SparseMerkleTree n (Digest f) f
   -> Int
-  -> F f
+  -> f
   -> Result
 setArbitraryAddressLaw _ tree addrInt value =
   let
@@ -242,13 +247,14 @@ setOutOfBoundsLaw
   :: forall n f
    . Reflectable n Int
   => PoseidonField f
+  => Hashable f f
   => Proxy n
   -> Int
-  -> F f
+  -> f
   -> Result
 setOutOfBoundsLaw _ addrInt value =
   let
-    tree :: Sparse.SparseMerkleTree n (Digest (F f)) (F f)
+    tree :: Sparse.SparseMerkleTree n (Digest f) f
     tree = Sparse.empty
     addr = Sparse.Address (BigInt.fromInt addrInt)
   in
@@ -259,12 +265,13 @@ multipleSetLaw
   :: forall n f
    . Reflectable n Int
   => PoseidonField f
+  => Hashable f f
   => Proxy n
-  -> Sparse.SparseMerkleTree n (Digest (F f)) (F f)
+  -> Sparse.SparseMerkleTree n (Digest f) f
   -> Int
   -> Int
-  -> F f
-  -> F f
+  -> f
+  -> f
   -> Result
 multipleSetLaw _ tree addr1Int addr2Int value1 value2 =
   let
@@ -293,10 +300,11 @@ witnessValidationLaw
   :: forall n f
    . Reflectable n Int
   => PoseidonField f
+  => Hashable f f
   => Proxy n
-  -> Sparse.SparseMerkleTree n (Digest (F f)) (F f)
+  -> Sparse.SparseMerkleTree n (Digest f) f
   -> Int
-  -> F f
+  -> f
   -> Result
 witnessValidationLaw _ tree addrInt value =
   let
@@ -308,7 +316,7 @@ witnessValidationLaw _ tree addrInt value =
         let
           witness = Sparse.getWitness addr tree'
           actualRoot = Sparse.root tree'
-          valueHash = hashLeaf @(F f) (Just value)
+          valueHash = hashLeaf (Just value)
           impliedRoot_ = Sparse.impliedRoot addr valueHash witness
         in
           impliedRoot_ === actualRoot
@@ -318,20 +326,21 @@ emptyWitnessLaw
   :: forall f n
    . Reflectable n Int
   => PoseidonField f
+  => Hashable f f
   => Proxy f
   -> Proxy n
   -> Int
   -> Result
 emptyWitnessLaw _ _ addrInt =
   let
-    tree :: Sparse.SparseMerkleTree n (Digest (F f)) (F f)
+    tree :: Sparse.SparseMerkleTree n (Digest f) f
     tree = Sparse.empty
     addr = Sparse.Address (BigInt.fromInt addrInt)
     witness = Sparse.getWitness addr tree
     actualRoot = Sparse.root tree
 
-    emptyHash :: Digest (F f)
-    emptyHash = defaultHash @(F f)
+    emptyHash :: Digest f
+    emptyHash = defaultHash @f
     impliedRoot_ = Sparse.impliedRoot addr emptyHash witness
   in
     impliedRoot_ === actualRoot
@@ -341,10 +350,11 @@ impliedRootLaw
   :: forall n f
    . Reflectable n Int
   => PoseidonField f
+  => Hashable f f
   => Proxy n
-  -> Sparse.SparseMerkleTree n (Digest (F f)) (F f)
+  -> Sparse.SparseMerkleTree n (Digest f) f
   -> Int
-  -> F f
+  -> f
   -> Result
 impliedRootLaw _ tree addrInt value =
   let
@@ -356,7 +366,7 @@ impliedRootLaw _ tree addrInt value =
         let
           witness = Sparse.getWitness addr tree'
           actualRoot = Sparse.root tree'
-          valueHash = hashLeaf @(F f) (Just value)
+          valueHash = hashLeaf (Just value)
           computed = Sparse.impliedRoot addr valueHash witness
         in
           computed === actualRoot
@@ -366,13 +376,14 @@ idempotentSetLaw
   :: forall n f
    . Reflectable n Int
   => PoseidonField f
+  => Hashable f f
   => Proxy n
   -> Int
-  -> F f
+  -> f
   -> Result
 idempotentSetLaw _ addrInt value =
   let
-    tree :: Sparse.SparseMerkleTree n (Digest (F f)) (F f)
+    tree :: Sparse.SparseMerkleTree n (Digest f) f
     tree = Sparse.empty
     addr = Sparse.Address (BigInt.fromInt addrInt)
   in
@@ -392,14 +403,15 @@ overwriteLaw
   :: forall n f
    . Reflectable n Int
   => PoseidonField f
+  => Hashable f f
   => Proxy n
   -> Int
-  -> F f
-  -> F f
+  -> f
+  -> f
   -> Result
 overwriteLaw _ addrInt value1 value2 =
   let
-    tree :: Sparse.SparseMerkleTree n (Digest (F f)) (F f)
+    tree :: Sparse.SparseMerkleTree n (Digest f) f
     tree = Sparse.empty
     addr = Sparse.Address (BigInt.fromInt addrInt)
   in

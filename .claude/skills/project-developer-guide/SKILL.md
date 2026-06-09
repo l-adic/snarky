@@ -224,7 +224,7 @@ The second argument is a natural transformation `m ~> Effect` that runs the advi
 
 See `packages/example/` for a complete worked example:
 - `src/Snarky/Example/Circuits.purs` — circuits using `AccountMapM` and `MerkleRequestM`
-- `test/Test/Snarky/Example/Monad.purs` — `TransferRefM` (proving) and `TransferCompileM` (compilation) instances
+- `test/Test/Snarky/Example/Monad.purs` — `TransactionM` (proving) and `TransferCompileM` (compilation) instances
 - `test/Test/Snarky/Example/Circuits.purs` — testing with `circuitSpec'`
 
 ### When to use advice

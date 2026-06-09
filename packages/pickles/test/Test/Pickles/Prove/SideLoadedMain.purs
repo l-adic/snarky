@@ -39,7 +39,7 @@ import Snarky.Circuit.Kimchi.EndoScalar (toFieldChecked')
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1)
 import Snarky.Curves.Class (fromInt, generator, toAffine)
 import Snarky.Curves.Pasta (PallasG)
-import Snarky.Data.EllipticCurve (WeierstrassAffinePoint(..))
+import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (Type1(..))
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
@@ -76,9 +76,9 @@ noRecursionInputRule _ self = do
   WeierstrassAffinePoint g :: WeierstrassAffinePoint PallasG (FVar StepField) <-
     exists (pure (WeierstrassAffinePoint innerCurveGen))
   _ <- toFieldChecked' @1 (unsafeCoerce x :: SizedF 16 (FVar StepField))
-  _ <- scaleFast1 @1 @5 g (Type1 x)
-  _ <- scaleFast1 @1 @5 g (Type1 x)
-  _ <- endo @4 @1 g (unsafeCoerce x :: SizedF 4 (FVar StepField))
+  _ <- scaleFast1 @1 @5 (AffinePoint g) (Type1 x)
+  _ <- scaleFast1 @1 @5 (AffinePoint g) (Type1 x)
+  _ <- endo @4 @1 (AffinePoint g) (unsafeCoerce x :: SizedF 4 (FVar StepField))
   assertEqual_ self (const_ zero)
   pure
     { prevPublicInputs: Vector.nil

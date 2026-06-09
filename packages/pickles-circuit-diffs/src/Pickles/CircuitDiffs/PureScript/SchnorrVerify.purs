@@ -22,7 +22,7 @@ import Snarky.Circuit.Schnorr.Shifted (assertOnCurveConst, createShifted)
 import Snarky.Circuit.Types (Bool(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
 -- | Schnorr verifier circuit-diff input — matches the OCaml fixture's
@@ -46,7 +46,7 @@ parseSchnorrVerifyInput inputs =
     sBits = Vector.generate @255 \i ->
       coerce (at (3 + getFinite i)) :: BoolVar StepField
   in
-    { pk: { x: at 0, y: at 1 }
+    { pk: AffinePoint { x: at 0, y: at 1 }
     , r: at 2
     , sBits
     , message: Vector.toUnfoldable (at 258 :< Vector.nil)

@@ -25,7 +25,7 @@ import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector as Vector
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEqual_, exists, if_, read)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, FVar, Snarky, assertEqual_, exists, if_, read)
 import Snarky.Circuit.MerkleTree (class MerkleRequestM, getElement, getPath, setValue)
 import Snarky.Circuit.RandomOracle (Digest(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -63,7 +63,9 @@ get
   :: forall t m f d v var
    . Reflectable d Int
   => PoseidonField f
-  => MerkleRequestM m f v d var
+  => MerkleRequestM m f v d
+  => CircuitType f v var
+  => CheckedType f (KimchiConstraint f) var
   => CircuitM f (KimchiConstraint f) t m
   => MerkleHashable var (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
   => Sized.AddressVar d f
@@ -121,8 +123,10 @@ update
   :: forall t m f d v var
    . Reflectable d Int
   => PoseidonField f
-  => MerkleRequestM m f v d var
+  => MerkleRequestM m f v d
   => MerkleHashable var (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
+  => CircuitType f v var
+  => CheckedType f (KimchiConstraint f) var
   => CircuitM f (KimchiConstraint f) t m
   => Sized.AddressVar d f
   -> Digest (FVar f)

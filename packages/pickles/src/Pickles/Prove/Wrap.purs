@@ -78,7 +78,7 @@ import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
+import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -172,7 +172,7 @@ type BuildWrapAdviceInput (mpv :: Int) (slots :: Type -> Type) =
 mkVestaPt
   :: AffinePoint WrapField
   -> WeierstrassAffinePoint VestaG (F WrapField)
-mkVestaPt pt = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
+mkVestaPt (AffinePoint pt) = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
 
 -- | Build the wrap-circuit advice record from the step proof + its
 -- | surrounding pickles context. Pure: all FFI calls go through
@@ -615,7 +615,7 @@ stepVkForCircuit
 stepVkForCircuit vk =
   let
     cp :: AffinePoint WrapField -> AffinePoint (FVar WrapField)
-    cp pt = { x: const_ pt.x, y: const_ pt.y }
+    cp (AffinePoint pt) = AffinePoint { x: const_ pt.x, y: const_ pt.y }
     cpChunk = over ChunkedCommitment (map cp)
   in
     { sigmaComm: map cpChunk vk.sigmaComm

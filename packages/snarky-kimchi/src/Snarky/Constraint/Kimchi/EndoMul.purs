@@ -16,7 +16,7 @@ import Data.Vector as Vector
 import Snarky.Circuit.DSL (FVar)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
 import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, GateKind(..), KimchiRow)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 
 type Round f =
   { t :: AffinePoint f
@@ -47,8 +47,9 @@ reduce
   => EndoMul (FVar f)
   -> m (Rows f)
 reduce c = do
-  xs <- reduceToVariable c.s.x
-  ys <- reduceToVariable c.s.y
+  let AffinePoint s = c.s
+  xs <- reduceToVariable s.x
+  ys <- reduceToVariable s.y
   nAcc <- reduceToVariable c.nAcc
   rows <- traverse (\r -> endoMulRound <$> reduceRound r) c.state
   pure $ Rows $ rows `NEA.snoc` finalZeroRow xs ys nAcc
@@ -56,7 +57,7 @@ reduce c = do
   where
   reduceRound round = do
     let
-      reducePoint { x, y } = do
+      reducePoint (AffinePoint { x, y }) = do
         x' <- reduceToVariable x
         y' <- reduceToVariable y
         pure { x: x', y: y' }

@@ -10,6 +10,7 @@ import Prelude
 
 import Data.Fin (getFinite)
 import Data.Fin as Fin
+import Data.Newtype (unwrap)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyPallasPt, dummyWrapSg, stepEndo, unsafeIdx)
@@ -28,7 +29,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (curveParams)
 import Snarky.Curves.Pasta (PallasG)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
 type FullStepVerifyOneParams =
@@ -45,13 +46,13 @@ fullStepVerifyOneCircuit
 fullStepVerifyOneCircuit { lagrangeAt, blindingH } inputs = do
   let
     at = unsafeIdx inputs
-    readPt i = { x: at i, y: at (i + 1) }
+    readPt i = AffinePoint { x: at i, y: at (i + 1) }
     readOtherField i = Type2 (SplitField { sDiv2: at i, sOdd: coerce (at (i + 1)) })
 
-    constDummyPt = let { x: F x', y: F y' } = dummyPallasPt in { x: const_ x', y: const_ y' }
+    constDummyPt = let AffinePoint { x: F x', y: F y' } = dummyPallasPt in AffinePoint { x: const_ x', y: const_ y' }
 
     constDummySg :: AffinePoint (FVar StepField)
-    constDummySg = { x: const_ dummyWrapSg.x, y: const_ dummyWrapSg.y }
+    constDummySg = AffinePoint { x: const_ (unwrap dummyWrapSg).x, y: const_ (unwrap dummyWrapSg).y }
 
     o = 1 -- offset for app_state
 

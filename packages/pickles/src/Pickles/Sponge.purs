@@ -53,7 +53,7 @@ import Snarky.Circuit.Kimchi.RangeCheck (lowest128Bits, lowest128Bits', lowest12
 import Snarky.Circuit.RandomOracle.Sponge as CircuitSponge
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 
 --------------------------------------------------------------------------------
 -- | MonadSponge Typeclass
@@ -73,7 +73,7 @@ class Monad m <= MonadSponge f m | m -> f where
 
 -- | Absorb a curve point (x and y coordinates)
 absorbPoint :: forall f m. MonadSponge f m => AffinePoint f -> m Unit
-absorbPoint { x, y } = do
+absorbPoint (AffinePoint { x, y }) = do
   absorb x
   absorb y
 

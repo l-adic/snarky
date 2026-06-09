@@ -44,7 +44,8 @@ import Effect.Exception (Error, error)
 import Effect.Ref (Ref, read, write)
 import Partial.Unsafe (unsafeCrashWith)
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F, FVar)
+import Safe.Coerce (coerce)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, FVar)
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -58,7 +59,7 @@ import Snarky.Example.Types (Account, PublicKey, TokenAmount)
 -- | `SignedTransaction`; the prover conjures it in-circuit via `exists`,
 -- | reading it from the witness monad's own instance.
 class Monad m <= TransactionM m f | m -> f where
-  getCurrentTransaction :: m (SignedTransaction (F f))
+  getCurrentTransaction :: m (SignedTransaction f)
 
 --------------------------------------------------------------------------------
 -- Run-time advice monad
@@ -69,7 +70,7 @@ class Monad m <= TransactionM m f | m -> f where
 newtype TransferM d f a =
   TransferM
     ( ReaderT
-        { currentTransaction :: Maybe (SignedTransaction (F f))
+        { currentTransaction :: Maybe (SignedTransaction f)
         , ledger :: Ref (Ledger d f)
         }
         Effect
@@ -87,7 +88,7 @@ derive newtype instance MonadThrow Error (TransferM d f)
 
 runTransferM
   :: forall d f
-   . { currentTransaction :: Maybe (SignedTransaction (F f)), ledger :: Ref (Ledger d f) }
+   . { currentTransaction :: Maybe (SignedTransaction f), ledger :: Ref (Ledger d f) }
   -> TransferM d f
        ~> Effect
 runTransferM env (TransferM m) = runReaderT m env
@@ -105,11 +106,11 @@ modifyLedger f = TransferM $ ask >>= \env -> liftEffect do
 instance
   ( Reflectable d Int
   , PoseidonField f
-  , CircuitType f (Account (F f)) (Account (FVar f))
+  , CircuitType f (Account f) (Account (FVar f))
   , CheckedType f (KimchiConstraint f) (TokenAmount (FVar f))
-  , MerkleHashable (Account (F f)) (Digest (F f))
+  , MerkleHashable (Account f) (Digest f)
   ) =>
-  CMT.MerkleRequestM (TransferM d f) f (Account (F f)) d (Account (FVar f)) where
+  CMT.MerkleRequestM (TransferM d f) f (Account f) d where
   getElement addr = do
     { tree } <- getLedger
     case Sparse.get tree addr of
@@ -131,7 +132,7 @@ instance Ord f => AccountMapM (TransferM d f) f d where
   getAccountId pk = do
     ledger <- getLedger
     case lookupAddress ledger pk of
-      Just addr -> pure addr
+      Just addr -> pure $ addr
       Nothing -> throwError $ error "getAccountId: public key not found in account map"
 
 -- | TransactionM instance — serves the transaction this prove is proving,
@@ -141,7 +142,7 @@ instance TransactionM (TransferM d f) f where
   getCurrentTransaction = do
     env <- TransferM ask
     case env.currentTransaction of
-      Just tx -> pure tx
+      Just tx -> pure $ coerce tx
       Nothing -> throwError $ error "getCurrentTransaction: no current transaction set"
 
 --------------------------------------------------------------------------------
@@ -163,10 +164,11 @@ runTransferCompileM (TransferCompileM m) = un Identity m
 instance
   ( Reflectable d Int
   , PoseidonField f
-  , CircuitType f (Account (F f)) (Account (FVar f))
+  , CircuitType f (Account f) (Account (FVar f))
   , CheckedType f (KimchiConstraint f) (TokenAmount (FVar f))
+  , MerkleHashable (Account f) (Digest f)
   ) =>
-  CMT.MerkleRequestM (TransferCompileM d f) f (Account (F f)) d (Account (FVar f)) where
+  CMT.MerkleRequestM (TransferCompileM d f) f (Account f) d where
   getElement _ = unsafeCrashWith "the impossible happened! unhandled request: getElement"
   getPath _ = unsafeCrashWith "the impossible happened! unhandled request: getPath"
   setValue _ _ = unsafeCrashWith "the impossible happened! unhandled request: setValue"
@@ -180,4 +182,4 @@ instance AccountMapM (TransferCompileM d f) f d where
 -- | This typeclass allows circuits to "conjure" an address from a public key
 -- | during witness generation. The prover provides the mapping externally.
 class Monad m <= AccountMapM m f (d :: Int) | m -> f d where
-  getAccountId :: PublicKey (F f) -> m (Address d)
+  getAccountId :: PublicKey f -> m (Address d)

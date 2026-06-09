@@ -37,7 +37,6 @@ import Pickles (BranchProver(..), Compiled, CompiledProof, PrevSlot(..), RulesCo
 import Snarky.Backend.Kimchi.Class (addLagrangeBasis, createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Backend.Kimchi.Types (CRS)
-import Snarky.Circuit.DSL (F)
 import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
@@ -50,7 +49,7 @@ import Test.Spec.Assertions (shouldEqual)
 
 -- | The shared statement type carried as each branch's public input: a
 -- | {source, target} ledger-digest pair with no public output.
-type TxnStmt = StatementIO (Statement (F Vesta.ScalarField)) Unit
+type TxnStmt = StatementIO (Statement Vesta.ScalarField) Unit
 
 -- | The two-branch program. Branch 0 (base) has no prev slots; branch 1
 -- | (merge) has two `Self` slots, each width 2 (a proof of THIS mpv=2
@@ -102,10 +101,10 @@ spec =
           , proofCache: Nothing
           }
 
-      baseEntry <- liftEffect $ mkRuleEntry @2 @Unit @(Statement (F Vesta.ScalarField)) @1 @1 @(TransferM Depth Vesta.ScalarField)
+      baseEntry <- liftEffect $ mkRuleEntry @2 @Unit @(Statement Vesta.ScalarField) @1 @1 @(TransferM Depth Vesta.ScalarField)
         (baseRule @Depth chainId)
         unit
-      mergeEntry <- liftEffect $ mkRuleEntry @2 @Unit @(Statement (F Vesta.ScalarField)) @1 @1 @(TransferM Depth Vesta.ScalarField)
+      mergeEntry <- liftEffect $ mkRuleEntry @2 @Unit @(Statement Vesta.ScalarField) @1 @1 @(TransferM Depth Vesta.ScalarField)
         mergeRule
         (tuple2 Self Self)
 
@@ -114,7 +113,7 @@ spec =
       out <- liftEffect $ runTransferM { currentTransaction: Nothing, ledger: ref } $ compileMulti
         @TxnSnarkRules
         @Unit
-        @(Statement (F Vesta.ScalarField))
+        @(Statement Vesta.ScalarField)
         @(Slots2 2 2)
         @1
         cfg
@@ -125,8 +124,8 @@ spec =
         BranchProver mergeProver = fst (snd out.provers)
 
         runBase
-          :: SignedTransaction (F Vesta.ScalarField)
-          -> Statement (F Vesta.ScalarField)
+          :: SignedTransaction Vesta.ScalarField
+          -> Statement Vesta.ScalarField
           -> Aff (CompiledProof 2 TxnStmt)
         runBase tx appInput = do
           e <- liftEffect $ runTransferM { currentTransaction: Just tx, ledger: ref } $ runExceptT $ baseProver
@@ -140,7 +139,7 @@ spec =
       -- base0: L0 → L1 with a fresh valid transfer. `source0` is the
       -- pre-state root; `target0` is the pure post-transfer root (the same
       -- value `processTransaction` computes in-circuit).
-      let source0 = Sparse.root l0.tree :: Digest (F Vesta.ScalarField)
+      let source0 = Sparse.root l0.tree :: Digest Vesta.ScalarField
       tx0 <- liftEffect $ randomSampleOne (genValidSignedTransaction chainId l0 keys)
       postState0 <- liftEffect $ applyTx chainId tx0 l0
       let target0 = Sparse.root postState0.tree
@@ -150,7 +149,7 @@ spec =
       -- base1: L1 → L2. Read the ref's actual post-b0 state (the base
       -- rule mutated it to L1) and transfer from there.
       l1 <- liftEffect $ Ref.read ref
-      let source1 = Sparse.root l1.tree :: Digest (F Vesta.ScalarField)
+      let source1 = Sparse.root l1.tree :: Digest Vesta.ScalarField
       tx1 <- liftEffect $ randomSampleOne (genValidSignedTransaction chainId l1 keys)
       postState1 <- liftEffect $ applyTx chainId tx1 l1
       let target1 = Sparse.root postState1.tree

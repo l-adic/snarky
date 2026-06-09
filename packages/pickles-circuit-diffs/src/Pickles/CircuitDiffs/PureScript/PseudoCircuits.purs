@@ -43,7 +43,7 @@ import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_, exists, 
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class PrimeField, fromBigInt)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
@@ -218,8 +218,8 @@ chooseKeyN1WrapCircuit
 chooseKeyN1WrapCircuit inputs = do
   let
     at = unsafeIdx inputs
-    { x: F dummyX, y: F dummyY } = dummyVestaPt
-    dummyPt = { x: const_ dummyX, y: const_ dummyY } :: AffinePoint (FVar WrapField)
+    AffinePoint { x: F dummyX, y: F dummyY } = dummyVestaPt
+    dummyPt = AffinePoint { x: const_ dummyX, y: const_ dummyY } :: AffinePoint (FVar WrapField)
     dummyPtChunks = ChunkedCommitment (Vector.singleton dummyPt)
     dummyVK =
       { sigmaComm: Vector.replicate dummyPtChunks :: Vector 7 _

@@ -16,7 +16,7 @@ import Effect.Ref (write)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import Snarky.Backend.Compile (compile, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_)
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi (verifyCircuitM)
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.RandomOracle (Digest(..))
@@ -60,12 +60,12 @@ transferSpec _ = do
     -- The in-circuit `processTransaction` must agree with this. `apply`
     -- is in `Effect` only to `throw` on bad inputs; the valid-case generator
     -- never produces those, so `unsafePerformEffect` is safe here.
-    testFunction :: SignedTransaction (F Vesta.ScalarField) -> Digest (F Vesta.ScalarField)
+    testFunction :: SignedTransaction Vesta.ScalarField -> Digest Vesta.ScalarField
     testFunction tx = Sparse.root (unsafePerformEffect (applyTx chainId tx ledger)).tree
 
     rootVar =
       let
-        Digest (F r) = Sparse.root ledger.tree
+        Digest r = Sparse.root ledger.tree
       in
         Digest $ const_ r
 
@@ -73,7 +73,7 @@ transferSpec _ = do
     circuit
       :: forall t @m
        . AccountMapM m Vesta.ScalarField d
-      => CMT.MerkleRequestM m Vesta.ScalarField (Account (F Vesta.ScalarField)) d (Account (FVar Vesta.ScalarField))
+      => CMT.MerkleRequestM m Vesta.ScalarField (Account Vesta.ScalarField) d
       => CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
       => SignedTransaction (FVar Vesta.ScalarField)
       -> Snarky (KimchiConstraint Vesta.ScalarField) t m (Digest (FVar Vesta.ScalarField))
@@ -83,8 +83,8 @@ transferSpec _ = do
     s =
       runTransferCompileM $
         compile
-          (Proxy @(SignedTransaction (F Vesta.ScalarField)))
-          (Proxy @(Digest (F Vesta.ScalarField)))
+          (Proxy @(SignedTransaction Vesta.ScalarField))
+          (Proxy @(Digest Vesta.ScalarField))
           (Proxy @(KimchiConstraint Vesta.ScalarField))
           (circuit @(TransferCompileM d Vesta.ScalarField))
           initialState

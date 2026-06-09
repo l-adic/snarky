@@ -31,7 +31,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (curveParams)
 import Snarky.Curves.Pasta (VestaG)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
 type IvpWrapParams =
@@ -73,7 +73,7 @@ parseIvpWrapInput :: Vector 177 (FVar WrapField) -> IvpWrapInput (PackedStepPubl
 parseIvpWrapInput inputs =
   let
     at = unsafeIdx inputs
-    readPt i = { x: at i, y: at (i + 1) }
+    readPt i = AffinePoint { x: at i, y: at (i + 1) }
     splitField i = Type2 (SplitField { sDiv2: at i, sOdd: coerce (at (i + 1)) })
 
     perProofTuple =
@@ -140,7 +140,7 @@ ivpWrapCircuit
   -> Snarky (KimchiConstraint WrapField) t m Unit
 ivpWrapCircuit { lagrangeAt, blindingH } input = do
   let
-    constDummyPt = let { x: F x', y: F y' } = dummyVestaPt in { x: const_ x', y: const_ y' }
+    constDummyPt = let AffinePoint { x: F x', y: F y' } = dummyVestaPt in AffinePoint { x: const_ x', y: const_ y' }
 
     ivpParams =
       { curveParams: curveParams (Proxy @VestaG)

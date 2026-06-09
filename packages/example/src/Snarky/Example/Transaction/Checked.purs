@@ -39,7 +39,7 @@ import Effect.Class (class MonadEffect)
 import Mina.ChainId (ChainId, signaturePrefix)
 import Pickles (StatementIO(..))
 import Pickles.Step.Main (RuleOutput)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, AsProverT, F, FVar, Snarky, add_, assertEq, assert_, check, const_, exists, fieldsToValue, fieldsToVar, not_, read, sizeInFields, true_, unpack_, valueToFields, varToFields)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, AsProverT, FVar, Snarky, add_, assertEq, assert_, check, const_, exists, fieldsToValue, fieldsToVar, not_, read, sizeInFields, true_, unpack_, valueToFields, varToFields)
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Circuit.Schnorr (Signature(..), verifies)
@@ -65,7 +65,7 @@ newtype Statement f = Statement
 -- | a `Statement` is converted to/from `source /\ target` and the
 -- | `(Tuple a b)` `CircuitType`/`CheckedType` instances do the rest
 -- | (which in turn delegate to `Digest`'s instances).
-instance CircuitType f (Statement (F f)) (Statement (FVar f)) where
+instance CircuitType f (Statement f) (Statement (FVar f)) where
   valueToFields (Statement { source, target }) = valueToFields (source /\ target)
   fieldsToValue fields =
     let
@@ -76,12 +76,12 @@ instance CircuitType f (Statement (F f)) (Statement (FVar f)) where
   -- Tuple instance's value type must be pinned explicitly (mirrors
   -- `Digest`'s `genericVarToFields @(Digest (F f))`).
   sizeInFields pf _ =
-    sizeInFields pf (Proxy :: Proxy (Tuple (Digest (F f)) (Digest (F f))))
+    sizeInFields pf (Proxy :: Proxy (Tuple (Digest f) (Digest f)))
   varToFields (Statement { source, target }) =
-    varToFields @f @(Tuple (Digest (F f)) (Digest (F f))) (source /\ target)
+    varToFields @f @(Tuple (Digest f) (Digest f)) (source /\ target)
   fieldsToVar fields =
     let
-      source /\ target = fieldsToVar @f @(Tuple (Digest (F f)) (Digest (F f))) fields
+      source /\ target = fieldsToVar @f @(Tuple (Digest f) (Digest f)) fields
     in
       Statement { source, target }
 
@@ -99,7 +99,7 @@ baseRule
   => CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
   => MonadEffect m
   => AccountMapM m Vesta.ScalarField d
-  => CMT.MerkleRequestM m Vesta.ScalarField (Account (F Vesta.ScalarField)) d (Account (FVar Vesta.ScalarField))
+  => CMT.MerkleRequestM m Vesta.ScalarField (Account Vesta.ScalarField) d
   => TransactionM m Vesta.ScalarField
   => ChainId
   -> AsProverT Vesta.ScalarField m Unit
@@ -130,8 +130,8 @@ mergeRule
   => MonadEffect m
   => AsProverT Vesta.ScalarField m
        ( Tuple2
-           (StatementIO (Statement (F Vesta.ScalarField)) Unit)
-           (StatementIO (Statement (F Vesta.ScalarField)) Unit)
+           (StatementIO (Statement Vesta.ScalarField) Unit)
+           (StatementIO (Statement Vesta.ScalarField) Unit)
        )
   -> Statement (FVar Vesta.ScalarField)
   -> Snarky
@@ -173,7 +173,7 @@ applyTxChecked
   :: forall t m @d
    . Reflectable d Int
   => AccountMapM m Vesta.ScalarField d
-  => CMT.MerkleRequestM m Vesta.ScalarField (Account (F Vesta.ScalarField)) d (Account (FVar Vesta.ScalarField))
+  => CMT.MerkleRequestM m Vesta.ScalarField (Account Vesta.ScalarField) d
   => CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
   => ChainId
   -> Digest (FVar Vesta.ScalarField)

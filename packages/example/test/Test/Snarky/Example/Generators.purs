@@ -25,11 +25,11 @@ import Data.Set as Set
 import Data.Traversable (for)
 import Mina.ChainId (ChainId)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Circuit.DSL (F(..))
 import Snarky.Curves.Class (fromBigInt, fromInt, generator, scalarMul, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Curves.Vesta as Vesta
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Snarky.Example.Ledger (Ledger, balanceOf, getAccount, lookupAddress)
 import Snarky.Example.Transaction (SignedTransaction, sign)
 import Snarky.Example.Types (Account(..), PublicKey(..), mkAmount)
@@ -37,16 +37,16 @@ import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen, chooseInt, suchThat)
 import Test.Snarky.Example.Utils (chooseBigInt)
 
-type Keystore = Map (PublicKey (F Vesta.ScalarField)) Pallas.ScalarField
+type Keystore = Map (PublicKey Vesta.ScalarField) Pallas.ScalarField
 
 -- | Pick two distinct public keys from the ledger's account index.
 genDistinctPublicKeys
   :: forall d
    . Ledger d Vesta.ScalarField
-  -> Gen { fromPk :: PublicKey (F Vesta.ScalarField), toPk :: PublicKey (F Vesta.ScalarField) }
+  -> Gen { fromPk :: PublicKey Vesta.ScalarField, toPk :: PublicKey Vesta.ScalarField }
 genDistinctPublicKeys ledger = do
   let
-    keys :: Array (PublicKey (F Vesta.ScalarField))
+    keys :: Array (PublicKey Vesta.ScalarField)
     keys = Set.toUnfoldable $ Map.keys ledger.accountMap
     maxIdx = length keys - 1
   fromIdx <- chooseInt 0 maxIdx
@@ -64,14 +64,14 @@ senderInfo
   :: forall d
    . Ledger d Vesta.ScalarField
   -> Keystore
-  -> PublicKey (F Vesta.ScalarField)
-  -> { privateKey :: F Pallas.ScalarField, nonce :: F Vesta.ScalarField, balance :: F Vesta.ScalarField }
+  -> PublicKey Vesta.ScalarField
+  -> { privateKey :: Pallas.ScalarField, nonce :: Vesta.ScalarField, balance :: Vesta.ScalarField }
 senderInfo ledger wallet fromPk =
   let
     fromAddr = unsafePartial fromJust $ lookupAddress ledger fromPk
     Account senderAcc = unsafePartial fromJust $ getAccount ledger fromAddr
   in
-    { privateKey: F (unsafePartial fromJust $ Map.lookup fromPk wallet)
+    { privateKey: unsafePartial fromJust $ Map.lookup fromPk wallet
     , nonce: senderAcc.nonce
     , balance: balanceOf senderAcc.tokenBalance
     }
@@ -83,7 +83,7 @@ genValidSignedTransaction
    . ChainId
   -> Ledger d Vesta.ScalarField
   -> Keystore
-  -> Gen (SignedTransaction (F Vesta.ScalarField))
+  -> Gen (SignedTransaction Vesta.ScalarField)
 genValidSignedTransaction chainId ledger wallet = do
   { fromPk, toPk } <- genDistinctPublicKeys ledger
   let { privateKey, nonce, balance } = senderInfo ledger wallet fromPk
@@ -99,7 +99,7 @@ genOverdraftSignedTransaction
    . ChainId
   -> Ledger d Vesta.ScalarField
   -> Keystore
-  -> Gen (SignedTransaction (F Vesta.ScalarField))
+  -> Gen (SignedTransaction Vesta.ScalarField)
 genOverdraftSignedTransaction chainId ledger wallet = do
   { fromPk, toPk } <- genDistinctPublicKeys ledger
   let
@@ -127,11 +127,11 @@ genLedger numAccounts = do
     balanceInt <- chooseInt 1000000 9999999
     let
       pkPoint = unsafePartial fromJust $ toAffine (scalarMul privateKey (generator :: PallasG))
-      publicKey = PublicKey { x: F pkPoint.x, y: F pkPoint.y }
+      publicKey = PublicKey (AffinePoint { x: pkPoint.x, y: pkPoint.y })
       account = Account
         { publicKey
         , tokenBalance: unsafePartial fromJust $ mkAmount (fromInt balanceInt)
-        , nonce: F zero
+        , nonce: zero
         }
     pure { privateKey, publicKey, account }
 

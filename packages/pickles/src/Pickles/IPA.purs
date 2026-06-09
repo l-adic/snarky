@@ -46,6 +46,7 @@ import Prelude
 import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (foldM, for_, product)
 import Data.Maybe (Maybe(..))
+import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
@@ -386,14 +387,14 @@ ipaFinalCheckCircuit scalarOps params input = do
   -- circuit reads from the step proof's opening via Req.Openings_proof
   -- + deferredValues — if any differs from OCaml, localizes the bug.
   liftSnarky do
-    ivpTrace "ipa.dbg.sg.x" input.sg.x
-    ivpTrace "ipa.dbg.sg.y" input.sg.y
-    ivpTrace "ipa.dbg.delta.x" input.delta.x
-    ivpTrace "ipa.dbg.delta.y" input.delta.y
-    ivpTrace "ipa.dbg.cp.x" input.combinedPolynomial.x
-    ivpTrace "ipa.dbg.cp.y" input.combinedPolynomial.y
-    ivpTrace "ipa.dbg.u.x" input.u.x
-    ivpTrace "ipa.dbg.u.y" input.u.y
+    ivpTrace "ipa.dbg.sg.x" (unwrap input.sg).x
+    ivpTrace "ipa.dbg.sg.y" (unwrap input.sg).y
+    ivpTrace "ipa.dbg.delta.x" (unwrap input.delta).x
+    ivpTrace "ipa.dbg.delta.y" (unwrap input.delta).y
+    ivpTrace "ipa.dbg.cp.x" (unwrap input.combinedPolynomial).x
+    ivpTrace "ipa.dbg.cp.y" (unwrap input.combinedPolynomial).y
+    ivpTrace "ipa.dbg.u.x" (unwrap input.u).x
+    ivpTrace "ipa.dbg.u.y" (unwrap input.u).y
 
   -- 1. Extract 128-bit scalar challenges from L/R pairs
   -- OCaml: bullet_reduce starts with Array.map gammas ~f:(absorb + squeeze_scalar)
@@ -432,8 +433,8 @@ ipaFinalCheckCircuit scalarOps params input = do
 
   -- DIAG: dump Q + c at this point
   liftSnarky do
-    ivpTrace "ipa.dbg.q.x" q.x
-    ivpTrace "ipa.dbg.q.y" q.y
+    ivpTrace "ipa.dbg.(unwrap q).x" (unwrap q).x
+    ivpTrace "ipa.dbg.(unwrap q).y" (unwrap q).y
     ivpTrace "ipa.dbg.c" (SizedF.toField c)
 
   success <- liftSnarky $ label "ipa_final_eq" $ do
@@ -450,14 +451,14 @@ ipaFinalCheckCircuit scalarOps params input = do
     { p: rhs } <- label "ipa_rhs_add" $ addComplete z1Term z2Term
 
     -- DIAG: dump LHS + RHS at the final equation
-    ivpTrace "ipa.dbg.lhs.x" lhs.x
-    ivpTrace "ipa.dbg.lhs.y" lhs.y
-    ivpTrace "ipa.dbg.rhs.x" rhs.x
-    ivpTrace "ipa.dbg.rhs.y" rhs.y
+    ivpTrace "ipa.dbg.(unwrap lhs).x" (unwrap lhs).x
+    ivpTrace "ipa.dbg.(unwrap lhs).y" (unwrap lhs).y
+    ivpTrace "ipa.dbg.(unwrap rhs).x" (unwrap rhs).x
+    ivpTrace "ipa.dbg.(unwrap rhs).y" (unwrap rhs).y
 
     -- 9. Check LHS == RHS
-    xEqual <- equals_ lhs.x rhs.x
-    yEqual <- equals_ lhs.y rhs.y
+    xEqual <- equals_ (unwrap lhs).x (unwrap rhs).x
+    yEqual <- equals_ (unwrap lhs).y (unwrap rhs).y
     xEqual `and_` yEqual
 
   pure { success, challenges: scalarChallenges }

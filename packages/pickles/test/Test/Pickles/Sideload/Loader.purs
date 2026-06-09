@@ -76,7 +76,7 @@ import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
 import Snarky.Curves.Class (class PrimeField, fromBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG) as PV
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
@@ -307,7 +307,7 @@ decodeAffinePoint j = do
     [ x, y ] -> do
       x' <- decodeHex x
       y' <- decodeHex y
-      pure { x: x', y: y' }
+      pure (AffinePoint { x: x', y: y' })
     _ -> Left (TypeMismatch ("expected 2-element [x, y] curve point, got " <> show (Array.length arr) <> " elements"))
 
 -- | Decode a JSON int64. After `parseJsonPreserveBigInts` rewrites

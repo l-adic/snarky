@@ -21,7 +21,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (generator, toAffine)
 import Snarky.Curves.Pasta (VestaG)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
 type CombinePolyInput f =
@@ -36,7 +36,7 @@ parseCombinePolyInput :: Vector 37 (FVar WrapField) -> CombinePolyInput WrapFiel
 parseCombinePolyInput inputs =
   let
     at = unsafeIdx inputs
-    readPt i = { x: at i, y: at (i + 1) }
+    readPt i = AffinePoint { x: at i, y: at (i + 1) }
   in
     { xHat: readPt 0
     , ftComm: readPt 2
@@ -55,7 +55,7 @@ combinePolyCircuit input =
     g = unsafePartial $ fromJust $ toAffine (generator :: VestaG)
 
     dummyPt :: AffinePoint (FVar WrapField)
-    dummyPt = { x: const_ g.x, y: const_ g.y }
+    dummyPt = AffinePoint { x: const_ g.x, y: const_ g.y }
 
     indexComms :: Vector 6 (AffinePoint (FVar WrapField))
     indexComms = Vector.generate \_ -> dummyPt

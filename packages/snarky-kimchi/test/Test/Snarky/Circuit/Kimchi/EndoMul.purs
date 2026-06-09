@@ -10,7 +10,7 @@ import Data.Tuple (Tuple(..), uncurry)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky)
+import Snarky.Circuit.DSL (class CircuitM, F, FVar, SizedF, Snarky)
 import Snarky.Circuit.Kimchi.EndoMul (endo, endoInv)
 import Snarky.Circuit.Kimchi.EndoScalar (expandToEndoScalar)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
@@ -19,7 +19,7 @@ import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class WeierstrassCurve, fromAffine, scalarMul, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Snarky.Data.EllipticCurve as EC
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen)
@@ -45,15 +45,15 @@ endoSpec cfg _ curveProxy curveName =
   describe ("EndoMul " <> curveName) do
     it ("EndoMul circuit is valid for " <> curveName) $ unsafePartial $ do
       let
-        f :: Tuple (AffinePoint (F f)) (SizedF 128 (F f)) -> AffinePoint (F f)
-        f (Tuple { x: F x, y: F y } scalar) =
+        f :: Tuple (AffinePoint f) (SizedF 128 (F f)) -> AffinePoint f
+        f (Tuple (AffinePoint { x, y }) scalar) =
           let
             base = fromAffine @f @g { x, y }
             effectiveScalar = expandToEndoScalar scalar :: F f'
             result = scalarMul (unwrap effectiveScalar) base
             { x, y } = unsafePartial $ fromJust $ toAffine @f result
           in
-            { x: F x, y: F y }
+            AffinePoint { x, y }
 
         circuit
           :: forall t
@@ -65,7 +65,7 @@ endoSpec cfg _ curveProxy curveName =
           result <- endo @128 @32 p scalar
           pure result
 
-        gen :: Gen (Tuple (AffinePoint (F f)) (SizedF 128 (F f)))
+        gen :: Gen (Tuple (AffinePoint f) (SizedF 128 (F f)))
         gen = do
           p <- EC.genAffinePoint curveProxy
           scalar <- arbitrary
@@ -102,8 +102,8 @@ endoInvSpec cfg _ curveProxy curveName =
     it ("EndoInv circuit is valid for " <> curveName) $ unsafePartial $ do
       let
         -- Reference: compute g / scalar using constant operations
-        refFn :: Tuple (AffinePoint (F f)) (SizedF 128 (F f)) -> AffinePoint (F f)
-        refFn (Tuple { x: F x, y: F y } scalar) =
+        refFn :: Tuple (AffinePoint f) (SizedF 128 (F f)) -> AffinePoint f
+        refFn (Tuple (AffinePoint { x, y }) scalar) =
           let
             -- Convert scalar to effective scalar in f'
             effectiveScalar = expandToEndoScalar scalar :: F f'
@@ -114,7 +114,7 @@ endoInvSpec cfg _ curveProxy curveName =
             result = scalarMul (unwrap invScalar) base
             { x, y } = unsafePartial $ fromJust $ toAffine result
           in
-            { x: F x, y: F y }
+            AffinePoint { x, y }
 
         circuit
           :: forall t
@@ -124,7 +124,7 @@ endoInvSpec cfg _ curveProxy curveName =
           -> Snarky (KimchiConstraint f) t Identity (AffinePoint (FVar f))
         circuit p scalar = endoInv @f @f' @g p scalar
 
-        gen :: Gen (Tuple (AffinePoint (F f)) (SizedF 128 (F f)))
+        gen :: Gen (Tuple (AffinePoint f) (SizedF 128 (F f)))
         gen = do
           p <- EC.genAffinePoint curveProxy
           scalar <- arbitrary
