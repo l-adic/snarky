@@ -12,6 +12,7 @@ import Snarky.Constraint.Kimchi.Types (AuxState)
 import Test.Data.MerkleTree as DynamicMerkleTree
 import Test.Data.MerkleTree.Sized as SizedMerkleTree
 import Test.Data.MerkleTree.Sparse as SparseMerkleTree
+import Test.Data.MerkleTree.Sparse.Mask as SparseMask
 import Test.Snarky.Circuit.MerkleTree as CircuitMerkleTree
 import Test.Snarky.Circuit.SparseMerkleTree as CircuitSparseMerkleTree
 import Test.Snarky.Circuit.Utils (TestConfig)
@@ -32,6 +33,7 @@ main = runSpecAndExitProcess'
       DynamicMerkleTree.spec
       SizedMerkleTree.spec
       SparseMerkleTree.spec
+      SparseMask.spec
     CircuitMerkleTree.spec kimchiTestConfig
     CircuitSparseMerkleTree.spec kimchiTestConfig
   where
