@@ -1,5 +1,7 @@
 module Snarky.Example.Block
   ( Block(..)
+  , TxSnarkWork
+  , processBlock
   ) where
 
 import Prelude
@@ -22,11 +24,6 @@ import Snarky.Example.Transaction.Unchecked (touchedAccounts)
 newtype Block = Block
   { transactions :: Vector 4 (SignedTransaction Vesta.ScalarField)
   }
-
---data SnarkWork
---  = Transaction (Statement Vesta.ScalarField)
---  | Merge (Statement Vesta.ScalarField) (Statement Vesta.ScalarField)
---
 
 type TxSnarkWork d =
   { mask :: Mask d

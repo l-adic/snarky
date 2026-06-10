@@ -9,68 +9,46 @@
 -- |     program (base or merge, interchangeably — same wrap VK) and composes
 -- |     their statements.
 -- |
--- | The whole compile + prover wiring lives in
--- | `Snarky.Example.Transaction.Checked.compileTxCircuit`; this test drives a
--- | two-base + one-merge chain (L0 → L1 → L2), proving each base against the
--- | mask of the ledger at that point, and `verifyBatch`-checking all three
--- | proofs. So it also validates that proving against the witness slice ≡
--- | proving against the whole ledger.
+-- | The spec consumes the suite-wide `Env` (SRS + compiled program, built ONCE
+-- | in `Test.Example.Main`'s `beforeAll`) and drives a two-base + one-merge
+-- | chain (L0 → L1 → L2), proving each base against the mask of the ledger at
+-- | that point, and `verifyBatch`-checking all three proofs. So it also
+-- | validates that proving against the witness slice ≡ proving against the
+-- | whole ledger.
 module Test.Snarky.Example.TransactionSnark
   ( spec
   ) where
 
 import Prelude
 
-import Data.Array (range)
-import Data.Foldable (for_)
 import Data.MerkleTree.Sparse as Sparse
 import Data.MerkleTree.Sparse.Mask (fromSubset)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
-import Pickles (CompiledProof, StepField, toVerifiable, verifyBatch)
-import Snarky.Backend.Kimchi.Class (addLagrangeBasis, createCRS)
-import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
-import Snarky.Backend.Kimchi.Types (CRS)
+import Pickles (CompiledProof, toVerifiable, verifyBatch)
 import Snarky.Circuit.RandomOracle (Digest)
-import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
+import Snarky.Example.Env (Env)
 import Snarky.Example.Ledger (Ledger)
-import Snarky.Example.Transaction (SignedTransaction, Statement(..), TxnStmt, applyTx, compileTxCircuit, touchedAccounts)
+import Snarky.Example.Transaction (SignedTransaction, Statement(..), TxnStmt, applyTx, touchedAccounts)
 import Test.QuickCheck.Gen (randomSampleOne)
-import Test.Snarky.Example.Config (Depth, chainId)
+import Test.Snarky.Example.Config (Depth)
 import Test.Snarky.Example.Generators (genLedger, genValidSignedTransaction)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
--- | Build the Pasta SRSes with the lagrange-basis caches pre-warmed for the
--- | step (Vesta, 2^9..2^16) and wrap (Pallas, 2^12..2^15) domains this
--- | program touches. Mirrors `Test.Pickles.SharedSrs.buildSharedSrs`; the
--- | wrap depth (2^15) is the OCaml Tock URS convention.
-buildSrs :: Aff { pallasSrs :: CRS PallasG, vestaSrs :: CRS VestaG }
-buildSrs = liftEffect do
-  let pallasSrs = PallasImpl.pallasCrsCreate 32768
-  vestaSrs <- createCRS @StepField
-  for_ (range 9 16) (addLagrangeBasis vestaSrs)
-  for_ (range 12 15) (addLagrangeBasis pallasSrs)
-  pure { pallasSrs, vestaSrs }
-
-spec :: SpecT Aff Unit Aff Unit
+spec :: SpecT Aff (Env Depth) Aff Unit
 spec =
   describe "Snarky.Example.TransactionSnark" do
-    it "proves two base transitions + a merge of them, and batch-verifies the chain" do
-      { pallasSrs, vestaSrs } <- buildSrs
+    it "proves two base transitions + a merge of them, and batch-verifies the chain" \env -> do
+      let { baseProver, mergeProver, verifier } = env.compiledTx
 
       -- Initial ledger L0 (with the wallet `keys` to sign transfers). The
       -- ledger is threaded immutably by `applyTx`; each base proof runs against
       -- the mask of the ledger at that point, not a shared ref.
       { ledger, keys } <- liftEffect $ randomSampleOne (genLedger 10)
       let l0 = ledger :: Ledger Depth
-
-      -- Compile the two-branch program once. The provers are self-contained
-      -- (`Effect`), taking the witness env directly.
-      { baseProver, mergeProver, verifier } <- liftEffect $
-        compileTxCircuit chainId { vestaSrs, pallasSrs }
 
       let
         -- Prove a base transition against the mask of `l` (= the slots the
@@ -86,21 +64,21 @@ spec =
             , statement
             }
 
-      Console.log "[TxnSnark] compiled program; proving base0…"
+      Console.log "[TxnSnark] proving base0…"
 
       -- base0: L0 → L1. `source0` is the pre-state root; `target0` the pure
       -- post-transfer root (the same value the circuit computes from the mask).
-      tx0 <- liftEffect $ randomSampleOne (genValidSignedTransaction chainId l0 keys)
+      tx0 <- liftEffect $ randomSampleOne (genValidSignedTransaction env.chainId l0 keys)
       let source0 = Sparse.root l0.tree :: Digest Vesta.ScalarField
-      l1 <- liftEffect $ applyTx chainId tx0 l0
+      l1 <- liftEffect $ applyTx env.chainId tx0 l0
       let target0 = Sparse.root l1.tree
       b0 <- runBase l0 tx0 (Statement { source: source0, target: target0 })
       Console.log "[TxnSnark] base0 proved; proving base1…"
 
       -- base1: L1 → L2, transferring from the post-b0 state.
-      tx1 <- liftEffect $ randomSampleOne (genValidSignedTransaction chainId l1 keys)
+      tx1 <- liftEffect $ randomSampleOne (genValidSignedTransaction env.chainId l1 keys)
       let source1 = Sparse.root l1.tree :: Digest Vesta.ScalarField
-      l2 <- liftEffect $ applyTx chainId tx1 l1
+      l2 <- liftEffect $ applyTx env.chainId tx1 l1
       let target1 = Sparse.root l2.tree
       b1 <- runBase l1 tx1 (Statement { source: source1, target: target1 })
       Console.log "[TxnSnark] base1 proved; verifying [b0, b1] standalone…"

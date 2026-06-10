@@ -25,7 +25,6 @@ import Data.Foldable (for_)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
-import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Effect.Aff (Aff, forkAff)
 import Effect.Aff.AVar (AVar)
@@ -33,16 +32,13 @@ import Effect.Aff.AVar as AVar
 import Effect.Class (liftEffect)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
-import Mina.ChainId (ChainId)
 import Pickles (Verifier)
-import Snarky.Backend.Kimchi.Types (CRS)
-import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Example.AsyncQueue (Queue, dequeue, enqueue, newQueue)
 import Snarky.Example.Snark.ScanState (ScanState, SlotId)
 import Snarky.Example.Snark.ScanState as ScanState
 import Snarky.Example.Snark.Work (BaseJob, Proof, WorkItem)
 import Snarky.Example.Snark.Worker (runWorker)
-import Snarky.Example.Transaction (compileTxCircuit)
+import Snarky.Example.Transaction (CompiledTx)
 
 type BlockId = Int
 
@@ -62,17 +58,16 @@ newtype Manager d = Manager
 verifier :: forall d. Manager d -> Verifier
 verifier (Manager n) = n.verifier
 
--- | Start a node: compile the program once (at the mask-backed monad — compile
--- | reads no advice, so an empty mask env suffices), then fork the worker and
--- | the result listener over a fresh pair of channels.
+-- | Start a node from an already-compiled program (compile once via
+-- | `Snarky.Example.Env.mkEnv`; the manager never compiles): fork the worker
+-- | and the result listener over a fresh pair of channels. The worker is
+-- | handed the same `CompiledTx` as its init input — that hand-off is the
+-- | externalization seam (a remote worker would compile its own).
 mkManager
   :: forall d
-   . Reflectable d Int
-  => ChainId
-  -> { vestaSrs :: CRS VestaG, pallasSrs :: CRS PallasG }
+   . CompiledTx d
   -> Aff (Manager d)
-mkManager chainId srs = do
-  compiled <- liftEffect $ compileTxCircuit chainId srs
+mkManager compiled = do
   workQ <- newQueue
   resultQ <- newQueue
   blocks <- liftEffect $ Ref.new Map.empty

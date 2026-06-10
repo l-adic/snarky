@@ -6,7 +6,8 @@
 -- | `Snarky.Example.Transaction`. The signing `keys` are the wallet map
 -- | returned alongside the ledger by `genLedger`.
 module Test.Snarky.Example.Generators
-  ( genLedger
+  ( Keystore
+  , genLedger
   , genDistinctPublicKeys
   , genValidSignedTransaction
   , genOverdraftSignedTransaction
