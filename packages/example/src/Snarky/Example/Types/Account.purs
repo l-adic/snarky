@@ -1,26 +1,22 @@
 module Snarky.Example.Types.Account
   ( Account(..)
-  , default
   ) where
 
 import Prelude
 
 import Data.Generic.Rep (class Generic)
-import Data.Maybe (fromJust)
 import Data.MerkleTree.Hashable (class Hashable)
 import Data.Newtype (class Newtype)
 import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
-import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F(..), FVar, check, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
-import Snarky.Circuit.DSL as Sized
 import Snarky.Curves.Class (class FieldSizeInBits)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Example.Types.PublicKey (PublicKey)
-import Snarky.Example.Types.TokenAmount (TokenAmount(..))
+import Snarky.Example.Types.TokenAmount (TokenAmount)
 import Test.QuickCheck (class Arbitrary)
 import Type.Proxy (Proxy(..))
 
@@ -79,11 +75,3 @@ instance Hashable (Account Pallas.ScalarField) Pallas.ScalarField where
 
 instance Hashable (Account (FVar f)) (FVar f) where
   toHashInput = varToFields @_ @(Account f)
-
-default :: forall f m. FieldSizeInBits f m => Compare 128 m LT => PublicKey f -> Account f
-default publicKey =
-  Account
-    { publicKey
-    , tokenBalance: TokenAmount $ unsafePartial fromJust $ Sized.fromField zero
-    , nonce: zero
-    }

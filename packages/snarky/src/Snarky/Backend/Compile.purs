@@ -13,6 +13,7 @@ module Snarky.Backend.Compile
   , compile
   , makeSolver
   , makeSolver'
+  , runAndCheck
   , runSolver
   , runSolverT
   ) where
@@ -29,7 +30,7 @@ import Data.Foldable (for_)
 import Data.Identity (Identity(..))
 import Data.Map (Map)
 import Data.Newtype (un)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), fst)
 import Data.Unfoldable (replicateA)
 import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, finalize, runCircuitBuilderT, setPublicInputVars)
 import Snarky.Backend.Prover (class SolveCircuit, ProverState, ProverT, emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
@@ -136,6 +137,27 @@ makeSolver
   -> (forall t. CircuitM f c t m => avar -> Snarky c t m bvar)
   -> SolverT f c m a b
 makeSolver = makeSolver' emptyProverState
+
+-- | Run a checked computation on concrete inputs, computing all witnesses and
+-- | eagerly validating every Basic-expressible constraint against them (the
+-- | analog of snarky OCaml's `run_and_check`). Gate-level equations are not
+-- | re-checked — their witnesses are honest by construction. Use this to
+-- | derive unchecked semantics from circuit logic instead of maintaining a
+-- | hand-written value-level twin.
+runAndCheck
+  :: forall f c m a b avar bvar
+   . SolveCircuit f c
+  => CheckedType f c avar
+  => CircuitType f a avar
+  => CircuitType f b bvar
+  => Monad m
+  => MonadRec m
+  => Proxy c
+  -> (forall t. CircuitM f c t m => avar -> Snarky c t m bvar)
+  -> a
+  -> m (Either EvaluationError b)
+runAndCheck p circuit a =
+  map fst <$> runSolverT (makeSolver' (emptyProverState { debug = true }) p circuit) a
 
 type SolverT :: Type -> Type -> (Type -> Type) -> Type -> Type -> Type
 type SolverT f c m a b = a -> ExceptT EvaluationError m (Tuple b (Map Variable f))

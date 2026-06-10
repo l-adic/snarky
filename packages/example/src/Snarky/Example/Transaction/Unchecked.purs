@@ -1,8 +1,13 @@
 -- | Transaction operations over a ledger: constructing a signed transfer
--- | (`sign`) and applying one off-circuit (`apply`, the
--- | "arrow" between two ledgers). The prover-side advice monad these run
--- | alongside — and the `TransactionM` advice class — live in
--- | `Snarky.Example.Transaction.Monad`.
+-- | (`sign`) and applying one off-circuit (`applyTx`, the "arrow" between
+-- | two ledgers).
+-- |
+-- | There is deliberately no hand-written value-level transfer logic here:
+-- | `applyTx` *interprets* the checked circuit (`applyTxChecked`) on concrete
+-- | values via `runAndCheck`, so the unchecked semantics cannot drift from
+-- | what the snark proves. Anything `applyTx` accepts is by construction
+-- | provable — and anything it rejects (bad signature, wrong nonce,
+-- | overdraft, unknown account) would have been unprovable.
 module Snarky.Example.Transaction.Unchecked
   ( sign
   , applyTx
@@ -12,11 +17,9 @@ module Snarky.Example.Transaction.Unchecked
 import Prelude
 
 import Data.Array as Array
-import Data.Foldable (foldl)
-import Data.Map as Map
+import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), fromJust)
-import Data.MerkleTree.Hashable (toHashInput)
-import Data.MerkleTree.Sparse (Address(..))
+import Data.MerkleTree.Sparse (Address)
 import Data.MerkleTree.Sparse as Sparse
 import Data.Reflectable (class Reflectable)
 import Data.Schnorr (toPublicKey)
@@ -24,32 +27,27 @@ import Data.Schnorr as Schnorr
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Exception (throw)
+import Effect.Ref as Ref
 import Mina.ChainId (ChainId, networkId, signaturePrefix)
 import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (valueToFields)
+import Snarky.Backend.Compile (runAndCheck)
+import Snarky.Circuit.DSL (const_, valueToFields)
+import Snarky.Circuit.RandomOracle (Digest(..))
+import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint(..))
-import Snarky.Example.Ledger (Ledger, balanceOf, getAccount, lookupAddress)
+import Snarky.Example.Ledger (Ledger, lookupAddress)
+import Snarky.Example.Transaction.Checked (applyTxChecked)
+import Snarky.Example.Transaction.Monad (runTransferM)
 import Snarky.Example.Transaction.Types (SignedTransaction(..), Transaction(..), Transfer(..))
-import Snarky.Example.Types (Account(..), PublicKey(..), TokenAmount, mkAmount)
-import Snarky.Example.Types.Account as Account
+import Snarky.Example.Types (PublicKey(..), TokenAmount)
+import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
 -- Transaction construction
-
-verifySignature
-  :: ChainId
-  -> SignedTransaction Vesta.ScalarField
-  -> Boolean
-verifySignature chainId (SignedTransaction { transaction, signature }) =
-  let
-    message = toHashInput transaction
-    Transaction { transfer: Transfer { from: PublicKey from } } = transaction
-  in
-    Schnorr.verify (signaturePrefix chainId) (coerce signature) (coerce from) (coerce message :: Array Vesta.ScalarField)
 
 -- | Build and sign a transfer to `to` of `amount`, signed by `privateKey`
 -- | (the signer's own key — the sender public key is derived from it as
@@ -90,11 +88,14 @@ sign privateKey chainId nonce txData =
 -- The state transition
 
 -- | The arrow between two ledgers: apply a signed transfer, returning the
--- | new ledger. Debits the sender (and bumps its nonce) and credits the
--- | receiver. This is the pure mirror of the in-circuit `processTransaction`
--- | (the `Test.Snarky.Example.Circuits` quickcheck spec checks they agree),
--- | and the resulting tree's root is the `target` ledger digest of the
--- | corresponding base statement.
+-- | new ledger. This is the checked circuit run as the unchecked
+-- | interpretation: `runAndCheck` computes every witness on concrete values
+-- | and eagerly validates each assertion (signature verifies, sender owns the
+-- | account, nonce matches, no under/overflow), throwing on the first
+-- | violation. The `TransferM` advice monad serves the circuit's Merkle
+-- | requests from — and applies its updates to — the ledger behind a local
+-- | `Ref`; the mutated ledger is the result, and its root is the `target`
+-- | digest of the corresponding base statement.
 applyTx
   :: forall d
    . Reflectable d Int
@@ -103,86 +104,35 @@ applyTx
   -> Ledger d
   -> Effect (Ledger d)
 applyTx chainId tx ledger = do
+  ref <- Ref.new ledger
   let
-    SignedTransaction { transaction: Transaction { transfer: Transfer { from, to, amount } } } = tx
-    amt = balanceOf amount
+    Digest r = Sparse.root ledger.tree
+    rootVar = Digest (const_ r)
+  res <- runTransferM { currentTransaction: Nothing, ledger: ref } $
+    runAndCheck
+      (Proxy @(KimchiConstraint Vesta.ScalarField))
+      (applyTxChecked @d chainId rootVar)
+      tx
+  case res of
+    Left e -> throw $ "applyTx: invalid transaction: " <> show e
+    Right (newRoot :: Digest Vesta.ScalarField) -> do
+      ledger' <- Ref.read ref
+      unless (Sparse.root ledger'.tree == newRoot) $
+        throw "applyTx: ledger root does not match circuit output"
+      pure ledger'
 
-  unless (verifySignature chainId tx) $
-    throw "Invalid signature on transaction"
-
-  ledger' <- do
-    fromAddr <- case lookupAddress ledger from of
-      Just a -> pure a
-      Nothing -> throw $ "Missing address for public key " <> show from
-    Account account <- case getAccount ledger fromAddr of
-      Just a -> pure a
-      Nothing -> throw $ "Missing account for public key " <> show from
-    newBalance <- case mkAmount (balanceOf account.tokenBalance - amt) of
-      Just b -> pure b
-      Nothing -> throw $ "Send amount exceeded account balance"
-    let
-      -- debit the transfer amount from the sender
-      account' = Account account
-        { tokenBalance = newBalance
-        , nonce = account.nonce + one
-        }
-      tree' = unsafePartial fromJust $ Sparse.set fromAddr account' ledger.tree
-    pure ledger { tree = tree' }
-
-  ledger'' <- do
-    res <- case lookupAddress ledger' to of
-      -- if the account already exists, just return it
-      Just address -> do
-        case getAccount ledger' address of
-          Just account -> pure { account, address, ledger: ledger' }
-          Nothing -> throw $ "Missing account for public key " <> show to
-      -- otherwise create a blank account for this pub key and return it
-      Nothing -> do
-        let
-          address = Sparse.Address ledger'.nextAddress
-          account = Account.default to
-        case Sparse.set address account ledger'.tree of
-          Nothing -> throw "Exceeded ledger max size"
-          Just tree' -> do
-            let
-              ledger'' = ledger'
-                { tree = tree'
-                , accountMap = Map.insert to address ledger'.accountMap
-                , nextAddress = ledger'.nextAddress + one
-                }
-            pure { account, address, ledger: ledger'' }
-    let
-      -- add the transfer amount to the recipient
-      Account account = res.account
-      newBalance = unsafePartial fromJust $ mkAmount (balanceOf account.tokenBalance + amt)
-      account' = Account account
-        { tokenBalance = newBalance
-        }
-    pure res.ledger { tree = unsafePartial $ fromJust $ Sparse.set res.address account' res.ledger.tree }
-
-  pure ledger''
-
+-- | The two account slots a transfer touches, for extracting a witness mask
+-- | (`Mask.fromSubset`). Both accounts must already exist — there is no
+-- | account creation (the circuit cannot prove it); an unknown key is simply
+-- | omitted, and `applyTx` rejects the transaction before any snark work is
+-- | created.
 touchedAccounts
   :: forall d
    . Ledger d
   -> SignedTransaction Vesta.ScalarField
   -> Array (Tuple (Address d) (Maybe (PublicKey Vesta.ScalarField)))
-touchedAccounts { accountMap, nextAddress } transaction =
+touchedAccounts ledger transaction =
   let
-    (SignedTransaction { transaction: Transaction { transfer: Transfer { to, from } } }) = transaction
-    res =
-      foldl
-        ( \acc pk ->
-            case Map.lookup pk accountMap of
-              Nothing ->
-                acc
-                  { nextAddress = acc.nextAddress + one
-                  , as = acc.as `Array.snoc` Tuple (Address acc.nextAddress) Nothing
-                  }
-              Just addr ->
-                acc { as = acc.as `Array.snoc` Tuple addr (Just pk) }
-        )
-        { nextAddress, as: mempty }
-        [ to, from ]
+    SignedTransaction { transaction: Transaction { transfer: Transfer { to, from } } } = transaction
   in
-    res.as
+    Array.mapMaybe (\pk -> lookupAddress ledger pk <#> \addr -> Tuple addr (Just pk)) [ from, to ]

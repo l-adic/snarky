@@ -32,7 +32,7 @@ import Snarky.Example.Log as Log
 import Snarky.Example.Simulation.Block (generateBlock)
 import Snarky.Example.Simulation.Genesis (genGenesisLedger)
 import Snarky.Example.Simulation.Keystore (Keystore, senderInfo)
-import Snarky.Example.Simulation.Transaction (genDistinctPublicKeys, genOverdraftSignedTransaction, genValidSignedTransaction)
+import Snarky.Example.Simulation.Transaction (genDistinctPublicKeys, genOverdraftSignedTransaction, genUnknownReceiverSignedTransaction, genValidSignedTransaction, genWrongNonceSignedTransaction)
 import Snarky.Example.Snark.Manager (Manager, OnProgress, mkManager)
 import Test.QuickCheck.Gen (randomSampleOne)
 

@@ -1,13 +1,16 @@
 -- | Random transaction *scenarios* for the simulation: pick a sender/receiver
--- | pair from the ledger and produce either a valid transfer (amount below the
--- | sender's balance) or an overdraft (amount above it, which the circuit must
--- | reject). The ledger lives in `Snarky.Example.Ledger`, `sign` in
+-- | pair from the ledger and produce a valid transfer (amount below the
+-- | sender's balance) or one of the invalid scenarios the circuit must
+-- | reject — an overdraft, a wrong-nonce replay, or a transfer to a key with
+-- | no ledger account. The ledger lives in `Snarky.Example.Ledger`, `sign` in
 -- | `Snarky.Example.Transaction`, and the signing keys come from the
 -- | simulation `Keystore`.
 module Snarky.Example.Simulation.Transaction
   ( genDistinctPublicKeys
   , genValidSignedTransaction
   , genOverdraftSignedTransaction
+  , genWrongNonceSignedTransaction
+  , genUnknownReceiverSignedTransaction
   ) where
 
 import Prelude
@@ -17,18 +20,22 @@ import Data.Array (length, (!!), (..))
 import Data.Foldable (foldl)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromJust)
+import Data.Schnorr (toPublicKey)
 import Data.Set as Set
 import Data.Traversable (for)
 import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
 import Mina.ChainId (ChainId)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Curves.Class (fromBigInt, toBigInt)
+import Snarky.Curves.Class (fromBigInt, toAffine, toBigInt)
+import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Snarky.Example.Ledger (Ledger)
 import Snarky.Example.Simulation.Keystore (Keystore, senderInfo)
 import Snarky.Example.Transaction (SignedTransaction, sign)
-import Snarky.Example.Types (PublicKey, mkAmount)
+import Snarky.Example.Types (PublicKey(..), mkAmount)
+import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen, chooseInt, suchThat)
 
 -- | Pick two distinct public keys from the ledger's account index.
@@ -77,6 +84,42 @@ genOverdraftSignedTransaction chainId ledger wallet = do
   let
     { privateKey, nonce, balance } = senderInfo ledger wallet fromPk
     amount = unsafePartial fromJust $ mkAmount (balance + one)
+  pure $ sign privateKey chainId nonce { amount, to: toPk }
+
+-- | Generate a correctly-signed, sufficiently-funded transfer whose nonce
+-- | does not match the sender's account nonce (a replay), which the
+-- | in-circuit nonce check must reject.
+genWrongNonceSignedTransaction
+  :: forall d
+   . ChainId
+  -> Ledger d
+  -> Keystore
+  -> Gen (SignedTransaction Vesta.ScalarField)
+genWrongNonceSignedTransaction chainId ledger wallet = do
+  { fromPk, toPk } <- genDistinctPublicKeys ledger
+  let { privateKey, nonce, balance } = senderInfo ledger wallet fromPk
+  amountInt <- chooseBigInt one (max one (toBigInt balance - one))
+  let amount = unsafePartial fromJust $ mkAmount (fromBigInt amountInt)
+  pure $ sign privateKey chainId (nonce + one) { amount, to: toPk }
+
+-- | Generate a correctly-signed, sufficiently-funded transfer to a public
+-- | key with no ledger account. There is no account creation, so this must
+-- | be rejected.
+genUnknownReceiverSignedTransaction
+  :: forall d
+   . ChainId
+  -> Ledger d
+  -> Keystore
+  -> Gen (SignedTransaction Vesta.ScalarField)
+genUnknownReceiverSignedTransaction chainId ledger wallet = do
+  { fromPk } <- genDistinctPublicKeys ledger
+  let { privateKey, nonce, balance } = senderInfo ledger wallet fromPk
+  amountInt <- chooseBigInt one (max one (toBigInt balance - one))
+  let amount = unsafePartial fromJust $ mkAmount (fromBigInt amountInt)
+  receiverSk <- arbitrary :: Gen Pallas.ScalarField
+  let
+    pkPoint = unsafePartial fromJust $ toAffine $ toPublicKey receiverSk
+    toPk = PublicKey (AffinePoint { x: pkPoint.x, y: pkPoint.y })
   pure $ sign privateKey chainId nonce { amount, to: toPk }
 
 --------------------------------------------------------------------------------

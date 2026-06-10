@@ -4,17 +4,20 @@ module Test.Snarky.Example.Circuits
 
 import Prelude
 
+import Data.Either (Either(..))
 import Data.Foldable (for_)
-import Data.Maybe (Maybe(Nothing))
+import Data.Maybe (Maybe(..), fromJust)
 import Data.MerkleTree.Sparse as Sparse
 import Data.Reflectable (class Reflectable, reifyType)
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
+import Effect.Exception (throw, try)
 import Effect.Ref (write)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
+import Partial.Unsafe (unsafePartial)
 import Snarky.Backend.Compile (compile, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi (verifyCircuitM)
@@ -23,10 +26,11 @@ import Snarky.Circuit.RandomOracle (Digest(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint, eval, initialState)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Example.Simulation (genGenesisLedger, genOverdraftSignedTransaction, genValidSignedTransaction)
-import Snarky.Example.Transaction (class AccountMapM, SignedTransaction, TransferCompileM, TransferM, applyTx, applyTxChecked, runTransferCompileM, runTransferM)
-import Snarky.Example.Types (Account)
-import Test.QuickCheck (quickCheck')
+import Snarky.Example.Ledger (balanceOf, getAccount, lookupAddress)
+import Snarky.Example.Simulation (genGenesisLedger, genOverdraftSignedTransaction, genUnknownReceiverSignedTransaction, genValidSignedTransaction, genWrongNonceSignedTransaction)
+import Snarky.Example.Transaction (class AccountMapM, SignedTransaction(..), Transaction(..), Transfer(..), TransferCompileM, TransferM, applyTx, applyTxChecked, runTransferCompileM, runTransferM)
+import Snarky.Example.Types (Account(..), mkAmount)
+import Test.QuickCheck (quickCheck', (===))
 import Test.QuickCheck.Gen (randomSampleOne)
 import Test.Snarky.Circuit.Utils (runTestM, satisfied, unsatisfied)
 import Test.Snarky.Example.Config (chainId)
@@ -56,12 +60,24 @@ transferSpec _ = do
   { ledger, keys } <- liftEffect $ randomSampleOne (genGenesisLedger 10)
 
   let
-    -- Expected root after applying the transfer: the pure ledger arrow.
-    -- The in-circuit `processTransaction` must agree with this. `apply`
-    -- is in `Effect` only to `throw` on bad inputs; the valid-case generator
-    -- never produces those, so `unsafePerformEffect` is safe here.
-    testFunction :: SignedTransaction Vesta.ScalarField -> Digest Vesta.ScalarField
-    testFunction tx = Sparse.root (unsafePerformEffect (applyTx chainId tx ledger)).tree
+    -- Test-local oracle: directly construct the expected post-transfer tree
+    -- (sender debited + nonce bumped, receiver credited) and take its root.
+    -- Deliberately does no validation — the rejection scenarios below cover
+    -- that — so it stays independent of the circuit it is checking.
+    expectedRoot :: SignedTransaction Vesta.ScalarField -> Digest Vesta.ScalarField
+    expectedRoot (SignedTransaction { transaction: Transaction { transfer: Transfer { from, to, amount } } }) =
+      unsafePartial $ fromJust do
+        fromAddr <- lookupAddress ledger from
+        toAddr <- lookupAddress ledger to
+        Account sender <- getAccount ledger fromAddr
+        senderBalance <- mkAmount (balanceOf sender.tokenBalance - balanceOf amount)
+        tree' <- Sparse.set fromAddr
+          (Account sender { tokenBalance = senderBalance, nonce = sender.nonce + one })
+          ledger.tree
+        Account receiver <- Sparse.get tree' toAddr
+        receiverBalance <- mkAmount (balanceOf receiver.tokenBalance + balanceOf amount)
+        tree'' <- Sparse.set toAddr (Account receiver { tokenBalance = receiverBalance }) tree'
+        pure (Sparse.root tree'')
 
     rootVar =
       let
@@ -102,9 +118,9 @@ transferSpec _ = do
       write ledger ref
       runTransferM env m
 
-  Console.log "Checking the Valid case"
+  Console.log "Checking the valid case"
   liftEffect $ quickCheck' 100 $ genValidSignedTransaction chainId ledger keys <#> \a ->
-    unsafePerformEffect $ natWithReset $ runTestM { builtState: s, solver, checker: eval, postCondition: Kimchi.postCondition } (satisfied testFunction) a
+    unsafePerformEffect $ natWithReset $ runTestM { builtState: s, solver, checker: eval, postCondition: Kimchi.postCondition } (satisfied expectedRoot) a
 
   liftEffect $ write ledger ref
   liftEffect $ runTransferM env $ verifyCircuitM { s, gen: genValidSignedTransaction chainId ledger keys, solver }
@@ -112,4 +128,28 @@ transferSpec _ = do
   Console.log "Checking the overdraft case"
   liftEffect $ quickCheck' 100 $ genOverdraftSignedTransaction chainId ledger keys <#> \a ->
     unsafePerformEffect $ natWithReset $ runTestM { builtState: s, solver, checker: eval, postCondition: Kimchi.postCondition } unsatisfied a
+
+  Console.log "Checking the wrong-nonce case"
+  liftEffect $ quickCheck' 100 $ genWrongNonceSignedTransaction chainId ledger keys <#> \a ->
+    unsafePerformEffect $ natWithReset $ runTestM { builtState: s, solver, checker: eval, postCondition: Kimchi.postCondition } unsatisfied a
   liftEffect $ write ledger ref
+
+  -- `applyTx` is the same circuit run through the `runAndCheck` interpreter
+  -- (ProverT with eager constraint checking): check that it agrees with the
+  -- oracle on valid transfers and rejects each invalid scenario.
+  Console.log "Checking applyTx (the unchecked interpretation) against the oracle"
+  liftEffect $ quickCheck' 10 $ genValidSignedTransaction chainId ledger keys <#> \tx ->
+    Sparse.root (unsafePerformEffect (applyTx chainId tx ledger)).tree === expectedRoot tx
+
+  Console.log "Checking applyTx rejects invalid transactions"
+  liftEffect $
+    for_
+      [ genOverdraftSignedTransaction
+      , genWrongNonceSignedTransaction
+      , genUnknownReceiverSignedTransaction
+      ]
+      \gen -> do
+        tx <- randomSampleOne (gen chainId ledger keys)
+        try (applyTx chainId tx ledger) >>= case _ of
+          Left _ -> pure unit
+          Right _ -> throw "expected applyTx to reject the transaction"
