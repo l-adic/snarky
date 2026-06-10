@@ -1,61 +1,57 @@
 module Snarky.Example.Block
   ( Block(..)
-  , SnarkWork(..)
-  , scanlM
   ) where
 
 import Prelude
 
-import Control.Monad.State (evalStateT, get, lift, put)
-import Data.Traversable (class Traversable, traverse)
+import Control.Monad.State (get, lift, put, runStateT)
+import Data.MerkleTree.Sparse (root)
+import Data.MerkleTree.Sparse.Mask as Mask
+import Data.Reflectable (class Reflectable)
+import Data.Traversable (traverse)
+import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
+import Data.Vector as Vector
+import Effect (Effect)
+import Mina.ChainId (ChainId)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Example.Transaction (SignedTransaction, Statement)
+import Snarky.Example.Ledger (Ledger, Mask)
+import Snarky.Example.Transaction (SignedTransaction, Statement(..), applyTx)
+import Snarky.Example.Transaction.Unchecked (touchedAccounts)
 
 newtype Block = Block
-  { transactions :: Vector 8 (SignedTransaction Vesta.ScalarField)
+  { transactions :: Vector 4 (SignedTransaction Vesta.ScalarField)
   }
 
-data SnarkWork
-  = Transaction (Statement Vesta.ScalarField)
-  | Merge (Statement Vesta.ScalarField) (Statement Vesta.ScalarField)
+--data SnarkWork
+--  = Transaction (Statement Vesta.ScalarField)
+--  | Merge (Statement Vesta.ScalarField) (Statement Vesta.ScalarField)
+--
 
--- type State = 
---   { Map (Digest Vesta.ScalarField) 
+type TxSnarkWork d =
+  { mask :: Mask d Vesta.ScalarField
+  , tx :: SignedTransaction Vesta.ScalarField
+  , statement :: Statement Vesta.ScalarField
+  }
 
---   }
-
--- processBlock
---   :: forall d
---    . Reflectable d Int
---   => ChainId
---   -> Block
---   -> Ledger d Vesta.ScalarField 
---   -> Effect
---       { snarkWork :: SnarkWork
---       , ledger :: Ledger d Vesta.ScalarField
---       }
--- processBlock chainId (Block txs) ledger = do
---   let
---     init = { root: root ledger.tree, ledger }
---     f acc tx = do
---       ledger' <- applyTx chainId tx ledger 
---       let root' = root ledger'.tree
---       pure { root: root', ledger: ledger' }
---   states <- scanlM f init txs
-
-scanlM
-  :: forall t m a b
-   . Traversable t
-  => Monad m
-  => (b -> a -> m b)
-  -> b
-  -> t a
-  -> m (t b)
-scanlM f seed t = evalStateT (traverse step t) seed
+processBlock
+  :: forall d
+   . Reflectable d Int
+  => ChainId
+  -> Ledger d Vesta.ScalarField
+  -> Block
+  -> Effect
+       { ledger :: Ledger d Vesta.ScalarField
+       , snarkWork :: Array (TxSnarkWork d)
+       }
+processBlock chainId ledger (Block { transactions }) = do
+  Tuple jobs finalLedger <- runStateT (traverse step transactions) ledger
+  pure { ledger: finalLedger, snarkWork: Vector.toUnfoldable jobs }
   where
-  step a = do
-    acc <- get
-    b <- lift (f acc a)
-    put b
-    pure b
+  step tx = do
+    l <- get
+    let mask = Mask.fromSubset l.tree (touchedAccounts l tx)
+    l' <- lift (applyTx chainId tx l)
+    let statement = Statement { source: root l.tree, target: root l'.tree }
+    put l'
+    pure { mask, tx, statement }

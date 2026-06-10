@@ -309,7 +309,7 @@ fetchAndUpdateSpec cfg _ pd = do
       => CircuitM f (KimchiConstraint f) t m
       => SMT.AddressVar d f
       -> Snarky (KimchiConstraint f) t m { root :: Digest (FVar f), old :: Account (FVar f), new :: Account (FVar f) }
-    circuit addr = CMT.fetchAndUpdate addr rootVar modifyF
+    circuit addr = CMT.fetchAndUpdate @(Account f) addr rootVar modifyF
 
     gen =
       let
@@ -374,7 +374,7 @@ updateSpec cfg _ pd = do
       => CircuitM f (KimchiConstraint f) t m
       => Tuple (SMT.AddressVar d f) (Tuple (Account (FVar f)) (Account (FVar f)))
       -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
-    circuit (Tuple addr (Tuple old new)) = CMT.update addr rootVar old new
+    circuit (Tuple addr (Tuple old new)) = CMT.update @(Account f) addr rootVar old new
 
     -- Generator: produce (address, oldValue, newValue) from fixed tree
     gen = do

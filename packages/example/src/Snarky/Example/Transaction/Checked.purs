@@ -22,30 +22,45 @@ module Snarky.Example.Transaction.Checked
   , baseRule
   , mergeRule
   , applyTxChecked
+  , compileTxCircuit
+  , TxnStmt
+  , BaseProverInput
+  , MergeProverInput
+  , CompiledTx
   ) where
 
 import Prelude
 
+import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift)
+import Data.Either (Either(..))
+import Data.Maybe (Maybe(..))
 import Data.MerkleTree.Hashable (toHashInput)
 import Data.Newtype (un)
 import Data.Reflectable (class Reflectable)
 import Data.Schnorr (Signature(..)) as Schnorr
-import Data.Tuple (Tuple)
-import Data.Tuple.Nested (Tuple2, (/\))
+import Data.Tuple (Tuple, fst, snd)
+import Data.Tuple.Nested (type (/\), Tuple2, tuple2, (/\))
 import Data.Vector ((:<))
 import Data.Vector as Vector
-import Effect.Class (class MonadEffect)
+import Effect (Effect)
+import Effect.Class (class MonadEffect, liftEffect)
+import Effect.Exception (throw)
+import Effect.Ref as Ref
 import Mina.ChainId (ChainId, signaturePrefix)
-import Pickles (StatementIO(..))
+import Pickles (BranchProver(..), Compiled, CompiledProof, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots2, StatementIO(..), Verifier, compileMulti, mkRuleEntry)
 import Pickles.Step.Main (RuleOutput)
+import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, AsProverT, FVar, Snarky, add_, assertEq, assert_, check, const_, exists, fieldsToValue, fieldsToVar, not_, read, sizeInFields, true_, unpack_, valueToFields, varToFields)
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Circuit.Schnorr (Signature(..), verifies)
 import Snarky.Circuit.Schnorr.Shifted as Shifted
 import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
+import Snarky.Example.Ledger (Mask, emptyMask)
+import Snarky.Example.Transaction.MaskMonad (TransferMaskM, runTransferMaskM)
 import Snarky.Example.Transaction.Monad (class AccountMapM, class TransactionM, getAccountId, getCurrentTransaction)
 import Snarky.Example.Transaction.Types (SignedTransaction(..), Transaction(..), Transfer(..))
 import Snarky.Example.Types (Account(..), PublicKey(..), addWithOverflow, subWithUnderflow)
@@ -202,7 +217,7 @@ applyTxChecked chainId root (SignedTransaction { signature, transaction }) = do
     fromAddr <- exists do
       fromPk <- read from
       lift $ getAccountId fromPk
-    CMT.fetchAndUpdate fromAddr root \(Account acc) -> do
+    CMT.fetchAndUpdate @(Account Vesta.ScalarField) fromAddr root \(Account acc) -> do
       -- Verify sender owns this account
       assertEq acc.publicKey from
       assertEq acc.nonce nonce
@@ -217,7 +232,7 @@ applyTxChecked chainId root (SignedTransaction { signature, transaction }) = do
       toPk <- read to
       lift $ getAccountId toPk
 
-    CMT.fetchAndUpdate toAddr root' \(Account acc) -> do
+    CMT.fetchAndUpdate @(Account Vesta.ScalarField) toAddr root' \(Account acc) -> do
       -- Verify receiver owns this account
       assertEq acc.publicKey to
       -- Credit the amount
@@ -226,3 +241,114 @@ applyTxChecked chainId root (SignedTransaction { signature, transaction }) = do
       pure $ Account acc { tokenBalance = newBalance }
 
   pure root''
+
+type TxnStmt = StatementIO (Statement Vesta.ScalarField) Unit
+
+-- | The two-branch program. Branch 0 (base) has no prev slots; branch 1
+-- | (merge) has two `Self` slots, each width 2 (a proof of THIS mpv=2
+-- | program) at one chunk.
+type TxnSnarkRules =
+  RulesCons 0 Unit Unit Unit
+    ( RulesCons 2
+        (TxnStmt /\ TxnStmt /\ Unit)
+        (Slot Compiled 2 1 TxnStmt /\ Slot Compiled 2 1 TxnStmt /\ Unit)
+        (SlotWrapKey /\ SlotWrapKey /\ Unit)
+        RulesNil
+    )
+
+type BaseProverInput d =
+  { env :: { mask :: Mask d Vesta.ScalarField, tx :: SignedTransaction Vesta.ScalarField }
+  , statement :: Statement Vesta.ScalarField
+  }
+
+type MergeProverInput =
+  { proof1 :: CompiledProof 2 TxnStmt
+  , proof2 :: CompiledProof 2 TxnStmt
+  , statement :: Statement Vesta.ScalarField
+  }
+
+type CompiledTx d =
+  { baseProver :: BaseProverInput d -> Effect (CompiledProof 2 TxnStmt)
+  , mergeProver :: MergeProverInput -> Effect (CompiledProof 2 TxnStmt)
+  , verifier :: Verifier
+  }
+
+compileTxCircuit
+  :: forall d
+   . Reflectable d Int
+  => ChainId
+  -> { vestaSrs :: CRS VestaG
+     , pallasSrs :: CRS PallasG
+     }
+  -> Effect (CompiledTx d)
+compileTxCircuit chainId srs = do
+  maskRef <- Ref.new emptyMask
+  runTransferMaskM { currentTransaction: Nothing, mask: maskRef } do
+    let
+      cfg =
+        { srs
+        , debug: false
+        , wrapDomainOverride: Just 14
+        , proofCache: Nothing
+        }
+    baseEntry <- liftEffect $
+      mkRuleEntry
+        @2
+        @Unit
+        @(Statement Vesta.ScalarField)
+        @1
+        @1
+        @(TransferMaskM d Vesta.ScalarField)
+        (baseRule @d chainId)
+        unit
+    mergeEntry <- liftEffect $
+      mkRuleEntry
+        @2
+        @Unit
+        @(Statement Vesta.ScalarField)
+        @1
+        @1
+        @(TransferMaskM d Vesta.ScalarField)
+        mergeRule
+        (tuple2 Self Self)
+
+    let rules = tuple2 baseEntry mergeEntry
+
+    out <-
+      compileMulti
+        @TxnSnarkRules
+        @Unit
+        @(Statement Vesta.ScalarField)
+        @(Slots2 2 2)
+        @1
+        cfg
+        rules
+    let
+      BranchProver baseProver = fst out.provers
+      BranchProver mergeProver = fst (snd out.provers)
+    pure
+      { baseProver: \{ env, statement } -> do
+          mask <- Ref.new env.mask
+          runTransferMaskM { currentTransaction: Just env.tx, mask }
+            ( runExceptT $ baseProver
+                { appInput: statement
+                , prevs: unit
+                , sideloadedVKs: unit
+                }
+            ) >>= case _ of
+            Left err -> throw $ show err
+            Right res -> pure res
+      , mergeProver: \{ statement, proof1, proof2 } -> do
+          mask <- Ref.new emptyMask
+          runTransferMaskM { currentTransaction: Nothing, mask }
+            ( runExceptT $ mergeProver
+                { appInput: statement
+                , prevs: tuple2 (InductivePrev proof1 out.tag) (InductivePrev proof2 out.tag)
+                , sideloadedVKs: tuple2 unit unit
+                }
+            ) >>= case _ of
+            Left err -> throw $ show err
+            Right res -> pure res
+      , verifier: out.verifier
+      }
+

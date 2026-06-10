@@ -28,8 +28,7 @@ class
   ( Monad m
   , MerkleHashable v (Digest f)
   ) <=
-  MerkleRequestM m f v (d :: Int)
-  | m -> f v d where
+  MerkleRequestM m f v (d :: Int) where
   getElement :: Address d -> m { value :: v, path :: Path d (Digest f) }
   getPath :: Address d -> m (Path d (Digest f))
   setValue :: Address d -> v -> m Unit
@@ -64,7 +63,7 @@ get addr (Digest root) = do
 -- | 4. Updates the underlying tree state via setValue
 -- | 5. Computes and returns the new root along with old and new elements
 fetchAndUpdate
-  :: forall t m f d v var
+  :: forall t m f d @v var
    . Reflectable d Int
   => PoseidonField f
   => MerkleRequestM m f v d
@@ -109,7 +108,7 @@ fetchAndUpdate addr (Digest root) f = do
 -- | 3. Updates the underlying tree state via setValue
 -- | 4. Computes and returns the new root
 update
-  :: forall t m f d v var
+  :: forall t m f d @v var
    . Reflectable d Int
   => PoseidonField f
   => MerkleRequestM m f v d

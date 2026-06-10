@@ -6,17 +6,22 @@
 module Snarky.Example.Transaction.Unchecked
   ( sign
   , applyTx
+  , touchedAccounts
   ) where
 
 import Prelude
 
+import Data.Array as Array
+import Data.Foldable (foldl)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromJust)
 import Data.MerkleTree.Hashable (toHashInput)
+import Data.MerkleTree.Sparse (Address(..))
 import Data.MerkleTree.Sparse as Sparse
 import Data.Reflectable (class Reflectable)
 import Data.Schnorr (toPublicKey)
 import Data.Schnorr as Schnorr
+import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Exception (throw)
 import Mina.ChainId (ChainId, networkId, signaturePrefix)
@@ -156,3 +161,28 @@ applyTx chainId tx ledger = do
     pure res.ledger { tree = unsafePartial $ fromJust $ Sparse.set res.address account' res.ledger.tree }
 
   pure ledger''
+
+touchedAccounts
+  :: forall d
+   . Ledger d Vesta.ScalarField
+  -> SignedTransaction Vesta.ScalarField
+  -> Array (Tuple (Address d) (Maybe (PublicKey Vesta.ScalarField)))
+touchedAccounts { accountMap, nextAddress } transaction =
+  let
+    (SignedTransaction { transaction: Transaction { transfer: Transfer { to, from } } }) = transaction
+    res =
+      foldl
+        ( \acc pk ->
+            case Map.lookup pk accountMap of
+              Nothing ->
+                acc
+                  { nextAddress = acc.nextAddress + one
+                  , as = acc.as `Array.snoc` Tuple (Address acc.nextAddress) Nothing
+                  }
+              Just addr ->
+                acc { as = acc.as `Array.snoc` Tuple addr (Just pk) }
+        )
+        { nextAddress, as: mempty }
+        [ to, from ]
+  in
+    res.as

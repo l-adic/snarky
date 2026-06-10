@@ -13,6 +13,9 @@ module Snarky.Example.Ledger
   , lookupAddress
   , getAccount
   , balanceOf
+  , empty
+  , Mask
+  , emptyMask
   ) where
 
 import Prelude
@@ -20,11 +23,16 @@ import Prelude
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe)
+import Data.MerkleTree (defaultHash)
 import Data.MerkleTree.Sparse as Sparse
+import Data.MerkleTree.Sparse.Mask (SparseLedger, ofHash)
 import Data.Newtype (un)
+import Data.Reflectable (class Reflectable)
 import JS.BigInt (BigInt)
+import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (toField)
-import Snarky.Circuit.RandomOracle (Digest)
+import Snarky.Circuit.RandomOracle (class Hashable, Digest)
+import Snarky.Curves.Vesta as Vesta
 import Snarky.Example.Types (Account, PublicKey, TokenAmount(..))
 
 --------------------------------------------------------------------------------
@@ -38,6 +46,18 @@ type Ledger d f =
   { tree :: Sparse.SparseMerkleTree d (Digest f) (Account f)
   , accountMap :: Map (PublicKey f) (Sparse.Address d) -- public key -> address
   , nextAddress :: BigInt -- next address to assign
+  }
+
+empty
+  :: forall @d @f
+   . PoseidonField f
+  => Hashable (Account f) f
+  => Reflectable d Int
+  => Ledger d f
+empty =
+  { tree: Sparse.empty
+  , accountMap: Map.empty
+  , nextAddress: zero
   }
 
 -- | Look up the address for a public key.
@@ -54,3 +74,10 @@ getAccount ledger addr = Sparse.get ledger.tree addr
 -- | Read the underlying field value of a token amount.
 balanceOf :: forall f. TokenAmount f -> f
 balanceOf tb = toField (un TokenAmount tb)
+
+type Mask d f = SparseLedger d (Digest f) (PublicKey f) (Account f)
+
+-- | An empty witness: a fully-collapsed mask. Used as the (never-read) mask env
+-- | for merge work (merge touches no ledger advice) and to compile.
+emptyMask :: forall d. Mask d Vesta.ScalarField
+emptyMask = ofHash (defaultHash @(Account Vesta.ScalarField) :: Digest Vesta.ScalarField)
