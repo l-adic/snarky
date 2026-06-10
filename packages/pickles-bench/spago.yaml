@@ -1,0 +1,68 @@
+# Separate Spago workspace (NOT a member of the root workspace).
+#
+# Per spago's monorepo rules, a spago.yaml carrying its own
+# `workspace:` section — and its subfolders — is ignored by any
+# enclosing workspace. So the root workspace never sees pickles-bench
+# and never pays the purs-backend-es cost; that optimizer lives only
+# here, where the benchmark needs realistic codegen.
+#
+# This workspace pulls in the root packages it needs as local `path:`
+# dependencies (the full transitive *local* closure of pickles-bench;
+# registry deps resolve from the shared registry 71.0.0 package set).
+#
+# Build/run via `tools/bench.sh` (it `cd`s here).
+workspace:
+  packageSet:
+    registry: 71.0.0
+  backend:
+    cmd: purs-backend-es
+    args:
+      - build
+  extraPackages:
+    blake2:
+      path: ../blake2
+    curves:
+      path: ../curves
+    pickles:
+      path: ../pickles
+    pickles-linearization-types:
+      path: ../pickles-linearization-types
+    poseidon:
+      path: ../poseidon
+    random-oracle:
+      path: ../random-oracle
+    snarky:
+      path: ../snarky
+    snarky-curves:
+      path: ../snarky-curves
+    snarky-kimchi:
+      path: ../snarky-kimchi
+    snarky-test-utils:
+      path: ../snarky-test-utils
+    union-find:
+      path: ../union-find
+    vector-sized:
+      path: ../sized-vector
+package:
+  name: pickles-bench
+  dependencies:
+    - aff
+    - arrays
+    - benchlib
+    - curves
+    - effect
+    - foldable-traversable
+    - maybe
+    - optparse
+    - pickles
+    - prelude
+    - snarky
+    - snarky-kimchi
+    - tailrec
+    - transformers
+    - tuples
+    - vector-sized
+  build:
+    strict: true
+  run:
+    main: Bench.Pickles.Main

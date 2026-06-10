@@ -84,3 +84,5 @@ tools/__pycache__/
 # compressed artifacts stay tracked.)
 packages/pickles-circuit-diffs/circuits/ocaml/*.json
 packages/pickles-circuit-diffs/circuits/ocaml/*.jsonl
+bench-results/
+prof/
