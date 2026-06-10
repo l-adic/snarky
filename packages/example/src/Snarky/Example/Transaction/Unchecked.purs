@@ -100,8 +100,8 @@ applyTx
    . Reflectable d Int
   => ChainId
   -> SignedTransaction Vesta.ScalarField
-  -> Ledger d Vesta.ScalarField
-  -> Effect (Ledger d Vesta.ScalarField)
+  -> Ledger d
+  -> Effect (Ledger d)
 applyTx chainId tx ledger = do
   let
     SignedTransaction { transaction: Transaction { transfer: Transfer { from, to, amount } } } = tx
@@ -164,7 +164,7 @@ applyTx chainId tx ledger = do
 
 touchedAccounts
   :: forall d
-   . Ledger d Vesta.ScalarField
+   . Ledger d
   -> SignedTransaction Vesta.ScalarField
   -> Array (Tuple (Address d) (Maybe (PublicKey Vesta.ScalarField)))
 touchedAccounts { accountMap, nextAddress } transaction =

@@ -65,7 +65,7 @@ spec =
       -- ledger is threaded immutably by `applyTx`; each base proof runs against
       -- the mask of the ledger at that point, not a shared ref.
       { ledger, keys } <- liftEffect $ randomSampleOne (genLedger 10)
-      let l0 = ledger :: Ledger Depth Vesta.ScalarField
+      let l0 = ledger :: Ledger Depth
 
       -- Compile the two-branch program once. The provers are self-contained
       -- (`Effect`), taking the witness env directly.
@@ -76,7 +76,7 @@ spec =
         -- Prove a base transition against the mask of `l` (= the slots the
         -- transfer touches), extracted via `touchedAccounts` + `fromSubset`.
         runBase
-          :: Ledger Depth Vesta.ScalarField
+          :: Ledger Depth
           -> SignedTransaction Vesta.ScalarField
           -> Statement Vesta.ScalarField
           -> Aff (CompiledProof 2 TxnStmt)

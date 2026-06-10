@@ -42,7 +42,7 @@ type Keystore = Map (PublicKey Vesta.ScalarField) Pallas.ScalarField
 -- | Pick two distinct public keys from the ledger's account index.
 genDistinctPublicKeys
   :: forall d
-   . Ledger d Vesta.ScalarField
+   . Ledger d
   -> Gen { fromPk :: PublicKey Vesta.ScalarField, toPk :: PublicKey Vesta.ScalarField }
 genDistinctPublicKeys ledger = do
   let
@@ -62,7 +62,7 @@ genDistinctPublicKeys ledger = do
 -- | generators can sign as whichever account they happened to sample.
 senderInfo
   :: forall d
-   . Ledger d Vesta.ScalarField
+   . Ledger d
   -> Keystore
   -> PublicKey Vesta.ScalarField
   -> { privateKey :: Pallas.ScalarField, nonce :: Vesta.ScalarField, balance :: Vesta.ScalarField }
@@ -81,7 +81,7 @@ senderInfo ledger wallet fromPk =
 genValidSignedTransaction
   :: forall d
    . ChainId
-  -> Ledger d Vesta.ScalarField
+  -> Ledger d
   -> Keystore
   -> Gen (SignedTransaction Vesta.ScalarField)
 genValidSignedTransaction chainId ledger wallet = do
@@ -97,7 +97,7 @@ genValidSignedTransaction chainId ledger wallet = do
 genOverdraftSignedTransaction
   :: forall d
    . ChainId
-  -> Ledger d Vesta.ScalarField
+  -> Ledger d
   -> Keystore
   -> Gen (SignedTransaction Vesta.ScalarField)
 genOverdraftSignedTransaction chainId ledger wallet = do
@@ -120,7 +120,7 @@ genLedger
   :: forall d
    . Reflectable d Int
   => Int
-  -> Gen { ledger :: Ledger d Vesta.ScalarField, keys :: Keystore }
+  -> Gen { ledger :: Ledger d, keys :: Keystore }
 genLedger numAccounts = do
   accounts <- for (1 .. numAccounts) \_ -> do
     privateKey <- arbitrary :: Gen Pallas.ScalarField

@@ -8,13 +8,16 @@
 -- | environment as an explicit per-prove input alongside the (mutable) ledger
 -- | reference:
 -- |
--- |   ReaderT { currentTransaction :: Maybe (SignedTransaction (F f))
--- |           , ledger :: Ref (Ledger d f) } Effect
+-- |   ReaderT { currentTransaction :: Maybe (SignedTransaction Vesta.ScalarField)
+-- |           , ledger :: Ref (Ledger d) } Effect
 -- |
 -- | A base prove supplies `currentTransaction = Just tx`; a merge prove
 -- | (which witnesses no transaction) supplies `Nothing`. `TransferCompileM`
 -- | is the compile-time twin whose advice instances throw (compilation
 -- | discards `exists` bodies, so no request is ever served).
+-- |
+-- | Everything here is value-only, so the field is pinned to the example's
+-- | `Vesta.ScalarField` rather than carried as a parameter.
 module Snarky.Example.Transaction.Monad
   ( class TransactionM
   , getCurrentTransaction
@@ -33,7 +36,6 @@ import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Control.Monad.Rec.Class (class MonadRec)
 import Data.Identity (Identity(..))
 import Data.Maybe (Maybe(..))
-import Data.MerkleTree.Hashable (class MerkleHashable)
 import Data.MerkleTree.Sparse (Address)
 import Data.MerkleTree.Sparse as Sparse
 import Data.Newtype (un)
@@ -43,23 +45,20 @@ import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Exception (Error, error)
 import Effect.Ref (Ref, read, write)
 import Partial.Unsafe (unsafeCrashWith)
-import Poseidon (class PoseidonField)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitType, FVar)
 import Snarky.Circuit.MerkleTree as CMT
-import Snarky.Circuit.RandomOracle (Digest)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Vesta as Vesta
 import Snarky.Example.Ledger (Ledger, lookupAddress)
 import Snarky.Example.Transaction.Types (SignedTransaction)
-import Snarky.Example.Types (Account, PublicKey, TokenAmount)
+import Snarky.Example.Types (Account, PublicKey)
 
 --------------------------------------------------------------------------------
 -- | Advice class for supplying the transaction being proven as a private
 -- | witness. The pickled {source, target} statement does not carry the
 -- | `SignedTransaction`; the prover conjures it in-circuit via `exists`,
 -- | reading it from the witness monad's own instance.
-class Monad m <= TransactionM m f | m -> f where
-  getCurrentTransaction :: m (SignedTransaction f)
+class Monad m <= TransactionM m where
+  getCurrentTransaction :: m (SignedTransaction Vesta.ScalarField)
 
 --------------------------------------------------------------------------------
 -- Run-time advice monad
@@ -67,36 +66,36 @@ class Monad m <= TransactionM m f | m -> f where
 -- | Advice monad: a reader over the per-prove transaction plus a mutable
 -- | ledger reference. The ledger is a `Ref` because `MerkleRequestM.setValue`
 -- | mutates the tree in place as the circuit applies the transfer.
-newtype TransferM d f a =
+newtype TransferM d a =
   TransferM
     ( ReaderT
-        { currentTransaction :: Maybe (SignedTransaction f)
-        , ledger :: Ref (Ledger d f)
+        { currentTransaction :: Maybe (SignedTransaction Vesta.ScalarField)
+        , ledger :: Ref (Ledger d)
         }
         Effect
         a
     )
 
-derive newtype instance Functor (TransferM d f)
-derive newtype instance Apply (TransferM d f)
-derive newtype instance Applicative (TransferM d f)
-derive newtype instance Bind (TransferM d f)
-derive newtype instance Monad (TransferM d f)
-derive newtype instance MonadRec (TransferM d f)
-derive newtype instance MonadEffect (TransferM d f)
-derive newtype instance MonadThrow Error (TransferM d f)
+derive newtype instance Functor (TransferM d)
+derive newtype instance Apply (TransferM d)
+derive newtype instance Applicative (TransferM d)
+derive newtype instance Bind (TransferM d)
+derive newtype instance Monad (TransferM d)
+derive newtype instance MonadRec (TransferM d)
+derive newtype instance MonadEffect (TransferM d)
+derive newtype instance MonadThrow Error (TransferM d)
 
 runTransferM
-  :: forall d f
-   . { currentTransaction :: Maybe (SignedTransaction f), ledger :: Ref (Ledger d f) }
-  -> TransferM d f
+  :: forall d
+   . { currentTransaction :: Maybe (SignedTransaction Vesta.ScalarField), ledger :: Ref (Ledger d) }
+  -> TransferM d
        ~> Effect
 runTransferM env (TransferM m) = runReaderT m env
 
-getLedger :: forall d f. TransferM d f (Ledger d f)
+getLedger :: forall d. TransferM d (Ledger d)
 getLedger = TransferM $ ask >>= \env -> liftEffect $ read env.ledger
 
-modifyLedger :: forall d f. (Ledger d f -> Ledger d f) -> TransferM d f Unit
+modifyLedger :: forall d. (Ledger d -> Ledger d) -> TransferM d Unit
 modifyLedger f = TransferM $ ask >>= \env -> liftEffect do
   ledger <- read env.ledger
   write (f ledger) env.ledger
@@ -104,13 +103,8 @@ modifyLedger f = TransferM $ ask >>= \env -> liftEffect do
 -- | MerkleRequestM instance — serves Merkle paths from, and applies updates
 -- | to, the ledger tree behind the reader's `ledger` reference.
 instance
-  ( Reflectable d Int
-  , PoseidonField f
-  , CircuitType f (Account f) (Account (FVar f))
-  , CheckedType f (KimchiConstraint f) (TokenAmount (FVar f))
-  , MerkleHashable (Account f) (Digest f)
-  ) =>
-  CMT.MerkleRequestM (TransferM d f) f (Account f) d where
+  Reflectable d Int =>
+  CMT.MerkleRequestM (TransferM d) Vesta.ScalarField (Account Vesta.ScalarField) d where
   getElement addr = do
     { tree } <- getLedger
     case Sparse.get tree addr of
@@ -128,7 +122,7 @@ instance
       Nothing -> throwError $ error "setValue: invalid address"
 
 -- | AccountMapM instance — resolves a public key to its ledger address.
-instance Ord f => AccountMapM (TransferM d f) f d where
+instance AccountMapM (TransferM d) d where
   getAccountId pk = do
     ledger <- getLedger
     case lookupAddress ledger pk of
@@ -138,7 +132,7 @@ instance Ord f => AccountMapM (TransferM d f) f d where
 -- | TransactionM instance — serves the transaction this prove is proving,
 -- | taken from the reader environment (the per-prove "arrow" input), NOT
 -- | from ledger state.
-instance TransactionM (TransferM d f) f where
+instance TransactionM (TransferM d) where
   getCurrentTransaction = do
     env <- TransferM ask
     case env.currentTransaction of
@@ -148,32 +142,26 @@ instance TransactionM (TransferM d f) f where
 --------------------------------------------------------------------------------
 -- Compile-time advice monad (throws on any request)
 
-newtype TransferCompileM :: Int -> Type -> Type -> Type
-newtype TransferCompileM d f a = TransferCompileM (Identity a)
+newtype TransferCompileM :: Int -> Type -> Type
+newtype TransferCompileM d a = TransferCompileM (Identity a)
 
-derive newtype instance Functor (TransferCompileM d f)
-derive newtype instance Apply (TransferCompileM d f)
-derive newtype instance Applicative (TransferCompileM d f)
-derive newtype instance Bind (TransferCompileM d f)
-derive newtype instance Monad (TransferCompileM d f)
-derive newtype instance MonadRec (TransferCompileM d f)
+derive newtype instance Functor (TransferCompileM d)
+derive newtype instance Apply (TransferCompileM d)
+derive newtype instance Applicative (TransferCompileM d)
+derive newtype instance Bind (TransferCompileM d)
+derive newtype instance Monad (TransferCompileM d)
+derive newtype instance MonadRec (TransferCompileM d)
 
-runTransferCompileM :: forall d f a. TransferCompileM d f a -> a
+runTransferCompileM :: forall d a. TransferCompileM d a -> a
 runTransferCompileM (TransferCompileM m) = un Identity m
 
 instance
-  ( Reflectable d Int
-  , PoseidonField f
-  , CircuitType f (Account f) (Account (FVar f))
-  , CheckedType f (KimchiConstraint f) (TokenAmount (FVar f))
-  , MerkleHashable (Account f) (Digest f)
-  ) =>
-  CMT.MerkleRequestM (TransferCompileM d f) f (Account f) d where
+  CMT.MerkleRequestM (TransferCompileM d) Vesta.ScalarField (Account Vesta.ScalarField) d where
   getElement _ = unsafeCrashWith "the impossible happened! unhandled request: getElement"
   getPath _ = unsafeCrashWith "the impossible happened! unhandled request: getPath"
   setValue _ _ = unsafeCrashWith "the impossible happened! unhandled request: setValue"
 
-instance AccountMapM (TransferCompileM d f) f d where
+instance AccountMapM (TransferCompileM d) d where
   getAccountId _ = unsafeCrashWith "the impossible happened! unhandled request: getAccountId"
 
 --------------------------------------------------------------------------------
@@ -181,5 +169,5 @@ instance AccountMapM (TransferCompileM d f) f d where
 -- |
 -- | This typeclass allows circuits to "conjure" an address from a public key
 -- | during witness generation. The prover provides the mapping externally.
-class Monad m <= AccountMapM m f (d :: Int) | m -> f d where
-  getAccountId :: PublicKey f -> m (Address d)
+class Monad m <= AccountMapM m (d :: Int) | m -> d where
+  getAccountId :: PublicKey Vesta.ScalarField -> m (Address d)

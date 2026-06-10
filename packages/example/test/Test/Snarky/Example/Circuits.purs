@@ -72,7 +72,7 @@ transferSpec _ = do
     -- The circuit verifies the signature, then applies the transfer.
     circuit
       :: forall t @m
-       . AccountMapM m Vesta.ScalarField d
+       . AccountMapM m d
       => CMT.MerkleRequestM m Vesta.ScalarField (Account Vesta.ScalarField) d
       => CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
       => SignedTransaction (FVar Vesta.ScalarField)
@@ -86,7 +86,7 @@ transferSpec _ = do
           (Proxy @(SignedTransaction Vesta.ScalarField))
           (Proxy @(Digest Vesta.ScalarField))
           (Proxy @(KimchiConstraint Vesta.ScalarField))
-          (circuit @(TransferCompileM d Vesta.ScalarField))
+          (circuit @(TransferCompileM d))
           initialState
 
   ref <- liftEffect $ Ref.new ledger
@@ -97,7 +97,7 @@ transferSpec _ = do
     env = { currentTransaction: Nothing, ledger: ref }
 
     -- Reset the ledger before each test case
-    natWithReset :: TransferM d Vesta.ScalarField ~> Effect
+    natWithReset :: TransferM d ~> Effect
     natWithReset m = do
       write ledger ref
       runTransferM env m

@@ -29,9 +29,8 @@ import Data.MerkleTree.Sparse.Mask (SparseLedger, ofHash)
 import Data.Newtype (un)
 import Data.Reflectable (class Reflectable)
 import JS.BigInt (BigInt)
-import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (toField)
-import Snarky.Circuit.RandomOracle (class Hashable, Digest)
+import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Example.Types (Account, PublicKey, TokenAmount(..))
 
@@ -42,18 +41,16 @@ import Snarky.Example.Types (Account, PublicKey, TokenAmount(..))
 -- | maintains beside it (Mina assigns addresses sequentially, so we also
 -- | track the next free slot). Signing keys are NOT ledger data and live
 -- | with the wallet that produced them (see `genLedger`'s `keys`).
-type Ledger d f =
-  { tree :: Sparse.SparseMerkleTree d (Digest f) (Account f)
-  , accountMap :: Map (PublicKey f) (Sparse.Address d) -- public key -> address
+type Ledger d =
+  { tree :: Sparse.SparseMerkleTree d (Digest Vesta.ScalarField) (Account Vesta.ScalarField)
+  , accountMap :: Map (PublicKey Vesta.ScalarField) (Sparse.Address d) -- public key -> address
   , nextAddress :: BigInt -- next address to assign
   }
 
 empty
-  :: forall @d @f
-   . PoseidonField f
-  => Hashable (Account f) f
-  => Reflectable d Int
-  => Ledger d f
+  :: forall @d
+   . Reflectable d Int
+  => Ledger d
 empty =
   { tree: Sparse.empty
   , accountMap: Map.empty
@@ -61,11 +58,11 @@ empty =
   }
 
 -- | Look up the address for a public key.
-lookupAddress :: forall d f. Ord f => Ledger d f -> PublicKey f -> Maybe (Sparse.Address d)
+lookupAddress :: forall d. Ledger d -> PublicKey Vesta.ScalarField -> Maybe (Sparse.Address d)
 lookupAddress ledger pk = Map.lookup pk ledger.accountMap
 
 -- | Fetch the account stored at an address (if any).
-getAccount :: forall d f. Ledger d f -> Sparse.Address d -> Maybe (Account f)
+getAccount :: forall d. Ledger d -> Sparse.Address d -> Maybe (Account Vesta.ScalarField)
 getAccount ledger addr = Sparse.get ledger.tree addr
 
 --------------------------------------------------------------------------------
@@ -75,9 +72,9 @@ getAccount ledger addr = Sparse.get ledger.tree addr
 balanceOf :: forall f. TokenAmount f -> f
 balanceOf tb = toField (un TokenAmount tb)
 
-type Mask d f = SparseLedger d (Digest f) (PublicKey f) (Account f)
+type Mask d = SparseLedger d (Digest Vesta.ScalarField) (PublicKey Vesta.ScalarField) (Account Vesta.ScalarField)
 
 -- | An empty witness: a fully-collapsed mask. Used as the (never-read) mask env
 -- | for merge work (merge touches no ledger advice) and to compile.
-emptyMask :: forall d. Mask d Vesta.ScalarField
+emptyMask :: forall d. Mask d
 emptyMask = ofHash (defaultHash @(Account Vesta.ScalarField) :: Digest Vesta.ScalarField)

@@ -29,7 +29,7 @@ newtype Block = Block
 --
 
 type TxSnarkWork d =
-  { mask :: Mask d Vesta.ScalarField
+  { mask :: Mask d
   , tx :: SignedTransaction Vesta.ScalarField
   , statement :: Statement Vesta.ScalarField
   }
@@ -38,10 +38,10 @@ processBlock
   :: forall d
    . Reflectable d Int
   => ChainId
-  -> Ledger d Vesta.ScalarField
+  -> Ledger d
   -> Block
   -> Effect
-       { ledger :: Ledger d Vesta.ScalarField
+       { ledger :: Ledger d
        , snarkWork :: Array (TxSnarkWork d)
        }
 processBlock chainId ledger (Block { transactions }) = do

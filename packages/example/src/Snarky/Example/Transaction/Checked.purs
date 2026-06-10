@@ -113,9 +113,9 @@ baseRule
    . Reflectable d Int
   => CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
   => MonadEffect m
-  => AccountMapM m Vesta.ScalarField d
+  => AccountMapM m d
   => CMT.MerkleRequestM m Vesta.ScalarField (Account Vesta.ScalarField) d
-  => TransactionM m Vesta.ScalarField
+  => TransactionM m
   => ChainId
   -> AsProverT Vesta.ScalarField m Unit
   -> Statement (FVar Vesta.ScalarField)
@@ -187,7 +187,7 @@ mergeRule getPrevStates (Statement { source, target }) = do
 applyTxChecked
   :: forall t m @d
    . Reflectable d Int
-  => AccountMapM m Vesta.ScalarField d
+  => AccountMapM m d
   => CMT.MerkleRequestM m Vesta.ScalarField (Account Vesta.ScalarField) d
   => CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
   => ChainId
@@ -257,7 +257,7 @@ type TxnSnarkRules =
     )
 
 type BaseProverInput d =
-  { env :: { mask :: Mask d Vesta.ScalarField, tx :: SignedTransaction Vesta.ScalarField }
+  { env :: { mask :: Mask d, tx :: SignedTransaction Vesta.ScalarField }
   , statement :: Statement Vesta.ScalarField
   }
 
@@ -298,7 +298,7 @@ compileTxCircuit chainId srs = do
         @(Statement Vesta.ScalarField)
         @1
         @1
-        @(TransferMaskM d Vesta.ScalarField)
+        @(TransferMaskM d)
         (baseRule @d chainId)
         unit
     mergeEntry <- liftEffect $
@@ -308,7 +308,7 @@ compileTxCircuit chainId srs = do
         @(Statement Vesta.ScalarField)
         @1
         @1
-        @(TransferMaskM d Vesta.ScalarField)
+        @(TransferMaskM d)
         mergeRule
         (tuple2 Self Self)
 

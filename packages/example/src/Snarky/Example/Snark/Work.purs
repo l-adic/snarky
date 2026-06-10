@@ -29,7 +29,7 @@ type Proof = CompiledProof 2 TxnStmt
 -- | transaction, and what a `Leaf` of the scan-state tree holds.
 type BaseJob d =
   { tx :: SignedTransaction Vesta.ScalarField
-  , mask :: Mask d Vesta.ScalarField
+  , mask :: Mask d
   , statement :: Statement Vesta.ScalarField
   }
 

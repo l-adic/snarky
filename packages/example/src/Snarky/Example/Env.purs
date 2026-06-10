@@ -37,7 +37,7 @@ mkConfig chainId = do
 type Env d =
   { chainId :: ChainId
   , compiledTx :: CompiledTx d
-  , ledger :: Ref (Ledger d Vesta.ScalarField)
+  , ledger :: Ref (Ledger d)
   }
 
 mkEnv
@@ -46,6 +46,6 @@ mkEnv
   => Config
   -> Effect (Env d)
 mkEnv cfg = do
-  ledger <- Ref.new $ Ledger.empty @d @Vesta.ScalarField
+  ledger <- Ref.new $ Ledger.empty @d
   compiledTx <- compileTxCircuit cfg.chainId { pallasSrs: cfg.pallasSrs, vestaSrs: cfg.vestaSrs }
   pure { ledger, compiledTx, chainId: cfg.chainId }
