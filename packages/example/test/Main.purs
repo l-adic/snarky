@@ -2,6 +2,7 @@ module Test.Example.Main where
 
 import Prelude
 
+import Colog (richMessageStdout)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Snarky.Example.Env (mkConfig, mkEnv)
@@ -21,6 +22,6 @@ main = runSpecAndExitProcess'
   do
     Circuits.spec
     -- One Env (SRS build + circuit compile) shared by every pickled test.
-    beforeAll (liftEffect (mkEnv @Depth =<< mkConfig chainId)) do
+    beforeAll (liftEffect (mkEnv @Depth richMessageStdout =<< mkConfig chainId)) do
       TransactionSnark.spec
       Block.spec

@@ -25,16 +25,16 @@ import Data.MerkleTree.Sparse as Sparse
 import Data.MerkleTree.Sparse.Mask (fromSubset)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Effect.Class.Console as Console
 import Pickles (CompiledProof, toVerifiable, verifyBatch)
 import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Example.Env (Env)
 import Snarky.Example.Ledger (Ledger)
+import Snarky.Example.Log as Log
+import Snarky.Example.Simulation (genGenesisLedger, genValidSignedTransaction)
 import Snarky.Example.Transaction (SignedTransaction, Statement(..), TxnStmt, applyTx, touchedAccounts)
 import Test.QuickCheck.Gen (randomSampleOne)
 import Test.Snarky.Example.Config (Depth)
-import Test.Snarky.Example.Generators (genLedger, genValidSignedTransaction)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
@@ -47,7 +47,7 @@ spec =
       -- Initial ledger L0 (with the wallet `keys` to sign transfers). The
       -- ledger is threaded immutably by `applyTx`; each base proof runs against
       -- the mask of the ledger at that point, not a shared ref.
-      { ledger, keys } <- liftEffect $ randomSampleOne (genLedger 10)
+      { ledger, keys } <- liftEffect $ randomSampleOne (genGenesisLedger 10)
       let l0 = ledger :: Ledger Depth
 
       let
@@ -64,7 +64,7 @@ spec =
             , statement
             }
 
-      Console.log "[TxnSnark] proving base0…"
+      Log.logInfo env.logger "[TxnSnark] proving base0…"
 
       -- base0: L0 → L1. `source0` is the pre-state root; `target0` the pure
       -- post-transfer root (the same value the circuit computes from the mask).
@@ -73,7 +73,7 @@ spec =
       l1 <- liftEffect $ applyTx env.chainId tx0 l0
       let target0 = Sparse.root l1.tree
       b0 <- runBase l0 tx0 (Statement { source: source0, target: target0 })
-      Console.log "[TxnSnark] base0 proved; proving base1…"
+      Log.logInfo env.logger "[TxnSnark] base0 proved; proving base1…"
 
       -- base1: L1 → L2, transferring from the post-b0 state.
       tx1 <- liftEffect $ randomSampleOne (genValidSignedTransaction env.chainId l1 keys)
@@ -81,15 +81,15 @@ spec =
       l2 <- liftEffect $ applyTx env.chainId tx1 l1
       let target1 = Sparse.root l2.tree
       b1 <- runBase l1 tx1 (Statement { source: source1, target: target1 })
-      Console.log "[TxnSnark] base1 proved; verifying [b0, b1] standalone…"
+      Log.logInfo env.logger "[TxnSnark] base1 proved; verifying [b0, b1] standalone…"
 
       -- Milestone check: the two base proofs verify on their own.
       verifyBatch verifier (map toVerifiable [ b0, b1 ]) `shouldEqual` true
-      Console.log "[TxnSnark] [b0, b1] verified"
+      Log.logInfo env.logger "[TxnSnark] [b0, b1] verified"
 
       -- merge(b0, b1): connects L0 → L1 → L2 into one L0 → L2 statement.
-      Console.log "[TxnSnark] proving merge…"
+      Log.logInfo env.logger "[TxnSnark] proving merge…"
       let mergedStmt = Statement { source: source0, target: target1 }
       merge <- liftEffect $ mergeProver { proof1: b0, proof2: b1, statement: mergedStmt }
-      Console.log "[TxnSnark] merge proved; batch-verifying full chain…"
+      Log.logInfo env.logger "[TxnSnark] merge proved; batch-verifying full chain…"
       verifyBatch verifier (map toVerifiable [ b0, b1, merge ]) `shouldEqual` true

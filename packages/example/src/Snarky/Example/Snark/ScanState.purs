@@ -17,6 +17,7 @@ module Snarky.Example.Snark.ScanState
   ( SlotId
   , ScanState
   , buildScanState
+  , describe
   , initialWork
   , record
   ) where
@@ -34,6 +35,15 @@ import Snarky.Example.Transaction (Statement(..))
 
 -- | A heap index into the perfect tree (root = 1).
 type SlotId = Int
+
+-- | Render a slot's work for logs: its kind, and — for a merge — which child
+-- | slots it combines (the heap children `2·slot` and `2·slot + 1`). This is
+-- | what makes the scheduler's log narrative legible: slot ids alone look
+-- | shuffled (leaves are the HIGH ids, the root is 1).
+describe :: forall d. SlotId -> WorkItem d -> String
+describe slot = case _ of
+  Base _ -> "Base (slot " <> show slot <> ")"
+  Merge _ -> "Merge (slot " <> show slot <> " = " <> show (2 * slot) <> " + " <> show (2 * slot + 1) <> ")"
 
 -- | The block's leaves (leaf `j` lives at slot `n+j`) and the proofs filled so
 -- | far. The tree itself is implicit in the heap indexing.

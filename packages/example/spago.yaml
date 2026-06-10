@@ -1,11 +1,17 @@
 package:
   name: example
   dependencies:
+    - aff
     - arrays
+    - avar
+    - colog
     - curves
     - effect
+    - either
     - exceptions
+    - fmt
     - foldable-traversable
+    - gen
     - identity
     - js-bigints
     - maybe
@@ -14,7 +20,6 @@ package:
     - ordered-collections
     - partial
     - pickles
-    - poseidon
     - prelude
     - quickcheck
     - random-oracle
@@ -35,15 +40,12 @@ package:
       - arrays
       - console
       - effect
-      - either
       - exceptions
       - foldable-traversable
-      - gen
       - identity
       - js-bigints
       - ordered-collections
       - partial
-      - poseidon
       - refs
       - snarky-test-utils
       - spec

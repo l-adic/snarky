@@ -17,8 +17,14 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import Fmt (fmt)
+import Snarky.Example.Log (Logger)
+import Snarky.Example.Log as Log
 import Snarky.Example.Snark.Work (Proof, WorkItem(..))
 import Snarky.Example.Transaction (CompiledTx)
+
+service :: String
+service = "Snark Worker"
 
 -- | Prove one work item against the compiled program. A `Base` runs over a fresh
 -- | `Ref` of its witness mask; a `Merge` over an empty mask (it reads none).
@@ -36,12 +42,18 @@ proveItem compiled = case _ of
 -- | queues, blocks, or the producer.
 runWorker
   :: forall d id
-   . CompiledTx d
+   . Show id
+  => Logger
+  -> CompiledTx d
   -> { next :: Aff (Tuple id (WorkItem d))
      , post :: Tuple id Proof -> Aff Unit
      }
   -> Aff Unit
-runWorker compiled io = forever do
+runWorker logger compiled io = forever do
   Tuple workId work <- io.next
+  Log.logInfo logger $ fmt @"[{service}] Received snark work request with id:{workId}"
+    { service, workId: show workId }
   proof <- liftEffect $ proveItem compiled work
+  Log.logInfo logger $ fmt @"[{service}] Completed snark work request with id:{workId}"
+    { service, workId: show workId }
   io.post (Tuple workId proof)

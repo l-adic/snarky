@@ -23,13 +23,13 @@ import Snarky.Circuit.RandomOracle (Digest(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint, eval, initialState)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Vesta as Vesta
+import Snarky.Example.Simulation (genGenesisLedger, genOverdraftSignedTransaction, genValidSignedTransaction)
 import Snarky.Example.Transaction (class AccountMapM, SignedTransaction, TransferCompileM, TransferM, applyTx, applyTxChecked, runTransferCompileM, runTransferM)
 import Snarky.Example.Types (Account)
 import Test.QuickCheck (quickCheck')
 import Test.QuickCheck.Gen (randomSampleOne)
 import Test.Snarky.Circuit.Utils (runTestM, satisfied, unsatisfied)
 import Test.Snarky.Example.Config (chainId)
-import Test.Snarky.Example.Generators (genLedger, genOverdraftSignedTransaction, genValidSignedTransaction)
 import Test.Spec (SpecT, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -53,7 +53,7 @@ transferSpec
   => Proxy d
   -> Aff Unit
 transferSpec _ = do
-  { ledger, keys } <- liftEffect $ randomSampleOne (genLedger 10)
+  { ledger, keys } <- liftEffect $ randomSampleOne (genGenesisLedger 10)
 
   let
     -- Expected root after applying the transfer: the pure ledger arrow.
