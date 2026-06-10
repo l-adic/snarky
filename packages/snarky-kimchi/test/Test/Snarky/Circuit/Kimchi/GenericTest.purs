@@ -13,14 +13,14 @@ import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.Curves (add_)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky)
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class WeierstrassCurve)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint, addAffine, genAffinePoint, toAffine)
+import Snarky.Data.EllipticCurve (AffinePoint(..), addAffine, genAffinePoint, toAffine)
 import Test.QuickCheck (class Arbitrary)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
@@ -47,7 +47,7 @@ spec' cfg testName pg _ =
 
     it "unsafeAdd Circuit generates valid Generic constraints" $ unsafePartial do
       let
-        f :: Tuple (AffinePoint (F f)) (AffinePoint (F f)) -> AffinePoint (F f)
+        f :: Tuple (AffinePoint f) (AffinePoint f) -> AffinePoint f
         f (Tuple x y) = unsafePartial $ fromJust $ toAffine $ addAffine x y
 
         circuit'
@@ -61,8 +61,8 @@ spec' cfg testName pg _ =
           p1 <- genAffinePoint pg
           p2 <- genAffinePoint pg `suchThat` \p ->
             let
-              { x: x1, y: y1 } = p1
-              { x: x2, y: y2 } = p
+              AffinePoint { x: x1, y: y1 } = p1
+              AffinePoint { x: x2, y: y2 } = p
             in
               x1 /= x2 && y1 /= negate y2
           pure $ Tuple p1 p2

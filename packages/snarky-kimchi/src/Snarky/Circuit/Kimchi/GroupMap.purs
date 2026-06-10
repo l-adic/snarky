@@ -20,7 +20,7 @@ import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, add_, and_, assertNonZero_, assertSquare_, const_, div_, exists, if_, label, mul_, not_, readCVar, scale_, sub_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class HasBW19, class HasSqrt, class PrimeField, bw19Params, curveParams, fromInt, isSquare, sqrt)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy)
 
 -- | Full parameters needed for group map circuit
@@ -100,7 +100,7 @@ groupMap params t =
 
     { x1, x2, x3 } = potentialXs params t
 
-    tryDecode x = sqrt (ySquared x) <#> \y -> { x, y }
+    tryDecode x = sqrt (ySquared x) <#> \y -> AffinePoint { x, y }
   in
     fromMaybe' (\_ -> unsafeThrow "groupMap: no valid x-coordinate found (BW19 invariant violated)")
       $ tryDecode x1 <|> tryDecode x2 <|> tryDecode x3
@@ -188,4 +188,4 @@ groupMapCircuit params t = do
   t1x <- label "t1x" $ mul_ (coerce b1) x1
   let xResult = add_ (add_ t1x t2x) t3x
 
-  pure { x: xResult, y: yResult }
+  pure (AffinePoint { x: xResult, y: yResult })

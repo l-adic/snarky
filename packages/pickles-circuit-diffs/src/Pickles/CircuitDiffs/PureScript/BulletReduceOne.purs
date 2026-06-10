@@ -17,7 +17,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
 type BulletReduceOneInput f =
@@ -31,8 +31,8 @@ parseBulletReduceOneInput inputs =
   let
     at = unsafeIdx inputs
   in
-    { l: { x: at 0, y: at 1 }
-    , r: { x: at 2, y: at 3 }
+    { l: AffinePoint { x: at 0, y: at 1 }
+    , r: AffinePoint { x: at 2, y: at 3 }
     , u: asSizedF128 (at 4)
     }
 

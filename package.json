@@ -29,6 +29,7 @@
     "blakejs": "^1.2.1",
     "json-bigint": "^1.0.0",
     "kimchi-napi": "file:./packages/kimchi-napi",
+    "log-update": "^8.0.0",
     "pasta-runtime": "file:./packages/pasta-runtime"
   },
   "devDependencies": {

@@ -6,6 +6,7 @@ package:
     - partial
     - prelude
     - quickcheck
+    - simple-json
     - snarky
   test:
     main: Test.Snarky.Circuit.Curves.Main

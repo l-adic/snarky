@@ -35,6 +35,9 @@ import Snarky.Circuit.DSL (class AssertEqual, class CheckedType, class CircuitM,
 import Snarky.Circuit.Kimchi (poseidon)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Vesta as Vesta
+import Type.Proxy (Proxy(..))
 
 -- | Initial state for the sponge: all zeros
 initialState :: forall f. PrimeField f => Vector 3 (FVar f)
@@ -81,10 +84,12 @@ derive instance Generic (Digest f) _
 
 derive instance Newtype (Digest f) _
 
-instance CircuitType f (Digest (F f)) (Digest (FVar f)) where
-  valueToFields = genericValueToFields
-  fieldsToValue = genericFieldsToValue
-  sizeInFields = genericSizeInFields
+-- | Value side is the raw field `f`; `F f` survives only as the internal
+-- | leaf marker the generic deriving needs (reached by `coerce`).
+instance CircuitType f (Digest f) (Digest (FVar f)) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy :: Proxy (Digest (F f)))
+  valueToFields d = genericValueToFields (coerce d :: Digest (F f))
+  fieldsToValue fs = coerce (genericFieldsToValue fs :: Digest (F f))
   varToFields = genericVarToFields @(Digest (F f))
   fieldsToVar = genericFieldsToVar @(Digest (F f))
 
@@ -170,7 +175,10 @@ class Hashable a b | a -> b where
   toHashInput :: a -> Array b
 
 -- | A field element is its own singleton input (the leaf base cases).
-instance Hashable (F f) (F f) where
+instance Hashable Vesta.ScalarField Vesta.ScalarField where
+  toHashInput x = [ x ]
+
+instance Hashable Pallas.ScalarField Pallas.ScalarField where
   toHashInput x = [ x ]
 
 instance Hashable (FVar f) (FVar f) where
@@ -183,8 +191,8 @@ instance Hashable (FVar f) (FVar f) where
 class HashInput b h where
   hashInput :: Array b -> h
 
-instance PoseidonField f => HashInput (F f) (Digest (F f)) where
-  hashInput xs = Digest (F (Poseidon.hash (coerce xs)))
+instance PoseidonField f => HashInput f (Digest f) where
+  hashInput xs = Digest (Poseidon.hash xs)
 
 instance
   ( CircuitM f (KimchiConstraint f) t m

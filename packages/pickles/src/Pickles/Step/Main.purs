@@ -81,7 +81,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (EndoScalar(..), curveParams, endoScalar)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
+import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -290,7 +290,7 @@ type StepMainSrsData wrapVkChunks len nd blueprints =
 -------------------------------------------------------------------------------
 
 unwrapPt :: WeierstrassAffinePoint PallasG (FVar StepField) -> AffinePoint (FVar StepField)
-unwrapPt (WeierstrassAffinePoint pt) = pt
+unwrapPt (WeierstrassAffinePoint pt) = AffinePoint pt
 
 stepEndoVal :: StepField
 stepEndoVal = let EndoScalar e = endoScalar @Vesta.BaseField @StepField in e
@@ -993,7 +993,7 @@ stepMain
             { x: const_ x, y: const_ y }
 
     constDummySg :: AffinePoint (FVar StepField)
-    constDummySg = { x: const_ dummySg.x, y: const_ dummySg.y }
+    constDummySg = AffinePoint { x: const_ (unwrap dummySg).x, y: const_ (unwrap dummySg).y }
 
   -- 8. verify_one × len + Assert.all (inside prevs_verified label).
   -- Drive structurally via traverseStepSlotsA — each callback invocation
@@ -1166,18 +1166,18 @@ stepMain
   outerDigest <- label "hash_messages_for_next_step_proof" do
     let
       absorbPt s pt = do
-        let { x, y } = unwrapPt pt
+        let AffinePoint { x, y } = unwrapPt pt
         s1 <- Sponge.absorb x s
         Sponge.absorb y s1
       absorbChunks s = foldM absorbPt s <<< unwrap
       traceChunks lbl cc =
         case Vector.toUnfoldable (unwrap cc) of
           [ pt ] -> do
-            let { x, y } = unwrapPt pt
+            let AffinePoint { x, y } = unwrapPt pt
             ivpTrace (lbl <> ".x") x
             ivpTrace (lbl <> ".y") y
           cs -> forWithIndex_ cs \j pt -> do
-            let { x, y } = unwrapPt pt
+            let AffinePoint { x, y } = unwrapPt pt
             ivpTrace (lbl <> "." <> show j <> ".x") x
             ivpTrace (lbl <> "." <> show j <> ".y") y
 
@@ -1219,14 +1219,14 @@ stepMain
     let proofData = map (\r -> { sg: r.sg, expandedChals: r.expandedChallenges }) results
     forWithIndex_ proofData \fi { sg: sgPt, expandedChals } -> do
       let i = getFinite fi
-      let pt = unwrapPt sgPt
+      let AffinePoint pt = unwrapPt sgPt
       ivpTrace ("step_main_outer.proof." <> show i <> ".sg.x") pt.x
       ivpTrace ("step_main_outer.proof." <> show i <> ".sg.y") pt.y
       forWithIndex_ expandedChals \fj c ->
         ivpTrace ("step_main_outer.proof." <> show i <> ".bp_chal." <> show (getFinite fj)) c
     sAfterProofs <- foldM
       ( \s { sg: sgPt, expandedChals } -> do
-          let pt = unwrapPt sgPt
+          let AffinePoint pt = unwrapPt sgPt
           s2 <- Sponge.absorb pt.x s
           s3 <- Sponge.absorb pt.y s2
           foldM (\s' c -> Sponge.absorb c s') s3 expandedChals

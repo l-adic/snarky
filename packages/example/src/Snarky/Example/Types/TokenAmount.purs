@@ -1,5 +1,6 @@
 module Snarky.Example.Types.TokenAmount
   ( TokenAmount(..)
+  , mkAmount
   , addWithOverflow
   , subWithUnderflow
   ) where
@@ -7,7 +8,7 @@ module Snarky.Example.Types.TokenAmount
 import Prelude
 
 import Data.Generic.Rep (class Generic)
-import Data.Maybe (fromJust)
+import Data.Maybe (Maybe, fromJust)
 import Data.Newtype (class Newtype, un)
 import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
@@ -131,3 +132,11 @@ subWithUnderflow a b = do
   pure { result, underflow }
   where
   two128 = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 128)
+
+mkAmount
+  :: forall f m
+   . FieldSizeInBits f m
+  => Compare 128 m LT
+  => f
+  -> Maybe (TokenAmount f)
+mkAmount f = TokenAmount <$> fromField f

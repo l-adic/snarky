@@ -18,6 +18,7 @@ module Data.Schnorr
   ( Signature(..)
   , isEven
   , hashMessage
+  , toPublicKey
   , sign
   , verify
   ) where
@@ -112,6 +113,10 @@ toScalar = fromBigInt <<< toBigInt
 toBase :: Pallas.ScalarField -> Pallas.BaseField
 toBase = fromBigInt <<< toBigInt
 
+toPublicKey :: Pallas.ScalarField -> Pallas.G
+toPublicKey privateKey =
+  scalarMul privateKey (generator :: PallasG)
+
 -- | Sign `message` with `privateKey`: deterministic nonce + negate-k
 -- | (so `R.y` is always even). Total — no rejection branches.
 sign
@@ -123,8 +128,7 @@ sign
   -> Signature Pallas.BaseField
 sign { spongePrefix, networkId, privateKey: d, message } =
   let
-    publicKey = affineOrThrow "public key [sk]·G"
-      (scalarMul d (generator :: PallasG))
+    publicKey = affineOrThrow "public key [sk]·G" $ toPublicKey d
     kPrime = deriveNonce
       { networkId
       , privateKey: d

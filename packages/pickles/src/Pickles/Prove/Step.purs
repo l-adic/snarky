@@ -132,7 +132,7 @@ import Snarky.Curves.Class (EndoScalar(..), endoScalar)
 import Snarky.Curves.Class (fromInt, generator, toAffine) as Curves
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
-import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
+import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (SplitField(..), Type1(..), Type2(..), fromShifted, toShifted)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
@@ -255,7 +255,11 @@ buildStepAdvice input =
     -- Pallas generator (= OCaml `Tock.Curve.one`). Never the
     -- point-at-infinity, so `toAffine` is always `Just`. Reused for
     -- every curve-point field in the base-case dummy advice.
-    g0 = coerce (unsafePartial (fromJust (Curves.toAffine (Curves.generator :: Pallas.G))) :: AffinePoint StepField)
+    g0 =
+      let
+        p = unsafePartial (fromJust (Curves.toAffine (Curves.generator :: Pallas.G)))
+      in
+        { x: F p.x, y: F p.y }
 
     g0w = WeierstrassAffinePoint g0
 
@@ -472,7 +476,7 @@ extractWrapVKCommsAdvice vk =
     comms = vestaVerifierIndexCommitments @wrapVkChunks vk
 
     wrapPt :: AffinePoint StepField -> WeierstrassAffinePoint PallasG (F StepField)
-    wrapPt pt = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
+    wrapPt (AffinePoint pt) = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
   in
     VerificationKey
       { sigma: map (over ChunkedCommitment (map wrapPt)) comms.sigma
@@ -1055,12 +1059,12 @@ buildSlotAdvice input = do
 
   forWithIndex_ input.prevChalPolys \fi entry -> do
     let i = getFinite fi
-    Trace.field ("expand_proof.chal_polys." <> show i <> ".comm.x") entry.sg.x
-    Trace.field ("expand_proof.chal_polys." <> show i <> ".comm.y") entry.sg.y
+    Trace.field ("expand_proof.chal_polys." <> show i <> ".comm.x") (unwrap entry.sg).x
+    Trace.field ("expand_proof.chal_polys." <> show i <> ".comm.y") (unwrap entry.sg).y
     Trace.field ("expand_proof.chal_polys." <> show i <> ".chal.0") (Vector.head entry.challenges)
 
   let
-    toFFIChalPoly r = { sgX: r.sg.x, sgY: r.sg.y, challenges: Vector.toUnfoldable r.challenges }
+    toFFIChalPoly r = { sgX: (unwrap r.sg).x, sgY: (unwrap r.sg).y, challenges: Vector.toUnfoldable r.challenges }
 
     oracles = proofOraclesRec input.wrapVK
       { proof: input.wrapProof
@@ -1300,8 +1304,8 @@ buildSlotAdvice input = do
   let
     openingSg = coerce expandProofResult.sg
 
-    mkPt :: AffinePoint StepField -> AffinePoint (F StepField)
-    mkPt pt = { x: F pt.x, y: F pt.y }
+    mkPt :: AffinePoint StepField -> { x :: F StepField, y :: F StepField }
+    mkPt (AffinePoint pt) = { x: F pt.x, y: F pt.y }
 
     wrapProofData = vestaProofData @WrapIPARounds input.wrapProof
 
@@ -1320,8 +1324,8 @@ buildSlotAdvice input = do
 
     wrapCommits = vestaProofCommitments @slotVkChunks input.wrapProof
 
-    mkPallasAffine :: AffinePoint StepField -> AffinePoint (F StepField)
-    mkPallasAffine pt = { x: F pt.x, y: F pt.y }
+    mkPallasAffine :: AffinePoint StepField -> { x :: F StepField, y :: F StepField }
+    mkPallasAffine (AffinePoint pt) = { x: F pt.x, y: F pt.y }
     wrapMessages =
       { wComm: map (over ChunkedCommitment (map mkPallasAffine)) wrapCommits.wComm
       , zComm: over ChunkedCommitment (map mkPallasAffine) wrapCommits.zComm
@@ -1419,7 +1423,7 @@ buildSlotAdvice input = do
           (\chals -> UnChecked (map F chals))
           (Vector.drop @pad input.prevChallengesForStepHash)
       , prevSgs: map
-          (\e -> WeierstrassAffinePoint (coerce e.sg :: AffinePoint (F StepField)))
+          (\e -> WeierstrassAffinePoint (coerce e.sg :: { x :: F StepField, y :: F StepField }))
           (Vector.drop @pad input.prevChalPolys)
       }
 
@@ -1440,8 +1444,8 @@ buildSlotAdvice input = do
     , slotUnfinalized: expandedUnfinalized
     , slotMsgWrapHashStep: msgWrapHashStep
     , slotKimchiPrevEntry:
-        { sgX: input.kimchiPrevSg.x
-        , sgY: input.kimchiPrevSg.y
+        { sgX: (unwrap input.kimchiPrevSg).x
+        , sgY: (unwrap input.kimchiPrevSg).y
         , challenges: input.kimchiPrevChallengesExpanded
         }
     , slotSppw

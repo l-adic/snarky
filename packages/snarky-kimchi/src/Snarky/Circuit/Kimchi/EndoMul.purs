@@ -19,7 +19,7 @@ import Snarky.Circuit.Kimchi.EndoScalar (expandToEndoScalar)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class WeierstrassCurve, EndoBase(..), endoBase, fromAffine, scalarMul, toAffine)
-import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
+import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 
 {-
 endo satisfies the equation
@@ -43,6 +43,7 @@ endo
   -> Snarky (KimchiConstraint f) t m
        (AffinePoint (FVar f))
 endo g scalar = label "endo" do
+  let AffinePoint gr = g
   msbBits <- exists do
     vVal :: SizedF k (F f) <- read scalar
     let lsbBits = SizedF.toBits vVal
@@ -55,24 +56,24 @@ endo g scalar = label "endo" do
   accInit <- do
     -- Seal the endo-scaled x coordinate BEFORE addComplete, matching OCaml's
     -- seal(Field.scale xt Endo.base) which happens outside add_fast.
-    phix <- label "seal_endo_x" $ seal (scale_ eb g.x)
+    phix <- label "seal_endo_x" $ seal (scale_ eb gr.x)
     -- Use addFast CheckFinite matching OCaml's add_fast default (check_finite=true).
     -- This makes inf = Const 0, whose reduce_to_v pairs with the queued seal constraint.
-    { p } <- addFast CheckFinite g (g { x = phix })
+    { p } <- addFast CheckFinite g (AffinePoint (gr { x = phix }))
     _.p <$> addFast CheckFinite p p
   Tuple rounds { nAcc, acc } <- mapAccumM
     ( \st bs -> do
         -- OCaml uses !acc and !n_acc directly (not mk/exists) for xp, yp, n_acc_prev.
         -- This preserves variable identity for permutation wiring.
         { r, s1, s3, s, nAccNext } <- exists do
-          { x: xt, y: yt } <- read @(AffinePoint _) g
+          { x: xt, y: yt } <- map (\(AffinePoint pt) -> { x: F pt.x, y: F pt.y }) (read @(AffinePoint _) g)
           bits <- read bs
           let
             b1 = bits !! unsafeFinite 0
             b2 = bits !! unsafeFinite 1
             b3 = bits !! unsafeFinite 2
             b4 = bits !! unsafeFinite 3
-          { x: xp, y: yp } <- read @(AffinePoint _) st.acc
+          { x: xp, y: yp } <- map (\(AffinePoint pt) -> { x: F pt.x, y: F pt.y }) (read @(AffinePoint _) st.acc)
           let
             xq1 = (one + (F eb - one) * b1) * xt
             yq1 = (double b2 - one) * yt
@@ -90,10 +91,10 @@ endo g scalar = label "endo" do
             ys = ((xr - xs) * s4) - yr
           nAccPrevVal <- readCVar st.nAcc
           pure
-            { r: { x: xr, y: yr }
+            { r: coerce { x: xr, y: yr } :: AffinePoint f
             , s1
             , s3
-            , s: { x: xs, y: ys }
+            , s: coerce { x: xs, y: ys } :: AffinePoint f
             , nAccNext: double (double (double (double nAccPrevVal + b1) + b2) + b3) + b4
             }
         pure $ Tuple
@@ -135,7 +136,7 @@ endoInv g scalar = label "endo-inv" do
   -- matching OCaml's G.typ which has check = assert_on_curve.
   WeierstrassAffinePoint result :: WeierstrassAffinePoint g _ <- exists do
     -- Read the input point
-    { x: F gx, y: F gy } <- read @(AffinePoint _) g
+    AffinePoint { x: gx, y: gy } <- read @(AffinePoint _) g
     -- Read the scalar challenge
     scalarVal :: SizedF 128 (F f) <- read scalar
 
@@ -162,7 +163,8 @@ endoInv g scalar = label "endo-inv" do
     pure $ WeierstrassAffinePoint { x: F rx, y: F ry }
 
   -- Verify: endo(result, scalar) == g
-  computed <- endo @128 @32 result scalar
-  assertEqual_ computed.x g.x
-  assertEqual_ computed.y g.y
-  pure result
+  AffinePoint computed <- endo @128 @32 (AffinePoint result) scalar
+  let AffinePoint gv = g
+  assertEqual_ computed.x gv.x
+  assertEqual_ computed.y gv.y
+  pure (AffinePoint result)

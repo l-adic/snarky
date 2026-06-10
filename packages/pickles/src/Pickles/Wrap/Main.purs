@@ -88,7 +88,7 @@ import Snarky.Curves.Class (EndoScalar(..), endoScalar) as Curves
 import Snarky.Curves.Class (curveParams, fromInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (VestaG)
-import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
+import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Snarky.Data.EllipticCurve as EC
 import Snarky.Types.Shifted (splitFieldCircuit)
 import Type.Proxy (Proxy(..))
@@ -211,7 +211,7 @@ unpackUnfinalized (PerProofUnfinalized r) =
   }
 
 unwrapPt :: WeierstrassAffinePoint VestaG (FVar WrapField) -> AffinePoint (FVar WrapField)
-unwrapPt (WeierstrassAffinePoint pt) = pt
+unwrapPt (WeierstrassAffinePoint pt) = AffinePoint pt
 
 -- | Project a `StepAllEvals` newtype (allocated with OCaml-ordered fields) into
 -- | the `ProofWitness` record consumed by `wrapFinalizeOtherProofCircuit`. The
@@ -774,19 +774,21 @@ wrapMain config (StatementPacked stmtR) advice = do
     sumMaskByBranch perBranchPts =
       let
         scaledPts = Vector.zipWith
-          ( \b { x: F x', y: F y' } ->
+          ( \b (AffinePoint { x: F x', y: F y' }) ->
               { x: CVar.scale_ x' b, y: CVar.scale_ y' b }
           )
           branchBools
           perBranchPts
         { head: spHead, tail: spTail } = Vector.uncons scaledPts
       in
-        foldl
-          ( \acc pt ->
-              { x: CVar.add_ acc.x pt.x, y: CVar.add_ acc.y pt.y }
+        AffinePoint
+          ( foldl
+              ( \acc pt ->
+                  { x: CVar.add_ acc.x pt.x, y: CVar.add_ acc.y pt.y }
+              )
+              spHead
+              spTail
           )
-          spHead
-          spTail
 
     -- Lagrange-base lookup driving `publicInputCommit`. Two paths,
     -- mirroring OCaml `wrap_verifier.ml:382-443`

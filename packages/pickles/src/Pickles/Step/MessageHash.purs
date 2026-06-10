@@ -33,7 +33,7 @@ import Snarky.Circuit.RandomOracle.Sponge (Sponge)
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 
 -- | `wrapVkChunks` is the wrap VK's own chunk count (Dim 2) — this is
 -- | the step circuit consuming the wrap VK's per-commitment chunks.
@@ -61,7 +61,7 @@ hashMessagesForNextStepProofOpt
   -> Snarky (KimchiConstraint f) t m { digest :: FVar f, spongeAfterIndex :: Sponge (FVar f) }
 hashMessagesForNextStepProofOpt { vkComms, appStateFields, proofs } = do
   let
-    absorbPt s { x, y } = do
+    absorbPt s (AffinePoint { x, y }) = do
       s1 <- Sponge.absorb x s
       Sponge.absorb y s1
     absorbChunks s = foldM absorbPt s <<< unwrap
@@ -81,8 +81,8 @@ hashMessagesForNextStepProofOpt { vkComms, appStateFields, proofs } = do
     -- 3. Switch to opt_sponge for masked sg + bp_challenges (one per proof)
     Tuple msg _ <- label "msg_hash_opt" $ OptSponge.runOptSpongeFromSponge s1 do
       for_ proofs \proof -> do
-        OptSponge.optAbsorb (Tuple proof.mask proof.sg.x)
-        OptSponge.optAbsorb (Tuple proof.mask proof.sg.y)
+        OptSponge.optAbsorb (Tuple proof.mask (unwrap proof.sg).x)
+        OptSponge.optAbsorb (Tuple proof.mask (unwrap proof.sg).y)
         for_ proof.rawChallenges \c ->
           OptSponge.optAbsorb (Tuple proof.mask c)
       OptSponge.optSqueeze
@@ -140,7 +140,7 @@ hashMessagesForNextStepProofPure
 hashMessagesForNextStepProofPure { stepVk, appState, proofs } =
   let
     ptFields :: AffinePoint f -> Array f
-    ptFields pt = [ pt.x, pt.y ]
+    ptFields (AffinePoint pt) = [ pt.x, pt.y ]
 
     -- Flatten chunks: each commitment contributes `2 * wrapVkChunks` fields.
     chunkedFields :: ChunkedCommitment wrapVkChunks (AffinePoint f) -> Array f
@@ -213,10 +213,10 @@ hashMessagesForNextStepProofPureTraced inp@{ stepVk, appState, proofs } = do
     traceChunks :: String -> ChunkedCommitment wrapVkChunks (AffinePoint f) -> Effect Unit
     traceChunks lbl cc =
       case Vector.toUnfoldable (unwrap cc) of
-        [ pt ] -> do
+        [ AffinePoint pt ] -> do
           Trace.field (lbl <> ".x") pt.x
           Trace.field (lbl <> ".y") pt.y
-        cs -> forWithIndex_ cs \j pt -> do
+        cs -> forWithIndex_ cs \j (AffinePoint pt) -> do
           Trace.field (lbl <> "." <> show j <> ".x") pt.x
           Trace.field (lbl <> "." <> show j <> ".y") pt.y
   -- sigma_comm: 7 chunked commitments
@@ -237,8 +237,8 @@ hashMessagesForNextStepProofPureTraced inp@{ stepVk, appState, proofs } = do
     Trace.field ("msgForNextStep.app_state." <> show i) v
   -- per-proof sg + bp_challenges
   forWithIndex_ (Array.fromFoldable proofs) \i p -> do
-    Trace.field ("msgForNextStep.prev." <> show i <> ".sg.x") p.sg.x
-    Trace.field ("msgForNextStep.prev." <> show i <> ".sg.y") p.sg.y
+    Trace.field ("msgForNextStep.prev." <> show i <> ".sg.x") (unwrap p.sg).x
+    Trace.field ("msgForNextStep.prev." <> show i <> ".sg.y") (unwrap p.sg).y
     forWithIndex_ p.expandedBpChallenges \fj c ->
       Trace.field ("msgForNextStep.prev." <> show i <> ".bp_chal." <> show (getFinite fj)) c
   let digest = hashMessagesForNextStepProofPure inp

@@ -41,7 +41,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (fromInt, generator, toAffine)
 import Snarky.Curves.Pasta (PallasG)
-import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
+import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (Type1(..))
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
@@ -93,12 +93,12 @@ sideLoadedChildRule _ appState = do
   --     (`Plonk_curve_ops.Make(Step.Impl)(Step_main_inputs.Inner_curve).scale_fast`).
   --     PS counterpart: `scaleFast1 @nChunks @bitsUsed g (Type1 x)` with
   --     `Mul 5 nChunks bitsUsed` ⇒ for `~num_bits:5` use `@1 @5`.
-  _ <- scaleFast1 @1 @5 g (Type1 x)
-  _ <- scaleFast1 @1 @5 g (Type1 x)
+  _ <- scaleFast1 @1 @5 (AffinePoint g) (Type1 x)
+  _ <- scaleFast1 @1 @5 (AffinePoint g) (Type1 x)
   -- (5) `Step_verifier.Scalar_challenge.endo g ~num_bits:4 (SC.create x)`.
   --     Parameterized `endo @nBits @rows` (Mul 4 rows nBits) — for
   --     num_bits=4 use `@4 @1` (a single 4-bit chunk).
-  _ <- endo @4 @1 g (unsafeCoerce x :: SizedF 4 (FVar StepField))
+  _ <- endo @4 @1 (AffinePoint g) (unsafeCoerce x :: SizedF 4 (FVar StepField))
 
   -- `StepField.Assert.equal self StepField.zero`
   assertEqual_ appState (const_ zero)

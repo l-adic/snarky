@@ -40,7 +40,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (curveParams)
 import Snarky.Curves.Pasta (PallasG)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
 type StepVerifyN2Params =
@@ -57,10 +57,10 @@ stepVerifyN2Circuit
 stepVerifyN2Circuit { lagrangeAt, blindingH } inputs = do
   let
     at = unsafeIdx inputs
-    readPt i = { x: at i, y: at (i + 1) }
+    readPt i = AffinePoint { x: at i, y: at (i + 1) }
     readOtherField i = Type2 (SplitField { sDiv2: at i, sOdd: coerce (at (i + 1)) })
 
-    constDummyPt = let { x: F x', y: F y' } = dummyPallasPt in { x: const_ x', y: const_ y' }
+    constDummyPt = let AffinePoint { x: F x', y: F y' } = dummyPallasPt in AffinePoint { x: const_ x', y: const_ y' }
 
     -- Parse wrap_proof (0-113) — same as N0
     wComm :: Vector 15 (AffinePoint (FVar StepField))

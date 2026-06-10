@@ -31,7 +31,7 @@ import RandomOracle.Sponge (Sponge)
 import Snarky.Circuit.DSL (class CircuitM, FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 
 -- | General pure version of OCaml `Wrap_hack.hash_messages_for_next_wrap_proof`
 -- | (`mina/src/lib/crypto/pickles/wrap_hack.ml:46-59`).
@@ -49,7 +49,7 @@ hashMessagesForNextWrapProofPureGeneral
      , paddedChallenges :: Vector n (Vector d f)
      }
   -> f
-hashMessagesForNextWrapProofPureGeneral { sg, paddedChallenges } =
+hashMessagesForNextWrapProofPureGeneral { sg: AffinePoint sg, paddedChallenges } =
   let
     outer = Vector.toUnfoldable paddedChallenges
 
@@ -69,7 +69,7 @@ hashMessagesForNextWrapProofCircuit'
      , allChallenges :: outer (Vector d (FVar f))
      }
   -> SpongeM f (KimchiConstraint f) t m (FVar f)
-hashMessagesForNextWrapProofCircuit' { sg, allChallenges } = labelM "hash-messages-for-next-wrap-proof" do
+hashMessagesForNextWrapProofCircuit' { sg: AffinePoint sg, allChallenges } = labelM "hash-messages-for-next-wrap-proof" do
   -- Absorb all challenge vectors in order (flattened)
   for_ allChallenges \chals ->
     Pickles.Sponge.absorbMany chals

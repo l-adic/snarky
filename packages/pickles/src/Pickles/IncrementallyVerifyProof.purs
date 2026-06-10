@@ -54,7 +54,7 @@ import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (GroupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve)
-import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
+import Snarky.Data.EllipticCurve (AffinePoint(..), CurveParams)
 
 -------------------------------------------------------------------------------
 -- | Types
@@ -255,7 +255,7 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
         -- in chunk order (mirrors OCaml `Plonk_verification_key_evals
         -- .to_field_elements`'s flat traversal).
         let
-          absorbPt { x, y } = do
+          absorbPt (AffinePoint { x, y }) = do
             Sponge.absorb x
             Sponge.absorb y
           absorbChunks cc = for_ (unwrap cc) absorbPt
@@ -287,7 +287,7 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
       -- index); for nc=1 this collapses to one entry. To preserve the
       -- legacy single-chunk trace key the i=0 entry is named without an
       -- index suffix (matching OCaml's wrap_verifier.ml:1037 comment).
-      liftSnarky $ forWithIndex_ xHat \fi pt -> do
+      liftSnarky $ forWithIndex_ xHat \fi (AffinePoint pt) -> do
         let i = getFinite fi
         if i == 0 then do
           ivpTrace "ivp.trace.wrap.xhat.x" pt.x
@@ -296,12 +296,12 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
           ivpTrace ("ivp.trace.wrap.xhat." <> show i <> ".x") pt.x
           ivpTrace ("ivp.trace.wrap.xhat." <> show i <> ".y") pt.y
       liftSnarky do
-        forWithIndex_ input.sgOld \fi pt -> do
+        forWithIndex_ input.sgOld \fi (AffinePoint pt) -> do
           let i = getFinite fi
           ivpTrace ("ivp.trace.wrap.sg_old." <> show i <> ".x") pt.x
           ivpTrace ("ivp.trace.wrap.sg_old." <> show i <> ".y") pt.y
         forWithIndex_ input.wComm \fi cc ->
-          forWithIndex_ (unwrap cc) \fj pt -> do
+          forWithIndex_ (unwrap cc) \fj (AffinePoint pt) -> do
             let i = getFinite fi
             let j = getFinite fj
             ivpTrace ("ivp.trace.wrap.w_comm." <> show i <> "." <> show j <> ".x") pt.x
@@ -318,11 +318,11 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
       liftSnarky $ ivpTrace "ivp.trace.index_digest" indexDigest
       labelM "ivp_absorb_index_digest" $ Sponge.absorb indexDigest
       labelM "ivp_absorb_sg_old" do
-        liftSnarky $ forWithIndex_ input.sgOld \fi pt -> do
+        liftSnarky $ forWithIndex_ input.sgOld \fi (AffinePoint pt) -> do
           let i = getFinite fi
           ivpTrace ("ivp.trace.sg_old." <> show i <> ".x") pt.x
           ivpTrace ("ivp.trace.sg_old." <> show i <> ".y") pt.y
-        for_ input.sgOld \pt -> do
+        for_ input.sgOld \(AffinePoint pt) -> do
           labelM "ivp_sg_x" $ Sponge.absorb pt.x
           labelM "ivp_sg_y" $ Sponge.absorb pt.y
       -- Compute x_hat
@@ -331,7 +331,7 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
       -- being verified is a wrap proof, and wrap's lagrange basis fits
       -- in 1 chunk by default, so xHat is `Vector 1` here and this
       -- collapses to the legacy single-point absorb.
-      liftSnarky $ forWithIndex_ xHat \fi pt -> do
+      liftSnarky $ forWithIndex_ xHat \fi (AffinePoint pt) -> do
         let i = getFinite fi
         if i == 0 then do
           ivpTrace "ivp.trace.xhat.x" pt.x
@@ -343,7 +343,7 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
       -- squeeze beta/gamma, etc. step_verifier.ml:551-568.
       for_ xHat Sponge.absorbPoint
       liftSnarky $ forWithIndex_ input.wComm \fi cc ->
-        forWithIndex_ (unwrap cc) \fj pt -> do
+        forWithIndex_ (unwrap cc) \fj (AffinePoint pt) -> do
           let i = getFinite fi
           let j = getFinite fj
           ivpTrace ("ivp.trace.w_comm." <> show i <> "." <> show j <> ".x") pt.x
@@ -355,7 +355,7 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
       gamma <- Sponge.squeezeScalarChallenge endoParams
       liftSnarky $ ivpTrace "ivp.trace.gamma_squeezed" (SizedF.toField gamma)
       -- z_comm: receive (per-chunk)
-      liftSnarky $ forWithIndex_ (unwrap input.zComm) \fj pt -> do
+      liftSnarky $ forWithIndex_ (unwrap input.zComm) \fj (AffinePoint pt) -> do
         let j = getFinite fj
         ivpTrace ("ivp.trace.zcomm." <> show j <> ".x") pt.x
         ivpTrace ("ivp.trace.zcomm." <> show j <> ".y") pt.y
@@ -364,7 +364,7 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
       alphaChal <- Sponge.squeezeScalar endoParams
       liftSnarky $ ivpTrace "ivp.trace.alpha_squeezed" (SizedF.toField alphaChal)
       -- t_comm: receive
-      liftSnarky $ forWithIndex_ input.tComm \fi pt -> do
+      liftSnarky $ forWithIndex_ input.tComm \fi (AffinePoint pt) -> do
         let i = getFinite fi
         ivpTrace ("ivp.trace.tcomm." <> show i <> ".x") pt.x
         ivpTrace ("ivp.trace.tcomm." <> show i <> ".y") pt.y
@@ -468,7 +468,7 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
 
   where
   constPt :: AffinePoint (F f) -> AffinePoint (FVar f)
-  constPt { x: F x', y: F y' } = { x: const_ x', y: const_ y' }
+  constPt (AffinePoint { x: F x', y: F y' }) = AffinePoint { x: const_ x', y: const_ y' }
 
 -------------------------------------------------------------------------------
 -- | packStatement (Spec.pack + to_data for WrapStatement)

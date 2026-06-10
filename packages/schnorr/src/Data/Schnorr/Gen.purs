@@ -23,7 +23,7 @@ import Snarky.Circuit.DSL.Bits (unpackPure)
 import Snarky.Curves.Class (fromBigInt, generator, scalarMul, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen)
 import Type.Proxy (Proxy(..))
@@ -34,11 +34,11 @@ import Type.Proxy (Proxy(..))
 -- | decomposition of the Pallas-scalar `s` (Booleans).
 type VerifyInput n a =
   { signature ::
-      { r :: a
+      { r :: F a
       , sBits :: Vector 255 Boolean
       }
   , publicKey :: AffinePoint a
-  , message :: Vector n a
+  , message :: Vector n (F a)
   }
 
 -- | Generate a verifying Schnorr signature for QuickCheck. The nonce is
@@ -56,7 +56,7 @@ genValidSignature
   => Vector 3 Pallas.BaseField
   -> Proxy PallasG
   -> Proxy n
-  -> Gen (VerifyInput n (F Pallas.BaseField))
+  -> Gen (VerifyInput n Pallas.BaseField)
 genValidSignature spongePrefix _pg _pn = do
   privateKey :: Pallas.ScalarField <- arbitrary
   message :: Vector n Pallas.BaseField <- Vector.generateA (const arbitrary)
@@ -77,6 +77,6 @@ genValidSignature spongePrefix _pg _pn = do
     sBits = unpackPure sScalar (Proxy @255)
   pure
     { signature: { r: F r, sBits }
-    , publicKey: { x: F publicKey.x, y: F publicKey.y }
+    , publicKey: AffinePoint publicKey
     , message: map F message
     }

@@ -157,7 +157,7 @@ set (MerkleTree t) (Address a) v =
 newtype Path d hash = Path (Vector d hash)
 
 derive instance Generic (Path d hash) _
-
+derive instance Newtype (Path d hash) _
 derive instance Functor (Path d)
 
 instance (Reflectable d Int, CircuitType f hash hashvar) => CircuitType f (Path d hash) (Path d hashvar) where

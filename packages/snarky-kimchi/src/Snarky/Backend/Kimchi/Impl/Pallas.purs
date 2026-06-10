@@ -7,7 +7,7 @@ import Effect (Effect)
 import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, GateWires, ProverIndex, VerifierIndex)
 import Snarky.Curves.Pallas as Pallas
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 
 -- Create a new circuit gate with the given gate kind, wires, and coefficients
 foreign import pallasCircuitGateNew :: String -> GateWires -> Array Pallas.ScalarField -> Gate Pallas.ScalarField
@@ -52,7 +52,7 @@ pallasSrsBPolyCommitmentPoint srs chals =
     xs = pallasSrsBPolyCommitment srs chals
   in
     case Array.index xs 0, Array.index xs 1 of
-      Just x, Just y -> { x, y }
+      Just x, Just y -> AffinePoint { x, y }
       _, _ -> unsafeCrashWith
         "pallasSrsBPolyCommitmentPoint: FFI returned unexpected length (must be [x, y])"
 

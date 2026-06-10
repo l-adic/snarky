@@ -34,6 +34,7 @@ import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertAny_, const_, equals_, exists, not_)
 import Snarky.Curves.Class (fromInt)
+import Test.Pickles.SerializeRoundTrip (mkWidthDummies, roundTripAndVerify)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -104,6 +105,12 @@ spec = describe "Pickles.Prove.SimpleChain" do
 
     let BranchProver chainProver = fst output.provers
 
+    -- Every recursive prev is round-tripped through SerializeProof
+    -- (toSerializable → reconstruct); a faithful reconstruction leaves the
+    -- downstream proofs unchanged, so the verify + statement assertions below
+    -- double as the round-trip correctness check.
+    let dummies = mkWidthDummies pallasSrs vestaSrs
+
     let
       runStep
         :: PrevSlot (F StepField) 1 (StatementIO (F StepField) Unit)
@@ -121,14 +128,18 @@ spec = describe "Pickles.Prove.SimpleChain" do
 
     logInfo "[SimpleChain] proving [step0, wrap0]"
     b0 <- withSpan "[SimpleChain] prove b0" $ liftAff $ runStep basePrev (F zero)
+    b0' <- roundTripAndVerify dummies output.verifier b0
     logInfo "[SimpleChain] proving [step1, wrap1]"
-    b1 <- withSpan "[SimpleChain] prove b1" $ liftAff $ runStep (InductivePrev b0 output.tag) (F one)
+    b1 <- withSpan "[SimpleChain] prove b1" $ liftAff $ runStep (InductivePrev b0' output.tag) (F one)
+    b1' <- roundTripAndVerify dummies output.verifier b1
     logInfo "[SimpleChain] proving [step2, wrap2]"
-    b2 <- withSpan "[SimpleChain] prove b2" $ liftAff $ runStep (InductivePrev b1 output.tag) (F (fromInt 2 :: StepField))
+    b2 <- withSpan "[SimpleChain] prove b2" $ liftAff $ runStep (InductivePrev b1' output.tag) (F (fromInt 2 :: StepField))
+    b2' <- roundTripAndVerify dummies output.verifier b2
     logInfo "[SimpleChain] proving [step3, wrap3]"
-    b3 <- withSpan "[SimpleChain] prove b3" $ liftAff $ runStep (InductivePrev b2 output.tag) (F (fromInt 3 :: StepField))
+    b3 <- withSpan "[SimpleChain] prove b3" $ liftAff $ runStep (InductivePrev b2' output.tag) (F (fromInt 3 :: StepField))
+    b3' <- roundTripAndVerify dummies output.verifier b3
     logInfo "[SimpleChain] proving [step4, wrap4]"
-    b4 <- withSpan "[SimpleChain] prove b4" $ liftAff $ runStep (InductivePrev b3 output.tag) (F (fromInt 4 :: StepField))
+    b4 <- withSpan "[SimpleChain] prove b4" $ liftAff $ runStep (InductivePrev b3' output.tag) (F (fromInt 4 :: StepField))
 
     logInfo "[SimpleChain] verifying 5-proof chain…"
     verifyBatch output.verifier (map toVerifiable [ b0, b1, b2, b3, b4 ]) `shouldEqual` true

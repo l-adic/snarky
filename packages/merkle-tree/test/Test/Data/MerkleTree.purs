@@ -10,6 +10,7 @@ import Data.List ((:))
 import Data.List as List
 import Data.List.Types (NonEmptyList(..))
 import Data.Maybe (Maybe(..), fromJust)
+import Data.MerkleTree (class Hashable)
 import Data.MerkleTree as MT
 import Data.NonEmpty (NonEmpty(..))
 import Data.Tuple (Tuple(..))
@@ -17,7 +18,6 @@ import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (F)
 import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -62,20 +62,20 @@ spec = describe "Dynamic MerkleTree Property Laws" do
       for_ (Array.range 2 4) \depth ->
         quickCheckGen $ setInvalidAddressLaw depth
 
-canRecoverElementsAddMany :: forall f. PoseidonField f => Proxy f -> NonEmptyList (F f) -> Result
+canRecoverElementsAddMany :: forall f. PoseidonField f => Hashable f f => Proxy f -> NonEmptyList f -> Result
 canRecoverElementsAddMany _ expected@(NonEmptyList (NonEmpty a as)) =
   let
-    base :: MT.MerkleTree (Digest (F f)) (F f)
+    base :: MT.MerkleTree (Digest f) f
     base = MT.create a
     mt = MT.addMany base (List.fromFoldable as)
     elems = MT.toUnfoldable mt
   in
     Array.fromFoldable expected === elems
 
-canRecoverElementsAdd :: forall f. PoseidonField f => Proxy f -> NonEmptyList (F f) -> Result
+canRecoverElementsAdd :: forall f. PoseidonField f => Hashable f f => Proxy f -> NonEmptyList f -> Result
 canRecoverElementsAdd _ expected@(NonEmptyList (NonEmpty a as)) =
   let
-    base :: MT.MerkleTree (Digest (F f)) (F f)
+    base :: MT.MerkleTree (Digest f) f
     base = MT.create a
     mt = foldl MT.add_ base as
     elems = MT.toUnfoldable mt
@@ -83,10 +83,10 @@ canRecoverElementsAdd _ expected@(NonEmptyList (NonEmpty a as)) =
     Array.fromFoldable expected === elems
 
 -- Path validation law: For any element in the tree, its path should validate against the root
-pathValidationLaw :: forall f. PoseidonField f => Proxy f -> NonEmptyList (F f) -> Result
+pathValidationLaw :: forall f. PoseidonField f => Hashable f f => Proxy f -> NonEmptyList f -> Result
 pathValidationLaw _ (NonEmptyList (NonEmpty a as)) =
   let
-    base :: MT.MerkleTree (Digest (F f)) (F f)
+    base :: MT.MerkleTree (Digest f) f
     base = MT.create a
     mt = MT.addMany base (List.fromFoldable as)
     rootHash = MT.root mt
@@ -118,13 +118,13 @@ pathValidationLaw _ (NonEmptyList (NonEmpty a as)) =
 depthExpansionLaw :: Int -> Gen Result
 depthExpansionLaw targetDepth = do
   -- Generate exactly 2^d elements to fill tree to capacity
-  vs <- vectorOf (2 `pow` targetDepth) (arbitrary @(F Pallas.ScalarField))
-  extraElement <- arbitrary @(F Pallas.ScalarField)
+  vs <- vectorOf (2 `pow` targetDepth) (arbitrary @Pallas.ScalarField)
+  extraElement <- arbitrary @Pallas.ScalarField
   let
     nea = unsafePartial $ fromJust $ NEA.fromArray vs
     { head: a, tail: as } = NEA.uncons nea
 
-    base :: MT.MerkleTree (Digest (F Pallas.ScalarField)) (F Pallas.ScalarField)
+    base :: MT.MerkleTree (Digest Pallas.ScalarField) Pallas.ScalarField
     base = MT.create a
     fullTree = MT.addMany base (List.fromFoldable as)
     depthBefore = MT.depth fullTree
@@ -136,14 +136,14 @@ depthExpansionLaw targetDepth = do
 setGetLaw :: Int -> Gen Result
 setGetLaw depth = do
   let numElements = 2 `pow` depth
-  vs <- vectorOf numElements (arbitrary @(F Pallas.ScalarField))
+  vs <- vectorOf numElements (arbitrary @Pallas.ScalarField)
   setIndex <- chooseInt 0 (numElements - 1)
-  newValue <- arbitrary @(F Pallas.ScalarField)
+  newValue <- arbitrary @Pallas.ScalarField
   let
     nea = unsafePartial $ fromJust $ NEA.fromArray vs
     { head: a, tail: as } = NEA.uncons nea
 
-    base :: MT.MerkleTree (Digest (F Pallas.ScalarField)) (F Pallas.ScalarField)
+    base :: MT.MerkleTree (Digest Pallas.ScalarField) Pallas.ScalarField
     base = MT.create a
     mt = MT.addMany base (List.fromFoldable as)
     addr = MT.Address (BigInt.fromInt setIndex)
@@ -157,18 +157,18 @@ setGetLaw depth = do
 setPreservesOthersLaw :: Int -> Gen Result
 setPreservesOthersLaw depth = do
   let numElements = 2 `pow` depth
-  vs <- vectorOf numElements (arbitrary @(F Pallas.ScalarField))
+  vs <- vectorOf numElements (arbitrary @Pallas.ScalarField)
   setIndex <- chooseInt 0 (numElements - 1)
-  newValue <- arbitrary @(F Pallas.ScalarField)
+  newValue <- arbitrary @Pallas.ScalarField
   let
     nea = unsafePartial $ fromJust $ NEA.fromArray vs
     { head: a, tail: as } = NEA.uncons nea
 
-    base :: MT.MerkleTree (Digest (F Pallas.ScalarField)) (F Pallas.ScalarField)
+    base :: MT.MerkleTree (Digest Pallas.ScalarField) Pallas.ScalarField
     base = MT.create a
     mt = MT.addMany base (List.fromFoldable as)
 
-    originalElems :: Array (F Pallas.ScalarField)
+    originalElems :: Array Pallas.ScalarField
     originalElems = MT.toUnfoldable mt
     expectedElems = Array.modifyAt setIndex (const newValue) originalElems
   pure $ case Tuple (MT.set mt (MT.Address (BigInt.fromInt setIndex)) newValue) expectedElems of
@@ -176,7 +176,7 @@ setPreservesOthersLaw depth = do
     Tuple _ Nothing -> withHelp false "modifyAt returned Nothing"
     Tuple (Just mt') (Just expected) ->
       let
-        actual :: Array (F Pallas.ScalarField)
+        actual :: Array Pallas.ScalarField
         actual = MT.toUnfoldable mt'
       in
         actual === expected
@@ -185,14 +185,14 @@ setPreservesOthersLaw depth = do
 setUpdatesRootLaw :: Int -> Gen Result
 setUpdatesRootLaw depth = do
   let numElements = 2 `pow` depth
-  vs <- vectorOf numElements (arbitrary @(F Pallas.ScalarField))
+  vs <- vectorOf numElements (arbitrary @Pallas.ScalarField)
   setIndex <- chooseInt 0 (numElements - 1)
-  newValue <- arbitrary @(F Pallas.ScalarField)
+  newValue <- arbitrary @Pallas.ScalarField
   let
     nea = unsafePartial $ fromJust $ NEA.fromArray vs
     { head: a, tail: as } = NEA.uncons nea
 
-    base :: MT.MerkleTree (Digest (F Pallas.ScalarField)) (F Pallas.ScalarField)
+    base :: MT.MerkleTree (Digest Pallas.ScalarField) Pallas.ScalarField
     base = MT.create a
     mt = MT.addMany base (List.fromFoldable as)
     addr = MT.Address (BigInt.fromInt setIndex)
@@ -219,15 +219,15 @@ setInvalidAddressLaw depth = do
   let maxElements = 2 `pow` depth
   -- Generate a tree with 1 to maxElements-2 elements (leaving at least 2 empty slots)
   numElements <- chooseInt 1 (maxElements - 2)
-  vs <- vectorOf numElements (arbitrary @(F Pallas.ScalarField))
+  vs <- vectorOf numElements (arbitrary @Pallas.ScalarField)
   -- Pick an invalid index: one that's beyond current size but within capacity
   invalidIndex <- chooseInt numElements (maxElements - 1)
-  newValue <- arbitrary @(F Pallas.ScalarField)
+  newValue <- arbitrary @Pallas.ScalarField
   let
     nea = unsafePartial $ fromJust $ NEA.fromArray vs
     { head: a, tail: as } = NEA.uncons nea
 
-    base :: MT.MerkleTree (Digest (F Pallas.ScalarField)) (F Pallas.ScalarField)
+    base :: MT.MerkleTree (Digest Pallas.ScalarField) Pallas.ScalarField
     base = MT.create a
     mt = MT.addMany base (List.fromFoldable as)
     addr = MT.Address (BigInt.fromInt invalidIndex)

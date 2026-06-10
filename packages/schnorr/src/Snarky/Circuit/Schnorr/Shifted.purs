@@ -42,7 +42,7 @@ import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (add_, scale_) as CVar
 import Snarky.Circuit.Curves (double, negate) as Curves
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, and_, assertSquare_, const_, exists, if_, mul_, square_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, and_, assertSquare_, const_, exists, if_, mul_, square_)
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Types (Bool(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -51,7 +51,7 @@ import Snarky.Curves.Class (class WeierstrassCurve, curveParams, fromAffine, gen
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
+import Snarky.Data.EllipticCurve (AffinePoint(..), CurveParams)
 import Type.Proxy (Proxy(..))
 
 -- | Shifted accumulator. The wrapped point is `shift + (partial
@@ -94,7 +94,7 @@ assertOnCurveConst
   => CurveParams f
   -> AffinePoint (FVar f)
   -> Snarky c t m Unit
-assertOnCurveConst { a, b } { x, y } = do
+assertOnCurveConst { a, b } (AffinePoint { x, y }) = do
   x2 <- square_ x
   x3 <- mul_ x2 x
   let
@@ -114,7 +114,7 @@ createShifted
   -> AffinePoint f
   -> Snarky (KimchiConstraint f) t m (ShiftedOps f t m)
 createShifted curveParams shiftConst = do
-  shift <- exists $ pure { x: F shiftConst.x, y: F shiftConst.y }
+  shift <- exists $ pure shiftConst
   assertOnCurveConst curveParams shift
   let
     zero :: Shifted f
@@ -135,10 +135,10 @@ createShifted curveParams shiftConst = do
     -- PS's record IfThenElse processes fields in reverse (snd first)
     -- for general OCaml compatibility, so we inline the x-then-y
     -- order here to keep wires aligned with production.
-    ifS b (Shifted t1) (Shifted t2) = do
+    ifS b (Shifted (AffinePoint t1)) (Shifted (AffinePoint t2)) = do
       x <- if_ @f b t1.x t2.x
       y <- if_ @f b t1.y t2.y
-      pure (Shifted { x, y })
+      pure (Shifted (AffinePoint { x, y }))
 
     -- OCaml `unshift_nonzero shifted = add_exn (negate shift) shifted`
     -- — negShift is FIRST arg, shifted SECOND. add_exn → add_fast under
@@ -158,7 +158,7 @@ shiftFor
   => Semigroup g
   => g
   -> AffinePoint f
-shiftFor g = unsafePartial fromJust $ C.toAffine (g <> g)
+shiftFor g = AffinePoint (unsafePartial fromJust $ C.toAffine (g <> g))
 
 -- | Ready-to-use shifted scalar-mul ops for the Pallas curve (point
 -- | coordinates in `Pallas.BaseField`), with the curve params and a
@@ -229,7 +229,7 @@ lookupPoint
      , t4 :: AffinePoint f
      }
   -> Snarky c t m (AffinePoint (FVar f))
-lookupPoint (Tuple b0 b1) { t1, t2, t3, t4 } = do
+lookupPoint (Tuple b0 b1) { t1: AffinePoint t1, t2: AffinePoint t2, t3: AffinePoint t3, t4: AffinePoint t4 } = do
   b0AndB1 <- and_ b0 b1
   let
     lookupOne a1 a2 a3 a4 =
@@ -239,7 +239,7 @@ lookupPoint (Tuple b0 b1) { t1, t2, t3, t4 } = do
                 (CVar.scale_ (a4 + a1 - a2 - a3) (coerce b0AndB1 :: FVar f))
             )
         )
-  pure
+  pure $ AffinePoint
     { x: lookupOne t1.x t2.x t3.x t4.x
     , y: lookupOne t1.y t2.y t3.y t4.y
     }
@@ -254,12 +254,12 @@ lookupSingleBit
   => BoolVar f
   -> { t1 :: AffinePoint f, t2 :: AffinePoint f }
   -> AffinePoint (FVar f)
-lookupSingleBit b { t1, t2 } =
+lookupSingleBit b { t1: AffinePoint t1, t2: AffinePoint t2 } =
   let
     lookupOne a1 a2 =
       CVar.add_ (const_ a1) (CVar.scale_ (a2 - a1) (coerce b :: FVar f))
   in
-    { x: lookupOne t1.x t2.x, y: lookupOne t1.y t2.y }
+    AffinePoint { x: lookupOne t1.x t2.x, y: lookupOne t1.y t2.y }
 
 -- | Fixed-base scalar multiplication for a constant point `t`.
 -- | Direct port of `Snarky_curves.Make_weierstrass_checked.scale_known`
@@ -291,7 +291,7 @@ scaleKnown
 scaleKnown ops t bits init = do
   let
     sigma :: AffinePoint f
-    sigma = unsafePartial fromJust $ C.toAffine t
+    sigma = AffinePoint (unsafePartial fromJust $ C.toAffine t)
     -- LSB-first bit list
     bs = List.fromFoldable (Vector.toUnfoldable bits :: Array (BoolVar f))
     n = List.length bs
@@ -305,13 +305,13 @@ scaleKnown ops t bits init = do
         sPlusI = s <> twoToI
         sPlusIp1 = s <> twoToIPlus1
         sPlusBoth = s <> twoToI <> twoToIPlus1
-        affine p = unsafePartial fromJust (C.toAffine p)
+        affine p = AffinePoint (unsafePartial fromJust (C.toAffine p))
       in
         { t1: affine s, t2: affine sPlusI, t3: affine sPlusIp1, t4: affine sPlusBoth }
     go acc twoToI = case _ of
       List.Nil -> pure acc
       List.Cons bi List.Nil -> do
-        let term = lookupSingleBit bi { t1: sigma, t2: unsafePartial fromJust (C.toAffine (t <> twoToI)) }
+        let term = lookupSingleBit bi { t1: sigma, t2: AffinePoint (unsafePartial fromJust (C.toAffine (t <> twoToI))) }
         ops.add acc term
       List.Cons bi (List.Cons biPlus1 rest) -> do
         let
@@ -328,7 +328,7 @@ scaleKnown ops t bits init = do
     negSigmaPt :: g
     negSigmaPt =
       let
-        s = sigma
+        AffinePoint s = sigma
       in
         C.fromAffine { x: s.x, y: zero - s.y }
 
@@ -337,7 +337,7 @@ scaleKnown ops t bits init = do
     unshiftAffine = unsafePartial fromJust (C.toAffine unshiftPt)
 
     unshiftConstVar :: AffinePoint (FVar f)
-    unshiftConstVar = { x: const_ unshiftAffine.x, y: const_ unshiftAffine.y }
+    unshiftConstVar = AffinePoint { x: const_ unshiftAffine.x, y: const_ unshiftAffine.y }
   ops.add resultWithShift unshiftConstVar
 
 -- | Naive Int-scaled group operation via double-and-add. Works for any

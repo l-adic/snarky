@@ -23,6 +23,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (curveParams)
 import Snarky.Curves.Pasta (VestaG)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
 type N = 1
@@ -37,9 +38,9 @@ wrapVerifyCircuit
 wrapVerifyCircuit { lagrangeAt, blindingH } inputs = do
   let
     at = unsafeIdx inputs
-    readPt i = { x: at i, y: at (i + 1) }
+    readPt i = AffinePoint { x: at i, y: at (i + 1) }
     ivpInput = parseIvpWrapInput (Vector.take inputs)
-    constDummyPt = let { x: F x', y: F y' } = dummyVestaPt in { x: const_ x', y: const_ y' }
+    constDummyPt = let AffinePoint { x: F x', y: F y' } = dummyVestaPt in AffinePoint { x: const_ x', y: const_ y' }
 
     ivpParams =
       { curveParams: curveParams (Proxy @VestaG)

@@ -24,7 +24,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (generator, toAffine)
 import Snarky.Curves.Pasta (PallasG)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
 type FtcommStepInput f =
@@ -38,7 +38,7 @@ parseFtcommStepInput :: Vector 20 (FVar StepField) -> FtcommStepInput StepField
 parseFtcommStepInput inputs =
   let
     at = unsafeIdx inputs
-    readPt i = { x: at i, y: at (i + 1) }
+    readPt i = AffinePoint { x: at i, y: at (i + 1) }
     readOtherField i = Type2 (SplitField { sDiv2: at i, sOdd: coerce (at (i + 1)) })
   in
     { tComm: Vector.generate \j -> readPt (2 * getFinite j)
@@ -55,7 +55,7 @@ ftcommStepCircuit
 ftcommStepCircuit input =
   let
     g = unsafePartial $ fromJust $ toAffine (generator :: PallasG)
-    sigmaLast = Vector.singleton { x: const_ g.x, y: const_ g.y }
+    sigmaLast = Vector.singleton (AffinePoint { x: const_ g.x, y: const_ g.y })
   in
     FtComm.ftComm StepOtherField.ipaScalarOps
       { sigmaLast

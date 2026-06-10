@@ -10,7 +10,7 @@ import Prelude
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, UnChecked(..), addConstraint, assertEqual_, assertSquare_, const_, div_, exists, mul_, negate_, pow_, r1cs, readCVar, scale_, square_, sub_)
 import Snarky.Circuit.DSL as Snarky
 import Snarky.Curves.Class (class PrimeField, fromInt)
-import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
+import Snarky.Data.EllipticCurve (AffinePoint(..), CurveParams)
 
 assertOnCurve
   :: forall f c t m
@@ -19,7 +19,7 @@ assertOnCurve
   => CurveParams (FVar f)
   -> AffinePoint (FVar f)
   -> Snarky c t m Unit
-assertOnCurve { a, b } { x, y } = do
+assertOnCurve { a, b } (AffinePoint { x, y }) = do
   rhs <- (x `pow_` 3) + (a `mul_` x) + (pure b)
   y2 <- mul_ y y
   assertEqual_ y2 rhs
@@ -29,8 +29,8 @@ negate
    . CircuitM f c t m
   => AffinePoint (FVar f)
   -> Snarky c t m (AffinePoint (FVar f))
-negate { x, y } = do
-  pure { x, y: negate_ y }
+negate (AffinePoint { x, y }) = do
+  pure (AffinePoint { x, y: negate_ y })
 
 -- N.B. This function is unsafe, if the x value is the same for both points
 -- bad things can happen, i.e.
@@ -43,7 +43,7 @@ add_
   => AffinePoint (FVar f)
   -> AffinePoint (FVar f)
   -> Snarky c t m (AffinePoint (FVar f))
-add_ { x: ax, y: ay } { x: bx, y: by } = do
+add_ (AffinePoint { x: ax, y: ay }) (AffinePoint { x: bx, y: by }) = do
   lambda <- div_ (sub_ by ay) (sub_ bx ax)
 
   UnChecked cx <- exists do
@@ -67,7 +67,7 @@ add_ { x: ax, y: ay } { x: bx, y: by } = do
     , output: Snarky.add_ cy ay
     }
 
-  pure { x: cx, y: cy }
+  pure (AffinePoint { x: cx, y: cy })
 
 double
   :: forall f c t m
@@ -84,7 +84,7 @@ double
 -- |   2. `assert_r1cs (2λ) ay (3x² + a)` (R1CS gate)
 -- |   3. `assert_square λ (bx + 2ax)` (Square gate)
 -- |   4. `assert_r1cs λ (ax - bx) (by + ay)` (R1CS gate)
-double { a } { x: ax, y: ay } = do
+double { a } (AffinePoint { x: ax, y: ay }) = do
   xSquared <- square_ ax
 
   lambda <- exists do
@@ -120,4 +120,4 @@ double { a } { x: ax, y: ay } = do
     , output: Snarky.add_ by ay
     }
 
-  pure { x: bx, y: by }
+  pure (AffinePoint { x: bx, y: by })

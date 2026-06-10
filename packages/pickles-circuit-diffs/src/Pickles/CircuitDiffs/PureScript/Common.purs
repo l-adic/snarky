@@ -48,7 +48,7 @@ import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, generator, t
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -84,17 +84,17 @@ dummyVestaPt =
   let
     g = unsafePartial $ fromJust $ toAffine (generator :: VestaG)
   in
-    { x: F g.x, y: F g.y }
+    AffinePoint { x: F g.x, y: F g.y }
 
 dummyPallasPt :: AffinePoint (F StepField)
 dummyPallasPt =
   let
     g = unsafePartial $ fromJust $ toAffine (generator :: PallasG)
   in
-    { x: F g.x, y: F g.y }
+    AffinePoint { x: F g.x, y: F g.y }
 
 dummyWrapSg :: AffinePoint StepField
-dummyWrapSg =
+dummyWrapSg = AffinePoint
   { x: fromBigInt $ unsafePartial fromJust $ BigInt.fromString "8063668238751197448664615329057427953229339439010717262869116690340613895496"
   , y: fromBigInt $ unsafePartial fromJust $ BigInt.fromString "2694491010813221541025626495812026140144933943906714931997499229912601205355"
   }

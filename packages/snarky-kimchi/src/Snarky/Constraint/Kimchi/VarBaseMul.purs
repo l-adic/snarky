@@ -17,7 +17,7 @@ import Snarky.Circuit.DSL (FVar)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
 import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, KimchiRow)
 import Snarky.Constraint.Kimchi.Types as GateKind
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 
 type ScaleRound f =
   { accs :: Vector 6 (AffinePoint (FVar f))
@@ -45,7 +45,7 @@ reduce c = Rows <$>
   where
   reduceRound round = do
     let
-      reducePointToVariable p = do
+      reducePointToVariable (AffinePoint p) = do
         x <- reduceToVariable p.x
         y <- reduceToVariable p.y
         pure { x, y }

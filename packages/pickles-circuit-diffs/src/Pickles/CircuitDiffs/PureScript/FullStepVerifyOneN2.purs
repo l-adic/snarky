@@ -38,7 +38,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (curveParams)
 import Snarky.Curves.Pasta (PallasG)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
 type FullStepVerifyOneN2Params =
@@ -55,10 +55,10 @@ fullStepVerifyOneN2Circuit
 fullStepVerifyOneN2Circuit { lagrangeAt, blindingH } inputs = do
   let
     at = unsafeIdx inputs
-    readPt i = { x: at i, y: at (i + 1) }
+    readPt i = AffinePoint { x: at i, y: at (i + 1) }
     readOtherField i = Type2 (SplitField { sDiv2: at i, sOdd: coerce (at (i + 1)) })
 
-    constDummyPt = let { x: F x', y: F y' } = dummyPallasPt in { x: const_ x', y: const_ y' }
+    constDummyPt = let AffinePoint { x: F x', y: F y' } = dummyPallasPt in AffinePoint { x: const_ x', y: const_ y' }
     o = 1 -- offset for app_state
 
     evalPair :: forall n. Int -> Fin.Finite n -> { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }

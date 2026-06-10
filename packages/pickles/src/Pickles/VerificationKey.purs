@@ -38,7 +38,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
+import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Type.Proxy (Proxy(..))
 
 -- | Plonk verification key: sigma(7), coefficients(15), index(6)
@@ -117,7 +117,7 @@ extractWrapVKComms vk =
     comms = vestaVerifierIndexCommitments @wrapVkChunks vk
 
     wrapPt :: AffinePoint Vesta.ScalarField -> WeierstrassAffinePoint Pallas.G (F Vesta.ScalarField)
-    wrapPt pt = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
+    wrapPt (AffinePoint pt) = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
   in
     VerificationKey
       { sigma: map (over ChunkedCommitment (map wrapPt)) comms.sigma
@@ -263,10 +263,10 @@ chooseKey bools keys = label "choose-key" do
   -- Scale a single curve point by the branch boolean. OCaml
   -- `Double.map g ~f:((*) (b :> t))` evaluates y first (right-to-left).
   scalePt :: FVar f -> AffinePoint (FVar f) -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
-  scalePt bf { x, y } = do
+  scalePt bf (AffinePoint { x, y }) = do
     y' <- mul_ bf y
     x' <- mul_ bf x
-    pure { x: x', y: y' }
+    pure (AffinePoint { x: x', y: y' })
 
   -- Scale every chunk of a chunked commitment. OCaml
   -- `Array.map g ~f:(Double.map ~f:((*) b))` maps over the chunk array.
@@ -313,10 +313,10 @@ chooseKey bools keys = label "choose-key" do
   -- Seal all coordinates (wrap_verifier.ml:321-322)
   -- OCaml: Double.map ~f:seal — evaluates y first
   sealPt :: AffinePoint (FVar f) -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
-  sealPt { x, y } = do
+  sealPt (AffinePoint { x, y }) = do
     y' <- seal y
     x' <- seal x
-    pure { x: x', y: y' }
+    pure (AffinePoint { x: x', y: y' })
 
   sealPtChunks
     :: ChunkedCommitment stepChunks (AffinePoint (FVar f))
@@ -363,4 +363,4 @@ chooseKey bools keys = label "choose-key" do
   addPtChunks = over2 ChunkedCommitment (Vector.zipWith addPt)
 
   addPt :: AffinePoint (FVar f) -> AffinePoint (FVar f) -> AffinePoint (FVar f)
-  addPt p1 p2 = { x: add_ p1.x p2.x, y: add_ p1.y p2.y }
+  addPt (AffinePoint p1) (AffinePoint p2) = AffinePoint { x: add_ p1.x p2.x, y: add_ p1.y p2.y }

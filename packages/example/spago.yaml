@@ -1,22 +1,35 @@
 package:
   name: example
   dependencies:
+    - aff
+    - arrays
+    - avar
+    - colog
     - curves
     - effect
+    - either
+    - exceptions
+    - fmt
+    - foldable-traversable
+    - gen
+    - identity
     - js-bigints
     - maybe
     - merkle-tree
     - newtype
+    - ordered-collections
     - partial
     - pickles
     - prelude
     - quickcheck
     - random-oracle
+    - refs
     - safe-coerce
     - schnorr
     - snarky
     - snarky-curves
     - snarky-kimchi
+    - tailrec
     - transformers
     - tuples
     - vector-sized
@@ -27,15 +40,12 @@ package:
       - arrays
       - console
       - effect
-      - either
       - exceptions
       - foldable-traversable
-      - gen
       - identity
       - js-bigints
       - ordered-collections
       - partial
-      - poseidon
       - refs
       - snarky-test-utils
       - spec

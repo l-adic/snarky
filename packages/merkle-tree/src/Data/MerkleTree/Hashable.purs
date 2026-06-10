@@ -17,7 +17,7 @@ import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_)
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, const_)
 import Snarky.Circuit.RandomOracle (class HashInput, class Hashable, hashInput, toHashInput) as RO
 import Snarky.Circuit.RandomOracle (Digest(..), hash2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -27,8 +27,8 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 class MergeHash hash where
   merge :: hash -> hash -> hash
 
-instance PoseidonField f => MergeHash (Digest (F f)) where
-  merge (Digest (F a)) (Digest (F b)) = Digest $ F $ Poseidon.hash [ a, b ]
+instance PoseidonField f => MergeHash (Digest f) where
+  merge (Digest a) (Digest b) = Digest $ Poseidon.hash [ a, b ]
 
 instance
   ( CircuitM f (KimchiConstraint f) t m

@@ -53,7 +53,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (curveParams, generator, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
-import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
+import Snarky.Data.EllipticCurve (AffinePoint(..), CurveParams)
 import Type.Proxy (Proxy(..))
 
 -- | Schnorr signature in-circuit. `r` is `R.x` (Pallas base-field).
@@ -90,7 +90,7 @@ shiftConst =
   let
     g = generator :: PallasG
   in
-    unsafePartial fromJust $ toAffine (g <> g)
+    AffinePoint (unsafePartial fromJust $ toAffine (g <> g))
 
 -- | Verify a Schnorr signature in the circuit, returning the accept
 -- | boolean.
@@ -106,7 +106,7 @@ verifies
   -> ShiftedOps Pallas.BaseField t m
   -> VerifyInput Pallas.BaseField
   -> Snarky (KimchiConstraint Pallas.BaseField) t m (BoolVar Pallas.BaseField)
-verifies spongePrefix shifted { publicKey: pk, signature: Signature { r, s: sBits }, message } = do
+verifies spongePrefix shifted { publicKey: AffinePoint pk, signature: Signature { r, s: sBits }, message } = do
   -- 1. e = Poseidon(message…, pk.x, pk.y, r) seeded with spongePrefix.
   let
     sponge0 = Sponge.spongeFromConstants
@@ -119,7 +119,7 @@ verifies spongePrefix shifted { publicKey: pk, signature: Signature { r, s: sBit
   sponge3 <- Sponge.absorb r sponge2
   { result: e } <- Sponge.squeeze sponge3
   -- 2. neg_pk = (pk.x, -pk.y), no constraint.
-  let negPk = { x: pk.x, y: negate_ pk.y }
+  let negPk = AffinePoint { x: pk.x, y: negate_ pk.y }
   -- 3. Unpack e to 255 LSB-first bits and scale.
   eBits <- unpack_ e (Proxy @255)
   ePkShifted <- scale pallasParams shifted shifted.zero negPk eBits
@@ -127,7 +127,7 @@ verifies spongePrefix shifted { publicKey: pk, signature: Signature { r, s: sBit
   -- ~2× fewer kimchi gates than plain `scale` for 255-bit s).
   rShifted <- scaleKnown shifted (generator :: PallasG) sBits ePkShifted
   -- 6. Unshift_nonzero at the end.
-  rPt <- shifted.unshiftNonzero rShifted
+  AffinePoint rPt <- shifted.unshiftNonzero rShifted
   -- 7. y_even: unpack_full + lt_bitstring_value canonical-form check,
   -- then take LSB. Mirrors production `is_even` (schnorr.ml:264-266 →
   -- Field.Checked.unpack_full → snark0.ml:470).

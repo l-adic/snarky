@@ -17,7 +17,7 @@ import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class PrimeField, fromAffine, fromBigInt, scalarMul, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Snarky.Data.EllipticCurve as EC
 import Snarky.Types.Shifted (Type1, Type2(..), fieldSizeBits, fromShifted, toShifted)
 import Test.QuickCheck (Result, arbitrary, (===))
@@ -41,15 +41,15 @@ spec cfg = do
   describe "VarBaseMul Type1 (Vesta circuit)" do
     it "varBaseMul Circuit is Valid for Type1" $ unsafePartial do
       let
-        f :: Tuple (AffinePoint (F Vesta.BaseField)) (Type1 (F Vesta.BaseField)) -> AffinePoint (F Vesta.BaseField)
-        f (Tuple { x: F x, y: F y } scalar_) =
+        f :: Tuple (AffinePoint Vesta.BaseField) (Type1 (F Vesta.BaseField)) -> AffinePoint Vesta.BaseField
+        f (Tuple (AffinePoint { x, y }) scalar_) =
           let
             base = fromAffine @Vesta.BaseField @Vesta.G { x, y }
             scalar = case fromShifted scalar_ of F a -> a
             result = scalarMul scalar base
             { x: x', y: y' } = unsafePartial $ fromJust $ toAffine @Vesta.BaseField result
           in
-            { x: F x', y: F y' }
+            AffinePoint { x: x', y: y' }
 
         circuit1
           :: forall t
@@ -60,7 +60,7 @@ spec cfg = do
           g <- scaleFast1 @51 p t
           pure g
 
-        gen :: Gen (Tuple (AffinePoint (F Vesta.BaseField)) (Type1 (F Vesta.BaseField)))
+        gen :: Gen (Tuple (AffinePoint Vesta.BaseField) (Type1 (F Vesta.BaseField)))
         gen = do
           p <- EC.genAffinePoint (Proxy @Vesta.G)
           -- Generate the shifted value directly in the circuit field
@@ -82,8 +82,8 @@ spec cfg = do
   describe "VarBaseMul Type2 (Pallas circuit)" do
     it "varBaseMul Circuit is Valid for Type2" $ unsafePartial do
       let
-        f :: Tuple (AffinePoint (F Pallas.BaseField)) { sDiv2 :: F Pallas.BaseField, sOdd :: Boolean } -> AffinePoint (F Pallas.BaseField)
-        f (Tuple { x: F x, y: F y } { sDiv2, sOdd }) =
+        f :: Tuple (AffinePoint Pallas.BaseField) { sDiv2 :: F Pallas.BaseField, sOdd :: Boolean } -> AffinePoint Pallas.BaseField
+        f (Tuple (AffinePoint { x, y }) { sDiv2, sOdd }) =
           let
             base = fromAffine @Pallas.BaseField @Pallas.G { x, y }
 
@@ -97,7 +97,7 @@ spec cfg = do
             result = scalarMul scalar base
             { x: x', y: y' } = unsafePartial $ fromJust $ toAffine @Pallas.BaseField result
           in
-            { x: F x', y: F y' }
+            AffinePoint { x: x', y: y' }
 
         circuit2
           :: forall t
@@ -106,7 +106,7 @@ spec cfg = do
           -> Snarky (KimchiConstraint Pallas.BaseField) t Identity (AffinePoint (FVar Pallas.BaseField))
         circuit2 = uncurry \p t -> scaleFast2 @51 @254 p t
 
-        gen :: Gen (Tuple (AffinePoint (F Pallas.BaseField)) { sDiv2 :: F Pallas.BaseField, sOdd :: Boolean })
+        gen :: Gen (Tuple (AffinePoint Pallas.BaseField) { sDiv2 :: F Pallas.BaseField, sOdd :: Boolean })
         gen = do
           p <- EC.genAffinePoint (Proxy @Pallas.G)
           f_ <- arbitrary @(F Vesta.ScalarField)
@@ -139,7 +139,7 @@ spec cfg = do
         circuit2M = uncurry \p t -> scaleFast2 @51 @254 p t
 
         -- Generator that picks from forbidden values
-        genForbidden :: Gen (Tuple (AffinePoint (F Pallas.BaseField)) (Type2 (F Pallas.BaseField) Boolean))
+        genForbidden :: Gen (Tuple (AffinePoint Pallas.BaseField) (Type2 (F Pallas.BaseField) Boolean))
         genForbidden = do
           p <- EC.genAffinePoint (Proxy @Pallas.G)
           { sDiv2, sOdd } <- elements (fromJust $ NEA.fromArray forbiddenType2Values)
@@ -150,7 +150,7 @@ spec cfg = do
         ( circuitTestM' @Pallas.BaseField identity
             cfg
             ( NEA.singleton
-                { testFunction: (unsatisfied :: _ -> Expectation (AffinePoint (F Pallas.BaseField)))
+                { testFunction: (unsatisfied :: _ -> Expectation (AffinePoint Pallas.BaseField))
                 , input: QuickCheck 10 genForbidden
                 }
             )
@@ -165,8 +165,8 @@ spec cfg = do
     it "scaleFast2' circuit matches [s + 2^n] * base" $ unsafePartial do
       let
         -- Pure function: [s + 2^n] * base
-        f :: Tuple (AffinePoint (F Pallas.BaseField)) (F Pallas.BaseField) -> AffinePoint (F Pallas.BaseField)
-        f (Tuple { x: F x, y: F y } (F sVal)) =
+        f :: Tuple (AffinePoint Pallas.BaseField) (F Pallas.BaseField) -> AffinePoint Pallas.BaseField
+        f (Tuple (AffinePoint { x, y }) (F sVal)) =
           let
             base = fromAffine @Pallas.BaseField @Pallas.G { x, y }
             -- Convert base field element to scalar field with 2^n shift
@@ -179,7 +179,7 @@ spec cfg = do
             result = scalarMul scalar base
             { x: x', y: y' } = unsafePartial $ fromJust $ toAffine @Pallas.BaseField result
           in
-            { x: F x', y: F y' }
+            AffinePoint { x: x', y: y' }
 
         circuit3
           :: forall t
@@ -188,7 +188,7 @@ spec cfg = do
           -> Snarky (KimchiConstraint Pallas.BaseField) t Identity (AffinePoint (FVar Pallas.BaseField))
         circuit3 = uncurry \p scalar -> scaleFast2' @51 @254 p scalar
 
-        gen :: Gen (Tuple (AffinePoint (F Pallas.BaseField)) (F Pallas.BaseField))
+        gen :: Gen (Tuple (AffinePoint Pallas.BaseField) (F Pallas.BaseField))
         gen = do
           p <- EC.genAffinePoint (Proxy @Pallas.G)
           scalar <- arbitrary @(F Pallas.BaseField)

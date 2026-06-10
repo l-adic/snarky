@@ -38,6 +38,7 @@ import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertEqual_, const_, exists, true_)
 import Snarky.Curves.Class (fromInt) as Curves
+import Test.Pickles.SerializeRoundTrip (mkWidthDummies, roundTripAndVerify)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -163,6 +164,9 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     let
       BranchProver makeZeroProver = fst output.provers
       BranchProver incrementProver = fst (snd output.provers)
+      -- Round-trip every recursive prev through SerializeProof; faithful
+      -- reconstruction leaves the chain byte-identical so the assertions hold.
+      dummies = mkWidthDummies pallasSrs vestaSrs
     -- Branch 0 (makeZero) has no prevs → spec-derived `vkCarrier =
     -- Unit`. Branch 1 (increment) has one compiled prev slot →
     -- `vkCarrier = Tuple1 Unit`.
@@ -172,32 +176,35 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     b0 <- case eRes of
       Left e -> liftEffect $ Exc.throw ("makeZeroProver: " <> show e)
       Right p -> pure p
+    b0' <- roundTripAndVerify dummies output.verifier b0
 
     -- b1 = increment(b0); appInput = 0 + 1 = 1. Prev is b0 (branch 0).
     logInfo "[TwoPhaseChain] proving [step1, wrap1]"
     eB1 <- withSpan "[TwoPhaseChain] prove b1" $ liftEffect $ runExceptT $ incrementProver
       { appInput: F one
-      , prevs: tuple1 (InductivePrev b0 output.tag)
+      , prevs: tuple1 (InductivePrev b0' output.tag)
       , sideloadedVKs: tuple1 unit
       }
     b1 <- case eB1 of
       Left e -> liftEffect $ Exc.throw ("incrementProver: " <> show e)
       Right p -> pure p
+    b1' <- roundTripAndVerify dummies output.verifier b1
     -- b2 = increment(b1); appInput = 1 + 1 = 2. Same-branch self-prev.
     logInfo "[TwoPhaseChain] proving [step2, wrap2]"
     eB2 <- withSpan "[TwoPhaseChain] prove b2" $ liftEffect $ runExceptT $ incrementProver
       { appInput: F (Curves.fromInt 2 :: StepField)
-      , prevs: tuple1 (InductivePrev b1 output.tag)
+      , prevs: tuple1 (InductivePrev b1' output.tag)
       , sideloadedVKs: tuple1 unit
       }
     b2 <- case eB2 of
       Left e -> liftEffect $ Exc.throw ("incrementProver b2: " <> show e)
       Right p -> pure p
+    b2' <- roundTripAndVerify dummies output.verifier b2
     -- b3 = increment(b2); appInput = 2 + 1 = 3.
     logInfo "[TwoPhaseChain] proving [step3, wrap3]"
     eB3 <- withSpan "[TwoPhaseChain] prove b3" $ liftEffect $ runExceptT $ incrementProver
       { appInput: F (Curves.fromInt 3 :: StepField)
-      , prevs: tuple1 (InductivePrev b2 output.tag)
+      , prevs: tuple1 (InductivePrev b2' output.tag)
       , sideloadedVKs: tuple1 unit
       }
     b3 <- case eB3 of

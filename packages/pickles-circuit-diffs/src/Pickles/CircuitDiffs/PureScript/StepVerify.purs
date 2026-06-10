@@ -11,6 +11,7 @@ import Prelude
 import Data.Fin (getFinite)
 import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
+import Data.Newtype (unwrap)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -29,7 +30,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (curveParams)
 import Snarky.Curves.Pasta (PallasG)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
 -- | Step_verifier.verify circuit — tests the full verify pipeline:
@@ -60,12 +61,12 @@ stepVerifyCircuit
 stepVerifyCircuit { lagrangeAt, blindingH } inputs = do
   let
     at = unsafeIdx inputs
-    readPt i = { x: at i, y: at (i + 1) }
+    readPt i = AffinePoint { x: at i, y: at (i + 1) }
     readOtherField i = Type2 (SplitField { sDiv2: at i, sOdd: coerce (at (i + 1)) })
 
     constDummySg :: AffinePoint (FVar StepField)
-    constDummySg = { x: const_ dummyWrapSg.x, y: const_ dummyWrapSg.y }
-    constDummyPt = let { x: F x', y: F y' } = dummyPallasPt in { x: const_ x', y: const_ y' }
+    constDummySg = AffinePoint { x: const_ (unwrap dummyWrapSg).x, y: const_ (unwrap dummyWrapSg).y }
+    constDummyPt = let AffinePoint { x: F x', y: F y' } = dummyPallasPt in AffinePoint { x: const_ x', y: const_ y' }
 
     -- Parse wrap_proof (0-113)
     wComm :: Vector 15 (AffinePoint (FVar StepField))

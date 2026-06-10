@@ -49,7 +49,7 @@ import Snarky.Circuit.Kimchi.RangeCheck (lowest128Bits')
 import Snarky.Constraint.Basic (r1cs)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 
 type OptSponge f =
   { state :: Vector 3 (FVar f)
@@ -333,7 +333,7 @@ optAbsorbPoint
    . CircuitM f (KimchiConstraint f) t m
   => AffinePoint (FVar f)
   -> OptSpongeM f (KimchiConstraint f) t m Unit
-optAbsorbPoint { x, y } = do
+optAbsorbPoint (AffinePoint { x, y }) = do
   optAbsorb (Tuple true_ x)
   optAbsorb (Tuple true_ y)
 

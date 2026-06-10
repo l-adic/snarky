@@ -176,9 +176,9 @@ compileBU :: (forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m Unit
 compileBU circuit = fromCompiledCircuit $
   compilePure (Proxy @Boolean) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit initialState
 
-type TwoPoints = Tuple (AffinePoint (F Fp)) (AffinePoint (F Fp))
-type Point = AffinePoint (F Fp)
-type PointField = Tuple (AffinePoint (F Fp)) (F Fp)
+type TwoPoints = Tuple (AffinePoint Fp) (AffinePoint Fp)
+type Point = AffinePoint Fp
+type PointField = Tuple (AffinePoint Fp) (F Fp)
 type V3 = Vector 3 (F Fp)
 
 compilePP

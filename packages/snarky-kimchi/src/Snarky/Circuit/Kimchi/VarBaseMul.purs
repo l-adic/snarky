@@ -26,7 +26,7 @@ import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.VarBaseMul (ScaleRound)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt, toBigInt)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Snarky.Types.Shifted (Type1(..))
 import Type.Proxy (Proxy(..))
 
@@ -48,6 +48,7 @@ varBaseMul base' (Type1 t) = label "var-base-mul" do
   -- of scale_fast_unpack. This converts complex CVar expressions to simple variables,
   -- preventing redundant constraints when base is reduced in each VarBaseMul round.
   base <- sealPoint base'
+  let AffinePoint baseR = base
   -- Use F f (field) witnesses, not Boolean — matching OCaml's Field.typ + Boolean.Unsafe.of_cvar.
   -- The VarBaseMul gate itself constrains bits to be boolean, so explicit checks are redundant.
   lsbBits <- exists do
@@ -80,13 +81,13 @@ varBaseMul base' (Type1 t) = label "var-base-mul" do
         -- s1, s1_squared, s2, x_res, y_res per bit step
         Tuple accs slopes <- Vector.unzip <<< fst <$> do
           mapAccumM
-            ( \a b -> do
+            ( \(AffinePoint a) b -> do
                 s1 <- exists do
                   xAcc <- readCVar a.x
                   yAcc <- readCVar a.y
                   bVal <- readCVar b
-                  xBase <- readCVar base.x
-                  yBase <- readCVar base.y
+                  xBase <- readCVar baseR.x
+                  yBase <- readCVar baseR.y
                   let d = xAcc - xBase
                   if d == zero then throwAsProver $ DivisionByZero
                     { context: "varBaseMul"
@@ -99,12 +100,12 @@ varBaseMul base' (Type1 t) = label "var-base-mul" do
                 s2 <- exists do
                   xAcc <- readCVar a.x
                   yAcc <- readCVar a.y
-                  xBase <- readCVar base.x
+                  xBase <- readCVar baseR.x
                   sq <- readCVar s1Sq
                   sv <- readCVar s1
                   pure $ (double yAcc / (double xAcc + xBase - sq)) - sv
                 xRes <- exists do
-                  xBase <- readCVar base.x
+                  xBase <- readCVar baseR.x
                   s2v <- readCVar s2
                   sq <- readCVar s1Sq
                   pure $ xBase + s2v * s2v - sq
@@ -114,7 +115,7 @@ varBaseMul base' (Type1 t) = label "var-base-mul" do
                   xR <- readCVar xRes
                   s2v <- readCVar s2
                   pure $ (xAcc - xR) * s2v - yAcc
-                let a' = { x: xRes, y: yRes }
+                let a' = AffinePoint { x: xRes, y: yRes }
                 pure $ Tuple (Tuple a' s1) a'
             )
             s.acc

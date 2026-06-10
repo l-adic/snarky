@@ -75,7 +75,7 @@ import Snarky.Backend.Kimchi.Util.Fatal (fromJust')
 import Snarky.Circuit.DSL (SizedF)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
 -- | Opaque proof type, parameterized by curve group and scalar field.
@@ -409,7 +409,7 @@ decodeProofData decF decC p =
   }
   where
   point :: NapiG -> AffinePoint c
-  point g = { x: decC g.x, y: decC g.y }
+  point g = AffinePoint { x: decC g.x, y: decC g.y }
 
   pointEvals :: NapiPointEvals -> NonEmptyArray (PointEval f)
   pointEvals ev =
@@ -460,7 +460,7 @@ decodeProofCommitments decC p =
   }
   where
   point :: NapiG -> AffinePoint c
-  point g = { x: decC g.x, y: decC g.y }
+  point g = AffinePoint { x: decC g.x, y: decC g.y }
 
   polyComm :: NapiPolyComm -> Array (AffinePoint c)
   polyComm pc = map point pc.unshifted

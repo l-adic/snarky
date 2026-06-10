@@ -20,29 +20,26 @@ import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector as Vector
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, F, FVar, Snarky, assertEqual_, exists, if_, read)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, FVar, Snarky, assertEqual_, exists, if_, read)
 import Snarky.Circuit.RandomOracle (Digest(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 
 class
   ( Monad m
-  , MerkleHashable v (Digest (F f))
-  , CircuitType f v var
-  , CheckedType f (KimchiConstraint f) var
+  , MerkleHashable v (Digest f)
   ) <=
-  MerkleRequestM m f v (d :: Int) var
-  | v f -> var
-  , var -> f
-  , m -> v where
-  getElement :: Address d -> m { value :: v, path :: Path d (Digest (F f)) }
-  getPath :: Address d -> m (Path d (Digest (F f)))
+  MerkleRequestM m f v (d :: Int) where
+  getElement :: Address d -> m { value :: v, path :: Path d (Digest f) }
+  getPath :: Address d -> m (Path d (Digest f))
   setValue :: Address d -> v -> m Unit
 
 get
-  :: forall t m f d v var
+  :: forall t m f d @v var
    . Reflectable d Int
   => PoseidonField f
-  => MerkleRequestM m f v d var
+  => MerkleRequestM m f v d
+  => CircuitType f v var
+  => CheckedType f (KimchiConstraint f) var
   => CircuitM f (KimchiConstraint f) t m
   => MerkleHashable var (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
   => AddressVar d f
@@ -66,10 +63,12 @@ get addr (Digest root) = do
 -- | 4. Updates the underlying tree state via setValue
 -- | 5. Computes and returns the new root along with old and new elements
 fetchAndUpdate
-  :: forall t m f d v var
+  :: forall t m f d @v var
    . Reflectable d Int
   => PoseidonField f
-  => MerkleRequestM m f v d var
+  => MerkleRequestM m f v d
+  => CircuitType f v var
+  => CheckedType f (KimchiConstraint f) var
   => MerkleHashable var (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
   => CircuitM f (KimchiConstraint f) t m
   => AddressVar d f
@@ -84,7 +83,7 @@ fetchAndUpdate addr (Digest root) f = do
   -- Get element and path as witnesses
   { value: prev, path } <- exists do
     a <- read addr
-    lift $ getElement @m @_ @v @d a
+    lift $ getElement @_ @_ @v @d a
   -- Hash old element and verify against root
   prevHash <- hashLeaf $ Just prev
   impliedRoot addr prevHash path >>= \(Digest d) ->
@@ -109,10 +108,11 @@ fetchAndUpdate addr (Digest root) f = do
 -- | 3. Updates the underlying tree state via setValue
 -- | 4. Computes and returns the new root
 update
-  :: forall t m f d v var
+  :: forall t m f d @v var
    . Reflectable d Int
   => PoseidonField f
-  => MerkleRequestM m f v d var
+  => MerkleRequestM m f v d
+  => CircuitType f v var
   => MerkleHashable var (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
   => CircuitM f (KimchiConstraint f) t m
   => AddressVar d f

@@ -56,7 +56,7 @@ import Snarky.Circuit.DSL.SizedF (SizedF, coerceViaBits, unsafeFromField, unwrap
 import Snarky.Circuit.Kimchi (Type1, fromShifted, toShifted)
 import Snarky.Curves.Class (fromInt)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 
 --------------------------------------------------------------------------------
 -- Input / output
@@ -222,7 +222,7 @@ wrapComputeDeferredValues input =
     prevChallengeList =
       Array.fromFoldable
         ( Vector.zipWith
-            ( \sg chals ->
+            ( \(AffinePoint sg) chals ->
                 { sgX: sg.x
                 , sgY: sg.y
                 , challenges: Array.fromFoldable chals

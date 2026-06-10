@@ -37,6 +37,7 @@ import Pickles (BranchProver(..), Compiled, CompiledProof, PrevSlot(..), RulesCo
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertAny_, const_, equals_, exists, not_)
+import Test.Pickles.SerializeRoundTrip (mkWidthDummies, roundTripAndVerify)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -108,6 +109,10 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
 
     let BranchProver prover = fst out.provers
 
+    -- Round-trip every recursive prev through SerializeProof; faithful
+    -- reconstruction leaves the chain byte-identical so the assertions hold.
+    let dummies = mkWidthDummies pallasSrs vestaSrs
+
     let
       runStep
         :: F StepField
@@ -133,10 +138,12 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
 
     logInfo "[SimpleChainN2] proving b0 (self=0, base case)"
     b0 <- withSpan "[SimpleChainN2] prove b0" $ liftAff $ runStep (F zero) baseDummy baseDummy
+    b0' <- roundTripAndVerify dummies out.verifier b0
     logInfo "[SimpleChainN2] proving b1 (self=1, verifies [b0, b0])"
-    b1 <- withSpan "[SimpleChainN2] prove b1" $ liftAff $ runStep (F one) (InductivePrev b0 out.tag) (InductivePrev b0 out.tag)
+    b1 <- withSpan "[SimpleChainN2] prove b1" $ liftAff $ runStep (F one) (InductivePrev b0' out.tag) (InductivePrev b0' out.tag)
+    b1' <- roundTripAndVerify dummies out.verifier b1
     logInfo "[SimpleChainN2] proving b2 (self=2, verifies [b1, b0])"
-    b2 <- withSpan "[SimpleChainN2] prove b2" $ liftAff $ runStep (F (one + one)) (InductivePrev b1 out.tag) (InductivePrev b0 out.tag)
+    b2 <- withSpan "[SimpleChainN2] prove b2" $ liftAff $ runStep (F (one + one)) (InductivePrev b1' out.tag) (InductivePrev b0' out.tag)
 
     logInfo "[SimpleChainN2] verifying 3-proof chain…"
     verifyBatch out.verifier (map toVerifiable [ b0, b1, b2 ]) `shouldEqual` true

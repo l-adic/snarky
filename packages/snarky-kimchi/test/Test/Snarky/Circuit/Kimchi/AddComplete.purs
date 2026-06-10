@@ -18,7 +18,7 @@ import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class WeierstrassCurve)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint, Point(..))
+import Snarky.Data.EllipticCurve (AffinePoint(..), Point(..))
 import Snarky.Data.EllipticCurve as EC
 import Test.QuickCheck (class Arbitrary)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
@@ -46,7 +46,10 @@ spec' cfg testName pg _ =
 
     it "addComplete Circuit is Valid" $ unsafePartial do
       let
-        f = uncurry EC.addAffine
+        -- `AffinePoint` is a record (stays `F f`-leaved at the circuit
+        -- boundary); coerce its inputs to raw `f` so `addAffine` yields the
+        -- raw `Point f` the circuit's value side now expects.
+        f (Tuple a b) = EC.addAffine a b
 
         circuit
           :: forall t
@@ -55,7 +58,7 @@ spec' cfg testName pg _ =
           -> AffinePoint (FVar f)
           -> Snarky (KimchiConstraint f) t Identity (Point (FVar f))
         circuit p1 p2 = do
-          { isInfinity, p } <- addFast DontCheckFinite p1 p2
+          { isInfinity, p: AffinePoint p } <- addFast DontCheckFinite p1 p2
           x <- Snarky.if_ isInfinity (const_ zero) p.x
           y <- Snarky.if_ isInfinity (const_ one) p.y
           z <- Snarky.if_ isInfinity (const_ zero) (const_ one)
@@ -67,14 +70,14 @@ spec' cfg testName pg _ =
           p1 <- EC.genAffinePoint pg
           p2 <- EC.genAffinePoint pg `suchThat` \p ->
             let
-              { x: x1, y: y1 } = p1
-              { x: x2, y: y2 } = p
+              AffinePoint { x: x1, y: y1 } = p1
+              AffinePoint { x: x2, y: y2 } = p
             in
               x1 /= x2 || y1 /= negate y2
           pure $ Tuple p1 p2
         genInverse = do
           p1 <- EC.genAffinePoint pg
-          let p2 = p1 { y = -p1.y }
+          let p2 = (\(AffinePoint r) -> AffinePoint (r { y = -r.y })) p1
           pure $ Tuple p1 p2
 
       { builtState, solver } <- circuitTest' @f
