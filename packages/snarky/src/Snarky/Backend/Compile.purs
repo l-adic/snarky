@@ -12,6 +12,7 @@ module Snarky.Backend.Compile
   , SolverT
   , liftExceptRow
   , compile
+  , compile'
   , makeSolver
   , makeSolver'
   , runSolver
@@ -24,7 +25,6 @@ import Data.Array (zip)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Foldable (for_)
-import Data.Map (Map)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Run (EFFECT, Run)
@@ -42,21 +42,25 @@ import Type.Proxy (Proxy(..))
 import Type.Row (type (+))
 import Unsafe.Coerce (unsafeCoerce)
 
-compile
+-- | `compile` with explicit config. `debug: true` records each variable's
+-- | label-stack birth context (read by diagnostic error rendering); the
+-- | default skips that per-variable work.
+compile'
   :: forall @f c c' a b avar bvar aux r
    . CompileCircuit f c c' aux
   => CheckedType f c' avar
   => CircuitType f a avar
   => CircuitType f b bvar
-  => Proxy a
+  => { debug :: Boolean }
+  -> Proxy a
   -> Proxy b
   -> Proxy c'
   -> (avar -> Snarky f c' r bvar)
   -> Run (EFFECT + r) (CircuitBuilderState c aux)
-compile _ _ _ circuit = do
+compile' { debug } _ _ _ circuit = do
   -- the backend constructs a fresh initial state (incl. mutable parts)
   -- per invocation — initial states are never shared, by construction
-  cbs0 <- Run.liftEffect initialBuilderState
+  cbs0 <- Run.liftEffect initialBuilderState <#> _ { debug = debug }
   let
     n = sizeInFields (Proxy @f) (Proxy @a)
     m = sizeInFields (Proxy @f) (Proxy @b)
@@ -74,6 +78,19 @@ compile _ _ _ circuit = do
         assertEqual_ v1 v2
   Tuple _ s <- runCircuitBuilder cbs2 (runSnarky prog)
   pure (finalize s)
+
+compile
+  :: forall @f c c' a b avar bvar aux r
+   . CompileCircuit f c c' aux
+  => CheckedType f c' avar
+  => CircuitType f a avar
+  => CircuitType f b bvar
+  => Proxy a
+  -> Proxy b
+  -> Proxy c'
+  -> (avar -> Snarky f c' r bvar)
+  -> Run (EFFECT + r) (CircuitBuilderState c aux)
+compile = compile' { debug: false }
 
 -- | Create a solver with an explicit initial prover state.
 -- | Useful for enabling debug mode: pass `{ debug: true }`.
@@ -117,7 +134,7 @@ makeSolver' { debug } _ circuit = \inputs -> do
     Left e -> Except.throw e
     Right outVar -> liftExceptRow (runAsProver s.assignments (read outVar)) >>= case _ of
       Left e -> Except.throw e
-      Right output -> Run.liftEffect (Assignments.toMap s.assignments) <#> Tuple output
+      Right output -> Run.liftEffect (Assignments.freeze s.assignments) <#> Tuple output
 
 makeSolver
   :: forall f a b c r avar bvar
@@ -131,13 +148,13 @@ makeSolver
 makeSolver = makeSolver' { debug: false }
 
 type SolverT :: Type -> Type -> Row (Type -> Type) -> Type -> Type -> Type
-type SolverT f c r a b = a -> Run (EXCEPT EvaluationError + EFFECT + r) (Tuple b (Map Variable f))
+type SolverT f c r a b = a -> Run (EXCEPT EvaluationError + EFFECT + r) (Tuple b (Assignments.Frozen f))
 
 runSolverT
   :: forall f c r a b
    . SolverT f c r a b
   -> a
-  -> Run (EFFECT + r) (Either EvaluationError (Tuple b (Map Variable f)))
+  -> Run (EFFECT + r) (Either EvaluationError (Tuple b (Assignments.Frozen f)))
 runSolverT f a = Except.runExcept (f a)
 
 type Solver f c a b = SolverT f c () a b
@@ -146,7 +163,7 @@ runSolver
   :: forall f c a b
    . Solver f c a b
   -> a
-  -> Effect (Either EvaluationError (Tuple b (Map Variable f)))
+  -> Effect (Either EvaluationError (Tuple b (Assignments.Frozen f)))
 runSolver c a = Run.runBaseEffect $ runSolverT c a
 
 -- | Widen an open row by the solver's EXCEPT channel. Safe for the same

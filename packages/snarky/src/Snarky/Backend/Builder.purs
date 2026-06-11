@@ -96,6 +96,7 @@ type CircuitBuilderState c aux =
   , publicInputs :: Array Variable
   , aux :: aux
   , labelStack :: Array String
+  , debug :: Boolean
   , varMetadata :: Assignments (Array String)
   }
 
@@ -128,12 +129,13 @@ emptyBuilderState aux = do
     , publicInputs: mempty
     , aux
     , labelStack: []
+    , debug: false
     , varMetadata
     }
 
--- | Allocate `n` consecutive variables in a builder state (recording the
--- | current label stack as each variable's metadata, exactly like a fresh
--- | allocation inside the interpreter).
+-- | Allocate `n` consecutive variables in a builder state. In debug mode
+-- | the current label stack is recorded as each variable's metadata (read
+-- | only by diagnostic error rendering); production builds skip the write.
 allocVars
   :: forall c aux
    . Int
@@ -145,7 +147,7 @@ allocVars n s0 = go 0 s0 []
     | i >= n = pure (Tuple acc s)
     | otherwise = do
         let v = s.nextVar
-        Assignments.set v s.labelStack s.varMetadata
+        when s.debug $ Assignments.set v s.labelStack s.varMetadata
         go (i + 1) (s { nextVar = incrementVariable v }) (Array.snoc acc v)
 
 -- | Interpret the `circuit` effect in builder mode over an open tail of

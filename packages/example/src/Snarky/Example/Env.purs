@@ -30,6 +30,7 @@ import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Example.Ledger (Ledger)
 import Snarky.Example.Ledger as Ledger
 import Snarky.Example.Log (Logger)
+import Snarky.Example.Log as Log
 import Snarky.Example.Transaction.Checked (CompiledTx, compileTxCircuit)
 
 type Config =
@@ -67,5 +68,7 @@ mkEnv
   -> Effect (Env d)
 mkEnv logger cfg = do
   ledger <- Ref.new $ Ledger.empty @d
+  Log.logDebug logger "Compiling TxCircuit..."
   compiledTx <- compileTxCircuit cfg.chainId { pallasSrs: cfg.pallasSrs, vestaSrs: cfg.vestaSrs }
+  Log.logDebug logger "Compiled TxCircuit"
   pure { ledger, compiledTx, chainId: cfg.chainId, logger }

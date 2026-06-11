@@ -22,7 +22,6 @@ package:
     - node-buffer
     - node-fs
     - node-process
-    - ordered-collections
     - partial
     - pickles-linearization-types
     - poseidon

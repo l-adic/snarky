@@ -9,11 +9,13 @@
 -- | successful `lookup` is stable forever.
 module Snarky.Backend.Assignments
   ( Assignments
+  , Frozen
   , fresh
   , set
   , lookup
+  , freeze
+  , lookupFrozen
   , toLookup
-  , toMap
   ) where
 
 import Prelude
@@ -23,9 +25,6 @@ import Control.Monad.ST.Internal (for) as STI
 import Data.Array as Array
 import Data.Array.ST (STArray)
 import Data.Array.ST as STA
-import Data.FoldableWithIndex (foldlWithIndex)
-import Data.Map (Map)
-import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Effect (Effect)
 import Effect.Unsafe (unsafePerformEffect)
@@ -62,19 +61,21 @@ set (Variable i) v (Assignments s) =
 lookup :: forall f. Variable -> Assignments f -> Maybe f
 lookup (Variable i) (Assignments s) = join (unsafePerformEffect (toEffect (STA.peek i s)))
 
+-- | Immutable end-of-solve snapshot of the store. `Variable` is a dense
+-- | integer index, so this IS the final lookup structure — O(n) to copy
+-- | once, O(1) per lookup, no tree to build or walk.
+newtype Frozen f = Frozen (Array (Maybe f))
+
+-- | Snapshot the store (one array copy).
+freeze :: forall f. Assignments f -> Effect (Frozen f)
+freeze (Assignments s) = Frozen <$> toEffect (STA.freeze s)
+
+-- | O(1) read of a snapshot. `Nothing` for out-of-range or never-assigned
+-- | variables alike.
+lookupFrozen :: forall f. Variable -> Frozen f -> Maybe f
+lookupFrozen (Variable i) (Frozen arr) = join (Array.index arr i)
+
 -- | Pure lookup over a frozen snapshot — for consumers that need a
 -- | `Variable -> Maybe f` function (debug checks, error formatting).
 toLookup :: forall f. Assignments f -> Effect (Variable -> Maybe f)
-toLookup (Assignments s) = do
-  frozen <- toEffect (STA.freeze s)
-  pure \(Variable i) -> join (Array.index frozen i)
-
--- | Materialise to the immutable `Map` the solver's consumers expect — one
--- | O(n log n) pass at the end of a solve.
-toMap :: forall f. Assignments f -> Effect (Map Variable f)
-toMap (Assignments s) = toEffect $ STA.freeze s <#> foldlWithIndex
-  ( \i acc -> case _ of
-      Just v -> Map.insert (Variable i) v acc
-      Nothing -> acc
-  )
-  Map.empty
+toLookup s = freeze s <#> flip lookupFrozen

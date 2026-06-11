@@ -15,8 +15,6 @@ import Data.Array as Array
 import Data.Fin (getFinite)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.FunctorWithIndex (mapWithIndex)
-import Data.Map (Map)
-import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Tuple (Tuple(..), uncurry)
 import Data.UnionFind.Mutable (MutableUF)
@@ -25,6 +23,7 @@ import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception.Unsafe (unsafeThrow)
+import Snarky.Backend.Assignments (Frozen, lookupFrozen)
 import Snarky.Backend.DenseStore as DenseStore
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateNew)
 import Snarky.Backend.Kimchi.Types (Gate, Wire, gateWiresNewFromWires, wireNew)
@@ -183,7 +182,7 @@ makeConstraintSystemWithPrevChallenges arg = do
 makeWitness
   :: forall f
    . PrimeField f
-  => { assignments :: Map Variable f
+  => { assignments :: Frozen f
      , constraints :: Array (Vector 15 (Maybe Variable))
      , publicInputs :: Array Variable
      }
@@ -198,7 +197,7 @@ makeWitness { assignments, constraints, publicInputs: fs } =
           ( \row ->
               case row !! i of
                 Nothing -> zero
-                Just v -> case Map.lookup v assignments of
+                Just v -> case lookupFrozen v assignments of
                   Nothing -> unsafeThrow $ "Missing witness variable assignment in witness: " <> show v
                   Just f -> f
 
@@ -206,7 +205,7 @@ makeWitness { assignments, constraints, publicInputs: fs } =
           constraints
     publicInputs =
       map
-        ( \v -> case Map.lookup v assignments of
+        ( \v -> case lookupFrozen v assignments of
             Nothing -> unsafeThrow $ "Missing public input variable assignment in witness: " <> show v
             Just f -> f
         )

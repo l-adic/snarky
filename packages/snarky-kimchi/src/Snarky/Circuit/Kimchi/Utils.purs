@@ -7,7 +7,6 @@ module Snarky.Circuit.Kimchi.Utils
 import Prelude
 
 import Data.Either (Either(..))
-import Data.Map (Map)
 import Data.Traversable (class Traversable, traverse)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
@@ -15,6 +14,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception (error, throwException)
 import Run (EFFECT, Run)
 import Run as Run
+import Snarky.Backend.Assignments as Assignments
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (Solver, SolverT, runSolverT)
 import Snarky.Circuit.CVar (EvaluationError, Variable)
@@ -79,7 +79,7 @@ verifyCircuit { gen, solver, s } =
 -- | the row's effects.
 verifyCircuitM
   :: forall f a b r
-   . (Run (EFFECT + r) (Either EvaluationError (Tuple b (Map Variable f))) -> Effect (Either EvaluationError (Tuple b (Map Variable f))))
+   . (Run (EFFECT + r) (Either EvaluationError (Tuple b (Assignments.Frozen f))) -> Effect (Either EvaluationError (Tuple b (Assignments.Frozen f))))
   -> { gen :: Gen a
      , solver :: SolverT f (KimchiGate f) r a b
      , s :: CircuitBuilderState (KimchiGate f) (AuxState f)

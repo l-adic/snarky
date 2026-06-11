@@ -12,7 +12,6 @@ package:
     - js-bigints
     - maybe
     - newtype
-    - ordered-collections
     - prelude
     - quickcheck
     - run

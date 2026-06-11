@@ -57,8 +57,6 @@ import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Lazy as Lazy
-import Data.Map (Map)
-import Data.Map as Map
 import Data.Maybe (Maybe(..), fromJust, maybe)
 import Data.Newtype (over, un, unwrap)
 import Data.Reflectable (class Reflectable, reflectType)
@@ -111,6 +109,7 @@ import Run as Run
 import Run.Except (EXCEPT)
 import Run.Except as Except
 import Safe.Coerce (coerce)
+import Snarky.Backend.Assignments as Assignments
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled, constraintsToArray)
 import Snarky.Backend.Compile (SolverT, compile, liftExceptRow, makeSolver', runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
@@ -1583,7 +1582,7 @@ type StepProveResult (outputSize :: Int) =
   , publicInputs :: Array StepField
   , publicOutputs :: Vector outputSize (F StepField)
   , proof :: Proof VestaG StepField
-  , assignments :: Map Variable StepField
+  , assignments :: Assignments.Frozen StepField
   -- | Field-flattened representation of the rule's user
   -- | `publicOutput` value, recovered post-solve. Carried as a raw
   -- | `Array StepField` (not `outputVal`) so that consumers like
@@ -2193,7 +2192,7 @@ stepSolveAndProve ctx rule compileResult advice = do
           let
             evalLookup :: Variable -> Either EvaluationError StepField
             evalLookup v =
-              maybe (Left (MissingVariable v)) Right (Map.lookup v assignments)
+              maybe (Left (MissingVariable v)) Right (Assignments.lookupFrozen v assignments)
           case traverse (CVar.eval evalLookup) fieldVars of
             Left e -> Except.throw e
             Right fieldVals -> pure fieldVals

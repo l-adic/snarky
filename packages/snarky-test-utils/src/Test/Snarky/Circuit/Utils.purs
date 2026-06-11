@@ -7,8 +7,6 @@ import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Either (Either(..))
 import Data.Foldable (foldM, for_, intercalate, traverse_)
 import Data.FoldableWithIndex (forWithIndex_)
-import Data.Map (Map)
-import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
@@ -18,7 +16,7 @@ import Run (EFFECT, Run)
 import Run as Run
 import Snarky.Backend.Assignments as Assignments
 import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, constraintsToArray)
-import Snarky.Backend.Compile (Checker, Solver, SolverT, compile, makeSolver', runSolverT)
+import Snarky.Backend.Compile (Checker, Solver, SolverT, compile', makeSolver', runSolverT)
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, EvaluationError(..), Snarky, Variable)
 import Snarky.Curves.Class (class PrimeField)
@@ -147,7 +145,7 @@ checkResult
   -> PostCondition f c aux
   -> (a -> Expectation b)
   -> a
-  -> Either EvaluationError (Tuple b (Map Variable f))
+  -> Either EvaluationError (Tuple b (Assignments.Frozen f))
   -> Effect Result
 checkResult builtState checker postCondition testFunction inputs result = do
   metaLookup <- Assignments.toLookup builtState.varMetadata
@@ -160,7 +158,7 @@ checkResult builtState checker postCondition testFunction inputs result = do
     Right (Tuple b assignments) -> do
       let
         lookup :: Variable -> Either EvaluationError f
-        lookup v = case Map.lookup v assignments of
+        lookup v = case Assignments.lookupFrozen v assignments of
           Nothing -> Left $ MissingVariable v
           Just res -> pure res
 
@@ -200,7 +198,7 @@ circuitTest'
   -> (avar -> Snarky f c' () bvar)
   -> Aff { builtState :: CircuitBuilderState c aux, solver :: Solver f c' a b }
 circuitTest' { checker, postCondition } scenarios circuit = do
-  builtState <- liftEffect $ Run.runBaseEffect $ compile (Proxy @a) (Proxy @b) (Proxy @c') circuit
+  builtState <- liftEffect $ Run.runBaseEffect $ compile' { debug: true } (Proxy @a) (Proxy @b) (Proxy @c') circuit
   let solver = makeSolver' { debug: true } (Proxy @c') circuit
   forWithIndex_ scenarios \idx { testFunction, input } ->
     runScenario idx (runTest { builtState, solver, checker, postCondition } testFunction) input
@@ -224,7 +222,7 @@ circuitTestM'
   -> (avar -> Snarky f c' r bvar)
   -> Aff { builtState :: CircuitBuilderState c aux, solver :: SolverT f c' r a b }
 circuitTestM' nat { checker, postCondition } scenarios circuit = do
-  builtState <- liftEffect $ nat $ compile (Proxy @a) (Proxy @b) (Proxy @c') circuit
+  builtState <- liftEffect $ nat $ compile' { debug: true } (Proxy @a) (Proxy @b) (Proxy @c') circuit
   let solver = makeSolver' { debug: true } (Proxy @c') circuit
   forWithIndex_ scenarios \idx { testFunction, input } ->
     runScenarioM idx nat (runTestM { builtState, solver, checker, postCondition } testFunction) input

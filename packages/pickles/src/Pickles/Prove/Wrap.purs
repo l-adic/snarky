@@ -30,7 +30,6 @@ import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Fin (unsafeFinite)
 import Data.Lazy as Lazy
-import Data.Map (Map)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (over, un)
 import Data.Reflectable (class Reflectable, reflectType)
@@ -62,6 +61,7 @@ import Run as Run
 import Run.Except (EXCEPT)
 import Run.Except as Except
 import Safe.Coerce (coerce)
+import Snarky.Backend.Assignments as Assignments
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled, constraintsToArray)
 import Snarky.Backend.Compile (SolverT, compile, liftExceptRow, makeSolver', runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
@@ -339,7 +339,7 @@ type WrapProveResult =
   , witness :: Vector 15 (Array WrapField)
   , publicInputs :: Array WrapField
   , proof :: Proof PallasG WrapField
-  , assignments :: Map Variable WrapField
+  , assignments :: Assignments.Frozen WrapField
   }
 
 -- | Monotonic counter for `KIMCHI_WRAP_CS_DUMP`'s `%c` template. Each
