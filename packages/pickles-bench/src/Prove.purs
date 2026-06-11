@@ -21,7 +21,6 @@ import Bench.Pickles.BenchUtils as BenchUtils
 import Bench.Pickles.Common (BenchSrs, NrrRules, TreeRules, benchIterations, benchTreeRule, nrrRule)
 import Bench.Pickles.FfiTimer as FfiTimer
 import BenchLib as BL
-import Control.Monad.Except (runExceptT)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
@@ -33,6 +32,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Pickles (BranchProver(..), NoSlots, PrevSlot(..), SlotWrapKey(..), Slots2, StatementIO(..), StepField, compileMulti, mkRuleEntry)
 import Run as Run
+import Run.Except (runExcept) as RunExcept
 import Snarky.Circuit.DSL (F(..))
 
 -- | Untimed setup against the shared SRS: compile (NRR + tree), prove
@@ -72,7 +72,7 @@ prepareProve srs = do
     BranchProver nrrProver = fst nrr.provers
     BranchProver treeProver = fst tree.provers
 
-  nrrCp <- Run.runBaseEffect (runExceptT (nrrProver { appInput: unit, prevs: unit, sideloadedVKs: unit })) >>= case _ of
+  nrrCp <- Run.runBaseEffect (RunExcept.runExcept (nrrProver { appInput: unit, prevs: unit, sideloadedVKs: unit })) >>= case _ of
     Left e -> Exc.throw (show e)
     Right r -> pure r
 
@@ -82,7 +82,7 @@ prepareProve srs = do
 
   b0 <-
     Run.runBaseEffect
-      ( runExceptT
+      ( RunExcept.runExcept
           ( treeProver
               { appInput: unit
               , prevs: tuple2 (InductivePrev nrrCp nrr.tag) basePrevSelf
@@ -96,7 +96,7 @@ prepareProve srs = do
   pure $ do
     _ <-
       liftEffect
-        ( Run.runBaseEffect $ runExceptT
+        ( Run.runBaseEffect $ RunExcept.runExcept
             ( treeProver
                 { appInput: unit
                 , prevs: tuple2 (InductivePrev nrrCp nrr.tag) (InductivePrev b0 tree.tag)

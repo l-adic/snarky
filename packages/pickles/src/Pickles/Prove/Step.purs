@@ -50,8 +50,6 @@ module Pickles.Prove.Step
 
 import Prelude
 
-import Control.Monad.Except (ExceptT, throwError)
-import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
@@ -109,9 +107,11 @@ import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Run (EFFECT, Run)
+import Run.Except (EXCEPT)
+import Run.Except as Except
 import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled, constraintsToArray)
-import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
+import Snarky.Backend.Compile (SolverT, compile, liftExceptRow, makeSolver', runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, gatesToJson)
 import Snarky.Backend.Kimchi.Proof (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofOpeningPrechallenges, proofOraclesRec, vestaProofCommitments, vestaProofData)
@@ -2116,7 +2116,7 @@ stepSolveAndProve
   -> StepRuleAt (EFFECT + r) len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> StepCompileResult
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
-  -> ExceptT EvaluationError (Run (EFFECT + r)) (StepProveResult outputSize)
+  -> Run (EXCEPT EvaluationError + EFFECT + r) (StepProveResult outputSize)
 stepSolveAndProve ctx rule compileResult advice = do
   -- Capture channel for the rule's user `publicOutput` FVars. The
   -- solver makes `stepMain`'s whole return value public, so the
@@ -2161,10 +2161,10 @@ stepSolveAndProve ctx rule compileResult advice = do
               captureRef
         )
 
-  eRes <- lift (runSolverT rawSolver unit)
+  eRes <- liftExceptRow (runSolverT rawSolver unit)
 
   case eRes of
-    Left e -> throwError (WithContext "stepProve solver" e)
+    Left e -> Except.throw (WithContext "stepProve solver" e)
     Right (Tuple publicOutputs assignments) -> do
       let
         { witness, publicInputs } = makeWitness
@@ -2190,14 +2190,14 @@ stepSolveAndProve ctx rule compileResult advice = do
       captured <- liftEffect (Ref.read captureRef)
       userPublicOutputFields <- case captured of
         Nothing ->
-          throwError (FailedAssertion "stepProve: stepMain did not capture publicOutput FVars (captureRef was Nothing post-solve)")
+          Except.throw (FailedAssertion "stepProve: stepMain did not capture publicOutput FVars (captureRef was Nothing post-solve)")
         Just fieldVars -> do
           let
             evalLookup :: Variable -> Either EvaluationError StepField
             evalLookup v =
               maybe (Left (MissingVariable v)) Right (Map.lookup v assignments)
           case traverse (CVar.eval evalLookup) fieldVars of
-            Left e -> throwError e
+            Left e -> Except.throw e
             Right fieldVals -> pure fieldVals
       let
         p = Lazy.defer \_ -> pallasCreateProofWithPrev

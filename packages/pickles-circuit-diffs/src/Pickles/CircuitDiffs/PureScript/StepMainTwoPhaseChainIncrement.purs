@@ -37,11 +37,13 @@ import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
+import Run as Run
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (class CircuitM, AsProverT, F, FVar, Snarky, assertEqual_, const_, exists, true_)
+import Snarky.Circuit.DSL (AsProver, F, FVar, Snarky, assertEqual_, const_, exists, true_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (SplitField, Type2)
 import Type.Proxy (Proxy(..))
@@ -55,11 +57,11 @@ type StepMainTwoPhaseChainIncrementParams =
 -- | `increment` rule: asserts `self_v = prev + 1`. No base case branch
 -- | (unlike SimpleChain), so `proofMustVerify` is a constant `true_`.
 incrementRule
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
-  => AsProverT StepField m (Tuple1 (StatementIO (F StepField) Unit))
+  :: forall r
+   . PrimeField StepField
+  => AsProver StepField r (Tuple1 (StatementIO (F StepField) Unit))
   -> FVar StepField
-  -> Snarky (KimchiConstraint StepField) t m
+  -> Snarky StepField (KimchiConstraint StepField) r
        (RuleOutput 1 (FVar StepField) Unit)
 incrementRule getPrevStates appState = do
   prev <- exists $ getPrevStates <#> \(StatementIO p1 /\ _) -> p1.input
@@ -102,7 +104,7 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
              _
              _
       dummyAdvice = unsafeCoerce unit
-    compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
+    Run.runBaseEffect $ compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
       -- mpvMax=1 (matches the multi-branch wrap's max_proofs_verified=N1).
       -- mpvPad=0 (this rule's own n = 1 = mpvMax).
       ( \_ -> stepMain

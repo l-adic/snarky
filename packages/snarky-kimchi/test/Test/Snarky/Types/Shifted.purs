@@ -3,7 +3,6 @@ module Test.Snarky.Types.Shifted where
 import Prelude
 
 import Data.Array.NonEmpty as NEA
-import Data.Identity (Identity)
 import JS.BigInt as BigInt
 import Snarky.Circuit.DSL (F(..), FVar, Snarky)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
@@ -87,23 +86,21 @@ genDangerZone =
 
 -- | Circuit that computes fromShiftedType1Circuit (cross-field: Vesta.BaseField).
 type1Circuit
-  :: forall t
-   . PrimeField Vesta.BaseField
+  :: PrimeField Vesta.BaseField
   => Type1 (FVar Vesta.BaseField)
   -> Snarky Vesta.BaseField (KimchiConstraint Vesta.BaseField) () (FVar Vesta.BaseField)
 type1Circuit shifted = pure $ fromShiftedType1Circuit shifted
 
 -- | Circuit that computes fromShiftedType1Circuit (same-field: Vesta.ScalarField).
 type1SameFieldCircuit
-  :: forall t
-   . PrimeField Vesta.ScalarField
+  :: PrimeField Vesta.ScalarField
   => Type1 (FVar Vesta.ScalarField)
   -> Snarky Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) () (FVar Vesta.ScalarField)
 type1SameFieldCircuit shifted = pure $ fromShiftedType1Circuit shifted
 
 -- | Circuit that computes fromShiftedType2Circuit.
 type2Circuit
-  :: forall @f t n
+  :: forall @f n
    . PrimeField f
   => PrimeField f
   => FieldSizeInBits f n

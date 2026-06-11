@@ -24,7 +24,6 @@ package:
       - console
       - effect
       - gen
-      - identity
       - newtype
       - quickcheck
       - safe-coerce

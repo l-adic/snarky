@@ -7,7 +7,7 @@ package:
     - newtype
     - ordered-collections
     - prelude
-    - transformers
+    - tuples
   test:
     main: Test.Data.UnionFind
     dependencies:

@@ -17,7 +17,6 @@ import Prelude
 
 import Data.Array (concatMap)
 import Data.Either (Either(..))
-import Data.Identity (Identity)
 import Data.Int as Int
 import Data.Maybe (Maybe(..), isJust, isNothing)
 import Data.Newtype (un)
@@ -45,8 +44,7 @@ import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
 
 squareCircuit
-  :: forall t
-   . PrimeField Pallas.BaseField
+  :: PrimeField Pallas.BaseField
   => FVar Pallas.BaseField
   -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) () (FVar Pallas.BaseField)
 squareCircuit x = do

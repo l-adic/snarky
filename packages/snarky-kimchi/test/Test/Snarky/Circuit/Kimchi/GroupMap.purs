@@ -5,7 +5,6 @@ module Test.Snarky.Circuit.Kimchi.GroupMap
 import Prelude
 
 import Data.Array.NonEmpty as NEA
-import Data.Identity (Identity)
 import Effect.Class (liftEffect)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (F(..), FVar, Snarky)
@@ -67,8 +66,7 @@ spec' cfg proxyG curveName = do
             AffinePoint { x, y }
 
         circuit'
-          :: forall t
-           . PrimeField f
+          :: PrimeField f
           => FVar f
           -> Snarky f (KimchiConstraint f) () (AffinePoint (FVar f))
         circuit' = groupMapCircuit params

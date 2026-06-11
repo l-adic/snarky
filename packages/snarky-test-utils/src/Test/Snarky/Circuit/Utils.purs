@@ -2,7 +2,6 @@ module Test.Snarky.Circuit.Utils where
 
 import Prelude
 
-import Control.Monad.Except (Except, runExcept, throwError)
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Either (Either(..))
@@ -61,9 +60,9 @@ expectDivideByZero _ = ProverError \e -> case e of
   _ -> false
 
 type PostCondition f c aux =
-  (Variable -> Except EvaluationError f)
+  (Variable -> Either EvaluationError f)
   -> CircuitBuilderState c aux
-  -> Except EvaluationError Boolean
+  -> Either EvaluationError Boolean
 
 nullPostCondition :: forall f c aux. PostCondition f c aux
 nullPostCondition _ _ = pure true
@@ -160,9 +159,9 @@ checkResult builtState checker postCondition testFunction inputs = case _ of
       _ -> withHelp false ("Encountered unexpected error when proving circuit: " <> decorateError builtState e)
   Right (Tuple b assignments) ->
     let
-      lookup :: Variable -> Except EvaluationError f
+      lookup :: Variable -> Either EvaluationError f
       lookup v = case Map.lookup v assignments of
-        Nothing -> throwError $ MissingVariable v
+        Nothing -> Left $ MissingVariable v
         Just res -> pure res
 
       checks = foldM (\acc c -> conj acc <$> checker lookup c.constraint) true
@@ -171,7 +170,7 @@ checkResult builtState checker postCondition testFunction inputs = case _ of
         postConditionResult <- postCondition lookup builtState
         pure { constraintsResult, postConditionResult }
     in
-      case runExcept satisfiedRes of
+      case satisfiedRes of
         Left e -> withHelp false ("Encountered unexpected error when checking circuit: " <> decorateError builtState e)
         Right s@{ constraintsResult, postConditionResult } -> case testFunction inputs of
           Satisfied expected | constraintsResult && postConditionResult ->

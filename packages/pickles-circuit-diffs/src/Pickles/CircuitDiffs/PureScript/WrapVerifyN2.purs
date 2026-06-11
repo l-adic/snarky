@@ -17,11 +17,11 @@ import Pickles.PublicInputCommit (CorrectionMode(..))
 import Pickles.Types (ChunkedCommitment(..), WrapIPARounds)
 import Pickles.Wrap.Verify (wrapVerify)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_)
+import Snarky.Circuit.DSL (F(..), FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi (groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (curveParams)
+import Snarky.Curves.Class (class PrimeField, curveParams)
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
@@ -30,11 +30,11 @@ type N = 2
 type InputSize = 212
 
 wrapVerifyN2Circuit
-  :: forall t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  :: forall r
+   . PrimeField WrapField
   => IvpWrapParams
   -> Vector InputSize (FVar WrapField)
-  -> Snarky (KimchiConstraint WrapField) t m Unit
+  -> Snarky WrapField (KimchiConstraint WrapField) r Unit
 wrapVerifyN2Circuit { lagrangeAt, blindingH } inputs = do
   let
     at = unsafeIdx inputs

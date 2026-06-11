@@ -7,7 +7,6 @@ import Data.Array (foldl)
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Fin (getFinite)
-import Data.Identity (Identity)
 import Data.Int (pow)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (sequence)

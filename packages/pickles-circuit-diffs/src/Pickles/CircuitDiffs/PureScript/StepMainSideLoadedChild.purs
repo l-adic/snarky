@@ -32,14 +32,15 @@ import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStep
 import Pickles.Field (StepField)
 import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, stepMain)
+import Run as Run
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (class CircuitM, AsProverT, F(..), FVar, SizedF, Snarky, assertEqual_, const_, exists)
+import Snarky.Circuit.DSL (AsProver, F(..), FVar, SizedF, Snarky, assertEqual_, const_, exists)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldChecked')
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (fromInt, generator, toAffine)
+import Snarky.Curves.Class (class PrimeField, fromInt, generator, toAffine)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (Type1(..))
@@ -67,11 +68,11 @@ innerCurveGen =
 -- |   StepField.Assert.equal self StepField.zero ;
 -- |   { previous_proof_statements = [] ; public_output = () ; ... }
 sideLoadedChildRule
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
-  => AsProverT StepField m Unit
+  :: forall r
+   . PrimeField StepField
+  => AsProver StepField r Unit
   -> FVar StepField
-  -> Snarky (KimchiConstraint StepField) t m
+  -> Snarky StepField (KimchiConstraint StepField) r
        (RuleOutput 0 Unit Unit)
 sideLoadedChildRule _ appState = do
   -- dummy_constraints body — translation of OCaml
@@ -118,7 +119,7 @@ compileStepMainSideLoadedChild params = do
   let
     dummyAdvice :: StepAdvice _ _ _ _ _ _ Unit _ _
     dummyAdvice = unsafeCoerce unit
-  mkStepArtifact <$>
+  mkStepArtifact <$> Run.runBaseEffect do
     compile (Proxy @Unit) (Proxy @(Vector.Vector 1 (F StepField)))
       (Proxy @(KimchiConstraint StepField))
       -- N=0, Input mode (input is the rule's `self` field). Output is

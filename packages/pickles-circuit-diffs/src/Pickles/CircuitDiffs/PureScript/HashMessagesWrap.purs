@@ -14,9 +14,10 @@ import Pickles.Types (WrapIPARounds)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofCircuit')
 import RandomOracle.Sponge (Sponge) as RO
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertEq)
+import Snarky.Circuit.DSL (F, FVar, Snarky, assertEq)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
@@ -30,10 +31,10 @@ import Type.Proxy (Proxy(..))
 -- |
 -- | Reference: mina/src/lib/pickles/wrap_hack.ml:119-142
 hashMessagesWrapCircuit
-  :: forall t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  :: forall r
+   . PrimeField WrapField
   => Vector 33 (FVar WrapField)
-  -> Snarky (KimchiConstraint WrapField) t m Unit
+  -> Snarky WrapField (KimchiConstraint WrapField) r Unit
 hashMessagesWrapCircuit inputs = do
   let
     at = unsafeIdx inputs

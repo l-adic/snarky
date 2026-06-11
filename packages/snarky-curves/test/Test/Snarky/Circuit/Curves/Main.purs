@@ -4,7 +4,6 @@ import Prelude
 
 import Control.Monad.Gen (suchThat)
 import Data.Array.NonEmpty as NEA
-import Data.Identity (Identity)
 import Data.Maybe (fromJust)
 import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
@@ -14,7 +13,7 @@ import Snarky.Backend.Builder (class CompileCircuit, initialState)
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.Curves (add_, assertOnCurve, double)
 import Snarky.Circuit.Curves as Curves
-import Snarky.Circuit.DSL (class CircuitM, Basic, BoolVar, F(..), FVar, Snarky, assertEq, if_)
+import Snarky.Circuit.DSL (Basic, BoolVar, F(..), FVar, Snarky, assertEq, if_)
 import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams)
 import Snarky.Curves.Vesta as Vesta
@@ -52,10 +51,9 @@ spec pg _pc =
         { a, b } = curveParams pg
 
         circuit'
-          :: forall t
-           . CircuitM f (Basic f) t Identity
+          :: PrimeField f
           => Tuple (CurveParams (FVar f)) (AffinePoint (FVar f))
-          -> Snarky (Basic f) t Identity Unit
+          -> Snarky f (Basic f) () Unit
         circuit' = uncurry assertOnCurve
 
         onCurve = do
@@ -85,10 +83,9 @@ spec pg _pc =
     it "assertEqual Circuit is Valid" do
       let
         circuit'
-          :: forall t
-           . CircuitM f (Basic f) t Identity
+          :: PrimeField f
           => Tuple (AffinePoint (FVar f)) (AffinePoint (FVar f))
-          -> Snarky (Basic f) t Identity Unit
+          -> Snarky f (Basic f) () Unit
         circuit' = uncurry assertEq
 
         same = do
@@ -118,10 +115,9 @@ spec pg _pc =
         pureNegate (AffinePoint { x, y }) = AffinePoint { x, y: negate y }
 
         circuit'
-          :: forall t
-           . CircuitM f (Basic f) t Identity
+          :: PrimeField f
           => AffinePoint (FVar f)
-          -> Snarky (Basic f) t Identity (AffinePoint (FVar f))
+          -> Snarky f (Basic f) () (AffinePoint (FVar f))
         circuit' = Curves.negate
 
         gen = genAffinePoint pg
@@ -141,10 +137,9 @@ spec pg _pc =
         pureIf = uncurry3 \b then_ else_ -> if b then then_ else else_
 
         circuit'
-          :: forall t
-           . CircuitM f (Basic f) t Identity
+          :: PrimeField f
           => Tuple3 (BoolVar f) (AffinePoint (FVar f)) (AffinePoint (FVar f))
-          -> Snarky (Basic f) t Identity (AffinePoint (FVar f))
+          -> Snarky f (Basic f) () (AffinePoint (FVar f))
         circuit' = uncurry3 if_
 
         gen = do
@@ -174,10 +169,9 @@ spec pg _pc =
         f (Tuple x y) = unsafePartial $ fromJust $ toAffine $ addAffine x y
 
         circuit'
-          :: forall t
-           . CircuitM f (Basic f) t Identity
+          :: PrimeField f
           => Tuple (AffinePoint (FVar f)) (AffinePoint (FVar f))
-          -> Snarky (Basic f) t Identity (AffinePoint (FVar f))
+          -> Snarky f (Basic f) () (AffinePoint (FVar f))
         circuit' = uncurry add_
 
         -- Generate distinct points to avoid division by zero in slope calculation
@@ -216,10 +210,9 @@ spec pg _pc =
             AffinePoint { x: x', y: y' }
 
         circuit'
-          :: forall t
-           . CircuitM f (Basic f) t Identity
+          :: PrimeField f
           => AffinePoint (FVar f)
-          -> Snarky (Basic f) t Identity (AffinePoint (FVar f))
+          -> Snarky f (Basic f) () (AffinePoint (FVar f))
         circuit' = double (curveParams pg)
 
         -- Generate points where y ≠ 0 to avoid division by zero in doubling

@@ -11,18 +11,15 @@
 -- | near-constant amortized time complexity.
 -- |
 -- | ```purescript
--- | import Control.Monad.State (evalState)
 -- | import Data.UnionFind (emptyUnionFind, find, union, connected)
 -- |
 -- | example :: Boolean
--- | example = flip evalState emptyUnionFind do
 -- |   union 1 2
 -- |   union 2 3
 -- |   connected 1 3  -- true: 1 and 3 are in the same equivalence class
 -- | ```
 module Data.UnionFind
-  ( class MonadUnionFind
-  , find
+  ( find
   , union
   , connected
   , equivalenceClasses
@@ -32,47 +29,70 @@ module Data.UnionFind
 
 import Prelude
 
-import Control.Monad.State (State)
-import Control.Monad.State.Class (get, modify_)
 import Data.Array as Array
 import Data.FoldableWithIndex (foldlWithIndex)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
-import Data.Newtype (class Newtype, over)
+import Data.Newtype (class Newtype)
+import Data.Tuple (Tuple(..))
 
--- | Type class for monads supporting union-find operations.
--- |
--- | The type parameter `a` is the element type (must be `Ord` for the
--- | standard implementation), and `m` is the monad providing the state.
-class Monad m <= MonadUnionFind a m where
-  -- | Find the representative (root) of an element's equivalence class.
-  -- |
-  -- | Elements in the same equivalence class will return the same
-  -- | representative. If the element hasn't been seen before, it becomes
-  -- | its own representative (a singleton equivalence class).
-  find :: a -> m a
+-- | Find the representative (root) of an element's equivalence class,
+-- | with path compression. Elements in the same equivalence class return
+-- | the same representative. If the element hasn't been seen before, it
+-- | becomes its own representative (a singleton equivalence class).
+find :: forall a. Ord a => a -> UnionFindData a -> Tuple a (UnionFindData a)
+find x uf@(UnionFindData st) = case Map.lookup x st.parent of
+  Nothing ->
+    Tuple x $ UnionFindData st
+      { parent = Map.insert x x st.parent
+      , rank = Map.insert x 0 st.rank
+      }
+  Just p
+    | p == x -> Tuple x uf
+    | otherwise ->
+        let
+          Tuple root (UnionFindData st') = find p uf
+        in
+          -- Path compression
+          Tuple root $ UnionFindData st' { parent = Map.insert x root st'.parent }
 
-  -- | Merge the equivalence classes containing two elements.
-  -- |
-  -- | After `union x y`, `find x` and `find y` will return the same
-  -- | representative.
-  union :: a -> a -> m Unit
+-- | Merge the equivalence classes containing two elements (union by rank).
+-- | After `union x y`, `find x` and `find y` return the same representative.
+union :: forall a. Ord a => a -> a -> UnionFindData a -> UnionFindData a
+union x y uf0 =
+  let
+    Tuple rootX uf1 = find x uf0
+    Tuple rootY uf2@(UnionFindData st) = find y uf1
+  in
+    if rootX == rootY then uf2
+    else
+      let
+        rankX = fromMaybe 0 $ Map.lookup rootX st.rank
+        rankY = fromMaybe 0 $ Map.lookup rootY st.rank
+      in
+        if rankX < rankY then UnionFindData st { parent = Map.insert rootX rootY st.parent }
+        else if rankX > rankY then UnionFindData st { parent = Map.insert rootY rootX st.parent }
+        else UnionFindData st
+          { parent = Map.insert rootY rootX st.parent
+          , rank = Map.insert rootX (rankX + 1) st.rank
+          }
 
 -- | Check if two elements are in the same equivalence class.
 -- |
 -- | ```purescript
--- | example = flip evalState emptyUnionFind do
 -- |   union 1 2
 -- |   c1 <- connected 1 2  -- true
 -- |   c2 <- connected 1 3  -- false
 -- |   pure { c1, c2 }
 -- | ```
-connected :: forall a m. MonadUnionFind a m => Eq a => a -> a -> m Boolean
-connected x y = do
-  rootX <- find x
-  rootY <- find y
-  pure (rootX == rootY)
+connected :: forall a. Ord a => a -> a -> UnionFindData a -> Tuple Boolean (UnionFindData a)
+connected x y uf0 =
+  let
+    Tuple rootX uf1 = find x uf0
+    Tuple rootY uf2 = find y uf1
+  in
+    Tuple (rootX == rootY) uf2
 
 -- | Pure helper to find root without path compression (used by `equivalenceClasses`).
 findRootPure :: forall a. Ord a => Map a a -> a -> a
@@ -124,46 +144,3 @@ derive instance Newtype (UnionFindData a) _
 -- | Create an empty union-find structure with no elements.
 emptyUnionFind :: forall a. UnionFindData a
 emptyUnionFind = UnionFindData { parent: Map.empty, rank: Map.empty }
-
--- | Standard implementation using `State (UnionFindData a)`.
--- |
--- | Uses path compression in `find` and union by rank in `union` for
--- | near-constant amortized time complexity (inverse Ackermann function).
-instance (Ord a) => MonadUnionFind a (State (UnionFindData a)) where
-  find x = do
-    UnionFindData st <- get
-    case Map.lookup x st.parent of
-      Nothing -> do
-        -- First time seeing this element, make it its own parent
-        modify_ $ over UnionFindData \s -> s
-          { parent = Map.insert x x s.parent
-          , rank = Map.insert x 0 s.rank
-          }
-        pure x
-      Just p ->
-        if p == x then pure x
-        else do
-          root <- find p
-          -- Path compression
-          modify_ $ over UnionFindData \s -> s
-            { parent = Map.insert x root s.parent }
-          pure root
-
-  union x y = do
-    rootX <- find x
-    rootY <- find y
-
-    when (rootX /= rootY) do
-      UnionFindData st <- get
-      let rankX = fromMaybe 0 $ Map.lookup rootX st.rank
-      let rankY = fromMaybe 0 $ Map.lookup rootY st.rank
-
-      -- Union by rank
-      if rankX < rankY then modify_ $ over UnionFindData \s -> s
-        { parent = Map.insert rootX rootY s.parent }
-      else if rankX > rankY then modify_ $ over UnionFindData \s -> s
-        { parent = Map.insert rootY rootX s.parent }
-      else modify_ $ over UnionFindData \s -> s
-        { parent = Map.insert rootY rootX s.parent
-        , rank = Map.insert rootX (rankX + 1) s.rank
-        }

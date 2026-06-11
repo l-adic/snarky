@@ -4,7 +4,6 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import Data.Foldable (sum)
-import Data.Identity (Identity)
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..), uncurry)
 import Data.Vector (Vector)

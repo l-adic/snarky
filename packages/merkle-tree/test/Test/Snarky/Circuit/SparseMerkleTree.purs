@@ -4,32 +4,26 @@ module Test.Snarky.Circuit.SparseMerkleTree
 
 import Prelude
 
-import Control.Monad.Reader (ReaderT, ask)
 import Data.Array.NonEmpty as NEA
 import Data.Generic.Rep (class Generic)
-import Data.Identity (Identity)
 import Data.Int (pow)
 import Data.Maybe (Maybe(..))
-import Data.MerkleTree.Hashable (class Hashable, class MerkleHashable, defaultHash, hashLeaf)
+import Data.MerkleTree.Hashable (class Hashable, defaultHash, hashLeaf)
 import Data.MerkleTree.Sized (Address(..), AddressVar, Path(..))
 import Data.MerkleTree.Sized as Sized
 import Data.MerkleTree.Sparse as Sparse
 import Data.Newtype (class Newtype)
 import Data.Reflectable (class Reflectable, reflectType, reifyType)
 import Data.Tuple (Tuple(..))
-import Effect (Effect)
 import Effect.Aff (Aff)
-import Effect.Class (class MonadEffect, liftEffect)
+import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
-import Effect.Exception.Unsafe (unsafeThrow)
-import Effect.Ref (Ref, read, write)
 import JS.BigInt as BigInt
 import Poseidon (class PoseidonField)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F(..), FVar, Snarky, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Circuit.Kimchi (verifyCircuit)
-import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.MerkleTree.Sparse as SparseCircuit
 import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
@@ -45,31 +39,6 @@ import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
 
--- | Sparse tree reference type alias
-type SparseTreeRef d f v = Ref (Sparse.SparseMerkleTree d (Digest f) v)
-
--- | Monad that reads sparse tree from a Ref
-newtype SparseMerkleRefM d f v a = SparseMerkleRefM (ReaderT (SparseTreeRef d f v) Effect a)
-
-derive instance Newtype (SparseMerkleRefM d f v a) _
-derive newtype instance Functor (SparseMerkleRefM d f v)
-derive newtype instance Apply (SparseMerkleRefM d f v)
-derive newtype instance Applicative (SparseMerkleRefM d f v)
-derive newtype instance Bind (SparseMerkleRefM d f v)
-derive newtype instance Monad (SparseMerkleRefM d f v)
-derive newtype instance MonadEffect (SparseMerkleRefM d f v)
-
-getSparseTreeRef :: forall d f v. SparseMerkleRefM d f v (Sparse.SparseMerkleTree d (Digest f) v)
-getSparseTreeRef = SparseMerkleRefM $ ask >>= \ref -> liftEffect $ read ref
-
-modifySparseTreeRef
-  :: forall d f v
-   . (Sparse.SparseMerkleTree d (Digest f) v -> Sparse.SparseMerkleTree d (Digest f) v)
-  -> SparseMerkleRefM d f v Unit
-modifySparseTreeRef f = SparseMerkleRefM $ ask >>= \ref -> liftEffect do
-  tree <- read ref
-  write (f tree) ref
-
 -- | Convert between Sized.Address and Sparse.Address (they're structurally identical)
 toSparseAddr :: forall d. Address d -> Sparse.Address d
 toSparseAddr (Address a) = Sparse.Address a
@@ -77,37 +46,6 @@ toSparseAddr (Address a) = Sparse.Address a
 -- | Convert between Sized.Path and Sparse.Path (they're structurally identical)
 fromSparsePath :: forall d hash. Sparse.Path d hash -> Path d hash
 fromSparsePath (Sparse.Path v) = Path v
-
--- | Instance for Ref-based testing (reads/writes sparse tree via Ref)
-instance
-  ( Reflectable d Int
-  , PoseidonField f
-  , MerkleHashable v (Digest f)
-  ) =>
-  CMT.MerkleRequestM (SparseMerkleRefM d f v) f v d where
-  getElement (Address addr) = do
-    tree <- getSparseTreeRef
-    let
-      sparseAddr = Sparse.Address addr
-      mval = Sparse.get tree sparseAddr
-      path = Sparse.getWitness sparseAddr tree
-    case mval of
-      Just v -> pure { value: v, path: fromSparsePath path }
-      Nothing ->
-        -- For sparse trees, "empty" addresses are valid - they just have the default hash
-        -- We need the value type to have a default, but for now we fail
-        unsafeThrow "getElement: address not set in sparse tree"
-
-  getPath (Address addr) = do
-    tree <- getSparseTreeRef
-    let sparseAddr = Sparse.Address addr
-    pure $ fromSparsePath $ Sparse.getWitness sparseAddr tree
-
-  setValue (Address addr) v = do
-    modifySparseTreeRef \tree ->
-      case Sparse.set (Sparse.Address addr) v tree of
-        Just tree' -> tree'
-        Nothing -> unsafeThrow "setValue: invalid address"
 
 --------------------------------------------------------------------------------
 -- | Account type for merkle tree leaves (reusing from circuit tests)
@@ -188,10 +126,8 @@ sparseImpliedRootSpec cfg _ pd = do
       Sized.impliedRoot addr entryHash path
 
     circuit
-      :: forall t
-       . CircuitM f (KimchiConstraint f) t Identity
-      => Tuple (AddressVar d f) (Tuple (Digest (FVar f)) (Path d (Digest (FVar f))))
-      -> Snarky (KimchiConstraint f) t Identity (Digest (FVar f))
+      :: Tuple (AddressVar d f) (Tuple (Digest (FVar f)) (Path d (Digest (FVar f))))
+      -> Snarky f (KimchiConstraint f) () (Digest (FVar f))
     circuit (Tuple addr (Tuple entryHash (Path pathVec))) =
       SparseCircuit.impliedRoot addr entryHash (Sized.Path pathVec)
 
@@ -244,15 +180,13 @@ sparseCheckAndUpdateSpec cfg _ pd = do
       Sized.impliedRoot addr newValueHash path
 
     circuit
-      :: forall t
-       . CircuitM f (KimchiConstraint f) t Identity
-      => { addr :: AddressVar d f
+      :: { addr :: AddressVar d f
          , oldValueHash :: Digest (FVar f)
          , newValueHash :: Digest (FVar f)
          , path :: Path d (Digest (FVar f))
          , oldRoot :: Digest (FVar f)
          }
-      -> Snarky (KimchiConstraint f) t Identity (Digest (FVar f))
+      -> Snarky f (KimchiConstraint f) () (Digest (FVar f))
     circuit { addr, oldValueHash, newValueHash, path: Path pathVec, oldRoot } =
       SparseCircuit.checkAndUpdate addr oldValueHash newValueHash (Sized.Path pathVec) oldRoot
 

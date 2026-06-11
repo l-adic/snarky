@@ -2,11 +2,12 @@ module Test.Data.UnionFind where
 
 import Prelude
 
-import Control.Monad.State (State, evalState, execState)
 import Data.Array as Array
 import Data.Maybe (Maybe(..))
 import Data.Traversable (traverse, traverse_)
-import Data.UnionFind (UnionFindData, connected, emptyUnionFind, equivalenceClasses, find, union)
+import Data.Tuple (Tuple(..), fst, snd)
+import Data.UnionFind (UnionFindData, emptyUnionFind, equivalenceClasses)
+import Data.UnionFind as UF
 import Effect (Effect)
 import Test.QuickCheck ((===))
 import Test.Spec (describe, it)
@@ -18,9 +19,39 @@ import Test.Spec.Runner.Node (runSpecAndExitProcess)
 -- | Test state type
 type TestState = UnionFindData Int
 
+-- | Minimal local state monad over the pure union-find API, so the test
+-- | bodies below keep their original do-notation.
+newtype UFM a = UFM (TestState -> Tuple a TestState)
+
+instance Functor UFM where
+  map f (UFM g) = UFM \s -> let Tuple a s' = g s in Tuple (f a) s'
+
+instance Apply UFM where
+  apply = ap
+
+instance Applicative UFM where
+  pure a = UFM \s -> Tuple a s
+
+instance Bind UFM where
+  bind (UFM g) f = UFM \s -> let Tuple a s' = g s in case f a of UFM h -> h s'
+
+instance Monad UFM
+
+find :: Int -> UFM Int
+find x = UFM (UF.find x)
+
+union :: Int -> Int -> UFM Unit
+union x y = UFM \s -> Tuple unit (UF.union x y s)
+
+connected :: Int -> Int -> UFM Boolean
+connected x y = UFM (UF.connected x y)
+
 -- | Helper to run union-find operations
-runUF :: forall a. State TestState a -> a
-runUF = flip evalState emptyUnionFind
+runUF :: forall a. UFM a -> a
+runUF (UFM f) = fst (f emptyUnionFind)
+
+execUF :: forall a. UFM a -> TestState -> TestState
+execUF (UFM f) = snd <<< f
 
 main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] do
@@ -304,7 +335,7 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     describe "Equivalence classes enumeration" do
       it "returns all equivalence classes" do
         let
-          finalState = execState
+          finalState = execUF
             ( do
                 -- Create components: {1,2,3}, {4,5}, {6}
                 union 1 2
@@ -339,7 +370,7 @@ main = runSpecAndExitProcess [ consoleReporter ] do
 
       it "returns singleton classes for disconnected elements" do
         let
-          finalState = execState
+          finalState = execUF
             ( do
                 _ <- find 1
                 _ <- find 2

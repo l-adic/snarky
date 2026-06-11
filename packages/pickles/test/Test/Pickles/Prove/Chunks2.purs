@@ -17,7 +17,6 @@ module Test.Pickles.Prove.Chunks2
 import Prelude
 
 import Colog (LoggerT, Message, logInfo, withSpan)
-import Control.Monad.Except (runExceptT)
 import Control.Monad.Rec.Class (Step(..), tailRecM)
 import Data.Either (Either(..))
 import Data.Int.Bits as Bits
@@ -32,6 +31,7 @@ import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verify)
 import Run as Run
+import Run.Except as Except
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F, addConstraint, exists, mul_)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
@@ -112,7 +112,7 @@ spec = describe "Pickles.Prove.Chunks2" do
 
     let BranchProver chunks2Prover = fst output.provers
     logInfo "[Chunks2] proving"
-    eResult <- withSpan "[Chunks2] prove" $ liftEffect $ Run.runBaseEffect $ runExceptT $ chunks2Prover
+    eResult <- withSpan "[Chunks2] prove" $ liftEffect $ Run.runBaseEffect $ Except.runExcept $ chunks2Prover
       { appInput: unit, prevs: unit, sideloadedVKs: unit }
     case eResult of
       Left e -> liftEffect $ Exc.throw ("chunks2Prover: " <> show e)

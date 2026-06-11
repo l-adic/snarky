@@ -39,7 +39,7 @@ import Pickles.Step.FinalizeOtherProof as FOP
 import Pickles.Types (ChunkedCommitment(..))
 import Pickles.VerificationKey (chooseKey)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_, exists, label)
+import Snarky.Circuit.DSL (F(..), FVar, Snarky, const_, exists, label)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class PrimeField, fromBigInt)
@@ -52,11 +52,11 @@ import Type.Proxy (Proxy(..))
 
 -- | Takes 1 public input field (the index to select).
 oneHotN1Circuit
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall f r
+   . PrimeField f
   => PrimeField f
   => Vector 1 (FVar f)
-  -> Snarky (KimchiConstraint f) t m Unit
+  -> Snarky f (KimchiConstraint f) r Unit
 oneHotN1Circuit inputs = do
   let at = unsafeIdx inputs
   _ <- label "one_hot_n1" $ (oneHotVector :: _ -> _ (Vector 1 _)) (at 0)
@@ -78,11 +78,11 @@ compileOneHotN1Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit
 
 -- | Takes 1 public input field (the index to select).
 oneHotN3Circuit
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall f r
+   . PrimeField f
   => PrimeField f
   => Vector 1 (FVar f)
-  -> Snarky (KimchiConstraint f) t m Unit
+  -> Snarky f (KimchiConstraint f) r Unit
 oneHotN3Circuit inputs = do
   let at = unsafeIdx inputs
   _ <- label "one_hot_n3" $ (oneHotVector :: _ -> _ (Vector 3 _)) (at 0)
@@ -103,11 +103,11 @@ compileOneHotN3Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit
 --------------------------------------------------------------------------------
 
 pseudoMaskN1Circuit
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall f r
+   . PrimeField f
   => PrimeField f
   => Vector 2 (FVar f)
-  -> Snarky (KimchiConstraint f) t m Unit
+  -> Snarky f (KimchiConstraint f) r Unit
 pseudoMaskN1Circuit inputs = do
   let at = unsafeIdx inputs
   bits <- (oneHotVector :: _ -> _ (Vector 1 _)) (at 0)
@@ -129,11 +129,11 @@ compilePseudoMaskN1Wrap = compilePure (Proxy @(Vector 2 (F WrapField))) (Proxy @
 --------------------------------------------------------------------------------
 
 pseudoMaskN3Circuit
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall f r
+   . PrimeField f
   => PrimeField f
   => Vector 4 (FVar f)
-  -> Snarky (KimchiConstraint f) t m Unit
+  -> Snarky f (KimchiConstraint f) r Unit
 pseudoMaskN3Circuit inputs = do
   let at = unsafeIdx inputs
   bits <- (oneHotVector :: _ -> _ (Vector 3 _)) (at 0)
@@ -155,11 +155,11 @@ compilePseudoMaskN3Wrap = compilePure (Proxy @(Vector 4 (F WrapField))) (Proxy @
 --------------------------------------------------------------------------------
 
 pseudoChooseN1Circuit
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall f r
+   . PrimeField f
   => PrimeField f
   => Vector 1 (FVar f)
-  -> Snarky (KimchiConstraint f) t m Unit
+  -> Snarky f (KimchiConstraint f) r Unit
 pseudoChooseN1Circuit inputs = do
   let at = unsafeIdx inputs
   bits <- (oneHotVector :: _ -> _ (Vector 1 _)) (at 0)
@@ -182,11 +182,11 @@ compilePseudoChooseN1Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy
 --------------------------------------------------------------------------------
 
 pseudoChooseN3Circuit
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall f r
+   . PrimeField f
   => PrimeField f
   => Vector 1 (FVar f)
-  -> Snarky (KimchiConstraint f) t m Unit
+  -> Snarky f (KimchiConstraint f) r Unit
 pseudoChooseN3Circuit inputs = do
   let at = unsafeIdx inputs
   bits <- (oneHotVector :: _ -> _ (Vector 3 _)) (at 0)
@@ -211,10 +211,10 @@ compilePseudoChooseN3Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy
 --------------------------------------------------------------------------------
 
 chooseKeyN1WrapCircuit
-  :: forall t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  :: forall r
+   . PrimeField WrapField
   => Vector 1 (FVar WrapField)
-  -> Snarky (KimchiConstraint WrapField) t m Unit
+  -> Snarky WrapField (KimchiConstraint WrapField) r Unit
 chooseKeyN1WrapCircuit inputs = do
   let
     at = unsafeIdx inputs
@@ -248,11 +248,11 @@ compileChooseKeyN1Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @U
 --------------------------------------------------------------------------------
 
 utilsOnesVectorN16Circuit
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall f r
+   . PrimeField f
   => PrimeField f
   => Vector 1 (FVar f)
-  -> Snarky (KimchiConstraint f) t m Unit
+  -> Snarky f (KimchiConstraint f) r Unit
 utilsOnesVectorN16Circuit inputs = do
   let at = unsafeIdx inputs
   _ <- label "ones_vector_n16" $ FOP.mkSideLoadedOnesPrefixMask (at 0)
@@ -276,11 +276,11 @@ compileUtilsOnesVectorN16Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (P
 --------------------------------------------------------------------------------
 
 oneHotN17Circuit
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall f r
+   . PrimeField f
   => PrimeField f
   => Vector 1 (FVar f)
-  -> Snarky (KimchiConstraint f) t m Unit
+  -> Snarky f (KimchiConstraint f) r Unit
 oneHotN17Circuit inputs = do
   let at = unsafeIdx inputs
   _ <- label "one_hot_n17" $ (oneHotVector :: _ -> _ (Vector 17 _)) (at 0)
@@ -303,11 +303,11 @@ compileOneHotN17Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @Uni
 --------------------------------------------------------------------------------
 
 pseudoMaskN17Circuit
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall f r
+   . PrimeField f
   => PrimeField f
   => Vector 1 (FVar f)
-  -> Snarky (KimchiConstraint f) t m Unit
+  -> Snarky f (KimchiConstraint f) r Unit
 pseudoMaskN17Circuit inputs = do
   let at = unsafeIdx inputs
   bits <- (oneHotVector :: _ -> _ (Vector 17 _)) (at 0)
@@ -345,10 +345,10 @@ compilePseudoMaskN17Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy 
 --------------------------------------------------------------------------------
 
 sideloadedVkTypStepCircuit
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+  :: forall r
+   . PrimeField StepField
   => Unit
-  -> Snarky (KimchiConstraint StepField) t m Unit
+  -> Snarky StepField (KimchiConstraint StepField) r Unit
 sideloadedVkTypStepCircuit _ = do
   _ <- label "sideloaded_vk_typ" $ exists (pure (compileDummy :: SLVK.VerificationKey 1 (F StepField) Boolean))
   pure unit

@@ -60,7 +60,6 @@ package:
     - snarky
     - snarky-kimchi
     - tailrec
-    - transformers
     - tuples
     - vector-sized
   build:

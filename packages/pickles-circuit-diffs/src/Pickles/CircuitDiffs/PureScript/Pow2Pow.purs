@@ -12,19 +12,20 @@ import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
 import Pickles.Field (StepField)
 import Pickles.Util.Pow2 (pow2PowSquare)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky)
+import Snarky.Circuit.DSL (F, FVar, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
 parsePow2PowInput :: Vector 1 (FVar StepField) -> FVar StepField
 parsePow2PowInput = Vector.head
 
 pow2PowCircuit
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+  :: forall r
+   . PrimeField StepField
   => FVar StepField
-  -> Snarky (KimchiConstraint StepField) t m (FVar StepField)
+  -> Snarky StepField (KimchiConstraint StepField) r (FVar StepField)
 pow2PowCircuit x = pow2PowSquare x 16
 
 compilePow2Pow :: CompiledCircuit StepField

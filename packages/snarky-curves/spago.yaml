@@ -3,9 +3,11 @@ package:
   dependencies:
     - curves
     - maybe
+    - newtype
     - partial
     - prelude
     - quickcheck
+    - safe-coerce
     - simple-json
     - snarky
   test:
@@ -14,7 +16,6 @@ package:
       - arrays
       - effect
       - gen
-      - identity
       - quickcheck
       - snarky-test-utils
       - spec

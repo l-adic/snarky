@@ -28,7 +28,6 @@ module Pickles.OptSponge
 
 import Prelude
 
-import Control.Monad.State.Trans (StateT(..), runStateT)
 import Data.Array as Array
 import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (foldM)
@@ -268,15 +267,25 @@ type OptSpongeState f =
   , needsFinalPermuteIfEmpty :: Boolean
   }
 
--- | Stateful Opt sponge monad wrapping Snarky.
-newtype OptSpongeM f c r a = OptSpongeM (StateT (OptSpongeState f) (Snarky f c r) a)
+-- | Stateful Opt sponge monad: a hand-rolled state monad over `Snarky`
+-- | (replaces `StateT` from `transformers`).
+newtype OptSpongeM f c r a = OptSpongeM (OptSpongeState f -> Snarky f c r (Tuple a (OptSpongeState f)))
 
 derive instance Newtype (OptSpongeM f c r a) _
-derive newtype instance Functor (Snarky f c r) => Functor (OptSpongeM f c r)
-derive newtype instance (Monad (Snarky f c r)) => Apply (OptSpongeM f c r)
-derive newtype instance (Monad (Snarky f c r)) => Applicative (OptSpongeM f c r)
-derive newtype instance (Monad (Snarky f c r)) => Bind (OptSpongeM f c r)
-derive newtype instance (Monad (Snarky f c r)) => Monad (OptSpongeM f c r)
+
+instance Functor (OptSpongeM f c r) where
+  map f (OptSpongeM g) = OptSpongeM \s -> g s <#> \(Tuple a s') -> Tuple (f a) s'
+
+instance Apply (OptSpongeM f c r) where
+  apply = ap
+
+instance Applicative (OptSpongeM f c r) where
+  pure a = OptSpongeM \s -> pure (Tuple a s)
+
+instance Bind (OptSpongeM f c r) where
+  bind (OptSpongeM g) f = OptSpongeM \s -> g s >>= \(Tuple a s') -> unwrap (f a) s'
+
+instance Monad (OptSpongeM f c r)
 
 -- | Run an OptSpongeM computation, returning both result and final state.
 runOptSpongeM
@@ -286,7 +295,7 @@ runOptSpongeM
   => OptSpongeM f (KimchiConstraint f) r a
   -> Snarky f (KimchiConstraint f) r (Tuple a (OptSpongeState f))
 runOptSpongeM computation =
-  runStateT (unwrap computation) initialOptState
+  unwrap computation initialOptState
   where
   initialOptState =
     { state: Vector.replicate (const_ zero)
@@ -305,7 +314,7 @@ runOptSpongeFromSponge
   -> Snarky f (KimchiConstraint f) r (Tuple a (OptSpongeState f))
 runOptSpongeFromSponge sponge computation = do
   initState <- ofSponge sponge
-  runStateT (unwrap computation) initState
+  unwrap computation initState
 
 -- | Lift a Snarky computation into OptSpongeM.
 liftSnarky
@@ -313,7 +322,7 @@ liftSnarky
    . PrimeField f
   => Snarky f (KimchiConstraint f) r a
   -> OptSpongeM f (KimchiConstraint f) r a
-liftSnarky ma = wrap $ StateT \s -> ma <#> \a -> Tuple a s
+liftSnarky ma = wrap \s -> ma <#> \a -> Tuple a s
 
 -- | Absorb a (flag, value) pair. Just accumulates; processing happens at squeeze.
 optAbsorb
@@ -321,7 +330,7 @@ optAbsorb
    . PrimeField f
   => Tuple (BoolVar f) (FVar f)
   -> OptSpongeM f (KimchiConstraint f) r Unit
-optAbsorb pair = wrap $ StateT \s -> pure $ Tuple unit case s.phase of
+optAbsorb pair = wrap \s -> pure $ Tuple unit case s.phase of
   Absorbing { nextIndex, xs } ->
     s { phase = Absorbing { nextIndex, xs: pair List.: xs } }
   OptSqueezed _ ->
@@ -347,7 +356,7 @@ optSqueeze
    . PoseidonField f
   => PrimeField f
   => OptSpongeM f (KimchiConstraint f) r (FVar f)
-optSqueeze = wrap $ StateT \s -> case s.phase of
+optSqueeze = wrap \s -> case s.phase of
   OptSqueezed n ->
     if n >= 2 {- rate -} then do
       newState <- poseidon s.state
@@ -384,7 +393,7 @@ peekPreSqueezeState
    . PoseidonField f
   => PrimeField f
   => OptSpongeM f (KimchiConstraint f) r (Vector 3 (FVar f))
-peekPreSqueezeState = wrap $ StateT \s -> case s.phase of
+peekPreSqueezeState = wrap \s -> case s.phase of
   OptSqueezed _ -> pure $ Tuple s.state s
   Absorbing { nextIndex, xs } -> do
     let input = Array.fromFoldable (List.reverse xs)
@@ -436,7 +445,7 @@ toRegularSponge
   :: forall f r
    . PrimeField f
   => OptSpongeM f (KimchiConstraint f) r (RegSponge.Sponge (FVar f))
-toRegularSponge = wrap $ StateT \s -> case s.phase of
+toRegularSponge = wrap \s -> case s.phase of
   OptSqueezed n ->
     pure $ Tuple
       { state: s.state, spongeState: RegSponge.Squeezed (unsafeFinite @3 n) }

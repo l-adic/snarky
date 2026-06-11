@@ -14,7 +14,7 @@ import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (PolishToken)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.CVar (CVar(..), const_)
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, mul_, pow_, sub_)
+import Snarky.Circuit.DSL (FVar, Snarky, mul_, pow_, sub_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
 
@@ -25,16 +25,16 @@ import Snarky.Curves.Class (class HasEndo, class PrimeField)
 -- | - Domain values computed from zeta (omega constants for lagrange basis)
 -- | - Monadic interpreter (evaluateM) with peephole alpha optimization
 linearizationCircuitM
-  :: forall f f' t m
+  :: forall f f' r
    . PrimeField f
   => PoseidonField f
   => HasEndo f f'
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => LinearizationFFI f
   => Int -- ^ domainLog2
   -> Array PolishToken
   -> Vector 90 (FVar f)
-  -> Snarky (KimchiConstraint f) t m (FVar f)
+  -> Snarky f (KimchiConstraint f) r (FVar f)
 linearizationCircuitM domLog2 tokens inputs = do
   let
     -- Unpack 90 inputs matching OCaml layout:
@@ -143,7 +143,7 @@ linearizationCircuitM domLog2 tokens inputs = do
   -- matching OCaml's lazy binding (plonk_checks.ml:281) forced inside
   -- unnormalized_lagrange_basis.
   let
-    env :: EnvM f (Snarky (KimchiConstraint f) t m)
+    env :: EnvM f (Snarky f (KimchiConstraint f) r)
     env = buildCircuitEnvM
       alphaPowers
       zeta

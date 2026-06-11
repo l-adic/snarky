@@ -24,6 +24,7 @@ module Pickles.Sponge
   , labelM
   , getSponge
   , putSponge
+  , runSpongeM
   -- Pure sponge monad
   , PureSpongeM(..)
   , runPureSpongeM
@@ -37,12 +38,10 @@ module Pickles.Sponge
 
 import Prelude
 
-import Control.Monad.State.Trans (StateT(..), evalStateT, get, put, runStateT)
 import Data.Foldable (class Foldable)
-import Data.Identity (Identity(..))
-import Data.Newtype (class Newtype, un, unwrap, wrap)
+import Data.Newtype (class Newtype, unwrap)
 import Data.Traversable (traverse_)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Poseidon (class PoseidonField)
@@ -85,57 +84,69 @@ absorbMany = traverse_ absorb
 -- | In-Circuit Sponge Monad: SpongeM
 --------------------------------------------------------------------------------
 
--- | The in-circuit sponge monad.
--- | A newtype wrapper around StateT to manage sponge state within Snarky.
-newtype SpongeM f c r a = SpongeM (StateT (Sponge (FVar f)) (Snarky f c r) a)
+-- | The in-circuit sponge monad: a hand-rolled state monad over `Snarky`
+-- | (replaces `StateT` from `transformers`).
+newtype SpongeM f c r a = SpongeM (Sponge (FVar f) -> Snarky f c r (Tuple a (Sponge (FVar f))))
 
 derive instance Newtype (SpongeM f c r a) _
-derive newtype instance Functor (Snarky f c r) => Functor (SpongeM f c r)
-derive newtype instance (Monad (Snarky f c r)) => Apply (SpongeM f c r)
-derive newtype instance (Monad (Snarky f c r)) => Applicative (SpongeM f c r)
-derive newtype instance (Monad (Snarky f c r)) => Bind (SpongeM f c r)
-derive newtype instance (Monad (Snarky f c r)) => Monad (SpongeM f c r)
+
+instance Functor (SpongeM f c r) where
+  map f (SpongeM g) = SpongeM \s -> g s <#> \(Tuple a s') -> Tuple (f a) s'
+
+instance Apply (SpongeM f c r) where
+  apply = ap
+
+instance Applicative (SpongeM f c r) where
+  pure a = SpongeM \s -> pure (Tuple a s)
+
+instance Bind (SpongeM f c r) where
+  bind (SpongeM g) f = SpongeM \s -> g s >>= \(Tuple a s') -> unwrap (f a) s'
+
+instance Monad (SpongeM f c r)
+
+-- | Run a SpongeM computation, returning result and final sponge
+runSpongeM
+  :: forall f c r a
+   . Sponge (FVar f)
+  -> SpongeM f c r a
+  -> Snarky f c r (Tuple a (Sponge (FVar f)))
+runSpongeM initialState computation = unwrap computation initialState
 
 -- | Run a SpongeM computation, returning only the result
 evalSpongeM
   :: forall f c r a
-   . Functor (Snarky f c r)
-  => Monad (Snarky f c r)
-  => Sponge (FVar f)
+   . Sponge (FVar f)
   -> SpongeM f c r a
   -> Snarky f c r a
-evalSpongeM initialState computation = evalStateT (unwrap computation) initialState
+evalSpongeM initialState computation = map fst (unwrap computation initialState)
 
 -- | Lift a Snarky computation into SpongeM
 liftSnarky
   :: forall f c r a
-   . Functor (Snarky f c r)
-  => Snarky f c r a
+   . Snarky f c r a
   -> SpongeM f c r a
-liftSnarky ma = wrap $ StateT \s -> ma <#> \a -> Tuple a s
+liftSnarky ma = SpongeM \s -> ma <#> \a -> Tuple a s
 
--- | Label a SpongeM computation (lifts Snarky label through StateT)
+-- | Label a SpongeM computation (lifts Snarky label through the state)
 labelM
   :: forall f c r a
    . String
   -> SpongeM f c r a
   -> SpongeM f c r a
-labelM s m = wrap $ StateT \state -> label s (runStateT (unwrap m) state)
+labelM s m = SpongeM \state -> label s (unwrap m state)
 
 -- | Get the current sponge state (for checkpointing)
 getSponge
   :: forall f c r
-   . Monad (Snarky f c r)
-  => SpongeM f c r (Sponge (FVar f))
-getSponge = wrap get
+   . SpongeM f c r (Sponge (FVar f))
+getSponge = SpongeM \s -> pure (Tuple s s)
 
 -- | Set the sponge state (for restoring from checkpoint)
 putSponge
   :: forall f c r
-   . Monad (Snarky f c r)
-  => Sponge (FVar f)
+   . Sponge (FVar f)
   -> SpongeM f c r Unit
-putSponge = wrap <<< put
+putSponge s' = SpongeM \_ -> pure (Tuple unit s')
 
 -- | MonadSponge instance for the in-circuit sponge monad
 instance
@@ -143,20 +154,11 @@ instance
   , PrimeField f
   ) =>
   MonadSponge (FVar f) (SpongeM f (KimchiConstraint f) r) where
-  absorb x = wrap do
-    sponge <- get
-    newSponge <- lift $ CircuitSponge.absorb x sponge
-    put newSponge
-    where
-    lift ma = StateT \s -> ma <#> \a -> Tuple a s
+  absorb x = SpongeM \sponge ->
+    CircuitSponge.absorb x sponge <#> \newSponge -> Tuple unit newSponge
 
-  squeeze = wrap do
-    sponge <- get
-    { result, sponge: newSponge } <- lift $ CircuitSponge.squeeze sponge
-    put newSponge
-    pure result
-    where
-    lift ma = StateT \s -> ma <#> \a -> Tuple a s
+  squeeze = SpongeM \sponge ->
+    CircuitSponge.squeeze sponge <#> \{ result, sponge: newSponge } -> Tuple result newSponge
 
 -- | Squeeze a scalar challenge (128 bits) from the sponge.
 -- | This is the in-circuit version that returns a SizedF 128.
@@ -197,15 +199,24 @@ squeezeScalar params = do
 --------------------------------------------------------------------------------
 
 -- | Pure sponge monad for testing and reference implementations.
--- | A newtype wrapper around State.
-newtype PureSpongeM f a = PureSpongeM (StateT (Sponge f) Identity a)
+-- | A hand-rolled pure state monad over the sponge.
+newtype PureSpongeM f a = PureSpongeM (Sponge f -> Tuple a (Sponge f))
 
 derive instance Newtype (PureSpongeM f a) _
-derive newtype instance Functor (PureSpongeM f)
-derive newtype instance Apply (PureSpongeM f)
-derive newtype instance Applicative (PureSpongeM f)
-derive newtype instance Bind (PureSpongeM f)
-derive newtype instance Monad (PureSpongeM f)
+
+instance Functor (PureSpongeM f) where
+  map f (PureSpongeM g) = PureSpongeM \s -> let Tuple a s' = g s in Tuple (f a) s'
+
+instance Apply (PureSpongeM f) where
+  apply = ap
+
+instance Applicative (PureSpongeM f) where
+  pure a = PureSpongeM \s -> Tuple a s
+
+instance Bind (PureSpongeM f) where
+  bind (PureSpongeM g) f = PureSpongeM \s -> let Tuple a s' = g s in unwrap (f a) s'
+
+instance Monad (PureSpongeM f)
 
 -- | Run a pure sponge computation, returning both result and final state
 runPureSpongeM
@@ -213,8 +224,7 @@ runPureSpongeM
    . Sponge f
   -> PureSpongeM f a
   -> Tuple a (Sponge f)
-runPureSpongeM initialState computation =
-  un Identity $ runStateT (unwrap computation) initialState
+runPureSpongeM initialState computation = unwrap computation initialState
 
 -- | Run a pure sponge computation, returning only the result
 evalPureSpongeM
@@ -222,25 +232,21 @@ evalPureSpongeM
    . Sponge f
   -> PureSpongeM f a
   -> a
-evalPureSpongeM initialState computation =
-  un Identity $ evalStateT (unwrap computation) initialState
+evalPureSpongeM initialState computation = fst (unwrap computation initialState)
 
 -- | Get the current sponge state (pure version)
 getSpongeState :: forall f. PureSpongeM f (Sponge f)
-getSpongeState = wrap get
+getSpongeState = PureSpongeM \s -> Tuple s s
 
 -- | MonadSponge instance for the pure sponge monad
 instance PoseidonField f => MonadSponge f (PureSpongeM f) where
-  absorb x = wrap do
-    sponge <- get
-    let newSponge = PureSponge.absorb x sponge
-    put newSponge
+  absorb x = PureSpongeM \sponge -> Tuple unit (PureSponge.absorb x sponge)
 
-  squeeze = wrap do
-    sponge <- get
-    let { result, sponge: newSponge } = PureSponge.squeeze sponge
-    put newSponge
-    pure result
+  squeeze = PureSpongeM \sponge ->
+    let
+      { result, sponge: newSponge } = PureSponge.squeeze sponge
+    in
+      Tuple result newSponge
 
 -- | Squeeze a scalar challenge from the pure sponge (128 bits)
 squeezeScalarChallengePure

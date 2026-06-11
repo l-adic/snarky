@@ -2,8 +2,6 @@ module Test.Snarky.Constraint (spec) where
 
 import Prelude
 
-import Control.Monad.Error.Class (throwError)
-import Control.Monad.Except (except, runExcept)
 import Data.Either (Either(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
@@ -24,12 +22,12 @@ spec pf = describe "Constraint Spec" do
       { cvar, assignments } <- CVar.genWithAssignments pf v0
       let
         _lookup v = case Map.lookup v assignments of
-          Nothing -> throwError $ MissingVariable v
+          Nothing -> Left $ MissingVariable v
           Just a -> pure a
       let
         lhs :: Either EvaluationError f
-        lhs = runExcept $ evalAffineExpression (reduceToAffineExpression cvar) _lookup
-      let rhs = runExcept $ eval _lookup cvar
+        lhs = evalAffineExpression (reduceToAffineExpression cvar) _lookup
+      let rhs = eval _lookup cvar
       pure $ lhs == rhs
 
   it "basic constraint gen is valid" do
@@ -37,9 +35,9 @@ spec pf = describe "Constraint Spec" do
       { basic, assignments } <- Basic.genWithAssignments pf
       let
         lookup v = case Map.lookup v assignments of
-          Nothing -> except $ Left $ MissingVariable v
+          Nothing -> Left $ MissingVariable v
           Just a -> pure a
 
         res :: Either (EvaluationError) Boolean
-        res = runExcept $ Basic.eval lookup basic
+        res = Basic.eval lookup basic
       pure $ res == Right true

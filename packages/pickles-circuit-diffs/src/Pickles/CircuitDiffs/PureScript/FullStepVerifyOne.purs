@@ -23,11 +23,11 @@ import Pickles.Step.VerifyOne (verifyOne)
 import Pickles.Types (ChunkedCommitment(..))
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, const_)
+import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (curveParams)
+import Snarky.Curves.Class (class PrimeField, curveParams)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
@@ -38,11 +38,11 @@ type FullStepVerifyOneParams =
   }
 
 fullStepVerifyOneCircuit
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+  :: forall r
+   . PrimeField StepField
   => FullStepVerifyOneParams
   -> Vector 286 (FVar StepField)
-  -> Snarky (KimchiConstraint StepField) t m Unit
+  -> Snarky StepField (KimchiConstraint StepField) r Unit
 fullStepVerifyOneCircuit { lagrangeAt, blindingH } inputs = do
   let
     at = unsafeIdx inputs

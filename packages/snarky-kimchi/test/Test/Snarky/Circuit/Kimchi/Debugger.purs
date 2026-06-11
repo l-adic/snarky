@@ -5,10 +5,8 @@ module Test.Snarky.Circuit.Kimchi.Debugger
 import Prelude
 
 import Data.Either (Either(..), isRight)
-import Data.Identity (Identity(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
-import Data.Newtype (un)
 import Data.String as String
 import Data.Tuple (Tuple(..), fst, uncurry)
 import Run as Run

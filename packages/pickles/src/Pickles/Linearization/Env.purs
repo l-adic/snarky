@@ -17,10 +17,9 @@ module Pickles.Linearization.Env
 
 import Prelude
 
-import Control.Monad.State (StateT, evalStateT, get, put)
-import Control.Monad.Trans.Class (lift)
 import Data.Fin (Finite, unsafeFinite)
 import Data.Int (pow) as Int
+import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt (fromInt)
@@ -30,7 +29,8 @@ import Pickles.Linearization.Types (Column(..), CurrOrNext(..), FeatureFlag(..),
 import Pickles.Linearization.Types (Column(..), CurrOrNext, FeatureFlag, GateType)
 import Poseidon (class PoseidonField, getMdsMatrix)
 import Snarky.Circuit.DSL (class BasicSystem, FVar, Snarky, add_, const_, div_, label, pow_, sub_)
-import Snarky.Circuit.DSL (class BasicSystem, mul_) as Circuit
+import Snarky.Circuit.DSL (mul_) as Circuit
+import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Curves.Class (class HasEndo, class PrimeField, EndoBase(..), endoBase, pow)
 import Type.Proxy (Proxy(..))
 
@@ -154,8 +154,8 @@ type EnvM f n =
 -- | constraints.
 -- |
 -- | Internals: seed with `[α^0, α^1] = [1, α]`, then generate α^2..α^70
--- | via a StateT-threaded monadic scan (`Vector.generateA` carrying the
--- | previous power). Each step emits one `Circuit.mul_` constraint.
+-- | via a `mapAccumM` scan carrying the previous power. Each step emits
+-- | one `Circuit.mul_` constraint.
 -- | Type-level `Vector.append` glues the seed and the generated tail
 -- | into the final `Vector 71` — no runtime length check needed.
 precomputeAlphaPowers
@@ -165,14 +165,13 @@ precomputeAlphaPowers
   => FVar f -- ^ alpha
   -> Snarky f c r (Vector AlphaPowersLen (FVar f))
 precomputeAlphaPowers alpha = label "precompute-alpha-powers" do
-  let
-    step :: Finite 69 -> StateT (FVar f) (Snarky f c r) (FVar f)
-    step _ = do
-      prev <- get
-      next <- lift (Circuit.mul_ alpha prev)
-      put next
-      pure next
-  rest <- evalStateT (Vector.generateA @69 step) alpha
+  Tuple rest _ <- mapAccumM
+    ( \prev (_ :: Finite 69) -> do
+        next <- Circuit.mul_ alpha prev
+        pure (Tuple next next)
+    )
+    alpha
+    (Vector.generate identity :: Vector 69 _)
   pure (Vector.append (const_ one :< alpha :< Vector.nil) rest)
 
 -- | Construct a monadic circuit environment for evaluating linearization polynomials.

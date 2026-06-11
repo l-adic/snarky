@@ -20,7 +20,6 @@ module Test.Pickles.Prove.NoRecursionReturn
 import Prelude
 
 import Colog (LoggerT, Message, logInfo, withSpan)
-import Control.Monad.Except (runExceptT)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
@@ -32,6 +31,7 @@ import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verify)
 import Run as Run
+import Run.Except as Except
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F, FVar, const_)
 import Test.Pickles.SharedSrs (SharedSrs)
@@ -85,7 +85,7 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
     -- branches. Threading the field uniformly keeps the
     -- `BranchProver` API consistent with side-loaded specs.
     logInfo "[NoRecursionReturn] proving"
-    eResult <- withSpan "[NoRecursionReturn] prove" $ liftEffect $ Run.runBaseEffect $ runExceptT $ nrrProver
+    eResult <- withSpan "[NoRecursionReturn] prove" $ liftEffect $ Run.runBaseEffect $ Except.runExcept $ nrrProver
       { appInput: unit, prevs: unit, sideloadedVKs: unit }
     case eResult of
       Left e -> liftEffect $ Exc.throw ("nrrProver: " <> show e)

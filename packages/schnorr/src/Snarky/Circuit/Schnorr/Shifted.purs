@@ -42,7 +42,7 @@ import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (add_, scale_) as CVar
 import Snarky.Circuit.Curves (double, negate) as Curves
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, and_, assertSquare_, const_, exists, if_, mul_, square_)
+import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, and_, assertSquare_, const_, exists, if_, mul_, square_)
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Types (Bool(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -59,20 +59,20 @@ import Type.Proxy (Proxy(..))
 newtype Shifted f = Shifted (AffinePoint (FVar f))
 
 -- | Ops parameterised by a single shift (allocated by `createShifted`).
-type ShiftedOps f t m =
+type ShiftedOps f r =
   { zero :: Shifted f
   , add ::
       Shifted f
       -> AffinePoint (FVar f)
-      -> Snarky (KimchiConstraint f) t m (Shifted f)
+      -> Snarky f (KimchiConstraint f) r (Shifted f)
   , if_ ::
       BoolVar f
       -> Shifted f
       -> Shifted f
-      -> Snarky (KimchiConstraint f) t m (Shifted f)
+      -> Snarky f (KimchiConstraint f) r (Shifted f)
   , unshiftNonzero ::
       Shifted f
-      -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
+      -> Snarky f (KimchiConstraint f) r (AffinePoint (FVar f))
   }
 
 -- | Pallas-style `assert_on_curve` matching OCaml
@@ -88,12 +88,13 @@ type ShiftedOps f t m =
 -- | Curve params are constants (not field vars); `a*x` is folded
 -- | symbolically via `CVar.scale_`.
 assertOnCurveConst
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => PrimeField f
   => CurveParams f
   -> AffinePoint (FVar f)
-  -> Snarky c t m Unit
+  -> Snarky f c r Unit
 assertOnCurveConst { a, b } (AffinePoint { x, y }) = do
   x2 <- square_ x
   x3 <- mul_ x2 x
@@ -107,12 +108,12 @@ assertOnCurveConst { a, b } (AffinePoint { x, y }) = do
 -- | "for free" via `Inner_curve.typ`'s check), and return ops.
 -- | Mirrors `Inner_curve.Checked.Shifted.create ()`.
 createShifted
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall f r
+   . PrimeField f
   => PrimeField f
   => CurveParams f
   -> AffinePoint f
-  -> Snarky (KimchiConstraint f) t m (ShiftedOps f t m)
+  -> Snarky f (KimchiConstraint f) r (ShiftedOps f r)
 createShifted curveParams shiftConst = do
   shift <- exists $ pure shiftConst
   assertOnCurveConst curveParams shift
@@ -164,18 +165,18 @@ shiftFor g = AffinePoint (unsafePartial fromJust $ C.toAffine (g <> g))
 -- | coordinates in `Pallas.BaseField`), with the curve params and a
 -- | standard shift baked in.
 pallasScalarOps
-  :: forall t m
-   . CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t m
-  => Snarky (KimchiConstraint Pallas.BaseField) t m (ShiftedOps Pallas.BaseField t m)
+  :: forall r
+   . PrimeField Pallas.BaseField
+  => Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) r (ShiftedOps Pallas.BaseField r)
 pallasScalarOps =
   createShifted (C.curveParams (Proxy :: Proxy PallasG)) (shiftFor (C.generator :: PallasG))
 
 -- | Ready-to-use shifted scalar-mul ops for the Vesta curve (point
 -- | coordinates in `Vesta.BaseField`).
 vestaScalarOps
-  :: forall t m
-   . CircuitM Vesta.BaseField (KimchiConstraint Vesta.BaseField) t m
-  => Snarky (KimchiConstraint Vesta.BaseField) t m (ShiftedOps Vesta.BaseField t m)
+  :: forall r
+   . PrimeField Vesta.BaseField
+  => Snarky Vesta.BaseField (KimchiConstraint Vesta.BaseField) r (ShiftedOps Vesta.BaseField r)
 vestaScalarOps =
   createShifted (C.curveParams (Proxy :: Proxy VestaG)) (shiftFor (C.generator :: VestaG))
 
@@ -192,15 +193,15 @@ vestaScalarOps =
 -- |   return acc
 -- | @
 scale
-  :: forall f t m n
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall f r n
+   . PrimeField f
   => PrimeField f
   => CurveParams f
-  -> ShiftedOps f t m
+  -> ShiftedOps f r
   -> Shifted f
   -> AffinePoint (FVar f)
   -> Vector n (BoolVar f)
-  -> Snarky (KimchiConstraint f) t m (Shifted f)
+  -> Snarky f (KimchiConstraint f) r (Shifted f)
 scale params ops init base bits = do
   Tuple acc _ <- foldM step (Tuple init base)
     (Vector.toUnfoldable bits :: Array _)
@@ -219,8 +220,9 @@ scale params ops init base bits = do
 -- | boolean AND). Mirrors `Snarky_curves.lookup_point`
 -- | (`snarky_curves.ml:351-366`).
 lookupPoint
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => PrimeField f
   => Tuple (BoolVar f) (BoolVar f)
   -> { t1 :: AffinePoint f
@@ -228,7 +230,7 @@ lookupPoint
      , t3 :: AffinePoint f
      , t4 :: AffinePoint f
      }
-  -> Snarky c t m (AffinePoint (FVar f))
+  -> Snarky f c r (AffinePoint (FVar f))
 lookupPoint (Tuple b0 b1) { t1: AffinePoint t1, t2: AffinePoint t2, t3: AffinePoint t3, t4: AffinePoint t4 } = do
   b0AndB1 <- and_ b0 b1
   let
@@ -278,16 +280,16 @@ lookupSingleBit b { t1: AffinePoint t1, t2: AffinePoint t2 } =
 -- | the same bit-length, at the cost of one boolean AND per
 -- | 2-bit window.
 scaleKnown
-  :: forall f g t m n
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall f g r n
+   . PrimeField f
   => PrimeField f
   => C.WeierstrassCurve f g
   => Semigroup g
-  => ShiftedOps f t m
+  => ShiftedOps f r
   -> g
   -> Vector n (BoolVar f)
   -> Shifted f
-  -> Snarky (KimchiConstraint f) t m (Shifted f)
+  -> Snarky f (KimchiConstraint f) r (Shifted f)
 scaleKnown ops t bits init = do
   let
     sigma :: AffinePoint f

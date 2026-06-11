@@ -45,12 +45,12 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
 import RandomOracle.Sponge (SpongeState(..))
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, and_, equals_, negate_, not_, unpack_)
+import Snarky.Circuit.DSL (BoolVar, FVar, Snarky, and_, equals_, negate_, not_, unpack_)
 import Snarky.Circuit.RandomOracle.Sponge (absorb, spongeFromConstants, squeeze) as Sponge
 import Snarky.Circuit.Schnorr.Shifted (ShiftedOps, scale, scaleKnown)
 import Snarky.Circuit.Schnorr.UnpackFull (unpackFull)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (curveParams, generator, toAffine)
+import Snarky.Curves.Class (class PrimeField, curveParams, generator, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint(..), CurveParams)
@@ -99,13 +99,13 @@ shiftConst =
 -- | (`generator :: PallasG` from `WeierstrassCurve`), matching production
 -- | `Curve.Checked.scale_known shifted Curve.one s_bits`.
 verifies
-  :: forall t m
+  :: forall r
    . PoseidonField Pallas.BaseField
-  => CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t m
+  => PrimeField Pallas.BaseField
   => Vector 3 Pallas.BaseField
-  -> ShiftedOps Pallas.BaseField t m
+  -> ShiftedOps Pallas.BaseField r
   -> VerifyInput Pallas.BaseField
-  -> Snarky (KimchiConstraint Pallas.BaseField) t m (BoolVar Pallas.BaseField)
+  -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) r (BoolVar Pallas.BaseField)
 verifies spongePrefix shifted { publicKey: AffinePoint pk, signature: Signature { r, s: sBits }, message } = do
   -- 1. e = Poseidon(message…, pk.x, pk.y, r) seeded with spongePrefix.
   let

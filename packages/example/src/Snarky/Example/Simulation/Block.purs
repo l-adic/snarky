@@ -8,12 +8,12 @@ module Snarky.Example.Simulation.Block
 
 import Prelude
 
-import Control.Monad.State (StateT, evalStateT, get, lift, put)
 import Data.Reflectable (class Reflectable)
+import Data.Tuple (Tuple(..))
 import Data.Vector as Vector
 import Effect (Effect)
-import Effect.Class (liftEffect)
 import Mina.ChainId (ChainId)
+import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Example.Block (Block(..))
 import Snarky.Example.Ledger (Ledger)
@@ -33,13 +33,11 @@ generateBlock
   -> Ledger d
   -> Effect Block
 generateBlock chainId keys ledger0 = do
-  transactions <- evalStateT (Vector.generateA \_ -> step) ledger0
+  Tuple transactions _ <- mapAccumM step ledger0 (Vector.generate (const unit) :: Vector.Vector _ Unit)
   pure $ Block { transactions }
   where
-  step :: StateT (Ledger d) Effect (SignedTransaction Vesta.ScalarField)
-  step = do
-    l <- get
-    tx <- liftEffect $ randomSampleOne (genValidSignedTransaction chainId l keys)
-    l' <- lift $ applyTx chainId tx l
-    put l'
-    pure tx
+  step :: Ledger d -> Unit -> Effect (Tuple (SignedTransaction Vesta.ScalarField) (Ledger d))
+  step l _ = do
+    tx <- randomSampleOne (genValidSignedTransaction chainId l keys)
+    l' <- applyTx chainId tx l
+    pure (Tuple tx l')

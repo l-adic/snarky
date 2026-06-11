@@ -16,10 +16,10 @@ import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, uns
 import Pickles.Field (WrapField)
 import Pickles.IPA (combinePolynomials)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, SizedF, Snarky, const_)
+import Snarky.Circuit.DSL (F, FVar, SizedF, Snarky, const_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (generator, toAffine)
+import Snarky.Curves.Class (class PrimeField, generator, toAffine)
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
@@ -46,10 +46,10 @@ parseCombinePolyInput inputs =
     }
 
 combinePolyCircuit
-  :: forall t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  :: forall r
+   . PrimeField WrapField
   => CombinePolyInput WrapField
-  -> Snarky (KimchiConstraint WrapField) t m (AffinePoint (FVar WrapField))
+  -> Snarky WrapField (KimchiConstraint WrapField) r (AffinePoint (FVar WrapField))
 combinePolyCircuit input =
   let
     g = unsafePartial $ fromJust $ toAffine (generator :: VestaG)

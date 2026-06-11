@@ -13,7 +13,6 @@ package:
     - foldable-traversable
     - foreign
     - functors
-    - identity
     - integers
     - js-bigints
     - lazy
@@ -38,9 +37,8 @@ package:
     - snarky-curves
     - snarky-kimchi
     - strings
-    - tailrec
-    - transformers
     - tuples
+    - typelevel-prelude
     - unsafe-coerce
     - vector-sized
   build:
@@ -57,3 +55,4 @@ package:
       - prelude
       - spec
       - spec-node
+      - tailrec

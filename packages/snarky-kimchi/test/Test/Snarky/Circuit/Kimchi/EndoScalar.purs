@@ -6,7 +6,6 @@ module Test.Snarky.Circuit.Kimchi.EndoScalar
 import Prelude
 
 import Data.Array.NonEmpty as NEA
-import Data.Identity (Identity)
 import Effect.Class (liftEffect)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
@@ -57,8 +56,7 @@ spec' cfg _ curveName = do
         f x = let EndoScalar e = endoScalar @(F f') @(F f) in toFieldPure (coerce x) e
 
         circuit'
-          :: forall t
-           . PrimeField f
+          :: PrimeField f
           => SizedF 128 (FVar f)
           -> Snarky f (KimchiConstraint f) () (FVar f)
         circuit' = circuit

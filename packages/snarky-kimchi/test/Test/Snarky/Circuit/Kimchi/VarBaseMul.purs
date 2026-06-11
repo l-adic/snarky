@@ -3,7 +3,6 @@ module Test.Snarky.Circuit.Kimchi.VarBaseMul where
 import Prelude
 
 import Data.Array.NonEmpty as NEA
-import Data.Identity (Identity)
 import Data.Maybe (fromJust)
 import Data.Tuple (Tuple(..), uncurry)
 import Effect.Class (liftEffect)
@@ -52,8 +51,7 @@ spec cfg = do
             AffinePoint { x: x', y: y' }
 
         circuit1
-          :: forall t
-           . PrimeField Vesta.BaseField
+          :: PrimeField Vesta.BaseField
           => Tuple (AffinePoint (FVar Vesta.BaseField)) (Type1 (FVar Vesta.BaseField))
           -> Snarky Vesta.BaseField (KimchiConstraint Vesta.BaseField) () (AffinePoint (FVar Vesta.BaseField))
         circuit1 = uncurry \p t -> do
@@ -100,8 +98,7 @@ spec cfg = do
             AffinePoint { x: x', y: y' }
 
         circuit2
-          :: forall t
-           . PrimeField Pallas.BaseField
+          :: PrimeField Pallas.BaseField
           => Tuple (AffinePoint (FVar Pallas.BaseField)) { sDiv2 :: FVar Pallas.BaseField, sOdd :: BoolVar Pallas.BaseField }
           -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) () (AffinePoint (FVar Pallas.BaseField))
         circuit2 = uncurry \p t -> scaleFast2 @51 @254 p t
@@ -182,8 +179,7 @@ spec cfg = do
             AffinePoint { x: x', y: y' }
 
         circuit3
-          :: forall t
-           . PrimeField Pallas.BaseField
+          :: PrimeField Pallas.BaseField
           => Tuple (AffinePoint (FVar Pallas.BaseField)) (FVar Pallas.BaseField)
           -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) () (AffinePoint (FVar Pallas.BaseField))
         circuit3 = uncurry \p scalar -> scaleFast2' @51 @254 p scalar

@@ -81,8 +81,8 @@ import Snarky.Backend.Kimchi.Impl.Pallas (pallasCrsCreate)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaCrsCreate)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (BoolVar, F(..), FVar, SizedF, addConstraint, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, pow_, unpack_, xor_)
-import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky)
+import Snarky.Circuit.DSL (class BasicSystem, BoolVar, F(..), FVar, SizedF, addConstraint, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, pow_, unpack_, xor_)
+import Snarky.Circuit.DSL.Monad (Snarky)
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
 import Snarky.Circuit.Kimchi.EndoScalar (toField)
@@ -152,27 +152,27 @@ resetOutputDirs = do
 --------------------------------------------------------------------------------
 -- Compile helpers (basic circuits, Fp only)
 
-compileFF :: (forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (FVar Fp)) -> Circuit Fp
+compileFF :: (forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (FVar Fp)) -> Circuit Fp
 compileFF circuit = fromCompiledCircuit $
   compilePure (Proxy @(F Fp)) (Proxy @(F Fp)) (Proxy @(KimchiConstraint Fp)) circuit initialState
 
-compileFB :: (forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (BoolVar Fp)) -> Circuit Fp
+compileFB :: (forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (BoolVar Fp)) -> Circuit Fp
 compileFB circuit = fromCompiledCircuit $
   compilePure (Proxy @(F Fp)) (Proxy @Boolean) (Proxy @(KimchiConstraint Fp)) circuit initialState
 
-compileFU :: (forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit) -> Circuit Fp
+compileFU :: (forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r Unit) -> Circuit Fp
 compileFU circuit = fromCompiledCircuit $
   compilePure (Proxy @(F Fp)) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit initialState
 
-compileUU :: (forall t m. CircuitM Fp (KimchiConstraint Fp) t m => Unit -> Snarky (KimchiConstraint Fp) t m Unit) -> Circuit Fp
+compileUU :: (forall r. PrimeField Fp => Unit -> Snarky Fp (KimchiConstraint Fp) r Unit) -> Circuit Fp
 compileUU circuit = fromCompiledCircuit $
   compilePure (Proxy @Unit) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit initialState
 
-compileBB :: (forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m (BoolVar Fp)) -> Circuit Fp
+compileBB :: (forall c r. BasicSystem Fp c => BoolVar Fp -> Snarky Fp c r (BoolVar Fp)) -> Circuit Fp
 compileBB circuit = fromCompiledCircuit $
   compilePure (Proxy @Boolean) (Proxy @Boolean) (Proxy @(KimchiConstraint Fp)) circuit initialState
 
-compileBU :: (forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m Unit) -> Circuit Fp
+compileBU :: (forall c r. BasicSystem Fp c => BoolVar Fp -> Snarky Fp c r Unit) -> Circuit Fp
 compileBU circuit = fromCompiledCircuit $
   compilePure (Proxy @Boolean) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit initialState
 
@@ -182,40 +182,40 @@ type PointField = Tuple (AffinePoint Fp) (F Fp)
 type V3 = Vector 3 (F Fp)
 
 compilePP
-  :: ( forall t m
-        . CircuitM Fp (KimchiConstraint Fp) t m
+  :: ( forall r
+        . PrimeField Fp
        => Tuple (AffinePoint (FVar Fp)) (AffinePoint (FVar Fp))
-       -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+       -> Snarky Fp (KimchiConstraint Fp) r (AffinePoint (FVar Fp))
      )
   -> Circuit Fp
 compilePP circuit = fromCompiledCircuit $
   compilePure (Proxy @TwoPoints) (Proxy @Point) (Proxy @(KimchiConstraint Fp)) circuit initialState
 
 compilePF
-  :: ( forall t m
-        . CircuitM Fp (KimchiConstraint Fp) t m
+  :: ( forall r
+        . PrimeField Fp
        => Tuple (AffinePoint (FVar Fp)) (FVar Fp)
-       -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+       -> Snarky Fp (KimchiConstraint Fp) r (AffinePoint (FVar Fp))
      )
   -> Circuit Fp
 compilePF circuit = fromCompiledCircuit $
   compilePure (Proxy @PointField) (Proxy @Point) (Proxy @(KimchiConstraint Fp)) circuit initialState
 
 compileKFF
-  :: ( forall t m
-        . CircuitM Fp (KimchiConstraint Fp) t m
+  :: ( forall r
+        . PrimeField Fp
        => FVar Fp
-       -> Snarky (KimchiConstraint Fp) t m (FVar Fp)
+       -> Snarky Fp (KimchiConstraint Fp) r (FVar Fp)
      )
   -> Circuit Fp
 compileKFF circuit = fromCompiledCircuit $
   compilePure (Proxy @(F Fp)) (Proxy @(F Fp)) (Proxy @(KimchiConstraint Fp)) circuit initialState
 
 compileV3
-  :: ( forall t m
-        . CircuitM Fp (KimchiConstraint Fp) t m
+  :: ( forall r
+        . PrimeField Fp
        => Vector 3 (FVar Fp)
-       -> Snarky (KimchiConstraint Fp) t m (Vector 3 (FVar Fp))
+       -> Snarky Fp (KimchiConstraint Fp) r (Vector 3 (FVar Fp))
      )
   -> Circuit Fp
 compileV3 circuit = fromCompiledCircuit $
@@ -224,40 +224,40 @@ compileV3 circuit = fromCompiledCircuit $
 --------------------------------------------------------------------------------
 -- Field arithmetic circuits
 
-mulCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (FVar Fp)
+mulCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (FVar Fp)
 mulCircuit x = do
   y <- exists (pure (zero :: F Fp))
   mul_ x y
 
-invCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (FVar Fp)
+invCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (FVar Fp)
 invCircuit x = inv_ x
 
-divCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (FVar Fp)
+divCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (FVar Fp)
 divCircuit x = do
   y <- exists (pure (zero :: F Fp))
   div_ x y
 
-ifCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (FVar Fp)
+ifCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (FVar Fp)
 ifCircuit x = do
   y <- exists (pure (zero :: F Fp))
   b <- exists (pure true)
   if_ b x y
 
-equalsCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (BoolVar Fp)
+equalsCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (BoolVar Fp)
 equalsCircuit x = do
   y <- exists (pure (zero :: F Fp))
   equals_ x y
 
-pow7Circuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (FVar Fp)
+pow7Circuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (FVar Fp)
 pow7Circuit x = pow_ x 7
 
-pow8Circuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (FVar Fp)
+pow8Circuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (FVar Fp)
 pow8Circuit x = pow_ x 8
 
 --------------------------------------------------------------------------------
 -- Assertion circuits
 
-assertEqualCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit
+assertEqualCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r Unit
 assertEqualCircuit x = do
   y <- exists (pure (zero :: F Fp))
   assertEqual_ x y
@@ -269,14 +269,14 @@ assertEqualCircuit x = do
 -- | trace-diff loop — if PS and OCaml disagree on the gate
 -- | sequence for this trivial body, every downstream step_main /
 -- | wrap_main / witness comparison is meaningless.
-makeZeroAppCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit
+makeZeroAppCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r Unit
 makeZeroAppCircuit x = assertEqual_ x (const_ zero)
 
 -- | Application body for `dump_two_phase_chain`'s branch 1
 -- | (`increment`): allocate prev as a witness, assert that the
 -- | public input equals `prev + 1`. PS mirror of
 -- | `app_circuit_two_phase_chain_increment`.
-incrementAppCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit
+incrementAppCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r Unit
 incrementAppCircuit x = do
   prev <- exists (pure (zero :: F Fp))
   assertEqual_ x (CVar.add_ (const_ one) prev)
@@ -287,7 +287,7 @@ incrementAppCircuit x = do
 -- | `for _ = 0 to 1 lsl 17 do`), then a raw 7-wire Generic row with zero
 -- | coeffs to bump the 7th permuted column's polynomial degree above
 -- | 2^16.
-chunks2AppCircuit :: forall t m. CircuitM Fp (KimchiConstraint Fp) t m => Unit -> Snarky (KimchiConstraint Fp) t m Unit
+chunks2AppCircuit :: forall r. PrimeField Fp => Unit -> Snarky Fp (KimchiConstraint Fp) r Unit
 chunks2AppCircuit _ = do
   let
     freshZero = exists (pure (zero :: F Fp))
@@ -307,20 +307,20 @@ chunks2AppCircuit _ = do
   addConstraint $ KimchiRawGeneric7
     (z :< z :< z :< z :< z :< z :< z :< Vector.nil)
 
-assertSquareCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit
+assertSquareCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r Unit
 assertSquareCircuit x = do
   y <- exists (pure (zero :: F Fp))
   assertSquare_ x y
 
-assertNonZeroCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit
+assertNonZeroCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r Unit
 assertNonZeroCircuit x = assertNonZero_ x
 
-assertNotEqualCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit
+assertNotEqualCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r Unit
 assertNotEqualCircuit x = do
   y <- exists (pure (zero :: F Fp))
   assertNotEqual_ x y
 
-unpackCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit
+unpackCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r Unit
 unpackCircuit x = do
   _ <- unpack_ x (Proxy @254)
   pure unit
@@ -328,52 +328,52 @@ unpackCircuit x = do
 --------------------------------------------------------------------------------
 -- Boolean circuits
 
-boolAndCircuit :: forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m (BoolVar Fp)
+boolAndCircuit :: forall c r. BasicSystem Fp c => BoolVar Fp -> Snarky Fp c r (BoolVar Fp)
 boolAndCircuit x = do
   y <- exists (pure true)
   and_ x y
 
-boolOrCircuit :: forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m (BoolVar Fp)
+boolOrCircuit :: forall c r. BasicSystem Fp c => BoolVar Fp -> Snarky Fp c r (BoolVar Fp)
 boolOrCircuit x = do
   y <- exists (pure true)
   or_ x y
 
-boolXorCircuit :: forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m (BoolVar Fp)
+boolXorCircuit :: forall c r. BasicSystem Fp c => BoolVar Fp -> Snarky Fp c r (BoolVar Fp)
 boolXorCircuit x = do
   y <- exists (pure true)
   xor_ x y
 
-boolAllCircuit :: forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m (BoolVar Fp)
+boolAllCircuit :: forall c r. BasicSystem Fp c => BoolVar Fp -> Snarky Fp c r (BoolVar Fp)
 boolAllCircuit x = do
   y <- exists (pure true)
   w <- exists (pure true)
   all_ [ x, y, w ]
 
-boolAnyCircuit :: forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m (BoolVar Fp)
+boolAnyCircuit :: forall c r. BasicSystem Fp c => BoolVar Fp -> Snarky Fp c r (BoolVar Fp)
 boolAnyCircuit x = do
   y <- exists (pure true)
   w <- exists (pure true)
   any_ [ x, y, w ]
 
-boolAssertCircuit :: forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m Unit
+boolAssertCircuit :: forall c r. BasicSystem Fp c => BoolVar Fp -> Snarky Fp c r Unit
 boolAssertCircuit x = assert_ x
 
 --------------------------------------------------------------------------------
 -- Kimchi gate circuits
 
 addCompleteCircuit
-  :: forall t m
-   . CircuitM Fp (KimchiConstraint Fp) t m
+  :: forall r
+   . PrimeField Fp
   => Tuple (AffinePoint (FVar Fp)) (AffinePoint (FVar Fp))
-  -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+  -> Snarky Fp (KimchiConstraint Fp) r (AffinePoint (FVar Fp))
 addCompleteCircuit (Tuple p1 p2) =
   _.p <$> addFast DontCheckFinite p1 p2
 
 endoScalarCircuit
-  :: forall t m
-   . CircuitM Fp (KimchiConstraint Fp) t m
+  :: forall r
+   . PrimeField Fp
   => FVar Fp
-  -> Snarky (KimchiConstraint Fp) t m (FVar Fp)
+  -> Snarky Fp (KimchiConstraint Fp) r (FVar Fp)
 endoScalarCircuit scalar =
   let
     EndoScalar es = endoScalar @Vesta.BaseField @Fp
@@ -381,34 +381,34 @@ endoScalarCircuit scalar =
     toField @8 (unsafeCoerce scalar :: SizedF 128 (FVar Fp)) (const_ es)
 
 varBaseMulCircuit
-  :: forall t m
-   . CircuitM Fp (KimchiConstraint Fp) t m
+  :: forall r
+   . PrimeField Fp
   => Tuple (AffinePoint (FVar Fp)) (FVar Fp)
-  -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+  -> Snarky Fp (KimchiConstraint Fp) r (AffinePoint (FVar Fp))
 varBaseMulCircuit (Tuple g scalar) =
   scaleFast1 @51 g (Type1 scalar)
 
 endoMulCircuit
-  :: forall t m
-   . CircuitM Fp (KimchiConstraint Fp) t m
+  :: forall r
+   . PrimeField Fp
   => Tuple (AffinePoint (FVar Fp)) (FVar Fp)
-  -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+  -> Snarky Fp (KimchiConstraint Fp) r (AffinePoint (FVar Fp))
 endoMulCircuit (Tuple g scalar) =
   endo @128 @32 g (unsafeCoerce scalar :: SizedF 128 (FVar Fp))
 
 scaleFast2_128Circuit
-  :: forall t m
-   . CircuitM Fp (KimchiConstraint Fp) t m
+  :: forall r
+   . PrimeField Fp
   => Tuple (AffinePoint (FVar Fp)) (FVar Fp)
-  -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+  -> Snarky Fp (KimchiConstraint Fp) r (AffinePoint (FVar Fp))
 scaleFast2_128Circuit (Tuple g scalar) =
   scaleFast2' @26 @127 g scalar
 
 poseidonCircuit
-  :: forall t m
-   . CircuitM Fp (KimchiConstraint Fp) t m
+  :: forall r
+   . PrimeField Fp
   => Vector 3 (FVar Fp)
-  -> Snarky (KimchiConstraint Fp) t m (Vector 3 (FVar Fp))
+  -> Snarky Fp (KimchiConstraint Fp) r (Vector 3 (FVar Fp))
 poseidonCircuit = poseidon
 
 --------------------------------------------------------------------------------

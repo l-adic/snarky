@@ -18,10 +18,11 @@ import Pickles.Linearization.FFI as LinFFI
 import Pickles.Wrap.FinalizeOtherProof (pow2PowMul, wrapFinalizeOtherProofCircuit)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), F, FVar, SizedF, Snarky, const_, sub_)
+import Snarky.Circuit.DSL (Bool(..), F, FVar, SizedF, Snarky, const_, sub_)
 import Snarky.Circuit.Kimchi (Type2(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
 type FopWrapInput =
@@ -90,10 +91,10 @@ parseFopWrapInput inputs =
     }
 
 fopWrapCircuit
-  :: forall t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  :: forall r
+   . PrimeField WrapField
   => FopWrapInput
-  -> Snarky (KimchiConstraint WrapField) t m (Output 16 WrapField)
+  -> Snarky WrapField (KimchiConstraint WrapField) r (Output 16 WrapField)
 fopWrapCircuit input =
   let
     unfinalized =

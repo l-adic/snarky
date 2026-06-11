@@ -6,7 +6,6 @@ import Prelude
 
 import Control.Monad.Gen (suchThat)
 import Data.Array.NonEmpty as NEA
-import Data.Identity (Identity)
 import Data.Maybe (fromJust)
 import Data.Tuple (Tuple(..), uncurry)
 import Effect.Class (liftEffect)
@@ -51,8 +50,7 @@ spec' cfg testName pg _ =
         f (Tuple x y) = unsafePartial $ fromJust $ toAffine $ addAffine x y
 
         circuit'
-          :: forall t
-           . PrimeField f
+          :: PrimeField f
           => Tuple (AffinePoint (FVar f)) (AffinePoint (FVar f))
           -> Snarky f (KimchiConstraint f) () (AffinePoint (FVar f))
         circuit' = uncurry add_

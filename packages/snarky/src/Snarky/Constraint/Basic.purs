@@ -44,8 +44,6 @@ module Snarky.Constraint.Basic
 import Prelude
 
 import Control.Apply (lift2)
-import Control.Monad.Error.Class (throwError)
-import Control.Monad.Except (Except, runExcept)
 import Data.Array.NonEmpty as NEA
 import Data.Either (Either(..))
 import Data.Generic.Rep (class Generic)
@@ -120,17 +118,17 @@ debugCheck
   -> Maybe EvaluationError
 debugCheck lookupVar c =
   let
-    lookup :: Variable -> Except EvaluationError f
+    lookup :: Variable -> Either EvaluationError f
     lookup v = case lookupVar v of
-      Nothing -> throwError $ MissingVariable v
-      Just val -> pure val
+      Nothing -> Left $ MissingVariable v
+      Just val -> Right val
 
     evalCVar :: CVar f Variable -> String
-    evalCVar cv = case runExcept (CVar.eval lookup cv) of
+    evalCVar cv = case (CVar.eval lookup cv) of
       Left _ -> "[unknown]"
       Right val -> show val
   in
-    case runExcept (eval lookup c) of
+    case (eval lookup c) of
       Left e -> Just e
       Right satisfied
         | satisfied -> Nothing
@@ -161,9 +159,9 @@ genWithAssignments pf =
       { cvar, assignments } <- CVar.genWithAssignments pf v0
       let
         lookup v = case Map.lookup v assignments of
-          Nothing -> throwError $ MissingVariable v
+          Nothing -> Left $ MissingVariable v
           Just a -> pure a
-        eres = runExcept $ CVar.eval lookup cvar
+        eres = CVar.eval lookup cvar
 
         b :: f
         b = case eres of
@@ -185,9 +183,9 @@ genWithAssignments pf =
       let
         assignments = Map.unions [ a1, a2 ]
         lookup v = case Map.lookup v assignments of
-          Nothing -> throwError $ MissingVariable v
+          Nothing -> Left $ MissingVariable v
           Just a -> pure a
-        eres = runExcept do
+        eres = do
           l <- CVar.eval lookup left
           r <- CVar.eval lookup right
           pure
@@ -209,9 +207,9 @@ genWithAssignments pf =
       let
         assignments = Map.unions [ a1, a2, a3 ]
         lookup v = case Map.lookup v assignments of
-          Nothing -> throwError $ MissingVariable v
+          Nothing -> Left $ MissingVariable v
           Just a -> pure a
-        eres = runExcept do
+        eres = do
           l <- CVar.eval lookup left
           r <- CVar.eval lookup right
           o <- CVar.eval lookup output

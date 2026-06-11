@@ -12,7 +12,6 @@ package:
     - fmt
     - foldable-traversable
     - gen
-    - identity
     - js-bigints
     - maybe
     - merkle-tree
@@ -24,14 +23,15 @@ package:
     - quickcheck
     - random-oracle
     - refs
+    - run
     - safe-coerce
     - schnorr
     - snarky
     - snarky-curves
     - snarky-kimchi
     - tailrec
-    - transformers
     - tuples
+    - typelevel-prelude
     - vector-sized
   test:
     main: Test.Example.Main
@@ -42,7 +42,6 @@ package:
       - effect
       - exceptions
       - foldable-traversable
-      - identity
       - js-bigints
       - ordered-collections
       - partial

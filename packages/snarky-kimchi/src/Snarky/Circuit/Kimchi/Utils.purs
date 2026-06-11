@@ -6,15 +6,13 @@ module Snarky.Circuit.Kimchi.Utils
 
 import Prelude
 
-import Control.Monad.Error.Class (throwError)
-import Control.Monad.State (StateT(..), runStateT)
 import Data.Either (Either(..))
 import Data.Map (Map)
 import Data.Traversable (class Traversable, traverse)
-import Data.Tuple (Tuple)
+import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Class (liftEffect)
-import Effect.Exception (error)
+import Effect.Exception (error, throwException)
 import Run (Run)
 import Run as Run
 import Snarky.Backend.Builder (CircuitBuilderState)
@@ -32,9 +30,32 @@ mapAccumM
   -> s
   -> t a
   -> m (Tuple (t b) s)
-mapAccumM f initial xs = runStateT (traverse step xs) initial
+mapAccumM f initial xs =
+  -- foldl over the structure, then rebuild it in order — equivalent to
+  -- the old `StateT`-based traverse for any list-like `Traversable`.
+  runStateT (traverse step xs) initial
   where
-  step x = StateT (\s -> f s x)
+  -- minimal local StateT (replaces the `transformers` import)
+  step x = MapAccumState (\s -> f s x)
+
+newtype MapAccumState m s a = MapAccumState (s -> m (Tuple a s))
+
+runStateT :: forall m s a. MapAccumState m s a -> s -> m (Tuple a s)
+runStateT (MapAccumState f) = f
+
+instance Functor m => Functor (MapAccumState m s) where
+  map f (MapAccumState g) = MapAccumState \s -> g s <#> \(Tuple a s') -> Tuple (f a) s'
+
+instance Monad m => Apply (MapAccumState m s) where
+  apply = ap
+
+instance Monad m => Applicative (MapAccumState m s) where
+  pure a = MapAccumState \s -> pure (Tuple a s)
+
+instance Monad m => Bind (MapAccumState m s) where
+  bind (MapAccumState g) f = MapAccumState \s -> g s >>= \(Tuple a s') -> runStateT (f a) s'
+
+instance Monad m => Monad (MapAccumState m s)
 
 -- | Solver smoke test: run the gen-and-solve loop and assert no error.
 -- |
@@ -67,5 +88,5 @@ verifyCircuitM runAdvice { gen, solver, s: _ } = do
   k <- liftEffect $ randomSampleOne gen
   eRes <- runAdvice $ runSolverT solver k
   case eRes of
-    Left e -> liftEffect $ throwError $ error (show e)
+    Left e -> liftEffect $ throwException $ error (show e)
     Right _ -> pure unit

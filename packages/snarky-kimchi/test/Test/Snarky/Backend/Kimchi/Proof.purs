@@ -20,7 +20,6 @@ import Prelude
 
 import Data.Array (concatMap)
 import Data.Either (Either(..))
-import Data.Identity (Identity)
 import Data.Int as Int
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
@@ -48,8 +47,7 @@ import Type.Proxy (Proxy(..))
 -- | `assertSquare_` gate. The output `y` becomes part of the public
 -- | input on the verifier side.
 squareCircuit
-  :: forall t
-   . PrimeField Pallas.BaseField
+  :: PrimeField Pallas.BaseField
   => FVar Pallas.BaseField
   -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) () (FVar Pallas.BaseField)
 squareCircuit x = do

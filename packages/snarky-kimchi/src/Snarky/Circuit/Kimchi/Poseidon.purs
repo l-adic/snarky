@@ -10,7 +10,7 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Poseidon (class PoseidonField, fullRound)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class BasicSystem, F(..), FVar, Snarky, addConstraint, exists, label, readCVar)
+import Snarky.Circuit.DSL (F(..), FVar, Snarky, addConstraint, exists, label, readCVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint(KimchiPoseidon))
 import Snarky.Curves.Class (class PrimeField)
 

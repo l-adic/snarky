@@ -21,6 +21,7 @@ package:
     - prelude
     - random-oracle
     - refs
+    - run
     - safe-coerce
     - schnorr
     - simple-json

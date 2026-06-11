@@ -14,10 +14,11 @@ import Prelude
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
 import Pickles.Field (StepField)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, F, Snarky, exists)
+import Snarky.Circuit.DSL (F, Snarky, exists)
 import Snarky.Circuit.Kimchi (SplitField, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -26,10 +27,10 @@ import Unsafe.Coerce (unsafeCoerce)
 -- |   1. genericCheck on SplitField (verifies sOdd is boolean)
 -- |   2. Forbidden shifted value check (4 values for Pallas→Vesta)
 otherFieldCheckCircuit
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+  :: forall r
+   . PrimeField StepField
   => Unit
-  -> Snarky (KimchiConstraint StepField) t m Unit
+  -> Snarky StepField (KimchiConstraint StepField) r Unit
 otherFieldCheckCircuit _ = do
   let
     dummy :: forall a b. Applicative b => b a

@@ -21,7 +21,6 @@ module Test.Pickles.Prove.TwoPhaseChain
 import Prelude
 
 import Colog (LoggerT, Message, logInfo, withSpan)
-import Control.Monad.Except (runExceptT)
 import Data.Either (Either(..))
 import Data.Functor.Product (Product)
 import Data.Maybe (Maybe(..))
@@ -35,6 +34,7 @@ import Effect.Exception as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), Compiled, NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
 import Run as Run
+import Run.Except as Except
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertEqual_, const_, exists, true_)
@@ -172,7 +172,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     -- Unit`. Branch 1 (increment) has one compiled prev slot →
     -- `vkCarrier = Tuple1 Unit`.
     logInfo "[TwoPhaseChain] proving [step0, wrap0]"
-    eRes <- withSpan "[TwoPhaseChain] prove b0" $ liftEffect $ Run.runBaseEffect $ runExceptT $ makeZeroProver
+    eRes <- withSpan "[TwoPhaseChain] prove b0" $ liftEffect $ Run.runBaseEffect $ Except.runExcept $ makeZeroProver
       { appInput: F zero, prevs: unit, sideloadedVKs: unit }
     b0 <- case eRes of
       Left e -> liftEffect $ Exc.throw ("makeZeroProver: " <> show e)
@@ -181,7 +181,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
 
     -- b1 = increment(b0); appInput = 0 + 1 = 1. Prev is b0 (branch 0).
     logInfo "[TwoPhaseChain] proving [step1, wrap1]"
-    eB1 <- withSpan "[TwoPhaseChain] prove b1" $ liftEffect $ Run.runBaseEffect $ runExceptT $ incrementProver
+    eB1 <- withSpan "[TwoPhaseChain] prove b1" $ liftEffect $ Run.runBaseEffect $ Except.runExcept $ incrementProver
       { appInput: F one
       , prevs: tuple1 (InductivePrev b0' output.tag)
       , sideloadedVKs: tuple1 unit
@@ -192,7 +192,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     b1' <- roundTripAndVerify dummies output.verifier b1
     -- b2 = increment(b1); appInput = 1 + 1 = 2. Same-branch self-prev.
     logInfo "[TwoPhaseChain] proving [step2, wrap2]"
-    eB2 <- withSpan "[TwoPhaseChain] prove b2" $ liftEffect $ Run.runBaseEffect $ runExceptT $ incrementProver
+    eB2 <- withSpan "[TwoPhaseChain] prove b2" $ liftEffect $ Run.runBaseEffect $ Except.runExcept $ incrementProver
       { appInput: F (Curves.fromInt 2 :: StepField)
       , prevs: tuple1 (InductivePrev b1' output.tag)
       , sideloadedVKs: tuple1 unit
@@ -203,7 +203,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     b2' <- roundTripAndVerify dummies output.verifier b2
     -- b3 = increment(b2); appInput = 2 + 1 = 3.
     logInfo "[TwoPhaseChain] proving [step3, wrap3]"
-    eB3 <- withSpan "[TwoPhaseChain] prove b3" $ liftEffect $ Run.runBaseEffect $ runExceptT $ incrementProver
+    eB3 <- withSpan "[TwoPhaseChain] prove b3" $ liftEffect $ Run.runBaseEffect $ Except.runExcept $ incrementProver
       { appInput: F (Curves.fromInt 3 :: StepField)
       , prevs: tuple1 (InductivePrev b2' output.tag)
       , sideloadedVKs: tuple1 unit

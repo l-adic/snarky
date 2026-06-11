@@ -15,10 +15,10 @@ import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF10, asSi
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), LagrangeBaseLookup, publicInputCommit)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, SizedF, Snarky)
+import Snarky.Circuit.DSL (F, FVar, SizedF, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (curveParams)
+import Snarky.Curves.Class (class PrimeField, curveParams)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
@@ -61,12 +61,12 @@ parseXhatStepInput inputs =
       )
 
 xhatStepCircuit
-  :: forall pi t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+  :: forall pi r
+   . PrimeField StepField
   => PublicInputCommit pi StepField
   => XhatStepParams StepField
   -> pi
-  -> Snarky (KimchiConstraint StepField) t m (Vector 1 (AffinePoint (FVar StepField)))
+  -> Snarky StepField (KimchiConstraint StepField) r (Vector 1 (AffinePoint (FVar StepField)))
 xhatStepCircuit { lagrangeAt, blindingH } publicInput =
   publicInputCommit @1
     { curveParams: curveParams (Proxy @PallasG)

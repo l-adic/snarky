@@ -13,10 +13,11 @@ import Pickles.Field (StepField)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Types (WrapIPARounds)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertEq)
+import Snarky.Circuit.DSL (F, FVar, Snarky, assertEq)
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
 -- | hash_messages_for_next_step_proof circuit.
@@ -36,10 +37,10 @@ import Type.Proxy (Proxy(..))
 -- |   sponge_after_index (lines 1167-1176)
 -- |   hash_messages_for_next_step_proof (lines 1178-1188)
 hashMessagesStepCircuit
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+  :: forall r
+   . PrimeField StepField
   => Vector 91 (FVar StepField)
-  -> Snarky (KimchiConstraint StepField) t m Unit
+  -> Snarky StepField (KimchiConstraint StepField) r Unit
 hashMessagesStepCircuit inputs = do
   let
     at = unsafeIdx inputs

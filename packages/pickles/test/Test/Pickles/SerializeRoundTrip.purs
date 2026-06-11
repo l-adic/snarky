@@ -12,8 +12,7 @@ module Test.Pickles.SerializeRoundTrip
 
 import Prelude
 
-import Control.Monad.Error.Class (class MonadThrow)
-import Effect.Exception (Error)
+import Effect.Aff.Class (class MonadAff, liftAff)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Prove.SerializeProof (WidthDummies, reconstructCompiledProof, toSerializableCompiledProof)
 import Pickles.Step.Dummy (baseCaseDummies, computeDummySgValues)
@@ -55,12 +54,12 @@ roundTrip dummies = reconstructCompiledProof dummies <<< toSerializableCompiledP
 -- | byte-faithfulness check.
 roundTripAndVerify
   :: forall mpv stmt m
-   . MonadThrow Error m
+   . MonadAff m
   => WidthDummies
   -> Verifier
   -> CompiledProof mpv stmt
   -> m (CompiledProof mpv stmt)
 roundTripAndVerify dummies verifier cp = do
   let cp' = roundTrip dummies cp
-  verifyBatch verifier [ toVerifiable cp' ] `shouldEqual` true
+  liftAff (verifyBatch verifier [ toVerifiable cp' ] `shouldEqual` true)
   pure cp'

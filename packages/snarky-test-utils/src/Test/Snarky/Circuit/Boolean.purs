@@ -4,7 +4,6 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import Data.Foldable (foldMap)
-import Data.Identity (Identity)
 import Data.Monoid.Conj (Conj(..))
 import Data.Monoid.Disj (Disj(..))
 import Data.Newtype (un)

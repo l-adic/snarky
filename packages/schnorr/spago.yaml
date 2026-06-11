@@ -31,7 +31,6 @@ package:
       - effect
       - either
       - exceptions
-      - identity
       - integers
       - node-buffer
       - node-fs

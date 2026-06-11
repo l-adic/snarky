@@ -40,12 +40,14 @@ import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
+import Run as Run
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (class CircuitM, AsProverT, Bool(..), BoolVar, F(..), FVar, Snarky, const_, exists, if_, not_)
+import Snarky.Circuit.DSL (AsProver, Bool(..), BoolVar, F(..), FVar, Snarky, const_, exists, if_, not_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (SplitField, Type2)
 import Type.Proxy (Proxy(..))
@@ -76,12 +78,12 @@ type StepMainTreeProofReturnParams =
 -- | `Test.Pickles.Prove.TreeProofReturn` rule. Reference:
 -- | test_no_sideloaded.ml:354-390.
 treeProofReturnRule
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
-  => AsProverT StepField m
+  :: forall r
+   . PrimeField StepField
+  => AsProver StepField r
        (Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
   -> Unit
-  -> Snarky (KimchiConstraint StepField) t m
+  -> Snarky StepField (KimchiConstraint StepField) r
        (RuleOutput 2 (FVar StepField) (FVar StepField))
 treeProofReturnRule getPrevStates _ = do
   no_recursive_input <- exists $ getPrevStates <#> \(StatementIO p1 /\ _) -> p1.output
@@ -130,7 +132,7 @@ compileStepMainTreeProofReturn params = do
              _
              _
       dummyAdvice = unsafeCoerce unit
-    compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
+    Run.runBaseEffect $ compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
       ( \_ -> stepMain
           @(Tuple2 (Slot Compiled 0 1 (StatementIO Unit (F StepField))) (Slot Compiled 2 1 (StatementIO Unit (F StepField))))
           @Unit

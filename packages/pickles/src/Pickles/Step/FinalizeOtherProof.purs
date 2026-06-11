@@ -26,8 +26,6 @@ module Pickles.Step.FinalizeOtherProof
 
 import Prelude
 
-import Control.Monad.State.Trans (evalStateT, get, put)
-import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.Fin (Finite, getFinite, unsafeFinite)
 import Data.Foldable (foldM)
@@ -37,8 +35,7 @@ import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Semigroup.Foldable as Foldable1
 import Data.Traversable (for, traverse)
-import Data.TraversableWithIndex (traverseWithIndex)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector, zipWith, (!!))
 import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
@@ -65,6 +62,7 @@ import Snarky.Circuit.CVar (negate_)
 import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, add_, all_, and_, assertAny_, const_, div_, equals_, if_, inv_, label, mul_, not_, pow_, seal, square_, sub_, true_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (toField)
+import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, fromInt)
 
@@ -647,27 +645,22 @@ mkSideLoadedOnesPrefixMask
   => FVar f
   -> Snarky f (KimchiConstraint f) r (Vector 16 (BoolVar f))
 mkSideLoadedOnesPrefixMask first_zero = label "ones_prefix_mask" do
-  -- Iterate i = 0..15 in `StateT BoolVar` over the underlying Snarky
-  -- monad: each step reads the running AND from state, computes
-  -- `newAcc = prev ∧ (first_zero ≠ i)`, writes it back, and emits it
-  -- as the visited value. `traverseWithIndex` collects the per-index
-  -- values into the result `Vector 16`.
+  -- Iterate i = 0..15 threading the running AND as a `mapAccumM`
+  -- accumulator: each step computes `newAcc = prev ∧ (first_zero ≠ i)`
+  -- and emits it as the visited value, collecting the per-index values
+  -- into the result `Vector 16`.
   let
     indices :: Vector 16 (Finite 16)
     indices = Vector.generate identity
-  evalStateT
-    ( traverseWithIndex
-        ( \fi _ -> do
-            let i = getFinite fi
-            prev <- get
-            eq <- lift $ equals_ first_zero (const_ (fromInt i))
-            newAcc <- lift $ (and_ prev) (not_ eq)
-            put newAcc
-            pure newAcc
-        )
-        indices
+  map fst $ mapAccumM
+    ( \prev fi -> do
+        let i = getFinite fi
+        eq <- equals_ first_zero (const_ (fromInt i))
+        newAcc <- (and_ prev) (not_ eq)
+        pure (Tuple newAcc newAcc)
     )
     true_
+    indices
 
 -- | Build the runtime `pow2_pows` table = `[x, x^2, x^4, ..., x^(2^maxLog2)]`
 -- | as an Array of length `maxLog2 + 1`. Emits exactly `maxLog2`

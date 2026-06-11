@@ -10,6 +10,7 @@ module Snarky.Backend.Compile
   ( Checker
   , Solver
   , SolverT
+  , liftExceptRow
   , compilePure
   , compile
   , makeSolver
@@ -20,13 +21,11 @@ module Snarky.Backend.Compile
 
 import Prelude
 
-import Control.Monad.Except (Except)
-import Data.Array (foldl, zip)
+import Data.Array (zip)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Foldable (for_)
 import Data.Map (Map)
-import Data.Map as Map
 import Data.Tuple (Tuple(..))
 import Run (Run)
 import Run as Run
@@ -164,6 +163,6 @@ liftExceptRow :: forall e r a. Run r a -> Run (EXCEPT e + r) a
 liftExceptRow = unsafeCoerce
 
 type Checker f c =
-  (Variable -> Except EvaluationError f)
+  (Variable -> Either EvaluationError f)
   -> c
-  -> Except EvaluationError Boolean
+  -> Either EvaluationError Boolean

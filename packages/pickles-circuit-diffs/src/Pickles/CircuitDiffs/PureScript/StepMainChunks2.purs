@@ -32,10 +32,12 @@ import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, stepMain)
+import Run as Run
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (class CircuitM, AsProverT, F, Snarky, addConstraint, exists, mul_)
+import Snarky.Circuit.DSL (AsProver, F, Snarky, addConstraint, exists, mul_)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
@@ -49,11 +51,11 @@ type StepMainChunks2Params =
 -- | choice body — `2^17 + 1` `mul_ fresh_zero fresh_zero` half-rows
 -- | followed by a single 7-wire Raw Generic with zero coeffs.
 chunks2Rule
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
-  => AsProverT StepField m Unit
+  :: forall r
+   . PrimeField StepField
+  => AsProver StepField r Unit
   -> Unit
-  -> Snarky (KimchiConstraint StepField) t m (RuleOutput 0 Unit Unit)
+  -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput 0 Unit Unit)
 chunks2Rule _ _ = do
   let
     freshZero = exists (pure (zero :: F StepField))
@@ -88,7 +90,7 @@ compileStepMainChunks2 params = do
   let
     dummyAdvice :: StepAdvice _ _ _ _ _ _ Unit _ _
     dummyAdvice = unsafeCoerce unit
-  mkStepArtifact <$>
+  mkStepArtifact <$> Run.runBaseEffect do
     compile (Proxy @Unit) (Proxy @(Vector 1 (F StepField))) (Proxy @(KimchiConstraint StepField))
       -- N=0: output size = 32*0 + 1 + 0 = 1 (just the msgForNextStep
       -- digest — no unfinalized_proofs, no messages_for_next_wrap_proof

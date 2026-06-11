@@ -35,8 +35,6 @@ module Pickles.Wrap.Main
 
 import Prelude
 
-import Control.Monad.State.Trans (evalStateT, get, put)
-import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.Fin (Finite, getFinite, unsafeFinite)
 import Data.Foldable (foldl)
@@ -46,7 +44,7 @@ import Data.Maybe (Maybe(..))
 import Data.Newtype (over)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Pickles.Dummy (dummyIpaChallenges)
@@ -82,6 +80,7 @@ import Snarky.Circuit.DSL (class CheckedType, Bool(..), BoolVar, F(..), FVar, Sn
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (SplitField(..), Type1, Type2(..), groupMapParams)
+import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField, curveParams, fromInt)
@@ -482,13 +481,15 @@ wrapMain config (StatementPacked stmtR) advice = do
   -- old hand-unrolled `{ maskVal0, maskVal1 }` pair element-for-element
   -- (slot index = vector index).
   maskVals :: Vector mpv (BoolVar WrapField) <- label "block1-ones-vector"
-    $ flip evalStateT true_
-    $ Vector.generateA @mpv \i -> do
-        prevV <- get
-        eq <- lift $ equals_ firstZero (const_ (fromInt (getFinite i)))
-        v <- lift $ and_ prevV (not_ eq)
-        put v
-        pure v
+    $ map fst
+    $ mapAccumM
+        ( \prevV i -> do
+            eq <- equals_ firstZero (const_ (fromInt (getFinite i)))
+            v <- and_ prevV (not_ eq)
+            pure (Tuple v v)
+        )
+        true_
+        (Vector.generate identity :: Vector mpv _)
 
   domainLog2 <- label "block1-domain-log2" $
     Pseudo.choose whichBranch config.domainLog2s

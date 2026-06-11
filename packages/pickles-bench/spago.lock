@@ -19,7 +19,6 @@
             "snarky",
             "snarky-kimchi",
             "tailrec",
-            "transformers",
             "tuples",
             "vector-sized"
           ]
@@ -1600,7 +1599,6 @@
         "foldable-traversable",
         "foreign",
         "functors",
-        "identity",
         "integers",
         "js-bigints",
         "lazy",
@@ -1625,9 +1623,8 @@
         "snarky-curves",
         "snarky-kimchi",
         "strings",
-        "tailrec",
-        "transformers",
         "tuples",
+        "typelevel-prelude",
         "unsafe-coerce",
         "vector-sized"
       ]
@@ -1885,7 +1882,6 @@
         "exceptions",
         "foldable-traversable",
         "functors",
-        "identity",
         "js-bigints",
         "lists",
         "maybe",
@@ -1899,9 +1895,9 @@
         "safe-coerce",
         "simple-json",
         "tailrec",
-        "transformers",
         "tuples",
-        "unfoldable",
+        "typelevel-prelude",
+        "unsafe-coerce",
         "vector-sized"
       ]
     },
@@ -1911,9 +1907,11 @@
       "dependencies": [
         "curves",
         "maybe",
+        "newtype",
         "partial",
         "prelude",
         "quickcheck",
+        "safe-coerce",
         "simple-json",
         "snarky"
       ]
@@ -1932,12 +1930,10 @@
         "exceptions",
         "foldable-traversable",
         "foreign-object",
-        "identity",
         "integers",
         "js-bigints",
         "lists",
         "maybe",
-        "mmorph",
         "newtype",
         "node-buffer",
         "node-fs",
@@ -1949,13 +1945,13 @@
         "prelude",
         "quickcheck",
         "record",
+        "run",
         "safe-coerce",
         "simple-json",
         "snarky",
         "snarky-curves",
         "snarky-test-utils",
         "strings",
-        "transformers",
         "tuples",
         "unfoldable",
         "union-find",
@@ -1971,7 +1967,6 @@
         "curves",
         "effect",
         "either",
-        "exceptions",
         "foldable-traversable",
         "gen",
         "identity",
@@ -1987,9 +1982,8 @@
         "snarky",
         "spec",
         "spec-quickcheck",
-        "tailrec",
-        "transformers",
         "tuples",
+        "typelevel-prelude",
         "vector-sized"
       ]
     },
@@ -2162,7 +2156,7 @@
         "newtype",
         "ordered-collections",
         "prelude",
-        "transformers"
+        "tuples"
       ]
     },
     "unsafe-coerce": {

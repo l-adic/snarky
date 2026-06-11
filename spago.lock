@@ -51,7 +51,6 @@
             "fmt",
             "foldable-traversable",
             "gen",
-            "identity",
             "js-bigints",
             "maybe",
             "merkle-tree",
@@ -63,14 +62,15 @@
             "quickcheck",
             "random-oracle",
             "refs",
+            "run",
             "safe-coerce",
             "schnorr",
             "snarky",
             "snarky-curves",
             "snarky-kimchi",
             "tailrec",
-            "transformers",
             "tuples",
+            "typelevel-prelude",
             "vector-sized"
           ]
         },
@@ -82,7 +82,6 @@
             "effect",
             "exceptions",
             "foldable-traversable",
-            "identity",
             "js-bigints",
             "ordered-collections",
             "partial",
@@ -111,11 +110,12 @@
             "poseidon",
             "prelude",
             "random-oracle",
+            "run",
             "safe-coerce",
             "snarky",
             "snarky-kimchi",
-            "transformers",
             "tuples",
+            "typelevel-prelude",
             "unfoldable",
             "vector-sized"
           ]
@@ -136,8 +136,6 @@
             "snarky-test-utils",
             "spec",
             "spec-node",
-            "tailrec",
-            "transformers",
             "tuples"
           ]
         }
@@ -158,7 +156,6 @@
             "foldable-traversable",
             "foreign",
             "functors",
-            "identity",
             "integers",
             "js-bigints",
             "lazy",
@@ -183,9 +180,8 @@
             "snarky-curves",
             "snarky-kimchi",
             "strings",
-            "tailrec",
-            "transformers",
             "tuples",
+            "typelevel-prelude",
             "unsafe-coerce",
             "vector-sized"
           ]
@@ -200,7 +196,8 @@
             "effect",
             "prelude",
             "spec",
-            "spec-node"
+            "spec-node",
+            "tailrec"
           ]
         }
       },
@@ -228,6 +225,7 @@
             "prelude",
             "random-oracle",
             "refs",
+            "run",
             "safe-coerce",
             "schnorr",
             "simple-json",
@@ -363,7 +361,6 @@
             "console",
             "effect",
             "gen",
-            "identity",
             "newtype",
             "quickcheck",
             "safe-coerce",
@@ -410,7 +407,6 @@
             "effect",
             "either",
             "exceptions",
-            "identity",
             "integers",
             "node-buffer",
             "node-fs",
@@ -435,7 +431,6 @@
             "exceptions",
             "foldable-traversable",
             "functors",
-            "identity",
             "js-bigints",
             "lists",
             "maybe",
@@ -449,9 +444,9 @@
             "safe-coerce",
             "simple-json",
             "tailrec",
-            "transformers",
             "tuples",
-            "unfoldable",
+            "typelevel-prelude",
+            "unsafe-coerce",
             "vector-sized"
           ]
         },
@@ -471,9 +466,11 @@
           "dependencies": [
             "curves",
             "maybe",
+            "newtype",
             "partial",
             "prelude",
             "quickcheck",
+            "safe-coerce",
             "simple-json",
             "snarky"
           ]
@@ -483,7 +480,6 @@
             "arrays",
             "effect",
             "gen",
-            "identity",
             "quickcheck",
             "snarky-test-utils",
             "spec",
@@ -506,12 +502,10 @@
             "exceptions",
             "foldable-traversable",
             "foreign-object",
-            "identity",
             "integers",
             "js-bigints",
             "lists",
             "maybe",
-            "mmorph",
             "newtype",
             "node-buffer",
             "node-fs",
@@ -523,13 +517,13 @@
             "prelude",
             "quickcheck",
             "record",
+            "run",
             "safe-coerce",
             "simple-json",
             "snarky",
             "snarky-curves",
             "snarky-test-utils",
             "strings",
-            "transformers",
             "tuples",
             "unfoldable",
             "union-find",
@@ -541,7 +535,6 @@
             "effect",
             "exceptions",
             "gen",
-            "identity",
             "integers",
             "node-fs",
             "partial",
@@ -563,10 +556,8 @@
             "curves",
             "effect",
             "either",
-            "exceptions",
             "foldable-traversable",
             "gen",
-            "identity",
             "integers",
             "js-bigints",
             "maybe",
@@ -579,9 +570,8 @@
             "snarky",
             "spec",
             "spec-quickcheck",
-            "tailrec",
-            "transformers",
             "tuples",
+            "typelevel-prelude",
             "vector-sized"
           ]
         },
@@ -599,7 +589,7 @@
             "newtype",
             "ordered-collections",
             "prelude",
-            "transformers"
+            "tuples"
           ]
         },
         "test": {

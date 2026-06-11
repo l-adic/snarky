@@ -4,7 +4,6 @@ import Prelude
 
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
-import Data.Identity (Identity)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect.Class (liftEffect)
@@ -51,8 +50,7 @@ spec' cfg testName _ = describe ("Poseidon Circuit Tests: " <> testName) do
           coerce $ Array.foldl (\state round -> fullRound state round) inputs' rounds
 
       poseidon'
-        :: forall t
-         . PrimeField f
+        :: PrimeField f
         => Vector 3 (FVar f)
         -> Snarky f (KimchiConstraint f) () (Vector 3 (FVar f))
       poseidon' = PoseidonCircuit.poseidon

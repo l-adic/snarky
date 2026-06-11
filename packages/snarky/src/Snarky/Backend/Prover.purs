@@ -136,7 +136,7 @@ runCircuitProver s0 r0 = tailRecM go (Tuple s0 r0)
               let
                 s' = s
                   { assignments =
-                      Array.foldl (\acc (Tuple v fv) -> Map.insert v fv acc)
+                      Array.foldl (\acc (Tuple var fv) -> Map.insert var fv acc)
                         s.assignments
                         (Array.zip vars fields)
                   }

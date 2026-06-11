@@ -15,17 +15,16 @@ import Effect.Class.Console as Console
 import Effect.Ref (write)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
+import Run (Run)
 import Snarky.Backend.Compile (compile, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, const_)
+import Snarky.Circuit.DSL (FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi (verifyCircuitM)
-import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.RandomOracle (Digest(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint, eval, initialState)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Example.Simulation (genGenesisLedger, genOverdraftSignedTransaction, genValidSignedTransaction)
-import Snarky.Example.Transaction (class AccountMapM, SignedTransaction, TransferCompileM, TransferM, applyTx, applyTxChecked, runTransferCompileM, runTransferM)
-import Snarky.Example.Types (Account)
+import Snarky.Example.Transaction (SignedTransaction, TransferRow, applyTx, applyTxChecked, runTransferCompileM, runTransferM)
 import Test.QuickCheck (quickCheck')
 import Test.QuickCheck.Gen (randomSampleOne)
 import Test.Snarky.Circuit.Utils (runTestM, satisfied, unsatisfied)
@@ -71,22 +70,18 @@ transferSpec _ = do
 
     -- The circuit verifies the signature, then applies the transfer.
     circuit
-      :: forall t @m
-       . AccountMapM m d
-      => CMT.MerkleRequestM m Vesta.ScalarField (Account Vesta.ScalarField) d
-      => CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
-      => SignedTransaction (FVar Vesta.ScalarField)
-      -> Snarky (KimchiConstraint Vesta.ScalarField) t m (Digest (FVar Vesta.ScalarField))
+      :: SignedTransaction (FVar Vesta.ScalarField)
+      -> Snarky Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) (TransferRow d) (Digest (FVar Vesta.ScalarField))
     circuit tx = applyTxChecked @d chainId rootVar tx
 
     solver = makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
     s =
-      runTransferCompileM $
+      unsafePerformEffect $ runTransferCompileM $
         compile
           (Proxy @(SignedTransaction Vesta.ScalarField))
           (Proxy @(Digest Vesta.ScalarField))
           (Proxy @(KimchiConstraint Vesta.ScalarField))
-          (circuit @(TransferCompileM d))
+          circuit
           initialState
 
   ref <- liftEffect $ Ref.new ledger
@@ -97,7 +92,7 @@ transferSpec _ = do
     env = { currentTransaction: Nothing, ledger: ref }
 
     -- Reset the ledger before each test case
-    natWithReset :: TransferM d ~> Effect
+    natWithReset :: Run (TransferRow d) ~> Effect
     natWithReset m = do
       write ledger ref
       runTransferM env m
@@ -107,7 +102,7 @@ transferSpec _ = do
     unsafePerformEffect $ natWithReset $ runTestM { builtState: s, solver, checker: eval, postCondition: Kimchi.postCondition } (satisfied testFunction) a
 
   liftEffect $ write ledger ref
-  liftEffect $ runTransferM env $ verifyCircuitM { s, gen: genValidSignedTransaction chainId ledger keys, solver }
+  liftEffect $ verifyCircuitM (runTransferM env) { s, gen: genValidSignedTransaction chainId ledger keys, solver }
 
   Console.log "Checking the overdraft case"
   liftEffect $ quickCheck' 100 $ genOverdraftSignedTransaction chainId ledger keys <#> \a ->

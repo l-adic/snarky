@@ -15,10 +15,11 @@ import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, ste
 import Pickles.Field (StepField)
 import Pickles.IPA (bCorrectCircuit) as IPA
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, SizedF, Snarky, const_)
+import Snarky.Circuit.DSL (BoolVar, F, FVar, SizedF, Snarky, const_)
 import Snarky.Circuit.Kimchi (Type1(..), fromShiftedType1Circuit, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
 type BCorrectInput f =
@@ -42,10 +43,10 @@ parseBCorrectInput inputs =
     }
 
 bCorrectStepCircuit
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+  :: forall r
+   . PrimeField StepField
   => BCorrectInput StepField
-  -> Snarky (KimchiConstraint StepField) t m (BoolVar StepField)
+  -> Snarky StepField (KimchiConstraint StepField) r (BoolVar StepField)
 bCorrectStepCircuit input = do
   let endoVar = const_ stepEndo :: FVar StepField
   -- Expand challenges in reverse order (OCaml right-to-left evaluation)

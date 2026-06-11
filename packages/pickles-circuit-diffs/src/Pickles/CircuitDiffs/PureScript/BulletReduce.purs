@@ -14,9 +14,10 @@ import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, uns
 import Pickles.Field (WrapField)
 import Pickles.IPA (bulletReduceCircuit)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, SizedF, Snarky)
+import Snarky.Circuit.DSL (BoolVar, F, FVar, SizedF, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
@@ -38,10 +39,10 @@ parseBulletReduceInput inputs =
     }
 
 bulletReduceWrapCircuit
-  :: forall t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  :: forall r
+   . PrimeField WrapField
   => BulletReduceInput 16 WrapField
-  -> Snarky (KimchiConstraint WrapField) t m { p :: AffinePoint (FVar WrapField), isInfinity :: BoolVar WrapField }
+  -> Snarky WrapField (KimchiConstraint WrapField) r { p :: AffinePoint (FVar WrapField), isInfinity :: BoolVar WrapField }
 bulletReduceWrapCircuit = bulletReduceCircuit @WrapField @VestaG
 
 compileBulletReduce :: CompiledCircuit WrapField

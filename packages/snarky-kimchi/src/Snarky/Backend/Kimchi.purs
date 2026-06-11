@@ -8,7 +8,6 @@ module Snarky.Backend.Kimchi
 
 import Prelude
 
-import Control.Monad.State (evalState)
 import Data.Array ((:))
 import Data.Array as Array
 import Data.Fin (getFinite)
@@ -18,7 +17,7 @@ import Data.FunctorWithIndex (mapWithIndex)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
-import Data.Tuple (Tuple(..), uncurry)
+import Data.Tuple (Tuple(..), fst, uncurry)
 import Data.UnionFind (UnionFindData, find)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
@@ -107,7 +106,7 @@ makeWireMapping uf variablePlacement =
   rotateLeft xs = case Array.uncons xs of
     Just { head, tail } -> tail `Array.snoc` head
     Nothing -> xs
-  getRoot x = evalState (find x) uf
+  getRoot x = fst (find x uf)
 
 makeGates
   :: forall f g

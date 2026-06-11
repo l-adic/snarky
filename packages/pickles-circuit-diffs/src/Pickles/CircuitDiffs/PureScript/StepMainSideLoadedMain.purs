@@ -33,11 +33,13 @@ import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
+import Run as Run
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (class CircuitM, AsProverT, F, FVar, Snarky, assertAny_, const_, equals_, exists, true_)
+import Snarky.Circuit.DSL (AsProver, F, FVar, Snarky, assertAny_, const_, equals_, exists, true_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (SplitField, Type2)
 import Type.Proxy (Proxy(..))
@@ -63,11 +65,11 @@ type StepMainSideLoadedMainParams =
 -- | `selfCorrect = (1 + prev == self) || isBaseCase`. The side-loaded
 -- | distinction shows up in the spec / vkCarrier, not the rule body.
 sideLoadedMainRule
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
-  => AsProverT StepField m (Tuple1 (StatementIO (F StepField) Unit))
+  :: forall r
+   . PrimeField StepField
+  => AsProver StepField r (Tuple1 (StatementIO (F StepField) Unit))
   -> FVar StepField
-  -> Snarky (KimchiConstraint StepField) t m
+  -> Snarky StepField (KimchiConstraint StepField) r
        (RuleOutput 1 (FVar StepField) Unit)
 sideLoadedMainRule getPrevStates appState = do
   prev <- exists $ getPrevStates <#> \(StatementIO p1 /\ _) -> p1.input
@@ -104,7 +106,7 @@ compileStepMainSideLoadedMain params = do
            _
            _
     dummyAdvice = unsafeCoerce unit
-  mkStepArtifact <$>
+  mkStepArtifact <$> Run.runBaseEffect do
     compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField)))
       (Proxy @(KimchiConstraint StepField))
       -- Parent N=1, pi=34 (1 input + 33 output = 1*32 unfp + 1 digest

@@ -6,10 +6,8 @@ package:
     - curves
     - effect
     - either
-    - exceptions
     - foldable-traversable
     - gen
-    - identity
     - integers
     - js-bigints
     - maybe
@@ -22,7 +20,6 @@ package:
     - snarky
     - spec
     - spec-quickcheck
-    - tailrec
-    - transformers
     - tuples
+    - typelevel-prelude
     - vector-sized

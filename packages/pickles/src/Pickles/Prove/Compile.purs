@@ -53,7 +53,6 @@ module Pickles.Prove.Compile
 
 import Prelude
 
-import Control.Monad.Except (ExceptT)
 import Data.Array as Array
 import Data.Array.NonEmpty as NonEmptyArray
 import Data.Enum (fromEnum)
@@ -145,6 +144,7 @@ import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (EQ, GT, LT)
 import Prim.Ordering as PrimOrdering
 import Run (EFFECT, Run)
+import Run.Except (EXCEPT)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Backend.Kimchi.Proof
@@ -2182,7 +2182,7 @@ newtype BranchProver
 newtype BranchProver prevsSpec mpv prevsCarrier vkCarrier inputVal outputVal r =
   BranchProver
     ( StepInputs prevsSpec inputVal prevsCarrier vkCarrier
-      -> ExceptT ProveError (Run (EFFECT + r))
+      -> Run (EXCEPT ProveError + EFFECT + r)
            (CompiledProof mpv (StatementIO inputVal outputVal))
     )
 
@@ -2335,7 +2335,7 @@ class
   -- |   StepProveContext mpv
   -- |   -> StepCompileResult
   -- |   -> StepAdvice prevsSpec _ _ inputVal mpv carrier valCarrier
-  -- |   -> ExceptT EvaluationError (Run (EFFECT + r)) (StepProveResult outputSize)
+  -- |   -> Run (EXCEPT EvaluationError + EFFECT + r) (StepProveResult outputSize)
   -- |
   -- | Used by `buildBranchProvers` to assemble per-branch
   -- | `BranchProver` closures by composing each branch's
@@ -2458,7 +2458,7 @@ instance
              carrier
              valCarrier
              vkCarrier
-        -> ExceptT EvaluationError (Run (EFFECT + r))
+        -> Run (EXCEPT EvaluationError + EFFECT + r)
              (PProveStep.StepProveResult outputSize)
       )
         /\ restStepProveFns
@@ -2923,7 +2923,7 @@ instance
                carrier
                valCarrier
                vkCarrier
-          -> ExceptT EvaluationError (Run (EFFECT + r))
+          -> Run (EXCEPT EvaluationError + EFFECT + r)
                (PProveStep.StepProveResult outputSize)
         )
           /\ restStepProveFns
@@ -2963,7 +2963,7 @@ instance
              carrier
              valCarrier
              vkCarrier
-        -> ExceptT EvaluationError (Run (EFFECT + r))
+        -> Run (EXCEPT EvaluationError + EFFECT + r)
              (PProveStep.StepProveResult outputSize)
       )
         /\ restStepProveFns
@@ -3164,7 +3164,7 @@ data RuleEntry prevsSpec mpv nd wrapVkChunks valCarrier inputVal carrier outputS
            carrier
            valCarrier
            vkCarrier
-      -> ExceptT EvaluationError (Run (EFFECT + r)) (PProveStep.StepProveResult outputSize)
+      -> Run (EXCEPT EvaluationError + EFFECT + r) (PProveStep.StepProveResult outputSize)
   , slotVKs :: slotVKs
   }
 
@@ -3511,7 +3511,7 @@ runMultiProverBody
   -- ^ this branch's selfStepDomainLog2 (from the pre-pass)
   -> RuleEntry prevsSpec mpv topBranches wrapVkChunks valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints r
   -> StepInputs prevsSpec inputVal prevsCarrier vkCarrier
-  -> ExceptT ProveError (Run (EFFECT + r))
+  -> Run (EXCEPT ProveError + EFFECT + r)
        (CompiledProof mpvMax (StatementIO inputVal outputVal))
 runMultiProverBody
   _ncProxy

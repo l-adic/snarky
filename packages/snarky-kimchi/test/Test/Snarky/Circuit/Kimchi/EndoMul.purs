@@ -3,7 +3,6 @@ module Test.Snarky.Circuit.Kimchi.EndoMul (spec) where
 import Prelude
 
 import Data.Array.NonEmpty as NEA
-import Data.Identity (Identity)
 import Data.Maybe (fromJust)
 import Data.Newtype (unwrap)
 import Data.Tuple (Tuple(..), uncurry)
@@ -56,8 +55,7 @@ endoSpec cfg _ curveProxy curveName =
             AffinePoint { x, y }
 
         circuit
-          :: forall t
-           . PrimeField f
+          :: PrimeField f
           => AffinePoint (FVar f)
           -> SizedF 128 (FVar f)
           -> Snarky f (KimchiConstraint f) () (AffinePoint (FVar f))
@@ -117,8 +115,7 @@ endoInvSpec cfg _ curveProxy curveName =
             AffinePoint { x, y }
 
         circuit
-          :: forall t
-           . PrimeField f
+          :: PrimeField f
           => AffinePoint (FVar f)
           -> SizedF 128 (FVar f)
           -> Snarky f (KimchiConstraint f) () (AffinePoint (FVar f))

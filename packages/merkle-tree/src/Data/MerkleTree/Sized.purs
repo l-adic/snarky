@@ -41,7 +41,7 @@ import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitType, Bool(..), BoolVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Snarky.Circuit.DSL (class BasicSystem, class CheckedType, class CircuitType, Bool(..), BoolVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Curves.Class (class PrimeField, toBigInt)
 import Type.Proxy (Proxy(..))
 
@@ -132,7 +132,7 @@ instance
   fieldsToVar as =
     coerce $ unsafePartial fromJust $ Vector.toVector @d as
 
-instance CheckedType f c (AddressVar d f) where
+instance BasicSystem f c => CheckedType f c (AddressVar d f) where
   check = genericCheck
 
 get

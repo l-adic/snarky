@@ -11,12 +11,10 @@ package:
     - exceptions
     - foldable-traversable
     - foreign-object
-    - identity
     - integers
     - js-bigints
     - lists
     - maybe
-    - mmorph
     - newtype
     - node-buffer
     - node-fs
@@ -28,13 +26,13 @@ package:
     - prelude
     - quickcheck
     - record
+    - run
     - safe-coerce
     - simple-json
     - snarky
     - snarky-curves
     - snarky-test-utils
     - strings
-    - transformers
     - tuples
     - unfoldable
     - union-find
@@ -45,7 +43,6 @@ package:
       - effect
       - exceptions
       - gen
-      - identity
       - integers
       - node-fs
       - partial

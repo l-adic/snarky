@@ -29,6 +29,7 @@ import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
 import Pickles.Wrap.Slots (NoSlots)
+import Run as Run
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Proof (srsLagrangeCommitmentChunksAt)
@@ -97,7 +98,7 @@ compileWrapMainChunks2 { blindingH } stepParams = do
   let
     dummyAdvice :: WrapAdvice 0 2 NoSlots
     dummyAdvice = unsafeCoerce unit
-  wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  wrapCs <- pure $ Run.extract $ compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\stmt -> wrapMainForPrevs @1 @Unit @2 config stmt dummyAdvice)
     Kimchi.initialState
   pure

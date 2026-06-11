@@ -11,10 +11,11 @@ import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
 import Pickles.Field (WrapField)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky)
+import Snarky.Circuit.DSL (F, FVar, Snarky)
 import Snarky.Circuit.Kimchi (groupMapCircuit, groupMapParams) as Kimchi
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi (initialState) as Kimchi
+import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
@@ -23,10 +24,10 @@ parseGroupMapInput :: Vector 1 (FVar WrapField) -> FVar WrapField
 parseGroupMapInput = Vector.head
 
 groupMapCircuit
-  :: forall t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  :: forall r
+   . PrimeField WrapField
   => FVar WrapField
-  -> Snarky (KimchiConstraint WrapField) t m (AffinePoint (FVar WrapField))
+  -> Snarky WrapField (KimchiConstraint WrapField) r (AffinePoint (FVar WrapField))
 groupMapCircuit = Kimchi.groupMapCircuit (Kimchi.groupMapParams (Proxy @VestaG))
 
 compileGroupMap :: CompiledCircuit WrapField

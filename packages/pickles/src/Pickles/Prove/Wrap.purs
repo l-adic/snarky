@@ -25,8 +25,6 @@ module Pickles.Prove.Wrap
 
 import Prelude
 
-import Control.Monad.Except (ExceptT, throwError)
-import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
@@ -61,9 +59,11 @@ import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Run (EFFECT, Run)
 import Run as Run
+import Run.Except (EXCEPT)
+import Run.Except as Except
 import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled, constraintsToArray)
-import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
+import Snarky.Backend.Compile (SolverT, compile, liftExceptRow, makeSolver', runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, gatesToJson)
 import Snarky.Backend.Kimchi.Proof (Proof, pallasProofCommitments, pallasProofData, srsBlindingGenerator, srsLagrangeCommitmentChunksAt, vestaCreateProofWithPrev)
@@ -502,7 +502,7 @@ wrapSolveAndProve
        (slots (Vector WrapIPARounds (FVar WrapField)))
   => WrapProveContext branches mpv stepChunks slots
   -> WrapCompileResult
-  -> ExceptT EvaluationError (Run (EFFECT + r)) WrapProveResult
+  -> Run (EXCEPT EvaluationError + EFFECT + r) WrapProveResult
 wrapSolveAndProve ctx compileResult = do
   let
     rawSolver
@@ -514,10 +514,10 @@ wrapSolveAndProve ctx compileResult = do
       makeSolver' (emptyProverState { debug = ctx.debug }) (Proxy @(KimchiConstraint WrapField))
         (\stmt -> wrapMain @branches @slots @stepChunks ctx.wrapMainConfig stmt ctx.advice)
 
-  eRes <- lift $ runSolverT rawSolver ctx.publicInput
+  eRes <- liftExceptRow $ runSolverT rawSolver ctx.publicInput
 
   case eRes of
-    Left e -> throwError (WithContext "wrapProve solver" e)
+    Left e -> Except.throw (WithContext "wrapProve solver" e)
     Right (Tuple _ assignments) -> do
       let
         { witness, publicInputs } = makeWitness

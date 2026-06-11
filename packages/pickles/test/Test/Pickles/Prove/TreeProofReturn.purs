@@ -34,7 +34,6 @@ module Test.Pickles.Prove.TreeProofReturn
 import Prelude
 
 import Colog (LoggerT, Message, logInfo, withSpan)
-import Control.Monad.Except (runExceptT)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
@@ -48,6 +47,7 @@ import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), Compiled, CompiledProof(..), NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots2, StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
 import Run as Run
+import Run.Except as Except
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, const_, exists, if_, not_, true_)
@@ -132,7 +132,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     let BranchProver nrrProver = fst nrr.provers
     -- NRR has no prev slots → spec-derived `vkCarrier = Unit`.
     logInfo "[TreeProofReturn] proving nrr"
-    eNrrCp <- withSpan "[TreeProofReturn] prove nrr" $ liftEffect $ Run.runBaseEffect $ runExceptT $ nrrProver
+    eNrrCp <- withSpan "[TreeProofReturn] prove nrr" $ liftEffect $ Run.runBaseEffect $ Except.runExcept $ nrrProver
       { appInput: unit, prevs: unit, sideloadedVKs: unit }
     nrrCp <- case eNrrCp of
       Left e -> liftEffect $ Exc.throw ("nrrProver: " <> show e)
@@ -187,7 +187,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         :: PrevSlot Unit 2 (StatementIO Unit (F StepField))
         -> Aff (CompiledProof 2 (StatementIO Unit (F StepField)))
       runStep selfPrev = do
-        eRes <- liftEffect $ Run.runBaseEffect $ runExceptT $ treeProver
+        eRes <- liftEffect $ Run.runBaseEffect $ Except.runExcept $ treeProver
           { appInput: unit
           , prevs:
               tuple2 (InductivePrev nrrCp' nrr.tag) selfPrev

@@ -4,7 +4,6 @@ import Prelude
 
 import Control.Monad.Gen (suchThat)
 import Data.Array.NonEmpty as NEA
-import Data.Identity (Identity)
 import Data.Tuple (Tuple(..), uncurry)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
@@ -52,8 +51,7 @@ spec' cfg testName pg _ =
         f (Tuple a b) = EC.addAffine a b
 
         circuit
-          :: forall t
-           . PrimeField f
+          :: PrimeField f
           => AffinePoint (FVar f)
           -> AffinePoint (FVar f)
           -> Snarky f (KimchiConstraint f) () (Point (FVar f))

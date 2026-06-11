@@ -17,8 +17,6 @@ package:
       - snarky-test-utils
       - spec
       - spec-node
-      - tailrec
-      - transformers
       - tuples
   dependencies:
     - arrays
@@ -34,10 +32,11 @@ package:
     - poseidon
     - prelude
     - random-oracle
+    - run
     - safe-coerce
     - snarky
     - snarky-kimchi
-    - transformers
     - tuples
+    - typelevel-prelude
     - unfoldable
     - vector-sized

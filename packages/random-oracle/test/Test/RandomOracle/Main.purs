@@ -7,7 +7,6 @@ import Data.Array ((:))
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Fin (unsafeFinite)
-import Data.Identity (Identity)
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reifyType)
 import Data.Traversable (for_)
@@ -223,8 +222,7 @@ hash2CircuitTests _ = do
     referenceHash (Tuple (F a) (F b)) = Digest $ hash [ a, b ]
 
     circuit'
-      :: forall t
-       . PrimeField f
+      :: PrimeField f
       => Tuple (FVar f) (FVar f)
       -> Snarky f (KimchiConstraint f) () (Digest (FVar f))
     circuit' = uncurry Checked.hash2
@@ -256,8 +254,7 @@ hashVecCircuitTests _ pn = do
         Digest $ hash xs
 
     circuit'
-      :: forall t
-       . PrimeField f
+      :: PrimeField f
       => Vector n (FVar f)
       -> Snarky f (KimchiConstraint f) () (Digest (FVar f))
     circuit' x = Checked.hashVec (Vector.toUnfoldable x)
@@ -290,8 +287,7 @@ hashVecEdgeCase _ input = do
         Digest $ hash xs'
 
     circuit'
-      :: forall t
-       . PrimeField f
+      :: PrimeField f
       => Vector n (FVar f)
       -> Snarky f (KimchiConstraint f) () (Digest (FVar f))
     circuit' x = Checked.hashVec (Vector.toUnfoldable x)
@@ -333,8 +329,7 @@ circuitSpongeTests _ = do
 
       -- Circuit version (fixed to Identity)
       circuit'
-        :: forall t
-         . PrimeField f
+        :: PrimeField f
         => Tuple (FVar f) (FVar f)
         -> Snarky f (KimchiConstraint f) () (FVar f)
       circuit' (Tuple a b) = do
@@ -370,8 +365,7 @@ circuitSpongeTests _ = do
 
       -- Circuit version (fixed to Identity)
       circuit'
-        :: forall t
-         . PrimeField f
+        :: PrimeField f
         => Tuple (FVar f) (Tuple (FVar f) (FVar f))
         -> Snarky f (KimchiConstraint f) () (Tuple (FVar f) (FVar f))
       circuit' (Tuple a (Tuple b c)) = do

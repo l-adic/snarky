@@ -16,7 +16,6 @@ module Test.Pickles.Prove.SideLoadedMain
 import Prelude
 
 import Colog (LoggerT, Message, withSpan)
-import Control.Monad.Except (runExceptT)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Tuple (fst)
@@ -31,6 +30,7 @@ import Partial.Unsafe (unsafePartial)
 import Pickles (BranchProver(..), CompiledProof, NoSlots, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, SideLoaded, Slot, Slots1, StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry)
 import Pickles.Sideload (mkBundle) as Sideload
 import Run as Run
+import Run.Except as Except
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -156,7 +156,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
 
     -- Produce a real child b0 proof. `appInput = F zero` satisfies
     -- the rule's `self == 0` assertion.
-    eChildCp <- withSpan "[SideLoadedMain] prove child" $ liftEffect $ Run.runBaseEffect $ runExceptT $ childProver
+    eChildCp <- withSpan "[SideLoadedMain] prove child" $ liftEffect $ Run.runBaseEffect $ Except.runExcept $ childProver
       { appInput: F zero
       , prevs: unit
       , sideloadedVKs: unit
@@ -221,7 +221,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
     -- Drive the parent prove with `InductivePrev`: parent self = 1,
     -- prev = (child input = 0, wrapped child proof, child VK). The
     -- rule's `selfCorrect = 1 + 0 == 1` holds.
-    eParentCp <- withSpan "[SideLoadedMain] prove parent" $ liftEffect $ Run.runBaseEffect $ runExceptT $ chainProver
+    eParentCp <- withSpan "[SideLoadedMain] prove parent" $ liftEffect $ Run.runBaseEffect $ Except.runExcept $ chainProver
       { appInput: F one
       , prevs: tuple1 (InductivePrev childCp2' childTag2)
       , sideloadedVKs: childVK /\ unit

@@ -14,9 +14,6 @@ module Snarky.Constraint.Kimchi.Reduction
 
 import Prelude
 
-import Control.Monad.Error.Class (class MonadThrow, throwError)
-import Control.Monad.Except (ExceptT, runExceptT)
-import Control.Monad.State (class MonadState, State, execState, get, gets, modify_, runState)
 import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
@@ -30,7 +27,7 @@ import Data.Newtype (class Newtype, over, un)
 import Data.NonEmpty (NonEmpty(..))
 import Data.Set as Set
 import Data.Tuple (Tuple(..))
-import Data.UnionFind (class MonadUnionFind, find, union)
+import Data.UnionFind as UF
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
@@ -144,7 +141,7 @@ reduceAsBuilder
 reduceAsBuilder { nextVariable, aux } m =
   let
     initState = { nextVariable, constraints: mempty, aux }
-    Tuple a s = runState (un PlonkBuilder m) initState
+    Tuple a s = un PlonkBuilder m initState
   in
     Tuple a
       ( Record.set (Proxy @"constraints")
@@ -167,10 +164,7 @@ reduceAsProver
            , assignments :: Map Variable f
            }
        )
-reduceAsProver s m =
-  case runState (runExceptT $ un PlonkProver m) s of
-    Tuple (Left e) _ -> Left e
-    Tuple (Right a) s' -> Right $ Tuple a s'
+reduceAsProver s m = un PlonkProver m s
 
 --------------------------------------------------------------------------------
 
@@ -184,16 +178,36 @@ type BuilderReductionState f =
   , aux :: AuxState f
   }
 
-newtype PlonkBuilder f a = PlonkBuilder (State (BuilderReductionState f) a)
-
-derive newtype instance Functor (PlonkBuilder f)
-derive newtype instance Apply (PlonkBuilder f)
-derive newtype instance Applicative (PlonkBuilder f)
-derive newtype instance Bind (PlonkBuilder f)
-derive newtype instance Monad (PlonkBuilder f)
-derive newtype instance MonadState (BuilderReductionState f) (PlonkBuilder f)
+-- | Hand-rolled pure state monad (replaces `State` from `transformers`).
+-- | Reductions are per-constraint (a handful of binds), so plain
+-- | function-composition binds are fine — no stack-safety machinery needed.
+newtype PlonkBuilder f a = PlonkBuilder (BuilderReductionState f -> Tuple a (BuilderReductionState f))
 
 derive instance Newtype (PlonkBuilder f a) _
+
+instance Functor (PlonkBuilder f) where
+  map f (PlonkBuilder g) = PlonkBuilder \s -> let Tuple a s' = g s in Tuple (f a) s'
+
+instance Apply (PlonkBuilder f) where
+  apply = ap
+
+instance Applicative (PlonkBuilder f) where
+  pure a = PlonkBuilder \s -> Tuple a s
+
+instance Bind (PlonkBuilder f) where
+  bind (PlonkBuilder g) f = PlonkBuilder \s ->
+    let
+      Tuple a s' = g s
+    in
+      un PlonkBuilder (f a) s'
+
+instance Monad (PlonkBuilder f)
+
+getsB :: forall f a. (BuilderReductionState f -> a) -> PlonkBuilder f a
+getsB f = PlonkBuilder \s -> Tuple (f s) s
+
+modifyB_ :: forall f. (BuilderReductionState f -> BuilderReductionState f) -> PlonkBuilder f Unit
+modifyB_ f = PlonkBuilder \s -> Tuple unit (f s)
 
 constraintToCoeffs
   :: forall f
@@ -228,11 +242,11 @@ handleGateBatching
   => GenericPlonkConstraint f
   -> PlonkBuilder f (Maybe (KimchiRow f))
 handleGateBatching newGate = do
-  mqueued <- gets (\{ aux: AuxState aux } -> aux.queuedGenericGate)
+  mqueued <- getsB (\{ aux: AuxState aux } -> aux.queuedGenericGate)
   case mqueued of
     Nothing -> do
       -- No queued gate, store this one for batching
-      modify_ \s -> s
+      modifyB_ \s -> s
         { aux = over AuxState
             _ { queuedGenericGate = Just newGate }
             (s.aux)
@@ -241,7 +255,7 @@ handleGateBatching newGate = do
       pure Nothing
     Just queuedGate -> do
       -- clear the queue
-      modify_ \s -> s
+      modifyB_ \s -> s
         { aux = over AuxState
             _ { queuedGenericGate = Nothing }
             (s.aux)
@@ -257,47 +271,49 @@ handleGateBatching newGate = do
     in
       { kind: GenericPlonkGate, coeffs, variables: vars }
 
--- | Implementation for any MonadState with a unionFind field
-instance MonadUnionFind Variable (PlonkBuilder f) where
-  find x = do
-    uf <- gets (\{ aux: AuxState aux } -> aux.wireState.unionFind)
-    let Tuple a uf' = runState (find x) uf
-    modify_ \s -> s
-      { aux = over AuxState
-          ( \st -> st
-              { wireState = st.wireState
-                  { unionFind = uf'
-                  }
-              }
-          )
-          s.aux
-      }
-    pure a
+-- | Wire-state union-find ops for the builder, over the pure
+-- | `Data.UnionFind` API.
+findB :: forall f. Variable -> PlonkBuilder f Variable
+findB x = do
+  uf <- getsB (\{ aux: AuxState aux } -> aux.wireState.unionFind)
+  let Tuple a uf' = UF.find x uf
+  modifyB_ \s -> s
+    { aux = over AuxState
+        ( \st -> st
+            { wireState = st.wireState
+                { unionFind = uf'
+                }
+            }
+        )
+        s.aux
+    }
+  pure a
 
-  union x y = do
-    uf <- gets (\{ aux: AuxState aux } -> aux.wireState.unionFind)
-    modify_ \s -> s
-      { aux = over AuxState
-          ( \st -> st
-              { wireState = st.wireState
-                  { unionFind = execState (union x y) uf
-                  }
-              }
-          )
-          s.aux
-      }
+unionB :: forall f. Variable -> Variable -> PlonkBuilder f Unit
+unionB x y = do
+  uf <- getsB (\{ aux: AuxState aux } -> aux.wireState.unionFind)
+  modifyB_ \s -> s
+    { aux = over AuxState
+        ( \st -> st
+            { wireState = st.wireState
+                { unionFind = UF.union x y uf
+                }
+            }
+        )
+        s.aux
+    }
 
 instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
   addGenericPlonkConstraint c = do
     mconstraint <- handleGateBatching c
     case mconstraint of
       Nothing -> pure unit
-      Just c' -> modify_ \s ->
+      Just c' -> modifyB_ \s ->
         s { constraints = Cons c' s.constraints }
   createInternalVariable _ = do
-    nextVariable <- gets _.nextVariable
-    void $ find nextVariable
-    modify_ \s -> s
+    nextVariable <- getsB _.nextVariable
+    void $ findB nextVariable
+    modifyB_ \s -> s
       { nextVariable = incrementVariable nextVariable
       , aux = over AuxState
           ( \st -> st
@@ -311,7 +327,7 @@ instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
     pure nextVariable
   addEqualsConstraint c
     | c.cl == zero && c.cr == zero = pure unit
-    | Just l <- c.vl, Just r <- c.vr, c.cl == c.cr = union l r
+    | Just l <- c.vl, Just r <- c.vr, c.cl == c.cr = unionB l r
     -- Two-variable case: cl * l = cr * r where cl /= cr.
     -- OCaml only emits a generic constraint here — it does NOT touch cached_constants.
     -- Caching would be incorrect: l and r are not constants, they are variables
@@ -329,10 +345,10 @@ instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
           , c: zero
           }
     | Just l <- c.vl, Nothing <- c.vr, c.cl /= zero = do
-        ws <- gets (\{ aux: AuxState aux } -> aux.wireState)
+        ws <- getsB (\{ aux: AuxState aux } -> aux.wireState)
         let constVal = c.cr / c.cl
         case Map.lookup constVal ws.cachedConstants of
-          Just cached -> union l cached
+          Just cached -> unionB l cached
           Nothing -> do
             addGenericPlonkConstraint
               { vl: Just l
@@ -344,7 +360,7 @@ instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
               , m: zero
               , c: -c.cr
               }
-            modify_ \s -> s
+            modifyB_ \s -> s
               { aux = over AuxState
                   ( \st -> st
                       { wireState = st.wireState
@@ -357,10 +373,10 @@ instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
     | Just l <- c.vl, Nothing <- c.vr =
         addGenericPlonkConstraint { vl: Nothing, cl: zero, vr: Nothing, cr: zero, co: zero, vo: Nothing, m: zero, c: c.cr }
     | Nothing <- c.vl, Just r <- c.vr, c.cr /= zero = do
-        ws <- gets (\{ aux: AuxState aux } -> aux.wireState)
+        ws <- getsB (\{ aux: AuxState aux } -> aux.wireState)
         let constVal = c.cl / c.cr
         case Map.lookup constVal ws.cachedConstants of
-          Just cached -> union r cached
+          Just cached -> unionB r cached
           Nothing -> do
             addGenericPlonkConstraint
               { vl: Nothing
@@ -372,7 +388,7 @@ instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
               , m: zero
               , c: -c.cl
               }
-            modify_ \s -> s
+            modifyB_ \s -> s
               { aux = over AuxState
                   ( \st -> st
                       { wireState = st.wireState { cachedConstants = Map.insert constVal r st.wireState.cachedConstants }
@@ -390,31 +406,39 @@ type ProverReductionState f =
   , assignments :: Map Variable f
   }
 
-newtype PlonkProver f a = PlonkProver (ExceptT EvaluationError (State (ProverReductionState f)) a)
-
-derive newtype instance Functor (PlonkProver f)
-derive newtype instance Apply (PlonkProver f)
-derive newtype instance Applicative (PlonkProver f)
-derive newtype instance Bind (PlonkProver f)
-derive newtype instance Monad (PlonkProver f)
-derive newtype instance MonadState (ProverReductionState f) (PlonkProver f)
-derive newtype instance MonadThrow EvaluationError (PlonkProver f)
+-- | Hand-rolled fused state + error monad (replaces
+-- | `ExceptT EvaluationError (State …)` from `transformers`).
+newtype PlonkProver f a = PlonkProver (ProverReductionState f -> Either EvaluationError (Tuple a (ProverReductionState f)))
 
 derive instance Newtype (PlonkProver f a) _
 
+instance Functor (PlonkProver f) where
+  map f (PlonkProver g) = PlonkProver \s -> g s <#> \(Tuple a s') -> Tuple (f a) s'
+
+instance Apply (PlonkProver f) where
+  apply = ap
+
+instance Applicative (PlonkProver f) where
+  pure a = PlonkProver \s -> Right (Tuple a s)
+
+instance Bind (PlonkProver f) where
+  bind (PlonkProver g) f = PlonkProver \s -> case g s of
+    Left e -> Left e
+    Right (Tuple a s') -> un PlonkProver (f a) s'
+
+instance Monad (PlonkProver f)
+
 instance (PrimeField f) => PlonkReductionM (PlonkProver f) f where
   addGenericPlonkConstraint _ = pure unit
-  createInternalVariable e = do
-    { nextVariable, assignments } <- get
+  createInternalVariable e = PlonkProver \s ->
     let
-      _lookup v = case Map.lookup v assignments of
-        Nothing -> throwError $ MissingVariable v
-        Just a -> pure a
-    a <- evalAffineExpression e _lookup
-    modify_
-      _
-        { nextVariable = incrementVariable nextVariable
-        , assignments = Map.insert nextVariable a assignments
-        }
-    pure nextVariable
+      _lookup v = case Map.lookup v s.assignments of
+        Nothing -> Left $ MissingVariable v
+        Just a -> Right a
+    in
+      evalAffineExpression e _lookup <#> \a ->
+        Tuple s.nextVariable
+          { nextVariable: incrementVariable s.nextVariable
+          , assignments: Map.insert s.nextVariable a s.assignments
+          }
   addEqualsConstraint _ = pure unit

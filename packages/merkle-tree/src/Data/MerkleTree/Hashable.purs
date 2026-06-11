@@ -17,10 +17,11 @@ import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, const_)
+import Snarky.Circuit.DSL (FVar, Snarky, const_)
 import Snarky.Circuit.RandomOracle (class HashInput, class Hashable, hashInput, toHashInput) as RO
 import Snarky.Circuit.RandomOracle (Digest(..), hash2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Class (class PrimeField)
 
 -- | Type class for merging two hashes into one.
 -- | Used for computing internal node hashes in merkle trees.
@@ -31,10 +32,10 @@ instance PoseidonField f => MergeHash (Digest f) where
   merge (Digest a) (Digest b) = Digest $ Poseidon.hash [ a, b ]
 
 instance
-  ( CircuitM f (KimchiConstraint f) t m
+  ( PrimeField f
   , PoseidonField f
   ) =>
-  MergeHash (Snarky (KimchiConstraint f) t m (Digest (FVar f))) where
+  MergeHash (Snarky f (KimchiConstraint f) r (Digest (FVar f))) where
   merge a b = join $ lift2 hash2 (map (un Digest) a) (map (un Digest) b)
 
 -- | The default/empty hash for a type — hashing the "empty" leaf.
@@ -67,21 +68,21 @@ derive instance Functor FreeHash
 
 -- | Circuit-level hash function for a single field element
 hashCircuit
-  :: forall f t m
+  :: forall f r
    . PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => Maybe (FVar f)
-  -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
+  -> Snarky f (KimchiConstraint f) r (Digest (FVar f))
 hashCircuit = case _ of
   Nothing -> hash2 (const_ zero) (const_ zero)
   Just a -> hash2 a (const_ zero)
 
 -- | Circuit-level merge of two digests
 mergeCircuit
-  :: forall f t m
+  :: forall f r
    . PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => Digest (FVar f)
   -> Digest (FVar f)
-  -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
+  -> Snarky f (KimchiConstraint f) r (Digest (FVar f))
 mergeCircuit (Digest a) (Digest b) = hash2 a b

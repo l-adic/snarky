@@ -9,7 +9,6 @@ package:
     - exceptions
     - foldable-traversable
     - functors
-    - identity
     - js-bigints
     - lists
     - maybe
@@ -23,9 +22,9 @@ package:
     - safe-coerce
     - simple-json
     - tailrec
-    - transformers
     - tuples
-    - unfoldable
+    - typelevel-prelude
+    - unsafe-coerce
     - vector-sized
   test:
     main: Test.Snarky.Circuit.Main

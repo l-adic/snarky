@@ -3,7 +3,6 @@ module Test.Snarky.Circuit.Assert (spec) where
 import Prelude
 
 import Data.Array.NonEmpty as NEA
-import Data.Identity (Identity)
 import Data.Tuple (Tuple(..), uncurry)
 import Snarky.Backend.Builder (class CompileCircuit)
 import Snarky.Backend.Prover (class SolveCircuit)

@@ -25,11 +25,11 @@ import Pickles.Types (ChunkedCommitment(..))
 import Pickles.Wrap.OtherField as WrapOtherField
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, assertEq, assertEqual_, const_)
+import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, assertEq, assertEqual_, const_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (curveParams)
+import Snarky.Curves.Class (class PrimeField, curveParams)
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
@@ -132,12 +132,12 @@ parseIvpWrapInput inputs =
     }
 
 ivpWrapCircuit
-  :: forall pi t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  :: forall pi r
+   . PrimeField WrapField
   => PublicInputCommit pi WrapField
   => IvpWrapParams
   -> IvpWrapInput pi
-  -> Snarky (KimchiConstraint WrapField) t m Unit
+  -> Snarky WrapField (KimchiConstraint WrapField) r Unit
 ivpWrapCircuit { lagrangeAt, blindingH } input = do
   let
     constDummyPt = let AffinePoint { x: F x', y: F y' } = dummyVestaPt in AffinePoint { x: const_ x', y: const_ y' }
