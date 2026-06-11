@@ -11,11 +11,13 @@ import Data.Fin (getFinite)
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
 import Pickles.Field (WrapField)
 import Pickles.IPA (combinePolynomials)
-import Snarky.Backend.Compile (compilePure)
+import Run as Run
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F, FVar, SizedF, Snarky, const_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -76,8 +78,7 @@ combinePolyCircuit input =
   in
     combinePolynomials allBases (Vector.replicate Nothing) input.xi
 
-compileCombinePoly :: CompiledCircuit WrapField
+compileCombinePoly :: Effect (CompiledCircuit WrapField)
 compileCombinePoly =
-  compilePure (Proxy @(Vector 37 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  Run.runBaseEffect $ compile (Proxy @(Vector 37 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ combinePolyCircuit (parseCombinePolyInput inputs))
-    Kimchi.initialState

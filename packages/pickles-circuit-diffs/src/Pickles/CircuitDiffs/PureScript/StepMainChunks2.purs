@@ -110,4 +110,3 @@ compileStepMainChunks2 params = do
           dummyAdvice
           throwawayCaptureRef
       )
-      Kimchi.initialState

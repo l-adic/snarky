@@ -60,7 +60,7 @@ endoSpec cfg _ curveProxy curveName =
           :: PrimeField f
           => AffinePoint (FVar f)
           -> SizedF 128 (FVar f)
-          -> Snarky f (KimchiConstraint f) (EFFECT + ()) (AffinePoint (FVar f))
+          -> Snarky f (KimchiConstraint f) () (AffinePoint (FVar f))
         circuit p scalar = do
           result <- endo @128 @32 p scalar
           pure result
@@ -120,7 +120,7 @@ endoInvSpec cfg _ curveProxy curveName =
           :: PrimeField f
           => AffinePoint (FVar f)
           -> SizedF 128 (FVar f)
-          -> Snarky f (KimchiConstraint f) (EFFECT + ()) (AffinePoint (FVar f))
+          -> Snarky f (KimchiConstraint f) () (AffinePoint (FVar f))
         circuit p scalar = endoInv @f @f' @g p scalar
 
         gen :: Gen (Tuple (AffinePoint f) (SizedF 128 (F f)))

@@ -20,11 +20,11 @@ import Snarky.Backend.Compile (compile, makeSolver)
 import Snarky.Circuit.DSL (FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi (verifyCircuitM)
 import Snarky.Circuit.RandomOracle (Digest(..))
-import Snarky.Constraint.Kimchi (KimchiConstraint, eval, initialState)
+import Snarky.Constraint.Kimchi (KimchiConstraint, eval)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Example.Simulation (genGenesisLedger, genOverdraftSignedTransaction, genValidSignedTransaction)
-import Snarky.Example.Transaction (SignedTransaction, TransferRow, applyTx, applyTxChecked, runTransferCompileM, runTransferM)
+import Snarky.Example.Transaction (SignedTransaction, TransferAdvice, TransferRow, applyTx, applyTxChecked, runTransferCompileM, runTransferM)
 import Test.QuickCheck (quickCheck')
 import Test.QuickCheck.Gen (randomSampleOne)
 import Test.Snarky.Circuit.Utils (runTestM, satisfied, unsatisfied)
@@ -71,7 +71,7 @@ transferSpec _ = do
     -- The circuit verifies the signature, then applies the transfer.
     circuit
       :: SignedTransaction (FVar Vesta.ScalarField)
-      -> Snarky Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) (TransferRow d) (Digest (FVar Vesta.ScalarField))
+      -> Snarky Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) (TransferAdvice d) (Digest (FVar Vesta.ScalarField))
     circuit tx = applyTxChecked @d chainId rootVar tx
 
     solver = makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
@@ -82,7 +82,6 @@ transferSpec _ = do
           (Proxy @(Digest Vesta.ScalarField))
           (Proxy @(KimchiConstraint Vesta.ScalarField))
           circuit
-          initialState
 
   ref <- liftEffect $ Ref.new ledger
 

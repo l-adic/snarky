@@ -8,10 +8,12 @@ import Prelude
 
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
 import Pickles.Field (StepField)
 import Pickles.Util.Pow2 (pow2PowSquare)
-import Snarky.Backend.Compile (compilePure)
+import Run as Run
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F, FVar, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -28,8 +30,7 @@ pow2PowCircuit
   -> Snarky StepField (KimchiConstraint StepField) r (FVar StepField)
 pow2PowCircuit x = pow2PowSquare x 16
 
-compilePow2Pow :: CompiledCircuit StepField
+compilePow2Pow :: Effect (CompiledCircuit StepField)
 compilePow2Pow =
-  compilePure (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  Run.runBaseEffect $ compile (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> void $ pow2PowCircuit (parsePow2PowInput inputs))
-    Kimchi.initialState

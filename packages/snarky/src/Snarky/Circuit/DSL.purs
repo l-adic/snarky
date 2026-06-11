@@ -34,7 +34,7 @@ import Snarky.Circuit.DSL.Assert (class AssertEqual, assertAll_, assertAny_, ass
 import Snarky.Circuit.DSL.Bits (packPure, pack_, unpackPure, unpack_) as ReExports
 import Snarky.Circuit.DSL.Boolean (class IfThenElse, all_, any_, false_, if_, true_, xor_) as ReExports
 import Snarky.Circuit.DSL.Field (equals, equals_, neq_, pow_, square_, sum_) as ReExports
-import Snarky.Circuit.DSL.Monad (class CheckedType, ASPROVER, AsProver(..), CIRCUIT, CircuitF(..), Snarky(..), addConstraint, and_, check, div_, exists, fresh, genericCheck, inv_, label, liftAdvice, liftCircuit, mul_, not_, or_, read, readCVar, runAsProver, runAsProverPure, runSnarky, throwAsProver) as ReExports
+import Snarky.Circuit.DSL.Monad (class CheckedType, ASPROVER, AsProver(..), CIRCUIT, CircuitF(..), Snarky(..), addConstraint, and_, check, div_, exists, fresh, genericCheck, inv_, label, liftAdvice, liftCircuit, liftEffectAsProver, mul_, not_, or_, read, readCVar, runAsProver, runSnarky, throwAsProver) as ReExports
 import Snarky.Circuit.DSL.SizedF (SizedF, coerceViaBits, fromBits, fromField, toBits, toField, unwrapF, wrapF) as ReExports
 import Snarky.Circuit.DSL.Utils (seal) as ReExports
 import Snarky.Circuit.Types (class CircuitType, Bool(..), BoolVar, F(..), FVar, UnChecked(..), fieldsToValue, fieldsToVar, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, sizeInFields, valueToFields, varToFields) as ReExports

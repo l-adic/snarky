@@ -20,11 +20,13 @@ import Data.FunctorWithIndex (mapWithIndex)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Tuple (Tuple(..), fst, uncurry)
-import Data.UnionFind (UnionFindData, find)
+import Data.UnionFind.Mutable (MutableUF)
+import Data.UnionFind.Mutable as MutableUF
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import Effect.Exception.Unsafe (unsafeThrow)
 import Snarky.Backend.DenseStore (DenseStore)
 import Snarky.Backend.DenseStore as DenseStore
@@ -45,10 +47,10 @@ import Snarky.Curves.Class (class PrimeField)
 -- `i * 16 + j`. Region-quantified `ST.run` proves the mutation is local.
 makeWireMapping
   :: forall f
-   . UnionFindData Variable
+   . Array Int
   -> Array (KimchiRow f)
   -> Array (Maybe Wire)
-makeWireMapping uf rows = ST.run do
+makeWireMapping roots rows = ST.run do
   placement <- DenseStore.fresh
   STI.foreach (mapWithIndex Tuple rows) \(Tuple i row) ->
     forWithIndex_ row.variables \j mVar -> case mVar of
@@ -57,7 +59,7 @@ makeWireMapping uf rows = ST.run do
   rootCells <- DenseStore.fresh
   placementEntries <- DenseStore.toEntries Tuple placement
   STI.foreach placementEntries \(Tuple v cells) -> do
-    let Variable root = fst (find (Variable v) uf)
+    let root = fromMaybe v (Array.index roots v)
     STI.foreach (Array.filter (\(Tuple _ j) -> j < 7) cells) \cell ->
       DenseStore.pushAt root cell rootCells
   wireMap <- DenseStore.fresh
@@ -117,20 +119,22 @@ makeGateData
   => PrimeField f
   => { constraints :: Array (KimchiRow f)
      , publicInputs :: Array Variable
-     , unionFind :: UnionFindData Variable
+     , unionFind :: MutableUF
      }
-  -> { constraints :: Array (KimchiRow f)
-     , gates :: Array (Gate f)
-     , publicInputSize :: Int
-     }
-makeGateData arg =
+  -> Effect
+       { constraints :: Array (KimchiRow f)
+       , gates :: Array (Gate f)
+       , publicInputSize :: Int
+       }
+makeGateData arg = do
+  roots <- MutableUF.rootOf arg.unionFind
   let
     publicInputRows = makePublicInputRows arg.publicInputs
     rows = publicInputRows <> arg.constraints
-    wireMapping = makeWireMapping arg.unionFind rows
+    wireMapping = makeWireMapping roots rows
     gates = makeGates wireMapping rows
     publicInputSize = Array.length publicInputRows
-  in
+  pure
     { constraints: rows
     , gates
     , publicInputSize
@@ -155,24 +159,24 @@ makeConstraintSystemWithPrevChallenges
   => PrimeField f
   => { constraints :: Array (KimchiRow f)
      , publicInputs :: Array Variable
-     , unionFind :: UnionFindData Variable
+     , unionFind :: MutableUF
      , prevChallengesCount :: Int
      , maxPolySize :: Int
      }
-  -> { constraints :: Array (KimchiRow f)
-     , gates :: Array (Gate f)
-     , publicInputSize :: Int
-     , prevChallengesCount :: Int
-     , maxPolySize :: Int
-     }
-makeConstraintSystemWithPrevChallenges arg =
-  let
-    gd = makeGateData @f
-      { constraints: arg.constraints
-      , publicInputs: arg.publicInputs
-      , unionFind: arg.unionFind
-      }
-  in
+  -> Effect
+       { constraints :: Array (KimchiRow f)
+       , gates :: Array (Gate f)
+       , publicInputSize :: Int
+       , prevChallengesCount :: Int
+       , maxPolySize :: Int
+       }
+makeConstraintSystemWithPrevChallenges arg = do
+  gd <- makeGateData @f
+    { constraints: arg.constraints
+    , publicInputs: arg.publicInputs
+    , unionFind: arg.unionFind
+    }
+  pure
     { constraints: gd.constraints
     , gates: gd.gates
     , publicInputSize: gd.publicInputSize

@@ -69,10 +69,10 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
   incrementArt <- compileStepMainTwoPhaseChainIncrement makeZeroArt incrementStepSrsData
   vestaSrs' <- createCRS @StepField
   pallasSrs <- createCRS @WrapField
+  makeZeroVK <- deriveStepVKFromCompiled @1 @0 vestaSrs' makeZeroArt.stepCs
+  incrementVK <- deriveStepVKFromCompiled @1 @1 vestaSrs' incrementArt.stepCs
   let
     -- @0 for make_zero (n=0 prev_challenges), @1 for increment (n=1).
-    makeZeroVK = deriveStepVKFromCompiled @1 @0 vestaSrs' makeZeroArt.stepCs
-    incrementVK = deriveStepVKFromCompiled @1 @1 vestaSrs' incrementArt.stepCs
 
     -- Per-branch chunked lagrange lookup at each branch's step domain log2.
     -- Both values derived from artifacts (no hardcoded 9 / 14). At
@@ -109,12 +109,12 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
   let
     dummyAdvice :: WrapAdvice 1 1 (Slots1 1)
     dummyAdvice = unsafeCoerce unit
-  wrapCs <- pure $ Run.extract $ compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  wrapCs <- Run.runBaseEffect $ compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\stmt -> wrapMain @2 @(Slots1 1) @1 config stmt dummyAdvice)
-    Kimchi.initialState
+  wrapVk <- deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
   pure
     { stepCs: incrementArt.stepCs
     , stepDomainLog2: incrementArt.stepDomainLog2
     , wrapCs
-    , wrapVk: deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
+    , wrapVk
     }

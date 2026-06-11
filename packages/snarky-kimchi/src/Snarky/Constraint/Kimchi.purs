@@ -3,7 +3,6 @@ module Snarky.Constraint.Kimchi
   , KimchiGate
   , class KimchiVerify
   , eval
-  , initialState
   , postCondition
   ) where
 
@@ -17,16 +16,17 @@ import Data.Newtype (over, un)
 import Data.Set as Set
 import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..))
-import Data.UnionFind (equivalenceClasses)
+import Data.UnionFind.Mutable as MutableUF
+import Data.UnionFind.Mutable as MutableUF
 import Data.Vector (Vector)
 import Effect (Effect)
 import Effect (Effect)
 import Poseidon (class PoseidonField)
 import Snarky.Backend.Assignments as Assignments
-import Snarky.Backend.Assignments as Assignments
 import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, Labeled)
 import Snarky.Backend.Builder as CircuitBuilder
 import Snarky.Backend.Prover (class SolveCircuit, ProverState)
+import Snarky.Circuit.CVar (Variable(..))
 import Snarky.Circuit.CVar (Variable, v0)
 import Snarky.Circuit.DSL (class BasicSystem, Basic(..), EvaluationError, FVar)
 import Snarky.Constraint.Basic as Basic
@@ -102,29 +102,31 @@ instance PoseidonField f => CompileCircuit f (KimchiGate f) (KimchiConstraint f)
       -> (a -> KimchiGate f)
       -> c
       -> CircuitBuilderState (KimchiGate f) (AuxState f)
-      -> CircuitBuilderState (KimchiGate f) (AuxState f)
+      -> Effect (CircuitBuilderState (KimchiGate f) (AuxState f))
     go reducer wrap c s =
-      let
-        Tuple rows res = reduceAsBuilder
-          { nextVariable: s.nextVar
-          , aux: s.aux
-          }
-          (reducer c)
-        lbl = s.labelStack
+      reduceAsBuilder
+        { nextVariable: s.nextVar
+        , aux: s.aux
+        }
+        (reducer c) <#> \(Tuple rows res) ->
+        let
+          lbl = s.labelStack
 
-        labelGate :: forall g. g -> Labeled g
-        labelGate g = { constraint: g, context: lbl }
-      in
-        s
-          { nextVar = res.nextVariable
-          , constraints =
-              CircuitBuilder.snocConstraint (labelGate (wrap rows))
-                ( CircuitBuilder.appendConstraintsBatch
-                    (map (labelGate <<< KimchiGatePlonk) res.constraints)
-                    s.constraints
-                )
-          , aux = res.aux
-          }
+          labelGate :: forall g. g -> Labeled g
+          labelGate g = { constraint: g, context: lbl }
+        in
+          s
+            { nextVar = res.nextVariable
+            , constraints =
+                CircuitBuilder.snocConstraint (labelGate (wrap rows))
+                  ( CircuitBuilder.appendConstraintsBatch
+                      (map (labelGate <<< KimchiGatePlonk) res.constraints)
+                      s.constraints
+                  )
+            , aux = res.aux
+            }
+
+  initialBuilderState = initialAuxState >>= CircuitBuilder.emptyBuilderState
 
   finalize s =
     let
@@ -171,34 +173,28 @@ instance (KimchiVerify f f') => SolveCircuit f (KimchiConstraint f) where
     -- the prover state has `debug: true`.
     goBasic :: Basic f -> Effect (Either EvaluationError (ProverState f))
     goBasic c =
-      reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (GenericPlonk.reduce c) <#> case _ of
-        Left e -> Left e
+      reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (GenericPlonk.reduce c) >>= case _ of
+        Left e -> pure (Left e)
         Right (Tuple _ res) -> do
           let s' = s { assignments = res.assignments, nextVar = res.nextVariable }
-          if s.debug then case Basic.debugCheck (flip Assignments.lookup res.assignments) c of
-            Nothing -> Right s'
-            Just e -> Left e
-          else Right s'
-
-initialState :: forall f. CircuitBuilderState (KimchiGate f) (AuxState f)
-initialState =
-  { nextVar: v0
-  , constraints: CircuitBuilder.emptyConstraints
-  , publicInputs: mempty
-  , aux: initialAuxState
-  , labelStack: []
-  , varMetadata: Map.empty
-  }
+          if s.debug then do
+            lookupFn <- Assignments.toLookup res.assignments
+            pure case Basic.debugCheck lookupFn c of
+              Nothing -> Right s'
+              Just e -> Left e
+          else pure (Right s')
 
 postCondition
   :: forall f
    . PrimeField f
   => PostCondition f (KimchiGate f) (AuxState f)
 postCondition lookup { aux: AuxState { wireState: { unionFind } } } = do
-  classes <- for (equivalenceClasses unionFind) \_class -> do
-    values <- traverse lookup _class
-    pure $ Set.fromFoldable values
-  pure $ all (\s -> Set.size s == 1) classes
+  ufClasses <- MutableUF.equivalenceClasses unionFind
+  pure do
+    classes <- for ufClasses \_class -> do
+      values <- traverse (lookup <<< Variable) _class
+      pure $ Set.fromFoldable values
+    pure $ all (\s -> Set.size s == 1) classes
 
 -- | Per-gate constraint sanity checker, threaded by `Test.Snarky.Circuit
 -- | .Utils.TestConfig` as the `checker:` field (used by `random-oracle`,

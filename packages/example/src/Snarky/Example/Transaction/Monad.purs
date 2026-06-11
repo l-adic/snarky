@@ -27,6 +27,7 @@ module Snarky.Example.Transaction.Monad
   , ACCOUNT_MAP
   , _accountMap
   , getAccountId
+  , TransferAdvice
   , TransferRow
   , runTransferM
   , runTransferCompileM
@@ -88,12 +89,17 @@ getAccountId pk = Run.lift _accountMap (GetAccountId pk identity)
 
 --------------------------------------------------------------------------------
 -- | The full advice row a transfer circuit's witnesses request from.
-type TransferRow d =
+-- | Advice labels a transfer circuit's witnesses request (EFFECT is
+-- | structural in circuit/witness rows, so it is not named here).
+type TransferAdvice d =
   MERKLE Vesta.ScalarField (Account Vesta.ScalarField) d
     + ACCOUNT_MAP d
     + TRANSACTION
-    + EFFECT
     + ()
+
+-- | The interpreter-facing row: advice plus the EFFECT channel the
+-- | solver/interpreters emit into.
+type TransferRow d = MERKLE Vesta.ScalarField (Account Vesta.ScalarField) d + ACCOUNT_MAP d + TRANSACTION + EFFECT + ()
 
 --------------------------------------------------------------------------------
 -- Run-time advice interpreter

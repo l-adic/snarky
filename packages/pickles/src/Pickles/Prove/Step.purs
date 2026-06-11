@@ -107,6 +107,7 @@ import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Run (EFFECT, Run)
+import Run as Run
 import Run.Except (EXCEPT)
 import Run.Except as Except
 import Safe.Coerce (coerce)
@@ -117,7 +118,6 @@ import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIn
 import Snarky.Backend.Kimchi.Proof (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofOpeningPrechallenges, proofOraclesRec, vestaProofCommitments, vestaProofData)
 import Snarky.Backend.Kimchi.ProofCache (ProofCache, getPallasProof, setPallasProof)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
-import Snarky.Backend.Prover (emptyProverState)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL (AsProver, BoolVar, F(..), FVar, SizedF, Snarky, UnChecked(..), coerceViaBits)
@@ -126,7 +126,6 @@ import Snarky.Circuit.DSL.SizedF (toField, unwrapF, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
 import Snarky.Circuit.Types (class CircuitType, valueToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
-import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar)
 import Snarky.Curves.Class (fromInt, generator, toAffine) as Curves
@@ -1756,7 +1755,7 @@ stepCompile
   => CheckedType StepField (KimchiConstraint StepField) input
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => StepProveContext wrapVkChunks len nd blueprints
-  -> StepRuleAt (EFFECT + r) len valCarrier inputVal input outputVal output prevInputVal prevInput
+  -> StepRuleAt r len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Run (EFFECT + r) StepCompileResult
 stepCompile ctx rule = do
   -- For compiled-only specs the side-loaded VK carrier is the all-Unit
@@ -1808,18 +1807,18 @@ stepCompile ctx rule = do
             dummyAdvice
             throwawayCaptureRef
       )
-      (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
 
   let
     kimchiRows :: Array (KimchiRow StepField)
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
-    csResult = makeConstraintSystemWithPrevChallenges @StepField
-      { constraints: kimchiRows
-      , publicInputs: builtState.publicInputs
-      , unionFind: (un AuxState builtState.aux).wireState.unionFind
-      , prevChallengesCount: reflectType (Proxy @len)
-      , maxPolySize: crsSize ctx.crs
-      }
+  csResult <- Run.liftEffect $ makeConstraintSystemWithPrevChallenges @StepField
+    { constraints: kimchiRows
+    , publicInputs: builtState.publicInputs
+    , unionFind: (un AuxState builtState.aux).wireState.unionFind
+    , prevChallengesCount: reflectType (Proxy @len)
+    , maxPolySize: crsSize ctx.crs
+    }
+  let
     { gates, publicInputSize, constraints } = csResult
 
     -- `cs.endo` is no longer threaded through the PS signature: the JS
@@ -1969,7 +1968,7 @@ preComputeStepDomainLog2
   -- wrap-VK placeholder. Free parameter; callers pin (tests `@1`).
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => StepProveContext wrapVkChunks len nd blueprints
-  -> StepRuleAt (EFFECT + r) len valCarrier inputVal input outputVal output prevInputVal prevInput
+  -> StepRuleAt r len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Run (EFFECT + r) Int
 preComputeStepDomainLog2 ctx rule = do
   -- See `stepCompile` for why the rule runs in `StepProverT … m` with
@@ -2009,7 +2008,6 @@ preComputeStepDomainLog2 ctx rule = do
             dummyAdvice
             throwawayCaptureRef
       )
-      (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
 
   let
     kimchiRows :: Array (KimchiRow StepField)
@@ -2113,7 +2111,7 @@ stepSolveAndProve
   => CheckedType StepField (KimchiConstraint StepField) input
   => SlotStatementsCarrier prevsSpec valCarrier
   => StepProveContext wrapVkChunks len nd blueprints
-  -> StepRuleAt (EFFECT + r) len valCarrier inputVal input outputVal output prevInputVal prevInput
+  -> StepRuleAt r len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> StepCompileResult
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
   -> Run (EXCEPT EvaluationError + EFFECT + r) (StepProveResult outputSize)
@@ -2137,7 +2135,7 @@ stepSolveAndProve ctx rule compileResult advice = do
            Unit
            (Vector outputSize (F StepField))
     rawSolver =
-      makeSolver' (emptyProverState { debug = ctx.debug })
+      makeSolver' { debug: ctx.debug }
         (Proxy @(KimchiConstraint StepField))
         ( \_ ->
             stepMain

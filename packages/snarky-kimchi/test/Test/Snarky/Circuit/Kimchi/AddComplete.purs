@@ -56,7 +56,7 @@ spec' cfg testName pg _ =
           :: PrimeField f
           => AffinePoint (FVar f)
           -> AffinePoint (FVar f)
-          -> Snarky f (KimchiConstraint f) (EFFECT + ()) (Point (FVar f))
+          -> Snarky f (KimchiConstraint f) () (Point (FVar f))
         circuit p1 p2 = do
           { isInfinity, p: AffinePoint p } <- addFast DontCheckFinite p1 p2
           x <- Snarky.if_ isInfinity (const_ zero) p.x

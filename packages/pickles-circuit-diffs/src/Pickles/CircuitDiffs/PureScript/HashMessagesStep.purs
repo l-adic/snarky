@@ -8,11 +8,13 @@ import Data.Fin (getFinite)
 import Data.Foldable (foldM)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
 import Pickles.Field (StepField)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Types (WrapIPARounds)
-import Snarky.Backend.Compile (compilePure)
+import Run as Run
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F, FVar, Snarky, assertEq)
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -84,8 +86,7 @@ hashMessagesStepCircuit inputs = do
   let claimed = at 90
   assertEq digest claimed
 
-compileHashMessagesStep :: CompiledCircuit StepField
+compileHashMessagesStep :: Effect (CompiledCircuit StepField)
 compileHashMessagesStep =
-  compilePure (Proxy @(Vector 91 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  Run.runBaseEffect $ compile (Proxy @(Vector 91 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> hashMessagesStepCircuit inputs)
-    Kimchi.initialState

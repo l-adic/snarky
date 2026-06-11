@@ -151,4 +151,3 @@ compileStepMainSideLoadedChild params = do
           dummyAdvice
           throwawayCaptureRef
       )
-      Kimchi.initialState

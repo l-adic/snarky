@@ -15,6 +15,7 @@ import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (tuple3, tuple6)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyVestaPt, unsafeIdx, wrapEndo)
 import Pickles.Field (WrapField)
 import Pickles.IncrementallyVerifyProof (incrementallyVerifyProof)
@@ -23,8 +24,9 @@ import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), L
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Types (ChunkedCommitment(..))
 import Pickles.Wrap.OtherField as WrapOtherField
+import Run as Run
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure)
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, assertEq, assertEqual_, const_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -174,8 +176,7 @@ ivpWrapCircuit { lagrangeAt, blindingH } input = do
   for_ (Vector.zip input.deferredValues.bulletproofChallenges output.bulletproofChallenges) \(Tuple c1 c2) ->
     assertEq c1 c2
 
-compileIvpWrap :: IvpWrapParams -> CompiledCircuit WrapField
+compileIvpWrap :: IvpWrapParams -> Effect (CompiledCircuit WrapField)
 compileIvpWrap srsData =
-  compilePure (Proxy @(Vector 177 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  Run.runBaseEffect $ compile (Proxy @(Vector 177 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> ivpWrapCircuit srsData (parseIvpWrapInput inputs))
-    Kimchi.initialState

@@ -60,7 +60,7 @@ spec' cfg _ curveName = do
         circuit'
           :: PrimeField f
           => SizedF 128 (FVar f)
-          -> Snarky f (KimchiConstraint f) (EFFECT + ()) (FVar f)
+          -> Snarky f (KimchiConstraint f) () (FVar f)
         circuit' = circuit
 
       { builtState, solver } <- circuitTest' @f

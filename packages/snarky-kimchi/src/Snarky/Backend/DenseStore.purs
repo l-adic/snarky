@@ -7,8 +7,6 @@ module Snarky.Backend.DenseStore
   , fresh
   , pushAt
   , setAt
-  , getAt
-  , foldSlots
   , toEntries
   , freeze
   ) where
@@ -16,10 +14,10 @@ module Snarky.Backend.DenseStore
 import Prelude
 
 import Control.Monad.ST (ST)
+import Control.Monad.ST.Internal (for) as STI
 import Data.Array as Array
 import Data.Array.ST (STArray)
 import Data.Array.ST as STA
-import Data.FoldableWithIndex (foldlWithIndex)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Maybe (Maybe(..))
 
@@ -31,11 +29,9 @@ fresh = DenseStore <$> STA.new
 -- | Poke with `Nothing`-padding growth to cover sparse indices.
 write :: forall h v. Int -> Maybe v -> STArray h (Maybe v) -> ST h Unit
 write i v s = do
-  ok <- STA.poke i v s
-  if ok then pure unit
-  else do
-    _ <- STA.push Nothing s
-    write i v s
+  n <- Array.length <$> STA.unsafeFreeze s
+  STI.for n (i + 1) (\_ -> STA.push Nothing s)
+  void (STA.poke i v s)
 
 -- | Append `v` to the array at slot `i`.
 pushAt :: forall h v. Int -> v -> DenseStore h (Array v) -> ST h Unit
@@ -48,20 +44,7 @@ pushAt i v (DenseStore s) = do
 setAt :: forall h v. Int -> v -> DenseStore h v -> ST h Unit
 setAt i v (DenseStore s) = write i (Just v) s
 
-getAt :: forall h v. Int -> DenseStore h v -> ST h (Maybe v)
-getAt i (DenseStore s) = join <$> STA.peek i s
-
--- | Fold filled slots, ascending by index (freezes a snapshot).
-foldSlots :: forall h v r. (r -> Int -> v -> r) -> r -> DenseStore h v -> ST h r
-foldSlots f init (DenseStore s) =
-  STA.freeze s <#> foldlWithIndex
-    ( \i acc -> case _ of
-        Just v -> f acc i v
-        Nothing -> acc
-    )
-    init
-
--- | Frozen snapshot of all slots.
+-- | Frozen copy of all slots.
 freeze :: forall h v. DenseStore h v -> ST h (Array (Maybe v))
 freeze (DenseStore s) = STA.freeze s
 

@@ -52,7 +52,7 @@ type TreeRef d f v = Ref (SMT.MerkleTree d (Digest f) v)
 
 -- | Monad that reads tree from a Ref
 -- | Run handler answering MERKLE requests against a Ref-held tree.
-type MerkleRow d f v = CMT.MERKLE f v d + EFFECT + ()
+type MerkleRow d f v = CMT.MERKLE f v d + ()
 
 runMerkleRef
   :: forall d f v
@@ -60,7 +60,7 @@ runMerkleRef
   => PoseidonField f
   => MerkleHashable v (Digest f)
   => TreeRef d f v
-  -> Run (MerkleRow d f v) ~> Effect
+  -> Run (EFFECT + MerkleRow d f v) ~> Effect
 runMerkleRef ref = Run.runBaseEffect <<< Run.interpret (Run.on CMT._merkle handler Run.send)
   where
   readTree = Run.liftEffect (read ref)
@@ -159,7 +159,7 @@ impliedRootSpec cfg _ pd = do
 
     circuit
       :: Tuple (SMT.AddressVar d f) (Tuple (Digest (FVar f)) (SMT.Path d (Digest (FVar f))))
-      -> Snarky f (KimchiConstraint f) (EFFECT + ()) (Digest (FVar f))
+      -> Snarky f (KimchiConstraint f) () (Digest (FVar f))
     circuit (Tuple addr (Tuple entryHash path)) =
       CMT.impliedRoot addr entryHash path
 
@@ -290,7 +290,7 @@ fetchAndUpdateSpec cfg _ pd = do
 
   -- Reset tree before each test case
   let
-    natWithReset :: Run (MerkleRow d f (Account f)) ~> Effect
+    natWithReset :: Run (EFFECT + MerkleRow d f (Account f)) ~> Effect
     natWithReset m = do
       write initialTree ref
       runMerkleRef ref m
@@ -355,7 +355,7 @@ updateSpec cfg _ pd = do
 
   -- Reset tree before each test case
   let
-    natWithReset :: Run (MerkleRow d f (Account f)) ~> Effect
+    natWithReset :: Run (EFFECT + MerkleRow d f (Account f)) ~> Effect
     natWithReset m = do
       write initialTree ref
       runMerkleRef ref m

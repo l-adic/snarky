@@ -11,9 +11,11 @@ module Pickles.CircuitDiffs.PureScript.OtherFieldCheck
 
 import Prelude
 
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
 import Pickles.Field (StepField)
-import Snarky.Backend.Compile (compilePure)
+import Run as Run
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F, Snarky, exists)
 import Snarky.Circuit.Kimchi (SplitField, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -38,8 +40,7 @@ otherFieldCheckCircuit _ = do
   _ <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))
   pure unit
 
-compileOtherFieldCheck :: CompiledCircuit StepField
+compileOtherFieldCheck :: Effect (CompiledCircuit StepField)
 compileOtherFieldCheck =
-  compilePure (Proxy @Unit) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  Run.runBaseEffect $ compile (Proxy @Unit) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     otherFieldCheckCircuit
-    Kimchi.initialState

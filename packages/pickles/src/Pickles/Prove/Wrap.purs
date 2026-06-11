@@ -69,13 +69,11 @@ import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIn
 import Snarky.Backend.Kimchi.Proof (Proof, pallasProofCommitments, pallasProofData, srsBlindingGenerator, srsLagrangeCommitmentChunksAt, vestaCreateProofWithPrev)
 import Snarky.Backend.Kimchi.ProofCache (ProofCache, getVestaProof, setVestaProof)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
-import Snarky.Backend.Prover (emptyProverState)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
 import Snarky.Circuit.DSL (class CheckedType, F(..), FVar, const_)
 import Snarky.Circuit.Kimchi (Type1, Type2, toShifted)
 import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
-import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
@@ -404,24 +402,23 @@ wrapCompile ctx = do
   let
     dummyAdvice :: WrapAdvice mpv stepChunks slots
     dummyAdvice = unsafeCoerce unit
-  let
-    builtState = Run.extract $
-      compile
-        (Proxy @(Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean))
-        (Proxy @Unit)
-        (Proxy @(KimchiConstraint WrapField))
-        (\stmt -> wrapMain @branches @slots @stepChunks ctx.wrapMainConfig stmt dummyAdvice)
-        (Kimchi.initialState :: CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField))
+  builtState <- Run.runBaseEffect $
+    compile
+      (Proxy @(Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean))
+      (Proxy @Unit)
+      (Proxy @(KimchiConstraint WrapField))
+      (\stmt -> wrapMain @branches @slots @stepChunks ctx.wrapMainConfig stmt dummyAdvice)
 
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
-    csResult = makeConstraintSystemWithPrevChallenges @WrapField
-      { constraints: kimchiRows
-      , publicInputs: builtState.publicInputs
-      , unionFind: (un AuxState builtState.aux).wireState.unionFind
-      , prevChallengesCount: reflectType (Proxy @PaddedLength)
-      , maxPolySize: crsSize ctx.crs
-      }
+  csResult <- makeConstraintSystemWithPrevChallenges @WrapField
+    { constraints: kimchiRows
+    , publicInputs: builtState.publicInputs
+    , unionFind: (un AuxState builtState.aux).wireState.unionFind
+    , prevChallengesCount: reflectType (Proxy @PaddedLength)
+    , maxPolySize: crsSize ctx.crs
+    }
+  let
     { gates, publicInputSize, constraints } = csResult
 
     -- `cs.endo` is no longer threaded through the PS signature: the JS
@@ -511,7 +508,7 @@ wrapSolveAndProve ctx compileResult = do
            (Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean)
            Unit
     rawSolver =
-      makeSolver' (emptyProverState { debug = ctx.debug }) (Proxy @(KimchiConstraint WrapField))
+      makeSolver' { debug: ctx.debug } (Proxy @(KimchiConstraint WrapField))
         (\stmt -> wrapMain @branches @slots @stepChunks ctx.wrapMainConfig stmt ctx.advice)
 
   eRes <- liftExceptRow $ runSolverT rawSolver ctx.publicInput

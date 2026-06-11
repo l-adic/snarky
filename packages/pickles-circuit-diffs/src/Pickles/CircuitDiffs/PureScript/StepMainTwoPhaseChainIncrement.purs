@@ -133,4 +133,3 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
           dummyAdvice
           throwawayCaptureRef
       )
-      Kimchi.initialState

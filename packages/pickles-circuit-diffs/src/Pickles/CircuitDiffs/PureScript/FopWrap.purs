@@ -10,14 +10,16 @@ import Prelude
 import Data.Fin (Finite, getFinite)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx, wrapDomainLog2, wrapEndo, wrapSrsLengthLog2)
 import Pickles.Field (WrapField)
 import Pickles.FinalizeOtherProof (DomainMode(..), Output)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.Wrap.FinalizeOtherProof (pow2PowMul, wrapFinalizeOtherProofCircuit)
+import Run as Run
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure)
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (Bool(..), F, FVar, SizedF, Snarky, const_, sub_)
 import Snarky.Circuit.Kimchi (Type2(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -129,8 +131,7 @@ fopWrapCircuit input =
       , prevChallenges: input.prevChallenges
       }
 
-compileFopWrap :: CompiledCircuit WrapField
+compileFopWrap :: Effect (CompiledCircuit WrapField)
 compileFopWrap =
-  compilePure (Proxy @(Vector 148 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  Run.runBaseEffect $ compile (Proxy @(Vector 148 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ fopWrapCircuit (parseFopWrapInput inputs))
-    Kimchi.initialState

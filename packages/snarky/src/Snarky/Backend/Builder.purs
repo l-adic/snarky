@@ -5,7 +5,8 @@
 -- | variables and DISCARDS the witness computation. Used during compilation
 -- | to extract the constraint system structure.
 module Snarky.Backend.Builder
-  ( initialState
+  ( emptyBuilderState
+  , initialBuilderState
   , runCircuitBuilder
   , execCircuitBuilder
   , CircuitBuilderState
@@ -35,12 +36,16 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Tuple (Tuple(..))
-import Run (Run)
+import Effect (Effect)
+import Run (EFFECT, Run)
 import Run as Run
+import Snarky.Backend.Assignments (Assignments)
+import Snarky.Backend.Assignments as Assignments
 import Snarky.Circuit.CVar (Variable, incrementVariable, v0)
 import Snarky.Circuit.DSL.Monad (CIRCUIT, CircuitF(..), _circuit)
 import Snarky.Constraint.Basic (class BasicSystem, Basic)
 import Snarky.Curves.Class (class PrimeField)
+import Type.Row (type (+))
 
 type Labeled c =
   { constraint :: c
@@ -93,31 +98,40 @@ type CircuitBuilderState c aux =
   , publicInputs :: Array Variable
   , aux :: aux
   , labelStack :: Array String
-  , varMetadata :: Map Variable (Array String)
+  , varMetadata :: Assignments (Array String)
   }
 
 -- | How a backend stores an emitted constraint `c'` in a builder state over
 -- | stored constraint type `c` (+ backend aux state), and finalizes the state
 -- | after the build. Replaces the old `ConstraintM`/`Finalizer`/
 -- | `CompileCircuit` class triple.
-class BasicSystem f c' <= CompileCircuit f c c' aux | f c -> c', c -> f where
-  appendBuilderConstraint :: c' -> CircuitBuilderState c aux -> CircuitBuilderState c aux
+class BasicSystem f c' <= CompileCircuit f c c' aux | f c -> c' aux, c' -> c, c -> f where
+  appendBuilderConstraint :: c' -> CircuitBuilderState c aux -> Effect (CircuitBuilderState c aux)
   finalize :: CircuitBuilderState c aux -> CircuitBuilderState c aux
+  -- | The backend's initial builder state, constructed fresh (including
+  -- | all mutable parts) per `compile` invocation — initial states are
+  -- | never shared, by construction.
+  initialBuilderState :: Effect (CircuitBuilderState c aux)
 
-instance PrimeField f => CompileCircuit f (Basic f) (Basic f) aux where
+instance PrimeField f => CompileCircuit f (Basic f) (Basic f) Unit where
   appendBuilderConstraint c s =
-    s { constraints = snocConstraint { constraint: c, context: s.labelStack } s.constraints }
+    pure s { constraints = snocConstraint { constraint: c, context: s.labelStack } s.constraints }
   finalize = identity
+  initialBuilderState = emptyBuilderState unit
 
-initialState :: forall c. CircuitBuilderState c Unit
-initialState =
-  { nextVar: v0
-  , constraints: emptyConstraints
-  , publicInputs: mempty
-  , aux: unit
-  , labelStack: []
-  , varMetadata: Map.empty
-  }
+-- | Fresh builder state over any aux value (helper for
+-- | `initialBuilderState` instances).
+emptyBuilderState :: forall c aux. aux -> Effect (CircuitBuilderState c aux)
+emptyBuilderState aux = do
+  varMetadata <- Assignments.fresh
+  pure
+    { nextVar: v0
+    , constraints: emptyConstraints
+    , publicInputs: mempty
+    , aux
+    , labelStack: []
+    , varMetadata
+    }
 
 -- | Allocate `n` consecutive variables in a builder state (recording the
 -- | current label stack as each variable's metadata, exactly like a fresh
@@ -126,22 +140,15 @@ allocVars
   :: forall c aux
    . Int
   -> CircuitBuilderState c aux
-  -> Tuple (Array Variable) (CircuitBuilderState c aux)
+  -> Effect (Tuple (Array Variable) (CircuitBuilderState c aux))
 allocVars n s0 = go 0 s0 []
   where
   go i s acc
-    | i >= n = Tuple acc s
-    | otherwise =
-        let
-          v = s.nextVar
-        in
-          go (i + 1)
-            ( s
-                { nextVar = incrementVariable v
-                , varMetadata = Map.insert v s.labelStack s.varMetadata
-                }
-            )
-            (Array.snoc acc v)
+    | i >= n = pure (Tuple acc s)
+    | otherwise = do
+        let v = s.nextVar
+        Assignments.set v s.labelStack s.varMetadata
+        go (i + 1) (s { nextVar = incrementVariable v }) (Array.snoc acc v)
 
 -- | Interpret the `circuit` effect in builder mode over an open tail of
 -- | advice effects `r` (which never fire — witness computations are
@@ -151,7 +158,7 @@ runCircuitBuilder
    . CompileCircuit f c c' aux
   => CircuitBuilderState c aux
   -> Run (CIRCUIT f c' r) a
-  -> Run r (Tuple a (CircuitBuilderState c aux))
+  -> Run (EFFECT + r) (Tuple a (CircuitBuilderState c aux))
 runCircuitBuilder s0 r0 = tailRecM go (Tuple s0 r0)
   where
   handle = Run.on _circuit Left Right
@@ -162,22 +169,19 @@ runCircuitBuilder s0 r0 = tailRecM go (Tuple s0 r0)
   go
     :: CompileCircuit f c c' aux
     => Tuple (CircuitBuilderState c aux) (Run (CIRCUIT f c' r) a)
-    -> Run r (Step (Tuple (CircuitBuilderState c aux) (Run (CIRCUIT f c' r) a)) (Tuple a (CircuitBuilderState c aux)))
+    -> Run (EFFECT + r) (Step (Tuple (CircuitBuilderState c aux) (Run (CIRCUIT f c' r) a)) (Tuple a (CircuitBuilderState c aux)))
   go (Tuple s r) = case Run.peel r of
     Left v -> case handle v of
       Left cf -> case cf of
         Fresh k ->
-          let
-            Tuple vs s' = allocVars 1 s
-          in
-            pure (Loop (Tuple s' (k (fromMaybe s.nextVar (Array.head vs)))))
+          Run.liftEffect (allocVars 1 s) <#> \(Tuple vs s') ->
+            Loop (Tuple s' (k (fromMaybe s.nextVar (Array.head vs))))
         AddConstraint c k ->
-          pure (Loop (Tuple (appendBuilderConstraint c s) k))
+          Run.liftEffect (appendBuilderConstraint c s) <#> \s' ->
+            Loop (Tuple s' k)
         Exists n _ k ->
-          let
-            Tuple vs s' = allocVars n s
-          in
-            pure (Loop (Tuple s' (k vs)))
+          Run.liftEffect (allocVars n s) <#> \(Tuple vs s') ->
+            Loop (Tuple s' (k vs))
         Assign _ _ k ->
           pure (Loop (Tuple s k))
         PushLabel l k ->
@@ -194,5 +198,5 @@ execCircuitBuilder
    . CompileCircuit f c c' aux
   => CircuitBuilderState c aux
   -> Run (CIRCUIT f c' r) a
-  -> Run r (CircuitBuilderState c aux)
+  -> Run (EFFECT + r) (CircuitBuilderState c aux)
 execCircuitBuilder s = map (\(Tuple _ s') -> s') <<< runCircuitBuilder s

@@ -10,13 +10,15 @@ import Prelude
 import Data.Fin (getFinite)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt, unsafeIdx, wrapEndo)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams, parseIvpWrapInput)
 import Pickles.Field (WrapField)
 import Pickles.PublicInputCommit (CorrectionMode(..))
 import Pickles.Types (ChunkedCommitment(..), WrapIPARounds)
 import Pickles.Wrap.Verify (wrapVerify)
-import Snarky.Backend.Compile (compilePure)
+import Run as Run
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F(..), FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi (groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -86,8 +88,7 @@ wrapVerifyCircuit { lagrangeAt, blindingH } inputs = do
 
   wrapVerify ivpParams fullIvpInput verifyInput
 
-compileWrapVerify :: IvpWrapParams -> CompiledCircuit WrapField
+compileWrapVerify :: IvpWrapParams -> Effect (CompiledCircuit WrapField)
 compileWrapVerify srsData =
-  compilePure (Proxy @(Vector InputSize (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  Run.runBaseEffect $ compile (Proxy @(Vector InputSize (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> wrapVerifyCircuit srsData inputs)
-    Kimchi.initialState

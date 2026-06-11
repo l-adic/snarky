@@ -28,7 +28,7 @@ spec cfg = describe "Assertion Circuit Specs" do
         a <- arbitrary `suchThat` (_ /= zero)
         pure $ F a
 
-      circuit :: FVar f -> Snarky f c' (EFFECT + ()) Unit
+      circuit :: FVar f -> Snarky f c' () Unit
       circuit = assertNonZero_
     in
       circuitTest' @f
@@ -47,7 +47,7 @@ spec cfg = describe "Assertion Circuit Specs" do
         b <- arbitrary `suchThat` \x -> x /= a
         pure $ Tuple (F a) (F b)
 
-      circuit :: Tuple (FVar f) (FVar f) -> Snarky f c' (EFFECT + ()) Unit
+      circuit :: Tuple (FVar f) (FVar f) -> Snarky f c' () Unit
       circuit = uncurry assertEqual_
     in
       circuitTest' @f
@@ -66,7 +66,7 @@ spec cfg = describe "Assertion Circuit Specs" do
         b <- arbitrary `suchThat` \x -> x /= a
         pure $ Tuple (F a) (F b)
 
-      circuit :: Tuple (FVar f) (FVar f) -> Snarky f c' (EFFECT + ()) Unit
+      circuit :: Tuple (FVar f) (FVar f) -> Snarky f c' () Unit
       circuit = uncurry assertNotEqual_
     in
       circuitTest' @f
@@ -87,7 +87,7 @@ spec cfg = describe "Assertion Circuit Specs" do
         y <- arbitrary `suchThat` \y -> y /= x * x
         pure $ Tuple (F x) (F y)
 
-      circuit :: Tuple (FVar f) (FVar f) -> Snarky f c' (EFFECT + ()) Unit
+      circuit :: Tuple (FVar f) (FVar f) -> Snarky f c' () Unit
       circuit = uncurry assertSquare_
     in
       circuitTest' @f

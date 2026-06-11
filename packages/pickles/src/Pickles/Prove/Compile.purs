@@ -3333,7 +3333,7 @@ mkRuleEntry rule slotVKs =
 -- `RuleEntry` field types. Pinned to the entry's monad `m` so an app
 -- rule's advice constraints discharge at the concrete `m`.
 type PStepRule r mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar =
-  PProveStep.StepRuleAt (EFFECT + r) mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
+  PProveStep.StepRuleAt r mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
 
 --------------------------------------------------------------------------------
 -- compileMulti — N-branch compile entry point.

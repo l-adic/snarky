@@ -90,14 +90,14 @@ genDangerZone =
 type1Circuit
   :: PrimeField Vesta.BaseField
   => Type1 (FVar Vesta.BaseField)
-  -> Snarky Vesta.BaseField (KimchiConstraint Vesta.BaseField) (EFFECT + ()) (FVar Vesta.BaseField)
+  -> Snarky Vesta.BaseField (KimchiConstraint Vesta.BaseField) () (FVar Vesta.BaseField)
 type1Circuit shifted = pure $ fromShiftedType1Circuit shifted
 
 -- | Circuit that computes fromShiftedType1Circuit (same-field: Vesta.ScalarField).
 type1SameFieldCircuit
   :: PrimeField Vesta.ScalarField
   => Type1 (FVar Vesta.ScalarField)
-  -> Snarky Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) (EFFECT + ()) (FVar Vesta.ScalarField)
+  -> Snarky Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) () (FVar Vesta.ScalarField)
 type1SameFieldCircuit shifted = pure $ fromShiftedType1Circuit shifted
 
 -- | Circuit that computes fromShiftedType2Circuit.
@@ -107,7 +107,7 @@ type2Circuit
   => PrimeField f
   => FieldSizeInBits f n
   => Type2 (FVar f)
-  -> Snarky f (KimchiConstraint f) (EFFECT + ()) (FVar f)
+  -> Snarky f (KimchiConstraint f) () (FVar f)
 type2Circuit shifted = pure $ fromShiftedType2Circuit shifted
 
 -- | Pure computation for Type1 (cross-field): s = 2*t + 2^n + 1

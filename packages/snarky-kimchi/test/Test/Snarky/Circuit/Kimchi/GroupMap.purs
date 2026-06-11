@@ -70,7 +70,7 @@ spec' cfg proxyG curveName = do
         circuit'
           :: PrimeField f
           => FVar f
-          -> Snarky f (KimchiConstraint f) (EFFECT + ()) (AffinePoint (FVar f))
+          -> Snarky f (KimchiConstraint f) () (AffinePoint (FVar f))
         circuit' = groupMapCircuit params
 
       void $ circuitTest' @f

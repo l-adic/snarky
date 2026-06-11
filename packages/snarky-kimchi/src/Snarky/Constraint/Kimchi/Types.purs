@@ -20,9 +20,10 @@ import Data.Newtype (class Newtype)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Show.Generic (genericShow)
-import Data.UnionFind (UnionFindData)
-import Data.UnionFind as UnionFind
+import Data.UnionFind.Mutable (MutableUF)
+import Data.UnionFind.Mutable as MutableUF
 import Data.Vector (Vector)
+import Effect (Effect)
 import Snarky.Circuit.DSL (Variable)
 
 type GenericPlonkConstraint f =
@@ -43,11 +44,13 @@ newtype AuxState f = AuxState
 
 derive instance Newtype (AuxState f) _
 
-initialAuxState :: forall f. AuxState f
-initialAuxState = AuxState
-  { wireState: emptyKimchiWireState
-  , queuedGenericGate: Nothing
-  }
+initialAuxState :: forall f. Effect (AuxState f)
+initialAuxState = do
+  uf <- MutableUF.fresh
+  pure $ AuxState
+    { wireState: emptyKimchiWireState uf
+    , queuedGenericGate: Nothing
+    }
 
 -- Gate kinds for tagging coefficient rows
 data GateKind
@@ -74,15 +77,15 @@ type KimchiRow f =
 -- Wire placement state for Kimchi constraint system
 type KimchiWireRow f =
   { internalVariables :: Set Variable
-  , unionFind :: UnionFindData Variable
+  , unionFind :: MutableUF
   , cachedConstants :: Map f Variable
   }
 
 -- Initial empty wire state
-emptyKimchiWireState :: forall f. KimchiWireRow f
-emptyKimchiWireState =
+emptyKimchiWireState :: forall f. MutableUF -> KimchiWireRow f
+emptyKimchiWireState uf =
   { internalVariables: Set.empty
-  , unionFind: UnionFind.emptyUnionFind
+  , unionFind: uf
   , cachedConstants: Map.empty
   }
 

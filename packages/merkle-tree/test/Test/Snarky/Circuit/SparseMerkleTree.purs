@@ -129,7 +129,7 @@ sparseImpliedRootSpec cfg _ pd = do
 
     circuit
       :: Tuple (AddressVar d f) (Tuple (Digest (FVar f)) (Path d (Digest (FVar f))))
-      -> Snarky f (KimchiConstraint f) (EFFECT + ()) (Digest (FVar f))
+      -> Snarky f (KimchiConstraint f) () (Digest (FVar f))
     circuit (Tuple addr (Tuple entryHash (Path pathVec))) =
       SparseCircuit.impliedRoot addr entryHash (Sized.Path pathVec)
 
@@ -188,7 +188,7 @@ sparseCheckAndUpdateSpec cfg _ pd = do
          , path :: Path d (Digest (FVar f))
          , oldRoot :: Digest (FVar f)
          }
-      -> Snarky f (KimchiConstraint f) (EFFECT + ()) (Digest (FVar f))
+      -> Snarky f (KimchiConstraint f) () (Digest (FVar f))
     circuit { addr, oldValueHash, newValueHash, path: Path pathVec, oldRoot } =
       SparseCircuit.checkAndUpdate addr oldValueHash newValueHash (Sized.Path pathVec) oldRoot
 

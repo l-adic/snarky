@@ -7,13 +7,15 @@ import Prelude
 import Data.Fin (getFinite)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
 import Pickles.Field (WrapField)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Types (WrapIPARounds)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofCircuit')
 import RandomOracle.Sponge (Sponge) as RO
-import Snarky.Backend.Compile (compilePure)
+import Run as Run
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F, FVar, Snarky, assertEq)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -56,8 +58,7 @@ hashMessagesWrapCircuit inputs = do
 
   assertEq digest claimed
 
-compileHashMessagesWrap :: CompiledCircuit WrapField
+compileHashMessagesWrap :: Effect (CompiledCircuit WrapField)
 compileHashMessagesWrap =
-  compilePure (Proxy @(Vector 33 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  Run.runBaseEffect $ compile (Proxy @(Vector 33 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> hashMessagesWrapCircuit inputs)
-    Kimchi.initialState

@@ -8,13 +8,14 @@ import Prelude
 
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
 import Pickles.Field (WrapField)
-import Snarky.Backend.Compile (compilePure)
+import Run as Run
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F, FVar, Snarky)
 import Snarky.Circuit.Kimchi (groupMapCircuit, groupMapParams) as Kimchi
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi (initialState) as Kimchi
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -30,8 +31,7 @@ groupMapCircuit
   -> Snarky WrapField (KimchiConstraint WrapField) r (AffinePoint (FVar WrapField))
 groupMapCircuit = Kimchi.groupMapCircuit (Kimchi.groupMapParams (Proxy @VestaG))
 
-compileGroupMap :: CompiledCircuit WrapField
+compileGroupMap :: Effect (CompiledCircuit WrapField)
 compileGroupMap =
-  compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  Run.runBaseEffect $ compile (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ groupMapCircuit (parseGroupMapInput inputs))
-    Kimchi.initialState

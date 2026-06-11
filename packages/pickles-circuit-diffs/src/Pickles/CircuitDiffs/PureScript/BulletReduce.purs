@@ -10,10 +10,12 @@ import Prelude
 import Data.Fin (getFinite)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
 import Pickles.Field (WrapField)
 import Pickles.IPA (bulletReduceCircuit)
-import Snarky.Backend.Compile (compilePure)
+import Run as Run
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (BoolVar, F, FVar, SizedF, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -45,8 +47,7 @@ bulletReduceWrapCircuit
   -> Snarky WrapField (KimchiConstraint WrapField) r { p :: AffinePoint (FVar WrapField), isInfinity :: BoolVar WrapField }
 bulletReduceWrapCircuit = bulletReduceCircuit @WrapField @VestaG
 
-compileBulletReduce :: CompiledCircuit WrapField
+compileBulletReduce :: Effect (CompiledCircuit WrapField)
 compileBulletReduce =
-  compilePure (Proxy @(Vector 80 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  Run.runBaseEffect $ compile (Proxy @(Vector 80 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ bulletReduceWrapCircuit (parseBulletReduceInput inputs))
-    Kimchi.initialState

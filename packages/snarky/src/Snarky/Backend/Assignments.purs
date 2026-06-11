@@ -10,16 +10,17 @@
 module Snarky.Backend.Assignments
   ( Assignments
   , fresh
-  , emptyFrozen
   , set
   , lookup
+  , toLookup
   , toMap
   ) where
 
 import Prelude
 
-import Control.Monad.ST (ST) as ST
 import Control.Monad.ST.Global (Global, toEffect)
+import Control.Monad.ST.Internal (for) as STI
+import Data.Array as Array
 import Data.Array.ST (STArray)
 import Data.Array.ST as STA
 import Data.FoldableWithIndex (foldlWithIndex)
@@ -27,7 +28,6 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Effect (Effect)
-import Effect.Unsafe (unsafePerformEffect)
 import Snarky.Circuit.CVar (Variable(..))
 
 newtype Assignments f = Assignments (STArray Global (Maybe f))
@@ -35,28 +35,25 @@ newtype Assignments f = Assignments (STArray Global (Maybe f))
 fresh :: forall f. Effect (Assignments f)
 fresh = Assignments <$> toEffect STA.new
 
--- | Immutable empty store for initial-state records (`emptyProverState`).
--- | The solver installs a `fresh` store before any write; this placeholder
--- | must never be written.
-emptyFrozen :: forall f. Assignments f
-emptyFrozen = unsafePerformEffect fresh
-
 -- | Write a slot (write-once). Mostly-sequential — variables allocate in
 -- | order, but output slots are back-filled by `Assign` — so: grow with
 -- | `Nothing` padding to cover the index, then poke.
 set :: forall f. Variable -> f -> Assignments f -> Effect Unit
-set (Variable i) v (Assignments s) = toEffect (grow unit)
-  where
-  grow :: Unit -> ST.ST Global Unit
-  grow _ = do
-    ok <- STA.poke i (Just v) s
-    if ok then pure unit
-    else do
-      _ <- STA.push Nothing s
-      grow unit
+set (Variable i) v (Assignments s) =
+  toEffect do
+    n <- Array.length <$> STA.unsafeFreeze s
+    STI.for n (i + 1) (\_ -> STA.push Nothing s)
+    void (STA.poke i (Just v) s)
 
-lookup :: forall f. Variable -> Assignments f -> Maybe f
-lookup (Variable i) (Assignments s) = join (unsafePerformEffect (toEffect (STA.peek i s)))
+lookup :: forall f. Variable -> Assignments f -> Effect (Maybe f)
+lookup (Variable i) (Assignments s) = join <$> toEffect (STA.peek i s)
+
+-- | Pure lookup over a frozen snapshot — for consumers that need a
+-- | `Variable -> Maybe f` function (debug checks, error formatting).
+toLookup :: forall f. Assignments f -> Effect (Variable -> Maybe f)
+toLookup (Assignments s) = do
+  frozen <- toEffect (STA.freeze s)
+  pure \(Variable i) -> join (Array.index frozen i)
 
 -- | Materialise to the immutable `Map` the solver's consumers expect — one
 -- | O(n log n) pass at the end of a solve.

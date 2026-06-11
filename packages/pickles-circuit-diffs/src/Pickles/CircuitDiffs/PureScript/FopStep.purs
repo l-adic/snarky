@@ -10,6 +10,7 @@ import Prelude
 import Data.Fin (Finite, getFinite)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, domainLog2, srsLengthLog2, stepEndo, unsafeIdx)
 import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (DomainMode(..), Output)
@@ -17,8 +18,9 @@ import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Step.OtherField as StepOtherField
+import Run as Run
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure)
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (Bool(..), BoolVar, F, FVar, SizedF, Snarky, const_)
 import Snarky.Circuit.Kimchi (Type1(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -133,8 +135,7 @@ fopStepCircuit input =
       , domainLog2Var: input.domainLog2Var
       }
 
-compileFopStep :: CompiledCircuit StepField
+compileFopStep :: Effect (CompiledCircuit StepField)
 compileFopStep =
-  compilePure (Proxy @(Vector 151 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  Run.runBaseEffect $ compile (Proxy @(Vector 151 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> void $ fopStepCircuit (parseFopStepInput inputs))
-    Kimchi.initialState

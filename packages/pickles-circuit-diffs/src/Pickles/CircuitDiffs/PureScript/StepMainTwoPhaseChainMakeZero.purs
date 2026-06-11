@@ -98,4 +98,3 @@ compileStepMainTwoPhaseChainMakeZero params = do
           dummyAdvice
           throwawayCaptureRef
       )
-      Kimchi.initialState

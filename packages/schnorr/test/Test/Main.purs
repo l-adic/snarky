@@ -24,7 +24,6 @@ kimchiTestConfig
 kimchiTestConfig =
   { checker: eval
   , postCondition: Kimchi.postCondition
-  , initState: Kimchi.initialState
   }
 
 main :: Effect Unit

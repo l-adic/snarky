@@ -10,12 +10,14 @@ import Data.Fin (getFinite)
 import Data.Tuple.Nested (tuple3, tuple6)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
 import Pickles.Field (WrapField)
 import Pickles.PackedStatement (PackedStepPublicInput, fromPackedTuple)
 import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), LagrangeBaseLookup, publicInputCommit)
+import Run as Run
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure)
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (Bool(..), BoolVar, F, FVar, SizedF, Snarky)
 import Snarky.Circuit.Kimchi (SplitField(..), Type2(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -76,8 +78,7 @@ xhatCircuit { lagrangeAt, blindingH } publicInput =
     }
     publicInput
 
-compileXhat :: XhatParams WrapField -> CompiledCircuit WrapField
+compileXhat :: XhatParams WrapField -> Effect (CompiledCircuit WrapField)
 compileXhat srsData =
-  compilePure (Proxy @(Vector 34 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  Run.runBaseEffect $ compile (Proxy @(Vector 34 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ xhatCircuit srsData (parseXhatInput inputs))
-    Kimchi.initialState

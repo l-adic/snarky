@@ -11,12 +11,14 @@ import Data.Fin (getFinite)
 import Data.Maybe (fromJust)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
 import Pickles.Field (WrapField)
 import Pickles.FtComm (ftComm) as FtComm
 import Pickles.Wrap.OtherField as WrapOtherField
-import Snarky.Backend.Compile (compilePure)
+import Run as Run
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F, FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi (Type1(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -63,8 +65,7 @@ ftcommWrapCircuit input =
       , zetaToDomainSize: input.zetaToDomainSize
       }
 
-compileFtcomm :: CompiledCircuit WrapField
+compileFtcomm :: Effect (CompiledCircuit WrapField)
 compileFtcomm =
-  compilePure (Proxy @(Vector 17 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  Run.runBaseEffect $ compile (Proxy @(Vector 17 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ ftcommWrapCircuit (parseFtcommInput inputs))
-    Kimchi.initialState

@@ -17,6 +17,7 @@ import Prelude
 import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
+import Data.Foldable (foldM)
 import Data.List (reverse) as List
 import Data.List.NonEmpty (fromFoldable)
 import Data.List.Types (List(..), NonEmptyList(..))
@@ -26,7 +27,7 @@ import Data.Newtype (class Newtype, over, un)
 import Data.NonEmpty (NonEmpty(..))
 import Data.Set as Set
 import Data.Tuple (Tuple(..))
-import Data.UnionFind as UF
+import Data.UnionFind.Mutable as MutableUF
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -34,7 +35,7 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import Record as Record
 import Snarky.Backend.Assignments (Assignments)
 import Snarky.Backend.Assignments as Assignments
-import Snarky.Circuit.CVar (AffineExpression(..), CVar, evalAffineExpression, incrementVariable, reduceToAffineExpression)
+import Snarky.Circuit.CVar (AffineExpression(..), CVar, Variable(..), evalAffineExpression, incrementVariable, reduceToAffineExpression)
 import Snarky.Circuit.DSL (EvaluationError(..), Variable)
 import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, AuxState(..), GateKind(..), GenericPlonkConstraint, KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
@@ -134,17 +135,18 @@ reduceAsBuilder
      | r
      }
   -> (forall m. PlonkReductionM m f => m a)
-  -> Tuple
-       a
-       { nextVariable :: Variable
-       , constraints :: Array (Rows f)
-       , aux :: AuxState f
-       }
-reduceAsBuilder { nextVariable, aux } m =
-  let
-    initState = { nextVariable, constraints: mempty, aux }
-    Tuple a s = un PlonkBuilder m initState
-  in
+  -> Effect
+       ( Tuple
+           a
+           { nextVariable :: Variable
+           , constraints :: Array (Rows f)
+           , aux :: AuxState f
+           }
+       )
+reduceAsBuilder { nextVariable, aux } m = do
+  let initState = { nextVariable, constraints: mempty, aux }
+  Tuple a s <- un PlonkBuilder m initState
+  pure $
     Tuple a
       ( Record.set (Proxy @"constraints")
           (map Rows (Array.fromFoldable (List.reverse s.constraints)))
@@ -185,33 +187,32 @@ type BuilderReductionState f =
 -- | Hand-rolled pure state monad (replaces `State` from `transformers`).
 -- | Reductions are per-constraint (a handful of binds), so plain
 -- | function-composition binds are fine — no stack-safety machinery needed.
-newtype PlonkBuilder f a = PlonkBuilder (BuilderReductionState f -> Tuple a (BuilderReductionState f))
+newtype PlonkBuilder f a = PlonkBuilder (BuilderReductionState f -> Effect (Tuple a (BuilderReductionState f)))
 
 derive instance Newtype (PlonkBuilder f a) _
 
 instance Functor (PlonkBuilder f) where
-  map f (PlonkBuilder g) = PlonkBuilder \s -> let Tuple a s' = g s in Tuple (f a) s'
+  map f (PlonkBuilder g) = PlonkBuilder \s -> g s <#> \(Tuple a s') -> Tuple (f a) s'
 
 instance Apply (PlonkBuilder f) where
   apply = ap
 
 instance Applicative (PlonkBuilder f) where
-  pure a = PlonkBuilder \s -> Tuple a s
+  pure a = PlonkBuilder \s -> pure (Tuple a s)
 
 instance Bind (PlonkBuilder f) where
-  bind (PlonkBuilder g) f = PlonkBuilder \s ->
-    let
-      Tuple a s' = g s
-    in
-      un PlonkBuilder (f a) s'
+  bind (PlonkBuilder g) f = PlonkBuilder \s -> g s >>= \(Tuple a s') -> un PlonkBuilder (f a) s'
 
 instance Monad (PlonkBuilder f)
 
 getsB :: forall f a. (BuilderReductionState f -> a) -> PlonkBuilder f a
-getsB f = PlonkBuilder \s -> Tuple (f s) s
+getsB f = PlonkBuilder \s -> pure (Tuple (f s) s)
 
 modifyB_ :: forall f. (BuilderReductionState f -> BuilderReductionState f) -> PlonkBuilder f Unit
-modifyB_ f = PlonkBuilder \s -> Tuple unit (f s)
+modifyB_ f = PlonkBuilder \s -> pure (Tuple unit (f s))
+
+liftEffB :: forall f a. Effect a -> PlonkBuilder f a
+liftEffB e = PlonkBuilder \s -> e <#> \a -> Tuple a s
 
 constraintToCoeffs
   :: forall f
@@ -278,34 +279,14 @@ handleGateBatching newGate = do
 -- | Wire-state union-find ops for the builder, over the pure
 -- | `Data.UnionFind` API.
 findB :: forall f. Variable -> PlonkBuilder f Variable
-findB x = do
+findB (Variable x) = do
   uf <- getsB (\{ aux: AuxState aux } -> aux.wireState.unionFind)
-  let Tuple a uf' = UF.find x uf
-  modifyB_ \s -> s
-    { aux = over AuxState
-        ( \st -> st
-            { wireState = st.wireState
-                { unionFind = uf'
-                }
-            }
-        )
-        s.aux
-    }
-  pure a
+  Variable <$> liftEffB (MutableUF.find x uf)
 
 unionB :: forall f. Variable -> Variable -> PlonkBuilder f Unit
-unionB x y = do
+unionB (Variable x) (Variable y) = do
   uf <- getsB (\{ aux: AuxState aux } -> aux.wireState.unionFind)
-  modifyB_ \s -> s
-    { aux = over AuxState
-        ( \st -> st
-            { wireState = st.wireState
-                { unionFind = UF.union x y uf
-                }
-            }
-        )
-        s.aux
-    }
+  liftEffB (MutableUF.union x y uf)
 
 instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
   addGenericPlonkConstraint c = do
@@ -434,16 +415,21 @@ instance Monad (PlonkProver f)
 
 instance (PrimeField f) => PlonkReductionM (PlonkProver f) f where
   addGenericPlonkConstraint _ = pure unit
-  createInternalVariable e = PlonkProver \s ->
-    let
-      _lookup v = case Assignments.lookup v s.assignments of
-        Nothing -> Left $ MissingVariable v
-        Just a -> Right a
-    in
-      case evalAffineExpression e _lookup of
-        Left e' -> pure (Left e')
-        Right a -> do
-          Assignments.set s.nextVariable a s.assignments
-          pure $ Right $ Tuple s.nextVariable
-            (s { nextVariable = incrementVariable s.nextVariable })
+  createInternalVariable (AffineExpression { constant, terms }) = PlonkProver \s -> do
+    -- evalAffineExpression's fold, with O(1) Effect reads from the store
+    eval <- foldM
+      ( \acc (Tuple var coeff) -> case acc of
+          Left e -> pure (Left e)
+          Right total -> Assignments.lookup var s.assignments <#> case _ of
+            Nothing -> Left (MissingVariable var)
+            Just val -> Right (total + coeff * val)
+      )
+      (Right (fromMaybe zero constant))
+      terms
+    case eval of
+      Left e' -> pure (Left e')
+      Right a -> do
+        Assignments.set s.nextVariable a s.assignments
+        pure $ Right $ Tuple s.nextVariable
+          (s { nextVariable = incrementVariable s.nextVariable })
   addEqualsConstraint _ = pure unit

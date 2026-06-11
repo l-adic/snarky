@@ -48,7 +48,7 @@ spec cfg = describe "Snarky.Circuit.Schnorr" do
       circuit'
         :: PrimeField Pallas.BaseField
         => VerifyInputVar 1 Pallas.BaseField
-        -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) (EFFECT + ()) Unit
+        -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) () Unit
       circuit' { signature: { r, sBits }, publicKey, message } = do
         shifted <- createShifted pallasParams shiftConst
         verified <- verifies (signaturePrefix Mainnet) shifted

@@ -10,7 +10,7 @@ import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
 import Run (EFFECT)
-import Snarky.Backend.Builder (class CompileCircuit, initialState)
+import Snarky.Backend.Builder (class CompileCircuit)
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.Curves (add_, assertOnCurve, double)
 import Snarky.Circuit.Curves as Curves
@@ -29,7 +29,7 @@ import Type.Proxy (Proxy(..))
 import Type.Row (type (+))
 
 basicTestConfig :: forall f. PrimeField f => TestConfig f (Basic f) Unit
-basicTestConfig = { checker: Basic.eval, postCondition: nullPostCondition, initState: initialState }
+basicTestConfig = { checker: Basic.eval, postCondition: nullPostCondition }
 
 main :: Effect Unit
 main =
@@ -55,7 +55,7 @@ spec pg _pc =
         circuit'
           :: PrimeField f
           => Tuple (CurveParams (FVar f)) (AffinePoint (FVar f))
-          -> Snarky f (Basic f) (EFFECT + ()) Unit
+          -> Snarky f (Basic f) () Unit
         circuit' = uncurry assertOnCurve
 
         onCurve = do
@@ -87,7 +87,7 @@ spec pg _pc =
         circuit'
           :: PrimeField f
           => Tuple (AffinePoint (FVar f)) (AffinePoint (FVar f))
-          -> Snarky f (Basic f) (EFFECT + ()) Unit
+          -> Snarky f (Basic f) () Unit
         circuit' = uncurry assertEq
 
         same = do
@@ -119,7 +119,7 @@ spec pg _pc =
         circuit'
           :: PrimeField f
           => AffinePoint (FVar f)
-          -> Snarky f (Basic f) (EFFECT + ()) (AffinePoint (FVar f))
+          -> Snarky f (Basic f) () (AffinePoint (FVar f))
         circuit' = Curves.negate
 
         gen = genAffinePoint pg
@@ -141,7 +141,7 @@ spec pg _pc =
         circuit'
           :: PrimeField f
           => Tuple3 (BoolVar f) (AffinePoint (FVar f)) (AffinePoint (FVar f))
-          -> Snarky f (Basic f) (EFFECT + ()) (AffinePoint (FVar f))
+          -> Snarky f (Basic f) () (AffinePoint (FVar f))
         circuit' = uncurry3 if_
 
         gen = do
@@ -173,7 +173,7 @@ spec pg _pc =
         circuit'
           :: PrimeField f
           => Tuple (AffinePoint (FVar f)) (AffinePoint (FVar f))
-          -> Snarky f (Basic f) (EFFECT + ()) (AffinePoint (FVar f))
+          -> Snarky f (Basic f) () (AffinePoint (FVar f))
         circuit' = uncurry add_
 
         -- Generate distinct points to avoid division by zero in slope calculation
@@ -214,7 +214,7 @@ spec pg _pc =
         circuit'
           :: PrimeField f
           => AffinePoint (FVar f)
-          -> Snarky f (Basic f) (EFFECT + ()) (AffinePoint (FVar f))
+          -> Snarky f (Basic f) () (AffinePoint (FVar f))
         circuit' = double (curveParams pg)
 
         -- Generate points where y ≠ 0 to avoid division by zero in doubling

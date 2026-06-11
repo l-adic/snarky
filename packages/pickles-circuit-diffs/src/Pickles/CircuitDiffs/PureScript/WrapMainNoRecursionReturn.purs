@@ -43,8 +43,8 @@ compileWrapMainNoRecursionReturn { lagrangeAt, blindingH } stepParams = do
   stepArt <- compileStepMainNoRecursionReturn stepParams
   vestaSrs <- createCRS @StepField
   pallasSrs <- createCRS @WrapField
+  realStepVK <- deriveStepVKFromCompiled @1 @0 vestaSrs stepArt.stepCs
   let
-    realStepVK = deriveStepVKFromCompiled @1 @0 vestaSrs stepArt.stepCs
 
     config :: WrapMainConfig 1 1
     config =
@@ -64,12 +64,12 @@ compileWrapMainNoRecursionReturn { lagrangeAt, blindingH } stepParams = do
   let
     dummyAdvice :: WrapAdvice 0 1 NoSlots
     dummyAdvice = unsafeCoerce unit
-  wrapCs <- pure $ Run.extract $ compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  wrapCs <- Run.runBaseEffect $ compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\stmt -> wrapMainForPrevs @1 @Unit @1 config stmt dummyAdvice)
-    Kimchi.initialState
+  wrapVk <- deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
   pure
     { stepCs: stepArt.stepCs
     , stepDomainLog2: stepArt.stepDomainLog2
     , wrapCs
-    , wrapVk: deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
+    , wrapVk
     }

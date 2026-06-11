@@ -67,10 +67,8 @@ import Pickles.VerificationKey (VerificationKey(..))
 import Prim.Boolean (False, True)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
-import Run (EFFECT)
-import Run as Run
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (AsProver, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), assertAll_, const_, exists, false_, label, liftAdvice, true_)
+import Snarky.Circuit.DSL (AsProver, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), assertAll_, const_, exists, false_, label, liftEffectAsProver, true_)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
 import Snarky.Circuit.DSL.SizedF (unsafeFromField) as SizedF
@@ -83,7 +81,6 @@ import Snarky.Curves.Pasta (PallasG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Type.Proxy (Proxy(..))
-import Type.Row (type (+))
 import Unsafe.Coerce (unsafeCoerce)
 
 -------------------------------------------------------------------------------
@@ -854,16 +851,16 @@ stepMain
   => Mul mpvMax UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
-  => ( AsProver StepField (EFFECT + r) valCarrier
+  => ( AsProver StepField r valCarrier
        -> input
-       -> Snarky StepField (KimchiConstraint StepField) (EFFECT + r) (RuleOutput len prevInput output)
+       -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput len prevInput output)
      )
   -> StepMainSrsData wrapVkChunks len nd blueprints
   -> AffinePoint StepField
   -> sideloadedVkCarrier
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
   -> Ref (Maybe (Array (FVar StepField)))
-  -> Snarky StepField (KimchiConstraint StepField) (EFFECT + r) (Vector outputSize (FVar StepField))
+  -> Snarky StepField (KimchiConstraint StepField) r (Vector outputSize (FVar StepField))
 stepMain
   rule
   { perSlotLagrangeAt
@@ -914,7 +911,7 @@ stepMain
   -- time `stepSolveAndProve` reads the Ref after the solver completes.
   -- The `exists` allocates a fresh `Unit` var (`sizeInFields = 0`, no
   -- actual circuit slot allocated), so this introduces no constraints.
-  _ :: Unit <- exists $ liftAdvice $ Run.liftEffect do
+  _ :: Unit <- exists $ liftEffectAsProver do
     Ref.write (Just publicOutputFields) captureRef
 
   -- 3. exists: SHARED VK via Req.Wrap_index.

@@ -42,8 +42,8 @@ module Snarky.Circuit.DSL.Monad
   , read
   , readCVar
   , runAsProver
-  , runAsProverPure
   , unAsProver
+  , liftEffectAsProver
   , throwAsProver
   , not_
   , or_
@@ -80,6 +80,7 @@ import Data.Symbol (class IsSymbol)
 import Data.Traversable (traverse, traverse_)
 import Data.Tuple (Tuple)
 import Data.Vector (Vector)
+import Effect (Effect)
 import Effect.Exception.Unsafe (unsafeThrow)
 import Prim.Row as Row
 import Prim.RowList (class RowToList)
@@ -109,7 +110,10 @@ import Unsafe.Coerce (unsafeCoerce)
 -- | The effects available to a witness computation: evaluation failure,
 -- | read access to the current variable assignments, plus whatever advice
 -- | effects `r` the application provides.
-type ASPROVER f r = EXCEPT EvaluationError + READER (Assignments f) + r
+-- | Witness computations read the (mutable) assignment store, so EFFECT
+-- | is part of the row by construction — `readCVar`/`read` stay generic
+-- | in the advice tail `r`.
+type ASPROVER f r = EXCEPT EvaluationError + READER (Assignments f) + EFFECT + r
 
 -- | Prover-side computation. Runs with access to variable assignments,
 -- | used as the argument to `exists` to compute witness values. A newtype
@@ -180,21 +184,13 @@ runAsProver
   :: forall f r a
    . Assignments f
   -> AsProver f r a
-  -> Run r (Either EvaluationError a)
+  -> Run (EFFECT + r) (Either EvaluationError a)
 runAsProver env (AsProver m) = Except.runExcept (Reader.runReader env m)
-
--- | Interpret a CLOSED witness computation (no advice effects) purely.
-runAsProverPure
-  :: forall f a
-   . AsProver f () a
-  -> Assignments f
-  -> Either EvaluationError a
-runAsProverPure m env = Run.extract (runAsProver env m)
 
 readCVar :: forall f r. PrimeField f => FVar f -> AsProver f r (F f)
 readCVar v = AsProver do
   m <- Reader.ask
-  let _lookup var = maybe (Except.throw $ MissingVariable var) pure $ Assignments.lookup var m
+  let _lookup var = Run.liftEffect (Assignments.lookup var m) >>= maybe (Except.throw $ MissingVariable var) pure
   F <$> CVar.eval _lookup v
 
 read
@@ -206,7 +202,7 @@ read
 read var = AsProver do
   let fieldVars = varToFields @f @a var
   m <- Reader.ask
-  let _lookup v = maybe (Except.throw $ MissingVariable v) pure $ Assignments.lookup v m
+  let _lookup v = Run.liftEffect (Assignments.lookup v m) >>= maybe (Except.throw $ MissingVariable v) pure
   fields <- traverse (CVar.eval _lookup) fieldVars
   pure $ fieldsToValue fields
 
@@ -231,7 +227,10 @@ derive instance Functor (CircuitF f c r)
 
 -- | The circuit row: the `circuit` effect over an open tail of advice
 -- | effects `r` (shared with the witness computations inside `Exists`).
-type CIRCUIT f c r = (circuit :: CircuitF f c r | r)
+-- | The circuit row carries EFFECT structurally: interpreters mutate
+-- | (stores, union-find) and circuits may perform effects while witnessing,
+-- | so every `Snarky f c r` has effect capability without `r` naming it.
+type CIRCUIT f c r = (circuit :: CircuitF f c r | EFFECT + r)
 
 _circuit :: Proxy "circuit"
 _circuit = Proxy
@@ -254,6 +253,11 @@ runSnarky (Snarky m) = m
 
 unAsProver :: forall f r a. AsProver f r a -> Run (ASPROVER f r) a
 unAsProver (AsProver m) = m
+
+-- | Run an `Effect` inside a witness computation (EFFECT is structural in
+-- | the witness row).
+liftEffectAsProver :: forall f r a. Effect a -> AsProver f r a
+liftEffectAsProver = AsProver <<< Run.liftEffect
 
 liftCircuit :: forall f c r a. CircuitF f c r a -> Snarky f c r a
 liftCircuit = Snarky <<< Run.lift _circuit

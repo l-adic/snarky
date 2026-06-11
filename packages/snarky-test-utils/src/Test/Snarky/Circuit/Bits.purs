@@ -76,7 +76,7 @@ spec cfg = describe "Bits Circuit Specs" do
         in
           generate (toBit <<< getFinite)
 
-      circuit :: FVar f -> Snarky f c' (EFFECT + ()) (Vector n (BoolVar f))
+      circuit :: FVar f -> Snarky f c' () (Vector n (BoolVar f))
       circuit = \v -> unpack_ v (Proxy @n)
     in
       circuitTest' @f
@@ -86,7 +86,7 @@ spec cfg = describe "Bits Circuit Specs" do
 
   it "pack/unpack round trip is Valid" $ void $
     let
-      circuit :: FVar f -> Snarky f c' (EFFECT + ()) (FVar f)
+      circuit :: FVar f -> Snarky f c' () (FVar f)
       circuit = packUnpackCircuit
     in
       circuitTest' @f

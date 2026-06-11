@@ -11,10 +11,12 @@ import Data.Fin (getFinite)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF10, asSizedF128, unsafeIdx)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), LagrangeBaseLookup, publicInputCommit)
-import Snarky.Backend.Compile (compilePure)
+import Run as Run
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F, FVar, SizedF, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -76,8 +78,7 @@ xhatStepCircuit { lagrangeAt, blindingH } publicInput =
     }
     publicInput
 
-compileXhatStep :: XhatStepParams StepField -> CompiledCircuit StepField
+compileXhatStep :: XhatStepParams StepField -> Effect (CompiledCircuit StepField)
 compileXhatStep srsData =
-  compilePure (Proxy @(Vector 30 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  Run.runBaseEffect $ compile (Proxy @(Vector 30 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> void $ xhatStepCircuit srsData (parseXhatStepInput inputs))
-    Kimchi.initialState

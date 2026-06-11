@@ -11,10 +11,12 @@ import Data.Fin (getFinite)
 import Data.Traversable (for)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, stepEndo, unsafeIdx)
 import Pickles.Field (StepField)
 import Pickles.IPA (bCorrectCircuit) as IPA
-import Snarky.Backend.Compile (compilePure)
+import Run as Run
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (BoolVar, F, FVar, SizedF, Snarky, const_)
 import Snarky.Circuit.Kimchi (Type1(..), fromShiftedType1Circuit, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -60,8 +62,7 @@ bCorrectStepCircuit input = do
     , expectedB: fromShiftedType1Circuit input.claimedB
     }
 
-compileBCorrect :: CompiledCircuit StepField
+compileBCorrect :: Effect (CompiledCircuit StepField)
 compileBCorrect =
-  compilePure (Proxy @(Vector 20 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  Run.runBaseEffect $ compile (Proxy @(Vector 20 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> void $ bCorrectStepCircuit (parseBCorrectInput inputs))
-    Kimchi.initialState

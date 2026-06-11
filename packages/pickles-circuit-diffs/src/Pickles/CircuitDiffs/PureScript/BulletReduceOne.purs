@@ -8,9 +8,11 @@ module Pickles.CircuitDiffs.PureScript.BulletReduceOne
 import Prelude
 
 import Data.Vector (Vector)
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
 import Pickles.Field (WrapField)
-import Snarky.Backend.Compile (compilePure)
+import Run as Run
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (BoolVar, F, FVar, SizedF, Snarky)
 import Snarky.Circuit.Kimchi (addComplete, endo, endoInv)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -47,8 +49,7 @@ bulletReduceOneCircuit input = do
   rScaled <- endo @128 @32 input.r input.u
   addComplete lScaled rScaled
 
-compileBulletReduceOne :: CompiledCircuit WrapField
+compileBulletReduceOne :: Effect (CompiledCircuit WrapField)
 compileBulletReduceOne =
-  compilePure (Proxy @(Vector 5 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  Run.runBaseEffect $ compile (Proxy @(Vector 5 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ bulletReduceOneCircuit (parseBulletReduceOneInput inputs))
-    Kimchi.initialState

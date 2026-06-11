@@ -26,6 +26,7 @@ import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Effect (Effect)
 import Foreign (ForeignError(..), MultipleErrors)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith)
@@ -124,14 +125,14 @@ fromCompiledCircuit
   => PrimeField f
   => Ord f
   => CircuitBuilderState (KimchiGate f) (AuxState f)
-  -> Circuit f
-fromCompiledCircuit s =
+  -> Effect (Circuit f)
+fromCompiledCircuit s = do
+  gd <- makeGateData @f
+    { constraints: concatMap (toKimchiRows <<< _.constraint) (constraintsToArray s.constraints)
+    , publicInputs: s.publicInputs
+    , unionFind: (un AuxState s.aux).wireState.unionFind
+    }
   let
-    gd = makeGateData @f
-      { constraints: concatMap (toKimchiRows <<< _.constraint) (constraintsToArray s.constraints)
-      , publicInputs: s.publicInputs
-      , unionFind: (un AuxState s.aux).wireState.unionFind
-      }
 
     contexts = piContexts <> gateContexts
       where
@@ -177,7 +178,7 @@ fromCompiledCircuit s =
                 }
             )
         $ (Map.toUnfoldable aux.wireState.cachedConstants)
-  in
+  pure
     { publicInputSize: gd.publicInputSize
     , gates
     , cachedConstants

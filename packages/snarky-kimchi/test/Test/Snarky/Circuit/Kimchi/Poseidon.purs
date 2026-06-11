@@ -54,7 +54,7 @@ spec' cfg testName _ = describe ("Poseidon Circuit Tests: " <> testName) do
       poseidon'
         :: PrimeField f
         => Vector 3 (FVar f)
-        -> Snarky f (KimchiConstraint f) (EFFECT + ()) (Vector 3 (FVar f))
+        -> Snarky f (KimchiConstraint f) () (Vector 3 (FVar f))
       poseidon' = PoseidonCircuit.poseidon
 
       genInputs = Vector.generator (Proxy @3) (F <$> arbitrary)

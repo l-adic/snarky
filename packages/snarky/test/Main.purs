@@ -18,6 +18,6 @@ import Type.Proxy (Proxy(..))
 main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] do
   ConstraintTests.spec $ Proxy @Vesta.ScalarField
-  CircuitTests.spec (Proxy @Vesta.ScalarField) { checker: Basic.eval, postCondition: nullPostCondition, initState: Snarky.initialState }
+  CircuitTests.spec (Proxy @Vesta.ScalarField) { checker: Basic.eval, postCondition: nullPostCondition }
   TypesTests.spec $ Proxy @(Vesta.BaseField)
   SizedFTests.spec

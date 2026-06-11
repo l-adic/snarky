@@ -140,17 +140,18 @@ deriveStepVKFromCompiled
   => Reflectable len Int
   => CRS VestaG
   -> CompiledCircuit StepField
-  -> StepVK stepChunks (FVar WrapField)
-deriveStepVKFromCompiled vestaSrs builtState =
+  -> Effect (StepVK stepChunks (FVar WrapField))
+deriveStepVKFromCompiled vestaSrs builtState = do
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
-    csResult = makeConstraintSystemWithPrevChallenges @StepField
-      { constraints: kimchiRows
-      , publicInputs: builtState.publicInputs
-      , unionFind: (un AuxState builtState.aux).wireState.unionFind
-      , prevChallengesCount: reflectType (Proxy @len)
-      , maxPolySize: crsSize vestaSrs
-      }
+  csResult <- makeConstraintSystemWithPrevChallenges @StepField
+    { constraints: kimchiRows
+    , publicInputs: builtState.publicInputs
+    , unionFind: (un AuxState builtState.aux).wireState.unionFind
+    , prevChallengesCount: reflectType (Proxy @len)
+    , maxPolySize: crsSize vestaSrs
+    }
+  let
 
     proverIndex = createProverIndex @StepField @VestaG
       { gates: csResult.gates
@@ -160,8 +161,7 @@ deriveStepVKFromCompiled vestaSrs builtState =
       , crs: vestaSrs
       }
     verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
-  in
-    stepVkForCircuit (extractStepVKComms @stepChunks verifierIndex)
+  pure $ stepVkForCircuit (extractStepVKComms @stepChunks verifierIndex)
 
 -- | Wrap-side analog of `deriveStepVKFromCompiled`. The wrap CS
 -- | lives in `WrapField` over Pallas; commitments are Pallas points
@@ -176,18 +176,18 @@ deriveWrapVKFromCompiled
   => Reflectable len Int
   => CRS PallasG
   -> CompiledCircuit WrapField
-  -> VerificationKey wrapVkChunks (WeierstrassAffinePoint PallasG (F StepField))
-deriveWrapVKFromCompiled pallasSrs builtState =
+  -> Effect (VerificationKey wrapVkChunks (WeierstrassAffinePoint PallasG (F StepField)))
+deriveWrapVKFromCompiled pallasSrs builtState = do
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
-    csResult = makeConstraintSystemWithPrevChallenges @WrapField
-      { constraints: kimchiRows
-      , publicInputs: builtState.publicInputs
-      , unionFind: (un AuxState builtState.aux).wireState.unionFind
-      , prevChallengesCount: reflectType (Proxy @len)
-      , maxPolySize: crsSize pallasSrs
-      }
-
+  csResult <- makeConstraintSystemWithPrevChallenges @WrapField
+    { constraints: kimchiRows
+    , publicInputs: builtState.publicInputs
+    , unionFind: (un AuxState builtState.aux).wireState.unionFind
+    , prevChallengesCount: reflectType (Proxy @len)
+    , maxPolySize: crsSize pallasSrs
+    }
+  let
     proverIndex = createProverIndex @WrapField @PallasG
       { gates: csResult.gates
       , publicInputSize: csResult.publicInputSize
@@ -196,8 +196,7 @@ deriveWrapVKFromCompiled pallasSrs builtState =
       , crs: pallasSrs
       }
     verifierIndex = createVerifierIndex @WrapField @PallasG proverIndex
-  in
-    extractWrapVKCommsAdvice @wrapVkChunks verifierIndex
+  pure $ extractWrapVKCommsAdvice @wrapVkChunks verifierIndex
 
 -------------------------------------------------------------------------------
 -- | Compile-result artifacts

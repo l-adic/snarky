@@ -54,7 +54,7 @@ spec' cfg testName pg _ =
         circuit'
           :: PrimeField f
           => Tuple (AffinePoint (FVar f)) (AffinePoint (FVar f))
-          -> Snarky f (KimchiConstraint f) (EFFECT + ()) (AffinePoint (FVar f))
+          -> Snarky f (KimchiConstraint f) () (AffinePoint (FVar f))
         circuit' = uncurry add_
 
         gen = do

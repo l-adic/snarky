@@ -7,7 +7,6 @@
 module Snarky.Backend.Prover
   ( runCircuitProver
   , ProverState
-  , emptyProverState
   , class SolveCircuit
   , proverConstraint
   , allocAssignments
@@ -42,14 +41,6 @@ type ProverState f =
   , labelStack :: Array String
   }
 
-emptyProverState :: forall f. ProverState f
-emptyProverState =
-  { nextVar: v0
-  , assignments: Assignments.emptyFrozen
-  , debug: false
-  , labelStack: []
-  }
-
 -- | How a backend handles an emitted constraint in prover mode: a transform
 -- | of the prover state in `Effect` (backends like kimchi ALLOCATE and
 -- | ASSIGN variables in the mutable store while reducing constraints),
@@ -62,9 +53,11 @@ class BasicSystem f c <= SolveCircuit f c | c -> f where
 -- | checked against the current assignments for rich error messages.
 instance PrimeField f => SolveCircuit f (Basic f) where
   proverConstraint c s
-    | s.debug = pure case Basic.debugCheck (flip Assignments.lookup s.assignments) c of
-        Nothing -> Right s
-        Just e -> Left e
+    | s.debug = do
+        lookupFn <- Assignments.toLookup s.assignments
+        pure case Basic.debugCheck lookupFn c of
+          Nothing -> Right s
+          Just e -> Left e
     | otherwise = pure (Right s)
 
 -- | Allocate `n` consecutive variables and assign them the given values
@@ -104,7 +97,7 @@ runCircuitProver
   :: forall f c r a
    . SolveCircuit f c
   => ProverState f
-  -> Run (CIRCUIT f c (EFFECT + r)) a
+  -> Run (CIRCUIT f c r) a
   -> Run (EFFECT + r) (Tuple (Either EvaluationError a) (ProverState f))
 runCircuitProver s0 r0 = tailRecM go (Tuple s0 r0)
   where
@@ -115,8 +108,8 @@ runCircuitProver s0 r0 = tailRecM go (Tuple s0 r0)
   -- hundreds of thousands of ops interpret in constant stack.
   go
     :: SolveCircuit f c
-    => Tuple (ProverState f) (Run (CIRCUIT f c (EFFECT + r)) a)
-    -> Run (EFFECT + r) (Step (Tuple (ProverState f) (Run (CIRCUIT f c (EFFECT + r)) a)) (Tuple (Either EvaluationError a) (ProverState f)))
+    => Tuple (ProverState f) (Run (CIRCUIT f c r) a)
+    -> Run (EFFECT + r) (Step (Tuple (ProverState f) (Run (CIRCUIT f c r) a)) (Tuple (Either EvaluationError a) (ProverState f)))
   go (Tuple s r) = case Run.peel r of
     Left v -> case handle v of
       Left cf -> case cf of

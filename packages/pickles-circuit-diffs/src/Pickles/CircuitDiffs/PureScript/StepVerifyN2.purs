@@ -25,6 +25,7 @@ import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyPallasPt, stepEndo, unsafeIdx)
 import Pickles.Field (StepField)
 import Pickles.IncrementallyVerifyProof (incrementallyVerifyProof, packStatement)
@@ -32,8 +33,9 @@ import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (ChunkedCommitment(..))
+import Run as Run
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure)
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, Snarky, assertEq, const_, if_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -178,8 +180,7 @@ stepVerifyN2Circuit { lagrangeAt, blindingH } inputs = do
     c2' <- if_ isBaseCase c1 c2
     assertEq c1 c2'
 
-compileStepVerifyN2 :: StepVerifyN2Params -> CompiledCircuit StepField
+compileStepVerifyN2 :: StepVerifyN2Params -> Effect (CompiledCircuit StepField)
 compileStepVerifyN2 srsData =
-  compilePure (Proxy @(Vector 304 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  Run.runBaseEffect $ compile (Proxy @(Vector 304 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> stepVerifyN2Circuit srsData inputs)
-    Kimchi.initialState

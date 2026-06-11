@@ -28,7 +28,7 @@ import Type.Proxy (Proxy(..))
 
 -- | Kimchi test configuration, shared by all Kimchi circuit tests.
 kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
-kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
+kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition }
 
 main :: Effect Unit
 main =

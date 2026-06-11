@@ -9,11 +9,12 @@ import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, un)
 import Data.Show.Generic (genericShow)
 import Data.Tuple (snd)
+import Effect (Effect)
 import Effect.Unsafe (unsafePerformEffect)
 import Run (EFFECT)
 import Run as Run
 import Safe.Coerce (coerce)
-import Snarky.Backend.Builder (constraintsToArray, initialState, runCircuitBuilder)
+import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray, initialBuilderState, runCircuitBuilder)
 import Snarky.Circuit.CVar (CVar(..))
 import Snarky.Circuit.DSL (class CheckedType, Basic, Bool, BoolVar, FVar, Snarky, UnChecked(..), Variable, check, const_, genericCheck, runSnarky)
 import Snarky.Curves.Class (class PrimeField)
@@ -24,10 +25,12 @@ import Test.Spec.QuickCheck (quickCheck')
 import Type.Proxy (Proxy)
 import Type.Row (type (+))
 
-runM :: forall f a. PrimeField f => Snarky f (Basic f) (EFFECT + ()) a -> Array (Basic f)
+runM :: forall f a. PrimeField f => Snarky f (Basic f) () a -> Array (Basic f)
 runM m = map _.constraint <<< constraintsToArray <<< _.constraints <<< snd
   $ unsafePerformEffect
-  $ Run.runBaseEffect (runCircuitBuilder initialState (runSnarky m))
+  $ Run.runBaseEffect do
+      st0 <- Run.liftEffect (initialBuilderState :: Effect (CircuitBuilderState (Basic f) Unit))
+      runCircuitBuilder st0 (runSnarky m)
 
 newtype ValidBVar f = ValidBVar (BoolVar f)
 

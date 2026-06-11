@@ -22,7 +22,7 @@ import Test.Spec.Runner.Node (runSpecAndExitProcess')
 import Test.Spec.Runner.Node.Config as Cfg
 
 kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
-kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
+kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition }
 
 main :: Effect Unit
 main = runSpecAndExitProcess'

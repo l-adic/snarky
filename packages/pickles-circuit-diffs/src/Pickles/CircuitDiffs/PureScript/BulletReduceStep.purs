@@ -9,11 +9,13 @@ import Prelude
 import Data.Fin (getFinite)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.BulletReduce (BulletReduceInput)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
 import Pickles.Field (StepField)
 import Pickles.IPA (bulletReduceCircuit)
-import Snarky.Backend.Compile (compilePure)
+import Run as Run
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (BoolVar, F, FVar, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -40,8 +42,7 @@ bulletReduceStepCircuit
   -> Snarky StepField (KimchiConstraint StepField) r { p :: AffinePoint (FVar StepField), isInfinity :: BoolVar StepField }
 bulletReduceStepCircuit = bulletReduceCircuit @StepField @PallasG
 
-compileBulletReduceStep :: CompiledCircuit StepField
+compileBulletReduceStep :: Effect (CompiledCircuit StepField)
 compileBulletReduceStep =
-  compilePure (Proxy @(Vector 75 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  Run.runBaseEffect $ compile (Proxy @(Vector 75 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> void $ bulletReduceStepCircuit (parseBulletReduceStepInput inputs))
-    Kimchi.initialState

@@ -13,6 +13,7 @@ import Data.Fin as Fin
 import Data.Newtype (unwrap)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyPallasPt, dummyWrapSg, stepEndo, unsafeIdx)
 import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (DomainMode(..))
@@ -21,8 +22,9 @@ import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Step.VerifyOne (verifyOne)
 import Pickles.Types (ChunkedCommitment(..))
+import Run as Run
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure)
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -171,8 +173,7 @@ fullStepVerifyOneCircuit { lagrangeAt, blindingH } inputs = do
   _result <- verifyOne fopParams input ivpParams
   pure unit
 
-compileFullStepVerifyOne :: FullStepVerifyOneParams -> CompiledCircuit StepField
+compileFullStepVerifyOne :: FullStepVerifyOneParams -> Effect (CompiledCircuit StepField)
 compileFullStepVerifyOne params =
-  compilePure (Proxy @(Vector 286 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  Run.runBaseEffect $ compile (Proxy @(Vector 286 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> fullStepVerifyOneCircuit params inputs)
-    Kimchi.initialState

@@ -24,7 +24,6 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
-import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Run (EFFECT)
@@ -37,7 +36,7 @@ import Snarky.Backend.Kimchi.Impl.Vesta (vestaCrsCreate)
 import Snarky.Backend.Kimchi.Proof (createProof, verifyOpeningProof)
 import Snarky.Backend.Kimchi.ProofCache (getPallasProof, mkProofCache, setPallasProof)
 import Snarky.Circuit.DSL (F(..), FVar, Snarky, assertSquare_, exists, readCVar)
-import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate, initialState)
+import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
 import Snarky.Curves.Class (class PrimeField, fromInt)
 import Snarky.Curves.Pallas as Pallas
@@ -50,7 +49,7 @@ import Type.Row (type (+))
 squareCircuit
   :: PrimeField Pallas.BaseField
   => FVar Pallas.BaseField
-  -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) (EFFECT + ()) (FVar Pallas.BaseField)
+  -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) () (FVar Pallas.BaseField)
 squareCircuit x = do
   y <- exists do
     F xv <- readCVar x
@@ -76,28 +75,27 @@ spec = describe "Snarky.Backend.Kimchi.ProofCache (round-trip)" do
       let cache = mkProofCache cachePath
 
       -- Build the FFI machinery once for both arms of the test.
+      builtState <- Run.runBaseEffect $ compile @Pallas.BaseField
+        (Proxy @(F Pallas.BaseField))
+        (Proxy @(F Pallas.BaseField))
+        (Proxy @(KimchiConstraint Pallas.BaseField))
+        squareCircuit
       let
-        builtState =
-          unsafePerformEffect $ Run.runBaseEffect $ compile @Pallas.BaseField
-            (Proxy @(F Pallas.BaseField))
-            (Proxy @(F Pallas.BaseField))
-            (Proxy @(KimchiConstraint Pallas.BaseField))
-            squareCircuit
-            (initialState :: CircuitBuilderState (KimchiGate Pallas.BaseField) (AuxState Pallas.BaseField))
         kimchiRows =
           concatMap
             (toKimchiRows <<< _.constraint)
             (constraintsToArray builtState.constraints)
         maxPolySize = Int.pow 2 16
         crs = vestaCrsCreate maxPolySize
-        csResult =
-          makeConstraintSystemWithPrevChallenges @Pallas.BaseField
-            { constraints: kimchiRows
-            , publicInputs: builtState.publicInputs
-            , unionFind: (un AuxState builtState.aux).wireState.unionFind
-            , prevChallengesCount: 0
-            , maxPolySize
-            }
+      csResult <-
+        makeConstraintSystemWithPrevChallenges @Pallas.BaseField
+          { constraints: kimchiRows
+          , publicInputs: builtState.publicInputs
+          , unionFind: (un AuxState builtState.aux).wireState.unionFind
+          , prevChallengesCount: 0
+          , maxPolySize
+          }
+      let
         proverIndex =
           createProverIndex @Pallas.BaseField @VestaG
             { gates: csResult.gates
