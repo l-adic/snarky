@@ -65,12 +65,20 @@ for (const line of lines) {
 
 const isScavenge = (k) => /Scavenge|Minor/.test(k);
 
+// NOTE on reading these: `reclaimedGB` (allocation churn) is NOT the cost
+// driver — scavenge pause cost tracks SURVIVORS, not reclaimed volume
+// (measured 2026-06-11: the transformer stack reclaims MORE GB than the
+// Run stack at half the GC pause, because its garbage dies young). Watch
+// `avgScavengeMs` (survivor copying per scavenge) and `majorGCs`/
+// `majorPauseMs` (promotion pressure) when comparing stacks.
 const summarize = (w) => {
   const evs = events.filter((e) => e.t >= w.start && e.t <= w.end);
   const scav = evs.filter((e) => isScavenge(e.kind));
   const major = evs.filter((e) => !isScavenge(e.kind));
   const wallMs = w.end - w.start;
   const pauseMs = evs.reduce((a, e) => a + e.pauseMs, 0);
+  const scavPauseMs = scav.reduce((a, e) => a + e.pauseMs, 0);
+  const majorPauseMs = major.reduce((a, e) => a + e.pauseMs, 0);
   return {
     label: w.label,
     wallMs,
@@ -80,6 +88,8 @@ const summarize = (w) => {
       evs.reduce((a, e) => a + Math.max(0, e.reclaimedMB), 0) / 1024,
     gcPauseMs: pauseMs,
     gcPausePct: wallMs > 0 ? (100 * pauseMs) / wallMs : 0,
+    avgScavengeMs: scav.length ? scavPauseMs / scav.length : 0,
+    majorPauseMs,
   };
 };
 
@@ -105,7 +115,8 @@ if (resultsPath) {
   for (const s of summaries) {
     console.log(
       `${s.label}: wall=${(s.wallMs / 1000).toFixed(1)}s  reclaimed=${s.reclaimedGB.toFixed(1)}GB  ` +
-        `scavenges=${s.scavenges}  major=${s.majorGCs}  gcPause=${s.gcPauseMs.toFixed(0)}ms (${s.gcPausePct.toFixed(1)}%)`
+        `scavenges=${s.scavenges} (avg ${s.avgScavengeMs.toFixed(2)}ms)  major=${s.majorGCs} (${s.majorPauseMs.toFixed(0)}ms)  ` +
+        `gcPause=${s.gcPauseMs.toFixed(0)}ms (${s.gcPausePct.toFixed(1)}%)`
     );
   }
 }
