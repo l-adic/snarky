@@ -9,9 +9,11 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.String as String
 import Data.Tuple (Tuple(..), fst, uncurry)
+import Effect.Unsafe (unsafePerformEffect)
+import Run (EFFECT)
 import Run as Run
 import Snarky.Backend.Builder (CircuitBuilderState)
-import Snarky.Backend.Compile (compilePure, makeSolver', runSolverT)
+import Snarky.Backend.Compile (compile, makeSolver', runSolverT)
 import Snarky.Backend.Prover (class SolveCircuit, emptyProverState)
 import Snarky.Circuit.CVar (EvaluationError(..), incrementVariable, v0)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F(..), FVar, Snarky, addConstraint, const_, div_, label, mul_, r1cs)
@@ -22,6 +24,7 @@ import Test.Snarky.Circuit.Utils (decorateError)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (fail, shouldEqual, shouldSatisfy)
 import Type.Proxy (Proxy(..))
+import Type.Row (type (+))
 
 type F' = F Pallas.BaseField
 type FV = FVar Pallas.BaseField
@@ -36,11 +39,11 @@ debugCircuitPure
   => CircuitType f a avar
   => CircuitType f b bvar
   => Proxy c
-  -> (avar -> Snarky f c () bvar)
+  -> (avar -> Snarky f c (EFFECT + ()) bvar)
   -> a
   -> Either EvaluationError b
 debugCircuitPure pc circuit inputs =
-  Run.extract (runSolverT (makeSolver' (emptyProverState { debug = true }) pc circuit) inputs)
+  unsafePerformEffect (Run.runBaseEffect (runSolverT (makeSolver' (emptyProverState { debug = true }) pc circuit) inputs))
     <#> fst
 
 spec :: Spec Unit
@@ -48,7 +51,7 @@ spec = describe "ProverT debug mode" do
 
   it "succeeds on a correct mul circuit" do
     let
-      circuit :: FV -> FV -> Snarky Pallas.BaseField KC () FV
+      circuit :: FV -> FV -> Snarky Pallas.BaseField KC (EFFECT + ()) FV
       circuit a b = mul_ a b
 
       result :: Either EvaluationError F'
@@ -59,7 +62,7 @@ spec = describe "ProverT debug mode" do
     let
       -- Circuit that adds a deliberately wrong constraint:
       -- asserts input * input = 0 (only true when input = 0)
-      badCircuit :: FV -> Snarky Pallas.BaseField KC () FV
+      badCircuit :: FV -> Snarky Pallas.BaseField KC (EFFECT + ()) FV
       badCircuit input = do
         res <- mul_ input input
         addConstraint $ r1cs { left: input, right: input, output: const_ zero }
@@ -78,7 +81,7 @@ spec = describe "ProverT debug mode" do
   it "catches DivisionByZero" do
     let
       -- Division by a variable-valued zero (not const_ zero, which throws unsafely)
-      circuit :: FV -> FV -> Snarky Pallas.BaseField KC () FV
+      circuit :: FV -> FV -> Snarky Pallas.BaseField KC (EFFECT + ()) FV
       circuit a b = div_ a b
 
       result :: Either EvaluationError F'
@@ -93,7 +96,7 @@ spec = describe "ProverT debug mode" do
   it "constraint satisfied when input is zero" do
     let
       -- Same deliberately wrong constraint, but with input = 0 it IS satisfied (0*0=0)
-      badCircuit :: FV -> Snarky Pallas.BaseField KC () FV
+      badCircuit :: FV -> Snarky Pallas.BaseField KC (EFFECT + ()) FV
       badCircuit input = do
         res <- mul_ input input
         addConstraint $ r1cs { left: input, right: input, output: const_ zero }
@@ -105,7 +108,7 @@ spec = describe "ProverT debug mode" do
 
   it "label wraps errors with WithContext" do
     let
-      circuit :: FV -> Snarky Pallas.BaseField KC () FV
+      circuit :: FV -> Snarky Pallas.BaseField KC (EFFECT + ()) FV
       circuit input = label "my-label" do
         res <- mul_ input input
         addConstraint $ r1cs { left: input, right: input, output: const_ zero }
@@ -123,7 +126,7 @@ spec = describe "ProverT debug mode" do
 
   it "labels nest correctly" do
     let
-      circuit :: FV -> Snarky Pallas.BaseField KC () FV
+      circuit :: FV -> Snarky Pallas.BaseField KC (EFFECT + ()) FV
       circuit input = label "outer" $ label "inner" do
         res <- mul_ input input
         addConstraint $ r1cs { left: input, right: input, output: const_ zero }
@@ -149,14 +152,14 @@ spec = describe "ProverT debug mode" do
     it "varMetadata tracks which label block allocated each variable" do
       let
         -- A circuit with two labeled sections, each allocating an intermediate variable
-        circuit :: FV -> Snarky Pallas.BaseField KC () FV
+        circuit :: FV -> Snarky Pallas.BaseField KC (EFFECT + ()) FV
         circuit input = do
           x <- label "squaring" $ mul_ input input
           y <- label "cubing" $ mul_ x input
           pure y
 
         builtState :: CircuitBuilderState KG AS
-        builtState = compilePure (Proxy @F') (Proxy @F') (Proxy @KC) circuit initialState
+        builtState = unsafePerformEffect $ Run.runBaseEffect $ compile (Proxy @F') (Proxy @F') (Proxy @KC) circuit initialState
 
       -- Variables 0,1 are public I/O (allocated by compile, no label context)
       Map.lookup v0 builtState.varMetadata `shouldEqual` Just []
@@ -168,13 +171,13 @@ spec = describe "ProverT debug mode" do
 
     it "nested labels produce nested birth context paths" do
       let
-        circuit :: FV -> Snarky Pallas.BaseField KC () FV
+        circuit :: FV -> Snarky Pallas.BaseField KC (EFFECT + ()) FV
         circuit input = label "outer" do
           x <- label "square" $ mul_ input input
           label "cube" $ mul_ x input
 
         builtState :: CircuitBuilderState KG AS
-        builtState = compilePure (Proxy @F') (Proxy @F') (Proxy @KC) circuit initialState
+        builtState = unsafePerformEffect $ Run.runBaseEffect $ compile (Proxy @F') (Proxy @F') (Proxy @KC) circuit initialState
 
       -- Variable 2: allocated inside "outer" > "square"
       Map.lookup v2 builtState.varMetadata `shouldEqual` Just [ "outer", "square" ]
@@ -183,13 +186,13 @@ spec = describe "ProverT debug mode" do
 
     it "decorateError enriches MissingVariable with birth context" do
       let
-        circuit :: FV -> Snarky Pallas.BaseField KC () FV
+        circuit :: FV -> Snarky Pallas.BaseField KC (EFFECT + ()) FV
         circuit input = label "scalar-mul" do
           x <- mul_ input input
           mul_ x input
 
         builtState :: CircuitBuilderState KG AS
-        builtState = compilePure (Proxy @F') (Proxy @F') (Proxy @KC) circuit initialState
+        builtState = unsafePerformEffect $ Run.runBaseEffect $ compile (Proxy @F') (Proxy @F') (Proxy @KC) circuit initialState
 
         -- Simulate a MissingVariable error for variable 2 (inside "scalar-mul")
         err = MissingVariable v2

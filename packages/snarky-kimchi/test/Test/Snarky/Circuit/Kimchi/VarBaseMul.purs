@@ -8,6 +8,7 @@ import Data.Tuple (Tuple(..), uncurry)
 import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
+import Run (EFFECT)
 import Snarky.Circuit.DSL (BoolVar, F(..), FVar, Snarky)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Circuit.Kimchi.VarBaseMul (joinField, scaleFast1, scaleFast2, scaleFast2', splitField)
@@ -25,6 +26,7 @@ import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satis
 import Test.Spec (Spec, describe, it)
 import Test.Spec.QuickCheck (quickCheck)
 import Type.Proxy (Proxy(..))
+import Type.Row (type (+))
 
 spec :: (forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)) -> Spec Unit
 spec cfg = do
@@ -53,7 +55,7 @@ spec cfg = do
         circuit1
           :: PrimeField Vesta.BaseField
           => Tuple (AffinePoint (FVar Vesta.BaseField)) (Type1 (FVar Vesta.BaseField))
-          -> Snarky Vesta.BaseField (KimchiConstraint Vesta.BaseField) () (AffinePoint (FVar Vesta.BaseField))
+          -> Snarky Vesta.BaseField (KimchiConstraint Vesta.BaseField) (EFFECT + ()) (AffinePoint (FVar Vesta.BaseField))
         circuit1 = uncurry \p t -> do
           g <- scaleFast1 @51 p t
           pure g
@@ -100,7 +102,7 @@ spec cfg = do
         circuit2
           :: PrimeField Pallas.BaseField
           => Tuple (AffinePoint (FVar Pallas.BaseField)) { sDiv2 :: FVar Pallas.BaseField, sOdd :: BoolVar Pallas.BaseField }
-          -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) () (AffinePoint (FVar Pallas.BaseField))
+          -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) (EFFECT + ()) (AffinePoint (FVar Pallas.BaseField))
         circuit2 = uncurry \p t -> scaleFast2 @51 @254 p t
 
         gen :: Gen (Tuple (AffinePoint Pallas.BaseField) { sDiv2 :: F Pallas.BaseField, sOdd :: Boolean })
@@ -181,7 +183,7 @@ spec cfg = do
         circuit3
           :: PrimeField Pallas.BaseField
           => Tuple (AffinePoint (FVar Pallas.BaseField)) (FVar Pallas.BaseField)
-          -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) () (AffinePoint (FVar Pallas.BaseField))
+          -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) (EFFECT + ()) (AffinePoint (FVar Pallas.BaseField))
         circuit3 = uncurry \p scalar -> scaleFast2' @51 @254 p scalar
 
         gen :: Gen (Tuple (AffinePoint Pallas.BaseField) (F Pallas.BaseField))

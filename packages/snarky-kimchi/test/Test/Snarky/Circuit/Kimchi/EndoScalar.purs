@@ -9,6 +9,7 @@ import Data.Array.NonEmpty as NEA
 import Effect.Class (liftEffect)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
+import Run (EFFECT)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (F, FVar, SizedF, Snarky, const_)
@@ -23,6 +24,7 @@ import Test.QuickCheck (arbitrary)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
+import Type.Row (type (+))
 
 circuit
   :: forall f f' r n
@@ -58,7 +60,7 @@ spec' cfg _ curveName = do
         circuit'
           :: PrimeField f
           => SizedF 128 (FVar f)
-          -> Snarky f (KimchiConstraint f) () (FVar f)
+          -> Snarky f (KimchiConstraint f) (EFFECT + ()) (FVar f)
         circuit' = circuit
 
       { builtState, solver } <- circuitTest' @f

@@ -13,6 +13,7 @@ import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, generate)
 import JS.BigInt as BigInt
+import Run (EFFECT)
 import Snarky.Backend.Builder (class CompileCircuit)
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.DSL (class BasicSystem, BoolVar, F(..), FVar, Snarky, pack_, unpack_)
@@ -21,6 +22,7 @@ import Test.QuickCheck.Gen (Gen, chooseInt)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
+import Type.Row (type (+))
 
 smallFieldElem :: forall f. PrimeField f => Int -> Gen (F f)
 smallFieldElem bitCount = do
@@ -74,7 +76,7 @@ spec cfg = describe "Bits Circuit Specs" do
         in
           generate (toBit <<< getFinite)
 
-      circuit :: FVar f -> Snarky f c' () (Vector n (BoolVar f))
+      circuit :: FVar f -> Snarky f c' (EFFECT + ()) (Vector n (BoolVar f))
       circuit = \v -> unpack_ v (Proxy @n)
     in
       circuitTest' @f
@@ -84,7 +86,7 @@ spec cfg = describe "Bits Circuit Specs" do
 
   it "pack/unpack round trip is Valid" $ void $
     let
-      circuit :: FVar f -> Snarky f c' () (FVar f)
+      circuit :: FVar f -> Snarky f c' (EFFECT + ()) (FVar f)
       circuit = packUnpackCircuit
     in
       circuitTest' @f

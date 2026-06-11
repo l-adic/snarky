@@ -22,6 +22,7 @@ import Poseidon (class PoseidonField, hash) as Poseidon
 import RandomOracle (digest, hash, initialState, update)
 import RandomOracle.DomainSeparator (class HasDomainSeparator, initWithDomain)
 import RandomOracle.Sponge as Sponge
+import Run (EFFECT)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (F(..), FVar, Snarky)
 import Snarky.Circuit.RandomOracle (Digest(..))
@@ -42,6 +43,7 @@ import Test.Spec.QuickCheck (quickCheck)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
 import Type.Proxy (Proxy(..))
+import Type.Row (type (+))
 
 kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
 kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
@@ -224,7 +226,7 @@ hash2CircuitTests _ = do
     circuit'
       :: PrimeField f
       => Tuple (FVar f) (FVar f)
-      -> Snarky f (KimchiConstraint f) () (Digest (FVar f))
+      -> Snarky f (KimchiConstraint f) (EFFECT + ()) (Digest (FVar f))
     circuit' = uncurry Checked.hash2
 
     genInputs = Tuple <$> (F <$> arbitrary) <*> (F <$> arbitrary)
@@ -256,7 +258,7 @@ hashVecCircuitTests _ pn = do
     circuit'
       :: PrimeField f
       => Vector n (FVar f)
-      -> Snarky f (KimchiConstraint f) () (Digest (FVar f))
+      -> Snarky f (KimchiConstraint f) (EFFECT + ()) (Digest (FVar f))
     circuit' x = Checked.hashVec (Vector.toUnfoldable x)
 
     genInputs = Vector.generator pn (F <$> arbitrary)
@@ -289,7 +291,7 @@ hashVecEdgeCase _ input = do
     circuit'
       :: PrimeField f
       => Vector n (FVar f)
-      -> Snarky f (KimchiConstraint f) () (Digest (FVar f))
+      -> Snarky f (KimchiConstraint f) (EFFECT + ()) (Digest (FVar f))
     circuit' x = Checked.hashVec (Vector.toUnfoldable x)
 
   void $ circuitTest' @f
@@ -331,7 +333,7 @@ circuitSpongeTests _ = do
       circuit'
         :: PrimeField f
         => Tuple (FVar f) (FVar f)
-        -> Snarky f (KimchiConstraint f) () (FVar f)
+        -> Snarky f (KimchiConstraint f) (EFFECT + ()) (FVar f)
       circuit' (Tuple a b) = do
         let sponge0 = CircuitSponge.create CircuitSponge.initialState
         sponge1 <- CircuitSponge.absorb a sponge0
@@ -367,7 +369,7 @@ circuitSpongeTests _ = do
       circuit'
         :: PrimeField f
         => Tuple (FVar f) (Tuple (FVar f) (FVar f))
-        -> Snarky f (KimchiConstraint f) () (Tuple (FVar f) (FVar f))
+        -> Snarky f (KimchiConstraint f) (EFFECT + ()) (Tuple (FVar f) (FVar f))
       circuit' (Tuple a (Tuple b c)) = do
         let sponge0 = CircuitSponge.create CircuitSponge.initialState
         sponge1 <- CircuitSponge.absorb a sponge0

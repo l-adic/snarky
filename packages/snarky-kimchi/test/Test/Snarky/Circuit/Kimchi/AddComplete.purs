@@ -7,6 +7,7 @@ import Data.Array.NonEmpty as NEA
 import Data.Tuple (Tuple(..), uncurry)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
+import Run (EFFECT)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (FVar, Snarky, const_)
 import Snarky.Circuit.DSL as Snarky
@@ -23,6 +24,7 @@ import Test.QuickCheck (class Arbitrary)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
+import Type.Row (type (+))
 
 spec :: (forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)) -> Spec Unit
 spec cfg = do
@@ -54,7 +56,7 @@ spec' cfg testName pg _ =
           :: PrimeField f
           => AffinePoint (FVar f)
           -> AffinePoint (FVar f)
-          -> Snarky f (KimchiConstraint f) () (Point (FVar f))
+          -> Snarky f (KimchiConstraint f) (EFFECT + ()) (Point (FVar f))
         circuit p1 p2 = do
           { isInfinity, p: AffinePoint p } <- addFast DontCheckFinite p1 p2
           x <- Snarky.if_ isInfinity (const_ zero) p.x

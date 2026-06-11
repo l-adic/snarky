@@ -13,6 +13,7 @@ import Data.Array as Array
 import Data.Fin (getFinite)
 import Data.Foldable (foldl)
 import Data.FoldableWithIndex (foldlWithIndex)
+import Data.FoldableWithIndex (forWithIndex_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Map (Map)
 import Data.Map as Map
@@ -21,9 +22,14 @@ import Data.Tuple (Tuple(..), fst, uncurry)
 import Data.UnionFind (UnionFindData, find)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
+import Effect (Effect, forE, foreachE)
 import Effect.Exception.Unsafe (unsafeThrow)
+import Effect.Unsafe (unsafePerformEffect)
+import Snarky.Backend.DenseStore (DenseStore)
+import Snarky.Backend.DenseStore as DenseStore
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateNew)
 import Snarky.Backend.Kimchi.Types (Gate, Wire, gateWiresNewFromWires, wireNew)
+import Snarky.Circuit.CVar (Variable(..))
 import Snarky.Circuit.DSL (Variable)
 import Snarky.Constraint.Kimchi.Types (GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
@@ -31,23 +37,28 @@ import Snarky.Curves.Class (class PrimeField)
 -- figure out the cell placement for each variable. 
 -- since we can use the same variable in multiple constraints,
 -- naturally this is a one to many mapping.
+-- Dense by variable index: slot v = the cells where variable v appears,
+-- in (row-major) discovery order — same order `Map.insertWith append`
+-- produced.
 placeVariables
   :: forall f
    . Array (KimchiRow f)
-  -> Map Variable (Array (Tuple Int Int))
-placeVariables rows =
-  foldlWithIndex
-    ( \i acc row ->
-        foldlWithIndex
-          ( \j m mVar -> case mVar of
-              Nothing -> m
-              Just var -> Map.insertWith append var [ Tuple i (getFinite j) ] m
-          )
-          acc
-          row.variables
-    )
-    Map.empty
-    rows
+  -> DenseStore (Array (Tuple Int Int))
+placeVariables rows = unsafePerformEffect do
+  store <- DenseStore.fresh
+  forEWithIndex rows \i row ->
+    forWithIndex_ row.variables \j mVar -> case mVar of
+      Nothing -> pure unit
+      Just (Variable v) -> DenseStore.pushAt v (Tuple i (getFinite j)) store
+  pure store
+  where
+  -- stack-safe indexed Effect loop (a row has 15 cells, so the inner
+  -- `forWithIndex_` is fine; the outer loop is circuit-sized)
+  forEWithIndex :: forall a. Array a -> (Int -> a -> Effect Unit) -> Effect Unit
+  forEWithIndex xs f = forE 0 (Array.length xs) \i ->
+    case Array.index xs i of
+      Just x -> f i x
+      Nothing -> pure unit
 
 -- Kimchi backend has a special format for public inputs
 makePublicInputRows
@@ -71,47 +82,35 @@ makePublicInputRows =
 -- to the existing wire. These wires create a cyclic list,
 -- meaning if you follow in order you end up back at the
 -- start, closing the loop for the perumutation argument
+-- The wire map is dense by cell key `i * 16 + j` (j < 16): cell ->
+-- next cell in its permutation cycle.
 makeWireMapping
   :: UnionFindData Variable
-  -> Map Variable (Array (Tuple Int Int))
-  -> Map (Tuple Int Int) Wire
-makeWireMapping uf variablePlacement =
-  let
-    -- mapping from the canonical root to the list
-    -- of all cells equivalent to that root,
-    -- filtered to only include permutation columns (0-6)
-    m =
-      foldl
-        ( \acc (Tuple var cells) ->
-            let
-              root = getRoot var
-              permCells = Array.filter (\(Tuple _ j) -> j < 7) cells
-            in
-              Map.insertWith append root permCells acc
-        )
-        Map.empty
-        (Map.toUnfoldable variablePlacement :: Array _)
-    classes =
-      map
-        ( \xs ->
-            let
-              xsSorted = Array.sort xs
-            in
-              Map.fromFoldable $ Array.zip xsSorted (rotateLeft xsSorted)
-        )
-        (Map.values m)
-  in
-    uncurry wireNew <$> Map.unions classes
+  -> DenseStore (Array (Tuple Int Int))
+  -> DenseStore Wire
+makeWireMapping uf variablePlacement = unsafePerformEffect do
+  -- per-root permutation cells (cols 0-6), in the same order the Map
+  -- version accumulated them (ascending variable index)
+  rootCells <- DenseStore.fresh
+  foreachE (DenseStore.toEntries Tuple variablePlacement) \(Tuple v cells) -> do
+    let Variable root = fst (find (Variable v) uf)
+    foreachE (Array.filter (\(Tuple _ j) -> j < 7) cells) \cell ->
+      DenseStore.pushAt root cell rootCells
+  wireMap <- DenseStore.fresh
+  foreachE (DenseStore.toEntries (\_ cells -> cells) rootCells) \cells -> do
+    let xsSorted = Array.sort cells
+    foreachE (Array.zip xsSorted (rotateLeft xsSorted)) \(Tuple (Tuple i j) target) ->
+      DenseStore.setAt (i * 16 + j) (uncurry wireNew target) wireMap
+  pure wireMap
   where
   rotateLeft xs = case Array.uncons xs of
     Just { head, tail } -> tail `Array.snoc` head
     Nothing -> xs
-  getRoot x = fst (find x uf)
 
 makeGates
   :: forall f g
    . CircuitGateConstructor f g
-  => Map (Tuple Int Int) Wire
+  => DenseStore Wire
   -> Array (KimchiRow f)
   -> Array (Gate f)
 makeGates wireMap rows =
@@ -126,7 +125,7 @@ makeGates wireMap rows =
   where
   makeGateWires i =
     gateWiresNewFromWires $ Vector.generate \j ->
-      case Map.lookup (Tuple i (getFinite j)) wireMap of
+      case DenseStore.getAt (i * 16 + getFinite j) wireMap of
         Just w -> w
         Nothing -> wireNew i (getFinite j)
 

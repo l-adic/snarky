@@ -499,7 +499,7 @@ runChunks2AppWitnessProve = do
 
     rawSolver :: Solver Fp (KimchiConstraint Fp) Unit Unit
     rawSolver = makeSolver (Proxy @(KimchiConstraint Fp)) chunks2AppCircuit
-  case runSolver rawSolver unit of
+  runSolver rawSolver unit >>= case _ of
     Left e -> throw $ "chunks2 app solver: " <> show e
     Right (Tuple _publicOutputs assignments) -> do
       let

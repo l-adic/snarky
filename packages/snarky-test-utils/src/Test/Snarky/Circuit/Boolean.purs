@@ -11,6 +11,7 @@ import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, uncurry3)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Run (EFFECT)
 import Snarky.Backend.Builder (class CompileCircuit)
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.DSL (BoolVar, F, FVar, Snarky, all_, and_, any_, if_, not_, or_, xor_)
@@ -18,6 +19,7 @@ import Test.QuickCheck (arbitrary)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
+import Type.Row (type (+))
 
 spec
   :: forall f c c' r
@@ -29,7 +31,7 @@ spec cfg = describe "Boolean Circuit Specs" do
 
   it "not Circuit is Valid" $ void $
     let
-      circuit :: BoolVar f -> Snarky f c' () (BoolVar f)
+      circuit :: BoolVar f -> Snarky f c' (EFFECT + ()) (BoolVar f)
       circuit = pure <<< not_
     in
       circuitTest' @f
@@ -39,7 +41,7 @@ spec cfg = describe "Boolean Circuit Specs" do
 
   it "and Circuit is Valid" $ void $
     let
-      circuit :: Tuple (BoolVar f) (BoolVar f) -> Snarky f c' () (BoolVar f)
+      circuit :: Tuple (BoolVar f) (BoolVar f) -> Snarky f c' (EFFECT + ()) (BoolVar f)
       circuit = uncurry and_
     in
       circuitTest' @f
@@ -49,7 +51,7 @@ spec cfg = describe "Boolean Circuit Specs" do
 
   it "or Circuit is Valid" $ void $
     let
-      circuit :: Tuple (BoolVar f) (BoolVar f) -> Snarky f c' () (BoolVar f)
+      circuit :: Tuple (BoolVar f) (BoolVar f) -> Snarky f c' (EFFECT + ()) (BoolVar f)
       circuit = uncurry or_
     in
       circuitTest' @f
@@ -62,7 +64,7 @@ spec cfg = describe "Boolean Circuit Specs" do
       f :: Tuple Boolean Boolean -> Boolean
       f (Tuple a b) = (a && not b) || (not a && b)
 
-      circuit :: Tuple (BoolVar f) (BoolVar f) -> Snarky f c' () (BoolVar f)
+      circuit :: Tuple (BoolVar f) (BoolVar f) -> Snarky f c' (EFFECT + ()) (BoolVar f)
       circuit = uncurry xor_
     in
       circuitTest' @f
@@ -76,7 +78,7 @@ spec cfg = describe "Boolean Circuit Specs" do
       f = uncurry3 \b t e ->
         if b then t else e
 
-      circuit :: Tuple3 (BoolVar f) (FVar f) (FVar f) -> Snarky f c' () (FVar f)
+      circuit :: Tuple3 (BoolVar f) (FVar f) (FVar f) -> Snarky f c' (EFFECT + ()) (FVar f)
       circuit = uncurry3 if_
     in
       circuitTest' @f
@@ -89,7 +91,7 @@ spec cfg = describe "Boolean Circuit Specs" do
       f :: forall n. Vector n Boolean -> Boolean
       f = un Conj <<< foldMap Conj
 
-      circuit :: Vector 10 (BoolVar f) -> Snarky f c' () (BoolVar f)
+      circuit :: Vector 10 (BoolVar f) -> Snarky f c' (EFFECT + ()) (BoolVar f)
       circuit = all_ <<< Vector.toUnfoldable
     in
       circuitTest' @f
@@ -102,7 +104,7 @@ spec cfg = describe "Boolean Circuit Specs" do
       f :: forall n. Vector n Boolean -> Boolean
       f = un Disj <<< foldMap Disj
 
-      circuit :: Vector 10 (BoolVar f) -> Snarky f c' () (BoolVar f)
+      circuit :: Vector 10 (BoolVar f) -> Snarky f c' (EFFECT + ()) (BoolVar f)
       circuit = any_ <<< Vector.toUnfoldable
     in
       circuitTest' @f

@@ -13,7 +13,7 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (error, throwException)
-import Run (Run)
+import Run (EFFECT, Run)
 import Run as Run
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (Solver, SolverT, runSolverT)
@@ -21,6 +21,7 @@ import Snarky.Circuit.CVar (EvaluationError, Variable)
 import Snarky.Constraint.Kimchi (KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
+import Type.Row (type (+))
 
 mapAccumM
   :: forall m s t a b
@@ -72,13 +73,13 @@ verifyCircuit
      }
   -> Effect Unit
 verifyCircuit { gen, solver, s } =
-  verifyCircuitM (pure <<< Run.extract) { gen, solver, s }
+  verifyCircuitM Run.runBaseEffect { gen, solver, s }
 
 -- | Sanity-check a solver over an advice row `r`, given an interpreter for
 -- | the row's effects.
 verifyCircuitM
   :: forall f a b r
-   . (Run r (Either EvaluationError (Tuple b (Map Variable f))) -> Effect (Either EvaluationError (Tuple b (Map Variable f))))
+   . (Run (EFFECT + r) (Either EvaluationError (Tuple b (Map Variable f))) -> Effect (Either EvaluationError (Tuple b (Map Variable f))))
   -> { gen :: Gen a
      , solver :: SolverT f (KimchiGate f) r a b
      , s :: CircuitBuilderState (KimchiGate f) (AuxState f)

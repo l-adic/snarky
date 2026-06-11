@@ -26,8 +26,11 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
+import Effect.Unsafe (unsafePerformEffect)
+import Run (EFFECT)
+import Run as Run
 import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray)
-import Snarky.Backend.Compile (Solver, compilePure, makeSolver, runSolver)
+import Snarky.Backend.Compile (Solver, compile, makeSolver, runSolver)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (createProverIndex, createVerifierIndex)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaCrsCreate)
@@ -41,6 +44,7 @@ import Snarky.Curves.Pasta (VestaG)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
+import Type.Row (type (+))
 
 -- | Tiny circuit: input `x`, output `x²`. Allocates `y` as a witness
 -- | (so the prover supplies it) and constrains `x² = y` via the kimchi
@@ -49,7 +53,7 @@ import Type.Proxy (Proxy(..))
 squareCircuit
   :: PrimeField Pallas.BaseField
   => FVar Pallas.BaseField
-  -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) () (FVar Pallas.BaseField)
+  -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) (EFFECT + ()) (FVar Pallas.BaseField)
 squareCircuit x = do
   y <- exists do
     F xv <- readCVar x
@@ -68,7 +72,7 @@ runProofRoundtrip = do
   let
     -- 1. Compile the squaring circuit.
     builtState =
-      compilePure @Pallas.BaseField
+      unsafePerformEffect $ Run.runBaseEffect $ compile @Pallas.BaseField
         (Proxy @(F Pallas.BaseField))
         (Proxy @(F Pallas.BaseField))
         (Proxy @(KimchiConstraint Pallas.BaseField))
@@ -103,7 +107,7 @@ runProofRoundtrip = do
     -- 3. Solve for x = 7 (so y = 49).
     solver :: Solver Pallas.BaseField (KimchiConstraint Pallas.BaseField) (F Pallas.BaseField) (F Pallas.BaseField)
     solver = makeSolver (Proxy @(KimchiConstraint Pallas.BaseField)) squareCircuit
-  case runSolver solver (F (fromInt 7)) of
+  runSolver solver (F (fromInt 7)) >>= case _ of
     Left e -> throw $ "Squaring-circuit solver failed: " <> show e
     Right (Tuple _output assignments) -> do
       let

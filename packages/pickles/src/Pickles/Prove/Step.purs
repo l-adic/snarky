@@ -2133,7 +2133,7 @@ stepSolveAndProve ctx rule compileResult advice = do
 
     rawSolver
       :: SolverT StepField (KimchiConstraint StepField)
-           (EFFECT + r)
+           r
            Unit
            (Vector outputSize (F StepField))
     rawSolver =

@@ -8,6 +8,7 @@ import Data.Newtype (unwrap)
 import Data.Tuple (Tuple(..), uncurry)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
+import Run (EFFECT)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (F, FVar, SizedF, Snarky)
 import Snarky.Circuit.Kimchi.EndoMul (endo, endoInv)
@@ -25,6 +26,7 @@ import Test.QuickCheck.Gen (Gen)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
+import Type.Row (type (+))
 
 endoSpec
   :: forall f f' g g'
@@ -58,7 +60,7 @@ endoSpec cfg _ curveProxy curveName =
           :: PrimeField f
           => AffinePoint (FVar f)
           -> SizedF 128 (FVar f)
-          -> Snarky f (KimchiConstraint f) () (AffinePoint (FVar f))
+          -> Snarky f (KimchiConstraint f) (EFFECT + ()) (AffinePoint (FVar f))
         circuit p scalar = do
           result <- endo @128 @32 p scalar
           pure result
@@ -118,7 +120,7 @@ endoInvSpec cfg _ curveProxy curveName =
           :: PrimeField f
           => AffinePoint (FVar f)
           -> SizedF 128 (FVar f)
-          -> Snarky f (KimchiConstraint f) () (AffinePoint (FVar f))
+          -> Snarky f (KimchiConstraint f) (EFFECT + ()) (AffinePoint (FVar f))
         circuit p scalar = endoInv @f @f' @g p scalar
 
         gen :: Gen (Tuple (AffinePoint f) (SizedF 128 (F f)))

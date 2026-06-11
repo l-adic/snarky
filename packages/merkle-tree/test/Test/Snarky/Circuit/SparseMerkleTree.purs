@@ -20,6 +20,7 @@ import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
 import JS.BigInt as BigInt
 import Poseidon (class PoseidonField)
+import Run (EFFECT)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F(..), FVar, Snarky, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
@@ -36,6 +37,7 @@ import Test.QuickCheck.Gen (Gen, chooseInt, randomSampleOne)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Type.Proxy (Proxy(..))
+import Type.Row (type (+))
 
 --------------------------------------------------------------------------------
 
@@ -127,7 +129,7 @@ sparseImpliedRootSpec cfg _ pd = do
 
     circuit
       :: Tuple (AddressVar d f) (Tuple (Digest (FVar f)) (Path d (Digest (FVar f))))
-      -> Snarky f (KimchiConstraint f) () (Digest (FVar f))
+      -> Snarky f (KimchiConstraint f) (EFFECT + ()) (Digest (FVar f))
     circuit (Tuple addr (Tuple entryHash (Path pathVec))) =
       SparseCircuit.impliedRoot addr entryHash (Sized.Path pathVec)
 
@@ -186,7 +188,7 @@ sparseCheckAndUpdateSpec cfg _ pd = do
          , path :: Path d (Digest (FVar f))
          , oldRoot :: Digest (FVar f)
          }
-      -> Snarky f (KimchiConstraint f) () (Digest (FVar f))
+      -> Snarky f (KimchiConstraint f) (EFFECT + ()) (Digest (FVar f))
     circuit { addr, oldValueHash, newValueHash, path: Path pathVec, oldRoot } =
       SparseCircuit.checkAndUpdate addr oldValueHash newValueHash (Sized.Path pathVec) oldRoot
 

@@ -507,7 +507,7 @@ wrapSolveAndProve ctx compileResult = do
   let
     rawSolver
       :: SolverT WrapField (KimchiConstraint WrapField)
-           (EFFECT + r)
+           r
            (Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean)
            Unit
     rawSolver =

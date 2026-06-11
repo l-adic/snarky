@@ -159,7 +159,7 @@ impliedRootSpec cfg _ pd = do
 
     circuit
       :: Tuple (SMT.AddressVar d f) (Tuple (Digest (FVar f)) (SMT.Path d (Digest (FVar f))))
-      -> Snarky f (KimchiConstraint f) () (Digest (FVar f))
+      -> Snarky f (KimchiConstraint f) (EFFECT + ()) (Digest (FVar f))
     circuit (Tuple addr (Tuple entryHash path)) =
       CMT.impliedRoot addr entryHash path
 

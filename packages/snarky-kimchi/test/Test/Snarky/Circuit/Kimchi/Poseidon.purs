@@ -8,6 +8,7 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect.Class (liftEffect)
 import Poseidon (fullRound)
+import Run (EFFECT)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (F(..), FVar, Snarky)
@@ -22,6 +23,7 @@ import Test.QuickCheck (arbitrary)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
+import Type.Row (type (+))
 
 spec :: (forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)) -> Spec Unit
 spec cfg = do
@@ -52,7 +54,7 @@ spec' cfg testName _ = describe ("Poseidon Circuit Tests: " <> testName) do
       poseidon'
         :: PrimeField f
         => Vector 3 (FVar f)
-        -> Snarky f (KimchiConstraint f) () (Vector 3 (FVar f))
+        -> Snarky f (KimchiConstraint f) (EFFECT + ()) (Vector 3 (FVar f))
       poseidon' = PoseidonCircuit.poseidon
 
       genInputs = Vector.generator (Proxy @3) (F <$> arbitrary)

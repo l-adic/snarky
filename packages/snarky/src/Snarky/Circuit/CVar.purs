@@ -15,7 +15,7 @@
 -- | -- AffineExpression { constant: Just 5, terms: [(v0, 2)] }
 -- | ```
 module Snarky.Circuit.CVar
-  ( Variable
+  ( Variable(..)
   , incrementVariable
   , v0
   , getVariable

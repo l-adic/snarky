@@ -27,10 +27,12 @@ import Data.Either (Either(..))
 import Data.Foldable (for_)
 import Data.Map (Map)
 import Data.Tuple (Tuple(..))
-import Run (Run)
+import Effect (Effect)
+import Run (EFFECT, Run)
 import Run as Run
 import Run.Except (EXCEPT)
 import Run.Except as Except
+import Snarky.Backend.Assignments as Assignments
 import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, allocVars, finalize, runCircuitBuilder)
 import Snarky.Backend.Prover (class SolveCircuit, ProverState, allocAssignments, emptyProverState, runCircuitProver)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError, Variable)
@@ -95,17 +97,22 @@ makeSolver'
   => CircuitType f b bvar
   => ProverState f
   -> Proxy c
-  -> (avar -> Snarky f c r bvar)
+  -> (avar -> Snarky f c (EFFECT + r) bvar)
   -> SolverT f c r a b
 makeSolver' initialState _ circuit = \inputs -> do
   let
     n = sizeInFields (Proxy @f) (Proxy @a)
     m = sizeInFields (Proxy @f) (Proxy @b)
-    Tuple vars st1 = allocAssignments (n + m) (valueToFields inputs) initialState
+  -- The mutable store is owned by THIS invocation (the solver closure is
+  -- reused across e.g. QuickCheck trials, so it must not be captured).
+  store <- Run.liftEffect Assignments.fresh
+  Tuple vars st1 <- Run.liftEffect $ allocAssignments (n + m) (valueToFields inputs)
+    (initialState { assignments = store })
+  let
     { before: avars, after: bvars } = Array.splitAt n vars
     avar = fieldsToVar @f @a (map Var avars)
 
-    prog :: Snarky f c r bvar
+    prog :: Snarky f c (EFFECT + r) bvar
     prog = do
       check avar
       out <- circuit avar
@@ -122,7 +129,7 @@ makeSolver' initialState _ circuit = \inputs -> do
     Left e -> Except.throw e
     Right outVar -> case runAsProverPure (read outVar) s.assignments of
       Left e -> Except.throw e
-      Right output -> pure $ Tuple output s.assignments
+      Right output -> pure $ Tuple output (Assignments.toMap s.assignments)
 
 makeSolver
   :: forall f a b c r avar bvar
@@ -131,18 +138,18 @@ makeSolver
   => CircuitType f a avar
   => CircuitType f b bvar
   => Proxy c
-  -> (avar -> Snarky f c r bvar)
+  -> (avar -> Snarky f c (EFFECT + r) bvar)
   -> SolverT f c r a b
 makeSolver = makeSolver' emptyProverState
 
 type SolverT :: Type -> Type -> Row (Type -> Type) -> Type -> Type -> Type
-type SolverT f c r a b = a -> Run (EXCEPT EvaluationError + r) (Tuple b (Map Variable f))
+type SolverT f c r a b = a -> Run (EXCEPT EvaluationError + EFFECT + r) (Tuple b (Map Variable f))
 
 runSolverT
   :: forall f c r a b
    . SolverT f c r a b
   -> a
-  -> Run r (Either EvaluationError (Tuple b (Map Variable f)))
+  -> Run (EFFECT + r) (Either EvaluationError (Tuple b (Map Variable f)))
 runSolverT f a = Except.runExcept (f a)
 
 type Solver f c a b = SolverT f c () a b
@@ -151,8 +158,8 @@ runSolver
   :: forall f c a b
    . Solver f c a b
   -> a
-  -> Either EvaluationError (Tuple b (Map Variable f))
-runSolver c a = Run.extract $ runSolverT c a
+  -> Effect (Either EvaluationError (Tuple b (Map Variable f)))
+runSolver c a = Run.runBaseEffect $ runSolverT c a
 
 -- | Widen an open row by the solver's EXCEPT channel. Safe for the same
 -- | reason `Run.expand` is (a `Run r` program can never produce an effect

@@ -15,10 +15,10 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Unsafe (unsafePerformEffect)
-import Run (Run)
+import Run (EFFECT, Run)
 import Run as Run
 import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, constraintsToArray)
-import Snarky.Backend.Compile (Checker, Solver, SolverT, compile, compilePure, makeSolver', runSolverT)
+import Snarky.Backend.Compile (Checker, Solver, SolverT, compile, makeSolver', runSolverT)
 import Snarky.Backend.Prover (class SolveCircuit, emptyProverState)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, EvaluationError(..), Snarky, Variable)
 import Snarky.Curves.Class (class PrimeField)
@@ -26,6 +26,7 @@ import Test.QuickCheck (Result(..), quickCheck', withHelp)
 import Test.QuickCheck.Gen (Gen)
 import Test.Spec.Assertions (fail)
 import Type.Proxy (Proxy(..))
+import Type.Row (type (+))
 
 -- | How to provide test inputs: either via a QuickCheck generator or as exact values.
 data TestInput a
@@ -115,7 +116,9 @@ runTest
   -> Result
 runTest { builtState, solver, checker, postCondition } testFunction inputs =
   let
-    solverResult = Run.extract $ runSolverT solver inputs
+    -- QuickCheck properties are pure; the solver now runs in Effect (mutable
+    -- assignment store). Standard test-boundary unsafePerformEffect.
+    solverResult = unsafePerformEffect $ Run.runBaseEffect $ runSolverT solver inputs
   in
     checkResult builtState checker postCondition testFunction inputs solverResult
 
@@ -133,7 +136,7 @@ runTestM
      }
   -> (a -> Expectation b)
   -> a
-  -> Run r Result
+  -> Run (EFFECT + r) Result
 runTestM { builtState, solver, checker, postCondition } testFunction inputs =
   runSolverT solver inputs <#>
     checkResult builtState checker postCondition testFunction inputs
@@ -195,11 +198,11 @@ circuitTest'
   => Show b
   => TestConfig f c aux
   -> NonEmptyArray { testFunction :: a -> Expectation b, input :: TestInput a }
-  -> (avar -> Snarky f c' () bvar)
+  -> (avar -> Snarky f c' (EFFECT + ()) bvar)
   -> Aff { builtState :: CircuitBuilderState c aux, solver :: Solver f c' a b }
 circuitTest' { checker, postCondition, initState } scenarios circuit = do
   let
-    builtState = compilePure (Proxy @a) (Proxy @b) (Proxy @c') circuit initState
+    builtState = unsafePerformEffect $ Run.runBaseEffect $ compile (Proxy @a) (Proxy @b) (Proxy @c') circuit initState
     solver = makeSolver' (emptyProverState { debug = true }) (Proxy @c') circuit
   forWithIndex_ scenarios \idx { testFunction, input } ->
     runScenario idx (runTest { builtState, solver, checker, postCondition } testFunction) input
@@ -217,10 +220,10 @@ circuitTestM'
   => PrimeField f
   => Eq b
   => Show b
-  => (Run r ~> Effect)
+  => (Run (EFFECT + r) ~> Effect)
   -> TestConfig f c aux
   -> NonEmptyArray { testFunction :: a -> Expectation b, input :: TestInput a }
-  -> (avar -> Snarky f c' r bvar)
+  -> (avar -> Snarky f c' (EFFECT + r) bvar)
   -> Aff { builtState :: CircuitBuilderState c aux, solver :: SolverT f c' r a b }
 circuitTestM' nat { checker, postCondition, initState } scenarios circuit = do
   builtState <- liftEffect $ nat $ compile (Proxy @a) (Proxy @b) (Proxy @c') circuit initState
@@ -243,7 +246,7 @@ runScenario idx run = case _ of
       inputs
 
 -- | Run a single test scenario with an effectful test runner.
-runScenarioM :: forall a r. Int -> (Run r ~> Effect) -> (a -> Run r Result) -> TestInput a -> Aff Unit
+runScenarioM :: forall a r. Int -> (Run (EFFECT + r) ~> Effect) -> (a -> Run (EFFECT + r) Result) -> TestInput a -> Aff Unit
 runScenarioM idx nat run = case _ of
   QuickCheck n gen ->
     liftEffect $ quickCheck' n $ gen <#> \a ->

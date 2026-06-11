@@ -9,6 +9,8 @@ import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, un)
 import Data.Show.Generic (genericShow)
 import Data.Tuple (snd)
+import Effect.Unsafe (unsafePerformEffect)
+import Run (EFFECT)
 import Run as Run
 import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (constraintsToArray, initialState, runCircuitBuilder)
@@ -20,10 +22,12 @@ import Test.QuickCheck.Gen (suchThat)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.QuickCheck (quickCheck')
 import Type.Proxy (Proxy)
+import Type.Row (type (+))
 
-runM :: forall f a. PrimeField f => Snarky f (Basic f) () a -> Array (Basic f)
-runM m = map _.constraint <<< constraintsToArray <<< _.constraints <<< snd $
-  Run.extract (runCircuitBuilder initialState (runSnarky m))
+runM :: forall f a. PrimeField f => Snarky f (Basic f) (EFFECT + ()) a -> Array (Basic f)
+runM m = map _.constraint <<< constraintsToArray <<< _.constraints <<< snd
+  $ unsafePerformEffect
+  $ Run.runBaseEffect (runCircuitBuilder initialState (runSnarky m))
 
 newtype ValidBVar f = ValidBVar (BoolVar f)
 

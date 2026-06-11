@@ -4,7 +4,7 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import Effect (Effect)
-import Run (Run)
+import Run (EFFECT, Run)
 import Run as Run
 import Snarky.Backend.Builder (class CompileCircuit)
 import Snarky.Backend.Prover (class SolveCircuit)
@@ -35,14 +35,15 @@ factor :: forall f r. F f -> Run (FACTOR f + r) { a :: F f, b :: F f }
 factor n = Run.lift _factor (Factor n identity)
 
 -- | Interpret `FACTOR` into `Effect` by sampling a random factorization.
-runFactor :: forall f. PrimeField f => Run (FACTOR f ()) ~> Effect
-runFactor = Run.runRec $ Run.match
-  { factor: \(Factor n k) -> k <$> randomSampleOne (genFactor n) }
-  where
-  genFactor :: F f -> Gen { a :: F f, b :: F f }
-  genFactor n = do
-    a <- arbitrary @(F f) `suchThat` \a -> a /= one && a /= n
-    pure { a, b: n / a }
+runFactor :: forall f. PrimeField f => Run (FACTOR f + EFFECT + ()) ~> Effect
+runFactor = Run.runBaseEffect <<< Run.interpret
+  ( Run.on _factor (\(Factor n k) -> k <$> Run.liftEffect (randomSampleOne (genFactor n))) Run.send
+  )
+
+genFactor :: forall f. PrimeField f => F f -> Gen { a :: F f, b :: F f }
+genFactor n = do
+  a <- arbitrary @(F f) `suchThat` \a -> a /= one && a /= n
+  pure { a, b: n / a }
 
 factorsCircuit
   :: forall f c r

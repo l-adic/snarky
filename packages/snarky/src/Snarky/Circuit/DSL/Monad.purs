@@ -92,6 +92,8 @@ import Run.Except as Except
 import Run.Reader (READER)
 import Run.Reader as Reader
 import Safe.Coerce (coerce)
+import Snarky.Backend.Assignments (Assignments)
+import Snarky.Backend.Assignments as Assignments
 import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), Variable, add_, const_, sub_)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Types (class CircuitType, Bool(..), BoolVar, F(..), FVar, NoInput, NoOutput, UnChecked, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
@@ -107,7 +109,7 @@ import Unsafe.Coerce (unsafeCoerce)
 -- | The effects available to a witness computation: evaluation failure,
 -- | read access to the current variable assignments, plus whatever advice
 -- | effects `r` the application provides.
-type ASPROVER f r = EXCEPT EvaluationError + READER (Map Variable f) + r
+type ASPROVER f r = EXCEPT EvaluationError + READER (Assignments f) + r
 
 -- | Prover-side computation. Runs with access to variable assignments,
 -- | used as the argument to `exists` to compute witness values. A newtype
@@ -176,7 +178,7 @@ instance HeytingAlgebra (AsProver f r Boolean) where
 -- | advice effects `r` to the caller.
 runAsProver
   :: forall f r a
-   . Map Variable f
+   . Assignments f
   -> AsProver f r a
   -> Run r (Either EvaluationError a)
 runAsProver env (AsProver m) = Except.runExcept (Reader.runReader env m)
@@ -185,14 +187,14 @@ runAsProver env (AsProver m) = Except.runExcept (Reader.runReader env m)
 runAsProverPure
   :: forall f a
    . AsProver f () a
-  -> Map Variable f
+  -> Assignments f
   -> Either EvaluationError a
 runAsProverPure m env = Run.extract (runAsProver env m)
 
 readCVar :: forall f r. PrimeField f => FVar f -> AsProver f r (F f)
 readCVar v = AsProver do
   m <- Reader.ask
-  let _lookup var = maybe (Except.throw $ MissingVariable var) pure $ Map.lookup var m
+  let _lookup var = maybe (Except.throw $ MissingVariable var) pure $ Assignments.lookup var m
   F <$> CVar.eval _lookup v
 
 read
@@ -204,7 +206,7 @@ read
 read var = AsProver do
   let fieldVars = varToFields @f @a var
   m <- Reader.ask
-  let _lookup v = maybe (Except.throw $ MissingVariable v) pure $ Map.lookup v m
+  let _lookup v = maybe (Except.throw $ MissingVariable v) pure $ Assignments.lookup v m
   fields <- traverse (CVar.eval _lookup) fieldVars
   pure $ fieldsToValue fields
 

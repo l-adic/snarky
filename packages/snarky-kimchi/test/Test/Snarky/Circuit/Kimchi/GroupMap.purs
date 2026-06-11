@@ -6,6 +6,7 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import Effect.Class (liftEffect)
+import Run (EFFECT)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (F(..), FVar, Snarky)
 import Snarky.Circuit.Kimchi.GroupMap (GroupMapParams, groupMap, groupMapCircuit, groupMapParams)
@@ -19,6 +20,7 @@ import Test.QuickCheck (arbitrary, quickCheck')
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
+import Type.Row (type (+))
 
 -- | Test that groupMap produces valid curve points (y² = x³ + b)
 testValidCurvePoints
@@ -68,7 +70,7 @@ spec' cfg proxyG curveName = do
         circuit'
           :: PrimeField f
           => FVar f
-          -> Snarky f (KimchiConstraint f) () (AffinePoint (FVar f))
+          -> Snarky f (KimchiConstraint f) (EFFECT + ()) (AffinePoint (FVar f))
         circuit' = groupMapCircuit params
 
       void $ circuitTest' @f

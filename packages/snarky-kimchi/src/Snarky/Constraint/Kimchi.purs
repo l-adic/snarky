@@ -19,7 +19,11 @@ import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..))
 import Data.UnionFind (equivalenceClasses)
 import Data.Vector (Vector)
+import Effect (Effect)
+import Effect (Effect)
 import Poseidon (class PoseidonField)
+import Snarky.Backend.Assignments as Assignments
+import Snarky.Backend.Assignments as Assignments
 import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, Labeled)
 import Snarky.Backend.Builder as CircuitBuilder
 import Snarky.Backend.Prover (class SolveCircuit, ProverState)
@@ -157,22 +161,24 @@ instance (KimchiVerify f f') => SolveCircuit f (KimchiConstraint f) where
        . ToKimchiRows f g
       => (forall n. PlonkReductionM n f => c -> n g)
       -> c
-      -> Either EvaluationError (ProverState f)
+      -> Effect (Either EvaluationError (ProverState f))
     go reducer c =
-      reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (reducer c) <#>
+      reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (reducer c) <#> map
         \(Tuple _ res) -> s { assignments = res.assignments, nextVar = res.nextVariable }
 
     -- Basic constraints keep their `debugCheck` (pure-PS, no FFI) for
     -- richer error messages (e.g. "R1CS failed: 42 * 7 != 293") when
     -- the prover state has `debug: true`.
-    goBasic :: Basic f -> Either EvaluationError (ProverState f)
-    goBasic c = do
-      Tuple _ res <- reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (GenericPlonk.reduce c)
-      let s' = s { assignments = res.assignments, nextVar = res.nextVariable }
-      if s.debug then case Basic.debugCheck (flip Map.lookup res.assignments) c of
-        Nothing -> Right s'
-        Just e -> Left e
-      else Right s'
+    goBasic :: Basic f -> Effect (Either EvaluationError (ProverState f))
+    goBasic c =
+      reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (GenericPlonk.reduce c) <#> case _ of
+        Left e -> Left e
+        Right (Tuple _ res) -> do
+          let s' = s { assignments = res.assignments, nextVar = res.nextVariable }
+          if s.debug then case Basic.debugCheck (flip Assignments.lookup res.assignments) c of
+            Nothing -> Right s'
+            Just e -> Left e
+          else Right s'
 
 initialState :: forall f. CircuitBuilderState (KimchiGate f) (AuxState f)
 initialState =
