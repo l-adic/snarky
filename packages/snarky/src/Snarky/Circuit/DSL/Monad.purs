@@ -44,6 +44,8 @@ module Snarky.Circuit.DSL.Monad
   , runAsProver
   , unAsProver
   , liftEffectAsProver
+  , liftEffectSnarky
+  , mkWitnessTable
   , throwAsProver
   , not_
   , or_
@@ -67,6 +69,7 @@ import Prelude
 
 import Control.Apply (lift2)
 import Control.Monad.Rec.Class (class MonadRec)
+import Data.Array as Array
 import Data.Const (Const)
 import Data.Either (Either)
 import Data.Functor.Product (Product(..)) as FP
@@ -80,6 +83,7 @@ import Data.Tuple (Tuple)
 import Data.Vector (Vector)
 import Effect (Effect)
 import Effect.Exception.Unsafe (unsafeThrow)
+import Effect.Ref as Ref
 import Prim.Row as Row
 import Prim.RowList (class RowToList)
 import Prim.RowList as RL
@@ -256,6 +260,37 @@ unAsProver (AsProver m) = m
 -- | the witness row).
 liftEffectAsProver :: forall f r a. Effect a -> AsProver f r a
 liftEffectAsProver = AsProver <<< Run.liftEffect
+
+-- | Lift an effect into the circuit monad (the `CIRCUIT` row carries
+-- | `EFFECT` structurally). Runs under BOTH interpreters -- builder and
+-- | prover -- so use only for interpretation-neutral setup (e.g. allocating
+-- | a fresh memo `Ref` for witness computations to share).
+liftEffectSnarky :: forall f c r a. Effect a -> Snarky f c r a
+liftEffectSnarky = Snarky <<< Run.liftEffect
+
+-- | A lazily-computed, memoized witness table shared by many `exists`
+-- | bodies: the FIRST body to run computes the whole table (e.g. a batched
+-- | scalar-mul witness chain), the rest pay a `Ref` read plus an array
+-- | index. The memo is allocated per gadget invocation, so solver closures
+-- | reused across runs never share state; the builder discards exists
+-- | bodies, so under compilation only the inert `Ref` allocation runs and
+-- | the emitted circuit is untouched.
+mkWitnessTable
+  :: forall f c r a
+   . String
+  -> AsProver f r (Array a)
+  -> Snarky f c r (Int -> AsProver f r a)
+mkWitnessTable name compute = do
+  memo <- liftEffectSnarky (Ref.new Nothing)
+  pure \i -> do
+    table <- liftEffectAsProver (Ref.read memo) >>= case _ of
+      Just t -> pure t
+      Nothing -> do
+        t <- compute
+        liftEffectAsProver (Ref.write (Just t) memo)
+        pure t
+    maybe (throwAsProver (FailedAssertion (name <> ": witness table index out of bounds"))) pure
+      (Array.index table i)
 
 liftCircuit :: forall f c r a. CircuitF f c r a -> Snarky f c r a
 liftCircuit = Snarky <<< Run.lift _circuit

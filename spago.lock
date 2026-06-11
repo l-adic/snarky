@@ -440,6 +440,7 @@
             "prelude",
             "quickcheck",
             "record",
+            "refs",
             "run",
             "safe-coerce",
             "simple-json",
@@ -465,7 +466,10 @@
         "path": "packages/snarky-curves",
         "core": {
           "dependencies": [
+            "arrays",
             "curves",
+            "either",
+            "foldable-traversable",
             "maybe",
             "newtype",
             "partial",
@@ -473,7 +477,8 @@
             "quickcheck",
             "safe-coerce",
             "simple-json",
-            "snarky"
+            "snarky",
+            "tuples"
           ]
         },
         "test": {

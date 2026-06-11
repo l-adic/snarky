@@ -17,7 +17,7 @@ import Run as Run
 import Snarky.Backend.Assignments as Assignments
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (Solver, SolverT, runSolverT)
-import Snarky.Circuit.CVar (EvaluationError, Variable)
+import Snarky.Circuit.CVar (EvaluationError)
 import Snarky.Constraint.Kimchi (KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)

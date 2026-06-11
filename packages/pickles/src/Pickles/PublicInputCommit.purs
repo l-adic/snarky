@@ -840,8 +840,15 @@ addPurePt params p1 p2
   | unwrapPt p1 == unwrapPt p2 = EC.double params p1
   | otherwise = wrapPt $ unsafePartial $ fromJust $ EC.toAffine $ unsafePartial (EC.addAffine (unwrapPt p1) (unwrapPt p2))
 
--- | Compute [2^k] * p by iterating pure doubling.
+-- | Compute [2^k] * p by k projective doublings (division-free) and a
+-- | single normalization -- one field inversion total instead of one per
+-- | doubling. [2^k]p is a unique point with unique affine coordinates, so
+-- | the result is identical to iterated affine doubling.
 pow2pow :: forall f. PrimeField f => CurveParams f -> AffinePoint (F f) -> Int -> AffinePoint (F f)
-pow2pow _ p k
-  | k <= 0 = p
-pow2pow params p k = pow2pow params (EC.double params p) (k - 1)
+pow2pow params p k =
+  let
+    go pt j
+      | j <= 0 = pt
+      | otherwise = go (EC.doubleProjective params pt) (j - 1)
+  in
+    wrapPt $ unsafePartial $ fromJust $ EC.toAffine $ go (EC.fromAffine (unwrapPt p)) k

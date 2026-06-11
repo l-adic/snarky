@@ -69,7 +69,7 @@ import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIn
 import Snarky.Backend.Kimchi.Proof (Proof, pallasProofCommitments, pallasProofData, srsBlindingGenerator, srsLagrangeCommitmentChunksAt, vestaCreateProofWithPrev)
 import Snarky.Backend.Kimchi.ProofCache (ProofCache, getVestaProof, setVestaProof)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
-import Snarky.Circuit.CVar (EvaluationError(..), Variable)
+import Snarky.Circuit.CVar (EvaluationError(..))
 import Snarky.Circuit.DSL (class CheckedType, F(..), FVar, const_)
 import Snarky.Circuit.Kimchi (Type1, Type2, toShifted)
 import Snarky.Circuit.Types (class CircuitType)
