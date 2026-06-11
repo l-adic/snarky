@@ -33,7 +33,6 @@ import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Circuit.DSL (F)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 

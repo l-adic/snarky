@@ -35,7 +35,6 @@ import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Proof (srsLagrangeCommitmentChunksAt)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
