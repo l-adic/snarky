@@ -32,8 +32,10 @@ package:
     - snarky
     - snarky-curves
     - snarky-test-utils
+    - st
     - strings
     - tuples
+    - typelevel-prelude
     - unfoldable
     - union-find
     - vector-sized

@@ -2,11 +2,13 @@ package:
   name: union-find
   dependencies:
     - arrays
+    - effect
     - foldable-traversable
     - maybe
     - newtype
     - ordered-collections
     - prelude
+    - st
     - tuples
   test:
     main: Test.Data.UnionFind

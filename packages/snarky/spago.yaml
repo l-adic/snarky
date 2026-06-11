@@ -5,6 +5,7 @@ package:
     - bifunctors
     - const
     - curves
+    - effect
     - either
     - exceptions
     - foldable-traversable
@@ -21,6 +22,7 @@ package:
     - run
     - safe-coerce
     - simple-json
+    - st
     - tailrec
     - tuples
     - typelevel-prelude

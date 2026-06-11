@@ -427,6 +427,7 @@
             "bifunctors",
             "const",
             "curves",
+            "effect",
             "either",
             "exceptions",
             "foldable-traversable",
@@ -443,6 +444,7 @@
             "run",
             "safe-coerce",
             "simple-json",
+            "st",
             "tailrec",
             "tuples",
             "typelevel-prelude",
@@ -523,8 +525,10 @@
             "snarky",
             "snarky-curves",
             "snarky-test-utils",
+            "st",
             "strings",
             "tuples",
+            "typelevel-prelude",
             "unfoldable",
             "union-find",
             "vector-sized"
@@ -584,11 +588,13 @@
         "core": {
           "dependencies": [
             "arrays",
+            "effect",
             "foldable-traversable",
             "maybe",
             "newtype",
             "ordered-collections",
             "prelude",
+            "st",
             "tuples"
           ]
         },
