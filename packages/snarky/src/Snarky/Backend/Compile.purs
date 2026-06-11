@@ -129,7 +129,7 @@ makeSolver' initialState _ circuit = \inputs -> do
     Left e -> Except.throw e
     Right outVar -> case runAsProverPure (read outVar) s.assignments of
       Left e -> Except.throw e
-      Right output -> pure $ Tuple output (Assignments.toMap s.assignments)
+      Right output -> Run.liftEffect (Assignments.toMap s.assignments) <#> Tuple output
 
 makeSolver
   :: forall f a b c r avar bvar

@@ -60,12 +60,10 @@ lookup (Variable i) (Assignments s) = join (unsafePerformEffect (toEffect (STA.p
 
 -- | Materialise to the immutable `Map` the solver's consumers expect — one
 -- | O(n log n) pass at the end of a solve.
-toMap :: forall f. Assignments f -> Map Variable f
-toMap (Assignments s) =
-  foldlWithIndex
-    ( \i acc -> case _ of
-        Just v -> Map.insert (Variable i) v acc
-        Nothing -> acc
-    )
-    Map.empty
-    (unsafePerformEffect (toEffect (STA.freeze s)))
+toMap :: forall f. Assignments f -> Effect (Map Variable f)
+toMap (Assignments s) = toEffect $ STA.freeze s <#> foldlWithIndex
+  ( \i acc -> case _ of
+      Just v -> Map.insert (Variable i) v acc
+      Nothing -> acc
+  )
+  Map.empty

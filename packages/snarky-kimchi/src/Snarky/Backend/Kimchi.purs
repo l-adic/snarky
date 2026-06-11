@@ -3,17 +3,20 @@ module Snarky.Backend.Kimchi
   , makeGateData
   , makePublicInputRows
   , makeWitness
-  , placeVariables
+
   ) where
 
 import Prelude
 
+import Control.Monad.ST (run) as ST
+import Control.Monad.ST.Internal (foreach) as STI
 import Data.Array ((:))
 import Data.Array as Array
 import Data.Fin (getFinite)
 import Data.Foldable (foldl)
 import Data.FoldableWithIndex (foldlWithIndex)
 import Data.FoldableWithIndex (forWithIndex_)
+import Data.FunctorWithIndex (mapWithIndex)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Map (Map)
 import Data.Map as Map
@@ -22,9 +25,7 @@ import Data.Tuple (Tuple(..), fst, uncurry)
 import Data.UnionFind (UnionFindData, find)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
-import Effect (Effect, forE, foreachE)
 import Effect.Exception.Unsafe (unsafeThrow)
-import Effect.Unsafe (unsafePerformEffect)
 import Snarky.Backend.DenseStore (DenseStore)
 import Snarky.Backend.DenseStore as DenseStore
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateNew)
@@ -37,28 +38,39 @@ import Snarky.Curves.Class (class PrimeField)
 -- figure out the cell placement for each variable. 
 -- since we can use the same variable in multiple constraints,
 -- naturally this is a one to many mapping.
--- Dense by variable index: slot v = the cells where variable v appears,
--- in (row-major) discovery order — same order `Map.insertWith append`
--- produced.
-placeVariables
+-- One pure ST pass: place variables into cells (dense by variable
+-- index, row-major discovery order — same order `Map.insertWith append`
+-- produced), group permutation cells (cols 0-6) by union-find root, and
+-- lay each class's cycle into a frozen wire table keyed by cell
+-- `i * 16 + j`. Region-quantified `ST.run` proves the mutation is local.
+makeWireMapping
   :: forall f
-   . Array (KimchiRow f)
-  -> DenseStore (Array (Tuple Int Int))
-placeVariables rows = unsafePerformEffect do
-  store <- DenseStore.fresh
-  forEWithIndex rows \i row ->
+   . UnionFindData Variable
+  -> Array (KimchiRow f)
+  -> Array (Maybe Wire)
+makeWireMapping uf rows = ST.run do
+  placement <- DenseStore.fresh
+  STI.foreach (mapWithIndex Tuple rows) \(Tuple i row) ->
     forWithIndex_ row.variables \j mVar -> case mVar of
       Nothing -> pure unit
-      Just (Variable v) -> DenseStore.pushAt v (Tuple i (getFinite j)) store
-  pure store
+      Just (Variable v) -> DenseStore.pushAt v (Tuple i (getFinite j)) placement
+  rootCells <- DenseStore.fresh
+  placementEntries <- DenseStore.toEntries Tuple placement
+  STI.foreach placementEntries \(Tuple v cells) -> do
+    let Variable root = fst (find (Variable v) uf)
+    STI.foreach (Array.filter (\(Tuple _ j) -> j < 7) cells) \cell ->
+      DenseStore.pushAt root cell rootCells
+  wireMap <- DenseStore.fresh
+  classes <- DenseStore.toEntries (\_ cells -> cells) rootCells
+  STI.foreach classes \cells -> do
+    let xsSorted = Array.sort cells
+    STI.foreach (Array.zip xsSorted (rotateLeft xsSorted)) \(Tuple (Tuple i j) target) ->
+      DenseStore.setAt (i * 16 + j) (uncurry wireNew target) wireMap
+  DenseStore.freeze wireMap
   where
-  -- stack-safe indexed Effect loop (a row has 15 cells, so the inner
-  -- `forWithIndex_` is fine; the outer loop is circuit-sized)
-  forEWithIndex :: forall a. Array a -> (Int -> a -> Effect Unit) -> Effect Unit
-  forEWithIndex xs f = forE 0 (Array.length xs) \i ->
-    case Array.index xs i of
-      Just x -> f i x
-      Nothing -> pure unit
+  rotateLeft xs = case Array.uncons xs of
+    Just { head, tail } -> tail `Array.snoc` head
+    Nothing -> xs
 
 -- Kimchi backend has a special format for public inputs
 makePublicInputRows
@@ -75,42 +87,10 @@ makePublicInputRows =
         }
     )
 
--- Take the equivalence classes given by equality
--- constraints and the equivalence classes given
--- by variable layout and create a wire mapping
--- (i,j) |-> wire meaning that we are wiring the cell
--- to the existing wire. These wires create a cyclic list,
--- meaning if you follow in order you end up back at the
--- start, closing the loop for the perumutation argument
--- The wire map is dense by cell key `i * 16 + j` (j < 16): cell ->
--- next cell in its permutation cycle.
-makeWireMapping
-  :: UnionFindData Variable
-  -> DenseStore (Array (Tuple Int Int))
-  -> DenseStore Wire
-makeWireMapping uf variablePlacement = unsafePerformEffect do
-  -- per-root permutation cells (cols 0-6), in the same order the Map
-  -- version accumulated them (ascending variable index)
-  rootCells <- DenseStore.fresh
-  foreachE (DenseStore.toEntries Tuple variablePlacement) \(Tuple v cells) -> do
-    let Variable root = fst (find (Variable v) uf)
-    foreachE (Array.filter (\(Tuple _ j) -> j < 7) cells) \cell ->
-      DenseStore.pushAt root cell rootCells
-  wireMap <- DenseStore.fresh
-  foreachE (DenseStore.toEntries (\_ cells -> cells) rootCells) \cells -> do
-    let xsSorted = Array.sort cells
-    foreachE (Array.zip xsSorted (rotateLeft xsSorted)) \(Tuple (Tuple i j) target) ->
-      DenseStore.setAt (i * 16 + j) (uncurry wireNew target) wireMap
-  pure wireMap
-  where
-  rotateLeft xs = case Array.uncons xs of
-    Just { head, tail } -> tail `Array.snoc` head
-    Nothing -> xs
-
 makeGates
   :: forall f g
    . CircuitGateConstructor f g
-  => DenseStore Wire
+  => Array (Maybe Wire)
   -> Array (KimchiRow f)
   -> Array (Gate f)
 makeGates wireMap rows =
@@ -125,7 +105,7 @@ makeGates wireMap rows =
   where
   makeGateWires i =
     gateWiresNewFromWires $ Vector.generate \j ->
-      case DenseStore.getAt (i * 16 + getFinite j) wireMap of
+      case join (Array.index wireMap (i * 16 + getFinite j)) of
         Just w -> w
         Nothing -> wireNew i (getFinite j)
 
@@ -147,8 +127,7 @@ makeGateData arg =
   let
     publicInputRows = makePublicInputRows arg.publicInputs
     rows = publicInputRows <> arg.constraints
-    placement = placeVariables rows
-    wireMapping = makeWireMapping arg.unionFind placement
+    wireMapping = makeWireMapping arg.unionFind rows
     gates = makeGates wireMapping rows
     publicInputSize = Array.length publicInputRows
   in
