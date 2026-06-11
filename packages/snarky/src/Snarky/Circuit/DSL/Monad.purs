@@ -188,7 +188,7 @@ runAsProver env (AsProver m) = Except.runExcept (Reader.runReader env m)
 readCVar :: forall f r. PrimeField f => FVar f -> AsProver f r (F f)
 readCVar v = AsProver do
   m <- Reader.ask
-  let _lookup var = Run.liftEffect (Assignments.lookup var m) >>= maybe (Except.throw $ MissingVariable var) pure
+  let _lookup var = maybe (Except.throw $ MissingVariable var) pure $ Assignments.lookup var m
   F <$> CVar.eval _lookup v
 
 read
@@ -200,7 +200,7 @@ read
 read var = AsProver do
   let fieldVars = varToFields @f @a var
   m <- Reader.ask
-  let _lookup v = Run.liftEffect (Assignments.lookup v m) >>= maybe (Except.throw $ MissingVariable v) pure
+  let _lookup v = maybe (Except.throw $ MissingVariable v) pure $ Assignments.lookup v m
   fields <- traverse (CVar.eval _lookup) fieldVars
   pure $ fieldsToValue fields
 

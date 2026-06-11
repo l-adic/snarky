@@ -161,15 +161,15 @@ spec = describe "ProverT debug mode" do
         builtState = unsafePerformEffect $ Run.runBaseEffect $ compile (Proxy @F') (Proxy @F') (Proxy @KC) circuit
 
       -- Variables 0,1 are public I/O (allocated by compile, no label context)
-      meta0 <- liftEffect $ Assignments.lookup v0 builtState.varMetadata
+      let meta0 = Assignments.lookup v0 builtState.varMetadata
       meta0 `shouldEqual` Just []
-      meta1 <- liftEffect $ Assignments.lookup v1 builtState.varMetadata
+      let meta1 = Assignments.lookup v1 builtState.varMetadata
       meta1 `shouldEqual` Just []
       -- Variable 2 is the intermediate from mul_ inside "squaring"
-      metav2 <- liftEffect $ Assignments.lookup v2 builtState.varMetadata
+      let metav2 = Assignments.lookup v2 builtState.varMetadata
       metav2 `shouldEqual` Just [ "squaring" ]
       -- Variable 3 is the intermediate from mul_ inside "cubing"
-      metav3 <- liftEffect $ Assignments.lookup v3 builtState.varMetadata
+      let metav3 = Assignments.lookup v3 builtState.varMetadata
       metav3 `shouldEqual` Just [ "cubing" ]
 
     it "nested labels produce nested birth context paths" do
@@ -183,10 +183,10 @@ spec = describe "ProverT debug mode" do
         builtState = unsafePerformEffect $ Run.runBaseEffect $ compile (Proxy @F') (Proxy @F') (Proxy @KC) circuit
 
       -- Variable 2: allocated inside "outer" > "square"
-      mv2 <- liftEffect $ Assignments.lookup v2 builtState.varMetadata
+      let mv2 = Assignments.lookup v2 builtState.varMetadata
       mv2 `shouldEqual` Just [ "outer", "square" ]
       -- Variable 3: allocated inside "outer" > "cube"
-      mv3 <- liftEffect $ Assignments.lookup v3 builtState.varMetadata
+      let mv3 = Assignments.lookup v3 builtState.varMetadata
       mv3 `shouldEqual` Just [ "outer", "cube" ]
 
     it "decorateError enriches MissingVariable with birth context" do

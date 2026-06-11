@@ -35,7 +35,7 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import Record as Record
 import Snarky.Backend.Assignments (Assignments)
 import Snarky.Backend.Assignments as Assignments
-import Snarky.Circuit.CVar (AffineExpression(..), CVar, Variable(..), incrementVariable, reduceToAffineExpression)
+import Snarky.Circuit.CVar (AffineExpression(..), CVar, Variable(..), evalAffineExpression, incrementVariable, reduceToAffineExpression)
 import Snarky.Circuit.DSL (EvaluationError(..), Variable)
 import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, AuxState(..), GateKind(..), GenericPlonkConstraint, KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
@@ -415,21 +415,16 @@ instance Monad (PlonkProver f)
 
 instance (PrimeField f) => PlonkReductionM (PlonkProver f) f where
   addGenericPlonkConstraint _ = pure unit
-  createInternalVariable (AffineExpression { constant, terms }) = PlonkProver \s -> do
-    -- evalAffineExpression's fold, with O(1) Effect reads from the store
-    eval <- foldM
-      ( \acc (Tuple var coeff) -> case acc of
-          Left e -> pure (Left e)
-          Right total -> Assignments.lookup var s.assignments <#> case _ of
-            Nothing -> Left (MissingVariable var)
-            Just val -> Right (total + coeff * val)
-      )
-      (Right (fromMaybe zero constant))
-      terms
-    case eval of
-      Left e' -> pure (Left e')
-      Right a -> do
-        Assignments.set s.nextVariable a s.assignments
-        pure $ Right $ Tuple s.nextVariable
-          (s { nextVariable = incrementVariable s.nextVariable })
+  createInternalVariable e = PlonkProver \s ->
+    let
+      _lookup v = case Assignments.lookup v s.assignments of
+        Nothing -> Left $ MissingVariable v
+        Just a -> Right a
+    in
+      case evalAffineExpression e _lookup of
+        Left e' -> pure (Left e')
+        Right a -> do
+          Assignments.set s.nextVariable a s.assignments
+          pure $ Right $ Tuple s.nextVariable
+            (s { nextVariable = incrementVariable s.nextVariable })
   addEqualsConstraint _ = pure unit

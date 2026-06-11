@@ -28,6 +28,7 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Effect (Effect)
+import Effect.Unsafe (unsafePerformEffect)
 import Snarky.Circuit.CVar (Variable(..))
 
 newtype Assignments f = Assignments (STArray Global (Maybe f))
@@ -45,8 +46,21 @@ set (Variable i) v (Assignments s) =
     STI.for n (i + 1) (\_ -> STA.push Nothing s)
     void (STA.poke i (Just v) s)
 
-lookup :: forall f. Variable -> Assignments f -> Effect (Maybe f)
-lookup (Variable i) (Assignments s) = join <$> toEffect (STA.peek i s)
+-- | Pure read of the mutable store — the branch's single sanctioned
+-- | `unsafePerformEffect`.
+-- |
+-- | CONTRACT (what makes this observationally pure): slots are write-once —
+-- | each is written exactly once, when its variable is allocated — and no
+-- | read targets a slot before that write. A successful lookup is therefore
+-- | referentially stable forever.
+-- |
+-- | MEASUREMENT (why the escape hatch earns its keep): routing these reads
+-- | through `Run.liftEffect` instead costs ~+40% prove js/rust ratio
+-- | (1.77 -> 2.48) and +45% allocation (32GB -> 47GB reclaim/prove) — one
+-- | Free node + Effect thunk per witness read, millions per prove
+-- | (bench artifacts a34dffc87-2026-06-11T19-42 vs the f5400db8f family).
+lookup :: forall f. Variable -> Assignments f -> Maybe f
+lookup (Variable i) (Assignments s) = join (unsafePerformEffect (toEffect (STA.peek i s)))
 
 -- | Pure lookup over a frozen snapshot — for consumers that need a
 -- | `Variable -> Maybe f` function (debug checks, error formatting).
