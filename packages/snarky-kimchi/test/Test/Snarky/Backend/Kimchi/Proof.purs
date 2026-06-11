@@ -33,10 +33,10 @@ import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitnes
 import Snarky.Backend.Kimchi.Class (createProverIndex, createVerifierIndex)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaCrsCreate)
 import Snarky.Backend.Kimchi.Proof (createProof, pallasProofFromSerdeJson, pallasProofToSerdeJson, pallasVerifierIndexFromSerdeJson, pallasVerifierIndexToSerdeJson, verifyOpeningProof)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, assertSquare_, exists, readCVar)
+import Snarky.Circuit.DSL (F(..), FVar, Snarky, assertSquare_, exists, readCVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate, initialState)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
-import Snarky.Curves.Class (fromInt)
+import Snarky.Curves.Class (class PrimeField, fromInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (VestaG)
 import Test.Spec (Spec, describe, it)
@@ -49,9 +49,9 @@ import Type.Proxy (Proxy(..))
 -- | input on the verifier side.
 squareCircuit
   :: forall t
-   . CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t Identity
+   . PrimeField Pallas.BaseField
   => FVar Pallas.BaseField
-  -> Snarky (KimchiConstraint Pallas.BaseField) t Identity (FVar Pallas.BaseField)
+  -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) () (FVar Pallas.BaseField)
 squareCircuit x = do
   y <- exists do
     F xv <- readCVar x

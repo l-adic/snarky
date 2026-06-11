@@ -43,7 +43,7 @@ import Poseidon (class PoseidonField)
 import RandomOracle.Sponge as RegSponge
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (sub_)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, SizedF, Snarky, addConstraint, all_, and_, any_, const_, exists, false_, if_, mul_, not_, or_, read, readCVar, true_, xor_)
+import Snarky.Circuit.DSL (Bool(..), BoolVar, FVar, SizedF, Snarky, addConstraint, all_, and_, any_, const_, exists, false_, if_, mul_, not_, or_, read, readCVar, true_, xor_)
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
 import Snarky.Circuit.Kimchi.RangeCheck (lowest128Bits')
 import Snarky.Constraint.Basic (r1cs)
@@ -68,12 +68,12 @@ create =
 -- | Squeeze the sponge after consuming all pending absorptions.
 -- | Returns state[0] after the final permutation.
 squeeze
-  :: forall f t m
+  :: forall f r
    . PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => OptSponge f
   -> Array (Tuple (BoolVar f) (FVar f))
-  -> Snarky (KimchiConstraint f) t m (FVar f)
+  -> Snarky f (KimchiConstraint f) r (FVar f)
 squeeze sponge pending = do
   finalState <- consume sponge pending
   pure $ Vector.index finalState (unsafeFinite @3 0)
@@ -89,12 +89,12 @@ squeeze sponge pending = do
 -- |   x * flag_j = s_j' - s_j
 -- | where flag_0 = NOT pos, flag_1 = pos.
 addIn
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall f r
+   . PrimeField f
   => Vector 3 (FVar f)
   -> BoolVar f
   -> FVar f
-  -> Snarky (KimchiConstraint f) t m (Vector 3 (FVar f))
+  -> Snarky f (KimchiConstraint f) r (Vector 3 (FVar f))
 addIn state pos x = do
   let
     iEquals0 = not_ pos
@@ -132,12 +132,12 @@ addIn state pos x = do
 -- | Conditional poseidon permutation.
 -- | Runs the permutation, then selects between permuted and original state.
 condPermute
-  :: forall f t m
+  :: forall f r
    . PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => BoolVar f
   -> Vector 3 (FVar f)
-  -> Snarky (KimchiConstraint f) t m (Vector 3 (FVar f))
+  -> Snarky f (KimchiConstraint f) r (Vector 3 (FVar f))
 condPermute permute state = do
   permuted <- poseidon state
   if_ permute permuted state
@@ -145,12 +145,12 @@ condPermute permute state = do
 -- | Process one pair of conditional absorptions.
 -- | Matches OCaml's consume_pairs fold body exactly.
 consumePair
-  :: forall f t m
+  :: forall f r
    . PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => { state :: Vector 3 (FVar f), pos :: BoolVar f }
   -> Tuple { b :: BoolVar f, x :: FVar f } { b :: BoolVar f, x :: FVar f }
-  -> Snarky (KimchiConstraint f) t m { state :: Vector 3 (FVar f), pos :: BoolVar f }
+  -> Snarky f (KimchiConstraint f) r { state :: Vector 3 (FVar f), pos :: BoolVar f }
 consumePair { state, pos: p } (Tuple first second) = do
   let { b, x } = first
   let { b: b', x: y } = second
@@ -191,12 +191,12 @@ consumePair { state, pos: p } (Tuple first second) = do
 
 -- | Consume all pending absorptions and perform final permutation.
 consume
-  :: forall f t m
+  :: forall f r
    . PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => OptSponge f
   -> Array (Tuple (BoolVar f) (FVar f))
-  -> Snarky (KimchiConstraint f) t m (Vector 3 (FVar f))
+  -> Snarky f (KimchiConstraint f) r (Vector 3 (FVar f))
 consume { state: initState, pos: startPos, needsFinalPermuteIfEmpty } input = do
   let
     -- Build pairs array matching OCaml's Array.init
@@ -269,22 +269,22 @@ type OptSpongeState f =
   }
 
 -- | Stateful Opt sponge monad wrapping Snarky.
-newtype OptSpongeM f c t m a = OptSpongeM (StateT (OptSpongeState f) (Snarky c t m) a)
+newtype OptSpongeM f c r a = OptSpongeM (StateT (OptSpongeState f) (Snarky f c r) a)
 
-derive instance Newtype (OptSpongeM f c t m a) _
-derive newtype instance Functor (Snarky c t m) => Functor (OptSpongeM f c t m)
-derive newtype instance (Monad (Snarky c t m)) => Apply (OptSpongeM f c t m)
-derive newtype instance (Monad (Snarky c t m)) => Applicative (OptSpongeM f c t m)
-derive newtype instance (Monad (Snarky c t m)) => Bind (OptSpongeM f c t m)
-derive newtype instance (Monad (Snarky c t m)) => Monad (OptSpongeM f c t m)
+derive instance Newtype (OptSpongeM f c r a) _
+derive newtype instance Functor (Snarky f c r) => Functor (OptSpongeM f c r)
+derive newtype instance (Monad (Snarky f c r)) => Apply (OptSpongeM f c r)
+derive newtype instance (Monad (Snarky f c r)) => Applicative (OptSpongeM f c r)
+derive newtype instance (Monad (Snarky f c r)) => Bind (OptSpongeM f c r)
+derive newtype instance (Monad (Snarky f c r)) => Monad (OptSpongeM f c r)
 
 -- | Run an OptSpongeM computation, returning both result and final state.
 runOptSpongeM
-  :: forall f t m a
+  :: forall f r a
    . PrimeField f
-  => CircuitM f (KimchiConstraint f) t m
-  => OptSpongeM f (KimchiConstraint f) t m a
-  -> Snarky (KimchiConstraint f) t m (Tuple a (OptSpongeState f))
+  => PrimeField f
+  => OptSpongeM f (KimchiConstraint f) r a
+  -> Snarky f (KimchiConstraint f) r (Tuple a (OptSpongeState f))
 runOptSpongeM computation =
   runStateT (unwrap computation) initialOptState
   where
@@ -297,30 +297,30 @@ runOptSpongeM computation =
 -- | Run an OptSpongeM computation starting from a regular sponge.
 -- | Converts the regular sponge to OptSpongeState via ofSponge, then runs.
 runOptSpongeFromSponge
-  :: forall f t m a
+  :: forall f r a
    . PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => RegSponge.Sponge (FVar f)
-  -> OptSpongeM f (KimchiConstraint f) t m a
-  -> Snarky (KimchiConstraint f) t m (Tuple a (OptSpongeState f))
+  -> OptSpongeM f (KimchiConstraint f) r a
+  -> Snarky f (KimchiConstraint f) r (Tuple a (OptSpongeState f))
 runOptSpongeFromSponge sponge computation = do
   initState <- ofSponge sponge
   runStateT (unwrap computation) initState
 
 -- | Lift a Snarky computation into OptSpongeM.
 liftSnarky
-  :: forall f t m a
-   . CircuitM f (KimchiConstraint f) t m
-  => Snarky (KimchiConstraint f) t m a
-  -> OptSpongeM f (KimchiConstraint f) t m a
+  :: forall f r a
+   . PrimeField f
+  => Snarky f (KimchiConstraint f) r a
+  -> OptSpongeM f (KimchiConstraint f) r a
 liftSnarky ma = wrap $ StateT \s -> ma <#> \a -> Tuple a s
 
 -- | Absorb a (flag, value) pair. Just accumulates; processing happens at squeeze.
 optAbsorb
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall f r
+   . PrimeField f
   => Tuple (BoolVar f) (FVar f)
-  -> OptSpongeM f (KimchiConstraint f) t m Unit
+  -> OptSpongeM f (KimchiConstraint f) r Unit
 optAbsorb pair = wrap $ StateT \s -> pure $ Tuple unit case s.phase of
   Absorbing { nextIndex, xs } ->
     s { phase = Absorbing { nextIndex, xs: pair List.: xs } }
@@ -329,10 +329,10 @@ optAbsorb pair = wrap $ StateT \s -> pure $ Tuple unit case s.phase of
 
 -- | Absorb a curve point with Boolean.true_ flag (unconditional).
 optAbsorbPoint
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall f r
+   . PrimeField f
   => AffinePoint (FVar f)
-  -> OptSpongeM f (KimchiConstraint f) t m Unit
+  -> OptSpongeM f (KimchiConstraint f) r Unit
 optAbsorbPoint (AffinePoint { x, y }) = do
   optAbsorb (Tuple true_ x)
   optAbsorb (Tuple true_ y)
@@ -343,10 +343,10 @@ optAbsorbPoint (AffinePoint { x, y }) = do
 -- | - If Squeezed n < rate: return state[n], switch to Squeezed (n+1)
 -- | - If Squeezed n = rate: permute, return state[0], switch to Squeezed 1
 optSqueeze
-  :: forall f t m
+  :: forall f r
    . PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
-  => OptSpongeM f (KimchiConstraint f) t m (FVar f)
+  => PrimeField f
+  => OptSpongeM f (KimchiConstraint f) r (FVar f)
 optSqueeze = wrap $ StateT \s -> case s.phase of
   OptSqueezed n ->
     if n >= 2 {- rate -} then do
@@ -380,10 +380,10 @@ optSqueeze = wrap $ StateT \s -> case s.phase of
 -- | Safe to insert just before a `optChallenge` / `optScalarChallenge`
 -- | call for debugging without changing circuit semantics.
 peekPreSqueezeState
-  :: forall f t m
+  :: forall f r
    . PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
-  => OptSpongeM f (KimchiConstraint f) t m (Vector 3 (FVar f))
+  => PrimeField f
+  => OptSpongeM f (KimchiConstraint f) r (Vector 3 (FVar f))
 peekPreSqueezeState = wrap $ StateT \s -> case s.phase of
   OptSqueezed _ -> pure $ Tuple s.state s
   Absorbing { nextIndex, xs } -> do
@@ -405,13 +405,13 @@ peekPreSqueezeState = wrap $ StateT \s -> case s.phase of
 -- | Squeeze a challenge (lowest 128 bits, constrain_low_bits:true).
 -- | Matches OCaml's Opt.challenge.
 optChallenge
-  :: forall f t m
+  :: forall f r
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => FVar f -- ^ endo constant
-  -> OptSpongeM f (KimchiConstraint f) t m (SizedF 128 (FVar f))
+  -> OptSpongeM f (KimchiConstraint f) r (SizedF 128 (FVar f))
 optChallenge endo = do
   x <- optSqueeze
   liftSnarky $ lowest128Bits' true endo x
@@ -419,13 +419,13 @@ optChallenge endo = do
 -- | Squeeze a scalar challenge (lowest 128 bits, constrain_low_bits:false).
 -- | Matches OCaml's Opt.scalar_challenge.
 optScalarChallenge
-  :: forall f t m
+  :: forall f r
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => FVar f -- ^ endo constant
-  -> OptSpongeM f (KimchiConstraint f) t m (SizedF 128 (FVar f))
+  -> OptSpongeM f (KimchiConstraint f) r (SizedF 128 (FVar f))
 optScalarChallenge endo = do
   x <- optSqueeze
   liftSnarky $ lowest128Bits' false endo x
@@ -433,9 +433,9 @@ optScalarChallenge endo = do
 -- | Convert OptSponge state to a regular Sponge for continuation (e.g., bulletproof check).
 -- | Only valid when the OptSponge is in Squeezed state.
 toRegularSponge
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
-  => OptSpongeM f (KimchiConstraint f) t m (RegSponge.Sponge (FVar f))
+  :: forall f r
+   . PrimeField f
+  => OptSpongeM f (KimchiConstraint f) r (RegSponge.Sponge (FVar f))
 toRegularSponge = wrap $ StateT \s -> case s.phase of
   OptSqueezed n ->
     pure $ Tuple
@@ -450,11 +450,11 @@ toRegularSponge = wrap $ StateT \s -> case s.phase of
 -- |
 -- | Reference: mina/src/lib/crypto/pickles/opt_sponge.ml:46-74
 ofSponge
-  :: forall f t m
+  :: forall f r
    . PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => RegSponge.Sponge (FVar f)
-  -> Snarky (KimchiConstraint f) t m (OptSpongeState f)
+  -> Snarky f (KimchiConstraint f) r (OptSpongeState f)
 ofSponge sponge = case sponge.spongeState of
   RegSponge.Squeezed n ->
     pure

@@ -37,9 +37,9 @@ import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(Const, ScalarMul), const_)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL.Field (equals_, sum_)
-import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, and_, exists, not_, or_, read, readCVar)
+import Snarky.Circuit.DSL.Monad (Snarky, addConstraint, and_, exists, not_, or_, read, readCVar)
 import Snarky.Circuit.Types (Bool(..), BoolVar, F(..), FVar, UnChecked(..))
-import Snarky.Constraint.Basic (r1cs)
+import Snarky.Constraint.Basic (class BasicSystem, r1cs)
 import Snarky.Curves.Class (class PrimeField, fromBigInt)
 import Type.Proxy (Proxy(..))
 
@@ -48,7 +48,7 @@ import Type.Proxy (Proxy(..))
 
 class IfThenElse :: Type -> Type -> Type -> Constraint
 class IfThenElse f c var | c -> f, var -> f where
-  if_ :: forall t m. CircuitM f c t m => BoolVar f -> var -> var -> Snarky c t m var
+  if_ :: forall rr. PrimeField f => BasicSystem f c => BoolVar f -> var -> var -> Snarky f c rr var
 
 -- Base instance for FVar
 -- if b then x else y = b * x + (1 - b) * y = b * (x - y) + y
@@ -99,7 +99,7 @@ instance (RowToList r rl, RIfThenElse f c rl r) => IfThenElse f c (Record r) whe
 
 class GIfThenElse :: Type -> Type -> Type -> Constraint
 class GIfThenElse f c rep where
-  gIfThenElse :: forall t m. CircuitM f c t m => BoolVar f -> rep -> rep -> Snarky c t m rep
+  gIfThenElse :: forall rr. PrimeField f => BasicSystem f c => BoolVar f -> rep -> rep -> Snarky f c rr rep
 
 instance GIfThenElse f c NoArguments where
   gIfThenElse _ _ _ = pure NoArguments
@@ -122,7 +122,7 @@ instance GIfThenElse f c a => GIfThenElse f c (Constructor name a) where
 
 class RIfThenElse :: Type -> Type -> RL.RowList Type -> Row Type -> Constraint
 class RIfThenElse f c (rl :: RL.RowList Type) (r :: Row Type) | rl -> r where
-  rIfThenElse :: forall t m. CircuitM f c t m => Proxy rl -> BoolVar f -> Record r -> Record r -> Snarky c t m (Record r)
+  rIfThenElse :: forall rr. PrimeField f => BasicSystem f c => Proxy rl -> BoolVar f -> Record r -> Record r -> Snarky f c rr (Record r)
 
 instance RIfThenElse f c RL.Nil () where
   rIfThenElse _ _ _ _ = pure {}
@@ -152,11 +152,12 @@ false_ :: forall f. PrimeField f => BoolVar f
 false_ = const_ zero
 
 xor_
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => BoolVar f
   -> BoolVar f
-  -> Snarky c t m (BoolVar f)
+  -> Snarky f c r (BoolVar f)
 xor_ a b = case a, b of
   Const aVal, Const bVal -> pure $ Const $ if (aVal == bVal) then zero else one
   Const aVal, _
@@ -179,10 +180,11 @@ xor_ a b = case a, b of
     pure res
 
 any_
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => Array (BoolVar f)
-  -> Snarky c t m (BoolVar f)
+  -> Snarky f c r (BoolVar f)
 any_ as =
   case Array.uncons as of
     Nothing -> ff
@@ -193,10 +195,11 @@ any_ as =
         else not $ equals_ (sum_ (coerce as)) (Const zero)
 
 all_
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => Array (BoolVar f)
-  -> Snarky c t m (BoolVar f)
+  -> Snarky f c r (BoolVar f)
 all_ as =
   case Array.uncons as of
     Nothing -> tt

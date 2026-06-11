@@ -3,26 +3,25 @@ module Test.Snarky.Circuit.Utils where
 import Prelude
 
 import Control.Monad.Except (Except, runExcept, throwError)
-import Control.Monad.Rec.Class (class MonadRec)
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Either (Either(..))
 import Data.Foldable (foldM, intercalate, traverse_)
 import Data.FoldableWithIndex (forWithIndex_)
-import Data.Identity (Identity(..))
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
-import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Unsafe (unsafePerformEffect)
+import Run (Run)
+import Run as Run
 import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, constraintsToArray)
 import Snarky.Backend.Compile (Checker, Solver, SolverT, compile, compilePure, makeSolver', runSolverT)
 import Snarky.Backend.Prover (class SolveCircuit, emptyProverState)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, EvaluationError(..), Snarky, Variable)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, EvaluationError(..), Snarky, Variable)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (Result(..), quickCheck', withHelp)
 import Test.QuickCheck.Gen (Gen)
@@ -61,16 +60,16 @@ expectDivideByZero _ = ProverError \e -> case e of
   DivisionByZero _ -> true
   _ -> false
 
-type PostCondition f c r =
+type PostCondition f c aux =
   (Variable -> Except EvaluationError f)
-  -> CircuitBuilderState c r
+  -> CircuitBuilderState c aux
   -> Except EvaluationError Boolean
 
-nullPostCondition :: forall f c r. PostCondition f c r
+nullPostCondition :: forall f c aux. PostCondition f c aux
 nullPostCondition _ _ = pure true
 
 -- | Render an EvaluationError with variable birth context from the builder state.
-decorateError :: forall c r. CircuitBuilderState c r -> EvaluationError -> String
+decorateError :: forall c aux. CircuitBuilderState c aux -> EvaluationError -> String
 decorateError builtState = go
   where
   go = case _ of
@@ -94,62 +93,61 @@ isFailedAssertion = case _ of
 
 -- | Backend-specific configuration for circuit tests.
 -- | Define one value per constraint family to avoid repeating these three fields everywhere.
-type TestConfig f c r =
+type TestConfig f c aux =
   { checker :: Checker f c
-  , postCondition :: PostCondition f c r
-  , initState :: CircuitBuilderState c r
+  , postCondition :: PostCondition f c aux
+  , initState :: CircuitBuilderState c aux
   }
 
 -- | Core test runner: given a solver, checker, and inputs, produce a QuickCheck Result.
 runTest
-  :: forall f c c' r a avar b
+  :: forall f c c' aux a avar b
    . CircuitType f a avar
   => PrimeField f
   => Eq b
   => Show b
-  => { builtState :: CircuitBuilderState c r
+  => { builtState :: CircuitBuilderState c aux
      , solver :: Solver f c' a b
      , checker :: Checker f c
-     , postCondition :: PostCondition f c r
+     , postCondition :: PostCondition f c aux
      }
   -> (a -> Expectation b)
   -> a
   -> Result
 runTest { builtState, solver, checker, postCondition } testFunction inputs =
   let
-    solverResult = un Identity $ runSolverT solver inputs
+    solverResult = Run.extract $ runSolverT solver inputs
   in
     checkResult builtState checker postCondition testFunction inputs solverResult
 
 -- | Core test runner for effectful solvers.
 runTestM
-  :: forall f c c' r m a avar b
+  :: forall f c c' aux r a avar b
    . CircuitType f a avar
-  => Monad m
   => PrimeField f
   => Eq b
   => Show b
-  => { builtState :: CircuitBuilderState c r
-     , solver :: SolverT f c' m a b
+  => { builtState :: CircuitBuilderState c aux
+     , solver :: SolverT f c' r a b
      , checker :: Checker f c
-     , postCondition :: PostCondition f c r
+     , postCondition :: PostCondition f c aux
      }
   -> (a -> Expectation b)
   -> a
-  -> m Result
+  -> Run r Result
 runTestM { builtState, solver, checker, postCondition } testFunction inputs =
   runSolverT solver inputs <#>
     checkResult builtState checker postCondition testFunction inputs
 
 -- | Check a solver result against the circuit constraints and test function.
 checkResult
-  :: forall f c r a b
+  :: forall f c aux a b
    . PrimeField f
   => Eq b
   => Show b
-  => CircuitBuilderState c r
+  => CircuitBuilderState c aux
   -> Checker f c
-  -> PostCondition f c r
+  -> PostCondition f c aux
   -> (a -> Expectation b)
   -> a
   -> Either EvaluationError (Tuple b (Map Variable f))
@@ -187,8 +185,8 @@ checkResult builtState checker postCondition testFunction inputs = case _ of
 -- | once and test multiple scenarios (e.g. satisfiable and unsatisfiable inputs).
 -- | Each scenario provides inputs via `QuickCheck n gen` or `Exact values`.
 circuitTest'
-  :: forall @f c c' r a b avar bvar
-   . CompileCircuit f c c' r
+  :: forall @f c c' aux a b avar bvar
+   . CompileCircuit f c c' aux
   => SolveCircuit f c'
   => CheckedType f c' avar
   => CircuitType f a avar
@@ -196,10 +194,10 @@ circuitTest'
   => PrimeField f
   => Eq b
   => Show b
-  => TestConfig f c r
+  => TestConfig f c aux
   -> NonEmptyArray { testFunction :: a -> Expectation b, input :: TestInput a }
-  -> (forall t. CircuitM f c' t Identity => avar -> Snarky c' t Identity bvar)
-  -> Aff { builtState :: CircuitBuilderState c r, solver :: Solver f c' a b }
+  -> (avar -> Snarky f c' () bvar)
+  -> Aff { builtState :: CircuitBuilderState c aux, solver :: Solver f c' a b }
 circuitTest' { checker, postCondition, initState } scenarios circuit = do
   let
     builtState = compilePure (Proxy @a) (Proxy @b) (Proxy @c') circuit initState
@@ -211,8 +209,8 @@ circuitTest' { checker, postCondition, initState } scenarios circuit = do
 -- | Like `circuitTest'` but for circuits with an effectful base monad.
 -- | Takes a natural transformation `m ~> Effect` to run the monad.
 circuitTestM'
-  :: forall @f c c' r a b avar bvar m
-   . CompileCircuit f c c' r
+  :: forall @f c c' aux a b avar bvar r
+   . CompileCircuit f c c' aux
   => SolveCircuit f c'
   => CheckedType f c' avar
   => CircuitType f a avar
@@ -220,13 +218,11 @@ circuitTestM'
   => PrimeField f
   => Eq b
   => Show b
-  => Monad m
-  => MonadRec m
-  => (m ~> Effect)
-  -> TestConfig f c r
+  => (Run r ~> Effect)
+  -> TestConfig f c aux
   -> NonEmptyArray { testFunction :: a -> Expectation b, input :: TestInput a }
-  -> (forall t. CircuitM f c' t m => avar -> Snarky c' t m bvar)
-  -> Aff { builtState :: CircuitBuilderState c r, solver :: SolverT f c' m a b }
+  -> (avar -> Snarky f c' r bvar)
+  -> Aff { builtState :: CircuitBuilderState c aux, solver :: SolverT f c' r a b }
 circuitTestM' nat { checker, postCondition, initState } scenarios circuit = do
   builtState <- liftEffect $ nat $ compile (Proxy @a) (Proxy @b) (Proxy @c') circuit initState
   let solver = makeSolver' (emptyProverState { debug = true }) (Proxy @c') circuit
@@ -248,7 +244,7 @@ runScenario idx run = case _ of
       inputs
 
 -- | Run a single test scenario with an effectful test runner.
-runScenarioM :: forall a m. Monad m => Int -> (m ~> Effect) -> (a -> m Result) -> TestInput a -> Aff Unit
+runScenarioM :: forall a r. Int -> (Run r ~> Effect) -> (a -> Run r Result) -> TestInput a -> Aff Unit
 runScenarioM idx nat run = case _ of
   QuickCheck n gen ->
     liftEffect $ quickCheck' n $ gen <#> \a ->

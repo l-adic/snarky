@@ -30,11 +30,12 @@ import Pickles.Types (ChunkedCommitment, StepIPARounds, WrapIPARounds)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, and_, assertEq, const_, if_, label, not_, or_)
+import Snarky.Circuit.DSL (Bool(..), BoolVar, FVar, Snarky, and_, assertEq, const_, if_, label, not_, or_)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (SplitField, Type1(..), Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
@@ -138,8 +139,8 @@ type VerifyOneResult tickD fv =
 -- | Full verify_one matching OCaml step_main.ml:17-148.
 -- | Specialized to the Step field (Vesta scalar field = Fp).
 verifyOne
-  :: forall @wrapVkChunks nd ndPred n wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred t m r1
-   . CircuitM StepField (KimchiConstraint StepField) t m
+  :: forall @wrapVkChunks nd ndPred n wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred r r1
+   . PrimeField StepField
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Compare 0 wrapVkChunks LT
@@ -171,7 +172,7 @@ verifyOne
   => FOP.Params nd StepField r1
   -> VerifyOneInput n wrapVkChunks tCommLen WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
   -> IncrementallyVerifyProofParams wrapVkChunks StepField ()
-  -> Snarky (KimchiConstraint StepField) t m (VerifyOneResult StepIPARounds (FVar StepField))
+  -> Snarky StepField (KimchiConstraint StepField) r (VerifyOneResult StepIPARounds (FVar StepField))
 verifyOne fopParams input ivpParams = do
   -- Step 1: assert should_finalize == must_verify (step_main.ml:28)
   label "step1_assert_finalize" $ assertEq input.unfinalized.shouldFinalize input.mustVerify

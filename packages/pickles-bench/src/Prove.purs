@@ -32,6 +32,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Pickles (BranchProver(..), NoSlots, PrevSlot(..), SlotWrapKey(..), Slots2, StatementIO(..), StepField, compileMulti, mkRuleEntry)
+import Run as Run
 import Snarky.Circuit.DSL (F(..))
 
 -- | Untimed setup against the shared SRS: compile (NRR + tree), prove
@@ -39,7 +40,7 @@ import Snarky.Circuit.DSL (F(..))
 prepareProve :: BenchSrs -> Effect (Aff Unit)
 prepareProve srs = do
   nrrEntry <- mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
-  nrr <- compileMulti
+  nrr <- Run.runBaseEffect $ compileMulti
     @NrrRules
     @(F StepField)
     @Unit
@@ -58,7 +59,7 @@ prepareProve srs = do
   treeEntry <- mkRuleEntry @2 @(F StepField) @(F StepField) @1 @1
     benchTreeRule
     (tuple2 (External nrrProverVKs) Self)
-  tree <- compileMulti
+  tree <- Run.runBaseEffect $ compileMulti
     @TreeRules
     @(F StepField)
     @(F StepField)
@@ -71,7 +72,7 @@ prepareProve srs = do
     BranchProver nrrProver = fst nrr.provers
     BranchProver treeProver = fst tree.provers
 
-  nrrCp <- runExceptT (nrrProver { appInput: unit, prevs: unit, sideloadedVKs: unit }) >>= case _ of
+  nrrCp <- Run.runBaseEffect (runExceptT (nrrProver { appInput: unit, prevs: unit, sideloadedVKs: unit })) >>= case _ of
     Left e -> Exc.throw (show e)
     Right r -> pure r
 
@@ -80,12 +81,14 @@ prepareProve srs = do
       { dummyStatement: StatementIO { input: unit, output: F (negate one) :: F StepField } }
 
   b0 <-
-    runExceptT
-      ( treeProver
-          { appInput: unit
-          , prevs: tuple2 (InductivePrev nrrCp nrr.tag) basePrevSelf
-          , sideloadedVKs: tuple2 unit unit
-          }
+    Run.runBaseEffect
+      ( runExceptT
+          ( treeProver
+              { appInput: unit
+              , prevs: tuple2 (InductivePrev nrrCp nrr.tag) basePrevSelf
+              , sideloadedVKs: tuple2 unit unit
+              }
+          )
       ) >>= case _ of
       Left e -> Exc.throw (show e)
       Right r -> pure r
@@ -93,7 +96,7 @@ prepareProve srs = do
   pure $ do
     _ <-
       liftEffect
-        ( runExceptT
+        ( Run.runBaseEffect $ runExceptT
             ( treeProver
                 { appInput: unit
                 , prevs: tuple2 (InductivePrev nrrCp nrr.tag) (InductivePrev b0 tree.tag)

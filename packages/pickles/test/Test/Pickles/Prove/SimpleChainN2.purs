@@ -34,6 +34,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), Compiled, CompiledProof, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots2, StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
+import Run as Run
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertAny_, const_, equals_, exists, not_)
@@ -98,7 +99,7 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
     let rules = tuple1 entry
 
     logInfo "[SimpleChainN2] compiling…"
-    out <- withSpan "[SimpleChainN2] compile" $ liftEffect $ compileMulti
+    out <- withSpan "[SimpleChainN2] compile" $ liftEffect $ Run.runBaseEffect $ compileMulti
       @SimpleChainN2Rules
       @Unit
       @(F StepField)
@@ -120,7 +121,7 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
         -> PrevSlot (F StepField) 2 Stmt
         -> Aff (CompiledProof 2 Stmt)
       runStep appInput prev1 prev2 = do
-        eRes <- liftEffect $ runExceptT $ prover
+        eRes <- liftEffect $ Run.runBaseEffect $ runExceptT $ prover
           { appInput
           , prevs: tuple2 prev1 prev2
           , sideloadedVKs: tuple2 unit unit

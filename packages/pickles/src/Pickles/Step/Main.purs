@@ -32,7 +32,6 @@ module Pickles.Step.Main
 
 import Prelude
 
-import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.Fin (getFinite)
 import Data.Foldable (foldM)
@@ -44,7 +43,6 @@ import Data.Traversable (traverse)
 import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
-import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Partial.Unsafe (unsafePartial)
@@ -69,8 +67,10 @@ import Pickles.VerificationKey (VerificationKey(..))
 import Prim.Boolean (False, True)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
+import Run (EFFECT)
+import Run as Run
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, AsProverT, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), assertAll_, const_, exists, false_, label, true_)
+import Snarky.Circuit.DSL (AsProver, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), assertAll_, const_, exists, false_, label, liftAdvice, true_)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
 import Snarky.Circuit.DSL.SizedF (unsafeFromField) as SizedF
@@ -78,11 +78,12 @@ import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapPara
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
 import Snarky.Circuit.Types (class CircuitType, varToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (EndoScalar(..), curveParams, endoScalar)
+import Snarky.Curves.Class (class PrimeField, EndoScalar(..), curveParams, endoScalar)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Type.Proxy (Proxy(..))
+import Type.Row (type (+))
 import Unsafe.Coerce (unsafeCoerce)
 
 -------------------------------------------------------------------------------
@@ -186,11 +187,11 @@ class
   , prevsSpec -> vkCarrier
   where
   buildSlotVkSources
-    :: forall t m
-     . CircuitM StepField (KimchiConstraint StepField) t m
+    :: forall r
+     . PrimeField StepField
     => blueprints
     -> cellCarrier
-    -> Snarky (KimchiConstraint StepField) t m vkCarrier
+    -> Snarky StepField (KimchiConstraint StepField) r vkCarrier
 
 instance BuildSlotVkSources cell Unit wrapVkChunks 0 Unit Unit Unit where
   buildSlotVkSources _ _ = pure unit
@@ -456,13 +457,13 @@ type AllocatedPerProofWitness n stepChunks tCommLen =
   }
 
 allocatePerProofWitness
-  :: forall @n @stepChunks tCommLen t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+  :: forall @n @stepChunks tCommLen r
+   . PrimeField StepField
   => Reflectable n Int
   => Reflectable stepChunks Int
   => Mul 7 stepChunks tCommLen
   => PerProofWitness n stepChunks StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
-  -> Snarky (KimchiConstraint StepField) t m (AllocatedPerProofWitness n stepChunks tCommLen)
+  -> Snarky StepField (KimchiConstraint StepField) r (AllocatedPerProofWitness n stepChunks tCommLen)
 allocatePerProofWitness (PerProofWitness ppw) = do
   let
     WrapProof wrapProofRec = ppw.wrapProof
@@ -551,10 +552,10 @@ type UnfinalizedProof =
 -- | Unpack one PerProofUnfinalized (allocated via the advice monad upstream)
 -- | into the legacy `UnfinalizedProof` record shape consumed by `verifyOne`.
 unpackUnfinalized
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+  :: forall r
+   . PrimeField StepField
   => PerProofUnfinalized WrapIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
-  -> Snarky (KimchiConstraint StepField) t m UnfinalizedProof
+  -> Snarky StepField (KimchiConstraint StepField) r UnfinalizedProof
 unpackUnfinalized (PerProofUnfinalized r) = pure
   { deferredValues:
       { plonk:
@@ -781,8 +782,8 @@ stepMain
        sg1 sg2 sg3 sg4 sg5
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        unfsTotal digestPlusUnfs
-       t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+       r
+   . PrimeField StepField
   -- Spec-indexed walk that, for each `Slot SideLoaded` position,
   -- allocates a `SLVK.VerificationKey (FVar _) (BoolVar _)` via
   -- `exists` and bundles it (alongside the compile-time per-domain
@@ -801,7 +802,6 @@ stepMain
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Reflectable nd Int
-  => MonadEffect m
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => CircuitType StepField prevInputVal prevInput
@@ -854,16 +854,16 @@ stepMain
   => Mul mpvMax UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
-  => ( AsProverT StepField m valCarrier
+  => ( AsProver StepField (EFFECT + r) valCarrier
        -> input
-       -> Snarky (KimchiConstraint StepField) t m (RuleOutput len prevInput output)
+       -> Snarky StepField (KimchiConstraint StepField) (EFFECT + r) (RuleOutput len prevInput output)
      )
   -> StepMainSrsData wrapVkChunks len nd blueprints
   -> AffinePoint StepField
   -> sideloadedVkCarrier
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
   -> Ref (Maybe (Array (FVar StepField)))
-  -> Snarky (KimchiConstraint StepField) t m (Vector outputSize (FVar StepField))
+  -> Snarky StepField (KimchiConstraint StepField) (EFFECT + r) (Vector outputSize (FVar StepField))
 stepMain
   rule
   { perSlotLagrangeAt
@@ -914,9 +914,8 @@ stepMain
   -- time `stepSolveAndProve` reads the Ref after the solver completes.
   -- The `exists` allocates a fresh `Unit` var (`sizeInFields = 0`, no
   -- actual circuit slot allocated), so this introduces no constraints.
-  _ :: Unit <- exists $ lift do
-    liftEffect (Ref.write (Just publicOutputFields) captureRef)
-    pure unit
+  _ :: Unit <- exists $ liftAdvice $ Run.liftEffect do
+    Ref.write (Just publicOutputFields) captureRef
 
   -- 3. exists: SHARED VK via Req.Wrap_index.
   --    Mirrors OCaml's `dlog_plonk_index` (step_main.ml:498) — one

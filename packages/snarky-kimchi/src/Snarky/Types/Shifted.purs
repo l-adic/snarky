@@ -33,7 +33,7 @@ import Data.Unfoldable (unfoldr)
 import JS.BigInt (BigInt, fromInt)
 import JS.BigInt as BigInt
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, Bool(..), BoolVar, F(..), FVar, Snarky, add_, and_, any_, assertEqual_, assert_, const_, equals_, exists, fieldsToValue, fieldsToVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, label, not_, readCVar, scale_, sizeInFields, sub_, valueToFields, varToFields)
+import Snarky.Circuit.DSL (class BasicSystem, class CheckedType, class CircuitType, Bool(..), BoolVar, F(..), FVar, Snarky, add_, and_, any_, assertEqual_, assert_, const_, equals_, exists, fieldsToValue, fieldsToVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, label, not_, readCVar, scale_, sizeInFields, sub_, valueToFields, varToFields)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, modulus, pow, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -65,7 +65,7 @@ instance PrimeField f => CircuitType f (Type1 (F f)) (Type1 (FVar f)) where
 -- | This is specialized for the Pallas.ScalarField cross-field case (Wrap circuit).
 -- | Vesta.ScalarField (= Pallas.BaseField) values stored as Type1 in Fq
 -- | can produce forbidden values where 2*t + 2^n + 1 ≡ 0 (mod scalarModulus).
-instance CheckedType Pallas.ScalarField c (Type1 (FVar Pallas.ScalarField)) where
+instance BasicSystem Pallas.ScalarField c => CheckedType Pallas.ScalarField c (Type1 (FVar Pallas.ScalarField)) where
   check (Type1 t) = do
     let forbiddenConstants = map (\(F f) -> const_ f) forbiddenType1Values
     matchesForbidden <- for forbiddenConstants (equals_ t)
@@ -73,7 +73,7 @@ instance CheckedType Pallas.ScalarField c (Type1 (FVar Pallas.ScalarField)) wher
     assert_ (not_ anyMatch)
 
 -- | Same-field Type1: Step circuit (Vesta.ScalarField). No forbidden values needed.
-instance CheckedType Vesta.ScalarField c (Type1 (FVar Vesta.ScalarField)) where
+instance BasicSystem Vesta.ScalarField c => CheckedType Vesta.ScalarField c (Type1 (FVar Vesta.ScalarField)) where
   check = genericCheck
 
 fieldSizeBits :: forall f n. FieldSizeInBits f n => Proxy f -> Int
@@ -117,7 +117,7 @@ instance CheckedType f c (Type2 (FVar f)) where
 -- | forbidden values where 2*sDiv2 + sOdd + 2^n ≡ 0 (mod scalarModulus).
 -- | Cross-field Type2 (SplitField) for Step circuit (Vesta.ScalarField = Fp).
 -- | Pallas.ScalarField values stored as Type2 (SplitField ...) in Fp need forbidden value checks.
-instance CheckedType Vesta.ScalarField c (Type2 (SplitField (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))) where
+instance BasicSystem Vesta.ScalarField c => CheckedType Vesta.ScalarField c (Type2 (SplitField (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))) where
   check (Type2 sf@(SplitField { sDiv2, sOdd })) = do
     -- First run the generic check on the inner SplitField (verifies sOdd is a boolean)
     genericCheck sf
@@ -134,7 +134,7 @@ instance CheckedType Vesta.ScalarField c (Type2 (SplitField (FVar Vesta.ScalarFi
 -- | Type2 (SplitField) in Wrap circuit (Pallas.ScalarField = Fq).
 -- | Used when the Wrap circuit reads Step public inputs containing Type2 (SplitField ...).
 -- | No forbidden value check needed — the Step circuit already validated these.
-instance CheckedType Pallas.ScalarField c (Type2 (SplitField (FVar Pallas.ScalarField) (BoolVar Pallas.ScalarField))) where
+instance BasicSystem Pallas.ScalarField c => CheckedType Pallas.ScalarField c (Type2 (SplitField (FVar Pallas.ScalarField) (BoolVar Pallas.ScalarField))) where
   check (Type2 sf) = genericCheck sf
 
 --------------------------------------------------------------------------------
@@ -166,10 +166,10 @@ instance PrimeField f => CircuitType f (SplitField (F f) Boolean) (SplitField (F
 -- | CheckedType for SplitField: just verify sOdd is boolean (no forbidden value checks needed).
 -- | Since SplitField represents s = 2*sDiv2 + sOdd (no shift), there are no forbidden values.
 -- | Two concrete instances avoid overlap with the Type2 (SplitField ...) instance above.
-instance CheckedType Vesta.ScalarField c (SplitField (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)) where
+instance BasicSystem Vesta.ScalarField c => CheckedType Vesta.ScalarField c (SplitField (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)) where
   check = genericCheck
 
-instance CheckedType Pallas.ScalarField c (SplitField (FVar Pallas.ScalarField) (BoolVar Pallas.ScalarField)) where
+instance BasicSystem Pallas.ScalarField c => CheckedType Pallas.ScalarField c (SplitField (FVar Pallas.ScalarField) (BoolVar Pallas.ScalarField)) where
   check = genericCheck
 
 -- | Split a field element into high bits and low bit.
@@ -180,11 +180,12 @@ instance CheckedType Pallas.ScalarField c (SplitField (FVar Pallas.ScalarField) 
 -- |
 -- | Reference: wrap_main.ml:57-69
 splitFieldCircuit
-  :: forall f c t m
+  :: forall f c r
    . PrimeField f
-  => CircuitM f c t m
+  => PrimeField f
+  => BasicSystem f c
   => FVar f
-  -> Snarky c t m (SplitField (FVar f) (BoolVar f))
+  -> Snarky f c r (SplitField (FVar f) (BoolVar f))
 splitFieldCircuit x = do
   let
     two = one + one
@@ -481,13 +482,14 @@ ofFieldType1Circuit raw =
 -- | Matches OCaml's `Shifted_value.Type1.equal Field.equal`:
 -- |   equal claimed_inner (of_field raw_computed)
 shiftedEqualType1
-  :: forall f n c t m
+  :: forall f n c r
    . PrimeField f
   => FieldSizeInBits f n
-  => CircuitM f c t m
+  => PrimeField f
+  => BasicSystem f c
   => Type1 (FVar f)
   -> FVar f
-  -> Snarky c t m (BoolVar f)
+  -> Snarky f c r (BoolVar f)
 shiftedEqualType1 (Type1 claimedInner) rawComputed =
   equals_ claimedInner (ofFieldType1Circuit rawComputed)
 
@@ -509,13 +511,14 @@ fromShiftedType2Circuit (Type2 sf) =
 -- | Matches OCaml's `Shifted_value.Type2.equal`:
 -- |   equal (claimed + 2^n) raw_computed
 shiftedEqualType2
-  :: forall f n c t m
+  :: forall f n c r
    . PrimeField f
   => FieldSizeInBits f n
-  => CircuitM f c t m
+  => PrimeField f
+  => BasicSystem f c
   => Type2 (FVar f)
   -> FVar f
-  -> Snarky c t m (BoolVar f)
+  -> Snarky f c r (BoolVar f)
 shiftedEqualType2 shifted rawComputed =
   equals_ (fromShiftedType2Circuit shifted) rawComputed
 

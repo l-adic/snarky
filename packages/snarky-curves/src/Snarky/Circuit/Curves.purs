@@ -7,28 +7,29 @@ module Snarky.Circuit.Curves
 
 import Prelude
 
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, UnChecked(..), addConstraint, assertEqual_, assertSquare_, const_, div_, exists, mul_, negate_, pow_, r1cs, readCVar, scale_, square_, sub_)
+import Snarky.Circuit.DSL (class BasicSystem, F(..), FVar, Snarky, UnChecked(..), addConstraint, assertEqual_, assertSquare_, const_, div_, exists, mul_, negate_, pow_, r1cs, readCVar, scale_, square_, sub_)
 import Snarky.Circuit.DSL as Snarky
 import Snarky.Curves.Class (class PrimeField, fromInt)
 import Snarky.Data.EllipticCurve (AffinePoint(..), CurveParams)
 
 assertOnCurve
-  :: forall f c t m
-   . CircuitM f c t m
-  => PrimeField f
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => CurveParams (FVar f)
   -> AffinePoint (FVar f)
-  -> Snarky c t m Unit
+  -> Snarky f c r Unit
 assertOnCurve { a, b } (AffinePoint { x, y }) = do
   rhs <- (x `pow_` 3) + (a `mul_` x) + (pure b)
   y2 <- mul_ y y
   assertEqual_ y2 rhs
 
 negate
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => AffinePoint (FVar f)
-  -> Snarky c t m (AffinePoint (FVar f))
+  -> Snarky f c r (AffinePoint (FVar f))
 negate (AffinePoint { x, y }) = do
   pure (AffinePoint { x, y: negate_ y })
 
@@ -37,12 +38,13 @@ negate (AffinePoint { x, y }) = do
 --   1. If the points are equal 
 --   2. If the points are mutual inverses
 add_
-  :: forall f c t m
+  :: forall f c r
    . Partial
-  => CircuitM f c t m
+  => PrimeField f
+  => BasicSystem f c
   => AffinePoint (FVar f)
   -> AffinePoint (FVar f)
-  -> Snarky c t m (AffinePoint (FVar f))
+  -> Snarky f c r (AffinePoint (FVar f))
 add_ (AffinePoint { x: ax, y: ay }) (AffinePoint { x: bx, y: by }) = do
   lambda <- div_ (sub_ by ay) (sub_ bx ax)
 
@@ -70,12 +72,12 @@ add_ (AffinePoint { x: ax, y: ay }) (AffinePoint { x: bx, y: by }) = do
   pure (AffinePoint { x: cx, y: cy })
 
 double
-  :: forall f c t m
-   . CircuitM f c t m
-  => PrimeField f
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => CurveParams f
   -> AffinePoint (FVar f)
-  -> Snarky c t m (AffinePoint (FVar f))
+  -> Snarky f c r (AffinePoint (FVar f))
 -- | Mirror of OCaml `Snarky_curves.Make_weierstrass_checked.double`
 -- | (`snarky_curves.ml:277-313`). Uses `square_` for `x²` (Square
 -- | gate) — NOT `mul_ ax ax` (R1CS gate). Constraint emission order

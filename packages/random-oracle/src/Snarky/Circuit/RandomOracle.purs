@@ -31,7 +31,7 @@ import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class AssertEqual, class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, add_, assertEqGeneric, const_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, isEqualGeneric)
+import Snarky.Circuit.DSL (class AssertEqual, class CheckedType, class CircuitType, F(..), FVar, Snarky, add_, assertEqGeneric, const_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, isEqualGeneric)
 import Snarky.Circuit.Kimchi (poseidon)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
@@ -64,12 +64,12 @@ addBlock state block =
 -- |
 -- | This is the core sponge operation: add block to rate positions, then permute.
 updateBlock
-  :: forall f t m
+  :: forall f r
    . PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => Vector 3 (FVar f)
   -> Vector 2 (FVar f)
-  -> Snarky (KimchiConstraint f) t m (Vector 3 (FVar f))
+  -> Snarky f (KimchiConstraint f) r (Vector 3 (FVar f))
 updateBlock state block = do
   let stateWithBlock = addBlock state block
   poseidon stateWithBlock
@@ -104,12 +104,12 @@ instance AssertEqual f c (Digest (FVar f)) where
 -- |
 -- | This is the most common case: hash(a, b).
 hash2
-  :: forall f t m
+  :: forall f r
    . PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => FVar f
   -> FVar f
-  -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
+  -> Snarky f (KimchiConstraint f) r (Digest (FVar f))
 hash2 a b = do
   let
     block :: Vector 2 (FVar f)
@@ -125,12 +125,12 @@ hash2 a b = do
 -- | For empty input, a single block of zeros is processed to match the
 -- | pure implementation behavior.
 update
-  :: forall f t m
+  :: forall f r
    . PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => Vector 3 (FVar f)
   -> Array (FVar f)
-  -> Snarky (KimchiConstraint f) t m (Vector 3 (FVar f))
+  -> Snarky f (KimchiConstraint f) r (Vector 3 (FVar f))
 update initState inputs = do
   let
     blocks :: Array (Vector 2 (FVar f))
@@ -154,11 +154,11 @@ update initState inputs = do
 -- | result <- hashVec @4 inputs  -- hash 4 elements
 -- | ```
 hashVec
-  :: forall f t m
+  :: forall f r
    . PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => Array (FVar f)
-  -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
+  -> Snarky f (KimchiConstraint f) r (Digest (FVar f))
 hashVec inputs = do
   finalState <- update initialState inputs
   -- Squeeze from position 0
@@ -195,10 +195,10 @@ instance PoseidonField f => HashInput f (Digest f) where
   hashInput xs = Digest (Poseidon.hash xs)
 
 instance
-  ( CircuitM f (KimchiConstraint f) t m
+  ( PrimeField f
   , PoseidonField f
   ) =>
-  HashInput (FVar f) (Snarky (KimchiConstraint f) t m (Digest (FVar f))) where
+  HashInput (FVar f) (Snarky f (KimchiConstraint f) r (Digest (FVar f))) where
   hashInput = hashVec
 
 -- | Hash a value directly: flatten it (`toHashInput`) then hash the

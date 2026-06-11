@@ -48,7 +48,7 @@ import Prim.Ordering (LT)
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, assertEq, const_, exists, label, readCVar)
+import Snarky.Circuit.DSL (class BasicSystem, Bool(..), BoolVar, F(..), FVar, Snarky, assertEq, const_, exists, label, readCVar)
 import Snarky.Circuit.DSL.SizedF (SizedF, unsafeFromField)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (GroupMapParams)
@@ -159,12 +159,13 @@ type IncrementallyVerifyProofOutput d f =
 -- | constraint through the entire IVP/step/wrap call chain. This is
 -- | purely for debugging.
 ivpTrace
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => PrimeField f
   => String
   -> FVar f
-  -> Snarky c t m Unit
+  -> Snarky f c r Unit
 ivpTrace labelStr v = do
   _ <- exists do
     val <- readCVar v
@@ -173,7 +174,7 @@ ivpTrace labelStr v = do
   pure unit
 
 incrementallyVerifyProof
-  :: forall publicInput sgOldN stepChunks numChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred d dPred f f' @g sf t m r
+  :: forall publicInput sgOldN stepChunks numChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred d dPred f f' @g sf r cr
    . PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
@@ -182,7 +183,7 @@ incrementallyVerifyProof
   => HasSqrt f
   => FrModule f' g
   => WeierstrassCurve f g
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => PublicInputCommit publicInput f
   => Reflectable d Int
   => Reflectable sgOldN Int
@@ -230,11 +231,11 @@ incrementallyVerifyProof
   => Add sg4 wCoeffN sg5 -- + coeff = 1 + 38nc
   => Add sg5 indexSigmaN nonSgBases -- + sigma = 1 + 44nc
   => Add 1 totalBasesPred totalBases
-  => IpaScalarOps f t m sf
+  => IpaScalarOps f cr sf
   -> IncrementallyVerifyProofParams stepChunks f r
   -> IncrementallyVerifyProofInput publicInput sgOldN stepChunks tCommLen d (FVar f) sf
   -> Maybe (Sponge (FVar f)) -- ^ Pre-computed sponge_after_index. Nothing = compute internally.
-  -> SpongeM f (KimchiConstraint f) t m (IncrementallyVerifyProofOutput d f)
+  -> SpongeM f (KimchiConstraint f) cr (IncrementallyVerifyProofOutput d f)
 incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incrementally-verify-proof" do
   let endoParams = { endo: const_ params.endo, groupMapParams: params.groupMapParams }
 

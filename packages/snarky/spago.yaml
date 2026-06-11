@@ -19,6 +19,7 @@ package:
     - prelude
     - quickcheck
     - record
+    - run
     - safe-coerce
     - simple-json
     - tailrec

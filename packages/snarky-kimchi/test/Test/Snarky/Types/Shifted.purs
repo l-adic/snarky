@@ -5,7 +5,7 @@ import Prelude
 import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
 import JS.BigInt as BigInt
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
+import Snarky.Circuit.DSL (F(..), FVar, Snarky)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, modulus)
@@ -88,27 +88,27 @@ genDangerZone =
 -- | Circuit that computes fromShiftedType1Circuit (cross-field: Vesta.BaseField).
 type1Circuit
   :: forall t
-   . CircuitM Vesta.BaseField (KimchiConstraint Vesta.BaseField) t Identity
+   . PrimeField Vesta.BaseField
   => Type1 (FVar Vesta.BaseField)
-  -> Snarky (KimchiConstraint Vesta.BaseField) t Identity (FVar Vesta.BaseField)
+  -> Snarky Vesta.BaseField (KimchiConstraint Vesta.BaseField) () (FVar Vesta.BaseField)
 type1Circuit shifted = pure $ fromShiftedType1Circuit shifted
 
 -- | Circuit that computes fromShiftedType1Circuit (same-field: Vesta.ScalarField).
 type1SameFieldCircuit
   :: forall t
-   . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t Identity
+   . PrimeField Vesta.ScalarField
   => Type1 (FVar Vesta.ScalarField)
-  -> Snarky (KimchiConstraint Vesta.ScalarField) t Identity (FVar Vesta.ScalarField)
+  -> Snarky Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) () (FVar Vesta.ScalarField)
 type1SameFieldCircuit shifted = pure $ fromShiftedType1Circuit shifted
 
 -- | Circuit that computes fromShiftedType2Circuit.
 type2Circuit
   :: forall @f t n
-   . CircuitM f (KimchiConstraint f) t Identity
+   . PrimeField f
   => PrimeField f
   => FieldSizeInBits f n
   => Type2 (FVar f)
-  -> Snarky (KimchiConstraint f) t Identity (FVar f)
+  -> Snarky f (KimchiConstraint f) () (FVar f)
 type2Circuit shifted = pure $ fromShiftedType2Circuit shifted
 
 -- | Pure computation for Type1 (cross-field): s = 2*t + 2^n + 1

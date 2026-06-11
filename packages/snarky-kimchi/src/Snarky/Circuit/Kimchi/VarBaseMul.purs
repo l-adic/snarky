@@ -19,7 +19,7 @@ import JS.BigInt as BigInt
 import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.Curves as EllipticCurve
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, EvaluationError(..), F(..), FVar, Snarky, addConstraint, assertEqual_, const_, exists, if_, label, read, readCVar, throwAsProver, unpackPure)
+import Snarky.Circuit.DSL (class BasicSystem, BoolVar, EvaluationError(..), F(..), FVar, Snarky, addConstraint, assertEqual_, const_, exists, if_, label, read, readCVar, throwAsProver, unpackPure)
 import Snarky.Circuit.DSL as Bits
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast, sealPoint)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
@@ -31,15 +31,15 @@ import Snarky.Types.Shifted (Type1(..))
 import Type.Proxy (Proxy(..))
 
 varBaseMul
-  :: forall t m n @nChunks @bitsUsed l f
+  :: forall r n @nChunks @bitsUsed l f
    . FieldSizeInBits f n
   => Add bitsUsed l n
   => Mul 5 nChunks bitsUsed
   => Reflectable bitsUsed Int
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => AffinePoint (FVar f)
   -> Type1 (FVar f)
-  -> Snarky (KimchiConstraint f) t m
+  -> Snarky f (KimchiConstraint f) r
        { g :: AffinePoint (FVar f)
        , lsbBits :: Vector n (FVar f)
        }
@@ -148,16 +148,16 @@ the pure function on the RHS. This is used when the modulus
 of the scalar field is smaller than the modulus of the circuit field.
 -}
 scaleFast1
-  :: forall t m n @nChunks @bitsUsed f _l
+  :: forall r n @nChunks @bitsUsed f _l
    . FieldSizeInBits f n
   => Add bitsUsed _l n
   => Mul 5 nChunks bitsUsed
   => Reflectable nChunks Int
   => Reflectable bitsUsed Int
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => AffinePoint (FVar f)
   -> Type1 (FVar f)
-  -> Snarky (KimchiConstraint f) t m
+  -> Snarky f (KimchiConstraint f) r
        (AffinePoint (FVar f))
 scaleFast1 p t = label "scale-fast-1" do
   { g } <- varBaseMul @nChunks @bitsUsed p t
@@ -171,17 +171,17 @@ the pure function on the RHS. This is used when the modulus
 of the scalar field is larger than the modulus of the circuit field.
 -}
 scaleFast2
-  :: forall t m f n @nChunks @sDiv2Bits bitsUsed _l _afterBits
+  :: forall r f n @nChunks @sDiv2Bits bitsUsed _l _afterBits
    . FieldSizeInBits f n
   => Add bitsUsed _l n
   => Add sDiv2Bits _afterBits n
   => Mul 5 nChunks bitsUsed
   => Reflectable bitsUsed Int
   => Reflectable sDiv2Bits Int
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => AffinePoint (FVar f)
   -> { sDiv2 :: FVar f, sOdd :: BoolVar f }
-  -> Snarky (KimchiConstraint f) t m
+  -> Snarky f (KimchiConstraint f) r
        (AffinePoint (FVar f))
 scaleFast2 base { sDiv2, sOdd } = label "scale-fast-2" do
   { g, lsbBits } <- varBaseMul @nChunks @bitsUsed base (Type1 sDiv2)
@@ -195,10 +195,11 @@ scaleFast2 base { sDiv2, sOdd } = label "scale-fast-2" do
 -- | Split a field element into parity decomposition and constrain it.
 -- | Witnesses (sDiv2, sOdd) where s = 2*sDiv2 + sOdd, then asserts the relationship.
 splitFieldVar
-  :: forall t m f c
-   . CircuitM f c t m
+  :: forall r f c
+   . PrimeField f
+  => BasicSystem f c
   => FVar f
-  -> Snarky c t m ({ sDiv2 :: (FVar f), sOdd :: (BoolVar f) })
+  -> Snarky f c r ({ sDiv2 :: (FVar f), sOdd :: (BoolVar f) })
 splitFieldVar s = label "split-field-var" do
   res@{ sDiv2, sOdd } <- exists do
     F sVal <- readCVar s
@@ -232,17 +233,17 @@ constrains the split, then delegates to scaleFast2 which adds the 2^n shift
 via varBaseMul. This matches OCaml's scale_fast2'.
 -}
 scaleFast2'
-  :: forall t m f n @nChunks @sDiv2Bits bitsUsed _l _afterBits
+  :: forall r f n @nChunks @sDiv2Bits bitsUsed _l _afterBits
    . FieldSizeInBits f n
   => Add bitsUsed _l n
   => Add sDiv2Bits _afterBits n
   => Mul 5 nChunks bitsUsed
   => Reflectable bitsUsed Int
   => Reflectable sDiv2Bits Int
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => AffinePoint (FVar f)
   -> FVar f
-  -> Snarky (KimchiConstraint f) t m
+  -> Snarky f (KimchiConstraint f) r
        (AffinePoint (FVar f))
 scaleFast2' base s = label "scale-fast-2-prime" do
   split <- splitFieldVar s

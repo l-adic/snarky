@@ -18,7 +18,7 @@ import Data.Maybe (fromJust)
 import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, UnChecked(..), add_, assertEqual_, exists, fromField, read, scale_)
+import Snarky.Circuit.DSL (F(..), FVar, SizedF, Snarky, UnChecked(..), add_, assertEqual_, exists, fromField, read, scale_)
 import Snarky.Circuit.DSL as SizedF
 import Snarky.Circuit.Kimchi.EndoScalar as EndoScalar
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -32,12 +32,12 @@ import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt,
 -- | `f` — derive it from `HasEndo` (`endoScalar`) at the call site, where
 -- | the field is concrete.
 rangeCheck128
-  :: forall f t m
+  :: forall f r
    . FieldSizeInBits f 255
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => FVar f -- ^ endo constant
   -> SizedF 128 (FVar f) -- ^ value to range-check
-  -> Snarky (KimchiConstraint f) t m Unit
+  -> Snarky f (KimchiConstraint f) r Unit
 rangeCheck128 endo v = void $ EndoScalar.toField @8 v endo
 
 -- | Extract the lowest 128 bits of a field element, with range checking
@@ -52,13 +52,13 @@ rangeCheck128 endo v = void $ EndoScalar.toField @8 v endo
 -- |
 -- | The endo parameter is a raw FVar f (the EndoScalar constant for the circuit field).
 lowest128Bits
-  :: forall f t m
+  :: forall f r
    . PrimeField f
   => FieldSizeInBits f 255
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => FVar f -- ^ endo constant
   -> FVar f -- ^ x (sponge squeeze output)
-  -> Snarky (KimchiConstraint f) t m (SizedF 128 (FVar f))
+  -> Snarky f (KimchiConstraint f) r (SizedF 128 (FVar f))
 lowest128Bits = lowest128Bits' true
 
 -- | Parameterized version: `constrainLowBits` controls whether lo is range-checked.
@@ -66,14 +66,14 @@ lowest128Bits = lowest128Bits' true
 -- | - `true`: matches OCaml's `squeeze_challenge` (constrain_low_bits:true)
 -- | - `false`: matches OCaml's `squeeze_scalar` (constrain_low_bits:false, only hi checked)
 lowest128Bits'
-  :: forall f t m
+  :: forall f r
    . PrimeField f
   => FieldSizeInBits f 255
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => Boolean
   -> FVar f -- ^ endo constant
   -> FVar f -- ^ x (sponge squeeze output)
-  -> Snarky (KimchiConstraint f) t m (SizedF 128 (FVar f))
+  -> Snarky f (KimchiConstraint f) r (SizedF 128 (FVar f))
 lowest128Bits' constrainLowBits endo x = do
   -- Witness lo (first) and hi (second), matching OCaml's Typ.(field * field)
   UnChecked (Tuple lo hi) <- exists do

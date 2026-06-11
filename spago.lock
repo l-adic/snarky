@@ -176,6 +176,7 @@
             "random-oracle",
             "record",
             "refs",
+            "run",
             "safe-coerce",
             "simple-json",
             "snarky",
@@ -444,6 +445,7 @@
             "prelude",
             "quickcheck",
             "record",
+            "run",
             "safe-coerce",
             "simple-json",
             "tailrec",
@@ -572,6 +574,7 @@
             "ordered-collections",
             "prelude",
             "quickcheck",
+            "run",
             "safe-coerce",
             "snarky",
             "spec",
@@ -2308,6 +2311,28 @@
       "dependencies": [
         "effect",
         "prelude"
+      ]
+    },
+    "run": {
+      "type": "registry",
+      "version": "5.0.0",
+      "integrity": "sha256-zGCyG7IamjYWypKMXTP9PFis2ShnoZJKZiu3SbXMc+M=",
+      "dependencies": [
+        "aff",
+        "control",
+        "effect",
+        "either",
+        "free",
+        "maybe",
+        "newtype",
+        "partial",
+        "prelude",
+        "tailrec",
+        "tuples",
+        "type-equality",
+        "typelevel-prelude",
+        "unsafe-coerce",
+        "variant"
       ]
     },
     "safe-coerce": {

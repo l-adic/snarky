@@ -19,10 +19,10 @@ module Pickles.Wrap.OtherField
 import Prelude
 
 import Pickles.ShiftOps (IpaScalarOps)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, label, seal)
+import Snarky.Circuit.DSL (BoolVar, FVar, Snarky, label, seal)
 import Snarky.Circuit.Kimchi (Type1(..), Type2(..), fromShiftedType1Circuit, fromShiftedType2Circuit, scaleFast1, shiftedEqualType1, shiftedEqualType2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits)
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 
 -- | Wrap circuit's cross-field variable type for IPA.
 -- | Represents Fp values (from the other curve) as a single field element
@@ -37,10 +37,10 @@ type WrapOtherField f = Type1 f
 -- |
 -- | Replaces the old `type1ScalarOps` from IPA.purs.
 ipaScalarOps
-  :: forall f t m
+  :: forall f r
    . FieldSizeInBits f 255
-  => CircuitM f (KimchiConstraint f) t m
-  => IpaScalarOps f t m (WrapOtherField (FVar f))
+  => PrimeField f
+  => IpaScalarOps f r (WrapOtherField (FVar f))
 ipaScalarOps =
   { scaleByShifted: \p t -> scaleFast1 @51 p t
   , shiftedToAbsorbFields: \(Type1 t) -> [ t ]
@@ -55,12 +55,12 @@ ipaScalarOps =
 -- |
 -- | The sealInner operation is needed for map_plonk_to_field in Wrap FOP.
 fopShiftOps
-  :: forall @f t @m
+  :: forall @f r
    . FieldSizeInBits f 255
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => { unshift :: Type2 (FVar f) -> FVar f
-     , shiftedEqual :: Type2 (FVar f) -> FVar f -> Snarky (KimchiConstraint f) t m (BoolVar f)
-     , sealInner :: Type2 (FVar f) -> Snarky (KimchiConstraint f) t m (Type2 (FVar f))
+     , shiftedEqual :: Type2 (FVar f) -> FVar f -> Snarky f (KimchiConstraint f) r (BoolVar f)
+     , sealInner :: Type2 (FVar f) -> Snarky f (KimchiConstraint f) r (Type2 (FVar f))
      }
 fopShiftOps =
   { unshift: fromShiftedType2Circuit

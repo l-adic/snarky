@@ -28,7 +28,7 @@ import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (add_, sub_)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, const_, equals_, label, mul_, seal, square_)
+import Snarky.Circuit.DSL (Bool(..), BoolVar, FVar, Snarky, const_, equals_, label, mul_, seal, square_)
 import Snarky.Circuit.DSL.Assert (assertNonZero_)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -45,12 +45,12 @@ import Snarky.Curves.Class (class PrimeField, fromBigInt)
 -- |
 -- | Reference: one_hot_vector.ml:21-24
 oneHotVector
-  :: forall @n f t m
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall @n f r
+   . PrimeField f
   => PrimeField f
   => Reflectable n Int
   => FVar f
-  -> Snarky (KimchiConstraint f) t m (Vector n (BoolVar f))
+  -> Snarky f (KimchiConstraint f) r (Vector n (BoolVar f))
 oneHotVector index = label "one-hot-vector" do
   -- OCaml Vector.init evaluates right-to-left (j=n-1 first, j=0 last)
   let indices = Vector.generate @n identity
@@ -75,13 +75,13 @@ oneHotVector index = label "one-hot-vector" do
 -- |
 -- | Reference: pseudo.ml:23-28
 mask
-  :: forall n f t m
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall n f r
+   . PrimeField f
   => PrimeField f
   => Reflectable n Int
   => Vector n (BoolVar f)
   -> Vector n (FVar f)
-  -> Snarky (KimchiConstraint f) t m (FVar f)
+  -> Snarky f (KimchiConstraint f) r (FVar f)
 mask bits xs = label "pseudo-mask" do
   -- OCaml Vector.map evaluates right-to-left (::  constructor)
   let
@@ -97,23 +97,23 @@ mask bits xs = label "pseudo-mask" do
 -- |
 -- | Reference: pseudo.ml:30-31
 choose
-  :: forall n a f t m
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall n a f r
+   . PrimeField f
   => PrimeField f
   => Reflectable n Int
   => Vector n (BoolVar f)
   -> Vector n a
   -> (a -> FVar f)
-  -> Snarky (KimchiConstraint f) t m (FVar f)
+  -> Snarky f (KimchiConstraint f) r (FVar f)
 choose bits xs f = mask bits (map f xs)
 
 -- | Plonk domain with dynamically-selected parameters.
 -- |
 -- | Reference: plonk_checks.ml plonk_domain object type
-type PlonkDomain f t m =
+type PlonkDomain f r =
   { generator :: FVar f
   , shifts :: Vector 7 (FVar f)
-  , vanishingPolynomial :: FVar f -> Snarky (KimchiConstraint f) t m (FVar f)
+  , vanishingPolynomial :: FVar f -> Snarky f (KimchiConstraint f) r (FVar f)
   }
 
 -- | Pseudo.Domain.to_domain: construct a plonk domain from a one-hot selection
@@ -136,8 +136,8 @@ type PlonkDomain f t m =
 -- |
 -- | Reference: pseudo.ml:103-128
 toDomain
-  :: forall @maxLog2 maxPred n f t m
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall @maxLog2 maxPred n f r
+   . PrimeField f
   => PrimeField f
   => Reflectable n Int
   => Reflectable maxLog2 Int
@@ -149,7 +149,7 @@ toDomain
      }
   -> Vector n (BoolVar f)
   -> Vector n (Finite maxLog2)
-  -> Snarky (KimchiConstraint f) t m (PlonkDomain f t m)
+  -> Snarky f (KimchiConstraint f) r (PlonkDomain f r)
 toDomain { shifts: getShifts, domainGenerator } which log2s = do
   -- Shifts: all domains have same shifts, return constants (pseudo.ml:61-73)
   let shifts_ = map const_ (getShifts (getFinite (Vector.head log2s)))
@@ -168,13 +168,13 @@ toDomain { shifts: getShifts, domainGenerator } which log2s = do
 -- | Build table of squared powers: [x, x^2, x^4, ..., x^(2^(k-1))]
 -- | Returns a Vector of size k, where entry i = x^(2^i).
 buildPow2Pows
-  :: forall @k kPred f t m
+  :: forall @k kPred f r
    . Add 1 kPred k
   => Add kPred 1 k
   => Reflectable k Int
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => FVar f
-  -> Snarky (KimchiConstraint f) t m (Vector k (FVar f))
+  -> Snarky f (KimchiConstraint f) r (Vector k (FVar f))
 buildPow2Pows x = do
   -- Use the tail of a k-sized vector (k-1 elements) to drive k-1 squarings
   let { tail: drivers } = Vector.uncons (Vector.generate identity)

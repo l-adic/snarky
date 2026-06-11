@@ -29,7 +29,7 @@ import Poseidon (class PoseidonField)
 import RandomOracle.Sponge (Sponge, SpongeState(..), create, rate, state) as ReExports
 import RandomOracle.Sponge (Sponge, SpongeState(..), rate)
 import RandomOracle.Sponge as Sponge
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, add_, const_, seal)
+import Snarky.Circuit.DSL (FVar, Snarky, add_, const_, seal)
 import Snarky.Circuit.Kimchi (poseidon)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
@@ -63,12 +63,12 @@ spongeFromConstants { state: s, spongeState: ss } =
 -- | - Add the element to the current position
 -- | - Track the new sponge state
 absorb
-  :: forall f t m
+  :: forall f r
    . PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => FVar f
   -> Sponge (FVar f)
-  -> Snarky (KimchiConstraint f) t m (Sponge (FVar f))
+  -> Snarky f (KimchiConstraint f) r (Sponge (FVar f))
 absorb x sponge = case sponge.spongeState of
   Absorbed n ->
     if n == rate then do
@@ -106,11 +106,11 @@ absorb x sponge = case sponge.spongeState of
 -- | - If we've squeezed `rate` elements, permute first
 -- | - Return the element at the current position
 squeeze
-  :: forall f t m
+  :: forall f r
    . PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => Sponge (FVar f)
-  -> Snarky (KimchiConstraint f) t m { result :: FVar f, sponge :: Sponge (FVar f) }
+  -> Snarky f (KimchiConstraint f) r { result :: FVar f, sponge :: Sponge (FVar f) }
 squeeze sponge = case sponge.spongeState of
   Squeezed n ->
     if n == rate then do

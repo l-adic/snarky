@@ -17,6 +17,7 @@ package:
     - ordered-collections
     - prelude
     - quickcheck
+    - run
     - safe-coerce
     - snarky
     - spec

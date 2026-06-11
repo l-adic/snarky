@@ -1,24 +1,17 @@
 -- | Circuit compilation backend.
 -- |
--- | `CircuitBuilderT` is a `CircuitM` instance that collects constraints without
--- | computing witness values. Used during compilation to extract the constraint
--- | system structure. The `exists` implementation allocates fresh variables and
--- | adds type-specific checks, but ignores the prover computation.
+-- | `runCircuitBuilder` interprets the `circuit` effect by collecting
+-- | constraints without computing witness values: `Exists` allocates fresh
+-- | variables and DISCARDS the witness computation. Used during compilation
+-- | to extract the constraint system structure.
 module Snarky.Backend.Builder
-  ( CircuitBuilderT
-  , initialState
-  , runCircuitBuilderT
-  , execCircuitBuilderT
-  , CircuitBuilderState
-  , CircuitBuilder
+  ( initialState
   , runCircuitBuilder
-  , setPublicInputVars
-  , appendConstraint
-  , putState
-  , getState
-  , class Finalizer
-  , finalize
+  , execCircuitBuilder
+  , CircuitBuilderState
   , class CompileCircuit
+  , appendBuilderConstraint
+  , finalize
   , Labeled
   , labeled
   , unlabel
@@ -28,29 +21,26 @@ module Snarky.Backend.Builder
   , snocConstraint
   , appendConstraintsBatch
   , constraintsToArray
+  , allocVars
   ) where
 
 import Prelude
 
-import Control.Monad.Rec.Class (class MonadRec)
-import Control.Monad.State (StateT, execStateT, get, modify_, put, runStateT)
-import Control.Monad.Trans.Class (class MonadTrans)
+import Control.Monad.Rec.Class (Step(..), tailRecM)
 import Data.Array as Array
+import Data.Either (Either(..))
 import Data.Foldable (foldl) as F
-import Data.Identity (Identity(..))
 import Data.List (List(..), reverse) as L
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (fromMaybe)
-import Data.Newtype (un)
-import Data.Tuple (Tuple)
-import Data.Unfoldable (replicateA)
-import Snarky.Circuit.CVar (CVar(Var), Variable, incrementVariable, v0)
-import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM, class ConstraintM, class MonadFresh, class WithLabel, AsProverT, Snarky, check, fresh)
-import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields)
+import Data.Tuple (Tuple(..))
+import Run (Run)
+import Run as Run
+import Snarky.Circuit.CVar (Variable, incrementVariable, v0)
+import Snarky.Circuit.DSL.Monad (CIRCUIT, CircuitF(..), _circuit)
 import Snarky.Constraint.Basic (class BasicSystem, Basic)
 import Snarky.Curves.Class (class PrimeField)
-import Type.Proxy (Proxy(..))
 
 type Labeled c =
   { constraint :: c
@@ -97,78 +87,27 @@ constraintsToArray (Constraints xs) = Array.fromFoldable (L.reverse xs)
 context :: forall c. Labeled c -> Array String
 context = _.context
 
-type CircuitBuilderState c r =
+type CircuitBuilderState c aux =
   { nextVar :: Variable
   , constraints :: Constraints c
   , publicInputs :: Array Variable
-  , aux :: r
+  , aux :: aux
   , labelStack :: Array String
   , varMetadata :: Map Variable (Array String)
   }
 
-newtype CircuitBuilderT c r m a = CircuitBuilderT (StateT (CircuitBuilderState c r) m a)
+-- | How a backend stores an emitted constraint `c'` in a builder state over
+-- | stored constraint type `c` (+ backend aux state), and finalizes the state
+-- | after the build. Replaces the old `ConstraintM`/`Finalizer`/
+-- | `CompileCircuit` class triple.
+class BasicSystem f c' <= CompileCircuit f c c' aux | f c -> c', c -> f where
+  appendBuilderConstraint :: c' -> CircuitBuilderState c aux -> CircuitBuilderState c aux
+  finalize :: CircuitBuilderState c aux -> CircuitBuilderState c aux
 
-derive newtype instance Functor m => Functor (CircuitBuilderT c r m)
-derive newtype instance Monad m => Apply (CircuitBuilderT c r m)
-derive newtype instance Monad m => Bind (CircuitBuilderT c r m)
-derive newtype instance Monad m => Applicative (CircuitBuilderT c r m)
-derive newtype instance Monad m => Monad (CircuitBuilderT c r m)
-derive newtype instance MonadRec m => MonadRec (CircuitBuilderT c r m)
-derive newtype instance MonadTrans (CircuitBuilderT c r)
-
-class Finalizer c r where
-  finalize :: CircuitBuilderState c r -> CircuitBuilderState c r
-
-instance Finalizer (Basic f) r where
+instance PrimeField f => CompileCircuit f (Basic f) (Basic f) aux where
+  appendBuilderConstraint c s =
+    s { constraints = snocConstraint { constraint: c, context: s.labelStack } s.constraints }
   finalize = identity
-
-runCircuitBuilderT
-  :: forall c r m a
-   . Monad m
-  => CircuitBuilderT c r m a
-  -> CircuitBuilderState c r
-  -> m (Tuple a (CircuitBuilderState c r))
-runCircuitBuilderT (CircuitBuilderT m) s = runStateT m s
-
-execCircuitBuilderT
-  :: forall c r m a
-   . Monad m
-  => CircuitBuilderT c r m a
-  -> CircuitBuilderState c r
-  -> m (CircuitBuilderState c r)
-execCircuitBuilderT (CircuitBuilderT m) s = execStateT m s
-
-type CircuitBuilder c r = CircuitBuilderT c r Identity
-
-runCircuitBuilder
-  :: forall c r a
-   . CircuitBuilder c r a
-  -> CircuitBuilderState c r
-  -> Tuple a (CircuitBuilderState c r)
-runCircuitBuilder (CircuitBuilderT m) s = un Identity $ runStateT m s
-
-instance Monad m => MonadFresh (CircuitBuilderT c r m) where
-  fresh = CircuitBuilderT do
-    s <- get
-    let v = s.nextVar
-    put $ s
-      { nextVar = incrementVariable v
-      , varMetadata = Map.insert v s.labelStack s.varMetadata
-      }
-    pure v
-
-class
-  ( BasicSystem f c'
-  , ConstraintM (CircuitBuilderT c r) c'
-  , Finalizer c r
-  ) <=
-  CompileCircuit f c c' r
-  | f c -> c'
-
-instance ConstraintM (CircuitBuilderT (Basic f) r) (Basic f) where
-  addConstraint' = appendConstraint
-
-instance PrimeField f => CompileCircuit f (Basic f) (Basic f) r
 
 initialState :: forall c. CircuitBuilderState c Unit
 initialState =
@@ -180,60 +119,80 @@ initialState =
   , varMetadata: Map.empty
   }
 
-instance
-  ( Monad m
-  , MonadRec m
-  , PrimeField f
-  , BasicSystem f c'
-  , ConstraintM (CircuitBuilderT c r) c'
-  ) =>
-  CircuitM f c' (CircuitBuilderT c r) m where
-  exists
-    :: forall a var
-     . CircuitType f a var
-    => CheckedType f c' var
-    => ConstraintM (CircuitBuilderT c r) c'
-    => AsProverT f m a
-    -> Snarky c' (CircuitBuilderT c r) m var
-  exists _ = do
-    let n = sizeInFields (Proxy @f) (Proxy @a)
-    vars <- replicateA n fresh
-    let v = fieldsToVar @f @a (map Var vars)
-    check v
-    pure v
+-- | Allocate `n` consecutive variables in a builder state (recording the
+-- | current label stack as each variable's metadata, exactly like a fresh
+-- | allocation inside the interpreter).
+allocVars
+  :: forall c aux
+   . Int
+  -> CircuitBuilderState c aux
+  -> Tuple (Array Variable) (CircuitBuilderState c aux)
+allocVars n s0 = go 0 s0 []
+  where
+  go i s acc
+    | i >= n = Tuple acc s
+    | otherwise =
+        let
+          v = s.nextVar
+        in
+          go (i + 1)
+            ( s
+                { nextVar = incrementVariable v
+                , varMetadata = Map.insert v s.labelStack s.varMetadata
+                }
+            )
+            (Array.snoc acc v)
 
-setPublicInputVars
-  :: forall f r m
-   . Monad m
-  => Array Variable
-  -> CircuitBuilderT f r m Unit
-setPublicInputVars vars = CircuitBuilderT $ modify_ \s ->
-  s { publicInputs = vars }
+-- | Interpret the `circuit` effect in builder mode over an open tail of
+-- | advice effects `r` (which never fire — witness computations are
+-- | discarded).
+runCircuitBuilder
+  :: forall f c c' aux r a
+   . CompileCircuit f c c' aux
+  => CircuitBuilderState c aux
+  -> Run (CIRCUIT f c' r) a
+  -> Run r (Tuple a (CircuitBuilderState c aux))
+runCircuitBuilder s0 r0 = tailRecM go (Tuple s0 r0)
+  where
+  handle = Run.on _circuit Left Right
 
-appendConstraint
-  :: forall m c r
-   . Monad m
-  => c
-  -> CircuitBuilderT c r m Unit
-appendConstraint c = CircuitBuilderT $ modify_ \s ->
-  s { constraints = snocConstraint { constraint: c, context: s.labelStack } s.constraints }
+  -- Stack safety: every interpreter step is a `tailRecM` `Step` in the
+  -- target `Run r` (whose `MonadRec` is stack-safe), so circuits with
+  -- hundreds of thousands of ops interpret in constant stack.
+  go
+    :: CompileCircuit f c c' aux
+    => Tuple (CircuitBuilderState c aux) (Run (CIRCUIT f c' r) a)
+    -> Run r (Step (Tuple (CircuitBuilderState c aux) (Run (CIRCUIT f c' r) a)) (Tuple a (CircuitBuilderState c aux)))
+  go (Tuple s r) = case Run.peel r of
+    Left v -> case handle v of
+      Left cf -> case cf of
+        Fresh k ->
+          let
+            Tuple vs s' = allocVars 1 s
+          in
+            pure (Loop (Tuple s' (k (fromMaybe s.nextVar (Array.head vs)))))
+        AddConstraint c k ->
+          pure (Loop (Tuple (appendBuilderConstraint c s) k))
+        Exists n _ k ->
+          let
+            Tuple vs s' = allocVars n s
+          in
+            pure (Loop (Tuple s' (k vs)))
+        Assign _ _ k ->
+          pure (Loop (Tuple s k))
+        PushLabel l k ->
+          pure (Loop (Tuple (s { labelStack = Array.snoc s.labelStack l }) k))
+        PopLabel k ->
+          pure (Loop (Tuple (s { labelStack = Array.init s.labelStack # fromMaybe [] }) k))
+      Right other ->
+        Run.send other <#> \r' -> Loop (Tuple s r')
+    Right a ->
+      pure (Done (Tuple a s))
 
-getState
-  :: forall m c r
-   . Monad m
-  => CircuitBuilderT c r m (CircuitBuilderState c r)
-getState = CircuitBuilderT $ get
-
-putState
-  :: forall m c r
-   . Monad m
-  => (CircuitBuilderState c r)
-  -> CircuitBuilderT c r m Unit
-putState = CircuitBuilderT <<< put
-
-instance WithLabel (CircuitBuilderT c r) where
-  withLabel l (CircuitBuilderT m) = CircuitBuilderT do
-    modify_ \s -> s { labelStack = Array.snoc s.labelStack l }
-    res <- m
-    modify_ \s -> s { labelStack = Array.init s.labelStack # fromMaybe [] }
-    pure res
+execCircuitBuilder
+  :: forall f c c' aux r a
+   . CompileCircuit f c c' aux
+  => CircuitBuilderState c aux
+  -> Run (CIRCUIT f c' r) a
+  -> Run r (CircuitBuilderState c aux)
+execCircuitBuilder s = map (\(Tuple _ s') -> s') <<< runCircuitBuilder s

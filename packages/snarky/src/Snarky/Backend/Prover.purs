@@ -1,51 +1,40 @@
 -- | Witness computation backend.
 -- |
--- | `ProverT` is a `CircuitM` instance that computes witness values without
--- | collecting constraints. The `exists` implementation runs the prover computation
--- | and stores the resulting assignments. Constraints are ignored (they're assumed
--- | to have been validated during compilation).
+-- | `runCircuitProver` interprets the `circuit` effect by computing witness
+-- | values: `Exists` RUNS the witness computation against the current
+-- | assignments and records the results. Constraints are ignored unless
+-- | `debug` is set (they're assumed validated during compilation).
 module Snarky.Backend.Prover
-  ( ProverT
-  , runProverT
+  ( runCircuitProver
   , ProverState
   , emptyProverState
-  , Prover
-  , runProver
-  , throwProverError
-  , setAssignments
-  , getAssignments
-  , getState
-  , putState
   , class SolveCircuit
+  , proverConstraint
+  , allocAssignments
   ) where
 
 import Prelude
 
-import Control.Monad.Except (ExceptT(..), catchError, lift, runExceptT, throwError)
-import Control.Monad.Rec.Class (class MonadRec)
-import Control.Monad.State (StateT, get, gets, modify_, put, runStateT)
-import Control.Monad.Trans.Class (class MonadTrans)
-import Data.Array (foldl, zip)
-import Data.Either (Either)
-import Data.Identity (Identity(..))
+import Control.Monad.Rec.Class (Step(..), tailRecM)
+import Data.Array as Array
+import Data.Either (Either(..))
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..))
-import Data.Newtype (un)
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Tuple (Tuple(..))
-import Data.Unfoldable (replicateA)
-import Snarky.Circuit.CVar (CVar(Var), EvaluationError(..), Variable, incrementVariable, v0)
-import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM, class ConstraintM, class MonadFresh, class WithLabel, AsProverT, Snarky(..), check, fresh, runAsProverT)
-import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields, valueToFields)
+import Run (Run)
+import Run as Run
+import Snarky.Circuit.CVar (EvaluationError(..), Variable, incrementVariable, v0)
+import Snarky.Circuit.DSL.Monad (AsProver(..), CIRCUIT, CircuitF(..), _circuit, runAsProver)
 import Snarky.Constraint.Basic (class BasicSystem, Basic)
 import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.Class (class PrimeField)
-import Type.Proxy (Proxy(..))
 
 type ProverState f =
   { nextVar :: Variable
   , assignments :: Map Variable f
   , debug :: Boolean
+  , labelStack :: Array String
   }
 
 emptyProverState :: forall f. ProverState f
@@ -53,125 +42,111 @@ emptyProverState =
   { nextVar: v0
   , assignments: Map.empty
   , debug: false
+  , labelStack: []
   }
 
-newtype ProverT f m a = ProverT (ExceptT EvaluationError (StateT (ProverState f) m) a)
+-- | How a backend handles an emitted constraint in prover mode: a pure
+-- | transform of the prover state (backends like kimchi ALLOCATE and ASSIGN
+-- | variables while reducing constraints), failing with an evaluation error.
+-- | Replaces the old `ConstraintM (ProverT f)` instances.
+class BasicSystem f c <= SolveCircuit f c | c -> f where
+  proverConstraint :: c -> ProverState f -> Either EvaluationError (ProverState f)
 
-derive newtype instance Functor m => Functor (ProverT f m)
-derive newtype instance Monad m => Apply (ProverT f m)
-derive newtype instance Monad m => Bind (ProverT f m)
-derive newtype instance Monad m => Applicative (ProverT f m)
-derive newtype instance Monad m => Monad (ProverT f m)
-derive newtype instance MonadRec m => MonadRec (ProverT f m)
+-- | `Basic` constraints do no prover-side work; in debug mode they are
+-- | checked against the current assignments for rich error messages.
+instance PrimeField f => SolveCircuit f (Basic f) where
+  proverConstraint c s
+    | s.debug = case Basic.debugCheck (flip Map.lookup s.assignments) c of
+        Nothing -> Right s
+        Just e -> Left e
+    | otherwise = Right s
 
--- TODO: why is this not newtype derivable
-instance MonadTrans (ProverT f) where
-  lift m = ProverT $ lift $ lift m
-
-runProverT
-  :: forall f a m
-   . Monad m
-  => ProverT f m a
+-- | Allocate `n` consecutive variables and assign them the given values.
+allocAssignments
+  :: forall f
+   . Int
+  -> Array f
   -> ProverState f
-  -> m (Tuple (Either EvaluationError a) (ProverState f))
-runProverT (ProverT m) s = runStateT (runExceptT m) s
+  -> Tuple (Array Variable) (ProverState f)
+allocAssignments n values s0 = go 0 s0 []
+  where
+  go i s acc
+    | i >= n = Tuple acc s
+    | otherwise =
+        let
+          v = s.nextVar
+          s' = s { nextVar = incrementVariable v }
+          s'' = case Array.index values i of
+            Just f -> s' { assignments = Map.insert v f s'.assignments }
+            Nothing -> s'
+        in
+          go (i + 1) s'' (Array.snoc acc v)
 
-type Prover f = ProverT f Identity
+-- | Wrap an error with the current label context (debug mode only), matching
+-- | the old `WithLabel (ProverT f)` behavior.
+contextualize :: forall f. ProverState f -> EvaluationError -> EvaluationError
+contextualize s e
+  | s.debug = Array.foldr WithContext e s.labelStack
+  | otherwise = e
 
-runProver
-  :: forall f a
-   . Prover f a
-  -> ProverState f
-  -> Tuple (Either EvaluationError a) (ProverState f)
-runProver (ProverT m) s = un Identity $ runStateT (runExceptT m) s
-
-instance PrimeField f => ConstraintM (ProverT f) (Basic f) where
-  addConstraint' c = ProverT do
-    { debug: d, assignments } <- get
-    when d do
-      case Basic.debugCheck (flip Map.lookup assignments) c of
-        Nothing -> pure unit
-        Just e -> throwError e
-
-class
-  ( BasicSystem f c
-  , ConstraintM (ProverT f) c
-  ) <=
-  SolveCircuit f c
-  | c -> f
-
-instance PrimeField f => SolveCircuit f (Basic f)
-
-instance
-  ( Monad m
-  , MonadRec m
-  , PrimeField f
-  , BasicSystem f c
-  , ConstraintM (ProverT f) c
-  ) =>
-  CircuitM f c (ProverT f) m where
-  exists
-    :: forall a var
-     . CircuitType f a var
-    => CheckedType f c var
-    => AsProverT f m a
-    -> Snarky c (ProverT f) m var
-  exists m = do
-    res <- Snarky do
-      assignments <- getAssignments
-      let n = sizeInFields (Proxy @f) (Proxy @a)
-      vars <- replicateA n fresh
-      a <- ProverT $ ExceptT $ lift $ runAsProverT m assignments
-      let
-        aFieldElems = valueToFields a
-      setAssignments (zip vars aFieldElems)
-      pure $ fieldsToVar @f @a (map Var vars)
-    check res
-    pure res
-
-instance Monad m => MonadFresh (ProverT f m) where
-  fresh = ProverT do
-    { nextVar } <- get
-    modify_ _ { nextVar = incrementVariable nextVar }
-    pure nextVar
-
-throwProverError
-  :: forall f m a
-   . Monad m
-  => EvaluationError
-  -> ProverT f m a
-throwProverError = ProverT <<< throwError
-
-setAssignments
-  :: forall f m
-   . Monad m
-  => Array (Tuple Variable f)
-  -> ProverT f m Unit
-setAssignments vs = ProverT $
-  modify_ \s ->
-    s { assignments = foldl (\acc (Tuple v f) -> Map.insert v f acc) s.assignments vs }
-
-getAssignments
-  :: forall f m
-   . Monad m
-  => ProverT f m (Map Variable f)
-getAssignments = ProverT $ gets _.assignments
-
-getState
-  :: forall f m
-   . Monad m
-  => ProverT f m (ProverState f)
-getState = ProverT $ get
-
-putState
-  :: forall f m
-   . Monad m
+-- | Interpret the `circuit` effect in prover mode over an open tail of advice
+-- | effects `r` (witness computations may use them). A witness failure
+-- | short-circuits the whole interpretation.
+runCircuitProver
+  :: forall f c r a
+   . SolveCircuit f c
   => ProverState f
-  -> ProverT f m Unit
-putState = ProverT <<< put
+  -> Run (CIRCUIT f c r) a
+  -> Run r (Tuple (Either EvaluationError a) (ProverState f))
+runCircuitProver s0 r0 = tailRecM go (Tuple s0 r0)
+  where
+  handle = Run.on _circuit Left Right
 
-instance WithLabel (ProverT f) where
-  withLabel s (ProverT action) = ProverT do
-    { debug: d } <- get
-    if d then catchError action \e -> throwError $ WithContext s e
-    else action
+  -- Stack safety: every interpreter step is a `tailRecM` `Step` in the
+  -- target `Run r` (whose `MonadRec` is stack-safe), so circuits with
+  -- hundreds of thousands of ops interpret in constant stack.
+  go
+    :: SolveCircuit f c
+    => Tuple (ProverState f) (Run (CIRCUIT f c r) a)
+    -> Run r (Step (Tuple (ProverState f) (Run (CIRCUIT f c r) a)) (Tuple (Either EvaluationError a) (ProverState f)))
+  go (Tuple s r) = case Run.peel r of
+    Left v -> case handle v of
+      Left cf -> case cf of
+        Fresh k ->
+          let
+            var = s.nextVar
+          in
+            pure (Loop (Tuple (s { nextVar = incrementVariable var }) (k var)))
+        AddConstraint c k ->
+          case proverConstraint c s of
+            Right s' -> pure (Loop (Tuple s' k))
+            Left e -> pure (Done (Tuple (Left (contextualize s e)) s))
+        Exists n w k ->
+          runAsProver s.assignments (AsProver w) <#> case _ of
+            Left e -> Done (Tuple (Left (contextualize s e)) s)
+            Right fields ->
+              let
+                Tuple vs s' = allocAssignments n fields s
+              in
+                Loop (Tuple s' (k vs))
+        Assign vars w k ->
+          runAsProver s.assignments (AsProver w) <#> case _ of
+            Left e -> Done (Tuple (Left (contextualize s e)) s)
+            Right fields ->
+              let
+                s' = s
+                  { assignments =
+                      Array.foldl (\acc (Tuple v fv) -> Map.insert v fv acc)
+                        s.assignments
+                        (Array.zip vars fields)
+                  }
+              in
+                Loop (Tuple s' k)
+        PushLabel l k ->
+          pure (Loop (Tuple (s { labelStack = Array.snoc s.labelStack l }) k))
+        PopLabel k ->
+          pure (Loop (Tuple (s { labelStack = Array.init s.labelStack # fromMaybe [] }) k))
+      Right other ->
+        Run.send other <#> \r' -> Loop (Tuple s r')
+    Right a ->
+      pure (Done (Tuple (Right a) s))

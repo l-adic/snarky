@@ -31,6 +31,7 @@ package:
     - random-oracle
     - record
     - refs
+    - run
     - safe-coerce
     - simple-json
     - snarky

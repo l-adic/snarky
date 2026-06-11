@@ -28,7 +28,7 @@ import Pickles.Sponge (SpongeM, absorb, absorbMany, getSpongeState, initialSpong
 import Pickles.Sponge as Pickles.Sponge
 import Poseidon (class PoseidonField, hash)
 import RandomOracle.Sponge (Sponge)
-import Snarky.Circuit.DSL (class CircuitM, FVar)
+import Snarky.Circuit.DSL (FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
@@ -58,17 +58,17 @@ hashMessagesForNextWrapProofPureGeneral { sg: AffinePoint sg, paddedChallenges }
     hash (flatChals <> [ sg.x, sg.y ])
 
 hashMessagesForNextWrapProofCircuit'
-  :: forall outer d f t m
+  :: forall outer d f r
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => Foldable outer
   => Reflectable d Int
   => { sg :: AffinePoint (FVar f)
      , allChallenges :: outer (Vector d (FVar f))
      }
-  -> SpongeM f (KimchiConstraint f) t m (FVar f)
+  -> SpongeM f (KimchiConstraint f) r (FVar f)
 hashMessagesForNextWrapProofCircuit' { sg: AffinePoint sg, allChallenges } = labelM "hash-messages-for-next-wrap-proof" do
   -- Absorb all challenge vectors in order (flattened)
   for_ allChallenges \chals ->

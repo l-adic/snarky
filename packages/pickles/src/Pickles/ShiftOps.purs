@@ -24,13 +24,13 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 -- | - `t`: tag type
 -- | - `m`: underlying monad
 -- | - `sf`: shifted scalar type (Type1 (FVar f) or SplitField (FVar f) (BoolVar f))
-type IpaScalarOps f t m sf =
+type IpaScalarOps f r sf =
   { -- | Scale a curve point by a shifted scalar value.
     -- | This corresponds to `scale_fast` in wrap_verifier.ml.
     scaleByShifted ::
       AffinePoint (FVar f)
       -> sf
-      -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
+      -> Snarky f (KimchiConstraint f) r (AffinePoint (FVar f))
   , -- | Get the field elements to absorb for a shifted scalar.
     -- | For Type1: returns [t] (single field element)
     -- | For Type2: returns [sDiv2, if sOdd then 1 else 0] (two elements)
@@ -49,14 +49,14 @@ type IpaScalarOps f t m sf =
     shiftedEqual ::
       sf
       -> FVar f
-      -> Snarky (KimchiConstraint f) t m (BoolVar f)
+      -> Snarky f (KimchiConstraint f) r (BoolVar f)
   }
 
 -- | Subset of shift operations needed by FinalizeOtherProof circuits.
 -- |
 -- | Both Step and Wrap FOP need only `unshift` and `shiftedEqual` to verify
 -- | deferred values (combined_inner_product, b, perm).
-type FopShiftOps f t m sf =
+type FopShiftOps f r sf =
   { unshift :: sf -> FVar f
-  , shiftedEqual :: sf -> FVar f -> Snarky (KimchiConstraint f) t m (BoolVar f)
+  , shiftedEqual :: sf -> FVar f -> Snarky f (KimchiConstraint f) r (BoolVar f)
   }

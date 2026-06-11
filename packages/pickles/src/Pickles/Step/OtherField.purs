@@ -20,10 +20,9 @@ module Pickles.Step.OtherField
 
 import Pickles.ShiftOps (FopShiftOps, IpaScalarOps)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, equals_)
+import Snarky.Circuit.DSL (Bool(..), BoolVar, FVar, equals_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1, Type2(..), fromShiftedSplitFieldCircuit, fromShiftedType1Circuit, scaleFast2, shiftedEqualType1)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits)
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 
 -- | Step circuit's FOP cross-field variable type.
 -- | Represents Fq deferred values using Type1 shift (2*t + 2^n + 1),
@@ -38,10 +37,10 @@ type StepOtherField f = Type1 f
 -- |
 -- | Replaces the old `type2ScalarOps` from IPA.purs.
 ipaScalarOps
-  :: forall f t m
+  :: forall f r
    . FieldSizeInBits f 255
-  => CircuitM f (KimchiConstraint f) t m
-  => IpaScalarOps f t m (Type2 (SplitField (FVar f) (BoolVar f)))
+  => PrimeField f
+  => IpaScalarOps f r (Type2 (SplitField (FVar f) (BoolVar f)))
 ipaScalarOps =
   { scaleByShifted: \p (Type2 (SplitField t)) -> scaleFast2 @51 @254 p t
   , shiftedToAbsorbFields: \(Type2 (SplitField { sDiv2, sOdd })) -> [ sDiv2, coerce sOdd ]
@@ -55,10 +54,10 @@ ipaScalarOps =
 -- | to verify deferred values from previous Wrap proofs.
 -- | Uses Type1 shift matching OCaml's Shifted_value.Type1.
 fopShiftOps
-  :: forall f t m
+  :: forall f r
    . FieldSizeInBits f 255
-  => CircuitM f (KimchiConstraint f) t m
-  => FopShiftOps f t m (StepOtherField (FVar f))
+  => PrimeField f
+  => FopShiftOps f r (StepOtherField (FVar f))
 fopShiftOps =
   { unshift: fromShiftedType1Circuit
   , shiftedEqual: shiftedEqualType1

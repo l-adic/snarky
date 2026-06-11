@@ -27,7 +27,8 @@ import Pickles.Linearization.FFI (PointEval)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput)
 import Pickles.PlonkChecks.Permutation (PermutationInput)
 import Prim.Int (class Add)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, add_, if_, label)
+import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, add_, if_, label)
+import Snarky.Curves.Class (class PrimeField)
 
 -------------------------------------------------------------------------------
 -- | Types
@@ -102,11 +103,12 @@ data EvalOpt f
 -- |
 -- | Reference: step_verifier.ml:1060-1121 (combine ~ft ~sg_evals)
 hornerCombine
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => FVar f
   -> NonEmptyArray (EvalOpt f)
-  -> Snarky c t m (FVar f)
+  -> Snarky f c r (FVar f)
 hornerCombine xi evals = label "horner-combine" do
   let
     reversed = NEA.reverse evals

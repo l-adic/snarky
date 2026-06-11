@@ -4,17 +4,18 @@ import Prelude
 
 import Control.Apply (lift2)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, UnChecked(..), addConstraint, exists, false_, label, read, readCVar, seal)
+import Snarky.Circuit.DSL (class BasicSystem, Bool(..), BoolVar, FVar, Snarky, UnChecked(..), addConstraint, exists, false_, label, read, readCVar, seal)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
-import Snarky.Curves.Class (fromInt)
+import Snarky.Curves.Class (class PrimeField, fromInt)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 
 -- | Seal an affine point: reduce each coordinate to a single variable if complex.
 sealPoint
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => AffinePoint (FVar f)
-  -> Snarky c t m (AffinePoint (FVar f))
+  -> Snarky f c r (AffinePoint (FVar f))
 sealPoint (AffinePoint p) = label "seal_point" do
   -- OCaml's seal = Tuple_lib.Double.map ~f:Utils.seal evaluates y before x
   -- (right-to-left tuple construction), so we must seal y first to match.
@@ -30,11 +31,11 @@ data Finiteness = CheckFinite | DontCheckFinite
 -- | Complete addition assuming finite inputs.
 -- | OCaml: add_fast (uses default check_finite=true)
 addComplete
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall f r
+   . PrimeField f
   => AffinePoint (FVar f)
   -> AffinePoint (FVar f)
-  -> Snarky (KimchiConstraint f) t m
+  -> Snarky f (KimchiConstraint f) r
        { p :: AffinePoint (FVar f)
        , isInfinity :: BoolVar f
        }
@@ -43,12 +44,12 @@ addComplete = addFast CheckFinite
 -- | Complete addition with explicit finiteness control.
 -- | OCaml: add_fast ~check_finite:true/false
 addFast
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall f r
+   . PrimeField f
   => Finiteness
   -> AffinePoint (FVar f)
   -> AffinePoint (FVar f)
-  -> Snarky (KimchiConstraint f) t m
+  -> Snarky f (KimchiConstraint f) r
        { p :: AffinePoint (FVar f)
        , isInfinity :: BoolVar f
        }

@@ -48,7 +48,7 @@ import Data.Vector as Vector
 import Poseidon (class PoseidonField)
 import RandomOracle.Sponge (Sponge, create)
 import RandomOracle.Sponge as PureSponge
-import Snarky.Circuit.DSL (class CircuitM, class WithLabel, FVar, SizedF, Snarky, const_, label)
+import Snarky.Circuit.DSL (FVar, SizedF, Snarky, const_, label)
 import Snarky.Circuit.Kimchi.RangeCheck (lowest128Bits, lowest128Bits', lowest128BitsPure)
 import Snarky.Circuit.RandomOracle.Sponge as CircuitSponge
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -87,64 +87,62 @@ absorbMany = traverse_ absorb
 
 -- | The in-circuit sponge monad.
 -- | A newtype wrapper around StateT to manage sponge state within Snarky.
-newtype SpongeM f c t m a = SpongeM (StateT (Sponge (FVar f)) (Snarky c t m) a)
+newtype SpongeM f c r a = SpongeM (StateT (Sponge (FVar f)) (Snarky f c r) a)
 
-derive instance Newtype (SpongeM f c t m a) _
-derive newtype instance Functor (Snarky c t m) => Functor (SpongeM f c t m)
-derive newtype instance (Monad (Snarky c t m)) => Apply (SpongeM f c t m)
-derive newtype instance (Monad (Snarky c t m)) => Applicative (SpongeM f c t m)
-derive newtype instance (Monad (Snarky c t m)) => Bind (SpongeM f c t m)
-derive newtype instance (Monad (Snarky c t m)) => Monad (SpongeM f c t m)
+derive instance Newtype (SpongeM f c r a) _
+derive newtype instance Functor (Snarky f c r) => Functor (SpongeM f c r)
+derive newtype instance (Monad (Snarky f c r)) => Apply (SpongeM f c r)
+derive newtype instance (Monad (Snarky f c r)) => Applicative (SpongeM f c r)
+derive newtype instance (Monad (Snarky f c r)) => Bind (SpongeM f c r)
+derive newtype instance (Monad (Snarky f c r)) => Monad (SpongeM f c r)
 
 -- | Run a SpongeM computation, returning only the result
 evalSpongeM
-  :: forall f c t m a
-   . Functor (Snarky c t m)
-  => Monad (Snarky c t m)
+  :: forall f c r a
+   . Functor (Snarky f c r)
+  => Monad (Snarky f c r)
   => Sponge (FVar f)
-  -> SpongeM f c t m a
-  -> Snarky c t m a
+  -> SpongeM f c r a
+  -> Snarky f c r a
 evalSpongeM initialState computation = evalStateT (unwrap computation) initialState
 
 -- | Lift a Snarky computation into SpongeM
 liftSnarky
-  :: forall f c t m a
-   . Functor (Snarky c t m)
-  => Snarky c t m a
-  -> SpongeM f c t m a
+  :: forall f c r a
+   . Functor (Snarky f c r)
+  => Snarky f c r a
+  -> SpongeM f c r a
 liftSnarky ma = wrap $ StateT \s -> ma <#> \a -> Tuple a s
 
 -- | Label a SpongeM computation (lifts Snarky label through StateT)
 labelM
-  :: forall f c t m a
-   . WithLabel t
-  => Monad m
-  => String
-  -> SpongeM f c t m a
-  -> SpongeM f c t m a
+  :: forall f c r a
+   . String
+  -> SpongeM f c r a
+  -> SpongeM f c r a
 labelM s m = wrap $ StateT \state -> label s (runStateT (unwrap m) state)
 
 -- | Get the current sponge state (for checkpointing)
 getSponge
-  :: forall f c t m
-   . Monad (Snarky c t m)
-  => SpongeM f c t m (Sponge (FVar f))
+  :: forall f c r
+   . Monad (Snarky f c r)
+  => SpongeM f c r (Sponge (FVar f))
 getSponge = wrap get
 
 -- | Set the sponge state (for restoring from checkpoint)
 putSponge
-  :: forall f c t m
-   . Monad (Snarky c t m)
+  :: forall f c r
+   . Monad (Snarky f c r)
   => Sponge (FVar f)
-  -> SpongeM f c t m Unit
+  -> SpongeM f c r Unit
 putSponge = wrap <<< put
 
 -- | MonadSponge instance for the in-circuit sponge monad
 instance
   ( PoseidonField f
-  , CircuitM f (KimchiConstraint f) t m
+  , PrimeField f
   ) =>
-  MonadSponge (FVar f) (SpongeM f (KimchiConstraint f) t m) where
+  MonadSponge (FVar f) (SpongeM f (KimchiConstraint f) r) where
   absorb x = wrap do
     sponge <- get
     newSponge <- lift $ CircuitSponge.absorb x sponge
@@ -168,13 +166,13 @@ instance
 -- | Takes any record containing `endo :: FVar f` (the EndoScalar constant for
 -- | challenge expansion, i.e. Wrap_inner_curve.scalar for Step, Step_inner_curve.scalar for Wrap).
 squeezeScalarChallenge
-  :: forall f t m r
+  :: forall f r cr
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => { endo :: FVar f | r }
-  -> SpongeM f (KimchiConstraint f) t m (SizedF 128 (FVar f))
+  -> SpongeM f (KimchiConstraint f) cr (SizedF 128 (FVar f))
 squeezeScalarChallenge params = do
   x <- squeeze
   liftSnarky $ lowest128Bits params.endo x
@@ -184,13 +182,12 @@ squeezeScalarChallenge params = do
 -- | Matches OCaml's `squeeze_scalar` which calls `lowest_128_bits ~constrain_low_bits:false`.
 -- | Only range-checks hi (not lo). Used in Wrap FOP for xi.
 squeezeScalar
-  :: forall f t m r
+  :: forall f r cr
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
   => { endo :: FVar f | r }
-  -> SpongeM f (KimchiConstraint f) t m (SizedF 128 (FVar f))
+  -> SpongeM f (KimchiConstraint f) cr (SizedF 128 (FVar f))
 squeezeScalar params = do
   x <- squeeze
   liftSnarky $ lowest128Bits' false params.endo x

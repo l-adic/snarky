@@ -1,10 +1,11 @@
 -- | High-level circuit compilation and solving.
 -- |
--- | - `compile`: Runs a circuit through `CircuitBuilderT` to extract constraints
--- | - `makeSolver`: Creates a witness solver that runs the circuit through `ProverT`
+-- | - `compile`: interprets a circuit with the builder to extract constraints
+-- | - `makeSolver`: creates a witness solver interpreting with the prover
 -- |
--- | Both functions handle the public input/output variable allocation and ensure
--- | the circuit's output variables are constrained to match the computed values.
+-- | Both handle public input/output variable allocation (deterministically,
+-- | from the initial state's `nextVar`) and constrain the circuit's output
+-- | variables to the computed values.
 module Snarky.Backend.Compile
   ( Checker
   , Solver
@@ -19,142 +20,148 @@ module Snarky.Backend.Compile
 
 import Prelude
 
-import Control.Monad.Error.Class (throwError)
-import Control.Monad.Except (Except, ExceptT, lift, runExceptT)
-import Control.Monad.Rec.Class (class MonadRec)
-import Data.Array (zip)
+import Control.Monad.Except (Except)
+import Data.Array (foldl, zip)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Foldable (for_)
-import Data.Identity (Identity(..))
 import Data.Map (Map)
-import Data.Newtype (un)
+import Data.Map as Map
 import Data.Tuple (Tuple(..))
-import Data.Unfoldable (replicateA)
-import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, finalize, runCircuitBuilderT, setPublicInputVars)
-import Snarky.Backend.Prover (class SolveCircuit, ProverState, ProverT, emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
+import Run (Run)
+import Run as Run
+import Run.Except (EXCEPT)
+import Run.Except as Except
+import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, allocVars, finalize, runCircuitBuilder)
+import Snarky.Backend.Prover (class SolveCircuit, ProverState, allocAssignments, emptyProverState, runCircuitProver)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError, Variable)
 import Snarky.Circuit.DSL.Assert (assertEqual_)
-import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM, Snarky, check, fresh, read, runAsProverT, runSnarky)
+import Snarky.Circuit.DSL.Monad (class CheckedType, CircuitF(..), Snarky, check, liftCircuit, read, runAsProverPure, runSnarky, unAsProver)
 import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Type.Proxy (Proxy(..))
+import Type.Row (type (+))
+import Unsafe.Coerce (unsafeCoerce)
 
 compilePure
-  :: forall @f c c' a b avar bvar r
-   . CompileCircuit f c c' r
+  :: forall @f c c' a b avar bvar aux
+   . CompileCircuit f c c' aux
   => CheckedType f c' avar
   => CircuitType f a avar
   => CircuitType f b bvar
   => Proxy a
   -> Proxy b
   -> Proxy c'
-  -> (forall t. CircuitM f c' t Identity => avar -> Snarky c' t Identity bvar)
-  -> CircuitBuilderState c r
-  -> CircuitBuilderState c r
-compilePure pa pb pc circuit cbs = un Identity $ compile pa pb pc circuit cbs
+  -> (avar -> Snarky f c' () bvar)
+  -> CircuitBuilderState c aux
+  -> CircuitBuilderState c aux
+compilePure pa pb pc circuit = Run.extract <<< compile pa pb pc circuit
 
 compile
-  :: forall f c c' m a b avar bvar r
-   . CompileCircuit f c c' r
+  :: forall @f c c' a b avar bvar aux r
+   . CompileCircuit f c c' aux
   => CheckedType f c' avar
   => CircuitType f a avar
   => CircuitType f b bvar
-  => Monad m
-  => MonadRec m
   => Proxy a
   -> Proxy b
   -> Proxy c'
-  -> (forall t. CircuitM f c' t m => avar -> Snarky c' t m bvar)
-  -> CircuitBuilderState c r
-  -> m (CircuitBuilderState c r)
-compile _ _ _ circuit cbs = finalize <$> do
-  Tuple _ s <-
-    flip runCircuitBuilderT cbs do
-      let
-        n = sizeInFields (Proxy @f) (Proxy @a)
-        m = sizeInFields (Proxy @f) (Proxy @b)
-      vars <- replicateA (n + m) fresh
-      let { before: avars, after: bvars } = Array.splitAt n vars
-      setPublicInputVars vars
-      let avar = fieldsToVar @f @a (map Var avars)
-      out <- runSnarky $ do
-        check @f @c' avar
-        out <- circuit avar
-        for_ (zip (varToFields @f @b out) (map Var bvars)) \(Tuple v1 v2) ->
-          assertEqual_ v1 v2
-      pure out
-  pure s
+  -> (avar -> Snarky f c' r bvar)
+  -> CircuitBuilderState c aux
+  -> Run r (CircuitBuilderState c aux)
+compile _ _ _ circuit cbs0 = do
+  let
+    n = sizeInFields (Proxy @f) (Proxy @a)
+    m = sizeInFields (Proxy @f) (Proxy @b)
+    Tuple vars cbs1 = allocVars (n + m) cbs0
+    cbs2 = cbs1 { publicInputs = vars }
+    { before: avars, after: bvars } = Array.splitAt n vars
+    avar = fieldsToVar @f @a (map Var avars)
+
+    prog :: Snarky f c' r Unit
+    prog = do
+      check avar
+      out <- circuit avar
+      for_ (zip (varToFields @f @b out) (map Var bvars)) \(Tuple v1 v2) ->
+        assertEqual_ v1 v2
+  Tuple _ s <- runCircuitBuilder cbs2 (runSnarky prog)
+  pure (finalize s)
 
 -- | Create a solver with an explicit initial prover state.
 -- | Useful for enabling debug mode: pass `emptyProverState { debug = true }`.
 makeSolver'
-  :: forall f a b c m avar bvar
+  :: forall f a b c r avar bvar
    . SolveCircuit f c
   => CheckedType f c avar
   => CircuitType f a avar
   => CircuitType f b bvar
-  => Monad m
-  => MonadRec m
   => ProverState f
   -> Proxy c
-  -> (forall t. CircuitM f c t m => avar -> Snarky c t m bvar)
-  -> SolverT f c m a b
+  -> (avar -> Snarky f c r bvar)
+  -> SolverT f c r a b
 makeSolver' initialState _ circuit = \inputs -> do
-  eres <- lift $ flip runProverT initialState do
-    let n = sizeInFields (Proxy @f) (Proxy @a)
-    let m = sizeInFields (Proxy @f) (Proxy @b)
-    vars <- replicateA (n + m) fresh
-    let { before: avars, after: bvars } = Array.splitAt n vars
-    setAssignments $ zip avars (valueToFields inputs)
-    outVar <- runSnarky $ do
-      let var = fieldsToVar @f @a (map Var avars)
-      check @f @c var
-      result <- circuit var
-      pure result
-    eres <- getAssignments >>= runAsProverT (read outVar)
-    case eres of
-      Left e -> throwProverError e
-      Right output -> do
-        setAssignments $ zip bvars (valueToFields output)
-        runSnarky $
-          for_ (zip (varToFields @f @b outVar) (map Var bvars)) \(Tuple v1 v2) -> do
-            assertEqual_ v1 v2 :: Snarky c (ProverT f) m Unit
-        pure output
-  case eres of
-    Tuple (Left e) _ -> throwError e
-    Tuple (Right c) { assignments } -> pure $ Tuple c assignments
+  let
+    n = sizeInFields (Proxy @f) (Proxy @a)
+    m = sizeInFields (Proxy @f) (Proxy @b)
+    Tuple vars st1 = allocAssignments (n + m) (valueToFields inputs) initialState
+    { before: avars, after: bvars } = Array.splitAt n vars
+    avar = fieldsToVar @f @a (map Var avars)
+
+    prog :: Snarky f c r bvar
+    prog = do
+      check avar
+      out <- circuit avar
+      -- Bind the circuit's output to the preallocated public-output
+      -- variables, then constrain them equal — INSIDE the prover, so
+      -- backend reductions allocate/assign their intermediates exactly
+      -- as the builder did at compile time.
+      liftCircuit (Assign bvars (map valueToFields (unAsProver (read @b out))) unit)
+      for_ (zip (varToFields @f @b out) (map Var bvars)) \(Tuple v1 v2) ->
+        assertEqual_ v1 v2
+      pure out
+  Tuple eOut s <- liftExceptRow (runCircuitProver st1 (runSnarky prog))
+  case eOut of
+    Left e -> Except.throw e
+    Right outVar -> case runAsProverPure (read outVar) s.assignments of
+      Left e -> Except.throw e
+      Right output -> pure $ Tuple output s.assignments
 
 makeSolver
-  :: forall f a b c m avar bvar
+  :: forall f a b c r avar bvar
    . SolveCircuit f c
   => CheckedType f c avar
   => CircuitType f a avar
   => CircuitType f b bvar
-  => Monad m
-  => MonadRec m
   => Proxy c
-  -> (forall t. CircuitM f c t m => avar -> Snarky c t m bvar)
-  -> SolverT f c m a b
+  -> (avar -> Snarky f c r bvar)
+  -> SolverT f c r a b
 makeSolver = makeSolver' emptyProverState
 
-type SolverT :: Type -> Type -> (Type -> Type) -> Type -> Type -> Type
-type SolverT f c m a b = a -> ExceptT EvaluationError m (Tuple b (Map Variable f))
+type SolverT :: Type -> Type -> Row (Type -> Type) -> Type -> Type -> Type
+type SolverT f c r a b = a -> Run (EXCEPT EvaluationError + r) (Tuple b (Map Variable f))
 
 runSolverT
-  :: forall f c m a b
-   . SolverT f c m a b
+  :: forall f c r a b
+   . SolverT f c r a b
   -> a
-  -> m (Either EvaluationError (Tuple b (Map Variable f)))
-runSolverT f a = runExceptT (f a)
+  -> Run r (Either EvaluationError (Tuple b (Map Variable f)))
+runSolverT f a = Except.runExcept (f a)
 
-type Solver f c a b = SolverT f c Identity a b
+type Solver f c a b = SolverT f c () a b
 
 runSolver
   :: forall f c a b
    . Solver f c a b
   -> a
   -> Either EvaluationError (Tuple b (Map Variable f))
-runSolver c a = un Identity $ runSolverT c a
+runSolver c a = Run.extract $ runSolverT c a
+
+-- | Widen an open row by the solver's EXCEPT channel. Safe for the same
+-- | reason `Run.expand` is (a `Run r` program can never produce an effect
+-- | outside `r`); spelled with `unsafeCoerce` because the `Union` solver
+-- | cannot align two open tails (`Run.expand` is itself `unsafeCoerce`
+-- | behind that unsolvable proof).
+liftExceptRow :: forall e r a. Run r a -> Run (EXCEPT e + r) a
+liftExceptRow = unsafeCoerce
 
 type Checker f c =
   (Variable -> Except EvaluationError f)

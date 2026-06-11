@@ -54,7 +54,6 @@ module Pickles.Prove.Compile
 import Prelude
 
 import Control.Monad.Except (ExceptT)
-import Control.Monad.Rec.Class (class MonadRec)
 import Data.Array as Array
 import Data.Array.NonEmpty as NonEmptyArray
 import Data.Enum (fromEnum)
@@ -69,7 +68,7 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Effect.Class (class MonadEffect, liftEffect)
+import Effect.Class (liftEffect)
 import Effect.Exception as Exc
 import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
@@ -145,6 +144,7 @@ import Pickles.Wrap.Slots (class PadSlots, NoSlots, noSlots, replicateSlots)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (EQ, GT, LT)
 import Prim.Ordering as PrimOrdering
+import Run (EFFECT, Run)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Backend.Kimchi.Proof
@@ -178,6 +178,7 @@ import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (SplitField, Type2)
 import Type.Proxy (Proxy(..))
+import Type.Row (type (+))
 
 --------------------------------------------------------------------------------
 -- Public types
@@ -2177,11 +2178,11 @@ type CompileMultiConfig =
 -- | Per-branch prover for ONE branch. Each `RulesCons` slot in the
 -- | carrier corresponds to a `BranchProver` of that branch's shape.
 newtype BranchProver
-  :: Type -> Int -> Type -> Type -> Type -> Type -> (Type -> Type) -> Type
-newtype BranchProver prevsSpec mpv prevsCarrier vkCarrier inputVal outputVal m =
+  :: Type -> Int -> Type -> Type -> Type -> Type -> Row (Type -> Type) -> Type
+newtype BranchProver prevsSpec mpv prevsCarrier vkCarrier inputVal outputVal r =
   BranchProver
     ( StepInputs prevsSpec inputVal prevsCarrier vkCarrier
-      -> ExceptT ProveError m
+      -> ExceptT ProveError (Run (EFFECT + r))
            (CompiledProof mpv (StatementIO inputVal outputVal))
     )
 
@@ -2278,7 +2279,7 @@ class CompilableRulesSpec
   -> Type
   -> Type
   -> Type
-  -> (Type -> Type)
+  -> Row (Type -> Type)
   -> Constraint
 class
   CompilableRulesSpec
@@ -2296,8 +2297,8 @@ class
     perBranchCtxsCarrier
     perBranchStepCompileResults
     stepProveFnsCarrier
-    m
-  | rs topBranches wrapVkChunks m ->
+    r
+  | rs topBranches wrapVkChunks r ->
     branches mpvMax rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
     perBranchStepCompileResults
     stepProveFnsCarrier
@@ -2326,7 +2327,7 @@ class
   runStepCompiles
     :: perBranchCtxsCarrier
     -> rulesCarrier
-    -> m perBranchStepCompileResults
+    -> Run (EFFECT + r) perBranchStepCompileResults
 
   -- | Symmetric to `extractStepCompileFns`: pull each entry's
   -- | `stepProveFn` into a Tuple chain. The per-branch thunk type:
@@ -2334,7 +2335,7 @@ class
   -- |   StepProveContext mpv
   -- |   -> StepCompileResult
   -- |   -> StepAdvice prevsSpec _ _ inputVal mpv carrier valCarrier
-  -- |   -> ExceptT EvaluationError m (StepProveResult outputSize)
+  -- |   -> ExceptT EvaluationError (Run (EFFECT + r)) (StepProveResult outputSize)
   -- |
   -- | Used by `buildBranchProvers` to assemble per-branch
   -- | `BranchProver` closures by composing each branch's
@@ -2365,7 +2366,6 @@ class
 -- | Nil instance is polymorphic in `slotsMax` and `topBranches` — Nil
 -- | returns unit-shaped carriers regardless of either.
 instance
-  Monad m =>
   CompilableRulesSpec RulesNil
     inputVal
     outputVal
@@ -2380,7 +2380,7 @@ instance
     Unit
     Unit
     Unit
-    m
+    r
   where
   branchCount _ = 0
   extractStepCompileFns _ = unit
@@ -2405,8 +2405,7 @@ instance
       restCtxs
       restStepCompileResults
       restStepProveFns
-      m
-  , Monad m
+      r
   , Add restBranches 1 branches
   , StepSlotsCarrier
       prevsSpec
@@ -2441,11 +2440,11 @@ instance
     mpvMax
     slotsMax
     wrapVkChunks
-    ( RuleEntry prevsSpec ruleMpv topBranches wrapVkChunks valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints m
+    ( RuleEntry prevsSpec ruleMpv topBranches wrapVkChunks valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints r
         /\ restCarrier
     )
     ( ( PProveStep.StepProveContext wrapVkChunks ruleMpv topBranches blueprints
-        -> m PProveStep.StepCompileResult
+        -> Run (EFFECT + r) PProveStep.StepCompileResult
       )
         /\ restStepCompileFns
     )
@@ -2459,12 +2458,12 @@ instance
              carrier
              valCarrier
              vkCarrier
-        -> ExceptT EvaluationError m
+        -> ExceptT EvaluationError (Run (EFFECT + r))
              (PProveStep.StepProveResult outputSize)
       )
         /\ restStepProveFns
     )
-    m
+    r
   where
   branchCount _ =
     1 + branchCount
@@ -2482,7 +2481,7 @@ instance
       @restCtxs
       @restStepCompileResults
       @restStepProveFns
-      @m
+      @r
       (Proxy :: Proxy rest)
   extractStepCompileFns (RuleEntry r /\ rest) =
     r.stepCompileFn
@@ -2501,7 +2500,7 @@ instance
         @restCtxs
         @restStepCompileResults
         @restStepProveFns
-        @m
+        @r
         rest
   runStepCompiles (ctx /\ restCtxs) (RuleEntry r /\ restEntries) = do
     headResult <- r.stepCompileFn ctx
@@ -2520,7 +2519,7 @@ instance
       @restCtxs
       @restStepCompileResults
       @restStepProveFns
-      @m
+      @r
       restCtxs
       restEntries
     pure (headResult /\ tailResults)
@@ -2546,7 +2545,7 @@ instance
         @restCtxs
         @restStepCompileResults
         @restStepProveFns
-        @m
+        @r
         restResults
     in
       headRecord :< restVec
@@ -2567,7 +2566,7 @@ instance
         @restCtxs
         @restStepCompileResults
         @restStepProveFns
-        @m
+        @r
         rest
 
 --------------------------------------------------------------------------------
@@ -2590,7 +2589,7 @@ class
     perBranchCtxsCarrier
     perBranchStepCompileResults
     stepProveFnsCarrier
-    m <=
+    r <=
   CompilableRulesSpecShape
     rs
     inputVal
@@ -2607,8 +2606,8 @@ class
     perBranchStepCompileResults
     stepProveFnsCarrier
     proversCarrier
-    m
-  | rs topBranches wrapVkChunks m -> branches mpvMax rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
+    r
+  | rs topBranches wrapVkChunks r -> branches mpvMax rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
     perBranchStepCompileResults stepProveFnsCarrier
     proversCarrier
   where
@@ -2629,7 +2628,7 @@ class
     :: CompileMultiConfig
     -> Vector topBranches Int
     -> rulesCarrier
-    -> m (Vector branches Int)
+    -> Run (EFFECT + r) (Vector branches Int)
 
   -- | High-level per-branch compile with caller-supplied multi-domain
   -- | `Vector topBranches Int`. The SAME Vector is fed to every
@@ -2641,7 +2640,7 @@ class
     :: CompileMultiConfig
     -> Vector topBranches Int
     -> rulesCarrier
-    -> m perBranchStepCompileResults
+    -> Run (EFFECT + r) perBranchStepCompileResults
 
   -- | Build per-branch `BranchProver` Tuple chain. Each closure runs
   -- | step solve+prove (via the rule's `stepProveFn`) and wrap
@@ -2713,7 +2712,7 @@ class
 -- | via `:<` from Nil's `Vector.nil` up to `Vector topBranches Int`
 -- | at the outermost call).
 runMultiCompileFull
-  :: forall @rs @inputVal @outputVal @prevInputVal @topBranches @mpvMax @slotsMax @wrapVkChunks @m
+  :: forall @rs @inputVal @outputVal @prevInputVal @topBranches @mpvMax @slotsMax @wrapVkChunks @r
        rulesCarrier
        stepCompileFnsCarrier
        perBranchCtxsCarrier
@@ -2732,15 +2731,12 @@ runMultiCompileFull
        perBranchStepCompileResults
        stepProveFnsCarrier
        proversCarrier
-       m
-  => Monad m
-  => MonadEffect m
-  => MonadRec m
+       r
   => Reflectable wrapVkChunks Int
   => Reflectable topBranches Int
   => CompileMultiConfig
   -> rulesCarrier
-  -> m
+  -> Run (EFFECT + r)
        { stepResults :: perBranchStepCompileResults
        , log2s :: Vector topBranches Int
        }
@@ -2763,7 +2759,7 @@ runMultiCompileFull cfg rules = do
     @perBranchStepCompileResults
     @stepProveFnsCarrier
     @proversCarrier
-    @m
+    @r
     cfg
     placeholder
     rules
@@ -2783,7 +2779,7 @@ runMultiCompileFull cfg rules = do
     @perBranchStepCompileResults
     @stepProveFnsCarrier
     @proversCarrier
-    @m
+    @r
     cfg
     log2s
     rules
@@ -2797,7 +2793,6 @@ runMultiCompileFull cfg rules = do
 -- | `branches = topBranches`, so this is only reached when the user
 -- | called with empty rs.
 instance
-  Monad m =>
   CompilableRulesSpecShape RulesNil
     inputVal
     outputVal
@@ -2813,7 +2808,7 @@ instance
     Unit
     Unit
     Unit
-    m
+    r
   where
   prePassDomainLog2s _ _ _ = pure Vector.nil
   runMultiCompile _ _ _ = pure unit
@@ -2832,10 +2827,7 @@ instance
       restStepCompileResults
       restStepProveFns
       restProvers
-      m
-  , Monad m
-  , MonadEffect m
-  , MonadRec m
+      r
   , CompilableSpec prevsSpec slotVKs prevsCarrier ruleMpv slots valCarrier
       carrier
       vkCarrier
@@ -2913,11 +2905,11 @@ instance
       mpvMax
       slotsMax
       wrapVkChunks
-      ( RuleEntry prevsSpec ruleMpv topBranches wrapVkChunks valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints m
+      ( RuleEntry prevsSpec ruleMpv topBranches wrapVkChunks valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints r
           /\ restCarrier
       )
       ( ( PProveStep.StepProveContext wrapVkChunks ruleMpv topBranches blueprints
-          -> m PProveStep.StepCompileResult
+          -> Run (EFFECT + r) PProveStep.StepCompileResult
         )
           /\ restStepCompileFns
       )
@@ -2931,12 +2923,12 @@ instance
                carrier
                valCarrier
                vkCarrier
-          -> ExceptT EvaluationError m
+          -> ExceptT EvaluationError (Run (EFFECT + r))
                (PProveStep.StepProveResult outputSize)
         )
           /\ restStepProveFns
       )
-      m
+      r
   , Add 1 restBranches branches
   -- `Vector.cons` (`(:<)`) needs `Add n 1 nInc`; here n=restBranches,
   -- nInc=branches. PS doesn't commute `Add` automatically, so we
@@ -2953,11 +2945,11 @@ instance
     mpvMax
     slotsMax
     wrapVkChunks
-    ( RuleEntry prevsSpec ruleMpv topBranches wrapVkChunks valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints m
+    ( RuleEntry prevsSpec ruleMpv topBranches wrapVkChunks valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints r
         /\ restCarrier
     )
     ( ( PProveStep.StepProveContext wrapVkChunks ruleMpv topBranches blueprints
-        -> m PProveStep.StepCompileResult
+        -> Run (EFFECT + r) PProveStep.StepCompileResult
       )
         /\ restStepCompileFns
     )
@@ -2971,7 +2963,7 @@ instance
              carrier
              valCarrier
              vkCarrier
-        -> ExceptT EvaluationError m
+        -> ExceptT EvaluationError (Run (EFFECT + r))
              (PProveStep.StepProveResult outputSize)
       )
         /\ restStepProveFns
@@ -2984,10 +2976,10 @@ instance
     -- BranchProver is a newtype (not an alias) so PS sees a saturated
     -- type constructor in the instance head rather than an unfolded
     -- function type — dispatch resolves cleanly.
-    ( BranchProver prevsSpec mpvMax prevsCarrier vkCarrier inputVal outputVal m
+    ( BranchProver prevsSpec mpvMax prevsCarrier vkCarrier inputVal outputVal r
         /\ restProvers
     )
-    m
+    r
   where
   prePassDomainLog2s cfg placeholder (RuleEntry r /\ restEntries) = do
     let placeholderCtx = buildStepProveCtx @prevsSpec cfg r.slotVKs placeholder
@@ -3008,7 +3000,7 @@ instance
       @restStepCompileResults
       @restStepProveFns
       @restProvers
-      @m
+      @r
       cfg
       placeholder
       restEntries
@@ -3032,7 +3024,7 @@ instance
       @restStepCompileResults
       @restStepProveFns
       @restProvers
-      @m
+      @r
       cfg
       log2s
       restEntries
@@ -3104,7 +3096,7 @@ instance
       @restStepCompileResults
       @restStepProveFns
       @restProvers
-      @m
+      @r
       ncProxy
       (branchIdx + 1)
       cfg
@@ -3140,9 +3132,9 @@ data RuleEntry
   -> Type
   -> Type
   -> Type
-  -> (Type -> Type)
+  -> Row (Type -> Type)
   -> Type
-data RuleEntry prevsSpec mpv nd wrapVkChunks valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints m = RuleEntry
+data RuleEntry prevsSpec mpv nd wrapVkChunks valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints r = RuleEntry
   { -- | Pre-pass: takes a placeholder `StepProveContext mpv` (built
     -- | with OCaml `rough_domains` log2=20) and returns the actual
     -- | `selfStepDomainLog2` derived by counting gates in a one-shot
@@ -3153,9 +3145,9 @@ data RuleEntry prevsSpec mpv nd wrapVkChunks valCarrier inputVal carrier outputS
     -- | proof-system's `branches` count, used for Pseudo dispatch
     -- | over Self-prev step domains in `finalizeOtherProofCircuit`.
     preComputeStepDomainLog2Fn ::
-      PProveStep.StepProveContext wrapVkChunks mpv nd blueprints -> m Int
+      PProveStep.StepProveContext wrapVkChunks mpv nd blueprints -> Run (EFFECT + r) Int
   , stepCompileFn ::
-      PProveStep.StepProveContext wrapVkChunks mpv nd blueprints -> m PProveStep.StepCompileResult
+      PProveStep.StepProveContext wrapVkChunks mpv nd blueprints -> Run (EFFECT + r) PProveStep.StepCompileResult
   -- | `vkCarrier` is the spec-derived per-slot side-loaded VK carrier
   -- | (`SideloadedVKsCarrier prevsSpec vkCarrier`): compiled slots
   -- | contribute `Unit`, side-loaded slots contribute a runtime
@@ -3172,7 +3164,7 @@ data RuleEntry prevsSpec mpv nd wrapVkChunks valCarrier inputVal carrier outputS
            carrier
            valCarrier
            vkCarrier
-      -> ExceptT EvaluationError m (PProveStep.StepProveResult outputSize)
+      -> ExceptT EvaluationError (Run (EFFECT + r)) (PProveStep.StepProveResult outputSize)
   , slotVKs :: slotVKs
   }
 
@@ -3181,7 +3173,7 @@ data RuleEntry prevsSpec mpv nd wrapVkChunks valCarrier inputVal carrier outputS
 -- | body invokes the captured rule against `stepCompile` /
 -- | `stepSolveAndProve`.
 mkRuleEntry
-  :: forall @mpvMax @outputVal @prevInputVal @slotVkChunks @wrapVkChunks @m
+  :: forall @mpvMax @outputVal @prevInputVal @slotVkChunks @wrapVkChunks @r
        prevsSpec mpv mpvPad nd ndPred outputSize valCarrier
        wrapVkChunksPred wvcTCommLen wvcTCommLenPred wvcWCoeffN wvcIndexSigmaN
        wvcChunkBases wvcNonSgBases wvcSg1 wvcSg2 wvcSg3 wvcSg4 wvcSg5
@@ -3270,12 +3262,9 @@ mkRuleEntry
        vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) inputVar
   => SlotStatementsCarrier prevsSpec valCarrier
-  => Monad m
-  => MonadEffect m
-  => MonadRec m
-  => PStepRule m mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
+  => PStepRule r mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
   -> slotVKs
-  -> Effect (RuleEntry prevsSpec mpv nd wrapVkChunks valCarrier inputVal carrier outputSize slotVKs sideloadedVkCarrier blueprints m)
+  -> Effect (RuleEntry prevsSpec mpv nd wrapVkChunks valCarrier inputVal carrier outputSize slotVKs sideloadedVkCarrier blueprints r)
 mkRuleEntry rule slotVKs =
   -- The rule already has the bare-`m` `StepRule` shape the step
   -- functions expect — pass it straight through (compile and prove use
@@ -3343,8 +3332,8 @@ mkRuleEntry rule slotVKs =
 -- Type synonym for `StepRuleAt`, used to avoid an import-cycle in the
 -- `RuleEntry` field types. Pinned to the entry's monad `m` so an app
 -- rule's advice constraints discharge at the concrete `m`.
-type PStepRule m mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar =
-  PProveStep.StepRuleAt m mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
+type PStepRule r mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar =
+  PProveStep.StepRuleAt (EFFECT + r) mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
 
 --------------------------------------------------------------------------------
 -- compileMulti — N-branch compile entry point.
@@ -3430,11 +3419,8 @@ runMultiProverBody
        pad unfsTotal digestPlusUnfs outputSize carrierFVar
        padMax totalBasesMax totalBasesMaxPred
        tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
-       vkCarrier blueprints m
+       vkCarrier blueprints r
    . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier vkCarrier blueprints
-  => Monad m
-  => MonadEffect m
-  => MonadRec m
   => Reflectable wrapVkChunks Int
   => Compare 0 wrapVkChunks LT
   => Add 1 wrapVkChunksPred wrapVkChunks
@@ -3523,9 +3509,9 @@ runMultiProverBody
   -- ^ this branch's step compile result
   -> Int
   -- ^ this branch's selfStepDomainLog2 (from the pre-pass)
-  -> RuleEntry prevsSpec mpv topBranches wrapVkChunks valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints m
+  -> RuleEntry prevsSpec mpv topBranches wrapVkChunks valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints r
   -> StepInputs prevsSpec inputVal prevsCarrier vkCarrier
-  -> ExceptT ProveError m
+  -> ExceptT ProveError (Run (EFFECT + r))
        (CompiledProof mpvMax (StatementIO inputVal outputVal))
 runMultiProverBody
   _ncProxy
@@ -3898,7 +3884,7 @@ runMultiProverBody
 
 compileMulti
   :: forall @rs @outputVal @prevInputVal @slots @stepChunks @wrapVkChunks numChunksPred
-       m
+       r
        inputVal mpvMax
        branches
        rulesCarrier
@@ -3921,10 +3907,7 @@ compileMulti
        perBranchStepCompileResults
        stepProveFnsCarrier
        proversCarrier
-       m
-  => Monad m
-  => MonadEffect m
-  => MonadRec m
+       r
   => CircuitGateConstructor WrapField PallasG
   => Reflectable wrapVkChunks Int
   => Compare 0 wrapVkChunks LT
@@ -3966,7 +3949,7 @@ compileMulti
        (slots (Vector WrapIPARounds (FVar WrapField)))
   => CompileMultiConfig
   -> rulesCarrier
-  -> m
+  -> Run (EFFECT + r)
        ( MultiOutput
            proversCarrier
            perBranchStepCompileResults
@@ -3993,7 +3976,7 @@ compileMulti cfg rules = do
     @mpvMax
     @slots
     @wrapVkChunks
-    @m
+    @r
     cfg
     rules
 
@@ -4040,7 +4023,7 @@ compileMulti cfg rules = do
       @perBranchCtxsCarrier
       @perBranchStepCompileResults
       @stepProveFnsCarrier
-      @m
+      @r
       stepResults
 
   -- Step 2: shared wrap compile across all branches.
@@ -4072,7 +4055,7 @@ compileMulti cfg rules = do
     @perBranchStepCompileResults
     @stepProveFnsCarrier
     @proversCarrier
-    @m
+    @r
     (Proxy :: Proxy stepChunks)
     0
     cfg

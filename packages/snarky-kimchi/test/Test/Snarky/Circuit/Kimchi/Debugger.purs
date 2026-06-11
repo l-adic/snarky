@@ -11,11 +11,12 @@ import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
 import Data.String as String
 import Data.Tuple (Tuple(..), fst, uncurry)
+import Run as Run
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (compilePure, makeSolver', runSolverT)
 import Snarky.Backend.Prover (class SolveCircuit, emptyProverState)
 import Snarky.Circuit.CVar (EvaluationError(..), incrementVariable, v0)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, addConstraint, const_, div_, label, mul_, r1cs)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F(..), FVar, Snarky, addConstraint, const_, div_, label, mul_, r1cs)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate, initialState)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Pallas as Pallas
@@ -37,11 +38,11 @@ debugCircuitPure
   => CircuitType f a avar
   => CircuitType f b bvar
   => Proxy c
-  -> (forall t. CircuitM f c t Identity => avar -> Snarky c t Identity bvar)
+  -> (avar -> Snarky f c () bvar)
   -> a
   -> Either EvaluationError b
 debugCircuitPure pc circuit inputs =
-  un Identity (runSolverT (makeSolver' (emptyProverState { debug = true }) pc circuit) inputs)
+  Run.extract (runSolverT (makeSolver' (emptyProverState { debug = true }) pc circuit) inputs)
     <#> fst
 
 spec :: Spec Unit
@@ -49,7 +50,7 @@ spec = describe "ProverT debug mode" do
 
   it "succeeds on a correct mul circuit" do
     let
-      circuit :: forall t. CircuitM Pallas.BaseField KC t Identity => FV -> FV -> Snarky KC t Identity FV
+      circuit :: FV -> FV -> Snarky Pallas.BaseField KC () FV
       circuit a b = mul_ a b
 
       result :: Either EvaluationError F'
@@ -60,7 +61,7 @@ spec = describe "ProverT debug mode" do
     let
       -- Circuit that adds a deliberately wrong constraint:
       -- asserts input * input = 0 (only true when input = 0)
-      badCircuit :: forall t. CircuitM Pallas.BaseField KC t Identity => FV -> Snarky KC t Identity FV
+      badCircuit :: FV -> Snarky Pallas.BaseField KC () FV
       badCircuit input = do
         res <- mul_ input input
         addConstraint $ r1cs { left: input, right: input, output: const_ zero }
@@ -79,7 +80,7 @@ spec = describe "ProverT debug mode" do
   it "catches DivisionByZero" do
     let
       -- Division by a variable-valued zero (not const_ zero, which throws unsafely)
-      circuit :: forall t. CircuitM Pallas.BaseField KC t Identity => FV -> FV -> Snarky KC t Identity FV
+      circuit :: FV -> FV -> Snarky Pallas.BaseField KC () FV
       circuit a b = div_ a b
 
       result :: Either EvaluationError F'
@@ -94,7 +95,7 @@ spec = describe "ProverT debug mode" do
   it "constraint satisfied when input is zero" do
     let
       -- Same deliberately wrong constraint, but with input = 0 it IS satisfied (0*0=0)
-      badCircuit :: forall t. CircuitM Pallas.BaseField KC t Identity => FV -> Snarky KC t Identity FV
+      badCircuit :: FV -> Snarky Pallas.BaseField KC () FV
       badCircuit input = do
         res <- mul_ input input
         addConstraint $ r1cs { left: input, right: input, output: const_ zero }
@@ -106,7 +107,7 @@ spec = describe "ProverT debug mode" do
 
   it "label wraps errors with WithContext" do
     let
-      circuit :: forall t. CircuitM Pallas.BaseField KC t Identity => FV -> Snarky KC t Identity FV
+      circuit :: FV -> Snarky Pallas.BaseField KC () FV
       circuit input = label "my-label" do
         res <- mul_ input input
         addConstraint $ r1cs { left: input, right: input, output: const_ zero }
@@ -124,7 +125,7 @@ spec = describe "ProverT debug mode" do
 
   it "labels nest correctly" do
     let
-      circuit :: forall t. CircuitM Pallas.BaseField KC t Identity => FV -> Snarky KC t Identity FV
+      circuit :: FV -> Snarky Pallas.BaseField KC () FV
       circuit input = label "outer" $ label "inner" do
         res <- mul_ input input
         addConstraint $ r1cs { left: input, right: input, output: const_ zero }
@@ -150,7 +151,7 @@ spec = describe "ProverT debug mode" do
     it "varMetadata tracks which label block allocated each variable" do
       let
         -- A circuit with two labeled sections, each allocating an intermediate variable
-        circuit :: forall t. CircuitM Pallas.BaseField KC t Identity => FV -> Snarky KC t Identity FV
+        circuit :: FV -> Snarky Pallas.BaseField KC () FV
         circuit input = do
           x <- label "squaring" $ mul_ input input
           y <- label "cubing" $ mul_ x input
@@ -169,7 +170,7 @@ spec = describe "ProverT debug mode" do
 
     it "nested labels produce nested birth context paths" do
       let
-        circuit :: forall t. CircuitM Pallas.BaseField KC t Identity => FV -> Snarky KC t Identity FV
+        circuit :: FV -> Snarky Pallas.BaseField KC () FV
         circuit input = label "outer" do
           x <- label "square" $ mul_ input input
           label "cube" $ mul_ x input
@@ -184,7 +185,7 @@ spec = describe "ProverT debug mode" do
 
     it "decorateError enriches MissingVariable with birth context" do
       let
-        circuit :: forall t. CircuitM Pallas.BaseField KC t Identity => FV -> Snarky KC t Identity FV
+        circuit :: FV -> Snarky Pallas.BaseField KC () FV
         circuit input = label "scalar-mul" do
           x <- mul_ input input
           mul_ x input

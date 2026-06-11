@@ -9,7 +9,7 @@ import Data.Tuple (Tuple(..), uncurry)
 import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky)
+import Snarky.Circuit.DSL (BoolVar, F(..), FVar, Snarky)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Circuit.Kimchi.VarBaseMul (joinField, scaleFast1, scaleFast2, scaleFast2', splitField)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
@@ -53,9 +53,9 @@ spec cfg = do
 
         circuit1
           :: forall t
-           . CircuitM Vesta.BaseField (KimchiConstraint Vesta.BaseField) t Identity
+           . PrimeField Vesta.BaseField
           => Tuple (AffinePoint (FVar Vesta.BaseField)) (Type1 (FVar Vesta.BaseField))
-          -> Snarky (KimchiConstraint Vesta.BaseField) t Identity (AffinePoint (FVar Vesta.BaseField))
+          -> Snarky Vesta.BaseField (KimchiConstraint Vesta.BaseField) () (AffinePoint (FVar Vesta.BaseField))
         circuit1 = uncurry \p t -> do
           g <- scaleFast1 @51 p t
           pure g
@@ -101,9 +101,9 @@ spec cfg = do
 
         circuit2
           :: forall t
-           . CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t Identity
+           . PrimeField Pallas.BaseField
           => Tuple (AffinePoint (FVar Pallas.BaseField)) { sDiv2 :: FVar Pallas.BaseField, sOdd :: BoolVar Pallas.BaseField }
-          -> Snarky (KimchiConstraint Pallas.BaseField) t Identity (AffinePoint (FVar Pallas.BaseField))
+          -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) () (AffinePoint (FVar Pallas.BaseField))
         circuit2 = uncurry \p t -> scaleFast2 @51 @254 p t
 
         gen :: Gen (Tuple (AffinePoint Pallas.BaseField) { sDiv2 :: F Pallas.BaseField, sOdd :: Boolean })
@@ -132,10 +132,10 @@ spec cfg = do
     it "rejects forbidden Type2 values" $ unsafePartial do
       let
         circuit2M
-          :: forall t m
-           . CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t m
+          :: forall r
+           . PrimeField Pallas.BaseField
           => Tuple (AffinePoint (FVar Pallas.BaseField)) (Type2 (FVar Pallas.BaseField) (BoolVar Pallas.BaseField))
-          -> Snarky (KimchiConstraint Pallas.BaseField) t m (AffinePoint (FVar Pallas.BaseField))
+          -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) r (AffinePoint (FVar Pallas.BaseField))
         circuit2M = uncurry \p t -> scaleFast2 @51 @254 p t
 
         -- Generator that picks from forbidden values
@@ -183,9 +183,9 @@ spec cfg = do
 
         circuit3
           :: forall t
-           . CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t Identity
+           . PrimeField Pallas.BaseField
           => Tuple (AffinePoint (FVar Pallas.BaseField)) (FVar Pallas.BaseField)
-          -> Snarky (KimchiConstraint Pallas.BaseField) t Identity (AffinePoint (FVar Pallas.BaseField))
+          -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) () (AffinePoint (FVar Pallas.BaseField))
         circuit3 = uncurry \p scalar -> scaleFast2' @51 @254 p scalar
 
         gen :: Gen (Tuple (AffinePoint Pallas.BaseField) (F Pallas.BaseField))

@@ -51,7 +51,6 @@ module Pickles.Prove.Step
 import Prelude
 
 import Control.Monad.Except (ExceptT, throwError)
-import Control.Monad.Rec.Class (class MonadRec)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
 import Data.Array as Array
@@ -72,7 +71,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
-import Effect.Class (class MonadEffect, liftEffect)
+import Effect.Class (liftEffect)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
@@ -109,6 +108,7 @@ import Pickles.Verify.Types (UnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
+import Run (EFFECT, Run)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled, constraintsToArray)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
@@ -120,7 +120,7 @@ import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
 import Snarky.Backend.Prover (emptyProverState)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (class CircuitM, AsProverT, BoolVar, F(..), FVar, SizedF, Snarky, UnChecked(..), coerceViaBits)
+import Snarky.Circuit.DSL (AsProver, BoolVar, F(..), FVar, SizedF, Snarky, UnChecked(..), coerceViaBits)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (toField, unwrapF, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
@@ -135,6 +135,7 @@ import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (SplitField(..), Type1(..), Type2(..), fromShifted, toShifted)
 import Type.Proxy (Proxy(..))
+import Type.Row (type (+))
 import Unsafe.Coerce (unsafeCoerce)
 
 --------------------------------------------------------------------------------
@@ -1499,16 +1500,14 @@ buildSlotAdvice input = do
 -- | to this shape — ordinary instances on the app monad, no orphan, no
 -- | concrete-advice-monad (`StepRuleM`) form needed.
 type StepRule (n :: Int) valCarrier inputVal input outputVal output prevInputVal prevInput =
-  forall t m'
-   . CircuitM StepField (KimchiConstraint StepField) t m'
-  => MonadEffect m'
-  => CircuitType StepField inputVal input
+  forall r'
+   . CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => CircuitType StepField prevInputVal prevInput
   => CheckedType StepField (KimchiConstraint StepField) input
-  => AsProverT StepField m' valCarrier
+  => AsProver StepField r' valCarrier
   -> input
-  -> Snarky (KimchiConstraint StepField) t m' (RuleOutput n prevInput output)
+  -> Snarky StepField (KimchiConstraint StepField) r' (RuleOutput n prevInput output)
 
 -- | `StepRule` pinned to a specific witness monad `m` — the shape the
 -- | step runner functions and `mkRuleEntry` actually accept. A universal
@@ -1520,17 +1519,14 @@ type StepRule (n :: Int) valCarrier inputVal input outputVal output prevInputVal
 -- | with `m` = the app monad), where the app monad's own instances are in
 -- | scope — there is no rank-2 skolem to defeat them (which is exactly why
 -- | the runner rule param can no longer be universal in `m`).
-type StepRuleAt m (n :: Int) valCarrier inputVal input outputVal output prevInputVal prevInput =
-  forall t
-   . CircuitM StepField (KimchiConstraint StepField) t m
-  => MonadEffect m
-  => CircuitType StepField inputVal input
+type StepRuleAt (r :: Row (Type -> Type)) (n :: Int) valCarrier inputVal input outputVal output prevInputVal prevInput =
+  CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => CircuitType StepField prevInputVal prevInput
   => CheckedType StepField (KimchiConstraint StepField) input
-  => AsProverT StepField m valCarrier
+  => AsProver StepField r valCarrier
   -> input
-  -> Snarky (KimchiConstraint StepField) t m (RuleOutput n prevInput output)
+  -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput n prevInput output)
 
 -- | Ambient data the step prover needs alongside the advice and rule.
 -- |
@@ -1689,7 +1685,7 @@ stepCompile
        ndPred wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN
        chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
-       pad unfsTotal digestPlusUnfs m
+       pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
   -- `wrapVkChunks` is the wrap VK's own chunk count (Dim 2), a free
   -- compile-wide parameter. Callers pin it (`@1`, protocol-guaranteed
@@ -1759,12 +1755,9 @@ stepCompile
        vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
-  => Monad m
-  => MonadEffect m
-  => MonadRec m
   => StepProveContext wrapVkChunks len nd blueprints
-  -> StepRuleAt m len valCarrier inputVal input outputVal output prevInputVal prevInput
-  -> m StepCompileResult
+  -> StepRuleAt (EFFECT + r) len valCarrier inputVal input outputVal output prevInputVal prevInput
+  -> Run (EFFECT + r) StepCompileResult
 stepCompile ctx rule = do
   -- For compiled-only specs the side-loaded VK carrier is the all-Unit
   -- chain `mkUnitVkCarrier` synthesises (= what the `SideloadedVKsM`
@@ -1903,7 +1896,7 @@ preComputeStepDomainLog2
        ndPred wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN
        chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
-       pad unfsTotal digestPlusUnfs m
+       pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
   -- Side-loaded VK carrier — see stepMain. preComputeStepDomainLog2
   -- runs at compile time; the caller synthesizes a placeholder
@@ -1975,12 +1968,9 @@ preComputeStepDomainLog2
   -- count → domain log2); `wrapVkChunks` only sizes the discarded
   -- wrap-VK placeholder. Free parameter; callers pin (tests `@1`).
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
-  => Monad m
-  => MonadEffect m
-  => MonadRec m
   => StepProveContext wrapVkChunks len nd blueprints
-  -> StepRuleAt m len valCarrier inputVal input outputVal output prevInputVal prevInput
-  -> m Int
+  -> StepRuleAt (EFFECT + r) len valCarrier inputVal input outputVal output prevInputVal prevInput
+  -> Run (EFFECT + r) Int
 preComputeStepDomainLog2 ctx rule = do
   -- See `stepCompile` for why the rule runs in `StepProverT … m` with
   -- an `unsafeCoerce unit` dummy advice (never deconstructed at compile).
@@ -2056,7 +2046,7 @@ stepSolveAndProve
        ndPred wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN
        chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
-       pad unfsTotal digestPlusUnfs m
+       pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
   -- `wrapVkChunks` is the compile-wide wrap-VK chunk count (Dim 2),
   -- a free parameter (callers pin `@1`). Mul/Add chain mirrors stepMain.
@@ -2121,15 +2111,12 @@ stepSolveAndProve
        carrierVar
        vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
-  => Monad m
-  => MonadEffect m
-  => MonadRec m
   => SlotStatementsCarrier prevsSpec valCarrier
   => StepProveContext wrapVkChunks len nd blueprints
-  -> StepRuleAt m len valCarrier inputVal input outputVal output prevInputVal prevInput
+  -> StepRuleAt (EFFECT + r) len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> StepCompileResult
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
-  -> ExceptT EvaluationError m (StepProveResult outputSize)
+  -> ExceptT EvaluationError (Run (EFFECT + r)) (StepProveResult outputSize)
 stepSolveAndProve ctx rule compileResult advice = do
   -- Capture channel for the rule's user `publicOutput` FVars. The
   -- solver makes `stepMain`'s whole return value public, so the
@@ -2146,7 +2133,7 @@ stepSolveAndProve ctx rule compileResult advice = do
 
     rawSolver
       :: SolverT StepField (KimchiConstraint StepField)
-           m
+           (EFFECT + r)
            Unit
            (Vector outputSize (F StepField))
     rawSolver =

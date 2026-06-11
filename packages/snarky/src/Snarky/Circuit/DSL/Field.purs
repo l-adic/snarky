@@ -19,25 +19,27 @@ import Data.Array (foldl)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(..), const_)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, exists, readCVar)
+import Snarky.Circuit.DSL.Monad (Snarky, addConstraint, exists, readCVar)
 import Snarky.Circuit.Types (Bool(..), BoolVar, F, FVar)
-import Snarky.Constraint.Basic (r1cs, square)
+import Snarky.Constraint.Basic (class BasicSystem, r1cs, square)
 import Snarky.Curves.Class (class PrimeField)
 
 equals
-  :: forall f c t m
-   . CircuitM f c t m
-  => Snarky c t m (FVar f)
-  -> Snarky c t m (FVar f)
-  -> Snarky c t m (BoolVar f)
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
+  => Snarky f c r (FVar f)
+  -> Snarky f c r (FVar f)
+  -> Snarky f c r (BoolVar f)
 equals a b = join $ lift2 equals_ a b
 
 equals_
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => FVar f
   -> FVar f
-  -> Snarky c t m (BoolVar f)
+  -> Snarky f c r (BoolVar f)
 equals_ a b = case a `CVar.sub_` b of
   Const f -> pure $ Const $ if f == zero then one else zero
   _ -> do
@@ -52,11 +54,12 @@ equals_ a b = case a `CVar.sub_` b of
     pure $ coerce r
 
 neq_
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => FVar f
   -> FVar f
-  -> Snarky c t m (BoolVar f)
+  -> Snarky f c r (BoolVar f)
 neq_ (a :: FVar f) (b :: FVar f) = not $ equals_ a b
 
 sum_
@@ -68,11 +71,12 @@ sum_ = foldl CVar.add_ (Const zero)
 
 -- | Compute x^n using repeated squaring (matches OCaml's evaluation order).
 pow_
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => FVar f
   -> Int
-  -> Snarky c t m (FVar f)
+  -> Snarky f c r (FVar f)
 pow_ x n
   | n == 0 = one
   | n == 1 = pure x
@@ -85,10 +89,11 @@ pow_ x n
 -- | Square a field variable, using a Square constraint (as opposed to R1CS).
 -- | Matches OCaml's `Checked.square` / `Field.square`.
 square_
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => FVar f
-  -> Snarky c t m (FVar f)
+  -> Snarky f c r (FVar f)
 square_ a = case a of
   Const f -> pure $ Const (f * f)
   _ -> do

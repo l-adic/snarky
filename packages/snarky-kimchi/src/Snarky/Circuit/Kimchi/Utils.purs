@@ -7,18 +7,19 @@ module Snarky.Circuit.Kimchi.Utils
 import Prelude
 
 import Control.Monad.Error.Class (throwError)
-import Control.Monad.Morph (hoist)
 import Control.Monad.State (StateT(..), runStateT)
 import Data.Either (Either(..))
-import Data.Identity (Identity(..))
-import Data.Newtype (un)
+import Data.Map (Map)
 import Data.Traversable (class Traversable, traverse)
 import Data.Tuple (Tuple)
 import Effect (Effect)
-import Effect.Class (class MonadEffect, liftEffect)
+import Effect.Class (liftEffect)
 import Effect.Exception (error)
+import Run (Run)
+import Run as Run
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (Solver, SolverT, runSolverT)
+import Snarky.Circuit.CVar (EvaluationError, Variable)
 import Snarky.Constraint.Kimchi (KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
@@ -50,23 +51,21 @@ verifyCircuit
      }
   -> Effect Unit
 verifyCircuit { gen, solver, s } =
-  let
-    nat :: Identity ~> Effect
-    nat = pure <<< un Identity
-  in
-    verifyCircuitM { gen, solver: \a -> hoist nat $ solver a, s }
+  verifyCircuitM (pure <<< Run.extract) { gen, solver, s }
 
+-- | Sanity-check a solver over an advice row `r`, given an interpreter for
+-- | the row's effects.
 verifyCircuitM
-  :: forall f a b m
-   . MonadEffect m
-  => { gen :: Gen a
-     , solver :: SolverT f (KimchiGate f) m a b
+  :: forall f a b r
+   . (Run r (Either EvaluationError (Tuple b (Map Variable f))) -> Effect (Either EvaluationError (Tuple b (Map Variable f))))
+  -> { gen :: Gen a
+     , solver :: SolverT f (KimchiGate f) r a b
      , s :: CircuitBuilderState (KimchiGate f) (AuxState f)
      }
-  -> m Unit
-verifyCircuitM { gen, solver, s: _ } = do
+  -> Effect Unit
+verifyCircuitM runAdvice { gen, solver, s: _ } = do
   k <- liftEffect $ randomSampleOne gen
-  eRes <- runSolverT solver k
+  eRes <- runAdvice $ runSolverT solver k
   case eRes of
     Left e -> liftEffect $ throwError $ error (show e)
     Right _ -> pure unit

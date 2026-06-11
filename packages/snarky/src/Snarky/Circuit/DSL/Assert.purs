@@ -45,25 +45,27 @@ import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(Const), const_, sub_)
 import Snarky.Circuit.DSL.Field (equals_, sum_)
-import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, and_, inv_)
+import Snarky.Circuit.DSL.Monad (Snarky, addConstraint, and_, inv_)
 import Snarky.Circuit.Types (Bool(..), BoolVar, FVar)
-import Snarky.Constraint.Basic (equal, square)
+import Snarky.Constraint.Basic (class BasicSystem, equal, square)
 import Snarky.Curves.Class (class PrimeField, fromInt)
 import Type.Proxy (Proxy(..))
 
 assertNonZero_
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => FVar f
-  -> Snarky c t m Unit
+  -> Snarky f c r Unit
 assertNonZero_ v = void $ inv_ v
 
 assertEqual_
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => FVar f
   -> FVar f
-  -> Snarky c t m Unit
+  -> Snarky f c r Unit
 assertEqual_ x y = case x, y of
   Const f, Const g ->
     if f == g then pure unit
@@ -72,37 +74,41 @@ assertEqual_ x y = case x, y of
     addConstraint $ equal x y
 
 assertNotEqual_
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => FVar f
   -> FVar f
-  -> Snarky c t m Unit
+  -> Snarky f c r Unit
 assertNotEqual_ x y = assertNonZero_ (x `sub_` y)
 
 assertSquare_
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => FVar f
   -> FVar f
-  -> Snarky c t m Unit
+  -> Snarky f c r Unit
 assertSquare_ x y = addConstraint $ square x y
 
 assert_
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => BoolVar f
-  -> Snarky c t m Unit
+  -> Snarky f c r Unit
 assert_ v = assertEqual_ (coerce v) (const_ $ one @f)
 
 -- | Boolean.Assert.any: assert at least one boolean is true.
 -- | Uses assert_non_zero(sum) — no special case for 2 elements.
 -- | Reference: mina/src/lib/snarky/src/base/utils.ml:385-386
 assertAny_
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => PrimeField f
   => Array (BoolVar f)
-  -> Snarky c t m Unit
+  -> Snarky f c r Unit
 assertAny_ bs = assertNonZero_ (sum_ (map boolToField bs))
   where
   boolToField :: BoolVar f -> FVar f
@@ -114,11 +120,12 @@ assertAny_ bs = assertNonZero_ (sum_ (map boolToField bs))
 -- | Used by `Pickles_base.Proofs_verified.One_hot.typ` to validate that
 -- | a length-N one-hot bitvec has exactly one true bit.
 assertExactlyOne_
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => PrimeField f
   => Array (BoolVar f)
-  -> Snarky c t m Unit
+  -> Snarky f c r Unit
 assertExactlyOne_ bs = assertEqual_ (sum_ (map boolToField bs)) (const_ one)
   where
   boolToField :: BoolVar f -> FVar f
@@ -128,11 +135,12 @@ assertExactlyOne_ bs = assertEqual_ (sum_ (map boolToField bs)) (const_ one)
 -- | Uses assertEqual(sum, n) — no special case for 2 elements.
 -- | Reference: mina/src/lib/snarky/src/base/utils.ml:388-391
 assertAll_
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => PrimeField f
   => Array (BoolVar f)
-  -> Snarky c t m Unit
+  -> Snarky f c r Unit
 assertAll_ bs = assertEqual_ (sum_ (map boolToField bs)) (const_ (fromInt (Array.length bs)))
   where
   boolToField :: BoolVar f -> FVar f
@@ -148,11 +156,12 @@ assertAll_ bs = assertEqual_ (sum_ (map boolToField bs)) (const_ (fromInt (Array
 -- | The n≥3 path uses a single `Field.equal` instead of n-1 `and_`
 -- | calls, so n=255 costs ~3 R1CS not 254.
 allBools
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => PrimeField f
   => Array (BoolVar f)
-  -> Snarky c t m (BoolVar f)
+  -> Snarky f c r (BoolVar f)
 allBools bs = case Array.length bs of
   0 -> pure $ Const one
   1 -> pure $ unsafePartial (Array.unsafeIndex bs 0)
@@ -174,8 +183,8 @@ allBools bs = case Array.length bs of
 
 class AssertEqual :: Type -> Type -> Type -> Constraint
 class AssertEqual f c var | c -> f, var -> f where
-  assertEq :: forall t m. CircuitM f c t m => var -> var -> Snarky c t m Unit
-  isEqual :: forall t m. CircuitM f c t m => var -> var -> Snarky c t m (BoolVar f)
+  assertEq :: forall rr. PrimeField f => BasicSystem f c => var -> var -> Snarky f c rr Unit
+  isEqual :: forall rr. PrimeField f => BasicSystem f c => var -> var -> Snarky f c rr (BoolVar f)
 
 -- Base instance for FVar
 instance AssertEqual f c (FVar f) where
@@ -219,8 +228,8 @@ instance (RowToList r rl, RAssertEqual f c rl r) => AssertEqual f c (Record r) w
 
 class GAssertEqual :: Type -> Type -> Type -> Constraint
 class GAssertEqual f c rep where
-  gAssertEqual :: forall t m. CircuitM f c t m => rep -> rep -> Snarky c t m Unit
-  gIsEqual :: forall t m. CircuitM f c t m => rep -> rep -> Snarky c t m (BoolVar f)
+  gAssertEqual :: forall rr. PrimeField f => BasicSystem f c => rep -> rep -> Snarky f c rr Unit
+  gIsEqual :: forall rr. PrimeField f => BasicSystem f c => rep -> rep -> Snarky f c rr (BoolVar f)
 
 instance GAssertEqual f c NoArguments where
   gAssertEqual _ _ = pure unit
@@ -245,24 +254,26 @@ instance GAssertEqual f c a => GAssertEqual f c (Constructor name a) where
 
 -- | Generic assertEqual for types with Generic instance
 assertEqGeneric
-  :: forall f c t m var rep
+  :: forall f c r var rep
    . Generic var rep
-  => CircuitM f c t m
+  => PrimeField f
+  => BasicSystem f c
   => GAssertEqual f c rep
   => var
   -> var
-  -> Snarky c t m Unit
+  -> Snarky f c r Unit
 assertEqGeneric x y = gAssertEqual @f @c (from x) (from y)
 
 -- | Generic isEqual for types with Generic instance
 isEqualGeneric
-  :: forall f c t m var rep
+  :: forall f c r var rep
    . Generic var rep
-  => CircuitM f c t m
+  => PrimeField f
+  => BasicSystem f c
   => GAssertEqual f c rep
   => var
   -> var
-  -> Snarky c t m (BoolVar f)
+  -> Snarky f c r (BoolVar f)
 isEqualGeneric x y = gIsEqual @f @c (from x) (from y)
 
 --------------------------------------------------------------------------------
@@ -270,8 +281,8 @@ isEqualGeneric x y = gIsEqual @f @c (from x) (from y)
 
 class RAssertEqual :: Type -> Type -> RL.RowList Type -> Row Type -> Constraint
 class RAssertEqual f c (rl :: RL.RowList Type) (r :: Row Type) | rl -> r where
-  rAssertEqual :: forall t m. CircuitM f c t m => Proxy rl -> Record r -> Record r -> Snarky c t m Unit
-  rIsEqual :: forall t m. CircuitM f c t m => Proxy rl -> Record r -> Record r -> Snarky c t m (BoolVar f)
+  rAssertEqual :: forall rr. PrimeField f => BasicSystem f c => Proxy rl -> Record r -> Record r -> Snarky f c rr Unit
+  rIsEqual :: forall rr. PrimeField f => BasicSystem f c => Proxy rl -> Record r -> Record r -> Snarky f c rr (BoolVar f)
 
 instance RAssertEqual f c RL.Nil () where
   rAssertEqual _ _ _ = pure unit

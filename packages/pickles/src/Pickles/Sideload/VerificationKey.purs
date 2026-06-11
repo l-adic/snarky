@@ -28,7 +28,7 @@ import Pickles.Field (StepField)
 import Pickles.ProofsVerified (ProofsVerified(..), ProofsVerifiedCount, proofsVerifiedToBoolVec)
 import Pickles.Types (ChunkedCommitment(..))
 import Pickles.VerificationKey as VK
-import Snarky.Circuit.DSL (BoolVar, F(..), FVar, assertExactlyOne_, label)
+import Snarky.Circuit.DSL (class BasicSystem, BoolVar, F(..), FVar, assertExactlyOne_, label)
 import Snarky.Circuit.DSL.Monad (class CheckedType, check)
 import Snarky.Circuit.Types (class CircuitType, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Curves.Class (class PrimeField)
@@ -114,6 +114,7 @@ instance
   ( CheckedType g c (WeierstrassAffinePoint Pallas.G (FVar g))
   , CheckedType g c (BoolVar g)
   , PrimeField g
+  , BasicSystem g c
   ) =>
   CheckedType g c (VerificationKey slotVkChunks (FVar g) (BoolVar g)) where
   check (VerificationKey r) = do

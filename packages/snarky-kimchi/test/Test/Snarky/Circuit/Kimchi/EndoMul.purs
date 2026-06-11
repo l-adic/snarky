@@ -10,13 +10,13 @@ import Data.Tuple (Tuple(..), uncurry)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, SizedF, Snarky)
+import Snarky.Circuit.DSL (F, FVar, SizedF, Snarky)
 import Snarky.Circuit.Kimchi.EndoMul (endo, endoInv)
 import Snarky.Circuit.Kimchi.EndoScalar (expandToEndoScalar)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class WeierstrassCurve, fromAffine, scalarMul, toAffine)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class PrimeField, class WeierstrassCurve, fromAffine, scalarMul, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint(..))
@@ -57,10 +57,10 @@ endoSpec cfg _ curveProxy curveName =
 
         circuit
           :: forall t
-           . CircuitM f (KimchiConstraint f) t Identity
+           . PrimeField f
           => AffinePoint (FVar f)
           -> SizedF 128 (FVar f)
-          -> Snarky (KimchiConstraint f) t Identity (AffinePoint (FVar f))
+          -> Snarky f (KimchiConstraint f) () (AffinePoint (FVar f))
         circuit p scalar = do
           result <- endo @128 @32 p scalar
           pure result
@@ -118,10 +118,10 @@ endoInvSpec cfg _ curveProxy curveName =
 
         circuit
           :: forall t
-           . CircuitM f (KimchiConstraint f) t Identity
+           . PrimeField f
           => AffinePoint (FVar f)
           -> SizedF 128 (FVar f)
-          -> Snarky (KimchiConstraint f) t Identity (AffinePoint (FVar f))
+          -> Snarky f (KimchiConstraint f) () (AffinePoint (FVar f))
         circuit p scalar = endoInv @f @f' @g p scalar
 
         gen :: Gen (Tuple (AffinePoint f) (SizedF 128 (F f)))

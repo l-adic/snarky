@@ -66,7 +66,7 @@ import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (add_, scale_) as CVar
 import Snarky.Circuit.Curves as Curves
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, addConstraint, const_, if_, label)
+import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, Snarky, addConstraint, const_, if_, label)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete, sealPoint)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast2')
@@ -173,9 +173,9 @@ data CorrectionMode = PureCorrections | InCircuitCorrections
 -- | `Array.map2_exn acc chunks ~f:(... scale_fast2' g x ~num_bits ...)`
 -- | (wrap_verifier.ml:1019-1023).
 newtype DeferredScaleMul (stepChunks :: Int) f = DeferredScaleMul
-  ( forall t m
-     . CircuitM f (KimchiConstraint f) t m
-    => Snarky (KimchiConstraint f) t m (Vector stepChunks (AffinePoint (FVar f)))
+  ( forall r
+     . PrimeField f
+    => Snarky f (KimchiConstraint f) r (Vector stepChunks (AffinePoint (FVar f)))
   )
 
 -- | Per-chunk deferred scalar multiplication. Used by `InCircuitCorrections`
@@ -184,9 +184,9 @@ newtype DeferredScaleMul (stepChunks :: Int) f = DeferredScaleMul
 -- | At nc=1 the chunked vector has length 1 and the per-chunk loop runs once —
 -- | emission is gate-identical to the pre-chunk single-point path.
 newtype DeferredScaleMul1 f = DeferredScaleMul1
-  ( forall t m
-     . CircuitM f (KimchiConstraint f) t m
-    => Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
+  ( forall r
+     . PrimeField f
+    => Snarky f (KimchiConstraint f) r (AffinePoint (FVar f))
   )
 
 -- | A single term from walking the public input structure.
@@ -416,14 +416,14 @@ type ScalarMulResult stepChunks f =
 -- | position (threaded through the instances).
 class PublicInputCommit a f where
   scalarMuls
-    :: forall @stepChunks t m
-     . CircuitM f (KimchiConstraint f) t m
+    :: forall @stepChunks r
+     . PrimeField f
     => Reflectable stepChunks Int
     => CurveParams f
     -> a
     -> LagrangeBaseLookup stepChunks f
     -> Int
-    -> Snarky (KimchiConstraint f) t m (ScalarMulResult stepChunks f)
+    -> Snarky f (KimchiConstraint f) r (ScalarMulResult stepChunks f)
 
 -------------------------------------------------------------------------------
 -- | Leaf instances
@@ -535,14 +535,14 @@ instance
 
 class RPublicInputCommit (rl :: RL.RowList Type) f (r :: Row Type) | rl -> r where
   rScalarMuls
-    :: forall @stepChunks t m
-     . CircuitM f (KimchiConstraint f) t m
+    :: forall @stepChunks rr
+     . PrimeField f
     => Reflectable stepChunks Int
     => CurveParams f
     -> Record r
     -> LagrangeBaseLookup stepChunks f
     -> Int
-    -> Snarky (KimchiConstraint f) t m (ScalarMulResult stepChunks f)
+    -> Snarky f (KimchiConstraint f) rr (ScalarMulResult stepChunks f)
 
 instance RPublicInputCommit RL.Nil f () where
   rScalarMuls _ _ _ idx = pure { results: [], nextIdx: idx }
@@ -573,11 +573,10 @@ instance
 -- |
 -- | where MSM = sum([s_i] * B_i) after shift correction.
 publicInputCommit
-  :: forall @stepChunks a f t m r
+  :: forall @stepChunks a f r cr
    . PublicInputCommit a f
   => PrimeField f
   => Reflectable stepChunks Int
-  => CircuitM f (KimchiConstraint f) t m
   => { curveParams :: CurveParams f
      , lagrangeAt :: LagrangeBaseLookup stepChunks f
      , blindingH :: AffinePoint (F f)
@@ -585,7 +584,7 @@ publicInputCommit
      | r
      }
   -> a
-  -> Snarky (KimchiConstraint f) t m (Vector stepChunks (AffinePoint (FVar f)))
+  -> Snarky f (KimchiConstraint f) cr (Vector stepChunks (AffinePoint (FVar f)))
 publicInputCommit params input = label "public-input-commit" do
   { results } <- scalarMuls params.curveParams input params.lagrangeAt 0
   case NEA.fromArray results of
@@ -757,7 +756,7 @@ publicInputCommit params input = label "public-input-commit" do
 -- | The correction is [2^bitsUsed] * base, matching OCaml's
 -- | `lagrange_with_correction ~input_length`.
 scalarMulLeaf
-  :: forall @nChunks @sDiv2Bits f n bitsUsed bitsRemaining sDiv2Remaining stepChunks t m
+  :: forall @nChunks @sDiv2Bits f n bitsUsed bitsRemaining sDiv2Remaining stepChunks r
    . FieldSizeInBits f n
   => Add bitsUsed bitsRemaining n
   => Add sDiv2Bits sDiv2Remaining n
@@ -765,13 +764,13 @@ scalarMulLeaf
   => Reflectable bitsUsed Int
   => Reflectable sDiv2Bits Int
   => Reflectable stepChunks Int
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => PrimeField f
   => CurveParams f
   -> FVar f
   -> LagrangeBaseLookup stepChunks f
   -> Int
-  -> Snarky (KimchiConstraint f) t m (ScalarMulResult stepChunks f)
+  -> Snarky f (KimchiConstraint f) r (ScalarMulResult stepChunks f)
 scalarMulLeaf params scalar lookup idx = do
   let
     base = lookup idx

@@ -47,7 +47,7 @@ import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import RandomOracle.Sponge (Sponge)
 import Snarky.Circuit.CVar (negate_)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, add_, all_, const_, div_, equals_, inv_, label, mul_, pow_, seal, sub_)
+import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, add_, all_, const_, div_, equals_, inv_, label, mul_, pow_, seal, sub_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (Type2, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -78,7 +78,7 @@ type Input n d fv b =
 -- |
 -- | Reference: wrap_verifier.ml:1511-1783
 wrapFinalizeOtherProofCircuit
-  :: forall d dPred n nPred nd ndPred f f' t m r2
+  :: forall d dPred n nPred nd ndPred f f' r r2
    . Add 1 dPred d
   => Add 1 nPred n
   => Add 1 ndPred nd
@@ -88,19 +88,19 @@ wrapFinalizeOtherProofCircuit
   => FieldSizeInBits f 255
   => PoseidonField f
   => HasEndo f f'
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => LinearizationFFI f
   => Reflectable d Int
   => Params nd f r2
-  -> (FVar f -> Snarky (KimchiConstraint f) t m (FVar f))
+  -> (FVar f -> Snarky f (KimchiConstraint f) r (FVar f))
   -> Input n d (FVar f) (BoolVar f)
-  -> Snarky (KimchiConstraint f) t m (Output d f)
+  -> Snarky f (KimchiConstraint f) r (Output d f)
 wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness, prevChallenges } = label "wrap-finalize-other-proof" do
   -- Wrap is currently single-domain; access via Vector.head. Multi-
   -- domain wrap dispatch (if ever needed) would mirror Step's
   -- Pseudo.toDomain pattern in Commit C.
   let
-    ops = WrapOtherField.fopShiftOps @f @m
+    ops = WrapOtherField.fopShiftOps @f
     deferred = unfinalized.deferredValues
     endoVar = const_ params.endo
     allEvals = witness.allEvals
@@ -415,11 +415,12 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
 -- | Generates R1CS constraints (co=1, cm=-1), unlike pow2PowSquare which
 -- | generates Square constraints (co=-1, cm=1).
 pow2PowMul
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => FVar f
   -> Int
-  -> Snarky c t m (FVar f)
+  -> Snarky f c r (FVar f)
 pow2PowMul x n = go x n
   where
   go acc i

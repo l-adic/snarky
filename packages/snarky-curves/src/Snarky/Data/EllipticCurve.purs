@@ -21,7 +21,7 @@ import Data.Newtype (class Newtype)
 import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
 import Simple.JSON (class ReadForeign, class WriteForeign)
-import Snarky.Circuit.DSL (class AssertEqual, class CheckedType, class CircuitType, class IfThenElse, F(..), FVar, add_, assertEqGeneric, assertSquare_, const_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, if_, isEqualGeneric, mul_, scale_, square_)
+import Snarky.Circuit.DSL (class AssertEqual, class BasicSystem, class CheckedType, class CircuitType, class IfThenElse, F(..), FVar, add_, assertEqGeneric, assertSquare_, const_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, if_, isEqualGeneric, mul_, scale_, square_)
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams)
 import Snarky.Curves.Class as Snarky.Curves.Class
 import Test.QuickCheck (class Arbitrary, arbitrary)
@@ -201,7 +201,7 @@ instance CircuitType f (WeierstrassAffinePoint g (F f)) (WeierstrassAffinePoint 
   varToFields = genericVarToFields @(WeierstrassAffinePoint g (F f))
   fieldsToVar = genericFieldsToVar @(WeierstrassAffinePoint g (F f))
 
-instance (PrimeField f, WeierstrassCurve f g) => CheckedType f c (WeierstrassAffinePoint g (FVar f)) where
+instance (PrimeField f, BasicSystem f c, WeierstrassCurve f g) => CheckedType f c (WeierstrassAffinePoint g (FVar f)) where
   -- | assert_on_curve: y² = x³ + ax + b
   -- | Matches OCaml's snarky_curve.ml assert_on_curve exactly:
   -- |   x2 = square x; x3 = x2 * x; assert_square y (x3 + ax + b)

@@ -26,7 +26,6 @@ module Pickles.Prove.Wrap
 import Prelude
 
 import Control.Monad.Except (ExceptT, throwError)
-import Control.Monad.Rec.Class (class MonadRec)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
 import Data.Array as Array
@@ -43,7 +42,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Effect.Class (class MonadEffect, liftEffect)
+import Effect.Class (liftEffect)
 import Effect.Exception.Unsafe (unsafeThrow)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
@@ -60,6 +59,8 @@ import Pickles.Wrap.Slots (class PadSlots)
 import Pickles.Wrap.Types as Wrap
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
+import Run (EFFECT, Run)
+import Run as Run
 import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled, constraintsToArray)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
@@ -80,6 +81,7 @@ import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Type.Proxy (Proxy(..))
+import Type.Row (type (+))
 import Unsafe.Coerce (unsafeCoerce)
 
 --------------------------------------------------------------------------------
@@ -402,13 +404,14 @@ wrapCompile ctx = do
   let
     dummyAdvice :: WrapAdvice mpv stepChunks slots
     dummyAdvice = unsafeCoerce unit
-  builtState <-
-    compile
-      (Proxy @(Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean))
-      (Proxy @Unit)
-      (Proxy @(KimchiConstraint WrapField))
-      (\stmt -> wrapMain @branches @slots @stepChunks ctx.wrapMainConfig stmt dummyAdvice)
-      (Kimchi.initialState :: CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField))
+  let
+    builtState = Run.extract $
+      compile
+        (Proxy @(Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean))
+        (Proxy @Unit)
+        (Proxy @(KimchiConstraint WrapField))
+        (\stmt -> wrapMain @branches @slots @stepChunks ctx.wrapMainConfig stmt dummyAdvice)
+        (Kimchi.initialState :: CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField))
 
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
@@ -466,7 +469,7 @@ wrapCompile ctx = do
 -- | `SolverT` uses. Constraint-system-unsatisfied failures are
 -- | reported as `FailedAssertion`.
 wrapSolveAndProve
-  :: forall @branches @slots @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 m
+  :: forall @branches @slots @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 r
    . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Reflectable mpv Int
@@ -497,17 +500,14 @@ wrapSolveAndProve
        (slots (Vector WrapIPARounds (FVar WrapField)))
   => CheckedType WrapField (KimchiConstraint WrapField)
        (slots (Vector WrapIPARounds (FVar WrapField)))
-  => Monad m
-  => MonadEffect m
-  => MonadRec m
   => WrapProveContext branches mpv stepChunks slots
   -> WrapCompileResult
-  -> ExceptT EvaluationError m WrapProveResult
+  -> ExceptT EvaluationError (Run (EFFECT + r)) WrapProveResult
 wrapSolveAndProve ctx compileResult = do
   let
     rawSolver
       :: SolverT WrapField (KimchiConstraint WrapField)
-           m
+           (EFFECT + r)
            (Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean)
            Unit
     rawSolver =

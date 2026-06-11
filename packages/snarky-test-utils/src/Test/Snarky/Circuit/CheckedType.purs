@@ -5,15 +5,15 @@ import Prelude
 import Control.Apply (lift2)
 import Data.Array as Array
 import Data.Generic.Rep (class Generic)
-import Data.Identity (Identity)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, un)
 import Data.Show.Generic (genericShow)
 import Data.Tuple (snd)
+import Run as Run
 import Safe.Coerce (coerce)
-import Snarky.Backend.Builder (CircuitBuilderT, constraintsToArray, initialState, runCircuitBuilder)
+import Snarky.Backend.Builder (constraintsToArray, initialState, runCircuitBuilder)
 import Snarky.Circuit.CVar (CVar(..))
-import Snarky.Circuit.DSL (class CheckedType, Basic, Bool, BoolVar, FVar, Snarky(..), UnChecked(..), Variable, check, const_, genericCheck)
+import Snarky.Circuit.DSL (class CheckedType, Basic, Bool, BoolVar, FVar, Snarky, UnChecked(..), Variable, check, const_, genericCheck, runSnarky)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary, (===))
 import Test.QuickCheck.Gen (suchThat)
@@ -21,8 +21,9 @@ import Test.Spec (Spec, describe, it)
 import Test.Spec.QuickCheck (quickCheck')
 import Type.Proxy (Proxy)
 
-runM :: forall f a. Snarky (Basic f) (CircuitBuilderT (Basic f) Unit) Identity a -> Array (Basic f)
-runM (Snarky m) = map _.constraint <<< constraintsToArray <<< _.constraints <<< snd $ runCircuitBuilder m initialState
+runM :: forall f a. PrimeField f => Snarky f (Basic f) () a -> Array (Basic f)
+runM m = map _.constraint <<< constraintsToArray <<< _.constraints <<< snd $
+  Run.extract (runCircuitBuilder initialState (runSnarky m))
 
 newtype ValidBVar f = ValidBVar (BoolVar f)
 

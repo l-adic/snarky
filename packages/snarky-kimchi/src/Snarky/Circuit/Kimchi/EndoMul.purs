@@ -12,13 +12,13 @@ import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, addConstraint, assertEqual_, const_, exists, label, read, readCVar, scale_, seal)
+import Snarky.Circuit.DSL (F(..), FVar, SizedF, Snarky, addConstraint, assertEqual_, const_, exists, label, read, readCVar, scale_, seal)
 import Snarky.Circuit.DSL as SizedF
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Kimchi.EndoScalar (expandToEndoScalar)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class WeierstrassCurve, EndoBase(..), endoBase, fromAffine, scalarMul, toAffine)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class PrimeField, class WeierstrassCurve, EndoBase(..), endoBase, fromAffine, scalarMul, toAffine)
 import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 
 {-
@@ -30,17 +30,17 @@ where ~ means that the LHS is a circuit which computes
 the pure function on the RHS.
 -}
 endo
-  :: forall f f' t m n @k @l _l
+  :: forall f f' r n @k @l _l
    . FieldSizeInBits f n
   => HasEndo f f'
   => Reflectable k Int
   => Mul 4 l k
   => Add 1 _l l
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => Compare k n LT
   => AffinePoint (FVar f)
   -> SizedF k (FVar f)
-  -> Snarky (KimchiConstraint f) t m
+  -> Snarky f (KimchiConstraint f) r
        (AffinePoint (FVar f))
 endo g scalar = label "endo" do
   let AffinePoint gr = g
@@ -119,17 +119,17 @@ where ~ means that the LHS is a circuit which computes
 the pure function on the RHS.
 -}
 endoInv
-  :: forall @f @f' @g t m n
+  :: forall @f @f' @g r n
    . FieldSizeInBits f n
   => FieldSizeInBits f' n
   => HasEndo f f'
   => FrModule f' g
   => WeierstrassCurve f g
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => Compare 128 n LT
   => AffinePoint (FVar f)
   -> SizedF 128 (FVar f)
-  -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
+  -> Snarky f (KimchiConstraint f) r (AffinePoint (FVar f))
 endoInv g scalar = label "endo-inv" do
   -- Witness the result: g * (1 / effective_scalar)
   -- Uses WeierstrassAffinePoint so exists triggers assert_on_curve check,

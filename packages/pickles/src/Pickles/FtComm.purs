@@ -15,9 +15,10 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Prim.Int (class Add)
 import Snarky.Circuit.Curves as Curves
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, label)
+import Snarky.Circuit.DSL (FVar, Snarky, label)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
 -- | Compute the ft polynomial commitment in-circuit.
@@ -29,11 +30,11 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 -- |
 -- | Reference: mina/src/lib/pickles/common.ml:227-246
 ftComm
-  :: forall stepChunks numChunksPred tCommLen tCommLenPred f t m sf r
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall stepChunks numChunksPred tCommLen tCommLenPred f r sf cr
+   . PrimeField f
   => Add 1 numChunksPred stepChunks
   => Add 1 tCommLenPred tCommLen
-  => { scaleByShifted :: AffinePoint (FVar f) -> sf -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
+  => { scaleByShifted :: AffinePoint (FVar f) -> sf -> Snarky f (KimchiConstraint f) cr (AffinePoint (FVar f))
      | r
      }
   -> { sigmaLast :: Vector stepChunks (AffinePoint (FVar f))
@@ -42,7 +43,7 @@ ftComm
      , zetaToSrsLength :: sf
      , zetaToDomainSize :: sf
      }
-  -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
+  -> Snarky f (KimchiConstraint f) cr (AffinePoint (FVar f))
 ftComm { scaleByShifted } { sigmaLast, tComm, perm, zetaToSrsLength, zetaToDomainSize } = label "ft-comm" do
   -- OCaml order (common.ml:307-326): both `sigma_comm_last` and `t_comm`
   -- are chunk arrays. Each one is collapsed via `reduce_chunks` (xi-Horner
@@ -77,7 +78,7 @@ ftComm { scaleByShifted } { sigmaLast, tComm, perm, zetaToSrsLength, zetaToDomai
     :: forall k kPred
      . Add 1 kPred k
     => Vector k (AffinePoint (FVar f))
-    -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
+    -> Snarky f (KimchiConstraint f) cr (AffinePoint (FVar f))
   hornerReduce v =
     let
       { last, init } = Vector.unsnoc v

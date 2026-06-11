@@ -9,8 +9,10 @@ import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Snarky.Circuit.CVar (AffineExpression(..), CVar(..), const_, reduceToAffineExpression)
 import Snarky.Circuit.DSL.Assert (assertEqual_)
-import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, exists, readCVar)
+import Snarky.Circuit.DSL.Monad (Snarky, exists, readCVar)
 import Snarky.Circuit.Types (FVar)
+import Snarky.Constraint.Basic (class BasicSystem)
+import Snarky.Curves.Class (class PrimeField)
 
 -- | Reduce an expression to a single variable if it's complex.
 -- |
@@ -18,10 +20,11 @@ import Snarky.Circuit.Types (FVar)
 -- | Otherwise introduces a new variable constrained equal to the expression. Useful when
 -- | you need a "sealed" value that won't expand during further operations.
 seal
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => FVar f
-  -> Snarky c t m (FVar f)
+  -> Snarky f c r (FVar f)
 seal x =
   let
     AffineExpression { constant, terms } = reduceToAffineExpression x
