@@ -12,13 +12,15 @@
 -- |   * `mkBenchSrs` builds one SRS pair and pre-warms its lagrange
 -- |     cache (the cache lives inside the SRS object, so every group
 -- |     reusing this record pays nothing for SRS load or lagrange).
--- |   * `Prove.prepareProve` does the prove bench's compile + b0 once
--- |     (NOT via benchlib's `prepareInput`, which re-runs per iteration).
+-- |   * `Prove.prepareProve` (the prove bench's compile + b0) runs once,
+-- |     but LAZILY — memoized inside the prove group's `prepareInput`,
+-- |     i.e. after the compile group — so the compile bench is not
+-- |     measured with prove's prepared state resident (that residency
+-- |     measurably triples scavenge cost; see the note at the call site).
 -- |
--- | CLI: `--only compile | prove` runs ONLY the named group. The other
--- | group's setup (notably `Prove.prepareProve`, which is itself a full
--- | compile + b0) is skipped, so `--only compile` doesn't pay for the
--- | prove warmup and `--only prove` doesn't run the timed compile.
+-- | CLI: `--only compile | prove` runs ONLY the named group. The lazy
+-- | prove setup means `--only compile` never pays for the prove warmup,
+-- | and `--only prove` doesn't run the timed compile.
 -- | `--help` prints the parser usage.
 -- |
 -- | This package is its OWN spago workspace (its spago.yaml has a
@@ -41,9 +43,10 @@ import Bench.Pickles.Stats (statsReporter)
 import BenchLib (reportConsole, runNode, suite)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Foldable (elem)
 import Data.Maybe (Maybe(..), optional)
 import Effect (Effect)
+import Effect.Class (liftEffect)
+import Effect.Ref as Ref
 import Options.Applicative ((<**>))
 import Options.Applicative as Opt
 
@@ -101,18 +104,27 @@ main = do
   FfiTimer.install
   srs <- mkBenchSrs
 
-  -- prepareProve is itself a full compile + b0 — only pay for it when
-  -- Prove is actually going to run.
-  mProveThunk <-
-    if elem Prove selected then
-      map Just (Prove.prepareProve srs)
-    else
-      pure Nothing
+  -- prepareProve (itself a full compile + b0) runs LAZILY on the prove
+  -- group's first `prepareInput` — i.e. AFTER the compile group has
+  -- finished — so the compile bench is not measured with prove's prepared
+  -- state resident in the old gen. Measured 2026-06-11: that residency
+  -- costs the compile bench +2.1s wall (6.5s -> 8.7s) by making every
+  -- scavenge 4-13x more expensive (remembered-set scanning), 8% -> 21%
+  -- GC pause. Memoized via a Ref: benchlib re-runs `prepareInput` per
+  -- sample; only the first call does the work.
+  lazyProveThunk <- do
+    ref <- Ref.new Nothing
+    pure $ liftEffect (Ref.read ref) >>= case _ of
+      Just thunk -> pure thunk
+      Nothing -> do
+        thunk <- liftEffect (Prove.prepareProve srs)
+        liftEffect (Ref.write (Just thunk) ref)
+        pure thunk
 
   let
     groups = selected # Array.mapMaybe case _ of
       Compile -> Just (Compile.group srs)
-      Prove -> map Prove.group mProveThunk
+      Prove -> Just (Prove.group lazyProveThunk)
 
   runNode (\o -> o { reporters = [ reportConsole, statsReporter, jsonReporter ] }) $
     suite "pickles"

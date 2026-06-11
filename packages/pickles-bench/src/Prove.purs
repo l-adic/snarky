@@ -3,9 +3,11 @@
 -- | `prepareProve` does all the untimed setup — compile (NRR + tree),
 -- | the NRR proof, and b0 — against the shared, pre-warmed SRS, and
 -- | returns the b1 prove as an `Aff Unit` thunk. `Bench.Pickles.Main`
--- | runs `prepareProve` exactly once (NOT inside benchlib's
--- | `prepareInput`, which re-runs per iteration) and hands the thunk to
--- | `group`, so only the b1 prove is measured.
+-- | wraps it in a memoized getter that `group` runs as benchlib's
+-- | `prepareInput` (untimed, outside `measureTime`): the first sample's
+-- | prepare does the real work — after the compile group, so compile is
+-- | never measured with prove state resident — and later samples hit
+-- | the memo. Only the b1 prove is measured.
 -- |
 -- | The prover-call shape mirrors the passing `Test.Pickles.Prove.
 -- | TreeProofReturn` (record `{ appInput, prevs, sideloadedVKs }` with
@@ -117,19 +119,22 @@ prepareProve srs = do
 benchLabel :: String
 benchLabel = "b1 recursive prove (shared warm SRS)"
 
-group :: Aff Unit -> BL.Group
-group proveThunk =
+group :: Aff (Aff Unit) -> BL.Group
+group getProveThunk =
   BL.group "prove: N=2 tree b1 (compile + b0 untimed)"
     -- iterations = 1, sizes = [0, 0, …, 0] of length `benchIterations`
     -- → benchIterations independent samples, each with its own time.
     (\o -> o { iterations = 1, sizes = Array.replicate benchIterations 0 })
     [ BL.benchAff_ benchLabel
-        (\_ -> pure unit)
-        ( \_ -> do
+        -- The untimed prepare: first call runs `prepareProve` (memoized
+        -- in Main), so the heavy setup happens here, outside the timed
+        -- region and after the compile group.
+        (\_ -> getProveThunk)
+        ( \proveThunk -> do
             liftEffect FfiTimer.start
             liftEffect $ BenchUtils.startFfiTracking benchLabel
             liftEffect BenchUtils.startGcTracking
-            _ <- proveThunk
+            proveThunk
             liftEffect $ BenchUtils.stopFfiTracking benchLabel
             liftEffect $ BenchUtils.captureTrial benchLabel
             liftEffect FfiTimer.reportSplit
