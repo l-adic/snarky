@@ -8,7 +8,6 @@ import Data.Tuple (Tuple(..), uncurry)
 import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
-import Run (EFFECT)
 import Snarky.Circuit.DSL (BoolVar, F(..), FVar, Snarky)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Circuit.Kimchi.VarBaseMul (joinField, scaleFast1, scaleFast2, scaleFast2', splitField)
@@ -26,7 +25,6 @@ import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satis
 import Test.Spec (Spec, describe, it)
 import Test.Spec.QuickCheck (quickCheck)
 import Type.Proxy (Proxy(..))
-import Type.Row (type (+))
 
 spec :: (forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)) -> Spec Unit
 spec cfg = do

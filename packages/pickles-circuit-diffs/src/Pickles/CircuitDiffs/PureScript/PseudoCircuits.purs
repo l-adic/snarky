@@ -43,7 +43,6 @@ import Run as Run
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F(..), FVar, Snarky, const_, exists, label)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class PrimeField, fromBigInt)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))

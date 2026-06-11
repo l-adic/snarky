@@ -8,7 +8,6 @@ import Data.Newtype (unwrap)
 import Data.Tuple (Tuple(..), uncurry)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
-import Run (EFFECT)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (F, FVar, SizedF, Snarky)
 import Snarky.Circuit.Kimchi.EndoMul (endo, endoInv)
@@ -26,7 +25,6 @@ import Test.QuickCheck.Gen (Gen)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
-import Type.Row (type (+))
 
 endoSpec
   :: forall f f' g g'

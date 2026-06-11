@@ -13,22 +13,18 @@ import Control.Monad.ST.Internal (foreach) as STI
 import Data.Array ((:))
 import Data.Array as Array
 import Data.Fin (getFinite)
-import Data.Foldable (foldl)
-import Data.FoldableWithIndex (foldlWithIndex)
 import Data.FoldableWithIndex (forWithIndex_)
-import Data.FunctorWithIndex (mapWithIndex)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
-import Data.Tuple (Tuple(..), fst, uncurry)
+import Data.Tuple (Tuple(..), uncurry)
 import Data.UnionFind.Mutable (MutableUF)
 import Data.UnionFind.Mutable as MutableUF
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception.Unsafe (unsafeThrow)
-import Snarky.Backend.DenseStore (DenseStore)
 import Snarky.Backend.DenseStore as DenseStore
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateNew)
 import Snarky.Backend.Kimchi.Types (Gate, Wire, gateWiresNewFromWires, wireNew)

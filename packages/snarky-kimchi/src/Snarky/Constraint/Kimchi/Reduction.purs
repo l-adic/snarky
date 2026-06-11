@@ -35,7 +35,7 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import Record as Record
 import Snarky.Backend.Assignments (Assignments)
 import Snarky.Backend.Assignments as Assignments
-import Snarky.Circuit.CVar (AffineExpression(..), CVar, Variable(..), evalAffineExpression, incrementVariable, reduceToAffineExpression)
+import Snarky.Circuit.CVar (AffineExpression(..), CVar, Variable(..), incrementVariable, reduceToAffineExpression)
 import Snarky.Circuit.DSL (EvaluationError(..), Variable)
 import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, AuxState(..), GateKind(..), GenericPlonkConstraint, KimchiRow)
 import Snarky.Curves.Class (class PrimeField)

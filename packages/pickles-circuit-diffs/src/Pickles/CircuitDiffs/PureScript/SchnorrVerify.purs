@@ -23,7 +23,6 @@ import Snarky.Circuit.Schnorr (Signature(..), pallasParams, shiftConst, verifies
 import Snarky.Circuit.Schnorr.Shifted (assertOnCurveConst, createShifted)
 import Snarky.Circuit.Types (Bool(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 

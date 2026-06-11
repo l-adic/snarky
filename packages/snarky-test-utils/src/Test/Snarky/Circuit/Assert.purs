@@ -4,7 +4,6 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import Data.Tuple (Tuple(..), uncurry)
-import Run (EFFECT)
 import Snarky.Backend.Builder (class CompileCircuit)
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.DSL (F(..), FVar, Snarky, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_)
@@ -12,7 +11,6 @@ import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (suchThat)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', expectDivideByZero, satisfied_, unsatisfied)
 import Test.Spec (Spec, describe, it)
-import Type.Row (type (+))
 
 spec
   :: forall f c r c'

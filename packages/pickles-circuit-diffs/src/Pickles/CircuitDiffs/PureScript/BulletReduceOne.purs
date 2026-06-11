@@ -16,7 +16,6 @@ import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (BoolVar, F, FVar, SizedF, Snarky)
 import Snarky.Circuit.Kimchi (addComplete, endo, endoInv)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Curves.Vesta as Vesta

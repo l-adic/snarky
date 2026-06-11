@@ -20,7 +20,6 @@ import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
 import JS.BigInt as BigInt
 import Poseidon (class PoseidonField)
-import Run (EFFECT)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F(..), FVar, Snarky, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
@@ -37,7 +36,6 @@ import Test.QuickCheck.Gen (Gen, chooseInt, randomSampleOne)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Type.Proxy (Proxy(..))
-import Type.Row (type (+))
 
 --------------------------------------------------------------------------------
 

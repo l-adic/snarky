@@ -13,7 +13,6 @@ import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, generate)
 import JS.BigInt as BigInt
-import Run (EFFECT)
 import Snarky.Backend.Builder (class CompileCircuit)
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.DSL (class BasicSystem, BoolVar, F(..), FVar, Snarky, pack_, unpack_)
@@ -22,7 +21,6 @@ import Test.QuickCheck.Gen (Gen, chooseInt)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
-import Type.Row (type (+))
 
 smallFieldElem :: forall f. PrimeField f => Int -> Gen (F f)
 smallFieldElem bitCount = do

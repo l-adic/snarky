@@ -10,16 +10,13 @@ import Prelude
 
 import Data.Array (all)
 import Data.Either (Either(..))
-import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (over, un)
 import Data.Set as Set
 import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..))
 import Data.UnionFind.Mutable as MutableUF
-import Data.UnionFind.Mutable as MutableUF
 import Data.Vector (Vector)
-import Effect (Effect)
 import Effect (Effect)
 import Poseidon (class PoseidonField)
 import Snarky.Backend.Assignments as Assignments
@@ -27,7 +24,6 @@ import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, Labele
 import Snarky.Backend.Builder as CircuitBuilder
 import Snarky.Backend.Prover (class SolveCircuit, ProverState)
 import Snarky.Circuit.CVar (Variable(..))
-import Snarky.Circuit.CVar (Variable, v0)
 import Snarky.Circuit.DSL (class BasicSystem, Basic(..), EvaluationError, FVar)
 import Snarky.Constraint.Basic as Basic
 import Snarky.Constraint.Kimchi.AddComplete (AddComplete)

@@ -9,7 +9,6 @@ import Data.Schnorr.Gen (genValidSignature)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Mina.ChainId (ChainId(..), signaturePrefix)
-import Run (EFFECT)
 import Snarky.Circuit.DSL (BoolVar, FVar, Snarky, assert_)
 import Snarky.Circuit.Schnorr (Signature(..), pallasParams, shiftConst, verifies)
 import Snarky.Circuit.Schnorr.Shifted (createShifted)
@@ -22,7 +21,6 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied_)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
-import Type.Row (type (+))
 
 -- | Var-side of the verifier input. The value side (what
 -- | `genValidSignature` produces, `Data.Schnorr.Gen.VerifyInput n (F f)`)

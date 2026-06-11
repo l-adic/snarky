@@ -72,8 +72,6 @@ import Data.Either (Either)
 import Data.Functor.Product (Product(..)) as FP
 import Data.Generic.Rep (class Generic, Argument(..), Constructor(..), NoArguments, Product(..), from)
 import Data.HeytingAlgebra (ff, implies, tt)
-import Data.Map (Map)
-import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.Symbol (class IsSymbol)

@@ -5,13 +5,11 @@ module Test.Snarky.Circuit.Kimchi.Debugger
 import Prelude
 
 import Data.Either (Either(..), isRight)
-import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.String as String
 import Data.Tuple (Tuple(..), fst, uncurry)
 import Effect.Class (liftEffect)
 import Effect.Unsafe (unsafePerformEffect)
-import Run (EFFECT)
 import Run as Run
 import Snarky.Backend.Assignments as Assignments
 import Snarky.Backend.Builder (CircuitBuilderState)
@@ -26,7 +24,6 @@ import Test.Snarky.Circuit.Utils (decorateError)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (fail, shouldEqual, shouldSatisfy)
 import Type.Proxy (Proxy(..))
-import Type.Row (type (+))
 
 type F' = F Pallas.BaseField
 type FV = FVar Pallas.BaseField

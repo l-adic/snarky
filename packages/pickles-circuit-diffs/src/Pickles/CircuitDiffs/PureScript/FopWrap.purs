@@ -23,7 +23,6 @@ import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (Bool(..), F, FVar, SizedF, Snarky, const_, sub_)
 import Snarky.Circuit.Kimchi (Type2(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 

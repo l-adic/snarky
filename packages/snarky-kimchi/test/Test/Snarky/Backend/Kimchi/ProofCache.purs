@@ -26,9 +26,8 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
-import Run (EFFECT)
 import Run as Run
-import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray)
+import Snarky.Backend.Builder (constraintsToArray)
 import Snarky.Backend.Compile (Solver, compile, makeSolver, runSolver)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (createProverIndex, createVerifierIndex)
@@ -36,7 +35,7 @@ import Snarky.Backend.Kimchi.Impl.Vesta (vestaCrsCreate)
 import Snarky.Backend.Kimchi.Proof (createProof, verifyOpeningProof)
 import Snarky.Backend.Kimchi.ProofCache (getPallasProof, mkProofCache, setPallasProof)
 import Snarky.Circuit.DSL (F(..), FVar, Snarky, assertSquare_, exists, readCVar)
-import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
+import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
 import Snarky.Curves.Class (class PrimeField, fromInt)
 import Snarky.Curves.Pallas as Pallas
@@ -44,7 +43,6 @@ import Snarky.Curves.Pasta (VestaG)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
-import Type.Row (type (+))
 
 squareCircuit
   :: PrimeField Pallas.BaseField

@@ -14,7 +14,6 @@ import Run as Run
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
 import Type.Proxy (Proxy(..))
 
 compileLinearizationWrap :: Effect (CompiledCircuit WrapField)

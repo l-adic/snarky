@@ -11,7 +11,6 @@ import Data.Show.Generic (genericShow)
 import Data.Tuple (snd)
 import Effect (Effect)
 import Effect.Unsafe (unsafePerformEffect)
-import Run (EFFECT)
 import Run as Run
 import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray, initialBuilderState, runCircuitBuilder)
@@ -23,7 +22,6 @@ import Test.QuickCheck.Gen (suchThat)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.QuickCheck (quickCheck')
 import Type.Proxy (Proxy)
-import Type.Row (type (+))
 
 runM :: forall f a. PrimeField f => Snarky f (Basic f) () a -> Array (Basic f)
 runM m = map _.constraint <<< constraintsToArray <<< _.constraints <<< snd

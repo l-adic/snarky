@@ -9,7 +9,6 @@ import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
-import Run (EFFECT)
 import Snarky.Backend.Builder (class CompileCircuit)
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.Curves (add_, assertOnCurve, double)
@@ -26,7 +25,6 @@ import Test.Spec (Spec, describe, it)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
 import Type.Proxy (Proxy(..))
-import Type.Row (type (+))
 
 basicTestConfig :: forall f. PrimeField f => TestConfig f (Basic f) Unit
 basicTestConfig = { checker: Basic.eval, postCondition: nullPostCondition }

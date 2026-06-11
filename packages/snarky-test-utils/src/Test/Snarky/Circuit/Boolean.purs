@@ -11,7 +11,6 @@ import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, uncurry3)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Run (EFFECT)
 import Snarky.Backend.Builder (class CompileCircuit)
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.DSL (BoolVar, F, FVar, Snarky, all_, and_, any_, if_, not_, or_, xor_)
@@ -19,7 +18,6 @@ import Test.QuickCheck (arbitrary)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
-import Type.Row (type (+))
 
 spec
   :: forall f c c' r

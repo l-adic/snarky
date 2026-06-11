@@ -18,8 +18,6 @@ import Control.Monad.Rec.Class (Step(..), tailRecM)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Foldable as Foldable
-import Data.Map (Map)
-import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
@@ -27,7 +25,7 @@ import Run (EFFECT, Run)
 import Run as Run
 import Snarky.Backend.Assignments (Assignments)
 import Snarky.Backend.Assignments as Assignments
-import Snarky.Circuit.CVar (EvaluationError(..), Variable, incrementVariable, v0)
+import Snarky.Circuit.CVar (EvaluationError(..), Variable, incrementVariable)
 import Snarky.Circuit.DSL.Monad (AsProver(..), CIRCUIT, CircuitF(..), _circuit, runAsProver)
 import Snarky.Constraint.Basic (class BasicSystem, Basic)
 import Snarky.Constraint.Basic as Basic

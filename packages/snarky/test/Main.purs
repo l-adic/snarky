@@ -3,7 +3,6 @@ module Test.Snarky.Circuit.Main where
 import Prelude
 
 import Effect (Effect)
-import Snarky.Backend.Builder as Snarky
 import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.Vesta as Vesta
 import Test.Snarky.Circuit as CircuitTests

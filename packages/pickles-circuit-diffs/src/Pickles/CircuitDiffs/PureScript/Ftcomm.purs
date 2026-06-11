@@ -22,7 +22,6 @@ import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F, FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi (Type1(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class PrimeField, generator, toAffine)
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint(..))

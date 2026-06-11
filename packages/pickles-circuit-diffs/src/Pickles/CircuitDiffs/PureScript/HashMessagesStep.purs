@@ -18,7 +18,6 @@ import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F, FVar, Snarky, assertEq)
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 

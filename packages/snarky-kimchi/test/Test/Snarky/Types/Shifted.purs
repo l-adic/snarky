@@ -4,7 +4,6 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import JS.BigInt as BigInt
-import Run (EFFECT)
 import Snarky.Circuit.DSL (F(..), FVar, Snarky)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
@@ -18,7 +17,6 @@ import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satis
 import Test.Spec (Spec, describe, it)
 import Test.Spec.QuickCheck (quickCheck)
 import Type.Proxy (Proxy(..))
-import Type.Row (type (+))
 
 --------------------------------------------------------------------------------
 -- Type1 roundtrip: fromShifted (toShifted s) == s

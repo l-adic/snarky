@@ -8,7 +8,6 @@ import Data.Newtype (un)
 import Data.Tuple (Tuple(..), uncurry)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Run (EFFECT)
 import Snarky.Backend.Builder (class CompileCircuit)
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.DSL (BoolVar, F(..), FVar, Snarky, div_, equals_, inv_, mul_, negate_, seal, sum_)
@@ -16,7 +15,6 @@ import Test.QuickCheck (arbitrary)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
-import Type.Row (type (+))
 
 spec
   :: forall f c r c'

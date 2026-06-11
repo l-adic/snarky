@@ -22,7 +22,6 @@ import Poseidon (class PoseidonField, hash) as Poseidon
 import RandomOracle (digest, hash, initialState, update)
 import RandomOracle.DomainSeparator (class HasDomainSeparator, initWithDomain)
 import RandomOracle.Sponge as Sponge
-import Run (EFFECT)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (F(..), FVar, Snarky)
 import Snarky.Circuit.RandomOracle (Digest(..))
@@ -43,7 +42,6 @@ import Test.Spec.QuickCheck (quickCheck)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
 import Type.Proxy (Proxy(..))
-import Type.Row (type (+))
 
 kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
 kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition }
