@@ -175,3 +175,26 @@ dump-schnorr-signatures: ## Generate raw Schnorr signature test vectors (pure-ve
 	cd mina && nix develop "git+file://$$PWD?submodules=1" --command \
 	  dune exec src/lib/crypto/pickles/dump_schnorr_signatures/dump_schnorr_signatures.exe -- \
 	  ../packages/schnorr/test/fixtures/schnorr_signatures
+
+.PHONY: bench-ps
+bench-ps: ## Run the PureScript pickles bench (tools/bench.sh); records to bench-results/
+	tools/bench.sh
+
+.PHONY: bench-o1js
+bench-o1js: ## Run the o1js bench, wasm backend; records to bench-results/
+	tools/bench_o1js.sh
+
+.PHONY: bench-o1js-native
+bench-o1js-native: ## Run the o1js bench, @o1js/native backend (tightest pairing vs our kimchi-napi); records to bench-results/
+	tools/bench_o1js.sh --native
+
+.PHONY: bench-ocaml
+bench-ocaml: ## Run the OCaml reference pickles bench (mina bench_tree); records to bench-results/
+	tools/bench_ocaml.sh
+
+.PHONY: bench-all
+bench-all: ## Run all four benches sequentially (PS, OCaml, o1js native, o1js wasm). Quiet machine recommended; runs are thermally sensitive.
+	$(MAKE) bench-ps
+	$(MAKE) bench-ocaml
+	$(MAKE) bench-o1js-native
+	$(MAKE) bench-o1js
