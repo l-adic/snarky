@@ -187,6 +187,13 @@ type BuilderReductionState f =
 -- | Hand-rolled pure state monad (replaces `State` from `transformers`).
 -- | Reductions are per-constraint (a handful of binds), so plain
 -- | function-composition binds are fine — no stack-safety machinery needed.
+-- |
+-- | MEASURED (2026-06-12, pickles-bench A/B): swapping this and
+-- | `PlonkProver` for concrete transformer stacks (`StateT`/`ExceptT`,
+-- | derive-newtype) regressed b1 prove wall +26% (js-side 3.1s -> 5.5s,
+-- | reclaim +15%/trial) — the extra dictionary-dispatched bind layer and
+-- | per-bind `Either` wrapping on this per-gate path are not free. Keep
+-- | the fused hand-rolled forms.
 newtype PlonkBuilder f a = PlonkBuilder (BuilderReductionState f -> Effect (Tuple a (BuilderReductionState f)))
 
 derive instance Newtype (PlonkBuilder f a) _

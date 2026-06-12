@@ -6,9 +6,10 @@ module Snarky.Circuit.Kimchi.Utils
 
 import Prelude
 
+import Control.Monad.State.Trans (StateT(..), runStateT)
 import Data.Either (Either(..))
 import Data.Traversable (class Traversable, traverse)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (error, throwException)
@@ -28,31 +29,7 @@ mapAccumM
   -> t a
   -> m (Tuple (t b) s)
 mapAccumM f initial xs =
-  -- foldl over the structure, then rebuild it in order — equivalent to
-  -- the old `StateT`-based traverse for any list-like `Traversable`.
-  runStateT (traverse step xs) initial
-  where
-  -- minimal local StateT (replaces the `transformers` import)
-  step x = MapAccumState (\s -> f s x)
-
-newtype MapAccumState m s a = MapAccumState (s -> m (Tuple a s))
-
-runStateT :: forall m s a. MapAccumState m s a -> s -> m (Tuple a s)
-runStateT (MapAccumState f) = f
-
-instance Functor m => Functor (MapAccumState m s) where
-  map f (MapAccumState g) = MapAccumState \s -> g s <#> \(Tuple a s') -> Tuple (f a) s'
-
-instance Monad m => Apply (MapAccumState m s) where
-  apply = ap
-
-instance Monad m => Applicative (MapAccumState m s) where
-  pure a = MapAccumState \s -> pure (Tuple a s)
-
-instance Monad m => Bind (MapAccumState m s) where
-  bind (MapAccumState g) f = MapAccumState \s -> g s >>= \(Tuple a s') -> runStateT (f a) s'
-
-instance Monad m => Monad (MapAccumState m s)
+  runStateT (traverse (\x -> StateT \s -> f s x) xs) initial
 
 -- | Solver smoke test: run the gen-and-solve loop and assert no error.
 -- |

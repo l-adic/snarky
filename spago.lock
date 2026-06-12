@@ -528,6 +528,7 @@
             "snarky-test-utils",
             "st",
             "strings",
+            "transformers",
             "tuples",
             "unfoldable",
             "union-find",

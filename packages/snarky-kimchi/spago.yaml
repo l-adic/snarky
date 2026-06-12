@@ -27,6 +27,7 @@ package:
     - quickcheck
     - record
     - safe-coerce
+    - transformers
     - simple-json
     - snarky
     - snarky-curves
