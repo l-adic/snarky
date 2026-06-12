@@ -11,13 +11,15 @@ module Pickles.CircuitDiffs.PureScript.OtherFieldCheck
 
 import Prelude
 
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
 import Pickles.Field (StepField)
-import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, F, Snarky, exists)
+import Snarky.Backend.Advice (noAdvice)
+import Snarky.Backend.Compile (compile)
+import Snarky.Circuit.DSL (F, Snarky, exists)
 import Snarky.Circuit.Kimchi (SplitField, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -26,10 +28,10 @@ import Unsafe.Coerce (unsafeCoerce)
 -- |   1. genericCheck on SplitField (verifies sOdd is boolean)
 -- |   2. Forbidden shifted value check (4 values for Pallas→Vesta)
 otherFieldCheckCircuit
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+  :: forall r
+   . PrimeField StepField
   => Unit
-  -> Snarky (KimchiConstraint StepField) t m Unit
+  -> Snarky StepField (KimchiConstraint StepField) r Unit
 otherFieldCheckCircuit _ = do
   let
     dummy :: forall a b. Applicative b => b a
@@ -37,8 +39,7 @@ otherFieldCheckCircuit _ = do
   _ <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))
   pure unit
 
-compileOtherFieldCheck :: CompiledCircuit StepField
+compileOtherFieldCheck :: Effect (CompiledCircuit StepField)
 compileOtherFieldCheck =
-  compilePure (Proxy @Unit) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compile noAdvice (Proxy @Unit) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     otherFieldCheckCircuit
-    Kimchi.initialState

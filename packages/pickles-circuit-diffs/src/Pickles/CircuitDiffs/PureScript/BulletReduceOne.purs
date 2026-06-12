@@ -8,13 +8,15 @@ module Pickles.CircuitDiffs.PureScript.BulletReduceOne
 import Prelude
 
 import Data.Vector (Vector)
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
 import Pickles.Field (WrapField)
-import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, SizedF, Snarky)
+import Snarky.Backend.Advice (noAdvice)
+import Snarky.Backend.Compile (compile)
+import Snarky.Circuit.DSL (BoolVar, F, FVar, SizedF, Snarky)
 import Snarky.Circuit.Kimchi (addComplete, endo, endoInv)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint(..))
@@ -37,17 +39,16 @@ parseBulletReduceOneInput inputs =
     }
 
 bulletReduceOneCircuit
-  :: forall t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  :: forall r
+   . PrimeField WrapField
   => BulletReduceOneInput WrapField
-  -> Snarky (KimchiConstraint WrapField) t m { p :: AffinePoint (FVar WrapField), isInfinity :: BoolVar WrapField }
+  -> Snarky WrapField (KimchiConstraint WrapField) r { p :: AffinePoint (FVar WrapField), isInfinity :: BoolVar WrapField }
 bulletReduceOneCircuit input = do
   lScaled <- endoInv @WrapField @Vesta.ScalarField @VestaG input.l input.u
   rScaled <- endo @128 @32 input.r input.u
   addComplete lScaled rScaled
 
-compileBulletReduceOne :: CompiledCircuit WrapField
+compileBulletReduceOne :: Effect (CompiledCircuit WrapField)
 compileBulletReduceOne =
-  compilePure (Proxy @(Vector 5 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  compile noAdvice (Proxy @(Vector 5 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ bulletReduceOneCircuit (parseBulletReduceOneInput inputs))
-    Kimchi.initialState

@@ -6,18 +6,17 @@ module Test.Snarky.Circuit.Kimchi.EndoScalar
 import Prelude
 
 import Data.Array.NonEmpty as NEA
-import Data.Identity (Identity)
 import Effect.Class (liftEffect)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, SizedF, Snarky, const_)
+import Snarky.Circuit.DSL (F, FVar, SizedF, Snarky, const_)
 import Snarky.Circuit.Kimchi.EndoScalar (toField, toFieldPure)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
-import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, EndoScalar(..), endoScalar)
+import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, EndoScalar(..), endoScalar)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (arbitrary)
@@ -26,13 +25,13 @@ import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
 circuit
-  :: forall f f' t m n
-   . CircuitM f (KimchiConstraint f) t m
+  :: forall f f' r n
+   . PrimeField f
   => FieldSizeInBits f n
   => Compare 128 n LT
   => HasEndo f' f
   => SizedF 128 (FVar f)
-  -> Snarky (KimchiConstraint f) t m (FVar f)
+  -> Snarky f (KimchiConstraint f) r (FVar f)
 circuit scalarValue =
   let
     EndoScalar es = endoScalar @f' @f
@@ -57,10 +56,9 @@ spec' cfg _ curveName = do
         f x = let EndoScalar e = endoScalar @(F f') @(F f) in toFieldPure (coerce x) e
 
         circuit'
-          :: forall t
-           . CircuitM f (KimchiConstraint f) t Identity
+          :: PrimeField f
           => SizedF 128 (FVar f)
-          -> Snarky (KimchiConstraint f) t Identity (FVar f)
+          -> Snarky f (KimchiConstraint f) () (FVar f)
         circuit' = circuit
 
       { builtState, solver } <- circuitTest' @f

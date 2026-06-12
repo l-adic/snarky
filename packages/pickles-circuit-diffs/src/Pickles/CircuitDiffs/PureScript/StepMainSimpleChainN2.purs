@@ -25,11 +25,12 @@ import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (class CircuitM, AsProverT, F, FVar, Snarky, assertAny_, const_, equals_, exists, not_)
+import Snarky.Circuit.DSL (AsProver, F, FVar, Snarky, assertAny_, const_, equals_, exists, not_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (SplitField, Type2)
 import Type.Proxy (Proxy(..))
@@ -47,12 +48,12 @@ type StepMainSimpleChainN2Params =
 -- | `exists`, so compile never touches the dummy advice).
 -- | Reference: dump_simple_chain_n2.ml
 simpleChainN2Rule
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
-  => AsProverT StepField m
+  :: forall r
+   . PrimeField StepField
+  => AsProver StepField r
        (Tuple2 (StatementIO (F StepField) Unit) (StatementIO (F StepField) Unit))
   -> FVar StepField
-  -> Snarky (KimchiConstraint StepField) t m (RuleOutput 2 (FVar StepField) Unit)
+  -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput 2 (FVar StepField) Unit)
 simpleChainN2Rule getPrevStates appState = do
   prev1 <- exists $ getPrevStates <#> \(StatementIO p1 /\ _) -> p1.input
   prev2 <- exists $ getPrevStates <#> \(_ /\ StatementIO p2 /\ _) -> p2.input
@@ -103,7 +104,7 @@ compileStepMainSimpleChainN2 params = do
              _
              _
       dummyAdvice = unsafeCoerce unit
-    compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
+    compile noAdvice (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
       -- Single-rule: mpvMax = len = 2, mpvPad = 0.
       ( \_ -> stepMain
           @(Tuple2 (Slot Compiled 2 1 (StatementIO (F StepField) Unit)) (Slot Compiled 2 1 (StatementIO (F StepField) Unit)))
@@ -130,4 +131,3 @@ compileStepMainSimpleChainN2 params = do
           dummyAdvice
           throwawayCaptureRef
       )
-      Kimchi.initialState

@@ -29,7 +29,6 @@ module Pickles.Step.Dummy
 
 import Prelude
 
-import Control.Monad.State (evalState)
 import Data.Array as Array
 import Data.Foldable (foldl)
 import Data.Maybe (fromJust)
@@ -38,7 +37,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
-import Pickles.Dummy (RoM, chal, dummyIpaStepChallenges, dummyIpaWrapChallenges, initialRo, pow2, scalarChal, stepEndo, tick, tock, wrapEndo)
+import Pickles.Dummy (RoM, chal, dummyIpaStepChallenges, dummyIpaWrapChallenges, evalRoM, initialRo, pow2, scalarChal, stepEndo, tick, tock, wrapEndo)
 import Pickles.Field (StepField, WrapField)
 import Pickles.IPA (bPoly, computeB)
 import Pickles.Linearization.Env (fieldEnv)
@@ -292,7 +291,7 @@ forceOrderFor { maxProofsVerified } = case maxProofsVerified of
 -- | property, not a compile-derived one. Same bits everywhere the same
 -- | N is used.
 baseCaseDummies :: { maxProofsVerified :: Int } -> BaseCaseDummies
-baseCaseDummies cfg = evalState (computeBaseCaseDummies cfg) initialRo
+baseCaseDummies cfg = evalRoM (computeBaseCaseDummies cfg) initialRo
 
 -- | Sequences IPA challenges + the three Ro-consuming dummies in the
 -- | OCaml-correct order for the given circuit shape. Consumers read

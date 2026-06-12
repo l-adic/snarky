@@ -25,15 +25,11 @@ module Pickles.Prove.Wrap
 
 import Prelude
 
-import Control.Monad.Except (ExceptT, throwError)
-import Control.Monad.Rec.Class (class MonadRec)
-import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Fin (unsafeFinite)
 import Data.Lazy as Lazy
-import Data.Map (Map)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (over, un)
 import Data.Reflectable (class Reflectable, reflectType)
@@ -43,7 +39,6 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Exception.Unsafe (unsafeThrow)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
@@ -61,20 +56,20 @@ import Pickles.Wrap.Types as Wrap
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
+import Snarky.Backend.Advice (noAdvice)
+import Snarky.Backend.Assignments as Assignments
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled, constraintsToArray)
-import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
+import Snarky.Backend.Compile (SolverT, compile, makeSolver')
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, gatesToJson)
 import Snarky.Backend.Kimchi.Proof (Proof, pallasProofCommitments, pallasProofData, srsBlindingGenerator, srsLagrangeCommitmentChunksAt, vestaCreateProofWithPrev)
 import Snarky.Backend.Kimchi.ProofCache (ProofCache, getVestaProof, setVestaProof)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
-import Snarky.Backend.Prover (emptyProverState)
-import Snarky.Circuit.CVar (EvaluationError(..), Variable)
+import Snarky.Circuit.CVar (EvaluationError(..))
 import Snarky.Circuit.DSL (class CheckedType, F(..), FVar, const_)
 import Snarky.Circuit.Kimchi (Type1, Type2, toShifted)
 import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
-import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
@@ -339,7 +334,7 @@ type WrapProveResult =
   , witness :: Vector 15 (Array WrapField)
   , publicInputs :: Array WrapField
   , proof :: Proof PallasG WrapField
-  , assignments :: Map Variable WrapField
+  , assignments :: Assignments.Frozen WrapField
   }
 
 -- | Monotonic counter for `KIMCHI_WRAP_CS_DUMP`'s `%c` template. Each
@@ -403,22 +398,22 @@ wrapCompile ctx = do
     dummyAdvice :: WrapAdvice mpv stepChunks slots
     dummyAdvice = unsafeCoerce unit
   builtState <-
-    compile
+    compile noAdvice
       (Proxy @(Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean))
       (Proxy @Unit)
       (Proxy @(KimchiConstraint WrapField))
       (\stmt -> wrapMain @branches @slots @stepChunks ctx.wrapMainConfig stmt dummyAdvice)
-      (Kimchi.initialState :: CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField))
 
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
-    csResult = makeConstraintSystemWithPrevChallenges @WrapField
-      { constraints: kimchiRows
-      , publicInputs: builtState.publicInputs
-      , unionFind: (un AuxState builtState.aux).wireState.unionFind
-      , prevChallengesCount: reflectType (Proxy @PaddedLength)
-      , maxPolySize: crsSize ctx.crs
-      }
+  csResult <- makeConstraintSystemWithPrevChallenges @WrapField
+    { constraints: kimchiRows
+    , publicInputs: builtState.publicInputs
+    , unionFind: (un AuxState builtState.aux).wireState.unionFind
+    , prevChallengesCount: reflectType (Proxy @PaddedLength)
+    , maxPolySize: crsSize ctx.crs
+    }
+  let
     { gates, publicInputSize, constraints } = csResult
 
     -- `cs.endo` is no longer threaded through the PS signature: the JS
@@ -461,12 +456,11 @@ wrapCompile ctx = do
 
 -- | Solve phase of the wrap prover. Takes a previously compiled
 -- | `WrapCompileResult` + the real advice + public input, runs the
--- | solver, and creates the kimchi proof. Errors surface through
--- | `ExceptT EvaluationError m` — the same error type the underlying
--- | `SolverT` uses. Constraint-system-unsatisfied failures are
--- | reported as `FailedAssertion`.
+-- | solver, and creates the kimchi proof. Errors surface as an explicit
+-- | `Either EvaluationError`. The wrap circuit emits no advice, so the
+-- | row is pinned to `()` (`noAdvice`).
 wrapSolveAndProve
-  :: forall @branches @slots @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 m
+  :: forall @branches @slots @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
    . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Reflectable mpv Int
@@ -497,27 +491,24 @@ wrapSolveAndProve
        (slots (Vector WrapIPARounds (FVar WrapField)))
   => CheckedType WrapField (KimchiConstraint WrapField)
        (slots (Vector WrapIPARounds (FVar WrapField)))
-  => Monad m
-  => MonadEffect m
-  => MonadRec m
   => WrapProveContext branches mpv stepChunks slots
   -> WrapCompileResult
-  -> ExceptT EvaluationError m WrapProveResult
+  -> Effect (Either EvaluationError WrapProveResult)
 wrapSolveAndProve ctx compileResult = do
   let
     rawSolver
       :: SolverT WrapField (KimchiConstraint WrapField)
-           m
+           ()
            (Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean)
            Unit
     rawSolver =
-      makeSolver' (emptyProverState { debug = ctx.debug }) (Proxy @(KimchiConstraint WrapField))
+      makeSolver' { debug: ctx.debug } (Proxy @(KimchiConstraint WrapField))
         (\stmt -> wrapMain @branches @slots @stepChunks ctx.wrapMainConfig stmt ctx.advice)
 
-  eRes <- lift $ runSolverT rawSolver ctx.publicInput
+  eRes <- rawSolver noAdvice ctx.publicInput
 
   case eRes of
-    Left e -> throwError (WithContext "wrapProve solver" e)
+    Left e -> pure (Left (WithContext "wrapProve solver" e))
     Right (Tuple _ assignments) -> do
       let
         { witness, publicInputs } = makeWitness
@@ -546,14 +537,14 @@ wrapSolveAndProve ctx compileResult = do
         case ctx.proofCache of
           Nothing -> pure $ Lazy.force p
           Just cache -> do
-            mp <- liftEffect $ getVestaProof cache compileResult.verifierIndex publicInputs
+            mp <- getVestaProof cache compileResult.verifierIndex publicInputs
             case mp of
               Just proof -> pure proof
               Nothing -> do
                 let proof = Lazy.force p
-                liftEffect $ setVestaProof cache compileResult.verifierIndex publicInputs proof
+                setVestaProof cache compileResult.verifierIndex publicInputs proof
                 pure proof
-      pure
+      pure $ Right
         { proverIndex: compileResult.proverIndex
         , verifierIndex: compileResult.verifierIndex
         , witness

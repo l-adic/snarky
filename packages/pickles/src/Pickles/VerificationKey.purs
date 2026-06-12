@@ -31,7 +31,7 @@ import Snarky.Backend.Kimchi.Proof (sigmaCommLast, verifierIndexColumnComms)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
 import Snarky.Backend.Kimchi.Util.Fatal (fromJust')
 import Snarky.Circuit.CVar (add_)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, label, mul_, seal)
+import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, Snarky, label, mul_, seal)
 import Snarky.Circuit.DSL.Monad (class CheckedType, check)
 import Snarky.Circuit.Types (class CircuitType, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -242,15 +242,14 @@ type StepVK stepChunks f =
 -- |
 -- | Reference: wrap_verifier.ml:212-310
 chooseKey
-  :: forall stepChunks n nPred f t m
-   . CircuitM f (KimchiConstraint f) t m
-  => PrimeField f
+  :: forall stepChunks n nPred f r
+   . PrimeField f
   => Reflectable n Int
   => Reflectable stepChunks Int
   => Add 1 nPred n
   => Vector n (BoolVar f)
   -> Vector n (StepVK stepChunks (FVar f))
-  -> Snarky (KimchiConstraint f) t m (StepVK stepChunks (FVar f))
+  -> Snarky f (KimchiConstraint f) r (StepVK stepChunks (FVar f))
 chooseKey bools keys = label "choose-key" do
   -- OCaml Vector.map2 evaluates right-to-left via :: constructor
   scaledRev <- traverse (\(Tuple b key) -> scaleVK b key) $
@@ -262,7 +261,7 @@ chooseKey bools keys = label "choose-key" do
   where
   -- Scale a single curve point by the branch boolean. OCaml
   -- `Double.map g ~f:((*) (b :> t))` evaluates y first (right-to-left).
-  scalePt :: FVar f -> AffinePoint (FVar f) -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
+  scalePt :: FVar f -> AffinePoint (FVar f) -> Snarky f (KimchiConstraint f) r (AffinePoint (FVar f))
   scalePt bf (AffinePoint { x, y }) = do
     y' <- mul_ bf y
     x' <- mul_ bf x
@@ -278,10 +277,10 @@ chooseKey bools keys = label "choose-key" do
   scalePtChunks
     :: FVar f
     -> ChunkedCommitment stepChunks (AffinePoint (FVar f))
-    -> Snarky (KimchiConstraint f) t m (ChunkedCommitment stepChunks (AffinePoint (FVar f)))
+    -> Snarky f (KimchiConstraint f) r (ChunkedCommitment stepChunks (AffinePoint (FVar f)))
   scalePtChunks bf cc = ChunkedCommitment <$> traverse (scalePt bf) (coerce cc)
 
-  scaleVK :: BoolVar f -> StepVK stepChunks (FVar f) -> Snarky (KimchiConstraint f) t m (StepVK stepChunks (FVar f))
+  scaleVK :: BoolVar f -> StepVK stepChunks (FVar f) -> Snarky f (KimchiConstraint f) r (StepVK stepChunks (FVar f))
   scaleVK b vk = do
     let bf = coerce b :: FVar f
     -- OCaml record fields evaluate right-to-left
@@ -305,14 +304,14 @@ chooseKey bools keys = label "choose-key" do
       , endomulScalarComm
       }
 
-  traverseRev :: forall k a b_. Reflectable k Int => (a -> Snarky (KimchiConstraint f) t m b_) -> Vector k a -> Snarky (KimchiConstraint f) t m (Vector k b_)
+  traverseRev :: forall k a b_. Reflectable k Int => (a -> Snarky f (KimchiConstraint f) r b_) -> Vector k a -> Snarky f (KimchiConstraint f) r (Vector k b_)
   traverseRev f v = do
     rev <- traverse f (Vector.reverse v)
     pure $ Vector.reverse rev
 
   -- Seal all coordinates (wrap_verifier.ml:321-322)
   -- OCaml: Double.map ~f:seal — evaluates y first
-  sealPt :: AffinePoint (FVar f) -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
+  sealPt :: AffinePoint (FVar f) -> Snarky f (KimchiConstraint f) r (AffinePoint (FVar f))
   sealPt (AffinePoint { x, y }) = do
     y' <- seal y
     x' <- seal x
@@ -320,10 +319,10 @@ chooseKey bools keys = label "choose-key" do
 
   sealPtChunks
     :: ChunkedCommitment stepChunks (AffinePoint (FVar f))
-    -> Snarky (KimchiConstraint f) t m (ChunkedCommitment stepChunks (AffinePoint (FVar f)))
+    -> Snarky f (KimchiConstraint f) r (ChunkedCommitment stepChunks (AffinePoint (FVar f)))
   sealPtChunks cc = ChunkedCommitment <$> traverse sealPt (coerce cc)
 
-  sealVK :: StepVK stepChunks (FVar f) -> Snarky (KimchiConstraint f) t m (StepVK stepChunks (FVar f))
+  sealVK :: StepVK stepChunks (FVar f) -> Snarky f (KimchiConstraint f) r (StepVK stepChunks (FVar f))
   sealVK vk = do
     endomulScalarComm <- sealPtChunks vk.endomulScalarComm
     emulComm <- sealPtChunks vk.emulComm

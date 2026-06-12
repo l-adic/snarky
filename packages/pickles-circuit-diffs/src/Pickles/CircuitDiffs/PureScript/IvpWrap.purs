@@ -15,6 +15,7 @@ import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (tuple3, tuple6)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyVestaPt, unsafeIdx, wrapEndo)
 import Pickles.Field (WrapField)
 import Pickles.IncrementallyVerifyProof (incrementallyVerifyProof)
@@ -24,12 +25,12 @@ import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Types (ChunkedCommitment(..))
 import Pickles.Wrap.OtherField as WrapOtherField
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, assertEq, assertEqual_, const_)
+import Snarky.Backend.Advice (noAdvice)
+import Snarky.Backend.Compile (compile)
+import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, assertEq, assertEqual_, const_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (curveParams)
+import Snarky.Curves.Class (class PrimeField, curveParams)
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
@@ -132,12 +133,12 @@ parseIvpWrapInput inputs =
     }
 
 ivpWrapCircuit
-  :: forall pi t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  :: forall pi r
+   . PrimeField WrapField
   => PublicInputCommit pi WrapField
   => IvpWrapParams
   -> IvpWrapInput pi
-  -> Snarky (KimchiConstraint WrapField) t m Unit
+  -> Snarky WrapField (KimchiConstraint WrapField) r Unit
 ivpWrapCircuit { lagrangeAt, blindingH } input = do
   let
     constDummyPt = let AffinePoint { x: F x', y: F y' } = dummyVestaPt in AffinePoint { x: const_ x', y: const_ y' }
@@ -174,8 +175,7 @@ ivpWrapCircuit { lagrangeAt, blindingH } input = do
   for_ (Vector.zip input.deferredValues.bulletproofChallenges output.bulletproofChallenges) \(Tuple c1 c2) ->
     assertEq c1 c2
 
-compileIvpWrap :: IvpWrapParams -> CompiledCircuit WrapField
+compileIvpWrap :: IvpWrapParams -> Effect (CompiledCircuit WrapField)
 compileIvpWrap srsData =
-  compilePure (Proxy @(Vector 177 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  compile noAdvice (Proxy @(Vector 177 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> ivpWrapCircuit srsData (parseIvpWrapInput inputs))
-    Kimchi.initialState

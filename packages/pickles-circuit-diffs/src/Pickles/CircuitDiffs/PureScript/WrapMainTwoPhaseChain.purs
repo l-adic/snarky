@@ -37,13 +37,13 @@ import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Pickles.Wrap.Slots (Slots1)
 import Safe.Coerce (coerce)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Proof (srsLagrangeCommitmentChunksAt)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
@@ -68,10 +68,10 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
   incrementArt <- compileStepMainTwoPhaseChainIncrement makeZeroArt incrementStepSrsData
   vestaSrs' <- createCRS @StepField
   pallasSrs <- createCRS @WrapField
+  makeZeroVK <- deriveStepVKFromCompiled @1 @0 vestaSrs' makeZeroArt.stepCs
+  incrementVK <- deriveStepVKFromCompiled @1 @1 vestaSrs' incrementArt.stepCs
   let
     -- @0 for make_zero (n=0 prev_challenges), @1 for increment (n=1).
-    makeZeroVK = deriveStepVKFromCompiled @1 @0 vestaSrs' makeZeroArt.stepCs
-    incrementVK = deriveStepVKFromCompiled @1 @1 vestaSrs' incrementArt.stepCs
 
     -- Per-branch chunked lagrange lookup at each branch's step domain log2.
     -- Both values derived from artifacts (no hardcoded 9 / 14). At
@@ -108,12 +108,12 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
   let
     dummyAdvice :: WrapAdvice 1 1 (Slots1 1)
     dummyAdvice = unsafeCoerce unit
-  wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\stmt -> wrapMain @2 @(Slots1 1) @1 config stmt dummyAdvice)
-    Kimchi.initialState
+  wrapVk <- deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
   pure
     { stepCs: incrementArt.stepCs
     , stepDomainLog2: incrementArt.stepDomainLog2
     , wrapCs
-    , wrapVk: deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
+    , wrapVk
     }

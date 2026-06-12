@@ -3,7 +3,6 @@ module Snarky.Constraint.Kimchi
   , KimchiGate
   , class KimchiVerify
   , eval
-  , initialState
   , postCondition
   ) where
 
@@ -11,21 +10,21 @@ import Prelude
 
 import Data.Array (all)
 import Data.Either (Either(..))
-import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (over, un)
 import Data.Set as Set
 import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..))
-import Data.UnionFind (equivalenceClasses)
+import Data.UnionFind.Mutable as MutableUF
 import Data.Vector (Vector)
+import Effect (Effect)
 import Poseidon (class PoseidonField)
-import Snarky.Backend.Builder (class CompileCircuit, class Finalizer, CircuitBuilderState, CircuitBuilderT, Labeled)
+import Snarky.Backend.Assignments as Assignments
+import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, Labeled)
 import Snarky.Backend.Builder as CircuitBuilder
-import Snarky.Backend.Prover (class SolveCircuit, ProverT, throwProverError)
-import Snarky.Backend.Prover as Prover
-import Snarky.Circuit.CVar (Variable, v0)
-import Snarky.Circuit.DSL (class BasicSystem, class ConstraintM, Basic(..), FVar)
+import Snarky.Backend.Prover (class SolveCircuit, ProverState)
+import Snarky.Circuit.CVar (Variable(..))
+import Snarky.Circuit.DSL (class BasicSystem, Basic(..), EvaluationError, FVar)
 import Snarky.Constraint.Basic as Basic
 import Snarky.Constraint.Kimchi.AddComplete (AddComplete)
 import Snarky.Constraint.Kimchi.AddComplete as AddComplete
@@ -74,7 +73,57 @@ instance ToKimchiRows f (KimchiGate f) where
     KimchiGateEndoMul a -> toKimchiRows a
     KimchiGateNoOp -> []
 
-instance PrimeField f => Finalizer (KimchiGate f) (AuxState f) where
+reduceRawGeneric7
+  :: forall n f
+   . PlonkReductionM n f
+  => Vector 7 (FVar f)
+  -> n (Rows f)
+reduceRawGeneric7 vs = do
+  varsReduced <- traverse reduceToVariable vs
+  pure (mkRawGeneric7Row varsReduced)
+
+instance PoseidonField f => CompileCircuit f (KimchiGate f) (KimchiConstraint f) (AuxState f) where
+  appendBuilderConstraint = case _ of
+    KimchiAddComplete c -> go AddComplete.reduce KimchiGateAddComplete c
+    KimchiPoseidon c -> go Poseidon.reduce KimchiGatePoseidon c
+    KimchiBasic c -> go GenericPlonk.reduce (const KimchiGateNoOp) c
+    KimchiVarBaseMul c -> go VarBaseMul.reduce KimchiGateVarBaseMul c
+    KimchiEndoScalar c -> go EndoScalar.reduce KimchiGateEndoScalar c
+    KimchiEndoMul c -> go EndoMul.reduce KimchiGateEndoMul c
+    KimchiRawGeneric7 vs -> go reduceRawGeneric7 KimchiGatePlonk vs
+    where
+    go
+      :: forall a c
+       . (forall n. PlonkReductionM n f => c -> n a)
+      -> (a -> KimchiGate f)
+      -> c
+      -> CircuitBuilderState (KimchiGate f) (AuxState f)
+      -> Effect (CircuitBuilderState (KimchiGate f) (AuxState f))
+    go reducer wrap c s =
+      reduceAsBuilder
+        { nextVariable: s.nextVar
+        , aux: s.aux
+        }
+        (reducer c) <#> \(Tuple rows res) ->
+        let
+          lbl = s.labelStack
+
+          labelGate :: forall g. g -> Labeled g
+          labelGate g = { constraint: g, context: lbl }
+        in
+          s
+            { nextVar = res.nextVariable
+            , constraints =
+                CircuitBuilder.snocConstraint (labelGate (wrap rows))
+                  ( CircuitBuilder.appendConstraintsBatch
+                      (map (labelGate <<< KimchiGatePlonk) res.constraints)
+                      s.constraints
+                  )
+            , aux = res.aux
+            }
+
+  initialBuilderState = initialAuxState >>= CircuitBuilder.emptyBuilderState
+
   finalize s =
     let
       mRow = finalizeGateQueue (un AuxState s.aux)
@@ -91,64 +140,8 @@ instance PrimeField f => Finalizer (KimchiGate f) (AuxState f) where
             s.aux
         }
 
-reduceRawGeneric7
-  :: forall n f
-   . PlonkReductionM n f
-  => Vector 7 (FVar f)
-  -> n (Rows f)
-reduceRawGeneric7 vs = do
-  varsReduced <- traverse reduceToVariable vs
-  pure (mkRawGeneric7Row varsReduced)
-
-instance PoseidonField f => CompileCircuit f (KimchiGate f) (KimchiConstraint f) (AuxState f)
-
-instance
-  ( PoseidonField f
-  ) =>
-  ConstraintM (CircuitBuilderT (KimchiGate f) (AuxState f)) (KimchiConstraint f) where
-  addConstraint' = case _ of
-    KimchiAddComplete c -> go AddComplete.reduce KimchiGateAddComplete c
-    KimchiPoseidon c -> go Poseidon.reduce KimchiGatePoseidon c
-    KimchiBasic c -> go GenericPlonk.reduce (const KimchiGateNoOp) c
-    KimchiVarBaseMul c -> go VarBaseMul.reduce KimchiGateVarBaseMul c
-    KimchiEndoScalar c -> go EndoScalar.reduce KimchiGateEndoScalar c
-    KimchiEndoMul c -> go EndoMul.reduce KimchiGateEndoMul c
-    KimchiRawGeneric7 vs -> go reduceRawGeneric7 KimchiGatePlonk vs
-    where
-    go
-      :: forall a c m
-       . Monad m
-      => (forall n. PlonkReductionM n f => c -> n a)
-      -> (a -> KimchiGate f)
-      -> c
-      -> CircuitBuilderT (KimchiGate f) (AuxState f) m Unit
-    go reducer wrap c = do
-      s <- CircuitBuilder.getState
-      let
-        Tuple rows res = reduceAsBuilder
-          { nextVariable: s.nextVar
-          , aux: s.aux
-          }
-          (reducer c)
-        lbl = s.labelStack
-
-        labelGate :: forall g. g -> Labeled g
-        labelGate g = { constraint: g, context: lbl }
-      CircuitBuilder.putState s
-        { nextVar = res.nextVariable
-        , constraints =
-            CircuitBuilder.snocConstraint (labelGate (wrap rows))
-              ( CircuitBuilder.appendConstraintsBatch
-                  (map (labelGate <<< KimchiGatePlonk) res.constraints)
-                  s.constraints
-              )
-        , aux = res.aux
-        }
-
-instance (KimchiVerify f f') => SolveCircuit f (KimchiConstraint f)
-
-instance (KimchiVerify f f') => ConstraintM (ProverT f) (KimchiConstraint f) where
-  addConstraint' = case _ of
+instance (KimchiVerify f f') => SolveCircuit f (KimchiConstraint f) where
+  proverConstraint kc s = case kc of
     KimchiAddComplete c -> go AddComplete.reduce c
     KimchiPoseidon c -> go Poseidon.reduce c
     KimchiBasic c -> goBasic c
@@ -162,53 +155,42 @@ instance (KimchiVerify f f') => ConstraintM (ProverT f) (KimchiConstraint f) whe
     -- favor of the circuit-diffs JSON byte-equality check, which is a
     -- strictly stronger correctness signal.
     go
-      :: forall c g m
-       . Monad m
-      => ToKimchiRows f g
+      :: forall c g
+       . ToKimchiRows f g
       => (forall n. PlonkReductionM n f => c -> n g)
       -> c
-      -> ProverT f m Unit
-    go reducer c = do
-      s <- Prover.getState
-      case reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (reducer c) of
-        Left e -> throwProverError e
-        Right (Tuple _ res) -> do
-          Prover.putState $ s { assignments = res.assignments, nextVar = res.nextVariable }
+      -> Effect (Either EvaluationError (ProverState f))
+    go reducer c =
+      reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (reducer c) <#> map
+        \(Tuple _ res) -> s { assignments = res.assignments, nextVar = res.nextVariable }
 
     -- Basic constraints keep their `debugCheck` (pure-PS, no FFI) for
     -- richer error messages (e.g. "R1CS failed: 42 * 7 != 293") when
     -- the prover state has `debug: true`.
-    goBasic :: forall m. Monad m => Basic f -> ProverT f m Unit
-    goBasic c = do
-      s <- Prover.getState
-      case reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (GenericPlonk.reduce c) of
-        Left e -> throwProverError e
+    goBasic :: Basic f -> Effect (Either EvaluationError (ProverState f))
+    goBasic c =
+      reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (GenericPlonk.reduce c) >>= case _ of
+        Left e -> pure (Left e)
         Right (Tuple _ res) -> do
-          Prover.putState $ s { assignments = res.assignments, nextVar = res.nextVariable }
-          when s.debug do
-            case Basic.debugCheck (flip Map.lookup res.assignments) c of
-              Nothing -> pure unit
-              Just e -> throwProverError e
-
-initialState :: forall f. CircuitBuilderState (KimchiGate f) (AuxState f)
-initialState =
-  { nextVar: v0
-  , constraints: CircuitBuilder.emptyConstraints
-  , publicInputs: mempty
-  , aux: initialAuxState
-  , labelStack: []
-  , varMetadata: Map.empty
-  }
+          let s' = s { assignments = res.assignments, nextVar = res.nextVariable }
+          if s.debug then do
+            lookupFn <- Assignments.toLookup res.assignments
+            pure case Basic.debugCheck lookupFn c of
+              Nothing -> Right s'
+              Just e -> Left e
+          else pure (Right s')
 
 postCondition
   :: forall f
    . PrimeField f
   => PostCondition f (KimchiGate f) (AuxState f)
 postCondition lookup { aux: AuxState { wireState: { unionFind } } } = do
-  classes <- for (equivalenceClasses unionFind) \_class -> do
-    values <- traverse lookup _class
-    pure $ Set.fromFoldable values
-  pure $ all (\s -> Set.size s == 1) classes
+  ufClasses <- MutableUF.equivalenceClasses unionFind
+  pure do
+    classes <- for ufClasses \_class -> do
+      values <- traverse (lookup <<< Variable) _class
+      pure $ Set.fromFoldable values
+    pure $ all (\s -> Set.size s == 1) classes
 
 -- | Per-gate constraint sanity checker, threaded by `Test.Snarky.Circuit
 -- | .Utils.TestConfig` as the `checker:` field (used by `random-oracle`,

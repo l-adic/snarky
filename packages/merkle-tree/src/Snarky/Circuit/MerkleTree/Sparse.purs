@@ -16,7 +16,6 @@ module Snarky.Circuit.MerkleTree.Sparse
 
 import Prelude
 
-import Control.Monad.Trans.Class (lift)
 import Data.Foldable (foldM)
 import Data.Maybe (Maybe(..))
 import Data.MerkleTree.Hashable (class MerkleHashable, hashLeaf, mergeCircuit)
@@ -25,10 +24,12 @@ import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector as Vector
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, FVar, Snarky, assertEqual_, exists, if_, read)
-import Snarky.Circuit.MerkleTree (class MerkleRequestM, getElement, getPath, setValue)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, FVar, Snarky, assertEqual_, exists, if_, liftAdvice, read)
+import Snarky.Circuit.MerkleTree (MERKLE, getElement, getPath, setValue)
 import Snarky.Circuit.RandomOracle (Digest(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Class (class PrimeField)
+import Type.Row (type (+))
 
 -- | Compute the implied root from an address, value hash, and path
 -- |
@@ -36,14 +37,14 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 -- | its hash, and the sibling hashes along the path to root, compute
 -- | what the root hash would be.
 impliedRoot
-  :: forall t m f d
+  :: forall r f d
    . Reflectable d Int
   => PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => Sized.AddressVar d f
   -> Digest (FVar f)
   -> Sized.Path d (Digest (FVar f))
-  -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
+  -> Snarky f (KimchiConstraint f) r (Digest (FVar f))
 impliedRoot (Sized.AddressVar addr) initialHash (Sized.Path path) =
   foldM
     ( \(Digest acc) (Tuple b (Digest h)) -> do
@@ -60,21 +61,20 @@ impliedRoot (Sized.AddressVar addr) initialHash (Sized.Path path) =
 -- | This witnesses the element and its path, then verifies the path
 -- | computes to the expected root.
 get
-  :: forall t m f d v var
+  :: forall r f d v var
    . Reflectable d Int
   => PoseidonField f
-  => MerkleRequestM m f v d
   => CircuitType f v var
   => CheckedType f (KimchiConstraint f) var
-  => CircuitM f (KimchiConstraint f) t m
-  => MerkleHashable var (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
+  => PrimeField f
+  => MerkleHashable var (Snarky f (KimchiConstraint f) (MERKLE f v d + r) (Digest (FVar f)))
   => Sized.AddressVar d f
   -> Digest (FVar f)
-  -> Snarky (KimchiConstraint f) t m var
+  -> Snarky f (KimchiConstraint f) (MERKLE f v d + r) var
 get addr (Digest root_) = do
   { value, path } <- exists do
     a <- read addr
-    lift $ getElement @_ @f @v @d a
+    liftAdvice $ getElement @f @v @d a
   h <- hashLeaf $ Just value
   impliedRoot addr h path >>= \(Digest d) ->
     assertEqual_ root_ d
@@ -95,16 +95,16 @@ get addr (Digest root_) = do
 -- |
 -- | Fails (constraint unsatisfiable) if the witness doesn't produce oldRoot
 checkAndUpdate
-  :: forall t m f d
+  :: forall r f d
    . Reflectable d Int
   => PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => Sized.AddressVar d f
   -> Digest (FVar f)
   -> Digest (FVar f)
   -> Sized.Path d (Digest (FVar f))
   -> Digest (FVar f)
-  -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
+  -> Snarky f (KimchiConstraint f) r (Digest (FVar f))
 checkAndUpdate addr oldValueHash newValueHash path (Digest oldRoot_) = do
   -- Verify the old value produces the old root
   impliedRoot addr oldValueHash path >>= \(Digest d) ->
@@ -120,24 +120,23 @@ checkAndUpdate addr oldValueHash newValueHash path (Digest oldRoot_) = do
 -- | 3. Updates the underlying tree state via setValue
 -- | 4. Computes and returns the new root
 update
-  :: forall t m f d v var
+  :: forall r f d v var
    . Reflectable d Int
   => PoseidonField f
-  => MerkleRequestM m f v d
-  => MerkleHashable var (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
+  => MerkleHashable var (Snarky f (KimchiConstraint f) (MERKLE f v d + r) (Digest (FVar f)))
   => CircuitType f v var
   => CheckedType f (KimchiConstraint f) var
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => Sized.AddressVar d f
   -> Digest (FVar f)
   -> var
   -> var
-  -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
+  -> Snarky f (KimchiConstraint f) (MERKLE f v d + r) (Digest (FVar f))
 update addr (Digest root_) prev next = do
   -- Witness only the path
   path <- exists do
     a <- read addr
-    lift $ getPath @m @_ @v @d a
+    liftAdvice $ getPath @f @v @d a
   -- Hash old element and verify against root
   prevHash <- hashLeaf $ Just prev
   impliedRoot addr prevHash path >>= \(Digest d) ->
@@ -146,7 +145,7 @@ update addr (Digest root_) prev next = do
   _ <- exists do
     a <- read addr
     n <- read @v next
-    lift $ setValue @_ @f @v @d a n
+    liftAdvice $ setValue @f @v @d a n
   -- Hash new element and compute new root
   nextHash <- hashLeaf $ Just next
   impliedRoot addr nextHash path

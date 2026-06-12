@@ -10,6 +10,7 @@ import Prelude
 import Data.Fin (Finite, getFinite)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx, wrapDomainLog2, wrapEndo, wrapSrsLengthLog2)
 import Pickles.Field (WrapField)
 import Pickles.FinalizeOtherProof (DomainMode(..), Output)
@@ -17,11 +18,12 @@ import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.Wrap.FinalizeOtherProof (pow2PowMul, wrapFinalizeOtherProofCircuit)
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), F, FVar, SizedF, Snarky, const_, sub_)
+import Snarky.Backend.Advice (noAdvice)
+import Snarky.Backend.Compile (compile)
+import Snarky.Circuit.DSL (Bool(..), F, FVar, SizedF, Snarky, const_, sub_)
 import Snarky.Circuit.Kimchi (Type2(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
 type FopWrapInput =
@@ -90,10 +92,10 @@ parseFopWrapInput inputs =
     }
 
 fopWrapCircuit
-  :: forall t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  :: forall r
+   . PrimeField WrapField
   => FopWrapInput
-  -> Snarky (KimchiConstraint WrapField) t m (Output 16 WrapField)
+  -> Snarky WrapField (KimchiConstraint WrapField) r (Output 16 WrapField)
 fopWrapCircuit input =
   let
     unfinalized =
@@ -128,8 +130,7 @@ fopWrapCircuit input =
       , prevChallenges: input.prevChallenges
       }
 
-compileFopWrap :: CompiledCircuit WrapField
+compileFopWrap :: Effect (CompiledCircuit WrapField)
 compileFopWrap =
-  compilePure (Proxy @(Vector 148 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  compile noAdvice (Proxy @(Vector 148 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ fopWrapCircuit (parseFopWrapInput inputs))
-    Kimchi.initialState

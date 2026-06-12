@@ -17,10 +17,9 @@ module Pickles.Linearization.Env
 
 import Prelude
 
-import Control.Monad.State (StateT, evalStateT, get, put)
-import Control.Monad.Trans.Class (lift)
 import Data.Fin (Finite, unsafeFinite)
 import Data.Int (pow) as Int
+import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt (fromInt)
@@ -29,9 +28,10 @@ import Pickles.Hex (parseHex)
 import Pickles.Linearization.Types (Column(..), CurrOrNext(..), FeatureFlag(..), GateType(..), LookupPattern(..)) as ReExports
 import Pickles.Linearization.Types (Column(..), CurrOrNext, FeatureFlag, GateType)
 import Poseidon (class PoseidonField, getMdsMatrix)
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, add_, const_, div_, label, pow_, sub_)
+import Snarky.Circuit.DSL (class BasicSystem, FVar, Snarky, add_, const_, div_, label, pow_, sub_)
 import Snarky.Circuit.DSL (mul_) as Circuit
-import Snarky.Curves.Class (class HasEndo, EndoBase(..), endoBase, pow)
+import Snarky.Circuit.Kimchi.Utils (mapAccumM)
+import Snarky.Curves.Class (class HasEndo, class PrimeField, EndoBase(..), endoBase, pow)
 import Type.Proxy (Proxy(..))
 
 -- | Number of precomputed powers of α: `α^0 .. α^70`. Drives the size
@@ -128,7 +128,7 @@ fieldEnv evalPoint challenges =
 -- | Monadic environment for direct-in-Snarky evaluation of linearization.
 -- | Pure operations (add, sub, var, cell, alphaPow, constants) return FVar directly.
 -- | Monadic operations (mul, pow, unnormalizedLagrangeBasis) run in monad n and create constraints.
--- | The type parameter 'n' is the monad (e.g., Snarky c t m).
+-- | The type parameter 'n' is the monad (e.g., Snarky f c r).
 type EnvM f n =
   { add :: FVar f -> FVar f -> FVar f
   , sub :: FVar f -> FVar f -> FVar f
@@ -154,24 +154,24 @@ type EnvM f n =
 -- | constraints.
 -- |
 -- | Internals: seed with `[α^0, α^1] = [1, α]`, then generate α^2..α^70
--- | via a StateT-threaded monadic scan (`Vector.generateA` carrying the
--- | previous power). Each step emits one `Circuit.mul_` constraint.
+-- | via a `mapAccumM` scan carrying the previous power. Each step emits
+-- | one `Circuit.mul_` constraint.
 -- | Type-level `Vector.append` glues the seed and the generated tail
 -- | into the final `Vector 71` — no runtime length check needed.
 precomputeAlphaPowers
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => FVar f -- ^ alpha
-  -> Snarky c t m (Vector AlphaPowersLen (FVar f))
+  -> Snarky f c r (Vector AlphaPowersLen (FVar f))
 precomputeAlphaPowers alpha = label "precompute-alpha-powers" do
-  let
-    step :: Finite 69 -> StateT (FVar f) (Snarky c t m) (FVar f)
-    step _ = do
-      prev <- get
-      next <- lift (Circuit.mul_ alpha prev)
-      put next
-      pure next
-  rest <- evalStateT (Vector.generateA @69 step) alpha
+  Tuple rest _ <- mapAccumM
+    ( \prev (_ :: Finite 69) -> do
+        next <- Circuit.mul_ alpha prev
+        pure (Tuple next next)
+    )
+    alpha
+    (Vector.generate identity :: Vector 69 _)
   pure (Vector.append (const_ one :< alpha :< Vector.nil) rest)
 
 -- | Construct a monadic circuit environment for evaluating linearization polynomials.
@@ -181,8 +181,9 @@ precomputeAlphaPowers alpha = label "precompute-alpha-powers" do
 -- | OCaml's lazy binding (plonk_checks.ml:280), which is forced mid-evaluation
 -- | at the first UnnormalizedLagrangeBasis token.
 buildCircuitEnvM
-  :: forall f f' c t m
-   . CircuitM f c t m
+  :: forall f f' c r
+   . PrimeField f
+  => BasicSystem f c
   => PoseidonField f
   => HasEndo f f'
   => Vector AlphaPowersLen (FVar f) -- ^ precomputed alpha powers α^0..α^70
@@ -194,7 +195,7 @@ buildCircuitEnvM
   -> FVar f -- ^ beta
   -> FVar f -- ^ gamma
   -> FVar f -- ^ jointCombiner
-  -> EnvM f (Snarky c t m)
+  -> EnvM f (Snarky f c r)
 buildCircuitEnvM alphaPowers zeta domainLog2 omegaForLagrange evalPoint vanishesOnZk beta gamma jointCombiner =
   { add: add_
   , sub: sub_

@@ -2,18 +2,18 @@ package:
   name: union-find
   dependencies:
     - arrays
-    - foldable-traversable
+    - effect
     - maybe
-    - newtype
     - ordered-collections
     - prelude
-    - transformers
+    - st
+    - tuples
   test:
     main: Test.Data.UnionFind
     dependencies:
       - arrays
       - effect
+      - foldable-traversable
       - quickcheck
       - spec
       - spec-node
-      - spec-quickcheck

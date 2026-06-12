@@ -17,7 +17,7 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import Prim.Int (class Compare, class Mul)
 import Prim.Ordering (LT)
 import Snarky.Circuit.CVar (CVar(..))
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, addConstraint, add_, assertEqual_, coerceViaBits, const_, exists, label, mul_, read, scale_, toBits)
+import Snarky.Circuit.DSL (F(..), FVar, SizedF, Snarky, addConstraint, add_, assertEqual_, coerceViaBits, const_, exists, label, mul_, read, scale_, toBits)
 import Snarky.Circuit.DSL as SizedF
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
@@ -30,18 +30,18 @@ import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeFie
 -- | the appropriate newtype (EndoBase or EndoScalar) depending on context.
 -- | This is used in conjunction with EndoMul.
 toField
-  :: forall @rows f t m n nBits _l
+  :: forall @rows f r n nBits _l
    . FieldSizeInBits f n
   => Mul 16 rows nBits
   => Mul 2 _l nBits
   => Mul 8 rows _l
   => Reflectable rows Int
   => Reflectable nBits Int
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => Compare nBits n LT
   => SizedF nBits (FVar f)
   -> FVar f
-  -> Snarky (KimchiConstraint f) t m (FVar f)
+  -> Snarky f (KimchiConstraint f) r (FVar f)
 toField scalar endo = label "endo-scalar-to-field" do
   { a, b, n } <- toFieldChecked' @rows scalar
   assertEqual_ n (SizedF.toField scalar)
@@ -56,17 +56,17 @@ toField scalar endo = label "endo-scalar-to-field" do
 -- | when you want the gate without the wrapper's extra `Equal` and
 -- | `Mul`/`Scale+Add`.
 toFieldChecked'
-  :: forall @rows f t m n nBits _l
+  :: forall @rows f r n nBits _l
    . FieldSizeInBits f n
   => Mul 16 rows nBits
   => Mul 2 _l nBits
   => Mul 8 rows _l
   => Reflectable rows Int
   => Reflectable nBits Int
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => Compare nBits n LT
   => SizedF nBits (FVar f)
-  -> Snarky (KimchiConstraint f) t m
+  -> Snarky f (KimchiConstraint f) r
        { a :: FVar f, b :: FVar f, n :: FVar f }
 toFieldChecked' scalar = do
   -- Create nybble variables directly (like OCaml's `exists Field.typ`).

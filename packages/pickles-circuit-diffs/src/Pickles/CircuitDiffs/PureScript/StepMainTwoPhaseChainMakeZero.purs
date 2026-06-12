@@ -30,10 +30,11 @@ import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, stepMain)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (class CircuitM, AsProverT, F, FVar, Snarky, assertEqual_, const_)
+import Snarky.Circuit.DSL (AsProver, F, FVar, Snarky, assertEqual_, const_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
@@ -45,11 +46,11 @@ type StepMainTwoPhaseChainMakeZeroParams =
 
 -- | `make_zero` rule: asserts `self_v = 0`. No prevs.
 makeZeroRule
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
-  => AsProverT StepField m Unit
+  :: forall r
+   . PrimeField StepField
+  => AsProver StepField r Unit
   -> FVar StepField
-  -> Snarky (KimchiConstraint StepField) t m
+  -> Snarky StepField (KimchiConstraint StepField) r
        (RuleOutput 0 Unit Unit)
 makeZeroRule _ appState = do
   assertEqual_ appState (const_ zero)
@@ -73,8 +74,8 @@ compileStepMainTwoPhaseChainMakeZero params = do
   -- so step PI front-pads 1 dummy unfinalized_proof slot. Output
   -- size = 1*32 + 1 + 1 = 34. `stepMain` derives the front-padding
   -- dummy from `len`.
-  mkStepArtifact <$>
-    compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
+  mkStepArtifact <$> do
+    compile noAdvice (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
       ( \_ -> stepMain
           @Unit
           @(F StepField)
@@ -96,4 +97,3 @@ compileStepMainTwoPhaseChainMakeZero params = do
           dummyAdvice
           throwawayCaptureRef
       )
-      Kimchi.initialState

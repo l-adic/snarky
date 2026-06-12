@@ -4,18 +4,17 @@ import Prelude
 
 import Control.Monad.Gen (suchThat)
 import Data.Array.NonEmpty as NEA
-import Data.Identity (Identity)
 import Data.Tuple (Tuple(..), uncurry)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, const_)
+import Snarky.Circuit.DSL (FVar, Snarky, const_)
 import Snarky.Circuit.DSL as Snarky
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
-import Snarky.Curves.Class (class WeierstrassCurve)
+import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint(..), Point(..))
@@ -52,11 +51,10 @@ spec' cfg testName pg _ =
         f (Tuple a b) = EC.addAffine a b
 
         circuit
-          :: forall t
-           . CircuitM f (KimchiConstraint f) t Identity
+          :: PrimeField f
           => AffinePoint (FVar f)
           -> AffinePoint (FVar f)
-          -> Snarky (KimchiConstraint f) t Identity (Point (FVar f))
+          -> Snarky f (KimchiConstraint f) () (Point (FVar f))
         circuit p1 p2 = do
           { isInfinity, p: AffinePoint p } <- addFast DontCheckFinite p1 p2
           x <- Snarky.if_ isInfinity (const_ zero) p.x

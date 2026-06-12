@@ -25,11 +25,12 @@ import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (class CircuitM, AsProverT, F, FVar, Snarky, assertAny_, const_, equals_, exists, not_)
+import Snarky.Circuit.DSL (AsProver, F, FVar, Snarky, assertAny_, const_, equals_, exists, not_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (SplitField, Type2)
 import Type.Proxy (Proxy(..))
@@ -43,11 +44,11 @@ type StepMainSimpleChainParams =
 -- | Simple_Chain N1 rule: self_correct = (1 + prev == self)
 -- | Reference: dump_circuit_impl.ml:4390-4413
 simpleChainRule
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
-  => AsProverT StepField m (Tuple1 (StatementIO (F StepField) Unit))
+  :: forall r
+   . PrimeField StepField
+  => AsProver StepField r (Tuple1 (StatementIO (F StepField) Unit))
   -> FVar StepField
-  -> Snarky (KimchiConstraint StepField) t m (RuleOutput 1 (FVar StepField) Unit)
+  -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput 1 (FVar StepField) Unit)
 simpleChainRule getPrevStates appState = do
   prev <- exists $ getPrevStates <#> \(StatementIO p1 /\ _) -> p1.input
   isBaseCase <- equals_ (const_ zero) appState
@@ -89,7 +90,7 @@ compileStepMainSimpleChain params = do
              _
              _
       dummyAdvice = unsafeCoerce unit
-    compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
+    compile noAdvice (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
       -- Axes: @prevsSpec @outputSize @inputVal @input @outputVal @output
       --       @prevInputVal @prevInput @valCarrier @mpvMax @mpvPad.
       -- Single-rule: mpvMax = len = 1, mpvPad = 0.
@@ -116,4 +117,3 @@ compileStepMainSimpleChain params = do
           dummyAdvice
           throwawayCaptureRef
       )
-      Kimchi.initialState

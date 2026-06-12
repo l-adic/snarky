@@ -11,18 +11,19 @@ import Data.Fin (getFinite)
 import Data.Maybe (fromJust)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
 import Pickles.Field (StepField)
 import Pickles.FtComm (ftComm) as FtComm
 import Pickles.Step.OtherField as StepOtherField
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, Snarky, const_)
+import Snarky.Backend.Advice (noAdvice)
+import Snarky.Backend.Compile (compile)
+import Snarky.Circuit.DSL (Bool(..), BoolVar, F, FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type2(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (generator, toAffine)
+import Snarky.Curves.Class (class PrimeField, generator, toAffine)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
@@ -48,10 +49,10 @@ parseFtcommStepInput inputs =
     }
 
 ftcommStepCircuit
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+  :: forall r
+   . PrimeField StepField
   => FtcommStepInput StepField
-  -> Snarky (KimchiConstraint StepField) t m (AffinePoint (FVar StepField))
+  -> Snarky StepField (KimchiConstraint StepField) r (AffinePoint (FVar StepField))
 ftcommStepCircuit input =
   let
     g = unsafePartial $ fromJust $ toAffine (generator :: PallasG)
@@ -65,8 +66,7 @@ ftcommStepCircuit input =
       , zetaToDomainSize: input.zetaToDomainSize
       }
 
-compileFtcommStep :: CompiledCircuit StepField
+compileFtcommStep :: Effect (CompiledCircuit StepField)
 compileFtcommStep =
-  compilePure (Proxy @(Vector 20 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compile noAdvice (Proxy @(Vector 20 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> void $ ftcommStepCircuit (parseFtcommStepInput inputs))
-    Kimchi.initialState

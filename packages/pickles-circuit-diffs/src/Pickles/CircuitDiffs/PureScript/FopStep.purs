@@ -10,6 +10,7 @@ import Prelude
 import Data.Fin (Finite, getFinite)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, domainLog2, srsLengthLog2, stepEndo, unsafeIdx)
 import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (DomainMode(..), Output)
@@ -18,11 +19,12 @@ import Pickles.Linearization.FFI as LinFFI
 import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Step.OtherField as StepOtherField
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, SizedF, Snarky, const_)
+import Snarky.Backend.Advice (noAdvice)
+import Snarky.Backend.Compile (compile)
+import Snarky.Circuit.DSL (Bool(..), BoolVar, F, FVar, SizedF, Snarky, const_)
 import Snarky.Circuit.Kimchi (Type1(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
 type FopStepInput =
@@ -95,10 +97,10 @@ parseFopStepInput inputs =
     }
 
 fopStepCircuit
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+  :: forall r
+   . PrimeField StepField
   => FopStepInput
-  -> Snarky (KimchiConstraint StepField) t m (Output 16 StepField)
+  -> Snarky StepField (KimchiConstraint StepField) r (Output 16 StepField)
 fopStepCircuit input =
   let
     unfinalized =
@@ -132,8 +134,7 @@ fopStepCircuit input =
       , domainLog2Var: input.domainLog2Var
       }
 
-compileFopStep :: CompiledCircuit StepField
+compileFopStep :: Effect (CompiledCircuit StepField)
 compileFopStep =
-  compilePure (Proxy @(Vector 151 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compile noAdvice (Proxy @(Vector 151 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> void $ fopStepCircuit (parseFopStepInput inputs))
-    Kimchi.initialState

@@ -40,12 +40,24 @@ BENCH_DIR="$REPO_ROOT/packages/pickles-bench"
 # comparable on the same V8.
 export PATH="$HOME/.nvm/versions/node/v23.11.1/bin:$PATH"
 
+# With `--cpu-prof`, the newest profile in prof/ is auto-summarized by
+# packages/pickles-bench/analyze_cpuprofile.mjs (self-time by category /
+# module / frame — sizes dispatch+currying overhead vs bigint core vs Run
+# machinery). Re-run it manually on any saved .cpuprofile.
+#
 # Our one flag; the rest is forwarded to the bench CLI.
+#
+# Deliberately NO GC tuning (e.g. --max-semi-space-size): measured
+# 2026-06-11 as noise-level for this workload once the compile bench
+# stopped running with prove's prepared state resident, and changing node
+# flags breaks comparability with older baselines. The flags are recorded
+# in the results JSON (`nodeFlags`) — only compare runs with identical
+# flags.
 NODE_FLAGS=(--trace-gc)
 ARGS=()
 for a in "$@"; do
   case "$a" in
-    --cpu-prof) NODE_FLAGS+=(--cpu-prof --cpu-prof-dir "$REPO_ROOT/prof") ;;
+    --cpu-prof) CPU_PROF=1; NODE_FLAGS+=(--cpu-prof --cpu-prof-dir "$REPO_ROOT/prof") ;;
     *) ARGS+=("$a") ;;
   esac
 done
@@ -61,12 +73,12 @@ echo "==> Running suite (node ${NODE_FLAGS[*]}; log: $RUN_LOG) ..."
 # The raw --trace-gc firehose (one line per GC, thousands per trial) goes
 # to the LOG ONLY — it is input for parse_gclog.mjs, not for humans. The
 # terminal shows just the bench's own output (markers, splits, results).
-node "${NODE_FLAGS[@]}" packages/pickles-bench/run.mjs "${ARGS[@]}" 2>&1 \
+node "${NODE_FLAGS[@]}" packages/pickles-bench/run.mjs ${ARGS[@]+"${ARGS[@]}"} 2>&1 \
   | tee "$RUN_LOG" \
   | grep -vE '^\[[0-9]+(:0x[0-9a-f]+)?\] ' || true
 
 # The bench prints `[bench-results] <path>` for the JSON it wrote.
-RESULTS_FILE=$(grep -oP '(?<=^\[bench-results\] ).*' "$RUN_LOG" | tail -1)
+RESULTS_FILE=$(sed -n 's/^\[bench-results\] //p' "$RUN_LOG" | tail -1)
 if [ -z "$RESULTS_FILE" ]; then
   echo "ERROR: no [bench-results] line found in the run output" >&2
   exit 1
@@ -74,5 +86,13 @@ fi
 
 echo "==> Attaching GC stats from the trace-gc log ..."
 node packages/pickles-bench/parse_gclog.mjs "$RUN_LOG" "$RESULTS_FILE"
+
+if [ "${CPU_PROF:-}" = "1" ]; then
+  CPU_PROFILE=$(ls -t prof/*.cpuprofile 2>/dev/null | head -1 || true)
+  if [ -n "$CPU_PROFILE" ]; then
+    echo "==> CPU profile summary ($CPU_PROFILE) ..."
+    node packages/pickles-bench/analyze_cpuprofile.mjs "$CPU_PROFILE"
+  fi
+fi
 
 echo "==> Results: $RESULTS_FILE"

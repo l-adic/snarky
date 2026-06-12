@@ -9,19 +9,19 @@ package:
     - exceptions
     - foldable-traversable
     - gen
-    - identity
     - integers
     - js-bigints
+    - lcg
     - maybe
     - newtype
-    - ordered-collections
     - prelude
     - quickcheck
+    - run
     - safe-coerce
     - snarky
     - spec
     - spec-quickcheck
-    - tailrec
-    - transformers
     - tuples
+    - typelevel-prelude
+    - variant
     - vector-sized

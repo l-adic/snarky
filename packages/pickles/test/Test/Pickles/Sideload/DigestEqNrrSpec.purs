@@ -22,6 +22,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Pickles (NoSlots, RuleEntry, StepField, compileMulti, mkRuleEntry)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (vestaVerifierIndexJsonKey)
 import Snarky.Circuit.DSL (F)
 import Test.Pickles.Prove.NoRecursionReturn (NrrRules, nrrRule)
@@ -46,6 +47,7 @@ spec = describe "Pickles.Sideload.NRR VK equality" do
       @Unit
       @NoSlots
       @1
+      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing

@@ -3,7 +3,6 @@ module Test.Snarky.Circuit.Main where
 import Prelude
 
 import Effect (Effect)
-import Snarky.Backend.Builder as Snarky
 import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.Vesta as Vesta
 import Test.Snarky.Circuit as CircuitTests
@@ -18,6 +17,6 @@ import Type.Proxy (Proxy(..))
 main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] do
   ConstraintTests.spec $ Proxy @Vesta.ScalarField
-  CircuitTests.spec (Proxy @Vesta.ScalarField) { checker: Basic.eval, postCondition: nullPostCondition, initState: Snarky.initialState }
+  CircuitTests.spec (Proxy @Vesta.ScalarField) { checker: Basic.eval, postCondition: nullPostCondition }
   TypesTests.spec $ Proxy @(Vesta.BaseField)
   SizedFTests.spec

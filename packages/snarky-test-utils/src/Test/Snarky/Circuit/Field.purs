@@ -4,14 +4,13 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import Data.Foldable (sum)
-import Data.Identity (Identity)
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..), uncurry)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Snarky.Backend.Builder (class CompileCircuit)
 import Snarky.Backend.Prover (class SolveCircuit)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, div_, equals_, inv_, mul_, negate_, seal, sum_)
+import Snarky.Circuit.DSL (BoolVar, F(..), FVar, Snarky, div_, equals_, inv_, mul_, negate_, seal, sum_)
 import Test.QuickCheck (arbitrary)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
@@ -27,7 +26,7 @@ spec cfg = describe "Field Circuit Specs" do
 
   it "mul Circuit is Valid" $ void $
     let
-      circuit :: forall t. CircuitM f c' t Identity => Tuple (FVar f) (FVar f) -> Snarky c' t Identity (FVar f)
+      circuit :: Tuple (FVar f) (FVar f) -> Snarky f c' () (FVar f)
       circuit = uncurry mul_
     in
       circuitTest' @f
@@ -47,7 +46,7 @@ spec cfg = describe "Field Circuit Specs" do
         b <- arbitrary
         pure $ Tuple (F a) (F b)
 
-      circuit :: forall t. CircuitM f c' t Identity => Tuple (FVar f) (FVar f) -> Snarky c' t Identity (BoolVar f)
+      circuit :: Tuple (FVar f) (FVar f) -> Snarky f c' () (BoolVar f)
       circuit = uncurry equals_
     in
       circuitTest' @f
@@ -64,7 +63,7 @@ spec cfg = describe "Field Circuit Specs" do
         if a == zero then F zero
         else F @f (recip a)
 
-      circuit :: forall t. CircuitM f c' t Identity => FVar f -> Snarky c' t Identity (FVar f)
+      circuit :: FVar f -> Snarky f c' () (FVar f)
       circuit = inv_
     in
       circuitTest' @f
@@ -78,7 +77,7 @@ spec cfg = describe "Field Circuit Specs" do
         if b == zero then F zero
         else F @f (a / b)
 
-      circuit :: forall t. CircuitM f c' t Identity => Tuple (FVar f) (FVar f) -> Snarky c' t Identity (FVar f)
+      circuit :: Tuple (FVar f) (FVar f) -> Snarky f c' () (FVar f)
       circuit = uncurry div_
     in
       circuitTest' @f
@@ -91,7 +90,7 @@ spec cfg = describe "Field Circuit Specs" do
       f :: Vector 10 (F f) -> F f
       f as = F $ sum (un F <$> as)
 
-      circuit :: forall t. CircuitM f c' t Identity => Vector 10 (FVar f) -> Snarky c' t Identity (FVar f)
+      circuit :: Vector 10 (FVar f) -> Snarky f c' () (FVar f)
       circuit = pure <<< sum_ <<< Vector.toUnfoldable
     in
       circuitTest' @f
@@ -101,7 +100,7 @@ spec cfg = describe "Field Circuit Specs" do
 
   it "negate Circuit is Valid" $ void $
     let
-      circuit :: forall t. CircuitM f c' t Identity => FVar f -> Snarky c' t Identity (FVar f)
+      circuit :: FVar f -> Snarky f c' () (FVar f)
       circuit = pure <<< negate_
     in
       circuitTest' @f
@@ -111,7 +110,7 @@ spec cfg = describe "Field Circuit Specs" do
 
   it "seal Circuit is Valid" $ void $
     let
-      circuit :: forall t. CircuitM f c' t Identity => FVar f -> Snarky c' t Identity (FVar f)
+      circuit :: FVar f -> Snarky f c' () (FVar f)
       circuit = seal
     in
       circuitTest' @f

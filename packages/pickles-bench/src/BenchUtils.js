@@ -168,6 +168,13 @@ export class BenchUtils {
       gitSha: process.env.GIT_SHA || sh("git rev-parse HEAD"),
       gitDirty: sh("git status --porcelain") ? true : false,
       node: process.version,
+      // V8 flags change GC behavior (e.g. --max-semi-space-size) — results
+      // are only comparable between runs with identical flags.
+      nodeFlags: process.execArgv,
+      // Same-machine artifacts are only comparable at the same power
+      // profile: power-saver clamps this box from 5.2GHz to ~1.5GHz
+      // (observed 2026-06-11: identical code, 22s vs 42s compile).
+      powerProfile: sh("powerprofilesctl get 2>/dev/null") || "unknown",
       benches,
     };
     const sha = (out.gitSha || "unknown").slice(0, 9);

@@ -13,7 +13,6 @@ package:
     - foldable-traversable
     - foreign
     - functors
-    - identity
     - integers
     - js-bigints
     - lazy
@@ -23,7 +22,6 @@ package:
     - node-buffer
     - node-fs
     - node-process
-    - ordered-collections
     - partial
     - pickles-linearization-types
     - poseidon
@@ -37,8 +35,6 @@ package:
     - snarky-curves
     - snarky-kimchi
     - strings
-    - tailrec
-    - transformers
     - tuples
     - unsafe-coerce
     - vector-sized
@@ -56,3 +52,4 @@ package:
       - prelude
       - spec
       - spec-node
+      - tailrec

@@ -10,18 +10,19 @@ import Data.Fin (getFinite)
 import Data.Foldable (traverse_)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import Mina.ChainId (ChainId(..), signaturePrefix)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
 import Pickles.Field (StepField)
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure)
+import Snarky.Backend.Advice (noAdvice)
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (BoolVar, F, FVar)
 import Snarky.Circuit.DSL.Monad (check) as DSL
 import Snarky.Circuit.Schnorr (Signature(..), pallasParams, shiftConst, verifies)
 import Snarky.Circuit.Schnorr.Shifted (assertOnCurveConst, createShifted)
 import Snarky.Circuit.Types (Bool(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
@@ -52,9 +53,9 @@ parseSchnorrVerifyInput inputs =
     , message: Vector.toUnfoldable (at 258 :< Vector.nil)
     }
 
-compileSchnorrVerify :: CompiledCircuit StepField
+compileSchnorrVerify :: Effect (CompiledCircuit StepField)
 compileSchnorrVerify =
-  compilePure (Proxy @(Vector 259 (F StepField))) (Proxy @Boolean) (Proxy @(KimchiConstraint StepField))
+  compile noAdvice (Proxy @(Vector 259 (F StepField))) (Proxy @Boolean) (Proxy @(KimchiConstraint StepField))
     ( \inputs -> do
         let { pk, r, sBits, message } = parseSchnorrVerifyInput inputs
         -- Mirror OCaml's input typ checks, in the same order OCaml
@@ -73,4 +74,3 @@ compileSchnorrVerify =
           , message
           }
     )
-    Kimchi.initialState

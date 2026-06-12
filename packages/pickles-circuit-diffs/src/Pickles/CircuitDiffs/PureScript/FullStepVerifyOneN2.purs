@@ -22,6 +22,7 @@ import Data.Fin (getFinite)
 import Data.Fin as Fin
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyPallasPt, stepEndo, unsafeIdx)
 import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (DomainMode(..))
@@ -31,12 +32,12 @@ import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Step.VerifyOne (verifyOne)
 import Pickles.Types (ChunkedCommitment(..))
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, const_)
+import Snarky.Backend.Advice (noAdvice)
+import Snarky.Backend.Compile (compile)
+import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (curveParams)
+import Snarky.Curves.Class (class PrimeField, curveParams)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
@@ -47,11 +48,11 @@ type FullStepVerifyOneN2Params =
   }
 
 fullStepVerifyOneN2Circuit
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+  :: forall r
+   . PrimeField StepField
   => FullStepVerifyOneN2Params
   -> Vector 304 (FVar StepField)
-  -> Snarky (KimchiConstraint StepField) t m Unit
+  -> Snarky StepField (KimchiConstraint StepField) r Unit
 fullStepVerifyOneN2Circuit { lagrangeAt, blindingH } inputs = do
   let
     at = unsafeIdx inputs
@@ -185,8 +186,7 @@ fullStepVerifyOneN2Circuit { lagrangeAt, blindingH } inputs = do
   _result <- verifyOne fopParams input ivpParams
   pure unit
 
-compileFullStepVerifyOneN2 :: FullStepVerifyOneN2Params -> CompiledCircuit StepField
+compileFullStepVerifyOneN2 :: FullStepVerifyOneN2Params -> Effect (CompiledCircuit StepField)
 compileFullStepVerifyOneN2 params =
-  compilePure (Proxy @(Vector 304 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compile noAdvice (Proxy @(Vector 304 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> fullStepVerifyOneN2Circuit params inputs)
-    Kimchi.initialState

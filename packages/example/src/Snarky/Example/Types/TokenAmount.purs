@@ -16,7 +16,7 @@ import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, assertEqual_, const_, exists, fieldsToValue, fieldsToVar, fromField, read, scale_, sizeInFields, sub_, toField, valueToFields, varToFields)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, assertEqual_, const_, exists, fieldsToValue, fieldsToVar, fromField, read, scale_, sizeInFields, sub_, toField, valueToFields, varToFields)
 import Snarky.Circuit.Kimchi.RangeCheck (rangeCheck128)
 import Snarky.Circuit.RandomOracle (class Hashable)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -68,14 +68,13 @@ instance Hashable (TokenAmount (FVar f)) (FVar f) where
 -- | constrains `overflow` to a boolean, and one linear constraint ties the
 -- | pieces back to the sum.
 addWithOverflow
-  :: forall f t m
+  :: forall f r
    . PrimeField f
   => FieldSizeInBits f 255
   => CheckedType f (KimchiConstraint f) (TokenAmount (FVar f))
-  => CircuitM f (KimchiConstraint f) t m
   => TokenAmount (FVar f)
   -> TokenAmount (FVar f)
-  -> Snarky (KimchiConstraint f) t m
+  -> Snarky f (KimchiConstraint f) r
        { result :: TokenAmount (FVar f), overflow :: BoolVar f }
 addWithOverflow a b = do
   let sumF = add_ (toField (un TokenAmount a)) (toField (un TokenAmount b))
@@ -102,14 +101,13 @@ addWithOverflow a b = do
 -- | `underflow` to a boolean, and one linear constraint ties them to the
 -- | field difference — which together pin `underflow` to the true borrow.
 subWithUnderflow
-  :: forall f t m
+  :: forall f r
    . PrimeField f
   => FieldSizeInBits f 255
   => CheckedType f (KimchiConstraint f) (TokenAmount (FVar f))
-  => CircuitM f (KimchiConstraint f) t m
   => TokenAmount (FVar f)
   -> TokenAmount (FVar f)
-  -> Snarky (KimchiConstraint f) t m
+  -> Snarky f (KimchiConstraint f) r
        { result :: TokenAmount (FVar f), underflow :: BoolVar f }
 subWithUnderflow a b = do
   let

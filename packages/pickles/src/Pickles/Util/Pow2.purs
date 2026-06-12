@@ -9,18 +9,20 @@ module Pickles.Util.Pow2
 
 import Prelude
 
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, square_)
+import Snarky.Circuit.DSL (class BasicSystem, FVar, Snarky, square_)
+import Snarky.Curves.Class (class PrimeField)
 
 -- | Compute x^(2^n) using Square constraints.
 -- |
 -- | Matches OCaml's step_verifier.ml `pow2_pow` which uses `Field.square`.
 -- | Generates exactly `n` Square constraints.
 pow2PowSquare
-  :: forall f c t m
-   . CircuitM f c t m
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => FVar f
   -> Int
-  -> Snarky c t m (FVar f)
+  -> Snarky f c r (FVar f)
 pow2PowSquare x n = go x n
   where
   go acc i

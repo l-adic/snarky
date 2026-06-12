@@ -17,7 +17,6 @@ import Prelude
 
 import Data.Array (concatMap)
 import Data.Either (Either(..))
-import Data.Identity (Identity)
 import Data.Int as Int
 import Data.Maybe (Maybe(..), isJust, isNothing)
 import Data.Newtype (un)
@@ -27,17 +26,18 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
-import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray)
-import Snarky.Backend.Compile (Solver, compilePure, makeSolver, runSolver)
+import Snarky.Backend.Advice (noAdvice)
+import Snarky.Backend.Builder (constraintsToArray)
+import Snarky.Backend.Compile (Solver, compile, makeSolver, runSolver)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (createProverIndex, createVerifierIndex)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaCrsCreate)
 import Snarky.Backend.Kimchi.Proof (createProof, verifyOpeningProof)
 import Snarky.Backend.Kimchi.ProofCache (getPallasProof, mkProofCache, setPallasProof)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, assertSquare_, exists, readCVar)
-import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate, initialState)
+import Snarky.Circuit.DSL (F(..), FVar, Snarky, assertSquare_, exists, readCVar)
+import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
-import Snarky.Curves.Class (fromInt)
+import Snarky.Curves.Class (class PrimeField, fromInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (VestaG)
 import Test.Spec (Spec, describe, it)
@@ -45,10 +45,9 @@ import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
 
 squareCircuit
-  :: forall t
-   . CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t Identity
+  :: PrimeField Pallas.BaseField
   => FVar Pallas.BaseField
-  -> Snarky (KimchiConstraint Pallas.BaseField) t Identity (FVar Pallas.BaseField)
+  -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) () (FVar Pallas.BaseField)
 squareCircuit x = do
   y <- exists do
     F xv <- readCVar x
@@ -74,28 +73,27 @@ spec = describe "Snarky.Backend.Kimchi.ProofCache (round-trip)" do
       let cache = mkProofCache cachePath
 
       -- Build the FFI machinery once for both arms of the test.
+      builtState <- compile @Pallas.BaseField noAdvice
+        (Proxy @(F Pallas.BaseField))
+        (Proxy @(F Pallas.BaseField))
+        (Proxy @(KimchiConstraint Pallas.BaseField))
+        squareCircuit
       let
-        builtState =
-          compilePure @Pallas.BaseField
-            (Proxy @(F Pallas.BaseField))
-            (Proxy @(F Pallas.BaseField))
-            (Proxy @(KimchiConstraint Pallas.BaseField))
-            squareCircuit
-            (initialState :: CircuitBuilderState (KimchiGate Pallas.BaseField) (AuxState Pallas.BaseField))
         kimchiRows =
           concatMap
             (toKimchiRows <<< _.constraint)
             (constraintsToArray builtState.constraints)
         maxPolySize = Int.pow 2 16
         crs = vestaCrsCreate maxPolySize
-        csResult =
-          makeConstraintSystemWithPrevChallenges @Pallas.BaseField
-            { constraints: kimchiRows
-            , publicInputs: builtState.publicInputs
-            , unionFind: (un AuxState builtState.aux).wireState.unionFind
-            , prevChallengesCount: 0
-            , maxPolySize
-            }
+      csResult <-
+        makeConstraintSystemWithPrevChallenges @Pallas.BaseField
+          { constraints: kimchiRows
+          , publicInputs: builtState.publicInputs
+          , unionFind: (un AuxState builtState.aux).wireState.unionFind
+          , prevChallengesCount: 0
+          , maxPolySize
+          }
+      let
         proverIndex =
           createProverIndex @Pallas.BaseField @VestaG
             { gates: csResult.gates
@@ -109,7 +107,7 @@ spec = describe "Snarky.Backend.Kimchi.ProofCache (round-trip)" do
         solver :: Solver Pallas.BaseField (KimchiConstraint Pallas.BaseField) (F Pallas.BaseField) (F Pallas.BaseField)
         solver = makeSolver (Proxy @(KimchiConstraint Pallas.BaseField)) squareCircuit
 
-      case runSolver solver (F (fromInt 7)) of
+      runSolver solver (F (fromInt 7)) >>= case _ of
         Left e -> throw $ "Squaring-circuit solver failed: " <> show e
         Right (Tuple _output assignments) -> do
           let

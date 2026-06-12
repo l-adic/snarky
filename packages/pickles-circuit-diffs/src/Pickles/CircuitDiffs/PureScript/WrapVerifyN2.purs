@@ -10,18 +10,19 @@ import Prelude
 import Data.Fin (getFinite)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt, unsafeIdx, wrapEndo)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams, parseIvpWrapInput)
 import Pickles.Field (WrapField)
 import Pickles.PublicInputCommit (CorrectionMode(..))
 import Pickles.Types (ChunkedCommitment(..), WrapIPARounds)
 import Pickles.Wrap.Verify (wrapVerify)
-import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_)
+import Snarky.Backend.Advice (noAdvice)
+import Snarky.Backend.Compile (compile)
+import Snarky.Circuit.DSL (F(..), FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi (groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (curveParams)
+import Snarky.Curves.Class (class PrimeField, curveParams)
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
@@ -30,11 +31,11 @@ type N = 2
 type InputSize = 212
 
 wrapVerifyN2Circuit
-  :: forall t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  :: forall r
+   . PrimeField WrapField
   => IvpWrapParams
   -> Vector InputSize (FVar WrapField)
-  -> Snarky (KimchiConstraint WrapField) t m Unit
+  -> Snarky WrapField (KimchiConstraint WrapField) r Unit
 wrapVerifyN2Circuit { lagrangeAt, blindingH } inputs = do
   let
     at = unsafeIdx inputs
@@ -82,8 +83,7 @@ wrapVerifyN2Circuit { lagrangeAt, blindingH } inputs = do
 
   wrapVerify ivpParams fullIvpInput verifyInput
 
-compileWrapVerifyN2 :: IvpWrapParams -> CompiledCircuit WrapField
+compileWrapVerifyN2 :: IvpWrapParams -> Effect (CompiledCircuit WrapField)
 compileWrapVerifyN2 srsData =
-  compilePure (Proxy @(Vector InputSize (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  compile noAdvice (Proxy @(Vector InputSize (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> wrapVerifyN2Circuit srsData inputs)
-    Kimchi.initialState

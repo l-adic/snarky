@@ -5,13 +5,15 @@ module Snarky.Circuit.Kimchi.VarBaseMul
   , splitFieldVar
   , splitField
   , joinField
+  , computeVbmChain
   ) where
 
 import Prelude
 
+import Data.Either (Either(..))
 import Data.Foldable (foldl, traverse_)
-import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
+import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -19,7 +21,7 @@ import JS.BigInt as BigInt
 import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.Curves as EllipticCurve
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, EvaluationError(..), F(..), FVar, Snarky, addConstraint, assertEqual_, const_, exists, if_, label, read, readCVar, throwAsProver, unpackPure)
+import Snarky.Circuit.DSL (class BasicSystem, BoolVar, EvaluationError, F(..), FVar, Snarky, addConstraint, assertEqual_, const_, exists, if_, label, mkWitnessTable, read, readCVar, throwAsProver, unpackPure)
 import Snarky.Circuit.DSL as Bits
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast, sealPoint)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
@@ -27,19 +29,35 @@ import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.VarBaseMul (ScaleRound)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt, toBigInt)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
+import Snarky.Data.EllipticCurve.Projective (DoubleAddRow, doubleAddChain)
 import Snarky.Types.Shifted (Type1(..))
 import Type.Proxy (Proxy(..))
 
+-- | The gadget's entire witness chain via `doubleAddChain` (three field
+-- | inversions total instead of two per bit — Montgomery's trick over a
+-- | projective walk). Each bit step is `acc' = 2·acc + Q` with
+-- | `Q = (xBase, (2·b − 1)·yBase)`. The rows are the same field elements
+-- | the sequential per-bit bodies produced, so witnesses stay
+-- | byte-identical.
+computeVbmChain
+  :: forall f
+   . PrimeField f
+  => { xBase :: f, yBase :: f, acc0 :: AffinePoint f, bits :: Array f }
+  -> Either EvaluationError (Array (DoubleAddRow f))
+computeVbmChain { xBase, yBase, acc0, bits } =
+  doubleAddChain "varBaseMul" acc0
+    (map (\b -> AffinePoint { x: xBase, y: yBase * (b + b - one) }) bits)
+
 varBaseMul
-  :: forall t m n @nChunks @bitsUsed l f
+  :: forall r n @nChunks @bitsUsed l f
    . FieldSizeInBits f n
   => Add bitsUsed l n
   => Mul 5 nChunks bitsUsed
   => Reflectable bitsUsed Int
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => AffinePoint (FVar f)
   -> Type1 (FVar f)
-  -> Snarky (KimchiConstraint f) t m
+  -> Snarky f (KimchiConstraint f) r
        { g :: AffinePoint (FVar f)
        , lsbBits :: Vector n (FVar f)
        }
@@ -48,7 +66,6 @@ varBaseMul base' (Type1 t) = label "var-base-mul" do
   -- of scale_fast_unpack. This converts complex CVar expressions to simple variables,
   -- preventing redundant constraints when base is reduced in each VarBaseMul round.
   base <- sealPoint base'
-  let AffinePoint baseR = base
   -- Use F f (field) witnesses, not Boolean — matching OCaml's Field.typ + Boolean.Unsafe.of_cvar.
   -- The VarBaseMul gate itself constrains bits to be boolean, so explicit checks are redundant.
   lsbBits <- exists do
@@ -71,6 +88,16 @@ varBaseMul base' (Type1 t) = label "var-base-mul" do
 
     chunks :: Vector nChunks (Vector 5 (FVar f))
     chunks = Vector.chunks @5 msbBitsUsed
+  -- The first per-bit exists body computes the whole batched witness chain
+  -- (`computeVbmChain`); the rest index into it. Advice-only: the emitted
+  -- circuit is untouched.
+  chainAt <- mkWitnessTable "varBaseMul" do
+    AffinePoint b0 <- read @(AffinePoint f) base
+    acc0 <- read @(AffinePoint f) p
+    bitVals :: Array (F f) <- traverse readCVar (Vector.toUnfoldable msbBitsUsed)
+    case computeVbmChain { xBase: b0.x, yBase: b0.y, acc0, bits: coerce bitVals } of
+      Left e -> throwAsProver e
+      Right tbl -> pure (coerce tbl :: Array (DoubleAddRow (F f)))
   Tuple rounds { nAccPrev: nAcc, acc: g } <- mapAccumM
     ( \s bs -> do
         nAcc <- exists do
@@ -81,44 +108,19 @@ varBaseMul base' (Type1 t) = label "var-base-mul" do
         -- s1, s1_squared, s2, x_res, y_res per bit step
         Tuple accs slopes <- Vector.unzip <<< fst <$> do
           mapAccumM
-            ( \(AffinePoint a) b -> do
-                s1 <- exists do
-                  xAcc <- readCVar a.x
-                  yAcc <- readCVar a.y
-                  bVal <- readCVar b
-                  xBase <- readCVar baseR.x
-                  yBase <- readCVar baseR.y
-                  let d = xAcc - xBase
-                  if d == zero then throwAsProver $ DivisionByZero
-                    { context: "varBaseMul"
-                    , expression: Just "xAcc - xBase"
-                    }
-                  else pure $ (yAcc - (yBase * (double bVal - one))) / d
-                s1Sq <- exists do
-                  v <- readCVar s1
-                  pure $ v * v
-                s2 <- exists do
-                  xAcc <- readCVar a.x
-                  yAcc <- readCVar a.y
-                  xBase <- readCVar baseR.x
-                  sq <- readCVar s1Sq
-                  sv <- readCVar s1
-                  pure $ (double yAcc / (double xAcc + xBase - sq)) - sv
-                xRes <- exists do
-                  xBase <- readCVar baseR.x
-                  s2v <- readCVar s2
-                  sq <- readCVar s1Sq
-                  pure $ xBase + s2v * s2v - sq
-                yRes <- exists do
-                  xAcc <- readCVar a.x
-                  yAcc <- readCVar a.y
-                  xR <- readCVar xRes
-                  s2v <- readCVar s2
-                  pure $ (xAcc - xR) * s2v - yAcc
+            ( \i _b -> do
+                s1 <- exists (chainAt i <#> _.s1)
+                -- s1Sq and s2 are allocated (in this exact order, for OCaml
+                -- allocation parity) and assigned, but no constraint row and
+                -- no later body reads the variables back.
+                _s1Sq <- exists (chainAt i <#> _.s1Sq)
+                _s2 <- exists (chainAt i <#> _.s2)
+                xRes <- exists (chainAt i <#> _.xRes)
+                yRes <- exists (chainAt i <#> _.yRes)
                 let a' = AffinePoint { x: xRes, y: yRes }
-                pure $ Tuple (Tuple a' s1) a'
+                pure $ Tuple (Tuple a' s1) (i + 1)
             )
-            s.acc
+            s.step
             bs
         pure $ Tuple
           ( { accs: s.acc :< accs
@@ -129,10 +131,10 @@ varBaseMul base' (Type1 t) = label "var-base-mul" do
             , base
             } :: ScaleRound f
           )
-          { nAccPrev: nAcc, acc: Vector.last accs }
+          { nAccPrev: nAcc, acc: Vector.last accs, step: s.step + 5 }
 
     )
-    { nAccPrev: const_ zero, acc: p }
+    { nAccPrev: const_ zero, acc: p, step: 0 }
     chunks
   addConstraint $ KimchiVarBaseMul $ Vector.toUnfoldable rounds
   assertEqual_ nAcc t
@@ -148,16 +150,16 @@ the pure function on the RHS. This is used when the modulus
 of the scalar field is smaller than the modulus of the circuit field.
 -}
 scaleFast1
-  :: forall t m n @nChunks @bitsUsed f _l
+  :: forall r n @nChunks @bitsUsed f _l
    . FieldSizeInBits f n
   => Add bitsUsed _l n
   => Mul 5 nChunks bitsUsed
   => Reflectable nChunks Int
   => Reflectable bitsUsed Int
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => AffinePoint (FVar f)
   -> Type1 (FVar f)
-  -> Snarky (KimchiConstraint f) t m
+  -> Snarky f (KimchiConstraint f) r
        (AffinePoint (FVar f))
 scaleFast1 p t = label "scale-fast-1" do
   { g } <- varBaseMul @nChunks @bitsUsed p t
@@ -171,17 +173,17 @@ the pure function on the RHS. This is used when the modulus
 of the scalar field is larger than the modulus of the circuit field.
 -}
 scaleFast2
-  :: forall t m f n @nChunks @sDiv2Bits bitsUsed _l _afterBits
+  :: forall r f n @nChunks @sDiv2Bits bitsUsed _l _afterBits
    . FieldSizeInBits f n
   => Add bitsUsed _l n
   => Add sDiv2Bits _afterBits n
   => Mul 5 nChunks bitsUsed
   => Reflectable bitsUsed Int
   => Reflectable sDiv2Bits Int
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => AffinePoint (FVar f)
   -> { sDiv2 :: FVar f, sOdd :: BoolVar f }
-  -> Snarky (KimchiConstraint f) t m
+  -> Snarky f (KimchiConstraint f) r
        (AffinePoint (FVar f))
 scaleFast2 base { sDiv2, sOdd } = label "scale-fast-2" do
   { g, lsbBits } <- varBaseMul @nChunks @bitsUsed base (Type1 sDiv2)
@@ -195,10 +197,11 @@ scaleFast2 base { sDiv2, sOdd } = label "scale-fast-2" do
 -- | Split a field element into parity decomposition and constrain it.
 -- | Witnesses (sDiv2, sOdd) where s = 2*sDiv2 + sOdd, then asserts the relationship.
 splitFieldVar
-  :: forall t m f c
-   . CircuitM f c t m
+  :: forall r f c
+   . PrimeField f
+  => BasicSystem f c
   => FVar f
-  -> Snarky c t m ({ sDiv2 :: (FVar f), sOdd :: (BoolVar f) })
+  -> Snarky f c r ({ sDiv2 :: (FVar f), sOdd :: (BoolVar f) })
 splitFieldVar s = label "split-field-var" do
   res@{ sDiv2, sOdd } <- exists do
     F sVal <- readCVar s
@@ -232,17 +235,17 @@ constrains the split, then delegates to scaleFast2 which adds the 2^n shift
 via varBaseMul. This matches OCaml's scale_fast2'.
 -}
 scaleFast2'
-  :: forall t m f n @nChunks @sDiv2Bits bitsUsed _l _afterBits
+  :: forall r f n @nChunks @sDiv2Bits bitsUsed _l _afterBits
    . FieldSizeInBits f n
   => Add bitsUsed _l n
   => Add sDiv2Bits _afterBits n
   => Mul 5 nChunks bitsUsed
   => Reflectable bitsUsed Int
   => Reflectable sDiv2Bits Int
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => AffinePoint (FVar f)
   -> FVar f
-  -> Snarky (KimchiConstraint f) t m
+  -> Snarky f (KimchiConstraint f) r
        (AffinePoint (FVar f))
 scaleFast2' base s = label "scale-fast-2-prime" do
   split <- splitFieldVar s

@@ -35,8 +35,6 @@ module Pickles.Wrap.Main
 
 import Prelude
 
-import Control.Monad.State.Trans (evalStateT, get, put)
-import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.Fin (Finite, getFinite, unsafeFinite)
 import Data.Foldable (foldl)
@@ -46,7 +44,7 @@ import Data.Maybe (Maybe(..))
 import Data.Newtype (over)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Pickles.Dummy (dummyIpaChallenges)
@@ -78,14 +76,15 @@ import Prim.Ordering (LT)
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (add_, scale_) as CVar
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), add_, and_, assertAny_, assertEqual_, const_, equals_, exists, label, not_, true_)
+import Snarky.Circuit.DSL (class CheckedType, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), add_, and_, assertAny_, assertEqual_, const_, equals_, exists, label, not_, true_)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (SplitField(..), Type1, Type2(..), groupMapParams)
+import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Class (class PrimeField, curveParams, fromInt)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar) as Curves
-import Snarky.Curves.Class (curveParams, fromInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
@@ -263,15 +262,15 @@ type FopBodyParams f =
   }
 
 processOneSlotFopBody
-  :: forall t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  :: forall r
+   . PrimeField WrapField
   => FopBodyParams WrapField
   -> Int -- slotIdx, for label only
-  -> PlonkDomain WrapField t m
+  -> PlonkDomain WrapField r
   -> UnfinalizedView
   -> ProofWitness (FVar WrapField)
   -> Vector PaddedLength (Vector WrapIPARounds (FVar WrapField)) -- pre-padded chals
-  -> Snarky (KimchiConstraint WrapField) t m (Vector WrapIPARounds (FVar WrapField))
+  -> Snarky WrapField (KimchiConstraint WrapField) r (Vector WrapIPARounds (FVar WrapField))
 processOneSlotFopBody fopBaseParams slotIdx domain unfView witness paddedChals = do
   { finalized, expandedChallenges } <- wrapFinalizeOtherProofCircuit
     { domains:
@@ -307,13 +306,13 @@ processOneSlotFopBody fopBaseParams slotIdx domain unfView witness paddedChals =
 -------------------------------------------------------------------------------
 
 hashOneSlotMessage
-  :: forall t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  :: forall r
+   . PrimeField WrapField
   => Int -- slotIdx, for labels only
   -> Sponge WrapField -- precomputed sponge state for the slot's pad count
   -> AffinePoint (FVar WrapField) -- step accumulator sg for this slot
   -> Array (Vector WrapIPARounds (FVar WrapField)) -- raw (unpadded) chals
-  -> Snarky (KimchiConstraint WrapField) t m (FVar WrapField)
+  -> Snarky WrapField (KimchiConstraint WrapField) r (FVar WrapField)
 hashOneSlotMessage slotIdx spongeState sg allChallenges =
   label ("block4-msg-hash-" <> show slotIdx)
     $ evalSpongeM (spongeFromConstants { state: spongeState.state, spongeState: spongeState.spongeState })
@@ -329,10 +328,10 @@ hashOneSlotMessage slotIdx spongeState sg allChallenges =
 -- | the wrap verifier's x_hat MSM can fold the result into a single curve
 -- | point.
 splitPerProofUnfinalized
-  :: forall t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  :: forall r
+   . PrimeField WrapField
   => PerProofUnfinalized WrapIPARounds (Type2 (FVar WrapField)) (FVar WrapField) (BoolVar WrapField)
-  -> Snarky (KimchiConstraint WrapField) t m
+  -> Snarky WrapField (KimchiConstraint WrapField) r
        (UnfinalizedProof WrapIPARounds (FVar WrapField) (Type2 (SplitField (FVar WrapField) (BoolVar WrapField))) (BoolVar WrapField))
 splitPerProofUnfinalized (PerProofUnfinalized r) = do
   let unType2 (Type2 x) = x
@@ -369,8 +368,8 @@ splitPerProofUnfinalized (PerProofUnfinalized r) = do
 -------------------------------------------------------------------------------
 
 wrapMain
-  :: forall @branches @slots @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  :: forall @branches @slots @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 r
+   . PrimeField WrapField
   -- `slots` carries the per-slot widths; `mpv` is derived via the
   -- `slots -> mpv` fundep on `PadSlots`. Concrete instantiations
   -- supported today: `NoSlots` (mpv=0), `Slots1 w` (mpv=1),
@@ -423,7 +422,7 @@ wrapMain
   => WrapMainConfig branches stepChunks
   -> WrapMainInputVar
   -> WrapAdvice mpv stepChunks slots
-  -> Snarky (KimchiConstraint WrapField) t m Unit
+  -> Snarky WrapField (KimchiConstraint WrapField) r Unit
 wrapMain config (StatementPacked stmtR) advice = do
   let
     wrapEndo = let Curves.EndoScalar e = Curves.endoScalar @Pallas.BaseField @WrapField in e
@@ -482,13 +481,15 @@ wrapMain config (StatementPacked stmtR) advice = do
   -- old hand-unrolled `{ maskVal0, maskVal1 }` pair element-for-element
   -- (slot index = vector index).
   maskVals :: Vector mpv (BoolVar WrapField) <- label "block1-ones-vector"
-    $ flip evalStateT true_
-    $ Vector.generateA @mpv \i -> do
-        prevV <- get
-        eq <- lift $ equals_ firstZero (const_ (fromInt (getFinite i)))
-        v <- lift $ and_ prevV (not_ eq)
-        put v
-        pure v
+    $ map fst
+    $ mapAccumM
+        ( \prevV i -> do
+            eq <- equals_ firstZero (const_ (fromInt (getFinite i)))
+            v <- and_ prevV (not_ eq)
+            pure (Tuple v v)
+        )
+        true_
+        (Vector.indices :: Vector mpv _)
 
   domainLog2 <- label "block1-domain-log2" $
     Pseudo.choose whichBranch config.domainLog2s
@@ -905,8 +906,8 @@ wrapMain config (StatementPacked stmtR) advice = do
 -- | doesn't compose across rules) and call `wrapMain @branches @slots`
 -- | directly.
 wrapMainForPrevs
-  :: forall @branches @prevsSpec @stepChunks numChunksPred slots mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  :: forall @branches @prevsSpec @stepChunks numChunksPred slots mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 r
+   . PrimeField WrapField
   => SlotsFromSpec prevsSpec slots
   => PadSlots slots mpv
   => Reflectable stepChunks Int
@@ -940,5 +941,5 @@ wrapMainForPrevs
   => WrapMainConfig branches stepChunks
   -> WrapMainInputVar
   -> WrapAdvice mpv stepChunks slots
-  -> Snarky (KimchiConstraint WrapField) t m Unit
+  -> Snarky WrapField (KimchiConstraint WrapField) r Unit
 wrapMainForPrevs = wrapMain @branches @slots @stepChunks

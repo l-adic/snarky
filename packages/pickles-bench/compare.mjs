@@ -28,6 +28,10 @@ const fmtPct = (x) => (x >= 0 ? "+" : "") + (100 * x).toFixed(1) + "%";
 
 console.log(`baseline:  ${base.gitSha?.slice(0, 9)}${base.gitDirty ? "+dirty" : ""}  (${base.date})`);
 console.log(`candidate: ${cand.gitSha?.slice(0, 9)}${cand.gitDirty ? "+dirty" : ""}  (${cand.date})`);
+if (base.node !== cand.node)
+  console.log(`⚠ node version mismatch: ${base.node} vs ${cand.node} — timings not comparable`);
+if (base.powerProfile !== cand.powerProfile)
+  console.log(`⚠ power profile mismatch: ${base.powerProfile ?? "unknown"} vs ${cand.powerProfile ?? "unknown"} — timings not comparable`);
 console.log("");
 
 let flagged = false;

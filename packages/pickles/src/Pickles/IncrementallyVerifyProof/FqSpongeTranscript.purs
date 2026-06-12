@@ -43,7 +43,7 @@ import Pickles.Trace as Trace
 import Pickles.Types (ChunkedCommitment)
 import Poseidon (class PoseidonField)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, SizedF, exists, readCVar, true_)
+import Snarky.Circuit.DSL (Bool(..), BoolVar, FVar, SizedF, exists, readCVar, true_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
@@ -80,15 +80,14 @@ type FqSpongeOutput f =
   }
 
 spongeTranscriptOptCircuit
-  :: forall f sgOldN stepChunks tCommLen t m r
+  :: forall f sgOldN stepChunks tCommLen r cr
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
   => { endo :: FVar f | r }
   -> Vector sgOldN (Bool (FVar f)) -- actual_proofs_verified_mask
   -> FqSpongeInput sgOldN stepChunks tCommLen (FVar f)
-  -> SpongeM f (KimchiConstraint f) t m (FqSpongeOutput (FVar f))
+  -> SpongeM f (KimchiConstraint f) cr (FqSpongeOutput (FVar f))
 spongeTranscriptOptCircuit params sgOldMask input = do
   -- Run the Opt sponge transcript in Snarky (not SpongeM)
   result <- Sponge.liftSnarky do

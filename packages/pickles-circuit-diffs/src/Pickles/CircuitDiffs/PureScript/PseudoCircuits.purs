@@ -28,6 +28,7 @@ import Prelude
 
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import JS.BigInt (fromInt)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt, unsafeIdx)
 import Pickles.Field (StepField, WrapField)
@@ -38,10 +39,10 @@ import Pickles.Sideload.VerificationKey as SLVK
 import Pickles.Step.FinalizeOtherProof as FOP
 import Pickles.Types (ChunkedCommitment(..))
 import Pickles.VerificationKey (chooseKey)
-import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_, exists, label)
+import Snarky.Backend.Advice (noAdvice)
+import Snarky.Backend.Compile (compile)
+import Snarky.Circuit.DSL (F(..), FVar, Snarky, const_, exists, label)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class PrimeField, fromBigInt)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
@@ -52,25 +53,22 @@ import Type.Proxy (Proxy(..))
 
 -- | Takes 1 public input field (the index to select).
 oneHotN1Circuit
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
-  => PrimeField f
+  :: forall f r
+   . PrimeField f
   => Vector 1 (FVar f)
-  -> Snarky (KimchiConstraint f) t m Unit
+  -> Snarky f (KimchiConstraint f) r Unit
 oneHotN1Circuit inputs = do
   let at = unsafeIdx inputs
   _ <- label "one_hot_n1" $ (oneHotVector :: _ -> _ (Vector 1 _)) (at 0)
   pure unit
 
-compileOneHotN1Step :: CompiledCircuit StepField
-compileOneHotN1Step = compilePure (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compileOneHotN1Step :: Effect (CompiledCircuit StepField)
+compileOneHotN1Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   oneHotN1Circuit
-  Kimchi.initialState
 
-compileOneHotN1Wrap :: CompiledCircuit WrapField
-compileOneHotN1Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compileOneHotN1Wrap :: Effect (CompiledCircuit WrapField)
+compileOneHotN1Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   oneHotN1Circuit
-  Kimchi.initialState
 
 --------------------------------------------------------------------------------
 -- one_hot_vector N3
@@ -78,88 +76,78 @@ compileOneHotN1Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit
 
 -- | Takes 1 public input field (the index to select).
 oneHotN3Circuit
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
-  => PrimeField f
+  :: forall f r
+   . PrimeField f
   => Vector 1 (FVar f)
-  -> Snarky (KimchiConstraint f) t m Unit
+  -> Snarky f (KimchiConstraint f) r Unit
 oneHotN3Circuit inputs = do
   let at = unsafeIdx inputs
   _ <- label "one_hot_n3" $ (oneHotVector :: _ -> _ (Vector 3 _)) (at 0)
   pure unit
 
-compileOneHotN3Step :: CompiledCircuit StepField
-compileOneHotN3Step = compilePure (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compileOneHotN3Step :: Effect (CompiledCircuit StepField)
+compileOneHotN3Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   oneHotN3Circuit
-  Kimchi.initialState
 
-compileOneHotN3Wrap :: CompiledCircuit WrapField
-compileOneHotN3Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compileOneHotN3Wrap :: Effect (CompiledCircuit WrapField)
+compileOneHotN3Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   oneHotN3Circuit
-  Kimchi.initialState
 
 --------------------------------------------------------------------------------
 -- pseudo_mask N1
 --------------------------------------------------------------------------------
 
 pseudoMaskN1Circuit
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
-  => PrimeField f
+  :: forall f r
+   . PrimeField f
   => Vector 2 (FVar f)
-  -> Snarky (KimchiConstraint f) t m Unit
+  -> Snarky f (KimchiConstraint f) r Unit
 pseudoMaskN1Circuit inputs = do
   let at = unsafeIdx inputs
   bits <- (oneHotVector :: _ -> _ (Vector 1 _)) (at 0)
   _ <- label "pseudo_mask_n1" $ choose bits ((at 1 :< Vector.nil)) identity
   pure unit
 
-compilePseudoMaskN1Step :: CompiledCircuit StepField
-compilePseudoMaskN1Step = compilePure (Proxy @(Vector 2 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compilePseudoMaskN1Step :: Effect (CompiledCircuit StepField)
+compilePseudoMaskN1Step = compile noAdvice (Proxy @(Vector 2 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   pseudoMaskN1Circuit
-  Kimchi.initialState
 
-compilePseudoMaskN1Wrap :: CompiledCircuit WrapField
-compilePseudoMaskN1Wrap = compilePure (Proxy @(Vector 2 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compilePseudoMaskN1Wrap :: Effect (CompiledCircuit WrapField)
+compilePseudoMaskN1Wrap = compile noAdvice (Proxy @(Vector 2 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   pseudoMaskN1Circuit
-  Kimchi.initialState
 
 --------------------------------------------------------------------------------
 -- pseudo_mask N3
 --------------------------------------------------------------------------------
 
 pseudoMaskN3Circuit
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
-  => PrimeField f
+  :: forall f r
+   . PrimeField f
   => Vector 4 (FVar f)
-  -> Snarky (KimchiConstraint f) t m Unit
+  -> Snarky f (KimchiConstraint f) r Unit
 pseudoMaskN3Circuit inputs = do
   let at = unsafeIdx inputs
   bits <- (oneHotVector :: _ -> _ (Vector 3 _)) (at 0)
   _ <- label "pseudo_mask_n3" $ choose bits (at 1 :< at 2 :< at 3 :< Vector.nil) identity
   pure unit
 
-compilePseudoMaskN3Step :: CompiledCircuit StepField
-compilePseudoMaskN3Step = compilePure (Proxy @(Vector 4 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compilePseudoMaskN3Step :: Effect (CompiledCircuit StepField)
+compilePseudoMaskN3Step = compile noAdvice (Proxy @(Vector 4 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   pseudoMaskN3Circuit
-  Kimchi.initialState
 
-compilePseudoMaskN3Wrap :: CompiledCircuit WrapField
-compilePseudoMaskN3Wrap = compilePure (Proxy @(Vector 4 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compilePseudoMaskN3Wrap :: Effect (CompiledCircuit WrapField)
+compilePseudoMaskN3Wrap = compile noAdvice (Proxy @(Vector 4 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   pseudoMaskN3Circuit
-  Kimchi.initialState
 
 --------------------------------------------------------------------------------
 -- pseudo_choose N1 (constant targets)
 --------------------------------------------------------------------------------
 
 pseudoChooseN1Circuit
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
-  => PrimeField f
+  :: forall f r
+   . PrimeField f
   => Vector 1 (FVar f)
-  -> Snarky (KimchiConstraint f) t m Unit
+  -> Snarky f (KimchiConstraint f) r Unit
 pseudoChooseN1Circuit inputs = do
   let at = unsafeIdx inputs
   bits <- (oneHotVector :: _ -> _ (Vector 1 _)) (at 0)
@@ -167,26 +155,23 @@ pseudoChooseN1Circuit inputs = do
     choose bits ((42 :< Vector.nil)) (\x -> const_ (fromBigInt (fromInt x)))
   pure unit
 
-compilePseudoChooseN1Step :: CompiledCircuit StepField
-compilePseudoChooseN1Step = compilePure (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compilePseudoChooseN1Step :: Effect (CompiledCircuit StepField)
+compilePseudoChooseN1Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   pseudoChooseN1Circuit
-  Kimchi.initialState
 
-compilePseudoChooseN1Wrap :: CompiledCircuit WrapField
-compilePseudoChooseN1Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compilePseudoChooseN1Wrap :: Effect (CompiledCircuit WrapField)
+compilePseudoChooseN1Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   pseudoChooseN1Circuit
-  Kimchi.initialState
 
 --------------------------------------------------------------------------------
 -- pseudo_choose N3 (constant targets)
 --------------------------------------------------------------------------------
 
 pseudoChooseN3Circuit
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
-  => PrimeField f
+  :: forall f r
+   . PrimeField f
   => Vector 1 (FVar f)
-  -> Snarky (KimchiConstraint f) t m Unit
+  -> Snarky f (KimchiConstraint f) r Unit
 pseudoChooseN3Circuit inputs = do
   let at = unsafeIdx inputs
   bits <- (oneHotVector :: _ -> _ (Vector 3 _)) (at 0)
@@ -194,15 +179,13 @@ pseudoChooseN3Circuit inputs = do
     choose bits (13 :< 14 :< 15 :< Vector.nil) (\x -> const_ (fromBigInt (fromInt x)))
   pure unit
 
-compilePseudoChooseN3Step :: CompiledCircuit StepField
-compilePseudoChooseN3Step = compilePure (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compilePseudoChooseN3Step :: Effect (CompiledCircuit StepField)
+compilePseudoChooseN3Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   pseudoChooseN3Circuit
-  Kimchi.initialState
 
-compilePseudoChooseN3Wrap :: CompiledCircuit WrapField
-compilePseudoChooseN3Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compilePseudoChooseN3Wrap :: Effect (CompiledCircuit WrapField)
+compilePseudoChooseN3Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   pseudoChooseN3Circuit
-  Kimchi.initialState
 
 --------------------------------------------------------------------------------
 -- choose_key N1 (single branch, dummy VK, Wrap side only)
@@ -211,10 +194,10 @@ compilePseudoChooseN3Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy
 --------------------------------------------------------------------------------
 
 chooseKeyN1WrapCircuit
-  :: forall t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  :: forall r
+   . PrimeField WrapField
   => Vector 1 (FVar WrapField)
-  -> Snarky (KimchiConstraint WrapField) t m Unit
+  -> Snarky WrapField (KimchiConstraint WrapField) r Unit
 chooseKeyN1WrapCircuit inputs = do
   let
     at = unsafeIdx inputs
@@ -235,10 +218,9 @@ chooseKeyN1WrapCircuit inputs = do
   _ <- chooseKey whichBranch (dummyVK :< Vector.nil)
   pure unit
 
-compileChooseKeyN1Wrap :: CompiledCircuit WrapField
-compileChooseKeyN1Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compileChooseKeyN1Wrap :: Effect (CompiledCircuit WrapField)
+compileChooseKeyN1Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   chooseKeyN1WrapCircuit
-  Kimchi.initialState
 
 --------------------------------------------------------------------------------
 -- Utils.ones_vector with length=16 — side-loaded ones-prefix mask.
@@ -248,25 +230,22 @@ compileChooseKeyN1Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @U
 --------------------------------------------------------------------------------
 
 utilsOnesVectorN16Circuit
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
-  => PrimeField f
+  :: forall f r
+   . PrimeField f
   => Vector 1 (FVar f)
-  -> Snarky (KimchiConstraint f) t m Unit
+  -> Snarky f (KimchiConstraint f) r Unit
 utilsOnesVectorN16Circuit inputs = do
   let at = unsafeIdx inputs
   _ <- label "ones_vector_n16" $ FOP.mkSideLoadedOnesPrefixMask (at 0)
   pure unit
 
-compileUtilsOnesVectorN16Step :: CompiledCircuit StepField
-compileUtilsOnesVectorN16Step = compilePure (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compileUtilsOnesVectorN16Step :: Effect (CompiledCircuit StepField)
+compileUtilsOnesVectorN16Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   utilsOnesVectorN16Circuit
-  Kimchi.initialState
 
-compileUtilsOnesVectorN16Wrap :: CompiledCircuit WrapField
-compileUtilsOnesVectorN16Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compileUtilsOnesVectorN16Wrap :: Effect (CompiledCircuit WrapField)
+compileUtilsOnesVectorN16Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   utilsOnesVectorN16Circuit
-  Kimchi.initialState
 
 --------------------------------------------------------------------------------
 -- One_hot_vector.of_index with length=17 — the side-loaded domain dispatch.
@@ -276,25 +255,22 @@ compileUtilsOnesVectorN16Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (P
 --------------------------------------------------------------------------------
 
 oneHotN17Circuit
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
-  => PrimeField f
+  :: forall f r
+   . PrimeField f
   => Vector 1 (FVar f)
-  -> Snarky (KimchiConstraint f) t m Unit
+  -> Snarky f (KimchiConstraint f) r Unit
 oneHotN17Circuit inputs = do
   let at = unsafeIdx inputs
   _ <- label "one_hot_n17" $ (oneHotVector :: _ -> _ (Vector 17 _)) (at 0)
   pure unit
 
-compileOneHotN17Step :: CompiledCircuit StepField
-compileOneHotN17Step = compilePure (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compileOneHotN17Step :: Effect (CompiledCircuit StepField)
+compileOneHotN17Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   oneHotN17Circuit
-  Kimchi.initialState
 
-compileOneHotN17Wrap :: CompiledCircuit WrapField
-compileOneHotN17Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compileOneHotN17Wrap :: Effect (CompiledCircuit WrapField)
+compileOneHotN17Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   oneHotN17Circuit
-  Kimchi.initialState
 
 --------------------------------------------------------------------------------
 -- Pseudo.mask with length=17 over CONSTANT generators.
@@ -303,11 +279,10 @@ compileOneHotN17Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @Uni
 --------------------------------------------------------------------------------
 
 pseudoMaskN17Circuit
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
-  => PrimeField f
+  :: forall f r
+   . PrimeField f
   => Vector 1 (FVar f)
-  -> Snarky (KimchiConstraint f) t m Unit
+  -> Snarky f (KimchiConstraint f) r Unit
 pseudoMaskN17Circuit inputs = do
   let at = unsafeIdx inputs
   bits <- (oneHotVector :: _ -> _ (Vector 17 _)) (at 0)
@@ -325,15 +300,13 @@ pseudoMaskN17Circuit inputs = do
   _ <- label "pseudo_mask_n17" $ Pseudo.mask bits gens
   pure unit
 
-compilePseudoMaskN17Step :: CompiledCircuit StepField
-compilePseudoMaskN17Step = compilePure (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compilePseudoMaskN17Step :: Effect (CompiledCircuit StepField)
+compilePseudoMaskN17Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   pseudoMaskN17Circuit
-  Kimchi.initialState
 
-compilePseudoMaskN17Wrap :: CompiledCircuit WrapField
-compilePseudoMaskN17Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compilePseudoMaskN17Wrap :: Effect (CompiledCircuit WrapField)
+compilePseudoMaskN17Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   pseudoMaskN17Circuit
-  Kimchi.initialState
 
 --------------------------------------------------------------------------------
 -- Side_loaded_verification_key.typ check (step circuit only).
@@ -345,15 +318,14 @@ compilePseudoMaskN17Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy 
 --------------------------------------------------------------------------------
 
 sideloadedVkTypStepCircuit
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+  :: forall r
+   . PrimeField StepField
   => Unit
-  -> Snarky (KimchiConstraint StepField) t m Unit
+  -> Snarky StepField (KimchiConstraint StepField) r Unit
 sideloadedVkTypStepCircuit _ = do
   _ <- label "sideloaded_vk_typ" $ exists (pure (compileDummy :: SLVK.VerificationKey 1 (F StepField) Boolean))
   pure unit
 
-compileSideloadedVkTypStep :: CompiledCircuit StepField
-compileSideloadedVkTypStep = compilePure (Proxy @Unit) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compileSideloadedVkTypStep :: Effect (CompiledCircuit StepField)
+compileSideloadedVkTypStep = compile noAdvice (Proxy @Unit) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   sideloadedVkTypStepCircuit
-  Kimchi.initialState

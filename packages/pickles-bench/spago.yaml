@@ -56,10 +56,10 @@ package:
     - optparse
     - pickles
     - prelude
+    - run
     - snarky
     - snarky-kimchi
     - tailrec
-    - transformers
     - tuples
     - vector-sized
   build:

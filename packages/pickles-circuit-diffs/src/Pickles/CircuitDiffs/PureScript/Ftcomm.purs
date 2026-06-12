@@ -11,17 +11,18 @@ import Data.Fin (getFinite)
 import Data.Maybe (fromJust)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
 import Pickles.Field (WrapField)
 import Pickles.FtComm (ftComm) as FtComm
 import Pickles.Wrap.OtherField as WrapOtherField
-import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, const_)
+import Snarky.Backend.Advice (noAdvice)
+import Snarky.Backend.Compile (compile)
+import Snarky.Circuit.DSL (F, FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi (Type1(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (generator, toAffine)
+import Snarky.Curves.Class (class PrimeField, generator, toAffine)
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
@@ -46,10 +47,10 @@ parseFtcommInput inputs =
     }
 
 ftcommWrapCircuit
-  :: forall t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  :: forall r
+   . PrimeField WrapField
   => FtcommInput WrapField
-  -> Snarky (KimchiConstraint WrapField) t m (AffinePoint (FVar WrapField))
+  -> Snarky WrapField (KimchiConstraint WrapField) r (AffinePoint (FVar WrapField))
 ftcommWrapCircuit input =
   let
     g = unsafePartial $ fromJust $ toAffine (generator :: VestaG)
@@ -63,8 +64,7 @@ ftcommWrapCircuit input =
       , zetaToDomainSize: input.zetaToDomainSize
       }
 
-compileFtcomm :: CompiledCircuit WrapField
+compileFtcomm :: Effect (CompiledCircuit WrapField)
 compileFtcomm =
-  compilePure (Proxy @(Vector 17 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  compile noAdvice (Proxy @(Vector 17 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ ftcommWrapCircuit (parseFtcommInput inputs))
-    Kimchi.initialState

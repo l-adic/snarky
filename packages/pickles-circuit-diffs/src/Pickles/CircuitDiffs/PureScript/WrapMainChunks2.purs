@@ -29,12 +29,12 @@ import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
 import Pickles.Wrap.Slots (NoSlots)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Proof (srsLagrangeCommitmentChunksAt)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
@@ -47,8 +47,8 @@ compileWrapMainChunks2 { blindingH } stepParams = do
   stepArt <- compileStepMainChunks2 stepParams
   vestaSrs <- createCRS @StepField
   pallasSrs <- createCRS @WrapField
+  realStepVK <- deriveStepVKFromCompiled @2 @0 vestaSrs stepArt.stepCs
   let
-    realStepVK = deriveStepVKFromCompiled @2 @0 vestaSrs stepArt.stepCs
 
     config :: WrapMainConfig 1 2
     config =
@@ -97,12 +97,12 @@ compileWrapMainChunks2 { blindingH } stepParams = do
   let
     dummyAdvice :: WrapAdvice 0 2 NoSlots
     dummyAdvice = unsafeCoerce unit
-  wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\stmt -> wrapMainForPrevs @1 @Unit @2 config stmt dummyAdvice)
-    Kimchi.initialState
+  wrapVk <- deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
   pure
     { stepCs: stepArt.stepCs
     , stepDomainLog2: stepArt.stepDomainLog2
     , wrapCs
-    , wrapVk: deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
+    , wrapVk
     }

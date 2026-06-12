@@ -34,7 +34,6 @@ module Test.Pickles.Prove.TreeProofReturn
 import Prelude
 
 import Colog (LoggerT, Message, logInfo, withSpan)
-import Control.Monad.Except (runExceptT)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
@@ -47,6 +46,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), Compiled, CompiledProof(..), NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots2, StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, const_, exists, if_, not_, true_)
@@ -121,6 +121,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       @Unit
       @NoSlots
       @1
+      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
@@ -131,7 +132,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     let BranchProver nrrProver = fst nrr.provers
     -- NRR has no prev slots → spec-derived `vkCarrier = Unit`.
     logInfo "[TreeProofReturn] proving nrr"
-    eNrrCp <- withSpan "[TreeProofReturn] prove nrr" $ liftEffect $ runExceptT $ nrrProver
+    eNrrCp <- withSpan "[TreeProofReturn] prove nrr" $ liftEffect $ nrrProver noAdvice
       { appInput: unit, prevs: unit, sideloadedVKs: unit }
     nrrCp <- case eNrrCp of
       Left e -> liftEffect $ Exc.throw ("nrrProver: " <> show e)
@@ -163,6 +164,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       @(F StepField)
       @(Slots2 0 2)
       @1
+      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14
@@ -186,7 +188,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         :: PrevSlot Unit 2 (StatementIO Unit (F StepField))
         -> Aff (CompiledProof 2 (StatementIO Unit (F StepField)))
       runStep selfPrev = do
-        eRes <- liftEffect $ runExceptT $ treeProver
+        eRes <- liftEffect $ treeProver noAdvice
           { appInput: unit
           , prevs:
               tuple2 (InductivePrev nrrCp' nrr.tag) selfPrev

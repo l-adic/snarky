@@ -10,17 +10,18 @@ import Data.Fin (getFinite)
 import Data.Tuple.Nested (tuple3, tuple6)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
 import Pickles.Field (WrapField)
 import Pickles.PackedStatement (PackedStepPublicInput, fromPackedTuple)
 import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), LagrangeBaseLookup, publicInputCommit)
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, SizedF, Snarky)
+import Snarky.Backend.Advice (noAdvice)
+import Snarky.Backend.Compile (compile)
+import Snarky.Circuit.DSL (Bool(..), BoolVar, F, FVar, SizedF, Snarky)
 import Snarky.Circuit.Kimchi (SplitField(..), Type2(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (curveParams)
+import Snarky.Curves.Class (class PrimeField, curveParams)
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
@@ -61,12 +62,12 @@ parseXhatInput inputs =
     fromPackedTuple stmtTuple
 
 xhatCircuit
-  :: forall pi t m
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  :: forall pi r
+   . PrimeField WrapField
   => PublicInputCommit pi WrapField
   => XhatParams WrapField
   -> pi
-  -> Snarky (KimchiConstraint WrapField) t m (Vector 1 (AffinePoint (FVar WrapField)))
+  -> Snarky WrapField (KimchiConstraint WrapField) r (Vector 1 (AffinePoint (FVar WrapField)))
 xhatCircuit { lagrangeAt, blindingH } publicInput =
   publicInputCommit @1
     { curveParams: curveParams (Proxy @VestaG)
@@ -76,8 +77,7 @@ xhatCircuit { lagrangeAt, blindingH } publicInput =
     }
     publicInput
 
-compileXhat :: XhatParams WrapField -> CompiledCircuit WrapField
+compileXhat :: XhatParams WrapField -> Effect (CompiledCircuit WrapField)
 compileXhat srsData =
-  compilePure (Proxy @(Vector 34 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  compile noAdvice (Proxy @(Vector 34 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ xhatCircuit srsData (parseXhatInput inputs))
-    Kimchi.initialState

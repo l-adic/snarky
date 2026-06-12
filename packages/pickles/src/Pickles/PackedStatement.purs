@@ -46,7 +46,7 @@ import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Pickles.PublicInputCommit (class PublicInputCommit, LagrangeBaseLookup, ScalarMulResult, scalarMuls)
 import Pickles.Verify.Types (UnfinalizedProof)
-import Snarky.Circuit.DSL (class CircuitM, class CircuitType, BoolVar, F, FVar, SizedF, Snarky, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
+import Snarky.Circuit.DSL (class CircuitType, BoolVar, F, FVar, SizedF, Snarky, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Circuit.Kimchi (SplitField, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
@@ -179,13 +179,13 @@ instance
   ) =>
   PublicInputCommit (PackedStepPublicInput n dw (FVar f) (BoolVar f)) f where
   scalarMuls
-    :: forall @stepChunks t m
-     . CircuitM f (KimchiConstraint f) t m
+    :: forall @stepChunks r
+     . PrimeField f
     => Reflectable stepChunks Int
     => CurveParams f
     -> PackedStepPublicInput n dw (FVar f) (BoolVar f)
     -> LagrangeBaseLookup stepChunks f
     -> Int
-    -> Snarky (KimchiConstraint f) t m (ScalarMulResult stepChunks f)
+    -> Snarky f (KimchiConstraint f) r (ScalarMulResult stepChunks f)
   scalarMuls params x lookup idx =
     scalarMuls @(StmtTuple n dw (FVar f) (BoolVar f)) @f params (toPackedTuple x) lookup idx

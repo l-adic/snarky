@@ -10,15 +10,16 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Poseidon (class PoseidonField, fullRound)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, addConstraint, exists, label, readCVar)
+import Snarky.Circuit.DSL (F(..), FVar, Snarky, addConstraint, exists, label, readCVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint(KimchiPoseidon))
+import Snarky.Curves.Class (class PrimeField)
 
 poseidon
-  :: forall f t m
+  :: forall f r
    . PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => Vector 3 (FVar f)
-  -> Snarky (KimchiConstraint f) t m (Vector 3 (FVar f))
+  -> Snarky f (KimchiConstraint f) r (Vector 3 (FVar f))
 poseidon initialState = label "poseidon" do
   -- Witness only the 55 round outputs (not the initial state).
   -- OCaml's block_cipher does t.(0) <- init after witnessing, overwriting row 0

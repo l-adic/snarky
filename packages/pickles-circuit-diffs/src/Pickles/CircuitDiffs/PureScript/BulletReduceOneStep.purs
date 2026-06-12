@@ -8,13 +8,15 @@ module Pickles.CircuitDiffs.PureScript.BulletReduceOneStep
 import Prelude
 
 import Data.Vector (Vector)
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
 import Pickles.Field (StepField)
-import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, SizedF, Snarky)
+import Snarky.Backend.Advice (noAdvice)
+import Snarky.Backend.Compile (compile)
+import Snarky.Circuit.DSL (BoolVar, F, FVar, SizedF, Snarky)
 import Snarky.Circuit.Kimchi (addComplete, endo, endoInv)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
@@ -37,17 +39,16 @@ parseBulletReduceOneStepInput inputs =
     }
 
 bulletReduceOneStepCircuit
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+  :: forall r
+   . PrimeField StepField
   => BulletReduceOneStepInput StepField
-  -> Snarky (KimchiConstraint StepField) t m { p :: AffinePoint (FVar StepField), isInfinity :: BoolVar StepField }
+  -> Snarky StepField (KimchiConstraint StepField) r { p :: AffinePoint (FVar StepField), isInfinity :: BoolVar StepField }
 bulletReduceOneStepCircuit input = do
   lScaled <- endoInv @StepField @Pallas.ScalarField @PallasG input.l input.u
   rScaled <- endo @128 @32 input.r input.u
   addComplete lScaled rScaled
 
-compileBulletReduceOneStep :: CompiledCircuit StepField
+compileBulletReduceOneStep :: Effect (CompiledCircuit StepField)
 compileBulletReduceOneStep =
-  compilePure (Proxy @(Vector 5 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compile noAdvice (Proxy @(Vector 5 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> void $ bulletReduceOneStepCircuit (parseBulletReduceOneStepInput inputs))
-    Kimchi.initialState

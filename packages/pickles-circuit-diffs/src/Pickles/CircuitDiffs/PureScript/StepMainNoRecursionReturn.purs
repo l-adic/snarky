@@ -38,10 +38,11 @@ import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, stepMain)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (class CircuitM, AsProverT, F, FVar, Snarky, const_)
+import Snarky.Circuit.DSL (AsProver, F, FVar, Snarky, const_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
@@ -55,11 +56,11 @@ type StepMainNoRecursionReturnParams =
 -- | Output mode (input = Unit).
 -- | Reference: test_no_sideloaded.ml:100-107
 noRecursionReturnRule
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
-  => AsProverT StepField m Unit
+  :: forall r
+   . PrimeField StepField
+  => AsProver StepField r Unit
   -> Unit
-  -> Snarky (KimchiConstraint StepField) t m
+  -> Snarky StepField (KimchiConstraint StepField) r
        (RuleOutput 0 Unit (FVar StepField))
 noRecursionReturnRule _ _ = pure
   { prevPublicInputs: Vector.nil
@@ -77,8 +78,8 @@ compileStepMainNoRecursionReturn params = do
   let
     dummyAdvice :: StepAdvice _ _ _ _ _ _ Unit _ _
     dummyAdvice = unsafeCoerce unit
-  mkStepArtifact <$>
-    compile (Proxy @Unit) (Proxy @(Vector 1 (F StepField))) (Proxy @(KimchiConstraint StepField))
+  mkStepArtifact <$> do
+    compile noAdvice (Proxy @Unit) (Proxy @(Vector 1 (F StepField))) (Proxy @(KimchiConstraint StepField))
       -- N=0: output size = 33*0 + 1 = 1 (just the msgForNextStep digest —
       -- no unfinalized_proofs, no messages_for_next_wrap_proof entries).
       -- N=0 has no prev proofs, so prevInputVal/prevInput are unused —
@@ -107,4 +108,3 @@ compileStepMainNoRecursionReturn params = do
           dummyAdvice
           throwawayCaptureRef
       )
-      Kimchi.initialState

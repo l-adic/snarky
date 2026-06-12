@@ -7,7 +7,6 @@ import Data.Array ((:))
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Fin (unsafeFinite)
-import Data.Identity (Identity)
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reifyType)
 import Data.Traversable (for_)
@@ -24,7 +23,7 @@ import RandomOracle (digest, hash, initialState, update)
 import RandomOracle.DomainSeparator (class HasDomainSeparator, initWithDomain)
 import RandomOracle.Sponge as Sponge
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
+import Snarky.Circuit.DSL (F(..), FVar, Snarky)
 import Snarky.Circuit.RandomOracle (Digest(..))
 import Snarky.Circuit.RandomOracle as Checked
 import Snarky.Circuit.RandomOracle.Sponge as CircuitSponge
@@ -45,7 +44,7 @@ import Test.Spec.Runner.Node (runSpecAndExitProcess)
 import Type.Proxy (Proxy(..))
 
 kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
-kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
+kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition }
 
 main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] spec
@@ -223,10 +222,9 @@ hash2CircuitTests _ = do
     referenceHash (Tuple (F a) (F b)) = Digest $ hash [ a, b ]
 
     circuit'
-      :: forall t
-       . CircuitM f (KimchiConstraint f) t Identity
+      :: PrimeField f
       => Tuple (FVar f) (FVar f)
-      -> Snarky (KimchiConstraint f) t Identity (Digest (FVar f))
+      -> Snarky f (KimchiConstraint f) () (Digest (FVar f))
     circuit' = uncurry Checked.hash2
 
     genInputs = Tuple <$> (F <$> arbitrary) <*> (F <$> arbitrary)
@@ -256,10 +254,9 @@ hashVecCircuitTests _ pn = do
         Digest $ hash xs
 
     circuit'
-      :: forall t
-       . CircuitM f (KimchiConstraint f) t Identity
+      :: PrimeField f
       => Vector n (FVar f)
-      -> Snarky (KimchiConstraint f) t Identity (Digest (FVar f))
+      -> Snarky f (KimchiConstraint f) () (Digest (FVar f))
     circuit' x = Checked.hashVec (Vector.toUnfoldable x)
 
     genInputs = Vector.generator pn (F <$> arbitrary)
@@ -290,10 +287,9 @@ hashVecEdgeCase _ input = do
         Digest $ hash xs'
 
     circuit'
-      :: forall t
-       . CircuitM f (KimchiConstraint f) t Identity
+      :: PrimeField f
       => Vector n (FVar f)
-      -> Snarky (KimchiConstraint f) t Identity (Digest (FVar f))
+      -> Snarky f (KimchiConstraint f) () (Digest (FVar f))
     circuit' x = Checked.hashVec (Vector.toUnfoldable x)
 
   void $ circuitTest' @f
@@ -333,10 +329,9 @@ circuitSpongeTests _ = do
 
       -- Circuit version (fixed to Identity)
       circuit'
-        :: forall t
-         . CircuitM f (KimchiConstraint f) t Identity
+        :: PrimeField f
         => Tuple (FVar f) (FVar f)
-        -> Snarky (KimchiConstraint f) t Identity (FVar f)
+        -> Snarky f (KimchiConstraint f) () (FVar f)
       circuit' (Tuple a b) = do
         let sponge0 = CircuitSponge.create CircuitSponge.initialState
         sponge1 <- CircuitSponge.absorb a sponge0
@@ -370,10 +365,9 @@ circuitSpongeTests _ = do
 
       -- Circuit version (fixed to Identity)
       circuit'
-        :: forall t
-         . CircuitM f (KimchiConstraint f) t Identity
+        :: PrimeField f
         => Tuple (FVar f) (Tuple (FVar f) (FVar f))
-        -> Snarky (KimchiConstraint f) t Identity (Tuple (FVar f) (FVar f))
+        -> Snarky f (KimchiConstraint f) () (Tuple (FVar f) (FVar f))
       circuit' (Tuple a (Tuple b c)) = do
         let sponge0 = CircuitSponge.create CircuitSponge.initialState
         sponge1 <- CircuitSponge.absorb a sponge0

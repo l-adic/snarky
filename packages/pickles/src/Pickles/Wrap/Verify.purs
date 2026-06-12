@@ -35,10 +35,11 @@ import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWr
 import Pickles.Wrap.OtherField as WrapOtherField
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEq, assertEqual_, assert_, label)
+import Snarky.Circuit.DSL (FVar, Snarky, assertEq, assertEqual_, assert_, label)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.Kimchi (Type1)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
@@ -63,8 +64,8 @@ type WrapVerifyInput n d fv =
 -- | Wrap_hack.Checked approach: for n < MaxProofsVerified, (2-n) dummy
 -- | challenge vectors are absorbed offline into the sponge state.
 wrapVerify
-  :: forall publicInput sgOldN stepChunks numChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred d dPred n t m r
-   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  :: forall publicInput sgOldN stepChunks numChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred d dPred n r cr
+   . PrimeField WrapField
   => PublicInputCommit publicInput WrapField
   => Reflectable d Int
   => Reflectable n Int
@@ -98,7 +99,7 @@ wrapVerify
   => IncrementallyVerifyProofParams stepChunks WrapField r
   -> IncrementallyVerifyProofInput publicInput sgOldN stepChunks tCommLen d (FVar WrapField) (Type1 (FVar WrapField))
   -> WrapVerifyInput n d (FVar WrapField)
-  -> Snarky (KimchiConstraint WrapField) t m Unit
+  -> Snarky WrapField (KimchiConstraint WrapField) cr Unit
 wrapVerify ivpParams ivpInput verifyInput = do
   -- Run IVP
   output <- evalSpongeM initialSpongeCircuit $

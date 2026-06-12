@@ -32,11 +32,12 @@ import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (const_)
+import Snarky.Circuit.DSL (class BasicSystem)
 import Snarky.Circuit.DSL.Assert (allBools, assert_)
 import Snarky.Circuit.DSL.Bits (unpack_)
 import Snarky.Circuit.DSL.Boolean (false_)
 import Snarky.Circuit.DSL.Field (equals_, sum_)
-import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, not_, or_)
+import Snarky.Circuit.DSL.Monad (Snarky, not_, or_)
 import Snarky.Circuit.Types (Bool(..), BoolVar, FVar)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, modulus)
 import Type.Proxy (Proxy(..))
@@ -45,13 +46,13 @@ import Type.Proxy (Proxy(..))
 -- | with the canonical `< modulus` check. Mirrors OCaml
 -- | `Field.Checked.unpack_full` (snark0.ml:470-483).
 unpackFull
-  :: forall f c t m n
-   . CircuitM f c t m
-  => PrimeField f
+  :: forall f c r n
+   . PrimeField f
+  => BasicSystem f c
   => FieldSizeInBits f n
   => Reflectable n Int
   => FVar f
-  -> Snarky c t m (Vector n (BoolVar f))
+  -> Snarky f c r (Vector n (BoolVar f))
 unpackFull x = do
   bits <- unpack_ x (Proxy @n)
   -- lt_bitstring_value takes MSB-first; our bits are LSB-first.
@@ -104,11 +105,11 @@ ofBinary = case _ of
 -- |   * `[b1; b2]` → `b1 || b2` (1 R1CS, via `not ((not b1) && (not b2))`)
 -- |   * `bs (n ≥ 3)` → `not (equal (sum bs) 0)` (~3 R1CS)
 anyBools
-  :: forall f c t m
-   . CircuitM f c t m
-  => PrimeField f
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => Array (BoolVar f)
-  -> Snarky c t m (BoolVar f)
+  -> Snarky f c r (BoolVar f)
 anyBools bs = case Array.length bs of
   0 -> pure false_
   1 -> pure $ unsafePartial (Array.unsafeIndex bs 0)
@@ -127,11 +128,11 @@ anyBools bs = case Array.length bs of
     pure (not_ allZero)
 
 evalNary
-  :: forall f c t m
-   . CircuitM f c t m
-  => PrimeField f
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => Nary (BoolVar f)
-  -> Snarky c t m (BoolVar f)
+  -> Snarky f c r (BoolVar f)
 evalNary = case _ of
   NLit x -> pure x
   NAnd xs -> do
@@ -141,7 +142,7 @@ evalNary = case _ of
     vs <- traverse evalNary xs
     anyBools (Array.fromFoldable vs)
   where
-  traverse :: forall a b. (a -> Snarky c t m b) -> List a -> Snarky c t m (List b)
+  traverse :: forall a b. (a -> Snarky f c r b) -> List a -> Snarky f c r (List b)
   traverse f xs = case xs of
     Nil -> pure Nil
     h : rest -> do
@@ -154,12 +155,12 @@ evalNary = case _ of
 -- | (`snark0.ml:404-468`): bit-by-bit compare, building a
 -- | `Binary AND/OR` tree, normalising to N-ary, evaluating.
 ltBitstringValue
-  :: forall f c t m
-   . CircuitM f c t m
-  => PrimeField f
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
   => Array (BoolVar f)
   -> Array Boolean
-  -> Snarky c t m (BoolVar f)
+  -> Snarky f c r (BoolVar f)
 ltBitstringValue xs0 ys0 =
   let
     xs = List.fromFoldable xs0

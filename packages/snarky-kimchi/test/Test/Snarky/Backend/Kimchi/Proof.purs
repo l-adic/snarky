@@ -1,6 +1,6 @@
 -- | End-to-end smoke test for the kimchi proof FFI:
 -- |
--- |   1. Build a tiny circuit (`y = x²`) via `compilePure`.
+-- |   1. Build a tiny circuit (`y = x²`) via `compile`.
 -- |   2. Run the kimchi pipeline: constraint-system → prover index →
 -- |      verifier index.
 -- |   3. Solve for a witness with `x = 7` (so `y = 49`).
@@ -20,23 +20,23 @@ import Prelude
 
 import Data.Array (concatMap)
 import Data.Either (Either(..))
-import Data.Identity (Identity)
 import Data.Int as Int
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
-import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray)
-import Snarky.Backend.Compile (Solver, compilePure, makeSolver, runSolver)
+import Snarky.Backend.Advice (noAdvice)
+import Snarky.Backend.Builder (constraintsToArray)
+import Snarky.Backend.Compile (Solver, compile, makeSolver, runSolver)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (createProverIndex, createVerifierIndex)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaCrsCreate)
 import Snarky.Backend.Kimchi.Proof (createProof, pallasProofFromSerdeJson, pallasProofToSerdeJson, pallasVerifierIndexFromSerdeJson, pallasVerifierIndexToSerdeJson, verifyOpeningProof)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, assertSquare_, exists, readCVar)
-import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate, initialState)
+import Snarky.Circuit.DSL (F(..), FVar, Snarky, assertSquare_, exists, readCVar)
+import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
-import Snarky.Curves.Class (fromInt)
+import Snarky.Curves.Class (class PrimeField, fromInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (VestaG)
 import Test.Spec (Spec, describe, it)
@@ -48,10 +48,9 @@ import Type.Proxy (Proxy(..))
 -- | `assertSquare_` gate. The output `y` becomes part of the public
 -- | input on the verifier side.
 squareCircuit
-  :: forall t
-   . CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t Identity
+  :: PrimeField Pallas.BaseField
   => FVar Pallas.BaseField
-  -> Snarky (KimchiConstraint Pallas.BaseField) t Identity (FVar Pallas.BaseField)
+  -> Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) () (FVar Pallas.BaseField)
 squareCircuit x = do
   y <- exists do
     F xv <- readCVar x
@@ -67,31 +66,29 @@ spec = describe "Snarky.Backend.Kimchi.Proof (end-to-end FFI)" do
 
 runProofRoundtrip :: Effect Unit
 runProofRoundtrip = do
+  -- 1. Compile the squaring circuit.
+  builtState <- compile @Pallas.BaseField noAdvice
+    (Proxy @(F Pallas.BaseField))
+    (Proxy @(F Pallas.BaseField))
+    (Proxy @(KimchiConstraint Pallas.BaseField))
+    squareCircuit
+  -- 2. Constraint-system + prover-index + verifier-index.
   let
-    -- 1. Compile the squaring circuit.
-    builtState =
-      compilePure @Pallas.BaseField
-        (Proxy @(F Pallas.BaseField))
-        (Proxy @(F Pallas.BaseField))
-        (Proxy @(KimchiConstraint Pallas.BaseField))
-        squareCircuit
-        (initialState :: CircuitBuilderState (KimchiGate Pallas.BaseField) (AuxState Pallas.BaseField))
-
-    -- 2. Constraint-system + prover-index + verifier-index.
     kimchiRows =
       concatMap
         (toKimchiRows <<< _.constraint)
         (constraintsToArray builtState.constraints)
     maxPolySize = Int.pow 2 16
     crs = vestaCrsCreate maxPolySize
-    csResult =
-      makeConstraintSystemWithPrevChallenges @Pallas.BaseField
-        { constraints: kimchiRows
-        , publicInputs: builtState.publicInputs
-        , unionFind: (un AuxState builtState.aux).wireState.unionFind
-        , prevChallengesCount: 0
-        , maxPolySize
-        }
+  csResult <-
+    makeConstraintSystemWithPrevChallenges @Pallas.BaseField
+      { constraints: kimchiRows
+      , publicInputs: builtState.publicInputs
+      , unionFind: (un AuxState builtState.aux).wireState.unionFind
+      , prevChallengesCount: 0
+      , maxPolySize
+      }
+  let
     proverIndex =
       createProverIndex @Pallas.BaseField @VestaG
         { gates: csResult.gates
@@ -105,7 +102,7 @@ runProofRoundtrip = do
     -- 3. Solve for x = 7 (so y = 49).
     solver :: Solver Pallas.BaseField (KimchiConstraint Pallas.BaseField) (F Pallas.BaseField) (F Pallas.BaseField)
     solver = makeSolver (Proxy @(KimchiConstraint Pallas.BaseField)) squareCircuit
-  case runSolver solver (F (fromInt 7)) of
+  runSolver solver (F (fromInt 7)) >>= case _ of
     Left e -> throw $ "Squaring-circuit solver failed: " <> show e
     Right (Tuple _output assignments) -> do
       let

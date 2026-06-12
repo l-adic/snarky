@@ -15,6 +15,7 @@ import Data.Newtype (unwrap)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF10, asSizedF128, dummyPallasPt, dummyWrapSg, stepEndo, unsafeIdx)
 import Pickles.Field (StepField)
 import Pickles.IncrementallyVerifyProof (incrementallyVerifyProof)
@@ -23,12 +24,12 @@ import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (ChunkedCommitment(..))
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, assertEq, assertEqual_, const_)
+import Snarky.Backend.Advice (noAdvice)
+import Snarky.Backend.Compile (compile)
+import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, assertEq, assertEqual_, const_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (curveParams)
+import Snarky.Curves.Class (class PrimeField, curveParams)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
@@ -136,12 +137,12 @@ parseIvpStepInput inputs =
     }
 
 ivpStepCircuit
-  :: forall pi t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
+  :: forall pi r
+   . PrimeField StepField
   => PublicInputCommit pi StepField
   => IvpStepParams
   -> IvpStepInput pi
-  -> Snarky (KimchiConstraint StepField) t m Unit
+  -> Snarky StepField (KimchiConstraint StepField) r Unit
 ivpStepCircuit { lagrangeAt, blindingH } input = do
   let
     constDummySg :: AffinePoint (FVar StepField)
@@ -181,8 +182,7 @@ ivpStepCircuit { lagrangeAt, blindingH } input = do
   for_ (Vector.zip input.deferredValues.bulletproofChallenges output.bulletproofChallenges) \(Tuple c1 c2) ->
     assertEq c1 c2
 
-compileIvpStep :: IvpStepParams -> CompiledCircuit StepField
+compileIvpStep :: IvpStepParams -> Effect (CompiledCircuit StepField)
 compileIvpStep srsData =
-  compilePure (Proxy @(Vector 175 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compile noAdvice (Proxy @(Vector 175 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> ivpStepCircuit srsData (parseIvpStepInput inputs))
-    Kimchi.initialState

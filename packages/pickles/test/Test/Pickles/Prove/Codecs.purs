@@ -13,7 +13,6 @@ module Test.Pickles.Prove.Codecs (spec) where
 import Prelude
 
 import Colog (LoggerT, Message, logInfo, withSpan)
-import Control.Monad.Except (runExceptT)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
@@ -24,6 +23,7 @@ import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), NoSlots, StepField, compileMulti, mkRuleEntry, toVerifiable, verify)
 import Pickles.Prove.Codecs (decodeVerifiableProof, decodeVerifier, encodeVerifiableProof, encodeVerifier)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F)
 import Test.Pickles.Prove.NoRecursionReturn (NrrRules, nrrRule)
@@ -48,6 +48,7 @@ spec = describe "Pickles.Prove.Codecs" do
         @Unit
         @NoSlots
         @1
+        noAdvice
         { srs: { vestaSrs, pallasSrs }
         , debug: false
         , wrapDomainOverride: Nothing
@@ -57,7 +58,7 @@ spec = describe "Pickles.Prove.Codecs" do
 
       let BranchProver nrrProver = fst output.provers
       logInfo "[Codecs] proving"
-      eResult <- withSpan "[Codecs] prove" $ liftEffect $ runExceptT $ nrrProver
+      eResult <- withSpan "[Codecs] prove" $ liftEffect $ nrrProver noAdvice
         { appInput: unit, prevs: unit, sideloadedVKs: unit }
       case eResult of
         Left e -> liftEffect $ Exc.throw ("Codecs prover: " <> show e)

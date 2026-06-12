@@ -3,11 +3,10 @@ module Test.Snarky.Circuit.Assert (spec) where
 import Prelude
 
 import Data.Array.NonEmpty as NEA
-import Data.Identity (Identity)
 import Data.Tuple (Tuple(..), uncurry)
 import Snarky.Backend.Builder (class CompileCircuit)
 import Snarky.Backend.Prover (class SolveCircuit)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_)
+import Snarky.Circuit.DSL (F(..), FVar, Snarky, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_)
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (suchThat)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', expectDivideByZero, satisfied_, unsatisfied)
@@ -27,7 +26,7 @@ spec cfg = describe "Assertion Circuit Specs" do
         a <- arbitrary `suchThat` (_ /= zero)
         pure $ F a
 
-      circuit :: forall t. CircuitM f c' t Identity => FVar f -> Snarky c' t Identity Unit
+      circuit :: FVar f -> Snarky f c' () Unit
       circuit = assertNonZero_
     in
       circuitTest' @f
@@ -46,7 +45,7 @@ spec cfg = describe "Assertion Circuit Specs" do
         b <- arbitrary `suchThat` \x -> x /= a
         pure $ Tuple (F a) (F b)
 
-      circuit :: forall t. CircuitM f c' t Identity => Tuple (FVar f) (FVar f) -> Snarky c' t Identity Unit
+      circuit :: Tuple (FVar f) (FVar f) -> Snarky f c' () Unit
       circuit = uncurry assertEqual_
     in
       circuitTest' @f
@@ -65,7 +64,7 @@ spec cfg = describe "Assertion Circuit Specs" do
         b <- arbitrary `suchThat` \x -> x /= a
         pure $ Tuple (F a) (F b)
 
-      circuit :: forall t. CircuitM f c' t Identity => Tuple (FVar f) (FVar f) -> Snarky c' t Identity Unit
+      circuit :: Tuple (FVar f) (FVar f) -> Snarky f c' () Unit
       circuit = uncurry assertNotEqual_
     in
       circuitTest' @f
@@ -86,7 +85,7 @@ spec cfg = describe "Assertion Circuit Specs" do
         y <- arbitrary `suchThat` \y -> y /= x * x
         pure $ Tuple (F x) (F y)
 
-      circuit :: forall t. CircuitM f c' t Identity => Tuple (FVar f) (FVar f) -> Snarky c' t Identity Unit
+      circuit :: Tuple (FVar f) (FVar f) -> Snarky f c' () Unit
       circuit = uncurry assertSquare_
     in
       circuitTest' @f

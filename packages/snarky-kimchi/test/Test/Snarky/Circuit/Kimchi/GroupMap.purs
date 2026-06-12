@@ -5,14 +5,13 @@ module Test.Snarky.Circuit.Kimchi.GroupMap
 import Prelude
 
 import Data.Array.NonEmpty as NEA
-import Data.Identity (Identity)
 import Effect.Class (liftEffect)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
+import Snarky.Circuit.DSL (F(..), FVar, Snarky)
 import Snarky.Circuit.Kimchi.GroupMap (GroupMapParams, groupMap, groupMapCircuit, groupMapParams)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
-import Snarky.Curves.Class (class HasBW19, class HasSqrt)
+import Snarky.Curves.Class (class HasBW19, class HasSqrt, class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint(..))
@@ -67,10 +66,9 @@ spec' cfg proxyG curveName = do
             AffinePoint { x, y }
 
         circuit'
-          :: forall t
-           . CircuitM f (KimchiConstraint f) t Identity
+          :: PrimeField f
           => FVar f
-          -> Snarky (KimchiConstraint f) t Identity (AffinePoint (FVar f))
+          -> Snarky f (KimchiConstraint f) () (AffinePoint (FVar f))
         circuit' = groupMapCircuit params
 
       void $ circuitTest' @f

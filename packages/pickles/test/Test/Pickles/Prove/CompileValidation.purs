@@ -19,6 +19,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception as Exc
 import Pickles (NoSlots, RuleEntry, StepField, compileMulti, mkRuleEntry)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (F)
 import Test.Pickles.Prove.NoRecursionReturn (NrrRules, nrrRule)
 import Test.Pickles.SharedSrs (SharedSrs)
@@ -42,6 +43,7 @@ spec = describe "Pickles.Prove.Compile.validateNumChunks" do
       @Unit
       @NoSlots
       @2
+      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing

@@ -12,6 +12,7 @@ module Pickles.Dummy
   ( -- * Ro monad
     Ro
   , RoM
+  , evalRoM
   , mkRo
   , initialRo
   , tick
@@ -32,12 +33,12 @@ module Pickles.Dummy
 
 import Prelude
 
-import Control.Monad.State (State, evalState, get, put)
 import Data.Array as Array
 import Data.Blake2s (blake2s256Bits)
 import Data.Foldable (class Foldable, foldr)
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
+import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import JS.BigInt as BigInt
@@ -67,11 +68,30 @@ mkRo = { tockCounter: 0, tickCounter: 0, chalCounter: 0 }
 
 -- | Canonical "start" Ro state. Alias of `mkRo`, renamed to surface the
 -- | intent at callsites (e.g. test setups pass `initialRo` into
--- | `evalStateT` at the top of a `StateT Ro m` block).
+-- | `evalRoM` at the top of an `RoM` block).
 initialRo :: Ro
 initialRo = mkRo
 
-type RoM = State Ro
+-- | Hand-rolled pure state monad over `Ro` (replaces `State` from
+-- | `transformers`).
+newtype RoM a = RoM (Ro -> Tuple a Ro)
+
+instance Functor RoM where
+  map f (RoM g) = RoM \s -> let Tuple a s' = g s in Tuple (f a) s'
+
+instance Apply RoM where
+  apply = ap
+
+instance Applicative RoM where
+  pure a = RoM \s -> Tuple a s
+
+instance Bind RoM where
+  bind (RoM g) f = RoM \s -> let Tuple a s' = g s in case f a of RoM h -> h s'
+
+instance Monad RoM
+
+evalRoM :: forall a. RoM a -> Ro -> a
+evalRoM (RoM f) = fst <<< f
 
 bitsToBigInt :: forall f. Foldable f => f Boolean -> BigInt.BigInt
 bitsToBigInt = foldr
@@ -96,25 +116,29 @@ bitsRandomOracle s =
     unsafePartial $ fromJust $ Vector.toVector @n (Array.take n (blake2s256Bits s))
 
 tock :: RoM WrapField
-tock = do
-  ro <- get
-  let next = ro.tockCounter + 1
-  put $ ro { tockCounter = next }
-  pure $ Curves.fromBigInt (bitsToBigInt (bitsRandomOracle @255 ("fq_" <> show next)))
+tock = RoM \ro ->
+  let
+    next = ro.tockCounter + 1
+  in
+    Tuple (tockVal next) (ro { tockCounter = next })
+  where
+  tockVal next = Curves.fromBigInt (bitsToBigInt (bitsRandomOracle @255 ("fq_" <> show next)))
 
 tick :: RoM StepField
-tick = do
-  ro <- get
-  let next = ro.tickCounter + 1
-  put $ ro { tickCounter = next }
-  pure $ Curves.fromBigInt (bitsToBigInt (bitsRandomOracle @255 ("fp_" <> show next)))
+tick = RoM \ro ->
+  let
+    next = ro.tickCounter + 1
+  in
+    Tuple (tickVal next) (ro { tickCounter = next })
+  where
+  tickVal next = Curves.fromBigInt (bitsToBigInt (bitsRandomOracle @255 ("fp_" <> show next)))
 
 chal :: forall @f. Curves.FieldSizeInBits f 255 => Curves.PrimeField f => RoM (SizedF 128 f)
-chal = do
-  ro <- get
-  let next = ro.chalCounter + 1
-  put $ ro { chalCounter = next }
-  pure $ fromBits $ bitsRandomOracle @128 ("chal_" <> show next)
+chal = RoM \ro ->
+  let
+    next = ro.chalCounter + 1
+  in
+    Tuple (fromBits $ bitsRandomOracle @128 ("chal_" <> show next)) (ro { chalCounter = next })
 
 scalarChal :: forall @f. Curves.FieldSizeInBits f 255 => Curves.PrimeField f => RoM (SizedF 128 f)
 scalarChal = chal
@@ -163,8 +187,8 @@ dummyIpaChallenges
      }
 dummyIpaChallenges =
   let
-    wrapRaw = evalState dummyIpaWrapChallenges initialRo
-    stepRaw = evalState (dummyIpaWrapChallenges *> dummyIpaStepChallenges) initialRo
+    wrapRaw = evalRoM dummyIpaWrapChallenges initialRo
+    stepRaw = evalRoM (dummyIpaWrapChallenges *> dummyIpaStepChallenges) initialRo
     wrapExpanded = map (\c -> toFieldPure c wrapEndo) wrapRaw
     stepExpanded = map (\c -> toFieldPure c stepEndo) stepRaw
   in

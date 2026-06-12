@@ -5,11 +5,11 @@ package:
     - bifunctors
     - const
     - curves
+    - effect
     - either
     - exceptions
     - foldable-traversable
     - functors
-    - identity
     - js-bigints
     - lists
     - maybe
@@ -19,12 +19,14 @@ package:
     - prelude
     - quickcheck
     - record
+    - refs
+    - run
     - safe-coerce
     - simple-json
+    - st
     - tailrec
-    - transformers
     - tuples
-    - unfoldable
+    - variant
     - vector-sized
   test:
     main: Test.Snarky.Circuit.Main

@@ -6,19 +6,16 @@ module Snarky.Circuit.Kimchi.Utils
 
 import Prelude
 
-import Control.Monad.Error.Class (throwError)
-import Control.Monad.Morph (hoist)
-import Control.Monad.State (StateT(..), runStateT)
+import Control.Monad.State.Trans (StateT(..), runStateT)
 import Data.Either (Either(..))
-import Data.Identity (Identity(..))
-import Data.Newtype (un)
 import Data.Traversable (class Traversable, traverse)
 import Data.Tuple (Tuple)
 import Effect (Effect)
-import Effect.Class (class MonadEffect, liftEffect)
-import Effect.Exception (error)
+import Effect.Class (liftEffect)
+import Effect.Exception (error, throwException)
+import Snarky.Backend.Advice (AdviceHandler, noAdvice)
 import Snarky.Backend.Builder (CircuitBuilderState)
-import Snarky.Backend.Compile (Solver, SolverT, runSolverT)
+import Snarky.Backend.Compile (Solver, SolverT)
 import Snarky.Constraint.Kimchi (KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
@@ -31,9 +28,8 @@ mapAccumM
   -> s
   -> t a
   -> m (Tuple (t b) s)
-mapAccumM f initial xs = runStateT (traverse step xs) initial
-  where
-  step x = StateT (\s -> f s x)
+mapAccumM f initial xs =
+  runStateT (traverse (\x -> StateT \s -> f s x) xs) initial
 
 -- | Solver smoke test: run the gen-and-solve loop and assert no error.
 -- |
@@ -50,23 +46,21 @@ verifyCircuit
      }
   -> Effect Unit
 verifyCircuit { gen, solver, s } =
-  let
-    nat :: Identity ~> Effect
-    nat = pure <<< un Identity
-  in
-    verifyCircuitM { gen, solver: \a -> hoist nat $ solver a, s }
+  verifyCircuitM noAdvice { gen, solver, s }
 
+-- | Sanity-check a solver over an advice row `r`, given a handler for
+-- | the row's effects.
 verifyCircuitM
-  :: forall f a b m
-   . MonadEffect m
-  => { gen :: Gen a
-     , solver :: SolverT f (KimchiGate f) m a b
+  :: forall f a b r
+   . AdviceHandler r
+  -> { gen :: Gen a
+     , solver :: SolverT f (KimchiGate f) r a b
      , s :: CircuitBuilderState (KimchiGate f) (AuxState f)
      }
-  -> m Unit
-verifyCircuitM { gen, solver, s: _ } = do
+  -> Effect Unit
+verifyCircuitM handler { gen, solver, s: _ } = do
   k <- liftEffect $ randomSampleOne gen
-  eRes <- runSolverT solver k
+  eRes <- solver handler k
   case eRes of
-    Left e -> liftEffect $ throwError $ error (show e)
+    Left e -> liftEffect $ throwException $ error (show e)
     Right _ -> pure unit

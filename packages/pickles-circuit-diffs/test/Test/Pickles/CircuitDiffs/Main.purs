@@ -73,22 +73,24 @@ import Pickles.CircuitDiffs.Types (CircuitComparison)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Safe.Coerce (coerce)
 import Simple.JSON (writeJSON)
-import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray)
-import Snarky.Backend.Compile (Solver, compilePure, makeSolver, runSolver)
+import Snarky.Backend.Advice (noAdvice)
+import Snarky.Backend.Builder (constraintsToArray)
+import Snarky.Backend.Compile (Solver, compile, makeSolver, runSolver)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (createProverIndex)
 import Snarky.Backend.Kimchi.Impl.Pallas (pallasCrsCreate)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaCrsCreate)
+import Snarky.Backend.Kimchi.Proof (createProof)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (BoolVar, F(..), FVar, SizedF, addConstraint, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, pow_, unpack_, xor_)
-import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky)
+import Snarky.Circuit.DSL (class BasicSystem, BoolVar, F(..), FVar, SizedF, addConstraint, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, pow_, unpack_, xor_)
+import Snarky.Circuit.DSL.Monad (Snarky)
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
 import Snarky.Circuit.Kimchi.EndoScalar (toField)
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2')
-import Snarky.Constraint.Kimchi (KimchiConstraint(..), KimchiGate, initialState)
+import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
 import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoScalar(..), endoScalar)
 import Snarky.Curves.Pallas as Pallas
@@ -152,29 +154,29 @@ resetOutputDirs = do
 --------------------------------------------------------------------------------
 -- Compile helpers (basic circuits, Fp only)
 
-compileFF :: (forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (FVar Fp)) -> Circuit Fp
-compileFF circuit = fromCompiledCircuit $
-  compilePure (Proxy @(F Fp)) (Proxy @(F Fp)) (Proxy @(KimchiConstraint Fp)) circuit initialState
+compileFF :: (forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (FVar Fp)) -> Effect (Circuit Fp)
+compileFF circuit = fromCompiledCircuit =<<
+  (compile noAdvice (Proxy @(F Fp)) (Proxy @(F Fp)) (Proxy @(KimchiConstraint Fp)) circuit)
 
-compileFB :: (forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (BoolVar Fp)) -> Circuit Fp
-compileFB circuit = fromCompiledCircuit $
-  compilePure (Proxy @(F Fp)) (Proxy @Boolean) (Proxy @(KimchiConstraint Fp)) circuit initialState
+compileFB :: (forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (BoolVar Fp)) -> Effect (Circuit Fp)
+compileFB circuit = fromCompiledCircuit =<<
+  (compile noAdvice (Proxy @(F Fp)) (Proxy @Boolean) (Proxy @(KimchiConstraint Fp)) circuit)
 
-compileFU :: (forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit) -> Circuit Fp
-compileFU circuit = fromCompiledCircuit $
-  compilePure (Proxy @(F Fp)) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit initialState
+compileFU :: (forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r Unit) -> Effect (Circuit Fp)
+compileFU circuit = fromCompiledCircuit =<<
+  (compile noAdvice (Proxy @(F Fp)) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit)
 
-compileUU :: (forall t m. CircuitM Fp (KimchiConstraint Fp) t m => Unit -> Snarky (KimchiConstraint Fp) t m Unit) -> Circuit Fp
-compileUU circuit = fromCompiledCircuit $
-  compilePure (Proxy @Unit) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit initialState
+compileUU :: (forall r. PrimeField Fp => Unit -> Snarky Fp (KimchiConstraint Fp) r Unit) -> Effect (Circuit Fp)
+compileUU circuit = fromCompiledCircuit =<<
+  (compile noAdvice (Proxy @Unit) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit)
 
-compileBB :: (forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m (BoolVar Fp)) -> Circuit Fp
-compileBB circuit = fromCompiledCircuit $
-  compilePure (Proxy @Boolean) (Proxy @Boolean) (Proxy @(KimchiConstraint Fp)) circuit initialState
+compileBB :: (forall c r. BasicSystem Fp c => BoolVar Fp -> Snarky Fp c r (BoolVar Fp)) -> Effect (Circuit Fp)
+compileBB circuit = fromCompiledCircuit =<<
+  (compile noAdvice (Proxy @Boolean) (Proxy @Boolean) (Proxy @(KimchiConstraint Fp)) circuit)
 
-compileBU :: (forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m Unit) -> Circuit Fp
-compileBU circuit = fromCompiledCircuit $
-  compilePure (Proxy @Boolean) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit initialState
+compileBU :: (forall c r. BasicSystem Fp c => BoolVar Fp -> Snarky Fp c r Unit) -> Effect (Circuit Fp)
+compileBU circuit = fromCompiledCircuit =<<
+  (compile noAdvice (Proxy @Boolean) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit)
 
 type TwoPoints = Tuple (AffinePoint Fp) (AffinePoint Fp)
 type Point = AffinePoint Fp
@@ -182,82 +184,82 @@ type PointField = Tuple (AffinePoint Fp) (F Fp)
 type V3 = Vector 3 (F Fp)
 
 compilePP
-  :: ( forall t m
-        . CircuitM Fp (KimchiConstraint Fp) t m
+  :: ( forall r
+        . PrimeField Fp
        => Tuple (AffinePoint (FVar Fp)) (AffinePoint (FVar Fp))
-       -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+       -> Snarky Fp (KimchiConstraint Fp) r (AffinePoint (FVar Fp))
      )
-  -> Circuit Fp
-compilePP circuit = fromCompiledCircuit $
-  compilePure (Proxy @TwoPoints) (Proxy @Point) (Proxy @(KimchiConstraint Fp)) circuit initialState
+  -> Effect (Circuit Fp)
+compilePP circuit = fromCompiledCircuit =<<
+  (compile noAdvice (Proxy @TwoPoints) (Proxy @Point) (Proxy @(KimchiConstraint Fp)) circuit)
 
 compilePF
-  :: ( forall t m
-        . CircuitM Fp (KimchiConstraint Fp) t m
+  :: ( forall r
+        . PrimeField Fp
        => Tuple (AffinePoint (FVar Fp)) (FVar Fp)
-       -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+       -> Snarky Fp (KimchiConstraint Fp) r (AffinePoint (FVar Fp))
      )
-  -> Circuit Fp
-compilePF circuit = fromCompiledCircuit $
-  compilePure (Proxy @PointField) (Proxy @Point) (Proxy @(KimchiConstraint Fp)) circuit initialState
+  -> Effect (Circuit Fp)
+compilePF circuit = fromCompiledCircuit =<<
+  (compile noAdvice (Proxy @PointField) (Proxy @Point) (Proxy @(KimchiConstraint Fp)) circuit)
 
 compileKFF
-  :: ( forall t m
-        . CircuitM Fp (KimchiConstraint Fp) t m
+  :: ( forall r
+        . PrimeField Fp
        => FVar Fp
-       -> Snarky (KimchiConstraint Fp) t m (FVar Fp)
+       -> Snarky Fp (KimchiConstraint Fp) r (FVar Fp)
      )
-  -> Circuit Fp
-compileKFF circuit = fromCompiledCircuit $
-  compilePure (Proxy @(F Fp)) (Proxy @(F Fp)) (Proxy @(KimchiConstraint Fp)) circuit initialState
+  -> Effect (Circuit Fp)
+compileKFF circuit = fromCompiledCircuit =<<
+  (compile noAdvice (Proxy @(F Fp)) (Proxy @(F Fp)) (Proxy @(KimchiConstraint Fp)) circuit)
 
 compileV3
-  :: ( forall t m
-        . CircuitM Fp (KimchiConstraint Fp) t m
+  :: ( forall r
+        . PrimeField Fp
        => Vector 3 (FVar Fp)
-       -> Snarky (KimchiConstraint Fp) t m (Vector 3 (FVar Fp))
+       -> Snarky Fp (KimchiConstraint Fp) r (Vector 3 (FVar Fp))
      )
-  -> Circuit Fp
-compileV3 circuit = fromCompiledCircuit $
-  compilePure (Proxy @V3) (Proxy @V3) (Proxy @(KimchiConstraint Fp)) circuit initialState
+  -> Effect (Circuit Fp)
+compileV3 circuit = fromCompiledCircuit =<<
+  (compile noAdvice (Proxy @V3) (Proxy @V3) (Proxy @(KimchiConstraint Fp)) circuit)
 
 --------------------------------------------------------------------------------
 -- Field arithmetic circuits
 
-mulCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (FVar Fp)
+mulCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (FVar Fp)
 mulCircuit x = do
   y <- exists (pure (zero :: F Fp))
   mul_ x y
 
-invCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (FVar Fp)
+invCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (FVar Fp)
 invCircuit x = inv_ x
 
-divCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (FVar Fp)
+divCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (FVar Fp)
 divCircuit x = do
   y <- exists (pure (zero :: F Fp))
   div_ x y
 
-ifCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (FVar Fp)
+ifCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (FVar Fp)
 ifCircuit x = do
   y <- exists (pure (zero :: F Fp))
   b <- exists (pure true)
   if_ b x y
 
-equalsCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (BoolVar Fp)
+equalsCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (BoolVar Fp)
 equalsCircuit x = do
   y <- exists (pure (zero :: F Fp))
   equals_ x y
 
-pow7Circuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (FVar Fp)
+pow7Circuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (FVar Fp)
 pow7Circuit x = pow_ x 7
 
-pow8Circuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (FVar Fp)
+pow8Circuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (FVar Fp)
 pow8Circuit x = pow_ x 8
 
 --------------------------------------------------------------------------------
 -- Assertion circuits
 
-assertEqualCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit
+assertEqualCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r Unit
 assertEqualCircuit x = do
   y <- exists (pure (zero :: F Fp))
   assertEqual_ x y
@@ -269,14 +271,14 @@ assertEqualCircuit x = do
 -- | trace-diff loop — if PS and OCaml disagree on the gate
 -- | sequence for this trivial body, every downstream step_main /
 -- | wrap_main / witness comparison is meaningless.
-makeZeroAppCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit
+makeZeroAppCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r Unit
 makeZeroAppCircuit x = assertEqual_ x (const_ zero)
 
 -- | Application body for `dump_two_phase_chain`'s branch 1
 -- | (`increment`): allocate prev as a witness, assert that the
 -- | public input equals `prev + 1`. PS mirror of
 -- | `app_circuit_two_phase_chain_increment`.
-incrementAppCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit
+incrementAppCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r Unit
 incrementAppCircuit x = do
   prev <- exists (pure (zero :: F Fp))
   assertEqual_ x (CVar.add_ (const_ one) prev)
@@ -287,7 +289,7 @@ incrementAppCircuit x = do
 -- | `for _ = 0 to 1 lsl 17 do`), then a raw 7-wire Generic row with zero
 -- | coeffs to bump the 7th permuted column's polynomial degree above
 -- | 2^16.
-chunks2AppCircuit :: forall t m. CircuitM Fp (KimchiConstraint Fp) t m => Unit -> Snarky (KimchiConstraint Fp) t m Unit
+chunks2AppCircuit :: forall r. PrimeField Fp => Unit -> Snarky Fp (KimchiConstraint Fp) r Unit
 chunks2AppCircuit _ = do
   let
     freshZero = exists (pure (zero :: F Fp))
@@ -307,20 +309,20 @@ chunks2AppCircuit _ = do
   addConstraint $ KimchiRawGeneric7
     (z :< z :< z :< z :< z :< z :< z :< Vector.nil)
 
-assertSquareCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit
+assertSquareCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r Unit
 assertSquareCircuit x = do
   y <- exists (pure (zero :: F Fp))
   assertSquare_ x y
 
-assertNonZeroCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit
+assertNonZeroCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r Unit
 assertNonZeroCircuit x = assertNonZero_ x
 
-assertNotEqualCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit
+assertNotEqualCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r Unit
 assertNotEqualCircuit x = do
   y <- exists (pure (zero :: F Fp))
   assertNotEqual_ x y
 
-unpackCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit
+unpackCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r Unit
 unpackCircuit x = do
   _ <- unpack_ x (Proxy @254)
   pure unit
@@ -328,52 +330,52 @@ unpackCircuit x = do
 --------------------------------------------------------------------------------
 -- Boolean circuits
 
-boolAndCircuit :: forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m (BoolVar Fp)
+boolAndCircuit :: forall c r. BasicSystem Fp c => BoolVar Fp -> Snarky Fp c r (BoolVar Fp)
 boolAndCircuit x = do
   y <- exists (pure true)
   and_ x y
 
-boolOrCircuit :: forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m (BoolVar Fp)
+boolOrCircuit :: forall c r. BasicSystem Fp c => BoolVar Fp -> Snarky Fp c r (BoolVar Fp)
 boolOrCircuit x = do
   y <- exists (pure true)
   or_ x y
 
-boolXorCircuit :: forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m (BoolVar Fp)
+boolXorCircuit :: forall c r. BasicSystem Fp c => BoolVar Fp -> Snarky Fp c r (BoolVar Fp)
 boolXorCircuit x = do
   y <- exists (pure true)
   xor_ x y
 
-boolAllCircuit :: forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m (BoolVar Fp)
+boolAllCircuit :: forall c r. BasicSystem Fp c => BoolVar Fp -> Snarky Fp c r (BoolVar Fp)
 boolAllCircuit x = do
   y <- exists (pure true)
   w <- exists (pure true)
   all_ [ x, y, w ]
 
-boolAnyCircuit :: forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m (BoolVar Fp)
+boolAnyCircuit :: forall c r. BasicSystem Fp c => BoolVar Fp -> Snarky Fp c r (BoolVar Fp)
 boolAnyCircuit x = do
   y <- exists (pure true)
   w <- exists (pure true)
   any_ [ x, y, w ]
 
-boolAssertCircuit :: forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m Unit
+boolAssertCircuit :: forall c r. BasicSystem Fp c => BoolVar Fp -> Snarky Fp c r Unit
 boolAssertCircuit x = assert_ x
 
 --------------------------------------------------------------------------------
 -- Kimchi gate circuits
 
 addCompleteCircuit
-  :: forall t m
-   . CircuitM Fp (KimchiConstraint Fp) t m
+  :: forall r
+   . PrimeField Fp
   => Tuple (AffinePoint (FVar Fp)) (AffinePoint (FVar Fp))
-  -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+  -> Snarky Fp (KimchiConstraint Fp) r (AffinePoint (FVar Fp))
 addCompleteCircuit (Tuple p1 p2) =
   _.p <$> addFast DontCheckFinite p1 p2
 
 endoScalarCircuit
-  :: forall t m
-   . CircuitM Fp (KimchiConstraint Fp) t m
+  :: forall r
+   . PrimeField Fp
   => FVar Fp
-  -> Snarky (KimchiConstraint Fp) t m (FVar Fp)
+  -> Snarky Fp (KimchiConstraint Fp) r (FVar Fp)
 endoScalarCircuit scalar =
   let
     EndoScalar es = endoScalar @Vesta.BaseField @Fp
@@ -381,34 +383,34 @@ endoScalarCircuit scalar =
     toField @8 (unsafeCoerce scalar :: SizedF 128 (FVar Fp)) (const_ es)
 
 varBaseMulCircuit
-  :: forall t m
-   . CircuitM Fp (KimchiConstraint Fp) t m
+  :: forall r
+   . PrimeField Fp
   => Tuple (AffinePoint (FVar Fp)) (FVar Fp)
-  -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+  -> Snarky Fp (KimchiConstraint Fp) r (AffinePoint (FVar Fp))
 varBaseMulCircuit (Tuple g scalar) =
   scaleFast1 @51 g (Type1 scalar)
 
 endoMulCircuit
-  :: forall t m
-   . CircuitM Fp (KimchiConstraint Fp) t m
+  :: forall r
+   . PrimeField Fp
   => Tuple (AffinePoint (FVar Fp)) (FVar Fp)
-  -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+  -> Snarky Fp (KimchiConstraint Fp) r (AffinePoint (FVar Fp))
 endoMulCircuit (Tuple g scalar) =
   endo @128 @32 g (unsafeCoerce scalar :: SizedF 128 (FVar Fp))
 
 scaleFast2_128Circuit
-  :: forall t m
-   . CircuitM Fp (KimchiConstraint Fp) t m
+  :: forall r
+   . PrimeField Fp
   => Tuple (AffinePoint (FVar Fp)) (FVar Fp)
-  -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+  -> Snarky Fp (KimchiConstraint Fp) r (AffinePoint (FVar Fp))
 scaleFast2_128Circuit (Tuple g scalar) =
   scaleFast2' @26 @127 g scalar
 
 poseidonCircuit
-  :: forall t m
-   . CircuitM Fp (KimchiConstraint Fp) t m
+  :: forall r
+   . PrimeField Fp
   => Vector 3 (FVar Fp)
-  -> Snarky (KimchiConstraint Fp) t m (Vector 3 (FVar Fp))
+  -> Snarky Fp (KimchiConstraint Fp) r (Vector 3 (FVar Fp))
 poseidonCircuit = poseidon
 
 --------------------------------------------------------------------------------
@@ -470,26 +472,25 @@ exactMatchEff name effPs =
 -- `dump_app_circuit_chunks2_witness.exe`.
 runChunks2AppWitnessProve :: Effect Unit
 runChunks2AppWitnessProve = do
+  builtState <- compile @Fp noAdvice (Proxy @Unit) (Proxy @Unit)
+    (Proxy @(KimchiConstraint Fp))
+    chunks2AppCircuit
   let
-    builtState = compilePure @Fp (Proxy @Unit) (Proxy @Unit)
-      (Proxy @(KimchiConstraint Fp))
-      chunks2AppCircuit
-      (initialState :: CircuitBuilderState (KimchiGate Fp) (AuxState Fp))
     kimchiRows = Array.concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
     -- max_poly_size = 2^16 (mirrors OCaml's default Tick.set_urs_info []).
     -- With our ~65538-row circuit the domain rounds up to 2^17,
     -- triggering num_chunks = 2.
     maxPolySize = 1 `Bits.shl` 16
     crs = vestaCrsCreate maxPolySize
-    csResult = makeConstraintSystemWithPrevChallenges @Fp
-      { constraints: kimchiRows
-      , publicInputs: builtState.publicInputs
-      , unionFind: (un AuxState builtState.aux).wireState.unionFind
-      , prevChallengesCount: 0
-      , maxPolySize
-      }
-    -- proverIndex creation disabled — see comment below at the proof step.
-    _proverIndex = createProverIndex @Fp @VestaG
+  csResult <- makeConstraintSystemWithPrevChallenges @Fp
+    { constraints: kimchiRows
+    , publicInputs: builtState.publicInputs
+    , unionFind: (un AuxState builtState.aux).wireState.unionFind
+    , prevChallengesCount: 0
+    , maxPolySize
+    }
+  let
+    proverIndex = createProverIndex @Fp @VestaG
       { gates: csResult.gates
       , publicInputSize: csResult.publicInputSize
       , prevChallengesCount: csResult.prevChallengesCount
@@ -499,20 +500,20 @@ runChunks2AppWitnessProve = do
 
     rawSolver :: Solver Fp (KimchiConstraint Fp) Unit Unit
     rawSolver = makeSolver (Proxy @(KimchiConstraint Fp)) chunks2AppCircuit
-  case runSolver rawSolver unit of
+  runSolver rawSolver unit >>= case _ of
     Left e -> throw $ "chunks2 app solver: " <> show e
     Right (Tuple _publicOutputs assignments) -> do
       let
-        { witness: _witness } = makeWitness
+        { witness } = makeWitness
           { assignments
           , constraints: map _.variables csResult.constraints
           , publicInputs: builtState.publicInputs
           }
-      -- Proof creation step disabled while ProofFFI still routes through
-      -- snarky-crypto: the kimchi-napi-backed `proverIndex` here is the
-      -- wrong `External<T>` Rust tag for snarky-crypto's
-      -- `pallasCreateProofWithPrev`. Re-enable once Snarky.Backend.Kimchi.Proof
-      -- migrates to kimchi-napi.
+        -- The prove is what fires the `KIMCHI_WITNESS_DUMP` hook inside
+        -- kimchi's `ProverProof::create_recursive`; the proof itself is
+        -- discarded (witness equality vs OCaml is the assertion, checked
+        -- by tools/witness_diff.sh).
+        _proof = createProof { proverIndex, witness }
       pure unit
 
 --------------------------------------------------------------------------------
@@ -529,26 +530,26 @@ spec =
   beforeAll_ (liftEffect resetOutputDirs) $
     describe "Circuit comparison" do
       describe "Field arithmetic" do
-        exactMatch "mul_step_circuit" (compileFF mulCircuit)
-        exactMatch "inv_step_circuit" (compileFF invCircuit)
-        exactMatch "div_step_circuit" (compileFF divCircuit)
-        exactMatch "if_step_circuit" (compileFF ifCircuit)
-        exactMatch "equals_step_circuit" (compileFB equalsCircuit)
-        exactMatch "pow7_step_circuit" (compileFF pow7Circuit)
-        exactMatch "pow8_step_circuit" (compileFF pow8Circuit)
+        exactMatchEff "mul_step_circuit" (compileFF mulCircuit)
+        exactMatchEff "inv_step_circuit" (compileFF invCircuit)
+        exactMatchEff "div_step_circuit" (compileFF divCircuit)
+        exactMatchEff "if_step_circuit" (compileFF ifCircuit)
+        exactMatchEff "equals_step_circuit" (compileFB equalsCircuit)
+        exactMatchEff "pow7_step_circuit" (compileFF pow7Circuit)
+        exactMatchEff "pow8_step_circuit" (compileFF pow8Circuit)
       describe "Assertions" do
-        exactMatch "assert_equal_step_circuit" (compileFU assertEqualCircuit)
-        exactMatch "assert_non_zero_step_circuit" (compileFU assertNonZeroCircuit)
-        exactMatch "assert_not_equal_step_circuit" (compileFU assertNotEqualCircuit)
-        exactMatch "assert_square_step_circuit" (compileFU assertSquareCircuit)
-        exactMatch "unpack_step_circuit" (compileFU unpackCircuit)
+        exactMatchEff "assert_equal_step_circuit" (compileFU assertEqualCircuit)
+        exactMatchEff "assert_non_zero_step_circuit" (compileFU assertNonZeroCircuit)
+        exactMatchEff "assert_not_equal_step_circuit" (compileFU assertNotEqualCircuit)
+        exactMatchEff "assert_square_step_circuit" (compileFU assertSquareCircuit)
+        exactMatchEff "unpack_step_circuit" (compileFU unpackCircuit)
       describe "Boolean" do
-        exactMatch "bool_and_step_circuit" (compileBB boolAndCircuit)
-        exactMatch "bool_or_step_circuit" (compileBB boolOrCircuit)
-        exactMatch "bool_xor_step_circuit" (compileBB boolXorCircuit)
-        exactMatch "bool_all_step_circuit" (compileBB boolAllCircuit)
-        exactMatch "bool_any_step_circuit" (compileBB boolAnyCircuit)
-        exactMatch "bool_assert_step_circuit" (compileBU boolAssertCircuit)
+        exactMatchEff "bool_and_step_circuit" (compileBB boolAndCircuit)
+        exactMatchEff "bool_or_step_circuit" (compileBB boolOrCircuit)
+        exactMatchEff "bool_xor_step_circuit" (compileBB boolXorCircuit)
+        exactMatchEff "bool_all_step_circuit" (compileBB boolAllCircuit)
+        exactMatchEff "bool_any_step_circuit" (compileBB boolAnyCircuit)
+        exactMatchEff "bool_assert_step_circuit" (compileBU boolAssertCircuit)
       describe "Two-phase chain application circuits" do
         -- App-level rule bodies for `dump_two_phase_chain` (the
         -- minimal multi-branch fixture). We byte-compare ONLY the
@@ -559,9 +560,9 @@ spec =
         -- deferred values, wrap_main) is rooted in noise. The full
         -- multi-branch step_main diff comes later, once PS supports
         -- multi-branch compile.
-        exactMatch "app_circuit_two_phase_chain_make_zero" (compileFU makeZeroAppCircuit)
-        exactMatch "app_circuit_two_phase_chain_increment" (compileFU incrementAppCircuit)
-        exactMatch "app_circuit_chunks2" (compileUU chunks2AppCircuit)
+        exactMatchEff "app_circuit_two_phase_chain_make_zero" (compileFU makeZeroAppCircuit)
+        exactMatchEff "app_circuit_two_phase_chain_increment" (compileFU incrementAppCircuit)
+        exactMatchEff "app_circuit_chunks2" (compileUU chunks2AppCircuit)
       describe "Witness dump" $
         -- | Gated on `KIMCHI_WITNESS_DUMP` env var. When set, runs the
         -- | standalone kimchi prover for chunks2 app body so the dump
@@ -577,23 +578,23 @@ spec =
         -- inputs (pk_x, pk_y, r, s, message[0]) + 1 boolean output.
         -- OCaml source: `schnorr_verify_circuit` in
         -- `mina/src/lib/crypto/pickles/dump_circuit_impl.ml`.
-        exactMatch "schnorr_verify_step_circuit" (fromCompiledCircuit compileSchnorrVerify)
+        exactMatchEff "schnorr_verify_step_circuit" (fromCompiledCircuit =<< compileSchnorrVerify)
       describe "Kimchi gates" do
-        exactMatch "add_complete_step_circuit" (compilePP addCompleteCircuit)
-        exactMatch "endo_scalar_step_circuit" (compileKFF endoScalarCircuit)
-        exactMatch "var_base_mul_step_circuit" (compilePF varBaseMulCircuit)
-        exactMatch "endo_mul_step_circuit" (compilePF endoMulCircuit)
-        exactMatch "scale_fast2_128_step_circuit" (compilePF scaleFast2_128Circuit)
-        exactMatch "poseidon_step_circuit" (compileV3 poseidonCircuit)
+        exactMatchEff "add_complete_step_circuit" (compilePP addCompleteCircuit)
+        exactMatchEff "endo_scalar_step_circuit" (compileKFF endoScalarCircuit)
+        exactMatchEff "var_base_mul_step_circuit" (compilePF varBaseMulCircuit)
+        exactMatchEff "endo_mul_step_circuit" (compilePF endoMulCircuit)
+        exactMatchEff "scale_fast2_128_step_circuit" (compilePF scaleFast2_128Circuit)
+        exactMatchEff "poseidon_step_circuit" (compileV3 poseidonCircuit)
       describe "Pickles Step sub-circuits" do
-        exactMatch "pow2_pow_step_circuit" (fromCompiledCircuit compilePow2Pow)
-        exactMatch "b_correct_step_circuit" (fromCompiledCircuit compileBCorrect)
-        exactMatch "hash_messages_for_next_step_proof_circuit" (fromCompiledCircuit compileHashMessagesStep)
-        exactMatch "finalize_other_proof_step_circuit" (fromCompiledCircuit compileFopStep)
-        exactMatch "group_map_step_circuit" (fromCompiledCircuit compileGroupMapStep)
-        exactMatch "bullet_reduce_one_step_circuit" (fromCompiledCircuit compileBulletReduceOneStep)
-        exactMatch "bullet_reduce_step_circuit" (fromCompiledCircuit compileBulletReduceStep)
-        exactMatch "ftcomm_step_circuit" (fromCompiledCircuit compileFtcommStep)
+        exactMatchEff "pow2_pow_step_circuit" (fromCompiledCircuit =<< compilePow2Pow)
+        exactMatchEff "b_correct_step_circuit" (fromCompiledCircuit =<< compileBCorrect)
+        exactMatchEff "hash_messages_for_next_step_proof_circuit" (fromCompiledCircuit =<< compileHashMessagesStep)
+        exactMatchEff "finalize_other_proof_step_circuit" (fromCompiledCircuit =<< compileFopStep)
+        exactMatchEff "group_map_step_circuit" (fromCompiledCircuit =<< compileGroupMapStep)
+        exactMatchEff "bullet_reduce_one_step_circuit" (fromCompiledCircuit =<< compileBulletReduceOneStep)
+        exactMatchEff "bullet_reduce_step_circuit" (fromCompiledCircuit =<< compileBulletReduceStep)
+        exactMatchEff "ftcomm_step_circuit" (fromCompiledCircuit =<< compileFtcommStep)
         let
           stepSrs = pallasCrsCreate (2 `Int.pow` 16)
           stepSrsData =
@@ -601,15 +602,15 @@ spec =
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepSrs 16 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
-        exactMatch "xhat_step_circuit" (fromCompiledCircuit $ compileXhatStep stepSrsData)
+        exactMatchEff "xhat_step_circuit" (fromCompiledCircuit =<< compileXhatStep stepSrsData)
       describe "Pickles Wrap sub-circuits" do
-        exactMatch "hash_messages_for_next_wrap_proof_circuit" (fromCompiledCircuit compileHashMessagesWrap)
-        exactMatch "finalize_other_proof_wrap_circuit" (fromCompiledCircuit compileFopWrap)
-        exactMatch "group_map_wrap_circuit" (fromCompiledCircuit compileGroupMap)
-        exactMatch "bullet_reduce_one_wrap_circuit" (fromCompiledCircuit compileBulletReduceOne)
-        exactMatch "bullet_reduce_wrap_circuit" (fromCompiledCircuit compileBulletReduce)
-        exactMatch "ftcomm_wrap_circuit" (fromCompiledCircuit compileFtcomm)
-        exactMatch "combine_poly_wrap_circuit" (fromCompiledCircuit compileCombinePoly)
+        exactMatchEff "hash_messages_for_next_wrap_proof_circuit" (fromCompiledCircuit =<< compileHashMessagesWrap)
+        exactMatchEff "finalize_other_proof_wrap_circuit" (fromCompiledCircuit =<< compileFopWrap)
+        exactMatchEff "group_map_wrap_circuit" (fromCompiledCircuit =<< compileGroupMap)
+        exactMatchEff "bullet_reduce_one_wrap_circuit" (fromCompiledCircuit =<< compileBulletReduceOne)
+        exactMatchEff "bullet_reduce_wrap_circuit" (fromCompiledCircuit =<< compileBulletReduce)
+        exactMatchEff "ftcomm_wrap_circuit" (fromCompiledCircuit =<< compileFtcomm)
+        exactMatchEff "combine_poly_wrap_circuit" (fromCompiledCircuit =<< compileCombinePoly)
         let
           srs = vestaCrsCreate (2 `Int.pow` 16)
           wrapSrsData =
@@ -617,7 +618,7 @@ spec =
                 Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt srs 16 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator srs
             }
-        exactMatch "xhat_wrap_circuit" (fromCompiledCircuit $ compileXhat wrapSrsData)
+        exactMatchEff "xhat_wrap_circuit" (fromCompiledCircuit =<< compileXhat wrapSrsData)
       describe "IVP" do
         let
           wrapSrs = vestaCrsCreate (2 `Int.pow` 16)
@@ -626,9 +627,9 @@ spec =
                 Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 16 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
-        exactMatch "ivp_wrap_circuit" (fromCompiledCircuit $ compileIvpWrap wrapSrsData)
-        exactMatch "wrap_verify_circuit" (fromCompiledCircuit $ compileWrapVerify wrapSrsData)
-        exactMatch "wrap_verify_n2_circuit" (fromCompiledCircuit $ compileWrapVerifyN2 wrapSrsData)
+        exactMatchEff "ivp_wrap_circuit" (fromCompiledCircuit =<< compileIvpWrap wrapSrsData)
+        exactMatchEff "wrap_verify_circuit" (fromCompiledCircuit =<< compileWrapVerify wrapSrsData)
+        exactMatchEff "wrap_verify_n2_circuit" (fromCompiledCircuit =<< compileWrapVerifyN2 wrapSrsData)
         let
           -- wrap_main_circuit fixture uses domainLog2 = 14 to match the
           -- production Simple_chain N1 wrap compile (verified via OCaml
@@ -657,7 +658,7 @@ spec =
         -- commitment pipeline (mirrors the wrap_main_n2_circuit fix at
         -- commit `cf352650`).
         exactMatchEff "wrap_main_circuit"
-          (fromCompiledCircuit <<< _.wrapCs <$> compileWrapMainN1 wrapMainSrsData wrapMainN1StepSrsData)
+          (fromCompiledCircuit <<< _.wrapCs =<< compileWrapMainN1 wrapMainSrsData wrapMainN1StepSrsData)
         -- N=1 side-loaded parent (`Simple_chain` from `dump_side_loaded_main`).
         -- Same shape as `wrap_main_circuit` but the prev slot's bound is
         -- N2 instead of N1: step_widths=[1], padded=[[0];[2]],
@@ -679,7 +680,7 @@ spec =
             , blindingH: (coerce $ vestaSrsBlindingGenerator wrapMainN1StepSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "wrap_main_side_loaded_main_circuit"
-          (fromCompiledCircuit <<< _.wrapCs <$> compileWrapMainSideLoadedMain wrapMainSrsData wrapMainSlmStepSrsData)
+          (fromCompiledCircuit <<< _.wrapCs =<< compileWrapMainSideLoadedMain wrapMainSrsData wrapMainSlmStepSrsData)
         -- N=2 Input mode (Simple_chain_n2). step_widths=[2], padded=[[0;2];[0;2]].
         -- `compileWrapMainN2` deterministically computes the step VK by
         -- recompiling the matching step CS and running the kimchi
@@ -703,7 +704,7 @@ spec =
             , blindingH: (coerce $ vestaSrsBlindingGenerator wrapMainN2StepSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "wrap_main_n2_circuit"
-          (fromCompiledCircuit <<< _.wrapCs <$> compileWrapMainN2 wrapMainN2SrsData wrapMainN2StepSrsData)
+          (fromCompiledCircuit <<< _.wrapCs =<< compileWrapMainN2 wrapMainN2SrsData wrapMainN2StepSrsData)
         -- N=0 Input_and_output mode (Add_one_return). step_widths=[0],
         -- padded=[[0];[0]]. First (and only) N=0 wrap fixture — exercises
         -- the wrap verify-one-of-step path with a step proof whose own
@@ -733,7 +734,7 @@ spec =
             , blindingH: (coerce $ vestaSrsBlindingGenerator aorStepSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "wrap_main_add_one_return_circuit"
-          (fromCompiledCircuit <<< _.wrapCs <$> compileWrapMainAddOneReturn wrapMainAddOneReturnSrsData aorStepSrsData)
+          (fromCompiledCircuit <<< _.wrapCs =<< compileWrapMainAddOneReturn wrapMainAddOneReturnSrsData aorStepSrsData)
         -- N=0, num_chunks=2 wrap. Same branch/widths/Max_widths layout
         -- as `wrap_main_add_one_return_circuit` but with `stepChunks=2`
         -- at `wrapMainForPrevs`, so the IVP MSM walks 2 chunks per
@@ -748,7 +749,7 @@ spec =
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
         exactMatchEff "chunks2_wrap_main_circuit"
-          (fromCompiledCircuit <<< _.wrapCs <$> compileWrapMainChunks2 chunks2WrapSrsData aorStepSrsData)
+          (fromCompiledCircuit <<< _.wrapCs =<< compileWrapMainChunks2 chunks2WrapSrsData aorStepSrsData)
         -- N=2 Output mode (Tree_proof_return). Single branch with
         -- heterogeneous prev slots [0; 2] (No_recursion_return at
         -- slot 0, self at slot 1). step_widths=[2], padded=[[0];[2]].
@@ -796,7 +797,7 @@ spec =
             , nrrStepSrsData: wrapTprNrrStepSrsData
             }
         exactMatchEff "wrap_main_tree_proof_return_circuit"
-          (fromCompiledCircuit <<< _.wrapCs <$> compileWrapMainTreeProofReturn wrapMainTprSrsData tprStepSrsData)
+          (fromCompiledCircuit <<< _.wrapCs =<< compileWrapMainTreeProofReturn wrapMainTprSrsData tprStepSrsData)
         -- Multi-branch (2 branches: make_zero + increment) sharing ONE wrap
         -- key. step_widths=[0;1], padded=[[0;0];[0;1]]; per-branch step
         -- domains [9; 14] differ (make_zero is tiny, increment full),
@@ -824,7 +825,7 @@ spec =
             , incrementStepSrsData: tpcIncrementSrsData
             }
         exactMatchEff "wrap_main_two_phase_chain_circuit"
-          (fromCompiledCircuit <<< _.wrapCs <$> compileWrapMainTwoPhaseChain wrapMainTpcParams)
+          (fromCompiledCircuit <<< _.wrapCs =<< compileWrapMainTwoPhaseChain wrapMainTpcParams)
         let
           -- OCaml uses SRS.Fq.create (1 lsl 15) and domain Pow_2_roots_of_unity 15
           stepSrs = pallasCrsCreate (2 `Int.pow` 15)
@@ -833,7 +834,7 @@ spec =
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepSrs 15 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
-        exactMatch "ivp_step_circuit" (fromCompiledCircuit $ compileIvpStep stepSrsData)
+        exactMatchEff "ivp_step_circuit" (fromCompiledCircuit =<< compileIvpStep stepSrsData)
       describe "Step verify" do
         let
           -- Same SRS as IVP step: OCaml uses SRS.Fq.create (1 lsl 15) and domain 15
@@ -843,14 +844,14 @@ spec =
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepVerifySrs 15 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepVerifySrs) :: AffinePoint (F Fp)
             }
-        exactMatch "step_verify_circuit" (fromCompiledCircuit $ compileStepVerify stepVerifySrsData)
+        exactMatchEff "step_verify_circuit" (fromCompiledCircuit =<< compileStepVerify stepVerifySrsData)
         let
           stepVerifyN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepVerifySrs 15 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepVerifySrs) :: AffinePoint (F Fp)
             }
-        exactMatch "step_verify_n2_circuit" (fromCompiledCircuit $ compileStepVerifyN2 stepVerifyN2SrsData)
+        exactMatchEff "step_verify_n2_circuit" (fromCompiledCircuit =<< compileStepVerifyN2 stepVerifyN2SrsData)
       describe "Full step verify_one" do
         let
           fullStepSrs = pallasCrsCreate (2 `Int.pow` 15)
@@ -859,16 +860,16 @@ spec =
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt fullStepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
             }
-        exactMatch "full_step_verify_one_circuit" (fromCompiledCircuit $ compileFullStepVerifyOne fullStepSrsData)
+        exactMatchEff "full_step_verify_one_circuit" (fromCompiledCircuit =<< compileFullStepVerifyOne fullStepSrsData)
         let
           fullStepN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt fullStepSrs 14 i)) :: AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
             }
-        exactMatch "full_step_verify_one_n2_circuit" (fromCompiledCircuit $ compileFullStepVerifyOneN2 fullStepN2SrsData)
+        exactMatchEff "full_step_verify_one_n2_circuit" (fromCompiledCircuit =<< compileFullStepVerifyOneN2 fullStepN2SrsData)
       describe "Typ checks" do
-        exactMatch "other_field_check_step_circuit" (fromCompiledCircuit compileOtherFieldCheck)
+        exactMatchEff "other_field_check_step_circuit" (fromCompiledCircuit =<< compileOtherFieldCheck)
       describe "Step main" do
         let
           -- OCaml uses SRS.Fq.create (1 lsl 15), wrap domain Pow_2_roots_of_unity 14
@@ -879,7 +880,7 @@ spec =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
         -- N=1, Input mode. Public input layout is input field only.
-        exactMatchEff "step_main_simple_chain_circuit" (fromCompiledCircuit <<< _.stepCs <$> compileStepMainSimpleChain stepMainSrsData)
+        exactMatchEff "step_main_simple_chain_circuit" (fromCompiledCircuit <<< _.stepCs =<< compileStepMainSimpleChain stepMainSrsData)
         let
           stepMainN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
@@ -887,12 +888,12 @@ spec =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
         -- N=2, Input mode. Two prev proofs verified by verify_one.
-        exactMatchEff "step_main_simple_chain_n2_circuit" (fromCompiledCircuit <<< _.stepCs <$> compileStepMainSimpleChainN2 stepMainN2SrsData)
+        exactMatchEff "step_main_simple_chain_n2_circuit" (fromCompiledCircuit <<< _.stepCs =<< compileStepMainSimpleChainN2 stepMainN2SrsData)
         -- N=0, Input_and_output mode — Add_one_return. No recursion,
         -- no verify_one; the hash_messages_for_next_step_proof absorbs
         -- BOTH input and output fields (OCaml step_main.ml:566-573
         -- Input_and_output branch → `to_field_elements (app_state, ret_var)`).
-        exactMatchEff "step_main_add_one_return_circuit" (fromCompiledCircuit <<< _.stepCs <$> compileStepMainAddOneReturn stepMainSrsData)
+        exactMatchEff "step_main_add_one_return_circuit" (fromCompiledCircuit <<< _.stepCs =<< compileStepMainAddOneReturn stepMainSrsData)
         -- N=0, Output mode — No_recursion_return. Rule returns
         -- `output = 0` with no input. Exercises the Output-mode branch
         -- of step_main.ml:566-573 (`Output _ -> ret_var`) at N=0: the
@@ -900,7 +901,7 @@ spec =
         -- field (no input contribution). Precursor to Tree_proof_return's
         -- proof-level byte-for-byte test, which consumes a real
         -- No_recursion_return proof in slot 0.
-        exactMatchEff "step_main_no_recursion_return_circuit" (fromCompiledCircuit <<< _.stepCs <$> compileStepMainNoRecursionReturn stepMainSrsData)
+        exactMatchEff "step_main_no_recursion_return_circuit" (fromCompiledCircuit <<< _.stepCs =<< compileStepMainNoRecursionReturn stepMainSrsData)
         -- N=0, num_chunks=2, override_wrap_domain=N1 (= log2 14).
         -- Same shape as NRR but with 2^17+1 mul fillers + a 7-wire Raw
         -- Generic gate so the step domain rounds to 2^17 and kimchi's
@@ -909,7 +910,7 @@ spec =
         -- not affected by `num_chunks` directly — it's purely a function
         -- of the rule body's gate count — but this fixture is the
         -- byte-equality gate for the chunks2 witness diff loop.
-        exactMatchEff "chunks2_step_main_circuit" (fromCompiledCircuit <<< _.stepCs <$> compileStepMainChunks2 stepMainSrsData)
+        exactMatchEff "chunks2_step_main_circuit" (fromCompiledCircuit <<< _.stepCs =<< compileStepMainChunks2 stepMainSrsData)
         -- N=2, Output mode, HETEROGENEOUS prevs (No_recursion_return @ N0,
         -- self @ N2). All four layers of heterogeneity wired up:
         -- * per-slot SPPW sizing  (`Slot Compiled 0 (Slot Compiled 2 …)`)
@@ -953,7 +954,7 @@ spec =
             , nrrWrapSrsData: tprNrrWrapSrsData
             , nrrStepSrsData: tprNrrStepSrsData
             }
-        exactMatchEff "step_main_tree_proof_return_circuit" (fromCompiledCircuit <<< _.stepCs <$> compileStepMainTreeProofReturn treeProofReturnSrsData)
+        exactMatchEff "step_main_tree_proof_return_circuit" (fromCompiledCircuit <<< _.stepCs =<< compileStepMainTreeProofReturn treeProofReturnSrsData)
         -- N=1 parent + single side-loaded prev (mpv=N2 upper bound).
         -- The three per-domain lagrange tables sit at log2 ∈ {13, 14,
         -- 15} (= the wrap-domain log2s for `actualWrapDomainSize ∈
@@ -997,7 +998,7 @@ spec =
         -- To run the diff manually:
         --   `npx spago test -p pickles-circuit-diffs -- --example "side_loaded_main"`
         -- after switching `pending'` below back to `exactMatchEff`.
-        exactMatchEff "step_main_side_loaded_main_circuit" (fromCompiledCircuit <<< _.stepCs <$> compileStepMainSideLoadedMain sideLoadedMainSrsData)
+        exactMatchEff "step_main_side_loaded_main_circuit" (fromCompiledCircuit <<< _.stepCs =<< compileStepMainSideLoadedMain sideLoadedMainSrsData)
         -- N=0, Input mode — side-loaded CHILD (No_recursion + dummy_constraints).
         -- The inner rule whose proof gets verified by the side-loaded
         -- parent in `dump_side_loaded_main.ml`. Full body translated:
@@ -1007,7 +1008,7 @@ spec =
           sideLoadedChildSrsData =
             { blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
-        exactMatchEff "step_main_side_loaded_child_circuit" (fromCompiledCircuit <<< _.stepCs <$> compileStepMainSideLoadedChild sideLoadedChildSrsData)
+        exactMatchEff "step_main_side_loaded_child_circuit" (fromCompiledCircuit <<< _.stepCs =<< compileStepMainSideLoadedChild sideLoadedChildSrsData)
         -- N=1 Input mode (`increment` branch of two_phase_chain).
         -- Step domain log2 = 14. Body asserts `self_v = prev + 1` (single
         -- R1CS) with `proofMustVerify = true_`. mpvMax=1, mpvPad=0.
@@ -1032,35 +1033,35 @@ spec =
         -- FOP domain dispatch list's `[makeZero, increment]` head).
         exactMatchEff "step_main_two_phase_chain_increment_circuit" $ do
           makeZeroArt <- compileStepMainTwoPhaseChainMakeZero twoPhaseChainMakeZeroSrsData
-          fromCompiledCircuit <<< _.stepCs <$>
+          fromCompiledCircuit <<< _.stepCs =<<
             compileStepMainTwoPhaseChainIncrement makeZeroArt twoPhaseChainIncrementSrsData
         -- N=0 Input mode (`make_zero` branch of two_phase_chain). Rule
         -- has no prevs but the multi-branch wrap is mpv=N1, so the
         -- step PI is 34 entries (mpvPad=1 → 1 front-padded dummy slot).
         -- Step domain log2 = 9. Body asserts `self_v = 0` (single R1CS).
         exactMatchEff "step_main_two_phase_chain_make_zero_circuit"
-          (fromCompiledCircuit <<< _.stepCs <$> compileStepMainTwoPhaseChainMakeZero twoPhaseChainMakeZeroSrsData)
+          (fromCompiledCircuit <<< _.stepCs =<< compileStepMainTwoPhaseChainMakeZero twoPhaseChainMakeZeroSrsData)
       describe "Linearization" do
-        exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
-        exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)
+        exactMatchEff "linearization_step_circuit" (fromCompiledCircuit =<< compileLinearizationStep)
+        exactMatchEff "linearization_wrap_circuit" (fromCompiledCircuit =<< compileLinearizationWrap)
       describe "Pseudo module" do
-        exactMatch "utils_ones_vector_n16_step_circuit" (fromCompiledCircuit compileUtilsOnesVectorN16Step)
-        exactMatch "utils_ones_vector_n16_wrap_circuit" (fromCompiledCircuit compileUtilsOnesVectorN16Wrap)
-        exactMatch "one_hot_n1_step_circuit" (fromCompiledCircuit compileOneHotN1Step)
-        exactMatch "one_hot_n1_wrap_circuit" (fromCompiledCircuit compileOneHotN1Wrap)
-        exactMatch "one_hot_n17_step_circuit" (fromCompiledCircuit compileOneHotN17Step)
-        exactMatch "one_hot_n17_wrap_circuit" (fromCompiledCircuit compileOneHotN17Wrap)
-        exactMatch "one_hot_n3_step_circuit" (fromCompiledCircuit compileOneHotN3Step)
-        exactMatch "one_hot_n3_wrap_circuit" (fromCompiledCircuit compileOneHotN3Wrap)
-        exactMatch "pseudo_mask_n1_step_circuit" (fromCompiledCircuit compilePseudoMaskN1Step)
-        exactMatch "pseudo_mask_n1_wrap_circuit" (fromCompiledCircuit compilePseudoMaskN1Wrap)
-        exactMatch "pseudo_mask_n3_step_circuit" (fromCompiledCircuit compilePseudoMaskN3Step)
-        exactMatch "pseudo_mask_n3_wrap_circuit" (fromCompiledCircuit compilePseudoMaskN3Wrap)
-        exactMatch "pseudo_mask_n17_step_circuit" (fromCompiledCircuit compilePseudoMaskN17Step)
-        exactMatch "pseudo_mask_n17_wrap_circuit" (fromCompiledCircuit compilePseudoMaskN17Wrap)
-        exactMatch "pseudo_choose_n1_step_circuit" (fromCompiledCircuit compilePseudoChooseN1Step)
-        exactMatch "pseudo_choose_n1_wrap_circuit" (fromCompiledCircuit compilePseudoChooseN1Wrap)
-        exactMatch "pseudo_choose_n3_step_circuit" (fromCompiledCircuit compilePseudoChooseN3Step)
-        exactMatch "pseudo_choose_n3_wrap_circuit" (fromCompiledCircuit compilePseudoChooseN3Wrap)
-        exactMatch "choose_key_n1_wrap_circuit" (fromCompiledCircuit compileChooseKeyN1Wrap)
-        exactMatch "sideloaded_vk_typ_step_circuit" (fromCompiledCircuit compileSideloadedVkTypStep)
+        exactMatchEff "utils_ones_vector_n16_step_circuit" (fromCompiledCircuit =<< compileUtilsOnesVectorN16Step)
+        exactMatchEff "utils_ones_vector_n16_wrap_circuit" (fromCompiledCircuit =<< compileUtilsOnesVectorN16Wrap)
+        exactMatchEff "one_hot_n1_step_circuit" (fromCompiledCircuit =<< compileOneHotN1Step)
+        exactMatchEff "one_hot_n1_wrap_circuit" (fromCompiledCircuit =<< compileOneHotN1Wrap)
+        exactMatchEff "one_hot_n17_step_circuit" (fromCompiledCircuit =<< compileOneHotN17Step)
+        exactMatchEff "one_hot_n17_wrap_circuit" (fromCompiledCircuit =<< compileOneHotN17Wrap)
+        exactMatchEff "one_hot_n3_step_circuit" (fromCompiledCircuit =<< compileOneHotN3Step)
+        exactMatchEff "one_hot_n3_wrap_circuit" (fromCompiledCircuit =<< compileOneHotN3Wrap)
+        exactMatchEff "pseudo_mask_n1_step_circuit" (fromCompiledCircuit =<< compilePseudoMaskN1Step)
+        exactMatchEff "pseudo_mask_n1_wrap_circuit" (fromCompiledCircuit =<< compilePseudoMaskN1Wrap)
+        exactMatchEff "pseudo_mask_n3_step_circuit" (fromCompiledCircuit =<< compilePseudoMaskN3Step)
+        exactMatchEff "pseudo_mask_n3_wrap_circuit" (fromCompiledCircuit =<< compilePseudoMaskN3Wrap)
+        exactMatchEff "pseudo_mask_n17_step_circuit" (fromCompiledCircuit =<< compilePseudoMaskN17Step)
+        exactMatchEff "pseudo_mask_n17_wrap_circuit" (fromCompiledCircuit =<< compilePseudoMaskN17Wrap)
+        exactMatchEff "pseudo_choose_n1_step_circuit" (fromCompiledCircuit =<< compilePseudoChooseN1Step)
+        exactMatchEff "pseudo_choose_n1_wrap_circuit" (fromCompiledCircuit =<< compilePseudoChooseN1Wrap)
+        exactMatchEff "pseudo_choose_n3_step_circuit" (fromCompiledCircuit =<< compilePseudoChooseN3Step)
+        exactMatchEff "pseudo_choose_n3_wrap_circuit" (fromCompiledCircuit =<< compilePseudoChooseN3Wrap)
+        exactMatchEff "choose_key_n1_wrap_circuit" (fromCompiledCircuit =<< compileChooseKeyN1Wrap)
+        exactMatchEff "sideloaded_vk_typ_step_circuit" (fromCompiledCircuit =<< compileSideloadedVkTypStep)

@@ -17,7 +17,7 @@ import Control.Alt ((<|>))
 import Data.Maybe (fromMaybe')
 import Effect.Exception.Unsafe (unsafeThrow)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, add_, and_, assertNonZero_, assertSquare_, const_, div_, exists, if_, label, mul_, not_, readCVar, scale_, sub_)
+import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, Snarky, add_, and_, assertNonZero_, assertSquare_, const_, div_, exists, if_, label, mul_, not_, readCVar, scale_, sub_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class HasBW19, class HasSqrt, class PrimeField, bw19Params, curveParams, fromInt, isSquare, sqrt)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
@@ -109,13 +109,12 @@ groupMap params t =
 -- | Uses the trick: exists is_square, y such that y² = if is_square then x else m*x
 -- | where m is a known non-residue
 sqrtFlagged
-  :: forall f t m
+  :: forall f r
    . PrimeField f
   => HasSqrt f
-  => CircuitM f (KimchiConstraint f) t m
   => f -- non-residue constant
   -> FVar f
-  -> Snarky (KimchiConstraint f) t m { sqrtVal :: FVar f, isQR :: BoolVar f }
+  -> Snarky f (KimchiConstraint f) r { sqrtVal :: FVar f, isQR :: BoolVar f }
 sqrtFlagged nonResidue x = do
   isQRBool :: BoolVar f <- label "sf_exists_bool" $ exists do
     F xVal <- readCVar x
@@ -135,12 +134,12 @@ sqrtFlagged nonResidue x = do
 -- | In-circuit group map
 -- | Maps a field element to a curve point using the BW19 algorithm
 groupMapCircuit
-  :: forall f t m
+  :: forall f r
    . HasSqrt f
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => GroupMapParams f
   -> FVar f
-  -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
+  -> Snarky f (KimchiConstraint f) r (AffinePoint (FVar f))
 groupMapCircuit params t = do
   t2 <- label "t2" $ mul_ t t
   let t2PlusFu = add_ t2 (const_ params.fu)

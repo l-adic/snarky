@@ -21,7 +21,6 @@ module Test.Pickles.Prove.SimpleChainN2
 import Prelude
 
 import Colog (LoggerT, Message, logInfo, withSpan)
-import Control.Monad.Except (runExceptT)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
@@ -34,6 +33,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), Compiled, CompiledProof, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots2, StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertAny_, const_, equals_, exists, not_)
@@ -104,6 +104,7 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
       @(F StepField)
       @(Slots2 2 2)
       @1
+      noAdvice
       cfg
       rules
 
@@ -120,7 +121,7 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
         -> PrevSlot (F StepField) 2 Stmt
         -> Aff (CompiledProof 2 Stmt)
       runStep appInput prev1 prev2 = do
-        eRes <- liftEffect $ runExceptT $ prover
+        eRes <- liftEffect $ prover noAdvice
           { appInput
           , prevs: tuple2 prev1 prev2
           , sideloadedVKs: tuple2 unit unit

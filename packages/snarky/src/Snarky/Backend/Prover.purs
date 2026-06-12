@@ -1,177 +1,147 @@
 -- | Witness computation backend.
 -- |
--- | `ProverT` is a `CircuitM` instance that computes witness values without
--- | collecting constraints. The `exists` implementation runs the prover computation
--- | and stores the resulting assignments. Constraints are ignored (they're assumed
--- | to have been validated during compilation).
+-- | `runCircuitProver` interprets the `circuit` effect by computing witness
+-- | values: `Exists` RUNS the witness computation against the current
+-- | assignments and records the results. Constraints are ignored unless
+-- | `debug` is set (they're assumed validated during compilation).
 module Snarky.Backend.Prover
-  ( ProverT
-  , runProverT
+  ( runCircuitProver
   , ProverState
-  , emptyProverState
-  , Prover
-  , runProver
-  , throwProverError
-  , setAssignments
-  , getAssignments
-  , getState
-  , putState
   , class SolveCircuit
+  , proverConstraint
+  , allocAssignments
   ) where
 
 import Prelude
 
-import Control.Monad.Except (ExceptT(..), catchError, lift, runExceptT, throwError)
-import Control.Monad.Rec.Class (class MonadRec)
-import Control.Monad.State (StateT, get, gets, modify_, put, runStateT)
-import Control.Monad.Trans.Class (class MonadTrans)
-import Data.Array (foldl, zip)
-import Data.Either (Either)
-import Data.Identity (Identity(..))
-import Data.Map (Map)
-import Data.Map as Map
-import Data.Maybe (Maybe(..))
-import Data.Newtype (un)
+import Data.Array as Array
+import Data.Either (Either(..))
+import Data.Foldable as Foldable
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Tuple (Tuple(..))
-import Data.Unfoldable (replicateA)
-import Snarky.Circuit.CVar (CVar(Var), EvaluationError(..), Variable, incrementVariable, v0)
-import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM, class ConstraintM, class MonadFresh, class WithLabel, AsProverT, Snarky(..), check, fresh, runAsProverT)
-import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields, valueToFields)
+import Effect (Effect)
+import Effect.Ref as Ref
+import Snarky.Backend.Advice (AdviceHandler)
+import Snarky.Backend.Assignments (Assignments)
+import Snarky.Backend.Assignments as Assignments
+import Snarky.Circuit.CVar (EvaluationError(..), Variable, incrementVariable)
+import Snarky.Circuit.DSL.Monad (AsProver(..), AsProverCtx(..), CircuitOps(..), Snarky(..))
+import Snarky.Circuit.EvalError (catchEvalError, throwEvalError)
 import Snarky.Constraint.Basic (class BasicSystem, Basic)
 import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.Class (class PrimeField)
-import Type.Proxy (Proxy(..))
 
 type ProverState f =
   { nextVar :: Variable
-  , assignments :: Map Variable f
+  , assignments :: Assignments f
   , debug :: Boolean
+  , labelStack :: Array String
   }
 
-emptyProverState :: forall f. ProverState f
-emptyProverState =
-  { nextVar: v0
-  , assignments: Map.empty
-  , debug: false
+-- | How a backend handles an emitted constraint in prover mode: a transform
+-- | of the prover state in `Effect` (backends like kimchi ALLOCATE and
+-- | ASSIGN variables in the mutable store while reducing constraints),
+-- | failing with an evaluation error. Replaces the old
+-- | `ConstraintM (ProverT f)` instances.
+class BasicSystem f c <= SolveCircuit f c | c -> f where
+  proverConstraint :: c -> ProverState f -> Effect (Either EvaluationError (ProverState f))
+
+-- | `Basic` constraints do no prover-side work; in debug mode they are
+-- | checked against the current assignments for rich error messages.
+instance PrimeField f => SolveCircuit f (Basic f) where
+  proverConstraint c s
+    | s.debug = do
+        lookupFn <- Assignments.toLookup s.assignments
+        pure case Basic.debugCheck lookupFn c of
+          Nothing -> Right s
+          Just e -> Left e
+    | otherwise = pure (Right s)
+
+-- | Allocate `n` consecutive variables and assign them the given values
+-- | (writing into the state's mutable store).
+allocAssignments
+  :: forall f
+   . Int
+  -> Array f
+  -> ProverState f
+  -> Effect (Tuple (Array Variable) (ProverState f))
+allocAssignments n values s0 = go 0 s0 []
+  where
+  go i s acc
+    | i >= n = pure (Tuple acc s)
+    | otherwise = do
+        let
+          v = s.nextVar
+          s' = s { nextVar = incrementVariable v }
+        case Array.index values i of
+          Just f -> Assignments.set v f s.assignments
+          Nothing -> pure unit
+        go (i + 1) s' (Array.snoc acc v)
+
+-- | Wrap an error with the current label context (debug mode only), matching
+-- | the old `WithLabel (ProverT f)` behavior.
+contextualize :: forall f. ProverState f -> EvaluationError -> EvaluationError
+contextualize s e
+  | s.debug = Array.foldr WithContext e s.labelStack
+  | otherwise = e
+
+-- | Interpret a circuit in prover mode: run witness computations against
+-- | the live assignments, recording results; constraints do backend-
+-- | specific prover work (`proverConstraint`). The SAME advice handler
+-- | serves every witness computation. A failing witness or constraint
+-- | throws (`Snarky.Circuit.EvalError`); this boundary recovers it as
+-- | `Either`, alongside the final prover state.
+runCircuitProver
+  :: forall f c r a
+   . SolveCircuit f c
+  => AdviceHandler r
+  -> ProverState f
+  -> Snarky f c r a
+  -> Effect (Tuple (Either EvaluationError a) (ProverState f))
+runCircuitProver advice s0 (Snarky g) = do
+  ref <- Ref.new s0
+  ea <- catchEvalError (g (proverOps advice ref))
+  s <- Ref.read ref
+  pure (Tuple ea s)
+
+-- | The prover's operations over a mutable state cell.
+proverOps
+  :: forall f c r
+   . SolveCircuit f c
+  => AdviceHandler r
+  -> Ref.Ref (ProverState f)
+  -> CircuitOps f c r
+proverOps advice ref = CircuitOps
+  { freshOp: do
+      s <- Ref.read ref
+      Ref.write (s { nextVar = incrementVariable s.nextVar }) ref
+      pure s.nextVar
+  , addConstraintOp: \c -> do
+      s <- Ref.read ref
+      proverConstraint c s >>= case _ of
+        Right s' -> Ref.write s' ref
+        Left e -> throwEvalError (contextualize s e)
+  , existsOp: \n w -> do
+      s <- Ref.read ref
+      fields <- runWitness s w
+      Tuple vs s' <- allocAssignments n fields s
+      Ref.write s' ref
+      pure vs
+  , assignOp: \vars w -> do
+      s <- Ref.read ref
+      fields <- runWitness s w
+      Foldable.for_ (Array.zip vars fields) \(Tuple var fv) ->
+        Assignments.set var fv s.assignments
+  , pushLabelOp: \l -> Ref.modify_ (\s -> s { labelStack = Array.snoc s.labelStack l }) ref
+  , popLabelOp: Ref.modify_ (\s -> s { labelStack = Array.init s.labelStack # fromMaybe [] }) ref
   }
-
-newtype ProverT f m a = ProverT (ExceptT EvaluationError (StateT (ProverState f) m) a)
-
-derive newtype instance Functor m => Functor (ProverT f m)
-derive newtype instance Monad m => Apply (ProverT f m)
-derive newtype instance Monad m => Bind (ProverT f m)
-derive newtype instance Monad m => Applicative (ProverT f m)
-derive newtype instance Monad m => Monad (ProverT f m)
-derive newtype instance MonadRec m => MonadRec (ProverT f m)
-
--- TODO: why is this not newtype derivable
-instance MonadTrans (ProverT f) where
-  lift m = ProverT $ lift $ lift m
-
-runProverT
-  :: forall f a m
-   . Monad m
-  => ProverT f m a
-  -> ProverState f
-  -> m (Tuple (Either EvaluationError a) (ProverState f))
-runProverT (ProverT m) s = runStateT (runExceptT m) s
-
-type Prover f = ProverT f Identity
-
-runProver
-  :: forall f a
-   . Prover f a
-  -> ProverState f
-  -> Tuple (Either EvaluationError a) (ProverState f)
-runProver (ProverT m) s = un Identity $ runStateT (runExceptT m) s
-
-instance PrimeField f => ConstraintM (ProverT f) (Basic f) where
-  addConstraint' c = ProverT do
-    { debug: d, assignments } <- get
-    when d do
-      case Basic.debugCheck (flip Map.lookup assignments) c of
-        Nothing -> pure unit
-        Just e -> throwError e
-
-class
-  ( BasicSystem f c
-  , ConstraintM (ProverT f) c
-  ) <=
-  SolveCircuit f c
-  | c -> f
-
-instance PrimeField f => SolveCircuit f (Basic f)
-
-instance
-  ( Monad m
-  , MonadRec m
-  , PrimeField f
-  , BasicSystem f c
-  , ConstraintM (ProverT f) c
-  ) =>
-  CircuitM f c (ProverT f) m where
-  exists
-    :: forall a var
-     . CircuitType f a var
-    => CheckedType f c var
-    => AsProverT f m a
-    -> Snarky c (ProverT f) m var
-  exists m = do
-    res <- Snarky do
-      assignments <- getAssignments
-      let n = sizeInFields (Proxy @f) (Proxy @a)
-      vars <- replicateA n fresh
-      a <- ProverT $ ExceptT $ lift $ runAsProverT m assignments
-      let
-        aFieldElems = valueToFields a
-      setAssignments (zip vars aFieldElems)
-      pure $ fieldsToVar @f @a (map Var vars)
-    check res
-    pure res
-
-instance Monad m => MonadFresh (ProverT f m) where
-  fresh = ProverT do
-    { nextVar } <- get
-    modify_ _ { nextVar = incrementVariable nextVar }
-    pure nextVar
-
-throwProverError
-  :: forall f m a
-   . Monad m
-  => EvaluationError
-  -> ProverT f m a
-throwProverError = ProverT <<< throwError
-
-setAssignments
-  :: forall f m
-   . Monad m
-  => Array (Tuple Variable f)
-  -> ProverT f m Unit
-setAssignments vs = ProverT $
-  modify_ \s ->
-    s { assignments = foldl (\acc (Tuple v f) -> Map.insert v f acc) s.assignments vs }
-
-getAssignments
-  :: forall f m
-   . Monad m
-  => ProverT f m (Map Variable f)
-getAssignments = ProverT $ gets _.assignments
-
-getState
-  :: forall f m
-   . Monad m
-  => ProverT f m (ProverState f)
-getState = ProverT $ get
-
-putState
-  :: forall f m
-   . Monad m
-  => ProverState f
-  -> ProverT f m Unit
-putState = ProverT <<< put
-
-instance WithLabel (ProverT f) where
-  withLabel s (ProverT action) = ProverT do
-    { debug: d } <- get
-    if d then catchError action \e -> throwError $ WithContext s e
-    else action
+  where
+  -- In debug mode, witness failures are wrapped with the label context at
+  -- the point of failure (rethrown; recovered at the interpreter boundary).
+  runWitness :: ProverState f -> AsProver f r (Array f) -> Effect (Array f)
+  runWitness s (AsProver g)
+    | s.debug =
+        catchEvalError (g (AsProverCtx { assignments: s.assignments, advice })) >>= case _ of
+          Left e -> throwEvalError (contextualize s e)
+          Right fields -> pure fields
+    | otherwise = g (AsProverCtx { assignments: s.assignments, advice })

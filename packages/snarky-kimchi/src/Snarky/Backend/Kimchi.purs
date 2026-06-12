@@ -3,28 +3,31 @@ module Snarky.Backend.Kimchi
   , makeGateData
   , makePublicInputRows
   , makeWitness
-  , placeVariables
+
   ) where
 
 import Prelude
 
-import Control.Monad.State (evalState)
+import Control.Monad.ST (run) as ST
+import Control.Monad.ST.Internal (foreach) as STI
 import Data.Array ((:))
 import Data.Array as Array
 import Data.Fin (getFinite)
-import Data.Foldable (foldl)
-import Data.FoldableWithIndex (foldlWithIndex)
+import Data.FoldableWithIndex (forWithIndex_)
 import Data.FunctorWithIndex (mapWithIndex)
-import Data.Map (Map)
-import Data.Map as Map
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Tuple (Tuple(..), uncurry)
-import Data.UnionFind (UnionFindData, find)
+import Data.UnionFind.Mutable (MutableUF)
+import Data.UnionFind.Mutable as MutableUF
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import Effect.Exception.Unsafe (unsafeThrow)
+import Snarky.Backend.Assignments (Frozen, lookupFrozen)
+import Snarky.Backend.DenseStore as DenseStore
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateNew)
 import Snarky.Backend.Kimchi.Types (Gate, Wire, gateWiresNewFromWires, wireNew)
+import Snarky.Circuit.CVar (Variable(..))
 import Snarky.Circuit.DSL (Variable)
 import Snarky.Constraint.Kimchi.Types (GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
@@ -32,23 +35,39 @@ import Snarky.Curves.Class (class PrimeField)
 -- figure out the cell placement for each variable. 
 -- since we can use the same variable in multiple constraints,
 -- naturally this is a one to many mapping.
-placeVariables
+-- One pure ST pass: place variables into cells (dense by variable
+-- index, row-major discovery order — same order `Map.insertWith append`
+-- produced), group permutation cells (cols 0-6) by union-find root, and
+-- lay each class's cycle into a frozen wire table keyed by cell
+-- `i * 16 + j`. Region-quantified `ST.run` proves the mutation is local.
+makeWireMapping
   :: forall f
-   . Array (KimchiRow f)
-  -> Map Variable (Array (Tuple Int Int))
-placeVariables rows =
-  foldlWithIndex
-    ( \i acc row ->
-        foldlWithIndex
-          ( \j m mVar -> case mVar of
-              Nothing -> m
-              Just var -> Map.insertWith append var [ Tuple i (getFinite j) ] m
-          )
-          acc
-          row.variables
-    )
-    Map.empty
-    rows
+   . Array Int
+  -> Array (KimchiRow f)
+  -> Array (Maybe Wire)
+makeWireMapping roots rows = ST.run do
+  placement <- DenseStore.fresh
+  STI.foreach (mapWithIndex Tuple rows) \(Tuple i row) ->
+    forWithIndex_ row.variables \j mVar -> case mVar of
+      Nothing -> pure unit
+      Just (Variable v) -> DenseStore.pushAt v (Tuple i (getFinite j)) placement
+  rootCells <- DenseStore.fresh
+  placementEntries <- DenseStore.toEntries Tuple placement
+  STI.foreach placementEntries \(Tuple v cells) -> do
+    let root = fromMaybe v (Array.index roots v)
+    STI.foreach (Array.filter (\(Tuple _ j) -> j < 7) cells) \cell ->
+      DenseStore.pushAt root cell rootCells
+  wireMap <- DenseStore.fresh
+  classes <- DenseStore.toEntries (\_ cells -> cells) rootCells
+  STI.foreach classes \cells -> do
+    let xsSorted = Array.sort cells
+    STI.foreach (Array.zip xsSorted (rotateLeft xsSorted)) \(Tuple (Tuple i j) target) ->
+      DenseStore.setAt (i * 16 + j) (uncurry wireNew target) wireMap
+  DenseStore.freeze wireMap
+  where
+  rotateLeft xs = case Array.uncons xs of
+    Just { head, tail } -> tail `Array.snoc` head
+    Nothing -> xs
 
 -- Kimchi backend has a special format for public inputs
 makePublicInputRows
@@ -65,54 +84,10 @@ makePublicInputRows =
         }
     )
 
--- Take the equivalence classes given by equality
--- constraints and the equivalence classes given
--- by variable layout and create a wire mapping
--- (i,j) |-> wire meaning that we are wiring the cell
--- to the existing wire. These wires create a cyclic list,
--- meaning if you follow in order you end up back at the
--- start, closing the loop for the perumutation argument
-makeWireMapping
-  :: UnionFindData Variable
-  -> Map Variable (Array (Tuple Int Int))
-  -> Map (Tuple Int Int) Wire
-makeWireMapping uf variablePlacement =
-  let
-    -- mapping from the canonical root to the list
-    -- of all cells equivalent to that root,
-    -- filtered to only include permutation columns (0-6)
-    m =
-      foldl
-        ( \acc (Tuple var cells) ->
-            let
-              root = getRoot var
-              permCells = Array.filter (\(Tuple _ j) -> j < 7) cells
-            in
-              Map.insertWith append root permCells acc
-        )
-        Map.empty
-        (Map.toUnfoldable variablePlacement :: Array _)
-    classes =
-      map
-        ( \xs ->
-            let
-              xsSorted = Array.sort xs
-            in
-              Map.fromFoldable $ Array.zip xsSorted (rotateLeft xsSorted)
-        )
-        (Map.values m)
-  in
-    uncurry wireNew <$> Map.unions classes
-  where
-  rotateLeft xs = case Array.uncons xs of
-    Just { head, tail } -> tail `Array.snoc` head
-    Nothing -> xs
-  getRoot x = evalState (find x) uf
-
 makeGates
   :: forall f g
    . CircuitGateConstructor f g
-  => Map (Tuple Int Int) Wire
+  => Array (Maybe Wire)
   -> Array (KimchiRow f)
   -> Array (Gate f)
 makeGates wireMap rows =
@@ -127,7 +102,7 @@ makeGates wireMap rows =
   where
   makeGateWires i =
     gateWiresNewFromWires $ Vector.generate \j ->
-      case Map.lookup (Tuple i (getFinite j)) wireMap of
+      case join (Array.index wireMap (i * 16 + getFinite j)) of
         Just w -> w
         Nothing -> wireNew i (getFinite j)
 
@@ -139,21 +114,22 @@ makeGateData
   => PrimeField f
   => { constraints :: Array (KimchiRow f)
      , publicInputs :: Array Variable
-     , unionFind :: UnionFindData Variable
+     , unionFind :: MutableUF
      }
-  -> { constraints :: Array (KimchiRow f)
-     , gates :: Array (Gate f)
-     , publicInputSize :: Int
-     }
-makeGateData arg =
+  -> Effect
+       { constraints :: Array (KimchiRow f)
+       , gates :: Array (Gate f)
+       , publicInputSize :: Int
+       }
+makeGateData arg = do
+  roots <- MutableUF.rootOf arg.unionFind
   let
     publicInputRows = makePublicInputRows arg.publicInputs
     rows = publicInputRows <> arg.constraints
-    placement = placeVariables rows
-    wireMapping = makeWireMapping arg.unionFind placement
+    wireMapping = makeWireMapping roots rows
     gates = makeGates wireMapping rows
     publicInputSize = Array.length publicInputRows
-  in
+  pure
     { constraints: rows
     , gates
     , publicInputSize
@@ -178,24 +154,24 @@ makeConstraintSystemWithPrevChallenges
   => PrimeField f
   => { constraints :: Array (KimchiRow f)
      , publicInputs :: Array Variable
-     , unionFind :: UnionFindData Variable
+     , unionFind :: MutableUF
      , prevChallengesCount :: Int
      , maxPolySize :: Int
      }
-  -> { constraints :: Array (KimchiRow f)
-     , gates :: Array (Gate f)
-     , publicInputSize :: Int
-     , prevChallengesCount :: Int
-     , maxPolySize :: Int
-     }
-makeConstraintSystemWithPrevChallenges arg =
-  let
-    gd = makeGateData @f
-      { constraints: arg.constraints
-      , publicInputs: arg.publicInputs
-      , unionFind: arg.unionFind
-      }
-  in
+  -> Effect
+       { constraints :: Array (KimchiRow f)
+       , gates :: Array (Gate f)
+       , publicInputSize :: Int
+       , prevChallengesCount :: Int
+       , maxPolySize :: Int
+       }
+makeConstraintSystemWithPrevChallenges arg = do
+  gd <- makeGateData @f
+    { constraints: arg.constraints
+    , publicInputs: arg.publicInputs
+    , unionFind: arg.unionFind
+    }
+  pure
     { constraints: gd.constraints
     , gates: gd.gates
     , publicInputSize: gd.publicInputSize
@@ -206,7 +182,7 @@ makeConstraintSystemWithPrevChallenges arg =
 makeWitness
   :: forall f
    . PrimeField f
-  => { assignments :: Map Variable f
+  => { assignments :: Frozen f
      , constraints :: Array (Vector 15 (Maybe Variable))
      , publicInputs :: Array Variable
      }
@@ -221,7 +197,7 @@ makeWitness { assignments, constraints, publicInputs: fs } =
           ( \row ->
               case row !! i of
                 Nothing -> zero
-                Just v -> case Map.lookup v assignments of
+                Just v -> case lookupFrozen v assignments of
                   Nothing -> unsafeThrow $ "Missing witness variable assignment in witness: " <> show v
                   Just f -> f
 
@@ -229,7 +205,7 @@ makeWitness { assignments, constraints, publicInputs: fs } =
           constraints
     publicInputs =
       map
-        ( \v -> case Map.lookup v assignments of
+        ( \v -> case lookupFrozen v assignments of
             Nothing -> unsafeThrow $ "Missing public input variable assignment in witness: " <> show v
             Just f -> f
         )

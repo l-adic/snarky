@@ -45,6 +45,8 @@ module Data.Vector
   , (!!)
   , generate
   , generateA
+  , indices
+  , unfoldM
   , scanl
   , append
   , splitAt
@@ -289,6 +291,24 @@ generate f = Vector $ map f (finites @n)
 -- | Create a vector by applying an effectful function to each index.
 generateA :: forall @n a f. Reflectable n Int => Applicative f => (Finite n -> f a) -> f (Vector n a)
 generateA f = Vector <$> traverse f (finites @n)
+
+-- | The vector of all indices in order:
+-- | ```purescript
+-- | indices @3 = Vector [0, 1, 2] :: Vector 3 (Finite 3)
+-- | ```
+indices :: forall @n. Reflectable n Int => Vector n (Finite n)
+indices = generate identity
+
+-- | Build a vector by running a stateful action `n` times — the sized
+-- | "generateA with an accumulator" (a monadic `unfoldr` whose length is
+-- | fixed by the type, so it is total).
+unfoldM :: forall @n m s a. Reflectable n Int => Monad m => (s -> m (Tuple a s)) -> s -> m (Tuple (Vector n a) s)
+unfoldM f s0 = do
+  Tuple as s <- A.foldM
+    (\(Tuple acc s) _ -> f s <#> \(Tuple a s') -> Tuple (A.snoc acc a) s')
+    (Tuple [] s0)
+    (finites @n)
+  pure (Tuple (Vector as) s)
 
 -- | Create a vector of `n` copies of a value.
 replicate :: forall @n a. Reflectable n Int => a -> Vector n a

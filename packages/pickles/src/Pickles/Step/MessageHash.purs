@@ -28,7 +28,7 @@ import Pickles.Trace as Trace
 import Pickles.Types (ChunkedCommitment)
 import Pickles.VerificationKey (StepVK)
 import Poseidon (class PoseidonField, hash)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, label)
+import Snarky.Circuit.DSL (BoolVar, FVar, Snarky, label)
 import Snarky.Circuit.RandomOracle.Sponge (Sponge)
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -40,10 +40,9 @@ import Snarky.Data.EllipticCurve (AffinePoint(..))
 -- | The sponge absorbs each chunk's `(x, y)` in chunk order, mirroring
 -- | OCaml `Plonk_verification_key_evals.to_field_elements`.
 hashMessagesForNextStepProofOpt
-  :: forall n wrapVkChunks d f t m
+  :: forall n wrapVkChunks d f r
    . PrimeField f
   => PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
   => { vkComms ::
          { sigma :: Vector 6 (ChunkedCommitment wrapVkChunks (AffinePoint (FVar f)))
          , sigmaLast :: ChunkedCommitment wrapVkChunks (AffinePoint (FVar f))
@@ -58,7 +57,7 @@ hashMessagesForNextStepProofOpt
            , mask :: BoolVar f
            }
      }
-  -> Snarky (KimchiConstraint f) t m { digest :: FVar f, spongeAfterIndex :: Sponge (FVar f) }
+  -> Snarky f (KimchiConstraint f) r { digest :: FVar f, spongeAfterIndex :: Sponge (FVar f) }
 hashMessagesForNextStepProofOpt { vkComms, appStateFields, proofs } = do
   let
     absorbPt s (AffinePoint { x, y }) = do

@@ -70,7 +70,9 @@ package:
     - pickles
     - prelude
     - refs
+    - run
     - schnorr
+    - variant
   build:
     strict: true
   run:

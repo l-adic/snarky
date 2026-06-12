@@ -70,7 +70,7 @@ test-pickles: build-napi gen-linearization ## Test pickles package (requires cod
 test-pickles-circuit-diffs: build-napi gen-linearization fixtures-unpack ## Test pickles circuit diffs package (requires codegen)
 	cd packages/pickles-circuit-diffs && npx spago test
 
-test-libs: ## Test every package EXCEPT pickles-circuit-diffs (CI parallel job)
+test-libs: ## Test every package EXCEPT example and pickles-circuit-diffs (each its own CI parallel job)
 	@echo "=== Generating Linearization Code ==="
 	$(MAKE) gen-linearization
 	$(MAKE) build-ps
@@ -85,13 +85,13 @@ test-libs: ## Test every package EXCEPT pickles-circuit-diffs (CI parallel job)
 	$(MAKE) test-random-oracle
 	@echo "=== Testing merkle-tree ==="
 	$(MAKE) test-merkle-tree
-	@echo "=== Testing Example ==="
-	$(MAKE) test-example
 	@echo "=== Testing Pickles ==="
 	$(MAKE) test-pickles
 	@echo "=== Library tests completed successfully ==="
 
 test-all: test-libs ## Test all packages with proper crypto provider
+	@echo "=== Testing Example ==="
+	$(MAKE) test-example
 	@echo "=== Testing Pickles Circuit Diffs ==="
 	$(MAKE) test-pickles-circuit-diffs
 	@echo "=== All tests completed successfully ==="

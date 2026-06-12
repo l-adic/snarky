@@ -59,7 +59,7 @@ import Pickles.Sponge (SpongeM, absorb, absorbPoint, getSponge, labelM, liftSnar
 import Pickles.Trace as Trace
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_, label)
+import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_, label)
 import Snarky.Circuit.DSL (exists, readCVar) as SDSL
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (GroupMapParams, addComplete, endo, endoInv, groupMapCircuit)
@@ -134,13 +134,13 @@ bPoly chals x =
 -- | This matches OCaml's challenge_polynomial (wrap_verifier.ml:35-57) exactly,
 -- | producing the same constraint ordering.
 bPolyCircuit
-  :: forall d dPred f c t m
+  :: forall d dPred f c r
    . Add 1 dPred d
   => Reflectable d Int
   => PrimeField f
-  => CircuitM f c t m
+  => BasicSystem f c
   => BPolyInput d (FVar f)
-  -> Snarky c t m (FVar f)
+  -> Snarky f c r (FVar f)
 bPolyCircuit { challenges: chals, x: pt } = label "b-poly" do
   -- Phase 1: Build pow_two_pows via k-1 squarings
   let { tail: chalsTail } = Vector.uncons chals
@@ -194,13 +194,13 @@ computeB chals { zeta, zetaOmega, evalscale } =
 -- | Evaluation order matches OCaml's right-to-left argument evaluation:
 -- | bPoly(zetaOmega), then evalscale * result, then bPoly(zeta).
 computeBCircuit
-  :: forall d dPred f c t m r
+  :: forall d dPred f c r cr
    . Add 1 dPred d
   => Reflectable d Int
   => PrimeField f
-  => CircuitM f c t m
+  => BasicSystem f c
   => ComputeBInput d (FVar f) r
-  -> Snarky c t m (FVar f)
+  -> Snarky f c cr (FVar f)
 computeBCircuit { challenges, zeta, zetaOmega, evalscale } = label "compute-b" do
   -- OCaml evaluates: challenge_poly zeta + (r * challenge_poly zetaw)
   -- Right-to-left: zetaw first, then r * result, then zeta
@@ -221,14 +221,13 @@ computeBCircuit { challenges, zeta, zetaOmega, evalscale } = label "compute-b" d
 -- |
 -- | The number of rounds `n` equals the SRS log size
 extractScalarChallenges
-  :: forall n f t m r
+  :: forall n f r cr
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
   => { endo :: FVar f | r }
   -> Vector n (LrPair (FVar f))
-  -> SpongeM f (KimchiConstraint f) t m (Vector n (SizedF 128 (FVar f)))
+  -> SpongeM f (KimchiConstraint f) cr (Vector n (SizedF 128 (FVar f)))
 extractScalarChallenges params pairs = for pairs \{ l, r } -> do
   -- Absorb L and R points into the sponge
   absorbPoint l
@@ -247,13 +246,13 @@ extractScalarChallenges params pairs = for pairs \{ l, r } -> do
 -- |
 -- | This is the in-circuit version of the "b_correct" check.
 bCorrectCircuit
-  :: forall n nPred f c t m
+  :: forall n nPred f c r
    . Add 1 nPred n
   => Reflectable n Int
   => PrimeField f
-  => CircuitM f c t m
+  => BasicSystem f c
   => BCorrectInput n (FVar f)
-  -> Snarky c t m (BoolVar f)
+  -> Snarky f c r (BoolVar f)
 bCorrectCircuit input@{ expectedB } = label "b-correct" do
   computedB <- computeBCircuit input
   expectedB `equals_` computedB
@@ -268,7 +267,7 @@ bCorrectCircuit input@{ expectedB } = label "b-correct" do
 -- |
 -- | Uses the efficient endo/endoInv circuits for scalar multiplication.
 bulletReduceCircuit
-  :: forall n nPred @f f' @g t m
+  :: forall n nPred @f f' @g r
    . Reflectable n Int
   => Add 1 nPred n
   => FieldSizeInBits f 255
@@ -276,9 +275,9 @@ bulletReduceCircuit
   => HasEndo f f'
   => FrModule f' g
   => WeierstrassCurve f g
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => BulletReduceInput n (FVar f)
-  -> Snarky (KimchiConstraint f) t m { p :: AffinePoint (FVar f), isInfinity :: BoolVar f }
+  -> Snarky f (KimchiConstraint f) r { p :: AffinePoint (FVar f), isInfinity :: BoolVar f }
 bulletReduceCircuit { pairs, challenges } = label "bullet-reduce" do
   -- Process each (L, R, u) triple to compute endoInv(L, u) + endo(R, u)
   -- OCaml let-binding order: endo_inv(L) first, then endo(R), then add_fast
@@ -358,7 +357,7 @@ type IpaFinalCheckResult n f =
 -- | For Pallas circuits (Fp), the commitment curve is Vesta, use Type1 for sf.
 -- | For Vesta circuits (Fq), the commitment curve is Pallas, use Type2 for sf.
 ipaFinalCheckCircuit
-  :: forall n nPred @f f' @g sf t m r
+  :: forall n nPred @f f' @g sf r cr
    . Reflectable n Int
   => Add 1 nPred n
   => FieldSizeInBits f 255
@@ -368,11 +367,11 @@ ipaFinalCheckCircuit
   => FrModule f' g
   => WeierstrassCurve f g
   => PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
-  => IpaScalarOps f t m sf
+  => PrimeField f
+  => IpaScalarOps f cr sf
   -> { endo :: FVar f, groupMapParams :: GroupMapParams f | r }
   -> IpaFinalCheckInput n (FVar f) sf
-  -> SpongeM f (KimchiConstraint f) t m (IpaFinalCheckResult n f)
+  -> SpongeM f (KimchiConstraint f) cr (IpaFinalCheckResult n f)
 ipaFinalCheckCircuit scalarOps params input = do
   let
     -- Local copy of Pickles.Verify.ivpTrace — can't import from Verify
@@ -482,15 +481,15 @@ ipaFinalCheckCircuit scalarOps params input = do
 -- |   if_ keep ~then_:point ~else_:acc.point
 -- | matching Opt.Maybe handling. When Nothing, the entry is unconditional (Opt.Just).
 combinePolynomials
-  :: forall n nPred f f' t m
+  :: forall n nPred f f' r
    . Add 1 nPred n
   => FieldSizeInBits f 255
   => HasEndo f f'
-  => CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
   => Vector n (AffinePoint (FVar f))
   -> Vector n (Maybe (BoolVar f)) -- per-base keep mask (Nothing = unconditional)
   -> SizedF 128 (FVar f)
-  -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
+  -> Snarky f (KimchiConstraint f) r (AffinePoint (FVar f))
 combinePolynomials bases masks xi = label "combine-polynomials" do
   let
     paired = Vector.zip bases masks
@@ -540,7 +539,7 @@ type CheckBulletproofInput n f sf =
 -- | Commitment bases are constant points from the verifier index / proof,
 -- | passed separately from the circuit input.
 checkBulletproof
-  :: forall numBases numBasesPred n nPred @f f' @g sf t m r
+  :: forall numBases numBasesPred n nPred @f f' @g sf r cr
    . Reflectable n Int
   => Add 1 nPred n
   => Add 1 numBasesPred numBases
@@ -551,13 +550,13 @@ checkBulletproof
   => FrModule f' g
   => WeierstrassCurve f g
   => PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
-  => IpaScalarOps f t m sf
+  => PrimeField f
+  => IpaScalarOps f cr sf
   -> { endo :: FVar f, groupMapParams :: GroupMapParams f | r }
   -> Vector numBases (AffinePoint (FVar f))
   -> Vector numBases (Maybe (BoolVar f)) -- per-base keep mask (Nothing = unconditional)
   -> CheckBulletproofInput n (FVar f) sf
-  -> SpongeM f (KimchiConstraint f) t m (IpaFinalCheckResult n f)
+  -> SpongeM f (KimchiConstraint f) cr (IpaFinalCheckResult n f)
 checkBulletproof scalarOps params commitmentBases baseMasks input = do
   let
     ivpTrace' labelStr v = do

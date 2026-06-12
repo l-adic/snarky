@@ -15,10 +15,10 @@
             "optparse",
             "pickles",
             "prelude",
+            "run",
             "snarky",
             "snarky-kimchi",
             "tailrec",
-            "transformers",
             "tuples",
             "vector-sized"
           ]
@@ -1598,11 +1598,10 @@
         "exists",
         "foldable-traversable",
         "foreign",
-        "foreign-object",
         "functors",
-        "identity",
         "integers",
         "js-bigints",
+        "lazy",
         "lists",
         "maybe",
         "newtype",
@@ -1617,15 +1616,15 @@
         "random-oracle",
         "record",
         "refs",
+        "run",
         "safe-coerce",
         "simple-json",
         "snarky",
         "snarky-curves",
         "snarky-kimchi",
         "strings",
-        "tailrec",
-        "transformers",
         "tuples",
+        "typelevel-prelude",
         "unsafe-coerce",
         "vector-sized"
       ]
@@ -1790,8 +1789,10 @@
         "partial",
         "poseidon",
         "prelude",
+        "safe-coerce",
         "snarky",
         "snarky-kimchi",
+        "tuples",
         "vector-sized"
       ]
     },
@@ -1812,6 +1813,28 @@
       "dependencies": [
         "effect",
         "prelude"
+      ]
+    },
+    "run": {
+      "type": "registry",
+      "version": "5.0.0",
+      "integrity": "sha256-zGCyG7IamjYWypKMXTP9PFis2ShnoZJKZiu3SbXMc+M=",
+      "dependencies": [
+        "aff",
+        "control",
+        "effect",
+        "either",
+        "free",
+        "maybe",
+        "newtype",
+        "partial",
+        "prelude",
+        "tailrec",
+        "tuples",
+        "type-equality",
+        "typelevel-prelude",
+        "unsafe-coerce",
+        "variant"
       ]
     },
     "safe-coerce": {
@@ -1859,7 +1882,6 @@
         "exceptions",
         "foldable-traversable",
         "functors",
-        "identity",
         "js-bigints",
         "lists",
         "maybe",
@@ -1869,12 +1891,13 @@
         "prelude",
         "quickcheck",
         "record",
+        "run",
         "safe-coerce",
         "simple-json",
         "tailrec",
-        "transformers",
         "tuples",
-        "unfoldable",
+        "typelevel-prelude",
+        "unsafe-coerce",
         "vector-sized"
       ]
     },
@@ -1884,9 +1907,12 @@
       "dependencies": [
         "curves",
         "maybe",
+        "newtype",
         "partial",
         "prelude",
         "quickcheck",
+        "safe-coerce",
+        "simple-json",
         "snarky"
       ]
     },
@@ -1894,6 +1920,7 @@
       "type": "local",
       "path": "../snarky-kimchi",
       "dependencies": [
+        "argonaut-core",
         "arrays",
         "bifunctors",
         "control",
@@ -1902,26 +1929,29 @@
         "either",
         "exceptions",
         "foldable-traversable",
-        "functions",
-        "identity",
+        "foreign-object",
+        "integers",
         "js-bigints",
         "lists",
         "maybe",
-        "mmorph",
         "newtype",
+        "node-buffer",
+        "node-fs",
         "nonempty",
+        "nullable",
         "ordered-collections",
         "partial",
         "poseidon",
         "prelude",
         "quickcheck",
         "record",
+        "run",
         "safe-coerce",
+        "simple-json",
         "snarky",
         "snarky-curves",
         "snarky-test-utils",
-        "spec",
-        "transformers",
+        "strings",
         "tuples",
         "unfoldable",
         "union-find",
@@ -1937,7 +1967,6 @@
         "curves",
         "effect",
         "either",
-        "exceptions",
         "foldable-traversable",
         "gen",
         "identity",
@@ -1948,13 +1977,13 @@
         "ordered-collections",
         "prelude",
         "quickcheck",
+        "run",
         "safe-coerce",
         "snarky",
         "spec",
         "spec-quickcheck",
-        "tailrec",
-        "transformers",
         "tuples",
+        "typelevel-prelude",
         "vector-sized"
       ]
     },
@@ -2127,7 +2156,7 @@
         "newtype",
         "ordered-collections",
         "prelude",
-        "transformers"
+        "tuples"
       ]
     },
     "unsafe-coerce": {

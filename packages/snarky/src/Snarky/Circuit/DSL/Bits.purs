@@ -19,20 +19,21 @@ import JS.BigInt as BigInt
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (const_)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, exists, readCVar)
+import Snarky.Circuit.DSL.Monad (Snarky, addConstraint, exists, readCVar)
 import Snarky.Circuit.Types (Bool(..), BoolVar, FVar)
-import Snarky.Constraint.Basic (r1cs)
+import Snarky.Constraint.Basic (class BasicSystem, r1cs)
 import Snarky.Curves.Class (class PrimeField, fromBigInt, pow, toBigInt)
 import Type.Proxy (Proxy)
 
 -- NB: LSB first
 unpack_
-  :: forall f c t m n
-   . CircuitM f c t m
+  :: forall f c r n
+   . PrimeField f
+  => BasicSystem f c
   => Reflectable n Int
   => FVar f
   -> Proxy n
-  -> Snarky c t m (Vector n (BoolVar f))
+  -> Snarky f c r (Vector n (BoolVar f))
 unpack_ v _ = do
   bits :: Vector n (BoolVar f) <- generateA @n \i -> exists do
     vVal <- readCVar v
