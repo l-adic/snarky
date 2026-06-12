@@ -78,6 +78,7 @@ import Snarky.Backend.Builder (constraintsToArray)
 import Snarky.Backend.Compile (Solver, compile, makeSolver, runSolver)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (createProverIndex)
+import Snarky.Backend.Kimchi.Proof (createProof)
 import Snarky.Backend.Kimchi.Impl.Pallas (pallasCrsCreate)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaCrsCreate)
 import Snarky.Backend.Kimchi.Types (CRS)
@@ -489,8 +490,7 @@ runChunks2AppWitnessProve = do
     , maxPolySize
     }
   let
-    -- proverIndex creation disabled — see comment below at the proof step.
-    _proverIndex = createProverIndex @Fp @VestaG
+    proverIndex = createProverIndex @Fp @VestaG
       { gates: csResult.gates
       , publicInputSize: csResult.publicInputSize
       , prevChallengesCount: csResult.prevChallengesCount
@@ -504,16 +504,16 @@ runChunks2AppWitnessProve = do
     Left e -> throw $ "chunks2 app solver: " <> show e
     Right (Tuple _publicOutputs assignments) -> do
       let
-        { witness: _witness } = makeWitness
+        { witness } = makeWitness
           { assignments
           , constraints: map _.variables csResult.constraints
           , publicInputs: builtState.publicInputs
           }
-      -- Proof creation step disabled while ProofFFI still routes through
-      -- snarky-crypto: the kimchi-napi-backed `proverIndex` here is the
-      -- wrong `External<T>` Rust tag for snarky-crypto's
-      -- `pallasCreateProofWithPrev`. Re-enable once Snarky.Backend.Kimchi.Proof
-      -- migrates to kimchi-napi.
+        -- The prove is what fires the `KIMCHI_WITNESS_DUMP` hook inside
+        -- kimchi's `ProverProof::create_recursive`; the proof itself is
+        -- discarded (witness equality vs OCaml is the assertion, checked
+        -- by tools/witness_diff.sh).
+        _proof = createProof { proverIndex, witness }
       pure unit
 
 --------------------------------------------------------------------------------
