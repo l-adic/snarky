@@ -47,7 +47,6 @@ import Effect.Ref as Ref
 import Mina.ChainId (ChainId, signaturePrefix)
 import Pickles (BranchProver(..), Compiled, CompiledProof, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots2, StatementIO(..), Verifier, compileMulti, mkRuleEntry)
 import Pickles.Step.Main (RuleOutput)
-import Run.Except as RunExcept
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, AsProver, FVar, Snarky, add_, assertEq, assert_, check, const_, exists, fieldsToValue, fieldsToVar, liftAdvice, not_, read, sizeInFields, true_, unpack_, valueToFields, varToFields)
 import Snarky.Circuit.MerkleTree (MERKLE)
@@ -178,7 +177,7 @@ mergeRule getPrevStates (Statement { source, target }) = do
 -- | Note: Addresses are assigned sequentially in Mina (not derived from public keys).
 -- | The circuit verifies the account at each address has the expected public key.
 -- | The open advice row the transfer circuits request from (close it with
--- | `r := EFFECT + ()` to get `Monad.TransferRow`).
+-- | `r := ()` to get `Monad.TransferAdvice`, the row the handlers serve).
 type TxAdviceRow d r =
   MERKLE Vesta.ScalarField (Account Vesta.ScalarField) d
     + ACCOUNT_MAP d
@@ -311,13 +310,14 @@ compileTxCircuit chainId srs = do
 
   let rules = tuple2 baseEntry mergeEntry
 
-  out <- runTransferMaskM { currentTransaction: Nothing, mask: maskRef } $
+  out <-
     compileMulti
       @TxnSnarkRules
       @Unit
       @(Statement Vesta.ScalarField)
       @(Slots2 2 2)
       @1
+      (runTransferMaskM { currentTransaction: Nothing, mask: maskRef })
       cfg
       rules
   let
@@ -326,24 +326,20 @@ compileTxCircuit chainId srs = do
   pure
     { baseProver: \{ env, statement } -> do
         mask <- Ref.new env.mask
-        runTransferMaskM { currentTransaction: Just env.tx, mask }
-          ( RunExcept.runExcept $ baseProver
-              { appInput: statement
-              , prevs: unit
-              , sideloadedVKs: unit
-              }
-          ) >>= case _ of
+        baseProver (runTransferMaskM { currentTransaction: Just env.tx, mask })
+          { appInput: statement
+          , prevs: unit
+          , sideloadedVKs: unit
+          } >>= case _ of
           Left err -> throw $ show err
           Right res -> pure res
     , mergeProver: \{ statement, proof1, proof2 } -> do
         mask <- Ref.new emptyMask
-        runTransferMaskM { currentTransaction: Nothing, mask }
-          ( RunExcept.runExcept $ mergeProver
-              { appInput: statement
-              , prevs: tuple2 (InductivePrev proof1 out.tag) (InductivePrev proof2 out.tag)
-              , sideloadedVKs: tuple2 unit unit
-              }
-          ) >>= case _ of
+        mergeProver (runTransferMaskM { currentTransaction: Nothing, mask })
+          { appInput: statement
+          , prevs: tuple2 (InductivePrev proof1 out.tag) (InductivePrev proof2 out.tag)
+          , sideloadedVKs: tuple2 unit unit
+          } >>= case _ of
           Left err -> throw $ show err
           Right res -> pure res
     , verifier: out.verifier

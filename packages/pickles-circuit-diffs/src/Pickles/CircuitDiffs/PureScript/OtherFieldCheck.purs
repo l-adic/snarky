@@ -14,7 +14,7 @@ import Prelude
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
 import Pickles.Field (StepField)
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F, Snarky, exists)
 import Snarky.Circuit.Kimchi (SplitField, Type2)
@@ -41,5 +41,5 @@ otherFieldCheckCircuit _ = do
 
 compileOtherFieldCheck :: Effect (CompiledCircuit StepField)
 compileOtherFieldCheck =
-  Run.runBaseEffect $ compile (Proxy @Unit) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compile noAdvice (Proxy @Unit) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     otherFieldCheckCircuit

@@ -33,8 +33,8 @@ import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (ChunkedCommitment(..))
-import Run as Run
 import Safe.Coerce (coerce)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, Snarky, assertEq, const_, if_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
@@ -181,5 +181,5 @@ stepVerifyN2Circuit { lagrangeAt, blindingH } inputs = do
 
 compileStepVerifyN2 :: StepVerifyN2Params -> Effect (CompiledCircuit StepField)
 compileStepVerifyN2 srsData =
-  Run.runBaseEffect $ compile (Proxy @(Vector 304 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compile noAdvice (Proxy @(Vector 304 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> stepVerifyN2Circuit srsData inputs)

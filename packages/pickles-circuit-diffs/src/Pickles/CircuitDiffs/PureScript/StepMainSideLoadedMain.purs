@@ -33,7 +33,7 @@ import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (AsProver, F, FVar, Snarky, assertAny_, const_, equals_, exists, true_)
@@ -105,8 +105,8 @@ compileStepMainSideLoadedMain params = do
            _
            _
     dummyAdvice = unsafeCoerce unit
-  mkStepArtifact <$> Run.runBaseEffect do
-    compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField)))
+  mkStepArtifact <$> do
+    compile noAdvice (Proxy @Unit) (Proxy @(Vector 34 (F StepField)))
       (Proxy @(KimchiConstraint StepField))
       -- Parent N=1, pi=34 (1 input + 33 output = 1*32 unfp + 1 digest
       -- + 1 msgs_wrap). The spec sizes the slot at the side-loaded

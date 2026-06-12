@@ -25,7 +25,7 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
 import Pickles.Wrap.Slots (NoSlots)
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -63,7 +63,7 @@ compileWrapMainNoRecursionReturn { lagrangeAt, blindingH } stepParams = do
   let
     dummyAdvice :: WrapAdvice 0 1 NoSlots
     dummyAdvice = unsafeCoerce unit
-  wrapCs <- Run.runBaseEffect $ compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\stmt -> wrapMainForPrevs @1 @Unit @1 config stmt dummyAdvice)
   wrapVk <- deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
   pure

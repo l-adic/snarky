@@ -22,8 +22,8 @@ import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Step.VerifyOne (verifyOne)
 import Pickles.Types (ChunkedCommitment(..))
-import Run as Run
 import Safe.Coerce (coerce)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
@@ -174,5 +174,5 @@ fullStepVerifyOneCircuit { lagrangeAt, blindingH } inputs = do
 
 compileFullStepVerifyOne :: FullStepVerifyOneParams -> Effect (CompiledCircuit StepField)
 compileFullStepVerifyOne params =
-  Run.runBaseEffect $ compile (Proxy @(Vector 286 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compile noAdvice (Proxy @(Vector 286 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> fullStepVerifyOneCircuit params inputs)

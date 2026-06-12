@@ -30,7 +30,7 @@ import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (AsProver, F, FVar, Snarky, assertEqual_, const_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -74,8 +74,8 @@ compileStepMainTwoPhaseChainMakeZero params = do
   -- so step PI front-pads 1 dummy unfinalized_proof slot. Output
   -- size = 1*32 + 1 + 1 = 34. `stepMain` derives the front-padding
   -- dummy from `len`.
-  mkStepArtifact <$> Run.runBaseEffect do
-    compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
+  mkStepArtifact <$> do
+    compile noAdvice (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
       ( \_ -> stepMain
           @Unit
           @(F StepField)

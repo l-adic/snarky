@@ -27,6 +27,7 @@ import Effect.Exception (throw)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Builder (constraintsToArray)
 import Snarky.Backend.Compile (Solver, compile, makeSolver, runSolver)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
@@ -73,7 +74,7 @@ spec = describe "Snarky.Backend.Kimchi.ProofCache (round-trip)" do
       let cache = mkProofCache cachePath
 
       -- Build the FFI machinery once for both arms of the test.
-      builtState <- Run.runBaseEffect $ compile @Pallas.BaseField
+      builtState <- compile @Pallas.BaseField noAdvice
         (Proxy @(F Pallas.BaseField))
         (Proxy @(F Pallas.BaseField))
         (Proxy @(KimchiConstraint Pallas.BaseField))

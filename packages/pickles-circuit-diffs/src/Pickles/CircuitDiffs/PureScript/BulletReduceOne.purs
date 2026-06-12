@@ -11,7 +11,7 @@ import Data.Vector (Vector)
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
 import Pickles.Field (WrapField)
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (BoolVar, F, FVar, SizedF, Snarky)
 import Snarky.Circuit.Kimchi (addComplete, endo, endoInv)
@@ -50,5 +50,5 @@ bulletReduceOneCircuit input = do
 
 compileBulletReduceOne :: Effect (CompiledCircuit WrapField)
 compileBulletReduceOne =
-  Run.runBaseEffect $ compile (Proxy @(Vector 5 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  compile noAdvice (Proxy @(Vector 5 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ bulletReduceOneCircuit (parseBulletReduceOneInput inputs))

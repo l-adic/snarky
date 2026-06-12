@@ -14,7 +14,7 @@ import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Types (WrapIPARounds)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofCircuit')
 import RandomOracle.Sponge (Sponge) as RO
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F, FVar, Snarky, assertEq)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -59,5 +59,5 @@ hashMessagesWrapCircuit inputs = do
 
 compileHashMessagesWrap :: Effect (CompiledCircuit WrapField)
 compileHashMessagesWrap =
-  Run.runBaseEffect $ compile (Proxy @(Vector 33 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  compile noAdvice (Proxy @(Vector 33 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> hashMessagesWrapCircuit inputs)

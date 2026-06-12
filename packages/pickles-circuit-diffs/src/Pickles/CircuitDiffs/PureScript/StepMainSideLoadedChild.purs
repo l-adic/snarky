@@ -32,7 +32,7 @@ import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStep
 import Pickles.Field (StepField)
 import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (AsProver, F(..), FVar, SizedF, Snarky, assertEqual_, const_, exists)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
@@ -118,8 +118,8 @@ compileStepMainSideLoadedChild params = do
   let
     dummyAdvice :: StepAdvice _ _ _ _ _ _ Unit _ _
     dummyAdvice = unsafeCoerce unit
-  mkStepArtifact <$> Run.runBaseEffect do
-    compile (Proxy @Unit) (Proxy @(Vector.Vector 1 (F StepField)))
+  mkStepArtifact <$> do
+    compile noAdvice (Proxy @Unit) (Proxy @(Vector.Vector 1 (F StepField)))
       (Proxy @(KimchiConstraint StepField))
       -- N=0, Input mode (input is the rule's `self` field). Output is
       -- Unit. Single-rule, no prevs ⇒ mpvMax=0, mpvPad=0,

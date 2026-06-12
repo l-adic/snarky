@@ -17,8 +17,8 @@ import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
 import Pickles.Field (StepField)
 import Pickles.FtComm (ftComm) as FtComm
 import Pickles.Step.OtherField as StepOtherField
-import Run as Run
 import Safe.Coerce (coerce)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (Bool(..), BoolVar, F, FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type2(..))
@@ -68,5 +68,5 @@ ftcommStepCircuit input =
 
 compileFtcommStep :: Effect (CompiledCircuit StepField)
 compileFtcommStep =
-  Run.runBaseEffect $ compile (Proxy @(Vector 20 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compile noAdvice (Proxy @(Vector 20 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> void $ ftcommStepCircuit (parseFtcommStepInput inputs))

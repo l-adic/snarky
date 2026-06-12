@@ -15,7 +15,7 @@ import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, stepEndo, unsafeIdx)
 import Pickles.Field (StepField)
 import Pickles.IPA (bCorrectCircuit) as IPA
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (BoolVar, F, FVar, SizedF, Snarky, const_)
 import Snarky.Circuit.Kimchi (Type1(..), fromShiftedType1Circuit, toField)
@@ -63,5 +63,5 @@ bCorrectStepCircuit input = do
 
 compileBCorrect :: Effect (CompiledCircuit StepField)
 compileBCorrect =
-  Run.runBaseEffect $ compile (Proxy @(Vector 20 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compile noAdvice (Proxy @(Vector 20 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> void $ bCorrectStepCircuit (parseBCorrectInput inputs))

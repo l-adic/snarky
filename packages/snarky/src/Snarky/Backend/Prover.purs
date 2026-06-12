@@ -21,16 +21,16 @@ import Data.Foldable as Foldable
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
-import Run (EFFECT, Run)
-import Run as Run
+import Effect.Ref as Ref
+import Snarky.Backend.Advice (AdviceHandler)
 import Snarky.Backend.Assignments (Assignments)
 import Snarky.Backend.Assignments as Assignments
 import Snarky.Circuit.CVar (EvaluationError(..), Variable, incrementVariable)
-import Snarky.Circuit.DSL.Monad (AsProver(..), CIRCUIT, CircuitF(..), _circuit, runAsProver)
+import Snarky.Circuit.DSL.Monad (AsProver(..), AsProverCtx(..), CircuitOps(..), Snarky(..))
+import Snarky.Circuit.EvalError (catchEvalError, throwEvalError)
 import Snarky.Constraint.Basic (class BasicSystem, Basic)
 import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.Class (class PrimeField)
-import Type.Row (type (+))
 
 type ProverState f =
   { nextVar :: Variable
@@ -86,57 +86,63 @@ contextualize s e
   | s.debug = Array.foldr WithContext e s.labelStack
   | otherwise = e
 
--- | Interpret the `circuit` effect in prover mode over an open tail of advice
--- | effects `r` (witness computations may use them). A witness failure
--- | short-circuits the whole interpretation. Runs at `EFFECT + r`: the
--- | assignment store is mutable, written once per variable as it is
--- | allocated.
+-- | Interpret a circuit in prover mode: run witness computations against
+-- | the live assignments, recording results; constraints do backend-
+-- | specific prover work (`proverConstraint`). The SAME advice handler
+-- | serves every witness computation. A failing witness or constraint
+-- | throws (`Snarky.Circuit.EvalError`); this boundary recovers it as
+-- | `Either`, alongside the final prover state.
 runCircuitProver
   :: forall f c r a
    . SolveCircuit f c
-  => ProverState f
-  -> Run (CIRCUIT f c r) a
-  -> Run (EFFECT + r) (Tuple (Either EvaluationError a) (ProverState f))
-runCircuitProver s0 r0 = tailRecM go (Tuple s0 r0)
-  where
-  handle = Run.on _circuit Left Right
+  => AdviceHandler r
+  -> ProverState f
+  -> Snarky f c r a
+  -> Effect (Tuple (Either EvaluationError a) (ProverState f))
+runCircuitProver advice s0 (Snarky g) = do
+  ref <- Ref.new s0
+  ea <- catchEvalError (g (proverOps advice ref))
+  s <- Ref.read ref
+  pure (Tuple ea s)
 
-  -- Stack safety: every interpreter step is a `tailRecM` `Step` in the
-  -- target `Run r` (whose `MonadRec` is stack-safe), so circuits with
-  -- hundreds of thousands of ops interpret in constant stack.
-  go
-    :: SolveCircuit f c
-    => Tuple (ProverState f) (Run (CIRCUIT f c r) a)
-    -> Run (EFFECT + r) (Step (Tuple (ProverState f) (Run (CIRCUIT f c r) a)) (Tuple (Either EvaluationError a) (ProverState f)))
-  go (Tuple s r) = case Run.peel r of
-    Left v -> case handle v of
-      Left cf -> case cf of
-        Fresh k ->
-          let
-            var = s.nextVar
-          in
-            pure (Loop (Tuple (s { nextVar = incrementVariable var }) (k var)))
-        AddConstraint c k ->
-          Run.liftEffect (proverConstraint c s) <#> case _ of
-            Right s' -> Loop (Tuple s' k)
-            Left e -> Done (Tuple (Left (contextualize s e)) s)
-        Exists n w k ->
-          runAsProver s.assignments (AsProver w) >>= case _ of
-            Left e -> pure (Done (Tuple (Left (contextualize s e)) s))
-            Right fields -> Run.liftEffect (allocAssignments n fields s) <#> \(Tuple vs s') ->
-              Loop (Tuple s' (k vs))
-        Assign vars w k ->
-          runAsProver s.assignments (AsProver w) >>= case _ of
-            Left e -> pure (Done (Tuple (Left (contextualize s e)) s))
-            Right fields -> do
-              Run.liftEffect $ Foldable.for_ (Array.zip vars fields) \(Tuple var fv) ->
-                Assignments.set var fv s.assignments
-              pure (Loop (Tuple s k))
-        PushLabel l k ->
-          pure (Loop (Tuple (s { labelStack = Array.snoc s.labelStack l }) k))
-        PopLabel k ->
-          pure (Loop (Tuple (s { labelStack = Array.init s.labelStack # fromMaybe [] }) k))
-      Right other ->
-        Run.send other <#> \r' -> Loop (Tuple s r')
-    Right a ->
-      pure (Done (Tuple (Right a) s))
+-- | The prover's operations over a mutable state cell.
+proverOps
+  :: forall f c r
+   . SolveCircuit f c
+  => AdviceHandler r
+  -> Ref.Ref (ProverState f)
+  -> CircuitOps f c r
+proverOps advice ref = CircuitOps
+  { freshOp: do
+      s <- Ref.read ref
+      Ref.write (s { nextVar = incrementVariable s.nextVar }) ref
+      pure s.nextVar
+  , addConstraintOp: \c -> do
+      s <- Ref.read ref
+      proverConstraint c s >>= case _ of
+        Right s' -> Ref.write s' ref
+        Left e -> throwEvalError (contextualize s e)
+  , existsOp: \n w -> do
+      s <- Ref.read ref
+      fields <- runWitness s w
+      Tuple vs s' <- allocAssignments n fields s
+      Ref.write s' ref
+      pure vs
+  , assignOp: \vars w -> do
+      s <- Ref.read ref
+      fields <- runWitness s w
+      Foldable.for_ (Array.zip vars fields) \(Tuple var fv) ->
+        Assignments.set var fv s.assignments
+  , pushLabelOp: \l -> Ref.modify_ (\s -> s { labelStack = Array.snoc s.labelStack l }) ref
+  , popLabelOp: Ref.modify_ (\s -> s { labelStack = Array.init s.labelStack # fromMaybe [] }) ref
+  }
+  where
+  -- In debug mode, witness failures are wrapped with the label context at
+  -- the point of failure (rethrown; recovered at the interpreter boundary).
+  runWitness :: ProverState f -> AsProver f r (Array f) -> Effect (Array f)
+  runWitness s (AsProver g)
+    | s.debug =
+        catchEvalError (g (AsProverCtx { assignments: s.assignments, advice })) >>= case _ of
+          Left e -> throwEvalError (contextualize s e)
+          Right fields -> pure fields
+    | otherwise = g (AsProverCtx { assignments: s.assignments, advice })

@@ -32,7 +32,7 @@ import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, stepMain)
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (AsProver, F, Snarky, addConstraint, exists, mul_)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
@@ -89,8 +89,8 @@ compileStepMainChunks2 params = do
   let
     dummyAdvice :: StepAdvice _ _ _ _ _ _ Unit _ _
     dummyAdvice = unsafeCoerce unit
-  mkStepArtifact <$> Run.runBaseEffect do
-    compile (Proxy @Unit) (Proxy @(Vector 1 (F StepField))) (Proxy @(KimchiConstraint StepField))
+  mkStepArtifact <$> do
+    compile noAdvice (Proxy @Unit) (Proxy @(Vector 1 (F StepField))) (Proxy @(KimchiConstraint StepField))
       -- N=0: output size = 32*0 + 1 + 0 = 1 (just the msgForNextStep
       -- digest — no unfinalized_proofs, no messages_for_next_wrap_proof
       -- entries). Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.

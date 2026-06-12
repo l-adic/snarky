@@ -34,6 +34,14 @@ write i v s = do
   void (STA.poke i v s)
 
 -- | Append `v` to the array at slot `i`.
+-- |
+-- | NOTE: the `Array.snoc` copy is deliberate. A "faster" variant with
+-- | mutable per-slot `STArray`s (O(1) in-place push) was measured
+-- | 2026-06-12 and REGRESSED the compile bench ~10% (avg scavenge cost
+-- | doubled): thousands of live, mutated inner arrays pay write-barrier/
+-- | remembered-set costs for the whole wiring pass, while snoc's
+-- | discarded copies die young and collect for free. Slot fan-outs are
+-- | small in practice, so the copies stay cheap.
 pushAt :: forall h v. Int -> v -> DenseStore h (Array v) -> ST h Unit
 pushAt i v (DenseStore s) = do
   cur <- STA.peek i s

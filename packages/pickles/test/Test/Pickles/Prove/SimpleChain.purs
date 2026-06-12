@@ -30,7 +30,7 @@ import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), Compiled, CompiledProof(..), PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots1, StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
 import Run as Run
-import Run.Except as Except
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertAny_, const_, equals_, exists, not_)
@@ -91,12 +91,13 @@ spec = describe "Pickles.Prove.SimpleChain" do
     let rules = tuple1 chainEntry
 
     logInfo "[SimpleChain] compiling…"
-    output <- withSpan "[SimpleChain] compile" $ liftEffect $ Run.runBaseEffect $ compileMulti
+    output <- withSpan "[SimpleChain] compile" $ liftEffect $ compileMulti
       @SimpleChainRules
       @Unit
       @(F StepField)
       @(Slots1 1)
       @1
+      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
@@ -118,7 +119,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
         -> F StepField
         -> Aff (CompiledProof 1 (StatementIO (F StepField) Unit))
       runStep prevSlot appInput = do
-        eRes <- liftEffect $ Run.runBaseEffect $ Except.runExcept $ chainProver
+        eRes <- liftEffect $ chainProver noAdvice
           { appInput, prevs: tuple1 prevSlot, sideloadedVKs: tuple1 unit }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("chainProver: " <> show e)

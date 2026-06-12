@@ -39,7 +39,6 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Effect.Class (liftEffect)
 import Effect.Exception.Unsafe (unsafeThrow)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
@@ -56,14 +55,11 @@ import Pickles.Wrap.Slots (class PadSlots)
 import Pickles.Wrap.Types as Wrap
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
-import Run (EFFECT, Run)
-import Run as Run
-import Run.Except (EXCEPT)
-import Run.Except as Except
 import Safe.Coerce (coerce)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Assignments as Assignments
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled, constraintsToArray)
-import Snarky.Backend.Compile (SolverT, compile, liftExceptRow, makeSolver', runSolverT)
+import Snarky.Backend.Compile (SolverT, compile, makeSolver')
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, gatesToJson)
 import Snarky.Backend.Kimchi.Proof (Proof, pallasProofCommitments, pallasProofData, srsBlindingGenerator, srsLagrangeCommitmentChunksAt, vestaCreateProofWithPrev)
@@ -79,7 +75,6 @@ import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Type.Proxy (Proxy(..))
-import Type.Row (type (+))
 import Unsafe.Coerce (unsafeCoerce)
 
 --------------------------------------------------------------------------------
@@ -402,8 +397,8 @@ wrapCompile ctx = do
   let
     dummyAdvice :: WrapAdvice mpv stepChunks slots
     dummyAdvice = unsafeCoerce unit
-  builtState <- Run.runBaseEffect $
-    compile
+  builtState <-
+    compile noAdvice
       (Proxy @(Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean))
       (Proxy @Unit)
       (Proxy @(KimchiConstraint WrapField))
@@ -461,12 +456,11 @@ wrapCompile ctx = do
 
 -- | Solve phase of the wrap prover. Takes a previously compiled
 -- | `WrapCompileResult` + the real advice + public input, runs the
--- | solver, and creates the kimchi proof. Errors surface through
--- | `ExceptT EvaluationError m` — the same error type the underlying
--- | `SolverT` uses. Constraint-system-unsatisfied failures are
--- | reported as `FailedAssertion`.
+-- | solver, and creates the kimchi proof. Errors surface as an explicit
+-- | `Either EvaluationError`. The wrap circuit emits no advice, so the
+-- | row is pinned to `()` (`noAdvice`).
 wrapSolveAndProve
-  :: forall @branches @slots @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 r
+  :: forall @branches @slots @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
    . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Reflectable mpv Int
@@ -499,22 +493,22 @@ wrapSolveAndProve
        (slots (Vector WrapIPARounds (FVar WrapField)))
   => WrapProveContext branches mpv stepChunks slots
   -> WrapCompileResult
-  -> Run (EXCEPT EvaluationError + EFFECT + r) WrapProveResult
+  -> Effect (Either EvaluationError WrapProveResult)
 wrapSolveAndProve ctx compileResult = do
   let
     rawSolver
       :: SolverT WrapField (KimchiConstraint WrapField)
-           r
+           ()
            (Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean)
            Unit
     rawSolver =
       makeSolver' { debug: ctx.debug } (Proxy @(KimchiConstraint WrapField))
         (\stmt -> wrapMain @branches @slots @stepChunks ctx.wrapMainConfig stmt ctx.advice)
 
-  eRes <- liftExceptRow $ runSolverT rawSolver ctx.publicInput
+  eRes <- rawSolver noAdvice ctx.publicInput
 
   case eRes of
-    Left e -> Except.throw (WithContext "wrapProve solver" e)
+    Left e -> pure (Left (WithContext "wrapProve solver" e))
     Right (Tuple _ assignments) -> do
       let
         { witness, publicInputs } = makeWitness
@@ -543,14 +537,14 @@ wrapSolveAndProve ctx compileResult = do
         case ctx.proofCache of
           Nothing -> pure $ Lazy.force p
           Just cache -> do
-            mp <- liftEffect $ getVestaProof cache compileResult.verifierIndex publicInputs
+            mp <- getVestaProof cache compileResult.verifierIndex publicInputs
             case mp of
               Just proof -> pure proof
               Nothing -> do
                 let proof = Lazy.force p
-                liftEffect $ setVestaProof cache compileResult.verifierIndex publicInputs proof
+                setVestaProof cache compileResult.verifierIndex publicInputs proof
                 pure proof
-      pure
+      pure $ Right
         { proverIndex: compileResult.proverIndex
         , verifierIndex: compileResult.verifierIndex
         , witness

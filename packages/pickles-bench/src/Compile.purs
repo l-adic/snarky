@@ -25,7 +25,7 @@ import Data.Tuple.Nested (tuple1, tuple2)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Pickles (NoSlots, RuleEntry, SlotWrapKey(..), Slots2, StepField, compileMulti, mkRuleEntry)
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (F)
 
 -- | Pin a compile-only `RuleEntry`'s input VALUE type to `Unit` (and its
@@ -52,12 +52,13 @@ fullCompile srs = do
   -- explicitly (compile discards the `exists` bodies, so `m` is phantom
   -- here; any `Monad`/`MonadEffect`/`MonadRec` works).
   nrrEntry <- pinCompileEntry <$> mkRuleEntry @0 @(F StepField) @Unit @1 @1 @() nrrRule unit
-  nrr <- Run.runBaseEffect $ compileMulti
+  nrr <- compileMulti
     @NrrRules
     @(F StepField)
     @Unit
     @NoSlots
     @1
+    noAdvice
     { srs, debug: false, wrapDomainOverride: Nothing, proofCache: Nothing }
     (tuple1 nrrEntry)
   let
@@ -71,12 +72,13 @@ fullCompile srs = do
   treeEntry <- pinCompileEntry <$> mkRuleEntry @2 @(F StepField) @(F StepField) @1 @1 @()
     benchTreeRule
     (tuple2 (External nrrProverVKs) Self)
-  tree <- Run.runBaseEffect $ compileMulti
+  tree <- compileMulti
     @TreeRules
     @(F StepField)
     @(F StepField)
     @(Slots2 0 2)
     @1
+    noAdvice
     { srs, debug: false, wrapDomainOverride: Just 14, proofCache: Nothing }
     (tuple1 treeEntry)
 

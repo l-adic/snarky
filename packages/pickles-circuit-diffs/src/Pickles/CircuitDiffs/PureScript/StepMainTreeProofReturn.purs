@@ -40,8 +40,8 @@ import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
-import Run as Run
 import Safe.Coerce (coerce)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (AsProver, Bool(..), BoolVar, F(..), FVar, Snarky, const_, exists, if_, not_)
@@ -131,7 +131,7 @@ compileStepMainTreeProofReturn params = do
              _
              _
       dummyAdvice = unsafeCoerce unit
-    Run.runBaseEffect $ compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
+    compile noAdvice (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
       ( \_ -> stepMain
           @(Tuple2 (Slot Compiled 0 1 (StatementIO Unit (F StepField))) (Slot Compiled 2 1 (StatementIO Unit (F StepField))))
           @Unit

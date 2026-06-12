@@ -23,8 +23,8 @@ import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), L
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (ChunkedCommitment(..))
-import Run as Run
 import Safe.Coerce (coerce)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, assertEq, assertEqual_, const_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type2(..), groupMapParams)
@@ -184,5 +184,5 @@ ivpStepCircuit { lagrangeAt, blindingH } input = do
 
 compileIvpStep :: IvpStepParams -> Effect (CompiledCircuit StepField)
 compileIvpStep srsData =
-  Run.runBaseEffect $ compile (Proxy @(Vector 175 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compile noAdvice (Proxy @(Vector 175 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> ivpStepCircuit srsData (parseIvpStepInput inputs))

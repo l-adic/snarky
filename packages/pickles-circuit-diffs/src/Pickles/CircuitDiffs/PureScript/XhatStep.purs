@@ -15,7 +15,7 @@ import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF10, asSizedF128, unsafeIdx)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), LagrangeBaseLookup, publicInputCommit)
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F, FVar, SizedF, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -79,5 +79,5 @@ xhatStepCircuit { lagrangeAt, blindingH } publicInput =
 
 compileXhatStep :: XhatStepParams StepField -> Effect (CompiledCircuit StepField)
 compileXhatStep srsData =
-  Run.runBaseEffect $ compile (Proxy @(Vector 30 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compile noAdvice (Proxy @(Vector 30 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> void $ xhatStepCircuit srsData (parseXhatStepInput inputs))

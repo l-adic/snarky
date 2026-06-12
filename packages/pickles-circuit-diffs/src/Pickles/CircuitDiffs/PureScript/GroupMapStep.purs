@@ -11,7 +11,7 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
 import Pickles.Field (StepField)
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F, FVar, Snarky)
 import Snarky.Circuit.Kimchi (groupMapCircuit, groupMapParams) as Kimchi
@@ -33,5 +33,5 @@ groupMapStepCircuit = Kimchi.groupMapCircuit (Kimchi.groupMapParams (Proxy @Pall
 
 compileGroupMapStep :: Effect (CompiledCircuit StepField)
 compileGroupMapStep =
-  Run.runBaseEffect $ compile (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> void $ groupMapStepCircuit (parseGroupMapStepInput inputs))

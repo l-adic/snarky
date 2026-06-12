@@ -10,7 +10,7 @@ import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, domainLog2)
 import Pickles.CircuitDiffs.PureScript.LinearizationCommon (linearizationCircuitM)
 import Pickles.Field (StepField)
 import Pickles.Linearization.Pallas as PallasTokens
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -18,7 +18,7 @@ import Type.Proxy (Proxy(..))
 
 compileLinearizationStep :: Effect (CompiledCircuit StepField)
 compileLinearizationStep =
-  Run.runBaseEffect $ compile
+  compile noAdvice
     (Proxy @(Vector 90 (F StepField)))
     (Proxy @(F StepField))
     (Proxy @(KimchiConstraint StepField))

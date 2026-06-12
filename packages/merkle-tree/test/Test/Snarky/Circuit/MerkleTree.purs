@@ -5,6 +5,7 @@ module Test.Snarky.Circuit.MerkleTree
 import Prelude
 
 import Data.Array.NonEmpty as NEA
+import Data.Functor.Variant (case_, on)
 import Data.Generic.Rep (class Generic)
 import Data.Int (pow)
 import Data.List as List
@@ -25,9 +26,8 @@ import Effect.Ref as Ref
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
-import Run (EFFECT, Run)
-import Run as Run
 import Safe.Coerce (coerce)
+import Snarky.Backend.Advice (AdviceHandler(..))
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F(..), FVar, Snarky, const_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Circuit.Kimchi (verifyCircuit, verifyCircuitM)
@@ -60,12 +60,12 @@ runMerkleRef
   => PoseidonField f
   => MerkleHashable v (Digest f)
   => TreeRef d f v
-  -> Run (EFFECT + MerkleRow d f v) ~> Effect
-runMerkleRef ref = Run.runBaseEffect <<< Run.interpret (Run.on CMT._merkle handler Run.send)
+  -> AdviceHandler (MerkleRow d f v)
+runMerkleRef ref = AdviceHandler (on CMT._merkle handler case_)
   where
-  readTree = Run.liftEffect (read ref)
+  readTree = read ref
 
-  handler :: CMT.MerkleF f v d ~> Run (EFFECT + ())
+  handler :: CMT.MerkleF f v d ~> Effect
   handler = case _ of
     CMT.GetElement addr k -> readTree <#> \tree ->
       case SMT.get tree addr, SMT.getPath tree addr of
@@ -76,7 +76,7 @@ runMerkleRef ref = Run.runBaseEffect <<< Run.interpret (Run.on CMT._merkle handl
         Just pth -> k pth
         Nothing -> unsafeThrow "getPath: invalid address"
     CMT.SetValue addr v k -> do
-      Run.liftEffect $ flip Ref.modify_ ref \tree ->
+      flip Ref.modify_ ref \tree ->
         case SMT.set tree addr v of
           Just tree' -> tree'
           Nothing -> unsafeThrow "setValue: invalid address"
@@ -219,7 +219,8 @@ getSpec cfg _ pd = do
 
   ref <- liftEffect $ Ref.new tree
 
-  { builtState: s, solver } <- circuitTestM' @f (runMerkleRef ref)
+  { builtState: s, solver } <- circuitTestM' @f
+    { handler: runMerkleRef ref, beforeEach: pure unit }
     cfg
     (NEA.singleton { testFunction: satisfied testFunction, input: QuickCheck 100 gen })
     circuit
@@ -289,13 +290,8 @@ fetchAndUpdateSpec cfg _ pd = do
   ref <- liftEffect $ Ref.new initialTree
 
   -- Reset tree before each test case
-  let
-    natWithReset :: Run (EFFECT + MerkleRow d f (Account f)) ~> Effect
-    natWithReset m = do
-      write initialTree ref
-      runMerkleRef ref m
-
-  { builtState: s, solver } <- circuitTestM' @f natWithReset
+  { builtState: s, solver } <- circuitTestM' @f
+    { handler: runMerkleRef ref, beforeEach: write initialTree ref }
     cfg
     (NEA.singleton { testFunction: satisfied testFunction, input: QuickCheck 100 gen })
     circuit
@@ -354,13 +350,8 @@ updateSpec cfg _ pd = do
   ref <- liftEffect $ Ref.new initialTree
 
   -- Reset tree before each test case
-  let
-    natWithReset :: Run (EFFECT + MerkleRow d f (Account f)) ~> Effect
-    natWithReset m = do
-      write initialTree ref
-      runMerkleRef ref m
-
-  { builtState: s, solver } <- circuitTestM' @f natWithReset
+  { builtState: s, solver } <- circuitTestM' @f
+    { handler: runMerkleRef ref, beforeEach: write initialTree ref }
     cfg
     (NEA.singleton { testFunction: satisfied testFunction, input: QuickCheck 100 gen })
     circuit

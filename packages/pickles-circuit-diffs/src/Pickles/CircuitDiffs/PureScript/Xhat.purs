@@ -15,8 +15,8 @@ import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, uns
 import Pickles.Field (WrapField)
 import Pickles.PackedStatement (PackedStepPublicInput, fromPackedTuple)
 import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), LagrangeBaseLookup, publicInputCommit)
-import Run as Run
 import Safe.Coerce (coerce)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (Bool(..), BoolVar, F, FVar, SizedF, Snarky)
 import Snarky.Circuit.Kimchi (SplitField(..), Type2(..))
@@ -79,5 +79,5 @@ xhatCircuit { lagrangeAt, blindingH } publicInput =
 
 compileXhat :: XhatParams WrapField -> Effect (CompiledCircuit WrapField)
 compileXhat srsData =
-  Run.runBaseEffect $ compile (Proxy @(Vector 34 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  compile noAdvice (Proxy @(Vector 34 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ xhatCircuit srsData (parseXhatInput inputs))

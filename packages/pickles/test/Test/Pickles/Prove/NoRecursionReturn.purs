@@ -31,7 +31,7 @@ import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verify)
 import Run as Run
-import Run.Except as Except
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F, FVar, const_)
 import Test.Pickles.SharedSrs (SharedSrs)
@@ -66,12 +66,13 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
     let rules = tuple1 nrrEntry
 
     logInfo "[NoRecursionReturn] compiling…"
-    output <- withSpan "[NoRecursionReturn] compile" $ liftEffect $ Run.runBaseEffect $ compileMulti
+    output <- withSpan "[NoRecursionReturn] compile" $ liftEffect $ compileMulti
       @NrrRules
       @(F StepField)
       @Unit
       @NoSlots
       @1
+      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
@@ -85,7 +86,7 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
     -- branches. Threading the field uniformly keeps the
     -- `BranchProver` API consistent with side-loaded specs.
     logInfo "[NoRecursionReturn] proving"
-    eResult <- withSpan "[NoRecursionReturn] prove" $ liftEffect $ Run.runBaseEffect $ Except.runExcept $ nrrProver
+    eResult <- withSpan "[NoRecursionReturn] prove" $ liftEffect $ nrrProver noAdvice
       { appInput: unit, prevs: unit, sideloadedVKs: unit }
     case eResult of
       Left e -> liftEffect $ Exc.throw ("nrrProver: " <> show e)

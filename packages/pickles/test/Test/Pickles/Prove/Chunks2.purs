@@ -31,7 +31,7 @@ import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verify)
 import Run as Run
-import Run.Except as Except
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F, addConstraint, exists, mul_)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
@@ -95,12 +95,13 @@ spec = describe "Pickles.Prove.Chunks2" do
     let rules = tuple1 chunks2Entry
 
     logInfo "[Chunks2] compiling…"
-    output <- withSpan "[Chunks2] compile" $ liftEffect $ Run.runBaseEffect $ compileMulti
+    output <- withSpan "[Chunks2] compile" $ liftEffect $ compileMulti
       @Chunks2Rules
       @Unit
       @Unit
       @NoSlots
       @2
+      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       -- N1 wrap_domain override (= log2 14), matching chunks2.ml's
@@ -112,7 +113,7 @@ spec = describe "Pickles.Prove.Chunks2" do
 
     let BranchProver chunks2Prover = fst output.provers
     logInfo "[Chunks2] proving"
-    eResult <- withSpan "[Chunks2] prove" $ liftEffect $ Run.runBaseEffect $ Except.runExcept $ chunks2Prover
+    eResult <- withSpan "[Chunks2] prove" $ liftEffect $ chunks2Prover noAdvice
       { appInput: unit, prevs: unit, sideloadedVKs: unit }
     case eResult of
       Left e -> liftEffect $ Exc.throw ("chunks2Prover: " <> show e)
