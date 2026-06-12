@@ -21,4 +21,5 @@ package:
     - spec-quickcheck
     - tuples
     - typelevel-prelude
+    - variant
     - vector-sized

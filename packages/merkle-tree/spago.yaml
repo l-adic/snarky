@@ -18,6 +18,7 @@ package:
       - spec
       - spec-node
       - tuples
+      - variant
   dependencies:
     - arrays
     - curves

@@ -32,6 +32,7 @@ package:
     - tailrec
     - tuples
     - typelevel-prelude
+    - variant
     - vector-sized
   test:
     main: Test.Example.Main

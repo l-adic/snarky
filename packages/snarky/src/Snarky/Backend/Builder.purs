@@ -27,9 +27,7 @@ module Snarky.Backend.Builder
 
 import Prelude
 
-import Control.Monad.Rec.Class (Step(..), tailRecM)
 import Data.Array as Array
-import Data.Either (Either(..))
 import Data.Foldable (foldl) as F
 import Data.List (List(..), reverse) as L
 import Data.Maybe (fromMaybe)

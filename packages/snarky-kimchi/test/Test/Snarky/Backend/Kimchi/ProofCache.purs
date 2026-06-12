@@ -26,7 +26,6 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
-import Run as Run
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Builder (constraintsToArray)
 import Snarky.Backend.Compile (Solver, compile, makeSolver, runSolver)

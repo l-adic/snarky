@@ -12,7 +12,6 @@ import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
-import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (BoolVar, F(..), FVar, Snarky)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Circuit.Kimchi.VarBaseMul (VbmRow, computeVbmChain, joinField, scaleFast1, scaleFast2, scaleFast2', splitField)

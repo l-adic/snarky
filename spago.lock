@@ -71,6 +71,7 @@
             "tailrec",
             "tuples",
             "typelevel-prelude",
+            "variant",
             "vector-sized"
           ]
         },
@@ -136,7 +137,8 @@
             "snarky-test-utils",
             "spec",
             "spec-node",
-            "tuples"
+            "tuples",
+            "variant"
           ]
         }
       },
@@ -172,7 +174,6 @@
             "random-oracle",
             "record",
             "refs",
-            "run",
             "safe-coerce",
             "simple-json",
             "snarky",
@@ -180,7 +181,6 @@
             "snarky-kimchi",
             "strings",
             "tuples",
-            "typelevel-prelude",
             "unsafe-coerce",
             "vector-sized"
           ]
@@ -224,7 +224,6 @@
             "prelude",
             "random-oracle",
             "refs",
-            "run",
             "safe-coerce",
             "schnorr",
             "simple-json",
@@ -447,8 +446,6 @@
             "st",
             "tailrec",
             "tuples",
-            "typelevel-prelude",
-            "unsafe-coerce",
             "variant",
             "vector-sized"
           ]
@@ -524,7 +521,6 @@
             "prelude",
             "quickcheck",
             "record",
-            "run",
             "safe-coerce",
             "simple-json",
             "snarky",
@@ -533,7 +529,6 @@
             "st",
             "strings",
             "tuples",
-            "typelevel-prelude",
             "unfoldable",
             "union-find",
             "vector-sized"
@@ -580,6 +575,7 @@
             "spec-quickcheck",
             "tuples",
             "typelevel-prelude",
+            "variant",
             "vector-sized"
           ]
         },

@@ -29,7 +29,6 @@ package:
     - random-oracle
     - record
     - refs
-    - run
     - safe-coerce
     - simple-json
     - snarky
@@ -37,7 +36,6 @@ package:
     - snarky-kimchi
     - strings
     - tuples
-    - typelevel-prelude
     - unsafe-coerce
     - vector-sized
   build:

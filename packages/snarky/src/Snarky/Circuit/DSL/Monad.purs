@@ -102,8 +102,6 @@ import Snarky.Circuit.Types (class CircuitType, Bool(..), BoolVar, F(..), FVar, 
 import Snarky.Constraint.Basic (class BasicSystem, boolean, r1cs)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
-import Type.Row (type (+))
-import Unsafe.Coerce (unsafeCoerce)
 
 --------------------------------------------------------------------------------
 -- Witness (prover-side) computations

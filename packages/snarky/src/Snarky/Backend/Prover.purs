@@ -14,7 +14,6 @@ module Snarky.Backend.Prover
 
 import Prelude
 
-import Control.Monad.Rec.Class (Step(..), tailRecM)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Foldable as Foldable

@@ -8,14 +8,12 @@ import Data.Foldable (for_)
 import Data.Maybe (Maybe(Nothing))
 import Data.MerkleTree.Sparse as Sparse
 import Data.Reflectable (class Reflectable, reifyType)
-import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
 import Effect.Ref (write)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
-import Run (Run)
 import Snarky.Backend.Compile (compile, makeSolver)
 import Snarky.Circuit.DSL (FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi (verifyCircuitM)

@@ -26,7 +26,6 @@ package:
     - prelude
     - quickcheck
     - record
-    - run
     - safe-coerce
     - simple-json
     - snarky
@@ -35,7 +34,6 @@ package:
     - st
     - strings
     - tuples
-    - typelevel-prelude
     - unfoldable
     - union-find
     - vector-sized
