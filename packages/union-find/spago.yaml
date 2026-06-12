@@ -3,9 +3,7 @@ package:
   dependencies:
     - arrays
     - effect
-    - foldable-traversable
     - maybe
-    - newtype
     - ordered-collections
     - prelude
     - st
@@ -15,7 +13,7 @@ package:
     dependencies:
       - arrays
       - effect
+      - foldable-traversable
       - quickcheck
       - spec
       - spec-node
-      - spec-quickcheck

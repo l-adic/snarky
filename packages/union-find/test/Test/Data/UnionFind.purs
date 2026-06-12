@@ -1,389 +1,251 @@
+-- | Tests for the mutable, array-backed union-find (the production
+-- | structure — the pure Map-backed variant it replaced is gone).
+-- |
+-- | Contract notes the tests rely on:
+-- |   * indices are DENSE non-negative ints: touching index `i` allocates
+-- |     0..i as singleton classes, so `equivalenceClasses` enumerates every
+-- |     allocated index, not just the ones a test mentioned;
+-- |   * `connected` is derived: same `find` root.
+-- |
+-- | Property-style cases draw their inputs with `randomSample'` and check
+-- | each sample in `Effect` directly — purescript-quickcheck has no
+-- | monadic-property API, and this keeps `unsafePerformEffect` out.
 module Test.Data.UnionFind where
 
 import Prelude
 
 import Data.Array as Array
-import Data.Maybe (Maybe(..))
+import Data.Foldable (for_)
 import Data.Traversable (traverse, traverse_)
-import Data.Tuple (Tuple(..), fst, snd)
-import Data.UnionFind (UnionFindData, emptyUnionFind, equivalenceClasses)
-import Data.UnionFind as UF
+import Data.UnionFind.Mutable (MutableUF, equivalenceClasses, find, fresh, union)
 import Effect (Effect)
-import Test.QuickCheck ((===))
+import Effect.Class (liftEffect)
+import Test.QuickCheck.Gen (Gen, chooseInt, randomSample')
 import Test.Spec (describe, it)
 import Test.Spec.Assertions (shouldEqual, shouldNotEqual)
-import Test.Spec.QuickCheck (quickCheck)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
 
--- | Test state type
-type TestState = UnionFindData Int
+connected :: Int -> Int -> MutableUF -> Effect Boolean
+connected x y uf = (==) <$> find x uf <*> find y uf
 
--- | Minimal local state monad over the pure union-find API, so the test
--- | bodies below keep their original do-notation.
-newtype UFM a = UFM (TestState -> Tuple a TestState)
+-- | Sample an effectful property 100 times.
+forSamples :: forall a. Gen a -> (a -> Effect Unit) -> Effect Unit
+forSamples gen check = randomSample' 100 gen >>= traverse_ check
 
-instance Functor UFM where
-  map f (UFM g) = UFM \s -> let Tuple a s' = g s in Tuple (f a) s'
-
-instance Apply UFM where
-  apply = ap
-
-instance Applicative UFM where
-  pure a = UFM \s -> Tuple a s
-
-instance Bind UFM where
-  bind (UFM g) f = UFM \s -> let Tuple a s' = g s in case f a of UFM h -> h s'
-
-instance Monad UFM
-
-find :: Int -> UFM Int
-find x = UFM (UF.find x)
-
-union :: Int -> Int -> UFM Unit
-union x y = UFM \s -> Tuple unit (UF.union x y s)
-
-connected :: Int -> Int -> UFM Boolean
-connected x y = UFM (UF.connected x y)
-
--- | Helper to run union-find operations
-runUF :: forall a. UFM a -> a
-runUF (UFM f) = fst (f emptyUnionFind)
-
-execUF :: forall a. UFM a -> TestState -> TestState
-execUF (UFM f) = snd <<< f
+idx :: Gen Int
+idx = chooseInt 0 100
 
 main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] do
-  describe "Data.UnionFind" do
+  describe "Data.UnionFind.Mutable" do
     describe "Basic operations" do
       it "find returns element for singleton sets" do
-        let
-          result = runUF do
-            root <- find 42
-            pure root
-        result `shouldEqual` 42
+        root <- liftEffect do
+          uf <- fresh
+          find 42 uf
+        root `shouldEqual` 42
 
       it "connected returns true for same element" do
-        let
-          result = runUF do
-            connected 42 42
-        result `shouldEqual` true
+        r <- liftEffect do
+          uf <- fresh
+          connected 42 42 uf
+        r `shouldEqual` true
 
       it "connected returns false for different elements initially" do
-        let
-          result = runUF do
-            connected 1 2
-        result `shouldEqual` false
+        r <- liftEffect do
+          uf <- fresh
+          connected 1 2 uf
+        r `shouldEqual` false
 
       it "union makes elements connected" do
-        let
-          result = runUF do
-            union 1 2
-            connected 1 2
-        result `shouldEqual` true
+        r <- liftEffect do
+          uf <- fresh
+          union 1 2 uf
+          connected 1 2 uf
+        r `shouldEqual` true
 
       it "union is transitive" do
-        let
-          result = runUF do
-            union 1 2
-            union 2 3
-            connected 1 3
-        result `shouldEqual` true
+        r <- liftEffect do
+          uf <- fresh
+          union 1 2 uf
+          union 2 3 uf
+          connected 1 3 uf
+        r `shouldEqual` true
 
-      it "path compression works" do
-        let
-          result = runUF do
-            -- Create a chain: 0->1->2->3->4
-            union 0 1
-            union 1 2
-            union 2 3
-            union 3 4
+      it "path compression keeps chains rooted together" do
+        r <- liftEffect do
+          uf <- fresh
+          union 0 1 uf
+          union 1 2 uf
+          union 2 3 uf
+          union 3 4 uf
+          root0 <- find 0 uf
+          root4 <- find 4 uf
+          pure (root0 == root4)
+        r `shouldEqual` true
 
-            -- Find root of 0 (should compress path)
-            root0 <- find 0
-            root4 <- find 4
-
-            pure (root0 == root4)
-
-        result `shouldEqual` true
-
-    describe "Property-based tests" do
+    describe "Property-based tests (100 random samples each)" do
       it "reflexivity: every element is connected to itself" do
-        quickCheck \(x :: Int) ->
-          runUF (connected x x) === true
+        liftEffect $ forSamples idx \x -> do
+          uf <- fresh
+          c <- connected x x uf
+          c `shouldEqual` true
 
       it "find is idempotent" do
-        quickCheck \(x :: Int) ->
-          let
-            result = runUF do
-              root1 <- find x
-              root2 <- find root1
-              pure (root1 == root2)
-          in
-            result === true
+        liftEffect $ forSamples idx \x -> do
+          uf <- fresh
+          root1 <- find x uf
+          root2 <- find root1 uf
+          root2 `shouldEqual` root1
 
       it "symmetry: connected(x,y) = connected(y,x)" do
-        quickCheck \(x :: Int) (y :: Int) ->
-          let
-            xy = runUF (connected x y)
-            yx = runUF (connected y x)
-          in
-            xy === yx
+        liftEffect $ forSamples ({ x: _, y: _ } <$> idx <*> idx) \{ x, y } -> do
+          uf1 <- fresh
+          xy <- connected x y uf1
+          uf2 <- fresh
+          yx <- connected y x uf2
+          xy `shouldEqual` yx
 
       it "transitivity after unions" do
-        quickCheck \(x :: Int) (y :: Int) (z :: Int) ->
-          let
-            result = runUF do
-              union x y
-              union y z
-              connected x z
-          in
-            result === true
+        liftEffect $ forSamples ({ x: _, y: _, z: _ } <$> idx <*> idx <*> idx) \{ x, y, z } -> do
+          uf <- fresh
+          union x y uf
+          union y z uf
+          c <- connected x z uf
+          c `shouldEqual` true
 
       it "union doesn't break existing connections" do
-        quickCheck \(a :: Int) (b :: Int) (c :: Int) (d :: Int) ->
-          let
-            result = runUF do
-              union a b
-              wasConnected <- connected a b
-              union c d -- This shouldn't affect a-b connection
-              stillConnected <- connected a b
-              pure (wasConnected && stillConnected)
-          in
-            result === true
+        liftEffect $ forSamples ({ a: _, b: _, c: _, d: _ } <$> idx <*> idx <*> idx <*> idx) \{ a, b, c, d } -> do
+          uf <- fresh
+          union a b uf
+          wasConnected <- connected a b uf
+          union c d uf
+          stillConnected <- connected a b uf
+          stillConnected `shouldEqual` wasConnected
+          stillConnected `shouldEqual` true
 
     describe "Equivalence class properties" do
       it "equivalence classes partition the elements" do
         let elements = [ 1, 2, 3, 4, 5 ]
-        let
-          result = runUF do
-            -- Create some unions: {1,2,3}, {4,5}
-            union 1 2
-            union 2 3
-            union 4 5
-
-            -- Check partitioning
-            group1 <- traverse (\x -> connected 1 x) elements
-            group2 <- traverse (\x -> connected 4 x) elements
-
-            pure { group1, group2 }
-
-        result.group1 `shouldEqual` [ true, true, true, false, false ]
-        result.group2 `shouldEqual` [ false, false, false, true, true ]
+        r <- liftEffect do
+          uf <- fresh
+          union 1 2 uf
+          union 2 3 uf
+          union 4 5 uf
+          group1 <- traverse (\x -> connected 1 x uf) elements
+          group2 <- traverse (\x -> connected 4 x uf) elements
+          pure { group1, group2 }
+        r.group1 `shouldEqual` [ true, true, true, false, false ]
+        r.group2 `shouldEqual` [ false, false, false, true, true ]
 
       it "all elements in same component have same representative" do
-        let
-          result = runUF do
-            union 1 2
-            union 2 3
-            union 3 4
-
-            root1 <- find 1
-            root2 <- find 2
-            root3 <- find 3
-            root4 <- find 4
-
-            pure [ root1, root2, root3, root4 ]
-
-        let
-          allSame = case Array.head result of
-            Nothing -> true -- Empty array case
-            Just first -> Array.all (_ == first) result
-        allSame `shouldEqual` true
+        roots <- liftEffect do
+          uf <- fresh
+          union 1 2 uf
+          union 2 3 uf
+          union 3 4 uf
+          traverse (\x -> find x uf) [ 1, 2, 3, 4 ]
+        Array.length (Array.nub roots) `shouldEqual` 1
 
       it "different components have different representatives" do
-        let
-          result = runUF do
-            union 1 2
-            union 3 4
-
-            root12 <- find 1
-            root34 <- find 3
-
-            pure { root12, root34 }
-
-        result.root12 `shouldNotEqual` result.root34
+        r <- liftEffect do
+          uf <- fresh
+          union 1 2 uf
+          union 3 4 uf
+          root12 <- find 1 uf
+          root34 <- find 3 uf
+          pure { root12, root34 }
+        r.root12 `shouldNotEqual` r.root34
 
     describe "Performance and edge cases" do
       it "handles many unions efficiently" do
-        let
-          result = runUF do
-            -- Chain all numbers 0..99 together
-            Array.range 0 98 # traverse_ \i ->
-              union i (i + 1)
-
-            -- Check that 0 and 99 are connected
-            connected 0 99
-
-        result `shouldEqual` true
+        r <- liftEffect do
+          uf <- fresh
+          for_ (Array.range 0 98) \i -> union i (i + 1) uf
+          connected 0 99 uf
+        r `shouldEqual` true
 
       it "handles repeated unions of same elements" do
-        let
-          result = runUF do
-            union 1 2
-            union 1 2 -- Redundant
-            union 2 1 -- Redundant but symmetric
-            union 1 2 -- Redundant again
-
-            connected 1 2
-
-        result `shouldEqual` true
-
-      it "works with negative numbers" do
-        let
-          result = runUF do
-            union (-1) (-2)
-            union (-2) (-3)
-
-            connected (-1) (-3)
-
-        result `shouldEqual` true
-
-      it "works with zero" do
-        let
-          result = runUF do
-            union 0 1
-            union 0 (-1)
-
-            allConnected <- do
-              c1 <- connected 0 1
-              c2 <- connected 0 (-1)
-              c3 <- connected 1 (-1)
-              pure (c1 && c2 && c3)
-
-            pure allConnected
-
-        result `shouldEqual` true
+        r <- liftEffect do
+          uf <- fresh
+          union 1 2 uf
+          union 1 2 uf
+          union 2 1 uf
+          union 1 2 uf
+          connected 1 2 uf
+        r `shouldEqual` true
 
       it "find creates singleton sets for new elements" do
-        let
-          result = runUF do
-            root1 <- find 42
-            root2 <- find 43
-
-            -- Should be their own representatives
-            self1 <- pure (root1 == 42)
-            self2 <- pure (root2 == 43)
-
-            -- Should not be connected
-            notConnected <- connected 42 43 >>= pure <<< not
-
-            pure (self1 && self2 && notConnected)
-
-        result `shouldEqual` true
+        r <- liftEffect do
+          uf <- fresh
+          root1 <- find 42 uf
+          root2 <- find 43 uf
+          notConnected <- not <$> connected 42 43 uf
+          pure (root1 == 42 && root2 == 43 && notConnected)
+        r `shouldEqual` true
 
     describe "Complex scenarios" do
       it "handles star topology" do
-        let
-          result = runUF do
-            -- Create star: center=0, leaves=1,2,3,4,5
-            traverse_ (union 0) [ 1, 2, 3, 4, 5 ]
-
-            -- All should be connected to center
-            allToCenter <- traverse (connected 0) [ 1, 2, 3, 4, 5 ]
-
-            -- All leaves should be connected to each other
-            allPairs <- traverse (\i -> traverse (connected i) [ 1, 2, 3, 4, 5 ]) [ 1, 2, 3, 4, 5 ]
-
-            pure { allToCenter, allPairs }
-
-        result.allToCenter `shouldEqual` [ true, true, true, true, true ]
-        -- All pairs should be connected (all true)
-        let allTrue = Array.all (Array.all identity) result.allPairs
-        allTrue `shouldEqual` true
+        let leaves = [ 1, 2, 3, 4, 5 ]
+        r <- liftEffect do
+          uf <- fresh
+          traverse_ (\l -> union 0 l uf) leaves
+          allToCenter <- traverse (\l -> connected 0 l uf) leaves
+          allPairs <- traverse (\i -> traverse (\j -> connected i j uf) leaves) leaves
+          pure { allToCenter, allPairs }
+        r.allToCenter `shouldEqual` [ true, true, true, true, true ]
+        Array.all (Array.all identity) r.allPairs `shouldEqual` true
 
       it "handles multiple disconnected components" do
-        let
-          result = runUF do
-            -- Component 1: {1,2,3}
-            union 1 2
-            union 2 3
-
-            -- Component 2: {4,5,6}
-            union 4 5
-            union 5 6
-
-            -- Component 3: {7} (singleton)
-
-            -- Test connections within components
-            comp1 <- do
-              c12 <- connected 1 2
-              c13 <- connected 1 3
-              c23 <- connected 2 3
-              pure [ c12, c13, c23 ]
-
-            comp2 <- do
-              c45 <- connected 4 5
-              c46 <- connected 4 6
-              c56 <- connected 5 6
-              pure [ c45, c46, c56 ]
-
-            -- Test no connections between components
-            between <- do
-              c14 <- connected 1 4 >>= pure <<< not
-              c17 <- connected 1 7 >>= pure <<< not
-              c47 <- connected 4 7 >>= pure <<< not
-              pure [ c14, c17, c47 ]
-
-            pure { comp1, comp2, between }
-
-        result.comp1 `shouldEqual` [ true, true, true ]
-        result.comp2 `shouldEqual` [ true, true, true ]
-        result.between `shouldEqual` [ true, true, true ]
+        r <- liftEffect do
+          uf <- fresh
+          union 1 2 uf
+          union 2 3 uf
+          union 4 5 uf
+          union 5 6 uf
+          _ <- find 7 uf
+          comp1 <- traverse (\{ x, y } -> connected x y uf)
+            [ { x: 1, y: 2 }, { x: 1, y: 3 }, { x: 2, y: 3 } ]
+          comp2 <- traverse (\{ x, y } -> connected x y uf)
+            [ { x: 4, y: 5 }, { x: 4, y: 6 }, { x: 5, y: 6 } ]
+          between <- traverse (\{ x, y } -> not <$> connected x y uf)
+            [ { x: 1, y: 4 }, { x: 1, y: 7 }, { x: 4, y: 7 } ]
+          pure { comp1, comp2, between }
+        r.comp1 `shouldEqual` [ true, true, true ]
+        r.comp2 `shouldEqual` [ true, true, true ]
+        r.between `shouldEqual` [ true, true, true ]
 
     describe "Equivalence classes enumeration" do
-      it "returns all equivalence classes" do
-        let
-          finalState = execUF
-            ( do
-                -- Create components: {1,2,3}, {4,5}, {6}
-                union 1 2
-                union 2 3
-                union 4 5
-                _ <- find 6 -- Make sure 6 is in the structure
-                pure unit
-            )
-            emptyUnionFind
+      it "returns all equivalence classes (dense: index 0 is allocated too)" do
+        classes <- liftEffect do
+          uf <- fresh
+          union 1 2 uf
+          union 2 3 uf
+          union 4 5 uf
+          _ <- find 6 uf
+          equivalenceClasses uf
+        -- allocated 0..6: {0} {1,2,3} {4,5} {6}
+        Array.length classes `shouldEqual` 4
+        Array.sort (Array.concat classes) `shouldEqual` [ 0, 1, 2, 3, 4, 5, 6 ]
+        Array.any (\cls -> Array.sort cls == [ 1, 2, 3 ]) classes `shouldEqual` true
+        Array.any (\cls -> Array.sort cls == [ 4, 5 ]) classes `shouldEqual` true
+        Array.any (\cls -> Array.sort cls == [ 6 ]) classes `shouldEqual` true
 
-          classes = equivalenceClasses finalState
-
-        -- Should have 3 classes total
-        Array.length classes `shouldEqual` 3
-
-        -- Check that all elements appear exactly once across all classes
-        let allElements = Array.concatMap identity classes
-        Array.sort allElements `shouldEqual` [ 1, 2, 3, 4, 5, 6 ]
-
-        -- Check specific groupings (arrays may be in different order)
-        let hasClass123 = Array.any (\cls -> Array.sort cls == [ 1, 2, 3 ]) classes
-        let hasClass45 = Array.any (\cls -> Array.sort cls == [ 4, 5 ]) classes
-        let hasClass6 = Array.any (\cls -> Array.sort cls == [ 6 ]) classes
-
-        hasClass123 `shouldEqual` true
-        hasClass45 `shouldEqual` true
-        hasClass6 `shouldEqual` true
-
-      it "returns empty array for empty union-find" do
-        let classes = equivalenceClasses (emptyUnionFind :: UnionFindData Int)
+      it "returns empty array for fresh union-find" do
+        classes <- liftEffect do
+          uf <- fresh
+          equivalenceClasses uf
         classes `shouldEqual` []
 
       it "returns singleton classes for disconnected elements" do
-        let
-          finalState = execUF
-            ( do
-                _ <- find 1
-                _ <- find 2
-                _ <- find 3
-                pure unit
-            )
-            emptyUnionFind
-
-          classes = equivalenceClasses finalState
-
-        Array.length classes `shouldEqual` 3
-        let allElements = Array.concatMap identity classes
-        Array.sort allElements `shouldEqual` [ 1, 2, 3 ]
-        -- Each class should have exactly one element
-        let allSingletons = Array.all (\cls -> Array.length cls == 1) classes
-        allSingletons `shouldEqual` true
+        classes <- liftEffect do
+          uf <- fresh
+          _ <- find 1 uf
+          _ <- find 2 uf
+          _ <- find 3 uf
+          equivalenceClasses uf
+        -- dense: allocates 0..3
+        Array.length classes `shouldEqual` 4
+        Array.sort (Array.concat classes) `shouldEqual` [ 0, 1, 2, 3 ]
+        Array.all (\cls -> Array.length cls == 1) classes `shouldEqual` true

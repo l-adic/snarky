@@ -244,7 +244,6 @@ type StepVK stepChunks f =
 chooseKey
   :: forall stepChunks n nPred f r
    . PrimeField f
-  => PrimeField f
   => Reflectable n Int
   => Reflectable stepChunks Int
   => Add 1 nPred n

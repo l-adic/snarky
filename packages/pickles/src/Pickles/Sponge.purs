@@ -172,7 +172,6 @@ squeezeScalarChallenge
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
-  => PrimeField f
   => { endo :: FVar f | r }
   -> SpongeM f (KimchiConstraint f) cr (SizedF 128 (FVar f))
 squeezeScalarChallenge params = do

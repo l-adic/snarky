@@ -112,7 +112,6 @@ sqrtFlagged
   :: forall f r
    . PrimeField f
   => HasSqrt f
-  => PrimeField f
   => f -- non-residue constant
   -> FVar f
   -> Snarky f (KimchiConstraint f) r { sqrtVal :: FVar f, isQR :: BoolVar f }

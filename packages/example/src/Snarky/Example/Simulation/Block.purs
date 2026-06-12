@@ -13,7 +13,6 @@ import Data.Tuple (Tuple(..))
 import Data.Vector as Vector
 import Effect (Effect)
 import Mina.ChainId (ChainId)
-import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Example.Block (Block(..))
 import Snarky.Example.Ledger (Ledger)
@@ -23,8 +22,9 @@ import Snarky.Example.Transaction (SignedTransaction, applyTx)
 import Test.QuickCheck.Gen (randomSampleOne)
 
 -- | Generate a block of sequentially-valid transfers from the given ledger
--- | state. The block size comes from the `Block` type itself (`Vector.generateA`
--- | fills exactly its `transactions` vector), so there is no size to pass.
+-- | state. The block size comes from the `Block` type itself
+-- | (`Vector.unfoldM` fills exactly its `transactions` vector, threading
+-- | the ledger as the accumulator), so there is no size to pass.
 generateBlock
   :: forall d
    . Reflectable d Int
@@ -33,11 +33,11 @@ generateBlock
   -> Ledger d
   -> Effect Block
 generateBlock chainId keys ledger0 = do
-  Tuple transactions _ <- mapAccumM step ledger0 (Vector.generate (const unit) :: Vector.Vector _ Unit)
+  Tuple transactions _ <- Vector.unfoldM step ledger0
   pure $ Block { transactions }
   where
-  step :: Ledger d -> Unit -> Effect (Tuple (SignedTransaction Vesta.ScalarField) (Ledger d))
-  step l _ = do
+  step :: Ledger d -> Effect (Tuple (SignedTransaction Vesta.ScalarField) (Ledger d))
+  step l = do
     tx <- randomSampleOne (genValidSignedTransaction chainId l keys)
     l' <- applyTx chainId tx l
     pure (Tuple tx l')

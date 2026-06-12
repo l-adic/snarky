@@ -47,6 +47,7 @@ import Effect.Ref as Ref
 import Mina.ChainId (ChainId, signaturePrefix)
 import Pickles (BranchProver(..), Compiled, CompiledProof, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots2, StatementIO(..), Verifier, compileMulti, mkRuleEntry)
 import Pickles.Step.Main (RuleOutput)
+import Snarky.Backend.Advice (badAdvice)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, AsProver, FVar, Snarky, add_, assertEq, assert_, check, const_, exists, fieldsToValue, fieldsToVar, liftAdvice, not_, read, sizeInFields, true_, unpack_, valueToFields, varToFields)
 import Snarky.Circuit.MerkleTree (MERKLE)
@@ -58,8 +59,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Example.Ledger (Mask, emptyMask)
-import Snarky.Example.Transaction.MaskMonad (runTransferMaskM)
-import Snarky.Example.Transaction.Monad (ACCOUNT_MAP, TRANSACTION, getAccountId, getCurrentTransaction)
+import Snarky.Example.Transaction.Monad (ACCOUNT_MAP, TRANSACTION, getAccountId, getCurrentTransaction, runTransferMaskM)
 import Snarky.Example.Transaction.Types (SignedTransaction(..), Transaction(..), Transfer(..))
 import Snarky.Example.Types (Account(..), PublicKey(..), addWithOverflow, subWithUnderflow)
 import Type.Proxy (Proxy(..))
@@ -279,7 +279,6 @@ compileTxCircuit
      }
   -> Effect (CompiledTx d)
 compileTxCircuit chainId srs = do
-  maskRef <- Ref.new emptyMask
   let
     cfg =
       { srs
@@ -317,7 +316,7 @@ compileTxCircuit chainId srs = do
       @(Statement Vesta.ScalarField)
       @(Slots2 2 2)
       @1
-      (runTransferMaskM { currentTransaction: Nothing, mask: maskRef })
+      badAdvice
       cfg
       rules
   let

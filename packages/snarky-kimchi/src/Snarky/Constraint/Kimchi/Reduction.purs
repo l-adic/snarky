@@ -30,6 +30,7 @@ import Data.UnionFind.Mutable as MutableUF
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
+import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Exception.Unsafe (unsafeThrow)
 import Record as Record
 import Snarky.Backend.Assignments (Assignments)
@@ -210,8 +211,8 @@ getsB f = PlonkBuilder \s -> pure (Tuple (f s) s)
 modifyB_ :: forall f. (BuilderReductionState f -> BuilderReductionState f) -> PlonkBuilder f Unit
 modifyB_ f = PlonkBuilder \s -> pure (Tuple unit (f s))
 
-liftEffB :: forall f a. Effect a -> PlonkBuilder f a
-liftEffB e = PlonkBuilder \s -> e <#> \a -> Tuple a s
+instance MonadEffect (PlonkBuilder f) where
+  liftEffect e = PlonkBuilder \s -> e <#> \a -> Tuple a s
 
 constraintToCoeffs
   :: forall f
@@ -280,12 +281,12 @@ handleGateBatching newGate = do
 findB :: forall f. Variable -> PlonkBuilder f Variable
 findB (Variable x) = do
   uf <- getsB (\{ aux: AuxState aux } -> aux.wireState.unionFind)
-  Variable <$> liftEffB (MutableUF.find x uf)
+  Variable <$> liftEffect (MutableUF.find x uf)
 
 unionB :: forall f. Variable -> Variable -> PlonkBuilder f Unit
 unionB (Variable x) (Variable y) = do
   uf <- getsB (\{ aux: AuxState aux } -> aux.wireState.unionFind)
-  liftEffB (MutableUF.union x y uf)
+  liftEffect (MutableUF.union x y uf)
 
 instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
   addGenericPlonkConstraint c = do

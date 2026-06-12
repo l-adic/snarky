@@ -149,7 +149,6 @@ finalizeOtherProofCircuit
   => FieldSizeInBits f 255
   => PoseidonField f
   => HasEndo f f'
-  => PrimeField f
   => LinearizationFFI f
   => Reflectable d Int
   => { unshift :: sf -> FVar f
@@ -641,7 +640,6 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
 mkSideLoadedOnesPrefixMask
   :: forall f r
    . PrimeField f
-  => PrimeField f
   => FVar f
   -> Snarky f (KimchiConstraint f) r (Vector 16 (BoolVar f))
 mkSideLoadedOnesPrefixMask first_zero = label "ones_prefix_mask" do

@@ -75,6 +75,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint(..), CurveParams)
 import Snarky.Data.EllipticCurve as EC
+import Snarky.Data.EllipticCurve.Projective (doubleProjective)
 import Snarky.Types.Shifted (SplitField(..), Type1(..), Type2(..))
 import Type.Proxy (Proxy(..))
 
@@ -765,7 +766,6 @@ scalarMulLeaf
   => Reflectable sDiv2Bits Int
   => Reflectable stepChunks Int
   => PrimeField f
-  => PrimeField f
   => CurveParams f
   -> FVar f
   -> LagrangeBaseLookup stepChunks f
@@ -849,6 +849,6 @@ pow2pow params p k =
   let
     go pt j
       | j <= 0 = pt
-      | otherwise = go (EC.doubleProjective params pt) (j - 1)
+      | otherwise = go (doubleProjective params pt) (j - 1)
   in
     wrapPt $ unsafePartial $ fromJust $ EC.toAffine $ go (EC.fromAffine (unwrapPt p)) k

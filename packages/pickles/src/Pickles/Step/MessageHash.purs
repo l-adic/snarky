@@ -43,7 +43,6 @@ hashMessagesForNextStepProofOpt
   :: forall n wrapVkChunks d f r
    . PrimeField f
   => PoseidonField f
-  => PrimeField f
   => { vkComms ::
          { sigma :: Vector 6 (ChunkedCommitment wrapVkChunks (AffinePoint (FVar f)))
          , sigmaLast :: ChunkedCommitment wrapVkChunks (AffinePoint (FVar f))

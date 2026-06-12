@@ -91,7 +91,6 @@ assertOnCurveConst
   :: forall f c r
    . PrimeField f
   => BasicSystem f c
-  => PrimeField f
   => CurveParams f
   -> AffinePoint (FVar f)
   -> Snarky f c r Unit
@@ -110,7 +109,6 @@ assertOnCurveConst { a, b } (AffinePoint { x, y }) = do
 createShifted
   :: forall f r
    . PrimeField f
-  => PrimeField f
   => CurveParams f
   -> AffinePoint f
   -> Snarky f (KimchiConstraint f) r (ShiftedOps f r)
@@ -195,7 +193,6 @@ vestaScalarOps =
 scale
   :: forall f r n
    . PrimeField f
-  => PrimeField f
   => CurveParams f
   -> ShiftedOps f r
   -> Shifted f
@@ -223,7 +220,6 @@ lookupPoint
   :: forall f c r
    . PrimeField f
   => BasicSystem f c
-  => PrimeField f
   => Tuple (BoolVar f) (BoolVar f)
   -> { t1 :: AffinePoint f
      , t2 :: AffinePoint f
@@ -282,7 +278,6 @@ lookupSingleBit b { t1: AffinePoint t1, t2: AffinePoint t2 } =
 scaleKnown
   :: forall f g r n
    . PrimeField f
-  => PrimeField f
   => C.WeierstrassCurve f g
   => Semigroup g
   => ShiftedOps f r

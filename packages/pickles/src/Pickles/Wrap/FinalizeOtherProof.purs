@@ -88,7 +88,6 @@ wrapFinalizeOtherProofCircuit
   => FieldSizeInBits f 255
   => PoseidonField f
   => HasEndo f f'
-  => PrimeField f
   => LinearizationFFI f
   => Reflectable d Int
   => Params nd f r2

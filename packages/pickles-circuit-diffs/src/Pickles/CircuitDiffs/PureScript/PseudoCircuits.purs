@@ -55,7 +55,6 @@ import Type.Proxy (Proxy(..))
 oneHotN1Circuit
   :: forall f r
    . PrimeField f
-  => PrimeField f
   => Vector 1 (FVar f)
   -> Snarky f (KimchiConstraint f) r Unit
 oneHotN1Circuit inputs = do
@@ -79,7 +78,6 @@ compileOneHotN1Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy 
 oneHotN3Circuit
   :: forall f r
    . PrimeField f
-  => PrimeField f
   => Vector 1 (FVar f)
   -> Snarky f (KimchiConstraint f) r Unit
 oneHotN3Circuit inputs = do
@@ -102,7 +100,6 @@ compileOneHotN3Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy 
 pseudoMaskN1Circuit
   :: forall f r
    . PrimeField f
-  => PrimeField f
   => Vector 2 (FVar f)
   -> Snarky f (KimchiConstraint f) r Unit
 pseudoMaskN1Circuit inputs = do
@@ -126,7 +123,6 @@ compilePseudoMaskN1Wrap = compile noAdvice (Proxy @(Vector 2 (F WrapField))) (Pr
 pseudoMaskN3Circuit
   :: forall f r
    . PrimeField f
-  => PrimeField f
   => Vector 4 (FVar f)
   -> Snarky f (KimchiConstraint f) r Unit
 pseudoMaskN3Circuit inputs = do
@@ -150,7 +146,6 @@ compilePseudoMaskN3Wrap = compile noAdvice (Proxy @(Vector 4 (F WrapField))) (Pr
 pseudoChooseN1Circuit
   :: forall f r
    . PrimeField f
-  => PrimeField f
   => Vector 1 (FVar f)
   -> Snarky f (KimchiConstraint f) r Unit
 pseudoChooseN1Circuit inputs = do
@@ -175,7 +170,6 @@ compilePseudoChooseN1Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (
 pseudoChooseN3Circuit
   :: forall f r
    . PrimeField f
-  => PrimeField f
   => Vector 1 (FVar f)
   -> Snarky f (KimchiConstraint f) r Unit
 pseudoChooseN3Circuit inputs = do
@@ -238,7 +232,6 @@ compileChooseKeyN1Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Pro
 utilsOnesVectorN16Circuit
   :: forall f r
    . PrimeField f
-  => PrimeField f
   => Vector 1 (FVar f)
   -> Snarky f (KimchiConstraint f) r Unit
 utilsOnesVectorN16Circuit inputs = do
@@ -264,7 +257,6 @@ compileUtilsOnesVectorN16Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField)
 oneHotN17Circuit
   :: forall f r
    . PrimeField f
-  => PrimeField f
   => Vector 1 (FVar f)
   -> Snarky f (KimchiConstraint f) r Unit
 oneHotN17Circuit inputs = do
@@ -289,7 +281,6 @@ compileOneHotN17Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy
 pseudoMaskN17Circuit
   :: forall f r
    . PrimeField f
-  => PrimeField f
   => Vector 1 (FVar f)
   -> Snarky f (KimchiConstraint f) r Unit
 pseudoMaskN17Circuit inputs = do

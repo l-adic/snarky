@@ -28,7 +28,8 @@ import Snarky.Circuit.Kimchi.EndoScalar (expandToEndoScalar)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class PrimeField, class WeierstrassCurve, EndoBase(..), endoBase, fromAffine, scalarMul, toAffine)
-import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..), doubleAddChain)
+import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
+import Snarky.Data.EllipticCurve.Projective (doubleAddChain)
 
 -- | Per-round witness record of `endo` — exactly what the gadget's exists
 -- | body witnesses for one 4-bit round (two double-add steps).

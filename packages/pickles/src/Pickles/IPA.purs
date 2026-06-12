@@ -138,7 +138,6 @@ bPolyCircuit
    . Add 1 dPred d
   => Reflectable d Int
   => PrimeField f
-  => PrimeField f
   => BasicSystem f c
   => BPolyInput d (FVar f)
   -> Snarky f c r (FVar f)
@@ -250,7 +249,6 @@ bCorrectCircuit
   :: forall n nPred f c r
    . Add 1 nPred n
   => Reflectable n Int
-  => PrimeField f
   => PrimeField f
   => BasicSystem f c
   => BCorrectInput n (FVar f)

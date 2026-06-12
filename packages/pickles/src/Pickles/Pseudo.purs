@@ -47,7 +47,6 @@ import Snarky.Curves.Class (class PrimeField, fromBigInt)
 oneHotVector
   :: forall @n f r
    . PrimeField f
-  => PrimeField f
   => Reflectable n Int
   => FVar f
   -> Snarky f (KimchiConstraint f) r (Vector n (BoolVar f))
@@ -77,7 +76,6 @@ oneHotVector index = label "one-hot-vector" do
 mask
   :: forall n f r
    . PrimeField f
-  => PrimeField f
   => Reflectable n Int
   => Vector n (BoolVar f)
   -> Vector n (FVar f)
@@ -99,7 +97,6 @@ mask bits xs = label "pseudo-mask" do
 choose
   :: forall n a f r
    . PrimeField f
-  => PrimeField f
   => Reflectable n Int
   => Vector n (BoolVar f)
   -> Vector n a
@@ -138,7 +135,6 @@ type PlonkDomain f r =
 toDomain
   :: forall @maxLog2 maxPred n f r
    . PrimeField f
-  => PrimeField f
   => Reflectable n Int
   => Reflectable maxLog2 Int
   => Add 1 maxPred maxLog2

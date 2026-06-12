@@ -489,7 +489,7 @@ wrapMain config (StatementPacked stmtR) advice = do
             pure (Tuple v v)
         )
         true_
-        (Vector.generate identity :: Vector mpv _)
+        (Vector.indices :: Vector mpv _)
 
   domainLog2 <- label "block1-domain-log2" $
     Pseudo.choose whichBranch config.domainLog2s

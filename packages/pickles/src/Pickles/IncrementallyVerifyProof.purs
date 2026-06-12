@@ -162,7 +162,6 @@ ivpTrace
   :: forall f c r
    . PrimeField f
   => BasicSystem f c
-  => PrimeField f
   => String
   -> FVar f
   -> Snarky f c r Unit
@@ -183,7 +182,6 @@ incrementallyVerifyProof
   => HasSqrt f
   => FrModule f' g
   => WeierstrassCurve f g
-  => PrimeField f
   => PublicInputCommit publicInput f
   => Reflectable d Int
   => Reflectable sgOldN Int

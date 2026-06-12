@@ -43,6 +43,7 @@ import Data.Traversable (traverse)
 import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
+import Effect.Class (liftEffect)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Partial.Unsafe (unsafePartial)
@@ -68,7 +69,7 @@ import Prim.Boolean (False, True)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (AsProver, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), assertAll_, const_, exists, false_, label, liftEffectAsProver, true_)
+import Snarky.Circuit.DSL (AsProver, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), assertAll_, const_, exists, false_, label, true_)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
 import Snarky.Circuit.DSL.SizedF (unsafeFromField) as SizedF
@@ -911,7 +912,7 @@ stepMain
   -- time `stepSolveAndProve` reads the Ref after the solver completes.
   -- The `exists` allocates a fresh `Unit` var (`sizeInFields = 0`, no
   -- actual circuit slot allocated), so this introduces no constraints.
-  _ :: Unit <- exists $ liftEffectAsProver do
+  _ :: Unit <- exists $ liftEffect do
     Ref.write (Just publicOutputFields) captureRef
 
   -- 3. exists: SHARED VK via Req.Wrap_index.

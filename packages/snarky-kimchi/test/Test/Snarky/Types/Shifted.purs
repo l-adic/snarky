@@ -102,7 +102,6 @@ type1SameFieldCircuit shifted = pure $ fromShiftedType1Circuit shifted
 type2Circuit
   :: forall @f n
    . PrimeField f
-  => PrimeField f
   => FieldSizeInBits f n
   => Type2 (FVar f)
   -> Snarky f (KimchiConstraint f) () (FVar f)

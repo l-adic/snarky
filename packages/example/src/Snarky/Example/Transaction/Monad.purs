@@ -1,22 +1,21 @@
--- | The prover-side advice effects and their interpreters, plus the
--- | `TRANSACTION` effect the circuit rules speak through.
+-- | The transfer circuit's advice effects and their production interpreter.
 -- |
--- | `runTransferM` answers a circuit's advice requests (`MERKLE` /
--- | `ACCOUNT_MAP` / `TRANSACTION`) against a live ledger and the particular
--- | transaction being proven. The transaction is NOT ledger state — it is the
--- | "arrow" mapping one ledger to the next — so it rides the handler's
--- | environment as an explicit per-prove input alongside the (mutable) ledger
--- | reference:
+-- | `runTransferMaskM` answers a circuit's advice requests (`MERKLE` /
+-- | `ACCOUNT_MAP` / `TRANSACTION`) against a `Mask` — the minimal
+-- | sparse-tree slice a snark worker receives — plus the particular
+-- | transaction being proven. The transaction is NOT ledger state — it is
+-- | the "arrow" mapping one ledger to the next — so it rides the handler's
+-- | environment as an explicit per-prove input alongside the (mutable)
+-- | mask reference:
 -- |
 -- |   { currentTransaction :: Maybe (SignedTransaction Vesta.ScalarField)
--- |   , ledger :: Ref (Ledger d) }
+-- |   , mask :: Ref (Mask d) }
 -- |
 -- | A base prove supplies `currentTransaction = Just tx`; a merge prove
--- | (which witnesses no transaction) supplies `Nothing`. `runTransferCompileM`
--- | is the compile-time twin whose handlers throw (compilation discards
--- | `exists` bodies, so no request is ever served). Both are `AdviceHandler`s
--- | — direct `VariantF row ~> Effect` functions the interpreters call per
--- | advice op (no Run handler chain).
+-- | (which witnesses no transaction) supplies `Nothing`. (Compilation
+-- | needs no handler at all — pass `Snarky.Backend.Advice.badAdvice`.)
+-- | The handler is a direct `VariantF row ~> Effect` function the
+-- | interpreters call per advice op (no Run handler chain).
 -- |
 -- | Everything here is value-only, so the field is pinned to the example's
 -- | `Vesta.ScalarField` rather than carried as a parameter.
@@ -30,8 +29,7 @@ module Snarky.Example.Transaction.Monad
   , _accountMap
   , getAccountId
   , TransferAdvice
-  , runTransferM
-  , runTransferCompileM
+  , runTransferMaskM
   ) where
 
 import Prelude
@@ -39,18 +37,17 @@ import Prelude
 import Data.Functor.Variant (case_, on)
 import Data.Maybe (Maybe(..))
 import Data.MerkleTree.Sparse (Address)
-import Data.MerkleTree.Sparse as Sparse
+import Data.MerkleTree.Sparse.Mask as Mask
 import Data.Reflectable (class Reflectable)
 import Effect (Effect)
-import Effect.Exception (error, throwException)
-import Effect.Ref (Ref, read, write)
-import Partial.Unsafe (unsafeCrashWith)
+import Effect.Exception (throw)
+import Effect.Ref (Ref, modify_, read)
 import Run (Run)
 import Run as Run
 import Snarky.Backend.Advice (AdviceHandler(..))
 import Snarky.Circuit.MerkleTree (MERKLE, MerkleF(..), _merkle)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Example.Ledger (Ledger, lookupAddress)
+import Snarky.Example.Ledger (Mask)
 import Snarky.Example.Transaction.Types (SignedTransaction)
 import Snarky.Example.Types (Account, PublicKey)
 import Type.Proxy (Proxy(..))
@@ -101,64 +98,42 @@ type TransferAdvice d =
     + ()
 
 --------------------------------------------------------------------------------
--- Run-time advice interpreter
+-- Prove-time advice interpreter
 
--- | Answers advice requests against a live ledger reference plus the
--- | per-prove transaction.
-runTransferM
+-- | Answers advice requests against a mutable mask reference plus the
+-- | per-prove transaction (the witness mutates the mask in place as the
+-- | circuit applies the transfer).
+runTransferMaskM
   :: forall d
    . Reflectable d Int
-  => { currentTransaction :: Maybe (SignedTransaction Vesta.ScalarField), ledger :: Ref (Ledger d) }
+  => { currentTransaction :: Maybe (SignedTransaction Vesta.ScalarField), mask :: Ref (Mask d) }
   -> AdviceHandler (TransferAdvice d)
-runTransferM env = AdviceHandler
-  (on _merkle merkleH (on _accountMap accountMapH (on _transaction transactionH case_)))
+runTransferMaskM env = AdviceHandler
+  ( case_
+      # on _transaction transactionH
+      # on _accountMap accountMapH
+      # on _merkle merkleH
+  )
   where
-  getLedger = read env.ledger
-
-  die :: forall a. String -> Effect a
-  die = throwException <<< error
+  getMask = read env.mask
 
   merkleH :: MerkleF Vesta.ScalarField (Account Vesta.ScalarField) d ~> Effect
   merkleH = case _ of
-    GetElement addr k -> getLedger >>= \{ tree } ->
-      case Sparse.get tree addr of
-        Just v -> pure (k { value: v, path: Sparse.getWitness addr tree })
-        Nothing -> die "getElement: address not set in sparse tree"
-    GetPath addr k -> getLedger <#> \{ tree } ->
-      k (Sparse.getWitness addr tree)
-    SetValue addr v k -> getLedger >>= \ledger ->
-      case Sparse.set addr v ledger.tree of
-        Just tree' -> write (ledger { tree = tree' }) env.ledger $> k
-        Nothing -> die "setValue: invalid address"
+    GetElement addr k -> getMask >>= \mask ->
+      case Mask.get addr mask of
+        Just v -> pure (k { value: v, path: Mask.getPath addr mask })
+        Nothing -> throw "getElement: address not present in the witness"
+    GetPath addr k -> getMask <#> \mask ->
+      k (Mask.getPath addr mask)
+    SetValue addr v k -> modify_ (Mask.set addr v) env.mask $> k
 
   accountMapH :: AccountMapF d ~> Effect
-  accountMapH (GetAccountId pk k) = getLedger >>= \ledger ->
-    case lookupAddress ledger pk of
+  accountMapH (GetAccountId pk k) = getMask >>= \mask ->
+    case Mask.findIndex pk mask of
       Just addr -> pure (k addr)
-      Nothing -> die "getAccountId: public key not found in account map"
+      Nothing -> throw "getAccountId: public key not present in the witness"
 
   transactionH :: TransactionF ~> Effect
   transactionH (GetCurrentTransaction k) = case env.currentTransaction of
     Just tx -> pure (k tx)
-    Nothing -> die "getCurrentTransaction: no current transaction set"
-
---------------------------------------------------------------------------------
--- Compile-time advice interpreter (crashes on any request)
-
--- | Compilation discards `exists` bodies, so no advice request is ever
--- | served; any request firing here is a bug.
-runTransferCompileM :: forall d. AdviceHandler (TransferAdvice d)
-runTransferCompileM = AdviceHandler
-  (on _merkle merkleH (on _accountMap accountMapH (on _transaction transactionH case_)))
-  where
-  merkleH :: MerkleF Vesta.ScalarField (Account Vesta.ScalarField) d ~> Effect
-  merkleH = case _ of
-    GetElement _ _ -> unsafeCrashWith "the impossible happened! unhandled request: getElement"
-    GetPath _ _ -> unsafeCrashWith "the impossible happened! unhandled request: getPath"
-    SetValue _ _ _ -> unsafeCrashWith "the impossible happened! unhandled request: setValue"
-
-  accountMapH :: AccountMapF d ~> Effect
-  accountMapH (GetAccountId _ _) = unsafeCrashWith "the impossible happened! unhandled request: getAccountId"
-
-  transactionH :: TransactionF ~> Effect
-  transactionH (GetCurrentTransaction _) = unsafeCrashWith "the impossible happened! unhandled request: getCurrentTransaction"
+    Nothing -> throw "getCurrentTransaction: no current transaction set"

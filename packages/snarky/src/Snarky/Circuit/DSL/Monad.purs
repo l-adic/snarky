@@ -43,7 +43,6 @@ module Snarky.Circuit.DSL.Monad
   , read
   , readCVar
   , runAsProver
-  , liftEffectAsProver
   , liftEffectSnarky
   , mkWitnessTable
   , throwAsProver
@@ -82,6 +81,7 @@ import Data.Traversable (traverse, traverse_)
 import Data.Tuple (Tuple)
 import Data.Vector (Vector)
 import Effect (Effect)
+import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Exception.Unsafe (unsafeThrow)
 import Effect.Ref as Ref
 import Prim.Row as Row
@@ -255,9 +255,14 @@ instance Monad (Snarky f c r)
 instance MonadRec (Snarky f c r) where
   tailRecM k a0 = Snarky \ops -> tailRecM (\a -> case k a of Snarky g -> g ops) a0
 
--- | Run an `Effect` inside a witness computation.
-liftEffectAsProver :: forall f r a. Effect a -> AsProver f r a
-liftEffectAsProver eff = AsProver \_ -> eff
+-- | Witness computations run only under the prover, so lifting an
+-- | effect into `AsProver` is benign — hence a `MonadEffect` instance.
+-- | (`Snarky` deliberately has NO such instance: a lifted effect there
+-- | runs under BOTH interpreters — builder and prover — which is almost
+-- | never intended, so the rare legitimate case goes through the
+-- | explicit, greppable `liftEffectSnarky`.)
+instance MonadEffect (AsProver f r) where
+  liftEffect eff = AsProver \_ -> eff
 
 -- | Lift an effect into the circuit monad. Runs under BOTH interpreters --
 -- | builder and prover -- so use only for interpretation-neutral setup
@@ -280,11 +285,11 @@ mkWitnessTable
 mkWitnessTable name compute = do
   memo <- liftEffectSnarky (Ref.new Nothing)
   pure \i -> do
-    table <- liftEffectAsProver (Ref.read memo) >>= case _ of
+    table <- liftEffect (Ref.read memo) >>= case _ of
       Just t -> pure t
       Nothing -> do
         t <- compute
-        liftEffectAsProver (Ref.write (Just t) memo)
+        liftEffect (Ref.write (Just t) memo)
         pure t
     maybe (throwAsProver (FailedAssertion (name <> ": witness table index out of bounds"))) pure
       (Array.index table i)

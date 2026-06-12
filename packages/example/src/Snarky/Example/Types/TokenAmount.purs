@@ -72,7 +72,6 @@ addWithOverflow
    . PrimeField f
   => FieldSizeInBits f 255
   => CheckedType f (KimchiConstraint f) (TokenAmount (FVar f))
-  => PrimeField f
   => TokenAmount (FVar f)
   -> TokenAmount (FVar f)
   -> Snarky f (KimchiConstraint f) r
@@ -106,7 +105,6 @@ subWithUnderflow
    . PrimeField f
   => FieldSizeInBits f 255
   => CheckedType f (KimchiConstraint f) (TokenAmount (FVar f))
-  => PrimeField f
   => TokenAmount (FVar f)
   -> TokenAmount (FVar f)
   -> Snarky f (KimchiConstraint f) r

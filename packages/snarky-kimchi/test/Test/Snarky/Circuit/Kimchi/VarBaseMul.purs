@@ -14,7 +14,7 @@ import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (BoolVar, F(..), FVar, Snarky)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
-import Snarky.Circuit.Kimchi.VarBaseMul (VbmRow, computeVbmChain, joinField, scaleFast1, scaleFast2, scaleFast2', splitField)
+import Snarky.Circuit.Kimchi.VarBaseMul (computeVbmChain, joinField, scaleFast1, scaleFast2, scaleFast2', splitField)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class PrimeField, curveParams, fromAffine, fromBigInt, fromInt, scalarMul, toAffine, toBigInt)
@@ -22,6 +22,7 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Snarky.Data.EllipticCurve as EC
+import Snarky.Data.EllipticCurve.Projective (DoubleAddRow, addProjectiveNonEqual, batchInverse, doubleProjective)
 import Snarky.Types.Shifted (Type1, Type2(..), fieldSizeBits, fromShifted, toShifted)
 import Test.QuickCheck (Result, arbitrary, withHelp, (===))
 import Test.QuickCheck.Gen (Gen, chooseInt, suchThat, vectorOf)
@@ -37,12 +38,12 @@ scaleRep k (EC.Point r) = EC.Point { x: k * r.x, y: k * r.y, z: k * r.z }
 
 -- | The OLD per-bit witness computation of `varBaseMul`, verbatim — the
 -- | oracle `computeVbmChain` must reproduce field-element-for-field-element.
-sequentialVbmRows
+sequentialDoubleAddRows
   :: forall f
    . PrimeField f
   => { xBase :: f, yBase :: f, acc0 :: AffinePoint f, bits :: Array f }
-  -> Array (VbmRow f)
-sequentialVbmRows { xBase, yBase, acc0, bits } =
+  -> Array (DoubleAddRow f)
+sequentialDoubleAddRows { xBase, yBase, acc0, bits } =
   _.out $ foldl step { acc: acc0, out: [] } bits
   where
   step { acc: AffinePoint a, out } b =
@@ -60,7 +61,7 @@ spec cfg = do
   describe "batched witness chain (pure ops)" do
     it "batchInverse matches recip element-wise" $ quickCheck do
       xs <- Array.filter (_ /= zero) <$> arbitrary @(Array Vesta.BaseField)
-      pure $ EC.batchInverse xs === map recip xs
+      pure $ batchInverse xs === map recip xs
 
     it "addProjectiveNonEqual matches affine addition on scaled representatives" $ quickCheck do
       p@(AffinePoint pa) <- EC.genAffinePoint (Proxy @Vesta.G)
@@ -68,7 +69,7 @@ spec cfg = do
       k1 <- arbitrary @Vesta.BaseField `suchThat` (_ /= zero)
       k2 <- arbitrary @Vesta.BaseField `suchThat` (_ /= zero)
       let
-        lhs = EC.toAffine $ EC.addProjectiveNonEqual (scaleRep k1 (EC.fromAffine p)) (scaleRep k2 (EC.fromAffine q))
+        lhs = EC.toAffine $ addProjectiveNonEqual (scaleRep k1 (EC.fromAffine p)) (scaleRep k2 (EC.fromAffine q))
         rhs = EC.toAffine $ unsafePartial (EC.addAffine p q)
       pure $ lhs === rhs
 
@@ -77,7 +78,7 @@ spec cfg = do
       k <- arbitrary @Vesta.BaseField `suchThat` (_ /= zero)
       let
         params = curveParams (Proxy @Vesta.G)
-        lhs = EC.toAffine $ EC.doubleProjective params (scaleRep k (EC.fromAffine p))
+        lhs = EC.toAffine $ doubleProjective params (scaleRep k (EC.fromAffine p))
         rhs = Just (coerce (EC.double params (coerce p)) :: AffinePoint Vesta.BaseField)
       pure $ lhs === rhs
 
@@ -97,7 +98,7 @@ spec cfg = do
           }
       pure case computeVbmChain inp of
         Left e -> withHelp false ("computeVbmChain errored: " <> show e)
-        Right rows -> rows === sequentialVbmRows inp
+        Right rows -> rows === sequentialDoubleAddRows inp
 
   describe "splitField / joinField" do
     it "roundtrips in Vesta.BaseField" $

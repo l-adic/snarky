@@ -55,7 +55,6 @@ lowest128Bits
   :: forall f r
    . PrimeField f
   => FieldSizeInBits f 255
-  => PrimeField f
   => FVar f -- ^ endo constant
   -> FVar f -- ^ x (sponge squeeze output)
   -> Snarky f (KimchiConstraint f) r (SizedF 128 (FVar f))
@@ -69,7 +68,6 @@ lowest128Bits'
   :: forall f r
    . PrimeField f
   => FieldSizeInBits f 255
-  => PrimeField f
   => Boolean
   -> FVar f -- ^ endo constant
   -> FVar f -- ^ x (sponge squeeze output)

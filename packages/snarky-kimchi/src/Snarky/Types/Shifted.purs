@@ -182,7 +182,6 @@ instance BasicSystem Pallas.ScalarField c => CheckedType Pallas.ScalarField c (S
 splitFieldCircuit
   :: forall f c r
    . PrimeField f
-  => PrimeField f
   => BasicSystem f c
   => FVar f
   -> Snarky f c r (SplitField (FVar f) (BoolVar f))
@@ -485,7 +484,6 @@ shiftedEqualType1
   :: forall f n c r
    . PrimeField f
   => FieldSizeInBits f n
-  => PrimeField f
   => BasicSystem f c
   => Type1 (FVar f)
   -> FVar f
@@ -514,7 +512,6 @@ shiftedEqualType2
   :: forall f n c r
    . PrimeField f
   => FieldSizeInBits f n
-  => PrimeField f
   => BasicSystem f c
   => Type2 (FVar f)
   -> FVar f

@@ -106,7 +106,6 @@ assertAny_
   :: forall f c r
    . PrimeField f
   => BasicSystem f c
-  => PrimeField f
   => Array (BoolVar f)
   -> Snarky f c r Unit
 assertAny_ bs = assertNonZero_ (sum_ (map boolToField bs))
@@ -123,7 +122,6 @@ assertExactlyOne_
   :: forall f c r
    . PrimeField f
   => BasicSystem f c
-  => PrimeField f
   => Array (BoolVar f)
   -> Snarky f c r Unit
 assertExactlyOne_ bs = assertEqual_ (sum_ (map boolToField bs)) (const_ one)
@@ -138,7 +136,6 @@ assertAll_
   :: forall f c r
    . PrimeField f
   => BasicSystem f c
-  => PrimeField f
   => Array (BoolVar f)
   -> Snarky f c r Unit
 assertAll_ bs = assertEqual_ (sum_ (map boolToField bs)) (const_ (fromInt (Array.length bs)))
@@ -159,7 +156,6 @@ allBools
   :: forall f c r
    . PrimeField f
   => BasicSystem f c
-  => PrimeField f
   => Array (BoolVar f)
   -> Snarky f c r (BoolVar f)
 allBools bs = case Array.length bs of

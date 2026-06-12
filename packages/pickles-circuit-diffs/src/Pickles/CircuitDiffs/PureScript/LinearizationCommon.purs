@@ -29,7 +29,6 @@ linearizationCircuitM
    . PrimeField f
   => PoseidonField f
   => HasEndo f f'
-  => PrimeField f
   => LinearizationFFI f
   => Int -- ^ domainLog2
   -> Array PolishToken

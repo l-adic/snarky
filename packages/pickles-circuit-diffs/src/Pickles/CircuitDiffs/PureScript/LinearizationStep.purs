@@ -2,7 +2,6 @@ module Pickles.CircuitDiffs.PureScript.LinearizationStep
   ( compileLinearizationStep
   ) where
 
-
 import Data.Vector (Vector)
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, domainLog2)

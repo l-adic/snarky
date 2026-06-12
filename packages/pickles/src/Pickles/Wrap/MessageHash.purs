@@ -62,7 +62,6 @@ hashMessagesForNextWrapProofCircuit'
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
-  => PrimeField f
   => Foldable outer
   => Reflectable d Int
   => { sg :: AffinePoint (FVar f)

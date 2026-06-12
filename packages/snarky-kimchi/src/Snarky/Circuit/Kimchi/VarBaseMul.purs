@@ -5,7 +5,6 @@ module Snarky.Circuit.Kimchi.VarBaseMul
   , splitFieldVar
   , splitField
   , joinField
-  , VbmRow
   , computeVbmChain
   ) where
 
@@ -29,13 +28,10 @@ import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.VarBaseMul (ScaleRound)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt, toBigInt)
-import Snarky.Data.EllipticCurve (AffinePoint(..), DoubleAddRow, doubleAddChain)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
+import Snarky.Data.EllipticCurve.Projective (DoubleAddRow, doubleAddChain)
 import Snarky.Types.Shifted (Type1(..))
 import Type.Proxy (Proxy(..))
-
--- | Per-bit witness row of `varBaseMul` — exactly the five values the
--- | gadget's `exists` bodies witness for one bit step.
-type VbmRow f = DoubleAddRow f
 
 -- | The gadget's entire witness chain via `doubleAddChain` (three field
 -- | inversions total instead of two per bit — Montgomery's trick over a
@@ -47,7 +43,7 @@ computeVbmChain
   :: forall f
    . PrimeField f
   => { xBase :: f, yBase :: f, acc0 :: AffinePoint f, bits :: Array f }
-  -> Either EvaluationError (Array (VbmRow f))
+  -> Either EvaluationError (Array (DoubleAddRow f))
 computeVbmChain { xBase, yBase, acc0, bits } =
   doubleAddChain "varBaseMul" acc0
     (map (\b -> AffinePoint { x: xBase, y: yBase * (b + b - one) }) bits)
@@ -101,7 +97,7 @@ varBaseMul base' (Type1 t) = label "var-base-mul" do
     bitVals :: Array (F f) <- traverse readCVar (Vector.toUnfoldable msbBitsUsed)
     case computeVbmChain { xBase: b0.x, yBase: b0.y, acc0, bits: coerce bitVals } of
       Left e -> throwAsProver e
-      Right tbl -> pure (coerce tbl :: Array (VbmRow (F f)))
+      Right tbl -> pure (coerce tbl :: Array (DoubleAddRow (F f)))
   Tuple rounds { nAccPrev: nAcc, acc: g } <- mapAccumM
     ( \s bs -> do
         nAcc <- exists do

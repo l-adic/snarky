@@ -291,7 +291,6 @@ instance Monad (OptSpongeM f c r)
 runOptSpongeM
   :: forall f r a
    . PrimeField f
-  => PrimeField f
   => OptSpongeM f (KimchiConstraint f) r a
   -> Snarky f (KimchiConstraint f) r (Tuple a (OptSpongeState f))
 runOptSpongeM computation =
@@ -418,7 +417,6 @@ optChallenge
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
-  => PrimeField f
   => FVar f -- ^ endo constant
   -> OptSpongeM f (KimchiConstraint f) r (SizedF 128 (FVar f))
 optChallenge endo = do
@@ -432,7 +430,6 @@ optScalarChallenge
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
-  => PrimeField f
   => FVar f -- ^ endo constant
   -> OptSpongeM f (KimchiConstraint f) r (SizedF 128 (FVar f))
 optScalarChallenge endo = do

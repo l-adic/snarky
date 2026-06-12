@@ -560,10 +560,12 @@
             "curves",
             "effect",
             "either",
+            "exceptions",
             "foldable-traversable",
             "gen",
             "integers",
             "js-bigints",
+            "lcg",
             "maybe",
             "newtype",
             "prelude",
@@ -589,9 +591,7 @@
           "dependencies": [
             "arrays",
             "effect",
-            "foldable-traversable",
             "maybe",
-            "newtype",
             "ordered-collections",
             "prelude",
             "st",
@@ -602,10 +602,10 @@
           "dependencies": [
             "arrays",
             "effect",
+            "foldable-traversable",
             "quickcheck",
             "spec",
-            "spec-node",
-            "spec-quickcheck"
+            "spec-node"
           ]
         }
       },

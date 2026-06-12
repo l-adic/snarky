@@ -49,7 +49,6 @@ unpackFull
   :: forall f c r n
    . PrimeField f
   => BasicSystem f c
-  => PrimeField f
   => FieldSizeInBits f n
   => Reflectable n Int
   => FVar f
@@ -109,7 +108,6 @@ anyBools
   :: forall f c r
    . PrimeField f
   => BasicSystem f c
-  => PrimeField f
   => Array (BoolVar f)
   -> Snarky f c r (BoolVar f)
 anyBools bs = case Array.length bs of
@@ -133,7 +131,6 @@ evalNary
   :: forall f c r
    . PrimeField f
   => BasicSystem f c
-  => PrimeField f
   => Nary (BoolVar f)
   -> Snarky f c r (BoolVar f)
 evalNary = case _ of
@@ -161,7 +158,6 @@ ltBitstringValue
   :: forall f c r
    . PrimeField f
   => BasicSystem f c
-  => PrimeField f
   => Array (BoolVar f)
   -> Array Boolean
   -> Snarky f c r (BoolVar f)

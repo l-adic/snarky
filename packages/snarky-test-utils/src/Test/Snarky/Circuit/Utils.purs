@@ -12,6 +12,8 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import Effect.Exception (throw)
+import Random.LCG (randomSeed)
 import Snarky.Backend.Advice (AdviceHandler, noAdvice)
 import Snarky.Backend.Assignments as Assignments
 import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, constraintsToArray)
@@ -20,7 +22,7 @@ import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, EvaluationError(..), Snarky, Variable)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (Result(..), withHelp)
-import Test.QuickCheck.Gen (Gen, randomSampleOne)
+import Test.QuickCheck.Gen (Gen, evalGen, randomSampleOne)
 import Test.Spec.Assertions (fail)
 import Type.Proxy (Proxy(..))
 
@@ -28,6 +30,23 @@ import Type.Proxy (Proxy(..))
 data TestInput a
   = QuickCheck Int (Gen a)
   | Exact (NonEmptyArray a)
+
+-- | Effectful QuickCheck driver: purescript-quickcheck has no
+-- | monadic-property API (`Testable` covers only pure shapes), so this
+-- | drives `Gen` with an explicit fresh seed per trial and runs the
+-- | property in `Effect`, throwing with the failing seed — the same
+-- | reproducibility `quickCheck` gives, without `unsafePerformEffect`
+-- | inside the property.
+quickCheckEffect :: forall a. Int -> Gen a -> (a -> Effect Result) -> Effect Unit
+quickCheckEffect n gen prop = go n
+  where
+  go 0 = pure unit
+  go i = do
+    seed <- randomSeed
+    -- size 10 = purescript-quickcheck's fixed default
+    prop (evalGen gen { newSeed: seed, size: 10 }) >>= case _ of
+      Success -> go (i - 1)
+      Failed msg -> throw ("Failed (seed " <> show seed <> "): " <> msg)
 
 data Expectation a
   = Satisfied a

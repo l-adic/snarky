@@ -20,7 +20,7 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
-import Effect.Exception.Unsafe (unsafeThrow)
+import Effect.Exception (throw)
 import Effect.Ref (Ref, read, write)
 import Effect.Ref as Ref
 import JS.BigInt as BigInt
@@ -67,19 +67,19 @@ runMerkleRef ref = AdviceHandler (on CMT._merkle handler case_)
 
   handler :: CMT.MerkleF f v d ~> Effect
   handler = case _ of
-    CMT.GetElement addr k -> readTree <#> \tree ->
+    CMT.GetElement addr k -> readTree >>= \tree ->
       case SMT.get tree addr, SMT.getPath tree addr of
-        Just v, Just pth -> k { value: v, path: pth }
-        _, _ -> unsafeThrow "getElement: invalid address"
-    CMT.GetPath addr k -> readTree <#> \tree ->
+        Just v, Just pth -> pure (k { value: v, path: pth })
+        _, _ -> throw "getElement: invalid address"
+    CMT.GetPath addr k -> readTree >>= \tree ->
       case SMT.getPath tree addr of
-        Just pth -> k pth
-        Nothing -> unsafeThrow "getPath: invalid address"
+        Just pth -> pure (k pth)
+        Nothing -> throw "getPath: invalid address"
     CMT.SetValue addr v k -> do
-      flip Ref.modify_ ref \tree ->
-        case SMT.set tree addr v of
-          Just tree' -> tree'
-          Nothing -> unsafeThrow "setValue: invalid address"
+      tree <- readTree
+      case SMT.set tree addr v of
+        Just tree' -> Ref.write tree' ref
+        Nothing -> throw "setValue: invalid address"
       pure k
 
 --------------------------------------------------------------------------------

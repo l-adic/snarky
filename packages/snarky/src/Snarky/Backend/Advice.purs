@@ -17,11 +17,13 @@ module Snarky.Backend.Advice
   ( AdviceHandler(..)
   , runAdviceHandler
   , noAdvice
+  , badAdvice
   ) where
 
 import Data.Functor.Variant (VariantF, case_)
 import Data.NaturalTransformation (type (~>))
 import Effect (Effect)
+import Effect.Exception (error, throwException)
 
 newtype AdviceHandler :: Row (Type -> Type) -> Type
 newtype AdviceHandler r = AdviceHandler (VariantF r ~> Effect)
@@ -32,3 +34,15 @@ runAdviceHandler (AdviceHandler f) = f
 -- | The handler for the empty advice row (`VariantF ()` is uninhabited).
 noAdvice :: AdviceHandler ()
 noAdvice = AdviceHandler case_
+
+-- | A handler for ANY advice row that throws if ever invoked. The
+-- | compile-time handler: compilation only allocates variables (`exists`
+-- | bodies are discarded), so no advice op can fire — pass `badAdvice`
+-- | instead of building a per-op crash record. Passing it to a PROVER is
+-- | a bug, and the error says so.
+badAdvice :: forall r. AdviceHandler r
+badAdvice = AdviceHandler \_ ->
+  throwException
+    ( error
+        "badAdvice: an advice op was invoked. badAdvice is only safe for compilation (which never runs advice); the prover needs a real AdviceHandler."
+    )

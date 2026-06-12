@@ -84,7 +84,6 @@ spongeTranscriptOptCircuit
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
-  => PrimeField f
   => { endo :: FVar f | r }
   -> Vector sgOldN (Bool (FVar f)) -- actual_proofs_verified_mask
   -> FqSpongeInput sgOldN stepChunks tCommLen (FVar f)
