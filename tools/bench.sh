@@ -40,6 +40,11 @@ BENCH_DIR="$REPO_ROOT/packages/pickles-bench"
 # comparable on the same V8.
 export PATH="$HOME/.nvm/versions/node/v23.11.1/bin:$PATH"
 
+# With `--cpu-prof`, the newest profile in prof/ is auto-summarized by
+# packages/pickles-bench/analyze_cpuprofile.mjs (self-time by category /
+# module / frame — sizes dispatch+currying overhead vs bigint core vs Run
+# machinery). Re-run it manually on any saved .cpuprofile.
+#
 # Our one flag; the rest is forwarded to the bench CLI.
 #
 # Deliberately NO GC tuning (e.g. --max-semi-space-size): measured
@@ -52,7 +57,7 @@ NODE_FLAGS=(--trace-gc)
 ARGS=()
 for a in "$@"; do
   case "$a" in
-    --cpu-prof) NODE_FLAGS+=(--cpu-prof --cpu-prof-dir "$REPO_ROOT/prof") ;;
+    --cpu-prof) CPU_PROF=1; NODE_FLAGS+=(--cpu-prof --cpu-prof-dir "$REPO_ROOT/prof") ;;
     *) ARGS+=("$a") ;;
   esac
 done
@@ -81,5 +86,13 @@ fi
 
 echo "==> Attaching GC stats from the trace-gc log ..."
 node packages/pickles-bench/parse_gclog.mjs "$RUN_LOG" "$RESULTS_FILE"
+
+if [ "${CPU_PROF:-}" = "1" ]; then
+  CPU_PROFILE=$(ls -t prof/*.cpuprofile 2>/dev/null | head -1 || true)
+  if [ -n "$CPU_PROFILE" ]; then
+    echo "==> CPU profile summary ($CPU_PROFILE) ..."
+    node packages/pickles-bench/analyze_cpuprofile.mjs "$CPU_PROFILE"
+  fi
+fi
 
 echo "==> Results: $RESULTS_FILE"
