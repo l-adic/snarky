@@ -1,48 +1,48 @@
--- | The circuit monad and core DSL operations, expressed with
--- | `purescript-run` extensible effects.
+-- | The circuit monad and core DSL operations, in DIRECT (final-tagless)
+-- | style: a `Snarky` computation is a function from an interpreter's
+-- | operations record (`CircuitOps`) straight to `Effect`, and an
+-- | `AsProver` witness computation is a function from the prover context
+-- | (assignments + advice handler) to `Effect`. Nothing is reified — a
+-- | bind is a closure, an op is a record-field call. The TWO interpreters
+-- | (the constraint builder, `Snarky.Backend.Builder`, and the witness
+-- | prover, `Snarky.Backend.Prover`) are just two ways of constructing a
+-- | `CircuitOps` record.
 -- |
--- | Circuit construction is ONE first-order effect (`CircuitF`) with TWO
--- | interpreters — the constraint builder (`Snarky.Backend.Builder`) and the
--- | witness prover (`Snarky.Backend.Prover`) — replacing the old
--- | `CircuitM f c t m` class over two monad transformers.
+-- | ## Advice
 -- |
--- | ## The rows
+-- | The open row `r` types the ADVICE an application serves to witness
+-- | computations (a ledger oracle, …). Advice operations remain encoded as
+-- | `Run r` values (cheap — they are rare); `liftAdvice` interprets them
+-- | against the `AdviceHandler r` carried in the prover context.
 -- |
--- | ```purescript
--- | Snarky f c r a       -- circuit program: Run (circuit :: CircuitF f c r | r) a
--- | AsProver f r a       -- witness program: Run (EXCEPT … + READER … + r) a
--- | ```
+-- | ## Errors
 -- |
--- | The old "base monad" `m` (the advice monad) is now the OPEN TAIL `r` —
--- | effects the circuit doesn't know about (a ledger oracle, `EFFECT`,
--- | nothing). They are reachable only from witness computations passed to
--- | `exists`, exactly as before.
+-- | Witness/constraint failures abort the whole interpretation via tagged
+-- | JS exceptions (`Snarky.Circuit.EvalError`), recovered as
+-- | `Either EvaluationError` only at interpreter boundaries. Throw-only —
+-- | there is no user-facing catch, matching the old EXCEPT-row semantics.
 -- |
 -- | ## The `exists` encoding
 -- |
 -- | `exists` is monomorphized at the call site: the `CircuitType` dictionary
--- | projects the witness to `Array f` and rebuilds the variable bundle, so the
--- | effect payload is plain data — a size, a witness computation returning
--- | fields, and a continuation from the allocated variables. The builder
--- | interpreter discards the witness computation; the prover runs it.
+-- | projects the witness to `Array f` and rebuilds the variable bundle, so
+-- | the ops-record payload is plain data — a size and a witness computation
+-- | returning fields. The builder's ops ignore the witness computation; the
+-- | prover's run it.
 module Snarky.Circuit.DSL.Monad
   ( AsProver(..)
-  , ASPROVER
+  , AsProverCtx(..)
   , liftAdvice
-  , _effect
-  , CircuitF(..)
-  , CIRCUIT
+  , runAdvice
+  , CircuitOps(..)
   , Snarky(..)
-  , _circuit
-  , liftCircuit
-  , runSnarky
+  , assignVars
   , addConstraint
   , exists
   , fresh
   , read
   , readCVar
   , runAsProver
-  , unAsProver
   , liftEffectAsProver
   , liftEffectSnarky
   , mkWitnessTable
@@ -88,18 +88,16 @@ import Prim.Row as Row
 import Prim.RowList (class RowToList)
 import Prim.RowList as RL
 import Record as Record
-import Run (EFFECT, Run)
+import Run (Run)
 import Run as Run
-import Run.Except (EXCEPT)
-import Run.Except as Except
-import Run.Reader (READER)
-import Run.Reader as Reader
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (AdviceHandler(..))
 import Snarky.Backend.Assignments (Assignments)
 import Snarky.Backend.Assignments as Assignments
 import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), Variable, add_, const_, sub_)
 import Snarky.Circuit.CVar as CVar
+import Snarky.Circuit.EvalError (throwEvalError)
+import Snarky.Circuit.EvalError as EvalError
 import Snarky.Circuit.Types (class CircuitType, Bool(..), BoolVar, F(..), FVar, NoInput, NoOutput, UnChecked, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Constraint.Basic (class BasicSystem, boolean, r1cs)
 import Snarky.Curves.Class (class PrimeField)
@@ -110,35 +108,50 @@ import Unsafe.Coerce (unsafeCoerce)
 --------------------------------------------------------------------------------
 -- Witness (prover-side) computations
 
--- | The effects available to a witness computation: evaluation failure,
--- | read access to the current variable assignments, plus whatever advice
--- | effects `r` the application provides.
--- | Witness computations read the (mutable) assignment store, so EFFECT
--- | is part of the row by construction — `readCVar`/`read` stay generic
--- | in the advice tail `r`.
-type ASPROVER f r = EXCEPT EvaluationError + READER (Assignments f) + EFFECT + r
+-- | What a witness computation runs against: the (mutable) assignment
+-- | store it reads variables from, and the application's advice handler.
+newtype AsProverCtx :: Type -> Row (Type -> Type) -> Type
+newtype AsProverCtx f r = AsProverCtx
+  { assignments :: Assignments f
+  , advice :: AdviceHandler r
+  }
 
--- | Prover-side computation. Runs with access to variable assignments,
--- | used as the argument to `exists` to compute witness values. A newtype
--- | over `Run` so it can carry the lifted numeric/boolean instances below
+-- | Prover-side computation: a direct reader of the prover context over
+-- | `Effect`. Used as the argument to `exists` to compute witness values.
+-- | A newtype so it can carry the lifted numeric/boolean instances below
 -- | (witness blocks compute with `*`, `/`, `&&` over `readCVar` results).
 newtype AsProver :: Type -> Row (Type -> Type) -> Type -> Type
-newtype AsProver f r a = AsProver (Run (ASPROVER f r) a)
+newtype AsProver f r a = AsProver (AsProverCtx f r -> Effect a)
 
-derive newtype instance Functor (AsProver f r)
-derive newtype instance Apply (AsProver f r)
-derive newtype instance Applicative (AsProver f r)
-derive newtype instance Bind (AsProver f r)
-derive newtype instance Monad (AsProver f r)
-derive newtype instance MonadRec (AsProver f r)
+instance Functor (AsProver f r) where
+  map f (AsProver g) = AsProver \ctx -> map f (g ctx)
+
+instance Apply (AsProver f r) where
+  apply (AsProver mf) (AsProver ma) = AsProver \ctx -> apply (mf ctx) (ma ctx)
+
+instance Applicative (AsProver f r) where
+  pure a = AsProver \_ -> pure a
+
+instance Bind (AsProver f r) where
+  bind (AsProver g) k = AsProver \ctx -> g ctx >>= \a -> case k a of AsProver h -> h ctx
+
+instance Monad (AsProver f r)
+
+instance MonadRec (AsProver f r) where
+  tailRecM k a0 = AsProver \ctx -> tailRecM (\a -> case k a of AsProver g -> g ctx) a0
 
 -- | Lift an advice computation (the open tail `r`) into a witness
--- | computation. Replaces the old `MonadTrans (AsProverT f)` instance; the
--- | row widening is safe for the same reason `Run.expand` is (a `Run r`
--- | program can never produce an effect outside `r`), and is spelled with a
--- | coercion because the `Union` solver cannot align two open tails.
+-- | computation: interpret its (tiny) `Run` encoding against the context's
+-- | handler. Advice ops are rare, so their `Run` reification is noise.
 liftAdvice :: forall f r a. Run r a -> AsProver f r a
-liftAdvice = AsProver <<< (unsafeCoerce :: Run r a -> Run (ASPROVER f r) a)
+liftAdvice run = AsProver \(AsProverCtx ctx) -> runAdvice ctx.advice run
+
+-- | Interpret a pure-advice `Run` program against a handler, directly in
+-- | `Effect`.
+runAdvice :: forall r a. AdviceHandler r -> Run r a -> Effect a
+runAdvice (AdviceHandler h) = tailRecM \m -> case Run.peel m of
+  Right a -> pure (Done a)
+  Left v -> Loop <$> h v
 
 instance (Semigroup a) => Semigroup (AsProver f r a) where
   append a b = lift2 (<>) a b
@@ -173,41 +186,20 @@ instance HeytingAlgebra (AsProver f r Boolean) where
   disj = lift2 disj
   implies = lift2 implies
 
--- | Interpret a witness computation against an assignment map, directly in
--- | `Effect`: a `tailRecM` loop over `Run.peel` that handles `except`
--- | (short-circuits — no `catch` exists in this codebase), `reader`
--- | (constant env — no `local`), and `effect` inline, and delegates the
--- | advice tail `r` to the caller's handler. Replaces the old
--- | `runExcept <<< runReader` handler chain, which reified a second Run
--- | program (and allocated a fresh handler pass) per witness computation.
+-- | Run a witness computation against an assignment map and advice
+-- | handler, recovering a thrown `EvaluationError` at this boundary.
 runAsProver
   :: forall f r a
    . AdviceHandler r
   -> Assignments f
   -> AsProver f r a
   -> Effect (Either EvaluationError a)
-runAsProver (AdviceHandler handler) env (AsProver m0) = tailRecM go m0
-  where
-  go
-    :: Run (ASPROVER f r) a
-    -> Effect (Step (Run (ASPROVER f r) a) (Either EvaluationError a))
-  go m = case Run.peel m of
-    Right a -> pure (Done (Right a))
-    Left v ->
-      v # Run.on Except._except (\(Except.Except e) -> pure (Done (Left e)))
-        ( Run.on Reader._reader (\(Reader.Reader k) -> pure (Loop (k env)))
-            ( Run.on _effect (\eff -> Loop <$> eff)
-                (\other -> Loop <$> handler other)
-            )
-        )
-
-_effect :: Proxy "effect"
-_effect = Proxy
+runAsProver advice assignments (AsProver g) =
+  EvalError.catchEvalError (g (AsProverCtx { assignments, advice }))
 
 readCVar :: forall f r. PrimeField f => FVar f -> AsProver f r (F f)
-readCVar v = AsProver do
-  m <- Reader.ask
-  let _lookup var = maybe (Except.throw $ MissingVariable var) pure $ Assignments.lookup var m
+readCVar v = AsProver \(AsProverCtx ctx) -> do
+  let _lookup var = maybe (throwEvalError $ MissingVariable var) pure $ Assignments.lookup var ctx.assignments
   F <$> CVar.eval _lookup v
 
 read
@@ -216,72 +208,64 @@ read
   => PrimeField f
   => var
   -> AsProver f r a
-read var = AsProver do
+read var = AsProver \(AsProverCtx ctx) -> do
   let fieldVars = varToFields @f @a var
-  m <- Reader.ask
-  let _lookup v = maybe (Except.throw $ MissingVariable v) pure $ Assignments.lookup v m
+  let _lookup v = maybe (throwEvalError $ MissingVariable v) pure $ Assignments.lookup v ctx.assignments
   fields <- traverse (CVar.eval _lookup) fieldVars
   pure $ fieldsToValue fields
 
 throwAsProver :: forall f r a. EvaluationError -> AsProver f r a
-throwAsProver = AsProver <<< Except.throw
+throwAsProver e = AsProver \_ -> throwEvalError e
 
 --------------------------------------------------------------------------------
--- The circuit effect
+-- The circuit monad
 
--- | The circuit-construction effect. First-order: `Exists` carries the
--- | witness computation already projected to `Array f` (see module doc), so
--- | interpreters never need the value type or its dictionaries.
-data CircuitF f c (r :: Row (Type -> Type)) a
-  = Fresh (Variable -> a)
-  | AddConstraint c a
-  | Exists Int (Run (ASPROVER f r) (Array f)) (Array Variable -> a)
-  | Assign (Array Variable) (Run (ASPROVER f r) (Array f)) a
-  | PushLabel String a
-  | PopLabel a
+-- | The operations record an interpreter supplies: how each circuit op
+-- | executes. The builder's ops collect constraints and ignore witness
+-- | computations; the prover's run witnesses against the live assignments.
+-- | A newtype so it can be stored and passed without rank-2 trouble; built
+-- | once per compile/solve, so its cost is nothing.
+newtype CircuitOps :: Type -> Type -> Row (Type -> Type) -> Type
+newtype CircuitOps f c r = CircuitOps
+  { freshOp :: Effect Variable
+  , addConstraintOp :: c -> Effect Unit
+  , existsOp :: Int -> AsProver f r (Array f) -> Effect (Array Variable)
+  , assignOp :: Array Variable -> AsProver f r (Array f) -> Effect Unit
+  , pushLabelOp :: String -> Effect Unit
+  , popLabelOp :: Effect Unit
+  }
 
-derive instance Functor (CircuitF f c r)
-
--- | The circuit row: the `circuit` effect over an open tail of advice
--- | effects `r` (shared with the witness computations inside `Exists`).
--- | The circuit row carries EFFECT structurally: interpreters mutate
--- | (stores, union-find) and circuits may perform effects while witnessing,
--- | so every `Snarky f c r` has effect capability without `r` naming it.
-type CIRCUIT f c r = (circuit :: CircuitF f c r | EFFECT + r)
-
-_circuit :: Proxy "circuit"
-_circuit = Proxy
-
--- | The circuit-building monad: `Run` over the circuit effect, newtyped to
--- | carry the numeric/boolean instances below (orphan rules forbid them on
--- | `Run` directly). Runtime-free.
+-- | The circuit-building monad: a direct reader of the interpreter's ops
+-- | over `Effect`. A bind is a closure; an op is a record-field call.
 newtype Snarky :: Type -> Type -> Row (Type -> Type) -> Type -> Type
-newtype Snarky f c r a = Snarky (Run (CIRCUIT f c r) a)
+newtype Snarky f c r a = Snarky (CircuitOps f c r -> Effect a)
 
-derive newtype instance Functor (Snarky f c r)
-derive newtype instance Apply (Snarky f c r)
-derive newtype instance Applicative (Snarky f c r)
-derive newtype instance Bind (Snarky f c r)
-derive newtype instance Monad (Snarky f c r)
-derive newtype instance MonadRec (Snarky f c r)
+instance Functor (Snarky f c r) where
+  map f (Snarky g) = Snarky \ops -> map f (g ops)
 
-runSnarky :: forall f c r a. Snarky f c r a -> Run (CIRCUIT f c r) a
-runSnarky (Snarky m) = m
+instance Apply (Snarky f c r) where
+  apply (Snarky mf) (Snarky ma) = Snarky \ops -> apply (mf ops) (ma ops)
 
-unAsProver :: forall f r a. AsProver f r a -> Run (ASPROVER f r) a
-unAsProver (AsProver m) = m
+instance Applicative (Snarky f c r) where
+  pure a = Snarky \_ -> pure a
 
--- | Run an `Effect` inside a witness computation (EFFECT is structural in
--- | the witness row).
+instance Bind (Snarky f c r) where
+  bind (Snarky g) k = Snarky \ops -> g ops >>= \a -> case k a of Snarky h -> h ops
+
+instance Monad (Snarky f c r)
+
+instance MonadRec (Snarky f c r) where
+  tailRecM k a0 = Snarky \ops -> tailRecM (\a -> case k a of Snarky g -> g ops) a0
+
+-- | Run an `Effect` inside a witness computation.
 liftEffectAsProver :: forall f r a. Effect a -> AsProver f r a
-liftEffectAsProver = AsProver <<< Run.liftEffect
+liftEffectAsProver eff = AsProver \_ -> eff
 
--- | Lift an effect into the circuit monad (the `CIRCUIT` row carries
--- | `EFFECT` structurally). Runs under BOTH interpreters -- builder and
--- | prover -- so use only for interpretation-neutral setup (e.g. allocating
--- | a fresh memo `Ref` for witness computations to share).
+-- | Lift an effect into the circuit monad. Runs under BOTH interpreters --
+-- | builder and prover -- so use only for interpretation-neutral setup
+-- | (e.g. allocating a fresh memo `Ref` for witness computations to share).
 liftEffectSnarky :: forall f c r a. Effect a -> Snarky f c r a
-liftEffectSnarky = Snarky <<< Run.liftEffect
+liftEffectSnarky eff = Snarky \_ -> eff
 
 -- | A lazily-computed, memoized witness table shared by many `exists`
 -- | bodies: the FIRST body to run computes the whole table (e.g. a batched
@@ -307,16 +291,19 @@ mkWitnessTable name compute = do
     maybe (throwAsProver (FailedAssertion (name <> ": witness table index out of bounds"))) pure
       (Array.index table i)
 
-liftCircuit :: forall f c r a. CircuitF f c r a -> Snarky f c r a
-liftCircuit = Snarky <<< Run.lift _circuit
-
 -- | Allocate a fresh circuit variable.
 fresh :: forall f c r. Snarky f c r Variable
-fresh = liftCircuit (Fresh identity)
+fresh = Snarky \(CircuitOps ops) -> ops.freshOp
 
 -- | Add a constraint to the circuit.
 addConstraint :: forall f c r. c -> Snarky f c r Unit
-addConstraint c = liftCircuit (AddConstraint c unit)
+addConstraint c = Snarky \(CircuitOps ops) -> ops.addConstraintOp c
+
+-- | Bind already-allocated variables to witness-computed values (prover
+-- | only; the builder ignores it). Used by the solver to back-fill the
+-- | public-output slots.
+assignVars :: forall f c r. Array Variable -> AsProver f r (Array f) -> Snarky f c r Unit
+assignVars vars w = Snarky \(CircuitOps ops) -> ops.assignOp vars w
 
 -- | Introduce witness variables with a prover-side computation. The builder
 -- | interpreter allocates variables and ignores the computation; the prover
@@ -328,9 +315,9 @@ exists
   => CheckedType f c var
   => AsProver f r a
   -> Snarky f c r var
-exists (AsProver w) = do
+exists w = do
   let n = sizeInFields (Proxy @f) (Proxy @a)
-  vars <- liftCircuit (Exists n (map valueToFields w) identity)
+  vars <- Snarky \(CircuitOps ops) -> ops.existsOp n (map valueToFields w)
   let v = fieldsToVar @f @a (map Var vars)
   check v
   pure v
@@ -339,10 +326,10 @@ exists (AsProver w) = do
 -- | carry the label context, and prover errors (in debug mode) are wrapped
 -- | with it.
 label :: forall f c r a. String -> Snarky f c r a -> Snarky f c r a
-label s (Snarky m) = Snarky do
-  Run.lift _circuit (PushLabel s unit)
-  a <- m
-  Run.lift _circuit (PopLabel unit)
+label s (Snarky m) = Snarky \ops@(CircuitOps o) -> do
+  o.pushLabelOp s
+  a <- m ops
+  o.popLabelOp
   pure a
 
 --------------------------------------------------------------------------------

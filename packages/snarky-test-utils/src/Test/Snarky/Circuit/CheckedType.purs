@@ -15,7 +15,7 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray, initialBuilderState, runCircuitBuilder)
 import Snarky.Circuit.CVar (CVar(..))
-import Snarky.Circuit.DSL (class CheckedType, Basic, Bool, BoolVar, FVar, Snarky, UnChecked(..), Variable, check, const_, genericCheck, runSnarky)
+import Snarky.Circuit.DSL (class CheckedType, Basic, Bool, BoolVar, FVar, Snarky, UnChecked(..), Variable, check, const_, genericCheck)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary, (===))
 import Test.QuickCheck.Gen (suchThat)
@@ -27,7 +27,7 @@ runM :: forall f a. PrimeField f => Snarky f (Basic f) () a -> Array (Basic f)
 runM m = map _.constraint <<< constraintsToArray <<< _.constraints <<< snd
   $ unsafePerformEffect do
       st0 <- initialBuilderState :: Effect (CircuitBuilderState (Basic f) Unit)
-      runCircuitBuilder noAdvice st0 (runSnarky m)
+      runCircuitBuilder noAdvice st0 m
 
 newtype ValidBVar f = ValidBVar (BoolVar f)
 

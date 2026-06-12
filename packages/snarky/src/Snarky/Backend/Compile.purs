@@ -34,7 +34,7 @@ import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, allocV
 import Snarky.Backend.Prover (class SolveCircuit, allocAssignments, runCircuitProver)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError, Variable, v0)
 import Snarky.Circuit.DSL.Assert (assertEqual_)
-import Snarky.Circuit.DSL.Monad (class CheckedType, CircuitF(..), Snarky, check, liftCircuit, read, runAsProver, runSnarky, unAsProver)
+import Snarky.Circuit.DSL.Monad (class CheckedType, Snarky, assignVars, check, read, runAsProver)
 import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Type.Proxy (Proxy(..))
 
@@ -73,7 +73,7 @@ compile' handler { debug } _ _ _ circuit = do
       out <- circuit avar
       for_ (zip (varToFields @f @b out) (map Var bvars)) \(Tuple v1 v2) ->
         assertEqual_ v1 v2
-  Tuple _ s <- runCircuitBuilder handler cbs2 (runSnarky prog)
+  Tuple _ s <- runCircuitBuilder handler cbs2 prog
   pure (finalize s)
 
 compile
@@ -123,11 +123,11 @@ makeSolver' { debug } _ circuit = \handler inputs -> do
       -- variables, then constrain them equal — INSIDE the prover, so
       -- backend reductions allocate/assign their intermediates exactly
       -- as the builder did at compile time.
-      liftCircuit (Assign bvars (map valueToFields (unAsProver (read @b out))) unit)
+      assignVars bvars (map valueToFields (read @b out))
       for_ (zip (varToFields @f @b out) (map Var bvars)) \(Tuple v1 v2) ->
         assertEqual_ v1 v2
       pure out
-  Tuple eOut s <- runCircuitProver handler st1 (runSnarky prog)
+  Tuple eOut s <- runCircuitProver handler st1 prog
   case eOut of
     Left e -> pure (Left e)
     Right outVar -> runAsProver handler s.assignments (read outVar) >>= case _ of

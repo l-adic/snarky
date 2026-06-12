@@ -35,13 +35,12 @@ import Data.List (List(..), reverse) as L
 import Data.Maybe (fromMaybe)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
-import Run (Run)
-import Run as Run
-import Snarky.Backend.Advice (AdviceHandler(..))
+import Effect.Ref as Ref
+import Snarky.Backend.Advice (AdviceHandler)
 import Snarky.Backend.Assignments (Assignments)
 import Snarky.Backend.Assignments as Assignments
 import Snarky.Circuit.CVar (Variable, incrementVariable, v0)
-import Snarky.Circuit.DSL.Monad (CIRCUIT, CircuitF(..), _circuit, _effect)
+import Snarky.Circuit.DSL.Monad (CircuitOps(..), Snarky(..))
 import Snarky.Constraint.Basic (class BasicSystem, Basic)
 import Snarky.Curves.Class (class PrimeField)
 
@@ -150,57 +149,55 @@ allocVars n s0 = go 0 s0 []
         when s.debug $ Assignments.set v s.labelStack s.varMetadata
         go (i + 1) (s { nextVar = incrementVariable v }) (Array.snoc acc v)
 
--- | Interpret the `circuit` effect in builder mode, directly in `Effect`.
--- | The open tail of advice effects `r` is delegated to the caller's
--- | handler — circuit code can lift advice ops outside `exists` (witness
--- | computations themselves are discarded by this interpreter).
+-- | Interpret a circuit in builder mode: collect constraints, allocate
+-- | variables, DISCARD witness computations. The advice handler is unused —
+-- | in direct style, advice is only reachable from witness computations,
+-- | which the builder never runs — but the parameter is kept so compile and
+-- | solve share a calling convention.
 runCircuitBuilder
   :: forall f c c' aux r a
    . CompileCircuit f c c' aux
   => AdviceHandler r
   -> CircuitBuilderState c aux
-  -> Run (CIRCUIT f c' r) a
+  -> Snarky f c' r a
   -> Effect (Tuple a (CircuitBuilderState c aux))
-runCircuitBuilder (AdviceHandler handler) s0 r0 = tailRecM go (Tuple s0 r0)
-  where
-  handle = Run.on _circuit Left Right
+runCircuitBuilder _ s0 (Snarky g) = do
+  ref <- Ref.new s0
+  a <- g (builderOps ref)
+  s <- Ref.read ref
+  pure (Tuple a s)
 
-  -- Stack safety: every interpreter step is a `tailRecM` `Step` in
-  -- `Effect` (whose `MonadRec` is a JS loop), so circuits with hundreds
-  -- of thousands of ops interpret in constant stack.
-  go
-    :: CompileCircuit f c c' aux
-    => Tuple (CircuitBuilderState c aux) (Run (CIRCUIT f c' r) a)
-    -> Effect (Step (Tuple (CircuitBuilderState c aux) (Run (CIRCUIT f c' r) a)) (Tuple a (CircuitBuilderState c aux)))
-  go (Tuple s r) = case Run.peel r of
-    Left v -> case handle v of
-      Left cf -> case cf of
-        Fresh k ->
-          allocVars 1 s <#> \(Tuple vs s') ->
-            Loop (Tuple s' (k (fromMaybe s.nextVar (Array.head vs))))
-        AddConstraint c k ->
-          appendBuilderConstraint c s <#> \s' ->
-            Loop (Tuple s' k)
-        Exists n _ k ->
-          allocVars n s <#> \(Tuple vs s') ->
-            Loop (Tuple s' (k vs))
-        Assign _ _ k ->
-          pure (Loop (Tuple s k))
-        PushLabel l k ->
-          pure (Loop (Tuple (s { labelStack = Array.snoc s.labelStack l }) k))
-        PopLabel k ->
-          pure (Loop (Tuple (s { labelStack = Array.init s.labelStack # fromMaybe [] }) k))
-      Right v' ->
-        v' # Run.on _effect (\eff -> eff <#> \r' -> Loop (Tuple s r'))
-          (\other -> handler other <#> \r' -> Loop (Tuple s r'))
-    Right a ->
-      pure (Done (Tuple a s))
+-- | The builder's operations over a mutable state cell.
+builderOps
+  :: forall f c c' aux r
+   . CompileCircuit f c c' aux
+  => Ref.Ref (CircuitBuilderState c aux)
+  -> CircuitOps f c' r
+builderOps ref = CircuitOps
+  { freshOp: do
+      s <- Ref.read ref
+      Tuple vs s' <- allocVars 1 s
+      Ref.write s' ref
+      pure (fromMaybe s.nextVar (Array.head vs))
+  , addConstraintOp: \c -> do
+      s <- Ref.read ref
+      s' <- appendBuilderConstraint c s
+      Ref.write s' ref
+  , existsOp: \n _ -> do
+      s <- Ref.read ref
+      Tuple vs s' <- allocVars n s
+      Ref.write s' ref
+      pure vs
+  , assignOp: \_ _ -> pure unit
+  , pushLabelOp: \l -> Ref.modify_ (\s -> s { labelStack = Array.snoc s.labelStack l }) ref
+  , popLabelOp: Ref.modify_ (\s -> s { labelStack = Array.init s.labelStack # fromMaybe [] }) ref
+  }
 
 execCircuitBuilder
   :: forall f c c' aux r a
    . CompileCircuit f c c' aux
   => AdviceHandler r
   -> CircuitBuilderState c aux
-  -> Run (CIRCUIT f c' r) a
+  -> Snarky f c' r a
   -> Effect (CircuitBuilderState c aux)
 execCircuitBuilder h s = map (\(Tuple _ s') -> s') <<< runCircuitBuilder h s

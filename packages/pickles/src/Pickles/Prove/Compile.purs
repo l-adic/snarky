@@ -68,7 +68,6 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Effect.Class (liftEffect)
 import Effect.Exception as Exc
 import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
@@ -178,7 +177,6 @@ import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (SplitField, Type2)
 import Type.Proxy (Proxy(..))
-import Type.Row (type (+))
 
 --------------------------------------------------------------------------------
 -- Public types

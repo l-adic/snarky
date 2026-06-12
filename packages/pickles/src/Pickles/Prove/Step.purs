@@ -67,7 +67,6 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
-import Effect.Class (liftEffect)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
@@ -104,10 +103,6 @@ import Pickles.Verify.Types (UnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
-import Run (EFFECT, Run)
-import Run as Run
-import Run.Except (EXCEPT)
-import Run.Except as Except
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (AdviceHandler)
 import Snarky.Backend.Assignments as Assignments
@@ -134,7 +129,6 @@ import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (SplitField(..), Type1(..), Type2(..), fromShifted, toShifted)
 import Type.Proxy (Proxy(..))
-import Type.Row (type (+))
 import Unsafe.Coerce (unsafeCoerce)
 
 --------------------------------------------------------------------------------
