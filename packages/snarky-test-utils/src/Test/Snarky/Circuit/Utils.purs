@@ -12,11 +12,10 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Run (EFFECT, Run)
-import Run as Run
+import Snarky.Backend.Advice (AdviceHandler, noAdvice)
 import Snarky.Backend.Assignments as Assignments
 import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, constraintsToArray)
-import Snarky.Backend.Compile (Checker, Solver, SolverT, compile', makeSolver', runSolverT)
+import Snarky.Backend.Compile (Checker, Solver, SolverT, compile', makeSolver', runSolver)
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, EvaluationError(..), Snarky, Variable)
 import Snarky.Curves.Class (class PrimeField)
@@ -24,7 +23,6 @@ import Test.QuickCheck (Result(..), withHelp)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
 import Test.Spec.Assertions (fail)
 import Type.Proxy (Proxy(..))
-import Type.Row (type (+))
 
 -- | How to provide test inputs: either via a QuickCheck generator or as exact values.
 data TestInput a
@@ -112,27 +110,29 @@ runTest
   -> a
   -> Effect Result
 runTest { builtState, solver, checker, postCondition } testFunction inputs = do
-  solverResult <- Run.runBaseEffect $ runSolverT solver inputs
+  solverResult <- runSolver solver inputs
   checkResult builtState checker postCondition testFunction inputs solverResult
 
--- | Core test runner for effectful solvers.
+-- | Core test runner for solvers with advice effects: the handler
+-- | discharges the circuit's advice row.
 runTestM
   :: forall f c c' aux r a avar b
    . CircuitType f a avar
   => PrimeField f
   => Eq b
   => Show b
-  => { builtState :: CircuitBuilderState c aux
+  => AdviceHandler r
+  -> { builtState :: CircuitBuilderState c aux
      , solver :: SolverT f c' r a b
      , checker :: Checker f c
      , postCondition :: PostCondition f c aux
      }
   -> (a -> Expectation b)
   -> a
-  -> Run (EFFECT + r) Result
-runTestM { builtState, solver, checker, postCondition } testFunction inputs =
-  runSolverT solver inputs >>= \res ->
-    Run.liftEffect (checkResult builtState checker postCondition testFunction inputs res)
+  -> Effect Result
+runTestM handler { builtState, solver, checker, postCondition } testFunction inputs =
+  solver handler inputs >>= \res ->
+    checkResult builtState checker postCondition testFunction inputs res
 
 -- | Check a solver result against the circuit constraints and test function.
 checkResult
@@ -198,14 +198,16 @@ circuitTest'
   -> (avar -> Snarky f c' () bvar)
   -> Aff { builtState :: CircuitBuilderState c aux, solver :: Solver f c' a b }
 circuitTest' { checker, postCondition } scenarios circuit = do
-  builtState <- liftEffect $ Run.runBaseEffect $ compile' { debug: true } (Proxy @a) (Proxy @b) (Proxy @c') circuit
+  builtState <- liftEffect $ compile' noAdvice { debug: true } (Proxy @a) (Proxy @b) (Proxy @c') circuit
   let solver = makeSolver' { debug: true } (Proxy @c') circuit
   forWithIndex_ scenarios \idx { testFunction, input } ->
     runScenario idx (runTest { builtState, solver, checker, postCondition } testFunction) input
   pure { builtState, solver }
 
--- | Like `circuitTest'` but for circuits with an effectful base monad.
--- | Takes a natural transformation `m ~> Effect` to run the monad.
+-- | Like `circuitTest'` but for circuits with advice effects. `handler`
+-- | discharges the advice row; `beforeEach` runs before EVERY trial (it
+-- | replaces the old natural-transformation-with-reset pattern — use it to
+-- | reset mutable state, e.g. rewrite a ledger/tree ref).
 circuitTestM'
   :: forall @f c c' aux a b avar bvar r
    . CompileCircuit f c c' aux
@@ -216,16 +218,16 @@ circuitTestM'
   => PrimeField f
   => Eq b
   => Show b
-  => (Run (EFFECT + r) ~> Effect)
+  => { handler :: AdviceHandler r, beforeEach :: Effect Unit }
   -> TestConfig f c aux
   -> NonEmptyArray { testFunction :: a -> Expectation b, input :: TestInput a }
   -> (avar -> Snarky f c' r bvar)
   -> Aff { builtState :: CircuitBuilderState c aux, solver :: SolverT f c' r a b }
-circuitTestM' nat { checker, postCondition } scenarios circuit = do
-  builtState <- liftEffect $ nat $ compile' { debug: true } (Proxy @a) (Proxy @b) (Proxy @c') circuit
+circuitTestM' { handler, beforeEach } { checker, postCondition } scenarios circuit = do
+  builtState <- liftEffect $ compile' handler { debug: true } (Proxy @a) (Proxy @b) (Proxy @c') circuit
   let solver = makeSolver' { debug: true } (Proxy @c') circuit
   forWithIndex_ scenarios \idx { testFunction, input } ->
-    runScenarioM idx nat (runTestM { builtState, solver, checker, postCondition } testFunction) input
+    runScenarioM idx beforeEach (runTestM handler { builtState, solver, checker, postCondition } testFunction) input
   pure { builtState, solver }
 
 -- | Run a single test scenario with the given test runner.
@@ -248,20 +250,20 @@ runScenario idx run = case _ of
       )
       inputs
 
--- | Run a single test scenario with an effectful test runner.
-runScenarioM :: forall a r. Int -> (Run (EFFECT + r) ~> Effect) -> (a -> Run (EFFECT + r) Result) -> TestInput a -> Aff Unit
-runScenarioM idx nat run = case _ of
+-- | Run a single test scenario, running `beforeEach` ahead of every trial.
+runScenarioM :: forall a. Int -> Effect Unit -> (a -> Effect Result) -> TestInput a -> Aff Unit
+runScenarioM idx beforeEach run = case _ of
   QuickCheck n gen ->
     for_ (Array.range 1 n) \_ -> do
       a <- liftEffect (randomSampleOne gen)
-      result <- liftEffect (nat (run a))
+      result <- liftEffect (beforeEach *> run a)
       case result of
         Success -> pure unit
         Failed msg -> fail $ "Scenario #" <> show idx <> " failed: " <> msg
   Exact inputs ->
     traverse_
       ( \a -> do
-          result <- liftEffect $ nat $ run a
+          result <- liftEffect (beforeEach *> run a)
           case result of
             Success -> pure unit
             Failed msg -> fail $ "Scenario #" <> show idx <> " failed: " <> msg

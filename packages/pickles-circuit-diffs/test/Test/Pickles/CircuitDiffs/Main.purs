@@ -71,9 +71,9 @@ import Pickles.CircuitDiffs.PureScript.Xhat (compileXhat)
 import Pickles.CircuitDiffs.PureScript.XhatStep (compileXhatStep)
 import Pickles.CircuitDiffs.Types (CircuitComparison)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
-import Run as Run
 import Safe.Coerce (coerce)
 import Simple.JSON (writeJSON)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Builder (constraintsToArray)
 import Snarky.Backend.Compile (Solver, compile, makeSolver, runSolver)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
@@ -154,28 +154,28 @@ resetOutputDirs = do
 -- Compile helpers (basic circuits, Fp only)
 
 compileFF :: (forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (FVar Fp)) -> Effect (Circuit Fp)
-compileFF circuit = fromCompiledCircuit =<< Run.runBaseEffect
-  (compile (Proxy @(F Fp)) (Proxy @(F Fp)) (Proxy @(KimchiConstraint Fp)) circuit)
+compileFF circuit = fromCompiledCircuit =<<
+  (compile noAdvice (Proxy @(F Fp)) (Proxy @(F Fp)) (Proxy @(KimchiConstraint Fp)) circuit)
 
 compileFB :: (forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (BoolVar Fp)) -> Effect (Circuit Fp)
-compileFB circuit = fromCompiledCircuit =<< Run.runBaseEffect
-  (compile (Proxy @(F Fp)) (Proxy @Boolean) (Proxy @(KimchiConstraint Fp)) circuit)
+compileFB circuit = fromCompiledCircuit =<<
+  (compile noAdvice (Proxy @(F Fp)) (Proxy @Boolean) (Proxy @(KimchiConstraint Fp)) circuit)
 
 compileFU :: (forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r Unit) -> Effect (Circuit Fp)
-compileFU circuit = fromCompiledCircuit =<< Run.runBaseEffect
-  (compile (Proxy @(F Fp)) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit)
+compileFU circuit = fromCompiledCircuit =<<
+  (compile noAdvice (Proxy @(F Fp)) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit)
 
 compileUU :: (forall r. PrimeField Fp => Unit -> Snarky Fp (KimchiConstraint Fp) r Unit) -> Effect (Circuit Fp)
-compileUU circuit = fromCompiledCircuit =<< Run.runBaseEffect
-  (compile (Proxy @Unit) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit)
+compileUU circuit = fromCompiledCircuit =<<
+  (compile noAdvice (Proxy @Unit) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit)
 
 compileBB :: (forall c r. BasicSystem Fp c => BoolVar Fp -> Snarky Fp c r (BoolVar Fp)) -> Effect (Circuit Fp)
-compileBB circuit = fromCompiledCircuit =<< Run.runBaseEffect
-  (compile (Proxy @Boolean) (Proxy @Boolean) (Proxy @(KimchiConstraint Fp)) circuit)
+compileBB circuit = fromCompiledCircuit =<<
+  (compile noAdvice (Proxy @Boolean) (Proxy @Boolean) (Proxy @(KimchiConstraint Fp)) circuit)
 
 compileBU :: (forall c r. BasicSystem Fp c => BoolVar Fp -> Snarky Fp c r Unit) -> Effect (Circuit Fp)
-compileBU circuit = fromCompiledCircuit =<< Run.runBaseEffect
-  (compile (Proxy @Boolean) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit)
+compileBU circuit = fromCompiledCircuit =<<
+  (compile noAdvice (Proxy @Boolean) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit)
 
 type TwoPoints = Tuple (AffinePoint Fp) (AffinePoint Fp)
 type Point = AffinePoint Fp
@@ -189,8 +189,8 @@ compilePP
        -> Snarky Fp (KimchiConstraint Fp) r (AffinePoint (FVar Fp))
      )
   -> Effect (Circuit Fp)
-compilePP circuit = fromCompiledCircuit =<< Run.runBaseEffect
-  (compile (Proxy @TwoPoints) (Proxy @Point) (Proxy @(KimchiConstraint Fp)) circuit)
+compilePP circuit = fromCompiledCircuit =<<
+  (compile noAdvice (Proxy @TwoPoints) (Proxy @Point) (Proxy @(KimchiConstraint Fp)) circuit)
 
 compilePF
   :: ( forall r
@@ -199,8 +199,8 @@ compilePF
        -> Snarky Fp (KimchiConstraint Fp) r (AffinePoint (FVar Fp))
      )
   -> Effect (Circuit Fp)
-compilePF circuit = fromCompiledCircuit =<< Run.runBaseEffect
-  (compile (Proxy @PointField) (Proxy @Point) (Proxy @(KimchiConstraint Fp)) circuit)
+compilePF circuit = fromCompiledCircuit =<<
+  (compile noAdvice (Proxy @PointField) (Proxy @Point) (Proxy @(KimchiConstraint Fp)) circuit)
 
 compileKFF
   :: ( forall r
@@ -209,8 +209,8 @@ compileKFF
        -> Snarky Fp (KimchiConstraint Fp) r (FVar Fp)
      )
   -> Effect (Circuit Fp)
-compileKFF circuit = fromCompiledCircuit =<< Run.runBaseEffect
-  (compile (Proxy @(F Fp)) (Proxy @(F Fp)) (Proxy @(KimchiConstraint Fp)) circuit)
+compileKFF circuit = fromCompiledCircuit =<<
+  (compile noAdvice (Proxy @(F Fp)) (Proxy @(F Fp)) (Proxy @(KimchiConstraint Fp)) circuit)
 
 compileV3
   :: ( forall r
@@ -219,8 +219,8 @@ compileV3
        -> Snarky Fp (KimchiConstraint Fp) r (Vector 3 (FVar Fp))
      )
   -> Effect (Circuit Fp)
-compileV3 circuit = fromCompiledCircuit =<< Run.runBaseEffect
-  (compile (Proxy @V3) (Proxy @V3) (Proxy @(KimchiConstraint Fp)) circuit)
+compileV3 circuit = fromCompiledCircuit =<<
+  (compile noAdvice (Proxy @V3) (Proxy @V3) (Proxy @(KimchiConstraint Fp)) circuit)
 
 --------------------------------------------------------------------------------
 -- Field arithmetic circuits
@@ -471,7 +471,7 @@ exactMatchEff name effPs =
 -- `dump_app_circuit_chunks2_witness.exe`.
 runChunks2AppWitnessProve :: Effect Unit
 runChunks2AppWitnessProve = do
-  builtState <- Run.runBaseEffect $ compile @Fp (Proxy @Unit) (Proxy @Unit)
+  builtState <- compile @Fp noAdvice (Proxy @Unit) (Proxy @Unit)
     (Proxy @(KimchiConstraint Fp))
     chunks2AppCircuit
   let

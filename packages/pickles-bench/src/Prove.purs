@@ -33,8 +33,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Pickles (BranchProver(..), NoSlots, PrevSlot(..), SlotWrapKey(..), Slots2, StatementIO(..), StepField, compileMulti, mkRuleEntry)
-import Run as Run
-import Run.Except (runExcept) as RunExcept
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (F(..))
 
 -- | Untimed setup against the shared SRS: compile (NRR + tree), prove
@@ -42,12 +41,13 @@ import Snarky.Circuit.DSL (F(..))
 prepareProve :: BenchSrs -> Effect (Aff Unit)
 prepareProve srs = do
   nrrEntry <- mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
-  nrr <- Run.runBaseEffect $ compileMulti
+  nrr <- compileMulti
     @NrrRules
     @(F StepField)
     @Unit
     @NoSlots
     @1
+    noAdvice
     { srs, debug: false, wrapDomainOverride: Nothing, proofCache: Nothing }
     (tuple1 nrrEntry)
   let
@@ -61,12 +61,13 @@ prepareProve srs = do
   treeEntry <- mkRuleEntry @2 @(F StepField) @(F StepField) @1 @1
     benchTreeRule
     (tuple2 (External nrrProverVKs) Self)
-  tree <- Run.runBaseEffect $ compileMulti
+  tree <- compileMulti
     @TreeRules
     @(F StepField)
     @(F StepField)
     @(Slots2 0 2)
     @1
+    noAdvice
     { srs, debug: false, wrapDomainOverride: Just 14, proofCache: Nothing }
     (tuple1 treeEntry)
 
@@ -74,7 +75,7 @@ prepareProve srs = do
     BranchProver nrrProver = fst nrr.provers
     BranchProver treeProver = fst tree.provers
 
-  nrrCp <- Run.runBaseEffect (RunExcept.runExcept (nrrProver { appInput: unit, prevs: unit, sideloadedVKs: unit })) >>= case _ of
+  nrrCp <- nrrProver noAdvice { appInput: unit, prevs: unit, sideloadedVKs: unit } >>= case _ of
     Left e -> Exc.throw (show e)
     Right r -> pure r
 
@@ -83,28 +84,22 @@ prepareProve srs = do
       { dummyStatement: StatementIO { input: unit, output: F (negate one) :: F StepField } }
 
   b0 <-
-    Run.runBaseEffect
-      ( RunExcept.runExcept
-          ( treeProver
-              { appInput: unit
-              , prevs: tuple2 (InductivePrev nrrCp nrr.tag) basePrevSelf
-              , sideloadedVKs: tuple2 unit unit
-              }
-          )
-      ) >>= case _ of
+    treeProver noAdvice
+      { appInput: unit
+      , prevs: tuple2 (InductivePrev nrrCp nrr.tag) basePrevSelf
+      , sideloadedVKs: tuple2 unit unit
+      } >>= case _ of
       Left e -> Exc.throw (show e)
       Right r -> pure r
 
   pure $ do
     _ <-
       liftEffect
-        ( Run.runBaseEffect $ RunExcept.runExcept
-            ( treeProver
-                { appInput: unit
-                , prevs: tuple2 (InductivePrev nrrCp nrr.tag) (InductivePrev b0 tree.tag)
-                , sideloadedVKs: tuple2 unit unit
-                }
-            )
+        ( treeProver noAdvice
+            { appInput: unit
+            , prevs: tuple2 (InductivePrev nrrCp nrr.tag) (InductivePrev b0 tree.tag)
+            , sideloadedVKs: tuple2 unit unit
+            }
         ) >>= case _ of
         Left e -> liftEffect $ Exc.throw (show e)
         Right _ -> pure unit

@@ -14,7 +14,7 @@ import Pickles.CircuitDiffs.PureScript.BulletReduce (BulletReduceInput)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
 import Pickles.Field (StepField)
 import Pickles.IPA (bulletReduceCircuit)
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (BoolVar, F, FVar, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -43,5 +43,5 @@ bulletReduceStepCircuit = bulletReduceCircuit @StepField @PallasG
 
 compileBulletReduceStep :: Effect (CompiledCircuit StepField)
 compileBulletReduceStep =
-  Run.runBaseEffect $ compile (Proxy @(Vector 75 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compile noAdvice (Proxy @(Vector 75 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> void $ bulletReduceStepCircuit (parseBulletReduceStepInput inputs))

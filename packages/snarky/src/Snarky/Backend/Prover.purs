@@ -21,16 +21,16 @@ import Data.Foldable as Foldable
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
-import Run (EFFECT, Run)
+import Run (Run)
 import Run as Run
+import Snarky.Backend.Advice (AdviceHandler(..))
 import Snarky.Backend.Assignments (Assignments)
 import Snarky.Backend.Assignments as Assignments
 import Snarky.Circuit.CVar (EvaluationError(..), Variable, incrementVariable)
-import Snarky.Circuit.DSL.Monad (AsProver(..), CIRCUIT, CircuitF(..), _circuit, runAsProver)
+import Snarky.Circuit.DSL.Monad (AsProver(..), CIRCUIT, CircuitF(..), _circuit, _effect, runAsProver)
 import Snarky.Constraint.Basic (class BasicSystem, Basic)
 import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.Class (class PrimeField)
-import Type.Row (type (+))
 
 type ProverState f =
   { nextVar :: Variable
@@ -86,28 +86,30 @@ contextualize s e
   | s.debug = Array.foldr WithContext e s.labelStack
   | otherwise = e
 
--- | Interpret the `circuit` effect in prover mode over an open tail of advice
--- | effects `r` (witness computations may use them). A witness failure
--- | short-circuits the whole interpretation. Runs at `EFFECT + r`: the
--- | assignment store is mutable, written once per variable as it is
--- | allocated.
+-- | Interpret the `circuit` effect in prover mode, directly in `Effect`.
+-- | The open tail of advice effects `r` (which witness computations may
+-- | use) is delegated to the caller's handler — the SAME handler serves
+-- | both the circuit row here and the witness row inside `Exists`/`Assign`
+-- | (via `runAsProver`). A witness failure short-circuits the whole
+-- | interpretation.
 runCircuitProver
   :: forall f c r a
    . SolveCircuit f c
-  => ProverState f
+  => AdviceHandler r
+  -> ProverState f
   -> Run (CIRCUIT f c r) a
-  -> Run (EFFECT + r) (Tuple (Either EvaluationError a) (ProverState f))
-runCircuitProver s0 r0 = tailRecM go (Tuple s0 r0)
+  -> Effect (Tuple (Either EvaluationError a) (ProverState f))
+runCircuitProver h@(AdviceHandler handler) s0 r0 = tailRecM go (Tuple s0 r0)
   where
   handle = Run.on _circuit Left Right
 
-  -- Stack safety: every interpreter step is a `tailRecM` `Step` in the
-  -- target `Run r` (whose `MonadRec` is stack-safe), so circuits with
-  -- hundreds of thousands of ops interpret in constant stack.
+  -- Stack safety: every interpreter step is a `tailRecM` `Step` in
+  -- `Effect` (whose `MonadRec` is a JS loop), so circuits with hundreds
+  -- of thousands of ops interpret in constant stack.
   go
     :: SolveCircuit f c
     => Tuple (ProverState f) (Run (CIRCUIT f c r) a)
-    -> Run (EFFECT + r) (Step (Tuple (ProverState f) (Run (CIRCUIT f c r) a)) (Tuple (Either EvaluationError a) (ProverState f)))
+    -> Effect (Step (Tuple (ProverState f) (Run (CIRCUIT f c r) a)) (Tuple (Either EvaluationError a) (ProverState f)))
   go (Tuple s r) = case Run.peel r of
     Left v -> case handle v of
       Left cf -> case cf of
@@ -117,26 +119,27 @@ runCircuitProver s0 r0 = tailRecM go (Tuple s0 r0)
           in
             pure (Loop (Tuple (s { nextVar = incrementVariable var }) (k var)))
         AddConstraint c k ->
-          Run.liftEffect (proverConstraint c s) <#> case _ of
+          proverConstraint c s <#> case _ of
             Right s' -> Loop (Tuple s' k)
             Left e -> Done (Tuple (Left (contextualize s e)) s)
         Exists n w k ->
-          runAsProver s.assignments (AsProver w) >>= case _ of
+          runAsProver h s.assignments (AsProver w) >>= case _ of
             Left e -> pure (Done (Tuple (Left (contextualize s e)) s))
-            Right fields -> Run.liftEffect (allocAssignments n fields s) <#> \(Tuple vs s') ->
+            Right fields -> allocAssignments n fields s <#> \(Tuple vs s') ->
               Loop (Tuple s' (k vs))
         Assign vars w k ->
-          runAsProver s.assignments (AsProver w) >>= case _ of
+          runAsProver h s.assignments (AsProver w) >>= case _ of
             Left e -> pure (Done (Tuple (Left (contextualize s e)) s))
             Right fields -> do
-              Run.liftEffect $ Foldable.for_ (Array.zip vars fields) \(Tuple var fv) ->
+              Foldable.for_ (Array.zip vars fields) \(Tuple var fv) ->
                 Assignments.set var fv s.assignments
               pure (Loop (Tuple s k))
         PushLabel l k ->
           pure (Loop (Tuple (s { labelStack = Array.snoc s.labelStack l }) k))
         PopLabel k ->
           pure (Loop (Tuple (s { labelStack = Array.init s.labelStack # fromMaybe [] }) k))
-      Right other ->
-        Run.send other <#> \r' -> Loop (Tuple s r')
+      Right v' ->
+        v' # Run.on _effect (\eff -> eff <#> \r' -> Loop (Tuple s r'))
+          (\other -> handler other <#> \r' -> Loop (Tuple s r'))
     Right a ->
       pure (Done (Tuple (Right a) s))

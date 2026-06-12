@@ -17,7 +17,7 @@ import Pickles.Field (WrapField)
 import Pickles.PublicInputCommit (CorrectionMode(..))
 import Pickles.Types (ChunkedCommitment(..), WrapIPARounds)
 import Pickles.Wrap.Verify (wrapVerify)
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F(..), FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi (groupMapParams)
@@ -85,5 +85,5 @@ wrapVerifyN2Circuit { lagrangeAt, blindingH } inputs = do
 
 compileWrapVerifyN2 :: IvpWrapParams -> Effect (CompiledCircuit WrapField)
 compileWrapVerifyN2 srsData =
-  Run.runBaseEffect $ compile (Proxy @(Vector InputSize (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  compile noAdvice (Proxy @(Vector InputSize (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> wrapVerifyN2Circuit srsData inputs)

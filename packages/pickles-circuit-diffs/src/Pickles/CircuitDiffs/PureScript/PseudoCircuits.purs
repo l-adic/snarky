@@ -39,7 +39,7 @@ import Pickles.Sideload.VerificationKey as SLVK
 import Pickles.Step.FinalizeOtherProof as FOP
 import Pickles.Types (ChunkedCommitment(..))
 import Pickles.VerificationKey (chooseKey)
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F(..), FVar, Snarky, const_, exists, label)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -64,11 +64,11 @@ oneHotN1Circuit inputs = do
   pure unit
 
 compileOneHotN1Step :: Effect (CompiledCircuit StepField)
-compileOneHotN1Step = Run.runBaseEffect $ compile (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compileOneHotN1Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   oneHotN1Circuit
 
 compileOneHotN1Wrap :: Effect (CompiledCircuit WrapField)
-compileOneHotN1Wrap = Run.runBaseEffect $ compile (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compileOneHotN1Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   oneHotN1Circuit
 
 --------------------------------------------------------------------------------
@@ -88,11 +88,11 @@ oneHotN3Circuit inputs = do
   pure unit
 
 compileOneHotN3Step :: Effect (CompiledCircuit StepField)
-compileOneHotN3Step = Run.runBaseEffect $ compile (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compileOneHotN3Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   oneHotN3Circuit
 
 compileOneHotN3Wrap :: Effect (CompiledCircuit WrapField)
-compileOneHotN3Wrap = Run.runBaseEffect $ compile (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compileOneHotN3Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   oneHotN3Circuit
 
 --------------------------------------------------------------------------------
@@ -112,11 +112,11 @@ pseudoMaskN1Circuit inputs = do
   pure unit
 
 compilePseudoMaskN1Step :: Effect (CompiledCircuit StepField)
-compilePseudoMaskN1Step = Run.runBaseEffect $ compile (Proxy @(Vector 2 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compilePseudoMaskN1Step = compile noAdvice (Proxy @(Vector 2 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   pseudoMaskN1Circuit
 
 compilePseudoMaskN1Wrap :: Effect (CompiledCircuit WrapField)
-compilePseudoMaskN1Wrap = Run.runBaseEffect $ compile (Proxy @(Vector 2 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compilePseudoMaskN1Wrap = compile noAdvice (Proxy @(Vector 2 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   pseudoMaskN1Circuit
 
 --------------------------------------------------------------------------------
@@ -136,11 +136,11 @@ pseudoMaskN3Circuit inputs = do
   pure unit
 
 compilePseudoMaskN3Step :: Effect (CompiledCircuit StepField)
-compilePseudoMaskN3Step = Run.runBaseEffect $ compile (Proxy @(Vector 4 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compilePseudoMaskN3Step = compile noAdvice (Proxy @(Vector 4 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   pseudoMaskN3Circuit
 
 compilePseudoMaskN3Wrap :: Effect (CompiledCircuit WrapField)
-compilePseudoMaskN3Wrap = Run.runBaseEffect $ compile (Proxy @(Vector 4 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compilePseudoMaskN3Wrap = compile noAdvice (Proxy @(Vector 4 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   pseudoMaskN3Circuit
 
 --------------------------------------------------------------------------------
@@ -161,11 +161,11 @@ pseudoChooseN1Circuit inputs = do
   pure unit
 
 compilePseudoChooseN1Step :: Effect (CompiledCircuit StepField)
-compilePseudoChooseN1Step = Run.runBaseEffect $ compile (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compilePseudoChooseN1Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   pseudoChooseN1Circuit
 
 compilePseudoChooseN1Wrap :: Effect (CompiledCircuit WrapField)
-compilePseudoChooseN1Wrap = Run.runBaseEffect $ compile (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compilePseudoChooseN1Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   pseudoChooseN1Circuit
 
 --------------------------------------------------------------------------------
@@ -186,11 +186,11 @@ pseudoChooseN3Circuit inputs = do
   pure unit
 
 compilePseudoChooseN3Step :: Effect (CompiledCircuit StepField)
-compilePseudoChooseN3Step = Run.runBaseEffect $ compile (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compilePseudoChooseN3Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   pseudoChooseN3Circuit
 
 compilePseudoChooseN3Wrap :: Effect (CompiledCircuit WrapField)
-compilePseudoChooseN3Wrap = Run.runBaseEffect $ compile (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compilePseudoChooseN3Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   pseudoChooseN3Circuit
 
 --------------------------------------------------------------------------------
@@ -225,7 +225,7 @@ chooseKeyN1WrapCircuit inputs = do
   pure unit
 
 compileChooseKeyN1Wrap :: Effect (CompiledCircuit WrapField)
-compileChooseKeyN1Wrap = Run.runBaseEffect $ compile (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compileChooseKeyN1Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   chooseKeyN1WrapCircuit
 
 --------------------------------------------------------------------------------
@@ -247,11 +247,11 @@ utilsOnesVectorN16Circuit inputs = do
   pure unit
 
 compileUtilsOnesVectorN16Step :: Effect (CompiledCircuit StepField)
-compileUtilsOnesVectorN16Step = Run.runBaseEffect $ compile (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compileUtilsOnesVectorN16Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   utilsOnesVectorN16Circuit
 
 compileUtilsOnesVectorN16Wrap :: Effect (CompiledCircuit WrapField)
-compileUtilsOnesVectorN16Wrap = Run.runBaseEffect $ compile (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compileUtilsOnesVectorN16Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   utilsOnesVectorN16Circuit
 
 --------------------------------------------------------------------------------
@@ -273,11 +273,11 @@ oneHotN17Circuit inputs = do
   pure unit
 
 compileOneHotN17Step :: Effect (CompiledCircuit StepField)
-compileOneHotN17Step = Run.runBaseEffect $ compile (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compileOneHotN17Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   oneHotN17Circuit
 
 compileOneHotN17Wrap :: Effect (CompiledCircuit WrapField)
-compileOneHotN17Wrap = Run.runBaseEffect $ compile (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compileOneHotN17Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   oneHotN17Circuit
 
 --------------------------------------------------------------------------------
@@ -310,11 +310,11 @@ pseudoMaskN17Circuit inputs = do
   pure unit
 
 compilePseudoMaskN17Step :: Effect (CompiledCircuit StepField)
-compilePseudoMaskN17Step = Run.runBaseEffect $ compile (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compilePseudoMaskN17Step = compile noAdvice (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   pseudoMaskN17Circuit
 
 compilePseudoMaskN17Wrap :: Effect (CompiledCircuit WrapField)
-compilePseudoMaskN17Wrap = Run.runBaseEffect $ compile (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+compilePseudoMaskN17Wrap = compile noAdvice (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
   pseudoMaskN17Circuit
 
 --------------------------------------------------------------------------------
@@ -336,5 +336,5 @@ sideloadedVkTypStepCircuit _ = do
   pure unit
 
 compileSideloadedVkTypStep :: Effect (CompiledCircuit StepField)
-compileSideloadedVkTypStep = Run.runBaseEffect $ compile (Proxy @Unit) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+compileSideloadedVkTypStep = compile noAdvice (Proxy @Unit) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
   sideloadedVkTypStepCircuit

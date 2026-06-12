@@ -3,9 +3,10 @@ module Test.Snarky.Circuit.Factors (spec) where
 import Prelude
 
 import Data.Array.NonEmpty as NEA
-import Effect (Effect)
-import Run (EFFECT, Run)
+import Data.Functor.Variant (case_, on)
+import Run (Run)
 import Run as Run
+import Snarky.Backend.Advice (AdviceHandler(..))
 import Snarky.Backend.Builder (class CompileCircuit)
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.DSL (class BasicSystem, F, FVar, Snarky, all_, assert_, const_, equals_, exists, liftAdvice, mul_, neq_, read)
@@ -35,10 +36,9 @@ factor :: forall f r. F f -> Run (FACTOR f + r) { a :: F f, b :: F f }
 factor n = Run.lift _factor (Factor n identity)
 
 -- | Interpret `FACTOR` into `Effect` by sampling a random factorization.
-runFactor :: forall f. PrimeField f => Run (FACTOR f + EFFECT + ()) ~> Effect
-runFactor = Run.runBaseEffect <<< Run.interpret
-  ( Run.on _factor (\(Factor n k) -> k <$> Run.liftEffect (randomSampleOne (genFactor n))) Run.send
-  )
+runFactor :: forall f. PrimeField f => AdviceHandler (FACTOR f ())
+runFactor = AdviceHandler
+  (on _factor (\(Factor n k) -> k <$> randomSampleOne (genFactor n)) case_)
 
 genFactor :: forall f. PrimeField f => F f -> Gen { a :: F f, b :: F f }
 genFactor n = do
@@ -74,7 +74,7 @@ spec cfg = describe "Factors Specs" do
       gen :: Gen (F f)
       gen = arbitrary `suchThat` \a -> a /= zero && a /= one
     in
-      circuitTestM' @f runFactor
+      circuitTestM' @f { handler: runFactor, beforeEach: pure unit }
         cfg
         (NEA.singleton { testFunction: satisfied_, input: QuickCheck 100 gen })
         factorsCircuit

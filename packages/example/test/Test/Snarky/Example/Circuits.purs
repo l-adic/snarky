@@ -24,7 +24,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint, eval)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Example.Simulation (genGenesisLedger, genOverdraftSignedTransaction, genValidSignedTransaction)
-import Snarky.Example.Transaction (SignedTransaction, TransferAdvice, TransferRow, applyTx, applyTxChecked, runTransferCompileM, runTransferM)
+import Snarky.Example.Transaction (SignedTransaction, TransferAdvice, applyTx, applyTxChecked, runTransferCompileM, runTransferM)
 import Test.QuickCheck (quickCheck')
 import Test.QuickCheck.Gen (randomSampleOne)
 import Test.Snarky.Circuit.Utils (runTestM, satisfied, unsatisfied)
@@ -76,8 +76,8 @@ transferSpec _ = do
 
     solver = makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
     s =
-      unsafePerformEffect $ runTransferCompileM $
-        compile
+      unsafePerformEffect $
+        compile runTransferCompileM
           (Proxy @(SignedTransaction Vesta.ScalarField))
           (Proxy @(Digest Vesta.ScalarField))
           (Proxy @(KimchiConstraint Vesta.ScalarField))
@@ -90,20 +90,18 @@ transferSpec _ = do
     -- monad needs no current transaction — only the (mutable) ledger.
     env = { currentTransaction: Nothing, ledger: ref }
 
-    -- Reset the ledger before each test case
-    natWithReset :: Run (TransferRow d) ~> Effect
-    natWithReset m = do
-      write ledger ref
-      runTransferM env m
-
   Console.log "Checking the Valid case"
   liftEffect $ quickCheck' 100 $ genValidSignedTransaction chainId ledger keys <#> \a ->
-    unsafePerformEffect $ natWithReset $ runTestM { builtState: s, solver, checker: eval, postCondition: Kimchi.postCondition } (satisfied testFunction) a
+    unsafePerformEffect do
+      write ledger ref
+      runTestM (runTransferM env) { builtState: s, solver, checker: eval, postCondition: Kimchi.postCondition } (satisfied testFunction) a
 
   liftEffect $ write ledger ref
   liftEffect $ verifyCircuitM (runTransferM env) { s, gen: genValidSignedTransaction chainId ledger keys, solver }
 
   Console.log "Checking the overdraft case"
   liftEffect $ quickCheck' 100 $ genOverdraftSignedTransaction chainId ledger keys <#> \a ->
-    unsafePerformEffect $ natWithReset $ runTestM { builtState: s, solver, checker: eval, postCondition: Kimchi.postCondition } unsatisfied a
+    unsafePerformEffect do
+      write ledger ref
+      runTestM (runTransferM env) { builtState: s, solver, checker: eval, postCondition: Kimchi.postCondition } unsatisfied a
   liftEffect $ write ledger ref

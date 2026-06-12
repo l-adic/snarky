@@ -17,7 +17,7 @@ import Pickles.Field (WrapField)
 import Pickles.PublicInputCommit (CorrectionMode(..))
 import Pickles.Types (ChunkedCommitment(..), WrapIPARounds)
 import Pickles.Wrap.Verify (wrapVerify)
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F(..), FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi (groupMapParams)
@@ -89,5 +89,5 @@ wrapVerifyCircuit { lagrangeAt, blindingH } inputs = do
 
 compileWrapVerify :: IvpWrapParams -> Effect (CompiledCircuit WrapField)
 compileWrapVerify srsData =
-  Run.runBaseEffect $ compile (Proxy @(Vector InputSize (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  compile noAdvice (Proxy @(Vector InputSize (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> wrapVerifyCircuit srsData inputs)

@@ -449,6 +449,7 @@
             "tuples",
             "typelevel-prelude",
             "unsafe-coerce",
+            "variant",
             "vector-sized"
           ]
         },

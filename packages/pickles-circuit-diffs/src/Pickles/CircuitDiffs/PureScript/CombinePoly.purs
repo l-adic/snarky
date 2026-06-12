@@ -16,7 +16,7 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
 import Pickles.Field (WrapField)
 import Pickles.IPA (combinePolynomials)
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F, FVar, SizedF, Snarky, const_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -79,5 +79,5 @@ combinePolyCircuit input =
 
 compileCombinePoly :: Effect (CompiledCircuit WrapField)
 compileCombinePoly =
-  Run.runBaseEffect $ compile (Proxy @(Vector 37 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  compile noAdvice (Proxy @(Vector 37 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ combinePolyCircuit (parseCombinePolyInput inputs))

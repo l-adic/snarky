@@ -24,8 +24,8 @@ import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), L
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Types (ChunkedCommitment(..))
 import Pickles.Wrap.OtherField as WrapOtherField
-import Run as Run
 import Safe.Coerce (coerce)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, assertEq, assertEqual_, const_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
@@ -177,5 +177,5 @@ ivpWrapCircuit { lagrangeAt, blindingH } input = do
 
 compileIvpWrap :: IvpWrapParams -> Effect (CompiledCircuit WrapField)
 compileIvpWrap srsData =
-  Run.runBaseEffect $ compile (Proxy @(Vector 177 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  compile noAdvice (Proxy @(Vector 177 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> ivpWrapCircuit srsData (parseIvpWrapInput inputs))

@@ -18,8 +18,8 @@ import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Step.OtherField as StepOtherField
-import Run as Run
 import Safe.Coerce (coerce)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (Bool(..), BoolVar, F, FVar, SizedF, Snarky, const_)
 import Snarky.Circuit.Kimchi (Type1(..))
@@ -136,5 +136,5 @@ fopStepCircuit input =
 
 compileFopStep :: Effect (CompiledCircuit StepField)
 compileFopStep =
-  Run.runBaseEffect $ compile (Proxy @(Vector 151 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compile noAdvice (Proxy @(Vector 151 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> void $ fopStepCircuit (parseFopStepInput inputs))

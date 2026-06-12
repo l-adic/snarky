@@ -109,9 +109,10 @@ import Run as Run
 import Run.Except (EXCEPT)
 import Run.Except as Except
 import Safe.Coerce (coerce)
+import Snarky.Backend.Advice (AdviceHandler)
 import Snarky.Backend.Assignments as Assignments
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled, constraintsToArray)
-import Snarky.Backend.Compile (SolverT, compile, liftExceptRow, makeSolver', runSolverT)
+import Snarky.Backend.Compile (SolverT, compile, makeSolver')
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, gatesToJson)
 import Snarky.Backend.Kimchi.Proof (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofOpeningPrechallenges, proofOraclesRec, vestaProofCommitments, vestaProofData)
@@ -1753,10 +1754,11 @@ stepCompile
        vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
-  => StepProveContext wrapVkChunks len nd blueprints
+  => AdviceHandler r
+  -> StepProveContext wrapVkChunks len nd blueprints
   -> StepRuleAt r len valCarrier inputVal input outputVal output prevInputVal prevInput
-  -> Run (EFFECT + r) StepCompileResult
-stepCompile ctx rule = do
+  -> Effect StepCompileResult
+stepCompile handler ctx rule = do
   -- For compiled-only specs the side-loaded VK carrier is the all-Unit
   -- chain `mkUnitVkCarrier` synthesises (= what the `SideloadedVKsM`
   -- Effect instance used to return). The circuit shape only depends on
@@ -1781,9 +1783,9 @@ stepCompile ctx rule = do
     dummyAdvice = unsafeCoerce unit
   -- A throwaway capture Ref — `compile` discards the `exists` body that
   -- would write it, so it stays `Nothing`.
-  throwawayCaptureRef <- liftEffect (Ref.new Nothing)
+  throwawayCaptureRef <- Ref.new Nothing
   builtState <-
-    compile
+    compile handler
       (Proxy @Unit)
       (Proxy @(Vector outputSize (F StepField)))
       (Proxy @(KimchiConstraint StepField))
@@ -1810,7 +1812,7 @@ stepCompile ctx rule = do
   let
     kimchiRows :: Array (KimchiRow StepField)
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
-  csResult <- Run.liftEffect $ makeConstraintSystemWithPrevChallenges @StepField
+  csResult <- makeConstraintSystemWithPrevChallenges @StepField
     { constraints: kimchiRows
     , publicInputs: builtState.publicInputs
     , unionFind: (un AuxState builtState.aux).wireState.unionFind
@@ -1843,7 +1845,7 @@ stepCompile ctx rule = do
   -- writes one file per branch — same convention as
   -- `KIMCHI_WITNESS_DUMP` / `KIMCHI_CS_DUMP`. Useful for localizing
   -- multi-rule per-branch CS divergences without going through prove.
-  liftEffect $ Process.lookupEnv "KIMCHI_STEP_LABELS_DUMP" >>= case _ of
+  Process.lookupEnv "KIMCHI_STEP_LABELS_DUMP" >>= case _ of
     Nothing -> pure unit
     Just pathTmpl -> do
       counter <- bumpStepLabelsCounter
@@ -1856,7 +1858,7 @@ stepCompile ctx rule = do
   -- `KIMCHI_STEP_CS_DUMP`. Mirrors the wrap-side `KIMCHI_WRAP_CS_DUMP`
   -- in `Pickles.Prove.Wrap`. Filename template uses `%c` (replaced
   -- with a monotonic counter independent of `KIMCHI_STEP_LABELS_DUMP`'s).
-  liftEffect $ Process.lookupEnv "KIMCHI_STEP_CS_DUMP" >>= case _ of
+  Process.lookupEnv "KIMCHI_STEP_CS_DUMP" >>= case _ of
     Nothing -> pure unit
     Just pathTmpl -> do
       counter <- bumpStepCsCounter
@@ -1966,10 +1968,11 @@ preComputeStepDomainLog2
   -- count → domain log2); `wrapVkChunks` only sizes the discarded
   -- wrap-VK placeholder. Free parameter; callers pin (tests `@1`).
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
-  => StepProveContext wrapVkChunks len nd blueprints
+  => AdviceHandler r
+  -> StepProveContext wrapVkChunks len nd blueprints
   -> StepRuleAt r len valCarrier inputVal input outputVal output prevInputVal prevInput
-  -> Run (EFFECT + r) Int
-preComputeStepDomainLog2 ctx rule = do
+  -> Effect Int
+preComputeStepDomainLog2 handler ctx rule = do
   -- See `stepCompile` for why the rule runs in `StepProverT … m` with
   -- an `unsafeCoerce unit` dummy advice (never deconstructed at compile).
   let
@@ -1983,9 +1986,9 @@ preComputeStepDomainLog2 ctx rule = do
            valCarrier
            sideloadedVkCarrier
     dummyAdvice = unsafeCoerce unit
-  throwawayCaptureRef <- liftEffect (Ref.new Nothing)
+  throwawayCaptureRef <- Ref.new Nothing
   builtState <-
-    compile
+    compile handler
       (Proxy @Unit)
       (Proxy @(Vector outputSize (F StepField)))
       (Proxy @(KimchiConstraint StepField))
@@ -2109,19 +2112,20 @@ stepSolveAndProve
        vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
   => SlotStatementsCarrier prevsSpec valCarrier
-  => StepProveContext wrapVkChunks len nd blueprints
+  => AdviceHandler r
+  -> StepProveContext wrapVkChunks len nd blueprints
   -> StepRuleAt r len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> StepCompileResult
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
-  -> Run (EXCEPT EvaluationError + EFFECT + r) (StepProveResult outputSize)
-stepSolveAndProve ctx rule compileResult advice = do
+  -> Effect (Either EvaluationError (StepProveResult outputSize))
+stepSolveAndProve handler ctx rule compileResult advice = do
   -- Capture channel for the rule's user `publicOutput` FVars. The
   -- solver makes `stepMain`'s whole return value public, so the
   -- captured FVars (which must NOT be public) ride a Ref instead: a
   -- plain value passed into `stepMain`, written inside an `exists`
   -- body at solve time, read back here. This is the ONLY mutable
   -- channel; the read-only advice flows as a plain argument.
-  captureRef <- liftEffect (Ref.new Nothing)
+  captureRef <- Ref.new Nothing
   -- Source the side-loaded VK carrier directly from the StepAdvice;
   -- keeps `m` arbitrary (no `SideloadedVKsM` constraint required).
   let
@@ -2158,10 +2162,10 @@ stepSolveAndProve ctx rule compileResult advice = do
               captureRef
         )
 
-  eRes <- liftExceptRow (runSolverT rawSolver unit)
+  eRes <- rawSolver handler unit
 
   case eRes of
-    Left e -> Except.throw (WithContext "stepProve solver" e)
+    Left e -> pure (Left (WithContext "stepProve solver" e))
     Right (Tuple publicOutputs assignments) -> do
       let
         { witness, publicInputs } = makeWitness
@@ -2184,57 +2188,60 @@ stepSolveAndProve ctx rule compileResult advice = do
       -- producing zeros. Raw field values are returned;
       -- `runProverBody` applies `fieldsToValue` against the rule's
       -- specific `outputVal`.
-      captured <- liftEffect (Ref.read captureRef)
-      userPublicOutputFields <- case captured of
-        Nothing ->
-          Except.throw (FailedAssertion "stepProve: stepMain did not capture publicOutput FVars (captureRef was Nothing post-solve)")
-        Just fieldVars -> do
-          let
-            evalLookup :: Variable -> Either EvaluationError StepField
-            evalLookup v =
-              maybe (Left (MissingVariable v)) Right (Assignments.lookupFrozen v assignments)
-          case traverse (CVar.eval evalLookup) fieldVars of
-            Left e -> Except.throw e
-            Right fieldVals -> pure fieldVals
+      captured <- Ref.read captureRef
       let
-        p = Lazy.defer \_ -> pallasCreateProofWithPrev
-          { proverIndex: compileResult.proverIndex
-          , witness
-          , prevChallenges:
-              map
-                ( \r ->
-                    { sgX: r.sgX
-                    , sgY: r.sgY
-                    , challenges: Vector.toUnfoldable r.challenges
-                    }
-                )
-                ( Vector.toUnfoldable adv.kimchiPrevChallenges
-                    :: Array
-                         { sgX :: WrapField
-                         , sgY :: WrapField
-                         , challenges :: Vector StepIPARounds StepField
-                         }
-                )
-          }
-      proof <-
-        case ctx.proofCache of
-          Nothing -> pure $ Lazy.force p
-          Just cache -> do
-            mp <- liftEffect $ getPallasProof cache compileResult.verifierIndex publicInputs
-            case mp of
-              Just proof -> pure proof
-              Nothing -> do
-                let proof = Lazy.force p
-                liftEffect $ setPallasProof cache compileResult.verifierIndex publicInputs proof
-                pure proof
-      pure
-        { proverIndex: compileResult.proverIndex
-        , verifierIndex: compileResult.verifierIndex
-        , witness
-        , publicInputs
-        , publicOutputs
-        , proof
-        , assignments
-        , userPublicOutputFields
-        }
+        eUserPublicOutputFields = case captured of
+          Nothing ->
+            Left (FailedAssertion "stepProve: stepMain did not capture publicOutput FVars (captureRef was Nothing post-solve)")
+          Just fieldVars ->
+            let
+              evalLookup :: Variable -> Either EvaluationError StepField
+              evalLookup v =
+                maybe (Left (MissingVariable v)) Right (Assignments.lookupFrozen v assignments)
+            in
+              traverse (CVar.eval evalLookup) fieldVars
+      case eUserPublicOutputFields of
+        Left e -> pure (Left e)
+        Right userPublicOutputFields -> do
+          let
+            p = Lazy.defer \_ -> pallasCreateProofWithPrev
+              { proverIndex: compileResult.proverIndex
+              , witness
+              , prevChallenges:
+                  map
+                    ( \r ->
+                        { sgX: r.sgX
+                        , sgY: r.sgY
+                        , challenges: Vector.toUnfoldable r.challenges
+                        }
+                    )
+                    ( Vector.toUnfoldable adv.kimchiPrevChallenges
+                        :: Array
+                             { sgX :: WrapField
+                             , sgY :: WrapField
+                             , challenges :: Vector StepIPARounds StepField
+                             }
+                    )
+              }
+          proof <-
+            case ctx.proofCache of
+              Nothing -> pure $ Lazy.force p
+              Just cache -> do
+                mp <- getPallasProof cache compileResult.verifierIndex publicInputs
+                case mp of
+                  Just proof -> pure proof
+                  Nothing -> do
+                    let proof = Lazy.force p
+                    setPallasProof cache compileResult.verifierIndex publicInputs proof
+                    pure proof
+          pure $ Right
+            { proverIndex: compileResult.proverIndex
+            , verifierIndex: compileResult.verifierIndex
+            , witness
+            , publicInputs
+            , publicOutputs
+            , proof
+            , assignments
+            , userPublicOutputFields
+            }
 

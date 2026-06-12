@@ -36,8 +36,8 @@ import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Pickles.Wrap.Slots (Slots1)
-import Run as Run
 import Safe.Coerce (coerce)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Proof (srsLagrangeCommitmentChunksAt)
@@ -108,7 +108,7 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
   let
     dummyAdvice :: WrapAdvice 1 1 (Slots1 1)
     dummyAdvice = unsafeCoerce unit
-  wrapCs <- Run.runBaseEffect $ compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\stmt -> wrapMain @2 @(Slots1 1) @1 config stmt dummyAdvice)
   wrapVk <- deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
   pure

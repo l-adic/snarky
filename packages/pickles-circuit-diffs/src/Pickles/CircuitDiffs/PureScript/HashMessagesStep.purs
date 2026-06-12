@@ -13,7 +13,7 @@ import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
 import Pickles.Field (StepField)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Types (WrapIPARounds)
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F, FVar, Snarky, assertEq)
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
@@ -87,5 +87,5 @@ hashMessagesStepCircuit inputs = do
 
 compileHashMessagesStep :: Effect (CompiledCircuit StepField)
 compileHashMessagesStep =
-  Run.runBaseEffect $ compile (Proxy @(Vector 91 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  compile noAdvice (Proxy @(Vector 91 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> hashMessagesStepCircuit inputs)

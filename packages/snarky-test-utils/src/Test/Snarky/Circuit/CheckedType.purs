@@ -11,8 +11,8 @@ import Data.Show.Generic (genericShow)
 import Data.Tuple (snd)
 import Effect (Effect)
 import Effect.Unsafe (unsafePerformEffect)
-import Run as Run
 import Safe.Coerce (coerce)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray, initialBuilderState, runCircuitBuilder)
 import Snarky.Circuit.CVar (CVar(..))
 import Snarky.Circuit.DSL (class CheckedType, Basic, Bool, BoolVar, FVar, Snarky, UnChecked(..), Variable, check, const_, genericCheck, runSnarky)
@@ -25,10 +25,9 @@ import Type.Proxy (Proxy)
 
 runM :: forall f a. PrimeField f => Snarky f (Basic f) () a -> Array (Basic f)
 runM m = map _.constraint <<< constraintsToArray <<< _.constraints <<< snd
-  $ unsafePerformEffect
-  $ Run.runBaseEffect do
-      st0 <- Run.liftEffect (initialBuilderState :: Effect (CircuitBuilderState (Basic f) Unit))
-      runCircuitBuilder st0 (runSnarky m)
+  $ unsafePerformEffect do
+      st0 <- initialBuilderState :: Effect (CircuitBuilderState (Basic f) Unit)
+      runCircuitBuilder noAdvice st0 (runSnarky m)
 
 newtype ValidBVar f = ValidBVar (BoolVar f)
 

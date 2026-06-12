@@ -14,7 +14,9 @@
 -- | A base prove supplies `currentTransaction = Just tx`; a merge prove
 -- | (which witnesses no transaction) supplies `Nothing`. `runTransferCompileM`
 -- | is the compile-time twin whose handlers throw (compilation discards
--- | `exists` bodies, so no request is ever served).
+-- | `exists` bodies, so no request is ever served). Both are `AdviceHandler`s
+-- | — direct `VariantF row ~> Effect` functions the interpreters call per
+-- | advice op (no Run handler chain).
 -- |
 -- | Everything here is value-only, so the field is pinned to the example's
 -- | `Vesta.ScalarField` rather than carried as a parameter.
@@ -28,13 +30,13 @@ module Snarky.Example.Transaction.Monad
   , _accountMap
   , getAccountId
   , TransferAdvice
-  , TransferRow
   , runTransferM
   , runTransferCompileM
   ) where
 
 import Prelude
 
+import Data.Functor.Variant (case_, on)
 import Data.Maybe (Maybe(..))
 import Data.MerkleTree.Sparse (Address)
 import Data.MerkleTree.Sparse as Sparse
@@ -43,8 +45,9 @@ import Effect (Effect)
 import Effect.Exception (error, throwException)
 import Effect.Ref (Ref, read, write)
 import Partial.Unsafe (unsafeCrashWith)
-import Run (EFFECT, Run)
+import Run (Run)
 import Run as Run
+import Snarky.Backend.Advice (AdviceHandler(..))
 import Snarky.Circuit.MerkleTree (MERKLE, MerkleF(..), _merkle)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Example.Ledger (Ledger, lookupAddress)
@@ -97,10 +100,6 @@ type TransferAdvice d =
     + TRANSACTION
     + ()
 
--- | The interpreter-facing row: advice plus the EFFECT channel the
--- | solver/interpreters emit into.
-type TransferRow d = MERKLE Vesta.ScalarField (Account Vesta.ScalarField) d + ACCOUNT_MAP d + TRANSACTION + EFFECT + ()
-
 --------------------------------------------------------------------------------
 -- Run-time advice interpreter
 
@@ -110,18 +109,16 @@ runTransferM
   :: forall d
    . Reflectable d Int
   => { currentTransaction :: Maybe (SignedTransaction Vesta.ScalarField), ledger :: Ref (Ledger d) }
-  -> Run (TransferRow d) ~> Effect
-runTransferM env = Run.runBaseEffect <<< Run.interpret
-  ( Run.on _merkle merkleH
-      (Run.on _accountMap accountMapH (Run.on _transaction transactionH Run.send))
-  )
+  -> AdviceHandler (TransferAdvice d)
+runTransferM env = AdviceHandler
+  (on _merkle merkleH (on _accountMap accountMapH (on _transaction transactionH case_)))
   where
-  getLedger = Run.liftEffect (read env.ledger)
+  getLedger = read env.ledger
 
-  die :: forall a. String -> Run (EFFECT + ()) a
-  die = Run.liftEffect <<< throwException <<< error
+  die :: forall a. String -> Effect a
+  die = throwException <<< error
 
-  merkleH :: MerkleF Vesta.ScalarField (Account Vesta.ScalarField) d ~> Run (EFFECT + ())
+  merkleH :: MerkleF Vesta.ScalarField (Account Vesta.ScalarField) d ~> Effect
   merkleH = case _ of
     GetElement addr k -> getLedger >>= \{ tree } ->
       case Sparse.get tree addr of
@@ -131,16 +128,16 @@ runTransferM env = Run.runBaseEffect <<< Run.interpret
       k (Sparse.getWitness addr tree)
     SetValue addr v k -> getLedger >>= \ledger ->
       case Sparse.set addr v ledger.tree of
-        Just tree' -> Run.liftEffect (write (ledger { tree = tree' }) env.ledger) $> k
+        Just tree' -> write (ledger { tree = tree' }) env.ledger $> k
         Nothing -> die "setValue: invalid address"
 
-  accountMapH :: AccountMapF d ~> Run (EFFECT + ())
+  accountMapH :: AccountMapF d ~> Effect
   accountMapH (GetAccountId pk k) = getLedger >>= \ledger ->
     case lookupAddress ledger pk of
       Just addr -> pure (k addr)
       Nothing -> die "getAccountId: public key not found in account map"
 
-  transactionH :: TransactionF ~> Run (EFFECT + ())
+  transactionH :: TransactionF ~> Effect
   transactionH (GetCurrentTransaction k) = case env.currentTransaction of
     Just tx -> pure (k tx)
     Nothing -> die "getCurrentTransaction: no current transaction set"
@@ -150,20 +147,18 @@ runTransferM env = Run.runBaseEffect <<< Run.interpret
 
 -- | Compilation discards `exists` bodies, so no advice request is ever
 -- | served; any request firing here is a bug.
-runTransferCompileM :: forall d. Run (TransferRow d) ~> Effect
-runTransferCompileM = Run.runBaseEffect <<< Run.interpret
-  ( Run.on _merkle merkleH
-      (Run.on _accountMap accountMapH (Run.on _transaction transactionH Run.send))
-  )
+runTransferCompileM :: forall d. AdviceHandler (TransferAdvice d)
+runTransferCompileM = AdviceHandler
+  (on _merkle merkleH (on _accountMap accountMapH (on _transaction transactionH case_)))
   where
-  merkleH :: MerkleF Vesta.ScalarField (Account Vesta.ScalarField) d ~> Run (EFFECT + ())
+  merkleH :: MerkleF Vesta.ScalarField (Account Vesta.ScalarField) d ~> Effect
   merkleH = case _ of
     GetElement _ _ -> unsafeCrashWith "the impossible happened! unhandled request: getElement"
     GetPath _ _ -> unsafeCrashWith "the impossible happened! unhandled request: getPath"
     SetValue _ _ _ -> unsafeCrashWith "the impossible happened! unhandled request: setValue"
 
-  accountMapH :: AccountMapF d ~> Run (EFFECT + ())
+  accountMapH :: AccountMapF d ~> Effect
   accountMapH (GetAccountId _ _) = unsafeCrashWith "the impossible happened! unhandled request: getAccountId"
 
-  transactionH :: TransactionF ~> Run (EFFECT + ())
+  transactionH :: TransactionF ~> Effect
   transactionH (GetCurrentTransaction _) = unsafeCrashWith "the impossible happened! unhandled request: getCurrentTransaction"

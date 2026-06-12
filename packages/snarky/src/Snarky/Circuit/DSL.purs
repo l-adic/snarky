@@ -29,6 +29,7 @@ module Snarky.Circuit.DSL
   ( module ReExports
   ) where
 
+import Snarky.Backend.Advice (AdviceHandler(..), noAdvice, runAdviceHandler) as ReExports
 import Snarky.Circuit.CVar (EvaluationError(..), Variable, add_, const_, negate_, scale_, sub_) as ReExports
 import Snarky.Circuit.DSL.Assert (class AssertEqual, assertAll_, assertAny_, assertEq, assertEqGeneric, assertEqual_, assertExactlyOne_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, isEqual, isEqualGeneric) as ReExports
 import Snarky.Circuit.DSL.Bits (packPure, pack_, unpackPure, unpack_) as ReExports

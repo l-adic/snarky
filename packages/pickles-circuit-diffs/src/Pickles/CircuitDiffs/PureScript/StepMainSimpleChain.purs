@@ -25,7 +25,7 @@ import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (AsProver, F, FVar, Snarky, assertAny_, const_, equals_, exists, not_)
@@ -90,7 +90,7 @@ compileStepMainSimpleChain params = do
              _
              _
       dummyAdvice = unsafeCoerce unit
-    Run.runBaseEffect $ compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
+    compile noAdvice (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
       -- Axes: @prevsSpec @outputSize @inputVal @input @outputVal @output
       --       @prevInputVal @prevInput @valCarrier @mpvMax @mpvPad.
       -- Single-rule: mpvMax = len = 1, mpvPad = 0.

@@ -30,8 +30,8 @@ import Partial.Unsafe (unsafePartial)
 import Pickles (BranchProver(..), CompiledProof, NoSlots, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, SideLoaded, Slot, Slots1, StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry)
 import Pickles.Sideload (mkBundle) as Sideload
 import Run as Run
-import Run.Except as Except
 import Safe.Coerce (coerce)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, SizedF, assertAny_, assertEqual_, const_, equals_, exists, true_)
@@ -139,12 +139,13 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       noRecursionInputRule
       unit
 
-    child <- withSpan "[SideLoadedMain] compile child" $ liftEffect $ Run.runBaseEffect $ compileMulti
+    child <- withSpan "[SideLoadedMain] compile child" $ liftEffect $ compileMulti
       @NoRecursionInputRules
       @Unit
       @(F StepField)
       @NoSlots
       @1
+      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
@@ -156,7 +157,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
 
     -- Produce a real child b0 proof. `appInput = F zero` satisfies
     -- the rule's `self == 0` assertion.
-    eChildCp <- withSpan "[SideLoadedMain] prove child" $ liftEffect $ Run.runBaseEffect $ Except.runExcept $ childProver
+    eChildCp <- withSpan "[SideLoadedMain] prove child" $ liftEffect $ childProver noAdvice
       { appInput: F zero
       , prevs: unit
       , sideloadedVKs: unit
@@ -196,12 +197,13 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       sideLoadedMainRule
       (tuple1 unit)
 
-    parent <- withSpan "[SideLoadedMain] compile parent" $ liftEffect $ Run.runBaseEffect $ compileMulti
+    parent <- withSpan "[SideLoadedMain] compile parent" $ liftEffect $ compileMulti
       @SideLoadedMainRules
       @Unit
       @(F StepField)
       @(Slots1 2)
       @1
+      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
@@ -221,7 +223,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
     -- Drive the parent prove with `InductivePrev`: parent self = 1,
     -- prev = (child input = 0, wrapped child proof, child VK). The
     -- rule's `selfCorrect = 1 + 0 == 1` holds.
-    eParentCp <- withSpan "[SideLoadedMain] prove parent" $ liftEffect $ Run.runBaseEffect $ Except.runExcept $ chainProver
+    eParentCp <- withSpan "[SideLoadedMain] prove parent" $ liftEffect $ chainProver noAdvice
       { appInput: F one
       , prevs: tuple1 (InductivePrev childCp2' childTag2)
       , sideloadedVKs: childVK /\ unit

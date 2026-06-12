@@ -12,16 +12,12 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (error, throwException)
-import Run (EFFECT, Run)
-import Run as Run
-import Snarky.Backend.Assignments as Assignments
+import Snarky.Backend.Advice (AdviceHandler, noAdvice)
 import Snarky.Backend.Builder (CircuitBuilderState)
-import Snarky.Backend.Compile (Solver, SolverT, runSolverT)
-import Snarky.Circuit.CVar (EvaluationError)
+import Snarky.Backend.Compile (Solver, SolverT)
 import Snarky.Constraint.Kimchi (KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
-import Type.Row (type (+))
 
 mapAccumM
   :: forall m s t a b
@@ -73,21 +69,21 @@ verifyCircuit
      }
   -> Effect Unit
 verifyCircuit { gen, solver, s } =
-  verifyCircuitM Run.runBaseEffect { gen, solver, s }
+  verifyCircuitM noAdvice { gen, solver, s }
 
--- | Sanity-check a solver over an advice row `r`, given an interpreter for
+-- | Sanity-check a solver over an advice row `r`, given a handler for
 -- | the row's effects.
 verifyCircuitM
   :: forall f a b r
-   . (Run (EFFECT + r) (Either EvaluationError (Tuple b (Assignments.Frozen f))) -> Effect (Either EvaluationError (Tuple b (Assignments.Frozen f))))
+   . AdviceHandler r
   -> { gen :: Gen a
      , solver :: SolverT f (KimchiGate f) r a b
      , s :: CircuitBuilderState (KimchiGate f) (AuxState f)
      }
   -> Effect Unit
-verifyCircuitM runAdvice { gen, solver, s: _ } = do
+verifyCircuitM handler { gen, solver, s: _ } = do
   k <- liftEffect $ randomSampleOne gen
-  eRes <- runAdvice $ runSolverT solver k
+  eRes <- solver handler k
   case eRes of
     Left e -> liftEffect $ throwException $ error (show e)
     Right _ -> pure unit

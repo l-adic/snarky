@@ -10,10 +10,10 @@ import Data.String as String
 import Data.Tuple (Tuple(..), fst, uncurry)
 import Effect.Class (liftEffect)
 import Effect.Unsafe (unsafePerformEffect)
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Assignments as Assignments
 import Snarky.Backend.Builder (CircuitBuilderState)
-import Snarky.Backend.Compile (compile', makeSolver', runSolverT)
+import Snarky.Backend.Compile (compile', makeSolver')
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.CVar (EvaluationError(..), incrementVariable, v0)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F(..), FVar, Snarky, addConstraint, const_, div_, label, mul_, r1cs)
@@ -42,7 +42,7 @@ debugCircuitPure
   -> a
   -> Either EvaluationError b
 debugCircuitPure pc circuit inputs =
-  unsafePerformEffect (Run.runBaseEffect (runSolverT (makeSolver' { debug: true } pc circuit) inputs))
+  unsafePerformEffect (makeSolver' { debug: true } pc circuit noAdvice inputs)
     <#> fst
 
 spec :: Spec Unit
@@ -158,7 +158,7 @@ spec = describe "ProverT debug mode" do
           pure y
 
         builtState :: CircuitBuilderState KG AS
-        builtState = unsafePerformEffect $ Run.runBaseEffect $ compile' { debug: true } (Proxy @F') (Proxy @F') (Proxy @KC) circuit
+        builtState = unsafePerformEffect $ compile' noAdvice { debug: true } (Proxy @F') (Proxy @F') (Proxy @KC) circuit
 
       -- Variables 0,1 are public I/O (allocated by compile, no label context)
       let meta0 = Assignments.lookup v0 builtState.varMetadata
@@ -180,7 +180,7 @@ spec = describe "ProverT debug mode" do
           label "cube" $ mul_ x input
 
         builtState :: CircuitBuilderState KG AS
-        builtState = unsafePerformEffect $ Run.runBaseEffect $ compile' { debug: true } (Proxy @F') (Proxy @F') (Proxy @KC) circuit
+        builtState = unsafePerformEffect $ compile' noAdvice { debug: true } (Proxy @F') (Proxy @F') (Proxy @KC) circuit
 
       -- Variable 2: allocated inside "outer" > "square"
       let mv2 = Assignments.lookup v2 builtState.varMetadata
@@ -198,7 +198,7 @@ spec = describe "ProverT debug mode" do
 
         -- Simulate a MissingVariable error for variable 2 (inside "scalar-mul")
         err = MissingVariable v2
-      builtState <- liftEffect $ Run.runBaseEffect $ compile' { debug: true } (Proxy @F') (Proxy @F') (Proxy @KC) circuit
+      builtState <- liftEffect $ compile' noAdvice { debug: true } (Proxy @F') (Proxy @F') (Proxy @KC) circuit
       metaLookup <- liftEffect $ Assignments.toLookup builtState.varMetadata
       let decorated = decorateError metaLookup err
 

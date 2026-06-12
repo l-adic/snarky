@@ -17,8 +17,8 @@ import Pickles.FinalizeOtherProof (DomainMode(..), Output)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.Wrap.FinalizeOtherProof (pow2PowMul, wrapFinalizeOtherProofCircuit)
-import Run as Run
 import Safe.Coerce (coerce)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (Bool(..), F, FVar, SizedF, Snarky, const_, sub_)
 import Snarky.Circuit.Kimchi (Type2(..))
@@ -132,5 +132,5 @@ fopWrapCircuit input =
 
 compileFopWrap :: Effect (CompiledCircuit WrapField)
 compileFopWrap =
-  Run.runBaseEffect $ compile (Proxy @(Vector 148 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  compile noAdvice (Proxy @(Vector 148 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ fopWrapCircuit (parseFopWrapInput inputs))

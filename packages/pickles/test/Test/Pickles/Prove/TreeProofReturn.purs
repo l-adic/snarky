@@ -47,7 +47,7 @@ import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Pickles (BranchProver(..), Compiled, CompiledProof(..), NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots2, StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
 import Run as Run
-import Run.Except as Except
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, const_, exists, if_, not_, true_)
@@ -116,12 +116,13 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     let nrrRules = tuple1 nrrEntry
 
     logInfo "[TreeProofReturn] compiling nrr…"
-    nrr <- withSpan "[TreeProofReturn] compile nrr" $ liftEffect $ Run.runBaseEffect $ compileMulti
+    nrr <- withSpan "[TreeProofReturn] compile nrr" $ liftEffect $ compileMulti
       @NrrRules
       @(F StepField)
       @Unit
       @NoSlots
       @1
+      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
@@ -132,7 +133,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     let BranchProver nrrProver = fst nrr.provers
     -- NRR has no prev slots → spec-derived `vkCarrier = Unit`.
     logInfo "[TreeProofReturn] proving nrr"
-    eNrrCp <- withSpan "[TreeProofReturn] prove nrr" $ liftEffect $ Run.runBaseEffect $ Except.runExcept $ nrrProver
+    eNrrCp <- withSpan "[TreeProofReturn] prove nrr" $ liftEffect $ nrrProver noAdvice
       { appInput: unit, prevs: unit, sideloadedVKs: unit }
     nrrCp <- case eNrrCp of
       Left e -> liftEffect $ Exc.throw ("nrrProver: " <> show e)
@@ -158,12 +159,13 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     let treeRules = tuple1 treeEntry
 
     logInfo "[TreeProofReturn] compiling tree…"
-    tree <- withSpan "[TreeProofReturn] compile tree" $ liftEffect $ Run.runBaseEffect $ compileMulti
+    tree <- withSpan "[TreeProofReturn] compile tree" $ liftEffect $ compileMulti
       @TreeRules
       @(F StepField)
       @(F StepField)
       @(Slots2 0 2)
       @1
+      noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14
@@ -187,7 +189,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         :: PrevSlot Unit 2 (StatementIO Unit (F StepField))
         -> Aff (CompiledProof 2 (StatementIO Unit (F StepField)))
       runStep selfPrev = do
-        eRes <- liftEffect $ Run.runBaseEffect $ Except.runExcept $ treeProver
+        eRes <- liftEffect $ treeProver noAdvice
           { appInput: unit
           , prevs:
               tuple2 (InductivePrev nrrCp' nrr.tag) selfPrev

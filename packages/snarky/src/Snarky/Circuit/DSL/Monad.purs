@@ -29,7 +29,7 @@ module Snarky.Circuit.DSL.Monad
   ( AsProver(..)
   , ASPROVER
   , liftAdvice
-  , liftEffectRow
+  , _effect
   , CircuitF(..)
   , CIRCUIT
   , Snarky(..)
@@ -68,10 +68,10 @@ module Snarky.Circuit.DSL.Monad
 import Prelude
 
 import Control.Apply (lift2)
-import Control.Monad.Rec.Class (class MonadRec)
+import Control.Monad.Rec.Class (class MonadRec, Step(..), tailRecM)
 import Data.Array as Array
 import Data.Const (Const)
-import Data.Either (Either)
+import Data.Either (Either(..))
 import Data.Functor.Product (Product(..)) as FP
 import Data.Generic.Rep (class Generic, Argument(..), Constructor(..), NoArguments, Product(..), from)
 import Data.HeytingAlgebra (ff, implies, tt)
@@ -95,6 +95,7 @@ import Run.Except as Except
 import Run.Reader (READER)
 import Run.Reader as Reader
 import Safe.Coerce (coerce)
+import Snarky.Backend.Advice (AdviceHandler(..))
 import Snarky.Backend.Assignments (Assignments)
 import Snarky.Backend.Assignments as Assignments
 import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), Variable, add_, const_, sub_)
@@ -130,14 +131,6 @@ derive newtype instance Applicative (AsProver f r)
 derive newtype instance Bind (AsProver f r)
 derive newtype instance Monad (AsProver f r)
 derive newtype instance MonadRec (AsProver f r)
-
--- | Widen an open row by the EFFECT label (for orchestration code running
--- | solvers, whose results are `Run r`, inside `Run (EFFECT + r)`). Safe for
--- | the same reason `Run.expand` is (a `Run r` program can never produce an
--- | effect outside `r`); spelled with a coercion because the `Union` solver
--- | cannot align two open tails.
-liftEffectRow :: forall r a. Run r a -> Run (EFFECT + r) a
-liftEffectRow = unsafeCoerce
 
 -- | Lift an advice computation (the open tail `r`) into a witness
 -- | computation. Replaces the old `MonadTrans (AsProverT f)` instance; the
@@ -180,14 +173,36 @@ instance HeytingAlgebra (AsProver f r Boolean) where
   disj = lift2 disj
   implies = lift2 implies
 
--- | Interpret a witness computation against an assignment map, leaving the
--- | advice effects `r` to the caller.
+-- | Interpret a witness computation against an assignment map, directly in
+-- | `Effect`: a `tailRecM` loop over `Run.peel` that handles `except`
+-- | (short-circuits — no `catch` exists in this codebase), `reader`
+-- | (constant env — no `local`), and `effect` inline, and delegates the
+-- | advice tail `r` to the caller's handler. Replaces the old
+-- | `runExcept <<< runReader` handler chain, which reified a second Run
+-- | program (and allocated a fresh handler pass) per witness computation.
 runAsProver
   :: forall f r a
-   . Assignments f
+   . AdviceHandler r
+  -> Assignments f
   -> AsProver f r a
-  -> Run (EFFECT + r) (Either EvaluationError a)
-runAsProver env (AsProver m) = Except.runExcept (Reader.runReader env m)
+  -> Effect (Either EvaluationError a)
+runAsProver (AdviceHandler handler) env (AsProver m0) = tailRecM go m0
+  where
+  go
+    :: Run (ASPROVER f r) a
+    -> Effect (Step (Run (ASPROVER f r) a) (Either EvaluationError a))
+  go m = case Run.peel m of
+    Right a -> pure (Done (Right a))
+    Left v ->
+      v # Run.on Except._except (\(Except.Except e) -> pure (Done (Left e)))
+        ( Run.on Reader._reader (\(Reader.Reader k) -> pure (Loop (k env)))
+            ( Run.on _effect (\eff -> Loop <$> eff)
+                (\other -> Loop <$> handler other)
+            )
+        )
+
+_effect :: Proxy "effect"
+_effect = Proxy
 
 readCVar :: forall f r. PrimeField f => FVar f -> AsProver f r (F f)
 readCVar v = AsProver do

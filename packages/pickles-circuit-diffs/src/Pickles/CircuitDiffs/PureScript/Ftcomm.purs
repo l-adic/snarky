@@ -17,7 +17,7 @@ import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
 import Pickles.Field (WrapField)
 import Pickles.FtComm (ftComm) as FtComm
 import Pickles.Wrap.OtherField as WrapOtherField
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F, FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi (Type1(..))
@@ -66,5 +66,5 @@ ftcommWrapCircuit input =
 
 compileFtcomm :: Effect (CompiledCircuit WrapField)
 compileFtcomm =
-  Run.runBaseEffect $ compile (Proxy @(Vector 17 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  compile noAdvice (Proxy @(Vector 17 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ ftcommWrapCircuit (parseFtcommInput inputs))

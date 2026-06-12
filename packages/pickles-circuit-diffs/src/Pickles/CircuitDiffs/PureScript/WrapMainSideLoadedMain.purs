@@ -31,7 +31,7 @@ import Pickles.Types (StatementIO)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
 import Pickles.Wrap.Slots (Slots1)
-import Run as Run
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Circuit.DSL (F)
@@ -67,7 +67,7 @@ compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
   let
     dummyAdvice :: WrapAdvice 1 1 (Slots1 2)
     dummyAdvice = unsafeCoerce unit
-  wrapCs <- Run.runBaseEffect $ compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     ( \stmt ->
         wrapMainForPrevs @1
           @(Tuple1 (Slot SideLoaded 2 1 (StatementIO (F StepField) Unit)))

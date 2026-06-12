@@ -12,6 +12,7 @@ import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (BoolVar, F(..), FVar, Snarky)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Circuit.Kimchi.VarBaseMul (VbmRow, computeVbmChain, joinField, scaleFast1, scaleFast2, scaleFast2', splitField)
@@ -215,7 +216,7 @@ spec cfg = do
 
       -- Run in Effect to catch JS FFI exception as test failure
       try
-        ( circuitTestM' @Pallas.BaseField identity
+        ( circuitTestM' @Pallas.BaseField { handler: noAdvice, beforeEach: pure unit }
             cfg
             ( NEA.singleton
                 { testFunction: (unsatisfied :: _ -> Expectation (AffinePoint Pallas.BaseField))

@@ -14,8 +14,8 @@ import Effect (Effect)
 import Mina.ChainId (ChainId(..), signaturePrefix)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
 import Pickles.Field (StepField)
-import Run as Run
 import Safe.Coerce (coerce)
+import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (BoolVar, F, FVar)
 import Snarky.Circuit.DSL.Monad (check) as DSL
@@ -55,7 +55,7 @@ parseSchnorrVerifyInput inputs =
 
 compileSchnorrVerify :: Effect (CompiledCircuit StepField)
 compileSchnorrVerify =
-  Run.runBaseEffect $ compile (Proxy @(Vector 259 (F StepField))) (Proxy @Boolean) (Proxy @(KimchiConstraint StepField))
+  compile noAdvice (Proxy @(Vector 259 (F StepField))) (Proxy @Boolean) (Proxy @(KimchiConstraint StepField))
     ( \inputs -> do
         let { pk, r, sBits, message } = parseSchnorrVerifyInput inputs
         -- Mirror OCaml's input typ checks, in the same order OCaml
