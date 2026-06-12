@@ -39,7 +39,7 @@ const moduleOf = (url) => {
 // First match wins.
 const CATEGORIES = [
   ["GC / engine", /^<v8> \((garbage collector|program|idle)\)/],
-  ["Rust FFI (kimchi-napi)", /kimchi-napi|\.node\b/],
+  ["Rust FFI (kimchi-napi, via timing wrappers)", /kimchi-napi|\.node\b|BenchUtils\/foreign crypto\./],
   ["bigint field/curve core (pasta-runtime)", /pasta-runtime\//],
   ["field FFI wrappers + dictionaries", /^Snarky\.Curves\.Pasta(\/foreign)? /],
   ["Run/Free machinery", /^(Data\.CatList|Data\.CatQueue|Control\.Monad\.Free|Run|Run\.[A-Za-z.]+) /],
