@@ -95,6 +95,64 @@ jobs:
       env:
         NODE_OPTIONS: "--max-old-space-size=8192"
 
+  test-example:
+    strategy:
+      matrix:
+        os: [ubuntu-latest-large]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '23'
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+          packages/kimchi-napi/target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+
+    - name: Cache SRS files
+      uses: actions/cache@v3
+      with:
+        path: srs-cache/
+        key: ${{ runner.os }}-srs-${{ hashFiles('mina/src/lib/crypto/proof-systems/srs/*.srs') }}
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Populate SRS cache
+      run: make fetch-srs
+
+    - name: Generate linearization code
+      run: make gen-linearization
+
+    - name: Test example package
+      run: make test-example
+      env:
+        NODE_OPTIONS: "--max-old-space-size=8192"
+
+    # Runs only if the example tests passed (a failed step aborts the job).
+    # Full one-block pipeline on the purs-backend-es optimized output:
+    # circuit compile, genesis, 4 base proofs + 3 merges, root verification.
+    - name: Run example simulation
+      run: tools/run_simulation.sh
+      env:
+        NODE_OPTIONS: "--max-old-space-size=8192"
+
   test-circuit-diffs:
     runs-on: ubuntu-latest
     steps:
@@ -172,7 +230,7 @@ jobs:
   # while all test jobs still run as required checks.
 
   deploy:
-    needs: [format-check, test-libs, test-circuit-diffs]
+    needs: [format-check, test-libs, test-example, test-circuit-diffs]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:

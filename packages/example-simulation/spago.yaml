@@ -72,6 +72,7 @@ package:
     - refs
     - run
     - schnorr
+    - variant
   build:
     strict: true
   run:

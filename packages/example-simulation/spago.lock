@@ -15,7 +15,8 @@
             "prelude",
             "refs",
             "run",
-            "schnorr"
+            "schnorr",
+            "variant"
           ]
         },
         "test": {
@@ -1588,7 +1589,6 @@
         "node-buffer",
         "node-fs",
         "node-process",
-        "ordered-collections",
         "partial",
         "pickles-linearization-types",
         "poseidon",
@@ -1873,6 +1873,7 @@
         "prelude",
         "quickcheck",
         "record",
+        "refs",
         "run",
         "safe-coerce",
         "simple-json",
@@ -1881,6 +1882,7 @@
         "tuples",
         "typelevel-prelude",
         "unsafe-coerce",
+        "variant",
         "vector-sized"
       ]
     },
@@ -1888,7 +1890,10 @@
       "type": "local",
       "path": "../snarky-curves",
       "dependencies": [
+        "arrays",
         "curves",
+        "either",
+        "foldable-traversable",
         "maybe",
         "newtype",
         "partial",
@@ -1896,7 +1901,8 @@
         "quickcheck",
         "safe-coerce",
         "simple-json",
-        "snarky"
+        "snarky",
+        "tuples"
       ]
     },
     "snarky-kimchi": {
@@ -1958,7 +1964,6 @@
         "js-bigints",
         "maybe",
         "newtype",
-        "ordered-collections",
         "prelude",
         "quickcheck",
         "run",
