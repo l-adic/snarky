@@ -13,6 +13,12 @@ node_modules/
 *.dylib
 *.dll
 
+# Generated wasm backend (built by `napi build` + patch-wasi-browser.mjs)
+packages/kimchi-napi/wasm/
+
+# Vite bundle output for the browser example app
+packages/example/web/dist/
+
 # Cargo/Rust
 target/
 

@@ -23,6 +23,7 @@ import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
 import Data.Tuple.Nested (tuple1, tuple2)
 import Effect (Effect)
+import Effect.Aff (Milliseconds(..), delay)
 import Effect.Class (liftEffect)
 import Pickles (NoSlots, RuleEntry, SlotWrapKey(..), Slots2, StepField, compileMulti, mkRuleEntry)
 import Snarky.Backend.Advice (noAdvice)
@@ -99,6 +100,14 @@ group srs =
     [ BL.benchAff_ benchLabel
         (\_ -> pure unit)
         ( \_ -> do
+            -- Pre-trial GC (gc -> yield -> gc): finalize the previous
+            -- trial's garbage so trials are independent — and so dead
+            -- prover indexes return to the wasm allocator before this
+            -- trial allocates (FinalizationRegistry callbacks run a
+            -- tick after gc, hence the yield between the two calls).
+            liftEffect BenchUtils.forceGc
+            delay (Milliseconds 1.0)
+            liftEffect BenchUtils.forceGc
             liftEffect $ BenchUtils.startFfiTracking benchLabel
             liftEffect BenchUtils.startGcTracking
             _ <- liftEffect (fullCompile srs)

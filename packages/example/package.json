@@ -1,0 +1,22 @@
+{
+  "name": "example-app",
+  "private": true,
+  "version": "0.1.0",
+  "description": "The example application workspace: simulation lib + terminal TUI + browser app over one purs-backend-es build",
+  "type": "module",
+  "scripts": {
+    "build:ps": "spago build",
+    "dev": "npm run build:ps && vite --config web/vite.config.mjs",
+    "bundle": "npm run build:ps && vite build --config web/vite.config.mjs",
+    "preview": "vite preview --config web/vite.config.mjs",
+    "simulate": "npm run build:ps && cd ../.. && node packages/example/terminal/run.mjs",
+    "test": "npm run build:ps && cd ../.. && node packages/example/lib/run-tests.mjs"
+  },
+  "devDependencies": {
+    "memfs": "^4.57.7",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^6.4.3",
+    "vite-plugin-node-polyfills": "^0.28.0"
+  }
+}

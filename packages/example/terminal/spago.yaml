@@ -1,0 +1,23 @@
+# The terminal (node TUI) frontend of the example simulation — sibling
+# of web/ (the browser frontend). Entry: Snarky.Example.Main, launched
+# by terminal/run.mjs via tools/run_simulation.sh. Both packages share
+# this workspace's purs-backend-es output.
+package:
+  name: example-simulation-terminal
+  dependencies:
+    - aff
+    - colog
+    - effect
+    - example
+    - fmt
+    - foldable-traversable
+    - pickles
+    - prelude
+    - refs
+    - run
+    - schnorr
+    - variant
+  build:
+    strict: true
+  run:
+    main: Snarky.Example.Main

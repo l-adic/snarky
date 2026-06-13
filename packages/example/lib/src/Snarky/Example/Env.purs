@@ -15,7 +15,6 @@ module Snarky.Example.Env where
 
 import Prelude
 
-import Data.Array (range)
 import Data.Foldable (for_)
 import Data.Reflectable (class Reflectable)
 import Effect (Effect)
@@ -39,18 +38,27 @@ type Config =
   , chainId :: ChainId
   }
 
--- | Build the Pasta SRSes with the lagrange-basis caches pre-warmed for the
--- | step (Vesta, 2^9..2^16) and wrap (Pallas, 2^12..2^15) domains the program
--- | touches. Mirrors `Test.Pickles.SharedSrs.buildSharedSrs`; the wrap depth
--- | (2^15) is the OCaml Tock URS convention.
+-- | Build the Pasta SRSes, pre-warming the lagrange-basis cache for
+-- | exactly the domains this program commits over (measured by
+-- | instrumenting the prover, not guessed):
+-- |
+-- |   * Vesta (step): 2^13 (base step) and 2^15 (merge step)
+-- |   * Pallas (wrap): 2^14 (the `override_wrap_domain:N1`)
+-- |
+-- | These are circuit-determined, so stable across blocks. Warming a
+-- | superset is merely wasted MSMs (the old code warmed Vesta 2^9..2^16
+-- | + Pallas 2^12..2^15 — 12 domains for the 3 actually used); warming a
+-- | subset just defers the missing basis to a one-time lazy generation
+-- | at prove time (correct, slower). The Pallas SRS depth stays 2^15
+-- | (the OCaml Tock URS convention) regardless of which bases are warmed.
 mkConfig
   :: ChainId
   -> Effect Config
 mkConfig chainId = do
   let pallasSrs = PallasImpl.pallasCrsCreate 32768
   vestaSrs <- createCRS @StepField
-  for_ (range 9 16) (addLagrangeBasis vestaSrs)
-  for_ (range 12 15) (addLagrangeBasis pallasSrs)
+  for_ [ 13, 15 ] (addLagrangeBasis vestaSrs)
+  for_ [ 14 ] (addLagrangeBasis pallasSrs)
   pure { pallasSrs, vestaSrs, chainId }
 
 type Env d =

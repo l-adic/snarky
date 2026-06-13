@@ -29,7 +29,7 @@ import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
 import Data.Tuple.Nested (tuple1, tuple2)
 import Effect (Effect)
-import Effect.Aff (Aff)
+import Effect.Aff (Aff, Milliseconds(..), delay)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Pickles (BranchProver(..), NoSlots, PrevSlot(..), SlotWrapKey(..), Slots2, StatementIO(..), StepField, compileMulti, mkRuleEntry)
@@ -126,6 +126,10 @@ group getProveThunk =
         -- region and after the compile group.
         (\_ -> getProveThunk)
         ( \proveThunk -> do
+            -- Pre-trial GC; see Compile.purs for the rationale.
+            liftEffect BenchUtils.forceGc
+            delay (Milliseconds 1.0)
+            liftEffect BenchUtils.forceGc
             liftEffect FfiTimer.start
             liftEffect $ BenchUtils.startFfiTracking benchLabel
             liftEffect BenchUtils.startGcTracking

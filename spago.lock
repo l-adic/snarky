@@ -36,64 +36,6 @@
           ]
         }
       },
-      "example": {
-        "path": "packages/example",
-        "core": {
-          "dependencies": [
-            "aff",
-            "arrays",
-            "avar",
-            "colog",
-            "curves",
-            "effect",
-            "either",
-            "exceptions",
-            "fmt",
-            "foldable-traversable",
-            "gen",
-            "js-bigints",
-            "maybe",
-            "merkle-tree",
-            "newtype",
-            "ordered-collections",
-            "partial",
-            "pickles",
-            "prelude",
-            "quickcheck",
-            "random-oracle",
-            "refs",
-            "run",
-            "safe-coerce",
-            "schnorr",
-            "snarky",
-            "snarky-curves",
-            "snarky-kimchi",
-            "tailrec",
-            "tuples",
-            "typelevel-prelude",
-            "variant",
-            "vector-sized"
-          ]
-        },
-        "test": {
-          "dependencies": [
-            "aff",
-            "arrays",
-            "console",
-            "effect",
-            "exceptions",
-            "foldable-traversable",
-            "js-bigints",
-            "ordered-collections",
-            "partial",
-            "refs",
-            "snarky-test-utils",
-            "spec",
-            "spec-node",
-            "tailrec"
-          ]
-        }
-      },
       "merkle-tree": {
         "path": "packages/merkle-tree",
         "core": {
@@ -1561,17 +1503,6 @@
         "enums",
         "maybe",
         "prelude"
-      ]
-    },
-    "fmt": {
-      "type": "registry",
-      "version": "0.2.1",
-      "integrity": "sha256-PB03XVGapVLn6GgwxEeAQ+yldoBlLP9eMdRnCdMIBic=",
-      "dependencies": [
-        "prelude",
-        "record",
-        "type-equality",
-        "typelevel-prelude"
       ]
     },
     "foldable-traversable": {

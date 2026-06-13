@@ -26,7 +26,7 @@ import Snarky.Example.Ledger (balanceOf)
 import Snarky.Example.Log as Log
 import Snarky.Example.Simulation (generateBlock, mkSimulation)
 import Snarky.Example.Snark.Manager (submitBlock)
-import Snarky.Example.Snark.Progress (mkProgressDisplay)
+import Snarky.Example.Terminal.ProgressDisplay (mkProgressDisplay)
 import Snarky.Example.Transaction (SignedTransaction(..), Transaction(..), Transfer(..))
 
 -- | Ledger tree depth for the simulation (2^4 = 16 account slots).

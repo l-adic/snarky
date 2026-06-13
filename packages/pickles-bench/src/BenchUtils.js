@@ -299,3 +299,13 @@ export const takeHeapSnapshot = (filepath) => () => {
 export const report = () => {
   BenchUtils.report();
 };
+
+// Force a V8 GC if node ran with --expose-gc (no-op otherwise). Called
+// between trials so no trial inherits the previous one's garbage — and,
+// under KIMCHI_BACKEND=wasm, so dead napi externals (~500MB prover
+// indexes) are finalized back to the wasm allocator before the next
+// trial allocates (wasm32 has a hard 4GB ceiling; finalizers run via
+// FinalizationRegistry a tick AFTER gc, hence callers gc-yield-gc).
+export const forceGc = () => {
+  if (globalThis.gc) globalThis.gc();
+};
