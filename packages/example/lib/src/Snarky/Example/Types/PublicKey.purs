@@ -1,5 +1,6 @@
 module Snarky.Example.Types.PublicKey
   ( PublicKey(..)
+  , toBase58Check
   ) where
 
 import Prelude
@@ -10,6 +11,7 @@ import Data.Tuple.Nested (Tuple2, tuple2, uncurry2)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class AssertEqual, class CheckedType, class CircuitType, F(..), FVar, assertEq, check, fieldsToValue, fieldsToVar, isEqual, sizeInFields, valueToFields, varToFields)
 import Snarky.Circuit.RandomOracle (class Hashable)
+import Snarky.Curves.Class (toHexLe)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint(..))
@@ -54,3 +56,15 @@ instance Hashable (PublicKey Pallas.ScalarField) Pallas.ScalarField where
 
 instance Hashable (PublicKey (FVar f)) (FVar f) where
   toHashInput = varToFields @_ @(PublicKey f)
+
+-- | Render a public key as a Mina-style `B62…` address — the
+-- | compressed-point base58check form shown by Mina explorers and the
+-- | GraphQL API, far more succinct than printing the full affine point.
+-- | Byte-faithful to MinaProtocol/mina's `non_zero_curve_point`
+-- | compressed encoding (validated against real network addresses).
+toBase58Check :: PublicKey Vesta.ScalarField -> String
+toBase58Check (PublicKey (AffinePoint { x, y })) = pubkeyToBase58 (toHexLe x) (toHexLe y)
+
+-- | base58check encode the compressed key from the little-endian hex of
+-- | its affine coordinates (the parity bit is read from `y`).
+foreign import pubkeyToBase58 :: String -> String -> String

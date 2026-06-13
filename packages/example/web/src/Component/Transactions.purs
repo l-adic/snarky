@@ -35,6 +35,14 @@ transactionsPanel { txs, selected, onSelect } =
 shorten :: String -> String
 shorten s = if String.length s <= 18 then s else String.take 18 s <> "…"
 
+-- | Middle-ellipsis truncation for long opaque identifiers (addresses,
+-- | hashes): keeps the prefix AND suffix, both of which matter for
+-- | recognizing a `B62…` key. The full value stays available on hover.
+shortenMid :: String -> String
+shortenMid s
+  | String.length s <= 24 = s
+  | otherwise = String.take 10 s <> "…" <> String.drop (String.length s - 8) s
+
 txRow :: Boolean -> Effect Unit -> TxView -> JSX
 txRow open toggle tx = R.div
   { className: "tx-item" <> (if open then " open" else "")
@@ -54,10 +62,10 @@ txDetail :: TxView -> JSX
 txDetail tx = R.div
   { className: "tx-detail"
   , children:
-      [ field "hash" tx.hash
+      [ idField "hash" tx.hash
       , field "nonce" tx.nonce
-      , field "from" tx.from
-      , field "to" tx.to
+      , idField "from" tx.from
+      , idField "to" tx.to
       , field "amount" tx.amount
       ]
   }
@@ -67,5 +75,17 @@ txDetail tx = R.div
     , children:
         [ R.span { className: "tx-field-label", children: [ R.text label ] }
         , R.span { className: "tx-field-value", children: [ R.text value ] }
+        ]
+    }
+  -- Long opaque identifiers: show middle-truncated, full value on hover.
+  idField label value = R.div
+    { className: "tx-field"
+    , children:
+        [ R.span { className: "tx-field-label", children: [ R.text label ] }
+        , R.span
+            { className: "tx-field-value mono"
+            , title: value
+            , children: [ R.text (shortenMid value) ]
+            }
         ]
     }

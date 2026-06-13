@@ -154,6 +154,13 @@
   color: var(--text);
   word-break: break-all;
 }
+/* Middle-truncated identifiers (addresses, hashes): full value on hover. */
+.tx-field-value.mono {
+  color: var(--accent);
+  letter-spacing: 0.02em;
+  word-break: normal;
+  cursor: help;
+}
 
 /* --- log stream --- */
 .log-scroll {

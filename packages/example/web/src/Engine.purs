@@ -35,6 +35,7 @@ import Snarky.Example.Simulation (generateBlock, mkSimulation)
 import Snarky.Example.Snark.Manager (submitBlock)
 import Snarky.Example.Snark.Progress (scanStateView)
 import Snarky.Example.Transaction (SignedTransaction(..), Transaction(..), Transfer(..))
+import Snarky.Example.Types.PublicKey (toBase58Check)
 
 -- | Ledger tree depth, matching the terminal entry.
 type Depth = 4
@@ -94,8 +95,8 @@ runSimulation cb = launchAff_ do
     \(SignedTransaction { transaction: tx@(Transaction { nonce, transfer: Transfer { from, to, amount } }) }) ->
       { hash: txHash tx
       , nonce: show nonce
-      , from: show from
-      , to: show to
+      , from: toBase58Check from
+      , to: toBase58Check to
       , amount: show (balanceOf amount)
       }
 
