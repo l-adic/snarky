@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "bash build.sh",
-    "build:wasm": "cd ../../mina/src/lib/crypto/proof-systems && napi build --package kimchi-napi --package-json-path ../../../../../packages/kimchi-napi/package.json --target wasm32-wasip1-threads --profile release-wasm --platform -o ../../../../../packages/kimchi-napi/wasm && cd ../../../../../packages/kimchi-napi && node patch-wasi-browser.mjs && wasm-opt -O3 --enable-threads --enable-bulk-memory --enable-mutable-globals --enable-sign-ext --enable-nontrapping-float-to-int wasm/kimchi-napi.wasm32-wasi.wasm -o wasm/kimchi-napi.wasm32-wasi.wasm"
+    "build:wasm": "cd ../../mina/src/lib/crypto/proof-systems && rustup target add wasm32-wasip1-threads && napi build --package kimchi-napi --package-json-path ../../../../../packages/kimchi-napi/package.json --target wasm32-wasip1-threads --profile release-wasm --platform -o ../../../../../packages/kimchi-napi/wasm && cd ../../../../../packages/kimchi-napi && node patch-wasi-browser.mjs && wasm-opt -O3 --enable-threads --enable-bulk-memory --enable-mutable-globals --enable-sign-ext --enable-nontrapping-float-to-int wasm/kimchi-napi.wasm32-wasi.wasm -o wasm/kimchi-napi.wasm32-wasi.wasm"
   },
   "files": [
     "index.js",
