@@ -44,9 +44,10 @@ export default defineConfig({
     outDir: here("dist"),
     emptyOutDir: true,
     rollupOptions: {
-      // Pages: full pipeline (index.html), the privacy split (private.html),
-      // and the serverless P2P proving mesh (p2p.html).
-      input: { main: here("index.html"), private: here("private.html"), p2p: here("p2p.html") },
+      // index.html IS the serverless P2P proving mesh — the published GitHub
+      // Pages landing page (served at /). The single-machine full pipeline
+      // (full.html) and the privacy split (private.html) are secondary pages.
+      input: { main: here("index.html"), full: here("full.html"), private: here("private.html") },
     },
   },
   worker: {

@@ -114,8 +114,9 @@ which needs the page cross-origin isolated — `vite.config.mjs` sends COOP/COEP
 (and `public/coi-serviceworker.js` / `public/_headers` cover deployed hosts).
 Three pages (one vite multi-page build):
 
-- **Full pipeline** (`/`, `Snarky.Example.Web.Engine`) — the whole one-block
-  flow in-browser: SRS + compile, genesis, block, base + merge proofs, verify.
+- **Full pipeline** (`/full.html`, `Snarky.Example.Web.Engine`) — the whole
+  one-block flow in-browser: SRS + compile, genesis, block, base + merge proofs,
+  verify.
 - **Privacy split** (`/private.html`, `Snarky.Example.WebBase`) — the client
   proves each transaction's BASE proof **locally** (private witnesses stay on
   device), then POSTs only proofs + public ledger statements to a native merge
@@ -125,7 +126,8 @@ Three pages (one vite multi-page build):
   untrusted server can do them. Cross-backend parity holds (VK is a pure
   function of circuit + SRS). Shared merge-tree primitives in
   `Snarky.Example.Merge`; proofs serialize via `Snarky.Example.Snark.LeafCodec`.
-- **Serverless P2P mesh** (`/p2p.html`, `Snarky.Example.P2P.*`) — the pipeline
+- **Serverless P2P mesh** (`/`, the root `index.html` — this is the published
+  GitHub Pages landing page, `Snarky.Example.P2P.*`) — the pipeline
   split across a **decentralized WebRTC mesh** of browsers on the same static
   site (no server). A peer is **base** (generates its OWN block from private
   transactions and proves that block's base proofs) or **merge** (proves ready

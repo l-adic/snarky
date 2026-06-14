@@ -13,7 +13,8 @@
 # No coordinator: peers gossip a content-addressed job-board, self-assign the
 # lowest ready slot, and verify every received proof before merging on it.
 #
-# Open http://localhost:5173/p2p.html and pick a role; share the session code
+# Open http://localhost:5173/ (the P2P mesh is the root page) and pick a role;
+# share the session code
 # (the #session=CODE hash) with the other browsers. Transports: BroadcastChannel
 # (same browser, default for local demos), manual copy-paste SDP, or Trystero
 # (cross-machine WebRTC over public Nostr relays) — choose via the `t=` hash
@@ -21,5 +22,5 @@
 set -e
 cd "$(dirname "${BASH_SOURCE[0]}")/../packages/example/app"
 npm run build:ps
-echo "p2p mesh: open http://localhost:5173/p2p.html  (share #session=CODE across browsers)"
+echo "p2p mesh: open http://localhost:5173/  (share #session=CODE across browsers)"
 npx vite --config web/vite.config.mjs --host

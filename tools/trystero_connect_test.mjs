@@ -39,7 +39,7 @@ async function mkPeer(role) {
   page.on("pageerror", (e) => logs.push("PAGEERROR: " + e.message));
   // The `&${role}` hash sets mode=base|merge, which AUTOSTARTS the mesh on
   // load (joining the trystero room) — no click needed; the buttons are hidden.
-  const url = `${BASE}/p2p.html#session=${SESSION}&t=trystero&${role}`;
+  const url = `${BASE}/#session=${SESSION}&t=trystero&${role}`;
   await page.goto(url, { waitUntil: "domcontentloaded" });
   return { ctx, page, logs };
 }

@@ -73,7 +73,7 @@ async function waitReady(role) {
   }
 }
 for (const role of ROLES) {
-  await brpc("Target.createTarget", { url: `${URL}/p2p.html#mode=${role}&session=${SESSION}&t=bc&threads=${THREADS}` });
+  await brpc("Target.createTarget", { url: `${URL}/#mode=${role}&session=${SESSION}&t=bc&threads=${THREADS}` });
   await sleep(800);
   await waitReady(role);
   console.log(`  ${role} ready`);

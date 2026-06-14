@@ -33,7 +33,7 @@ done
 SESSION="${POS[0]:?usage: run_p2p_merge_peer.sh <SESSION> [BASE_URL] [TRANSPORT] [--headless]}"
 URL="${POS[1]:-http://localhost:5173}"
 TRANSPORT="${POS[2]:-trystero}"
-PAGE="$URL/p2p.html#mode=merge&session=$SESSION&t=$TRANSPORT"
+PAGE="$URL/#mode=merge&session=$SESSION&t=$TRANSPORT"
 
 if [ "$HEADLESS" = "1" ]; then
   CHROME="${CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
