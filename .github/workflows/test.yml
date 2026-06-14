@@ -5,6 +5,13 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  # Manual "Run workflow" button: build + deploy ANY branch to GitHub Pages
+  # without merging to main first (e.g. to preview a feature branch). The
+  # heavy test suite is skipped on this path; only the Pages build gates the
+  # deploy. NOTE: the button only appears once this workflow_dispatch trigger
+  # is present on the DEFAULT branch (main) — GitHub reads dispatchability from
+  # there — but the run executes the workflow file of the branch you select.
+  workflow_dispatch:
 
 # Pages deploy needs these; test jobs only read. Set workflow-wide to
 # match the proven deploy config (slightly over-privileged for the test
@@ -22,6 +29,8 @@ jobs:
   # ---- parallel test jobs (no `needs:` => run concurrently) ----------
 
   format-check:
+    # Skipped on a manual Pages preview (workflow_dispatch); gates push/PR only.
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -49,6 +58,7 @@ jobs:
       run: cargo clippy --workspace --all-targets -- -D warnings
 
   test-libs:
+    if: github.event_name != 'workflow_dispatch'
     strategy:
       matrix:
         os: [ubuntu-latest-large]
@@ -96,6 +106,7 @@ jobs:
         NODE_OPTIONS: "--max-old-space-size=8192"
 
   test-example:
+    if: github.event_name != 'workflow_dispatch'
     strategy:
       matrix:
         os: [ubuntu-latest-large]
@@ -154,6 +165,7 @@ jobs:
         NODE_OPTIONS: "--max-old-space-size=8192"
 
   test-circuit-diffs:
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -215,14 +227,17 @@ jobs:
         test -f packages/pickles-circuit-diffs/visualizer/dist/results/manifest.jsonl
         echo "Visualizer build verified: $(ls packages/pickles-circuit-diffs/visualizer/dist/*.js | wc -l) JS bundle(s), $(ls packages/pickles-circuit-diffs/visualizer/dist/*.css | wc -l) CSS bundle(s), $(ls packages/pickles-circuit-diffs/visualizer/dist/results/*.json | wc -l) circuit result(s)"
 
-  # ---- build the example app for GitHub Pages (push to main only) ------
+  # ---- build the example app for GitHub Pages -------------------------
   # The in-browser block-pipeline app: wasm kimchi backend + vite bundle,
   # base-pathed for the project page (/snarky/). Heavy (wasm + backend-es
-  # build), so it runs only on the deploy path; PRs still compile the
-  # app's PureScript via the test-example job.
+  # build), so it runs only on the deploy paths (push to main, or a manual
+  # workflow_dispatch preview of any branch); PRs still compile the app's
+  # PureScript via the test-example job.
 
   build-pages:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest-large
     steps:
     - uses: actions/checkout@v4
@@ -272,15 +287,29 @@ jobs:
       with:
         path: packages/example/app/web/dist
 
-  # ---- synchronization point: deploy ONLY if every test job passed ---
-  # `needs:` is satisfied only on success of all listed jobs. Combined
-  # with the push-to-main guard, the site deploys iff the full suite is
-  # green. On pull_request the guard is false, so deploy is skipped
-  # while all test jobs still run as required checks.
+  # ---- synchronization point: deploy ---------------------------------
+  # Two deploy paths:
+  #   * push to main  -> deploy iff the FULL test suite + build-pages are green
+  #     (the test jobs run on this event and must all succeed).
+  #   * workflow_dispatch (any branch) -> the test jobs are skipped, so gate
+  #     the preview deploy on build-pages alone.
+  # always() lets this `if` evaluate even when the test jobs were skipped (the
+  # dispatch path); on pull_request, build-pages is skipped so deploy is too.
 
   deploy:
     needs: [format-check, test-libs, test-example, test-circuit-diffs, build-pages]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: >-
+      always() && needs.build-pages.result == 'success'
+      && (
+        github.event_name == 'workflow_dispatch'
+        || (
+          github.event_name == 'push' && github.ref == 'refs/heads/main'
+          && needs.format-check.result == 'success'
+          && needs.test-libs.result == 'success'
+          && needs.test-example.result == 'success'
+          && needs.test-circuit-diffs.result == 'success'
+        )
+      )
     runs-on: ubuntu-latest
     environment:
       name: github-pages
