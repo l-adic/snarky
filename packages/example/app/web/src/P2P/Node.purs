@@ -111,7 +111,9 @@ startNode cfg = do
       , doneBlocks
       }
   T.onMessage cfg.transport (handleRaw st)
-  T.onPeer cfg.transport (greet st)
+  T.onPeer cfg.transport \peer -> do
+    cfg.log { severity: "info", text: "peer connected: " <> peer }
+    greet st peer
   launchAff_ do
     cached <- Cache.cacheAll
     liftEffect $ for_ cached \c -> do

@@ -23,19 +23,32 @@ function hashParams() {
 }
 const params = hashParams();
 const mode = params.mode || (params.merge ? "merge" : params.base ? "base" : params.local ? "local" : "");
-const session = params.session || "default";
-const tKind = params.t || "bc";
+const session0 = params.session || "default";
+const tKind0 = params.t || "bc";
 
 const app = document.getElementById("app");
+const sel = (v, t, label) => `<option value="${t}"${v === t ? " selected" : ""}>${label}</option>`;
 app.innerHTML = `
   <div class="app">
     <div class="header">
       <h1 class="title">snarky · P2P proving mesh</h1>
       <span id="phase" class="phase-badge">idle</span>
       <span id="role" class="phase-badge"></span>
-      <button id="base" class="run-btn">base prover (private)</button>
-      <button id="merge" class="run-btn">merge prover</button>
-      <button id="local" class="run-btn">run local (no peers)</button>
+      <label style="font:12px sans-serif;color:#94a3b8">session
+        <input id="session" value="${session0}" style="width:9ch;font:12px monospace" /></label>
+      <label style="font:12px sans-serif;color:#94a3b8">transport
+        <select id="transport">
+          ${sel(tKind0, "bc", "BroadcastChannel (same browser)")}
+          ${sel(tKind0, "trystero", "Trystero — WebRTC (different browsers/machines)")}
+          ${sel(tKind0, "manual", "manual SDP (2 peers)")}
+        </select></label>
+      <label style="font:12px sans-serif;color:#94a3b8">role
+        <select id="role-select">
+          ${sel(mode || "base", "base", "base prover (private)")}
+          ${sel(mode || "base", "merge", "merge prover")}
+          ${sel(mode || "base", "local", "run local (no peers)")}
+        </select></label>
+      <button id="start" class="run-btn">start</button>
       <button id="next" class="run-btn" style="display:none" disabled>prove next</button>
     </div>
     <div class="grid">
@@ -127,7 +140,11 @@ const onScan = (s) => () => {
   next.textContent = s.steppable > 0 ? "prove next (" + s.steppable + " ready)" : "nothing ready";
 };
 
-async function mkTransport() {
+// read the live selector/input values (so the URL hash is just a default)
+const currentSession = () => document.getElementById("session").value.trim() || "default";
+const currentTransport = () => document.getElementById("transport").value;
+
+async function mkTransport(tKind, session) {
   if (tKind === "manual") {
     const { mkManualTransport } = await import("./p2p-transport-manual.js");
     return mkManualTransport();
@@ -141,10 +158,16 @@ async function mkTransport() {
 }
 
 async function startMesh(isBase) {
-  roleEl.textContent = isBase ? "base · session " + session : "merge · session " + session;
+  const session = currentSession();
+  const tKind = currentTransport();
+  roleEl.textContent = (isBase ? "base · " : "merge · ") + tKind + " · session " + session;
   phaseEl.textContent = "connecting…";
-  for (const b of ["base", "merge", "local"]) document.getElementById(b).style.display = "none";
-  const transport = await mkTransport();
+  document.getElementById("start").style.display = "none";
+  document.getElementById("session").disabled = true;
+  document.getElementById("transport").disabled = true;
+  document.getElementById("role-select").disabled = true;
+  if (tKind === "bc") addLog("info", "BroadcastChannel only connects tabs of the SAME browser — pick Trystero for different browsers/machines");
+  const transport = await mkTransport(tKind, session);
   globalThis.__transport = transport; // for manual-SDP signaling / tests
   addLog("info", "joined session '" + session + "' as " + transport.myId + " over " + tKind);
   const handle = startNode({ transport, client, mode: isBase ? Base : Merge, log, onScan })();
@@ -155,15 +178,23 @@ async function startMesh(isBase) {
 }
 
 function startLocal() {
+  roleEl.textContent = "local (no peers)";
   phaseEl.textContent = "running…";
-  for (const b of ["base", "merge", "local"]) document.getElementById(b).disabled = true;
+  document.getElementById("start").style.display = "none";
+  document.getElementById("session").disabled = true;
+  document.getElementById("transport").disabled = true;
+  document.getElementById("role-select").disabled = true;
   runLocal(client)(log)();
 }
 
-document.getElementById("base").onclick = () => startMesh(true);
-document.getElementById("merge").onclick = () => startMesh(false);
-document.getElementById("local").onclick = startLocal;
+function start() {
+  const role = document.getElementById("role-select").value;
+  if (role === "local") startLocal();
+  else startMesh(role === "base");
+}
+document.getElementById("start").onclick = start;
 
-if (mode === "local") startLocal();
-else if (mode === "base") startMesh(true);
-else if (mode === "merge") startMesh(false);
+// A role in the URL hash (#mode=base / #base / #merge / #local) auto-starts —
+// used by headless tests and the merge-peer launcher; a fresh page waits for
+// the user to pick a role and click Start (no default-to-base).
+if (mode === "local" || mode === "base" || mode === "merge") start();
