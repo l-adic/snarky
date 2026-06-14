@@ -35,7 +35,7 @@ import Effect.Class (liftEffect)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Fmt (fmt)
-import Pickles (Verifier)
+import Pickles (Verifier, toVerifiable, verify)
 import Snarky.Example.AsyncQueue (Queue, dequeue, enqueue, newQueue)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
@@ -114,24 +114,33 @@ listen (Manager n) resultQ = forever do
     Nothing ->
       Log.logWarning n.logger $ fmt @"[{service}] Received unrequested snark work for blockId:{block} slotId:{slot}"
         { block: workId.block, slot: workId.slot, service }
-    Just entry -> do
-      let { state, unlocked, done } = ScanState.record workId.slot proof entry.scan
-      liftEffect $ Ref.modify_ (Map.insert workId.block (entry { scan = state })) n.blocks
-      liftEffect $ for_ n.onProgress \report -> report workId.block state
-      -- One line per consequence of this result: each unlocked merge, the
-      -- root completing, or (at Debug) nothing yet — the sibling is pending.
-      for_ unlocked \(Tuple slot work) -> do
-        Log.logInfo n.logger $ fmt @"[{service}] block {block}: recorded slot {slot} -> submitting {work}"
-          { service, block: workId.block, slot: workId.slot, work: ScanState.describe slot work }
-        enqueue n.workQ (Tuple { block: workId.block, slot } work)
-      case done of
-        Just rootProof -> do
-          _ <- AVar.tryPut rootProof entry.done
-          Log.logInfo n.logger $ fmt @"[{service}] block {block}: recorded slot {slot} -> block complete"
-            { service, block: workId.block, slot: workId.slot }
-          liftEffect $ Ref.modify_ (Map.delete workId.block) n.blocks
-        Nothing ->
-          when (Array.null unlocked)
-            $ Log.logDebug n.logger
-            $ fmt @"[{service}] block {block}: recorded slot {slot} (sibling pending)"
-                { service, block: workId.block, slot: workId.slot }
+    Just entry ->
+      if not (verify n.verifier (toVerifiable proof)) then do
+        Log.logWarning n.logger $ fmt @"[{service}] block {block}: slot {slot} proof FAILED verification — resubmitting"
+          { service, block: workId.block, slot: workId.slot }
+        case ScanState.workFor workId.slot entry.scan of
+          Just work -> enqueue n.workQ (Tuple workId work)
+          Nothing ->
+            Log.logError n.logger $ fmt @"[{service}] block {block}: slot {slot} failed verification but its work could not be rebuilt to resubmit"
+              { service, block: workId.block, slot: workId.slot }
+      else do
+        let { state, unlocked, done } = ScanState.record workId.slot proof entry.scan
+        liftEffect $ Ref.modify_ (Map.insert workId.block (entry { scan = state })) n.blocks
+        liftEffect $ for_ n.onProgress \report -> report workId.block state
+        -- One line per consequence of this result: each unlocked merge, the
+        -- root completing, or (at Debug) nothing yet — the sibling is pending.
+        for_ unlocked \(Tuple slot work) -> do
+          Log.logInfo n.logger $ fmt @"[{service}] block {block}: recorded slot {slot} -> submitting {work}"
+            { service, block: workId.block, slot: workId.slot, work: ScanState.describe slot work }
+          enqueue n.workQ (Tuple { block: workId.block, slot } work)
+        case done of
+          Just rootProof -> do
+            _ <- AVar.tryPut rootProof entry.done
+            Log.logInfo n.logger $ fmt @"[{service}] block {block}: recorded slot {slot} -> block complete"
+              { service, block: workId.block, slot: workId.slot }
+            liftEffect $ Ref.modify_ (Map.delete workId.block) n.blocks
+          Nothing ->
+            when (Array.null unlocked)
+              $ Log.logDebug n.logger
+              $ fmt @"[{service}] block {block}: recorded slot {slot} (sibling pending)"
+                  { service, block: workId.block, slot: workId.slot }
