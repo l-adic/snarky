@@ -4,6 +4,16 @@
  * data-driven fill/stroke inline — react-basic's SVG has no className,
  * and those colors track runtime job status.) */
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+}
+
 :root {
   --bg: #0f172a;
   --panel: #1e293b;
@@ -25,7 +35,8 @@
 .header {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
   margin-bottom: 1.25rem;
 }
 
@@ -90,6 +101,16 @@
   border-radius: 10px;
   padding: 1rem 1.25rem;
   border: 1px solid var(--border);
+  /* let a grid/flex child shrink below its content width instead of
+     forcing horizontal overflow (wide SVG tree, long log tokens). */
+  min-width: 0;
+}
+/* the scan-state SVG can be wider than a phone — scroll it, don't overflow. */
+#tree {
+  overflow-x: auto;
+}
+#tree svg {
+  display: block;
 }
 .panel-title {
   color: var(--dim);
@@ -194,4 +215,49 @@
   color: var(--dim);
   font-size: 11px;
   margin-top: 1.25rem;
+}
+
+/* --- mobile / narrow viewports --- */
+@media (max-width: 640px) {
+  .app {
+    padding: 1rem 0.85rem;
+  }
+  .header {
+    gap: 0.5rem 0.6rem;
+    margin-bottom: 1rem;
+  }
+  /* title on its own row; controls + buttons wrap below it */
+  .title {
+    font-size: 15px;
+    flex-basis: 100%;
+  }
+  /* stack the two-up panels into a single column */
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  /* buttons span the row and are comfortable to tap */
+  .run-btn {
+    margin-left: 0;
+    flex: 1 1 8rem;
+    padding: 0.7rem 1rem;
+  }
+  .log-scroll {
+    max-height: 55vh;
+  }
+  /* iOS zooms a focused control whose font-size < 16px; bump form controls
+     (the inline 12px on #session is overridden here) to suppress that. */
+  #session,
+  #transport,
+  #role-select {
+    font-size: 16px !important;
+  }
+  #session {
+    width: 7rem;
+  }
+  /* a <select> sizes to its widest option; cap it to the viewport so a long
+     transport label can't force horizontal overflow on a phone. */
+  #transport,
+  #role-select {
+    max-width: calc(100vw - 1.7rem);
+  }
 }

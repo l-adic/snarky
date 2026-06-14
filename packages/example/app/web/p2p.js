@@ -23,8 +23,8 @@ function hashParams() {
 }
 const params = hashParams();
 const mode = params.mode || (params.merge ? "merge" : params.base ? "base" : params.local ? "local" : "");
-const session0 = params.session || "default";
-const tKind0 = params.t || "bc";
+const session0 = params.session || "l-adic";
+const tKind0 = params.t || "trystero";
 
 const app = document.getElementById("app");
 const sel = (v, t, label) => `<option value="${t}"${v === t ? " selected" : ""}>${label}</option>`;
@@ -38,8 +38,8 @@ app.innerHTML = `
         <input id="session" value="${session0}" style="width:9ch;font:12px monospace" /></label>
       <label style="font:12px sans-serif;color:#94a3b8">transport
         <select id="transport">
+          ${sel(tKind0, "trystero", "Trystero · WebRTC (cross-device)")}
           ${sel(tKind0, "bc", "BroadcastChannel (same browser)")}
-          ${sel(tKind0, "trystero", "Trystero — WebRTC (different browsers/machines)")}
           ${sel(tKind0, "manual", "manual SDP (2 peers)")}
         </select></label>
       <label style="font:12px sans-serif;color:#94a3b8">role
