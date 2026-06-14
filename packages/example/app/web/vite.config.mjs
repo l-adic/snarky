@@ -26,6 +26,10 @@ const aliases = [
 
 export default defineConfig({
   root: here("."),
+  // Served from "/" locally (dev/preview). GitHub Pages serves the repo
+  // under a subpath (https://l-adic.github.io/snarky/), so the deploy
+  // build sets VITE_BASE=/snarky/ to prefix asset URLs accordingly.
+  base: process.env.VITE_BASE ?? "/",
   plugins: [nodePolyfills({ exclude: ["module"], overrides: { fs: "memfs" } })],
   resolve: { alias: aliases },
   // Flow a build-time KIMCHI_WASM_POOL_SIZE override into the bundled

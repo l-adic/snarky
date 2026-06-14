@@ -215,13 +215,62 @@ jobs:
         test -f packages/pickles-circuit-diffs/visualizer/dist/results/manifest.jsonl
         echo "Visualizer build verified: $(ls packages/pickles-circuit-diffs/visualizer/dist/*.js | wc -l) JS bundle(s), $(ls packages/pickles-circuit-diffs/visualizer/dist/*.css | wc -l) CSS bundle(s), $(ls packages/pickles-circuit-diffs/visualizer/dist/results/*.json | wc -l) circuit result(s)"
 
+  # ---- build the example app for GitHub Pages (push to main only) ------
+  # The in-browser block-pipeline app: wasm kimchi backend + vite bundle,
+  # base-pathed for the project page (/snarky/). Heavy (wasm + backend-es
+  # build), so it runs only on the deploy path; PRs still compile the
+  # app's PureScript via the test-example job.
+
+  build-pages:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest-large
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '23'
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+          packages/kimchi-napi/target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Generate linearization code
+      run: make gen-linearization
+
+    - name: Build wasm kimchi backend
+      run: npm run build:wasm -w kimchi-napi
+
+    - name: Build the browser app (production, base /snarky/)
+      run: npm run bundle -w example-app
+      env:
+        VITE_BASE: /snarky/
+        NODE_OPTIONS: "--max-old-space-size=8192"
+
     - name: Setup Pages
       uses: actions/configure-pages@v5
 
     - name: Upload Pages artifact
       uses: actions/upload-pages-artifact@v3
       with:
-        path: packages/pickles-circuit-diffs/visualizer/dist
+        path: packages/example/app/web/dist
 
   # ---- synchronization point: deploy ONLY if every test job passed ---
   # `needs:` is satisfied only on success of all listed jobs. Combined
@@ -230,7 +279,7 @@ jobs:
   # while all test jobs still run as required checks.
 
   deploy:
-    needs: [format-check, test-libs, test-example, test-circuit-diffs]
+    needs: [format-check, test-libs, test-example, test-circuit-diffs, build-pages]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
