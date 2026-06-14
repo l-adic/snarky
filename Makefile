@@ -61,8 +61,8 @@ test-random-oracle: build-napi ## Test random-oracle package
 test-merkle-tree: build-napi ## Test merkle-tree package
 	cd packages/merkle-tree && npx spago test
 
-test-example: build-napi ## Test example package
-	cd packages/example && npx spago test
+test-example: build-napi ## Test the example library (plain backend, root workspace; the TUI/web frontends are a separate backend-es workspace under packages/example/app)
+	npx spago test -p example
 
 test-pickles: build-napi gen-linearization ## Test pickles package (requires codegen)
 	cd packages/pickles && npx spago test

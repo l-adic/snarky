@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Snarky example simulation</title>
+    <!-- Must run first: enables cross-origin isolation (SharedArrayBuffer)
+         on hosts that can't send COOP/COEP headers, e.g. GitHub Pages.
+         No-op when the server already sets the headers (local dev/preview). -->
+    <script>
+      // Reload to apply the service worker only once it actually CONTROLS
+      // this page. The library's default reloads on `updatefound`, which can
+      // beat activation and leave the first load stuck un-isolated.
+      window.coi = {
+        doReload: () => {
+          if (window.__coiReloading) return;
+          window.__coiReloading = true;
+          const reload = () => window.location.reload();
+          if (navigator.serviceWorker.controller) reload();
+          else navigator.serviceWorker.addEventListener("controllerchange", reload, { once: true });
+        },
+      };
+    </script>
+    <script src="%BASE_URL%coi-serviceworker.js"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>

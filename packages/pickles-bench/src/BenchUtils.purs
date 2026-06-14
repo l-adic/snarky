@@ -5,6 +5,7 @@ module Bench.Pickles.BenchUtils
   , captureTrial
   , recordBenchSamples
   , writeResults
+  , forceGc
   , startGcTracking
   , stopGcTracking
   , takeHeapSnapshot
@@ -59,6 +60,7 @@ foreign import recordBenchSamples :: String -> Array WallSample -> Effect Unit
 -- | (relative to the CWD, i.e. the repo root under the runner scripts).
 foreign import writeResults :: Effect Unit
 
+foreign import forceGc :: Effect Unit
 foreign import startGcTracking :: Effect Unit
 foreign import stopGcTracking :: Effect (Array GCEvent)
 foreign import takeHeapSnapshot :: String -> Effect Unit

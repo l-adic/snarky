@@ -20,6 +20,7 @@ module Snarky.Example.Snark.ScanState
   , describe
   , initialWork
   , record
+  , workFor
   ) where
 
 import Prelude
@@ -88,12 +89,25 @@ record slot proof st =
 
 -- | The parent merge of `slot`, if both its children are now proved.
 unlockParent :: forall d. SlotId -> ScanState d -> Maybe (Tuple SlotId (WorkItem d))
-unlockParent slot st = do
-  let parent = slot / 2
-  proof1 <- Map.lookup (2 * parent) st.proofs
-  proof2 <- Map.lookup (2 * parent + 1) st.proofs
-  statement <- statementOf st parent
-  pure (Tuple parent (Merge { proof1, proof2, statement }))
+unlockParent slot st = Tuple parent <$> workFor parent st
+  where
+  parent = slot / 2
+
+-- | Reconstruct a slot's work from the current state: a leaf's base job, or an
+-- | internal node's merge over its two child proofs (plus the structural
+-- | statement). Used to resubmit a slot whose returned proof failed
+-- | verification — the children's proofs are still recorded, so a merge can be
+-- | rebuilt. `Nothing` if the slot is out of range or a child proof is missing.
+workFor :: forall d. SlotId -> ScanState d -> Maybe (WorkItem d)
+workFor slot st = do
+  let
+    n = Array.length st.leaves
+  if slot >= n then Base <$> Array.index st.leaves (slot - n)
+  else do
+    proof1 <- Map.lookup (2 * slot) st.proofs
+    proof2 <- Map.lookup (2 * slot + 1) st.proofs
+    statement <- statementOf st slot
+    pure (Merge { proof1, proof2, statement })
 
 -- | A node's statement is structural: `source` of its leftmost leaf, `target`
 -- | of its rightmost — reached by descending the heap indices into the leaves.

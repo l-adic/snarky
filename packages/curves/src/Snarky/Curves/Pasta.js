@@ -16,7 +16,7 @@
 // swap — the upstream binding takes/returns 32-byte LE buffers, which we
 // convert at the FFI boundary using `Fp.toBytesLE / fromBytesLE`.
 
-import { createHash } from 'node:crypto';
+import { sha256 } from '@noble/hashes/sha2.js';
 import {
   Fp,
   Fq,
@@ -47,9 +47,11 @@ import {
 // ============================================================================
 
 function seedToBytes32(seed) {
-  const buf = Buffer.alloc(4);
-  buf.writeInt32LE(seed | 0);
-  return createHash('sha256').update(buf).digest();
+  // Uint8Array + @noble/hashes: pure JS, identical bytes to the old
+  // node-crypto path, and browser-safe (no Buffer, no node:crypto).
+  const buf = new Uint8Array(4);
+  new DataView(buf.buffer).setInt32(0, seed | 0, true);
+  return sha256(buf);
 }
 
 const seedToFq = (seed) => Fq.fromBigint(Fq.fromBytesLE(seedToBytes32(seed)));

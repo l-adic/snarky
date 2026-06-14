@@ -1,0 +1,33 @@
+# Browser frontend for the example simulation — second package in the
+# example-simulation workspace (the workspace spago.yaml is one level
+# up), sharing the simulation source (`example`) with the node TUI
+# package.
+#
+# The node entry renders the scan-state tree with log-update; this one
+# renders it with react-basic. Build/bundle via vite (see
+# vite.config.mjs in this directory): node-only FFI modules
+# (kimchi-napi, node:crypto) are aliased to stubs until the wasm
+# backend leg lands.
+package:
+  name: example-simulation-web
+  dependencies:
+    - aff
+    - arrays
+    - colog
+    - effect
+    - example
+    - exceptions
+    - foreign
+    - maybe
+    - prelude
+    - react-basic
+    - react-basic-dom
+    - react-basic-hooks
+    - refs
+    - strings
+    - tuples
+    - web-dom
+    - web-html
+    - web-workers
+  build:
+    strict: true

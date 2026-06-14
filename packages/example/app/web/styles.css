@@ -1,0 +1,197 @@
+/* Styling for the browser simulation UI (Snarky.Example.Web.Main).
+ * The PureScript renders structure + semantic class names; all visual
+ * styling lives here. (The SVG scan-state tree keeps its geometry and
+ * data-driven fill/stroke inline — react-basic's SVG has no className,
+ * and those colors track runtime job status.) */
+
+:root {
+  --bg: #0f172a;
+  --panel: #1e293b;
+  --border: #334155;
+  --text: #e2e8f0;
+  --dim: #94a3b8;
+  --accent: #38bdf8;
+}
+
+.app {
+  background: var(--bg);
+  min-height: 100vh;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 1.5rem 2rem;
+}
+
+/* --- header --- */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.title {
+  font-size: 18px;
+  margin: 0;
+  font-weight: 600;
+}
+
+.phase-badge {
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+  font-size: 12px;
+  background: #1e3a5f;
+  color: #7dd3fc;
+}
+.phase-badge.done {
+  background: #14532d;
+  color: #86efac;
+}
+
+.verdict {
+  font-size: 13px;
+}
+.verdict.ok {
+  color: #22c55e;
+}
+.verdict.fail {
+  color: #f87171;
+}
+
+.run-btn {
+  margin-left: auto;
+  background: #0ea5e9;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.5rem 1.2rem;
+  font-size: 13px;
+  cursor: pointer;
+}
+.run-btn:disabled {
+  background: var(--border);
+  cursor: default;
+}
+
+/* --- layout --- */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* --- panels --- */
+.panel {
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+}
+.panel-title {
+  color: var(--dim);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.75rem;
+}
+.empty {
+  color: var(--dim);
+  font-size: 13px;
+}
+
+/* --- transactions accordion --- */
+.tx-item {
+  border-bottom: 1px solid #283548;
+}
+.tx-item.open {
+  background: #16202e;
+  border-radius: 6px;
+}
+
+.tx-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.5rem;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+.tx-head:hover {
+  background: #16202e;
+  border-radius: 6px;
+}
+.tx-caret {
+  color: var(--dim);
+  width: 0.8em;
+}
+.tx-hash {
+  color: var(--accent);
+  letter-spacing: 0.02em;
+}
+
+.tx-detail {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 0.9rem;
+  padding: 0.25rem 0.75rem 0.7rem 1.9rem;
+  font-size: 12px;
+}
+.tx-field {
+  display: contents;
+}
+.tx-field-label {
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+}
+.tx-field-value {
+  color: var(--text);
+  word-break: break-all;
+}
+/* Middle-truncated identifiers (addresses, hashes): full value on hover. */
+.tx-field-value.mono {
+  color: var(--accent);
+  letter-spacing: 0.02em;
+  word-break: normal;
+  cursor: help;
+}
+
+/* --- log stream --- */
+.log-scroll {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.log-line {
+  padding: 0.12rem 0;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+.log-sev {
+  margin-right: 0.5rem;
+  color: #7dd3fc;
+}
+.log-sev.error {
+  color: #f87171;
+}
+.log-sev.warning {
+  color: #fbbf24;
+}
+.log-sev.debug {
+  color: #64748b;
+}
+.log-text {
+  color: var(--text);
+}
+
+/* --- footnote --- */
+.footnote {
+  color: var(--dim);
+  font-size: 11px;
+  margin-top: 1.25rem;
+}

@@ -1,0 +1,63 @@
+# The example application frontends — two sibling packages over ONE
+# purs-backend-es build:
+#
+#   terminal/   the node TUI frontend  (Snarky.Example.Main)
+#   web/        the browser frontend   (Snarky.Example.Web.Main, react)
+#
+# Both depend on the `example` simulation library, which lives one level
+# up (packages/example) and is a member of the ROOT workspace on the
+# plain backend — so its tests run with a normal `spago test -p example`,
+# no special runner. Only the application mains want the purs-backend-es
+# optimizer, so only they live in this nested workspace (its `workspace:`
+# section makes the root workspace ignore this subtree).
+#
+# Launchers: tools/run_simulation.sh (terminal),
+# tools/run_simulation_web.sh (web). NOTE `spago run` does NOT work under
+# the purs-backend-es backend (spago re-invokes the backend as a runner)
+# — hence terminal/run.mjs.
+workspace:
+  packageSet:
+    registry: 71.0.0
+  backend:
+    cmd: purs-backend-es
+    args:
+      - build
+  extraPackages:
+    colog-core:
+      git: https://github.com/l-adic/purescript-colog.git
+      ref: 36636ecf70dbb1ae67ed6dee7fa7922f10deb578
+      subdir: packages/colog-core
+    colog:
+      git: https://github.com/l-adic/purescript-colog.git
+      ref: 36636ecf70dbb1ae67ed6dee7fa7922f10deb578
+      subdir: packages/colog
+    example:
+      path: ..
+    blake2:
+      path: ../../blake2
+    curves:
+      path: ../../curves
+    merkle-tree:
+      path: ../../merkle-tree
+    pickles:
+      path: ../../pickles
+    pickles-linearization-types:
+      path: ../../pickles-linearization-types
+    poseidon:
+      path: ../../poseidon
+    random-oracle:
+      path: ../../random-oracle
+    schnorr:
+      path: ../../schnorr
+    snarky:
+      path: ../../snarky
+    snarky-curves:
+      path: ../../snarky-curves
+    snarky-kimchi:
+      path: ../../snarky-kimchi
+    snarky-test-utils:
+      path: ../../snarky-test-utils
+    union-find:
+      path: ../../union-find
+    vector-sized:
+      path: ../../sized-vector

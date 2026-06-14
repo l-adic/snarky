@@ -53,11 +53,16 @@ export PATH="$HOME/.nvm/versions/node/v23.11.1/bin:$PATH"
 # flags breaks comparability with older baselines. The flags are recorded
 # in the results JSON (`nodeFlags`) — only compare runs with identical
 # flags.
-NODE_FLAGS=(--trace-gc)
+NODE_FLAGS=(--trace-gc --expose-gc)
 ARGS=()
 for a in "$@"; do
   case "$a" in
     --cpu-prof) CPU_PROF=1; NODE_FLAGS+=(--cpu-prof --cpu-prof-dir "$REPO_ROOT/prof") ;;
+    # --wasm: run against the wasm32-wasip1-threads build of kimchi-napi
+    # (see packages/kimchi-napi/index.js). The artifact gets a `backend`
+    # field + filename infix so wasm runs never pollute the native
+    # baseline history compare.mjs reads.
+    --wasm) KIMCHI_BACKEND=wasm; export KIMCHI_BACKEND ;;
     *) ARGS+=("$a") ;;
   esac
 done
@@ -86,6 +91,20 @@ fi
 
 echo "==> Attaching GC stats from the trace-gc log ..."
 node packages/pickles-bench/parse_gclog.mjs "$RUN_LOG" "$RESULTS_FILE"
+
+if [ "${KIMCHI_BACKEND:-}" = "wasm" ]; then
+  RESULTS_FILE=$(node -e '
+    const fs = require("fs");
+    const f = process.argv[1];
+    const a = JSON.parse(fs.readFileSync(f, "utf8"));
+    a.backend = "wasm";
+    const out = f.replace(/^(bench-results\/)/, "$1wasm-");
+    fs.writeFileSync(out, JSON.stringify(a, null, 2));
+    fs.unlinkSync(f);
+    console.log(out);
+  ' "$RESULTS_FILE")
+  echo "==> wasm backend: artifact tagged + renamed -> $RESULTS_FILE"
+fi
 
 if [ "${CPU_PROF:-}" = "1" ]; then
   CPU_PROFILE=$(ls -t prof/*.cpuprofile 2>/dev/null | head -1 || true)

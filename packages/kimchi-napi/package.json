@@ -4,12 +4,27 @@
   "description": "Local wrapper around the upstream kimchi-napi crate (built from the in-tree proof-systems submodule)",
   "main": "index.js",
   "scripts": {
-    "build": "bash build.sh"
+    "build": "bash build.sh",
+    "build:wasm": "bash build-wasm.sh"
   },
   "files": [
     "index.js",
     "*.node"
   ],
   "license": "MIT OR Apache-2.0",
-  "private": true
+  "private": true,
+  "napi": {
+    "binaryName": "kimchi-napi",
+    "targets": [
+      "x86_64-unknown-linux-gnu",
+      "wasm32-wasip1-threads"
+    ],
+    "wasm": {
+      "initialMemory": 4000,
+      "maximumMemory": 65536,
+      "browser": {
+        "asyncInit": true
+      }
+    }
+  }
 }

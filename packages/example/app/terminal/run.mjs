@@ -5,5 +5,5 @@
 // `process.argv` cleanly. Run from the REPO ROOT so the SRS cache
 // (`srs-cache/`) and the kimchi-napi node module resolve correctly.
 
-import { main } from "./output-es/Snarky.Example.Main/index.js";
+import { main } from "../output-es/Snarky.Example.Main/index.js";
 main();

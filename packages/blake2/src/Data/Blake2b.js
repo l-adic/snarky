@@ -7,7 +7,7 @@
 // `Digestif.Make_BLAKE2B { digest_size = 32 }` (see
 // `mina/src/lib/crypto/blake2/blake2.ml:9`).
 
-import * as blakejs from "blakejs";
+import blakejs from "blakejs";
 
 const blake2b256Bytes = (str) => {
   // `blakejs.blake2b` accepts string OR Uint8Array; for the bit-packed
