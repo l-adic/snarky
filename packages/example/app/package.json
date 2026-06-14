@@ -9,7 +9,12 @@
     "dev": "npm run build:ps && vite --config web/vite.config.mjs",
     "bundle": "npm run build:ps && vite build --config web/vite.config.mjs",
     "preview": "vite preview --config web/vite.config.mjs",
-    "simulate": "npm run build:ps && cd ../../.. && node packages/example/app/terminal/run.mjs"
+    "simulate": "npm run build:ps && cd ../../.. && node packages/example/app/terminal/run.mjs",
+    "p2p": "npm run build:ps && vite --config web/vite.config.mjs --host",
+    "merge-server": "npm run build:ps && cd ../../.. && node packages/example/app/web/merge-server.mjs"
+  },
+  "dependencies": {
+    "trystero": "^0.25.2"
   },
   "devDependencies": {
     "memfs": "^4.57.7",

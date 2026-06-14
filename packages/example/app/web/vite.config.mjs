@@ -43,6 +43,11 @@ export default defineConfig({
     target: "esnext",
     outDir: here("dist"),
     emptyOutDir: true,
+    rollupOptions: {
+      // Pages: full pipeline (index.html), the privacy split (private.html),
+      // and the serverless P2P proving mesh (p2p.html).
+      input: { main: here("index.html"), private: here("private.html"), p2p: here("p2p.html") },
+    },
   },
   worker: {
     format: "es",
@@ -55,6 +60,11 @@ export default defineConfig({
     },
     fs: {
       allow: [here("../../../..")],
+    },
+    // The privacy page's worker POSTs base proofs to a same-origin /merge,
+    // which we proxy to the native merge server (web/merge-server.mjs).
+    proxy: {
+      "/merge": "http://localhost:8099",
     },
   },
   preview: {

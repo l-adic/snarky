@@ -15,16 +15,22 @@ package:
     - arrays
     - colog
     - effect
+    - either
     - example
     - exceptions
+    - foldable-traversable
     - foreign
     - maybe
+    - newtype
+    - ordered-collections
     - prelude
     - react-basic
     - react-basic-dom
     - react-basic-hooks
     - refs
+    - simple-json
     - strings
+    - transformers
     - tuples
     - web-dom
     - web-html
