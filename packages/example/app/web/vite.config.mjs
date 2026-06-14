@@ -28,6 +28,13 @@ export default defineConfig({
   root: here("."),
   plugins: [nodePolyfills({ exclude: ["module"], overrides: { fs: "memfs" } })],
   resolve: { alias: aliases },
+  // Flow a build-time KIMCHI_WASM_POOL_SIZE override into the bundled
+  // worker: the kimchi-napi wasm-pool-config module reads this env ref to
+  // derive MAX_RAYON_THREADS, so the worker's rayon cap stays consistent
+  // with the pre-spawned pool size baked into the wasm loader.
+  define: {
+    "process.env.KIMCHI_WASM_POOL_SIZE": JSON.stringify(process.env.KIMCHI_WASM_POOL_SIZE ?? ""),
+  },
   build: {
     target: "esnext",
     outDir: here("dist"),
