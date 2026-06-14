@@ -21,7 +21,10 @@
     ],
     "wasm": {
       "initialMemory": 4000,
-      "maximumMemory": 65536
+      "maximumMemory": 65536,
+      "browser": {
+        "asyncInit": true
+      }
     }
   }
 }
