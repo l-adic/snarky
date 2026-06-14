@@ -47,19 +47,20 @@ import Web.Worker.Worker (Worker)
 mkScanView :: Int -> Int -> Boolean -> Maybe ScanView
 mkScanView n done serverDone
   | n <= 0 = Nothing
-  | otherwise = Just
-      { blockId: 0
-      , leaves: n
-      , statuses: map (\slot -> { slot, status: statusOf slot }) (Array.range 1 (2 * n - 1))
-      }
-  where
-  proved s = s >= n && (s - n) < done
-  statusOf slot
-    | serverDone = "complete"
-    | proved slot = "complete"
-    | slot >= n = "pending"
-    | proved (2 * slot) && proved (2 * slot + 1) = "pending"
-    | otherwise = "locked"
+  | otherwise =
+      Just
+        { blockId: 0
+        , leaves: n
+        , statuses: map (\slot -> { slot, status: statusOf slot }) (Array.range 1 (2 * n - 1))
+        }
+      where
+      proved s = s >= n && (s - n) < done
+      statusOf slot
+        | serverDone = "complete"
+        | proved slot = "complete"
+        | slot >= n = "pending"
+        | proved (2 * slot) && proved (2 * slot + 1) = "pending"
+        | otherwise = "locked"
 
 mkApp :: Worker -> Component Unit
 mkApp worker = component "PrivateApp" \_ -> React.do

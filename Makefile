@@ -119,7 +119,7 @@ gen-linearization: build-napi ## Generate Kimchi linearization PureScript module
 
 lint: ## Format, tidy, and lint all code (Rust + PureScript)
 	cargo fmt --all
-	npx purs-tidy format-in-place 'packages/*/src/**/*.purs' 'packages/*/test/**/*.purs'
+	npx purs-tidy format-in-place 'packages/*/src/**/*.purs' 'packages/*/test/**/*.purs' 'packages/example/**/src/**/*.purs'
 	cargo clippy --all-targets -- -D warnings
 
 clean: ## Clean everything

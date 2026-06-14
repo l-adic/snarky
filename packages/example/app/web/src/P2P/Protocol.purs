@@ -11,8 +11,8 @@ module Snarky.Example.P2P.Protocol
 import Prelude
 
 import Data.Either (Either(..))
-import Foreign (MultipleErrors, ForeignError(..))
 import Data.List.NonEmpty as NEL
+import Foreign (ForeignError(..), MultipleErrors)
 import Simple.JSON (readJSON, writeJSON)
 
 data Msg
