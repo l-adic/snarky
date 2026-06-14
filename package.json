@@ -6,7 +6,7 @@
   "workspaces": [
     "packages/kimchi-napi",
     "packages/pasta-runtime",
-    "packages/example"
+    "packages/example/app"
   ],
   "scripts": {
     "test": "make test",
@@ -28,6 +28,7 @@
   "homepage": "https://github.com/l-adic/snarky#readme",
   "dependencies": {
     "@noble/hashes": "^2.2.0",
+    "@scure/base": "^1.2.6",
     "blakejs": "^1.2.1",
     "json-bigint": "^1.0.0",
     "kimchi-napi": "file:./packages/kimchi-napi",

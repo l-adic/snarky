@@ -17,7 +17,7 @@ node_modules/
 packages/kimchi-napi/wasm/
 
 # Vite bundle output for the browser example app
-packages/example/web/dist/
+packages/example/app/web/dist/
 
 # Cargo/Rust
 target/

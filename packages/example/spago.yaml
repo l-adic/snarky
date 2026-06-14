@@ -1,61 +1,53 @@
-# The example application workspace: three sibling packages over ONE
-# purs-backend-es build —
-#
-#   lib/        the simulation library (`example`) + its test suite
-#   terminal/   the node TUI frontend  (Snarky.Example.Main)
-#   web/        the browser frontend   (Snarky.Example.Web.Main, react)
-#
-# Separate from the root workspace (this spago.yaml carries the
-# `workspace:` section, so the root workspace ignores this subtree):
-# only here does the purs-backend-es optimizer run — the long-running
-# simulation and the (future) in-browser prover want optimized codegen,
-# while the root workspace stays on plain purs for fast library dev.
-#
-# Launchers: tools/run_simulation.sh (terminal),
-# tools/run_simulation_web.sh (web). NOTE `spago run`/`spago test` do
-# NOT work under the purs-backend-es backend (spago re-invokes the
-# backend as a runner) — hence terminal/run.mjs and lib/run-tests.mjs.
-workspace:
-  packageSet:
-    registry: 71.0.0
-  backend:
-    cmd: purs-backend-es
-    args:
-      - build
-  extraPackages:
-    colog-core:
-      git: https://github.com/l-adic/purescript-colog.git
-      ref: 36636ecf70dbb1ae67ed6dee7fa7922f10deb578
-      subdir: packages/colog-core
-    colog:
-      git: https://github.com/l-adic/purescript-colog.git
-      ref: 36636ecf70dbb1ae67ed6dee7fa7922f10deb578
-      subdir: packages/colog
-    blake2:
-      path: ../blake2
-    curves:
-      path: ../curves
-    merkle-tree:
-      path: ../merkle-tree
-    pickles:
-      path: ../pickles
-    pickles-linearization-types:
-      path: ../pickles-linearization-types
-    poseidon:
-      path: ../poseidon
-    random-oracle:
-      path: ../random-oracle
-    schnorr:
-      path: ../schnorr
-    snarky:
-      path: ../snarky
-    snarky-curves:
-      path: ../snarky-curves
-    snarky-kimchi:
-      path: ../snarky-kimchi
-    snarky-test-utils:
-      path: ../snarky-test-utils
-    union-find:
-      path: ../union-find
-    vector-sized:
-      path: ../sized-vector
+package:
+  name: example
+  dependencies:
+    - aff
+    - arrays
+    - avar
+    - colog
+    - curves
+    - effect
+    - either
+    - exceptions
+    - fmt
+    - foldable-traversable
+    - gen
+    - js-bigints
+    - maybe
+    - merkle-tree
+    - newtype
+    - ordered-collections
+    - partial
+    - pickles
+    - prelude
+    - quickcheck
+    - random-oracle
+    - refs
+    - run
+    - safe-coerce
+    - schnorr
+    - snarky
+    - snarky-curves
+    - snarky-kimchi
+    - tailrec
+    - tuples
+    - typelevel-prelude
+    - variant
+    - vector-sized
+  test:
+    main: Test.Example.Main
+    dependencies:
+      - aff
+      - arrays
+      - console
+      - effect
+      - exceptions
+      - foldable-traversable
+      - js-bigints
+      - ordered-collections
+      - partial
+      - refs
+      - snarky-test-utils
+      - spec
+      - spec-node
+      - tailrec

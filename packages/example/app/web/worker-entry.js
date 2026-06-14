@@ -6,7 +6,7 @@
 // Everything heavy is imported LAZILY inside the message handler so the
 // worker is responsive immediately and any wasm-init failure is caught
 // and forwarded to the UI log instead of killing the worker silently.
-import { MAX_RAYON_THREADS } from "../../kimchi-napi/wasm-pool-config.mjs";
+import { MAX_RAYON_THREADS } from "../../../kimchi-napi/wasm-pool-config.mjs";
 
 // Keep one core for this worker's own JS (witness generation, the event
 // loop servicing the wasi threads) between Rust phases.

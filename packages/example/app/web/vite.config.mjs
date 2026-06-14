@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 
 const aliases = [
-  { find: "kimchi-napi", replacement: here("../../kimchi-napi/wasm/kimchi-napi.wasi-browser.js") },
+  { find: "kimchi-napi", replacement: here("../../../kimchi-napi/wasm/kimchi-napi.wasi-browser.js") },
   { find: "module", replacement: here("stubs/node-module.js") },
 ];
 
@@ -43,7 +43,7 @@ export default defineConfig({
       "Cross-Origin-Embedder-Policy": "require-corp",
     },
     fs: {
-      allow: [here("../../..")],
+      allow: [here("../../../..")],
     },
   },
   preview: {
