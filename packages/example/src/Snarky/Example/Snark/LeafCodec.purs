@@ -46,6 +46,7 @@ encodeLeaf :: SerializableCompiledProof TxnStmt -> String
 encodeLeaf scp =
   let
     StatementIO { input: Statement { source, target } } = scp.statement
+
     wire :: LeafWire
     wire =
       { verifiable: encodeVerifiableProof scp.verifiable

@@ -42,6 +42,7 @@ severityLabel = case _ of
   Info -> "info"
   Warning -> "warning"
   Error -> "error"
+
 -- | POST { n, leaves } to the server's /merge endpoint; resolves to whether
 -- | the server's merged root verified.
 foreign import _postBaseProofs :: Int -> Array String -> EffectFnAff Boolean

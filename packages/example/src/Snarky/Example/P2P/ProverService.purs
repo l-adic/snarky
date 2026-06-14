@@ -35,6 +35,8 @@ import Prelude
 
 import Colog (LogAction(..), Message, Msg(..), Severity(..))
 import Data.Array as Array
+import Data.Either (Either(..))
+import Data.Maybe (Maybe(..))
 import Data.Traversable (sequence)
 import Effect (Effect)
 import Effect.Aff (attempt, launchAff_)
@@ -42,8 +44,6 @@ import Effect.Class (liftEffect)
 import Effect.Exception (message, throw)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
-import Data.Either (Either(..))
-import Data.Maybe (Maybe(..))
 import Mina.ChainId (ChainId(..))
 import Pickles (toVerifiable, verifyBatch)
 import Pickles.Prove.SerializeProof (WidthDummies, toSerializableCompiledProof)
@@ -135,8 +135,10 @@ seedBlock { env } = do
   let
     leafStmts = Array.mapWithIndex
       ( \j job ->
-          let Statement { source, target } = job.statement
-          in { slot: n + j, stmt: encodeStmt { source, target } }
+          let
+            Statement { source, target } = job.statement
+          in
+            { slot: n + j, stmt: encodeStmt { source, target } }
       )
       snarkWork
   pure { n, leaves, leafStmts }
@@ -154,8 +156,10 @@ genBlock { env, jobs } = do
   let
     leafStmts = Array.mapWithIndex
       ( \j job ->
-          let Statement { source, target } = job.statement
-          in { slot: n + j, stmt: encodeStmt { source, target } }
+          let
+            Statement { source, target } = job.statement
+          in
+            { slot: n + j, stmt: encodeStmt { source, target } }
       )
       snarkWork
   pure { n, leafStmts }
