@@ -13,12 +13,16 @@ module Snarky.Example.Snark.Work
   , Proof
   , encodeMergeJob
   , decodeMergeJob
+  , encodeBaseJob
+  , decodeBaseJob
+  , encodeWorkItem
+  , decodeWorkItem
   ) where
 
 import Prelude
 
-import Data.Either (Either)
-import Foreign (MultipleErrors)
+import Data.Either (Either(..))
+import Foreign (ForeignError(..), MultipleErrors)
 import Pickles (CompiledProof)
 import Pickles.Prove.SerializeProof (WidthDummies, decodeCompiledProof, encodeCompiledProof)
 import Simple.JSON (readJSON, writeJSON)
@@ -74,3 +78,32 @@ decodeMergeJob dummies s = do
   proof1 <- decodeCompiledProof dummies w.proof1
   proof2 <- decodeCompiledProof dummies w.proof2
   pure { proof1, proof2, statement: w.statement }
+
+-- | Serialize a base job: the transaction, witness mask, and statement all
+-- | serialize structurally (no proofs to embed).
+encodeBaseJob :: forall d. BaseJob d -> String
+encodeBaseJob = writeJSON
+
+-- | Parse a base job.
+decodeBaseJob :: forall d. String -> Either MultipleErrors (BaseJob d)
+decodeBaseJob = readJSON
+
+-- | Serialize a work item (tagged base/merge) for transport.
+encodeWorkItem :: forall d. WorkItem d -> String
+encodeWorkItem = case _ of
+  Base b -> writeJSON { tag: "base", base: b }
+  Merge m -> writeJSON { tag: "merge", merge: encodeMergeJob m }
+
+-- | Parse a work item. The merge branch reconstructs its child proofs with the
+-- | program's `WidthDummies`; the base branch needs none.
+decodeWorkItem :: forall d. WidthDummies -> String -> Either MultipleErrors (WorkItem d)
+decodeWorkItem dummies s = do
+  tagged <- readJSON s :: Either MultipleErrors { tag :: String }
+  case tagged.tag of
+    "base" -> do
+      r <- readJSON s :: Either MultipleErrors { base :: BaseJob d }
+      pure (Base r.base)
+    "merge" -> do
+      r <- readJSON s :: Either MultipleErrors { merge :: String }
+      Merge <$> decodeMergeJob dummies r.merge
+    other -> Left (pure (ForeignError ("WorkItem: unknown tag " <> other)))

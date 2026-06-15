@@ -35,7 +35,7 @@ import Snarky.Example.Env (Env)
 import Snarky.Example.Ledger (Ledger)
 import Snarky.Example.Log as Log
 import Snarky.Example.Simulation (genGenesisLedger, genValidSignedTransaction)
-import Snarky.Example.Snark.Work (decodeMergeJob, encodeMergeJob)
+import Snarky.Example.Snark.Work (BaseJob, decodeBaseJob, decodeMergeJob, encodeBaseJob, encodeMergeJob)
 import Snarky.Example.Transaction (SignedTransaction, Statement(..), TxnStmt, applyTx, touchedAccounts)
 import Test.QuickCheck.Gen (randomSampleOne)
 import Test.Snarky.Example.Config (Depth)
@@ -62,11 +62,16 @@ spec =
           -> SignedTransaction Vesta.ScalarField
           -> Statement Vesta.ScalarField
           -> Aff (CompiledProof 2 TxnStmt)
-        runBase l tx statement =
+        runBase l tx statement = do
+          -- Round-trip the base job (tx + witness mask + statement) through the
+          -- transport codec first, then prove from the DECODED job — so the
+          -- proof succeeds only if the mask codec is byte-faithful.
+          let job = { tx, mask: fromSubset l.tree (touchedAccounts l tx), statement } :: BaseJob Depth
+          job' <- case decodeBaseJob (encodeBaseJob job) of
+            Left e -> liftEffect $ throw ("decodeBaseJob: " <> show e)
+            Right j -> pure j
           liftEffect $ baseProver
-            { env: { mask: fromSubset l.tree (touchedAccounts l tx), tx }
-            , statement
-            }
+            { env: { mask: job'.mask, tx: job'.tx }, statement: job'.statement }
 
       Log.logInfo env.logger "[TxnSnark] proving base0…"
 

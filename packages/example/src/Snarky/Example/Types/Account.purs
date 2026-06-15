@@ -4,6 +4,7 @@ module Snarky.Example.Types.Account
   ) where
 
 import Prelude
+import Simple.JSON (class ReadForeign, class WriteForeign)
 
 import Data.Generic.Rep (class Generic)
 import Data.Maybe (fromJust)
@@ -35,6 +36,8 @@ newtype Account f = Account
 derive instance Newtype (Account f) _
 derive instance Generic (Account f) _
 derive newtype instance Show f => Show (Account f)
+derive newtype instance WriteForeign f => WriteForeign (Account f)
+derive newtype instance ReadForeign f => ReadForeign (Account f)
 derive instance Eq f => Eq (Account f)
 derive newtype instance (FieldSizeInBits f n, Compare 128 n LT, Arbitrary f) => Arbitrary (Account f)
 

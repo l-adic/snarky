@@ -42,7 +42,9 @@ import Data.MerkleTree.Sparse as Full
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
 import Data.Vector as Vector
+import Foreign (ForeignError(..), fail)
 import Partial.Unsafe (unsafePartial)
+import Simple.JSON (class ReadForeign, class WriteForeign, readImpl, writeImpl)
 import Type.Proxy (Proxy(..))
 
 -- | Mina `Tree.t`. A leaf carries `Maybe a` so an empty-but-touched slot
@@ -60,6 +62,38 @@ newtype SparseLedger d hash key a = SparseLedger
   { indexes :: Map key (Address d)
   , tree :: Tree hash a
   }
+
+-- Transport codecs: a tagged form for the recursive tree, and `indexes` as an
+-- array of key/address pairs (its key is not a JSON string).
+instance (WriteForeign hash, WriteForeign a) => WriteForeign (Tree hash a) where
+  writeImpl = case _ of
+    Account ma -> writeImpl { tag: "account", value: ma }
+    Hash h -> writeImpl { tag: "hash", value: h }
+    Node h l r -> writeImpl { tag: "node", hash: h, left: l, right: r }
+
+instance (ReadForeign hash, ReadForeign a) => ReadForeign (Tree hash a) where
+  readImpl f = do
+    tagged :: { tag :: String } <- readImpl f
+    case tagged.tag of
+      "account" -> (\(r :: { value :: Maybe a }) -> Account r.value) <$> readImpl f
+      "hash" -> (\(r :: { value :: hash }) -> Hash r.value) <$> readImpl f
+      "node" ->
+        (\(r :: { hash :: hash, left :: Tree hash a, right :: Tree hash a }) -> Node r.hash r.left r.right) <$> readImpl f
+      other -> fail (ForeignError ("Tree: unknown tag " <> other))
+
+instance (Ord key, WriteForeign key, WriteForeign hash, WriteForeign a) => WriteForeign (SparseLedger d hash key a) where
+  writeImpl (SparseLedger r) = writeImpl
+    { indexes: (Map.toUnfoldable r.indexes :: Array (Tuple key (Address d))) <#> \(Tuple k v) -> { key: k, address: v }
+    , tree: r.tree
+    }
+
+instance (Ord key, ReadForeign key, ReadForeign hash, ReadForeign a) => ReadForeign (SparseLedger d hash key a) where
+  readImpl f = do
+    r :: { indexes :: Array { key :: key, address :: Address d }, tree :: Tree hash a } <- readImpl f
+    pure $ SparseLedger
+      { indexes: Map.fromFoldable (r.indexes <#> \i -> Tuple i.key i.address)
+      , tree: r.tree
+      }
 
 -- | O(1) subtree hash (OCaml `hash`): a cached `Node`/`Hash`, or the leaf hash.
 treeHash :: forall hash a. MerkleHashable a hash => Tree hash a -> hash
