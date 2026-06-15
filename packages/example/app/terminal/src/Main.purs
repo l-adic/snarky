@@ -15,6 +15,7 @@ import Colog (richMessageStdout)
 import Data.Foldable (for_)
 import Data.Int as Int
 import Data.Maybe (Maybe(..))
+import Data.Time.Duration (Milliseconds(..))
 import Effect (Effect)
 import Effect.Aff (launchAff_)
 import Effect.Class (liftEffect)
@@ -58,11 +59,33 @@ resolvePoolSize logger =
             { s, d: defaultPoolSize }
         pure defaultPoolSize
 
+-- | Per-job timeout (seconds) when `SNARK_JOB_TIMEOUT_S` is unset or invalid.
+-- | A warm proof is ~30s, so the default leaves comfortable headroom before the
+-- | pool speculatively reassigns a job to another worker.
+defaultJobTimeoutS :: Int
+defaultJobTimeoutS = 120
+
+-- | Resolve the per-job timeout from `SNARK_JOB_TIMEOUT_S` (positive seconds),
+-- | falling back to `defaultJobTimeoutS` — and warning — when unset or invalid.
+resolveJobTimeout :: Logger -> Effect Milliseconds
+resolveJobTimeout logger = do
+  secs <- lookupEnv "SNARK_JOB_TIMEOUT_S" >>= case _ of
+    Nothing -> pure defaultJobTimeoutS
+    Just s -> case Int.fromString s of
+      Just n | n >= 1 -> pure n
+      _ -> do
+        Log.logWarning logger $
+          fmt @"[Main] ignoring invalid SNARK_JOB_TIMEOUT_S='{s}' (want positive seconds); using {d}"
+            { s, d: defaultJobTimeoutS }
+        pure defaultJobTimeoutS
+  pure $ Milliseconds (Int.toNumber secs * 1000.0)
+
 main :: Effect Unit
 main = launchAff_ do
   display <- liftEffect mkProgressDisplay
   let logger = display.wrapLogger richMessageStdout
   poolSize <- liftEffect $ resolvePoolSize logger
+  jobTimeout <- liftEffect $ resolveJobTimeout logger
   Log.logInfo logger $ fmt @"[Main] worker setup logs → {path} (tail it to watch warmup)"
     { path: workerLogPath }
   sim <- mkSimulation @Depth
@@ -71,6 +94,7 @@ main = launchAff_ do
     , logger
     , onProgress: Just display.reporter
     , poolSize
+    , jobTimeout
     , backend: nodeSnarkBackend
     }
 

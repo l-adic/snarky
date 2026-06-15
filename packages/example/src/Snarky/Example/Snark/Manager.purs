@@ -26,6 +26,7 @@ import Data.Foldable (for_)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
+import Data.Time.Duration (Milliseconds)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Aff (Aff, forkAff)
@@ -78,22 +79,25 @@ service = "Snark Manager"
 -- | along with the worker count `poolSize`: `localSnarkBackend` runs the
 -- | synchronous prover in-process (so `poolSize` is plumbing-only there), while
 -- | a parallel backend (node thread / web worker) makes `poolSize` a real knob.
+-- | `jobTimeout` bounds how long the pool waits for a worker before reassigning
+-- | a job to another (see `Snarky.Example.Snark.Pool.runPool`).
 mkManager
   :: forall d
    . { logger :: Logger
      , onProgress :: Maybe (OnProgress d)
      , poolSize :: Int
+     , jobTimeout :: Milliseconds
      , backend :: SnarkBackend d
      }
   -> Env d
   -> Aff (Manager d)
-mkManager { logger, onProgress, poolSize, backend } env = do
+mkManager { logger, onProgress, poolSize, jobTimeout, backend } env = do
   workQ <- newQueue
   resultQ <- newQueue
   blocks <- liftEffect $ Ref.new Map.empty
   let
     node = Manager { workQ, blocks, verifier: env.compiledTx.verifier, logger, onProgress }
-  _ <- forkAff $ runPool logger poolSize (backend env)
+  _ <- forkAff $ runPool logger jobTimeout poolSize (backend env)
     { next: dequeue workQ
     , post: enqueue resultQ
     , describe: \workId work -> ScanState.describe workId.slot work

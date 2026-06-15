@@ -23,6 +23,7 @@ import Data.Array as Array
 import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
 import Data.MerkleTree.Sparse (root)
+import Data.Time.Duration (Milliseconds(..))
 import Data.Tuple (Tuple(..))
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
@@ -70,7 +71,12 @@ spec =
       -- (8 bases + 7 merges) to the root.
       Log.logInfo env.logger $ fmt @"[Block] starting snark manager; submitting block of {n} transactions" { n: Array.length snarkWork }
       manager <- mkManager
-        { logger: env.logger, onProgress: Nothing, poolSize: 1, backend: localSnarkBackend }
+        { logger: env.logger
+        , onProgress: Nothing
+        , poolSize: 1
+        , jobTimeout: Milliseconds 120000.0
+        , backend: localSnarkBackend
+        }
         env
       rootProof <- submitBlock manager 0 snarkWork
       Log.logInfo env.logger "[Block] root proof received; checking statement + verifying…"

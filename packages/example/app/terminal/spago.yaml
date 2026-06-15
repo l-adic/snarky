@@ -8,6 +8,7 @@ package:
     - aff
     - avar
     - colog
+    - datetime
     - effect
     - either
     - example
@@ -20,6 +21,7 @@ package:
     - node-workerbees
     - pickles
     - prelude
+    - random
     - refs
     - run
     - schnorr

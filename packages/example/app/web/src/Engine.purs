@@ -19,6 +19,7 @@ import Prelude
 
 import Colog (LogAction(..), Msg(..), Severity(..))
 import Data.Maybe (Maybe(..))
+import Data.Time.Duration (Milliseconds(..))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Aff (launchAff_)
@@ -92,6 +93,8 @@ runSimulation cb = launchAff_ do
     , logger
     , onProgress: Just onProgress
     , poolSize: 1
+    -- Unused by the in-process backend (its synchronous run never times out).
+    , jobTimeout: Milliseconds 120000.0
     , backend: localSnarkBackend
     }
 

@@ -45,6 +45,7 @@
             "avar",
             "colog",
             "curves",
+            "datetime",
             "effect",
             "either",
             "exceptions",

@@ -21,6 +21,7 @@ import Prelude
 
 import Data.Maybe (Maybe)
 import Data.Reflectable (class Reflectable)
+import Data.Time.Duration (Milliseconds)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Ref as Ref
@@ -48,6 +49,7 @@ type SimulationConfig d =
   , logger :: Logger
   , onProgress :: Maybe (OnProgress d)
   , poolSize :: Int
+  , jobTimeout :: Milliseconds
   , backend :: SnarkBackend d
   }
 
@@ -67,12 +69,12 @@ mkSimulation
    . Reflectable d Int
   => SimulationConfig d
   -> Aff (Simulation d)
-mkSimulation { chainId, numAccounts, logger, onProgress, poolSize, backend } = do
+mkSimulation { chainId, numAccounts, logger, onProgress, poolSize, jobTimeout, backend } = do
   Log.logInfo logger "[Simulation] building SRS + compiling the transaction snark…"
   config <- liftEffect $ mkConfig chainId
   env <- liftEffect $ mkEnv @d logger config
   Log.logInfo logger $ fmt @"[Simulation] minting genesis ledger of {numAccounts} accounts" { numAccounts }
   { ledger, keys } <- liftEffect $ randomSampleOne (genGenesisLedger numAccounts)
   liftEffect $ Ref.write ledger env.ledger
-  manager <- mkManager { logger, onProgress, poolSize, backend } env
+  manager <- mkManager { logger, onProgress, poolSize, jobTimeout, backend } env
   pure { env, keys, manager }
