@@ -113,9 +113,23 @@ function blockSvg(n, statuses) {
   return svg;
 }
 
+// The role this peer started as ("base" | "merge" | "local"), for messaging.
+let startedRole = null;
+
 // Render every block's tree (one base prover → one block; many blocks coexist).
 function renderTrees(blocks) {
   const treeEl = document.getElementById("tree");
+  if (blocks.length === 0) {
+    // No block exists yet anywhere this peer can see. Explain why, by role —
+    // otherwise it just looks stuck at "0/0 nodes / nothing ready".
+    const hint =
+      startedRole === "merge"
+        ? "No block yet. A <b>merge</b> prover only helps <i>after</i> a <b>base</b> peer has published a block — so at least one connected peer must be running as <b>base</b>. Waiting for a base prover to compile its circuit and generate a block (~30–60s on desktop; can be minutes on a phone)…"
+        : "Compiling the circuit, then generating your block from its private transactions… (~30–60s on desktop; can be a few minutes — or fail on memory — on a phone). Your work tree appears once the block is ready; watch the log below.";
+    treeEl.innerHTML =
+      '<div class="panel-title">work tree</div><div class="empty" style="line-height:1.6">' + hint + "</div>";
+    return;
+  }
   treeEl.innerHTML = '<div class="panel-title">work trees (' + blocks.length + " block" + (blocks.length === 1 ? "" : "s") + ")</div>";
   for (const b of blocks) {
     const wrap = document.createElement("div");
@@ -133,7 +147,14 @@ const onScan = (s) => () => {
   const total = s.blocks.reduce((a, b) => a + 2 * b.n - 1, 0);
   const done = s.blocks.reduce((a, b) => a + b.statuses.filter((x) => x.status === "complete").length, 0);
   if (phaseEl.textContent !== "failed")
-    phaseEl.textContent = total > 0 && done === total ? "all blocks done ✓" : "running… (" + done + "/" + total + " nodes)";
+    phaseEl.textContent =
+      total === 0
+        ? startedRole === "merge"
+          ? "waiting for a base prover…"
+          : "compiling / generating block…"
+        : done === total
+          ? "all blocks done ✓"
+          : "running… (" + done + "/" + total + " nodes)";
   renderTrees(s.blocks);
   const next = document.getElementById("next");
   next.disabled = s.steppable === 0;
@@ -158,6 +179,7 @@ async function mkTransport(tKind, session) {
 }
 
 async function startMesh(isBase) {
+  startedRole = isBase ? "base" : "merge";
   const session = currentSession();
   const tKind = currentTransport();
   roleEl.textContent = (isBase ? "base · " : "merge · ") + tKind + " · session " + session;
@@ -178,6 +200,7 @@ async function startMesh(isBase) {
 }
 
 function startLocal() {
+  startedRole = "local";
   roleEl.textContent = "local (no peers)";
   phaseEl.textContent = "running…";
   document.getElementById("start").style.display = "none";
