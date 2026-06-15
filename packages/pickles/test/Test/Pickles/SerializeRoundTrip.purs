@@ -9,7 +9,7 @@
 -- | `encodeCompiledProof`/`decodeCompiledProof` Sendability codec, used where the
 -- | statement type is serializable (e.g. SimpleChain over `NoOutput`).
 module Test.Pickles.SerializeRoundTrip
-  ( mkWidthDummies
+  ( module Pickles.Prove.SerializeProof
   , roundTrip
   , roundTripAndVerify
   , roundTripJSON
@@ -21,29 +21,10 @@ import Prelude
 import Data.Either (either)
 import Effect.Aff.Class (class MonadAff, liftAff)
 import Partial.Unsafe (unsafeCrashWith)
-import Pickles.Dummy (dummyIpaChallenges)
-import Pickles.Prove.SerializeProof (WidthDummies, decodeCompiledProof, encodeCompiledProof, reconstructCompiledProof, toSerializableCompiledProof)
-import Pickles.Step.Dummy (baseCaseDummies, computeDummySgValues)
+import Pickles.Prove.SerializeProof (WidthDummies, decodeCompiledProof, encodeCompiledProof, mkWidthDummies, reconstructCompiledProof, toSerializableCompiledProof)
 import Pickles.Verify (CompiledProof, Verifier, toVerifiable, verifyBatch)
 import Simple.JSON (class ReadForeign, class WriteForeign)
-import Snarky.Backend.Kimchi.Types (CRS)
-import Snarky.Curves.Pasta (PallasG, VestaG)
 import Test.Spec.Assertions (shouldEqual)
-
--- | The front-padding dummies the prover packs into `widthData` at the
--- | `CompiledProof` construction site (Compile.purs): `dummyIpaChallenges`
--- | for the bp-challenge stacks and the `maxProofsVerified: 0` dummy wrap sg
--- | for the outer-step challenge-polynomial commitment. All constants of the
--- | SRS — independent of any program's `mpvMax`.
-mkWidthDummies :: CRS PallasG -> CRS VestaG -> WidthDummies
-mkWidthDummies pallasSrs vestaSrs =
-  let
-    dummySgsMax = computeDummySgValues (baseCaseDummies { maxProofsVerified: 0 }) pallasSrs vestaSrs
-  in
-    { dummyOldBp: dummyIpaChallenges.stepExpanded
-    , dummyMsgWrap: dummyIpaChallenges.wrapExpanded
-    , dummyChalPolyComm: dummySgsMax.ipa.wrap.sg
-    }
 
 -- | Serialize a `CompiledProof` and reconstruct it (in memory) — the identity
 -- | if reconstruction is faithful.

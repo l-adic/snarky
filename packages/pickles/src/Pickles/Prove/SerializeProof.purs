@@ -22,6 +22,7 @@
 module Pickles.Prove.SerializeProof
   ( SerializableCompiledProof
   , WidthDummies
+  , mkWidthDummies
   , toSerializableCompiledProof
   , reconstructCompiledProof
   , encodeCompiledProof
@@ -39,12 +40,16 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Foreign (MultipleErrors)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (StepField, WrapField)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.Prove.Codecs (decodeVerifiableProof, encodeVerifiableProof)
+import Pickles.Step.Dummy (baseCaseDummies, computeDummySgValues)
 import Pickles.Types (PaddedLength, StepIPARounds, WrapIPARounds)
 import Pickles.Verify (CompiledProof(..), CompiledProofWidthData(..), SomeCompiledProofWidthData, VerifiableProof, mkSomeCompiledProofWidthData, toVerifiable)
 import Simple.JSON (class ReadForeign, class WriteForeign, readJSON, writeJSON)
+import Snarky.Backend.Kimchi.Types (CRS)
+import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
 -- | The flat, self-describing superset of `VerifiableProof`: everything in a
@@ -81,6 +86,20 @@ type WidthDummies =
   , dummyMsgWrap :: Vector WrapIPARounds WrapField
   , dummyChalPolyComm :: AffinePoint StepField
   }
+
+-- | Build the front-padding `WidthDummies` from the SRSes — program constants
+-- | (the prover's `dummyIpaChallenges` bp-challenge stacks and the
+-- | `maxProofsVerified: 0` dummy wrap sg), independent of any program's mpvMax.
+-- | Any caller of `reconstructCompiledProof`/`decodeCompiledProof` needs these.
+mkWidthDummies :: CRS PallasG -> CRS VestaG -> WidthDummies
+mkWidthDummies pallasSrs vestaSrs =
+  let
+    dummySgsMax = computeDummySgValues (baseCaseDummies { maxProofsVerified: 0 }) pallasSrs vestaSrs
+  in
+    { dummyOldBp: dummyIpaChallenges.stepExpanded
+    , dummyMsgWrap: dummyIpaChallenges.wrapExpanded
+    , dummyChalPolyComm: dummySgsMax.ipa.wrap.sg
+    }
 
 -- | Project a `CompiledProof` to its self-describing serializable form.
 toSerializableCompiledProof
