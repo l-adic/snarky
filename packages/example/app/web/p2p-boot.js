@@ -197,6 +197,91 @@ async function startMesh(isBase) {
   const next = document.getElementById("next");
   next.style.display = "";
   next.onclick = () => handle.step();
+  // manual SDP has no discovery server — render the copy-paste exchange UI so
+  // the two peers can hand-wire their WebRTC connection.
+  if (tKind === "manual") setupManualSignaling(transport);
+}
+
+// Copy-paste SDP signaling panel (manual transport, zero infra, exactly 2 peers).
+// One peer creates an offer and sends the string to the other; the other pastes
+// it, returns an answer string; the first applies it. NOTE: we deliberately do
+// NOT call transport.onPeer here — startNode already owns that handler (greet);
+// connection success shows up as the "peer connected" log line.
+function setupManualSignaling(transport) {
+  const panel = document.createElement("div");
+  panel.className = "panel";
+  panel.id = "sdp";
+  panel.style.marginBottom = "1rem";
+  panel.innerHTML = `
+    <div class="panel-title">manual SDP signaling — 2 peers, no server</div>
+    <p class="empty" style="line-height:1.6">Pick ONE side to <b>Create offer</b>; copy the string to the other peer (any channel — chat, email). The other clicks <b>I was given an offer</b>, pastes it, and sends the <b>answer</b> string back; the offerer pastes that and clicks Apply. The channel opens and the mesh runs.</p>
+    <div id="sdp-pick" style="display:flex;gap:.5rem;flex-wrap:wrap;margin:.5rem 0">
+      <button id="sdp-offer" class="run-btn" style="margin-left:0">Create offer</button>
+      <button id="sdp-haveoffer" class="run-btn" style="margin-left:0;background:#475569">I was given an offer</button>
+    </div>
+    <label id="sdp-in-wrap" class="empty" style="display:none">
+      <span id="sdp-in-kind">Paste their offer</span>:
+      <textarea id="sdp-in" rows="3" style="width:100%;font:11px monospace;margin:.3rem 0"></textarea>
+    </label>
+    <button id="sdp-apply" class="run-btn" style="margin-left:0;display:none">Apply</button>
+    <label id="sdp-out-wrap" class="empty" style="display:none">
+      Your <span id="sdp-out-kind">offer</span> — copy &amp; send to the other peer (click to select all):
+      <textarea id="sdp-out" readonly rows="3" style="width:100%;font:11px monospace;margin:.3rem 0"></textarea>
+    </label>
+    <div id="sdp-status" class="empty" style="margin-top:.4rem"></div>`;
+  const grid = document.querySelector(".grid");
+  grid.parentNode.insertBefore(panel, grid);
+
+  const $ = (id) => document.getElementById(id);
+  const show = (el, on = true) => { el.style.display = on ? "" : "none"; };
+  $("sdp-out").onclick = () => $("sdp-out").select();
+  let role = null; // "offerer" | "answerer"
+
+  $("sdp-offer").onclick = async () => {
+    role = "offerer";
+    show($("sdp-pick"), false);
+    $("sdp-status").textContent = "gathering ICE candidates…";
+    const offer = await transport.createOffer();
+    $("sdp-out-kind").textContent = "offer";
+    $("sdp-out").value = offer;
+    show($("sdp-out-wrap"));
+    $("sdp-in-kind").textContent = "Paste their answer";
+    show($("sdp-in-wrap"));
+    $("sdp-apply").textContent = "Apply answer";
+    show($("sdp-apply"));
+    $("sdp-status").textContent = "send the offer above, then paste the answer you get back.";
+  };
+  $("sdp-haveoffer").onclick = () => {
+    role = "answerer";
+    show($("sdp-pick"), false);
+    $("sdp-in-kind").textContent = "Paste their offer";
+    show($("sdp-in-wrap"));
+    $("sdp-apply").textContent = "Accept offer & create answer";
+    show($("sdp-apply"));
+  };
+  $("sdp-apply").onclick = async () => {
+    const val = $("sdp-in").value.trim();
+    if (!val) { $("sdp-status").textContent = "paste the string first."; return; }
+    try {
+      if (role === "answerer") {
+        $("sdp-status").textContent = "gathering ICE candidates…";
+        const answer = await transport.acceptOffer(val);
+        $("sdp-out-kind").textContent = "answer";
+        $("sdp-out").value = answer;
+        show($("sdp-out-wrap"));
+        show($("sdp-apply"), false);
+        show($("sdp-in-wrap"), false);
+        $("sdp-status").textContent = "send the answer above back to the offerer — the channel opens when they apply it.";
+      } else {
+        await transport.acceptAnswer(val);
+        show($("sdp-apply"), false);
+        show($("sdp-in-wrap"), false);
+        $("sdp-status").textContent = "answer applied — establishing connection… (watch for “peer connected” in the log)";
+      }
+    } catch (e) {
+      $("sdp-status").textContent = "error: " + (e && e.message ? e.message : e);
+    }
+  };
 }
 
 function startLocal() {
