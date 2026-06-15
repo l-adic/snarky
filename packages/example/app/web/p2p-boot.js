@@ -237,12 +237,37 @@ async function startMesh(isBase) {
   // WebRTC transports: fetch the Metered account's TURN credentials first, then
   // probe that a TURN relay is actually reachable with valid creds.
   if (tKind === "trystero" || tKind === "manual") {
-    const n = await initIce();
-    addLog("info", n > 0 ? "loaded " + n + " TURN relay(s) from the Metered account" : "no Metered key — using built-in public TURN relay");
+    const r = await initIce();
+    const fallback = " — using built-in public TURN relay";
+    switch (r.status) {
+      case "ok":
+        addLog("info", "Metered: loaded " + r.count + " ICE server(s), " + r.turn + " TURN relay(s) [key from " + r.source + "]");
+        break;
+      case "nokey":
+        addLog("info", "Metered: no API key set — set the VITE_METERED_API_KEY build secret or localStorage['snarky-metered-key']" + fallback);
+        break;
+      case "http":
+        addLog("warning", "Metered: API rejected the request — HTTP " + r.code + (r.detail ? " (" + r.detail + ")" : "") + " [key " + r.keyFp + " from " + r.source + "]" + (r.code === 401 ? " — this is the WRONG key; copy the Credential API Key from the dashboard" : "") + fallback);
+        break;
+      case "neterror":
+        addLog("warning", "Metered: API unreachable — " + r.message + " (offline / DNS / CORS / COEP)" + fallback);
+        break;
+      case "badjson":
+        addLog("warning", "Metered: API returned non-JSON — " + r.message + fallback);
+        break;
+      case "badshape":
+        addLog("warning", "Metered: API returned an unexpected shape (not an ICE-server array)" + fallback);
+        break;
+      case "empty":
+        addLog("warning", "Metered: API returned zero ICE servers (account/region not provisioned?)" + fallback);
+        break;
+      default:
+        addLog("warning", "Metered: ICE init failed (" + r.status + ")" + fallback);
+    }
     probeTurn().then(({ relay, srflx }) => {
-      if (relay) addLog("info", "TURN reachable — got a relay candidate ✓ (works behind symmetric NAT)");
-      else if (srflx) addLog("warning", "no TURN relay candidate (STUN ok) — invalid creds or relay blocked; symmetric-NAT peers may fail");
-      else addLog("warning", "no relay/srflx candidate — network may block WebRTC");
+      if (relay) addLog("info", "TURN probe: relay candidate obtained ✓ — TURN works (peers behind symmetric NAT can connect)");
+      else if (srflx) addLog("warning", "TURN probe: STUN ok (srflx) but NO relay candidate — TURN creds invalid or relay blocked; symmetric-NAT peers may fail");
+      else addLog("warning", "TURN probe: no srflx/relay candidate — STUN+TURN both unreachable (network blocks WebRTC / offline)");
     });
   }
   const transport = await mkTransport(tKind, session);

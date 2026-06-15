@@ -23,24 +23,48 @@
 // client-side TURN credentials call, and Metered rate-limits it to your plan.
 const METERED_API = "https://l-adic.metered.live/api/v1/turn/credentials";
 function meteredKey() {
-  try { const k = localStorage.getItem("snarky-metered-key"); if (k) return k; } catch {}
-  try { return (import.meta.env && import.meta.env.VITE_METERED_API_KEY) || ""; } catch { return ""; }
+  try { const k = localStorage.getItem("snarky-metered-key"); if (k) return { key: k.trim(), source: "localStorage" }; } catch {}
+  try {
+    const k = import.meta.env && import.meta.env.VITE_METERED_API_KEY;
+    if (k) return { key: String(k).trim(), source: "build env" };
+  } catch {}
+  return { key: "", source: "" };
 }
 
 let meteredIce = []; // populated by initIce()
 
 // Fetch the Metered account's ICE servers once, before any RTCPeerConnection is
-// built. Best-effort: on any failure we silently keep the public fallback.
+// built. Best-effort: on any failure we keep the public fallback. Returns a
+// status object the caller logs, disambiguating every failure mode:
+//   {status:"nokey"}                           - no key set (env or localStorage)
+//   {status:"neterror", message}               - fetch threw (offline/DNS/CORS)
+//   {status:"http", code, detail, keyFp}       - non-2xx (e.g. 401 invalid key)
+//   {status:"badjson", message}                - 2xx but body wasn't JSON
+//   {status:"badshape"}                        - JSON but not an array
+//   {status:"empty"}                           - empty array
+//   {status:"ok", count, turn, source}         - loaded `count` servers
 export async function initIce() {
-  const key = meteredKey();
-  if (!key) return 0;
+  const { key, source } = meteredKey();
+  if (!key) return { status: "nokey" };
+  const keyFp = key.slice(0, 3) + "…" + key.slice(-3); // safe to log, not the key
+  let r;
   try {
-    const r = await fetch(METERED_API + "?apiKey=" + encodeURIComponent(key));
-    if (!r.ok) return 0;
-    const list = await r.json();
-    if (Array.isArray(list) && list.length) meteredIce = list;
-  } catch {}
-  return meteredIce.length;
+    r = await fetch(METERED_API + "?apiKey=" + encodeURIComponent(key));
+  } catch (e) {
+    return { status: "neterror", message: (e && e.message) || String(e) };
+  }
+  if (!r.ok) {
+    let detail = "";
+    try { const j = await r.json(); detail = (j && j.error) || ""; } catch {}
+    return { status: "http", code: r.status, detail, keyFp, source };
+  }
+  let list;
+  try { list = await r.json(); } catch (e) { return { status: "badjson", message: (e && e.message) || String(e) }; }
+  if (!Array.isArray(list)) return { status: "badshape" };
+  if (!list.length) return { status: "empty" };
+  meteredIce = list;
+  const isTurn = (s) => /^turns?:/.test(Array.isArray(s.urls) ? s.urls.join(",") : s.urls || "");
+  return { status: "ok", count: list.length, turn: list.filter(isTurn).length, source };
 }
 
 // Verify the TURN config actually works: gather ICE candidates from a throwaway
