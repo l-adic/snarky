@@ -26,6 +26,7 @@ import Snarky.Example.Ledger (balanceOf)
 import Snarky.Example.Log as Log
 import Snarky.Example.Simulation (generateBlock, mkSimulation)
 import Snarky.Example.Snark.Manager (submitBlock)
+import Snarky.Example.Snark.Worker (localSnarkBackend)
 import Snarky.Example.Terminal.ProgressDisplay (mkProgressDisplay)
 import Snarky.Example.Transaction (SignedTransaction(..), Transaction(..), Transfer(..))
 
@@ -37,7 +38,13 @@ main = launchAff_ do
   display <- liftEffect mkProgressDisplay
   let logger = display.wrapLogger richMessageStdout
   sim <- mkSimulation @Depth
-    { chainId: Testnet, numAccounts: 10, logger, onProgress: Just display.reporter }
+    { chainId: Testnet
+    , numAccounts: 10
+    , logger
+    , onProgress: Just display.reporter
+    , poolSize: 1
+    , backend: localSnarkBackend
+    }
 
   -- One block of random transfers against the current ledger.
   ledger0 <- liftEffect $ Ref.read sim.env.ledger

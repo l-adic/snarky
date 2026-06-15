@@ -37,14 +37,14 @@ import Effect.Ref as Ref
 import Fmt (fmt)
 import Pickles (Verifier, toVerifiable, verify)
 import Snarky.Example.AsyncQueue (Queue, dequeue, enqueue, newQueue)
+import Snarky.Example.Env (Env)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
-import Snarky.Example.Snark.Pool (localBackend, runPool)
+import Snarky.Example.Snark.Pool (runPool)
 import Snarky.Example.Snark.ScanState (ScanState, SlotId)
 import Snarky.Example.Snark.ScanState as ScanState
 import Snarky.Example.Snark.Work (BaseJob, Proof, WorkItem)
-import Snarky.Example.Snark.Worker (proveItem)
-import Snarky.Example.Transaction (CompiledTx)
+import Snarky.Example.Snark.Worker (SnarkBackend)
 
 type BlockId = Int
 
@@ -70,30 +70,30 @@ newtype Manager d = Manager
 service :: String
 service = "Snark Manager"
 
--- | Worker count. `localBackend`'s prover is synchronous, so the pool runs jobs
--- | one at a time no matter what this is — keep it at 1 (anything more just
--- | spawns idle in-process workers). It becomes a real, injected parameter once
--- | a parallel (worker-thread / web-worker) backend is wired in.
-poolSize :: Int
-poolSize = 1
-
--- | Start a node from an already-compiled program (compile once via
--- | `Snarky.Example.Env.mkEnv`; the manager never compiles): fork the worker
--- | and the result listener over a fresh pair of channels. The worker is
--- | handed the same `CompiledTx` as its init input — that hand-off is the
--- | externalization seam (a remote worker would compile its own).
+-- | Start a node from an already-built `Env` (SRS + compiled program, produced
+-- | once via `Snarky.Example.Env.mkEnv`; the manager never compiles): fork the
+-- | worker pool and the result listener over a fresh pair of channels.
+-- |
+-- | The work backend is injected (`Snarky.Example.Snark.Worker.SnarkBackend`),
+-- | along with the worker count `poolSize`: `localSnarkBackend` runs the
+-- | synchronous prover in-process (so `poolSize` is plumbing-only there), while
+-- | a parallel backend (node thread / web worker) makes `poolSize` a real knob.
 mkManager
   :: forall d
-   . { logger :: Logger, onProgress :: Maybe (OnProgress d) }
-  -> CompiledTx d
+   . { logger :: Logger
+     , onProgress :: Maybe (OnProgress d)
+     , poolSize :: Int
+     , backend :: SnarkBackend d
+     }
+  -> Env d
   -> Aff (Manager d)
-mkManager { logger, onProgress } compiled = do
+mkManager { logger, onProgress, poolSize, backend } env = do
   workQ <- newQueue
   resultQ <- newQueue
   blocks <- liftEffect $ Ref.new Map.empty
   let
-    node = Manager { workQ, blocks, verifier: compiled.verifier, logger, onProgress }
-  _ <- forkAff $ runPool logger poolSize (localBackend (proveItem compiled))
+    node = Manager { workQ, blocks, verifier: env.compiledTx.verifier, logger, onProgress }
+  _ <- forkAff $ runPool logger poolSize (backend env)
     { next: dequeue workQ, post: enqueue resultQ }
   _ <- forkAff $ listen node resultQ
   pure node

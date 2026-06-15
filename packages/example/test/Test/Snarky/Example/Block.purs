@@ -34,6 +34,7 @@ import Snarky.Example.Ledger (Ledger)
 import Snarky.Example.Log as Log
 import Snarky.Example.Simulation (genGenesisLedger, generateBlock)
 import Snarky.Example.Snark.Manager (mkManager, submitBlock)
+import Snarky.Example.Snark.Worker (localSnarkBackend)
 import Snarky.Example.Transaction (Statement(..))
 import Test.QuickCheck.Gen (randomSampleOne)
 import Test.Snarky.Example.Config (Depth)
@@ -68,7 +69,9 @@ spec =
       -- program) runs the worker + listener and fills the scan-state tree
       -- (4 bases + 3 merges) to the root.
       Log.logInfo env.logger $ fmt @"[Block] starting snark manager; submitting block of {n} transactions" { n: Array.length snarkWork }
-      manager <- mkManager { logger: env.logger, onProgress: Nothing } env.compiledTx
+      manager <- mkManager
+        { logger: env.logger, onProgress: Nothing, poolSize: 1, backend: localSnarkBackend }
+        env
       rootProof <- submitBlock manager 0 snarkWork
       Log.logInfo env.logger "[Block] root proof received; checking statement + verifying…"
 

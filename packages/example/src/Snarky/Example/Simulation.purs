@@ -34,16 +34,21 @@ import Snarky.Example.Simulation.Genesis (genGenesisLedger)
 import Snarky.Example.Simulation.Keystore (Keystore, senderInfo)
 import Snarky.Example.Simulation.Transaction (genDistinctPublicKeys, genOverdraftSignedTransaction, genValidSignedTransaction)
 import Snarky.Example.Snark.Manager (Manager, OnProgress, mkManager)
+import Snarky.Example.Snark.Worker (SnarkBackend)
 import Test.QuickCheck.Gen (randomSampleOne)
 
 -- | What a simulation run is configured by. `onProgress` optionally plugs a
 -- | scan-state observer (e.g. the terminal display in
--- | `Snarky.Example.Snark.Progress`) into the snark manager.
+-- | `Snarky.Example.Snark.Progress`) into the snark manager. `backend` and
+-- | `poolSize` select where snark work runs and how many workers (see
+-- | `Snarky.Example.Snark.Worker.SnarkBackend` / `localSnarkBackend`).
 type SimulationConfig d =
   { chainId :: ChainId
   , numAccounts :: Int
   , logger :: Logger
   , onProgress :: Maybe (OnProgress d)
+  , poolSize :: Int
+  , backend :: SnarkBackend d
   }
 
 -- | Everything needed to run the simulation: the app `Env` (compiled program,
@@ -62,12 +67,12 @@ mkSimulation
    . Reflectable d Int
   => SimulationConfig d
   -> Aff (Simulation d)
-mkSimulation { chainId, numAccounts, logger, onProgress } = do
+mkSimulation { chainId, numAccounts, logger, onProgress, poolSize, backend } = do
   Log.logInfo logger "[Simulation] building SRS + compiling the transaction snark…"
   config <- liftEffect $ mkConfig chainId
   env <- liftEffect $ mkEnv @d logger config
   Log.logInfo logger $ fmt @"[Simulation] minting genesis ledger of {numAccounts} accounts" { numAccounts }
   { ledger, keys } <- liftEffect $ randomSampleOne (genGenesisLedger numAccounts)
   liftEffect $ Ref.write ledger env.ledger
-  manager <- mkManager { logger, onProgress } env.compiledTx
+  manager <- mkManager { logger, onProgress, poolSize, backend } env
   pure { env, keys, manager }

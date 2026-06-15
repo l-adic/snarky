@@ -34,6 +34,7 @@ import Snarky.Example.Ledger (balanceOf)
 import Snarky.Example.Simulation (generateBlock, mkSimulation)
 import Snarky.Example.Snark.Manager (submitBlock)
 import Snarky.Example.Snark.Progress (scanStateView)
+import Snarky.Example.Snark.Worker (localSnarkBackend)
 import Snarky.Example.Transaction (SignedTransaction(..), Transaction(..), Transfer(..))
 import Snarky.Example.Types.PublicKey (toBase58Check)
 
@@ -86,7 +87,13 @@ runSimulation cb = launchAff_ do
 
   liftEffect $ cb.onPhase "setup"
   sim <- mkSimulation @Depth
-    { chainId: Testnet, numAccounts: 10, logger, onProgress: Just onProgress }
+    { chainId: Testnet
+    , numAccounts: 10
+    , logger
+    , onProgress: Just onProgress
+    , poolSize: 1
+    , backend: localSnarkBackend
+    }
 
   liftEffect $ cb.onPhase "block"
   ledger0 <- liftEffect $ Ref.read sim.env.ledger
