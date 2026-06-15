@@ -99,7 +99,7 @@ import Prim.RowList (class RowToList)
 import Prim.RowList as RL
 import Record as Record
 import Safe.Coerce (coerce)
-import Simple.JSON (class ReadForeign, class WriteForeign)
+import Simple.JSON (class ReadForeign, class WriteForeign, writeImpl)
 import Snarky.Circuit.CVar (CVar, Variable)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, EndoBase(..), EndoScalar(..), endoBase, endoScalar, fromBigInt, modulus, pow, toBigInt)
 import Test.QuickCheck (class Arbitrary)
@@ -243,6 +243,20 @@ instance CircuitType f NoInput NoInput where
   sizeInFields _ _ = 0
   varToFields _ = mempty
   fieldsToVar _ = NoInput
+
+-- Empty wire form (`{}`); the read ignores it — these carry no data. Lets
+-- `StatementIO`-based statements serialize for the proof-transport codec.
+instance WriteForeign NoInput where
+  writeImpl _ = writeImpl {}
+
+instance ReadForeign NoInput where
+  readImpl _ = pure NoInput
+
+instance WriteForeign NoOutput where
+  writeImpl _ = writeImpl {}
+
+instance ReadForeign NoOutput where
+  readImpl _ = pure NoOutput
 
 instance CircuitType f NoOutput NoOutput where
   valueToFields _ = mempty

@@ -27,6 +27,7 @@ import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (Tuple10, Tuple2, Tuple3, Tuple5, Tuple7, tuple10, tuple2, tuple3, tuple5, tuple7, uncurry10, uncurry2, uncurry3, uncurry5, uncurry7)
 import Data.Vector (Vector)
 import Pickles.Verify.Types (UnfinalizedProof, WrapDeferredValues)
+import Simple.JSON (class ReadForeign, class WriteForeign)
 import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment(..)) as ChunkedCommitmentReExports
 import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment)
 import Snarky.Circuit.DSL (F, FVar, UnChecked)
@@ -217,6 +218,9 @@ newtype StatementIO input output = StatementIO
   { input :: input
   , output :: output
   }
+
+derive newtype instance (WriteForeign input, WriteForeign output) => WriteForeign (StatementIO input output)
+derive newtype instance (ReadForeign input, ReadForeign output) => ReadForeign (StatementIO input output)
 
 instance
   ( CircuitType f inputVal inputVar

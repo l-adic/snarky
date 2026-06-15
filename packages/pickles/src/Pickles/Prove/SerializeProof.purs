@@ -24,21 +24,27 @@ module Pickles.Prove.SerializeProof
   , WidthDummies
   , toSerializableCompiledProof
   , reconstructCompiledProof
+  , encodeCompiledProof
+  , decodeCompiledProof
   ) where
 
 import Prelude
 
 import Data.Array as Array
+import Data.Either (Either)
 import Data.Exists (runExists)
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Foreign (MultipleErrors)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Pickles.Field (StepField, WrapField)
 import Pickles.PlonkChecks (AllEvals)
+import Pickles.Prove.Codecs (decodeVerifiableProof, encodeVerifiableProof)
 import Pickles.Types (PaddedLength, StepIPARounds, WrapIPARounds)
 import Pickles.Verify (CompiledProof(..), CompiledProofWidthData(..), SomeCompiledProofWidthData, VerifiableProof, mkSomeCompiledProofWidthData, toVerifiable)
+import Simple.JSON (class ReadForeign, class WriteForeign, readJSON, writeJSON)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
 -- | The flat, self-describing superset of `VerifiableProof`: everything in a
@@ -176,3 +182,56 @@ rebuildWidthData dummies oldBp msgWrap outerSg =
 
 toVec :: forall @n a. Reflectable n Int => Array a -> Vector n a
 toVec arr = unsafePartial fromJust (Vector.toVector @n arr)
+
+-- | JSON wire form of `SerializableCompiledProof`: the `verifiable` field is
+-- | embedded as a nested JSON string via `Pickles.Prove.Codecs` (the same way
+-- | its own `wrapProof` is a nested serde string — it carries the kimchi proof +
+-- | chunked evals). The rest — the application `statement` (generic), the
+-- | single-eval `prevEvals`, and the two `messages_for_next_*` vectors —
+-- | serialize directly via their leaf `WriteForeign`/`ReadForeign` instances
+-- | (fields as hex, `AffinePoint`, `Vector`).
+type SerializableCompiledProofWire stmtVal =
+  { verifiable :: String
+  , statement :: stmtVal
+  , prevEvals :: AllEvals StepField
+  , messagesForNextStepProof ::
+      { challengePolynomialCommitments :: Array (AffinePoint StepField) }
+  , messagesForNextWrapProof ::
+      { oldBulletproofChallenges :: Array (Vector WrapIPARounds WrapField) }
+  }
+
+toWireSCP :: forall stmtVal. SerializableCompiledProof stmtVal -> SerializableCompiledProofWire stmtVal
+toWireSCP scp = scp { verifiable = encodeVerifiableProof scp.verifiable }
+
+fromWireSCP
+  :: forall stmtVal
+   . SerializableCompiledProofWire stmtVal
+  -> Either MultipleErrors (SerializableCompiledProof stmtVal)
+fromWireSCP w = do
+  verifiable <- decodeVerifiableProof w.verifiable
+  pure (w { verifiable = verifiable })
+
+-- | Serialize a full `CompiledProof` to JSON for worker/recursion transport.
+-- | Generic over the application `statement`, which the caller's
+-- | `WriteForeign` instance encodes.
+encodeCompiledProof
+  :: forall mpv stmtVal
+   . WriteForeign stmtVal
+  => CompiledProof mpv stmtVal
+  -> String
+encodeCompiledProof = writeJSON <<< toWireSCP <<< toSerializableCompiledProof
+
+-- | Parse a full `CompiledProof` from JSON. As with `reconstructCompiledProof`,
+-- | the caller supplies the program's front-padding `WidthDummies`; `mpv` (the
+-- | program `mpvMax`) is a phantom index, so the result unifies with whatever
+-- | program consumes it.
+decodeCompiledProof
+  :: forall mpv stmtVal
+   . ReadForeign stmtVal
+  => WidthDummies
+  -> String
+  -> Either MultipleErrors (CompiledProof mpv stmtVal)
+decodeCompiledProof dummies s = do
+  w :: SerializableCompiledProofWire stmtVal <- readJSON s
+  scp <- fromWireSCP w
+  pure (reconstructCompiledProof dummies scp)
