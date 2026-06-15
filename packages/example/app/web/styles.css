@@ -193,6 +193,11 @@ body {
   font-size: 12px;
   white-space: pre-wrap;
 }
+.log-time {
+  margin-right: 0.5rem;
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+}
 .log-sev {
   margin-right: 0.5rem;
   color: #7dd3fc;
