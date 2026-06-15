@@ -3,6 +3,7 @@ module Snarky.Example.Transaction.Types.Transaction
   ) where
 
 import Prelude
+import Simple.JSON (class ReadForeign, class WriteForeign)
 
 import Data.Generic.Rep (class Generic)
 import Data.Newtype (class Newtype)
@@ -30,6 +31,8 @@ newtype Transaction f = Transaction
 derive instance Newtype (Transaction f) _
 derive instance Generic (Transaction f) _
 derive newtype instance Show f => Show (Transaction f)
+derive newtype instance WriteForeign f => WriteForeign (Transaction f)
+derive newtype instance ReadForeign f => ReadForeign (Transaction f)
 derive instance Eq f => Eq (Transaction f)
 derive newtype instance (FieldSizeInBits f n, Compare 128 n LT, Arbitrary f) => Arbitrary (Transaction f)
 

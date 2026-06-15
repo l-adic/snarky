@@ -24,6 +24,7 @@ module Data.Schnorr
   ) where
 
 import Prelude
+import Simple.JSON (class ReadForeign, class WriteForeign)
 
 import Data.Foldable (foldl)
 import Data.Generic.Rep (class Generic)
@@ -54,6 +55,8 @@ newtype Signature f = Signature
 derive instance Newtype (Signature f) _
 derive instance Generic (Signature f) _
 derive newtype instance Show f => Show (Signature f)
+derive newtype instance WriteForeign f => WriteForeign (Signature f)
+derive newtype instance ReadForeign f => ReadForeign (Signature f)
 derive newtype instance Eq f => Eq (Signature f)
 
 -- | `CircuitType`/`CheckedType` for embedding a signature in a circuit.

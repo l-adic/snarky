@@ -4,6 +4,7 @@ module Snarky.Example.Types.PublicKey
   ) where
 
 import Prelude
+import Simple.JSON (class ReadForeign, class WriteForeign)
 
 import Data.Generic.Rep (class Generic)
 import Data.Newtype (class Newtype)
@@ -24,6 +25,8 @@ newtype PublicKey f = PublicKey (AffinePoint f)
 derive instance Newtype (PublicKey f) _
 derive instance Generic (PublicKey f) _
 derive newtype instance Show f => Show (PublicKey f)
+derive newtype instance WriteForeign f => WriteForeign (PublicKey f)
+derive newtype instance ReadForeign f => ReadForeign (PublicKey f)
 derive newtype instance Eq f => Eq (PublicKey f)
 derive newtype instance Ord f => Ord (PublicKey f)
 derive newtype instance Arbitrary f => Arbitrary (PublicKey f)

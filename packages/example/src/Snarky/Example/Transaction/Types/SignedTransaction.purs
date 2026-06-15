@@ -3,6 +3,7 @@ module Snarky.Example.Transaction.Types.SignedTransaction
   ) where
 
 import Prelude
+import Simple.JSON (class ReadForeign, class WriteForeign)
 
 import Data.Generic.Rep (class Generic)
 import Data.Newtype (class Newtype)
@@ -25,6 +26,8 @@ newtype SignedTransaction f = SignedTransaction
 derive instance Newtype (SignedTransaction f) _
 derive instance Generic (SignedTransaction f) _
 derive newtype instance Show f => Show (SignedTransaction f)
+derive newtype instance WriteForeign f => WriteForeign (SignedTransaction f)
+derive newtype instance ReadForeign f => ReadForeign (SignedTransaction f)
 derive instance Eq f => Eq (SignedTransaction f)
 
 instance CircuitType f (SignedTransaction f) (SignedTransaction (FVar f)) where

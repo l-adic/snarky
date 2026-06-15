@@ -6,6 +6,7 @@ module Snarky.Example.Types.TokenAmount
   ) where
 
 import Prelude
+import Simple.JSON (class ReadForeign, class WriteForeign)
 
 import Data.Generic.Rep (class Generic)
 import Data.Maybe (Maybe, fromJust)
@@ -31,6 +32,8 @@ newtype TokenAmount f = TokenAmount (SizedF 128 f)
 derive instance Newtype (TokenAmount f) _
 derive instance Generic (TokenAmount f) _
 derive newtype instance Show f => Show (TokenAmount f)
+derive newtype instance WriteForeign f => WriteForeign (TokenAmount f)
+derive newtype instance ReadForeign f => ReadForeign (TokenAmount f)
 derive newtype instance Eq f => Eq (TokenAmount f)
 derive newtype instance (FieldSizeInBits f n, Compare 128 n LT, Arbitrary f) => Arbitrary (TokenAmount f)
 
