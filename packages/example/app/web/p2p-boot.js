@@ -26,6 +26,24 @@ const mode = params.mode || (params.merge ? "merge" : params.base ? "base" : par
 const session0 = params.session || "l-adic";
 const tKind0 = params.t || "trystero";
 
+// Prefill the TURN field from a previously-saved localStorage["snarky-turn"]
+// (shown as the "urls|user|pass" shorthand, or raw JSON if it was an array /
+// multi-server config we can't round-trip to shorthand).
+function turnDisplay() {
+  const raw = localStorage.getItem("snarky-turn");
+  if (!raw) return "";
+  try {
+    const t = JSON.parse(raw);
+    if (Array.isArray(t)) return raw;
+    if (t && t.urls) {
+      const url = Array.isArray(t.urls) ? t.urls[0] : t.urls;
+      return [url, t.username, t.credential].filter(Boolean).join("|");
+    }
+  } catch {}
+  return raw;
+}
+const turn0 = turnDisplay();
+
 const app = document.getElementById("app");
 const sel = (v, t, label) => `<option value="${t}"${v === t ? " selected" : ""}>${label}</option>`;
 app.innerHTML = `
@@ -42,6 +60,8 @@ app.innerHTML = `
           ${sel(tKind0, "bc", "BroadcastChannel (same browser)")}
           ${sel(tKind0, "manual", "manual SDP (2 peers)")}
         </select></label>
+      <label style="font:12px sans-serif;color:#94a3b8" title="Optional TURN relay for peers behind symmetric NAT / CGNAT. Shorthand 'turn:host:3478|user|pass', or paste a JSON {urls,username,credential}. Added to the built-in public relay.">TURN
+        <input id="turn" value="${turn0}" placeholder="turn:host:3478|user|pass (optional)" style="width:24ch;font:12px monospace" /></label>
       <label style="font:12px sans-serif;color:#94a3b8">role
         <select id="role-select">
           ${sel(mode || "base", "base", "base prover (private)")}
@@ -165,6 +185,22 @@ const onScan = (s) => () => {
 const currentSession = () => document.getElementById("session").value.trim() || "default";
 const currentTransport = () => document.getElementById("transport").value;
 
+// Persist the TURN field to localStorage["snarky-turn"] (read by p2p-rtc's
+// iceServers(), so it must be set BEFORE the transport builds its RTCPeer-
+// Connection). Accepts raw JSON ({…} or […]) or the shorthand
+// "turn:host:port|username|credential". Empty clears it (back to defaults).
+function applyTurn() {
+  const spec = document.getElementById("turn").value.trim();
+  if (!spec) { localStorage.removeItem("snarky-turn"); return; }
+  if (spec[0] === "{" || spec[0] === "[") {
+    try { JSON.parse(spec); localStorage.setItem("snarky-turn", spec); return; }
+    catch { addLog("warning", "TURN: ignoring invalid JSON"); return; }
+  }
+  const [urls, username, credential] = spec.split("|").map((s) => s.trim());
+  if (!urls) { addLog("warning", "TURN: empty url — ignoring"); return; }
+  localStorage.setItem("snarky-turn", JSON.stringify(username ? { urls, username, credential } : { urls }));
+}
+
 async function mkTransport(tKind, session) {
   if (tKind === "manual") {
     const { mkManualTransport } = await import("./p2p-transport-manual.js");
@@ -188,6 +224,9 @@ async function startMesh(isBase) {
   document.getElementById("session").disabled = true;
   document.getElementById("transport").disabled = true;
   document.getElementById("role-select").disabled = true;
+  applyTurn(); // persist the TURN field BEFORE the transport builds its RTCPeerConnection
+  document.getElementById("turn").disabled = true;
+  if (document.getElementById("turn").value.trim()) addLog("info", "using custom TURN relay (plus the built-in public one)");
   if (tKind === "bc") addLog("info", "BroadcastChannel only connects tabs of the SAME browser — pick Trystero for different browsers/machines");
   const transport = await mkTransport(tKind, session);
   globalThis.__transport = transport; // for manual-SDP signaling / tests
@@ -292,6 +331,7 @@ function startLocal() {
   document.getElementById("session").disabled = true;
   document.getElementById("transport").disabled = true;
   document.getElementById("role-select").disabled = true;
+  document.getElementById("turn").disabled = true;
   runLocal(client)(log)();
 }
 
