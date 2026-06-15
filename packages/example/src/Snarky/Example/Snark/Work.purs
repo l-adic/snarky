@@ -24,11 +24,17 @@ import Prelude
 import Data.Either (Either(..))
 import Foreign (ForeignError(..), MultipleErrors)
 import Pickles (CompiledProof)
-import Pickles.Prove.SerializeProof (WidthDummies, decodeCompiledProof, encodeCompiledProof)
+import Pickles.Prove.SerializeProof (decodeCompiledProof, encodeCompiledProof)
 import Simple.JSON (readJSON, writeJSON)
+import Snarky.Backend.Kimchi.Types (CRS)
+import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Example.Ledger (Mask)
 import Snarky.Example.Transaction (SignedTransaction, Statement, TxnStmt)
+
+-- | The SRSes a decode needs to rebuild proofs — any record carrying them, so
+-- | the app `Env` can be passed directly.
+type Srs r = { pallasSrs :: CRS PallasG, vestaSrs :: CRS VestaG | r }
 
 -- | A proof of the two-branch transaction-snark program (base or merge — same
 -- | wrap VK, both `CompiledProof 2 TxnStmt`).
@@ -67,16 +73,16 @@ encodeMergeJob j = writeJSON
   , statement: j.statement
   }
 
--- | Parse a merge job. The child proofs are reconstructed with the program's
--- | `WidthDummies` (`Pickles.Prove.SerializeProof.mkWidthDummies`).
-decodeMergeJob :: WidthDummies -> String -> Either MultipleErrors MergeJob
-decodeMergeJob dummies s = do
+-- | Parse a merge job. The child proofs are reconstructed from the SRSes (the
+-- | decode builds the program's front-padding internally).
+decodeMergeJob :: forall r. Srs r -> String -> Either MultipleErrors MergeJob
+decodeMergeJob srs s = do
   w <-
     readJSON s
       :: Either MultipleErrors
            { proof1 :: String, proof2 :: String, statement :: Statement Vesta.ScalarField }
-  proof1 <- decodeCompiledProof dummies w.proof1
-  proof2 <- decodeCompiledProof dummies w.proof2
+  proof1 <- decodeCompiledProof srs w.proof1
+  proof2 <- decodeCompiledProof srs w.proof2
   pure { proof1, proof2, statement: w.statement }
 
 -- | Serialize a base job: the transaction, witness mask, and statement all
@@ -94,10 +100,10 @@ encodeWorkItem = case _ of
   Base b -> writeJSON { tag: "base", base: b }
   Merge m -> writeJSON { tag: "merge", merge: encodeMergeJob m }
 
--- | Parse a work item. The merge branch reconstructs its child proofs with the
--- | program's `WidthDummies`; the base branch needs none.
-decodeWorkItem :: forall d. WidthDummies -> String -> Either MultipleErrors (WorkItem d)
-decodeWorkItem dummies s = do
+-- | Parse a work item. The merge branch reconstructs its child proofs from the
+-- | SRSes; the base branch needs none.
+decodeWorkItem :: forall d r. Srs r -> String -> Either MultipleErrors (WorkItem d)
+decodeWorkItem srs s = do
   tagged <- readJSON s :: Either MultipleErrors { tag :: String }
   case tagged.tag of
     "base" -> do
@@ -105,5 +111,5 @@ decodeWorkItem dummies s = do
       pure (Base r.base)
     "merge" -> do
       r <- readJSON s :: Either MultipleErrors { merge :: String }
-      Merge <$> decodeMergeJob dummies r.merge
+      Merge <$> decodeMergeJob srs r.merge
     other -> Left (pure (ForeignError ("WorkItem: unknown tag " <> other)))

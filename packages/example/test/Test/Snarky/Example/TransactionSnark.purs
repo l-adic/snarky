@@ -28,7 +28,6 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Pickles (CompiledProof, toVerifiable, verifyBatch)
-import Pickles.Prove.SerializeProof (mkWidthDummies)
 import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Example.Env (Env)
@@ -102,8 +101,7 @@ spec =
       -- Round-trip the merge job through the transport codec first: the merge
       -- proves from the DECODED child proofs, so it succeeds only if
       -- encode/decode is byte-faithful.
-      let dummies = mkWidthDummies env.pallasSrs env.vestaSrs
-      mergeJob <- case decodeMergeJob dummies (encodeMergeJob { proof1: b0, proof2: b1, statement: mergedStmt }) of
+      mergeJob <- case decodeMergeJob env (encodeMergeJob { proof1: b0, proof2: b1, statement: mergedStmt }) of
         Left e -> liftEffect $ throw ("decodeMergeJob: " <> show e)
         Right j -> pure j
       merge <- liftEffect $ mergeProver mergeJob

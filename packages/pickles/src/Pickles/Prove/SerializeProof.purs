@@ -240,17 +240,18 @@ encodeCompiledProof
   -> String
 encodeCompiledProof = writeJSON <<< toWireSCP <<< toSerializableCompiledProof
 
--- | Parse a full `CompiledProof` from JSON. As with `reconstructCompiledProof`,
--- | the caller supplies the program's front-padding `WidthDummies`; `mpv` (the
--- | program `mpvMax`) is a phantom index, so the result unifies with whatever
--- | program consumes it.
+-- | Parse a full `CompiledProof` from JSON. Takes the SRSes directly (any record
+-- | carrying `pallasSrs`/`vestaSrs`, e.g. the app `Env`) and builds the
+-- | front-padding `WidthDummies` internally, so the caller never handles them.
+-- | `mpv` (the program `mpvMax`) is a phantom index, so the result unifies with
+-- | whatever program consumes it.
 decodeCompiledProof
-  :: forall mpv stmtVal
+  :: forall mpv stmtVal r
    . ReadForeign stmtVal
-  => WidthDummies
+  => { pallasSrs :: CRS PallasG, vestaSrs :: CRS VestaG | r }
   -> String
   -> Either MultipleErrors (CompiledProof mpv stmtVal)
-decodeCompiledProof dummies s = do
+decodeCompiledProof srs s = do
   w :: SerializableCompiledProofWire stmtVal <- readJSON s
   scp <- fromWireSCP w
-  pure (reconstructCompiledProof dummies scp)
+  pure (reconstructCompiledProof (mkWidthDummies srs.pallasSrs srs.vestaSrs) scp)

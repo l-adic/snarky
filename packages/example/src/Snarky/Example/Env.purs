@@ -66,8 +66,8 @@ type Env d =
   , compiledTx :: CompiledTx d
   , ledger :: Ref (Ledger d)
   , logger :: Logger
-  -- Carried for decoding transported proofs (the `WidthDummies` a worker
-  -- needs to reconstruct a `CompiledProof` derive from these).
+  -- Carried for decoding transported proofs: `decodeCompiledProof` takes the
+  -- SRSes directly (it builds the reconstruction dummies internally).
   , pallasSrs :: CRS PallasG
   , vestaSrs :: CRS VestaG
   }
