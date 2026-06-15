@@ -31,6 +31,7 @@ import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
 import Safe.Coerce (coerce)
+import Simple.JSON (class ReadForeign, class WriteForeign)
 import Snarky.Circuit.DSL (class AssertEqual, class CheckedType, class CircuitType, F(..), FVar, Snarky, add_, assertEqGeneric, const_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, isEqualGeneric)
 import Snarky.Circuit.Kimchi (poseidon)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -79,6 +80,8 @@ newtype Digest f = Digest f
 derive newtype instance Eq f => Eq (Digest f)
 derive newtype instance Show f => Show (Digest f)
 derive newtype instance Ord f => Ord (Digest f)
+derive newtype instance WriteForeign f => WriteForeign (Digest f)
+derive newtype instance ReadForeign f => ReadForeign (Digest f)
 
 derive instance Generic (Digest f) _
 
