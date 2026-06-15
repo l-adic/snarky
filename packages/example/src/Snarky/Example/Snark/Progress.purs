@@ -9,9 +9,13 @@
 -- | Renderers live with their frontends: the terminal's log-update
 -- | display in the terminal package (ProgressDisplay), the browser's
 -- | SVG tree in the web package. Both consume the functions here, so
--- | every frontend draws from the same status logic.
+-- | every frontend draws from the same status logic. `renderScanState`
+-- | draws from a live `ScanState`; `renderScanView` draws from the
+-- | serializable `ScanView` (what the engine emits over a worker boundary).
 module Snarky.Example.Snark.Progress
-  ( renderScanState
+  ( ScanView
+  , renderScanState
+  , renderScanView
   , scanStateView
   , slotStatus
   ) where
@@ -20,6 +24,8 @@ import Prelude
 
 import Data.Array as Array
 import Data.Map as Map
+import Data.Maybe (fromMaybe)
+import Data.Tuple (Tuple(..))
 import Snarky.Example.Snark.Manager (BlockId)
 import Snarky.Example.Snark.ScanState (ScanState, SlotId)
 
@@ -49,18 +55,26 @@ scanStateView st =
     , statuses: map (\slot -> { slot, status: slotStatus st slot }) slots
     }
 
--- | Draw the scan-state tree sideways from the root (slot 1), each node's
--- | status read off the proofs map via the heap indexing.
-renderScanState :: forall d. BlockId -> ScanState d -> String
-renderScanState blockId st =
+-- | The serializable scan-state view the engine emits across a worker
+-- | boundary (`scanStateView` plus the block id). Frontends render it with
+-- | `renderScanView` (terminal tree) or their own structured renderer (the
+-- | browser SVG), with no live `ScanState` in hand.
+type ScanView =
+  { blockId :: Int
+  , leaves :: Int
+  , statuses :: Array { slot :: Int, status :: String }
+  }
+
+-- | Draw the scan-state tree sideways from the root (slot 1): `n` leaves at
+-- | slots `n..2n-1`, each node's status looked up via `statusOf`.
+renderTree :: BlockId -> Int -> (SlotId -> String) -> String
+renderTree blockId n statusOf =
   Array.intercalate "\n"
     $ [ "scan state - block " <> show blockId <> "   (✓ complete  ▦ pending  ○ locked)" ]
         <> go "" true 1
   where
-  n = Array.length st.leaves
-
-  status :: SlotId -> String
-  status slot = case slotStatus st slot of
+  glyph :: SlotId -> String
+  glyph slot = case statusOf slot of
     "complete" -> "✓"
     "pending" -> "▦"
     _ -> "○"
@@ -75,8 +89,19 @@ renderScanState blockId st =
     let
       branch = if isLast then "└─ " else "├─ "
       childIndent = indent <> (if isLast then "   " else "│  ")
-      self = indent <> branch <> status slot <> " " <> label slot
+      self = indent <> branch <> glyph slot <> " " <> label slot
     in
       if slot >= n then [ self ]
       else [ self ] <> go childIndent false (2 * slot) <> go childIndent true (2 * slot + 1)
 
+-- | Draw the tree from a live `ScanState` (status read off the proofs map).
+renderScanState :: forall d. BlockId -> ScanState d -> String
+renderScanState blockId st = renderTree blockId (Array.length st.leaves) (slotStatus st)
+
+-- | Draw the tree from a serializable `ScanView` (status looked up in its
+-- | per-slot array; an absent slot is treated as locked).
+renderScanView :: ScanView -> String
+renderScanView v = renderTree v.blockId v.leaves statusOf
+  where
+  bySlot = Map.fromFoldable (map (\s -> Tuple s.slot s.status) v.statuses)
+  statusOf slot = fromMaybe "locked" (Map.lookup slot bySlot)

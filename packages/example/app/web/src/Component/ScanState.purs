@@ -17,8 +17,8 @@ import Data.Maybe (Maybe(..), fromMaybe)
 import React.Basic (JSX)
 import React.Basic.DOM as R
 import React.Basic.DOM.SVG as SVG
+import Snarky.Example.Snark.Progress (ScanView)
 import Snarky.Example.Web.Component.Panel (emptyHint, panel)
-import Snarky.Example.Web.Engine (ScanView)
 
 scanStatePanel :: Maybe ScanView -> JSX
 scanStatePanel scan =

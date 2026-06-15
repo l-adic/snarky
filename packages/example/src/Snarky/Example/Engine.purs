@@ -1,16 +1,15 @@
--- | The browser engine: the SAME one-block pipeline as the terminal
--- | entry (`Snarky.Example.Main`) — SRS + compile, genesis, random
--- | transfers, base + merge proofs through the snark manager, root
--- | proof verification — but instead of a terminal display it emits
--- | typed events through `EngineCallbacks`. The worker entry
--- | (web/worker-entry.js) wires those callbacks to `postMessage`; the
--- | UI thread renders them.
+-- | The UI-agnostic simulation engine: the one-block pipeline — SRS +
+-- | compile, genesis, random transfers, base + merge proofs through the
+-- | snark manager, root-proof verification — emitting typed events through
+-- | `EngineCallbacks` instead of touching any UI.
 -- |
--- | Runs inside a Web Worker over the wasm kimchi backend: proving is
--- | synchronous, so it must never live on the UI thread.
-module Snarky.Example.Web.Engine
+-- | Both frontends drive the SAME `runSimulation`: the terminal-wasm entry
+-- | (`Snarky.Example.WasmMain`) wires the callbacks to stdout + the pinned
+-- | display; the browser worker (web/worker-entry.js) wires them to
+-- | `postMessage` and the UI thread renders them. Proving is synchronous, so
+-- | this must run off any UI thread (a process, or a worker).
+module Snarky.Example.Engine
   ( EngineCallbacks
-  , ScanView
   , TxView
   , runSimulation
   ) where
@@ -34,12 +33,12 @@ import Snarky.Example.Block (Block(..), processBlock)
 import Snarky.Example.Ledger (balanceOf)
 import Snarky.Example.Simulation (generateBlock, mkSimulation)
 import Snarky.Example.Snark.Manager (submitBlock)
-import Snarky.Example.Snark.Progress (scanStateView)
+import Snarky.Example.Snark.Progress (ScanView, scanStateView)
 import Snarky.Example.Snark.Worker (localSnarkBackend)
 import Snarky.Example.Transaction (SignedTransaction(..), Transaction(..), Transfer(..))
 import Snarky.Example.Types.PublicKey (toBase58Check)
 
--- | Ledger tree depth, matching the terminal entry.
+-- | Ledger tree depth (matches the native terminal entry).
 type Depth = 4
 
 type TxView = { hash :: String, nonce :: String, from :: String, to :: String, amount :: String }
@@ -54,12 +53,8 @@ txHash transaction =
   in
     toHexLe h
 
-type ScanView =
-  { blockId :: Int
-  , leaves :: Int
-  , statuses :: Array { slot :: Int, status :: String }
-  }
-
+-- | The UI-agnostic events the engine emits (all payloads serializable, so
+-- | they survive a worker `postMessage`).
 type EngineCallbacks =
   { onLog :: { severity :: String, text :: String } -> Effect Unit
   , onPhase :: String -> Effect Unit

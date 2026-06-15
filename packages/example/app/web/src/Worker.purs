@@ -13,7 +13,8 @@ import Prelude
 
 import Effect (Effect)
 import Foreign (Foreign, unsafeFromForeign)
-import Snarky.Example.Web.Engine (ScanView, TxView)
+import Snarky.Example.Engine (TxView)
+import Snarky.Example.Snark.Progress (ScanView)
 import Web.Worker.MessageEvent (data_)
 import Web.Worker.Worker (Worker, onError, onMessage, postMessage)
 

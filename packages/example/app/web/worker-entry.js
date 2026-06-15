@@ -61,7 +61,7 @@ self.onmessage = async (e) => {
         `crossOriginIsolated=${self.crossOriginIsolated})`,
     });
 
-    const { runSimulation } = await import("../output-es/Snarky.Example.Web.Engine/index.js");
+    const { runSimulation } = await import("../output-es/Snarky.Example.Engine/index.js");
     runSimulation({
       onLog: post("log"),
       onPhase: post("phase"),

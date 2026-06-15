@@ -1,7 +1,7 @@
 -- | Browser frontend for the example simulation: the same one-block
 -- | pipeline as the terminal TUI, rendered with react-basic. The
 -- | simulation runs in a Web Worker over the wasm kimchi backend
--- | (web/worker-entry.js -> Snarky.Example.Web.Engine); this module
+-- | (web/worker-entry.js -> Snarky.Example.Engine); this module
 -- | holds the UI state, subscribes to the worker's event stream, and
 -- | composes the section components —
 -- |
@@ -27,11 +27,12 @@ import React.Basic.DOM as R
 import React.Basic.DOM.Client (createRoot, renderRoot)
 import React.Basic.Hooks (Component, component, useState, useState')
 import React.Basic.Hooks as React
+import Snarky.Example.Engine (TxView)
+import Snarky.Example.Snark.Progress (ScanView)
 import Snarky.Example.Web.Component.Header (header)
 import Snarky.Example.Web.Component.Log (LogEntry, logPanel)
 import Snarky.Example.Web.Component.ScanState (scanStatePanel)
 import Snarky.Example.Web.Component.Transactions (transactionsPanel)
-import Snarky.Example.Web.Engine (ScanView, TxView)
 import Snarky.Example.Web.Worker (startEngine)
 import Web.DOM.NonElementParentNode (getElementById)
 import Web.HTML (window)
