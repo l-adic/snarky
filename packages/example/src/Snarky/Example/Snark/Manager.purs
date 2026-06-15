@@ -39,10 +39,11 @@ import Pickles (Verifier, toVerifiable, verify)
 import Snarky.Example.AsyncQueue (Queue, dequeue, enqueue, newQueue)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
+import Snarky.Example.Snark.Pool (localBackend, runPool)
 import Snarky.Example.Snark.ScanState (ScanState, SlotId)
 import Snarky.Example.Snark.ScanState as ScanState
 import Snarky.Example.Snark.Work (BaseJob, Proof, WorkItem)
-import Snarky.Example.Snark.Worker (runWorker)
+import Snarky.Example.Snark.Worker (proveItem)
 import Snarky.Example.Transaction (CompiledTx)
 
 type BlockId = Int
@@ -69,6 +70,13 @@ newtype Manager d = Manager
 service :: String
 service = "Snark Manager"
 
+-- | Worker count. `localBackend`'s prover is synchronous, so the pool runs jobs
+-- | one at a time no matter what this is — keep it at 1 (anything more just
+-- | spawns idle in-process workers). It becomes a real, injected parameter once
+-- | a parallel (worker-thread / web-worker) backend is wired in.
+poolSize :: Int
+poolSize = 1
+
 -- | Start a node from an already-compiled program (compile once via
 -- | `Snarky.Example.Env.mkEnv`; the manager never compiles): fork the worker
 -- | and the result listener over a fresh pair of channels. The worker is
@@ -85,7 +93,8 @@ mkManager { logger, onProgress } compiled = do
   blocks <- liftEffect $ Ref.new Map.empty
   let
     node = Manager { workQ, blocks, verifier: compiled.verifier, logger, onProgress }
-  _ <- forkAff $ runWorker logger compiled { next: dequeue workQ, post: enqueue resultQ }
+  _ <- forkAff $ runPool logger poolSize (localBackend (proveItem compiled))
+    { next: dequeue workQ, post: enqueue resultQ }
   _ <- forkAff $ listen node resultQ
   pure node
 
