@@ -10,7 +10,7 @@ import "./styles.css";
 import { mkClient, onEvent } from "../output-es/Snarky.Example.P2P.ProverClient/index.js";
 import { runLocal } from "../output-es/Snarky.Example.P2P.LocalDriver/index.js";
 import { startNode, Base, Merge } from "../output-es/Snarky.Example.P2P.Node/index.js";
-import { initIce } from "./p2p-rtc.js";
+import { initIce, probeTurn } from "./p2p-rtc.js";
 
 function hashParams() {
   const raw = location.hash.replace(/^#/, "");
@@ -234,10 +234,16 @@ async function startMesh(isBase) {
   document.getElementById("turn").disabled = true;
   if (document.getElementById("turn").value.trim()) addLog("info", "using custom TURN relay (plus the built-in relays)");
   if (tKind === "bc") addLog("info", "BroadcastChannel only connects tabs of the SAME browser — pick Trystero for different browsers/machines");
-  // WebRTC transports: fetch the Metered account's TURN credentials first.
+  // WebRTC transports: fetch the Metered account's TURN credentials first, then
+  // probe that a TURN relay is actually reachable with valid creds.
   if (tKind === "trystero" || tKind === "manual") {
     const n = await initIce();
     addLog("info", n > 0 ? "loaded " + n + " TURN relay(s) from the Metered account" : "no Metered key — using built-in public TURN relay");
+    probeTurn().then(({ relay, srflx }) => {
+      if (relay) addLog("info", "TURN reachable — got a relay candidate ✓ (works behind symmetric NAT)");
+      else if (srflx) addLog("warning", "no TURN relay candidate (STUN ok) — invalid creds or relay blocked; symmetric-NAT peers may fail");
+      else addLog("warning", "no relay/srflx candidate — network may block WebRTC");
+    });
   }
   const transport = await mkTransport(tKind, session);
   globalThis.__transport = transport; // for manual-SDP signaling / tests

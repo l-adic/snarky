@@ -43,6 +43,39 @@ export async function initIce() {
   return meteredIce.length;
 }
 
+// Verify the TURN config actually works: gather ICE candidates from a throwaway
+// peer connection and report whether a `relay` candidate appears (proves a TURN
+// server is reachable AND the credentials are valid) and/or a `srflx` one (STUN
+// reachable). Resolves early as soon as a relay candidate shows up.
+export function probeTurn(timeoutMs = 6000) {
+  return new Promise((resolve) => {
+    let relay = false, srflx = false, done = false;
+    let pc;
+    try {
+      pc = new RTCPeerConnection({ iceServers: iceServers() });
+    } catch {
+      resolve({ relay, srflx });
+      return;
+    }
+    const finish = () => {
+      if (done) return;
+      done = true;
+      try { pc.close(); } catch {}
+      resolve({ relay, srflx });
+    };
+    pc.onicecandidate = (e) => {
+      if (!e.candidate) return finish(); // null candidate = gathering complete
+      const c = e.candidate.candidate || "";
+      if (/ typ relay /.test(c)) relay = true;
+      else if (/ typ srflx /.test(c)) srflx = true;
+      if (relay) finish();
+    };
+    pc.createDataChannel("turn-probe");
+    pc.createOffer().then((o) => pc.setLocalDescription(o)).catch(finish);
+    setTimeout(finish, timeoutMs);
+  });
+}
+
 export function iceServers() {
   const servers = [
     { urls: "stun:stun.l.google.com:19302" },
