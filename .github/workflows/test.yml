@@ -277,6 +277,10 @@ jobs:
       run: npm run bundle -w example-app
       env:
         VITE_BASE: /snarky/
+        # Metered.ca TURN credentials-API key, injected at build time from a repo
+        # secret so it isn't committed. (On a public static deploy it still ends
+        # up in the shipped bundle — inherent to a client-side TURN call.)
+        VITE_METERED_API_KEY: ${{ secrets.METERED_API_KEY }}
         NODE_OPTIONS: "--max-old-space-size=8192"
 
     - name: Setup Pages

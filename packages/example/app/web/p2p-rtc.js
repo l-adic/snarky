@@ -5,16 +5,49 @@
 // us running infra. The relay only forwards DTLS-encrypted WebRTC packets, so
 // it cannot read the proofs that pass through it.
 //
-// CAVEAT: free public TURN (Metered's OpenRelay, static creds, no signup) is
-// rate-limited and may be slow or down at any time — if it's unreachable ICE
-// just ignores these candidates and falls back to direct/STUN. For something
-// reliable, set a keyed or self-hosted (coturn) server via
+// Primary TURN is a Metered.ca account (l-adic): initIce() fetches time-limited
+// ICE servers from its credentials API at startup. The OpenRelay free public
+// TURN below stays as a best-effort fallback (rate-limited, may be down). The
+// relay only forwards DTLS-encrypted WebRTC packets, so it can't read proofs.
+//
+// Per-user / self-hosted override (tried IN ADDITION to all of the above):
 //   localStorage["snarky-turn"] = JSON.stringify({urls, username, credential})
-// (an object or an array of them); it is tried IN ADDITION to the defaults.
+//   (an object, or an array of them).
+
+// --- Metered.ca account ---------------------------------------------------
+// The credentials API host is the account's *.metered.live domain (the relay
+// servers it returns are *.relay.metered.ca). The API key is injected at BUILD
+// time (VITE_METERED_API_KEY) so it is NOT committed to the repo; a per-browser
+// override is localStorage["snarky-metered-key"]. NOTE: on a PUBLIC static
+// deploy the key still ends up in the shipped bundle — that is inherent to a
+// client-side TURN credentials call, and Metered rate-limits it to your plan.
+const METERED_API = "https://l-adic.metered.live/api/v1/turn/credentials";
+function meteredKey() {
+  try { const k = localStorage.getItem("snarky-metered-key"); if (k) return k; } catch {}
+  try { return (import.meta.env && import.meta.env.VITE_METERED_API_KEY) || ""; } catch { return ""; }
+}
+
+let meteredIce = []; // populated by initIce()
+
+// Fetch the Metered account's ICE servers once, before any RTCPeerConnection is
+// built. Best-effort: on any failure we silently keep the public fallback.
+export async function initIce() {
+  const key = meteredKey();
+  if (!key) return 0;
+  try {
+    const r = await fetch(METERED_API + "?apiKey=" + encodeURIComponent(key));
+    if (!r.ok) return 0;
+    const list = await r.json();
+    if (Array.isArray(list) && list.length) meteredIce = list;
+  } catch {}
+  return meteredIce.length;
+}
+
 export function iceServers() {
   const servers = [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
+    ...meteredIce,
     { urls: "turn:staticauth.openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
     { urls: "turn:staticauth.openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
     { urls: "turn:staticauth.openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },

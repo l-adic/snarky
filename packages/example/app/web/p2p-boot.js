@@ -10,6 +10,7 @@ import "./styles.css";
 import { mkClient, onEvent } from "../output-es/Snarky.Example.P2P.ProverClient/index.js";
 import { runLocal } from "../output-es/Snarky.Example.P2P.LocalDriver/index.js";
 import { startNode, Base, Merge } from "../output-es/Snarky.Example.P2P.Node/index.js";
+import { initIce } from "./p2p-rtc.js";
 
 function hashParams() {
   const raw = location.hash.replace(/^#/, "");
@@ -231,8 +232,13 @@ async function startMesh(isBase) {
   document.getElementById("role-select").disabled = true;
   applyTurn(); // persist the TURN field BEFORE the transport builds its RTCPeerConnection
   document.getElementById("turn").disabled = true;
-  if (document.getElementById("turn").value.trim()) addLog("info", "using custom TURN relay (plus the built-in public one)");
+  if (document.getElementById("turn").value.trim()) addLog("info", "using custom TURN relay (plus the built-in relays)");
   if (tKind === "bc") addLog("info", "BroadcastChannel only connects tabs of the SAME browser — pick Trystero for different browsers/machines");
+  // WebRTC transports: fetch the Metered account's TURN credentials first.
+  if (tKind === "trystero" || tKind === "manual") {
+    const n = await initIce();
+    addLog("info", n > 0 ? "loaded " + n + " TURN relay(s) from the Metered account" : "no Metered key — using built-in public TURN relay");
+  }
   const transport = await mkTransport(tKind, session);
   globalThis.__transport = transport; // for manual-SDP signaling / tests
   addLog("info", "joined session '" + session + "' as " + transport.myId + " (" + startedRole + " prover) over " + tKind);
