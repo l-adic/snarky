@@ -56,6 +56,7 @@
             "merkle-tree",
             "newtype",
             "ordered-collections",
+            "parallel",
             "partial",
             "pickles",
             "prelude",

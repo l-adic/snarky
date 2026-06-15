@@ -4,7 +4,6 @@ module Snarky.Example.Types.Account
   ) where
 
 import Prelude
-import Simple.JSON (class ReadForeign, class WriteForeign)
 
 import Data.Generic.Rep (class Generic)
 import Data.Maybe (fromJust)
@@ -15,6 +14,7 @@ import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
+import Simple.JSON (class ReadForeign, class WriteForeign)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F(..), FVar, check, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Circuit.DSL as Sized
 import Snarky.Curves.Class (class FieldSizeInBits)

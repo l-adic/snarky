@@ -13,6 +13,7 @@ import Prelude
 
 import Colog (richMessageStdout)
 import Data.Foldable (for_)
+import Data.Int as Int
 import Data.Maybe (Maybe(..))
 import Effect (Effect)
 import Effect.Aff (launchAff_)
@@ -20,30 +21,57 @@ import Effect.Class (liftEffect)
 import Effect.Ref as Ref
 import Fmt (fmt)
 import Mina.ChainId (ChainId(..))
+import Node.Process (exit', lookupEnv)
 import Pickles (toVerifiable, verifyBatch)
 import Snarky.Example.Block (Block(..), processBlock)
 import Snarky.Example.Ledger (balanceOf)
+import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
 import Snarky.Example.Simulation (generateBlock, mkSimulation)
 import Snarky.Example.Snark.Manager (submitBlock)
-import Snarky.Example.Snark.Worker (localSnarkBackend)
+import Snarky.Example.Terminal.NodeBackend (nodeSnarkBackend)
 import Snarky.Example.Terminal.ProgressDisplay (mkProgressDisplay)
+import Snarky.Example.Terminal.WorkerLog (workerLogPath)
 import Snarky.Example.Transaction (SignedTransaction(..), Transaction(..), Transfer(..))
 
 -- | Ledger tree depth for the simulation (2^4 = 16 account slots).
 type Depth = 4
 
+-- | Worker-pool size when `SNARK_POOL_SIZE` is unset or invalid. An
+-- | 8-transaction block has 8 base proofs available at once; 4 worker threads
+-- | runs them in two waves, keeping peak memory ~halved versus one worker per
+-- | leaf. Raise `SNARK_POOL_SIZE` toward 8 for more parallelism if memory allows.
+defaultPoolSize :: Int
+defaultPoolSize = 4
+
+-- | Resolve the worker-pool size from `SNARK_POOL_SIZE` (a positive integer),
+-- | falling back to `defaultPoolSize` — and warning — when unset or invalid.
+resolvePoolSize :: Logger -> Effect Int
+resolvePoolSize logger =
+  lookupEnv "SNARK_POOL_SIZE" >>= case _ of
+    Nothing -> pure defaultPoolSize
+    Just s -> case Int.fromString s of
+      Just n | n >= 1 -> pure n
+      _ -> do
+        Log.logWarning logger $
+          fmt @"[Main] ignoring invalid SNARK_POOL_SIZE='{s}' (want a positive integer); using {d}"
+            { s, d: defaultPoolSize }
+        pure defaultPoolSize
+
 main :: Effect Unit
 main = launchAff_ do
   display <- liftEffect mkProgressDisplay
   let logger = display.wrapLogger richMessageStdout
+  poolSize <- liftEffect $ resolvePoolSize logger
+  Log.logInfo logger $ fmt @"[Main] worker setup logs → {path} (tail it to watch warmup)"
+    { path: workerLogPath }
   sim <- mkSimulation @Depth
     { chainId: Testnet
     , numAccounts: 10
     , logger
     , onProgress: Just display.reporter
-    , poolSize: 1
-    , backend: localSnarkBackend
+    , poolSize
+    , backend: nodeSnarkBackend
     }
 
   -- One block of random transfers against the current ledger.
@@ -68,3 +96,9 @@ main = launchAff_ do
 
   -- Persist the final frame of the progress display.
   liftEffect display.done
+
+  -- Each worker thread keeps a `parentPort` receiver attached, which holds the
+  -- node event loop open, so this one-shot demo exits explicitly once its
+  -- single block is done. (The pool and manager are long-lived by design — a
+  -- server processing many blocks would keep them, and the workers, running.)
+  liftEffect $ exit' 0

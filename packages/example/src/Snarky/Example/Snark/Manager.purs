@@ -94,7 +94,10 @@ mkManager { logger, onProgress, poolSize, backend } env = do
   let
     node = Manager { workQ, blocks, verifier: env.compiledTx.verifier, logger, onProgress }
   _ <- forkAff $ runPool logger poolSize (backend env)
-    { next: dequeue workQ, post: enqueue resultQ }
+    { next: dequeue workQ
+    , post: enqueue resultQ
+    , describe: \workId work -> ScanState.describe workId.slot work
+    }
   _ <- forkAff $ listen node resultQ
   pure node
 

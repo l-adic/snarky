@@ -6,16 +6,24 @@ package:
   name: example-simulation-terminal
   dependencies:
     - aff
+    - avar
     - colog
     - effect
+    - either
     - example
+    - exceptions
     - fmt
     - foldable-traversable
+    - integers
+    - maybe
+    - node-process
+    - node-workerbees
     - pickles
     - prelude
     - refs
     - run
     - schnorr
+    - tuples
     - variant
   build:
     strict: true

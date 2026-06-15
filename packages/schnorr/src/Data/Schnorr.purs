@@ -24,7 +24,6 @@ module Data.Schnorr
   ) where
 
 import Prelude
-import Simple.JSON (class ReadForeign, class WriteForeign)
 
 import Data.Foldable (foldl)
 import Data.Generic.Rep (class Generic)
@@ -37,6 +36,7 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
 import RandomOracle.Input as Input
 import RandomOracle.Sponge (absorb, create, squeeze) as Sponge
+import Simple.JSON (class ReadForeign, class WriteForeign)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, check, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Curves.Class (fromAffine, fromBigInt, generator, inverse, scalarMul, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas

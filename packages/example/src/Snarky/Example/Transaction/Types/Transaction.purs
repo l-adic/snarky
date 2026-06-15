@@ -3,7 +3,6 @@ module Snarky.Example.Transaction.Types.Transaction
   ) where
 
 import Prelude
-import Simple.JSON (class ReadForeign, class WriteForeign)
 
 import Data.Generic.Rep (class Generic)
 import Data.Newtype (class Newtype)
@@ -11,6 +10,7 @@ import Data.Tuple.Nested (Tuple2, tuple2, uncurry2)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
+import Simple.JSON (class ReadForeign, class WriteForeign)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F(..), FVar, check, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Circuit.RandomOracle (class Hashable)
 import Snarky.Curves.Class (class FieldSizeInBits)

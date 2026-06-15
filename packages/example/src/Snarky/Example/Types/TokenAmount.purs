@@ -6,7 +6,6 @@ module Snarky.Example.Types.TokenAmount
   ) where
 
 import Prelude
-import Simple.JSON (class ReadForeign, class WriteForeign)
 
 import Data.Generic.Rep (class Generic)
 import Data.Maybe (Maybe, fromJust)
@@ -17,6 +16,7 @@ import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
+import Simple.JSON (class ReadForeign, class WriteForeign)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, assertEqual_, const_, exists, fieldsToValue, fieldsToVar, fromField, read, scale_, sizeInFields, sub_, toField, valueToFields, varToFields)
 import Snarky.Circuit.Kimchi.RangeCheck (rangeCheck128)
 import Snarky.Circuit.RandomOracle (class Hashable)

@@ -18,6 +18,7 @@ module Snarky.Example.Snark.Pool
 import Prelude
 
 import Control.Monad.Rec.Class (forever)
+import Control.Parallel (parTraverse)
 import Data.Array (range)
 import Data.Foldable (for_)
 import Data.Tuple (Tuple(..))
@@ -30,9 +31,13 @@ import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
 
 -- | A discrete worker: runs ONE job at a time, in true parallel with its
--- | siblings. `run`'s `Aff` blocks until THIS worker finishes the job.
+-- | siblings. `run`'s `Aff` blocks until THIS worker finishes the job. `id`
+-- | identifies the worker in dispatch logs — for a real backend it should match
+-- | whatever the worker labels its own logs with (e.g. its OS thread id), so
+-- | the two log streams can be correlated.
 type Worker job result =
-  { run :: job -> Aff result
+  { id :: String
+  , run :: job -> Aff result
   , terminate :: Effect Unit
   }
 
@@ -49,7 +54,7 @@ type WorkerBackend job result =
 localBackend :: forall job result. (job -> Effect result) -> WorkerBackend job result
 localBackend process =
   { name: "in-process"
-  , spawn: pure { run: \job -> liftEffect (process job), terminate: pure unit }
+  , spawn: pure { id: "in-process", run: \job -> liftEffect (process job), terminate: pure unit }
   }
 
 -- | Spawn `size` workers and drive them over a `{ next, post }` work
@@ -60,23 +65,37 @@ localBackend process =
 -- | worker. So `next` and the free queue have a single consumer (the
 -- | dispatcher) while results and freed workers have many producers — the
 -- | channel discipline `AsyncQueue` requires.
+-- |
+-- | Workers are spawned concurrently (`parTraverse`), so a backend whose
+-- | `spawn` does expensive warmup — e.g. a worker thread building its own SRS
+-- | and compiling the circuit before it reports ready — pays that cost once in
+-- | parallel rather than `size`× serially. No work is dispatched until every
+-- | worker is ready.
+-- | `describe` renders a job (from its routing `id` and the work itself) for
+-- | the per-dispatch log that records which worker picked it up.
 runPool
   :: forall id job result
    . Logger
   -> Int
   -> WorkerBackend job result
-  -> { next :: Aff (Tuple id job), post :: Tuple id result -> Aff Unit }
+  -> { next :: Aff (Tuple id job)
+     , post :: Tuple id result -> Aff Unit
+     , describe :: id -> job -> String
+     }
   -> Aff Unit
 runPool logger size backend io = do
   free <- newQueue
-  for_ (range 1 size) \_ -> do
-    w <- backend.spawn
-    enqueue free w
-  Log.logInfo logger $ fmt @"[Worker Pool] initialized: {size} {name} worker(s)"
+  Log.logInfo logger $ fmt @"[Worker Pool] warming up {size} {name} worker(s)…"
+    { size, name: backend.name }
+  workers <- parTraverse (\_ -> backend.spawn) (range 1 size)
+  for_ workers (enqueue free)
+  Log.logInfo logger $ fmt @"[Worker Pool] ready: {size} {name} worker(s)"
     { size, name: backend.name }
   forever do
     Tuple id job <- io.next
     worker <- dequeue free
+    Log.logInfo logger $ fmt @"[Worker Pool] {what} → worker {w}"
+      { what: io.describe id job, w: worker.id }
     forkAff $ finally (enqueue free worker) do
       result <- worker.run job
       io.post (Tuple id result)

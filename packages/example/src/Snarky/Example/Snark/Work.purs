@@ -72,9 +72,9 @@ encodeMergeJob j = writeJSON
 decodeMergeJob :: WidthDummies -> String -> Either MultipleErrors MergeJob
 decodeMergeJob dummies s = do
   w <-
-    readJSON s ::
-      Either MultipleErrors
-        { proof1 :: String, proof2 :: String, statement :: Statement Vesta.ScalarField }
+    readJSON s
+      :: Either MultipleErrors
+           { proof1 :: String, proof2 :: String, statement :: Statement Vesta.ScalarField }
   proof1 <- decodeCompiledProof dummies w.proof1
   proof2 <- decodeCompiledProof dummies w.proof2
   pure { proof1, proof2, statement: w.statement }
