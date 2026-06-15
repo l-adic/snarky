@@ -1,15 +1,29 @@
 // Shared WebRTC helpers for the manual-SDP and Trystero transports.
 //
-// ICE: public STUN by default; a TURN relay can be injected via
-// localStorage["snarky-turn"] = JSON.stringify({urls,username,credential})
-// for peers behind symmetric NAT (the static-site stays infra-free by default).
+// ICE: public STUN, plus a best-effort free public TURN relay so peers behind
+// symmetric NAT / CGNAT (common on mobile networks) can still connect without
+// us running infra. The relay only forwards DTLS-encrypted WebRTC packets, so
+// it cannot read the proofs that pass through it.
+//
+// CAVEAT: free public TURN (Metered's OpenRelay, static creds, no signup) is
+// rate-limited and may be slow or down at any time — if it's unreachable ICE
+// just ignores these candidates and falls back to direct/STUN. For something
+// reliable, set a keyed or self-hosted (coturn) server via
+//   localStorage["snarky-turn"] = JSON.stringify({urls, username, credential})
+// (an object or an array of them); it is tried IN ADDITION to the defaults.
 export function iceServers() {
-  const stun = [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }];
+  const servers = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "turn:staticauth.openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+    { urls: "turn:staticauth.openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+    { urls: "turn:staticauth.openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
+  ];
   try {
     const turn = JSON.parse(localStorage.getItem("snarky-turn") || "null");
-    if (turn) return stun.concat(Array.isArray(turn) ? turn : [turn]);
+    if (turn) return (Array.isArray(turn) ? turn : [turn]).concat(servers);
   } catch {}
-  return stun;
+  return servers;
 }
 
 // Data-channel chunking: a single proof wire can exceed the safe ~256KB SCTP
