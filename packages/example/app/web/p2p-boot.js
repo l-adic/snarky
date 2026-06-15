@@ -191,7 +191,7 @@ async function startMesh(isBase) {
   if (tKind === "bc") addLog("info", "BroadcastChannel only connects tabs of the SAME browser — pick Trystero for different browsers/machines");
   const transport = await mkTransport(tKind, session);
   globalThis.__transport = transport; // for manual-SDP signaling / tests
-  addLog("info", "joined session '" + session + "' as " + transport.myId + " over " + tKind);
+  addLog("info", "joined session '" + session + "' as " + transport.myId + " (" + startedRole + " prover) over " + tKind);
   const handle = startNode({ transport, client, mode: isBase ? Base : Merge, log, onScan })();
   globalThis.__node = handle; // for tests / manual stepping
   const next = document.getElementById("next");

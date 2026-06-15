@@ -16,8 +16,9 @@ import Foreign (ForeignError(..), MultipleErrors)
 import Simple.JSON (readJSON, writeJSON)
 
 data Msg
-  -- announce presence: peer id, build fingerprint, and the proof keys I hold
-  = Hello { peerId :: String, fingerprint :: String, haveKeys :: Array String }
+  -- announce presence: peer id, role ("base"/"merge"), build fingerprint, and
+  -- the proof keys I hold
+  = Hello { peerId :: String, role :: String, fingerprint :: String, haveKeys :: Array String }
   -- one block's structure (leaf statements). Many blocks may coexist in a
   -- session (one per base prover); a block is identified by its root key.
   | BlockAnnounce { n :: Int, leafStmts :: Array { slot :: Int, stmt :: String } }

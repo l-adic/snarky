@@ -50,6 +50,11 @@ foreign import nowMs :: Effect Number
 
 data Mode = Base | Merge
 
+modeStr :: Mode -> String
+modeStr = case _ of
+  Base -> "base"
+  Merge -> "merge"
+
 -- | A block as this peer tracks it: its public shape + derived DAG.
 type Block = { meta :: BlockMeta, dag :: DagView }
 
@@ -152,14 +157,14 @@ helloAll :: St -> Effect Unit
 helloAll st = do
   keys <- localKeys st
   fp <- Ref.read st.fingerprint
-  T.broadcast st.cfg.transport (encodeMsg (Hello { peerId: st.myId, fingerprint: fp, haveKeys: keys }))
+  T.broadcast st.cfg.transport (encodeMsg (Hello { peerId: st.myId, role: modeStr st.cfg.mode, fingerprint: fp, haveKeys: keys }))
 
 -- | Greet a newly-connected peer: Hello + every block we know + our Haves.
 greet :: St -> String -> Effect Unit
 greet st peer = do
   fp <- Ref.read st.fingerprint
   keys <- localKeys st
-  T.sendTo st.cfg.transport peer (encodeMsg (Hello { peerId: st.myId, fingerprint: fp, haveKeys: keys }))
+  T.sendTo st.cfg.transport peer (encodeMsg (Hello { peerId: st.myId, role: modeStr st.cfg.mode, fingerprint: fp, haveKeys: keys }))
   bs <- Ref.read st.blocks
   for_ (Map.values bs) \b -> T.sendTo st.cfg.transport peer (encodeMsg (BlockAnnounce b.meta))
   for_ keys \k -> do
@@ -276,6 +281,7 @@ handleRaw st from raw = case decodeMsg raw of
 handle :: St -> String -> Msg -> Effect Unit
 handle st from = case _ of
   Hello h -> do
+    log_ st "info" ("peer " <> h.peerId <> " is a " <> h.role <> " prover")
     fp <- Ref.read st.fingerprint
     when (fp /= "" && h.fingerprint /= "" && fp /= h.fingerprint) do
       log_ st "warning" ("peer " <> h.peerId <> " has a different build fingerprint — ignoring (reload to the same version)")
