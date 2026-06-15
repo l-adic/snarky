@@ -6,6 +6,7 @@ package:
     - avar
     - colog
     - curves
+    - datetime
     - effect
     - either
     - exceptions
@@ -17,6 +18,7 @@ package:
     - merkle-tree
     - newtype
     - ordered-collections
+    - parallel
     - partial
     - pickles
     - prelude

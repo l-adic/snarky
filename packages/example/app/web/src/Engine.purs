@@ -19,6 +19,7 @@ import Prelude
 
 import Colog (LogAction(..), Msg(..), Severity(..))
 import Data.Maybe (Maybe(..))
+import Data.Time.Duration (Milliseconds(..))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Aff (launchAff_)
@@ -34,6 +35,7 @@ import Snarky.Example.Ledger (balanceOf)
 import Snarky.Example.Simulation (generateBlock, mkSimulation)
 import Snarky.Example.Snark.Manager (submitBlock)
 import Snarky.Example.Snark.Progress (scanStateView)
+import Snarky.Example.Snark.Worker (localSnarkBackend)
 import Snarky.Example.Transaction (SignedTransaction(..), Transaction(..), Transfer(..))
 import Snarky.Example.Types.PublicKey (toBase58Check)
 
@@ -86,7 +88,15 @@ runSimulation cb = launchAff_ do
 
   liftEffect $ cb.onPhase "setup"
   sim <- mkSimulation @Depth
-    { chainId: Testnet, numAccounts: 10, logger, onProgress: Just onProgress }
+    { chainId: Testnet
+    , numAccounts: 10
+    , logger
+    , onProgress: Just onProgress
+    , poolSize: 1
+    -- Unused by the in-process backend (its synchronous run never times out).
+    , jobTimeout: Milliseconds 120000.0
+    , backend: localSnarkBackend
+    }
 
   liftEffect $ cb.onPhase "block"
   ledger0 <- liftEffect $ Ref.read sim.env.ledger

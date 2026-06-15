@@ -47,6 +47,7 @@ import Effect.Ref as Ref
 import Mina.ChainId (ChainId, signaturePrefix)
 import Pickles (BranchProver(..), Compiled, CompiledProof, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots2, StatementIO(..), Verifier, compileMulti, mkRuleEntry)
 import Pickles.Step.Main (RuleOutput)
+import Simple.JSON (class ReadForeign, class WriteForeign)
 import Snarky.Backend.Advice (badAdvice)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, AsProver, FVar, Snarky, add_, assertEq, assert_, check, const_, exists, fieldsToValue, fieldsToVar, liftAdvice, not_, read, sizeInFields, true_, unpack_, valueToFields, varToFields)
@@ -55,6 +56,7 @@ import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Circuit.Schnorr (Signature(..), verifies)
 import Snarky.Circuit.Schnorr.Shifted as Shifted
+import Snarky.Circuit.Types (NoOutput(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
@@ -73,6 +75,9 @@ newtype Statement f = Statement
   { source :: Digest f
   , target :: Digest f
   }
+
+derive newtype instance WriteForeign f => WriteForeign (Statement f)
+derive newtype instance ReadForeign f => ReadForeign (Statement f)
 
 -- | `Statement`'s circuit representation is just its two `Digest` fields,
 -- | so both instances mediate through the existing `Tuple` instances:
@@ -119,7 +124,7 @@ baseRule
        Vesta.ScalarField
        (KimchiConstraint Vesta.ScalarField)
        (TxAdviceRow d r)
-       (RuleOutput 0 (Statement (FVar Vesta.ScalarField)) Unit)
+       (RuleOutput 0 (Statement (FVar Vesta.ScalarField)) NoOutput)
 baseRule chainId _ (Statement { source, target }) = do
   tx <- exists (liftAdvice getCurrentTransaction)
   computedTarget <- applyTxChecked @d chainId source tx
@@ -127,7 +132,7 @@ baseRule chainId _ (Statement { source, target }) = do
   pure
     { prevPublicInputs: Vector.nil
     , proofMustVerify: Vector.nil
-    , publicOutput: unit
+    , publicOutput: NoOutput
     }
 
 -- | Merge rule (mpv = 2, Self-recursive). Verifies two proofs of THIS
@@ -137,15 +142,15 @@ mergeRule
   :: forall r
    . AsProver Vesta.ScalarField r
        ( Tuple2
-           (StatementIO (Statement Vesta.ScalarField) Unit)
-           (StatementIO (Statement Vesta.ScalarField) Unit)
+           (StatementIO (Statement Vesta.ScalarField) NoOutput)
+           (StatementIO (Statement Vesta.ScalarField) NoOutput)
        )
   -> Statement (FVar Vesta.ScalarField)
   -> Snarky
        Vesta.ScalarField
        (KimchiConstraint Vesta.ScalarField)
        r
-       (RuleOutput 2 (Statement (FVar Vesta.ScalarField)) Unit)
+       (RuleOutput 2 (Statement (FVar Vesta.ScalarField)) NoOutput)
 mergeRule getPrevStates (Statement { source, target }) = do
   -- The two sub-statements are the verified prev proofs' public inputs;
   -- witness them from the deferred prev-states getter.
@@ -160,7 +165,7 @@ mergeRule getPrevStates (Statement { source, target }) = do
   pure
     { prevPublicInputs: s1 :< s2 :< Vector.nil
     , proofMustVerify: true_ :< true_ :< Vector.nil
-    , publicOutput: unit
+    , publicOutput: NoOutput
     }
 
 --------------------------------------------------------------------------------
@@ -239,7 +244,7 @@ applyTxChecked chainId root (SignedTransaction { signature, transaction }) = do
 
   pure root''
 
-type TxnStmt = StatementIO (Statement Vesta.ScalarField) Unit
+type TxnStmt = StatementIO (Statement Vesta.ScalarField) NoOutput
 
 -- | The two-branch program. Branch 0 (base) has no prev slots; branch 1
 -- | (merge) has two `Self` slots, each width 2 (a proof of THIS mpv=2
@@ -289,7 +294,7 @@ compileTxCircuit chainId srs = do
   baseEntry <-
     mkRuleEntry
       @2
-      @Unit
+      @NoOutput
       @(Statement Vesta.ScalarField)
       @1
       @1
@@ -299,7 +304,7 @@ compileTxCircuit chainId srs = do
   mergeEntry <-
     mkRuleEntry
       @2
-      @Unit
+      @NoOutput
       @(Statement Vesta.ScalarField)
       @1
       @1
@@ -312,7 +317,7 @@ compileTxCircuit chainId srs = do
   out <-
     compileMulti
       @TxnSnarkRules
-      @Unit
+      @NoOutput
       @(Statement Vesta.ScalarField)
       @(Slots2 2 2)
       @1

@@ -24,6 +24,7 @@ package:
     - curves
     - exceptions
     - foldable-traversable
+    - foreign
     - js-bigints
     - lists
     - maybe
@@ -35,6 +36,7 @@ package:
     - random-oracle
     - run
     - safe-coerce
+    - simple-json
     - snarky
     - snarky-kimchi
     - tuples

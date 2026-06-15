@@ -9,6 +9,7 @@ import Data.Newtype (class Newtype)
 import Data.Schnorr (Signature)
 import Data.Tuple.Nested (Tuple2, tuple2, uncurry2)
 import Safe.Coerce (coerce)
+import Simple.JSON (class ReadForeign, class WriteForeign)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F(..), FVar, check, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Example.Transaction.Types.Transaction (Transaction)
 import Snarky.Example.Types.TokenAmount (TokenAmount)
@@ -25,6 +26,8 @@ newtype SignedTransaction f = SignedTransaction
 derive instance Newtype (SignedTransaction f) _
 derive instance Generic (SignedTransaction f) _
 derive newtype instance Show f => Show (SignedTransaction f)
+derive newtype instance WriteForeign f => WriteForeign (SignedTransaction f)
+derive newtype instance ReadForeign f => ReadForeign (SignedTransaction f)
 derive instance Eq f => Eq (SignedTransaction f)
 
 instance CircuitType f (SignedTransaction f) (SignedTransaction (FVar f)) where

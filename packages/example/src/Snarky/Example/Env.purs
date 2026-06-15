@@ -66,6 +66,10 @@ type Env d =
   , compiledTx :: CompiledTx d
   , ledger :: Ref (Ledger d)
   , logger :: Logger
+  -- Carried for decoding transported proofs: `decodeCompiledProof` takes the
+  -- SRSes directly (it builds the reconstruction dummies internally).
+  , pallasSrs :: CRS PallasG
+  , vestaSrs :: CRS VestaG
   }
 
 mkEnv
@@ -79,4 +83,4 @@ mkEnv logger cfg = do
   Log.logDebug logger "Compiling TxCircuit..."
   compiledTx <- compileTxCircuit cfg.chainId { pallasSrs: cfg.pallasSrs, vestaSrs: cfg.vestaSrs }
   Log.logDebug logger "Compiled TxCircuit"
-  pure { ledger, compiledTx, chainId: cfg.chainId, logger }
+  pure { ledger, compiledTx, chainId: cfg.chainId, logger, pallasSrs: cfg.pallasSrs, vestaSrs: cfg.vestaSrs }

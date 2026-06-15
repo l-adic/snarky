@@ -16,6 +16,7 @@ import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
+import Simple.JSON (class ReadForeign, class WriteForeign)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, assertEqual_, const_, exists, fieldsToValue, fieldsToVar, fromField, read, scale_, sizeInFields, sub_, toField, valueToFields, varToFields)
 import Snarky.Circuit.Kimchi.RangeCheck (rangeCheck128)
 import Snarky.Circuit.RandomOracle (class Hashable)
@@ -31,6 +32,8 @@ newtype TokenAmount f = TokenAmount (SizedF 128 f)
 derive instance Newtype (TokenAmount f) _
 derive instance Generic (TokenAmount f) _
 derive newtype instance Show f => Show (TokenAmount f)
+derive newtype instance WriteForeign f => WriteForeign (TokenAmount f)
+derive newtype instance ReadForeign f => ReadForeign (TokenAmount f)
 derive newtype instance Eq f => Eq (TokenAmount f)
 derive newtype instance (FieldSizeInBits f n, Compare 128 n LT, Arbitrary f) => Arbitrary (TokenAmount f)
 

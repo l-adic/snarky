@@ -21,10 +21,12 @@ module Test.Snarky.Example.TransactionSnark
 
 import Prelude
 
+import Data.Either (Either(..))
 import Data.MerkleTree.Sparse as Sparse
 import Data.MerkleTree.Sparse.Mask (fromSubset)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import Effect.Exception (throw)
 import Pickles (CompiledProof, toVerifiable, verifyBatch)
 import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Curves.Vesta as Vesta
@@ -32,6 +34,7 @@ import Snarky.Example.Env (Env)
 import Snarky.Example.Ledger (Ledger)
 import Snarky.Example.Log as Log
 import Snarky.Example.Simulation (genGenesisLedger, genValidSignedTransaction)
+import Snarky.Example.Snark.Work (BaseJob, decodeBaseJob, decodeMergeJob, encodeBaseJob, encodeMergeJob)
 import Snarky.Example.Transaction (SignedTransaction, Statement(..), TxnStmt, applyTx, touchedAccounts)
 import Test.QuickCheck.Gen (randomSampleOne)
 import Test.Snarky.Example.Config (Depth)
@@ -58,11 +61,16 @@ spec =
           -> SignedTransaction Vesta.ScalarField
           -> Statement Vesta.ScalarField
           -> Aff (CompiledProof 2 TxnStmt)
-        runBase l tx statement =
+        runBase l tx statement = do
+          -- Round-trip the base job (tx + witness mask + statement) through the
+          -- transport codec first, then prove from the DECODED job — so the
+          -- proof succeeds only if the mask codec is byte-faithful.
+          let job = { tx, mask: fromSubset l.tree (touchedAccounts l tx), statement } :: BaseJob Depth
+          job' <- case decodeBaseJob (encodeBaseJob job) of
+            Left e -> liftEffect $ throw ("decodeBaseJob: " <> show e)
+            Right j -> pure j
           liftEffect $ baseProver
-            { env: { mask: fromSubset l.tree (touchedAccounts l tx), tx }
-            , statement
-            }
+            { env: { mask: job'.mask, tx: job'.tx }, statement: job'.statement }
 
       Log.logInfo env.logger "[TxnSnark] proving base0…"
 
@@ -90,6 +98,12 @@ spec =
       -- merge(b0, b1): connects L0 → L1 → L2 into one L0 → L2 statement.
       Log.logInfo env.logger "[TxnSnark] proving merge…"
       let mergedStmt = Statement { source: source0, target: target1 }
-      merge <- liftEffect $ mergeProver { proof1: b0, proof2: b1, statement: mergedStmt }
-      Log.logInfo env.logger "[TxnSnark] merge proved; batch-verifying full chain…"
+      -- Round-trip the merge job through the transport codec first: the merge
+      -- proves from the DECODED child proofs, so it succeeds only if
+      -- encode/decode is byte-faithful.
+      mergeJob <- case decodeMergeJob env (encodeMergeJob { proof1: b0, proof2: b1, statement: mergedStmt }) of
+        Left e -> liftEffect $ throw ("decodeMergeJob: " <> show e)
+        Right j -> pure j
+      merge <- liftEffect $ mergeProver mergeJob
+      Log.logInfo env.logger "[TxnSnark] merge proved (from round-tripped job); batch-verifying full chain…"
       verifyBatch verifier (map toVerifiable [ b0, b1, merge ]) `shouldEqual` true

@@ -10,6 +10,7 @@ import Data.Tuple.Nested (Tuple2, tuple2, uncurry2)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
+import Simple.JSON (class ReadForeign, class WriteForeign)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F(..), FVar, check, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Circuit.RandomOracle (class Hashable)
 import Snarky.Curves.Class (class FieldSizeInBits)
@@ -30,6 +31,8 @@ newtype Transaction f = Transaction
 derive instance Newtype (Transaction f) _
 derive instance Generic (Transaction f) _
 derive newtype instance Show f => Show (Transaction f)
+derive newtype instance WriteForeign f => WriteForeign (Transaction f)
+derive newtype instance ReadForeign f => ReadForeign (Transaction f)
 derive instance Eq f => Eq (Transaction f)
 derive newtype instance (FieldSizeInBits f n, Compare 128 n LT, Arbitrary f) => Arbitrary (Transaction f)
 

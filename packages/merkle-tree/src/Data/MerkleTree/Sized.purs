@@ -26,7 +26,7 @@ import Data.Foldable (length)
 import Data.FoldableWithIndex (foldlWithIndex)
 import Data.Generic.Rep (class Generic)
 import Data.List (List)
-import Data.Maybe (Maybe(..), fromJust)
+import Data.Maybe (Maybe(..), fromJust, maybe)
 import Data.MerkleTree (FreeHash)
 import Data.MerkleTree as MT
 import Data.MerkleTree.Hashable (class HashInput, class Hashable, class MergeHash, class MerkleHashable, FreeHash(..), defaultHash, hashCircuit, hashInput, hashLeaf, merge, mergeCircuit, toHashInput) as ReExports
@@ -37,10 +37,12 @@ import Data.Unfoldable (class Unfoldable)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
+import Foreign (ForeignError(..), fail)
 import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
+import Simple.JSON (class ReadForeign, class WriteForeign, readImpl, writeImpl)
 import Snarky.Circuit.DSL (class BasicSystem, class CheckedType, class CircuitType, Bool(..), BoolVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Curves.Class (class PrimeField, toBigInt)
 import Type.Proxy (Proxy(..))
@@ -98,6 +100,15 @@ addMany _tree@(MerkleTree mt@(MT.MerkleTree t)) xs =
       MerkleTree $ MT.addMany mt xs
 
 newtype Address (d :: Int) = Address BigInt
+
+-- A leaf index; `BigInt` has no simple-json instance, so encode as a string.
+instance WriteForeign (Address d) where
+  writeImpl (Address n) = writeImpl (BigInt.toString n)
+
+instance ReadForeign (Address d) where
+  readImpl f = do
+    s <- readImpl f
+    maybe (fail (ForeignError "Address: invalid BigInt")) (pure <<< Address) (BigInt.fromString s)
 
 newtype AddressVar d f = AddressVar (Vector d (BoolVar f))
 

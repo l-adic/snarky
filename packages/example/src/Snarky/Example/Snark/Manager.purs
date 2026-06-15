@@ -26,6 +26,7 @@ import Data.Foldable (for_)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
+import Data.Time.Duration (Milliseconds)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Aff (Aff, forkAff)
@@ -37,13 +38,14 @@ import Effect.Ref as Ref
 import Fmt (fmt)
 import Pickles (Verifier, toVerifiable, verify)
 import Snarky.Example.AsyncQueue (Queue, dequeue, enqueue, newQueue)
+import Snarky.Example.Env (Env)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
+import Snarky.Example.Snark.Pool (runPool)
 import Snarky.Example.Snark.ScanState (ScanState, SlotId)
 import Snarky.Example.Snark.ScanState as ScanState
 import Snarky.Example.Snark.Work (BaseJob, Proof, WorkItem)
-import Snarky.Example.Snark.Worker (runWorker)
-import Snarky.Example.Transaction (CompiledTx)
+import Snarky.Example.Snark.Worker (SnarkBackend)
 
 type BlockId = Int
 
@@ -69,23 +71,37 @@ newtype Manager d = Manager
 service :: String
 service = "Snark Manager"
 
--- | Start a node from an already-compiled program (compile once via
--- | `Snarky.Example.Env.mkEnv`; the manager never compiles): fork the worker
--- | and the result listener over a fresh pair of channels. The worker is
--- | handed the same `CompiledTx` as its init input — that hand-off is the
--- | externalization seam (a remote worker would compile its own).
+-- | Start a node from an already-built `Env` (SRS + compiled program, produced
+-- | once via `Snarky.Example.Env.mkEnv`; the manager never compiles): fork the
+-- | worker pool and the result listener over a fresh pair of channels.
+-- |
+-- | The work backend is injected (`Snarky.Example.Snark.Worker.SnarkBackend`),
+-- | along with the worker count `poolSize`: `localSnarkBackend` runs the
+-- | synchronous prover in-process (so `poolSize` is plumbing-only there), while
+-- | a parallel backend (node thread / web worker) makes `poolSize` a real knob.
+-- | `jobTimeout` bounds how long the pool waits for a worker before reassigning
+-- | a job to another (see `Snarky.Example.Snark.Pool.runPool`).
 mkManager
   :: forall d
-   . { logger :: Logger, onProgress :: Maybe (OnProgress d) }
-  -> CompiledTx d
+   . { logger :: Logger
+     , onProgress :: Maybe (OnProgress d)
+     , poolSize :: Int
+     , jobTimeout :: Milliseconds
+     , backend :: SnarkBackend d
+     }
+  -> Env d
   -> Aff (Manager d)
-mkManager { logger, onProgress } compiled = do
+mkManager { logger, onProgress, poolSize, jobTimeout, backend } env = do
   workQ <- newQueue
   resultQ <- newQueue
   blocks <- liftEffect $ Ref.new Map.empty
   let
-    node = Manager { workQ, blocks, verifier: compiled.verifier, logger, onProgress }
-  _ <- forkAff $ runWorker logger compiled { next: dequeue workQ, post: enqueue resultQ }
+    node = Manager { workQ, blocks, verifier: env.compiledTx.verifier, logger, onProgress }
+  _ <- forkAff $ runPool logger jobTimeout poolSize (backend env)
+    { next: dequeue workQ
+    , post: enqueue resultQ
+    , describe: \workId work -> ScanState.describe workId.slot work
+    }
   _ <- forkAff $ listen node resultQ
   pure node
 

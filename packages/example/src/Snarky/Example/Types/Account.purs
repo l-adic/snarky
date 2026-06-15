@@ -14,6 +14,7 @@ import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
+import Simple.JSON (class ReadForeign, class WriteForeign)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F(..), FVar, check, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Circuit.DSL as Sized
 import Snarky.Curves.Class (class FieldSizeInBits)
@@ -35,6 +36,8 @@ newtype Account f = Account
 derive instance Newtype (Account f) _
 derive instance Generic (Account f) _
 derive newtype instance Show f => Show (Account f)
+derive newtype instance WriteForeign f => WriteForeign (Account f)
+derive newtype instance ReadForeign f => ReadForeign (Account f)
 derive instance Eq f => Eq (Account f)
 derive newtype instance (FieldSizeInBits f n, Compare 128 n LT, Arbitrary f) => Arbitrary (Account f)
 

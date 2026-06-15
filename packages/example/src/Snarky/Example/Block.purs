@@ -21,7 +21,7 @@ import Snarky.Example.Transaction (SignedTransaction, Statement(..), applyTx)
 import Snarky.Example.Transaction.Unchecked (touchedAccounts)
 
 newtype Block = Block
-  { transactions :: Vector 4 (SignedTransaction Vesta.ScalarField)
+  { transactions :: Vector 8 (SignedTransaction Vesta.ScalarField)
   }
 
 type TxSnarkWork d =
