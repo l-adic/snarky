@@ -21,16 +21,30 @@
 # proof verification. Expect ~10 minutes.
 #
 # Usage:
-#   tools/run_simulation.sh            # plain run
-#   tools/run_simulation.sh --split    # split-screen with the worker log
+#   tools/run_simulation.sh [options]
 #
-# With --split, the run opens in a throwaway tmux session: the simulation
-# on top, a live `tail -F` of the snark worker setup log
-# (snark-worker.log) below it. The log is truncated fresh at the START
-# of each run and is NEVER deleted at the end — so after the run you can
-# scroll it (tmux copy-mode: prefix + [) and inspect it on disk. When you
-# are done, press Enter in the simulation pane to throw the session away;
-# the log file stays. Any other args are passed through to the simulation.
+# Options:
+#   --split               Split-screen: simulation on top, a live tail of the
+#                         worker setup log (snark-worker.log) below it, in a
+#                         throwaway tmux session. The log is truncated fresh at
+#                         the START of each run and NEVER deleted at the end, so
+#                         you can scroll it (tmux copy-mode: prefix + [) and
+#                         inspect it on disk afterward. Press Enter in the sim
+#                         pane to throw the session away; the log file stays.
+#
+#   --pool-size N         worker threads                  (env SNARK_POOL_SIZE)
+#   --job-timeout S       per-job timeout, seconds        (env SNARK_JOB_TIMEOUT_S)
+#
+#   Fault injection (for exercising the pool's reliability paths):
+#   --delay-ms MS         stall a job MS ms before proving (env SNARK_WORKER_DELAY_MS)
+#   --delay-pct PCT       % of jobs to stall, default 50   (env SNARK_WORKER_DELAY_PCT)
+#   --crash-pct PCT       % of jobs that crash the worker  (env SNARK_WORKER_CRASH_PCT)
+#
+# The config/fault flags just set the corresponding env vars for the run (and
+# are passed through to the worker threads), so e.g.
+#   tools/run_simulation.sh --split --job-timeout 10 --delay-ms 20000 --delay-pct 40
+# stalls ~40% of jobs for 20s against a 10s timeout, so the pool times out and
+# reassigns them. Any other args pass through to the simulation.
 
 set -e
 
@@ -38,14 +52,26 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SIM_DIR="$REPO_ROOT/packages/example/app"
 WORKER_LOG="$REPO_ROOT/snark-worker.log"
 
-# Pull our own --split flag out of the args; everything else is passed
-# through to the simulation entrypoint.
+usage() { sed -n '23,48p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+
+# A value-taking flag needs its argument.
+need() { [ -n "$2" ] || { echo "error: $1 needs a value" >&2; exit 1; }; }
+
+# Pull our own flags out of the args. Config/fault flags become env-var
+# assignments (ENVV); everything else passes through to the simulation.
 SPLIT=0
+ENVV=()
 ARGS=()
-for arg in "$@"; do
-  case "$arg" in
-    --split) SPLIT=1 ;;
-    *) ARGS+=("$arg") ;;
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --split) SPLIT=1; shift ;;
+    --pool-size) need "$1" "${2:-}"; ENVV+=("SNARK_POOL_SIZE=$2"); shift 2 ;;
+    --job-timeout) need "$1" "${2:-}"; ENVV+=("SNARK_JOB_TIMEOUT_S=$2"); shift 2 ;;
+    --delay-ms) need "$1" "${2:-}"; ENVV+=("SNARK_WORKER_DELAY_MS=$2"); shift 2 ;;
+    --delay-pct) need "$1" "${2:-}"; ENVV+=("SNARK_WORKER_DELAY_PCT=$2"); shift 2 ;;
+    --crash-pct) need "$1" "${2:-}"; ENVV+=("SNARK_WORKER_CRASH_PCT=$2"); shift 2 ;;
+    -h | --help) usage; exit 0 ;;
+    *) ARGS+=("$1"); shift ;;
   esac
 done
 
@@ -60,9 +86,11 @@ echo "==> Building example frontends workspace (purs-backend-es -> output-es/) .
 # resolves from the root node_modules.
 cd "$REPO_ROOT"
 
+[ ${#ENVV[@]} -eq 0 ] || echo "==> config: ${ENVV[*]}"
+
 if [ "$SPLIT" -eq 0 ]; then
   echo "==> Running optimized Snarky.Example.Main ..."
-  exec node packages/example/app/terminal/run.mjs "${ARGS[@]}"
+  exec env "${ENVV[@]}" node packages/example/app/terminal/run.mjs "${ARGS[@]}"
 fi
 
 if ! command -v tmux >/dev/null 2>&1; then
@@ -74,7 +102,10 @@ fi
 : > "$WORKER_LOG"
 
 SESSION="snark-sim-$$"
-SIM_CMD="node packages/example/app/terminal/run.mjs ${ARGS[*]}"
+# Pass the env-var assignments explicitly into the pane: a tmux pane inherits
+# the tmux server's environment, not necessarily this shell's, so config/fault
+# flags must be baked into the command to reach node (and its worker threads).
+SIM_CMD="env ${ENVV[*]} node packages/example/app/terminal/run.mjs ${ARGS[*]}"
 # After the run, hold the session open so the worker log stays readable;
 # Enter (in this pane) throws the whole session away. The log file is left
 # untouched on disk.
