@@ -10,6 +10,9 @@
 -- |   * `Result` worker → coordinator: "here is the proof" (`proof` =
 -- |              `encodeCompiledProof`).
 -- |   * `Reject` worker → coordinator: "I could not do it" (decode/prove failed).
+-- |   * `Leave`  worker → coordinator: "I am going away" (broadcast on page
+-- |              unload) so the coordinator drops it and reassigns its in-flight
+-- |              job at once, rather than waiting out the job timeout.
 -- |
 -- | `jobId` correlates an `Assign` with its `Result`/`Reject`; it is the
 -- | coordinator's transport-level id, independent of the snark manager's slot id.
@@ -31,6 +34,7 @@ data Msg
   | Assign { jobId :: String, work :: String }
   | Result { jobId :: String, proof :: String }
   | Reject { jobId :: String, reason :: String }
+  | Leave { peerId :: String }
 
 -- | A coarse build/circuit-compatibility tag. v1 uses a fixed constant shared by
 -- | both ends (the coordinator drops a `Join` whose fingerprint differs); a
@@ -47,6 +51,7 @@ encodeMsg = case _ of
   Assign r -> writeJSON { tag: "assign", jobId: r.jobId, work: r.work }
   Result r -> writeJSON { tag: "result", jobId: r.jobId, proof: r.proof }
   Reject r -> writeJSON { tag: "reject", jobId: r.jobId, reason: r.reason }
+  Leave r -> writeJSON { tag: "leave", peerId: r.peerId }
 
 decodeMsg :: String -> Either MultipleErrors Msg
 decodeMsg s = do
@@ -56,4 +61,5 @@ decodeMsg s = do
     "assign" -> readJSON s <#> \(r :: { jobId :: String, work :: String }) -> Assign r
     "result" -> readJSON s <#> \(r :: { jobId :: String, proof :: String }) -> Result r
     "reject" -> readJSON s <#> \(r :: { jobId :: String, reason :: String }) -> Reject r
+    "leave" -> readJSON s <#> \(r :: { peerId :: String }) -> Leave r
     other -> Left (pure (ForeignError ("Msg: unknown tag " <> other)))

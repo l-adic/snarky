@@ -125,6 +125,9 @@ p2pSnarkBackend transport onPeers = do
   counter <- Ref.new 0
   known <- Ref.new Set.empty
   peers <- Ref.new (Map.empty :: Map String PeerState)
+  -- A remote peer's in-flight reply slot, keyed by peer id, so a `Leave` can
+  -- reject it immediately (the run then throws → the pool reassigns the job).
+  peerSlot <- Ref.new (Map.empty :: Map String Reply)
   selfSpawned <- Ref.new false
   joinQ <- newJoinQueue
   let
@@ -147,6 +150,15 @@ p2pSnarkBackend transport onPeers = do
     jobLabel = case _ of
       Base _ -> "proving base"
       Merge _ -> "proving merge"
+    -- A peer announced it is leaving (page unload). Forget it, and if it had a
+    -- job in flight, reject that job's reply now so the pool reassigns it at once
+    -- (its `run` throws → reclaim terminates it → removed from the table).
+    peerGone id = do
+      Ref.modify_ (Set.delete id) known
+      m <- Ref.read peerSlot
+      case Map.lookup id m of
+        Just slot -> void $ EffectAVar.put (Left "peer left") slot mempty
+        Nothing -> removePeer id
   onMessage transport \from raw ->
     case decodeMsg raw of
       Right (Join j) | j.fingerprint == fingerprint -> do
@@ -157,6 +169,7 @@ p2pSnarkBackend transport onPeers = do
           joinQ.push from
       Right (Result r) -> deliver pending r.jobId (Right r.proof)
       Right (Reject r) -> deliver pending r.jobId (Left r.reason)
+      Right (Leave l) -> peerGone l.peerId
       _ -> pure unit
   pure \env ->
     { name: "p2p pool"
@@ -224,9 +237,12 @@ p2pSnarkBackend transport onPeers = do
                 liftEffect $ setStatus peerId (jobLabel job)
                 slot <- liftEffect EffectAVar.empty
                 liftEffect $ Ref.modify_ (Map.insert jobId slot) pending
+                -- Track this peer's in-flight slot so a `Leave` can reject it.
+                liftEffect $ Ref.modify_ (Map.insert peerId slot) peerSlot
                 liftEffect $ sendTo transport peerId (encodeMsg (Assign { jobId, work: encodeWorkItem job }))
                 res <- AVar.take slot
                 liftEffect $ Ref.modify_ (Map.delete jobId) pending
+                liftEffect $ Ref.modify_ (Map.delete peerId) peerSlot
                 case res of
                   Left reason -> do
                     liftEffect $ setStatus peerId "idle"
@@ -245,10 +261,11 @@ p2pSnarkBackend transport onPeers = do
 -- | Run the whole one-block pipeline as the coordinator: install the p2p backend
 -- | and drive the shared engine over a DYNAMIC pool of remote prover peers — it
 -- | starts immediately and each peer that joins the session picks up work, so
--- | there is no peer count to fix up front (the pool is `Dynamic`). A generous
--- | job timeout — remote proving is slow, and a spurious reassignment just hands
--- | the job to another peer.
+-- | there is no peer count to fix up front (the pool is `Dynamic`). The 120 s
+-- | job timeout is the BACKSTOP for an ungraceful peer death (a graceful exit
+-- | sends `Leave`, reassigning at once); the pool only reassigns on timeout, it
+-- | doesn't kill the slow original, so a merely-slow peer can still win.
 runCoordinator :: Transport -> (Array PeerView -> Effect Unit) -> EngineCallbacks -> Effect Unit
 runCoordinator transport onPeers cb = do
   backend <- p2pSnarkBackend transport onPeers
-  runWith backend Dynamic (Milliseconds 600000.0) cb
+  runWith backend Dynamic (Milliseconds 120000.0) cb

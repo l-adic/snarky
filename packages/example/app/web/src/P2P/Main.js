@@ -27,3 +27,9 @@ export const connectTransport = (kind, channel, cont) => {
 export const setWindowProp = (k) => (v) => () => {
   try { window[k] = v; } catch {}
 };
+
+// Run `eff` when the page is unloaded. `pagehide` is the reliable signal (it
+// fires on tab close / navigation, and unlike `unload` is bfcache-friendly).
+export const onPageHide = (eff) => () => {
+  window.addEventListener("pagehide", () => eff(), { once: true });
+};

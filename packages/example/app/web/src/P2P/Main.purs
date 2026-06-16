@@ -50,6 +50,7 @@ import Routing (match)
 import Routing.Hash (getHash)
 import Routing.Match (params)
 import Snarky.Example.P2P.Backend (PeerView)
+import Snarky.Example.P2P.Protocol (Msg(Leave), encodeMsg)
 import Snarky.Example.P2P.Transport (Transport)
 import Snarky.Example.P2P.Transport as T
 import Snarky.Example.Web.Component.Log (LogEntry, logPanel)
@@ -67,6 +68,9 @@ import Web.Worker.Worker as WW
 foreign import spawnWorker :: Effect Worker
 foreign import connectTransport :: EffectFn3 String String (EffectFn1 Transport Unit) Unit
 foreign import setWindowProp :: String -> Foreign -> Effect Unit
+
+-- | Run an action when the page is being unloaded (the `pagehide` event).
+foreign import onPageHide :: Effect Unit -> Effect Unit
 
 -- | Boot options read from the URL hash: the initial channel + transport, an
 -- | auto-start role (headless harness), and an optional rayon-thread override.
@@ -177,6 +181,11 @@ mkApp opts = component "P2PApp" \_ -> React.do
       T.onPeer transport \id -> WW.postMessage { "_t": "peer", id } worker
       WW.postMessage { "_t": "myId", id: T.myId transport } worker
       WW.postMessage { type: "start", role: r, threads: toNullable opts.threads } worker
+      -- A worker that closes its tab announces it, so the coordinator drops it
+      -- and reassigns its in-flight job at once (rather than waiting the timeout).
+      when (r == "peer")
+        $ onPageHide
+        $ T.broadcast transport (encodeMsg (Leave { peerId: T.myId transport }))
 
     begin r = do
       setStarted true
