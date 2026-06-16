@@ -1,6 +1,7 @@
 -- | The P2P proving UI, in react-basic — the same stack as the single-app
--- | frontend (`Snarky.Example.Web.Main`), reusing its `logPanel` / `scanStatePanel`
--- | components. Minimal controls: a channel name and two buttons —
+-- | frontend (`Snarky.Example.Web.Main`), reusing its `logPanel` (and, for the
+-- | coordinator, `scanStatePanel`) components. Minimal controls: a channel name
+-- | and two buttons —
 -- |
 -- |   Start experiment   be the coordinator (block producer): generate a block,
 -- |                      farm every base + merge job to the workers, verify root
@@ -127,6 +128,15 @@ peerTable peers =
         ]
     }
 
+-- | The worker's main view: what it is proving right now. A worker only ever
+-- | sees one base/merge work item at a time (handed to it by the coordinator) and
+-- | never the whole block, so it has no scan-state tree to show — just its current
+-- | job. The phase string already carries it (e.g. "proving base (#3)").
+jobPanel :: String -> JSX
+jobPanel phase =
+  panel "current job"
+    [ R.div { className: "job-status", children: [ R.text (phaseLabel phase) ] } ]
+
 mkApp :: Opts -> Component Unit
 mkApp opts = component "P2PApp" \_ -> React.do
   logs /\ setLogs <- useState ([] :: Array LogEntry)
@@ -244,10 +254,14 @@ mkApp opts = component "P2PApp" \_ -> React.do
                 [ R.div
                     { className: "col"
                     , children:
-                        -- The peer table is the coordinator's view of its pool;
-                        -- a worker has no pool, so it shows only the scan tree.
-                        (if role == "coordinator" then [ peerTable peers ] else [])
-                          <> [ scanStatePanel scan ]
+                        -- The coordinator owns the block, so it shows its pool
+                        -- (peer table) and the scan-state tree it is filling in. A
+                        -- worker only ever sees one job at a time, so it shows just
+                        -- that. Before a role is picked, an empty scan tree.
+                        case role of
+                          "coordinator" -> [ peerTable peers, scanStatePanel scan ]
+                          "peer" -> [ jobPanel phase ]
+                          _ -> [ scanStatePanel scan ]
                     }
                 , logPanel logs
                 ]

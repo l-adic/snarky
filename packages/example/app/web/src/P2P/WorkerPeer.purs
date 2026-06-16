@@ -11,6 +11,12 @@
 -- |
 -- | `WorkerPeerEvents` surfaces what the worker is doing (compile / each job) to
 -- | its own UI — without it the operator sees nothing while the worker proves.
+-- |
+-- | A worker `Join`s by broadcasting; because a single announce can be lost over
+-- | WebRTC (it may race the data channel opening, or the coordinator may still be
+-- | discovering us), it re-announces periodically (`reannounce`) until it is
+-- | assigned its first job — otherwise a worker that joined an already-running
+-- | session could sit silently unused.
 module Snarky.Example.P2P.WorkerPeer
   ( WorkerPeerEvents
   , runWorkerPeer
@@ -31,6 +37,10 @@ import Snarky.Example.P2P.Transport (Transport, broadcast, myId, onMessage, onPe
 import Snarky.Example.Prover (buildProver)
 import Snarky.Example.Web.Engine (Depth)
 import Type.Proxy (Proxy(..))
+
+-- | Re-run an action every `ms` until the stop predicate holds or `maxTimes`
+-- | runs have happened (whichever first). Used to keep re-broadcasting `Join`.
+foreign import reannounce :: Int -> Int -> Effect Boolean -> Effect Unit -> Effect Unit
 
 -- | The chain the coordinator's engine compiles against
 -- | (`Snarky.Example.Web.Engine` uses `Testnet`). A worker MUST compile the same
@@ -60,11 +70,13 @@ runWorkerPeer transport { logger, onPhase } = do
   onPhase "ready — awaiting work"
   Log.logInfo logger "waiting for the coordinator to assign work"
   count <- Ref.new 0
+  assigned <- Ref.new false
   let
     announce = broadcast transport (encodeMsg (Join { peerId: myId transport, fingerprint }))
   onMessage transport \from raw ->
     case decodeMsg raw of
       Right (Assign a) -> do
+        Ref.write true assigned
         n <- Ref.modify (_ + 1) count
         let label = jobLabel a.work
         onPhase ("proving " <> label <> " (#" <> show n <> ")")
@@ -84,3 +96,7 @@ runWorkerPeer transport { logger, onPhase } = do
   -- booted before the coordinator is still picked up once the coordinator joins.
   onPeer transport \_ -> announce
   announce
+  -- …and keep re-announcing for a while, since a single broadcast can be lost
+  -- over WebRTC — until the coordinator assigns the first job (proof it knows us)
+  -- or a bounded number of tries elapse (so an empty room isn't spammed forever).
+  reannounce 4000 30 (Ref.read assigned) announce

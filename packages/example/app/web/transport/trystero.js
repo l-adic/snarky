@@ -24,9 +24,15 @@ export async function mkTrysteroTransport(session) {
   const room = joinRoom(config, session);
 
   const gossip = room.makeAction("g");
+  const peers = new Set();
   let msgHandler = null;
   let peerHandler = null;
-  room.onPeerJoin = (id) => { if (peerHandler) peerHandler(id); };
+  // Track membership so onPeer (below) can replay peers that joined before the
+  // handler was registered — parity with the BroadcastChannel transport, and it
+  // matters here because a worker only registers its handler after its (~2 min)
+  // circuit compile, by which point onPeerJoin for the coordinator has fired.
+  room.onPeerJoin = (id) => { peers.add(id); if (peerHandler) peerHandler(id); };
+  room.onPeerLeave = (id) => { peers.delete(id); };
   gossip.onMessage = (data, meta) => { if (msgHandler) msgHandler(meta?.peerId ?? meta, data); };
 
   return {
@@ -34,6 +40,6 @@ export async function mkTrysteroTransport(session) {
     broadcast: (msg) => { gossip.send(msg); },
     sendTo: (peer, msg) => { gossip.send(msg, { target: peer }); },
     onMessage: (fn) => { msgHandler = fn; },
-    onPeer: (fn) => { peerHandler = fn; },
+    onPeer: (fn) => { peerHandler = fn; for (const p of peers) fn(p); },
   };
 }

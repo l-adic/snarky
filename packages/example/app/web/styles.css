@@ -155,6 +155,14 @@
   font-size: 13px;
 }
 
+/* The worker's "current job" panel: a single prominent status line (it has no
+ * scan tree — it only ever proves one base/merge item at a time). */
+.job-status {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
 /* --- transactions accordion --- */
 .tx-item {
   border-bottom: 1px solid #283548;
