@@ -95,6 +95,30 @@
   padding: 0.3rem 0.5rem;
 }
 
+/* Coordinator peer table. */
+.peer-table {
+  width: 100%;
+  border-collapse: collapse;
+  font: 12px ui-monospace, Menlo, monospace;
+}
+.peer-table th,
+.peer-table td {
+  text-align: left;
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.peer-table th {
+  color: #64748b;
+  font-weight: 500;
+  font-size: 11px;
+}
+.peer-table .peer-busy {
+  color: #f59e0b;
+}
+.peer-table .peer-idle {
+  color: #64748b;
+}
+
 /* --- layout --- */
 .grid {
   display: grid;

@@ -80,13 +80,14 @@ let last = "";
 while (ts() < DEADLINE) {
   const coordWs = await tabFor("role=coordinator");
   if (coordWs) {
-    let verified, phase, tail;
+    let verified, phase, tail, peers;
     try {
       verified = await evalIn(coordWs, "window.__p2pVerified");
       phase = await evalIn(coordWs, "window.__p2pPhase");
       tail = ((await logsOf(coordWs)) || "").split("\n")[0];
+      peers = await evalIn(coordWs, "JSON.stringify((window.__p2pPeers||[]).map(p=>p.id.slice(0,6)+':'+p.status+':'+p.completed))");
     } catch {}
-    const summary = `phase=${phase ?? "-"}  ${tail ?? ""}`;
+    const summary = `phase=${phase ?? "-"}  peers=${peers ?? "[]"}  ${tail ?? ""}`;
     if (summary !== last) { console.log(`[t+${ts()}s] ${summary}`); last = summary; }
     if (verified === true) { console.log(`\nblock root proof verified ✓  (t+${ts()}s)\nPASS`); process.exit(0); }
     if (verified === false || phase === "failed") { console.log(`\nFAIL: coordinator reported failure (phase=${phase})`); process.exit(1); }

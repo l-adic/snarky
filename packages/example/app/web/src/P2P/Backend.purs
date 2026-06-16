@@ -4,17 +4,20 @@
 -- | peer) instead of `postMessage` (a local Web Worker), and workers are
 -- | discovered dynamically via the `Join` handshake rather than spawned.
 -- |
--- | The pool (`Snarky.Example.Snark.Pool.runPool`) drives this unchanged: each
--- | `spawn` blocks until a peer `Join`s, so `poolSize` means "wait for N peers,
--- | then start dispatching". Reliability (timeout → reassign, at-most-once) is
--- | the pool's, so a peer that vanishes mid-job is handled by the job timeout
--- | (its `Result` never arrives → reassign).
+-- | The pool (`Snarky.Example.Snark.Pool.runPool`) drives this unchanged over a
+-- | `Dynamic` pool: each `spawn` blocks until a peer `Join`s, so the coordinator
+-- | starts immediately and grows as peers arrive. Reliability (timeout →
+-- | reassign, at-most-once) is the pool's, so a peer that vanishes mid-job is
+-- | handled by the job timeout (its `Result` never arrives → reassign).
 -- |
 -- | One `Transport.onMessage` router (installed once when the backend is built)
 -- | fans `Result`/`Reject` to the waiting `run` by `jobId`, and turns each fresh
--- | `Join` into a queued peer that the next `spawn` claims.
+-- | `Join` into a queued peer that the next `spawn` claims. The backend also
+-- | tracks per-peer state (idle / proving / completed count) and reports a
+-- | snapshot through `onPeers` for the UI's peer table.
 module Snarky.Example.P2P.Backend
-  ( p2pSnarkBackend
+  ( PeerView
+  , p2pSnarkBackend
   , runCoordinator
   ) where
 
@@ -27,6 +30,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Set as Set
 import Data.Time.Duration (Milliseconds(..))
+import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.AVar (AVar)
 import Effect.AVar as EffectAVar
@@ -40,13 +44,19 @@ import Pickles.Prove.SerializeProof (decodeCompiledProof)
 import Snarky.Example.P2P.Protocol (Msg(..), decodeMsg, encodeMsg, fingerprint)
 import Snarky.Example.P2P.Transport (Transport, onMessage, sendTo)
 import Snarky.Example.Snark.Pool (PoolSize(Dynamic))
-import Snarky.Example.Snark.Work (encodeWorkItem)
+import Snarky.Example.Snark.Work (WorkItem(..), encodeWorkItem)
 import Snarky.Example.Snark.Worker (SnarkBackend)
 import Snarky.Example.Web.Engine (Depth, EngineCallbacks, runWith)
 
 -- | A reply slot for one assigned job: filled by the router with the worker's
 -- | encoded proof (`Right`) or a rejection reason (`Left`).
 type Reply = AVar (Either String String)
+
+-- | A row of the UI's peer table: a connected worker peer, what it is doing
+-- | right now, and how many jobs it has completed.
+type PeerView = { id :: String, status :: String, completed :: Int }
+
+type PeerState = { status :: String, completed :: Int }
 
 -- | An Effect-pushable, Aff-pullable queue of joined peer ids — the same
 -- | single-consumer discipline as `Snarky.Example.AsyncQueue`, but `push` is in
@@ -85,18 +95,35 @@ deliver pending jobId value = do
 -- | Build the coordinator's `SnarkBackend`: install the transport router and the
 -- | shared correlation state once, returning the per-`Env` backend the pool
 -- | applies. Each remote worker is a peer addressed by its `Join`'s `from` id.
-p2pSnarkBackend :: Transport -> Effect (SnarkBackend Depth)
-p2pSnarkBackend transport = do
+p2pSnarkBackend :: Transport -> (Array PeerView -> Effect Unit) -> Effect (SnarkBackend Depth)
+p2pSnarkBackend transport onPeers = do
   pending <- Ref.new (Map.empty :: Map String Reply)
   counter <- Ref.new 0
   known <- Ref.new Set.empty
+  peers <- Ref.new (Map.empty :: Map String PeerState)
   joinQ <- newJoinQueue
+  let
+    -- Push the current peer table (sorted by id, via `Map`) to the UI.
+    report = do
+      m <- Ref.read peers
+      onPeers (map (\(Tuple id s) -> { id, status: s.status, completed: s.completed }) (Map.toUnfoldable m))
+    addPeer id = do
+      Ref.modify_ (Map.insert id { status: "idle", completed: 0 }) peers
+      report
+    setStatus id status = do
+      Ref.modify_ (Map.update (\s -> Just s { status = status }) id) peers
+      report
+    completed id = do
+      Ref.modify_ (Map.update (\s -> Just (s { status = "idle", completed = s.completed + 1 })) id) peers
+      report
   onMessage transport \from raw ->
     case decodeMsg raw of
       Right (Join j) | j.fingerprint == fingerprint -> do
         -- Dedup by transport id: a peer re-announces on every discovery.
         fresh <- Ref.modify' (\s -> { state: Set.insert from s, value: not (Set.member from s) }) known
-        when fresh (joinQ.push from)
+        when fresh do
+          addPeer from
+          joinQ.push from
       Right (Result r) -> deliver pending r.jobId (Right r.proof)
       Right (Reject r) -> deliver pending r.jobId (Left r.reason)
       _ -> pure unit
@@ -108,17 +135,27 @@ p2pSnarkBackend transport = do
           { id: peerId
           , run: \job -> do
               jobId <- liftEffect $ Ref.modify' (\n -> { state: n + 1, value: "job-" <> show (n + 1) }) counter
+              liftEffect $ setStatus peerId case job of
+                Base _ -> "proving base"
+                Merge _ -> "proving merge"
               slot <- liftEffect EffectAVar.empty
               liftEffect $ Ref.modify_ (Map.insert jobId slot) pending
               liftEffect $ sendTo transport peerId (encodeMsg (Assign { jobId, work: encodeWorkItem job }))
               res <- AVar.take slot
               liftEffect $ Ref.modify_ (Map.delete jobId) pending
               case res of
-                Left reason -> liftEffect $ throw ("p2p worker " <> peerId <> " rejected job " <> jobId <> ": " <> reason)
+                Left reason -> do
+                  liftEffect $ setStatus peerId "idle"
+                  liftEffect $ throw ("p2p worker " <> peerId <> " rejected job " <> jobId <> ": " <> reason)
                 Right proofStr -> case decodeCompiledProof env proofStr of
                   Left err -> liftEffect $ throw ("p2p decodeCompiledProof failed: " <> show err)
-                  Right proof -> pure proof
-          , terminate: Ref.modify_ (Set.delete peerId) known
+                  Right proof -> do
+                    liftEffect $ completed peerId
+                    pure proof
+          , terminate: do
+              Ref.modify_ (Set.delete peerId) known
+              Ref.modify_ (Map.delete peerId) peers
+              report
           }
     }
 
@@ -128,7 +165,7 @@ p2pSnarkBackend transport = do
 -- | there is no peer count to fix up front (the pool is `Dynamic`). A generous
 -- | job timeout — remote proving is slow, and a spurious reassignment just hands
 -- | the job to another peer.
-runCoordinator :: Transport -> EngineCallbacks -> Effect Unit
-runCoordinator transport cb = do
-  backend <- p2pSnarkBackend transport
+runCoordinator :: Transport -> (Array PeerView -> Effect Unit) -> EngineCallbacks -> Effect Unit
+runCoordinator transport onPeers cb = do
+  backend <- p2pSnarkBackend transport onPeers
   runWith backend Dynamic (Milliseconds 600000.0) cb

@@ -25,20 +25,24 @@ import Data.Array as Array
 import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
 import Data.Nullable (Nullable, toMaybe)
+import Data.String as String
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Uncurried (EffectFn1, EffectFn3, mkEffectFn1, runEffectFn3)
 import Foreign (Foreign, unsafeFromForeign, unsafeToForeign)
+import React.Basic (JSX)
 import React.Basic.DOM as R
 import React.Basic.DOM.Client (createRoot, renderRoot)
 import React.Basic.DOM.Events (targetValue)
 import React.Basic.Events (handler, handler_)
 import React.Basic.Hooks (Component, component, useEffectOnce, useState, useState')
 import React.Basic.Hooks as React
+import Snarky.Example.P2P.Backend (PeerView)
 import Snarky.Example.P2P.Transport (Transport)
 import Snarky.Example.P2P.Transport as T
 import Snarky.Example.Web.Component.Log (LogEntry, logPanel)
+import Snarky.Example.Web.Component.Panel (emptyHint, panel)
 import Snarky.Example.Web.Component.ScanState (scanStatePanel)
 import Snarky.Example.Web.Engine (ScanView)
 import Web.DOM.NonElementParentNode (getElementById)
@@ -85,6 +89,34 @@ phaseLabel = case _ of
   "proving" -> "proving (base + merge)"
   p -> p
 
+-- | The coordinator's pool, one row per connected worker peer: a short id, what
+-- | it is doing now, and how many jobs it has completed.
+peerTable :: Array PeerView -> JSX
+peerTable peers =
+  panel ("peers (" <> show (Array.length peers) <> ")") $
+    if Array.null peers then [ emptyHint ]
+    else
+      [ R.table
+          { className: "peer-table"
+          , children:
+              [ R.thead { children: [ R.tr { children: [ th "peer", th "status", th "done" ] } ] }
+              , R.tbody { children: map row peers }
+              ]
+          }
+      ]
+  where
+  th t = R.th { children: [ R.text t ] }
+  row p = R.tr
+    { children:
+        [ R.td { children: [ R.text (String.take 8 p.id) ] }
+        , R.td
+            { className: if String.take 7 p.status == "proving" then "peer-busy" else "peer-idle"
+            , children: [ R.text p.status ]
+            }
+        , R.td { children: [ R.text (show p.completed) ] }
+        ]
+    }
+
 mkApp :: Boot -> Component Unit
 mkApp boot = component "P2PApp" \_ -> React.do
   logs /\ setLogs <- useState ([] :: Array LogEntry)
@@ -93,6 +125,7 @@ mkApp boot = component "P2PApp" \_ -> React.do
   role /\ setRole <- useState' ""
   started /\ setStarted <- useState' false
   channel /\ setChannel <- useState' boot.channel
+  peers /\ setPeers <- useState' ([] :: Array PeerView)
 
   let
     pushLog l = setLogs \ls -> Array.take 400 (Array.cons l ls)
@@ -123,6 +156,9 @@ mkApp boot = component "P2PApp" \_ -> React.do
           Just "phase" -> setPhaseH (unsafeFromForeign m.value)
           Just "scan" -> setScan (Just (unsafeFromForeign m.value))
           Just "verified" -> setVerifiedH (unsafeFromForeign m.value)
+          Just "peers" -> do
+            setPeers (unsafeFromForeign m.value)
+            setWindowProp "__p2pPeers" m.value
           _ -> pure unit
 
     -- Once the transport is up: spawn the worker, wire the relay both ways
@@ -182,7 +218,20 @@ mkApp boot = component "P2PApp" \_ -> React.do
                     }
                 ]
             }
-        , R.div { className: "grid", children: [ scanStatePanel scan, logPanel logs ] }
+        , R.div
+            { className: "grid"
+            , children:
+                [ R.div
+                    { className: "col"
+                    , children:
+                        -- The peer table is the coordinator's view of its pool;
+                        -- a worker has no pool, so it shows only the scan tree.
+                        (if role == "coordinator" then [ peerTable peers ] else [])
+                          <> [ scanStatePanel scan ]
+                    }
+                , logPanel logs
+                ]
+            }
         , R.p
             { className: "footnote"
             , children:
