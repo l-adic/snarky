@@ -25,6 +25,7 @@
 .header {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 1rem;
   margin-bottom: 1.25rem;
 }
@@ -58,7 +59,6 @@
 }
 
 .run-btn {
-  margin-left: auto;
   background: #0ea5e9;
   color: white;
   border: none;
@@ -71,10 +71,12 @@
   background: var(--border);
   cursor: default;
 }
-/* Group consecutive buttons (Start experiment / Join as worker) at the right:
-   the first gets the auto margin, the next sits beside it. */
-.run-btn + .run-btn {
-  margin-left: 0.5rem;
+/* The Start / Join buttons, grouped at the right of the header so they wrap
+   together (not split across lines) and stack cleanly on mobile. */
+.actions {
+  margin-left: auto;
+  display: flex;
+  gap: 0.5rem;
 }
 
 /* Channel name field in the P2P header. */
@@ -137,6 +139,9 @@
   border-radius: 10px;
   padding: 1rem 1.25rem;
   border: 1px solid var(--border);
+  /* The scan-state tree SVG has a fixed (wide) width; let it scroll horizontally
+     within its panel rather than overflowing the page on narrow screens. */
+  overflow-x: auto;
 }
 .panel-title {
   color: var(--dim);
@@ -241,4 +246,45 @@
   color: var(--dim);
   font-size: 11px;
   margin-top: 1.25rem;
+}
+
+/* --- responsive: phones / narrow viewports --- */
+@media (max-width: 768px) {
+  .app {
+    padding: 1rem;
+  }
+  .header {
+    gap: 0.6rem;
+  }
+  /* Title on its own line; the controls flow below it. */
+  .title {
+    flex-basis: 100%;
+    font-size: 16px;
+  }
+  /* Stack the two columns (peer table / scan tree, log). */
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  /* Channel field spans a line; its input fills the width (easy to tap/type). */
+  .field {
+    flex: 1 1 100%;
+  }
+  .channel-input {
+    flex: 1;
+    width: auto;
+  }
+  /* Actions span a full row; each button a comfortable touch target. */
+  .actions {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+  .run-btn {
+    flex: 1;
+    padding: 0.6rem 1rem;
+    font-size: 14px;
+  }
+  /* Keep the log from dominating the stacked layout. */
+  .log-scroll {
+    max-height: 50vh;
+  }
 }

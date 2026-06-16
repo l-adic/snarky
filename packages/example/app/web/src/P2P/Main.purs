@@ -210,17 +210,22 @@ mkApp opts = component "P2PApp" \_ -> React.do
                             }
                         ]
                     }
-                , R.button
-                    { className: "run-btn"
-                    , disabled: started
-                    , onClick: handler_ (unless started (begin "coordinator"))
-                    , children: [ R.text "Start experiment" ]
-                    }
-                , R.button
-                    { className: "run-btn"
-                    , disabled: started
-                    , onClick: handler_ (unless started (begin "peer"))
-                    , children: [ R.text "Join as worker" ]
+                , R.div
+                    { className: "actions"
+                    , children:
+                        [ R.button
+                            { className: "run-btn"
+                            , disabled: started
+                            , onClick: handler_ (unless started (begin "coordinator"))
+                            , children: [ R.text "Start experiment" ]
+                            }
+                        , R.button
+                            { className: "run-btn"
+                            , disabled: started
+                            , onClick: handler_ (unless started (begin "peer"))
+                            , children: [ R.text "Join as worker" ]
+                            }
+                        ]
                     }
                 ]
             }
