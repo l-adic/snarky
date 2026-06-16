@@ -26,6 +26,7 @@ import Prelude
 
 import Data.Either (Either(..))
 import Data.Reflectable (reflectType)
+import Data.String as String
 import Effect (Effect)
 import Effect.Exception (message, try)
 import Effect.Ref as Ref
@@ -42,6 +43,10 @@ import Type.Proxy (Proxy(..))
 -- | runs have happened (whichever first). Used to keep re-broadcasting `Join`.
 foreign import reannounce :: Int -> Int -> Effect Boolean -> Effect Unit -> Effect Unit
 
+-- | Render a little-endian field hex (how an amount/digest serializes) as a
+-- | decimal string. In JS so it can use BigInt regardless of the value's size.
+foreign import leHexToDec :: String -> String
+
 -- | The chain the coordinator's engine compiles against
 -- | (`Snarky.Example.Web.Engine` uses `Testnet`). A worker MUST compile the same
 -- | circuit or the proofs it returns will not verify under the coordinator's VK.
@@ -56,12 +61,51 @@ type WorkerPeerEvents =
   , onPhase :: String -> Effect Unit
   }
 
--- | A work item's kind for display, peeked from the encoded `WorkItem`'s tag
--- | (`{ tag: "base" | "merge", … }`) without fully decoding it.
-jobLabel :: String -> String
-jobLabel work = case readJSON work :: Either _ { tag :: String } of
-  Right r -> r.tag
-  Left _ -> "job"
+-- | The public statement both job kinds prove: the ledger Merkle-root transition
+-- | (`source → target`). Serialized as two little-endian field hex strings.
+type StmtPeek = { source :: String, target :: String }
+
+-- | A short fingerprint of a 32-byte field hex (for display only).
+shortHex :: String -> String
+shortHex h = String.take 8 h <> "…"
+
+-- | `source → target`, both shortened.
+transition :: StmtPeek -> String
+transition s = shortHex s.source <> " → " <> shortHex s.target
+
+-- | A human description of a work item, peeked from its JSON WITHOUT the SRS —
+-- | so it covers exactly the public parts: every job's statement (the ledger
+-- | transition it proves) and, for a base job, the transaction itself (the
+-- | transfer's amount + recipient). A merge's child proofs stay opaque (decoding
+-- | them needs the SRS), so only its merged statement is shown. The label feeds
+-- | the worker's "current job" panel, answering "what am I actually proving?".
+describeJob :: String -> String
+describeJob work = case readJSON work :: Either _ { tag :: String } of
+  Right { tag: "base" } ->
+    case
+      readJSON work ::
+        Either _
+          { base ::
+              { statement :: StmtPeek
+              , tx :: { transaction :: { transfer :: { to :: { x :: String }, amount :: String } } }
+              }
+          }
+      of
+      Right { base: b } ->
+        let
+          t = b.tx.transaction.transfer
+        in
+          "base · transfer " <> leHexToDec t.amount <> " → " <> shortHex t.to.x
+            <> " · ledger "
+            <> transition b.statement
+      Left _ -> "base"
+  Right { tag: "merge" } ->
+    case readJSON work :: Either _ { merge :: String } of
+      Right { merge } -> case readJSON merge :: Either _ { statement :: StmtPeek } of
+        Right { statement } -> "merge · ledger " <> transition statement
+        Left _ -> "merge"
+      Left _ -> "merge"
+  _ -> "job"
 
 runWorkerPeer :: Transport -> WorkerPeerEvents -> Effect Unit
 runWorkerPeer transport { logger, onPhase } = do
@@ -78,18 +122,18 @@ runWorkerPeer transport { logger, onPhase } = do
       Right (Assign a) -> do
         Ref.write true assigned
         n <- Ref.modify (_ + 1) count
-        let label = jobLabel a.work
-        onPhase ("proving " <> label <> " (#" <> show n <> ")")
-        Log.logInfo logger ("assigned " <> label <> " job #" <> show n <> " — proving…")
+        let desc = describeJob a.work
+        onPhase ("proving #" <> show n <> " · " <> desc)
+        Log.logInfo logger ("assigned job #" <> show n <> " (" <> desc <> ") — proving…")
         result <- try (prove a.work)
         case result of
           Right proof -> do
             sendTo transport from (encodeMsg (Result { jobId: a.jobId, proof }))
-            Log.logInfo logger (label <> " job #" <> show n <> " done — proof sent to coordinator")
+            Log.logInfo logger ("job #" <> show n <> " done — proof sent to coordinator")
             onPhase "ready — awaiting work"
           Left err -> do
             sendTo transport from (encodeMsg (Reject { jobId: a.jobId, reason: message err }))
-            Log.logError logger (label <> " job #" <> show n <> " failed: " <> message err)
+            Log.logError logger ("job #" <> show n <> " failed: " <> message err)
             onPhase "ready — awaiting work"
       _ -> pure unit
   -- (Re)announce availability whenever a peer is discovered, so a worker that
