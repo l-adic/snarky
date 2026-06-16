@@ -1,0 +1,8 @@
+# COOP/COEP so the page is cross-origin isolated — required for the
+# SharedArrayBuffer-backed wasm rayon thread pool. Honored by header-capable
+# static hosts (Cloudflare Pages, Netlify). For hosts that cannot set headers
+# (e.g. GitHub Pages) ship a coi-serviceworker shim instead. Vite copies this
+# file (public/) to the dist root.
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp

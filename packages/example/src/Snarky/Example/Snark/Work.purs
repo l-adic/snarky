@@ -2,10 +2,12 @@
 -- | unit of work and the proof it yields. Both ends depend only on this module,
 -- | so the channel boundary between them is explicit.
 -- |
--- | The `Merge` job is serializable for cross-process transport
--- | (`encodeMergeJob`/`decodeMergeJob`): each child proof goes through the
--- | pickles `CompiledProof` codec, the merged statement through its own codec.
--- | `Base` transport additionally needs the witness `Mask` codec (pending).
+-- | Both jobs are serializable for cross-process transport. A `Merge`
+-- | (`encodeMergeJob`/`decodeMergeJob`) sends each child proof through the
+-- | pickles `CompiledProof` codec and the merged statement through its own
+-- | codec; a `Base` (`encodeBaseJob`/`decodeBaseJob`) serializes structurally —
+-- | the witness `Mask` (a `SparseLedger`) already has `Read/WriteForeign`
+-- | instances, so there are no proofs to embed.
 module Snarky.Example.Snark.Work
   ( WorkItem(..)
   , BaseJob

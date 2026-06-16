@@ -43,6 +43,15 @@ export default defineConfig({
     target: "esnext",
     outDir: here("dist"),
     emptyOutDir: true,
+    // Two entry pages over one shared output-es build:
+    //   index.html  the single-instance simulation app
+    //   p2p.html    the P2P star worker-pool (coordinator + worker peers)
+    rollupOptions: {
+      input: {
+        main: here("index.html"),
+        p2p: here("p2p.html"),
+      },
+    },
   },
   worker: {
     format: "es",

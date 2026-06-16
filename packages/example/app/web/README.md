@@ -24,3 +24,32 @@ npm run preview   # prod: serve the built bundle
 Cross-origin isolation (COOP `same-origin` + COEP `require-corp`) is
 required for the SharedArrayBuffer-backed rayon thread pool; the dev
 server sets both, and any production host must do the same.
+
+## P2P star worker-pool (`/p2p.html`)
+
+A second entry distributes the proving across machines. One **coordinator**
+(the block producer) proves nothing itself — it generates the block, farms
+*every* base and merge job to the connected worker peers, and verifies the
+root proof. Each **worker peer** is a single full-core wasm prover answering
+the coordinator's assignments. Parallelism comes from N machines each at full
+speed, over the #148 WebRTC transport (`trystero`) or, for same-browser tabs,
+`BroadcastChannel`.
+
+Open `/p2p.html`, pick a role + transport + session: run one coordinator and
+N peers in the same session. The pieces:
+
+- `src/P2P/Protocol.purs` — the Join/Assign/Result/Reject dispatch messages.
+- `src/P2P/Backend.purs` — `p2pSnarkBackend` / `runCoordinator`: a `SnarkBackend`
+  whose workers are remote peers; reuses the `runPool` reliability (timeout →
+  reassign, at-most-once) unchanged.
+- `src/P2P/WorkerPeer.purs` — `runWorkerPeer`: compile once, then prove each
+  `Assign` (base and merge identically).
+- `src/P2P/Transport.purs` + `p2p-transport-*.js` / `p2p-rtc.js` — the transport
+  tier (pulled from #148): BroadcastChannel, Trystero (WebRTC), manual SDP.
+
+Headless Milestone-A test (coordinator + N peers over BroadcastChannel, to a
+verified root) — from the repo root:
+
+```
+tools/run_p2p_pool.sh --test 2
+```

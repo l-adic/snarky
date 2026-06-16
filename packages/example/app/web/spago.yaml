@@ -13,18 +13,23 @@ package:
   dependencies:
     - aff
     - arrays
+    - avar
     - colog
     - datetime
     - effect
+    - either
     - example
     - exceptions
     - foreign
     - maybe
+    - ordered-collections
+    - pickles
     - prelude
     - react-basic
     - react-basic-dom
     - react-basic-hooks
     - refs
+    - simple-json
     - strings
     - tuples
     - web-dom
