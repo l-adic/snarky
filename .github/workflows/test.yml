@@ -277,6 +277,9 @@ jobs:
       run: npm run bundle -w example-app
       env:
         VITE_BASE: /snarky/
+        # Single in-process wasm instance: faster than a core-split pool on one
+        # machine, and one instance fits the wasm32 4GB ceiling with headroom.
+        EXAMPLE_POOL_SIZE: "1"
         NODE_OPTIONS: "--max-old-space-size=8192"
 
     - name: Setup Pages

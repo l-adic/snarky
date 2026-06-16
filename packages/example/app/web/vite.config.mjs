@@ -32,12 +32,15 @@ export default defineConfig({
   base: process.env.VITE_BASE ?? "/",
   plugins: [nodePolyfills({ exclude: ["module"], overrides: { fs: "memfs" } })],
   resolve: { alias: aliases },
-  // Flow a build-time KIMCHI_WASM_POOL_SIZE override into the bundled
-  // worker: the kimchi-napi wasm-pool-config module reads this env ref to
-  // derive MAX_RAYON_THREADS, so the worker's rayon cap stays consistent
-  // with the pre-spawned pool size baked into the wasm loader.
+  // Flow build-time overrides into the bundled worker:
+  // - KIMCHI_WASM_POOL_SIZE: the kimchi-napi wasm-pool-config module reads this
+  //   env ref to derive MAX_RAYON_THREADS, so the worker's rayon cap stays
+  //   consistent with the pre-spawned pool size baked into the wasm loader.
+  // - EXAMPLE_POOL_SIZE: the coordinator's prover-pool size. 1 is the in-process
+  //   single-instance path; >1 spawns that many prover Web Workers.
   define: {
     "process.env.KIMCHI_WASM_POOL_SIZE": JSON.stringify(process.env.KIMCHI_WASM_POOL_SIZE ?? ""),
+    "process.env.EXAMPLE_POOL_SIZE": JSON.stringify(process.env.EXAMPLE_POOL_SIZE ?? ""),
   },
   build: {
     target: "esnext",
