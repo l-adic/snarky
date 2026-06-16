@@ -119,11 +119,14 @@ function renderScan(s) {
   if (n > 0) treeEl.append(blockSvg(n, s.statuses || []));
 }
 
-function startRole() {
-  const role = document.getElementById("role-select").value;
-  const session = document.getElementById("session").value.trim() || "snarky-p2p";
-  const tKind = document.getElementById("transport").value;
-  const poolSize = +document.getElementById("poolsize").value || 2;
+// `opts` overrides the controls — used by the headless test / launchers, where
+// the URL hash is authoritative (e.g. `t=manual`, which the UI select doesn't
+// offer). The Start button passes nothing and reads the controls.
+function startRole(opts) {
+  const role = opts?.role ?? document.getElementById("role-select").value;
+  const session = opts?.session ?? (document.getElementById("session").value.trim() || "snarky-p2p");
+  const tKind = opts?.transport ?? document.getElementById("transport").value;
+  const poolSize = opts?.poolSize ?? (+document.getElementById("poolsize").value || 2);
   roleEl.textContent = role + " · " + tKind + " · session " + session;
   setPhase("connecting…");
   for (const id of ["start", "role-select", "session", "transport", "poolsize"]) document.getElementById(id).disabled = true;
@@ -173,6 +176,8 @@ function startRole() {
   }
 }
 
-document.getElementById("start").onclick = startRole;
+document.getElementById("start").onclick = () => startRole();
 // Auto-start for the headless test / launchers (#…&auto=1, or any explicit role).
-if (params.auto || params.role) startRole();
+// The hash params are authoritative here (the transport may be one the UI select
+// doesn't list, e.g. manual SDP driven programmatically by the test harness).
+if (params.auto || params.role) startRole({ role: role0, session: session0, transport: tKind0, poolSize: +poolSize0 || 2 });

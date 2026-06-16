@@ -47,9 +47,22 @@ N peers in the same session. The pieces:
 - `src/P2P/Transport.purs` + `p2p-transport-*.js` / `p2p-rtc.js` — the transport
   tier (pulled from #148): BroadcastChannel, Trystero (WebRTC), manual SDP.
 
-Headless Milestone-A test (coordinator + N peers over BroadcastChannel, to a
-verified root) — from the repo root:
+The transport runs on the **main thread** (it stays responsive while the worker
+proves, and WebRTC's `RTCPeerConnection` isn't constructable in a Worker); it is
+bridged into the prover worker over `postMessage` (`p2p-bridge.js`). The
+PureScript is transport-host-agnostic.
+
+Headless tests — from the repo root:
 
 ```
-tools/run_p2p_pool.sh --test 2
+tools/run_p2p_pool.sh --test 2     # Milestone A: 1 coordinator + 2 peers over
+                                   # BroadcastChannel, to a verified root
+tools/run_p2p_pool.sh --webrtc     # Milestone B: 1 coordinator + 1 peer over a
+                                   # REAL WebRTC data channel (manual SDP,
+                                   # harness-driven signaling), to a verified root
 ```
+
+Trystero (serverless WebRTC over public Nostr relays) is the cross-machine
+many-peer transport: pick it in the UI and share the session code. It depends on
+public relays, so it's human-tested rather than part of the deterministic CI
+checks above.

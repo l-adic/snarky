@@ -8,6 +8,10 @@
 #   tools/run_p2p_pool.sh --test [N]  # headless Milestone A: build, preview,
 #                                     # and drive 1 coordinator + N peers (default
 #                                     # 2) over BroadcastChannel to a verified root
+#   tools/run_p2p_pool.sh --webrtc    # headless Milestone B: build, preview, and
+#                                     # drive 1 coordinator + 1 peer over a REAL
+#                                     # WebRTC data channel (manual SDP) to a
+#                                     # verified root
 #
 # A coordinator (block producer) farms every base + merge job to the connected
 # worker peers and verifies the root; each peer is a full-core wasm prover.
@@ -19,15 +23,18 @@ case "${1:-}" in
   --build)
     npm run bundle -w example-app
     ;;
-  --test)
-    PEERS="${2:-2}"
+  --test|--webrtc)
     npm run bundle -w example-app
     npx vite preview --config "$APP/web/vite.config.mjs" --port 4173 &
     PREVIEW=$!
     trap 'kill $PREVIEW 2>/dev/null || true' EXIT
     # wait for the preview server to answer
     until curl -sf -o /dev/null http://localhost:4173/p2p.html; do sleep 1; done
-    URL=http://localhost:4173 node tools/p2p_pool_test.mjs "$PEERS"
+    if [ "$1" = "--webrtc" ]; then
+      URL=http://localhost:4173 node tools/p2p_pool_webrtc_test.mjs
+    else
+      URL=http://localhost:4173 node tools/p2p_pool_test.mjs "${2:-2}"
+    fi
     ;;
   *)
     cd "$APP" && npm run p2p
