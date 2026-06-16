@@ -5,10 +5,11 @@
 -- | discovered dynamically via the `Join` handshake rather than spawned.
 -- |
 -- | The pool (`Snarky.Example.Snark.Pool.runPool`) drives this over a `Dynamic`
--- | pool: the first worker is the coordinator's OWN in-process prover (so a lone
--- | coordinator proves the whole block itself — the single-machine path), and
--- | every subsequent `spawn` blocks until a peer `Join`s, so the pool grows as
--- | peers arrive. Reliability (timeout → reassign, at-most-once) is the pool's,
+-- | pool: the first worker is the coordinator's OWN prover — a nested Web Worker
+-- | (`prover.js`) so it proves async, off the coordinator's thread (a lone
+-- | coordinator thus proves the whole block itself — the single-machine path) —
+-- | and every subsequent `spawn` blocks until a peer `Join`s, so the pool grows
+-- | as peers arrive. Reliability (timeout → reassign, at-most-once) is the pool's,
 -- | so a peer that vanishes mid-job is handled by the job timeout (its `Result`
 -- | never arrives → reassign).
 -- |
@@ -30,25 +31,36 @@ import Data.Either (Either(..))
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
+import Data.Reflectable (reflectType)
 import Data.Set as Set
 import Data.Time.Duration (Milliseconds(..))
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.AVar (AVar)
 import Effect.AVar as EffectAVar
-import Effect.Aff (Aff, delay)
+import Effect.Aff (Aff)
 import Effect.Aff.AVar as AVar
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
+import Foreign (unsafeFromForeign)
 import Pickles.Prove.SerializeProof (decodeCompiledProof)
 import Snarky.Example.P2P.Protocol (Msg(..), decodeMsg, encodeMsg, fingerprint)
 import Snarky.Example.P2P.Transport (Transport, onMessage, sendTo)
 import Snarky.Example.Snark.Pool (PoolSize(Dynamic))
 import Snarky.Example.Snark.Work (WorkItem(..), encodeWorkItem)
-import Snarky.Example.Snark.Worker (SnarkBackend, proveItem)
+import Snarky.Example.Snark.Worker (SnarkBackend)
 import Snarky.Example.Web.Engine (Depth, EngineCallbacks, runWith)
+import Type.Proxy (Proxy(..))
+import Web.Worker.MessageEvent (data_)
+import Web.Worker.Worker (Worker)
+import Web.Worker.Worker as WW
+
+-- | The coordinator's own prover, a nested Web Worker (`prover.js`); the factory
+-- | + thread hint are set on the global scope by `p2p-worker.js`.
+foreign import spawnLocalProver :: Effect Worker
+foreign import localProverThreads :: Effect Int
 
 -- | A reply slot for one assigned job: filled by the router with the worker's
 -- | encoded proof (`Right`) or a rejection reason (`Left`).
@@ -119,6 +131,9 @@ p2pSnarkBackend transport onPeers = do
     completed id = do
       Ref.modify_ (Map.update (\s -> Just (s { status = "idle", completed = s.completed + 1 })) id) peers
       report
+    removePeer id = do
+      Ref.modify_ (Map.delete id) peers
+      report
     jobLabel = case _ of
       Base _ -> "proving base"
       Merge _ -> "proving merge"
@@ -135,29 +150,51 @@ p2pSnarkBackend transport onPeers = do
       _ -> pure unit
   pure \env ->
     { name: "p2p pool"
-    -- The FIRST worker is the coordinator's own in-process prover, so a lone
-    -- coordinator (no remote peers) proves the whole block itself — the
+    -- The FIRST worker is the coordinator's own prover (a nested Web Worker), so
+    -- a lone coordinator (no remote peers) proves the whole block itself — the
     -- single-machine path. Each subsequent worker is a remote peer that joined.
     , spawn: do
         isSelf <- liftEffect $ Ref.modify' (\done -> { state: true, value: not done }) selfSpawned
         if isSelf then do
+          -- The coordinator's own prover, as a NESTED Web Worker so it proves
+          -- async — in its own thread — and never freezes the coordinator (so
+          -- peers are never starved). One reply slot: the pool gives it one job
+          -- at a time. It compiles on `init`; its first job simply queues behind
+          -- that compile.
+          worker <- liftEffect spawnLocalProver
+          threads <- liftEffect localProverThreads
+          reply <- liftEffect EffectAVar.empty
+          liftEffect $ flip WW.onMessage worker \ev ->
+            let
+              r = unsafeFromForeign (data_ ev) :: { tag :: String, proof :: String, reason :: String }
+            in
+              case r.tag of
+                "proof" -> void $ EffectAVar.put (Right r.proof) reply mempty
+                "reject" -> void $ EffectAVar.put (Left r.reason) reply mempty
+                "error" -> void $ EffectAVar.put (Left r.reason) reply mempty
+                _ -> pure unit
+          liftEffect $ WW.postMessage
+            { type: "init", chain: "Testnet", depth: reflectType (Proxy :: Proxy Depth), threads }
+            worker
           liftEffect $ addPeer "self"
           pure
             { id: "self"
             , run: \job -> do
-                -- Yield to a macrotask before the (synchronous, blocking) local
-                -- proof: the pool dispatches over microtasks, so without this the
-                -- coordinator would prove back-to-back and never drain its
-                -- message queue — the relayed `Join`s from peers would never be
-                -- processed and no peer could ever enter the pool. The yield lets
-                -- queued joins/results process and the dispatcher hand work to
-                -- the peers between local proofs.
-                delay (Milliseconds 1.0)
                 liftEffect $ setStatus "self" (jobLabel job)
-                proof <- liftEffect $ proveItem env.compiledTx job
-                liftEffect $ completed "self"
-                pure proof
-            , terminate: pure unit
+                liftEffect $ WW.postMessage { type: "job", work: encodeWorkItem job } worker
+                res <- AVar.take reply
+                case res of
+                  Left reason -> do
+                    liftEffect $ setStatus "self" "idle"
+                    liftEffect $ throw ("self prover: " <> reason)
+                  Right proofStr -> case decodeCompiledProof env proofStr of
+                    Left err -> liftEffect $ throw ("self decodeCompiledProof failed: " <> show err)
+                    Right proof -> do
+                      liftEffect $ completed "self"
+                      pure proof
+            , terminate: do
+                removePeer "self"
+                WW.terminate worker
             }
         else do
           peerId <- joinQ.pull
@@ -182,8 +219,7 @@ p2pSnarkBackend transport onPeers = do
                       pure proof
             , terminate: do
                 Ref.modify_ (Set.delete peerId) known
-                Ref.modify_ (Map.delete peerId) peers
-                report
+                removePeer peerId
             }
     }
 

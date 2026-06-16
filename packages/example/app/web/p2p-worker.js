@@ -40,6 +40,14 @@ self.onmessage = async (e) => {
   started = true;
   const role = m.role === "coordinator" ? "coordinator" : "peer";
   globalThis.__p2pBoot = { role, threads: m.threads };
+  // The coordinator's own prover runs as a NESTED worker (so it proves async,
+  // off the coordinator's thread). Expose the factory + thread hint for the PS
+  // backend's FFI; the `new URL("./prover.js", …)` literal must live here (a
+  // worker-side file vite can resolve + bundle as a nested worker).
+  if (role === "coordinator") {
+    globalThis.__proverThreads = m.threads || 0;
+    globalThis.__spawnProver = () => new Worker(new URL("./prover.js", import.meta.url), { type: "module" });
+  }
   try {
     postNow("phase", "booting wasm kimchi");
     const kimchi = await import("kimchi-napi");
