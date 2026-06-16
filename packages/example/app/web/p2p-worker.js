@@ -67,16 +67,12 @@ self.onmessage = async (e) => {
     // Wait for the main relay to hand us our transport id before the role announces.
     await bridge.ready;
     postNow("log", { severity: "info", text: `[${role}] transport id ${bridge.transport.myId}` });
-    if (role === "peer") postNow("phase", "compiling circuit");
 
-    // LAZY (post-boot) import of the heavy PS, then the single JS→PS call.
+    // LAZY (post-boot) import of the heavy PS, then the single JS→PS call. The PS
+    // entry owns the role's phases/logs from here (the engine for a coordinator,
+    // runWorkerPeer for a peer).
     const { main } = await import("../output-es/Snarky.Example.Web.P2P.Worker/index.js");
     main();
-
-    if (role === "peer") {
-      postNow("phase", "ready — awaiting work");
-      postNow("log", { severity: "info", text: "[peer] compiled; awaiting work" });
-    }
   } catch (err) {
     postNow("log", { severity: "error", text: `[${role}] ` + (err?.stack ?? String(err)) });
     postNow("phase", "failed");

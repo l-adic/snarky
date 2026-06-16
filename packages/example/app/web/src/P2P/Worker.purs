@@ -42,4 +42,8 @@ main = do
         , onScan: \v -> postToMain "scan" (unsafeToForeign v)
         , onVerified: \v -> postToMain "verified" (unsafeToForeign v)
         }
-    _ -> runWorkerPeer transport
+    _ ->
+      runWorkerPeer transport
+        { onLog: \v -> postToMain "log" (unsafeToForeign v)
+        , onPhase: \v -> postToMain "phase" (unsafeToForeign v)
+        }
