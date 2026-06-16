@@ -21,6 +21,7 @@ package:
     - example
     - exceptions
     - foreign
+    - integers
     - maybe
     - nullable
     - ordered-collections

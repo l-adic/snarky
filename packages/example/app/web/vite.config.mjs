@@ -22,6 +22,10 @@ const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 const aliases = [
   { find: "kimchi-napi", replacement: here("../../../kimchi-napi/wasm/kimchi-napi.wasi-browser.js") },
   { find: "module", replacement: here("stubs/node-module.js") },
+  // The PS FFI (compiled into output-es/) reaches the app's internal JS modules
+  // here in app/web/ through this alias, so its imports don't depend on the
+  // output-es layout.
+  { find: "@webjs", replacement: here(".") },
 ];
 
 export default defineConfig({

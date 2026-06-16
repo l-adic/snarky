@@ -10,21 +10,26 @@
 -- | count), and the transport defaults to Trystero (overridable via the URL hash
 -- | for the headless tests).
 -- |
--- | The irreducibly-JS bits are injected as `Boot` by the thin `p2p-main.js`
--- | entry: `spawnWorker` (vite needs the literal `new Worker(new URL(...))`) and
--- | `connectTransport` (the transport factory modules, async for Trystero). The
--- | rest — the transport↔worker relay and the UI — is here.
+-- | This module is the entry (`main :: Effect Unit`) — `p2p-main.js` only does
+-- | `main()`. The irreducibly-JS dependencies are `foreign import`s (their JS in
+-- | `Main.js`, signatures dictated here):
+-- |   * `spawnWorker` — construct the prover worker (`new Worker(new URL(...))`,
+-- |     which must resolve relative to `app/web/`, so it lives in `p2p-spawn.js`).
+-- |   * `connectTransport` — build the real transport on the main thread (async
+-- |     for Trystero) and hand it back via the continuation.
+-- |   * `readHashParam` — read a URL-hash parameter (browser API).
+-- | The transport factory / WebRTC modules stay internal JS; the FFI calls them.
 module Snarky.Example.Web.P2P.Main
-  ( Boot
-  , runP2pApp
+  ( main
   ) where
 
 import Prelude
 
 import Data.Array as Array
 import Data.Foldable (for_)
-import Data.Maybe (Maybe(..))
-import Data.Nullable (Nullable, toMaybe)
+import Data.Int as Int
+import Data.Maybe (Maybe(..), fromMaybe, isJust)
+import Data.Nullable (Nullable, toMaybe, toNullable)
 import Data.String as String
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
@@ -53,20 +58,18 @@ import Web.Worker.MessageEvent (data_)
 import Web.Worker.Worker (Worker)
 import Web.Worker.Worker as WW
 
--- | The JS-only dependencies, supplied by `p2p-main.js`.
--- |   * `spawnWorker` — construct the prover worker (`new Worker(new URL(...))`).
--- |   * `connectTransport kind channel cont` — build the real transport on the
--- |     main thread (async for Trystero) and hand it back via `cont`.
--- |   * `channel`/`transport` — initial values (from the URL hash, else defaults).
--- |   * `autoRole` — set by the headless harness to auto-start a role on mount.
--- |   * `threads` — optional rayon-thread override (headless test; shares a CPU).
-type Boot =
-  { spawnWorker :: Effect Worker
-  , connectTransport :: EffectFn3 String String (EffectFn1 Transport Unit) Unit
-  , channel :: String
+foreign import spawnWorker :: Effect Worker
+foreign import connectTransport :: EffectFn3 String String (EffectFn1 Transport Unit) Unit
+foreign import readHashParam :: String -> Effect (Nullable String)
+foreign import setWindowProp :: String -> Foreign -> Effect Unit
+
+-- | Boot options read from the URL hash: the initial channel + transport, an
+-- | auto-start role (headless harness), and an optional rayon-thread override.
+type Opts =
+  { channel :: String
   , transport :: String
-  , autoRole :: Nullable String
-  , threads :: Nullable Int
+  , autoRole :: Maybe String
+  , threads :: Maybe Int
   }
 
 -- | A worker → main message: either transport-relay plumbing (`_t`) or a UI event
@@ -78,8 +81,6 @@ type WMsg =
   , msg :: Nullable String
   , peer :: Nullable String
   }
-
-foreign import setWindowProp :: String -> Foreign -> Effect Unit
 
 phaseLabel :: String -> String
 phaseLabel = case _ of
@@ -117,14 +118,14 @@ peerTable peers =
         ]
     }
 
-mkApp :: Boot -> Component Unit
-mkApp boot = component "P2PApp" \_ -> React.do
+mkApp :: Opts -> Component Unit
+mkApp opts = component "P2PApp" \_ -> React.do
   logs /\ setLogs <- useState ([] :: Array LogEntry)
   scan /\ setScan <- useState' (Nothing :: Maybe ScanView)
   phase /\ setPhase <- useState' "idle"
   role /\ setRole <- useState' ""
   started /\ setStarted <- useState' false
-  channel /\ setChannel <- useState' boot.channel
+  channel /\ setChannel <- useState' opts.channel
   peers /\ setPeers <- useState' ([] :: Array PeerView)
 
   let
@@ -164,22 +165,22 @@ mkApp boot = component "P2PApp" \_ -> React.do
     -- Once the transport is up: spawn the worker, wire the relay both ways
     -- (transport → worker, worker → transport/UI), hand it our id, and start.
     afterConnect r transport = do
-      worker <- boot.spawnWorker
+      worker <- spawnWorker
       WW.onMessage (handleWorkerMsg transport) worker
       WW.onError (\_ -> pushLog { severity: "error", text: "[worker] crashed — see the browser console" }) worker
       T.onMessage transport \from raw -> WW.postMessage { "_t": "msg", from, raw } worker
       T.onPeer transport \id -> WW.postMessage { "_t": "peer", id } worker
       WW.postMessage { "_t": "myId", id: T.myId transport } worker
-      WW.postMessage { type: "start", role: r, threads: boot.threads } worker
+      WW.postMessage { type: "start", role: r, threads: toNullable opts.threads } worker
 
     begin r = do
       setStarted true
       setRole r
       setPhaseH "connecting…"
-      runEffectFn3 boot.connectTransport boot.transport channel (mkEffectFn1 (afterConnect r))
+      runEffectFn3 connectTransport opts.transport channel (mkEffectFn1 (afterConnect r))
 
   useEffectOnce do
-    for_ (toMaybe boot.autoRole) begin
+    for_ opts.autoRole begin
     pure (pure unit)
 
   pure $ R.div
@@ -242,15 +243,30 @@ mkApp boot = component "P2PApp" \_ -> React.do
         ]
     }
 
--- | Entry point: the JS-only factories are constructed in `p2p-main.js` (where
--- | vite sees the worker URL and the transport modules) and injected here.
-runP2pApp :: Boot -> Effect Unit
-runP2pApp boot = do
+-- | Entry point — `p2p-main.js` is just `main()`. Reads the URL-hash options and
+-- | mounts the app; the JS-only dependencies are the `foreign import`s above.
+main :: Effect Unit
+main = do
+  channel <- fromMaybe "snarky-p2p" <$> hashParam "session"
+  transport <- fromMaybe "trystero" <$> hashParam "t"
+  roleParam <- hashParam "role"
+  autoParam <- hashParam "auto"
+  threadsParam <- hashParam "threads"
+  let
+    -- Auto-start the headless harness / launchers: an explicit role, or `auto`
+    -- (defaulting to coordinator).
+    autoRole = case roleParam of
+      Just "peer" -> Just "peer"
+      Just _ -> Just "coordinator"
+      Nothing -> if isJust autoParam then Just "coordinator" else Nothing
+    opts = { channel, transport, autoRole, threads: threadsParam >>= Int.fromString }
   doc <- document =<< window
   mRoot <- getElementById "app" (toNonElementParentNode doc)
   case mRoot of
     Nothing -> throw "no #app element"
     Just el -> do
-      app <- mkApp boot
+      app <- mkApp opts
       root <- createRoot el
       renderRoot root (app unit)
+  where
+  hashParam k = toMaybe <$> readHashParam k
