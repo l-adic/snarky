@@ -1,27 +1,29 @@
-// The simulation Web Worker: owns the wasm kimchi backend (the
-// `kimchi-napi` import is aliased to the wasi-browser loader in
-// vite.config.mjs) and runs the engine, bridging its callbacks to
-// postMessage. Lives off the UI thread because proving is synchronous.
+// The coordinator Web Worker: runs the engine + snark manager over a POOL of
+// prover Web Workers (prover-entry.js), spawned from here — the
+// coordinator-spawns-provers topology validated by the spike. The coordinator
+// still loads wasm kimchi itself (it compiles once for the verifier and decodes
+// the proofs the provers send back); the provers do the actual proving in
+// parallel. Bridges the engine's callbacks to postMessage for the UI thread.
 //
-// Everything heavy is imported LAZILY inside the message handler so the
-// worker is responsive immediately and any wasm-init failure is caught
-// and forwarded to the UI log instead of killing the worker silently.
+// Everything heavy is imported LAZILY inside the message handler so the worker
+// is responsive immediately and any wasm-init failure is caught and forwarded
+// to the UI log instead of dying silently.
 import { MAX_RAYON_THREADS, ASYNC_POOL_SIZE } from "../../../kimchi-napi/wasm-pool-config.mjs";
 
-// Keep one core for this worker's own JS (witness generation, the event
-// loop servicing the wasi threads) between Rust phases.
-const RESERVED_FOR_JS = 1;
+// Browser pool size. Memory-bound: this is POOL_SIZE+1 wasm instances in one
+// tab (coordinator + provers), each up to the wasm32 4GB ceiling, so keep it
+// small. 2 proves the pattern; raise only if the tab has the headroom.
+const POOL_SIZE = 2;
 
 const post = (tag) => (value) => () => self.postMessage({ tag, value });
 const postNow = (tag, value) => self.postMessage({ tag, value });
 
-// rayon pool size: one fewer than the reported core count, never more
-// than the pre-spawned worker pool allows. If the core count is
-// unreported, fall back to single-threaded (don't oversubscribe blind).
+// Each of the POOL_SIZE+1 wasm instances takes an even share of the cores for
+// rayon, so they don't oversubscribe. Clamped to the loader's pre-spawned pool.
 function rayonThreadCount() {
   const cores = self.navigator?.hardwareConcurrency;
   if (!cores) return 1;
-  return Math.min(MAX_RAYON_THREADS, Math.max(1, cores - RESERVED_FOR_JS));
+  return Math.min(MAX_RAYON_THREADS, Math.max(1, Math.floor(cores / POOL_SIZE)));
 }
 
 self.onmessage = async (e) => {
@@ -29,40 +31,27 @@ self.onmessage = async (e) => {
   try {
     postNow("phase", "booting wasm kimchi");
     const kimchi = await import("kimchi-napi");
-    // Size the rayon pool BEFORE any proving call: wasi reports 1 CPU,
-    // so the default global pool would be single-threaded.
+
     let threads = rayonThreadCount();
-    // Guard against a build-time desync: the rayon count is bundled from
-    // wasm-pool-config, but the pre-spawned pool size is baked into the
-    // loader by a SEPARATE build (build:wasm). If they disagree (e.g.
-    // KIMCHI_WASM_POOL_SIZE set for one build but not the other) and we
-    // request more threads than the pool can serve, emnapi spawns a worker
-    // on demand and DEADLOCKS. The loader exports its baked size; clamp to
-    // it and warn loudly rather than hang.
     const bakedPool = kimchi.wasmThreadPoolSize;
     if (typeof bakedPool === "number" && threads > bakedPool - ASYNC_POOL_SIZE) {
-      const safe = Math.max(1, bakedPool - ASYNC_POOL_SIZE);
-      postNow("log", {
-        severity: "warning",
-        text:
-          `[worker] rayon threads (${threads}) exceed the loader's pool capacity ` +
-          `(pool ${bakedPool} - async ${ASYNC_POOL_SIZE} = ${bakedPool - ASYNC_POOL_SIZE}); the wasm ` +
-          `backend and web bundle were built with different KIMCHI_WASM_POOL_SIZE. Clamping to ${safe} ` +
-          `to avoid a worker-pool deadlock — rebuild both with the same value.`,
-      });
-      threads = safe;
+      threads = Math.max(1, bakedPool - ASYNC_POOL_SIZE);
     }
     kimchi.initThreadPool(threads);
     postNow("log", {
       severity: "info",
       text:
-        `[worker] wasm kimchi ready, rayon pool: ${threads} threads ` +
-        `(hardwareConcurrency=${self.navigator?.hardwareConcurrency}, ` +
-        `crossOriginIsolated=${self.crossOriginIsolated})`,
+        `[coordinator] wasm kimchi ready; pool ${POOL_SIZE} workers x ${threads} rayon threads ` +
+        `(cores=${self.navigator?.hardwareConcurrency}, crossOriginIsolated=${self.crossOriginIsolated})`,
     });
 
-    const { runSimulation } = await import("../output-es/Snarky.Example.Engine/index.js");
-    runSimulation({
+    const { runSimulationPool } = await import("../output-es/Snarky.Example.Web.Pool/index.js");
+    // The literal `new Worker(new URL(...))` is what vite must see HERE (in the
+    // coordinator module) to emit + wire the prover chunk.
+    const spawnProver = () =>
+      new Worker(new URL("./prover-entry.js", import.meta.url), { type: "module" });
+
+    runSimulationPool(POOL_SIZE)(spawnProver)({
       onLog: post("log"),
       onPhase: post("phase"),
       onTxs: post("txs"),
@@ -70,7 +59,7 @@ self.onmessage = async (e) => {
       onVerified: post("verified"),
     })();
   } catch (err) {
-    postNow("log", { severity: "error", text: "[worker] " + (err?.stack ?? String(err)) });
+    postNow("log", { severity: "error", text: "[coordinator] " + (err?.stack ?? String(err)) });
     postNow("phase", "failed");
   }
 };

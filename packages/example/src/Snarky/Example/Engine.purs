@@ -12,6 +12,7 @@ module Snarky.Example.Engine
   ( EngineCallbacks
   , TxView
   , runSimulation
+  , runWith
   ) where
 
 import Prelude
@@ -34,7 +35,7 @@ import Snarky.Example.Ledger (balanceOf)
 import Snarky.Example.Simulation (generateBlock, mkSimulation)
 import Snarky.Example.Snark.Manager (submitBlock)
 import Snarky.Example.Snark.Progress (ScanView, scanStateView)
-import Snarky.Example.Snark.Worker (localSnarkBackend)
+import Snarky.Example.Snark.Worker (SnarkBackend, localSnarkBackend)
 import Snarky.Example.Transaction (SignedTransaction(..), Transaction(..), Transfer(..))
 import Snarky.Example.Types.PublicKey (toBase58Check)
 
@@ -70,8 +71,16 @@ severityLabel = case _ of
   Warning -> "warning"
   Error -> "error"
 
+-- | The single-instance engine: the in-process `localSnarkBackend`, used by the
+-- | terminal-wasm entry and the browser's single-worker mode.
 runSimulation :: EngineCallbacks -> Effect Unit
-runSimulation cb = launchAff_ do
+runSimulation = runWith localSnarkBackend 1 (Milliseconds 120000.0)
+
+-- | The engine parameterized by its snark backend (and pool size / job timeout),
+-- | so a frontend can drive the same one-block pipeline over the in-process
+-- | backend or a real worker pool (node threads, browser Web Workers).
+runWith :: SnarkBackend Depth -> Int -> Milliseconds -> EngineCallbacks -> Effect Unit
+runWith backend poolSize jobTimeout cb = launchAff_ do
   let
     logger = LogAction \(Msg { severity, text }) ->
       cb.onLog { severity: severityLabel severity, text }
@@ -87,10 +96,9 @@ runSimulation cb = launchAff_ do
     , numAccounts: 10
     , logger
     , onProgress: Just onProgress
-    , poolSize: 1
-    -- Unused by the in-process backend (its synchronous run never times out).
-    , jobTimeout: Milliseconds 120000.0
-    , backend: localSnarkBackend
+    , poolSize
+    , jobTimeout
+    , backend
     }
 
   liftEffect $ cb.onPhase "block"
