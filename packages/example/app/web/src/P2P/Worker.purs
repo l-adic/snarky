@@ -19,6 +19,7 @@ import Foreign (Foreign, unsafeToForeign)
 import Snarky.Example.P2P.Backend (runCoordinator)
 import Snarky.Example.P2P.Transport (Transport)
 import Snarky.Example.P2P.WorkerPeer (runWorkerPeer)
+import Snarky.Example.Web.P2P.WorkerLog (mkPostLogger)
 
 -- | The role + the ready bridged transport, stashed by p2p-worker.js after boot.
 foreign import bootRole :: Effect String
@@ -42,8 +43,9 @@ main = do
         , onScan: \v -> postToMain "scan" (unsafeToForeign v)
         , onVerified: \v -> postToMain "verified" (unsafeToForeign v)
         }
-    _ ->
+    _ -> do
+      logger <- mkPostLogger
       runWorkerPeer transport
-        { onLog: \v -> postToMain "log" (unsafeToForeign v)
+        { logger
         , onPhase: \v -> postToMain "phase" (unsafeToForeign v)
         }

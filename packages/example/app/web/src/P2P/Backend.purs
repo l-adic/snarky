@@ -46,6 +46,8 @@ import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Foreign (unsafeFromForeign)
 import Pickles.Prove.SerializeProof (decodeCompiledProof)
+import Snarky.Example.Log (Logger)
+import Snarky.Example.Log as Log
 import Snarky.Example.P2P.Protocol (Msg(..), decodeMsg, encodeMsg, fingerprint)
 import Snarky.Example.P2P.Transport (Transport, onMessage, sendTo)
 import Snarky.Example.Snark.Pool (PoolSize(Dynamic))
@@ -96,6 +98,14 @@ newJoinQueue = do
           when (not (Array.null tail)) $ void $ liftEffect $ EffectAVar.tryPut unit signal
           pure head
   pure { push, pull }
+
+-- | Relay a nested-prover log line to a colog logger at its reported severity.
+relayLog :: Logger -> String -> String -> Effect Unit
+relayLog logger text = case _ of
+  "debug" -> Log.logDebug logger text
+  "warning" -> Log.logWarning logger text
+  "error" -> Log.logError logger text
+  _ -> Log.logInfo logger text
 
 -- | Fill a job's reply slot iff it is still pending (a late duplicate after the
 -- | pool already reassigned + delivered is dropped).
@@ -166,12 +176,21 @@ p2pSnarkBackend transport onPeers = do
           reply <- liftEffect EffectAVar.empty
           liftEffect $ flip WW.onMessage worker \ev ->
             let
-              r = unsafeFromForeign (data_ ev) :: { tag :: String, proof :: String, reason :: String }
+              r =
+                unsafeFromForeign (data_ ev)
+                  :: { tag :: String
+                     , proof :: String
+                     , reason :: String
+                     , value :: { severity :: String, text :: String }
+                     }
             in
               case r.tag of
                 "proof" -> void $ EffectAVar.put (Right r.proof) reply mempty
                 "reject" -> void $ EffectAVar.put (Left r.reason) reply mempty
                 "error" -> void $ EffectAVar.put (Left r.reason) reply mempty
+                -- The nested prover logs its SRS/compile + status through colog;
+                -- relay it to the coordinator's own logger (→ the coordinator UI).
+                "log" -> relayLog env.logger ("[self] " <> r.value.text) r.value.severity
                 _ -> pure unit
           liftEffect $ WW.postMessage
             { type: "init", chain: "Testnet", depth: reflectType (Proxy :: Proxy Depth), threads }

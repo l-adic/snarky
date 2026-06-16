@@ -46,8 +46,11 @@ self.onmessage = async (e) => {
       }
       kimchi.initThreadPool(threads);
       // LAZY (post-init) import of the kimchi-loading PS, then compile the circuit.
+      // The logger forwards SRS/compile + status to the coordinator (it relays
+      // "log" messages to its UI); see WorkerLog / P2P.Backend.
+      const { mkPostLogger } = await import("../output-es/Snarky.Example.Web.P2P.WorkerLog/index.js");
       const { buildProver } = await import("../output-es/Snarky.Example.Prover/index.js");
-      prove = buildProver({ chain: m.chain, depth: m.depth })();
+      prove = buildProver(mkPostLogger())({ chain: m.chain, depth: m.depth })();
       // Drain any jobs that arrived while we were compiling (init is async, so a
       // job message can interleave before `prove` is set — run them now, in order).
       for (const work of queued.splice(0)) runJob(work);

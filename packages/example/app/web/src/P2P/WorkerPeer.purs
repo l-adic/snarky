@@ -24,6 +24,8 @@ import Effect (Effect)
 import Effect.Exception (message, try)
 import Effect.Ref as Ref
 import Simple.JSON (readJSON)
+import Snarky.Example.Log (Logger)
+import Snarky.Example.Log as Log
 import Snarky.Example.P2P.Protocol (Msg(..), decodeMsg, encodeMsg, fingerprint)
 import Snarky.Example.P2P.Transport (Transport, broadcast, myId, onMessage, onPeer, sendTo)
 import Snarky.Example.Prover (buildProver)
@@ -36,10 +38,11 @@ import Type.Proxy (Proxy(..))
 chainTag :: String
 chainTag = "Testnet"
 
--- | What the worker reports to its own UI (the worker JS wires these to
--- | `postMessage`, mirroring the engine's callbacks on the coordinator).
+-- | What the worker reports to its own UI: a colog `Logger` for the log stream
+-- | (the same vehicle the engine uses — `buildProver`'s SRS/compile logging flows
+-- | through it too) and an `onPhase` for the current-status badge.
 type WorkerPeerEvents =
-  { onLog :: { severity :: String, text :: String } -> Effect Unit
+  { logger :: Logger
   , onPhase :: String -> Effect Unit
   }
 
@@ -51,11 +54,11 @@ jobLabel work = case readJSON work :: Either _ { tag :: String } of
   Left _ -> "job"
 
 runWorkerPeer :: Transport -> WorkerPeerEvents -> Effect Unit
-runWorkerPeer transport ev = do
-  ev.onPhase "compiling circuit"
-  prove <- buildProver { chain: chainTag, depth: reflectType (Proxy :: Proxy Depth) }
-  ev.onPhase "ready — awaiting work"
-  ev.onLog { severity: "info", text: "circuit compiled; waiting for the coordinator to assign work" }
+runWorkerPeer transport { logger, onPhase } = do
+  onPhase "compiling circuit"
+  prove <- buildProver logger { chain: chainTag, depth: reflectType (Proxy :: Proxy Depth) }
+  onPhase "ready — awaiting work"
+  Log.logInfo logger "waiting for the coordinator to assign work"
   count <- Ref.new 0
   let
     announce = broadcast transport (encodeMsg (Join { peerId: myId transport, fingerprint }))
@@ -64,18 +67,18 @@ runWorkerPeer transport ev = do
       Right (Assign a) -> do
         n <- Ref.modify (_ + 1) count
         let label = jobLabel a.work
-        ev.onPhase ("proving " <> label <> " (#" <> show n <> ")")
-        ev.onLog { severity: "info", text: "assigned " <> label <> " job #" <> show n <> " — proving…" }
+        onPhase ("proving " <> label <> " (#" <> show n <> ")")
+        Log.logInfo logger ("assigned " <> label <> " job #" <> show n <> " — proving…")
         result <- try (prove a.work)
         case result of
           Right proof -> do
             sendTo transport from (encodeMsg (Result { jobId: a.jobId, proof }))
-            ev.onLog { severity: "info", text: label <> " job #" <> show n <> " done — proof sent to coordinator" }
-            ev.onPhase "ready — awaiting work"
+            Log.logInfo logger (label <> " job #" <> show n <> " done — proof sent to coordinator")
+            onPhase "ready — awaiting work"
           Left err -> do
             sendTo transport from (encodeMsg (Reject { jobId: a.jobId, reason: message err }))
-            ev.onLog { severity: "error", text: label <> " job #" <> show n <> " failed: " <> message err }
-            ev.onPhase "ready — awaiting work"
+            Log.logError logger (label <> " job #" <> show n <> " failed: " <> message err)
+            onPhase "ready — awaiting work"
       _ -> pure unit
   -- (Re)announce availability whenever a peer is discovered, so a worker that
   -- booted before the coordinator is still picked up once the coordinator joins.
