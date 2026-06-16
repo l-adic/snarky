@@ -30,6 +30,7 @@ import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
 import Snarky.Example.Simulation (generateBlock, mkSimulation)
 import Snarky.Example.Snark.Manager (submitBlock)
+import Snarky.Example.Snark.Pool (PoolSize(Fixed))
 import Snarky.Example.Terminal.NodeBackend (nodeSnarkBackend)
 import Snarky.Example.Terminal.ProgressDisplay (mkProgressDisplay)
 import Snarky.Example.Terminal.WorkerLog (workerLogPath)
@@ -93,7 +94,7 @@ main = launchAff_ do
     , numAccounts: 10
     , logger
     , onProgress: Just display.reporter
-    , poolSize
+    , poolSize: Fixed poolSize
     , jobTimeout
     , backend: nodeSnarkBackend
     }

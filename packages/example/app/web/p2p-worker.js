@@ -68,7 +68,9 @@ self.onmessage = async (e) => {
 
     if (role === "coordinator") {
       const { runCoordinator } = await import("../output-es/Snarky.Example.P2P.Backend/index.js");
-      runCoordinator(bridge.transport)(m.poolSize || 2)({
+      // Dynamic pool: starts immediately, peers picked up as they join — no
+      // worker count needed.
+      runCoordinator(bridge.transport)({
         onLog: post("log"),
         onPhase: post("phase"),
         onTxs: post("txs"),

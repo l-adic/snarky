@@ -41,7 +41,7 @@ import Snarky.Example.AsyncQueue (Queue, dequeue, enqueue, newQueue)
 import Snarky.Example.Env (Env)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
-import Snarky.Example.Snark.Pool (runPool)
+import Snarky.Example.Snark.Pool (PoolSize, runPool)
 import Snarky.Example.Snark.ScanState (ScanState, SlotId)
 import Snarky.Example.Snark.ScanState as ScanState
 import Snarky.Example.Snark.Work (BaseJob, Proof, WorkItem)
@@ -76,16 +76,18 @@ service = "Snark Manager"
 -- | worker pool and the result listener over a fresh pair of channels.
 -- |
 -- | The work backend is injected (`Snarky.Example.Snark.Worker.SnarkBackend`),
--- | along with the worker count `poolSize`: `localSnarkBackend` runs the
--- | synchronous prover in-process (so `poolSize` is plumbing-only there), while
--- | a parallel backend (node thread / web worker) makes `poolSize` a real knob.
--- | `jobTimeout` bounds how long the pool waits for a worker before reassigning
--- | a job to another (see `Snarky.Example.Snark.Pool.runPool`).
+-- | along with the `poolSize` (`Snarky.Example.Snark.Pool.PoolSize`): `Fixed n`
+-- | for a known worker count (`localSnarkBackend` runs the synchronous prover
+-- | in-process, so it is plumbing-only there; a node-thread / web-worker backend
+-- | makes it a real knob), or `Dynamic` for a pool that grows as workers join
+-- | (the p2p coordinator). `jobTimeout` bounds how long the pool waits for a
+-- | worker before reassigning a job to another (see
+-- | `Snarky.Example.Snark.Pool.runPool`).
 mkManager
   :: forall d
    . { logger :: Logger
      , onProgress :: Maybe (OnProgress d)
-     , poolSize :: Int
+     , poolSize :: PoolSize
      , jobTimeout :: Milliseconds
      , backend :: SnarkBackend d
      }

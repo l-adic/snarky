@@ -35,20 +35,22 @@ import Snarky.Example.Simulation.Genesis (genGenesisLedger)
 import Snarky.Example.Simulation.Keystore (Keystore, senderInfo)
 import Snarky.Example.Simulation.Transaction (genDistinctPublicKeys, genOverdraftSignedTransaction, genValidSignedTransaction)
 import Snarky.Example.Snark.Manager (Manager, OnProgress, mkManager)
+import Snarky.Example.Snark.Pool (PoolSize)
 import Snarky.Example.Snark.Worker (SnarkBackend)
 import Test.QuickCheck.Gen (randomSampleOne)
 
 -- | What a simulation run is configured by. `onProgress` optionally plugs a
 -- | scan-state observer (e.g. the terminal display in
 -- | `Snarky.Example.Snark.Progress`) into the snark manager. `backend` and
--- | `poolSize` select where snark work runs and how many workers (see
--- | `Snarky.Example.Snark.Worker.SnarkBackend` / `localSnarkBackend`).
+-- | `poolSize` select where snark work runs and how many workers — `Fixed n` or
+-- | `Dynamic` (see `Snarky.Example.Snark.Worker.SnarkBackend` /
+-- | `Snarky.Example.Snark.Pool.PoolSize`).
 type SimulationConfig d =
   { chainId :: ChainId
   , numAccounts :: Int
   , logger :: Logger
   , onProgress :: Maybe (OnProgress d)
-  , poolSize :: Int
+  , poolSize :: PoolSize
   , jobTimeout :: Milliseconds
   , backend :: SnarkBackend d
   }

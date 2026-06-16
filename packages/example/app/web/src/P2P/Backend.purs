@@ -39,6 +39,7 @@ import Effect.Ref as Ref
 import Pickles.Prove.SerializeProof (decodeCompiledProof)
 import Snarky.Example.P2P.Protocol (Msg(..), decodeMsg, encodeMsg, fingerprint)
 import Snarky.Example.P2P.Transport (Transport, onMessage, sendTo)
+import Snarky.Example.Snark.Pool (PoolSize(Dynamic))
 import Snarky.Example.Snark.Work (encodeWorkItem)
 import Snarky.Example.Snark.Worker (SnarkBackend)
 import Snarky.Example.Web.Engine (Depth, EngineCallbacks, runWith)
@@ -122,10 +123,12 @@ p2pSnarkBackend transport = do
     }
 
 -- | Run the whole one-block pipeline as the coordinator: install the p2p backend
--- | and drive the shared engine over `poolSize` remote prover peers. A generous
+-- | and drive the shared engine over a DYNAMIC pool of remote prover peers — it
+-- | starts immediately and each peer that joins the session picks up work, so
+-- | there is no peer count to fix up front (the pool is `Dynamic`). A generous
 -- | job timeout — remote proving is slow, and a spurious reassignment just hands
 -- | the job to another peer.
-runCoordinator :: Transport -> Int -> EngineCallbacks -> Effect Unit
-runCoordinator transport poolSize cb = do
+runCoordinator :: Transport -> EngineCallbacks -> Effect Unit
+runCoordinator transport cb = do
   backend <- p2pSnarkBackend transport
-  runWith backend poolSize (Milliseconds 600000.0) cb
+  runWith backend Dynamic (Milliseconds 600000.0) cb

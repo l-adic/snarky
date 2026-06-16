@@ -36,6 +36,7 @@ import Snarky.Example.Block (Block(..), processBlock)
 import Snarky.Example.Ledger (balanceOf)
 import Snarky.Example.Simulation (generateBlock, mkSimulation)
 import Snarky.Example.Snark.Manager (submitBlock)
+import Snarky.Example.Snark.Pool (PoolSize(..))
 import Snarky.Example.Snark.Progress (scanStateView)
 import Snarky.Example.Snark.Worker (SnarkBackend, localSnarkBackend)
 import Snarky.Example.Transaction (SignedTransaction(..), Transaction(..), Transfer(..))
@@ -81,13 +82,13 @@ severityLabel = case _ of
 -- | "performant single" path), used by the browser's single-worker mode. Its
 -- | synchronous run never times out, so `poolSize`/`jobTimeout` are plumbing.
 runSimulation :: EngineCallbacks -> Effect Unit
-runSimulation = runWith localSnarkBackend 1 (Milliseconds 120000.0)
+runSimulation = runWith localSnarkBackend (Fixed 1) (Milliseconds 120000.0)
 
 -- | The engine parameterized by its snark backend (plus pool size / job
 -- | timeout), so a frontend can drive the same one-block pipeline over the
--- | in-process backend or a real worker pool (e.g. remote p2p prover peers via
--- | `Snarky.Example.P2P.Backend.p2pSnarkBackend`).
-runWith :: SnarkBackend Depth -> Int -> Milliseconds -> EngineCallbacks -> Effect Unit
+-- | in-process backend (`Fixed 1`) or a real worker pool (e.g. a `Dynamic` pool
+-- | of remote p2p prover peers via `Snarky.Example.P2P.Backend.p2pSnarkBackend`).
+runWith :: SnarkBackend Depth -> PoolSize -> Milliseconds -> EngineCallbacks -> Effect Unit
 runWith backend poolSize jobTimeout cb = launchAff_ do
   let
     logger = LogAction \(Msg { severity, text }) ->
