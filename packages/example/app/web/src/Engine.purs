@@ -1,10 +1,8 @@
--- | The browser engine: the SAME one-block pipeline as the terminal
--- | entry (`Snarky.Example.Main`) — SRS + compile, genesis, random
--- | transfers, base + merge proofs through the snark manager, root
--- | proof verification — but instead of a terminal display it emits
--- | typed events through `EngineCallbacks`. The worker entry
--- | (web/worker-entry.js) wires those callbacks to `postMessage`; the
--- | UI thread renders them.
+-- | The browser engine: the one-block pipeline — SRS + compile, genesis, random
+-- | transfers, base + merge proofs through the snark manager, root-proof
+-- | verification — emitting typed events through `EngineCallbacks` instead of
+-- | touching any UI. Driven by the P2P coordinator (`Snarky.Example.P2P.Backend`
+-- | / `Snarky.Example.Web.P2P.Worker`) over an injected `SnarkBackend`.
 -- |
 -- | Runs inside a Web Worker over the wasm kimchi backend: proving is
 -- | synchronous, so it must never live on the UI thread.
@@ -13,7 +11,6 @@ module Snarky.Example.Web.Engine
   , EngineCallbacks
   , ScanView
   , TxView
-  , runSimulation
   , runWith
   ) where
 
@@ -21,7 +18,7 @@ import Prelude
 
 import Colog (LogAction(..), Msg(..), Severity(..))
 import Data.Maybe (Maybe(..))
-import Data.Time.Duration (Milliseconds(..))
+import Data.Time.Duration (Milliseconds)
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Aff (launchAff_)
@@ -36,9 +33,9 @@ import Snarky.Example.Block (Block(..), processBlock)
 import Snarky.Example.Ledger (balanceOf)
 import Snarky.Example.Simulation (generateBlock, mkSimulation)
 import Snarky.Example.Snark.Manager (submitBlock)
-import Snarky.Example.Snark.Pool (PoolSize(..))
+import Snarky.Example.Snark.Pool (PoolSize)
 import Snarky.Example.Snark.Progress (scanStateView)
-import Snarky.Example.Snark.Worker (SnarkBackend, localSnarkBackend)
+import Snarky.Example.Snark.Worker (SnarkBackend)
 import Snarky.Example.Transaction (SignedTransaction(..), Transaction(..), Transfer(..))
 import Snarky.Example.Types.PublicKey (toBase58Check)
 
@@ -78,16 +75,10 @@ severityLabel = case _ of
   Warning -> "warning"
   Error -> "error"
 
--- | The single-instance engine: the in-process `localSnarkBackend` (the
--- | "performant single" path), used by the browser's single-worker mode. Its
--- | synchronous run never times out, so `poolSize`/`jobTimeout` are plumbing.
-runSimulation :: EngineCallbacks -> Effect Unit
-runSimulation = runWith localSnarkBackend (Fixed 1) (Milliseconds 120000.0)
-
 -- | The engine parameterized by its snark backend (plus pool size / job
--- | timeout), so a frontend can drive the same one-block pipeline over the
--- | in-process backend (`Fixed 1`) or a real worker pool (e.g. a `Dynamic` pool
--- | of remote p2p prover peers via `Snarky.Example.P2P.Backend.p2pSnarkBackend`).
+-- | timeout): the P2P coordinator drives the one-block pipeline over a `Dynamic`
+-- | pool whose first worker is its own in-process prover and the rest are remote
+-- | peers (`Snarky.Example.P2P.Backend.p2pSnarkBackend`).
 runWith :: SnarkBackend Depth -> PoolSize -> Milliseconds -> EngineCallbacks -> Effect Unit
 runWith backend poolSize jobTimeout cb = launchAff_ do
   let

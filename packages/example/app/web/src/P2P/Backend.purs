@@ -4,11 +4,13 @@
 -- | peer) instead of `postMessage` (a local Web Worker), and workers are
 -- | discovered dynamically via the `Join` handshake rather than spawned.
 -- |
--- | The pool (`Snarky.Example.Snark.Pool.runPool`) drives this unchanged over a
--- | `Dynamic` pool: each `spawn` blocks until a peer `Join`s, so the coordinator
--- | starts immediately and grows as peers arrive. Reliability (timeout →
--- | reassign, at-most-once) is the pool's, so a peer that vanishes mid-job is
--- | handled by the job timeout (its `Result` never arrives → reassign).
+-- | The pool (`Snarky.Example.Snark.Pool.runPool`) drives this over a `Dynamic`
+-- | pool: the first worker is the coordinator's OWN in-process prover (so a lone
+-- | coordinator proves the whole block itself — the single-machine path), and
+-- | every subsequent `spawn` blocks until a peer `Join`s, so the pool grows as
+-- | peers arrive. Reliability (timeout → reassign, at-most-once) is the pool's,
+-- | so a peer that vanishes mid-job is handled by the job timeout (its `Result`
+-- | never arrives → reassign).
 -- |
 -- | One `Transport.onMessage` router (installed once when the backend is built)
 -- | fans `Result`/`Reject` to the waiting `run` by `jobId`, and turns each fresh
@@ -34,7 +36,7 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.AVar (AVar)
 import Effect.AVar as EffectAVar
-import Effect.Aff (Aff)
+import Effect.Aff (Aff, delay)
 import Effect.Aff.AVar as AVar
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
@@ -45,7 +47,7 @@ import Snarky.Example.P2P.Protocol (Msg(..), decodeMsg, encodeMsg, fingerprint)
 import Snarky.Example.P2P.Transport (Transport, onMessage, sendTo)
 import Snarky.Example.Snark.Pool (PoolSize(Dynamic))
 import Snarky.Example.Snark.Work (WorkItem(..), encodeWorkItem)
-import Snarky.Example.Snark.Worker (SnarkBackend)
+import Snarky.Example.Snark.Worker (SnarkBackend, proveItem)
 import Snarky.Example.Web.Engine (Depth, EngineCallbacks, runWith)
 
 -- | A reply slot for one assigned job: filled by the router with the worker's
@@ -101,6 +103,7 @@ p2pSnarkBackend transport onPeers = do
   counter <- Ref.new 0
   known <- Ref.new Set.empty
   peers <- Ref.new (Map.empty :: Map String PeerState)
+  selfSpawned <- Ref.new false
   joinQ <- newJoinQueue
   let
     -- Push the current peer table (sorted by id, via `Map`) to the UI.
@@ -116,6 +119,9 @@ p2pSnarkBackend transport onPeers = do
     completed id = do
       Ref.modify_ (Map.update (\s -> Just (s { status = "idle", completed = s.completed + 1 })) id) peers
       report
+    jobLabel = case _ of
+      Base _ -> "proving base"
+      Merge _ -> "proving merge"
   onMessage transport \from raw ->
     case decodeMsg raw of
       Right (Join j) | j.fingerprint == fingerprint -> do
@@ -128,35 +134,57 @@ p2pSnarkBackend transport onPeers = do
       Right (Reject r) -> deliver pending r.jobId (Left r.reason)
       _ -> pure unit
   pure \env ->
-    { name: "p2p peer"
+    { name: "p2p pool"
+    -- The FIRST worker is the coordinator's own in-process prover, so a lone
+    -- coordinator (no remote peers) proves the whole block itself — the
+    -- single-machine path. Each subsequent worker is a remote peer that joined.
     , spawn: do
-        peerId <- joinQ.pull
-        pure
-          { id: peerId
-          , run: \job -> do
-              jobId <- liftEffect $ Ref.modify' (\n -> { state: n + 1, value: "job-" <> show (n + 1) }) counter
-              liftEffect $ setStatus peerId case job of
-                Base _ -> "proving base"
-                Merge _ -> "proving merge"
-              slot <- liftEffect EffectAVar.empty
-              liftEffect $ Ref.modify_ (Map.insert jobId slot) pending
-              liftEffect $ sendTo transport peerId (encodeMsg (Assign { jobId, work: encodeWorkItem job }))
-              res <- AVar.take slot
-              liftEffect $ Ref.modify_ (Map.delete jobId) pending
-              case res of
-                Left reason -> do
-                  liftEffect $ setStatus peerId "idle"
-                  liftEffect $ throw ("p2p worker " <> peerId <> " rejected job " <> jobId <> ": " <> reason)
-                Right proofStr -> case decodeCompiledProof env proofStr of
-                  Left err -> liftEffect $ throw ("p2p decodeCompiledProof failed: " <> show err)
-                  Right proof -> do
-                    liftEffect $ completed peerId
-                    pure proof
-          , terminate: do
-              Ref.modify_ (Set.delete peerId) known
-              Ref.modify_ (Map.delete peerId) peers
-              report
-          }
+        isSelf <- liftEffect $ Ref.modify' (\done -> { state: true, value: not done }) selfSpawned
+        if isSelf then do
+          liftEffect $ addPeer "self"
+          pure
+            { id: "self"
+            , run: \job -> do
+                -- Yield to a macrotask before the (synchronous, blocking) local
+                -- proof: the pool dispatches over microtasks, so without this the
+                -- coordinator would prove back-to-back and never drain its
+                -- message queue — the relayed `Join`s from peers would never be
+                -- processed and no peer could ever enter the pool. The yield lets
+                -- queued joins/results process and the dispatcher hand work to
+                -- the peers between local proofs.
+                delay (Milliseconds 1.0)
+                liftEffect $ setStatus "self" (jobLabel job)
+                proof <- liftEffect $ proveItem env.compiledTx job
+                liftEffect $ completed "self"
+                pure proof
+            , terminate: pure unit
+            }
+        else do
+          peerId <- joinQ.pull
+          pure
+            { id: peerId
+            , run: \job -> do
+                jobId <- liftEffect $ Ref.modify' (\n -> { state: n + 1, value: "job-" <> show (n + 1) }) counter
+                liftEffect $ setStatus peerId (jobLabel job)
+                slot <- liftEffect EffectAVar.empty
+                liftEffect $ Ref.modify_ (Map.insert jobId slot) pending
+                liftEffect $ sendTo transport peerId (encodeMsg (Assign { jobId, work: encodeWorkItem job }))
+                res <- AVar.take slot
+                liftEffect $ Ref.modify_ (Map.delete jobId) pending
+                case res of
+                  Left reason -> do
+                    liftEffect $ setStatus peerId "idle"
+                    liftEffect $ throw ("p2p worker " <> peerId <> " rejected job " <> jobId <> ": " <> reason)
+                  Right proofStr -> case decodeCompiledProof env proofStr of
+                    Left err -> liftEffect $ throw ("p2p decodeCompiledProof failed: " <> show err)
+                    Right proof -> do
+                      liftEffect $ completed peerId
+                      pure proof
+            , terminate: do
+                Ref.modify_ (Set.delete peerId) known
+                Ref.modify_ (Map.delete peerId) peers
+                report
+            }
     }
 
 -- | Run the whole one-block pipeline as the coordinator: install the p2p backend

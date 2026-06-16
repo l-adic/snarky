@@ -61,7 +61,7 @@ const brpc = (m, p = {}) => rpc(ver.webSocketDebuggerUrl, m, p);
 // 2. open the peer tabs first (so they're compiling + announcing), then the
 //    coordinator. All compile in parallel; the coordinator's pool waits for N
 //    Joins before dispatching, which the peers satisfy as they finish compiling.
-const base = `${URL}/p2p.html`;
+const base = `${URL}/index.html`;
 async function tabFor(match) {
   const ts = (await J()).filter((t) => (t.url || "").includes(match));
   return ts[ts.length - 1]?.webSocketDebuggerUrl;

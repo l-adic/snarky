@@ -61,7 +61,7 @@ const ver = await (await fetch(`http://localhost:${CDP}/json/version`)).json();
 const brpc = (m, p = {}) => rpc(ver.webSocketDebuggerUrl, m, p);
 
 // 2. open the coordinator (offerer) + one peer (answerer).
-const base = `${URL}/p2p.html`;
+const base = `${URL}/index.html`;
 async function tabFor(match) {
   const ts = (await J()).filter((t) => (t.url || "").includes(match));
   return ts[ts.length - 1]?.webSocketDebuggerUrl;

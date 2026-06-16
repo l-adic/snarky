@@ -3,7 +3,7 @@
 # P2P star worker-pool launcher (web only). Three modes:
 #
 #   tools/run_p2p_pool.sh             # dev server (vite, COOP/COEP, --host)
-#                                     # open /p2p.html, pick coordinator | peer
+#                                     # open /index.html, pick coordinator | peer
 #   tools/run_p2p_pool.sh --build     # production bundle -> web/dist
 #   tools/run_p2p_pool.sh --test [N]  # headless Milestone A: build, preview,
 #                                     # and drive 1 coordinator + N peers (default
@@ -29,7 +29,7 @@ case "${1:-}" in
     PREVIEW=$!
     trap 'kill $PREVIEW 2>/dev/null || true' EXIT
     # wait for the preview server to answer
-    until curl -sf -o /dev/null http://localhost:4173/p2p.html; do sleep 1; done
+    until curl -sf -o /dev/null http://localhost:4173/index.html; do sleep 1; done
     if [ "$1" = "--webrtc" ]; then
       URL=http://localhost:4173 node tools/p2p_pool_webrtc_test.mjs
     else
