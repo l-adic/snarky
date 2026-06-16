@@ -35,13 +35,20 @@ the coordinator's assignments. Parallelism comes from N machines each at full
 speed, over the #148 WebRTC transport (`trystero`) or, for same-browser tabs,
 `BroadcastChannel`.
 
-Open `/p2p.html`, pick a role + transport + session: run one coordinator and
-N peers in the same session. The pieces:
+Open `/p2p.html`, enter a channel name, then click **Start experiment** (be the
+coordinator) on one machine and **Join as worker** on the others — that's the
+whole UI. The coordinator's pool is *dynamic*: it starts immediately and uses
+whatever workers join the channel (add more anytime), so there is no peer count
+to enter. The pieces:
 
+- `src/P2P/Main.purs` — the react-basic UI (same stack as `Web.Main`, reusing its
+  `logPanel`/`scanStatePanel`): channel + the two buttons, and the
+  transport↔worker relay. `p2p-main.js` injects only the irreducibly-JS bits
+  (the `new Worker(...)` literal and the transport factory).
 - `src/P2P/Protocol.purs` — the Join/Assign/Result/Reject dispatch messages.
 - `src/P2P/Backend.purs` — `p2pSnarkBackend` / `runCoordinator`: a `SnarkBackend`
   whose workers are remote peers; reuses the `runPool` reliability (timeout →
-  reassign, at-most-once) unchanged.
+  reassign, at-most-once) over a `Dynamic` pool.
 - `src/P2P/WorkerPeer.purs` — `runWorkerPeer`: compile once, then prove each
   `Assign` (base and merge identically).
 - `src/P2P/Transport.purs` + `p2p-transport-*.js` / `p2p-rtc.js` — the transport
@@ -62,7 +69,8 @@ tools/run_p2p_pool.sh --webrtc     # Milestone B: 1 coordinator + 1 peer over a
                                    # harness-driven signaling), to a verified root
 ```
 
-Trystero (serverless WebRTC over public Nostr relays) is the cross-machine
-many-peer transport: pick it in the UI and share the session code. It depends on
-public relays, so it's human-tested rather than part of the deterministic CI
+Trystero (serverless WebRTC over public Nostr relays) is the default transport —
+the cross-machine, many-peer one: share the channel name across devices. It
+depends on public relays, so it's human-tested rather than part of the
+deterministic CI
 checks above.

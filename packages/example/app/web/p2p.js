@@ -1,5 +1,5 @@
 import "./styles.css";
-// P2P entry LOADER — gates the real bootstrap (p2p-boot.js) on cross-origin
+// P2P entry LOADER — gates the real bootstrap (p2p-main.js) on cross-origin
 // isolation.
 //
 // On GitHub Pages there are no COOP/COEP response headers, so the page is NOT
@@ -25,7 +25,7 @@ const panel = (html) => {
 
 if (globalThis.crossOriginIsolated) {
   try { sessionStorage.removeItem("coiTries"); } catch {}
-  import("./p2p-boot.js");
+  import("./p2p-main.js");
 } else {
   panel("Enabling secure context (SharedArrayBuffer)…<br>one moment, reloading.");
   // Watchdog: the coi-serviceworker reloads to gain cross-origin isolation, but

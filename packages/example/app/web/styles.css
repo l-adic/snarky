@@ -71,6 +71,29 @@
   background: var(--border);
   cursor: default;
 }
+/* Group consecutive buttons (Start experiment / Join as worker) at the right:
+   the first gets the auto margin, the next sits beside it. */
+.run-btn + .run-btn {
+  margin-left: 0.5rem;
+}
+
+/* Channel name field in the P2P header. */
+.field {
+  font: 12px sans-serif;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.channel-input {
+  width: 12ch;
+  font: 12px monospace;
+  background: #0f172a;
+  color: #e2e8f0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+}
 
 /* --- layout --- */
 .grid {
