@@ -34,6 +34,12 @@
 #
 #   --pool-size N         worker threads                  (env SNARK_POOL_SIZE)
 #   --job-timeout S       per-job timeout, seconds        (env SNARK_JOB_TIMEOUT_S)
+#   --wasm                run the pool over the wasm kimchi backend, splitting
+#                         rayon threads evenly across the pool (each instance
+#                         gets cores/N). env KIMCHI_BACKEND=wasm +
+#                         KIMCHI_WASM_RAYON_THREADS. Slower than native, and
+#                         memory-bound (N+1 wasm instances, each up to ~4GB) —
+#                         keep N small (2-3).
 #
 #   Fault injection (for exercising the pool's reliability paths):
 #   --delay-ms MS         stall a job MS ms before proving (env SNARK_WORKER_DELAY_MS)
@@ -52,7 +58,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SIM_DIR="$REPO_ROOT/packages/example/app"
 WORKER_LOG="$REPO_ROOT/snark-worker.log"
 
-usage() { sed -n '23,48p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+# Print the Usage block (everything from "# Usage:" up to `set -e`).
+usage() { sed -n '/^# Usage:/,/^set -e/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'; }
 
 # A value-taking flag needs its argument.
 need() { [ -n "$2" ] || { echo "error: $1 needs a value" >&2; exit 1; }; }
@@ -60,12 +67,15 @@ need() { [ -n "$2" ] || { echo "error: $1 needs a value" >&2; exit 1; }; }
 # Pull our own flags out of the args. Config/fault flags become env-var
 # assignments (ENVV); everything else passes through to the simulation.
 SPLIT=0
+WASM=0
+POOL_SIZE=4 # mirrors Main's defaultPoolSize; used for the --wasm rayon split
 ENVV=()
 ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --split) SPLIT=1; shift ;;
-    --pool-size) need "$1" "${2:-}"; ENVV+=("SNARK_POOL_SIZE=$2"); shift 2 ;;
+    --wasm) WASM=1; shift ;;
+    --pool-size) need "$1" "${2:-}"; POOL_SIZE="$2"; ENVV+=("SNARK_POOL_SIZE=$2"); shift 2 ;;
     --job-timeout) need "$1" "${2:-}"; ENVV+=("SNARK_JOB_TIMEOUT_S=$2"); shift 2 ;;
     --delay-ms) need "$1" "${2:-}"; ENVV+=("SNARK_WORKER_DELAY_MS=$2"); shift 2 ;;
     --delay-pct) need "$1" "${2:-}"; ENVV+=("SNARK_WORKER_DELAY_PCT=$2"); shift 2 ;;
@@ -74,6 +84,18 @@ while [ $# -gt 0 ]; do
     *) ARGS+=("$1"); shift ;;
   esac
 done
+
+# --wasm: select the wasm kimchi loader and split rayon threads evenly across
+# the pool — each of the N+1 wasm instances (the N workers + the coordinator)
+# gets cores/N, so they don't oversubscribe the cores. The env reaches the
+# worker threads via the same ENVV pass-through used below.
+if [ "$WASM" -eq 1 ]; then
+  cores=$(nproc)
+  per=$(( cores / POOL_SIZE )); [ "$per" -lt 1 ] && per=1
+  ENVV+=("KIMCHI_BACKEND=wasm" "KIMCHI_WASM_RAYON_THREADS=$per")
+  echo "==> wasm backend: $POOL_SIZE worker(s) × $per rayon threads (of $cores cores)"
+  [ "$POOL_SIZE" -ge 4 ] && echo "    note: $((POOL_SIZE + 1)) wasm instances, each up to ~4GB — watch memory"
+fi
 
 # Build from inside the workspace dir (spago must be run there to
 # detect the frontends workspace). Build BEFORE opening tmux so build

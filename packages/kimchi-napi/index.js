@@ -11,13 +11,16 @@
 // REQUIRED for multi-threaded proving.
 if (process.env.KIMCHI_BACKEND === "wasm") {
   const k = require("./wasm/kimchi-napi.wasi.cjs");
-  // Full core count IN NODE: our napi calls are synchronous, so the
-  // main JS thread is blocked (asleep) during every Rust phase — it
-  // donates its core to the pool rather than contending with it.
-  // Measured: cores-1 costs ~8% prove wall here. The BROWSER is the
-  // opposite regime — the UI thread keeps running concurrently, so the
-  // browser init should use navigator.hardwareConcurrency - 1.
-  k.initThreadPool(require("os").cpus().length);
+  // rayon pool size. Default IN NODE is the full core count: our napi
+  // calls are synchronous, so the main JS thread is blocked (asleep)
+  // during every Rust phase — it donates its core to the pool rather than
+  // contending with it (cores-1 measured ~8% prove wall). When several wasm
+  // instances run at once (the worker_threads pool), that full count
+  // oversubscribes — so KIMCHI_WASM_RAYON_THREADS overrides it, letting the
+  // launcher hand each instance cores/poolSize for an even split. (The
+  // browser is the opposite regime and sizes its own pool via wasm-pool-config.)
+  const rayon = Number(process.env.KIMCHI_WASM_RAYON_THREADS) || require("os").cpus().length;
+  k.initThreadPool(rayon);
   module.exports = k;
   return;
 }
