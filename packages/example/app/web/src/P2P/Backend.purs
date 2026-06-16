@@ -26,6 +26,7 @@ module Snarky.Example.P2P.Backend
 
 import Prelude
 
+import Colog (LogAction(..), Msg(..), Severity(..))
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Map (Map)
@@ -49,7 +50,7 @@ import Pickles.Prove.SerializeProof (decodeCompiledProof)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
 import Snarky.Example.P2P.Protocol (Msg(..), decodeMsg, encodeMsg, fingerprint)
-import Snarky.Example.P2P.Transport (Transport, onMessage, sendTo)
+import Snarky.Example.P2P.Transport (Transport, onMessage, onPeer, sendTo)
 import Snarky.Example.Snark.Pool (PoolSize(Dynamic))
 import Snarky.Example.Snark.Work (WorkItem(..), encodeWorkItem)
 import Snarky.Example.Snark.Worker (SnarkBackend)
@@ -119,8 +120,8 @@ deliver pending jobId value = do
 -- | Build the coordinator's `SnarkBackend`: install the transport router and the
 -- | shared correlation state once, returning the per-`Env` backend the pool
 -- | applies. Each remote worker is a peer addressed by its `Join`'s `from` id.
-p2pSnarkBackend :: Transport -> (Array PeerView -> Effect Unit) -> Effect (SnarkBackend Depth)
-p2pSnarkBackend transport onPeers = do
+p2pSnarkBackend :: Transport -> Logger -> (Array PeerView -> Effect Unit) -> Effect (SnarkBackend Depth)
+p2pSnarkBackend transport logger onPeers = do
   pending <- Ref.new (Map.empty :: Map String Reply)
   counter <- Ref.new 0
   known <- Ref.new Set.empty
@@ -159,18 +160,35 @@ p2pSnarkBackend transport onPeers = do
       case Map.lookup id m of
         Just slot -> void $ EffectAVar.put (Left "peer left") slot mempty
         Nothing -> removePeer id
+  -- Log every peer the transport discovers, even before it announces: the key
+  -- diagnostic for a worker that never gets recognized — if "discovered peer X"
+  -- appears but "peer X joined the pool" never does, the link is up but its
+  -- Join isn't arriving; if neither appears, the transport never connected them.
+  onPeer transport \id ->
+    Log.logInfo logger ("[pool] discovered peer " <> id <> " (awaiting its Join)")
   onMessage transport \from raw ->
     case decodeMsg raw of
-      Right (Join j) | j.fingerprint == fingerprint -> do
-        -- Dedup by transport id: a peer re-announces on every discovery.
-        fresh <- Ref.modify' (\s -> { state: Set.insert from s, value: not (Set.member from s) }) known
-        when fresh do
-          addPeer from
-          joinQ.push from
+      Right (Join j)
+        | j.fingerprint == fingerprint -> do
+            -- Dedup by transport id: a peer re-announces on every discovery.
+            fresh <- Ref.modify' (\s -> { state: Set.insert from s, value: not (Set.member from s) }) known
+            when fresh do
+              Log.logInfo logger ("[pool] peer " <> from <> " joined the pool")
+              addPeer from
+              joinQ.push from
+        | otherwise ->
+            Log.logWarning logger
+              ( "[pool] ignoring Join from " <> from <> ": fingerprint \"" <> j.fingerprint
+                  <> "\" != \""
+                  <> fingerprint
+                  <> "\" (incompatible build)"
+              )
       Right (Result r) -> deliver pending r.jobId (Right r.proof)
       Right (Reject r) -> deliver pending r.jobId (Left r.reason)
       Right (Leave l) -> peerGone l.peerId
-      _ -> pure unit
+      -- The coordinator assigns; it never receives an `Assign`. Ignore it.
+      Right (Assign _) -> pure unit
+      Left _ -> Log.logDebug logger ("[pool] undecodable message from " <> from)
   pure \env ->
     { name: "p2p pool"
     -- The FIRST worker is the coordinator's own prover (a nested Web Worker), so
@@ -267,5 +285,19 @@ p2pSnarkBackend transport onPeers = do
 -- | doesn't kill the slow original, so a merely-slow peer can still win.
 runCoordinator :: Transport -> (Array PeerView -> Effect Unit) -> EngineCallbacks -> Effect Unit
 runCoordinator transport onPeers cb = do
-  backend <- p2pSnarkBackend transport onPeers
+  -- A logger for the transport router (which runs outside the engine, so it has
+  -- no `env.logger`): relay through the same `cb.onLog` sink the engine uses, so
+  -- pool discovery/Join diagnostics land in the coordinator's UI log.
+  let
+    logger = LogAction \(Msg { severity, text }) ->
+      cb.onLog { severity: severityLabel severity, text }
+  backend <- p2pSnarkBackend transport logger onPeers
   runWith backend Dynamic (Milliseconds 120000.0) cb
+
+-- | Colog `Severity` → the string label `EngineCallbacks.onLog` expects.
+severityLabel :: Severity -> String
+severityLabel = case _ of
+  Debug -> "debug"
+  Info -> "info"
+  Warning -> "warning"
+  Error -> "error"

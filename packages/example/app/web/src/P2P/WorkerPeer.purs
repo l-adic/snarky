@@ -83,13 +83,13 @@ describeJob :: String -> String
 describeJob work = case readJSON work :: Either _ { tag :: String } of
   Right { tag: "base" } ->
     case
-      readJSON work ::
-        Either _
-          { base ::
-              { statement :: StmtPeek
-              , tx :: { transaction :: { transfer :: { to :: { x :: String }, amount :: String } } }
-              }
-          }
+      readJSON work
+        :: Either _
+             { base ::
+                 { statement :: StmtPeek
+                 , tx :: { transaction :: { transfer :: { to :: { x :: String }, amount :: String } } }
+                 }
+             }
       of
       Right { base: b } ->
         let
@@ -116,7 +116,8 @@ runWorkerPeer transport { logger, onPhase } = do
   count <- Ref.new 0
   assigned <- Ref.new false
   let
-    announce = broadcast transport (encodeMsg (Join { peerId: myId transport, fingerprint }))
+    joinMsg = encodeMsg (Join { peerId: myId transport, fingerprint })
+    announce = broadcast transport joinMsg
   onMessage transport \from raw ->
     case decodeMsg raw of
       Right (Assign a) -> do
@@ -136,11 +137,18 @@ runWorkerPeer transport { logger, onPhase } = do
             Log.logError logger ("job #" <> show n <> " failed: " <> message err)
             onPhase "ready — awaiting work"
       _ -> pure unit
-  -- (Re)announce availability whenever a peer is discovered, so a worker that
-  -- booted before the coordinator is still picked up once the coordinator joins.
-  onPeer transport \_ -> announce
+  -- Announce availability whenever a peer is discovered. Send the `Join` DIRECTLY
+  -- to that peer (`sendTo`), not just by broadcast: `onPeer` fires exactly when
+  -- the channel to it opens, so a targeted send is the reliable way to reach the
+  -- coordinator the instant we are connected — a broadcast can race the channel
+  -- or be dropped. Broadcast too, as a fallback for any peer we already had.
+  onPeer transport \id -> do
+    Log.logInfo logger ("discovered peer " <> id <> " — announcing")
+    sendTo transport id joinMsg
+    announce
   announce
-  -- …and keep re-announcing for a while, since a single broadcast can be lost
-  -- over WebRTC — until the coordinator assigns the first job (proof it knows us)
-  -- or a bounded number of tries elapse (so an empty room isn't spammed forever).
+  -- …and keep re-announcing for a while, since a single announce can still be
+  -- lost over WebRTC — until the coordinator assigns the first job (proof it
+  -- knows us) or a bounded number of tries elapse (so an empty room isn't
+  -- spammed forever; a coordinator that appears later is caught by onPeer above).
   reannounce 4000 30 (Ref.read assigned) announce
