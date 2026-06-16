@@ -11,8 +11,12 @@ import "./styles.css";
 // merge job to the pool of peers, and verifies the root. A peer is a full-core
 // prover answering Assigns. Run one coordinator + N peers in the same session.
 //
-// The worker is constructed HERE so vite bundles its module graph.
+// The REAL transport is built HERE, on the main thread (it stays responsive
+// while the worker proves, and WebRTC's RTCPeerConnection only works off-worker);
+// it is bridged into the prover worker over postMessage (see p2p-bridge.js). The
+// worker is constructed HERE too so vite bundles its module graph.
 import { initIce, probeTurn } from "./p2p-rtc.js";
+import { mkTransport } from "./p2p-mk-transport.js";
 
 function hashParams() {
   const raw = location.hash.replace(/^#/, "");
@@ -125,12 +129,21 @@ function startRole() {
   for (const id of ["start", "role-select", "session", "transport", "poolsize"]) document.getElementById(id).disabled = true;
   if (tKind === "bc") addLog("info", "BroadcastChannel connects tabs of the SAME browser — pick Trystero for different machines");
 
-  const launch = () => {
+  const launch = async () => {
+    // The real transport lives on THIS (main) thread; the worker gets a bridged
+    // proxy. So the network connection is serviced here, never blocked by the
+    // worker's synchronous proving.
+    const transport = await mkTransport(tKind, session);
+    window.__transport = transport; // for manual-SDP signaling / tests
     const worker = new Worker(new URL("./p2p-worker.js", import.meta.url), { type: "module" });
     window.__worker = worker;
     worker.onmessage = (e) => {
       const m = e.data;
-      if (!m || !m.tag) return;
+      if (!m) return;
+      // worker → transport relay
+      if (m._t === "broadcast") { transport.broadcast(m.msg); return; }
+      if (m._t === "send") { transport.sendTo(m.peer, m.msg); return; }
+      // worker → page events
       if (m.tag === "log") addLog(m.value.severity, m.value.text);
       else if (m.tag === "phase") setPhase(m.value);
       else if (m.tag === "scan") renderScan(m.value);
@@ -141,7 +154,11 @@ function startRole() {
       }
     };
     worker.onerror = (ev) => addLog("error", "[worker] " + (ev?.message || "crashed — see console"));
-    worker.postMessage({ type: "start", role, session, transport: tKind, poolSize, threads: threads0 ? +threads0 : undefined });
+    // transport → worker relay (+ our id), then start the role.
+    transport.onMessage((from, raw) => worker.postMessage({ _t: "msg", from, raw }));
+    transport.onPeer((id) => worker.postMessage({ _t: "peer", id }));
+    worker.postMessage({ _t: "myId", id: transport.myId });
+    worker.postMessage({ type: "start", role, session, poolSize, threads: threads0 ? +threads0 : undefined });
   };
 
   // WebRTC transports: load TURN credentials + probe before connecting.

@@ -1,23 +1,25 @@
-// The P2P prover worker. Owns the wasm kimchi backend (the `kimchi-napi` import
-// is aliased to the wasi-browser loader in vite.config.mjs) and a `Transport`,
-// then runs ONE of two roles per the start message:
+// The P2P prover worker — pure compute. Owns the wasm kimchi backend (the
+// `kimchi-napi` import is aliased to the wasi-browser loader in vite.config.mjs)
+// and runs ONE of two roles per the start message, over a BRIDGED transport: the
+// real transport (BroadcastChannel / WebRTC) lives on the MAIN thread (p2p-boot.js)
+// and is relayed in here via p2p-bridge.js, so this worker can block on synchronous
+// proving without ever stalling the network connection (and WebRTC works at all —
+// RTCPeerConnection isn't available in a Worker).
 //
 //   coordinator  the block producer. Proves nothing itself: drives the shared
-//                one-block engine over `Snarky.Example.P2P.Backend.runCoordinator`,
-//                farming every base AND merge job to the pool of remote peers and
-//                verifying the root. Forwards the engine's callbacks to the page.
-//   peer         a full-core prover. Runs `Snarky.Example.P2P.WorkerPeer`:
-//                compile the circuit once, then answer each `Assign` with a proof.
+//                one-block engine (runCoordinator), farming every base AND merge
+//                job to the pool of remote peers and verifying the root.
+//   peer         a full-core prover. Runs runWorkerPeer: compile the circuit
+//                once, then answer each `Assign` with a proof.
 //
-// Everything heavy is imported LAZILY after the wasm pool is sized: `buildProver`
-// /the backend pull in the snarky-kimchi FFI, which `require`s kimchi at module
-// load — importing them before `initThreadPool` would reverse that order and
-// hang (see prover-entry.js / worker-entry.js for the same constraint).
+// Everything heavy is imported LAZILY after the wasm pool is sized: buildProver /
+// the backend pull in the snarky-kimchi FFI, which `require`s kimchi at module
+// load — importing them before `initThreadPool` would reverse that order and hang.
 import { MAX_RAYON_THREADS, ASYNC_POOL_SIZE } from "../../../kimchi-napi/wasm-pool-config.mjs";
-import { mkTransport } from "./p2p-mk-transport.js";
+import { mkBridgedTransport } from "./p2p-bridge.js";
 
 // Keep one core for this worker's own JS (witness generation, the event loop
-// servicing the wasi threads / the transport) between Rust phases.
+// servicing the wasi threads) between Rust phases.
 const RESERVED_FOR_JS = 1;
 
 const post = (tag) => (value) => () => self.postMessage({ tag, value });
@@ -33,9 +35,16 @@ function rayonThreadCount(override) {
   return Math.min(MAX_RAYON_THREADS, Math.max(1, cores - RESERVED_FOR_JS));
 }
 
+const bridge = mkBridgedTransport();
+let started = false;
+
 self.onmessage = async (e) => {
   const m = e.data;
-  if (!m || m.type !== "start") return;
+  if (!m) return;
+  // Transport-bridge frames from the main relay (myId / inbound msg / peer).
+  if (m._t) { bridge.handleMessage(m); return; }
+  if (m.type !== "start" || started) return;
+  started = true;
   const role = m.role === "coordinator" ? "coordinator" : "peer";
   try {
     postNow("phase", "booting wasm kimchi");
@@ -53,12 +62,13 @@ self.onmessage = async (e) => {
       text: `[${role}] wasm kimchi ready, rayon ${threads} threads (crossOriginIsolated=${self.crossOriginIsolated})`,
     });
 
-    const transport = await mkTransport(m.transport || "bc", m.session || "snarky-p2p");
-    postNow("log", { severity: "info", text: `[${role}] joined session '${m.session}' as ${transport.myId} over ${m.transport || "bc"}` });
+    // Wait for the main relay to hand us our transport id before announcing.
+    await bridge.ready;
+    postNow("log", { severity: "info", text: `[${role}] transport id ${bridge.transport.myId}` });
 
     if (role === "coordinator") {
       const { runCoordinator } = await import("../output-es/Snarky.Example.P2P.Backend/index.js");
-      runCoordinator(transport)(m.poolSize || 2)({
+      runCoordinator(bridge.transport)(m.poolSize || 2)({
         onLog: post("log"),
         onPhase: post("phase"),
         onTxs: post("txs"),
@@ -70,7 +80,7 @@ self.onmessage = async (e) => {
       postNow("phase", "compiling circuit");
       // Synchronous: buildProver compiles the circuit before returning, then the
       // peer is live (announces + listens for Assign).
-      runWorkerPeer(transport)();
+      runWorkerPeer(bridge.transport)();
       postNow("phase", "ready — awaiting work");
       postNow("log", { severity: "info", text: `[peer] compiled; awaiting work` });
     }
