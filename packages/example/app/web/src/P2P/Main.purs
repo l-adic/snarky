@@ -26,8 +26,11 @@ module Snarky.Example.Web.P2P.Main
 import Prelude
 
 import Data.Array as Array
+import Data.Either (either)
 import Data.Foldable (for_)
 import Data.Int as Int
+import Data.Map (Map)
+import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, isJust)
 import Data.Nullable (Nullable, toMaybe, toNullable)
 import Data.String as String
@@ -43,6 +46,9 @@ import React.Basic.DOM.Events (targetValue)
 import React.Basic.Events (handler, handler_)
 import React.Basic.Hooks (Component, component, useEffectOnce, useState, useState')
 import React.Basic.Hooks as React
+import Routing (match)
+import Routing.Hash (getHash)
+import Routing.Match (params)
 import Snarky.Example.P2P.Backend (PeerView)
 import Snarky.Example.P2P.Transport (Transport)
 import Snarky.Example.P2P.Transport as T
@@ -60,7 +66,6 @@ import Web.Worker.Worker as WW
 
 foreign import spawnWorker :: Effect Worker
 foreign import connectTransport :: EffectFn3 String String (EffectFn1 Transport Unit) Unit
-foreign import readHashParam :: String -> Effect (Nullable String)
 foreign import setWindowProp :: String -> Foreign -> Effect Unit
 
 -- | Boot options read from the URL hash: the initial channel + transport, an
@@ -243,23 +248,35 @@ mkApp opts = component "P2PApp" \_ -> React.do
         ]
     }
 
+-- | Read the boot options from the URL-hash query params (`#k=v&k=v`) via
+-- | `routing`. The hash carries no path, so it is parsed as a query (the parser
+-- | exposes query params only after a `?`, hence the prefix); a hash with no
+-- | params yields the defaults.
+readOpts :: Effect Opts
+readOpts = do
+  hash <- getHash
+  let
+    m :: Map String String
+    m = either (const Map.empty) identity (match params ("?" <> hash))
+    look k = Map.lookup k m
+    -- Auto-start (headless harness / launchers): an explicit role, or `auto`
+    -- (defaulting to coordinator).
+    autoRole = case look "role" of
+      Just "peer" -> Just "peer"
+      Just _ -> Just "coordinator"
+      Nothing -> if isJust (look "auto") then Just "coordinator" else Nothing
+  pure
+    { channel: fromMaybe "snarky-p2p" (look "session")
+    , transport: fromMaybe "trystero" (look "t")
+    , autoRole
+    , threads: look "threads" >>= Int.fromString
+    }
+
 -- | Entry point — `p2p-main.js` is just `main()`. Reads the URL-hash options and
 -- | mounts the app; the JS-only dependencies are the `foreign import`s above.
 main :: Effect Unit
 main = do
-  channel <- fromMaybe "snarky-p2p" <$> hashParam "session"
-  transport <- fromMaybe "trystero" <$> hashParam "t"
-  roleParam <- hashParam "role"
-  autoParam <- hashParam "auto"
-  threadsParam <- hashParam "threads"
-  let
-    -- Auto-start the headless harness / launchers: an explicit role, or `auto`
-    -- (defaulting to coordinator).
-    autoRole = case roleParam of
-      Just "peer" -> Just "peer"
-      Just _ -> Just "coordinator"
-      Nothing -> if isJust autoParam then Just "coordinator" else Nothing
-    opts = { channel, transport, autoRole, threads: threadsParam >>= Int.fromString }
+  opts <- readOpts
   doc <- document =<< window
   mRoot <- getElementById "app" (toNonElementParentNode doc)
   case mRoot of
@@ -268,5 +285,3 @@ main = do
       app <- mkApp opts
       root <- createRoot el
       renderRoot root (app unit)
-  where
-  hashParam k = toMaybe <$> readHashParam k

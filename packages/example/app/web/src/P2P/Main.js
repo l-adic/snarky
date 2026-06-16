@@ -23,17 +23,6 @@ export const connectTransport = (kind, channel, cont) => {
   })();
 };
 
-// Read one URL-hash parameter (`#key=value&…`); null if absent.
-export const readHashParam = (key) => () => {
-  const raw = (location.hash || "").replace(/^#/, "");
-  for (const part of raw.split("&")) {
-    if (!part) continue;
-    const [k, v] = part.split("=");
-    if (k === key) return v === undefined ? "" : decodeURIComponent(v);
-  }
-  return null;
-};
-
 // Mirror a value onto `window` (the headless harness polls window.__p2pVerified
 // / __p2pPhase / __p2pPeers). Guarded so it is a no-op in any non-window context.
 export const setWindowProp = (k) => (v) => () => {

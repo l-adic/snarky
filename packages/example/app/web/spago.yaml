@@ -31,6 +31,7 @@ package:
     - react-basic-dom
     - react-basic-hooks
     - refs
+    - routing
     - simple-json
     - strings
     - tuples
