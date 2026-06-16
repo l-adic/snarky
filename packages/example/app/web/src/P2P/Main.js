@@ -2,8 +2,7 @@
 // `foreign import`s. The transport tier and the worker-spawn module are internal
 // app JS reached via the `@webjs` vite alias (app/web/), so this FFI — which is
 // compiled into output-es/ — can import them regardless of its own location.
-import { mkTransport } from "@webjs/p2p-mk-transport.js";
-import { initIce } from "@webjs/p2p-rtc.js";
+import { mkTransport, initIce } from "@webjs/transport";
 import { spawnWorker as makeWorker } from "@webjs/p2p-spawn.js";
 
 // Construct the prover Web Worker. The `new Worker(new URL(...))` literal lives

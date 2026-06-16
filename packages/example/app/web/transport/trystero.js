@@ -3,7 +3,7 @@
 // keyed by the session code; once peers connect the gossip Node runs over the
 // data channels. Trystero handles its own chunking/binary + presence.
 //
-// ICE/TURN is injected from p2p-rtc.iceServers() (STUN by default, optional
+// ICE/TURN is injected from rtc.iceServers() (STUN by default, optional
 // BYO TURN via localStorage["snarky-turn"]). Custom Nostr relays via
 // localStorage["snarky-relays"] (JSON array); otherwise trystero's defaults.
 //
@@ -11,7 +11,7 @@
 // + assignable `.onMessage`); room.onPeerJoin/onPeerLeave are assignable
 // properties (not methods).
 import { joinRoom, selfId } from "trystero/nostr";
-import { iceServers } from "./p2p-rtc.js";
+import { iceServers } from "./rtc.js";
 
 export async function mkTrysteroTransport(session) {
   let relayUrls;

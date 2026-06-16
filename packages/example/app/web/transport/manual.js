@@ -7,7 +7,7 @@
 //
 // Once the channel opens both sides exchange ids and the gossip Node runs over
 // it exactly as over any other transport.
-import { iceServers, sendChunked, recvChunked, waitIce } from "./p2p-rtc.js";
+import { iceServers, sendChunked, recvChunked, waitIce } from "./rtc.js";
 
 export function mkManualTransport() {
   const myId = Math.random().toString(36).slice(2, 10);

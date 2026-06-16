@@ -7,11 +7,11 @@
 // globals set here and runs the role.
 //
 // The real transport lives on the MAIN thread (p2p-boot/Main); this worker gets a
-// bridged proxy (p2p-bridge.js) so it can block on synchronous proving without
+// bridged proxy (transport/bridge.js) so it can block on synchronous proving without
 // stalling the connection, and so WebRTC works (RTCPeerConnection isn't available
 // in a Worker).
 import { MAX_RAYON_THREADS, ASYNC_POOL_SIZE } from "../../../kimchi-napi/wasm-pool-config.mjs";
-import { mkBridgedTransport } from "./p2p-bridge.js";
+import { mkBridgedTransport } from "@webjs/transport";
 
 // Keep one core for this worker's own JS between Rust phases.
 const RESERVED_FOR_JS = 1;
