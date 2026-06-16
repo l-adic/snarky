@@ -253,21 +253,16 @@ body {
      (the inline 12px on #session is overridden here) to suppress that. */
   #session,
   #transport,
-  #role-select,
-  #turn {
+  #role-select {
     font-size: 16px !important;
   }
   #session {
     width: 7rem;
   }
   /* a <select> sizes to its widest option; cap controls to the viewport so a
-     long transport label / TURN url can't force horizontal overflow on a phone. */
+     long transport label can't force horizontal overflow on a phone. */
   #transport,
-  #role-select,
-  #turn {
+  #role-select {
     max-width: calc(100vw - 1.7rem);
-  }
-  #turn {
-    width: 100%;
   }
 }

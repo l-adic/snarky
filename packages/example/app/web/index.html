@@ -8,13 +8,25 @@
          on hosts that can't send COOP/COEP headers, e.g. GitHub Pages.
          No-op when the server already sets the headers (local dev/preview). -->
     <script>
-      // Reload to apply the service worker only once it actually CONTROLS
-      // this page. The library's default reloads on `updatefound`, which can
-      // beat activation and leave the first load stuck un-isolated.
+      // The coi-serviceworker's default loop-guard registers/reloads only ONCE;
+      // if the page still isn't cross-origin isolated after that single reload
+      // (common on Safari, where the SW is "active but not controlling" on the
+      // next load) it gives up and the app hangs on the loading screen. Override
+      // it to keep retrying until actually isolated, capped to avoid an infinite
+      // loop (the loader shows a Reset prompt once the cap is hit).
       window.coi = {
+        shouldRegister: () =>
+          !window.crossOriginIsolated &&
+          (parseInt(sessionStorage.getItem("coiTries") || "0", 10) < 4),
         doReload: () => {
           if (window.__coiReloading) return;
           window.__coiReloading = true;
+          try {
+            sessionStorage.setItem(
+              "coiTries",
+              String(parseInt(sessionStorage.getItem("coiTries") || "0", 10) + 1),
+            );
+          } catch {}
           const reload = () => window.location.reload();
           if (navigator.serviceWorker.controller) reload();
           else navigator.serviceWorker.addEventListener("controllerchange", reload, { once: true });
