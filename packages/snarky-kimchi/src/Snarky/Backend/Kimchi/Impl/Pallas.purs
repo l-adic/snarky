@@ -4,6 +4,7 @@ import Data.Array as Array
 import Data.Maybe (Maybe(..))
 import Data.Unit (Unit)
 import Effect (Effect)
+import Node.Buffer (Buffer)
 import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, GateWires, ProverIndex, VerifierIndex)
 import Snarky.Curves.Pallas as Pallas
@@ -34,6 +35,16 @@ foreign import pallasCrsSize :: CRS Pallas.G -> Int
 -- | of size `2^log2`. Effectful: mutates the SRS in place, so later
 -- | index/proof creation over that domain hits the cache.
 foreign import pallasSrsAddLagrangeBasis :: CRS Pallas.G -> Int -> Effect Unit
+
+-- | Serialize the lagrange basis for the domain of size `2^log2` to a byte
+-- | blob (computing it if not yet cached). The out-of-band carrier the SRS
+-- | cache manager persists — `caml_fq_srs_to_bytes` (generators) skips it.
+foreign import pallasSrsLagrangeBasisToBytes :: CRS Pallas.G -> Int -> Effect Buffer
+
+-- | Inject a serialized lagrange basis (from `pallasSrsLagrangeBasisToBytes`)
+-- | into this SRS's cache for the domain of size `2^log2`, so later
+-- | index/proof creation hits the cache instead of running the FFT.
+foreign import pallasSrsSetLagrangeBasisFromBytes :: CRS Pallas.G -> Int -> Buffer -> Effect Unit
 
 -- | Compute challenge polynomial commitment from Pallas SRS.
 -- | Pallas scalar field = Fq, result coords in Fp (= Vesta.ScalarField).

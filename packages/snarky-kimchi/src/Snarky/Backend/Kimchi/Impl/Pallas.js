@@ -144,6 +144,27 @@ export function pallasSrsAddLagrangeBasis(crs) {
     };
 }
 
+// Serialize the lagrange basis for domain 2^log2Size to a Buffer (napi returns
+// a Uint8Array; wrap it so the node-buffer PS API applies).
+export function pallasSrsLagrangeBasisToBytes(crs) {
+    return function(log2Size) {
+        return function() {
+            return Buffer.from(k.caml_fq_srs_lagrange_basis_to_bytes(crs.srs, log2Size));
+        };
+    };
+}
+
+// Inject a serialized lagrange basis into the SRS cache for domain 2^log2Size.
+export function pallasSrsSetLagrangeBasisFromBytes(crs) {
+    return function(log2Size) {
+        return function(bytes) {
+            return function() {
+                k.caml_fq_srs_set_lagrange_basis_from_bytes(crs.srs, log2Size, bytes);
+            };
+        };
+    };
+}
+
 // b_poly commitment: takes Pallas scalars (Fq), returns a `PolyComm<Pallas>`
 // whose points have Fp coords. PS-side currently expects a flat
 // `Array Pallas.BaseField` of length 2 (x, y); we expose the first
