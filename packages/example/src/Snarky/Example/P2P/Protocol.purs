@@ -1,14 +1,11 @@
--- | The star worker-pool dispatch protocol: the four messages a coordinator and
--- | its worker peers exchange over a `Transport`. This replaces #148's 6-variant
--- | decentralized gossip vocabulary (Hello/BlockAnnounce/Have/Claim/Request/
--- | Deliver) — there is no claim/TTL/DAG here, only a hub assigning jobs.
+-- | The star worker-pool dispatch protocol: the messages a coordinator and its
+-- | worker peers exchange over a `Transport`.
 -- |
 -- |   * `Join`   worker → coordinator: "I am available" (broadcast on startup
--- |              and whenever a peer is discovered). `fingerprint` lets the
--- |              coordinator reject a peer built against an incompatible circuit.
--- |   * `Assign` coordinator → worker: "prove this" (`work` = `encodeWorkItem`).
--- |   * `Result` worker → coordinator: "here is the proof" (`proof` =
--- |              `encodeCompiledProof`).
+-- |              and whenever a peer is discovered).
+-- |   * `Assign` coordinator → worker: "prove this" (`work` = an encoded job).
+-- |   * `Result` worker → coordinator: "here is the proof" (`proof` = an encoded
+-- |              proof).
 -- |   * `Reject` worker → coordinator: "I could not do it" (decode/prove failed).
 -- |   * `Leave`  worker → coordinator: "I am going away" (broadcast on page
 -- |              unload) so the coordinator drops it and reassigns its in-flight
@@ -20,46 +17,40 @@ module Snarky.Example.P2P.Protocol
   ( Msg(..)
   , encodeMsg
   , decodeMsg
-  , fingerprint
   ) where
 
 import Prelude
 
 import Data.Either (Either(..))
 import Foreign (ForeignError(..), MultipleErrors)
+import Safe.Coerce (coerce)
 import Simple.JSON (readJSON, writeJSON)
+import Snarky.Example.P2P.Types (Frame(..), JobId(..), Payload(..), PeerId(..))
 
 data Msg
-  = Join { peerId :: String, fingerprint :: String }
-  | Assign { jobId :: String, work :: String }
-  | Result { jobId :: String, proof :: String }
-  | Reject { jobId :: String, reason :: String }
-  | Leave { peerId :: String }
-
--- | A coarse build/circuit-compatibility tag. v1 uses a fixed constant shared by
--- | both ends (the coordinator drops a `Join` whose fingerprint differs); a
--- | later version can derive it from the compiled verification key so peers on a
--- | stale build are turned away rather than producing unverifiable proofs.
-fingerprint :: String
-fingerprint = "snarky-p2p-star-v1"
+  = Join { peerId :: PeerId }
+  | Assign { jobId :: JobId, work :: Payload }
+  | Result { jobId :: JobId, proof :: Payload }
+  | Reject { jobId :: JobId, reason :: String }
+  | Leave { peerId :: PeerId }
 
 -- | Serialize a message: a `tag` field plus the variant's own fields. The
 -- | decoder reads the tag first, then the matching shape (extra fields ignored).
-encodeMsg :: Msg -> String
-encodeMsg = case _ of
-  Join r -> writeJSON { tag: "join", peerId: r.peerId, fingerprint: r.fingerprint }
-  Assign r -> writeJSON { tag: "assign", jobId: r.jobId, work: r.work }
-  Result r -> writeJSON { tag: "result", jobId: r.jobId, proof: r.proof }
-  Reject r -> writeJSON { tag: "reject", jobId: r.jobId, reason: r.reason }
-  Leave r -> writeJSON { tag: "leave", peerId: r.peerId }
+encodeMsg :: Msg -> Frame
+encodeMsg = Frame <<< case _ of
+  Join r -> writeJSON { tag: "join", peerId: coerce r.peerId :: String }
+  Assign r -> writeJSON { tag: "assign", jobId: coerce r.jobId :: String, work: coerce r.work :: String }
+  Result r -> writeJSON { tag: "result", jobId: coerce r.jobId :: String, proof: coerce r.proof :: String }
+  Reject r -> writeJSON { tag: "reject", jobId: coerce r.jobId :: String, reason: r.reason }
+  Leave r -> writeJSON { tag: "leave", peerId: coerce r.peerId :: String }
 
-decodeMsg :: String -> Either MultipleErrors Msg
-decodeMsg s = do
+decodeMsg :: Frame -> Either MultipleErrors Msg
+decodeMsg (Frame s) = do
   tagged <- readJSON s :: Either MultipleErrors { tag :: String }
   case tagged.tag of
-    "join" -> readJSON s <#> \(r :: { peerId :: String, fingerprint :: String }) -> Join r
-    "assign" -> readJSON s <#> \(r :: { jobId :: String, work :: String }) -> Assign r
-    "result" -> readJSON s <#> \(r :: { jobId :: String, proof :: String }) -> Result r
-    "reject" -> readJSON s <#> \(r :: { jobId :: String, reason :: String }) -> Reject r
-    "leave" -> readJSON s <#> \(r :: { peerId :: String }) -> Leave r
+    "join" -> readJSON s <#> \(r :: { peerId :: String }) -> Join { peerId: coerce r.peerId }
+    "assign" -> readJSON s <#> \(r :: { jobId :: String, work :: String }) -> Assign { jobId: coerce r.jobId, work: coerce r.work }
+    "result" -> readJSON s <#> \(r :: { jobId :: String, proof :: String }) -> Result { jobId: coerce r.jobId, proof: coerce r.proof }
+    "reject" -> readJSON s <#> \(r :: { jobId :: String, reason :: String }) -> Reject { jobId: coerce r.jobId, reason: r.reason }
+    "leave" -> readJSON s <#> \(r :: { peerId :: String }) -> Leave { peerId: coerce r.peerId }
     other -> Left (pure (ForeignError ("Msg: unknown tag " <> other)))

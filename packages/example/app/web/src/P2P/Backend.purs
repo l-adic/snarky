@@ -20,6 +20,7 @@ import Prelude
 import Colog (LogAction(..), Msg(..), Severity(..))
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
+import Data.Newtype (un)
 import Data.Reflectable (reflectType)
 import Data.Time.Duration (Milliseconds(..))
 import Effect (Effect)
@@ -35,6 +36,7 @@ import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
 import Snarky.Example.P2P.Coordinator (PeerView, RawWorker, mapResult, mkStarBackend)
 import Snarky.Example.P2P.Transport (Transport)
+import Snarky.Example.P2P.Types (Payload(..))
 import Snarky.Example.Snark.Pool (PoolSize(Dynamic))
 import Snarky.Example.Snark.Work (WorkItem(..), encodeWorkItem)
 import Snarky.Example.Snark.Worker (SnarkBackend)
@@ -71,7 +73,7 @@ mkLocalProver :: Logger -> Effect (Aff (Either String (RawWorker (WorkItem Depth
 mkLocalProver logger = do
   selfWorker <- spawnLocalProver
   selfThreads <- localProverThreads
-  selfReply <- EffectAVar.empty :: Effect (AVar (Either String String))
+  selfReply <- EffectAVar.empty :: Effect (AVar (Either String Payload))
   selfReady <- EffectAVar.empty :: Effect (AVar (Either String Unit))
   flip WW.onMessage selfWorker \ev ->
     let
@@ -85,7 +87,7 @@ mkLocalProver logger = do
     in
       case r.tag of
         "ready" -> void $ EffectAVar.tryPut (Right unit) selfReady
-        "proof" -> void $ EffectAVar.put (Right r.proof) selfReply mempty
+        "proof" -> void $ EffectAVar.put (Right (Payload r.proof)) selfReply mempty
         "reject" -> void $ EffectAVar.put (Left r.reason) selfReply mempty
         -- A compile/init failure resolves ready as a failure → never offered.
         "error" -> void $ EffectAVar.tryPut (Left r.reason) selfReady
@@ -105,7 +107,7 @@ mkLocalProver logger = do
             res <- AVar.take selfReply
             case res of
               Left reason -> liftEffect $ throw ("self prover: " <> reason)
-              Right proofStr -> pure proofStr
+              Right proof -> pure proof
         , terminate: WW.terminate selfWorker
         }
 
@@ -117,12 +119,12 @@ p2pSnarkBackend transport logger onPeers = do
   base <- mkStarBackend
     { logger
     , transport
-    , encodeJob: encodeWorkItem
+    , encodeJob: Payload <<< encodeWorkItem
     , jobLabel
     , prepareLocal
     , onPeers
     }
-  pure \env -> mapResult (lmap show <<< decodeCompiledProof env) base
+  pure \env -> mapResult (lmap show <<< decodeCompiledProof env <<< un Payload) base
 
 -- | Run the whole one-block pipeline as the coordinator: install the p2p backend
 -- | and drive the shared engine over a DYNAMIC pool of remote prover peers. The

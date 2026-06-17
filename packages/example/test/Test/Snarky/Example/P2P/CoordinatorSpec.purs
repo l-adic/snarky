@@ -11,8 +11,8 @@
 -- |     reassigned to another worker AT ONCE (the `Leave` path, not the timeout).
 -- |
 -- | The coordinator's own self-prover is disabled here (`prepareLocal` returns
--- | `Left`) so the scenarios are purely about remote-peer participation. Jobs and
--- | results are plain `String`s (identity codecs).
+-- | `Left`) so the scenarios are purely about remote-peer participation. Jobs are
+-- | plain `String`s; results come back as the wire `Payload` (identity codecs).
 module Test.Snarky.Example.P2P.CoordinatorSpec
   ( spec
   ) where
@@ -23,6 +23,7 @@ import Colog (LogAction(..))
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
+import Data.Newtype (un)
 import Data.Time.Duration (Milliseconds(..))
 import Data.Tuple (Tuple(..), fst, snd)
 import Effect (Effect)
@@ -33,8 +34,9 @@ import Snarky.Example.AsyncQueue (dequeue, enqueue, newQueue)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.P2P.Coordinator (PeerView, mkStarBackend)
 import Snarky.Example.P2P.Peer (runStarPeer)
-import Snarky.Example.P2P.Protocol (Msg(..), encodeMsg, fingerprint)
+import Snarky.Example.P2P.Protocol (Msg(..), encodeMsg)
 import Snarky.Example.P2P.Transport (Transport, broadcast, myId)
+import Snarky.Example.P2P.Types (Payload(..), PeerId(..))
 import Snarky.Example.Snark.Pool (PoolSize(Dynamic), runPool)
 import Test.Snarky.Example.P2P.InMemoryBus (Bus, connect, disconnect, newBus)
 import Test.Spec (SpecT, describe, it)
@@ -44,19 +46,19 @@ silentLogger :: Logger
 silentLogger = LogAction \_ -> pure unit
 
 -- | A stub prover: returns "proof:<work>" immediately.
-stubProve :: String -> Effect String
-stubProve work = pure ("proof:" <> work)
+stubProve :: Payload -> Effect Payload
+stubProve (Payload work) = pure (Payload ("proof:" <> work))
 
 -- | Start a real peer on the bus with the given prover; returns its transport (so
 -- | a test can make it `Leave` / disconnect).
-startPeer :: Bus -> String -> (String -> Effect String) -> Effect Transport
+startPeer :: Bus -> String -> (Payload -> Effect Payload) -> Effect Transport
 startPeer bus pid prove = do
   t <- connect bus pid
   runStarPeer
     { transport: t
     , logger: silentLogger
     , prove
-    , describeJob: identity
+    , describeJob: un Payload
     , onPhase: \_ -> pure unit
     , reannounceMs: 50.0
     , reannounceMax: 20
@@ -68,13 +70,13 @@ startPeer bus pid prove = do
 startSilentPeer :: Bus -> String -> Effect Transport
 startSilentPeer bus pid = do
   t <- connect bus pid
-  broadcast t (encodeMsg (Join { peerId: myId t, fingerprint }))
+  broadcast t (encodeMsg (Join { peerId: myId t }))
   pure t
 
 -- | Make a peer quit: announce `Leave`, then go off the bus.
 quit :: Bus -> Transport -> String -> Effect Unit
 quit bus t pid = do
-  broadcast t (encodeMsg (Leave { peerId: pid }))
+  broadcast t (encodeMsg (Leave { peerId: PeerId pid }))
   disconnect bus pid
 
 -- | The coordinator under test: its pool (running a `Dynamic` star backend with
@@ -82,7 +84,7 @@ quit bus t pid = do
 -- | peer table.
 type Harness =
   { submit :: String -> Aff Unit
-  , results :: Effect (Array (Tuple String String))
+  , results :: Effect (Array (Tuple String Payload))
   , peers :: Effect (Array PeerView)
   , stop :: Aff Unit
   }
@@ -95,7 +97,7 @@ mkHarness bus timeout = do
   backend <- liftEffect $ mkStarBackend
     { logger: silentLogger
     , transport: coordT
-    , encodeJob: identity
+    , encodeJob: Payload
     , jobLabel: const "proving"
     , prepareLocal: pure (Left "no self worker in test")
     , onPeers: \ps -> Ref.write ps peersRef
@@ -133,6 +135,10 @@ hasPeer pid = Array.any (\p -> p.id == pid)
 peerStatus :: String -> Array PeerView -> Maybe String
 peerStatus pid ps = _.status <$> Array.find (\p -> p.id == pid) ps
 
+-- | The proofs posted, as plain strings (unwrapping the wire `Payload`).
+proofs :: Array (Tuple String Payload) -> Array String
+proofs = map (un Payload <<< snd)
+
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "P2P star coordination" do
   it "picks up a worker that joins after the pool has started (late join)" do
@@ -147,7 +153,7 @@ spec = describe "P2P star coordination" do
     awaitUntil h.results (\r -> Array.length r >= 2)
     res <- liftEffect h.results
     Array.sort (map fst res) `shouldEqual` [ "j0", "j1" ]
-    Array.sort (map snd res) `shouldEqual` [ "proof:j0", "proof:j1" ]
+    Array.sort (proofs res) `shouldEqual` [ "proof:j0", "proof:j1" ]
     ps <- liftEffect h.peers
     hasPeer "p1" ps `shouldEqual` true
     h.stop
@@ -202,5 +208,5 @@ spec = describe "P2P star coordination" do
     awaitUntil h.results (\r -> Array.length r >= 1)
     res <- liftEffect h.results
     map fst res `shouldEqual` [ "j0" ]
-    map snd res `shouldEqual` [ "proof:j0" ] -- proved by the live worker
+    proofs res `shouldEqual` [ "proof:j0" ] -- proved by the live worker
     h.stop

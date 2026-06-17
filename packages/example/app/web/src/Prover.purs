@@ -12,13 +12,14 @@ import Prelude
 import Control.Promise (Promise, fromAff)
 import Effect (Effect)
 import Snarky.Example.Log (Logger)
+import Snarky.Example.P2P.Types (Payload)
 import Snarky.Example.Prover (buildProver)
 import Snarky.Example.Web.SrsCache (openSrsCache)
 
 buildBrowserProver
   :: Logger
   -> { chain :: String, depth :: Int }
-  -> Effect (Promise (String -> Effect String))
+  -> Effect (Promise (Payload -> Effect Payload))
 buildBrowserProver logger args = fromAff do
   cache <- openSrsCache logger
   buildProver cache logger args

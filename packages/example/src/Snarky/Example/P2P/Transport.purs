@@ -8,7 +8,8 @@
 -- |     cross-machine, many peers.
 -- |
 -- | A `Transport` is a JS object `{ myId, broadcast, sendTo, onMessage, onPeer }`;
--- | these are the typed accessors.
+-- | these are the typed accessors. Ids are `PeerId`, wire messages are `Frame`
+-- | (both newtypes over the underlying strings the JS factories speak).
 module Snarky.Example.P2P.Transport
   ( Transport
   , TransportImpl
@@ -25,6 +26,8 @@ import Prelude
 
 import Effect (Effect)
 import Effect.Uncurried (EffectFn1, EffectFn2, runEffectFn2)
+import Safe.Coerce (coerce)
+import Snarky.Example.P2P.Types (Frame(..), PeerId(..))
 
 -- | Opaque handle constructed by a backend's JS (`mkBroadcastTransport`, …).
 foreign import data Transport :: Type
@@ -35,12 +38,12 @@ foreign import data Transport :: Type
 -- | test bus connecting several nodes in one process) can be built without any
 -- | JS factory. The accessors below work on it identically.
 type TransportImpl =
-  { myId :: String
-  , broadcast :: String -> Effect Unit
-  , sendTo :: String -> String -> Effect Unit
-  , onMessage :: (String -> String -> Effect Unit) -> Effect Unit
-  , onPeer :: (String -> Effect Unit) -> Effect Unit
-  , onPeerLeave :: (String -> Effect Unit) -> Effect Unit
+  { myId :: PeerId
+  , broadcast :: Frame -> Effect Unit
+  , sendTo :: PeerId -> Frame -> Effect Unit
+  , onMessage :: (PeerId -> Frame -> Effect Unit) -> Effect Unit
+  , onPeer :: (PeerId -> Effect Unit) -> Effect Unit
+  , onPeerLeave :: (PeerId -> Effect Unit) -> Effect Unit
   }
 
 -- | Build a `Transport` from a PureScript implementation (adapts the curried
@@ -55,30 +58,30 @@ foreign import _onPeer :: EffectFn2 Transport (EffectFn1 String Unit) Unit
 foreign import _onPeerLeave :: EffectFn2 Transport (EffectFn1 String Unit) Unit
 
 -- | This peer's stable id within the room.
-myId :: Transport -> String
-myId = _myId
+myId :: Transport -> PeerId
+myId = coerce _myId
 
--- | Send a raw message string to every connected peer.
-broadcast :: Transport -> String -> Effect Unit
-broadcast = runEffectFn2 _broadcast
+-- | Send a message frame to every connected peer.
+broadcast :: Transport -> Frame -> Effect Unit
+broadcast t msg = runEffectFn2 _broadcast t (coerce msg)
 
--- | Send a raw message string to one peer.
-sendTo :: Transport -> String -> String -> Effect Unit
-sendTo t peer msg = runEffectFn2 _sendTo t { peer, msg }
+-- | Send a message frame to one peer.
+sendTo :: Transport -> PeerId -> Frame -> Effect Unit
+sendTo t peer msg = runEffectFn2 _sendTo t { peer: coerce peer, msg: coerce msg }
 
--- | Register the `(fromPeerId, raw) -> Effect Unit` message handler.
-onMessage :: Transport -> (String -> String -> Effect Unit) -> Effect Unit
-onMessage t f = runEffectFn2 _onMessage t (mkHandler2 f)
+-- | Register the `(fromPeerId, frame) -> Effect Unit` message handler.
+onMessage :: Transport -> (PeerId -> Frame -> Effect Unit) -> Effect Unit
+onMessage t f = runEffectFn2 _onMessage t (mkHandler2 (coerce f))
 
 -- | Register the peer-joined handler (fires once the channel to a peer opens).
-onPeer :: Transport -> (String -> Effect Unit) -> Effect Unit
-onPeer t f = runEffectFn2 _onPeer t (mkHandler1 f)
+onPeer :: Transport -> (PeerId -> Effect Unit) -> Effect Unit
+onPeer t f = runEffectFn2 _onPeer t (mkHandler1 (coerce f))
 
 -- | Register the peer-left handler (fires when a peer's connection drops —
 -- | natively for the WebRTC transports; never for BroadcastChannel, which has no
 -- | connection and relies on the cooperative `Leave` message instead).
-onPeerLeave :: Transport -> (String -> Effect Unit) -> Effect Unit
-onPeerLeave t f = runEffectFn2 _onPeerLeave t (mkHandler1 f)
+onPeerLeave :: Transport -> (PeerId -> Effect Unit) -> Effect Unit
+onPeerLeave t f = runEffectFn2 _onPeerLeave t (mkHandler1 (coerce f))
 
 foreign import mkHandler2 :: (String -> String -> Effect Unit) -> EffectFn2 String String Unit
 foreign import mkHandler1 :: (String -> Effect Unit) -> EffectFn1 String Unit

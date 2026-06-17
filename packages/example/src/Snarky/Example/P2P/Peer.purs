@@ -1,7 +1,7 @@
 -- | The worker side of the P2P star, generic over the work payload (which travels
--- | as a `String`). A peer announces availability (`Join`), then answers the
--- | coordinator's `Assign` messages: prove the work via the injected `prove`, and
--- | reply with the encoded result (`Result`) or the failure reason (`Reject`).
+-- | as an encoded `Payload`). A peer announces availability (`Join`), then answers
+-- | the coordinator's `Assign` messages: prove the work via the injected `prove`,
+-- | and reply with the encoded result (`Result`) or the failure reason (`Reject`).
 -- |
 -- | Because a single announce can be lost over WebRTC (it may race the data
 -- | channel opening, or the coordinator may still be discovering us), the peer
@@ -32,16 +32,17 @@ import Effect.Exception (message, try)
 import Effect.Ref as Ref
 import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
-import Snarky.Example.P2P.Protocol (Msg(..), decodeMsg, encodeMsg, fingerprint)
+import Snarky.Example.P2P.Protocol (Msg(..), decodeMsg, encodeMsg)
 import Snarky.Example.P2P.Transport (Transport, broadcast, myId, onMessage, onPeer, sendTo)
+import Snarky.Example.P2P.Types (Payload)
 
 type PeerConfig =
   { transport :: Transport
   , logger :: Logger
   -- Prove an assigned (encoded) work item, returning the encoded result.
-  , prove :: String -> Effect String
+  , prove :: Payload -> Effect Payload
   -- A human label for the encoded work item (UI / logs).
-  , describeJob :: String -> String
+  , describeJob :: Payload -> String
   -- Report the current status to the peer's own UI.
   , onPhase :: String -> Effect Unit
   -- Re-announce cadence: every `reannounceMs`, up to `reannounceMax` tries.
@@ -60,7 +61,7 @@ runStarPeer cfg = do
   -- re-announce loop (proof the coordinator knows us).
   stop <- EffectAVar.empty :: Effect (AVar Unit)
   let
-    joinMsg = encodeMsg (Join { peerId: myId cfg.transport, fingerprint })
+    joinMsg = encodeMsg (Join { peerId: myId cfg.transport })
     announce = broadcast cfg.transport joinMsg
   onMessage cfg.transport \from raw ->
     case decodeMsg raw of
@@ -84,7 +85,7 @@ runStarPeer cfg = do
   -- Announce to each peer the instant it is discovered: a targeted `sendTo` (the
   -- channel is open exactly then), plus a broadcast fallback for peers we had.
   onPeer cfg.transport \id -> do
-    Log.logInfo cfg.logger ("discovered peer " <> id <> " — announcing")
+    Log.logInfo cfg.logger ("discovered peer " <> show id <> " — announcing")
     sendTo cfg.transport id joinMsg
     announce
   announce

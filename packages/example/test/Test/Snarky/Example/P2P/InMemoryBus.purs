@@ -26,7 +26,9 @@ import Data.Maybe (Maybe(..))
 import Effect (Effect)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
+import Safe.Coerce (coerce)
 import Snarky.Example.P2P.Transport (Transport, fromImpl)
+import Snarky.Example.P2P.Types (Frame(..), PeerId(..))
 
 type Node =
   { id :: String
@@ -58,7 +60,9 @@ connect (Bus ref) self = do
       when live do
         ns <- Ref.read ref
         for_ ns \n -> when (n.id /= from && keep n.id) (callMsg from msg n)
-  pure $ fromImpl
+  -- The bus is String-keyed internally; `coerce` adapts it to the transport's
+  -- PeerId/Frame newtypes at the boundary (they're runtime-identical strings).
+  pure $ fromImpl $ coerce
     { myId: self
     , broadcast: \msg -> deliver self (const true) msg
     , sendTo: \peer msg -> deliver self (_ == peer) msg

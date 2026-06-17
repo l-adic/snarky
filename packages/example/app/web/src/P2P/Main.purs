@@ -56,6 +56,7 @@ import Snarky.Example.P2P.Coordinator (PeerView)
 import Snarky.Example.P2P.Protocol (Msg(Leave), encodeMsg)
 import Snarky.Example.P2P.Transport (Transport)
 import Snarky.Example.P2P.Transport as T
+import Snarky.Example.P2P.Types (Frame(..), PeerId(..))
 import Snarky.Example.Web.Component.Log (LogEntry, logPanel)
 import Snarky.Example.Web.Component.Panel (emptyHint, panel)
 import Snarky.Example.Web.Component.ScanState (scanStatePanel)
@@ -176,9 +177,9 @@ mkApp opts = component "P2PApp" \_ -> React.do
     handleWorkerMsg transport ev = do
       let m = unsafeFromForeign (data_ ev) :: WMsg
       case toMaybe m."_t" of
-        Just "broadcast" -> for_ (toMaybe m.msg) (T.broadcast transport)
+        Just "broadcast" -> for_ (toMaybe m.msg) (T.broadcast transport <<< Frame)
         Just "send" -> case toMaybe m.peer, toMaybe m.msg of
-          Just peer, Just msg -> T.sendTo transport peer msg
+          Just peer, Just msg -> T.sendTo transport (PeerId peer) (Frame msg)
           _, _ -> pure unit
         _ -> case toMaybe m.tag of
           Just "log" -> pushLog (unsafeFromForeign m.value)

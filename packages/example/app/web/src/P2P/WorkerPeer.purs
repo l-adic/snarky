@@ -21,6 +21,7 @@ import Simple.JSON (readJSON)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.P2P.Peer (runStarPeer)
 import Snarky.Example.P2P.Transport (Transport)
+import Snarky.Example.P2P.Types (Payload(..))
 import Snarky.Example.Prover (buildProver)
 import Snarky.Example.Web.Engine (Depth)
 import Snarky.Example.Web.SrsCache (openSrsCache)
@@ -61,8 +62,8 @@ transition s = shortHex s.source <> " → " <> shortHex s.target
 -- | transition it proves) and, for a base job, the transaction itself (the
 -- | transfer's amount + recipient). A merge's child proofs stay opaque (decoding
 -- | them needs the SRS), so only its merged statement is shown.
-describeJob :: String -> String
-describeJob work = case readJSON work :: Either _ { tag :: String } of
+describeJob :: Payload -> String
+describeJob (Payload work) = case readJSON work :: Either _ { tag :: String } of
   Right { tag: "base" } ->
     case
       readJSON work

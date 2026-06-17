@@ -22,6 +22,7 @@ import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.MerkleTree.Sparse (root)
+import Data.Newtype (un)
 import Data.Time.Duration (Milliseconds(..))
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
@@ -34,6 +35,7 @@ import Snarky.Example.Ledger (Ledger)
 import Snarky.Example.Log as Log
 import Snarky.Example.P2P.Coordinator (mapResult, mkStarBackend)
 import Snarky.Example.P2P.Peer (runStarPeer)
+import Snarky.Example.P2P.Types (Payload(..))
 import Snarky.Example.Simulation (genGenesisLedger, generateBlock)
 import Snarky.Example.Snark.Manager (mkManager, submitBlock)
 import Snarky.Example.Snark.Pool (PoolSize(Dynamic))
@@ -65,21 +67,21 @@ spec =
       base <- liftEffect $ mkStarBackend
         { logger: env.logger
         , transport: coordT
-        , encodeJob: encodeWorkItem
+        , encodeJob: Payload <<< encodeWorkItem
         , jobLabel: const "proving"
         , prepareLocal: pure (Left "no self worker in test")
         , onPeers: \_ -> pure unit
         }
-      let backend e = mapResult (lmap show <<< decodeCompiledProof e) base
+      let backend e = mapResult (lmap show <<< decodeCompiledProof e <<< un Payload) base
 
       -- A real remote peer: decode the work item, prove it with the shared Env's
       -- compiled program (no recompile), and ship the encoded proof back.
       liftEffect $ runStarPeer
         { transport: peerT
         , logger: env.logger
-        , prove: \encoded -> case decodeWorkItem env encoded of
+        , prove: \encoded -> case decodeWorkItem env (un Payload encoded) of
             Left e -> throw ("decodeWorkItem failed: " <> show e)
-            Right item -> encodeCompiledProof <$> proveItem env.compiledTx item
+            Right item -> (Payload <<< encodeCompiledProof) <$> proveItem env.compiledTx item
         , describeJob: const "job"
         , onPhase: \_ -> pure unit
         , reannounceMs: 50.0

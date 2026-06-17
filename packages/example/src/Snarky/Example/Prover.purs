@@ -15,6 +15,7 @@ module Snarky.Example.Prover
 import Prelude
 
 import Data.Either (Either(..))
+import Data.Newtype (un)
 import Data.Reflectable (class Reflectable, reifyType)
 import Effect (Effect)
 import Effect.Aff (Aff)
@@ -25,6 +26,7 @@ import Pickles.Prove.SerializeProof (encodeCompiledProof)
 import Snarky.Example.Env (mkConfigCached, mkEnv)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
+import Snarky.Example.P2P.Types (Payload(..))
 import Snarky.Example.Snark.Work (WorkItem, decodeWorkItem)
 import Snarky.Example.Snark.Worker (proveItem)
 import Snarky.Example.Srs.Cache (SrsCache)
@@ -41,16 +43,16 @@ chainIdFromTag = case _ of
 -- | The closure captures the compiled program + the SRS, so the (expensive)
 -- | setup happens once. The `Logger` carries the SRS-build / circuit-compile
 -- | progress to the worker (`mkEnv` logs the compile through it too).
-buildProver :: SrsCache -> Logger -> { chain :: String, depth :: Int } -> Aff (String -> Effect String)
+buildProver :: SrsCache -> Logger -> { chain :: String, depth :: Int } -> Aff (Payload -> Effect Payload)
 buildProver cache logger { chain, depth } = reifyType depth (buildProverAt cache logger chain)
 
-buildProverAt :: forall d. Reflectable d Int => SrsCache -> Logger -> String -> Proxy d -> Aff (String -> Effect String)
+buildProverAt :: forall d. Reflectable d Int => SrsCache -> Logger -> String -> Proxy d -> Aff (Payload -> Effect Payload)
 buildProverAt cache logger chain _ = do
   Log.logInfo logger "building SRS…"
   config <- mkConfigCached cache (chainIdFromTag chain)
   Log.logInfo logger "SRS ready — compiling the transaction circuit…"
   env <- liftEffect $ mkEnv @d logger config
   Log.logInfo logger "circuit compiled"
-  pure \encoded -> case decodeWorkItem env encoded :: Either _ (WorkItem d) of
+  pure \encoded -> case decodeWorkItem env (un Payload encoded) :: Either _ (WorkItem d) of
     Left err -> throw ("prover: decodeWorkItem failed: " <> show err)
-    Right item -> encodeCompiledProof <$> proveItem env.compiledTx item
+    Right item -> (Payload <<< encodeCompiledProof) <$> proveItem env.compiledTx item
