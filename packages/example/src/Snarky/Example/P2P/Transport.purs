@@ -11,6 +11,8 @@
 -- | these are the typed accessors.
 module Snarky.Example.P2P.Transport
   ( Transport
+  , TransportImpl
+  , fromImpl
   , myId
   , broadcast
   , sendTo
@@ -25,6 +27,23 @@ import Effect.Uncurried (EffectFn1, EffectFn2, runEffectFn2)
 
 -- | Opaque handle constructed by a backend's JS (`mkBroadcastTransport`, …).
 foreign import data Transport :: Type
+
+-- | A PureScript-side implementation of the transport interface — the same five
+-- | operations the JS factories provide, but as ordinary PureScript functions.
+-- | `fromImpl` wraps one into a `Transport`, so an in-memory transport (e.g. a
+-- | test bus connecting several nodes in one process) can be built without any
+-- | JS factory. The accessors below work on it identically.
+type TransportImpl =
+  { myId :: String
+  , broadcast :: String -> Effect Unit
+  , sendTo :: String -> String -> Effect Unit
+  , onMessage :: (String -> String -> Effect Unit) -> Effect Unit
+  , onPeer :: (String -> Effect Unit) -> Effect Unit
+  }
+
+-- | Build a `Transport` from a PureScript implementation (adapts the curried
+-- | `Effect` functions to the JS object the accessors expect).
+foreign import fromImpl :: TransportImpl -> Transport
 
 foreign import _myId :: Transport -> String
 foreign import _broadcast :: EffectFn2 Transport String Unit
