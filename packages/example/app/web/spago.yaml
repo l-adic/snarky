@@ -21,6 +21,7 @@ package:
     - example
     - exceptions
     - foreign
+    - formatters
     - integers
     - maybe
     - nullable

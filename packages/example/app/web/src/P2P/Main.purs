@@ -26,9 +26,11 @@ module Snarky.Example.Web.P2P.Main
 
 import Prelude
 
+import Colog.Rich (nowUTC)
 import Data.Array as Array
 import Data.Either (either)
 import Data.Foldable (for_)
+import Data.Formatter.DateTime (formatDateTime)
 import Data.Int as Int
 import Data.Map (Map)
 import Data.Map as Map
@@ -148,7 +150,14 @@ mkApp opts = component "P2PApp" \_ -> React.do
   peers /\ setPeers <- useState' ([] :: Array PeerView)
 
   let
-    pushLog l = setLogs \ls -> Array.take 400 (Array.cons l ls)
+    -- Stamp each line with a UTC wall-clock time at the moment it reaches the UI
+    -- (the one place every log — coordinator, peer, relayed self-prover — funnels
+    -- through), reusing colog's clock. The worker sends only `{ severity, text }`;
+    -- the time is added here.
+    clock t = either (const "") (\s -> "[" <> s <> "]") (formatDateTime "HH:mm:ss.SSS" t)
+    pushLog (l :: { severity :: String, text :: String }) = do
+      t <- nowUTC
+      setLogs \ls -> Array.take 400 (Array.cons { time: clock t, severity: l.severity, text: l.text } ls)
 
     -- phase/verified mirror to `window` so the headless harness can poll them.
     setPhaseH p = do

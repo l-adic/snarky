@@ -232,6 +232,11 @@
   font-size: 12px;
   white-space: pre-wrap;
 }
+.log-time {
+  margin-right: 0.4rem;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
 .log-sev {
   margin-right: 0.5rem;
   color: #7dd3fc;
