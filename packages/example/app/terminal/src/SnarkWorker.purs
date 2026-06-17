@@ -21,20 +21,27 @@ import Data.Int as Int
 import Data.Maybe (fromMaybe)
 import Data.Reflectable (class Reflectable, reifyType)
 import Effect (Effect)
+import Effect.Aff (launchAff_)
+import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Exception (throw)
 import Effect.Random (random)
 import Mina.ChainId (ChainId(..))
 import Node.Process (lookupEnv)
 import Node.WorkerBees (ThreadId(..), WorkerContext, makeAsMain)
 import Pickles.Prove.SerializeProof (encodeCompiledProof)
-import Snarky.Example.Env (mkConfig, mkEnv)
+import Snarky.Example.Env (mkConfigCached, mkEnv)
 import Snarky.Example.Log as Log
 import Snarky.Example.Snark.Work (WorkItem(..), decodeWorkItem)
 import Snarky.Example.Snark.Worker (proveItem)
+import Snarky.Example.Srs.Cache.Fs (fsCache)
 import Snarky.Example.Terminal.WorkerLog (workerLogger)
 import Type.Proxy (Proxy)
 
 foreign import sleepSync :: Int -> Effect Unit
+
+-- | The on-disk SRS cache directory shared by all worker threads (and reused
+-- | across runs); `SNARK_SRS_CACHE_DIR` overrides it.
+foreign import resolveSrsCacheDir :: Effect String
 
 -- | The init data the host sends as `workerData`: the chain id (as `Mina.ChainId`
 -- | shows it) and the ledger depth, so the worker compiles the same circuit as
@@ -86,18 +93,24 @@ worker ctx = reifyType ctx.workerData.depth (workerAtDepth ctx)
 -- | encoded proof. The `Proxy d` is just the reify witness — `d` is used via
 -- | `mkEnv @d`.
 workerAtDepth :: forall d. Reflectable d Int => WorkerContext WorkerData String String -> Proxy d -> Effect Unit
-workerAtDepth ctx _ = do
+workerAtDepth ctx _ = launchAff_ do
   let
     ThreadId tid = ctx.threadId
+
+    note :: forall m. MonadEffect m => String -> m Unit
     note text = Log.logInfo workerLogger ("[worker " <> show tid <> "] " <> text)
-  fault <- readFault
+  fault <- liftEffect readFault
+  cacheDir <- liftEffect resolveSrsCacheDir
   note "building SRS + lagrange basis…"
-  config <- mkConfig (chainIdFromTag ctx.workerData.chain)
+  -- Build the SRS through the shared on-disk cache: a cold cache runs the
+  -- Lagrange-basis FFTs once (and stores them) for the whole worker pool; a warm
+  -- one (a later worker, or a later run) loads + injects them, no FFT.
+  config <- mkConfigCached (fsCache cacheDir) (chainIdFromTag ctx.workerData.chain)
   note "compiling circuit…"
-  env <- mkEnv @d mempty config
+  env <- liftEffect $ mkEnv @d mempty config
   note "ready"
-  ctx.reply "ready"
-  ctx.receive \encoded ->
+  liftEffect $ ctx.reply "ready"
+  liftEffect $ ctx.receive \encoded ->
     case decodeWorkItem env encoded :: Either _ (WorkItem d) of -- d = the reified depth
       Left err -> throw ("snark worker: decodeWorkItem failed: " <> show err)
       Right item -> do
