@@ -31,6 +31,15 @@ const bridge = mkBridgedTransport();
 globalThis.__p2pBridge = bridge;
 let started = false;
 
+// DIAGNOSTIC: surface uncaught worker errors / unhandled rejections (the engine
+// runs inside an Aff, which otherwise swallows them) to the coordinator UI.
+self.addEventListener("error", (e) =>
+  postNow("log", { severity: "error", text: `[worker uncaught] ${e.message} @ ${e.filename}:${e.lineno}` }),
+);
+self.addEventListener("unhandledrejection", (e) =>
+  postNow("log", { severity: "error", text: `[worker unhandled] ${e.reason?.stack ?? String(e.reason)}` }),
+);
+
 self.onmessage = async (e) => {
   const m = e.data;
   if (!m) return;

@@ -17,12 +17,14 @@ module Snarky.Example.Web.Engine
 import Prelude
 
 import Colog (LogAction(..), Msg(..), Severity(..))
+import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.Time.Duration (Milliseconds)
 import Data.Vector as Vector
 import Effect (Effect)
-import Effect.Aff (launchAff_)
+import Effect.Aff (runAff_)
 import Effect.Class (liftEffect)
+import Effect.Exception (message)
 import Effect.Ref as Ref
 import Mina.ChainId (ChainId(..))
 import Pickles (toVerifiable, verifyBatch)
@@ -36,9 +38,9 @@ import Snarky.Example.Snark.Manager (submitBlock)
 import Snarky.Example.Snark.Pool (PoolSize)
 import Snarky.Example.Snark.Progress (scanStateView)
 import Snarky.Example.Snark.Worker (SnarkBackend)
-import Snarky.Example.Srs.Cache (nullCache)
 import Snarky.Example.Transaction (SignedTransaction(..), Transaction(..), Transfer(..))
 import Snarky.Example.Types.PublicKey (toBase58Check)
+import Snarky.Example.Web.SrsCache (openSrsCache)
 
 -- | Ledger tree depth, matching the terminal entry.
 type Depth = 4
@@ -81,7 +83,7 @@ severityLabel = case _ of
 -- | pool whose first worker is its own in-process prover and the rest are remote
 -- | peers (`Snarky.Example.P2P.Backend.p2pSnarkBackend`).
 runWith :: SnarkBackend Depth -> PoolSize -> Milliseconds -> EngineCallbacks -> Effect Unit
-runWith backend poolSize jobTimeout cb = launchAff_ do
+runWith backend poolSize jobTimeout cb = runAff_ onDone do
   let
     logger = LogAction \(Msg { severity, text }) ->
       cb.onLog { severity: severityLabel severity, text }
@@ -92,6 +94,9 @@ runWith backend poolSize jobTimeout cb = launchAff_ do
         cb.onScan { blockId, leaves: v.leaves, statuses: v.statuses }
 
   liftEffect $ cb.onPhase "setup"
+  -- The shared same-origin SRS cache (with hit/miss logging): the engine warms
+  -- it; the nested self-prover reads it instead of re-running the FFTs.
+  cache <- openSrsCache logger
   sim <- mkSimulation @Depth
     { chainId: Testnet
     , numAccounts: 10
@@ -100,8 +105,7 @@ runWith backend poolSize jobTimeout cb = launchAff_ do
     , poolSize
     , jobTimeout
     , backend
-    -- Browser SRS caching (IndexedDB) is deferred; the engine builds un-cached.
-    , cache: nullCache
+    , cache
     }
 
   liftEffect $ cb.onPhase "block"
@@ -126,3 +130,8 @@ runWith backend poolSize jobTimeout cb = launchAff_ do
   else
     liftEffect $ cb.onVerified false
   liftEffect $ cb.onPhase "done"
+  where
+  -- Surface an otherwise-swallowed Aff failure (e.g. an SRS cache error) to the UI.
+  onDone = case _ of
+    Left err -> cb.onLog { severity: "error", text: "[engine] FAILED: " <> message err }
+    Right _ -> pure unit

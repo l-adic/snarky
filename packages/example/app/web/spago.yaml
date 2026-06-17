@@ -12,6 +12,8 @@ package:
   name: example-simulation-web
   dependencies:
     - aff
+    - aff-promise
+    - arraybuffer-types
     - arrays
     - avar
     - colog
