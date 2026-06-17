@@ -32,6 +32,7 @@ type Node =
   { id :: String
   , onMsg :: Ref (Maybe (String -> String -> Effect Unit))
   , onPeer :: Ref (Maybe (String -> Effect Unit))
+  , onLeave :: Ref (Maybe (String -> Effect Unit))
   }
 
 newtype Bus = Bus (Ref (Array Node))
@@ -44,10 +45,11 @@ connect :: Bus -> String -> Effect Transport
 connect (Bus ref) self = do
   onMsgRef <- Ref.new Nothing
   onPeerRef <- Ref.new Nothing
+  onLeaveRef <- Ref.new Nothing
   -- announce the newcomer to the already-connected nodes
   existing <- Ref.read ref
   for_ existing \n -> Ref.read n.onPeer >>= \h -> for_ h \fn -> fn self
-  Ref.modify_ (\ns -> Array.snoc ns { id: self, onMsg: onMsgRef, onPeer: onPeerRef }) ref
+  Ref.modify_ (\ns -> Array.snoc ns { id: self, onMsg: onMsgRef, onPeer: onPeerRef, onLeave: onLeaveRef }) ref
   let
     connected from = Ref.read ref <#> Array.any (\n -> n.id == from)
     callMsg from msg n = Ref.read n.onMsg >>= \h -> for_ h \fn -> fn from msg
@@ -65,8 +67,14 @@ connect (Bus ref) self = do
         Ref.write (Just fn) onPeerRef
         ns <- Ref.read ref
         for_ ns \n -> when (n.id /= self) (fn n.id)
+    , onPeerLeave: \fn -> Ref.write (Just fn) onLeaveRef
     }
 
--- | Disconnect a node (simulate a quit): its `Transport` goes inert.
+-- | Disconnect a node (a dropped connection): remove it, and fire `onPeerLeave`
+-- | on every node that remains — modelling the WebRTC transports' native
+-- | disconnect signal (no cooperative `Leave` needed).
 disconnect :: Bus -> String -> Effect Unit
-disconnect (Bus ref) self = Ref.modify_ (Array.filter (\n -> n.id /= self)) ref
+disconnect (Bus ref) self = do
+  Ref.modify_ (Array.filter (\n -> n.id /= self)) ref
+  remaining <- Ref.read ref
+  for_ remaining \n -> Ref.read n.onLeave >>= \h -> for_ h \fn -> fn self

@@ -5,6 +5,7 @@ export const _broadcast = (t, msg) => t.broadcast(msg);
 export const _sendTo = (t, { peer, msg }) => t.sendTo(peer, msg);
 export const _onMessage = (t, fn) => t.onMessage((from, raw) => fn(from, raw));
 export const _onPeer = (t, fn) => t.onPeer((peer) => fn(peer));
+export const _onPeerLeave = (t, fn) => t.onPeerLeave((peer) => fn(peer));
 
 // Adapt a curried PS handler `a -> b -> Effect Unit` into an EffectFn2.
 export const mkHandler2 = (f) => (a, b) => f(a)(b)();
@@ -20,4 +21,5 @@ export const fromImpl = (impl) => ({
   sendTo: (peer, msg) => impl.sendTo(peer)(msg)(),
   onMessage: (fn) => impl.onMessage((from) => (raw) => () => fn(from, raw))(),
   onPeer: (fn) => impl.onPeer((id) => () => fn(id))(),
+  onPeerLeave: (fn) => impl.onPeerLeave((id) => () => fn(id))(),
 });

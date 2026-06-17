@@ -44,13 +44,12 @@ import Effect.Aff (Aff, launchAff_, try)
 import Effect.Aff.AVar as AVar
 import Effect.Class (liftEffect)
 import Effect.Exception (message, throw)
-import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Snarky.Example.AsyncQueue (Queue, dequeue, enqueueEffect, newQueueEffect)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
 import Snarky.Example.P2P.Protocol (Msg(..), decodeMsg, encodeMsg, fingerprint)
-import Snarky.Example.P2P.Transport (Transport, onMessage, onPeer, sendTo)
+import Snarky.Example.P2P.Transport (Transport, onMessage, onPeer, onPeerLeave, sendTo)
 import Snarky.Example.Snark.Pool (Worker, WorkerBackend)
 
 -- | A reply slot for one assigned job: filled by the router with the worker's
@@ -145,6 +144,12 @@ mkStarBackend config = do
   -- that never gets recognized.
   onPeer config.transport \id ->
     Log.logInfo logger ("[pool] discovered peer " <> id <> " (awaiting its Join)")
+  -- The transport detected a peer's connection drop (WebRTC). Treat it like a
+  -- `Leave`: forget it and reassign its in-flight job at once — no wait for the
+  -- cooperative Leave message or the job timeout.
+  onPeerLeave config.transport \id -> do
+    Log.logInfo logger ("[pool] peer " <> id <> " disconnected")
+    peerGone id
   onMessage config.transport \from raw ->
     case decodeMsg raw of
       Right (Join j)

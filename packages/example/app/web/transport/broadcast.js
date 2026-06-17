@@ -51,5 +51,9 @@ export function mkBroadcastTransport(room) {
     sendTo: (peer, msg) => bc.postMessage({ from: myId, to: peer, kind: "data", payload: msg }),
     onMessage: (fn) => { msgHandler = fn; },
     onPeer: (fn) => { peerHandler = fn; for (const p of peers) fn(p); },
+    // BroadcastChannel has no connection, so no native disconnect signal — a
+    // closed tab is only noticed via its `Leave` message (sent on pagehide). This
+    // never fires; it exists to satisfy the Transport interface.
+    onPeerLeave: (_fn) => {},
   };
 }

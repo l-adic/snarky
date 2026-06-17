@@ -172,6 +172,20 @@ spec = describe "P2P star coordination" do
     Array.sort (map fst res) `shouldEqual` [ "j0", "j1" ]
     h.stop
 
+  it "drops an idle worker whose connection drops, with no Leave message (onPeerLeave)" do
+    bus <- liftEffect newBus
+    -- long timeout: the only thing that can drop an IDLE peer here is onPeerLeave
+    -- (it has no in-flight job for the timeout to catch, and sends no Leave).
+    h <- mkHarness bus (Milliseconds 60000.0)
+    _ <- liftEffect (startPeer bus "p1" stubProve)
+    awaitUntil h.peers (hasPeer "p1")
+    liftEffect (hasPeer "p1" <$> h.peers) >>= \x -> x `shouldEqual` true
+    -- its connection simply drops — no Leave broadcast, just off the bus
+    liftEffect (disconnect bus "p1")
+    awaitUntil h.peers (\ps -> not (hasPeer "p1" ps))
+    liftEffect (hasPeer "p1" <$> h.peers) >>= \x -> x `shouldEqual` false
+    h.stop
+
   it "reassigns a quitting worker's in-flight job to another worker (Leave path)" do
     bus <- liftEffect newBus
     -- long timeout so we prove the Leave-driven reassign, not the timeout backstop

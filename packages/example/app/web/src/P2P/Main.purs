@@ -189,6 +189,7 @@ mkApp opts = component "P2PApp" \_ -> React.do
       WW.onError (\_ -> pushLog { severity: "error", text: "[worker] crashed — see the browser console" }) worker
       T.onMessage transport \from raw -> WW.postMessage { "_t": "msg", from, raw } worker
       T.onPeer transport \id -> WW.postMessage { "_t": "peer", id } worker
+      T.onPeerLeave transport \id -> WW.postMessage { "_t": "leave", id } worker
       WW.postMessage { "_t": "myId", id: T.myId transport } worker
       WW.postMessage { type: "start", role: r, threads: toNullable opts.threads } worker
       -- A worker that closes its tab announces it, so the coordinator drops it

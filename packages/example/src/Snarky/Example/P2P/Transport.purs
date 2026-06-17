@@ -18,6 +18,7 @@ module Snarky.Example.P2P.Transport
   , sendTo
   , onMessage
   , onPeer
+  , onPeerLeave
   ) where
 
 import Prelude
@@ -39,6 +40,7 @@ type TransportImpl =
   , sendTo :: String -> String -> Effect Unit
   , onMessage :: (String -> String -> Effect Unit) -> Effect Unit
   , onPeer :: (String -> Effect Unit) -> Effect Unit
+  , onPeerLeave :: (String -> Effect Unit) -> Effect Unit
   }
 
 -- | Build a `Transport` from a PureScript implementation (adapts the curried
@@ -50,6 +52,7 @@ foreign import _broadcast :: EffectFn2 Transport String Unit
 foreign import _sendTo :: EffectFn2 Transport { peer :: String, msg :: String } Unit
 foreign import _onMessage :: EffectFn2 Transport (EffectFn2 String String Unit) Unit
 foreign import _onPeer :: EffectFn2 Transport (EffectFn1 String Unit) Unit
+foreign import _onPeerLeave :: EffectFn2 Transport (EffectFn1 String Unit) Unit
 
 -- | This peer's stable id within the room.
 myId :: Transport -> String
@@ -70,6 +73,12 @@ onMessage t f = runEffectFn2 _onMessage t (mkHandler2 f)
 -- | Register the peer-joined handler (fires once the channel to a peer opens).
 onPeer :: Transport -> (String -> Effect Unit) -> Effect Unit
 onPeer t f = runEffectFn2 _onPeer t (mkHandler1 f)
+
+-- | Register the peer-left handler (fires when a peer's connection drops —
+-- | natively for the WebRTC transports; never for BroadcastChannel, which has no
+-- | connection and relies on the cooperative `Leave` message instead).
+onPeerLeave :: Transport -> (String -> Effect Unit) -> Effect Unit
+onPeerLeave t f = runEffectFn2 _onPeerLeave t (mkHandler1 f)
 
 foreign import mkHandler2 :: (String -> String -> Effect Unit) -> EffectFn2 String String Unit
 foreign import mkHandler1 :: (String -> Effect Unit) -> EffectFn1 String Unit

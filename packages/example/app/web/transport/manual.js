@@ -16,10 +16,18 @@ export function mkManualTransport() {
   let remoteId = null;
   let msgHandler = null;
   let peerHandler = null;
+  let peerLeaveHandler = null;
+
+  const dropped = () => {
+    const id = remoteId;
+    remoteId = null;
+    if (id && peerLeaveHandler) peerLeaveHandler(id);
+  };
 
   function bind(channel) {
     dc = channel;
     dc.onopen = () => dc.send(JSON.stringify({ c: -1, i: 0, n: 1, d: "__id:" + myId }));
+    dc.onclose = dropped; // the single data channel closing = the peer dropped
     recvChunked(dc, (s) => {
       if (s.startsWith("__id:")) {
         remoteId = s.slice(5);
@@ -29,6 +37,11 @@ export function mkManualTransport() {
       if (msgHandler) msgHandler(remoteId || "peer", s);
     });
   }
+  // …and an ICE failure (a lost link without a clean channel close).
+  pc.oniceconnectionstatechange = () => {
+    const st = pc.iceConnectionState;
+    if (st === "disconnected" || st === "failed" || st === "closed") dropped();
+  };
 
   return {
     myId,
@@ -36,6 +49,7 @@ export function mkManualTransport() {
     sendTo: (_peer, msg) => { if (dc) sendChunked(dc, msg); },
     onMessage: (fn) => { msgHandler = fn; },
     onPeer: (fn) => { peerHandler = fn; if (remoteId) fn(remoteId); },
+    onPeerLeave: (fn) => { peerLeaveHandler = fn; },
 
     // --- signaling (driven by the UI / test harness) ---
     async createOffer() {
