@@ -18,7 +18,7 @@ import Prelude
 
 import Data.Either (Either(..))
 import Data.Int as Int
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Maybe (fromMaybe)
 import Data.Reflectable (class Reflectable, reifyType)
 import Effect (Effect)
 import Effect.Aff (launchAff_)
@@ -30,33 +30,14 @@ import Node.Process (lookupEnv)
 import Node.WorkerBees (ThreadId(..), WorkerContext, makeAsMain)
 import Pickles.Prove.SerializeProof (encodeCompiledProof)
 import Snarky.Example.Env (mkConfigCached, mkEnv)
-import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
 import Snarky.Example.Snark.Work (WorkItem(..), decodeWorkItem)
 import Snarky.Example.Snark.Worker (proveItem)
-import Snarky.Example.Srs.Cache (SrsCache, entryKey)
-import Snarky.Example.Srs.Cache.Fs (fsCache)
+import Snarky.Example.Terminal.SrsCache (openSrsCache)
 import Snarky.Example.Terminal.WorkerLog (workerLogger)
 import Type.Proxy (Proxy)
 
 foreign import sleepSync :: Int -> Effect Unit
-
--- | The on-disk SRS cache directory shared by all worker threads (and reused
--- | across runs); `SNARK_SRS_CACHE_DIR` overrides it.
-foreign import resolveSrsCacheDir :: Effect String
-
--- | Wrap an `SrsCache` so every lookup logs HIT (loaded + injected, no FFT) or
--- | MISS (will build + store). Lives here in the app, not the cache manager, so
--- | the manager stays silent — the `{ get, put }` seam carries the observability.
-loggingCache :: Logger -> SrsCache -> SrsCache
-loggingCache logger inner = inner
-  { get = \e -> do
-      result <- inner.get e
-      Log.logInfo logger $ case result of
-        Just _ -> "[srs-cache] HIT  " <> entryKey e <> " (inject, no FFT)"
-        Nothing -> "[srs-cache] MISS " <> entryKey e <> " (building + storing)"
-      pure result
-  }
 
 -- | The init data the host sends as `workerData`: the chain id (as `Mina.ChainId`
 -- | shows it) and the ledger depth, so the worker compiles the same circuit as
@@ -115,12 +96,12 @@ workerAtDepth ctx _ = launchAff_ do
     note :: forall m. MonadEffect m => String -> m Unit
     note text = Log.logInfo workerLogger ("[worker " <> show tid <> "] " <> text)
   fault <- liftEffect readFault
-  cacheDir <- liftEffect resolveSrsCacheDir
+  cache <- liftEffect (openSrsCache workerLogger)
   note "building SRS + lagrange basis…"
   -- Build the SRS through the shared on-disk cache: a cold cache runs the
   -- Lagrange-basis FFTs once (and stores them) for the whole worker pool; a warm
   -- one (a later worker, or a later run) loads + injects them, no FFT.
-  config <- mkConfigCached (loggingCache workerLogger (fsCache cacheDir)) (chainIdFromTag ctx.workerData.chain)
+  config <- mkConfigCached cache (chainIdFromTag ctx.workerData.chain)
   note "compiling circuit…"
   env <- liftEffect $ mkEnv @d mempty config
   note "ready"

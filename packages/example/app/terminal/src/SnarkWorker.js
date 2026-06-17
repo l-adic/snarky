@@ -7,11 +7,3 @@ export const sleepSync = (ms) => () => {
   const buf = new Int32Array(new SharedArrayBuffer(4));
   Atomics.wait(buf, 0, 0, ms);
 };
-
-// The on-disk SRS cache directory shared by every worker thread (and reused
-// across runs). All workers resolve the same path, so the first to build warms
-// it for the rest. Override with SNARK_SRS_CACHE_DIR.
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-export const resolveSrsCacheDir = () =>
-  process.env.SNARK_SRS_CACHE_DIR || join(tmpdir(), "snarky-srs-cache");

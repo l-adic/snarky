@@ -36,6 +36,7 @@ import Snarky.Example.Snark.Manager (submitBlock)
 import Snarky.Example.Snark.Pool (PoolSize)
 import Snarky.Example.Snark.Progress (scanStateView)
 import Snarky.Example.Snark.Worker (SnarkBackend)
+import Snarky.Example.Srs.Cache (nullCache)
 import Snarky.Example.Transaction (SignedTransaction(..), Transaction(..), Transfer(..))
 import Snarky.Example.Types.PublicKey (toBase58Check)
 
@@ -99,6 +100,8 @@ runWith backend poolSize jobTimeout cb = launchAff_ do
     , poolSize
     , jobTimeout
     , backend
+    -- Browser SRS caching (IndexedDB) is deferred; the engine builds un-cached.
+    , cache: nullCache
     }
 
   liftEffect $ cb.onPhase "block"

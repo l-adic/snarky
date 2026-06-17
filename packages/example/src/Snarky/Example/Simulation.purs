@@ -27,7 +27,7 @@ import Effect.Class (liftEffect)
 import Effect.Ref as Ref
 import Fmt (fmt)
 import Mina.ChainId (ChainId)
-import Snarky.Example.Env (Env, mkConfig, mkEnv)
+import Snarky.Example.Env (Env, mkConfigCached, mkEnv)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
 import Snarky.Example.Simulation.Block (generateBlock)
@@ -37,6 +37,7 @@ import Snarky.Example.Simulation.Transaction (genDistinctPublicKeys, genOverdraf
 import Snarky.Example.Snark.Manager (Manager, OnProgress, mkManager)
 import Snarky.Example.Snark.Pool (PoolSize)
 import Snarky.Example.Snark.Worker (SnarkBackend)
+import Snarky.Example.Srs.Cache (SrsCache)
 import Test.QuickCheck.Gen (randomSampleOne)
 
 -- | What a simulation run is configured by. `onProgress` optionally plugs a
@@ -53,6 +54,9 @@ type SimulationConfig d =
   , poolSize :: PoolSize
   , jobTimeout :: Milliseconds
   , backend :: SnarkBackend d
+  -- The SRS cache the host's setup builds through — skips the Lagrange-basis
+  -- FFTs on a hit. `nullCache` for the un-cached path.
+  , cache :: SrsCache
   }
 
 -- | Everything needed to run the simulation: the app `Env` (compiled program,
@@ -71,9 +75,9 @@ mkSimulation
    . Reflectable d Int
   => SimulationConfig d
   -> Aff (Simulation d)
-mkSimulation { chainId, numAccounts, logger, onProgress, poolSize, jobTimeout, backend } = do
+mkSimulation { chainId, numAccounts, logger, onProgress, poolSize, jobTimeout, backend, cache } = do
   Log.logInfo logger "[Simulation] building SRS + compiling the transaction snark…"
-  config <- liftEffect $ mkConfig chainId
+  config <- mkConfigCached cache chainId
   env <- liftEffect $ mkEnv @d logger config
   Log.logInfo logger $ fmt @"[Simulation] minting genesis ledger of {numAccounts} accounts" { numAccounts }
   { ledger, keys } <- liftEffect $ randomSampleOne (genGenesisLedger numAccounts)
