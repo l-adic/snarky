@@ -14,6 +14,7 @@ import Test.Snarky.Example.P2P.CoordinatorSpec as CoordinatorSpec
 import Test.Snarky.Example.P2P.PipelineSpec as PipelineSpec
 import Test.Snarky.Example.Snark.PoolSpec as PoolSpec
 import Test.Snarky.Example.Srs.CacheSpec as SrsCacheSpec
+import Test.Snarky.Example.Srs.FsCacheSpec as FsCacheSpec
 import Test.Snarky.Example.TransactionSnark as TransactionSnark
 import Test.Spec (beforeAll)
 import Test.Spec.Reporter.Console (consoleReporter)
@@ -31,6 +32,7 @@ main = runSpecAndExitProcess'
     BusSpec.spec
     CoordinatorSpec.spec
     SrsCacheSpec.spec
+    FsCacheSpec.spec
     -- One Env (SRS build + circuit compile) shared by every pickled test.
     beforeAll (liftEffect (mkEnv @Depth richMessageStdout =<< mkConfig chainId)) do
       TransactionSnark.spec
