@@ -49,8 +49,10 @@ self.onmessage = async (e) => {
       // The logger forwards SRS/compile + status to the coordinator (it relays
       // "log" messages to its UI); see WorkerLog / P2P.Backend.
       const { mkPostLogger } = await import("../output-es/Snarky.Example.Web.P2P.WorkerLog/index.js");
-      const { buildProver } = await import("../output-es/Snarky.Example.Prover/index.js");
-      prove = buildProver(mkPostLogger())({ chain: m.chain, depth: m.depth })();
+      const { buildBrowserProver } = await import("../output-es/Snarky.Example.Web.Prover/index.js");
+      // buildBrowserProver opens the shared IndexedDB SRS cache and compiles
+      // through it (async cache I/O), so it returns a Promise; await it.
+      prove = await buildBrowserProver(mkPostLogger())({ chain: m.chain, depth: m.depth })();
       // Compiled: announce readiness. The backend waits for this before marking
       // us an available pool worker, so the pool starts a job's timeout only
       // AFTER we are warm — otherwise the first job's timeout would have to cover

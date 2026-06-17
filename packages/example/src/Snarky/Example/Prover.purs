@@ -17,14 +17,17 @@ import Prelude
 import Data.Either (Either(..))
 import Data.Reflectable (class Reflectable, reifyType)
 import Effect (Effect)
+import Effect.Aff (Aff)
+import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Mina.ChainId (ChainId(..))
 import Pickles.Prove.SerializeProof (encodeCompiledProof)
-import Snarky.Example.Env (mkConfig, mkEnv)
+import Snarky.Example.Env (mkConfigCached, mkEnv)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
 import Snarky.Example.Snark.Work (WorkItem, decodeWorkItem)
 import Snarky.Example.Snark.Worker (proveItem)
+import Snarky.Example.Srs.Cache (SrsCache)
 import Type.Proxy (Proxy)
 
 -- | Inverse of `show :: ChainId -> String` (anything but mainnet is testnet).
@@ -38,15 +41,15 @@ chainIdFromTag = case _ of
 -- | The closure captures the compiled program + the SRS, so the (expensive)
 -- | setup happens once. The `Logger` carries the SRS-build / circuit-compile
 -- | progress to the worker (`mkEnv` logs the compile through it too).
-buildProver :: Logger -> { chain :: String, depth :: Int } -> Effect (String -> Effect String)
-buildProver logger { chain, depth } = reifyType depth (buildProverAt logger chain)
+buildProver :: SrsCache -> Logger -> { chain :: String, depth :: Int } -> Aff (String -> Effect String)
+buildProver cache logger { chain, depth } = reifyType depth (buildProverAt cache logger chain)
 
-buildProverAt :: forall d. Reflectable d Int => Logger -> String -> Proxy d -> Effect (String -> Effect String)
-buildProverAt logger chain _ = do
+buildProverAt :: forall d. Reflectable d Int => SrsCache -> Logger -> String -> Proxy d -> Aff (String -> Effect String)
+buildProverAt cache logger chain _ = do
   Log.logInfo logger "building SRS…"
-  config <- mkConfig (chainIdFromTag chain)
+  config <- mkConfigCached cache (chainIdFromTag chain)
   Log.logInfo logger "SRS ready — compiling the transaction circuit…"
-  env <- mkEnv @d logger config
+  env <- liftEffect $ mkEnv @d logger config
   Log.logInfo logger "circuit compiled"
   pure \encoded -> case decodeWorkItem env encoded :: Either _ (WorkItem d) of
     Left err -> throw ("prover: decodeWorkItem failed: " <> show err)

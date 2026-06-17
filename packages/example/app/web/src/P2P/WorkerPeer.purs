@@ -15,12 +15,15 @@ import Data.Either (Either(..))
 import Data.Reflectable (reflectType)
 import Data.String as String
 import Effect (Effect)
+import Effect.Aff (launchAff_)
+import Effect.Class (liftEffect)
 import Simple.JSON (readJSON)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.P2P.Peer (runStarPeer)
 import Snarky.Example.P2P.Transport (Transport)
 import Snarky.Example.Prover (buildProver)
 import Snarky.Example.Web.Engine (Depth)
+import Snarky.Example.Web.SrsCache (openSrsCache)
 import Type.Proxy (Proxy(..))
 
 -- | Render a little-endian field hex (how an amount/digest serializes) as a
@@ -86,12 +89,14 @@ describeJob work = case readJSON work :: Either _ { tag :: String } of
       Left _ -> "merge"
   _ -> "job"
 
--- | Compile the circuit, then run the generic peer loop with the real prover.
+-- | Compile the circuit (through this peer's own machine-local SRS cache), then
+-- | run the generic peer loop with the real prover.
 runWorkerPeer :: Transport -> WorkerPeerEvents -> Effect Unit
-runWorkerPeer transport { logger, onPhase } = do
-  onPhase "compiling circuit"
-  prove <- buildProver logger { chain: chainTag, depth: reflectType (Proxy :: Proxy Depth) }
-  runStarPeer
+runWorkerPeer transport { logger, onPhase } = launchAff_ do
+  liftEffect $ onPhase "compiling circuit"
+  cache <- openSrsCache logger
+  prove <- buildProver cache logger { chain: chainTag, depth: reflectType (Proxy :: Proxy Depth) }
+  liftEffect $ runStarPeer
     { transport
     , logger
     , prove
