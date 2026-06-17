@@ -50,7 +50,7 @@ import React.Basic.Hooks as React
 import Routing (match)
 import Routing.Hash (getHash)
 import Routing.Match (params)
-import Snarky.Example.P2P.Backend (PeerView)
+import Snarky.Example.P2P.Coordinator (PeerView)
 import Snarky.Example.P2P.Protocol (Msg(Leave), encodeMsg)
 import Snarky.Example.P2P.Transport (Transport)
 import Snarky.Example.P2P.Transport as T

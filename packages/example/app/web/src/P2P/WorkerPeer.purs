@@ -1,22 +1,9 @@
--- | The worker side of the star: compile the circuit once, then answer the
--- | coordinator's `Assign` messages — prove the work item and reply with the
--- | encoded proof (`Result`) or the failure reason (`Reject`). Base and merge
--- | jobs are handled identically (`buildProver`'s closure dispatches on the
--- | decoded `WorkItem`), so a worker is a plain full-core prover.
--- |
--- | The transport is supplied by the caller (the worker JS entry constructs it),
--- | so this module is agnostic to BroadcastChannel vs WebRTC. Proving is
--- | synchronous (it blocks the JS thread while the wasm rayon pool works), which
--- | is why a peer runs off any UI thread and takes one `Assign` at a time.
--- |
--- | `WorkerPeerEvents` surfaces what the worker is doing (compile / each job) to
--- | its own UI — without it the operator sees nothing while the worker proves.
--- |
--- | A worker `Join`s by broadcasting; because a single announce can be lost over
--- | WebRTC (it may race the data channel opening, or the coordinator may still be
--- | discovering us), it re-announces periodically (a small `Aff` timer loop)
--- | until it is assigned its first job — otherwise a worker that joined an
--- | already-running session could sit silently unused.
+-- | The browser worker peer: compile the snark circuit once (`buildProver`), then
+-- | hand the generic peer loop (`Snarky.Example.P2P.Peer.runStarPeer`) the real
+-- | prover and a snark-specific `describeJob`. Everything transport-related —
+-- | announce, re-announce, answer `Assign` — lives in the generic loop; this
+-- | module is just the snark instantiation (the WorkItem JSON peek + the wasm
+-- | prover) plus the one-time compile.
 module Snarky.Example.P2P.WorkerPeer
   ( WorkerPeerEvents
   , runWorkerPeer
@@ -24,25 +11,14 @@ module Snarky.Example.P2P.WorkerPeer
 
 import Prelude
 
-import Control.Monad.Rec.Class (Step(..), tailRecM)
-import Control.Parallel (parOneOf)
 import Data.Either (Either(..))
 import Data.Reflectable (reflectType)
 import Data.String as String
-import Data.Time.Duration (Milliseconds(..))
 import Effect (Effect)
-import Effect.AVar (AVar)
-import Effect.AVar as EffectAVar
-import Effect.Aff (delay, launchAff_)
-import Effect.Aff.AVar as AVar
-import Effect.Class (liftEffect)
-import Effect.Exception (message, try)
-import Effect.Ref as Ref
 import Simple.JSON (readJSON)
 import Snarky.Example.Log (Logger)
-import Snarky.Example.Log as Log
-import Snarky.Example.P2P.Protocol (Msg(..), decodeMsg, encodeMsg, fingerprint)
-import Snarky.Example.P2P.Transport (Transport, broadcast, myId, onMessage, onPeer, sendTo)
+import Snarky.Example.P2P.Peer (runStarPeer)
+import Snarky.Example.P2P.Transport (Transport)
 import Snarky.Example.Prover (buildProver)
 import Snarky.Example.Web.Engine (Depth)
 import Type.Proxy (Proxy(..))
@@ -58,8 +34,8 @@ chainTag :: String
 chainTag = "Testnet"
 
 -- | What the worker reports to its own UI: a colog `Logger` for the log stream
--- | (the same vehicle the engine uses — `buildProver`'s SRS/compile logging flows
--- | through it too) and an `onPhase` for the current-status badge.
+-- | (`buildProver`'s SRS/compile logging flows through it too) and an `onPhase`
+-- | for the current-status badge.
 type WorkerPeerEvents =
   { logger :: Logger
   , onPhase :: String -> Effect Unit
@@ -77,12 +53,11 @@ shortHex h = String.take 8 h <> "…"
 transition :: StmtPeek -> String
 transition s = shortHex s.source <> " → " <> shortHex s.target
 
--- | A human description of a work item, peeked from its JSON WITHOUT the SRS —
--- | so it covers exactly the public parts: every job's statement (the ledger
+-- | A human description of a work item, peeked from its JSON WITHOUT the SRS — so
+-- | it covers exactly the public parts: every job's statement (the ledger
 -- | transition it proves) and, for a base job, the transaction itself (the
 -- | transfer's amount + recipient). A merge's child proofs stay opaque (decoding
--- | them needs the SRS), so only its merged statement is shown. The label feeds
--- | the worker's "current job" panel, answering "what am I actually proving?".
+-- | them needs the SRS), so only its merged statement is shown.
 describeJob :: String -> String
 describeJob work = case readJSON work :: Either _ { tag :: String } of
   Right { tag: "base" } ->
@@ -111,57 +86,17 @@ describeJob work = case readJSON work :: Either _ { tag :: String } of
       Left _ -> "merge"
   _ -> "job"
 
+-- | Compile the circuit, then run the generic peer loop with the real prover.
 runWorkerPeer :: Transport -> WorkerPeerEvents -> Effect Unit
 runWorkerPeer transport { logger, onPhase } = do
   onPhase "compiling circuit"
   prove <- buildProver logger { chain: chainTag, depth: reflectType (Proxy :: Proxy Depth) }
-  onPhase "ready — awaiting work"
-  Log.logInfo logger "waiting for the coordinator to assign work"
-  count <- Ref.new 0
-  -- One-shot signal: raised when the coordinator assigns the first job, which
-  -- stops the re-announce loop below (proof the coordinator knows us).
-  stop <- EffectAVar.empty :: Effect (AVar Unit)
-  let
-    joinMsg = encodeMsg (Join { peerId: myId transport, fingerprint })
-    announce = broadcast transport joinMsg
-  onMessage transport \from raw ->
-    case decodeMsg raw of
-      Right (Assign a) -> do
-        void $ EffectAVar.tryPut unit stop
-        n <- Ref.modify (_ + 1) count
-        let desc = describeJob a.work
-        onPhase ("proving #" <> show n <> " · " <> desc)
-        Log.logInfo logger ("assigned job #" <> show n <> " (" <> desc <> ") — proving…")
-        result <- try (prove a.work)
-        case result of
-          Right proof -> do
-            sendTo transport from (encodeMsg (Result { jobId: a.jobId, proof }))
-            Log.logInfo logger ("job #" <> show n <> " done — proof sent to coordinator")
-            onPhase "ready — awaiting work"
-          Left err -> do
-            sendTo transport from (encodeMsg (Reject { jobId: a.jobId, reason: message err }))
-            Log.logError logger ("job #" <> show n <> " failed: " <> message err)
-            onPhase "ready — awaiting work"
-      _ -> pure unit
-  -- Announce availability whenever a peer is discovered. Send the `Join` DIRECTLY
-  -- to that peer (`sendTo`), not just by broadcast: `onPeer` fires exactly when
-  -- the channel to it opens, so a targeted send is the reliable way to reach the
-  -- coordinator the instant we are connected — a broadcast can race the channel
-  -- or be dropped. Broadcast too, as a fallback for any peer we already had.
-  onPeer transport \id -> do
-    Log.logInfo logger ("discovered peer " <> id <> " — announcing")
-    sendTo transport id joinMsg
-    announce
-  announce
-  -- …and keep re-announcing for a while, since a single announce can still be
-  -- lost over WebRTC. Re-announce every 4s until the first job is assigned (which
-  -- raises `stop`) or 30 tries elapse — so an empty room isn't spammed forever; a
-  -- coordinator that appears later is still caught by `onPeer` above. Each round
-  -- races a 4s timer against the stop signal (`AVar.read`, non-consuming so every
-  -- round sees it once raised); the timer winning ⇒ re-announce, stop winning ⇒ done.
-  launchAff_ $ flip tailRecM 0 \n ->
-    if n >= 30 then pure (Done unit)
-    else do
-      stopped <- parOneOf [ delay (Milliseconds 4000.0) $> false, AVar.read stop $> true ]
-      if stopped then pure (Done unit)
-      else liftEffect announce $> Loop (n + 1)
+  runStarPeer
+    { transport
+    , logger
+    , prove
+    , describeJob
+    , onPhase
+    , reannounceMs: 4000.0
+    , reannounceMax: 30
+    }

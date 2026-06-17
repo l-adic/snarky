@@ -10,6 +10,7 @@ import Test.Snarky.Example.Block as Block
 import Test.Snarky.Example.Circuits as Circuits
 import Test.Snarky.Example.Config (Depth, chainId)
 import Test.Snarky.Example.P2P.BusSpec as BusSpec
+import Test.Snarky.Example.P2P.CoordinatorSpec as CoordinatorSpec
 import Test.Snarky.Example.Snark.PoolSpec as PoolSpec
 import Test.Snarky.Example.TransactionSnark as TransactionSnark
 import Test.Spec (beforeAll)
@@ -26,6 +27,7 @@ main = runSpecAndExitProcess'
     -- Pool reliability + the in-memory transport bus — in-process, no Env needed.
     PoolSpec.spec
     BusSpec.spec
+    CoordinatorSpec.spec
     -- One Env (SRS build + circuit compile) shared by every pickled test.
     beforeAll (liftEffect (mkEnv @Depth richMessageStdout =<< mkConfig chainId)) do
       TransactionSnark.spec
