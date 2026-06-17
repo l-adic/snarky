@@ -22,17 +22,19 @@ module Test.Snarky.Backend.Kimchi.SrsCache
 
 import Prelude
 
+import Data.ArrayBuffer.Types (Uint8Array)
 import Data.Foldable (for_)
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Node.Buffer (Buffer)
-import Node.Buffer as Buffer
 import Snarky.Backend.Kimchi.Impl.Pallas as P
 import Snarky.Backend.Kimchi.Impl.Vesta as V
 import Snarky.Backend.Kimchi.Types (CRS)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
+
+-- | Byte-wise equality of two serialized blobs (length + contents).
+foreign import bytesEq :: Uint8Array -> Uint8Array -> Boolean
 
 -- | Test SRS size — a power of two comfortably above every test domain. Far
 -- | below the app's 65536/32768 so the FFTs stay quick.
@@ -46,8 +48,8 @@ checkCurve
   :: forall g
    . (Int -> CRS g)
   -> (CRS g -> Int -> Effect Unit)
-  -> (CRS g -> Int -> Effect Buffer)
-  -> (CRS g -> Int -> Buffer -> Effect Unit)
+  -> (CRS g -> Int -> Effect Uint8Array)
+  -> (CRS g -> Int -> Uint8Array -> Effect Unit)
   -> Int
   -> Aff Unit
 checkCurve create addBasis toBytes setFromBytes log2 = do
@@ -63,19 +65,18 @@ checkCurve create addBasis toBytes setFromBytes log2 = do
     let crs = create depth
     addBasis crs log2
     toBytes crs log2
-  aFft <- liftEffect (Buffer.toArray bytesFft)
-  aInjected <- liftEffect (Buffer.toArray bytesInjected)
-  aFftAgain <- liftEffect (Buffer.toArray bytesFftAgain)
-  (aInjected == aFft) `shouldEqual` true
-  (aFftAgain == aFft) `shouldEqual` true
+  bytesEq bytesInjected bytesFft `shouldEqual` true
+  bytesEq bytesFftAgain bytesFft `shouldEqual` true
 
 spec :: Spec Unit
 spec = describe "Snarky.Backend.Kimchi SRS Lagrange-basis serde (out-of-band cache)" do
   it "Vesta: serialize → inject round-trips byte-identical and matches an independent FFT" do
     for_ [ 11, 12 ] $
       checkCurve V.vestaCrsCreate V.vestaSrsAddLagrangeBasis
-        V.vestaSrsLagrangeBasisToBytes V.vestaSrsSetLagrangeBasisFromBytes
+        V.vestaSrsLagrangeBasisToBytes
+        V.vestaSrsSetLagrangeBasisFromBytes
   it "Pallas: serialize → inject round-trips byte-identical and matches an independent FFT" do
     for_ [ 11, 12 ] $
       checkCurve P.pallasCrsCreate P.pallasSrsAddLagrangeBasis
-        P.pallasSrsLagrangeBasisToBytes P.pallasSrsSetLagrangeBasisFromBytes
+        P.pallasSrsLagrangeBasisToBytes
+        P.pallasSrsSetLagrangeBasisFromBytes

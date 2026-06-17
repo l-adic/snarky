@@ -125,12 +125,12 @@ export function vestaSrsAddLagrangeBasis(crs) {
     };
 }
 
-// Serialize the lagrange basis for domain 2^log2Size to a Buffer (napi returns
-// a Uint8Array; wrap it so the node-buffer PS API applies).
+// Serialize the lagrange basis for domain 2^log2Size. napi returns a Uint8Array
+// (portable across the napi + wasm builds); we pass it through untouched.
 export function vestaSrsLagrangeBasisToBytes(crs) {
     return function(log2Size) {
         return function() {
-            return Buffer.from(k.caml_fp_srs_lagrange_basis_to_bytes(crs.srs, log2Size));
+            return k.caml_fp_srs_lagrange_basis_to_bytes(crs.srs, log2Size);
         };
     };
 }
@@ -142,6 +142,22 @@ export function vestaSrsSetLagrangeBasisFromBytes(crs) {
             return function() {
                 k.caml_fp_srs_set_lagrange_basis_from_bytes(crs.srs, log2Size, bytes);
             };
+        };
+    };
+}
+
+// Serialize the SRS generators (g, h) — the basis cache is serde-skipped.
+export function vestaSrsToBytes(crs) {
+    return function() {
+        return k.caml_fp_srs_to_bytes(crs.srs);
+    };
+}
+
+// Reconstruct an SRS (generators only) from bytes, tagged with `size`.
+export function vestaSrsFromBytes(size) {
+    return function(bytes) {
+        return function() {
+            return { srs: k.caml_fp_srs_from_bytes(bytes), size };
         };
     };
 }

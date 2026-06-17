@@ -2,6 +2,7 @@ package:
   name: example
   dependencies:
     - aff
+    - arraybuffer-types
     - arrays
     - avar
     - colog

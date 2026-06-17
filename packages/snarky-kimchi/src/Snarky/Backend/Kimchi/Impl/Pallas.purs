@@ -1,10 +1,10 @@
 module Snarky.Backend.Kimchi.Impl.Pallas where
 
 import Data.Array as Array
+import Data.ArrayBuffer.Types (Uint8Array)
 import Data.Maybe (Maybe(..))
 import Data.Unit (Unit)
 import Effect (Effect)
-import Node.Buffer (Buffer)
 import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, GateWires, ProverIndex, VerifierIndex)
 import Snarky.Curves.Pallas as Pallas
@@ -38,13 +38,22 @@ foreign import pallasSrsAddLagrangeBasis :: CRS Pallas.G -> Int -> Effect Unit
 
 -- | Serialize the lagrange basis for the domain of size `2^log2` to a byte
 -- | blob (computing it if not yet cached). The out-of-band carrier the SRS
--- | cache manager persists — `caml_fq_srs_to_bytes` (generators) skips it.
-foreign import pallasSrsLagrangeBasisToBytes :: CRS Pallas.G -> Int -> Effect Buffer
+-- | cache manager persists — `pallasSrsToBytes` (generators) skips it.
+foreign import pallasSrsLagrangeBasisToBytes :: CRS Pallas.G -> Int -> Effect Uint8Array
 
 -- | Inject a serialized lagrange basis (from `pallasSrsLagrangeBasisToBytes`)
 -- | into this SRS's cache for the domain of size `2^log2`, so later
 -- | index/proof creation hits the cache instead of running the FFT.
-foreign import pallasSrsSetLagrangeBasisFromBytes :: CRS Pallas.G -> Int -> Buffer -> Effect Unit
+foreign import pallasSrsSetLagrangeBasisFromBytes :: CRS Pallas.G -> Int -> Uint8Array -> Effect Unit
+
+-- | Serialize the SRS generators (`g`, `h`) to a byte blob. The basis cache is
+-- | `#[serde(skip)]`'d, so this carries generators only — pair with
+-- | `pallasSrsLagrangeBasisToBytes` per domain.
+foreign import pallasSrsToBytes :: CRS Pallas.G -> Effect Uint8Array
+
+-- | Reconstruct an SRS (generators only) from `pallasSrsToBytes`, tagged with
+-- | the given size. Deterministic alternative to `pallasCrsCreate size`.
+foreign import pallasSrsFromBytes :: Int -> Uint8Array -> Effect (CRS Pallas.G)
 
 -- | Compute challenge polynomial commitment from Pallas SRS.
 -- | Pallas scalar field = Fq, result coords in Fp (= Vesta.ScalarField).

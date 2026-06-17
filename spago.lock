@@ -41,6 +41,7 @@
         "core": {
           "dependencies": [
             "aff",
+            "arraybuffer-types",
             "arrays",
             "avar",
             "colog",
@@ -501,6 +502,7 @@
         "core": {
           "dependencies": [
             "argonaut-core",
+            "arraybuffer-types",
             "arrays",
             "bifunctors",
             "control",

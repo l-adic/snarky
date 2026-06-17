@@ -1,10 +1,10 @@
 module Snarky.Backend.Kimchi.Impl.Vesta where
 
 import Data.Array as Array
+import Data.ArrayBuffer.Types (Uint8Array)
 import Data.Maybe (Maybe(..))
 import Data.Unit (Unit)
 import Effect (Effect)
-import Node.Buffer (Buffer)
 import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, GateWires, ProverIndex, VerifierIndex)
 import Snarky.Curves.Vesta as Vesta
@@ -38,13 +38,22 @@ foreign import vestaSrsAddLagrangeBasis :: CRS Vesta.G -> Int -> Effect Unit
 
 -- | Serialize the lagrange basis for the domain of size `2^log2` to a byte
 -- | blob (computing it if not yet cached). The out-of-band carrier the SRS
--- | cache manager persists — `caml_fp_srs_to_bytes` (generators) skips it.
-foreign import vestaSrsLagrangeBasisToBytes :: CRS Vesta.G -> Int -> Effect Buffer
+-- | cache manager persists — `vestaSrsToBytes` (generators) skips it.
+foreign import vestaSrsLagrangeBasisToBytes :: CRS Vesta.G -> Int -> Effect Uint8Array
 
 -- | Inject a serialized lagrange basis (from `vestaSrsLagrangeBasisToBytes`)
 -- | into this SRS's cache for the domain of size `2^log2`, so later
 -- | index/proof creation hits the cache instead of running the FFT.
-foreign import vestaSrsSetLagrangeBasisFromBytes :: CRS Vesta.G -> Int -> Buffer -> Effect Unit
+foreign import vestaSrsSetLagrangeBasisFromBytes :: CRS Vesta.G -> Int -> Uint8Array -> Effect Unit
+
+-- | Serialize the SRS generators (`g`, `h`) to a byte blob. The basis cache is
+-- | `#[serde(skip)]`'d, so this carries generators only — pair with
+-- | `vestaSrsLagrangeBasisToBytes` per domain.
+foreign import vestaSrsToBytes :: CRS Vesta.G -> Effect Uint8Array
+
+-- | Reconstruct an SRS (generators only) from `vestaSrsToBytes`, tagged with the
+-- | given size. Deterministic alternative to `vestaCrsCreate size`.
+foreign import vestaSrsFromBytes :: Int -> Uint8Array -> Effect (CRS Vesta.G)
 
 -- | Compute challenge polynomial commitment from Vesta SRS.
 -- | Vesta scalar field = Fp, result coords in Fq (= Pallas.ScalarField).

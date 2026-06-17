@@ -18,6 +18,7 @@ import Prelude
 import Data.Foldable (for_)
 import Data.Reflectable (class Reflectable)
 import Effect (Effect)
+import Effect.Aff (Aff)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Mina.ChainId (ChainId)
@@ -30,6 +31,7 @@ import Snarky.Example.Ledger (Ledger)
 import Snarky.Example.Ledger as Ledger
 import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
+import Snarky.Example.Srs.Cache (SrsCache, ensureSrs, pallasOps, vestaOps)
 import Snarky.Example.Transaction.Checked (CompiledTx, compileTxCircuit)
 
 type Config =
@@ -51,14 +53,42 @@ type Config =
 -- | subset just defers the missing basis to a one-time lazy generation
 -- | at prove time (correct, slower). The Pallas SRS depth stays 2^15
 -- | (the OCaml Tock URS convention) regardless of which bases are warmed.
+-- The SRS sizes + the domains this program commits over. Single-sourced so
+-- `mkConfig` (direct FFT) and `mkConfigCached` (via the SRS cache manager) can't
+-- drift. `vestaSrsSize` mirrors `createCRS @StepField`'s built-in 2^16.
+vestaSrsSize :: Int
+vestaSrsSize = 65536
+
+vestaDomains :: Array Int
+vestaDomains = [ 13, 15 ]
+
+pallasSrsSize :: Int
+pallasSrsSize = 32768
+
+pallasDomains :: Array Int
+pallasDomains = [ 14 ]
+
 mkConfig
   :: ChainId
   -> Effect Config
 mkConfig chainId = do
-  let pallasSrs = PallasImpl.pallasCrsCreate 32768
+  let pallasSrs = PallasImpl.pallasCrsCreate pallasSrsSize
   vestaSrs <- createCRS @StepField
-  for_ [ 13, 15 ] (addLagrangeBasis vestaSrs)
-  for_ [ 14 ] (addLagrangeBasis pallasSrs)
+  for_ vestaDomains (addLagrangeBasis vestaSrs)
+  for_ pallasDomains (addLagrangeBasis pallasSrs)
+  pure { pallasSrs, vestaSrs, chainId }
+
+-- | `mkConfig` through the SRS cache manager: load the generators + each domain's
+-- | Lagrange basis from `cache` if present (no FFT), else build and store them.
+-- | `mkConfig` is exactly `mkConfigCached nullCache` modulo the `Effect`/`Aff`
+-- | split. The chain plays no part — the SRS depends only on curve/size/domains.
+mkConfigCached
+  :: SrsCache
+  -> ChainId
+  -> Aff Config
+mkConfigCached cache chainId = do
+  vestaSrs <- ensureSrs cache vestaOps vestaSrsSize vestaDomains
+  pallasSrs <- ensureSrs cache pallasOps pallasSrsSize pallasDomains
   pure { pallasSrs, vestaSrs, chainId }
 
 type Env d =
