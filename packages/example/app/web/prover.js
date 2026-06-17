@@ -51,11 +51,19 @@ self.onmessage = async (e) => {
       const { mkPostLogger } = await import("../output-es/Snarky.Example.Web.P2P.WorkerLog/index.js");
       const { buildProver } = await import("../output-es/Snarky.Example.Prover/index.js");
       prove = buildProver(mkPostLogger())({ chain: m.chain, depth: m.depth })();
-      // Drain any jobs that arrived while we were compiling (init is async, so a
-      // job message can interleave before `prove` is set — run them now, in order).
+      // Compiled: announce readiness. The backend waits for this before marking
+      // us an available pool worker, so the pool starts a job's timeout only
+      // AFTER we are warm — otherwise the first job's timeout would have to cover
+      // the whole (multi-minute) compile and we'd time out on it. (Mirrors a
+      // remote peer, which only announces Join after it finishes compiling.)
+      self.postMessage({ tag: "ready" });
+      // Drain any jobs that arrived while we were compiling (with the ready-gate
+      // none should, but init is async so keep this for safety — run in order).
       for (const work of queued.splice(0)) runJob(work);
     } catch (err) {
-      self.postMessage({ tag: "reject", reason: "init failed: " + String(err?.message ?? err) });
+      // Init/compile failed — "error" both unblocks the backend's ready-wait and
+      // reports the failure, so the pool drops this worker instead of hanging.
+      self.postMessage({ tag: "error", reason: "init failed: " + String(err?.message ?? err) });
     }
   } else if (m.type === "job") {
     if (prove) runJob(m.work);

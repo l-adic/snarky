@@ -39,7 +39,7 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.AVar (AVar)
 import Effect.AVar as EffectAVar
-import Effect.Aff (Aff)
+import Effect.Aff (Aff, forkAff)
 import Effect.Aff.AVar as AVar
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
@@ -130,6 +130,37 @@ p2pSnarkBackend transport logger onPeers = do
   -- reject it immediately (the run then throws → the pool reassigns the job).
   peerSlot <- Ref.new (Map.empty :: Map String Reply)
   selfSpawned <- Ref.new false
+  -- The coordinator's OWN prover (the nested prover.js worker). Construct the
+  -- Worker object now — that is cheap (prover.js boots no wasm until it gets an
+  -- `init`) — and wire its message handler. Its COMPILE (`init`) is deferred to
+  -- the first pool spawn (see `spawn` below), so it compiles while the engine is
+  -- idle (proving phase), not fighting the engine's own setup compile. It signals
+  -- `ready` when compiled; the `selfReply` slot carries each job's result back.
+  selfWorker <- spawnLocalProver
+  selfThreads <- localProverThreads
+  selfReply <- EffectAVar.empty :: Effect Reply
+  selfReady <- EffectAVar.empty :: Effect (AVar (Either String Unit))
+  flip WW.onMessage selfWorker \ev ->
+    let
+      r =
+        unsafeFromForeign (data_ ev)
+          :: { tag :: String
+             , proof :: String
+             , reason :: String
+             , value :: { severity :: String, text :: String }
+             }
+    in
+      case r.tag of
+        "ready" -> void $ EffectAVar.tryPut (Right unit) selfReady
+        "proof" -> void $ EffectAVar.put (Right r.proof) selfReply mempty
+        "reject" -> void $ EffectAVar.put (Left r.reason) selfReply mempty
+        -- A compile/init failure resolves the ready signal as a failure, so the
+        -- self prover is simply never offered to the pool (rather than hanging).
+        "error" -> void $ EffectAVar.tryPut (Left r.reason) selfReady
+        -- Relay the nested prover's colog (SRS/compile + status) to the
+        -- coordinator's own logger → its UI.
+        "log" -> relayLog logger ("[self] " <> r.value.text) r.value.severity
+        _ -> pure unit
   joinQ <- newJoinQueue
   let
     -- Push the current peer table (sorted by id, via `Map`) to the UI.
@@ -191,48 +222,39 @@ p2pSnarkBackend transport logger onPeers = do
       Left _ -> Log.logDebug logger ("[pool] undecodable message from " <> from)
   pure \env ->
     { name: "p2p pool"
-    -- The FIRST worker is the coordinator's own prover (a nested Web Worker), so
-    -- a lone coordinator (no remote peers) proves the whole block itself — the
-    -- single-machine path. Each subsequent worker is a remote peer that joined.
+    -- The coordinator's OWN prover and the remote peers are offered through the
+    -- SAME join queue: a synthetic "self" id is the nested prover, any other id is
+    -- a peer that announced `Join`. So a lone coordinator (no peers) still proves
+    -- the whole block itself — its self worker is the only one offered.
     , spawn: do
-        isSelf <- liftEffect $ Ref.modify' (\done -> { state: true, value: not done }) selfSpawned
-        if isSelf then do
-          -- The coordinator's own prover, as a NESTED Web Worker so it proves
-          -- async — in its own thread — and never freezes the coordinator (so
-          -- peers are never starved). One reply slot: the pool gives it one job
-          -- at a time. It compiles on `init`; its first job simply queues behind
-          -- that compile.
-          worker <- liftEffect spawnLocalProver
-          threads <- liftEffect localProverThreads
-          reply <- liftEffect EffectAVar.empty
-          liftEffect $ flip WW.onMessage worker \ev ->
-            let
-              r =
-                unsafeFromForeign (data_ ev)
-                  :: { tag :: String
-                     , proof :: String
-                     , reason :: String
-                     , value :: { severity :: String, text :: String }
-                     }
-            in
-              case r.tag of
-                "proof" -> void $ EffectAVar.put (Right r.proof) reply mempty
-                "reject" -> void $ EffectAVar.put (Left r.reason) reply mempty
-                "error" -> void $ EffectAVar.put (Left r.reason) reply mempty
-                -- The nested prover logs its SRS/compile + status through colog;
-                -- relay it to the coordinator's own logger (→ the coordinator UI).
-                "log" -> relayLog env.logger ("[self] " <> r.value.text) r.value.severity
-                _ -> pure unit
+        -- On the FIRST spawn (the pool is dispatching now, so the engine is past
+        -- its own setup compile) kick off the self-prover's compile in the
+        -- BACKGROUND and offer it to the join queue once it is `ready`. Forked, so
+        -- it never holds up the spawn loop from taking peers that are already
+        -- available; deferred to here (not backend construction) so it compiles
+        -- while the engine is idle rather than fighting the engine's setup
+        -- compile. Gating on `ready` makes its first job's timeout cover only
+        -- proving, not the (multi-minute) compile — the fix for the self worker
+        -- timing out on its very first job. A self that fails to compile is simply
+        -- never offered.
+        first <- liftEffect $ Ref.modify' (\done -> { state: true, value: not done }) selfSpawned
+        when first $ void $ forkAff do
           liftEffect $ WW.postMessage
-            { type: "init", chain: "Testnet", depth: reflectType (Proxy :: Proxy Depth), threads }
-            worker
+            { type: "init", chain: "Testnet", depth: reflectType (Proxy :: Proxy Depth), threads: selfThreads }
+            selfWorker
+          ready <- AVar.take selfReady
+          case ready of
+            Right _ -> liftEffect $ joinQ.push "self"
+            Left reason -> liftEffect $ Log.logError logger ("[pool] self prover failed to compile: " <> reason)
+        peerId <- joinQ.pull
+        if peerId == "self" then do
           liftEffect $ addPeer "self"
           pure
             { id: "self"
             , run: \job -> do
                 liftEffect $ setStatus "self" (jobLabel job)
-                liftEffect $ WW.postMessage { type: "job", work: encodeWorkItem job } worker
-                res <- AVar.take reply
+                liftEffect $ WW.postMessage { type: "job", work: encodeWorkItem job } selfWorker
+                res <- AVar.take selfReply
                 case res of
                   Left reason -> do
                     liftEffect $ setStatus "self" "idle"
@@ -244,10 +266,9 @@ p2pSnarkBackend transport logger onPeers = do
                       pure proof
             , terminate: do
                 removePeer "self"
-                WW.terminate worker
+                WW.terminate selfWorker
             }
-        else do
-          peerId <- joinQ.pull
+        else
           pure
             { id: peerId
             , run: \job -> do
