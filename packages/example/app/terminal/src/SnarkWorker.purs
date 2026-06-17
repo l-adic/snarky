@@ -29,7 +29,7 @@ import Mina.ChainId (ChainId(..))
 import Node.Process (lookupEnv)
 import Node.WorkerBees (ThreadId(..), WorkerContext, makeAsMain)
 import Pickles.Prove.SerializeProof (encodeCompiledProof)
-import Snarky.Example.Env (mkConfigCached, mkEnv)
+import Snarky.Example.Env (mkConfig, mkEnv)
 import Snarky.Example.Log as Log
 import Snarky.Example.Snark.Work (WorkItem(..), decodeWorkItem)
 import Snarky.Example.Snark.Worker (proveItem)
@@ -101,7 +101,7 @@ workerAtDepth ctx _ = launchAff_ do
   -- Build the SRS through the shared on-disk cache: a cold cache runs the
   -- Lagrange-basis FFTs once (and stores them) for the whole worker pool; a warm
   -- one (a later worker, or a later run) loads + injects them, no FFT.
-  config <- mkConfigCached cache (chainIdFromTag ctx.workerData.chain)
+  config <- mkConfig cache (chainIdFromTag ctx.workerData.chain)
   note "compiling circuit…"
   env <- liftEffect $ mkEnv @d mempty config
   note "ready"

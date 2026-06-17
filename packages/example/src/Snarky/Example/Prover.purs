@@ -23,7 +23,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Mina.ChainId (ChainId(..))
 import Pickles.Prove.SerializeProof (encodeCompiledProof)
-import Snarky.Example.Env (mkConfigCached, mkEnv)
+import Snarky.Example.Env (mkConfig, mkEnv)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
 import Snarky.Example.P2P.Types (Payload(..))
@@ -49,7 +49,7 @@ buildProver cache logger { chain, depth } = reifyType depth (buildProverAt cache
 buildProverAt :: forall d. Reflectable d Int => SrsCache -> Logger -> String -> Proxy d -> Aff (Payload -> Effect Payload)
 buildProverAt cache logger chain _ = do
   Log.logInfo logger "building SRS…"
-  config <- mkConfigCached cache (chainIdFromTag chain)
+  config <- mkConfig cache (chainIdFromTag chain)
   Log.logInfo logger "SRS ready — compiling the transaction circuit…"
   env <- liftEffect $ mkEnv @d logger config
   Log.logInfo logger "circuit compiled"

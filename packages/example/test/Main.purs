@@ -6,6 +6,7 @@ import Colog (richMessageStdout)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Snarky.Example.Env (mkConfig, mkEnv)
+import Snarky.Example.Srs.Cache (nullCache)
 import Test.Snarky.Example.Block as Block
 import Test.Snarky.Example.Circuits as Circuits
 import Test.Snarky.Example.Config (Depth, chainId)
@@ -34,7 +35,7 @@ main = runSpecAndExitProcess'
     SrsCacheSpec.spec
     FsCacheSpec.spec
     -- One Env (SRS build + circuit compile) shared by every pickled test.
-    beforeAll (liftEffect (mkEnv @Depth richMessageStdout =<< mkConfig chainId)) do
+    beforeAll (mkConfig nullCache chainId >>= mkEnv @Depth richMessageStdout >>> liftEffect) do
       TransactionSnark.spec
       Block.spec
       -- Real-proof block pipeline driven over the in-memory P2P transport.

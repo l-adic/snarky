@@ -15,16 +15,12 @@ module Snarky.Example.Env where
 
 import Prelude
 
-import Data.Foldable (for_)
 import Data.Reflectable (class Reflectable)
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Mina.ChainId (ChainId)
-import Pickles (StepField)
-import Snarky.Backend.Kimchi.Class (addLagrangeBasis, createCRS)
-import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Example.Ledger (Ledger)
@@ -53,9 +49,7 @@ type Config =
 -- | subset just defers the missing basis to a one-time lazy generation
 -- | at prove time (correct, slower). The Pallas SRS depth stays 2^15
 -- | (the OCaml Tock URS convention) regardless of which bases are warmed.
--- The SRS sizes + the domains this program commits over. Single-sourced so
--- `mkConfig` (direct FFT) and `mkConfigCached` (via the SRS cache manager) can't
--- drift. `vestaSrsSize` mirrors `createCRS @StepField`'s built-in 2^16.
+-- The SRS sizes + the domains this program commits over, single-sourced.
 vestaSrsSize :: Int
 vestaSrsSize = 65536
 
@@ -68,25 +62,15 @@ pallasSrsSize = 32768
 pallasDomains :: Array Int
 pallasDomains = [ 14 ]
 
+-- | Build the Pasta SRSes through the SRS cache manager: load the generators +
+-- | each domain's Lagrange basis from `cache` if present (no FFT), else build and
+-- | store them. Pass `nullCache` for the un-cached (always-FFT) path. The chain
+-- | plays no part — the SRS depends only on curve/size/domains.
 mkConfig
-  :: ChainId
-  -> Effect Config
-mkConfig chainId = do
-  let pallasSrs = PallasImpl.pallasCrsCreate pallasSrsSize
-  vestaSrs <- createCRS @StepField
-  for_ vestaDomains (addLagrangeBasis vestaSrs)
-  for_ pallasDomains (addLagrangeBasis pallasSrs)
-  pure { pallasSrs, vestaSrs, chainId }
-
--- | `mkConfig` through the SRS cache manager: load the generators + each domain's
--- | Lagrange basis from `cache` if present (no FFT), else build and store them.
--- | `mkConfig` is exactly `mkConfigCached nullCache` modulo the `Effect`/`Aff`
--- | split. The chain plays no part — the SRS depends only on curve/size/domains.
-mkConfigCached
   :: SrsCache
   -> ChainId
   -> Aff Config
-mkConfigCached cache chainId = do
+mkConfig cache chainId = do
   vestaSrs <- ensureSrs cache vestaOps vestaSrsSize vestaDomains
   pallasSrs <- ensureSrs cache pallasOps pallasSrsSize pallasDomains
   pure { pallasSrs, vestaSrs, chainId }
