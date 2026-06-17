@@ -14,9 +14,9 @@
 -- |
 -- | A worker `Join`s by broadcasting; because a single announce can be lost over
 -- | WebRTC (it may race the data channel opening, or the coordinator may still be
--- | discovering us), it re-announces periodically (`reannounce`) until it is
--- | assigned its first job — otherwise a worker that joined an already-running
--- | session could sit silently unused.
+-- | discovering us), it re-announces periodically (a small `Aff` timer loop)
+-- | until it is assigned its first job — otherwise a worker that joined an
+-- | already-running session could sit silently unused.
 module Snarky.Example.P2P.WorkerPeer
   ( WorkerPeerEvents
   , runWorkerPeer
@@ -24,10 +24,18 @@ module Snarky.Example.P2P.WorkerPeer
 
 import Prelude
 
+import Control.Monad.Rec.Class (Step(..), tailRecM)
+import Control.Parallel (parOneOf)
 import Data.Either (Either(..))
 import Data.Reflectable (reflectType)
 import Data.String as String
+import Data.Time.Duration (Milliseconds(..))
 import Effect (Effect)
+import Effect.AVar (AVar)
+import Effect.AVar as EffectAVar
+import Effect.Aff (delay, launchAff_)
+import Effect.Aff.AVar as AVar
+import Effect.Class (liftEffect)
 import Effect.Exception (message, try)
 import Effect.Ref as Ref
 import Simple.JSON (readJSON)
@@ -38,10 +46,6 @@ import Snarky.Example.P2P.Transport (Transport, broadcast, myId, onMessage, onPe
 import Snarky.Example.Prover (buildProver)
 import Snarky.Example.Web.Engine (Depth)
 import Type.Proxy (Proxy(..))
-
--- | Re-run an action every `ms` until the stop predicate holds or `maxTimes`
--- | runs have happened (whichever first). Used to keep re-broadcasting `Join`.
-foreign import reannounce :: Int -> Int -> Effect Boolean -> Effect Unit -> Effect Unit
 
 -- | Render a little-endian field hex (how an amount/digest serializes) as a
 -- | decimal string. In JS so it can use BigInt regardless of the value's size.
@@ -114,14 +118,16 @@ runWorkerPeer transport { logger, onPhase } = do
   onPhase "ready — awaiting work"
   Log.logInfo logger "waiting for the coordinator to assign work"
   count <- Ref.new 0
-  assigned <- Ref.new false
+  -- One-shot signal: raised when the coordinator assigns the first job, which
+  -- stops the re-announce loop below (proof the coordinator knows us).
+  stop <- EffectAVar.empty :: Effect (AVar Unit)
   let
     joinMsg = encodeMsg (Join { peerId: myId transport, fingerprint })
     announce = broadcast transport joinMsg
   onMessage transport \from raw ->
     case decodeMsg raw of
       Right (Assign a) -> do
-        Ref.write true assigned
+        void $ EffectAVar.tryPut unit stop
         n <- Ref.modify (_ + 1) count
         let desc = describeJob a.work
         onPhase ("proving #" <> show n <> " · " <> desc)
@@ -148,7 +154,14 @@ runWorkerPeer transport { logger, onPhase } = do
     announce
   announce
   -- …and keep re-announcing for a while, since a single announce can still be
-  -- lost over WebRTC — until the coordinator assigns the first job (proof it
-  -- knows us) or a bounded number of tries elapse (so an empty room isn't
-  -- spammed forever; a coordinator that appears later is caught by onPeer above).
-  reannounce 4000 30 (Ref.read assigned) announce
+  -- lost over WebRTC. Re-announce every 4s until the first job is assigned (which
+  -- raises `stop`) or 30 tries elapse — so an empty room isn't spammed forever; a
+  -- coordinator that appears later is still caught by `onPeer` above. Each round
+  -- races a 4s timer against the stop signal (`AVar.read`, non-consuming so every
+  -- round sees it once raised); the timer winning ⇒ re-announce, stop winning ⇒ done.
+  launchAff_ $ flip tailRecM 0 \n ->
+    if n >= 30 then pure (Done unit)
+    else do
+      stopped <- parOneOf [ delay (Milliseconds 4000.0) $> false, AVar.read stop $> true ]
+      if stopped then pure (Done unit)
+      else liftEffect announce $> Loop (n + 1)

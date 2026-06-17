@@ -5,19 +5,19 @@
 -- | discovered dynamically via the `Join` handshake rather than spawned.
 -- |
 -- | The pool (`Snarky.Example.Snark.Pool.runPool`) drives this over a `Dynamic`
--- | pool: the first worker is the coordinator's OWN prover — a nested Web Worker
--- | (`prover.js`) so it proves async, off the coordinator's thread (a lone
--- | coordinator thus proves the whole block itself — the single-machine path) —
--- | and every subsequent `spawn` blocks until a peer `Join`s, so the pool grows
--- | as peers arrive. Reliability (timeout → reassign, at-most-once) is the pool's,
--- | so a peer that vanishes mid-job is handled by the job timeout (its `Result`
--- | never arrives → reassign).
+-- | pool whose workers all arrive through one join queue (`AsyncQueue`): each
+-- | `spawn` `dequeue`s the next available worker. Two producers feed that queue —
+-- | a fresh `Join` (a remote peer) and the coordinator's OWN prover (a nested Web
+-- | Worker, `prover.js`, offered as the synthetic id "self" once it has compiled
+-- | in the background). So a lone coordinator proves the whole block itself (only
+-- | "self" is ever offered), and the pool grows as peers arrive. Reliability
+-- | (timeout → reassign, at-most-once) is the pool's, so a peer that vanishes
+-- | mid-job is handled by the job timeout (its `Result` never arrives → reassign).
 -- |
 -- | One `Transport.onMessage` router (installed once when the backend is built)
--- | fans `Result`/`Reject` to the waiting `run` by `jobId`, and turns each fresh
--- | `Join` into a queued peer that the next `spawn` claims. The backend also
--- | tracks per-peer state (idle / proving / completed count) and reports a
--- | snapshot through `onPeers` for the UI's peer table.
+-- | fans `Result`/`Reject` to the waiting `run` by `jobId`, and enqueues each
+-- | fresh `Join`. The backend also tracks per-peer state (idle / proving /
+-- | completed count) and reports a snapshot through `onPeers` for the UI table.
 module Snarky.Example.P2P.Backend
   ( PeerView
   , p2pSnarkBackend
@@ -27,7 +27,6 @@ module Snarky.Example.P2P.Backend
 import Prelude
 
 import Colog (LogAction(..), Msg(..), Severity(..))
-import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Map (Map)
 import Data.Map as Map
@@ -39,7 +38,7 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.AVar (AVar)
 import Effect.AVar as EffectAVar
-import Effect.Aff (Aff, forkAff)
+import Effect.Aff (launchAff_)
 import Effect.Aff.AVar as AVar
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
@@ -47,6 +46,7 @@ import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Foreign (unsafeFromForeign)
 import Pickles.Prove.SerializeProof (decodeCompiledProof)
+import Snarky.Example.AsyncQueue (Queue, dequeue, enqueueEffect, newQueueEffect)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
 import Snarky.Example.P2P.Protocol (Msg(..), decodeMsg, encodeMsg, fingerprint)
@@ -74,31 +74,6 @@ type Reply = AVar (Either String String)
 type PeerView = { id :: String, status :: String, completed :: Int }
 
 type PeerState = { status :: String, completed :: Int }
-
--- | An Effect-pushable, Aff-pullable queue of joined peer ids — the same
--- | single-consumer discipline as `Snarky.Example.AsyncQueue`, but `push` is in
--- | `Effect` so the transport's (Effect) message handler can feed it while a
--- | pool `spawn` (Aff) blocks on `pull`.
-type JoinQueue = { push :: String -> Effect Unit, pull :: Aff String }
-
-newJoinQueue :: Effect JoinQueue
-newJoinQueue = do
-  buf <- Ref.new []
-  signal <- EffectAVar.empty
-  let
-    push x = do
-      Ref.modify_ (\xs -> Array.snoc xs x) buf
-      void $ EffectAVar.tryPut unit signal
-    pull = do
-      _ <- AVar.take signal
-      xs <- liftEffect $ Ref.read buf
-      case Array.uncons xs of
-        Nothing -> pull -- spurious wake; retry
-        Just { head, tail } -> do
-          liftEffect $ Ref.write tail buf
-          when (not (Array.null tail)) $ void $ liftEffect $ EffectAVar.tryPut unit signal
-          pure head
-  pure { push, pull }
 
 -- | Relay a nested-prover log line to a colog logger at its reported severity.
 relayLog :: Logger -> String -> String -> Effect Unit
@@ -129,13 +104,16 @@ p2pSnarkBackend transport logger onPeers = do
   -- A remote peer's in-flight reply slot, keyed by peer id, so a `Leave` can
   -- reject it immediately (the run then throws → the pool reassigns the job).
   peerSlot <- Ref.new (Map.empty :: Map String Reply)
-  selfSpawned <- Ref.new false
+  -- Raised (once) by the first pool `spawn` — i.e. when the pool starts
+  -- dispatching, so the engine is past its own setup compile. The self-prover
+  -- warm-up fiber below waits on this before it compiles.
+  provingStarted <- EffectAVar.empty :: Effect (AVar Unit)
   -- The coordinator's OWN prover (the nested prover.js worker). Construct the
   -- Worker object now — that is cheap (prover.js boots no wasm until it gets an
   -- `init`) — and wire its message handler. Its COMPILE (`init`) is deferred to
-  -- the first pool spawn (see `spawn` below), so it compiles while the engine is
-  -- idle (proving phase), not fighting the engine's own setup compile. It signals
-  -- `ready` when compiled; the `selfReply` slot carries each job's result back.
+  -- `provingStarted`, so it compiles while the engine is idle (proving phase),
+  -- not fighting the engine's own setup compile. It signals `ready` when
+  -- compiled; the `selfReply` slot carries each job's result back.
   selfWorker <- spawnLocalProver
   selfThreads <- localProverThreads
   selfReply <- EffectAVar.empty :: Effect Reply
@@ -161,7 +139,24 @@ p2pSnarkBackend transport logger onPeers = do
         -- coordinator's own logger → its UI.
         "log" -> relayLog logger ("[self] " <> r.value.text) r.value.severity
         _ -> pure unit
-  joinQ <- newJoinQueue
+  -- Joined workers waiting for a pool slot: a remote peer's id (pushed by the
+  -- router on a fresh `Join`) or the synthetic "self" (pushed by the warm-up
+  -- fiber once compiled). The pool `dequeue`s it in `spawn`.
+  joinQ <- newQueueEffect :: Effect (Queue String)
+  -- The self-prover warm-up, as a fiber: wait until the pool starts dispatching
+  -- (`provingStarted`), compile in the background (engine idle → no contention
+  -- with its setup compile), and on `ready` offer it to the join queue as "self".
+  -- Forked, so it never holds up the spawn loop; a self that fails to compile is
+  -- just never offered (logged).
+  launchAff_ do
+    _ <- AVar.read provingStarted
+    liftEffect $ WW.postMessage
+      { type: "init", chain: "Testnet", depth: reflectType (Proxy :: Proxy Depth), threads: selfThreads }
+      selfWorker
+    ready <- AVar.take selfReady
+    case ready of
+      Right _ -> liftEffect $ enqueueEffect joinQ "self"
+      Left reason -> liftEffect $ Log.logError logger ("[pool] self prover failed to compile: " <> reason)
   let
     -- Push the current peer table (sorted by id, via `Map`) to the UI.
     report = do
@@ -206,7 +201,7 @@ p2pSnarkBackend transport logger onPeers = do
             when fresh do
               Log.logInfo logger ("[pool] peer " <> from <> " joined the pool")
               addPeer from
-              joinQ.push from
+              enqueueEffect joinQ from
         | otherwise ->
             Log.logWarning logger
               ( "[pool] ignoring Join from " <> from <> ": fingerprint \"" <> j.fingerprint
@@ -227,26 +222,16 @@ p2pSnarkBackend transport logger onPeers = do
     -- a peer that announced `Join`. So a lone coordinator (no peers) still proves
     -- the whole block itself — its self worker is the only one offered.
     , spawn: do
-        -- On the FIRST spawn (the pool is dispatching now, so the engine is past
-        -- its own setup compile) kick off the self-prover's compile in the
-        -- BACKGROUND and offer it to the join queue once it is `ready`. Forked, so
-        -- it never holds up the spawn loop from taking peers that are already
-        -- available; deferred to here (not backend construction) so it compiles
-        -- while the engine is idle rather than fighting the engine's setup
-        -- compile. Gating on `ready` makes its first job's timeout cover only
-        -- proving, not the (multi-minute) compile — the fix for the self worker
-        -- timing out on its very first job. A self that fails to compile is simply
-        -- never offered.
-        first <- liftEffect $ Ref.modify' (\done -> { state: true, value: not done }) selfSpawned
-        when first $ void $ forkAff do
-          liftEffect $ WW.postMessage
-            { type: "init", chain: "Testnet", depth: reflectType (Proxy :: Proxy Depth), threads: selfThreads }
-            selfWorker
-          ready <- AVar.take selfReady
-          case ready of
-            Right _ -> liftEffect $ joinQ.push "self"
-            Left reason -> liftEffect $ Log.logError logger ("[pool] self prover failed to compile: " <> reason)
-        peerId <- joinQ.pull
+        -- Tell the warm-up fiber the pool is dispatching now (idempotent — only
+        -- the first spawn's `tryPut` lands, the rest are no-ops). This is what
+        -- defers the self-prover's compile to the proving phase, so its first
+        -- job's timeout covers only proving, not the (multi-minute) compile — the
+        -- fix for the self worker timing out on its very first job.
+        liftEffect $ void $ EffectAVar.tryPut unit provingStarted
+        -- Take the next available worker: the synthetic "self" (the coordinator's
+        -- own prover) or a remote peer id. A lone coordinator only ever offers
+        -- "self", so it proves the whole block itself.
+        peerId <- dequeue joinQ
         if peerId == "self" then do
           liftEffect $ addPeer "self"
           pure
