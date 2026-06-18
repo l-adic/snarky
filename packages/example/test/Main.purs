@@ -13,6 +13,7 @@ import Test.Snarky.Example.Config (Depth, chainId)
 import Test.Snarky.Example.P2P.BusSpec as BusSpec
 import Test.Snarky.Example.P2P.CoordinatorSpec as CoordinatorSpec
 import Test.Snarky.Example.P2P.PipelineSpec as PipelineSpec
+import Test.Snarky.Example.Snark.JobSummarySpec as JobSummarySpec
 import Test.Snarky.Example.Snark.PoolSpec as PoolSpec
 import Test.Snarky.Example.Srs.CacheSpec as SrsCacheSpec
 import Test.Snarky.Example.Srs.FsCacheSpec as FsCacheSpec
@@ -28,6 +29,8 @@ main = runSpecAndExitProcess'
   [ consoleReporter ]
   do
     Circuits.spec
+    -- Pure unit tests — no Env, no browser.
+    JobSummarySpec.spec
     -- Pool reliability + the in-memory transport bus — in-process, no Env needed.
     PoolSpec.spec
     BusSpec.spec
