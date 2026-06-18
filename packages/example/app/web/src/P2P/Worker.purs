@@ -18,6 +18,7 @@ import Effect (Effect)
 import Foreign (Foreign, unsafeToForeign)
 import Mina.ChainId (ChainId(..))
 import Snarky.Example.P2P.Backend (runCoordinator)
+import Snarky.Example.P2P.Peer (peerPhaseLabel)
 import Snarky.Example.P2P.Transport (Transport)
 import Snarky.Example.P2P.WorkerPeer (runWorkerPeer)
 import Snarky.Example.Web.P2P.WorkerLog (mkPostLogger)
@@ -57,5 +58,5 @@ main = do
       logger <- mkPostLogger
       runWorkerPeer chainId transport
         { logger
-        , onPhase: \v -> postToMain "phase" (unsafeToForeign v)
+        , onPhase: \p -> postToMain "phase" (unsafeToForeign (peerPhaseLabel p))
         }

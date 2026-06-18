@@ -24,7 +24,7 @@ import Simple.JSON (readJSON)
 import Snarky.Curves.Class (fromHexLe, toBigInt)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Example.Log (Logger)
-import Snarky.Example.P2P.Peer (runStarPeer)
+import Snarky.Example.P2P.Peer (PeerPhase(Compiling), runStarPeer)
 import Snarky.Example.P2P.Transport (Transport)
 import Snarky.Example.P2P.Types (Payload(..))
 import Snarky.Example.Prover (buildProver)
@@ -42,7 +42,7 @@ fieldToDec hex = BigInt.toString (toBigInt (fromHexLe hex :: Vesta.ScalarField))
 -- | for the current-status badge.
 type WorkerPeerEvents =
   { logger :: Logger
-  , onPhase :: String -> Effect Unit
+  , onPhase :: PeerPhase -> Effect Unit
   }
 
 -- | The public statement both job kinds prove: the ledger Merkle-root transition
@@ -104,7 +104,7 @@ describeJob p = case jobSummary p of
 -- | run the generic peer loop with the real prover.
 runWorkerPeer :: ChainId -> Transport -> WorkerPeerEvents -> Effect Unit
 runWorkerPeer chainId transport { logger, onPhase } = launchAff_ do
-  liftEffect $ onPhase "compiling circuit"
+  liftEffect $ onPhase Compiling
   cache <- openSrsCache logger
   prove <- buildProver cache logger { chain: show chainId, depth: reflectType (Proxy :: Proxy Depth) }
   liftEffect $ runStarPeer

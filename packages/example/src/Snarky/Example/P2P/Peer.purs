@@ -13,6 +13,8 @@
 -- | a browser worker (real wasm prover) or in a Node test (stub prover).
 module Snarky.Example.P2P.Peer
   ( PeerConfig
+  , PeerPhase(..)
+  , peerPhaseLabel
   , runStarPeer
   ) where
 
@@ -37,6 +39,20 @@ import Snarky.Example.P2P.Protocol (Msg(..), decodeMsg, encodeMsg)
 import Snarky.Example.P2P.Transport (Transport, broadcast, myId, onMessage, onPeer, sendTo)
 import Snarky.Example.P2P.Types (Payload)
 
+-- | What a worker peer is doing, for its own status badge: compiling its circuit
+-- | (before the loop starts), idle awaiting work, or proving its `jobNo`-th job
+-- | (with that job's label). `peerPhaseLabel` renders it for display.
+data PeerPhase
+  = Compiling
+  | AwaitingWork
+  | Proving { jobNo :: Int, label :: String }
+
+peerPhaseLabel :: PeerPhase -> String
+peerPhaseLabel = case _ of
+  Compiling -> "compiling circuit"
+  AwaitingWork -> "ready — awaiting work"
+  Proving { jobNo, label } -> fmt @"proving #{jobNo} · {label}" { jobNo, label }
+
 type PeerConfig =
   { transport :: Transport
   , logger :: Logger
@@ -45,7 +61,7 @@ type PeerConfig =
   -- A human label for the encoded work item (UI / logs).
   , describeJob :: Payload -> String
   -- Report the current status to the peer's own UI.
-  , onPhase :: String -> Effect Unit
+  , onPhase :: PeerPhase -> Effect Unit
   -- Re-announce cadence: every `reannounceMs`, up to `reannounceMax` tries.
   , reannounceMs :: Number
   , reannounceMax :: Int
@@ -55,7 +71,7 @@ type PeerConfig =
 -- | compile first); this just announces and answers `Assign`s.
 runStarPeer :: PeerConfig -> Effect Unit
 runStarPeer cfg = do
-  cfg.onPhase "ready — awaiting work"
+  cfg.onPhase AwaitingWork
   Log.logInfo cfg.logger "waiting for the coordinator to assign work"
   count <- Ref.new 0
   -- One-shot signal raised when the first job is assigned, stopping the
@@ -70,18 +86,18 @@ runStarPeer cfg = do
         void $ EffectAVar.tryPut unit stop
         n <- Ref.modify (_ + 1) count
         let desc = cfg.describeJob a.work
-        cfg.onPhase (fmt @"proving #{n} · {desc}" { n, desc })
+        cfg.onPhase (Proving { jobNo: n, label: desc })
         Log.logInfo cfg.logger (fmt @"assigned job #{n} ({desc}) — proving…" { n, desc })
         result <- try (cfg.prove a.work)
         case result of
           Right proof -> do
             sendTo cfg.transport from (encodeMsg (Result { jobId: a.jobId, proof }))
             Log.logInfo cfg.logger (fmt @"job #{n} done — proof sent to coordinator" { n })
-            cfg.onPhase "ready — awaiting work"
+            cfg.onPhase AwaitingWork
           Left err -> do
             sendTo cfg.transport from (encodeMsg (Reject { jobId: a.jobId, reason: message err }))
             Log.logError cfg.logger (fmt @"job #{n} failed: {err}" { n, err: message err })
-            cfg.onPhase "ready — awaiting work"
+            cfg.onPhase AwaitingWork
       _ -> pure unit
   -- Announce to each peer the instant it is discovered: a targeted `sendTo` (the
   -- channel is open exactly then), plus a broadcast fallback for peers we had.
