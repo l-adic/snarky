@@ -10,6 +10,7 @@ import Snarky.Example.Srs.Cache (nullCache)
 import Test.Snarky.Example.Block as Block
 import Test.Snarky.Example.Circuits as Circuits
 import Test.Snarky.Example.Config (Depth, chainId)
+import Test.Snarky.Example.EngineSpec as EngineSpec
 import Test.Snarky.Example.P2P.BusSpec as BusSpec
 import Test.Snarky.Example.P2P.CoordinatorSpec as CoordinatorSpec
 import Test.Snarky.Example.P2P.PipelineSpec as PipelineSpec
@@ -41,5 +42,7 @@ main = runSpecAndExitProcess'
     beforeAll (mkConfig nullCache chainId >>= mkEnv @Depth richMessageStdout >>> liftEffect) do
       TransactionSnark.spec
       Block.spec
+      -- The one-block engine pipeline (events + transforms + verify) in Node.
+      EngineSpec.spec
       -- Real-proof block pipeline driven over the in-memory P2P transport.
       PipelineSpec.spec
