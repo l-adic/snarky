@@ -45,6 +45,7 @@ import Effect.Aff.AVar as AVar
 import Effect.Class (liftEffect)
 import Effect.Exception (message, throw)
 import Effect.Ref as Ref
+import Fmt (fmt)
 import Snarky.Example.AsyncQueue (Queue, dequeue, enqueueEffect, newQueueEffect)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
@@ -169,30 +170,30 @@ mkStarBackend config = do
     res <- config.prepareLocal
     case res of
       Right rw -> liftEffect $ enqueueEffect joinQ (SelfW rw)
-      Left reason -> liftEffect $ Log.logError logger ("[pool] self prover failed to warm up: " <> reason)
+      Left reason -> liftEffect $ Log.logError logger (fmt @"[pool] self prover failed to warm up: {reason}" { reason })
   -- Log every discovered peer (before its Join): the key diagnostic for a worker
   -- that never gets recognized.
   onPeer config.transport \id ->
-    Log.logInfo logger ("[pool] discovered peer " <> show id <> " (awaiting its Join)")
+    Log.logInfo logger (fmt @"[pool] discovered peer {id} (awaiting its Join)" { id: show id })
   -- The transport detected a peer's connection drop (WebRTC). Treat it like a
   -- `Leave`: forget it and reassign its in-flight job at once — no wait for the
   -- cooperative Leave message or the job timeout.
   onPeerLeave config.transport \id -> do
-    Log.logInfo logger ("[pool] peer " <> show id <> " disconnected")
+    Log.logInfo logger (fmt @"[pool] peer {id} disconnected" { id: show id })
     peerGone id
   onMessage config.transport \from raw ->
     case decodeMsg raw of
       Right (Join _) -> do
         fresh <- Ref.modify' (\s -> { state: Set.insert from s, value: not (Set.member from s) }) known
         when fresh do
-          Log.logInfo logger ("[pool] peer " <> show from <> " joined the pool")
+          Log.logInfo logger (fmt @"[pool] peer {peer} joined the pool" { peer: show from })
           addPeer (Remote from)
           enqueueEffect joinQ (PeerW from)
       Right (Result r) -> deliver r.jobId (Right r.proof)
       Right (Reject r) -> deliver r.jobId (Left r.reason)
       Right (Leave l) -> peerGone l.peerId
       Right (Assign _) -> pure unit -- the coordinator assigns; it never receives one
-      Left _ -> Log.logDebug logger ("[pool] undecodable message from " <> show from)
+      Left _ -> Log.logDebug logger (fmt @"[pool] undecodable message from {peer}" { peer: show from })
   pure
     { name: "p2p pool"
     , spawn: do
@@ -234,7 +235,7 @@ mkStarBackend config = do
                   case res of
                     Left reason -> do
                       liftEffect $ setStatus (Remote peerId) Idle
-                      liftEffect $ throw ("p2p worker " <> show peerId <> " rejected job " <> show jobId <> ": " <> reason)
+                      liftEffect $ throw (fmt @"p2p worker {peer} rejected job {job}: {reason}" { peer: show peerId, job: show jobId, reason })
                     Right proof -> do
                       liftEffect $ completed (Remote peerId)
                       pure proof

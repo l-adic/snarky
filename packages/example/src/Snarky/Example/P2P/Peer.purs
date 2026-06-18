@@ -30,6 +30,7 @@ import Effect.Aff.AVar as AVar
 import Effect.Class (liftEffect)
 import Effect.Exception (message, try)
 import Effect.Ref as Ref
+import Fmt (fmt)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
 import Snarky.Example.P2P.Protocol (Msg(..), decodeMsg, encodeMsg)
@@ -69,23 +70,23 @@ runStarPeer cfg = do
         void $ EffectAVar.tryPut unit stop
         n <- Ref.modify (_ + 1) count
         let desc = cfg.describeJob a.work
-        cfg.onPhase ("proving #" <> show n <> " · " <> desc)
-        Log.logInfo cfg.logger ("assigned job #" <> show n <> " (" <> desc <> ") — proving…")
+        cfg.onPhase (fmt @"proving #{n} · {desc}" { n, desc })
+        Log.logInfo cfg.logger (fmt @"assigned job #{n} ({desc}) — proving…" { n, desc })
         result <- try (cfg.prove a.work)
         case result of
           Right proof -> do
             sendTo cfg.transport from (encodeMsg (Result { jobId: a.jobId, proof }))
-            Log.logInfo cfg.logger ("job #" <> show n <> " done — proof sent to coordinator")
+            Log.logInfo cfg.logger (fmt @"job #{n} done — proof sent to coordinator" { n })
             cfg.onPhase "ready — awaiting work"
           Left err -> do
             sendTo cfg.transport from (encodeMsg (Reject { jobId: a.jobId, reason: message err }))
-            Log.logError cfg.logger ("job #" <> show n <> " failed: " <> message err)
+            Log.logError cfg.logger (fmt @"job #{n} failed: {err}" { n, err: message err })
             cfg.onPhase "ready — awaiting work"
       _ -> pure unit
   -- Announce to each peer the instant it is discovered: a targeted `sendTo` (the
   -- channel is open exactly then), plus a broadcast fallback for peers we had.
   onPeer cfg.transport \id -> do
-    Log.logInfo cfg.logger ("discovered peer " <> show id <> " — announcing")
+    Log.logInfo cfg.logger (fmt @"discovered peer {id} — announcing" { id: show id })
     sendTo cfg.transport id joinMsg
     announce
   announce
