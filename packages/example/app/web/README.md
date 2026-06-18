@@ -20,7 +20,7 @@ One-time prerequisite — build the wasm backend:
 npm run build:wasm -w kimchi-napi
 ```
 
-Then, from `packages/example/` (or via `tools/run_p2p_pool.sh`):
+Then, from `packages/example/`:
 
 ```
 npm run p2p       # dev: vite dev server (COOP/COEP set, --host) → /index.html
@@ -64,15 +64,19 @@ proves, and WebRTC's `RTCPeerConnection` isn't constructable in a Worker); it's
 bridged into the prover worker over `postMessage` (`p2p-bridge.js`), so the
 PureScript is transport-host-agnostic.
 
-## Headless tests
+## Tests
 
-From the repo root:
+The coordination logic, the engine pipeline (block → prove → verify), and the
+worker↔main protocol are all covered in Node — no browser — by the `example`
+package's spec suite, which runs in CI (`make test-example`):
 
-```
-tools/run_p2p_pool.sh --test 2     # 1 coordinator + 2 peers over BroadcastChannel
-tools/run_p2p_pool.sh --webrtc     # 1 coordinator + 1 peer over a REAL WebRTC
-                                   #   data channel (manual SDP, harness-driven)
-```
+- `Test.Snarky.Example.P2P.{CoordinatorSpec,BusSpec,PipelineSpec}` — the P2P star
+  (late join, quit/rejoin, reassign-on-leave; real proofs over an in-memory bus).
+- `Test.Snarky.Example.EngineSpec` — the one-block engine driven to a verified root.
+- `Test.Snarky.Example.P2P.WorkerMsgSpec` — the worker↔main wire codec round-trip.
 
-Trystero depends on public Nostr relays, so it's human-tested cross-machine
-rather than part of these deterministic checks.
+The browser-specific integration (wasm proving, the real Web Worker, IndexedDB,
+WebRTC) is not automated — validate it by opening the app (above) when those
+layers change. `#t=bc` (same-browser tabs) and `#t=manual` (manual-SDP WebRTC)
+are the infra-free ways to drive multiple peers by hand; Trystero needs public
+Nostr relays, so it's human-tested cross-machine.

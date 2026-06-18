@@ -22,12 +22,6 @@ export const connectTransport = (kind, channel, cont) => {
   })();
 };
 
-// Mirror a value onto `window` (the headless harness polls window.__p2pVerified
-// / __p2pPhase / __p2pPeers). Guarded so it is a no-op in any non-window context.
-export const setWindowProp = (k) => (v) => () => {
-  try { window[k] = v; } catch {}
-};
-
 // Run `eff` when the page is unloaded. `pagehide` is the reliable signal (it
 // fires on tab close / navigation, and unlike `unload` is bfcache-friendly).
 export const onPageHide = (eff) => () => {

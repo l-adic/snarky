@@ -41,7 +41,6 @@ import Data.Tuple.Nested ((/\))
 import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Uncurried (EffectFn1, EffectFn3, mkEffectFn1, runEffectFn3)
-import Foreign (Foreign, unsafeToForeign)
 import Mina.ChainId (ChainId(..))
 import React.Basic (JSX)
 import React.Basic.DOM as R
@@ -72,7 +71,6 @@ import Web.Worker.Worker as WW
 
 foreign import spawnWorker :: Effect Worker
 foreign import connectTransport :: EffectFn3 String String (EffectFn1 Transport Unit) Unit
-foreign import setWindowProp :: String -> Foreign -> Effect Unit
 
 -- | Run an action when the page is being unloaded (the `pagehide` event).
 foreign import onPageHide :: Effect Unit -> Effect Unit
@@ -164,17 +162,12 @@ mkApp opts = component "P2PApp" \_ -> React.do
       t <- nowUTC
       setLogs \ls -> Array.take maxLogLines (Array.cons { time: clock t, severity: l.severity, text: l.text } ls)
 
-    -- phase/verified mirror to `window` so the headless harness can poll them.
-    setPhaseH p = do
-      setPhase p
-      setWindowProp "__p2pPhase" (unsafeToForeign p)
     setVerifiedH ok = do
       pushLog
         { severity: if ok then "info" else "error"
         , text: if ok then "block root proof verified ✓" else "block root proof FAILED verification"
         }
-      setPhaseH (if ok then "done" else "failed")
-      setWindowProp "__p2pVerified" (unsafeToForeign ok)
+      setPhase (if ok then "done" else "failed")
 
     -- Worker → main: relay transport ops back onto the (main-thread) transport,
     -- and fold UI events into state.
@@ -184,14 +177,12 @@ mkApp opts = component "P2PApp" \_ -> React.do
       WBroadcast frame -> T.broadcast transport frame
       WSend peerId frame -> T.sendTo transport peerId frame
       WLog l -> pushLog l
-      WPhase p -> setPhaseH p
+      WPhase p -> setPhase p
       -- the coordinator UI shows the scan-state tree, not a per-tx table
       WTxs _ -> pure unit
       WScan s -> setScan (Just s)
       WVerified ok -> setVerifiedH ok
-      WPeers ps -> do
-        setPeers ps
-        setWindowProp "__p2pPeers" (unsafeToForeign ps)
+      WPeers ps -> setPeers ps
 
     -- Once the transport is up: spawn the worker, wire the relay both ways
     -- (transport → worker, worker → transport/UI), hand it our id, and start.
@@ -213,7 +204,7 @@ mkApp opts = component "P2PApp" \_ -> React.do
     begin r = do
       setStarted true
       setRole r
-      setPhaseH "connecting…"
+      setPhase "connecting…"
       runEffectFn3 connectTransport opts.transport channel (mkEffectFn1 (afterConnect r))
 
   useEffectOnce do

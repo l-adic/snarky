@@ -1,8 +1,8 @@
 // Same-origin transport over BroadcastChannel: peers in tabs/contexts of the
 // same browser discover + message each other with zero infrastructure. Used
-// for same-machine multi-tab meshes and as the headless test vehicle (multiple
-// CDP contexts in one Chrome). Exposes the Transport shape the gossip Node
-// speaks: { myId, broadcast, sendTo, onMessage, onPeer }.
+// for same-machine multi-tab meshes (`#t=bc`, the infra-free way to drive
+// multiple peers by hand). Exposes the Transport shape the gossip Node speaks:
+// { myId, broadcast, sendTo, onMessage, onPeer }.
 //
 // Presence handshake: each peer announces "hello-presence"; a receiver adds the
 // sender, fires onPeer, and replies "ack-presence" so both sides learn each
