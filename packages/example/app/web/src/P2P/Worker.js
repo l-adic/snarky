@@ -6,6 +6,6 @@ export const bootChain = () => (globalThis.__p2pBoot && globalThis.__p2pBoot.cha
 
 export const bootTransport = () => globalThis.__p2pBridge.transport;
 
-export const postToMain = (tag) => (value) => () => {
-  self.postMessage({ tag, value });
+export const post = (value) => () => {
+  self.postMessage(value);
 };

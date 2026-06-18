@@ -28,7 +28,7 @@ import Prelude
 
 import Colog.Rich (nowUTC)
 import Data.Array as Array
-import Data.Either (either, hush)
+import Data.Either (either)
 import Data.Foldable (for_)
 import Data.Formatter.DateTime (formatDateTime)
 import Data.Int as Int
@@ -53,13 +53,12 @@ import React.Basic.Hooks as React
 import Routing (match)
 import Routing.Hash (getHash)
 import Routing.Match (params)
-import Simple.JSON (class ReadForeign, read)
 import Snarky.Example.Engine (ScanView)
 import Snarky.Example.P2P.Coordinator (PeerView)
 import Snarky.Example.P2P.Protocol (Msg(Leave), encodeMsg)
 import Snarky.Example.P2P.Transport (Transport)
 import Snarky.Example.P2P.Transport as T
-import Snarky.Example.P2P.Types (Frame(..), PeerId(..))
+import Snarky.Example.P2P.WorkerMsg (WorkerMsg(..), decodeWorkerMsg)
 import Snarky.Example.Web.Component.Log (LogEntry, logPanel)
 import Snarky.Example.Web.Component.Panel (emptyHint, panel)
 import Snarky.Example.Web.Component.ScanState (scanStatePanel)
@@ -99,17 +98,6 @@ chainIdFromTag = case _ of
 -- | How many log lines the UI keeps (oldest dropped); a bounded scrollback.
 maxLogLines :: Int
 maxLogLines = 400
-
--- | A worker → main message: either transport-relay plumbing (`_t` + `msg`/`peer`)
--- | or a UI event (`tag` + `value`). The two families have disjoint fields, so
--- | every field is optional (`read` accepts whichever shape arrives).
-type WMsg =
-  { "_t" :: Maybe String
-  , tag :: Maybe String
-  , value :: Maybe Foreign
-  , msg :: Maybe String
-  , peer :: Maybe String
-  }
 
 phaseLabel :: String -> String
 phaseLabel = case _ of
@@ -192,25 +180,18 @@ mkApp opts = component "P2PApp" \_ -> React.do
     -- and fold UI events into state.
     -- Each UI event's `value` is decoded into its expected type (`read`), so a
     -- malformed payload is dropped rather than `unsafeFromForeign`'d into a crash.
-    handleWorkerMsg transport ev = for_ (hush (read (data_ ev)) :: Maybe WMsg) \m ->
-      let
-        decoded :: forall a. ReadForeign a => Maybe a
-        decoded = m.value >>= (hush <<< read)
-      in
-        case m."_t" of
-          Just "broadcast" -> for_ m.msg (T.broadcast transport <<< Frame)
-          Just "send" -> case m.peer, m.msg of
-            Just peer, Just msg -> T.sendTo transport (PeerId peer) (Frame msg)
-            _, _ -> pure unit
-          _ -> case m.tag of
-            Just "log" -> for_ decoded pushLog
-            Just "phase" -> for_ decoded setPhaseH
-            Just "scan" -> for_ decoded (setScan <<< Just)
-            Just "verified" -> for_ decoded setVerifiedH
-            Just "peers" -> for_ decoded \ps -> do
-              setPeers ps
-              setWindowProp "__p2pPeers" (unsafeToForeign (ps :: Array PeerView))
-            _ -> pure unit
+    handleWorkerMsg transport ev = for_ (decodeWorkerMsg (data_ ev)) case _ of
+      WBroadcast frame -> T.broadcast transport frame
+      WSend peerId frame -> T.sendTo transport peerId frame
+      WLog l -> pushLog l
+      WPhase p -> setPhaseH p
+      -- the coordinator UI shows the scan-state tree, not a per-tx table
+      WTxs _ -> pure unit
+      WScan s -> setScan (Just s)
+      WVerified ok -> setVerifiedH ok
+      WPeers ps -> do
+        setPeers ps
+        setWindowProp "__p2pPeers" (unsafeToForeign ps)
 
     -- Once the transport is up: spawn the worker, wire the relay both ways
     -- (transport → worker, worker → transport/UI), hand it our id, and start.

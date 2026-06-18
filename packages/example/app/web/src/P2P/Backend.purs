@@ -17,7 +17,6 @@ module Snarky.Example.P2P.Backend
 
 import Prelude
 
-import Colog (LogAction(..), Msg(..), Severity(..))
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
 import Data.Newtype (un)
@@ -33,7 +32,7 @@ import Effect.Exception (throw)
 import Foreign (unsafeFromForeign)
 import Mina.ChainId (ChainId)
 import Pickles.Prove.SerializeProof (decodeCompiledProof)
-import Snarky.Example.Engine (EngineCallbacks)
+import Snarky.Example.Engine (EngineCallbacks, engineLogger)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
 import Snarky.Example.P2P.Coordinator (PeerView, RawWorker, mapResult, mkStarBackend)
@@ -135,18 +134,8 @@ p2pSnarkBackend chainId transport logger onPeers = do
 -- | it doesn't kill the slow original, so a merely-slow peer can still win.
 runCoordinator :: ChainId -> Transport -> (Array PeerView -> Effect Unit) -> EngineCallbacks -> Effect Unit
 runCoordinator chainId transport onPeers cb = do
-  -- A logger for the transport router (which runs outside the engine, so it has
-  -- no `env.logger`): relay through the same `cb.onLog` sink the engine uses.
-  let
-    logger = LogAction \(Msg { severity, text }) ->
-      cb.onLog { severity: severityLabel severity, text }
+  -- The transport router runs outside the engine (no `env.logger`), so relay
+  -- through the same `cb.onLog` sink the engine uses.
+  let logger = engineLogger cb
   backend <- p2pSnarkBackend chainId transport logger onPeers
   runWith chainId backend Dynamic (Milliseconds 120000.0) cb
-
--- | Colog `Severity` → the string label `EngineCallbacks.onLog` expects.
-severityLabel :: Severity -> String
-severityLabel = case _ of
-  Debug -> "debug"
-  Info -> "info"
-  Warning -> "warning"
-  Error -> "error"

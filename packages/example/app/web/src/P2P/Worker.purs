@@ -5,9 +5,9 @@
 -- | `initThreadPool`). Once booted, the JS does only `main()`.
 -- |
 -- | `main` reads its role and the (already-connected) bridged transport from the
--- | JS boot via `foreign import`s, builds the engine callbacks as
--- | `postToMain`-posting closures (so JS isn't handed PureScript-shaped
--- | callbacks), and runs the coordinator or worker-peer.
+-- | JS boot via `foreign import`s, builds the engine callbacks as `WorkerMsg`-
+-- | posting closures (`Snarky.Example.P2P.WorkerMsg`, the typed wire protocol the
+-- | main thread decodes), and runs the coordinator or worker-peer.
 module Snarky.Example.Web.P2P.Worker
   ( main
   ) where
@@ -15,11 +15,12 @@ module Snarky.Example.Web.P2P.Worker
 import Prelude
 
 import Effect (Effect)
-import Foreign (Foreign, unsafeToForeign)
+import Foreign (Foreign)
 import Mina.ChainId (ChainId(..))
 import Snarky.Example.P2P.Backend (runCoordinator)
 import Snarky.Example.P2P.Peer (peerPhaseLabel)
 import Snarky.Example.P2P.Transport (Transport)
+import Snarky.Example.P2P.WorkerMsg (WorkerMsg(..), encodeWorkerMsg)
 import Snarky.Example.P2P.WorkerPeer (runWorkerPeer)
 import Snarky.Example.Web.P2P.WorkerLog (mkPostLogger)
 
@@ -35,9 +36,12 @@ chainIdFromTag = case _ of
   "Mainnet" -> Mainnet
   _ -> Testnet
 
--- | Post a tagged event to the main thread (`self.postMessage({ tag, value })`);
--- | the main-thread app (`P2P.Main`) folds it into UI state.
-foreign import postToMain :: String -> Foreign -> Effect Unit
+-- | `self.postMessage` of a pre-encoded wire object; the main-thread app
+-- | (`P2P.Main`) decodes it with `decodeWorkerMsg`.
+foreign import post :: Foreign -> Effect Unit
+
+postMsg :: WorkerMsg -> Effect Unit
+postMsg = post <<< encodeWorkerMsg
 
 main :: Effect Unit
 main = do
@@ -47,16 +51,16 @@ main = do
   case role of
     "coordinator" ->
       runCoordinator chainId transport
-        (\peers -> postToMain "peers" (unsafeToForeign peers))
-        { onLog: \v -> postToMain "log" (unsafeToForeign v)
-        , onPhase: \v -> postToMain "phase" (unsafeToForeign v)
-        , onTxs: \v -> postToMain "txs" (unsafeToForeign v)
-        , onScan: \v -> postToMain "scan" (unsafeToForeign v)
-        , onVerified: \v -> postToMain "verified" (unsafeToForeign v)
+        (\peers -> postMsg (WPeers peers))
+        { onLog: \v -> postMsg (WLog v)
+        , onPhase: \v -> postMsg (WPhase v)
+        , onTxs: \v -> postMsg (WTxs v)
+        , onScan: \v -> postMsg (WScan v)
+        , onVerified: \v -> postMsg (WVerified v)
         }
     _ -> do
       logger <- mkPostLogger
       runWorkerPeer chainId transport
         { logger
-        , onPhase: \p -> postToMain "phase" (unsafeToForeign (peerPhaseLabel p))
+        , onPhase: \p -> postMsg (WPhase (peerPhaseLabel p))
         }
