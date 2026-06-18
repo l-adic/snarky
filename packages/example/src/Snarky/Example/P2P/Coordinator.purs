@@ -69,11 +69,25 @@ participantId = case _ of
   Self -> "self"
   Remote p -> show p
 
--- | A row of the UI's peer table: a connected worker, what it is doing right now,
--- | and how many jobs it has completed.
-type PeerView = { id :: String, status :: String, completed :: Int }
+-- | What a pooled worker is doing: idle, or proving a job (carrying its label).
+data PeerStatus = Idle | Proving String
 
-type PeerState = { status :: String, completed :: Int }
+statusLabel :: PeerStatus -> String
+statusLabel = case _ of
+  Idle -> "idle"
+  Proving label -> label
+
+isBusy :: PeerStatus -> Boolean
+isBusy = case _ of
+  Idle -> false
+  Proving _ -> true
+
+-- | A row of the UI's peer table: a connected worker, what it is doing right now
+-- | (`busy` + a label), and how many jobs it has completed. `status`/`busy` are
+-- | the wire projection of `PeerStatus` (the UI shows the label, styles on busy).
+type PeerView = { id :: String, status :: String, busy :: Boolean, completed :: Int }
+
+type PeerState = { status :: PeerStatus, completed :: Int }
 
 -- | The coordinator's own prover, once warmed up: it proves a job and returns the
 -- | encoded result, or throws on failure. (Remote peers are built internally from
@@ -118,15 +132,18 @@ mkStarBackend config = do
   let
     report = do
       m <- Ref.read peers
-      config.onPeers (map (\(Tuple w s) -> { id: participantId w, status: s.status, completed: s.completed }) (Map.toUnfoldable m))
+      config.onPeers (map view (Map.toUnfoldable m))
+      where
+      view (Tuple w s) =
+        { id: participantId w, status: statusLabel s.status, busy: isBusy s.status, completed: s.completed }
     addPeer w = do
-      Ref.modify_ (Map.insert w { status: "idle", completed: 0 }) peers
+      Ref.modify_ (Map.insert w { status: Idle, completed: 0 }) peers
       report
     setStatus w status = do
       Ref.modify_ (Map.update (\s -> Just s { status = status }) w) peers
       report
     completed w = do
-      Ref.modify_ (Map.update (\s -> Just (s { status = "idle", completed = s.completed + 1 })) w) peers
+      Ref.modify_ (Map.update (\s -> Just (s { status = Idle, completed = s.completed + 1 })) w) peers
       report
     removePeer w = do
       Ref.modify_ (Map.delete w) peers
@@ -189,11 +206,11 @@ mkStarBackend config = do
             pure
               { id: participantId Self
               , run: \job -> do
-                  liftEffect $ setStatus Self (config.jobLabel job)
+                  liftEffect $ setStatus Self (Proving (config.jobLabel job))
                   res <- try (rw.run job)
                   case res of
                     Left err -> do
-                      liftEffect $ setStatus Self "idle"
+                      liftEffect $ setStatus Self Idle
                       liftEffect $ throw (message err)
                     Right proof -> do
                       liftEffect $ completed Self
@@ -205,7 +222,7 @@ mkStarBackend config = do
               { id: participantId (Remote peerId)
               , run: \job -> do
                   jobId <- liftEffect $ Ref.modify' (\n -> { state: n + 1, value: JobId ("job-" <> show (n + 1)) }) counter
-                  liftEffect $ setStatus (Remote peerId) (config.jobLabel job)
+                  liftEffect $ setStatus (Remote peerId) (Proving (config.jobLabel job))
                   slot <- liftEffect EffectAVar.empty
                   liftEffect $ Ref.modify_ (Map.insert jobId slot) pending
                   liftEffect $ Ref.modify_ (Map.insert peerId slot) peerSlot
@@ -216,7 +233,7 @@ mkStarBackend config = do
                     Ref.modify_ (Map.delete peerId) peerSlot
                   case res of
                     Left reason -> do
-                      liftEffect $ setStatus (Remote peerId) "idle"
+                      liftEffect $ setStatus (Remote peerId) Idle
                       liftEffect $ throw ("p2p worker " <> show peerId <> " rejected job " <> show jobId <> ": " <> reason)
                     Right proof -> do
                       liftEffect $ completed (Remote peerId)

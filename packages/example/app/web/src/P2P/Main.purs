@@ -95,6 +95,10 @@ chainIdFromTag = case _ of
   "Mainnet" -> Mainnet
   _ -> Testnet
 
+-- | How many log lines the UI keeps (oldest dropped); a bounded scrollback.
+maxLogLines :: Int
+maxLogLines = 400
+
 -- | A worker → main message: either transport-relay plumbing (`_t`) or a UI event
 -- | (`tag`). Decoded structurally (the worker produces exactly these shapes).
 type WMsg =
@@ -134,7 +138,7 @@ peerTable peers =
     { children:
         [ R.td { children: [ R.text (String.take 8 p.id) ] }
         , R.td
-            { className: if String.take 7 p.status == "proving" then "peer-busy" else "peer-idle"
+            { className: if p.busy then "peer-busy" else "peer-idle"
             , children: [ R.text p.status ]
             }
         , R.td { children: [ R.text (show p.completed) ] }
@@ -168,7 +172,7 @@ mkApp opts = component "P2PApp" \_ -> React.do
     clock t = either (const "") (\s -> "[" <> s <> "]") (formatDateTime "HH:mm:ss.SSS" t)
     pushLog (l :: { severity :: String, text :: String }) = do
       t <- nowUTC
-      setLogs \ls -> Array.take 400 (Array.cons { time: clock t, severity: l.severity, text: l.text } ls)
+      setLogs \ls -> Array.take maxLogLines (Array.cons { time: clock t, severity: l.severity, text: l.text } ls)
 
     -- phase/verified mirror to `window` so the headless harness can poll them.
     setPhaseH p = do

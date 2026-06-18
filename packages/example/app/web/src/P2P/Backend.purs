@@ -94,7 +94,7 @@ mkLocalProver chainId logger = do
         "error" -> void $ EffectAVar.tryPut (Left r.reason) selfReady
         -- Relay the nested prover's colog (SRS/compile + status) to our logger.
         "log" -> relayLog logger ("[self] " <> r.value.text) r.value.severity
-        _ -> pure unit
+        other -> Log.logWarning logger ("[self] ignoring unknown message tag: " <> other)
   pure do
     liftEffect $ WW.postMessage
       { type: "init", chain: show chainId, depth: reflectType (Proxy :: Proxy Depth), threads: selfThreads }
