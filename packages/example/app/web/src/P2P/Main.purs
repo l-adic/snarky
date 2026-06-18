@@ -28,20 +28,20 @@ import Prelude
 
 import Colog.Rich (nowUTC)
 import Data.Array as Array
-import Data.Either (either)
+import Data.Either (either, hush)
 import Data.Foldable (for_)
 import Data.Formatter.DateTime (formatDateTime)
 import Data.Int as Int
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, isJust)
-import Data.Nullable (Nullable, toMaybe, toNullable)
+import Data.Nullable (toNullable)
 import Data.String as String
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Uncurried (EffectFn1, EffectFn3, mkEffectFn1, runEffectFn3)
-import Foreign (Foreign, unsafeFromForeign, unsafeToForeign)
+import Foreign (Foreign, unsafeToForeign)
 import Mina.ChainId (ChainId(..))
 import React.Basic (JSX)
 import React.Basic.DOM as R
@@ -53,6 +53,7 @@ import React.Basic.Hooks as React
 import Routing (match)
 import Routing.Hash (getHash)
 import Routing.Match (params)
+import Simple.JSON (class ReadForeign, read)
 import Snarky.Example.P2P.Coordinator (PeerView)
 import Snarky.Example.P2P.Protocol (Msg(Leave), encodeMsg)
 import Snarky.Example.P2P.Transport (Transport)
@@ -99,14 +100,15 @@ chainIdFromTag = case _ of
 maxLogLines :: Int
 maxLogLines = 400
 
--- | A worker → main message: either transport-relay plumbing (`_t`) or a UI event
--- | (`tag`). Decoded structurally (the worker produces exactly these shapes).
+-- | A worker → main message: either transport-relay plumbing (`_t` + `msg`/`peer`)
+-- | or a UI event (`tag` + `value`). The two families have disjoint fields, so
+-- | every field is optional (`read` accepts whichever shape arrives).
 type WMsg =
-  { "_t" :: Nullable String
-  , tag :: Nullable String
-  , value :: Foreign
-  , msg :: Nullable String
-  , peer :: Nullable String
+  { "_t" :: Maybe String
+  , tag :: Maybe String
+  , value :: Maybe Foreign
+  , msg :: Maybe String
+  , peer :: Maybe String
   }
 
 phaseLabel :: String -> String
@@ -188,22 +190,27 @@ mkApp opts = component "P2PApp" \_ -> React.do
 
     -- Worker → main: relay transport ops back onto the (main-thread) transport,
     -- and fold UI events into state.
-    handleWorkerMsg transport ev = do
-      let m = unsafeFromForeign (data_ ev) :: WMsg
-      case toMaybe m."_t" of
-        Just "broadcast" -> for_ (toMaybe m.msg) (T.broadcast transport <<< Frame)
-        Just "send" -> case toMaybe m.peer, toMaybe m.msg of
-          Just peer, Just msg -> T.sendTo transport (PeerId peer) (Frame msg)
-          _, _ -> pure unit
-        _ -> case toMaybe m.tag of
-          Just "log" -> pushLog (unsafeFromForeign m.value)
-          Just "phase" -> setPhaseH (unsafeFromForeign m.value)
-          Just "scan" -> setScan (Just (unsafeFromForeign m.value))
-          Just "verified" -> setVerifiedH (unsafeFromForeign m.value)
-          Just "peers" -> do
-            setPeers (unsafeFromForeign m.value)
-            setWindowProp "__p2pPeers" m.value
-          _ -> pure unit
+    -- Each UI event's `value` is decoded into its expected type (`read`), so a
+    -- malformed payload is dropped rather than `unsafeFromForeign`'d into a crash.
+    handleWorkerMsg transport ev = for_ (hush (read (data_ ev)) :: Maybe WMsg) \m ->
+      let
+        decoded :: forall a. ReadForeign a => Maybe a
+        decoded = m.value >>= (hush <<< read)
+      in
+        case m."_t" of
+          Just "broadcast" -> for_ m.msg (T.broadcast transport <<< Frame)
+          Just "send" -> case m.peer, m.msg of
+            Just peer, Just msg -> T.sendTo transport (PeerId peer) (Frame msg)
+            _, _ -> pure unit
+          _ -> case m.tag of
+            Just "log" -> for_ decoded pushLog
+            Just "phase" -> for_ decoded setPhaseH
+            Just "scan" -> for_ decoded (setScan <<< Just)
+            Just "verified" -> for_ decoded setVerifiedH
+            Just "peers" -> for_ decoded \ps -> do
+              setPeers ps
+              setWindowProp "__p2pPeers" (unsafeToForeign (ps :: Array PeerView))
+            _ -> pure unit
 
     -- Once the transport is up: spawn the worker, wire the relay both ways
     -- (transport → worker, worker → transport/UI), hand it our id, and start.
