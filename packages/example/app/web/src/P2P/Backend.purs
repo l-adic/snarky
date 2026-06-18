@@ -31,6 +31,7 @@ import Effect.Aff.AVar as AVar
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Foreign (unsafeFromForeign)
+import Mina.ChainId (ChainId)
 import Pickles.Prove.SerializeProof (decodeCompiledProof)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
@@ -69,8 +70,8 @@ relayLog logger text = case _ of
 -- | `init`), wire its message handler, and return the `prepareLocal` action the
 -- | generic coordinator runs once dispatching starts: post `init` (the compile),
 -- | wait for `ready`, then expose a `RawWorker` that proves a job per round-trip.
-mkLocalProver :: Logger -> Effect (Aff (Either String (RawWorker (WorkItem Depth))))
-mkLocalProver logger = do
+mkLocalProver :: ChainId -> Logger -> Effect (Aff (Either String (RawWorker (WorkItem Depth))))
+mkLocalProver chainId logger = do
   selfWorker <- spawnLocalProver
   selfThreads <- localProverThreads
   selfReply <- EffectAVar.empty :: Effect (AVar (Either String Payload))
@@ -96,7 +97,7 @@ mkLocalProver logger = do
         _ -> pure unit
   pure do
     liftEffect $ WW.postMessage
-      { type: "init", chain: "Testnet", depth: reflectType (Proxy :: Proxy Depth), threads: selfThreads }
+      { type: "init", chain: show chainId, depth: reflectType (Proxy :: Proxy Depth), threads: selfThreads }
       selfWorker
     ready <- AVar.take selfReady
     case ready of
@@ -113,9 +114,9 @@ mkLocalProver logger = do
 
 -- | Build the coordinator's `SnarkBackend`: the generic star backend (raw String
 -- | results) projected per `Env` by decoding each result into a `CompiledProof`.
-p2pSnarkBackend :: Transport -> Logger -> (Array PeerView -> Effect Unit) -> Effect (SnarkBackend Depth)
-p2pSnarkBackend transport logger onPeers = do
-  prepareLocal <- mkLocalProver logger
+p2pSnarkBackend :: ChainId -> Transport -> Logger -> (Array PeerView -> Effect Unit) -> Effect (SnarkBackend Depth)
+p2pSnarkBackend chainId transport logger onPeers = do
+  prepareLocal <- mkLocalProver chainId logger
   base <- mkStarBackend
     { logger
     , transport
@@ -131,15 +132,15 @@ p2pSnarkBackend transport logger onPeers = do
 -- | 120 s job timeout is the BACKSTOP for an ungraceful peer death (a graceful
 -- | exit sends `Leave`, reassigning at once); the pool only reassigns on timeout,
 -- | it doesn't kill the slow original, so a merely-slow peer can still win.
-runCoordinator :: Transport -> (Array PeerView -> Effect Unit) -> EngineCallbacks -> Effect Unit
-runCoordinator transport onPeers cb = do
+runCoordinator :: ChainId -> Transport -> (Array PeerView -> Effect Unit) -> EngineCallbacks -> Effect Unit
+runCoordinator chainId transport onPeers cb = do
   -- A logger for the transport router (which runs outside the engine, so it has
   -- no `env.logger`): relay through the same `cb.onLog` sink the engine uses.
   let
     logger = LogAction \(Msg { severity, text }) ->
       cb.onLog { severity: severityLabel severity, text }
-  backend <- p2pSnarkBackend transport logger onPeers
-  runWith backend Dynamic (Milliseconds 120000.0) cb
+  backend <- p2pSnarkBackend chainId transport logger onPeers
+  runWith chainId backend Dynamic (Milliseconds 120000.0) cb
 
 -- | Colog `Severity` → the string label `EngineCallbacks.onLog` expects.
 severityLabel :: Severity -> String

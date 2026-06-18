@@ -16,14 +16,23 @@ import Prelude
 
 import Effect (Effect)
 import Foreign (Foreign, unsafeToForeign)
+import Mina.ChainId (ChainId(..))
 import Snarky.Example.P2P.Backend (runCoordinator)
 import Snarky.Example.P2P.Transport (Transport)
 import Snarky.Example.P2P.WorkerPeer (runWorkerPeer)
 import Snarky.Example.Web.P2P.WorkerLog (mkPostLogger)
 
--- | The role + the ready bridged transport, stashed by p2p-worker.js after boot.
+-- | The role, chain, and the ready bridged transport, stashed by p2p-worker.js
+-- | after boot (the chain flows from the main-thread app's config).
 foreign import bootRole :: Effect String
+foreign import bootChain :: Effect String
 foreign import bootTransport :: Effect Transport
+
+-- | Inverse of `show :: ChainId -> String` (anything but mainnet is testnet).
+chainIdFromTag :: String -> ChainId
+chainIdFromTag = case _ of
+  "Mainnet" -> Mainnet
+  _ -> Testnet
 
 -- | Post a tagged event to the main thread (`self.postMessage({ tag, value })`);
 -- | the main-thread app (`P2P.Main`) folds it into UI state.
@@ -32,10 +41,11 @@ foreign import postToMain :: String -> Foreign -> Effect Unit
 main :: Effect Unit
 main = do
   role <- bootRole
+  chainId <- chainIdFromTag <$> bootChain
   transport <- bootTransport
   case role of
     "coordinator" ->
-      runCoordinator transport
+      runCoordinator chainId transport
         (\peers -> postToMain "peers" (unsafeToForeign peers))
         { onLog: \v -> postToMain "log" (unsafeToForeign v)
         , onPhase: \v -> postToMain "phase" (unsafeToForeign v)
@@ -45,7 +55,7 @@ main = do
         }
     _ -> do
       logger <- mkPostLogger
-      runWorkerPeer transport
+      runWorkerPeer chainId transport
         { logger
         , onPhase: \v -> postToMain "phase" (unsafeToForeign v)
         }

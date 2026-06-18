@@ -42,6 +42,7 @@ import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Uncurried (EffectFn1, EffectFn3, mkEffectFn1, runEffectFn3)
 import Foreign (Foreign, unsafeFromForeign, unsafeToForeign)
+import Mina.ChainId (ChainId(..))
 import React.Basic (JSX)
 import React.Basic.DOM as R
 import React.Basic.DOM.Client (createRoot, renderRoot)
@@ -83,7 +84,16 @@ type Opts =
   , transport :: String
   , autoRole :: Maybe String
   , threads :: Maybe Int
+  -- The chain every worker (the engine's self-prover + remote peers) compiles
+  -- against; `#chain=Mainnet` overrides the Testnet default.
+  , chain :: ChainId
   }
+
+-- | Inverse of `show :: ChainId -> String` (anything but mainnet is testnet).
+chainIdFromTag :: String -> ChainId
+chainIdFromTag = case _ of
+  "Mainnet" -> Mainnet
+  _ -> Testnet
 
 -- | A worker → main message: either transport-relay plumbing (`_t`) or a UI event
 -- | (`tag`). Decoded structurally (the worker produces exactly these shapes).
@@ -201,7 +211,7 @@ mkApp opts = component "P2PApp" \_ -> React.do
       T.onPeer transport \id -> WW.postMessage { "_t": "peer", id } worker
       T.onPeerLeave transport \id -> WW.postMessage { "_t": "leave", id } worker
       WW.postMessage { "_t": "myId", id: T.myId transport } worker
-      WW.postMessage { type: "start", role: r, threads: toNullable opts.threads } worker
+      WW.postMessage { type: "start", role: r, threads: toNullable opts.threads, chain: show opts.chain } worker
       -- A worker that closes its tab announces it, so the coordinator drops it
       -- and reassigns its in-flight job at once (rather than waiting the timeout).
       when (r == "peer")
@@ -309,6 +319,7 @@ readOpts = do
     , transport: fromMaybe "trystero" (look "t")
     , autoRole
     , threads: look "threads" >>= Int.fromString
+    , chain: chainIdFromTag (fromMaybe "Testnet" (look "chain"))
     }
 
 -- | Entry point — `p2p-main.js` is just `main()`. Reads the URL-hash options and

@@ -48,7 +48,7 @@ self.onmessage = async (e) => {
   if (m.type !== "start" || started) return;
   started = true;
   const role = m.role === "coordinator" ? "coordinator" : "peer";
-  globalThis.__p2pBoot = { role, threads: m.threads };
+  globalThis.__p2pBoot = { role, threads: m.threads, chain: m.chain };
   // The coordinator's own prover runs as a NESTED worker (so it proves async,
   // off the coordinator's thread). Expose the factory + thread hint for the PS
   // backend's FFI; the `new URL("./prover.js", …)` literal must live here (a

@@ -26,7 +26,7 @@ import Effect.Aff (runAff_)
 import Effect.Class (liftEffect)
 import Effect.Exception (message)
 import Effect.Ref as Ref
-import Mina.ChainId (ChainId(..))
+import Mina.ChainId (ChainId)
 import Pickles (toVerifiable, verifyBatch)
 import Snarky.Circuit.RandomOracle (Digest(..), hashOf)
 import Snarky.Curves.Class (toHexLe)
@@ -82,8 +82,8 @@ severityLabel = case _ of
 -- | timeout): the P2P coordinator drives the one-block pipeline over a `Dynamic`
 -- | pool whose first worker is its own in-process prover and the rest are remote
 -- | peers (`Snarky.Example.P2P.Backend.p2pSnarkBackend`).
-runWith :: SnarkBackend Depth -> PoolSize -> Milliseconds -> EngineCallbacks -> Effect Unit
-runWith backend poolSize jobTimeout cb = runAff_ onDone do
+runWith :: ChainId -> SnarkBackend Depth -> PoolSize -> Milliseconds -> EngineCallbacks -> Effect Unit
+runWith chainId backend poolSize jobTimeout cb = runAff_ onDone do
   let
     logger = LogAction \(Msg { severity, text }) ->
       cb.onLog { severity: severityLabel severity, text }
@@ -98,7 +98,7 @@ runWith backend poolSize jobTimeout cb = runAff_ onDone do
   -- it; the nested self-prover reads it instead of re-running the FFTs.
   cache <- openSrsCache logger
   sim <- mkSimulation @Depth
-    { chainId: Testnet
+    { chainId
     , numAccounts: 10
     , logger
     , onProgress: Just onProgress

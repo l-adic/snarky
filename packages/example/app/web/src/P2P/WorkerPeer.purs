@@ -17,6 +17,7 @@ import Data.String as String
 import Effect (Effect)
 import Effect.Aff (launchAff_)
 import Effect.Class (liftEffect)
+import Mina.ChainId (ChainId)
 import Simple.JSON (readJSON)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.P2P.Peer (runStarPeer)
@@ -30,12 +31,6 @@ import Type.Proxy (Proxy(..))
 -- | Render a little-endian field hex (how an amount/digest serializes) as a
 -- | decimal string. In JS so it can use BigInt regardless of the value's size.
 foreign import leHexToDec :: String -> String
-
--- | The chain the coordinator's engine compiles against
--- | (`Snarky.Example.Web.Engine` uses `Testnet`). A worker MUST compile the same
--- | circuit or the proofs it returns will not verify under the coordinator's VK.
-chainTag :: String
-chainTag = "Testnet"
 
 -- | What the worker reports to its own UI: a colog `Logger` for the log stream
 -- | (`buildProver`'s SRS/compile logging flows through it too) and an `onPhase`
@@ -92,11 +87,11 @@ describeJob (Payload work) = case readJSON work :: Either _ { tag :: String } of
 
 -- | Compile the circuit (through this peer's own machine-local SRS cache), then
 -- | run the generic peer loop with the real prover.
-runWorkerPeer :: Transport -> WorkerPeerEvents -> Effect Unit
-runWorkerPeer transport { logger, onPhase } = launchAff_ do
+runWorkerPeer :: ChainId -> Transport -> WorkerPeerEvents -> Effect Unit
+runWorkerPeer chainId transport { logger, onPhase } = launchAff_ do
   liftEffect $ onPhase "compiling circuit"
   cache <- openSrsCache logger
-  prove <- buildProver cache logger { chain: chainTag, depth: reflectType (Proxy :: Proxy Depth) }
+  prove <- buildProver cache logger { chain: show chainId, depth: reflectType (Proxy :: Proxy Depth) }
   liftEffect $ runStarPeer
     { transport
     , logger
