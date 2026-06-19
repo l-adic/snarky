@@ -14,6 +14,7 @@ module Snarky.Example.Web.P2P.Worker
 
 import Prelude
 
+import Data.Time.Duration (Milliseconds(..))
 import Effect (Effect)
 import Foreign (Foreign)
 import Mina.ChainId (chainIdFromTag)
@@ -37,6 +38,11 @@ foreign import post :: Foreign -> Effect Unit
 postMsg :: WorkerMsg -> Effect Unit
 postMsg = post <<< encodeWorkerMsg
 
+-- | Backstop timeout for an ungraceful peer death (a graceful `Leave` reassigns
+-- | at once); 120 s comfortably covers one base/merge proof on a slow wasm worker.
+coordinatorJobTimeout :: Milliseconds
+coordinatorJobTimeout = Milliseconds 120000.0
+
 main :: Effect Unit
 main = do
   role <- bootRole
@@ -44,7 +50,7 @@ main = do
   transport <- bootTransport
   case role of
     "coordinator" ->
-      runCoordinator chainId transport
+      runCoordinator chainId coordinatorJobTimeout transport
         (\peers -> postMsg (WPeers peers))
         { onLog: \v -> postMsg (WLog v)
         , onPhase: \v -> postMsg (WPhase v)

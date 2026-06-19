@@ -21,7 +21,7 @@ import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
 import Data.Newtype (un)
 import Data.Reflectable (reflectType)
-import Data.Time.Duration (Milliseconds(..))
+import Data.Time.Duration (Milliseconds)
 import Effect (Effect)
 import Effect.AVar (AVar)
 import Effect.AVar as EffectAVar
@@ -100,17 +100,16 @@ mkLocalProver chainId logger = do
       { type: "init", chain: show chainId, depth: reflectType (Proxy :: Proxy Depth), threads: selfThreads }
       selfWorker
     ready <- AVar.take selfReady
-    case ready of
-      Left reason -> pure (Left reason)
-      Right _ -> pure $ Right
-        { run: \job -> do
-            liftEffect $ WW.postMessage { type: "job", work: encodeWorkItem job } selfWorker
-            res <- AVar.take selfReply
-            case res of
-              Left reason -> liftEffect $ throw ("self prover: " <> reason)
-              Right proof -> pure proof
-        , terminate: WW.terminate selfWorker
-        }
+    -- `ready` is `Either reason Unit`; on success swap in the RawWorker.
+    pure $ ready $>
+      { run: \job -> do
+          liftEffect $ WW.postMessage { type: "job", work: encodeWorkItem job } selfWorker
+          res <- AVar.take selfReply
+          case res of
+            Left reason -> liftEffect $ throw ("self prover: " <> reason)
+            Right proof -> pure proof
+      , terminate: WW.terminate selfWorker
+      }
 
 -- | Build the coordinator's `SnarkBackend`: the generic star backend (raw String
 -- | results) projected per `Env` by decoding each result into a `CompiledProof`.
@@ -128,14 +127,14 @@ p2pSnarkBackend chainId transport logger onPeers = do
   pure \env -> mapResult (lmap show <<< decodeCompiledProof env <<< un Payload) base
 
 -- | Run the whole one-block pipeline as the coordinator: install the p2p backend
--- | and drive the shared engine over a DYNAMIC pool of remote prover peers. The
--- | 120 s job timeout is the BACKSTOP for an ungraceful peer death (a graceful
--- | exit sends `Leave`, reassigning at once); the pool only reassigns on timeout,
--- | it doesn't kill the slow original, so a merely-slow peer can still win.
-runCoordinator :: ChainId -> Transport -> (Array PeerView -> Effect Unit) -> EngineCallbacks -> Effect Unit
-runCoordinator chainId transport onPeers cb = do
+-- | and drive the shared engine over a DYNAMIC pool of remote prover peers.
+-- | `jobTimeout` is the BACKSTOP for an ungraceful peer death (a graceful exit
+-- | sends `Leave`, reassigning at once); the pool only reassigns on timeout, it
+-- | doesn't kill the slow original, so a merely-slow peer can still win.
+runCoordinator :: ChainId -> Milliseconds -> Transport -> (Array PeerView -> Effect Unit) -> EngineCallbacks -> Effect Unit
+runCoordinator chainId jobTimeout transport onPeers cb = do
   -- The transport router runs outside the engine (no `env.logger`), so relay
   -- through the same `cb.onLog` sink the engine uses.
   let logger = engineLogger cb
   backend <- p2pSnarkBackend chainId transport logger onPeers
-  runWith chainId backend Dynamic (Milliseconds 120000.0) cb
+  runWith chainId backend Dynamic jobTimeout cb

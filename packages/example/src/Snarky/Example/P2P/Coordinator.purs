@@ -166,7 +166,7 @@ mkStarBackend config = do
         Nothing -> removePeer (Remote id)
   -- Warm up the self prover once dispatching starts, then offer it as `Self`.
   launchAff_ do
-    _ <- AVar.read provingStarted
+    void $ AVar.read provingStarted
     res <- config.prepareLocal
     case res of
       Right rw -> liftEffect $ enqueueEffect joinQ (SelfW rw)
