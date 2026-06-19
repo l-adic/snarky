@@ -52,7 +52,7 @@ import React.Basic.Hooks as React
 import Routing (match)
 import Routing.Hash (getHash)
 import Routing.Match (params)
-import Snarky.Example.Engine (ScanView)
+import Snarky.Example.Engine (ScanView, TxView)
 import Snarky.Example.P2P.Coordinator (PeerView)
 import Snarky.Example.P2P.Protocol (Msg(Leave), encodeMsg)
 import Snarky.Example.P2P.Transport (Transport)
@@ -61,6 +61,7 @@ import Snarky.Example.P2P.WorkerMsg (WorkerMsg(..), decodeWorkerMsg)
 import Snarky.Example.Web.Component.Log (LogEntry, logPanel)
 import Snarky.Example.Web.Component.Panel (emptyHint, panel)
 import Snarky.Example.Web.Component.ScanState (scanStatePanel)
+import Snarky.Example.Web.Component.Transactions (transactionsPanel)
 import Web.DOM.NonElementParentNode (getElementById)
 import Web.HTML (window)
 import Web.HTML.HTMLDocument (toNonElementParentNode)
@@ -145,6 +146,8 @@ mkApp opts = component "P2PApp" \_ -> React.do
   started /\ setStarted <- useState' false
   channel /\ setChannel <- useState' opts.channel
   peers /\ setPeers <- useState' ([] :: Array PeerView)
+  txs /\ setTxs <- useState' ([] :: Array TxView)
+  selectedTx /\ setSelectedTx <- useState' (Nothing :: Maybe Int)
 
   let
     -- Stamp each line with a UTC wall-clock time at the moment it reaches the UI
@@ -172,8 +175,8 @@ mkApp opts = component "P2PApp" \_ -> React.do
       WSend peerId frame -> T.sendTo transport peerId frame
       WLog l -> pushLog l
       WPhase p -> setPhase p
-      -- the coordinator UI shows the scan-state tree, not a per-tx table
-      WTxs _ -> pure unit
+      -- a fresh block's transactions; reset the accordion selection
+      WTxs newTxs -> setTxs newTxs *> setSelectedTx Nothing
       WScan s -> setScan (Just s)
       WVerified ok -> setVerifiedH ok
       WPeers ps -> setPeers ps
@@ -253,11 +256,20 @@ mkApp opts = component "P2PApp" \_ -> React.do
                     { className: "col"
                     , children:
                         -- The coordinator owns the block, so it shows its pool
-                        -- (peer table) and the scan-state tree it is filling in. A
-                        -- worker only ever sees one job at a time, so it shows just
-                        -- that. Before a role is picked, an empty scan tree.
+                        -- (peer table), the block's transactions, and the scan-state
+                        -- tree it is filling in. A worker only ever sees one job at a
+                        -- time, so it shows just that. Before a role is picked, an
+                        -- empty scan tree.
                         case role of
-                          "coordinator" -> [ peerTable peers, scanStatePanel scan ]
+                          "coordinator" ->
+                            [ peerTable peers
+                            , transactionsPanel
+                                { txs
+                                , selected: selectedTx
+                                , onSelect: \i -> setSelectedTx (if selectedTx == Just i then Nothing else Just i)
+                                }
+                            , scanStatePanel scan
+                            ]
                           "peer" -> [ jobPanel phase ]
                           _ -> [ scanStatePanel scan ]
                     }
