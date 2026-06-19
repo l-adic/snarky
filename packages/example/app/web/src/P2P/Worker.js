@@ -5,7 +5,3 @@ export const bootRole = () => (globalThis.__p2pBoot && globalThis.__p2pBoot.role
 export const bootChain = () => (globalThis.__p2pBoot && globalThis.__p2pBoot.chain) || "Testnet";
 
 export const bootTransport = () => globalThis.__p2pBridge.transport;
-
-export const post = (value) => () => {
-  self.postMessage(value);
-};

@@ -16,13 +16,13 @@ import Prelude
 
 import Data.Time.Duration (Milliseconds(..))
 import Effect (Effect)
-import Foreign (Foreign)
 import Mina.ChainId (chainIdFromTag)
 import Snarky.Example.P2P.Backend (runCoordinator)
 import Snarky.Example.P2P.Peer (peerPhaseLabel)
 import Snarky.Example.P2P.Transport (Transport)
 import Snarky.Example.P2P.WorkerMsg (WorkerMsg(..), encodeWorkerMsg)
 import Snarky.Example.P2P.WorkerPeer (runWorkerPeer)
+import Snarky.Example.Web.P2P.Post (post)
 import Snarky.Example.Web.P2P.WorkerLog (mkPostLogger)
 
 -- | The role, chain, and the ready bridged transport, stashed by p2p-worker.js
@@ -30,10 +30,6 @@ import Snarky.Example.Web.P2P.WorkerLog (mkPostLogger)
 foreign import bootRole :: Effect String
 foreign import bootChain :: Effect String
 foreign import bootTransport :: Effect Transport
-
--- | `self.postMessage` of a pre-encoded wire object; the main-thread app
--- | (`P2P.Main`) decodes it with `decodeWorkerMsg`.
-foreign import post :: Foreign -> Effect Unit
 
 postMsg :: WorkerMsg -> Effect Unit
 postMsg = post <<< encodeWorkerMsg
