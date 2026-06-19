@@ -10,14 +10,13 @@ import { spawnWorker as makeWorker } from "@webjs/p2p-spawn.js";
 export const spawnWorker = () => makeWorker();
 
 // Build the real transport on the main thread (async for trystero), priming the
-// TURN credentials for WebRTC transports first, then resolve it via `cont`.
+// TURN credentials for the WebRTC transport first, then resolve it via `cont`.
 export const connectTransport = (kind, channel, cont) => {
   (async () => {
-    if (kind === "trystero" || kind === "manual") {
+    if (kind === "trystero") {
       try { await initIce(); } catch {}
     }
     const t = await mkTransport(kind, channel);
-    try { window.__transport = t; } catch {} // manual-SDP signaling / tests
     cont(t);
   })();
 };

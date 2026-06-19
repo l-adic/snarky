@@ -56,8 +56,8 @@ The pieces:
 - `src/P2P/WorkerPeer.purs` — `runWorkerPeer`: compile once, prove each `Assign`.
 - `src/P2P/Protocol.purs` — the Join/Assign/Result/Reject dispatch messages.
 - `src/P2P/Transport.purs` + `p2p-transport-*.js` / `p2p-rtc.js` / `p2p-bridge.js`
-  — the transport tier (from #148): BroadcastChannel, Trystero (WebRTC), manual
-  SDP, plus the worker-side bridge.
+  — the transport tier (from #148): BroadcastChannel and Trystero (WebRTC), plus
+  the worker-side bridge.
 
 The transport runs on the **main thread** (it stays responsive while the worker
 proves, and WebRTC's `RTCPeerConnection` isn't constructable in a Worker); it's
@@ -77,6 +77,6 @@ package's spec suite, which runs in CI (`make test-example`):
 
 The browser-specific integration (wasm proving, the real Web Worker, IndexedDB,
 WebRTC) is not automated — validate it by opening the app (above) when those
-layers change. `#t=bc` (same-browser tabs) and `#t=manual` (manual-SDP WebRTC)
-are the infra-free ways to drive multiple peers by hand; Trystero needs public
-Nostr relays, so it's human-tested cross-machine.
+layers change. `#t=bc` (same-browser tabs) is the infra-free way to drive
+multiple peers by hand; Trystero (the default) needs public Nostr relays, so
+it's human-tested cross-machine.

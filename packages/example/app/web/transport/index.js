@@ -1,6 +1,6 @@
 // The transport tier — the single import surface for the P2P networking glue,
-// pulled from #148. Internals (rtc / broadcast / manual / trystero / bridge) are
-// hidden behind this barrel; consumers import `@webjs/transport`.
+// pulled from #148. Internals (rtc / broadcast / trystero / bridge) are hidden
+// behind this barrel; consumers import `@webjs/transport`.
 //
 //   mkTransport         build the REAL transport on the main thread, by kind.
 //   mkBridgedTransport  the worker-side proxy that relays to the main-thread
@@ -13,6 +13,5 @@ export { mkBridgedTransport } from "./bridge.js";
 // the others' graph (e.g. the BroadcastChannel path never loads trystero).
 export async function mkTransport(kind, channel) {
   if (kind === "trystero") return (await import("./trystero.js")).mkTrysteroTransport(channel);
-  if (kind === "manual") return (await import("./manual.js")).mkManualTransport();
   return (await import("./broadcast.js")).mkBroadcastTransport(channel);
 }

@@ -1,4 +1,4 @@
-// Shared WebRTC helpers for the manual-SDP and Trystero transports.
+// Shared WebRTC helpers for the Trystero transport.
 //
 // ICE: public STUN, plus a best-effort free public TURN relay so peers behind
 // symmetric NAT / CGNAT (common on mobile networks) can still connect without
