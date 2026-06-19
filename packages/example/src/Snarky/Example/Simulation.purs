@@ -35,22 +35,28 @@ import Snarky.Example.Simulation.Genesis (genGenesisLedger)
 import Snarky.Example.Simulation.Keystore (Keystore, senderInfo)
 import Snarky.Example.Simulation.Transaction (genDistinctPublicKeys, genOverdraftSignedTransaction, genValidSignedTransaction)
 import Snarky.Example.Snark.Manager (Manager, OnProgress, mkManager)
+import Snarky.Example.Snark.Pool (PoolSize)
 import Snarky.Example.Snark.Worker (SnarkBackend)
+import Snarky.Example.Srs.Cache (SrsCache)
 import Test.QuickCheck.Gen (randomSampleOne)
 
 -- | What a simulation run is configured by. `onProgress` optionally plugs a
 -- | scan-state observer (e.g. the terminal display in
 -- | `Snarky.Example.Snark.Progress`) into the snark manager. `backend` and
--- | `poolSize` select where snark work runs and how many workers (see
--- | `Snarky.Example.Snark.Worker.SnarkBackend` / `localSnarkBackend`).
+-- | `poolSize` select where snark work runs and how many workers — `Fixed n` or
+-- | `Dynamic` (see `Snarky.Example.Snark.Worker.SnarkBackend` /
+-- | `Snarky.Example.Snark.Pool.PoolSize`).
 type SimulationConfig d =
   { chainId :: ChainId
   , numAccounts :: Int
   , logger :: Logger
   , onProgress :: Maybe (OnProgress d)
-  , poolSize :: Int
+  , poolSize :: PoolSize
   , jobTimeout :: Milliseconds
   , backend :: SnarkBackend d
+  -- The SRS cache the host's setup builds through — skips the Lagrange-basis
+  -- FFTs on a hit. `nullCache` for the un-cached path.
+  , cache :: SrsCache
   }
 
 -- | Everything needed to run the simulation: the app `Env` (compiled program,
@@ -69,9 +75,9 @@ mkSimulation
    . Reflectable d Int
   => SimulationConfig d
   -> Aff (Simulation d)
-mkSimulation { chainId, numAccounts, logger, onProgress, poolSize, jobTimeout, backend } = do
+mkSimulation { chainId, numAccounts, logger, onProgress, poolSize, jobTimeout, backend, cache } = do
   Log.logInfo logger "[Simulation] building SRS + compiling the transaction snark…"
-  config <- liftEffect $ mkConfig chainId
+  config <- mkConfig cache chainId
   env <- liftEffect $ mkEnv @d logger config
   Log.logInfo logger $ fmt @"[Simulation] minting genesis ledger of {numAccounts} accounts" { numAccounts }
   { ledger, keys } <- liftEffect $ randomSampleOne (genGenesisLedger numAccounts)

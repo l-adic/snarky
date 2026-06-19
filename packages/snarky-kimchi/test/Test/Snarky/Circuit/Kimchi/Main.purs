@@ -10,6 +10,7 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Snarky.Backend.Kimchi.Proof as ProofTests
 import Test.Snarky.Backend.Kimchi.ProofCache as ProofCacheTests
+import Test.Snarky.Backend.Kimchi.SrsCache as SrsCacheTests
 import Test.Snarky.Circuit as CircuitTests
 import Test.Snarky.Circuit.Kimchi.AddComplete as AddCompleteTests
 import Test.Snarky.Circuit.Kimchi.Debugger as DebuggerTests
@@ -63,3 +64,4 @@ spec = do
   -- scaffolding required.
   ProofTests.spec
   ProofCacheTests.spec
+  SrsCacheTests.spec

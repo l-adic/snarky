@@ -19,6 +19,7 @@
 module Snarky.Example.Snark.Pool
   ( Worker
   , WorkerBackend
+  , PoolSize(..)
   , localBackend
   , runPool
   ) where
@@ -61,6 +62,20 @@ type WorkerBackend job result =
   { name :: String
   , spawn :: Aff (Worker job result)
   }
+
+-- | How the pool is populated:
+-- |   * `Fixed n` — spawn `n` workers up front (in parallel) and dispatch nothing
+-- |     until all are ready; a worker that dies is replaced to hold the size.
+-- |     Right for backends whose `spawn` returns promptly (in-process, node
+-- |     threads), where you know the worker count.
+-- |   * `Dynamic` — start dispatching immediately (jobs queue) and add each worker
+-- |     as it joins (a forked loop that keeps calling `spawn`, which for such a
+-- |     backend BLOCKS until a peer appears); a worker that dies just leaves. Right
+-- |     for a membership that grows over time — the p2p coordinator, where peers
+-- |     join an open session and a fixed count would be arbitrary.
+data PoolSize
+  = Fixed Int
+  | Dynamic
 
 -- | In-process backend: each worker just runs the `Effect` processor. No real
 -- | parallelism (the processor is synchronous), but it validates the pool with
@@ -105,23 +120,33 @@ runPool
    . Ord id
   => Logger
   -> Milliseconds
-  -> Int
+  -> PoolSize
   -> WorkerBackend job result
   -> { next :: Aff (Tuple id job)
      , post :: Tuple id result -> Aff Unit
      , describe :: id -> job -> String
      }
   -> Aff Unit
-runPool logger timeout size backend io = do
+runPool logger timeout poolSize backend io = do
   free <- newQueue
   ready <- newQueue
   outstanding <- liftEffect $ Ref.new Set.empty
-  Log.logInfo logger $ fmt @"[Worker Pool] warming up {size} {name} worker(s)…"
-    { size, name: backend.name }
-  workers <- parTraverse (\_ -> backend.spawn) (range 1 size)
-  for_ workers (enqueue free)
-  Log.logInfo logger $ fmt @"[Worker Pool] ready: {size} {name} worker(s)"
-    { size, name: backend.name }
+  case poolSize of
+    Fixed size -> do
+      Log.logInfo logger $ fmt @"[Worker Pool] warming up {size} {name} worker(s)…"
+        { size, name: backend.name }
+      workers <- parTraverse (\_ -> backend.spawn) (range 1 size)
+      for_ workers (enqueue free)
+      Log.logInfo logger $ fmt @"[Worker Pool] ready: {size} {name} worker(s)"
+        { size, name: backend.name }
+    Dynamic -> do
+      Log.logInfo logger $ fmt @"[Worker Pool] open: {name} workers join dynamically"
+        { name: backend.name }
+      -- Each `spawn` blocks until the next peer joins; enqueue it and wait again.
+      void $ forkAff $ forever do
+        worker <- backend.spawn
+        Log.logInfo logger $ fmt @"[Worker Pool] worker {w} joined" { w: worker.id }
+        enqueue free worker
 
   let
     outstandingFor id = liftEffect $ Ref.read outstanding <#> Set.member id
@@ -134,15 +159,20 @@ runPool logger timeout size backend io = do
       when first $ io.post (Tuple id result)
 
     -- Return a worker to the pool, or — if its run errored (a dead thread) —
-    -- terminate it and spawn a replacement so the pool holds its size.
+    -- terminate it. A FIXED pool spawns a replacement to hold its size; a DYNAMIC
+    -- pool just drops it (the join loop is the only source of workers, so a dead
+    -- one simply leaves until another peer joins).
     reclaim worker = case _ of
       Right _ -> enqueue free worker
       Left err -> do
-        Log.logError logger $ fmt @"[Worker Pool] worker {w} died ({e}); replacing it"
+        Log.logError logger $ fmt @"[Worker Pool] worker {w} died ({e})"
           { w: worker.id, e: message err }
         liftEffect worker.terminate
-        replacement <- backend.spawn
-        enqueue free replacement
+        case poolSize of
+          Fixed _ -> do
+            replacement <- backend.spawn
+            enqueue free replacement
+          Dynamic -> pure unit
 
     -- Run one job on one worker, bounded by `timeout`. The run is forked so the
     -- timer races only the WAIT on it — never killing the run itself, which

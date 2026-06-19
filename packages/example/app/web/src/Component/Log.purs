@@ -13,7 +13,7 @@ import React.Basic (JSX)
 import React.Basic.DOM as R
 import Snarky.Example.Web.Component.Panel (emptyHint, panel)
 
-type LogEntry = { severity :: String, text :: String }
+type LogEntry = { time :: String, severity :: String, text :: String }
 
 logPanel :: Array LogEntry -> JSX
 logPanel logs =
@@ -25,7 +25,8 @@ logLine :: LogEntry -> JSX
 logLine l = R.div
   { className: "log-line"
   , children:
-      [ R.span { className: "log-sev " <> l.severity, children: [ R.text ("[" <> l.severity <> "]") ] }
+      [ R.span { className: "log-time", children: [ R.text l.time ] }
+      , R.span { className: "log-sev " <> l.severity, children: [ R.text ("[" <> l.severity <> "]") ] }
       , R.span { className: "log-text", children: [ R.text l.text ] }
       ]
   }

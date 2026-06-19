@@ -22,6 +22,10 @@ const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 const aliases = [
   { find: "kimchi-napi", replacement: here("../../../kimchi-napi/wasm/kimchi-napi.wasi-browser.js") },
   { find: "module", replacement: here("stubs/node-module.js") },
+  // The PS FFI (compiled into output-es/) reaches the app's internal JS modules
+  // here in app/web/ through this alias, so its imports don't depend on the
+  // output-es layout.
+  { find: "@webjs", replacement: here(".") },
 ];
 
 export default defineConfig({
@@ -43,6 +47,8 @@ export default defineConfig({
     target: "esnext",
     outDir: here("dist"),
     emptyOutDir: true,
+    // Single entry: index.html — the P2P proving app (a lone coordinator proves
+    // the block itself via its in-process worker; peers join to parallelize).
   },
   worker: {
     format: "es",

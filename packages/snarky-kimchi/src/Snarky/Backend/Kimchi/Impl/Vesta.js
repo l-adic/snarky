@@ -125,6 +125,43 @@ export function vestaSrsAddLagrangeBasis(crs) {
     };
 }
 
+// Serialize the lagrange basis for domain 2^log2Size. napi returns a Uint8Array
+// (portable across the napi + wasm builds); we pass it through untouched.
+export function vestaSrsLagrangeBasisToBytes(crs) {
+    return function(log2Size) {
+        return function() {
+            return k.caml_fp_srs_lagrange_basis_to_bytes(crs.srs, log2Size);
+        };
+    };
+}
+
+// Inject a serialized lagrange basis into the SRS cache for domain 2^log2Size.
+export function vestaSrsSetLagrangeBasisFromBytes(crs) {
+    return function(log2Size) {
+        return function(bytes) {
+            return function() {
+                k.caml_fp_srs_set_lagrange_basis_from_bytes(crs.srs, log2Size, bytes);
+            };
+        };
+    };
+}
+
+// Serialize the SRS generators (g, h) — the basis cache is serde-skipped.
+export function vestaSrsToBytes(crs) {
+    return function() {
+        return k.caml_fp_srs_to_bytes(crs.srs);
+    };
+}
+
+// Reconstruct an SRS (generators only) from bytes, tagged with `size`.
+export function vestaSrsFromBytes(size) {
+    return function(bytes) {
+        return function() {
+            return { srs: k.caml_fp_srs_from_bytes(bytes), size };
+        };
+    };
+}
+
 // Vesta b_poly commitment: inputs in Fp, outputs Vesta points (coords in Fq).
 export function vestaSrsBPolyCommitment(crs) {
     return function(challenges) {

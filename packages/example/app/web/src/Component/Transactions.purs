@@ -16,8 +16,8 @@ import Effect (Effect)
 import React.Basic (JSX)
 import React.Basic.DOM as R
 import React.Basic.Events (handler_)
+import Snarky.Example.Engine (TxView)
 import Snarky.Example.Web.Component.Panel (emptyHint, panel)
-import Snarky.Example.Web.Engine (TxView)
 
 type TransactionsProps =
   { txs :: Array TxView

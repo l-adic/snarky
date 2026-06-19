@@ -2,6 +2,8 @@ package:
   name: example
   dependencies:
     - aff
+    - aff-promise
+    - arraybuffer-types
     - arrays
     - avar
     - colog
@@ -17,6 +19,7 @@ package:
     - maybe
     - merkle-tree
     - newtype
+    - nullable
     - ordered-collections
     - parallel
     - partial

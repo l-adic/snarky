@@ -25,6 +25,7 @@
 .header {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 1rem;
   margin-bottom: 1.25rem;
 }
@@ -58,7 +59,6 @@
 }
 
 .run-btn {
-  margin-left: auto;
   background: #0ea5e9;
   color: white;
   border: none;
@@ -70,6 +70,55 @@
 .run-btn:disabled {
   background: var(--border);
   cursor: default;
+}
+/* The Start / Join buttons, grouped at the right of the header so they wrap
+   together (not split across lines) and stack cleanly on mobile. */
+.actions {
+  margin-left: auto;
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Channel name field in the P2P header. */
+.field {
+  font: 12px sans-serif;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.channel-input {
+  width: 12ch;
+  font: 12px monospace;
+  background: #0f172a;
+  color: #e2e8f0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+}
+
+/* Coordinator peer table. */
+.peer-table {
+  width: 100%;
+  border-collapse: collapse;
+  font: 12px ui-monospace, Menlo, monospace;
+}
+.peer-table th,
+.peer-table td {
+  text-align: left;
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.peer-table th {
+  color: #64748b;
+  font-weight: 500;
+  font-size: 11px;
+}
+.peer-table .peer-busy {
+  color: #f59e0b;
+}
+.peer-table .peer-idle {
+  color: #64748b;
 }
 
 /* --- layout --- */
@@ -90,6 +139,9 @@
   border-radius: 10px;
   padding: 1rem 1.25rem;
   border: 1px solid var(--border);
+  /* The scan-state tree SVG has a fixed (wide) width; let it scroll horizontally
+     within its panel rather than overflowing the page on narrow screens. */
+  overflow-x: auto;
 }
 .panel-title {
   color: var(--dim);
@@ -101,6 +153,14 @@
 .empty {
   color: var(--dim);
   font-size: 13px;
+}
+
+/* The worker's "current job" panel: a single prominent status line (it has no
+ * scan tree — it only ever proves one base/merge item at a time). */
+.job-status {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
 }
 
 /* --- transactions accordion --- */
@@ -172,6 +232,11 @@
   font-size: 12px;
   white-space: pre-wrap;
 }
+.log-time {
+  margin-right: 0.4rem;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
 .log-sev {
   margin-right: 0.5rem;
   color: #7dd3fc;
@@ -194,4 +259,45 @@
   color: var(--dim);
   font-size: 11px;
   margin-top: 1.25rem;
+}
+
+/* --- responsive: phones / narrow viewports --- */
+@media (max-width: 768px) {
+  .app {
+    padding: 1rem;
+  }
+  .header {
+    gap: 0.6rem;
+  }
+  /* Title on its own line; the controls flow below it. */
+  .title {
+    flex-basis: 100%;
+    font-size: 16px;
+  }
+  /* Stack the two columns (peer table / scan tree, log). */
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  /* Channel field spans a line; its input fills the width (easy to tap/type). */
+  .field {
+    flex: 1 1 100%;
+  }
+  .channel-input {
+    flex: 1;
+    width: auto;
+  }
+  /* Actions span a full row; each button a comfortable touch target. */
+  .actions {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+  .run-btn {
+    flex: 1;
+    padding: 0.6rem 1rem;
+    font-size: 14px;
+  }
+  /* Keep the log from dominating the stacked layout. */
+  .log-scroll {
+    max-height: 50vh;
+  }
 }

@@ -9,10 +9,12 @@
 -- | e.g. `richMessageStdout` (coloured severity + UTC timestamp).
 module Snarky.Example.Log
   ( Logger
+  , logAt
   , logDebug
   , logInfo
   , logWarning
   , logError
+  , severityFromTag
   ) where
 
 import Prelude
@@ -24,17 +26,28 @@ import Effect.Class (class MonadEffect, liftEffect)
 -- | The application logger: a colog action over `Effect`.
 type Logger = LogAction Effect Message
 
-log' :: forall m. MonadEffect m => Logger -> Severity -> String -> m Unit
-log' logger severity text = liftEffect $ unLogAction logger (Msg { severity, text })
+-- | Log `text` at an arbitrary `Severity` (the level-generic primitive the
+-- | fixed-level helpers below are built on).
+logAt :: forall m. MonadEffect m => Logger -> Severity -> String -> m Unit
+logAt logger severity text = liftEffect $ unLogAction logger (Msg { severity, text })
 
 logDebug :: forall m. MonadEffect m => Logger -> String -> m Unit
-logDebug logger = log' logger Debug
+logDebug logger = logAt logger Debug
 
 logInfo :: forall m. MonadEffect m => Logger -> String -> m Unit
-logInfo logger = log' logger Info
+logInfo logger = logAt logger Info
 
 logWarning :: forall m. MonadEffect m => Logger -> String -> m Unit
-logWarning logger = log' logger Warning
+logWarning logger = logAt logger Warning
 
 logError :: forall m. MonadEffect m => Logger -> String -> m Unit
-logError logger = log' logger Error
+logError logger = logAt logger Error
+
+-- | Parse a severity tag (as a colog logger renders it) back to a `Severity`;
+-- | anything unrecognized is treated as `Info`.
+severityFromTag :: String -> Severity
+severityFromTag = case _ of
+  "debug" -> Debug
+  "warning" -> Warning
+  "error" -> Error
+  _ -> Info

@@ -12,19 +12,30 @@ package:
   name: example-simulation-web
   dependencies:
     - aff
+    - aff-promise
+    - arraybuffer-types
     - arrays
+    - avar
     - colog
     - datetime
     - effect
+    - either
     - example
     - exceptions
     - foreign
+    - formatters
+    - integers
     - maybe
+    - nullable
+    - ordered-collections
+    - pickles
     - prelude
     - react-basic
     - react-basic-dom
     - react-basic-hooks
     - refs
+    - routing
+    - simple-json
     - strings
     - tuples
     - web-dom

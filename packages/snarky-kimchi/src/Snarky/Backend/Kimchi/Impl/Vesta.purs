@@ -1,6 +1,7 @@
 module Snarky.Backend.Kimchi.Impl.Vesta where
 
 import Data.Array as Array
+import Data.ArrayBuffer.Types (Uint8Array)
 import Data.Maybe (Maybe(..))
 import Data.Unit (Unit)
 import Effect (Effect)
@@ -34,6 +35,25 @@ foreign import vestaCrsSize :: CRS Vesta.G -> Int
 -- | of size `2^log2`. Effectful: mutates the SRS in place, so later
 -- | index/proof creation over that domain hits the cache.
 foreign import vestaSrsAddLagrangeBasis :: CRS Vesta.G -> Int -> Effect Unit
+
+-- | Serialize the lagrange basis for the domain of size `2^log2` to a byte
+-- | blob (computing it if not yet cached). The out-of-band carrier the SRS
+-- | cache manager persists — `vestaSrsToBytes` (generators) skips it.
+foreign import vestaSrsLagrangeBasisToBytes :: CRS Vesta.G -> Int -> Effect Uint8Array
+
+-- | Inject a serialized lagrange basis (from `vestaSrsLagrangeBasisToBytes`)
+-- | into this SRS's cache for the domain of size `2^log2`, so later
+-- | index/proof creation hits the cache instead of running the FFT.
+foreign import vestaSrsSetLagrangeBasisFromBytes :: CRS Vesta.G -> Int -> Uint8Array -> Effect Unit
+
+-- | Serialize the SRS generators (`g`, `h`) to a byte blob. The basis cache is
+-- | `#[serde(skip)]`'d, so this carries generators only — pair with
+-- | `vestaSrsLagrangeBasisToBytes` per domain.
+foreign import vestaSrsToBytes :: CRS Vesta.G -> Effect Uint8Array
+
+-- | Reconstruct an SRS (generators only) from `vestaSrsToBytes`, tagged with the
+-- | given size. Deterministic alternative to `vestaCrsCreate size`.
+foreign import vestaSrsFromBytes :: Int -> Uint8Array -> Effect (CRS Vesta.G)
 
 -- | Compute challenge polynomial commitment from Vesta SRS.
 -- | Vesta scalar field = Fp, result coords in Fq (= Pallas.ScalarField).

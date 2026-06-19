@@ -21,9 +21,12 @@ import Data.Int as Int
 import Data.Maybe (fromMaybe)
 import Data.Reflectable (class Reflectable, reifyType)
 import Effect (Effect)
+import Effect.Aff (launchAff_)
+import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Exception (throw)
 import Effect.Random (random)
-import Mina.ChainId (ChainId(..))
+import Fmt (fmt)
+import Mina.ChainId (chainIdFromTag)
 import Node.Process (lookupEnv)
 import Node.WorkerBees (ThreadId(..), WorkerContext, makeAsMain)
 import Pickles.Prove.SerializeProof (encodeCompiledProof)
@@ -31,6 +34,7 @@ import Snarky.Example.Env (mkConfig, mkEnv)
 import Snarky.Example.Log as Log
 import Snarky.Example.Snark.Work (WorkItem(..), decodeWorkItem)
 import Snarky.Example.Snark.Worker (proveItem)
+import Snarky.Example.Terminal.SrsCache (fsSrsCache)
 import Snarky.Example.Terminal.WorkerLog (workerLogger)
 import Type.Proxy (Proxy)
 
@@ -40,13 +44,6 @@ foreign import sleepSync :: Int -> Effect Unit
 -- | shows it) and the ledger depth, so the worker compiles the same circuit as
 -- | the host — neither is hard-coded here.
 type WorkerData = { chain :: String, depth :: Int }
-
--- | Inverse of `show :: ChainId -> String`. Anything but the mainnet tag is
--- | treated as testnet (the example's default).
-chainIdFromTag :: String -> ChainId
-chainIdFromTag = case _ of
-  "Mainnet" -> Mainnet
-  _ -> Testnet
 
 -- | Fault-injection knobs for exercising the pool's reliability paths, read once
 -- | from the environment. Both probabilities are fractions in [0, 1]:
@@ -86,18 +83,21 @@ worker ctx = reifyType ctx.workerData.depth (workerAtDepth ctx)
 -- | encoded proof. The `Proxy d` is just the reify witness — `d` is used via
 -- | `mkEnv @d`.
 workerAtDepth :: forall d. Reflectable d Int => WorkerContext WorkerData String String -> Proxy d -> Effect Unit
-workerAtDepth ctx _ = do
+workerAtDepth ctx _ = launchAff_ do
   let
     ThreadId tid = ctx.threadId
-    note text = Log.logInfo workerLogger ("[worker " <> show tid <> "] " <> text)
-  fault <- readFault
+
+    note :: forall m. MonadEffect m => String -> m Unit
+    note text = Log.logInfo workerLogger (fmt @"[worker {tid}] {text}" { tid: show tid, text })
+  fault <- liftEffect readFault
+  cache <- liftEffect (fsSrsCache workerLogger)
   note "building SRS + lagrange basis…"
-  config <- mkConfig (chainIdFromTag ctx.workerData.chain)
+  config <- mkConfig cache (chainIdFromTag ctx.workerData.chain)
   note "compiling circuit…"
-  env <- mkEnv @d mempty config
+  env <- liftEffect $ mkEnv @d mempty config
   note "ready"
-  ctx.reply "ready"
-  ctx.receive \encoded ->
+  liftEffect $ ctx.reply "ready"
+  liftEffect $ ctx.receive \encoded ->
     case decodeWorkItem env encoded :: Either _ (WorkItem d) of -- d = the reified depth
       Left err -> throw ("snark worker: decodeWorkItem failed: " <> show err)
       Right item -> do

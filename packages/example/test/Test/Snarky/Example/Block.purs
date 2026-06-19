@@ -35,6 +35,7 @@ import Snarky.Example.Ledger (Ledger)
 import Snarky.Example.Log as Log
 import Snarky.Example.Simulation (genGenesisLedger, generateBlock)
 import Snarky.Example.Snark.Manager (mkManager, submitBlock)
+import Snarky.Example.Snark.Pool (PoolSize(Fixed))
 import Snarky.Example.Snark.Worker (localSnarkBackend)
 import Snarky.Example.Transaction (Statement(..))
 import Test.QuickCheck.Gen (randomSampleOne)
@@ -73,7 +74,7 @@ spec =
       manager <- mkManager
         { logger: env.logger
         , onProgress: Nothing
-        , poolSize: 1
+        , poolSize: Fixed 1
         , jobTimeout: Milliseconds 120000.0
         , backend: localSnarkBackend
         }

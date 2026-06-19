@@ -2,6 +2,7 @@ package:
   name: snarky-kimchi
   dependencies:
     - argonaut-core
+    - arraybuffer-types
     - arrays
     - bifunctors
     - control
