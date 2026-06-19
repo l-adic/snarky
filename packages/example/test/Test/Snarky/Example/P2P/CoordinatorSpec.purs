@@ -60,8 +60,7 @@ startPeer bus pid prove = do
     , prove
     , describeJob: un Payload
     , onPhase: \_ -> pure unit
-    , reannounceMs: 50.0
-    , reannounceMax: 20
+    , reannounce: { ms: 50.0, max: 20 }
     }
   pure t
 

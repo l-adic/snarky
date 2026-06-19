@@ -49,6 +49,5 @@ runWorkerPeer chainId transport { logger, onPhase } = launchAff_ do
     , prove
     , describeJob: JobSummary.describeJob <<< un Payload
     , onPhase
-    , reannounceMs: 4000.0
-    , reannounceMax: 30
+    , reannounce: { ms: 4000.0, max: 30 }
     }

@@ -62,9 +62,8 @@ type PeerConfig =
   , describeJob :: Payload -> String
   -- Report the current status to the peer's own UI.
   , onPhase :: PeerPhase -> Effect Unit
-  -- Re-announce cadence: every `reannounceMs`, up to `reannounceMax` tries.
-  , reannounceMs :: Number
-  , reannounceMax :: Int
+  -- Re-announce cadence: every `ms`, up to `max` tries.
+  , reannounce :: { ms :: Number, max :: Int }
   }
 
 -- | Run the peer loop. Assumes the prover is already built (the caller does any
@@ -110,8 +109,8 @@ runStarPeer cfg = do
   -- try budget runs out. Each round races a timer against the stop signal
   -- (`AVar.read`, non-consuming so every round sees it once raised).
   launchAff_ $ flip tailRecM 0 \n ->
-    if n >= cfg.reannounceMax then pure (Done unit)
+    if n >= cfg.reannounce.max then pure (Done unit)
     else do
-      stopped <- parOneOf [ delay (Milliseconds cfg.reannounceMs) $> false, AVar.read stop $> true ]
+      stopped <- parOneOf [ delay (Milliseconds cfg.reannounce.ms) $> false, AVar.read stop $> true ]
       if stopped then pure (Done unit)
       else liftEffect announce $> Loop (n + 1)

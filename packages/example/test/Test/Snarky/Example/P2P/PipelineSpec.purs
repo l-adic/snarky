@@ -84,8 +84,7 @@ spec =
             Right item -> (Payload <<< encodeCompiledProof) <$> proveItem env.compiledTx item
         , describeJob: const "job"
         , onPhase: \_ -> pure unit
-        , reannounceMs: 50.0
-        , reannounceMax: 40
+        , reannounce: { ms: 50.0, max: 40 }
         }
 
       Log.logInfo env.logger "[Pipeline] submitting block over the in-memory transport"
