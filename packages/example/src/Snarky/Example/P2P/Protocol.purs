@@ -27,6 +27,9 @@ import Safe.Coerce (coerce)
 import Simple.JSON (readJSON, writeJSON)
 import Snarky.Example.P2P.Types (Frame(..), JobId(..), Payload(..), PeerId(..))
 
+-- | A decode result: the value, or the accumulated `readJSON` errors.
+type Decoded a = Either MultipleErrors a
+
 data Msg
   = Join { peerId :: PeerId }
   | Assign { jobId :: JobId, work :: Payload }
@@ -44,9 +47,9 @@ encodeMsg = Frame <<< case _ of
   Reject r -> writeJSON { tag: "reject", jobId: coerce r.jobId :: String, reason: r.reason }
   Leave r -> writeJSON { tag: "leave", peerId: coerce r.peerId :: String }
 
-decodeMsg :: Frame -> Either MultipleErrors Msg
+decodeMsg :: Frame -> Decoded Msg
 decodeMsg (Frame s) = do
-  tagged <- readJSON s :: Either MultipleErrors { tag :: String }
+  tagged <- readJSON s :: Decoded { tag :: String }
   case tagged.tag of
     "join" -> readJSON s <#> \(r :: { peerId :: String }) -> Join { peerId: coerce r.peerId }
     "assign" -> readJSON s <#> \(r :: { jobId :: String, work :: String }) -> Assign { jobId: coerce r.jobId, work: coerce r.work }

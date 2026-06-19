@@ -70,6 +70,11 @@ participantId = case _ of
   Self -> "self"
   Remote p -> show p
 
+-- | Mint the next transport-level job id off a monotonic counter (`job-1`,
+-- | `job-2`, …) — distinct from the snark manager's slot id.
+nextJobId :: Ref.Ref Int -> Effect JobId
+nextJobId counter = Ref.modify' (\n -> { state: n + 1, value: JobId ("job-" <> show (n + 1)) }) counter
+
 -- | What a pooled worker is doing: idle, or proving a job (carrying its label).
 data PeerStatus = Idle | Proving String
 
@@ -222,7 +227,7 @@ mkStarBackend config = do
             pure
               { id: participantId (Remote peerId)
               , run: \job -> do
-                  jobId <- liftEffect $ Ref.modify' (\n -> { state: n + 1, value: JobId ("job-" <> show (n + 1)) }) counter
+                  jobId <- liftEffect $ nextJobId counter
                   liftEffect $ setStatus (Remote peerId) (Proving (config.jobLabel job))
                   slot <- liftEffect EffectAVar.empty
                   liftEffect $ Ref.modify_ (Map.insert jobId slot) pending

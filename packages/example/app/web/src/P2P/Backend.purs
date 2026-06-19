@@ -60,11 +60,7 @@ jobLabel = case _ of
 
 -- | Relay a nested-prover log line to a colog logger at its reported severity.
 relayLog :: Logger -> String -> String -> Effect Unit
-relayLog logger text = case _ of
-  "debug" -> Log.logDebug logger text
-  "warning" -> Log.logWarning logger text
-  "error" -> Log.logError logger text
-  _ -> Log.logInfo logger text
+relayLog logger text severityTag = Log.logAt logger (Log.severityFromTag severityTag) text
 
 -- | Spawn the nested Web Worker self-prover (cheap — it boots no wasm until
 -- | `init`), wire its message handler, and return the `prepareLocal` action the
