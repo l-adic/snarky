@@ -25,6 +25,7 @@ import Effect.Aff (launchAff_)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Exception (throw)
 import Effect.Random (random)
+import Fmt (fmt)
 import Mina.ChainId (chainIdFromTag)
 import Node.Process (lookupEnv)
 import Node.WorkerBees (ThreadId(..), WorkerContext, makeAsMain)
@@ -87,13 +88,10 @@ workerAtDepth ctx _ = launchAff_ do
     ThreadId tid = ctx.threadId
 
     note :: forall m. MonadEffect m => String -> m Unit
-    note text = Log.logInfo workerLogger ("[worker " <> show tid <> "] " <> text)
+    note text = Log.logInfo workerLogger (fmt @"[worker {tid}] {text}" { tid: show tid, text })
   fault <- liftEffect readFault
   cache <- liftEffect (openSrsCache workerLogger)
   note "building SRS + lagrange basis…"
-  -- Build the SRS through the shared on-disk cache: a cold cache runs the
-  -- Lagrange-basis FFTs once (and stores them) for the whole worker pool; a warm
-  -- one (a later worker, or a later run) loads + injects them, no FFT.
   config <- mkConfig cache (chainIdFromTag ctx.workerData.chain)
   note "compiling circuit…"
   env <- liftEffect $ mkEnv @d mempty config

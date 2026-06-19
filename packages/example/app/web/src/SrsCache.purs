@@ -18,6 +18,7 @@ import Data.Maybe (Maybe(..))
 import Data.Nullable (Nullable, toMaybe)
 import Effect (Effect)
 import Effect.Aff (Aff)
+import Fmt (fmt)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
 import Snarky.Example.Srs.Cache (SrsCache, entryKey)
@@ -49,8 +50,8 @@ loggingCache logger inner = inner
   { get = \e -> do
       result <- inner.get e
       Log.logInfo logger $ case result of
-        Just _ -> "[srs-cache] HIT  " <> entryKey e <> " (inject, no FFT)"
-        Nothing -> "[srs-cache] MISS " <> entryKey e <> " (building + storing)"
+        Just _ -> fmt @"[srs-cache] hit {key} (reused, no FFT)" { key: entryKey e }
+        Nothing -> fmt @"[srs-cache] miss {key} (building + storing)" { key: entryKey e }
       pure result
   }
 
