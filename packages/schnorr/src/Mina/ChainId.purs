@@ -12,6 +12,7 @@
 -- | so it stays byte-identical to Mina's deployed prefix.
 module Mina.ChainId
   ( ChainId(..)
+  , chainIdFromTag
   , signaturePrefix
   , networkId
   ) where
@@ -32,6 +33,12 @@ derive instance Ord ChainId
 derive instance Generic ChainId _
 instance Show ChainId where
   show = genericShow
+
+-- | Parse a chain tag (the inverse of `show`); anything but `"Mainnet"` is testnet.
+chainIdFromTag :: String -> ChainId
+chainIdFromTag = case _ of
+  "Mainnet" -> Mainnet
+  _ -> Testnet
 
 -- | `Hash_prefix_states.signature ~signature_kind` — the 3-element
 -- | Poseidon-sponge state to seed a `Schnorr.Chunked` hash with for

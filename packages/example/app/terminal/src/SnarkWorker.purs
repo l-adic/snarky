@@ -25,7 +25,7 @@ import Effect.Aff (launchAff_)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Exception (throw)
 import Effect.Random (random)
-import Mina.ChainId (ChainId(..))
+import Mina.ChainId (chainIdFromTag)
 import Node.Process (lookupEnv)
 import Node.WorkerBees (ThreadId(..), WorkerContext, makeAsMain)
 import Pickles.Prove.SerializeProof (encodeCompiledProof)
@@ -43,13 +43,6 @@ foreign import sleepSync :: Int -> Effect Unit
 -- | shows it) and the ledger depth, so the worker compiles the same circuit as
 -- | the host — neither is hard-coded here.
 type WorkerData = { chain :: String, depth :: Int }
-
--- | Inverse of `show :: ChainId -> String`. Anything but the mainnet tag is
--- | treated as testnet (the example's default).
-chainIdFromTag :: String -> ChainId
-chainIdFromTag = case _ of
-  "Mainnet" -> Mainnet
-  _ -> Testnet
 
 -- | Fault-injection knobs for exercising the pool's reliability paths, read once
 -- | from the environment. Both probabilities are fractions in [0, 1]:

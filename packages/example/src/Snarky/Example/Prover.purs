@@ -21,7 +21,7 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
-import Mina.ChainId (ChainId(..))
+import Mina.ChainId (chainIdFromTag)
 import Pickles.Prove.SerializeProof (encodeCompiledProof)
 import Snarky.Example.Env (mkConfig, mkEnv)
 import Snarky.Example.Log (Logger)
@@ -31,12 +31,6 @@ import Snarky.Example.Snark.Work (WorkItem, decodeWorkItem)
 import Snarky.Example.Snark.Worker (proveItem)
 import Snarky.Example.Srs.Cache (SrsCache)
 import Type.Proxy (Proxy)
-
--- | Inverse of `show :: ChainId -> String` (anything but mainnet is testnet).
-chainIdFromTag :: String -> ChainId
-chainIdFromTag = case _ of
-  "Mainnet" -> Mainnet
-  _ -> Testnet
 
 -- | Build the SRS + compile the circuit for the given chain + depth, returning
 -- | a closure that proves one encoded `WorkItem` and returns the encoded proof.

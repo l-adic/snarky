@@ -41,7 +41,7 @@ import Data.Tuple.Nested ((/\))
 import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Uncurried (EffectFn1, EffectFn3, mkEffectFn1, runEffectFn3)
-import Mina.ChainId (ChainId(..))
+import Mina.ChainId (ChainId, chainIdFromTag)
 import React.Basic (JSX)
 import React.Basic.DOM as R
 import React.Basic.DOM.Client (createRoot, renderRoot)
@@ -86,12 +86,6 @@ type Opts =
   -- against; `#chain=Mainnet` overrides the Testnet default.
   , chain :: ChainId
   }
-
--- | Inverse of `show :: ChainId -> String` (anything but mainnet is testnet).
-chainIdFromTag :: String -> ChainId
-chainIdFromTag = case _ of
-  "Mainnet" -> Mainnet
-  _ -> Testnet
 
 -- | How many log lines the UI keeps (oldest dropped); a bounded scrollback.
 maxLogLines :: Int

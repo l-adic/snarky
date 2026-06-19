@@ -16,7 +16,7 @@ import Prelude
 
 import Effect (Effect)
 import Foreign (Foreign)
-import Mina.ChainId (ChainId(..))
+import Mina.ChainId (chainIdFromTag)
 import Snarky.Example.P2P.Backend (runCoordinator)
 import Snarky.Example.P2P.Peer (peerPhaseLabel)
 import Snarky.Example.P2P.Transport (Transport)
@@ -29,12 +29,6 @@ import Snarky.Example.Web.P2P.WorkerLog (mkPostLogger)
 foreign import bootRole :: Effect String
 foreign import bootChain :: Effect String
 foreign import bootTransport :: Effect Transport
-
--- | Inverse of `show :: ChainId -> String` (anything but mainnet is testnet).
-chainIdFromTag :: String -> ChainId
-chainIdFromTag = case _ of
-  "Mainnet" -> Mainnet
-  _ -> Testnet
 
 -- | `self.postMessage` of a pre-encoded wire object; the main-thread app
 -- | (`P2P.Main`) decodes it with `decodeWorkerMsg`.
