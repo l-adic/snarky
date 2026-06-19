@@ -6,9 +6,7 @@
 -- | (`Snarky.Example.Srs.Cache`) stays silent — the `{ get, put }` seam carries
 -- | the observability.
 module Snarky.Example.Terminal.SrsCache
-  ( resolveSrsCacheDir
-  , loggingCache
-  , openSrsCache
+  ( fsSrsCache
   ) where
 
 import Prelude
@@ -38,5 +36,5 @@ loggingCache logger inner = inner
   }
 
 -- | Open the shared on-disk SRS cache with hit/miss logging.
-openSrsCache :: Logger -> Effect SrsCache
-openSrsCache logger = loggingCache logger <<< fsCache <$> resolveSrsCacheDir
+fsSrsCache :: Logger -> Effect SrsCache
+fsSrsCache logger = loggingCache logger <<< fsCache <$> resolveSrsCacheDir

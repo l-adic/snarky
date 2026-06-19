@@ -24,7 +24,7 @@ import Snarky.Example.Engine (EngineCallbacks, engineLogger, engineOnProgress, r
 import Snarky.Example.Simulation (mkSimulation)
 import Snarky.Example.Snark.Pool (PoolSize)
 import Snarky.Example.Snark.Worker (SnarkBackend)
-import Snarky.Example.Web.SrsCache (openSrsCache)
+import Snarky.Example.Web.SrsCache (idbSrsCache)
 
 -- | Ledger tree depth, matching the terminal entry.
 type Depth = 4
@@ -40,7 +40,7 @@ runWith chainId backend poolSize jobTimeout cb = runAff_ onDone do
   liftEffect $ cb.onPhase "setup"
   -- The shared same-origin SRS cache (with hit/miss logging): the engine warms it;
   -- the nested self-prover reads it instead of re-running the FFTs.
-  cache <- openSrsCache logger
+  cache <- idbSrsCache logger
   sim <- mkSimulation @Depth
     { chainId
     , numAccounts: 10

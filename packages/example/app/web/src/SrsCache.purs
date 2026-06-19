@@ -4,10 +4,7 @@
 -- | SAME database: whichever builds the SRS first warms it for the other (no
 -- | postMessage transfer of the bases needed), and the cache survives reloads.
 module Snarky.Example.Web.SrsCache
-  ( srsCacheDb
-  , idbCache
-  , loggingCache
-  , openSrsCache
+  ( idbSrsCache
   ) where
 
 import Prelude
@@ -56,5 +53,5 @@ loggingCache logger inner = inner
   }
 
 -- | Open the shared IndexedDB SRS cache with hit/miss logging.
-openSrsCache :: Logger -> Aff SrsCache
-openSrsCache logger = loggingCache logger <$> idbCache srsCacheDb
+idbSrsCache :: Logger -> Aff SrsCache
+idbSrsCache logger = loggingCache logger <$> idbCache srsCacheDb

@@ -14,12 +14,12 @@ import Effect (Effect)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.P2P.Types (Payload)
 import Snarky.Example.Prover (buildProver)
-import Snarky.Example.Web.SrsCache (openSrsCache)
+import Snarky.Example.Web.SrsCache (idbSrsCache)
 
 buildBrowserProver
   :: Logger
   -> { chain :: String, depth :: Int }
   -> Effect (Promise (Payload -> Effect Payload))
 buildBrowserProver logger args = fromAff do
-  cache <- openSrsCache logger
+  cache <- idbSrsCache logger
   buildProver cache logger args

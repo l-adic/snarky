@@ -33,7 +33,7 @@ import Snarky.Example.Snark.Manager (submitBlock)
 import Snarky.Example.Snark.Pool (PoolSize(Fixed))
 import Snarky.Example.Terminal.NodeBackend (nodeSnarkBackend)
 import Snarky.Example.Terminal.ProgressDisplay (mkProgressDisplay)
-import Snarky.Example.Terminal.SrsCache (openSrsCache)
+import Snarky.Example.Terminal.SrsCache (fsSrsCache)
 import Snarky.Example.Terminal.WorkerLog (workerLogPath)
 import Snarky.Example.Transaction (SignedTransaction(..), Transaction(..), Transfer(..))
 
@@ -92,7 +92,7 @@ main = launchAff_ do
     { path: workerLogPath }
   -- The host builds its SRS through the same shared on-disk cache the workers
   -- use, so the whole run's Lagrange-basis FFTs happen once (and persist).
-  cache <- liftEffect $ openSrsCache logger
+  cache <- liftEffect $ fsSrsCache logger
   sim <- mkSimulation @Depth
     { chainId: Testnet
     , numAccounts: 10
