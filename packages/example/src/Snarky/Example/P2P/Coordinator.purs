@@ -215,9 +215,9 @@ mkStarBackend config = do
                   liftEffect $ setStatus Self (Proving (config.jobLabel job))
                   res <- try (rw.run job)
                   case res of
-                    Left err -> do
-                      liftEffect $ setStatus Self Idle
-                      liftEffect $ throw (message err)
+                    Left err -> liftEffect do
+                      setStatus Self Idle
+                      throw (message err)
                     Right proof -> do
                       liftEffect $ completed Self
                       pure proof
@@ -227,20 +227,22 @@ mkStarBackend config = do
             pure
               { id: participantId (Remote peerId)
               , run: \job -> do
-                  jobId <- liftEffect $ nextJobId counter
-                  liftEffect $ setStatus (Remote peerId) (Proving (config.jobLabel job))
-                  slot <- liftEffect EffectAVar.empty
-                  liftEffect $ Ref.modify_ (Map.insert jobId slot) pending
-                  liftEffect $ Ref.modify_ (Map.insert peerId slot) peerSlot
-                  liftEffect $ sendTo config.transport peerId (encodeMsg (Assign { jobId, work: config.encodeJob job }))
+                  { jobId, slot } <- liftEffect do
+                    jobId <- nextJobId counter
+                    setStatus (Remote peerId) (Proving (config.jobLabel job))
+                    slot <- EffectAVar.empty
+                    Ref.modify_ (Map.insert jobId slot) pending
+                    Ref.modify_ (Map.insert peerId slot) peerSlot
+                    sendTo config.transport peerId (encodeMsg (Assign { jobId, work: config.encodeJob job }))
+                    pure { jobId, slot }
                   res <- AVar.take slot
                   liftEffect do
                     Ref.modify_ (Map.delete jobId) pending
                     Ref.modify_ (Map.delete peerId) peerSlot
                   case res of
-                    Left reason -> do
-                      liftEffect $ setStatus (Remote peerId) Idle
-                      liftEffect $ throw (fmt @"p2p worker {peer} rejected job {job}: {reason}" { peer: show peerId, job: show jobId, reason })
+                    Left reason -> liftEffect do
+                      setStatus (Remote peerId) Idle
+                      throw (fmt @"p2p worker {peer} rejected job {job}: {reason}" { peer: show peerId, job: show jobId, reason })
                     Right proof -> do
                       liftEffect $ completed (Remote peerId)
                       pure proof

@@ -116,18 +116,22 @@ engineOnProgress cb = \blockId st -> cb.onScan (scanView blockId st)
 -- | compile, i.e. building the `Simulation`) is the caller's responsibility.
 runEngine :: forall d. Reflectable d Int => Simulation d -> EngineCallbacks -> Aff Unit
 runEngine sim cb = do
-  liftEffect $ cb.onPhase "block"
-  ledger0 <- liftEffect $ Ref.read sim.env.ledger
-  block@(Block { transactions }) <- liftEffect $ generateBlock sim.env.chainId sim.keys ledger0
-  liftEffect $ cb.onTxs $ Vector.toUnfoldable $ map txView transactions
+  { ledger0, block } <- liftEffect do
+    cb.onPhase "block"
+    ledger0 <- Ref.read sim.env.ledger
+    block@(Block { transactions }) <- generateBlock sim.env.chainId sim.keys ledger0
+    cb.onTxs $ Vector.toUnfoldable $ map txView transactions
+    pure { ledger0, block }
 
-  liftEffect $ cb.onPhase "proving"
-  { ledger: ledger1, snarkWork } <- liftEffect $ processBlock sim.env.chainId ledger0 block
+  { ledger: ledger1, snarkWork } <- liftEffect do
+    cb.onPhase "proving"
+    processBlock sim.env.chainId ledger0 block
   rootProof <- submitBlock sim.manager 0 snarkWork
 
-  if verifyBatch sim.env.compiledTx.verifier [ toVerifiable rootProof ] then do
-    liftEffect $ Ref.write ledger1 sim.env.ledger
-    liftEffect $ cb.onVerified true
-  else
-    liftEffect $ cb.onVerified false
-  liftEffect $ cb.onPhase "done"
+  liftEffect do
+    if verifyBatch sim.env.compiledTx.verifier [ toVerifiable rootProof ] then do
+      Ref.write ledger1 sim.env.ledger
+      cb.onVerified true
+    else
+      cb.onVerified false
+    cb.onPhase "done"

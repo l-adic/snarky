@@ -34,13 +34,14 @@ spec = describe "Snarky.Example.Engine" do
     -- A Simulation from the shared Env: seed the genesis ledger into the env's ref
     -- and start a manager over the in-process local backend. Same shape as
     -- `mkSimulation`, minus the (already-done) SRS build + compile.
-    { ledger: l0, keys } <- liftEffect $ randomSampleOne (genGenesisLedger 10)
-    liftEffect $ Ref.write l0 env.ledger
-
-    phasesRef <- liftEffect $ Ref.new ([] :: Array String)
-    txsRef <- liftEffect $ Ref.new ([] :: Array TxView)
-    scansRef <- liftEffect $ Ref.new 0
-    verifiedRef <- liftEffect $ Ref.new (Nothing :: Maybe Boolean)
+    { keys, phasesRef, txsRef, scansRef, verifiedRef } <- liftEffect do
+      { ledger: l0, keys } <- randomSampleOne (genGenesisLedger 10)
+      Ref.write l0 env.ledger
+      phasesRef <- Ref.new ([] :: Array String)
+      txsRef <- Ref.new ([] :: Array TxView)
+      scansRef <- Ref.new 0
+      verifiedRef <- Ref.new (Nothing :: Maybe Boolean)
+      pure { keys, phasesRef, txsRef, scansRef, verifiedRef }
     let
       cb =
         { onLog: \_ -> pure unit
@@ -61,7 +62,13 @@ spec = describe "Snarky.Example.Engine" do
 
     -- The full event protocol fired in order, the block's transactions surfaced,
     -- the scan tree advanced as the manager proved, and the root proof verified.
-    liftEffect (Ref.read phasesRef) >>= \ps -> ps `shouldEqual` [ "block", "proving", "done" ]
-    liftEffect (Ref.read txsRef) >>= \txs -> (Array.length txs > 0) `shouldEqual` true
-    liftEffect (Ref.read scansRef) >>= \n -> (n > 0) `shouldEqual` true
-    liftEffect (Ref.read verifiedRef) >>= \v -> v `shouldEqual` Just true
+    { phases, txs, scans, verified } <- liftEffect do
+      phases <- Ref.read phasesRef
+      txs <- Ref.read txsRef
+      scans <- Ref.read scansRef
+      verified <- Ref.read verifiedRef
+      pure { phases, txs, scans, verified }
+    phases `shouldEqual` [ "block", "proving", "done" ]
+    (Array.length txs > 0) `shouldEqual` true
+    (scans > 0) `shouldEqual` true
+    verified `shouldEqual` Just true

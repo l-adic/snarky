@@ -90,17 +90,19 @@ type Harness =
 
 mkHarness :: Bus -> Milliseconds -> Aff Harness
 mkHarness bus timeout = do
-  coordT <- liftEffect (connect bus "coord")
-  resultsRef <- liftEffect (Ref.new [])
-  peersRef <- liftEffect (Ref.new [])
-  backend <- liftEffect $ mkStarBackend
-    { logger: silentLogger
-    , transport: coordT
-    , encodeJob: Payload
-    , jobLabel: const "proving"
-    , prepareLocal: pure (Left "no self worker in test")
-    , onPeers: \ps -> Ref.write ps peersRef
-    }
+  { resultsRef, peersRef, backend } <- liftEffect do
+    coordT <- connect bus "coord"
+    resultsRef <- Ref.new []
+    peersRef <- Ref.new []
+    backend <- mkStarBackend
+      { logger: silentLogger
+      , transport: coordT
+      , encodeJob: Payload
+      , jobLabel: const "proving"
+      , prepareLocal: pure (Left "no self worker in test")
+      , onPeers: \ps -> Ref.write ps peersRef
+      }
+    pure { resultsRef, peersRef, backend }
   workQ <- newQueue
   let
     io =
