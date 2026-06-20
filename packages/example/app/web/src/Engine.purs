@@ -24,7 +24,6 @@ import Snarky.Example.Engine (EngineCallbacks, engineLogger, engineOnProgress, r
 import Snarky.Example.Simulation (mkSimulation)
 import Snarky.Example.Snark.Pool (PoolSize)
 import Snarky.Example.Snark.Worker (SnarkBackend)
-import Snarky.Example.Web.SrsCache (idbSrsCache)
 
 -- | Ledger tree depth, matching the terminal entry.
 type Depth = 4
@@ -33,14 +32,12 @@ type Depth = 4
 -- | the P2P coordinator drives the one-block pipeline over a `Dynamic` pool whose
 -- | first worker is its own in-process prover and the rest are remote peers
 -- | (`Snarky.Example.P2P.Backend.p2pSnarkBackend`). This is the setup shell —
--- | build the SRS cache + compile (the "setup" phase), then `runEngine`.
+-- | build the SRS + compile (the "setup" phase), then `runEngine`. The engine's
+-- | compile is kimchi-lazy; the prover workers warm + persist the bases.
 runWith :: ChainId -> SnarkBackend Depth -> PoolSize -> Milliseconds -> EngineCallbacks -> Effect Unit
 runWith chainId backend poolSize jobTimeout cb = runAff_ onDone do
   let logger = engineLogger cb
   liftEffect $ cb.onPhase "setup"
-  -- The shared same-origin SRS cache (with hit/miss logging): the engine warms it;
-  -- the nested self-prover reads it instead of re-running the FFTs.
-  cache <- idbSrsCache logger
   sim <- mkSimulation @Depth
     { chainId
     , numAccounts: 10
@@ -49,7 +46,6 @@ runWith chainId backend poolSize jobTimeout cb = runAff_ onDone do
     , poolSize
     , jobTimeout
     , backend
-    , cache
     }
   runEngine sim cb
   where

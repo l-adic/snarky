@@ -76,7 +76,7 @@ type Chunks4Rules =
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.Chunks4" do
-  it "base case (b0) — chunks=4 step+wrap proves end-to-end" \{ pallasSrs, vestaSrs } -> do
+  it "base case (b0) — chunks=4 step+wrap proves end-to-end" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/Chunks4.json")
     -- Step kimchi uses `vestaSrs` (depth 2^16 via cache load). With
     -- chunks4's 2^17-row step circuit, the step domain rounds to
@@ -103,6 +103,7 @@ spec = describe "Pickles.Prove.Chunks4" do
       , debug: false
       , wrapDomainOverride: Just 14
       , proofCache: cache
+      , lagrangeCache: Just lagrangeCache
       }
       rules
 

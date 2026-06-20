@@ -1,40 +1,20 @@
--- | The node terminal's shared SRS cache: one on-disk directory (under tmp, or
--- | `SNARK_SRS_CACHE_DIR`) that the host simulation process AND every worker
--- | thread build through, so the Lagrange-basis FFTs run once across the whole
--- | run (and persist across runs). The logging decorator surfaces each lookup
--- | as a HIT/MISS line; it lives here in the app, so the cache manager
--- | (`Snarky.Example.Srs.Cache`) stays silent — the `{ get, put }` seam carries
--- | the observability.
+-- | The node terminal app's Lagrange cache: the shared on-disk backend
+-- | (`Snarky.Lagrange.Cache.FS`, default dir or `SNARK_LAGRANGE_CACHE_DIR`)
+-- | wrapped with hit/miss logging at DEBUG. Every worker thread warms through
+-- | this one directory, so each Lagrange-basis FFT runs once across the whole run
+-- | and persists across runs. Logging at debug keeps the default info view clean.
 module Snarky.Example.Terminal.SrsCache
-  ( fsSrsCache
+  ( fsLagrangeCache
   ) where
 
 import Prelude
 
-import Data.Maybe (Maybe(..))
 import Effect (Effect)
-import Fmt (fmt)
 import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
-import Snarky.Example.Srs.Cache (SrsCache, entryKey)
-import Snarky.Example.Srs.Cache.Fs (fsCache)
+import Snarky.Lagrange.Cache (LagrangeCache, loggingCache)
+import Snarky.Lagrange.Cache.FS (defaultDir, fsCache)
 
--- | The on-disk SRS cache directory shared by the host + all worker threads (and
--- | reused across runs); `SNARK_SRS_CACHE_DIR` overrides it.
-foreign import resolveSrsCacheDir :: Effect String
-
--- | Wrap an `SrsCache` so every lookup logs HIT (loaded + injected, no FFT) or
--- | MISS (will build + store) per entry.
-loggingCache :: Logger -> SrsCache -> SrsCache
-loggingCache logger inner = inner
-  { get = \e -> do
-      result <- inner.get e
-      Log.logInfo logger $ case result of
-        Just _ -> fmt @"[srs-cache] hit {key} (reused, no FFT)" { key: entryKey e }
-        Nothing -> fmt @"[srs-cache] miss {key} (building + storing)" { key: entryKey e }
-      pure result
-  }
-
--- | Open the shared on-disk SRS cache with hit/miss logging.
-fsSrsCache :: Logger -> Effect SrsCache
-fsSrsCache logger = loggingCache logger <<< fsCache <$> resolveSrsCacheDir
+-- | Open the shared on-disk Lagrange cache with debug-level hit/miss logging.
+fsLagrangeCache :: Logger -> Effect LagrangeCache
+fsLagrangeCache logger = loggingCache (Log.logDebug logger) <<< fsCache <$> defaultDir

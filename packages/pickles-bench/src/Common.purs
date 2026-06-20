@@ -30,12 +30,14 @@ import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Pickles (Compiled, RulesCons, RulesNil, Slot, SlotWrapKey, StatementIO(..), StepField, StepRule)
-import Snarky.Backend.Kimchi.Class (addLagrangeBasis, createCRS)
-import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
+import Snarky.Backend.Kimchi.Impl.Pallas as P
+import Snarky.Backend.Kimchi.Impl.Vesta as V
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, const_, exists, if_, mul_, not_, true_)
 import Snarky.Curves.Pasta (PallasG, VestaG)
+import Snarky.Lagrange.Cache (pallasOps, vestaOps, warmer)
+import Snarky.Lagrange.Cache.FS (defaultDir, fsCache)
 
 -- | The shared SRS pair threaded through every bench group. Field types
 -- | match `compileMulti`'s `srs` config exactly.
@@ -51,10 +53,19 @@ type BenchSrs = { vestaSrs :: CRS VestaG, pallasSrs :: CRS PallasG }
 -- | simply to move *all* lagrange work ahead of the benchmarks.
 mkBenchSrs :: Effect BenchSrs
 mkBenchSrs = do
-  vestaSrs <- createCRS @StepField
-  let pallasSrs = PallasImpl.pallasCrsCreate (1 `Bits.shl` 15)
-  for_ [ 13, 14, 15, 16 ] (addLagrangeBasis vestaSrs)
-  for_ [ 13, 14, 15 ] (addLagrangeBasis pallasSrs)
+  -- Build the SRS directly, then PRE-WARM the Lagrange bases here (untimed,
+  -- before any bench), through the on-disk cache: a cold run FFTs + stores each
+  -- basis; later runs inject them. The bench compile configs use `Nothing`, so
+  -- no warming lands in a timed region. (Bench deliberately keeps this pre-warm
+  -- rather than the lazy compile-time warm, to exclude it from the measurement.)
+  cache <- fsCache <$> defaultDir
+  let
+    vestaSrs = V.vestaCrsCreate (1 `Bits.shl` 16)
+    pallasSrs = P.pallasCrsCreate (1 `Bits.shl` 15)
+  warmV <- warmer cache vestaOps vestaSrs
+  for_ [ 13, 14, 15, 16 ] warmV
+  warmP <- warmer cache pallasOps pallasSrs
+  for_ [ 13, 14, 15 ] warmP
   pure { vestaSrs, pallasSrs }
 
 -- | Per-call `mul_ freshZero freshZero` filler. Each ≈ ½ a kimchi row.

@@ -15,65 +15,56 @@ module Snarky.Example.Env where
 
 import Prelude
 
+import Data.Maybe (Maybe)
 import Data.Reflectable (class Reflectable)
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Mina.ChainId (ChainId)
+import Snarky.Backend.Kimchi.Impl.Pallas as P
+import Snarky.Backend.Kimchi.Impl.Vesta as V
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Example.Ledger (Ledger)
 import Snarky.Example.Ledger as Ledger
 import Snarky.Example.Log (Logger)
 import Snarky.Example.Log as Log
-import Snarky.Example.Srs.Cache (SrsCache, ensureSrs, pallasOps, vestaOps)
 import Snarky.Example.Transaction.Checked (CompiledTx, compileTxCircuit)
+import Snarky.Lagrange.Cache (LagrangeCache)
 
 type Config =
   { pallasSrs :: CRS PallasG
   , vestaSrs :: CRS VestaG
   , chainId :: ChainId
+  -- | Threaded to `compileTxCircuit` so compile warms exactly the domains the
+  -- | transaction circuit commits over — no guessed domain list.
+  , lagrangeCache :: Maybe LagrangeCache
   }
 
--- | Build the Pasta SRSes, pre-warming the lagrange-basis cache for
--- | exactly the domains this program commits over (measured by
--- | instrumenting the prover, not guessed):
--- |
--- |   * Vesta (step): 2^13 (base step) and 2^15 (merge step)
--- |   * Pallas (wrap): 2^14 (the `override_wrap_domain:N1`)
--- |
--- | These are circuit-determined, so stable across blocks. Warming a
--- | superset is merely wasted MSMs (the old code warmed Vesta 2^9..2^16
--- | + Pallas 2^12..2^15 — 12 domains for the 3 actually used); warming a
--- | subset just defers the missing basis to a one-time lazy generation
--- | at prove time (correct, slower). The Pallas SRS depth stays 2^15
--- | (the OCaml Tock URS convention) regardless of which bases are warmed.
--- The SRS sizes + the domains this program commits over, single-sourced.
+-- | The Pasta SRS depths (the only sizes this program uses). Single-sourced.
+-- | Vesta = 2^16 (OCaml Tick URS), Pallas = 2^15 (Tock URS).
 vestaSrsSize :: Int
 vestaSrsSize = 65536
-
-vestaDomains :: Array Int
-vestaDomains = [ 13, 15 ]
 
 pallasSrsSize :: Int
 pallasSrsSize = 32768
 
-pallasDomains :: Array Int
-pallasDomains = [ 14 ]
-
--- | Build the Pasta SRSes through the SRS cache manager: load the generators +
--- | each domain's Lagrange basis from `cache` if present (no FFT), else build and
--- | store them. Pass `nullCache` for the un-cached (always-FFT) path. The chain
--- | plays no part — the SRS depends only on curve/size/domains.
+-- | Build the Pasta SRS *generators* directly (a cheap, deterministic
+-- | hash-to-curve string) and carry `lagrangeCache` onto the `Config` for
+-- | compile — only the expensive Lagrange bases are cached, lazily at compile.
+-- | The chain plays no part. Pass `Nothing` for the un-cached path (bases
+-- | kimchi-lazy, not persisted).
 mkConfig
-  :: SrsCache
+  :: Maybe LagrangeCache
   -> ChainId
   -> Aff Config
-mkConfig cache chainId = do
-  vestaSrs <- ensureSrs cache vestaOps vestaSrsSize vestaDomains
-  pallasSrs <- ensureSrs cache pallasOps pallasSrsSize pallasDomains
-  pure { pallasSrs, vestaSrs, chainId }
+mkConfig lagrangeCache chainId = pure
+  { pallasSrs: P.pallasCrsCreate pallasSrsSize
+  , vestaSrs: V.vestaCrsCreate vestaSrsSize
+  , chainId
+  , lagrangeCache
+  }
 
 type Env d =
   { chainId :: ChainId
@@ -95,6 +86,6 @@ mkEnv
 mkEnv logger cfg = do
   ledger <- Ref.new $ Ledger.empty @d
   Log.logDebug logger "Compiling TxCircuit..."
-  compiledTx <- compileTxCircuit cfg.chainId { pallasSrs: cfg.pallasSrs, vestaSrs: cfg.vestaSrs }
+  compiledTx <- compileTxCircuit cfg.chainId cfg.lagrangeCache { pallasSrs: cfg.pallasSrs, vestaSrs: cfg.vestaSrs }
   Log.logDebug logger "Compiled TxCircuit"
   pure { ledger, compiledTx, chainId: cfg.chainId, logger, pallasSrs: cfg.pallasSrs, vestaSrs: cfg.vestaSrs }

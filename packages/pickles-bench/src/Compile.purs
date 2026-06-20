@@ -60,7 +60,7 @@ fullCompile srs = do
     @NoSlots
     @1
     noAdvice
-    { srs, debug: false, wrapDomainOverride: Nothing, proofCache: Nothing }
+    { srs, debug: false, wrapDomainOverride: Nothing, proofCache: Nothing, lagrangeCache: Nothing }
     (tuple1 nrrEntry)
   let
     nrrProverVKs =
@@ -80,7 +80,7 @@ fullCompile srs = do
     @(Slots2 0 2)
     @1
     noAdvice
-    { srs, debug: false, wrapDomainOverride: Just 14, proofCache: Nothing }
+    { srs, debug: false, wrapDomainOverride: Just 14, proofCache: Nothing, lagrangeCache: Nothing }
     (tuple1 treeEntry)
 
   -- Force the step constraint system so the compile is not deferred.

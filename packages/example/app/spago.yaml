@@ -57,6 +57,8 @@ workspace:
       path: ../../snarky-kimchi
     snarky-test-utils:
       path: ../../snarky-test-utils
+    lagrange-cache:
+      path: ../../lagrange-cache
     union-find:
       path: ../../union-find
     vector-sized:

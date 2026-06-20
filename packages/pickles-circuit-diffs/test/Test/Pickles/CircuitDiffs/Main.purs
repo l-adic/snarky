@@ -5,7 +5,6 @@ import Prelude
 import Control.Monad.Rec.Class (Step(..), tailRecM)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Int as Int
 import Data.Int.Bits as Bits
 import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
@@ -470,8 +469,8 @@ exactMatchEff name effPs =
 -- `KIMCHI_WITNESS_DUMP=<path>` captures only the app body's witness
 -- assignments. The OCaml side is
 -- `dump_app_circuit_chunks2_witness.exe`.
-runChunks2AppWitnessProve :: Effect Unit
-runChunks2AppWitnessProve = do
+runChunks2AppWitnessProve :: CRS VestaG -> Effect Unit
+runChunks2AppWitnessProve crs = do
   builtState <- compile @Fp noAdvice (Proxy @Unit) (Proxy @Unit)
     (Proxy @(KimchiConstraint Fp))
     chunks2AppCircuit
@@ -479,9 +478,8 @@ runChunks2AppWitnessProve = do
     kimchiRows = Array.concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
     -- max_poly_size = 2^16 (mirrors OCaml's default Tick.set_urs_info []).
     -- With our ~65538-row circuit the domain rounds up to 2^17,
-    -- triggering num_chunks = 2.
+    -- triggering num_chunks = 2. The 2^16 SRS is built once in `main`.
     maxPolySize = 1 `Bits.shl` 16
-    crs = vestaCrsCreate maxPolySize
   csResult <- makeConstraintSystemWithPrevChallenges @Fp
     { constraints: kimchiRows
     , publicInputs: builtState.publicInputs
@@ -519,14 +517,30 @@ runChunks2AppWitnessProve = do
 --------------------------------------------------------------------------------
 -- Test spec
 
+-- | The three distinct SRSes the circuit-diff fixtures read constants off
+-- | (Lagrange commitments + blinding generators), built directly and threaded
+-- | into `spec`. The kimchi URS is a cheap, deterministic hash-to-curve string;
+-- | the per-domain bases each read triggers are computed lazily by kimchi.
+type SrsBundle =
+  { vestaCrs16 :: CRS VestaG
+  , pallasCrs16 :: CRS PallasG
+  , pallasCrs15 :: CRS PallasG
+  }
+
 main :: Effect Unit
-main =
+main = do
+  let
+    bundle =
+      { vestaCrs16: vestaCrsCreate (1 `Bits.shl` 16)
+      , pallasCrs16: pallasCrsCreate (1 `Bits.shl` 16)
+      , pallasCrs15: pallasCrsCreate (1 `Bits.shl` 15)
+      }
   runSpecAndExitProcess' { defaultConfig: Cfg.defaultConfig, parseCLIOptions: true }
     [ consoleReporter ]
-    spec
+    (spec bundle)
 
-spec :: SpecT Aff Unit Aff Unit
-spec =
+spec :: SrsBundle -> SpecT Aff Unit Aff Unit
+spec bundle =
   beforeAll_ (liftEffect resetOutputDirs) $
     describe "Circuit comparison" do
       describe "Field arithmetic" do
@@ -571,7 +585,7 @@ spec =
         it "app_circuit_chunks2 witness" do
           liftEffect (Process.lookupEnv "KIMCHI_WITNESS_DUMP") >>= case _ of
             Nothing -> pure unit
-            Just _ -> liftEffect runChunks2AppWitnessProve
+            Just _ -> liftEffect (runChunks2AppWitnessProve bundle.vestaCrs16)
       describe "Schnorr signature" do
         -- Iteration 1 fixture: zero-seed sponge (matches PS
         -- `Snarky.Circuit.RandomOracle.Sponge` initial state). 5 public
@@ -596,7 +610,7 @@ spec =
         exactMatchEff "bullet_reduce_step_circuit" (fromCompiledCircuit =<< compileBulletReduceStep)
         exactMatchEff "ftcomm_step_circuit" (fromCompiledCircuit =<< compileFtcommStep)
         let
-          stepSrs = pallasCrsCreate (2 `Int.pow` 16)
+          stepSrs = bundle.pallasCrs16
           stepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepSrs 16 i)) :: AffinePoint (F Fp))
@@ -612,7 +626,7 @@ spec =
         exactMatchEff "ftcomm_wrap_circuit" (fromCompiledCircuit =<< compileFtcomm)
         exactMatchEff "combine_poly_wrap_circuit" (fromCompiledCircuit =<< compileCombinePoly)
         let
-          srs = vestaCrsCreate (2 `Int.pow` 16)
+          srs = bundle.vestaCrs16
           wrapSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
                 Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt srs 16 i))
@@ -621,7 +635,7 @@ spec =
         exactMatchEff "xhat_wrap_circuit" (fromCompiledCircuit =<< compileXhat wrapSrsData)
       describe "IVP" do
         let
-          wrapSrs = vestaCrsCreate (2 `Int.pow` 16)
+          wrapSrs = bundle.vestaCrs16
           wrapSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
                 Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 16 i))
@@ -646,7 +660,7 @@ spec =
           -- N=1 step CS commits over the Vesta SRS at log2=14. The
           -- step shape is the same one `step_main_simple_chain_circuit`
           -- already byte-matches.
-          wrapMainN1StepSrs = pallasCrsCreate (2 `Int.pow` 15)
+          wrapMainN1StepSrs = bundle.pallasCrs15
           wrapMainN1StepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 14 i)) :: AffinePoint (F Fp))
@@ -697,7 +711,7 @@ spec =
                 Vector.singleton (coerce (pallasSrsLagrangeCommitmentAt wrapSrs 15 i))
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
-          wrapMainN2StepSrs = pallasCrsCreate (2 `Int.pow` 15)
+          wrapMainN2StepSrs = bundle.pallasCrs15
           wrapMainN2StepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt wrapMainN2StepSrs 14 i)) :: AffinePoint (F Fp))
@@ -727,7 +741,7 @@ spec =
           -- Lagrange lookup is unused at mpv=0 (perSlotLagrangeAt is
           -- Vector.nil). blindingH and SRS size match the Vesta CRS
           -- used by createCRS in deriveStepVKFromCompiled.
-          aorStepSrs = pallasCrsCreate (2 `Int.pow` 15)
+          aorStepSrs = bundle.pallasCrs15
           aorStepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt aorStepSrs 14 i)) :: AffinePoint (F Fp))
@@ -768,7 +782,7 @@ spec =
           -- Per-slot lagrange domains: slot 0 (NRR) at 2^13, slot 1
           -- (self) at 2^14 (override_wrap_domain:N1). Same shape used
           -- by `step_main_tree_proof_return_circuit`'s direct test.
-          tprStepSrs = pallasCrsCreate (2 `Int.pow` 15)
+          tprStepSrs = bundle.pallasCrs15
           tprLagrangeAtD13 = mkConstLagrangeBaseLookup \i ->
             Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 13 i)) :: AffinePoint (F Fp))
           tprLagrangeAtD14 = mkConstLagrangeBaseLookup \i ->
@@ -806,7 +820,7 @@ spec =
         -- Step VKs are derived per-branch (mirrors the deterministic
         -- VK fix family — wrap_main_circuit, wrap_main_tree_proof_return).
         let
-          tpcStepSrs = pallasCrsCreate (2 `Int.pow` 15)
+          tpcStepSrs = bundle.pallasCrs15
           tpcMakeZeroSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt tpcStepSrs 14 i)) :: AffinePoint (F Fp))
@@ -828,7 +842,7 @@ spec =
           (fromCompiledCircuit <<< _.wrapCs =<< compileWrapMainTwoPhaseChain wrapMainTpcParams)
         let
           -- OCaml uses SRS.Fq.create (1 lsl 15) and domain Pow_2_roots_of_unity 15
-          stepSrs = pallasCrsCreate (2 `Int.pow` 15)
+          stepSrs = bundle.pallasCrs15
           stepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepSrs 15 i)) :: AffinePoint (F Fp))
@@ -838,7 +852,7 @@ spec =
       describe "Step verify" do
         let
           -- Same SRS as IVP step: OCaml uses SRS.Fq.create (1 lsl 15) and domain 15
-          stepVerifySrs = pallasCrsCreate (2 `Int.pow` 15)
+          stepVerifySrs = bundle.pallasCrs15
           stepVerifySrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepVerifySrs 15 i)) :: AffinePoint (F Fp))
@@ -854,7 +868,7 @@ spec =
         exactMatchEff "step_verify_n2_circuit" (fromCompiledCircuit =<< compileStepVerifyN2 stepVerifyN2SrsData)
       describe "Full step verify_one" do
         let
-          fullStepSrs = pallasCrsCreate (2 `Int.pow` 15)
+          fullStepSrs = bundle.pallasCrs15
           fullStepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt fullStepSrs 14 i)) :: AffinePoint (F Fp))
@@ -873,7 +887,7 @@ spec =
       describe "Step main" do
         let
           -- OCaml uses SRS.Fq.create (1 lsl 15), wrap domain Pow_2_roots_of_unity 14
-          stepMainSrs = pallasCrsCreate (2 `Int.pow` 15)
+          stepMainSrs = bundle.pallasCrs15
           stepMainSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
                 Vector.singleton ((coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp))
@@ -929,7 +943,7 @@ spec =
           -- 28-copies-of-Pallas-generator placeholder). Mirrors
           -- `wrapMainAddOneReturnSrsData` (NRR is N=0 leaf rule, same
           -- wrap config as AOR — IVP MSM lookup at step domain log2 9).
-          tprNrrWrapSrs = vestaCrsCreate (2 `Int.pow` 16)
+          tprNrrWrapSrs = bundle.vestaCrs16
 
           tprNrrWrapSrsData :: IvpWrapParams
           tprNrrWrapSrsData =

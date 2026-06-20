@@ -34,6 +34,7 @@ package:
     - snarky
     - snarky-curves
     - snarky-kimchi
+    - lagrange-cache
     - strings
     - tuples
     - unsafe-coerce
@@ -52,4 +53,5 @@ package:
       - prelude
       - spec
       - spec-node
+      - lagrange-cache
       - tailrec

@@ -106,7 +106,7 @@ type TreeRules =
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.TreeProofReturn" do
-  it "5-iteration heterogeneous chain (b0..b4): NRR external slot + self-recursive slot, end-to-end verify" \{ pallasSrs, vestaSrs } -> do
+  it "5-iteration heterogeneous chain (b0..b4): NRR external slot + self-recursive slot, end-to-end verify" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/TreeProofReturn.json")
 
     -- ===== NRR side: 1-rule compileMulti at mpvMax=0. =====
@@ -126,6 +126,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       , debug: false
       , wrapDomainOverride: Nothing
       , proofCache: cache
+      , lagrangeCache: Just lagrangeCache
       }
       nrrRules
 
@@ -169,6 +170,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       , debug: false
       , wrapDomainOverride: Just 14
       , proofCache: cache
+      , lagrangeCache: Just lagrangeCache
       }
       treeRules
 

@@ -137,7 +137,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
   --     shared verifier — relies on per-proof `stepDomainLog2` so each
   --     proof's deferred-values reconstruction uses its own branch's
   --     step domain (b0=9, b1..b3=14).
-  it "b0..b3 chain prove + verify under shared wrap VK" \{ pallasSrs, vestaSrs } -> do
+  it "b0..b3 chain prove + verify under shared wrap VK" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/TwoPhaseChain.json")
 
     let
@@ -146,6 +146,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
         , debug: false
         , wrapDomainOverride: Nothing
         , proofCache: cache
+        , lagrangeCache: Just lagrangeCache
         }
 
     makeZeroEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) @1 @1 makeZeroRule unit

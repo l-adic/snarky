@@ -39,6 +39,8 @@ workspace:
       path: ../snarky-kimchi
     snarky-test-utils:
       path: ../snarky-test-utils
+    lagrange-cache:
+      path: ../lagrange-cache
     union-find:
       path: ../union-find
     vector-sized:
@@ -49,14 +51,21 @@ package:
     - aff
     - arrays
     - benchlib
+    - console
     - curves
     - effect
+    - either
+    - exceptions
     - foldable-traversable
+    - integers
+    - lagrange-cache
     - maybe
+    - newtype
+    - numbers
     - optparse
     - pickles
     - prelude
-    - run
+    - refs
     - snarky
     - snarky-kimchi
     - tailrec

@@ -48,7 +48,7 @@ prepareProve srs = do
     @NoSlots
     @1
     noAdvice
-    { srs, debug: false, wrapDomainOverride: Nothing, proofCache: Nothing }
+    { srs, debug: false, wrapDomainOverride: Nothing, proofCache: Nothing, lagrangeCache: Nothing }
     (tuple1 nrrEntry)
   let
     nrrProverVKs =
@@ -68,7 +68,7 @@ prepareProve srs = do
     @(Slots2 0 2)
     @1
     noAdvice
-    { srs, debug: false, wrapDomainOverride: Just 14, proofCache: Nothing }
+    { srs, debug: false, wrapDomainOverride: Just 14, proofCache: Nothing, lagrangeCache: Nothing }
     (tuple1 treeEntry)
 
   let

@@ -15,6 +15,7 @@ module Snarky.Example.Prover
 import Prelude
 
 import Data.Either (Either(..))
+import Data.Maybe (Maybe)
 import Data.Newtype (un)
 import Data.Reflectable (class Reflectable, reifyType)
 import Effect (Effect)
@@ -29,7 +30,7 @@ import Snarky.Example.Log as Log
 import Snarky.Example.P2P.Types (Payload(..))
 import Snarky.Example.Snark.Work (WorkItem, decodeWorkItem)
 import Snarky.Example.Snark.Worker (proveItem)
-import Snarky.Example.Srs.Cache (SrsCache)
+import Snarky.Lagrange.Cache (LagrangeCache)
 import Type.Proxy (Proxy)
 
 -- | Build the SRS + compile the circuit for the given chain + depth, returning
@@ -37,13 +38,13 @@ import Type.Proxy (Proxy)
 -- | The closure captures the compiled program + the SRS, so the (expensive)
 -- | setup happens once. The `Logger` carries the SRS-build / circuit-compile
 -- | progress to the worker (`mkEnv` logs the compile through it too).
-buildProver :: SrsCache -> Logger -> { chain :: String, depth :: Int } -> Aff (Payload -> Effect Payload)
-buildProver cache logger { chain, depth } = reifyType depth (buildProverAt cache logger chain)
+buildProver :: Maybe LagrangeCache -> Logger -> { chain :: String, depth :: Int } -> Aff (Payload -> Effect Payload)
+buildProver lagrangeCache logger { chain, depth } = reifyType depth (buildProverAt lagrangeCache logger chain)
 
-buildProverAt :: forall d. Reflectable d Int => SrsCache -> Logger -> String -> Proxy d -> Aff (Payload -> Effect Payload)
-buildProverAt cache logger chain _ = do
+buildProverAt :: forall d. Reflectable d Int => Maybe LagrangeCache -> Logger -> String -> Proxy d -> Aff (Payload -> Effect Payload)
+buildProverAt lagrangeCache logger chain _ = do
   Log.logInfo logger "building SRS…"
-  config <- mkConfig cache (chainIdFromTag chain)
+  config <- mkConfig lagrangeCache (chainIdFromTag chain)
   Log.logInfo logger "SRS ready — compiling the transaction circuit…"
   env <- liftEffect $ mkEnv @d logger config
   Log.logInfo logger "circuit compiled"

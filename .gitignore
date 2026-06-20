@@ -51,7 +51,9 @@ Thumbs.db
 # Purescript Spec
 .spec-results
 
-srs-cache/
+# The on-disk SRS cache output dir (the `srs-cache` PACKAGE source lives under
+# packages/ and must stay tracked — so anchor this to the repo root only).
+/srs-cache/
 
 # Crypto provider symlink (removed - now using real crate)
 

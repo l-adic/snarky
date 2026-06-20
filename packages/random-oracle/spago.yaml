@@ -6,13 +6,14 @@ package:
     - enums
     - foldable-traversable
     - integers
+    - js-bigints
     - maybe
     - newtype
     - partial
     - poseidon
     - prelude
-    - js-bigints
     - safe-coerce
+    - simple-json
     - snarky
     - snarky-kimchi
     - tuples

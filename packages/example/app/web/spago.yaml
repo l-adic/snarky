@@ -13,19 +13,22 @@ package:
   dependencies:
     - aff
     - aff-promise
-    - arraybuffer-types
     - arrays
     - avar
+    - bifunctors
     - colog
     - datetime
     - effect
     - either
     - example
     - exceptions
+    - foldable-traversable
     - foreign
     - formatters
     - integers
+    - lagrange-cache
     - maybe
+    - newtype
     - nullable
     - ordered-collections
     - pickles
@@ -33,9 +36,8 @@ package:
     - react-basic
     - react-basic-dom
     - react-basic-hooks
-    - refs
     - routing
-    - simple-json
+    - schnorr
     - strings
     - tuples
     - web-dom

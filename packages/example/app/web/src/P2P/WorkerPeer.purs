@@ -11,6 +11,7 @@ module Snarky.Example.P2P.WorkerPeer
 
 import Prelude
 
+import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
 import Data.Reflectable (reflectType)
 import Effect (Effect)
@@ -24,7 +25,7 @@ import Snarky.Example.P2P.Types (Payload(..))
 import Snarky.Example.Prover (buildProver)
 import Snarky.Example.Snark.JobSummary as JobSummary
 import Snarky.Example.Web.Engine (Depth)
-import Snarky.Example.Web.SrsCache (idbSrsCache)
+import Snarky.Example.Web.SrsCache (idbLagrangeCache)
 import Type.Proxy (Proxy(..))
 
 -- | What the worker reports to its own UI: a colog `Logger` for the log stream
@@ -41,8 +42,8 @@ type WorkerPeerEvents =
 runWorkerPeer :: ChainId -> Transport -> WorkerPeerEvents -> Effect Unit
 runWorkerPeer chainId transport { logger, onPhase } = launchAff_ do
   liftEffect $ onPhase Compiling
-  cache <- idbSrsCache logger
-  prove <- buildProver cache logger { chain: show chainId, depth: reflectType (Proxy :: Proxy Depth) }
+  lagrangeCache <- idbLagrangeCache logger
+  prove <- buildProver (Just lagrangeCache) logger { chain: show chainId, depth: reflectType (Proxy :: Proxy Depth) }
   liftEffect $ runStarPeer
     { transport
     , logger

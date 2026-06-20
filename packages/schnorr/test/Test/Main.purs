@@ -2,7 +2,9 @@ module Test.Schnorr.Main where
 
 import Prelude
 
+import Data.Int as Int
 import Effect (Effect)
+import Snarky.Backend.Kimchi.Impl.Vesta as V
 import Snarky.Constraint.Kimchi (KimchiGate, eval)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState)
@@ -27,9 +29,13 @@ kimchiTestConfig =
   }
 
 main :: Effect Unit
-main = runSpecAndExitProcess [ consoleReporter ] do
-  DataSchnorr.spec
-  DataSchnorrDerive.spec
-  DataSchnorrVerifyFixtures.spec
-  CircuitSchnorr.spec kimchiTestConfig
-  CircuitSchnorrVerify.spec
+main = do
+  -- The verifier's input-independent SRS, built once (cheap, deterministic) and
+  -- threaded into the fixture spec; the verify computes its Lagrange basis lazily.
+  let verifySrs = V.vestaCrsCreate (Int.pow 2 16)
+  runSpecAndExitProcess [ consoleReporter ] do
+    DataSchnorr.spec
+    DataSchnorrDerive.spec
+    DataSchnorrVerifyFixtures.spec
+    CircuitSchnorr.spec kimchiTestConfig
+    CircuitSchnorrVerify.spec verifySrs
