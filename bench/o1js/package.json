@@ -1,0 +1,19 @@
+{
+  "name": "o1js-bench",
+  "private": true,
+  "version": "0.1.0",
+  "description": "o1js side of the apples-to-apples bench: same workload as packages/pickles-bench, driven through the shared `bench-harness` runner.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "rows": "node dist/rows.js"
+  },
+  "dependencies": {
+    "bench-harness": "file:../harness",
+    "o1js": "2.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}
