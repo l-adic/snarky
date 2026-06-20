@@ -63,6 +63,11 @@ jobs:
       matrix:
         os: [ubuntu-latest-large]
     runs-on: ${{ matrix.os }}
+    # Point the on-disk Lagrange-basis cache at a repo-root dir that actions/cache
+    # persists across runs (below). Absolute so spawned worker threads write the
+    # same dir regardless of cwd.
+    env:
+      SNARK_LAGRANGE_CACHE_DIR: ${{ github.workspace }}/lagrange-cache
     steps:
     - uses: actions/checkout@v4
       with:
@@ -93,6 +98,20 @@ jobs:
       with:
         path: srs-cache/
         key: ${{ runner.os }}-srs-${{ hashFiles('mina/src/lib/crypto/proof-systems/srs/*.srs') }}
+
+    # The Lagrange bases (the expensive FFTs) are deterministic — the same every
+    # run — so a STATIC key suffices: populate once, inject thereafter. No need
+    # to encode the crypto version in the key, because the cache is already
+    # self-validating: each filename carries an SRS fingerprint (blake2b of the
+    # generators), so if the crypto ever changes the bytes the fingerprint
+    # changes too and old entries simply miss — never served wrong. Keyed
+    # per-job (github.job) since test-libs and test-example warm different domain
+    # sets and would otherwise fight over one key.
+    - name: Cache Lagrange bases
+      uses: actions/cache@v3
+      with:
+        path: lagrange-cache/
+        key: ${{ runner.os }}-lagrange-${{ github.job }}
 
     - name: Install dependencies
       run: npm install
@@ -111,6 +130,11 @@ jobs:
       matrix:
         os: [ubuntu-latest-large]
     runs-on: ${{ matrix.os }}
+    # Point the on-disk Lagrange-basis cache at a repo-root dir that actions/cache
+    # persists across runs (below). Absolute so spawned worker threads write the
+    # same dir regardless of cwd.
+    env:
+      SNARK_LAGRANGE_CACHE_DIR: ${{ github.workspace }}/lagrange-cache
     steps:
     - uses: actions/checkout@v4
       with:
@@ -141,6 +165,15 @@ jobs:
       with:
         path: srs-cache/
         key: ${{ runner.os }}-srs-${{ hashFiles('mina/src/lib/crypto/proof-systems/srs/*.srs') }}
+
+    # See test-libs: deterministic bases, static per-job key; the fingerprinted
+    # filenames make it self-validating. Written here by the `run_simulation`
+    # terminal worker (fsLagrangeCache); persisted across runs.
+    - name: Cache Lagrange bases
+      uses: actions/cache@v3
+      with:
+        path: lagrange-cache/
+        key: ${{ runner.os }}-lagrange-${{ github.job }}
 
     - name: Install dependencies
       run: npm install
