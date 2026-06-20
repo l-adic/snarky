@@ -24,23 +24,25 @@ spec = describe "Snarky.Lagrange.Cache (memoryCache + SRS fingerprint)" do
       size = 8192
       domain = 11
       crs = V.vestaCrsCreate size
-    fftCount <- liftEffect (Ref.new 0)
-    cache <- liftEffect memoryCache
-    -- Count the FFT (`addBasis`) by wrapping the real ops.
-    let ops = vestaOps { addBasis = \c d -> Ref.modify_ (_ + 1) fftCount *> vestaOps.addBasis c d }
-    srsHash <- liftEffect $ fingerprint ops crs
+      crs2 = V.vestaCrsCreate size
+    { cold, warm, stored, srsHash, hash2 } <- liftEffect do
+      fftCount <- Ref.new 0
+      cache <- memoryCache
+      -- Count the FFT (`addBasis`) by wrapping the real ops.
+      let ops = vestaOps { addBasis = \c d -> Ref.modify_ (_ + 1) fftCount *> vestaOps.addBasis c d }
 
-    -- Cold: one FFT; the basis lands under (vesta, fingerprint, domain).
-    liftEffect $ ensureBasis cache ops crs srsHash domain
-    cold <- liftEffect (Ref.read fftCount)
-    stored <- liftEffect $ cache.get { curve: "vesta", srsHash, log2: domain }
+      -- Cold: one FFT; the basis lands under (vesta, fingerprint, domain).
+      srsHash <- fingerprint ops crs
+      ensureBasis cache ops crs srsHash domain
+      cold <- Ref.read fftCount
+      stored <- cache.get { curve: "vesta", srsHash, log2: domain }
 
-    -- A FRESH SRS instance of the same size is the deterministic Pasta URS, so it
-    -- has the SAME fingerprint → the cached basis is injected, no FFT.
-    let crs2 = V.vestaCrsCreate size
-    hash2 <- liftEffect $ fingerprint ops crs2
-    liftEffect $ ensureBasis cache ops crs2 hash2 domain
-    warm <- liftEffect (Ref.read fftCount)
+      -- A FRESH SRS instance of the same size is the deterministic Pasta URS, so
+      -- it has the SAME fingerprint → the cached basis is injected, no FFT.
+      hash2 <- fingerprint ops crs2
+      ensureBasis cache ops crs2 hash2 domain
+      warm <- Ref.read fftCount
+      pure { cold, warm, stored, srsHash, hash2 }
 
     cold `shouldEqual` 1
     warm `shouldEqual` 1

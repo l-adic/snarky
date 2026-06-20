@@ -33,6 +33,7 @@ module Snarky.Lagrange.Cache
 import Prelude
 
 import Data.ArrayBuffer.Types (Uint8Array)
+import Data.Blake2b (blake2bHex)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
@@ -118,13 +119,11 @@ pallasOps =
   , setBasisFromBytes: P.pallasSrsSetLagrangeBasisFromBytes
   }
 
--- | A 128-bit blake2b digest of `bytes`, hex. Synchronous (blakejs) so it runs
--- | inside the compile-time warm, and browser-safe (unlike `crypto.subtle`).
-foreign import srsFingerprint :: Uint8Array -> String
-
--- | Fingerprint an SRS by hashing its serialized generators.
+-- | Fingerprint an SRS by hashing its serialized generators: a 128-bit blake2b
+-- | digest, hex. Synchronous (blakejs, via `Data.Blake2b`) so it runs inside the
+-- | compile-time warm, and browser-safe (unlike `crypto.subtle`).
 fingerprint :: forall g. CurveOps g -> CRS g -> Effect String
-fingerprint ops crs = srsFingerprint <$> ops.srsToBytes crs
+fingerprint ops crs = blake2bHex 16 <$> ops.srsToBytes crs
 
 -- | Ensure `crs` holds the Lagrange basis for domain `2^log2`, keyed by the SRS
 -- | fingerprint `srsHash`: inject from the cache (no FFT), or run the FFT

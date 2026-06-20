@@ -4,7 +4,9 @@
       "blake2": {
         "path": "packages/blake2",
         "core": {
-          "dependencies": []
+          "dependencies": [
+            "arraybuffer-types"
+          ]
         },
         "test": {
           "dependencies": []
@@ -110,6 +112,7 @@
             "arraybuffer",
             "arraybuffer-types",
             "arrays",
+            "blake2",
             "curves",
             "effect",
             "maybe",
@@ -132,6 +135,9 @@
             "datetime",
             "effect",
             "maybe",
+            "node-fs",
+            "node-os",
+            "node-path",
             "ordered-collections",
             "refs",
             "spec",

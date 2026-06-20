@@ -36,15 +36,21 @@ spec = describe "Snarky.Lagrange.Cache.Hydrated (hydrate/flush)" do
       , putAsync: \k v -> liftEffect (Ref.modify_ (Map.insert k v) durable)
       }
 
-    h0 <- liftEffect $ cache.get k1
+    -- A hydrated key serves synchronously; an absent one misses.
+    { h0, m0 } <- liftEffect do
+      h0 <- cache.get k1
+      m0 <- cache.get k2
+      pure { h0, m0 }
     isJust h0 `shouldEqual` true
-    m0 <- liftEffect $ cache.get k2
     isNothing m0 `shouldEqual` true
 
-    liftEffect $ cache.put k2 (mkBytes 8)
-    g1 <- liftEffect $ cache.get k2
+    -- `put` is immediately visible to a synchronous `get`.
+    g1 <- liftEffect do
+      cache.put k2 (mkBytes 8)
+      cache.get k2
     isJust g1 `shouldEqual` true
 
+    -- ...and the fire-and-forget write reaches the durable store.
     delay (Milliseconds 20.0)
     persisted <- liftEffect $ Map.member (keyString k2) <$> Ref.read durable
     persisted `shouldEqual` true

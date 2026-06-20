@@ -1,3 +1,4 @@
 package:
   name: blake2
-  dependencies: []
+  dependencies:
+    - arraybuffer-types

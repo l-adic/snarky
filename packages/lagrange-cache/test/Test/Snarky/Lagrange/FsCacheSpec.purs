@@ -8,23 +8,22 @@ module Test.Snarky.Lagrange.FsCacheSpec
 
 import Prelude
 
-import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Ref as Ref
+import Node.FS.Sync (mkdtemp)
+import Node.OS (tmpdir)
+import Node.Path (concat)
 import Snarky.Backend.Kimchi.Impl.Vesta as V
 import Snarky.Lagrange.Cache (ensureBasis, fingerprint, vestaOps)
 import Snarky.Lagrange.Cache.FS (fsCache)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
--- | A fresh empty temp directory (node `fs.mkdtempSync`).
-foreign import mkTmpDir :: Effect String
-
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Snarky.Lagrange.Cache.FS (filesystem)" do
   it "persists a basis to disk; a fresh handle reloads it with no re-FFT" do
-    dir <- liftEffect mkTmpDir
+    dir <- liftEffect $ mkdtemp =<< (tmpdir <#> \t -> concat [ t, "lagrange-fscache-" ])
     let
       size = 8192
       domain = 11

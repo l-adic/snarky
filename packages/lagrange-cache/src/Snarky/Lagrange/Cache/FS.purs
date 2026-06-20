@@ -40,7 +40,7 @@ fsCache :: FilePath -> LagrangeCache
 fsCache dir =
   { get: \k ->
       let
-        path = entryPath dir k
+        path = entryPath k
       in
         exists path >>= case _ of
           false -> pure Nothing
@@ -48,29 +48,29 @@ fsCache dir =
   , put: \k bytes -> do
       mkdir' dir { recursive: true, mode: dirPerms }
       buf <- toBuffer bytes
-      tmp <- tempPath dir k
+      tmp <- tempPath k
       writeFile tmp buf
-      rename tmp (entryPath dir k)
+      rename tmp (entryPath k)
   }
+  where
+  entryPath :: BasisKey -> FilePath
+  entryPath k = concat [ dir, keyString k ]
 
-entryPath :: FilePath -> BasisKey -> FilePath
-entryPath dir k = concat [ dir, keyString k ]
+  -- A unique sibling temp path for an atomic write (random suffix: worker
+  -- threads share a pid, so a pid/counter would collide between concurrent cold
+  -- builds of the same entry; randomness doesn't).
+  tempPath :: BasisKey -> Effect FilePath
+  tempPath k = do
+    n <- randomInt 0 0x7fffffff
+    pure (concat [ dir, "." <> keyString k <> "." <> show n <> ".tmp" ])
 
--- | A unique sibling temp path for an atomic write (random suffix: worker
--- | threads share a pid, so a pid/counter would collide between concurrent cold
--- | builds of the same entry; randomness doesn't).
-tempPath :: FilePath -> BasisKey -> Effect FilePath
-tempPath dir k = do
-  n <- randomInt 0 0x7fffffff
-  pure (concat [ dir, "." <> keyString k <> "." <> show n <> ".tmp" ])
+  dirPerms :: Perms
+  dirPerms = mkPerms all all all
 
-dirPerms :: Perms
-dirPerms = mkPerms all all all
+  -- The kimchi bindings speak `Uint8Array`; node-fs speaks `Buffer`. Same
+  -- runtime representation, bridged through the typed-array view.
+  toBuffer :: Uint8Array -> Effect Buffer
+  toBuffer = Buffer.fromArrayBuffer <<< Typed.buffer
 
--- | The kimchi bindings speak `Uint8Array`; node-fs speaks `Buffer`. Same
--- | runtime representation, bridged through the typed-array view.
-toBuffer :: Uint8Array -> Effect Buffer
-toBuffer = Buffer.fromArrayBuffer <<< Typed.buffer
-
-fromBuffer :: Buffer -> Effect Uint8Array
-fromBuffer buf = Buffer.toArrayBuffer buf >>= Typed.whole
+  fromBuffer :: Buffer -> Effect Uint8Array
+  fromBuffer buf = Buffer.toArrayBuffer buf >>= Typed.whole
