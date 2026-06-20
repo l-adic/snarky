@@ -2,8 +2,6 @@ package:
   name: example
   dependencies:
     - aff
-    - aff-promise
-    - arraybuffer-types
     - arrays
     - avar
     - colog
@@ -14,12 +12,13 @@ package:
     - exceptions
     - fmt
     - foldable-traversable
+    - foreign
     - gen
     - js-bigints
+    - lagrange-cache
     - maybe
     - merkle-tree
     - newtype
-    - nullable
     - ordered-collections
     - parallel
     - partial
@@ -31,9 +30,11 @@ package:
     - run
     - safe-coerce
     - schnorr
+    - simple-json
     - snarky
     - snarky-curves
     - snarky-kimchi
+    - strings
     - tailrec
     - tuples
     - typelevel-prelude
@@ -44,6 +45,7 @@ package:
     dependencies:
       - aff
       - arrays
+      - bifunctors
       - console
       - effect
       - exceptions

@@ -18,6 +18,7 @@ package:
     - quickcheck
     - random-oracle
     - safe-coerce
+    - simple-json
     - snarky
     - snarky-curves
     - snarky-kimchi

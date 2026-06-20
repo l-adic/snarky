@@ -34,7 +34,7 @@ import Test.Spec.Assertions (shouldEqual)
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.Codecs" do
   it "serialize -> deserialize -> verify a pickles wrap proof + verifier"
-    \{ pallasSrs, vestaSrs } -> do
+    \{ pallasSrs, vestaSrs, lagrangeCache } -> do
       cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR"
         <#> map \dir -> mkProofCache (dir <> "/Codecs.json")
 
@@ -53,6 +53,7 @@ spec = describe "Pickles.Prove.Codecs" do
         , debug: false
         , wrapDomainOverride: Nothing
         , proofCache: cache
+        , lagrangeCache: Just lagrangeCache
         }
         rules
 

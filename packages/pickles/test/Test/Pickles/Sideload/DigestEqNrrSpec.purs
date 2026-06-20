@@ -36,7 +36,7 @@ spec = describe "Pickles.Sideload.NRR VK equality" do
   it "PS compileMulti VK == OCaml compile VK (full-JSON key)" body
   where
   body :: SharedSrs -> LoggerT Message Aff Unit
-  body { pallasSrs, vestaSrs } = do
+  body { pallasSrs, vestaSrs, lagrangeCache } = do
     -- PureScript-side compile: produce the wrap VK for NRR.
     nrrEntry :: RuleEntry _ _ _ _ _ Unit _ _ _ _ _ _ <-
       liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
@@ -52,6 +52,7 @@ spec = describe "Pickles.Sideload.NRR VK equality" do
       , debug: false
       , wrapDomainOverride: Nothing
       , proofCache: Nothing
+      , lagrangeCache: Just lagrangeCache
       }
       rules
 

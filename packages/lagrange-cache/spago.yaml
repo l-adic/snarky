@@ -1,0 +1,37 @@
+package:
+  name: lagrange-cache
+  dependencies:
+    - aff
+    - aff-promise
+    - arraybuffer
+    - arraybuffer-types
+    - arrays
+    - blake2
+    - curves
+    - effect
+    - maybe
+    - node-buffer
+    - node-fs
+    - node-os
+    - node-path
+    - node-process
+    - ordered-collections
+    - prelude
+    - random
+    - refs
+    - snarky-kimchi
+  test:
+    main: Test.Snarky.Lagrange.Main
+    dependencies:
+      - aff
+      - arraybuffer-types
+      - datetime
+      - effect
+      - maybe
+      - node-fs
+      - node-os
+      - node-path
+      - ordered-collections
+      - refs
+      - spec
+      - spec-node

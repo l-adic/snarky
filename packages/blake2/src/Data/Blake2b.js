@@ -21,6 +21,10 @@ const blake2b256Bytes = (str) => {
 
 export const blake2b256 = blake2b256Bytes;
 
+// BLAKE2b of raw bytes -> hex string, `outlen`-byte digest (init-time
+// parameterized, as for blake2b256).
+export const blake2bHex = (outlen) => (bytes) => blakejs.blake2bHex(bytes, undefined, outlen);
+
 export const blake2b256Bits = (str) => {
   const bytes = blake2b256Bytes(str);
   const bits = [];

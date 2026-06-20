@@ -6,14 +6,12 @@ import Prelude
 
 import Data.Either (Either(..))
 import Data.Foldable (for_)
-import Data.Int as Int
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Simple.JSON (readJSON)
-import Snarky.Backend.Kimchi.Impl.Vesta (vestaCrsCreate)
 import Snarky.Backend.Kimchi.Proof (pallasProofFromSerdeJson, pallasVerifierIndexFromSerdeJson, verifyOpeningProof)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Curves.Class (fromHexLe)
@@ -58,10 +56,11 @@ verifyAt crs dir = do
     proof = pallasProofFromSerdeJson proofJson
   verifyOpeningProof verifierIndex { proof, publicInput } `shouldEqual` true
 
-spec :: Spec Unit
-spec = describe "Snarky.Circuit.Schnorr.Verify (kimchi-only fixtures)" do
-  -- One SRS shared across all fixtures (input-independent).
-  let crs = vestaCrsCreate (Int.pow 2 16)
+-- | The shared input-independent SRS is built once in `Test.Schnorr.Main`
+-- | through the on-disk cache (the same vesta-2^16 generators every other suite
+-- | uses) and threaded in here.
+spec :: CRS VestaG -> Spec Unit
+spec crs = describe "Snarky.Circuit.Schnorr.Verify (kimchi-only fixtures)" do
   for_ fixtureDirs \dir ->
     it ("verifies the OCaml-emitted Schnorr signature proof: " <> dir)
       (verifyAt crs dir)

@@ -6,7 +6,7 @@
 //
 // Like run.mjs this resolves `../output-es/` relative to its own location
 // (packages/example/app/), so the simulation build (purs-backend-es) must have
-// run first. node_modules / srs-cache resolve from the worker's cwd (the repo
-// root, inherited from the spawning process).
+// run first. node_modules resolves from the worker's cwd (the repo root,
+// inherited from the spawning process).
 import { main } from "../output-es/Snarky.Example.Terminal.SnarkWorker/index.js";
 main();

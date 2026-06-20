@@ -54,7 +54,7 @@ type NrrRules =
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.NoRecursionReturn" do
-  it "compileMulti + prover.step end-to-end verify returns true" \{ pallasSrs, vestaSrs } -> do
+  it "compileMulti + prover.step end-to-end verify returns true" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/NoRecursionReturn.json")
 
     -- Build the 1-tuple rules carrier for compileMulti. mpvMax = 0
@@ -76,6 +76,7 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
       , debug: false
       , wrapDomainOverride: Nothing
       , proofCache: cache
+      , lagrangeCache: Just lagrangeCache
       }
       rules
 

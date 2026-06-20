@@ -128,7 +128,7 @@ sideLoadedMainRule getPrevStates self = do
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.SideLoadedMain" do
-  it "parent prove with InductivePrev (PS-compiled child, width-lifted to N2)" \{ pallasSrs, vestaSrs } -> do
+  it "parent prove with InductivePrev (PS-compiled child, width-lifted to N2)" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/SideLoadedMain.json")
 
     -- Compile the Input-mode No_recursion child. Its kimchi wrap VK
@@ -149,6 +149,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       , debug: false
       , wrapDomainOverride: Nothing
       , proofCache: cache
+      , lagrangeCache: Just lagrangeCache
       }
       (tuple1 childEntry)
 
@@ -207,6 +208,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       , debug: false
       , wrapDomainOverride: Nothing
       , proofCache: cache
+      , lagrangeCache: Just lagrangeCache
       }
       (tuple1 sideLoadedEntry)
 

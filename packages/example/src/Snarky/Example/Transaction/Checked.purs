@@ -64,6 +64,7 @@ import Snarky.Example.Ledger (Mask, emptyMask)
 import Snarky.Example.Transaction.Monad (ACCOUNT_MAP, TRANSACTION, getAccountId, getCurrentTransaction, runTransferMaskM)
 import Snarky.Example.Transaction.Types (SignedTransaction(..), Transaction(..), Transfer(..))
 import Snarky.Example.Types (Account(..), PublicKey(..), addWithOverflow, subWithUnderflow)
+import Snarky.Lagrange.Cache (LagrangeCache)
 import Type.Proxy (Proxy(..))
 import Type.Row (type (+))
 
@@ -279,17 +280,19 @@ compileTxCircuit
   :: forall d
    . Reflectable d Int
   => ChainId
+  -> Maybe LagrangeCache
   -> { vestaSrs :: CRS VestaG
      , pallasSrs :: CRS PallasG
      }
   -> Effect (CompiledTx d)
-compileTxCircuit chainId srs = do
+compileTxCircuit chainId lagrangeCache srs = do
   let
     cfg =
       { srs
       , debug: false
       , wrapDomainOverride: Just 14
       , proofCache: Nothing
+      , lagrangeCache
       }
   baseEntry <-
     mkRuleEntry

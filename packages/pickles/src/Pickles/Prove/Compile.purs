@@ -59,6 +59,7 @@ import Data.Either (Either(..))
 import Data.Enum (fromEnum)
 import Data.Exists (runExists)
 import Data.Fin (unsafeFinite)
+import Data.Foldable (for_)
 import Data.Functor.Product (Product, product)
 import Data.Int.Bits as Int.Bits
 import Data.Maybe (Maybe(..))
@@ -175,6 +176,7 @@ import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, toBigInt)
 import Snarky.Curves.Class (fromInt) as Curves
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
+import Snarky.Lagrange.Cache (LagrangeCache, pallasOps, vestaOps, warmer)
 import Snarky.Types.Shifted (SplitField, Type2)
 import Type.Proxy (Proxy(..))
 
@@ -2171,6 +2173,13 @@ type CompileMultiConfig =
   -- | Optional disk proof-cache (test/dev). `Nothing` = no caching
   -- | (always prove). Mirrors OCaml `compile`'s `?proof_cache`.
   , proofCache :: Maybe ProofCache
+  -- | Optional on-disk Lagrange-basis cache. When `Just`, compile warms each
+  -- | of the program's real domains (step domains on vesta, wrap domain on
+  -- | pallas) through it before any constraint building — so each basis is
+  -- | FFT'd once ever and injected from disk thereafter, and the warmed `CRS`
+  -- | (shared by reference into prove) needs no recompute. `Nothing` = the SRS
+  -- | is used as-is (kimchi computes bases lazily in-process, not persisted).
+  , lagrangeCache :: Maybe LagrangeCache
   }
 
 -- | Per-branch prover for ONE branch. Each `RulesCons` slot in the
@@ -2769,6 +2778,29 @@ runMultiCompileFull handler cfg rules = do
     cfg
     placeholder
     rules
+  -- Lazy, persistent Lagrange-basis warming (opt-in via `lagrangeCache`). The
+  -- pre-pass has now yielded the real per-branch step domains, and we are still
+  -- before any constraint building (which is what fires the lazy
+  -- `mkConstLagrangeBaseLookup` reads). The warmed CRS is shared by reference
+  -- into prove, so the prover finds every basis already present — no recompute,
+  -- and persisted.
+  --
+  --   * vesta @ the program's real step domains (from the pre-pass) — the
+  --     expensive/large side, kept precise (includes chunked domains > the SRS).
+  --   * pallas @ the COMPLETE legal wrap-domain set {13,14,15}. A program's own
+  --     wrap domain and every slot's verified-proof wrap domain — Self (= own),
+  --     External (an imported VK's domain), SideLoaded (a runtime VK's domain) —
+  --     are all in this set, so warming it covers them exhaustively with no slot
+  --     inspection. This is exhaustive, not a guess: 13/14/15 are the only wrap
+  --     domains (`wrapDomainLog2ForProofsVerified`, mpv 0/1/2). Cheap — three
+  --     small 2^15-SRS bases; a Self-only program warms at most two it won't use.
+  for_ cfg.lagrangeCache \cache -> do
+    -- `warmer` fingerprints each SRS once, then warms each domain under that
+    -- fingerprint (cache hit → inject, miss → FFT + store).
+    warmVesta <- warmer cache vestaOps cfg.srs.vestaSrs
+    for_ log2s warmVesta
+    warmPallas <- warmer cache pallasOps cfg.srs.pallasSrs
+    for_ [ 13, 14, 15 ] warmPallas
   stepResults <- runMultiCompile
     @rs
     @inputVal

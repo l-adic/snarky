@@ -51,7 +51,14 @@ Thumbs.db
 # Purescript Spec
 .spec-results
 
-srs-cache/
+# The on-disk SRS-files dir, populated by `make fetch-srs` (the kimchi `.srs`
+# URS blobs). Anchored to the repo root.
+/srs-cache/
+
+# The on-disk Lagrange-basis cache dir (CI points SNARK_LAGRANGE_CACHE_DIR here
+# so actions/cache can persist it across runs). Anchored to the repo root; the
+# `lagrange-cache` PACKAGE source lives under packages/ and stays tracked.
+/lagrange-cache/
 
 # Crypto provider symlink (removed - now using real crate)
 

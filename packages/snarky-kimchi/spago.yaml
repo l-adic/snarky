@@ -42,6 +42,7 @@ package:
   test:
     main: Test.Snarky.Circuit.Kimchi.Main
     dependencies:
+      - aff
       - effect
       - exceptions
       - gen

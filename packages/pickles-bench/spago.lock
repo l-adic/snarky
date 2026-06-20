@@ -8,14 +8,21 @@
             "aff",
             "arrays",
             "benchlib",
+            "console",
             "curves",
             "effect",
+            "either",
+            "exceptions",
             "foldable-traversable",
+            "integers",
+            "lagrange-cache",
             "maybe",
+            "newtype",
+            "numbers",
             "optparse",
             "pickles",
             "prelude",
-            "run",
+            "refs",
             "snarky",
             "snarky-kimchi",
             "tailrec",
@@ -611,6 +618,9 @@
       "curves": {
         "path": "../curves"
       },
+      "lagrange-cache": {
+        "path": "../lagrange-cache"
+      },
       "pickles": {
         "path": "../pickles"
       },
@@ -663,6 +673,21 @@
         "tailrec",
         "transformers",
         "unsafe-coerce"
+      ]
+    },
+    "aff-promise": {
+      "type": "registry",
+      "version": "4.0.0",
+      "integrity": "sha256-Jgp3y+NWuuAmwz2V3LlWoX+AvxqfVglY77N5zTw8xnI=",
+      "dependencies": [
+        "aff",
+        "control",
+        "effect",
+        "either",
+        "exceptions",
+        "foreign",
+        "prelude",
+        "transformers"
       ]
     },
     "ansi": {
@@ -747,6 +772,25 @@
         "strings",
         "tailrec",
         "tuples",
+        "unfoldable"
+      ]
+    },
+    "arraybuffer": {
+      "type": "registry",
+      "version": "13.2.0",
+      "integrity": "sha256-WPYcYUR+RCUx+Mnccz1Irg1ryvA7pE6OqpkBlqpCqk0=",
+      "dependencies": [
+        "arraybuffer-types",
+        "arrays",
+        "effect",
+        "float32",
+        "functions",
+        "gen",
+        "maybe",
+        "nullable",
+        "prelude",
+        "tailrec",
+        "uint",
         "unfoldable"
       ]
     },
@@ -1069,6 +1113,16 @@
         "tuples"
       ]
     },
+    "float32": {
+      "type": "registry",
+      "version": "2.0.0",
+      "integrity": "sha256-lO8pshPBj5ExM+/ZjZ8nXVltb37XGJdRP8vakl0LBTE=",
+      "dependencies": [
+        "gen",
+        "maybe",
+        "prelude"
+      ]
+    },
     "foldable-traversable": {
       "type": "registry",
       "version": "6.0.0",
@@ -1254,6 +1308,30 @@
         "prelude"
       ]
     },
+    "lagrange-cache": {
+      "type": "local",
+      "path": "../lagrange-cache",
+      "dependencies": [
+        "aff",
+        "aff-promise",
+        "arraybuffer",
+        "arraybuffer-types",
+        "arrays",
+        "curves",
+        "effect",
+        "maybe",
+        "node-buffer",
+        "node-fs",
+        "node-os",
+        "node-path",
+        "node-process",
+        "ordered-collections",
+        "prelude",
+        "random",
+        "refs",
+        "snarky-kimchi"
+      ]
+    },
     "lazy": {
       "type": "registry",
       "version": "6.0.0",
@@ -1387,6 +1465,30 @@
         "partial",
         "prelude",
         "strings"
+      ]
+    },
+    "node-os": {
+      "type": "registry",
+      "version": "5.1.0",
+      "integrity": "sha256-UtQiPiZy5ouV832ubww/U8KlpVYny9xsW8WWfYOEgtA=",
+      "dependencies": [
+        "arrays",
+        "bifunctors",
+        "control",
+        "datetime",
+        "effect",
+        "either",
+        "exceptions",
+        "foreign",
+        "foreign-object",
+        "functions",
+        "maybe",
+        "node-buffer",
+        "nullable",
+        "partial",
+        "posix-types",
+        "prelude",
+        "unsafe-coerce"
       ]
     },
     "node-path": {
@@ -1601,6 +1703,7 @@
         "functors",
         "integers",
         "js-bigints",
+        "lagrange-cache",
         "lazy",
         "lists",
         "maybe",
@@ -1608,7 +1711,6 @@
         "node-buffer",
         "node-fs",
         "node-process",
-        "ordered-collections",
         "partial",
         "pickles-linearization-types",
         "poseidon",
@@ -1616,7 +1718,6 @@
         "random-oracle",
         "record",
         "refs",
-        "run",
         "safe-coerce",
         "simple-json",
         "snarky",
@@ -1624,7 +1725,6 @@
         "snarky-kimchi",
         "strings",
         "tuples",
-        "typelevel-prelude",
         "unsafe-coerce",
         "vector-sized"
       ]
@@ -1790,6 +1890,7 @@
         "poseidon",
         "prelude",
         "safe-coerce",
+        "simple-json",
         "snarky",
         "snarky-kimchi",
         "tuples",
@@ -1878,6 +1979,7 @@
         "bifunctors",
         "const",
         "curves",
+        "effect",
         "either",
         "exceptions",
         "foldable-traversable",
@@ -1891,13 +1993,14 @@
         "prelude",
         "quickcheck",
         "record",
+        "refs",
         "run",
         "safe-coerce",
         "simple-json",
+        "st",
         "tailrec",
         "tuples",
-        "typelevel-prelude",
-        "unsafe-coerce",
+        "variant",
         "vector-sized"
       ]
     },
@@ -1905,7 +2008,10 @@
       "type": "local",
       "path": "../snarky-curves",
       "dependencies": [
+        "arrays",
         "curves",
+        "either",
+        "foldable-traversable",
         "maybe",
         "newtype",
         "partial",
@@ -1913,7 +2019,8 @@
         "quickcheck",
         "safe-coerce",
         "simple-json",
-        "snarky"
+        "snarky",
+        "tuples"
       ]
     },
     "snarky-kimchi": {
@@ -1921,6 +2028,7 @@
       "path": "../snarky-kimchi",
       "dependencies": [
         "argonaut-core",
+        "arraybuffer-types",
         "arrays",
         "bifunctors",
         "control",
@@ -1945,13 +2053,14 @@
         "prelude",
         "quickcheck",
         "record",
-        "run",
         "safe-coerce",
         "simple-json",
         "snarky",
         "snarky-curves",
         "snarky-test-utils",
+        "st",
         "strings",
+        "transformers",
         "tuples",
         "unfoldable",
         "union-find",
@@ -1967,14 +2076,14 @@
         "curves",
         "effect",
         "either",
+        "exceptions",
         "foldable-traversable",
         "gen",
-        "identity",
         "integers",
         "js-bigints",
+        "lcg",
         "maybe",
         "newtype",
-        "ordered-collections",
         "prelude",
         "quickcheck",
         "run",
@@ -1984,6 +2093,7 @@
         "spec-quickcheck",
         "tuples",
         "typelevel-prelude",
+        "variant",
         "vector-sized"
       ]
     },
@@ -2134,6 +2244,18 @@
         "type-equality"
       ]
     },
+    "uint": {
+      "type": "registry",
+      "version": "7.0.0",
+      "integrity": "sha256-MCTYyDPFLoNLweSY1oEjKKo0xhqCGrAbiBQNdva1B3w=",
+      "dependencies": [
+        "enums",
+        "gen",
+        "maybe",
+        "numbers",
+        "prelude"
+      ]
+    },
     "unfoldable": {
       "type": "registry",
       "version": "6.0.0",
@@ -2151,11 +2273,11 @@
       "path": "../union-find",
       "dependencies": [
         "arrays",
-        "foldable-traversable",
+        "effect",
         "maybe",
-        "newtype",
         "ordered-collections",
         "prelude",
+        "st",
         "tuples"
       ]
     },

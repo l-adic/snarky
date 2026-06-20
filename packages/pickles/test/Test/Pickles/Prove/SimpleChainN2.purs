@@ -79,7 +79,7 @@ type SimpleChainN2Rules =
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.SimpleChainN2" do
-  it "b0..b2 chain (prevs = [self; self], N2): prove + verify" \{ pallasSrs, vestaSrs } -> do
+  it "b0..b2 chain (prevs = [self; self], N2): prove + verify" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/SimpleChainN2.json")
 
     let
@@ -89,6 +89,7 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
         -- Matches dump_simple_chain_n2.ml `override_wrap_domain:N1` (2^14).
         , wrapDomainOverride: Just 14
         , proofCache: cache
+        , lagrangeCache: Just lagrangeCache
         }
 
     entry <- liftEffect $ mkRuleEntry @2 @Unit @(F StepField) @1 @1

@@ -4,7 +4,9 @@
       "blake2": {
         "path": "packages/blake2",
         "core": {
-          "dependencies": []
+          "dependencies": [
+            "arraybuffer-types"
+          ]
         },
         "test": {
           "dependencies": []
@@ -41,8 +43,6 @@
         "core": {
           "dependencies": [
             "aff",
-            "aff-promise",
-            "arraybuffer-types",
             "arrays",
             "avar",
             "colog",
@@ -53,12 +53,13 @@
             "exceptions",
             "fmt",
             "foldable-traversable",
+            "foreign",
             "gen",
             "js-bigints",
+            "lagrange-cache",
             "maybe",
             "merkle-tree",
             "newtype",
-            "nullable",
             "ordered-collections",
             "parallel",
             "partial",
@@ -70,9 +71,11 @@
             "run",
             "safe-coerce",
             "schnorr",
+            "simple-json",
             "snarky",
             "snarky-curves",
             "snarky-kimchi",
+            "strings",
             "tailrec",
             "tuples",
             "typelevel-prelude",
@@ -84,6 +87,7 @@
           "dependencies": [
             "aff",
             "arrays",
+            "bifunctors",
             "console",
             "effect",
             "exceptions",
@@ -96,6 +100,48 @@
             "spec",
             "spec-node",
             "tailrec"
+          ]
+        }
+      },
+      "lagrange-cache": {
+        "path": "packages/lagrange-cache",
+        "core": {
+          "dependencies": [
+            "aff",
+            "aff-promise",
+            "arraybuffer",
+            "arraybuffer-types",
+            "arrays",
+            "blake2",
+            "curves",
+            "effect",
+            "maybe",
+            "node-buffer",
+            "node-fs",
+            "node-os",
+            "node-path",
+            "node-process",
+            "ordered-collections",
+            "prelude",
+            "random",
+            "refs",
+            "snarky-kimchi"
+          ]
+        },
+        "test": {
+          "dependencies": [
+            "aff",
+            "arraybuffer-types",
+            "datetime",
+            "effect",
+            "maybe",
+            "node-fs",
+            "node-os",
+            "node-path",
+            "ordered-collections",
+            "refs",
+            "spec",
+            "spec-node"
           ]
         }
       },
@@ -167,6 +213,7 @@
             "functors",
             "integers",
             "js-bigints",
+            "lagrange-cache",
             "lazy",
             "lists",
             "maybe",
@@ -200,6 +247,7 @@
             "bifunctors",
             "colog",
             "effect",
+            "lagrange-cache",
             "prelude",
             "spec",
             "spec-node",
@@ -354,6 +402,7 @@
             "poseidon",
             "prelude",
             "safe-coerce",
+            "simple-json",
             "snarky",
             "snarky-kimchi",
             "tuples",
@@ -398,6 +447,7 @@
             "quickcheck",
             "random-oracle",
             "safe-coerce",
+            "simple-json",
             "snarky",
             "snarky-curves",
             "snarky-kimchi",
@@ -545,6 +595,7 @@
         },
         "test": {
           "dependencies": [
+            "aff",
             "effect",
             "exceptions",
             "gen",
@@ -1319,6 +1370,25 @@
         "tailrec"
       ]
     },
+    "arraybuffer": {
+      "type": "registry",
+      "version": "13.2.0",
+      "integrity": "sha256-WPYcYUR+RCUx+Mnccz1Irg1ryvA7pE6OqpkBlqpCqk0=",
+      "dependencies": [
+        "arraybuffer-types",
+        "arrays",
+        "effect",
+        "float32",
+        "functions",
+        "gen",
+        "maybe",
+        "nullable",
+        "prelude",
+        "tailrec",
+        "uint",
+        "unfoldable"
+      ]
+    },
     "arraybuffer-types": {
       "type": "registry",
       "version": "3.0.2",
@@ -1582,6 +1652,16 @@
       "integrity": "sha256-xBl4aFSEQ05Owp1ZvO6OxxvLK3LVzU35RSbj79SsePQ=",
       "dependencies": [
         "enums",
+        "maybe",
+        "prelude"
+      ]
+    },
+    "float32": {
+      "type": "registry",
+      "version": "2.0.0",
+      "integrity": "sha256-lO8pshPBj5ExM+/ZjZ8nXVltb37XGJdRP8vakl0LBTE=",
+      "dependencies": [
+        "gen",
         "maybe",
         "prelude"
       ]
@@ -1974,6 +2054,30 @@
         "partial",
         "prelude",
         "strings"
+      ]
+    },
+    "node-os": {
+      "type": "registry",
+      "version": "5.1.0",
+      "integrity": "sha256-UtQiPiZy5ouV832ubww/U8KlpVYny9xsW8WWfYOEgtA=",
+      "dependencies": [
+        "arrays",
+        "bifunctors",
+        "control",
+        "datetime",
+        "effect",
+        "either",
+        "exceptions",
+        "foreign",
+        "foreign-object",
+        "functions",
+        "maybe",
+        "node-buffer",
+        "nullable",
+        "partial",
+        "posix-types",
+        "prelude",
+        "unsafe-coerce"
       ]
     },
     "node-path": {
@@ -2621,6 +2725,18 @@
       "dependencies": [
         "prelude",
         "type-equality"
+      ]
+    },
+    "uint": {
+      "type": "registry",
+      "version": "7.0.0",
+      "integrity": "sha256-MCTYyDPFLoNLweSY1oEjKKo0xhqCGrAbiBQNdva1B3w=",
+      "dependencies": [
+        "enums",
+        "gen",
+        "maybe",
+        "numbers",
+        "prelude"
       ]
     },
     "unfoldable": {

@@ -16,6 +16,7 @@ package:
     - fmt
     - foldable-traversable
     - integers
+    - lagrange-cache
     - maybe
     - node-process
     - node-workerbees
@@ -23,10 +24,8 @@ package:
     - prelude
     - random
     - refs
-    - run
     - schnorr
     - tuples
-    - variant
   build:
     strict: true
   run:

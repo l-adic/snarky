@@ -18,7 +18,7 @@ import Prelude
 
 import Data.Either (Either(..))
 import Data.Int as Int
-import Data.Maybe (fromMaybe)
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Reflectable (class Reflectable, reifyType)
 import Effect (Effect)
 import Effect.Aff (launchAff_)
@@ -34,7 +34,7 @@ import Snarky.Example.Env (mkConfig, mkEnv)
 import Snarky.Example.Log as Log
 import Snarky.Example.Snark.Work (WorkItem(..), decodeWorkItem)
 import Snarky.Example.Snark.Worker (proveItem)
-import Snarky.Example.Terminal.SrsCache (fsSrsCache)
+import Snarky.Example.Terminal.SrsCache (fsLagrangeCache)
 import Snarky.Example.Terminal.WorkerLog (workerLogger)
 import Type.Proxy (Proxy)
 
@@ -90,9 +90,9 @@ workerAtDepth ctx _ = launchAff_ do
     note :: forall m. MonadEffect m => String -> m Unit
     note text = Log.logInfo workerLogger (fmt @"[worker {tid}] {text}" { tid: show tid, text })
   fault <- liftEffect readFault
-  cache <- liftEffect (fsSrsCache workerLogger)
-  note "building SRS + lagrange basis…"
-  config <- mkConfig cache (chainIdFromTag ctx.workerData.chain)
+  lagrangeCache <- liftEffect (fsLagrangeCache workerLogger)
+  note "building SRS generators (lagrange bases warmed lazily at compile)…"
+  config <- mkConfig (Just lagrangeCache) (chainIdFromTag ctx.workerData.chain)
   note "compiling circuit…"
   env <- liftEffect $ mkEnv @d mempty config
   note "ready"

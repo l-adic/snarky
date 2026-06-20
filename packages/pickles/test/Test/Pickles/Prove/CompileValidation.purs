@@ -48,6 +48,7 @@ spec = describe "Pickles.Prove.Compile.validateNumChunks" do
       , debug: false
       , wrapDomainOverride: Nothing
       , proofCache: Nothing
+      , lagrangeCache: Nothing
       }
       rules
     case result of

@@ -80,7 +80,7 @@ type SimpleChainRules =
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.SimpleChain" do
-  it "5-iteration step+wrap chain (b0..b4) proves end-to-end" \{ pallasSrs, vestaSrs } -> do
+  it "5-iteration step+wrap chain (b0..b4) proves end-to-end" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/SimpleChain.json")
 
     -- Build the 1-tuple rules carrier for compileMulti. mpvMax = 1
@@ -102,6 +102,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       , debug: false
       , wrapDomainOverride: Nothing
       , proofCache: cache
+      , lagrangeCache: Just lagrangeCache
       }
       rules
 
