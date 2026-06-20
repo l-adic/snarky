@@ -9,6 +9,7 @@
     "rows": "node dist/rows.js"
   },
   "dependencies": {
+    "@o1js/native": "^2.15.0",
     "bench-harness": "file:../harness",
     "o1js": "2.15.0"
   },
