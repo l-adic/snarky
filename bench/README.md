@@ -139,6 +139,19 @@ node tools/bench_table.mjs bench-results/a.json bench-results/b.json
 - **o1js wasm OOM / slow:** wasm has a 4 GB linear-memory ceiling per worker and
   is 2–2.5× slower than native; expect long runs and high RSS. If it OOMs,
   reduce concurrency or run wasm configs separately.
+- **o1js wasm HANGS / deadlocks** (seen on the dev box — flag for confirmation
+  on the bench machine): o1js's wasm prover spawned ~20 worker threads, ran
+  ~3 min, then wedged — alive but **0 CPU, indefinitely idle**, `--trace-gc`
+  output stops. A worker/thread-pool deadlock (the repeated
+  compile + `forceRecompile` + prove pattern spawns workers that don't drain),
+  cousin of the rayon nested-worker deadlock in our own browser-wasm path.
+  *Confirm it's wedged (not just slow):* sample `utime+stime` (fields 14+15) of
+  `/proc/<pid>/stat` over a few seconds — a 0 delta = deadlocked, kill it. *If
+  it deadlocks,* try: (a) one compile+prove in isolation (no `forceRecompile`
+  loop) to see if the repeated-compile pattern is the trigger; (b) any
+  worker-count / thread env knob your o1js version exposes; (c) failing that,
+  report the **native pairing + PS-wasm** only and mark o1js-wasm unavailable.
+  **Native o1js does not have this problem** — the native pairing is solid.
 - **`node: command not found` / wrong version:** the launchers expect node at
   the v23.11.1 nvm path; install it or edit the `PATH` line in both launchers.
 - **`KIMCHI_BACKEND=wasm` fails to load:** you didn't run
