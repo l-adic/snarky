@@ -90,41 +90,49 @@ only wasm-to-wasm, never wasm-to-native.** Wall and CPU time are unaffected.
 
 ## Results
 
-> _Fill in from a clean, single-tenant matrix run (`bench-results/<runid>-summary.md`)._
+_From matrix run `20260621-132137` (`bench-results/20260621-132137-summary.md`)._
 
-- machine: `_____`  ·  node: `v23.11.1`  ·  power profile: `_____`  ·  iterations: `_____`
+- machine: `Intel Core i5-13500 (20 threads)`  ·  node: `v23.11.1`  ·  iterations: `5`
 - o1js `2.15.0`  ·  rows: PS tree.step `53,960` / o1js tree.step `32,772` (both domain 2^16)
 
 ### Compile — NRR + tree, step domain 2^16
 
 | config | wall mean (s) | stddev (s) | cpu mean (s) | cores | reclaim/trial (GB) | rustShare |
 |---|---|---|---|---|---|---|
-| PS native   | _ | _ | _ | _ | _  | _ |
-| o1js native | _ | _ | _ | _ | _  | — |
-| PS wasm     | _ | _ | _ | _ | _† | _ |
-| o1js wasm   | _ | _ | _ | _ | _† | — |
+| PS native   | 5.96  | 0.13 | 36.74  | 6.2 | 13.6  | 0.558 |
+| o1js native | 15.61 | 0.06 | 40.54  | 2.6 | 15.0  | — |
+| PS wasm     | 15.11 | 0.09 | 125.92 | 8.3 | 23.0† | 0.828 |
+| o1js wasm   | 18.11 | 0.09 | 98.14  | 5.4 | 70.9† | — |
 
-- **native:** o1js / PS = `__×`
-- **wasm:** o1js / PS = `__×`
+- **native:** o1js / PS = `2.62×`
+- **wasm:** o1js / PS = `1.20×`
 
 ### Prove — b1 recursive merge
 
 | config | wall mean (s) | stddev (s) | cpu mean (s) | cores | reclaim/trial (GB) | rustShare |
 |---|---|---|---|---|---|---|
-| PS native   | _ | _ | _ | _ | _  | _ |
-| o1js native | _ | _ | _ | _ | _  | — |
-| PS wasm     | _ | _ | _ | _ | _† | _ |
-| o1js wasm   | _ | _ | _ | _ | _† | — |
+| PS native   | 6.29  | 0.15 | 62.07  | 9.9  | 7.7  | 0.577 |
+| o1js native | 10.42 | 0.04 | 57.42  | 5.5  | 9.1  | — |
+| PS wasm     | 13.67 | 0.04 | 187.64 | 13.7 | 7.6† | 0.800 |
+| o1js wasm   | 15.92 | 0.03 | 157.65 | 9.9  | 27.6† | — |
 
-- **native:** o1js / PS = `__×`
-- **wasm:** o1js / PS = `__×`
+- **native:** o1js / PS = `1.66×`
+- **wasm:** o1js / PS = `1.16×`
 
 † wasm reclaim is a main-isolate lower bound (see [What we measure](#what-we-measure)).
 
 ### Notes / interpretation
 
-_(Space for takeaways — e.g. native-vs-wasm degradation per stack, what the
-`cores` column says about parallelism, any caveats from the run.)_
+- **PS is faster in every cell** — wall-time wins of 2.62× / 1.20× (compile,
+  native / wasm) and 1.66× / 1.16× (prove). Stddevs are ≤0.15 s everywhere, so
+  the ordering is not noise.
+- **PS extracts more parallelism.** The `cores` column (cpu/wall) is higher for
+  PS in all four configs — prove native 9.9 vs 5.5, prove wasm 13.7 vs 9.9. PS
+  pushes more work across the kimchi-napi boundary into the rayon-parallel Rust
+  prover (`rustShare` 0.56–0.83), where o1js keeps more on a single JS thread
+  (js_of_ocaml). See [Profiling & flamegraphs](#profiling--flamegraphs).
+- **wasm costs ~2–2.5× vs native** for both stacks (PS prove 6.3→13.7 s, o1js
+  prove 10.4→15.9 s), and the gap between stacks narrows under wasm.
 
 ---
 
