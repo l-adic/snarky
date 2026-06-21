@@ -140,18 +140,24 @@ node tools/bench_table.mjs bench-results/a.json bench-results/b.json
   is 2–2.5× slower than native; expect long runs and high RSS. If it OOMs,
   reduce concurrency or run wasm configs separately.
 - **o1js wasm HANGS / deadlocks** (seen on the dev box — flag for confirmation
-  on the bench machine): o1js's wasm prover spawned ~20 worker threads, ran
-  ~3 min, then wedged — alive but **0 CPU, indefinitely idle**, `--trace-gc`
-  output stops. A worker/thread-pool deadlock (the repeated
-  compile + `forceRecompile` + prove pattern spawns workers that don't drain),
-  cousin of the rayon nested-worker deadlock in our own browser-wasm path.
-  *Confirm it's wedged (not just slow):* sample `utime+stime` (fields 14+15) of
-  `/proc/<pid>/stat` over a few seconds — a 0 delta = deadlocked, kill it. *If
-  it deadlocks,* try: (a) one compile+prove in isolation (no `forceRecompile`
-  loop) to see if the repeated-compile pattern is the trigger; (b) any
-  worker-count / thread env knob your o1js version exposes; (c) failing that,
-  report the **native pairing + PS-wasm** only and mark o1js-wasm unavailable.
-  **Native o1js does not have this problem** — the native pairing is solid.
+  on the bench machine): the run wedges several minutes in — alive but **0 CPU,
+  indefinitely idle**, `--trace-gc` output stops. **Root cause (debugged): the
+  wasm32 4 GB linear-memory ceiling.** o1js doesn't release its prover-key wasm
+  memory between compiles (`forceRecompile` re-synthesizes without freeing, and
+  `forceGc` can't touch wasm linear memory), so RSS climbs ~1 GB/compile
+  monotonically; eventually a wasm worker crosses its 4 GB instance ceiling,
+  OOMs and dies, and the main thread deadlocks awaiting the dead worker.
+  (Verified with `BENCH_RSS=1`: o1js climbs `2.2 → 3.9 → 4.6 → 5.3 GB` and never
+  plateaus; PS plateaus ~2.2 GB because our kimchi-napi wasm returns prover
+  memory to the allocator via a FinalizationRegistry on the harness's
+  gc-yield-gc. It is **not** oversubscription — capping `setNumberOfWorkers`
+  doesn't help.) *Confirm it's wedged (not just slow):* sample `utime+stime`
+  (fields 14+15) of `/proc/<pid>/stat` over a few seconds — a 0 delta =
+  deadlocked, kill it. **Fix:** the 4 GB is a wasm32 hard limit (more system RAM
+  won't help) — run the o1js-wasm **compile and prove groups in separate node
+  processes** (each gets a fresh 4 GB wasm arena; compile-only peaks ~5 GB and
+  survives, prove-only is lighter). **Native o1js is unaffected** (no ceiling).
+  Run with `BENCH_RSS=1` to watch the climb yourself.
 - **`node: command not found` / wrong version:** the launchers expect node at
   the v23.11.1 nvm path; install it or edit the `PATH` line in both launchers.
 - **`KIMCHI_BACKEND=wasm` fails to load:** you didn't run
