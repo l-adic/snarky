@@ -31,6 +31,14 @@ const childGroup = argv.includes("--child") ? argv[argv.indexOf("--child") + 1] 
 
 const { buildGroups, analyzeRows } = await import("./target.js");
 
+// O1JS_ONLY=compile|prove restricts the run to one phase (mirrors PS's --only),
+// so a profile/timeline captures a single phase.
+const ONLY = process.env.O1JS_ONLY?.toLowerCase();
+const groups = () => {
+  const gs = buildGroups();
+  return ONLY ? gs.filter((g) => g.label.toLowerCase().includes(ONLY)) : gs;
+};
+
 // --- child mode: run ONE timed trial of one group in this fresh process -------
 // (one fresh wasm arena → bounded memory). Prints the wall ms for the parent.
 if (childGroup) {
@@ -82,7 +90,7 @@ async function main() {
   let benches: Bench[];
   if (BACKEND === "wasm") {
     benches = [];
-    for (const g of buildGroups()) {
+    for (const g of groups()) {
       const key = g.label.toLowerCase().includes("compile") ? "compile" : "prove";
       const samples = [];
       for (let t = 0; t < g.trials; t++) {
@@ -93,7 +101,7 @@ async function main() {
       benches.push({ name: g.label, samples, stats: stats(samples) });
     }
   } else {
-    benches = await runBench(buildGroups());
+    benches = await runBench(groups());
   }
 
   writeArtifact({

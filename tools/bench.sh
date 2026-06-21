@@ -86,8 +86,8 @@ echo "==> Running suite (node ${NODE_FLAGS[*]}; log: $RUN_LOG) ..."
 # to the LOG ONLY — it is input for parse_gclog.mjs, not for humans. The
 # terminal shows just the bench's own output (markers, splits, results).
 node "${NODE_FLAGS[@]}" packages/pickles-bench/run.mjs ${ARGS[@]+"${ARGS[@]}"} 2>&1 \
-  | tee "$RUN_LOG" \
-  | grep -vE '^\[[0-9]+(:0x[0-9a-f]+)?\] ' || true
+  | stdbuf -oL tee "$RUN_LOG" \
+  | grep --line-buffered -vE '^\[[0-9]+(:0x[0-9a-f]+)?\] ' || true
 
 # The bench prints `[bench-results] <path>` for the JSON it wrote.
 RESULTS_FILE=$(sed -n 's/^\[bench-results\] //p' "$RUN_LOG" | tail -1)

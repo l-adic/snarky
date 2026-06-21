@@ -29,8 +29,9 @@ echo "==> node: $(node --version) ($(command -v node))"
 BACKEND=wasm
 NODE_FLAGS=(--trace-gc --expose-gc)
 CPU_PROF=
-for a in "$@"; do
-  case "$a" in
+ONLY=
+while [ $# -gt 0 ]; do
+  case "$1" in
     --native) BACKEND=native ;;
     # Mirror tools/bench.sh: capture a V8 CPU profile into prof/. NOTE: profiles
     # the main node process — clean for o1js NATIVE (single process), but for
@@ -38,10 +39,15 @@ for a in "$@"; do
     # the orchestrator, not the prover. (V8 --cpu-prof also doesn't see napi/
     # worker isolates, same as the PS side.)
     --cpu-prof) CPU_PROF=1; NODE_FLAGS+=(--cpu-prof --cpu-prof-dir "$REPO_ROOT/prof") ;;
+    # Mirror tools/bench.sh --only: restrict to one phase (compile|prove) via O1JS_ONLY.
+    --only) ONLY="$2"; shift ;;
+    --only=*) ONLY="${1#*=}" ;;
     *) ;;
   esac
+  shift
 done
 export O1JS_BACKEND="$BACKEND"
+[ -n "$ONLY" ] && export O1JS_ONLY="$ONLY"
 
 echo "==> Building o1js bench (tsc -> dist/) ..."
 ( cd "$O1JS_DIR" && npx tsc )
@@ -51,9 +57,10 @@ mkdir -p bench-results prof
 RUN_LOG="prof/bench-o1js-run.log"
 
 echo "==> Running o1js bench (backend=$BACKEND; node $(node --version); flags ${NODE_FLAGS[*]}) ..."
+# Line-buffer tee|grep so markers reach the terminal / cpu_timeline reader live.
 node "${NODE_FLAGS[@]}" "$O1JS_DIR/dist/bench.js" 2>&1 \
-  | tee "$RUN_LOG" \
-  | grep -vE '^\[[0-9]+(:0x[0-9a-f]+)?\] ' || true
+  | stdbuf -oL tee "$RUN_LOG" \
+  | grep --line-buffered -vE '^\[[0-9]+(:0x[0-9a-f]+)?\] ' || true
 
 RESULTS_FILE=$(sed -n 's/^\[bench-results\] //p' "$RUN_LOG" | tail -1)
 if [ -z "$RESULTS_FILE" ]; then
