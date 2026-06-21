@@ -45,6 +45,7 @@ function agg(config, label) {
   const means = [];
   const reclaims = [];
   const shares = [];
+  const cpus = [];
   for (const a of groups[config] ?? []) {
     const b = a.benches.find((x) => x.name === label);
     if (!b) continue;
@@ -52,6 +53,8 @@ function agg(config, label) {
     const r = reclaim(b);
     if (r != null) reclaims.push(r);
     if (b.ffi?.rustShare != null) shares.push(b.ffi.rustShare);
+    const cpuVals = (b.samples ?? []).map((s) => s.cpuMs).filter((x) => x != null);
+    if (cpuVals.length) cpus.push(mean(cpuVals));
   }
   return {
     n: means.length,
@@ -61,6 +64,7 @@ function agg(config, label) {
     max: means.length ? Math.max(...means) : null,
     reclaim: mean(reclaims),
     rustShare: mean(shares),
+    cpu: mean(cpus),
   };
 }
 
@@ -76,13 +80,14 @@ out.push("");
 
 for (const label of labels) {
   out.push(`## ${label}\n`);
-  out.push("| config | iters | wall mean (s) | iter stddev (s) | min–max (s) | reclaim/trial (GB)¹ | rustShare |");
-  out.push("|---|---|---|---|---|---|---|");
+  out.push("| config | iters | wall mean (s) | iter stddev (s) | min–max (s) | cpu mean (s)² | cores² | reclaim/trial (GB)¹ | rustShare |");
+  out.push("|---|---|---|---|---|---|---|---|---|");
   for (const c of configs) {
     const a = agg(c, label);
     if (!a.n) continue;
+    const cores = a.cpu != null && a.mean ? a.cpu / a.mean : null;
     out.push(
-      `| ${c} | ${a.n} | ${f(a.mean / 1000)} | ${f(a.sd / 1000)} | ${f(a.min / 1000)}–${f(a.max / 1000)} | ${f(a.reclaim, 1)} | ${f(a.rustShare, 3)} |`
+      `| ${c} | ${a.n} | ${f(a.mean / 1000)} | ${f(a.sd / 1000)} | ${f(a.min / 1000)}–${f(a.max / 1000)} | ${f(a.cpu / 1000)} | ${f(cores, 1)} | ${f(a.reclaim, 1)} | ${f(a.rustShare, 3)} |`
     );
   }
   out.push("");
@@ -98,6 +103,11 @@ for (const label of labels) {
 }
 
 out.push("---");
+out.push(
+  "² **cpu mean** is process-wide CPU time per trial (user+system, sums the prover's worker/rayon threads); " +
+    "**cores** = cpu/wall ≈ average cores used. Captures parallelism differences wall alone hides (e.g. a stack " +
+    "that uses more cores for the same wall is doing more total work)."
+);
 out.push(
   "¹ **wasm reclaim is a main-isolate lower bound.** Both stacks run the prover on worker threads " +
     "(separate isolates / wasm linear memory), invisible to `--trace-gc` and the GC observer — so it captures " +

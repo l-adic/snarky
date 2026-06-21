@@ -27,9 +27,17 @@ fi
 echo "==> node: $(node --version) ($(command -v node))"
 
 BACKEND=wasm
+NODE_FLAGS=(--trace-gc --expose-gc)
+CPU_PROF=
 for a in "$@"; do
   case "$a" in
     --native) BACKEND=native ;;
+    # Mirror tools/bench.sh: capture a V8 CPU profile into prof/. NOTE: profiles
+    # the main node process — clean for o1js NATIVE (single process), but for
+    # o1js WASM the prover runs in per-trial CHILD processes, so this profiles
+    # the orchestrator, not the prover. (V8 --cpu-prof also doesn't see napi/
+    # worker isolates, same as the PS side.)
+    --cpu-prof) CPU_PROF=1; NODE_FLAGS+=(--cpu-prof --cpu-prof-dir "$REPO_ROOT/prof") ;;
     *) ;;
   esac
 done
@@ -42,8 +50,8 @@ cd "$REPO_ROOT"
 mkdir -p bench-results prof
 RUN_LOG="prof/bench-o1js-run.log"
 
-echo "==> Running o1js bench (backend=$BACKEND; node $(node --version)) ..."
-node --trace-gc --expose-gc "$O1JS_DIR/dist/bench.js" 2>&1 \
+echo "==> Running o1js bench (backend=$BACKEND; node $(node --version); flags ${NODE_FLAGS[*]}) ..."
+node "${NODE_FLAGS[@]}" "$O1JS_DIR/dist/bench.js" 2>&1 \
   | tee "$RUN_LOG" \
   | grep -vE '^\[[0-9]+(:0x[0-9a-f]+)?\] ' || true
 
@@ -55,5 +63,13 @@ fi
 
 echo "==> Attaching GC stats from the trace-gc log ..."
 node packages/pickles-bench/parse_gclog.mjs "$RUN_LOG" "$RESULTS_FILE"
+
+if [ "${CPU_PROF:-}" = "1" ]; then
+  CPU_PROFILE=$(ls -t prof/*.cpuprofile 2>/dev/null | head -1 || true)
+  if [ -n "$CPU_PROFILE" ]; then
+    echo "==> CPU profile summary ($CPU_PROFILE) ..."
+    node packages/pickles-bench/analyze_cpuprofile.mjs "$CPU_PROFILE" || true
+  fi
+fi
 
 echo "==> Results: $RESULTS_FILE"

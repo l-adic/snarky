@@ -120,14 +120,19 @@ export async function runBench(groups, hooks = {}) {
             hooks.onStart?.(label);
             windowStart(label);
             startGcTracking();
+            // CPU time is process-wide (getrusage RUSAGE_SELF) so it sums the
+            // prover's worker/rayon threads; cpuMs/ms ≈ avg cores used. Captures
+            // thread-utilization differences that wall alone hides.
+            const cpu0 = process.cpuUsage();
             const t0 = performance.now();
             await work();
             const ms = performance.now() - t0;
+            const cpu = process.cpuUsage(cpu0);
             windowEnd(label);
             if (RSS) console.log(`[rss] ${label} #${i} peak   ${rssGB()}GB`);
             hooks.onEnd?.(label);
             await stopGcTrackingAndReport();
-            samples.push({ iterations: 1, ms });
+            samples.push({ iterations: 1, ms, cpuMs: (cpu.user + cpu.system) / 1000 });
         }
         logStats(samples);
         benches.push({ name: label, samples, stats: stats(samples) });

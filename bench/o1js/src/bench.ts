@@ -37,7 +37,9 @@ if (childGroup) {
   const g = buildGroups().find((x) => x.label.toLowerCase().includes(childGroup));
   if (!g) throw new Error(`--child: no group matching '${childGroup}'`);
   const benches = await runBench([{ ...g, trials: 1 }]);
-  console.log(`[child-ms] ${benches[0].samples[0].ms}`);
+  const s = benches[0].samples[0];
+  console.log(`[child-ms] ${s.ms}`);
+  console.log(`[child-cpu] ${s.cpuMs ?? 0}`);
   process.exit(0);
 }
 
@@ -51,7 +53,7 @@ function o1jsVersion(): string {
 // Spawn a fresh process running ONE timed trial of `key` ("compile"|"prove");
 // resolve its wall ms. The child's stdout (markers, --trace-gc, the ms line) is
 // forwarded so parse_gclog sees the same stream as a single-process run.
-function childTrial(key: string): Promise<number> {
+function childTrial(key: string): Promise<{ ms: number; cpuMs: number }> {
   const self = new URL(import.meta.url).pathname;
   return new Promise((resolve, reject) => {
     const child = spawn(
@@ -66,7 +68,8 @@ function childTrial(key: string): Promise<number> {
     });
     child.on("exit", (code) => {
       const m = out.match(/\[child-ms\] ([\d.]+)/);
-      if (code === 0 && m) resolve(Number(m[1]));
+      const c = out.match(/\[child-cpu\] ([\d.]+)/);
+      if (code === 0 && m) resolve({ ms: Number(m[1]), cpuMs: c ? Number(c[1]) : 0 });
       else reject(new Error(`child trial '${key}' failed (exit ${code})`));
     });
   });
@@ -84,7 +87,8 @@ async function main() {
       const samples = [];
       for (let t = 0; t < g.trials; t++) {
         console.log(`[wasm per-trial] ${key} ${t + 1}/${g.trials} (fresh process)`);
-        samples.push({ iterations: 1, ms: await childTrial(key) });
+        const r = await childTrial(key);
+        samples.push({ iterations: 1, ms: r.ms, cpuMs: r.cpuMs });
       }
       benches.push({ name: g.label, samples, stats: stats(samples) });
     }

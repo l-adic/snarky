@@ -21,6 +21,8 @@ export interface Hooks {
 export interface Sample {
   iterations: number;
   ms: number;
+  /** Process-wide CPU time for the trial (user+system); cpuMs/ms ≈ cores used. */
+  cpuMs?: number;
 }
 
 export interface Stats {
