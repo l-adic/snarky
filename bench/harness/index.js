@@ -156,6 +156,9 @@ export function writeArtifact(payload) {
         node: process.version,
         nodeFlags: process.execArgv,
         powerProfile: sh("powerprofilesctl get 2>/dev/null") || "unknown",
+        // 1-min load average at write time — a non-idle box (load ≫ 0) flags a
+        // run that may be skewed by competing work; keep it with the numbers.
+        loadavg1: sh("awk '{print $1}' /proc/loadavg") || "unknown",
         ...payload,
     };
     const sha = (out.gitSha || "unknown").slice(0, 9);

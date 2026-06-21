@@ -39,10 +39,19 @@ mean/stddev, GC reclaim per trial, and — PS only — a Rust/JS `rustShare` spl
   `tools/bench.sh` **and** `tools/bench_o1js.sh` to point at the same node for
   both. Do **not** run the two stacks on different node versions.
 - **Rust** stable toolchain (builds the native + wasm kimchi-napi bindings).
-- **`powerprofilesctl`** (or equivalent) to pin the CPU to `performance`. A
-  laptop on `balanced`/`power-saver` throttles ~3× and ruins wall numbers.
-- A machine that's **idle** during the run and has enough RAM (o1js-wasm peaks
-  ~7–8 GB RSS; the wasm linear-memory ceiling is 4 GB *per worker*).
+- A way to pin the CPU to **`performance`** (a `balanced`/`power-saver` box
+  throttles ~3× and ruins wall numbers). `powerprofilesctl set performance` if
+  it's installed; otherwise the **`intel_pstate`/sysfs** route —
+  `sudo cpupower frequency-set -g performance`, or
+  `echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor`.
+  If you can't change it, that's OK — the artifact records `powerProfile`, so
+  note it; just don't compare across different profiles. The matrix warns (it
+  doesn't block) if it can't confirm `performance`.
+- A machine that's **idle / single-tenant** during the run (this is the big one
+  — a competing Mina node or a second bench *will* deadlock the run and corrupt
+  numbers). `bench_matrix.sh` takes a lockfile and warns on high load / other
+  bench processes, but it can't stop unrelated load — make sure nothing else is
+  running. Enough RAM too (o1js-wasm peaks ~5–8 GB RSS).
 
 ## 2. One-time setup (build everything)
 
@@ -69,8 +78,10 @@ cd bench/o1js && npm install && cd ../..
 Sanity-check each backend loads before the long run:
 
 ```sh
-# PS native + wasm compile (fast)
-npx purs compile -g corefn $(cd packages/pickles-bench && npx spago sources 2>/dev/null) >/dev/null && echo PS-ok
+# PS bench builds (purs-backend-es) — what the launcher does. Run from the bench
+# workspace; `spago sources` emits paths relative to it, so don't run purs from
+# the repo root.
+( cd packages/pickles-bench && npx spago build ) && echo PS-ok
 # o1js circuit analysis, native + wasm (no prove — seconds)
 ( cd bench/o1js && npm run build && O1JS_BACKEND=native npm run rows && O1JS_BACKEND=wasm npm run rows )
 ```

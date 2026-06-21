@@ -47,6 +47,8 @@ Thumbs.db
 # NAPI generated files
 *.d.ts
 *.js.map
+# …but the bench harness's hand-written TS contract is source, not generated.
+!bench/harness/index.d.ts
 
 # Purescript Spec
 .spec-results

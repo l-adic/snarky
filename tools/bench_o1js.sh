@@ -16,7 +16,15 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 O1JS_DIR="$REPO_ROOT/bench/o1js"
-export PATH="$HOME/.nvm/versions/node/v23.11.1/bin:$PATH"
+# Pinned node (same as tools/bench.sh) — warn loudly if absent rather than
+# silently using a different node, which would skew the PS/o1js comparison.
+PINNED_NODE="$HOME/.nvm/versions/node/v23.11.1/bin"
+if [ -x "$PINNED_NODE/node" ]; then
+  export PATH="$PINNED_NODE:$PATH"
+else
+  echo "WARN: pinned node v23.11.1 not at $PINNED_NODE — using $(command -v node) ($(node --version 2>/dev/null)). PS and o1js MUST use the SAME node; install v23.11.1 or edit this PATH." >&2
+fi
+echo "==> node: $(node --version) ($(command -v node))"
 
 BACKEND=wasm
 for a in "$@"; do

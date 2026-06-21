@@ -37,8 +37,15 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BENCH_DIR="$REPO_ROOT/packages/pickles-bench"
 # Pinned node — the artifact records the version, and baselines are only
-# comparable on the same V8.
-export PATH="$HOME/.nvm/versions/node/v23.11.1/bin:$PATH"
+# comparable on the same V8. If it isn't installed, warn LOUDLY rather than
+# silently falling through to a different node (which would skew the comparison).
+PINNED_NODE="$HOME/.nvm/versions/node/v23.11.1/bin"
+if [ -x "$PINNED_NODE/node" ]; then
+  export PATH="$PINNED_NODE:$PATH"
+else
+  echo "WARN: pinned node v23.11.1 not at $PINNED_NODE — using $(command -v node) ($(node --version 2>/dev/null)). PS and o1js MUST use the SAME node for a fair comparison; install v23.11.1 (nvm install 23.11.1) or edit this PATH." >&2
+fi
+echo "==> node: $(node --version) ($(command -v node))"
 
 # With `--cpu-prof`, the newest profile in prof/ is auto-summarized by
 # packages/pickles-bench/analyze_cpuprofile.mjs (self-time by category /
