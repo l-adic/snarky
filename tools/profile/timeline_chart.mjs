@@ -17,39 +17,66 @@ if (!outPath || !files.length) {
 
 const series = files.map((f) => {
   const d = JSON.parse(fs.readFileSync(f, "utf8"));
-  return { label: d.label, samples: d.samples, markers: d.markers || [] };
+  return { label: d.label, samples: d.samples, markers: d.markers || [], intervalMs: d.intervalMs || 50 };
 });
 
 // Phase windows come from the [bench-window] markers, timestamped at read-time
-// by cpu_timeline (the launchers are line-buffered so markers arrive live and on
-// the sampler clock — including o1js's per-trial children). TRIM=<substr>
-// restricts to the matching timed windows (rebased to 0, dropping untimed
-// prepare/compile); SHADE=1 shades each timed trial.
+// by cpu_timeline (launchers are line-buffered so markers arrive live and on the
+// sampler clock — including o1js's per-trial children). TRIM=<substr> selects the
+// matching timed windows (e.g. "prove"). AVERAGE=1 collapses a config's N trials
+// into ONE representative curve: each trial is aligned to its own start and the
+// cores are averaged across trials onto a common time grid (linear interp).
 const TRIM = process.env.TRIM;
-const SHADE = process.env.SHADE === "1";
+const AVERAGE = process.env.AVERAGE === "1";
+const SHADE = process.env.SHADE === "1" && !AVERAGE;
+
+const interp = (samples, t) => { // linear interp of cores at time t over a trial's rebased samples
+  if (!samples.length) return null;
+  if (t <= samples[0].t) return samples[0].cores;
+  if (t >= samples.at(-1).t) return samples.at(-1).cores;
+  let lo = 0, hi = samples.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (samples[m].t <= t) lo = m; else hi = m; }
+  const a = samples[lo], b = samples[hi];
+  return a.cores + (b.cores - a.cores) * ((t - a.t) / (b.t - a.t || 1));
+};
+
 for (const s of series) {
   const starts = s.markers.filter((m) => m.kind === "start" && (!TRIM || (m.label || "").toLowerCase().includes(TRIM)));
   const ends = s.markers.filter((m) => m.kind === "end" && (!TRIM || (m.label || "").toLowerCase().includes(TRIM)));
-  s.windows = starts.map((m, i) => ({ s: m.t, e: ends[i]?.t ?? m.t })).filter((w) => w.e > w.s);
-  if (TRIM && s.windows.length) {
+  const windows = starts.map((m, i) => ({ s: m.t, e: ends[i]?.t ?? m.t })).filter((w) => w.e > w.s);
+  s.windows = windows;
+  if (!windows.length) continue;
+
+  if (AVERAGE) {
+    // per-trial curves, rebased to 0
+    const trials = windows.map((w) => s.samples.filter((p) => p.t >= w.s && p.t <= w.e).map((p) => ({ t: p.t - w.s, cores: p.cores })));
+    const maxDur = Math.max(...trials.map((tr) => tr.at(-1)?.t ?? 0));
+    const dt = s.intervalMs;
+    const avg = [];
+    for (let t = 0; t <= maxDur; t += dt) {
+      const vals = [];
+      for (const tr of trials) {
+        if (!tr.length || t > tr.at(-1).t) continue; // skip trials that already ended
+        const v = interp(tr, t);
+        if (v != null) vals.push(v);
+      }
+      if (vals.length) avg.push({ t, cores: vals.reduce((a, b) => a + b, 0) / vals.length });
+    }
+    s.samples = avg;
+    s.windows = [];
+  } else if (TRIM) {
     const lead = 500, tail = 500;
-    const lo = Math.max(0, s.windows[0].s - lead);
-    const hi = s.windows.at(-1).e + tail;
+    const lo = Math.max(0, windows[0].s - lead), hi = windows.at(-1).e + tail;
     s.samples = s.samples.filter((p) => p.t >= lo && p.t <= hi).map((p) => ({ t: p.t - lo, cores: p.cores }));
-    s.windows = s.windows.map((w) => ({ s: Math.max(0, w.s - lo), e: w.e - lo }));
+    s.windows = windows.map((w) => ({ s: Math.max(0, w.s - lo), e: w.e - lo }));
   }
 }
 
-// 4 distinct solid colors (PS = blues, o1js = oranges; native = dark, wasm = light).
-const PALETTE = {
-  "PS/native": "#1c5fb8", "PS/wasm": "#5aa9f0",
-  "o1js/native": "#c2570f", "o1js/wasm": "#f0a050",
-};
+// 2-color: PS = blue, o1js = red (each chart is one backend, so 2 lines).
 const styleOf = (label) => {
   const stack = /o1js/i.test(label) ? "o1js" : "PS";
   const backend = /wasm/i.test(label) ? "wasm" : "native";
-  const key = `${stack}/${backend}`;
-  return { stroke: PALETTE[key] || "#666", key, stack, backend };
+  return { stroke: stack === "o1js" ? "#d62728" : "#2a7de1", stack, backend };
 };
 
 // centered moving-average smoothing over SMOOTH_MS of wall time (0 = raw).
