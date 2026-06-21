@@ -207,27 +207,29 @@ Sanity-check both backends load before the long run:
 
 ---
 
-## Profiling & flamegraphs (why is one stack faster / more parallel?)
+## Profiling — cores & memory over time
 
-The matrix says *how much*; to see *where the time goes and how parallel each
-stack is*, profile with `--cpu-prof` and render flamegraphs. Full reusable
-tooling and recipe: [`tools/profile/`](../tools/profile/README.md). Committed
-visualizations: [`bench/profiles/`](profiles/).
+The matrix says *how much*; these timelines show *how* each stack spends a prove
+— its parallelism profile and its memory profile — sampled from `/proc` (the
+whole process tree, so native Rust threads, wasm rayon workers, and o1js's
+per-trial child processes are all counted). Tooling + recipe:
+[`tools/profile/`](../tools/profile/README.md). Committed visualizations (PNG),
+PS = blue, o1js = red:
 
-- **`parallelism.png`** — avg cores (cpu/wall) per config, compile vs prove.
-  Generated from the matrix `/proc` numbers by `tools/profile/chart.mjs`. This is
-  the authoritative parallelism picture.
-- **`{ps,o1js}-{native,wasm}.flame.png`** — main-isolate (serial JS) flamegraphs.
-- **`{ps,o1js}-wasm-workers.flame.png`** — the rayon worker pool merged.
+- **`cores-{native,wasm}-prove.png`** — cores in use (`Δcpu/Δwall`) over one
+  prove, averaged across the 3 trials. Parallel peaks (FFT/MSM) vs serial valleys
+  (witness-gen); PS holds higher plateaus and spends less time pinned at 1 core.
+- **`rss-{native,wasm}-prove.png`** — resident memory across the 3 prove trials.
+  Note the wasm chart: PS plateaus (one process, memory reclaimed via a
+  FinalizationRegistry) while o1js sawtooths (a fresh process per trial, reclaimed
+  on exit — the per-trial-subprocess design).
 
-**The cpuprofile rule (do not violate):** a V8 `.cpuprofile`'s `timeDeltas` are
-**wall time of the sampled thread, not CPU time**. You therefore cannot sum
-profile time across threads to get CPU (20 wasm isolates alive ~95 s each sum to
-~1800 s while the OS counted ~180 s), and rayon workers count `sleep::Sleep`
-spin as "running". So: **all CPU/parallelism quantities come from `/proc` (the
-matrix cpu+cores), never from summing cpuprofiles**; cpuprofiles are for
-code-location attribution only. PNGs are committed; the interactive SVGs and raw
-`.cpuprofile`s stay local in `prof/` (gitignored).
+Flamegraphs (where time goes *in the code*) are intentionally **not committed** —
+a flamegraph is only useful interactively (click-to-zoom), so the tooling stays
+in `tools/profile/` to regenerate the SVG on demand. The cpuprofile rule: a V8
+`.cpuprofile`'s `timeDeltas` are wall time of the sampled thread, not CPU — so
+all CPU/memory **quantities** come from `/proc` (these timelines + the matrix
+`cpu`/`cores`), never from summing profiles.
 
 ---
 

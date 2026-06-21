@@ -27,6 +27,7 @@ const [cmd, ...cmdArgs] = args.slice(dashdash + 1);
 const INTERVAL = Number(process.env.SAMPLE_MS || 50);
 const CLK_TCK = 100; // getconf CLK_TCK on linux
 
+const PAGE = 4096; // resident pages -> bytes (statm field 2)
 // read /proc/<pid>/stat -> {ppid, ticks}. comm (field 2) may contain spaces and
 // parens, so split on the LAST ')'.
 function readStat(pid) {
@@ -37,17 +38,19 @@ function readStat(pid) {
     const ppid = Number(rest[1]); // field 4
     const utime = Number(rest[11]); // field 14
     const stime = Number(rest[12]); // field 15
-    return { ppid, ticks: utime + stime };
+    let rss = 0;
+    try { rss = Number(fs.readFileSync(`/proc/${pid}/statm`, "utf8").split(" ")[1]) * PAGE; } catch {}
+    return { ppid, ticks: utime + stime, rss };
   } catch {
     return null;
   }
 }
 
-// sum ticks over root pid + all descendants
-function treeTicks(root) {
+// sum ticks + RSS over root pid + all descendants
+function treeStats(root) {
   let pids;
   try { pids = fs.readdirSync("/proc").filter((d) => /^\d+$/.test(d)).map(Number); }
-  catch { return 0; }
+  catch { return { ticks: 0, rss: 0 }; }
   const stat = new Map();
   for (const p of pids) { const s = readStat(p); if (s) stat.set(p, s); }
   // descendants of root via ppid chain
@@ -56,12 +59,12 @@ function treeTicks(root) {
   const want = new Set([root]);
   const stack = [root];
   while (stack.length) { const p = stack.pop(); for (const c of kids.get(p) || []) if (!want.has(c)) { want.add(c); stack.push(c); } }
-  let total = 0;
-  for (const p of want) { const s = stat.get(p); if (s) total += s.ticks; }
-  return total;
+  let ticks = 0, rss = 0;
+  for (const p of want) { const s = stat.get(p); if (s) { ticks += s.ticks; rss += s.rss; } }
+  return { ticks, rss };
 }
 
-const samples = []; // {t, cores}
+const samples = []; // {t, cores, rssMB}
 const markers = []; // {kind, uptimeMs, label}
 const MARK = /^\[bench-window\] (start|end) (\d+) ?(.*)$/;
 
@@ -81,13 +84,17 @@ child.stdout.on("data", (d) => {
   }
 });
 
-let prevTicks = treeTicks(child.pid);
+let prevTicks = treeStats(child.pid).ticks;
 let prevT = nowMs();
 const timer = setInterval(() => {
   const t = nowMs();
-  const ticks = treeTicks(child.pid);
+  const { ticks, rss } = treeStats(child.pid);
   const dt = (t - prevT) / 1000;
-  if (dt > 0) samples.push({ t: +t.toFixed(0), cores: +(((ticks - prevTicks) / CLK_TCK) / dt).toFixed(2) });
+  if (dt > 0) samples.push({
+    t: +t.toFixed(0),
+    cores: +(((ticks - prevTicks) / CLK_TCK) / dt).toFixed(2),
+    rssMB: +(rss / 1048576).toFixed(1),
+  });
   prevTicks = ticks; prevT = t;
 }, INTERVAL);
 

@@ -15,9 +15,17 @@ if (!outPath || !files.length) {
   process.exit(2);
 }
 
+// METRIC=cores (default) | rss. Each sample is normalized to {t, v}.
+const METRIC = (process.env.METRIC || "cores").toLowerCase();
+const FIELD = METRIC === "rss" ? "rssMB" : "cores";
 const series = files.map((f) => {
   const d = JSON.parse(fs.readFileSync(f, "utf8"));
-  return { label: d.label, samples: d.samples, markers: d.markers || [], intervalMs: d.intervalMs || 50 };
+  return {
+    label: d.label,
+    samples: (d.samples || []).map((p) => ({ t: p.t, v: METRIC === "rss" ? (p.rssMB ?? 0) : (p.cores ?? 0) })),
+    markers: d.markers || [],
+    intervalMs: d.intervalMs || 50,
+  };
 });
 
 // Phase windows come from the [bench-window] markers, timestamped at read-time
@@ -30,14 +38,14 @@ const TRIM = process.env.TRIM;
 const AVERAGE = process.env.AVERAGE === "1";
 const SHADE = process.env.SHADE === "1" && !AVERAGE;
 
-const interp = (samples, t) => { // linear interp of cores at time t over a trial's rebased samples
+const interp = (samples, t) => { // linear interp of value at time t over a trial's rebased samples
   if (!samples.length) return null;
-  if (t <= samples[0].t) return samples[0].cores;
-  if (t >= samples.at(-1).t) return samples.at(-1).cores;
+  if (t <= samples[0].t) return samples[0].v;
+  if (t >= samples.at(-1).t) return samples.at(-1).v;
   let lo = 0, hi = samples.length - 1;
   while (hi - lo > 1) { const m = (lo + hi) >> 1; if (samples[m].t <= t) lo = m; else hi = m; }
   const a = samples[lo], b = samples[hi];
-  return a.cores + (b.cores - a.cores) * ((t - a.t) / (b.t - a.t || 1));
+  return a.v + (b.v - a.v) * ((t - a.t) / (b.t - a.t || 1));
 };
 
 for (const s of series) {
@@ -49,7 +57,7 @@ for (const s of series) {
 
   if (AVERAGE) {
     // per-trial curves, rebased to 0
-    const trials = windows.map((w) => s.samples.filter((p) => p.t >= w.s && p.t <= w.e).map((p) => ({ t: p.t - w.s, cores: p.cores })));
+    const trials = windows.map((w) => s.samples.filter((p) => p.t >= w.s && p.t <= w.e).map((p) => ({ t: p.t - w.s, v: p.v })));
     const maxDur = Math.max(...trials.map((tr) => tr.at(-1)?.t ?? 0));
     const dt = s.intervalMs;
     const avg = [];
@@ -60,14 +68,14 @@ for (const s of series) {
         const v = interp(tr, t);
         if (v != null) vals.push(v);
       }
-      if (vals.length) avg.push({ t, cores: vals.reduce((a, b) => a + b, 0) / vals.length });
+      if (vals.length) avg.push({ t, v: vals.reduce((a, b) => a + b, 0) / vals.length });
     }
     s.samples = avg;
     s.windows = [];
   } else if (TRIM) {
     const lead = 500, tail = 500;
     const lo = Math.max(0, windows[0].s - lead), hi = windows.at(-1).e + tail;
-    s.samples = s.samples.filter((p) => p.t >= lo && p.t <= hi).map((p) => ({ t: p.t - lo, cores: p.cores }));
+    s.samples = s.samples.filter((p) => p.t >= lo && p.t <= hi).map((p) => ({ t: p.t - lo, v: p.v }));
     s.windows = windows.map((w) => ({ s: Math.max(0, w.s - lo), e: w.e - lo }));
   }
 }
@@ -85,33 +93,38 @@ const smooth = (samples) => {
   if (!SMOOTH_MS) return samples;
   return samples.map((p, i) => {
     let a = 0, n = 0;
-    for (let j = i; j >= 0 && p.t - samples[j].t <= SMOOTH_MS / 2; j--) { a += samples[j].cores; n++; }
-    for (let j = i + 1; j < samples.length && samples[j].t - p.t <= SMOOTH_MS / 2; j++) { a += samples[j].cores; n++; }
-    return { t: p.t, cores: a / n };
+    for (let j = i; j >= 0 && p.t - samples[j].t <= SMOOTH_MS / 2; j--) { a += samples[j].v; n++; }
+    for (let j = i + 1; j < samples.length && samples[j].t - p.t <= SMOOTH_MS / 2; j++) { a += samples[j].v; n++; }
+    return { t: p.t, v: a / n };
   });
 };
 
-const W = 1100, H = 520, padL = 56, padR = 20, padT = 56, padB = 56;
+const W = 1100, H = 520, padL = 60, padR = 20, padT = 56, padB = 56;
 const plotW = W - padL - padR, plotH = H - padT - padB;
 const maxT = Math.max(...series.flatMap((s) => s.samples.map((p) => p.t)), 1);
-const maxC = Math.max(20, Math.ceil(Math.max(...series.flatMap((s) => s.samples.map((p) => p.cores))) + 1));
+const dataMax = Math.max(...series.flatMap((s) => s.samples.map((p) => p.v)), 1);
+// y axis: cores → 0..max(20, data); rss → 0..(data in GB, rounded up)
+const RSS = METRIC === "rss";
+const maxY = RSS ? Math.ceil(dataMax / 1024 * 1.1) * 1024 : Math.max(20, Math.ceil(dataMax + 1));
+const yStep = RSS ? 1024 : 2; // 1 GB ticks for rss, 2-core ticks for cores
+const yLabel = (val) => (RSS ? (val / 1024).toFixed(0) : String(val));
 const x = (t) => padL + (t / maxT) * plotW;
-const y = (c) => padT + plotH - (c / maxC) * plotH;
+const y = (v) => padT + plotH - (v / maxY) * plotH;
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
 let g = "";
-// gridlines + y labels (cores)
-for (let c = 0; c <= maxC; c += 2) {
-  g += `<line x1="${padL}" y1="${y(c).toFixed(1)}" x2="${W - padR}" y2="${y(c).toFixed(1)}" stroke="#eee"/>`;
-  g += `<text x="${padL - 6}" y="${(y(c) + 3).toFixed(1)}" text-anchor="end" font-size="10" fill="#888">${c}</text>`;
+// gridlines + y labels
+for (let v = 0; v <= maxY; v += yStep) {
+  g += `<line x1="${padL}" y1="${y(v).toFixed(1)}" x2="${W - padR}" y2="${y(v).toFixed(1)}" stroke="#eee"/>`;
+  g += `<text x="${padL - 6}" y="${(y(v) + 3).toFixed(1)}" text-anchor="end" font-size="10" fill="#888">${yLabel(v)}</text>`;
 }
 // x labels (seconds)
 for (let s = 0; s <= maxT / 1000; s += Math.max(1, Math.round(maxT / 1000 / 10))) {
   g += `<line x1="${x(s * 1000).toFixed(1)}" y1="${padT}" x2="${x(s * 1000).toFixed(1)}" y2="${padT + plotH}" stroke="#f4f4f4"/>`;
   g += `<text x="${x(s * 1000).toFixed(1)}" y="${padT + plotH + 16}" text-anchor="middle" font-size="10" fill="#888">${s}s</text>`;
 }
-// nproc reference line if known via env
-if (process.env.NPROC) {
+// reference line: cores → machine nproc (env NPROC)
+if (!RSS && process.env.NPROC) {
   const np = Number(process.env.NPROC);
   g += `<line x1="${padL}" y1="${y(np).toFixed(1)}" x2="${W - padR}" y2="${y(np).toFixed(1)}" stroke="#bbb" stroke-dasharray="2,3"/>`;
   g += `<text x="${W - padR - 4}" y="${(y(np) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="#999">${np} cores (machine)</text>`;
@@ -126,8 +139,9 @@ const single = series.length === 1;
 for (const s of series) {
   const st = styleOf(s.label);
   const sm = smooth(s.samples);
-  const line = sm.map((p) => `${x(p.t).toFixed(1)},${y(p.cores).toFixed(1)}`).join(" ");
-  if (single) { // area fill for per-config panels
+  if (!sm.length) continue;
+  const line = sm.map((p) => `${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+  if (single) { // area fill for single-line charts
     const area = `${x(0).toFixed(1)},${y(0).toFixed(1)} ${line} ${x(sm.at(-1).t).toFixed(1)},${y(0).toFixed(1)}`;
     g += `<polygon points="${area}" fill="${st.stroke}" opacity="0.12"/>`;
   }
@@ -147,9 +161,9 @@ const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" font-family="sans-serif">
 <rect width="100%" height="100%" fill="#fff"/>
 <text x="${W / 2}" y="26" text-anchor="middle" font-size="16" font-weight="bold">${esc(title)}</text>
-<text x="16" y="${padT + plotH / 2}" transform="rotate(-90 16 ${padT + plotH / 2})" text-anchor="middle" font-size="11" fill="#555">cores in use (Δcpu/Δwall)</text>
+<text x="16" y="${padT + plotH / 2}" transform="rotate(-90 16 ${padT + plotH / 2})" text-anchor="middle" font-size="11" fill="#555">${RSS ? "resident memory (GB, whole process tree)" : "cores in use (Δcpu/Δwall)"}</text>
 <text x="${padL + plotW / 2}" y="${H - 8}" text-anchor="middle" font-size="11" fill="#555">wall time</text>
 ${g}
 </svg>`;
 fs.writeFileSync(outPath, svg);
-console.log(`wrote ${outPath} (${series.length} series, ${maxT / 1000 | 0}s, peak ~${maxC} cores axis)`);
+console.log(`wrote ${outPath} (${series.length} series, ${maxT / 1000 | 0}s, ${METRIC}, axis 0..${RSS ? (maxY / 1024).toFixed(0) + "GB" : maxY})`);

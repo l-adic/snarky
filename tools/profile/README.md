@@ -1,87 +1,80 @@
-# tools/profile — CPU profiling & flamegraphs for the bench matrix
+# tools/profile — profiling visualizations for the bench matrix
 
-Reusable, zero-dependency tooling to turn `--cpu-prof` output from the bench
-launchers into flamegraphs and a parallelism chart, for answering "where does
-the time go, and how parallel is each stack" (PS vs o1js, native vs wasm).
+Reusable, zero-dependency tooling to answer, for PS vs o1js × native vs wasm:
+**how parallel is each stack, and how much memory does it use, over the course
+of a prove?** plus a drill-down (where does the time go in the code?).
 
-Committed visualizations live in [`bench/profiles/`](../../bench/profiles/).
-Raw `.cpuprofile` dumps are large and local-only (`prof/` is gitignored).
+Committed visualizations live in [`bench/profiles/`](../../bench/profiles/) as
+PNGs. Everything else (SVGs, raw `.cpuprofile`s) is large/regenerable and stays
+local in `prof/` (gitignored).
 
-## The one rule that governs all of this
+## The committed visuals: cores & memory timelines
 
-**A V8 `.cpuprofile`'s `timeDeltas` are wall time of the sampled thread, not CPU
-time.** Two consequences, both of which bite if ignored:
+Sampled from **`/proc`** (the whole process tree, every 50 ms) while the bench
+runs — so they see native Rust threads, wasm rayon workers, AND o1js's per-trial
+child processes, none of which a V8 `.cpuprofile` can account for. Four charts,
+PS = blue, o1js = red:
 
-1. You **cannot sum cpuprofile time across threads** to get CPU. A wasm prover
-   runs ~20 isolates alive ~95 s each → ~1800 s of "presence" while the OS
-   counted ~180 s of actual CPU (a ~10× overcount).
-2. rayon workers count `sleep::Sleep::sleep` **spin** as "running" samples
-   (~50% of a worker's presence).
+- `cores-{native,wasm}-prove.png` — cores in use (`Δcpu/Δwall`) over one prove,
+  **averaged across the 3 trials**. Shows the parallelism profile: serial valleys
+  (witness-gen) vs parallel peaks (FFT/MSM).
+- `rss-{native,wasm}-prove.png` — resident memory over the prove region (all 3
+  trials), showing peak + whether memory accumulates or is reclaimed.
 
-So the division of labor is strict:
+### Tools
 
-| question | source |
-|---|---|
-| **how much CPU / how parallel** (numbers) | `/proc` cpu+cores → the bench `*-summary.md` and `chart.mjs` |
-| **where serial JS goes** (one thread) | a main-isolate flamegraph (`flamegraph.mjs`) |
-| **where the parallel prover goes** (proportional) | merged worker flamegraph (`flamemerge.mjs`) |
+- **`cpu_timeline.mjs <out.json> <label> -- <cmd...>`** — spawn a command, sample
+  its process tree's cores + RSS over time, capture `[bench-window]` markers for
+  phase segmentation. (Launchers are line-buffered so markers arrive live and on
+  the sampler clock — including o1js's children.)
+- **`timeline_chart.mjs <out.svg> "title" <timeline.json>...`** — line chart from
+  one or more timelines. `METRIC=cores|rss`, `TRIM=prove` (restrict to timed
+  windows), `AVERAGE=1` (collapse N trials into one aligned curve), `SMOOTH_MS`
+  (default 300), `NPROC` (machine cores reference line).
 
-cpuprofiles = code-location attribution only. Every *quantity* comes from the
-matrix `/proc` numbers, never from summing profiles.
-
-## Tools
-
-- **`flamegraph.mjs <in.cpuprofile> <out.svg> [title]`** — single-profile
-  flamegraph (root at bottom, width = inclusive time). Hover = ms/%/self; click
-  a frame to zoom (works in a browser). Resolves PureScript module names and
-  demangles wasm Rust symbols.
-- **`flamemerge.mjs <out.svg> "title" <file.cpuprofile>...`** — fold N profiles
-  into one tree. Use to collapse a worker pool (e.g. 19 rayon isolates) into a
-  single proportional view. Width = share of pool wall-presence (NOT CPU);
-  sleep/spin frames are kept but easy to spot.
-- **`rollup.mjs <label> <file.cpuprofile>...`** — per-role (main vs worker)
-  split of busy / wait-spin / gc / idle. Sanity tool; remember the across-thread
-  totals are wall-presence, not CPU.
-- **`chart.mjs <out.svg> <bench-results/<runid>-*.json>...`** — avg-cores
-  (cpu/wall) bar chart per config, compile vs prove, read straight from matrix
-  artifacts. The authoritative parallelism picture.
-
-## End-to-end recipe
+### Recipe
 
 ```sh
 export PATH="$HOME/.nvm/versions/node/v23.11.1/bin:$PATH"   # same node as the matrix
+TL=prof/timeline; mkdir -p "$TL"
+S="node tools/profile/cpu_timeline.mjs"
+# Run ALONE on an idle machine — this IS the bench.
+$S "$TL/ps-native-prove.json"   PS/native   -- tools/bench.sh --only prove
+$S "$TL/ps-wasm-prove.json"     PS/wasm     -- tools/bench.sh --wasm --only prove
+$S "$TL/o1js-native-prove.json" o1js/native -- tools/bench_o1js.sh --native --only prove
+$S "$TL/o1js-wasm-prove.json"   o1js/wasm   -- tools/bench_o1js.sh --only prove
 
-# 1. Profile each config. Profiles land in prof/ (gitignored).
-#    o1js-wasm runs the prover in per-trial CHILD processes, so inject --cpu-prof
-#    via NODE_OPTIONS to reach the prover child (the launcher flag only hits the parent).
-rm -f prof/CPU.*.cpuprofile
-tools/bench.sh --cpu-prof                                   # PS native
-tools/bench.sh --wasm --cpu-prof                            # PS wasm  (main + ~20 worker isolates)
-tools/bench_o1js.sh --native --cpu-prof                     # o1js native
-NODE_OPTIONS="--cpu-prof --cpu-prof-dir=$PWD/prof/o1js-wasm-raw" tools/bench_o1js.sh   # o1js wasm
+C=tools/profile/timeline_chart.mjs
+TRIM=prove AVERAGE=1 METRIC=cores NPROC=20 node $C prof/cores-native-prove.svg "Cores during prove — native" "$TL"/{ps,o1js}-native-prove.json
+TRIM=prove AVERAGE=1 METRIC=cores NPROC=20 node $C prof/cores-wasm-prove.svg   "Cores during prove — wasm"   "$TL"/{ps,o1js}-wasm-prove.json
+TRIM=prove METRIC=rss NPROC=20 node $C prof/rss-native-prove.svg "Resident memory during prove — native" "$TL"/{ps,o1js}-native-prove.json
+TRIM=prove METRIC=rss NPROC=20 node $C prof/rss-wasm-prove.svg   "Resident memory during prove — wasm"   "$TL"/{ps,o1js}-wasm-prove.json
 
-# 2. Identify isolates. Filename = CPU.<date>.<pid>.<thread>.<seq>.cpuprofile
-#    thread 0 = main isolate (serial JS); threads >0 = worker isolates (wasm only).
-#    For o1js-wasm pick a PROVE child (later/larger pids; 20 isolates each).
-
-# SVGs are generated into prof/ (scratch, gitignored). Only the rasterized PNGs
-# are committed to bench/profiles/ (SVGs are large & regenerable — see step 6).
-
-# 3. Serial flamegraph (main isolate) per config:
-node tools/profile/flamegraph.mjs <main.cpuprofile> prof/<cfg>.flame.svg "<cfg> — main isolate JS"
-
-# 4. Merged worker flamegraph (wasm only), folding threads 1..N of one process.
-#    Worker merges are huge; FLAME_MINPX raises the prune threshold to shrink them:
-FLAME_MINPX=1.0 node tools/profile/flamemerge.mjs prof/<cfg>-workers.flame.svg "<cfg> — workers merged" prof/CPU.*.<pid>.[1-9].*.cpuprofile prof/CPU.*.<pid>.1[0-9].*.cpuprofile
-
-# 5. Parallelism chart from the matrix run:
-node tools/profile/chart.mjs prof/parallelism.svg bench-results/<runid>-*-i*.json
-
-# 6. Rasterize SVG -> PNG into bench/profiles/ (committed). No system rasterizer needed:
+# rasterize SVG -> PNG into bench/profiles/ (no system rasterizer needed)
 npm install --prefix /tmp/raster @resvg/resvg-js
-node -e 'import("/tmp/raster/node_modules/@resvg/resvg-js/index.js").then(({Resvg})=>{const fs=require("fs"),p=require("path");for(const a of process.argv.slice(1)){const svg=fs.readFileSync(a,"utf8");fs.writeFileSync("bench/profiles/"+p.basename(a).replace(/\.svg$/,".png"),new Resvg(svg,{background:"#fff",fitTo:{mode:"width",value:2400}}).render().asPng());}})' prof/*.svg
+for f in prof/{cores,rss}-*.svg; do node -e 'import("/tmp/raster/node_modules/@resvg/resvg-js/index.js").then(({Resvg})=>{const fs=require("fs"),p=require("path"),a=process.argv[1];fs.writeFileSync("bench/profiles/"+p.basename(a).replace(/\.svg$/,".png"),new Resvg(fs.readFileSync(a,"utf8"),{background:"#fff",fitTo:{mode:"width",value:2400}}).render().asPng())}).catch(e=>{throw e})' "$f"; done
 ```
 
-Commit the PNGs in `bench/profiles/`; the SVGs (interactive, click-to-zoom) and
-raw `.cpuprofile`s stay local in `prof/` (gitignored). Open an SVG in a browser
-when you need to actually explore deep frames.
+## Drill-down: flamegraphs (not committed — regenerable interactive SVGs)
+
+The timelines say *how much* parallelism/memory; flamegraphs say *where in the
+code*. A flamegraph is only useful interactively (click-to-zoom), so we keep the
+tooling but do **not** commit static PNGs — generate the SVG and open it in a
+browser when you need to dig in.
+
+- **`flamegraph.mjs <in.cpuprofile> <out.svg> [title]`** — single-profile
+  flamegraph; resolves PureScript module names and demangles wasm Rust symbols.
+- **`flamemerge.mjs <out.svg> "title" <file...>`** — fold N profiles into one
+  (collapse a rayon worker pool). `FLAME_MINPX` raises the prune threshold.
+- **`rollup.mjs <label> <file...>`** — per-role busy/wait-spin/gc/idle split.
+
+To capture cpuprofiles: `tools/bench.sh [--wasm] --cpu-prof --only <phase>`; for
+o1js-wasm the prover runs in per-trial children, so inject via
+`NODE_OPTIONS="--cpu-prof --cpu-prof-dir=$PWD/prof/raw"` to reach them.
+
+**The rule for cpuprofiles:** a V8 `.cpuprofile`'s `timeDeltas` are wall time of
+the sampled thread, **not CPU time** — you cannot sum across threads to get CPU
+(20 wasm isolates alive ~95 s each sum to ~1800 s vs ~180 s real), and rayon
+workers count `sleep::Sleep` spin as "running". So cpuprofiles are for
+code-location attribution only; all CPU/memory **quantities** come from `/proc`
+(the timelines above, and the matrix `cpu`/`cores` columns).
