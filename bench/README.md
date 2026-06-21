@@ -139,25 +139,24 @@ node tools/bench_table.mjs bench-results/a.json bench-results/b.json
 - **o1js wasm OOM / slow:** wasm has a 4 GB linear-memory ceiling per worker and
   is 2–2.5× slower than native; expect long runs and high RSS. If it OOMs,
   reduce concurrency or run wasm configs separately.
-- **o1js wasm HANGS / deadlocks** (seen on the dev box — flag for confirmation
-  on the bench machine): the run wedges several minutes in — alive but **0 CPU,
-  indefinitely idle**, `--trace-gc` output stops. **Root cause (debugged): the
-  wasm32 4 GB linear-memory ceiling.** o1js doesn't release its prover-key wasm
-  memory between compiles (`forceRecompile` re-synthesizes without freeing, and
-  `forceGc` can't touch wasm linear memory), so RSS climbs ~1 GB/compile
-  monotonically; eventually a wasm worker crosses its 4 GB instance ceiling,
-  OOMs and dies, and the main thread deadlocks awaiting the dead worker.
-  (Verified with `BENCH_RSS=1`: o1js climbs `2.2 → 3.9 → 4.6 → 5.3 GB` and never
-  plateaus; PS plateaus ~2.2 GB because our kimchi-napi wasm returns prover
-  memory to the allocator via a FinalizationRegistry on the harness's
-  gc-yield-gc. It is **not** oversubscription — capping `setNumberOfWorkers`
-  doesn't help.) *Confirm it's wedged (not just slow):* sample `utime+stime`
-  (fields 14+15) of `/proc/<pid>/stat` over a few seconds — a 0 delta =
-  deadlocked, kill it. **Fix:** the 4 GB is a wasm32 hard limit (more system RAM
-  won't help) — run the o1js-wasm **compile and prove groups in separate node
-  processes** (each gets a fresh 4 GB wasm arena; compile-only peaks ~5 GB and
-  survives, prove-only is lighter). **Native o1js is unaffected** (no ceiling).
-  Run with `BENCH_RSS=1` to watch the climb yourself.
+- **o1js wasm is slow (per-trial fresh processes — by design):** under `--wasm`
+  the o1js bench runs **each timed trial in its own node process** (`bench.ts`
+  does this automatically), so a single o1js-wasm run spawns 6 child processes
+  and re-pays the untimed SRS+compile setup each time → expect ~8–12 min/run.
+  *Why:* o1js doesn't release its prover-key wasm memory between compiles
+  (`forceRecompile` re-synthesizes without freeing; `forceGc` can't touch wasm
+  linear memory), so a single process climbs ~1 GB/compile and a worker
+  eventually crosses the wasm32 **4 GB instance ceiling**, OOMs, and the main
+  thread deadlocks awaiting the dead worker. A fresh process per trial caps
+  memory at one trial's worth (OS reclaims on exit). The timed numbers are
+  unaffected — setup/warmup is untimed `prepare` on both sides, and each child's
+  prepare warms the JIT. (Watch the difference with `BENCH_RSS=1`: single-process
+  o1js climbs `2.2 → 3.9 → 4.6 → 5.3 GB` and never plateaus; our kimchi-napi wasm
+  plateaus ~2.2 GB because it returns prover memory via a FinalizationRegistry on
+  the harness's gc-yield-gc. **Native o1js and PS are single-process** — no
+  ceiling, no per-trial spawning.) If o1js-wasm STILL wedges on the bench box,
+  confirm it's wedged (not slow) by sampling `utime+stime` (fields 14+15) of
+  `/proc/<pid>/stat` over a few seconds — 0 delta = deadlocked.
 - **`node: command not found` / wrong version:** the launchers expect node at
   the v23.11.1 nvm path; install it or edit the `PATH` line in both launchers.
 - **`KIMCHI_BACKEND=wasm` fails to load:** you didn't run
