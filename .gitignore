@@ -101,3 +101,6 @@ packages/pickles-circuit-diffs/circuits/ocaml/*.json
 packages/pickles-circuit-diffs/circuits/ocaml/*.jsonl
 bench-results/
 prof/
+
+# Profiling visualizations: commit PNGs; SVGs are large/regenerable (tools/profile/)
+bench/profiles/*.svg

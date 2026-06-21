@@ -199,6 +199,30 @@ Sanity-check both backends load before the long run:
 
 ---
 
+## Profiling & flamegraphs (why is one stack faster / more parallel?)
+
+The matrix says *how much*; to see *where the time goes and how parallel each
+stack is*, profile with `--cpu-prof` and render flamegraphs. Full reusable
+tooling and recipe: [`tools/profile/`](../tools/profile/README.md). Committed
+visualizations: [`bench/profiles/`](profiles/).
+
+- **`parallelism.png`** — avg cores (cpu/wall) per config, compile vs prove.
+  Generated from the matrix `/proc` numbers by `tools/profile/chart.mjs`. This is
+  the authoritative parallelism picture.
+- **`{ps,o1js}-{native,wasm}.flame.png`** — main-isolate (serial JS) flamegraphs.
+- **`{ps,o1js}-wasm-workers.flame.png`** — the rayon worker pool merged.
+
+**The cpuprofile rule (do not violate):** a V8 `.cpuprofile`'s `timeDeltas` are
+**wall time of the sampled thread, not CPU time**. You therefore cannot sum
+profile time across threads to get CPU (20 wasm isolates alive ~95 s each sum to
+~1800 s while the OS counted ~180 s), and rayon workers count `sleep::Sleep`
+spin as "running". So: **all CPU/parallelism quantities come from `/proc` (the
+matrix cpu+cores), never from summing cpuprofiles**; cpuprofiles are for
+code-location attribution only. PNGs are committed; the interactive SVGs and raw
+`.cpuprofile`s stay local in `prof/` (gitignored).
+
+---
+
 ## Troubleshooting
 
 - **o1js wasm is slow (per-trial fresh processes — by design):** under `--wasm`
