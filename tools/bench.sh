@@ -35,34 +35,25 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$REPO_ROOT/tools/lib/common.sh"
 BENCH_DIR="$REPO_ROOT/packages/pickles-bench"
 # Pinned node — the artifact records the version, and baselines are only
-# comparable on the same V8.
-export PATH="$HOME/.nvm/versions/node/v23.11.1/bin:$PATH"
+# comparable on the same V8. If it isn't installed, warn LOUDLY rather than
+# silently falling through to a different node (which would skew the comparison).
+source "$REPO_ROOT/tools/lib/setup-node.sh"
 
-# With `--cpu-prof`, the newest profile in prof/ is auto-summarized by
-# packages/pickles-bench/analyze_cpuprofile.mjs (self-time by category /
-# module / frame — sizes dispatch+currying overhead vs bigint core vs Run
-# machinery). Re-run it manually on any saved .cpuprofile.
+# Only --cpu-prof needs launcher-level handling (it's a node flag, not a script
+# flag). Everything else (--wasm, --only, --help) is forwarded to run.mjs / the
+# PureScript CLI which parse them natively.
 #
-# Our one flag; the rest is forwarded to the bench CLI.
-#
-# Deliberately NO GC tuning (e.g. --max-semi-space-size): measured
-# 2026-06-11 as noise-level for this workload once the compile bench
-# stopped running with prove's prepared state resident, and changing node
-# flags breaks comparability with older baselines. The flags are recorded
-# in the results JSON (`nodeFlags`) — only compare runs with identical
-# flags.
+# Deliberately NO GC tuning (e.g. --max-semi-space-size): noise-level
+# for this workload, and changing node flags breaks comparability.
 NODE_FLAGS=(--trace-gc --expose-gc)
+CPU_PROF=
 ARGS=()
 for a in "$@"; do
   case "$a" in
     --cpu-prof) CPU_PROF=1; NODE_FLAGS+=(--cpu-prof --cpu-prof-dir "$REPO_ROOT/prof") ;;
-    # --wasm: run against the wasm32-wasip1-threads build of kimchi-napi
-    # (see packages/kimchi-napi/index.js). The artifact gets a `backend`
-    # field + filename infix so wasm runs never pollute the native
-    # baseline history compare.mjs reads.
-    --wasm) KIMCHI_BACKEND=wasm; export KIMCHI_BACKEND ;;
     *) ARGS+=("$a") ;;
   esac
 done
@@ -74,37 +65,27 @@ cd "$REPO_ROOT"
 mkdir -p bench-results prof
 RUN_LOG="prof/bench-run.log"
 
+# --help: print usage and exit before the measurement pipeline.
+for a in "${ARGS[@]+"${ARGS[@]}"}"; do
+  case "$a" in --help|-h) node packages/pickles-bench/run.mjs --help; exit 0 ;; esac
+done
+
 echo "==> Running suite (node ${NODE_FLAGS[*]}; log: $RUN_LOG) ..."
 # The raw --trace-gc firehose (one line per GC, thousands per trial) goes
 # to the LOG ONLY — it is input for parse_gclog.mjs, not for humans. The
 # terminal shows just the bench's own output (markers, splits, results).
 node "${NODE_FLAGS[@]}" packages/pickles-bench/run.mjs ${ARGS[@]+"${ARGS[@]}"} 2>&1 \
-  | tee "$RUN_LOG" \
-  | grep -vE '^\[[0-9]+(:0x[0-9a-f]+)?\] ' || true
+  | stdbuf -oL tee "$RUN_LOG" \
+  | grep --line-buffered -vE '^\[[0-9]+(:0x[0-9a-f]+)?\] ' || true
 
 # The bench prints `[bench-results] <path>` for the JSON it wrote.
 RESULTS_FILE=$(sed -n 's/^\[bench-results\] //p' "$RUN_LOG" | tail -1)
 if [ -z "$RESULTS_FILE" ]; then
-  echo "ERROR: no [bench-results] line found in the run output" >&2
-  exit 1
+  die "no [bench-results] line found in the run output"
 fi
 
 echo "==> Attaching GC stats from the trace-gc log ..."
 node packages/pickles-bench/parse_gclog.mjs "$RUN_LOG" "$RESULTS_FILE"
-
-if [ "${KIMCHI_BACKEND:-}" = "wasm" ]; then
-  RESULTS_FILE=$(node -e '
-    const fs = require("fs");
-    const f = process.argv[1];
-    const a = JSON.parse(fs.readFileSync(f, "utf8"));
-    a.backend = "wasm";
-    const out = f.replace(/^(bench-results\/)/, "$1wasm-");
-    fs.writeFileSync(out, JSON.stringify(a, null, 2));
-    fs.unlinkSync(f);
-    console.log(out);
-  ' "$RESULTS_FILE")
-  echo "==> wasm backend: artifact tagged + renamed -> $RESULTS_FILE"
-fi
 
 if [ "${CPU_PROF:-}" = "1" ]; then
   CPU_PROFILE=$(ls -t prof/*.cpuprofile 2>/dev/null | head -1 || true)

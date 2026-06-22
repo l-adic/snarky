@@ -19,19 +19,19 @@ module Bench.Pickles.Prove
 
 import Prelude
 
-import Bench.Pickles.BenchUtils as BenchUtils
-import Bench.Pickles.Common (BenchSrs, NrrRules, TreeRules, benchIterations, benchTreeRule, nrrRule)
+import Bench.Harness (Group)
+import Bench.Pickles.Common (BenchSrs, NrrRules, TreeRules, benchTreeRule, nrrRule)
 import Bench.Pickles.FfiTimer as FfiTimer
-import BenchLib as BL
-import Data.Array as Array
+import Control.Promise (fromAff)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
 import Data.Tuple.Nested (tuple1, tuple2)
 import Effect (Effect)
-import Effect.Aff (Aff, Milliseconds(..), delay)
+import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
+import Effect.Ref as Ref
 import Pickles (BranchProver(..), NoSlots, PrevSlot(..), SlotWrapKey(..), Slots2, StatementIO(..), StepField, compileMulti, mkRuleEntry)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (F(..))
@@ -114,31 +114,24 @@ prepareProve srs = do
 benchLabel :: String
 benchLabel = "b1 recursive prove (shared warm SRS)"
 
-group :: Aff (Aff Unit) -> BL.Group
-group getProveThunk =
-  BL.group "prove: N=2 tree b1 (compile + b0 untimed)"
-    -- iterations = 1, sizes = [0, 0, …, 0] of length `benchIterations`
-    -- → benchIterations independent samples, each with its own time.
-    (\o -> o { iterations = 1, sizes = Array.replicate benchIterations 0 })
-    [ BL.benchAff_ benchLabel
-        -- The untimed prepare: first call runs `prepareProve` (memoized
-        -- in Main), so the heavy setup happens here, outside the timed
-        -- region and after the compile group.
-        (\_ -> getProveThunk)
-        ( \proveThunk -> do
-            -- Pre-trial GC; see Compile.purs for the rationale.
-            liftEffect BenchUtils.forceGc
-            delay (Milliseconds 1.0)
-            liftEffect BenchUtils.forceGc
-            liftEffect FfiTimer.start
-            liftEffect $ BenchUtils.startFfiTracking benchLabel
-            liftEffect BenchUtils.startGcTracking
-            proveThunk
-            liftEffect $ BenchUtils.stopFfiTracking benchLabel
-            liftEffect $ BenchUtils.captureTrial benchLabel
-            liftEffect FfiTimer.reportSplit
-            liftEffect BenchUtils.report
-            _ <- liftEffect BenchUtils.stopGcTracking
-            pure unit
-        )
-    ]
+-- | `prepare` runs `prepareProve` once (untimed: compile + NRR + b0) and stashes
+-- | the b1 prove thunk; `work` runs that thunk (the one timed unit) `trials`
+-- | times. Because `runBench` runs each group's `prepare` in order, the heavy
+-- | prove setup happens AFTER the compile group — so compile is never measured
+-- | with prove's prepared state resident. `FfiTimer` brackets the timed prove
+-- | (the napi prove-phase split), as before. The per-trial GC / window / FFI-
+-- | counter wrapping is in the shared `runBench`.
+group :: Int -> BenchSrs -> Effect Group
+group trials srs = do
+  ref <- Ref.new (pure unit :: Aff Unit)
+  pure
+    { label: benchLabel
+    , trials
+    , prepare: fromAff do
+        thunk <- liftEffect (prepareProve srs)
+        liftEffect (Ref.write thunk ref)
+    , work: fromAff do
+        liftEffect FfiTimer.start
+        join (liftEffect (Ref.read ref))
+        liftEffect FfiTimer.reportSplit
+    }

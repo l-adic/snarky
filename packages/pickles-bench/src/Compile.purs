@@ -15,15 +15,14 @@ module Bench.Pickles.Compile
 
 import Prelude
 
-import Bench.Pickles.BenchUtils as BenchUtils
-import Bench.Pickles.Common (BenchSrs, NrrRules, TreeRules, benchIterations, benchTreeRule, nrrRule)
-import BenchLib as BL
+import Bench.Harness (Group)
+import Bench.Pickles.Common (BenchSrs, NrrRules, TreeRules, benchTreeRule, nrrRule)
+import Control.Promise (fromAff)
 import Data.Array as Array
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
 import Data.Tuple.Nested (tuple1, tuple2)
 import Effect (Effect)
-import Effect.Aff (Milliseconds(..), delay)
 import Effect.Class (liftEffect)
 import Pickles (NoSlots, RuleEntry, SlotWrapKey(..), Slots2, StepField, compileMulti, mkRuleEntry)
 import Snarky.Backend.Advice (noAdvice)
@@ -91,30 +90,14 @@ fullCompile srs = do
 benchLabel :: String
 benchLabel = "NRR + tree compile (shared warm SRS)"
 
--- | Benchmark group: the compile workload. SRS shared/pre-warmed in
--- | `Main`; only the NRR + tree compilation is timed.
-group :: BenchSrs -> BL.Group
-group srs =
-  BL.group "compile: N=2 step circuit, domain log2 = 16"
-    (\o -> o { iterations = benchIterations, sizes = [ 0 ] })
-    [ BL.benchAff_ benchLabel
-        (\_ -> pure unit)
-        ( \_ -> do
-            -- Pre-trial GC (gc -> yield -> gc): finalize the previous
-            -- trial's garbage so trials are independent — and so dead
-            -- prover indexes return to the wasm allocator before this
-            -- trial allocates (FinalizationRegistry callbacks run a
-            -- tick after gc, hence the yield between the two calls).
-            liftEffect BenchUtils.forceGc
-            delay (Milliseconds 1.0)
-            liftEffect BenchUtils.forceGc
-            liftEffect $ BenchUtils.startFfiTracking benchLabel
-            liftEffect BenchUtils.startGcTracking
-            _ <- liftEffect (fullCompile srs)
-            liftEffect $ BenchUtils.stopFfiTracking benchLabel
-            liftEffect $ BenchUtils.captureTrial benchLabel
-            liftEffect BenchUtils.report
-            _ <- liftEffect BenchUtils.stopGcTracking
-            pure unit
-        )
-    ]
+-- | Benchmark group: the compile workload. SRS shared/pre-warmed in `Main`; only
+-- | the NRR + tree compilation is timed. No setup (`prepare` is a no-op — the SRS
+-- | is ready); each trial is one full `fullCompile`. The per-trial GC / window /
+-- | FFI wrapping lives in the shared `runBench`, not here.
+group :: Int -> BenchSrs -> Group
+group trials srs =
+  { label: benchLabel
+  , trials
+  , prepare: fromAff (pure unit)
+  , work: fromAff (liftEffect (void (fullCompile srs)))
+  }

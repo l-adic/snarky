@@ -49,9 +49,8 @@ package:
   name: pickles-bench
   dependencies:
     - aff
+    - aff-promise
     - arrays
-    - benchlib
-    - console
     - curves
     - effect
     - either
@@ -60,8 +59,7 @@ package:
     - integers
     - lagrange-cache
     - maybe
-    - newtype
-    - numbers
+    - nullable
     - optparse
     - pickles
     - prelude

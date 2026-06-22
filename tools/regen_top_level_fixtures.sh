@@ -33,15 +33,8 @@ FIXTURES_DIR="${SNARKY_ROOT}/packages/pickles-circuit-diffs/circuits/ocaml"
 TMP="${TMP:-/tmp/regen_top_level_fixtures}"
 DRIVER_BIN_DIR="${SNARKY_ROOT}/mina/_build/default/src/lib/crypto/pickles"
 
-DRIVERS=(
-  dump_simple_chain
-  dump_simple_chain_n2
-  dump_no_recursion_return
-  dump_add_one_return
-  dump_tree_proof_return
-  dump_two_phase_chain
-  dump_side_loaded_main
-)
+source "${SNARKY_ROOT}/tools/lib/circuits.sh"
+DRIVERS=("${TOP_LEVEL_DRIVERS[@]}")
 
 echo ">> Building drivers in mina..."
 ( cd mina && dune build $(for d in "${DRIVERS[@]}"; do

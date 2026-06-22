@@ -6,7 +6,8 @@
   "workspaces": [
     "packages/kimchi-napi",
     "packages/pasta-runtime",
-    "packages/example/app"
+    "packages/example/app",
+    "bench/harness"
   ],
   "scripts": {
     "test": "make test",
