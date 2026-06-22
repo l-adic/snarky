@@ -25,6 +25,10 @@ tools/bench_o1js.sh --help
 
 _Intel Core i5-13500 (20 threads), node v23.11.1, 5 iterations._
 
+Reproduce on an idle, single-tenant box: the tables come from
+`tools/bench_matrix.sh --iters 5`; the cores/RSS charts from the recipe in
+[`tools/profile/README.md`](../tools/profile/README.md#recipe).
+
 o1js-wasm runs each timed trial in a fresh process: o1js doesn't free its wasm
 prover memory between trials, so a single process hits the wasm32 4 GB ceiling
 and deadlocks. This only slows the o1js-wasm *run* (it re-pays setup per trial);

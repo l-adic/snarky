@@ -38,17 +38,21 @@ PS = blue, o1js = red:
 export PATH="$HOME/.nvm/versions/node/v23.11.1/bin:$PATH"   # same node as the matrix
 TL=prof/timeline; mkdir -p "$TL"
 S="node tools/profile/cpu_timeline.mjs"
-# Run ALONE on an idle machine — this IS the bench.
-$S "$TL/ps-native-prove.json"   PS/native   -- tools/bench.sh --only prove
-$S "$TL/ps-wasm-prove.json"     PS/wasm     -- tools/bench.sh --wasm --only prove
-$S "$TL/o1js-native-prove.json" o1js/native -- tools/bench_o1js.sh --native --only prove
-$S "$TL/o1js-wasm-prove.json"   o1js/wasm   -- tools/bench_o1js.sh --only prove
+# Run ALONE on an idle machine — this IS the bench. Full suite (no --only) so
+# each timeline carries BOTH the compile and prove windows.
+$S "$TL/ps-native.json"   PS/native   -- tools/bench.sh
+$S "$TL/ps-wasm.json"     PS/wasm     -- tools/bench.sh --wasm
+$S "$TL/o1js-native.json" o1js/native -- tools/bench_o1js.sh --native
+$S "$TL/o1js-wasm.json"   o1js/wasm   -- tools/bench_o1js.sh
 
+# The 8 committed charts: {cores,rss} × {native,wasm} × {compile,prove}. cores is
+# trial-averaged (AVERAGE=1), rss shows all trials. NPROC = the machine's thread
+# count (the reference line — 20 on the reported i5-13500).
 C=tools/profile/timeline_chart.mjs
-TRIM=prove AVERAGE=1 METRIC=cores NPROC=20 node $C prof/cores-native-prove.svg "Cores during prove — native" "$TL"/{ps,o1js}-native-prove.json
-TRIM=prove AVERAGE=1 METRIC=cores NPROC=20 node $C prof/cores-wasm-prove.svg   "Cores during prove — wasm"   "$TL"/{ps,o1js}-wasm-prove.json
-TRIM=prove METRIC=rss NPROC=20 node $C prof/rss-native-prove.svg "Resident memory during prove — native" "$TL"/{ps,o1js}-native-prove.json
-TRIM=prove METRIC=rss NPROC=20 node $C prof/rss-wasm-prove.svg   "Resident memory during prove — wasm"   "$TL"/{ps,o1js}-wasm-prove.json
+for ph in compile prove; do for be in native wasm; do
+  TRIM=$ph AVERAGE=1 METRIC=cores NPROC=20 node $C prof/cores-$be-$ph.svg "Cores during $ph — $be"            "$TL"/{ps,o1js}-$be.json
+  TRIM=$ph            METRIC=rss   NPROC=20 node $C prof/rss-$be-$ph.svg   "Resident memory during $ph — $be"  "$TL"/{ps,o1js}-$be.json
+done; done
 
 # rasterize SVG -> PNG into bench/profiles/ (no system rasterizer needed)
 npm install --prefix /tmp/raster @resvg/resvg-js
