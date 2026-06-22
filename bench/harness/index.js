@@ -154,6 +154,9 @@ export function writeArtifact(payload) {
             return null;
         }
     };
+    // backend: payload may set it explicitly (o1js passes it); for PS it's
+    // inferred from KIMCHI_BACKEND (set by run.mjs --wasm).
+    const backend = payload.backend || process.env.KIMCHI_BACKEND || "native";
     const out = {
         date: new Date().toISOString(),
         gitSha: process.env.GIT_SHA || sh("git rev-parse HEAD"),
@@ -164,10 +167,11 @@ export function writeArtifact(payload) {
         // 1-min load average at write time — a non-idle box (load ≫ 0) flags a
         // run that may be skewed by competing work; keep it with the numbers.
         loadavg1: sh("awk '{print $1}' /proc/loadavg") || "unknown",
+        backend,
         ...payload,
     };
     const sha = (out.gitSha || "unknown").slice(0, 9);
-    const infix = payload.backend && payload.backend !== "native" ? payload.backend + "-" : "";
+    const infix = backend !== "native" ? backend + "-" : "";
     const file =
         process.env.BENCH_RESULTS_FILE ||
         path.join("bench-results", `${infix}${sha}-${out.date.replace(/[:.]/g, "-")}.json`);
