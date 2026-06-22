@@ -24,7 +24,6 @@ module Pickles.PublicInputCommit
   , class RPackStatement
   , PackedField
   , CorrectionMode(..)
-  , DeferredScaleMul(..)
   , DeferredScaleMul1(..)
   , MsmTerm(..)
   , ScalarMulResult
@@ -160,24 +159,6 @@ instance
 -- | PureCorrections: sum as pure field arithmetic (no circuit cost) — for Step verifier.
 -- | InCircuitCorrections: sum via in-circuit addComplete gates — for Wrap verifier.
 data CorrectionMode = PureCorrections | InCircuitCorrections
-
--- | A deferred scalar multiplication that captures type-level parameters.
--- | This lets scalarMulLeaf store the computation without executing it,
--- | so publicInputCommit can interleave scale_fast2' and add_fast inline
--- | during the fold (matching OCaml's step_verifier.ml:468-475).
--- |
--- | Returns a `Vector stepChunks (AffinePoint (FVar f))` — one curve point
--- | per chunk of the lagrange basis. For nc=1 this is a 1-element vector
--- | producing identical gates to a single scaleFast2'; for chunks2 (step
--- | domain > wrap SRS max_poly_size) it emits stepChunks scaleFast2' calls
--- | per PI slot. Mirrors OCaml's
--- | `Array.map2_exn acc chunks ~f:(... scale_fast2' g x ~num_bits ...)`
--- | (wrap_verifier.ml:1019-1023).
-newtype DeferredScaleMul (stepChunks :: Int) f = DeferredScaleMul
-  ( forall r
-     . PrimeField f
-    => Snarky f (KimchiConstraint f) r (Vector stepChunks (AffinePoint (FVar f)))
-  )
 
 -- | Per-chunk deferred scalar multiplication. Used by `InCircuitCorrections`
 -- | to interleave scale_fast2'+add_fast per chunk (matching OCaml's

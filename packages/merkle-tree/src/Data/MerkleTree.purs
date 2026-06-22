@@ -13,9 +13,6 @@ module Data.MerkleTree
   , set
   , getPath
   , impliedRoot
-  , getFreePath
-  , freeRoot
-  , impliedFreeRoot
   , root
   , toUnfoldable
   , ithBit
@@ -29,8 +26,8 @@ import Data.Foldable (class Foldable)
 import Data.List (List(..), (:))
 import Data.List as List
 import Data.Maybe (Maybe(..))
-import Data.MerkleTree.Hashable (class HashInput, class Hashable, class MergeHash, class MerkleHashable, FreeHash(..), defaultHash, hashInput, hashLeaf, merge, toHashInput) as ReExports
-import Data.MerkleTree.Hashable (class MergeHash, class MerkleHashable, FreeHash(..), defaultHash, hashLeaf, merge)
+import Data.MerkleTree.Hashable (class HashInput, class Hashable, class MergeHash, class MerkleHashable, defaultHash, hashInput, hashLeaf, merge, toHashInput) as ReExports
+import Data.MerkleTree.Hashable (class MergeHash, class MerkleHashable, defaultHash, hashLeaf, merge)
 import Data.Traversable (class Traversable)
 import Data.Unfoldable (class Unfoldable, class Unfoldable1)
 import Effect.Exception.Unsafe (unsafeThrow)
@@ -453,76 +450,6 @@ impliedRoot (Address addr0) entryHash (Path path0) =
         go (merge acc h) (i + 1) hs
   in
     go entryHash 0 path0
-
--- Get free hash path
-getFreePath
-  :: forall hash a
-   . MerkleTree hash a
-  -> Address
-  -> Maybe (Path (FreeHash a))
-getFreePath (MerkleTree t) (Address addr0) =
-  let
-    go :: List (FreeHash a) -> NonEmptyTree hash a -> Int -> Maybe (List (FreeHash a))
-    go acc tree i =
-      if i < 0 then Just acc
-      else
-        let
-          goRight = ithBit addr0 i
-        in
-          case tree of
-            Leaf _ _ -> Just acc -- We've reached the leaf, return accumulated path
-            Node _ l r ->
-              if goRight then
-                case r of
-                  Empty -> Nothing
-                  NonEmpty tr' -> go (treeFreeHash l : acc) tr' (i - 1)
-              else
-                case l of
-                  Empty -> Nothing
-                  NonEmpty tl' -> go (treeFreeHash r : acc) tl' (i - 1)
-  in
-    Path <$> go Nil t.tree (t.depth - 1)
-
--- Helper to convert tree to free hash
-treeFreeHash
-  :: forall hash a
-   . Tree hash a
-  -> FreeHash a
-treeFreeHash = case _ of
-  Empty -> HashEmpty
-  NonEmpty t -> nonEmptyFreeHash t
-
--- Helper to convert non-empty tree to free hash
-nonEmptyFreeHash
-  :: forall hash a
-   . NonEmptyTree hash a
-  -> FreeHash a
-nonEmptyFreeHash = case _ of
-  Leaf _ x -> HashValue x
-  Node _ l r -> Merge (treeFreeHash l) (treeFreeHash r)
-
--- Get free hash of root
-freeRoot :: forall hash a. MerkleTree hash a -> FreeHash a
-freeRoot (MerkleTree t) = nonEmptyFreeHash t.tree
-
--- Compute free root from value and path  
-impliedFreeRoot
-  :: forall a
-   . Address
-  -> a
-  -> Path (FreeHash a)
-  -> FreeHash a
-impliedFreeRoot (Address addr0) value (Path path0) =
-  let
-    go :: FreeHash a -> Int -> List (FreeHash a) -> FreeHash a
-    go acc _ Nil = acc
-    go acc i (h : hs) =
-      if ithBit addr0 i then
-        go (Merge h acc) (i + 1) hs
-      else
-        go (Merge acc h) (i + 1) hs
-  in
-    go (HashValue value) 0 path0
 
 -- Get root hash
 root :: forall hash a. MerkleTree hash a -> hash

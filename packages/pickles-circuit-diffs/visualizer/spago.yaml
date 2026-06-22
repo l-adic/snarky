@@ -11,16 +11,20 @@ package:
     - aff
     - affjax
     - affjax-web
+    - arrays
     - effect
     - either
     - maybe
-    - prelude
+    - ordered-collections
     - pickles-circuit-diffs-types
+    - prelude
     - react-basic
     - react-basic-dom
     - react-basic-hooks
     - refs
     - simple-json
+    - strings
+    - web-dom
     - web-events
     - web-html
     - web-uievents

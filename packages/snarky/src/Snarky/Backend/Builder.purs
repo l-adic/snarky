@@ -8,15 +8,11 @@ module Snarky.Backend.Builder
   ( emptyBuilderState
   , initialBuilderState
   , runCircuitBuilder
-  , execCircuitBuilder
   , CircuitBuilderState
   , class CompileCircuit
   , appendBuilderConstraint
   , finalize
   , Labeled
-  , labeled
-  , unlabel
-  , context
   , Constraints
   , emptyConstraints
   , snocConstraint
@@ -46,12 +42,6 @@ type Labeled c =
   { constraint :: c
   , context :: Array String
   }
-
-labeled :: forall c. Array String -> c -> Labeled c
-labeled ctx c = { constraint: c, context: ctx }
-
-unlabel :: forall c. Labeled c -> c
-unlabel = _.constraint
 
 -- | Append-efficient constraint accumulator.
 -- |
@@ -83,9 +73,6 @@ appendConstraintsBatch batch (Constraints xs) =
 -- | Materialise to forward (emission) order. O(m), once.
 constraintsToArray :: forall c. Constraints c -> Array (Labeled c)
 constraintsToArray (Constraints xs) = Array.fromFoldable (L.reverse xs)
-
-context :: forall c. Labeled c -> Array String
-context = _.context
 
 type CircuitBuilderState c aux =
   { nextVar :: Variable
@@ -191,11 +178,3 @@ builderOps ref = CircuitOps
   , popLabelOp: Ref.modify_ (\s -> s { labelStack = Array.init s.labelStack # fromMaybe [] }) ref
   }
 
-execCircuitBuilder
-  :: forall f c c' aux r a
-   . CompileCircuit f c c' aux
-  => AdviceHandler r
-  -> CircuitBuilderState c aux
-  -> Snarky f c' r a
-  -> Effect (CircuitBuilderState c aux)
-execCircuitBuilder h s = map (\(Tuple _ s') -> s') <<< runCircuitBuilder h s

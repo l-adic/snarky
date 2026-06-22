@@ -34,7 +34,6 @@ module Snarky.Constraint.Basic
   , debugCheck
   , genWithAssignments
   , class BasicSystem
-  , fromBasic
   , r1cs
   , boolean
   , equal
@@ -249,17 +248,6 @@ class PrimeField f <= BasicSystem f c | c -> f where
   square :: CVar f Variable -> CVar f Variable -> c
   -- | Create a boolean constraint: the expression must be 0 or 1
   boolean :: CVar f Variable -> c
-
--- | Convert a `Basic` constraint to any `BasicSystem` constraint type.
--- |
--- | This allows using the concrete `Basic` type as an intermediate
--- | representation before converting to backend-specific formats.
-fromBasic :: forall f c. BasicSystem f c => Basic f -> c
-fromBasic = case _ of
-  R1CS r -> r1cs r
-  Equal a b -> equal a b
-  Square a c -> square a c
-  Boolean b -> boolean b
 
 instance PrimeField f => BasicSystem f (Basic f) where
   r1cs = R1CS

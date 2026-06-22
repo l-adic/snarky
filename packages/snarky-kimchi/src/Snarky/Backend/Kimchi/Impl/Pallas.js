@@ -172,15 +172,6 @@ export function pallasSrsToBytes(crs) {
     };
 }
 
-// Reconstruct an SRS (generators only) from bytes, tagged with `size`.
-export function pallasSrsFromBytes(size) {
-    return function(bytes) {
-        return function() {
-            return { srs: k.caml_fq_srs_from_bytes(bytes), size };
-        };
-    };
-}
-
 // b_poly commitment: takes Pallas scalars (Fq), returns a `PolyComm<Pallas>`
 // whose points have Fp coords. PS-side currently expects a flat
 // `Array Pallas.BaseField` of length 2 (x, y); we expose the first
