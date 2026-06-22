@@ -25,7 +25,6 @@ module Snarky.Circuit.Schnorr.Shifted
   , assertOnCurveConst
   , createShifted
   , pallasScalarOps
-  , vestaScalarOps
   , scale
   , scaleKnown
   ) where
@@ -49,8 +48,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Class (class WeierstrassCurve, curveParams, fromAffine, generator, toAffine) as C
 import Snarky.Curves.Pallas as Pallas
-import Snarky.Curves.Pasta (PallasG, VestaG)
-import Snarky.Curves.Vesta as Vesta
+import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint(..), CurveParams)
 import Type.Proxy (Proxy(..))
 
@@ -168,15 +166,6 @@ pallasScalarOps
   => Snarky Pallas.BaseField (KimchiConstraint Pallas.BaseField) r (ShiftedOps Pallas.BaseField r)
 pallasScalarOps =
   createShifted (C.curveParams (Proxy :: Proxy PallasG)) (shiftFor (C.generator :: PallasG))
-
--- | Ready-to-use shifted scalar-mul ops for the Vesta curve (point
--- | coordinates in `Vesta.BaseField`).
-vestaScalarOps
-  :: forall r
-   . PrimeField Vesta.BaseField
-  => Snarky Vesta.BaseField (KimchiConstraint Vesta.BaseField) r (ShiftedOps Vesta.BaseField r)
-vestaScalarOps =
-  createShifted (C.curveParams (Proxy :: Proxy VestaG)) (shiftFor (C.generator :: VestaG))
 
 -- | LSB-first unbounded double-and-add. Direct port of
 -- | `Snarky_curves.Make_weierstrass_checked.scale`

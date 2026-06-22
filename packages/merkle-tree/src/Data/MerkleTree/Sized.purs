@@ -11,9 +11,6 @@ module Data.MerkleTree.Sized
   , set
   , getPath
   , impliedRoot
-  , getFreePath
-  , freeRoot
-  , impliedFreeRoot
   , root
   , toUnfoldable
   , module ReExports
@@ -27,9 +24,8 @@ import Data.FoldableWithIndex (foldlWithIndex)
 import Data.Generic.Rep (class Generic)
 import Data.List (List)
 import Data.Maybe (Maybe(..), fromJust, maybe)
-import Data.MerkleTree (FreeHash)
 import Data.MerkleTree as MT
-import Data.MerkleTree.Hashable (class HashInput, class Hashable, class MergeHash, class MerkleHashable, FreeHash(..), defaultHash, hashCircuit, hashInput, hashLeaf, merge, mergeCircuit, toHashInput) as ReExports
+import Data.MerkleTree.Hashable (class HashInput, class Hashable, class MergeHash, class MerkleHashable, defaultHash, hashInput, hashLeaf, merge, mergeCircuit, toHashInput) as ReExports
 import Data.MerkleTree.Hashable (class MergeHash, class MerkleHashable)
 import Data.Newtype (class Newtype)
 import Data.Reflectable (class Reflectable, reflectType)
@@ -206,33 +202,6 @@ impliedRoot
   -> hash
 impliedRoot (Address addr0) entryHash (Path path0) =
   MT.impliedRoot (MT.Address addr0) entryHash (Vector.toUnfoldable path0)
-
--- Get free hash path
-getFreePath
-  :: forall d hash a
-   . Reflectable d Int
-  => MerkleTree d hash a
-  -> Address d
-  -> Maybe (Path d (FreeHash a))
-getFreePath (MerkleTree t) (Address addr0) =
-  MT.getFreePath t (MT.Address addr0) <#> \path ->
-    case Vector.toVector (Array.fromFoldable path) of
-      Nothing -> unsafeThrow $ "Expected Merkle path of length " <> show (reflectType $ Proxy @d)
-      Just p -> Path p
-
--- Get free hash of root
-freeRoot :: forall d hash a. MerkleTree d hash a -> FreeHash a
-freeRoot (MerkleTree t) = MT.freeRoot t
-
--- Compute free root from value and path  
-impliedFreeRoot
-  :: forall d a
-   . Address d
-  -> a
-  -> Path d (FreeHash a)
-  -> FreeHash a
-impliedFreeRoot (Address addr0) value (Path path0) =
-  MT.impliedFreeRoot (MT.Address addr0) value (Vector.toUnfoldable path0)
 
 -- Get root hash
 root :: forall d hash a. MerkleTree d hash a -> hash

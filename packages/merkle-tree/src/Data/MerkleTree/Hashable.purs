@@ -5,8 +5,6 @@ module Data.MerkleTree.Hashable
   , merge
   , module RO
   , defaultHash
-  , FreeHash(..)
-  , hashCircuit
   , mergeCircuit
   ) where
 
@@ -17,7 +15,7 @@ import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
-import Snarky.Circuit.DSL (FVar, Snarky, const_)
+import Snarky.Circuit.DSL (FVar, Snarky)
 import Snarky.Circuit.RandomOracle (class HashInput, class Hashable, hashInput, toHashInput) as RO
 import Snarky.Circuit.RandomOracle (Digest(..), hash2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -56,26 +54,6 @@ instance (MergeHash hash, RO.Hashable a b, RO.HashInput b hash) => MerkleHashabl
   hashLeaf = case _ of
     Nothing -> RO.hashInput ([] :: Array b)
     Just x -> RO.hashInput (RO.toHashInput x)
-
--- | Free hash type for lazy/symbolic hash computation
-data FreeHash a
-  = HashValue a
-  | HashEmpty
-  | Merge (FreeHash a) (FreeHash a)
-
-derive instance Eq a => Eq (FreeHash a)
-derive instance Functor FreeHash
-
--- | Circuit-level hash function for a single field element
-hashCircuit
-  :: forall f r
-   . PoseidonField f
-  => PrimeField f
-  => Maybe (FVar f)
-  -> Snarky f (KimchiConstraint f) r (Digest (FVar f))
-hashCircuit = case _ of
-  Nothing -> hash2 (const_ zero) (const_ zero)
-  Just a -> hash2 a (const_ zero)
 
 -- | Circuit-level merge of two digests
 mergeCircuit

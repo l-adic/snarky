@@ -153,15 +153,6 @@ export function vestaSrsToBytes(crs) {
     };
 }
 
-// Reconstruct an SRS (generators only) from bytes, tagged with `size`.
-export function vestaSrsFromBytes(size) {
-    return function(bytes) {
-        return function() {
-            return { srs: k.caml_fp_srs_from_bytes(bytes), size };
-        };
-    };
-}
-
 // Vesta b_poly commitment: inputs in Fp, outputs Vesta points (coords in Fq).
 export function vestaSrsBPolyCommitment(crs) {
     return function(challenges) {

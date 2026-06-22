@@ -29,8 +29,6 @@ module Snarky.Circuit.CVar
   , genWithAssignments
   , reduceToAffineExpression
   , AffineExpression(..)
-  , scaleAffineExpression
-  , subAffineExpression
   , evalAffineExpression
   , EvaluationError(..)
   ) where
@@ -40,7 +38,7 @@ import Prelude
 import Data.Array ((..))
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
-import Data.Bifunctor (class Bifunctor, rmap)
+import Data.Bifunctor (class Bifunctor)
 import Data.Foldable (class Foldable, foldM, foldl)
 import Data.Generic.Rep (class Generic)
 import Data.Map (Map, toUnfoldable)
@@ -193,26 +191,6 @@ instance PrimeField f => Semigroup (AffineExpression f) where
 
 instance PrimeField f => Monoid (AffineExpression f) where
   mempty = AffineExpression { constant: Nothing, terms: mempty }
-
-scaleAffineExpression
-  :: forall f
-   . PrimeField f
-  => f
-  -> AffineExpression f
-  -> AffineExpression f
-scaleAffineExpression f (AffineExpression { constant, terms }) =
-  AffineExpression
-    { constant: mul f <$> constant
-    , terms: rmap (mul f) <$> terms
-    }
-
-subAffineExpression
-  :: forall f
-   . PrimeField f
-  => AffineExpression f
-  -> AffineExpression f
-  -> AffineExpression f
-subAffineExpression a b = a <> scaleAffineExpression (-one) b
 
 -- Reduce the affine circuit to the unique form \sum_{i} a_i * x_i + c,
 -- which we represent as {constant: c, terms: Map [(x_i, a_i)]}

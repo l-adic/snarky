@@ -24,7 +24,6 @@ module Pickles.Sponge
   , labelM
   , getSponge
   , putSponge
-  , runSpongeM
   -- Pure sponge monad
   , PureSpongeM(..)
   , runPureSpongeM
@@ -103,14 +102,6 @@ instance Bind (SpongeM f c r) where
   bind (SpongeM g) f = SpongeM \s -> g s >>= \(Tuple a s') -> unwrap (f a) s'
 
 instance Monad (SpongeM f c r)
-
--- | Run a SpongeM computation, returning result and final sponge
-runSpongeM
-  :: forall f c r a
-   . Sponge (FVar f)
-  -> SpongeM f c r a
-  -> Snarky f c r (Tuple a (Sponge (FVar f)))
-runSpongeM initialState computation = unwrap computation initialState
 
 -- | Run a SpongeM computation, returning only the result
 evalSpongeM

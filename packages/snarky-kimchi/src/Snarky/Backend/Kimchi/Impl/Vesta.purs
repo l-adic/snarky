@@ -51,10 +51,6 @@ foreign import vestaSrsSetLagrangeBasisFromBytes :: CRS Vesta.G -> Int -> Uint8A
 -- | `vestaSrsLagrangeBasisToBytes` per domain.
 foreign import vestaSrsToBytes :: CRS Vesta.G -> Effect Uint8Array
 
--- | Reconstruct an SRS (generators only) from `vestaSrsToBytes`, tagged with the
--- | given size. Deterministic alternative to `vestaCrsCreate size`.
-foreign import vestaSrsFromBytes :: Int -> Uint8Array -> Effect (CRS Vesta.G)
-
 -- | Compute challenge polynomial commitment from Vesta SRS.
 -- | Vesta scalar field = Fp, result coords in Fq (= Pallas.ScalarField).
 -- | OCaml: SRS.Fp.b_poly_commitment (Dummy.Ipa.Step.compute_sg)

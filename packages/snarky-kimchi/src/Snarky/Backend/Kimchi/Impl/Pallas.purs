@@ -51,10 +51,6 @@ foreign import pallasSrsSetLagrangeBasisFromBytes :: CRS Pallas.G -> Int -> Uint
 -- | `pallasSrsLagrangeBasisToBytes` per domain.
 foreign import pallasSrsToBytes :: CRS Pallas.G -> Effect Uint8Array
 
--- | Reconstruct an SRS (generators only) from `pallasSrsToBytes`, tagged with
--- | the given size. Deterministic alternative to `pallasCrsCreate size`.
-foreign import pallasSrsFromBytes :: Int -> Uint8Array -> Effect (CRS Pallas.G)
-
 -- | Compute challenge polynomial commitment from Pallas SRS.
 -- | Pallas scalar field = Fq, result coords in Fp (= Vesta.ScalarField).
 -- | OCaml: SRS.Fq.b_poly_commitment (Dummy.Ipa.Wrap.compute_sg)
