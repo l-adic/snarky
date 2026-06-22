@@ -26,28 +26,20 @@ else
 fi
 echo "==> node: $(node --version) ($(command -v node))"
 
-BACKEND=wasm
+# Only --cpu-prof needs launcher-level handling (it's a node flag, not a script
+# flag). Everything else (--native, --only, --help) is forwarded to bench.js
+# which parses them via node:util parseArgs.
 NODE_FLAGS=(--trace-gc --expose-gc)
 CPU_PROF=
-ONLY=
+ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    --native) BACKEND=native ;;
-    # Mirror tools/bench.sh: capture a V8 CPU profile into prof/. NOTE: profiles
-    # the main node process — clean for o1js NATIVE (single process), but for
-    # o1js WASM the prover runs in per-trial CHILD processes, so this profiles
-    # the orchestrator, not the prover. (V8 --cpu-prof also doesn't see napi/
-    # worker isolates, same as the PS side.)
     --cpu-prof) CPU_PROF=1; NODE_FLAGS+=(--cpu-prof --cpu-prof-dir "$REPO_ROOT/prof") ;;
-    # Mirror tools/bench.sh --only: restrict to one phase (compile|prove) via O1JS_ONLY.
-    --only) ONLY="$2"; shift ;;
-    --only=*) ONLY="${1#*=}" ;;
-    *) ;;
+    --only) ARGS+=("$1" "$2"); shift ;;   # grab the value so shift doesn't eat it
+    *)      ARGS+=("$1") ;;
   esac
   shift
 done
-export O1JS_BACKEND="$BACKEND"
-[ -n "$ONLY" ] && export O1JS_ONLY="$ONLY"
 
 echo "==> Building o1js bench (tsc -> dist/) ..."
 ( cd "$O1JS_DIR" && npx tsc )
@@ -56,9 +48,14 @@ cd "$REPO_ROOT"
 mkdir -p bench-results prof
 RUN_LOG="prof/bench-o1js-run.log"
 
-echo "==> Running o1js bench (backend=$BACKEND; node $(node --version); flags ${NODE_FLAGS[*]}) ..."
+# --help / -h: print usage and exit before the measurement pipeline.
+for a in "${ARGS[@]+"${ARGS[@]}"}"; do
+  case "$a" in --help|-h) node "$O1JS_DIR/dist/bench.js" --help; exit 0 ;; esac
+done
+
+echo "==> Running o1js bench (node $(node --version); args: ${ARGS[*]+"${ARGS[*]}"}) ..."
 # Line-buffer tee|grep so markers reach the terminal / cpu_timeline reader live.
-node "${NODE_FLAGS[@]}" "$O1JS_DIR/dist/bench.js" 2>&1 \
+node "${NODE_FLAGS[@]}" "$O1JS_DIR/dist/bench.js" ${ARGS[@]+"${ARGS[@]}"} 2>&1 \
   | stdbuf -oL tee "$RUN_LOG" \
   | grep --line-buffered -vE '^\[[0-9]+(:0x[0-9a-f]+)?\] ' || true
 

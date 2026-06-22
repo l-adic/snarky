@@ -8,32 +8,58 @@
 // WASM caveat → per-trial subprocesses: o1js does not release its prover-key
 // wasm memory between compiles (no GC finalizer, unlike our kimchi-napi), so a
 // single process accumulates ~1 GB/compile and wedges at the wasm32 4 GB
-// ceiling. Under `--wasm` we therefore run EACH timed trial in a fresh child
+// ceiling. Under wasm we therefore run EACH timed trial in a fresh child
 // process (`--child`): memory is capped at one trial's worth and the OS reclaims
 // it on exit. The untimed `prepare` in each child warms the JIT so the timed op
 // isn't cold; the children emit the same `[bench-window]` markers, so the
 // launcher's parse_gclog attaches GC per trial exactly as for the single-process
 // (native) path. Native runs single-process — no ceiling, no need.
 //
-// Run via tools/bench_o1js.sh. O1JS_BACKEND=native|wasm selects the backend.
+// Run via tools/bench_o1js.sh (or directly with `node dist/bench.js --help`).
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { parseArgs } from "node:util";
 import { runBench, stats, writeArtifact, type Bench } from "bench-harness";
 import { setBackend } from "o1js";
 
-const BACKEND = (process.env.O1JS_BACKEND ?? "wasm") as "wasm" | "native";
-// Backend selection MUST precede any ZkProgram construction, so the target (and
-// the programs it imports) is loaded dynamically AFTER this.
+// ---- CLI ------------------------------------------------------------------
+const { values: flags } = parseArgs({
+  args: process.argv.slice(2),
+  options: {
+    native: { type: "boolean", default: false },
+    only: { type: "string" },
+    child: { type: "string" }, // internal: wasm per-trial subprocess
+    help: { type: "boolean", short: "h", default: false },
+  },
+  strict: true,
+  allowPositionals: false,
+});
+
+if (flags.help) {
+  console.log(`\
+o1js bench — compile + prove benchmarks mirroring the PS pickles-bench suite.
+
+Usage: tools/bench_o1js.sh [options]
+
+Options:
+  --native       Use the @o1js/native backend (default: wasm)
+  --only <phase> Run only groups matching <phase> (compile | prove)
+  --cpu-prof     Capture a V8 CPU profile (handled by the launcher, not the script)
+  -h, --help     Show this help and exit
+`);
+  process.exit(0);
+}
+
+// ---- backend selection (must precede any ZkProgram import) -----------------
+const BACKEND: "wasm" | "native" = flags.native ? "native" : "wasm";
 if (BACKEND === "native") setBackend("native");
 
-const argv = process.argv.slice(2);
-const childGroup = argv.includes("--child") ? argv[argv.indexOf("--child") + 1] : undefined;
+const childGroup = flags.child;
 
 const { buildGroups, analyzeRows } = await import("./target.js");
 
-// O1JS_ONLY=compile|prove restricts the run to one phase (mirrors PS's --only),
-// so a profile/timeline captures a single phase.
-const ONLY = process.env.O1JS_ONLY?.toLowerCase();
+// --only restricts to one phase (mirrors PS's --only).
+const ONLY = flags.only?.toLowerCase();
 const groups = () => {
   const gs = buildGroups();
   return ONLY ? gs.filter((g) => g.label.toLowerCase().includes(ONLY)) : gs;
