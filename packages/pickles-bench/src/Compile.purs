@@ -16,7 +16,7 @@ module Bench.Pickles.Compile
 import Prelude
 
 import Bench.Harness (Group)
-import Bench.Pickles.Common (BenchSrs, NrrRules, TreeRules, benchIterations, benchTreeRule, nrrRule)
+import Bench.Pickles.Common (BenchSrs, NrrRules, TreeRules, benchTreeRule, nrrRule)
 import Control.Promise (fromAff)
 import Data.Array as Array
 import Data.Maybe (Maybe(..))
@@ -94,10 +94,10 @@ benchLabel = "NRR + tree compile (shared warm SRS)"
 -- | the NRR + tree compilation is timed. No setup (`prepare` is a no-op — the SRS
 -- | is ready); each trial is one full `fullCompile`. The per-trial GC / window /
 -- | FFI wrapping lives in the shared `runBench`, not here.
-group :: BenchSrs -> Group
-group srs =
+group :: Int -> BenchSrs -> Group
+group trials srs =
   { label: benchLabel
-  , trials: benchIterations
+  , trials
   , prepare: fromAff (pure unit)
   , work: fromAff (liftEffect (void (fullCompile srs)))
   }

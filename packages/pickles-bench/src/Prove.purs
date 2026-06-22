@@ -20,7 +20,7 @@ module Bench.Pickles.Prove
 import Prelude
 
 import Bench.Harness (Group)
-import Bench.Pickles.Common (BenchSrs, NrrRules, TreeRules, benchIterations, benchTreeRule, nrrRule)
+import Bench.Pickles.Common (BenchSrs, NrrRules, TreeRules, benchTreeRule, nrrRule)
 import Bench.Pickles.FfiTimer as FfiTimer
 import Control.Promise (fromAff)
 import Data.Either (Either(..))
@@ -121,12 +121,12 @@ benchLabel = "b1 recursive prove (shared warm SRS)"
 -- | with prove's prepared state resident. `FfiTimer` brackets the timed prove
 -- | (the napi prove-phase split), as before. The per-trial GC / window / FFI-
 -- | counter wrapping is in the shared `runBench`.
-group :: BenchSrs -> Effect Group
-group srs = do
+group :: Int -> BenchSrs -> Effect Group
+group trials srs = do
   ref <- Ref.new (pure unit :: Aff Unit)
   pure
     { label: benchLabel
-    , trials: benchIterations
+    , trials
     , prepare: fromAff do
         thunk <- liftEffect (prepareProve srs)
         liftEffect (Ref.write thunk ref)

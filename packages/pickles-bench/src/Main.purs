@@ -24,13 +24,14 @@ module Bench.Pickles.Main where
 import Prelude
 
 import Bench.Harness as Harness
-import Bench.Pickles.Common (mkBenchSrs)
+import Bench.Pickles.Common (benchIterations, mkBenchSrs)
 import Bench.Pickles.Compile as Compile
 import Bench.Pickles.Ffi as Ffi
 import Bench.Pickles.FfiTimer as FfiTimer
 import Bench.Pickles.Prove as Prove
 import Data.Either (Either(..))
-import Data.Maybe (Maybe(..), optional)
+import Data.Int as Int
+import Data.Maybe (Maybe(..), fromMaybe, optional)
 import Effect (Effect)
 import Effect.Aff (launchAff_)
 import Effect.Class (liftEffect)
@@ -49,7 +50,13 @@ parseGroup = case _ of
   "prove" -> Right Prove
   s -> Left ("unknown group '" <> s <> "' (expected: compile | prove)")
 
-type CliOptions = { only :: Maybe BenchGroup }
+-- | `--trials <N>` argument parser: a positive integer.
+parseTrials :: String -> Either String Int
+parseTrials s = case Int.fromString s of
+  Just n | n > 0 -> Right n
+  _ -> Left ("--trials expects a positive integer, got '" <> s <> "'")
+
+type CliOptions = { only :: Maybe BenchGroup, trials :: Maybe Int }
 
 cliParser :: Opt.Parser CliOptions
 cliParser = ado
@@ -58,7 +65,12 @@ cliParser = ado
         <> Opt.metavar "GROUP"
         <> Opt.help "Run only the named group: compile | prove"
     )
-  in { only }
+  trials <- optional $ Opt.option (Opt.eitherReader parseTrials)
+    ( Opt.long "trials"
+        <> Opt.metavar "N"
+        <> Opt.help "Timed trials per group (default: 3)"
+    )
+  in { only, trials }
 
 cliInfo :: Opt.ParserInfo CliOptions
 cliInfo = Opt.info (cliParser <**> Opt.helper)
@@ -78,9 +90,11 @@ main = do
 
   -- Build both groups; selection just drops one. Order is [compile, prove] so
   -- prove's prepare (which leaves state resident) runs after the compile group.
-  proveGroup <- Prove.group srs
+  -- `--trials N` overrides the per-group trial count (default benchIterations).
+  let trials = fromMaybe benchIterations opts.trials
+  proveGroup <- Prove.group trials srs
   let
-    compileGroup = Compile.group srs
+    compileGroup = Compile.group trials srs
     wants g = case opts.only of
       Nothing -> true
       Just sel -> sel == g
