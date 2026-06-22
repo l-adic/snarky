@@ -62,6 +62,11 @@ code*. A flamegraph is only useful interactively (click-to-zoom), so we keep the
 tooling but do **not** commit static PNGs — generate the SVG and open it in a
 browser when you need to dig in.
 
+Why not an off-the-shelf viewer (speedscope, 0x)? Those read the same
+`.cpuprofile`, but our frames need work theirs don't do: resolving PureScript's
+mangled module names, demangling the wasm Rust symbols, and merging a rayon
+worker pool's N per-thread profiles into one. Hence the two small scripts.
+
 - **`flamegraph.mjs <in.cpuprofile> <out.svg> [title]`** — single-profile
   flamegraph; resolves PureScript module names and demangles wasm Rust symbols.
 - **`flamemerge.mjs <out.svg> "title" <file...>`** — fold N profiles into one

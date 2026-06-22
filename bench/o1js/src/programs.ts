@@ -7,15 +7,14 @@
 //     verification on the Self slot (base case detected by prev output == -1,
 //     exactly the PS rule's `isBaseCase` trick), output 0 (base) or prev + 1.
 //   * FILLER_ITERS multiplications of two witnessed zeros pad the step circuit.
-//     The PS suite tunes 2^16 fillers to 53,960 rows ⇒ step domain 2^16. o1js
-//     gate accounting differs, so this constant MUST be re-tuned: run
-//     `npm run rows` and adjust until tree.step lands in (2^15, 2^16]. Report
-//     rows alongside every result — matching domains is the apples-to-apples
-//     evidence.
+//     `npm run rows` reports tree.step's row count, which is the WHOLE step
+//     circuit — recursion/IVP verification overhead included — so tuning the
+//     filler until that count lands in (2^15, 2^16] sizes the *total* circuit
+//     (recursion + filler) to domain 2^16, the apples-to-apples target. o1js
+//     gate accounting differs from PS's, so the constant is stack-specific:
+//     1<<16 fillers ⇒ 32,772 rows here vs PS's 53,960; both are domain 2^16.
 import { Field, Provable, SelfProof, ZkProgram } from "o1js";
 
-// TODO(tuning): calibrate against `npm run rows` so the Tree step circuit's
-// domain log2 == 16, matching the PS workload.
 export const FILLER_ITERS = 1 << 16;
 
 export const Nrr = ZkProgram({

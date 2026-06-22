@@ -16,12 +16,6 @@ import { execSync } from "child_process";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const uptimeMs = () => (process.uptime() * 1000).toFixed(0);
 
-// Opt-in per-trial RSS logging (BENCH_RSS=1) — diagnostic for wasm memory: a
-// stack that releases wasm linear memory between trials sawtooths (post-gc
-// baseline flat, peak during work); one that doesn't climbs monotonically.
-const RSS = process.env.BENCH_RSS === "1";
-const rssGB = () => (process.memoryUsage().rss / 1024 ** 3).toFixed(2);
-
 // ---- window markers ------------------------------------------------------
 // One line per timed region on stdout (same stream + timestamp base as
 // `--trace-gc`), so `parse_gclog.mjs` attributes GC lines to the right trial.
@@ -116,7 +110,6 @@ export async function runBench(groups, hooks = {}) {
             forceGc();
             await sleep(1);
             forceGc(); // gc → yield → gc: finalize last trial's garbage
-            if (RSS) console.log(`[rss] ${label} #${i} post-gc ${rssGB()}GB`);
             hooks.onStart?.(label);
             windowStart(label);
             startGcTracking();
@@ -129,7 +122,6 @@ export async function runBench(groups, hooks = {}) {
             const ms = performance.now() - t0;
             const cpu = process.cpuUsage(cpu0);
             windowEnd(label);
-            if (RSS) console.log(`[rss] ${label} #${i} peak   ${rssGB()}GB`);
             hooks.onEnd?.(label);
             await stopGcTrackingAndReport();
             samples.push({ iterations: 1, ms, cpuMs: (cpu.user + cpu.system) / 1000 });
