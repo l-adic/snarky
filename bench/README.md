@@ -107,6 +107,26 @@ _From matrix run `20260621-132137` (`bench-results/20260621-132137-summary.md`).
 - **native:** o1js / PS = `2.62×`
 - **wasm:** o1js / PS = `1.20×`
 
+<p align="center">
+<img src="profiles/cores-native-compile.png" width="700" alt="cores during compile — native" /><br/>
+<sub>Cores in use during compile (native). PS (blue) sustains higher parallelism; o1js (red) spends more time serial.</sub>
+</p>
+
+<p align="center">
+<img src="profiles/cores-wasm-compile.png" width="700" alt="cores during compile — wasm" /><br/>
+<sub>Cores in use during compile (wasm). Same pattern — PS parallelizes harder.</sub>
+</p>
+
+<p align="center">
+<img src="profiles/rss-native-compile.png" width="700" alt="RSS during compile — native" /><br/>
+<sub>Resident memory during compile (native). PS starts at ~0.6 GB, climbs to ~1.4 GB. o1js carries ~2 GB more baseline (js_of_ocaml runtime).</sub>
+</p>
+
+<p align="center">
+<img src="profiles/rss-wasm-compile.png" width="700" alt="RSS during compile — wasm" /><br/>
+<sub>Resident memory during compile (wasm). o1js climbs from ~3.1 to ~4.5 GB; PS stays under ~1.6 GB.</sub>
+</p>
+
 ### Prove — b1 recursive merge
 
 | config | wall mean (s) | stddev (s) | cpu mean (s) | cores | reclaim/trial (GB) | rustShare |
@@ -119,6 +139,26 @@ _From matrix run `20260621-132137` (`bench-results/20260621-132137-summary.md`).
 - **native:** o1js / PS = `1.66×`
 - **wasm:** o1js / PS = `1.16×`
 
+<p align="center">
+<img src="profiles/cores-native-prove.png" width="700" alt="cores during prove — native" /><br/>
+<sub>Cores in use during prove (native, trial-averaged). PS (blue) finishes in ~6 s with sustained ~17-core phases; o1js (red) takes ~10 s with long single-core serial stretches.</sub>
+</p>
+
+<p align="center">
+<img src="profiles/cores-wasm-prove.png" width="700" alt="cores during prove — wasm" /><br/>
+<sub>Cores in use during prove (wasm, trial-averaged). Both peak ~18–20 cores; o1js spends more time serial, runs longer.</sub>
+</p>
+
+<p align="center">
+<img src="profiles/rss-native-prove.png" width="700" alt="RSS during prove — native" /><br/>
+<sub>Resident memory during prove (native, trial-averaged). PS ~2 GB baseline / ~3 GB peak; o1js ~1 GB heavier throughout. Memory allocated during compile is stable here.</sub>
+</p>
+
+<p align="center">
+<img src="profiles/rss-wasm-prove.png" width="700" alt="RSS during prove — wasm" /><br/>
+<sub>Resident memory during prove (wasm, trial-averaged). Both relatively flat — the big allocations happened during compile.</sub>
+</p>
+
 † wasm reclaim is a main-isolate lower bound (see [What we measure](#what-we-measure)).
 
 ### Notes / interpretation
@@ -130,7 +170,10 @@ _From matrix run `20260621-132137` (`bench-results/20260621-132137-summary.md`).
   PS in all four configs — prove native 9.9 vs 5.5, prove wasm 13.7 vs 9.9. PS
   pushes more work across the kimchi-napi boundary into the rayon-parallel Rust
   prover (`rustShare` 0.56–0.83), where o1js keeps more on a single JS thread
-  (js_of_ocaml). See [Profiling & flamegraphs](#profiling--flamegraphs).
+  (js_of_ocaml). See [Profiling](#profiling--cores--memory-over-time).
+- **o1js carries ~1–2 GB more resident memory** — visible in the compile RSS charts.
+  The delta is the js_of_ocaml Pickles/snarky layer resident in the V8 heap
+  (`o1js_node.bc.cjs`, 39 MB / 430 K lines) plus its OCaml-style shadow heap.
 - **wasm costs ~2–2.5× vs native** for both stacks (PS prove 6.3→13.7 s, o1js
   prove 10.4→15.9 s), and the gap between stacks narrows under wasm.
 
@@ -209,20 +252,13 @@ Sanity-check both backends load before the long run:
 
 ## Profiling — cores & memory over time
 
-The matrix says *how much*; these timelines show *how* each stack spends a prove
-— its parallelism profile and its memory profile — sampled from `/proc` (the
-whole process tree, so native Rust threads, wasm rayon workers, and o1js's
-per-trial child processes are all counted). Tooling + recipe:
-[`tools/profile/`](../tools/profile/README.md). Committed visualizations (PNG),
-PS = blue, o1js = red:
+The tables say *how much*; the timelines above show *how* — sampled from `/proc`
+every 50 ms (the whole process tree: native Rust threads, wasm rayon workers,
+o1js per-trial children all counted). PS = blue, o1js = red; trial-averaged for
+cores, trial-averaged for RSS. 8 charts total: `{cores,rss}-{native,wasm}-{compile,prove}.png`
+in [`bench/profiles/`](profiles/), inlined in the [Results](#results) section above.
 
-- **`cores-{native,wasm}-prove.png`** — cores in use (`Δcpu/Δwall`) over one
-  prove, averaged across the 3 trials. Parallel peaks (FFT/MSM) vs serial valleys
-  (witness-gen); PS holds higher plateaus and spends less time pinned at 1 core.
-- **`rss-{native,wasm}-prove.png`** — resident memory across the 3 prove trials.
-  Note the wasm chart: PS plateaus (one process, memory reclaimed via a
-  FinalizationRegistry) while o1js sawtooths (a fresh process per trial, reclaimed
-  on exit — the per-trial-subprocess design).
+Tooling + recipe: [`tools/profile/`](../tools/profile/README.md).
 
 Flamegraphs (where time goes *in the code*) are intentionally **not committed** —
 a flamegraph is only useful interactively (click-to-zoom), so the tooling stays
