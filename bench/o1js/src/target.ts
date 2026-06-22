@@ -7,8 +7,10 @@ import type { Group } from "bench-harness";
 import { Cache, Field, SelfProof } from "o1js";
 import { Nrr, Tree, dummySelfProof, NrrProof } from "./programs.js";
 
-// = Bench.Pickles.Common.benchIterations (3). Same count both sides.
-const TRIALS = 3;
+// Default trial count; overridable via --trials N in bench.ts.
+let TRIALS = 3;
+
+export function setTrials(n: number) { TRIALS = n; }
 
 const COMPILE_LABEL = "NRR + tree compile (shared warm SRS)";
 const PROVE_LABEL = "b1 recursive prove (shared warm SRS)";

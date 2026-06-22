@@ -1,9 +1,8 @@
-// o1js bench entry — the mirror of `Bench.Pickles.Main`. Selects the backend,
-// builds the two groups, and drives them through the SHARED `bench-harness`
-// `runBench` (the exact runner the PS suite uses), then writes the same-schema
-// artifact. No hooks: o1js has no napi boundary to time (its kimchi is WASM in
-// the JS heap), so the timed region is purely `work()` — identical to the PS
-// side's timed region.
+// o1js bench entry. o1js has its own circuit API (ZkProgram / compile / prove)
+// distinct from PS's kimchi-napi FFI, so it needs its own driver. But the timed
+// measurement runs through the SAME shared `bench-harness` (`runBench` +
+// `writeArtifact`), producing the same-schema JSON artifacts — the harness is
+// what makes the comparison apples-to-apples, not the circuit construction API.
 //
 // WASM caveat → per-trial subprocesses: o1js does not release its prover-key
 // wasm memory between compiles (no GC finalizer, unlike our kimchi-napi), so a
@@ -28,6 +27,7 @@ const { values: flags } = parseArgs({
   options: {
     native: { type: "boolean", default: false },
     only: { type: "string" },
+    trials: { type: "string", default: "3" },
     child: { type: "string" }, // internal: wasm per-trial subprocess
     help: { type: "boolean", short: "h", default: false },
   },
@@ -42,10 +42,11 @@ o1js bench — compile + prove benchmarks mirroring the PS pickles-bench suite.
 Usage: tools/bench_o1js.sh [options]
 
 Options:
-  --native       Use the @o1js/native backend (default: wasm)
-  --only <phase> Run only groups matching <phase> (compile | prove)
-  --cpu-prof     Capture a V8 CPU profile (handled by the launcher, not the script)
-  -h, --help     Show this help and exit
+  --native        Use the @o1js/native backend (default: wasm)
+  --only <phase>  Run only groups matching <phase> (compile | prove)
+  --trials N      Timed trials per group (default: 3)
+  --cpu-prof      Capture a V8 CPU profile (handled by the launcher)
+  -h, --help      Show this help and exit
 `);
   process.exit(0);
 }
@@ -56,7 +57,8 @@ if (BACKEND === "native") setBackend("native");
 
 const childGroup = flags.child;
 
-const { buildGroups, analyzeRows } = await import("./target.js");
+const { buildGroups, analyzeRows, setTrials } = await import("./target.js");
+setTrials(parseInt(flags.trials!, 10));
 
 // --only restricts to one phase (mirrors PS's --only).
 const ONLY = flags.only?.toLowerCase();
