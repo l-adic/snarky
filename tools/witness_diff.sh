@@ -6,7 +6,7 @@
 # matrices counter-by-counter (stripping `#`-header lines). The witness is
 # the definitional ground-truth correctness check.
 #
-# Replaces the per-circuit `*_witness_diff.sh` scripts. Both sides funnel
+# Consolidated witness-equivalence harness (all circuits in one script). Both sides funnel
 # through `ProverProof::create_recursive`, whose KIMCHI_WITNESS_DUMP hook
 # emits one file per proof with `%c` = a monotonic counter; each counter is
 # mapped to a label below.
@@ -29,10 +29,12 @@
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$REPO/tools/lib/common.sh"
 SEED="${KIMCHI_DETERMINISTIC_SEED:-42}"
-export PATH="$HOME/.nvm/versions/node/v23.11.1/bin:$PATH"
+source "$REPO/tools/lib/setup-node.sh"
 
-ALL="simple_chain simple_chain_n2 nrr tree_proof_return two_phase_chain sideload chunks2 chunks4 app_circuit_chunks2"
+source "$REPO/tools/lib/circuits.sh"
+ALL="$ALL_CIRCUITS"
 
 # circuit -> "dumper|ps_pkg|ps_main|ps_example|<space-separated counter-ordered labels>"
 cfg() {

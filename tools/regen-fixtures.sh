@@ -27,8 +27,7 @@
 #   tools/regen-fixtures.sh tree         # only Tree_proof_return
 #
 # Environment / prerequisites:
-#   - Nix shell at `git+file:///home/martyall/code/o1/mina?submodules=1`
-#     (builds OCaml dumpers).
+#   - Nix shell at `mina#default` (builds OCaml dumpers).
 #   - `~/.cargo/bin/cargo` to build the kimchi-stubs static lib with the
 #     deterministic-RNG patch:
 #
@@ -46,20 +45,20 @@
 set -e
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$REPO_ROOT/tools/lib/common.sh"
 FIXTURE_DIR="$REPO_ROOT/packages/pickles/test/fixtures"
 WITNESS_DIR="$FIXTURE_DIR/witness"
 KIMCHI_STUBS_LOCAL=/tmp/local_kimchi_stubs
 SEED=42
-NIX_FLAKE='git+file:///home/martyall/code/o1/mina?submodules=1'
+NIX_FLAKE='mina#default'
 
 if [ ! -f "$KIMCHI_STUBS_LOCAL/lib/libkimchi_stubs.a" ]; then
-  echo "FATAL: $KIMCHI_STUBS_LOCAL/lib/libkimchi_stubs.a missing." >&2
-  echo "Build it with:" >&2
-  echo "  cd $REPO_ROOT/mina/src/lib/crypto/proof-systems && \\" >&2
-  echo "    ~/.cargo/bin/cargo build -p kimchi-stubs --release && \\" >&2
-  echo "    mkdir -p $KIMCHI_STUBS_LOCAL/lib && \\" >&2
-  echo "    cp target/release/libkimchi_stubs.a $KIMCHI_STUBS_LOCAL/lib/" >&2
-  exit 2
+  die "$KIMCHI_STUBS_LOCAL/lib/libkimchi_stubs.a missing.
+Build it with:
+  cd $REPO_ROOT/mina/src/lib/crypto/proof-systems && \\
+    ~/.cargo/bin/cargo build -p kimchi-stubs --release && \\
+    mkdir -p $KIMCHI_STUBS_LOCAL/lib && \\
+    cp target/release/libkimchi_stubs.a $KIMCHI_STUBS_LOCAL/lib/"
 fi
 
 mode="${1:-all}"
@@ -119,8 +118,7 @@ if $want_nrr; then
     name="${src##*:}"
     dst="$WITNESS_NRR_DIR/ocaml_${name}.txt"
     if [ ! -f "/tmp/regen_nrr_${counter}.witness" ]; then
-      echo "FATAL: dump_no_recursion_return did not emit /tmp/regen_nrr_${counter}.witness" >&2
-      exit 3
+      die "dump_no_recursion_return did not emit /tmp/regen_nrr_${counter}.witness"
     fi
     cp "/tmp/regen_nrr_${counter}.witness" "$dst"
     echo "  -> $dst ($(wc -l <"$dst") lines)" >&2
@@ -148,8 +146,7 @@ if $want_simple; then
       name="${src##*:}"
       dst="$WITNESS_DIR/ocaml_${name}.txt"
       if [ ! -f "/tmp/regen_sc_${counter}.witness" ]; then
-        echo "FATAL: dump_simple_chain did not emit /tmp/regen_sc_${counter}.witness" >&2
-        exit 3
+        die "dump_simple_chain did not emit /tmp/regen_sc_${counter}.witness"
       fi
       cp "/tmp/regen_sc_${counter}.witness" "$dst"
       echo "  -> $dst ($(wc -l <"$dst") lines)" >&2

@@ -15,16 +15,11 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$REPO_ROOT/tools/lib/common.sh"
 O1JS_DIR="$REPO_ROOT/bench/o1js"
 # Pinned node (same as tools/bench.sh) — warn loudly if absent rather than
 # silently using a different node, which would skew the PS/o1js comparison.
-PINNED_NODE="$HOME/.nvm/versions/node/v23.11.1/bin"
-if [ -x "$PINNED_NODE/node" ]; then
-  export PATH="$PINNED_NODE:$PATH"
-else
-  echo "WARN: pinned node v23.11.1 not at $PINNED_NODE — using $(command -v node) ($(node --version 2>/dev/null)). PS and o1js MUST use the SAME node; install v23.11.1 or edit this PATH." >&2
-fi
-echo "==> node: $(node --version) ($(command -v node))"
+source "$REPO_ROOT/tools/lib/setup-node.sh"
 
 # Only --cpu-prof needs launcher-level handling (it's a node flag, not a script
 # flag). Everything else (--native, --only, --help) is forwarded to bench.js
@@ -61,8 +56,7 @@ node "${NODE_FLAGS[@]}" "$O1JS_DIR/dist/bench.js" ${ARGS[@]+"${ARGS[@]}"} 2>&1 \
 
 RESULTS_FILE=$(sed -n 's/^\[bench-results\] //p' "$RUN_LOG" | tail -1)
 if [ -z "$RESULTS_FILE" ]; then
-  echo "ERROR: no [bench-results] line found in the run output" >&2
-  exit 1
+  die "no [bench-results] line found in the run output"
 fi
 
 echo "==> Attaching GC stats from the trace-gc log ..."

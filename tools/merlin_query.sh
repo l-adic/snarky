@@ -16,8 +16,9 @@ FILE="$1"
 LINE="$2"
 COL="$3"
 
-MINA_DIR="/home/martyall/code/l-adic/snarky/mina"
-PYTHON="/home/martyall/code/l-adic/snarky/.venv/bin/python3"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MINA_DIR="${MINA_DIR:-$REPO_ROOT/mina}"
+PYTHON="${PYTHON:-$REPO_ROOT/.venv/bin/python3}"
 
 cd "$MINA_DIR"
 

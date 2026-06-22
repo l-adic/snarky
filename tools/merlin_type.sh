@@ -18,7 +18,8 @@ FILE="$1"
 LINE="$2"
 COL="$3"
 
-MINA_DIR="/home/martyall/code/l-adic/snarky/mina"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MINA_DIR="${MINA_DIR:-$REPO_ROOT/mina}"
 
 cd "$MINA_DIR"
 

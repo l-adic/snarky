@@ -35,26 +35,19 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$REPO_ROOT/tools/lib/common.sh"
 BENCH_DIR="$REPO_ROOT/packages/pickles-bench"
 # Pinned node — the artifact records the version, and baselines are only
 # comparable on the same V8. If it isn't installed, warn LOUDLY rather than
 # silently falling through to a different node (which would skew the comparison).
-PINNED_NODE="$HOME/.nvm/versions/node/v23.11.1/bin"
-if [ -x "$PINNED_NODE/node" ]; then
-  export PATH="$PINNED_NODE:$PATH"
-else
-  echo "WARN: pinned node v23.11.1 not at $PINNED_NODE — using $(command -v node) ($(node --version 2>/dev/null)). PS and o1js MUST use the SAME node for a fair comparison; install v23.11.1 (nvm install 23.11.1) or edit this PATH." >&2
-fi
-echo "==> node: $(node --version) ($(command -v node))"
+source "$REPO_ROOT/tools/lib/setup-node.sh"
 
 # Only --cpu-prof needs launcher-level handling (it's a node flag, not a script
 # flag). Everything else (--wasm, --only, --help) is forwarded to run.mjs / the
 # PureScript CLI which parse them natively.
 #
-# Deliberately NO GC tuning (e.g. --max-semi-space-size): measured
-# 2026-06-11 as noise-level for this workload once the compile bench
-# stopped running with prove's prepared state resident, and changing node
-# flags breaks comparability with older baselines.
+# Deliberately NO GC tuning (e.g. --max-semi-space-size): noise-level
+# for this workload, and changing node flags breaks comparability.
 NODE_FLAGS=(--trace-gc --expose-gc)
 CPU_PROF=
 ARGS=()
@@ -88,8 +81,7 @@ node "${NODE_FLAGS[@]}" packages/pickles-bench/run.mjs ${ARGS[@]+"${ARGS[@]}"} 2
 # The bench prints `[bench-results] <path>` for the JSON it wrote.
 RESULTS_FILE=$(sed -n 's/^\[bench-results\] //p' "$RUN_LOG" | tail -1)
 if [ -z "$RESULTS_FILE" ]; then
-  echo "ERROR: no [bench-results] line found in the run output" >&2
-  exit 1
+  die "no [bench-results] line found in the run output"
 fi
 
 echo "==> Attaching GC stats from the trace-gc log ..."
