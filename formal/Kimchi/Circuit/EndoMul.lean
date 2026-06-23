@@ -1,5 +1,6 @@
 import Kimchi.Gate.EndoMul
 import Kimchi.Gate.EndoScalar
+import Kimchi.Circuit.EndoScalar
 
 /-!
 # The `EndoMul` circuit: GLV scalar multiplication
@@ -221,7 +222,7 @@ theorem recode_fold (m : ℕ) (c2 : ℕ → ℤ) (g : ℕ → F)
   exact Finset.sum_congr rfl fun i _ => by rw [hrow i]
 
 open Kimchi.Gate.EndoScalar (cPoly dPoly cPoly_table dPoly_table) in
-/-- The per-row digit equations (STUB), the gate-side source of `recode_fold`'s
+/-- The per-row digit equations — the gate-side source of `recode_fold`'s
     hypothesis. A satisfying row's GLV contribution `S = 4·P + c₁·T + c₂·φ(T)` has its
     integers pinned to `EndoScalar`'s digits: `(c₁ : F) = 2·dPoly(crumb₁) + dPoly(crumb₂)`
     (the `T`/`b` digits) and `(c₂ : F) = 2·cPoly(crumb₁) + cPoly(crumb₂)` (the `φ(T)`/`a`
@@ -322,7 +323,7 @@ def bDigit (g : ℕ → Witness F) (j : ℕ) : F :=
   else dPoly ((g (j / 2)).b4 + 2 * (g (j / 2)).b3)
 
 open Kimchi.Gate.EndoScalar (cPoly dPoly) in
-/-- THE FULL RECODING RESULT (STUB): EndoMul's GLV coefficients are EndoScalar's
+/-- THE FULL RECODING RESULT: EndoMul's GLV coefficients are EndoScalar's
     `a`, `b`. `m` chained rows compute `P_m = 4^m·P₀ + k₁·T + k₂·φ(T)` where the field
     casts of `k₂` (the `φ(T)` coefficient) and `k₁` (the `T` coefficient) are exactly
     `EndoScalar`'s Algorithm-2 accumulations over the `2m` crumbs:
@@ -382,5 +383,74 @@ theorem endoMul_ab (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
     have hbO : bDigit g (2 * i + 1) = dPoly ((g i).b4 + 2 * (g i).b3) := by
       simp [bDigit, e3, e4]
     rw [hbE, hbO, ← (hc i hi').2.1]
+
+/-! ## Top level: EndoMul computes `[EndoScalar.toField]·T`. -/
+
+/-- The `2m`-crumb list the rows feed to `EndoScalar`: row `i` contributes its two
+    windows `[b₂+2·b₁, b₄+2·b₃]` in order, so `crumbList[2i] = aDigit/bDigit`'s crumb
+    `2i` and `crumbList[2i+1]` crumb `2i+1`. -/
+def crumbList (g : ℕ → Witness F) (m : ℕ) : List F :=
+  (List.range m).flatMap fun i => [(g i).b2 + 2 * (g i).b1, (g i).b4 + 2 * (g i).b3]
+
+omit [DecidableEq F] in
+/-- Each additional row appends its two window crumbs to the crumb list. -/
+theorem crumbList_succ (g : ℕ → Witness F) (m : ℕ) :
+    crumbList g (m + 1)
+      = crumbList g m ++ [(g m).b2 + 2 * (g m).b1, (g m).b4 + 2 * (g m).b3] := by
+  simp [crumbList, List.range_succ, List.flatMap_append]
+
+omit [DecidableEq F] in
+/-- The init bridge: `EndoScalar`'s `decomposeA`/`decomposeB` over the crumb
+    list (folded from the `a = b = 2` init) is its `2·4^m` carry plus the
+    Algorithm-2 digit sums — exactly `endoMul_ab`'s `(k₂:F)` / `(k₁:F)`. By induction
+    on `m` (each row appends 2 crumbs; `List.foldl_append`). -/
+theorem decompose_crumbList (g : ℕ → Witness F) (m : ℕ) :
+    Kimchi.Circuit.EndoScalar.decomposeA (crumbList g m)
+        = 2 * (4 : F) ^ m + ∑ j ∈ Finset.range (2 * m), (2 : F) ^ (2 * m - 1 - j) * aDigit g j
+      ∧ Kimchi.Circuit.EndoScalar.decomposeB (crumbList g m)
+        = 2 * (4 : F) ^ m + ∑ j ∈ Finset.range (2 * m), (2 : F) ^ (2 * m - 1 - j) * bDigit g j := by
+  induction' m with m ih <;> simp_all +decide [ Nat.mul_succ, Finset.sum_range_succ ];
+  · exact ⟨ rfl, rfl ⟩;
+  · rw [ crumbList_succ, EndoScalar.decomposeA_append, EndoScalar.decomposeB_append ];
+    simp_all +decide [ aDigit, bDigit ];
+    norm_num [ Nat.add_div ] ; ring_nf ;
+    constructor <;> rw [ Finset.sum_mul _ _ _ ] <;>
+      rw [ Finset.sum_congr rfl fun x hx => ?_ ] <;> ring;
+    · split_ifs <;>
+        rw [ show 1 + m * 2 - x = (m * 2 - 1 - x) + 2 by
+              have := Finset.mem_range.mp hx; omega ] <;> ring;
+    · split_ifs <;>
+        rw [ show 1 + m * 2 - x = (m * 2 - 1 - x) + 2 by
+              have := Finset.mem_range.mp hx; omega ] <;> ring
+
+/-- THE TOP-LEVEL STATEMENT: EndoMul computes scalar multiplication by exactly
+    the scalar EndoScalar decodes. At the real init (`P₀ = 2·(T + φ(T))`) and with the
+    eigenvalue `φ(T) = [λ]·T`, the `m` rows produce `P_m = s·T` where `s` is the
+    `EndoScalar.toField` of the shared challenge crumbs:
+
+        (s : F) = decomposeA(crumbs)·λ + decomposeB(crumbs) = toField crumbs λ.
+
+    This closes `EndoMul ∘ EndoScalar`: EndoScalar decodes the scalar into the
+    eigenvalue basis `a·λ + b`, and EndoMul multiplies the base by exactly that
+    scalar. Assembles `endoMul_ab` (k₂,k₁ = the a,b digit-sums) with
+    `decompose_crumbList` (the `a=b=2` ↔ `4^m·P₀` init alignment), the init `hP₀`,
+    and the eigenvalue `heig`. -/
+theorem endoMul_toField (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo : F)
+    (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → EndoStep W endo (g i))
+    (P : ℕ → W.Point) (T φT : W.Point)
+    (hT : ∀ i (hi : i < m), T = Point.some (gs i hi).hT)
+    (hφT : ∀ i (hi : i < m), φT = Point.some (gs i hi).hφT)
+    (hin : ∀ i (hi : i < m), P i = Point.some (gs i hi).hP)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some (gs i hi).hS)
+    (hP0 : P 0 = (2 : ℤ) • T + (2 : ℤ) • φT) (lam : ℤ) (heig : φT = lam • T) :
+    ∃ s : ℤ, P m = s • T
+      ∧ (s : F) = Kimchi.Circuit.EndoScalar.toField (crumbList g m) (lam : F) := by
+  obtain ⟨ k1, k2, hPm, hk2, hk1 ⟩ := endoMul_ab W ha h2 h3 endo m g gs P T φT hT hφT hin hout;
+  refine' ⟨ 2 * 4 ^ m + k1 + ( 2 * 4 ^ m + k2 ) * lam, _, _ ⟩;
+  · rw [ hPm, hP0, heig ];
+    module;
+  · simp +decide [ EndoScalar.toField, hk1, hk2 ];
+    rw [ decompose_crumbList g m |>.1, decompose_crumbList g m |>.2 ] ; ring
 
 end Kimchi.Circuit.EndoMul
