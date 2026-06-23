@@ -88,10 +88,10 @@ jobs:
         #print axioms Kimchi.Circuit.EndoScalar.endoScalar_spec
         #print axioms Kimchi.Gate.VarBaseMul.ok_iff
         #print axioms Kimchi.Gate.VarBaseMul.singleBitOk_iff
-        #print axioms Kimchi.Gate.VarBaseMul.secant_add
+        #print axioms Kimchi.secant_add
         #print axioms Kimchi.Gate.VarBaseMul.singleBit_sound
         #print axioms Kimchi.Gate.VarBaseMul.gate_scalarMul
-        #print axioms Kimchi.Gate.VarBaseMul.signed_target
+        #print axioms Kimchi.signed_target
         #print axioms Kimchi.Gate.VarBaseMul.gate_scalarMul_int
         #print axioms Kimchi.Circuit.VarBaseMul.chain_scalarMul
         #print axioms Kimchi.Circuit.VarBaseMul.chain_register
