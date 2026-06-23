@@ -11,22 +11,25 @@ gates is pure group algebra.
 
 ## Main result
 
-`scalarMul_baseMul` — when the accumulator starts at a multiple of the base
-(`P 0 = a·T`, as the circuit inits to `[2]T`), `m` chained gates compute a SINGLE
-scalar multiple of the base, `P m = n·T` for an explicit integer `n` with
-`(n : F) = 32^m·a + 2·N m − 2·32^m·N 0 − (32^m − 1)`. The carried `32^m·P₀` is
-absorbed; the scalar `n` is determined by the init `a` and the scalar register
-(`N 0 → N m`), in signed-digit form. This is variable-base scalar multiplication
-of `T`.
+`scalarMul_shifted` — at the REAL circuit's parameters (accumulator initialized to
+`[2]·T`, register started at `0`), `m` gates compute `P m = n·T` where the scalar
+is the pickles Type1 unshift of the final register value,
+`(n : F) = 2·(N m) + 2^(5m) + 1`. This `2·t + 2^numBits + 1` is verbatim
+`Shifted_value.Type1.to_field`, and reproduces the reference value
+`[1 + 2^numBits + 2·n_bits]·BasePoint` from proof-systems `varbasemul.rs`'s own
+test — so the circuit computes `[s]·T` for the original scalar `s` once the
+caller feeds the shifted scalar `t = shift(s)`.
 
-`scalarMul` is the general form (arbitrary `P 0`): `P m = 32^m·P₀ + k·T`, `k`
-pinned to the register the same way.
+The ladder under it:
+* `scalarMul_baseMul` — accumulator a multiple of the base (`P 0 = a·T`): the
+  output is a SINGLE scalar multiple `P m = n·T` (the `32^m·P₀` carry absorbed).
+* `scalarMul` — general `P 0`: `P m = 32^m·P₀ + k·T`, `k` pinned to the register.
 
 ## Supporting development
 
 `chain_scalarMul` / `chain_register` (the point- and register-level recurrence
-folds) and `GateStep` (the per-gate hypothesis bundle that `gate_scalarMul_int`
-consumes).
+folds), `GateStep` (the per-gate hypothesis bundle that `gate_scalarMul_int`
+consumes), and `unshiftType1` (the pickles Type1 `to_field`).
 -/
 
 namespace Kimchi.Circuit.VarBaseMul
@@ -185,5 +188,48 @@ theorem scalarMul_baseMul
   refine ⟨(32 : ℤ) ^ m * a + k, ?_, ?_⟩
   · rw [hk, hP0, smul_smul, ← add_smul]
   · push_cast; rw [hkf]; ring
+
+/-! ## Matching the real circuit: the pickles Type1 unshift -/
+
+/-- The pickles `Shifted_value.Type1` unshift (`to_field`): a scalar represented
+    by the shifted register value `t` (over `numBits` bits) is recovered as
+    `2·t + 2^numBits + 1`. The `VarBaseMul` circuit's signed-digit double-and-add
+    computes scalar multiplication by exactly this unshift of its accumulated
+    register — see `scalarMul_shifted`. -/
+def unshiftType1 (numBits : ℕ) (t : F) : F := 2 * t + 2 ^ numBits + 1
+
+/-- The circuit computes `[s]·T` for the pickles-unshifted scalar `s`. At the real
+    circuit's parameters — accumulator initialized to `[2]·T` (`P 0 = 2·T`) and
+    scalar register started at `0` (`N 0 = 0`) — the `m` gates (processing `5m`
+    bits) compute `P m = n·T` where the scalar is exactly the pickles Type1
+    unshift of the final register value:
+
+        (n : F) = unshiftType1 (5·m) (N m) = 2·(N m) + 2^(5m) + 1.
+
+    This closes the loop: `2·t + 2^numBits + 1` is verbatim
+    `Shifted_value.Type1.to_field`, and it reproduces the kimchi reference value
+    `[1 + 2^numBits + 2·n_bits]·BasePoint` asserted in proof-systems
+    `varbasemul.rs`'s own test. So feeding the gate the Type1-shifted scalar
+    `t = shift(s)` (`N m = t`) makes it compute `[s]·T` — variable-base scalar
+    multiplication by the original scalar `s`, the cross-field shift being the
+    pickles `Shifted_value` contract. -/
+theorem scalarMul_shifted
+    (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
+    (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep W (g i))
+    (T : W.Point) (N : ℕ → F) (P : ℕ → W.Point)
+    (hT : ∀ i (hi : i < m), T = Point.some (gs i hi).hT)
+    (hin : ∀ i (hi : i < m), P i = Point.some (gs i hi).a0)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some (gs i hi).a5)
+    (hregIn : ∀ i, i < m → N i = (g i).n)
+    (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
+    (hP0 : P 0 = (2 : ℤ) • T) (hN0 : N 0 = 0) :
+    ∃ n : ℤ, P m = n • T ∧ (n : F) = unshiftType1 (5 * m) (N m) := by
+  obtain ⟨n, hn, hnf⟩ :=
+    scalarMul_baseMul W ha m g gs T N 2 P hT hin hout hregIn hregOut hP0
+  refine ⟨n, hn, ?_⟩
+  have h32 : (2 : F) ^ (5 * m) = (32 : F) ^ m := by rw [pow_mul]; norm_num
+  rw [hnf, hN0, unshiftType1, h32]
+  push_cast
+  ring
 
 end Kimchi.Circuit.VarBaseMul
