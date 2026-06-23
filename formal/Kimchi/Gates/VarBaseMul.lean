@@ -36,6 +36,7 @@
   in Mathlib's group) is the next step — see the note at the end.
 -/
 import Kimchi.Curve
+import Kimchi.Gates.AddComplete
 
 namespace Kimchi.VarBaseMul
 
@@ -173,19 +174,129 @@ def egVBM : Witness (ZMod 97) := build 3 5 10 20 1 1 0 1 1 0
 -- inverses, which don't reduce in the kernel; `#eval` uses the compiler.)
 #eval ok egVBM   -- true
 
-/-! ## Soundness (next step).
+/-! ## Soundness.
 
-    The semantic theorem characterizing this gate: under `IsShortShape W`,
-    nonsingular acc/target points, and the per-bit non-degeneracy conditions
-    (`xi ≠ xb`, `t ≠ 0`), each block forces
+    Per bit, a satisfying block computes the double-and-add step
 
-        Point.some xo yo  =  (Point.some xi yi − (2·bᵢ − 1) • Point.some xT yT)
-                                + Point.some xi yi
+        output = (input + Q) + input        (= 2·input + (2·b − 1)·target)
 
-    i.e. `output = 2·input ∓ target` in `W.Point`, and `nPrime` is the claimed
-    scalar update. Proving it means showing the fused `s2 = u/t` formula equals
-    the composite of two `add_some` applications (the `(P+Q)+P` trick) — a deeper
-    argument than CompleteAdd's single addition, building directly on
-    `Kimchi.AddComplete`. -/
+    in the curve group, where `Q := (xb, (2b−1)·yb)` is the sign-selected target
+    (`Q = target` when `b = 1`, `Q = −target` when `b = 0`, since on a short
+    Weierstrass curve negation is `y ↦ −y`).
+
+    The content is that the fused `s2 = u/t` formula — which skips the
+    intermediate `Y` of `input + Q` — equals the slope of the SECOND addition, so
+    the block is exactly the composite of two Mathlib affine additions. This
+    builds on the already-proven `Kimchi.AddComplete`, whose `sound_point_*`
+    theorems characterize one such addition. The non-degeneracy hypotheses
+    `xi ≠ xb` (first addition non-vertical) and `2·xi + xb − s1² ≠ 0` (i.e.
+    `t ≠ 0`, second addition non-vertical) are exactly when the two divisions are
+    defined. -/
+
+section Soundness
+
+open WeierstrassCurve.Affine
+
+variable [Field F] [DecidableEq F]
+
+/-- One non-vertical (secant) affine addition, packaged with explicit output
+    coordinates. If `(x₁,y₁)`, `(x₂,y₂)` are nonsingular points with `x₁ ≠ x₂`,
+    and `ℓ, x₃, y₃` are the secant slope and resulting coordinates, then their
+    group sum is the nonsingular point `(x₃, y₃)`.
+
+    This is the secant specialization of
+    `Kimchi.AddComplete.sound_point_noninf` (its first slope branch); unlike that
+    theorem it carries no `y₁ ≠ 0` hypothesis, since the doubling branch is
+    excluded by `x₁ ≠ x₂`. -/
+lemma secant_add
+    (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
+    {x1 y1 x2 y2 : F}
+    (h1 : W.Nonsingular x1 y1) (h2 : W.Nonsingular x2 y2)
+    (hx : x1 ≠ x2)
+    {l x3 y3 : F}
+    (hl : l = (y1 - y2) / (x1 - x2))
+    (hx3 : x3 = l * l - x1 - x2)
+    (hy3 : y3 = l * (x1 - x3) - y1) :
+    ∃ h3 : W.Nonsingular x3 y3,
+      Point.some h1 + Point.some h2 = Point.some h3 := by
+  obtain ⟨ha1, ha2, ha3, ha4⟩ := ha
+  have hslope : W.slope x1 x2 y1 y2 = l := by
+    rw [WeierstrassCurve.Affine.slope_of_X_ne hx, hl]
+  have hfin : ¬(x1 = x2 ∧ y1 = W.negY x2 y2) := fun hc => hx hc.1
+  have hx3' : W.addX x1 x2 (W.slope x1 x2 y1 y2) = x3 := by
+    rw [hslope]; simp only [WeierstrassCurve.Affine.addX, ha1, ha2]
+    rw [hx3]; ring
+  have hy3' : W.addY x1 x2 y1 (W.slope x1 x2 y1 y2) = y3 := by
+    rw [hslope]
+    simp only [WeierstrassCurve.Affine.addY, WeierstrassCurve.Affine.negY,
+      WeierstrassCurve.Affine.negAddY, WeierstrassCurve.Affine.addX, ha1, ha2, ha3]
+    rw [hy3, hx3]; ring
+  rw [← hx3', ← hy3']
+  exact ⟨WeierstrassCurve.Affine.nonsingular_add h1 h2 hfin,
+         WeierstrassCurve.Affine.Point.add_some hfin⟩
+
+/-- Per-bit soundness. A single-bit block that
+    satisfies `singleBitHolds` computes `output = (input + Q) + input` in the
+    group, where `Q = (xb, (2b−1)·yb)` is the sign-selected target. The output is
+    a genuine nonsingular curve point (hence the `∃ hO`, mirroring
+    `Kimchi.AddComplete.sound_point_noninf`).
+
+    The block is exactly the composite of two affine additions: `R := I + Q`
+    (first slope `s1`, non-vertical since `xi ≠ xb`) followed by `O := R + I`
+    (second slope `s2 = u/t`, non-vertical since `t = 2·xi + xb − s1² ≠ 0`). The
+    fused `s2 = u/t` formula skips the intermediate `Y` of `R`; we recover it from
+    the `xo`/`yo` constraints, then close with `secant_add` twice.
+
+    No booleanity hypothesis on `b` is needed: the algebraic argument holds for
+    arbitrary `b`, since `Q`'s validity as a curve point is supplied directly by
+    `hQ`. (At the gate level the `b ∈ {0,1}` constraint is what makes
+    `Q = (2b−1)·target` equal `±target`.) -/
+theorem singleBit_sound
+    (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
+    (b xb yb s1 xi yi xo yo : F)
+    (hI : W.Nonsingular xi yi)
+    (hQ : W.Nonsingular xb ((2 * b - 1) * yb))
+    (hxne : xi ≠ xb)
+    (htne : 2 * xi + xb - s1 * s1 ≠ 0)
+    (h : singleBitHolds b xb yb s1 xi yi xo yo) :
+    ∃ hO : W.Nonsingular xo yo,
+      Point.some hO = (Point.some hI + Point.some hQ) + Point.some hI := by
+  obtain ⟨ha1, ha2, ha3, ha4⟩ := ha
+  simp only [singleBitHolds] at h
+  obtain ⟨hbool, hc_s1, hc_xo, hc_yo⟩ := h
+  have hdiff1 : xi - xb ≠ 0 := sub_ne_zero.mpr hxne
+  -- the first addition `I + Q` has slope `s1`
+  have hl1 : s1 = (yi - (2 * b - 1) * yb) / (xi - xb) := by
+    rw [eq_div_iff hdiff1]; linear_combination hc_s1
+  -- name the intermediate point `R = (rx, ry)` and the second slope `s2`
+  set rx : F := s1 * s1 - xi - xb with hrx
+  set ry : F := s1 * (xi - rx) - yi with hry
+  set s2 : F := (ry - yi) / (rx - xi) with hs2
+  clear_value s2 ry rx
+  have htval : xi - rx = 2 * xi + xb - s1 * s1 := by rw [hrx]; ring
+  have htt : xi - rx ≠ 0 := by rw [htval]; exact htne
+  have hrxne : rx ≠ xi := by intro hc; exact htt (by rw [hc]; ring)
+  have hxine : rx - xi ≠ 0 := sub_ne_zero.mpr hrxne
+  -- first addition: `I + Q = R`
+  obtain ⟨hR, hAdd1⟩ :=
+    secant_add W ⟨ha1, ha2, ha3, ha4⟩ hI hQ hxne hl1 hrx hry
+  -- the fused `s2 = u/t` is the slope of the second addition: `s2² = xo − xb + s1²`
+  have hs2sq : s2 * s2 = xo - xb + s1 * s1 := by
+    rw [hs2, div_mul_div_comm, div_eq_iff (mul_ne_zero hxine hxine), hry]
+    linear_combination hc_xo
+  have hxo : xo = s2 * s2 - rx - xi := by rw [hs2sq, hrx]; ring
+  have hyo : yo = s2 * (rx - xo) - ry := by
+    have hsr : s2 * (rx - xi) = ry - yi := by
+      rw [hs2, div_mul_cancel₀]; exact hxine
+    have hyo' : yo = (xi - xo) * s2 - yi := by
+      rw [hs2]; field_simp
+      linear_combination -hc_yo - (xi - xo) * hry
+    rw [hyo']; linear_combination -hsr
+  -- second addition: `R + I = O`
+  obtain ⟨hO, hAdd2⟩ :=
+    secant_add W ⟨ha1, ha2, ha3, ha4⟩ hR hI hrxne hs2 hxo hyo
+  exact ⟨hO, by rw [hAdd1, hAdd2]⟩
+
+end Soundness
 
 end Kimchi.VarBaseMul
