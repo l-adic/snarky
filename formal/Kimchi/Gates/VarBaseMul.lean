@@ -32,9 +32,13 @@
   the fixed target; `s0..s4` are the per-bit `s1` slopes; `b0..b4` the bits.
 
   This file has the faithful CONSTRAINT transcription + reflection + a runnable
-  example, then SOUNDNESS against Mathlib's group law: the per-bit step
-  (`singleBit_sound`) and the full-gate 5-bit double-and-add (`gate_scalarMul`,
-  `P₅ = 32·P₀ + 16·Q₀ + ⋯ + Q₄`).
+  example, then SOUNDNESS against Mathlib's group law, as a ladder:
+    * `singleBit_sound`     — one bit  : `output = (input + Q) + input`
+    * `gate_scalarMul`      — 5 bits   : `P₅ = 32·P₀ + 16·Q₀ + ⋯ + Q₄`
+    * `gate_scalarMul_int`  — 5 bits   : `∃ c : ℤ, P₅ = 32·P₀ + c·T`  (the bridge)
+    * `chain_scalarMul`     — `5m` bits: `P_m = 32^m·P₀ + (∑ 32^(m-1-i)·cᵢ)·T`
+  i.e. `m` chained gates compute variable-base scalar multiplication by an
+  arbitrary-length scalar `k = ∑ 32^(m-1-i)·cᵢ`.
 -/
 import Kimchi.Curve
 import Kimchi.Gates.AddComplete
@@ -353,6 +357,87 @@ theorem gate_scalarMul
   have eq4 : Point.some h4 = (Point.some h3 + Point.some hQ3) + Point.some h3 := e3
   have eq5 : Point.some h5 = (Point.some h4 + Point.some hQ4) + Point.some h4 := e4
   rw [eq5, eq4, eq3, eq2, eq1]
+  abel
+
+omit [DecidableEq F] in
+/-- Two affine points with the same `x` and provably-equal `y` are equal (proof
+    irrelevance on the nonsingularity witness). -/
+lemma some_eq_some (W : WeierstrassCurve.Affine F) {x y y' : F}
+    (h : W.Nonsingular x y) (h' : W.Nonsingular x y') (hy : y = y') :
+    Point.some h = Point.some h' := by
+  subst hy; rfl
+
+omit [DecidableEq F] in
+/-- Booleanity from the field constraint `b·b − b = 0`. -/
+lemma bool_of_sq {b : F} (h : b * b - b = 0) : b = 0 ∨ b = 1 := by
+  have hmul : b * (b - 1) = 0 := by ring_nf; linear_combination h
+  rcases mul_eq_zero.mp hmul with h1 | h1
+  · exact Or.inl h1
+  · exact Or.inr (by linear_combination h1)
+
+/-- The sign-selected target `Q = (xT, (2b−1)·yT)` is `±T` once `b ∈ {0,1}`:
+    on a short Weierstrass curve negation is `y ↦ −y`, so `Q = (2b−1)•T` as an
+    integer scalar multiple of `T = (xT, yT)`. -/
+lemma signed_target
+    (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
+    {b xT yT : F}
+    (hT : W.Nonsingular xT yT)
+    (hQ : W.Nonsingular xT ((2 * b - 1) * yT))
+    (hb : b = 0 ∨ b = 1) :
+    ∃ e : ℤ, Point.some hQ = e • Point.some hT := by
+  obtain ⟨ha1, _, ha3, _⟩ := ha
+  rcases hb with rfl | rfl
+  · refine ⟨-1, ?_⟩
+    rw [neg_one_zsmul, Point.neg_some]
+    exact some_eq_some W hQ _ (by rw [WeierstrassCurve.Affine.negY, ha1, ha3]; ring)
+  · refine ⟨1, ?_⟩
+    rw [one_zsmul]
+    exact some_eq_some W hQ hT (by ring)
+
+/-- The bridge to the integer-scalar form. A
+    satisfying gate computes `P₅ = 32·P₀ + c·T` for an integer `c` — the gate's
+    signed 5-bit value `c = 16(2b₀−1) + 8(2b₁−1) + 4(2b₂−1) + 2(2b₃−1) + (2b₄−1)`.
+
+    This folds `gate_scalarMul`'s point sum `16·Q₀ + ⋯ + Q₄` into `c·T`: each
+    `Qᵢ = (xT, (2bᵢ−1)·yT)` is `±T` once `bᵢ ∈ {0,1}` (booleanity, available from
+    the `b·b − b = 0` constraint inside `Holds`), since on a short curve negation
+    is `y ↦ −y`. This is exactly the per-gate relation `chain_scalarMul` consumes,
+    so it closes the gap between one gate and the arbitrary-length chain. -/
+theorem gate_scalarMul_int
+    (W : WeierstrassCurve.Affine F) (ha : IsShortShape W) (w : Witness F)
+    (h0 : W.Nonsingular w.x0 w.y0) (h1 : W.Nonsingular w.x1 w.y1)
+    (h2 : W.Nonsingular w.x2 w.y2) (h3 : W.Nonsingular w.x3 w.y3)
+    (h4 : W.Nonsingular w.x4 w.y4) (h5 : W.Nonsingular w.x5 w.y5)
+    (hT : W.Nonsingular w.xT w.yT)
+    (hQ0 : W.Nonsingular w.xT ((2 * w.b0 - 1) * w.yT))
+    (hQ1 : W.Nonsingular w.xT ((2 * w.b1 - 1) * w.yT))
+    (hQ2 : W.Nonsingular w.xT ((2 * w.b2 - 1) * w.yT))
+    (hQ3 : W.Nonsingular w.xT ((2 * w.b3 - 1) * w.yT))
+    (hQ4 : W.Nonsingular w.xT ((2 * w.b4 - 1) * w.yT))
+    (hxne0 : w.x0 ≠ w.xT) (hxne1 : w.x1 ≠ w.xT) (hxne2 : w.x2 ≠ w.xT)
+    (hxne3 : w.x3 ≠ w.xT) (hxne4 : w.x4 ≠ w.xT)
+    (htne0 : 2 * w.x0 + w.xT - w.s0 * w.s0 ≠ 0)
+    (htne1 : 2 * w.x1 + w.xT - w.s1 * w.s1 ≠ 0)
+    (htne2 : 2 * w.x2 + w.xT - w.s2 * w.s2 ≠ 0)
+    (htne3 : 2 * w.x3 + w.xT - w.s3 * w.s3 ≠ 0)
+    (htne4 : 2 * w.x4 + w.xT - w.s4 * w.s4 ≠ 0)
+    (h : Holds w) :
+    ∃ c : ℤ, Point.some h5 = (32 : ℤ) • Point.some h0 + c • Point.some hT := by
+  -- the Q-point sum from the already-proven nat-smul gate soundness
+  have main := gate_scalarMul W ha w h0 h1 h2 h3 h4 h5 hQ0 hQ1 hQ2 hQ3 hQ4
+    hxne0 hxne1 hxne2 hxne3 hxne4 htne0 htne1 htne2 htne3 htne4 h
+  -- booleanity of each bit from the `b·b − b = 0` constraint inside `Holds`
+  obtain ⟨_, hbit0, hbit1, hbit2, hbit3, hbit4⟩ := h
+  obtain ⟨e0, q0⟩ := signed_target W ha hT hQ0 (bool_of_sq hbit0.1)
+  obtain ⟨e1, q1⟩ := signed_target W ha hT hQ1 (bool_of_sq hbit1.1)
+  obtain ⟨e2, q2⟩ := signed_target W ha hT hQ2 (bool_of_sq hbit2.1)
+  obtain ⟨e3, q3⟩ := signed_target W ha hT hQ3 (bool_of_sq hbit3.1)
+  obtain ⟨e4, q4⟩ := signed_target W ha hT hQ4 (bool_of_sq hbit4.1)
+  refine ⟨16 * e0 + 8 * e1 + 4 * e2 + 2 * e3 + e4, ?_⟩
+  rw [main, q0, q1, q2, q3, q4]
+  simp only [← natCast_zsmul, smul_smul]
+  push_cast
+  rw [add_smul, add_smul, add_smul, add_smul]
   abel
 
 end Soundness
