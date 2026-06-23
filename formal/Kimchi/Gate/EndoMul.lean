@@ -227,4 +227,29 @@ theorem block_sound (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
     secant_add W ⟨ha1, ha2, ha3, ha4⟩ hM hP hMxne hs2 hxR_eq hyR_eq
   rw [hAdd1, hAdd2]
 
+/-- Per-row soundness: a satisfying row's two windows compute the double-and-add
+    chain `R = (P + Q₁) + P` then `S = (R + Q₂) + R`, where `Q₁, Q₂` are the gate's
+    endo-and-sign-selected targets. The distinct-point constraint (via
+    `distinctPoints`) supplies each window's `xR ≠ xP` / `xS ≠ xR`; the per-slope
+    non-degeneracies `xP ≠ xq` and `2·xP − s² + xq ≠ 0` are the remaining honest-
+    witness conditions (as in VarBaseMul). Identify `Q₁, Q₂` as `±T` / `±φ(T)` with
+    `selectQ` to feed the GLV accumulation. -/
+theorem row_sound (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
+    (endo : F) (w : Witness F) (h : Holds endo w)
+    (hP : W.Nonsingular w.xP w.yP) (hR : W.Nonsingular w.xR w.yR)
+    (hS : W.Nonsingular w.xS w.yS)
+    (hQ1 : W.Nonsingular ((1 + (endo - 1) * w.b1) * w.xT) ((2 * w.b2 - 1) * w.yT))
+    (hQ2 : W.Nonsingular ((1 + (endo - 1) * w.b3) * w.xT) ((2 * w.b4 - 1) * w.yT))
+    (hxne1 : w.xP ≠ (1 + (endo - 1) * w.b1) * w.xT)
+    (htne1 : 2 * w.xP - w.s1 ^ 2 + (1 + (endo - 1) * w.b1) * w.xT ≠ 0)
+    (hxne2 : w.xR ≠ (1 + (endo - 1) * w.b3) * w.xT)
+    (htne2 : 2 * w.xR - w.s3 ^ 2 + (1 + (endo - 1) * w.b3) * w.xT ≠ 0) :
+    Point.some hR = (Point.some hP + Point.some hQ1) + Point.some hP
+      ∧ Point.some hS = (Point.some hR + Point.some hQ2) + Point.some hR := by
+  obtain ⟨hxPxR, hxRxS⟩ := distinctPoints endo w h
+  simp only [Holds] at h
+  obtain ⟨hs1, hc2_1, hc3_1, hs2, hc2_2, hc3_2, _, _, _, _, _, _⟩ := h
+  exact ⟨block_sound W ha hP hQ1 hR hxne1 htne1 (Ne.symm hxPxR) hs1 hc2_1 hc3_1,
+         block_sound W ha hR hQ2 hS hxne2 htne2 (Ne.symm hxRxS) hs2 hc2_2 hc3_2⟩
+
 end Kimchi.Gate.EndoMul
