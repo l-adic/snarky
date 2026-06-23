@@ -83,6 +83,9 @@ jobs:
         #print axioms Kimchi.Gate.EndoScalar.cPoly_table
         #print axioms Kimchi.Gate.EndoScalar.dPoly_table
         #print axioms Kimchi.Gate.EndoScalar.gate_endoScalar
+        #print axioms Kimchi.Gate.EndoScalar.gate_endoScalar_table
+        #print axioms Kimchi.Circuit.EndoScalar.gate_toField
+        #print axioms Kimchi.Circuit.EndoScalar.endoScalar_spec
         #print axioms Kimchi.Gate.VarBaseMul.ok_iff
         #print axioms Kimchi.Gate.VarBaseMul.singleBitOk_iff
         #print axioms Kimchi.Gate.VarBaseMul.secant_add
