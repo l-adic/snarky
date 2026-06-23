@@ -1,50 +1,58 @@
-/-
-  Gates/VarBaseMul.lean
+import Kimchi.Curve
+import Kimchi.Gates.AddComplete
 
-  The kimchi variable-base scalar-multiplication gate (`VarBaseMul`), transcribed
-  from proof-systems `kimchi/src/circuits/polynomials/varbasemul.rs`.
+/-!
+# The kimchi `VarBaseMul` gate
 
-  The gate processes 5 bits of a double-and-add scalar multiplication across two
-  rows (a `VBSM` row and a `ZERO` row). Per bit it computes the EC operation
+The variable-base scalar-multiplication gate, transcribed from proof-systems
+`kimchi/src/circuits/polynomials/varbasemul.rs`.
 
-        Output = (Input + (2·b − 1)·Target) + Input          (= 2·Input + (2b−1)·Target)
+The gate processes 5 bits of a double-and-add scalar multiplication across two
+rows (a `VBSM` row and a `ZERO` row). Per bit it computes the EC operation
 
-  using the efficient "(P+Q)+P without the intermediate Y" formula (1 mul, 2
-  squarings, 2 divisions). Writing `Input = (xi,yi)`, `Target = (xb,yb)`:
+      Output = (Input + (2·b − 1)·Target) + Input          (= 2·Input + (2b−1)·Target)
 
-      s1 := (yi − (2b−1)·yb) / (xi − xb)
-      rx := s1² − xi − xb                     -- x of the intermediate Input + (2b−1)·Target
-      t  := xi − rx   (= 2xi − s1² + xb)
-      u  := 2yi − t·s1
-      s2 := u / t                             -- slope of the second addition
-      xo := xb + s2² − s1²
-      yo := (xi − xo)·s2 − yi
+using the efficient "(P+Q)+P without the intermediate Y" formula (1 mul, 2
+squarings, 2 divisions). Writing `Input = (xi,yi)`, `Target = (xb,yb)`:
 
-  Cleared of divisions, each bit contributes 4 constraints (boolean, s1, xo, yo);
-  one more constraint ties the running scalar `n → n'`. 5·4 + 1 = 21 constraints.
+    s1 := (yi − (2b−1)·yb) / (xi − xb)
+    rx := s1² − xi − xb                     -- x of the intermediate Input + (2b−1)·Target
+    t  := xi − rx   (= 2xi − s1² + xb)
+    u  := 2yi − t·s1
+    s2 := u / t                             -- slope of the second addition
+    xo := xb + s2² − s1²
+    yo := (xi − xo)·s2 − yi
 
-  Witness layout (cols 0–14 of the VBSM row `i`, then the ZERO row `i+1`):
+Cleared of divisions, each bit contributes 4 constraints (boolean, s1, xo, yo);
+one more constraint ties the running scalar `n → n'`. 5·4 + 1 = 21 constraints.
+
+Witness layout (cols 0–14 of the VBSM row `i`, then the ZERO row `i+1`):
 
     row i  : xT yT x0 y0  n  n'  _  x1 y1 x2 y2 x3 y3 x4 y4   (VBSM)
     row i+1: x5 y5 b0 b1 b2 b3 b4 s0 s1 s2 s3 s4              (ZERO)
 
-  The accumulator chain is (x0,y0) → (x1,y1) → … → (x5,y5); `base = (xT,yT)` is
-  the fixed target; `s0..s4` are the per-bit `s1` slopes; `b0..b4` the bits.
+The accumulator chain is (x0,y0) → (x1,y1) → … → (x5,y5); `base = (xT,yT)` is the
+fixed target; `s0..s4` are the per-bit `s1` slopes; `b0..b4` the bits.
 
-  This file has the faithful CONSTRAINT transcription + reflection + a runnable
-  example, then SOUNDNESS against Mathlib's group law, as a ladder that funnels
-  into one top-level theorem `scalarMul`:
-    * `singleBit_sound`     — one bit  : `output = (input + Q) + input`
-    * `gate_scalarMul`      — 5 bits   : `P₅ = 32·P₀ + 16·Q₀ + ⋯ + Q₄`
-    * `gate_scalarMul_int`  — 5 bits   : `∃ c : ℤ, P₅ = 32·P₀ + c·T`  (the bridge)
-    * `chain_scalarMul`     — `5m` bits: `P_m = 32^m·P₀ + (∑ 32^(m-1-i)·cᵢ)·T`
-    * `scalarMul`           — `m` chained gates: `∃ k : ℤ, P_m = 32^m·P₀ + k·T`
-  i.e. `m` chained `VarBaseMul` gates compute variable-base scalar multiplication
-  by an arbitrary-length scalar. `scalarMul` instantiates `chain_scalarMul` with
-  the per-gate relations from `gate_scalarMul_int`, so the whole ladder is used.
+## Main result
+
+`VarBaseMul.scalarMul` — `m` chained gates compute variable-base scalar
+multiplication: `∃ k : ℤ, Pₘ = 32^m · P₀ + k · T`.
+
+## Supporting development
+
+The faithful constraint model (`Witness` / `Holds` / `ok`) + reflection
+(`ok_iff`), a runnable example, then the soundness ladder against Mathlib's
+elliptic-curve group law:
+
+* `singleBit_sound`     — one bit  : `output = (input + Q) + input`
+* `gate_scalarMul`      — 5 bits   : `P₅ = 32·P₀ + 16·Q₀ + ⋯ + Q₄`
+* `gate_scalarMul_int`  — 5 bits   : `∃ c : ℤ, P₅ = 32·P₀ + c·T`  (the bridge)
+* `chain_scalarMul`     — `5m` bits: `P_m = 32^m·P₀ + (∑ 32^(m-1-i)·cᵢ)·T`
+
+`scalarMul` assembles these — it instantiates `chain_scalarMul` with the per-gate
+relations from `gate_scalarMul_int`, so the whole ladder is used.
 -/
-import Kimchi.Curve
-import Kimchi.Gates.AddComplete
 
 namespace Kimchi.VarBaseMul
 
@@ -524,7 +532,9 @@ structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
   t4 : 2 * g.x4 + g.xT - g.s4 * g.s4 ≠ 0
   holds : Holds g
 
-/-- TOP-LEVEL: `m` chained `VarBaseMul` gates compute variable-base scalar
+/-! ## Main theorem: variable-base scalar multiplication -/
+
+/-- `m` chained `VarBaseMul` gates compute variable-base scalar
     multiplication. Given `m` valid gates `g i` over a shared target point `T`,
     whose accumulator points form a chain `P` (gate `i`'s input is `P i`, its
     output is `P (i+1)`, so consecutive gates are threaded), the final accumulator
