@@ -1,0 +1,69 @@
+name: Lean
+
+# Separate from the main `CI` workflow: the Kimchi formalization has its own
+# toolchain (elan / lake / Mathlib), needs no git submodules, and is independent
+# of the PureScript/Rust build — so it runs in parallel and only when `formal/`
+# (or this file) changes.
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'formal/**'
+      - '.github/workflows/lean.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'formal/**'
+      - '.github/workflows/lean.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run per ref; newer pushes cancel the in-flight build.
+concurrency:
+  group: lean-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & check (Kimchi formalization)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      # No submodules: the Lean project depends only on Mathlib (fetched by lake).
+
+    - name: Lean style check
+      run: bash formal/scripts/check-style.sh
+
+    # Installs elan + the pinned toolchain (lean-toolchain), restores/saves the
+    # `.lake` GitHub cache, runs `lake exe cache get` for Mathlib oleans, and
+    # `lake build`. Building the library *is* checking every proof.
+    - name: Build the formalization
+      uses: leanprover/lean-action@v1
+      with:
+        lake-package-directory: formal
+        test: "false"
+
+    # `lake build` succeeds even with `sorry` (it's only a warning), so gate
+    # explicitly: every headline theorem must reduce to the standard axioms with
+    # no `sorryAx` in its closure.
+    - name: Verify proofs are sorry-free
+      working-directory: formal
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cat > check_axioms.lean <<'EOF'
+        import Kimchi
+        open Kimchi.AddComplete
+        #print axioms sound_noninf
+        #print axioms complete_noninf
+        #print axioms sound_point_noninf
+        #print axioms sound_point_inf
+        #print axioms ok_iff
+        EOF
+        out=$(lake env lean check_axioms.lean)
+        echo "$out"
+        if echo "$out" | grep -q sorryAx; then
+          echo "::error::a headline proof depends on sorryAx"
+          exit 1
+        fi

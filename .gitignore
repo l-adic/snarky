@@ -2,6 +2,9 @@
 output/
 output-es/
 .spago/
+
+# Lean (formal/) build artifacts — Lake-managed, regenerable
+formal/.lake/
 .pulp-cache/
 bower_components/
 node_modules/

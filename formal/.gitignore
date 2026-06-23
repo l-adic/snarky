@@ -1,0 +1,6 @@
+# Lake build artifacts + fetched dependencies (incl. the Mathlib checkout/oleans).
+# Everything here is reproducible from lakefile.toml + lake-manifest.json.
+/.lake/
+
+# CI scratch
+/check_axioms.lean

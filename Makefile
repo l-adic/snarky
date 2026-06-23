@@ -1,4 +1,4 @@
-.PHONY: help all clean build-napi test-curves test-snarky test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint build-ps gen-linearization dep-graph pickles-inventory
+.PHONY: help all clean build-napi test-curves test-snarky test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint lean-build lean-style lean-style-fix build-ps gen-linearization dep-graph pickles-inventory
 
 .DEFAULT_GOAL := help
 
@@ -117,10 +117,20 @@ cargo-clippy: ## Run clippy lints on workspace
 gen-linearization: build-napi ## Generate Kimchi linearization PureScript modules
 	cd packages/pickles-codegen && $(MAKE) generate
 
-lint: ## Format, tidy, and lint all code (Rust + PureScript)
+lint: ## Format, tidy, and lint all code (Rust + PureScript + Lean)
 	cargo fmt --all
 	npx purs-tidy format-in-place 'packages/*/src/**/*.purs' 'packages/*/test/**/*.purs'
+	bash formal/scripts/check-style.sh --fix
 	cargo clippy --all-targets -- -D warnings
+
+lean-build: ## Build the Lean (formal/) project
+	cd formal && PATH="$$HOME/.elan/bin:$$PATH" lake build
+
+lean-style: ## Check Lean style (<=100 cols, no trailing ws/tabs, final newline)
+	bash formal/scripts/check-style.sh
+
+lean-style-fix: ## Auto-fix mechanical Lean style (trailing whitespace, final newline)
+	bash formal/scripts/check-style.sh --fix
 
 clean: ## Clean everything
 	cargo clean
