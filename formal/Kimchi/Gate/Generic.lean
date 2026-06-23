@@ -27,7 +27,7 @@ The gate model (`Generic` / `Generic.holds` / `Generic.ok`), the per-gate
 reflection `Generic.ok_iff`, and a runnable multiplication example.
 -/
 
-namespace Kimchi
+namespace Kimchi.Gate
 
 /-- One generic gate. Field names match the PureScript record so the
     correspondence is checkable by eye: `cl,vl` left coeff/var; `cr,vr` right;
@@ -94,4 +94,4 @@ def egBad  : Assignment := #[3, 4, 13]   -- 3 * 4 ≠ 13  ✗
 example : Satisfies [mulGate] egGood := by rw [← satisfies_iff]; rfl
 example : ¬ Satisfies [mulGate] egBad := by rw [← satisfies_iff]; decide
 
-end Kimchi
+end Kimchi.Gate

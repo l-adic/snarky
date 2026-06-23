@@ -1,6 +1,6 @@
-import Kimchi.Gates.Generic
+import Kimchi.Gate.Generic
 
-open Kimchi
+open Kimchi.Gate
 
 /-- A runnable demo: the shape of "ingest a dumped (circuit, witness) and run the
     verified checker". Here the generic gate + witness are inline; later they are

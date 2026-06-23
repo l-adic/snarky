@@ -1,5 +1,5 @@
 import Kimchi.Curve
-import Kimchi.Gates.AddComplete
+import Kimchi.Gate.AddComplete
 
 /-!
 # The kimchi `VarBaseMul` gate
@@ -34,27 +34,27 @@ Witness layout (cols 0–14 of the VBSM row `i`, then the ZERO row `i+1`):
 The accumulator chain is (x0,y0) → (x1,y1) → … → (x5,y5); `base = (xT,yT)` is the
 fixed target; `s0..s4` are the per-bit `s1` slopes; `b0..b4` the bits.
 
+This file is the GATE: one 5-bit block. The CIRCUIT that chains gates into a
+full scalar multiplication lives in `Kimchi.Circuit.VarBaseMul`.
+
 ## Main result
 
-`VarBaseMul.scalarMul` — `m` chained gates compute variable-base scalar
-multiplication: `∃ k : ℤ, Pₘ = 32^m · P₀ + k · T`.
+`gate_scalarMul_int` — one satisfying gate computes `∃ c : ℤ, P₅ = 32·P₀ + c·T`
+in Mathlib's elliptic-curve group: the integer-scalar interface the circuit
+consumes.
 
 ## Supporting development
 
 The faithful constraint model (`Witness` / `Holds` / `ok`) + reflection
-(`ok_iff`), a runnable example, then the soundness ladder against Mathlib's
-elliptic-curve group law:
+(`ok_iff`), a runnable example, then the per-gate soundness ladder against
+Mathlib's group law:
 
-* `singleBit_sound`     — one bit  : `output = (input + Q) + input`
-* `gate_scalarMul`      — 5 bits   : `P₅ = 32·P₀ + 16·Q₀ + ⋯ + Q₄`
-* `gate_scalarMul_int`  — 5 bits   : `∃ c : ℤ, P₅ = 32·P₀ + c·T`  (the bridge)
-* `chain_scalarMul`     — `5m` bits: `P_m = 32^m·P₀ + (∑ 32^(m-1-i)·cᵢ)·T`
-
-`scalarMul` assembles these — it instantiates `chain_scalarMul` with the per-gate
-relations from `gate_scalarMul_int`, so the whole ladder is used.
+* `singleBit_sound` — one bit : `output = (input + Q) + input`
+* `gate_scalarMul`  — 5 bits  : `P₅ = 32·P₀ + 16·Q₀ + ⋯ + Q₄`  (point form)
+* `gate_scalarMul_int` — folds those `Qⱼ` into `±T` (the integer-scalar bridge)
 -/
 
-namespace Kimchi.VarBaseMul
+namespace Kimchi.Gate.VarBaseMul
 
 /-- The `VarBaseMul` witness columns spanning the VBSM + ZERO rows. -/
 structure Witness (F : Type*) where
@@ -203,7 +203,7 @@ def egVBM : Witness (ZMod 97) := build 3 5 10 20 1 1 0 1 1 0
     The content is that the fused `s2 = u/t` formula — which skips the
     intermediate `Y` of `input + Q` — equals the slope of the SECOND addition, so
     the block is exactly the composite of two Mathlib affine additions. This
-    builds on the already-proven `Kimchi.AddComplete`, whose `sound_point_*`
+    builds on the already-proven `Kimchi.Gate.AddComplete`, whose `sound_point_*`
     theorems characterize one such addition. The non-degeneracy hypotheses
     `xi ≠ xb` (first addition non-vertical) and `2·xi + xb − s1² ≠ 0` (i.e.
     `t ≠ 0`, second addition non-vertical) are exactly when the two divisions are
@@ -221,7 +221,7 @@ variable [Field F] [DecidableEq F]
     group sum is the nonsingular point `(x₃, y₃)`.
 
     This is the secant specialization of
-    `Kimchi.AddComplete.sound_point_noninf` (its first slope branch); unlike that
+    `Kimchi.Gate.AddComplete.sound_point_noninf` (its first slope branch); unlike that
     theorem it carries no `y₁ ≠ 0` hypothesis, since the doubling branch is
     excluded by `x₁ ≠ x₂`. -/
 lemma secant_add
@@ -255,7 +255,7 @@ lemma secant_add
     satisfies `singleBitHolds` computes `output = (input + Q) + input` in the
     group, where `Q = (xb, (2b−1)·yb)` is the sign-selected target. The output is
     a genuine nonsingular curve point (hence the `∃ hO`, mirroring
-    `Kimchi.AddComplete.sound_point_noninf`).
+    `Kimchi.Gate.AddComplete.sound_point_noninf`).
 
     The block is exactly the composite of two affine additions: `R := I + Q`
     (first slope `s1`, non-vertical since `xi ≠ xb`) followed by `O := R + I`
@@ -453,113 +453,4 @@ theorem gate_scalarMul_int
 
 end Soundness
 
-/-! ## Composition: chaining gates for an arbitrary-length scalar.
-
-    A full scalar multiplication runs many `VarBaseMul` gates back to back, each
-    consuming 5 bits: gate `i`'s output accumulator feeds gate `i+1`'s input, and
-    `gate_scalarMul` gives each the per-gate relation `P_{i+1} = 32·P_i + cᵢ·T`
-    (with `cᵢ ∈ ℤ` the gate's signed 5-bit contribution `16(2b₀−1)+⋯+(2b₄−1)`).
-    Folding that recurrence over `m` gates is pure group algebra: the chain
-    computes the scalar multiple `[k]·T` with `k = ∑ 32^(m-1-i)·cᵢ`, on top of the
-    carried `32^m·P₀`. -/
-
-section Composition
-
-open WeierstrassCurve.Affine
-
-variable [Field F] [DecidableEq F]
-
-/-- Chaining the per-gate relation `P_{i+1} = 32·P_i + cᵢ·T` over `m` gates gives
-    the closed-form scalar multiple
-
-        P_m = 32^m·P₀ + (∑_{i<m} 32^(m-1-i)·cᵢ)·T
-
-    — i.e. `m` chained `VarBaseMul` gates compute variable-base scalar
-    multiplication by the `5m`-bit scalar `k = ∑_{i<m} 32^(m-1-i)·cᵢ` (plus the
-    carried `32^m·P₀`). The per-gate relation is supplied by `gate_scalarMul`
-    after folding its `Qⱼ` points into `±T` via booleanity. -/
-theorem chain_scalarMul
-    (W : WeierstrassCurve.Affine F)
-    (m : ℕ) (P : ℕ → W.Point) (T : W.Point) (c : ℕ → ℤ)
-    (hstep : ∀ i, i < m → P (i + 1) = (32 : ℤ) • P i + c i • T) :
-    P m = (32 : ℤ) ^ m • P 0
-        + (∑ i ∈ Finset.range m, (32 : ℤ) ^ (m - 1 - i) * c i) • T := by
-  induction m with
-  | zero => simp
-  | succ m ih =>
-    have hs : P (m + 1) = (32 : ℤ) • P m + c m • T := hstep m (Nat.lt_succ_self m)
-    have ih' := ih (fun i hi => hstep i (Nat.lt_succ_of_lt hi))
-    have hsum : (∑ i ∈ Finset.range (m + 1), (32 : ℤ) ^ (m + 1 - 1 - i) * c i)
-        = (32 : ℤ) * (∑ i ∈ Finset.range m, (32 : ℤ) ^ (m - 1 - i) * c i) + c m := by
-      rw [Finset.sum_range_succ, Finset.mul_sum]
-      simp only [Nat.add_sub_cancel, Nat.sub_self, pow_zero, one_mul]
-      congr 1
-      apply Finset.sum_congr rfl
-      intro i hi
-      have hi' : m - i = (m - 1 - i) + 1 := by
-        have := Finset.mem_range.mp hi; omega
-      rw [hi', pow_succ]
-      ring
-    rw [hs, ih', hsum, smul_add, smul_smul, smul_smul, add_smul, pow_succ']
-    abel
-
-/-- The per-gate hypotheses `gate_scalarMul_int` needs, bundled: nonsingular
-    accumulators `a0..a5` and signed targets `q0..q4`, the per-step
-    non-degeneracy `x0..x4` (`xᵢ ≠ xT`) and `t0..t4` (`tᵢ ≠ 0`), and the 21
-    constraints `holds`. (A `Prop`, so its fields are usable as proofs.) -/
-structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
-  a0 : W.Nonsingular g.x0 g.y0
-  a1 : W.Nonsingular g.x1 g.y1
-  a2 : W.Nonsingular g.x2 g.y2
-  a3 : W.Nonsingular g.x3 g.y3
-  a4 : W.Nonsingular g.x4 g.y4
-  a5 : W.Nonsingular g.x5 g.y5
-  hT : W.Nonsingular g.xT g.yT
-  q0 : W.Nonsingular g.xT ((2 * g.b0 - 1) * g.yT)
-  q1 : W.Nonsingular g.xT ((2 * g.b1 - 1) * g.yT)
-  q2 : W.Nonsingular g.xT ((2 * g.b2 - 1) * g.yT)
-  q3 : W.Nonsingular g.xT ((2 * g.b3 - 1) * g.yT)
-  q4 : W.Nonsingular g.xT ((2 * g.b4 - 1) * g.yT)
-  x0 : g.x0 ≠ g.xT
-  x1 : g.x1 ≠ g.xT
-  x2 : g.x2 ≠ g.xT
-  x3 : g.x3 ≠ g.xT
-  x4 : g.x4 ≠ g.xT
-  t0 : 2 * g.x0 + g.xT - g.s0 * g.s0 ≠ 0
-  t1 : 2 * g.x1 + g.xT - g.s1 * g.s1 ≠ 0
-  t2 : 2 * g.x2 + g.xT - g.s2 * g.s2 ≠ 0
-  t3 : 2 * g.x3 + g.xT - g.s3 * g.s3 ≠ 0
-  t4 : 2 * g.x4 + g.xT - g.s4 * g.s4 ≠ 0
-  holds : Holds g
-
-/-! ## Main theorem: variable-base scalar multiplication -/
-
-/-- `m` chained `VarBaseMul` gates compute variable-base scalar
-    multiplication. Given `m` valid gates `g i` over a shared target point `T`,
-    whose accumulator points form a chain `P` (gate `i`'s input is `P i`, its
-    output is `P (i+1)`, so consecutive gates are threaded), the final accumulator
-    is `P m = 32^m·P₀ + k·T` for some integer scalar `k`. The proof applies
-    `gate_scalarMul_int` to each gate for its per-step relation
-    `P (i+1) = 32·P i + cᵢ·T`, then folds them with `chain_scalarMul`. -/
-theorem scalarMul
-    (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
-    (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep W (g i))
-    (P : ℕ → W.Point) (T : W.Point)
-    (hT : ∀ i (hi : i < m), T = Point.some (gs i hi).hT)
-    (hin : ∀ i (hi : i < m), P i = Point.some (gs i hi).a0)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some (gs i hi).a5) :
-    ∃ k : ℤ, P m = (32 : ℤ) ^ m • P 0 + k • T := by
-  refine ⟨_, chain_scalarMul W m P T (fun i =>
-    -- each gate's integer contribution, via `gate_scalarMul_int` (junk 0 past `m`)
-    if hi : i < m then
-      Classical.choose (gate_scalarMul_int W ha (g i)
-        (gs i hi).a0 (gs i hi).a1 (gs i hi).a2 (gs i hi).a3 (gs i hi).a4 (gs i hi).a5
-        (gs i hi).hT (gs i hi).q0 (gs i hi).q1 (gs i hi).q2 (gs i hi).q3 (gs i hi).q4
-        (gs i hi).x0 (gs i hi).x1 (gs i hi).x2 (gs i hi).x3 (gs i hi).x4
-        (gs i hi).t0 (gs i hi).t1 (gs i hi).t2 (gs i hi).t3 (gs i hi).t4 (gs i hi).holds)
-    else 0) ?_⟩
-  grind +qlia
-
-end Composition
-
-end Kimchi.VarBaseMul
+end Kimchi.Gate.VarBaseMul

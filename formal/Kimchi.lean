@@ -2,6 +2,7 @@
 -- Re-exports the constraint model, the EC oracle, and the gate identities.
 import Kimchi.ConstraintSystem
 import Kimchi.Curve
-import Kimchi.Gates.Generic
-import Kimchi.Gates.AddComplete
-import Kimchi.Gates.VarBaseMul
+import Kimchi.Gate.Generic
+import Kimchi.Gate.AddComplete
+import Kimchi.Gate.VarBaseMul
+import Kimchi.Circuit.VarBaseMul

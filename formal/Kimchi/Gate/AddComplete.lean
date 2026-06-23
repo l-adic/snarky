@@ -36,7 +36,7 @@ that feed the `Point`-level results, and a runnable example. No `sorry`; standar
 axioms only.
 -/
 
-namespace Kimchi.AddComplete
+namespace Kimchi.Gate.AddComplete
 
 /-- The CompleteAdd witness columns (cols 0–10), names matching AddComplete.purs. -/
 structure Witness (F : Type*) where
@@ -329,4 +329,4 @@ def egDouble : Witness (ZMod 17) :=
 example : Holds egDouble := by
   rw [← ok_iff]; rfl
 
-end Kimchi.AddComplete
+end Kimchi.Gate.AddComplete
