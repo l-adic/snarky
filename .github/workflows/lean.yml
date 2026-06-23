@@ -92,6 +92,7 @@ jobs:
         #print axioms Kimchi.Circuit.EndoMul.chain_endo
         #print axioms Kimchi.Circuit.EndoMul.endoMul
         #print axioms Kimchi.Circuit.EndoMul.endoMul_scalar
+        #print axioms Kimchi.Circuit.EndoMul.recoding_digit
         #print axioms Kimchi.Circuit.EndoScalar.gate_toField
         #print axioms Kimchi.Circuit.EndoScalar.endoScalar_spec
         #print axioms Kimchi.Gate.VarBaseMul.ok_iff

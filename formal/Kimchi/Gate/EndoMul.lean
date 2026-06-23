@@ -50,9 +50,9 @@ distinct-point lemma `distinctPoints` (which discharges `block_sound`'s
 non-degeneracy at the row level), and the `some_congr` point congruence. The GLV
 accumulation `P_m = 4^m·P₀ + k₁·T + k₂·φ(T)` and the eigenvalue collapse to
 `[k₁+k₂·λ]·T` live in `Kimchi.Circuit.EndoMul` (`chain_endo` / `endoMul` /
-`endoMul_scalar`). The only step left to a fully-closed `EndoMul ∘ EndoScalar` is
-the recoding correspondence `(k₂, k₁) = (a, b)` between the two gates' bit
-processing — see `endoMul_scalar`.
+`endoMul_scalar`), and the recoding correspondence with EndoScalar
+(`Kimchi.Circuit.EndoMul.recoding_digit`): per 2-bit window the two gates assign the
+same signed base, the per-window heart of `(k₂, k₁) = (a, b)`.
 -/
 
 namespace Kimchi.Gate.EndoMul
