@@ -79,6 +79,10 @@ jobs:
         #print axioms Kimchi.Gate.AddComplete.sound_point_noninf
         #print axioms Kimchi.Gate.AddComplete.sound_point_inf
         #print axioms Kimchi.Gate.AddComplete.ok_iff
+        #print axioms Kimchi.Gate.EndoScalar.crumb_iff
+        #print axioms Kimchi.Gate.EndoScalar.cPoly_table
+        #print axioms Kimchi.Gate.EndoScalar.dPoly_table
+        #print axioms Kimchi.Gate.EndoScalar.gate_endoScalar
         #print axioms Kimchi.Gate.VarBaseMul.ok_iff
         #print axioms Kimchi.Gate.VarBaseMul.singleBitOk_iff
         #print axioms Kimchi.Gate.VarBaseMul.secant_add
