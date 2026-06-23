@@ -95,6 +95,8 @@ jobs:
         #print axioms Kimchi.Circuit.EndoMul.recoding_digit
         #print axioms Kimchi.Circuit.EndoMul.sum_reindex
         #print axioms Kimchi.Circuit.EndoMul.recode_fold
+        #print axioms Kimchi.Circuit.EndoMul.row_digit
+        #print axioms Kimchi.Circuit.EndoMul.endoMul_ab
         #print axioms Kimchi.Circuit.EndoScalar.gate_toField
         #print axioms Kimchi.Circuit.EndoScalar.endoScalar_spec
         #print axioms Kimchi.Gate.VarBaseMul.ok_iff
