@@ -91,6 +91,9 @@ jobs:
         #print axioms Kimchi.Circuit.VarBaseMul.scalarMul
         #print axioms Kimchi.Circuit.VarBaseMul.scalarMul_baseMul
         #print axioms Kimchi.Circuit.VarBaseMul.scalarMul_shifted
+        #print axioms Kimchi.Circuit.VarBaseMul.unshiftType1_shiftType1
+        #print axioms Kimchi.Circuit.VarBaseMul.scalarMul_caller
+        #print axioms Kimchi.Circuit.VarBaseMul.scalarMul_type2
         EOF
         out=$(lake env lean check_axioms.lean)
         echo "$out"

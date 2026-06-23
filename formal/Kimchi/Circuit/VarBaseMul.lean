@@ -29,7 +29,28 @@ The ladder under it:
 
 `chain_scalarMul` / `chain_register` (the point- and register-level recurrence
 folds), `GateStep` (the per-gate hypothesis bundle that `gate_scalarMul_int`
-consumes), and `unshiftType1` (the pickles Type1 `to_field`).
+consumes), and `unshiftType1` / `shiftType1` / `unshiftType2` (the pickles shift).
+
+## Correspondence to the PureScript circuit
+
+The hypotheses are exactly the constraints `Snarky.Circuit.Kimchi.VarBaseMul`
+emits (`packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/VarBaseMul.purs`):
+
+* `P 0 = 2·T` ← `addFast CheckFinite base base` (acc := `[2]base`);
+* `N 0 = 0` ← `nAccPrev: const_ zero`; per-bit `n' = 2·n + b` ←
+  `foldl (\a b -> double a + b)`;
+* `q_j = (xT, (2·b − 1)·yT)` ← `Q = (xBase, (2·b − 1)·yBase)` (`computeVbmChain`);
+* `N m = shiftType1 s` (caller feeds the shift) ← `assertEqual_ nAcc t`.
+
+So the theorems track the circuit's entry points:
+
+* `scalarMul_caller`  ↔ `scaleFast1`  — `g, a ↦ [fromShifted a]·g` (Type1).
+* `scalarMul_type2`   ↔ `scaleFast2`  — split `s = 2·sDiv2 + sOdd`, run VarBaseMul
+  on `sDiv2`, then `if sOdd then g else g − base` (so `scaleFast2' ~ [s + 2^n]·g`).
+* `scalarMul_shifted` ↔ the core `varBaseMul`, `[2·t + 2^n + 1]·g`.
+
+This is an audit-level correspondence — the Lean model's hypotheses match the
+PureScript constraints by inspection, not a mechanized PS→Lean extraction.
 -/
 
 namespace Kimchi.Circuit.VarBaseMul
@@ -231,5 +252,74 @@ theorem scalarMul_shifted
   rw [hnf, hN0, unshiftType1, h32]
   push_cast
   ring
+
+/-! ## The caller's scalar: shift round-trip (Type1) and the odd correction (Type2) -/
+
+/-- The pickles `Shifted_value.Type1` shift (`of_field`): `t = (s − 2^numBits − 1)/2`,
+    the left inverse of `unshiftType1` (needs char ≠ 2). The caller computes this
+    `t` from the intended scalar `s` and feeds it to the gate as the register. -/
+def shiftType1 (numBits : ℕ) (s : F) : F := (s - 2 ^ numBits - 1) / 2
+
+omit [DecidableEq F] in
+/-- Round-trip: `unshift ∘ shift = id` (char ≠ 2). The pickles `to_field`/`of_field`
+    pair `s ↦ (s − 2^n − 1)/2 ↦ 2·t + 2^n + 1` recovers `s`. -/
+theorem unshiftType1_shiftType1 (h2 : (2 : F) ≠ 0) (numBits : ℕ) (s : F) :
+    unshiftType1 numBits (shiftType1 numBits s) = s := by
+  rw [unshiftType1, shiftType1]
+  field_simp
+  ring
+
+/-- The circuit computes `[s]·T` for the CALLER's scalar `s`. When the caller feeds
+    the Type1 shift of `s` as the register (`N m = shiftType1 (5m) s` — what pickles
+    `of_field` produces), the `m` gates compute `P m = n·T` with `(n : F) = s`:
+    variable-base scalar multiplication by the original scalar `s`. -/
+theorem scalarMul_caller
+    (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
+    (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep W (g i))
+    (T : W.Point) (N : ℕ → F) (P : ℕ → W.Point)
+    (hT : ∀ i (hi : i < m), T = Point.some (gs i hi).hT)
+    (hin : ∀ i (hi : i < m), P i = Point.some (gs i hi).a0)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some (gs i hi).a5)
+    (hregIn : ∀ i, i < m → N i = (g i).n)
+    (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
+    (hP0 : P 0 = (2 : ℤ) • T) (hN0 : N 0 = 0)
+    (s : F) (h2 : (2 : F) ≠ 0) (hNs : N m = shiftType1 (5 * m) s) :
+    ∃ n : ℤ, P m = n • T ∧ (n : F) = s := by
+  obtain ⟨n, hn, hnf⟩ :=
+    scalarMul_shifted W ha m g gs T N P hT hin hout hregIn hregOut hP0 hN0
+  exact ⟨n, hn, by rw [hnf, hNs, unshiftType1_shiftType1 h2]⟩
+
+/-- The pickles `Shifted_value.Type2` value `2·sHi + sOdd + 2^numBits` — the scalar
+    `s + 2^numBits` for `s = 2·sHi + sOdd`, used when the scalar field is LARGER
+    than the circuit field, so `s` is split into high bits `sHi` and low bit `sOdd`. -/
+def unshiftType2 (numBits : ℕ) (sHi sOdd : F) : F := 2 * sHi + sOdd + 2 ^ numBits
+
+/-- Type2 scalar multiplication: split + the explicit low-bit correction. The
+    `VarBaseMul` chain runs on the high part (register `N m = sHi`, giving
+    `P m = [2·sHi + 2^(5m) + 1]·T`), then the circuit applies the final
+    `if sOdd then h else h − T`. The corrected `result` is `n·T` with
+    `(n : F) = unshiftType2 (5m) (N m) sOdd = 2·(N m) + sOdd + 2^(5m)` — the Type2
+    scalar, in both bit cases. -/
+theorem scalarMul_type2
+    (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
+    (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep W (g i))
+    (T : W.Point) (N : ℕ → F) (P : ℕ → W.Point)
+    (hT : ∀ i (hi : i < m), T = Point.some (gs i hi).hT)
+    (hin : ∀ i (hi : i < m), P i = Point.some (gs i hi).a0)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some (gs i hi).a5)
+    (hregIn : ∀ i, i < m → N i = (g i).n)
+    (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
+    (hP0 : P 0 = (2 : ℤ) • T) (hN0 : N 0 = 0)
+    (sOdd : F) (result : W.Point)
+    (hcorr : (sOdd = 1 ∧ result = P m) ∨ (sOdd = 0 ∧ result = P m - T)) :
+    ∃ n : ℤ, result = n • T ∧ (n : F) = unshiftType2 (5 * m) (N m) sOdd := by
+  obtain ⟨n, hn, hnf⟩ :=
+    scalarMul_shifted W ha m g gs T N P hT hin hout hregIn hregOut hP0 hN0
+  rcases hcorr with ⟨ho, hr⟩ | ⟨ho, hr⟩
+  · refine ⟨n, by rw [hr, hn], ?_⟩
+    rw [hnf, ho, unshiftType1, unshiftType2]; ring
+  · refine ⟨n - 1, by rw [hr, hn, sub_smul, one_zsmul], ?_⟩
+    push_cast
+    rw [hnf, ho, unshiftType1, unshiftType2]; ring
 
 end Kimchi.Circuit.VarBaseMul
