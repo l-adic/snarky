@@ -1,4 +1,5 @@
 import Kimchi.Gate.EndoMul
+import Kimchi.Gate.EndoScalar
 
 /-!
 # The `EndoMul` circuit: GLV scalar multiplication
@@ -19,6 +20,9 @@ TWO bases (`T` and `φ(T)`).
 * `endoMul_scalar` — with the eigenvalue `φ(T) = [λ]·T` (a hypothesis), this
   collapses to a single scalar multiple `P_m = 4^m·P₀ + k·T`, `k = k₁ + k₂·λ` — the
   endo-scalar form `EndoScalar.toField` computes.
+* `recoding_digit` — the `EndoMul ∘ EndoScalar` recoding correspondence: per 2-bit
+  window, `EndoScalar`'s `cPoly`/`dPoly` digits equal `EndoMul`'s GLV window digit,
+  so the two gates assign the same signed base to each window.
 -/
 
 namespace Kimchi.Circuit.EndoMul
@@ -113,9 +117,10 @@ theorem endoMul (W : WeierstrassCurve.Affine F) (ha : IsShortShape W) (endo : F)
     The scalar `k = k₁ + k₂·λ` has exactly the endo-scalar form `a·λ + b` that
     `Kimchi.Circuit.EndoScalar.toField` computes from the challenge (with `a = k₂`,
     `b = k₁`) — so on a joint witness (the same challenge bits fed to both gates),
-    EndoMul's point is `[toField challenge λ]·T`. Proving `k₂ = a`, `k₁ = b` is the
-    recoding correspondence between the two gates' bit processing — the remaining
-    step to a fully-closed `EndoMul ∘ EndoScalar`. -/
+    EndoMul's point is `[toField challenge λ]·T`. `recoding_digit` proves the
+    per-window heart of `k₂ = a`, `k₁ = b`: the two gates assign the same signed base
+    to each 2-bit window (the full fold-level identity is then summing the matched
+    digits with the inits aligned). -/
 theorem endoMul_scalar (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
     (endo : F) (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → EndoStep W endo (g i))
     (P : ℕ → W.Point) (T φT : W.Point)
@@ -127,5 +132,41 @@ theorem endoMul_scalar (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
     ∃ k : ℤ, P m = (4 : ℤ) ^ m • P 0 + k • T := by
   obtain ⟨k1, k2, hk⟩ := endoMul W ha endo m g gs P T φT hT hφT hin hout
   exact ⟨k1 + k2 * lam, by rw [hk, heig]; module⟩
+
+/-! ## The recoding correspondence with `EndoScalar`. -/
+
+omit [DecidableEq F] in
+open Kimchi.Gate.EndoScalar in
+/-- The recoding correspondence (per window). An `EndoMul` window's bits `(b₁, b₂)`
+    map to the `EndoScalar` crumb `x = b₂ + 2·b₁` (the crumb's `bitEven`/`bitOdd` are
+    the sign/base-selector — `EndoScalar`'s nybble is `bitEven + 2·bitOdd`). On it,
+    `EndoScalar`'s Algorithm-2 digit polynomials equal `EndoMul`'s GLV window digit:
+
+        cPoly x = (2·b₂ − 1)·b₁          dPoly x = (2·b₂ − 1)·(1 − b₁)
+
+    where `2·b₂ − 1` is the sign (as in `selectQ`) and `b₁` selects the base — so
+    `cPoly` lands on the `φ(T)`/λ component (`EndoScalar`'s `a`, `EndoMul`'s `k₂`)
+    and `dPoly` on the `T`/1 component (`EndoScalar`'s `b`, `EndoMul`'s `k₁`). This
+    is the heart of `EndoMul ∘ EndoScalar`: the two gates assign the SAME signed
+    base to each 2-bit window. Folding these matched digits — with `EndoMul`'s ×4
+    per row = ×2 per window matching `EndoScalar`'s ×2 per crumb, and the inits
+    aligned (`EndoMul`'s `4^m·P₀` carry ↔ `EndoScalar`'s `a=b=2`) — yields
+    `(k₂, k₁) = (a, b)`, i.e. `endoMul_scalar`'s scalar equals
+    `EndoScalar.toField challenge λ`. -/
+theorem recoding_digit (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {b1 b2 : F}
+    (hb1 : b1 = 0 ∨ b1 = 1) (hb2 : b2 = 0 ∨ b2 = 1) :
+    cPoly (b2 + 2 * b1) = (2 * b2 - 1) * b1
+      ∧ dPoly (b2 + 2 * b1) = (2 * b2 - 1) * (1 - b1) := by
+  obtain ⟨c0, c1, c2, c3⟩ := cPoly_table h2 h3
+  obtain ⟨d0, d1, d2, d3⟩ := dPoly_table h2 h3
+  rcases hb1 with rfl | rfl <;> rcases hb2 with rfl | rfl
+  · exact ⟨by rw [show (0:F) + 2 * 0 = 0 by ring, c0]; ring,
+           by rw [show (0:F) + 2 * 0 = 0 by ring, d0]; ring⟩
+  · exact ⟨by rw [show (1:F) + 2 * 0 = 1 by ring, c1]; ring,
+           by rw [show (1:F) + 2 * 0 = 1 by ring, d1]; ring⟩
+  · exact ⟨by rw [show (0:F) + 2 * 1 = 2 by ring, c2]; ring,
+           by rw [show (0:F) + 2 * 1 = 2 by ring, d2]; ring⟩
+  · exact ⟨by rw [show (1:F) + 2 * 1 = 3 by ring, c3]; ring,
+           by rw [show (1:F) + 2 * 1 = 3 by ring, d3]; ring⟩
 
 end Kimchi.Circuit.EndoMul
