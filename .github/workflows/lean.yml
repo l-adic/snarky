@@ -54,12 +54,13 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         cat > check_axioms.lean <<'EOF'
         import Kimchi
-        open Kimchi.AddComplete
-        #print axioms sound_noninf
-        #print axioms complete_noninf
-        #print axioms sound_point_noninf
-        #print axioms sound_point_inf
-        #print axioms ok_iff
+        #print axioms Kimchi.AddComplete.sound_noninf
+        #print axioms Kimchi.AddComplete.complete_noninf
+        #print axioms Kimchi.AddComplete.sound_point_noninf
+        #print axioms Kimchi.AddComplete.sound_point_inf
+        #print axioms Kimchi.AddComplete.ok_iff
+        #print axioms Kimchi.VarBaseMul.ok_iff
+        #print axioms Kimchi.VarBaseMul.singleBitOk_iff
         EOF
         out=$(lake env lean check_axioms.lean)
         echo "$out"

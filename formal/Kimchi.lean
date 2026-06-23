@@ -4,3 +4,4 @@ import Kimchi.ConstraintSystem
 import Kimchi.Curve
 import Kimchi.Gates.Generic
 import Kimchi.Gates.AddComplete
+import Kimchi.Gates.VarBaseMul
