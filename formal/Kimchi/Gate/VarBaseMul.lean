@@ -215,42 +215,6 @@ open WeierstrassCurve.Affine
 
 variable [Field F] [DecidableEq F]
 
-/-- One non-vertical (secant) affine addition, packaged with explicit output
-    coordinates. If `(x₁,y₁)`, `(x₂,y₂)` are nonsingular points with `x₁ ≠ x₂`,
-    and `ℓ, x₃, y₃` are the secant slope and resulting coordinates, then their
-    group sum is the nonsingular point `(x₃, y₃)`.
-
-    This is the secant specialization of
-    `Kimchi.Gate.AddComplete.sound_point_noninf` (its first slope branch); unlike that
-    theorem it carries no `y₁ ≠ 0` hypothesis, since the doubling branch is
-    excluded by `x₁ ≠ x₂`. -/
-lemma secant_add
-    (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
-    {x1 y1 x2 y2 : F}
-    (h1 : W.Nonsingular x1 y1) (h2 : W.Nonsingular x2 y2)
-    (hx : x1 ≠ x2)
-    {l x3 y3 : F}
-    (hl : l = (y1 - y2) / (x1 - x2))
-    (hx3 : x3 = l * l - x1 - x2)
-    (hy3 : y3 = l * (x1 - x3) - y1) :
-    ∃ h3 : W.Nonsingular x3 y3,
-      Point.some h1 + Point.some h2 = Point.some h3 := by
-  obtain ⟨ha1, ha2, ha3, ha4⟩ := ha
-  have hslope : W.slope x1 x2 y1 y2 = l := by
-    rw [WeierstrassCurve.Affine.slope_of_X_ne hx, hl]
-  have hfin : ¬(x1 = x2 ∧ y1 = W.negY x2 y2) := fun hc => hx hc.1
-  have hx3' : W.addX x1 x2 (W.slope x1 x2 y1 y2) = x3 := by
-    rw [hslope]; simp only [WeierstrassCurve.Affine.addX, ha1, ha2]
-    rw [hx3]; ring
-  have hy3' : W.addY x1 x2 y1 (W.slope x1 x2 y1 y2) = y3 := by
-    rw [hslope]
-    simp only [WeierstrassCurve.Affine.addY, WeierstrassCurve.Affine.negY,
-      WeierstrassCurve.Affine.negAddY, WeierstrassCurve.Affine.addX, ha1, ha2, ha3]
-    rw [hy3, hx3]; ring
-  rw [← hx3', ← hy3']
-  exact ⟨WeierstrassCurve.Affine.nonsingular_add h1 h2 hfin,
-         WeierstrassCurve.Affine.Point.add_some hfin⟩
-
 /-- Per-bit soundness. A single-bit block that
     satisfies `singleBitHolds` computes `output = (input + Q) + input` in the
     group, where `Q = (xb, (2b−1)·yb)` is the sign-selected target. The output is
@@ -371,39 +335,12 @@ theorem gate_scalarMul
   abel
 
 omit [DecidableEq F] in
-/-- Two affine points with the same `x` and provably-equal `y` are equal (proof
-    irrelevance on the nonsingularity witness). -/
-private lemma some_eq_some (W : WeierstrassCurve.Affine F) {x y y' : F}
-    (h : W.Nonsingular x y) (h' : W.Nonsingular x y') (hy : y = y') :
-    Point.some h = Point.some h' := by
-  subst hy; rfl
-
-omit [DecidableEq F] in
 /-- Booleanity from the field constraint `b·b − b = 0`. -/
 private lemma bool_of_sq {b : F} (h : b * b - b = 0) : b = 0 ∨ b = 1 := by
   have hmul : b * (b - 1) = 0 := by ring_nf; linear_combination h
   rcases mul_eq_zero.mp hmul with h1 | h1
   · exact Or.inl h1
   · exact Or.inr (by linear_combination h1)
-
-/-- The sign-selected target `Q = (xT, (2b−1)·yT)` is `±T` once `b ∈ {0,1}`:
-    on a short Weierstrass curve negation is `y ↦ −y`, so `Q = (2b−1)•T` as an
-    integer scalar multiple of `T = (xT, yT)`. -/
-lemma signed_target
-    (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
-    {b xT yT : F}
-    (hT : W.Nonsingular xT yT)
-    (hQ : W.Nonsingular xT ((2 * b - 1) * yT))
-    (hb : b = 0 ∨ b = 1) :
-    ∃ e : ℤ, Point.some hQ = e • Point.some hT ∧ (e : F) = 2 * b - 1 := by
-  obtain ⟨ha1, _, ha3, _⟩ := ha
-  rcases hb with rfl | rfl
-  · refine ⟨-1, ?_, by push_cast; ring⟩
-    rw [neg_one_zsmul, Point.neg_some]
-    exact some_eq_some W hQ _ (by rw [WeierstrassCurve.Affine.negY, ha1, ha3]; ring)
-  · refine ⟨1, ?_, by push_cast; ring⟩
-    rw [one_zsmul]
-    exact some_eq_some W hQ hT (by ring)
 
 /-- The bridge to the integer-scalar form. A
     satisfying gate computes `P₅ = 32·P₀ + c·T` for an integer `c` — the gate's
