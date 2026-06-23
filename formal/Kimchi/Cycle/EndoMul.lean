@@ -1,4 +1,5 @@
 import Kimchi.Cycle.VarBaseMul
+import Kimchi.Cycle.Shifted
 import Kimchi.Circuit.EndoMul
 
 /-!
@@ -71,5 +72,33 @@ theorem endoMul_toField_cm (c : CMCurve F) (h2 : (2 : F) ≠ 0) (h3 : (3 : F) �
       ∧ (s : F) = Kimchi.Circuit.EndoScalar.toField (crumbList g m) (c.lam : F) := by
   have heig : φT = c.lam • T := by rw [hTeq, hφTeq]; exact endoStep_eigen c hTbase hφTbase
   exact endoMul_toField c.W c.short h2 h3 c.beta m g gs P T φT hT hφT hin hout hP0 c.lam heig
+
+/-- PHASE 3 (faithful) — EndoMul ∘ EndoScalar computes `[σ]·T` for the genuine scalar.
+    Given the intended scalar `σ : ℤ` that `toField` decodes (`(σ:F) = toField crumbs λ`,
+    its coordinate-field representation), the gate's output `P_m = [s]·T` has `s = σ`
+    once the `Shifted_value` range bounds `|s − σ| < p` — so `P_m = [σ]·T` for the honest
+    integer scalar. The EndoScalar analogue of `varBaseMul_faithful`: `endoMul_toField_cm`
+    gives `(s:F) = toField = (σ:F)`, and the cross-field coincidence (`intCast_inj_of_sub_lt`)
+    upgrades it to `s = σ` under the range. With the eigenvalue from the curve, this closes
+    Level-1 EndoMul — `[EndoScalar.toField]·T` with both the eigenvalue and the scalar
+    honest, modulo the single explicit range hypothesis. -/
+theorem endoMul_faithful (c : CMCurve F) {p : ℕ} [CharP F p]
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → EndoStep c.W c.beta (g i))
+    (P : ℕ → c.W.Point) (T φT : c.W.Point) {xT yT : F}
+    (hTbase : c.W.Nonsingular xT yT) (hφTbase : c.W.Nonsingular (c.beta * xT) yT)
+    (hTeq : T = Point.some hTbase) (hφTeq : φT = Point.some hφTbase)
+    (hT : ∀ i (hi : i < m), T = Point.some (gs i hi).hT)
+    (hφT : ∀ i (hi : i < m), φT = Point.some (gs i hi).hφT)
+    (hin : ∀ i (hi : i < m), P i = Point.some (gs i hi).hP)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some (gs i hi).hS)
+    (hP0 : P 0 = (2 : ℤ) • T + (2 : ℤ) • φT)
+    (σ : ℤ) (hσ : (σ : F) = Kimchi.Circuit.EndoScalar.toField (crumbList g m) (c.lam : F)) :
+    ∃ s : ℤ, P m = s • T
+      ∧ (s : F) = Kimchi.Circuit.EndoScalar.toField (crumbList g m) (c.lam : F)
+      ∧ ((s - σ).natAbs < p → P m = σ • T) := by
+  obtain ⟨s, hPm, hs⟩ := endoMul_toField_cm c h2 h3 m g gs P T φT hTbase hφTbase
+    hTeq hφTeq hT hφT hin hout hP0
+  exact ⟨s, hPm, hs, fun hrange => by rw [hPm, intCast_inj_of_sub_lt (hs.trans hσ.symm) hrange]⟩
 
 end Kimchi.Cycle

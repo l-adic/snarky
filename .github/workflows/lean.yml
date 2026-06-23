@@ -99,6 +99,12 @@ jobs:
         #print axioms Kimchi.Circuit.EndoMul.endoMul_ab
         #print axioms Kimchi.Circuit.EndoMul.decompose_crumbList
         #print axioms Kimchi.Circuit.EndoMul.endoMul_toField
+        #print axioms Kimchi.Cycle.zsmul_mod
+        #print axioms Kimchi.Cycle.varBaseMul_scalar
+        #print axioms Kimchi.Cycle.varBaseMul_faithful
+        #print axioms Kimchi.Cycle.endoMul_scalar_cm
+        #print axioms Kimchi.Cycle.endoMul_toField_cm
+        #print axioms Kimchi.Cycle.endoMul_faithful
         #print axioms Kimchi.Circuit.EndoScalar.gate_toField
         #print axioms Kimchi.Circuit.EndoScalar.endoScalar_spec
         #print axioms Kimchi.Gate.VarBaseMul.ok_iff
