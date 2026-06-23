@@ -365,14 +365,14 @@ theorem gate_scalarMul
 omit [DecidableEq F] in
 /-- Two affine points with the same `x` and provably-equal `y` are equal (proof
     irrelevance on the nonsingularity witness). -/
-lemma some_eq_some (W : WeierstrassCurve.Affine F) {x y y' : F}
+private lemma some_eq_some (W : WeierstrassCurve.Affine F) {x y y' : F}
     (h : W.Nonsingular x y) (h' : W.Nonsingular x y') (hy : y = y') :
     Point.some h = Point.some h' := by
   subst hy; rfl
 
 omit [DecidableEq F] in
 /-- Booleanity from the field constraint `b·b − b = 0`. -/
-lemma bool_of_sq {b : F} (h : b * b - b = 0) : b = 0 ∨ b = 1 := by
+private lemma bool_of_sq {b : F} (h : b * b - b = 0) : b = 0 ∨ b = 1 := by
   have hmul : b * (b - 1) = 0 := by ring_nf; linear_combination h
   rcases mul_eq_zero.mp hmul with h1 | h1
   · exact Or.inl h1
