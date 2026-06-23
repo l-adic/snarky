@@ -87,6 +87,7 @@ jobs:
         #print axioms Kimchi.Gate.VarBaseMul.signed_target
         #print axioms Kimchi.Gate.VarBaseMul.gate_scalarMul_int
         #print axioms Kimchi.Circuit.VarBaseMul.chain_scalarMul
+        #print axioms Kimchi.Circuit.VarBaseMul.chain_register
         #print axioms Kimchi.Circuit.VarBaseMul.scalarMul
         EOF
         out=$(lake env lean check_axioms.lean)
