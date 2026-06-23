@@ -29,35 +29,47 @@ jobs:
   build:
     name: Build & check (Kimchi formalization)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: formal
     steps:
     - uses: actions/checkout@v4
-      # No submodules: the Lean project depends only on Mathlib (fetched by lake).
+      with:
+        # No submodules: the Lean project depends only on Mathlib (fetched by lake).
+        submodules: false
 
     - name: Lean style check
+      working-directory: .
       run: bash formal/scripts/check-style.sh
 
-    # Installs elan + the pinned toolchain (lean-toolchain), restores/saves the
-    # `.lake` GitHub cache, runs `lake exe cache get` for Mathlib oleans, and
-    # `lake build`. Building the library *is* checking every proof.
-    #
-    # `build-args: Kimchi` scopes the build to OUR library only. The default
-    # `lake build` would also link the `kimchi-demo` exe, which drags in
-    # ProofWidgets' `widgetJsAll` (a Mathlib transitive dep that compiles widget
-    # TypeScript→JS) — that JS isn't fetched by `lake exe cache get` (oleans
-    # only), so it fails in CI. We don't need it: the lib build typechecks every
-    # proof and runs the `#eval`s using cached ProofWidgets oleans.
-    - name: Build the formalization
-      uses: leanprover/lean-action@v1
-      with:
-        lake-package-directory: formal
-        build-args: Kimchi
-        test: "false"
+    - name: Install elan (reads the pinned toolchain from lean-toolchain)
+      run: |
+        curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+          | sh -s -- -y --default-toolchain none
+        echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+    - name: Fetch deps + build the library (= check every proof)
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        # Mathlib olean cache (does NOT include ProofWidgets' widget JS).
+        lake exe cache get
+        # ProofWidgets ships its prebuilt widget JS as a GitHub *cloud release*
+        # (`ProofWidgets4.tar.gz`), which `lake exe cache get` does not fetch.
+        # Without it, `lake build` hits ProofWidgets' `errorOnBuild` guard
+        # ("ProofWidgets not up-to-date"). Fetch + extract it ourselves.
+        pw=.lake/packages/proofwidgets
+        rev=$(jq -r '.packages[] | select(.name=="proofwidgets") | .inputRev' lake-manifest.json)
+        echo "Fetching ProofWidgets cloud release $rev (prebuilt widget JS)"
+        mkdir -p "$pw/.lake/build"
+        curl -fsSL "https://github.com/leanprover-community/ProofWidgets4/releases/download/${rev}/ProofWidgets4.tar.gz" \
+          | tar xz -C "$pw/.lake/build"
+        # Build only our library: typechecks every proof and runs the `#eval`s.
+        lake build Kimchi
 
     # `lake build` succeeds even with `sorry` (it's only a warning), so gate
     # explicitly: every headline theorem must reduce to the standard axioms with
     # no `sorryAx` in its closure.
     - name: Verify proofs are sorry-free
-      working-directory: formal
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         cat > check_axioms.lean <<'EOF'
