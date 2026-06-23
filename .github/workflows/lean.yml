@@ -88,6 +88,9 @@ jobs:
         #print axioms Kimchi.Gate.EndoMul.distinctPoints
         #print axioms Kimchi.Gate.EndoMul.block_sound
         #print axioms Kimchi.Gate.EndoMul.row_sound
+        #print axioms Kimchi.Gate.EndoMul.row_int
+        #print axioms Kimchi.Circuit.EndoMul.chain_endo
+        #print axioms Kimchi.Circuit.EndoMul.endoMul
         #print axioms Kimchi.Circuit.EndoScalar.gate_toField
         #print axioms Kimchi.Circuit.EndoScalar.endoScalar_spec
         #print axioms Kimchi.Gate.VarBaseMul.ok_iff

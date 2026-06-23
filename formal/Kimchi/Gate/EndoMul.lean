@@ -39,15 +39,18 @@ accumulation.
 * `block_sound` — one window's `(P + Q) + P` double-and-add, via `Kimchi.secant_add`
   twice (general in `Q`; carries the `xR ≠ xP` non-degeneracy the modeled gate
   revision needs — see its docstring + the upstream fix it references).
+* `row_sound` / `row_int` — the per-row two-window chain `R = (P+Q₁)+P`,
+  `S = (R+Q₂)+R`, exposed as `S = 4·P + c₁·T + c₂·φ(T)` (integers `c₁, c₂`) — the
+  GLV interface the circuit folds.
 
 ## Supporting development
 
 The constraint model `Witness` / `Holds`, the booleanity helper `bool_of_mul`, the
 distinct-point lemma `distinctPoints` (which discharges `block_sound`'s
-non-degeneracy at the row level), and the `some_congr` point congruence. Still to
-come: threading these through `Holds` per row, the GLV `[k₁]T + [k₂]·φ(T)`
-accumulation, and the `φ(T) = [λ]T` eigenvalue collapse (a hypothesis/axiom)
-composing with EndoScalar's `a·λ + b`.
+non-degeneracy at the row level), and the `some_congr` point congruence. The GLV
+accumulation `P_m = 4^m·P₀ + k₁·T + k₂·φ(T)` lives in `Kimchi.Circuit.EndoMul`
+(`chain_endo` / `endoMul`); the remaining step is the `φ(T) = [λ]T` eigenvalue
+collapse (a hypothesis/axiom) composing with EndoScalar's `a·λ + b`.
 -/
 
 namespace Kimchi.Gate.EndoMul
@@ -251,5 +254,39 @@ theorem row_sound (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
   obtain ⟨hs1, hc2_1, hc3_1, hs2, hc2_2, hc3_2, _, _, _, _, _, _⟩ := h
   exact ⟨block_sound W ha hP hQ1 hR hxne1 htne1 (Ne.symm hxPxR) hs1 hc2_1 hc3_1,
          block_sound W ha hR hQ2 hS hxne2 htne2 (Ne.symm hxRxS) hs2 hc2_2 hc3_2⟩
+
+/-- The per-row GLV contribution, as integer scalar multiples of the two bases.
+    Folding `row_sound`'s `S = (R+Q₂)+R`, `R = (P+Q₁)+P` gives `S = 4·P + 2·Q₁ + Q₂`;
+    `selectQ` makes each `Qⱼ` a signed `T` or `φ(T)`, so `S = 4·P + c₁·T + c₂·φ(T)`
+    for integers `c₁, c₂` (the gate's exposed interface, consumed by the chain). -/
+theorem row_int (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
+    (endo : F) (w : Witness F) (h : Holds endo w)
+    (hT : W.Nonsingular w.xT w.yT) (hφT : W.Nonsingular (endo * w.xT) w.yT)
+    (hP : W.Nonsingular w.xP w.yP) (hR : W.Nonsingular w.xR w.yR)
+    (hS : W.Nonsingular w.xS w.yS)
+    (hQ1 : W.Nonsingular ((1 + (endo - 1) * w.b1) * w.xT) ((2 * w.b2 - 1) * w.yT))
+    (hQ2 : W.Nonsingular ((1 + (endo - 1) * w.b3) * w.xT) ((2 * w.b4 - 1) * w.yT))
+    (hxne1 : w.xP ≠ (1 + (endo - 1) * w.b1) * w.xT)
+    (htne1 : 2 * w.xP - w.s1 ^ 2 + (1 + (endo - 1) * w.b1) * w.xT ≠ 0)
+    (hxne2 : w.xR ≠ (1 + (endo - 1) * w.b3) * w.xT)
+    (htne2 : 2 * w.xR - w.s3 ^ 2 + (1 + (endo - 1) * w.b3) * w.xT ≠ 0) :
+    ∃ c1 c2 : ℤ, Point.some hS
+      = (4 : ℤ) • Point.some hP + c1 • Point.some hT + c2 • Point.some hφT := by
+  obtain ⟨hReq, hSeq⟩ :=
+    row_sound W ha endo w h hP hR hS hQ1 hQ2 hxne1 htne1 hxne2 htne2
+  have hb := h
+  simp only [Holds] at hb
+  obtain ⟨_, _, _, _, _, _, _, hb1c, hb2c, hb3c, hb4c, _⟩ := hb
+  have hb1 := bool_of_mul hb1c
+  have hb2 := bool_of_mul hb2c
+  have hb3 := bool_of_mul hb3c
+  have hb4 := bool_of_mul hb4c
+  rcases selectQ W ha hT hφT hQ1 hb1 hb2 with ⟨e1, hQ1e⟩ | ⟨e1, hQ1e⟩
+  · rcases selectQ W ha hT hφT hQ2 hb3 hb4 with ⟨e2, hQ2e⟩ | ⟨e2, hQ2e⟩
+    · exact ⟨2 * e1 + e2, 0, by rw [hSeq, hReq, hQ1e, hQ2e]; module⟩
+    · exact ⟨2 * e1, e2, by rw [hSeq, hReq, hQ1e, hQ2e]; module⟩
+  · rcases selectQ W ha hT hφT hQ2 hb3 hb4 with ⟨e2, hQ2e⟩ | ⟨e2, hQ2e⟩
+    · exact ⟨e2, 2 * e1, by rw [hSeq, hReq, hQ1e, hQ2e]; module⟩
+    · exact ⟨0, 2 * e1 + e2, by rw [hSeq, hReq, hQ1e, hQ2e]; module⟩
 
 end Kimchi.Gate.EndoMul
