@@ -357,4 +357,56 @@ theorem gate_scalarMul
 
 end Soundness
 
+/-! ## Composition: chaining gates for an arbitrary-length scalar.
+
+    A full scalar multiplication runs many `VarBaseMul` gates back to back, each
+    consuming 5 bits: gate `i`'s output accumulator feeds gate `i+1`'s input, and
+    `gate_scalarMul` gives each the per-gate relation `P_{i+1} = 32·P_i + cᵢ·T`
+    (with `cᵢ ∈ ℤ` the gate's signed 5-bit contribution `16(2b₀−1)+⋯+(2b₄−1)`).
+    Folding that recurrence over `m` gates is pure group algebra: the chain
+    computes the scalar multiple `[k]·T` with `k = ∑ 32^(m-1-i)·cᵢ`, on top of the
+    carried `32^m·P₀`. -/
+
+section Composition
+
+open WeierstrassCurve.Affine
+
+variable [Field F] [DecidableEq F]
+
+/-- Chaining the per-gate relation `P_{i+1} = 32·P_i + cᵢ·T` over `m` gates gives
+    the closed-form scalar multiple
+
+        P_m = 32^m·P₀ + (∑_{i<m} 32^(m-1-i)·cᵢ)·T
+
+    — i.e. `m` chained `VarBaseMul` gates compute variable-base scalar
+    multiplication by the `5m`-bit scalar `k = ∑_{i<m} 32^(m-1-i)·cᵢ` (plus the
+    carried `32^m·P₀`). The per-gate relation is supplied by `gate_scalarMul`
+    after folding its `Qⱼ` points into `±T` via booleanity. -/
+theorem chain_scalarMul
+    (W : WeierstrassCurve.Affine F)
+    (m : ℕ) (P : ℕ → W.Point) (T : W.Point) (c : ℕ → ℤ)
+    (hstep : ∀ i, i < m → P (i + 1) = (32 : ℤ) • P i + c i • T) :
+    P m = (32 : ℤ) ^ m • P 0
+        + (∑ i ∈ Finset.range m, (32 : ℤ) ^ (m - 1 - i) * c i) • T := by
+  induction m with
+  | zero => simp
+  | succ m ih =>
+    have hs : P (m + 1) = (32 : ℤ) • P m + c m • T := hstep m (Nat.lt_succ_self m)
+    have ih' := ih (fun i hi => hstep i (Nat.lt_succ_of_lt hi))
+    have hsum : (∑ i ∈ Finset.range (m + 1), (32 : ℤ) ^ (m + 1 - 1 - i) * c i)
+        = (32 : ℤ) * (∑ i ∈ Finset.range m, (32 : ℤ) ^ (m - 1 - i) * c i) + c m := by
+      rw [Finset.sum_range_succ, Finset.mul_sum]
+      simp only [Nat.add_sub_cancel, Nat.sub_self, pow_zero, one_mul]
+      congr 1
+      apply Finset.sum_congr rfl
+      intro i hi
+      have hi' : m - i = (m - 1 - i) + 1 := by
+        have := Finset.mem_range.mp hi; omega
+      rw [hi', pow_succ]
+      ring
+    rw [hs, ih', hsum, smul_add, smul_smul, smul_smul, add_smul, pow_succ']
+    abel
+
+end Composition
+
 end Kimchi.VarBaseMul

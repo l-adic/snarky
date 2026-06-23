@@ -64,6 +64,7 @@ jobs:
         #print axioms Kimchi.VarBaseMul.secant_add
         #print axioms Kimchi.VarBaseMul.singleBit_sound
         #print axioms Kimchi.VarBaseMul.gate_scalarMul
+        #print axioms Kimchi.VarBaseMul.chain_scalarMul
         EOF
         out=$(lake env lean check_axioms.lean)
         echo "$out"
