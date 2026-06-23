@@ -8,6 +8,7 @@ import Kimchi.Gate.VarBaseMul
 import Kimchi.Gate.EndoMul
 import Kimchi.Circuit.VarBaseMul
 import Kimchi.Circuit.EndoScalar
+import Kimchi.Circuit.EndoMul
 import Kimchi.Cycle.Axioms
 import Kimchi.Cycle.VarBaseMul
 import Kimchi.Cycle.Shifted
