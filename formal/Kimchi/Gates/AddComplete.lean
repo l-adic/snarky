@@ -1,26 +1,40 @@
-/-
-  CompleteAdd.lean
-
-  The first *semantic* (non-mechanical) gate: the kimchi CompleteAdd gate, and
-  the theorem that its 7 constraints actually implement elliptic-curve addition.
-
-  Sources transcribed:
-    * column layout   — AddComplete.purs (cols 0–10: x1 y1 x2 y2 x3 y3 inf sameX s infZ x21Inv)
-    * the 7 constraints — proof-systems .../complete_add.rs `constraint_checks`
-
-  The trusted ORACLE is Mathlib's affine elliptic-curve group law
-  (`WeierstrassCurve.Affine.slope / addX / addY`). With the Pasta-shape curve
-  (a₁=a₂=a₃=a₄=0) Mathlib's formulas collapse to exactly the gate's identities:
-     slope (doubling) = 3x₁²/(2y₁)      ← gate c3 doubling: 2·s·y₁ = 3x₁²
-     addX             = ℓ² − x₁ − x₂     ← gate c4: x₁+x₂+x₃ = s²
-     addY             = ℓ(x₁ − x₃) − y₁  ← gate c5: y₃ = s(x₁−x₃) − y₁
-  and `Point.add` of two affine points is DEFINED as `(addX, addY)` (lemma
-  `Affine.add_some`), so matching those formulas = computing the group sum.
-
-  Both directions (soundness + completeness) are fully proven below — no
-  `sorry`, depending only on Lean's standard axioms.
--/
 import Kimchi.Curve
+
+/-!
+# The kimchi `CompleteAdd` gate
+
+Complete elliptic-curve point addition: the gate's 7 constraints, and the theorem
+that they implement Mathlib's affine group law.
+
+Sources transcribed:
+* column layout    — AddComplete.purs (cols 0–10: x1 y1 x2 y2 x3 y3 inf sameX s infZ x21Inv)
+* the 7 constraints — proof-systems `.../complete_add.rs` `constraint_checks`
+
+The trusted ORACLE is Mathlib's affine elliptic-curve group law
+(`WeierstrassCurve.Affine.slope / addX / addY`). With the Pasta-shape curve
+(`IsShortShape`) Mathlib's formulas collapse to exactly the gate's identities:
+
+    slope (doubling) = 3x₁²/(2y₁)      ← gate c3 doubling: 2·s·y₁ = 3x₁²
+    addX             = ℓ² − x₁ − x₂     ← gate c4: x₁+x₂+x₃ = s²
+    addY             = ℓ(x₁ − x₃) − y₁  ← gate c5: y₃ = s(x₁−x₃) − y₁
+
+and `Point.add` of two affine points is DEFINED as `(addX, addY)`
+(`Affine.add_some`), so matching those formulas = computing the group sum.
+
+## Main results
+
+The gate computes addition in Mathlib's proven elliptic-curve group `W.Point`:
+* `sound_point_noninf` — finite case (`inf = 0`): the output is the group sum
+  `(x₁,y₁) + (x₂,y₂)`.
+* `sound_point_inf`    — infinity case (`inf = 1`): the sum is `0`.
+
+## Supporting development
+
+The constraint model (`Witness` / `Holds` / `ok`) + reflection (`ok_iff`), the
+coordinate-level soundness and completeness (`sound_noninf`, `complete_noninf`)
+that feed the `Point`-level results, and a runnable example. No `sorry`; standard
+axioms only.
+-/
 
 namespace Kimchi.AddComplete
 
@@ -213,7 +227,7 @@ theorem complete_noninf
 
 end Faithfulness
 
-/-! ## Lifting to Mathlib's group law: the gate computes `Point` addition.
+/-! ## Main theorems: the gate computes `Point` addition.
 
     The coordinate theorems above are the *inputs* to this section. Combined with
     `add_some`, they upgrade "the output columns equal the addition formulas" into

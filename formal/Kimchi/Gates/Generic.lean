@@ -1,19 +1,31 @@
-/-
-  Gates/Generic.lean
-
-  The generic gate, modeled exactly as `GenericPlonkConstraint`.
-
-  The high-level snarky `Basic` constraints (R1CS / Square / Equal / Boolean) are
-  not primitives at this layer: `GenericPlonk.purs:reduce` lowers every one of
-  them to the generic gate
-
-        cl·vl + cr·vr + co·vo + m·(vl·vr) + c = 0
-
-  (see `Snarky.Constraint.Kimchi.Types.GenericPlonkConstraint`). So we model the
-  generic gate exactly, plus the system-level "all gates hold" relation and its
-  executable checker.
--/
 import Kimchi.ConstraintSystem
+
+/-!
+# The generic gate
+
+The generic gate, modeled exactly as `GenericPlonkConstraint`.
+
+The high-level snarky `Basic` constraints (R1CS / Square / Equal / Boolean) are
+not primitives at this layer: `GenericPlonk.purs:reduce` lowers every one of them
+to the generic gate
+
+      cl·vl + cr·vr + co·vo + m·(vl·vr) + c = 0
+
+(see `Snarky.Constraint.Kimchi.Types.GenericPlonkConstraint`). So we model the
+generic gate exactly, plus the system-level "all gates hold" relation and its
+executable checker.
+
+## Main result
+
+`satisfies_iff` — the executable checker `satisfies` faithfully decides the
+relational spec `Satisfies` (every generic gate in a list holds on an
+assignment).
+
+## Supporting development
+
+The gate model (`Generic` / `Generic.holds` / `Generic.ok`), the per-gate
+reflection `Generic.ok_iff`, and a runnable multiplication example.
+-/
 
 namespace Kimchi
 
