@@ -169,4 +169,50 @@ theorem recoding_digit (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {b1 b2 : F}
   · exact ⟨by rw [show (1:F) + 2 * 1 = 3 by ring, c3]; ring,
            by rw [show (1:F) + 2 * 1 = 3 by ring, d3]; ring⟩
 
+/-- The row↔crumb sum reindexing — the structural core of the fold-level recoding.
+    `EndoMul`'s `m` rows weight each row's 2-crumb contribution `2·g(2i) + g(2i+1)`
+    by `4^(m-1-i)`; flattening to `EndoScalar`'s `2m` crumbs weights crumb `j` by
+    `2^(2m-1-j)`. The two agree (the row's `×4 = ×2` twice splits across its two
+    crumbs). Over any `CommRing` — used at `ℤ` (the GLV coefficients) and `F` (the
+    `cPoly`/`dPoly` digits). -/
+theorem sum_reindex {R : Type*} [CommRing R] (m : ℕ) (g : ℕ → R) :
+    ∑ i ∈ Finset.range m, (4 : R) ^ (m - 1 - i) * (2 * g (2 * i) + g (2 * i + 1))
+      = ∑ j ∈ Finset.range (2 * m), (2 : R) ^ (2 * m - 1 - j) * g j := by
+  induction m with
+  | zero => simp
+  | succ m ih =>
+    have e1 : ∀ i ∈ Finset.range m, (4 : R) ^ (m + 1 - 1 - i) * (2 * g (2 * i) + g (2 * i + 1))
+        = 4 * ((4 : R) ^ (m - 1 - i) * (2 * g (2 * i) + g (2 * i + 1))) := by
+      intro i hi
+      have : i < m := Finset.mem_range.mp hi
+      rw [show m + 1 - 1 - i = (m - 1 - i) + 1 by omega, pow_succ]; ring
+    have e2 : ∀ j ∈ Finset.range (2 * m), (2 : R) ^ (2 * m + 1 + 1 - 1 - j) * g j
+        = 4 * ((2 : R) ^ (2 * m - 1 - j) * g j) := by
+      intro j hj
+      have : j < 2 * m := Finset.mem_range.mp hj
+      rw [show 2 * m + 1 + 1 - 1 - j = (2 * m - 1 - j) + 2 by omega, pow_add]; ring
+    rw [Finset.sum_range_succ, Finset.sum_congr rfl e1, ← Finset.mul_sum, ih,
+      show 2 * (m + 1) = 2 * m + 1 + 1 by ring, Finset.sum_range_succ,
+      Finset.sum_range_succ, Finset.sum_congr rfl e2, ← Finset.mul_sum,
+      show m + 1 - 1 - m = 0 by omega, show 2 * m + 1 + 1 - 1 - (2 * m) = 1 by omega,
+      show 2 * m + 1 + 1 - 1 - (2 * m + 1) = 0 by omega]
+    ring
+
+omit [DecidableEq F] in
+/-- Fold-level recoding (coefficient level). Given the per-row digit equations
+    `(c₂ᵢ : F) = 2·g(2i) + g(2i+1)` — `EndoMul`'s integer row contribution casts to
+    `EndoScalar`'s two `cPoly`-digits, supplied by `row_int` + `recoding_digit` (so
+    `g j` is crumb `j`'s `cPoly` digit) — the field cast of `EndoMul`'s GLV
+    `φ(T)`-coefficient `∑ 4^(m-1-i)·c₂ᵢ` equals `EndoScalar`'s Algorithm-2 digit sum
+    `∑_{j<2m} 2^(2m-1-j)·g(j)` that `a` accumulates. (The same holds for the
+    `T`-coefficient `k₁` / `b` with the `dPoly` digits.) This is `sum_reindex` over
+    `F` after pushing the cast through and substituting each row's digits. -/
+theorem recode_fold (m : ℕ) (c2 : ℕ → ℤ) (g : ℕ → F)
+    (hrow : ∀ i, ((c2 i : ℤ) : F) = 2 * g (2 * i) + g (2 * i + 1)) :
+    (((∑ i ∈ Finset.range m, (4 : ℤ) ^ (m - 1 - i) * c2 i : ℤ)) : F)
+      = ∑ j ∈ Finset.range (2 * m), (2 : F) ^ (2 * m - 1 - j) * g j := by
+  rw [← sum_reindex m g]
+  push_cast
+  exact Finset.sum_congr rfl fun i _ => by rw [hrow i]
+
 end Kimchi.Circuit.EndoMul
