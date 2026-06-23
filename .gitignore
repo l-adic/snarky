@@ -1,3 +1,7 @@
+# Secrets / local env
+.env
+.env.*
+
 # Build outputs
 output/
 output-es/
