@@ -7,13 +7,13 @@
   The gate processes 5 bits of a double-and-add scalar multiplication across two
   rows (a `VBSM` row and a `ZERO` row). Per bit it computes the EC operation
 
-        Output = (Input − (2·b − 1)·Target) + Input          (i.e. 2·Input ∓ Target)
+        Output = (Input + (2·b − 1)·Target) + Input          (= 2·Input + (2b−1)·Target)
 
   using the efficient "(P+Q)+P without the intermediate Y" formula (1 mul, 2
   squarings, 2 divisions). Writing `Input = (xi,yi)`, `Target = (xb,yb)`:
 
       s1 := (yi − (2b−1)·yb) / (xi − xb)
-      rx := s1² − xi − xb                     -- x of the intermediate Input∓Target
+      rx := s1² − xi − xb                     -- x of the intermediate Input + (2b−1)·Target
       t  := xi − rx   (= 2xi − s1² + xb)
       u  := 2yi − t·s1
       s2 := u / t                             -- slope of the second addition
@@ -31,9 +31,10 @@
   The accumulator chain is (x0,y0) → (x1,y1) → … → (x5,y5); `base = (xT,yT)` is
   the fixed target; `s0..s4` are the per-bit `s1` slopes; `b0..b4` the bits.
 
-  This file is the faithful CONSTRAINT transcription + reflection + a runnable
-  example. The semantic soundness theorem (each output equals `2·input ∓ target`
-  in Mathlib's group) is the next step — see the note at the end.
+  This file has the faithful CONSTRAINT transcription + reflection + a runnable
+  example, then SOUNDNESS against Mathlib's group law: the per-bit step
+  (`singleBit_sound`) and the full-gate 5-bit double-and-add (`gate_scalarMul`,
+  `P₅ = 32·P₀ + 16·Q₀ + ⋯ + Q₄`).
 -/
 import Kimchi.Curve
 import Kimchi.Gates.AddComplete
@@ -296,6 +297,63 @@ theorem singleBit_sound
   obtain ⟨hO, hAdd2⟩ :=
     secant_add W ⟨ha1, ha2, ha3, ha4⟩ hR hI hrxne hs2 hxo hyo
   exact ⟨hO, by rw [hAdd1, hAdd2]⟩
+
+/-- Full-gate scalar multiplication (STUB — body left to automation). Chaining
+    `singleBit_sound` across all five blocks, a satisfying gate computes the
+    double-and-add accumulation
+
+        P₅ = 32·P₀ + 16·Q₀ + 8·Q₁ + 4·Q₂ + 2·Q₃ + Q₄
+
+    in the curve group, where `Pᵢ = (xᵢ, yᵢ)` is the accumulator chain and
+    `Qᵢ = (xT, (2bᵢ−1)·yT)` is the sign-selected target for bit `i` (so `Qᵢ = ±T`
+    when `bᵢ ∈ {0,1}`). This is exactly variable-base scalar multiplication by the
+    signed-binary digits `b₀..b₄`. The companion `decompHolds` constraint records
+    the same digits in the scalar register `n → n' = 32n + 16b₀ + ⋯ + b₄`.
+
+    `Pᵢ` nonsingularity and the per-step non-degeneracy (`xᵢ ≠ xT`, `tᵢ ≠ 0`) are
+    hypotheses; booleanity of each `bᵢ` is available from `Holds` if needed. -/
+theorem gate_scalarMul
+    (W : WeierstrassCurve.Affine F) (ha : IsShortShape W) (w : Witness F)
+    (h0 : W.Nonsingular w.x0 w.y0) (h1 : W.Nonsingular w.x1 w.y1)
+    (h2 : W.Nonsingular w.x2 w.y2) (h3 : W.Nonsingular w.x3 w.y3)
+    (h4 : W.Nonsingular w.x4 w.y4) (h5 : W.Nonsingular w.x5 w.y5)
+    (hQ0 : W.Nonsingular w.xT ((2 * w.b0 - 1) * w.yT))
+    (hQ1 : W.Nonsingular w.xT ((2 * w.b1 - 1) * w.yT))
+    (hQ2 : W.Nonsingular w.xT ((2 * w.b2 - 1) * w.yT))
+    (hQ3 : W.Nonsingular w.xT ((2 * w.b3 - 1) * w.yT))
+    (hQ4 : W.Nonsingular w.xT ((2 * w.b4 - 1) * w.yT))
+    (hxne0 : w.x0 ≠ w.xT) (hxne1 : w.x1 ≠ w.xT) (hxne2 : w.x2 ≠ w.xT)
+    (hxne3 : w.x3 ≠ w.xT) (hxne4 : w.x4 ≠ w.xT)
+    (htne0 : 2 * w.x0 + w.xT - w.s0 * w.s0 ≠ 0)
+    (htne1 : 2 * w.x1 + w.xT - w.s1 * w.s1 ≠ 0)
+    (htne2 : 2 * w.x2 + w.xT - w.s2 * w.s2 ≠ 0)
+    (htne3 : 2 * w.x3 + w.xT - w.s3 * w.s3 ≠ 0)
+    (htne4 : 2 * w.x4 + w.xT - w.s4 * w.s4 ≠ 0)
+    (h : Holds w) :
+    Point.some h5
+      = (32 : ℕ) • Point.some h0
+        + (16 : ℕ) • Point.some hQ0 + (8 : ℕ) • Point.some hQ1
+        + (4 : ℕ) • Point.some hQ2 + (2 : ℕ) • Point.some hQ3
+        + Point.some hQ4 := by
+  obtain ⟨_hdecomp, hb0, hb1, hb2, hb3, hb4⟩ := h
+  obtain ⟨_, e0⟩ := singleBit_sound W ha w.b0 w.xT w.yT w.s0 w.x0 w.y0 w.x1 w.y1
+    h0 hQ0 hxne0 htne0 hb0
+  obtain ⟨_, e1⟩ := singleBit_sound W ha w.b1 w.xT w.yT w.s1 w.x1 w.y1 w.x2 w.y2
+    h1 hQ1 hxne1 htne1 hb1
+  obtain ⟨_, e2⟩ := singleBit_sound W ha w.b2 w.xT w.yT w.s2 w.x2 w.y2 w.x3 w.y3
+    h2 hQ2 hxne2 htne2 hb2
+  obtain ⟨_, e3⟩ := singleBit_sound W ha w.b3 w.xT w.yT w.s3 w.x3 w.y3 w.x4 w.y4
+    h3 hQ3 hxne3 htne3 hb3
+  obtain ⟨_, e4⟩ := singleBit_sound W ha w.b4 w.xT w.yT w.s4 w.x4 w.y4 w.x5 w.y5
+    h4 hQ4 hxne4 htne4 hb4
+  -- match the existential outputs with the given nonsingularity proofs by proof irrelevance
+  have eq1 : Point.some h1 = (Point.some h0 + Point.some hQ0) + Point.some h0 := e0
+  have eq2 : Point.some h2 = (Point.some h1 + Point.some hQ1) + Point.some h1 := e1
+  have eq3 : Point.some h3 = (Point.some h2 + Point.some hQ2) + Point.some h2 := e2
+  have eq4 : Point.some h4 = (Point.some h3 + Point.some hQ3) + Point.some h3 := e3
+  have eq5 : Point.some h5 = (Point.some h4 + Point.some hQ4) + Point.some h4 := e4
+  rw [eq5, eq4, eq3, eq2, eq1]
+  abel
 
 end Soundness
 
