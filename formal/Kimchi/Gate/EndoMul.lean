@@ -152,21 +152,21 @@ theorem selectQ (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
     (hT : W.Nonsingular xT yT) (hφT : W.Nonsingular (endo * xT) yT)
     (hQ : W.Nonsingular ((1 + (endo - 1) * b1) * xT) ((2 * b2 - 1) * yT))
     (hb1 : b1 = 0 ∨ b1 = 1) (hb2 : b2 = 0 ∨ b2 = 1) :
-    (∃ e : ℤ, Point.some hQ = e • Point.some hT)
-      ∨ (∃ e : ℤ, Point.some hQ = e • Point.some hφT) := by
+    (∃ e : ℤ, Point.some hQ = e • Point.some hT ∧ (e : F) = 2 * b2 - 1)
+      ∨ (∃ e : ℤ, Point.some hQ = e • Point.some hφT ∧ (e : F) = 2 * b2 - 1) := by
   rcases hb1 with rfl | rfl
   · -- `b₁ = 0`: the `x`-coordinate `(1 + (endo-1)*0)*xT` collapses to `xT`,
     -- so `Q = ±T` via `signed_target` with base `T`.
     left
     have hx : (1 + (endo - 1) * 0) * xT = xT := by ring
-    obtain ⟨e, he, _⟩ := signed_target W ha hT (hx ▸ hQ) hb2
-    exact ⟨e, (some_congr W hQ (hx ▸ hQ) hx rfl).trans he⟩
+    obtain ⟨e, he, hef⟩ := signed_target W ha hT (hx ▸ hQ) hb2
+    exact ⟨e, (some_congr W hQ (hx ▸ hQ) hx rfl).trans he, hef⟩
   · -- `b₁ = 1`: the `x`-coordinate `(1 + (endo-1)*1)*xT` collapses to `endo*xT`,
     -- so `Q = ±φ(T)` via `signed_target` with base `φ(T)`.
     right
     have hx : (1 + (endo - 1) * 1) * xT = endo * xT := by ring
-    obtain ⟨e, he, _⟩ := signed_target W ha hφT (hx ▸ hQ) hb2
-    exact ⟨e, (some_congr W hQ (hx ▸ hQ) hx rfl).trans he⟩
+    obtain ⟨e, he, hef⟩ := signed_target W ha hφT (hx ▸ hQ) hb2
+    exact ⟨e, (some_congr W hQ (hx ▸ hQ) hx rfl).trans he, hef⟩
 
 /-- One window's `(P + Q) + P` double-and-add. The three EC constraints — the
     first-addition slope `s` and the `xR`/`yR` relations — together with the
@@ -283,11 +283,11 @@ theorem row_int (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
   have hb2 := bool_of_mul hb2c
   have hb3 := bool_of_mul hb3c
   have hb4 := bool_of_mul hb4c
-  rcases selectQ W ha hT hφT hQ1 hb1 hb2 with ⟨e1, hQ1e⟩ | ⟨e1, hQ1e⟩
-  · rcases selectQ W ha hT hφT hQ2 hb3 hb4 with ⟨e2, hQ2e⟩ | ⟨e2, hQ2e⟩
+  rcases selectQ W ha hT hφT hQ1 hb1 hb2 with ⟨e1, hQ1e, _⟩ | ⟨e1, hQ1e, _⟩
+  · rcases selectQ W ha hT hφT hQ2 hb3 hb4 with ⟨e2, hQ2e, _⟩ | ⟨e2, hQ2e, _⟩
     · exact ⟨2 * e1 + e2, 0, by rw [hSeq, hReq, hQ1e, hQ2e]; module⟩
     · exact ⟨2 * e1, e2, by rw [hSeq, hReq, hQ1e, hQ2e]; module⟩
-  · rcases selectQ W ha hT hφT hQ2 hb3 hb4 with ⟨e2, hQ2e⟩ | ⟨e2, hQ2e⟩
+  · rcases selectQ W ha hT hφT hQ2 hb3 hb4 with ⟨e2, hQ2e, _⟩ | ⟨e2, hQ2e, _⟩
     · exact ⟨e2, 2 * e1, by rw [hSeq, hReq, hQ1e, hQ2e]; module⟩
     · exact ⟨0, 2 * e1 + e2, by rw [hSeq, hReq, hQ1e, hQ2e]; module⟩
 
