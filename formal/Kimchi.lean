@@ -3,3 +3,5 @@
 import Kimchi.Curve
 import Kimchi.Gate.Generic
 import Kimchi.Gate.AddComplete
+import Kimchi.Gate.VarBaseMul
+import Kimchi.Circuit.VarBaseMul
