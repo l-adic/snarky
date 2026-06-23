@@ -12,3 +12,4 @@ import Kimchi.Circuit.EndoMul
 import Kimchi.Cycle.Axioms
 import Kimchi.Cycle.VarBaseMul
 import Kimchi.Cycle.Shifted
+import Kimchi.Cycle.EndoMul
