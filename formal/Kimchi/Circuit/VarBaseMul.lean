@@ -11,11 +11,16 @@ gates is pure group algebra.
 
 ## Main result
 
-`scalarMul` — `m` chained gates, threading both the accumulator points and the
-scalar register `N`, compute `Pₘ = 32^m·P₀ + k·T` with the scalar pinned to the
-register: `(k : F) = 2·N m − 2·32^m·N 0 − (32^m − 1)` (signed-digit form). It
-folds the point chain with `chain_scalarMul` and the register chain with
-`chain_register`, both fed by the gate's `gate_scalarMul_int`.
+`scalarMul_baseMul` — when the accumulator starts at a multiple of the base
+(`P 0 = a·T`, as the circuit inits to `[2]T`), `m` chained gates compute a SINGLE
+scalar multiple of the base, `P m = n·T` for an explicit integer `n` with
+`(n : F) = 32^m·a + 2·N m − 2·32^m·N 0 − (32^m − 1)`. The carried `32^m·P₀` is
+absorbed; the scalar `n` is determined by the init `a` and the scalar register
+(`N 0 → N m`), in signed-digit form. This is variable-base scalar multiplication
+of `T`.
+
+`scalarMul` is the general form (arbitrary `P 0`): `P m = 32^m·P₀ + k·T`, `k`
+pinned to the register the same way.
 
 ## Supporting development
 
@@ -151,5 +156,34 @@ theorem scalarMul
   · convert chain_scalarMul W m P T c hc.1 using 1
   · have := chain_register m N c hc.2
     exact ⟨_, h, this⟩
+
+/-- Clean variable-base scalar multiplication. When the accumulator is
+    initialized to a multiple of the base (`P 0 = a · T`, `a : ℤ` — the circuit
+    inits to `[2]T`), the carried `32^m·P₀` term is absorbed and the output is a
+    SINGLE scalar multiple of the base:
+
+        P m = n · T   for an explicit integer `n`,
+
+    with `(n : F) = 32^m·a + 2·N m − 2·32^m·N 0 − (32^m − 1)`. So `m` chained
+    `VarBaseMul` gates compute `[n]·T`: variable-base scalar multiplication of the
+    base point `T`, the scalar `n` determined by the init `a` and the scalar
+    register (`N 0 → N m`), in signed-digit form. -/
+theorem scalarMul_baseMul
+    (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
+    (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep W (g i))
+    (T : W.Point) (N : ℕ → F) (a : ℤ) (P : ℕ → W.Point)
+    (hT : ∀ i (hi : i < m), T = Point.some (gs i hi).hT)
+    (hin : ∀ i (hi : i < m), P i = Point.some (gs i hi).a0)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some (gs i hi).a5)
+    (hregIn : ∀ i, i < m → N i = (g i).n)
+    (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
+    (hP0 : P 0 = a • T) :
+    ∃ n : ℤ, P m = n • T
+           ∧ (n : F) = (32 : F) ^ m * (a : F) + 2 * N m
+                        - 2 * (32 : F) ^ m * N 0 - ((32 : F) ^ m - 1) := by
+  obtain ⟨k, hk, hkf⟩ := scalarMul W ha m g gs P T N hT hin hout hregIn hregOut
+  refine ⟨(32 : ℤ) ^ m * a + k, ?_, ?_⟩
+  · rw [hk, hP0, smul_smul, ← add_smul]
+  · push_cast; rw [hkf]; ring
 
 end Kimchi.Circuit.VarBaseMul
