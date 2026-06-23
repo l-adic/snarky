@@ -16,6 +16,9 @@ TWO bases (`T` and `φ(T)`).
 
 * `chain_endo` — the abstract two-base recurrence fold.
 * `endoMul` — `m` chained rows compute `∃ k₁ k₂, P_m = 4^m·P₀ + k₁·T + k₂·φ(T)`.
+* `endoMul_scalar` — with the eigenvalue `φ(T) = [λ]·T` (a hypothesis), this
+  collapses to a single scalar multiple `P_m = 4^m·P₀ + k·T`, `k = k₁ + k₂·λ` — the
+  endo-scalar form `EndoScalar.toField` computes.
 -/
 
 namespace Kimchi.Circuit.EndoMul
@@ -98,5 +101,31 @@ theorem endoMul (W : WeierstrassCurve.Affine F) (ha : IsShortShape W) (endo : F)
     rw [hout i hi, hin i hi, hT i hi, hφT i hi]
     exact hc i hi
   exact ⟨_, _, chain_endo W m P T φT c1 c2 hc⟩
+
+/-- The GLV eigenvalue collapse → genuine scalar multiplication. The curve
+    endomorphism satisfies `φ(T) = [λ]·T` (its defining property — a hypothesis
+    here, NOT provable in Mathlib for an abstract `WeierstrassCurve`; on the Pasta
+    curves `λ` is the scalar-field `endo_scalar`). With it, the two-base GLV result
+    becomes a single scalar multiple of the base:
+
+        P_m = 4^m·P₀ + k·T,   k = k₁ + k₂·λ.
+
+    The scalar `k = k₁ + k₂·λ` has exactly the endo-scalar form `a·λ + b` that
+    `Kimchi.Circuit.EndoScalar.toField` computes from the challenge (with `a = k₂`,
+    `b = k₁`) — so on a joint witness (the same challenge bits fed to both gates),
+    EndoMul's point is `[toField challenge λ]·T`. Proving `k₂ = a`, `k₁ = b` is the
+    recoding correspondence between the two gates' bit processing — the remaining
+    step to a fully-closed `EndoMul ∘ EndoScalar`. -/
+theorem endoMul_scalar (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
+    (endo : F) (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → EndoStep W endo (g i))
+    (P : ℕ → W.Point) (T φT : W.Point)
+    (hT : ∀ i (hi : i < m), T = Point.some (gs i hi).hT)
+    (hφT : ∀ i (hi : i < m), φT = Point.some (gs i hi).hφT)
+    (hin : ∀ i (hi : i < m), P i = Point.some (gs i hi).hP)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some (gs i hi).hS)
+    (lam : ℤ) (heig : φT = lam • T) :
+    ∃ k : ℤ, P m = (4 : ℤ) ^ m • P 0 + k • T := by
+  obtain ⟨k1, k2, hk⟩ := endoMul W ha endo m g gs P T φT hT hφT hin hout
+  exact ⟨k1 + k2 * lam, by rw [hk, heig]; module⟩
 
 end Kimchi.Circuit.EndoMul
