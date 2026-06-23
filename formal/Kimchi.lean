@@ -3,6 +3,7 @@
 import Kimchi.Curve
 import Kimchi.Gate.Generic
 import Kimchi.Gate.AddComplete
+import Kimchi.Gate.EndoScalar
 import Kimchi.Gate.VarBaseMul
 import Kimchi.Circuit.VarBaseMul
 import Kimchi.Cycle.Axioms
