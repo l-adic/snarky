@@ -81,6 +81,7 @@ jobs:
         #print axioms Kimchi.Gate.AddComplete.ok_iff
         #print axioms Kimchi.Gate.AddComplete.inf_boolean
         #print axioms Kimchi.Gate.AddComplete.complete_inf
+        #print axioms Kimchi.Gate.AddComplete.complete
         #print axioms Kimchi.Gate.AddComplete.sound_point
         #print axioms Kimchi.Gate.EndoScalar.crumb_iff
         #print axioms Kimchi.Gate.EndoScalar.cPoly_table
