@@ -79,6 +79,9 @@ jobs:
         #print axioms Kimchi.Gate.AddComplete.sound_point_noninf
         #print axioms Kimchi.Gate.AddComplete.sound_point_inf
         #print axioms Kimchi.Gate.AddComplete.ok_iff
+        #print axioms Kimchi.Gate.AddComplete.inf_boolean
+        #print axioms Kimchi.Gate.AddComplete.complete_inf
+        #print axioms Kimchi.Gate.AddComplete.sound_point
         EOF
         out=$(lake env lean check_axioms.lean)
         echo "$out"
