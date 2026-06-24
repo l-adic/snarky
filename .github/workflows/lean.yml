@@ -119,6 +119,9 @@ jobs:
         #print axioms Kimchi.Cycle.zsmul_mod
         #print axioms Kimchi.Cycle.varBaseMul_scalar
         #print axioms Kimchi.Cycle.varBaseMul_faithful
+        #print axioms Kimchi.Cycle.endoMul_scalar_cm
+        #print axioms Kimchi.Cycle.endoMul_toField_cm
+        #print axioms Kimchi.Cycle.endoMul_faithful
         EOF
         out=$(lake env lean check_axioms.lean)
         echo "$out"
