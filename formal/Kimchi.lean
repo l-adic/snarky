@@ -24,9 +24,9 @@ import Kimchi.Cycle.Pasta
     Pasta results are a refinement and live below, in the supporting material. -/
 def Kimchi.mainResults : List Lean.Name :=
   [-- (1) gate soundness (AddComplete also completeness)
-   ``Kimchi.Gate.AddComplete.sound_point_noninf, -- output = group sum (finite case)
-   ``Kimchi.Gate.AddComplete.sound_point_inf,    -- output = 0 (infinity case)
-   ``Kimchi.Gate.AddComplete.complete_noninf,    -- honest prover can always witness
+   ``Kimchi.Gate.AddComplete.sound_point,        -- soundness, both cases (sum = output / 0)
+   ``Kimchi.Gate.AddComplete.complete_noninf,    -- completeness (finite sum)
+   ``Kimchi.Gate.AddComplete.complete_inf,       -- completeness (sum = ∞)
    ``Kimchi.Gate.VarBaseMul.gate_scalarMul,      -- the double-and-add accumulation
    ``Kimchi.Gate.EndoScalar.gate_endoScalar,     -- the row runs Algorithm 2
    ``Kimchi.Gate.EndoMul.row_sound,              -- the row's two windows add correctly
