@@ -4,3 +4,10 @@
 
 # CI scratch
 /check_axioms.lean
+
+# `make lean-docs` outputs (generated from Blueprint.lean)
+/blueprint.md
+/blueprint.html
+/blueprint.pdf
+/roots.txt
+/.docs-venv/

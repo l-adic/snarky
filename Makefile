@@ -1,4 +1,4 @@
-.PHONY: help all clean build-napi test-curves test-snarky test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint lean-build lean-style lean-style-fix build-ps gen-linearization dep-graph pickles-inventory
+.PHONY: help all clean build-napi test-curves test-snarky test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint lean-build lean-style lean-style-fix lean-docs build-ps gen-linearization dep-graph pickles-inventory
 
 .DEFAULT_GOAL := help
 
@@ -131,6 +131,19 @@ lean-style: ## Check Lean style (<=100 cols, no trailing ws/tabs, final newline)
 
 lean-style-fix: ## Auto-fix mechanical Lean style (trailing whitespace, final newline)
 	bash formal/scripts/check-style.sh --fix
+
+lean-docs: ## Render Lean statements + definitions to formal/blueprint.{html,pdf}
+	cd formal && \
+	grep '#print axioms' ../.github/workflows/lean.yml | sed 's/.*#print axioms //' > roots.txt && \
+	printf 'Kimchi.Cycle.Pasta.pallas\nKimchi.Cycle.Pasta.pallas_zsmul\nKimchi.Cycle.Pasta.pallas_endoMul_toField\nKimchi.Cycle.Pasta.pallas_endoMul_faithful\n' >> roots.txt && \
+	PATH="$$HOME/.elan/bin:$$PATH" lake env lean Blueprint.lean && \
+	pandoc blueprint.md -o blueprint.html --standalone --toc --toc-depth=4 \
+	  -c scripts/blueprint.css --embed-resources \
+	  --metadata title="Kimchi formalization — statements & definitions" && \
+	{ test -d .docs-venv || python3 -m venv .docs-venv; } && \
+	{ .docs-venv/bin/python -c "import weasyprint" 2>/dev/null || .docs-venv/bin/pip install --quiet weasyprint; } && \
+	.docs-venv/bin/python -c "import weasyprint; weasyprint.HTML('blueprint.html').write_pdf('blueprint.pdf')"
+	@echo "==> formal/blueprint.html and formal/blueprint.pdf"
 
 clean: ## Clean everything
 	cargo clean
