@@ -25,8 +25,7 @@ import Kimchi.Cycle.Pasta
 def Kimchi.mainResults : List Lean.Name :=
   [-- (1) gate soundness (AddComplete also completeness)
    ``Kimchi.Gate.AddComplete.sound_point,        -- soundness, both cases (sum = output / 0)
-   ``Kimchi.Gate.AddComplete.complete_noninf,    -- completeness (finite sum)
-   ``Kimchi.Gate.AddComplete.complete_inf,       -- completeness (sum = ∞)
+   ``Kimchi.Gate.AddComplete.complete,           -- completeness, both cases (∃ witness)
    ``Kimchi.Gate.VarBaseMul.gate_scalarMul,      -- the double-and-add accumulation
    ``Kimchi.Gate.EndoScalar.gate_endoScalar,     -- the row runs Algorithm 2
    ``Kimchi.Gate.EndoMul.row_sound,              -- the row's two windows add correctly
