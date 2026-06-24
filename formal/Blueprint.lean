@@ -97,28 +97,40 @@ def renderOne (n : Name) : MetaM String := do
   let sigName := match ci with | .inductInfo i => i.ctors.head! | _ => n
   let mut body := stripUniv ((← Lean.PrettyPrinter.ppSignature sigName).fmt.pretty 80)
   if let .inductInfo _ := ci then body := body.replace s!"{sigName}" s!"{n}"
+  -- a `Prop`-valued def is a packaged proof: show no value, and label it a theorem
+  let mut propDef := false
   if let .defnInfo d := ci then
-    unless (← Meta.isProp d.type) do body := body ++ " :=\n  " ++ (← ppExpr d.value).pretty 76
+    propDef := (← Meta.isProp d.type)
+    unless propDef do body := body ++ " :=\n  " ++ (← ppExpr d.value).pretty 76
   let (mod, line) ← locOf n
   let src := s!"{repoBase}{mod.replace "." "/"}.lean#L{line}"
   let deps ← (← directDeps n).filterMapM
     (fun d => do return if (← shouldRender d) then some s!"`{d}`" else none)
   let depsLine := if deps.isEmpty then "" else s!"**Uses:** {String.intercalate ", " deps}\n\n"
-  let kind := kindOf ci
+  let kind := if propDef then "theorem" else kindOf ci
   let docBlock := if doc.isEmpty then "" else s!"{doc}\n\n"
   let head := s!"#### `{n}` — {kind}\n\n{docBlock}```lean\n{kind} {body}\n```\n\n"
   return head ++ depsLine ++ s!"[source]({src})\n\n---\n\n"
 
-def run (roots : List Name) : MetaM String := do
+def run (roots mains : List Name) : MetaM String := do
   let names ← collect roots {}
-  let withLoc ← names.toList.mapM (fun n => do return (n, ← locOf n))
+  let mainSet : NameSet := mains.foldl (·.insert ·) ∅
+  -- Main results first, in the curated order.
+  let mut out := "% kimchi formalization — statements and definitions\n\n# Main results\n\n"
+  out := out ++ "_The headline theorems. Everything under "
+    ++ "*Supporting definitions and lemmas* is the vocabulary they rest on._\n\n"
+  for n in mains do
+    if ← shouldRender n then out := out ++ (← renderOne n)
+  -- Then the rest of the closure, grouped by module.
+  out := out ++ "\n# Supporting definitions and lemmas\n\n"
+  let rest := names.toList.filter (fun n => !mainSet.contains n)
+  let withLoc ← rest.mapM (fun n => do return (n, ← locOf n))
   let sorted := withLoc.toArray.qsort (fun a b =>
     if a.2.1 == b.2.1 then a.2.2 < b.2.2 else a.2.1 < b.2.1)
-  let mut out := "% kimchi formalization — statements and definitions\n\n"
   let mut curMod := ""
   for (n, mod, _) in sorted do
     if ← shouldRender n then
-      if mod != curMod then curMod := mod; out := out ++ s!"\n# {mod}\n\n"
+      if mod != curMod then curMod := mod; out := out ++ s!"\n## {mod}\n\n"
       out := out ++ (← renderOne n)
   return out
 
@@ -132,6 +144,6 @@ open Lean Elab Command in
   let roots := (content.splitOn "\n").filterMap (fun l =>
     let l := l.replace "\r" ""
     if l.isEmpty then none else some l.toName)
-  let md ← liftTermElabM (Render.run roots)
+  let md ← liftTermElabM (Render.run roots Kimchi.mainResults)
   IO.FS.writeFile "blueprint.md" md
   logInfo s!"wrote blueprint.md ({md.length} bytes, {roots.length} roots)"
