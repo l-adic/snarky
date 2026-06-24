@@ -113,6 +113,38 @@ theorem chain_register (m : ℕ) (N : ℕ → F) (c : ℕ → ℤ)
       Nat.sub_add_cancel (Nat.succ_le_of_lt (Nat.sub_pos_of_lt (Finset.mem_range.mp hi)))]
   · ring
 
+/-- Magnitude bound on the folded signed-digit multiplier. If each per-gate digit
+    `c i` has `|c i| ≤ 31`, then the accumulated scalar
+    `k = ∑_{i<m} 32^(m-1-i)·c i` satisfies `|k| ≤ 32^m − 1`. (Induction: the
+    recurrence `k_{m+1} = 32·k_m + c m` and `32·(32^m−1) + 31 = 32^(m+1)−1`.) -/
+theorem chain_sum_bound (m : ℕ) (c : ℕ → ℤ) (hc : ∀ i, i < m → (c i).natAbs ≤ 31) :
+    (∑ i ∈ Finset.range m, (32 : ℤ) ^ (m - 1 - i) * c i).natAbs ≤ 32 ^ m - 1 := by
+  induction m with
+  | zero => simp
+  | succ m ih =>
+    have hsum : (∑ i ∈ Finset.range (m + 1), (32 : ℤ) ^ (m + 1 - 1 - i) * c i)
+        = (32 : ℤ) * (∑ i ∈ Finset.range m, (32 : ℤ) ^ (m - 1 - i) * c i) + c m := by
+      rw [Finset.sum_range_succ, Finset.mul_sum]
+      simp only [Nat.add_sub_cancel, Nat.sub_self, pow_zero, one_mul]
+      congr 1
+      apply Finset.sum_congr rfl
+      intro i hi
+      have hi' : m - i = (m - 1 - i) + 1 := by
+        have := Finset.mem_range.mp hi; omega
+      rw [hi', pow_succ]
+      ring
+    rw [hsum]
+    have ihb := ih (fun i hi => hc i (Nat.lt_succ_of_lt hi))
+    have hcm := hc m (Nat.lt_succ_self m)
+    set S := ∑ i ∈ Finset.range m, (32 : ℤ) ^ (m - 1 - i) * c i with hS
+    have key : (32 * S + c m).natAbs ≤ 32 * S.natAbs + (c m).natAbs := by
+      calc (32 * S + c m).natAbs
+          ≤ (32 * S).natAbs + (c m).natAbs := Int.natAbs_add_le _ _
+        _ = 32 * S.natAbs + (c m).natAbs := by rw [Int.natAbs_mul]; norm_num
+    have h1 : (1 : ℕ) ≤ 32 ^ m := Nat.one_le_pow _ _ (by norm_num)
+    have hps : 32 ^ (m + 1) = 32 * 32 ^ m := by rw [pow_succ]; ring
+    omega
+
 /-- The per-gate hypotheses `gate_scalarMul_int` needs, bundled: nonsingular
     accumulators `a0..a5` and signed targets `q0..q4`, the per-step
     non-degeneracy `x0..x4` (`xᵢ ≠ xT`) and `t0..t4` (`tᵢ ≠ 0`), and the 21
@@ -166,21 +198,23 @@ theorem scalarMul
     (hregIn : ∀ i, i < m → N i = (g i).n)
     (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime) :
     ∃ k : ℤ, P m = (32 : ℤ) ^ m • P 0 + k • T
-           ∧ (k : F) = 2 * N m - 2 * (32 : F) ^ m * N 0 - ((32 : F) ^ m - 1) := by
-  obtain ⟨c, hc⟩ : ∃ c : ℕ → ℤ, (∀ i < m, P (i + 1) = (32 : ℤ) • P i + c i • T)
-      ∧ (∀ i < m, (c i : F) = 2 * N (i + 1) - 64 * N i - 31) := by
-    choose! c hc₁ hc₂ using fun i hi => gate_scalarMul_int W ha (g i)
+           ∧ (k : F) = 2 * N m - 2 * (32 : F) ^ m * N 0 - ((32 : F) ^ m - 1)
+           ∧ k.natAbs ≤ 32 ^ m - 1 := by
+  obtain ⟨c, hc₁, hc₂, hc₃⟩ :
+      ∃ c : ℕ → ℤ, (∀ i < m, P (i + 1) = (32 : ℤ) • P i + c i • T)
+        ∧ (∀ i < m, (c i : F) = 2 * N (i + 1) - 64 * N i - 31)
+        ∧ (∀ i < m, (c i).natAbs ≤ 31) := by
+    choose! c hc₁ hc₂ hc₃ using fun i hi => gate_scalarMul_int W ha (g i)
       (gs i hi).a0 (gs i hi).a1 (gs i hi).a2 (gs i hi).a3 (gs i hi).a4 (gs i hi).a5
       (gs i hi).hT (gs i hi).q0 (gs i hi).q1 (gs i hi).q2 (gs i hi).q3 (gs i hi).q4
       (gs i hi).x0 (gs i hi).x1 (gs i hi).x2 (gs i hi).x3 (gs i hi).x4
       (gs i hi).t0 (gs i hi).t1 (gs i hi).t2 (gs i hi).t3 (gs i hi).t4 (gs i hi).holds
-    refine ⟨c, ?_, ?_⟩ <;> intros i hi <;> simp_all +decide only
+    refine ⟨c, ?_, ?_, ?_⟩ <;> intros i hi <;> simp_all +decide only
     rw [hT i hi]
-  convert chain_scalarMul W m P T c hc.1 using 1
-  constructor <;> intro h
-  · convert chain_scalarMul W m P T c hc.1 using 1
-  · have := chain_register m N c hc.2
-    exact ⟨_, h, this⟩
+  refine ⟨∑ i ∈ Finset.range m, (32 : ℤ) ^ (m - 1 - i) * c i, ?_, ?_, ?_⟩
+  · exact chain_scalarMul W m P T c hc₁
+  · exact chain_register m N c hc₂
+  · exact chain_sum_bound m c hc₃
 
 /-- Clean variable-base scalar multiplication. When the accumulator is
     initialized to a multiple of the base (`P 0 = a · T`, `a : ℤ` — the circuit
@@ -205,11 +239,16 @@ theorem scalarMul_baseMul
     (hP0 : P 0 = a • T) :
     ∃ n : ℤ, P m = n • T
            ∧ (n : F) = (32 : F) ^ m * (a : F) + 2 * N m
-                        - 2 * (32 : F) ^ m * N 0 - ((32 : F) ^ m - 1) := by
-  obtain ⟨k, hk, hkf⟩ := scalarMul W ha m g gs P T N hT hin hout hregIn hregOut
-  refine ⟨(32 : ℤ) ^ m * a + k, ?_, ?_⟩
+                        - 2 * (32 : F) ^ m * N 0 - ((32 : F) ^ m - 1)
+           ∧ n.natAbs ≤ 32 ^ m * a.natAbs + (32 ^ m - 1) := by
+  obtain ⟨k, hk, hkf, hkb⟩ := scalarMul W ha m g gs P T N hT hin hout hregIn hregOut
+  refine ⟨(32 : ℤ) ^ m * a + k, ?_, ?_, ?_⟩
   · rw [hk, hP0, smul_smul, ← add_smul]
   · push_cast; rw [hkf]; ring
+  · calc ((32 : ℤ) ^ m * a + k).natAbs
+        ≤ ((32 : ℤ) ^ m * a).natAbs + k.natAbs := Int.natAbs_add_le _ _
+      _ = 32 ^ m * a.natAbs + k.natAbs := by rw [Int.natAbs_mul, Int.natAbs_pow]; norm_num
+      _ ≤ 32 ^ m * a.natAbs + (32 ^ m - 1) := by omega
 
 /-! ## Matching the real circuit: scalar-mul by the pickles Type1 unshift -/
 
@@ -238,14 +277,19 @@ theorem scalarMul_shifted
     (hregIn : ∀ i, i < m → N i = (g i).n)
     (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
     (hP0 : P 0 = (2 : ℤ) • T) (hN0 : N 0 = 0) :
-    ∃ n : ℤ, P m = n • T ∧ (n : F) = unshiftType1 (5 * m) (N m) := by
-  obtain ⟨n, hn, hnf⟩ :=
+    ∃ n : ℤ, P m = n • T ∧ (n : F) = unshiftType1 (5 * m) (N m)
+           ∧ n.natAbs ≤ 3 * 32 ^ m := by
+  obtain ⟨n, hn, hnf, hnb⟩ :=
     scalarMul_baseMul W ha m g gs T N 2 P hT hin hout hregIn hregOut hP0
-  refine ⟨n, hn, ?_⟩
-  have h32 : (2 : F) ^ (5 * m) = (32 : F) ^ m := by rw [pow_mul]; norm_num
-  rw [hnf, hN0, unshiftType1, h32]
-  push_cast
-  ring
+  refine ⟨n, hn, ?_, ?_⟩
+  · have h32 : (2 : F) ^ (5 * m) = (32 : F) ^ m := by rw [pow_mul]; norm_num
+    rw [hnf, hN0, unshiftType1, h32]
+    push_cast
+    ring
+  · -- `a = 2`, so `(2 : ℤ).natAbs = 2` and `32^m·2 + (32^m − 1) ≤ 3·32^m`.
+    have h2 : (2 : ℤ).natAbs = 2 := rfl
+    rw [h2] at hnb
+    omega
 
 /-! ## The caller's scalar: Type1 and the odd correction (Type2) -/
 
@@ -264,10 +308,10 @@ theorem scalarMul_caller
     (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
     (hP0 : P 0 = (2 : ℤ) • T) (hN0 : N 0 = 0)
     (s : F) (h2 : (2 : F) ≠ 0) (hNs : N m = shiftType1 (5 * m) s) :
-    ∃ n : ℤ, P m = n • T ∧ (n : F) = s := by
-  obtain ⟨n, hn, hnf⟩ :=
+    ∃ n : ℤ, P m = n • T ∧ (n : F) = s ∧ n.natAbs ≤ 3 * 32 ^ m := by
+  obtain ⟨n, hn, hnf, hnb⟩ :=
     scalarMul_shifted W ha m g gs T N P hT hin hout hregIn hregOut hP0 hN0
-  exact ⟨n, hn, by rw [hnf, hNs, unshiftType1_shiftType1 h2]⟩
+  exact ⟨n, hn, by rw [hnf, hNs, unshiftType1_shiftType1 h2], hnb⟩
 
 /-- Type2 scalar multiplication: split + the explicit low-bit correction. The
     `VarBaseMul` chain runs on the high part (register `N m = sHi`, giving
@@ -288,7 +332,7 @@ theorem scalarMul_type2
     (sOdd : F) (result : W.Point)
     (hcorr : (sOdd = 1 ∧ result = P m) ∨ (sOdd = 0 ∧ result = P m - T)) :
     ∃ n : ℤ, result = n • T ∧ (n : F) = unshiftType2 (5 * m) (N m) sOdd := by
-  obtain ⟨n, hn, hnf⟩ :=
+  obtain ⟨n, hn, hnf, _⟩ :=
     scalarMul_shifted W ha m g gs T N P hT hin hout hregIn hregOut hP0 hN0
   rcases hcorr with ⟨ho, hr⟩ | ⟨ho, hr⟩
   · refine ⟨n, by rw [hr, hn], ?_⟩

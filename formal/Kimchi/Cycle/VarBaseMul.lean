@@ -49,7 +49,7 @@ theorem varBaseMul_scalar (c : CMCurve F)
     ∃ n : ℤ, P m = n • T
       ∧ (n : F) = (32 : F) ^ m * (a : F) + 2 * N m - 2 * (32 : F) ^ m * N 0 - ((32 : F) ^ m - 1)
       ∧ ∀ s : ℤ, n ≡ s [ZMOD (c.order : ℤ)] → P m = s • T := by
-  obtain ⟨n, hn, hnf⟩ :=
+  obtain ⟨n, hn, hnf, _⟩ :=
     scalarMul_baseMul c.W c.short m g gs T N a P hT hin hout hregIn hregOut hP0
   exact ⟨n, hn, hnf, fun s hs => hn.trans (zsmul_emod_eq c T hs)⟩
 
@@ -73,8 +73,38 @@ theorem varBaseMul_faithful (c : CMCurve F) {p : ℕ} [CharP F p]
     (h2 : (2 : F) ≠ 0) (s : ℤ) (hNs : N m = shiftType1 (5 * m) (s : F)) :
     ∃ n : ℤ, P m = n • T ∧ (n : F) = (s : F)
       ∧ ((n - s).natAbs < p → P m = s • T) := by
-  obtain ⟨n, hn, hnf⟩ := scalarMul_caller c.W c.short m g gs T N P
+  obtain ⟨n, hn, hnf, _⟩ := scalarMul_caller c.W c.short m g gs T N P
     hT hin hout hregIn hregOut hP0 hN0 (s : F) h2 hNs
   exact ⟨n, hn, hnf, fun hrange => by rw [hn, intCast_inj_of_sub_lt hnf hrange]⟩
+
+/-- Faithful VarBaseMul, UNCONDITIONALLY, in the sub-width (128-bit-challenge)
+    regime. Same setup as `varBaseMul_faithful`, but instead of *assuming* the
+    `Shifted_value` range bound `|n − s| < p` we *derive* it from explicit budget
+    hypotheses: the intended scalar fits in the `5m`-bit window
+    (`|s| < 2·32^m`) and the field is large enough to separate the
+    `5m+`-bit multiplier from it (`5·32^m ≤ p`). The gate's multiplier `n` is
+    magnitude-bounded by `scalarMul_caller` (`|n| ≤ 3·32^m`, the `5m`-bit digit
+    budget), so `|n − s| ≤ |n| + |s| < 3·32^m + 2·32^m = 5·32^m ≤ p`, and
+    `intCast_inj_of_sub_lt` upgrades `(n:F) = (s:F)` to `n = s`. Hence the gate
+    computes `P_m = [s]·T` for the genuine scalar `s` with no residual side
+    condition. (`32^m = 2^(5m)`, so these are exactly the `5m`-bit budgets.) -/
+theorem varBaseMul_faithful_unconditional (c : CMCurve F) {p : ℕ} [CharP F p]
+    (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep c.W (g i))
+    (T : c.W.Point) (N : ℕ → F) (P : ℕ → c.W.Point)
+    (hT : ∀ i (hi : i < m), T = Point.some (gs i hi).hT)
+    (hin : ∀ i (hi : i < m), P i = Point.some (gs i hi).a0)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some (gs i hi).a5)
+    (hregIn : ∀ i, i < m → N i = (g i).n)
+    (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
+    (hP0 : P 0 = (2 : ℤ) • T) (hN0 : N 0 = 0)
+    (h2 : (2 : F) ≠ 0) (s : ℤ) (hNs : N m = shiftType1 (5 * m) (s : F))
+    (hs : s.natAbs < 2 * 32 ^ m) (hp : 5 * 32 ^ m ≤ p) :
+    P m = s • T := by
+  obtain ⟨n, hn, hnf, hnb⟩ := scalarMul_caller c.W c.short m g gs T N P
+    hT hin hout hregIn hregOut hP0 hN0 (s : F) h2 hNs
+  have hrange : (n - s).natAbs < p := by
+    have htri : (n - s).natAbs ≤ n.natAbs + s.natAbs := Int.natAbs_sub_le n s
+    omega
+  rw [hn, intCast_inj_of_sub_lt hnf hrange]
 
 end Kimchi.Cycle

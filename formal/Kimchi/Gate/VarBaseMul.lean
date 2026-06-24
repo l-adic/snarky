@@ -395,13 +395,14 @@ lemma signed_target
     (hT : W.Nonsingular xT yT)
     (hQ : W.Nonsingular xT ((2 * b - 1) * yT))
     (hb : b = 0 ∨ b = 1) :
-    ∃ e : ℤ, Point.some hQ = e • Point.some hT ∧ (e : F) = 2 * b - 1 := by
+    ∃ e : ℤ, Point.some hQ = e • Point.some hT ∧ (e : F) = 2 * b - 1
+           ∧ (e = 1 ∨ e = -1) := by
   obtain ⟨ha1, _, ha3, _⟩ := ha
   rcases hb with rfl | rfl
-  · refine ⟨-1, ?_, by push_cast; ring⟩
+  · refine ⟨-1, ?_, by push_cast; ring, Or.inr rfl⟩
     rw [neg_one_zsmul, Point.neg_some]
     exact some_eq_some W hQ _ (by rw [WeierstrassCurve.Affine.negY, ha1, ha3]; ring)
-  · refine ⟨1, ?_, by push_cast; ring⟩
+  · refine ⟨1, ?_, by push_cast; ring, Or.inl rfl⟩
     rw [one_zsmul]
     exact some_eq_some W hQ hT (by ring)
 
@@ -434,18 +435,19 @@ theorem gate_scalarMul_int
     (htne4 : 2 * w.x4 + w.xT - w.s4 * w.s4 ≠ 0)
     (h : Holds w) :
     ∃ c : ℤ, Point.some h5 = (32 : ℤ) • Point.some h0 + c • Point.some hT
-           ∧ (c : F) = 2 * w.nPrime - 64 * w.n - 31 := by
+           ∧ (c : F) = 2 * w.nPrime - 64 * w.n - 31
+           ∧ c.natAbs ≤ 31 := by
   -- the Q-point sum from the already-proven nat-smul gate soundness
   have main := gate_scalarMul W ha w h0 h1 h2 h3 h4 h5 hQ0 hQ1 hQ2 hQ3 hQ4
     hxne0 hxne1 hxne2 hxne3 hxne4 htne0 htne1 htne2 htne3 htne4 h
   -- booleanity of each bit from the `b·b − b = 0` constraint inside `Holds`
   obtain ⟨hdec, hbit0, hbit1, hbit2, hbit3, hbit4⟩ := h
-  obtain ⟨e0, q0, he0⟩ := signed_target W ha hT hQ0 (bool_of_sq hbit0.1)
-  obtain ⟨e1, q1, he1⟩ := signed_target W ha hT hQ1 (bool_of_sq hbit1.1)
-  obtain ⟨e2, q2, he2⟩ := signed_target W ha hT hQ2 (bool_of_sq hbit2.1)
-  obtain ⟨e3, q3, he3⟩ := signed_target W ha hT hQ3 (bool_of_sq hbit3.1)
-  obtain ⟨e4, q4, he4⟩ := signed_target W ha hT hQ4 (bool_of_sq hbit4.1)
-  refine ⟨16 * e0 + 8 * e1 + 4 * e2 + 2 * e3 + e4, ?_, ?_⟩
+  obtain ⟨e0, q0, he0, hd0⟩ := signed_target W ha hT hQ0 (bool_of_sq hbit0.1)
+  obtain ⟨e1, q1, he1, hd1⟩ := signed_target W ha hT hQ1 (bool_of_sq hbit1.1)
+  obtain ⟨e2, q2, he2, hd2⟩ := signed_target W ha hT hQ2 (bool_of_sq hbit2.1)
+  obtain ⟨e3, q3, he3, hd3⟩ := signed_target W ha hT hQ3 (bool_of_sq hbit3.1)
+  obtain ⟨e4, q4, he4, hd4⟩ := signed_target W ha hT hQ4 (bool_of_sq hbit4.1)
+  refine ⟨16 * e0 + 8 * e1 + 4 * e2 + 2 * e3 + e4, ?_, ?_, ?_⟩
   · rw [main, q0, q1, q2, q3, q4]
     simp only [← natCast_zsmul, smul_smul]
     push_cast
@@ -456,6 +458,10 @@ theorem gate_scalarMul_int
     push_cast
     rw [he0, he1, he2, he3, he4]
     linear_combination -2 * hdec
+  · -- magnitude: each signed digit is ±1, so `|c| ≤ 16+8+4+2+1 = 31`.
+    rcases hd0 with rfl | rfl <;> rcases hd1 with rfl | rfl <;>
+      rcases hd2 with rfl | rfl <;> rcases hd3 with rfl | rfl <;>
+      rcases hd4 with rfl | rfl <;> decide
 
 end Soundness
 
