@@ -15,16 +15,22 @@ import Kimchi.Cycle.Shifted
 import Kimchi.Cycle.EndoMul
 import Kimchi.Cycle.Pasta
 
-/-- The headline results of this formalization, in narrative order. `make lean-docs`
-    renders these first; everything else is the supporting definitions and lemmas they
-    rest on. The arc: each gate's soundness → the `EndoMul ∘ EndoScalar` recoding → the
-    faithful two-field account → the real Pasta curve. -/
+/-- The headline results of this formalization. `make lean-docs` renders these first;
+    everything else is the supporting definitions and lemmas they rest on. Three
+    groups: (1) each gate's soundness — and, for AddComplete, completeness; (2) the
+    VarBaseMul *circuit* computes scalar multiplication (PS `scaleFast1 g a ~
+    scalarMul (fromShifted a) g`); (3) the EndoMul circuit relates to EndoScalar (PS
+    `endo g a ~ scalarMul (toFieldPure a endoScalar) g`). The faithful two-field /
+    Pasta results are a refinement and live below, in the supporting material. -/
 def Kimchi.mainResults : List Lean.Name :=
-  [``Kimchi.Gate.AddComplete.ok_iff,            -- complete EC addition (in/out of ∞)
-   ``Kimchi.Circuit.VarBaseMul.scalarMul_caller, -- VarBaseMul computes [s]·T
-   ``Kimchi.Circuit.EndoScalar.endoScalar_spec,  -- EndoScalar computes a·λ + b
-   ``Kimchi.Circuit.EndoMul.endoMul_ab,          -- EndoMul's GLV coeffs ARE EndoScalar's a, b
-   ``Kimchi.Circuit.EndoMul.endoMul_toField,     -- EndoMul computes [EndoScalar.toField]·T
-   ``Kimchi.Cycle.varBaseMul_faithful,           -- faithful VarBaseMul (scalar field, in range)
-   ``Kimchi.Cycle.endoMul_faithful,              -- faithful EndoMul — Level-1 capstone
-   ``Kimchi.Cycle.Pasta.pallas_endoMul_faithful] -- the same, on the real Pallas curve
+  [-- (1) gate soundness (AddComplete also completeness)
+   ``Kimchi.Gate.AddComplete.sound_point_noninf, -- output = group sum (finite case)
+   ``Kimchi.Gate.AddComplete.sound_point_inf,    -- output = 0 (infinity case)
+   ``Kimchi.Gate.AddComplete.complete_noninf,    -- honest prover can always witness
+   ``Kimchi.Gate.VarBaseMul.gate_scalarMul,      -- the double-and-add accumulation
+   ``Kimchi.Gate.EndoScalar.gate_endoScalar,     -- the row runs Algorithm 2
+   ``Kimchi.Gate.EndoMul.row_sound,              -- the row's two windows add correctly
+   -- (2) the VarBaseMul circuit computes scalar multiplication
+   ``Kimchi.Circuit.VarBaseMul.scalarMul_caller, -- [s]·T = scalarMul (fromShifted a) g
+   -- (3) the EndoMul circuit relates to EndoScalar
+   ``Kimchi.Circuit.EndoMul.endoMul_toField]     -- [EndoScalar.toField]·T
