@@ -24,16 +24,18 @@ and `Point.add` of two affine points is DEFINED as `(addX, addY)`
 ## Main results
 
 The gate computes addition in Mathlib's proven elliptic-curve group `W.Point`:
-* `sound_point_noninf` — finite case (`inf = 0`): the output is the group sum
-  `(x₁,y₁) + (x₂,y₂)`.
-* `sound_point_inf`    — infinity case (`inf = 1`): the sum is `0`.
+* `sound_point` — SOUNDNESS, both cases in one statement: for a satisfying witness the
+  sum `(x₁,y₁) + (x₂,y₂)` is the group element the gate encodes — `0` when `inf = 1`,
+  else the affine output `(x₃, y₃)` — using that `inf` is boolean (`inf_boolean`). It
+  splits into the per-case `sound_point_noninf` / `sound_point_inf`.
+* `complete_noninf` / `complete_inf` — COMPLETENESS, both cases: for on-curve inputs
+  with a finite sum, or whose sum is `∞`, an honest prover can fill a satisfying witness.
 
 ## Supporting development
 
 The constraint model (`Witness` / `Holds` / `ok`) + reflection (`ok_iff`), the
-coordinate-level soundness and completeness (`sound_noninf`, `complete_noninf`)
-that feed the `Point`-level results, and a runnable example. No `sorry`; standard
-axioms only.
+coordinate-level soundness (`sound_noninf`) feeding the `Point`-level results, and a
+runnable example. No `sorry`; standard axioms only.
 -/
 
 namespace Kimchi.Gate.AddComplete
@@ -225,6 +227,43 @@ theorem complete_noninf
     · simp only [WeierstrassCurve.Affine.addY, WeierstrassCurve.Affine.negY,
         WeierstrassCurve.Affine.negAddY, WeierstrassCurve.Affine.addX, ha1, ha2, ha3]; ring
 
+omit [DecidableEq F] in
+/-- COMPLETENESS, infinity case. When the inputs sum to `∞` — `x₁ = x₂` and
+    `y₁ = negY x₂ y₂`, i.e. `P₂ = -P₁` — the honest prover can fill a satisfying witness
+    with `inf = 1`. The output columns carry the (unused) doubling slope `s = 3x₁²/(2y₁)`
+    so the `sameX = 1` slope constraint still holds; `infZ = 1/(y₂−y₁)` witnesses `inf`.
+    The companion to `complete_noninf`, closing completeness over both cases. -/
+theorem complete_inf
+    (W : WeierstrassCurve.Affine F)
+    (ha : IsShortShape W)
+    (x1 y1 x2 y2 : F)
+    (_hon1 : W.Equation x1 y1) (_hon2 : W.Equation x2 y2)
+    (hinf : x1 = x2 ∧ y1 = W.negY x2 y2)
+    (hy1 : y1 ≠ 0) (h2 : (2 : F) ≠ 0) :
+    ∃ w : Witness F,
+      w.x1 = x1 ∧ w.y1 = y1 ∧ w.x2 = x2 ∧ w.y2 = y2 ∧ w.inf = 1 ∧ Holds w := by
+  obtain ⟨ha1, -, ha3, -⟩ := ha
+  obtain ⟨hxe, hye⟩ := hinf
+  have hnegY2 : W.negY x2 y2 = -y2 := by simp [WeierstrassCurve.Affine.negY, ha1, ha3]
+  rw [hnegY2] at hye
+  have hy2 : y2 = -y1 := by linear_combination hye
+  have hden : (2 : F) * y1 ≠ 0 := mul_ne_zero h2 hy1
+  have hy21ne : y2 - y1 ≠ 0 := by
+    rw [hy2]; intro h; exact hden (by linear_combination -h)
+  set s : F := 3 * x1 ^ 2 / (2 * y1) with hsdef
+  refine ⟨{ x1 := x1, y1 := y1, x2 := x2, y2 := y2, x3 := s ^ 2 - x1 - x2,
+            y3 := s * (x1 - (s ^ 2 - x1 - x2)) - y1, inf := 1, sameX := 1, s := s,
+            infZ := 1 / (y2 - y1), x21Inv := 0 }, rfl, rfl, rfl, rfl, rfl, ?_⟩
+  simp only [Holds]
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · ring
+  · rw [hxe]; ring
+  · rw [hsdef]; field_simp; ring
+  · ring
+  · ring
+  · ring
+  · rw [mul_one_div, div_self hy21ne, sub_self]
+
 end Faithfulness
 
 /-! ## Main theorems: the gate computes `Point` addition.
@@ -311,6 +350,44 @@ theorem sound_point_inf
   rcases Y_eq_of_X_eq h1.1 h2.1 hx with hyy | hyn
   · exact absurd (by linear_combination -hyy) hy21ne
   · exact Point.add_of_Y_eq hx hyn
+
+/-- The `inf` flag is boolean on a satisfying witness: `inf ∈ {0, 1}`. (If `y₂ = y₁`,
+    `c7` forces `inf = 0`; otherwise `c6` ties `inf` to `sameX`, which `c1`/`c2` pin to
+    `0` or `1` according to whether `x₁ = x₂`.) -/
+theorem inf_boolean (w : Witness F) (hcons : Holds w) :
+    w.inf = 0 ∨ w.inf = 1 := by
+  simp only [Holds] at hcons
+  obtain ⟨c1, c2, _c3, _c4, _c5, c6, c7⟩ := hcons
+  by_cases hy21 : w.y2 - w.y1 = 0
+  · rw [hy21] at c7
+    exact Or.inl (by linear_combination -c7)
+  · have hsame : w.sameX = w.inf := by
+      rcases mul_eq_zero.mp c6 with h | h
+      · exact absurd h hy21
+      · linear_combination h
+    by_cases hx21 : w.x2 - w.x1 = 0
+    · rw [hx21] at c1
+      have hone : w.sameX = 1 := by linear_combination c1
+      exact Or.inr (by rw [← hsame]; exact hone)
+    · have hzero : w.sameX = 0 := (mul_eq_zero.mp c2).resolve_right hx21
+      exact Or.inl (by rw [← hsame]; exact hzero)
+
+/-- THE GATE COMPUTES COMPLETE ADDITION — both cases in one statement. For a satisfying
+    witness, either the `inf` flag is set and the sum `(x₁,y₁) + (x₂,y₂)` is the point at
+    infinity, or the flag is clear and the affine output `(x₃, y₃)` is that sum. Unifies
+    `sound_point_inf` and `sound_point_noninf` via the boolean `inf`. -/
+theorem sound_point
+    (W : WeierstrassCurve.Affine F)
+    (ha : IsShortShape W)
+    (w : Witness F)
+    (h1 : W.Nonsingular w.x1 w.y1) (h2 : W.Nonsingular w.x2 w.y2)
+    (hcons : Holds w) (hy1 : w.y1 ≠ 0) (htwo : (2 : F) ≠ 0) :
+    (w.inf = 1 ∧ Point.some h1 + Point.some h2 = 0)
+      ∨ (w.inf = 0 ∧ ∃ h3 : W.Nonsingular w.x3 w.y3,
+          Point.some h1 + Point.some h2 = Point.some h3) := by
+  rcases inf_boolean w hcons with hinf | hinf
+  · exact Or.inr ⟨hinf, sound_point_noninf W ha w h1 h2 hcons hy1 htwo hinf⟩
+  · exact Or.inl ⟨hinf, sound_point_inf W ha w h1 h2 hcons hinf⟩
 
 end Point
 
