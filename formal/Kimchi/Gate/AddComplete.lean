@@ -6,9 +6,8 @@ import Kimchi.Curve
 Complete elliptic-curve point addition: the gate's 7 constraints, and the theorem
 that they implement Mathlib's affine group law.
 
-Sources transcribed:
-* column layout    — AddComplete.purs (cols 0–10: x1 y1 x2 y2 x3 y3 inf sameX s infZ x21Inv)
-* the 7 constraints — proof-systems `.../complete_add.rs` `constraint_checks`
+Transcribed from proof-systems `.../complete_add.rs`: the column layout
+(cols 0–10: x1 y1 x2 y2 x3 y3 inf sameX s infZ x21Inv) and the 7 `constraint_checks`.
 
 The trusted ORACLE is Mathlib's affine elliptic-curve group law
 (`WeierstrassCurve.Affine.slope / addX / addY`). With the Pasta-shape curve
@@ -31,17 +30,11 @@ The gate computes addition in Mathlib's proven elliptic-curve group `W.Point`:
 * `complete` — COMPLETENESS, both cases in one statement: for on-curve inputs (`y₁ ≠ 0`),
   an honest prover can fill a satisfying witness, casing internally on whether the sum is
   finite or `∞`. Splits into the per-case `complete_noninf` / `complete_inf`.
-
-## Supporting development
-
-The constraint model (`Witness` / `Holds` / `ok`) + reflection (`ok_iff`), the
-coordinate-level soundness (`sound_noninf`) feeding the `Point`-level results, and a
-runnable example. No `sorry`; standard axioms only.
 -/
 
 namespace Kimchi.Gate.AddComplete
 
-/-- The CompleteAdd witness columns (cols 0–10), names matching AddComplete.purs. -/
+/-- The CompleteAdd witness columns (cols 0–10). -/
 structure Witness (F : Type*) where
   x1 : F
   y1 : F
@@ -71,7 +64,7 @@ def Holds [CommRing F] (w : Witness F) : Prop :=
   (w.x21Inv * x21 - (1 - w.sameX) = 0)                                         -- c1
   ∧ (w.sameX * x21 = 0)                                                        -- c2
   -- slope: sameX ? (2·s·y₁ = 3x₁²)  :  ((x₂−x₁)·s = y₂−y₁)
-  ∧ (w.sameX * ((w.s + w.s) * w.y1 - (x1sq + x1sq + x1sq))
+  ∧ (w.sameX * (2 * w.s * w.y1 - 3 * x1sq)
        + (1 - w.sameX) * (x21 * w.s - y21) = 0)                               -- c3
   ∧ (w.x1 + w.x2 + w.x3 - w.s * w.s = 0)                                      -- c4  (x₃)
   ∧ (w.s * (w.x1 - w.x3) - w.y1 - w.y3 = 0)                                   -- c5  (y₃)
@@ -86,7 +79,7 @@ def ok [CommRing F] [DecidableEq F] (w : Witness F) : Bool :=
   let x1sq := w.x1 * w.x1
   (w.x21Inv * x21 - (1 - w.sameX) == 0)
     && (w.sameX * x21 == 0)
-    && (w.sameX * ((w.s + w.s) * w.y1 - (x1sq + x1sq + x1sq))
+    && (w.sameX * (2 * w.s * w.y1 - 3 * x1sq)
           + (1 - w.sameX) * (x21 * w.s - y21) == 0)
     && (w.x1 + w.x2 + w.x3 - w.s * w.s == 0)
     && (w.s * (w.x1 - w.x3) - w.y1 - w.y3 == 0)
@@ -97,14 +90,6 @@ def ok [CommRing F] [DecidableEq F] (w : Witness F) : Bool :=
 theorem ok_iff [CommRing F] [DecidableEq F] (w : Witness F) :
     ok w = true ↔ Holds w := by
   simp only [ok, Holds, Bool.and_eq_true, beq_iff_eq, and_assoc]
-
-/-! ## The semantic theorem: the constraints implement EC addition.
-
-    Oracle = Mathlib's `WeierstrassCurve.Affine` group law. `W` has type
-    `Affine F` (so dot-notation `W.slope` etc. resolves to the affine API), and
-    we assume the Pasta shape `IsShortShape W`. These coordinate-level theorems
-    are the non-infinity (`inf = 0`) case; the `Point`-level section below lifts
-    them to the group law and adds the `inf = 1` (point-at-infinity) case. -/
 
 section Faithfulness
 

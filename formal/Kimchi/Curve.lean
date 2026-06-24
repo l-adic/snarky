@@ -1,15 +1,3 @@
-/-
-  Curve.lean
-
-  The elliptic-curve oracle for the kimchi EC gates.
-
-  The custom EC gates (AddComplete, VarBaseMul, EndoMul) all operate on the Pasta
-  curves (Pallas / Vesta), which are short Weierstrass curves `y² = x³ + b` — i.e.
-  every `a`-invariant except `a₆` vanishes. The gates are checked against
-  Mathlib's `WeierstrassCurve.Affine` specialized to this shape, so we name the
-  shape predicate once here and share it across the gate proofs instead of
-  inlining the four-way conjunction in every theorem.
--/
 import Mathlib
 
 namespace Kimchi
