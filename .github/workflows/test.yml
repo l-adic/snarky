@@ -312,6 +312,51 @@ jobs:
         VITE_BASE: /snarky/
         NODE_OPTIONS: "--max-old-space-size=8192"
 
+    # ---- Formalization blueprint (best-effort; NEVER blocks the app deploy) ----
+    # Renders formal/Kimchi statements + definitions to blueprint.{html,pdf} and drops
+    # them into the app's dist, so they ship to /snarky/blueprint.{html,pdf} alongside
+    # the (untouched) app. Every step is `continue-on-error`: if the Lean toolchain
+    # isn't on this ref yet, or rendering fails, the app still deploys without it.
+    - name: Install elan (Lean toolchain)
+      continue-on-error: true
+      run: |
+        curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+          | sh -s -- -y --default-toolchain none
+        echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+    - name: Install pandoc + weasyprint runtime deps
+      continue-on-error: true
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pandoc python3-venv \
+          libpango-1.0-0 libpangocairo-1.0-0 fonts-dejavu-core
+
+    - name: Render the formalization blueprint
+      id: blueprint
+      continue-on-error: true
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd formal
+        lake exe cache get
+        # ProofWidgets ships prebuilt widget JS as a cloud release (cache get skips it).
+        pw=.lake/packages/proofwidgets
+        rev=$(jq -r '.packages[] | select(.name=="proofwidgets") | .inputRev' lake-manifest.json)
+        mkdir -p "$pw/.lake/build"
+        curl -fsSL "https://github.com/leanprover-community/ProofWidgets4/releases/download/${rev}/ProofWidgets4.tar.gz" \
+          | tar xz -C "$pw/.lake/build" || true
+        lake build Kimchi
+        cd ..
+        make lean-docs
+
+    - name: Add blueprint to the Pages site (only if it built)
+      run: |
+        if [ -f formal/blueprint.html ]; then
+          cp formal/blueprint.html formal/blueprint.pdf packages/example/app/web/dist/
+          echo "::notice::blueprint published at /snarky/blueprint.{html,pdf}"
+        else
+          echo "::warning::blueprint not built on this ref — deploying the app only"
+        fi
+
     - name: Setup Pages
       uses: actions/configure-pages@v5
 
