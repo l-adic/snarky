@@ -1,4 +1,5 @@
 import Kimchi.Gate.VarBaseMul
+import Kimchi.Shifted
 
 /-!
 # The `VarBaseMul` circuit: variable-base scalar multiplication
@@ -55,7 +56,7 @@ PureScript constraints by inspection, not a mechanized PS→Lean extraction.
 
 namespace Kimchi.Circuit.VarBaseMul
 
-open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine
+open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine Kimchi.Shifted
 
 variable {F : Type*} [Field F] [DecidableEq F]
 
@@ -210,14 +211,7 @@ theorem scalarMul_baseMul
   · rw [hk, hP0, smul_smul, ← add_smul]
   · push_cast; rw [hkf]; ring
 
-/-! ## Matching the real circuit: the pickles Type1 unshift -/
-
-/-- The pickles `Shifted_value.Type1` unshift (`to_field`): a scalar represented
-    by the shifted register value `t` (over `numBits` bits) is recovered as
-    `2·t + 2^numBits + 1`. The `VarBaseMul` circuit's signed-digit double-and-add
-    computes scalar multiplication by exactly this unshift of its accumulated
-    register — see `scalarMul_shifted`. -/
-def unshiftType1 (numBits : ℕ) (t : F) : F := 2 * t + 2 ^ numBits + 1
+/-! ## Matching the real circuit: scalar-mul by the pickles Type1 unshift -/
 
 /-- The circuit computes `[s]·T` for the pickles-unshifted scalar `s`. At the real
     circuit's parameters — accumulator initialized to `[2]·T` (`P 0 = 2·T`) and
@@ -253,21 +247,7 @@ theorem scalarMul_shifted
   push_cast
   ring
 
-/-! ## The caller's scalar: shift round-trip (Type1) and the odd correction (Type2) -/
-
-/-- The pickles `Shifted_value.Type1` shift (`of_field`): `t = (s − 2^numBits − 1)/2`,
-    the left inverse of `unshiftType1` (needs char ≠ 2). The caller computes this
-    `t` from the intended scalar `s` and feeds it to the gate as the register. -/
-def shiftType1 (numBits : ℕ) (s : F) : F := (s - 2 ^ numBits - 1) / 2
-
-omit [DecidableEq F] in
-/-- Round-trip: `unshift ∘ shift = id` (char ≠ 2). The pickles `to_field`/`of_field`
-    pair `s ↦ (s − 2^n − 1)/2 ↦ 2·t + 2^n + 1` recovers `s`. -/
-theorem unshiftType1_shiftType1 (h2 : (2 : F) ≠ 0) (numBits : ℕ) (s : F) :
-    unshiftType1 numBits (shiftType1 numBits s) = s := by
-  rw [unshiftType1, shiftType1]
-  field_simp
-  ring
+/-! ## The caller's scalar: Type1 and the odd correction (Type2) -/
 
 /-- The circuit computes `[s]·T` for the CALLER's scalar `s`. When the caller feeds
     the Type1 shift of `s` as the register (`N m = shiftType1 (5m) s` — what pickles
@@ -288,11 +268,6 @@ theorem scalarMul_caller
   obtain ⟨n, hn, hnf⟩ :=
     scalarMul_shifted W ha m g gs T N P hT hin hout hregIn hregOut hP0 hN0
   exact ⟨n, hn, by rw [hnf, hNs, unshiftType1_shiftType1 h2]⟩
-
-/-- The pickles `Shifted_value.Type2` value `2·sHi + sOdd + 2^numBits` — the scalar
-    `s + 2^numBits` for `s = 2·sHi + sOdd`, used when the scalar field is LARGER
-    than the circuit field, so `s` is split into high bits `sHi` and low bit `sOdd`. -/
-def unshiftType2 (numBits : ℕ) (sHi sOdd : F) : F := 2 * sHi + sOdd + 2 ^ numBits
 
 /-- Type2 scalar multiplication: split + the explicit low-bit correction. The
     `VarBaseMul` chain runs on the high part (register `N m = sHi`, giving

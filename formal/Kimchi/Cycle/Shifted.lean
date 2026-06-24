@@ -1,4 +1,5 @@
 import Kimchi.Cycle.VarBaseMul
+import Kimchi.Shifted
 
 /-!
 # Phase 2: the `Shifted_value` range bridge — faithful VarBaseMul
@@ -19,22 +20,9 @@ single-field model silently assumed; here it is an explicit hypothesis.
 namespace Kimchi.Cycle
 
 open WeierstrassCurve.Affine Kimchi.Gate.VarBaseMul Kimchi.Circuit.VarBaseMul
+  Kimchi.Shifted
 
 variable {F : Type*} [Field F] [DecidableEq F]
-
-omit [DecidableEq F] in
-/-- Cross-field coincidence (the range-bookkeeping core). In a field of
-    characteristic `p`, two integers whose images agree and whose difference is
-    smaller than `p` are equal. This is what turns a coordinate-field equation into
-    an honest integer equality once the `Shifted_value` range bounds the gap — the
-    base-field and scalar-field reductions then coincide. -/
-theorem intCast_inj_of_sub_lt {p : ℕ} [CharP F p] {n s : ℤ}
-    (h : (n : F) = (s : F)) (hlt : (n - s).natAbs < p) : n = s := by
-  have hz : ((n - s : ℤ) : F) = 0 := by push_cast; rw [h]; ring
-  have hdvd : (p : ℤ) ∣ (n - s) := (CharP.intCast_eq_zero_iff F p (n - s)).mp hz
-  have h0 : n - s = 0 :=
-    Int.eq_zero_of_dvd_of_natAbs_lt_natAbs hdvd (by rw [Int.natAbs_natCast]; exact hlt)
-  omega
 
 /-- PHASE 2 — faithful VarBaseMul. At the real init (`P₀ = [2]·T`, `N₀ = 0`) with the
     register `Shifted_value`-encoding a scalar `s` (`N_m = shiftType1 s`), the gate
