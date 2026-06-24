@@ -79,6 +79,10 @@ jobs:
         #print axioms Kimchi.Gate.AddComplete.sound_point_noninf
         #print axioms Kimchi.Gate.AddComplete.sound_point_inf
         #print axioms Kimchi.Gate.AddComplete.ok_iff
+        #print axioms Kimchi.Gate.AddComplete.inf_boolean
+        #print axioms Kimchi.Gate.AddComplete.complete_inf
+        #print axioms Kimchi.Gate.AddComplete.complete
+        #print axioms Kimchi.Gate.AddComplete.sound_point
         #print axioms Kimchi.Gate.VarBaseMul.ok_iff
         #print axioms Kimchi.Gate.VarBaseMul.singleBitOk_iff
         #print axioms Kimchi.Gate.VarBaseMul.secant_add
@@ -95,6 +99,8 @@ jobs:
         #print axioms Kimchi.Circuit.VarBaseMul.scalarMul_caller
         #print axioms Kimchi.Circuit.VarBaseMul.scalarMul_type2
         #print axioms Kimchi.Cycle.zsmul_mod
+        #print axioms Kimchi.Cycle.varBaseMul_scalar
+        #print axioms Kimchi.Cycle.varBaseMul_faithful
         EOF
         out=$(lake env lean check_axioms.lean)
         echo "$out"
