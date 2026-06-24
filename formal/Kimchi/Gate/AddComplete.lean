@@ -28,8 +28,9 @@ The gate computes addition in Mathlib's proven elliptic-curve group `W.Point`:
   sum `(x₁,y₁) + (x₂,y₂)` is the group element the gate encodes — `0` when `inf = 1`,
   else the affine output `(x₃, y₃)` — using that `inf` is boolean (`inf_boolean`). It
   splits into the per-case `sound_point_noninf` / `sound_point_inf`.
-* `complete_noninf` / `complete_inf` — COMPLETENESS, both cases: for on-curve inputs
-  with a finite sum, or whose sum is `∞`, an honest prover can fill a satisfying witness.
+* `complete` — COMPLETENESS, both cases in one statement: for on-curve inputs (`y₁ ≠ 0`),
+  an honest prover can fill a satisfying witness, casing internally on whether the sum is
+  finite or `∞`. Splits into the per-case `complete_noninf` / `complete_inf`.
 
 ## Supporting development
 
@@ -263,6 +264,26 @@ theorem complete_inf
   · ring
   · ring
   · rw [mul_one_div, div_self hy21ne, sub_self]
+
+/-- COMPLETENESS, both cases in one statement. For any on-curve inputs with `y₁ ≠ 0`, an
+    honest prover can fill a satisfying witness — casing internally on whether the sum is
+    `∞` (`x₁=x₂ ∧ y₁ = negY x₂ y₂` → `complete_inf`, `inf=1`) or finite (`complete_noninf`,
+    `inf=0`). The single-theorem companion to `sound_point`. (`y₁ ≠ 0` excludes 2-torsion,
+    which the prime-order kimchi curves don't have — so it is no real restriction there.) -/
+theorem complete
+    (W : WeierstrassCurve.Affine F)
+    (ha : IsShortShape W)
+    (x1 y1 x2 y2 : F)
+    (hon1 : W.Equation x1 y1) (hon2 : W.Equation x2 y2)
+    (hy1 : y1 ≠ 0) (h2 : (2 : F) ≠ 0) :
+    ∃ w : Witness F, w.x1 = x1 ∧ w.y1 = y1 ∧ w.x2 = x2 ∧ w.y2 = y2 ∧ Holds w := by
+  by_cases hd : x1 = x2 ∧ y1 = W.negY x2 y2
+  · obtain ⟨w, e1, e2, e3, e4, _, hcons⟩ :=
+      complete_inf W ha x1 y1 x2 y2 hon1 hon2 hd hy1 h2
+    exact ⟨w, e1, e2, e3, e4, hcons⟩
+  · obtain ⟨w, e1, e2, e3, e4, _, hcons, _, _⟩ :=
+      complete_noninf W ha x1 y1 x2 y2 hon1 hon2 hd hy1 h2
+    exact ⟨w, e1, e2, e3, e4, hcons⟩
 
 end Faithfulness
 
