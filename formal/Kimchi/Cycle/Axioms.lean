@@ -25,7 +25,7 @@ structure CMCurve (F : Type*) [Field F] [DecidableEq F] where
   /-- **AXIOM (CM).** The coordinate map `φ(x,y) = (β·x, y)` realizes scalar
       multiplication by `λ`: `φ(P) = [λ]·P`. -/
   eigen : ∀ {x y : F} (h : W.Nonsingular x y) (h' : W.Nonsingular (beta * x) y),
-    Point.some h' = lam • Point.some h
+    Point.some _ _ h' = lam • Point.some _ _ h
 
 /-- The Pasta two-cycle: two CM curves whose base/scalar fields are reciprocal —
     `E_p / F_p` has order `card F_q`, `E_q / F_q` has order `card F_p`. This is what
