@@ -53,16 +53,21 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         # Mathlib olean cache (does NOT include ProofWidgets' widget JS).
         lake exe cache get
-        # ProofWidgets ships its prebuilt widget JS as a GitHub *cloud release*
-        # (`ProofWidgets4.tar.gz`), which `lake exe cache get` does not fetch.
-        # Without it, `lake build` hits ProofWidgets' `errorOnBuild` guard
-        # ("ProofWidgets not up-to-date"). Fetch + extract it ourselves.
+        # Older ProofWidgets tags ship prebuilt widget JS in a GitHub release
+        # asset (`ProofWidgets4.tar.gz`) that `lake exe cache get` does not
+        # fetch. Newer tags vendor this differently and may not publish the
+        # tarball, so treat the download as best-effort.
         pw=.lake/packages/proofwidgets
         rev=$(jq -r '.packages[] | select(.name=="proofwidgets") | .inputRev' lake-manifest.json)
-        echo "Fetching ProofWidgets cloud release $rev (prebuilt widget JS)"
+        url="https://github.com/leanprover-community/ProofWidgets4/releases/download/${rev}/ProofWidgets4.tar.gz"
+        echo "Checking ProofWidgets cloud release $rev for prebuilt widget JS"
         mkdir -p "$pw/.lake/build"
-        curl -fsSL "https://github.com/leanprover-community/ProofWidgets4/releases/download/${rev}/ProofWidgets4.tar.gz" \
-          | tar xz -C "$pw/.lake/build"
+        if curl -fsI "$url" >/dev/null; then
+          echo "Fetching ProofWidgets cloud release asset"
+          curl -fsSL "$url" | tar xz -C "$pw/.lake/build"
+        else
+          echo "No ProofWidgets release tarball for $rev; continuing"
+        fi
         # Build only our library: typechecks every proof and runs the `#eval`s.
         lake build Kimchi
 
