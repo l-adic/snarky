@@ -97,11 +97,11 @@ jobs:
         #print axioms Kimchi.Circuit.VarBaseMul.scalarMul_shifted
         #print axioms Kimchi.Shifted.unshiftType1_shiftType1
         #print axioms Kimchi.Circuit.VarBaseMul.scalarMul_caller
+        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_faithful_unconditional
+        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_sound
         #print axioms Kimchi.Circuit.VarBaseMul.scalarMul_type2
         #print axioms Kimchi.Cycle.zsmul_mod
         #print axioms Kimchi.Cycle.varBaseMul_scalar
-        #print axioms Kimchi.Cycle.varBaseMul_faithful_unconditional
-        #print axioms Kimchi.Cycle.varBaseMul_valid_of_not_forbidden
         EOF
         out=$(lake env lean check_axioms.lean)
         echo "$out"

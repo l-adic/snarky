@@ -145,11 +145,10 @@ theorem chain_sum_bound (m : ℕ) (c : ℕ → ℤ) (hc : ∀ i, i < m → (c i)
     have hps : 32 ^ (m + 1) = 32 * 32 ^ m := by rw [pow_succ]; ring
     omega
 
-/-- The per-gate hypotheses `gate_scalarMul_int` needs, bundled: nonsingular
-    accumulators `a0..a5` and signed targets `q0..q4`, the per-step
-    non-degeneracy `x0..x4` (`xᵢ ≠ xT`) and `t0..t4` (`tᵢ ≠ 0`), and the 21
-    constraints `holds`. (A `Prop`, so its fields are usable as proofs.) -/
-structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
+/-- The per-gate CONSTRAINT DATA that `gate_scalarMul_int` consumes: nonsingular
+    accumulators `a0..a5`, signed targets `q0..q4`, and the 21 constraints `holds`.
+    This is the prover's witness — an INPUT to the circuit, not derivable. -/
+structure GateData (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
   a0 : W.Nonsingular g.x0 g.y0
   a1 : W.Nonsingular g.x1 g.y1
   a2 : W.Nonsingular g.x2 g.y2
@@ -162,6 +161,13 @@ structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
   q2 : W.Nonsingular g.xT ((2 * g.b2 - 1) * g.yT)
   q3 : W.Nonsingular g.xT ((2 * g.b3 - 1) * g.yT)
   q4 : W.Nonsingular g.xT ((2 * g.b4 - 1) * g.yT)
+  holds : Holds g
+
+/-- The per-gate NON-DEGENERACY side conditions: the additions are non-vertical
+    (`xⱼ ≠ xT`) and the second additions are non-vertical (`tⱼ ≠ 0`). For the kimchi
+    VarBaseMul gate these are exactly what the `s ∉ forbiddenShiftedValues` guard is
+    supposed to secure for ANY satisfying witness (its soundness). -/
+structure NonDegen (g : Witness F) : Prop where
   x0 : g.x0 ≠ g.xT
   x1 : g.x1 ≠ g.xT
   x2 : g.x2 ≠ g.xT
@@ -172,7 +178,12 @@ structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
   t2 : 2 * g.x2 + g.xT - g.s2 * g.s2 ≠ 0
   t3 : 2 * g.x3 + g.xT - g.s3 * g.s3 ≠ 0
   t4 : 2 * g.x4 + g.xT - g.s4 * g.s4 ≠ 0
-  holds : Holds g
+
+/-- A full per-gate step: the constraint `GateData` plus the `NonDegen` side
+    conditions. (Both parents' fields are inherited via dot notation, so existing
+    `gate_scalarMul_int` call sites are unaffected.) -/
+structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop
+    extends GateData W g, NonDegen g
 
 /-! ## Main theorem: variable-base scalar multiplication -/
 
@@ -340,5 +351,70 @@ theorem scalarMul_type2
   · refine ⟨n - 1, by rw [hr, hn, sub_smul, one_zsmul], ?_⟩
     push_cast
     rw [hnf, ho, unshiftType1, unshiftType2]; ring
+
+/-! ## The circuit's correctness: valid for non-forbidden scalars. -/
+
+/-- Given the per-gate `GateStep`s (constraints + non-degeneracy) and the sub-width
+    budget, the gate computes `[s]·T` for the genuine scalar `s`. The cross-field range
+    `|n − s| < p` is derived from the multiplier bound `|n| ≤ 3·32^m` (`scalarMul_caller`)
+    and `|s| < 2·32^m`: `|n − s| < 5·32^m ≤ p`, so `intCast_inj_of_sub_lt` upgrades
+    `(n:F) = (s:F)` to `n = s`. (`32^m = 2^(5m)`, the `5m`-bit budget.) -/
+theorem varBaseMul_faithful_unconditional (W : WeierstrassCurve.Affine F)
+    (ha : IsShortShape W) {p : ℕ} [CharP F p]
+    (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep W (g i))
+    (T : W.Point) (N : ℕ → F) (P : ℕ → W.Point)
+    (hT : ∀ i (hi : i < m), T = Point.some (gs i hi).hT)
+    (hin : ∀ i (hi : i < m), P i = Point.some (gs i hi).a0)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some (gs i hi).a5)
+    (hregIn : ∀ i, i < m → N i = (g i).n)
+    (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
+    (hP0 : P 0 = (2 : ℤ) • T) (hN0 : N 0 = 0)
+    (h2 : (2 : F) ≠ 0) (s : ℤ) (hNs : N m = shiftType1 (5 * m) (s : F))
+    (hs : s.natAbs < 2 * 32 ^ m) (hp : 5 * 32 ^ m ≤ p) :
+    P m = s • T := by
+  obtain ⟨n, hn, hnf, hnb⟩ := scalarMul_caller W ha m g gs T N P
+    hT hin hout hregIn hregOut hP0 hN0 (s : F) h2 hNs
+  have hrange : (n - s).natAbs < p := by
+    have htri : (n - s).natAbs ≤ n.natAbs + s.natAbs := Int.natAbs_sub_le n s
+    omega
+  rw [hn, intCast_inj_of_sub_lt hnf hrange]
+
+/-- The pickles Type1 `forbiddenShiftedValues`: the scalars the circuit rejects. The
+    decoded scalar `s = 2·t + 2^n + 1` is forbidden exactly when `s ≡ 0 (mod order)` —
+    then `[s]·T` is the identity, which the incomplete-addition gate cannot represent.
+    (`forbiddenType1Values` in `Snarky.Types.Shifted` enumerates the circuit-field
+    representatives of this one residue class.) -/
+def forbiddenShiftedValues (order : ℕ) : Set ℤ := {s | (order : ℤ) ∣ s}
+
+/-- The circuit's correctness, stated as the circuit claims it: the VarBaseMul gate
+    computes `[s]·T` for any scalar it ACCEPTS — `s ∉ forbiddenShiftedValues`.
+
+    Faithful to `Snarky.Circuit.Kimchi.VarBaseMul`:
+    * `hd` — the prover's witness: every gate's constraint data holds (an INPUT).
+    * `hnf` — the circuit's runtime guard (`t ∉ forbiddenType1Values`).
+    * `hsound` — the SOUNDNESS of that guard: for ANY satisfying witness, `s ∉ forbidden`
+      forces the incomplete-addition steps non-degenerate (`NonDegen`). This is the
+      kimchi design guarantee; we take it as an explicit assumption rather than derive
+      it — mirroring the circuit's trust, not re-proving its exceptional-case freedom.
+    * `hs`/`hp` — the `5m`-bit budget (cross-field range, from the magnitude bound). -/
+theorem varBaseMul_sound (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
+    {p : ℕ} [CharP F p] (order m : ℕ) (g : ℕ → Witness F)
+    (T : W.Point) (N : ℕ → F) (P : ℕ → W.Point) (s : ℤ)
+    (hd : ∀ i, i < m → GateData W (g i))
+    (hnf : s ∉ forbiddenShiftedValues order)
+    (hsound : s ∉ forbiddenShiftedValues order →
+      ∀ i, i < m → GateData W (g i) → NonDegen (g i))
+    (hT : ∀ i (hi : i < m), T = Point.some (hd i hi).hT)
+    (hin : ∀ i (hi : i < m), P i = Point.some (hd i hi).a0)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some (hd i hi).a5)
+    (hregIn : ∀ i, i < m → N i = (g i).n)
+    (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
+    (hP0 : P 0 = (2 : ℤ) • T) (hN0 : N 0 = 0)
+    (h2 : (2 : F) ≠ 0) (hNs : N m = shiftType1 (5 * m) (s : F))
+    (hs : s.natAbs < 2 * 32 ^ m) (hp : 5 * 32 ^ m ≤ p) :
+    P m = s • T :=
+  varBaseMul_faithful_unconditional W ha m g
+    (fun i hi => ⟨hd i hi, hsound hnf i hi (hd i hi)⟩) T N P
+    hT hin hout hregIn hregOut hP0 hN0 h2 s hNs hs hp
 
 end Kimchi.Circuit.VarBaseMul
