@@ -51,6 +51,9 @@ jobs:
     - name: Fetch deps + build the library (= check every proof)
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
+        # Ensure the manifest matches the Mathlib revision pinned in lakefile.toml
+        # so `lake exe cache get` does not fail on toolchain mismatch checks.
+        lake update mathlib
         # Mathlib olean cache (does NOT include ProofWidgets' widget JS).
         lake exe cache get
         # Older ProofWidgets tags ship prebuilt widget JS in a GitHub release
