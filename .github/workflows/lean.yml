@@ -102,6 +102,7 @@ jobs:
         #print axioms Kimchi.Cycle.varBaseMul_scalar
         #print axioms Kimchi.Cycle.varBaseMul_faithful
         #print axioms Kimchi.Cycle.varBaseMul_faithful_unconditional
+        #print axioms Kimchi.Cycle.varBaseMul_valid_of_not_forbidden
         EOF
         out=$(lake env lean check_axioms.lean)
         echo "$out"
