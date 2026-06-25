@@ -240,7 +240,8 @@ theorem row_digit (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
     (hxne2 : w.xR ≠ (1 + (endo - 1) * w.b3) * w.xT)
     (htne2 : 2 * w.xR - w.s3 ^ 2 + (1 + (endo - 1) * w.b3) * w.xT ≠ 0) :
     ∃ c1 c2 : ℤ,
-      Point.some _ _ hS = (4 : ℤ) • Point.some _ _ hP + c1 • Point.some _ _ hT + c2 • Point.some _ _ hφT
+      Point.some _ _ hS =
+        (4 : ℤ) • Point.some _ _ hP + c1 • Point.some _ _ hT + c2 • Point.some _ _ hφT
         ∧ (c1 : F) = 2 * dPoly (w.b2 + 2 * w.b1) + dPoly (w.b4 + 2 * w.b3)
         ∧ (c2 : F) = 2 * cPoly (w.b2 + 2 * w.b1) + cPoly (w.b4 + 2 * w.b3) := by
   obtain ⟨hReq, hSeq⟩ :=

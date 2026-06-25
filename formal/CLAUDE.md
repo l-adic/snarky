@@ -12,6 +12,13 @@ Build: `make lean-build` (from repo root) or `lake build` (from `formal/`). The 
 is pinned in `lean-toolchain` (Lean `4.30.0-rc2`); deps in `lakefile.toml` (Mathlib +
 `CompElliptic`, which transitively pulls `CompPoly`). `import Mathlib` is used wholesale.
 
+**Always run `formal/scripts/check-style.sh` before committing any change under `formal/`** —
+and fix anything it reports. Lean 4 has no autoformatter, so this script is the formatter
+contract: ≤100 columns, no trailing whitespace, no tabs, exactly one final newline. It's
+check-only by default (non-zero exit on any violation); `check-style.sh --fix` auto-corrects
+trailing whitespace and final newlines (the over-long lines you wrap by hand). CI runs the
+same checks, so a clean run here is the gate for a green build.
+
 ## The three layers
 
 The library is a strict bottom-up stack (`Cycle` → `Circuit` → `Gate` → `Curve`):
