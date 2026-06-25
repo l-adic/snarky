@@ -17,6 +17,9 @@ structure CMCurve (F : Type*) [Field F] [DecidableEq F] where
       act through `ℤ/order` (`[n]·P = [n mod order]·P`). For Pasta the group is cyclic
       of *prime* `order`, hence this. -/
   order_smul : ∀ P : W.Point, (order : ℤ) • P = 0
+  /-- **AXIOM (Pasta).** The group `order` is prime, so every nonzero point has
+      full order `order` (no nontrivial proper subgroup can absorb a nonzero point). -/
+  order_prime : Nat.Prime order
   /-- base-field primitive cube root of unity — the endomorphism's `x`-scaling. -/
   beta : F
   beta_cube : beta ^ 3 = 1
