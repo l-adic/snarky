@@ -99,6 +99,7 @@ jobs:
         #print axioms Kimchi.Circuit.VarBaseMul.scalarMul_caller
         #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_faithful_unconditional
         #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_sound
+        #print axioms Kimchi.Ladder.ladder_nondegen
         #print axioms Kimchi.Circuit.VarBaseMul.scalarMul_type2
         #print axioms Kimchi.Cycle.zsmul_mod
         #print axioms Kimchi.Cycle.varBaseMul_scalar
