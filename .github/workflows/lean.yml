@@ -84,6 +84,15 @@ jobs:
         #print axioms Kimchi.Gate.AddComplete.complete
         #print axioms Kimchi.Gate.AddComplete.sound_point
         #print axioms Kimchi.Cycle.zsmul_mod
+        -- The ingested-constraint-system checker + end-to-end circuit soundness.
+        #print axioms Kimchi.Circuit.check_iff
+        #print axioms Kimchi.Circuit.rowHolds_completeAdd
+        #print axioms Kimchi.Circuit.addComplete_sound
+        -- The custom-gate constraint reflections.
+        #print axioms Kimchi.Gate.VarBaseMul.ok_iff
+        #print axioms Kimchi.Gate.EndoMul.ok_iff
+        #print axioms Kimchi.Gate.EndoScalar.ok_iff
+        #print axioms Kimchi.Gate.Poseidon.ok_iff
         EOF
         out=$(lake env lean check_axioms.lean)
         echo "$out"
@@ -91,3 +100,10 @@ jobs:
           echo "::error::a headline proof depends on sorryAx"
           exit 1
         fi
+
+    # The committed fixtures are real PureScript-dumped (circuit, witness) pairs; the
+    # verified `check` (faithful by `check_iff`) must accept each. This guards against
+    # drift between what snarky emits and what the Lean constraints model.
+    - name: Run the verified checker on committed circuit fixtures
+      working-directory: .
+      run: make lean-check-fixtures

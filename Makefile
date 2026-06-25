@@ -1,4 +1,4 @@
-.PHONY: help all clean build-napi test-curves test-snarky test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint lean-build lean-style lean-style-fix build-ps gen-linearization dep-graph pickles-inventory
+.PHONY: help all clean build-napi test-curves test-snarky test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint lean-build lean-check-fixtures dump-fixtures lean-style lean-style-fix build-ps gen-linearization dep-graph pickles-inventory
 
 .DEFAULT_GOAL := help
 
@@ -125,6 +125,17 @@ lint: ## Format, tidy, and lint all code (Rust + PureScript + Lean)
 
 lean-build: ## Build the Lean (formal/) project
 	cd formal && PATH="$$HOME/.elan/bin:$$PATH" lake build
+
+lean-check-fixtures: lean-build ## Run the verified checker on every committed circuit fixture (asserts check = true; exits non-zero on any false)
+	cd formal && for f in fixtures/*.json; do \
+	  echo "=== $$f ==="; \
+	  PATH="$$HOME/.elan/bin:$$PATH" lake env lean --run Main.lean "$$f" || exit 1; \
+	done
+
+dump-fixtures: build-napi ## Regenerate formal/fixtures/*.json from real compiled circuits (needs the native backend)
+	@echo "Building the dumpers (the spago spec runner trips on pickles' generated modules — only the build matters here)"
+	-npx spago test -p snarky-kimchi -- --example "dumps add_complete"
+	node -e "import('./output/Test.Snarky.Circuit.Kimchi.DumpAddComplete/index.js').then(m=>{m.dump();m.dumpPoseidon();m.dumpVarBaseMul();m.dumpEndoMul();m.dumpEndoScalar()})"
 
 lean-style: ## Check Lean style (<=100 cols, no trailing ws/tabs, final newline)
 	bash formal/scripts/check-style.sh
