@@ -414,15 +414,17 @@ lemma gate_block' (c : CMCurve F) (g : ℕ → Witness F) (i : ℕ)
   refine ⟨⟨hx0, hx1, hx2, hx3, hx4, ht0, ht1, ht2, ht3, ht4⟩, ?_⟩
   rw [hTeq]; exact ha5
 
-/-- **The deployed VarBaseMul circuit is sound.** For ANY witness satisfying the gate
-    constraints at the real init (`P 0 = 2·T`), in the one-wrap regime with the Pasta
-    register-field relation `circuitMod + 2^(5m-1) < 2·order`, whose register is a valid
-    circuit-field element (`s = gateLadder g (5m) < 2·circuitMod + 2^(5m)`), every gate row
-    is `NonDegen` — and hence (via `Circuit.VarBaseMul.scalarMul_shifted`) `P m = s·T`. The
-    forbidden-value check appears nowhere: the t-conditions come from the constraints +
-    prime order (`tne_of_holds`), the x-conditions from the register bound
-    (`ladder_x_nondegen`). -/
-theorem varBaseMul_deployed_sound (c : CMCurve F)
+/-- **Top-level deployed VarBaseMul circuit theorem: correct (hence sound).** For ANY
+    witness satisfying the gate constraints at the real init (`P 0 = 2·T`), in the one-wrap
+    regime with the Pasta register-field relation `circuitMod + 2^(5m-1) + 2 ≤ 2·order`,
+    whose register is a valid circuit-field element
+    (`s = gateLadder g (5m) < 2·circuitMod + 2^(5m)`), the `m` gates **compute `P m = s·T`**
+    and every gate row is `NonDegen`. The forbidden-value check appears NOWHERE: the
+    t-conditions come from the constraints + prime order (`tne_of_holds`), the x-conditions
+    from the register field bound (`ladder_x_nondegen`), and `P m = s·T` directly from the
+    chained per-row advance (`gate_block'`). The `.2` (non-degeneracy) is the deployed
+    soundness; the `.1` is the deployed correctness. -/
+theorem varBaseMul_deployed_correct (c : CMCurve F)
     (m : ℕ) (g : ℕ → Witness F) (circuitMod : ℕ)
     (T : c.W.Point) (P : ℕ → c.W.Point) (s : ℤ)
     (hTne : T ≠ 0)
@@ -436,7 +438,7 @@ theorem varBaseMul_deployed_sound (c : CMCurve F)
     (hbound : circuitMod + 2 ^ (5 * m - 1) + 2 ≤ 2 * c.order)
     (hs : s = gateLadder g (5 * m))
     (hreg : s < 2 * (circuitMod : ℤ) + 2 ^ (5 * m)) :
-    ∀ i, i < m → NonDegen (g i) := by
+    P m = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
   have hodd : c.order ≠ 2 := by omega
   have hND := Kimchi.Ladder.ladder_x_nondegen c.order circuitMod (5 * m)
     hreg₁ hreg₂ (c.order_prime.odd_of_ne_two hodd) horder hbound
@@ -465,7 +467,6 @@ theorem varBaseMul_deployed_sound (c : CMCurve F)
         rcases Nat.lt_succ_iff_lt_or_eq.mp hi' with h | h
         · exact hNDi i' h
         · subst h; exact hNDgi
-  intro i hi
-  exact (key m le_rfl).2 i hi
+  exact ⟨by rw [hs]; exact (key m le_rfl).1, fun i hi => (key m le_rfl).2 i hi⟩
 
 end Kimchi.Cycle

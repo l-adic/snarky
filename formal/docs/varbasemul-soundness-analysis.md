@@ -183,7 +183,7 @@ missing lemmas and assemble the deployed-soundness theorem.
 Target theorem (over the concrete Pasta `CMCurve`):
 
 ```
-varBaseMul_deployed_sound :
+varBaseMul_deployed_correct :
   (∀ i, GateData c.W (g i)) ∧ (register < circuitMod) ∧ <init/linking>
     ⟹ P m = s · T
 ```
