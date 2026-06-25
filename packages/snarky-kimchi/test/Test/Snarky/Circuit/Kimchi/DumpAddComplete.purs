@@ -6,17 +6,17 @@
 -- | hex), so Lean checks the exact object kimchi proves about. Used to validate the Lean
 -- | gate transcriptions — a wrong constraint makes `check` reject the real witness.
 -- |
--- | Build then run via node on the compiled output (the spago spec runner trips on the
--- | pickles package's generated modules):
--- |   npx spago test -p snarky-kimchi -- --example "dumps add_complete"   # builds
--- |   node -e "import('./output/Test.Snarky.Circuit.Kimchi.DumpAddComplete/index.js').then(m=>{m.dump();m.dumpPoseidon()})"
+-- | This is a generation TOOL, not a test — it writes committed files, so it is NOT wired
+-- | into the test spec (that would run with the wrong cwd and pollute the repo). Drive it
+-- | from the repo root via `make dump-fixtures`, which compiles this module and then:
+-- |   node -e "import('./output/Test.Snarky.Circuit.Kimchi.DumpAddComplete/index.js').then(m=>m.dumpAll())"
 module Test.Snarky.Circuit.Kimchi.DumpAddComplete
-  ( spec
-  , dump
+  ( dump
   , dumpPoseidon
   , dumpVarBaseMul
   , dumpEndoMul
   , dumpEndoScalar
+  , dumpAll
   ) where
 
 import Prelude
@@ -29,7 +29,6 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, nil, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Effect.Class (liftEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Partial.Unsafe (unsafeCrashWith)
@@ -54,7 +53,6 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Snarky.Types.Shifted (Type1(..))
-import Test.Spec (Spec, it)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -254,10 +252,12 @@ dumpEndoScalar = do
     solver = makeSolver (Proxy @(KimchiConstraint Fp)) circuit
   dumpToFile "formal/fixtures/endoscalar_step.json" builtState solver input
 
-spec :: Spec Unit
-spec = do
-  it "dumps add_complete fixture for Lean" $ liftEffect dump
-  it "dumps poseidon fixture for Lean" $ liftEffect dumpPoseidon
-  it "dumps varbasemul fixture for Lean" $ liftEffect dumpVarBaseMul
-  it "dumps endomul fixture for Lean" $ liftEffect dumpEndoMul
-  it "dumps endoscalar fixture for Lean" $ liftEffect dumpEndoScalar
+-- | Regenerate every committed fixture. Run from the repo root so the relative
+-- | `formal/fixtures/…` paths resolve.
+dumpAll :: Effect Unit
+dumpAll = do
+  dump
+  dumpPoseidon
+  dumpVarBaseMul
+  dumpEndoMul
+  dumpEndoScalar

@@ -133,9 +133,9 @@ lean-check-fixtures: lean-build ## Run the verified checker on every committed c
 	done
 
 dump-fixtures: build-napi ## Regenerate formal/fixtures/*.json from real compiled circuits (needs the native backend)
-	@echo "Building the dumpers (the spago spec runner trips on pickles' generated modules — only the build matters here)"
-	-npx spago test -p snarky-kimchi -- --example "dumps add_complete"
-	node -e "import('./output/Test.Snarky.Circuit.Kimchi.DumpAddComplete/index.js').then(m=>{m.dump();m.dumpPoseidon();m.dumpVarBaseMul();m.dumpEndoMul();m.dumpEndoScalar()})"
+	@echo "Compiling the dumpers (only the build matters; the spec runner may trip on pickles codegen)"
+	-npx spago test -p snarky-kimchi -- --example "__compile_dumpers_only__"
+	node -e "import('./output/Test.Snarky.Circuit.Kimchi.DumpAddComplete/index.js').then(m=>m.dumpAll())"
 
 lean-style: ## Check Lean style (<=100 cols, no trailing ws/tabs, final newline)
 	bash formal/scripts/check-style.sh
