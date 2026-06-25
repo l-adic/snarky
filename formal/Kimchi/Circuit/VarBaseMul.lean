@@ -145,11 +145,12 @@ theorem chain_sum_bound (m : ℕ) (c : ℕ → ℤ) (hc : ∀ i, i < m → (c i)
     have hps : 32 ^ (m + 1) = 32 * 32 ^ m := by rw [pow_succ]; ring
     omega
 
-/-- The per-gate hypotheses `gate_scalarMul_int` needs, bundled: nonsingular
-    accumulators `a0..a5` and signed targets `q0..q4`, the per-step
-    non-degeneracy `x0..x4` (`xᵢ ≠ xT`) and `t0..t4` (`tᵢ ≠ 0`), and the 21
-    constraints `holds`. (A `Prop`, so its fields are usable as proofs.) -/
-structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
+/-- The per-gate *constraint data* `gate_scalarMul_int` needs: nonsingular
+    accumulators `a0..a5`, signed targets `q0..q4`, and the 21 constraints `holds`.
+    Everything EXCEPT the non-degeneracy side conditions — those are derivable from
+    this data plus a scalar-range hypothesis (`Kimchi.Cycle`), so splitting them out
+    lets a caller supply only `GateData` + a range and discharge the rest. -/
+structure GateData (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
   a0 : W.Nonsingular g.x0 g.y0
   a1 : W.Nonsingular g.x1 g.y1
   a2 : W.Nonsingular g.x2 g.y2
@@ -162,6 +163,14 @@ structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
   q2 : W.Nonsingular g.xT ((2 * g.b2 - 1) * g.yT)
   q3 : W.Nonsingular g.xT ((2 * g.b3 - 1) * g.yT)
   q4 : W.Nonsingular g.xT ((2 * g.b4 - 1) * g.yT)
+  holds : Holds g
+
+/-- A full per-gate step: the constraint `GateData` plus the per-step non-degeneracy
+    side conditions `x0..x4` (`xᵢ ≠ xT`, the additions are non-vertical) and `t0..t4`
+    (`tᵢ ≠ 0`, the second additions are non-vertical). (A `Prop`; its fields are usable
+    as proofs, and `GateData`'s fields are inherited via dot notation.) -/
+structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop extends
+    GateData W g where
   x0 : g.x0 ≠ g.xT
   x1 : g.x1 ≠ g.xT
   x2 : g.x2 ≠ g.xT
@@ -172,7 +181,6 @@ structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
   t2 : 2 * g.x2 + g.xT - g.s2 * g.s2 ≠ 0
   t3 : 2 * g.x3 + g.xT - g.s3 * g.s3 ≠ 0
   t4 : 2 * g.x4 + g.xT - g.s4 * g.s4 ≠ 0
-  holds : Holds g
 
 /-! ## Main theorem: variable-base scalar multiplication -/
 
