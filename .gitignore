@@ -1,6 +1,8 @@
 # Secrets / local env
 .env
 .env.*
+# Metered.ca TURN credentials API key (mirrors the METERED_API_KEY GH secret)
+metered-key.txt
 
 # Build outputs
 output/
