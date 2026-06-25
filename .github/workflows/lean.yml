@@ -1,20 +1,22 @@
 name: Lean
 
 # Separate from the main `CI` workflow: the Kimchi formalization has its own
-# toolchain (elan / lake / Mathlib), needs no git submodules, and is independent
-# of the PureScript/Rust build — so it runs in parallel and only when `formal/`
-# (or this file) changes.
+# toolchain (elan / lake / Mathlib) and is independent of the PureScript/Rust
+# build — so it runs in parallel and only when `formal/` (or this file) changes.
+# CompElliptic is vendored as a git submodule under formal/vendor/CompElliptic.
 on:
   push:
     branches: [ main ]
     paths:
       - 'formal/**'
       - '.github/workflows/lean.yml'
+      - '.gitmodules'
   pull_request:
     branches: [ main ]
     paths:
       - 'formal/**'
       - '.github/workflows/lean.yml'
+      - '.gitmodules'
   workflow_dispatch:
 
 permissions:
@@ -35,8 +37,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        # No submodules: the Lean project depends only on Mathlib (fetched by lake).
-        submodules: false
+        submodules: recursive
 
     - name: Lean style check
       working-directory: .
@@ -51,9 +52,10 @@ jobs:
     - name: Fetch deps + build the library (= check every proof)
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        # Ensure the manifest matches the Mathlib revision pinned in lakefile.toml
-        # so `lake exe cache get` does not fail on toolchain mismatch checks.
-        lake update mathlib
+        # Regenerate the manifest from lakefile.toml (resolves all transitive deps
+        # coherently, including CompElliptic via the vendored submodule path dep and
+        # Mathlib pinned to the revision in lakefile.toml).
+        lake update
         # Mathlib olean cache (does NOT include ProofWidgets' widget JS).
         lake exe cache get
         # Older ProofWidgets tags ship prebuilt widget JS in a GitHub release

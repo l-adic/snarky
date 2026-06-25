@@ -1,3 +1,6 @@
 [submodule "mina"]
 	path = mina
 	url = https://github.com/MinaProtocol/mina.git
+[submodule "formal/vendor/CompElliptic"]
+	path = formal/vendor/CompElliptic
+	url = https://github.com/daira/CompElliptic.git

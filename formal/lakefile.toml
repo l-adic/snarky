@@ -11,10 +11,11 @@ rev = "v4.31.0"
 
 # CompElliptic: SW group law + concrete Pasta SWCurve/SWPoint instances (replaces our
 # axiomatized CMCurve boilerplate; order_prime via Pratt certificate, group law concrete).
+# Vendored as a git submodule at formal/vendor/CompElliptic so the revision is locked
+# to this repository rather than floating on upstream main.
 [[require]]
 name = "CompElliptic"
-git = "https://github.com/daira/CompElliptic.git"
-rev = "main"
+path = "vendor/CompElliptic"
 
 [[lean_lib]]
 name = "Kimchi"
