@@ -17,8 +17,8 @@ The trusted ORACLE is Mathlib's affine elliptic-curve group law
     addX             = ℓ² − x₁ − x₂     ← gate c4: x₁+x₂+x₃ = s²
     addY             = ℓ(x₁ − x₃) − y₁  ← gate c5: y₃ = s(x₁−x₃) − y₁
 
-and `Point.add` of two affine points is DEFINED as `(addX, addY)`
-(`Affine.add_some`), so matching those formulas = computing the group sum.
+and the sum of two affine points has coordinates `(addX, addY)`
+(`Point.add_some`), so matching those formulas = computing the group sum.
 
 ## Main results
 
@@ -97,9 +97,9 @@ variable [Field F] [DecidableEq F]
 
 /-- SOUNDNESS: a satisfying witness can't lie. If the 7 constraints hold for
     on-curve inputs with finite result, then the witnessed slope and output are
-    EXACTLY Mathlib's affine group-law values. Since `Point.add` of two affine
-    points is `(addX, addY)` (`Affine.add_some`), this says the gate computes
-    `(x1,y1) + (x2,y2)` on the curve. -/
+    EXACTLY Mathlib's affine group-law values. Since the sum of two affine
+    points has coordinates `(addX, addY)` (`Point.add_some`), this says the gate
+    computes `(x1,y1) + (x2,y2)` on the curve. -/
 theorem sound_noninf
     (W : WeierstrassCurve.Affine F)
     (ha : IsShortShape W)
