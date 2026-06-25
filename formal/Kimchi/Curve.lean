@@ -32,7 +32,7 @@ omit [DecidableEq F] in
     for rewriting a target point into a recognizable form. -/
 theorem some_eq_some (W : WeierstrassCurve.Affine F) {x y y' : F}
     (h : W.Nonsingular x y) (h' : W.Nonsingular x y') (hy : y = y') :
-    Point.some h = Point.some h' := by
+    Point.some _ _ h = Point.some _ _ h' := by
   subst hy; rfl
 
 /-- One non-vertical (secant) affine addition, packaged with explicit output
@@ -50,7 +50,7 @@ lemma secant_add
     (hx3 : x3 = l * l - x1 - x2)
     (hy3 : y3 = l * (x1 - x3) - y1) :
     ∃ h3 : W.Nonsingular x3 y3,
-      Point.some h1 + Point.some h2 = Point.some h3 := by
+      Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3 := by
   obtain ⟨ha1, ha2, ha3, ha4⟩ := ha
   have hslope : W.slope x1 x2 y1 y2 = l := by
     rw [WeierstrassCurve.Affine.slope_of_X_ne hx, hl]
@@ -76,7 +76,7 @@ lemma signed_target
     (hT : W.Nonsingular xT yT)
     (hQ : W.Nonsingular xT ((2 * b - 1) * yT))
     (hb : b = 0 ∨ b = 1) :
-    ∃ e : ℤ, Point.some hQ = e • Point.some hT ∧ (e : F) = 2 * b - 1 := by
+    ∃ e : ℤ, Point.some _ _ hQ = e • Point.some _ _ hT ∧ (e : F) = 2 * b - 1 := by
   obtain ⟨ha1, _, ha3, _⟩ := ha
   rcases hb with rfl | rfl
   · refine ⟨-1, ?_, by push_cast; ring⟩

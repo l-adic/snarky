@@ -140,7 +140,7 @@ omit [DecidableEq F] in
     identity that holds only `by ring`. -/
 theorem some_congr (W : WeierstrassCurve.Affine F) {x x' y y' : F}
     (h : W.Nonsingular x y) (h' : W.Nonsingular x' y') (hx : x = x') (hy : y = y') :
-    Point.some h = Point.some h' := by
+    Point.some _ _ h = Point.some _ _ h' := by
   subst hx; subst hy; rfl
 
 /-- GLV target selection. A window's target
@@ -152,8 +152,8 @@ theorem selectQ (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
     (hT : W.Nonsingular xT yT) (hφT : W.Nonsingular (endo * xT) yT)
     (hQ : W.Nonsingular ((1 + (endo - 1) * b1) * xT) ((2 * b2 - 1) * yT))
     (hb1 : b1 = 0 ∨ b1 = 1) (hb2 : b2 = 0 ∨ b2 = 1) :
-    (∃ e : ℤ, Point.some hQ = e • Point.some hT ∧ (e : F) = 2 * b2 - 1)
-      ∨ (∃ e : ℤ, Point.some hQ = e • Point.some hφT ∧ (e : F) = 2 * b2 - 1) := by
+    (∃ e : ℤ, Point.some _ _ hQ = e • Point.some _ _ hT ∧ (e : F) = 2 * b2 - 1)
+      ∨ (∃ e : ℤ, Point.some _ _ hQ = e • Point.some _ _ hφT ∧ (e : F) = 2 * b2 - 1) := by
   rcases hb1 with rfl | rfl
   · -- `b₁ = 0`: the `x`-coordinate `(1 + (endo-1)*0)*xT` collapses to `xT`,
     -- so `Q = ±T` via `signed_target` with base `T`.
@@ -188,7 +188,7 @@ theorem block_sound (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
     (hs : (xq - xP) * s = yq - yP)
     (hc2 : (2 * xP - s ^ 2 + xq) * ((xP - xR) * s + yR + yP) = (xP - xR) * (2 * yP))
     (hc3 : (yR + yP) ^ 2 = (xP - xR) ^ 2 * (s ^ 2 - xq + xR)) :
-    Point.some hR = (Point.some hP + Point.some hQ) + Point.some hP := by
+    Point.some _ _ hR = (Point.some _ _ hP + Point.some _ _ hQ) + Point.some _ _ hP := by
   obtain ⟨ha1, ha2, ha3, ha4⟩ := ha
   have hdiff1 : xP - xq ≠ 0 := sub_ne_zero.mpr hxne
   have hxRne0 : xP - xR ≠ 0 := sub_ne_zero.mpr (Ne.symm hxRne)
@@ -249,8 +249,8 @@ theorem row_sound (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
     (htne1 : 2 * w.xP - w.s1 ^ 2 + (1 + (endo - 1) * w.b1) * w.xT ≠ 0)
     (hxne2 : w.xR ≠ (1 + (endo - 1) * w.b3) * w.xT)
     (htne2 : 2 * w.xR - w.s3 ^ 2 + (1 + (endo - 1) * w.b3) * w.xT ≠ 0) :
-    Point.some hR = (Point.some hP + Point.some hQ1) + Point.some hP
-      ∧ Point.some hS = (Point.some hR + Point.some hQ2) + Point.some hR := by
+    Point.some _ _ hR = (Point.some _ _ hP + Point.some _ _ hQ1) + Point.some _ _ hP
+      ∧ Point.some _ _ hS = (Point.some _ _ hR + Point.some _ _ hQ2) + Point.some _ _ hR := by
   obtain ⟨hxPxR, hxRxS⟩ := distinctPoints endo w h
   simp only [Holds] at h
   obtain ⟨hs1, hc2_1, hc3_1, hs2, hc2_2, hc3_2, _, _, _, _, _, _⟩ := h
@@ -272,8 +272,8 @@ theorem row_int (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
     (htne1 : 2 * w.xP - w.s1 ^ 2 + (1 + (endo - 1) * w.b1) * w.xT ≠ 0)
     (hxne2 : w.xR ≠ (1 + (endo - 1) * w.b3) * w.xT)
     (htne2 : 2 * w.xR - w.s3 ^ 2 + (1 + (endo - 1) * w.b3) * w.xT ≠ 0) :
-    ∃ c1 c2 : ℤ, Point.some hS
-      = (4 : ℤ) • Point.some hP + c1 • Point.some hT + c2 • Point.some hφT := by
+    ∃ c1 c2 : ℤ, Point.some _ _ hS
+      = (4 : ℤ) • Point.some _ _ hP + c1 • Point.some _ _ hT + c2 • Point.some _ _ hφT := by
   obtain ⟨hReq, hSeq⟩ :=
     row_sound W ha endo w h hP hR hS hQ1 hQ2 hxne1 htne1 hxne2 htne2
   have hb := h

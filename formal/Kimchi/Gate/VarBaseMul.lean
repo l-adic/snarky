@@ -240,7 +240,7 @@ theorem singleBit_sound
     (htne : 2 * xi + xb - s1 * s1 ≠ 0)
     (h : singleBitHolds b xb yb s1 xi yi xo yo) :
     ∃ hO : W.Nonsingular xo yo,
-      Point.some hO = (Point.some hI + Point.some hQ) + Point.some hI := by
+      Point.some _ _ hO = (Point.some _ _ hI + Point.some _ _ hQ) + Point.some _ _ hI := by
   obtain ⟨ha1, ha2, ha3, ha4⟩ := ha
   simp only [singleBitHolds] at h
   obtain ⟨hbool, hc_s1, hc_xo, hc_yo⟩ := h
@@ -309,11 +309,11 @@ theorem gate_scalarMul
     (htne3 : 2 * w.x3 + w.xT - w.s3 * w.s3 ≠ 0)
     (htne4 : 2 * w.x4 + w.xT - w.s4 * w.s4 ≠ 0)
     (h : Holds w) :
-    Point.some h5
-      = (32 : ℕ) • Point.some h0
-        + (16 : ℕ) • Point.some hQ0 + (8 : ℕ) • Point.some hQ1
-        + (4 : ℕ) • Point.some hQ2 + (2 : ℕ) • Point.some hQ3
-        + Point.some hQ4 := by
+    Point.some _ _ h5
+      = (32 : ℕ) • Point.some _ _ h0
+        + (16 : ℕ) • Point.some _ _ hQ0 + (8 : ℕ) • Point.some _ _ hQ1
+        + (4 : ℕ) • Point.some _ _ hQ2 + (2 : ℕ) • Point.some _ _ hQ3
+        + Point.some _ _ hQ4 := by
   obtain ⟨_hdecomp, hb0, hb1, hb2, hb3, hb4⟩ := h
   obtain ⟨_, e0⟩ := singleBit_sound W ha w.b0 w.xT w.yT w.s0 w.x0 w.y0 w.x1 w.y1
     h0 hQ0 hxne0 htne0 hb0
@@ -326,11 +326,11 @@ theorem gate_scalarMul
   obtain ⟨_, e4⟩ := singleBit_sound W ha w.b4 w.xT w.yT w.s4 w.x4 w.y4 w.x5 w.y5
     h4 hQ4 hxne4 htne4 hb4
   -- match the existential outputs with the given nonsingularity proofs by proof irrelevance
-  have eq1 : Point.some h1 = (Point.some h0 + Point.some hQ0) + Point.some h0 := e0
-  have eq2 : Point.some h2 = (Point.some h1 + Point.some hQ1) + Point.some h1 := e1
-  have eq3 : Point.some h3 = (Point.some h2 + Point.some hQ2) + Point.some h2 := e2
-  have eq4 : Point.some h4 = (Point.some h3 + Point.some hQ3) + Point.some h3 := e3
-  have eq5 : Point.some h5 = (Point.some h4 + Point.some hQ4) + Point.some h4 := e4
+  have eq1 : Point.some _ _ h1 = (Point.some _ _ h0 + Point.some _ _ hQ0) + Point.some _ _ h0 := e0
+  have eq2 : Point.some _ _ h2 = (Point.some _ _ h1 + Point.some _ _ hQ1) + Point.some _ _ h1 := e1
+  have eq3 : Point.some _ _ h3 = (Point.some _ _ h2 + Point.some _ _ hQ2) + Point.some _ _ h2 := e2
+  have eq4 : Point.some _ _ h4 = (Point.some _ _ h3 + Point.some _ _ hQ3) + Point.some _ _ h3 := e3
+  have eq5 : Point.some _ _ h5 = (Point.some _ _ h4 + Point.some _ _ hQ4) + Point.some _ _ h4 := e4
   rw [eq5, eq4, eq3, eq2, eq1]
   abel
 
@@ -370,7 +370,7 @@ theorem gate_scalarMul_int
     (htne3 : 2 * w.x3 + w.xT - w.s3 * w.s3 ≠ 0)
     (htne4 : 2 * w.x4 + w.xT - w.s4 * w.s4 ≠ 0)
     (h : Holds w) :
-    ∃ c : ℤ, Point.some h5 = (32 : ℤ) • Point.some h0 + c • Point.some hT
+    ∃ c : ℤ, Point.some _ _ h5 = (32 : ℤ) • Point.some _ _ h0 + c • Point.some _ _ hT
            ∧ (c : F) = 2 * w.nPrime - 64 * w.n - 31 := by
   -- the Q-point sum from the already-proven nat-smul gate soundness
   have main := gate_scalarMul W ha w h0 h1 h2 h3 h4 h5 hQ0 hQ1 hQ2 hQ3 hQ4

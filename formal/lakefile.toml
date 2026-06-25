@@ -1,13 +1,21 @@
 name = "kimchi-formal"
 defaultTargets = ["Kimchi", "kimchi-demo"]
 
-# Mathlib gives us prime fields (`ZMod p`) and the elliptic-curve group law
-# (`WeierstrassCurve.Affine`), the trusted oracle the EC gates are checked
-# against. Pinned to the tag matching our Lean toolchain (v4.28.0).
+# Pinned to match CompElliptic / CompPoly (Lean v4.30.0-rc2). Mathlib gives the
+# elliptic-curve group law (`WeierstrassCurve.Affine`) the gates are checked
+# against; this rev is the exact one CompElliptic resolves, so the dep graph unifies.
 [[require]]
 name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4.git"
-rev = "v4.28.0"
+rev = "5450b53e5ddc75d46418fabb605edbf36bd0beb6"
+
+# CompElliptic supplies the concrete Pasta fields (`ZMod p` with machine-verified,
+# axiom-clean Pratt primality via CompPoly's `PrattCertificate'`) + the y²=x³+5
+# curve + group law — discharging the Pasta field/curve postulates in Cycle/Pasta.
+[[require]]
+name = "CompElliptic"
+git = "https://github.com/daira/CompElliptic.git"
+rev = "74a35313bbda9d6c32f98e33f8cd71700aa120c1"
 
 [[lean_lib]]
 name = "Kimchi"

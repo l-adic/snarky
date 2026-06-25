@@ -28,7 +28,7 @@ variable {F : Type*} [Field F] [DecidableEq F]
     is the `heig` hypothesis `endoMul_scalar`/`endoMul_toField` ask for, now a theorem. -/
 theorem endoStep_eigen (c : CMCurve F) {xT yT : F}
     (hTbase : c.W.Nonsingular xT yT) (hφTbase : c.W.Nonsingular (c.beta * xT) yT) :
-    Point.some hφTbase = c.lam • Point.some hTbase :=
+    Point.some _ _ hφTbase = c.lam • Point.some _ _ hTbase :=
   c.eigen hTbase hφTbase
 
 /-- PHASE 3 — EndoMul over a `CMCurve`, eigenvalue from the curve. With the rows running
@@ -40,11 +40,11 @@ theorem endoMul_scalar_cm (c : CMCurve F)
     (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → EndoStep c.W c.beta (g i))
     (P : ℕ → c.W.Point) (T φT : c.W.Point) {xT yT : F}
     (hTbase : c.W.Nonsingular xT yT) (hφTbase : c.W.Nonsingular (c.beta * xT) yT)
-    (hTeq : T = Point.some hTbase) (hφTeq : φT = Point.some hφTbase)
-    (hT : ∀ i (hi : i < m), T = Point.some (gs i hi).hT)
-    (hφT : ∀ i (hi : i < m), φT = Point.some (gs i hi).hφT)
-    (hin : ∀ i (hi : i < m), P i = Point.some (gs i hi).hP)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some (gs i hi).hS) :
+    (hTeq : T = Point.some _ _ hTbase) (hφTeq : φT = Point.some _ _ hφTbase)
+    (hT : ∀ i (hi : i < m), T = Point.some _ _ (gs i hi).hT)
+    (hφT : ∀ i (hi : i < m), φT = Point.some _ _ (gs i hi).hφT)
+    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (gs i hi).hP)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (gs i hi).hS) :
     ∃ k : ℤ, P m = (4 : ℤ) ^ m • P 0 + k • T
       ∧ ∀ s : ℤ, k ≡ s [ZMOD (c.order : ℤ)] → P m = (4 : ℤ) ^ m • P 0 + s • T := by
   have heig : φT = c.lam • T := by rw [hTeq, hφTeq]; exact endoStep_eigen c hTbase hφTbase
@@ -62,11 +62,11 @@ theorem endoMul_toField_cm (c : CMCurve F) (h2 : (2 : F) ≠ 0) (h3 : (3 : F) �
     (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → EndoStep c.W c.beta (g i))
     (P : ℕ → c.W.Point) (T φT : c.W.Point) {xT yT : F}
     (hTbase : c.W.Nonsingular xT yT) (hφTbase : c.W.Nonsingular (c.beta * xT) yT)
-    (hTeq : T = Point.some hTbase) (hφTeq : φT = Point.some hφTbase)
-    (hT : ∀ i (hi : i < m), T = Point.some (gs i hi).hT)
-    (hφT : ∀ i (hi : i < m), φT = Point.some (gs i hi).hφT)
-    (hin : ∀ i (hi : i < m), P i = Point.some (gs i hi).hP)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some (gs i hi).hS)
+    (hTeq : T = Point.some _ _ hTbase) (hφTeq : φT = Point.some _ _ hφTbase)
+    (hT : ∀ i (hi : i < m), T = Point.some _ _ (gs i hi).hT)
+    (hφT : ∀ i (hi : i < m), φT = Point.some _ _ (gs i hi).hφT)
+    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (gs i hi).hP)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (gs i hi).hS)
     (hP0 : P 0 = (2 : ℤ) • T + (2 : ℤ) • φT) :
     ∃ s : ℤ, P m = s • T
       ∧ (s : F) = Kimchi.Circuit.EndoScalar.toField (crumbList g m) (c.lam : F) := by
@@ -87,11 +87,11 @@ theorem endoMul_faithful (c : CMCurve F) {p : ℕ} [CharP F p]
     (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → EndoStep c.W c.beta (g i))
     (P : ℕ → c.W.Point) (T φT : c.W.Point) {xT yT : F}
     (hTbase : c.W.Nonsingular xT yT) (hφTbase : c.W.Nonsingular (c.beta * xT) yT)
-    (hTeq : T = Point.some hTbase) (hφTeq : φT = Point.some hφTbase)
-    (hT : ∀ i (hi : i < m), T = Point.some (gs i hi).hT)
-    (hφT : ∀ i (hi : i < m), φT = Point.some (gs i hi).hφT)
-    (hin : ∀ i (hi : i < m), P i = Point.some (gs i hi).hP)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some (gs i hi).hS)
+    (hTeq : T = Point.some _ _ hTbase) (hφTeq : φT = Point.some _ _ hφTbase)
+    (hT : ∀ i (hi : i < m), T = Point.some _ _ (gs i hi).hT)
+    (hφT : ∀ i (hi : i < m), φT = Point.some _ _ (gs i hi).hφT)
+    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (gs i hi).hP)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (gs i hi).hS)
     (hP0 : P 0 = (2 : ℤ) • T + (2 : ℤ) • φT)
     (σ : ℤ) (hσ : (σ : F) = Kimchi.Circuit.EndoScalar.toField (crumbList g m) (c.lam : F)) :
     ∃ s : ℤ, P m = s • T

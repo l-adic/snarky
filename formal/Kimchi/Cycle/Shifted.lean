@@ -47,9 +47,9 @@ theorem intCast_inj_of_sub_lt {p : ℕ} [CharP F p] {n s : ℤ}
 theorem varBaseMul_faithful (c : CMCurve F) {p : ℕ} [CharP F p]
     (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep c.W (g i))
     (T : c.W.Point) (N : ℕ → F) (P : ℕ → c.W.Point)
-    (hT : ∀ i (hi : i < m), T = Point.some (gs i hi).hT)
-    (hin : ∀ i (hi : i < m), P i = Point.some (gs i hi).a0)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some (gs i hi).a5)
+    (hT : ∀ i (hi : i < m), T = Point.some _ _ (gs i hi).hT)
+    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (gs i hi).a0)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (gs i hi).a5)
     (hregIn : ∀ i, i < m → N i = (g i).n)
     (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
     (hP0 : P 0 = (2 : ℤ) • T) (hN0 : N 0 = 0)

@@ -96,10 +96,10 @@ structure EndoStep (W : WeierstrassCurve.Affine F) (endo : F) (g : Witness F) : 
 theorem endoMul (W : WeierstrassCurve.Affine F) (ha : IsShortShape W) (endo : F)
     (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → EndoStep W endo (g i))
     (P : ℕ → W.Point) (T φT : W.Point)
-    (hT : ∀ i (hi : i < m), T = Point.some (gs i hi).hT)
-    (hφT : ∀ i (hi : i < m), φT = Point.some (gs i hi).hφT)
-    (hin : ∀ i (hi : i < m), P i = Point.some (gs i hi).hP)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some (gs i hi).hS) :
+    (hT : ∀ i (hi : i < m), T = Point.some _ _ (gs i hi).hT)
+    (hφT : ∀ i (hi : i < m), φT = Point.some _ _ (gs i hi).hφT)
+    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (gs i hi).hP)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (gs i hi).hS) :
     ∃ k1 k2 : ℤ, P m = (4 : ℤ) ^ m • P 0 + k1 • T + k2 • φT := by
   obtain ⟨c1, c2, hc⟩ : ∃ c1 c2 : ℕ → ℤ, ∀ i, i < m →
       P (i + 1) = (4 : ℤ) • P i + c1 i • T + c2 i • φT := by
@@ -130,10 +130,10 @@ theorem endoMul (W : WeierstrassCurve.Affine F) (ha : IsShortShape W) (endo : F)
 theorem endoMul_scalar (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
     (endo : F) (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → EndoStep W endo (g i))
     (P : ℕ → W.Point) (T φT : W.Point)
-    (hT : ∀ i (hi : i < m), T = Point.some (gs i hi).hT)
-    (hφT : ∀ i (hi : i < m), φT = Point.some (gs i hi).hφT)
-    (hin : ∀ i (hi : i < m), P i = Point.some (gs i hi).hP)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some (gs i hi).hS)
+    (hT : ∀ i (hi : i < m), T = Point.some _ _ (gs i hi).hT)
+    (hφT : ∀ i (hi : i < m), φT = Point.some _ _ (gs i hi).hφT)
+    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (gs i hi).hP)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (gs i hi).hS)
     (lam : ℤ) (heig : φT = lam • T) :
     ∃ k : ℤ, P m = (4 : ℤ) ^ m • P 0 + k • T := by
   obtain ⟨k1, k2, hk⟩ := endoMul W ha endo m g gs P T φT hT hφT hin hout
@@ -240,7 +240,7 @@ theorem row_digit (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
     (hxne2 : w.xR ≠ (1 + (endo - 1) * w.b3) * w.xT)
     (htne2 : 2 * w.xR - w.s3 ^ 2 + (1 + (endo - 1) * w.b3) * w.xT ≠ 0) :
     ∃ c1 c2 : ℤ,
-      Point.some hS = (4 : ℤ) • Point.some hP + c1 • Point.some hT + c2 • Point.some hφT
+      Point.some _ _ hS = (4 : ℤ) • Point.some _ _ hP + c1 • Point.some _ _ hT + c2 • Point.some _ _ hφT
         ∧ (c1 : F) = 2 * dPoly (w.b2 + 2 * w.b1) + dPoly (w.b4 + 2 * w.b3)
         ∧ (c2 : F) = 2 * cPoly (w.b2 + 2 * w.b1) + cPoly (w.b4 + 2 * w.b3) := by
   obtain ⟨hReq, hSeq⟩ :=
@@ -258,11 +258,11 @@ theorem row_digit (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
   · -- b1 = 0 (Q₁ = ±T), b3 = 0 (Q₂ = ±T)
     have hxc1 : (1 + (endo - 1) * w.b1) * w.xT = w.xT := by rw [hb1']; ring
     obtain ⟨e1, he1, he1f⟩ := signed_target W ha hT (hxc1 ▸ hQ1) hb2
-    have hQ1e : Point.some hQ1 = e1 • Point.some hT :=
+    have hQ1e : Point.some _ _ hQ1 = e1 • Point.some _ _ hT :=
       (some_congr W hQ1 (hxc1 ▸ hQ1) hxc1 rfl).trans he1
     have hxc2 : (1 + (endo - 1) * w.b3) * w.xT = w.xT := by rw [hb3']; ring
     obtain ⟨e2, he2, he2f⟩ := signed_target W ha hT (hxc2 ▸ hQ2) hb4
-    have hQ2e : Point.some hQ2 = e2 • Point.some hT :=
+    have hQ2e : Point.some _ _ hQ2 = e2 • Point.some _ _ hT :=
       (some_congr W hQ2 (hxc2 ▸ hQ2) hxc2 rfl).trans he2
     refine ⟨2 * e1 + e2, 0, ?_, ?_, ?_⟩
     · rw [hSeq, hReq, hQ1e, hQ2e]; module
@@ -271,11 +271,11 @@ theorem row_digit (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
   · -- b1 = 0 (Q₁ = ±T), b3 = 1 (Q₂ = ±φT)
     have hxc1 : (1 + (endo - 1) * w.b1) * w.xT = w.xT := by rw [hb1']; ring
     obtain ⟨e1, he1, he1f⟩ := signed_target W ha hT (hxc1 ▸ hQ1) hb2
-    have hQ1e : Point.some hQ1 = e1 • Point.some hT :=
+    have hQ1e : Point.some _ _ hQ1 = e1 • Point.some _ _ hT :=
       (some_congr W hQ1 (hxc1 ▸ hQ1) hxc1 rfl).trans he1
     have hxc2 : (1 + (endo - 1) * w.b3) * w.xT = endo * w.xT := by rw [hb3']; ring
     obtain ⟨e2, he2, he2f⟩ := signed_target W ha hφT (hxc2 ▸ hQ2) hb4
-    have hQ2e : Point.some hQ2 = e2 • Point.some hφT :=
+    have hQ2e : Point.some _ _ hQ2 = e2 • Point.some _ _ hφT :=
       (some_congr W hQ2 (hxc2 ▸ hQ2) hxc2 rfl).trans he2
     refine ⟨2 * e1, e2, ?_, ?_, ?_⟩
     · rw [hSeq, hReq, hQ1e, hQ2e]; module
@@ -284,11 +284,11 @@ theorem row_digit (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
   · -- b1 = 1 (Q₁ = ±φT), b3 = 0 (Q₂ = ±T)
     have hxc1 : (1 + (endo - 1) * w.b1) * w.xT = endo * w.xT := by rw [hb1']; ring
     obtain ⟨e1, he1, he1f⟩ := signed_target W ha hφT (hxc1 ▸ hQ1) hb2
-    have hQ1e : Point.some hQ1 = e1 • Point.some hφT :=
+    have hQ1e : Point.some _ _ hQ1 = e1 • Point.some _ _ hφT :=
       (some_congr W hQ1 (hxc1 ▸ hQ1) hxc1 rfl).trans he1
     have hxc2 : (1 + (endo - 1) * w.b3) * w.xT = w.xT := by rw [hb3']; ring
     obtain ⟨e2, he2, he2f⟩ := signed_target W ha hT (hxc2 ▸ hQ2) hb4
-    have hQ2e : Point.some hQ2 = e2 • Point.some hT :=
+    have hQ2e : Point.some _ _ hQ2 = e2 • Point.some _ _ hT :=
       (some_congr W hQ2 (hxc2 ▸ hQ2) hxc2 rfl).trans he2
     refine ⟨e2, 2 * e1, ?_, ?_, ?_⟩
     · rw [hSeq, hReq, hQ1e, hQ2e]; module
@@ -297,11 +297,11 @@ theorem row_digit (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
   · -- b1 = 1 (Q₁ = ±φT), b3 = 1 (Q₂ = ±φT)
     have hxc1 : (1 + (endo - 1) * w.b1) * w.xT = endo * w.xT := by rw [hb1']; ring
     obtain ⟨e1, he1, he1f⟩ := signed_target W ha hφT (hxc1 ▸ hQ1) hb2
-    have hQ1e : Point.some hQ1 = e1 • Point.some hφT :=
+    have hQ1e : Point.some _ _ hQ1 = e1 • Point.some _ _ hφT :=
       (some_congr W hQ1 (hxc1 ▸ hQ1) hxc1 rfl).trans he1
     have hxc2 : (1 + (endo - 1) * w.b3) * w.xT = endo * w.xT := by rw [hb3']; ring
     obtain ⟨e2, he2, he2f⟩ := signed_target W ha hφT (hxc2 ▸ hQ2) hb4
-    have hQ2e : Point.some hQ2 = e2 • Point.some hφT :=
+    have hQ2e : Point.some _ _ hQ2 = e2 • Point.some _ _ hφT :=
       (some_congr W hQ2 (hxc2 ▸ hQ2) hxc2 rfl).trans he2
     refine ⟨0, 2 * e1 + e2, ?_, ?_, ?_⟩
     · rw [hSeq, hReq, hQ1e, hQ2e]; module
@@ -339,10 +339,10 @@ theorem endoMul_ab (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo : F)
     (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → EndoStep W endo (g i))
     (P : ℕ → W.Point) (T φT : W.Point)
-    (hT : ∀ i (hi : i < m), T = Point.some (gs i hi).hT)
-    (hφT : ∀ i (hi : i < m), φT = Point.some (gs i hi).hφT)
-    (hin : ∀ i (hi : i < m), P i = Point.some (gs i hi).hP)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some (gs i hi).hS) :
+    (hT : ∀ i (hi : i < m), T = Point.some _ _ (gs i hi).hT)
+    (hφT : ∀ i (hi : i < m), φT = Point.some _ _ (gs i hi).hφT)
+    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (gs i hi).hP)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (gs i hi).hS) :
     ∃ k1 k2 : ℤ, P m = (4 : ℤ) ^ m • P 0 + k1 • T + k2 • φT
       ∧ (k2 : F) = ∑ j ∈ Finset.range (2 * m), (2 : F) ^ (2 * m - 1 - j) * aDigit g j
       ∧ (k1 : F) = ∑ j ∈ Finset.range (2 * m), (2 : F) ^ (2 * m - 1 - j) * bDigit g j := by
@@ -415,7 +415,7 @@ theorem decompose_crumbList (g : ℕ → Witness F) (m : ℕ) :
     simp_all +decide [ aDigit, bDigit ];
     norm_num [ Nat.add_div ] ; ring_nf ;
     constructor <;> rw [ Finset.sum_mul _ _ _ ] <;>
-      rw [ Finset.sum_congr rfl fun x hx => ?_ ] <;> ring;
+      (rw [ Finset.sum_congr rfl fun x hx => ?_ ]; ring);
     · split_ifs <;>
         rw [ show 1 + m * 2 - x = (m * 2 - 1 - x) + 2 by
               have := Finset.mem_range.mp hx; omega ] <;> ring;
@@ -439,10 +439,10 @@ theorem endoMul_toField (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo : F)
     (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → EndoStep W endo (g i))
     (P : ℕ → W.Point) (T φT : W.Point)
-    (hT : ∀ i (hi : i < m), T = Point.some (gs i hi).hT)
-    (hφT : ∀ i (hi : i < m), φT = Point.some (gs i hi).hφT)
-    (hin : ∀ i (hi : i < m), P i = Point.some (gs i hi).hP)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some (gs i hi).hS)
+    (hT : ∀ i (hi : i < m), T = Point.some _ _ (gs i hi).hT)
+    (hφT : ∀ i (hi : i < m), φT = Point.some _ _ (gs i hi).hφT)
+    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (gs i hi).hP)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (gs i hi).hS)
     (hP0 : P 0 = (2 : ℤ) • T + (2 : ℤ) • φT) (lam : ℤ) (heig : φT = lam • T) :
     ∃ s : ℤ, P m = s • T
       ∧ (s : F) = Kimchi.Circuit.EndoScalar.toField (crumbList g m) (lam : F) := by

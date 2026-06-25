@@ -44,7 +44,7 @@ structure CMCurve (F : Type*) [Field F] [DecidableEq F] where
       Mathlib lacks (it is the fact `endoMul_scalar` currently hypothesizes, now
       properly typed `λ` acting on the scalar field). -/
   eigen : ∀ {x y : F} (h : W.Nonsingular x y) (h' : W.Nonsingular (beta * x) y),
-    Point.some h' = lam • Point.some h
+    Point.some _ _ h' = lam • Point.some _ _ h
 
 /-- The Pasta two-cycle: two CM curves whose base/scalar fields are reciprocal —
     `E_p / F_p` has order `card F_q`, `E_q / F_q` has order `card F_p`. This is what

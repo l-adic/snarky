@@ -258,7 +258,7 @@ theorem sound_point_noninf
     (hcons : Holds w)
     (hy1 : w.y1 ≠ 0) (htwo : (2 : F) ≠ 0) (hinf : w.inf = 0) :
     ∃ h3 : W.Nonsingular w.x3 w.y3,
-      Point.some h1 + Point.some h2 = Point.some h3 := by
+      Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3 := by
   obtain ⟨ha1, ha2, ha3, ha4⟩ := ha
   -- `inf = 0` rules out the vertical (sum-is-∞) case.
   have hfin : ¬(w.x1 = w.x2 ∧ w.y1 = W.negY w.x2 w.y2) := by
@@ -292,7 +292,7 @@ theorem sound_point_inf
     (w : Witness F)
     (h1 : W.Nonsingular w.x1 w.y1) (h2 : W.Nonsingular w.x2 w.y2)
     (hcons : Holds w) (hinf : w.inf = 1) :
-    Point.some h1 + Point.some h2 = 0 := by
+    Point.some _ _ h1 + Point.some _ _ h2 = 0 := by
   simp only [Holds] at hcons
   obtain ⟨c1, c2, c3, c4, c5, c6, c7⟩ := hcons
   rw [hinf] at c6 c7
