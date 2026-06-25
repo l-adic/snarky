@@ -9,6 +9,13 @@ name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4.git"
 rev = "v4.31.0"
 
+# CompElliptic: SW group law + concrete Pasta SWCurve/SWPoint instances (replaces our
+# axiomatized CMCurve boilerplate; order_prime via Pratt certificate, group law concrete).
+[[require]]
+name = "CompElliptic"
+git = "https://github.com/daira/CompElliptic.git"
+rev = "main"
+
 [[lean_lib]]
 name = "Kimchi"
 
