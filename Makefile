@@ -127,10 +127,7 @@ lean-build: ## Build the Lean (formal/) project
 	cd formal && PATH="$$HOME/.elan/bin:$$PATH" lake build
 
 lean-check-fixtures: lean-build ## Run the verified checker on every committed circuit fixture (asserts check = true; exits non-zero on any false)
-	cd formal && for f in fixtures/*.json; do \
-	  echo "=== $$f ==="; \
-	  PATH="$$HOME/.elan/bin:$$PATH" lake env lean --run Main.lean "$$f" || exit 1; \
-	done
+	cd formal && PATH="$$HOME/.elan/bin:$$PATH" lake env lean --run Main.lean
 
 dump-fixtures: build-napi ## Regenerate formal/fixtures/*.json from real compiled circuits (needs the native backend)
 	@echo "Compiling the dumpers (only the build matters; the spec runner may trip on pickles codegen)"
