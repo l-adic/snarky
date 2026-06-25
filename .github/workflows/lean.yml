@@ -100,7 +100,6 @@ jobs:
         #print axioms Kimchi.Circuit.VarBaseMul.scalarMul_type2
         #print axioms Kimchi.Cycle.zsmul_mod
         #print axioms Kimchi.Cycle.varBaseMul_scalar
-        #print axioms Kimchi.Cycle.varBaseMul_faithful
         #print axioms Kimchi.Cycle.varBaseMul_faithful_unconditional
         #print axioms Kimchi.Cycle.varBaseMul_valid_of_not_forbidden
         EOF
