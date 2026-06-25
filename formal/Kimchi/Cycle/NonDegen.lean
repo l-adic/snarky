@@ -1,4 +1,5 @@
 import Kimchi.Cycle.Axioms
+import Kimchi.Gate.VarBaseMul
 
 /-!
 # Group-order non-degeneracy toolkit
@@ -14,7 +15,7 @@ stay away from `±T`" — to be wired into the per-row accumulators in a later s
 
 namespace Kimchi.Cycle
 
-open WeierstrassCurve.Affine
+open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine
 
 variable {F : Type*} [Field F] [DecidableEq F]
 
@@ -68,5 +69,28 @@ lemma x_ne_xT_of_ne_base (c : CMCurve F) {x y xT yT : F}
     have := h.1; have := hT.1
     simp_all +decide [WeierstrassCurve.Affine.equation_iff]
   exact mul_left_cancel₀ (sub_ne_zero_of_ne hne) (by linear_combination h_eq)
+
+/-- **Second-addition non-vertical guarantee.** The geometric non-degeneracy
+    `2·I + Q ≠ 0` forces the field condition `tⱼ = 2·xi + xb − s1² ≠ 0` that the
+    `VarBaseMul` gate bundles. -/
+lemma singleBit_tne_of_double_ne (c : CMCurve F)
+    {b xb yb s1 xi yi xo yo : F}
+    (hI : c.W.Nonsingular xi yi)
+    (hQ : c.W.Nonsingular xb ((2 * b - 1) * yb))
+    (hxne : xi ≠ xb)
+    (h : singleBitHolds b xb yb s1 xi yi xo yo)
+    (hdbl : (2 : ℤ) • Point.some hI + Point.some hQ ≠ 0) :
+    2 * xi + xb - s1 * s1 ≠ 0 := by
+  contrapose! hdbl
+  -- the first addition `I + Q` is the secant point `R = (rx, ry)` with slope `s1`
+  have hR : ∃ hR : c.W.Nonsingular (s1 * s1 - xi - xb)
+      (s1 * (xi - (s1 * s1 - xi - xb)) - yi),
+      Point.some hI + Point.some hQ = Point.some hR := by
+    apply secant_add c.W c.short hI hQ hxne (l := s1)
+    · rw [eq_div_iff (sub_ne_zero_of_ne hxne)]
+      linear_combination' h.2.1
+    · rfl
+    · rfl
+  grind +suggestions
 
 end Kimchi.Cycle

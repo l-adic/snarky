@@ -105,6 +105,7 @@ jobs:
         #print axioms Kimchi.Cycle.smul_ne_zero_of_lt
         #print axioms Kimchi.Cycle.smul_ne_base
         #print axioms Kimchi.Cycle.x_ne_xT_of_ne_base
+        #print axioms Kimchi.Cycle.singleBit_tne_of_double_ne
         EOF
         out=$(lake env lean check_axioms.lean)
         echo "$out"
