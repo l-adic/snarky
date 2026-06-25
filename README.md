@@ -1,6 +1,6 @@
 # Snarky
 
-Embedded DSL for constructing recursive zero-knowledge circuits in PureScript. Faithfully implements the pickles recursive snark protocol backed by o1-labs [proof-systmes](https://github.com/o1-labs/proof-systems)
+Embedded DSL for constructing recursive zero-knowledge circuits in PureScript. Faithfully implements the pickles recursive snark protocol backed by o1-labs [proof-systems](https://github.com/o1-labs/proof-systems)
 
 
 ## Summary
