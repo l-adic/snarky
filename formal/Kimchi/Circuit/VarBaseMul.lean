@@ -379,12 +379,14 @@ theorem varBaseMul_faithful_unconditional (W : WeierstrassCurve.Affine F)
     omega
   rw [hn, intCast_inj_of_sub_lt hnf hrange]
 
-/-- The pickles Type1 `forbiddenShiftedValues`: the scalars the circuit rejects. The
-    decoded scalar `s = 2·t + 2^n + 1` is forbidden exactly when `s ≡ 0 (mod order)` —
-    then `[s]·T` is the identity, which the incomplete-addition gate cannot represent.
-    (`forbiddenType1Values` in `Snarky.Types.Shifted` enumerates the circuit-field
-    representatives of this one residue class.) -/
-def forbiddenShiftedValues (order : ℕ) : Set ℤ := {s | (order : ℤ) ∣ s}
+/-- The pickles Type1 `forbiddenShiftedValues`: the scalars the circuit rejects.
+    Transcribed from `forbiddenShiftedValues` / `forbiddenType1Values` in
+    `Snarky.Types.Shifted`: a register `t` is forbidden when `t ≡ -2^n` or
+    `t ≡ -2^n - 1 (mod order)` (`n = numBits`). In terms of the decoded scalar
+    `s = 2·t + 2^n + 1` that is `s + 2^n ≡ ±1 (mod order)` — the two residues where the
+    VarBaseMul double-and-add hits an incomplete-addition exceptional case. -/
+def forbiddenShiftedValues (order numBits : ℕ) : Set ℤ :=
+  {s | (order : ℤ) ∣ (s + 2 ^ numBits - 1) ∨ (order : ℤ) ∣ (s + 2 ^ numBits + 1)}
 
 /-- The circuit's correctness, stated as the circuit claims it: the VarBaseMul gate
     computes `[s]·T` for any scalar it ACCEPTS — `s ∉ forbiddenShiftedValues`.
@@ -401,8 +403,8 @@ theorem varBaseMul_sound (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
     {p : ℕ} [CharP F p] (order m : ℕ) (g : ℕ → Witness F)
     (T : W.Point) (N : ℕ → F) (P : ℕ → W.Point) (s : ℤ)
     (hd : ∀ i, i < m → GateData W (g i))
-    (hnf : s ∉ forbiddenShiftedValues order)
-    (hsound : s ∉ forbiddenShiftedValues order →
+    (hnf : s ∉ forbiddenShiftedValues order (5 * m))
+    (hsound : s ∉ forbiddenShiftedValues order (5 * m) →
       ∀ i, i < m → GateData W (g i) → NonDegen (g i))
     (hT : ∀ i (hi : i < m), T = Point.some (hd i hi).hT)
     (hin : ∀ i (hi : i < m), P i = Point.some (hd i hi).a0)
