@@ -1,5 +1,6 @@
 import Kimchi.Cycle.EndoMul
-import CompElliptic.Fields.Pasta
+import Kimchi.Gate.AddComplete
+import CompElliptic.Curves.Pasta
 
 /-!
 # Phase 4: instantiating the cycle for Pasta — the axioms become real
@@ -18,8 +19,10 @@ What used to be postulated here is now **concrete**:
   `DecidableEq`, and `CharP F p` instances all come for free from `ZMod p`. This is the
   hard part — a 255-bit primality proof with no `sorry` and no `native_decide` — and it
   is borrowed wholesale from CompElliptic (daira/CompElliptic), not postulated.
-* The curve `W` is the concrete short-Weierstrass `y² = x³ + 5` (`a₆ = 5`, all other
-  invariants `0`), so `Wshort` is `rfl`s.
+* The curve `W` is **CompElliptic's** Pallas curve (`y² = x³ + 5`): the coefficients of its
+  verified `Pallas.curve` transported to a Mathlib `WeierstrassCurve.Affine` via the `toW`
+  bridge, so `Wshort` is `rfl`s. This makes CompElliptic's curve the single source of truth —
+  the gate theorems run over exactly the object it proves elliptic.
 * `order` is the concrete other Pasta prime `q = PALLAS_SCALAR_CARD` (the scalar field
   cardinality = the Pallas group order).
 * `beta` is the concrete primitive cube root of unity `5^((p-1)/3) mod p`; `beta_cube`
@@ -41,6 +44,11 @@ So `#print axioms pallas_endoMul_faithful` now lists only
 — the genuinely-non-Mathlib facts about a *definitely-non-vacuous* concrete curve. The
 whole postulated "field + primality + curve" surface is gone.
 
+`addComplete_sound_pallas` goes one further: plain *addition* needs neither Schoof nor CM, so
+the AddComplete gate's group-law soundness on this concrete Pallas curve is **fully
+axiom-clean** — `#print axioms` is the standard three, resting solely on CompElliptic's
+verified field and curve.
+
 This is the gate-level end of the cycle. The remaining *two-curve* reciprocity
 (`TwoCycle`) is a recursion-layer concern — how scalars pass between the Pasta step/wrap
 circuits — above the per-gate scope.
@@ -50,6 +58,8 @@ namespace Kimchi.Cycle.Pasta
 
 open WeierstrassCurve.Affine Kimchi.Gate.EndoMul Kimchi.Circuit.EndoMul
 open CompElliptic.Fields.Pasta
+open CompElliptic.CurveForms.ShortWeierstrass (toW)
+open CompElliptic.Curves.Pasta
 
 /-- The Pallas coordinate field — the **concrete** `ZMod p` from CompElliptic (= Vesta's
     scalar field), with its axiom-clean Pratt primality certificate. The `Field`,
@@ -59,13 +69,12 @@ abbrev F := PallasBaseField
 /-- The Pasta base-field characteristic (the 255-bit prime `p`), concretely. -/
 abbrev pPasta : ℕ := PALLAS_BASE_CARD
 
-/-- The concrete Pallas curve `y² = x³ + 5` over `F` (`a₆ = 5`; every other invariant `0`). -/
-def W : WeierstrassCurve.Affine F where
-  a₁ := 0
-  a₂ := 0
-  a₃ := 0
-  a₄ := 0
-  a₆ := 5
+/-- The concrete Pallas curve, taken from **CompElliptic**: the coefficients of its verified
+    `Pallas.curve` (`Pallas.a = 0`, `Pallas.b = 5`, i.e. `y² = x³ + 5`) transported to a
+    Mathlib `WeierstrassCurve.Affine` via CompElliptic's `toW` bridge. This is the single
+    source of truth for "the Pasta curve" — the gate theorems below run over exactly the
+    curve CompElliptic proves elliptic and reasons about (`five_not_isSquare`, etc.). -/
+def W : WeierstrassCurve.Affine F := toW Pallas.a Pallas.b
 
 theorem Wshort : IsShortShape W := ⟨rfl, rfl, rfl, rfl⟩
 
@@ -122,5 +131,23 @@ def pallas_endoMul_toField := endoMul_toField_cm pallas
     actual curve. `#print axioms` lists exactly `pallas_order_smul`, `pallas_eigen`,
     `lam` on top of the standard three. -/
 def pallas_endoMul_faithful := endoMul_faithful pallas
+
+/-- **AddComplete on the REAL Pallas curve.** The generic gate soundness
+    `AddComplete.sound_point_noninf` specialized to the concrete CompElliptic Pallas curve
+    `W`: a satisfying CompleteAdd witness with `inf = 0` computes the genuine elliptic-curve
+    sum `(x₁,y₁) + (x₂,y₂)` in Mathlib's group on Pallas.
+
+    Unlike the scalar results, addition needs neither Schoof (`order_smul`) nor CM (`eigen`),
+    so this rests *only* on CompElliptic's verified field + curve: `#print axioms` is the
+    standard three (`propext, Classical.choice, Quot.sound`) — no `pallas_*` axioms, no
+    `sorryAx`, no `Lean.ofReduceBool`. The `(2 : F) ≠ 0` side condition is discharged
+    concretely on `ZMod p`. -/
+theorem addComplete_sound_pallas
+    (w : Kimchi.Gate.AddComplete.Witness F)
+    (h1 : W.Nonsingular w.x1 w.y1) (h2 : W.Nonsingular w.x2 w.y2)
+    (hcons : Kimchi.Gate.AddComplete.Holds w) (hy1 : w.y1 ≠ 0) (hinf : w.inf = 0) :
+    ∃ h3 : W.Nonsingular w.x3 w.y3,
+      Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3 :=
+  Kimchi.Gate.AddComplete.sound_point_noninf W Wshort w h1 h2 hcons hy1 (by decide) hinf
 
 end Kimchi.Cycle.Pasta

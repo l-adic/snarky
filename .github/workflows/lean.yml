@@ -122,6 +122,9 @@ jobs:
         #print axioms Kimchi.Cycle.endoMul_scalar_cm
         #print axioms Kimchi.Cycle.endoMul_toField_cm
         #print axioms Kimchi.Cycle.endoMul_faithful
+        #print axioms Kimchi.Cycle.Pasta.addComplete_sound_pallas
+        #print axioms Kimchi.Cycle.Pasta.pallas_endoMul_toField
+        #print axioms Kimchi.Cycle.Pasta.pallas_endoMul_faithful
         EOF
         out=$(lake env lean check_axioms.lean)
         echo "$out"
