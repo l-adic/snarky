@@ -103,6 +103,9 @@ jobs:
         #print axioms Kimchi.Ladder.ladder_nondegen_tight
         #print axioms Kimchi.Cycle.gate_step_advance
         #print axioms Kimchi.Cycle.nonDegen_of_not_forbidden
+        #print axioms Kimchi.Cycle.tne_of_holds
+        #print axioms Kimchi.Ladder.ladder_x_nondegen
+        #print axioms Kimchi.Cycle.varBaseMul_deployed_sound
         #print axioms Kimchi.Circuit.VarBaseMul.scalarMul_type2
         #print axioms Kimchi.Cycle.zsmul_mod
         #print axioms Kimchi.Cycle.varBaseMul_scalar

@@ -93,4 +93,54 @@ lemma singleBit_tne_of_double_ne (c : CMCurve F)
     · rfl
   grind +suggestions
 
+/-- **t-condition self-enforcement.** The gate constraints together with prime order
+    already force `t ≠ 0` — the forbidden check is NOT needed for the second-addition
+    non-degeneracy. If `t = 2·xi + xb − s1² = 0`, then the `xo` constraint
+    `u² − t²·(…) = 0` collapses to `u² = 0`, i.e. `u = 2·yi − t·s1 = 2·yi = 0`, so
+    `yi = 0`. But a nonsingular affine point with `yi = 0` equals its own negation
+    (short Weierstrass), hence is 2-torsion; on a group of odd prime `order` there is no
+    such point. Contradiction.
+
+    The hypothesis `c.order ≠ 2` (equivalently, the prime `order` is odd) is genuinely
+    required, not a convenience: for `order = 2` the statement is false. E.g. over
+    `ZMod 7` with the curve `y² = x³ + 6` (group `(ℤ/2)²`, so `order = 2`), the input
+    point `(xi, yi) = (1, 0)` is nonsingular and `singleBitHolds 0 5 0 0 1 0 0 0` holds,
+    yet `2·xi + xb − s1² = 2·1 + 5 − 0 = 7 = 0`. The Pasta `order` is a 255-bit prime,
+    so `order ≠ 2` there; it is not derivable from the abstract `CMCurve` axioms alone
+    (`beta = lam = 1` satisfies them in the counterexample), hence it is assumed. -/
+lemma tne_of_holds (c : CMCurve F) (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2)
+    {b xb yb s1 xi yi xo yo : F}
+    (hI : c.W.Nonsingular xi yi)
+    (hh : singleBitHolds b xb yb s1 xi yi xo yo) :
+    2 * xi + xb - s1 * s1 ≠ 0 := by
+  intro ht
+  -- Step 1: the `xo` constraint collapses (with `t = 0`) to `4·yi² = 0`, so `yi = 0`.
+  have hyi : yi = 0 := by
+    simp only [singleBitHolds] at hh
+    obtain ⟨_, _, h3, _⟩ := hh
+    have htt : xi - (s1 * s1 - xi - xb) = 0 := by linear_combination ht
+    rw [htt] at h3
+    have hy2 : yi * yi = 0 := by
+      have hfour : (4 : F) * (yi * yi) = 0 := by linear_combination h3
+      have h4ne : (4 : F) ≠ 0 := by
+        have h44 : (4 : F) = 2 * 2 := by norm_num
+        rw [h44]; exact mul_ne_zero h2 h2
+      exact (mul_eq_zero.mp hfour).resolve_left h4ne
+    exact mul_self_eq_zero.mp hy2
+  -- Step 2: with `yi = 0` (and short shape `a₁ = a₃ = 0`), `negY = yi`, so `P = -P`.
+  obtain ⟨ha1, -, ha3, -⟩ := c.short
+  have hneg : negY c.W xi yi = yi := by
+    simp [WeierstrassCurve.Affine.negY, ha1, ha3, hyi]
+  have hPselfneg : -(Point.some hI) = Point.some hI := by
+    rw [Point.neg_some]; congr 1
+  -- Step 3: `P = -P` gives `2 • P = P + (-P) = 0`.
+  have hPne : Point.some hI ≠ 0 := Point.some_ne_zero hI
+  have h2P : (2 : ℤ) • Point.some hI = 0 := by
+    rw [two_zsmul]; nth_rewrite 2 [← hPselfneg]; rw [add_neg_cancel]
+  -- Step 4: `0 < 2 < order` (prime, `≠ 2`) contradicts `2 • P = 0` for `P ≠ 0`.
+  have hlt : (2 : ℤ) < (c.order : ℤ) := by
+    have : 3 ≤ c.order := by have := c.order_prime.two_le; omega
+    exact_mod_cast this
+  exact smul_ne_zero_of_lt c hPne (by norm_num) hlt h2P
+
 end Kimchi.Cycle

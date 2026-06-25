@@ -350,4 +350,91 @@ theorem ladder_nondegen_tight (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
         (by tauto) <;>
     exact hnf t ht htd
 
+/-
+**x-condition non-degeneracy from the register/magnitude bound** (pure number theory,
+    orthogonal to the t-condition `tne_of_holds`). The deployed circuit's register is a
+    valid field element `< circuitMod`, so the ladder top is bounded:
+    `k L < 2·circuitMod + 2^L`. The only x-condition accumulator values are
+    `k ≡ ±1 (mod order)`, whose smallest ODD representatives are `2·order ± 1` (the even
+    reps `order ± 1` are unreachable since every `k j` with `1 ≤ j` is odd, `ladder_odd`).
+    The regime `circuitMod + 2^(L-1) < 2·order` (the Pasta `2δ > δ'` fact) puts those
+    above the bounded range, so no INPUT `k j` (`j < L`) is `≡ ±1 (mod order)` — i.e. no
+    accumulator equals `±T`. (No constraints, no curve, no forbidden set.)
+
+    ## Corrections to the originally stated hypotheses
+
+    The statement as originally shipped is **false**; brute-force search over small
+    parameters finds explicit degenerate inputs.  Two independent failures occur:
+
+    * The even residue representatives `order ± 1` of `±1 (mod order)` are reachable when
+      `order` is even, so we must assume `hodd : Odd order` (the real `order` is a prime,
+      hence odd).  Combined with `ladder_odd` (every `k j`, `1 ≤ j`, is odd) this rules
+      out the even reps and forces the odd reps `2·order ± 1`.
+    * For `j = L - 1` the `+1` branch (`k (L-1) = 2·order - 1`) gives a final value
+      `k L = 4·order - 2 + ε ≥ 4·order - 3`, which the *strict* bound
+      `circuitMod + 2^(L-1) < 2·order` (i.e. `k L < 4·order - 2`) does **not** exclude
+      (e.g. `order = 5, circuitMod = 5, L = 3`).  Tightening the slack by `2` to
+      `hbound : circuitMod + 2^(L-1) + 2 ≤ 2·order` (i.e. `k L < 4·order - 4`) closes it.
+    * The single tiny case `order = 3, L = 2` makes the input `k 0 = 2` satisfy
+      `order ∣ (k 0 + 1) = 3`; this is excluded by `horder : 3 < order`.
+
+    All three additions hold comfortably for the real Pasta parameters
+    (`L = 255`, `order ≈ 2^254 + 4.56·10^37` is a large prime, and `2δ > δ'`), and a
+    brute-force search confirms there are **no** counterexamples to the corrected
+    statement.  The conclusion is left exactly as originally requested.
+-/
+theorem ladder_x_nondegen (order circuitMod L : ℕ)
+    (hreg₁ : 2 ^ (L - 1) < order) (hreg₂ : order < 2 ^ L)
+    (hodd : Odd order) (horder : 3 < order)
+    (hbound : circuitMod + 2 ^ (L - 1) + 2 ≤ 2 * order)
+    (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
+    (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
+    (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j)
+    (hkL : k L < 2 * (circuitMod : ℤ) + 2 ^ L) :
+    ∀ j, j < L → ¬ (order : ℤ) ∣ (k j - 1) ∧ ¬ (order : ℤ) ∣ (k j + 1) := by
+  -- From `ladder_bounds`, `2^j + 1 ≤ k j` and `k j ≤ 3 * 2^j - 1` for all `j < L`.
+  intros j hj
+  have h_bounds : 2 ^ j + 1 ≤ k j ∧ k j ≤ 3 * 2 ^ j - 1 :=
+    ladder_bounds L k ε hk0 hε hrec j (by linarith)
+  constructor <;> intro h <;> obtain ⟨t, ht⟩ := h
+  · rcases lt_trichotomy t 1 with ht' | rfl | ht' <;>
+      try nlinarith [pow_pos (zero_lt_two' ℤ) j]
+    · obtain ⟨m, hm⟩ := hodd
+      simp_all +decide [parity_simps]
+      rcases j with (_ | j) <;> simp_all +decide [pow_succ']
+      grind
+    · -- Propagate forward: `k L ≥ 2^(L-j) * k j - (2^(L-j) - 1)`.
+      have h_step : k L ≥ 2 ^ (L - j) * k j - (2 ^ (L - j) - 1) := by
+        have h_step : |k L - 2 ^ (L - j) * k j| ≤ 2 ^ (L - j) - 1 := by
+          convert ladder_step L k ε hε hrec (L - j) j (by omega) using 1
+          simp +decide [Nat.add_sub_of_le hj.le]
+        linarith [abs_le.mp h_step]
+      rcases L with (_ | L) <;> simp_all +decide [pow_succ']
+      nlinarith [pow_pos (zero_lt_two' ℤ) (L + 1 - j),
+        pow_le_pow_right₀ (by decide : 1 ≤ 2)
+          (show L + 1 - j ≥ 1 from Nat.sub_pos_of_lt (by linarith))]
+  · rcases t with ⟨_ | _ | _ | t⟩ <;> norm_num at ht
+    · linarith [pow_pos (zero_lt_two' ℤ) j]
+    · obtain ⟨m, hm⟩ := hodd
+      simp_all +decide [parity_simps]
+      exact absurd
+        (ladder_odd L k ε hε hrec j (Nat.pos_of_ne_zero (by rintro rfl; linarith))
+          (by linarith))
+        (by norm_num [ht, parity_simps])
+    · -- Propagate forward: `k L ≥ 2^(L-j) * k j - (2^(L-j) - 1)`.
+      have h_step : k L ≥ 2 ^ (L - j) * k j - (2 ^ (L - j) - 1) := by
+        have := ladder_step L k ε hε hrec (L - j) j (by omega)
+        simp_all +decide [Nat.add_sub_of_le hj.le]
+        linarith [abs_lt.mp this]
+      rcases L with (_ | L) <;> simp_all +decide [pow_succ']
+      nlinarith [pow_pos (zero_lt_two' ℤ) j,
+        pow_le_pow_right₀ (by decide : 1 ≤ 2) hj,
+        pow_pos (zero_lt_two' ℤ) (L + 1 - j),
+        pow_le_pow_right₀ (by decide : 1 ≤ 2)
+          (show L + 1 - j ≥ 1 from Nat.sub_pos_of_lt (by linarith))]
+    · nlinarith [pow_pos (zero_lt_two' ℤ) j,
+        pow_le_pow_right₀ (show 1 ≤ 2 by decide)
+          (show j ≤ L - 1 from Nat.le_sub_one_of_lt hj)]
+    · grind
+
 end Kimchi.Ladder
