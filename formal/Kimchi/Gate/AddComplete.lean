@@ -49,6 +49,14 @@ structure Witness (F : Type*) where
   x21Inv : F
 deriving Repr
 
+/-- Extract a `CompleteAdd` witness from the 15-column row that the dumped circuit
+    carries. The column layout (cols 0–10) matches `complete_add.rs`:
+    `x1 y1 x2 y2 x3 y3 inf sameX s infZ x21Inv`. Out-of-range reads default to `0`. -/
+def ofRow {F : Type*} [Zero F] (row : Array F) : Witness F :=
+  { x1 := row.getD 0 0, y1 := row.getD 1 0, x2 := row.getD 2 0, y2 := row.getD 3 0
+  , x3 := row.getD 4 0, y3 := row.getD 5 0, inf := row.getD 6 0, sameX := row.getD 7 0
+  , s := row.getD 8 0, infZ := row.getD 9 0, x21Inv := row.getD 10 0 }
+
 variable {F : Type*}
 
 /-! ## The 7 constraints, transcribed from `complete_add.rs`. -/

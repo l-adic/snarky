@@ -1,5 +1,10 @@
 name = "kimchi-formal"
-defaultTargets = ["Kimchi", "kimchi-demo"]
+# Default build = the verified library (all gate/circuit proofs). The `kimchi-demo`
+# executable is intentionally NOT a default target: linking a native binary that
+# transitively pulls the whole Mathlib closure overflows the linker command line on
+# macOS. Run the checker through the interpreter instead (no native link):
+#   lake env lean --run Main.lean fixtures/add_complete_step.json
+defaultTargets = ["Kimchi"]
 
 # Mathlib gives us prime fields (`ZMod p`) and the elliptic-curve group law
 # (`WeierstrassCurve.Affine`), the trusted oracle the EC gates are checked
