@@ -277,9 +277,8 @@ theorem singleBit_sound
     secant_add W ⟨ha1, ha2, ha3, ha4⟩ hR hI hrxne hs2 hxo hyo
   exact ⟨hO, by rw [hAdd1, hAdd2]⟩
 
-/-- Full-gate scalar multiplication (STUB — body left to automation). Chaining
-    `singleBit_sound` across all five blocks, a satisfying gate computes the
-    double-and-add accumulation
+/-- Full-gate scalar multiplication. Chaining `singleBit_sound` across all five
+    blocks, a satisfying gate computes the double-and-add accumulation
 
         P₅ = 32·P₀ + 16·Q₀ + 8·Q₁ + 4·Q₂ + 2·Q₃ + Q₄
 

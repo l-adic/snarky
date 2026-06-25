@@ -70,6 +70,8 @@ node_modules/spago/README.md
 
 **Project conventions** — See `.claude/skills/project-developer-guide/` for testing patterns, FFI conventions, and other project-specific practices.
 
+**Lean formalization (`formal/`)** — The `Kimchi` Lean 4 / Mathlib proofs of the EC gates have their own agent guide: `formal/CLAUDE.md` (auto-loaded when working under `formal/`). It is a constraint-predicate + Mathlib-`WeierstrassCurve` formalization — **not** a circuit-DSL embedding.
+
 ## Project Structure
 
 ### Crypto Backend

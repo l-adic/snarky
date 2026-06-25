@@ -23,7 +23,7 @@ What used to be postulated here is now **concrete**:
 * `order` is the concrete other Pasta prime `q = PALLAS_SCALAR_CARD` (the scalar field
   cardinality = the Pallas group order).
 * `beta` is the concrete primitive cube root of unity `5^((p-1)/3) mod p`; `beta_cube`
-  (`β³ = 1`) is closed by `reduce_mod_char`.
+  (`β³ = 1`) is closed by `decide` (the exponent is `3`, so no modexp tactic is needed).
 
 Only three things stay axioms, and they are exactly the irreducible trusted core:
 

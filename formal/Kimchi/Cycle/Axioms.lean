@@ -1,7 +1,7 @@
 import Kimchi.Curve
 
 /-!
-# Phase 0: the Pasta-cycle axioms (STUB)
+# Phase 0: the Pasta-cycle axioms
 
 The foundation for a *faithful* (two-field) account of the kimchi scalar gates — see
 `formal/docs/cycle-formalization.md`. The gate point-soundness lives over the
@@ -14,7 +14,10 @@ can parametrize over them. Instantiating for Pallas/Vesta supplies these as `axi
 (checkable externally, NOT derivable in Mathlib). The fields flagged **AXIOM** are
 the load-bearing ones; the rest is ordinary data.
 
-Nothing here is used by the verified gate suite yet — it is the scaffold for Phase 1+.
+This is the foundation Phases 1–4 build on: `Cycle/VarBaseMul` and `Cycle/EndoMul` lift
+the coordinate-field gate results into the scalar field via `order_smul`/`eigen`, and
+`Cycle/Pasta` instantiates the concrete Pallas curve (where these become the only
+remaining `axiom`s — `#print axioms` of the Pasta theorems lists exactly them).
 -/
 
 namespace Kimchi.Cycle
