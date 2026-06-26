@@ -26,12 +26,17 @@ namespace Kimchi.Circuit.VarBaseMul
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta CompElliptic.CurveForms.ShortWeierstrass
 open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine
 
-/-- **The deployed VarBaseMul circuit is correct on the real Pallas curve.** Same statement as
-    `varBaseMul_deployed_correct`, with the curve fixed to `Pallas.curve.toAffine`; the
-    short-shape and prime-order hypotheses are supplied by the `Fact` instances in
-    `Kimchi.Pasta`, and `2 ≠ 0` by computation in the Pallas base field. -/
+/-- **The deployed VarBaseMul circuit is correct on the real Pallas curve.**
+    `varBaseMul_deployed_correct` at `Pallas.curve.toAffine`, with `baseFieldOrder` fixed to the
+    actual base-field cardinality `PALLAS_BASE_CARD` (the curve is over `ZMod PALLAS_BASE_CARD`).
+
+    The only remaining hypotheses are the genuine ones: `hbits : 5 * m ≤ 255` — the circuit's
+    `bitsUsed ≤ FieldSizeInBits` constraint (the Pasta fields are 255-bit) — and `hreg`, the
+    scalar/register cap. The regime facts `3 < order`, `2^(5m-1) < order`, and the 2-cycle size
+    relation `p + 2^(5m-1) + 2 ≤ 2q` are *discharged* here from `hbits` and the known Pasta
+    cardinals (`order = PALLAS_SCALAR_CARD` via `pallas_card`), not assumed. -/
 theorem varBaseMul_pallas_correct
-    (m : ℕ) (g : ℕ → Witness PallasBaseField) (baseFieldOrder : ℕ)
+    (m : ℕ) (g : ℕ → Witness PallasBaseField)
     (T : Pallas.curve.toAffine.Point) (P : ℕ → Pallas.curve.toAffine.Point) (s : ℤ)
     (hTne : T ≠ 0)
     (hd : ∀ i, i < m → GateData Pallas.curve.toAffine (g i))
@@ -39,21 +44,28 @@ theorem varBaseMul_pallas_correct
     (hin : ∀ i (hi : i < m), P i = Point.some _ _ (hd i hi).a0)
     (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
     (hP0 : P 0 = (2 : ℤ) • T)
-    (horder : 3 < Pallas.curve.toAffine.order)
-    (hreg₁ : 2 ^ (5 * m - 1) < Pallas.curve.toAffine.order)
-    (hbound : baseFieldOrder + 2 ^ (5 * m - 1) + 2 ≤ 2 * Pallas.curve.toAffine.order)
+    (hbits : 5 * m ≤ 255)
     (hs : s = gateLadder g (5 * m))
-    (hreg : s < 2 * (baseFieldOrder : ℤ) + 2 ^ (5 * m)) :
-    P m = s • T ∧ ∀ i, i < m → NonDegen (g i) :=
-  varBaseMul_deployed_correct Pallas.curve.toAffine m g baseFieldOrder T P s hTne hd hT hin hout hP0
-    (by decide) horder hreg₁ hbound hs hreg
+    (hreg : s < 2 * (PALLAS_BASE_CARD : ℤ) + 2 ^ (5 * m)) :
+    P m = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
+  have hq : Pallas.curve.toAffine.order = PALLAS_SCALAR_CARD := Kimchi.Pasta.pallas_card
+  have hpow : (2 : ℕ) ^ (5 * m - 1) ≤ 2 ^ 254 := Nat.pow_le_pow_right (by norm_num) (by omega)
+  refine varBaseMul_deployed_correct Pallas.curve.toAffine m g PALLAS_BASE_CARD T P s
+    hTne hd hT hin hout hP0 (by decide) ?_ ?_ ?_ hs hreg
+  · rw [hq]; norm_num [PALLAS_SCALAR_CARD]
+  · rw [hq]; exact lt_of_le_of_lt hpow (by norm_num [PALLAS_SCALAR_CARD])
+  · rw [hq]
+    have hc : PALLAS_BASE_CARD + 2 ^ 254 + 2 ≤ 2 * PALLAS_SCALAR_CARD := by
+      norm_num [PALLAS_BASE_CARD, PALLAS_SCALAR_CARD]
+    omega
 
-/-- **The deployed VarBaseMul circuit is correct on the real Vesta curve.** The 2-cycle mirror
-    of `varBaseMul_pallas_correct`, with the curve fixed to `Vesta.curve.toAffine`; the
-    short-shape and prime-order hypotheses are supplied by the `Fact` instances in
-    `Kimchi.Pasta`, and `2 ≠ 0` by computation in the Vesta base field. -/
+/-- **The deployed VarBaseMul circuit is correct on the real Vesta curve.** The 2-cycle mirror of
+    `varBaseMul_pallas_correct`, at `Vesta.curve.toAffine` (over `ZMod PALLAS_SCALAR_CARD`), with
+    `baseFieldOrder` fixed to `PALLAS_SCALAR_CARD` and `order = PALLAS_BASE_CARD` (`vesta_card`).
+    The regime facts are discharged from `hbits` and the Pasta cardinals; only the bit-width bound
+    and the scalar cap remain. -/
 theorem varBaseMul_vesta_correct
-    (m : ℕ) (g : ℕ → Witness VestaBaseField) (baseFieldOrder : ℕ)
+    (m : ℕ) (g : ℕ → Witness VestaBaseField)
     (T : Vesta.curve.toAffine.Point) (P : ℕ → Vesta.curve.toAffine.Point) (s : ℤ)
     (hTne : T ≠ 0)
     (hd : ∀ i, i < m → GateData Vesta.curve.toAffine (g i))
@@ -61,13 +73,19 @@ theorem varBaseMul_vesta_correct
     (hin : ∀ i (hi : i < m), P i = Point.some _ _ (hd i hi).a0)
     (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
     (hP0 : P 0 = (2 : ℤ) • T)
-    (horder : 3 < Vesta.curve.toAffine.order)
-    (hreg₁ : 2 ^ (5 * m - 1) < Vesta.curve.toAffine.order)
-    (hbound : baseFieldOrder + 2 ^ (5 * m - 1) + 2 ≤ 2 * Vesta.curve.toAffine.order)
+    (hbits : 5 * m ≤ 255)
     (hs : s = gateLadder g (5 * m))
-    (hreg : s < 2 * (baseFieldOrder : ℤ) + 2 ^ (5 * m)) :
-    P m = s • T ∧ ∀ i, i < m → NonDegen (g i) :=
-  varBaseMul_deployed_correct Vesta.curve.toAffine m g baseFieldOrder T P s hTne hd hT hin hout hP0
-    (by decide) horder hreg₁ hbound hs hreg
+    (hreg : s < 2 * (PALLAS_SCALAR_CARD : ℤ) + 2 ^ (5 * m)) :
+    P m = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
+  have hq : Vesta.curve.toAffine.order = PALLAS_BASE_CARD := Kimchi.Pasta.vesta_card
+  have hpow : (2 : ℕ) ^ (5 * m - 1) ≤ 2 ^ 254 := Nat.pow_le_pow_right (by norm_num) (by omega)
+  refine varBaseMul_deployed_correct Vesta.curve.toAffine m g PALLAS_SCALAR_CARD T P s
+    hTne hd hT hin hout hP0 (by decide) ?_ ?_ ?_ hs hreg
+  · rw [hq]; norm_num [PALLAS_BASE_CARD]
+  · rw [hq]; exact lt_of_le_of_lt hpow (by norm_num [PALLAS_BASE_CARD])
+  · rw [hq]
+    have hc : PALLAS_SCALAR_CARD + 2 ^ 254 + 2 ≤ 2 * PALLAS_BASE_CARD := by
+      norm_num [PALLAS_BASE_CARD, PALLAS_SCALAR_CARD]
+    omega
 
 end Kimchi.Circuit.VarBaseMul
