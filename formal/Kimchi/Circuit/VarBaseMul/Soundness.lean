@@ -420,15 +420,21 @@ lemma gate_block' (c : WeierstrassCurve.Affine F)
   rw [hTeq]; exact ha5
 
 /-- **Top-level deployed VarBaseMul circuit theorem: correct (hence sound).** For ANY
-    witness satisfying the gate constraints at the real init (`P 0 = 2·T`), in the one-wrap
-    regime with the Pasta register-field relation `circuitMod + 2^(5m-1) + 2 ≤ 2·order`,
-    whose register is a valid circuit-field element
-    (`s = gateLadder g (5m) < 2·circuitMod + 2^(5m)`), the `m` gates **compute `P m = s·T`**
-    and every gate row is `NonDegen`. The forbidden-value check appears NOWHERE: the
-    t-conditions come from the constraints + prime order (`tne_of_holds`), the x-conditions
-    from the register field bound (`ladder_x_nondegen`), and `P m = s·T` directly from the
-    chained per-row advance (`gate_block'`). The `.2` (non-degeneracy) is the deployed
-    soundness; the `.1` is the deployed correctness. -/
+    witness satisfying the gate constraints at the real init (`P 0 = 2·T`), when the bit
+    count `5m` does not exceed the order's bit length (`hreg₁ : 2^(5m-1) < order`), with the
+    Pasta register-field relation `circuitMod + 2^(5m-1) + 2 ≤ 2·order` and a register that
+    is a valid circuit-field element (`s = gateLadder g (5m) < 2·circuitMod + 2^(5m)`), the
+    `m` gates **compute `P m = s·T`** and every gate row is `NonDegen`. The forbidden-value
+    check appears NOWHERE: the t-conditions come from the constraints + prime order
+    (`tne_of_holds`), the x-conditions from the register field bound (`ladder_x_nondegen`),
+    and `P m = s·T` directly from the chained per-row advance (`gate_block'`). The `.2`
+    (non-degeneracy) is the deployed soundness; the `.1` is the deployed correctness.
+
+    `hreg₁` is the Lean image of the PureScript circuit's `bitsUsed ≤ n` constraint
+    (`bitsUsed = 5m`, `n` = circuit-field bit size): since `order ≈ 2^n` by Hasse,
+    processing at most `n` bits keeps every accumulator strictly below the order, so no row
+    hits `±T`. There is deliberately NO upper regime bound (`order < 2^(5m)`) — running on
+    *fewer* bits than the field width is sound, exactly as the circuit permits. -/
 theorem varBaseMul_deployed_correct (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
     [Fact (Nat.Prime c.order)]
@@ -441,14 +447,14 @@ theorem varBaseMul_deployed_correct (c : WeierstrassCurve.Affine F)
     (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
     (hP0 : P 0 = (2 : ℤ) • T)
     (h2 : (2 : F) ≠ 0) (horder : 3 < c.order)
-    (hreg₁ : 2 ^ (5 * m - 1) < c.order) (hreg₂ : c.order < 2 ^ (5 * m))
+    (hreg₁ : 2 ^ (5 * m - 1) < c.order)
     (hbound : circuitMod + 2 ^ (5 * m - 1) + 2 ≤ 2 * c.order)
     (hs : s = gateLadder g (5 * m))
     (hreg : s < 2 * (circuitMod : ℤ) + 2 ^ (5 * m)) :
     P m = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
   have hodd : c.order ≠ 2 := by omega
   have hND := Ladder.ladder_x_nondegen c.order circuitMod (5 * m)
-    hreg₁ hreg₂ (c.order_prime.odd_of_ne_two hodd) horder hbound
+    hreg₁ (c.order_prime.odd_of_ne_two hodd) horder hbound
     (gateLadder g) (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
     (fun j _ => gateLadder_succ g j) (by rw [← hs]; exact hreg)
   have key : ∀ i, i ≤ m →

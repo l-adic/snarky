@@ -39,12 +39,11 @@ theorem varBaseMul_pallas_correct
     (hP0 : P 0 = (2 : ℤ) • T)
     (horder : 3 < Pallas.curve.toAffine.order)
     (hreg₁ : 2 ^ (5 * m - 1) < Pallas.curve.toAffine.order)
-    (hreg₂ : Pallas.curve.toAffine.order < 2 ^ (5 * m))
     (hbound : circuitMod + 2 ^ (5 * m - 1) + 2 ≤ 2 * Pallas.curve.toAffine.order)
     (hs : s = gateLadder g (5 * m))
     (hreg : s < 2 * (circuitMod : ℤ) + 2 ^ (5 * m)) :
     P m = s • T ∧ ∀ i, i < m → NonDegen (g i) :=
   varBaseMul_deployed_correct Pallas.curve.toAffine m g circuitMod T P s hTne hd hT hin hout hP0
-    (by decide) horder hreg₁ hreg₂ hbound hs hreg
+    (by decide) horder hreg₁ hbound hs hreg
 
 end Kimchi.Circuit.VarBaseMul

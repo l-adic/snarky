@@ -371,7 +371,7 @@ theorem ladder_nondegen_tight (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
     `order ≈ 2^254 + 4.56·10^37` a large prime, `2δ > δ'`).
 -/
 theorem ladder_x_nondegen (order circuitMod L : ℕ)
-    (hreg₁ : 2 ^ (L - 1) < order) (hreg₂ : order < 2 ^ L)
+    (hreg₁ : 2 ^ (L - 1) < order)
     (hodd : Odd order) (horder : 3 < order)
     (hbound : circuitMod + 2 ^ (L - 1) + 2 ≤ 2 * order)
     (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
