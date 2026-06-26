@@ -1,9 +1,10 @@
 name: Lean
 
 # Separate from the main `CI` workflow: the Kimchi formalization has its own
-# toolchain (elan / lake / Mathlib), needs no git submodules, and is independent
-# of the PureScript/Rust build — so it runs in parallel and only when `formal/`
-# (or this file) changes.
+# toolchain (elan / lake / Mathlib) and is independent of the PureScript/Rust
+# build — so it runs in parallel and only when `formal/` (or this file) changes.
+# It needs one git submodule, the CompElliptic dependency (initialized below);
+# the large `mina` submodule is skipped.
 on:
   push:
     branches: [ main ]
@@ -35,8 +36,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        # No submodules: the Lean project depends only on Mathlib (fetched by lake).
+        # Skip submodules here so the large `mina` submodule isn't fetched; the
+        # CompElliptic dependency submodule is initialized on its own below.
         submodules: false
+
+    - name: Check out the CompElliptic dependency submodule
+      working-directory: .
+      run: git submodule update --init formal/vendor/CompElliptic
 
     - name: Lean style check
       working-directory: .
@@ -51,18 +57,26 @@ jobs:
     - name: Fetch deps + build the library (= check every proof)
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
+        # Ensure the manifest matches the Mathlib revision pinned in lakefile.toml
+        # so `lake exe cache get` does not fail on toolchain mismatch checks.
+        lake update mathlib
         # Mathlib olean cache (does NOT include ProofWidgets' widget JS).
         lake exe cache get
-        # ProofWidgets ships its prebuilt widget JS as a GitHub *cloud release*
-        # (`ProofWidgets4.tar.gz`), which `lake exe cache get` does not fetch.
-        # Without it, `lake build` hits ProofWidgets' `errorOnBuild` guard
-        # ("ProofWidgets not up-to-date"). Fetch + extract it ourselves.
+        # Older ProofWidgets tags ship prebuilt widget JS in a GitHub release
+        # asset (`ProofWidgets4.tar.gz`) that `lake exe cache get` does not
+        # fetch. Newer tags vendor this differently and may not publish the
+        # tarball, so treat the download as best-effort.
         pw=.lake/packages/proofwidgets
         rev=$(jq -r '.packages[] | select(.name=="proofwidgets") | .inputRev' lake-manifest.json)
-        echo "Fetching ProofWidgets cloud release $rev (prebuilt widget JS)"
+        url="https://github.com/leanprover-community/ProofWidgets4/releases/download/${rev}/ProofWidgets4.tar.gz"
+        echo "Checking ProofWidgets cloud release $rev for prebuilt widget JS"
         mkdir -p "$pw/.lake/build"
-        curl -fsSL "https://github.com/leanprover-community/ProofWidgets4/releases/download/${rev}/ProofWidgets4.tar.gz" \
-          | tar xz -C "$pw/.lake/build"
+        if curl -fsI "$url" >/dev/null; then
+          echo "Fetching ProofWidgets cloud release asset"
+          curl -fsSL "$url" | tar xz -C "$pw/.lake/build"
+        else
+          echo "No ProofWidgets release tarball for $rev; continuing"
+        fi
         # Build only our library: typechecks every proof and runs the `#eval`s.
         lake build Kimchi
 
