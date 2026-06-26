@@ -1,9 +1,10 @@
 name: Lean
 
 # Separate from the main `CI` workflow: the Kimchi formalization has its own
-# toolchain (elan / lake / Mathlib), needs no git submodules, and is independent
-# of the PureScript/Rust build — so it runs in parallel and only when `formal/`
-# (or this file) changes.
+# toolchain (elan / lake / Mathlib) and is independent of the PureScript/Rust
+# build — so it runs in parallel and only when `formal/` (or this file) changes.
+# It needs one git submodule, the CompElliptic dependency (initialized below);
+# the large `mina` submodule is skipped.
 on:
   push:
     branches: [ main ]
@@ -35,8 +36,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        # No submodules: the Lean project depends only on Mathlib (fetched by lake).
+        # Skip submodules here so the large `mina` submodule isn't fetched; the
+        # CompElliptic dependency submodule is initialized on its own below.
         submodules: false
+
+    - name: Check out the CompElliptic dependency submodule
+      working-directory: .
+      run: git submodule update --init formal/vendor/CompElliptic
 
     - name: Lean style check
       working-directory: .
