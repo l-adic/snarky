@@ -1,4 +1,4 @@
-import Kimchi.Cycle.Order
+import Kimchi.Curve
 import Kimchi.Gate.VarBaseMul
 
 /-!
@@ -13,7 +13,7 @@ These are standalone library lemmas — the mathematical core of "the partial ac
 stay away from `±T`" — to be wired into the per-row accumulators in a later step.
 -/
 
-namespace Kimchi.Cycle
+namespace Kimchi.Circuit.VarBaseMul
 
 open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine
 
@@ -153,4 +153,4 @@ lemma tne_of_holds (c : WeierstrassCurve.Affine F)
     exact_mod_cast this
   exact smul_ne_zero_of_lt c hPne (by norm_num) hlt h2P
 
-end Kimchi.Cycle
+end Kimchi.Circuit.VarBaseMul

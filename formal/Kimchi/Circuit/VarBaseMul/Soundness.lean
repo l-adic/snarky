@@ -1,6 +1,6 @@
-import Kimchi.Cycle.NonDegen
-import Kimchi.Circuit.VarBaseMul
-import Kimchi.Ladder
+import Kimchi.Circuit.VarBaseMul.NonDegen
+import Kimchi.Circuit.VarBaseMul.Basic
+import Kimchi.Circuit.VarBaseMul.Ladder
 
 /-!
 # VarBaseMul soundness: `s ∉ forbiddenBand ⟹ every gate row is non-degenerate`
@@ -8,12 +8,12 @@ import Kimchi.Ladder
 This is the genuine `hsound` for the kimchi VarBaseMul gate. The complete forbidden set
 is the band `s ∈ [-15, 15] (mod order)` (the small scalars whose double-and-add drives
 the accumulator onto `±T` in the final doublings; the number-theoretic core is
-`Kimchi.Ladder.ladder_nondegen`). Excluding it makes EVERY satisfying witness's gate rows
+`Ladder.ladder_nondegen`). Excluding it makes EVERY satisfying witness's gate rows
 non-degenerate — the property the (incomplete-addition) gate needs and the deployed
 two-residue check fails to guarantee.
 -/
 
-namespace Kimchi.Cycle
+namespace Kimchi.Circuit.VarBaseMul
 
 open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine Kimchi.Circuit.VarBaseMul
   Kimchi.Shifted
@@ -25,7 +25,7 @@ variable {F : Type*} [Field F] [DecidableEq F]
     prime `order ≡ 1 (mod 4)` (the actual degenerate set is `⊆` these), and exactly tight
     for the Pasta primes. -/
 def forbiddenValues (order : ℕ) : Set ℤ :=
-  {s | ∃ t ∈ Kimchi.Ladder.forbiddenResidues, (order : ℤ) ∣ (s - t)}
+  {s | ∃ t ∈ Ladder.forbiddenResidues, (order : ℤ) ∣ (s - t)}
 
 /-- **Prime order ⇒ full order.** For a nonzero point `T` on a `short-Weierstrass curve`, a scalar
     multiple `m • T` vanishes iff `order ∣ m`. (`order` is prime and `order • T = 0`, so
@@ -109,7 +109,7 @@ lemma gate_step_advance (c : WeierstrassCurve.Affine F)
         rw [ add_zsmul, one_zsmul ];
         rw [ ← hIk, h, neg_add_cancel ];
       exact hkx2 ( zsmul_eq_zero_iff_order_dvd c hTne _ |>.1 h_contra ) ) ) ( by
-      apply Kimchi.Cycle.singleBit_tne_of_double_ne c hI hQ ( x_ne_xT_of_ne_base c hI hTns ( by
+      apply singleBit_tne_of_double_ne c hI hQ ( x_ne_xT_of_ne_base c hI hTns ( by
         contrapose! hkx1;
         rw [ ← zsmul_eq_zero_iff_order_dvd c hTne ];
         rw [ sub_smul, one_smul, ← hIk, hkx1, sub_self ] ) ( by
@@ -267,7 +267,7 @@ lemma gate_block (c : WeierstrassCurve.Affine F)
 
     The scalar enters directly as the bit-determined ladder top
     (`hs : s = gateLadder g (5 * m)`), and the one-wrap regime bounds (`hreg₁`, `hreg₂`)
-    feed the number-theoretic core `Kimchi.Ladder.ladder_nondegen_tight`.
+    feed the number-theoretic core `Ladder.ladder_nondegen_tight`.
 -/
 theorem nonDegen_of_not_forbidden (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
@@ -286,12 +286,12 @@ theorem nonDegen_of_not_forbidden (c : WeierstrassCurve.Affine F)
     (hs : s = gateLadder g (5 * m)) (hnf : s ∉ forbiddenValues c.order) :
     ∀ i, i < m → NonDegen (g i) := by
   -- Transport `hnf` from `s` to the bit-determined ladder top.
-  have hnf' : ∀ t ∈ Kimchi.Ladder.forbiddenResidues,
+  have hnf' : ∀ t ∈ Ladder.forbiddenResidues,
       ¬ (c.order : ℤ) ∣ (gateLadder g (5 * m) - t) := by
     intro t ht hdvd
     exact hnf ⟨t, ht, by rw [hs]; exact hdvd⟩
   -- Global ladder non-degeneracy from the number-theoretic core.
-  have hND := Kimchi.Ladder.ladder_nondegen_tight c.order (5 * m) c.order_prime hq4 hreg₁ hreg₂
+  have hND := Ladder.ladder_nondegen_tight c.order (5 * m) c.order_prime hq4 hreg₁ hreg₂
     (gateLadder g) (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
     (fun j _ => gateLadder_succ g j) hnf'
   -- Fold the gate blocks: each accumulator is `gateLadder g (5i) • T` and every row is
@@ -327,7 +327,7 @@ theorem nonDegen_of_not_forbidden (c : WeierstrassCurve.Affine F)
 The §6 conclusion of `docs/varbasemul-soundness-analysis.md`, formalized: the deployed
 circuit is sound because (A) the t-conditions are forced by the gate constraints
 (`tne_of_holds`) and (B) the x-conditions are excluded by the circuit-field register
-bound (`Kimchi.Ladder.ladder_x_nondegen`) — the forbidden check appears NOWHERE. -/
+bound (`Ladder.ladder_x_nondegen`) — the forbidden check appears NOWHERE. -/
 
 /-- Per sub-step advance using ONLY the x-condition `k ≢ ±1`; the t-condition `t ≠ 0`
     is supplied by `tne_of_holds` (the constraints + prime order), not by `2k ≢ ±1`. -/
@@ -447,7 +447,7 @@ theorem varBaseMul_deployed_correct (c : WeierstrassCurve.Affine F)
     (hreg : s < 2 * (circuitMod : ℤ) + 2 ^ (5 * m)) :
     P m = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
   have hodd : c.order ≠ 2 := by omega
-  have hND := Kimchi.Ladder.ladder_x_nondegen c.order circuitMod (5 * m)
+  have hND := Ladder.ladder_x_nondegen c.order circuitMod (5 * m)
     hreg₁ hreg₂ (c.order_prime.odd_of_ne_two hodd) horder hbound
     (gateLadder g) (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
     (fun j _ => gateLadder_succ g j) (by rw [← hs]; exact hreg)
@@ -476,4 +476,4 @@ theorem varBaseMul_deployed_correct (c : WeierstrassCurve.Affine F)
         · subst h; exact hNDgi
   exact ⟨by rw [hs]; exact (key m le_rfl).1, fun i hi => (key m le_rfl).2 i hi⟩
 
-end Kimchi.Cycle
+end Kimchi.Circuit.VarBaseMul

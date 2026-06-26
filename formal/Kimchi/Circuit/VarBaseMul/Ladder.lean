@@ -26,7 +26,7 @@ the regime and `L = 2,…,13`.
 Only the lower regime bound `hreg₁ : 2^(L-1) < q` is used in the proof; the upper bound
 `hreg₂ : q < 2 ^ L` and primality `hq` are carried to state the one-wrap regime. -/
 
-namespace Kimchi.Ladder
+namespace Kimchi.Circuit.VarBaseMul.Ladder
 
 /-- Lower/upper envelope of the ladder: `2^j + 1 ≤ k j ≤ 3·2^j - 1` for `j ≤ L`. -/
 lemma ladder_bounds (L : ℕ) (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
@@ -424,4 +424,4 @@ theorem ladder_x_nondegen (order circuitMod L : ℕ)
           (show j ≤ L - 1 from Nat.le_sub_one_of_lt hj)]
     · grind
 
-end Kimchi.Ladder
+end Kimchi.Circuit.VarBaseMul.Ladder

@@ -1,4 +1,4 @@
-import Kimchi.Cycle.Order
+import Kimchi.Curve
 import CompElliptic.Curves.Pasta
 import CompElliptic.Fields.Pasta
 
@@ -22,7 +22,7 @@ This is the ONLY file in the tree that declares an `axiom`; everything upstream 
 `#print axioms`-clean.
 -/
 
-namespace Kimchi.Cycle
+namespace Kimchi.Pasta
 
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta CompElliptic.CurveForms.ShortWeierstrass
 
@@ -55,4 +55,4 @@ instance : Fact (Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ =
 instance : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0 ∧
     Vesta.curve.toAffine.a₃ = 0) := ⟨⟨rfl, rfl, rfl⟩⟩
 
-end Kimchi.Cycle
+end Kimchi.Pasta

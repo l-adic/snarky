@@ -99,8 +99,8 @@ jobs:
         #print axioms Kimchi.Gate.AddComplete.sound_point
         #print axioms WeierstrassCurve.Affine.zsmul_mod
         #print axioms WeierstrassCurve.Affine.order_smul
-        #print axioms Kimchi.Cycle.varBaseMul_deployed_correct
-        #print axioms Kimchi.Cycle.varBaseMul_pallas_correct
+        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_deployed_correct
+        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_pallas_correct
         EOF
         out=$(lake env lean check_axioms.lean)
         echo "$out"
