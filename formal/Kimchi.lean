@@ -14,4 +14,4 @@ import Kimchi.Circuit
 import Kimchi.Circuits.AddCompleteStep
 import Kimchi.Json
 
-import Kimchi.Cycle.Axioms
+import Kimchi.Cycle.ScalarMod

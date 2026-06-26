@@ -17,8 +17,8 @@ The trusted ORACLE is Mathlib's affine elliptic-curve group law
     addX             = ℓ² − x₁ − x₂     ← gate c4: x₁+x₂+x₃ = s²
     addY             = ℓ(x₁ − x₃) − y₁  ← gate c5: y₃ = s(x₁−x₃) − y₁
 
-and `Point.add` of two affine points is DEFINED as `(addX, addY)`
-(`Affine.add_some`), so matching those formulas = computing the group sum.
+and the sum of two affine points has coordinates `(addX, addY)`
+(`Point.add_some`), so matching those formulas = computing the group sum.
 
 ## Main results
 
@@ -105,9 +105,9 @@ variable [Field F] [DecidableEq F]
 
 /-- SOUNDNESS: a satisfying witness can't lie. If the 7 constraints hold for
     on-curve inputs with finite result, then the witnessed slope and output are
-    EXACTLY Mathlib's affine group-law values. Since `Point.add` of two affine
-    points is `(addX, addY)` (`Affine.add_some`), this says the gate computes
-    `(x1,y1) + (x2,y2)` on the curve. -/
+    EXACTLY Mathlib's affine group-law values. Since the sum of two affine
+    points has coordinates `(addX, addY)` (`Point.add_some`), this says the gate
+    computes `(x1,y1) + (x2,y2)` on the curve. -/
 theorem sound_noninf
     (W : WeierstrassCurve.Affine F)
     (ha : IsShortShape W)
@@ -311,7 +311,7 @@ theorem sound_point_noninf
     (hcons : Holds w)
     (hy1 : w.y1 ≠ 0) (htwo : (2 : F) ≠ 0) (hinf : w.inf = 0) :
     ∃ h3 : W.Nonsingular w.x3 w.y3,
-      Point.some h1 + Point.some h2 = Point.some h3 := by
+      Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3 := by
   obtain ⟨ha1, ha2, ha3, ha4⟩ := ha
   -- `inf = 0` rules out the vertical (sum-is-∞) case.
   have hfin : ¬(w.x1 = w.x2 ∧ w.y1 = W.negY w.x2 w.y2) := by
@@ -345,7 +345,7 @@ theorem sound_point_inf
     (w : Witness F)
     (h1 : W.Nonsingular w.x1 w.y1) (h2 : W.Nonsingular w.x2 w.y2)
     (hcons : Holds w) (hinf : w.inf = 1) :
-    Point.some h1 + Point.some h2 = 0 := by
+    Point.some _ _ h1 + Point.some _ _ h2 = 0 := by
   simp only [Holds] at hcons
   obtain ⟨c1, c2, c3, c4, c5, c6, c7⟩ := hcons
   rw [hinf] at c6 c7
@@ -396,9 +396,9 @@ theorem sound_point
     (w : Witness F)
     (h1 : W.Nonsingular w.x1 w.y1) (h2 : W.Nonsingular w.x2 w.y2)
     (hcons : Holds w) (hy1 : w.y1 ≠ 0) (htwo : (2 : F) ≠ 0) :
-    (w.inf = 1 ∧ Point.some h1 + Point.some h2 = 0)
+    (w.inf = 1 ∧ Point.some _ _ h1 + Point.some _ _ h2 = 0)
       ∨ (w.inf = 0 ∧ ∃ h3 : W.Nonsingular w.x3 w.y3,
-          Point.some h1 + Point.some h2 = Point.some h3) := by
+          Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3) := by
   rcases inf_boolean w hcons with hinf | hinf
   · exact Or.inr ⟨hinf, sound_point_noninf W ha w h1 h2 hcons hy1 htwo hinf⟩
   · exact Or.inl ⟨hinf, sound_point_inf W ha w h1 h2 hcons hinf⟩
