@@ -97,4 +97,50 @@ theorem varBaseMul_vesta_correct
       norm_num [PALLAS_BASE_CARD, PALLAS_SCALAR_CARD]
     omega
 
+/-! ## The output as a scalar-field element
+
+Scalar multiplication `s • T` depends only on `s mod order` (`WeierstrassCurve.Affine.zsmul_mod`),
+so the circuit's output is best read as `[s mod (group order)]·T` — multiplication by the genuine
+scalar-field residue. The integer `s` (the ladder top) is just one representative. -/
+
+/-- `varBaseMul_pallas_correct` with the output scalar reduced to its scalar-field residue:
+    the `m` gates compute `[s mod PALLAS_SCALAR_CARD]·T`, scalar multiplication by the genuine
+    `ZMod PALLAS_SCALAR_CARD` element (the Pallas group order, via `pallas_card`). -/
+theorem varBaseMul_pallas_correct_mod
+    (m : ℕ) (g : ℕ → Witness PallasBaseField)
+    (T : Pallas.curve.toAffine.Point) (P : ℕ → Pallas.curve.toAffine.Point) (s : ℤ)
+    (hTne : T ≠ 0)
+    (hd : ∀ i, i < m → GateData Pallas.curve.toAffine (g i))
+    (hT : ∀ i (hi : i < m), T = Point.some _ _ (hd i hi).hT)
+    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (hd i hi).a0)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
+    (hP0 : P 0 = (2 : ℤ) • T)
+    (hbits : 5 * m ≤ 255)
+    (hs : s = gateLadder g (5 * m))
+    (hcanonical : s < 2 * (PALLAS_BASE_CARD : ℤ) + 2 ^ (5 * m)) :
+    P m = (s % (PALLAS_SCALAR_CARD : ℤ)) • T ∧ ∀ i, i < m → NonDegen (g i) := by
+  obtain ⟨hP, hND⟩ :=
+    varBaseMul_pallas_correct m g T P s hTne hd hT hin hout hP0 hbits hs hcanonical
+  exact ⟨by rw [hP, ← Kimchi.Pasta.pallas_card, WeierstrassCurve.Affine.zsmul_mod], hND⟩
+
+/-- `varBaseMul_vesta_correct` with the output scalar reduced to its scalar-field residue:
+    the `m` gates compute `[s mod PALLAS_BASE_CARD]·T` (`PALLAS_BASE_CARD` is the Vesta group
+    order, `vesta_card`). -/
+theorem varBaseMul_vesta_correct_mod
+    (m : ℕ) (g : ℕ → Witness VestaBaseField)
+    (T : Vesta.curve.toAffine.Point) (P : ℕ → Vesta.curve.toAffine.Point) (s : ℤ)
+    (hTne : T ≠ 0)
+    (hd : ∀ i, i < m → GateData Vesta.curve.toAffine (g i))
+    (hT : ∀ i (hi : i < m), T = Point.some _ _ (hd i hi).hT)
+    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (hd i hi).a0)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
+    (hP0 : P 0 = (2 : ℤ) • T)
+    (hbits : 5 * m ≤ 255)
+    (hs : s = gateLadder g (5 * m))
+    (hcanonical : s < 2 * (PALLAS_SCALAR_CARD : ℤ) + 2 ^ (5 * m)) :
+    P m = (s % (PALLAS_BASE_CARD : ℤ)) • T ∧ ∀ i, i < m → NonDegen (g i) := by
+  obtain ⟨hP, hND⟩ :=
+    varBaseMul_vesta_correct m g T P s hTne hd hT hin hout hP0 hbits hs hcanonical
+  exact ⟨by rw [hP, ← Kimchi.Pasta.vesta_card, WeierstrassCurve.Affine.zsmul_mod], hND⟩
+
 end Kimchi.Circuit.VarBaseMul

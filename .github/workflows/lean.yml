@@ -103,6 +103,8 @@ jobs:
         #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_correct
         #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_pallas_correct
         #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_vesta_correct
+        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_pallas_correct_mod
+        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_vesta_correct_mod
         EOF
         out=$(lake env lean check_axioms.lean)
         echo "$out"
