@@ -44,7 +44,7 @@ lemma zsmul_eq_zero_iff_order_dvd (c : WeierstrassCurve.Affine F)
     · exact h1
   rw [← addOrderOf_dvd_iff_zsmul_eq_zero, horder]
 
-/-
+/--
 **Per sub-step advance (mod-based).** Given the gate's per-bit constraints
     `singleBitHolds` with input accumulator `Pᵢ = k·T` and the abstract-ladder
     non-degeneracy facts at `k` (`k ≢ ±1` and `2k ≢ ±1 (mod order)`), the two additions
@@ -162,10 +162,8 @@ lemma gateBitSign_eq (g : ℕ → Witness F) (j : ℕ) :
     gateBitSign g j = 1 ∨ gateBitSign g j = -1 := by
   unfold gateBitSign; split <;> simp
 
-/-
-The five raw bits of gate `i` are the sub-step bits `5i … 5i+4`.
--/
 omit [Field F] [DecidableEq F] in
+/-- The five raw bits of gate `i` are the sub-step bits `5i … 5i+4`. -/
 lemma gateBit_block (g : ℕ → Witness F) (i : ℕ) :
     gateBit g (5 * i) = (g i).b0 ∧ gateBit g (5 * i + 1) = (g i).b1
       ∧ gateBit g (5 * i + 2) = (g i).b2 ∧ gateBit g (5 * i + 3) = (g i).b3
@@ -173,9 +171,7 @@ lemma gateBit_block (g : ℕ → Witness F) (i : ℕ) :
   unfold gateBit; simp +decide [ Nat.add_mod ] ;
   norm_num [ Nat.add_div ]
 
-/-
-The signed bit `e` produced by `signed_target` matches `gateBitSign`.
--/
+/-- The signed bit `e` produced by `signed_target` matches `gateBitSign`. -/
 lemma e_eq_gateBitSign (g : ℕ → Witness F) (j : ℕ) {b : F} (hgb : gateBit g j = b)
     (hbit : b = 0 ∨ b = 1) {e : ℤ} (he2 : (e : F) = 2 * b - 1) (he : e = 1 ∨ e = -1)
     (h2 : (2 : F) ≠ 0) : e = gateBitSign g j := by
@@ -185,7 +181,7 @@ lemma e_eq_gateBitSign (g : ℕ → Witness F) (j : ℕ) {b : F} (hgb : gateBit 
   · rcases he with ( rfl | rfl ) <;> norm_num at *;
     grind +extAll
 
-/-
+/--
 **One gate block.** Given a gate's constraint data `gd`, the input accumulator equal
     to `gateLadder g (5i) • T`, and the ladder non-degeneracy at all five sub-step scalars
     `gateLadder g (5i+ℓ)` (`ℓ < 5`), every one of the gate's ten side conditions holds
@@ -258,7 +254,7 @@ lemma gate_block (c : WeierstrassCurve.Affine F)
   refine ⟨⟨hx0, hx1, hx2, hx3, hx4, ht0, ht1, ht2, ht3, ht4⟩, ?_⟩
   rw [hTeq]; exact ha5
 
-/-
+/--
 **VarBaseMul soundness (`hsound`).** For ANY witness satisfying the gate constraints
     (`GateData` for every row) at the real init (`P 0 = 2·T`), in the one-wrap regime
     `2^(5m-1) < order < 2^(5m)`, if the integer scalar `s` computed by the gate bits
@@ -269,12 +265,9 @@ lemma gate_block (c : WeierstrassCurve.Affine F)
     `Kimchi.Circuit.VarBaseMul.varBaseMul_sound`: a non-forbidden scalar forces every
     incomplete-addition step non-degenerate.
 
-    Hypothesis adjustments vs. the original stub (the conclusion is unchanged):
-    the cross-field register bookkeeping (`N`, `hN0`, `hNs`, `hregIn`, `hregOut`) is
-    replaced by stating the scalar directly as the bit-determined ladder top
+    The scalar enters directly as the bit-determined ladder top
     (`hs : s = gateLadder g (5 * m)`), and the one-wrap regime bounds (`hreg₁`, `hreg₂`)
-    are added — both are needed to invoke the number-theoretic core
-    `Kimchi.Ladder.ladder_nondegen_tight`.
+    feed the number-theoretic core `Kimchi.Ladder.ladder_nondegen_tight`.
 -/
 theorem nonDegen_of_not_forbidden (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]

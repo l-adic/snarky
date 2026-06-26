@@ -10,9 +10,9 @@ inconsistently and break `ring`/`linear_combination`). For such a curve we need 
 supplied as auto-threading `Fact`s plus one theorem:
 
 * `c.order` — the group order `#E(F)` (`Nat.card c.Point`);
-* `c.order_smul` — that the order annihilates every point. A **theorem**
-  (`card_nsmul_eq_zero'`), not an axiom: it holds for any group, no finiteness needed (an
-  infinite group has `Nat.card = 0`). This is the win over a hand-rolled curve record.
+* `c.order_smul` — that the order annihilates every point, proved from
+  `card_nsmul_eq_zero'`: it holds for any group, with no finiteness needed (an infinite
+  group has `Nat.card = 0`).
 * `[Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]` and `[Fact (Nat.Prime c.order)]` — the
   short-Weierstrass and prime-order hypotheses, as instances so they thread through the
   development by inference. No named predicate — the short-shape condition is the bare
@@ -30,9 +30,9 @@ variable {F : Type*} [Field F] [DecidableEq F]
 /-- The group order `#E(F)`. -/
 noncomputable def order (W : Affine F) : ℕ := Nat.card W.Point
 
-/-- The order annihilates every point: `(order : ℤ) • P = 0`. A theorem
-    (`card_nsmul_eq_zero'`), not an axiom — it holds for any group, with no finiteness
-    hypothesis (an infinite group has `Nat.card = 0`). -/
+/-- The order annihilates every point: `(order : ℤ) • P = 0`, from `card_nsmul_eq_zero'`.
+    Holds for any group with no finiteness hypothesis (an infinite group has
+    `Nat.card = 0`). -/
 lemma order_smul (W : Affine F) (P : W.Point) : (W.order : ℤ) • P = 0 := by
   rw [natCast_zsmul]; exact card_nsmul_eq_zero'
 

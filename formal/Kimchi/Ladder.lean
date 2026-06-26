@@ -2,32 +2,29 @@ import Mathlib
 
 /-! # Number-theoretic kernel of the VarBaseMul gate soundness (pure math).
 
-## Correction to the originally stated forbidden set
+## The forbidden set is a band, not a two-residue condition
 
-The task shipped with the forbidden condition phrased as `q ∣ (k L + 2^L - 1)` or
-`q ∣ (k L + 2^L + 1)` (i.e. `k L + 2^L ≡ ±1 (mod q)`).  That condition is **false** as a
-characterisation of degeneracy: a brute-force search over the entire one-wrap regime (every
-prime `q` with `2^(L-1) < q < 2^L`, for `L = 5,…,13`) produces sign patterns whose final value
-`s = k L` is *not* of that form yet has a degenerate input.  Concretely, for `L = 5`, `q = 29`
-the pattern giving `k 3 = 15` has `2·k 3 = 30 ≡ 1 (mod 29)`, yet `s + 2^L = 95 ≢ ±1 (mod 29)`.
+A natural guess for the degenerate finals is `k L + 2^L ≡ ±1 (mod q)`, but that is **not** a
+correct characterisation: a brute-force search over the one-wrap regime (every prime `q` with
+`2^(L-1) < q < 2^L`, for `L = 5,…,13`) produces sign patterns whose final value `s = k L` is not
+of that form yet has a degenerate input.  Concretely, for `L = 5`, `q = 29` the pattern giving
+`k 3 = 15` has `2·k 3 = 30 ≡ 1 (mod 29)`, yet `s + 2^L = 95 ≢ ±1 (mod 29)`.
 
-The *correct* forbidden set is a small band around the multiples of `q`, on `k L` itself (not on
+The forbidden set is instead a small band around the multiples of `q`, on `k L` itself (not on
 `k L + 2^L`).  Propagating a degenerate input `k j` forward through `d = L - j` doubling steps
 gives `k L = 2^d · k j + T` with `|T| ≤ 2^d - 1`; a size argument confines degeneracy to the top
-three inputs (`d ≤ 3`), so the reachable degenerate finals satisfy `k L ≡ t (mod q)` for some
-integer `|t| ≤ 15`.  We therefore replace the (incorrect) two-residue hypothesis by
+three inputs (`d ≤ 3`), so every reachable degenerate final satisfies `k L ≡ t (mod q)` for some
+integer `|t| ≤ 15`.  The non-forbidden hypothesis is therefore
 
-  `hnf : ∀ t : ℤ, -15 ≤ t → t ≤ 15 → ¬ (q : ℤ) ∣ (k L - t)`.
+  `hnf : ∀ t : ℤ, -15 ≤ t → t ≤ 15 → ¬ (q : ℤ) ∣ (k L - t)`,
 
-This is a genuine *strengthening* of "`s` is not forbidden": it rules out the full band that can
-actually be reached.  It is satisfiable for the real parameters (`L = 255`, `q ≈ 2^254`): the band
-has `31 ≪ q` residues, so the overwhelming majority of `k L` avoid it.  A brute-force check
-confirms that under this hypothesis there are **no** degenerate inputs for any prime `q` in the
-regime and `L = 2,…,13`.  The conclusion is left exactly as originally requested.
+which rules out the full reachable band.  It is satisfiable for the real parameters
+(`L = 255`, `q ≈ 2^254`): the band has `31 ≪ q` residues, so the overwhelming majority of `k L`
+avoid it, and a brute-force check finds **no** degenerate inputs under it for any prime `q` in
+the regime and `L = 2,…,13`.
 
-The upper regime bound `hreg₂ : q < 2 ^ L` and the primality `hq` are kept because the user asked
-for the one-wrap regime, but they turn out not to be needed for the proof (only the lower regime
-bound `hreg₁ : 2^(L-1) < q` is used). -/
+Only the lower regime bound `hreg₁ : 2^(L-1) < q` is used in the proof; the upper bound
+`hreg₂ : q < 2 ^ L` and primality `hq` are carried to state the one-wrap regime. -/
 
 namespace Kimchi.Ladder
 
@@ -71,9 +68,7 @@ lemma ladder_size (q L : ℕ) (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
     nlinarith [pow_pos (zero_lt_two' ℤ) j,
       pow_le_pow_right₀ (by decide : 1 ≤ 2) (show j ≤ L - 4 by omega)]
 
-/-
-Every accumulator after the first step is odd (each step adds `ε ∈ {-1,1}`).
--/
+/-- Every accumulator after the first step is odd (each step adds `ε ∈ {-1,1}`). -/
 lemma ladder_odd (L : ℕ) (k ε : ℕ → ℤ)
     (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
     (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j) :
@@ -133,8 +128,8 @@ lemma ladder_top (q L : ℕ) (k ε : ℕ → ℤ)
     of length `L`, over a prime modulus `q` in the one-wrap regime `2^(L-1) < q < 2^L`.
     If the final value `s = k L` avoids the forbidden band `k L ≡ t (mod q)` for all
     `|t| ≤ 15`, then every INPUT `k j` (`j < L`) is non-degenerate:
-    `k j ≢ ±1` and `2·k j ≢ ±1 (mod q)`.  (See the file header for why the originally
-    stated forbidden set had to be corrected.) -/
+    `k j ≢ ±1` and `2·k j ≢ ±1 (mod q)`.  (See the file header for why the forbidden set
+    is this band rather than a two-residue condition.) -/
 theorem ladder_nondegen (q L : ℕ) (_hq : Nat.Prime q)
     (hreg₁ : 2 ^ (L - 1) < q) (_hreg₂ : q < 2 ^ L)
     (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
@@ -156,9 +151,7 @@ theorem ladder_nondegen (q L : ℕ) (_hq : Nat.Prime q)
     Pasta primes it is exactly this set. -/
 def forbiddenResidues : List ℤ := [0, 1, -1, 2, -2, 3, -3, 5, 7, 9, 11]
 
-/-
-Depth-1 input (`L = j + 1`): every degeneracy branch lands on a forbidden residue.
--/
+/-- Depth-1 input (`L = j + 1`): every degeneracy branch lands on a forbidden residue. -/
 lemma degen_d1 (q L : ℕ)
     (k ε : ℕ → ℤ)
     (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
@@ -180,11 +173,9 @@ lemma degen_d1 (q L : ℕ)
     · exact ⟨ 0, by decide, by simpa using h ⟩;
     · exact ⟨ -2, by decide, by convert h using 1; ring ⟩
 
-/-
-Depth-2 input (`L = j + 2`). Branches `q∣(k j-1)` and `q∣(2 k j-1)` land on forbidden
+/-- Depth-2 input (`L = j + 2`). Branches `q∣(k j-1)` and `q∣(2 k j-1)` land on forbidden
     residues; `q∣(k j+1)` is impossible by parity+size; `q∣(2 k j+1)` is impossible by
-    `q ≡ 1 (mod 4)`.
--/
+    `q ≡ 1 (mod 4)`. -/
 lemma degen_d2 (q L : ℕ) (hq4 : q % 4 = 1)
     (hreg₁ : 2 ^ (L - 1) < q) (hreg₂ : q < 2 ^ L)
     (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
@@ -246,11 +237,9 @@ lemma degen_d2 (q L : ℕ) (hq4 : q % 4 = 1)
       linarith );
     grind
 
-/-
-Depth-3 input (`L = j + 3`). Branch `q∣(2 k j-1)` lands on a forbidden residue;
+/-- Depth-3 input (`L = j + 3`). Branch `q∣(2 k j-1)` lands on a forbidden residue;
     `q∣(k j±1)` are impossible by size; `q∣(2 k j+1)` is impossible by `q ≡ 1 (mod 4)`
-    (or, when `j = 0`, forces `q = 5`, where forbiddenResidues covers every residue).
--/
+    (or, when `j = 0`, forces `q = 5`, where forbiddenResidues covers every residue). -/
 lemma degen_d3 (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
     (hreg₁ : 2 ^ (L - 1) < q) (hreg₂ : q < 2 ^ L)
     (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
@@ -350,7 +339,7 @@ theorem ladder_nondegen_tight (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
         (by tauto) <;>
     exact hnf t ht htd
 
-/-
+/--
 **x-condition non-degeneracy from the register/magnitude bound** (pure number theory,
     orthogonal to the t-condition `tne_of_holds`). The deployed circuit's register is a
     valid field element `< circuitMod`, so the ladder top is bounded:
@@ -361,27 +350,25 @@ theorem ladder_nondegen_tight (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
     above the bounded range, so no INPUT `k j` (`j < L`) is `≡ ±1 (mod order)` — i.e. no
     accumulator equals `±T`. (No constraints, no curve, no forbidden set.)
 
-    ## Corrections to the originally stated hypotheses
+    ## Why each side condition is needed
 
-    The statement as originally shipped is **false**; brute-force search over small
-    parameters finds explicit degenerate inputs.  Two independent failures occur:
+    Brute-force search over small parameters pins down three hypotheses, each necessary
+    (a concrete degenerate input exists without it):
 
-    * The even residue representatives `order ± 1` of `±1 (mod order)` are reachable when
-      `order` is even, so we must assume `hodd : Odd order` (the real `order` is a prime,
-      hence odd).  Combined with `ladder_odd` (every `k j`, `1 ≤ j`, is odd) this rules
-      out the even reps and forces the odd reps `2·order ± 1`.
-    * For `j = L - 1` the `+1` branch (`k (L-1) = 2·order - 1`) gives a final value
-      `k L = 4·order - 2 + ε ≥ 4·order - 3`, which the *strict* bound
-      `circuitMod + 2^(L-1) < 2·order` (i.e. `k L < 4·order - 2`) does **not** exclude
-      (e.g. `order = 5, circuitMod = 5, L = 3`).  Tightening the slack by `2` to
-      `hbound : circuitMod + 2^(L-1) + 2 ≤ 2·order` (i.e. `k L < 4·order - 4`) closes it.
-    * The single tiny case `order = 3, L = 2` makes the input `k 0 = 2` satisfy
-      `order ∣ (k 0 + 1) = 3`; this is excluded by `horder : 3 < order`.
+    * `hodd : Odd order` — when `order` is even the even representatives `order ± 1` of
+      `±1 (mod order)` are reachable. With `ladder_odd` (every `k j`, `1 ≤ j`, is odd)
+      it rules out the even reps and forces the odd reps `2·order ± 1`. The real `order`
+      is prime, hence odd.
+    * `hbound : circuitMod + 2^(L-1) + 2 ≤ 2·order` — for `j = L - 1` the `+1` branch
+      (`k (L-1) = 2·order - 1`) gives `k L = 4·order - 2 + ε ≥ 4·order - 3`, which the
+      slacker bound `circuitMod + 2^(L-1) < 2·order` (`k L < 4·order - 2`) fails to
+      exclude (e.g. `order = 5, circuitMod = 5, L = 3`); tightening the slack by `2`
+      (`k L < 4·order - 4`) closes it.
+    * `horder : 3 < order` — for `order = 3, L = 2` the input `k 0 = 2` satisfies
+      `order ∣ (k 0 + 1) = 3`.
 
-    All three additions hold comfortably for the real Pasta parameters
-    (`L = 255`, `order ≈ 2^254 + 4.56·10^37` is a large prime, and `2δ > δ'`), and a
-    brute-force search confirms there are **no** counterexamples to the corrected
-    statement.  The conclusion is left exactly as originally requested.
+    All three hold comfortably for the real Pasta parameters (`L = 255`,
+    `order ≈ 2^254 + 4.56·10^37` a large prime, `2δ > δ'`).
 -/
 theorem ladder_x_nondegen (order circuitMod L : ℕ)
     (hreg₁ : 2 ^ (L - 1) < order) (hreg₂ : order < 2 ^ L)
