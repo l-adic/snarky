@@ -21,10 +21,11 @@ cd "$(dirname "$0")/.." || exit 2   # -> formal/
 fix=0
 [ "${1:-}" = "--fix" ] && fix=1
 
-# Collect tracked source files (skip the Lake build dir).
+# Collect our own source files (skip the Lake build dir and the vendored
+# CompElliptic dependency submodule, which has its own upstream style).
 files=()
 while IFS= read -r f; do files+=("$f"); done \
-  < <(find . -name '*.lean' -not -path './.lake/*' | sort)
+  < <(find . -name '*.lean' -not -path './.lake/*' -not -path './vendor/*' | sort)
 
 if [ "${#files[@]}" -eq 0 ]; then
   echo "no .lean files found under formal/"
