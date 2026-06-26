@@ -70,11 +70,12 @@ theorem addComplete_sound
     ∧ ∃ (H1 : W.Nonsingular (w.cell (6, 0)) (w.cell (6, 1)))
         (H2 : W.Nonsingular (w.cell (6, 2)) (w.cell (6, 3))),
         (w.cell (6, 6) = 1 ∧
-            WeierstrassCurve.Affine.Point.some H1 + WeierstrassCurve.Affine.Point.some H2 = 0)
+            WeierstrassCurve.Affine.Point.some _ _ H1
+              + WeierstrassCurve.Affine.Point.some _ _ H2 = 0)
         ∨ (w.cell (6, 6) = 0 ∧
             ∃ h3 : W.Nonsingular (w.cell (6, 4)) (w.cell (6, 5)),
-              WeierstrassCurve.Affine.Point.some H1 + WeierstrassCurve.Affine.Point.some H2
-                = WeierstrassCurve.Affine.Point.some h3) := by
+              WeierstrassCurve.Affine.Point.some _ _ H1 + WeierstrassCurve.Affine.Point.some _ _ H2
+                = WeierstrassCurve.Affine.Point.some _ _ h3) := by
   obtain ⟨hgates, hcopy⟩ := hsat
   have hsz : (addCompleteCircuit (F := F)).gates.size = 7 := rfl
   -- the `CompleteAdd` row's wire for col k points to (k, 0)
