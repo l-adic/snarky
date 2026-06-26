@@ -11,7 +11,7 @@ Transcribed from proof-systems `.../complete_add.rs`: the column layout
 
 The trusted ORACLE is Mathlib's affine elliptic-curve group law
 (`WeierstrassCurve.Affine.slope / addX / addY`). With the Pasta-shape curve
-(`IsShortShape`) Mathlib's formulas collapse to exactly the gate's identities:
+(`a₁ = a₂ = a₃ = a₄ = 0`) Mathlib's formulas collapse to exactly the gate's identities:
 
     slope (doubling) = 3x₁²/(2y₁)      ← gate c3 doubling: 2·s·y₁ = 3x₁²
     addX             = ℓ² − x₁ − x₂     ← gate c4: x₁+x₂+x₃ = s²
@@ -102,7 +102,7 @@ variable [Field F] [DecidableEq F]
     computes `(x1,y1) + (x2,y2)` on the curve. -/
 theorem sound_noninf
     (W : WeierstrassCurve.Affine F)
-    (ha : IsShortShape W)
+    (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
     (w : Witness F)
     (_hon1 : W.Equation w.x1 w.y1) (_hon2 : W.Equation w.x2 w.y2)
     (h : Holds w) (hinf : w.inf = 0)
@@ -158,7 +158,7 @@ theorem sound_noninf
     is the Mathlib affine sum. -/
 theorem complete_noninf
     (W : WeierstrassCurve.Affine F)
-    (ha : IsShortShape W)
+    (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
     (x1 y1 x2 y2 : F)
     (hon1 : W.Equation x1 y1) (hon2 : W.Equation x2 y2)
     (hfin : ¬ (x1 = x2 ∧ y1 = W.negY x2 y2))
@@ -221,7 +221,7 @@ omit [DecidableEq F] in
     The companion to `complete_noninf`, closing completeness over both cases. -/
 theorem complete_inf
     (W : WeierstrassCurve.Affine F)
-    (ha : IsShortShape W)
+    (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
     (x1 y1 x2 y2 : F)
     (_hon1 : W.Equation x1 y1) (_hon2 : W.Equation x2 y2)
     (hinf : x1 = x2 ∧ y1 = W.negY x2 y2)
@@ -257,7 +257,7 @@ theorem complete_inf
     which the prime-order kimchi curves don't have — so it is no real restriction there.) -/
 theorem complete
     (W : WeierstrassCurve.Affine F)
-    (ha : IsShortShape W)
+    (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
     (x1 y1 x2 y2 : F)
     (hon1 : W.Equation x1 y1) (hon2 : W.Equation x2 y2)
     (hy1 : y1 ≠ 0) (h2 : (2 : F) ≠ 0) :
@@ -297,7 +297,7 @@ variable [Field F] [DecidableEq F]
     point, and as a group element it equals the sum `(x₁,y₁) + (x₂,y₂)`. -/
 theorem sound_point_noninf
     (W : WeierstrassCurve.Affine F)
-    (ha : IsShortShape W)
+    (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
     (w : Witness F)
     (h1 : W.Nonsingular w.x1 w.y1) (h2 : W.Nonsingular w.x2 w.y2)
     (hcons : Holds w)
@@ -333,7 +333,6 @@ theorem sound_point_noninf
     and indeed `(x₁,y₁) + (x₂,y₂) = 0` in the group. -/
 theorem sound_point_inf
     (W : WeierstrassCurve.Affine F)
-    (_ha : IsShortShape W)
     (w : Witness F)
     (h1 : W.Nonsingular w.x1 w.y1) (h2 : W.Nonsingular w.x2 w.y2)
     (hcons : Holds w) (hinf : w.inf = 1) :
@@ -384,7 +383,7 @@ theorem inf_boolean (w : Witness F) (hcons : Holds w) :
     `sound_point_inf` and `sound_point_noninf` via the boolean `inf`. -/
 theorem sound_point
     (W : WeierstrassCurve.Affine F)
-    (ha : IsShortShape W)
+    (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
     (w : Witness F)
     (h1 : W.Nonsingular w.x1 w.y1) (h2 : W.Nonsingular w.x2 w.y2)
     (hcons : Holds w) (hy1 : w.y1 ≠ 0) (htwo : (2 : F) ≠ 0) :
@@ -393,7 +392,7 @@ theorem sound_point
           Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3) := by
   rcases inf_boolean w hcons with hinf | hinf
   · exact Or.inr ⟨hinf, sound_point_noninf W ha w h1 h2 hcons hy1 htwo hinf⟩
-  · exact Or.inl ⟨hinf, sound_point_inf W ha w h1 h2 hcons hinf⟩
+  · exact Or.inl ⟨hinf, sound_point_inf W w h1 h2 hcons hinf⟩
 
 end Point
 
