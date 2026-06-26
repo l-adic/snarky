@@ -4,13 +4,14 @@ import Kimchi.Gate.VarBaseMul
 /-!
 # Group-order non-degeneracy toolkit
 
-In the point group of a `short-Weierstrass curve`, the `order` is prime, so a nonzero point times a
-scalar strictly between `0` and `order` is itself nonzero. Hence a multiple `k • T` of a
-nonzero point `T`, with `k` strictly between `1` and `order − 1`, is neither `T` nor `−T`,
-and (on a short-Weierstrass curve) has a different `x`-coordinate than `T`.
+The two field side conditions the VarBaseMul gate's incomplete additions need, established from
+the group structure of a `short-Weierstrass curve`:
 
-These are standalone library lemmas — the mathematical core of "the partial accumulators
-stay away from `±T`" — to be wired into the per-row accumulators in a later step.
+* `x_ne_xT_of_ne_base` — a point that is neither `T` nor `−T` has a different `x`-coordinate
+  (the non-vertical condition for the first addition), built on `smul_ne_zero_of_lt` (with prime
+  `order`, a nonzero point times a scalar strictly between `0` and `order` is nonzero);
+* `tne_of_holds` — the gate constraints together with prime `order` already force the
+  second-addition condition `t = 2·xi + xb − s1² ≠ 0`, with no exclusion set.
 -/
 
 namespace Kimchi.Circuit.VarBaseMul
@@ -42,23 +43,6 @@ lemma smul_ne_zero_of_lt (c : WeierstrassCurve.Affine F)
   rw [h_contra, c.order_smul, smul_zero, smul_zero, add_zero] at h_decomp
   exact hT h_decomp
 
-/-- A nonzero point times a scalar strictly between `1` and `order − 1` is neither `T`
-    nor `−T`. -/
-lemma smul_ne_base (c : WeierstrassCurve.Affine F)
-    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
-    [Fact (Nat.Prime c.order)] {T : c.Point} (hT : T ≠ 0)
-    {k : ℤ} (h1 : 1 < k) (h2 : k + 1 < (c.order : ℤ)) :
-    k • T ≠ T ∧ k • T ≠ -T := by
-  refine ⟨?_, ?_⟩
-  · intro h_contra
-    have h_eq : (k - 1) • T = 0 := by
-      rw [sub_smul, one_zsmul, h_contra, sub_self]
-    exact smul_ne_zero_of_lt c hT (by linarith) (by linarith) h_eq
-  · intro h_contra
-    have h_eq : (k + 1) • T = 0 := by
-      rw [add_zsmul, one_zsmul, h_contra, neg_add_cancel]
-    exact smul_ne_zero_of_lt c hT (by linarith) (by linarith) h_eq
-
 /-- **x-coordinate bridge.** On a short-Weierstrass curve, a point that is neither `T`
     nor `−T` has a different `x`-coordinate. -/
 lemma x_ne_xT_of_ne_base (c : WeierstrassCurve.Affine F)
@@ -75,31 +59,6 @@ lemma x_ne_xT_of_ne_base (c : WeierstrassCurve.Affine F)
     have := h.1; have := hT.1
     simp_all +decide [WeierstrassCurve.Affine.equation_iff]
   exact mul_left_cancel₀ (sub_ne_zero_of_ne hne) (by linear_combination h_eq)
-
-/-- **Second-addition non-vertical guarantee.** The geometric non-degeneracy
-    `2·I + Q ≠ 0` forces the field condition `tⱼ = 2·xi + xb − s1² ≠ 0` that the
-    `VarBaseMul` gate bundles. -/
-lemma singleBit_tne_of_double_ne (c : WeierstrassCurve.Affine F)
-    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
-    [Fact (Nat.Prime c.order)]
-    {b xb yb s1 xi yi xo yo : F}
-    (hI : c.Nonsingular xi yi)
-    (hQ : c.Nonsingular xb ((2 * b - 1) * yb))
-    (hxne : xi ≠ xb)
-    (h : singleBitHolds b xb yb s1 xi yi xo yo)
-    (hdbl : (2 : ℤ) • Point.some _ _ hI + Point.some _ _ hQ ≠ 0) :
-    2 * xi + xb - s1 * s1 ≠ 0 := by
-  contrapose! hdbl
-  -- the first addition `I + Q` is the secant point `R = (rx, ry)` with slope `s1`
-  have hR : ∃ hR : c.Nonsingular (s1 * s1 - xi - xb)
-      (s1 * (xi - (s1 * s1 - xi - xb)) - yi),
-      Point.some _ _ hI + Point.some _ _ hQ = Point.some _ _ hR := by
-    apply secant_add c c.short hI hQ hxne (l := s1)
-    · rw [eq_div_iff (sub_ne_zero_of_ne hxne)]
-      linear_combination' h.2.1
-    · rfl
-    · rfl
-  grind +suggestions
 
 /-- **t-condition self-enforcement.** The gate constraints together with prime order
     already force `t ≠ 0` — the forbidden check is NOT needed for the second-addition
