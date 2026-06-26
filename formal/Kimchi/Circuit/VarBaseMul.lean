@@ -29,7 +29,7 @@ open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine
     short-shape and prime-order hypotheses are supplied by the `Fact` instances in
     `Kimchi.Pasta`, and `2 ≠ 0` by computation in the Pallas base field. -/
 theorem varBaseMul_pallas_correct
-    (m : ℕ) (g : ℕ → Witness PallasBaseField) (circuitMod : ℕ)
+    (m : ℕ) (g : ℕ → Witness PallasBaseField) (baseFieldOrder : ℕ)
     (T : Pallas.curve.toAffine.Point) (P : ℕ → Pallas.curve.toAffine.Point) (s : ℤ)
     (hTne : T ≠ 0)
     (hd : ∀ i, i < m → GateData Pallas.curve.toAffine (g i))
@@ -39,11 +39,11 @@ theorem varBaseMul_pallas_correct
     (hP0 : P 0 = (2 : ℤ) • T)
     (horder : 3 < Pallas.curve.toAffine.order)
     (hreg₁ : 2 ^ (5 * m - 1) < Pallas.curve.toAffine.order)
-    (hbound : circuitMod + 2 ^ (5 * m - 1) + 2 ≤ 2 * Pallas.curve.toAffine.order)
+    (hbound : baseFieldOrder + 2 ^ (5 * m - 1) + 2 ≤ 2 * Pallas.curve.toAffine.order)
     (hs : s = gateLadder g (5 * m))
-    (hreg : s < 2 * (circuitMod : ℤ) + 2 ^ (5 * m)) :
+    (hreg : s < 2 * (baseFieldOrder : ℤ) + 2 ^ (5 * m)) :
     P m = s • T ∧ ∀ i, i < m → NonDegen (g i) :=
-  varBaseMul_deployed_correct Pallas.curve.toAffine m g circuitMod T P s hTne hd hT hin hout hP0
+  varBaseMul_deployed_correct Pallas.curve.toAffine m g baseFieldOrder T P s hTne hd hT hin hout hP0
     (by decide) horder hreg₁ hbound hs hreg
 
 end Kimchi.Circuit.VarBaseMul

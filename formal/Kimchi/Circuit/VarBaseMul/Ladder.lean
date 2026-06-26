@@ -342,11 +342,11 @@ theorem ladder_nondegen_tight (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
 /--
 **x-condition non-degeneracy from the register/magnitude bound** (pure number theory,
     orthogonal to the t-condition `tne_of_holds`). The deployed circuit's register is a
-    valid field element `< circuitMod`, so the ladder top is bounded:
-    `k L < 2·circuitMod + 2^L`. The only x-condition accumulator values are
+    valid field element `< baseFieldOrder`, so the ladder top is bounded:
+    `k L < 2·baseFieldOrder + 2^L`. The only x-condition accumulator values are
     `k ≡ ±1 (mod order)`, whose smallest ODD representatives are `2·order ± 1` (the even
     reps `order ± 1` are unreachable since every `k j` with `1 ≤ j` is odd, `ladder_odd`).
-    The regime `circuitMod + 2^(L-1) < 2·order` (the Pasta `2δ > δ'` fact) puts those
+    The regime `baseFieldOrder + 2^(L-1) < 2·order` (the Pasta `2δ > δ'` fact) puts those
     above the bounded range, so no INPUT `k j` (`j < L`) is `≡ ±1 (mod order)` — i.e. no
     accumulator equals `±T`. (No constraints, no curve, no forbidden set.)
 
@@ -359,10 +359,10 @@ theorem ladder_nondegen_tight (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
       `±1 (mod order)` are reachable. With `ladder_odd` (every `k j`, `1 ≤ j`, is odd)
       it rules out the even reps and forces the odd reps `2·order ± 1`. The real `order`
       is prime, hence odd.
-    * `hbound : circuitMod + 2^(L-1) + 2 ≤ 2·order` — for `j = L - 1` the `+1` branch
+    * `hbound : baseFieldOrder + 2^(L-1) + 2 ≤ 2·order` — for `j = L - 1` the `+1` branch
       (`k (L-1) = 2·order - 1`) gives `k L = 4·order - 2 + ε ≥ 4·order - 3`, which the
-      slacker bound `circuitMod + 2^(L-1) < 2·order` (`k L < 4·order - 2`) fails to
-      exclude (e.g. `order = 5, circuitMod = 5, L = 3`); tightening the slack by `2`
+      slacker bound `baseFieldOrder + 2^(L-1) < 2·order` (`k L < 4·order - 2`) fails to
+      exclude (e.g. `order = 5, baseFieldOrder = 5, L = 3`); tightening the slack by `2`
       (`k L < 4·order - 4`) closes it.
     * `horder : 3 < order` — for `order = 3, L = 2` the input `k 0 = 2` satisfies
       `order ∣ (k 0 + 1) = 3`.
@@ -370,14 +370,14 @@ theorem ladder_nondegen_tight (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
     All three hold comfortably for the real Pasta parameters (`L = 255`,
     `order ≈ 2^254 + 4.56·10^37` a large prime, `2δ > δ'`).
 -/
-theorem ladder_x_nondegen (order circuitMod L : ℕ)
+theorem ladder_x_nondegen (order baseFieldOrder L : ℕ)
     (hreg₁ : 2 ^ (L - 1) < order)
     (hodd : Odd order) (horder : 3 < order)
-    (hbound : circuitMod + 2 ^ (L - 1) + 2 ≤ 2 * order)
+    (hbound : baseFieldOrder + 2 ^ (L - 1) + 2 ≤ 2 * order)
     (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
     (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
     (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j)
-    (hkL : k L < 2 * (circuitMod : ℤ) + 2 ^ L) :
+    (hkL : k L < 2 * (baseFieldOrder : ℤ) + 2 ^ L) :
     ∀ j, j < L → ¬ (order : ℤ) ∣ (k j - 1) ∧ ¬ (order : ℤ) ∣ (k j + 1) := by
   -- From `ladder_bounds`, `2^j + 1 ≤ k j` and `k j ≤ 3 * 2^j - 1` for all `j < L`.
   intros j hj

@@ -422,8 +422,8 @@ lemma gate_block' (c : WeierstrassCurve.Affine F)
 /-- **Top-level deployed VarBaseMul circuit theorem: correct (hence sound).** For ANY
     witness satisfying the gate constraints at the real init (`P 0 = 2·T`), when the bit
     count `5m` does not exceed the order's bit length (`hreg₁ : 2^(5m-1) < order`), with the
-    Pasta register-field relation `circuitMod + 2^(5m-1) + 2 ≤ 2·order` and a register that
-    is a valid circuit-field element (`s = gateLadder g (5m) < 2·circuitMod + 2^(5m)`), the
+    Pasta register-field relation `baseFieldOrder + 2^(5m-1) + 2 ≤ 2·order` and a register that
+    is a valid circuit-field element (`s = gateLadder g (5m) < 2·baseFieldOrder + 2^(5m)`), the
     `m` gates **compute `P m = s·T`** and every gate row is `NonDegen`. The forbidden-value
     check appears NOWHERE: the t-conditions come from the constraints + prime order
     (`tne_of_holds`), the x-conditions from the register field bound (`ladder_x_nondegen`),
@@ -438,7 +438,7 @@ lemma gate_block' (c : WeierstrassCurve.Affine F)
 theorem varBaseMul_deployed_correct (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
     [Fact (Nat.Prime c.order)]
-    (m : ℕ) (g : ℕ → Witness F) (circuitMod : ℕ)
+    (m : ℕ) (g : ℕ → Witness F) (baseFieldOrder : ℕ)
     (T : c.Point) (P : ℕ → c.Point) (s : ℤ)
     (hTne : T ≠ 0)
     (hd : ∀ i, i < m → GateData c (g i))
@@ -448,12 +448,12 @@ theorem varBaseMul_deployed_correct (c : WeierstrassCurve.Affine F)
     (hP0 : P 0 = (2 : ℤ) • T)
     (h2 : (2 : F) ≠ 0) (horder : 3 < c.order)
     (hreg₁ : 2 ^ (5 * m - 1) < c.order)
-    (hbound : circuitMod + 2 ^ (5 * m - 1) + 2 ≤ 2 * c.order)
+    (hbound : baseFieldOrder + 2 ^ (5 * m - 1) + 2 ≤ 2 * c.order)
     (hs : s = gateLadder g (5 * m))
-    (hreg : s < 2 * (circuitMod : ℤ) + 2 ^ (5 * m)) :
+    (hreg : s < 2 * (baseFieldOrder : ℤ) + 2 ^ (5 * m)) :
     P m = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
   have hodd : c.order ≠ 2 := by omega
-  have hND := Ladder.ladder_x_nondegen c.order circuitMod (5 * m)
+  have hND := Ladder.ladder_x_nondegen c.order baseFieldOrder (5 * m)
     hreg₁ (c.order_prime.odd_of_ne_two hodd) horder hbound
     (gateLadder g) (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
     (fun j _ => gateLadder_succ g j) (by rw [← hs]; exact hreg)
