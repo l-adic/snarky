@@ -1,5 +1,7 @@
 # Snarky
 
+[![CI](https://github.com/l-adic/snarky/actions/workflows/test.yml/badge.svg)](https://github.com/l-adic/snarky/actions/workflows/test.yml)
+
 Embedded DSL for constructing recursive zero-knowledge circuits in PureScript. Faithfully implements the pickles recursive snark protocol backed by o1-labs [proof-systmes](https://github.com/o1-labs/proof-systems)
 
 
