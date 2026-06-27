@@ -180,8 +180,7 @@ structure NonDegen (g : Witness F) : Prop where
   t4 : 2 * g.x4 + g.xT - g.s4 * g.s4 ≠ 0
 
 /-- A full per-gate step: the constraint `GateData` plus the `NonDegen` side
-    conditions. (Both parents' fields are inherited via dot notation, so existing
-    `sound` call sites are unaffected.) -/
+    conditions. Both parents' fields are inherited via dot notation. -/
 structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop
     extends GateData W g, NonDegen g
 

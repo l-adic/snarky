@@ -10,7 +10,7 @@ nonzero point `T`, with `k` strictly between `1` and `order − 1`, is neither `
 and (on a short-Weierstrass curve) has a different `x`-coordinate than `T`.
 
 These are standalone library lemmas — the mathematical core of "the partial accumulators
-stay away from `±T`" — to be wired into the per-row accumulators in a later step.
+stay away from `±T`", consumed by the per-row non-degeneracy in `.Soundness`.
 -/
 
 namespace Kimchi.Circuit.VarBaseMul

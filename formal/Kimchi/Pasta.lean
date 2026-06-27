@@ -15,8 +15,7 @@ So the two point counts below are **axioms** — the same trusted status "this i
 order" has in any EC formalization. They are true by the Pasta construction: a curve's scalar
 field *is* `ℤ/(group order)`, and Pasta fixes Pallas' order to the prime `PALLAS_SCALAR_CARD`
 (`= q`) and Vesta's to `PALLAS_BASE_CARD` (`= p`), with the reciprocity
-`VestaBaseField = PallasScalarField`. Should CompElliptic (or we) later prove a point count,
-these axioms simply disappear.
+`VestaBaseField = PallasScalarField`.
 
 This is the ONLY file in the tree that declares an `axiom`; everything upstream is
 `#print axioms`-clean.

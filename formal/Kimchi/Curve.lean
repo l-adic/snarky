@@ -15,11 +15,11 @@ supplied as auto-threading `Fact`s plus one theorem:
   group has `Nat.card = 0`).
 * `[Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]` and `[Fact (Nat.Prime c.order)]` — the
   short-Weierstrass and prime-order hypotheses, as instances so they thread through the
-  development by inference. No named predicate — the short-shape condition is the bare
-  conjunction (all VarBaseMul needs; `a₄` is free).
+  development by inference. The short-shape condition is the bare conjunction `a₁=a₂=a₃=0`
+  (all VarBaseMul needs; `a₄` is free).
 
 The concrete CompElliptic `SWCurve` enters only at instantiation: `C.toAffine` realizes it as a
-Mathlib curve and `Cycle/Pasta.lean` discharges the two `Fact`s (the short-shape one by
+Mathlib curve and `Kimchi/Pasta.lean` discharges the two `Fact`s (the short-shape one by
 `⟨rfl, rfl, rfl⟩`, since every `toW` curve has `a₁=a₂=a₃=0`).
 -/
 
@@ -52,7 +52,7 @@ lemma order_prime (W : Affine F) [Fact (Nat.Prime W.order)] : Nat.Prime W.order 
 /-- The short-Weierstrass coefficients `a₁ = a₂ = a₃ = 0` as a `Fact`-backed accessor
     (`c.short`). This is *all* VarBaseMul needs (no `a₄ = 0`), and every CompElliptic `SWCurve`
     satisfies it by `rfl` — so at a concrete `toW` curve the `Fact` is discharged by
-    `⟨rfl, rfl, rfl⟩`, never an assumption. No named predicate: it's the bare condition. -/
+    `⟨rfl, rfl, rfl⟩`, never an assumption. -/
 lemma short (W : Affine F) [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] :
     W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 := Fact.out
 

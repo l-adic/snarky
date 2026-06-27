@@ -24,7 +24,7 @@ the two directions the deployed circuit actually uses, each at its concrete curv
   range-checks the high half, so soundness is the field-bound route.
 
 A bare `varBaseMul` is never deployed on its own — only these two — so the field-bound Pallas
-correctness is *inlined* into `scaleFast2` rather than exposed as a separate corollary. The `Fact`s
+correctness is *inlined* into `scaleFast2`. The `Fact`s
 are discharged from `Kimchi.Pasta`, the prime-order one through the trusted point count
 (`pallas_card` / `vesta_card`). So these corollaries are the only things that depend on a
 point-count axiom; the abstract development stays axiom-free.
