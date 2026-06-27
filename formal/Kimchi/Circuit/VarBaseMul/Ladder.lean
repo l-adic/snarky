@@ -339,6 +339,30 @@ theorem ladder_nondegen_tight (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
         (by tauto) <;>
     exact hnf t ht htd
 
+/-- **Sub-wrap non-degeneracy.** When the whole ladder fits below the modulus (`3·2^L ≤ q`), every
+    input is non-degenerate *unconditionally* — no primality, no `q ≡ 1 (mod 4)`, no forbidden set.
+    The envelope `2^j + 1 ≤ k j ≤ 3·2^j - 1` (`ladder_bounds`) places each of `k j ± 1` and
+    `2·k j ± 1` strictly inside `(0, q)`, so none can be a multiple of `q`. This is the small-`L`
+    regime (`5m ≤ bitlength(order) - 1`), where the scalar is too small to ever drive an
+    accumulator onto `±T`, so the gate is safe with no guard at all. -/
+lemma ladder_subwrap_nondegen (q L : ℕ) (hsub : 3 * 2 ^ L ≤ q)
+    (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
+    (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
+    (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j) :
+    ∀ j, j < L → ¬ (q : ℤ) ∣ (k j - 1) ∧ ¬ (q : ℤ) ∣ (k j + 1)
+                ∧ ¬ (q : ℤ) ∣ (2 * k j - 1) ∧ ¬ (q : ℤ) ∣ (2 * k j + 1) := by
+  intro j hj
+  obtain ⟨hlo, hhi⟩ := ladder_bounds L k ε hk0 hε hrec j hj.le
+  have hjpos : (0 : ℤ) < 2 ^ j := by positivity
+  have hps : (2 : ℤ) ^ (j + 1) = 2 * 2 ^ j := by rw [pow_succ]; ring
+  have hpow : (2 : ℤ) ^ (j + 1) ≤ 2 ^ L := pow_le_pow_right₀ (by norm_num) (by omega)
+  have hqz : (3 : ℤ) * 2 ^ L ≤ (q : ℤ) := by exact_mod_cast hsub
+  -- `6·2^j = 3·2^(j+1) ≤ 3·2^L ≤ q`, so every value below is `< q`.
+  have h6 : 6 * 2 ^ j ≤ (q : ℤ) := by linarith
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> intro hdvd <;>
+    have hle := Int.le_of_dvd (by nlinarith [hlo, hjpos]) hdvd <;>
+    nlinarith [hhi, h6, hle, hjpos, hlo]
+
 /--
 **x-condition non-degeneracy from the register/magnitude bound** (pure number theory,
     orthogonal to the t-condition `tne_of_holds`). The deployed circuit's register is a

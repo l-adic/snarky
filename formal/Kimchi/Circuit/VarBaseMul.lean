@@ -147,9 +147,10 @@ theorem varBaseMul_vesta_correct_mod
 
 `scaleFast2` (the Pallas direction above) range-checks the register, so its soundness is the
 field-bound `varBaseMul_pallas_correct`. `scaleFast1` (the Vesta direction; scalar field < circuit
-field) range-checks nothing and instead guards with a forbidden-value check. The matching soundness
-is `varBaseMul_forbidden_correct`: excluding the forbidden band makes every row non-degenerate, and
-the gates compute `[s]·T`.
+field) range-checks nothing and instead guards with a forbidden-value check. Its soundness splits by
+chunk count `m` (`bitsUsed = 5m ≤ FieldSizeInBits = 255`): for `m ≤ 50` the ladder fits below the
+order and every row is non-degenerate unconditionally (`varBaseMul_subwrap_correct`); only the full
+width `m = 51` is the one-wrap case that needs the forbidden band (`varBaseMul_forbidden_correct`).
 
 Caveat on faithfulness to the deployed circuit: the band `forbiddenValues` is the COMPLETE forbidden
 set, whereas mina's runtime guard `forbidden_shifted_values` (`crypto/pickles/impls.ml`) is the
@@ -158,12 +159,14 @@ forbidden values as well", and `Ladder` proves the two-residue set misses the ba
 is stronger than (and supersedes) the circuit's actual check; closing the gap — showing the band
 scalars cannot arise for the wrap-verifier's Type1 scalars — is an open item upstream as well. -/
 
-/-- **scaleFast1 / Type1 on the real Vesta curve: correct + sound for non-forbidden scalars.**
-    `varBaseMul_forbidden_correct` at `Vesta.curve.toAffine` (group order `PALLAS_BASE_CARD`, via
-    `vesta_card`): in the one-wrap regime (`hreg₁`/`hreg₂` pin `5m` to the order's bit width), for a
-    scalar `s` outside the forbidden band, the `m` gates compute `P m = s·T` with every row
-    `NonDegen`. The `order ≡ 1 (mod 4)` fact is discharged from the known cardinal. See the section
-    note on the band vs mina's (incomplete) deployed `forbidden_shifted_values` check. -/
+/-- **scaleFast1 / Type1 on the real Vesta curve: correct + sound for any chunk count `m ∈ 1..51`.**
+    The single hypothesis on the bit count is `hbits : 5 * m ≤ 255` (`bitsUsed ≤ FieldSizeInBits`).
+    The forbidden-band exclusion `hnf` is required **only at the full width** `5m = 255` — a
+    conditional hypothesis — because every smaller chunk count is in the sub-wrap regime and is
+    sound with no guard at all. The proof dispatches: `5m ≤ 250` → `varBaseMul_subwrap_correct`
+    (`3·2^(5m) ≤ PALLAS_BASE_CARD` by computation); `5m = 255` → `varBaseMul_forbidden_correct`
+    (one-wrap, regime bounds + `order ≡ 1 mod 4` discharged from the cardinal). See the section note
+    on the band vs mina's (incomplete) deployed `forbidden_shifted_values` check. -/
 theorem varBaseMul_vesta_correct_forbidden
     (m : ℕ) (g : ℕ → Witness VestaBaseField)
     (T : Vesta.curve.toAffine.Point) (P : ℕ → Vesta.curve.toAffine.Point) (s : ℤ)
@@ -173,12 +176,25 @@ theorem varBaseMul_vesta_correct_forbidden
     (hin : ∀ i (hi : i < m), P i = Point.some _ _ (hd i hi).a0)
     (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
     (hP0 : P 0 = (2 : ℤ) • T)
-    (hreg₁ : 2 ^ (5 * m - 1) < Vesta.curve.toAffine.order)
-    (hreg₂ : Vesta.curve.toAffine.order < 2 ^ (5 * m))
+    (hbits : 5 * m ≤ 255)
     (hs : s = gateLadder g (5 * m))
-    (hnf : s ∉ forbiddenValues Vesta.curve.toAffine.order) :
-    P m = s • T ∧ ∀ i, i < m → NonDegen (g i) :=
-  varBaseMul_forbidden_correct Vesta.curve.toAffine m g T P s hTne hd hT hin hout hP0
-    (by decide) hreg₁ hreg₂ (by rw [Kimchi.Pasta.vesta_card]; norm_num [PALLAS_BASE_CARD]) hs hnf
+    (hnf : 5 * m = 255 → s ∉ forbiddenValues Vesta.curve.toAffine.order) :
+    P m = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
+  rcases Nat.lt_or_ge (5 * m) 255 with hlt | hge
+  · -- sub-wrap: `5m` a multiple of 5 below 255 ⟹ `5m ≤ 250` ⟹ `3·2^(5m) ≤ PALLAS_BASE_CARD`.
+    refine varBaseMul_subwrap_correct Vesta.curve.toAffine m g T P s hTne hd hT hin hout hP0
+      (by decide) ?_ hs
+    rw [Kimchi.Pasta.vesta_card]
+    have hp : (2 : ℕ) ^ (5 * m) ≤ 2 ^ 250 := Nat.pow_le_pow_right (by norm_num) (by omega)
+    have : (3 : ℕ) * 2 ^ 250 ≤ PALLAS_BASE_CARD := by norm_num [PALLAS_BASE_CARD]
+    omega
+  · -- one-wrap: `5m = 255` exactly.
+    have h255 : 5 * m = 255 := by omega
+    exact varBaseMul_forbidden_correct Vesta.curve.toAffine m g T P s hTne hd hT hin hout hP0
+      (by decide)
+      (by rw [Kimchi.Pasta.vesta_card, h255]; norm_num [PALLAS_BASE_CARD])
+      (by rw [Kimchi.Pasta.vesta_card, h255]; norm_num [PALLAS_BASE_CARD])
+      (by rw [Kimchi.Pasta.vesta_card]; norm_num [PALLAS_BASE_CARD])
+      hs (hnf h255)
 
 end Kimchi.Circuit.VarBaseMul

@@ -106,6 +106,7 @@ jobs:
         #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_pallas_correct_mod
         #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_vesta_correct_mod
         #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_forbidden_correct
+        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_subwrap_correct
         #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_vesta_correct_forbidden
         EOF
         out=$(lake env lean check_axioms.lean)

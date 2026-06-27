@@ -254,6 +254,53 @@ lemma gate_block (c : WeierstrassCurve.Affine F)
   refine ⟨⟨hx0, hx1, hx2, hx3, hx4, ht0, ht1, ht2, ht3, ht4⟩, ?_⟩
   rw [hTeq]; exact ha5
 
+/-- **Chaining lemma.** Given the per-substep ladder non-degeneracy (the four conditions at every
+    `gateLadder g n`, `n < 5m`) and the gate constraint data, fold the `m` gate blocks: the output
+    is `P m = gateLadder g (5m) · T` and every row is `NonDegen`. The soundness routes below
+    (forbidden band, sub-wrap) differ only in how they supply `hND`. -/
+lemma gate_chain (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
+    [Fact (Nat.Prime c.order)]
+    (m : ℕ) (g : ℕ → Witness F)
+    (T : c.Point) (P : ℕ → c.Point) (s : ℤ)
+    (hTne : T ≠ 0)
+    (hd : ∀ i, i < m → GateData c (g i))
+    (hT : ∀ i (hi : i < m), T = Point.some _ _ (hd i hi).hT)
+    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (hd i hi).a0)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
+    (hP0 : P 0 = (2 : ℤ) • T)
+    (h2 : (2 : F) ≠ 0)
+    (hND : ∀ n, n < 5 * m →
+        ¬ (c.order : ℤ) ∣ (gateLadder g n - 1) ∧ ¬ (c.order : ℤ) ∣ (gateLadder g n + 1)
+          ∧ ¬ (c.order : ℤ) ∣ (2 * gateLadder g n - 1)
+          ∧ ¬ (c.order : ℤ) ∣ (2 * gateLadder g n + 1))
+    (hs : s = gateLadder g (5 * m)) :
+    P m = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
+  have key : ∀ i, i ≤ m →
+      P i = gateLadder g (5 * i) • T ∧ (∀ i', i' < i → NonDegen (g i')) := by
+    intro i
+    induction i with
+    | zero =>
+      intro _
+      refine ⟨?_, ?_⟩
+      · rw [hP0]; simp [gateLadder_zero]
+      · intro i' hi'; omega
+    | succ i ih =>
+      intro hi1
+      have hi : i < m := by omega
+      obtain ⟨hPi, hNDi⟩ := ih (by omega)
+      have ha0 : Point.some _ _ (hd i hi).a0 = gateLadder g (5 * i) • T := by
+        rw [← hin i hi]; exact hPi
+      obtain ⟨hNDgi, ha5⟩ := gate_block c g i h2 hTne (hd i hi) (hT i hi) ha0
+        (fun ℓ hℓ => hND (5 * i + ℓ) (by omega))
+      refine ⟨?_, ?_⟩
+      · rw [hout i hi, show 5 * (i + 1) = 5 * i + 5 from by ring]; exact ha5
+      · intro i' hi'
+        rcases Nat.lt_succ_iff_lt_or_eq.mp hi' with h | h
+        · exact hNDi i' h
+        · subst h; exact hNDgi
+  exact ⟨by rw [hs]; exact (key m le_rfl).1, fun i hi => (key m le_rfl).2 i hi⟩
+
 /--
 **VarBaseMul correctness + soundness via the forbidden band.** For ANY witness satisfying the
     gate constraints (`GateData` for every row) at the real init (`P 0 = 2·T`), in the one-wrap
@@ -293,41 +340,41 @@ theorem varBaseMul_forbidden_correct (c : WeierstrassCurve.Affine F)
     (hq4 : c.order % 4 = 1)
     (hs : s = gateLadder g (5 * m)) (hnf : s ∉ forbiddenValues c.order) :
     P m = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
-  -- Transport `hnf` from `s` to the bit-determined ladder top.
+  -- Transport `hnf` from `s` to the bit-determined ladder top, feed the one-wrap core, chain.
   have hnf' : ∀ t ∈ Ladder.forbiddenResidues,
       ¬ (c.order : ℤ) ∣ (gateLadder g (5 * m) - t) := by
     intro t ht hdvd
     exact hnf ⟨t, ht, by rw [hs]; exact hdvd⟩
-  -- Global ladder non-degeneracy from the number-theoretic core.
-  have hND := Ladder.ladder_nondegen_tight c.order (5 * m) c.order_prime hq4 hreg₁ hreg₂
-    (gateLadder g) (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
-    (fun j _ => gateLadder_succ g j) hnf'
-  -- Fold the gate blocks: each accumulator is `gateLadder g (5i) • T` and every row is
-  -- non-degenerate.
-  have key : ∀ i, i ≤ m →
-      P i = gateLadder g (5 * i) • T ∧ (∀ i', i' < i → NonDegen (g i')) := by
-    intro i
-    induction i with
-    | zero =>
-      intro _
-      refine ⟨?_, ?_⟩
-      · rw [hP0]; simp [gateLadder_zero]
-      · intro i' hi'; omega
-    | succ i ih =>
-      intro hi1
-      have hi : i < m := by omega
-      obtain ⟨hPi, hNDi⟩ := ih (by omega)
-      have ha0 : Point.some _ _ (hd i hi).a0 = gateLadder g (5 * i) • T := by
-        rw [← hin i hi]; exact hPi
-      obtain ⟨hNDgi, ha5⟩ := gate_block c g i h2 hTne (hd i hi) (hT i hi) ha0
-        (fun ℓ hℓ => hND (5 * i + ℓ) (by omega))
-      refine ⟨?_, ?_⟩
-      · rw [hout i hi, show 5 * (i + 1) = 5 * i + 5 from by ring]; exact ha5
-      · intro i' hi'
-        rcases Nat.lt_succ_iff_lt_or_eq.mp hi' with h | h
-        · exact hNDi i' h
-        · subst h; exact hNDgi
-  exact ⟨by rw [hs]; exact (key m le_rfl).1, fun i hi => (key m le_rfl).2 i hi⟩
+  exact gate_chain c m g T P s hTne hd hT hin hout hP0 h2
+    (Ladder.ladder_nondegen_tight c.order (5 * m) c.order_prime hq4 hreg₁ hreg₂
+      (gateLadder g) (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
+      (fun j _ => gateLadder_succ g j) hnf') hs
+
+/-- **VarBaseMul correctness + soundness in the sub-wrap regime — no forbidden check.** When the
+    bit count is small enough that the whole ladder fits below the order (`3·2^(5m) ≤ order`, i.e.
+    `5m ≲ bitlength(order) - 2`), every row is `NonDegen` *unconditionally*: the scalar is too small
+    to drive an accumulator onto `±T`, so no forbidden-value exclusion (and no `q ≡ 1 mod 4`) is
+    needed. This is the easy regime — any chunk count below the field width is safe with no guard;
+    only the top (one-wrap) chunk needs `varBaseMul_forbidden_correct`. -/
+theorem varBaseMul_subwrap_correct (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
+    [Fact (Nat.Prime c.order)]
+    (m : ℕ) (g : ℕ → Witness F)
+    (T : c.Point) (P : ℕ → c.Point) (s : ℤ)
+    (hTne : T ≠ 0)
+    (hd : ∀ i, i < m → GateData c (g i))
+    (hT : ∀ i (hi : i < m), T = Point.some _ _ (hd i hi).hT)
+    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (hd i hi).a0)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
+    (hP0 : P 0 = (2 : ℤ) • T)
+    (h2 : (2 : F) ≠ 0)
+    (hsub : 3 * 2 ^ (5 * m) ≤ c.order)
+    (hs : s = gateLadder g (5 * m)) :
+    P m = s • T ∧ ∀ i, i < m → NonDegen (g i) :=
+  gate_chain c m g T P s hTne hd hT hin hout hP0 h2
+    (Ladder.ladder_subwrap_nondegen c.order (5 * m) hsub
+      (gateLadder g) (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
+      (fun j _ => gateLadder_succ g j)) hs
 
 /-! ## Deployed soundness: from the constraints + the register field bound (no forbidden set)
 
