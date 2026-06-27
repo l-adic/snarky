@@ -103,7 +103,6 @@ jobs:
         #print axioms Kimchi.Gate.VarBaseMul.complete
         #print axioms WeierstrassCurve.Affine.zsmul_mod
         #print axioms WeierstrassCurve.Affine.order_smul
-        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_correct
         #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_deployed_correct
         #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_forbidden_correct
         #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_subwrap_correct

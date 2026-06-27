@@ -32,24 +32,15 @@ axiom pallas_card : Pallas.curve.toAffine.order = PALLAS_SCALAR_CARD
 /-- TRUSTED INPUT: the Vesta curve's group order is the prime cardinality `p`. -/
 axiom vesta_card : Vesta.curve.toAffine.order = PALLAS_BASE_CARD
 
-/-- **The Pasta fields' size in bits.** Both base-field cardinals are 255-bit:
-    `2^(pastaFieldBits-1) ≤ card < 2^pastaFieldBits` (the four bound lemmas below). This is the one
+/-- **The Pasta fields' size in bits.** Both base-field cardinals are 255-bit. This is the one
     place the width is written down — it is the circuit's `FieldSizeInBits`, the bound on
     `bitsUsed = 5·m`, and `pastaFieldBits - 1` is `scaleFast2`'s `s_div_2_bits` range-check width.
     Everything downstream refers to this name rather than a bare `255`/`254`. -/
 abbrev pastaFieldBits : ℕ := 255
 
+/-- The register range-check bound: `2^(pastaFieldBits-1) ≤ PALLAS_BASE_CARD` (`scaleFast2`). -/
 lemma two_pow_le_pallas_base : 2 ^ (pastaFieldBits - 1) ≤ PALLAS_BASE_CARD := by
   norm_num [PALLAS_BASE_CARD]
-
-lemma pallas_base_lt_two_pow : PALLAS_BASE_CARD < 2 ^ pastaFieldBits := by
-  norm_num [PALLAS_BASE_CARD]
-
-lemma two_pow_le_pallas_scalar : 2 ^ (pastaFieldBits - 1) ≤ PALLAS_SCALAR_CARD := by
-  norm_num [PALLAS_SCALAR_CARD]
-
-lemma pallas_scalar_lt_two_pow : PALLAS_SCALAR_CARD < 2 ^ pastaFieldBits := by
-  norm_num [PALLAS_SCALAR_CARD]
 
 /-- The Pallas group order is prime — the point count plus `PALLAS_SCALAR_is_prime`. -/
 theorem pallas_order_prime : Nat.Prime Pallas.curve.toAffine.order := by

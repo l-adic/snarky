@@ -42,23 +42,6 @@ lemma smul_ne_zero_of_lt (c : WeierstrassCurve.Affine F)
   rw [h_contra, c.order_smul, smul_zero, smul_zero, add_zero] at h_decomp
   exact hT h_decomp
 
-/-- A nonzero point times a scalar strictly between `1` and `order − 1` is neither `T`
-    nor `−T`. -/
-lemma smul_ne_base (c : WeierstrassCurve.Affine F)
-    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
-    [Fact (Nat.Prime c.order)] {T : c.Point} (hT : T ≠ 0)
-    {k : ℤ} (h1 : 1 < k) (h2 : k + 1 < (c.order : ℤ)) :
-    k • T ≠ T ∧ k • T ≠ -T := by
-  refine ⟨?_, ?_⟩
-  · intro h_contra
-    have h_eq : (k - 1) • T = 0 := by
-      rw [sub_smul, one_zsmul, h_contra, sub_self]
-    exact smul_ne_zero_of_lt c hT (by linarith) (by linarith) h_eq
-  · intro h_contra
-    have h_eq : (k + 1) • T = 0 := by
-      rw [add_zsmul, one_zsmul, h_contra, neg_add_cancel]
-    exact smul_ne_zero_of_lt c hT (by linarith) (by linarith) h_eq
-
 /-- **x-coordinate bridge.** On a short-Weierstrass curve, a point that is neither `T`
     nor `−T` has a different `x`-coordinate. -/
 lemma x_ne_xT_of_ne_base (c : WeierstrassCurve.Affine F)

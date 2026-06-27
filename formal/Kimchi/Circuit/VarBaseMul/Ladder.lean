@@ -78,71 +78,6 @@ lemma ladder_odd (L : ℕ) (k ε : ℕ → ℤ)
   · contradiction;
   · grind +splitImp
 
-/-- Non-degeneracy of the top inputs (`1 ≤ d = L - j ≤ 3`): a degenerate input propagates
-    forward to a final value `k L ≡ t (mod q)` with `|t| ≤ 15`, contradicting `hnf`. -/
-lemma ladder_top (q L : ℕ) (k ε : ℕ → ℤ)
-    (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
-    (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j)
-    (hnf : ∀ t : ℤ, -15 ≤ t → t ≤ 15 → ¬ (q : ℤ) ∣ (k L - t)) :
-    ∀ j, j < L → L ≤ j + 3 → ¬ (q : ℤ) ∣ (k j - 1) ∧ ¬ (q : ℤ) ∣ (k j + 1)
-                ∧ ¬ (q : ℤ) ∣ (2 * k j - 1) ∧ ¬ (q : ℤ) ∣ (2 * k j + 1) := by
-  intro j hj_lt_L hj_le_L_plus_3
-  -- Let `D := L - j`; since `j < L` and `L ≤ j + 3`, we have `1 ≤ D ≤ 3`.
-  set D := L - j with hD
-  have hD_bounds : 1 ≤ D ∧ D ≤ 3 := by omega
-  -- By `ladder_step`, `|k L - 2^D * k j| ≤ 2^D - 1`.
-  have h_step : |k L - 2 ^ D * k j| ≤ 2 ^ D - 1 := by
-    have := ladder_step L k ε hε hrec D j (by omega)
-    simpa [hD, Nat.add_sub_cancel' (le_of_lt hj_lt_L)] using this
-  have hp2 : (2 : ℤ) ^ D ≤ 8 :=
-    pow_le_pow_right₀ (by decide : (1 : ℤ) ≤ 2) hD_bounds.2 |>.trans_eq (by norm_num)
-  refine ⟨?_, ?_, ?_, ?_⟩ <;> intro hdvd
-  · -- `t = k L - 2^D * (k j - 1)`.
-    set t := k L - 2 ^ D * (k j - 1) with ht
-    have ht_bounds : -15 ≤ t ∧ t ≤ 15 := by
-      constructor <;> nlinarith [abs_le.mp h_step, hp2]
-    exact hnf t ht_bounds.1 ht_bounds.2
-      (by convert dvd_mul_of_dvd_right hdvd (2 ^ D) using 1; ring)
-  · -- `t = k L - 2^D * (k j + 1)`.
-    set t := k L - 2 ^ D * (k j + 1) with ht
-    have ht_bounds : -15 ≤ t ∧ t ≤ 15 := by
-      constructor <;> nlinarith [abs_le.mp h_step, hp2]
-    exact hnf t ht_bounds.1 ht_bounds.2
-      (by convert dvd_mul_of_dvd_right hdvd (2 ^ D) using 1; ring)
-  · -- `t = k L - 2^(D-1) * (2 * k j - 1)`.
-    set t := k L - 2 ^ (D - 1) * (2 * k j - 1) with ht
-    have ht_bounds : -15 ≤ t ∧ t ≤ 15 := by
-      rcases hD_bounds with ⟨_, _⟩
-      interval_cases D <;> norm_num at * <;> constructor <;> linarith [abs_le.mp h_step]
-    exact hnf t ht_bounds.1 ht_bounds.2
-      (by convert hdvd.mul_left (2 ^ (D - 1)) using 1; ring)
-  · -- `t = k L - 2^(D-1) * (2 * k j + 1)`.
-    set t := k L - 2 ^ (D - 1) * (2 * k j + 1) with ht
-    have ht_bounds : -15 ≤ t ∧ t ≤ 15 := by
-      rcases hD_bounds with ⟨_, _⟩
-      interval_cases D <;> norm_num at * <;> constructor <;> linarith [abs_le.mp h_step]
-    exact hnf t ht_bounds.1 ht_bounds.2
-      (by convert hdvd.mul_left (2 ^ (D - 1)) using 1; ring)
-
-/-- A double-and-add ladder `k 0 = 2`, `k (j+1) = 2·k j + ε j` with `ε j ∈ {-1, 1}`,
-    of length `L`, over a prime modulus `q` in the one-wrap regime `2^(L-1) < q < 2^L`.
-    If the final value `s = k L` avoids the forbidden band `k L ≡ t (mod q)` for all
-    `|t| ≤ 15`, then every INPUT `k j` (`j < L`) is non-degenerate:
-    `k j ≢ ±1` and `2·k j ≢ ±1 (mod q)`.  (See the file header for why the forbidden set
-    is this band rather than a two-residue condition.) -/
-theorem ladder_nondegen (q L : ℕ) (_hq : Nat.Prime q)
-    (hreg₁ : 2 ^ (L - 1) < q) (_hreg₂ : q < 2 ^ L)
-    (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
-    (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
-    (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j)
-    (hnf : ∀ t : ℤ, -15 ≤ t → t ≤ 15 → ¬ (q : ℤ) ∣ (k L - t)) :
-    ∀ j, j < L → ¬ (q : ℤ) ∣ (k j - 1) ∧ ¬ (q : ℤ) ∣ (k j + 1)
-                ∧ ¬ (q : ℤ) ∣ (2 * k j - 1) ∧ ¬ (q : ℤ) ∣ (2 * k j + 1) := by
-  intro j hj
-  by_cases hd : j + 4 ≤ L
-  · exact ladder_size q L k ε hk0 hreg₁ hε hrec j hd
-  · exact ladder_top q L k ε hε hrec hnf j hj (by omega)
-
 /-- The exact forbidden scalar residues for the Pasta VarBaseMul gate (verified by
     exhaustive computation, and identical for both Pasta scalar fields): the small
     scalars whose double-and-add drives the accumulator onto `±T` in the final
@@ -317,7 +252,7 @@ lemma degenerate_input_forces_forbidden (q L : ℕ) (hq : Nat.Prime q) (hq4 : q 
     · exact degen_d2 q L hq4 hreg₁ hreg₂ k ε hk0 hε hrec j hj hL hdeg
     · exact degen_d3 q L hq hq4 hreg₁ hreg₂ k ε hk0 hε hrec j hj hL hdeg
 
-/-- **Tight (exact-set) form.** Same ladder as `ladder_nondegen`, but for a prime
+/-- **Tight (exact-set) form.** The same double-and-add ladder, but for a prime
     `q ≡ 1 (mod 4)` the forbidden set shrinks from the `[-15,15]` band to the explicit
     11 residues `forbiddenResidues = {0, ±1, ±2, ±3, 5, 7, 9, 11}`. The `q ≡ 1 (mod 4)`
     hypothesis closes the `2·k ≡ -1` degeneracy branch (`(q-1)/2` is even, so it is not a

@@ -8,7 +8,7 @@ import Kimchi.Circuit.VarBaseMul.Ladder
 This is the genuine `hsound` for the kimchi VarBaseMul gate. The complete forbidden set
 is the band `s ∈ [-15, 15] (mod order)` (the small scalars whose double-and-add drives
 the accumulator onto `±T` in the final doublings; the number-theoretic core is
-`Ladder.ladder_nondegen`). Excluding it makes EVERY satisfying witness's gate rows
+`Ladder.ladder_nondegen_tight`). Excluding it makes EVERY satisfying witness's gate rows
 non-degenerate — the property the (incomplete-addition) gate needs and the deployed
 two-residue check fails to guarantee.
 -/
@@ -49,8 +49,8 @@ lemma zsmul_eq_zero_iff_order_dvd (c : WeierstrassCurve.Affine F)
     `singleBitHolds` with input accumulator `Pᵢ = k·T` and the abstract-ladder
     non-degeneracy facts at `k` (`k ≢ ±1` and `2k ≢ ±1 (mod order)`), the two additions
     are non-vertical (`xᵢ ≠ xT`, `tⱼ ≠ 0`) and the output accumulator is `(2k+e)·T`,
-    `e = ±1`. This is the curve-level bridge from `ladder_nondegen`'s arithmetic
-    non-degeneracy to the gate's field side conditions, via `smul_ne_base` /
+    `e = ±1`. This is the curve-level bridge from `ladder_nondegen_tight`'s arithmetic
+    non-degeneracy to the gate's field side conditions, via
     `x_ne_xT_of_ne_base` / `singleBit_tne_of_double_ne` (re-stated for the mod hypotheses
     using prime `order`: `m·T = 0 ↔ order ∣ m`).
 -/
@@ -563,41 +563,5 @@ theorem varBaseMul_deployed_correct (c : WeierstrassCurve.Affine F)
         · exact hNDi i' h
         · subst h; exact hNDgi
   exact ⟨by rw [hs]; exact (key m le_rfl).1, fun i hi => (key m le_rfl).2 i hi⟩
-
-/-- **The deployed VarBaseMul circuit computes `[s]·T` for the caller's scalar `s`.** This is the
-    `scaleFast1`-style correspondence via the register field bound: `varBaseMul` consumes the
-    Type1-shifted register (`hNs : N m = shiftType1 (5m) s`), and the `m` gates output `P m = s·T`.
-    Non-degeneracy is NOT assumed — it is discharged from the register field bound via
-    `varBaseMul_deployed_correct` (`Ladder.ladder_x_nondegen`); the Shifted correctness
-    `varBaseMul_faithful_unconditional` then re-expresses the output in the caller's scalar.
-    `hregLadder` is the magnitude bound on the bit-determined ladder top (the register is a valid
-    base-field element); `hreg₁`/`hbound` are the bit-count and 2-cycle size conditions. -/
-theorem varBaseMul_correct (c : WeierstrassCurve.Affine F)
-    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
-    [Fact (Nat.Prime c.order)]
-    {p : ℕ} [CharP F p]
-    (m : ℕ) (g : ℕ → Witness F) (baseFieldOrder : ℕ)
-    (T : c.Point) (N : ℕ → F) (P : ℕ → c.Point) (s : ℤ)
-    (hTne : T ≠ 0)
-    (hd : ∀ i, i < m → GateData c (g i))
-    (hT : ∀ i (hi : i < m), T = Point.some _ _ (hd i hi).hT)
-    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (hd i hi).a0)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
-    (hregIn : ∀ i, i < m → N i = (g i).n)
-    (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
-    (hP0 : P 0 = (2 : ℤ) • T) (hN0 : N 0 = 0)
-    (h2 : (2 : F) ≠ 0) (horder : 3 < c.order)
-    (hreg₁ : 2 ^ (5 * m - 1) < c.order)
-    (hbound : baseFieldOrder + 2 ^ (5 * m - 1) + 2 ≤ 2 * c.order)
-    (hregLadder : gateLadder g (5 * m) < 2 * (baseFieldOrder : ℤ) + 2 ^ (5 * m))
-    (hNs : N m = shiftType1 (5 * m) (s : F))
-    (hs : s.natAbs < 2 * 32 ^ m) (hp : 5 * 32 ^ m ≤ p) :
-    P m = s • T := by
-  have hnd : ∀ i, i < m → NonDegen (g i) :=
-    (varBaseMul_deployed_correct c m g baseFieldOrder T P (gateLadder g (5 * m))
-      hTne hd hT hin hout hP0 h2 horder hreg₁ hbound rfl hregLadder).2
-  exact varBaseMul_faithful_unconditional c c.short m g
-    (fun i hi => ⟨hd i hi, hnd i hi⟩) T N P
-    hT hin hout hregIn hregOut hP0 hN0 h2 s hNs hs hp
 
 end Kimchi.Circuit.VarBaseMul
