@@ -6,7 +6,7 @@ import Kimchi.Shifted
 
 Composition of `Kimchi.Gate.VarBaseMul` gates. A full scalar multiplication runs
 many gates back to back, each consuming 5 bits: gate `i`'s output accumulator
-feeds gate `i+1`'s input, and each gate's `gate_scalarMul_int` supplies the
+feeds gate `i+1`'s input, and each gate's `sound` supplies the
 per-step relation `P_{i+1} = 32·P_i + cᵢ·T`. Folding that recurrence over `m`
 gates is pure group algebra.
 
@@ -29,7 +29,7 @@ The ladder under it:
 ## Supporting development
 
 `chain_scalarMul` / `chain_register` (the point- and register-level recurrence
-folds), `GateStep` (the per-gate hypothesis bundle that `gate_scalarMul_int`
+folds), `GateStep` (the per-gate hypothesis bundle that `sound`
 consumes), and `unshiftType1` / `shiftType1` / `unshiftType2` (the pickles shift).
 
 ## Correspondence to the PureScript circuit
@@ -67,7 +67,7 @@ variable {F : Type*} [Field F] [DecidableEq F]
 
     — i.e. `m` chained `VarBaseMul` gates compute variable-base scalar
     multiplication by the `5m`-bit scalar `k = ∑_{i<m} 32^(m-1-i)·cᵢ` (plus the
-    carried `32^m·P₀`). The per-gate relation is supplied by `gate_scalarMul_int`
+    carried `32^m·P₀`). The per-gate relation is supplied by `sound`
     after folding its `Qⱼ` points into `±T` via booleanity. -/
 theorem chain_scalarMul
     (W : WeierstrassCurve.Affine F)
@@ -145,7 +145,7 @@ theorem chain_sum_bound (m : ℕ) (c : ℕ → ℤ) (hc : ∀ i, i < m → (c i)
     have hps : 32 ^ (m + 1) = 32 * 32 ^ m := by rw [pow_succ]; ring
     omega
 
-/-- The per-gate CONSTRAINT DATA that `gate_scalarMul_int` consumes: nonsingular
+/-- The per-gate CONSTRAINT DATA that `sound` consumes: nonsingular
     accumulators `a0..a5`, signed targets `q0..q4`, and the 21 constraints `holds`.
     This is the prover's witness — an INPUT to the circuit, not derivable. -/
 structure GateData (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
@@ -181,7 +181,7 @@ structure NonDegen (g : Witness F) : Prop where
 
 /-- A full per-gate step: the constraint `GateData` plus the `NonDegen` side
     conditions. (Both parents' fields are inherited via dot notation, so existing
-    `gate_scalarMul_int` call sites are unaffected.) -/
+    `sound` call sites are unaffected.) -/
 structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop
     extends GateData W g, NonDegen g
 
@@ -198,7 +198,7 @@ structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop
     scalar `k` is pinned to what the scalar register computed (`N 0 → N m`) — in
     signed-digit form. The proof folds the point chain with `chain_scalarMul` and
     the register chain with `chain_register`, both fed by the gate's
-    `gate_scalarMul_int`. -/
+    `sound`. -/
 theorem scalarMul
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep W (g i))
@@ -215,7 +215,7 @@ theorem scalarMul
       ∃ c : ℕ → ℤ, (∀ i < m, P (i + 1) = (32 : ℤ) • P i + c i • T)
         ∧ (∀ i < m, (c i : F) = 2 * N (i + 1) - 64 * N i - 31)
         ∧ (∀ i < m, (c i).natAbs ≤ 31) := by
-    choose! c hc₁ hc₂ hc₃ using fun i hi => gate_scalarMul_int W ha (g i)
+    choose! c hc₁ hc₂ hc₃ using fun i hi => sound W ha (g i)
       (gs i hi).a0 (gs i hi).a1 (gs i hi).a2 (gs i hi).a3 (gs i hi).a4 (gs i hi).a5
       (gs i hi).hT (gs i hi).q0 (gs i hi).q1 (gs i hi).q2 (gs i hi).q3 (gs i hi).q4
       (gs i hi).x0 (gs i hi).x1 (gs i hi).x2 (gs i hi).x3 (gs i hi).x4

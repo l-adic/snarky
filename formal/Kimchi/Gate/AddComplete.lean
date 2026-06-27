@@ -23,7 +23,7 @@ and the sum of two affine points has coordinates `(addX, addY)`
 ## Main results
 
 The gate computes addition in Mathlib's proven elliptic-curve group `W.Point`:
-* `sound_point` — SOUNDNESS, both cases in one statement: for a satisfying witness the
+* `sound` — SOUNDNESS, both cases in one statement: for a satisfying witness the
   sum `(x₁,y₁) + (x₂,y₂)` is the group element the gate encodes — `0` when `inf = 1`,
   else the affine output `(x₃, y₃)` — using that `inf` is boolean (`inf_boolean`). It
   splits into the per-case `sound_point_noninf` / `sound_point_inf`.
@@ -253,7 +253,7 @@ theorem complete_inf
 /-- COMPLETENESS, both cases in one statement. For any on-curve inputs with `y₁ ≠ 0`, an
     honest prover can fill a satisfying witness — casing internally on whether the sum is
     `∞` (`x₁=x₂ ∧ y₁ = negY x₂ y₂` → `complete_inf`, `inf=1`) or finite (`complete_noninf`,
-    `inf=0`). The single-theorem companion to `sound_point`. (`y₁ ≠ 0` excludes 2-torsion,
+    `inf=0`). The single-theorem companion to `sound`. (`y₁ ≠ 0` excludes 2-torsion,
     which the prime-order kimchi curves don't have — so it is no real restriction there.) -/
 theorem complete
     (W : WeierstrassCurve.Affine F)
@@ -381,7 +381,7 @@ theorem inf_boolean (w : Witness F) (hcons : Holds w) :
     witness, either the `inf` flag is set and the sum `(x₁,y₁) + (x₂,y₂)` is the point at
     infinity, or the flag is clear and the affine output `(x₃, y₃)` is that sum. Unifies
     `sound_point_inf` and `sound_point_noninf` via the boolean `inf`. -/
-theorem sound_point
+theorem sound
     (W : WeierstrassCurve.Affine F)
     (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
     (w : Witness F)

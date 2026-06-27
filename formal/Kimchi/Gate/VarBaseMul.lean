@@ -39,7 +39,7 @@ full scalar multiplication lives in `Kimchi.Circuit.VarBaseMul`.
 
 ## Main result
 
-`gate_scalarMul_int` — one satisfying gate computes `∃ c : ℤ, P₅ = 32·P₀ + c·T`
+`sound` — one satisfying gate computes `∃ c : ℤ, P₅ = 32·P₀ + c·T`
 in Mathlib's elliptic-curve group: the integer-scalar interface the circuit
 consumes.
 
@@ -51,7 +51,7 @@ Mathlib's group law:
 
 * `singleBit_sound` — one bit : `output = (input + Q) + input`
 * `gate_scalarMul`  — 5 bits  : `P₅ = 32·P₀ + 16·Q₀ + ⋯ + Q₄`  (point form)
-* `gate_scalarMul_int` — folds those `Qⱼ` into `±T` (the integer-scalar bridge)
+* `sound` — folds those `Qⱼ` into `±T` (the integer-scalar bridge)
 -/
 
 namespace Kimchi.Gate.VarBaseMul
@@ -415,7 +415,7 @@ lemma signed_target
     the `b·b − b = 0` constraint inside `Holds`), since on a short curve negation
     is `y ↦ −y`. This is exactly the per-gate relation `chain_scalarMul` consumes,
     so it closes the gap between one gate and the arbitrary-length chain. -/
-theorem gate_scalarMul_int
+theorem sound
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0) (w : Witness F)
     (h0 : W.Nonsingular w.x0 w.y0) (h1 : W.Nonsingular w.x1 w.y1)
     (h2 : W.Nonsingular w.x2 w.y2) (h3 : W.Nonsingular w.x3 w.y3)
@@ -464,5 +464,74 @@ theorem gate_scalarMul_int
       rcases hd4 with rfl | rfl <;> decide
 
 end Soundness
+
+/-! ## Completeness: the witness generator satisfies the constraints
+
+`sound` shows a satisfying witness computes `[s]·T`. Completeness is the converse direction —
+the honest computation yields a satisfying witness: the generated chain `build` satisfies `Holds`,
+under the same non-degeneracy conditions soundness needs (each step's two additions are
+non-vertical: `xᵢ ≠ xT` and `tᵢ = 2·xᵢ + xT − sᵢ² ≠ 0`). It is purely algebraic — no curve
+membership is required. -/
+
+/-- A single block's constraints hold for any `(s1, s2, xo, yo)` linked by the generation
+    relations (slope `s1` chord, slope `s2` tangent, and the output point), given booleanity.
+    Stated with the slopes in *multiplicative* form so it is pure polynomial algebra. -/
+theorem singleBitHolds_of_step [CommRing F] (b xb yb s1 s2 xi yi xo yo : F)
+    (hb : b * b - b = 0)
+    (hsl : (xi - xb) * s1 = yi - (2 * b - 1) * yb)
+    (hs2 : (2 * xi + xb - s1 * s1) * s2 = 2 * yi - (2 * xi + xb - s1 * s1) * s1)
+    (hxo : xo = xb + s2 * s2 - s1 * s1)
+    (hyo : yo = (xi - xo) * s2 - yi) :
+    singleBitHolds b xb yb s1 xi yi xo yo := by
+  simp only [singleBitHolds]
+  refine ⟨hb, by linear_combination hsl, ?_, ?_⟩
+  · subst hxo
+    linear_combination
+      (-(2 * yi - (2 * xi + xb - s1 * s1) * s1) - (2 * xi + xb - s1 * s1) * s2) * hs2
+  · subst hyo hxo
+    linear_combination (xi - (xb + s2 * s2 - s1 * s1)) * hs2
+
+/-- The generated single-bit step satisfies the single-bit constraints, given booleanity of `b`
+    and the two non-degeneracy conditions (`xi ≠ xb`, `t ≠ 0`) — the denominators in `stepBit`. -/
+theorem stepBit_holds [Field F] (b xb yb xi yi : F)
+    (hb : b * b - b = 0) (hx : xi - xb ≠ 0)
+    (ht : 2 * xi + xb - (stepBit b xb yb xi yi).1 * (stepBit b xb yb xi yi).1 ≠ 0) :
+    singleBitHolds b xb yb (stepBit b xb yb xi yi).1 xi yi
+      (stepBit b xb yb xi yi).2.1 (stepBit b xb yb xi yi).2.2 := by
+  set s1 := (yi - (2 * b - 1) * yb) / (xi - xb) with hs1
+  have e1 : (stepBit b xb yb xi yi).1 = s1 := rfl
+  set s2 := 2 * yi / (2 * xi + xb - s1 * s1) - s1 with hs2d
+  have e2 : (stepBit b xb yb xi yi).2.1 = xb + s2 * s2 - s1 * s1 := rfl
+  have e3 : (stepBit b xb yb xi yi).2.2 = (xi - (xb + s2 * s2 - s1 * s1)) * s2 - yi := rfl
+  rw [e1] at ht ⊢
+  rw [e2, e3]
+  refine singleBitHolds_of_step b xb yb s1 s2 xi yi _ _ hb ?_ ?_ rfl rfl
+  · rw [hs1]; field_simp
+  · rw [hs2d]
+    have ht' : 2 * xi + xb - s1 ^ 2 ≠ 0 := by rw [pow_two]; exact ht
+    field_simp [ht']
+
+/-- **Completeness of the VarBaseMul gate.** The witness produced by the generator `build`
+    satisfies all 21 constraints (`Holds`), given booleanity of the five bits and the per-step
+    non-degeneracy conditions (each accumulator `xᵢ ≠ xT` and each `tᵢ ≠ 0`) — the conditions
+    under which the gate's incomplete additions are well-defined. Conditional, as expected for an
+    incomplete-addition gate; `decompHolds` holds unconditionally by construction. -/
+theorem complete [Field F] (xb yb x0 y0 n b0 b1 b2 b3 b4 : F)
+    (w : Witness F) (hw : w = build xb yb x0 y0 n b0 b1 b2 b3 b4)
+    (hb0 : b0 * b0 - b0 = 0) (hb1 : b1 * b1 - b1 = 0) (hb2 : b2 * b2 - b2 = 0)
+    (hb3 : b3 * b3 - b3 = 0) (hb4 : b4 * b4 - b4 = 0)
+    (hx0 : w.x0 ≠ w.xT) (ht0 : 2 * w.x0 + w.xT - w.s0 * w.s0 ≠ 0)
+    (hx1 : w.x1 ≠ w.xT) (ht1 : 2 * w.x1 + w.xT - w.s1 * w.s1 ≠ 0)
+    (hx2 : w.x2 ≠ w.xT) (ht2 : 2 * w.x2 + w.xT - w.s2 * w.s2 ≠ 0)
+    (hx3 : w.x3 ≠ w.xT) (ht3 : 2 * w.x3 + w.xT - w.s3 * w.s3 ≠ 0)
+    (hx4 : w.x4 ≠ w.xT) (ht4 : 2 * w.x4 + w.xT - w.s4 * w.s4 ≠ 0) :
+    Holds w := by
+  subst hw
+  refine ⟨by simp only [decompHolds, build]; ring, ?_, ?_, ?_, ?_, ?_⟩
+  · exact stepBit_holds b0 xb yb x0 y0 hb0 (sub_ne_zero_of_ne hx0) ht0
+  · exact stepBit_holds b1 xb yb _ _ hb1 (sub_ne_zero_of_ne hx1) ht1
+  · exact stepBit_holds b2 xb yb _ _ hb2 (sub_ne_zero_of_ne hx2) ht2
+  · exact stepBit_holds b3 xb yb _ _ hb3 (sub_ne_zero_of_ne hx3) ht3
+  · exact stepBit_holds b4 xb yb _ _ hb4 (sub_ne_zero_of_ne hx4) ht4
 
 end Kimchi.Gate.VarBaseMul

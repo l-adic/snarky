@@ -88,6 +88,8 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         cat > check_axioms.lean <<'EOF'
         import Kimchi
+        #print axioms Kimchi.Gate.Generic.sound
+        #print axioms Kimchi.Gate.Generic.complete
         #print axioms Kimchi.Gate.AddComplete.sound_noninf
         #print axioms Kimchi.Gate.AddComplete.complete_noninf
         #print axioms Kimchi.Gate.AddComplete.sound_point_noninf
@@ -96,11 +98,13 @@ jobs:
         #print axioms Kimchi.Gate.AddComplete.inf_boolean
         #print axioms Kimchi.Gate.AddComplete.complete_inf
         #print axioms Kimchi.Gate.AddComplete.complete
-        #print axioms Kimchi.Gate.AddComplete.sound_point
+        #print axioms Kimchi.Gate.AddComplete.sound
+        #print axioms Kimchi.Gate.VarBaseMul.sound
+        #print axioms Kimchi.Gate.VarBaseMul.complete
         #print axioms WeierstrassCurve.Affine.zsmul_mod
         #print axioms WeierstrassCurve.Affine.order_smul
-        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_deployed_correct
         #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_correct
+        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_deployed_correct
         #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_forbidden_correct
         #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_subwrap_correct
         #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast1
