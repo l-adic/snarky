@@ -164,9 +164,9 @@ structure GateData (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
   holds : Holds g
 
 /-- The per-gate NON-DEGENERACY side conditions: the additions are non-vertical
-    (`xⱼ ≠ xT`) and the second additions are non-vertical (`tⱼ ≠ 0`). For ANY satisfying
-    witness these are secured by the register field bound (`Soundness.varBaseMul_deployed_correct`
-    via `Ladder.ladder_x_nondegen`), so no incomplete-addition step hits an exceptional case. -/
+    (`xⱼ ≠ xT`) and the second additions are non-vertical (`tⱼ ≠ 0`). For the kimchi
+    VarBaseMul gate these are exactly what the `s ∉ forbiddenShiftedValues` guard is
+    supposed to secure for ANY satisfying witness (its soundness). -/
 structure NonDegen (g : Witness F) : Prop where
   x0 : g.x0 ≠ g.xT
   x1 : g.x1 ≠ g.xT
@@ -352,9 +352,7 @@ theorem scalarMul_type2
     push_cast
     rw [hnf, ho, unshiftType1, unshiftType2]; ring
 
-/-! ## The circuit's correctness: it computes `[s]·T` for the caller's scalar `s`,
-    given the per-gate `GateStep`s. Non-degeneracy is discharged from the field bound in
-    `Soundness` (`varBaseMul_correct`); here it is a `GateStep` hypothesis. -/
+/-! ## The circuit's correctness: valid for non-forbidden scalars. -/
 
 /-- Given the per-gate `GateStep`s (constraints + non-degeneracy) and the sub-width
     budget, the gate computes `[s]·T` for the genuine scalar `s`. The cross-field range
@@ -380,5 +378,45 @@ theorem varBaseMul_faithful_unconditional (W : WeierstrassCurve.Affine F)
     have htri : (n - s).natAbs ≤ n.natAbs + s.natAbs := Int.natAbs_sub_le n s
     omega
   rw [hn, intCast_inj_of_sub_lt hnf hrange]
+
+/-- The pickles Type1 `forbiddenShiftedValues`: the scalars the circuit rejects.
+    Transcribed from `forbiddenShiftedValues` / `forbiddenType1Values` in
+    `Snarky.Types.Shifted`: a register `t` is forbidden when `t ≡ -2^n` or
+    `t ≡ -2^n - 1 (mod order)` (`n = numBits`). In terms of the decoded scalar
+    `s = 2·t + 2^n + 1` that is `s + 2^n ≡ ±1 (mod order)` — the two residues where the
+    VarBaseMul double-and-add hits an incomplete-addition exceptional case. -/
+def forbiddenShiftedValues (order numBits : ℕ) : Set ℤ :=
+  {s | (order : ℤ) ∣ (s + 2 ^ numBits - 1) ∨ (order : ℤ) ∣ (s + 2 ^ numBits + 1)}
+
+/-- The circuit's correctness, stated as the circuit claims it: the VarBaseMul gate
+    computes `[s]·T` for any scalar it ACCEPTS — `s ∉ forbiddenShiftedValues`.
+
+    Faithful to `Snarky.Circuit.Kimchi.VarBaseMul`:
+    * `hd` — the prover's witness: every gate's constraint data holds (an INPUT).
+    * `hnf` — the circuit's runtime guard (`t ∉ forbiddenType1Values`).
+    * `hsound` — the SOUNDNESS of that guard: for ANY satisfying witness, `s ∉ forbidden`
+      forces the incomplete-addition steps non-degenerate (`NonDegen`). This is the
+      kimchi design guarantee; we take it as an explicit assumption rather than derive
+      it — mirroring the circuit's trust, not re-proving its exceptional-case freedom.
+    * `hs`/`hp` — the `5m`-bit budget (cross-field range, from the magnitude bound). -/
+theorem varBaseMul_sound (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
+    {p : ℕ} [CharP F p] (order m : ℕ) (g : ℕ → Witness F)
+    (T : W.Point) (N : ℕ → F) (P : ℕ → W.Point) (s : ℤ)
+    (hd : ∀ i, i < m → GateData W (g i))
+    (hnf : s ∉ forbiddenShiftedValues order (5 * m))
+    (hsound : s ∉ forbiddenShiftedValues order (5 * m) →
+      ∀ i, i < m → GateData W (g i) → NonDegen (g i))
+    (hT : ∀ i (hi : i < m), T = Point.some _ _ (hd i hi).hT)
+    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (hd i hi).a0)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
+    (hregIn : ∀ i, i < m → N i = (g i).n)
+    (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
+    (hP0 : P 0 = (2 : ℤ) • T) (hN0 : N 0 = 0)
+    (h2 : (2 : F) ≠ 0) (hNs : N m = shiftType1 (5 * m) (s : F))
+    (hs : s.natAbs < 2 * 32 ^ m) (hp : 5 * 32 ^ m ≤ p) :
+    P m = s • T :=
+  varBaseMul_faithful_unconditional W ha m g
+    (fun i hi => ⟨hd i hi, hsound hnf i hi (hd i hi)⟩) T N P
+    hT hin hout hregIn hregOut hP0 hN0 h2 s hNs hs hp
 
 end Kimchi.Circuit.VarBaseMul
