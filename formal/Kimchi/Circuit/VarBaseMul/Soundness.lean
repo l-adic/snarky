@@ -255,21 +255,29 @@ lemma gate_block (c : WeierstrassCurve.Affine F)
   rw [hTeq]; exact ha5
 
 /--
-**VarBaseMul soundness (`hsound`).** For ANY witness satisfying the gate constraints
-    (`GateData` for every row) at the real init (`P 0 = 2·T`), in the one-wrap regime
-    `2^(5m-1) < order < 2^(5m)`, if the integer scalar `s` computed by the gate bits
-    (`s = gateLadder g (5m)`, the double-and-add ladder top) avoids the forbidden residues
-    `forbiddenValues order` and `order ≡ 1 (mod 4)`, then every gate row is `NonDegen`.
+**VarBaseMul correctness + soundness via the forbidden band.** For ANY witness satisfying the
+    gate constraints (`GateData` for every row) at the real init (`P 0 = 2·T`), in the one-wrap
+    regime `2^(5m-1) < order < 2^(5m)` with `order ≡ 1 (mod 4)`, if the integer scalar
+    `s = gateLadder g (5m)` (the double-and-add ladder top) avoids the forbidden band
+    `forbiddenValues order` (`= {0,±1,±2,±3,5,7,9,11} (mod order)`), then the `m` gates compute
+    `P m = s·T` and every gate row is `NonDegen`.
 
-    This discharges the soundness assumption of
-    `Kimchi.Circuit.VarBaseMul.varBaseMul_sound`: a non-forbidden scalar forces every
-    incomplete-addition step non-degenerate.
+    This is the soundness mechanism for the `scaleFast1` / Type1 entry point — the Vesta direction
+    (scalar field < circuit field), which guards with a forbidden-value check rather than a range
+    check (`scaleFast2` is the range-checked direction; see `varBaseMul_deployed_correct`).
 
-    The scalar enters directly as the bit-determined ladder top
-    (`hs : s = gateLadder g (5 * m)`), and the one-wrap regime bounds (`hreg₁`, `hreg₂`)
-    feed the number-theoretic core `Ladder.ladder_nondegen_tight`.
+    The band here is the COMPLETE forbidden set (`Ladder.ladder_nondegen_tight`). Mina's deployed
+    guard `forbidden_shifted_values` (`crypto/pickles/impls.ml`) is the *incomplete* two-residue
+    subset `s + 2^numBits ≡ ±1`; its own source carries the TODO "I think there are other forbidden
+    values as well", and `Ladder` proves that two-residue set misses this band (`L=5,q=29`). So this
+    statement is the complete characterization the circuit's runtime check only approximates;
+    whether the band scalars can actually arise for the wrap-verifier's Type1 scalars is left open
+    (it is upstream's open question too).
+
+    The scalar enters directly as the bit-determined ladder top (`hs : s = gateLadder g (5m)`), and
+    the one-wrap regime bounds (`hreg₁`, `hreg₂`) feed `Ladder.ladder_nondegen_tight`.
 -/
-theorem nonDegen_of_not_forbidden (c : WeierstrassCurve.Affine F)
+theorem varBaseMul_forbidden_correct (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
     [Fact (Nat.Prime c.order)]
     (m : ℕ) (g : ℕ → Witness F)
@@ -284,7 +292,7 @@ theorem nonDegen_of_not_forbidden (c : WeierstrassCurve.Affine F)
     (hreg₁ : 2 ^ (5 * m - 1) < c.order) (hreg₂ : c.order < 2 ^ (5 * m))
     (hq4 : c.order % 4 = 1)
     (hs : s = gateLadder g (5 * m)) (hnf : s ∉ forbiddenValues c.order) :
-    ∀ i, i < m → NonDegen (g i) := by
+    P m = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
   -- Transport `hnf` from `s` to the bit-determined ladder top.
   have hnf' : ∀ t ∈ Ladder.forbiddenResidues,
       ¬ (c.order : ℤ) ∣ (gateLadder g (5 * m) - t) := by
@@ -319,8 +327,7 @@ theorem nonDegen_of_not_forbidden (c : WeierstrassCurve.Affine F)
         rcases Nat.lt_succ_iff_lt_or_eq.mp hi' with h | h
         · exact hNDi i' h
         · subst h; exact hNDgi
-  intro i hi
-  exact (key m le_rfl).2 i hi
+  exact ⟨by rw [hs]; exact (key m le_rfl).1, fun i hi => (key m le_rfl).2 i hi⟩
 
 /-! ## Deployed soundness: from the constraints + the register field bound (no forbidden set)
 

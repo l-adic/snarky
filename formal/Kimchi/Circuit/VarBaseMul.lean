@@ -143,4 +143,42 @@ theorem varBaseMul_vesta_correct_mod
     varBaseMul_vesta_correct m g T P s hTne hd hT hin hout hP0 hbits hs hcanonical
   exact ⟨by rw [hP, ← Kimchi.Pasta.vesta_card, WeierstrassCurve.Affine.zsmul_mod], hND⟩
 
+/-! ## The `scaleFast1` / Type1 direction: soundness via the forbidden band (Vesta)
+
+`scaleFast2` (the Pallas direction above) range-checks the register, so its soundness is the
+field-bound `varBaseMul_pallas_correct`. `scaleFast1` (the Vesta direction; scalar field < circuit
+field) range-checks nothing and instead guards with a forbidden-value check. The matching soundness
+is `varBaseMul_forbidden_correct`: excluding the forbidden band makes every row non-degenerate, and
+the gates compute `[s]·T`.
+
+Caveat on faithfulness to the deployed circuit: the band `forbiddenValues` is the COMPLETE forbidden
+set, whereas mina's runtime guard `forbidden_shifted_values` (`crypto/pickles/impls.ml`) is the
+*incomplete* two-residue subset — its source even carries the TODO "I think there are other
+forbidden values as well", and `Ladder` proves the two-residue set misses the band. So this theorem
+is stronger than (and supersedes) the circuit's actual check; closing the gap — showing the band
+scalars cannot arise for the wrap-verifier's Type1 scalars — is an open item upstream as well. -/
+
+/-- **scaleFast1 / Type1 on the real Vesta curve: correct + sound for non-forbidden scalars.**
+    `varBaseMul_forbidden_correct` at `Vesta.curve.toAffine` (group order `PALLAS_BASE_CARD`, via
+    `vesta_card`): in the one-wrap regime (`hreg₁`/`hreg₂` pin `5m` to the order's bit width), for a
+    scalar `s` outside the forbidden band, the `m` gates compute `P m = s·T` with every row
+    `NonDegen`. The `order ≡ 1 (mod 4)` fact is discharged from the known cardinal. See the section
+    note on the band vs mina's (incomplete) deployed `forbidden_shifted_values` check. -/
+theorem varBaseMul_vesta_correct_forbidden
+    (m : ℕ) (g : ℕ → Witness VestaBaseField)
+    (T : Vesta.curve.toAffine.Point) (P : ℕ → Vesta.curve.toAffine.Point) (s : ℤ)
+    (hTne : T ≠ 0)
+    (hd : ∀ i, i < m → GateData Vesta.curve.toAffine (g i))
+    (hT : ∀ i (hi : i < m), T = Point.some _ _ (hd i hi).hT)
+    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (hd i hi).a0)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
+    (hP0 : P 0 = (2 : ℤ) • T)
+    (hreg₁ : 2 ^ (5 * m - 1) < Vesta.curve.toAffine.order)
+    (hreg₂ : Vesta.curve.toAffine.order < 2 ^ (5 * m))
+    (hs : s = gateLadder g (5 * m))
+    (hnf : s ∉ forbiddenValues Vesta.curve.toAffine.order) :
+    P m = s • T ∧ ∀ i, i < m → NonDegen (g i) :=
+  varBaseMul_forbidden_correct Vesta.curve.toAffine m g T P s hTne hd hT hin hout hP0
+    (by decide) hreg₁ hreg₂ (by rw [Kimchi.Pasta.vesta_card]; norm_num [PALLAS_BASE_CARD]) hs hnf
+
 end Kimchi.Circuit.VarBaseMul
