@@ -10,15 +10,24 @@ import Kimchi.Pasta
 The public module for variable-base scalar multiplication: it aggregates the circuit
 definitions (`.Basic`), the number-theoretic ladder kernel (`.Ladder`), the group-order
 non-degeneracy toolkit (`.NonDegen`), and the abstract soundness (`.Soundness`), and then
-instantiates the soundness at the real Pasta curve.
+instantiates it at the real Pasta curves.
 
-`varBaseMul_deployed_correct` is proved abstractly over any `WeierstrassCurve.Affine` carrying
-the short-shape and prime-order `Fact`s, and is `#print axioms`-clean. Here we fix the curve to
-each concrete Pasta curve in turn — `varBaseMul_pallas_correct` and `varBaseMul_vesta_correct`,
-symmetric across the 2-cycle. The two `Fact`s are discharged from `Kimchi.Pasta`, the prime-order
-one through the trusted point count (`pallas_card` / `vesta_card` respectively). So these
-corollaries are the only things that depend on a point-count axiom; the abstract development
-stays axiom-free.
+The abstract `varBaseMul_deployed_correct` / `varBaseMul_subwrap_correct` /
+`varBaseMul_forbidden_correct` (in `.Soundness`) are proved over any `WeierstrassCurve.Affine`
+carrying the short-shape and prime-order `Fact`s, and are `#print axioms`-clean. Here we expose
+the two directions the deployed circuit actually uses, each at its concrete curve:
+
+* `varBaseMul_scaleFast1` — `scaleFast1` / Type1 (Vesta): the scalar field is smaller
+  than the circuit field, so there is no register range-check; soundness comes from the forbidden
+  band (full width) or the sub-wrap regime (below it).
+* `varBaseMul_scaleFast2` — `scaleFast2` / Type2 (Pallas): the caller splits the scalar and
+  range-checks the high half, so soundness is the field-bound route.
+
+A bare `varBaseMul` is never deployed on its own — only these two — so the field-bound Pallas
+correctness is *inlined* into `scaleFast2` rather than exposed as a separate corollary. The `Fact`s
+are discharged from `Kimchi.Pasta`, the prime-order one through the trusted point count
+(`pallas_card` / `vesta_card`). So these corollaries are the only things that depend on a
+point-count axiom; the abstract development stays axiom-free.
 -/
 
 namespace Kimchi.Circuit.VarBaseMul
@@ -26,135 +35,15 @@ namespace Kimchi.Circuit.VarBaseMul
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta CompElliptic.CurveForms.ShortWeierstrass
 open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine Kimchi.Shifted Kimchi.Pasta
 
-/-- **The deployed VarBaseMul circuit is correct on the real Pallas curve.**
-    `varBaseMul_deployed_correct` at `Pallas.curve.toAffine`, with `baseFieldOrder` fixed to the
-    actual base-field cardinality `PALLAS_BASE_CARD` (the curve is over `ZMod PALLAS_BASE_CARD`).
-
-    The only remaining hypotheses are the genuine ones: `hbits : 5 * m ≤ pastaFieldBits` — the
-    circuit's `bitsUsed ≤ FieldSizeInBits` constraint (`pastaFieldBits` = 255, the Pasta field
-    width) — and `hcanonical`. The regime facts `3 < order`, `2^(5m-1) < order`, and the 2-cycle
-    size relation
-    `p + 2^(5m-1) + 2 ≤ 2q` are *discharged* here from `hbits` and the known Pasta cardinals
-    (`order = PALLAS_SCALAR_CARD` via `pallas_card`), not assumed.
-
-    `hcanonical : s < 2·PALLAS_BASE_CARD + 2^(5m)` is the **range / canonical-form** condition,
-    equivalent to "the scalar register `(s − 2^(5m) − 1)/2 < PALLAS_BASE_CARD`". It is a genuine
-    soundness precondition, NOT implied by the scalar living in a field: the gate's register is the
-    integer the `5m` witness bits spell out, ranging over `[0, 2^(5m))`, while only its residue
-    mod `p` is a base-field element. A non-canonical encoding (register in `[p, 2^(5m))`, same field
-    value) yields a larger ladder top whose intermediate accumulators can hit `±T`. `hcanonical`
-    rules those out — it is the bit-decomposition range-check the circuit must enforce. -/
-theorem varBaseMul_pallas_correct
-    (m : ℕ) (g : ℕ → Witness PallasBaseField)
-    (T : Pallas.curve.toAffine.Point) (P : ℕ → Pallas.curve.toAffine.Point) (s : ℤ)
-    (hTne : T ≠ 0)
-    (hd : ∀ i, i < m → GateData Pallas.curve.toAffine (g i))
-    (hT : ∀ i (hi : i < m), T = Point.some _ _ (hd i hi).hT)
-    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (hd i hi).a0)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
-    (hP0 : P 0 = (2 : ℤ) • T)
-    (hbits : 5 * m ≤ pastaFieldBits)
-    (hs : s = gateLadder g (5 * m))
-    (hcanonical : s < 2 * (PALLAS_BASE_CARD : ℤ) + 2 ^ (5 * m)) :
-    P m = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
-  have hq : Pallas.curve.toAffine.order = PALLAS_SCALAR_CARD := Kimchi.Pasta.pallas_card
-  have hpow : (2 : ℕ) ^ (5 * m - 1) ≤ 2 ^ (pastaFieldBits - 1) :=
-    Nat.pow_le_pow_right (by norm_num) (by omega)
-  refine varBaseMul_deployed_correct Pallas.curve.toAffine m g PALLAS_BASE_CARD T P s
-    hTne hd hT hin hout hP0 (by decide) ?_ ?_ ?_ hs hcanonical
-  · rw [hq]; norm_num [PALLAS_SCALAR_CARD]
-  · rw [hq]; exact lt_of_le_of_lt hpow (by norm_num [PALLAS_SCALAR_CARD])
-  · rw [hq]
-    have hc : PALLAS_BASE_CARD + 2 ^ (pastaFieldBits - 1) + 2 ≤ 2 * PALLAS_SCALAR_CARD := by
-      norm_num [PALLAS_BASE_CARD, PALLAS_SCALAR_CARD]
-    omega
-
-/-- **The deployed VarBaseMul circuit is correct on the real Vesta curve.** The 2-cycle mirror of
-    `varBaseMul_pallas_correct`, at `Vesta.curve.toAffine` (over `ZMod PALLAS_SCALAR_CARD`), with
-    `baseFieldOrder` fixed to `PALLAS_SCALAR_CARD` and `order = PALLAS_BASE_CARD` (`vesta_card`).
-    The regime facts are discharged from `hbits` and the Pasta cardinals; only the bit-width bound
-    and `hcanonical` (the range / canonical-form condition `register < PALLAS_SCALAR_CARD`, as in
-    `varBaseMul_pallas_correct`) remain. -/
-theorem varBaseMul_vesta_correct
-    (m : ℕ) (g : ℕ → Witness VestaBaseField)
-    (T : Vesta.curve.toAffine.Point) (P : ℕ → Vesta.curve.toAffine.Point) (s : ℤ)
-    (hTne : T ≠ 0)
-    (hd : ∀ i, i < m → GateData Vesta.curve.toAffine (g i))
-    (hT : ∀ i (hi : i < m), T = Point.some _ _ (hd i hi).hT)
-    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (hd i hi).a0)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
-    (hP0 : P 0 = (2 : ℤ) • T)
-    (hbits : 5 * m ≤ pastaFieldBits)
-    (hs : s = gateLadder g (5 * m))
-    (hcanonical : s < 2 * (PALLAS_SCALAR_CARD : ℤ) + 2 ^ (5 * m)) :
-    P m = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
-  have hq : Vesta.curve.toAffine.order = PALLAS_BASE_CARD := Kimchi.Pasta.vesta_card
-  have hpow : (2 : ℕ) ^ (5 * m - 1) ≤ 2 ^ (pastaFieldBits - 1) :=
-    Nat.pow_le_pow_right (by norm_num) (by omega)
-  refine varBaseMul_deployed_correct Vesta.curve.toAffine m g PALLAS_SCALAR_CARD T P s
-    hTne hd hT hin hout hP0 (by decide) ?_ ?_ ?_ hs hcanonical
-  · rw [hq]; norm_num [PALLAS_BASE_CARD]
-  · rw [hq]; exact lt_of_le_of_lt hpow (by norm_num [PALLAS_BASE_CARD])
-  · rw [hq]
-    have hc : PALLAS_SCALAR_CARD + 2 ^ (pastaFieldBits - 1) + 2 ≤ 2 * PALLAS_BASE_CARD := by
-      norm_num [PALLAS_BASE_CARD, PALLAS_SCALAR_CARD]
-    omega
-
-/-! ## The output as a scalar-field element
-
-Scalar multiplication `s • T` depends only on `s mod order` (`WeierstrassCurve.Affine.zsmul_mod`),
-so the circuit's output is best read as `[s mod (group order)]·T` — multiplication by the genuine
-scalar-field residue. The integer `s` (the ladder top) is just one representative. -/
-
-/-- `varBaseMul_pallas_correct` with the output scalar reduced to its scalar-field residue:
-    the `m` gates compute `[s mod PALLAS_SCALAR_CARD]·T`, scalar multiplication by the genuine
-    `ZMod PALLAS_SCALAR_CARD` element (the Pallas group order, via `pallas_card`). -/
-theorem varBaseMul_pallas_correct_mod
-    (m : ℕ) (g : ℕ → Witness PallasBaseField)
-    (T : Pallas.curve.toAffine.Point) (P : ℕ → Pallas.curve.toAffine.Point) (s : ℤ)
-    (hTne : T ≠ 0)
-    (hd : ∀ i, i < m → GateData Pallas.curve.toAffine (g i))
-    (hT : ∀ i (hi : i < m), T = Point.some _ _ (hd i hi).hT)
-    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (hd i hi).a0)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
-    (hP0 : P 0 = (2 : ℤ) • T)
-    (hbits : 5 * m ≤ pastaFieldBits)
-    (hs : s = gateLadder g (5 * m))
-    (hcanonical : s < 2 * (PALLAS_BASE_CARD : ℤ) + 2 ^ (5 * m)) :
-    P m = (s % (PALLAS_SCALAR_CARD : ℤ)) • T ∧ ∀ i, i < m → NonDegen (g i) := by
-  obtain ⟨hP, hND⟩ :=
-    varBaseMul_pallas_correct m g T P s hTne hd hT hin hout hP0 hbits hs hcanonical
-  exact ⟨by rw [hP, ← Kimchi.Pasta.pallas_card, WeierstrassCurve.Affine.zsmul_mod], hND⟩
-
-/-- `varBaseMul_vesta_correct` with the output scalar reduced to its scalar-field residue:
-    the `m` gates compute `[s mod PALLAS_BASE_CARD]·T` (`PALLAS_BASE_CARD` is the Vesta group
-    order, `vesta_card`). -/
-theorem varBaseMul_vesta_correct_mod
-    (m : ℕ) (g : ℕ → Witness VestaBaseField)
-    (T : Vesta.curve.toAffine.Point) (P : ℕ → Vesta.curve.toAffine.Point) (s : ℤ)
-    (hTne : T ≠ 0)
-    (hd : ∀ i, i < m → GateData Vesta.curve.toAffine (g i))
-    (hT : ∀ i (hi : i < m), T = Point.some _ _ (hd i hi).hT)
-    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (hd i hi).a0)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
-    (hP0 : P 0 = (2 : ℤ) • T)
-    (hbits : 5 * m ≤ pastaFieldBits)
-    (hs : s = gateLadder g (5 * m))
-    (hcanonical : s < 2 * (PALLAS_SCALAR_CARD : ℤ) + 2 ^ (5 * m)) :
-    P m = (s % (PALLAS_BASE_CARD : ℤ)) • T ∧ ∀ i, i < m → NonDegen (g i) := by
-  obtain ⟨hP, hND⟩ :=
-    varBaseMul_vesta_correct m g T P s hTne hd hT hin hout hP0 hbits hs hcanonical
-  exact ⟨by rw [hP, ← Kimchi.Pasta.vesta_card, WeierstrassCurve.Affine.zsmul_mod], hND⟩
-
 /-! ## The `scaleFast1` / Type1 direction: soundness via the forbidden band (Vesta)
 
-`scaleFast2` (the Pallas direction above) range-checks the register, so its soundness is the
-field-bound `varBaseMul_pallas_correct`. `scaleFast1` (the Vesta direction; scalar field < circuit
-field) range-checks nothing and instead guards with a forbidden-value check. Its soundness splits by
-chunk count `m` (`bitsUsed = 5m ≤ FieldSizeInBits = pastaFieldBits`): for `m ≤ 50` the ladder fits
-below the order and every row is non-degenerate unconditionally (`varBaseMul_subwrap_correct`); only
-the full width `m = 51` is the one-wrap case that needs the forbidden band
-(`varBaseMul_forbidden_correct`).
+`scaleFast2` (the Pallas direction, below) range-checks the register, so its soundness is the
+field-bound route (inlined into `varBaseMul_scaleFast2`). `scaleFast1` (the Vesta direction;
+scalar field < circuit field) range-checks nothing and instead guards with a forbidden-value check.
+Its soundness splits by chunk count `m` (`bitsUsed = 5m ≤ FieldSizeInBits = pastaFieldBits`): for
+`m ≤ 50` the ladder fits below the order and every row is non-degenerate unconditionally
+(`varBaseMul_subwrap_correct`); only the full width `m = 51` is the one-wrap case that needs the
+forbidden band (`varBaseMul_forbidden_correct`).
 
 Caveat on faithfulness to the deployed circuit: the band `forbiddenValues` is the COMPLETE forbidden
 set, whereas mina's runtime guard `forbidden_shifted_values` (`crypto/pickles/impls.ml`) is the
@@ -172,7 +61,7 @@ scalars cannot arise for the wrap-verifier's Type1 scalars — is an open item u
     computation); `5m = pastaFieldBits` → `varBaseMul_forbidden_correct`
     (one-wrap, regime bounds + `order ≡ 1 mod 4` discharged from the cardinal). See the section note
     on the band vs mina's (incomplete) deployed `forbidden_shifted_values` check. -/
-theorem varBaseMul_vesta_correct_forbidden
+theorem varBaseMul_scaleFast1
     (m : ℕ) (g : ℕ → Witness VestaBaseField)
     (T : Vesta.curve.toAffine.Point) (P : ℕ → Vesta.curve.toAffine.Point) (s : ℤ)
     (hTne : T ≠ 0)
@@ -210,8 +99,9 @@ theorem varBaseMul_vesta_correct_forbidden
 `sDiv2 < 2^(pastaFieldBits-1)` — and applies the parity correction `if sOdd then g else g − base`.
 So the inner register is `sDiv2 < 2^(pastaFieldBits-1) < p`, which discharges `hcanonical` via the
 signed-ladder/register bridge (`gateLadder_eq_register`): no separate range hypothesis beyond
-`sDiv2`'s bound. The split itself is
-modeled by `scalarMul_type2`. -/
+`sDiv2`'s bound. The field-bound non-degeneracy (the abstract `varBaseMul_deployed_correct`
+instantiated at Pallas) is inlined below — a bare `varBaseMul` is never a deployed entry point on
+its own. The split itself is modeled by `scalarMul_type2`. -/
 
 /-- **scaleFast2 on the real Pallas curve.** The Type2 entry point: the scalar is split
     `s = 2·sDiv2 + sOdd`, the register `N` holds `sDiv2` (range-checked to
@@ -220,10 +110,10 @@ modeled by `scalarMul_type2`. -/
     correction gives `result = if sOdd then P m else P m − T`. The output is `[n]·T` with
     `(n : F) = unshiftType2 (5m) (N m) sOdd = 2·(N m) + sOdd + 2^(5m)`. Non-degeneracy is *derived*
     from the range-check (`sDiv2 < 2^(pastaFieldBits-1) ≤ p` ⟹ `hcanonical` via
-    `gateLadder_eq_register`), then
-    `varBaseMul_pallas_correct` gives `NonDegen` and `scalarMul_type2` the split + correction —
+    `gateLadder_eq_register`), feeding the field-bound `varBaseMul_deployed_correct` (instantiated
+    at Pallas, inlined) for `NonDegen`; then `scalarMul_type2` supplies the split + correction —
     matching the PureScript `scaleFast2` exactly. -/
-theorem varBaseMul_pallas_scaleFast2
+theorem varBaseMul_scaleFast2
     (m : ℕ) (g : ℕ → Witness PallasBaseField)
     (T : Pallas.curve.toAffine.Point) (N : ℕ → PallasBaseField)
     (P : ℕ → Pallas.curve.toAffine.Point)
@@ -240,14 +130,26 @@ theorem varBaseMul_pallas_scaleFast2
     (sOdd : PallasBaseField) (result : Pallas.curve.toAffine.Point)
     (hcorr : (sOdd = 1 ∧ result = P m) ∨ (sOdd = 0 ∧ result = P m - T)) :
     ∃ n : ℤ, result = n • T ∧ (n : PallasBaseField) = unshiftType2 (5 * m) (N m) sOdd := by
+  -- The range-check `sDiv2 < 2^(pastaFieldBits-1) ≤ p` bounds the ladder top (canonical form).
   have hcanon : gateLadder g (5 * m) < 2 * (PALLAS_BASE_CARD : ℤ) + 2 ^ (5 * m) := by
     rw [gateLadder_eq_register]
     have hp : (2 ^ (pastaFieldBits - 1) : ℤ) ≤ PALLAS_BASE_CARD := by
       exact_mod_cast two_pow_le_pallas_base
     linarith
-  obtain ⟨_, hnd⟩ :=
-    varBaseMul_pallas_correct m g T P (gateLadder g (5 * m)) hTne hd hT hin hout hP0 hbits rfl
-      hcanon
+  -- Field-bound `varBaseMul` non-degeneracy at Pallas — the abstract `deployed_correct` inlined,
+  -- with the regime facts discharged from the Pasta cardinals (`pallas_card`).
+  have hnd : ∀ i, i < m → NonDegen (g i) := by
+    have hq : Pallas.curve.toAffine.order = PALLAS_SCALAR_CARD := Kimchi.Pasta.pallas_card
+    have hpow : (2 : ℕ) ^ (5 * m - 1) ≤ 2 ^ (pastaFieldBits - 1) :=
+      Nat.pow_le_pow_right (by norm_num) (by omega)
+    refine (varBaseMul_deployed_correct Pallas.curve.toAffine m g PALLAS_BASE_CARD T P
+      (gateLadder g (5 * m)) hTne hd hT hin hout hP0 (by decide) ?_ ?_ ?_ rfl hcanon).2
+    · rw [hq]; norm_num [PALLAS_SCALAR_CARD]
+    · rw [hq]; exact lt_of_le_of_lt hpow (by norm_num [PALLAS_SCALAR_CARD])
+    · rw [hq]
+      have hc : PALLAS_BASE_CARD + 2 ^ (pastaFieldBits - 1) + 2 ≤ 2 * PALLAS_SCALAR_CARD := by
+        norm_num [PALLAS_BASE_CARD, PALLAS_SCALAR_CARD]
+      omega
   exact scalarMul_type2 Pallas.curve.toAffine ⟨rfl, rfl, rfl⟩ m g
     (fun i hi => ⟨hd i hi, hnd i hi⟩) T N P hT hin hout hregIn hregOut hP0 hN0 sOdd result hcorr
 

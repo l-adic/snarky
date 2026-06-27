@@ -101,14 +101,10 @@ jobs:
         #print axioms WeierstrassCurve.Affine.order_smul
         #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_deployed_correct
         #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_correct
-        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_pallas_correct
-        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_vesta_correct
-        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_pallas_correct_mod
-        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_vesta_correct_mod
         #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_forbidden_correct
         #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_subwrap_correct
-        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_vesta_correct_forbidden
-        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_pallas_scaleFast2
+        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast1
+        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast2
         EOF
         out=$(lake env lean check_axioms.lean)
         echo "$out"
