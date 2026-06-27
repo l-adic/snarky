@@ -162,6 +162,34 @@ lemma gateBitSign_eq (g : ℕ → Witness F) (j : ℕ) :
     gateBitSign g j = 1 ∨ gateBitSign g j = -1 := by
   unfold gateBitSign; split <;> simp
 
+/-- The unsigned bit at sub-step `j`: `1` if set, else `0` (same `= 1` test as `gateBitSign`). -/
+def ubit (g : ℕ → Witness F) (j : ℕ) : ℤ := if gateBit g j = 1 then 1 else 0
+
+/-- The signed digit is `2·(unsigned bit) − 1`, unconditionally (same `gateBit = 1` test). -/
+lemma gateBitSign_eq_ubit (g : ℕ → Witness F) (j : ℕ) :
+    gateBitSign g j = 2 * ubit g j - 1 := by
+  unfold gateBitSign ubit; split <;> ring
+
+/-- The unsigned scalar register the ladder bits encode (Horner over `ubit`), `r 0 = 0`. -/
+def gateRegister (g : ℕ → Witness F) : ℕ → ℤ
+  | 0 => 0
+  | j + 1 => 2 * gateRegister g j + ubit g j
+
+lemma gateRegister_succ (g : ℕ → Witness F) (j : ℕ) :
+    gateRegister g (j + 1) = 2 * gateRegister g j + ubit g j := rfl
+
+/-- **Signed ladder ↔ unsigned register bridge.** The signed double-and-add top is the `Type1`
+    unshift of the unsigned register it encodes, as an honest **ℤ** identity (no booleanity needed —
+    the signed digits are `2·ubit − 1`): `gateLadder g L = 2·gateRegister g L + 2^L + 1`. This links
+    the non-degeneracy path (`gateLadder`) to the scalar-register path: a range-check
+    `gateRegister < 2^k` directly bounds the ladder top, hence the deployed `hcanonical`. -/
+lemma gateLadder_eq_register (g : ℕ → Witness F) (L : ℕ) :
+    gateLadder g L = 2 * gateRegister g L + 2 ^ L + 1 := by
+  induction L with
+  | zero => norm_num [gateLadder, gateRegister]
+  | succ j ih =>
+    rw [gateLadder_succ, ih, gateBitSign_eq_ubit, gateRegister_succ, pow_succ]; ring
+
 omit [Field F] [DecidableEq F] in
 /-- The five raw bits of gate `i` are the sub-step bits `5i … 5i+4`. -/
 lemma gateBit_block (g : ℕ → Witness F) (i : ℕ) :

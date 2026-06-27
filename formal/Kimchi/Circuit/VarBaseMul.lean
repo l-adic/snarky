@@ -24,7 +24,7 @@ stays axiom-free.
 namespace Kimchi.Circuit.VarBaseMul
 
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta CompElliptic.CurveForms.ShortWeierstrass
-open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine Kimchi.Pasta
+open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine Kimchi.Shifted Kimchi.Pasta
 
 /-- **The deployed VarBaseMul circuit is correct on the real Pallas curve.**
     `varBaseMul_deployed_correct` at `Pallas.curve.toAffine`, with `baseFieldOrder` fixed to the
@@ -202,5 +202,53 @@ theorem varBaseMul_vesta_correct_forbidden
       (by rw [Kimchi.Pasta.vesta_card, hfull]; norm_num [PALLAS_BASE_CARD])
       (by rw [Kimchi.Pasta.vesta_card]; norm_num [PALLAS_BASE_CARD])
       hs (hnf hfull)
+
+/-! ## scaleFast2 / Type2: the parity-split entry point (Pallas direction)
+
+`scaleFast2 base {sDiv2, sOdd}` does not call `varBaseMul` directly. It runs the inner
+`varBaseMul base (Type1 sDiv2)`, asserts the high bits of the decomposition zero — forcing
+`sDiv2 < 2^(pastaFieldBits-1)` — and applies the parity correction `if sOdd then g else g − base`.
+So the inner register is `sDiv2 < 2^(pastaFieldBits-1) < p`, which discharges `hcanonical` via the
+signed-ladder/register bridge (`gateLadder_eq_register`): no separate range hypothesis beyond
+`sDiv2`'s bound. The split itself is
+modeled by `scalarMul_type2`. -/
+
+/-- **scaleFast2 on the real Pallas curve.** The Type2 entry point: the scalar is split
+    `s = 2·sDiv2 + sOdd`, the register `N` holds `sDiv2` (range-checked to
+    `gateRegister g (5m) < 2^(pastaFieldBits-1)` — the deployed `sDiv2 < 2^(pastaFieldBits-1)`), the
+    `m` gates run the inner `varBaseMul`, and the parity
+    correction gives `result = if sOdd then P m else P m − T`. The output is `[n]·T` with
+    `(n : F) = unshiftType2 (5m) (N m) sOdd = 2·(N m) + sOdd + 2^(5m)`. Non-degeneracy is *derived*
+    from the range-check (`sDiv2 < 2^(pastaFieldBits-1) ≤ p` ⟹ `hcanonical` via
+    `gateLadder_eq_register`), then
+    `varBaseMul_pallas_correct` gives `NonDegen` and `scalarMul_type2` the split + correction —
+    matching the PureScript `scaleFast2` exactly. -/
+theorem varBaseMul_pallas_scaleFast2
+    (m : ℕ) (g : ℕ → Witness PallasBaseField)
+    (T : Pallas.curve.toAffine.Point) (N : ℕ → PallasBaseField)
+    (P : ℕ → Pallas.curve.toAffine.Point)
+    (hTne : T ≠ 0)
+    (hd : ∀ i, i < m → GateData Pallas.curve.toAffine (g i))
+    (hT : ∀ i (hi : i < m), T = Point.some _ _ (hd i hi).hT)
+    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (hd i hi).a0)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
+    (hregIn : ∀ i, i < m → N i = (g i).n)
+    (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
+    (hP0 : P 0 = (2 : ℤ) • T) (hN0 : N 0 = 0)
+    (hbits : 5 * m ≤ pastaFieldBits)
+    (hsDiv2 : gateRegister g (5 * m) < 2 ^ (pastaFieldBits - 1))
+    (sOdd : PallasBaseField) (result : Pallas.curve.toAffine.Point)
+    (hcorr : (sOdd = 1 ∧ result = P m) ∨ (sOdd = 0 ∧ result = P m - T)) :
+    ∃ n : ℤ, result = n • T ∧ (n : PallasBaseField) = unshiftType2 (5 * m) (N m) sOdd := by
+  have hcanon : gateLadder g (5 * m) < 2 * (PALLAS_BASE_CARD : ℤ) + 2 ^ (5 * m) := by
+    rw [gateLadder_eq_register]
+    have hp : (2 ^ (pastaFieldBits - 1) : ℤ) ≤ PALLAS_BASE_CARD := by
+      exact_mod_cast two_pow_le_pallas_base
+    linarith
+  obtain ⟨_, hnd⟩ :=
+    varBaseMul_pallas_correct m g T P (gateLadder g (5 * m)) hTne hd hT hin hout hP0 hbits rfl
+      hcanon
+  exact scalarMul_type2 Pallas.curve.toAffine ⟨rfl, rfl, rfl⟩ m g
+    (fun i hi => ⟨hd i hi, hnd i hi⟩) T N P hT hin hout hregIn hregOut hP0 hN0 sOdd result hcorr
 
 end Kimchi.Circuit.VarBaseMul
