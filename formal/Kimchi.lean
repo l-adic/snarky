@@ -7,4 +7,6 @@ import Kimchi.Shifted
 import Kimchi.Gate.Generic
 import Kimchi.Gate.AddComplete
 import Kimchi.Gate.VarBaseMul
+import Kimchi.Gate.EndoScalar
 import Kimchi.Circuit.VarBaseMul
+import Kimchi.Circuit.EndoScalar
