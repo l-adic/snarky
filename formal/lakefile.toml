@@ -1,5 +1,10 @@
 name = "kimchi-formal"
-defaultTargets = ["Kimchi", "kimchi-demo"]
+# Default build = the verified library (all gate/circuit proofs). The `kimchi-demo`
+# executable is intentionally NOT a default target: linking a native binary that
+# transitively pulls the whole Mathlib closure overflows the linker command line on
+# macOS. Run the checker through the interpreter instead (no native link):
+#   lake env lean --run Main.lean fixtures/add_complete_step.json
+defaultTargets = ["Kimchi"]
 
 # CompElliptic: concrete short-Weierstrass `SWCurve` / `SWPoint` with a proven group law,
 # and the Pasta curve instances. Vendored as a git submodule at vendor/CompElliptic so the
