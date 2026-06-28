@@ -15,11 +15,9 @@ crumb list (`List.foldl_append`).
 
 ## Main results
 
-* `gate_toField` — a satisfying row from the canonical init `(a,b,n) = (2,2,0)`
-  outputs the effective scalar `toField crumbs λ` and the register
+* `gate_toField` — the single-row atom: a satisfying row from the canonical init
+  `(a,b,n) = (2,2,0)` outputs the effective scalar `toField crumbs λ` and the register
   `nReconstruct crumbs`.
-* `endoScalar_spec` — with the wrapper's `n = challenge`, that register IS the
-  challenge: the gate computes the endo-decomposition of the challenge.
 * `chain_decompose` / `chain_toField` — the same statement over a *run* of `m + 1`
   sequential gate rows threaded from `(2,2,0)` (`varBaseMul`'s multi-row shape): the
   whole run is one fold over the concatenated crumbs, with output `a·λ + b`.
@@ -63,15 +61,6 @@ theorem gate_toField (lam : F) (w : Witness F) (h : Holds w)
   rw [hb0] at hb
   rw [hn0] at hn
   exact ⟨by rw [ha, hb, toField, decomposeA, decomposeB], by rw [hn, nReconstruct]⟩
-
-/-- The endo-scalar spec: a satisfying row from the canonical init, whose register
-    the wrapper has asserted equal to the input `challenge`, computes the effective
-    scalar — and the crumbs are the base-4 decoding of `challenge`. -/
-theorem endoScalar_spec (lam challenge : F) (w : Witness F) (h : Holds w)
-    (ha0 : w.a0 = 2) (hb0 : w.b0 = 2) (hn0 : w.n0 = 0) (hchal : w.n8 = challenge) :
-    w.a8 * lam + w.b8 = toField w.crumbs lam ∧ nReconstruct w.crumbs = challenge := by
-  obtain ⟨hout, hn⟩ := gate_toField lam w h ha0 hb0 hn0
-  exact ⟨hout, hn ▸ hchal⟩
 
 /-! ## Multi-row composition: threading rows = folding the concatenated crumbs.
 

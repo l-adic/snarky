@@ -34,9 +34,8 @@ Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast2
 Kimchi.Gate.EndoScalar.sound
 Kimchi.Gate.EndoScalar.complete
 
--- Endo-scalar decomposition (circuit): the effective scalar a·λ + b from the challenge
-Kimchi.Circuit.EndoScalar.endoScalar_spec
--- multi-row run over sequential gates, and uniqueness of the decomposition under the
--- bit-size/field-size bound (challenge ↦ a·λ + b is well defined)
+-- Endo-scalar decomposition (circuit): the effective scalar a·λ + b over a multi-row run of
+-- sequential gates, and uniqueness of the decomposition under the bit-size/field-size bound
+-- (so challenge ↦ a·λ + b is well defined)
 Kimchi.Circuit.EndoScalar.chain_toField
 Kimchi.Circuit.EndoScalar.endoScalar_unique
