@@ -144,12 +144,13 @@ theorem chain_sum_bound (m : ℕ) (c : ℕ → ℤ) (hc : ∀ i, i < m → (c i)
     have hps : 32 ^ (m + 1) = 32 * 32 ^ m := by rw [pow_succ]; ring
     omega
 
-/-- The per-gate CONSTRAINT DATA that `sound` consumes: nonsingular
-    accumulators `a0..a5`, the nonsingular target `hT`, and the 21 constraints `holds`.
-    This is the prover's witness — an INPUT to the circuit, not derivable. (The sign-selected
-    targets `(xT, (2bⱼ−1)·yT)` are *not* fields: they are nonsingular by `signed_target_nonsingular`
-    from `hT` and the per-bit booleanity inside `holds`.) -/
-structure GateData (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
+/-- **Per-gate validity certificate.** The facts about one gate's witness `g` that `sound`
+    consumes: its accumulators `a0..a5` and target `hT` are genuine nonsingular curve points, and
+    the 21 constraints `holds`. This is *evidence that `g` is a well-formed satisfying gate row*,
+    not the row's cell data (that is the `Witness g`) — an INPUT to the circuit's soundness,
+    supplied by the prover. (The sign-selected targets `(xT, (2bⱼ−1)·yT)` are *not* fields: they are
+    nonsingular by `signed_target_nonsingular` from `hT` and the per-bit booleanity in `holds`.) -/
+structure GateValid (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
   a0 : W.Nonsingular g.x0 g.y0
   a1 : W.Nonsingular g.x1 g.y1
   a2 : W.Nonsingular g.x2 g.y2
@@ -176,10 +177,10 @@ structure NonDegen (g : Witness F) : Prop where
   t3 : 2 * g.x3 + g.xT - g.s3 * g.s3 ≠ 0
   t4 : 2 * g.x4 + g.xT - g.s4 * g.s4 ≠ 0
 
-/-- A full per-gate step: the constraint `GateData` plus the `NonDegen` side
+/-- A full per-gate step: the validity certificate `GateValid` plus the `NonDegen` side
     conditions. Both parents' fields are inherited via dot notation. -/
 structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop
-    extends GateData W g, NonDegen g
+    extends GateValid W g, NonDegen g
 
 /-! ## Main theorem: variable-base scalar multiplication -/
 
