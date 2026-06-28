@@ -35,7 +35,7 @@ def roots : List Name :=
     `Kimchi.Circuit.EndoScalar.chain_toField,
     `Kimchi.Circuit.EndoScalar.chain_complete,
     `Kimchi.Circuit.EndoScalar.endoScalar_unique,
-    `Kimchi.Gate.EndoMul.row_sound, `Kimchi.Gate.EndoMul.row_int,
+    `Kimchi.Gate.EndoMul.sound, `Kimchi.Gate.EndoMul.complete,
     `Kimchi.Circuit.EndoMul.endoMul, `Kimchi.Circuit.EndoMul.endoMul_scalar,
     `Kimchi.Circuit.EndoMul.recoding_digit, `Kimchi.Circuit.EndoMul.endoMul_toField ]
 

@@ -7,7 +7,7 @@ import Kimchi.Circuit.EndoScalar
 
 Composition of `Kimchi.Gate.EndoMul` rows into the full endomorphism-optimized
 scalar multiplication. Each row contributes `S = 4·P + c₁·T + c₂·φ(T)` (the gate's
-`row_int`), so chaining `m` rows folds into
+`sound`), so chaining `m` rows folds into
 
     P_m = 4^m · P₀ + k₁ · T + k₂ · φ(T)
 
@@ -67,7 +67,7 @@ theorem chain_endo (W : WeierstrassCurve.Affine F)
     rw [hs, ih', hsum c1, hsum c2, pow_succ']
     module
 
-/-- The per-row hypotheses `row_int` needs, bundled (over a shared base `T` whose
+/-- The per-row hypotheses `sound` needs, bundled (over a shared base `T` whose
     coordinates are the row's `xT`/`yT`): the base/endo/accumulator/target
     nonsingularities, the two per-slope non-degeneracies per window, and the 12
     constraints `holds`. -/
@@ -91,7 +91,7 @@ structure EndoStep (W : WeierstrassCurve.Affine F) (endo : F) (g : Witness F) : 
     rows over a shared base `T` and its endomorphism image `φ(T)`, whose accumulator
     points form a chain `P` (row `i`'s input is `P i`, output is `P (i+1)`), the
     final accumulator is `P m = 4^m·P₀ + k₁·T + k₂·φ(T)` for integers `k₁, k₂`. The
-    proof reads each row's contribution `c₁ᵢ·T + c₂ᵢ·φ(T)` off `row_int` and folds
+    proof reads each row's contribution `c₁ᵢ·T + c₂ᵢ·φ(T)` off `sound` and folds
     them with `chain_endo`. -/
 theorem endoMul (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)) (endo : F)
     (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → EndoStep W endo (g i))
@@ -104,7 +104,7 @@ theorem endoMul (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0
   obtain ⟨c1, c2, hc⟩ : ∃ c1 c2 : ℕ → ℤ, ∀ i, i < m →
       P (i + 1) = (4 : ℤ) • P i + c1 i • T + c2 i • φT := by
     choose! c1 c2 hc using fun i (hi : i < m) =>
-      row_int W ha endo (g i) (gs i hi).holds (gs i hi).hT (gs i hi).hφT (gs i hi).hP
+      sound W ha endo (g i) (gs i hi).holds (gs i hi).hT (gs i hi).hφT (gs i hi).hP
         (gs i hi).hR (gs i hi).hS (gs i hi).hQ1 (gs i hi).hQ2 (gs i hi).hxne1
         (gs i hi).htne1 (gs i hi).hxne2 (gs i hi).htne2
     refine ⟨c1, c2, fun i hi => ?_⟩
@@ -209,7 +209,7 @@ open Kimchi.Gate.EndoScalar (cPoly dPoly cPoly_table dPoly_table) in
     identity. A satisfying row's GLV contribution `S = 4·P + c₁·T + c₂·φ(T)` has its
     integers pinned to `EndoScalar`'s digits: `(c₁ : F) = 2·dPoly(crumb₁) + dPoly(crumb₂)`
     (the `T`/`b` digits) and `(c₂ : F) = 2·cPoly(crumb₁) + cPoly(crumb₂)` (the `φ(T)`/`a`
-    digits), where `crumbⱼ = b₂ⱼ + 2·b₂ⱼ₋₁` is window `j`'s `EndoScalar` crumb. (`row_int`
+    digits), where `crumbⱼ = b₂ⱼ + 2·b₂ⱼ₋₁` is window `j`'s `EndoScalar` crumb. (`sound`
     with the field digits read off the strengthened `selectQ` + `recoding_digit`.) -/
 theorem row_digit (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo : F) (w : Witness F) (h : Holds endo w)
