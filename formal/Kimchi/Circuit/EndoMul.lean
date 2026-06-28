@@ -23,8 +23,8 @@ TWO bases (`T` and `φ(T)`).
   endo-scalar form `EndoScalar.toField` computes.
 * `recoding_digit` — the `EndoMul ∘ EndoScalar` recoding correspondence (per
   window): `EndoScalar`'s `cPoly`/`dPoly` digits equal `EndoMul`'s GLV window digit.
-* `sum_reindex` / `recode_fold` — that correspondence lifted to the fold (the
-  row↔crumb reindexing + the coefficient identity).
+* `sum_reindex` — the row↔crumb reindexing that lifts the per-window correspondence
+  to the fold (the coefficient identity is folded inline in `endoMul_ab`).
 * `endoMul_ab` — THE FULL RESULT: `m` chained rows give `P_m = 4^m·P₀ + k₁·T + k₂·φ(T)`
   with `(k₂:F) = ∑ 2^(2m-1-j)·aDigit g j` and `(k₁:F) = ∑ 2^(2m-1-j)·bDigit g j` —
   EndoMul's GLV coefficients ARE `EndoScalar`'s Algorithm-2 `a`, `b` accumulations
@@ -204,26 +204,9 @@ theorem sum_reindex {R : Type*} [CommRing R] (m : ℕ) (g : ℕ → R) :
       show 2 * m + 1 + 1 - 1 - (2 * m + 1) = 0 by omega]
     ring
 
-omit [DecidableEq F] in
-/-- Fold-level recoding (coefficient level). Given the per-row digit equations
-    `(c₂ᵢ : F) = 2·g(2i) + g(2i+1)` — `EndoMul`'s integer row contribution casts to
-    `EndoScalar`'s two `cPoly`-digits, supplied by `row_int` + `recoding_digit` (so
-    `g j` is crumb `j`'s `cPoly` digit) — the field cast of `EndoMul`'s GLV
-    `φ(T)`-coefficient `∑ 4^(m-1-i)·c₂ᵢ` equals `EndoScalar`'s Algorithm-2 digit sum
-    `∑_{j<2m} 2^(2m-1-j)·g(j)` that `a` accumulates. (The same holds for the
-    `T`-coefficient `k₁` / `b` with the `dPoly` digits.) This is `sum_reindex` over
-    `F` after pushing the cast through and substituting each row's digits. -/
-theorem recode_fold (m : ℕ) (c2 : ℕ → ℤ) (g : ℕ → F)
-    (hrow : ∀ i, ((c2 i : ℤ) : F) = 2 * g (2 * i) + g (2 * i + 1)) :
-    (((∑ i ∈ Finset.range m, (4 : ℤ) ^ (m - 1 - i) * c2 i : ℤ)) : F)
-      = ∑ j ∈ Finset.range (2 * m), (2 : F) ^ (2 * m - 1 - j) * g j := by
-  rw [← sum_reindex m g]
-  push_cast
-  exact Finset.sum_congr rfl fun i _ => by rw [hrow i]
-
 open Kimchi.Gate.EndoScalar (cPoly dPoly cPoly_table dPoly_table) in
-/-- The per-row digit equations — the gate-side source of `recode_fold`'s
-    hypothesis. A satisfying row's GLV contribution `S = 4·P + c₁·T + c₂·φ(T)` has its
+/-- The per-row digit equations — the gate-side source of the fold-level recoding
+    identity. A satisfying row's GLV contribution `S = 4·P + c₁·T + c₂·φ(T)` has its
     integers pinned to `EndoScalar`'s digits: `(c₁ : F) = 2·dPoly(crumb₁) + dPoly(crumb₂)`
     (the `T`/`b` digits) and `(c₂ : F) = 2·cPoly(crumb₁) + cPoly(crumb₂)` (the `φ(T)`/`a`
     digits), where `crumbⱼ = b₂ⱼ + 2·b₂ⱼ₋₁` is window `j`'s `EndoScalar` crumb. (`row_int`
@@ -332,7 +315,7 @@ open Kimchi.Gate.EndoScalar (cPoly dPoly) in
         (k₂ : F) = ∑_{j<2m} 2^(2m-1-j)·aDigit g j    (= `a`, the λ component)
         (k₁ : F) = ∑_{j<2m} 2^(2m-1-j)·bDigit g j    (= `b`, the 1 component)
 
-    Folds `row_digit` (per-row digits) through `chain_endo` and `recode_fold` (the
+    Folds `row_digit` (per-row digits) through `chain_endo` and `sum_reindex` (the
     `aDigit (2i) = cPoly(window-1 crumb)`, `aDigit (2i+1) = cPoly(window-2 crumb)`
     pairing reindexes the rows to crumbs). With `φ(T) = [λ]·T` and `P₀ = 2(T+φ(T))`
     this gives `P_m = [b + a·λ]·T = [EndoScalar.toField]·T`. -/
