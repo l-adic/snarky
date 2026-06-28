@@ -29,3 +29,10 @@ Kimchi.Gate.VarBaseMul.complete
 -- Variable-base scalar multiplication (circuit): the two deployed entry points
 Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast1
 Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast2
+
+-- Endo-scalar decomposition (gate)
+Kimchi.Gate.EndoScalar.sound
+Kimchi.Gate.EndoScalar.complete
+
+-- Endo-scalar decomposition (circuit): the effective scalar a·λ + b from the challenge
+Kimchi.Circuit.EndoScalar.endoScalar_spec
