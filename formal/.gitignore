@@ -2,5 +2,8 @@
 # Everything here is reproducible from lakefile.toml + lake-manifest.json.
 /.lake/
 
-# CI scratch
-/check_axioms.lean
+# Local leanblueprint tooling: Python venv + generated output.
+/.docs-venv/
+/blueprint.html
+/blueprint.pdf
+/blueprint.md

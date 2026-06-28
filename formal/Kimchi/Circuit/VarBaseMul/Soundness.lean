@@ -1,0 +1,582 @@
+import Kimchi.Circuit.VarBaseMul.NonDegen
+import Kimchi.Circuit.VarBaseMul.Basic
+import Kimchi.Circuit.VarBaseMul.Ladder
+
+/-!
+# VarBaseMul soundness: `s ∉ forbiddenBand ⟹ every gate row is non-degenerate`
+
+This is the genuine `hsound` for the kimchi VarBaseMul gate. The complete forbidden set
+is the band `s ∈ [-15, 15] (mod order)` (the small scalars whose double-and-add drives
+the accumulator onto `±T` in the final doublings; the number-theoretic core is
+`Ladder.ladder_nondegen_tight`). Excluding it makes EVERY satisfying witness's gate rows
+non-degenerate — the property the (incomplete-addition) gate needs and the deployed
+two-residue check fails to guarantee.
+-/
+
+namespace Kimchi.Circuit.VarBaseMul
+
+open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine Kimchi.Circuit.VarBaseMul
+  Kimchi.Shifted
+
+variable {F : Type*} [Field F] [DecidableEq F]
+
+/-- The forbidden set for VarBaseMul non-degeneracy: the EXACT Pasta reachable
+    degenerate residues `forbiddenResidues = {0, ±1, ±2, ±3, 5, 7, 9, 11}`. Sound for any
+    prime `order ≡ 1 (mod 4)` (the actual degenerate set is `⊆` these), and exactly tight
+    for the Pasta primes. -/
+def forbiddenValues (order : ℕ) : Set ℤ :=
+  {s | ∃ t ∈ Ladder.forbiddenResidues, (order : ℤ) ∣ (s - t)}
+
+/-- **Prime order ⇒ full order.** For a nonzero point `T` on a `short-Weierstrass curve`, a scalar
+    multiple `m • T` vanishes iff `order ∣ m`. (`order` is prime and `order • T = 0`, so
+    `addOrderOf T ∣ order`; nonzero `T` rules out `addOrderOf T = 1`, hence it equals
+    `order`.) -/
+lemma zsmul_eq_zero_iff_order_dvd (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
+    [Fact (Nat.Prime c.order)] {T : c.Point} (hT : T ≠ 0) (m : ℤ) :
+    m • T = 0 ↔ (c.order : ℤ) ∣ m := by
+  have hdvd : (addOrderOf T : ℤ) ∣ (c.order : ℤ) :=
+    addOrderOf_dvd_iff_zsmul_eq_zero.mpr (c.order_smul T)
+  have horder : addOrderOf T = c.order := by
+    have hnat : addOrderOf T ∣ c.order := by exact_mod_cast hdvd
+    rcases (Nat.Prime.eq_one_or_self_of_dvd c.order_prime _ hnat) with h1 | h1
+    · exact absurd (AddMonoid.addOrderOf_eq_one_iff.mp h1) hT
+    · exact h1
+  rw [← addOrderOf_dvd_iff_zsmul_eq_zero, horder]
+
+/--
+**Per sub-step advance (mod-based).** Given the gate's per-bit constraints
+    `singleBitHolds` with input accumulator `Pᵢ = k·T` and the abstract-ladder
+    non-degeneracy facts at `k` (`k ≢ ±1` and `2k ≢ ±1 (mod order)`), the two additions
+    are non-vertical (`xᵢ ≠ xT`, `tⱼ ≠ 0`) and the output accumulator is `(2k+e)·T`,
+    `e = ±1`. This is the curve-level bridge from `ladder_nondegen_tight`'s arithmetic
+    non-degeneracy to the gate's field side conditions, via
+    `x_ne_xT_of_ne_base` / `singleBit_tne_of_double_ne` (re-stated for the mod hypotheses
+    using prime `order`: `m·T = 0 ↔ order ∣ m`).
+-/
+lemma gate_step_advance (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
+    [Fact (Nat.Prime c.order)]
+    {xT yT b s1 xi yi xo yo : F}
+    (hTns : c.Nonsingular xT yT)
+    (hI : c.Nonsingular xi yi)
+    (hQ : c.Nonsingular xT ((2 * b - 1) * yT))
+    (hbit : b = 0 ∨ b = 1)
+    (hTne : Point.some _ _ hTns ≠ 0)
+    (k : ℤ) (hIk : Point.some _ _ hI = k • Point.some _ _ hTns)
+    (hkx1 : ¬ ((c.order : ℤ) ∣ (k - 1))) (hkx2 : ¬ ((c.order : ℤ) ∣ (k + 1)))
+    (hkt1 : ¬ ((c.order : ℤ) ∣ (2 * k - 1))) (hkt2 : ¬ ((c.order : ℤ) ∣ (2 * k + 1)))
+    (hh : singleBitHolds b xT yT s1 xi yi xo yo) :
+    xi ≠ xT ∧ (2 * xi + xT - s1 * s1 ≠ 0) ∧
+      ∃ (hO : c.Nonsingular xo yo) (e : ℤ),
+        (e = 1 ∨ e = -1) ∧ (e : F) = 2 * b - 1 ∧
+          Point.some _ _ hO = (2 * k + e) • Point.some _ _ hTns := by
+  obtain ⟨ e, he, he' ⟩ := signed_target c c.short hTns hQ hbit;
+  refine' ⟨ _, _, _ ⟩;
+  · apply x_ne_xT_of_ne_base c hI hTns;
+    · contrapose! hkx1;
+      have h_div : (k - 1) • Point.some _ _ hTns = 0 := by
+        rw [ sub_smul, one_smul, ← hIk, hkx1, sub_self ];
+      exact zsmul_eq_zero_iff_order_dvd c hTne _ |>.1 h_div;
+    · contrapose! hkx2;
+      rw [ ← zsmul_eq_zero_iff_order_dvd c hTne ];
+      rw [ add_zsmul, one_zsmul, ← hIk, hkx2, neg_add_cancel ];
+  · apply singleBit_tne_of_double_ne c hI hQ (by
+    apply x_ne_xT_of_ne_base c hI hTns;
+    · contrapose! hkx1;
+      rw [ ← zsmul_eq_zero_iff_order_dvd c hTne ];
+      rw [ sub_smul, one_smul, ← hIk, hkx1, sub_self ];
+    · intro h
+      have h_contra : (k + 1 : ℤ) • Point.some _ _ hTns = 0 := by
+        rw [ add_zsmul, one_zsmul ];
+        rw [ ← hIk, h, neg_add_cancel ];
+      exact hkx2 ( zsmul_eq_zero_iff_order_dvd c hTne _ |>.1 h_contra )) hh (by
+    intro h
+    have h_div : (c.order : ℤ) ∣ (2 * k + e) := by
+      rw [ ← zsmul_eq_zero_iff_order_dvd c hTne ];
+      convert h using 1;
+      rw [ hIk, he ];
+      module;
+    grind +qlia);
+  · obtain ⟨ hO, hOeq ⟩ :=
+      singleBit_sound c c.short b xT yT s1 xi yi xo yo hI hQ
+        ( x_ne_xT_of_ne_base c hI hTns ( by
+      contrapose! hkx1;
+      rw [ ← zsmul_eq_zero_iff_order_dvd c hTne ];
+      rw [ sub_smul, one_smul, ← hIk, hkx1, sub_self ] ) ( by
+      intro h
+      have h_contra : (k + 1 : ℤ) • Point.some _ _ hTns = 0 := by
+        rw [ add_zsmul, one_zsmul ];
+        rw [ ← hIk, h, neg_add_cancel ];
+      exact hkx2 ( zsmul_eq_zero_iff_order_dvd c hTne _ |>.1 h_contra ) ) ) ( by
+      apply singleBit_tne_of_double_ne c hI hQ ( x_ne_xT_of_ne_base c hI hTns ( by
+        contrapose! hkx1;
+        rw [ ← zsmul_eq_zero_iff_order_dvd c hTne ];
+        rw [ sub_smul, one_smul, ← hIk, hkx1, sub_self ] ) ( by
+        intro h
+        have h_contra : (k + 1 : ℤ) • Point.some _ _ hTns = 0 := by
+          rw [ add_zsmul, one_zsmul ];
+          rw [ ← hIk, h, neg_add_cancel ];
+        exact hkx2 ( zsmul_eq_zero_iff_order_dvd c hTne _ |>.1 h_contra ) ) ) hh ( by
+        intro h
+        have h_div : (c.order : ℤ) ∣ (2 * k + e) := by
+          rw [ ← zsmul_eq_zero_iff_order_dvd c hTne ];
+          convert h using 1;
+          rw [ hIk, he ];
+          module;
+        grind +qlia ) ) hh;
+    refine' ⟨ hO, e, he'.2, he'.1, _ ⟩;
+    rw [ hOeq, hIk, he ];
+    module
+
+/-! ## Assembling the per-row non-degeneracy from the abstract ladder
+
+The `m` gates × 5 sub-steps form one length-`5m` double-and-add ladder of accumulator
+points.  We package the signed bits of the witnesses into an integer ladder `gateLadder`,
+transport `ladder_nondegen_tight`'s arithmetic non-degeneracy along it with
+`gate_step_advance`, and read off `NonDegen` for every row. -/
+
+/-- The raw bit processed at sub-step `j`: bit `j % 5` of gate `j / 5`. -/
+def gateBit (g : ℕ → Witness F) (j : ℕ) : F :=
+  match j % 5 with
+  | 0 => (g (j / 5)).b0
+  | 1 => (g (j / 5)).b1
+  | 2 => (g (j / 5)).b2
+  | 3 => (g (j / 5)).b3
+  | _ => (g (j / 5)).b4
+
+/-- The signed bit `±1` at sub-step `j`. -/
+def gateBitSign (g : ℕ → Witness F) (j : ℕ) : ℤ := if gateBit g j = 1 then 1 else -1
+
+/-- The integer double-and-add ladder over the gate bits, with `k 0 = 2`. -/
+def gateLadder (g : ℕ → Witness F) : ℕ → ℤ
+  | 0 => 2
+  | j + 1 => 2 * gateLadder g j + gateBitSign g j
+
+@[simp] lemma gateLadder_zero (g : ℕ → Witness F) : gateLadder g 0 = 2 := rfl
+
+lemma gateLadder_succ (g : ℕ → Witness F) (j : ℕ) :
+    gateLadder g (j + 1) = 2 * gateLadder g j + gateBitSign g j := rfl
+
+lemma gateBitSign_eq (g : ℕ → Witness F) (j : ℕ) :
+    gateBitSign g j = 1 ∨ gateBitSign g j = -1 := by
+  unfold gateBitSign; split <;> simp
+
+/-- The unsigned bit at sub-step `j`: `1` if set, else `0` (same `= 1` test as `gateBitSign`). -/
+def ubit (g : ℕ → Witness F) (j : ℕ) : ℤ := if gateBit g j = 1 then 1 else 0
+
+/-- The signed digit is `2·(unsigned bit) − 1`, unconditionally (same `gateBit = 1` test). -/
+lemma gateBitSign_eq_ubit (g : ℕ → Witness F) (j : ℕ) :
+    gateBitSign g j = 2 * ubit g j - 1 := by
+  unfold gateBitSign ubit; split <;> ring
+
+/-- The unsigned scalar register the ladder bits encode (Horner over `ubit`), `r 0 = 0`. -/
+def gateRegister (g : ℕ → Witness F) : ℕ → ℤ
+  | 0 => 0
+  | j + 1 => 2 * gateRegister g j + ubit g j
+
+lemma gateRegister_succ (g : ℕ → Witness F) (j : ℕ) :
+    gateRegister g (j + 1) = 2 * gateRegister g j + ubit g j := rfl
+
+/-- **Signed ladder ↔ unsigned register bridge.** The signed double-and-add top is the `Type1`
+    unshift of the unsigned register it encodes, as an honest **ℤ** identity (no booleanity needed —
+    the signed digits are `2·ubit − 1`): `gateLadder g L = 2·gateRegister g L + 2^L + 1`. This links
+    the non-degeneracy path (`gateLadder`) to the scalar-register path: a range-check
+    `gateRegister < 2^k` directly bounds the ladder top, hence the deployed `hcanonical`. -/
+lemma gateLadder_eq_register (g : ℕ → Witness F) (L : ℕ) :
+    gateLadder g L = 2 * gateRegister g L + 2 ^ L + 1 := by
+  induction L with
+  | zero => norm_num [gateLadder, gateRegister]
+  | succ j ih =>
+    rw [gateLadder_succ, ih, gateBitSign_eq_ubit, gateRegister_succ, pow_succ]; ring
+
+omit [Field F] [DecidableEq F] in
+/-- The five raw bits of gate `i` are the sub-step bits `5i … 5i+4`. -/
+lemma gateBit_block (g : ℕ → Witness F) (i : ℕ) :
+    gateBit g (5 * i) = (g i).b0 ∧ gateBit g (5 * i + 1) = (g i).b1
+      ∧ gateBit g (5 * i + 2) = (g i).b2 ∧ gateBit g (5 * i + 3) = (g i).b3
+      ∧ gateBit g (5 * i + 4) = (g i).b4 := by
+  unfold gateBit; simp +decide [ Nat.add_mod ] ;
+  norm_num [ Nat.add_div ]
+
+/-- The signed bit `e` produced by `signed_target` matches `gateBitSign`. -/
+lemma e_eq_gateBitSign (g : ℕ → Witness F) (j : ℕ) {b : F} (hgb : gateBit g j = b)
+    (hbit : b = 0 ∨ b = 1) {e : ℤ} (he2 : (e : F) = 2 * b - 1) (he : e = 1 ∨ e = -1)
+    (h2 : (2 : F) ≠ 0) : e = gateBitSign g j := by
+  cases hbit <;> simp_all +decide [ gateBitSign ];
+  · cases he <;> simp_all +decide;
+    exact h2 ( by linear_combination' he2 );
+  · rcases he with ( rfl | rfl ) <;> norm_num at *;
+    grind +extAll
+
+/--
+**One gate block.** Given a gate's constraint data `gd`, the input accumulator equal
+    to `gateLadder g (5i) • T`, and the ladder non-degeneracy at all five sub-step scalars
+    `gateLadder g (5i+ℓ)` (`ℓ < 5`), every one of the gate's ten side conditions holds
+    (`NonDegen (g i)`) and the output accumulator advances to `gateLadder g (5i+5) • T`.
+-/
+lemma gate_block (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
+    [Fact (Nat.Prime c.order)] (g : ℕ → Witness F) (i : ℕ)
+    (h2 : (2 : F) ≠ 0)
+    {T : c.Point} (hTne : T ≠ 0)
+    (gd : GateValid c (g i)) (hTeq : T = Point.some _ _ gd.hT)
+    (ha0 : Point.some _ _ gd.a0 = gateLadder g (5 * i) • T)
+    (hnd : ∀ ℓ, ℓ < 5 →
+        ¬ (c.order : ℤ) ∣ (gateLadder g (5 * i + ℓ) - 1)
+          ∧ ¬ (c.order : ℤ) ∣ (gateLadder g (5 * i + ℓ) + 1)
+          ∧ ¬ (c.order : ℤ) ∣ (2 * gateLadder g (5 * i + ℓ) - 1)
+          ∧ ¬ (c.order : ℤ) ∣ (2 * gateLadder g (5 * i + ℓ) + 1)) :
+    NonDegen (g i) ∧ Point.some _ _ gd.a5 = gateLadder g (5 * i + 5) • T := by
+  have hT0 : Point.some _ _ gd.hT ≠ 0 := by rw [← hTeq]; exact hTne
+  obtain ⟨_hdec, hsb0, hsb1, hsb2, hsb3, hsb4⟩ := gd.holds
+  obtain ⟨gb0, gb1, gb2, gb3, gb4⟩ := gateBit_block g i
+  -- booleanity from the `b * b - b = 0` constraint
+  have bit : ∀ {x : F}, x * x - x = 0 → x = 0 ∨ x = 1 := by
+    intro x hx
+    rcases mul_eq_zero.mp (show x * (x - 1) = 0 by linear_combination hx) with h | h
+    · exact Or.inl h
+    · exact Or.inr (by linear_combination h)
+  -- sub-step 0
+  have ha0' : Point.some _ _ gd.a0 = gateLadder g (5 * i) • Point.some _ _ gd.hT := by
+    rw [hTeq] at ha0; exact ha0
+  obtain ⟨hx0, ht0, hO0, e0, hepm0, hef0, hOeq0⟩ :=
+    gate_step_advance c gd.hT gd.a0 (signed_target_nonsingular c c.short gd.hT (bit hsb0.1))
+      (bit hsb0.1) hT0 (gateLadder g (5 * i)) ha0'
+      (hnd 0 (by omega)).1 (hnd 0 (by omega)).2.1 (hnd 0 (by omega)).2.2.1
+      (hnd 0 (by omega)).2.2.2 hsb0
+  have ha1 : Point.some _ _ gd.a1 = gateLadder g (5 * i + 1) • Point.some _ _ gd.hT := by
+    rw [show Point.some _ _ gd.a1 = Point.some _ _ hO0 from rfl, hOeq0,
+      e_eq_gateBitSign g (5 * i) gb0 (bit hsb0.1) hef0 hepm0 h2, ← gateLadder_succ]
+  -- sub-step 1
+  obtain ⟨hx1, ht1, hO1, e1, hepm1, hef1, hOeq1⟩ :=
+    gate_step_advance c gd.hT gd.a1 (signed_target_nonsingular c c.short gd.hT (bit hsb1.1))
+      (bit hsb1.1) hT0 (gateLadder g (5 * i + 1)) ha1
+      (hnd 1 (by omega)).1 (hnd 1 (by omega)).2.1 (hnd 1 (by omega)).2.2.1
+      (hnd 1 (by omega)).2.2.2 hsb1
+  have ha2 : Point.some _ _ gd.a2 = gateLadder g (5 * i + 2) • Point.some _ _ gd.hT := by
+    rw [show Point.some _ _ gd.a2 = Point.some _ _ hO1 from rfl, hOeq1,
+      e_eq_gateBitSign g (5 * i + 1) gb1 (bit hsb1.1) hef1 hepm1 h2, ← gateLadder_succ]
+  -- sub-step 2
+  obtain ⟨hx2, ht2, hO2, e2, hepm2, hef2, hOeq2⟩ :=
+    gate_step_advance c gd.hT gd.a2 (signed_target_nonsingular c c.short gd.hT (bit hsb2.1))
+      (bit hsb2.1) hT0 (gateLadder g (5 * i + 2)) ha2
+      (hnd 2 (by omega)).1 (hnd 2 (by omega)).2.1 (hnd 2 (by omega)).2.2.1
+      (hnd 2 (by omega)).2.2.2 hsb2
+  have ha3 : Point.some _ _ gd.a3 = gateLadder g (5 * i + 3) • Point.some _ _ gd.hT := by
+    rw [show Point.some _ _ gd.a3 = Point.some _ _ hO2 from rfl, hOeq2,
+      e_eq_gateBitSign g (5 * i + 2) gb2 (bit hsb2.1) hef2 hepm2 h2, ← gateLadder_succ]
+  -- sub-step 3
+  obtain ⟨hx3, ht3, hO3, e3, hepm3, hef3, hOeq3⟩ :=
+    gate_step_advance c gd.hT gd.a3 (signed_target_nonsingular c c.short gd.hT (bit hsb3.1))
+      (bit hsb3.1) hT0 (gateLadder g (5 * i + 3)) ha3
+      (hnd 3 (by omega)).1 (hnd 3 (by omega)).2.1 (hnd 3 (by omega)).2.2.1
+      (hnd 3 (by omega)).2.2.2 hsb3
+  have ha4 : Point.some _ _ gd.a4 = gateLadder g (5 * i + 4) • Point.some _ _ gd.hT := by
+    rw [show Point.some _ _ gd.a4 = Point.some _ _ hO3 from rfl, hOeq3,
+      e_eq_gateBitSign g (5 * i + 3) gb3 (bit hsb3.1) hef3 hepm3 h2, ← gateLadder_succ]
+  -- sub-step 4
+  obtain ⟨hx4, ht4, hO4, e4, hepm4, hef4, hOeq4⟩ :=
+    gate_step_advance c gd.hT gd.a4 (signed_target_nonsingular c c.short gd.hT (bit hsb4.1))
+      (bit hsb4.1) hT0 (gateLadder g (5 * i + 4)) ha4
+      (hnd 4 (by omega)).1 (hnd 4 (by omega)).2.1 (hnd 4 (by omega)).2.2.1
+      (hnd 4 (by omega)).2.2.2 hsb4
+  have ha5 : Point.some _ _ gd.a5 = gateLadder g (5 * i + 5) • Point.some _ _ gd.hT := by
+    rw [show Point.some _ _ gd.a5 = Point.some _ _ hO4 from rfl, hOeq4,
+      e_eq_gateBitSign g (5 * i + 4) gb4 (bit hsb4.1) hef4 hepm4 h2, ← gateLadder_succ]
+  refine ⟨⟨hx0, hx1, hx2, hx3, hx4, ht0, ht1, ht2, ht3, ht4⟩, ?_⟩
+  rw [hTeq]; exact ha5
+
+/-- **Chaining lemma.** Given the per-substep ladder non-degeneracy (the four conditions at every
+    `gateLadder g n`, `n < 5m`) and the gate constraint data, fold the `m` gate blocks: the output
+    is `P m = gateLadder g (5m) · T` and every row is `NonDegen`. The soundness routes below
+    (forbidden band, sub-wrap) differ only in how they supply `hND`. -/
+lemma gate_chain (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
+    [Fact (Nat.Prime c.order)]
+    (m : ℕ) (g : ℕ → Witness F)
+    (T : c.Point) (P : ℕ → c.Point) (s : ℤ)
+    (hTne : T ≠ 0)
+    (hd : ∀ i, i < m → GateValid c (g i))
+    (hT : ∀ i (hi : i < m), T = Point.some _ _ (hd i hi).hT)
+    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (hd i hi).a0)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
+    (hP0 : P 0 = (2 : ℤ) • T)
+    (h2 : (2 : F) ≠ 0)
+    (hND : ∀ n, n < 5 * m →
+        ¬ (c.order : ℤ) ∣ (gateLadder g n - 1) ∧ ¬ (c.order : ℤ) ∣ (gateLadder g n + 1)
+          ∧ ¬ (c.order : ℤ) ∣ (2 * gateLadder g n - 1)
+          ∧ ¬ (c.order : ℤ) ∣ (2 * gateLadder g n + 1))
+    (hs : s = gateLadder g (5 * m)) :
+    P m = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
+  have key : ∀ i, i ≤ m →
+      P i = gateLadder g (5 * i) • T ∧ (∀ i', i' < i → NonDegen (g i')) := by
+    intro i
+    induction i with
+    | zero =>
+      intro _
+      refine ⟨?_, ?_⟩
+      · rw [hP0]; simp [gateLadder_zero]
+      · intro i' hi'; omega
+    | succ i ih =>
+      intro hi1
+      have hi : i < m := by omega
+      obtain ⟨hPi, hNDi⟩ := ih (by omega)
+      have ha0 : Point.some _ _ (hd i hi).a0 = gateLadder g (5 * i) • T := by
+        rw [← hin i hi]; exact hPi
+      obtain ⟨hNDgi, ha5⟩ := gate_block c g i h2 hTne (hd i hi) (hT i hi) ha0
+        (fun ℓ hℓ => hND (5 * i + ℓ) (by omega))
+      refine ⟨?_, ?_⟩
+      · rw [hout i hi, show 5 * (i + 1) = 5 * i + 5 from by ring]; exact ha5
+      · intro i' hi'
+        rcases Nat.lt_succ_iff_lt_or_eq.mp hi' with h | h
+        · exact hNDi i' h
+        · subst h; exact hNDgi
+  exact ⟨by rw [hs]; exact (key m le_rfl).1, fun i hi => (key m le_rfl).2 i hi⟩
+
+/--
+**VarBaseMul correctness + soundness via the forbidden band.** For ANY witness satisfying the
+    gate constraints (`GateValid` for every row) at the real init (`P 0 = 2·T`), in the one-wrap
+    regime `2^(5m-1) < order < 2^(5m)` with `order ≡ 1 (mod 4)`, if the integer scalar
+    `s = gateLadder g (5m)` (the double-and-add ladder top) avoids the forbidden band
+    `forbiddenValues order` (`= {0,±1,±2,±3,5,7,9,11} (mod order)`), then the `m` gates compute
+    `P m = s·T` and every gate row is `NonDegen`.
+
+    This is the soundness mechanism for the `scaleFast1` / Type1 entry point — the Vesta direction
+    (scalar field < circuit field), which guards with a forbidden-value check rather than a range
+    check (`scaleFast2` is the range-checked direction; see `varBaseMul_deployed_correct`).
+
+    The band here is the COMPLETE forbidden set (`Ladder.ladder_nondegen_tight`). Mina's deployed
+    guard `forbidden_shifted_values` (`crypto/pickles/impls.ml`) is the *incomplete* two-residue
+    subset `s + 2^numBits ≡ ±1`; its own source carries the TODO "I think there are other forbidden
+    values as well", and `Ladder` proves that two-residue set misses this band (`L=5,q=29`). So this
+    statement is the complete characterization the circuit's runtime check only approximates;
+    whether the band scalars can actually arise for the wrap-verifier's Type1 scalars is left open
+    (it is upstream's open question too).
+
+    The scalar enters directly as the bit-determined ladder top (`hs : s = gateLadder g (5m)`), and
+    the one-wrap regime bounds (`hreg₁`, `hreg₂`) feed `Ladder.ladder_nondegen_tight`.
+-/
+theorem varBaseMul_forbidden_correct (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
+    [Fact (Nat.Prime c.order)]
+    (m : ℕ) (g : ℕ → Witness F)
+    (T : c.Point) (P : ℕ → c.Point) (s : ℤ)
+    (hTne : T ≠ 0)
+    (hd : ∀ i, i < m → GateValid c (g i))
+    (hT : ∀ i (hi : i < m), T = Point.some _ _ (hd i hi).hT)
+    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (hd i hi).a0)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
+    (hP0 : P 0 = (2 : ℤ) • T)
+    (h2 : (2 : F) ≠ 0)
+    (hreg₁ : 2 ^ (5 * m - 1) < c.order) (hreg₂ : c.order < 2 ^ (5 * m))
+    (hq4 : c.order % 4 = 1)
+    (hs : s = gateLadder g (5 * m)) (hnf : s ∉ forbiddenValues c.order) :
+    P m = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
+  -- Transport `hnf` from `s` to the bit-determined ladder top, feed the one-wrap core, chain.
+  have hnf' : ∀ t ∈ Ladder.forbiddenResidues,
+      ¬ (c.order : ℤ) ∣ (gateLadder g (5 * m) - t) := by
+    intro t ht hdvd
+    exact hnf ⟨t, ht, by rw [hs]; exact hdvd⟩
+  exact gate_chain c m g T P s hTne hd hT hin hout hP0 h2
+    (Ladder.ladder_nondegen_tight c.order (5 * m) c.order_prime hq4 hreg₁ hreg₂
+      (gateLadder g) (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
+      (fun j _ => gateLadder_succ g j) hnf') hs
+
+/-- **VarBaseMul correctness + soundness in the sub-wrap regime — no forbidden check.** When the
+    bit count is small enough that the whole ladder fits below the order (`3·2^(5m) ≤ order`, i.e.
+    `5m ≲ bitlength(order) - 2`), every row is `NonDegen` *unconditionally*: the scalar is too small
+    to drive an accumulator onto `±T`, so no forbidden-value exclusion (and no `q ≡ 1 mod 4`) is
+    needed. This is the easy regime — any chunk count below the field width is safe with no guard;
+    only the top (one-wrap) chunk needs `varBaseMul_forbidden_correct`. -/
+theorem varBaseMul_subwrap_correct (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
+    [Fact (Nat.Prime c.order)]
+    (m : ℕ) (g : ℕ → Witness F)
+    (T : c.Point) (P : ℕ → c.Point) (s : ℤ)
+    (hTne : T ≠ 0)
+    (hd : ∀ i, i < m → GateValid c (g i))
+    (hT : ∀ i (hi : i < m), T = Point.some _ _ (hd i hi).hT)
+    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (hd i hi).a0)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
+    (hP0 : P 0 = (2 : ℤ) • T)
+    (h2 : (2 : F) ≠ 0)
+    (hsub : 3 * 2 ^ (5 * m) ≤ c.order)
+    (hs : s = gateLadder g (5 * m)) :
+    P m = s • T ∧ ∀ i, i < m → NonDegen (g i) :=
+  gate_chain c m g T P s hTne hd hT hin hout hP0 h2
+    (Ladder.ladder_subwrap_nondegen c.order (5 * m) hsub
+      (gateLadder g) (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
+      (fun j _ => gateLadder_succ g j)) hs
+
+/-! ## Deployed soundness: from the constraints + the register field bound (no forbidden set)
+
+The §6 conclusion of `docs/varbasemul-soundness-analysis.md`, formalized: the deployed
+circuit is sound because (A) the t-conditions are forced by the gate constraints
+(`tne_of_holds`) and (B) the x-conditions are excluded by the circuit-field register
+bound (`Ladder.ladder_x_nondegen`) — the forbidden check appears NOWHERE. -/
+
+/-- Per sub-step advance using ONLY the x-condition `k ≢ ±1`; the t-condition `t ≠ 0`
+    is supplied by `tne_of_holds` (the constraints + prime order), not by `2k ≢ ±1`. -/
+lemma gate_step_advance' (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
+    [Fact (Nat.Prime c.order)] (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2)
+    {xT yT b s1 xi yi xo yo : F}
+    (hTns : c.Nonsingular xT yT)
+    (hI : c.Nonsingular xi yi)
+    (hQ : c.Nonsingular xT ((2 * b - 1) * yT))
+    (hbit : b = 0 ∨ b = 1)
+    (hTne : Point.some _ _ hTns ≠ 0)
+    (k : ℤ) (hIk : Point.some _ _ hI = k • Point.some _ _ hTns)
+    (hkx1 : ¬ ((c.order : ℤ) ∣ (k - 1))) (hkx2 : ¬ ((c.order : ℤ) ∣ (k + 1)))
+    (hh : singleBitHolds b xT yT s1 xi yi xo yo) :
+    xi ≠ xT ∧ (2 * xi + xT - s1 * s1 ≠ 0) ∧
+      ∃ (hO : c.Nonsingular xo yo) (e : ℤ),
+        (e = 1 ∨ e = -1) ∧ (e : F) = 2 * b - 1 ∧
+          Point.some _ _ hO = (2 * k + e) • Point.some _ _ hTns := by
+  obtain ⟨e, he, he'⟩ := signed_target c c.short hTns hQ hbit
+  have hxne : xi ≠ xT := by
+    apply x_ne_xT_of_ne_base c hI hTns
+    · contrapose! hkx1
+      have hd : (k - 1) • Point.some _ _ hTns = 0 := by
+        rw [sub_smul, one_smul, ← hIk, hkx1, sub_self]
+      exact (zsmul_eq_zero_iff_order_dvd c hTne _).1 hd
+    · contrapose! hkx2
+      rw [← zsmul_eq_zero_iff_order_dvd c hTne, add_zsmul, one_zsmul, ← hIk, hkx2,
+        neg_add_cancel]
+  have htne : 2 * xi + xT - s1 * s1 ≠ 0 := tne_of_holds c h2 hodd hI hh
+  obtain ⟨hO, hOeq⟩ := singleBit_sound c c.short b xT yT s1 xi yi xo yo hI hQ hxne htne hh
+  refine ⟨hxne, htne, hO, e, he'.2, he'.1, ?_⟩
+  rw [hOeq, hIk, he]
+  module
+
+/-- One gate block from ONLY the x-conditions (`gate_block` needs all four; this needs
+    two). The t-conditions come from `gate_step_advance'` via `tne_of_holds`. -/
+lemma gate_block' (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
+    [Fact (Nat.Prime c.order)] (g : ℕ → Witness F) (i : ℕ)
+    (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2)
+    {T : c.Point} (hTne : T ≠ 0)
+    (gd : GateValid c (g i)) (hTeq : T = Point.some _ _ gd.hT)
+    (ha0 : Point.some _ _ gd.a0 = gateLadder g (5 * i) • T)
+    (hnd : ∀ ℓ, ℓ < 5 →
+        ¬ (c.order : ℤ) ∣ (gateLadder g (5 * i + ℓ) - 1)
+          ∧ ¬ (c.order : ℤ) ∣ (gateLadder g (5 * i + ℓ) + 1)) :
+    NonDegen (g i) ∧ Point.some _ _ gd.a5 = gateLadder g (5 * i + 5) • T := by
+  have hT0 : Point.some _ _ gd.hT ≠ 0 := by rw [← hTeq]; exact hTne
+  obtain ⟨_hdec, hsb0, hsb1, hsb2, hsb3, hsb4⟩ := gd.holds
+  obtain ⟨gb0, gb1, gb2, gb3, gb4⟩ := gateBit_block g i
+  have bit : ∀ {x : F}, x * x - x = 0 → x = 0 ∨ x = 1 := by
+    intro x hx
+    rcases mul_eq_zero.mp (show x * (x - 1) = 0 by linear_combination hx) with h | h
+    · exact Or.inl h
+    · exact Or.inr (by linear_combination h)
+  have ha0' : Point.some _ _ gd.a0 = gateLadder g (5 * i) • Point.some _ _ gd.hT := by
+    rw [hTeq] at ha0; exact ha0
+  obtain ⟨hx0, ht0, hO0, e0, hepm0, hef0, hOeq0⟩ :=
+    gate_step_advance' c h2 hodd gd.hT gd.a0
+      (signed_target_nonsingular c c.short gd.hT (bit hsb0.1)) (bit hsb0.1) hT0
+      (gateLadder g (5 * i)) ha0'
+      (hnd 0 (by omega)).1 (hnd 0 (by omega)).2 hsb0
+  have ha1 : Point.some _ _ gd.a1 = gateLadder g (5 * i + 1) • Point.some _ _ gd.hT := by
+    rw [show Point.some _ _ gd.a1 = Point.some _ _ hO0 from rfl, hOeq0,
+      e_eq_gateBitSign g (5 * i) gb0 (bit hsb0.1) hef0 hepm0 h2, ← gateLadder_succ]
+  obtain ⟨hx1, ht1, hO1, e1, hepm1, hef1, hOeq1⟩ :=
+    gate_step_advance' c h2 hodd gd.hT gd.a1
+      (signed_target_nonsingular c c.short gd.hT (bit hsb1.1)) (bit hsb1.1) hT0
+      (gateLadder g (5 * i + 1)) ha1
+      (hnd 1 (by omega)).1 (hnd 1 (by omega)).2 hsb1
+  have ha2 : Point.some _ _ gd.a2 = gateLadder g (5 * i + 2) • Point.some _ _ gd.hT := by
+    rw [show Point.some _ _ gd.a2 = Point.some _ _ hO1 from rfl, hOeq1,
+      e_eq_gateBitSign g (5 * i + 1) gb1 (bit hsb1.1) hef1 hepm1 h2, ← gateLadder_succ]
+  obtain ⟨hx2, ht2, hO2, e2, hepm2, hef2, hOeq2⟩ :=
+    gate_step_advance' c h2 hodd gd.hT gd.a2
+      (signed_target_nonsingular c c.short gd.hT (bit hsb2.1)) (bit hsb2.1) hT0
+      (gateLadder g (5 * i + 2)) ha2
+      (hnd 2 (by omega)).1 (hnd 2 (by omega)).2 hsb2
+  have ha3 : Point.some _ _ gd.a3 = gateLadder g (5 * i + 3) • Point.some _ _ gd.hT := by
+    rw [show Point.some _ _ gd.a3 = Point.some _ _ hO2 from rfl, hOeq2,
+      e_eq_gateBitSign g (5 * i + 2) gb2 (bit hsb2.1) hef2 hepm2 h2, ← gateLadder_succ]
+  obtain ⟨hx3, ht3, hO3, e3, hepm3, hef3, hOeq3⟩ :=
+    gate_step_advance' c h2 hodd gd.hT gd.a3
+      (signed_target_nonsingular c c.short gd.hT (bit hsb3.1)) (bit hsb3.1) hT0
+      (gateLadder g (5 * i + 3)) ha3
+      (hnd 3 (by omega)).1 (hnd 3 (by omega)).2 hsb3
+  have ha4 : Point.some _ _ gd.a4 = gateLadder g (5 * i + 4) • Point.some _ _ gd.hT := by
+    rw [show Point.some _ _ gd.a4 = Point.some _ _ hO3 from rfl, hOeq3,
+      e_eq_gateBitSign g (5 * i + 3) gb3 (bit hsb3.1) hef3 hepm3 h2, ← gateLadder_succ]
+  obtain ⟨hx4, ht4, hO4, e4, hepm4, hef4, hOeq4⟩ :=
+    gate_step_advance' c h2 hodd gd.hT gd.a4
+      (signed_target_nonsingular c c.short gd.hT (bit hsb4.1)) (bit hsb4.1) hT0
+      (gateLadder g (5 * i + 4)) ha4
+      (hnd 4 (by omega)).1 (hnd 4 (by omega)).2 hsb4
+  have ha5 : Point.some _ _ gd.a5 = gateLadder g (5 * i + 5) • Point.some _ _ gd.hT := by
+    rw [show Point.some _ _ gd.a5 = Point.some _ _ hO4 from rfl, hOeq4,
+      e_eq_gateBitSign g (5 * i + 4) gb4 (bit hsb4.1) hef4 hepm4 h2, ← gateLadder_succ]
+  refine ⟨⟨hx0, hx1, hx2, hx3, hx4, ht0, ht1, ht2, ht3, ht4⟩, ?_⟩
+  rw [hTeq]; exact ha5
+
+/-- **Top-level deployed VarBaseMul circuit theorem: correct (hence sound).** For ANY
+    witness satisfying the gate constraints at the real init (`P 0 = 2·T`), when the bit
+    count `5m` does not exceed the order's bit length (`hreg₁ : 2^(5m-1) < order`), with the
+    Pasta register-field relation `baseFieldOrder + 2^(5m-1) + 2 ≤ 2·order` and a register that
+    is a valid circuit-field element (`s = gateLadder g (5m) < 2·baseFieldOrder + 2^(5m)`), the
+    `m` gates **compute `P m = s·T`** and every gate row is `NonDegen`. The forbidden-value
+    check appears NOWHERE: the t-conditions come from the constraints + prime order
+    (`tne_of_holds`), the x-conditions from the register field bound (`ladder_x_nondegen`),
+    and `P m = s·T` directly from the chained per-row advance (`gate_block'`). The `.2`
+    (non-degeneracy) is the deployed soundness; the `.1` is the deployed correctness.
+
+    `hreg₁` is the Lean image of the PureScript circuit's `bitsUsed ≤ n` constraint
+    (`bitsUsed = 5m`, `n` = circuit-field bit size): since `order ≈ 2^n` by Hasse,
+    processing at most `n` bits keeps every accumulator strictly below the order, so no row
+    hits `±T`. There is deliberately NO upper regime bound (`order < 2^(5m)`) — running on
+    *fewer* bits than the field width is sound, exactly as the circuit permits. -/
+theorem varBaseMul_deployed_correct (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
+    [Fact (Nat.Prime c.order)]
+    (m : ℕ) (g : ℕ → Witness F) (baseFieldOrder : ℕ)
+    (T : c.Point) (P : ℕ → c.Point) (s : ℤ)
+    (hTne : T ≠ 0)
+    (hd : ∀ i, i < m → GateValid c (g i))
+    (hT : ∀ i (hi : i < m), T = Point.some _ _ (hd i hi).hT)
+    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (hd i hi).a0)
+    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
+    (hP0 : P 0 = (2 : ℤ) • T)
+    (h2 : (2 : F) ≠ 0) (horder : 3 < c.order)
+    (hreg₁ : 2 ^ (5 * m - 1) < c.order)
+    (hbound : baseFieldOrder + 2 ^ (5 * m - 1) + 2 ≤ 2 * c.order)
+    (hs : s = gateLadder g (5 * m))
+    (hreg : s < 2 * (baseFieldOrder : ℤ) + 2 ^ (5 * m)) :
+    P m = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
+  have hodd : c.order ≠ 2 := by omega
+  have hND := Ladder.ladder_x_nondegen c.order baseFieldOrder (5 * m)
+    hreg₁ (c.order_prime.odd_of_ne_two hodd) horder hbound
+    (gateLadder g) (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
+    (fun j _ => gateLadder_succ g j) (by rw [← hs]; exact hreg)
+  have key : ∀ i, i ≤ m →
+      P i = gateLadder g (5 * i) • T ∧ (∀ i', i' < i → NonDegen (g i')) := by
+    intro i
+    induction i with
+    | zero =>
+      intro _
+      refine ⟨?_, ?_⟩
+      · rw [hP0]; simp [gateLadder_zero]
+      · intro i' hi'; omega
+    | succ i ih =>
+      intro hi1
+      have hi : i < m := by omega
+      obtain ⟨hPi, hNDi⟩ := ih (by omega)
+      have ha0 : Point.some _ _ (hd i hi).a0 = gateLadder g (5 * i) • T := by
+        rw [← hin i hi]; exact hPi
+      obtain ⟨hNDgi, ha5⟩ := gate_block' c g i h2 hodd hTne (hd i hi) (hT i hi) ha0
+        (fun ℓ hℓ => hND (5 * i + ℓ) (by omega))
+      refine ⟨?_, ?_⟩
+      · rw [hout i hi, show 5 * (i + 1) = 5 * i + 5 from by ring]; exact ha5
+      · intro i' hi'
+        rcases Nat.lt_succ_iff_lt_or_eq.mp hi' with h | h
+        · exact hNDi i' h
+        · subst h; exact hNDgi
+  exact ⟨by rw [hs]; exact (key m le_rfl).1, fun i hi => (key m le_rfl).2 i hi⟩
+
+end Kimchi.Circuit.VarBaseMul

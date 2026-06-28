@@ -54,6 +54,17 @@ theorem Generic.ok_iff [DecidableEq F] (g : Generic F) (a : Assignment F) :
     g.ok a = true ↔ g.holds a := by
   simp [Generic.ok, Generic.holds]
 
+/-- **Soundness:** a witness accepted by the executable checker satisfies the gate's linear
+    relation. (The generic gate is a decidable predicate, so soundness is one direction of
+    `ok_iff`; the other is `complete`.) -/
+theorem Generic.sound [DecidableEq F] (g : Generic F) (a : Assignment F) :
+    g.ok a = true → g.holds a := (g.ok_iff a).mp
+
+/-- **Completeness:** any witness satisfying the gate's linear relation is accepted by the
+    executable checker. (The converse direction of `ok_iff`.) -/
+theorem Generic.complete [DecidableEq F] (g : Generic F) (a : Assignment F) :
+    g.holds a → g.ok a = true := (g.ok_iff a).mpr
+
 theorem satisfies_iff [DecidableEq F] (gs : List (Generic F)) (a : Assignment F) :
     satisfies gs a = true ↔ Satisfies gs a := by
   simp [satisfies, Satisfies, List.all_eq_true, Generic.ok_iff]

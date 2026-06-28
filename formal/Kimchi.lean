@@ -1,7 +1,10 @@
 -- Library root: a formalization of the kimchi proof system.
--- Re-exports the EC oracle, the generic gate, and the custom-gate identities.
+-- Re-exports the EC oracle, the generic gate, and the custom-gate identities, plus the
+-- VarBaseMul scalar-multiplication soundness (abstract + instantiated at the Pasta curves).
 import Kimchi.Curve
+import Kimchi.Pasta
+import Kimchi.Shifted
 import Kimchi.Gate.Generic
 import Kimchi.Gate.AddComplete
-
-import Kimchi.Cycle.ScalarMod
+import Kimchi.Gate.VarBaseMul
+import Kimchi.Circuit.VarBaseMul
