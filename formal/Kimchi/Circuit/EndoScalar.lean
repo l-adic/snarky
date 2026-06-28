@@ -15,12 +15,10 @@ crumb list (`List.foldl_append`).
 
 ## Main results
 
-* `gate_toField` — the single-row atom: a satisfying row from the canonical init
-  `(a,b,n) = (2,2,0)` outputs the effective scalar `toField crumbs λ` and the register
-  `nReconstruct crumbs`.
-* `chain_decompose` / `chain_toField` — the same statement over a *run* of `m + 1`
-  sequential gate rows threaded from `(2,2,0)` (`varBaseMul`'s multi-row shape): the
-  whole run is one fold over the concatenated crumbs, with output `a·λ + b`.
+* `chain_decompose` / `chain_toField` — a satisfying *run* of `m + 1` sequential gate rows
+  threaded from the canonical init `(a,b,n) = (2,2,0)` (`varBaseMul`'s multi-row shape) is
+  one fold over the concatenated crumbs: it outputs the effective scalar `a·λ + b` and the
+  register `nReconstruct` of the whole challenge (a single row is the `m = 0` case).
 * `nReconstruct_inj` / `endoScalar_unique` — the self-contained soundness. Under the
   no-wrap bound `4 ^ #crumbs ≤ p` (the challenge's bit size below the field size), the
   base-4 decomposition is unique, so the effective scalar `a·λ + b` is a well-defined
@@ -48,19 +46,6 @@ def nReconstruct (crumbs : List F) : F := crumbs.foldl (fun n x => 4 * n + x) 0
     eigenvalue). This is the pure `to_field` of the challenge. -/
 def toField (crumbs : List F) (lam : F) : F :=
   decomposeA crumbs * lam + decomposeB crumbs
-
-/-- A satisfying `EndoScalar` row, started from the canonical init `(2,2,0)`,
-    outputs the effective scalar `toField crumbs λ` and reconstructs the register
-    `nReconstruct crumbs`. (Definitional once the init is fixed — `Holds`'s folds
-    are exactly `decomposeA`/`decomposeB`/`nReconstruct`.) -/
-theorem gate_toField (lam : F) (w : Witness F) (h : Holds w)
-    (ha0 : w.a0 = 2) (hb0 : w.b0 = 2) (hn0 : w.n0 = 0) :
-    w.a8 * lam + w.b8 = toField w.crumbs lam ∧ w.n8 = nReconstruct w.crumbs := by
-  obtain ⟨hn, ha, hb, _⟩ := h
-  rw [ha0] at ha
-  rw [hb0] at hb
-  rw [hn0] at hn
-  exact ⟨by rw [ha, hb, toField, decomposeA, decomposeB], by rw [hn, nReconstruct]⟩
 
 /-! ## Multi-row composition: threading rows = folding the concatenated crumbs.
 
