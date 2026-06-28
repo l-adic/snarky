@@ -19,6 +19,9 @@ crumb list (`List.foldl_append`).
   threaded from the canonical init `(a,b,n) = (2,2,0)` (`varBaseMul`'s multi-row shape) is
   one fold over the concatenated crumbs: it outputs the effective scalar `a·λ + b` and the
   register `nReconstruct` of the whole challenge (a single row is the `m = 0` case).
+* `chain_complete` — the completeness counterpart: for any valid crumb-rows the honest prover
+  threads the gate's `build` into a satisfying run (no global side-condition, since the gate's
+  completeness precondition is per-row).
 * `nReconstruct_inj` / `endoScalar_unique` — the self-contained soundness. Under the
   no-wrap bound `4 ^ #crumbs ≤ p` (the challenge's bit size below the field size), the
   base-4 decomposition is unique, so the effective scalar `a·λ + b` is a well-defined
@@ -128,6 +131,45 @@ theorem chain_toField (lam : F) (m : ℕ) (w : ℕ → Witness F)
       ∧ (w m).n8 = nReconstruct (chainCrumbs w (m + 1)) := by
   obtain ⟨hA, hB, hN⟩ := chain_decompose m w hHolds ha0 hb0 hn0 haStep hbStep hnStep
   exact ⟨by rw [hA, hB, toField], hN⟩
+
+/-! ## Completeness: the honest prover fills a multi-row run.
+
+    The completeness counterpart of `chain_decompose`. The gate's `complete` precondition is
+    per-row crumb validity — independent of the threaded accumulators — so the honest builder
+    threads with no global side-condition. (Contrast the EC gates, whose ladder completeness
+    must propagate non-exceptional points across rows; that is why `varBaseMul`'s circuit has
+    no free completeness while EndoScalar, being curve- and exception-free, does.) -/
+
+/-- The honest multi-row witness: thread the gate's `build` from the canonical `(2,2,0)`,
+    each row started from the previous row's output accumulators. -/
+def chainBuild (rows : ℕ → List F) : ℕ → Witness F
+  | 0 => build 2 2 0 (rows 0)
+  | i + 1 =>
+    let prev := chainBuild rows i
+    build prev.a8 prev.b8 prev.n8 (rows (i + 1))
+
+/-- **Completeness.** For any rows of valid crumbs, the threaded honest witness `chainBuild`
+    satisfies the entire multi-row run — every row `Holds`, the first starts at `(2,2,0)`, the
+    accumulators thread, and each row carries the given crumbs. Feeding this into
+    `chain_toField` shows the honest prover computes the challenge's effective scalar. The
+    threading and init are definitional; the only real input is `Gate.complete` per row. -/
+theorem chain_complete (m : ℕ) (rows : ℕ → List F)
+    (hvalid : ∀ i, i ≤ m → ∀ x ∈ rows i, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
+    (∀ i, i ≤ m → Holds (chainBuild rows i))
+      ∧ (chainBuild rows 0).a0 = 2 ∧ (chainBuild rows 0).b0 = 2 ∧ (chainBuild rows 0).n0 = 0
+      ∧ (∀ i, i < m → (chainBuild rows (i + 1)).a0 = (chainBuild rows i).a8)
+      ∧ (∀ i, i < m → (chainBuild rows (i + 1)).b0 = (chainBuild rows i).b8)
+      ∧ (∀ i, i < m → (chainBuild rows (i + 1)).n0 = (chainBuild rows i).n8)
+      ∧ (∀ i, i ≤ m → (chainBuild rows i).crumbs = rows i) := by
+  refine ⟨?_, rfl, rfl, rfl, fun i _ => rfl, fun i _ => rfl, fun i _ => rfl, ?_⟩
+  · intro i hi
+    cases i with
+    | zero => exact complete 2 2 0 (rows 0) (hvalid 0 hi)
+    | succ k => exact complete _ _ _ (rows (k + 1)) (hvalid (k + 1) hi)
+  · intro i _
+    cases i with
+    | zero => rfl
+    | succ k => rfl
 
 /-! ## Uniqueness of the decomposition under the bit-size/field-size bound.
 
