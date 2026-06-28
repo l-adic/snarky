@@ -8,10 +8,9 @@ decomposition. A challenge is processed 8 crumbs at a time, each row threading t
 `(a,b,n)` accumulators; the result is the effective scalar `a·λ + b` and the raw
 register `n`, which the wrapper asserts equals the input challenge.
 
-Because each row is a `List.foldl` over its crumbs, chaining rows is just folding
-over the concatenated crumb list (`List.foldl_append`) — the multi-row layout
-adds nothing to the math, so the full-challenge (multi-row) spec is deferred until
-a consumer (EndoMul) needs it.
+Because a row's crumb list is arbitrary-length, a single `Witness` already folds
+the whole multi-row challenge; chaining rows is just folding over the concatenated
+crumb list (`List.foldl_append`).
 
 ## Main results
 

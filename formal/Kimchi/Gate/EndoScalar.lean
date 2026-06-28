@@ -86,8 +86,9 @@ theorem dPoly_table (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
 
 /-! ## The gate's constraint model. -/
 
-/-- One `EndoScalar` row: the input/output `(a,b,n)` accumulators and the 8 crumbs
-    (kept as a `List` — the fold is uniform in the count). -/
+/-- One `EndoScalar` row: the input/output `(a,b,n)` accumulators and the crumbs
+    (the deployed gate carries 8; kept as a `List`, since the fold is uniform in the
+    count — so one `Witness` can equally model a whole multi-row challenge). -/
 structure Witness (F : Type*) where
   a0 : F
   b0 : F
@@ -98,9 +99,9 @@ structure Witness (F : Type*) where
   crumbs : List F
 deriving Repr
 
-/-- The 11 gate constraints: the three accumulator folds (`n := 4n+x`,
-    `a := 2a + cPoly x`, `b := 2b + dPoly x`) close at `a8,b8,n8`, and every crumb
-    satisfies the range polynomial. -/
+/-- The gate constraints (11 at the deployed 8-crumb width: `3 + #crumbs`): the three
+    accumulator folds (`n := 4n+x`, `a := 2a + cPoly x`, `b := 2b + dPoly x`) close at
+    `a8,b8,n8`, and every crumb satisfies the range polynomial. -/
 def Holds (w : Witness F) : Prop :=
   w.n8 = w.crumbs.foldl (fun acc x => 4 * acc + x) w.n0
     ∧ w.a8 = w.crumbs.foldl (fun acc x => 2 * acc + cPoly x) w.a0
@@ -189,7 +190,7 @@ theorem dPoly_eq_dFunc (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
 /-- **Soundness.** A satisfying row genuinely runs Halo's Algorithm 2: the crumbs are valid 2-bit
     values, and the `a`/`b`/`n` accumulators are the Algorithm-2 folds — with the `a`/`b` folds
     using the *literal* `c_func`/`d_func` lookup tables (the cubics in `Holds` interpolate them, so
-    `2,3 ≠ 0` — true on the Pasta scalar fields). The bare crumb-validity fact is `(sound …).1`. -/
+    `2,3 ≠ 0` — true on the Pasta scalar fields). -/
 theorem sound (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (w : Witness F) (h : Holds w) :
     (∀ x ∈ w.crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3)
