@@ -32,7 +32,9 @@ def roots : List Name :=
     `Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast1,
     `Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast2,
     `Kimchi.Gate.EndoScalar.sound, `Kimchi.Gate.EndoScalar.complete,
-    `Kimchi.Circuit.EndoScalar.endoScalar_spec ]
+    `Kimchi.Circuit.EndoScalar.endoScalar_spec,
+    `Kimchi.Circuit.EndoScalar.chain_toField,
+    `Kimchi.Circuit.EndoScalar.endoScalar_unique ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms plus the two trusted
     Pasta point counts. -/
