@@ -4,11 +4,9 @@ import Mathlib
 
 ## The forbidden set is a band, not a two-residue condition
 
-A natural guess for the degenerate finals is `k L + 2^L ≡ ±1 (mod q)`, but that is **not** a
-correct characterisation: a brute-force search over the one-wrap regime (every prime `q` with
-`2^(L-1) < q < 2^L`, for `L = 5,…,13`) produces sign patterns whose final value `s = k L` is not
-of that form yet has a degenerate input.  Concretely, for `L = 5`, `q = 29` the pattern giving
-`k 3 = 15` has `2·k 3 = 30 ≡ 1 (mod 29)`, yet `s + 2^L = 95 ≢ ±1 (mod 29)`.
+The degenerate finals are **not** characterised by `k L + 2^L ≡ ±1 (mod q)`: for `L = 5`, `q = 29`
+the sign pattern giving `k 3 = 15` has a degenerate input (`2·k 3 = 30 ≡ 1 (mod 29)`) yet
+`s + 2^L = 95 ≢ ±1 (mod 29)`.
 
 The forbidden set is instead a small band around the multiples of `q`, on `k L` itself (not on
 `k L + 2^L`).  Propagating a degenerate input `k j` forward through `d = L - j` doubling steps
@@ -18,10 +16,9 @@ integer `|t| ≤ 15`.  The non-forbidden hypothesis is therefore
 
   `hnf : ∀ t : ℤ, -15 ≤ t → t ≤ 15 → ¬ (q : ℤ) ∣ (k L - t)`,
 
-which rules out the full reachable band.  It is satisfiable for the real parameters
+which rules out the full reachable band, and is satisfiable for the real parameters
 (`L = 255`, `q ≈ 2^254`): the band has `31 ≪ q` residues, so the overwhelming majority of `k L`
-avoid it, and a brute-force check finds **no** degenerate inputs under it for any prime `q` in
-the regime and `L = 2,…,13`.
+avoid it.
 
 Only the lower regime bound `hreg₁ : 2^(L-1) < q` is used in the proof; the upper bound
 `hreg₂ : q < 2 ^ L` and primality `hq` are carried to state the one-wrap regime. -/
@@ -311,8 +308,7 @@ lemma ladder_subwrap_nondegen (q L : ℕ) (hsub : 3 * 2 ^ L ≤ q)
 
     ## Why each side condition is needed
 
-    Brute-force search over small parameters pins down three hypotheses, each necessary
-    (a concrete degenerate input exists without it):
+    Each of the three hypotheses is necessary — without it a concrete degenerate input exists:
 
     * `hodd : Odd order` — when `order` is even the even representatives `order ± 1` of
       `±1 (mod order)` are reachable. With `ladder_odd` (every `k j`, `1 ≤ j`, is odd)

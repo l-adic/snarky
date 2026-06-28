@@ -145,8 +145,10 @@ theorem chain_sum_bound (m : ℕ) (c : ℕ → ℤ) (hc : ∀ i, i < m → (c i)
     omega
 
 /-- The per-gate CONSTRAINT DATA that `sound` consumes: nonsingular
-    accumulators `a0..a5`, signed targets `q0..q4`, and the 21 constraints `holds`.
-    This is the prover's witness — an INPUT to the circuit, not derivable. -/
+    accumulators `a0..a5`, the nonsingular target `hT`, and the 21 constraints `holds`.
+    This is the prover's witness — an INPUT to the circuit, not derivable. (The sign-selected
+    targets `(xT, (2bⱼ−1)·yT)` are *not* fields: they are nonsingular by `signed_target_nonsingular`
+    from `hT` and the per-bit booleanity inside `holds`.) -/
 structure GateData (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
   a0 : W.Nonsingular g.x0 g.y0
   a1 : W.Nonsingular g.x1 g.y1
@@ -155,11 +157,6 @@ structure GateData (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
   a4 : W.Nonsingular g.x4 g.y4
   a5 : W.Nonsingular g.x5 g.y5
   hT : W.Nonsingular g.xT g.yT
-  q0 : W.Nonsingular g.xT ((2 * g.b0 - 1) * g.yT)
-  q1 : W.Nonsingular g.xT ((2 * g.b1 - 1) * g.yT)
-  q2 : W.Nonsingular g.xT ((2 * g.b2 - 1) * g.yT)
-  q3 : W.Nonsingular g.xT ((2 * g.b3 - 1) * g.yT)
-  q4 : W.Nonsingular g.xT ((2 * g.b4 - 1) * g.yT)
   holds : Holds g
 
 /-- The per-gate NON-DEGENERACY side conditions: the additions are non-vertical
@@ -216,7 +213,7 @@ theorem scalarMul
         ∧ (∀ i < m, (c i).natAbs ≤ 31) := by
     choose! c hc₁ hc₂ hc₃ using fun i hi => sound W ha (g i)
       (gs i hi).a0 (gs i hi).a1 (gs i hi).a2 (gs i hi).a3 (gs i hi).a4 (gs i hi).a5
-      (gs i hi).hT (gs i hi).q0 (gs i hi).q1 (gs i hi).q2 (gs i hi).q3 (gs i hi).q4
+      (gs i hi).hT
       (gs i hi).x0 (gs i hi).x1 (gs i hi).x2 (gs i hi).x3 (gs i hi).x4
       (gs i hi).t0 (gs i hi).t1 (gs i hi).t2 (gs i hi).t3 (gs i hi).t4 (gs i hi).holds
     refine ⟨c, ?_, ?_, ?_⟩ <;> intros i hi <;> simp_all +decide only

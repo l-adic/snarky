@@ -385,6 +385,23 @@ private lemma bool_of_sq {b : F} (h : b * b - b = 0) : b = 0 ∨ b = 1 := by
   · exact Or.inl h1
   · exact Or.inr (by linear_combination h1)
 
+omit [DecidableEq F] in
+/-- The sign-selected target `(xT, (2b−1)·yT)` is itself a nonsingular point once `b ∈ {0,1}` and
+    the base `(xT, yT)` is: it equals `(xT, yT)` when `b = 1` and its negation when `b = 0` (short
+    shape). So this nonsingularity never has to be supplied separately — it follows from `hT` and
+    booleanity. -/
+lemma signed_target_nonsingular
+    (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
+    {b xT yT : F} (hT : W.Nonsingular xT yT) (hb : b = 0 ∨ b = 1) :
+    W.Nonsingular xT ((2 * b - 1) * yT) := by
+  obtain ⟨ha1, _, ha3⟩ := ha
+  rcases hb with rfl | rfl
+  · have h : (2 * (0 : F) - 1) * yT = W.negY xT yT := by
+      rw [WeierstrassCurve.Affine.negY, ha1, ha3]; ring
+    rw [h]; exact (W.nonsingular_neg xT yT).mpr hT
+  · have h : (2 * (1 : F) - 1) * yT = yT := by ring
+    rw [h]; exact hT
+
 /-- The sign-selected target `Q = (xT, (2b−1)·yT)` is `±T` once `b ∈ {0,1}`:
     on a short Weierstrass curve negation is `y ↦ −y`, so `Q = (2b−1)•T` as an
     integer scalar multiple of `T = (xT, yT)`. -/
@@ -420,11 +437,6 @@ theorem sound
     (h2 : W.Nonsingular w.x2 w.y2) (h3 : W.Nonsingular w.x3 w.y3)
     (h4 : W.Nonsingular w.x4 w.y4) (h5 : W.Nonsingular w.x5 w.y5)
     (hT : W.Nonsingular w.xT w.yT)
-    (hQ0 : W.Nonsingular w.xT ((2 * w.b0 - 1) * w.yT))
-    (hQ1 : W.Nonsingular w.xT ((2 * w.b1 - 1) * w.yT))
-    (hQ2 : W.Nonsingular w.xT ((2 * w.b2 - 1) * w.yT))
-    (hQ3 : W.Nonsingular w.xT ((2 * w.b3 - 1) * w.yT))
-    (hQ4 : W.Nonsingular w.xT ((2 * w.b4 - 1) * w.yT))
     (hxne0 : w.x0 ≠ w.xT) (hxne1 : w.x1 ≠ w.xT) (hxne2 : w.x2 ≠ w.xT)
     (hxne3 : w.x3 ≠ w.xT) (hxne4 : w.x4 ≠ w.xT)
     (htne0 : 2 * w.x0 + w.xT - w.s0 * w.s0 ≠ 0)
@@ -436,11 +448,18 @@ theorem sound
     ∃ c : ℤ, Point.some _ _ h5 = (32 : ℤ) • Point.some _ _ h0 + c • Point.some _ _ hT
            ∧ (c : F) = 2 * w.nPrime - 64 * w.n - 31
            ∧ c.natAbs ≤ 31 := by
+  -- booleanity of each bit from the `b·b − b = 0` constraint inside `Holds`; the sign-selected
+  -- targets are then nonsingular by `signed_target_nonsingular` (no need to assume them)
+  obtain ⟨hdec, hbit0, hbit1, hbit2, hbit3, hbit4⟩ := h
+  have hQ0 := signed_target_nonsingular W ha hT (bool_of_sq hbit0.1)
+  have hQ1 := signed_target_nonsingular W ha hT (bool_of_sq hbit1.1)
+  have hQ2 := signed_target_nonsingular W ha hT (bool_of_sq hbit2.1)
+  have hQ3 := signed_target_nonsingular W ha hT (bool_of_sq hbit3.1)
+  have hQ4 := signed_target_nonsingular W ha hT (bool_of_sq hbit4.1)
   -- the Q-point sum from the already-proven nat-smul gate soundness
   have main := gate_scalarMul W ha w h0 h1 h2 h3 h4 h5 hQ0 hQ1 hQ2 hQ3 hQ4
-    hxne0 hxne1 hxne2 hxne3 hxne4 htne0 htne1 htne2 htne3 htne4 h
-  -- booleanity of each bit from the `b·b − b = 0` constraint inside `Holds`
-  obtain ⟨hdec, hbit0, hbit1, hbit2, hbit3, hbit4⟩ := h
+    hxne0 hxne1 hxne2 hxne3 hxne4 htne0 htne1 htne2 htne3 htne4
+    ⟨hdec, hbit0, hbit1, hbit2, hbit3, hbit4⟩
   obtain ⟨e0, q0, he0, hd0⟩ := signed_target W ha hT hQ0 (bool_of_sq hbit0.1)
   obtain ⟨e1, q1, he1, hd1⟩ := signed_target W ha hT hQ1 (bool_of_sq hbit1.1)
   obtain ⟨e2, q2, he2, hd2⟩ := signed_target W ha hT hQ2 (bool_of_sq hbit2.1)

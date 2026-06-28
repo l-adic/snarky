@@ -81,37 +81,10 @@ jobs:
         lake build Kimchi
 
     # `lake build` succeeds even with `sorry` (it's only a warning), so gate
-    # explicitly: every headline theorem must reduce to the standard axioms with
-    # no `sorryAx` in its closure.
-    - name: Verify proofs are sorry-free
+    # explicitly: every headline theorem must reduce to the allowed axiom set (the
+    # standard logical axioms plus the two trusted Pasta point counts). This catches
+    # a `sorryAx` AND any other stray axiom. Roots/allowlist live in the script.
+    - name: Verify headline proofs use only the allowed axioms
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        cat > check_axioms.lean <<'EOF'
-        import Kimchi
-        #print axioms Kimchi.Gate.Generic.sound
-        #print axioms Kimchi.Gate.Generic.complete
-        #print axioms Kimchi.Gate.AddComplete.sound_noninf
-        #print axioms Kimchi.Gate.AddComplete.complete_noninf
-        #print axioms Kimchi.Gate.AddComplete.sound_point_noninf
-        #print axioms Kimchi.Gate.AddComplete.sound_point_inf
-        #print axioms Kimchi.Gate.AddComplete.ok_iff
-        #print axioms Kimchi.Gate.AddComplete.inf_boolean
-        #print axioms Kimchi.Gate.AddComplete.complete_inf
-        #print axioms Kimchi.Gate.AddComplete.complete
-        #print axioms Kimchi.Gate.AddComplete.sound
-        #print axioms Kimchi.Gate.VarBaseMul.sound
-        #print axioms Kimchi.Gate.VarBaseMul.complete
-        #print axioms WeierstrassCurve.Affine.zsmul_mod
-        #print axioms WeierstrassCurve.Affine.order_smul
-        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_deployed_correct
-        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_forbidden_correct
-        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_subwrap_correct
-        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast1
-        #print axioms Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast2
-        EOF
-        out=$(lake env lean check_axioms.lean)
-        echo "$out"
-        if echo "$out" | grep -q sorryAx; then
-          echo "::error::a headline proof depends on sorryAx"
-          exit 1
-        fi
+        scripts/check_axioms.sh

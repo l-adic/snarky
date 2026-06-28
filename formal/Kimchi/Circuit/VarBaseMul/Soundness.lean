@@ -241,7 +241,8 @@ lemma gate_block (c : WeierstrassCurve.Affine F)
   have ha0' : Point.some _ _ gd.a0 = gateLadder g (5 * i) • Point.some _ _ gd.hT := by
     rw [hTeq] at ha0; exact ha0
   obtain ⟨hx0, ht0, hO0, e0, hepm0, hef0, hOeq0⟩ :=
-    gate_step_advance c gd.hT gd.a0 gd.q0 (bit hsb0.1) hT0 (gateLadder g (5 * i)) ha0'
+    gate_step_advance c gd.hT gd.a0 (signed_target_nonsingular c c.short gd.hT (bit hsb0.1))
+      (bit hsb0.1) hT0 (gateLadder g (5 * i)) ha0'
       (hnd 0 (by omega)).1 (hnd 0 (by omega)).2.1 (hnd 0 (by omega)).2.2.1
       (hnd 0 (by omega)).2.2.2 hsb0
   have ha1 : Point.some _ _ gd.a1 = gateLadder g (5 * i + 1) • Point.some _ _ gd.hT := by
@@ -249,7 +250,8 @@ lemma gate_block (c : WeierstrassCurve.Affine F)
       e_eq_gateBitSign g (5 * i) gb0 (bit hsb0.1) hef0 hepm0 h2, ← gateLadder_succ]
   -- sub-step 1
   obtain ⟨hx1, ht1, hO1, e1, hepm1, hef1, hOeq1⟩ :=
-    gate_step_advance c gd.hT gd.a1 gd.q1 (bit hsb1.1) hT0 (gateLadder g (5 * i + 1)) ha1
+    gate_step_advance c gd.hT gd.a1 (signed_target_nonsingular c c.short gd.hT (bit hsb1.1))
+      (bit hsb1.1) hT0 (gateLadder g (5 * i + 1)) ha1
       (hnd 1 (by omega)).1 (hnd 1 (by omega)).2.1 (hnd 1 (by omega)).2.2.1
       (hnd 1 (by omega)).2.2.2 hsb1
   have ha2 : Point.some _ _ gd.a2 = gateLadder g (5 * i + 2) • Point.some _ _ gd.hT := by
@@ -257,7 +259,8 @@ lemma gate_block (c : WeierstrassCurve.Affine F)
       e_eq_gateBitSign g (5 * i + 1) gb1 (bit hsb1.1) hef1 hepm1 h2, ← gateLadder_succ]
   -- sub-step 2
   obtain ⟨hx2, ht2, hO2, e2, hepm2, hef2, hOeq2⟩ :=
-    gate_step_advance c gd.hT gd.a2 gd.q2 (bit hsb2.1) hT0 (gateLadder g (5 * i + 2)) ha2
+    gate_step_advance c gd.hT gd.a2 (signed_target_nonsingular c c.short gd.hT (bit hsb2.1))
+      (bit hsb2.1) hT0 (gateLadder g (5 * i + 2)) ha2
       (hnd 2 (by omega)).1 (hnd 2 (by omega)).2.1 (hnd 2 (by omega)).2.2.1
       (hnd 2 (by omega)).2.2.2 hsb2
   have ha3 : Point.some _ _ gd.a3 = gateLadder g (5 * i + 3) • Point.some _ _ gd.hT := by
@@ -265,7 +268,8 @@ lemma gate_block (c : WeierstrassCurve.Affine F)
       e_eq_gateBitSign g (5 * i + 2) gb2 (bit hsb2.1) hef2 hepm2 h2, ← gateLadder_succ]
   -- sub-step 3
   obtain ⟨hx3, ht3, hO3, e3, hepm3, hef3, hOeq3⟩ :=
-    gate_step_advance c gd.hT gd.a3 gd.q3 (bit hsb3.1) hT0 (gateLadder g (5 * i + 3)) ha3
+    gate_step_advance c gd.hT gd.a3 (signed_target_nonsingular c c.short gd.hT (bit hsb3.1))
+      (bit hsb3.1) hT0 (gateLadder g (5 * i + 3)) ha3
       (hnd 3 (by omega)).1 (hnd 3 (by omega)).2.1 (hnd 3 (by omega)).2.2.1
       (hnd 3 (by omega)).2.2.2 hsb3
   have ha4 : Point.some _ _ gd.a4 = gateLadder g (5 * i + 4) • Point.some _ _ gd.hT := by
@@ -273,7 +277,8 @@ lemma gate_block (c : WeierstrassCurve.Affine F)
       e_eq_gateBitSign g (5 * i + 3) gb3 (bit hsb3.1) hef3 hepm3 h2, ← gateLadder_succ]
   -- sub-step 4
   obtain ⟨hx4, ht4, hO4, e4, hepm4, hef4, hOeq4⟩ :=
-    gate_step_advance c gd.hT gd.a4 gd.q4 (bit hsb4.1) hT0 (gateLadder g (5 * i + 4)) ha4
+    gate_step_advance c gd.hT gd.a4 (signed_target_nonsingular c c.short gd.hT (bit hsb4.1))
+      (bit hsb4.1) hT0 (gateLadder g (5 * i + 4)) ha4
       (hnd 4 (by omega)).1 (hnd 4 (by omega)).2.1 (hnd 4 (by omega)).2.2.1
       (hnd 4 (by omega)).2.2.2 hsb4
   have ha5 : Point.some _ _ gd.a5 = gateLadder g (5 * i + 5) • Point.some _ _ gd.hT := by
@@ -469,31 +474,41 @@ lemma gate_block' (c : WeierstrassCurve.Affine F)
   have ha0' : Point.some _ _ gd.a0 = gateLadder g (5 * i) • Point.some _ _ gd.hT := by
     rw [hTeq] at ha0; exact ha0
   obtain ⟨hx0, ht0, hO0, e0, hepm0, hef0, hOeq0⟩ :=
-    gate_step_advance' c h2 hodd gd.hT gd.a0 gd.q0 (bit hsb0.1) hT0 (gateLadder g (5 * i)) ha0'
+    gate_step_advance' c h2 hodd gd.hT gd.a0
+      (signed_target_nonsingular c c.short gd.hT (bit hsb0.1)) (bit hsb0.1) hT0
+      (gateLadder g (5 * i)) ha0'
       (hnd 0 (by omega)).1 (hnd 0 (by omega)).2 hsb0
   have ha1 : Point.some _ _ gd.a1 = gateLadder g (5 * i + 1) • Point.some _ _ gd.hT := by
     rw [show Point.some _ _ gd.a1 = Point.some _ _ hO0 from rfl, hOeq0,
       e_eq_gateBitSign g (5 * i) gb0 (bit hsb0.1) hef0 hepm0 h2, ← gateLadder_succ]
   obtain ⟨hx1, ht1, hO1, e1, hepm1, hef1, hOeq1⟩ :=
-    gate_step_advance' c h2 hodd gd.hT gd.a1 gd.q1 (bit hsb1.1) hT0 (gateLadder g (5 * i + 1)) ha1
+    gate_step_advance' c h2 hodd gd.hT gd.a1
+      (signed_target_nonsingular c c.short gd.hT (bit hsb1.1)) (bit hsb1.1) hT0
+      (gateLadder g (5 * i + 1)) ha1
       (hnd 1 (by omega)).1 (hnd 1 (by omega)).2 hsb1
   have ha2 : Point.some _ _ gd.a2 = gateLadder g (5 * i + 2) • Point.some _ _ gd.hT := by
     rw [show Point.some _ _ gd.a2 = Point.some _ _ hO1 from rfl, hOeq1,
       e_eq_gateBitSign g (5 * i + 1) gb1 (bit hsb1.1) hef1 hepm1 h2, ← gateLadder_succ]
   obtain ⟨hx2, ht2, hO2, e2, hepm2, hef2, hOeq2⟩ :=
-    gate_step_advance' c h2 hodd gd.hT gd.a2 gd.q2 (bit hsb2.1) hT0 (gateLadder g (5 * i + 2)) ha2
+    gate_step_advance' c h2 hodd gd.hT gd.a2
+      (signed_target_nonsingular c c.short gd.hT (bit hsb2.1)) (bit hsb2.1) hT0
+      (gateLadder g (5 * i + 2)) ha2
       (hnd 2 (by omega)).1 (hnd 2 (by omega)).2 hsb2
   have ha3 : Point.some _ _ gd.a3 = gateLadder g (5 * i + 3) • Point.some _ _ gd.hT := by
     rw [show Point.some _ _ gd.a3 = Point.some _ _ hO2 from rfl, hOeq2,
       e_eq_gateBitSign g (5 * i + 2) gb2 (bit hsb2.1) hef2 hepm2 h2, ← gateLadder_succ]
   obtain ⟨hx3, ht3, hO3, e3, hepm3, hef3, hOeq3⟩ :=
-    gate_step_advance' c h2 hodd gd.hT gd.a3 gd.q3 (bit hsb3.1) hT0 (gateLadder g (5 * i + 3)) ha3
+    gate_step_advance' c h2 hodd gd.hT gd.a3
+      (signed_target_nonsingular c c.short gd.hT (bit hsb3.1)) (bit hsb3.1) hT0
+      (gateLadder g (5 * i + 3)) ha3
       (hnd 3 (by omega)).1 (hnd 3 (by omega)).2 hsb3
   have ha4 : Point.some _ _ gd.a4 = gateLadder g (5 * i + 4) • Point.some _ _ gd.hT := by
     rw [show Point.some _ _ gd.a4 = Point.some _ _ hO3 from rfl, hOeq3,
       e_eq_gateBitSign g (5 * i + 3) gb3 (bit hsb3.1) hef3 hepm3 h2, ← gateLadder_succ]
   obtain ⟨hx4, ht4, hO4, e4, hepm4, hef4, hOeq4⟩ :=
-    gate_step_advance' c h2 hodd gd.hT gd.a4 gd.q4 (bit hsb4.1) hT0 (gateLadder g (5 * i + 4)) ha4
+    gate_step_advance' c h2 hodd gd.hT gd.a4
+      (signed_target_nonsingular c c.short gd.hT (bit hsb4.1)) (bit hsb4.1) hT0
+      (gateLadder g (5 * i + 4)) ha4
       (hnd 4 (by omega)).1 (hnd 4 (by omega)).2 hsb4
   have ha5 : Point.some _ _ gd.a5 = gateLadder g (5 * i + 5) • Point.some _ _ gd.hT := by
     rw [show Point.some _ _ gd.a5 = Point.some _ _ hO4 from rfl, hOeq4,

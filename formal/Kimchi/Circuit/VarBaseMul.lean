@@ -45,12 +45,8 @@ Its soundness splits by chunk count `m` (`bitsUsed = 5m ≤ FieldSizeInBits = pa
 (`varBaseMul_subwrap_correct`); only the full width `m = 51` is the one-wrap case that needs the
 forbidden band (`varBaseMul_forbidden_correct`).
 
-Caveat on faithfulness to the deployed circuit: the band `forbiddenValues` is the COMPLETE forbidden
-set, whereas mina's runtime guard `forbidden_shifted_values` (`crypto/pickles/impls.ml`) is the
-*incomplete* two-residue subset — its source even carries the TODO "I think there are other
-forbidden values as well", and `Ladder` proves the two-residue set misses the band. So this theorem
-is stronger than (and supersedes) the circuit's actual check; closing the gap — showing the band
-scalars cannot arise for the wrap-verifier's Type1 scalars — is an open item upstream as well. -/
+The full-width `m = 51` case excludes the COMPLETE forbidden band, which is *stronger* than mina's
+incomplete runtime guard; see `varBaseMul_forbidden_correct` for the faithfulness caveat. -/
 
 /-- **scaleFast1 / Type1 on the real Vesta curve: correct + sound for any chunk count `m ∈ 1..51`.**
     The single hypothesis on the bit count is `hbits : 5 * m ≤ pastaFieldBits`
@@ -59,8 +55,8 @@ scalars cannot arise for the wrap-verifier's Type1 scalars — is an open item u
     count is in the sub-wrap regime and is sound with no guard at all. The proof dispatches:
     `5m ≤ pastaFieldBits - 5` → `varBaseMul_subwrap_correct` (`3·2^(5m) ≤ PALLAS_BASE_CARD` by
     computation); `5m = pastaFieldBits` → `varBaseMul_forbidden_correct`
-    (one-wrap, regime bounds + `order ≡ 1 mod 4` discharged from the cardinal). See the section note
-    on the band vs mina's (incomplete) deployed `forbidden_shifted_values` check. -/
+    (one-wrap, regime bounds + `order ≡ 1 mod 4` discharged from the cardinal). See
+    `varBaseMul_forbidden_correct` for the band-vs-deployed-check faithfulness caveat. -/
 theorem varBaseMul_scaleFast1
     (m : ℕ) (g : ℕ → Witness VestaBaseField)
     (T : Vesta.curve.toAffine.Point) (P : ℕ → Vesta.curve.toAffine.Point) (s : ℤ)
