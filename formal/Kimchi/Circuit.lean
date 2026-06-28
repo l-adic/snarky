@@ -2,7 +2,7 @@ import Kimchi.Checker.Generic
 import Kimchi.Gate.AddComplete
 import Kimchi.Checker.VarBaseMul
 import Kimchi.Gate.EndoMul
-import Kimchi.Gate.EndoScalar
+import Kimchi.Checker.EndoScalar
 import Kimchi.Gate.Poseidon
 
 /-!
@@ -100,7 +100,7 @@ def rowHolds [CommRing F] (g : Gate F) (curr next : Row F) (pubr : F) : Prop :=
   | .poseidon      => Poseidon.holds g.coeffs curr next
   | .varBaseMul    => Checker.VarBaseMul.holds curr next
   | .endoMul       => EndoMul.holds curr next
-  | .endoMulScalar => EndoScalar.holds curr next
+  | .endoMulScalar => Checker.EndoScalar.holds curr next
 
 /-- EXECUTABLE mirror of `rowHolds`. -/
 def rowOk [CommRing F] [DecidableEq F] (g : Gate F) (curr next : Row F) (pubr : F) : Bool :=
@@ -111,13 +111,13 @@ def rowOk [CommRing F] [DecidableEq F] (g : Gate F) (curr next : Row F) (pubr : 
   | .poseidon      => Poseidon.ok g.coeffs curr next
   | .varBaseMul    => Checker.VarBaseMul.ok curr next
   | .endoMul       => EndoMul.ok curr next
-  | .endoMulScalar => EndoScalar.ok curr next
+  | .endoMulScalar => Checker.EndoScalar.ok curr next
 
 theorem rowOk_iff [CommRing F] [DecidableEq F] (g : Gate F) (curr next : Row F) (pubr : F) :
     rowOk g curr next pubr = true ↔ rowHolds g curr next pubr := by
   cases h : g.kind <;>
     simp [rowOk, rowHolds, h, AddComplete.ok_iff, Checker.VarBaseMul.ok_iff, EndoMul.ok_iff,
-      EndoScalar.ok_iff, Poseidon.ok_iff]
+      Checker.EndoScalar.ok_iff, Poseidon.ok_iff]
 
 /-- BRIDGE: on a `completeAdd` row, the dispatcher's identity *is* the proven
     `AddComplete.Holds` of the witness extracted from the row's cells — so the entire

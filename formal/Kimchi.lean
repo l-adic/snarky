@@ -15,9 +15,11 @@ import Kimchi.Gate.Poseidon
 import Kimchi.Checker.Row
 import Kimchi.Checker.Generic
 import Kimchi.Checker.VarBaseMul
+import Kimchi.Checker.EndoScalar
 
 import Kimchi.Field.Pasta
 import Kimchi.Circuit
 import Kimchi.Circuit.VarBaseMul
+import Kimchi.Circuit.EndoScalar
 import Kimchi.Circuits.AddCompleteStep
 import Kimchi.Json

@@ -31,13 +31,18 @@ def roots : List Name :=
     `Kimchi.Circuit.VarBaseMul.varBaseMul_subwrap_correct,
     `Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast1,
     `Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast2,
+    -- EndoScalar gate + circuit soundness (#173).
+    `Kimchi.Gate.EndoScalar.sound, `Kimchi.Gate.EndoScalar.complete,
+    `Kimchi.Circuit.EndoScalar.chain_toField,
+    `Kimchi.Circuit.EndoScalar.chain_complete,
+    `Kimchi.Circuit.EndoScalar.endoScalar_unique,
     -- The ingested-constraint-system checker: its faithfulness reflection and the
     -- completeAdd bridge into the AddComplete soundness suite.
     `Kimchi.Circuit.check_iff, `Kimchi.Circuit.rowHolds_completeAdd,
     -- The checker-facing custom-gate constraint reflections.
     `Kimchi.Checker.Generic.ok_iff, `Kimchi.Checker.VarBaseMul.ok_iff,
-    `Kimchi.Gate.EndoMul.ok_iff, `Kimchi.Gate.EndoScalar.ok_iff,
-    `Kimchi.Gate.Poseidon.ok_iff ]
+    `Kimchi.Checker.EndoScalar.ok_iff,
+    `Kimchi.Gate.EndoMul.ok_iff, `Kimchi.Gate.Poseidon.ok_iff ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms plus the two trusted
     Pasta point counts. -/
