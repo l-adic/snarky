@@ -81,39 +81,13 @@ jobs:
         lake build Kimchi
 
     # `lake build` succeeds even with `sorry` (it's only a warning), so gate
-    # explicitly: every headline theorem must reduce to the standard axioms with
-    # no `sorryAx` in its closure.
-    - name: Verify proofs are sorry-free
+    # explicitly: every headline theorem must reduce to the allowed axiom set (the
+    # standard logical axioms plus the two trusted Pasta point counts). This catches
+    # a `sorryAx` AND any other stray axiom. Roots/allowlist live in the script.
+    - name: Verify headline proofs use only the allowed axioms
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        cat > check_axioms.lean <<'EOF'
-        import Kimchi
-        #print axioms Kimchi.Gate.AddComplete.sound_noninf
-        #print axioms Kimchi.Gate.AddComplete.complete_noninf
-        #print axioms Kimchi.Gate.AddComplete.sound_point_noninf
-        #print axioms Kimchi.Gate.AddComplete.sound_point_inf
-        #print axioms Kimchi.Gate.AddComplete.ok_iff
-        #print axioms Kimchi.Gate.AddComplete.inf_boolean
-        #print axioms Kimchi.Gate.AddComplete.complete_inf
-        #print axioms Kimchi.Gate.AddComplete.complete
-        #print axioms Kimchi.Gate.AddComplete.sound_point
-        #print axioms Kimchi.Cycle.zsmul_mod
-        -- The ingested-constraint-system checker + end-to-end circuit soundness.
-        #print axioms Kimchi.Circuit.check_iff
-        #print axioms Kimchi.Circuit.rowHolds_completeAdd
-        #print axioms Kimchi.Circuit.addComplete_sound
-        -- The custom-gate constraint reflections.
-        #print axioms Kimchi.Gate.VarBaseMul.ok_iff
-        #print axioms Kimchi.Gate.EndoMul.ok_iff
-        #print axioms Kimchi.Gate.EndoScalar.ok_iff
-        #print axioms Kimchi.Gate.Poseidon.ok_iff
-        EOF
-        out=$(lake env lean check_axioms.lean)
-        echo "$out"
-        if echo "$out" | grep -q sorryAx; then
-          echo "::error::a headline proof depends on sorryAx"
-          exit 1
-        fi
+        scripts/check_axioms.sh
 
     # The committed fixtures are real PureScript-dumped (circuit, witness) pairs; the
     # verified `check` (faithful by `check_iff`) must accept each. This guards against

@@ -2,67 +2,90 @@ import Mathlib.Algebra.Field.Basic
 import Mathlib.Data.ZMod.Basic
 import Mathlib.Tactic
 
-/-! # The kimchi generic gate, over a real 15-column row.
-
-The single-row generic identity
-
-    `cl·w0 + cr·w1 + co·w2 + m·(w0·w1) + c = 0`
-
-reads the first three registers of the row (`w0,w1,w2`) and the five coefficients
-`[cl, cr, co, m, c]` (the dump's coefficient order — a pure copy row is `[1,0,0,0,0]`).
-
-`eval` is the polynomial's value; `holds`/`ok` are the `= 0` relation and its decidable
-checker. The public-input contribution is *not* folded in here — that is added at the
-circuit level (`Kimchi.Circuit`), since it comes from the protocol's public-input
-polynomial, not the gate's coefficients. -/
+/-! # The generic gate `cl·vl + cr·vr + co·vo + m·(vl·vr) + c = 0`, the "all gates
+    hold" relation, and the executable checker that decides it. -/
 
 namespace Kimchi.Gate
 
-/-- A row is the 15 registers of one circuit row. We keep it an `Array` (totality via
-    `getD`) rather than a length-indexed vector to avoid index side-conditions in proofs;
-    the dump always supplies 15 entries. -/
-abbrev Row (F : Type*) := Array F
+variable {F : Type*} [Field F]
 
-namespace Generic
+/-- A variable index into the assignment. -/
+abbrev Variable := Nat
 
-variable {F : Type*}
+/-- A witness: a value per variable. -/
+abbrev Assignment (F : Type*) := Array F
 
-/-- The generic gate's polynomial value `cl·w0 + cr·w1 + co·w2 + m·(w0·w1) + c`. -/
-def eval [CommRing F] (coeffs : Array F) (row : Row F) : F :=
-  coeffs.getD 0 0 * row.getD 0 0
-    + coeffs.getD 1 0 * row.getD 1 0
-    + coeffs.getD 2 0 * row.getD 2 0
-    + coeffs.getD 3 0 * (row.getD 0 0 * row.getD 1 0)
-    + coeffs.getD 4 0
+/-- Read a variable's value; out-of-range as 0 for totality. -/
+def Assignment.get (a : Assignment F) (v : Variable) : F := a.getD v 0
 
-/-- Relational spec for one generic gate (no public-input term): the value is `0`. -/
-def holds [CommRing F] (coeffs : Array F) (row : Row F) : Prop :=
-  eval coeffs row = 0
+/-- An optional slot's value: an absent (`none`) slot contributes 0. -/
+def slot (a : Assignment F) : Option Variable → F
+  | none   => 0
+  | some v => a.get v
 
-/-- Executable checker for one generic gate. -/
-def ok [CommRing F] [DecidableEq F] (coeffs : Array F) (row : Row F) : Bool :=
-  eval coeffs row == 0
+/-- One generic gate: `cl·vl + cr·vr + co·vo + m·(vl·vr) + c = 0`. -/
+structure Generic (F : Type*) where
+  cl : F
+  vl : Option Variable
+  cr : F
+  vr : Option Variable
+  co : F
+  vo : Option Variable
+  m  : F
+  c  : F
 
-theorem ok_iff [CommRing F] [DecidableEq F] (coeffs : Array F) (row : Row F) :
-    ok coeffs row = true ↔ holds coeffs row := by
-  simp [ok, holds]
+/-- Relational spec for one generic gate — a `Prop`. -/
+def Generic.holds (g : Generic F) (a : Assignment F) : Prop :=
+  g.cl * slot a g.vl + g.cr * slot a g.vr + g.co * slot a g.vo
+    + g.m * (slot a g.vl * slot a g.vr) + g.c = 0
 
-end Generic
+/-- Executable checker for one generic gate — a `Bool`. -/
+def Generic.ok [DecidableEq F] (g : Generic F) (a : Assignment F) : Bool :=
+  (g.cl * slot a g.vl + g.cr * slot a g.vr + g.co * slot a g.vo
+    + g.m * (slot a g.vl * slot a g.vr) + g.c) == 0
 
-/-! ## A concrete, runnable example over `ZMod 17`: `w0 * w1 = w2`. -/
+def Satisfies (gs : List (Generic F)) (a : Assignment F) : Prop :=
+  ∀ g ∈ gs, g.holds a
 
+def satisfies [DecidableEq F] (gs : List (Generic F)) (a : Assignment F) : Bool :=
+  gs.all (·.ok a)
+
+theorem Generic.ok_iff [DecidableEq F] (g : Generic F) (a : Assignment F) :
+    g.ok a = true ↔ g.holds a := by
+  simp [Generic.ok, Generic.holds]
+
+/-- **Soundness:** a witness accepted by the executable checker satisfies the gate's linear
+    relation. (The generic gate is a decidable predicate, so soundness is one direction of
+    `ok_iff`; the other is `complete`.) -/
+theorem Generic.sound [DecidableEq F] (g : Generic F) (a : Assignment F) :
+    g.ok a = true → g.holds a := (g.ok_iff a).mp
+
+/-- **Completeness:** any witness satisfying the gate's linear relation is accepted by the
+    executable checker. (The converse direction of `ok_iff`.) -/
+theorem Generic.complete [DecidableEq F] (g : Generic F) (a : Assignment F) :
+    g.holds a → g.ok a = true := (g.ok_iff a).mpr
+
+theorem satisfies_iff [DecidableEq F] (gs : List (Generic F)) (a : Assignment F) :
+    satisfies gs a = true ↔ Satisfies gs a := by
+  simp [satisfies, Satisfies, List.all_eq_true, Generic.ok_iff]
+
+/-- Example: `w0 * w1 = w2`, as `1·w2 + (-1)·(w0·w1) = 0`, over the field `ZMod 17`. -/
 instance : Fact (Nat.Prime 17) := ⟨by norm_num⟩
 
-/-- `w0 · w1 = w2`, encoded as `1·w2 + (-1)·(w0·w1) = 0`: coeffs `[cl,cr,co,m,c] = [0,0,1,-1,0]`. -/
-def mulCoeffs : Array (ZMod 17) := #[0, 0, 1, -1, 0]
+def mulGate : Generic (ZMod 17) :=
+  { cl := 0, vl := some 0
+  , cr := 0, vr := some 1
+  , co := 1, vo := some 2
+  , m  := -1
+  , c  := 0 }
 
-def egGood : Row (ZMod 17) := #[3, 4, 12]   -- 3 * 4 = 12  ✓
-def egBad  : Row (ZMod 17) := #[3, 4, 13]   -- 3 * 4 ≠ 13  ✗
+def egGood : Assignment (ZMod 17) := #[3, 4, 12]   -- 3 * 4 = 12  ✓
+def egBad  : Assignment (ZMod 17) := #[3, 4, 13]   -- 3 * 4 ≠ 13  ✗
 
-#eval Generic.ok mulCoeffs egGood   -- true
-#eval Generic.ok mulCoeffs egBad    -- false
+#eval satisfies [mulGate] egGood   -- true
+#eval satisfies [mulGate] egBad    -- false
 
-example : Generic.holds mulCoeffs egGood := by rw [← Generic.ok_iff]; rfl
-example : ¬ Generic.holds mulCoeffs egBad := by rw [← Generic.ok_iff]; decide
+example : Satisfies [mulGate] egGood := by rw [← satisfies_iff]; decide
+example : ¬ Satisfies [mulGate] egBad := by rw [← satisfies_iff]; decide
 
 end Kimchi.Gate

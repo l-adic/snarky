@@ -1,0 +1,31 @@
+-- Library API root set for kimchi-formal.
+--
+-- The curated top-level surface the library exists to provide. Lean has no export-list
+-- mechanism (everything non-`private` is visible once imported), so this manifest — not the
+-- type system — defines the public API. It is the root set for dead-code analysis:
+--
+--   a declaration in `Kimchi.*` is LIVE iff it is in the transitive constant-dependency
+--   closure of these roots; anything compiled but outside that closure is dead.
+--
+-- Format: one fully-qualified declaration name per line; `--` lines and blanks are ignored.
+--
+-- Note: the `kimchi-demo` executable (Main.lean) is a SEPARATE build root, reaching the demo
+-- defs `Kimchi.Gate.{mulGate, egGood, egBad, satisfies}`. Those are demo-only and are not part
+-- of this library API surface, so they are reachable through the executable rather than here.
+
+-- Generic gate
+Kimchi.Gate.Generic.sound
+Kimchi.Gate.Generic.complete
+Kimchi.Gate.satisfies_iff
+
+-- Complete addition
+Kimchi.Gate.AddComplete.complete
+Kimchi.Gate.AddComplete.sound
+
+-- Variable-base scalar multiplication (gate)
+Kimchi.Gate.VarBaseMul.sound
+Kimchi.Gate.VarBaseMul.complete
+
+-- Variable-base scalar multiplication (circuit): the two deployed entry points
+Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast1
+Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast2

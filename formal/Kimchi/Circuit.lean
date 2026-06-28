@@ -1,6 +1,6 @@
-import Kimchi.Gate.Generic
+import Kimchi.Checker.Generic
 import Kimchi.Gate.AddComplete
-import Kimchi.Gate.VarBaseMul
+import Kimchi.Checker.VarBaseMul
 import Kimchi.Gate.EndoMul
 import Kimchi.Gate.EndoScalar
 import Kimchi.Gate.Poseidon
@@ -94,34 +94,34 @@ def Circuit.pubTerm [Zero F] (c : Circuit F) (pub : Array F) (r : Nat) : F :=
     `True`-stubbed (their constraint polynomials are not yet transcribed). -/
 def rowHolds [CommRing F] (g : Gate F) (curr next : Row F) (pubr : F) : Prop :=
   match g.kind with
-  | .generic       => Generic.eval g.coeffs curr = pubr
+  | .generic       => Checker.Generic.eval g.coeffs curr = pubr
   | .zero          => True
   | .completeAdd   => AddComplete.Holds (AddComplete.ofRow curr)
   | .poseidon      => Poseidon.holds g.coeffs curr next
-  | .varBaseMul    => VarBaseMul.holds curr next
+  | .varBaseMul    => Checker.VarBaseMul.holds curr next
   | .endoMul       => EndoMul.holds curr next
   | .endoMulScalar => EndoScalar.holds curr next
 
 /-- EXECUTABLE mirror of `rowHolds`. -/
 def rowOk [CommRing F] [DecidableEq F] (g : Gate F) (curr next : Row F) (pubr : F) : Bool :=
   match g.kind with
-  | .generic       => Generic.eval g.coeffs curr == pubr
+  | .generic       => Checker.Generic.eval g.coeffs curr == pubr
   | .zero          => true
   | .completeAdd   => AddComplete.ok (AddComplete.ofRow curr)
   | .poseidon      => Poseidon.ok g.coeffs curr next
-  | .varBaseMul    => VarBaseMul.ok curr next
+  | .varBaseMul    => Checker.VarBaseMul.ok curr next
   | .endoMul       => EndoMul.ok curr next
   | .endoMulScalar => EndoScalar.ok curr next
 
 theorem rowOk_iff [CommRing F] [DecidableEq F] (g : Gate F) (curr next : Row F) (pubr : F) :
     rowOk g curr next pubr = true ↔ rowHolds g curr next pubr := by
   cases h : g.kind <;>
-    simp [rowOk, rowHolds, h, AddComplete.ok_iff, VarBaseMul.ok_iff, EndoMul.ok_iff,
+    simp [rowOk, rowHolds, h, AddComplete.ok_iff, Checker.VarBaseMul.ok_iff, EndoMul.ok_iff,
       EndoScalar.ok_iff, Poseidon.ok_iff]
 
 /-- BRIDGE: on a `completeAdd` row, the dispatcher's identity *is* the proven
     `AddComplete.Holds` of the witness extracted from the row's cells — so the entire
-    soundness suite in `Gate/AddComplete.lean` (`sound_point`, …) applies verbatim. -/
+    soundness suite in `Gate/AddComplete.lean` (`sound`, …) applies verbatim. -/
 theorem rowHolds_completeAdd [CommRing F] (g : Gate F) (curr next : Row F) (pubr : F)
     (h : g.kind = .completeAdd) :
     rowHolds g curr next pubr ↔ AddComplete.Holds (AddComplete.ofRow curr) := by

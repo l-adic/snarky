@@ -13,7 +13,7 @@ The proof threads the three obligations of `Satisfies`:
 * the `CompleteAdd` row's copy constraints carry those into its cells 0–5
   (`x1,y1,x2,y2,x3,y3`) — *the one place the permutation is load-bearing*;
 * the `CompleteAdd` gate identity is the already-proven `AddComplete.Holds`, so
-  `AddComplete.sound_point` finishes the job.
+  `AddComplete.sound` finishes the job.
 
 No new gate polynomials are needed: this rests entirely on the proven `AddComplete`
 suite plus the copy/public-input plumbing in `Kimchi.Circuit`.
@@ -43,7 +43,7 @@ def addCompleteCircuit : Circuit F :=
 omit [DecidableEq F] in
 /-- A `Generic` row with coeffs `[1,0,0,0,0]` evaluates to register 0. -/
 theorem genEval (row : Row F) :
-    Generic.eval (#[1, 0, 0, 0, 0] : Array F) row = row.getD 0 0 := by
+    Checker.Generic.eval (#[1, 0, 0, 0, 0] : Array F) row = row.getD 0 0 := by
   show (1 : F) * row.getD 0 0 + 0 * row.getD 1 0 + 0 * row.getD 2 0
         + 0 * (row.getD 0 0 * row.getD 1 0) + 0 = row.getD 0 0
   ring
@@ -58,9 +58,10 @@ theorem genEval (row : Row F) :
       `(x1,y1) + (x2,y2) = 0`, or `(x3,y3)` is that sum.
 
     The nonsingularity proofs for the row-6 cells are existentially bound and reused, so the
-    conclusion matches `AddComplete.sound_point` definitionally (no coordinate transport). -/
+    conclusion matches `AddComplete.sound` definitionally (no coordinate transport). -/
 theorem addComplete_sound
-    (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
+    (W : WeierstrassCurve.Affine F)
+    (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
     (w : Witness F) (pub : Array F)
     (h1 : W.Nonsingular (pub.getD 0 0) (pub.getD 1 0))
     (h2 : W.Nonsingular (pub.getD 2 0) (pub.getD 3 0))
@@ -92,7 +93,7 @@ theorem addComplete_sound
     rw [wireEq k hk] at hc
     have hg := hgates k (by rw [hsz]; omega)
     rw [gateEq k hk] at hg
-    change Generic.eval (#[1, 0, 0, 0, 0] : Array F) (w.row k)
+    change Checker.Generic.eval (#[1, 0, 0, 0, 0] : Array F) (w.row k)
         = (addCompleteCircuit (F := F)).pubTerm pub k at hg
     rw [genEval] at hg
     have hpt : (addCompleteCircuit (F := F)).pubTerm pub k = pub.getD k 0 := by
@@ -110,6 +111,6 @@ theorem addComplete_sound
   have hy1' : w.cell (6, 1) ≠ 0 := (key 1 (by omega)).symm ▸ hy1
   -- the proven CompleteAdd soundness gives exactly the disjunction we want
   exact ⟨H1, H2,
-    AddComplete.sound_point W ha (AddComplete.ofRow (w.row 6)) H1 H2 hH hy1' htwo⟩
+    AddComplete.sound W ha (AddComplete.ofRow (w.row 6)) H1 H2 hH hy1' htwo⟩
 
 end Kimchi.Circuit

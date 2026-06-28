@@ -1,4 +1,4 @@
-import Kimchi.Gate.Generic
+import Kimchi.Checker.Row
 
 /-! # The kimchi `Poseidon` gate (5 rounds per row).
 

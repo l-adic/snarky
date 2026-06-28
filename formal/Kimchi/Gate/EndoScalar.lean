@@ -1,4 +1,4 @@
-import Kimchi.Gate.Generic
+import Kimchi.Checker.Row
 
 /-! # The kimchi `EndoMulScalar` (endo scalar decomposition) gate.
 

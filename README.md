@@ -1,7 +1,8 @@
 # Snarky
 
-Embedded DSL for constructing recursive zero-knowledge circuits in PureScript. Faithfully implements the pickles recursive snark protocol backed by o1-labs [proof-systmes](https://github.com/o1-labs/proof-systems)
+[![CI](https://github.com/l-adic/snarky/actions/workflows/test.yml/badge.svg)](https://github.com/l-adic/snarky/actions/workflows/test.yml)
 
+Embedded DSL for constructing recursive zero-knowledge circuits in PureScript. Faithfully implements the pickles recursive snark protocol backed by o1-labs [proof-systmes](https://github.com/o1-labs/proof-systems)
 
 ## Summary
 A port of the [ocaml snarky DSL](https://github.com/o1-labs/snarky) to PureScript,
@@ -19,6 +20,16 @@ For a practical demonstration, refer to `packages/example`. This implements a si
 - `make gen-linearization` — generate Kimchi linearization code (required to build pickles)
 
 ## Build
+
+First - clone this repo using 
+
+```bash
+git clone https://github.com/l-adic/snarky/ --recursive
+```
+
+(and if it ever starts drifting use `git submodule update --init --recursive`)
+
+then
 
 ```bash
 make all
