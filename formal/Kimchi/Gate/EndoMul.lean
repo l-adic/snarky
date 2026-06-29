@@ -168,6 +168,34 @@ theorem selectQ (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0
     obtain ⟨e, he, hef, _⟩ := Kimchi.Gate.VarBaseMul.signed_target W ha hφT (hx ▸ hQ) hb2
     exact ⟨e, (some_congr W hQ (hx ▸ hQ) hx rfl).trans he, hef⟩
 
+omit [DecidableEq F] in
+/-- A window target `Q = ((1 + (endo−1)·b₁)·xT, (2·b₂−1)·yT)` is nonsingular whenever the base
+    `T` and its endo-image `φ(T) = (endo·xT, yT)` are: `b₁` selects the base, `b₂` the sign. So
+    the target's nonsingularity need never be assumed — it follows from `hT`/`hφT` and the bits'
+    booleanity (the EndoMul analog of VarBaseMul's `signed_target_nonsingular`). -/
+theorem target_nonsingular (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
+    {endo b1 b2 xT yT : F} (hT : W.Nonsingular xT yT) (hφT : W.Nonsingular (endo * xT) yT)
+    (hb1 : b1 = 0 ∨ b1 = 1) (hb2 : b2 = 0 ∨ b2 = 1) :
+    W.Nonsingular ((1 + (endo - 1) * b1) * xT) ((2 * b2 - 1) * yT) := by
+  rcases hb1 with rfl | rfl
+  · rw [show (1 + (endo - 1) * 0) * xT = xT by ring]
+    exact Kimchi.Gate.VarBaseMul.signed_target_nonsingular W ha hT hb2
+  · rw [show (1 + (endo - 1) * 1) * xT = endo * xT by ring]
+    exact Kimchi.Gate.VarBaseMul.signed_target_nonsingular W ha hφT hb2
+
+omit [DecidableEq F] in
+/-- Both window targets are nonsingular, read off the bases `hT`/`hφT` and the four bits'
+    booleanity in `Holds` — so a row's targets are derived, not assumed. -/
+theorem targets_nonsingular (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
+    (endo : F) (w : Witness F) (h : Holds endo w)
+    (hT : W.Nonsingular w.xT w.yT) (hφT : W.Nonsingular (endo * w.xT) w.yT) :
+    W.Nonsingular ((1 + (endo - 1) * w.b1) * w.xT) ((2 * w.b2 - 1) * w.yT)
+      ∧ W.Nonsingular ((1 + (endo - 1) * w.b3) * w.xT) ((2 * w.b4 - 1) * w.yT) := by
+  simp only [Holds] at h
+  obtain ⟨_, _, _, _, _, _, _, hb1, hb2, hb3, hb4, _⟩ := h
+  exact ⟨target_nonsingular W ha hT hφT (bool_of_mul hb1) (bool_of_mul hb2),
+         target_nonsingular W ha hT hφT (bool_of_mul hb3) (bool_of_mul hb4)⟩
+
 /-- One window's `(P + Q) + P` double-and-add. The three EC constraints — the
     first-addition slope `s` and the `xR`/`yR` relations — together with the
     non-degeneracy `xP ≠ xq` (first slope), `2·xP − s² + xq ≠ 0` (second addition

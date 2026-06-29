@@ -68,17 +68,15 @@ theorem chain_endo (W : WeierstrassCurve.Affine F)
     module
 
 /-- The per-row hypotheses `sound` needs, bundled (over a shared base `T` whose
-    coordinates are the row's `xT`/`yT`): the base/endo/accumulator/target
-    nonsingularities, the two per-slope non-degeneracies per window, and the 12
-    constraints `holds`. -/
+    coordinates are the row's `xT`/`yT`): the base/endo/accumulator nonsingularities, the
+    two per-slope non-degeneracies per window, and the 12 constraints `holds`. The window
+    targets' nonsingularity is *derived* (`Gate.EndoMul.targets_nonsingular`), not assumed. -/
 structure EndoStep (W : WeierstrassCurve.Affine F) (endo : F) (g : Witness F) : Prop where
   hT : W.Nonsingular g.xT g.yT
   hφT : W.Nonsingular (endo * g.xT) g.yT
   hP : W.Nonsingular g.xP g.yP
   hR : W.Nonsingular g.xR g.yR
   hS : W.Nonsingular g.xS g.yS
-  hQ1 : W.Nonsingular ((1 + (endo - 1) * g.b1) * g.xT) ((2 * g.b2 - 1) * g.yT)
-  hQ2 : W.Nonsingular ((1 + (endo - 1) * g.b3) * g.xT) ((2 * g.b4 - 1) * g.yT)
   hxne1 : g.xP ≠ (1 + (endo - 1) * g.b1) * g.xT
   htne1 : 2 * g.xP - g.s1 ^ 2 + (1 + (endo - 1) * g.b1) * g.xT ≠ 0
   hxne2 : g.xR ≠ (1 + (endo - 1) * g.b3) * g.xT
@@ -113,7 +111,9 @@ theorem endoMul_ab (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ 
       ∧ (k1 : F) = ∑ j ∈ Finset.range (2 * m), (2 : F) ^ (2 * m - 1 - j) * bDigit g j := by
   choose! c1 c2 hc using fun i (hi : i < m) =>
     row_digit W ha h2 h3 endo (g i) (gs i hi).holds (gs i hi).hT (gs i hi).hφT
-      (gs i hi).hP (gs i hi).hR (gs i hi).hS (gs i hi).hQ1 (gs i hi).hQ2
+      (gs i hi).hP (gs i hi).hR (gs i hi).hS
+      (targets_nonsingular W ha endo (g i) (gs i hi).holds (gs i hi).hT (gs i hi).hφT).1
+      (targets_nonsingular W ha endo (g i) (gs i hi).holds (gs i hi).hT (gs i hi).hφT).2
       (gs i hi).hxne1 (gs i hi).htne1 (gs i hi).hxne2 (gs i hi).htne2
   have hstep : ∀ i, i < m → P (i + 1) = (4 : ℤ) • P i + c1 i • T + c2 i • φT := by
     intro i hi
