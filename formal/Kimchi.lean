@@ -8,5 +8,8 @@ import Kimchi.Gate.Generic
 import Kimchi.Gate.AddComplete
 import Kimchi.Gate.VarBaseMul
 import Kimchi.Gate.EndoScalar
+import Kimchi.Gate.EndoMul
 import Kimchi.Circuit.VarBaseMul
 import Kimchi.Circuit.EndoScalar
+import Kimchi.Circuit.EndoMul
+import Kimchi.Circuit.EndoMul.Pasta
