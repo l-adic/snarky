@@ -287,6 +287,160 @@ lemma gate_block (c : WeierstrassCurve.Affine F)
   refine ⟨⟨hx0, hx1, hx2, hx3, hx4, ht0, ht1, ht2, ht3, ht4⟩, ?_⟩
   rw [hTeq]; exact ha5
 
+/-- **Producing variant of `gate_block`.** One gate block deriving the output point's
+    nonsingularity rather than asserting it: from the *input* point `a0` on-curve (only) plus the
+    constraint `Holds` and the base, it chains the five `gate_step_advance`s and *produces* `a5`
+    (existentially). The leaner-interface analog of EndoMul's `gate_advance` — so the deployed
+    soundness needs no per-row `GateValid` bundle, only the threaded input. -/
+lemma gate_block_produce (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
+    [Fact (Nat.Prime c.order)] (g : ℕ → Witness F) (i : ℕ)
+    (h2 : (2 : F) ≠ 0)
+    {T : c.Point} (hTne : T ≠ 0)
+    (hTns : c.Nonsingular (g i).xT (g i).yT) (hTeq : T = Point.some _ _ hTns)
+    (ha0ns : c.Nonsingular (g i).x0 (g i).y0) (hh : Holds (g i))
+    (ha0 : Point.some _ _ ha0ns = gateLadder g (5 * i) • T)
+    (hnd : ∀ ℓ, ℓ < 5 →
+        ¬ (c.order : ℤ) ∣ (gateLadder g (5 * i + ℓ) - 1)
+          ∧ ¬ (c.order : ℤ) ∣ (gateLadder g (5 * i + ℓ) + 1)
+          ∧ ¬ (c.order : ℤ) ∣ (2 * gateLadder g (5 * i + ℓ) - 1)
+          ∧ ¬ (c.order : ℤ) ∣ (2 * gateLadder g (5 * i + ℓ) + 1)) :
+    NonDegen (g i) ∧ ∃ ha5ns : c.Nonsingular (g i).x5 (g i).y5,
+      Point.some _ _ ha5ns = gateLadder g (5 * i + 5) • T := by
+  have hT0 : Point.some _ _ hTns ≠ 0 := by rw [← hTeq]; exact hTne
+  obtain ⟨_hdec, hsb0, hsb1, hsb2, hsb3, hsb4⟩ := hh
+  obtain ⟨gb0, gb1, gb2, gb3, gb4⟩ := gateBit_block g i
+  have bit : ∀ {x : F}, x * x - x = 0 → x = 0 ∨ x = 1 := by
+    intro x hx
+    rcases mul_eq_zero.mp (show x * (x - 1) = 0 by linear_combination hx) with h | h
+    · exact Or.inl h
+    · exact Or.inr (by linear_combination h)
+  have ha0' : Point.some _ _ ha0ns = gateLadder g (5 * i) • Point.some _ _ hTns := by
+    rw [hTeq] at ha0; exact ha0
+  obtain ⟨hx0, ht0, hO0, e0, hepm0, hef0, hOeq0⟩ :=
+    gate_step_advance c hTns ha0ns (signed_target_nonsingular c c.short hTns (bit hsb0.1))
+      (bit hsb0.1) hT0 (gateLadder g (5 * i)) ha0'
+      (hnd 0 (by omega)).1 (hnd 0 (by omega)).2.1 (hnd 0 (by omega)).2.2.1
+      (hnd 0 (by omega)).2.2.2 hsb0
+  have ha1 : Point.some _ _ hO0 = gateLadder g (5 * i + 1) • Point.some _ _ hTns := by
+    rw [hOeq0, e_eq_gateBitSign g (5 * i) gb0 (bit hsb0.1) hef0 hepm0 h2, ← gateLadder_succ]
+  obtain ⟨hx1, ht1, hO1, e1, hepm1, hef1, hOeq1⟩ :=
+    gate_step_advance c hTns hO0 (signed_target_nonsingular c c.short hTns (bit hsb1.1))
+      (bit hsb1.1) hT0 (gateLadder g (5 * i + 1)) ha1
+      (hnd 1 (by omega)).1 (hnd 1 (by omega)).2.1 (hnd 1 (by omega)).2.2.1
+      (hnd 1 (by omega)).2.2.2 hsb1
+  have ha2 : Point.some _ _ hO1 = gateLadder g (5 * i + 2) • Point.some _ _ hTns := by
+    rw [hOeq1, e_eq_gateBitSign g (5 * i + 1) gb1 (bit hsb1.1) hef1 hepm1 h2, ← gateLadder_succ]
+  obtain ⟨hx2, ht2, hO2, e2, hepm2, hef2, hOeq2⟩ :=
+    gate_step_advance c hTns hO1 (signed_target_nonsingular c c.short hTns (bit hsb2.1))
+      (bit hsb2.1) hT0 (gateLadder g (5 * i + 2)) ha2
+      (hnd 2 (by omega)).1 (hnd 2 (by omega)).2.1 (hnd 2 (by omega)).2.2.1
+      (hnd 2 (by omega)).2.2.2 hsb2
+  have ha3 : Point.some _ _ hO2 = gateLadder g (5 * i + 3) • Point.some _ _ hTns := by
+    rw [hOeq2, e_eq_gateBitSign g (5 * i + 2) gb2 (bit hsb2.1) hef2 hepm2 h2, ← gateLadder_succ]
+  obtain ⟨hx3, ht3, hO3, e3, hepm3, hef3, hOeq3⟩ :=
+    gate_step_advance c hTns hO2 (signed_target_nonsingular c c.short hTns (bit hsb3.1))
+      (bit hsb3.1) hT0 (gateLadder g (5 * i + 3)) ha3
+      (hnd 3 (by omega)).1 (hnd 3 (by omega)).2.1 (hnd 3 (by omega)).2.2.1
+      (hnd 3 (by omega)).2.2.2 hsb3
+  have ha4 : Point.some _ _ hO3 = gateLadder g (5 * i + 4) • Point.some _ _ hTns := by
+    rw [hOeq3, e_eq_gateBitSign g (5 * i + 3) gb3 (bit hsb3.1) hef3 hepm3 h2, ← gateLadder_succ]
+  obtain ⟨hx4, ht4, hO4, e4, hepm4, hef4, hOeq4⟩ :=
+    gate_step_advance c hTns hO3 (signed_target_nonsingular c c.short hTns (bit hsb4.1))
+      (bit hsb4.1) hT0 (gateLadder g (5 * i + 4)) ha4
+      (hnd 4 (by omega)).1 (hnd 4 (by omega)).2.1 (hnd 4 (by omega)).2.2.1
+      (hnd 4 (by omega)).2.2.2 hsb4
+  have ha5 : Point.some _ _ hO4 = gateLadder g (5 * i + 5) • Point.some _ _ hTns := by
+    rw [hOeq4, e_eq_gateBitSign g (5 * i + 4) gb4 (bit hsb4.1) hef4 hepm4 h2, ← gateLadder_succ]
+  exact ⟨⟨hx0, hx1, hx2, hx3, hx4, ht0, ht1, ht2, ht3, ht4⟩, hO4, by rw [hTeq]; exact ha5⟩
+
+/-- Final-accumulator coordinates after `m` rows (row 0's `x0`/`y0` if `m = 0`, else row `(m-1)`'s
+    `x5`/`y5`) — the leaner interface's stand-in for `P m`. -/
+def accX (g : ℕ → Witness F) : ℕ → F
+  | 0 => (g 0).x0
+  | k + 1 => (g k).x5
+
+def accY (g : ℕ → Witness F) : ℕ → F
+  | 0 => (g 0).y0
+  | k + 1 => (g k).y5
+
+/-- **Producing variant of `gate_chain` — the leaner fold (BLUEPRINT: has `sorry`).** Over `m` rows
+    the prover supplies only `Holds` per row, the base nonsingularity (row 0), the column threading
+    (`(g (i+1)).x0 = (g i).x5`), and the initial accumulator `2·T`; every intermediate point's
+    nonsingularity is *derived* (`gate_block_produce`), threaded through the chain. Same conclusion
+    as `gate_chain` (`= s·T`, every row `NonDegen`), but no per-row `GateValid` bundle — the leaner
+    interface, exactly as EndoMul's `endoMul`/`accumulator_chain` replaced its `EndoStep` bundle.
+
+    Proof sketch (mirror `gate_chain` + EndoMul's `key` induction): induct on `k ≤ m` proving
+    `∃ hk : Nonsingular (accX g k) (accY g k), Point.some _ _ hk = gateLadder g (5*k) • T`; base
+    `k=0` is `hP0ns`/`hP0` (`gateLadder g 0 = 2`); step feeds the threaded input to
+    `gate_block_produce` (base transported to row `k` via `hbase`), yielding row `k`'s `NonDegen`
+    and the next point. Read off `hfin := key m`, `s = gateLadder g (5m)` via `hs`. -/
+lemma gate_chain_produce (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
+    (m : ℕ) (g : ℕ → Witness F) (T : c.Point) (s : ℤ) (hTne : T ≠ 0)
+    (hholds : ∀ i, i < m → Holds (g i))
+    (hTns : c.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
+    (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
+    (hthread : ∀ i, i + 1 < m → (g (i + 1)).x0 = (g i).x5 ∧ (g (i + 1)).y0 = (g i).y5)
+    (hP0ns : c.Nonsingular (g 0).x0 (g 0).y0)
+    (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T)
+    (h2 : (2 : F) ≠ 0)
+    (hND : ∀ n, n < 5 * m →
+        ¬ (c.order : ℤ) ∣ (gateLadder g n - 1) ∧ ¬ (c.order : ℤ) ∣ (gateLadder g n + 1)
+          ∧ ¬ (c.order : ℤ) ∣ (2 * gateLadder g n - 1)
+          ∧ ¬ (c.order : ℤ) ∣ (2 * gateLadder g n + 1))
+    (hs : s = gateLadder g (5 * m)) :
+    ∃ hfin : c.Nonsingular (accX g m) (accY g m),
+      Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
+  -- Point congruence across equal coordinates (local analog of `Gate.EndoMul.some_congr`).
+  have some_congr : ∀ {x x' y y' : F} (h : c.Nonsingular x y) (h' : c.Nonsingular x' y'),
+      x = x' → y = y' → Point.some _ _ h = Point.some _ _ h' := by
+    intro x x' y y' h h' hx hy; subst hx; subst hy; rfl
+  -- coordinate threading: row `k`'s input column equals the accumulator at step `k`
+  have haccP : ∀ k, k < m → (g k).x0 = accX g k ∧ (g k).y0 = accY g k := by
+    intro k hk
+    cases k with
+    | zero => exact ⟨rfl, rfl⟩
+    | succ j => exact hthread j hk
+  -- per-step accumulator nonsingularity + point value + accumulated non-degeneracy
+  have key : ∀ k, k ≤ m → ∃ hk : c.Nonsingular (accX g k) (accY g k),
+      Point.some _ _ hk = gateLadder g (5 * k) • T ∧ (∀ i, i < k → NonDegen (g i)) := by
+    intro k
+    induction k with
+    | zero =>
+      intro _
+      refine ⟨hP0ns, ?_, ?_⟩
+      · change Point.some (g 0).x0 (g 0).y0 hP0ns = gateLadder g (5 * 0) • T
+        rw [hP0]; simp only [Nat.mul_zero, gateLadder_zero]
+      · intro i hi; omega
+    | succ j ih =>
+      intro hj1
+      have hj' : j < m := by omega
+      obtain ⟨hk, hPk, hNDk⟩ := ih (by omega)
+      -- transport the base nonsingularity to row `j`
+      obtain ⟨hbx, hby⟩ := hbase j hj'
+      have hTns_j : c.Nonsingular (g j).xT (g j).yT := by rw [hbx, hby]; exact hTns
+      have hTeq_j : T = Point.some _ _ hTns_j := by
+        rw [hTeq]; exact some_congr hTns hTns_j hbx.symm hby.symm
+      -- transport the threaded input accumulator to row `j`'s input column
+      obtain ⟨hx0, hy0⟩ := haccP j hj'
+      have ha0ns_j : c.Nonsingular (g j).x0 (g j).y0 := by rw [hx0, hy0]; exact hk
+      have ha0_j : Point.some _ _ ha0ns_j = gateLadder g (5 * j) • T := by
+        rw [some_congr ha0ns_j hk hx0 hy0]; exact hPk
+      obtain ⟨hNDj, ha5ns, ha5eq⟩ :=
+        gate_block_produce c g j h2 hTne hTns_j hTeq_j ha0ns_j (hholds j hj') ha0_j
+          (fun ℓ _ => hND (5 * j + ℓ) (by omega))
+      -- `accX g (j+1) = (g j).x5` and `gateLadder g (5*(j+1)) = gateLadder g (5*j+5)` definitionally
+      refine ⟨ha5ns, ?_, ?_⟩
+      · rw [show 5 * (j + 1) = 5 * j + 5 from by ring]; exact ha5eq
+      · intro i hi
+        rcases Nat.lt_succ_iff_lt_or_eq.mp hi with h | h
+        · exact hNDk i h
+        · subst h; exact hNDj
+  obtain ⟨hfin, hPfin, hNDfin⟩ := key m le_rfl
+  exact ⟨hfin, by rw [hs]; exact hPfin, hNDfin⟩
+
 /-- **Chaining lemma.** Given the per-substep ladder non-degeneracy (the four conditions at every
     `gateLadder g n`, `n < 5m`) and the gate constraint data, fold the `m` gate blocks: the output
     is `P m = gateLadder g (5m) · T` and every row is `NonDegen`. The soundness routes below
