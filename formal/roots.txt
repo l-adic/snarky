@@ -51,3 +51,7 @@ Kimchi.Circuit.EndoMul.endoMul
 -- EndoMul instantiated at the real Pasta curves (eigenvalue discharged via the CM axiom)
 Kimchi.Cycle.EndoMul.pallas_endoMul
 Kimchi.Cycle.EndoMul.vesta_endoMul
+-- GLV non-degeneracy: a bounded two-base accumulator avoids ±T/±φT (the hxne core, via the
+-- GLV short-basis bound)
+Kimchi.Cycle.EndoMul.pallas_combo_off_targets
+Kimchi.Cycle.EndoMul.vesta_combo_off_targets

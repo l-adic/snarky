@@ -1,5 +1,6 @@
 import Kimchi.Gate.EndoMul
 import Kimchi.Circuit.VarBaseMul.NonDegen
+import Kimchi.Circuit.VarBaseMul.Soundness
 
 /-!
 # EndoMul non-degeneracy: the second-addition condition is self-enforced
@@ -64,5 +65,42 @@ theorem htne_of_holds (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
   simp only [Holds] at h
   obtain ⟨_, hc1, _, _, hc2, _, _, _, _, _, _, _⟩ := h
   exact ⟨block_tne W ha h2 hodd hP hxPxR hc1, block_tne W ha h2 hodd hR hxRxS hc2⟩
+
+/-! ## The GLV non-degeneracy: the two-base accumulator avoids the targets.
+
+    The first-addition condition `hxne` is `Pᵢ ∉ {±T, ±φT}` (same `x` ⟺ `±` point). Writing the
+    accumulator as `[a]·T + [b]·φT` and collapsing with the eigenvalue `φT = [λ]·T`, this reduces
+    to `a + b·λ ≢ {±1, ±λ} (mod order)` — four "no short relation" facts, supplied for the small
+    accumulator coefficients by the GLV bound (`Kimchi.Pasta.pallas_glv_no_short_relation`). -/
+
+/-- **GLV off-targets.** With the eigenvalue `φT = [λ]·T` and the four no-short-relation facts
+    for the accumulator's offset coefficients, the two-base combination `[a]·T + [b]·φT` is none
+    of `±T`, `±φT`. The geometric core of `hxne`. -/
+theorem combo_off_targets (W : WeierstrassCurve.Affine F)
+    [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)]
+    {T φT : W.Point} (hTne : T ≠ 0) {lam : ℤ} (heig : φT = lam • T) {a b : ℤ}
+    (h1 : ¬ (W.order : ℤ) ∣ (a - 1 + b * lam))
+    (h2 : ¬ (W.order : ℤ) ∣ (a + 1 + b * lam))
+    (h3 : ¬ (W.order : ℤ) ∣ (a + (b - 1) * lam))
+    (h4 : ¬ (W.order : ℤ) ∣ (a + (b + 1) * lam)) :
+    a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
+      ∧ a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT := by
+  have combo : ∀ c : ℤ, a • T + b • φT = c • T ↔ (W.order : ℤ) ∣ (a + b * lam - c) := by
+    intro c
+    have e : a • T + b • φT - c • T = (a + b * lam - c) • T := by rw [heig]; module
+    rw [← sub_eq_zero, e, Kimchi.Circuit.VarBaseMul.zsmul_eq_zero_iff_order_dvd W hTne]
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro hP
+    exact h1 (by have := (combo 1).mp (hP.trans (one_zsmul T).symm)
+                 rwa [show a + b * lam - 1 = a - 1 + b * lam by ring] at this)
+  · intro hP
+    exact h2 (by have := (combo (-1)).mp (hP.trans (neg_one_zsmul T).symm)
+                 rwa [show a + b * lam - (-1) = a + 1 + b * lam by ring] at this)
+  · intro hP
+    exact h3 (by have := (combo lam).mp (hP.trans (by rw [heig]))
+                 rwa [show a + b * lam - lam = a + (b - 1) * lam by ring] at this)
+  · intro hP
+    exact h4 (by have := (combo (-lam)).mp (hP.trans (by rw [heig]; simp))
+                 rwa [show a + b * lam - -lam = a + (b + 1) * lam by ring] at this)
 
 end Kimchi.Circuit.EndoMul
