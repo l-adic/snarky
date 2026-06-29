@@ -8,10 +8,19 @@ defaultTargets = ["Kimchi", "kimchi-demo"]
 name = "CompElliptic"
 path = "vendor/CompElliptic"
 
+# ArkLib (Verified-zkEVM): the polynomial-commitment-scheme spec (`Commitment.Scheme`) and the
+# oracle-reduction framework the IPA opening protocol is modelled in. Shares mathlib (same v4.30.0
+# commit `c5ea003…`) and CompPoly with us; pulls VCVio transitively. Pinned to a commit. The lake
+# package name is `Arklib`; the module root is `ArkLib` (`import ArkLib.Commitments.…`).
+[[require]]
+name = "Arklib"
+git = "https://github.com/Verified-zkEVM/ArkLib"
+rev = "4e914a2bff725eac3072daa512452ebecdf5abde"
+
 # Mathlib gives us prime fields (`ZMod p`) and the elliptic-curve group law
 # (`WeierstrassCurve.Affine`), the trusted oracle the EC gates are checked against. Pinned to
 # the tag matching our Lean toolchain (v4.30.0). Kept LAST so this direct pin wins over the
-# mathlib revision CompElliptic/CompPoly pull in transitively.
+# mathlib revision CompElliptic/CompPoly/ArkLib pull in transitively.
 [[require]]
 name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4.git"
