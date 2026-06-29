@@ -71,11 +71,12 @@ theorem varBaseMul_scaleFast1
     (hnf : 5 * m = pastaFieldBits → s ∉ forbiddenValues Vesta.curve.toAffine.order) :
     ∃ hfin : Vesta.curve.toAffine.Nonsingular (accX g m) (accY g m),
       Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
+  have hodd : Vesta.curve.toAffine.order ≠ 2 := by rw [Kimchi.Pasta.vesta_card]; decide
   rcases Nat.lt_or_ge (5 * m) pastaFieldBits with hlt | hge
   · -- sub-wrap: `5m` below `pastaFieldBits` with `5 ∣ 5m` ⟹ `5m ≤ pastaFieldBits - 5` ⟹ safe.
     refine varBaseMul_subwrap_correct Vesta.curve.toAffine m g T s hTne hholds hTns hTeq hbase
       hthread hP0ns hP0
-      (by decide) ?_ hs
+      (by decide) hodd ?_ hs
     rw [Kimchi.Pasta.vesta_card]
     have hp : (2 : ℕ) ^ (5 * m) ≤ 2 ^ (pastaFieldBits - 5) :=
       Nat.pow_le_pow_right (by norm_num) (by have : pastaFieldBits = 255 := rfl; omega)
@@ -85,7 +86,7 @@ theorem varBaseMul_scaleFast1
     have hfull : 5 * m = pastaFieldBits := by omega
     exact varBaseMul_forbidden_correct Vesta.curve.toAffine m g T s hTne hholds hTns hTeq hbase
       hthread hP0ns hP0
-      (by decide)
+      (by decide) hodd
       (by rw [Kimchi.Pasta.vesta_card, hfull]; norm_num [PALLAS_BASE_CARD])
       (by rw [Kimchi.Pasta.vesta_card, hfull]; norm_num [PALLAS_BASE_CARD])
       (by rw [Kimchi.Pasta.vesta_card]; norm_num [PALLAS_BASE_CARD])
@@ -131,6 +132,34 @@ theorem varBaseMul_scaleFast2
     (hcorr : (sOdd = 1 ∧ result = Point.some _ _ hPmns)
         ∨ (sOdd = 0 ∧ result = Point.some _ _ hPmns - T)) :
     ∃ n : ℤ, result = n • T ∧ (n : PallasBaseField) = unshiftType2 (5 * m) (N m) sOdd := by
-  sorry
+  have h2 : (2 : PallasBaseField) ≠ 0 := by decide
+  have hodd : Pallas.curve.toAffine.order ≠ 2 := by rw [Kimchi.Pasta.pallas_card]; decide
+  have hq : Pallas.curve.toAffine.order = PALLAS_SCALAR_CARD := Kimchi.Pasta.pallas_card
+  have hcanon : gateLadder g (5 * m) < 2 * (PALLAS_BASE_CARD : ℤ) + 2 ^ (5 * m) := by
+    rw [gateLadder_eq_register]
+    have hp : (2 ^ (pastaFieldBits - 1) : ℤ) ≤ PALLAS_BASE_CARD := by
+      exact_mod_cast two_pow_le_pallas_base
+    linarith
+  have hpow : (2 : ℕ) ^ (5 * m - 1) ≤ 2 ^ (pastaFieldBits - 1) :=
+    Nat.pow_le_pow_right (by norm_num) (by omega)
+  have hND := Ladder.ladder_x_nondegen Pallas.curve.toAffine.order PALLAS_BASE_CARD (5 * m)
+    (by rw [hq]; exact lt_of_le_of_lt hpow (by norm_num [PALLAS_SCALAR_CARD]))
+    (Pallas.curve.toAffine.order_prime.odd_of_ne_two hodd)
+    (by rw [hq]; norm_num [PALLAS_SCALAR_CARD])
+    (by rw [hq]
+        have hc : PALLAS_BASE_CARD + 2 ^ (pastaFieldBits - 1) + 2 ≤ 2 * PALLAS_SCALAR_CARD := by
+          norm_num [PALLAS_BASE_CARD, PALLAS_SCALAR_CARD]
+        omega)
+    (gateLadder g) (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
+    (fun j _ => gateLadder_succ g j) hcanon
+  obtain ⟨gs, P, hTP, hin, hout, hP0P⟩ := gateStep_chain Pallas.curve.toAffine m g T hTne hholds
+    hTns hTeq hbase hthread hP0ns hP0 h2 hodd hND
+  have hPm : P m = Point.some _ _ hPmns := by
+    have h := hout (m - 1) (by omega)
+    rwa [show (m - 1) + 1 = m from by omega] at h
+  have hcorr' : (sOdd = 1 ∧ result = P m) ∨ (sOdd = 0 ∧ result = P m - T) := by
+    rw [hPm]; exact hcorr
+  exact scalarMul_type2 Pallas.curve.toAffine ⟨rfl, rfl, rfl⟩ m g gs T N P hTP hin hout
+    hregIn hregOut hP0P hN0 sOdd result hcorr'
 
 end Kimchi.Circuit.VarBaseMul
