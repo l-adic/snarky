@@ -4,4 +4,4 @@
 [submodule "formal/vendor/CompElliptic"]
 	path = formal/vendor/CompElliptic
 	url = https://github.com/l-adic/CompElliptic.git
-	branch = v4.30.0
+	branch = codex/use-l-adic-comppoly

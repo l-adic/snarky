@@ -93,17 +93,25 @@ lemma degen_d1 (q L : ℕ)
     ∃ t ∈ forbiddenResidues, (q : ℤ) ∣ (k L - t) := by
   obtain h | h | h | h := hdeg;
   · rcases hε j hj with ( hε | hε ) <;> simp_all +decide;
-    · exact ⟨ 3, by decide, by convert h.mul_left 2 using 1; ring ⟩;
-    · exact ⟨ 1, by decide, by convert h.mul_left 2 using 1; ring ⟩;
+    · refine ⟨ 3, by decide, ?_ ⟩
+      obtain ⟨ c, hc ⟩ := h; exact ⟨ 2 * c, by linear_combination 2 * hc ⟩;
+    · refine ⟨ 1, by decide, ?_ ⟩
+      obtain ⟨ c, hc ⟩ := h; exact ⟨ 2 * c, by linear_combination 2 * hc ⟩;
   · rcases hε j hj with ( hε | hε ) <;> simp_all +decide;
-    · exact ⟨ -1, by decide, by convert h.mul_left 2 using 1; ring ⟩;
-    · exact ⟨ -3, by decide, by convert h.mul_left 2 using 1; ring ⟩;
+    · refine ⟨ -1, by decide, ?_ ⟩
+      obtain ⟨ c, hc ⟩ := h; exact ⟨ 2 * c, by linear_combination 2 * hc ⟩;
+    · refine ⟨ -3, by decide, ?_ ⟩
+      obtain ⟨ c, hc ⟩ := h; exact ⟨ 2 * c, by linear_combination 2 * hc ⟩;
   · rcases hε j hj with ( hε | hε ) <;> simp_all +decide;
-    · exact ⟨ 2, by decide, by convert h using 1; ring ⟩;
-    · exact ⟨ 0, by decide, by simpa using h ⟩;
+    · refine ⟨ 2, by decide, ?_ ⟩
+      obtain ⟨ c, hc ⟩ := h; exact ⟨ c, by linear_combination hc ⟩;
+    · refine ⟨ 0, by decide, ?_ ⟩
+      obtain ⟨ c, hc ⟩ := h; exact ⟨ c, by linear_combination hc ⟩;
   · cases hε j hj <;> simp_all +decide;
-    · exact ⟨ 0, by decide, by simpa using h ⟩;
-    · exact ⟨ -2, by decide, by convert h using 1; ring ⟩
+    · refine ⟨ 0, by decide, ?_ ⟩
+      obtain ⟨ c, hc ⟩ := h; exact ⟨ c, by linear_combination hc ⟩;
+    · refine ⟨ -2, by decide, ?_ ⟩
+      obtain ⟨ c, hc ⟩ := h; exact ⟨ c, by linear_combination hc ⟩
 
 /-- Depth-2 input (`L = j + 2`). Branches `q∣(k j-1)` and `q∣(2 k j-1)` land on forbidden
     residues; `q∣(k j+1)` is impossible by parity+size; `q∣(2 k j+1)` is impossible by
@@ -119,11 +127,14 @@ lemma degen_d2 (q L : ℕ) (hq4 : q % 4 = 1)
   obtain h | h | h | h := hdeg;
   · rcases hε j hj with ha | ha <;>
       rcases hε ( j + 1 ) ( by linarith ) with hb | hb <;> simp_all +decide;
-    · exact ⟨ 7, by decide, by convert h.mul_left 4 using 1; ring ⟩;
-    · use 5;
-      exact ⟨ by decide, by convert h.mul_left 4 using 1; ring ⟩;
-    · exact ⟨ 3, by decide, by convert h.mul_left 4 using 1; ring ⟩;
-    · exact ⟨ 1, by decide, by convert h.mul_left 4 using 1; ring ⟩;
+    · refine ⟨ 7, by decide, ?_ ⟩
+      obtain ⟨ c, hc ⟩ := h; exact ⟨ 4 * c, by linear_combination 4 * hc ⟩;
+    · refine ⟨ 5, by decide, ?_ ⟩
+      obtain ⟨ c, hc ⟩ := h; exact ⟨ 4 * c, by linear_combination 4 * hc ⟩;
+    · refine ⟨ 3, by decide, ?_ ⟩
+      obtain ⟨ c, hc ⟩ := h; exact ⟨ 4 * c, by linear_combination 4 * hc ⟩;
+    · refine ⟨ 1, by decide, ?_ ⟩
+      obtain ⟨ c, hc ⟩ := h; exact ⟨ 4 * c, by linear_combination 4 * hc ⟩;
   · -- From hb, `0 < k j + 1 ≤ 3*2^j` and `2*q > 4*2^j > 3*2^j`, so `0 < k j + 1 < 2*q`;
     -- `Int.le_of_dvd` forces `k j + 1 = q` (the only positive multiple below `2q`).
     have h_eq_q : k j + 1 = q := by
@@ -140,8 +151,10 @@ lemma degen_d2 (q L : ℕ) (hq4 : q % 4 = 1)
     omega;
   · -- `q ∣ 2 * k j - 1` propagates to `q ∣ k L - t` for some `t ∈ forbiddenResidues`.
     have h_div : (q : ℤ) ∣ k L - (2 * ε j + ε (j + 1) + 2) := by
-      convert h.mul_left 2 using 1
-      rw [ hL, hrec _ ( by linarith ), hrec _ ( by linarith ) ] ; ring;
+      obtain ⟨ c, hc ⟩ := h
+      refine ⟨ 2 * c, ?_ ⟩
+      rw [ hL, hrec _ ( by linarith ), hrec _ ( by linarith ) ]
+      linear_combination 2 * hc
     cases hε j hj <;> cases hε ( j + 1 ) ( by linarith ) <;>
       simp_all +decide only [forbiddenResidues];
     · exact ⟨ 5, by decide, h_div ⟩;

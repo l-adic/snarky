@@ -9,7 +9,7 @@ modelled as **plain Lean predicates over witness structures**, and proved faithf
 Clean framework, forget its vocabulary here — none of it applies.
 
 Build: `make lean-build` (from repo root) or `lake build` (from `formal/`). The toolchain
-is pinned in `lean-toolchain` (Lean `4.30.0-rc2`); deps in `lakefile.toml` (Mathlib +
+is pinned in `lean-toolchain` (Lean `4.31.0`); deps in `lakefile.toml` (Mathlib +
 `CompElliptic`, which transitively pulls `CompPoly`). `import Mathlib` is used wholesale.
 
 **Always run `formal/scripts/check-style.sh` before committing any change under `formal/`** —
