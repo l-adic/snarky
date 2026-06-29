@@ -2,6 +2,7 @@ import Kimchi.Gate.EndoMul
 import Kimchi.Gate.EndoScalar
 import Kimchi.Circuit.EndoScalar
 import Kimchi.Circuit.EndoMul.Recoding
+import Kimchi.Circuit.EndoMul.NonDegen
 
 /-!
 # The `EndoMul` circuit: GLV scalar multiplication
@@ -68,9 +69,11 @@ theorem chain_endo (W : WeierstrassCurve.Affine F)
     module
 
 /-- The per-row hypotheses `sound` needs, bundled (over a shared base `T` whose
-    coordinates are the row's `xT`/`yT`): the base/endo/accumulator nonsingularities, the
-    two per-slope non-degeneracies per window, and the 12 constraints `holds`. The window
-    targets' nonsingularity is *derived* (`Gate.EndoMul.targets_nonsingular`), not assumed. -/
+    coordinates are the row's `xT`/`yT`): the base/endo/accumulator nonsingularities, the two
+    per-window *first*-addition non-degeneracies `hxne`, and the 12 constraints `holds`. The
+    window targets' nonsingularity and the *second*-addition non-degeneracies are *derived*
+    (`Gate.EndoMul.targets_nonsingular` / `htne_of_holds`), not assumed — leaving only `hxne`
+    (the accumulator avoiding `±T`/`±φT`) for the Pasta-layer global argument. -/
 structure EndoStep (W : WeierstrassCurve.Affine F) (endo : F) (g : Witness F) : Prop where
   hT : W.Nonsingular g.xT g.yT
   hφT : W.Nonsingular (endo * g.xT) g.yT
@@ -78,9 +81,7 @@ structure EndoStep (W : WeierstrassCurve.Affine F) (endo : F) (g : Witness F) : 
   hR : W.Nonsingular g.xR g.yR
   hS : W.Nonsingular g.xS g.yS
   hxne1 : g.xP ≠ (1 + (endo - 1) * g.b1) * g.xT
-  htne1 : 2 * g.xP - g.s1 ^ 2 + (1 + (endo - 1) * g.b1) * g.xT ≠ 0
   hxne2 : g.xR ≠ (1 + (endo - 1) * g.b3) * g.xT
-  htne2 : 2 * g.xR - g.s3 ^ 2 + (1 + (endo - 1) * g.b3) * g.xT ≠ 0
   holds : Holds endo g
 
 /-! ## The recoding result: GLV coefficients are `EndoScalar`'s `a`, `b`. -/
@@ -98,8 +99,9 @@ open Kimchi.Gate.EndoScalar (cPoly dPoly) in
     `aDigit (2i) = cPoly(window-1 crumb)`, `aDigit (2i+1) = cPoly(window-2 crumb)`
     pairing reindexes the rows to crumbs). With `φ(T) = [λ]·T` and `P₀ = 2(T+φ(T))`
     this gives `P_m = [b + a·λ]·T = [EndoScalar.toField]·T`. -/
-theorem endoMul_ab (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo : F)
+theorem endoMul_ab (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
+    (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (hodd : W.order ≠ 2) (endo : F)
     (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → EndoStep W endo (g i))
     (P : ℕ → W.Point) (T φT : W.Point)
     (hT : ∀ i (hi : i < m), T = Point.some _ _ (gs i hi).hT)
@@ -114,7 +116,10 @@ theorem endoMul_ab (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ 
       (gs i hi).hP (gs i hi).hR (gs i hi).hS
       (targets_nonsingular W ha endo (g i) (gs i hi).holds (gs i hi).hT (gs i hi).hφT).1
       (targets_nonsingular W ha endo (g i) (gs i hi).holds (gs i hi).hT (gs i hi).hφT).2
-      (gs i hi).hxne1 (gs i hi).htne1 (gs i hi).hxne2 (gs i hi).htne2
+      (gs i hi).hxne1
+      (htne_of_holds W ha h2 hodd endo (g i) (gs i hi).holds (gs i hi).hP (gs i hi).hR).1
+      (gs i hi).hxne2
+      (htne_of_holds W ha h2 hodd endo (g i) (gs i hi).holds (gs i hi).hP (gs i hi).hR).2
   have hstep : ∀ i, i < m → P (i + 1) = (4 : ℤ) • P i + c1 i • T + c2 i • φT := by
     intro i hi
     rw [hout i hi, hin i hi, hT i hi, hφT i hi]
@@ -162,9 +167,12 @@ theorem endoMul_ab (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ 
     eigenvalue basis `a·λ + b`, and EndoMul multiplies the base by exactly that
     scalar. Assembles `endoMul_ab` (k₂,k₁ = the a,b digit-sums) with
     `decompose_crumbList` (the `a=b=2` ↔ `4^m·P₀` init alignment), the init `hP₀`,
-    and the eigenvalue `heig`. -/
-theorem endoMul (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo : F)
+    and the eigenvalue `heig`. Over a curve of odd prime order (`Fact (Prime W.order)` +
+    `hodd : W.order ≠ 2`), which self-enforces each block's second-addition non-degeneracy
+    (`htne_of_holds`), so `EndoStep` need only carry the first-addition `hxne`. -/
+theorem endoMul (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
+    (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (hodd : W.order ≠ 2) (endo : F)
     (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → EndoStep W endo (g i))
     (P : ℕ → W.Point) (T φT : W.Point)
     (hT : ∀ i (hi : i < m), T = Point.some _ _ (gs i hi).hT)
@@ -174,7 +182,8 @@ theorem endoMul (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0
     (hP0 : P 0 = (2 : ℤ) • T + (2 : ℤ) • φT) (lam : ℤ) (heig : φT = lam • T) :
     ∃ s : ℤ, P m = s • T
       ∧ (s : F) = Kimchi.Circuit.EndoScalar.toField (crumbList g m) (lam : F) := by
-  obtain ⟨ k1, k2, hPm, hk2, hk1 ⟩ := endoMul_ab W ha h2 h3 endo m g gs P T φT hT hφT hin hout;
+  obtain ⟨ k1, k2, hPm, hk2, hk1 ⟩ :=
+    endoMul_ab W ha h2 h3 hodd endo m g gs P T φT hT hφT hin hout;
   refine' ⟨ 2 * 4 ^ m + k1 + ( 2 * 4 ^ m + k2 ) * lam, _, _ ⟩;
   · rw [ hPm, hP0, heig ];
     module;
