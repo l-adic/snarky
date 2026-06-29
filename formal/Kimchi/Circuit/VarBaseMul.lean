@@ -105,14 +105,16 @@ its own. The split itself is modeled by `scalarMul_type2`. -/
 
 /-- **scaleFast2 on the real Pallas curve.** The Type2 entry point: the scalar is split
     `s = 2·sDiv2 + sOdd`, the register `N` holds `sDiv2` (range-checked to
-    `gateRegister g (5m) < 2^(pastaFieldBits-1)` — the deployed `sDiv2 < 2^(pastaFieldBits-1)`), the
-    `m` gates run the inner `varBaseMul`, and the parity
-    correction gives `result = if sOdd then P m else P m − T`. The output is `[n]·T` with
-    `(n : F) = unshiftType2 (5m) (N m) sOdd = 2·(N m) + sOdd + 2^(5m)`. Non-degeneracy is *derived*
-    from the range-check (`sDiv2 < 2^(pastaFieldBits-1) ≤ p` ⟹ `hcanonical` via
-    `gateLadder_eq_register`), feeding the field-bound `varBaseMul_deployed_correct` (instantiated
-    at Pallas, inlined) for `NonDegen`; then `scalarMul_type2` supplies the split + correction —
-    matching the PureScript `scaleFast2` exactly. -/
+    `gateRegister g (5m) < 2^(pastaFieldBits-1)` — the deployed `sDiv2 < 2^(pastaFieldBits-1)`), and
+    the `m` gates run the inner `varBaseMul`. The prover supplies only the gate `Holds` per row +
+    base + threading + the initial accumulator + the parity bit `sOdd ∈ {0,1}`; the final
+    accumulator `Point.some _ _ hfin` (its nonsingularity *derived*, like `endoMul`) and the scalar
+    `n` are *exposed in the conclusion*. The parity correction is stated on that accumulator:
+    `if sOdd then P m else P m − T = [n]·T`, with `(n : F) = unshiftType2 (5m) (N m) sOdd =
+    2·(N m) + sOdd + 2^(5m)`. Non-degeneracy comes from the range-check
+    (`sDiv2 < 2^(pastaFieldBits-1) ≤ p` ⟹ `hcanonical` via `gateLadder_eq_register`), feeding
+    `gateStep_chain` for the derived `GateStep`s; `scalarMul_type2` then supplies the split +
+    correction — matching the PureScript `scaleFast2` exactly. -/
 theorem varBaseMul_scaleFast2
     (m : ℕ) (hm : 0 < m) (g : ℕ → Witness PallasBaseField)
     (T : Pallas.curve.toAffine.Point) (N : ℕ → PallasBaseField) (hTne : T ≠ 0)
@@ -127,22 +129,23 @@ theorem varBaseMul_scaleFast2
     (hN0 : N 0 = 0)
     (hbits : 5 * m ≤ pastaFieldBits)
     (hsDiv2 : gateRegister g (5 * m) < 2 ^ (pastaFieldBits - 1))
-    (hPmns : Pallas.curve.toAffine.Nonsingular (g (m - 1)).x5 (g (m - 1)).y5)
-    (sOdd : PallasBaseField) (result : Pallas.curve.toAffine.Point)
-    (hcorr : (sOdd = 1 ∧ result = Point.some _ _ hPmns)
-        ∨ (sOdd = 0 ∧ result = Point.some _ _ hPmns - T)) :
-    ∃ n : ℤ, result = n • T ∧ (n : PallasBaseField) = unshiftType2 (5 * m) (N m) sOdd := by
+    (sOdd : PallasBaseField) (hsOdd : sOdd = 0 ∨ sOdd = 1) :
+    ∃ (hfin : Pallas.curve.toAffine.Nonsingular (accX g m) (accY g m)) (n : ℤ),
+      (n : PallasBaseField) = unshiftType2 (5 * m) (N m) sOdd
+        ∧ ((sOdd = 1 ∧ Point.some _ _ hfin = n • T)
+            ∨ (sOdd = 0 ∧ Point.some _ _ hfin - T = n • T)) := by
+  obtain ⟨k, rfl⟩ := Nat.exists_eq_succ_of_ne_zero (by omega : m ≠ 0)
   have h2 : (2 : PallasBaseField) ≠ 0 := by decide
   have hodd : Pallas.curve.toAffine.order ≠ 2 := by rw [Kimchi.Pasta.pallas_card]; decide
   have hq : Pallas.curve.toAffine.order = PALLAS_SCALAR_CARD := Kimchi.Pasta.pallas_card
-  have hcanon : gateLadder g (5 * m) < 2 * (PALLAS_BASE_CARD : ℤ) + 2 ^ (5 * m) := by
+  have hcanon : gateLadder g (5 * (k + 1)) < 2 * (PALLAS_BASE_CARD : ℤ) + 2 ^ (5 * (k + 1)) := by
     rw [gateLadder_eq_register]
     have hp : (2 ^ (pastaFieldBits - 1) : ℤ) ≤ PALLAS_BASE_CARD := by
       exact_mod_cast two_pow_le_pallas_base
     linarith
-  have hpow : (2 : ℕ) ^ (5 * m - 1) ≤ 2 ^ (pastaFieldBits - 1) :=
+  have hpow : (2 : ℕ) ^ (5 * (k + 1) - 1) ≤ 2 ^ (pastaFieldBits - 1) :=
     Nat.pow_le_pow_right (by norm_num) (by omega)
-  have hND := Ladder.ladder_x_nondegen Pallas.curve.toAffine.order PALLAS_BASE_CARD (5 * m)
+  have hND := Ladder.ladder_x_nondegen Pallas.curve.toAffine.order PALLAS_BASE_CARD (5 * (k + 1))
     (by rw [hq]; exact lt_of_le_of_lt hpow (by norm_num [PALLAS_SCALAR_CARD]))
     (Pallas.curve.toAffine.order_prime.odd_of_ne_two hodd)
     (by rw [hq]; norm_num [PALLAS_SCALAR_CARD])
@@ -152,14 +155,16 @@ theorem varBaseMul_scaleFast2
         omega)
     (gateLadder g) (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
     (fun j _ => gateLadder_succ g j) hcanon
-  obtain ⟨gs, P, hTP, hin, hout, hP0P⟩ := gateStep_chain Pallas.curve.toAffine m g T hTne hholds
-    hTns hTeq hbase hthread hP0ns hP0 h2 hodd hND
-  have hPm : P m = Point.some _ _ hPmns := by
-    have h := hout (m - 1) (by omega)
-    rwa [show (m - 1) + 1 = m from by omega] at h
-  have hcorr' : (sOdd = 1 ∧ result = P m) ∨ (sOdd = 0 ∧ result = P m - T) := by
-    rw [hPm]; exact hcorr
-  exact scalarMul_type2 Pallas.curve.toAffine ⟨rfl, rfl, rfl⟩ m g gs T N P hTP hin hout
-    hregIn hregOut hP0P hN0 sOdd result hcorr'
+  obtain ⟨gs, P, hTP, hin, hout, hP0P⟩ := gateStep_chain Pallas.curve.toAffine (k + 1) g T hTne
+    hholds hTns hTeq hbase hthread hP0ns hP0 h2 hodd hND
+  have hfin : Pallas.curve.toAffine.Nonsingular (accX g (k + 1)) (accY g (k + 1)) :=
+    (gs k (by omega)).a5
+  have hPm : P (k + 1) = Point.some _ _ hfin := hout k (by omega)
+  obtain ⟨n, hnf, hcase⟩ := scalarMul_type2 Pallas.curve.toAffine ⟨rfl, rfl, rfl⟩ (k + 1) g gs T N P
+    hTP hin hout hregIn hregOut hP0P hN0 sOdd hsOdd
+  refine ⟨hfin, n, hnf, ?_⟩
+  rcases hcase with ⟨ho, hr⟩ | ⟨ho, hr⟩
+  · exact Or.inl ⟨ho, by rw [← hPm]; exact hr⟩
+  · exact Or.inr ⟨ho, by rw [← hPm]; exact hr⟩
 
 end Kimchi.Circuit.VarBaseMul

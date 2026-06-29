@@ -308,10 +308,11 @@ theorem scalarMul_shifted
 
 /-- Type2 scalar multiplication: split + the explicit low-bit correction. The
     `VarBaseMul` chain runs on the high part (register `N m = sHi`, giving
-    `P m = [2·sHi + 2^(5m) + 1]·T`), then the circuit applies the final
-    `if sOdd then h else h − T`. The corrected `result` is `n·T` with
-    `(n : F) = unshiftType2 (5m) (N m) sOdd = 2·(N m) + sOdd + 2^(5m)` — the Type2
-    scalar, in both bit cases. -/
+    `P m = [2·sHi + 2^(5m) + 1]·T`); the parity bit `sOdd` (a boolean column) then
+    selects the final `if sOdd then P m else P m − T`. That corrected accumulator is
+    `n·T` with `(n : F) = unshiftType2 (5m) (N m) sOdd = 2·(N m) + sOdd + 2^(5m)` — the
+    Type2 scalar — in both bit cases. The correction is stated on `P m` directly (no
+    prover-supplied output point or correction relation). -/
 theorem scalarMul_type2
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep W (g i))
@@ -322,16 +323,15 @@ theorem scalarMul_type2
     (hregIn : ∀ i, i < m → N i = (g i).n)
     (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
     (hP0 : P 0 = (2 : ℤ) • T) (hN0 : N 0 = 0)
-    (sOdd : F) (result : W.Point)
-    (hcorr : (sOdd = 1 ∧ result = P m) ∨ (sOdd = 0 ∧ result = P m - T)) :
-    ∃ n : ℤ, result = n • T ∧ (n : F) = unshiftType2 (5 * m) (N m) sOdd := by
+    (sOdd : F) (hsOdd : sOdd = 0 ∨ sOdd = 1) :
+    ∃ n : ℤ, (n : F) = unshiftType2 (5 * m) (N m) sOdd
+      ∧ ((sOdd = 1 ∧ P m = n • T) ∨ (sOdd = 0 ∧ P m - T = n • T)) := by
   obtain ⟨n, hn, hnf, _⟩ :=
     scalarMul_shifted W ha m g gs T N P hT hin hout hregIn hregOut hP0 hN0
-  rcases hcorr with ⟨ho, hr⟩ | ⟨ho, hr⟩
-  · refine ⟨n, by rw [hr, hn], ?_⟩
-    rw [hnf, ho, unshiftType1, unshiftType2]; ring
-  · refine ⟨n - 1, by rw [hr, hn, sub_smul, one_zsmul], ?_⟩
-    push_cast
-    rw [hnf, ho, unshiftType1, unshiftType2]; ring
+  rcases hsOdd with ho | ho
+  · refine ⟨n - 1, ?_, Or.inr ⟨ho, ?_⟩⟩
+    · push_cast; rw [hnf, ho, unshiftType1, unshiftType2]; ring
+    · rw [hn, sub_smul, one_zsmul]
+  · exact ⟨n, by rw [hnf, ho, unshiftType1, unshiftType2]; ring, Or.inl ⟨ho, hn⟩⟩
 
 end Kimchi.Circuit.VarBaseMul
