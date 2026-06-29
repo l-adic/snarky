@@ -36,13 +36,16 @@ def roots : List Name :=
     `Kimchi.Circuit.EndoScalar.chain_complete,
     `Kimchi.Circuit.EndoScalar.endoScalar_unique,
     `Kimchi.Gate.EndoMul.sound, `Kimchi.Gate.EndoMul.complete,
-    `Kimchi.Circuit.EndoMul.endoMul ]
+    `Kimchi.Circuit.EndoMul.endoMul,
+    `Kimchi.Cycle.EndoMul.pallas_endoMul, `Kimchi.Cycle.EndoMul.vesta_endoMul ]
 
-/-- The only axioms the roots may depend on: the standard logical axioms plus the two trusted
-    Pasta point counts. -/
+/-- The only axioms the roots may depend on: the standard logical axioms, the trusted Pasta
+    point counts, and the Pasta GLV endomorphism inputs (`β`, `λ`, the CM eigenvalue relation). -/
 def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound,
-    `Kimchi.Pasta.pallas_card, `Kimchi.Pasta.vesta_card ]
+    `Kimchi.Pasta.pallas_card, `Kimchi.Pasta.vesta_card,
+    `Kimchi.Pasta.pallas_endo, `Kimchi.Pasta.pallas_lam, `Kimchi.Pasta.pallas_eigen,
+    `Kimchi.Pasta.vesta_endo, `Kimchi.Pasta.vesta_lam, `Kimchi.Pasta.vesta_eigen ]
 
 end Kimchi.CheckAxioms
 

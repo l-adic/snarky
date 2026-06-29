@@ -64,4 +64,62 @@ instance : Fact (Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ =
 instance : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0 ∧
     Vesta.curve.toAffine.a₃ = 0) := ⟨⟨rfl, rfl, rfl⟩⟩
 
+/-! ## The Pasta GLV endomorphisms — the trusted inputs for `EndoMul`
+
+Both Pasta curves `y² = x³ + 5` carry the GLV endomorphism `φ(x, y) = (β·x, y)`, where `β` is a
+primitive cube root of unity in the base field (so `(β·x)³ = x³` keeps the point on the curve)
+and `φ` acts as multiplication by a scalar `λ` on the group. For each curve these facts — the
+eigenvalue relation and the GLV lattice's short-basis bound — are the endomorphism analog of the
+point counts above: trusted inputs that discharge `Kimchi.Circuit.EndoMul.endoMul`'s `heig` and
+the accumulator non-degeneracy. -/
+
+open WeierstrassCurve.Affine
+
+/-- TRUSTED INPUT: the Pallas base-field endomorphism coefficient `β` (a primitive cube root of
+    unity), so `φ(x, y) = (β·x, y)` maps `y² = x³ + 5` to itself. -/
+axiom pallas_endo : PallasBaseField
+
+/-- TRUSTED INPUT: the scalar eigenvalue `λ` of the Pallas endomorphism `φ` on the group. -/
+axiom pallas_lam : ℤ
+
+/-- **AXIOM (CM).** The Pallas endomorphism `φ(x, y) = (β·x, y)` acts as `[λ]` on the group:
+    `φ(P) = [λ]·P`. The defining property of the GLV endomorphism — not Mathlib-provable for the
+    abstract curve, true by the Pasta construction (same trusted status as the point counts). It
+    discharges `Kimchi.Circuit.EndoMul.endoMul`'s eigenvalue hypothesis `heig`. -/
+axiom pallas_eigen {x y : PallasBaseField}
+    (h : Pallas.curve.toAffine.Nonsingular x y)
+    (h' : Pallas.curve.toAffine.Nonsingular (pallas_endo * x) y) :
+    Point.some _ _ h' = pallas_lam • Point.some _ _ h
+
+/-- **AXIOM (GLV short basis — to be discharged later).** No short relation in the Pallas GLV
+    lattice: for `(a, b) ≠ 0` with `|a|, |b| < 2¹²⁷`, `a + b·λ ≢ 0 (mod order)`. The shortest
+    lattice vector is `≈ √order ≈ 2¹²⁷` (the balance that makes GLV efficient) — a finite
+    statement about the concrete `λ`, taken as a trusted input for now; it keeps the EndoMul
+    accumulator off `±T`/`±φT` (the `hxne` non-degeneracy). -/
+axiom pallas_glv_no_short_relation {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0)
+    (ha : |a| < 2 ^ 127) (hb : |b| < 2 ^ 127) :
+    ¬ (Pallas.curve.toAffine.order : ℤ) ∣ (a + b * pallas_lam)
+
+/-- TRUSTED INPUT: the Vesta base-field endomorphism coefficient `β` (a primitive cube root of
+    unity), so `φ(x, y) = (β·x, y)` maps `y² = x³ + 5` to itself. -/
+axiom vesta_endo : VestaBaseField
+
+/-- TRUSTED INPUT: the scalar eigenvalue `λ` of the Vesta endomorphism `φ` on the group. -/
+axiom vesta_lam : ℤ
+
+/-- **AXIOM (CM).** The Vesta endomorphism `φ(x, y) = (β·x, y)` acts as `[λ]` on the group:
+    `φ(P) = [λ]·P` — the defining property of the GLV endomorphism (same trusted status as the
+    point counts). It discharges `Kimchi.Circuit.EndoMul.endoMul`'s `heig` at Vesta. -/
+axiom vesta_eigen {x y : VestaBaseField}
+    (h : Vesta.curve.toAffine.Nonsingular x y)
+    (h' : Vesta.curve.toAffine.Nonsingular (vesta_endo * x) y) :
+    Point.some _ _ h' = vesta_lam • Point.some _ _ h
+
+/-- **AXIOM (GLV short basis — to be discharged later).** No short relation in the Vesta GLV
+    lattice: for `(a, b) ≠ 0` with `|a|, |b| < 2¹²⁷`, `a + b·λ ≢ 0 (mod order)` (shortest vector
+    `≈ √order ≈ 2¹²⁷`). Keeps the EndoMul accumulator off `±T`/`±φT` at Vesta. -/
+axiom vesta_glv_no_short_relation {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0)
+    (ha : |a| < 2 ^ 127) (hb : |b| < 2 ^ 127) :
+    ¬ (Vesta.curve.toAffine.order : ℤ) ∣ (a + b * vesta_lam)
+
 end Kimchi.Pasta

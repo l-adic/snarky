@@ -48,3 +48,6 @@ Kimchi.Gate.EndoMul.complete
 -- GLV endomorphism scalar multiplication (circuit): the capstone tying EndoScalar ↔ EndoMul ↔ [s]·T
 -- (the single top-level result the deployed `endo` circuit needs)
 Kimchi.Circuit.EndoMul.endoMul
+-- EndoMul instantiated at the real Pasta curves (eigenvalue discharged via the CM axiom)
+Kimchi.Cycle.EndoMul.pallas_endoMul
+Kimchi.Cycle.EndoMul.vesta_endoMul
