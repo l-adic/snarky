@@ -47,10 +47,8 @@ def roots : List Name :=
 def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound,
     `Kimchi.Pasta.pallas_card, `Kimchi.Pasta.vesta_card,
-    `Kimchi.Pasta.pallas_endo, `Kimchi.Pasta.pallas_lam, `Kimchi.Pasta.pallas_eigen,
-    `Kimchi.Pasta.pallas_glv_no_short_relation,
-    `Kimchi.Pasta.vesta_endo, `Kimchi.Pasta.vesta_lam, `Kimchi.Pasta.vesta_eigen,
-    `Kimchi.Pasta.vesta_glv_no_short_relation ]
+    `Kimchi.Pasta.pallas_endo, `Kimchi.Pasta.pallas_eigen,
+    `Kimchi.Pasta.vesta_endo, `Kimchi.Pasta.vesta_eigen, ]
 
 end Kimchi.CheckAxioms
 

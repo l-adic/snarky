@@ -33,12 +33,11 @@ comfortably above any `4^m` a `< 254`-bit challenge reaches) and nonzero is none
 This is the consumer of `*_glv_no_short_relation` — the geometric core that, threaded through the
 per-row accumulators (`accumulator_chain`), discharges the per-row `hxne`. -/
 
-/-- `|x| < 2¹²⁶` keeps the offsets `x ∓ 1` inside the GLV bound `2¹²⁷`. -/
+/-- `|x| < 2¹²⁶` keeps the offsets `x ∓ 1` inside the GLV bound `2¹²⁶`. -/
 private lemma abs_offset_lt {x : ℤ} (hx : |x| < 2 ^ 126) :
-    |x - 1| < 2 ^ 127 ∧ |x + 1| < 2 ^ 127 := by
+    |x - 1| ≤ 2 ^ 126 ∧ |x + 1| ≤ 2 ^ 126 := by
   rw [abs_lt] at hx
-  have hp : (2 : ℤ) ^ 126 < 2 ^ 127 := by norm_num
-  exact ⟨by rw [abs_lt]; omega, by rw [abs_lt]; omega⟩
+  exact ⟨by rw [abs_le]; omega, by rw [abs_le]; omega⟩
 
 /-- **GLV off-targets at Pallas.** A bounded nonzero two-base accumulator avoids `±T`, `±φT`. -/
 theorem pallas_combo_off_targets {a b : ℤ} (ha : a ≠ 0) (hb : b ≠ 0)
@@ -48,13 +47,11 @@ theorem pallas_combo_off_targets {a b : ℤ} (ha : a ≠ 0) (hb : b ≠ 0)
       ∧ a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT := by
   obtain ⟨ha1, ha1'⟩ := abs_offset_lt hba
   obtain ⟨hb1, hb1'⟩ := abs_offset_lt hbb
-  have ha127 : |a| < 2 ^ 127 := lt_trans hba (by norm_num)
-  have hb127 : |b| < 2 ^ 127 := lt_trans hbb (by norm_num)
   exact combo_off_targets Pallas.curve.toAffine hTne heig
-    (pallas_glv_no_short_relation (Or.inr hb) ha1 hb127)
-    (pallas_glv_no_short_relation (Or.inr hb) ha1' hb127)
-    (pallas_glv_no_short_relation (Or.inl ha) ha127 hb1)
-    (pallas_glv_no_short_relation (Or.inl ha) ha127 hb1')
+    (pallas_glv_no_short_relation (Or.inr hb) ha1 hbb.le)
+    (pallas_glv_no_short_relation (Or.inr hb) ha1' hbb.le)
+    (pallas_glv_no_short_relation (Or.inl ha) hba.le hb1)
+    (pallas_glv_no_short_relation (Or.inl ha) hba.le hb1')
 
 /-- **GLV off-targets at Vesta** — the other half of the 2-cycle. -/
 theorem vesta_combo_off_targets {a b : ℤ} (ha : a ≠ 0) (hb : b ≠ 0)
@@ -64,13 +61,11 @@ theorem vesta_combo_off_targets {a b : ℤ} (ha : a ≠ 0) (hb : b ≠ 0)
       ∧ a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT := by
   obtain ⟨ha1, ha1'⟩ := abs_offset_lt hba
   obtain ⟨hb1, hb1'⟩ := abs_offset_lt hbb
-  have ha127 : |a| < 2 ^ 127 := lt_trans hba (by norm_num)
-  have hb127 : |b| < 2 ^ 127 := lt_trans hbb (by norm_num)
   exact combo_off_targets Vesta.curve.toAffine hTne heig
-    (vesta_glv_no_short_relation (Or.inr hb) ha1 hb127)
-    (vesta_glv_no_short_relation (Or.inr hb) ha1' hb127)
-    (vesta_glv_no_short_relation (Or.inl ha) ha127 hb1)
-    (vesta_glv_no_short_relation (Or.inl ha) ha127 hb1')
+    (vesta_glv_no_short_relation (Or.inr hb) ha1 hbb.le)
+    (vesta_glv_no_short_relation (Or.inr hb) ha1' hbb.le)
+    (vesta_glv_no_short_relation (Or.inl ha) hba.le hb1)
+    (vesta_glv_no_short_relation (Or.inl ha) hba.le hb1')
 
 /-! ## `endoMul` at the curves
 

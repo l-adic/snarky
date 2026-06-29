@@ -68,10 +68,11 @@ instance : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
 
 Both Pasta curves `y² = x³ + 5` carry the GLV endomorphism `φ(x, y) = (β·x, y)`, where `β` is a
 primitive cube root of unity in the base field (so `(β·x)³ = x³` keeps the point on the curve)
-and `φ` acts as multiplication by a scalar `λ` on the group. For each curve these facts — the
-eigenvalue relation and the GLV lattice's short-basis bound — are the endomorphism analog of the
-point counts above: trusted inputs that discharge `Kimchi.Circuit.EndoMul.endoMul`'s `heig` and
-the accumulator non-degeneracy. -/
+and `φ` acts as multiplication by a scalar `λ` on the group. The coefficient `β` and the
+eigenvalue relation `φ(P) = [λ]·P` are trusted inputs (the endomorphism analog of the point
+counts), discharging `Kimchi.Circuit.EndoMul.endoMul`'s `heig`. The GLV lattice's short-basis
+bound, by contrast, is **proved** here (`{pallas,vesta}_glv_no_short_relation`, from a concrete
+reduced-basis certificate) — it is the accumulator non-degeneracy fact. -/
 
 open WeierstrassCurve.Affine
 
@@ -79,8 +80,53 @@ open WeierstrassCurve.Affine
     unity), so `φ(x, y) = (β·x, y)` maps `y² = x³ + 5` to itself. -/
 axiom pallas_endo : PallasBaseField
 
-/-- TRUSTED INPUT: the scalar eigenvalue `λ` of the Pallas endomorphism `φ` on the group. -/
-axiom pallas_lam : ℤ
+/-- **No short relation in a rank-2 GLV lattice, from a reduced-basis certificate.** If `(s, t)`
+    lies in the lattice `{(a,b) : a + b·λ ≡ 0 (mod n)}` (`s + t·λ = k₂·n`), is primitive
+    (`u·s + v·t = 1`), has `|s| > 2¹²⁶`, and the box `[−2¹²⁶, 2¹²⁶]²` fits below the covolume
+    (`2¹²⁶·(|s|+|t|) < n`), then no nonzero `(a,b)` in that box lies in the lattice. Proof: the
+    cross product `a·t − b·s` is divisible by `n` yet `|a·t − b·s| < n`, so it is `0`; primitivity
+    makes `(a,b)` a multiple of `(s,t)`, ruled out by `|a| ≤ 2¹²⁶ < |s|`. -/
+theorem glv_no_short_of_cert {n lam s t k2 u v : ℤ} (hn : 0 < n)
+    (hcert : s + t * lam = k2 * n) (hbez : u * s + v * t = 1)
+    (hsabs : 2 ^ 126 < |s|) (hbnd : 2 ^ 126 * |t| + 2 ^ 126 * |s| < n)
+    {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0) (ha : |a| ≤ 2 ^ 126) (hb : |b| ≤ 2 ^ 126) :
+    ¬ n ∣ (a + b * lam) := by
+  intro hdvd
+  have hdvd2 : n ∣ (a * t - b * s) := by
+    have e : a * t - b * s = t * (a + b * lam) - b * (k2 * n) := by rw [← hcert]; ring
+    rw [e]; exact dvd_sub (hdvd.mul_left t) ⟨b * k2, by ring⟩
+  have hsmall : |a * t - b * s| < n := by
+    have key : |a * t - b * s| ≤ |a| * |t| + |b| * |s| := by
+      calc |a * t - b * s| = |a * t + -(b * s)| := by rw [sub_eq_add_neg]
+        _ ≤ |a * t| + |-(b * s)| := abs_add_le _ _
+        _ = |a| * |t| + |b| * |s| := by rw [abs_neg, abs_mul, abs_mul]
+    have hbound : |a| * |t| + |b| * |s| ≤ 2 ^ 126 * |t| + 2 ^ 126 * |s| := by gcongr
+    linarith
+  have hzero : a * t - b * s = 0 := by
+    rcases hdvd2 with ⟨c, hc⟩
+    by_contra h0
+    have hcne : c ≠ 0 := by rintro rfl; simp at hc; exact h0 hc
+    have hge : n ≤ |a * t - b * s| := by
+      rw [hc, abs_mul, abs_of_pos hn]
+      exact le_mul_of_one_le_right hn.le (Int.one_le_abs hcne)
+    linarith
+  have hat : a * t = b * s := by linarith
+  have hsm : a = s * (u * a + v * b) := by linear_combination v * hat - a * hbez
+  have htm : b = t * (u * a + v * b) := by linear_combination -u * hat - b * hbez
+  have hm0 : u * a + v * b = 0 := by
+    by_contra hmne
+    have : |s| ≤ |a| := by
+      rw [hsm, abs_mul]; exact le_mul_of_one_le_right (abs_nonneg s) (Int.one_le_abs hmne)
+    linarith
+  rcases hne with h | h
+  · exact h (by rw [hsm, hm0, mul_zero])
+  · exact h (by rw [htm, hm0, mul_zero])
+
+/-- The scalar eigenvalue `λ` of the Pallas endomorphism `φ` — a primitive cube root of unity in
+    the scalar field (`endo_scalar`, from `Snarky.Curves.PastaCurve`). Concrete, so the GLV
+    short-basis fact below is *proved*, not assumed. -/
+def pallas_lam : ℤ :=
+  26005156700822196841419187675678338661165322343552424574062261873906994770353
 
 /-- **AXIOM (CM).** The Pallas endomorphism `φ(x, y) = (β·x, y)` acts as `[λ]` on the group:
     `φ(P) = [λ]·P`. The defining property of the GLV endomorphism — not Mathlib-provable for the
@@ -91,21 +137,31 @@ axiom pallas_eigen {x y : PallasBaseField}
     (h' : Pallas.curve.toAffine.Nonsingular (pallas_endo * x) y) :
     Point.some _ _ h' = pallas_lam • Point.some _ _ h
 
-/-- **AXIOM (GLV short basis — to be discharged later).** No short relation in the Pallas GLV
-    lattice: for `(a, b) ≠ 0` with `|a|, |b| < 2¹²⁷`, `a + b·λ ≢ 0 (mod order)`. The shortest
-    lattice vector is `≈ √order ≈ 2¹²⁷` (the balance that makes GLV efficient) — a finite
-    statement about the concrete `λ`, taken as a trusted input for now; it keeps the EndoMul
-    accumulator off `±T`/`±φT` (the `hxne` non-degeneracy). -/
-axiom pallas_glv_no_short_relation {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0)
-    (ha : |a| < 2 ^ 127) (hb : |b| < 2 ^ 127) :
-    ¬ (Pallas.curve.toAffine.order : ℤ) ∣ (a + b * pallas_lam)
+/-- **No short relation in the Pallas GLV lattice.** For `(a, b) ≠ 0` with `|a|, |b| ≤ 2¹²⁶`,
+    `a + b·λ ≢ 0 (mod order)`. Proved from the reduced-basis certificate via `glv_no_short_of_cert`
+    (`order = PALLAS_SCALAR_CARD` by `pallas_card`). The bound is `2¹²⁶`, not `2¹²⁷`: the shortest
+    lattice vector has sup-norm `≈ 9.82·10³⁷ ∈ (2¹²⁶, 2¹²⁷)`, so `2¹²⁷` would be *false* (EndoMul
+    only ever needs `< 2¹²⁴`). Keeps the accumulator off `±T`/`±φT` (`hxne`). -/
+theorem pallas_glv_no_short_relation {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0)
+    (ha : |a| ≤ 2 ^ 126) (hb : |b| ≤ 2 ^ 126) :
+    ¬ (Pallas.curve.toAffine.order : ℤ) ∣ (a + b * pallas_lam) := by
+  rw [pallas_card]
+  exact glv_no_short_of_cert (n := (PALLAS_SCALAR_CARD : ℤ)) (lam := pallas_lam)
+    (s := -98231058071100081932162823354453065728)
+    (t := 98231058071186745657228807397848383489)
+    (k2 := 88244855925979294593813989187869077937)
+    (u := -9986202145207451063414818209979305552)
+    (v := -9986202145198640800203172615810973695)
+    (by decide) (by decide) (by decide) (by decide) (by decide) hne ha hb
 
 /-- TRUSTED INPUT: the Vesta base-field endomorphism coefficient `β` (a primitive cube root of
     unity), so `φ(x, y) = (β·x, y)` maps `y² = x³ + 5` to itself. -/
 axiom vesta_endo : VestaBaseField
 
-/-- TRUSTED INPUT: the scalar eigenvalue `λ` of the Vesta endomorphism `φ` on the group. -/
-axiom vesta_lam : ℤ
+/-- The scalar eigenvalue `λ` of the Vesta endomorphism `φ` — a primitive cube root of unity in
+    the scalar field (`endo_scalar`). Concrete, so the GLV short-basis fact below is proved. -/
+def vesta_lam : ℤ :=
+  8503465768106391777493614032514048814691664078728891710322960303815233784505
 
 /-- **AXIOM (CM).** The Vesta endomorphism `φ(x, y) = (β·x, y)` acts as `[λ]` on the group:
     `φ(P) = [λ]·P` — the defining property of the GLV endomorphism (same trusted status as the
@@ -115,11 +171,19 @@ axiom vesta_eigen {x y : VestaBaseField}
     (h' : Vesta.curve.toAffine.Nonsingular (vesta_endo * x) y) :
     Point.some _ _ h' = vesta_lam • Point.some _ _ h
 
-/-- **AXIOM (GLV short basis — to be discharged later).** No short relation in the Vesta GLV
-    lattice: for `(a, b) ≠ 0` with `|a|, |b| < 2¹²⁷`, `a + b·λ ≢ 0 (mod order)` (shortest vector
-    `≈ √order ≈ 2¹²⁷`). Keeps the EndoMul accumulator off `±T`/`±φT` at Vesta. -/
-axiom vesta_glv_no_short_relation {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0)
-    (ha : |a| < 2 ^ 127) (hb : |b| < 2 ^ 127) :
-    ¬ (Vesta.curve.toAffine.order : ℤ) ∣ (a + b * vesta_lam)
+/-- **No short relation in the Vesta GLV lattice.** For `(a, b) ≠ 0` with `|a|, |b| ≤ 2¹²⁶`,
+    `a + b·λ ≢ 0 (mod order)`. Proved from the reduced-basis certificate (`order = PALLAS_BASE_CARD`
+    by `vesta_card`); bound `2¹²⁶` for the same shortest-vector reason as Pallas. -/
+theorem vesta_glv_no_short_relation {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0)
+    (ha : |a| ≤ 2 ^ 126) (hb : |b| ≤ 2 ^ 126) :
+    ¬ (Vesta.curve.toAffine.order : ℤ) ∣ (a + b * vesta_lam) := by
+  rw [vesta_card]
+  exact glv_no_short_of_cert (n := (PALLAS_BASE_CARD : ℤ)) (lam := vesta_lam)
+    (s := -98231058071186745657228807397848383488)
+    (t := 98231058071100081932162823354453065729)
+    (k2 := 28855319743320701602732952904011762361)
+    (u := 28855319743320701602732952904011762361)
+    (v := 28855319743346159024713648477422223361)
+    (by decide) (by decide) (by decide) (by decide) (by decide) hne ha hb
 
 end Kimchi.Pasta
