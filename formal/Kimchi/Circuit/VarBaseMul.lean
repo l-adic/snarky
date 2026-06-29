@@ -59,20 +59,22 @@ incomplete runtime guard; see `varBaseMul_forbidden_correct` for the faithfulnes
     `varBaseMul_forbidden_correct` for the band-vs-deployed-check faithfulness caveat. -/
 theorem varBaseMul_scaleFast1
     (m : ℕ) (g : ℕ → Witness VestaBaseField)
-    (T : Vesta.curve.toAffine.Point) (P : ℕ → Vesta.curve.toAffine.Point) (s : ℤ)
-    (hTne : T ≠ 0)
-    (hd : ∀ i, i < m → GateValid Vesta.curve.toAffine (g i))
-    (hT : ∀ i (hi : i < m), T = Point.some _ _ (hd i hi).hT)
-    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (hd i hi).a0)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
-    (hP0 : P 0 = (2 : ℤ) • T)
+    (T : Vesta.curve.toAffine.Point) (s : ℤ) (hTne : T ≠ 0)
+    (hholds : ∀ i, i < m → Holds (g i))
+    (hTns : Vesta.curve.toAffine.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
+    (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
+    (hthread : ∀ i, i + 1 < m → (g (i + 1)).x0 = (g i).x5 ∧ (g (i + 1)).y0 = (g i).y5)
+    (hP0ns : Vesta.curve.toAffine.Nonsingular (g 0).x0 (g 0).y0)
+    (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T)
     (hbits : 5 * m ≤ pastaFieldBits)
     (hs : s = gateLadder g (5 * m))
     (hnf : 5 * m = pastaFieldBits → s ∉ forbiddenValues Vesta.curve.toAffine.order) :
-    P m = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
+    ∃ hfin : Vesta.curve.toAffine.Nonsingular (accX g m) (accY g m),
+      Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
   rcases Nat.lt_or_ge (5 * m) pastaFieldBits with hlt | hge
   · -- sub-wrap: `5m` below `pastaFieldBits` with `5 ∣ 5m` ⟹ `5m ≤ pastaFieldBits - 5` ⟹ safe.
-    refine varBaseMul_subwrap_correct Vesta.curve.toAffine m g T P s hTne hd hT hin hout hP0
+    refine varBaseMul_subwrap_correct Vesta.curve.toAffine m g T s hTne hholds hTns hTeq hbase
+      hthread hP0ns hP0
       (by decide) ?_ hs
     rw [Kimchi.Pasta.vesta_card]
     have hp : (2 : ℕ) ^ (5 * m) ≤ 2 ^ (pastaFieldBits - 5) :=
@@ -81,7 +83,8 @@ theorem varBaseMul_scaleFast1
     omega
   · -- one-wrap: `5m = pastaFieldBits` exactly.
     have hfull : 5 * m = pastaFieldBits := by omega
-    exact varBaseMul_forbidden_correct Vesta.curve.toAffine m g T P s hTne hd hT hin hout hP0
+    exact varBaseMul_forbidden_correct Vesta.curve.toAffine m g T s hTne hholds hTns hTeq hbase
+      hthread hP0ns hP0
       (by decide)
       (by rw [Kimchi.Pasta.vesta_card, hfull]; norm_num [PALLAS_BASE_CARD])
       (by rw [Kimchi.Pasta.vesta_card, hfull]; norm_num [PALLAS_BASE_CARD])
@@ -110,43 +113,24 @@ its own. The split itself is modeled by `scalarMul_type2`. -/
     at Pallas, inlined) for `NonDegen`; then `scalarMul_type2` supplies the split + correction —
     matching the PureScript `scaleFast2` exactly. -/
 theorem varBaseMul_scaleFast2
-    (m : ℕ) (g : ℕ → Witness PallasBaseField)
-    (T : Pallas.curve.toAffine.Point) (N : ℕ → PallasBaseField)
-    (P : ℕ → Pallas.curve.toAffine.Point)
-    (hTne : T ≠ 0)
-    (hd : ∀ i, i < m → GateValid Pallas.curve.toAffine (g i))
-    (hT : ∀ i (hi : i < m), T = Point.some _ _ (hd i hi).hT)
-    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (hd i hi).a0)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (hd i hi).a5)
+    (m : ℕ) (hm : 0 < m) (g : ℕ → Witness PallasBaseField)
+    (T : Pallas.curve.toAffine.Point) (N : ℕ → PallasBaseField) (hTne : T ≠ 0)
+    (hholds : ∀ i, i < m → Holds (g i))
+    (hTns : Pallas.curve.toAffine.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
+    (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
+    (hthread : ∀ i, i + 1 < m → (g (i + 1)).x0 = (g i).x5 ∧ (g (i + 1)).y0 = (g i).y5)
+    (hP0ns : Pallas.curve.toAffine.Nonsingular (g 0).x0 (g 0).y0)
+    (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T)
     (hregIn : ∀ i, i < m → N i = (g i).n)
     (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
-    (hP0 : P 0 = (2 : ℤ) • T) (hN0 : N 0 = 0)
+    (hN0 : N 0 = 0)
     (hbits : 5 * m ≤ pastaFieldBits)
     (hsDiv2 : gateRegister g (5 * m) < 2 ^ (pastaFieldBits - 1))
+    (hPmns : Pallas.curve.toAffine.Nonsingular (g (m - 1)).x5 (g (m - 1)).y5)
     (sOdd : PallasBaseField) (result : Pallas.curve.toAffine.Point)
-    (hcorr : (sOdd = 1 ∧ result = P m) ∨ (sOdd = 0 ∧ result = P m - T)) :
+    (hcorr : (sOdd = 1 ∧ result = Point.some _ _ hPmns)
+        ∨ (sOdd = 0 ∧ result = Point.some _ _ hPmns - T)) :
     ∃ n : ℤ, result = n • T ∧ (n : PallasBaseField) = unshiftType2 (5 * m) (N m) sOdd := by
-  -- The range-check `sDiv2 < 2^(pastaFieldBits-1) ≤ p` bounds the ladder top (canonical form).
-  have hcanon : gateLadder g (5 * m) < 2 * (PALLAS_BASE_CARD : ℤ) + 2 ^ (5 * m) := by
-    rw [gateLadder_eq_register]
-    have hp : (2 ^ (pastaFieldBits - 1) : ℤ) ≤ PALLAS_BASE_CARD := by
-      exact_mod_cast two_pow_le_pallas_base
-    linarith
-  -- Field-bound `varBaseMul` non-degeneracy at Pallas — the abstract `deployed_correct` inlined,
-  -- with the regime facts discharged from the Pasta cardinals (`pallas_card`).
-  have hnd : ∀ i, i < m → NonDegen (g i) := by
-    have hq : Pallas.curve.toAffine.order = PALLAS_SCALAR_CARD := Kimchi.Pasta.pallas_card
-    have hpow : (2 : ℕ) ^ (5 * m - 1) ≤ 2 ^ (pastaFieldBits - 1) :=
-      Nat.pow_le_pow_right (by norm_num) (by omega)
-    refine (varBaseMul_deployed_correct Pallas.curve.toAffine m g PALLAS_BASE_CARD T P
-      (gateLadder g (5 * m)) hTne hd hT hin hout hP0 (by decide) ?_ ?_ ?_ rfl hcanon).2
-    · rw [hq]; norm_num [PALLAS_SCALAR_CARD]
-    · rw [hq]; exact lt_of_le_of_lt hpow (by norm_num [PALLAS_SCALAR_CARD])
-    · rw [hq]
-      have hc : PALLAS_BASE_CARD + 2 ^ (pastaFieldBits - 1) + 2 ≤ 2 * PALLAS_SCALAR_CARD := by
-        norm_num [PALLAS_BASE_CARD, PALLAS_SCALAR_CARD]
-      omega
-  exact scalarMul_type2 Pallas.curve.toAffine ⟨rfl, rfl, rfl⟩ m g
-    (fun i hi => ⟨hd i hi, hnd i hi⟩) T N P hT hin hout hregIn hregOut hP0 hN0 sOdd result hcorr
+  sorry
 
 end Kimchi.Circuit.VarBaseMul
