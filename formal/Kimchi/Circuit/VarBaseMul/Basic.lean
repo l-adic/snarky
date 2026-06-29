@@ -144,22 +144,6 @@ theorem chain_sum_bound (m : ℕ) (c : ℕ → ℤ) (hc : ∀ i, i < m → (c i)
     have hps : 32 ^ (m + 1) = 32 * 32 ^ m := by rw [pow_succ]; ring
     omega
 
-/-- **Per-gate validity certificate.** The facts about one gate's witness `g` that `sound`
-    consumes: its accumulators `a0..a5` and target `hT` are genuine nonsingular curve points, and
-    the 21 constraints `holds`. This is *evidence that `g` is a well-formed satisfying gate row*,
-    not the row's cell data (that is the `Witness g`) — an INPUT to the circuit's soundness,
-    supplied by the prover. (The sign-selected targets `(xT, (2bⱼ−1)·yT)` are *not* fields: they are
-    nonsingular by `signed_target_nonsingular` from `hT` and the per-bit booleanity in `holds`.) -/
-structure GateValid (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
-  a0 : W.Nonsingular g.x0 g.y0
-  a1 : W.Nonsingular g.x1 g.y1
-  a2 : W.Nonsingular g.x2 g.y2
-  a3 : W.Nonsingular g.x3 g.y3
-  a4 : W.Nonsingular g.x4 g.y4
-  a5 : W.Nonsingular g.x5 g.y5
-  hT : W.Nonsingular g.xT g.yT
-  holds : Holds g
-
 /-- The per-gate NON-DEGENERACY side conditions: the additions are non-vertical
     (`xⱼ ≠ xT`) and the second additions are non-vertical (`tⱼ ≠ 0`). For the kimchi
     VarBaseMul gate these are exactly what the deployed guards (`scaleFast1`'s forbidden-value
@@ -177,10 +161,31 @@ structure NonDegen (g : Witness F) : Prop where
   t3 : 2 * g.x3 + g.xT - g.s3 * g.s3 ≠ 0
   t4 : 2 * g.x4 + g.xT - g.s4 * g.s4 ≠ 0
 
-/-- A full per-gate step: the validity certificate `GateValid` plus the `NonDegen` side
-    conditions. Both parents' fields are inherited via dot notation. -/
-structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop
-    extends GateValid W g, NonDegen g
+/-- A full per-gate step: the nonsingular accumulator points `a0..a5` + base `hT`, the gate
+    constraints `holds`, and the `NonDegen` side conditions, in one flat bundle. (The register
+    subsystem `scalarMul`/`scalarMul_type2` consumes all of these via the gate `sound`.) Flat —
+    not `extends GateValid` — so the prover-facing `GateValid` bundle can be retired in favour of
+    the leaner `Holds`+threading interface (the deployed entry points derive a `GateStep` per row
+    via `gateStep_chain`). -/
+structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
+  a0 : W.Nonsingular g.x0 g.y0
+  a1 : W.Nonsingular g.x1 g.y1
+  a2 : W.Nonsingular g.x2 g.y2
+  a3 : W.Nonsingular g.x3 g.y3
+  a4 : W.Nonsingular g.x4 g.y4
+  a5 : W.Nonsingular g.x5 g.y5
+  hT : W.Nonsingular g.xT g.yT
+  holds : Holds g
+  x0 : g.x0 ≠ g.xT
+  x1 : g.x1 ≠ g.xT
+  x2 : g.x2 ≠ g.xT
+  x3 : g.x3 ≠ g.xT
+  x4 : g.x4 ≠ g.xT
+  t0 : 2 * g.x0 + g.xT - g.s0 * g.s0 ≠ 0
+  t1 : 2 * g.x1 + g.xT - g.s1 * g.s1 ≠ 0
+  t2 : 2 * g.x2 + g.xT - g.s2 * g.s2 ≠ 0
+  t3 : 2 * g.x3 + g.xT - g.s3 * g.s3 ≠ 0
+  t4 : 2 * g.x4 + g.xT - g.s4 * g.s4 ≠ 0
 
 /-! ## Main theorem: variable-base scalar multiplication -/
 
