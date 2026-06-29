@@ -8,7 +8,7 @@ import Kimchi.Circuit.EndoScalar
 The supporting machinery behind `EndoMul`'s capstone (`endoMul`): the proof that
 `EndoMul`'s per-window GLV digits coincide with `EndoScalar`'s Algorithm-2 `cPoly`/`dPoly`
 digits over the shared challenge crumbs. It is the technical bridge between the two gates —
-pure digit/crumb bookkeeping, independent of the GLV point-fold (`chain_endo`/`EndoStep`) —
+pure digit/crumb bookkeeping, independent of the GLV point-fold (`chain_endo`) —
 so it lives apart from `Kimchi.Circuit.EndoMul`, which assembles it into the point statement.
 
 ## Main results
@@ -16,7 +16,6 @@ so it lives apart from `Kimchi.Circuit.EndoMul`, which assembles it into the poi
 * `recoding_digit` — the per-window correspondence: an `EndoMul` window's bits map to the
   `EndoScalar` crumb on which `cPoly`/`dPoly` reproduce the GLV window digit.
 * `sum_reindex` — the row↔crumb reindexing lifting the per-window identity to the fold.
-* `row_digit` — a satisfying row's GLV integers `(c₁,c₂)` cast to `EndoScalar`'s digit sums.
 * `aDigit` / `bDigit` — the `cPoly` / `dPoly` digit of crumb `j` built from the rows.
 * `crumbList` / `decompose_crumbList` — the `2m`-crumb list the rows feed to `EndoScalar`,
   and the init-aligned bridge to its `decomposeA`/`decomposeB`.
@@ -90,94 +89,6 @@ theorem sum_reindex {R : Type*} [CommRing R] (m : ℕ) (g : ℕ → R) :
       show m + 1 - 1 - m = 0 by omega, show 2 * m + 1 + 1 - 1 - (2 * m) = 1 by omega,
       show 2 * m + 1 + 1 - 1 - (2 * m + 1) = 0 by omega]
     ring
-
-open Kimchi.Gate.EndoScalar (cPoly dPoly cPoly_table dPoly_table) in
-/-- The per-row digit equations — the gate-side source of the fold-level recoding
-    identity. A satisfying row's GLV contribution `S = 4·P + c₁·T + c₂·φ(T)` has its
-    integers pinned to `EndoScalar`'s digits: `(c₁ : F) = 2·dPoly(crumb₁) + dPoly(crumb₂)`
-    (the `T`/`b` digits) and `(c₂ : F) = 2·cPoly(crumb₁) + cPoly(crumb₂)` (the `φ(T)`/`a`
-    digits), where `crumbⱼ = b₂ⱼ + 2·b₂ⱼ₋₁` is window `j`'s `EndoScalar` crumb. (`sound`
-    with the field digits read off the strengthened `selectQ` + `recoding_digit`.) -/
-theorem row_digit (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo : F) (w : Witness F) (h : Holds endo w)
-    (hT : W.Nonsingular w.xT w.yT) (hφT : W.Nonsingular (endo * w.xT) w.yT)
-    (hP : W.Nonsingular w.xP w.yP) (hR : W.Nonsingular w.xR w.yR)
-    (hS : W.Nonsingular w.xS w.yS)
-    (hQ1 : W.Nonsingular ((1 + (endo - 1) * w.b1) * w.xT) ((2 * w.b2 - 1) * w.yT))
-    (hQ2 : W.Nonsingular ((1 + (endo - 1) * w.b3) * w.xT) ((2 * w.b4 - 1) * w.yT))
-    (hxne1 : w.xP ≠ (1 + (endo - 1) * w.b1) * w.xT)
-    (htne1 : 2 * w.xP - w.s1 ^ 2 + (1 + (endo - 1) * w.b1) * w.xT ≠ 0)
-    (hxne2 : w.xR ≠ (1 + (endo - 1) * w.b3) * w.xT)
-    (htne2 : 2 * w.xR - w.s3 ^ 2 + (1 + (endo - 1) * w.b3) * w.xT ≠ 0) :
-    ∃ c1 c2 : ℤ,
-      Point.some _ _ hS = (4 : ℤ) • Point.some _ _ hP + c1 • Point.some _ _ hT
-          + c2 • Point.some _ _ hφT
-        ∧ (c1 : F) = 2 * dPoly (w.b2 + 2 * w.b1) + dPoly (w.b4 + 2 * w.b3)
-        ∧ (c2 : F) = 2 * cPoly (w.b2 + 2 * w.b1) + cPoly (w.b4 + 2 * w.b3) := by
-  obtain ⟨hReq, hSeq⟩ :=
-    row_sound W ha endo w h hP hR hS hQ1 hQ2 hxne1 htne1 hxne2 htne2
-  have hb := h
-  simp only [Holds] at hb
-  obtain ⟨_, _, _, _, _, _, _, hb1c, hb2c, hb3c, hb4c, _⟩ := hb
-  have hb1 := bool_of_mul hb1c
-  have hb2 := bool_of_mul hb2c
-  have hb3 := bool_of_mul hb3c
-  have hb4 := bool_of_mul hb4c
-  obtain ⟨hcP1, hdP1⟩ := recoding_digit h2 h3 hb1 hb2
-  obtain ⟨hcP2, hdP2⟩ := recoding_digit h2 h3 hb3 hb4
-  rcases hb1 with hb1' | hb1' <;> rcases hb3 with hb3' | hb3'
-  · -- b1 = 0 (Q₁ = ±T), b3 = 0 (Q₂ = ±T)
-    have hxc1 : (1 + (endo - 1) * w.b1) * w.xT = w.xT := by rw [hb1']; ring
-    obtain ⟨e1, he1, he1f, _⟩ := Kimchi.Gate.VarBaseMul.signed_target W ha hT (hxc1 ▸ hQ1) hb2
-    have hQ1e : Point.some _ _ hQ1 = e1 • Point.some _ _ hT :=
-      (some_congr W hQ1 (hxc1 ▸ hQ1) hxc1 rfl).trans he1
-    have hxc2 : (1 + (endo - 1) * w.b3) * w.xT = w.xT := by rw [hb3']; ring
-    obtain ⟨e2, he2, he2f, _⟩ := Kimchi.Gate.VarBaseMul.signed_target W ha hT (hxc2 ▸ hQ2) hb4
-    have hQ2e : Point.some _ _ hQ2 = e2 • Point.some _ _ hT :=
-      (some_congr W hQ2 (hxc2 ▸ hQ2) hxc2 rfl).trans he2
-    refine ⟨2 * e1 + e2, 0, ?_, ?_, ?_⟩
-    · rw [hSeq, hReq, hQ1e, hQ2e]; module
-    · rw [hdP1, hdP2]; push_cast [he1f, he2f]; rw [hb1', hb3']; ring
-    · rw [hcP1, hcP2]; push_cast [he1f, he2f]; rw [hb1', hb3']; ring
-  · -- b1 = 0 (Q₁ = ±T), b3 = 1 (Q₂ = ±φT)
-    have hxc1 : (1 + (endo - 1) * w.b1) * w.xT = w.xT := by rw [hb1']; ring
-    obtain ⟨e1, he1, he1f, _⟩ := Kimchi.Gate.VarBaseMul.signed_target W ha hT (hxc1 ▸ hQ1) hb2
-    have hQ1e : Point.some _ _ hQ1 = e1 • Point.some _ _ hT :=
-      (some_congr W hQ1 (hxc1 ▸ hQ1) hxc1 rfl).trans he1
-    have hxc2 : (1 + (endo - 1) * w.b3) * w.xT = endo * w.xT := by rw [hb3']; ring
-    obtain ⟨e2, he2, he2f, _⟩ := Kimchi.Gate.VarBaseMul.signed_target W ha hφT (hxc2 ▸ hQ2) hb4
-    have hQ2e : Point.some _ _ hQ2 = e2 • Point.some _ _ hφT :=
-      (some_congr W hQ2 (hxc2 ▸ hQ2) hxc2 rfl).trans he2
-    refine ⟨2 * e1, e2, ?_, ?_, ?_⟩
-    · rw [hSeq, hReq, hQ1e, hQ2e]; module
-    · rw [hdP1, hdP2]; push_cast [he1f, he2f]; rw [hb1', hb3']; ring
-    · rw [hcP1, hcP2]; push_cast [he1f, he2f]; rw [hb1', hb3']; ring
-  · -- b1 = 1 (Q₁ = ±φT), b3 = 0 (Q₂ = ±T)
-    have hxc1 : (1 + (endo - 1) * w.b1) * w.xT = endo * w.xT := by rw [hb1']; ring
-    obtain ⟨e1, he1, he1f, _⟩ := Kimchi.Gate.VarBaseMul.signed_target W ha hφT (hxc1 ▸ hQ1) hb2
-    have hQ1e : Point.some _ _ hQ1 = e1 • Point.some _ _ hφT :=
-      (some_congr W hQ1 (hxc1 ▸ hQ1) hxc1 rfl).trans he1
-    have hxc2 : (1 + (endo - 1) * w.b3) * w.xT = w.xT := by rw [hb3']; ring
-    obtain ⟨e2, he2, he2f, _⟩ := Kimchi.Gate.VarBaseMul.signed_target W ha hT (hxc2 ▸ hQ2) hb4
-    have hQ2e : Point.some _ _ hQ2 = e2 • Point.some _ _ hT :=
-      (some_congr W hQ2 (hxc2 ▸ hQ2) hxc2 rfl).trans he2
-    refine ⟨e2, 2 * e1, ?_, ?_, ?_⟩
-    · rw [hSeq, hReq, hQ1e, hQ2e]; module
-    · rw [hdP1, hdP2]; push_cast [he1f, he2f]; rw [hb1', hb3']; ring
-    · rw [hcP1, hcP2]; push_cast [he1f, he2f]; rw [hb1', hb3']; ring
-  · -- b1 = 1 (Q₁ = ±φT), b3 = 1 (Q₂ = ±φT)
-    have hxc1 : (1 + (endo - 1) * w.b1) * w.xT = endo * w.xT := by rw [hb1']; ring
-    obtain ⟨e1, he1, he1f, _⟩ := Kimchi.Gate.VarBaseMul.signed_target W ha hφT (hxc1 ▸ hQ1) hb2
-    have hQ1e : Point.some _ _ hQ1 = e1 • Point.some _ _ hφT :=
-      (some_congr W hQ1 (hxc1 ▸ hQ1) hxc1 rfl).trans he1
-    have hxc2 : (1 + (endo - 1) * w.b3) * w.xT = endo * w.xT := by rw [hb3']; ring
-    obtain ⟨e2, he2, he2f, _⟩ := Kimchi.Gate.VarBaseMul.signed_target W ha hφT (hxc2 ▸ hQ2) hb4
-    have hQ2e : Point.some _ _ hQ2 = e2 • Point.some _ _ hφT :=
-      (some_congr W hQ2 (hxc2 ▸ hQ2) hxc2 rfl).trans he2
-    refine ⟨0, 2 * e1 + e2, ?_, ?_, ?_⟩
-    · rw [hSeq, hReq, hQ1e, hQ2e]; module
-    · rw [hdP1, hdP2]; push_cast [he1f, he2f]; rw [hb1', hb3']; ring
-    · rw [hcP1, hcP2]; push_cast [he1f, he2f]; rw [hb1', hb3']; ring
 
 open Kimchi.Gate.EndoScalar (cPoly) in
 /-- `EndoScalar`'s `a`-digit (`cPoly`, the `φ(T)`/λ component) of crumb `j` built from

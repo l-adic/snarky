@@ -37,9 +37,9 @@ def roots : List Name :=
     `Kimchi.Circuit.EndoScalar.endoScalar_unique,
     `Kimchi.Gate.EndoMul.sound, `Kimchi.Gate.EndoMul.complete,
     `Kimchi.Circuit.EndoMul.endoMul,
-    `Kimchi.Cycle.EndoMul.pallas_endoMul, `Kimchi.Cycle.EndoMul.vesta_endoMul,
-    `Kimchi.Cycle.EndoMul.pallas_combo_off_targets,
-    `Kimchi.Cycle.EndoMul.vesta_combo_off_targets ]
+    `Kimchi.Circuit.EndoMul.pallas_endoMul, `Kimchi.Circuit.EndoMul.vesta_endoMul,
+    `Kimchi.Circuit.EndoMul.pallas_combo_off_targets,
+    `Kimchi.Circuit.EndoMul.vesta_combo_off_targets ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms, the trusted Pasta
     point counts, and the Pasta GLV endomorphism inputs (`β`, `λ`, the CM eigenvalue relation,

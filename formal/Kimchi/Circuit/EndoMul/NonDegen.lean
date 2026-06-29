@@ -3,21 +3,20 @@ import Kimchi.Circuit.VarBaseMul.NonDegen
 import Kimchi.Circuit.VarBaseMul.Soundness
 
 /-!
-# EndoMul non-degeneracy: the second-addition condition is self-enforced
+# EndoMul non-degeneracy lemmas
 
-Stage 2a of discharging `EndoStep`'s per-row non-degeneracies. The *second*-addition
-condition of each `(P+Q)+P` block — `htne = 2·xI − s² + xq ≠ 0` — is forced by the gate
-constraints themselves: it is the EndoMul analog of VarBaseMul's `tne_of_holds`, and EndoMul's
-built-in distinct-point check supplies the `xI ≠ xO` it needs.
+The per-row non-degeneracy facts the EndoMul soundness needs, generic over the curve:
 
-If `htne = 0`, block constraint #2/#5 collapses to `(xI − xO)·(2·yI) = 0`; with `xI ≠ xO`
-(`distinctPoints`) and char ≠ 2 this forces `yI = 0`, so `I` is 2-torsion — impossible on an
-odd-prime-order group (`smul_ne_zero_of_lt`). So the gate never needs `htne` assumed.
-
-The *first*-addition condition `hxne` is NOT self-enforced — it needs the global
-accumulator-avoids-`±T`/`±φT` argument, deferred to the Pasta instantiation.
+* `block_tne` — each `(P+Q)+P` block's *second*-addition condition `htne ≠ 0` is self-enforced by
+  the gate constraints (the EndoMul analog of VarBaseMul's `tne_of_holds`): were it to fail, the
+  block constraint plus the built-in distinct-point check would force the accumulator to be
+  2-torsion — impossible on an odd-prime-order group (`smul_ne_zero_of_lt`).
+* `combo_off_targets` — the *first*-addition condition `hxne` is NOT self-enforced; its geometric
+  core is that a bounded two-base combination `[a]·T + [b]·φT` avoids `±T`/`±φT` (eigenvalue
+  `φT = [λ]·T` + four "no short relation" facts). The Pasta GLV bound supplies those, threaded
+  through `accumulator_chain`.
+* `selectQ'` — a bounded variant of `Gate.EndoMul.selectQ` that also returns the sign `e = ±1`.
 -/
-
 namespace Kimchi.Circuit.EndoMul
 
 open Kimchi.Gate.EndoMul WeierstrassCurve.Affine
@@ -51,20 +50,6 @@ theorem block_tne (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
     have : (2 : ℕ) < W.order := lt_of_le_of_ne W.order_prime.two_le (Ne.symm hodd)
     exact_mod_cast this
   exact Kimchi.Circuit.VarBaseMul.smul_ne_zero_of_lt W hPne (by norm_num) hlt h2P
-
-/-- Both blocks' second-addition non-degeneracies, read off `Holds` and the distinct-point
-    check (`distinctPoints` supplies `xP ≠ xR`, `xR ≠ xS`). These are the `htne1`/`htne2` that
-    `EndoStep` previously assumed — now derived. -/
-theorem htne_of_holds (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
-    (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0) (h2 : (2 : F) ≠ 0) (hodd : W.order ≠ 2)
-    (endo : F) (w : Witness F) (h : Holds endo w)
-    (hP : W.Nonsingular w.xP w.yP) (hR : W.Nonsingular w.xR w.yR) :
-    2 * w.xP - w.s1 ^ 2 + (1 + (endo - 1) * w.b1) * w.xT ≠ 0
-      ∧ 2 * w.xR - w.s3 ^ 2 + (1 + (endo - 1) * w.b3) * w.xT ≠ 0 := by
-  obtain ⟨hxPxR, hxRxS⟩ := distinctPoints endo w h
-  simp only [Holds] at h
-  obtain ⟨_, hc1, _, _, hc2, _, _, _, _, _, _, _⟩ := h
-  exact ⟨block_tne W ha h2 hodd hP hxPxR hc1, block_tne W ha h2 hodd hR hxRxS hc2⟩
 
 /-! ## The GLV non-degeneracy: the two-base accumulator avoids the targets.
 
@@ -102,5 +87,25 @@ theorem combo_off_targets (W : WeierstrassCurve.Affine F)
   · intro hP
     exact h4 (by have := (combo (-lam)).mp (hP.trans (by rw [heig]; simp))
                  rwa [show a + b * lam - -lam = a + (b + 1) * lam by ring] at this)
+
+/-- A bounded variant of `Gate.EndoMul.selectQ` that additionally returns the integer fact
+    `e = 1 ∨ e = -1` (the sign), which `selectQ` discards. Same case split, threading the fourth
+    component of `Kimchi.Gate.VarBaseMul.signed_target`. -/
+theorem selectQ' (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
+    {endo b1 b2 xT yT : F}
+    (hT : W.Nonsingular xT yT) (hφT : W.Nonsingular (endo * xT) yT)
+    (hQ : W.Nonsingular ((1 + (endo - 1) * b1) * xT) ((2 * b2 - 1) * yT))
+    (hb1 : b1 = 0 ∨ b1 = 1) (hb2 : b2 = 0 ∨ b2 = 1) :
+    (∃ e : ℤ, Point.some _ _ hQ = e • Point.some _ _ hT ∧ (e = 1 ∨ e = -1))
+      ∨ (∃ e : ℤ, Point.some _ _ hQ = e • Point.some _ _ hφT ∧ (e = 1 ∨ e = -1)) := by
+  rcases hb1 with rfl | rfl
+  · left
+    have hx : (1 + (endo - 1) * 0) * xT = xT := by ring
+    obtain ⟨e, he, _, hpm⟩ := Kimchi.Gate.VarBaseMul.signed_target W ha hT (hx ▸ hQ) hb2
+    exact ⟨e, (some_congr W hQ (hx ▸ hQ) hx rfl).trans he, hpm⟩
+  · right
+    have hx : (1 + (endo - 1) * 1) * xT = endo * xT := by ring
+    obtain ⟨e, he, _, hpm⟩ := Kimchi.Gate.VarBaseMul.signed_target W ha hφT (hx ▸ hQ) hb2
+    exact ⟨e, (some_congr W hQ (hx ▸ hQ) hx rfl).trans he, hpm⟩
 
 end Kimchi.Circuit.EndoMul

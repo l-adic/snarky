@@ -45,13 +45,16 @@ Kimchi.Circuit.EndoScalar.endoScalar_unique
 Kimchi.Gate.EndoMul.sound
 Kimchi.Gate.EndoMul.complete
 
--- GLV endomorphism scalar multiplication (circuit): the capstone tying EndoScalar ↔ EndoMul ↔ [s]·T
--- (the single top-level result the deployed `endo` circuit needs)
+-- GLV endomorphism scalar multiplication (circuit): the generic capstone over `Holds` — a run of
+-- valid EndoMul rows + base + threading + initial conditions computes [s]·T, with intermediate
+-- nonsingularity derived (no per-row bundle). Ties EndoScalar ↔ EndoMul ↔ [s]·T.
 Kimchi.Circuit.EndoMul.endoMul
--- EndoMul instantiated at the real Pasta curves (eigenvalue discharged via the CM axiom)
-Kimchi.Cycle.EndoMul.pallas_endoMul
-Kimchi.Cycle.EndoMul.vesta_endoMul
--- GLV non-degeneracy: a bounded two-base accumulator avoids ±T/±φT (the hxne core, via the
--- GLV short-basis bound)
-Kimchi.Cycle.EndoMul.pallas_combo_off_targets
-Kimchi.Cycle.EndoMul.vesta_combo_off_targets
+-- GLV non-degeneracy at the Pasta curves: a bounded two-base accumulator avoids ±T/±φT (the
+-- hxne core, via the GLV short-basis bound)
+Kimchi.Circuit.EndoMul.pallas_combo_off_targets
+Kimchi.Circuit.EndoMul.vesta_combo_off_targets
+-- EndoMul at the real Pasta curves: the deployed entry points. The prover supplies only the gate
+-- constraint Holds per row + base + threading + initial conditions; the eigenvalue is discharged
+-- via the CM axiom and the per-row hxne is *derived* from the GLV bound (not assumed)
+Kimchi.Circuit.EndoMul.pallas_endoMul
+Kimchi.Circuit.EndoMul.vesta_endoMul
