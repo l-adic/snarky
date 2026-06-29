@@ -50,7 +50,7 @@ distinct-point lemma `distinctPoints` (which discharges `block_sound`'s
 non-degeneracy at the row level), and the `some_congr` point congruence. The GLV
 accumulation `P_m = 4^m·P₀ + k₁·T + k₂·φ(T)`, its eigenvalue collapse, and the
 recoding correspondence with EndoScalar live in `Kimchi.Circuit.EndoMul` /
-`Kimchi.Circuit.EndoMul.Recoding`, culminating in `endoMul_toField`: per 2-bit window
+`Kimchi.Circuit.EndoMul.Recoding`, culminating in `endoMul`: per 2-bit window
 the two gates assign the same signed base, so `EndoMul` multiplies the base by exactly
 the scalar `EndoScalar` decodes.
 -/

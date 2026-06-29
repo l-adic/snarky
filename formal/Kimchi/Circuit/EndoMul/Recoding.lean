@@ -5,7 +5,7 @@ import Kimchi.Circuit.EndoScalar
 /-!
 # The `EndoMul ∘ EndoScalar` recoding kernel
 
-The supporting machinery behind `EndoMul`'s capstone (`endoMul_toField`): the proof that
+The supporting machinery behind `EndoMul`'s capstone (`endoMul`): the proof that
 `EndoMul`'s per-window GLV digits coincide with `EndoScalar`'s Algorithm-2 `cPoly`/`dPoly`
 digits over the shared challenge crumbs. It is the technical bridge between the two gates —
 pure digit/crumb bookkeeping, independent of the GLV point-fold (`chain_endo`/`EndoStep`) —
@@ -44,7 +44,7 @@ open Kimchi.Gate.EndoScalar in
     base to each 2-bit window. Folding these matched digits — with `EndoMul`'s ×4
     per row = ×2 per window matching `EndoScalar`'s ×2 per crumb, and the inits
     aligned (`EndoMul`'s `4^m·P₀` carry ↔ `EndoScalar`'s `a=b=2`) — yields
-    `(k₂, k₁) = (a, b)`, i.e. `endoMul_toField`'s scalar equals
+    `(k₂, k₁) = (a, b)`, i.e. `endoMul`'s scalar equals
     `EndoScalar.toField challenge λ`. -/
 theorem recoding_digit (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {b1 b2 : F}
     (hb1 : b1 = 0 ∨ b1 = 1) (hb2 : b2 = 0 ∨ b2 = 1) :

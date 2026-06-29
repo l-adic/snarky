@@ -20,7 +20,7 @@ over TWO bases (`T` and `φ(T)`).
 
 * `endoMul_ab` — the recoding result: the GLV coefficients `(k₂, k₁)` cast to `F` are
   exactly `EndoScalar`'s Algorithm-2 `a`, `b` digit-sums over the shared crumbs.
-* `endoMul_toField` — THE CAPSTONE (and the only result the deployed `endo` circuit
+* `endoMul` — THE CAPSTONE (and the only result the deployed `endo` circuit
   needs): at the real init `P₀ = 2(T+φT)` and the eigenvalue `φ(T) = [λ]·T`, the `m`
   rows give `P_m = [s]·T` with `(s:F) = EndoScalar.toField (crumbList g m) λ` — EndoMul
   multiplies the base by exactly the scalar EndoScalar decodes.
@@ -163,7 +163,7 @@ theorem endoMul_ab (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ 
     scalar. Assembles `endoMul_ab` (k₂,k₁ = the a,b digit-sums) with
     `decompose_crumbList` (the `a=b=2` ↔ `4^m·P₀` init alignment), the init `hP₀`,
     and the eigenvalue `heig`. -/
-theorem endoMul_toField (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
+theorem endoMul (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo : F)
     (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → EndoStep W endo (g i))
     (P : ℕ → W.Point) (T φT : W.Point)
