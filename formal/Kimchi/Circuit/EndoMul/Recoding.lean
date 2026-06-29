@@ -44,7 +44,7 @@ open Kimchi.Gate.EndoScalar in
     base to each 2-bit window. Folding these matched digits — with `EndoMul`'s ×4
     per row = ×2 per window matching `EndoScalar`'s ×2 per crumb, and the inits
     aligned (`EndoMul`'s `4^m·P₀` carry ↔ `EndoScalar`'s `a=b=2`) — yields
-    `(k₂, k₁) = (a, b)`, i.e. `endoMul_scalar`'s scalar equals
+    `(k₂, k₁) = (a, b)`, i.e. `endoMul_toField`'s scalar equals
     `EndoScalar.toField challenge λ`. -/
 theorem recoding_digit (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {b1 b2 : F}
     (hb1 : b1 = 0 ∨ b1 = 1) (hb2 : b2 = 0 ∨ b2 = 1) :

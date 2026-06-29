@@ -48,11 +48,11 @@ accumulation.
 The constraint model `Witness` / `Holds`, the booleanity helper `bool_of_mul`, the
 distinct-point lemma `distinctPoints` (which discharges `block_sound`'s
 non-degeneracy at the row level), and the `some_congr` point congruence. The GLV
-accumulation `P_m = 4^m·P₀ + k₁·T + k₂·φ(T)` and the eigenvalue collapse to
-`[k₁+k₂·λ]·T` live in `Kimchi.Circuit.EndoMul` (`chain_endo` / `endoMul` /
-`endoMul_scalar`), and the recoding correspondence with EndoScalar
-(`Kimchi.Circuit.EndoMul.recoding_digit`): per 2-bit window the two gates assign the
-same signed base, the per-window heart of `(k₂, k₁) = (a, b)`.
+accumulation `P_m = 4^m·P₀ + k₁·T + k₂·φ(T)`, its eigenvalue collapse, and the
+recoding correspondence with EndoScalar live in `Kimchi.Circuit.EndoMul` /
+`Kimchi.Circuit.EndoMul.Recoding`, culminating in `endoMul_toField`: per 2-bit window
+the two gates assign the same signed base, so `EndoMul` multiplies the base by exactly
+the scalar `EndoScalar` decodes.
 -/
 
 namespace Kimchi.Gate.EndoMul

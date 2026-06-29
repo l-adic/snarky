@@ -46,7 +46,5 @@ Kimchi.Gate.EndoMul.sound
 Kimchi.Gate.EndoMul.complete
 
 -- GLV endomorphism scalar multiplication (circuit): the capstone tying EndoScalar ↔ EndoMul ↔ [s]·T
-Kimchi.Circuit.EndoMul.endoMul
-Kimchi.Circuit.EndoMul.endoMul_scalar
-Kimchi.Circuit.EndoMul.recoding_digit
+-- (the single top-level result the deployed `endo` circuit needs)
 Kimchi.Circuit.EndoMul.endoMul_toField
