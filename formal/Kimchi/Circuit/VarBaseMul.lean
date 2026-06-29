@@ -1,21 +1,18 @@
-import Kimchi.Circuit.VarBaseMul.Basic
-import Kimchi.Circuit.VarBaseMul.Ladder
-import Kimchi.Circuit.VarBaseMul.NonDegen
-import Kimchi.Circuit.VarBaseMul.Soundness
+import Kimchi.Circuit.VarBaseMul.Internal
 import Kimchi.Pasta
 
 /-!
 # The `VarBaseMul` circuit
 
-The public module for variable-base scalar multiplication: it aggregates the circuit
-definitions (`.Basic`), the number-theoretic ladder kernel (`.Ladder`), the group-order
-non-degeneracy toolkit (`.NonDegen`), and the abstract soundness (`.Soundness`), and then
-instantiates it at the real Pasta curves.
+Variable-base scalar multiplication, instantiated at the real Pasta curves. The supporting
+development — the accumulator and register recurrence folds, the number-theoretic ladder kernel,
+the group-order non-degeneracy toolkit, and the abstract soundness — lives in
+`Kimchi.Circuit.VarBaseMul.Internal`.
 
-The abstract `varBaseMul_deployed_correct` / `varBaseMul_subwrap_correct` /
-`varBaseMul_forbidden_correct` (in `.Soundness`) are proved over any `WeierstrassCurve.Affine`
-carrying the short-shape and prime-order `Fact`s, and are `#print axioms`-clean. Here we expose
-the two directions the deployed circuit actually uses, each at its concrete curve:
+The generic soundness theorems `varBaseMul_subwrap_correct` and `varBaseMul_forbidden_correct` are
+proved over any `WeierstrassCurve.Affine` carrying the short-shape and prime-order `Fact`s, and are
+`#print axioms`-clean. This module exposes the two directions the deployed circuit actually uses,
+each at its concrete curve:
 
 * `varBaseMul_scaleFast1` — `scaleFast1` / Type1 (Vesta): the scalar field is smaller
   than the circuit field, so there is no register range-check; soundness comes from the forbidden
@@ -99,9 +96,8 @@ theorem varBaseMul_scaleFast1
 `sDiv2 < 2^(pastaFieldBits-1)` — and applies the parity correction `if sOdd then g else g − base`.
 So the inner register is `sDiv2 < 2^(pastaFieldBits-1) < p`, which discharges `hcanonical` via the
 signed-ladder/register bridge (`gateLadder_eq_register`): no separate range hypothesis beyond
-`sDiv2`'s bound. The field-bound non-degeneracy (the abstract `varBaseMul_deployed_correct`
-instantiated at Pallas) is inlined below — a bare `varBaseMul` is never a deployed entry point on
-its own. The split itself is modeled by `scalarMul_type2`. -/
+`sDiv2`'s bound. The field-bound non-degeneracy at Pallas is inlined below — a bare `varBaseMul` is
+never a deployed entry point on its own. The split itself is modeled by `scalarMul_type2`. -/
 
 /-- **scaleFast2 on the real Pallas curve.** The Type2 entry point: the scalar is split
     `s = 2·sDiv2 + sOdd`, the register `N` holds `sDiv2` (range-checked to

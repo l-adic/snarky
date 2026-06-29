@@ -1,6 +1,5 @@
 import Kimchi.Gate.EndoMul
-import Kimchi.Circuit.VarBaseMul.NonDegen
-import Kimchi.Circuit.VarBaseMul.Soundness
+import Kimchi.Circuit.VarBaseMul.Internal
 
 /-!
 # EndoMul non-degeneracy lemmas
