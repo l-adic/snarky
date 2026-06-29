@@ -33,6 +33,20 @@ The library is a strict bottom-up stack (`Cycle` → `Circuit` → `Gate` → `C
 `Kimchi/Gate/Generic.lean` are a runnable demo of "ingest a (gate, witness) and run the
 verified checker".
 
+### The Circuit module convention
+
+Each `Circuit/{Name}` is exactly two files:
+
+- **`Kimchi/Circuit/{Name}.lean`** — the thin top-level module. It exposes only the headline root
+  theorems: for `EndoMul`/`VarBaseMul`, the per-Pasta-curve specializations (`pallas_endoMul`,
+  `varBaseMul_scaleFast1`, …); for the field-generic circuits, the principal results. It imports
+  `Kimchi.Circuit.{Name}.Internal`.
+- **`Kimchi/Circuit/{Name}/Internal.lean`** — the entire supporting development (the recurrence
+  folds, ladder/recoding kernels, non-degeneracy toolkit, and the abstract soundness theorems).
+  Its declarations stay public — the generic roots (`endoMul`, `varBaseMul_subwrap_correct`, …)
+  live here and are still tracked by `scripts/check_axioms.lean` — `Internal` is a naming
+  convention, not an access boundary.
+
 ## How a gate is modelled
 
 There are **two gate idioms**, by purpose:
@@ -173,8 +187,13 @@ axiom-clean Pratt/Lucas primality certificate); `W`, `order`, `beta` are concret
   layout, the constraint transcription, and a prose statement of what each theorem means
   *before* its signature. Match this house style; it's what makes the formalization auditable.
 - **Files are split into `/-! ## … -/` sections** (constraint model → reflection → soundness →
-  completeness → runnable `#eval` example → supporting lemmas), and larger gates into "part N /
-  phase N" files. Keep phase docstrings in sync with reality (see below).
+  completeness → runnable `#eval` example → supporting lemmas). Keep section docstrings in sync
+  with reality (see below).
+- **Each circuit is two files** (see "The Circuit module convention" above): a thin top-level
+  `Kimchi/Circuit/{Name}.lean` exposing the headline roots, and `Kimchi/Circuit/{Name}/Internal.lean`
+  holding the whole supporting development. Add new supporting lemmas to `Internal.lean`; promote a
+  result to the top-level file only when it is a headline root. Do not reintroduce a scatter of
+  per-topic submodules.
 - **Never modify `maxHeartbeats`.** If a proof is slow, profile with `#count_heartbeats in`
   (`import Mathlib.Util.CountHeartbeats`) and fix the proof, don't raise the limit.
 
