@@ -1,0 +1,187 @@
+\chapter{The IPA Scheme over the Pasta Curves}
+
+The preceding chapters develop the IPA polynomial commitment generically: the
+scheme \(\textsf{ipa}\) of \cref{def:ipa_scheme} and its two security theorems are
+stated for an arbitrary additive commitment group \(\GG\) of prime order with
+scalar field \(\Fr\). This chapter instantiates that generic development at the two
+Pasta curves, Pallas and Vesta, taking \(\GG\) to be a Pasta curve's group of
+rational points and \(\Fr\) to be the corresponding scalar field, both supplied by
+CompElliptic. The result is a concrete \texttt{Commitment.Scheme} on each curve
+together with the specialized correctness and binding statements; nothing new is
+proved here beyond transporting the generic results across the instantiation.
+
+The Pallas and Vesta curves form a \(2\)-cycle: both have the short-Weierstrass
+shape \(y^{2} = x^{3} + 5\), the base field of one is the scalar field of the
+other, and each curve's group of points has prime order equal to the cardinality of
+the partner field. Concretely, the Pallas curve is defined over the Pallas base
+field, and its group of rational points has order \(q\), the cardinality of the
+Pallas scalar field; the Vesta curve is defined over that scalar field \(\Fp[q]\),
+and its group has order \(p\), the cardinality of the Pallas base field. Each
+instantiation pairs a curve's point group with the partner curve's base field as
+the scalar field, exactly as the generic scheme requires.
+
+\section{CompElliptic Pasta dependency anchors}
+
+The following four blocks are dependency anchors for the CompElliptic vendor
+library: each states an external declaration in the project's notation and points
+\lean{} at the real CompElliptic target, marked \mathlibok so the dependency graph
+treats it as supplied. None is a proof obligation of this project — the \lean{}
+target is the citation.
+
+\begin{definition}[Pallas curve group]
+  \label{def:pallas_group}
+  \lean{CompElliptic.Curves.Pasta.Pallas.curve}
+  \mathlibok
+  \textit{Provided by CompElliptic.}
+  The Pallas curve is the short-Weierstrass elliptic curve
+  \(y^{2} = x^{3} + 5\) (coefficients \(A = 0\), \(B = 5\)) over the Pallas base
+  field. Its discriminant is a unit, so the curve is elliptic, and its set of
+  rational points forms a finite abelian group of prime order \(q\). This point
+  group is the commitment group \(\GG\) of the Pallas instantiation of the IPA
+  scheme.
+\end{definition}
+
+\begin{definition}[Pallas scalar field]
+  \label{def:pallas_scalar_field}
+  \lean{CompElliptic.Fields.Pasta.PallasScalarField}
+  \mathlibok
+  \textit{Provided by CompElliptic.}
+  The Pallas scalar field is the prime field \(\Zmod{q}\), where \(q\) is the
+  (prime) order of the Pallas point group of \cref{def:pallas_group}. It carries a
+  machine-checked Pratt/Lucas primality certificate for \(q\), and is the scalar
+  field \(\Fr\) over which polynomials are committed and folding challenges are
+  drawn in the Pallas instantiation.
+\end{definition}
+
+\begin{definition}[Vesta curve group]
+  \label{def:vesta_group}
+  \lean{CompElliptic.Curves.Pasta.Vesta.curve}
+  \mathlibok
+  \textit{Provided by CompElliptic.}
+  The Vesta curve is the short-Weierstrass elliptic curve \(y^{2} = x^{3} + 5\)
+  (coefficients \(A = 0\), \(B = 5\)) over the Vesta base field, which coincides
+  with the Pallas scalar field of \cref{def:pallas_scalar_field}. Its rational
+  points form a finite abelian group of prime order \(p\), equal to the cardinality
+  of the Pallas base field. This point group is the commitment group \(\GG\) of the
+  Vesta instantiation.
+\end{definition}
+
+\begin{definition}[Vesta scalar field]
+  \label{def:vesta_scalar_field}
+  \lean{CompElliptic.Fields.Pasta.VestaScalarField}
+  \mathlibok
+  \textit{Provided by CompElliptic.}
+  The Vesta scalar field is the prime field \(\Zmod{p}\), where \(p\) is the order
+  of the Vesta point group of \cref{def:vesta_group}; it coincides with the Pallas
+  base field. It is the scalar field \(\Fr\) of the Vesta instantiation.
+\end{definition}
+
+\section{The Pasta instances}
+
+\begin{definition}[IPA scheme over Pallas]
+  \label{def:ipa_pallas}
+  \lean{Kimchi.Commitment.IPA.ipaPallas}
+  \uses{def:ipa_scheme, def:pallas_group, def:pallas_scalar_field}
+  The IPA commitment scheme over the Pallas curve is the generic scheme
+  \(\textsf{ipa}\) of \cref{def:ipa_scheme} with the commitment group \(\GG\) taken
+  to be the Pallas point group of \cref{def:pallas_group} and the scalar field
+  \(\Fr\) taken to be the Pallas scalar field of \cref{def:pallas_scalar_field}.
+  All of the abstract data slots of \cref{def:ipa_scheme} — the structured
+  reference string of generators and blinding base, the Pedersen commitment, and
+  the logarithmic-round opening protocol — are inherited unchanged; only the
+  carrier group and its scalars are fixed. Concretely, a polynomial of degree
+  \(< d\) over the Pallas scalar field is committed by a Pedersen vector commitment
+  whose values lie in the Pallas point group.
+\end{definition}
+
+\begin{definition}[IPA scheme over Vesta]
+  \label{def:ipa_vesta}
+  \lean{Kimchi.Commitment.IPA.ipaVesta}
+  \uses{def:ipa_scheme, def:vesta_group, def:vesta_scalar_field}
+  The IPA commitment scheme over the Vesta curve is the generic scheme
+  \(\textsf{ipa}\) of \cref{def:ipa_scheme} with the commitment group \(\GG\) taken
+  to be the Vesta point group of \cref{def:vesta_group} and the scalar field
+  \(\Fr\) taken to be the Vesta scalar field of \cref{def:vesta_scalar_field}. As
+  for Pallas, every component of the generic scheme is inherited unchanged; the
+  construction differs only in the choice of carrier curve. Because the Pasta
+  curves form a cycle, the Pallas and Vesta instantiations are the two halves used
+  together by the recursive proof system, but each is, on its own, an instance of
+  the same generic IPA scheme.
+\end{definition}
+
+\section{Security at the Pasta curves}
+
+\begin{theorem}[perfect correctness over Pallas]
+  \label{thm:ipa_pallas_correctness}
+  \lean{Kimchi.Commitment.IPA.ipaPallas_correctness}
+  \uses{thm:ipa_correctness, def:ipa_pallas, def:commitment_perfect_correctness}
+  The Pallas IPA scheme of \cref{def:ipa_pallas} satisfies perfect correctness
+  (\cref{def:commitment_perfect_correctness}): for every polynomial of degree
+  \(< d\) over the Pallas scalar field and every evaluation point, the honest
+  commit-then-open interaction makes the verifier accept with probability \(1\).
+  \begin{proof}
+    \uses{thm:ipa_correctness}
+    The generic perfect-correctness theorem \cref{thm:ipa_correctness} holds for
+    the scheme \(\textsf{ipa}\) over any prime-order commitment group with its
+    scalar field. The Pallas instantiation of \cref{def:ipa_pallas} is exactly
+    \(\textsf{ipa}\) with \(\GG\) the Pallas point group
+    (\cref{def:pallas_group}) and \(\Fr\) the Pallas scalar field
+    (\cref{def:pallas_scalar_field}); both hypotheses of the generic theorem —
+    that \(\GG\) is a commutative group acted on by the field \(\Fr\) and that
+    \(\Fr\) is a field — are discharged by the CompElliptic instances for the
+    Pasta curve. Specializing \cref{thm:ipa_correctness} at these choices yields
+    the claim.
+  \end{proof}
+\end{theorem}
+
+\begin{theorem}[evaluation binding over Pallas]
+  \label{thm:ipa_pallas_binding}
+  \lean{Kimchi.Commitment.IPA.ipaPallas_binding}
+  \uses{thm:ipa_binding, def:ipa_pallas, def:commitment_binding}
+  The Pallas IPA scheme of \cref{def:ipa_pallas} satisfies evaluation binding
+  (\cref{def:commitment_binding}): no efficient adversary can open a single Pallas
+  commitment to two different evaluations at the same point, except with the
+  negligible error of the generic bound.
+  \begin{proof}
+    \uses{thm:ipa_binding}
+    The generic binding theorem \cref{thm:ipa_binding} establishes evaluation
+    binding for \(\textsf{ipa}\) over any prime-order commitment group with its
+    scalar field, the binding error being controlled by the hardness of the
+    discrete-logarithm relation among the SRS elements. The Pallas scheme is the
+    instantiation of \(\textsf{ipa}\) at the Pallas point group
+    (\cref{def:pallas_group}) and Pallas scalar field
+    (\cref{def:pallas_scalar_field}), whose prime order is certified by
+    CompElliptic; specializing \cref{thm:ipa_binding} at this group and field
+    gives the result.
+  \end{proof}
+\end{theorem}
+
+\begin{theorem}[perfect correctness over Vesta]
+  \label{thm:ipa_vesta_correctness}
+  \lean{Kimchi.Commitment.IPA.ipaVesta_correctness}
+  \uses{thm:ipa_correctness, def:ipa_vesta, def:commitment_perfect_correctness}
+  The Vesta IPA scheme of \cref{def:ipa_vesta} satisfies perfect correctness
+  (\cref{def:commitment_perfect_correctness}).
+  \begin{proof}
+    \uses{thm:ipa_correctness}
+    Identical to the Pallas case (\cref{thm:ipa_pallas_correctness}), specializing
+    the generic theorem \cref{thm:ipa_correctness} at the Vesta point group
+    (\cref{def:vesta_group}) and Vesta scalar field
+    (\cref{def:vesta_scalar_field}).
+  \end{proof}
+\end{theorem}
+
+\begin{theorem}[evaluation binding over Vesta]
+  \label{thm:ipa_vesta_binding}
+  \lean{Kimchi.Commitment.IPA.ipaVesta_binding}
+  \uses{thm:ipa_binding, def:ipa_vesta, def:commitment_binding}
+  The Vesta IPA scheme of \cref{def:ipa_vesta} satisfies evaluation binding
+  (\cref{def:commitment_binding}).
+  \begin{proof}
+    \uses{thm:ipa_binding}
+    Identical to the Pallas case (\cref{thm:ipa_pallas_binding}), specializing the
+    generic theorem \cref{thm:ipa_binding} at the Vesta point group
+    (\cref{def:vesta_group}) and Vesta scalar field
+    (\cref{def:vesta_scalar_field}).
+  \end{proof}
+\end{theorem}

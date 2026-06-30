@@ -1,0 +1,153 @@
+\chapter{Perfect Completeness of the IPA Scheme}
+
+This chapter states and sketches the first of the two headline security
+properties of the IPA polynomial commitment of \cref{def:ipa_scheme}:
+\emph{perfect completeness}. Informally, an honest prover always convinces the
+verifier of a true evaluation: committing to a polynomial \(p\) of degree
+\(< d\) and then running the honest opening protocol on a point \(x\) with the
+true value \(v = p(x)\) makes the verifier accept with probability \(1\). This
+is the completeness half of Halo's Theorem~1; binding and extractability are
+deferred to their own chapter.
+
+The Lean statement follows the two-layer shape used by ArkLib's worked KZG
+development. There, an \emph{algebraic} correctness lemma
+(\texttt{KZG.correctness}), asserting that the concrete commit/open/verify
+operations satisfy the verification equation, is \emph{lifted} to the
+interface-level predicate \texttt{Commitment.perfectCorrectness}
+(\texttt{KZG.CommitmentScheme.correctness}) by unfolding the oracle-computation
+plumbing of \texttt{KeyGen}, \texttt{Commit}, and the opening reduction and
+discharging the probability-one obligation. The IPA correctness theorem below
+plays the role of that interface-level statement: its proof reduces, after the
+same unfolding, to the algebraic accept-equation identity sketched here for the
+honest transcript of \cref{def:ipa_opening_protocol}.
+
+\section{Perfect completeness}
+
+\begin{theorem}[Perfect completeness of IPA]
+  \label{thm:ipa_correctness}
+  \lean{Kimchi.Commitment.IPA.Correctness.ipa_correctness}
+  \uses{def:ipa_scheme, def:commitment_perfect_correctness,
+    def:ipa_opening_protocol, def:ipa_commit}
+  % SOURCE: [Halo], Section 3, Theorem 1 (read from references/halo.txt)
+  % SOURCE QUOTE: "Theorem 1. The protocol presented in Section 3.1 has perfect completeness,
+  % computational witness-extended emulation, and perfect special honest-verifier
+  % zero knowledge."
+  \textit{Source: Halo, Section 3, Theorem 1 (perfect completeness).}
+  The IPA commitment scheme \(\texttt{ipa}\) of \cref{def:ipa_scheme} satisfies
+  perfect correctness in the sense of \cref{def:commitment_perfect_correctness}:
+  for every polynomial \(p \in \Fr[X]\) of degree \(< d\), presented by its
+  coefficient vector \(a \in \Fr^{d}\), and every evaluation point
+  \(x \in \Fr\), the experiment that
+  \begin{enumerate}
+    \item runs key generation to obtain the SRS \(\sigma = (g, H)\),
+    \item runs the honest \(\Commit\) of \cref{def:ipa_commit} on \(a\),
+      yielding the commitment \(P = \inner{a}{g} + [r]H\) with decommitment
+      \(r\), and
+    \item runs the honest opening protocol of
+      \cref{def:ipa_opening_protocol} on the statement
+      \((P, x, v)\) with \(v = p(x)\),
+  \end{enumerate}
+  makes the verifier accept with probability \(1\); equivalently,
+  \(\texttt{ipa}\) satisfies \(\correctness\) with error
+  \(\varepsilon_{\mathrm{c}} = 0\).
+\end{theorem}
+
+% SOURCE QUOTE PROOF: "and the prover proceeds
+%                     Pk to demonstrate   Pk knowledge of a = a 0 and synthetic
+% blinding factor r0 = j=1 (lj u2j ) + r + j=1 (rj u−2
+%                                                   j  ) such that
+%                              Q = [a] G + [r0 ]H + [ab] U
+%                                                                                 (2)
+%                                   = [a] (G + [b] U ) + [r0 ]H
+% which establishes the claim that v = v 0 = ha, bi as described in [13, Section 3]."
+% SOURCE QUOTE PROOF: "The prover begins by sampling random d, s ∈ Fp and sending
+%
+%                               R = [d] (G + [b] U ) + [s]H
+%
+% which the verifier responds to with random challenge c ∈ I. The prover now
+% sends
+%                                  z1 = ac + d
+%                                  z2 = cr0 + s
+% and the verifier accepts if [c] Q + R = [z1 ] (G + [b] U ) + [z2 ]H."
+\begin{proof}
+  \uses{def:ipa_opening_proof, def:ipa_bpoly, def:ipa_relation,
+    def:mathlib_module_smul}
+  \textit{Source: Halo, Section 3.1 and eq.~(2).}
+  The proof mirrors the perfect-completeness half of Halo's Theorem~1: it tracks
+  the honest prover's values through the protocol of
+  \cref{def:ipa_opening_protocol} and verifies the final accept equation by
+  direct substitution. Since the honest \(\Commit\) makes the statement
+  \((P, x, v)\) a member of the opening relation of \cref{def:ipa_relation}
+  (i.e.\ \(P = \inner{a}{g} + [r]H\) and \(v = p(x) = \inner{a}{(1, x, \dots,
+  x^{d-1})}\)), every step below is an identity in \(\GG\) and \(\Fr\), so the
+  accepting event has probability \(1\). At the interface level this algebraic
+  identity is what the \texttt{perfectCorrectness} unfolding reduces to, exactly
+  as ArkLib's \texttt{KZG.CommitmentScheme.correctness} reduces to its algebraic
+  \texttt{KZG.correctness} lemma.
+
+  \emph{(i) Collapse of the fold.} After the setup move both parties hold
+  \(P' = P + [v]U\), and the prover initializes \(g' := g\), \(a' := a\),
+  \(b' := (1, x, x^{2}, \dots, x^{d-1})\). Each of the \(k = \log_{2} d\) honest
+  folding rounds replaces a length-\(2m\) triple \((g', a', b')\) by the
+  length-\(m\) triple
+  \[
+    a' \leftarrow a'_{\mathrm{hi}}\, u_{j}^{-1} + a'_{\mathrm{lo}}\, u_{j},
+    \quad
+    b' \leftarrow b'_{\mathrm{lo}}\, u_{j}^{-1} + b'_{\mathrm{hi}}\, u_{j},
+    \quad
+    g' \leftarrow g'_{\mathrm{lo}}\, u_{j}^{-1} + g'_{\mathrm{hi}}\, u_{j}.
+  \]
+  After all \(k\) rounds the three vectors have length one. Write
+  \(a_{0}\) for the final folded scalar \(a'_{0}\), \(g_{0} := g'_{0}\), and
+  \(b_{0} := b'_{0}\). Unwinding the recursion expresses \(g_{0}\) and \(b_{0}\)
+  as the inner products of the length-\(d\) coefficient vector \(s\) of
+  \cref{def:ipa_bpoly} (eq.~(1)) against \(g\) and against the powers of \(x\):
+  \[
+    g_{0} = \inner{s}{g} =: G,
+    \qquad
+    b_{0} = \inner{s}{(1, x, x^{2}, \dots, x^{d-1})} = \bpoly(x) =: b,
+  \]
+  the second equality being the defining property of the challenge polynomial
+  \(\bpoly\) of \cref{def:ipa_bpoly}.
+
+  \emph{(ii) Telescoping to \(Q\) (eq.~(2)).} The verifier forms
+  \[
+    Q = \sum_{j=1}^{k} [u_{j}^{2}]\, L_{j} \;+\; P' \;+\;
+        \sum_{j=1}^{k} [u_{j}^{-2}]\, R_{j}.
+  \]
+  Substituting the honest cross-term definitions
+  \(L_{j} = \inner{a'_{\mathrm{lo}}}{g'_{\mathrm{hi}}} + [l_{j}]H +
+  [\inner{a'_{\mathrm{lo}}}{b'_{\mathrm{hi}}}]U\) and
+  \(R_{j} = \inner{a'_{\mathrm{hi}}}{g'_{\mathrm{lo}}} + [r_{j}]H +
+  [\inner{a'_{\mathrm{hi}}}{b'_{\mathrm{lo}}}]U\) of round \(j\), the
+  cross-terms telescope against \(P'\): each round's contribution combines with
+  the running \(\inner{a'}{g'}\)- and \(\inner{a'}{b'}\)-terms so that all
+  intermediate pieces cancel, leaving the length-one residue. With the synthetic
+  blinding factor
+  \(r' = \sum_{j=1}^{k} (l_{j} u_{j}^{2}) + r + \sum_{j=1}^{k} (r_{j}
+  u_{j}^{-2})\) one obtains Halo's eq.~(2):
+  \[
+    Q = [a_{0}]\,G + [r']H + [a_{0} b]\,U
+      = [a_{0}]\,(G + [b]U) + [r']H.
+  \]
+
+  \emph{(iii) The Schnorr check.} The prover samples \(d, s \in \Fr\), sends
+  \(\delta = [d](G + [b]U) + [s]H\) (Halo's \(R\)), receives the Schnorr
+  challenge \(c \in \Fr\), and answers with the honest responses
+  \(z_{1} = a_{0} c + d\) and \(z_{2} = c r' + s\). Substituting these and the
+  expressions for \(Q\) and \(\delta\) into the right-hand side of the
+  verifier's check and using bilinearity of the scalar action
+  (\cref{def:mathlib_module_smul}),
+  \begin{align*}
+    [z_{1}]\,(G + [b]U) + [z_{2}]\,H
+      &= [a_{0} c + d]\,(G + [b]U) + [c r' + s]\,H \\
+      &= [c]\bigl([a_{0}]\,(G + [b]U) + [r']H\bigr)
+         + \bigl([d]\,(G + [b]U) + [s]H\bigr) \\
+      &= [c]\,Q + \delta.
+  \end{align*}
+  This is exactly the verifier's accept condition
+  \([c]\,Q + \delta = [z_{1}]\,(G + [b]U) + [z_{2}]\,H\), so the honest
+  transcript \((\{(L_{j}, R_{j})\}_{j}, a_{0}, g_{0}, \delta, z_{1}, z_{2})\) of
+  \cref{def:ipa_opening_proof} always passes. Hence the verifier accepts with
+  probability \(1\), which is perfect completeness.
+\end{proof}

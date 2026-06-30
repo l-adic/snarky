@@ -1,0 +1,436 @@
+\chapter{The IPA Polynomial Commitment}
+
+This chapter constructs kimchi's inner-product-argument (IPA) univariate
+polynomial commitment as an instance of ArkLib's \texttt{Commitment.Scheme}. The
+scheme is generic over an additive commitment group \(\GG\) of prime order with
+scalar field \(\Fr\): a degree-\((d-1)\) polynomial over \(\Fr\) is committed by a
+Pedersen vector commitment to its coefficient vector, and the prover convinces a
+verifier of a claimed evaluation through a logarithmic-round folding argument
+wrapped in a zero-knowledge Schnorr step. The mathematical statement follows
+Halo \S3; the operational ground truth is the kimchi Rust reference
+(\texttt{ipa.rs}, \texttt{commitment.rs}). The security theorems
+(\(\correctness\), \(\binding\)) and the Pasta instantiation are deferred to
+their own chapters.
+
+\section{The structured reference string}
+
+\begin{definition}[IPA structured reference string]
+  \label{def:ipa_srs}
+  \lean{Kimchi.Commitment.IPA.SRS}
+  % SOURCE: [Halo], Section 3, Setup (read from references/halo.txt)
+  % SOURCE QUOTE: "   First, for a given degree bound d − 1 we define Setup(1λ , d) as an algorithm
+  % that produces a common reference string σ = (G, Fp , G, H) for group G of prime
+  % order p, with random G ∈ Gd and H ∈ G."
+  % SOURCE: [kimchi], poly-commitment/src/ipa.rs, struct SRS (read from references/ipa.rs)
+  % SOURCE QUOTE: "pub struct SRS<G> {
+  %     /// The vector of group elements for committing to polynomials in
+  %     /// coefficient form.
+  %     #[serde_as(as = "Vec<o1_utils::serialization::SerdeAs>")]
+  %     pub g: Vec<G>,
+  %
+  %     /// A group element used for blinding commitments
+  %     #[serde_as(as = "o1_utils::serialization::SerdeAs")]
+  %     pub h: G,"
+  \textit{Source: Halo, Section 3 (Setup); kimchi \texttt{ipa.rs} \texttt{struct SRS}.}
+  Fix a degree bound \(d - 1\) and assume \(d = 2^{k}\). The structured reference
+  string produced by \(\Setup(1^{\lambda}, d)\) consists of a vector of generators
+  \(g = (g_{0}, \dots, g_{d-1}) \in \GG^{d}\), used to commit to a polynomial in
+  coefficient form, together with a single blinding base \(H \in \GG\). All of
+  \(g_{0}, \dots, g_{d-1}, H\) are sampled uniformly at random and independently;
+  no trapdoor or hidden structure relates them, so the only constraint the SRS
+  imposes is that no nontrivial discrete-log relation among its elements is known.
+  In the Rust reference these are exactly the fields \texttt{g} (the commitment
+  generators) and \texttt{h} (the blinding base) of \texttt{struct SRS}.
+\end{definition}
+
+\section{The Pedersen commitment}
+
+\begin{definition}[IPA Pedersen commitment]
+  \label{def:ipa_commit}
+  \lean{Kimchi.Commitment.IPA.commit}
+  \uses{def:ipa_srs, def:mathlib_finsum, def:mathlib_module_smul}
+  % SOURCE: [Halo], Section 3, Commit (read from references/halo.txt)
+  % SOURCE QUOTE: "Let Commit be defined as
+  %                        Commit(σ, p(X); r) = ha, Gi + [r]H
+  % for blinding factor r, where ai ∈ F is the coefficient for the ith degree term of
+  % p(X), and p(X) ∈ Fp [X] is of maximal degree d − 1. We will sometimes omit
+  % the blinding factor r if it is either implicit or unnecessary. This is a Pedersen
+  % vector commitment to the polynomial coefficients, and we remark that such
+  % commitments are perfectly hiding and additively homomorphic"
+  % SOURCE: [kimchi], poly-commitment/src/ipa.rs, fn mask (read from references/ipa.rs)
+  % SOURCE QUOTE: "    /// Turns a non-hiding polynomial commitment into a hiding polynomial
+  %     /// commitment. Transforms each given `<a, G>` into `(<a, G> + wH, w)` with
+  %     /// a random `w` per commitment."
+  \textit{Source: Halo, Section 3 (Commit); kimchi \texttt{ipa.rs}
+  \texttt{commit\_non\_hiding}/\texttt{mask}.}
+  Let \(p(X) \in \Fr[X]\) have degree at most \(d - 1\), and write
+  \(a = (a_{0}, \dots, a_{d-1})\) for its coefficient vector, so that \(a_{i}\) is
+  the coefficient of the degree-\(i\) term. For a blinding factor \(r \in \Fr\) the
+  commitment relative to the SRS \(\sigma = (g, H)\) of \cref{def:ipa_srs} is the
+  Pedersen vector commitment
+  \[
+    \Commit(\sigma, p(X); r) \;=\; \inner{a}{g} + [r]H
+    \;=\; \sum_{i=0}^{d-1} [a_{i}]\, g_{i} \;+\; [r]H,
+  \]
+  where \(\inner{a}{g} = \sum_{i} [a_{i}] g_{i}\) is the multiscalar
+  multiplication of the coefficients against the generators and \([r]H\) is the
+  scalar action of \(r\) on the blinding base. The non-hiding part
+  \(\inner{a}{g}\) (\texttt{commit\_non\_hiding}) is turned into the hiding
+  commitment by adding \([r]H\) for a freshly sampled \(r\) (\texttt{mask}),
+  which records \(r\) as the decommitment. The commitment is perfectly hiding and
+  additively homomorphic: for all \(a, b, r, s \in \Fr\) and \(p, q \in \Fr[X]\),
+  \[
+    [a]\,\Commit(\sigma, p(X); r) + [b]\,\Commit(\sigma, q(X); s)
+      \;=\; \Commit\bigl(\sigma,\; a \cdot p(X) + b \cdot q(X);\; a r + b s\bigr).
+  \]
+\end{definition}
+
+\section{The challenge polynomial}
+
+\begin{definition}[challenge polynomial]
+  \label{def:ipa_bpoly}
+  \lean{Kimchi.Commitment.IPA.bPoly}
+  \uses{def:mathlib_poly_eval}
+  % SOURCE: [Halo], Section 3.2, eq. (3) (read from references/halo.txt)
+  % SOURCE QUOTE: "structure of s and
+  % b by defining a polynomial
+  %                                                   k
+  %                                                                        i−1
+  %                                                   Y
+  %                      g(X, u1 , u2 , ..., uk ) =         (ui + u−1
+  %                                                                i X
+  %                                                                    2
+  %                                                                              )   (3)
+  %                                                   i=1
+  %
+  %
+  % such that b = hs, bi = g(x, u1 , u2 , ..., uk )"
+  % SOURCE: [Halo], Section 3.1, eq. (1) (read from references/halo.txt)
+  % SOURCE QUOTE: "the verifier can compute G = G0 0 as hs, Gi and b = b0 0 as hs, bi where
+  %                                   s = ( u−1   −1
+  %                                          1 u2 · · · uk ,
+  %                                                          −1
+  %
+  %                                         u1 u2 · · · u−1
+  %                                               −1
+  %                                                          k ,"
+  % SOURCE: [kimchi], poly-commitment/src/commitment.rs, fn b_poly (read from references/commitment.rs)
+  % SOURCE QUOTE: "pub fn b_poly<F: Field>(chals: &[F], x: F) -> F {
+  %     let k = chals.len();
+  %
+  %     let mut pow_twos = vec![x];
+  %
+  %     for i in 1..k {
+  %         pow_twos.push(pow_twos[i - 1].square());
+  %     }
+  %
+  %     product((0..k).map(|i| F::one() + (chals[i] * pow_twos[k - 1 - i])))
+  % }"
+  \textit{Source: Halo, Section 3.2 eq. (3) and Section 3.1 eq. (1); kimchi
+  \texttt{commitment.rs::b\_poly}.}
+  Given the \(k\) folding challenges \(u_{1}, \dots, u_{k} \in \Fr\), Halo's
+  challenge polynomial is
+  \[
+    g(X, u_{1}, \dots, u_{k}) \;=\; \prod_{i=1}^{k}
+      \bigl(u_{i} + u_{i}^{-1} X^{2^{i-1}}\bigr).
+  \]
+  Its value at the evaluation point \(x\) equals the inner product
+  \(\inner{s}{(1, x, x^{2}, \dots, x^{d-1})}\), where \(s\) is the length-\(d\)
+  vector of eq. (1) whose entry at index \(\sum_{j} b_{j} 2^{j}\) is the product
+  \(\prod_{j : b_{j} = 1} u_{k - j}^{\pm 1}\) of (inverse) challenges dictated by
+  the binary expansion of the index; concretely \(s\) records, for the first half
+  of bases scaled by inverse challenges and the second half by the plain
+  challenges, the binary-counting product structure of the fold. kimchi deploys
+  the reindexed and normalized variant
+  \[
+    \bpoly(X) \;=\; \prod_{i=0}^{k-1}\bigl(1 + u_{k-i}\, X^{2^{i}}\bigr),
+  \]
+  computed by \texttt{commitment.rs::b\_poly} (which forms the squarings
+  \(x^{2^{i}}\) and multiplies the factors \(1 + u_{k-i} x^{2^{i}}\)); this form
+  satisfies \(\bpoly(x) = \inner{s}{(1, x, \dots, x^{d-1})}\) for the same vector
+  \(s\). The folded evaluation point produced after all rounds of the protocol of
+  \cref{def:ipa_opening_protocol} equals \(\bpoly(x)\), so the verifier can
+  recompute it in time \(O(k) = O(\log d)\) rather than by a linear scan.
+\end{definition}
+
+\section{The opening relation}
+
+\begin{definition}[IPA opening relation]
+  \label{def:ipa_relation}
+  \lean{Kimchi.Commitment.IPA.openingRelation}
+  \uses{def:ipa_srs, def:ipa_commit, def:mathlib_poly_eval}
+  % SOURCE: [Halo], Section 3, opening relation (read from references/halo.txt)
+  % SOURCE QUOTE: "    We will have (Setup, Open, VerifyOpen) be a PSHVZK argument of knowledge
+  % for the relation
+  %         ((P, x, v); (a, r)) : P = ha, Gi + [r]H ∧ v = ha, (1, x, x2 , ..., xd−1 )i"
+  \textit{Source: Halo, Section 3 (the opening relation).}
+  The opening relation pairs a public statement \((P, x, v)\) — a commitment
+  \(P \in \GG\), an evaluation point \(x \in \Fr\), and a claimed value
+  \(v \in \Fr\) — with a witness \((a, r)\), the coefficient vector
+  \(a \in \Fr^{d}\) and the blinding factor \(r \in \Fr\). The pair is in the
+  relation when
+  \[
+    P = \inner{a}{g} + [r]H
+    \qquad\text{and}\qquad
+    v = \inner{a}{(1, x, x^{2}, \dots, x^{d-1})}.
+  \]
+  The first conjunct asserts that \(P\) is the Pedersen commitment of
+  \cref{def:ipa_commit} to the polynomial with coefficients \(a\) under blinding
+  \(r\); the second asserts that this polynomial evaluates to \(v\) at \(x\), i.e.
+  \(v = p(x)\) where \(p(X) = \sum_{i} a_{i} X^{i}\). Membership thus certifies
+  both that the committed polynomial has degree at most \(d - 1\) and that it
+  opens to \(v\) at \(x\).
+\end{definition}
+
+\section{The opening proof transcript}
+
+\begin{definition}[IPA opening proof]
+  \label{def:ipa_opening_proof}
+  \lean{Kimchi.Commitment.IPA.OpeningProof}
+  \uses{def:ipa_bpoly}
+  % SOURCE: [kimchi], poly-commitment/src/ipa.rs, struct OpeningProof (read from references/ipa.rs)
+  % SOURCE QUOTE: "pub struct OpeningProof<G: AffineRepr, const FULL_ROUNDS: usize> {
+  %     /// Vector of rounds of L & R commitments
+  %     #[serde_as(as = "Vec<(o1_utils::serialization::SerdeAs, o1_utils::serialization::SerdeAs)>")]
+  %     pub lr: Vec<(G, G)>,
+  %     #[serde_as(as = "o1_utils::serialization::SerdeAs")]
+  %     pub delta: G,
+  %     #[serde_as(as = "o1_utils::serialization::SerdeAs")]
+  %     pub z1: G::ScalarField,
+  %     #[serde_as(as = "o1_utils::serialization::SerdeAs")]
+  %     pub z2: G::ScalarField,
+  %     /// A final folded commitment base
+  %     #[serde_as(as = "o1_utils::serialization::SerdeAs")]
+  %     pub sg: G,
+  % }"
+  % SOURCE: [Halo], Section 3.1, Zero-Knowledge Opening (read from references/halo.txt)
+  % SOURCE QUOTE: "The prover now
+  % sends
+  %                                  z1 = ac + d
+  %                                  z2 = cr0 + s"
+  \textit{Source: kimchi \texttt{ipa.rs} \texttt{struct OpeningProof} (and Halo,
+  Section 3.1, the Schnorr responses).}
+  An opening proof for a statement of \cref{def:ipa_relation} is the transcript
+  emitted by the prover. It consists of:
+  \begin{itemize}
+    \item the \(k = \log_{2} d\) rounds of cross-term commitments
+      \((L_{j}, R_{j}) \in \GG \times \GG\), one pair per folding round (the
+      field \texttt{lr});
+    \item the final folded scalar \(a \in \Fr\), the length-one residue of the
+      coefficient vector after all \(k\) folds (denoted \(a_{0}\) below);
+    \item the final folded commitment base \(sg = g_{0} \in \GG\), the length-one
+      residue of the generator vector after folding (the field \texttt{sg});
+    \item the Schnorr blinding commitment \(\delta \in \GG\) (Halo's \(R\), the
+      field \texttt{delta}); and
+    \item the Schnorr responses \(z_{1} = a c + d\) and \(z_{2} = c r' + s\) in
+      \(\Fr\) (the fields \texttt{z1}, \texttt{z2}), where \(c\) is the
+      verifier's Schnorr challenge, \(d, s\) are the prover's fresh blinders, and
+      \(r'\) is the synthetic blinding factor accumulated across the fold.
+  \end{itemize}
+  The folded base \(sg\) doubles as the value the verifier checks against
+  \(\inner{s}{g}\) for the vector \(s\) of \cref{def:ipa_bpoly}.
+\end{definition}
+
+\section{The interactive opening protocol}
+
+\begin{definition}[IPA opening protocol]
+  \label{def:ipa_opening_protocol}
+  \lean{Kimchi.Commitment.IPA.openingProof}
+  \uses{def:ipa_relation, def:ipa_opening_proof, def:ipa_bpoly,
+    def:commitment_opening, def:mathlib_module_smul}
+  % SOURCE: [Halo], Section 3.1, Protocol Description (read from references/halo.txt)
+  % SOURCE QUOTE: "The protocol takes the polynomial commitment P , point x, and claimed eval-
+  % uation v as common inputs. In the first move the verifier VerifyOpen sends a
+  % random group element U ∈ G. Both parties compute
+  %                                    P 0 = P + [v] U"
+  % SOURCE: [Halo], Section 3.1, the fold (read from references/halo.txt)
+  % SOURCE QUOTE: "we will proceed in k rounds of interaction, where in the jth round (starting with
+  % j = k and finishing with j = 1) the prover sends
+  %                     Lj = ha0 lo , G0 hi i + [ lj ]H + [ha0 lo , b0 hi i] U
+  %                     Rj = ha0 hi , G0 lo i + [rj ]H + [ha0 hi , b0 lo i] U
+  % with random blinding factors lj , rj ∈ Fp . The verifier responds with a random
+  % challenge uj ∈ I and the prover computes
+  %                             a 0 ← a 0 hi · u−1   0
+  %                                             j + a lo · uj
+  %                             b 0 ← b 0 lo · u−1   0
+  %                                             j + b hi · uj
+  %                                             −1
+  %                             G ← G lo · uj + G0 hi · uj"
+  % SOURCE: [Halo], Section 3.1, eq. (2) (read from references/halo.txt)
+  % SOURCE QUOTE: "                            k
+  %                             X                       k
+  %                                                     X
+  %                                    [u2j ]Lj + P 0 +   [u−2
+  %
+  %                      Q=                                 j ]Rj
+  %                             j=1                        j=1
+  %                                                                  0
+  % blinding factor r0 = j=1 (lj u2j ) + r + j=1 (rj u−2
+  %                                                   j  ) such that
+  %                              Q = [a] G + [r0 ]H + [ab] U
+  %                                                                                 (2)
+  %                                   = [a] (G + [b] U ) + [r0 ]H"
+  % SOURCE: [Halo], Section 3.1, Zero-Knowledge Opening (read from references/halo.txt)
+  % SOURCE QUOTE: "The prover begins by sampling random d, s ∈ Fp and sending
+  %
+  %                               R = [d] (G + [b] U ) + [s]H
+  %
+  % which the verifier responds to with random challenge c ∈ I. The prover now
+  % sends
+  %                                  z1 = ac + d
+  %                                  z2 = cr0 + s
+  % and the verifier accepts if [c] Q + R = [z1 ] (G + [b] U ) + [z2 ]H."
+  % SOURCE: [kimchi], poly-commitment/src/ipa.rs, fn verify (read from references/ipa.rs)
+  % SOURCE QUOTE: "        // Verifier checks for all i,
+  %         // c_i Q_i + delta_i = z1_i (G_i + b_i U_i) + z2_i H"
+  \textit{Source: Halo, Section 3.1 and eq. (2); kimchi \texttt{ipa.rs}
+  \texttt{open}/\texttt{verify}.}
+  The protocol takes the commitment \(P\), the point \(x\), and the claimed
+  value \(v\) as common inputs, and is an argument of knowledge for the relation
+  of \cref{def:ipa_relation} (instantiating the ArkLib opening interface of
+  \cref{def:commitment_opening}). It proceeds as follows.
+
+  \emph{Setup move.} The verifier sends a random group element \(U \in \GG\), and
+  both parties form
+  \[
+    P' = P + [v]U.
+  \]
+  The prover initializes \(g' := g\), \(a' := a\), and the fixed evaluation
+  vector \(b' := (1, x, x^{2}, \dots, x^{d-1})\).
+
+  \emph{Folding rounds.} For \(j = k, k-1, \dots, 1\), split each of
+  \(g', a', b'\) into its lower and upper halves. The prover samples blinders
+  \(l_{j}, r_{j} \in \Fr\) and sends the cross-term commitments
+  \[
+    L_{j} = \inner{a'_{\mathrm{lo}}}{g'_{\mathrm{hi}}} + [l_{j}]H
+      + \bigl[\inner{a'_{\mathrm{lo}}}{b'_{\mathrm{hi}}}\bigr]U,
+    \qquad
+    R_{j} = \inner{a'_{\mathrm{hi}}}{g'_{\mathrm{lo}}} + [r_{j}]H
+      + \bigl[\inner{a'_{\mathrm{hi}}}{b'_{\mathrm{lo}}}\bigr]U.
+  \]
+  The verifier replies with a challenge \(u_{j} \in \Fr\), and both parties fold
+  \[
+    a' \leftarrow a'_{\mathrm{hi}}\, u_{j}^{-1} + a'_{\mathrm{lo}}\, u_{j},
+    \qquad
+    b' \leftarrow b'_{\mathrm{lo}}\, u_{j}^{-1} + b'_{\mathrm{hi}}\, u_{j},
+    \qquad
+    g' \leftarrow g'_{\mathrm{lo}}\, u_{j}^{-1} + g'_{\mathrm{hi}}\, u_{j}.
+  \]
+  After \(k\) rounds each of \(g', a', b'\) has length one; write
+  \(a = a'_{0}\), \(g_{0} = g'_{0}\), and note \(b'_{0} = \bpoly(x)\) for the
+  challenge polynomial \(\bpoly\) of \cref{def:ipa_bpoly} reconstructed from the
+  \(u_{j}\).
+
+  \emph{Recombination.} The verifier forms
+  \[
+    Q = \sum_{j=1}^{k} [u_{j}^{2}]\, L_{j} \;+\; P' \;+\;
+        \sum_{j=1}^{k} [u_{j}^{-2}]\, R_{j},
+  \]
+  and writes \(G = \inner{s}{g} = g_{0}\) and \(b = \inner{s}{(1, x, \dots,
+  x^{d-1})} = \bpoly(x)\) for the vector \(s\) of \cref{def:ipa_bpoly}. The
+  synthetic blinder is
+  \(r' = \sum_{j} (l_{j} u_{j}^{2}) + r + \sum_{j} (r_{j} u_{j}^{-2})\), and the
+  reduced claim is knowledge of \(a, r'\) with
+  \[
+    Q = [a]\,G + [r']H + [a b]\,U = [a]\,(G + [b]U) + [r']H.
+  \]
+
+  \emph{Zero-knowledge step.} The prover samples \(d, s \in \Fr\) and sends the
+  blinding commitment
+  \[
+    \delta = [d]\,(G + [b]U) + [s]H
+  \]
+  (Halo's \(R\)). The verifier replies with a Schnorr challenge \(c \in \Fr\),
+  and the prover answers with
+  \[
+    z_{1} = a c + d, \qquad z_{2} = c r' + s.
+  \]
+  The verifier accepts iff
+  \[
+    [c]\,Q + \delta = [z_{1}]\,(G + [b]U) + [z_{2}]\,H.
+  \]
+  The transcript \((\{(L_{j}, R_{j})\}_{j}, a, g_{0}, \delta, z_{1}, z_{2})\) is
+  exactly the opening proof of \cref{def:ipa_opening_proof}.
+\end{definition}
+
+\section{The commitment scheme instance}
+
+\begin{definition}[IPA commitment scheme]
+  \label{def:ipa_scheme}
+  \lean{Kimchi.Commitment.IPA.ipa}
+  \uses{def:commitment_scheme, def:ipa_srs, def:ipa_commit,
+    def:ipa_opening_protocol}
+  % SOURCE: [ArkLib], Commitments/Functional/KZG/Basic.lean, def kzg (read from references/arklib/KZG_Basic.lean)
+  % SOURCE QUOTE: "/-- The KZG instantiated as a **(functional) commitment scheme**.
+  %
+  %   The scheme takes a pregenerated structured reference string (srs) for the
+  %   committer and the verifier (generated by `Groups.PowerSrs.generate`).
+  %
+  %   - `commit` : a function that commits to an `n + 1`-tuple of coefficients `coeffs`
+  %   (corresponding to a polynomial of maximum degree `n`)
+  %   - `opening` : a non-interactive reduction (i.e. solely the committer sends a single
+  %   message) to prove the evaluation of the committed polynomial at a point `z`. The
+  %   message from the prover is the witness for the evaluation.
+  % -/"
+  \textit{Source: ArkLib \texttt{KZG\_Basic.lean} (\texttt{def kzg}), the worked
+  \texttt{Commitment.Scheme} instance whose shape this mirrors.}
+  The IPA scheme is the \texttt{Commitment.Scheme} instance of
+  \cref{def:commitment_scheme} obtained by the following choices of the abstract
+  data slots:
+  \begin{itemize}
+    \item \(\textsf{Data}\) is a polynomial of degree \(< d\), presented as its
+      coefficient vector in \(\Fr^{d}\), equipped with the evaluation
+      \texttt{OracleInterface} whose query at a point \(z \in \Fr\) returns the
+      evaluation \(p(z) = \sum_{i} a_{i} z^{i}\);
+    \item \(\textsf{Commitment} = \GG\), a single group element;
+    \item \(\textsf{Decommitment} = \Fr\), the blinding factor \(r\) (in contrast
+      to KZG, where it is \texttt{Unit}, the IPA scheme is randomized);
+    \item \(\textsf{ComKey} = \textsf{VerifKey} = \SRS\), the structured reference
+      string of \cref{def:ipa_srs};
+    \item \(\KeyGen\) samples the SRS (the random generators \(g\) and blinding
+      base \(H\));
+    \item \(\Commit\) is the Pedersen commitment of \cref{def:ipa_commit},
+      returning \((\inner{a}{g} + [r]H,\; r)\); and
+    \item \(\Opening\) is the interactive opening protocol of
+      \cref{def:ipa_opening_protocol}.
+  \end{itemize}
+  The same committer and verifier keys hold the full SRS, since both parties need
+  the generator vector to run the fold.
+\end{definition}
+
+\section{Mathlib dependency anchors}
+
+\begin{definition}[univariate polynomial evaluation]
+  \label{def:mathlib_poly_eval}
+  \lean{Polynomial.eval}
+  \mathlibok
+  \textit{Provided by Mathlib.}
+  For \(p \in \Fr[X]\) and \(z \in \Fr\), \(\texttt{Polynomial.eval}\;z\;p\) is
+  the value \(p(z) = \sum_{i} a_{i} z^{i}\) of \(p\) at \(z\). This is the
+  evaluation underlying both the second conjunct of the opening relation
+  (\cref{def:ipa_relation}) and the \texttt{OracleInterface} query of the scheme
+  (\cref{def:ipa_scheme}).
+\end{definition}
+
+\begin{definition}[finite sum]
+  \label{def:mathlib_finsum}
+  \lean{Finset.sum}
+  \mathlibok
+  \textit{Provided by Mathlib.}
+  For a finite index set \(I\) and a family \(f : I \to M\) valued in a
+  commutative monoid, \(\texttt{Finset.sum}\) forms \(\sum_{i \in I} f(i)\). The
+  multiscalar multiplication \(\inner{a}{g} = \sum_{i=0}^{d-1} [a_{i}] g_{i}\) of
+  \cref{def:ipa_commit} is such a finite sum over \(I = \{0, \dots, d-1\}\).
+\end{definition}
+
+\begin{definition}[scalar action]
+  \label{def:mathlib_module_smul}
+  \lean{SMul.smul}
+  \mathlibok
+  \textit{Provided by Mathlib.}
+  For a scalar \(a \in \Fr\) and a group element \(P \in \GG\),
+  \(\texttt{SMul.smul}\;a\;P\) is the scalar action \([a]P\) of the field \(\Fr\)
+  on the additive group \(\GG\). Every \([a_{i}]g_{i}\), \([r]H\),
+  \([v]U\), and \([c]Q\) appearing in \cref{def:ipa_commit} and
+  \cref{def:ipa_opening_protocol} is an instance of this action.
+\end{definition}

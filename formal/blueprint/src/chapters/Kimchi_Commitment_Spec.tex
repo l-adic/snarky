@@ -1,0 +1,161 @@
+\providecommand{\oSpec}{\mathcal{O}_{\mathrm{spec}}}
+
+\chapter{The ArkLib Commitment-Scheme Interface}
+
+This chapter records the ArkLib \emph{functional commitment scheme} interface that the
+kimchi IPA construction implements. Every block below is a \emph{dependency anchor}: it
+states an external ArkLib declaration (namespace \texttt{Commitment}) in the project's
+notation and marks it \mathlibok, so the dependency graph treats it as supplied. None of
+these are proof obligations of this project — the \lean{} target is the citation. The IPA
+chapters (\texttt{IPA\_Basic}, \texttt{IPA\_Correctness}, \texttt{IPA\_Binding}) depend on
+these labels.
+
+Throughout, fix an oracle specification $\oSpec$ and a data type $\mathsf{Data}$ equipped
+with an \texttt{OracleInterface}, i.e. a query type $\mathsf{Query}$, a response family
+$\mathsf{Response}$, and an answering map $\mathsf{answer} : \mathsf{Data} \to (q :
+\mathsf{Query}) \to \mathsf{Response}\,q$. A scheme is parameterized by types
+$\mathsf{Commitment}$, $\mathsf{Decommitment}$, $\mathsf{ComKey}$, $\mathsf{VerifKey}$,
+and a protocol specification $\mathsf{pSpec}$ for the opening proof.
+
+\section{The scheme}
+
+\begin{definition}[Key generation]
+  \label{def:commitment_keygen}
+  \lean{Commitment.KeyGen}
+  \mathlibok
+  \textit{Provided by ArkLib.}
+  Key generation is an oracle computation
+  \(
+    \KeyGen : \mathsf{OracleComp}\;\oSpec\;(\mathsf{ComKey} \times \mathsf{VerifKey})
+  \)
+  that samples a committer key and a verifier key.
+\end{definition}
+
+\begin{definition}[Commit]
+  \label{def:commitment_commit}
+  \lean{Commitment.Commit}
+  \mathlibok
+  \textit{Provided by ArkLib.}
+  The commit algorithm is a map
+  \(
+    \Commit : \mathsf{ComKey} \to \mathsf{Data} \to
+      \mathsf{OracleComp}\;\oSpec\;(\mathsf{Commitment} \times \mathsf{Decommitment}),
+  \)
+  taking a committer key and the data, and producing a commitment together with a
+  decommitment value (auxiliary information such as blinding randomness needed to open
+  later; $\mathsf{Decommitment} = \mathsf{Unit}$ for deterministic schemes).
+\end{definition}
+
+\begin{definition}[Opening proof]
+  \label{def:commitment_opening}
+  \lean{Commitment.Opening}
+  \mathlibok
+  \textit{Provided by ArkLib.}
+  The opening component supplies, for each key pair $(\mathsf{ck}, \mathsf{vk})$, an
+  interactive proof relative to $\oSpec$ over the protocol specification $\mathsf{pSpec}$
+  for the relation on statements $(\mathsf{cm}, q, y)$ with $q : \mathsf{Query}$,
+  $y : \mathsf{Response}\,q$ and witnesses $(d, \mathsf{dc})$:
+  \[
+    \Opening : (\mathsf{cm}, q, y),\ (d, \mathsf{dc}) \ \longmapsto\
+      \bigl(\Commit\,\mathsf{ck}\,d \rightsquigarrow (\mathsf{cm}, \mathsf{dc})\bigr)
+      \ \wedge\ \mathsf{answer}\,d\,q = y,
+  \]
+  i.e. that $d$ commits to $\mathsf{cm}$ with decommitment $\mathsf{dc}$ and that the
+  oracle on $d$ answers $q$ with $y$.
+\end{definition}
+
+\begin{definition}[Commitment scheme]
+  \label{def:commitment_scheme}
+  \lean{Commitment.Scheme}
+  \uses{def:commitment_keygen, def:commitment_commit, def:commitment_opening}
+  \mathlibok
+  \textit{Provided by ArkLib.}
+  A commitment scheme relative to $\oSpec$ for data $\mathsf{Data}$ with an
+  \texttt{OracleInterface} is the bundle of a key generator (\cref{def:commitment_keygen}),
+  a commit algorithm (\cref{def:commitment_commit}), and an opening proof
+  (\cref{def:commitment_opening}) over a fixed protocol specification $\mathsf{pSpec}$.
+\end{definition}
+
+\section{Correctness}
+
+\begin{definition}[Correctness]
+  \label{def:commitment_correctness}
+  \lean{Commitment.correctness}
+  \uses{def:commitment_scheme}
+  \mathlibok
+  \textit{Provided by ArkLib.}
+  A scheme satisfies $\correctness$ with error $\varepsilon_{\mathrm{c}} \in \mathbb{R}_{\ge 0}$
+  if for every $\mathsf{data} : \mathsf{Data}$ and every $\mathsf{query} : \mathsf{Query}$,
+  running key generation, the honest commit on $\mathsf{data}$, and then the honest opening
+  proof on the statement $(\mathsf{cm}, \mathsf{query}, \mathsf{answer}\,\mathsf{data}\,
+  \mathsf{query})$ makes the verifier accept (with the prover's output statement equal to the
+  verifier's) with probability at least $1 - \varepsilon_{\mathrm{c}}$.
+\end{definition}
+
+\begin{definition}[Perfect correctness]
+  \label{def:commitment_perfect_correctness}
+  \lean{Commitment.perfectCorrectness}
+  \uses{def:commitment_scheme, def:commitment_correctness}
+  \mathlibok
+  \textit{Provided by ArkLib.}
+  A scheme satisfies \emph{perfect correctness} if it satisfies $\correctness$
+  (\cref{def:commitment_correctness}) with error $0$.
+\end{definition}
+
+\section{Evaluation binding}
+
+\begin{definition}[Binding adversary]
+  \label{def:commitment_binding_adversary}
+  \lean{Commitment.BindingAdversary}
+  \mathlibok
+  \textit{Provided by ArkLib.}
+  A binding adversary (for an auxiliary-state type $\mathsf{AuxState}$) consists of:
+  a \emph{claim} step, an oracle computation
+  $\mathsf{ComKey} \to \mathsf{OracleComp}\;\oSpec\;\bigl(\mathsf{Commitment} \times
+  (q : \mathsf{Query}) \times \mathsf{Response}\,q \times \mathsf{Response}\,q \times
+  \mathsf{AuxState} \times \mathsf{AuxState}\bigr)$ that outputs a commitment $\mathsf{cm}$,
+  a query $q$, two purported responses, and two auxiliary states; and a malicious
+  \emph{prover} for the opening protocol that consumes such an auxiliary state.
+\end{definition}
+
+\begin{definition}[Binding condition]
+  \label{def:commitment_binding_condition}
+  \lean{Commitment.bindingCondition}
+  \mathlibok
+  \textit{Provided by ArkLib.}
+  The win condition for the binding game, on a tuple
+  $(q, \mathsf{resp}_1, \mathsf{resp}_2, \mathsf{accept}_1, \mathsf{accept}_2)$, holds iff
+  \[
+    \mathsf{resp}_1 \neq \mathsf{resp}_2 \ \wedge\ \mathsf{accept}_1 \ \wedge\ \mathsf{accept}_2,
+  \]
+  i.e. the two responses to the same query differ yet both openings are accepted.
+\end{definition}
+
+\begin{definition}[Binding experiment]
+  \label{def:commitment_binding_experiment}
+  \lean{Commitment.bindingExperiment}
+  \uses{def:commitment_scheme, def:commitment_binding_adversary, def:commitment_binding_condition}
+  \mathlibok
+  \textit{Provided by ArkLib.}
+  The binding experiment is the probability that a fixed adversary
+  (\cref{def:commitment_binding_adversary}) wins the evaluation-binding game, i.e. the
+  probability that the play of claim-then-two-openings satisfies the binding condition
+  (\cref{def:commitment_binding_condition}):
+  \(
+    \Pr[\,\mathsf{bindingCondition} \mid \mathsf{bindingGame}\,] \in
+    \overline{\mathbb{R}}_{\ge 0}.
+  \)
+\end{definition}
+
+\begin{definition}[Evaluation binding]
+  \label{def:commitment_binding}
+  \lean{Commitment.binding}
+  \uses{def:commitment_binding_experiment}
+  \mathlibok
+  \textit{Provided by ArkLib.}
+  A scheme satisfies (evaluation) $\binding$ with error
+  $\varepsilon_{\mathrm{b}} \in \mathbb{R}_{\ge 0}$ if for every auxiliary-state type and
+  every adversary the binding experiment (\cref{def:commitment_binding_experiment}) is at
+  most $\varepsilon_{\mathrm{b}}$. Informally, it is infeasible to open a commitment to two
+  different responses for the same query.
+\end{definition}

@@ -1,0 +1,222 @@
+\chapter{Binding / Knowledge Soundness of the IPA Scheme}
+
+\providecommand{\oSpec}{\mathcal{O}_{\mathrm{spec}}}
+
+This chapter states the second headline security property of kimchi's IPA
+polynomial commitment: \emph{knowledge soundness}, in the form of
+\emph{evaluation binding}. Where the correctness chapter says that honest
+openings are accepted, binding says the dual: it is computationally infeasible to
+make the verifier accept two \emph{different} evaluations of the same commitment
+at the same point. In the Halo development this is packaged as \emph{computational
+witness-extended emulation} (Halo Definition~2, Theorem~1): for any efficient
+malicious prover there is an emulator that, alongside a transcript indistinguishable
+from the real interaction, extracts a witness satisfying the opening relation
+(\cref{def:ipa_relation}) whenever the transcript accepts. We record Halo's
+definition verbatim, then state the property in the ArkLib experiment shape
+(\cref{def:commitment_binding}) that the Lean development targets, and give an
+honest high-level sketch of the extractor argument. The full extraction proof is
+Halo Appendix~A and is deferred to a later research phase; the sketch here is a
+sketch, not a proof.
+
+\section{Witness-extended emulation}
+
+\begin{definition}[Computational witness-extended emulation]
+  \label{def:wee}
+  \lean{Kimchi.Commitment.IPA.Binding.witnessExtendedEmulation}
+  \uses{def:ipa_relation}
+  % SOURCE: [Halo], Definition 2 (Computational Witness-Extended Emulation) (read from references/halo.txt)
+  % SOURCE QUOTE: "Definition 2 (Computational Witness-Extended Emulation).
+  % (Setup, P, V) has witness-extended emulation if for all deterministic polynomial-
+  % time P ∗ there exists an expected polynomial-time emulator E such that for all
+  % pairs of interactive adversaries A1 , A2
+  %
+  %                                         σ ← Setup(1λ )
+  %
+  %
+  %       Pr                   A1 (tr) = 1 (x, s) ← A2 (σ)            −
+  %
+  %
+  %                                        tr ← hP ∗ (σ, x, s), V(σ, x)i
+  %                                                                          ≤ negl(λ)
+  %                                        σ ← Setup(1λ )
+  %
+  %                            A1 (tr) = 1
+  %       Pr                              (x, s) ← A2 (σ)
+  %
+  %           ∧ (tr accepts ⇒ (x, w) ∈ R)
+  %
+  %                                        (tr, w) ← E O (σ, x)
+  %
+  % where the oracle is given by O = hP ∗ (σ, x, s), V(σ, x)i and permits rewinding to a
+  % specific point and resuming with fresh randomness for the verifier from that point
+  % onward. We also define computational witness-extended emulation by restricting
+  % to non-uniform polynomial-time adversaries A1 and A2 ."
+  \textit{Source: Halo, Definition~2 (computational witness-extended emulation).}
+  The opening argument \((\Setup, \Open, \VerifyOpen)\) has \emph{computational
+  witness-extended emulation} if for every deterministic polynomial-time malicious
+  prover \(P^{*}\) there is an expected-polynomial-time emulator \(E\) such that for
+  every pair of interactive adversaries \((A_{1}, A_{2})\) the two experiments
+  \begin{itemize}
+    \item sample \(\sigma \leftarrow \Setup(1^{\lambda})\) and \((x, s) \leftarrow
+      A_{2}(\sigma)\), run the real interaction \(\mathrm{tr} \leftarrow
+      \langle P^{*}(\sigma, x, s), \VerifyOpen(\sigma, x)\rangle\), and output
+      \(A_{1}(\mathrm{tr})\); versus
+    \item the same sampling, but with \((\mathrm{tr}, w) \leftarrow E^{O}(\sigma, x)\)
+      produced by the emulator, whose oracle
+      \(O = \langle P^{*}(\sigma, x, s), \VerifyOpen(\sigma, x)\rangle\) permits
+      rewinding to a chosen point and resuming with fresh verifier randomness, and
+      output \(A_{1}(\mathrm{tr})\) conjoined with the soundness clause
+      \(\mathrm{tr}\ \text{accepts} \Rightarrow (x, w) \in R\),
+  \end{itemize}
+  differ in acceptance probability by at most \(\mathrm{negl}(\lambda)\). Here
+  \(R\) is the opening relation of \cref{def:ipa_relation}. Thus the emulator
+  reproduces the prover's transcript distribution while additionally extracting a
+  witness \(w = (a, r)\) that genuinely opens the commitment whenever the
+  transcript is accepting. The non-uniform variant restricts \(A_{1}, A_{2}\) to
+  non-uniform polynomial time.
+\end{definition}
+
+Witness-extended emulation (\cref{def:wee}) is the \emph{intended}
+knowledge-soundness notion for the IPA opening argument: it is the property whose
+extractor recovers a genuine opening witness whenever a transcript accepts. The
+headline result of this chapter, \cref{thm:ipa_binding}, instead establishes the
+strictly weaker but fully well-formed notion of \emph{evaluation binding}
+(\cref{def:commitment_binding}) --- that no efficient adversary opens one
+commitment to two distinct evaluations at the same point. A faithful Lean
+statement of the full witness-extended emulation property is deferred: ArkLib's
+corresponding \(\extractability\) predicate currently has its body stubbed to
+\(\bot\) (it has not yet been given its real definition upstream), so there is no
+provable target to formalize against. The knowledge-soundness formulation is
+therefore recorded here as the semantic goal but is not a Phase-1 target; it
+becomes actionable only once the real ArkLib extractability body is upstreamed.
+
+\begin{definition}[Discrete Log Relation Assumption]
+  \label{def:dl_relation_assumption}
+  \lean{Kimchi.Commitment.IPA.Binding.dlRelationAssumption}
+  % SOURCE: [Halo], Definition 6 (Discrete Log Relation Assumption) (read from references/halo.txt)
+  % SOURCE QUOTE: "Definition 6 (Discrete Log Relation Assumption). For all adversaries A
+  % and for all n ≥ 2
+  %         h                                                 i
+  %            $
+  %            − Gn ; a ∈ Fn ← A(G, G) : ∃ai 6= 0 ∧ ha, Gi = O ≤ negl(λ)
+  %       Pr G ←
+  %
+  % The discrete log relation assumption generalizes the discrete log assumption to
+  % arbitrary numbers of random group elements. We say that ha, Gi = O is a non-
+  % trivial discrete log relation between elements of G when at least one of a is
+  % nonzero."
+  \textit{Source: Halo, Definition~6 (discrete log relation assumption).}
+  Let \(G\) be a group of order the scalar field \(\F\). The \emph{discrete log
+  relation assumption} postulates that for every \(n \ge 2\) and every efficient
+  adversary \(A\), if \((G_{1}, \dots, G_{n}) \leftarrow G^{n}\) are sampled
+  uniformly at random, then the probability that \(A\) outputs a coefficient vector
+  \(a = (a_{1}, \dots, a_{n}) \in \F^{n}\) with some \(a_{i} \neq 0\) and
+  \[
+    \inner{a}{(G_{1}, \dots, G_{n})} = \sum_{i=1}^{n} [a_{i}]G_{i} = O
+  \]
+  (the group identity) is negligible in the security parameter \(\lambda\). A tuple
+  \(a\) with \(\inner{a}{(G_{1}, \dots, G_{n})} = O\) and at least one \(a_{i} \neq
+  0\) is called a \emph{non-trivial discrete log relation} among the generators.
+  Writing \(\varepsilon_{\mathrm{dl}}(\lambda)\) for the maximal advantage of any
+  efficient adversary in producing such a relation, the assumption asserts
+  \(\varepsilon_{\mathrm{dl}}(\lambda)\) is negligible. This is a postulated
+  hardness assumption --- a foundational cryptographic hypothesis taken as given,
+  not derived from the elliptic-curve group law --- and it is the quantity the IPA
+  binding error term is measured against.
+\end{definition}
+
+\begin{theorem}[Binding of the IPA scheme]
+  \label{thm:ipa_binding}
+  \lean{Kimchi.Commitment.IPA.Binding.ipa_binding}
+  \uses{def:ipa_scheme, def:commitment_binding, def:commitment_binding_experiment,
+    def:dl_relation_assumption, def:ipa_opening_protocol}
+  % SOURCE: [Halo], Theorem 1 (read from references/halo.txt)
+  % SOURCE QUOTE: "Theorem 1. The protocol presented in Section 3.1 has perfect completeness,
+  % computational witness-extended emulation, and perfect special honest-verifier
+  % zero knowledge.
+  %
+  % This proof appears in Appendix A."
+  \textit{Source: Halo, Theorem~1 (computational witness-extended emulation of the
+  Section~3.1 protocol).}
+  The IPA commitment scheme \(\mathsf{ipa}\) of \cref{def:ipa_scheme} satisfies
+  ArkLib evaluation \(\binding\) (\cref{def:commitment_binding}) with negligible
+  error: there is a negligible \(\varepsilon_{\mathrm{b}}(\lambda)\) such that for
+  every auxiliary-state type and every binding adversary, the binding experiment
+  (\cref{def:commitment_binding_experiment}) for \(\mathsf{ipa}\) is at most
+  \(\varepsilon_{\mathrm{b}}(\lambda)\). Concretely, no efficient adversary can
+  produce a commitment \(P\), a point \(x\), and two responses \(v_{1} \neq v_{2}\)
+  together with malicious openings of the protocol of
+  \cref{def:ipa_opening_protocol} that both pass \(\VerifyOpen\). This is the
+  ArkLib-experiment expression of Halo's computational witness-extended emulation
+  (\cref{def:wee}): the binding error \(\varepsilon_{\mathrm{b}}\) is exactly the
+  emulation gap of Halo Theorem~1 specialized to the evaluation query, so an
+  adversary winning the binding game would refute the witness-extended emulation
+  of the opening argument.
+\end{theorem}
+
+% SOURCE: [Halo], Section 3.1, Protocol Description (read from references/halo.txt)
+% SOURCE QUOTE PROOF: "and that v 0 = ha, (1, x, x2 , ..., xd−1 )i. As the prover did not know U in advance,
+% this establishes that v = v 0 . (In this respect we differ from the protocol described
+% in [37, Appendix A.3] which effectively has U fixed prior to the argument; a
+% prover with malicious control of P would then be able to interfere with the
+% argument by including terms involving U in P .)"
+% SOURCE: [Halo], Definition 6 (Discrete Log Relation Assumption) (read from references/halo.txt)
+% SOURCE QUOTE PROOF: "Definition 6 (Discrete Log Relation Assumption). For all adversaries A
+% and for all n ≥ 2
+%         h                                                 i
+%            $
+%            − Gn ; a ∈ Fn ← A(G, G) : ∃ai 6= 0 ∧ ha, Gi = O ≤ negl(λ)
+%       Pr G ←
+%
+% The discrete log relation assumption generalizes the discrete log assumption to
+% arbitrary numbers of random group elements. We say that ha, Gi = O is a non-
+% trivial discrete log relation between elements of G when at least one of a is
+% nonzero."
+\begin{proof}
+  \uses{def:commitment_binding_adversary, def:ipa_relation, def:wee,
+    def:dl_relation_assumption}
+  \textit{Source: Halo, Section~3.1 and Definition~6; the full construction is Halo
+  Appendix~A and is deferred to the research phase.} This is a high-level sketch,
+  not a complete proof.
+
+  Suppose, for contradiction, a binding adversary
+  (\cref{def:commitment_binding_adversary}) produces a commitment \(P\), an
+  evaluation point \(x\), and two distinct claims \(v_{1} \neq v_{2}\), with
+  malicious provers that drive the opening protocol
+  (\cref{def:ipa_opening_protocol}) to acceptance for both \((P, x, v_{1})\) and
+  \((P, x, v_{2})\). Recall that the first verifier move samples a fresh group
+  element \(U\) and both parties pass to \(P' = P + [v]U\); because the prover does
+  not learn \(U\) before committing to \(P\), an accepting transcript pins the
+  claimed value to the value actually committed (Halo \S3.1).
+
+  Apply the emulator \(E\) of \cref{def:wee} to each accepting branch. Rewinding
+  the \(k = \log_{2} d\) folding rounds with fresh challenges \(u_{j}\) and solving
+  the resulting linear system across rounds extracts, for branch \(i\), a witness
+  \((a_{i}, r_{i})\) with
+  \[
+    P = \inner{a_{i}}{g} + [r_{i}]H
+    \qquad\text{and}\qquad
+    v_{i} = \inner{a_{i}}{(1, x, x^{2}, \dots, x^{d-1})},
+  \]
+  i.e. \((P, x, v_{i}; a_{i}, r_{i})\) lies in the opening relation
+  \cref{def:ipa_relation}. The extractor obtained this way runs in expected
+  polynomial time once the rewinding oracle is folded into the query log.
+
+  Now \(v_{1} \neq v_{2}\) forces \((a_{1}, r_{1}) \neq (a_{2}, r_{2})\), yet both
+  reconstruct the \emph{same} \(P\). Subtracting the two Pedersen equations gives
+  \[
+    \inner{a_{1} - a_{2}}{g} + [r_{1} - r_{2}]H = O,
+  \]
+  a non-trivial discrete-log relation among the random generators \(g\), \(H\)
+  (and \(U\), once the \([v]U\) terms are accounted for), because the coefficient
+  vector \(a_{1} - a_{2}\) is nonzero on the monomial basis distinguishing
+  \(v_{1}\) from \(v_{2}\). By the discrete log relation assumption (Halo
+  Definition~6) such a relation occurs only with negligible probability, so both
+  openings can succeed only with negligible probability. Hence the binding error
+  \(\varepsilon_{\mathrm{b}}\) is the sum of the emulation gap of \cref{def:wee}
+  and the discrete-log advantage, both negligible.
+
+  The faithful construction of the rewinding emulator and the exact accounting of
+  the extraction error are carried out in Halo Appendix~A and are not reproduced
+  here; this chapter states the result and records the argument's shape.
+\end{proof}
