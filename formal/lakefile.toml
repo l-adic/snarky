@@ -12,10 +12,13 @@ path = "vendor/CompElliptic"
 # oracle-reduction framework the IPA opening protocol is modelled in. Shares mathlib (same v4.30.0
 # commit `c5ea003…`) and CompPoly with us; pulls VCVio transitively. Pinned to a commit. The lake
 # package name is `Arklib`; the module root is `ArkLib` (`import ArkLib.Commitments.…`).
+# Pinned post-#530 (coordinate-wise special soundness): provides `Security/TranscriptTree`
+# and `Security/CoordinateWiseSpecialSoundness` — the transcript-tree + special-soundness-as-
+# tree-extraction vocabulary the IPA binding (general forking lemma) is stated against.
 [[require]]
 name = "Arklib"
 git = "https://github.com/Verified-zkEVM/ArkLib"
-rev = "4e914a2bff725eac3072daa512452ebecdf5abde"
+rev = "a5ef0a234e5ed8910709ee3e12d24e0320ea1c64"
 
 # Mathlib gives us prime fields (`ZMod p`) and the elliptic-curve group law
 # (`WeierstrassCurve.Affine`), the trusted oracle the EC gates are checked against. Pinned to
@@ -28,6 +31,21 @@ rev = "v4.30.0"
 
 [[lean_lib]]
 name = "Kimchi"
+
+# The IPA polynomial-commitment development (kimchi's PCS as an ArkLib `Commitment.Scheme`).
+# Kept as a SEPARATE library so the gate lib `Kimchi` stays ArkLib-free: the `Kimchi` lib's
+# glob defaults to `Glob.one Kimchi`, i.e. it builds only `Kimchi.lean` and its transitive
+# imports (the gate tree), which never reaches `Kimchi.Commitment.*`. This lib globs exactly
+# the IPA submodules under `Kimchi/Commitment/IPA/`, so `lake build Kimchi` is unaffected.
+# Source files live at `Kimchi/Commitment/IPA/*.lean` (srcDir defaults to ".").
+[[lean_lib]]
+name = "KimchiCommitment"
+# NOTE (iter-006): the `.+` (andSubmodules) glob does NOT build the root module
+# `Kimchi.Commitment.IPA` — empirically reproduced twice (rm root .olean +
+# `lake build KimchiCommitment` does not regenerate it; only the IPA.* submodules
+# replay). An explicit `Glob.one` entry for the root is added so the headline file
+# and its four security theorems are covered by the lib target / CI.
+globs = ["Kimchi.Commitment.IPA", "Kimchi.Commitment.IPA.+"]
 
 [[lean_exe]]
 name = "kimchi-demo"
