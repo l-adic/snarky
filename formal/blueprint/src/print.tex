@@ -1,0 +1,61 @@
+% Standalone print driver for the IPA polynomial-commitment blueprint.
+% Builds a self-contained PDF without the leanblueprint/plastex toolchain:
+% it defines the blueprint annotation macros (\lean, \uses, \leanok, \mathlibok)
+% locally, loads the shared math macros, and \input{}s the chapter content.
+%
+% Build:  cd blueprint/src && latexmk -pdf print.tex   (or pdflatex twice for \cref)
+\documentclass[11pt]{report}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{xcolor}
+\usepackage[colorlinks=true, linkcolor=blue!60!black, citecolor=blue!60!black]{hyperref}
+\usepackage[capitalize]{cleveref}
+
+% --- Theorem environments -------------------------------------------------
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[chapter]
+\newtheorem{assumption}[definition]{Assumption}
+\theoremstyle{plain}
+\newtheorem{theorem}[definition]{Theorem}
+\newtheorem{lemma}[definition]{Lemma}
+\newtheorem{proposition}[definition]{Proposition}
+\newtheorem{corollary}[definition]{Corollary}
+\theoremstyle{remark}
+\newtheorem{remark}[definition]{Remark}
+
+\crefname{definition}{Definition}{Definitions}
+\crefname{theorem}{Theorem}{Theorems}
+\crefname{assumption}{Assumption}{Assumptions}
+
+% --- Blueprint annotation macros (print rendering) ------------------------
+% \lean{Foo.bar}: the Lean declaration this node formalizes (roadmap target).
+% \detokenize makes underscores in Lean names printable in text mode.
+\providecommand{\lean}[1]{%
+  \par\smallskip\noindent{\small\textcolor{blue!45!black}{$\vdash$ \textsf{Lean:} \texttt{\detokenize{#1}}}}\par}
+% \mathlibok: this anchor is already provided upstream (Mathlib / ArkLib).
+\providecommand{\mathlibok}{%
+  \par\smallskip\noindent{\small\textcolor{green!50!black}{$\checkmark$ \textsf{provided upstream (Mathlib/ArkLib)}}}\par}
+% \leanok: the Lean statement/proof is complete. (No-op marker in print.)
+\providecommand{\leanok}{}
+% \uses{...}: dependency-graph annotation; cross-references are carried by \cref.
+\providecommand{\uses}[1]{}
+\providecommand{\notready}{}
+\providecommand{\proves}[1]{}
+\providecommand{\discussion}[1]{}
+
+% --- Extra math macro not in common.tex -----------------------------------
+\providecommand{\F}{\mathbb{F}}
+
+\input{macros/common}
+
+\title{Kimchi's Inner-Product-Argument Polynomial Commitment\\
+  \large A blueprint, as an ArkLib \texttt{Commitment.Scheme} instance}
+\author{Formalization roadmap (Halo \S3 / kimchi \texttt{ipa.rs})}
+\date{\today}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\input{content}
+\end{document}

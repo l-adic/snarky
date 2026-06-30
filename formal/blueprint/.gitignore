@@ -1,0 +1,8 @@
+# LaTeX build artifacts
+src/*.aux
+src/*.log
+src/*.out
+src/*.toc
+src/*.fls
+src/*.fdb_latexmk
+src/*.synctex.gz
