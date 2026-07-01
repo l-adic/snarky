@@ -9,8 +9,10 @@ modelled as **plain Lean predicates over witness structures**, and proved faithf
 Clean framework, forget its vocabulary here — none of it applies.
 
 Build: `make lean-build` (from repo root) or `lake build` (from `formal/`). The toolchain
-is pinned in `lean-toolchain` (Lean `4.30.0-rc2`); deps in `lakefile.toml` (Mathlib +
-`CompElliptic`, which transitively pulls `CompPoly`). `import Mathlib` is used wholesale.
+is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakefile.toml`
+(Mathlib + `CompElliptic` at `vendor/CompElliptic`, which transitively pulls `CompPoly`, plus
+the vendored `Zcash`/Ironwood IPA formalization at `vendor/ironwood`). `import Mathlib` is used
+wholesale.
 
 **Always run `formal/scripts/check-style.sh` before committing any change under `formal/`** —
 and fix anything it reports. Lean 4 has no autoformatter, so this script is the formatter
@@ -169,10 +171,9 @@ axiom-clean Pratt/Lucas primality certificate); `W`, `order`, `beta` are concret
   free top-level `axiom`s scattered in gate files.
 - The CI gate (`.github/workflows/lean.yml`) runs `#print axioms` on the headline theorems and
   fails on `sorryAx`. **Never introduce `sorry`/`admit`.**
-- **Never use `native_decide`** in a proof that feeds a headline theorem: it adds
-  `Lean.ofReduceBool` (the compiler) to the trusted base and shows up in `#print axioms`.
-  Use `decide` (small goals) or `reduce_mod_char` (modular exponentiation over `ZMod p`).
-  The `CompElliptic` primality certs deliberately avoid `native_decide` for this reason.
+- **Avoid `native_decide` in our own proofs** — use `decide` or `reduce_mod_char`. It is accepted
+  only when inherited from CompElliptic (whose point-count proofs use it); `check_axioms.lean`
+  allows `CompElliptic`-namespaced `native_decide` axioms and rejects any from this tree.
 
 ## Conventions
 

@@ -1,35 +1,42 @@
 import Kimchi.Curve
 import CompElliptic.Curves.Pasta
+import CompElliptic.Curves.PastaOrder
 import CompElliptic.Fields.Pasta
 
 /-!
-# The Pasta curves' group orders — the one trusted input
+# The Pasta curves' group orders
 
-The VarBaseMul soundness is proved abstractly over an `SWCurve` with `order_prime` as a
-hypothesis (axiom-free). To instantiate it at the *real* Pasta curves we need their group
-orders to be prime — and that rests on the curves' point counts, which Lean cannot derive:
-counting `≈2²⁵⁴` points is infeasible for `decide`/`native_decide`, and CompElliptic ships no
-point-counting (Schoof etc.).
-
-So the two point counts below are **axioms** — the same trusted status "this is the curve's
-order" has in any EC formalization. They are true by the Pasta construction: a curve's scalar
-field *is* `ℤ/(group order)`, and Pasta fixes Pallas' order to the prime `PALLAS_SCALAR_CARD`
-(`= q`) and Vesta's to `PALLAS_BASE_CARD` (`= p`), with the reciprocity
-`VestaBaseField = PallasScalarField`.
-
-This is the ONLY file in the tree that declares an `axiom`; everything upstream is
-`#print axioms`-clean.
+The Pallas group order is the prime `q = PALLAS_SCALAR_CARD` and the Vesta group order is the
+prime `p = PALLAS_BASE_CARD` (the Pasta cycle: each curve's order is the other's base-field
+size). Both are obtained from Hasse's bound `#E(𝔽) ∈ [q+1−2√q, q+1+2√q]` and the point order of a
+generator `G` (`[q]·G = 𝒪`): the bound leaves the point order as the only in-interval
+possibility. Hasse's bound is the one input Mathlib cannot supply, so it is an axiom
+(`pallas_hasse`/`vesta_hasse`); everything else is discharged by `CompElliptic.Curves.PastaOrder`.
 -/
 
 namespace Kimchi.Pasta
 
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta CompElliptic.CurveForms.ShortWeierstrass
+  CompElliptic.CurveOrder
 
-/-- TRUSTED INPUT: the Pallas curve's group order is the prime scalar-field cardinality `q`. -/
-axiom pallas_card : Pallas.curve.toAffine.order = PALLAS_SCALAR_CARD
+/-- **AXIOM (Hasse).** The Pallas group order lies in the Hasse interval
+    `[q+1−2√q, q+1+2√q]` (`#E(𝔽) ∈ hasseInterval (#𝔽)`). -/
+axiom pallas_hasse : HasseBound Pallas.curve
 
-/-- TRUSTED INPUT: the Vesta curve's group order is the prime cardinality `p`. -/
-axiom vesta_card : Vesta.curve.toAffine.order = PALLAS_BASE_CARD
+/-- **AXIOM (Hasse).** The Vesta group order lies in the Hasse interval. -/
+axiom vesta_hasse : HasseBound Vesta.curve
+
+/-- The Pallas group order is the prime scalar-field cardinality `q`. -/
+theorem pallas_card : Pallas.curve.toAffine.order = PALLAS_SCALAR_CARD := by
+  have h := Pallas.card_eq pallas_hasse
+  rw [SWPoint.card_eq_point Pallas.curve] at h
+  exact h
+
+/-- The Vesta group order is the prime cardinality `p`. -/
+theorem vesta_card : Vesta.curve.toAffine.order = PALLAS_BASE_CARD := by
+  have h := Vesta.card_eq vesta_hasse
+  rw [SWPoint.card_eq_point Vesta.curve] at h
+  exact h
 
 /-- **The Pasta fields' size in bits.** Both base-field cardinals are 255-bit. This is the one
     place the width is written down — it is the circuit's `FieldSizeInBits`, the bound on
