@@ -3,10 +3,11 @@ Axiom-closure gate for the Kimchi formalization.
 
 `lake build` succeeds even with `sorry` (it is only a warning), so this script gates the headline
 theorems explicitly: it collects the full axiom closure of each root and fails unless every axiom
-is in the allowlist below — the three standard logical axioms plus the two trusted Pasta
-point-count axioms (`Kimchi.Pasta.{pallas_card, vesta_card}`). This subsumes the old `sorryAx`
-grep: a `sorry` shows up as `sorryAx`, which is not in the allowlist, and any *other* stray axiom
-that slips into a proof is caught too.
+is in the allowlist below — the three standard logical axioms, the two trusted Pasta Hasse-bound
+axioms (`Kimchi.Pasta.{pallas_hasse, vesta_hasse}`, from which the group orders are *derived* via
+CompElliptic), `Lean.ofReduceBool` (inherited from CompElliptic's `native_decide` order witness),
+and the Pasta GLV endomorphism inputs. This subsumes the old `sorryAx` grep: a `sorry` shows up as
+`sorryAx`, which is not in the allowlist, and any *other* stray axiom that slips in is caught too.
 
 Run from `formal/`:  lake env lean scripts/check_axioms.lean   (or: scripts/check_axioms.sh)
 -/
@@ -40,14 +41,26 @@ def roots : List Name :=
     `Kimchi.Circuit.EndoMul.pallas_combo_off_targets,
     `Kimchi.Circuit.EndoMul.vesta_combo_off_targets ]
 
-/-- The only axioms the roots may depend on: the standard logical axioms, the trusted Pasta
-    point counts, and the Pasta GLV endomorphism inputs (`β`, `λ`, the CM eigenvalue relation,
-    and the GLV short-basis bound). -/
+/-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
+    (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta GLV endomorphism inputs (`β`, `λ`,
+    the CM eigenvalue relation). CompElliptic `native_decide` witnesses are permitted separately by
+    `isTrustedNativeDecide`. -/
 def allowed : List Name :=
-  [ `propext, `Classical.choice, `Quot.sound,
-    `Kimchi.Pasta.pallas_card, `Kimchi.Pasta.vesta_card,
+  [ `propext, `Classical.choice, `Quot.sound, `Lean.ofReduceBool,
+    `Kimchi.Pasta.pallas_hasse, `Kimchi.Pasta.vesta_hasse,
     `Kimchi.Pasta.pallas_endo, `Kimchi.Pasta.pallas_eigen,
     `Kimchi.Pasta.vesta_endo, `Kimchi.Pasta.vesta_eigen, ]
+
+/-- A CompElliptic `native_decide` witness: an axiom under the `CompElliptic` namespace carrying the
+    `native_decide` marker (these back CompElliptic's point counts). A `native_decide` in our own
+    tree is not `CompElliptic`-namespaced, so it is still rejected. -/
+def isTrustedNativeDecide (ax : Name) : Bool :=
+  let s := ax.toString
+  "CompElliptic.".isPrefixOf s && (s.splitOn "native_decide").length > 1
+
+/-- An axiom is permitted if it is in the explicit allowlist or is a CompElliptic `native_decide`
+    witness. -/
+def isAllowed (ax : Name) : Bool := allowed.contains ax || isTrustedNativeDecide ax
 
 end Kimchi.CheckAxioms
 
@@ -58,7 +71,7 @@ run_cmd do
     unless env.contains root do
       throwError "axiom-check root not in environment: {root}"
     for ax in (← liftCoreM <| Lean.collectAxioms root) do
-      unless Kimchi.CheckAxioms.allowed.contains ax do
+      unless Kimchi.CheckAxioms.isAllowed ax do
         bad := bad.push (root, ax)
   if bad.isEmpty then
     IO.println s!"✓ all {Kimchi.CheckAxioms.roots.length} roots reduce to the allowed axiom set \
