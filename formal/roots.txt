@@ -67,3 +67,11 @@ Kimchi.Circuit.EndoMul.vesta_endoMul
 Kimchi.Commitment.IPA.ipa_soundness
 Kimchi.Commitment.IPA.commitmentBinding_iff_no_relation
 Kimchi.Commitment.IPA.ipaRelation_unique
+
+-- Kimchi IPA batched opening (multi-polynomial, multi-point — the form the kimchi verifier
+-- actually calls). Under the grid Fiat–Shamir hypothesis and no-DL-relation binding, batched
+-- acceptance at pairwise-distinct (polyscale, evalscale) pairs yields per-commitment openings
+-- with every individual claimed evaluation genuine (`batch_soundness`); the algebraic engine is
+-- the n-point Vandermonde dual basis (`vandermondeN`).
+Kimchi.Commitment.IPA.vandermondeN
+Kimchi.Commitment.IPA.batch_soundness
