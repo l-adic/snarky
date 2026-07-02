@@ -75,3 +75,10 @@ Kimchi.Commitment.IPA.ipaRelation_unique
 -- the n-point Vandermonde dual basis (`vandermondeN`).
 Kimchi.Commitment.IPA.vandermondeN
 Kimchi.Commitment.IPA.batch_soundness
+
+-- Kimchi quotient/vanishing argument (implementation checkpoint). Over the size-n evaluation
+-- domain, a constraint polynomial is divisible by Z_H = X^n - 1 iff it vanishes on every row
+-- (`zH_dvd_iff`); instantiated at the double generic gate: both constraint polynomials divisible
+-- iff the gate's two constraints hold at every row of the table (`genericRows_iff_dvd`).
+Kimchi.Quotient.zH_dvd_iff
+Kimchi.Quotient.genericRows_iff_dvd
