@@ -42,7 +42,9 @@ def roots : List Name :=
     `Kimchi.Circuit.EndoMul.vesta_combo_off_targets,
     `Kimchi.Commitment.IPA.ipa_soundness,
     `Kimchi.Commitment.IPA.commitmentBinding_iff_no_relation,
-    `Kimchi.Commitment.IPA.ipaRelation_unique ]
+    `Kimchi.Commitment.IPA.ipaRelation_unique,
+    `Kimchi.Commitment.IPA.vandermondeN,
+    `Kimchi.Commitment.IPA.batch_soundness ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta GLV endomorphism inputs (`β`, `λ`,

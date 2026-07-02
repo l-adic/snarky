@@ -49,7 +49,23 @@ def recombine (σ : SRS G) (P : G) (v : F) {k : ℕ} (u : Fin k → F)
 
 /-! ## The verifier acceptance equation -/
 
-/-- The verifier accepts, with final Schnorr challenge `c`, iff both hold:
+/-- The verifier acceptance equation with the evaluation slot abstracted to a free
+scalar `b0`. With final Schnorr challenge `c`, accepts iff both hold:
+
+* `c • Q + δ = z1 • sg + (z1 · b0) • σ.U + z2 • σ.h` (Schnorr check, with
+  `Q = recombine σ P v u proof.lr`);
+* `sg = ⟨bPolyCoefficients u, σ.g⟩` (the `sg`-correctness check).
+
+`VerifierAccepts` is the specialization at `b0 = bPoly u x`; the batched verifier
+feeds `b0 = combinedB u r x` (see `IPA/Batch.lean`). -/
+def VerifierAcceptsAt (σ : SRS G) (proof : OpeningProof F G σ.k) (P : G) (b0 v c : F)
+    (u : Fin σ.k → F) : Prop :=
+  (c • recombine σ P v u proof.lr + proof.delta
+      = proof.z1 • proof.sg + (proof.z1 * b0) • σ.U + proof.z2 • σ.h)
+  ∧ (proof.sg = commitGen σ.g (bPolyCoefficients u))
+
+/-- The verifier accepts, with final Schnorr challenge `c`, iff both hold. This is
+`VerifierAcceptsAt` at `b0 = bPoly u x`:
 
 * `c • Q + δ = z1 • sg + (z1 · bPoly(u, x)) • σ.U + z2 • σ.h` (the Schnorr check,
   with `Q = recombine σ P v u proof.lr`);
@@ -57,8 +73,6 @@ def recombine (σ : SRS G) (P : G) (v : F) {k : ℕ} (u : Fin k → F)
   generator is the challenge-coefficient combination of the generators). -/
 def VerifierAccepts (σ : SRS G) (proof : OpeningProof F G σ.k) (P : G) (x v c : F)
     (u : Fin σ.k → F) : Prop :=
-  (c • recombine σ P v u proof.lr + proof.delta
-      = proof.z1 • proof.sg + (proof.z1 * bPoly u x) • σ.U + proof.z2 • σ.h)
-  ∧ (proof.sg = commitGen σ.g (bPolyCoefficients u))
+  VerifierAcceptsAt σ proof P (bPoly u x) v c u
 
 end Kimchi.Commitment.IPA
