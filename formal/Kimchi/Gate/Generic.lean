@@ -69,6 +69,45 @@ theorem satisfies_iff [DecidableEq F] (gs : List (Generic F)) (a : Assignment F)
     satisfies gs a = true ↔ Satisfies gs a := by
   simp [satisfies, Satisfies, List.all_eq_true, Generic.ok_iff]
 
+/-! ## The double generic gate row
+
+kimchi's generic gate row (`generic.rs`) packs **two** generic gates: the first on registers
+`w 0, w 1, w 2` with coefficients `q 0 … q 4`, the second on `w 3, w 4, w 5` with `q 5 … q 9`
+(coefficient order per gate: `l, r, o, m, c`). A row is 15 witness cells `w : Fin 15 → F` and
+15 coefficient cells `q : Fin 15 → F` (`q 10 … q 14` unused). The two halves are literal
+`Generic` gates over the row's first six cells viewed as an `Assignment`. -/
+
+/-- The first generic gate of a double generic row: coefficients `q 0 … q 4`, registers at
+assignment slots `0, 1, 2` (row cells `w 0, w 1, w 2`). -/
+def DoubleGeneric.fst (q : Fin 15 → F) : Generic F :=
+  { cl := q 0, vl := some 0, cr := q 1, vr := some 1, co := q 2, vo := some 2
+  , m := q 3, c := q 4 }
+
+/-- The second generic gate of a double generic row: coefficients `q 5 … q 9`, registers at
+assignment slots `3, 4, 5` (row cells `w 3, w 4, w 5`). -/
+def DoubleGeneric.snd (q : Fin 15 → F) : Generic F :=
+  { cl := q 5, vl := some 3, cr := q 6, vr := some 4, co := q 7, vo := some 5
+  , m := q 8, c := q 9 }
+
+/-- The row's first six witness cells as an `Assignment` (the registers both halves read). -/
+def DoubleGeneric.registers (w : Fin 15 → F) : Assignment F :=
+  #[w 0, w 1, w 2, w 3, w 4, w 5]
+
+/-- **The double generic gate holds at a row**: both packed `Generic` gates hold on the row's
+registers. This is the row-level predicate the polynomial layer (`Kimchi/Quotient`) lifts. -/
+def DoubleGeneric.Holds (q w : Fin 15 → F) : Prop :=
+  (DoubleGeneric.fst q).holds (DoubleGeneric.registers w)
+    ∧ (DoubleGeneric.snd q).holds (DoubleGeneric.registers w)
+
+/-- `DoubleGeneric.Holds` unfolded to the two raw cell equations of `generic.rs` (l.245–250):
+`q₀w₀ + q₁w₁ + q₂w₂ + q₃(w₀w₁) + q₄ = 0` and `q₅w₃ + q₆w₄ + q₇w₅ + q₈(w₃w₄) + q₉ = 0`. -/
+theorem DoubleGeneric.holds_iff (q w : Fin 15 → F) :
+    DoubleGeneric.Holds q w
+      ↔ (q 0 * w 0 + q 1 * w 1 + q 2 * w 2 + q 3 * (w 0 * w 1) + q 4 = 0
+          ∧ q 5 * w 3 + q 6 * w 4 + q 7 * w 5 + q 8 * (w 3 * w 4) + q 9 = 0) := by
+  simp [DoubleGeneric.Holds, DoubleGeneric.fst, DoubleGeneric.snd, DoubleGeneric.registers,
+    Generic.holds, slot, Assignment.get]
+
 /-- Example: `w0 * w1 = w2`, as `1·w2 + (-1)·(w0·w1) = 0`, over the field `ZMod 17`. -/
 instance : Fact (Nat.Prime 17) := ⟨by norm_num⟩
 

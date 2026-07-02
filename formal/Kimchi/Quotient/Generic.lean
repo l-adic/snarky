@@ -1,16 +1,18 @@
 import Kimchi.Quotient.Domain
+import Kimchi.Gate.Generic
 
 /-!
-# The double generic gate and the divisibility checkpoint
+# The double generic gate's constraint polynomials and the divisibility checkpoint
 
-Field-valued model of kimchi's **double** generic gate (`generic.rs`,
+The polynomial lift of kimchi's **double** generic gate (`generic.rs`,
 `CONSTRAINTS = 2`) and the first end-to-end "gate holds on every row iff the
 constraint polynomials are divisible by `Z_H`" thread. Commitment-free, built
 directly on `Kimchi.Quotient.Domain`.
 
-The existing `Kimchi/Gate/Generic.lean` is a single-op runnable demo over
-`Array Int`; this is a fresh field-valued model living over an abstract field
-`[Field F]` with a primitive `n`-th root of unity `ω`.
+The row-level gate predicate is `Kimchi.Gate.DoubleGeneric.Holds` (defined in
+`Kimchi/Gate/Generic.lean` as two `Generic` gates packed in one row); this file
+owns only the *polynomial* side — the constraint polynomials over column
+interpolants and the divisibility bridge.
 
 ## Column layout (from `generic.rs`)
 
@@ -32,15 +34,6 @@ namespace Kimchi.Quotient
 open Polynomial
 
 variable {F : Type*} [Field F] {n : ℕ} {ω : F}
-
-/-! ## One row: the two constraints -/
-
-/-- The **double generic gate** holds at a row given coefficient cells `q` and
-witness cells `w`: the conjunction of the two generic constraints. Mirrors
-`generic.rs` l.245–250 verbatim (the `qᵢ` here are the `cᵢ` / `coeffs` there). -/
-def GenericHolds (q w : Fin 15 → F) : Prop :=
-  q 0 * w 0 + q 1 * w 1 + q 2 * w 2 + q 3 * (w 0 * w 1) + q 4 = 0 ∧
-  q 5 * w 3 + q 6 * w 4 + q 7 * w 5 + q 8 * (w 3 * w 4) + q 9 = 0
 
 /-! ## The constraint polynomials of a circuit
 
@@ -99,9 +92,10 @@ polynomials `W c = columnPoly (fun i => wTab i c)`,
 divisible by `Z_H` iff the double generic gate holds at every row.
 
 By `zH_dvd_iff`, `Z_H ∣ E ↔ ∀ i < n, E(ω^i) = 0`; by `eval_genericE1/2`,
-`E₁(ω^i) = 0` (resp. `E₂`) is exactly the first (resp. second) constraint at
-row `i`. Commuting `∧` past `∀` merges the two per-constraint statements into
-`GenericHolds`. Pure polynomial algebra — no probabilistic content here. -/
+`E₁(ω^i) = 0` (resp. `E₂`) is exactly the first (resp. second) constraint of
+`Gate.DoubleGeneric.holds_iff` at row `i`. Commuting `∧` past `∀` merges the
+two per-constraint statements. Pure polynomial algebra — no probabilistic
+content here. -/
 theorem genericRows_iff_dvd (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     (wTab qTab : Fin n → Fin 15 → F) :
     (zH F n ∣
@@ -110,7 +104,8 @@ theorem genericRows_iff_dvd (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
       zH F n ∣
         genericE2 (fun c => columnPoly ω (fun i => qTab i c))
           (fun c => columnPoly ω (fun i => wTab i c))) ↔
-      ∀ i, GenericHolds (qTab i) (wTab i) := by
+      ∀ i, Gate.DoubleGeneric.Holds (qTab i) (wTab i) := by
+  simp only [Gate.DoubleGeneric.holds_iff]
   rw [zH_dvd_iff hω hn, zH_dvd_iff hω hn]
   constructor
   · rintro ⟨h1, h2⟩ i
