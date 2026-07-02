@@ -44,7 +44,9 @@ def roots : List Name :=
     `Kimchi.Commitment.IPA.commitmentBinding_iff_no_relation,
     `Kimchi.Commitment.IPA.ipaRelation_unique,
     `Kimchi.Commitment.IPA.vandermondeN,
-    `Kimchi.Commitment.IPA.batch_soundness ]
+    `Kimchi.Commitment.IPA.batch_soundness,
+    `Kimchi.Quotient.zH_dvd_iff,
+    `Kimchi.Quotient.genericRows_iff_dvd ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta GLV endomorphism inputs (`β`, `λ`,

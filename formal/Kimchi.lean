@@ -14,3 +14,4 @@ import Kimchi.Circuit.EndoScalar
 import Kimchi.Circuit.EndoMul
 import Kimchi.Commitment.IPA.Soundness
 import Kimchi.Commitment.IPA.Soundness.Batch
+import Kimchi.Quotient.Generic
