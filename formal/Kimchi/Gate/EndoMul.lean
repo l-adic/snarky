@@ -83,36 +83,98 @@ structure Witness (F : Type*) where
   yS : F
   inv : F
 
-/-- The 12 gate constraints: two `(P+Q)+P` blocks (3 each, with `Q` the endo-and-
+/-- Map a function across every witness cell. Instantiating at a ring homomorphism moves a
+    witness between rings — in particular between `Witness (Polynomial F)` (the column
+    polynomials of the quotient layer) and `Witness F` (their values at a domain node). -/
+def Witness.map {R S : Type*} (f : R → S) (w : Witness R) : Witness S where
+  xT := f w.xT
+  yT := f w.yT
+  xP := f w.xP
+  yP := f w.yP
+  n := f w.n
+  nPrime := f w.nPrime
+  b1 := f w.b1
+  b2 := f w.b2
+  b3 := f w.b3
+  b4 := f w.b4
+  s1 := f w.s1
+  xR := f w.xR
+  yR := f w.yR
+  s3 := f w.s3
+  xS := f w.xS
+  yS := f w.yS
+  inv := f w.inv
+
+/-- The 12 constraint expressions: two `(P+Q)+P` blocks (3 each, with `Q` the endo-and-
     sign-selected target), the distinct-point check, 4 booleanity checks, and the
-    scalar-register decomposition. `endo` is the base-field endomorphism coefficient.
+    scalar-register decomposition — the single transcription, from which the relational
+    spec (`Holds`) and the quotient layer's constraint polynomials are both read. `endo`
+    is the base-field endomorphism coefficient.
     (The distinct-point check is the upstream fix o1-labs/proof-systems@64129ce4 — see
     `block_sound` / `distinctPoints`; the pre-fix gate without it is underconstrained.) -/
-def Holds (endo : F) (w : Witness F) : Prop :=
+def constraints {R : Type*} [CommRing R] (endo : R) (w : Witness R) : List R :=
   let xq1 := (1 + (endo - 1) * w.b1) * w.xT
   let yq1 := (2 * w.b2 - 1) * w.yT
   let xq2 := (1 + (endo - 1) * w.b3) * w.xT
   let yq2 := (2 * w.b4 - 1) * w.yT
   -- first window `P → R`, slope `s1`
-  ((xq1 - w.xP) * w.s1 = yq1 - w.yP)
-    ∧ ((2 * w.xP - w.s1 ^ 2 + xq1) * ((w.xP - w.xR) * w.s1 + w.yR + w.yP)
-        = (w.xP - w.xR) * (2 * w.yP))
-    ∧ ((w.yR + w.yP) ^ 2 = (w.xP - w.xR) ^ 2 * (w.s1 ^ 2 - xq1 + w.xR))
-    -- second window `R → S`, slope `s3`
-    ∧ ((xq2 - w.xR) * w.s3 = yq2 - w.yR)
-    ∧ ((2 * w.xR - w.s3 ^ 2 + xq2) * ((w.xR - w.xS) * w.s3 + w.yS + w.yR)
-        = (w.xR - w.xS) * (2 * w.yR))
-    ∧ ((w.yS + w.yR) ^ 2 = (w.xR - w.xS) ^ 2 * (w.s3 ^ 2 - xq2 + w.xS))
-    -- distinct-point check (upstream fix): `inv` witnesses `(xP−xR)·(xR−xS)` is a
-    -- unit, forcing `xP ≠ xR` and `xR ≠ xS` (no degenerate `R = −P` / `S = −R`)
-    ∧ ((w.xP - w.xR) * (w.xR - w.xS) * w.inv = 1)
-    -- booleanity of the four bits
-    ∧ (w.b1 * (w.b1 - 1) = 0)
-    ∧ (w.b2 * (w.b2 - 1) = 0)
-    ∧ (w.b3 * (w.b3 - 1) = 0)
-    ∧ (w.b4 * (w.b4 - 1) = 0)
-    -- scalar register
-    ∧ (w.nPrime = 16 * w.n + 8 * w.b1 + 4 * w.b2 + 2 * w.b3 + w.b4)
+  [ (xq1 - w.xP) * w.s1 - (yq1 - w.yP)
+  , (2 * w.xP - w.s1 ^ 2 + xq1) * ((w.xP - w.xR) * w.s1 + w.yR + w.yP)
+      - (w.xP - w.xR) * (2 * w.yP)
+  , (w.yR + w.yP) ^ 2 - (w.xP - w.xR) ^ 2 * (w.s1 ^ 2 - xq1 + w.xR)
+  -- second window `R → S`, slope `s3`
+  , (xq2 - w.xR) * w.s3 - (yq2 - w.yR)
+  , (2 * w.xR - w.s3 ^ 2 + xq2) * ((w.xR - w.xS) * w.s3 + w.yS + w.yR)
+      - (w.xR - w.xS) * (2 * w.yR)
+  , (w.yS + w.yR) ^ 2 - (w.xR - w.xS) ^ 2 * (w.s3 ^ 2 - xq2 + w.xS)
+  -- distinct-point check (upstream fix): `inv` witnesses `(xP−xR)·(xR−xS)` is a
+  -- unit, forcing `xP ≠ xR` and `xR ≠ xS` (no degenerate `R = −P` / `S = −R`)
+  , (w.xP - w.xR) * (w.xR - w.xS) * w.inv - 1
+  -- booleanity of the four bits
+  , w.b1 * (w.b1 - 1)
+  , w.b2 * (w.b2 - 1)
+  , w.b3 * (w.b3 - 1)
+  , w.b4 * (w.b4 - 1)
+  -- scalar register
+  , w.nPrime - (16 * w.n + 8 * w.b1 + 4 * w.b2 + 2 * w.b3 + w.b4) ]
+
+/-- RELATIONAL spec: all 12 constraint expressions vanish. -/
+def Holds (endo : F) (w : Witness F) : Prop :=
+  ∀ e ∈ constraints endo w, e = 0
+
+omit [DecidableEq F] in
+/-- `Holds` as the readable 12-conjunction (what the soundness proofs destructure). -/
+theorem holds_iff (endo : F) (w : Witness F) :
+    Holds endo w ↔
+      (((1 + (endo - 1) * w.b1) * w.xT - w.xP) * w.s1 = (2 * w.b2 - 1) * w.yT - w.yP)
+      ∧ ((2 * w.xP - w.s1 ^ 2 + (1 + (endo - 1) * w.b1) * w.xT)
+            * ((w.xP - w.xR) * w.s1 + w.yR + w.yP)
+          = (w.xP - w.xR) * (2 * w.yP))
+      ∧ ((w.yR + w.yP) ^ 2
+          = (w.xP - w.xR) ^ 2 * (w.s1 ^ 2 - (1 + (endo - 1) * w.b1) * w.xT + w.xR))
+      ∧ (((1 + (endo - 1) * w.b3) * w.xT - w.xR) * w.s3 = (2 * w.b4 - 1) * w.yT - w.yR)
+      ∧ ((2 * w.xR - w.s3 ^ 2 + (1 + (endo - 1) * w.b3) * w.xT)
+            * ((w.xR - w.xS) * w.s3 + w.yS + w.yR)
+          = (w.xR - w.xS) * (2 * w.yR))
+      ∧ ((w.yS + w.yR) ^ 2
+          = (w.xR - w.xS) ^ 2 * (w.s3 ^ 2 - (1 + (endo - 1) * w.b3) * w.xT + w.xS))
+      ∧ ((w.xP - w.xR) * (w.xR - w.xS) * w.inv = 1)
+      ∧ (w.b1 * (w.b1 - 1) = 0)
+      ∧ (w.b2 * (w.b2 - 1) = 0)
+      ∧ (w.b3 * (w.b3 - 1) = 0)
+      ∧ (w.b4 * (w.b4 - 1) = 0)
+      ∧ (w.nPrime = 16 * w.n + 8 * w.b1 + 4 * w.b2 + 2 * w.b3 + w.b4) := by
+  simp only [Holds, constraints, List.forall_mem_cons, List.not_mem_nil, false_implies,
+    implies_true, and_true, sub_eq_zero]
+
+omit [DecidableEq F] in
+/-- The constraint expressions commute with ring homomorphisms (applied cellwise via
+    `Witness.map`, with the `endo` parameter transported): `constraints` is a natural
+    transformation over commutative rings. -/
+theorem constraints_map {R S : Type*} [CommRing R] [CommRing S] (f : R →+* S)
+    (endo : R) (w : Witness R) :
+    (constraints endo w).map f = constraints (f endo) (w.map f) := by
+  simp [constraints, Witness.map, map_ofNat]
 
 omit [DecidableEq F] in
 /-- Booleanity: the constraint `b·(b−1) = 0` forces `b ∈ {0,1}` (field = domain). -/
@@ -127,7 +189,7 @@ omit [DecidableEq F] in
     window, `R ≠ −P`) and `xR ≠ xS` (second window, `S ≠ −R`). -/
 theorem distinctPoints (endo : F) (w : Witness F) (h : Holds endo w) :
     w.xP ≠ w.xR ∧ w.xR ≠ w.xS := by
-  simp only [Holds] at h
+  rw [holds_iff] at h
   have hinv := h.2.2.2.2.2.2.1
   refine ⟨fun hc => ?_, fun hc => ?_⟩
   · rw [hc, sub_self, zero_mul, zero_mul] at hinv; exact one_ne_zero hinv.symm
@@ -191,7 +253,7 @@ theorem targets_nonsingular (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 �
     (hT : W.Nonsingular w.xT w.yT) (hφT : W.Nonsingular (endo * w.xT) w.yT) :
     W.Nonsingular ((1 + (endo - 1) * w.b1) * w.xT) ((2 * w.b2 - 1) * w.yT)
       ∧ W.Nonsingular ((1 + (endo - 1) * w.b3) * w.xT) ((2 * w.b4 - 1) * w.yT) := by
-  simp only [Holds] at h
+  rw [holds_iff] at h
   obtain ⟨_, _, _, _, _, _, _, hb1, hb2, hb3, hb4, _⟩ := h
   exact ⟨target_nonsingular W ha hT hφT (bool_of_mul hb1) (bool_of_mul hb2),
          target_nonsingular W ha hT hφT (bool_of_mul hb3) (bool_of_mul hb4)⟩
@@ -280,7 +342,7 @@ theorem row_sound (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ =
     Point.some _ _ hR = (Point.some _ _ hP + Point.some _ _ hQ1) + Point.some _ _ hP
       ∧ Point.some _ _ hS = (Point.some _ _ hR + Point.some _ _ hQ2) + Point.some _ _ hR := by
   obtain ⟨hxPxR, hxRxS⟩ := distinctPoints endo w h
-  simp only [Holds] at h
+  rw [holds_iff] at h
   obtain ⟨hs1, hc2_1, hc3_1, hs2, hc2_2, hc3_2, _, _, _, _, _, _⟩ := h
   exact ⟨block_sound W ha hP hQ1 hR hxne1 htne1 (Ne.symm hxPxR) hs1 hc2_1 hc3_1,
          block_sound W ha hR hQ2 hS hxne2 htne2 (Ne.symm hxRxS) hs2 hc2_2 hc3_2⟩
@@ -305,7 +367,7 @@ theorem sound (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 �
   obtain ⟨hReq, hSeq⟩ :=
     row_sound W ha endo w h hP hR hS hQ1 hQ2 hxne1 htne1 hxne2 htne2
   have hb := h
-  simp only [Holds] at hb
+  rw [holds_iff] at hb
   obtain ⟨_, _, _, _, _, _, _, hb1c, hb2c, hb3c, hb4c, _⟩ := hb
   have hb1 := bool_of_mul hb1c
   have hb2 := bool_of_mul hb2c
@@ -413,7 +475,7 @@ theorem complete (endo xT yT xP yP n b1 b2 b3 b4 : F)
     stepWindow_holds ((1 + (endo - 1) * b3) * xT) ((2 * b4 - 1) * yT)
       (build endo xT yT xP yP n b1 b2 b3 b4).xR (build endo xT yT xP yP n b1 b2 b3 b4).yR
       hxne2 htne2
-  refine ⟨h1, h2, h3, h4, h5, h6, ?_, hb1, hb2, hb3, hb4, rfl⟩
+  refine (holds_iff _ _).mpr ⟨h1, h2, h3, h4, h5, h6, ?_, hb1, hb2, hb3, hb4, rfl⟩
   have hd : (xP - (build endo xT yT xP yP n b1 b2 b3 b4).xR)
       * ((build endo xT yT xP yP n b1 b2 b3 b4).xR
          - (build endo xT yT xP yP n b1 b2 b3 b4).xS) ≠ 0 :=

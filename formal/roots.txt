@@ -10,7 +10,7 @@
 -- Format: one fully-qualified declaration name per line; `--` lines and blanks are ignored.
 --
 -- Note: the `kimchi-demo` executable (Main.lean) is a SEPARATE build root, reaching the demo
--- defs `Kimchi.Gate.{mulGate, egGood, egBad, satisfies}`. Those are demo-only and are not part
+-- defs `Kimchi.Gate.{egQ, egGood, egBad, satisfies}`. Those are demo-only and are not part
 -- of this library API surface, so they are reachable through the executable rather than here.
 
 -- Generic gate

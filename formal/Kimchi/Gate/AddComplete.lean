@@ -51,45 +51,82 @@ deriving Repr
 
 variable {F : Type*}
 
-/-! ## The 7 constraints, transcribed from `complete_add.rs`. -/
+/-- Map a function across every witness cell. Instantiating at a ring homomorphism moves a
+    witness between rings — in particular between `Witness (Polynomial F)` (the column
+    polynomials of the quotient layer) and `Witness F` (their values at a domain node). -/
+def Witness.map {R S : Type*} (f : R → S) (w : Witness R) : Witness S where
+  x1 := f w.x1
+  y1 := f w.y1
+  x2 := f w.x2
+  y2 := f w.y2
+  x3 := f w.x3
+  y3 := f w.y3
+  inf := f w.inf
+  sameX := f w.sameX
+  s := f w.s
+  infZ := f w.infZ
+  x21Inv := f w.x21Inv
 
-/-- RELATIONAL spec: the conjunction of the gate's 7 polynomial identities.
-    `CommRing` suffices — no division appears (the inverse is *witnessed* as
-    `x21Inv`, the whole point of the gate). -/
-def Holds [CommRing F] (w : Witness F) : Prop :=
+/-! ## The 7 constraints, transcribed from `complete_add.rs`.
+
+The constraint left-hand sides live here once, as ring elements (`constraints`); the
+relational spec (`Holds`), the executable checker (`ok`), and the quotient layer's constraint
+polynomials (which read the same list over `F[X]`) are all defined from them. `CommRing`
+suffices — no division appears (the inverse is *witnessed* as `x21Inv`, the whole point of
+the gate). -/
+
+/-- The gate's 7 constraint expressions — the single transcription. -/
+def constraints [CommRing F] (w : Witness F) : List F :=
   let x21  := w.x2 - w.x1
   let y21  := w.y2 - w.y1
   let x1sq := w.x1 * w.x1
   -- zero_check(x21, x21Inv, sameX): constrains `sameX = (x1 == x2)`
-  (w.x21Inv * x21 - (1 - w.sameX) = 0)                                         -- c1
-  ∧ (w.sameX * x21 = 0)                                                        -- c2
+  [ w.x21Inv * x21 - (1 - w.sameX)                                             -- c1
+  , w.sameX * x21                                                              -- c2
   -- slope: sameX ? (2·s·y₁ = 3x₁²)  :  ((x₂−x₁)·s = y₂−y₁)
-  ∧ (w.sameX * (2 * w.s * w.y1 - 3 * x1sq)
-       + (1 - w.sameX) * (x21 * w.s - y21) = 0)                               -- c3
-  ∧ (w.x1 + w.x2 + w.x3 - w.s * w.s = 0)                                      -- c4  (x₃)
-  ∧ (w.s * (w.x1 - w.x3) - w.y1 - w.y3 = 0)                                   -- c5  (y₃)
+  , w.sameX * (2 * w.s * w.y1 - 3 * x1sq)
+      + (1 - w.sameX) * (x21 * w.s - y21)                                      -- c3
+  , w.x1 + w.x2 + w.x3 - w.s * w.s                                             -- c4  (x₃)
+  , w.s * (w.x1 - w.x3) - w.y1 - w.y3                                          -- c5  (y₃)
   -- inf = sameX ∧ (y₁ ≠ y₂):
-  ∧ (y21 * (w.sameX - w.inf) = 0)                                             -- c6
-  ∧ (y21 * w.infZ - w.inf = 0)                                                -- c7
+  , y21 * (w.sameX - w.inf)                                                    -- c6
+  , y21 * w.infZ - w.inf ]                                                     -- c7
+
+/-- RELATIONAL spec: all 7 constraint expressions vanish. -/
+def Holds [CommRing F] (w : Witness F) : Prop :=
+  ∀ e ∈ constraints w, e = 0
 
 /-- EXECUTABLE checker — runnable on a concrete witness. -/
 def ok [CommRing F] [DecidableEq F] (w : Witness F) : Bool :=
-  let x21  := w.x2 - w.x1
-  let y21  := w.y2 - w.y1
-  let x1sq := w.x1 * w.x1
-  (w.x21Inv * x21 - (1 - w.sameX) == 0)
-    && (w.sameX * x21 == 0)
-    && (w.sameX * (2 * w.s * w.y1 - 3 * x1sq)
-          + (1 - w.sameX) * (x21 * w.s - y21) == 0)
-    && (w.x1 + w.x2 + w.x3 - w.s * w.s == 0)
-    && (w.s * (w.x1 - w.x3) - w.y1 - w.y3 == 0)
-    && (y21 * (w.sameX - w.inf) == 0)
-    && (y21 * w.infZ - w.inf == 0)
+  (constraints w).all (· == 0)
 
 /-- Reflection: the checker faithfully decides the relational constraints. -/
 theorem ok_iff [CommRing F] [DecidableEq F] (w : Witness F) :
     ok w = true ↔ Holds w := by
-  simp only [ok, Holds, Bool.and_eq_true, beq_iff_eq, and_assoc]
+  simp only [ok, Holds, List.all_eq_true, beq_iff_eq]
+
+/-- `Holds` as the readable 7-conjunction (what the faithfulness proofs destructure). -/
+theorem holds_iff [CommRing F] (w : Witness F) :
+    Holds w ↔
+      (w.x21Inv * (w.x2 - w.x1) - (1 - w.sameX) = 0)                           -- c1
+      ∧ (w.sameX * (w.x2 - w.x1) = 0)                                          -- c2
+      ∧ (w.sameX * (2 * w.s * w.y1 - 3 * (w.x1 * w.x1))
+           + (1 - w.sameX) * ((w.x2 - w.x1) * w.s - (w.y2 - w.y1)) = 0)        -- c3
+      ∧ (w.x1 + w.x2 + w.x3 - w.s * w.s = 0)                                   -- c4
+      ∧ (w.s * (w.x1 - w.x3) - w.y1 - w.y3 = 0)                                -- c5
+      ∧ ((w.y2 - w.y1) * (w.sameX - w.inf) = 0)                                -- c6
+      ∧ ((w.y2 - w.y1) * w.infZ - w.inf = 0) := by                             -- c7
+  simp only [Holds, constraints, List.forall_mem_cons, List.not_mem_nil, false_implies,
+    implies_true, and_true]
+
+/-- The constraint expressions commute with ring homomorphisms (applied cellwise via
+    `Witness.map`). At `f = eval (ω^i) : F[X] →+* F` this turns the quotient layer's
+    constraint polynomials' values at a domain node into the gate constraints of that
+    node's row witness. -/
+theorem constraints_map {R S : Type*} [CommRing R] [CommRing S] (f : R →+* S)
+    (w : Witness R) :
+    (constraints w).map f = constraints (w.map f) := by
+  simp [constraints, Witness.map, map_ofNat]
 
 section Faithfulness
 
@@ -112,7 +149,7 @@ theorem sound_noninf
     ∧ w.x3 = W.addX w.x1 w.x2 w.s
     ∧ w.y3 = W.addY w.x1 w.x2 w.y1 w.s := by
   obtain ⟨ha1, ha2, ha3, ha4⟩ := ha
-  simp only [Holds] at h
+  rw [holds_iff] at h
   obtain ⟨c1, c2, c3, c4, c5, c6, _⟩ := h
   refine ⟨?_, ?_, ?_⟩
   · -- slope: w.s = W.slope …
@@ -181,7 +218,7 @@ theorem complete_noninf
             , inf := 0, sameX := 1, s := W.slope x1 x2 y1 y2
             , infZ := 0, x21Inv := 0 },
           rfl, rfl, rfl, rfl, rfl, ?_, rfl, rfl⟩
-    simp only [Holds]
+    rw [holds_iff]
     refine ⟨by ring, by rw [hx]; ring, ?_, ?_, ?_, by rw [← hyeq]; ring, by ring⟩
     · -- c3: 2·s·y₁ = 3x₁²  (via slope = 3x₁²/(2y₁), cleared with eq_div_iff)
       have hs : W.slope x1 x2 y1 y2 = 3 * x1 ^ 2 / (y1 + y1) := by
@@ -200,7 +237,7 @@ theorem complete_noninf
             , inf := 0, sameX := 0, s := W.slope x1 x2 y1 y2
             , infZ := 0, x21Inv := (x2 - x1)⁻¹ },
           rfl, rfl, rfl, rfl, rfl, ?_, rfl, rfl⟩
-    simp only [Holds]
+    rw [holds_iff]
     refine ⟨?_, by ring, ?_, ?_, ?_, by ring, by ring⟩
     · -- c1: (x₂−x₁)⁻¹·(x₂−x₁) − 1 = 0
       rw [inv_mul_cancel₀ hx21]; ring
@@ -240,7 +277,7 @@ theorem complete_inf
   refine ⟨{ x1 := x1, y1 := y1, x2 := x2, y2 := y2, x3 := s ^ 2 - x1 - x2,
             y3 := s * (x1 - (s ^ 2 - x1 - x2)) - y1, inf := 1, sameX := 1, s := s,
             infZ := 1 / (y2 - y1), x21Inv := 0 }, rfl, rfl, rfl, rfl, rfl, ?_⟩
-  simp only [Holds]
+  rw [holds_iff]
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · ring
   · rw [hxe]; ring
@@ -309,7 +346,7 @@ theorem sound_point_noninf
   have hfin : ¬(w.x1 = w.x2 ∧ w.y1 = W.negY w.x2 w.y2) := by
     rintro ⟨hxe, hye⟩
     have hc := hcons
-    simp only [Holds] at hc
+    rw [holds_iff] at hc
     obtain ⟨c1, c2, c3, c4, c5, c6, c7⟩ := hc
     have hx21 : w.x2 - w.x1 = 0 := by rw [hxe]; ring
     rw [hx21] at c1
@@ -337,7 +374,7 @@ theorem sound_point_inf
     (h1 : W.Nonsingular w.x1 w.y1) (h2 : W.Nonsingular w.x2 w.y2)
     (hcons : Holds w) (hinf : w.inf = 1) :
     Point.some _ _ h1 + Point.some _ _ h2 = 0 := by
-  simp only [Holds] at hcons
+  rw [holds_iff] at hcons
   obtain ⟨c1, c2, c3, c4, c5, c6, c7⟩ := hcons
   rw [hinf] at c6 c7
   -- c7 forces y₂ ≠ y₁ (otherwise `0·infZ − 1 = 0`, i.e. `1 = 0`).
@@ -361,7 +398,7 @@ theorem sound_point_inf
     `0` or `1` according to whether `x₁ = x₂`.) -/
 theorem inf_boolean (w : Witness F) (hcons : Holds w) :
     w.inf = 0 ∨ w.inf = 1 := by
-  simp only [Holds] at hcons
+  rw [holds_iff] at hcons
   obtain ⟨c1, c2, _c3, _c4, _c5, c6, c7⟩ := hcons
   by_cases hy21 : w.y2 - w.y1 = 0
   · rw [hy21] at c7
