@@ -12,3 +12,4 @@ import Kimchi.Gate.EndoMul
 import Kimchi.Circuit.VarBaseMul
 import Kimchi.Circuit.EndoScalar
 import Kimchi.Circuit.EndoMul
+import Kimchi.Commitment.IPA.Soundness
