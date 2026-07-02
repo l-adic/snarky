@@ -58,3 +58,12 @@ Kimchi.Circuit.EndoMul.vesta_combo_off_targets
 -- via the CM axiom and the per-row hxne is *derived* from the GLV bound (not assumed)
 Kimchi.Circuit.EndoMul.pallas_endoMul
 Kimchi.Circuit.EndoMul.vesta_endoMul
+
+-- Kimchi IPA polynomial commitment (soundness + binding). Knowledge soundness: under the single
+-- Fiat–Shamir rewinding hypothesis, an accepting verifier run yields a witness in the opening
+-- relation (`ipa_soundness`). Binding: commitment binding is *exactly* discrete-log-relation
+-- triviality among the generators (`commitmentBinding_iff_no_relation`), and the opening is unique
+-- under binding (`ipaRelation_unique`).
+Kimchi.Commitment.IPA.ipa_soundness
+Kimchi.Commitment.IPA.commitmentBinding_iff_no_relation
+Kimchi.Commitment.IPA.ipaRelation_unique
