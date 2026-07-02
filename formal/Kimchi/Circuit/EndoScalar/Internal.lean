@@ -125,7 +125,7 @@ theorem chain_decompose (m : ℕ) (w : ℕ → Witness F)
       ∧ (w m).n8 = nReconstruct (chainCrumbs w (m + 1)) := by
   induction m with
   | zero =>
-    obtain ⟨hn, ha, hb, _⟩ := hHolds 0 (le_refl 0)
+    obtain ⟨hn, ha, hb, _⟩ := (holds_iff _).mp (hHolds 0 (le_refl 0))
     rw [chainCrumbs_succ, chainCrumbs_zero, List.nil_append]
     refine ⟨?_, ?_, ?_⟩
     · rw [ha, ha0, decomposeA]
@@ -135,7 +135,7 @@ theorem chain_decompose (m : ℕ) (w : ℕ → Witness F)
     obtain ⟨ihA, ihB, ihN⟩ := ih (fun i hi => hHolds i (by omega))
       (fun i hi => haStep i (by omega)) (fun i hi => hbStep i (by omega))
       (fun i hi => hnStep i (by omega))
-    obtain ⟨hn, ha, hb, _⟩ := hHolds (k + 1) (le_refl _)
+    obtain ⟨hn, ha, hb, _⟩ := (holds_iff _).mp (hHolds (k + 1) (le_refl _))
     rw [chainCrumbs_succ]
     refine ⟨?_, ?_, ?_⟩
     · rw [ha, haStep k (Nat.lt_succ_self k), ihA, decomposeA_append]

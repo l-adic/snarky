@@ -99,25 +99,40 @@ structure Witness (F : Type*) where
   crumbs : List F
 deriving Repr
 
-/-- The gate constraints (11 at the deployed 8-crumb width: `3 + #crumbs`): the three
-    accumulator folds (`n := 4n+x`, `a := 2a + cPoly x`, `b := 2b + dPoly x`) close at
-    `a8,b8,n8`, and every crumb satisfies the range polynomial. -/
-def Holds (w : Witness F) : Prop :=
-  w.n8 = w.crumbs.foldl (fun acc x => 4 * acc + x) w.n0
-    ∧ w.a8 = w.crumbs.foldl (fun acc x => 2 * acc + cPoly x) w.a0
-    ∧ w.b8 = w.crumbs.foldl (fun acc x => 2 * acc + dPoly x) w.b0
-    ∧ ∀ x ∈ w.crumbs, crumbPoly x = 0
+/-- The gate constraint expressions (11 at the deployed 8-crumb width: `3 + #crumbs`) — the
+    single transcription: the three accumulator folds (`n := 4n+x`, `a := 2a + cPoly x`,
+    `b := 2b + dPoly x`) closing at `a8,b8,n8`, and the range polynomial per crumb. The
+    relational spec (`Holds`) and the checker (`ok`) are read from this list. (Stated over
+    the field `F` — `cPoly`/`dPoly` carry field-constant coefficients; the ring-generic
+    reading for the quotient layer goes through the algebra map, deferred to that layer.) -/
+def constraints (w : Witness F) : List F :=
+  [ w.n8 - w.crumbs.foldl (fun acc x => 4 * acc + x) w.n0
+  , w.a8 - w.crumbs.foldl (fun acc x => 2 * acc + cPoly x) w.a0
+  , w.b8 - w.crumbs.foldl (fun acc x => 2 * acc + dPoly x) w.b0 ]
+  ++ w.crumbs.map crumbPoly
 
-/-- EXECUTABLE checker: the three accumulator folds close and every crumb is in range. -/
+/-- RELATIONAL spec: all constraint expressions vanish. -/
+def Holds (w : Witness F) : Prop :=
+  ∀ e ∈ constraints w, e = 0
+
+/-- EXECUTABLE checker: every constraint expression evaluates to zero. -/
 def ok [DecidableEq F] (w : Witness F) : Bool :=
-  (w.n8 == w.crumbs.foldl (fun acc x => 4 * acc + x) w.n0)
-    && (w.a8 == w.crumbs.foldl (fun acc x => 2 * acc + cPoly x) w.a0)
-    && (w.b8 == w.crumbs.foldl (fun acc x => 2 * acc + dPoly x) w.b0)
-    && w.crumbs.all (fun x => crumbPoly x == 0)
+  (constraints w).all (· == 0)
 
 /-- Reflection: the checker faithfully decides the constraints. -/
 theorem ok_iff [DecidableEq F] (w : Witness F) : ok w = true ↔ Holds w := by
-  simp only [ok, Holds, Bool.and_eq_true, beq_iff_eq, List.all_eq_true, and_assoc]
+  simp only [ok, Holds, List.all_eq_true, beq_iff_eq]
+
+/-- `Holds` as the readable conjunction: the three folds close and every crumb is in
+    range. -/
+theorem holds_iff (w : Witness F) :
+    Holds w ↔
+      w.n8 = w.crumbs.foldl (fun acc x => 4 * acc + x) w.n0
+        ∧ w.a8 = w.crumbs.foldl (fun acc x => 2 * acc + cPoly x) w.a0
+        ∧ w.b8 = w.crumbs.foldl (fun acc x => 2 * acc + dPoly x) w.b0
+        ∧ ∀ x ∈ w.crumbs, crumbPoly x = 0 := by
+  simp only [Holds, constraints, List.cons_append, List.nil_append, List.forall_mem_cons,
+    List.forall_mem_map, sub_eq_zero]
 
 /-- Build the canonical satisfying row from valid crumbs and the input accumulators: the three
     outputs are the accumulator folds, run on the given crumbs. -/
@@ -134,7 +149,7 @@ def build (a0 b0 n0 : F) (crumbs : List F) : Witness F :=
 theorem complete (a0 b0 n0 : F) (crumbs : List F)
     (hvalid : ∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
     Holds (build a0 b0 n0 crumbs) :=
-  ⟨rfl, rfl, rfl, fun x hx => (crumb_iff x).mpr (hvalid x hx)⟩
+  (holds_iff _).mpr ⟨rfl, rfl, rfl, fun x hx => (crumb_iff x).mpr (hvalid x hx)⟩
 
 /-! ## The bare-table form of the folds.
 
@@ -197,7 +212,7 @@ theorem sound (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
       ∧ w.n8 = w.crumbs.foldl (fun n x => 4 * n + x) w.n0
       ∧ w.a8 = w.crumbs.foldl (fun a x => 2 * a + cFunc x) w.a0
       ∧ w.b8 = w.crumbs.foldl (fun b x => 2 * b + dFunc x) w.b0 := by
-  obtain ⟨hn, ha, hb, hc⟩ := h
+  obtain ⟨hn, ha, hb, hc⟩ := (holds_iff w).mp h
   have hv : ∀ x ∈ w.crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3 :=
     fun x hx => (crumb_iff x).mp (hc x hx)
   refine ⟨hv, hn, ?_, ?_⟩

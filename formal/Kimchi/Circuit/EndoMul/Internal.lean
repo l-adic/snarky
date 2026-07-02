@@ -380,7 +380,7 @@ theorem gate_advance (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
   obtain ⟨hQ1, hQ2⟩ := targets_nonsingular W ha endo w h hT hφT
   -- the gate constraints
   have hb := h
-  simp only [Holds] at hb
+  rw [holds_iff] at hb
   obtain ⟨hs1, hc2_1, hc3_1, hs3, hc2_2, hc3_2, _, hb1c, hb2c, hb3c, hb4c, _⟩ := hb
   have hb1 := bool_of_mul hb1c
   have hb2 := bool_of_mul hb2c
@@ -730,7 +730,7 @@ theorem accumulator_chain (W : WeierstrassCurve.Affine F)
       -- per-row constraints
       obtain ⟨hxPxR, hxRxS⟩ := distinctPoints endo (g i) (hholds i hi')
       have hcon := hholds i hi'
-      simp only [Holds] at hcon
+      rw [holds_iff] at hcon
       obtain ⟨hs1, hc2_1, hc3_1, hs3, hc2_3, hc3_3, _, hb1c, hb2c, hb3c, hb4c, _⟩ := hcon
       have hb1 := bool_of_mul hb1c
       have hb2 := bool_of_mul hb2c
@@ -778,7 +778,7 @@ theorem accumulator_chain (W : WeierstrassCurve.Affine F)
     hφTeq.trans (some_congr W hφTns hφTi (by rw [(hbase i hi).1]) (hbase i hi).2.symm)
   obtain ⟨hxPxR, hxRxS⟩ := distinctPoints endo (g i) (hholds i hi)
   have hcon := hholds i hi
-  simp only [Holds] at hcon
+  rw [holds_iff] at hcon
   obtain ⟨hs1, hc2_1, hc3_1, hs3, hc2_3, hc3_3, _, hb1c, hb2c, hb3c, hb4c, _⟩ := hcon
   have hb1 := bool_of_mul hb1c
   have hb2 := bool_of_mul hb2c
