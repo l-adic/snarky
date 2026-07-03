@@ -16,6 +16,7 @@ module Test.Snarky.Circuit.Kimchi.DumpAddComplete
   , dumpVarBaseMul
   , dumpEndoMul
   , dumpEndoScalar
+  , dumpScaleCombine
   , dumpAll
   ) where
 
@@ -252,6 +253,41 @@ dumpEndoScalar = do
     solver = makeSolver (Proxy @(KimchiConstraint Fp)) circuit
   dumpToFile "formal/fixtures/endoscalar_step.json" builtState solver input
 
+--------------------------------------------------------------------------------
+-- scale_combine (the IPA MSM term `p' = acc + [s]·T`): VarBaseMul chain → CompleteAdd
+
+-- | `addFast acc (scaleFast1 g s)` — a scalar-mul whose result feeds an add. This is the atomic
+-- | multi-scalar-multiplication term of the IPA opening check (wrap_verifier), and the first
+-- | dumped circuit exercising genuine gate-output→gate-input dataflow (VarBaseMul result into a
+-- | CompleteAdd input), matching Lean `Kimchi.Circuit.VarBaseMul.scaleCombine_sound`.
+dumpScaleCombine :: Effect Unit
+dumpScaleCombine = do
+  let
+    circuit
+      :: forall r
+       . Tuple (Tuple (AffinePoint (FVar Fp)) (FVar Fp)) (AffinePoint (FVar Fp))
+      -> Snarky Fp (KimchiConstraint Fp) r (AffinePoint (FVar Fp))
+    circuit (Tuple (Tuple g scalar) acc) =
+      _.p <$> (addFast DontCheckFinite acc =<< scaleFast1 @51 g (Type1 scalar))
+    toPt h = case toAffine h of
+      Just c -> AffinePoint c
+      Nothing -> unsafeCrashWith "dumpScaleCombine: infinity"
+    input =
+      Tuple (Tuple (toPt (generator :: Pallas.G)) (F (fromInt 12345)))
+        (toPt ((generator :: Pallas.G) <> (generator :: Pallas.G)))
+  builtState <- compile @Fp noAdvice
+    (Proxy @(Tuple (Tuple (AffinePoint Fp) (F Fp)) (AffinePoint Fp)))
+    (Proxy @(AffinePoint Fp))
+    (Proxy @(KimchiConstraint Fp))
+    circuit
+  let
+    solver
+      :: Solver Fp (KimchiConstraint Fp)
+           (Tuple (Tuple (AffinePoint Fp) (F Fp)) (AffinePoint Fp))
+           (AffinePoint Fp)
+    solver = makeSolver (Proxy @(KimchiConstraint Fp)) circuit
+  dumpToFile "formal/fixtures/scale_combine_step.json" builtState solver input
+
 -- | Regenerate every committed fixture. Run from the repo root so the relative
 -- | `formal/fixtures/…` paths resolve.
 dumpAll :: Effect Unit
@@ -261,3 +297,4 @@ dumpAll = do
   dumpVarBaseMul
   dumpEndoMul
   dumpEndoScalar
+  dumpScaleCombine

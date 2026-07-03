@@ -520,4 +520,109 @@ theorem vbmCircuitGrounded_scaleFast1
   exact varBaseMul_scaleFast1_grounded m w pub hchain T s hTne hTns hTeq (w.row (2 * m)) hdblcons
     hx12 hy12 hbaseX hbaseY houtX houtY hy1 hbits hs hnf
 
+/-! ## A verifier sub-circuit: the IPA scale-and-combine term `p' = acc + [s]·T`
+
+The atomic multi-scalar-multiplication term of the IPA opening check
+(`addComplete acc (scaleFast1 g s)`, proof-systems `wrap_verifier`): a `VarBaseMul` chain computes
+`[s]·T`, then a trailing `CompleteAdd` adds it to an accumulator point `acc`. This is the first
+*verifier* operation assembled from the gate-composition proofs — genuine gate-output→gate-input
+dataflow (the chain's output accumulator feeds the add's second input by a copy constraint), the
+mirror of the init grounding above (there a `CompleteAdd` fed *into* the chain).
+
+The soundness statement is the **full complete-add disjunction**: either the add's `inf` flag is
+set and `acc + [s]·T = 0`, or the flag is clear and the output cells carry `acc + [s]·T` — no
+branch is hypothesized away (unlike the doubling init, the vertical case is genuinely reachable
+here: an adversarial `acc = -[s]·T` is legitimate input, and the gate must and does flag it). -/
+
+/-- The trailing `CompleteAdd` combine row: input 1 `(x1,y1)` is the external accumulator `acc`
+    (self-loops — supplied by hypothesis); input 2 `(x2,y2)` is wired to the chain's output
+    accumulator (the last `Zero` row `2m−1`, cols 0/1); output and `inf` self-loop. -/
+def caCombGate (m : ℕ) : Kimchi.Circuit.Gate F :=
+  { kind := .completeAdd, coeffs := #[]
+  , wires := #[(2 * m, 0), (2 * m, 1), (2 * m - 1, 0), (2 * m - 1, 1),
+               (2 * m, 4), (2 * m, 5), (2 * m, 6)] }
+
+/-- `vbmCircuit m` with a trailing `CompleteAdd` combine row (at row `2m`). -/
+def scaleCombineCircuit (m : ℕ) : Kimchi.Circuit.Circuit F :=
+  (vbmCircuit m).append #[caCombGate m]
+
+omit [Field F] [DecidableEq F] in
+@[simp] theorem scaleCombine_size (m : ℕ) :
+    (scaleCombineCircuit m (F := F)).gates.size = 2 * m + 1 := by simp [scaleCombineCircuit]
+
+omit [Field F] [DecidableEq F] in
+theorem gateAt_sc_eq (m r : ℕ) (hr : r < 2 * m) :
+    (scaleCombineCircuit m (F := F)).gateAt r = (vbmCircuit m).gateAt r :=
+  Circuit.gateAt_append_left _ _ r (by rw [vbmCircuit_size]; omega)
+
+omit [Field F] [DecidableEq F] in
+theorem gateAt_sc_ca (m : ℕ) :
+    (scaleCombineCircuit m (F := F)).gateAt (2 * m) = caCombGate m := by
+  have h := Circuit.gateAt_append_right (vbmCircuit m (F := F)) #[caCombGate m] 0
+    (by show 0 < 1; decide)
+  rw [vbmCircuit_size] at h
+  exact h
+
+/-- **Scale-and-combine (an IPA MSM term), complete.** From `Satisfies (scaleCombineCircuit m)` the
+    sub-circuit computes `p' = acc + [s]·T` with the full complete-add case split: the `VarBaseMul`
+    chain gives `[s]·T` (`scaleFast1` on the projected chain `Satisfies`), its output feeds the
+    trailing `CompleteAdd` by a `copyHolds`-derived wire, and `AddComplete.sound` yields either the
+    flagged vertical case (`inf = 1`, `acc + [s]·T = 0`) or the affine sum in the output cells. -/
+theorem scaleCombine_sound
+    (m : ℕ) (hm : 0 < m) (w : Kimchi.Circuit.Witness VestaBaseField) (pub : Array VestaBaseField)
+    (hsat : Satisfies (scaleCombineCircuit m) w pub)
+    (T : Vesta.curve.toAffine.Point) (s : ℤ) (hTne : T ≠ 0)
+    (hTns : Vesta.curve.toAffine.Nonsingular (gwit w 0).xT (gwit w 0).yT)
+    (hTeq : T = Point.some _ _ hTns)
+    (hP0ns : Vesta.curve.toAffine.Nonsingular (gwit w 0).x0 (gwit w 0).y0)
+    (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T)
+    (hbits : 5 * m ≤ pastaFieldBits) (hs : s = gateLadder (gwit w) (5 * m))
+    (hnf : 5 * m = pastaFieldBits → s ∉ forbiddenValues Vesta.curve.toAffine.order)
+    (hacc : Vesta.curve.toAffine.Nonsingular
+        (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).x1
+        (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y1)
+    (hy1 : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y1 ≠ 0) :
+    ((Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).inf = 1
+        ∧ Point.some _ _ hacc + s • T = 0)
+    ∨ ((Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).inf = 0
+        ∧ ∃ h3 : Vesta.curve.toAffine.Nonsingular
+            (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).x3
+            (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y3,
+          Point.some _ _ h3 = Point.some _ _ hacc + s • T) := by
+  obtain ⟨k, rfl⟩ := Nat.exists_eq_succ_of_ne_zero (by omega : m ≠ 0)
+  have ha : Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
+      ∧ Vesta.curve.toAffine.a₃ = 0 ∧ Vesta.curve.toAffine.a₄ = 0 := ⟨rfl, rfl, rfl, rfl⟩
+  -- the chain: [s]·T at the final accumulator
+  have hchain : Satisfies (vbmCircuit (k + 1)) w pub :=
+    Satisfies.of_append (c := vbmCircuit (k + 1)) (gs := #[caCombGate (k + 1)]) hsat
+  obtain ⟨hg, hc⟩ := hsat
+  obtain ⟨hfin, hptS, _⟩ :=
+    varBaseMul_circuit_scaleFast1 (k + 1) w pub hchain T s hTne hTns hTeq hP0ns hP0 hbits hs hnf
+  -- the combine row's gate identity and its chain-output wires
+  have hcacons : Kimchi.Gate.AddComplete.Holds
+      (Kimchi.Gate.AddComplete.ofRow (w.row (2 * (k + 1)))) := by
+    have hh := hg (2 * (k + 1)) (by rw [scaleCombine_size]; omega)
+    rwa [gateAt_sc_ca (k + 1)] at hh
+  have hcc2 := hc (2 * (k + 1)) (by rw [scaleCombine_size]; omega) 2 (by omega)
+  have hcc3 := hc (2 * (k + 1)) (by rw [scaleCombine_size]; omega) 3 (by omega)
+  rw [gateAt_sc_ca (k + 1)] at hcc2 hcc3
+  simp only [caCombGate] at hcc2 hcc3
+  rw [show 2 * (k + 1) - 1 = 2 * k + 1 by omega] at hcc2 hcc3
+  -- input 2 is the chain's output accumulator (defeq the ofRows cells)
+  have hx2 : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * (k + 1)))).x2
+      = accX (gwit w) (k + 1) := hcc2
+  have hy2 : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * (k + 1)))).y2
+      = accY (gwit w) (k + 1) := hcc3
+  have h2 : Vesta.curve.toAffine.Nonsingular
+      (Kimchi.Gate.AddComplete.ofRow (w.row (2 * (k + 1)))).x2
+      (Kimchi.Gate.AddComplete.ofRow (w.row (2 * (k + 1)))).y2 := by
+    rw [hx2, hy2]; exact hfin
+  have heq2 : Point.some _ _ h2 = s • T := (Point.some_congr h2 hfin hx2 hy2).trans hptS
+  -- the full complete-add case split
+  rcases Kimchi.Gate.AddComplete.sound Vesta.curve.toAffine ha
+      (Kimchi.Gate.AddComplete.ofRow (w.row (2 * (k + 1)))) hacc h2 hcacons hy1 (by decide) with
+    ⟨hinf, hsum⟩ | ⟨hinf, h3, hsum⟩
+  · exact Or.inl ⟨hinf, by rw [← heq2]; exact hsum⟩
+  · exact Or.inr ⟨hinf, h3, by rw [← heq2]; exact hsum.symm⟩
+
 end Kimchi.Circuit.VarBaseMul

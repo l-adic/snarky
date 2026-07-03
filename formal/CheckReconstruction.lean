@@ -59,7 +59,7 @@ def checkRecon (name : String) (path : System.FilePath) (recon : Circuit Fp)
   IO.println s!"{name}: accepts real chain = {accepts}, rejects tampered = {rejects}"
   pure (accepts && rejects)
 
-open Kimchi.Circuit.VarBaseMul (vbmCircuit)
+open Kimchi.Circuit.VarBaseMul (vbmCircuit scaleCombineCircuit)
 open Kimchi.Circuit.EndoMul (emCircuit)
 open Kimchi.Circuit.EndoScalar (esCircuit)
 open Kimchi.Circuit.Poseidon (posCircuit)
@@ -86,6 +86,9 @@ def main : IO Unit := do
   ok := ok && (← checkRecon "endoscalar → esCircuit 7" "fixtures/endoscalar_step.json"
     (esCircuit 7) 3 11)
   ok := ok && (← checkReconPoseidon "fixtures/poseidon_step.json" 11 6 18)
+  -- the verifier sub-circuit: chain rows 8..109 + the combine CompleteAdd at 110
+  ok := ok && (← checkRecon "scale-combine → scaleCombineCircuit 51"
+    "fixtures/scale_combine_step.json" (scaleCombineCircuit 51) 8 111)
   unless ok do
     IO.eprintln "reconstruction mismatch: a hand-written step-circuit disagrees with the dump"
     IO.Process.exit 1

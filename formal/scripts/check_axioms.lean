@@ -99,7 +99,10 @@ def roots : List Name :=
     -- VarBaseMul init from a CompleteAdd doubling (dataflow): P₀ = [2]·T derived, not assumed —
     -- the adapter, and the fully reconstructed circuit deriving the wiring from copyHolds.
     `Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast1_grounded,
-    `Kimchi.Circuit.VarBaseMul.vbmCircuitGrounded_scaleFast1 ]
+    `Kimchi.Circuit.VarBaseMul.vbmCircuitGrounded_scaleFast1,
+    -- Verifier sub-circuit: the IPA scale-and-combine MSM term p' = acc + [s]·T (VarBaseMul chain
+    -- output fed into a CompleteAdd by dataflow), with the FULL complete-add disjunction.
+    `Kimchi.Circuit.VarBaseMul.scaleCombine_sound ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations
