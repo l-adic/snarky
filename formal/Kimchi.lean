@@ -30,4 +30,5 @@ import Kimchi.Circuit
 import Kimchi.Circuits.AddCompleteStep
 import Kimchi.Circuits.VarBaseMulStep
 import Kimchi.Circuits.EndoMulStep
+import Kimchi.Circuits.EndoScalarStep
 import Kimchi.Json
