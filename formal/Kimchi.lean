@@ -28,4 +28,5 @@ import Kimchi.Checker.EndoMul
 import Kimchi.Field.Pasta
 import Kimchi.Circuit
 import Kimchi.Circuits.AddCompleteStep
+import Kimchi.Circuits.VarBaseMulStep
 import Kimchi.Json

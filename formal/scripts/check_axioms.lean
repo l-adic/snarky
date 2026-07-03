@@ -54,7 +54,10 @@ def roots : List Name :=
     -- The checker-facing custom-gate constraint reflections.
     `Kimchi.Checker.Generic.ok_iff, `Kimchi.Checker.VarBaseMul.ok_iff,
     `Kimchi.Checker.EndoScalar.ok_iff,
-    `Kimchi.Checker.EndoMul.ok_iff, `Kimchi.Gate.Poseidon.ok_iff ]
+    `Kimchi.Checker.EndoMul.ok_iff, `Kimchi.Gate.Poseidon.ok_iff,
+    -- Composing gates into circuits: the checker↔algebraic-gate bridge and the chained
+    -- variable-base scalar-multiplication soundness (threading from copy constraints).
+    `Kimchi.Gate.VarBaseMul.checker_holds_iff, `Kimchi.Circuit.VarBaseMul.chain_sound ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta GLV endomorphism inputs (`β`, `λ`,
