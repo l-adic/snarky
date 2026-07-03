@@ -1,5 +1,6 @@
 import Kimchi.Circuit
 import Kimchi.Circuit.VarBaseMul
+import Kimchi.Circuits.InitGrounding
 
 /-!
 # End-to-end soundness for a chained `VarBaseMul` circuit
@@ -407,5 +408,49 @@ theorem varBaseMul_circuit_scaleFast1_scalar
   obtain ⟨k, hk, h0, hlt⟩ :=
     exists_canonical_scalar _ (Point.some _ _ hfin) T s (by rw [vesta_card]; decide) hpt
   exact ⟨hfin, k, hk, h0, hlt⟩
+
+/-- **Init from a `CompleteAdd` doubling (#4 dataflow).** Composes
+    `InitGrounding.completeAdd_doubles` with `varBaseMul_circuit_scaleFast1`: given the chain's
+    `Satisfies` *and* a `CompleteAdd` row
+    `dbl` fed the base twice (`x₁=x₂`, `y₁=y₂`) whose inputs are wired to gate 0's base
+    (`hbaseX/Y`) and whose output is wired to gate 0's input accumulator (`houtX/Y`), the chain
+    computes `[s]·T` — the init `P₀ = [2]·T` is *derived* from the doubling gate's proven
+    `AddComplete` soundness, not assumed. (A fully reconstructed circuit would derive the four
+    wiring equalities from `copyHolds`, exactly as `EndoScalar.esCircuitGrounded_sound` does for the
+    constant-pinning case.) -/
+theorem varBaseMul_scaleFast1_grounded
+    (m : ℕ) (w : Kimchi.Circuit.Witness VestaBaseField) (pub : Array VestaBaseField)
+    (hsat : Satisfies (vbmCircuit m) w pub)
+    (T : Vesta.curve.toAffine.Point) (s : ℤ) (hTne : T ≠ 0)
+    (hTns : Vesta.curve.toAffine.Nonsingular (gwit w 0).xT (gwit w 0).yT)
+    (hTeq : T = Point.some _ _ hTns)
+    (dbl : Kimchi.Gate.Row VestaBaseField)
+    (hdblcons : Kimchi.Gate.AddComplete.Holds (Kimchi.Gate.AddComplete.ofRow dbl))
+    (hx12 : (Kimchi.Gate.AddComplete.ofRow dbl).x1 = (Kimchi.Gate.AddComplete.ofRow dbl).x2)
+    (hy12 : (Kimchi.Gate.AddComplete.ofRow dbl).y1 = (Kimchi.Gate.AddComplete.ofRow dbl).y2)
+    (hbaseX : (Kimchi.Gate.AddComplete.ofRow dbl).x1 = (gwit w 0).xT)
+    (hbaseY : (Kimchi.Gate.AddComplete.ofRow dbl).y1 = (gwit w 0).yT)
+    (houtX : (Kimchi.Gate.AddComplete.ofRow dbl).x3 = (gwit w 0).x0)
+    (houtY : (Kimchi.Gate.AddComplete.ofRow dbl).y3 = (gwit w 0).y0)
+    (hy1 : (Kimchi.Gate.AddComplete.ofRow dbl).y1 ≠ 0)
+    (hinf : (Kimchi.Gate.AddComplete.ofRow dbl).inf = 0)
+    (hbits : 5 * m ≤ pastaFieldBits) (hs : s = gateLadder (gwit w) (5 * m))
+    (hnf : 5 * m = pastaFieldBits → s ∉ forbiddenValues Vesta.curve.toAffine.order) :
+    ∃ hfin : Vesta.curve.toAffine.Nonsingular (accX (gwit w) m) (accY (gwit w) m),
+      Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (gwit w i) := by
+  have ha : Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
+      ∧ Vesta.curve.toAffine.a₃ = 0 ∧ Vesta.curve.toAffine.a₄ = 0 := ⟨rfl, rfl, rfl, rfl⟩
+  -- the doubling's input point is `T`
+  have hTca : Vesta.curve.toAffine.Nonsingular (Kimchi.Gate.AddComplete.ofRow dbl).x1
+      (Kimchi.Gate.AddComplete.ofRow dbl).y1 := by rw [hbaseX, hbaseY]; exact hTns
+  obtain ⟨h3, hdbl⟩ := Kimchi.Circuit.InitGrounding.completeAdd_doubles Vesta.curve.toAffine ha dbl
+    hTca hx12 hy12 hdblcons hy1 (by decide) hinf
+  -- transport the produced output nonsingularity onto gate 0's input accumulator
+  have hP0ns : Vesta.curve.toAffine.Nonsingular (gwit w 0).x0 (gwit w 0).y0 := by
+    rw [← houtX, ← houtY]; exact h3
+  have hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T := by
+    rw [some_congr Vesta.curve.toAffine hP0ns h3 houtX.symm houtY.symm, hdbl,
+      some_congr Vesta.curve.toAffine hTca hTns hbaseX hbaseY, ← hTeq]
+  exact varBaseMul_circuit_scaleFast1 m w pub hsat T s hTne hTns hTeq hP0ns hP0 hbits hs hnf
 
 end Kimchi.Circuit.VarBaseMul
