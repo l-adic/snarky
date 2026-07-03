@@ -453,4 +453,95 @@ theorem varBaseMul_scaleFast1_grounded
       some_congr Vesta.curve.toAffine hTca hTns hbaseX hbaseY, ← hTeq]
   exact varBaseMul_circuit_scaleFast1 m w pub hsat T s hTne hTns hTeq hP0ns hP0 hbits hs hnf
 
+/-! ## Fully grounded (Vesta): init reconstructed from a trailing `CompleteAdd` doubling row
+
+`vbmCircuitGrounded m` appends a `CompleteAdd` row to `vbmCircuit m`, wired to double gate 0's base
+into gate 0's input accumulator. Its soundness derives the four wiring equalities from `copyHolds`
+(no longer hypotheses), feeding `varBaseMul_scaleFast1_grounded`. -/
+
+/-- The trailing `CompleteAdd` doubling row: both inputs wired to gate 0's base `(0,0)/(0,1)`, its
+    output wired to gate 0's input accumulator `(0,2)/(0,3)`; the `inf` column self-loops. -/
+def caDoubleGate (m : ℕ) : Kimchi.Circuit.Gate F :=
+  { kind := .completeAdd, coeffs := #[]
+  , wires := #[(0, 0), (0, 1), (0, 0), (0, 1), (0, 2), (0, 3), (2 * m, 6)] }
+
+/-- `vbmCircuit m` with a trailing `CompleteAdd` doubling row (at row `2m`). -/
+def vbmCircuitGrounded (m : ℕ) : Kimchi.Circuit.Circuit F :=
+  { publicInputSize := 0
+  , gates := Array.ofFn (n := 2 * m + 1) fun idx =>
+      if idx.val < 2 * m then (if idx.val % 2 = 0 then vbmGate (idx.val / 2) else vbmZero)
+      else caDoubleGate m }
+
+omit [Field F] [DecidableEq F] in
+@[simp] theorem vbmGrounded_size (m : ℕ) :
+    (vbmCircuitGrounded m (F := F)).gates.size = 2 * m + 1 := by simp [vbmCircuitGrounded]
+
+omit [Field F] [DecidableEq F] in
+/-- The chain gate at `r < 2m` reconstructs the same in `vbmCircuitGrounded` as in `vbmCircuit`. -/
+theorem gateAt_grounded_eq (m r : ℕ) (hr : r < 2 * m) :
+    (vbmCircuitGrounded m (F := F)).gateAt r = (vbmCircuit m).gateAt r := by
+  rw [Circuit.gateAt, Circuit.gateAt, vbmCircuitGrounded, vbmCircuit,
+    getD_ofFn_lt _ _ _ _ (show r < 2 * m + 1 by omega), getD_ofFn_lt _ _ _ _ hr]
+  show (if r < 2 * m then (if r % 2 = 0 then vbmGate (r / 2) else vbmZero) else caDoubleGate m)
+      = (if r % 2 = 0 then vbmGate (r / 2) else vbmZero)
+  rw [if_pos hr]
+
+omit [Field F] [DecidableEq F] in
+/-- The trailing row reconstructs to `caDoubleGate m`. -/
+theorem gateAt_grounded_ca (m : ℕ) :
+    (vbmCircuitGrounded m (F := F)).gateAt (2 * m) = caDoubleGate m := by
+  rw [Circuit.gateAt, vbmCircuitGrounded, getD_ofFn_lt _ _ _ _ (show 2 * m < 2 * m + 1 by omega)]
+  show (if 2 * m < 2 * m then (if 2 * m % 2 = 0 then vbmGate (2 * m / 2) else vbmZero)
+        else caDoubleGate m) = caDoubleGate m
+  rw [if_neg (by omega)]
+
+/-- **Fully grounded VarBaseMul soundness (Vesta, #4 dataflow).** Any witness satisfying
+    `vbmCircuitGrounded m` computes `[s]·T` — the init `P₀ = [2]·T` is *derived* from the trailing
+    `CompleteAdd` doubling row, whose four wiring equalities are read off `copyHolds`. The only
+    remaining hypotheses are the base nonsingularity, `yT ≠ 0`, the doubling `inf = 0`, and the
+    ladder bounds — the exact analogue of `EndoScalar.esCircuitGrounded_sound`. -/
+theorem vbmCircuitGrounded_scaleFast1
+    (m : ℕ) (w : Kimchi.Circuit.Witness VestaBaseField) (pub : Array VestaBaseField)
+    (hsat : Satisfies (vbmCircuitGrounded m) w pub)
+    (T : Vesta.curve.toAffine.Point) (s : ℤ) (hTne : T ≠ 0)
+    (hTns : Vesta.curve.toAffine.Nonsingular (gwit w 0).xT (gwit w 0).yT)
+    (hTeq : T = Point.some _ _ hTns)
+    (hyT : (gwit w 0).yT ≠ 0)
+    (hinf : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).inf = 0)
+    (hbits : 5 * m ≤ pastaFieldBits) (hs : s = gateLadder (gwit w) (5 * m))
+    (hnf : 5 * m = pastaFieldBits → s ∉ forbiddenValues Vesta.curve.toAffine.order) :
+    ∃ hfin : Vesta.curve.toAffine.Nonsingular (accX (gwit w) m) (accY (gwit w) m),
+      Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (gwit w i) := by
+  obtain ⟨hg, hc⟩ := hsat
+  -- project the chain's `Satisfies` (the first `2m` gates are `vbmCircuit`'s, verbatim)
+  have hchain : Satisfies (vbmCircuit m) w pub := by
+    refine ⟨fun r hr => ?_, fun r hr k hk => ?_⟩ <;> rw [vbmCircuit_size] at hr
+    · have hh := hg r (by rw [vbmGrounded_size]; omega); rwa [gateAt_grounded_eq m r hr] at hh
+    · have hh := hc r (by rw [vbmGrounded_size]; omega) k hk
+      rwa [gateAt_grounded_eq m r hr] at hh
+  -- the doubling row's gate identity and its six copy constraints
+  have hdblcons : Kimchi.Gate.AddComplete.Holds
+      (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))) := by
+    have hh := hg (2 * m) (by rw [vbmGrounded_size]; omega); rwa [gateAt_grounded_ca m] at hh
+  have hc0 := hc (2 * m) (by rw [vbmGrounded_size]; omega) 0 (by omega)
+  have hc1 := hc (2 * m) (by rw [vbmGrounded_size]; omega) 1 (by omega)
+  have hc2 := hc (2 * m) (by rw [vbmGrounded_size]; omega) 2 (by omega)
+  have hc3 := hc (2 * m) (by rw [vbmGrounded_size]; omega) 3 (by omega)
+  have hc4 := hc (2 * m) (by rw [vbmGrounded_size]; omega) 4 (by omega)
+  have hc5 := hc (2 * m) (by rw [vbmGrounded_size]; omega) 5 (by omega)
+  rw [gateAt_grounded_ca m] at hc0 hc1 hc2 hc3 hc4 hc5
+  simp only [caDoubleGate] at hc0 hc1 hc2 hc3 hc4 hc5
+  -- name the wiring equalities in `AddComplete.ofRow` terms (defeq to the cells)
+  have hbaseX : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).x1 = (gwit w 0).xT := hc0
+  have hbaseY : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y1 = (gwit w 0).yT := hc1
+  have hx12 : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).x1
+      = (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).x2 := hc0.trans hc2.symm
+  have hy12 : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y1
+      = (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y2 := hc1.trans hc3.symm
+  have houtX : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).x3 = (gwit w 0).x0 := hc4
+  have houtY : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y3 = (gwit w 0).y0 := hc5
+  have hy1 : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y1 ≠ 0 := by rw [hbaseY]; exact hyT
+  exact varBaseMul_scaleFast1_grounded m w pub hchain T s hTne hTns hTeq (w.row (2 * m)) hdblcons
+    hx12 hy12 hbaseX hbaseY houtX houtY hy1 hinf hbits hs hnf
+
 end Kimchi.Circuit.VarBaseMul

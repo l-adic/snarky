@@ -96,8 +96,10 @@ def roots : List Name :=
     `Kimchi.Circuit.InitGrounding.completeAdd_doubles,
     -- Fully-grounded EndoMulScalar: init derived from trailing setup rows, no init hypotheses.
     `Kimchi.Circuit.EndoScalar.esCircuitGrounded_sound,
-    -- VarBaseMul init from a CompleteAdd doubling (dataflow): P₀ = [2]·T derived, not assumed.
-    `Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast1_grounded ]
+    -- VarBaseMul init from a CompleteAdd doubling (dataflow): P₀ = [2]·T derived, not assumed —
+    -- the adapter, and the fully reconstructed circuit deriving the wiring from copyHolds.
+    `Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast1_grounded,
+    `Kimchi.Circuit.VarBaseMul.vbmCircuitGrounded_scaleFast1 ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations
