@@ -17,11 +17,19 @@ The composition rests on two already-proven bodies of work:
 * `Kimchi.Circuit.VarBaseMul` — the abstract `m`-gate fold `scalarMul_baseMul`, which
   consumes per-row `GateStep`s plus *threading hypotheses* (`hin`/`hout`/`hregIn`/`hregOut`).
 
-The new ingredient is the **bridge**: the ingested circuit's `Checker.VarBaseMul.holds` row
-predicate equals the algebraic `Gate.VarBaseMul.Holds` of the witness read off the row pair
-(`ofRows`), and the circuit's copy constraints (`copyHolds`) *supply* the threading
-hypotheses the abstract fold assumes. Everything below is field-generic; the Pasta
-instantiation is layered on top exactly as in `Circuit/VarBaseMul.lean`.
+The development proceeds in two rungs:
+* `chain_sound` — the **abstract** composition: given per-row `GateStep`s and the threading
+  as *hypotheses*, the chain computes `[n]·T`. The bridge `checker_holds_iff` is what lets a
+  dumped, checker-accepted row supply a `GateStep.holds`.
+* `circuit_sound` — the **gold standard** (matching `AddCompleteStep`): reconstruct the actual
+  parametric `m`-gate circuit `vbmCircuit m` and *derive* both the threading and the 21 per-row
+  constraints from its `Satisfies` relation — `copyHolds` supplies the wiring (`hacc`/`hreg`/
+  `hbase`), `gatesHold` + `checker_holds_iff` supply each `Holds`. Only the curve-level
+  nonsingularity / non-degeneracy remain hypotheses (bundled as `RowCurve`), exactly as
+  `AddCompleteStep` keeps input nonsingularity as a hypothesis while deriving the gate identity.
+
+Everything below is field-generic; the Pasta instantiation is layered on top exactly as in
+`Circuit/VarBaseMul.lean`.
 -/
 
 namespace Kimchi.Gate.VarBaseMul
@@ -154,5 +162,167 @@ theorem chain_sound
   · rw [← hout (m - 1) (by omega), show m - 1 + 1 = m by omega, hn]
   · rw [hnf, hNm, hregIn 0 hm]
   · exact hnb
+
+/-! ## Grounding the chain in a reconstructed `Circuit`
+
+`chain_sound` above still *assumes* the threading (`hacc`/`hreg`/`hbase`) and each row's gate
+identity (bundled in `GateStep.holds`). The gold standard set by `AddCompleteStep` is stronger:
+reconstruct the *actual* ingested `Circuit` and derive both the wiring **and** the gate identities
+from its `Satisfies` relation, leaving only the curve-level nonsingularity / non-degeneracy as
+hypotheses (there the input points being on the curve; here the analogous per-row `RowCurve`). The
+development below builds the parametric `m`-gate `VarBaseMul` circuit and closes that gap. -/
+
+open Kimchi.Circuit (Cell Satisfies gatesHold copyHolds)
+
+/-- `Array.ofFn` lookup below its length: the workhorse for reducing `gateAt`/`wires` on the
+    parametric circuit's `Array.ofFn` gate list. -/
+private theorem getD_ofFn_lt {α} (n : ℕ) (f : Fin n → α) (r : ℕ) (d : α) (h : r < n) :
+    (Array.ofFn f).getD r d = f ⟨r, h⟩ := by
+  rw [Array.getD, dif_pos (by simpa using h)]; simp [Array.getElem_ofFn]
+
+/-- The curve-level per-row preconditions: this is `GateStep` **minus** the gate identity `Holds`
+    (the six accumulator points and base are nonsingular; the ten `NonDegen` side conditions hold).
+    `circuit_sound` derives `Holds` from the reconstructed circuit's `Satisfies` and assembles the
+    full `GateStep` via `RowCurve.toGateStep` — mirroring how `AddCompleteStep` keeps input
+    nonsingularity as a hypothesis while deriving the gate identity from `gatesHold`. -/
+structure RowCurve (W : WeierstrassCurve.Affine F)
+    (g : Kimchi.Gate.VarBaseMul.Witness F) : Prop where
+  a0 : W.Nonsingular g.x0 g.y0
+  a1 : W.Nonsingular g.x1 g.y1
+  a2 : W.Nonsingular g.x2 g.y2
+  a3 : W.Nonsingular g.x3 g.y3
+  a4 : W.Nonsingular g.x4 g.y4
+  a5 : W.Nonsingular g.x5 g.y5
+  hT : W.Nonsingular g.xT g.yT
+  x0 : g.x0 ≠ g.xT
+  x1 : g.x1 ≠ g.xT
+  x2 : g.x2 ≠ g.xT
+  x3 : g.x3 ≠ g.xT
+  x4 : g.x4 ≠ g.xT
+  t0 : 2 * g.x0 + g.xT - g.s0 * g.s0 ≠ 0
+  t1 : 2 * g.x1 + g.xT - g.s1 * g.s1 ≠ 0
+  t2 : 2 * g.x2 + g.xT - g.s2 * g.s2 ≠ 0
+  t3 : 2 * g.x3 + g.xT - g.s3 * g.s3 ≠ 0
+  t4 : 2 * g.x4 + g.xT - g.s4 * g.s4 ≠ 0
+
+/-- Combine the curve preconditions with a derived gate identity into a full `GateStep`. -/
+def RowCurve.toGateStep {W : WeierstrassCurve.Affine F} {g : Kimchi.Gate.VarBaseMul.Witness F}
+    (rc : RowCurve W g) (h : Holds g) : GateStep W g :=
+  { a0 := rc.a0, a1 := rc.a1, a2 := rc.a2, a3 := rc.a3, a4 := rc.a4, a5 := rc.a5, hT := rc.hT
+  , holds := h
+  , x0 := rc.x0, x1 := rc.x1, x2 := rc.x2, x3 := rc.x3, x4 := rc.x4
+  , t0 := rc.t0, t1 := rc.t1, t2 := rc.t2, t3 := rc.t3, t4 := rc.t4 }
+
+/-- Copy wiring for gate `i`'s `VarBaseMul` row (`2·i`). Cols 0–1 wire the base to gate 0
+    (shared `T`); for `i ≥ 1`, col 2–3 wire the input accumulator `(x0,y0)` to the previous gate's
+    output `(x5,y5)` (the `Zero` row `2i−1`, cols 0–1), and col 4 wires the input register `n` to
+    the previous gate's `n'` (the `VarBaseMul` row `2i−2`, col 5). Gate 0's row is all self-loops:
+    its init is supplied by `hinit`, not by a copy constraint. -/
+def vbmWires (i : ℕ) : Array Cell :=
+  if i = 0 then #[(0, 0), (0, 1), (0, 2), (0, 3), (0, 4), (0, 5), (0, 6)]
+  else #[(0, 0), (0, 1), (2 * i - 1, 0), (2 * i - 1, 1), (2 * i - 2, 5), (2 * i, 5), (2 * i, 6)]
+
+/-- Gate `i`'s `VarBaseMul` row (with the threading wires); the following `Zero` row carries no
+    outgoing copies. -/
+def vbmGate (i : ℕ) : Kimchi.Circuit.Gate F :=
+  { kind := .varBaseMul, coeffs := #[], wires := vbmWires i }
+
+/-- The all-`zero` companion row of each gate pair. -/
+def vbmZero : Kimchi.Circuit.Gate F := { kind := .zero, coeffs := #[], wires := #[] }
+
+/-- The reconstructed `m`-gate `VarBaseMul` circuit: `m` interleaved `VarBaseMul`/`Zero` row pairs
+    (gate `i` at rows `2i`, `2i+1`), threaded by `vbmWires`. No public inputs — the chain's initial
+    accumulator is pinned by `hinit`, exactly as `chain_sound` takes it. -/
+def vbmCircuit (m : ℕ) : Kimchi.Circuit.Circuit F :=
+  { publicInputSize := 0
+  , gates := Array.ofFn (n := 2 * m) fun idx =>
+      if idx.val % 2 = 0 then vbmGate (idx.val / 2) else vbmZero }
+
+omit [Field F] [DecidableEq F] in
+@[simp] theorem vbmCircuit_size (m : ℕ) : (vbmCircuit m (F := F)).gates.size = 2 * m := by
+  simp [vbmCircuit]
+
+omit [Field F] [DecidableEq F] in
+/-- The `VarBaseMul` row of gate `i` reconstructs to `vbmGate i`. -/
+theorem gateAt_vbm (m i : ℕ) (hi : i < m) :
+    (vbmCircuit m (F := F)).gateAt (2 * i) = vbmGate i := by
+  rw [Circuit.gateAt, vbmCircuit, getD_ofFn_lt _ _ _ _ (show 2 * i < 2 * m by omega)]
+  show (if 2 * i % 2 = 0 then vbmGate (2 * i / 2) else vbmZero) = vbmGate i
+  rw [if_pos (by omega), show 2 * i / 2 = i by omega]
+
+/-- Wire lookups for a threading row (`i ≠ 0`): base to gate 0, accumulator/register to the
+    previous gate. Each reduces the explicit `vbmWires` array literal. -/
+theorem vbmWires_get0 (i : ℕ) (hi : i ≠ 0) (d : Cell) : (vbmWires i).getD 0 d = (0, 0) := by
+  simp [vbmWires, hi]
+theorem vbmWires_get1 (i : ℕ) (hi : i ≠ 0) (d : Cell) : (vbmWires i).getD 1 d = (0, 1) := by
+  simp [vbmWires, hi]
+theorem vbmWires_get2 (i : ℕ) (hi : i ≠ 0) (d : Cell) :
+    (vbmWires i).getD 2 d = (2 * i - 1, 0) := by simp [vbmWires, hi]
+theorem vbmWires_get3 (i : ℕ) (hi : i ≠ 0) (d : Cell) :
+    (vbmWires i).getD 3 d = (2 * i - 1, 1) := by simp [vbmWires, hi]
+theorem vbmWires_get4 (i : ℕ) (hi : i ≠ 0) (d : Cell) :
+    (vbmWires i).getD 4 d = (2 * i - 2, 5) := by simp [vbmWires, hi]
+
+/-- The witness read off gate `i`'s physical row pair. -/
+private def gwit (w : Kimchi.Circuit.Witness F) (i : ℕ) : Kimchi.Gate.VarBaseMul.Witness F :=
+  ofRows (w.row (2 * i)) (w.row (2 * i + 1))
+
+/-- **End-to-end soundness for the reconstructed `VarBaseMul` chain.** Any witness satisfying
+    `vbmCircuit m` — with the per-row curve preconditions `rc` and the initial accumulator pinned to
+    `[a]·T` — certifies `[n]·T` for an explicit scalar `n`. Unlike `chain_sound`, the threading and
+    the 21 per-row constraints are *derived* from `Satisfies` (`copyHolds` supplies the wiring,
+    `gatesHold` + `checker_holds_iff` supply each `Holds`); only the curve nonsingularity /
+    non-degeneracy remain hypotheses, as in `AddCompleteStep`. -/
+theorem circuit_sound
+    (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
+    (m : ℕ) (hm : 0 < m) (w : Kimchi.Circuit.Witness F) (pub : Array F)
+    (hsat : Satisfies (vbmCircuit m) w pub)
+    (rc : ∀ i, i < m → RowCurve W (gwit w i))
+    (a : ℤ)
+    (hinit : Point.some _ _ (rc 0 hm).a0 = a • Point.some _ _ (rc 0 hm).hT) :
+    ∃ n : ℤ,
+      Point.some _ _ (rc (m - 1) (by omega)).a5 = n • Point.some _ _ (rc 0 hm).hT
+      ∧ (n : F) = (32 : F) ^ m * (a : F) + 2 * (gwit w (m - 1)).nPrime
+                   - 2 * (32 : F) ^ m * (gwit w 0).n - ((32 : F) ^ m - 1)
+      ∧ n.natAbs ≤ 32 ^ m * a.natAbs + (32 ^ m - 1) := by
+  obtain ⟨hgates, hcopy⟩ := hsat
+  -- gate identity of each row, read from `gatesHold` through the checker bridge
+  have hHolds : ∀ i (hi : i < m), Holds (gwit w i) := by
+    intro i hi
+    have hg := hgates (2 * i) (by rw [vbmCircuit_size]; omega)
+    rw [gateAt_vbm m i hi] at hg
+    have : Checker.VarBaseMul.holds (w.row (2 * i)) (w.row (2 * i + 1)) := hg
+    exact (checker_holds_iff _ _).1 this
+  -- assemble the per-row `GateStep` from the curve preconditions and the derived identity
+  have gs : ∀ i (hi : i < m), GateStep W (gwit w i) :=
+    fun i hi => (rc i hi).toGateStep (hHolds i hi)
+  -- the threading, from `copyHolds` (`w.cell (r,c)` is defeq the matching `ofRows` projection)
+  have hacc : ∀ i (_ : i + 1 < m),
+      (gwit w i).x5 = (gwit w (i + 1)).x0 ∧ (gwit w i).y5 = (gwit w (i + 1)).y0 := by
+    intro i hnext
+    have hc2 := hcopy (2 * (i + 1)) (by rw [vbmCircuit_size]; omega) 2 (by omega)
+    have hc3 := hcopy (2 * (i + 1)) (by rw [vbmCircuit_size]; omega) 3 (by omega)
+    rw [gateAt_vbm m (i + 1) (by omega)] at hc2 hc3
+    simp only [vbmGate, vbmWires_get2 (i + 1) (by omega),
+      vbmWires_get3 (i + 1) (by omega)] at hc2 hc3
+    rw [show 2 * (i + 1) - 1 = 2 * i + 1 by omega] at hc2 hc3
+    exact ⟨hc2.symm, hc3.symm⟩
+  have hreg : ∀ i (_ : i + 1 < m), (gwit w i).nPrime = (gwit w (i + 1)).n := by
+    intro i hnext
+    have hc4 := hcopy (2 * (i + 1)) (by rw [vbmCircuit_size]; omega) 4 (by omega)
+    rw [gateAt_vbm m (i + 1) (by omega)] at hc4
+    simp only [vbmGate, vbmWires_get4 (i + 1) (by omega)] at hc4
+    rw [show 2 * (i + 1) - 2 = 2 * i by omega] at hc4
+    exact hc4.symm
+  have hbase : ∀ i (_ : i < m), (gwit w i).xT = (gwit w 0).xT ∧ (gwit w i).yT = (gwit w 0).yT := by
+    intro i hi
+    rcases Nat.eq_zero_or_pos i with h0 | hpos
+    · subst h0; exact ⟨rfl, rfl⟩
+    · have hc0 := hcopy (2 * i) (by rw [vbmCircuit_size]; omega) 0 (by omega)
+      have hc1 := hcopy (2 * i) (by rw [vbmCircuit_size]; omega) 1 (by omega)
+      rw [gateAt_vbm m i hi] at hc0 hc1
+      simp only [vbmGate, vbmWires_get0 i (by omega), vbmWires_get1 i (by omega)] at hc0 hc1
+      exact ⟨hc0, hc1⟩
+  exact chain_sound W ha m hm (gwit w) gs hacc hreg hbase a hinit
 
 end Kimchi.Circuit.VarBaseMul
