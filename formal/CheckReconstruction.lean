@@ -2,6 +2,7 @@ import Kimchi.Json
 import Kimchi.Circuits.VarBaseMulStep
 import Kimchi.Circuits.EndoMulStep
 import Kimchi.Circuits.EndoScalarStep
+import Kimchi.Circuits.PoseidonStep
 
 /-! # Validate the reconstructed step-circuits against real dumps
 
@@ -36,12 +37,16 @@ def tamperCell (w : Witness Fp) (r c : Nat) : Witness Fp :=
   { rows := (Array.range w.rows.size).map fun i =>
       if i = r then (w.row i).modify c (· + 1) else w.row i }
 
-/-- Parse a fixture's witness (column-major → row-major), discarding its circuit/public inputs. -/
-def loadWitness (path : System.FilePath) : IO (Witness Fp) := do
+/-- Parse a fixture into the Lean model (circuit + row-major witness). -/
+def loadDump (path : System.FilePath) : IO (Circuit Fp × Witness Fp) := do
   let s ← IO.FS.readFile path
   match Lean.Json.parse s >>= Lean.fromJson? (α := JCircuit) with
   | .error e => throw (IO.userError s!"failed to load {path}: {e}")
-  | .ok jc => return toWitness jc
+  | .ok jc => return (toCircuit jc, toWitness jc)
+
+/-- A fixture's witness only (column-major → row-major). -/
+def loadWitness (path : System.FilePath) : IO (Witness Fp) := do
+  return (← loadDump path).2
 
 /-- Slice `[lo, hi)` of a fixture's witness and confirm the reconstruction `recon` accepts the real
     chain and rejects a one-cell tamper (at row 0, col 0 — always a constrained base/register). -/
@@ -57,6 +62,20 @@ def checkRecon (name : String) (path : System.FilePath) (recon : Circuit Fp)
 open Kimchi.Circuit.VarBaseMul (vbmCircuit)
 open Kimchi.Circuit.EndoMul (emCircuit)
 open Kimchi.Circuit.EndoScalar (esCircuit)
+open Kimchi.Circuit.Poseidon (posCircuit)
+
+/-- Poseidon needs the reconstruction's per-row round constants, which come from the dumped gates
+    (rows `lo …`). Confirm `posCircuit m` (with those constants) accepts the sliced chain. -/
+def checkReconPoseidon (path : System.FilePath) (m lo hi : Nat) : IO Bool := do
+  let (c, w) ← loadDump path
+  let coeffs : Nat → Array Fp := fun i => (c.gateAt (lo + i)).coeffs
+  let recon := posCircuit m coeffs
+  let wS := sliceWitness w lo hi
+  let accepts := check recon wS #[]
+  let rejects := !check recon (tamperCell wS 0 0) #[]
+  IO.println s!"poseidon   → posCircuit {m}: accepts real chain = {accepts}, \
+    rejects tampered = {rejects}"
+  pure (accepts && rejects)
 
 def main : IO Unit := do
   let mut ok := true
@@ -66,6 +85,7 @@ def main : IO Unit := do
     (emCircuit 32) 8 41)
   ok := ok && (← checkRecon "endoscalar → esCircuit 7" "fixtures/endoscalar_step.json"
     (esCircuit 7) 3 11)
+  ok := ok && (← checkReconPoseidon "fixtures/poseidon_step.json" 11 6 18)
   unless ok do
     IO.eprintln "reconstruction mismatch: a hand-written step-circuit disagrees with the dump"
     IO.Process.exit 1

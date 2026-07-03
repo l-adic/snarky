@@ -72,7 +72,10 @@ def roots : List Name :=
     `Kimchi.Circuit.VarBaseMul.varBaseMul_circuit_scaleFast2,
     `Kimchi.Circuit.EndoMul.pallas_endoMul_circuit,
     `Kimchi.Circuit.EndoScalar.pallas_circuit_sound,
-    `Kimchi.Circuit.EndoScalar.vesta_circuit_sound ]
+    `Kimchi.Circuit.EndoScalar.vesta_circuit_sound,
+    -- Poseidon: the per-row round-function bridge and the chained-permutation soundness (the
+    -- chain computes the 5m-round Poseidon permutation of the initial state).
+    `Kimchi.Gate.Poseidon.holds_rowPerm, `Kimchi.Circuit.Poseidon.circuit_sound ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta GLV endomorphism inputs (`β`, `λ`,
