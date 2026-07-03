@@ -243,4 +243,28 @@ theorem pallas_endoMul_circuit
     fun i _ => ⟨rfl, rfl⟩
   exact pallas_endoMul m hbits (gwit w) hholds T φT hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0
 
+/-- **Scalar-field form (#6).** The `[s]·T` of `pallas_endoMul_circuit`, with the scalar reduced to
+    its canonical representative in `[0, Pallas.order)` — an element of the Pallas scalar field
+    `ZMod PALLAS_SCALAR_CARD = VestaBaseField` (the 2-cycle: the scalar of a Pallas scalar-mul is a
+    Vesta base-field element, the cross-field value Pickles' Wrap verifier consumes). -/
+theorem pallas_endoMul_circuit_scalar
+    (m : ℕ) (hbits : 4 * m ≤ 244) (w : Kimchi.Circuit.Witness PallasBaseField)
+    (pub : Array PallasBaseField) (hsat : Satisfies (emCircuit m) w pub)
+    (hdist : ∀ i, i < m →
+        ((gwit w i).xP - (gwit w i).xR) * ((gwit w i).xR - (gwit w i).xS) ≠ 0)
+    (T φT : Pallas.curve.toAffine.Point)
+    (hTns : Pallas.curve.toAffine.Nonsingular (gwit w 0).xT (gwit w 0).yT)
+    (hTeq : T = Point.some _ _ hTns)
+    (hφTns : Pallas.curve.toAffine.Nonsingular (pallas_endo * (gwit w 0).xT) (gwit w 0).yT)
+    (hφTeq : φT = Point.some _ _ hφTns)
+    (hP0ns : Pallas.curve.toAffine.Nonsingular (gwit w 0).xP (gwit w 0).yP)
+    (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T + (2 : ℤ) • φT) :
+    ∃ (hfin : Pallas.curve.toAffine.Nonsingular (accX (gwit w) m) (accY (gwit w) m)) (s : ℤ),
+      Point.some _ _ hfin = s • T ∧ 0 ≤ s ∧ s < (Pallas.curve.toAffine.order : ℤ) := by
+  obtain ⟨hfin, s, hpt, _⟩ := pallas_endoMul_circuit m hbits w pub hsat hdist T φT
+    hTns hTeq hφTns hφTeq hP0ns hP0
+  obtain ⟨s', hs', h0, hlt⟩ :=
+    exists_canonical_scalar _ (Point.some _ _ hfin) T s (by rw [pallas_card]; decide) hpt
+  exact ⟨hfin, s', hs', h0, hlt⟩
+
 end Kimchi.Circuit.EndoMul

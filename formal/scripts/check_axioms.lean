@@ -71,6 +71,11 @@ def roots : List Name :=
     `Kimchi.Circuit.VarBaseMul.varBaseMul_circuit_scaleFast1,
     `Kimchi.Circuit.VarBaseMul.varBaseMul_circuit_scaleFast2,
     `Kimchi.Circuit.EndoMul.pallas_endoMul_circuit,
+    -- Scalar-field lifts (#6): the integer output scalar reduced to its canonical residue in
+    -- [0, order) — an element of the 2-cycle sister curve's base field.
+    `WeierstrassCurve.Affine.exists_canonical_scalar,
+    `Kimchi.Circuit.EndoMul.pallas_endoMul_circuit_scalar,
+    `Kimchi.Circuit.VarBaseMul.varBaseMul_circuit_scaleFast1_scalar,
     `Kimchi.Circuit.EndoScalar.pallas_circuit_sound,
     `Kimchi.Circuit.EndoScalar.vesta_circuit_sound,
     -- Poseidon: the per-row round-function bridge and the chained-permutation soundness (the

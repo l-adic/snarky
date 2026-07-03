@@ -45,6 +45,17 @@ lemma zsmul_mod (W : Affine F) (n : ℤ) (P : W.Point) :
     rw [← mul_smul, ← add_smul, Int.emod_add_mul_ediv]
   rw [h, W.order_smul, add_zero]
 
+/-- **Canonical scalar-field representative.** From `P = n•T` recover the unique scalar `s` in
+    `[0, order)` with `P = s•T` — the genuine scalar-field element (`s ∈ ZMod order` via `Fin`),
+    independent of the integer `n`'s signed-digit magnitude. The bridge a scalar-mul circuit's
+    integer output crosses into the finite scalar group (and, on a 2-cycle, into the sister curve's
+    base field). -/
+theorem exists_canonical_scalar (W : Affine F) (P T : W.Point) (n : ℤ) (hord : 0 < W.order)
+    (h : P = n • T) : ∃ s : ℤ, P = s • T ∧ 0 ≤ s ∧ s < (W.order : ℤ) := by
+  have hpos : (0 : ℤ) < (W.order : ℤ) := by exact_mod_cast hord
+  exact ⟨n % (W.order : ℤ), by rw [zsmul_mod]; exact h,
+    Int.emod_nonneg n hpos.ne', Int.emod_lt_of_pos n hpos⟩
+
 /-- The prime-order hypothesis as a `Fact`-backed accessor — reads like a field (`c.order_prime`)
     and threads through the development by instance inference. -/
 lemma order_prime (W : Affine F) [Fact (Nat.Prime W.order)] : Nat.Prime W.order := Fact.out

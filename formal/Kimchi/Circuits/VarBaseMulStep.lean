@@ -387,4 +387,25 @@ theorem varBaseMul_circuit_scaleFast2
     hbits hsDiv2 sOdd hsOdd
   exact ⟨hfin, n, by rw [hn, hNm], hcase⟩
 
+/-- **Scalar-field form (#6).** The `[s]·T` of `varBaseMul_circuit_scaleFast1` (Vesta), with the
+    scalar reduced to its canonical representative in `[0, Vesta.order)` — an element of the Vesta
+    scalar field `ZMod PALLAS_BASE_CARD = PallasBaseField` (the 2-cycle sister base field). -/
+theorem varBaseMul_circuit_scaleFast1_scalar
+    (m : ℕ) (w : Kimchi.Circuit.Witness VestaBaseField) (pub : Array VestaBaseField)
+    (hsat : Satisfies (vbmCircuit m) w pub)
+    (T : Vesta.curve.toAffine.Point) (s : ℤ) (hTne : T ≠ 0)
+    (hTns : Vesta.curve.toAffine.Nonsingular (gwit w 0).xT (gwit w 0).yT)
+    (hTeq : T = Point.some _ _ hTns)
+    (hP0ns : Vesta.curve.toAffine.Nonsingular (gwit w 0).x0 (gwit w 0).y0)
+    (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T)
+    (hbits : 5 * m ≤ pastaFieldBits) (hs : s = gateLadder (gwit w) (5 * m))
+    (hnf : 5 * m = pastaFieldBits → s ∉ forbiddenValues Vesta.curve.toAffine.order) :
+    ∃ (hfin : Vesta.curve.toAffine.Nonsingular (accX (gwit w) m) (accY (gwit w) m)) (k : ℤ),
+      Point.some _ _ hfin = k • T ∧ 0 ≤ k ∧ k < (Vesta.curve.toAffine.order : ℤ) := by
+  obtain ⟨hfin, hpt, _⟩ :=
+    varBaseMul_circuit_scaleFast1 m w pub hsat T s hTne hTns hTeq hP0ns hP0 hbits hs hnf
+  obtain ⟨k, hk, h0, hlt⟩ :=
+    exists_canonical_scalar _ (Point.some _ _ hfin) T s (by rw [vesta_card]; decide) hpt
+  exact ⟨hfin, k, hk, h0, hlt⟩
+
 end Kimchi.Circuit.VarBaseMul
