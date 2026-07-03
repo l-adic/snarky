@@ -95,3 +95,11 @@ jobs:
     - name: Run the verified checker on committed circuit fixtures
       working-directory: .
       run: make lean-check-fixtures
+
+    # The `Circuits/*Step.lean` composition proofs are stated over hand-written
+    # reconstructions of the dumped circuits. Confirm those reconstructions actually
+    # accept the real dumped gate chains (and reject a tamper) — machine-verifying the
+    # column layout / copy wiring they assume, not just auditing it by eye.
+    - name: Check reconstructed step-circuits against the real dumps
+      working-directory: .
+      run: make lean-check-reconstruction

@@ -1,4 +1,4 @@
-.PHONY: help all clean build-napi test-curves test-snarky test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint lean-build lean-check-fixtures dump-fixtures lean-style lean-style-fix build-ps gen-linearization dep-graph pickles-inventory
+.PHONY: help all clean build-napi test-curves test-snarky test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint lean-build lean-check-fixtures lean-check-reconstruction dump-fixtures lean-style lean-style-fix build-ps gen-linearization dep-graph pickles-inventory
 
 .DEFAULT_GOAL := help
 
@@ -128,6 +128,9 @@ lean-build: ## Build the Lean (formal/) project
 
 lean-check-fixtures: lean-build ## Run the verified checker on every committed circuit fixture (asserts check = true; exits non-zero on any false)
 	cd formal && PATH="$$HOME/.elan/bin:$$PATH" lake env lean --run Main.lean
+
+lean-check-reconstruction: lean-build ## Check the reconstructed step-circuits (vbmCircuit/emCircuit/esCircuit) accept the real dumped chains and reject tampers
+	cd formal && PATH="$$HOME/.elan/bin:$$PATH" lake env lean --run CheckReconstruction.lean
 
 dump-fixtures: build-napi ## Regenerate formal/fixtures/*.json from real compiled circuits (needs the native backend)
 	@echo "Compiling the dumpers (only the build matters; the spec runner may trip on pickles codegen)"
