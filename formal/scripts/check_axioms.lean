@@ -76,8 +76,8 @@ def roots : List Name :=
     -- Poseidon: the per-row round-function bridge and the chained-permutation soundness (the
     -- chain computes the 5m-round Poseidon permutation of the initial state).
     `Kimchi.Gate.Poseidon.holds_rowPerm, `Kimchi.Circuit.Poseidon.circuit_sound,
-    -- The concrete Pallas endo constant is machine-checked to be a primitive cube root of unity.
-    `Kimchi.Pasta.pallas_endo_cube,
+    -- The concrete Pallas/Vesta endo constants are machine-checked to be primitive cube roots.
+    `Kimchi.Pasta.pallas_endo_cube, `Kimchi.Pasta.vesta_endo_cube,
     -- Heterogeneous gate-combination examples: every unordered pair of the five custom kinds
     -- composes in one circuit, its Satisfies yielding both gates' algebraic facts.
     `Kimchi.Circuit.Combinations.exCA_VB_sound, `Kimchi.Circuit.Combinations.exCA_EM_sound,
@@ -87,15 +87,15 @@ def roots : List Name :=
     `Kimchi.Circuit.Combinations.exEM_PO_sound, `Kimchi.Circuit.Combinations.exES_PO_sound ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
-    (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta GLV eigenvalue inputs (the CM
-    relation `{pallas,vesta}_eigen` and the Vesta `β`; the Pallas `β = pallas_endo` is now a
-    concrete def). CompElliptic `native_decide` witnesses are permitted separately by
+    (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations
+    (`{pallas,vesta}_eigen`). The endo coefficients `{pallas,vesta}_endo` are now concrete defs
+    (machine-checked cube roots), no longer axioms. CompElliptic `native_decide` witnesses are
+    permitted separately by
     `isTrustedNativeDecide`. -/
 def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound, `Lean.ofReduceBool,
     `Kimchi.Pasta.pallas_hasse, `Kimchi.Pasta.vesta_hasse,
-    `Kimchi.Pasta.pallas_eigen,
-    `Kimchi.Pasta.vesta_endo, `Kimchi.Pasta.vesta_eigen, ]
+    `Kimchi.Pasta.pallas_eigen, `Kimchi.Pasta.vesta_eigen, ]
 
 /-- A CompElliptic `native_decide` witness: an axiom under the `CompElliptic` namespace carrying the
     `native_decide` marker (these back CompElliptic's point counts). A `native_decide` in our own

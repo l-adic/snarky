@@ -171,9 +171,17 @@ theorem pallas_glv_no_short_relation {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0)
     (v := -9986202145198640800203172615810973695)
     (by decide) (by decide) (by decide) (by decide) (by decide) hne ha hb
 
-/-- TRUSTED INPUT: the Vesta base-field endomorphism coefficient `β` (a primitive cube root of
-    unity), so `φ(x, y) = (β·x, y)` maps `y² = x³ + 5` to itself. -/
-axiom vesta_endo : VestaBaseField
+/-- The Vesta base-field endomorphism coefficient `β` (a primitive cube root of unity), so
+    `φ(x, y) = (β·x, y)` maps `y² = x³ + 5` to itself. **Concrete** — the `vestaEndoBase` numeral
+    from `Snarky.Curves.PastaCurve` — so, like `pallas_endo`, only the eigenvalue action
+    (`vesta_eigen`) remains a trusted input, not the constant's value. -/
+def vesta_endo : VestaBaseField :=
+  2942865608506852014473558576493638302197734138389222805617480874486368177743
+
+/-- `vesta_endo` is a genuine primitive cube root of unity (`β³ = 1`, `β ≠ 1`) — the condition for
+    `φ` to preserve `y² = x³ + 5`. Machine-checked by kernel `decide` (GMP field arithmetic; no
+    `native_decide`, no extra axioms), validating the numeral as a valid endo coefficient. -/
+theorem vesta_endo_cube : vesta_endo ^ 3 = 1 ∧ vesta_endo ≠ 1 := by decide
 
 /-- The scalar eigenvalue `λ` of the Vesta endomorphism `φ` — a primitive cube root of unity in
     the scalar field (`endo_scalar`). Concrete, so the GLV short-basis fact below is proved. -/
