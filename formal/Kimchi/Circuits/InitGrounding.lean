@@ -80,30 +80,30 @@ theorem esSetup_pins_init (t : Nat) (w : Witness F) (pub : Array F)
 
 open WeierstrassCurve.Affine Kimchi.Gate
 
-/-- Equal coordinates give the same affine point (congruence past the nonsingularity proof). -/
-private theorem some_congr {W : WeierstrassCurve.Affine F} {x x' y y' : F}
-    (h : W.Nonsingular x y) (h' : W.Nonsingular x' y') (hx : x = x') (hy : y = y') :
-    Point.some _ _ h = Point.some _ _ h' := by subst hx; subst hy; rfl
-
 /-- **CompleteAdd doubles.** A satisfying `CompleteAdd` row whose two inputs are the *same* point
     `T` (`x₁ = x₂`, `y₁ = y₂` — the base fed in twice) computes `output = [2]·T` in the group. Its
     output cells then feed the first `VarBaseMul` gate's input accumulator by a copy constraint,
-    discharging that chain's `hinit : P₀ = [2]·T`. -/
+    discharging that chain's `hinit : P₀ = [2]·T`.
+
+    No `inf` hypothesis: the full `AddComplete.sound` disjunction is used, and the infinity branch
+    is *refuted* — a doubling of a `y ≠ 0` point cannot land at infinity
+    (`Point.add_self_ne_zero`). -/
 theorem completeAdd_doubles (W : WeierstrassCurve.Affine F)
     (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0) (row : Row F)
     (hT : W.Nonsingular (AddComplete.ofRow row).x1 (AddComplete.ofRow row).y1)
     (hx : (AddComplete.ofRow row).x1 = (AddComplete.ofRow row).x2)
     (hy : (AddComplete.ofRow row).y1 = (AddComplete.ofRow row).y2)
     (hcons : AddComplete.Holds (AddComplete.ofRow row))
-    (hy1 : (AddComplete.ofRow row).y1 ≠ 0) (htwo : (2 : F) ≠ 0)
-    (hinf : (AddComplete.ofRow row).inf = 0) :
+    (hy1 : (AddComplete.ofRow row).y1 ≠ 0) (htwo : (2 : F) ≠ 0) :
     ∃ h3 : W.Nonsingular (AddComplete.ofRow row).x3 (AddComplete.ofRow row).y3,
       Point.some _ _ h3 = (2 : ℤ) • Point.some _ _ hT := by
   have h2 : W.Nonsingular (AddComplete.ofRow row).x2 (AddComplete.ofRow row).y2 := hx ▸ hy ▸ hT
-  obtain ⟨h3, hsum⟩ := AddComplete.sound_point_noninf W ha (AddComplete.ofRow row) hT h2 hcons
-    hy1 htwo hinf
-  refine ⟨h3, ?_⟩
-  have heq : Point.some _ _ h2 = Point.some _ _ hT := some_congr h2 hT hx.symm hy.symm
-  rw [← hsum, heq, two_zsmul]
+  have heq : Point.some _ _ h2 = Point.some _ _ hT := Point.some_congr h2 hT hx.symm hy.symm
+  rcases AddComplete.sound W ha (AddComplete.ofRow row) hT h2 hcons hy1 htwo with
+    ⟨_, hsum⟩ | ⟨_, h3, hsum⟩
+  · -- infinity branch: `T + T = 0` contradicts `y ≠ 0` (no affine 2-torsion off the x-axis)
+    rw [heq] at hsum
+    exact absurd hsum (Point.add_self_ne_zero W ha.1 ha.2.2.1 hT hy1 htwo)
+  · exact ⟨h3, by rw [← hsum, heq, two_zsmul]⟩
 
 end Kimchi.Circuit.InitGrounding

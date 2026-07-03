@@ -160,4 +160,51 @@ theorem check_iff [CommRing F] [DecidableEq F]
   simp only [check, Satisfies, gatesHold, copyHolds, Bool.and_eq_true,
     List.all_eq_true, List.mem_range, rowOk_iff, beq_iff_eq]
 
+/-! ## Extending a circuit: the `append` combinator
+
+Every reconstructed sub-circuit so far is "a proven block plus a few extra rows" (setup pins, an
+init doubling, a trailing combine gate). `Circuit.append` is that pattern once: appended rows leave
+the prefix's gates, wires, and public-input term untouched, so a `Satisfies` of the extension
+*projects* onto the prefix (`Satisfies.of_append`) — the sub-circuit's own composition theorem then
+applies verbatim, and only the appended rows need bespoke reasoning. -/
+
+/-- `Array.ofFn` lookup below its length — the workhorse for reducing `gateAt`/`wires` lookups on
+    reconstructed circuits (shared here; previously re-derived per file). -/
+theorem getD_ofFn_lt {α} (n : ℕ) (f : Fin n → α) (r : ℕ) (d : α) (h : r < n) :
+    (Array.ofFn f).getD r d = f ⟨r, h⟩ := by
+  rw [Array.getD, dif_pos (by simpa using h)]; simp [Array.getElem_ofFn]
+
+/-- Extend a circuit with extra gate rows (same public-input prefix). -/
+def Circuit.append (c : Circuit F) (gs : Array (Gate F)) : Circuit F :=
+  { publicInputSize := c.publicInputSize, gates := c.gates ++ gs }
+
+@[simp] theorem Circuit.size_append (c : Circuit F) (gs : Array (Gate F)) :
+    (c.append gs).gates.size = c.gates.size + gs.size := by
+  simp [Circuit.append]
+
+/-- Rows below the prefix length are the prefix's gates, unchanged. -/
+theorem Circuit.gateAt_append_left (c : Circuit F) (gs : Array (Gate F)) (r : ℕ)
+    (hr : r < c.gates.size) : (c.append gs).gateAt r = c.gateAt r := by
+  rw [Circuit.gateAt, Circuit.gateAt, Circuit.append,
+    Array.getD, dif_pos (by rw [Array.size_append]; omega), Array.getD, dif_pos hr]
+  exact Array.getElem_append_left hr
+
+/-- Row `c.gates.size + j` is the `j`-th appended gate. -/
+theorem Circuit.gateAt_append_right (c : Circuit F) (gs : Array (Gate F)) (j : ℕ)
+    (hj : j < gs.size) : (c.append gs).gateAt (c.gates.size + j) = gs[j] := by
+  rw [Circuit.gateAt, Circuit.append, Array.getD,
+    dif_pos (by rw [Array.size_append]; omega)]
+  simp
+
+/-- A witness satisfying the extension satisfies the prefix (public-input term unchanged; the
+    appended rows can only add obligations). -/
+theorem Satisfies.of_append [CommRing F] {c : Circuit F} {gs : Array (Gate F)} {w : Witness F}
+    {pub : Array F} (h : Satisfies (c.append gs) w pub) : Satisfies c w pub := by
+  obtain ⟨hg, hc⟩ := h
+  refine ⟨fun r hr => ?_, fun r hr k hk => ?_⟩
+  · have hh := hg r (by rw [Circuit.size_append]; omega)
+    rwa [Circuit.gateAt_append_left c gs r hr] at hh
+  · have hh := hc r (by rw [Circuit.size_append]; omega) k hk
+    rwa [Circuit.gateAt_append_left c gs r hr] at hh
+
 end Kimchi.Circuit

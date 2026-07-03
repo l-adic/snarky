@@ -72,11 +72,6 @@ open Kimchi.Circuit (Cell Satisfies gatesHold)
 
 variable {F : Type*} [CommRing F] [DecidableEq F]
 
-/-- `Array.ofFn` lookup below its length. -/
-private theorem getD_ofFn_lt {α} (n : ℕ) (f : Fin n → α) (r : ℕ) (d : α) (h : r < n) :
-    (Array.ofFn f).getD r d = f ⟨r, h⟩ := by
-  rw [Array.getD, dif_pos (by simpa using h)]; simp [Array.getElem_ofFn]
-
 /-- Gate `i`'s `Poseidon` row carries its round-constant coefficient row `coeffs i`; the state
     threading is definitional (consecutive rows share cells), so no copy wiring is needed. -/
 def posGate (c : Array F) : Kimchi.Circuit.Gate F :=

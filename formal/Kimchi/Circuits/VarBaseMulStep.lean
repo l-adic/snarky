@@ -90,12 +90,6 @@ open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine
 
 variable {F : Type*} [Field F] [DecidableEq F]
 
-/-- Equal coordinates give the same affine point (the nonsingularity proofs are irrelevant). -/
-private theorem some_congr {F : Type*} [Field F] (W : WeierstrassCurve.Affine F)
-    {x x' y y' : F} (h : W.Nonsingular x y) (h' : W.Nonsingular x' y')
-    (hx : x = x') (hy : y = y') :
-    Point.some _ _ h = Point.some _ _ h' := by subst hx; subst hy; rfl
-
 /-- **The composition theorem — variable-base scalar multiplication from a threaded chain.**
 
     Given `m ≥ 1` `VarBaseMul` gate steps `g 0 … g (m-1)` (each an honest `GateStep`: its 21
@@ -135,14 +129,14 @@ theorem chain_sound
   let N : ℕ → F := fun i => if h : i < m then (g i).n else (g (m - 1)).nPrime
   have hT : ∀ i (hi : i < m), T = Point.some _ _ (gs i hi).hT := by
     intro i hi
-    exact some_congr W _ _ (hbase i hi).1.symm (hbase i hi).2.symm
+    exact Point.some_congr _ _ (hbase i hi).1.symm (hbase i hi).2.symm
   have hin : ∀ i (hi : i < m), P i = Point.some _ _ (gs i hi).a0 := by
     intro i hi; simp only [P, dif_pos hi]
   have hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (gs i hi).a5 := by
     intro i hi
     by_cases hnext : i + 1 < m
     · simp only [P, dif_pos hnext]
-      exact (some_congr W _ _ (hacc i hnext).1 (hacc i hnext).2).symm
+      exact (Point.some_congr _ _ (hacc i hnext).1 (hacc i hnext).2).symm
     · have him : i = m - 1 := by omega
       simp only [P, dif_neg hnext]
       subst him; rfl
@@ -174,12 +168,6 @@ hypotheses (there the input points being on the curve; here the analogous per-ro
 development below builds the parametric `m`-gate `VarBaseMul` circuit and closes that gap. -/
 
 open Kimchi.Circuit (Cell Satisfies gatesHold copyHolds)
-
-/-- `Array.ofFn` lookup below its length: the workhorse for reducing `gateAt`/`wires` on the
-    parametric circuit's `Array.ofFn` gate list. -/
-private theorem getD_ofFn_lt {α} (n : ℕ) (f : Fin n → α) (r : ℕ) (d : α) (h : r < n) :
-    (Array.ofFn f).getD r d = f ⟨r, h⟩ := by
-  rw [Array.getD, dif_pos (by simpa using h)]; simp [Array.getElem_ofFn]
 
 /-- The curve-level per-row preconditions: this is `GateStep` **minus** the gate identity `Holds`
     (the six accumulator points and base are nonsingular; the ten `NonDegen` side conditions hold).
@@ -415,9 +403,10 @@ theorem varBaseMul_circuit_scaleFast1_scalar
     `dbl` fed the base twice (`x₁=x₂`, `y₁=y₂`) whose inputs are wired to gate 0's base
     (`hbaseX/Y`) and whose output is wired to gate 0's input accumulator (`houtX/Y`), the chain
     computes `[s]·T` — the init `P₀ = [2]·T` is *derived* from the doubling gate's proven
-    `AddComplete` soundness, not assumed. (A fully reconstructed circuit would derive the four
-    wiring equalities from `copyHolds`, exactly as `EndoScalar.esCircuitGrounded_sound` does for the
-    constant-pinning case.) -/
+    `AddComplete` soundness (including its `inf = 0` flag: a doubling of a `y ≠ 0` point cannot
+    land at infinity, `Point.add_self_ne_zero`). (`vbmCircuitGrounded_scaleFast1` below derives the
+    four wiring equalities from `copyHolds`, exactly as `EndoScalar.esCircuitGrounded_sound` does
+    for the constant-pinning case.) -/
 theorem varBaseMul_scaleFast1_grounded
     (m : ℕ) (w : Kimchi.Circuit.Witness VestaBaseField) (pub : Array VestaBaseField)
     (hsat : Satisfies (vbmCircuit m) w pub)
@@ -433,7 +422,6 @@ theorem varBaseMul_scaleFast1_grounded
     (houtX : (Kimchi.Gate.AddComplete.ofRow dbl).x3 = (gwit w 0).x0)
     (houtY : (Kimchi.Gate.AddComplete.ofRow dbl).y3 = (gwit w 0).y0)
     (hy1 : (Kimchi.Gate.AddComplete.ofRow dbl).y1 ≠ 0)
-    (hinf : (Kimchi.Gate.AddComplete.ofRow dbl).inf = 0)
     (hbits : 5 * m ≤ pastaFieldBits) (hs : s = gateLadder (gwit w) (5 * m))
     (hnf : 5 * m = pastaFieldBits → s ∉ forbiddenValues Vesta.curve.toAffine.order) :
     ∃ hfin : Vesta.curve.toAffine.Nonsingular (accX (gwit w) m) (accY (gwit w) m),
@@ -444,13 +432,13 @@ theorem varBaseMul_scaleFast1_grounded
   have hTca : Vesta.curve.toAffine.Nonsingular (Kimchi.Gate.AddComplete.ofRow dbl).x1
       (Kimchi.Gate.AddComplete.ofRow dbl).y1 := by rw [hbaseX, hbaseY]; exact hTns
   obtain ⟨h3, hdbl⟩ := Kimchi.Circuit.InitGrounding.completeAdd_doubles Vesta.curve.toAffine ha dbl
-    hTca hx12 hy12 hdblcons hy1 (by decide) hinf
+    hTca hx12 hy12 hdblcons hy1 (by decide)
   -- transport the produced output nonsingularity onto gate 0's input accumulator
   have hP0ns : Vesta.curve.toAffine.Nonsingular (gwit w 0).x0 (gwit w 0).y0 := by
     rw [← houtX, ← houtY]; exact h3
   have hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T := by
-    rw [some_congr Vesta.curve.toAffine hP0ns h3 houtX.symm houtY.symm, hdbl,
-      some_congr Vesta.curve.toAffine hTca hTns hbaseX hbaseY, ← hTeq]
+    rw [Point.some_congr hP0ns h3 houtX.symm houtY.symm, hdbl,
+      Point.some_congr hTca hTns hbaseX hbaseY, ← hTeq]
   exact varBaseMul_circuit_scaleFast1 m w pub hsat T s hTne hTns hTeq hP0ns hP0 hbits hs hnf
 
 /-! ## Fully grounded (Vesta): init reconstructed from a trailing `CompleteAdd` doubling row
@@ -467,10 +455,7 @@ def caDoubleGate (m : ℕ) : Kimchi.Circuit.Gate F :=
 
 /-- `vbmCircuit m` with a trailing `CompleteAdd` doubling row (at row `2m`). -/
 def vbmCircuitGrounded (m : ℕ) : Kimchi.Circuit.Circuit F :=
-  { publicInputSize := 0
-  , gates := Array.ofFn (n := 2 * m + 1) fun idx =>
-      if idx.val < 2 * m then (if idx.val % 2 = 0 then vbmGate (idx.val / 2) else vbmZero)
-      else caDoubleGate m }
+  (vbmCircuit m).append #[caDoubleGate m]
 
 omit [Field F] [DecidableEq F] in
 @[simp] theorem vbmGrounded_size (m : ℕ) :
@@ -479,27 +464,22 @@ omit [Field F] [DecidableEq F] in
 omit [Field F] [DecidableEq F] in
 /-- The chain gate at `r < 2m` reconstructs the same in `vbmCircuitGrounded` as in `vbmCircuit`. -/
 theorem gateAt_grounded_eq (m r : ℕ) (hr : r < 2 * m) :
-    (vbmCircuitGrounded m (F := F)).gateAt r = (vbmCircuit m).gateAt r := by
-  rw [Circuit.gateAt, Circuit.gateAt, vbmCircuitGrounded, vbmCircuit,
-    getD_ofFn_lt _ _ _ _ (show r < 2 * m + 1 by omega), getD_ofFn_lt _ _ _ _ hr]
-  show (if r < 2 * m then (if r % 2 = 0 then vbmGate (r / 2) else vbmZero) else caDoubleGate m)
-      = (if r % 2 = 0 then vbmGate (r / 2) else vbmZero)
-  rw [if_pos hr]
+    (vbmCircuitGrounded m (F := F)).gateAt r = (vbmCircuit m).gateAt r :=
+  Circuit.gateAt_append_left _ _ r (by rw [vbmCircuit_size]; omega)
 
 omit [Field F] [DecidableEq F] in
 /-- The trailing row reconstructs to `caDoubleGate m`. -/
 theorem gateAt_grounded_ca (m : ℕ) :
     (vbmCircuitGrounded m (F := F)).gateAt (2 * m) = caDoubleGate m := by
-  rw [Circuit.gateAt, vbmCircuitGrounded, getD_ofFn_lt _ _ _ _ (show 2 * m < 2 * m + 1 by omega)]
-  show (if 2 * m < 2 * m then (if 2 * m % 2 = 0 then vbmGate (2 * m / 2) else vbmZero)
-        else caDoubleGate m) = caDoubleGate m
-  rw [if_neg (by omega)]
+  have h := Circuit.gateAt_append_right (vbmCircuit m (F := F)) #[caDoubleGate m] 0 (by simp)
+  simpa using h
 
 /-- **Fully grounded VarBaseMul soundness (Vesta, #4 dataflow).** Any witness satisfying
     `vbmCircuitGrounded m` computes `[s]·T` — the init `P₀ = [2]·T` is *derived* from the trailing
-    `CompleteAdd` doubling row, whose four wiring equalities are read off `copyHolds`. The only
-    remaining hypotheses are the base nonsingularity, `yT ≠ 0`, the doubling `inf = 0`, and the
-    ladder bounds — the exact analogue of `EndoScalar.esCircuitGrounded_sound`. -/
+    `CompleteAdd` doubling row, whose four wiring equalities are read off `copyHolds` and whose
+    `inf = 0` flag is refuted-at-infinity rather than assumed. The only remaining hypotheses are
+    the base nonsingularity, `yT ≠ 0`, and the ladder bounds — the exact analogue of
+    `EndoScalar.esCircuitGrounded_sound`. -/
 theorem vbmCircuitGrounded_scaleFast1
     (m : ℕ) (w : Kimchi.Circuit.Witness VestaBaseField) (pub : Array VestaBaseField)
     (hsat : Satisfies (vbmCircuitGrounded m) w pub)
@@ -507,18 +487,14 @@ theorem vbmCircuitGrounded_scaleFast1
     (hTns : Vesta.curve.toAffine.Nonsingular (gwit w 0).xT (gwit w 0).yT)
     (hTeq : T = Point.some _ _ hTns)
     (hyT : (gwit w 0).yT ≠ 0)
-    (hinf : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).inf = 0)
     (hbits : 5 * m ≤ pastaFieldBits) (hs : s = gateLadder (gwit w) (5 * m))
     (hnf : 5 * m = pastaFieldBits → s ∉ forbiddenValues Vesta.curve.toAffine.order) :
     ∃ hfin : Vesta.curve.toAffine.Nonsingular (accX (gwit w) m) (accY (gwit w) m),
       Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (gwit w i) := by
-  obtain ⟨hg, hc⟩ := hsat
   -- project the chain's `Satisfies` (the first `2m` gates are `vbmCircuit`'s, verbatim)
-  have hchain : Satisfies (vbmCircuit m) w pub := by
-    refine ⟨fun r hr => ?_, fun r hr k hk => ?_⟩ <;> rw [vbmCircuit_size] at hr
-    · have hh := hg r (by rw [vbmGrounded_size]; omega); rwa [gateAt_grounded_eq m r hr] at hh
-    · have hh := hc r (by rw [vbmGrounded_size]; omega) k hk
-      rwa [gateAt_grounded_eq m r hr] at hh
+  have hchain : Satisfies (vbmCircuit m) w pub :=
+    Satisfies.of_append (c := vbmCircuit m) (gs := #[caDoubleGate m]) hsat
+  obtain ⟨hg, hc⟩ := hsat
   -- the doubling row's gate identity and its six copy constraints
   have hdblcons : Kimchi.Gate.AddComplete.Holds
       (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))) := by
@@ -542,6 +518,6 @@ theorem vbmCircuitGrounded_scaleFast1
   have houtY : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y3 = (gwit w 0).y0 := hc5
   have hy1 : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y1 ≠ 0 := by rw [hbaseY]; exact hyT
   exact varBaseMul_scaleFast1_grounded m w pub hchain T s hTne hTns hTeq (w.row (2 * m)) hdblcons
-    hx12 hy12 hbaseX hbaseY houtX houtY hy1 hinf hbits hs hnf
+    hx12 hy12 hbaseX hbaseY houtX houtY hy1 hbits hs hnf
 
 end Kimchi.Circuit.VarBaseMul

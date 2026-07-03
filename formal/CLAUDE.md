@@ -135,7 +135,8 @@ abbrev IsShortShape (W : WeierstrassCurve.Affine F) : Prop :=
 Reusable EC lemmas live in `Curve.lean` — **prefer these over re-deriving**:
 - `secant_add` — one non-vertical addition: slope + output coords ⇒ the group sum is `Point.some`.
 - `signed_target` — `∃ e, Point.some _ _ hQ = e • Point.some _ _ hT ∧ (e:F) = 2b−1` (the `±T` selector for bit `b`).
-- `some_eq_some` — points with equal coordinates are equal (congruence past the nonsingularity proof).
+- `Point.some_congr` — points with equal coordinates are equal (congruence past the nonsingularity proof).
+- `Point.add_self_ne_zero` — no affine 2-torsion off the x-axis: a `y ≠ 0` point's doubling is not `0` (refutes a `CompleteAdd` doubling row's infinity branch).
 
 ## The axiom boundary (`Cycle/Axioms.lean`, `Cycle/Pasta.lean`)
 
