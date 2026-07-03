@@ -85,13 +85,14 @@ def roots : List Name :=
     `Kimchi.Circuit.Combinations.exEM_PO_sound, `Kimchi.Circuit.Combinations.exES_PO_sound ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
-    (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta GLV endomorphism inputs (`β`, `λ`,
-    the CM eigenvalue relation). CompElliptic `native_decide` witnesses are permitted separately by
+    (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta GLV eigenvalue inputs (the CM
+    relation `{pallas,vesta}_eigen` and the Vesta `β`; the Pallas `β = pallas_endo` is now a
+    concrete def). CompElliptic `native_decide` witnesses are permitted separately by
     `isTrustedNativeDecide`. -/
 def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound, `Lean.ofReduceBool,
     `Kimchi.Pasta.pallas_hasse, `Kimchi.Pasta.vesta_hasse,
-    `Kimchi.Pasta.pallas_endo, `Kimchi.Pasta.pallas_eigen,
+    `Kimchi.Pasta.pallas_eigen,
     `Kimchi.Pasta.vesta_endo, `Kimchi.Pasta.vesta_eigen, ]
 
 /-- A CompElliptic `native_decide` witness: an axiom under the `CompElliptic` namespace carrying the

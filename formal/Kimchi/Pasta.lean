@@ -83,9 +83,13 @@ reduced-basis certificate) — it is the accumulator non-degeneracy fact. -/
 
 open WeierstrassCurve.Affine
 
-/-- TRUSTED INPUT: the Pallas base-field endomorphism coefficient `β` (a primitive cube root of
-    unity), so `φ(x, y) = (β·x, y)` maps `y² = x³ + 5` to itself. -/
-axiom pallas_endo : PallasBaseField
+/-- The Pallas base-field endomorphism coefficient `β` (a primitive cube root of unity), so
+    `φ(x, y) = (β·x, y)` maps `y² = x³ + 5` to itself. **Concrete** — the `endoBase` numeral from
+    `Snarky.Curves.PastaCurve` (identical to `Kimchi.Checker.EndoMul.endo`) — so the reconstructed
+    `EndoMul` circuit's hardcoded constant matches it definitionally and needs no `endo = β`
+    hypothesis. Only the eigenvalue action (`pallas_eigen`) remains a trusted input. -/
+def pallas_endo : PallasBaseField :=
+  20444556541222657078399132219657928148671392403212669005631716460534733845831
 
 /-- **No short relation in a rank-2 GLV lattice, from a reduced-basis certificate.** If `(s, t)`
     lies in the lattice `{(a,b) : a + b·λ ≡ 0 (mod n)}` (`s + t·λ = k₂·n`), is primitive

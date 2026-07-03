@@ -207,20 +207,18 @@ theorem circuit_sound
 
 Routing `Satisfies` through the deployed `pallas_endoMul` (which derives the per-row `hxne` from the
 GLV short-basis bound and the eigenvalue from `pallas_eigen`, and discharges the char/order side
-conditions by computation) drops those hypotheses. The one honest residue is `hendo`: the dumped
-`EndoMul` gate hardcodes the base-field endomorphism constant `Checker.EndoMul.endo` (a numeral),
-whereas the Pasta GLV development is stated over the *opaque* `pallas_endo` axiom — so the caller
-must supply that these coincide (they do; asserting it is the caller's choice, keeping this theorem
-axiom-clean). The distinct-point `hdist` also stays: the dumped gate omits that constraint. -/
+conditions by computation) drops those hypotheses. The dumped `EndoMul` gate's endomorphism constant
+`Checker.EndoMul.endo` now equals `pallas_endo` *definitionally* (both the same concrete numeral),
+so no `endo = β` hypothesis is needed. The distinct-point `hdist` stays: the dumped gate omits that
+constraint. -/
 
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Kimchi.Pasta
 
 /-- **Pallas.** From `Satisfies (emCircuit m) w pub` (plus base/init, the distinct-point `hdist`,
-    the GLV bit bound, and `hendo`) the reconstructed chain computes `[s]·T` with
+    and the GLV bit bound) the reconstructed chain computes `[s]·T` with
     `s = EndoScalar.toField (crumbList …) pallas_lam`. `hxne`, the eigenvalue, and the char/order
     side conditions are all discharged inside `pallas_endoMul`. -/
 theorem pallas_endoMul_circuit
-    (hendo : Kimchi.Checker.EndoMul.endo = pallas_endo)
     (m : ℕ) (hbits : 4 * m ≤ 244) (w : Kimchi.Circuit.Witness PallasBaseField)
     (pub : Array PallasBaseField) (hsat : Satisfies (emCircuit m) w pub)
     (hdist : ∀ i, i < m →
@@ -237,11 +235,12 @@ theorem pallas_endoMul_circuit
         ∧ (s : PallasBaseField)
             = Kimchi.Circuit.EndoScalar.toField (crumbList (gwit w) m)
                 (pallas_lam : PallasBaseField) := by
+  -- `Checker.EndoMul.endo` and `pallas_endo` are the same concrete numeral, so `hholds` already
+  -- has the `Holds pallas_endo` type `pallas_endoMul` expects (definitionally).
   obtain ⟨hholds, hbase⟩ := satisfies_extract m w pub hsat hdist
-  have hholds' : ∀ i, i < m → Holds pallas_endo (gwit w i) := fun i hi => hendo ▸ hholds i hi
   have hthread : ∀ i, i + 1 < m →
       (gwit w (i + 1)).xP = (gwit w i).xS ∧ (gwit w (i + 1)).yP = (gwit w i).yS :=
     fun i _ => ⟨rfl, rfl⟩
-  exact pallas_endoMul m hbits (gwit w) hholds' T φT hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0
+  exact pallas_endoMul m hbits (gwit w) hholds T φT hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0
 
 end Kimchi.Circuit.EndoMul
