@@ -93,7 +93,9 @@ def roots : List Name :=
     -- Init grounding (#4): the chain's initial state sourced from setup rows — constant-pinning
     -- (EndoMulScalar) and CompleteAdd-doubling dataflow (VarBaseMul's [2]·T).
     `Kimchi.Circuit.InitGrounding.esSetup_pins_init,
-    `Kimchi.Circuit.InitGrounding.completeAdd_doubles ]
+    `Kimchi.Circuit.InitGrounding.completeAdd_doubles,
+    -- Fully-grounded EndoMulScalar: init derived from trailing setup rows, no init hypotheses.
+    `Kimchi.Circuit.EndoScalar.esCircuitGrounded_sound ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations
