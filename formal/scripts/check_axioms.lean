@@ -59,7 +59,10 @@ def roots : List Name :=
     -- soundness (threading assumed), and the gold-standard circuit soundness (threading + gate
     -- identities derived from the reconstructed circuit's `Satisfies`).
     `Kimchi.Gate.VarBaseMul.checker_holds_iff, `Kimchi.Circuit.VarBaseMul.chain_sound,
-    `Kimchi.Circuit.VarBaseMul.circuit_sound ]
+    `Kimchi.Circuit.VarBaseMul.circuit_sound,
+    -- EndoMul: the checker↔gate bridge (up to the distinct-point non-degeneracy the dumped gate
+    -- omits) and the gold-standard circuit soundness.
+    `Kimchi.Gate.EndoMul.checker_holds_iff, `Kimchi.Circuit.EndoMul.circuit_sound ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta GLV endomorphism inputs (`β`, `λ`,
