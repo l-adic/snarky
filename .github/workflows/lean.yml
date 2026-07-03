@@ -88,3 +88,10 @@ jobs:
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         scripts/check_axioms.sh
+
+    # The committed fixtures are real PureScript-dumped (circuit, witness) pairs; the
+    # verified `check` (faithful by `check_iff`) must accept each. This guards against
+    # drift between what snarky emits and what the Lean constraints model.
+    - name: Run the verified checker on committed circuit fixtures
+      working-directory: .
+      run: make lean-check-fixtures

@@ -124,6 +124,18 @@ jobs:
       env:
         NODE_OPTIONS: "--max-old-space-size=8192"
 
+    # The Lean fixtures under formal/fixtures/ are real dumped (circuit, witness)
+    # pairs; the dump is deterministic, so regenerating must reproduce them byte
+    # for byte. This catches a circuit change that wasn't re-dumped (the committed
+    # fixture, and the Lean CI checking it, would otherwise go stale).
+    - name: Lean fixtures are up to date (regenerate + diff)
+      run: |
+        make dump-fixtures
+        git diff --exit-code formal/fixtures/ \
+          || { echo "::error::formal/fixtures are stale — run 'make dump-fixtures' and commit the result"; exit 1; }
+      env:
+        NODE_OPTIONS: "--max-old-space-size=8192"
+
   test-example:
     if: github.event_name != 'workflow_dispatch'
     strategy:

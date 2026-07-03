@@ -2,7 +2,9 @@ module Pickles.CircuitDiffs.Circuit
   ( Circuit
   , GateData
   , CachedConstant
+  , CircuitWitnessExport
   , comparable
+  , exportCircuitWitness
   , fromCompiledCircuit
   , parseOcamlFixtures
   , parseCircuitJson
@@ -32,7 +34,7 @@ import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith)
 import Pickles.CircuitDiffs.Types (CircuitComparison, ComparableCircuit, ComparableGate) as ReExports
 import Pickles.CircuitDiffs.Types (ComparableCircuit)
-import Simple.JSON (class ReadForeign, readJSON)
+import Simple.JSON (class ReadForeign, class WriteForeign, readJSON, writeJSON)
 import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray)
 import Snarky.Backend.Kimchi (makeGateData)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateGetWires)
@@ -92,6 +94,43 @@ comparable c =
       c.gates
   , cachedConstants: Array.sortWith _.variable $ map (\cc -> { variable: cc.variable, varType: cc.varType, value: toSignedDecimal cc.value }) c.cachedConstants
   }
+
+--------------------------------------------------------------------------------
+-- Combined {circuit, witness} export for the Lean verified checker
+
+-- | The combined dump ingested by `formal/Kimchi/Json.lean`: gates with their
+-- | little-endian-hex coefficients, the column-major (15 × n) witness, and the public
+-- | inputs. Field elements `f` serialize as LE hex through their `WriteForeign` instance,
+-- | matching the OCaml circuit fixtures.
+type CircuitWitnessExport f =
+  { publicInputSize :: Int
+  , gates :: Array { typ :: String, wires :: Array { row :: Int, col :: Int }, coeffs :: Array f }
+  , witness :: Array (Array f)
+  , publicInputs :: Array f
+  }
+
+-- | Serialize a compiled `Circuit` together with a witness and public inputs into the
+-- | combined JSON the Lean checker reads. Pair with `fromCompiledCircuit` (for the gates)
+-- | and `Snarky.Backend.Kimchi.makeWitness` (for `witness`/`publicInputs`) on the same
+-- | circuit — see `runChunks2AppWitnessProve` in the CircuitDiffs test for the full
+-- | compile → constraint-system → solve → witness sequence.
+exportCircuitWitness
+  :: forall f
+   . SerdeHex f
+  => WriteForeign f
+  => Circuit f
+  -> Vector 15 (Array f)
+  -> Array f
+  -> String
+exportCircuitWitness c witness publicInputs =
+  writeJSON
+    { publicInputSize: c.publicInputSize
+    , gates: map
+        (\g -> { typ: gateKindToString g.kind, wires: g.wires, coeffs: g.coeffs })
+        c.gates
+    , witness: Vector.toUnfoldable witness :: Array (Array f)
+    , publicInputs
+    }
 
 --------------------------------------------------------------------------------
 -- Types

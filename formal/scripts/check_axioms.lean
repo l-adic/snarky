@@ -31,6 +31,7 @@ def roots : List Name :=
     `Kimchi.Circuit.VarBaseMul.varBaseMul_subwrap_correct,
     `Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast1,
     `Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast2,
+    -- EndoScalar gate + circuit soundness (#173).
     `Kimchi.Gate.EndoScalar.sound, `Kimchi.Gate.EndoScalar.complete,
     `Kimchi.Circuit.EndoScalar.chain_toField,
     `Kimchi.Circuit.EndoScalar.chain_complete,
@@ -46,7 +47,14 @@ def roots : List Name :=
     `Kimchi.Commitment.IPA.vandermondeN,
     `Kimchi.Commitment.IPA.batch_soundness,
     `Kimchi.Quotient.zH_dvd_iff,
-    `Kimchi.Quotient.genericRows_iff_dvd ]
+    `Kimchi.Quotient.genericRows_iff_dvd,
+    -- The ingested-constraint-system checker: its faithfulness reflection and the
+    -- completeAdd bridge into the AddComplete soundness suite.
+    `Kimchi.Circuit.check_iff, `Kimchi.Circuit.rowHolds_completeAdd,
+    -- The checker-facing custom-gate constraint reflections.
+    `Kimchi.Checker.Generic.ok_iff, `Kimchi.Checker.VarBaseMul.ok_iff,
+    `Kimchi.Checker.EndoScalar.ok_iff,
+    `Kimchi.Checker.EndoMul.ok_iff, `Kimchi.Gate.Poseidon.ok_iff ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta GLV endomorphism inputs (`β`, `λ`,
