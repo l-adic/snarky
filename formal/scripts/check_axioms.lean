@@ -89,7 +89,11 @@ def roots : List Name :=
     `Kimchi.Circuit.Combinations.exCA_ES_sound, `Kimchi.Circuit.Combinations.exCA_PO_sound,
     `Kimchi.Circuit.Combinations.exVB_EM_sound, `Kimchi.Circuit.Combinations.exVB_ES_sound,
     `Kimchi.Circuit.Combinations.exVB_PO_sound, `Kimchi.Circuit.Combinations.exEM_ES_sound,
-    `Kimchi.Circuit.Combinations.exEM_PO_sound, `Kimchi.Circuit.Combinations.exES_PO_sound ]
+    `Kimchi.Circuit.Combinations.exEM_PO_sound, `Kimchi.Circuit.Combinations.exES_PO_sound,
+    -- Init grounding (#4): the chain's initial state sourced from setup rows — constant-pinning
+    -- (EndoMulScalar) and CompleteAdd-doubling dataflow (VarBaseMul's [2]·T).
+    `Kimchi.Circuit.InitGrounding.esSetup_pins_init,
+    `Kimchi.Circuit.InitGrounding.completeAdd_doubles ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations
