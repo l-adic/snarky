@@ -118,11 +118,6 @@ open Kimchi.Circuit (Cell Satisfies gatesHold copyHolds)
 
 variable {F : Type*} [Field F] [DecidableEq F]
 
-/-- `Array.ofFn` lookup below its length (reduces `gateAt`/`wires` on the parametric gate list). -/
-private theorem getD_ofFn_lt {α} (n : ℕ) (f : Fin n → α) (r : ℕ) (d : α) (h : r < n) :
-    (Array.ofFn f).getD r d = f ⟨r, h⟩ := by
-  rw [Array.getD, dif_pos (by simpa using h)]; simp [Array.getElem_ofFn]
-
 /-- Copy wiring for gate `i`'s `EndoMulScalar` row: for `i ≥ 1`, cols 0/2/3 (the input registers
     `n0`/`a0`/`b0`) wire to gate `i−1`'s output registers `n8`/`a8`/`b8` (cols 1/4/5); the output
     cols and crumb cols are self-loops. Gate 0's row is all self-loops (its init is `hinit`). -/
@@ -243,44 +238,39 @@ then needs **no init hypotheses** — they are *derived* from `Satisfies`. -/
 
 open Kimchi.Circuit.InitGrounding (genPin genPin_eval)
 
+/-- The three constant-pinning setup rows: `n₀ = 0`, `a₀ = 2`, `b₀ = 2` into row 0. -/
+private abbrev esPins : Array (Kimchi.Circuit.Gate F) :=
+  #[genPin 0 (0, 0), genPin 2 (0, 2), genPin 2 (0, 3)]
+
 /-- `esCircuit m` with three trailing `Generic` rows pinning row 0's `n₀,a₀,b₀` to `0,2,2`. -/
 def esCircuitGrounded (m : ℕ) : Kimchi.Circuit.Circuit F :=
-  { publicInputSize := 0
-  , gates := Array.ofFn (n := m + 4) fun idx =>
-      if idx.val < m + 1 then esGate idx.val
-      else if idx.val = m + 1 then genPin 0 (0, 0)
-      else if idx.val = m + 2 then genPin 2 (0, 2)
-      else genPin 2 (0, 3) }
+  (esCircuit m).append esPins
 
 @[simp] theorem esCircuitGrounded_size (m : ℕ) :
-    (esCircuitGrounded m (F := F)).gates.size = m + 4 := by simp [esCircuitGrounded]
+    (esCircuitGrounded m (F := F)).gates.size = m + 4 := by
+  simp [esCircuitGrounded]
 
 theorem gateAt_grounded_chain (m i : ℕ) (hi : i < m + 1) :
-    (esCircuitGrounded m (F := F)).gateAt i = esGate i := by
-  rw [Circuit.gateAt, esCircuitGrounded, getD_ofFn_lt _ _ _ _ (show i < m + 4 by omega)]
-  show (if i < m + 1 then esGate i else _) = esGate i
-  rw [if_pos hi]
+    (esCircuitGrounded m (F := F)).gateAt i = esGate i :=
+  (Circuit.gateAt_append_left _ _ i (by rw [esCircuit_size]; omega)).trans (gateAt_es m i hi)
 
 theorem gateAt_grounded_p0 (m : ℕ) :
     (esCircuitGrounded m (F := F)).gateAt (m + 1) = genPin 0 (0, 0) := by
-  rw [Circuit.gateAt, esCircuitGrounded, getD_ofFn_lt _ _ _ _ (show m + 1 < m + 4 by omega)]
-  show (if m + 1 < m + 1 then esGate (m + 1) else if m + 1 = m + 1 then genPin (0 : F) (0, 0)
-        else if m + 1 = m + 2 then genPin 2 (0, 2) else genPin 2 (0, 3)) = genPin 0 (0, 0)
-  rw [if_neg (by omega), if_pos rfl]
+  have h := Circuit.gateAt_append_right (esCircuit m (F := F)) esPins 0 (by show 0 < 3; decide)
+  rw [esCircuit_size] at h
+  exact h
 
 theorem gateAt_grounded_p1 (m : ℕ) :
     (esCircuitGrounded m (F := F)).gateAt (m + 2) = genPin 2 (0, 2) := by
-  rw [Circuit.gateAt, esCircuitGrounded, getD_ofFn_lt _ _ _ _ (show m + 2 < m + 4 by omega)]
-  show (if m + 2 < m + 1 then esGate (m + 2) else if m + 2 = m + 1 then genPin (0 : F) (0, 0)
-        else if m + 2 = m + 2 then genPin 2 (0, 2) else genPin 2 (0, 3)) = genPin 2 (0, 2)
-  rw [if_neg (by omega), if_neg (by omega), if_pos rfl]
+  have h := Circuit.gateAt_append_right (esCircuit m (F := F)) esPins 1 (by show 1 < 3; decide)
+  rw [esCircuit_size] at h
+  exact h
 
 theorem gateAt_grounded_p2 (m : ℕ) :
     (esCircuitGrounded m (F := F)).gateAt (m + 3) = genPin 2 (0, 3) := by
-  rw [Circuit.gateAt, esCircuitGrounded, getD_ofFn_lt _ _ _ _ (show m + 3 < m + 4 by omega)]
-  show (if m + 3 < m + 1 then esGate (m + 3) else if m + 3 = m + 1 then genPin (0 : F) (0, 0)
-        else if m + 3 = m + 2 then genPin 2 (0, 2) else genPin 2 (0, 3)) = genPin 2 (0, 3)
-  rw [if_neg (by omega), if_neg (by omega), if_neg (by omega)]
+  have h := Circuit.gateAt_append_right (esCircuit m (F := F)) esPins 2 (by show 2 < 3; decide)
+  rw [esCircuit_size] at h
+  exact h
 
 /-- **Fully grounded EndoMulScalar soundness (#4).** Any witness satisfying `esCircuitGrounded m`
     computes the effective scalar `a·λ + b` and register `n` — with the init `(2,2,0)` **derived**
@@ -291,17 +281,10 @@ theorem esCircuitGrounded_sound (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (lam :
     (hsat : Satisfies (esCircuitGrounded m) w pub) :
     (gwit w m).a8 * lam + (gwit w m).b8 = toField (chainCrumbs (gwit w) (m + 1)) lam
       ∧ (gwit w m).n8 = nReconstruct (chainCrumbs (gwit w) (m + 1)) := by
-  obtain ⟨hg, hc⟩ := hsat
   -- project the chain's `Satisfies` (the first `m+1` gates are `esCircuit`'s, verbatim)
-  have hchain : Satisfies (esCircuit m) w pub := by
-    refine ⟨fun r hr => ?_, fun r hr k hk => ?_⟩ <;>
-      rw [esCircuit_size] at hr
-    · have hgr := hg r (by rw [esCircuitGrounded_size]; omega)
-      rw [gateAt_grounded_chain m r hr] at hgr
-      rw [gateAt_es m r hr]; exact hgr
-    · have hcr := hc r (by rw [esCircuitGrounded_size]; omega) k hk
-      rw [gateAt_grounded_chain m r hr] at hcr
-      rw [gateAt_es m r hr]; exact hcr
+  have hchain : Satisfies (esCircuit m) w pub :=
+    Satisfies.of_append (c := esCircuit m) (gs := esPins) hsat
+  obtain ⟨hg, hc⟩ := hsat
   -- derive the init from the three setup rows (rows m+1, m+2, m+3 → row 0 cols 0,2,3)
   have pin : ∀ j c col, (esCircuitGrounded m (F := F)).gateAt (m + 1 + j) = genPin c (0, col) →
       j < 3 → (w.row 0).getD col 0 = c := by

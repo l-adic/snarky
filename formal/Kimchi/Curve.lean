@@ -56,6 +56,27 @@ theorem exists_canonical_scalar (W : Affine F) (P T : W.Point) (n : ℤ) (hord :
   exact ⟨n % (W.order : ℤ), by rw [zsmul_mod]; exact h,
     Int.emod_nonneg n hpos.ne', Int.emod_lt_of_pos n hpos⟩
 
+omit [DecidableEq F] in
+/-- Points with equal coordinates are equal — congruence past the nonsingularity proof. The
+    single shared home for what was re-derived privately at several use sites. -/
+theorem Point.some_congr {W : Affine F} {x x' y y' : F}
+    (h : W.Nonsingular x y) (h' : W.Nonsingular x' y') (hx : x = x') (hy : y = y') :
+    Point.some _ _ h = Point.some _ _ h' := by subst hx; subst hy; rfl
+
+/-- **No affine 2-torsion off the x-axis** (`a₁ = a₃ = 0`, `char ≠ 2`): a point with `y ≠ 0` is
+    not its own inverse, so `P + P ≠ 0`. This is what makes a `CompleteAdd` *doubling* row's
+    infinity branch refutable — the flag `inf = 0` is derivable, not an assumption. -/
+theorem Point.add_self_ne_zero (W : Affine F) (ha1 : W.a₁ = 0) (ha3 : W.a₃ = 0)
+    {x y : F} (h : W.Nonsingular x y) (hy : y ≠ 0) (h2 : (2 : F) ≠ 0) :
+    Point.some x y h + Point.some x y h ≠ 0 := by
+  intro hzero
+  have hneg : Point.some x y h = -Point.some x y h := eq_neg_of_add_eq_zero_left hzero
+  rw [Point.neg_some] at hneg
+  have hyy : y = W.negY x y := by simpa using hneg
+  rw [WeierstrassCurve.Affine.negY, ha1, ha3] at hyy
+  have h2y : 2 * y = 0 := by linear_combination hyy
+  exact hy ((mul_eq_zero.mp h2y).resolve_left h2)
+
 /-- The prime-order hypothesis as a `Fact`-backed accessor — reads like a field (`c.order_prime`)
     and threads through the development by instance inference. -/
 lemma order_prime (W : Affine F) [Fact (Nat.Prime W.order)] : Nat.Prime W.order := Fact.out

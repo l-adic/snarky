@@ -100,11 +100,6 @@ open Kimchi.Circuit (Cell Satisfies gatesHold copyHolds)
 
 variable {F : Type*} [Field F] [DecidableEq F]
 
-/-- `Array.ofFn` lookup below its length (reduces `gateAt`/`wires` on the parametric gate list). -/
-private theorem getD_ofFn_lt {α} (n : ℕ) (f : Fin n → α) (r : ℕ) (d : α) (h : r < n) :
-    (Array.ofFn f).getD r d = f ⟨r, h⟩ := by
-  rw [Array.getD, dif_pos (by simpa using h)]; simp [Array.getElem_ofFn]
-
 /-- Copy wiring for gate `i`'s `EndoMul` row: cols 0–1 wire the base `(xT,yT)` to gate 0's (shared
     `T`); the accumulator/register threading is *free* (consecutive rows share cells), so cols 2–6
     are self-loops. Gate 0's row is all self-loops. -/
