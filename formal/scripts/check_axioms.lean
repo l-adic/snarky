@@ -75,7 +75,14 @@ def roots : List Name :=
     `Kimchi.Circuit.EndoScalar.vesta_circuit_sound,
     -- Poseidon: the per-row round-function bridge and the chained-permutation soundness (the
     -- chain computes the 5m-round Poseidon permutation of the initial state).
-    `Kimchi.Gate.Poseidon.holds_rowPerm, `Kimchi.Circuit.Poseidon.circuit_sound ]
+    `Kimchi.Gate.Poseidon.holds_rowPerm, `Kimchi.Circuit.Poseidon.circuit_sound,
+    -- Heterogeneous gate-combination examples: every unordered pair of the five custom kinds
+    -- composes in one circuit, its Satisfies yielding both gates' algebraic facts.
+    `Kimchi.Circuit.Combinations.exCA_VB_sound, `Kimchi.Circuit.Combinations.exCA_EM_sound,
+    `Kimchi.Circuit.Combinations.exCA_ES_sound, `Kimchi.Circuit.Combinations.exCA_PO_sound,
+    `Kimchi.Circuit.Combinations.exVB_EM_sound, `Kimchi.Circuit.Combinations.exVB_ES_sound,
+    `Kimchi.Circuit.Combinations.exVB_PO_sound, `Kimchi.Circuit.Combinations.exEM_ES_sound,
+    `Kimchi.Circuit.Combinations.exEM_PO_sound, `Kimchi.Circuit.Combinations.exES_PO_sound ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta GLV endomorphism inputs (`β`, `λ`,
