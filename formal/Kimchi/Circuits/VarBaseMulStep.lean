@@ -267,12 +267,46 @@ theorem vbmWires_get4 (i : ℕ) (hi : i ≠ 0) (d : Cell) :
 private def gwit (w : Kimchi.Circuit.Witness F) (i : ℕ) : Kimchi.Gate.VarBaseMul.Witness F :=
   ofRows (w.row (2 * i)) (w.row (2 * i + 1))
 
+/-- Extract from `Satisfies (vbmCircuit m) w pub` the data the composition folds consume: each
+    row's gate identity (`gatesHold` + `checker_holds_iff`) and the accumulator/register/base
+    threading (`copyHolds`). Shared by `circuit_sound` and the Pasta specializations. -/
+theorem satisfies_extract (m : ℕ) (w : Kimchi.Circuit.Witness F) (pub : Array F)
+    (hsat : Satisfies (vbmCircuit m) w pub) :
+    (∀ i, i < m → Holds (gwit w i))
+    ∧ (∀ i, i < m → (gwit w i).xT = (gwit w 0).xT ∧ (gwit w i).yT = (gwit w 0).yT)
+    ∧ (∀ i, i + 1 < m → (gwit w i).x5 = (gwit w (i + 1)).x0 ∧ (gwit w i).y5 = (gwit w (i + 1)).y0)
+    ∧ (∀ i, i + 1 < m → (gwit w i).nPrime = (gwit w (i + 1)).n) := by
+  obtain ⟨hgates, hcopy⟩ := hsat
+  refine ⟨fun i hi => ?_, fun i hi => ?_, fun i hnext => ?_, fun i hnext => ?_⟩
+  · have hg := hgates (2 * i) (by rw [vbmCircuit_size]; omega)
+    rw [gateAt_vbm m i hi] at hg
+    have hck : Checker.VarBaseMul.holds (w.row (2 * i)) (w.row (2 * i + 1)) := hg
+    exact (checker_holds_iff _ _).1 hck
+  · rcases Nat.eq_zero_or_pos i with h0 | hpos
+    · subst h0; exact ⟨rfl, rfl⟩
+    · have hc0 := hcopy (2 * i) (by rw [vbmCircuit_size]; omega) 0 (by omega)
+      have hc1 := hcopy (2 * i) (by rw [vbmCircuit_size]; omega) 1 (by omega)
+      rw [gateAt_vbm m i hi] at hc0 hc1
+      simp only [vbmGate, vbmWires_get0 i (by omega), vbmWires_get1 i (by omega)] at hc0 hc1
+      exact ⟨hc0, hc1⟩
+  · have hc2 := hcopy (2 * (i + 1)) (by rw [vbmCircuit_size]; omega) 2 (by omega)
+    have hc3 := hcopy (2 * (i + 1)) (by rw [vbmCircuit_size]; omega) 3 (by omega)
+    rw [gateAt_vbm m (i + 1) (by omega)] at hc2 hc3
+    simp only [vbmGate, vbmWires_get2 (i + 1) (by omega),
+      vbmWires_get3 (i + 1) (by omega)] at hc2 hc3
+    rw [show 2 * (i + 1) - 1 = 2 * i + 1 by omega] at hc2 hc3
+    exact ⟨hc2.symm, hc3.symm⟩
+  · have hc4 := hcopy (2 * (i + 1)) (by rw [vbmCircuit_size]; omega) 4 (by omega)
+    rw [gateAt_vbm m (i + 1) (by omega)] at hc4
+    simp only [vbmGate, vbmWires_get4 (i + 1) (by omega)] at hc4
+    rw [show 2 * (i + 1) - 2 = 2 * i by omega] at hc4
+    exact hc4.symm
+
 /-- **End-to-end soundness for the reconstructed `VarBaseMul` chain.** Any witness satisfying
     `vbmCircuit m` — with the per-row curve preconditions `rc` and the initial accumulator pinned to
-    `[a]·T` — certifies `[n]·T` for an explicit scalar `n`. Unlike `chain_sound`, the threading and
-    the 21 per-row constraints are *derived* from `Satisfies` (`copyHolds` supplies the wiring,
-    `gatesHold` + `checker_holds_iff` supply each `Holds`); only the curve nonsingularity /
-    non-degeneracy remain hypotheses, as in `AddCompleteStep`. -/
+    `[a]·T` — certifies `[n]·T` for an explicit scalar `n`. The threading and the 21 per-row
+    constraints are *derived* from `Satisfies` (via `satisfies_extract`); only the curve
+    nonsingularity / non-degeneracy remain hypotheses, as in `AddCompleteStep`. -/
 theorem circuit_sound
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     (m : ℕ) (hm : 0 < m) (w : Kimchi.Circuit.Witness F) (pub : Array F)
@@ -285,44 +319,72 @@ theorem circuit_sound
       ∧ (n : F) = (32 : F) ^ m * (a : F) + 2 * (gwit w (m - 1)).nPrime
                    - 2 * (32 : F) ^ m * (gwit w 0).n - ((32 : F) ^ m - 1)
       ∧ n.natAbs ≤ 32 ^ m * a.natAbs + (32 ^ m - 1) := by
-  obtain ⟨hgates, hcopy⟩ := hsat
-  -- gate identity of each row, read from `gatesHold` through the checker bridge
-  have hHolds : ∀ i (hi : i < m), Holds (gwit w i) := by
+  obtain ⟨hHolds, hbase, hacc, hreg⟩ := satisfies_extract m w pub hsat
+  exact chain_sound W ha m hm (gwit w)
+    (fun i hi => (rc i hi).toGateStep (hHolds i hi)) hacc hreg hbase a hinit
+
+/-! ## Pasta specializations
+
+Routing `Satisfies` through the deployed Pasta roots `varBaseMul_scaleFast{1,2}` (which derive the
+per-row `NonDegen` from the ladder toolkit and discharge the char/order side conditions by
+computation) gives circuit soundness with **no curve non-degeneracy hypotheses** — only the base/
+init nonsingularity (genuinely external) and the register range / forbidden-band bound. -/
+
+open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Kimchi.Pasta Kimchi.Shifted
+
+/-- **Vesta / scaleFast1 (Type1).** From `Satisfies (vbmCircuit m) w pub` the reconstructed chain
+    computes `[s]·T`; the per-row `NonDegen` is derived, not assumed. -/
+theorem varBaseMul_circuit_scaleFast1
+    (m : ℕ) (w : Kimchi.Circuit.Witness VestaBaseField) (pub : Array VestaBaseField)
+    (hsat : Satisfies (vbmCircuit m) w pub)
+    (T : Vesta.curve.toAffine.Point) (s : ℤ) (hTne : T ≠ 0)
+    (hTns : Vesta.curve.toAffine.Nonsingular (gwit w 0).xT (gwit w 0).yT)
+    (hTeq : T = Point.some _ _ hTns)
+    (hP0ns : Vesta.curve.toAffine.Nonsingular (gwit w 0).x0 (gwit w 0).y0)
+    (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T)
+    (hbits : 5 * m ≤ pastaFieldBits) (hs : s = gateLadder (gwit w) (5 * m))
+    (hnf : 5 * m = pastaFieldBits → s ∉ forbiddenValues Vesta.curve.toAffine.order) :
+    ∃ hfin : Vesta.curve.toAffine.Nonsingular (accX (gwit w) m) (accY (gwit w) m),
+      Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (gwit w i) := by
+  obtain ⟨hHolds, hbase, hacc, _⟩ := satisfies_extract m w pub hsat
+  exact varBaseMul_scaleFast1 m (gwit w) T s hTne hHolds hTns hTeq hbase
+    (fun i hi => ⟨(hacc i hi).1.symm, (hacc i hi).2.symm⟩) hP0ns hP0 hbits hs hnf
+
+/-- **Pallas / scaleFast2 (Type2).** The parity-split entry point: from `Satisfies` (plus base/init
+    and the register range-check `hsDiv2`) the chain computes `[n]·T` for the unshifted scalar,
+    the register `N` threaded from `copyHolds`. -/
+theorem varBaseMul_circuit_scaleFast2
+    (m : ℕ) (hm : 0 < m) (w : Kimchi.Circuit.Witness PallasBaseField)
+    (pub : Array PallasBaseField) (hsat : Satisfies (vbmCircuit m) w pub)
+    (T : Pallas.curve.toAffine.Point) (hTne : T ≠ 0)
+    (hTns : Pallas.curve.toAffine.Nonsingular (gwit w 0).xT (gwit w 0).yT)
+    (hTeq : T = Point.some _ _ hTns)
+    (hP0ns : Pallas.curve.toAffine.Nonsingular (gwit w 0).x0 (gwit w 0).y0)
+    (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T)
+    (hN0 : (gwit w 0).n = 0)
+    (hbits : 5 * m ≤ pastaFieldBits)
+    (hsDiv2 : gateRegister (gwit w) (5 * m) < 2 ^ (pastaFieldBits - 1))
+    (sOdd : PallasBaseField) (hsOdd : sOdd = 0 ∨ sOdd = 1) :
+    ∃ (hfin : Pallas.curve.toAffine.Nonsingular (accX (gwit w) m) (accY (gwit w) m)) (n : ℤ),
+      (n : PallasBaseField) = unshiftType2 (5 * m) (gwit w (m - 1)).nPrime sOdd
+        ∧ ((sOdd = 1 ∧ Point.some _ _ hfin = n • T)
+            ∨ (sOdd = 0 ∧ Point.some _ _ hfin - T = n • T)) := by
+  obtain ⟨hHolds, hbase, hacc, hreg⟩ := satisfies_extract m w pub hsat
+  set N : ℕ → PallasBaseField :=
+    fun i => if _ : i < m then (gwit w i).n else (gwit w (m - 1)).nPrime with hNdef
+  have hregIn : ∀ i, i < m → N i = (gwit w i).n := fun i hi => by simp only [N, dif_pos hi]
+  have hregOut : ∀ i, i < m → N (i + 1) = (gwit w i).nPrime := by
     intro i hi
-    have hg := hgates (2 * i) (by rw [vbmCircuit_size]; omega)
-    rw [gateAt_vbm m i hi] at hg
-    have : Checker.VarBaseMul.holds (w.row (2 * i)) (w.row (2 * i + 1)) := hg
-    exact (checker_holds_iff _ _).1 this
-  -- assemble the per-row `GateStep` from the curve preconditions and the derived identity
-  have gs : ∀ i (hi : i < m), GateStep W (gwit w i) :=
-    fun i hi => (rc i hi).toGateStep (hHolds i hi)
-  -- the threading, from `copyHolds` (`w.cell (r,c)` is defeq the matching `ofRows` projection)
-  have hacc : ∀ i (_ : i + 1 < m),
-      (gwit w i).x5 = (gwit w (i + 1)).x0 ∧ (gwit w i).y5 = (gwit w (i + 1)).y0 := by
-    intro i hnext
-    have hc2 := hcopy (2 * (i + 1)) (by rw [vbmCircuit_size]; omega) 2 (by omega)
-    have hc3 := hcopy (2 * (i + 1)) (by rw [vbmCircuit_size]; omega) 3 (by omega)
-    rw [gateAt_vbm m (i + 1) (by omega)] at hc2 hc3
-    simp only [vbmGate, vbmWires_get2 (i + 1) (by omega),
-      vbmWires_get3 (i + 1) (by omega)] at hc2 hc3
-    rw [show 2 * (i + 1) - 1 = 2 * i + 1 by omega] at hc2 hc3
-    exact ⟨hc2.symm, hc3.symm⟩
-  have hreg : ∀ i (_ : i + 1 < m), (gwit w i).nPrime = (gwit w (i + 1)).n := by
-    intro i hnext
-    have hc4 := hcopy (2 * (i + 1)) (by rw [vbmCircuit_size]; omega) 4 (by omega)
-    rw [gateAt_vbm m (i + 1) (by omega)] at hc4
-    simp only [vbmGate, vbmWires_get4 (i + 1) (by omega)] at hc4
-    rw [show 2 * (i + 1) - 2 = 2 * i by omega] at hc4
-    exact hc4.symm
-  have hbase : ∀ i (_ : i < m), (gwit w i).xT = (gwit w 0).xT ∧ (gwit w i).yT = (gwit w 0).yT := by
-    intro i hi
-    rcases Nat.eq_zero_or_pos i with h0 | hpos
-    · subst h0; exact ⟨rfl, rfl⟩
-    · have hc0 := hcopy (2 * i) (by rw [vbmCircuit_size]; omega) 0 (by omega)
-      have hc1 := hcopy (2 * i) (by rw [vbmCircuit_size]; omega) 1 (by omega)
-      rw [gateAt_vbm m i hi] at hc0 hc1
-      simp only [vbmGate, vbmWires_get0 i (by omega), vbmWires_get1 i (by omega)] at hc0 hc1
-      exact ⟨hc0, hc1⟩
-  exact chain_sound W ha m hm (gwit w) gs hacc hreg hbase a hinit
+    by_cases hn : i + 1 < m
+    · simp only [N, dif_pos hn]; exact (hreg i hn).symm
+    · have him : i = m - 1 := by omega
+      simp only [N, dif_neg hn]; subst him; rfl
+  have hNinit : N 0 = 0 := by rw [hregIn 0 hm]; exact hN0
+  have hNm : N m = (gwit w (m - 1)).nPrime := by
+    have h := hregOut (m - 1) (by omega); rwa [Nat.sub_add_cancel hm] at h
+  obtain ⟨hfin, n, hn, hcase⟩ := varBaseMul_scaleFast2 m hm (gwit w) T N hTne hHolds hTns hTeq hbase
+    (fun i hi => ⟨(hacc i hi).1.symm, (hacc i hi).2.symm⟩) hP0ns hP0 hregIn hregOut hNinit
+    hbits hsDiv2 sOdd hsOdd
+  exact ⟨hfin, n, by rw [hn, hNm], hcase⟩
 
 end Kimchi.Circuit.VarBaseMul

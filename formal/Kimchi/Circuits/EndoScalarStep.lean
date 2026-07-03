@@ -1,5 +1,6 @@
 import Kimchi.Circuit
 import Kimchi.Circuit.EndoScalar
+import Kimchi.Pasta
 
 /-!
 # End-to-end soundness for a chained `EndoMulScalar` circuit
@@ -206,5 +207,30 @@ theorem circuit_sound (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (lam : F)
     rw [show i + 1 - 1 = i by omega] at hc
     exact hc
   exact chain_toField lam m (gwit w) hHolds ha0 hb0 hn0 haStep hbStep hnStep
+
+/-! ## Pasta specializations
+
+At the concrete Pasta scalar fields the char precondition `2, 3 ≠ 0` is discharged by `decide`, so
+the reconstructed `EndoMulScalar` chain has no field/char side conditions — only the init. -/
+
+open CompElliptic.Fields.Pasta
+
+/-- `circuit_sound` at the Pallas base field: `2, 3 ≠ 0` by `decide`. -/
+theorem pallas_circuit_sound (lam : PallasBaseField) (m : ℕ)
+    (w : Kimchi.Circuit.Witness PallasBaseField) (pub : Array PallasBaseField)
+    (hsat : Satisfies (esCircuit m) w pub)
+    (ha0 : (gwit w 0).a0 = 2) (hb0 : (gwit w 0).b0 = 2) (hn0 : (gwit w 0).n0 = 0) :
+    (gwit w m).a8 * lam + (gwit w m).b8 = toField (chainCrumbs (gwit w) (m + 1)) lam
+      ∧ (gwit w m).n8 = nReconstruct (chainCrumbs (gwit w) (m + 1)) :=
+  circuit_sound (by decide) (by decide) lam m w pub hsat ha0 hb0 hn0
+
+/-- `circuit_sound` at the Vesta base field. -/
+theorem vesta_circuit_sound (lam : VestaBaseField) (m : ℕ)
+    (w : Kimchi.Circuit.Witness VestaBaseField) (pub : Array VestaBaseField)
+    (hsat : Satisfies (esCircuit m) w pub)
+    (ha0 : (gwit w 0).a0 = 2) (hb0 : (gwit w 0).b0 = 2) (hn0 : (gwit w 0).n0 = 0) :
+    (gwit w m).a8 * lam + (gwit w m).b8 = toField (chainCrumbs (gwit w) (m + 1)) lam
+      ∧ (gwit w m).n8 = nReconstruct (chainCrumbs (gwit w) (m + 1)) :=
+  circuit_sound (by decide) (by decide) lam m w pub hsat ha0 hb0 hn0
 
 end Kimchi.Circuit.EndoScalar

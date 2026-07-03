@@ -144,6 +144,29 @@ theorem emWires_get1 (i : ℕ) (hi : i ≠ 0) (d : Cell) : (emWires i).getD 1 d 
 private def gwit (w : Kimchi.Circuit.Witness F) (i : ℕ) : Kimchi.Gate.EndoMul.Witness F :=
   ofRows (w.row i) (w.row (i + 1))
 
+/-- Extract from `Satisfies (emCircuit m) w pub` the data the `endoMul` fold consumes: each row's
+    full 12-constraint `Holds` (`gatesHold` + `checker_holds_iff`, using the distinct-point `hdist`)
+    and the shared base (`copyHolds`). Shared by `circuit_sound` and the Pasta specialization. -/
+theorem satisfies_extract (m : ℕ) (w : Kimchi.Circuit.Witness F) (pub : Array F)
+    (hsat : Satisfies (emCircuit m) w pub)
+    (hdist : ∀ i, i < m →
+        ((gwit w i).xP - (gwit w i).xR) * ((gwit w i).xR - (gwit w i).xS) ≠ 0) :
+    (∀ i, i < m → Holds Kimchi.Checker.EndoMul.endo (gwit w i))
+    ∧ (∀ i, i < m → (gwit w i).xT = (gwit w 0).xT ∧ (gwit w i).yT = (gwit w 0).yT) := by
+  obtain ⟨hgates, hcopy⟩ := hsat
+  refine ⟨fun i hi => ?_, fun i hi => ?_⟩
+  · have hg := hgates i (by rw [emCircuit_size]; omega)
+    rw [gateAt_em m i hi] at hg
+    have hck : Kimchi.Checker.EndoMul.holds (w.row i) (w.row (i + 1)) := hg
+    exact (checker_holds_iff _ _).2 ⟨hck, hdist i hi⟩
+  · rcases Nat.eq_zero_or_pos i with h0 | hpos
+    · subst h0; exact ⟨rfl, rfl⟩
+    · have hc0 := hcopy i (by rw [emCircuit_size]; omega) 0 (by omega)
+      have hc1 := hcopy i (by rw [emCircuit_size]; omega) 1 (by omega)
+      rw [gateAt_em m i hi] at hc0 hc1
+      simp only [emGate, emWires_get0 i (by omega), emWires_get1 i (by omega)] at hc0 hc1
+      exact ⟨hc0, hc1⟩
+
 /-- **End-to-end soundness for the reconstructed `EndoMul` chain.** Any witness satisfying
     `emCircuit m` — with the base/init nonsingularity, the per-row curve non-degeneracies (`hxne`,
     the distinct-point `hdist`), and the eigenvalue `φT = [λ]·T` — certifies `[s]·T`, the scalar
@@ -172,29 +195,53 @@ theorem circuit_sound
     ∃ (hfin : W.Nonsingular (accX (gwit w) m) (accY (gwit w) m)) (s : ℤ),
       Point.some _ _ hfin = s • T
         ∧ (s : F) = Kimchi.Circuit.EndoScalar.toField (crumbList (gwit w) m) (lam : F) := by
-  obtain ⟨hgates, hcopy⟩ := hsat
-  -- each row's full gate identity, from `gatesHold` through the checker bridge + distinctness
-  have hholds : ∀ i, i < m → Holds Kimchi.Checker.EndoMul.endo (gwit w i) := by
-    intro i hi
-    have hg := hgates i (by rw [emCircuit_size]; omega)
-    rw [gateAt_em m i hi] at hg
-    have hck : Kimchi.Checker.EndoMul.holds (w.row i) (w.row (i + 1)) := hg
-    exact (checker_holds_iff _ _).2 ⟨hck, hdist i hi⟩
-  -- the shared base, from `copyHolds`
-  have hbase : ∀ i, i < m → (gwit w i).xT = (gwit w 0).xT ∧ (gwit w i).yT = (gwit w 0).yT := by
-    intro i hi
-    rcases Nat.eq_zero_or_pos i with h0 | hpos
-    · subst h0; exact ⟨rfl, rfl⟩
-    · have hc0 := hcopy i (by rw [emCircuit_size]; omega) 0 (by omega)
-      have hc1 := hcopy i (by rw [emCircuit_size]; omega) 1 (by omega)
-      rw [gateAt_em m i hi] at hc0 hc1
-      simp only [emGate, emWires_get0 i (by omega), emWires_get1 i (by omega)] at hc0 hc1
-      exact ⟨hc0, hc1⟩
+  obtain ⟨hholds, hbase⟩ := satisfies_extract m w pub hsat hdist
   -- the accumulator/register threading is definitional (consecutive rows share cells)
   have hthread : ∀ i, i + 1 < m →
       (gwit w (i + 1)).xP = (gwit w i).xS ∧ (gwit w (i + 1)).yP = (gwit w i).yS :=
     fun i _ => ⟨rfl, rfl⟩
   exact endoMul W ha h2 h3 hodd Kimchi.Checker.EndoMul.endo m (gwit w) hholds T φT
     hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0 hxne lam heig
+
+/-! ## Pasta specialization
+
+Routing `Satisfies` through the deployed `pallas_endoMul` (which derives the per-row `hxne` from the
+GLV short-basis bound and the eigenvalue from `pallas_eigen`, and discharges the char/order side
+conditions by computation) drops those hypotheses. The one honest residue is `hendo`: the dumped
+`EndoMul` gate hardcodes the base-field endomorphism constant `Checker.EndoMul.endo` (a numeral),
+whereas the Pasta GLV development is stated over the *opaque* `pallas_endo` axiom — so the caller
+must supply that these coincide (they do; asserting it is the caller's choice, keeping this theorem
+axiom-clean). The distinct-point `hdist` also stays: the dumped gate omits that constraint. -/
+
+open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Kimchi.Pasta
+
+/-- **Pallas.** From `Satisfies (emCircuit m) w pub` (plus base/init, the distinct-point `hdist`,
+    the GLV bit bound, and `hendo`) the reconstructed chain computes `[s]·T` with
+    `s = EndoScalar.toField (crumbList …) pallas_lam`. `hxne`, the eigenvalue, and the char/order
+    side conditions are all discharged inside `pallas_endoMul`. -/
+theorem pallas_endoMul_circuit
+    (hendo : Kimchi.Checker.EndoMul.endo = pallas_endo)
+    (m : ℕ) (hbits : 4 * m ≤ 244) (w : Kimchi.Circuit.Witness PallasBaseField)
+    (pub : Array PallasBaseField) (hsat : Satisfies (emCircuit m) w pub)
+    (hdist : ∀ i, i < m →
+        ((gwit w i).xP - (gwit w i).xR) * ((gwit w i).xR - (gwit w i).xS) ≠ 0)
+    (T φT : Pallas.curve.toAffine.Point)
+    (hTns : Pallas.curve.toAffine.Nonsingular (gwit w 0).xT (gwit w 0).yT)
+    (hTeq : T = Point.some _ _ hTns)
+    (hφTns : Pallas.curve.toAffine.Nonsingular (pallas_endo * (gwit w 0).xT) (gwit w 0).yT)
+    (hφTeq : φT = Point.some _ _ hφTns)
+    (hP0ns : Pallas.curve.toAffine.Nonsingular (gwit w 0).xP (gwit w 0).yP)
+    (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T + (2 : ℤ) • φT) :
+    ∃ (hfin : Pallas.curve.toAffine.Nonsingular (accX (gwit w) m) (accY (gwit w) m)) (s : ℤ),
+      Point.some _ _ hfin = s • T
+        ∧ (s : PallasBaseField)
+            = Kimchi.Circuit.EndoScalar.toField (crumbList (gwit w) m)
+                (pallas_lam : PallasBaseField) := by
+  obtain ⟨hholds, hbase⟩ := satisfies_extract m w pub hsat hdist
+  have hholds' : ∀ i, i < m → Holds pallas_endo (gwit w i) := fun i hi => hendo ▸ hholds i hi
+  have hthread : ∀ i, i + 1 < m →
+      (gwit w (i + 1)).xP = (gwit w i).xS ∧ (gwit w (i + 1)).yP = (gwit w i).yS :=
+    fun i _ => ⟨rfl, rfl⟩
+  exact pallas_endoMul m hbits (gwit w) hholds' T φT hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0
 
 end Kimchi.Circuit.EndoMul

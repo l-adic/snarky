@@ -65,7 +65,14 @@ def roots : List Name :=
     `Kimchi.Gate.EndoMul.checker_holds_iff, `Kimchi.Circuit.EndoMul.circuit_sound,
     -- EndoScalar: the checker↔gate bridge (up to the `6·`-scaling / char precondition) and the
     -- gold-standard circuit soundness.
-    `Kimchi.Gate.EndoScalar.checker_holds_iff, `Kimchi.Circuit.EndoScalar.circuit_sound ]
+    `Kimchi.Gate.EndoScalar.checker_holds_iff, `Kimchi.Circuit.EndoScalar.circuit_sound,
+    -- Pasta specializations of the circuit-composition proofs: routing `Satisfies` through the
+    -- deployed Pasta roots discharges the curve non-degeneracy / char / order side conditions.
+    `Kimchi.Circuit.VarBaseMul.varBaseMul_circuit_scaleFast1,
+    `Kimchi.Circuit.VarBaseMul.varBaseMul_circuit_scaleFast2,
+    `Kimchi.Circuit.EndoMul.pallas_endoMul_circuit,
+    `Kimchi.Circuit.EndoScalar.pallas_circuit_sound,
+    `Kimchi.Circuit.EndoScalar.vesta_circuit_sound ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta GLV endomorphism inputs (`β`, `λ`,
