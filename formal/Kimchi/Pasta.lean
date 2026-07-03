@@ -91,6 +91,12 @@ open WeierstrassCurve.Affine
 def pallas_endo : PallasBaseField :=
   20444556541222657078399132219657928148671392403212669005631716460534733845831
 
+/-- The concrete `pallas_endo` is a genuine **primitive cube root of unity** (`β³ = 1`, `β ≠ 1`) —
+    exactly the condition for `φ(x, y) = (β·x, y)` to preserve `y² = x³ + 5`. Machine-checked: plain
+    kernel `decide` closes it (Lean's kernel does the 255-bit field arithmetic on GMP integers — no
+    `native_decide`, no extra axioms), so the numeral is validated as a valid endo coefficient. -/
+theorem pallas_endo_cube : pallas_endo ^ 3 = 1 ∧ pallas_endo ≠ 1 := by decide
+
 /-- **No short relation in a rank-2 GLV lattice, from a reduced-basis certificate.** If `(s, t)`
     lies in the lattice `{(a,b) : a + b·λ ≡ 0 (mod n)}` (`s + t·λ = k₂·n`), is primitive
     (`u·s + v·t = 1`), has `|s| > 2¹²⁶`, and the box `[−2¹²⁶, 2¹²⁶]²` fits below the covolume

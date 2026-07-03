@@ -76,6 +76,8 @@ def roots : List Name :=
     -- Poseidon: the per-row round-function bridge and the chained-permutation soundness (the
     -- chain computes the 5m-round Poseidon permutation of the initial state).
     `Kimchi.Gate.Poseidon.holds_rowPerm, `Kimchi.Circuit.Poseidon.circuit_sound,
+    -- The concrete Pallas endo constant is machine-checked to be a primitive cube root of unity.
+    `Kimchi.Pasta.pallas_endo_cube,
     -- Heterogeneous gate-combination examples: every unordered pair of the five custom kinds
     -- composes in one circuit, its Satisfies yielding both gates' algebraic facts.
     `Kimchi.Circuit.Combinations.exCA_VB_sound, `Kimchi.Circuit.Combinations.exCA_EM_sound,
