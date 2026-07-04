@@ -252,8 +252,9 @@ theorem vbmWires_get3 (i : ℕ) (hi : i ≠ 0) (d : Cell) :
 theorem vbmWires_get4 (i : ℕ) (hi : i ≠ 0) (d : Cell) :
     (vbmWires i).getD 4 d = (2 * i - 2, 5) := by simp [vbmWires, hi]
 
-/-- The witness read off gate `i`'s physical row pair. -/
-private def gwit (w : Kimchi.Circuit.Witness F) (i : ℕ) : Kimchi.Gate.VarBaseMul.Witness F :=
+/-- The witness read off gate `i`'s physical row pair (public: downstream sub-circuit files
+    state hypotheses over the chain's cells through it). -/
+def gwit (w : Kimchi.Circuit.Witness F) (i : ℕ) : Kimchi.Gate.VarBaseMul.Witness F :=
   ofRows (w.row (2 * i)) (w.row (2 * i + 1))
 
 /-- Extract from `Satisfies (vbmCircuit m) w pub` the data the composition folds consume: each

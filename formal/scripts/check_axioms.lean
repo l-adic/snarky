@@ -102,7 +102,11 @@ def roots : List Name :=
     `Kimchi.Circuit.VarBaseMul.vbmCircuitGrounded_scaleFast1,
     -- Verifier sub-circuit: the IPA scale-and-combine MSM term p' = acc + [s]·T (VarBaseMul chain
     -- output fed into a CompleteAdd by dataflow), with the FULL complete-add disjunction.
-    `Kimchi.Circuit.VarBaseMul.scaleCombine_sound ]
+    `Kimchi.Circuit.VarBaseMul.scaleCombine_sound,
+    -- Rung 1: the fully-public statement — the whole dumped circuit reconstructed (public rows +
+    -- init doubling + embedded chain + combine + inf assert), conclusion over pub alone.
+    `Kimchi.Circuit.VarBaseMul.gateRegister_cast,
+    `Kimchi.Circuit.VarBaseMul.scaleCombinePub_sound ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations

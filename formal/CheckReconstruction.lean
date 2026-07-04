@@ -3,6 +3,7 @@ import Kimchi.Circuits.VarBaseMulStep
 import Kimchi.Circuits.EndoMulStep
 import Kimchi.Circuits.EndoScalarStep
 import Kimchi.Circuits.PoseidonStep
+import Kimchi.Circuits.ScaleCombinePub
 
 /-! # Validate the reconstructed step-circuits against real dumps
 
@@ -37,12 +38,17 @@ def tamperCell (w : Witness Fp) (r c : Nat) : Witness Fp :=
   { rows := (Array.range w.rows.size).map fun i =>
       if i = r then (w.row i).modify c (· + 1) else w.row i }
 
-/-- Parse a fixture into the Lean model (circuit + row-major witness). -/
-def loadDump (path : System.FilePath) : IO (Circuit Fp × Witness Fp) := do
+/-- Parse a fixture into the Lean model (circuit + row-major witness + public inputs). -/
+def loadFull (path : System.FilePath) : IO (Circuit Fp × Witness Fp × Array Fp) := do
   let s ← IO.FS.readFile path
   match Lean.Json.parse s >>= Lean.fromJson? (α := JCircuit) with
   | .error e => throw (IO.userError s!"failed to load {path}: {e}")
-  | .ok jc => return (toCircuit jc, toWitness jc)
+  | .ok jc => return (toCircuit jc, toWitness jc, toPub jc)
+
+/-- Parse a fixture into the Lean model (circuit + row-major witness). -/
+def loadDump (path : System.FilePath) : IO (Circuit Fp × Witness Fp) := do
+  let (c, w, _) ← loadFull path
+  return (c, w)
 
 /-- A fixture's witness only (column-major → row-major). -/
 def loadWitness (path : System.FilePath) : IO (Witness Fp) := do
@@ -59,7 +65,7 @@ def checkRecon (name : String) (path : System.FilePath) (recon : Circuit Fp)
   IO.println s!"{name}: accepts real chain = {accepts}, rejects tampered = {rejects}"
   pure (accepts && rejects)
 
-open Kimchi.Circuit.VarBaseMul (vbmCircuit scaleCombineCircuit)
+open Kimchi.Circuit.VarBaseMul (vbmCircuit scaleCombineCircuit scaleCombinePubCircuit)
 open Kimchi.Circuit.EndoMul (emCircuit)
 open Kimchi.Circuit.EndoScalar (esCircuit)
 open Kimchi.Circuit.Poseidon (posCircuit)
@@ -89,6 +95,14 @@ def main : IO Unit := do
   -- the verifier sub-circuit: chain rows 8..109 + the combine CompleteAdd at 110
   ok := ok && (← checkRecon "scale-combine → scaleCombineCircuit 51"
     "fixtures/scale_combine_step.json" (scaleCombineCircuit 51) 8 111)
+  -- Rung 1: the WHOLE dump, no slicing, against the real public inputs
+  ok := ok && (← do
+    let (_, w, pub) ← loadFull "fixtures/scale_combine_step.json"
+    let accepts := check (scaleCombinePubCircuit 51) w pub
+    let rejects := !check (scaleCombinePubCircuit 51) (tamperCell w 8 0) pub
+    IO.println s!"scale-combine (FULL) → scaleCombinePubCircuit 51: accepts real chain = \
+      {accepts}, rejects tampered = {rejects}"
+    pure (accepts && rejects))
   unless ok do
     IO.eprintln "reconstruction mismatch: a hand-written step-circuit disagrees with the dump"
     IO.Process.exit 1

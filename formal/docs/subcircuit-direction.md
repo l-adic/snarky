@@ -30,21 +30,23 @@ and the theorem covers it. Likewise the init doubling's `inf = 0` is *derived*
 public rows are dropped, `acc` and the init are hypotheses, and the scalar is pinned via
 `gateLadder` of the witness rather than the public register.
 
-## Rung 1: the fully-public statement (the real dump, whole, no slicing)
+## Rung 1 (done): the fully-public statement (the real dump, whole, no slicing)
 
-The dumped `scale_combine` circuit pins **everything** to public inputs (verified against the
-fixture's wires): rows 0–1 = the base `T` → the init doubling row 7; row 2 = the scalar → the
-**final register `n'`** (cell `(108,5)` — the Type1 shifted value); rows 3–4 = `acc` → the
-combine's inputs; rows 5–6 = **the output** → the combine's `x3,y3`. So the honest target is a
-relation purely over the public vector:
+`Circuits/ScaleCombinePub.lean`: the whole dumped circuit reconstructed — 7 public rows, the init
+`CompleteAdd` doubling, the `VarBaseMul` chain **embedded at row 8** (wires shifted,
+`Satisfies.of_embed`), the combine, and the trailing `inf`-assert row. `scaleCombinePub_sound`
+concludes purely over the public vector:
 
-> For any witness satisfying the *entire* reconstructed circuit (public rows + init doubling +
-> chain + combine): `(pub 5, pub 6) = (pub 3, pub 4) + [unshiftType1 (pub 2)] • (pub 0, pub 1)`.
+> `(pub 5, pub 6) = (pub 3, pub 4) + [s] • (pub 0, pub 1)` with
+> `(s : F) = unshiftType1 (5m) (pub 2)` — up to the combine's flagged vertical case.
 
-Everything needed exists: `AddCompleteStep`'s public-row extraction, `vbmCircuitGrounded`'s init
-doubling, `scalarMul_shifted`/`unshiftType1` for the register form, `exists_canonical_scalar` for
-the sister-field scalar, and `Circuit.append` for the assembly. This sets the statement shape every
-later rung should have: **witness fully existential, conclusion over `pub` alone.**
+Everything Rung 0 hypothesized is derived from the circuit: the init `[2]·T` (doubling row), the
+register init `n₀ = 0` (the dump's `inf`-into-register-column trick + the assert row), the scalar's
+field image (`gateRegister_cast` + `gateLadder_eq_register`), every `y ≠ 0` (odd group order).
+Remaining hypotheses: base/acc on the curve, the bit budget, and at full width the forbidden-band
+exclusion on the witness's ladder. Validated: `CheckReconstruction`'s FULL case runs `check` on the
+*unsliced* dump with its real `publicInputs` — accepts, and rejects a tamper. This is the statement
+shape every later rung should have: **witness fully existential, conclusion over `pub` alone.**
 
 ## Rung 2: the parametric `n`-term MSM
 
