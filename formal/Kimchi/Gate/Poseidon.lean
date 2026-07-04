@@ -1,0 +1,145 @@
+import Mathlib
+
+/-! # The kimchi `Poseidon` gate (5 rounds per row).
+
+Transcribed from proof-systems `.../polynomials/poseidon.rs` (15 constraints = 5 rounds × 3
+state elements). Each round maps the 3-element state through
+`state' = MDS · sbox(state) + roundConstants`, with the S-box `sbox(x) = x⁷` (Pasta
+`PERM_SBOX = 7`) and the 3×3 `MDS` matrix below (the Pasta `fp` kimchi constants). The five
+rounds chain `s0 → s1 → s2 → s3 → s4 → s5`, so one gate row applies five permutation rounds.
+
+Unlike the elliptic-curve gates there is no external Mathlib spec: the gate *defines* the
+permutation. Soundness (`sound`) is therefore that a satisfying witness's output state is the
+5-round permutation `perm` of its input state, and completeness (`complete`) is that the honest
+witness built by iterating `round` satisfies the constraints.
+
+The witness holds the six 3-element states `s0 .. s5` (`s0` = input, `s5` = output); the 15
+round constants are the gate's coefficient row, supplied as `rc : Fin 5 → F × F × F`. The
+mapping of these states/constants onto the dumped 15-column row is a *checker* concern and lives
+with the ingestion layer, not here. -/
+
+namespace Kimchi.Gate.Poseidon
+
+variable {F : Type*}
+
+/-! ## The 3×3 MDS matrix (Pasta `fp` kimchi constants). -/
+
+def m00 [CommRing F] : F :=
+  12035446894107573964500871153637039653510326950134440362813193268448863222019
+def m01 [CommRing F] : F :=
+  25461374787957152039031444204194007219326765802730624564074257060397341542093
+def m02 [CommRing F] : F :=
+  27667907157110496066452777015908813333407980290333709698851344970789663080149
+def m10 [CommRing F] : F :=
+  4491931056866994439025447213644536587424785196363427220456343191847333476930
+def m11 [CommRing F] : F :=
+  14743631939509747387607291926699970421064627808101543132147270746750887019919
+def m12 [CommRing F] : F :=
+  9448400033389617131295304336481030167723486090288313334230651810071857784477
+def m20 [CommRing F] : F :=
+  10525578725509990281643336361904863911009900817790387635342941550657754064843
+def m21 [CommRing F] : F :=
+  27437632000253211280915908546961303399777448677029255413769125486614773776695
+def m22 [CommRing F] : F :=
+  27566319851776897085443681456689352477426926500749993803132851225169606086988
+
+/-! ## The round function and the 5-round permutation. -/
+
+/-- The S-box: `x ↦ x⁷` (Pasta `PERM_SBOX = 7`). -/
+def sbox [CommRing F] (x : F) : F := x ^ 7
+
+/-- One full round: `state' = MDS · sbox(state) + roundConstants`. -/
+def round [CommRing F] (s r : F × F × F) : F × F × F :=
+  (r.1 + m00 * sbox s.1 + m01 * sbox s.2.1 + m02 * sbox s.2.2,
+   r.2.1 + m10 * sbox s.1 + m11 * sbox s.2.1 + m12 * sbox s.2.2,
+   r.2.2 + m20 * sbox s.1 + m21 * sbox s.2.1 + m22 * sbox s.2.2)
+
+/-- The gate's 5-round permutation of the initial state. -/
+def perm [CommRing F] (s0 : F × F × F) (rc : Fin 5 → F × F × F) : F × F × F :=
+  round (round (round (round (round s0 (rc 0)) (rc 1)) (rc 2)) (rc 3)) (rc 4)
+
+/-! ## Witness and constraint model. -/
+
+/-- One `Poseidon` row: the six chained 3-element states, `s0` (input) through `s5` (output). -/
+structure Witness (F : Type*) where
+  s0 : F × F × F
+  s1 : F × F × F
+  s2 : F × F × F
+  s3 : F × F × F
+  s4 : F × F × F
+  s5 : F × F × F
+
+/-- The 15 constraint expressions: for each of the five rounds, the three components of
+    `sᵢ₊₁ − round(sᵢ, rcᵢ)`. -/
+def constraints [CommRing F] (rc : Fin 5 → F × F × F) (w : Witness F) : List F :=
+  [ w.s1.1 - (round w.s0 (rc 0)).1, w.s1.2.1 - (round w.s0 (rc 0)).2.1,
+    w.s1.2.2 - (round w.s0 (rc 0)).2.2,
+    w.s2.1 - (round w.s1 (rc 1)).1, w.s2.2.1 - (round w.s1 (rc 1)).2.1,
+    w.s2.2.2 - (round w.s1 (rc 1)).2.2,
+    w.s3.1 - (round w.s2 (rc 2)).1, w.s3.2.1 - (round w.s2 (rc 2)).2.1,
+    w.s3.2.2 - (round w.s2 (rc 2)).2.2,
+    w.s4.1 - (round w.s3 (rc 3)).1, w.s4.2.1 - (round w.s3 (rc 3)).2.1,
+    w.s4.2.2 - (round w.s3 (rc 3)).2.2,
+    w.s5.1 - (round w.s4 (rc 4)).1, w.s5.2.1 - (round w.s4 (rc 4)).2.1,
+    w.s5.2.2 - (round w.s4 (rc 4)).2.2 ]
+
+/-- RELATIONAL spec: all 15 constraint expressions vanish. -/
+def Holds [CommRing F] (rc : Fin 5 → F × F × F) (w : Witness F) : Prop :=
+  ∀ e ∈ constraints rc w, e = 0
+
+/-- Executable checker: every constraint expression is zero. -/
+def ok [CommRing F] [DecidableEq F] (rc : Fin 5 → F × F × F) (w : Witness F) : Bool :=
+  (constraints rc w).all (· == 0)
+
+/-- Reflection: the `Bool` checker agrees with the relational spec. -/
+theorem ok_iff [CommRing F] [DecidableEq F] (rc : Fin 5 → F × F × F) (w : Witness F) :
+    ok rc w = true ↔ Holds rc w := by
+  simp only [ok, Holds, List.all_eq_true, beq_iff_eq]
+
+/-! ## Soundness: a satisfying row computes the permutation. -/
+
+/-- Each round's three componentwise constraints assemble into `sᵢ₊₁ = round(sᵢ, rcᵢ)`. -/
+private theorem step_eq [CommRing F] {a b : F × F × F}
+    (h1 : a.1 - b.1 = 0) (h2 : a.2.1 - b.2.1 = 0) (h3 : a.2.2 - b.2.2 = 0) : a = b :=
+  Prod.ext (sub_eq_zero.mp h1) (Prod.ext (sub_eq_zero.mp h2) (sub_eq_zero.mp h3))
+
+/-- **Soundness of the Poseidon gate.** A satisfying witness's output state `s5` is the 5-round
+    permutation of its input state `s0`. -/
+theorem sound [CommRing F] (rc : Fin 5 → F × F × F) (w : Witness F) (h : Holds rc w) :
+    w.s5 = perm w.s0 rc := by
+  simp only [Holds, constraints, List.forall_mem_cons] at h
+  obtain ⟨h1a, h1b, h1c, h2a, h2b, h2c, h3a, h3b, h3c,
+    h4a, h4b, h4c, h5a, h5b, h5c, -⟩ := h
+  have hs1 : w.s1 = round w.s0 (rc 0) := step_eq h1a h1b h1c
+  have hs2 : w.s2 = round w.s1 (rc 1) := step_eq h2a h2b h2c
+  have hs3 : w.s3 = round w.s2 (rc 2) := step_eq h3a h3b h3c
+  have hs4 : w.s4 = round w.s3 (rc 3) := step_eq h4a h4b h4c
+  have hs5 : w.s5 = round w.s4 (rc 4) := step_eq h5a h5b h5c
+  rw [perm, ← hs1, ← hs2, ← hs3, ← hs4, ← hs5]
+
+/-! ## Completeness: the honest witness satisfies the gate. -/
+
+/-- Build the canonical satisfying row by iterating `round` from the input state. -/
+def build [CommRing F] (s0 : F × F × F) (rc : Fin 5 → F × F × F) : Witness F :=
+  let s1 := round s0 (rc 0)
+  let s2 := round s1 (rc 1)
+  let s3 := round s2 (rc 2)
+  let s4 := round s3 (rc 3)
+  { s0, s1, s2, s3, s4, s5 := round s4 (rc 4) }
+
+/-- **Completeness of the Poseidon gate.** The honest witness (`build`) satisfies all 15
+    constraints — unconditionally (the permutation is total). -/
+theorem complete [CommRing F] (s0 : F × F × F) (rc : Fin 5 → F × F × F) :
+    Holds rc (build s0 rc) := by
+  intro e he
+  fin_cases he <;> simp [build]
+
+/-! ## Runnable example. -/
+
+/-- A concrete satisfying row over a small field: `build` always satisfies `ok`. -/
+def egPoseidon : Witness (ZMod 101) :=
+  build (1, 2, 3) (fun _ => (1, 1, 1))
+
+#eval ok (fun _ => (1, 1, 1)) egPoseidon   -- expect true
+
+end Kimchi.Gate.Poseidon
