@@ -123,7 +123,9 @@ def roots : List Name :=
     -- MSM on the verifier's recombined commitment; circuit_ipa_soundness composes through
     -- VerifierAccepts into ipa_soundness — circuit satisfaction becomes knowledge soundness.
     `Kimchi.Circuit.IpaBridge.msm_recombine,
-    `Kimchi.Circuit.IpaBridge.circuit_ipa_soundness ]
+    `Kimchi.Circuit.IpaBridge.circuit_ipa_soundness,
+    -- The fully circuit-grounded capstone: the Schnorr sides derived from circuits too.
+    `Kimchi.Circuit.IpaBridge.circuit_ipa_soundness' ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations

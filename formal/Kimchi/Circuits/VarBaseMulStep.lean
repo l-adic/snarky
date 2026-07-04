@@ -499,7 +499,8 @@ theorem vbmCircuitGrounded_scaleFast1
   have hrow : 2 * m < (vbmCircuitGrounded (F := VestaBaseField) m).gates.size := by
     rw [vbmGrounded_size]; omega
   obtain ⟨hdblcons, hccopy⟩ := gateAt_extract (vbmCircuitGrounded (F := VestaBaseField) m)
-      w pub hsat (2 * m) hrow (caDoubleGate (F := VestaBaseField) m) (gateAt_grounded_ca (F := VestaBaseField) m)
+      w pub hsat (2 * m) hrow (caDoubleGate (F := VestaBaseField) m)
+      (gateAt_grounded_ca (F := VestaBaseField) m)
   -- name the wiring equalities in `AddComplete.ofRow` terms (defeq to the cells)
   have hbaseX : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).x1 = (gwit w 0).xT := by
     simpa [caDoubleGate] using hccopy 0 (by omega)

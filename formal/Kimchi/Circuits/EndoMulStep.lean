@@ -339,7 +339,8 @@ theorem endoCombine_sound
   have hrow : m + 1 < (emCombCircuit (F := PallasBaseField) m).gates.size := by
     rw [emComb_size]; omega
   obtain ⟨hCcons, hccopy⟩ := gateAt_extract (emCombCircuit (F := PallasBaseField) m)
-      w pub hsat (m + 1) hrow (caCombEndo (F := PallasBaseField) m) (gateAt_emComb_ca (F := PallasBaseField) m)
+      w pub hsat (m + 1) hrow (caCombEndo (F := PallasBaseField) m)
+      (gateAt_emComb_ca (F := PallasBaseField) m)
   have ex2 : (Kimchi.Gate.AddComplete.ofRow (w.row (m + 1))).x2 = accX (gwit w) m := by
     rw [accX_cell]; exact hccopy 2 (by omega)
   have ey2 : (Kimchi.Gate.AddComplete.ofRow (w.row (m + 1))).y2 = accY (gwit w) m := by

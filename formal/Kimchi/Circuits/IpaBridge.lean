@@ -156,4 +156,138 @@ theorem circuit_ipa_soundness (μ : ℕ) (w : Kimchi.Circuit.Witness VestaBaseFi
     exact hSchnorr hOut
   exact ipa_soundness σ proof P x v c u hFS hacc
 
+/-! ## The fully circuit-grounded capstone
+
+`circuit_ipa_soundness` takes the Schnorr equation in point form. Here each of its sides is
+*derived from a circuit* too:
+
+* the LHS `c•Q + δ` is a **1-block MSM** — accumulator cells carrying `δ`, block base tied to the
+  recombination circuit's output cells (`Q`), block scalar casting to `c`;
+* the RHS is `[z1]·sg` (a grounded `VarBaseMul` chain on base `sg`) feeding a **2-block MSM**
+  (`(z1·b₀)•U` and `z2•h`);
+* the circuit's asserted equality is **cell-value equality** between the two output pairs — the
+  form a real dump's copy/`Generic` assert produces.
+
+The remaining non-circuit hypotheses are exactly the honest residue: the on-curve facts, the
+ladder-scalar casts pinning each block to its protocol scalar, the base ties pinning cells to the
+SRS points, and the commitment layer's `FiatShamirTree`. -/
+
+/-- **The capstone, fully circuit-grounded.** Four satisfying witnesses — the recombination MSM
+    (`Q`), the LHS combine (`c•Q + δ`), the `[z1]·sg` chain, and the RHS combine
+    (`z1•sg + (z1·b₀)•U + z2•h`) — whose asserted output equality (cell values) closes the Schnorr
+    check: with the `sg`-check and the Fiat–Shamir rewinding hypothesis, the prover knows an
+    opening. -/
+theorem circuit_ipa_soundness' (μ : ℕ) (σ : SRS VPoint) (hk : 0 < σ.k)
+    (proof : OpeningProof VScalar VPoint σ.k)
+    (P : VPoint) (x v c : VScalar) (u : Fin σ.k → VScalar)
+    -- (A) the recombination MSM: witness `wQ` computes `Q = recombine σ P v u proof.lr`
+    (wQ : Kimchi.Circuit.Witness VestaBaseField) (pubQ : Array VestaBaseField)
+    (TQ : ℕ → VPoint)
+    (hTQ : ∀ i (hns : Vesta.curve.toAffine.Nonsingular
+        (gwit (wQ.shift (chainOff (μ + 1) i)) 0).xT (gwit (wQ.shift (chainOff (μ + 1) i)) 0).yT),
+      TQ i = Point.some _ _ hns)
+    (hbits : 5 * (μ + 1) ≤ pastaFieldBits)
+    (hAccNsQ : Vesta.curve.toAffine.Nonsingular
+      (wQ.cell (cbRow (μ + 1) 0, 0)) (wQ.cell (cbRow (μ + 1) 0, 1)))
+    (hsatQ : Satisfies (msmCircuit (μ + 1) (2 * σ.k) (F := VestaBaseField)) wQ pubQ)
+    (hTnsQ : ∀ i, i < 2 * σ.k → Vesta.curve.toAffine.Nonsingular
+        (gwit (wQ.shift (chainOff (μ + 1) i)) 0).xT (gwit (wQ.shift (chainOff (μ + 1) i)) 0).yT)
+    (hnfQ : ∀ i, i < 2 * σ.k → 5 * (μ + 1) = pastaFieldBits →
+        msmScalar (μ + 1) wQ i ∉ forbiddenValues Vesta.curve.toAffine.order)
+    (hinfsQ : ∀ i, i < 2 * σ.k →
+        (Kimchi.Gate.AddComplete.ofRow (wQ.row (cbRow (μ + 1) i))).inf = 0)
+    (hAccPtQ : Point.some _ _ hAccNsQ = P + v • σ.U)
+    (hlr1 : ∀ j : Fin σ.k, TQ (2 * j.val) = (proof.lr j).1)
+    (hlr2 : ∀ j : Fin σ.k, TQ (2 * j.val + 1) = (proof.lr j).2)
+    (hu1 : ∀ j : Fin σ.k, ((msmScalar (μ + 1) wQ (2 * j.val) : ℤ) : VScalar) = (u j)⁻¹)
+    (hu2 : ∀ j : Fin σ.k, ((msmScalar (μ + 1) wQ (2 * j.val + 1) : ℤ) : VScalar) = u j)
+    -- (B) the LHS combine: witness `wL`, one block; acc = δ, base = Q, scalar ↦ c
+    (wL : Kimchi.Circuit.Witness VestaBaseField) (pubL : Array VestaBaseField)
+    (TL : ℕ → VPoint)
+    (hTL : ∀ i (hns : Vesta.curve.toAffine.Nonsingular
+        (gwit (wL.shift (chainOff (μ + 1) i)) 0).xT (gwit (wL.shift (chainOff (μ + 1) i)) 0).yT),
+      TL i = Point.some _ _ hns)
+    (hAccNsL : Vesta.curve.toAffine.Nonsingular
+      (wL.cell (cbRow (μ + 1) 0, 0)) (wL.cell (cbRow (μ + 1) 0, 1)))
+    (hsatL : Satisfies (msmCircuit (μ + 1) 1 (F := VestaBaseField)) wL pubL)
+    (hTnsL : ∀ i, i < 1 → Vesta.curve.toAffine.Nonsingular
+        (gwit (wL.shift (chainOff (μ + 1) i)) 0).xT (gwit (wL.shift (chainOff (μ + 1) i)) 0).yT)
+    (hnfL : ∀ i, i < 1 → 5 * (μ + 1) = pastaFieldBits →
+        msmScalar (μ + 1) wL i ∉ forbiddenValues Vesta.curve.toAffine.order)
+    (hinfsL : ∀ i, i < 1 →
+        (Kimchi.Gate.AddComplete.ofRow (wL.row (cbRow (μ + 1) i))).inf = 0)
+    (hAccPtL : Point.some _ _ hAccNsL = proof.delta)
+    (hQtie : ∀ hOut : Vesta.curve.toAffine.Nonsingular
+        (wQ.cell (cbRow (μ + 1) (2 * σ.k - 1), 4)) (wQ.cell (cbRow (μ + 1) (2 * σ.k - 1), 5)),
+      TL 0 = Point.some _ _ hOut)
+    (hcL : ((msmScalar (μ + 1) wL 0 : ℤ) : VScalar) = c)
+    -- (C) the `[z1]·sg` chain: witness `wS` (grounded VarBaseMul), base tied to `sg`
+    (wS : Kimchi.Circuit.Witness VestaBaseField) (pubS : Array VestaBaseField)
+    (hsatS : Satisfies (vbmCircuitGrounded (μ + 1)) wS pubS)
+    (TS : VPoint) (hTneS : TS ≠ 0)
+    (hTnsS : Vesta.curve.toAffine.Nonsingular (gwit wS 0).xT (gwit wS 0).yT)
+    (hTeqS : TS = Point.some _ _ hTnsS)
+    (hsgT : TS = proof.sg)
+    (hnfS : 5 * (μ + 1) = pastaFieldBits →
+      gateLadder (gwit wS) (5 * (μ + 1)) ∉ forbiddenValues Vesta.curve.toAffine.order)
+    (hz1 : ((gateLadder (gwit wS) (5 * (μ + 1)) : ℤ) : VScalar) = proof.z1)
+    -- (D) the RHS combine: witness `wR`, two blocks; acc = `[z1]·sg`, scalars ↦ z1·b₀, z2
+    (wR : Kimchi.Circuit.Witness VestaBaseField) (pubR : Array VestaBaseField)
+    (TR : ℕ → VPoint)
+    (hTR : ∀ i (hns : Vesta.curve.toAffine.Nonsingular
+        (gwit (wR.shift (chainOff (μ + 1) i)) 0).xT (gwit (wR.shift (chainOff (μ + 1) i)) 0).yT),
+      TR i = Point.some _ _ hns)
+    (hAccNsR : Vesta.curve.toAffine.Nonsingular
+      (wR.cell (cbRow (μ + 1) 0, 0)) (wR.cell (cbRow (μ + 1) 0, 1)))
+    (hsatR : Satisfies (msmCircuit (μ + 1) 2 (F := VestaBaseField)) wR pubR)
+    (hTnsR : ∀ i, i < 2 → Vesta.curve.toAffine.Nonsingular
+        (gwit (wR.shift (chainOff (μ + 1) i)) 0).xT (gwit (wR.shift (chainOff (μ + 1) i)) 0).yT)
+    (hnfR : ∀ i, i < 2 → 5 * (μ + 1) = pastaFieldBits →
+        msmScalar (μ + 1) wR i ∉ forbiddenValues Vesta.curve.toAffine.order)
+    (hinfsR : ∀ i, i < 2 →
+        (Kimchi.Gate.AddComplete.ofRow (wR.row (cbRow (μ + 1) i))).inf = 0)
+    (hSacc : ∀ hfin : Vesta.curve.toAffine.Nonsingular
+        (accX (gwit wS) (μ + 1)) (accY (gwit wS) (μ + 1)),
+      Point.some _ _ hAccNsR = Point.some _ _ hfin)
+    (hU : TR 0 = σ.U) (hh : TR 1 = σ.h)
+    (hz1b : ((msmScalar (μ + 1) wR 0 : ℤ) : VScalar) = proof.z1 * bPoly u x)
+    (hz2 : ((msmScalar (μ + 1) wR 1 : ℤ) : VScalar) = proof.z2)
+    -- (E) the circuit's asserted equality of the two sides (output cell values)
+    (heq4 : wL.cell (cbRow (μ + 1) 0, 4) = wR.cell (cbRow (μ + 1) 1, 4))
+    (heq5 : wL.cell (cbRow (μ + 1) 0, 5) = wR.cell (cbRow (μ + 1) 1, 5))
+    -- the sg-check and the Fiat–Shamir hypothesis
+    (hsg : proof.sg = commitGen σ.g (bPolyCoefficients u))
+    (hFS : FiatShamirTree σ P x v (VerifierAccepts σ proof P x v c u)) :
+    ∃ (a : Fin (2 ^ σ.k) → VScalar) (r : VScalar), openingRelation σ P x v a r := by
+  -- (A) the recombination
+  obtain ⟨hQ, hQpt⟩ := msm_recombine μ wQ pubQ σ hk P v u proof.lr TQ hTQ hbits hAccNsQ hsatQ
+    hTnsQ hnfQ hinfsQ hAccPtQ hlr1 hlr2 hu1 hu2
+  -- (B) the LHS: `δ + [c]·Q`
+  obtain ⟨hL, hLpt⟩ := msm_sound μ wL pubL TL hTL hbits hAccNsL 0 hsatL
+    (fun i hi => hTnsL i (by omega)) (fun i hi => hnfL i (by omega))
+    (fun i hi => hinfsL i (by omega))
+  rw [Finset.sum_range_one, hAccPtL, hQtie hQ] at hLpt
+  rw [← Int.cast_smul_eq_zsmul VScalar, hcL, hQpt] at hLpt
+  -- (C) `[z1]·sg`
+  obtain ⟨hfinS, hSpt, -⟩ := vbmCircuitGrounded_scaleFast1 (μ + 1) wS pubS hsatS TS
+    (gateLadder (gwit wS) (5 * (μ + 1))) hTneS hTnsS hTeqS hbits rfl hnfS
+  rw [← Int.cast_smul_eq_zsmul VScalar, hz1, hsgT] at hSpt
+  -- (D) the RHS: `z1•sg + (z1·b₀)•U + z2•h`
+  obtain ⟨hR, hRpt⟩ := msm_sound μ wR pubR TR hTR hbits hAccNsR 1 hsatR
+    (fun i hi => hTnsR i (by omega)) (fun i hi => hnfR i (by omega))
+    (fun i hi => hinfsR i (by omega))
+  rw [Finset.sum_range_succ, Finset.sum_range_one, hSacc hfinS, hSpt] at hRpt
+  rw [← Int.cast_smul_eq_zsmul VScalar (msmScalar (μ + 1) wR 0),
+    ← Int.cast_smul_eq_zsmul VScalar (msmScalar (μ + 1) wR 1),
+    hz1b, hz2, hU, hh, ← add_assoc] at hRpt
+  -- (E) the asserted equality closes the Schnorr check
+  have hacc : VerifierAccepts σ proof P x v c u := by
+    refine ⟨?_, hsg⟩
+    calc c • recombine σ P v u proof.lr + proof.delta
+        = proof.delta + c • recombine σ P v u proof.lr := by abel
+      _ = Point.some _ _ hL := hLpt.symm
+      _ = Point.some _ _ hR := Point.some_congr hL hR heq4 heq5
+      _ = proof.z1 • proof.sg + (proof.z1 * bPoly u x) • σ.U + proof.z2 • σ.h := hRpt
+  exact ipa_soundness σ proof P x v c u hFS hacc
+
 end Kimchi.Circuit.IpaBridge

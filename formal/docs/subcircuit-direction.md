@@ -119,9 +119,12 @@ its inverse.
   soundness**, over the four Pasta postulates (plus `FiatShamirTree`, the commitment layer's
   declared trust boundary).
 
-*Remaining fidelity work*: instantiate the outer Schnorr sides as their own reconstructed blocks
-(mechanical, the same shapes), and a full `ipaFinalCheckCircuit` dump once the Pickles test
-context is pluggable into the dumper.
+The outer Schnorr sides are now **also circuit-derived** (`circuit_ipa_soundness'`): the LHS
+`c•Q + δ` is a 1-block MSM (acc = `δ`, base tied to the recombination's output cells), the RHS is
+a grounded `[z1]·sg` chain feeding a 2-block MSM (`(z1·b₀)•U`, `z2•h`), and the asserted equality
+is cell-value equality between the two output pairs — the form a real dump's assert produces.
+*Remaining fidelity work*: a full `ipaFinalCheckCircuit` dump once the Pickles test context is
+pluggable into the dumper, and Rung 4's `hi` range block.
 
 ## Cross-cutting upgrades
 
