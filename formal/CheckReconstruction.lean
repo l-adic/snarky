@@ -5,6 +5,7 @@ import Kimchi.Circuits.EndoScalarStep
 import Kimchi.Circuits.PoseidonStep
 import Kimchi.Circuits.ScaleCombinePub
 import Kimchi.Circuits.Msm
+import Kimchi.Circuits.FiatShamir
 
 /-! # Validate the reconstructed step-circuits against real dumps
 
@@ -103,6 +104,16 @@ def main : IO Unit := do
   -- Rung 2: the 2-term MSM — two [init][chain][comb] blocks, rows 10..217
   ok := ok && (← checkRecon "msm2       → msmCircuit 51 2" "fixtures/msm2_step.json"
     (msmCircuit 51 2) 10 218)
+  -- Rung 4: Fiat-Shamir — the WHOLE dump (transcript → split → endo-decode), real pub
+  ok := ok && (← do
+    let (c, w, pub) ← loadFull "fixtures/fiat_shamir_step.json"
+    let coeffs : Nat → Array Fp := fun i => (c.gateAt (4 + i)).coeffs
+    let recon := Kimchi.Circuit.FiatShamir.fsCircuit 11 coeffs
+    let accepts := check recon w pub
+    let rejects := !check recon (tamperCell w 16 3) pub
+    IO.println s!"fiat-shamir (FULL) → fsCircuit 11: accepts real chain = {accepts}, \
+      rejects tampered = {rejects}"
+    pure (accepts && rejects))
   -- Rung 1: the WHOLE dump, no slicing, against the real public inputs
   ok := ok && (← do
     let (_, w, pub) ← loadFull "fixtures/scale_combine_step.json"

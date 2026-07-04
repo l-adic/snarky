@@ -79,12 +79,24 @@ Two results:
   equality is the honest interface hypothesis; discharging it from one squeezed challenge's
   decomposition rows is the Fiat–Shamir rung's job.
 
-## Rung 4: Fiat–Shamir inside the proof
+## Rung 4 (done): Fiat–Shamir inside the proof
 
-`PoseidonStep` gives the transcript gate. Compose it: challenges squeezed from an in-circuit
-Poseidon sponge feed the EndoScalar/EndoMul blocks of Rung 3. The statement upgrades from "for any
-challenge `c`" to "for the challenge *the transcript derives*" — the first piece of in-circuit
-Fiat–Shamir soundness, and the last gate family not yet composed by dataflow.
+`Circuits/FiatShamir.lean`: the whole transcript-to-challenge pipeline reconstructed from a real
+dump (`fixtures/fiat_shamir_step.json`) — a Poseidon sponge over the public inputs, the squeezed
+state split as `sq = lo + 2¹²⁸·hi` (a double-`Generic` truncation row), and the 128-bit challenge
+`lo` decoded by an `EndoMulScalar` block whose final register is copy-wired to `lo`.
+`fiatShamir_sound` concludes over the public vector: the sponge output (`chainPerm coeffs
+(pub 0, pub 1, pub 2)` — a *function of the inputs*) equals `nReconstruct (crumbs) + 2¹²⁸·hi`,
+and `pub 3 = toField (crumbs) vesta_lam` — the challenge is **derived**, not hypothesized. This is
+the discharge path for Rung 3b's crumb-interface hypothesis.
+
+Two by-products: `Satisfies.of_embed'` (the generalized embedding — a block's self-looped cells
+may carry the host's own pin wires), and a **checker strengthening**: reconstructing the dump
+exposed that the Generic checker ignored the second gate of kimchi's double generic row
+(`eval2` now conjoined into `rowHolds`; all fixtures re-validated under the stronger checker).
+
+*Fidelity gap*: `hi`'s range is unconstrained (aliasing mod `p`); the real protocol's challenge
+canonicity needs a range check on `hi` — a second decomposition block, mechanical to add.
 
 ## Rung 5: `ipaFinalCheckCircuit`, assembled
 

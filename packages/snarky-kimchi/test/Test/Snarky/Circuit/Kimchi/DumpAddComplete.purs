@@ -19,6 +19,7 @@ module Test.Snarky.Circuit.Kimchi.DumpAddComplete
   , dumpScaleCombine
   , dumpEndoCombine
   , dumpMsm2
+  , dumpFiatShamir
   , dumpAll
   ) where
 
@@ -42,7 +43,8 @@ import Snarky.Backend.Compile (Solver, compile, makeSolver, runSolver)
 import Snarky.Backend.Kimchi (makeGateData, makeWitness)
 import Snarky.Backend.Kimchi.Class (circuitGateGetWires)
 import Snarky.Backend.Kimchi.Types (gateWiresGetWire, wireGetCol, wireGetRow)
-import Snarky.Circuit.DSL (F(..), FVar, SizedF, Snarky, const_)
+import JS.BigInt as BigInt
+import Snarky.Circuit.DSL (F(..), FVar, SizedF, Snarky, add_, assertEqual_, const_, exists, readCVar, scale_)
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
 import Snarky.Circuit.Kimchi.EndoScalar (toField)
@@ -50,7 +52,7 @@ import Snarky.Circuit.Kimchi.Poseidon as PoseidonCircuit
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), GateKind(..), toKimchiRows)
-import Snarky.Curves.Class (class PrimeField, endoScalar, fromInt, generator, toAffine)
+import Snarky.Curves.Class (class PrimeField, endoScalar, fromBigInt, fromInt, generator, toAffine, toBigInt)
 import Snarky.Curves.Class (EndoScalar(..)) as Cv
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -366,6 +368,49 @@ dumpMsm2 = do
     solver = makeSolver (Proxy @(KimchiConstraint Fp)) circuit
   dumpToFile "formal/fixtures/msm2_step.json" builtState solver input
 
+--------------------------------------------------------------------------------
+-- fiat_shamir (Rung 4): Poseidon transcript → challenge split → EndoScalar decode
+
+-- | Squeeze a Poseidon transcript, split the squeezed element as `sq = lo + 2^128·hi`
+-- | (the challenge truncation), and endo-decode the 128-bit challenge `lo` via the
+-- | EndoMulScalar chain — matching Lean `Kimchi.Circuit.FiatShamir.fiatShamir_sound`.
+dumpFiatShamir :: Effect Unit
+dumpFiatShamir = do
+  let
+    p128 = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 128)
+
+    circuit
+      :: forall r
+       . Vector 3 (FVar Fp)
+      -> Snarky Fp (KimchiConstraint Fp) r (FVar Fp)
+    circuit v = do
+      out <- PoseidonCircuit.poseidon v
+      let
+        sq = case Array.index (Vector.toUnfoldable out) 0 of
+          Just x -> x
+          Nothing -> unsafeCrashWith "dumpFiatShamir: empty state"
+      lo <- exists do
+        s <- readCVar sq
+        pure (F (fromBigInt (toBigInt s `mod` p128)))
+      hi <- exists do
+        s <- readCVar sq
+        pure (F (fromBigInt (toBigInt s `div` p128)))
+      assertEqual_ sq (add_ lo (scale_ (fromBigInt p128) hi))
+      let Cv.EndoScalar es = endoScalar @Vesta.BaseField @Fp
+      toField @8 (unsafeCoerce lo :: SizedF 128 (FVar Fp)) (const_ es)
+
+    input :: Vector 3 (F Fp)
+    input = F (fromInt 5) :< F (fromInt 6) :< F (fromInt 7) :< nil
+  builtState <- compile @Fp noAdvice
+    (Proxy @(Vector 3 (F Fp)))
+    (Proxy @(F Fp))
+    (Proxy @(KimchiConstraint Fp))
+    circuit
+  let
+    solver :: Solver Fp (KimchiConstraint Fp) (Vector 3 (F Fp)) (F Fp)
+    solver = makeSolver (Proxy @(KimchiConstraint Fp)) circuit
+  dumpToFile "formal/fixtures/fiat_shamir_step.json" builtState solver input
+
 -- | Regenerate every committed fixture. Run from the repo root so the relative
 -- | `formal/fixtures/…` paths resolve.
 dumpAll :: Effect Unit
@@ -378,3 +423,4 @@ dumpAll = do
   dumpScaleCombine
   dumpEndoCombine
   dumpMsm2
+  dumpFiatShamir

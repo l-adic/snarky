@@ -275,4 +275,44 @@ theorem Satisfies.of_embed [CommRing F] {host block : Circuit F} {w : Witness F}
     rw [Witness.cell_shift, Witness.cell_shift]
     exact hh
 
+/-- `rowHolds` only reads a gate's kind and coefficients — never its wires. -/
+theorem rowHolds_congr [CommRing F] {g g' : Gate F} (hk : g.kind = g'.kind)
+    (hc : g.coeffs = g'.coeffs) (curr next : Row F) (pubr : F) :
+    rowHolds g curr next pubr ↔ rowHolds g' curr next pubr := by
+  unfold rowHolds
+  rw [hk, hc]
+
+/-- **Generalized embedding.** Like `Satisfies.of_embed`, but the host's rows need only match the
+    block's *kind and coefficients*; per wire, either the block's wire is a self-loop (its copy
+    obligation is vacuous — the host may pin that cell however it likes, e.g. tying a block input
+    to a setup row) or the host's wire is the shifted block wire. This is how a dumped circuit
+    embeds a proven block whose boundary cells participate in the dump's own permutation cycles. -/
+theorem Satisfies.of_embed' [CommRing F] {host block : Circuit F} {w : Witness F} {pub : Array F}
+    (k : ℕ) (hpub : host.publicInputSize ≤ k)
+    (hsz : k + block.gates.size ≤ host.gates.size)
+    (hkind : ∀ r, r < block.gates.size → (host.gateAt (k + r)).kind = (block.gateAt r).kind)
+    (hcoeffs : ∀ r, r < block.gates.size → (host.gateAt (k + r)).coeffs = (block.gateAt r).coeffs)
+    (hwires : ∀ r j, r < block.gates.size → j < 7 →
+      (block.gateAt r).wires.getD j (r, j) = (r, j)
+      ∨ (host.gateAt (k + r)).wires.getD j (k + r, j)
+          = ((fun p : Cell => (k + p.1, p.2)) ((block.gateAt r).wires.getD j (r, j))))
+    (h : Satisfies host w pub) : Satisfies block (w.shift k) #[] := by
+  obtain ⟨hg, hc⟩ := h
+  refine ⟨fun r hr => ?_, fun r hr j hj => ?_⟩
+  · have hh := hg (k + r) (by omega)
+    rw [rowHolds_congr (hkind r hr) (hcoeffs r hr)] at hh
+    have hpt : host.pubTerm pub (k + r) = 0 := by
+      rw [Circuit.pubTerm, if_neg (by omega)]
+    rw [hpt] at hh
+    have hpt' : block.pubTerm #[] r = (0 : F) := by
+      rw [Circuit.pubTerm]; split <;> simp
+    rw [hpt', Witness.row_shift, Witness.row_shift]
+    exact hh
+  · rcases hwires r j hr hj with hself | hmatch
+    · rw [hself]
+    · have hh := hc (k + r) (by omega) j hj
+      rw [hmatch] at hh
+      rw [Witness.cell_shift, Witness.cell_shift]
+      exact hh
+
 end Kimchi.Circuit

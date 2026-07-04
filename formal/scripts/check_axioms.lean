@@ -115,7 +115,10 @@ def roots : List Name :=
     `Kimchi.Circuit.EndoMul.endoCombine_sound,
     -- Rung 2: the parametric n-term MSM — scale-and-combine blocks folded through their
     -- CompleteAdds (structural induction over the recursively-built circuit).
-    `Kimchi.Circuit.VarBaseMul.blockStep, `Kimchi.Circuit.VarBaseMul.msm_sound ]
+    `Kimchi.Circuit.VarBaseMul.blockStep, `Kimchi.Circuit.VarBaseMul.msm_sound,
+    -- Rung 4: Fiat-Shamir — the transcript-derived challenge feeds the endo decode; the public
+    -- output is the effective scalar of a challenge the circuit computes from its own inputs.
+    `Kimchi.Circuit.FiatShamir.fiatShamir_sound ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations

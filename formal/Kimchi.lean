@@ -36,5 +36,6 @@ import Kimchi.Circuits.Combinations
 import Kimchi.Circuits.ScaleCombinePub
 import Kimchi.Circuits.EndoSibling
 import Kimchi.Circuits.Msm
+import Kimchi.Circuits.FiatShamir
 import Kimchi.Circuits.InitGrounding
 import Kimchi.Json
