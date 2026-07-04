@@ -117,6 +117,12 @@ lemma order_prime (W : Affine F) [Fact (Nat.Prime W.order)] : Nat.Prime W.order 
 lemma short (W : Affine F) [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] :
     W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 := Fact.out
 
+/-- All four short-Weierstrass coefficients are zero: `a₁ = a₂ = a₃ = a₄ = 0`.
+    Needed by `CompleteAdd.sound`. Every CompElliptic `SWCurve` with `A = 0` satisfies this by
+    `rfl`; the Pasta curves (`A = 0`, `B = 5`) have `a₄ = 0` definitionally. -/
+lemma short4 (W : Affine F) [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)] :
+    W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0 := Fact.out
+
 end WeierstrassCurve.Affine
 
 namespace CompElliptic.CurveForms.ShortWeierstrass

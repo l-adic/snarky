@@ -331,26 +331,19 @@ theorem endoCombine_sound
                 (Kimchi.Gate.AddComplete.ofRow (w.row (m + 1))).x3
                 (Kimchi.Gate.AddComplete.ofRow (w.row (m + 1))).y3,
               Point.some _ _ h3 = Point.some _ _ hacc + s • T)) := by
-  have ha4 : Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0
-      ∧ Pallas.curve.toAffine.a₃ = 0 ∧ Pallas.curve.toAffine.a₄ = 0 := ⟨rfl, rfl, rfl, rfl⟩
+  have ha4 := short4 Pallas.curve.toAffine
   have hchain : Satisfies (emCircuit m) w pub :=
     Satisfies.of_append (c := emCircuit m) (gs := #[emOutRow, caCombEndo m]) hsat
-  obtain ⟨hg, hc⟩ := hsat
   obtain ⟨hfin, s, hpt, hsF⟩ := pallas_endoMul_circuit m hbits w pub hchain hdist T φT
     hTns hTeq hφTns hφTeq hP0ns hP0
-  -- the combine row's gate identity and its chain-output wires
-  have hCcons : Kimchi.Gate.AddComplete.Holds
-      (Kimchi.Gate.AddComplete.ofRow (w.row (m + 1))) := by
-    have := hg (m + 1) (by rw [emComb_size]; omega)
-    rwa [gateAt_emComb_ca m] at this
-  have hcc2 := hc (m + 1) (by rw [emComb_size]; omega) 2 (by omega)
-  have hcc3 := hc (m + 1) (by rw [emComb_size]; omega) 3 (by omega)
-  rw [gateAt_emComb_ca m] at hcc2 hcc3
-  simp only [caCombEndo] at hcc2 hcc3
+  have hrow : m + 1 < (emCombCircuit (F := PallasBaseField) m).gates.size := by
+    rw [emComb_size]; omega
+  obtain ⟨hCcons, hccopy⟩ := gateAt_extract (emCombCircuit (F := PallasBaseField) m)
+      w pub hsat (m + 1) hrow (caCombEndo (F := PallasBaseField) m) (gateAt_emComb_ca (F := PallasBaseField) m)
   have ex2 : (Kimchi.Gate.AddComplete.ofRow (w.row (m + 1))).x2 = accX (gwit w) m := by
-    rw [accX_cell]; exact hcc2
+    rw [accX_cell]; exact hccopy 2 (by omega)
   have ey2 : (Kimchi.Gate.AddComplete.ofRow (w.row (m + 1))).y2 = accY (gwit w) m := by
-    rw [accY_cell]; exact hcc3
+    rw [accY_cell]; exact hccopy 3 (by omega)
   have h2C : Pallas.curve.toAffine.Nonsingular
       (Kimchi.Gate.AddComplete.ofRow (w.row (m + 1))).x2
       (Kimchi.Gate.AddComplete.ofRow (w.row (m + 1))).y2 := by

@@ -237,8 +237,7 @@ theorem scaleCombinePub_sound
             ∧ ∃ hOut : Vesta.curve.toAffine.Nonsingular (pub.getD 5 0) (pub.getD 6 0),
               Point.some _ _ hOut = Point.some _ _ hAccPub + s • Point.some _ _ hTpub)) := by
   obtain ⟨k, rfl⟩ := Nat.exists_eq_succ_of_ne_zero (show m ≠ 0 by omega)
-  have ha4 : Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
-      ∧ Vesta.curve.toAffine.a₃ = 0 ∧ Vesta.curve.toAffine.a₄ = 0 := ⟨rfl, rfl, rfl, rfl⟩
+  have ha4 := short4 Vesta.curve.toAffine
   -- the chain block, projected out of the host
   have hemb : Satisfies (vbmCircuit (k + 1)) (w.shift 8) #[] :=
     Satisfies.of_embed 8 (by show (7 : ℕ) ≤ 8; decide)
@@ -389,25 +388,28 @@ theorem scaleCombinePub_sound
     scPub_gateAt_comb (k + 1)
   have hCcons : Kimchi.Gate.AddComplete.Holds
       (Kimchi.Gate.AddComplete.ofRow (w.row (8 + 2 * (k + 1)))) := by
-    have := hg (8 + 2 * (k + 1)) (by rw [scPub_size]; omega)
-    rwa [hgatC] at this
-  have cC : ∀ j, j < 7 → w.cell (8 + 2 * (k + 1), j)
-      = w.cell ((combPub (k + 1) (F := VestaBaseField)).wires.getD j (8 + 2 * (k + 1), j)) := by
-    intro j hj
-    have := hc (8 + 2 * (k + 1)) (by rw [scPub_size]; omega) j hj
-    rwa [hgatC] at this
+    have hh := hg (8 + 2 * (k + 1)) (by rw [scPub_size]; omega)
+    rwa [hgatC] at hh
+  have hcc2 : w.cell (8 + 2 * (k + 1), 2)
+      = w.cell ((combPub (k + 1) (F := VestaBaseField)).wires.getD 2 (8 + 2 * (k + 1), 2)) := by
+    have hh := hc (8 + 2 * (k + 1)) (by rw [scPub_size]; omega) 2 (by omega)
+    rwa [hgatC] at hh
+  have hcc3 : w.cell (8 + 2 * (k + 1), 3)
+      = w.cell ((combPub (k + 1) (F := VestaBaseField)).wires.getD 3 (8 + 2 * (k + 1), 3)) := by
+    have hh := hc (8 + 2 * (k + 1)) (by rw [scPub_size]; omega) 3 (by omega)
+    rwa [hgatC] at hh
   have ex2 : (Kimchi.Gate.AddComplete.ofRow (w.row (8 + 2 * (k + 1)))).x2
       = accX (gwit (w.shift 8)) (k + 1) := by
     show w.cell (8 + 2 * (k + 1), 2) = ((w.shift 8).row (2 * k + 1)).getD 0 0
     rw [Witness.row_shift]
-    calc w.cell (8 + 2 * (k + 1), 2) = w.cell (7 + 2 * (k + 1), 0) := cC 2 (by omega)
+    calc w.cell (8 + 2 * (k + 1), 2) = w.cell (7 + 2 * (k + 1), 0) := hcc2
       _ = w.cell (8 + (2 * k + 1), 0) := by
           rw [show 7 + 2 * (k + 1) = 8 + (2 * k + 1) by omega]
   have ey2 : (Kimchi.Gate.AddComplete.ofRow (w.row (8 + 2 * (k + 1)))).y2
       = accY (gwit (w.shift 8)) (k + 1) := by
     show w.cell (8 + 2 * (k + 1), 3) = ((w.shift 8).row (2 * k + 1)).getD 1 0
     rw [Witness.row_shift]
-    calc w.cell (8 + 2 * (k + 1), 3) = w.cell (7 + 2 * (k + 1), 1) := cC 3 (by omega)
+    calc w.cell (8 + 2 * (k + 1), 3) = w.cell (7 + 2 * (k + 1), 1) := hcc3
       _ = w.cell (8 + (2 * k + 1), 1) := by
           rw [show 7 + 2 * (k + 1) = 8 + (2 * k + 1) by omega]
   have haccC : Vesta.curve.toAffine.Nonsingular

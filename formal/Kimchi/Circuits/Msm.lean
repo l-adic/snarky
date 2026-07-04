@@ -152,8 +152,7 @@ theorem blockStep (μ n : ℕ) (w : Kimchi.Circuit.Witness VestaBaseField)
     ∃ hOut : Vesta.curve.toAffine.Nonsingular
         (w.cell (cbRow (μ + 1) n, 4)) (w.cell (cbRow (μ + 1) n, 5)),
       Point.some _ _ hOut = Q + msmScalar (μ + 1) w n • T := by
-  have ha4 : Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
-      ∧ Vesta.curve.toAffine.a₃ = 0 ∧ Vesta.curve.toAffine.a₄ = 0 := ⟨rfl, rfl, rfl, rfl⟩
+  have ha4 := short4 Vesta.curve.toAffine
   -- the chain, embedded at `chainOff`
   have hemb : Satisfies (vbmCircuit (μ + 1)) (w.shift (chainOff (μ + 1) n)) #[] := by
     refine Satisfies.of_embed (host := msmCircuit (μ + 1) (n + 1)) (block := vbmCircuit (μ + 1))
@@ -252,10 +251,11 @@ theorem blockStep (μ n : ℕ) (w : Kimchi.Circuit.Witness VestaBaseField)
     show n * (2 * (μ + 1) + 2) + 2 * (μ + 1) + 1 < (n + 1) * (2 * (μ + 1) + 2)
     ring_nf
     omega
-  have hCcons : Kimchi.Gate.AddComplete.Holds
-      (Kimchi.Gate.AddComplete.ofRow (w.row (cbRow (μ + 1) n))) := by
-    have := hg (cbRow (μ + 1) n) hrowC
-    rwa [hgatC] at this
+  have hCcons : rowHolds (msmComb (μ + 1) n) (w.row (cbRow (μ + 1) n))
+      (w.row (cbRow (μ + 1) n + 1))
+      ((msmCircuit (μ + 1) (n + 1)).pubTerm pub (cbRow (μ + 1) n)) := by
+    have hh := hg (cbRow (μ + 1) n) hrowC
+    rwa [hgatC] at hh
   have hcc2 := hc (cbRow (μ + 1) n) hrowC 2 (by omega)
   have hcc3 := hc (cbRow (μ + 1) n) hrowC 3 (by omega)
   rw [hgatC, msmComb_get2] at hcc2

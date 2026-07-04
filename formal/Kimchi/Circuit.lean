@@ -250,6 +250,24 @@ theorem Gate.wires_getD_shift (g : Gate F) (k j r c : ℕ) :
     simp
   · rw [Gate.shiftWires, Array.getD, dif_neg (by simpa using hj), Array.getD, dif_neg hj]
 
+/-- **Helper for both embedding theorems.** The `pubTerm` of a non-public row is `0`, and the
+    witness shifted by `k` reads the same row at `k + r`. -/
+private theorem embed_pubTerm [CommRing F] (host block : Circuit F) (pub : Array F)
+    (k : ℕ) (hpub : host.publicInputSize ≤ k) (r : ℕ) :
+    host.pubTerm pub (k + r) = 0 ∧ block.pubTerm #[] r = (0 : F) := by
+  have hpt : host.pubTerm pub (k + r) = 0 := by
+    rw [Circuit.pubTerm, if_neg (by omega)]
+  have hpt' : block.pubTerm #[] r = (0 : F) := by
+    rw [Circuit.pubTerm]; split <;> simp
+  exact ⟨hpt, hpt'⟩
+
+/-- `rowHolds` only reads a gate's kind and coefficients — never its wires. -/
+theorem rowHolds_congr [CommRing F] {g g' : Gate F} (hk : g.kind = g'.kind)
+    (hc : g.coeffs = g'.coeffs) (curr next : Row F) (pubr : F) :
+    rowHolds g curr next pubr ↔ rowHolds g' curr next pubr := by
+  unfold rowHolds
+  rw [hk, hc]
+
 /-- **Projection onto an embedded block.** If rows `[k, k + block.size)` of the host are exactly
     the block's gates with wires shifted by `k`, and the block sits past the host's public rows,
     then a witness satisfying the host satisfies the block against the shifted witness view (the
@@ -263,24 +281,12 @@ theorem Satisfies.of_embed [CommRing F] {host block : Circuit F} {w : Witness F}
   refine ⟨fun r hr => ?_, fun r hr j hj => ?_⟩
   · have hh := hg (k + r) (by omega)
     rw [hgates r hr] at hh
-    have hpt : host.pubTerm pub (k + r) = 0 := by
-      rw [Circuit.pubTerm, if_neg (by omega)]
-    rw [hpt] at hh
-    have hpt' : block.pubTerm #[] r = (0 : F) := by
-      rw [Circuit.pubTerm]; split <;> simp
-    rw [hpt', Witness.row_shift, Witness.row_shift]
-    exact hh
+    obtain ⟨hpt, hpt'⟩ := embed_pubTerm host block pub k hpub r
+    simpa [hpt, hpt', Witness.row_shift w k r, Witness.row_shift w k (r + 1)] using hh
   · have hh := hc (k + r) (by omega) j hj
     rw [hgates r hr, Gate.wires_getD_shift] at hh
-    rw [Witness.cell_shift, Witness.cell_shift]
+    rw [Witness.cell_shift w k, Witness.cell_shift w k]
     exact hh
-
-/-- `rowHolds` only reads a gate's kind and coefficients — never its wires. -/
-theorem rowHolds_congr [CommRing F] {g g' : Gate F} (hk : g.kind = g'.kind)
-    (hc : g.coeffs = g'.coeffs) (curr next : Row F) (pubr : F) :
-    rowHolds g curr next pubr ↔ rowHolds g' curr next pubr := by
-  unfold rowHolds
-  rw [hk, hc]
 
 /-- **Generalized embedding.** Like `Satisfies.of_embed`, but the host's rows need only match the
     block's *kind and coefficients*; per wire, either the block's wire is a self-loop (its copy
@@ -301,18 +307,30 @@ theorem Satisfies.of_embed' [CommRing F] {host block : Circuit F} {w : Witness F
   refine ⟨fun r hr => ?_, fun r hr j hj => ?_⟩
   · have hh := hg (k + r) (by omega)
     rw [rowHolds_congr (hkind r hr) (hcoeffs r hr)] at hh
-    have hpt : host.pubTerm pub (k + r) = 0 := by
-      rw [Circuit.pubTerm, if_neg (by omega)]
-    rw [hpt] at hh
-    have hpt' : block.pubTerm #[] r = (0 : F) := by
-      rw [Circuit.pubTerm]; split <;> simp
-    rw [hpt', Witness.row_shift, Witness.row_shift]
-    exact hh
+    obtain ⟨hpt, hpt'⟩ := embed_pubTerm host block pub k hpub r
+    simpa [hpt, hpt', Witness.row_shift w k r, Witness.row_shift w k (r + 1)] using hh
   · rcases hwires r j hr hj with hself | hmatch
     · rw [hself]
     · have hh := hc (k + r) (by omega) j hj
       rw [hmatch] at hh
       rw [Witness.cell_shift, Witness.cell_shift]
       exact hh
+
+/-- **Extract gate identity and copy constraints at row `r`.** Given `c.gateAt r = g`,
+    this returns the `rowHolds` at that row and the copy constraints for all 7 columns. -/
+theorem gateAt_extract [CommRing F] [DecidableEq F] (c : Circuit F) (w : Witness F) (pub : Array F)
+    (hsat : Satisfies c w pub) (r : ℕ) (hr : r < c.gates.size) (g : Gate F)
+    (hgatC : c.gateAt r = g) :
+    rowHolds g (w.row r) (w.row (r + 1)) (c.pubTerm pub r) ∧
+    (∀ j, j < 7 → w.cell (r, j) = w.cell (g.wires.getD j (r, j))) := by
+  obtain ⟨hgates, hcopy⟩ := hsat
+  have hCcons : rowHolds g (w.row r) (w.row (r + 1)) (c.pubTerm pub r) := by
+    have hh := hgates r hr
+    rwa [hgatC] at hh
+  have hccopy : ∀ j, j < 7 → w.cell (r, j) = w.cell (g.wires.getD j (r, j)) := by
+    intro j hj
+    have hh := hcopy r hr j hj
+    rwa [hgatC] at hh
+  exact ⟨hCcons, hccopy⟩
 
 end Kimchi.Circuit

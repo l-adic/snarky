@@ -496,28 +496,25 @@ theorem vbmCircuitGrounded_scaleFast1
   -- project the chain's `Satisfies` (the first `2m` gates are `vbmCircuit`'s, verbatim)
   have hchain : Satisfies (vbmCircuit m) w pub :=
     Satisfies.of_append (c := vbmCircuit m) (gs := #[caDoubleGate m]) hsat
-  obtain ⟨hg, hc⟩ := hsat
-  -- the doubling row's gate identity and its six copy constraints
-  have hdblcons : Kimchi.Gate.AddComplete.Holds
-      (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))) := by
-    have hh := hg (2 * m) (by rw [vbmGrounded_size]; omega); rwa [gateAt_grounded_ca m] at hh
-  have hc0 := hc (2 * m) (by rw [vbmGrounded_size]; omega) 0 (by omega)
-  have hc1 := hc (2 * m) (by rw [vbmGrounded_size]; omega) 1 (by omega)
-  have hc2 := hc (2 * m) (by rw [vbmGrounded_size]; omega) 2 (by omega)
-  have hc3 := hc (2 * m) (by rw [vbmGrounded_size]; omega) 3 (by omega)
-  have hc4 := hc (2 * m) (by rw [vbmGrounded_size]; omega) 4 (by omega)
-  have hc5 := hc (2 * m) (by rw [vbmGrounded_size]; omega) 5 (by omega)
-  rw [gateAt_grounded_ca m] at hc0 hc1 hc2 hc3 hc4 hc5
-  simp only [caDoubleGate] at hc0 hc1 hc2 hc3 hc4 hc5
+  have hrow : 2 * m < (vbmCircuitGrounded (F := VestaBaseField) m).gates.size := by
+    rw [vbmGrounded_size]; omega
+  obtain ⟨hdblcons, hccopy⟩ := gateAt_extract (vbmCircuitGrounded (F := VestaBaseField) m)
+      w pub hsat (2 * m) hrow (caDoubleGate (F := VestaBaseField) m) (gateAt_grounded_ca (F := VestaBaseField) m)
   -- name the wiring equalities in `AddComplete.ofRow` terms (defeq to the cells)
-  have hbaseX : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).x1 = (gwit w 0).xT := hc0
-  have hbaseY : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y1 = (gwit w 0).yT := hc1
+  have hbaseX : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).x1 = (gwit w 0).xT := by
+    simpa [caDoubleGate] using hccopy 0 (by omega)
+  have hbaseY : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y1 = (gwit w 0).yT := by
+    simpa [caDoubleGate] using hccopy 1 (by omega)
   have hx12 : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).x1
-      = (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).x2 := hc0.trans hc2.symm
+      = (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).x2 := by
+    simpa [caDoubleGate] using (hccopy 0 (by omega)).trans (hccopy 2 (by omega)).symm
   have hy12 : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y1
-      = (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y2 := hc1.trans hc3.symm
-  have houtX : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).x3 = (gwit w 0).x0 := hc4
-  have houtY : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y3 = (gwit w 0).y0 := hc5
+      = (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y2 := by
+    simpa [caDoubleGate] using (hccopy 1 (by omega)).trans (hccopy 3 (by omega)).symm
+  have houtX : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).x3 = (gwit w 0).x0 := by
+    simpa [caDoubleGate] using hccopy 4 (by omega)
+  have houtY : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y3 = (gwit w 0).y0 := by
+    simpa [caDoubleGate] using hccopy 5 (by omega)
   exact varBaseMul_scaleFast1_grounded m w pub hchain T s hTne hTns hTeq (w.row (2 * m)) hdblcons
     hx12 hy12 hbaseX hbaseY houtX houtY hbits hs hnf
 

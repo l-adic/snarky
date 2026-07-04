@@ -72,13 +72,22 @@ instance : Fact (Nat.Prime Pallas.curve.toAffine.order) := ⟨pallas_order_prime
 instance : Fact (Nat.Prime Vesta.curve.toAffine.order) := ⟨vesta_order_prime⟩
 
 /-- The short-Weierstrass `Fact` the VarBaseMul soundness consumes — `a₁=a₂=a₃=0`, which every
-    `toW` curve satisfies by `rfl` (no `a₄=0`/`A=0` needed). -/
+    `toW` curve satisfies by `rfl`. -/
 instance : Fact (Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0 ∧
     Pallas.curve.toAffine.a₃ = 0) := ⟨⟨rfl, rfl, rfl⟩⟩
 
 /-- The short-Weierstrass `Fact` for Vesta likewise. -/
 instance : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0 ∧
     Vesta.curve.toAffine.a₃ = 0) := ⟨⟨rfl, rfl, rfl⟩⟩
+
+/-- The short-Weierstrass `Fact` for CompleteAdd soundness: all four coefficients `a₁=a₂=a₃=a₄=0`.
+    The Pasta curves have `a₄ = 0` definitionally (their `SWCurve` has `A = 0`). -/
+instance : Fact (Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0 ∧
+    Pallas.curve.toAffine.a₃ = 0 ∧ Pallas.curve.toAffine.a₄ = 0) := ⟨⟨rfl, rfl, rfl, rfl⟩⟩
+
+/-- The short-Weierstrass `Fact` for Vesta likewise. -/
+instance : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0 ∧
+    Vesta.curve.toAffine.a₃ = 0 ∧ Vesta.curve.toAffine.a₄ = 0) := ⟨⟨rfl, rfl, rfl, rfl⟩⟩
 
 /-! ## The Pasta GLV endomorphisms — the trusted inputs for `EndoMul`
 
