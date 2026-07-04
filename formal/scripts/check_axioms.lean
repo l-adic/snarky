@@ -129,7 +129,11 @@ def roots : List Name :=
     -- The emission-monad semantics: elaborating the Poseidon gadget IS posCircuit, for all m —
     -- the generic replacement for the per-fixture reconstruction tie.
     `Kimchi.Circuit.Elab.elabPoseidon_eq_posCircuit,
-    `Kimchi.Circuit.Elab.elabPoseidon_seq ]
+    `Kimchi.Circuit.Elab.elabPoseidon_seq,
+    -- copyHolds discharged from Ironwood's permutation kernel: the extensional copy constraints
+    -- are a consequence of the grand-product multiset identity, not a modeling choice.
+    `Kimchi.Circuit.Permutation.copyHolds_of_multiset,
+    `Kimchi.Circuit.Permutation.cell_eq_of_sameCycle ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations

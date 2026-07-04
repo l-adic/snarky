@@ -39,6 +39,7 @@ import Kimchi.Circuits.Msm
 import Kimchi.Circuits.FiatShamir
 import Kimchi.Circuits.IpaBridge
 import Kimchi.Circuits.InitGrounding
+import Kimchi.Circuits.Permutation
 import Kimchi.Json
 
 -- The certified-pipeline direction: the emission-monad semantics (generic seam closure) and

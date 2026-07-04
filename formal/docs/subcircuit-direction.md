@@ -149,3 +149,23 @@ the whole 817-row circuit — its blocks are exactly the proven Rung 0–4 shape
   refutable at the Pasta curves from the odd prime group order (a `y = 0` point would be
   2-torsion); deriving it would leave the base/`acc` nonsingularity as the only genuinely external
   facts.
+
+## The certified-pipeline direction (spikes landed)
+
+Three rungs toward "what you deploy is what you proved", exploiting that the PS programs are
+*pure*:
+
+- **CoreFn interpreter** (`Kimchi/CoreFn.lean` + `CheckCoreFn.lean`): `purs` emits its whole IR
+  as `output/*/corefn.json`; a CBV interpreter (full expression language, transparent newtypes,
+  defunctionalized ST heap, foreign registry with BigInt ↦ `Int`) evaluates the *actual compiled
+  artifact* inside Lean. Demo: `Snarky.Types.Shifted.forbiddenShiftedValues` — the deployed
+  shift-protocol wraparound guard — reproduces the independent Lean spec exactly. Trusted base
+  for the cross-check: the `purs` frontend + the interpreter. No JS runtime, no dumper.
+- **Emission-monad semantics** (`Kimchi/Elab.lean`): the DSL's gate-emission fragment as a state
+  monad; `elabPoseidon_eq_posCircuit` proves elaboration = reconstruction *for every* `m`
+  (generic, not per-fixture), and `elabPoseidon_seq` shows monadic sequencing *is*
+  `Circuit.append`. Next semantic rung: the wire/union-find layer.
+- **`copyHolds` discharged** (`Circuits/Permutation.lean`): Ironwood's grand-product kernel
+  (multiset-of-pairs identity + injective `δʲ·ωⁱ` labels) *derives* our extensional copy
+  constraints — the `Satisfies` modeling note is now a theorem, with the residue being
+  Ironwood's own documented remaining steps (telescoping; keygen label distinctness).

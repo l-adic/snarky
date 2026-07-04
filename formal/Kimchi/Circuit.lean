@@ -28,7 +28,11 @@ faithful. Running `check` over `ZMod p` uses real (compiled) field arithmetic �
 * **Permutation.** `copyHolds` models the *extensional* consequence of kimchi's permutation
   argument — each wired cell holds the same value as the cell its wire points to — not the
   grand-product polynomial. That polynomial is a protocol/completeness device; the value
-  equalities are exactly what soundness consumes.
+  equalities are exactly what soundness consumes. This is no longer only a modeling choice:
+  `Circuits/Permutation.lean` (`copyHolds_of_multiset`) *derives* `copyHolds` from the
+  grand-product kernel of the vendored Ironwood formalization — the multiset-of-pairs identity
+  plus injective cell labels — with the residue being Ironwood's own documented remaining steps
+  (grand-product telescoping and the keygen's δ-coset label distinctness).
 -/
 
 -- The structure `Circuit` lives in namespace `Kimchi.Circuit` (giving `Kimchi.Circuit.Circuit`);
