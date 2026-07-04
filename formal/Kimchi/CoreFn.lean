@@ -330,6 +330,9 @@ def foreignArity (mod name : String) : Option Nat :=
   | "Data.Unfoldable1", "unfoldr1ArrayImpl" => some 7
   | "Data.Array", "sortByImpl" => some 3
   | "Data.Array", "fromFoldableImpl" => some 2
+  | "Data.Array", "unsafeIndexImpl" => some 2
+  | "Data.Array", "anyImpl" => some 2
+  | "Data.Array", "allImpl" => some 2
   | "$builtin", "listCons" => some 2
   | "Data.Array", "length" => some 1
   | "Data.Array", "concat" => some 1
@@ -448,10 +451,12 @@ structure Ctx where
   globals : IO.Ref (Std.HashMap (String × String) Value)
   /-- The ST heap: `Value.vRef i` indexes a slot (both `STRef`s and `STArray`s). -/
   heap : IO.Ref (Array Value)
+  /-- Diagnostic ring buffer: recent evaluation events, dumped on error. -/
+  trace : IO.Ref (Array String)
 
 def Ctx.new (outDir : System.FilePath) : IO Ctx := do
   return { outDir, modules := ← IO.mkRef {}, globals := ← IO.mkRef {},
-           heap := ← IO.mkRef #[] }
+           heap := ← IO.mkRef #[], trace := ← IO.mkRef #[] }
 
 private def err {α : Type} (msg : String) : IO α :=
   throw (IO.userError msg)
@@ -484,6 +489,15 @@ def loadModule (ctx : Ctx) (m : String) : IO ModuleData := do
   ctx.modules.modify (·.insert m md)
   return md
 
+def pushTrace (ctx : Ctx) (msg : String) : IO Unit := do
+  ctx.trace.modify fun t => (if t.size > 400 then t.extract 200 t.size else t).push msg
+
+def dumpTrace (ctx : Ctx) : IO Unit := do
+  let t ← ctx.trace.get
+  IO.eprintln "=== last evaluation events ==="
+  for msg in t.toList.reverse.take 60 do
+    IO.eprintln s!"  {msg}"
+
 mutual
 
 /-- Look up (and memoize) a top-level value. Top-level recursion resolves through this lookup
@@ -495,6 +509,7 @@ partial def globalValue (ctx : Ctx) (m ident : String) : IO Value := do
   if let some v := (← ctx.globals.get).get? (m, ident) then
     return v
   let md ← loadModule ctx m
+  pushTrace ctx s!"decl {m}.{ident}"
   let v ← do
     if let some e := md.decls.get? ident then
       try
@@ -571,11 +586,14 @@ partial def eval (ctx : Ctx) (env : List (String × Value)) : Expr → IO Value
     references materialize the group on first application. -/
 partial def apply (ctx : Ctx) (f a : Value) : IO Value := do
   match f with
-  | .vClosure env arg body => eval ctx ((arg, a) :: env) body
+  | .vClosure env arg body => do
+      pushTrace ctx s!"app (\\{arg}) ← {a.describe}"
+      eval ctx ((arg, a) :: env) body
   | .vCtor "$ST" tag ar args =>
       -- JS semantics: an Effect/ST action is a zero-arg thunk; calling it with an argument
       -- runs it and discards the argument (the Snarky monad's reader/Effect coercion relies
       -- on exactly this)
+      pushTrace ctx s!"APPLY-DISCARD on $ST.{tag} arg={a.describe}"
       runST ctx (.vCtor "$ST" tag ar args)
   | .vCtor ty c arity args =>
       let args' := args ++ [a]
@@ -768,6 +786,7 @@ partial def runST (ctx : Ctx) (v : Value) : IO Value := do
   | .vClosure env arg body =>
       -- JS: a zero-arg invocation of a real closure binds its parameter to `undefined`;
       -- the sentinel errors loudly if the body ever inspects it
+      pushTrace ctx s!"RUNST-CLOSURE (\\{arg})"
       eval ctx ((arg, Value.vCtor "$U" "undefined" 0 []) :: env) body
   | v =>
       -- already-run payloads reaching action position pass through (reader/Effect coercion)
@@ -845,7 +864,7 @@ partial def applyForeign (ctx : Ctx) (m n : String) (args : List Value) : IO Val
   let int2 (f : Int → Int → Value) : IO Value := do
     match args with
     | [.vInt a, .vInt b] => pure (f a b)
-    | _ => err s!"{m}.{n}: expected 2 ints"
+    | _ => err s!"{m}.{n}: expected 2 ints, got {args.map (·.describe)}"
   let big2 (f : Int → Int → Value) : IO Value := do
     match args with
     | [.vBig a, .vBig b] => pure (f a b)
@@ -936,6 +955,25 @@ partial def applyForeign (ctx : Ctx) (m n : String) (args : List Value) : IO Val
               | v => err s!"sortByImpl ordering→int: {v.describe}"
           pure (.vArr arr)
       | _ => err "sortByImpl: expected (cmp, toInt, array)"
+  | "Data.Array", "unsafeIndexImpl" =>
+      match args with
+      | [.vArr es, .vInt i] =>
+          if h : i.toNat < es.size then pure es[i.toNat] else err "unsafeIndexImpl: OOB"
+      | _ => err s!"unsafeIndexImpl: bad args {args.map (·.describe)}"
+  | "Data.Array", "anyImpl" =>
+      match args with
+      | [f, .vArr es] => do
+          for e in es do
+            if let .vBool true ← apply ctx f e then return (.vBool true)
+          pure (.vBool false)
+      | _ => err "anyImpl: bad args"
+  | "Data.Array", "allImpl" =>
+      match args with
+      | [f, .vArr es] => do
+          for e in es do
+            if let .vBool false ← apply ctx f e then return (.vBool false)
+          pure (.vBool true)
+      | _ => err "allImpl: bad args"
   | "Data.Array", "length" =>
       match args with
       | [.vArr es] => pure (.vInt es.size)
@@ -1217,7 +1255,8 @@ partial def applyForeign (ctx : Ctx) (m n : String) (args : List Value) : IO Val
               let mid := (bot + top) / 2
               let left ← go bot mid
               let right ← go (mid + 1) top
-              apply ctx (← apply ctx (← apply ctx mapF cat2) left) right
+              let merged ← apply ctx (← apply ctx mapF cat2) left
+              apply ctx (← apply ctx applyF merged) right
           if es.isEmpty then apply ctx pureF (.vArr #[])
           else go 0 (es.size - 1)
       | _ => err s!"traverseArrayImpl: bad args {args.map (·.describe)}"

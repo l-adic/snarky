@@ -12,6 +12,9 @@
 -- |   node -e "import('./output/Test.Snarky.Circuit.Kimchi.DumpAddComplete/index.js').then(m=>m.dumpAll())"
 module Test.Snarky.Circuit.Kimchi.DumpAddComplete
   ( addCompleteKindsCoeffs
+  , stateTProbe
+  , stProbeA
+  , stProbeB
   , varBaseMulKindsCoeffs
   , dump
   , dumpPoseidon
@@ -28,7 +31,9 @@ module Test.Snarky.Circuit.Kimchi.DumpAddComplete
 import Prelude
 
 import Data.Array as Array
+import Control.Monad.State.Trans (StateT(..), runStateT)
 import Data.Either (Either(..))
+import Data.Traversable (traverse)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
@@ -138,6 +143,29 @@ addCompleteCircuit
   => Tuple (AffinePoint (FVar Fp)) (AffinePoint (FVar Fp))
   -> Snarky Fp (KimchiConstraint Fp) r (AffinePoint (FVar Fp))
 addCompleteCircuit (Tuple p1 p2) = _.p <$> addFast DontCheckFinite p1 p2
+
+-- | Probe A: bare StateT bind chain, no traverse.
+stProbeA :: Effect Int
+stProbeA = do
+  Tuple a s <- runStateT (do
+    x <- StateT \s -> pure (Tuple (s + 1) (s + 10))
+    y <- StateT \s -> pure (Tuple (s + 2) (s + 20))
+    pure (x + y)) 0
+  pure (a * 1000 + s)
+
+-- | Probe B: traverse over 2 elements.
+stProbeB :: Effect { xs :: Array Int, final :: Int }
+stProbeB = do
+  Tuple xs final <- runStateT (traverse (\x -> StateT \s -> pure (Tuple (x + s) (s + 1)))
+    [ 10, 20 ]) 0
+  pure { xs, final }
+
+-- | Minimal semantics probe for the Lean CoreFn interpreter: StateT-over-Effect traversal.
+stateTProbe :: Effect { xs :: Array Int, final :: Int }
+stateTProbe = do
+  Tuple xs final <- runStateT (traverse (\x -> StateT \s -> pure (Tuple (x + s) (s + 1)))
+    [ 10, 20, 30, 40, 50 ]) 0
+  pure { xs, final }
 
 -- | Entry point for the Lean CoreFn interpreter (formal/CheckCoreFn.lean): the compiled
 -- | elaboration of the addComplete circuit, as plain (kind, coeffs) rows. No file IO, no

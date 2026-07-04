@@ -111,7 +111,10 @@ def main : IO Unit := do
   -- the elaborator itself
   unless (← checkElaborator ctx "addCompleteKindsCoeffs" "fixtures/add_complete_step.json") do
     throw (IO.userError "elaborator cross-validation failed (addComplete)")
-  -- The varBaseMul entry (scaleFast1 @51) is wired PS-side (`varBaseMulKindsCoeffs`) but its
-  -- interpretation still diverges inside `mapAccumM`'s StateT-over-Snarky layering — the
-  -- remaining Effect-calling-convention semantics work. Next session:
-  --   unless (← checkElaborator ctx "varBaseMulKindsCoeffs" "fixtures/varbasemul_step.json") ...
+  let okVbm ← try
+    checkElaborator ctx "varBaseMulKindsCoeffs" "fixtures/varbasemul_step.json"
+  catch ex => do
+    dumpTrace ctx
+    throw ex
+  unless okVbm do
+    throw (IO.userError "elaborator cross-validation failed (varBaseMul)")
