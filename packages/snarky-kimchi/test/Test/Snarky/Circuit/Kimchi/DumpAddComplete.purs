@@ -397,6 +397,8 @@ dumpFiatShamir = do
         pure (F (fromBigInt (toBigInt s `div` p128)))
       assertEqual_ sq (add_ lo (scale_ (fromBigInt p128) hi))
       let Cv.EndoScalar es = endoScalar @Vesta.BaseField @Fp
+      -- the high part is also crumb-decomposed (challenge canonicity: hi < 2^128)
+      _ <- toField @8 (unsafeCoerce hi :: SizedF 128 (FVar Fp)) (const_ es)
       toField @8 (unsafeCoerce lo :: SizedF 128 (FVar Fp)) (const_ es)
 
     input :: Vector 3 (F Fp)

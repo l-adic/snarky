@@ -95,8 +95,10 @@ may carry the host's own pin wires), and a **checker strengthening**: reconstruc
 exposed that the Generic checker ignored the second gate of kimchi's double generic row
 (`eval2` now conjoined into `rowHolds`; all fixtures re-validated under the stronger checker).
 
-*Fidelity gap*: `hi`'s range is unconstrained (aliasing mod `p`); the real protocol's challenge
-canonicity needs a range check on `hi` — a second decomposition block, mechanical to add.
+*Canonicity (done)*: `hi` is now **also crumb-decomposed** by a second ES block; the conclusion
+strengthened to `sponge output = nReconstruct(cs_lo) + 2¹²⁸·nReconstruct(cs_hi)` with no free
+`hi` — both halves are `< 2¹²⁸` as integers by crumb validity, bounding the truncation aliasing
+to the standard `±kp` ambiguity rather than leaving `hi` unconstrained.
 
 ## Rungs 5–6 (done): the circuit ↔ commitment-layer IPA bridge
 
