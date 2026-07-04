@@ -125,7 +125,11 @@ def roots : List Name :=
     `Kimchi.Circuit.IpaBridge.msm_recombine,
     `Kimchi.Circuit.IpaBridge.circuit_ipa_soundness,
     -- The fully circuit-grounded capstone: the Schnorr sides derived from circuits too.
-    `Kimchi.Circuit.IpaBridge.circuit_ipa_soundness' ]
+    `Kimchi.Circuit.IpaBridge.circuit_ipa_soundness',
+    -- The emission-monad semantics: elaborating the Poseidon gadget IS posCircuit, for all m —
+    -- the generic replacement for the per-fixture reconstruction tie.
+    `Kimchi.Circuit.Elab.elabPoseidon_eq_posCircuit,
+    `Kimchi.Circuit.Elab.elabPoseidon_seq ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations

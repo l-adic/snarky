@@ -40,3 +40,8 @@ import Kimchi.Circuits.FiatShamir
 import Kimchi.Circuits.IpaBridge
 import Kimchi.Circuits.InitGrounding
 import Kimchi.Json
+
+-- The certified-pipeline direction: the emission-monad semantics (generic seam closure) and
+-- the CoreFn interpreter (evaluating the actual compiled PureScript inside Lean).
+import Kimchi.Elab
+import Kimchi.CoreFn
