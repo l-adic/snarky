@@ -421,7 +421,6 @@ theorem varBaseMul_scaleFast1_grounded
     (hbaseY : (Kimchi.Gate.AddComplete.ofRow dbl).y1 = (gwit w 0).yT)
     (houtX : (Kimchi.Gate.AddComplete.ofRow dbl).x3 = (gwit w 0).x0)
     (houtY : (Kimchi.Gate.AddComplete.ofRow dbl).y3 = (gwit w 0).y0)
-    (hy1 : (Kimchi.Gate.AddComplete.ofRow dbl).y1 ≠ 0)
     (hbits : 5 * m ≤ pastaFieldBits) (hs : s = gateLadder (gwit w) (5 * m))
     (hnf : 5 * m = pastaFieldBits → s ∉ forbiddenValues Vesta.curve.toAffine.order) :
     ∃ hfin : Vesta.curve.toAffine.Nonsingular (accX (gwit w) m) (accY (gwit w) m),
@@ -431,6 +430,9 @@ theorem varBaseMul_scaleFast1_grounded
   -- the doubling's input point is `T`
   have hTca : Vesta.curve.toAffine.Nonsingular (Kimchi.Gate.AddComplete.ofRow dbl).x1
       (Kimchi.Gate.AddComplete.ofRow dbl).y1 := by rw [hbaseX, hbaseY]; exact hTns
+  -- the base's y ≠ 0 is derived: an odd-order curve has no point on the x-axis
+  have hy1 : (Kimchi.Gate.AddComplete.ofRow dbl).y1 ≠ 0 :=
+    Point.y_ne_zero_of_odd_order rfl rfl vesta_order_odd hTca
   obtain ⟨h3, hdbl⟩ := Kimchi.Circuit.InitGrounding.completeAdd_doubles Vesta.curve.toAffine ha dbl
     hTca hx12 hy12 hdblcons hy1 (by decide)
   -- transport the produced output nonsingularity onto gate 0's input accumulator
@@ -477,16 +479,15 @@ theorem gateAt_grounded_ca (m : ℕ) :
 /-- **Fully grounded VarBaseMul soundness (Vesta, #4 dataflow).** Any witness satisfying
     `vbmCircuitGrounded m` computes `[s]·T` — the init `P₀ = [2]·T` is *derived* from the trailing
     `CompleteAdd` doubling row, whose four wiring equalities are read off `copyHolds` and whose
-    `inf = 0` flag is refuted-at-infinity rather than assumed. The only remaining hypotheses are
-    the base nonsingularity, `yT ≠ 0`, and the ladder bounds — the exact analogue of
-    `EndoScalar.esCircuitGrounded_sound`. -/
+    `inf = 0` flag is refuted-at-infinity rather than assumed, and `yT ≠ 0` is derived from the
+    odd group order. The only remaining hypotheses are the base nonsingularity and the ladder
+    bounds — the exact analogue of `EndoScalar.esCircuitGrounded_sound`. -/
 theorem vbmCircuitGrounded_scaleFast1
     (m : ℕ) (w : Kimchi.Circuit.Witness VestaBaseField) (pub : Array VestaBaseField)
     (hsat : Satisfies (vbmCircuitGrounded m) w pub)
     (T : Vesta.curve.toAffine.Point) (s : ℤ) (hTne : T ≠ 0)
     (hTns : Vesta.curve.toAffine.Nonsingular (gwit w 0).xT (gwit w 0).yT)
     (hTeq : T = Point.some _ _ hTns)
-    (hyT : (gwit w 0).yT ≠ 0)
     (hbits : 5 * m ≤ pastaFieldBits) (hs : s = gateLadder (gwit w) (5 * m))
     (hnf : 5 * m = pastaFieldBits → s ∉ forbiddenValues Vesta.curve.toAffine.order) :
     ∃ hfin : Vesta.curve.toAffine.Nonsingular (accX (gwit w) m) (accY (gwit w) m),
@@ -516,9 +517,8 @@ theorem vbmCircuitGrounded_scaleFast1
       = (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y2 := hc1.trans hc3.symm
   have houtX : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).x3 = (gwit w 0).x0 := hc4
   have houtY : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y3 = (gwit w 0).y0 := hc5
-  have hy1 : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y1 ≠ 0 := by rw [hbaseY]; exact hyT
   exact varBaseMul_scaleFast1_grounded m w pub hchain T s hTne hTns hTeq (w.row (2 * m)) hdblcons
-    hx12 hy12 hbaseX hbaseY houtX houtY hy1 hbits hs hnf
+    hx12 hy12 hbaseX hbaseY houtX houtY hbits hs hnf
 
 /-! ## A verifier sub-circuit: the IPA scale-and-combine term `p' = acc + [s]·T`
 
@@ -580,8 +580,7 @@ theorem scaleCombine_sound
     (hnf : 5 * m = pastaFieldBits → s ∉ forbiddenValues Vesta.curve.toAffine.order)
     (hacc : Vesta.curve.toAffine.Nonsingular
         (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).x1
-        (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y1)
-    (hy1 : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y1 ≠ 0) :
+        (Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).y1) :
     ((Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).inf = 1
         ∧ Point.some _ _ hacc + s • T = 0)
     ∨ ((Kimchi.Gate.AddComplete.ofRow (w.row (2 * m))).inf = 0
@@ -618,7 +617,9 @@ theorem scaleCombine_sound
       (Kimchi.Gate.AddComplete.ofRow (w.row (2 * (k + 1)))).y2 := by
     rw [hx2, hy2]; exact hfin
   have heq2 : Point.some _ _ h2 = s • T := (Point.some_congr h2 hfin hx2 hy2).trans hptS
-  -- the full complete-add case split
+  -- the full complete-add case split (`acc`'s `y ≠ 0` derived from the odd group order)
+  have hy1 : (Kimchi.Gate.AddComplete.ofRow (w.row (2 * (k + 1)))).y1 ≠ 0 :=
+    Point.y_ne_zero_of_odd_order rfl rfl vesta_order_odd hacc
   rcases Kimchi.Gate.AddComplete.sound Vesta.curve.toAffine ha
       (Kimchi.Gate.AddComplete.ofRow (w.row (2 * (k + 1)))) hacc h2 hcacons hy1 (by decide) with
     ⟨hinf, hsum⟩ | ⟨hinf, h3, hsum⟩

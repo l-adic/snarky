@@ -38,6 +38,15 @@ theorem vesta_card : Vesta.curve.toAffine.order = PALLAS_BASE_CARD := by
   rw [SWPoint.card_eq_point Vesta.curve] at h
   exact h
 
+/-- The Pallas group order is odd (an odd prime) — feeds `Point.y_ne_zero_of_odd_order`, which
+    turns the `y ≠ 0` side conditions into consequences of being on the curve. -/
+theorem pallas_order_odd : Odd Pallas.curve.toAffine.order := by
+  rw [pallas_card]; exact Nat.odd_iff.mpr (by decide)
+
+/-- The Vesta group order is odd. -/
+theorem vesta_order_odd : Odd Vesta.curve.toAffine.order := by
+  rw [vesta_card]; exact Nat.odd_iff.mpr (by decide)
+
 /-- **The Pasta fields' size in bits.** Both base-field cardinals are 255-bit. This is the one
     place the width is written down — it is the circuit's `FieldSizeInBits`, the bound on
     `bitsUsed = 5·m`, and `pastaFieldBits - 1` is `scaleFast2`'s `s_div_2_bits` range-check width.

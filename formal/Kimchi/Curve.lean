@@ -77,6 +77,35 @@ theorem Point.add_self_ne_zero (W : Affine F) (ha1 : W.a₁ = 0) (ha3 : W.a₃ =
   have h2y : 2 * y = 0 := by linear_combination hyy
   exact hy ((mul_eq_zero.mp h2y).resolve_left h2)
 
+/-- An odd-order group has no 2-torsion: `P + P = 0` forces `P = 0` (Bézout on `2` and the odd
+    order, via `order_smul`). -/
+theorem Point.eq_zero_of_add_self_eq_zero {W : Affine F} (hodd : Odd W.order)
+    {P : W.Point} (h : P + P = 0) : P = 0 := by
+  obtain ⟨t, ht⟩ := hodd
+  have h2 : (2 : ℤ) • P = 0 := by rw [two_zsmul]; exact h
+  calc P = (1 : ℤ) • P := (one_zsmul P).symm
+    _ = ((W.order : ℤ) - 2 * t) • P := by
+        congr 1
+        have : (W.order : ℤ) = 2 * t + 1 := by exact_mod_cast ht
+        omega
+    _ = (W.order : ℤ) • P - (t : ℤ) • ((2 : ℤ) • P) := by
+        rw [sub_zsmul, smul_smul, mul_comm (t : ℤ) 2, sub_eq_add_neg]
+    _ = 0 := by rw [W.order_smul, h2, smul_zero, sub_zero]
+
+/-- **No point on the x-axis of an odd-order curve** (`a₁ = a₃ = 0`): a nonsingular affine point
+    with `y = 0` would be nontrivial 2-torsion. At the Pasta curves (odd prime order) this
+    *derives* the ubiquitous `y ≠ 0` side conditions from nonsingularity alone. -/
+theorem Point.y_ne_zero_of_odd_order {W : Affine F} (ha1 : W.a₁ = 0) (ha3 : W.a₃ = 0)
+    (hodd : Odd W.order)
+    {x y : F} (h : W.Nonsingular x y) : y ≠ 0 := by
+  intro hy0
+  have hneg : Point.some x y h = -Point.some x y h := by
+    rw [Point.neg_some]
+    exact Point.some_congr _ _ rfl (by rw [WeierstrassCurve.Affine.negY, ha1, ha3, hy0]; ring)
+  have hzero : Point.some x y h = 0 :=
+    Point.eq_zero_of_add_self_eq_zero hodd (add_eq_zero_iff_eq_neg.mpr hneg)
+  exact Point.some_ne_zero h hzero
+
 /-- The prime-order hypothesis as a `Fact`-backed accessor — reads like a field (`c.order_prime`)
     and threads through the development by instance inference. -/
 lemma order_prime (W : Affine F) [Fact (Nat.Prime W.order)] : Nat.Prime W.order := Fact.out
