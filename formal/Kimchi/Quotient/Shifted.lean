@@ -3,7 +3,7 @@ import Kimchi.Quotient.Domain
 /-!
 # Shifted columns: the two-row-gate mechanism
 
-Archon-original polynomial-algebra infrastructure. **Commitment-free**: everything lives over
+Polynomial-algebra infrastructure. **Commitment-free**: everything lives over
 an abstract field `[Field F]` with a primitive `n`-th root of unity supplied as a hypothesis.
 This file provides the "next row" access that a two-row custom gate (`VarBaseMul`, `EndoMul`)
 needs on the polynomial side.

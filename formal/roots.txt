@@ -89,8 +89,8 @@ Kimchi.Quotient.genericRows_iff_dvd
 -- constraint divisible (`dvd_separation`). The generic lift engine (`rows_iff_dvd_of`,
 -- selector-gated `rowsSel_iff_dvd`) turns any eval bridge into a divisibility-iff-rows theorem;
 -- instantiated per gate via cell maps and `constraints_map` naturality (`<G>.rows_iff_dvd`).
--- Headlines: per active row the gate's Holds follows, and via the landed Gate.<G>.sound the EC
--- meaning (`<G>.soundness_point`).
+-- Headline per gate: for every selector-active row the gate's Holds follows
+-- (`<G>.soundness`); the EC meaning is obtained by citing Gate.<G>.sound where consumed.
 Kimchi.Quotient.identity_of_evals
 Kimchi.Quotient.dvd_separation
 Kimchi.Quotient.rows_iff_dvd_of
@@ -98,6 +98,6 @@ Kimchi.Quotient.rowsSel_iff_dvd
 Kimchi.Quotient.AddComplete.rows_iff_dvd
 Kimchi.Quotient.VarBaseMul.rows_iff_dvd
 Kimchi.Quotient.EndoMul.rows_iff_dvd
-Kimchi.Quotient.AddComplete.soundness_point
-Kimchi.Quotient.VarBaseMul.soundness_point
-Kimchi.Quotient.EndoMul.soundness_point
+Kimchi.Quotient.AddComplete.soundness
+Kimchi.Quotient.VarBaseMul.soundness
+Kimchi.Quotient.EndoMul.soundness

@@ -5,7 +5,7 @@ import Kimchi.Gate.EndoMul
 /-!
 # Quotient lift of the EndoMul gate
 
-Archon-original polynomial-algebra lift of kimchi's `EndoMul` (endomorphism-optimized
+The polynomial-algebra lift of kimchi's `EndoMul` (endomorphism-optimized
 `VarBaseMul`) gate, following the cell-map / bridge / corollaries pattern of
 `Kimchi/Quotient/AddComplete.lean` and `Kimchi/Quotient/VarBaseMul.lean`. Like `VarBaseMul`
 it is a **two-row** gate (a pair of `EVBSM` rows `i`, `i+1`), so the poly witness reads the

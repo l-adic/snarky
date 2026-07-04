@@ -3,7 +3,7 @@ import Kimchi.Quotient.Domain
 /-!
 # α-aggregation and constraint separation
 
-This file is **Archon-original** polynomial-algebra infrastructure for kimchi's quotient
+Polynomial-algebra infrastructure for kimchi's quotient
 argument. It is **commitment-free**: everything lives over an abstract field `[Field F]`,
 with a primitive `n`-th root of unity supplied as a hypothesis
 (`hω : IsPrimitiveRoot ω n`, `0 < n`).

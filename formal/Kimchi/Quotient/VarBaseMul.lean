@@ -5,7 +5,7 @@ import Kimchi.Gate.VarBaseMul
 /-!
 # Quotient lift of the VarBaseMul gate
 
-Archon-original polynomial-algebra lift of kimchi's variable-base scalar-multiplication gate.
+The polynomial-algebra lift of kimchi's variable-base scalar-multiplication gate.
 **Commitment-free**: everything lives over an abstract field `[Field F]` with a primitive
 `n`-th root of unity supplied as a hypothesis (`ω : F`, `hω : IsPrimitiveRoot ω n`).
 

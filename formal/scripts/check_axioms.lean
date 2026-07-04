@@ -54,9 +54,9 @@ def roots : List Name :=
     `Kimchi.Quotient.AddComplete.rows_iff_dvd,
     `Kimchi.Quotient.VarBaseMul.rows_iff_dvd,
     `Kimchi.Quotient.EndoMul.rows_iff_dvd,
-    `Kimchi.Quotient.AddComplete.soundness_point,
-    `Kimchi.Quotient.VarBaseMul.soundness_point,
-    `Kimchi.Quotient.EndoMul.soundness_point ]
+    `Kimchi.Quotient.AddComplete.soundness,
+    `Kimchi.Quotient.VarBaseMul.soundness,
+    `Kimchi.Quotient.EndoMul.soundness ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta GLV endomorphism inputs (`β`, `λ`,

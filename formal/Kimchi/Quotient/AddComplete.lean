@@ -4,7 +4,7 @@ import Kimchi.Gate.AddComplete
 /-!
 # Quotient lift of the CompleteAdd gate
 
-Archon-original polynomial-algebra lift of kimchi's CompleteAdd gate, built on the generic
+The polynomial-algebra lift of kimchi's CompleteAdd gate, built on the generic
 lift engine (`Kimchi.Quotient.Lift`) and the domain substrate (`Kimchi.Quotient.Domain`).
 
 CompleteAdd is a **single-row** gate, so its cell map reads only the current row. The gate's
