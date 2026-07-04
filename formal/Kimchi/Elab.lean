@@ -217,4 +217,81 @@ theorem linksHold_of_cycles {F : Type} [Zero F] (w : Witness F) (wireOf : Cell �
   obtain ⟨l, hl, h1, h2⟩ := hcover p hp
   exact class_const_of_cycle w wireOf l (hcycles l hl) (hptr l hl) p.1 h1 p.2 h2
 
+/-! ## End to end: a wired gadget
+
+The full pipeline on a concrete gadget: an `ElabWM` elaboration that emits two `Generic` rows
+and records one union event; its realization as a `Circuit` whose wire map closes the linked
+cells into a 2-cycle (kimchi's sigma for a 2-element class); and the theorem that circuit
+satisfaction recovers the DSL-level meaning of the union event. Emission, wiring, realization,
+and semantics — each step is now a definition or a theorem, none a convention. -/
+
+/-- Two generic rows whose first cells are asserted equal:
+    `row 0: a·w₀ = 0`-shaped and `row 1: b·w₀ = 0`-shaped, with `(0,0) ~ (1,0)`. -/
+def elabPair (c0 c1 : Array F) : ElabWM F Unit := do
+  emitW { kind := .generic, coeffs := c0, wires := #[] }
+  emitW { kind := .generic, coeffs := c1, wires := #[] }
+  wireW (0, 0) (1, 0)
+
+/-- The elaboration state `elabPair` produces. -/
+theorem elabPair_state (c0 c1 : Array F) :
+    ((elabPair c0 c1).run ⟨#[], []⟩).2
+      = ⟨#[{ kind := .generic, coeffs := c0, wires := #[] },
+           { kind := .generic, coeffs := c1, wires := #[] }],
+         [((0, 0), (1, 0))]⟩ := rfl
+
+/-- The realization: the emitted rows with the class `{(0,0), (1,0)}` closed into a 2-cycle
+    (each cell's wire 0 points at the other row's cell 0; the rest self-loop by default). -/
+def pairCircuit (c0 c1 : Array F) : Circuit F :=
+  { publicInputSize := 0
+  , gates := #[
+      { kind := .generic, coeffs := c0
+      , wires := #[(1, 0), (0, 1), (0, 2), (0, 3), (0, 4), (0, 5), (0, 6)] },
+      { kind := .generic, coeffs := c1
+      , wires := #[(0, 0), (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6)] }] }
+
+/-- The realization's gates are exactly the elaboration's emission (wire columns aside — the
+    realization *adds* the sigma; the kinds and coefficients are untouched). -/
+theorem pairCircuit_gates (c0 c1 : Array F) (r : ℕ) (hr : r < 2) :
+    ((pairCircuit c0 c1).gateAt r).kind
+        = ((((elabPair c0 c1).run ⟨#[], []⟩).2.gates.getD r
+            { kind := .generic, coeffs := #[], wires := #[] })).kind
+    ∧ ((pairCircuit c0 c1).gateAt r).coeffs
+        = ((((elabPair c0 c1).run ⟨#[], []⟩).2.gates.getD r
+            { kind := .generic, coeffs := #[], wires := #[] })).coeffs := by
+  interval_cases r <;> exact ⟨rfl, rfl⟩
+
+/-- The realization's wire map closes the recorded class into a cycle. -/
+theorem pairCircuit_cycle (c0 c1 : Array F) :
+    CycleWires (fun c => ((pairCircuit c0 c1).gateAt c.1).wires.getD c.2 c) [(0, 0), (1, 0)] := by
+  intro i hi
+  match i, hi with
+  | 0, _ => rfl
+  | 1, _ => rfl
+
+/-- **End to end.** A witness satisfying the realized circuit satisfies the elaboration's
+    union-event specification: the sigma encoding round-trips back to `LinksHold` — the wire
+    the DSL asked for is the equality the circuit enforces. -/
+theorem pairCircuit_linksHold (c0 c1 : Array F) (w : Witness F) (pub : Array F)
+    (hsat : Satisfies (pairCircuit c0 c1) w pub) :
+    LinksHold ((elabPair c0 c1).run (⟨#[], []⟩ : ElabSt F)).2.links w := by
+  have hc := hsat.2
+  refine linksHold_of_cycles w
+    (fun c => ((pairCircuit c0 c1).gateAt c.1).wires.getD c.2 c)
+    [[(0, 0), (1, 0)]] [((0, 0), (1, 0))] ?_ ?_ ?_
+  · intro l hl
+    rw [List.mem_singleton] at hl
+    subst hl
+    exact pairCircuit_cycle c0 c1
+  · intro p hp
+    rw [List.mem_singleton] at hp
+    subst hp
+    exact ⟨[(0, 0), (1, 0)], List.mem_singleton.mpr rfl, by simp, by simp⟩
+  · intro l hl c hcl
+    rw [List.mem_singleton] at hl
+    subst hl
+    simp only [List.mem_cons, List.mem_singleton, List.not_mem_nil, or_false] at hcl
+    rcases hcl with rfl | rfl
+    · exact hc 0 (by show 0 < 2; omega) 0 (by omega)
+    · exact hc 1 (by show 1 < 2; omega) 0 (by omega)
+
 end Kimchi.Circuit.Elab

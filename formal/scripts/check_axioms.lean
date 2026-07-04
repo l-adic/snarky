@@ -135,6 +135,9 @@ def roots : List Name :=
     `Kimchi.Circuit.Elab.class_const_of_cycle,
     `Kimchi.Circuit.Elab.cycle_of_class_const,
     `Kimchi.Circuit.Elab.linksHold_of_cycles,
+    -- End-to-end wired gadget: Satisfies of the realized circuit recovers the DSL's
+    -- union-event specification — emission, wiring, realization, semantics, all theorems.
+    `Kimchi.Circuit.Elab.pairCircuit_linksHold,
     -- copyHolds discharged from Ironwood's permutation kernel: the extensional copy constraints
     -- are a consequence of the grand-product multiset identity, not a modeling choice.
     `Kimchi.Circuit.Permutation.copyHolds_of_multiset,
