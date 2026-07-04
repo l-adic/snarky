@@ -136,7 +136,7 @@ theorem emWires_get1 (i : ℕ) (hi : i ≠ 0) (d : Cell) : (emWires i).getD 1 d 
   simp [emWires, hi]
 
 /-- The witness read off gate `i`'s row pair (`i`, `i+1`). -/
-private def gwit (w : Kimchi.Circuit.Witness F) (i : ℕ) : Kimchi.Gate.EndoMul.Witness F :=
+def gwit (w : Kimchi.Circuit.Witness F) (i : ℕ) : Kimchi.Gate.EndoMul.Witness F :=
   ofRows (w.row i) (w.row (i + 1))
 
 /-- Extract from `Satisfies (emCircuit m) w pub` the data the `endoMul` fold consumes: each row's

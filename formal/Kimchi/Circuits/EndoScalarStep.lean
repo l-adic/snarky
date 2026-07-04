@@ -158,7 +158,7 @@ theorem esWires_get3 (i : ℕ) (hi : i ≠ 0) (d : Cell) : (esWires i).getD 3 d 
   simp [esWires, hi]
 
 /-- The witness read off gate `i`'s row. -/
-private def gwit (w : Kimchi.Circuit.Witness F) (i : ℕ) : Kimchi.Gate.EndoScalar.Witness F :=
+def gwit (w : Kimchi.Circuit.Witness F) (i : ℕ) : Kimchi.Gate.EndoScalar.Witness F :=
   ofRows (w.row i)
 
 /-- **End-to-end soundness for the reconstructed `EndoMulScalar` chain.** With `2, 3 ≠ 0` and the

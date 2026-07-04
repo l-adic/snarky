@@ -60,14 +60,14 @@ its nonsingularity *produced* by the complete-add case split, the Rung-0 thread 
 
 Two results:
 - **`addComplete (endo q c) delta`** (IPA.purs:441): the `EndoMul`-result→`CompleteAdd` pairing,
-  same shape as Rung 0.
-- **EndoScalar ↔ EndoMul consistency.** There is no wire dataflow between them (they are siblings
-  consuming the same squeezed challenge) — but that *is* the theorem: in a circuit containing an
-  `EndoMulScalar` run and an `EndoMul` chain wired to the **same challenge crumbs**, the point
-  result is `[toField(challenge)]·T` for the *very field element the circuit computed*. Both Lean
-  developments already meet at `EndoScalar.toField` (`pallas_endoMul`'s scalar is stated in it), so
-  this is a join of two proven results at a shared public challenge — the verifier fact "the scalar
-  used on points equals the scalar used in-field".
+  same shape as Rung 0. *(Remaining: a Rung-0 mirror over `emCircuit` + a fixture.)*
+- **EndoScalar ↔ EndoMul consistency — done** (`Circuits/EndoSibling.lean`,
+  `pallas_sibling_consistency`): an `EndoMulScalar` run and an `EndoMul` chain processing the
+  **same crumb stream** produce `[s]·T` with `(s : F) = a₈·λ + b₈` — the scalar multiplied onto
+  the point is the very field element the scalar run computed, both circuit soundness results
+  joined at `EndoScalar.toField` instantiated at the concrete `pallas_lam`. The crumb-stream
+  equality is the honest interface hypothesis; discharging it from one squeezed challenge's
+  decomposition rows is the Fiat–Shamir rung's job.
 
 ## Rung 4: Fiat–Shamir inside the proof
 

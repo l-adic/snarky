@@ -106,7 +106,10 @@ def roots : List Name :=
     -- Rung 1: the fully-public statement — the whole dumped circuit reconstructed (public rows +
     -- init doubling + embedded chain + combine + inf assert), conclusion over pub alone.
     `Kimchi.Circuit.VarBaseMul.gateRegister_cast,
-    `Kimchi.Circuit.VarBaseMul.scaleCombinePub_sound ]
+    `Kimchi.Circuit.VarBaseMul.scaleCombinePub_sound,
+    -- Rung 3b: EndoScalar↔EndoMul sibling consistency — the scalar multiplied onto the point is
+    -- the very field element the scalar run computed, joined at the shared crumb stream.
+    `Kimchi.Circuit.EndoSibling.pallas_sibling_consistency ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations
