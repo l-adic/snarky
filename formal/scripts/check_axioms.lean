@@ -118,7 +118,12 @@ def roots : List Name :=
     `Kimchi.Circuit.VarBaseMul.blockStep, `Kimchi.Circuit.VarBaseMul.msm_sound,
     -- Rung 4: Fiat-Shamir — the transcript-derived challenge feeds the endo decode; the public
     -- output is the effective scalar of a challenge the circuit computes from its own inputs.
-    `Kimchi.Circuit.FiatShamir.fiatShamir_sound ]
+    `Kimchi.Circuit.FiatShamir.fiatShamir_sound,
+    -- Rungs 5-6: the circuit ↔ commitment-layer IPA bridge. msm_recombine lands the circuit's
+    -- MSM on the verifier's recombined commitment; circuit_ipa_soundness composes through
+    -- VerifierAccepts into ipa_soundness — circuit satisfaction becomes knowledge soundness.
+    `Kimchi.Circuit.IpaBridge.msm_recombine,
+    `Kimchi.Circuit.IpaBridge.circuit_ipa_soundness ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations

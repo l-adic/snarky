@@ -98,23 +98,30 @@ exposed that the Generic checker ignored the second gate of kimchi's double gene
 *Fidelity gap*: `hi`'s range is unconstrained (aliasing mod `p`); the real protocol's challenge
 canonicity needs a range check on `hi` — a second decomposition block, mechanical to add.
 
-## Rung 5: `ipaFinalCheckCircuit`, assembled
+## Rungs 5–6 (done): the circuit ↔ commitment-layer IPA bridge
 
-The IPA final check (`Pickles/IPA.purs:375`) is exactly Rungs 2 + 3 + 4 stitched: sponge-derived
-challenges, endo scalar-muls, the challenge-polynomial MSM, complete adds. Assemble, don't re-prove.
+`Circuits/IpaBridge.lean`. The meeting point is `recombine` — the verifier's recombined commitment
+`Q = P + v•U + ∑ⱼ (uⱼ⁻¹•Lⱼ + uⱼ•Rⱼ)` — which is *exactly* a `2k`-term MSM. Two pieces of glue make
+the layers meet: the point group becomes a **module over its scalar field**
+(`Module (ZMod W.order) W.Point` via `AddCommGroup.zmodModule` from `order_smul` — this is where
+the 2-cycle lives, `ZMod (Vesta.order) = PallasBaseField`), and the circuit's ℤ-scalars cross by
+`Int.cast_smul_eq_zsmul`, per-block cast hypotheses pinning each ladder scalar to a challenge or
+its inverse.
 
-## Rung 6 (the capstone): the bridge to `Kimchi.Commitment.IPA`
+- **Rung 5** (`msm_recombine`): a satisfying witness of the `2k`-block MSM circuit — accumulator
+  `P + v•U`, block bases the cross-commitments, block scalars casting to `u⁻¹/u` — carries
+  `recombine σ P v u lr` in its output cells, verbatim in the commitment layer's vocabulary.
+- **Rung 6** (`circuit_ipa_soundness`, the capstone): the circuit-derived `Q`, the asserted
+  Schnorr equation over the output cells (its sides are further scale-and-combine blocks of the
+  Rung 0–4 shapes; stated in point form), and the `sg`-check give `VerifierAccepts`; then
+  `ipa_soundness` — under the commitment layer's own stated Fiat–Shamir rewinding hypothesis —
+  yields `∃ a r, openingRelation σ P x v a r`. **Circuit satisfaction has become knowledge
+  soundness**, over the four Pasta postulates (plus `FiatShamirTree`, the commitment layer's
+  declared trust boundary).
 
-The repo already has protocol-level IPA soundness (`ipa_soundness`, `ipaRelation_of_acceptV`,
-multi-poly/multi-point batching). The bridge theorem:
-
-> Any witness satisfying the (reconstructed, fully-public) IPA-final-check circuit yields an
-> accepted `Kimchi.Commitment.IPA.Verify` run on the public commitments/evaluations — so the
-> commitment-layer soundness applies, and the claimed evaluations are binding.
-
-This connects the two existing bodies of proof (circuit layer ↔ commitment layer) into one
-statement: **circuit-satisfaction ⇒ cryptographic verification**, over the trusted base of the
-four Pasta postulates. It is the reason the sub-circuit direction exists.
+*Remaining fidelity work*: instantiate the outer Schnorr sides as their own reconstructed blocks
+(mechanical, the same shapes), and a full `ipaFinalCheckCircuit` dump once the Pickles test
+context is pluggable into the dumper.
 
 ## Cross-cutting upgrades
 
