@@ -125,8 +125,14 @@ The outer Schnorr sides are now **also circuit-derived** (`circuit_ipa_soundness
 `c•Q + δ` is a 1-block MSM (acc = `δ`, base tied to the recombination's output cells), the RHS is
 a grounded `[z1]·sg` chain feeding a 2-block MSM (`(z1·b₀)•U`, `z2•h`), and the asserted equality
 is cell-value equality between the two output pairs — the form a real dump's assert produces.
-*Remaining fidelity work*: a full `ipaFinalCheckCircuit` dump once the Pickles test context is
-pluggable into the dumper, and Rung 4's `hi` range block.
+*The real thing (done)*: `fixtures/ipa_final_check_step.json` is a dump of the **actual Pickles
+`ipaFinalCheckCircuit`** (2 rounds, Step-side instantiation) — 817 rows spanning all six custom
+gate families (204 VarBaseMul, 160 EndoMul, 55 Poseidon, 26 CompleteAdd, 24 EndoMulScalar,
+134 Generic). The verified checker **accepts it and rejects a tamper**: the deployed verifier's
+own gate stream is now under the drift guard. (The input is fabricated — the circuit does not
+assert `success`, so no real proof/SRS is needed for transcription validation; a `success = true`
+fixture from a real wrap proof remains available future work, as does a Lean reconstruction of
+the whole 817-row circuit — its blocks are exactly the proven Rung 0–4 shapes.)
 
 ## Cross-cutting upgrades
 
