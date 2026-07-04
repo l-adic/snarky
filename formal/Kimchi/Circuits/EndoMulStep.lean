@@ -262,4 +262,106 @@ theorem pallas_endoMul_circuit_scalar
     exists_canonical_scalar _ (Point.some _ _ hfin) T s (by rw [pallas_card]; decide) hpt
   exact ⟨hfin, s', hs', h0, hlt⟩
 
+/-! ## Rung 3a: the endo scale-and-combine `p' = acc + [s]·T`
+
+The `EndoMul`-result→`CompleteAdd` pairing (`addComplete (endo q c) delta`, `Pickles/IPA.purs`):
+the chain's output accumulator (row `m`, cols 4–5 — `EndoMul` writes its output into the *next*
+row) feeds a trailing `CompleteAdd`'s second input by a copy wire. Full complete-add disjunction,
+`y ≠ 0` derived from the odd Pallas order — the endo mirror of `scaleCombine_sound`. -/
+
+/-- The output row of the chain (row `m`), as a gate: `Zero`, no constraints, no wires — it only
+    carries the last gate's output cells (as in the dump). -/
+def emOutRow : Kimchi.Circuit.Gate F := { kind := .zero, coeffs := #[], wires := #[] }
+
+/-- The combine row (row `m+1`): input 1 the external accumulator (self-loops), input 2 wired to
+    the chain's output cells `(m, 4)/(m, 5)`; output and `inf` self-loop. -/
+def caCombEndo (m : ℕ) : Kimchi.Circuit.Gate F :=
+  { kind := .completeAdd, coeffs := #[]
+  , wires := #[(m + 1, 0), (m + 1, 1), (m, 4), (m, 5), (m + 1, 4), (m + 1, 5), (m + 1, 6)] }
+
+/-- `emCircuit m` with the output row and a trailing `CompleteAdd` combine. -/
+def emCombCircuit (m : ℕ) : Kimchi.Circuit.Circuit F :=
+  (emCircuit m).append #[emOutRow, caCombEndo m]
+
+omit [Field F] [DecidableEq F] in
+@[simp] theorem emComb_size (m : ℕ) :
+    (emCombCircuit m (F := F)).gates.size = m + 2 := by simp [emCombCircuit]
+
+omit [Field F] [DecidableEq F] in
+theorem gateAt_emComb_ca (m : ℕ) :
+    (emCombCircuit m (F := F)).gateAt (m + 1) = caCombEndo m := by
+  have h := Circuit.gateAt_append_right (emCircuit m (F := F)) #[emOutRow, caCombEndo m] 1
+    (by show 1 < 2; decide)
+  rw [emCircuit_size] at h
+  exact h
+
+/-- The chain's output accumulator lives at row `m`, cols 4–5 (both `accX` branches). -/
+theorem accX_cell (w : Kimchi.Circuit.Witness F) (m : ℕ) :
+    accX (gwit w) m = (w.row m).getD 4 0 := by cases m <;> rfl
+
+theorem accY_cell (w : Kimchi.Circuit.Witness F) (m : ℕ) :
+    accY (gwit w) m = (w.row m).getD 5 0 := by cases m <;> rfl
+
+/-- **Endo scale-and-combine (Pallas), complete.** From `Satisfies (emCombCircuit m)` the
+    sub-circuit computes `p' = acc + [s]·T` with `s`'s field image the challenge's
+    `EndoScalar.toField` — the full complete-add case split, `acc`'s `y ≠ 0` derived from the
+    odd group order. -/
+theorem endoCombine_sound
+    (m : ℕ) (hbits : 4 * m ≤ 244) (w : Kimchi.Circuit.Witness PallasBaseField)
+    (pub : Array PallasBaseField) (hsat : Satisfies (emCombCircuit m) w pub)
+    (hdist : ∀ i, i < m →
+        ((gwit w i).xP - (gwit w i).xR) * ((gwit w i).xR - (gwit w i).xS) ≠ 0)
+    (T φT : Pallas.curve.toAffine.Point)
+    (hTns : Pallas.curve.toAffine.Nonsingular (gwit w 0).xT (gwit w 0).yT)
+    (hTeq : T = Point.some _ _ hTns)
+    (hφTns : Pallas.curve.toAffine.Nonsingular (pallas_endo * (gwit w 0).xT) (gwit w 0).yT)
+    (hφTeq : φT = Point.some _ _ hφTns)
+    (hP0ns : Pallas.curve.toAffine.Nonsingular (gwit w 0).xP (gwit w 0).yP)
+    (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T + (2 : ℤ) • φT)
+    (hacc : Pallas.curve.toAffine.Nonsingular
+        (Kimchi.Gate.AddComplete.ofRow (w.row (m + 1))).x1
+        (Kimchi.Gate.AddComplete.ofRow (w.row (m + 1))).y1) :
+    ∃ s : ℤ,
+      (s : PallasBaseField)
+          = Kimchi.Circuit.EndoScalar.toField (crumbList (gwit w) m) (pallas_lam : PallasBaseField)
+      ∧ (((Kimchi.Gate.AddComplete.ofRow (w.row (m + 1))).inf = 1
+            ∧ Point.some _ _ hacc + s • T = 0)
+        ∨ ((Kimchi.Gate.AddComplete.ofRow (w.row (m + 1))).inf = 0
+            ∧ ∃ h3 : Pallas.curve.toAffine.Nonsingular
+                (Kimchi.Gate.AddComplete.ofRow (w.row (m + 1))).x3
+                (Kimchi.Gate.AddComplete.ofRow (w.row (m + 1))).y3,
+              Point.some _ _ h3 = Point.some _ _ hacc + s • T)) := by
+  have ha4 : Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0
+      ∧ Pallas.curve.toAffine.a₃ = 0 ∧ Pallas.curve.toAffine.a₄ = 0 := ⟨rfl, rfl, rfl, rfl⟩
+  have hchain : Satisfies (emCircuit m) w pub :=
+    Satisfies.of_append (c := emCircuit m) (gs := #[emOutRow, caCombEndo m]) hsat
+  obtain ⟨hg, hc⟩ := hsat
+  obtain ⟨hfin, s, hpt, hsF⟩ := pallas_endoMul_circuit m hbits w pub hchain hdist T φT
+    hTns hTeq hφTns hφTeq hP0ns hP0
+  -- the combine row's gate identity and its chain-output wires
+  have hCcons : Kimchi.Gate.AddComplete.Holds
+      (Kimchi.Gate.AddComplete.ofRow (w.row (m + 1))) := by
+    have := hg (m + 1) (by rw [emComb_size]; omega)
+    rwa [gateAt_emComb_ca m] at this
+  have hcc2 := hc (m + 1) (by rw [emComb_size]; omega) 2 (by omega)
+  have hcc3 := hc (m + 1) (by rw [emComb_size]; omega) 3 (by omega)
+  rw [gateAt_emComb_ca m] at hcc2 hcc3
+  simp only [caCombEndo] at hcc2 hcc3
+  have ex2 : (Kimchi.Gate.AddComplete.ofRow (w.row (m + 1))).x2 = accX (gwit w) m := by
+    rw [accX_cell]; exact hcc2
+  have ey2 : (Kimchi.Gate.AddComplete.ofRow (w.row (m + 1))).y2 = accY (gwit w) m := by
+    rw [accY_cell]; exact hcc3
+  have h2C : Pallas.curve.toAffine.Nonsingular
+      (Kimchi.Gate.AddComplete.ofRow (w.row (m + 1))).x2
+      (Kimchi.Gate.AddComplete.ofRow (w.row (m + 1))).y2 := by
+    rw [ex2, ey2]; exact hfin
+  have heq2 : Point.some _ _ h2C = s • T := (Point.some_congr h2C hfin ex2 ey2).trans hpt
+  refine ⟨s, hsF, ?_⟩
+  rcases Kimchi.Gate.AddComplete.sound Pallas.curve.toAffine ha4
+      (Kimchi.Gate.AddComplete.ofRow (w.row (m + 1))) hacc h2C hCcons
+      (Point.y_ne_zero_of_odd_order rfl rfl pallas_order_odd hacc) (by decide) with
+    ⟨hinf, hsum⟩ | ⟨hinf, h3, hsum⟩
+  · exact Or.inl ⟨hinf, by rw [← heq2]; exact hsum⟩
+  · exact Or.inr ⟨hinf, h3, by rw [← heq2]; exact hsum.symm⟩
+
 end Kimchi.Circuit.EndoMul

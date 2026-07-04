@@ -109,7 +109,10 @@ def roots : List Name :=
     `Kimchi.Circuit.VarBaseMul.scaleCombinePub_sound,
     -- Rung 3b: EndoScalar↔EndoMul sibling consistency — the scalar multiplied onto the point is
     -- the very field element the scalar run computed, joined at the shared crumb stream.
-    `Kimchi.Circuit.EndoSibling.pallas_sibling_consistency ]
+    `Kimchi.Circuit.EndoSibling.pallas_sibling_consistency,
+    -- Rung 3a: the endo scale-and-combine MSM term (EndoMul chain output fed into a CompleteAdd),
+    -- full complete-add disjunction.
+    `Kimchi.Circuit.EndoMul.endoCombine_sound ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations

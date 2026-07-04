@@ -17,6 +17,7 @@ module Test.Snarky.Circuit.Kimchi.DumpAddComplete
   , dumpEndoMul
   , dumpEndoScalar
   , dumpScaleCombine
+  , dumpEndoCombine
   , dumpAll
   ) where
 
@@ -288,6 +289,41 @@ dumpScaleCombine = do
     solver = makeSolver (Proxy @(KimchiConstraint Fp)) circuit
   dumpToFile "formal/fixtures/scale_combine_step.json" builtState solver input
 
+--------------------------------------------------------------------------------
+-- endo_combine (the endo MSM term `p' = acc + [s]·T`): EndoMul chain → CompleteAdd
+
+-- | `addFast acc (endo g c)` — the endo scalar-mul's result feeds an add
+-- | (`addComplete (endo q c) delta`, Pickles/IPA.purs), matching Lean
+-- | `Kimchi.Circuit.EndoMul.endoCombine_sound`.
+dumpEndoCombine :: Effect Unit
+dumpEndoCombine = do
+  let
+    circuit
+      :: forall r
+       . Tuple (Tuple (AffinePoint (FVar Fp)) (FVar Fp)) (AffinePoint (FVar Fp))
+      -> Snarky Fp (KimchiConstraint Fp) r (AffinePoint (FVar Fp))
+    circuit (Tuple (Tuple g scalar) acc) = do
+      q <- endo @128 @32 g (unsafeCoerce scalar :: SizedF 128 (FVar Fp))
+      _.p <$> addFast DontCheckFinite acc q
+    toPt h = case toAffine h of
+      Just c -> AffinePoint c
+      Nothing -> unsafeCrashWith "dumpEndoCombine: infinity"
+    input =
+      Tuple (Tuple (toPt (generator :: Pallas.G)) (F (fromInt 12345)))
+        (toPt ((generator :: Pallas.G) <> (generator :: Pallas.G)))
+  builtState <- compile @Fp noAdvice
+    (Proxy @(Tuple (Tuple (AffinePoint Fp) (F Fp)) (AffinePoint Fp)))
+    (Proxy @(AffinePoint Fp))
+    (Proxy @(KimchiConstraint Fp))
+    circuit
+  let
+    solver
+      :: Solver Fp (KimchiConstraint Fp)
+           (Tuple (Tuple (AffinePoint Fp) (F Fp)) (AffinePoint Fp))
+           (AffinePoint Fp)
+    solver = makeSolver (Proxy @(KimchiConstraint Fp)) circuit
+  dumpToFile "formal/fixtures/endo_combine_step.json" builtState solver input
+
 -- | Regenerate every committed fixture. Run from the repo root so the relative
 -- | `formal/fixtures/…` paths resolve.
 dumpAll :: Effect Unit
@@ -298,3 +334,4 @@ dumpAll = do
   dumpEndoMul
   dumpEndoScalar
   dumpScaleCombine
+  dumpEndoCombine

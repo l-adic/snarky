@@ -66,7 +66,7 @@ def checkRecon (name : String) (path : System.FilePath) (recon : Circuit Fp)
   pure (accepts && rejects)
 
 open Kimchi.Circuit.VarBaseMul (vbmCircuit scaleCombineCircuit scaleCombinePubCircuit)
-open Kimchi.Circuit.EndoMul (emCircuit)
+open Kimchi.Circuit.EndoMul (emCircuit emCombCircuit)
 open Kimchi.Circuit.EndoScalar (esCircuit)
 open Kimchi.Circuit.Poseidon (posCircuit)
 
@@ -95,6 +95,9 @@ def main : IO Unit := do
   -- the verifier sub-circuit: chain rows 8..109 + the combine CompleteAdd at 110
   ok := ok && (← checkRecon "scale-combine → scaleCombineCircuit 51"
     "fixtures/scale_combine_step.json" (scaleCombineCircuit 51) 8 111)
+  -- Rung 3a: the endo scale-and-combine (EndoMul chain -> CompleteAdd), rows 10..43
+  ok := ok && (← checkRecon "endo-combine → emCombCircuit 32"
+    "fixtures/endo_combine_step.json" (emCombCircuit 32) 10 44)
   -- Rung 1: the WHOLE dump, no slicing, against the real public inputs
   ok := ok && (← do
     let (_, w, pub) ← loadFull "fixtures/scale_combine_step.json"
