@@ -46,7 +46,17 @@ def roots : List Name :=
     `Kimchi.Commitment.IPA.vandermondeN,
     `Kimchi.Commitment.IPA.batch_soundness,
     `Kimchi.Quotient.zH_dvd_iff,
-    `Kimchi.Quotient.genericRows_iff_dvd ]
+    `Kimchi.Quotient.genericRows_iff_dvd,
+    `Kimchi.Quotient.identity_of_evals,
+    `Kimchi.Quotient.dvd_separation,
+    `Kimchi.Quotient.rows_iff_dvd_of,
+    `Kimchi.Quotient.rowsSel_iff_dvd,
+    `Kimchi.Quotient.AddComplete.rows_iff_dvd,
+    `Kimchi.Quotient.VarBaseMul.rows_iff_dvd,
+    `Kimchi.Quotient.EndoMul.rows_iff_dvd,
+    `Kimchi.Quotient.AddComplete.soundness,
+    `Kimchi.Quotient.VarBaseMul.soundness,
+    `Kimchi.Quotient.EndoMul.soundness ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta GLV endomorphism inputs (`β`, `λ`,

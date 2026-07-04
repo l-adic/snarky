@@ -82,3 +82,22 @@ Kimchi.Commitment.IPA.batch_soundness
 -- iff the gate's two constraints hold at every row of the table (`genericRows_iff_dvd`).
 Kimchi.Quotient.zH_dvd_iff
 Kimchi.Quotient.genericRows_iff_dvd
+
+-- Kimchi quotient argument (soundness engine + gate lifts). Random-evaluation soundness: the
+-- quotient identity at more-than-degree-many distinct points forces it as polynomials
+-- (`identity_of_evals`); the alpha-aggregate divisible at enough distinct alphas forces each
+-- constraint divisible (`dvd_separation`). The generic lift engine (`rows_iff_dvd_of`,
+-- selector-gated `rowsSel_iff_dvd`) turns any eval bridge into a divisibility-iff-rows theorem;
+-- instantiated per gate via cell maps and `constraints_map` naturality (`<G>.rows_iff_dvd`).
+-- Headline per gate: for every selector-active row the gate's Holds follows
+-- (`<G>.soundness`); the EC meaning is obtained by citing Gate.<G>.sound where consumed.
+Kimchi.Quotient.identity_of_evals
+Kimchi.Quotient.dvd_separation
+Kimchi.Quotient.rows_iff_dvd_of
+Kimchi.Quotient.rowsSel_iff_dvd
+Kimchi.Quotient.AddComplete.rows_iff_dvd
+Kimchi.Quotient.VarBaseMul.rows_iff_dvd
+Kimchi.Quotient.EndoMul.rows_iff_dvd
+Kimchi.Quotient.AddComplete.soundness
+Kimchi.Quotient.VarBaseMul.soundness
+Kimchi.Quotient.EndoMul.soundness
