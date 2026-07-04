@@ -48,19 +48,29 @@ exclusion on the witness's ladder. Validated: `CheckReconstruction`'s FULL case 
 *unsliced* dump with its real `publicInputs` — accepts, and rejects a tamper. This is the statement
 shape every later rung should have: **witness fully existential, conclusion over `pub` alone.**
 
-## Rung 2: the parametric `n`-term MSM
+## Rung 2 (done): the parametric `n`-term MSM
 
-`acc + ∑ᵢ [sᵢ]·Gᵢ` — not a 2-term toy; the machinery is already parametric in the chain length, so
-go straight to `n` blocks folded through the adds (add `i`'s output wired to add `i+1`'s input-1,
-its nonsingularity *produced* by the complete-add case split, the Rung-0 thread iterated). This is
-`combined_polynomial` / the Lagrange-base MSM (`PublicInputCommit`). State the scalars canonically
-(`[0, order)`, sister base field) via the #6 lift.
+`Circuits/Msm.lean`: `msmCircuit m n` is built **recursively** — block `i` (rows
+`[i·(2m+2), (i+1)·(2m+2))`) is an init doubling, the chain, and a combine whose first input is the
+previous combine's output; `msmCircuit m (n+1) = (msmCircuit m n).append (block n)`. `msm_sound` is
+a structural induction: `of_append` hands the prefix to the IH, `of_embed` projects the last
+block's chain, and `blockStep` (init doubling → `scaleFast1` → combine) advances the accumulator:
+
+> the last combine's output cells carry `acc + ∑_{i ≤ n} [sᵢ]·Tᵢ`.
+
+Per-block hypotheses mirror the single-term theorems; each combine's `inf = 0` is a hypothesis
+(an `n`-fold statement under flagged verticals would enumerate first-failure prefixes — the
+per-term vertical case is `scaleCombine_sound`'s disjunction). Validated:
+`fixtures/msm2_step.json` (a real 2-term MSM dump — uniform contiguous `2m+2`-row blocks, as the
+circuit assumes) is accepted by `msmCircuit 51 2` and rejects a tamper. Canonical scalars
+(`[0, order)`, sister field) compose via `exists_canonical_scalar` as in #6.
 
 ## Rung 3: the endo side — and the sibling-consistency theorem
 
 Two results:
-- **`addComplete (endo q c) delta`** (IPA.purs:441): the `EndoMul`-result→`CompleteAdd` pairing,
-  same shape as Rung 0. *(Remaining: a Rung-0 mirror over `emCircuit` + a fixture.)*
+- **`addComplete (endo q c) delta` — done** (`endoCombine_sound` in `EndoMulStep.lean`): the
+  `EndoMul`-result→`CompleteAdd` pairing, full complete-add disjunction, validated against
+  `fixtures/endo_combine_step.json` (`emCombCircuit 32`, rows 10–43).
 - **EndoScalar ↔ EndoMul consistency — done** (`Circuits/EndoSibling.lean`,
   `pallas_sibling_consistency`): an `EndoMulScalar` run and an `EndoMul` chain processing the
   **same crumb stream** produce `[s]·T` with `(s : F) = a₈·λ + b₈` — the scalar multiplied onto

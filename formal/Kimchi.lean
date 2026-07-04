@@ -35,5 +35,6 @@ import Kimchi.Circuits.PoseidonStep
 import Kimchi.Circuits.Combinations
 import Kimchi.Circuits.ScaleCombinePub
 import Kimchi.Circuits.EndoSibling
+import Kimchi.Circuits.Msm
 import Kimchi.Circuits.InitGrounding
 import Kimchi.Json

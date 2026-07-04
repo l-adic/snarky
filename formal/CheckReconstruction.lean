@@ -4,6 +4,7 @@ import Kimchi.Circuits.EndoMulStep
 import Kimchi.Circuits.EndoScalarStep
 import Kimchi.Circuits.PoseidonStep
 import Kimchi.Circuits.ScaleCombinePub
+import Kimchi.Circuits.Msm
 
 /-! # Validate the reconstructed step-circuits against real dumps
 
@@ -65,7 +66,8 @@ def checkRecon (name : String) (path : System.FilePath) (recon : Circuit Fp)
   IO.println s!"{name}: accepts real chain = {accepts}, rejects tampered = {rejects}"
   pure (accepts && rejects)
 
-open Kimchi.Circuit.VarBaseMul (vbmCircuit scaleCombineCircuit scaleCombinePubCircuit)
+open Kimchi.Circuit.VarBaseMul (vbmCircuit scaleCombineCircuit scaleCombinePubCircuit
+  msmCircuit)
 open Kimchi.Circuit.EndoMul (emCircuit emCombCircuit)
 open Kimchi.Circuit.EndoScalar (esCircuit)
 open Kimchi.Circuit.Poseidon (posCircuit)
@@ -98,6 +100,9 @@ def main : IO Unit := do
   -- Rung 3a: the endo scale-and-combine (EndoMul chain -> CompleteAdd), rows 10..43
   ok := ok && (← checkRecon "endo-combine → emCombCircuit 32"
     "fixtures/endo_combine_step.json" (emCombCircuit 32) 10 44)
+  -- Rung 2: the 2-term MSM — two [init][chain][comb] blocks, rows 10..217
+  ok := ok && (← checkRecon "msm2       → msmCircuit 51 2" "fixtures/msm2_step.json"
+    (msmCircuit 51 2) 10 218)
   -- Rung 1: the WHOLE dump, no slicing, against the real public inputs
   ok := ok && (← do
     let (_, w, pub) ← loadFull "fixtures/scale_combine_step.json"

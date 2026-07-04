@@ -112,7 +112,10 @@ def roots : List Name :=
     `Kimchi.Circuit.EndoSibling.pallas_sibling_consistency,
     -- Rung 3a: the endo scale-and-combine MSM term (EndoMul chain output fed into a CompleteAdd),
     -- full complete-add disjunction.
-    `Kimchi.Circuit.EndoMul.endoCombine_sound ]
+    `Kimchi.Circuit.EndoMul.endoCombine_sound,
+    -- Rung 2: the parametric n-term MSM — scale-and-combine blocks folded through their
+    -- CompleteAdds (structural induction over the recursively-built circuit).
+    `Kimchi.Circuit.VarBaseMul.blockStep, `Kimchi.Circuit.VarBaseMul.msm_sound ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations

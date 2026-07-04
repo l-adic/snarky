@@ -18,6 +18,7 @@ module Test.Snarky.Circuit.Kimchi.DumpAddComplete
   , dumpEndoScalar
   , dumpScaleCombine
   , dumpEndoCombine
+  , dumpMsm2
   , dumpAll
   ) where
 
@@ -324,6 +325,47 @@ dumpEndoCombine = do
     solver = makeSolver (Proxy @(KimchiConstraint Fp)) circuit
   dumpToFile "formal/fixtures/endo_combine_step.json" builtState solver input
 
+--------------------------------------------------------------------------------
+-- msm2 (a 2-term MSM): acc + [s1]·G1 + [s2]·G2 — the scale-combine folded
+
+-- | Two scale-combine terms folded: the core of the verifier's Lagrange/IPA MSM,
+-- | matching Lean `Kimchi.Circuit.VarBaseMul.msm_sound` (n = 2).
+dumpMsm2 :: Effect Unit
+dumpMsm2 = do
+  let
+    circuit
+      :: forall r
+       . Tuple (Tuple (Tuple (AffinePoint (FVar Fp)) (FVar Fp))
+            (Tuple (AffinePoint (FVar Fp)) (FVar Fp))) (AffinePoint (FVar Fp))
+      -> Snarky Fp (KimchiConstraint Fp) r (AffinePoint (FVar Fp))
+    circuit (Tuple (Tuple (Tuple g1 s1) (Tuple g2 s2)) acc) = do
+      q1 <- scaleFast1 @51 g1 (Type1 s1)
+      r1 <- _.p <$> addFast DontCheckFinite acc q1
+      q2 <- scaleFast1 @51 g2 (Type1 s2)
+      _.p <$> addFast DontCheckFinite r1 q2
+    toPt h = case toAffine h of
+      Just c -> AffinePoint c
+      Nothing -> unsafeCrashWith "dumpMsm2: infinity"
+    input =
+      Tuple
+        (Tuple (Tuple (toPt (generator :: Pallas.G)) (F (fromInt 12345)))
+          (Tuple (toPt ((generator :: Pallas.G) <> (generator :: Pallas.G))) (F (fromInt 6789))))
+        (toPt ((generator :: Pallas.G) <> (generator :: Pallas.G) <> (generator :: Pallas.G)))
+  builtState <- compile @Fp noAdvice
+    (Proxy @(Tuple (Tuple (Tuple (AffinePoint Fp) (F Fp)) (Tuple (AffinePoint Fp) (F Fp)))
+        (AffinePoint Fp)))
+    (Proxy @(AffinePoint Fp))
+    (Proxy @(KimchiConstraint Fp))
+    circuit
+  let
+    solver
+      :: Solver Fp (KimchiConstraint Fp)
+           (Tuple (Tuple (Tuple (AffinePoint Fp) (F Fp)) (Tuple (AffinePoint Fp) (F Fp)))
+             (AffinePoint Fp))
+           (AffinePoint Fp)
+    solver = makeSolver (Proxy @(KimchiConstraint Fp)) circuit
+  dumpToFile "formal/fixtures/msm2_step.json" builtState solver input
+
 -- | Regenerate every committed fixture. Run from the repo root so the relative
 -- | `formal/fixtures/…` paths resolve.
 dumpAll :: Effect Unit
@@ -335,3 +377,4 @@ dumpAll = do
   dumpEndoScalar
   dumpScaleCombine
   dumpEndoCombine
+  dumpMsm2
