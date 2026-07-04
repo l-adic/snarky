@@ -207,4 +207,68 @@ theorem Satisfies.of_append [CommRing F] {c : Circuit F} {gs : Array (Gate F)} {
   · have hh := hc r (by rw [Circuit.size_append]; omega) k hk
     rwa [Circuit.gateAt_append_left c gs r hr] at hh
 
+/-! ## Embedding a block at a row offset
+
+A multi-block circuit places a proven block (a `vbmCircuit`, an `emCircuit`, …) at rows
+`[k, k + size)` of a larger host — with the block's internal copy-wires shifted by `k`. The host's
+`Satisfies` then *projects* onto the block against the row-shifted view of the witness
+(`Satisfies.of_embed`), so the block's composition theorem applies verbatim at offset `k`. This is
+the general form of `append` (which is the case `k = c.gates.size` of a suffix block), and the
+enabler for reconstructing dumped circuits whole — setup rows first, chain in the middle. -/
+
+/-- Shift a gate's copy-wires `k` rows deeper. Kind and coefficients unchanged, so the gate
+    identity (`rowHolds`) is untouched — only the permutation targets move. -/
+def Gate.shiftWires (k : ℕ) (g : Gate F) : Gate F :=
+  { g with wires := g.wires.map fun c => (k + c.1, c.2) }
+
+/-- The row-shifted view of a witness: `(w.shift k).row i = w.row (k + i)`. -/
+def Witness.shift (k : ℕ) (w : Witness F) : Witness F :=
+  ⟨Array.ofFn (n := w.rows.size - k) fun i => w.row (k + i.val)⟩
+
+theorem Witness.row_shift (w : Witness F) (k i : ℕ) : (w.shift k).row i = w.row (k + i) := by
+  by_cases h : i < w.rows.size - k
+  · rw [Witness.row, Witness.shift, getD_ofFn_lt _ _ _ _ h]
+  · rw [Witness.row, Witness.shift, Array.getD, dif_neg (by simpa using h),
+      Witness.row, Array.getD, dif_neg (by omega)]
+
+theorem Witness.cell_shift [Zero F] (w : Witness F) (k : ℕ) (c : Cell) :
+    (w.shift k).cell c = w.cell (k + c.1, c.2) := by
+  show ((w.shift k).row c.1).getD c.2 0 = (w.row (k + c.1)).getD c.2 0
+  rw [Witness.row_shift]
+
+/-- A shifted gate's wire lookup is the shift of the original lookup (defaults align because
+    `shiftWires` uses `k + ·`). -/
+theorem Gate.wires_getD_shift (g : Gate F) (k j r c : ℕ) :
+    (g.shiftWires k).wires.getD j (k + r, c)
+      = ((fun p : Cell => (k + p.1, p.2)) (g.wires.getD j (r, c))) := by
+  by_cases hj : j < g.wires.size
+  · rw [Gate.shiftWires, Array.getD, dif_pos (by simpa using hj), Array.getD, dif_pos hj]
+    simp
+  · rw [Gate.shiftWires, Array.getD, dif_neg (by simpa using hj), Array.getD, dif_neg hj]
+
+/-- **Projection onto an embedded block.** If rows `[k, k + block.size)` of the host are exactly
+    the block's gates with wires shifted by `k`, and the block sits past the host's public rows,
+    then a witness satisfying the host satisfies the block against the shifted witness view (the
+    block itself carrying no public input — its `pubTerm` is `0` against the empty vector). -/
+theorem Satisfies.of_embed [CommRing F] {host block : Circuit F} {w : Witness F} {pub : Array F}
+    (k : ℕ) (hpub : host.publicInputSize ≤ k)
+    (hsz : k + block.gates.size ≤ host.gates.size)
+    (hgates : ∀ r, r < block.gates.size → host.gateAt (k + r) = (block.gateAt r).shiftWires k)
+    (h : Satisfies host w pub) : Satisfies block (w.shift k) #[] := by
+  obtain ⟨hg, hc⟩ := h
+  refine ⟨fun r hr => ?_, fun r hr j hj => ?_⟩
+  · have hh := hg (k + r) (by omega)
+    rw [hgates r hr] at hh
+    have hpt : host.pubTerm pub (k + r) = 0 := by
+      rw [Circuit.pubTerm, if_neg (by omega)]
+    rw [hpt] at hh
+    have hpt' : block.pubTerm #[] r = (0 : F) := by
+      rw [Circuit.pubTerm]; split <;> simp
+    rw [hpt', Witness.row_shift, Witness.row_shift]
+    exact hh
+  · have hh := hc (k + r) (by omega) j hj
+    rw [hgates r hr, Gate.wires_getD_shift] at hh
+    rw [Witness.cell_shift, Witness.cell_shift]
+    exact hh
+
 end Kimchi.Circuit
