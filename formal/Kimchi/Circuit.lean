@@ -91,10 +91,13 @@ def Circuit.pubTerm [Zero F] (c : Circuit F) (pub : Array F) (r : Nat) : F :=
 /-- RELATIONAL: row `g`'s gate identity holds for register rows `curr`/`next`, with the
     public-input term `pubr` folded into the generic case. `zero` is vacuous; `completeAdd`
     delegates to the proven `AddComplete.Holds`; the four custom gates are currently
-    `True`-stubbed (their constraint polynomials are not yet transcribed). -/
+    `True`-stubbed (their constraint polynomials are not yet transcribed). The generic case
+    checks **both** gates of kimchi's double generic row (`eval` on cols 0–2, `eval2` on
+    cols 3–5; a 5-coefficient row leaves the second half vacuous). -/
 def rowHolds [CommRing F] (g : Gate F) (curr next : Row F) (pubr : F) : Prop :=
   match g.kind with
   | .generic       => Checker.Generic.eval g.coeffs curr = pubr
+                        ∧ Checker.Generic.eval2 g.coeffs curr = 0
   | .zero          => True
   | .completeAdd   => AddComplete.Holds (AddComplete.ofRow curr)
   | .poseidon      => Poseidon.holds g.coeffs curr next
@@ -105,7 +108,8 @@ def rowHolds [CommRing F] (g : Gate F) (curr next : Row F) (pubr : F) : Prop :=
 /-- EXECUTABLE mirror of `rowHolds`. -/
 def rowOk [CommRing F] [DecidableEq F] (g : Gate F) (curr next : Row F) (pubr : F) : Bool :=
   match g.kind with
-  | .generic       => Checker.Generic.eval g.coeffs curr == pubr
+  | .generic       => (Checker.Generic.eval g.coeffs curr == pubr)
+                        && (Checker.Generic.eval2 g.coeffs curr == 0)
   | .zero          => true
   | .completeAdd   => AddComplete.ok (AddComplete.ofRow curr)
   | .poseidon      => Poseidon.ok g.coeffs curr next

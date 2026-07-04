@@ -93,13 +93,13 @@ theorem addComplete_sound
     rw [wireEq k hk] at hc
     have hg := hgates k (by rw [hsz]; omega)
     rw [gateEq k hk] at hg
-    change Checker.Generic.eval (#[1, 0, 0, 0, 0] : Array F) (w.row k)
-        = (addCompleteCircuit (F := F)).pubTerm pub k at hg
-    rw [genEval] at hg
+    have hg1 : Checker.Generic.eval (#[1, 0, 0, 0, 0] : Array F) (w.row k)
+        = (addCompleteCircuit (F := F)).pubTerm pub k := hg.1
+    rw [genEval] at hg1
     have hpt : (addCompleteCircuit (F := F)).pubTerm pub k = pub.getD k 0 := by
       simp only [Circuit.pubTerm, addCompleteCircuit]; exact if_pos hk
-    rw [hpt] at hg
-    rw [hc]; exact hg
+    rw [hpt] at hg1
+    rw [hc]; exact hg1
   -- the CompleteAdd gate identity holds at row 6
   have hH : AddComplete.Holds (AddComplete.ofRow (w.row 6)) := hgates 6 (by rw [hsz]; omega)
   refine ⟨key, ?_⟩

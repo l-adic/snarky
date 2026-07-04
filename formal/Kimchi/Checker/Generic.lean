@@ -31,6 +31,16 @@ def eval [CommRing F] (coeffs : Array F) (row : Row F) : F :=
     + coeffs.getD 3 0 * (row.getD 0 0 * row.getD 1 0)
     + coeffs.getD 4 0
 
+/-- The second gate of a **double** generic row: coefficients 5–9 acting on columns 3–5
+    (`l₂·w₃ + r₂·w₄ + o₂·w₅ + m₂·w₃w₄ + c₂`). kimchi's generic row carries two independent
+    gates; a 5-coefficient row leaves this half vacuously `0`. -/
+def eval2 [CommRing F] (coeffs : Array F) (row : Row F) : F :=
+  coeffs.getD 5 0 * row.getD 3 0
+    + coeffs.getD 6 0 * row.getD 4 0
+    + coeffs.getD 7 0 * row.getD 5 0
+    + coeffs.getD 8 0 * (row.getD 3 0 * row.getD 4 0)
+    + coeffs.getD 9 0
+
 /-- Relational spec for one generic gate (no public-input term): the value is `0`. -/
 def holds [CommRing F] (coeffs : Array F) (row : Row F) : Prop :=
   eval coeffs row = 0

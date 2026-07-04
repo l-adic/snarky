@@ -67,7 +67,7 @@ theorem esSetup_pins_init (t : Nat) (w : Witness F) (pub : Array F)
     -- gate: `eval = pubTerm = 0` ⇒ `w[r][0] = c`
     have hval : (w.row r).getD 0 0 = c := by
       have : Kimchi.Checker.Generic.eval (#[1, 0, 0, 0, -c] : Array F) (w.row r)
-          = (esSetupCircuit t (F := F)).pubTerm pub r := hgr
+          = (esSetupCircuit t (F := F)).pubTerm pub r := hgr.1
       rw [genPin_eval, show (esSetupCircuit t (F := F)).pubTerm pub r = 0 from rfl] at this
       exact sub_eq_zero.mp this
     -- copy: `w[r][0] = w[t][col]`, i.e. `(t,col)` holds `c`

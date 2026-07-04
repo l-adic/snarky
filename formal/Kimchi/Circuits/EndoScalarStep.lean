@@ -294,7 +294,7 @@ theorem esCircuitGrounded_sound (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (lam :
     rw [hgate] at hgr hcr
     have hval : (w.row (m + 1 + j)).getD 0 0 = c := by
       have : Kimchi.Checker.Generic.eval (#[1, 0, 0, 0, -c] : Array F) (w.row (m + 1 + j))
-          = (esCircuitGrounded m (F := F)).pubTerm pub (m + 1 + j) := hgr
+          = (esCircuitGrounded m (F := F)).pubTerm pub (m + 1 + j) := hgr.1
       rw [genPin_eval, show (esCircuitGrounded m (F := F)).pubTerm pub (m + 1 + j) = 0 from rfl]
         at this
       exact sub_eq_zero.mp this

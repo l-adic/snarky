@@ -254,7 +254,7 @@ theorem scaleCombinePub_sound
     rw [hgat] at hgj
     have heq : (w.row j).getD 0 0 = (scaleCombinePubCircuit (k + 1)).pubTerm pub j := by
       have : Kimchi.Checker.Generic.eval (#[1, 0, 0, 0, 0] : Array VestaBaseField) (w.row j)
-          = (scaleCombinePubCircuit (k + 1)).pubTerm pub j := hgj
+          = (scaleCombinePubCircuit (k + 1)).pubTerm pub j := hgj.1
       rwa [genEval] at this
     have hpt : (scaleCombinePubCircuit (k + 1) (F := VestaBaseField)).pubTerm pub j
         = pub.getD j 0 := by
@@ -304,7 +304,7 @@ theorem scaleCombinePub_sound
     have hval : (w.row (9 + 2 * (k + 1))).getD 0 0 = 0 := by
       have : Kimchi.Checker.Generic.eval (#[1, 0, 0, 0, 0] : Array VestaBaseField)
           (w.row (9 + 2 * (k + 1)))
-          = (scaleCombinePubCircuit (k + 1)).pubTerm pub (9 + 2 * (k + 1)) := hgi
+          = (scaleCombinePubCircuit (k + 1)).pubTerm pub (9 + 2 * (k + 1)) := hgi.1
       rw [genEval] at this
       rwa [Circuit.pubTerm,
         show (scaleCombinePubCircuit (k + 1) (F := VestaBaseField)).publicInputSize = 7 from rfl,
