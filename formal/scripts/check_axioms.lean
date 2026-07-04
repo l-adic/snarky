@@ -130,6 +130,11 @@ def roots : List Name :=
     -- the generic replacement for the per-fixture reconstruction tie.
     `Kimchi.Circuit.Elab.elabPoseidon_eq_posCircuit,
     `Kimchi.Circuit.Elab.elabPoseidon_seq,
+    -- The wire layer: cycle-pointer wires (kimchi's sigma) are extensionally class-constancy,
+    -- and recovering the DSL's union-event specification from the cycle encoding is lossless.
+    `Kimchi.Circuit.Elab.class_const_of_cycle,
+    `Kimchi.Circuit.Elab.cycle_of_class_const,
+    `Kimchi.Circuit.Elab.linksHold_of_cycles,
     -- copyHolds discharged from Ironwood's permutation kernel: the extensional copy constraints
     -- are a consequence of the grand-product multiset identity, not a modeling choice.
     `Kimchi.Circuit.Permutation.copyHolds_of_multiset,

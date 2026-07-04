@@ -131,4 +131,90 @@ theorem elabPoseidon_seq (coeffs coeffs' : ℕ → Array F) (m m' : ℕ) :
   simp only [elab_seq, g1, g2]
   rfl
 
+/-! ## The wire layer
+
+The second emission effect: *wiring*. The DSL's `assertEqual_`-style operations record union
+events between cells; keygen closes each resulting equivalence class into a **cycle** of wire
+pointers (kimchi's sigma — every cell points at the next cell of its class). The kernel theorem
+of that translation: pointer equalities around a cycle are extensionally *class-constancy* —
+which is precisely the shape `copyHolds` consumes, and (via `Circuits/Permutation.lean`) the
+shape Ironwood's grand-product kernel delivers. -/
+
+/-- Elaboration state with wiring: emitted gates plus recorded union events. -/
+structure ElabSt (F : Type) where
+  gates : Array (Gate F)
+  links : List (Cell × Cell)
+
+/-- The wire-aware elaboration monad. -/
+abbrev ElabWM (F : Type) (α : Type) := StateM (ElabSt F) α
+
+/-- Emit one gate row. -/
+def emitW {F : Type} (g : Gate F) : ElabWM F Unit :=
+  modify fun st => { st with gates := st.gates.push g }
+
+/-- Record a union event: the two cells must carry equal values (an `assertEqual_`). -/
+def wireW {F : Type} (a b : Cell) : ElabWM F Unit :=
+  modify fun st => { st with links := (a, b) :: st.links }
+
+/-- A witness respects the recorded links. This is the *specification* the wiring means. -/
+def LinksHold {F : Type} [Zero F] (links : List (Cell × Cell)) (w : Witness F) : Prop :=
+  ∀ p ∈ links, w.cell p.1 = w.cell p.2
+
+/-- A wire map realizes a class as a cycle: each listed cell points at the next, wrapping. -/
+def CycleWires (wireOf : Cell → Cell) (l : List Cell) : Prop :=
+  ∀ i (hi : i < l.length),
+    wireOf l[i] = l[(i + 1) % l.length]'(Nat.mod_lt _ (by omega))
+
+/-- **The cycle-wiring kernel.** If a witness satisfies the pointer equalities of a cycle
+    (`w.cell c = w.cell (wireOf c)` along the class), then the class is *constant*: any two
+    of its cells agree. The step from kimchi's sigma representation to the equalities
+    `copyHolds` states — and the inverse direction is immediate, so cycles lose nothing. -/
+theorem class_const_of_cycle {F : Type} [Zero F] (w : Witness F) (wireOf : Cell → Cell)
+    (l : List Cell) (hcyc : CycleWires wireOf l)
+    (hptr : ∀ c ∈ l, w.cell c = w.cell (wireOf c)) :
+    ∀ a ∈ l, ∀ b ∈ l, w.cell a = w.cell b := by
+  -- every cell equals the head, by walking the pointers forward
+  have aux : ∀ i (hi : i < l.length), w.cell l[0] = w.cell l[i] := by
+    intro i
+    induction i with
+    | zero => intro _; rfl
+    | succ n ih =>
+        intro hi
+        have hn : n < l.length := by omega
+        have hstep := hptr l[n] (l.getElem_mem hn)
+        rw [hcyc n hn] at hstep
+        simp only [Nat.mod_eq_of_lt hi] at hstep
+        exact (ih hn).trans hstep
+  intro a ha b hb
+  obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem ha
+  obtain ⟨j, hj, rfl⟩ := List.getElem_of_mem hb
+  exact (aux i hi).symm.trans (aux j hj)
+
+/-- The converse: class-constancy trivially satisfies the pointer equalities of *any* cycle
+    through the class — so realizing links as cycles is a lossless encoding. -/
+theorem cycle_of_class_const {F : Type} [Zero F] (w : Witness F) (wireOf : Cell → Cell)
+    (l : List Cell) (hcyc : CycleWires wireOf l)
+    (hconst : ∀ a ∈ l, ∀ b ∈ l, w.cell a = w.cell b) :
+    ∀ c ∈ l, w.cell c = w.cell (wireOf c) := by
+  intro c hc
+  obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hc
+  rw [hcyc i hi]
+  exact hconst l[i] (l.getElem_mem hi)
+    (l[(i + 1) % l.length]'(Nat.mod_lt _ (by omega)))
+    (l.getElem_mem (Nat.mod_lt _ (by omega)))
+
+/-- **The wiring semantics, end to end.** For classes that cover the recorded links (each link's
+    endpoints share a class) and are realized as cycles by the circuit's wire map, pointer
+    satisfaction implies the links' specification `LinksHold` — the DSL-level meaning of the
+    union events is recovered from the sigma encoding. -/
+theorem linksHold_of_cycles {F : Type} [Zero F] (w : Witness F) (wireOf : Cell → Cell)
+    (classes : List (List Cell)) (links : List (Cell × Cell))
+    (hcycles : ∀ l ∈ classes, CycleWires wireOf l)
+    (hcover : ∀ p ∈ links, ∃ l ∈ classes, p.1 ∈ l ∧ p.2 ∈ l)
+    (hptr : ∀ l ∈ classes, ∀ c ∈ l, w.cell c = w.cell (wireOf c)) :
+    LinksHold links w := by
+  intro p hp
+  obtain ⟨l, hl, h1, h2⟩ := hcover p hp
+  exact class_const_of_cycle w wireOf l (hcycles l hl) (hptr l hl) p.1 h1 p.2 h2
+
 end Kimchi.Circuit.Elab
