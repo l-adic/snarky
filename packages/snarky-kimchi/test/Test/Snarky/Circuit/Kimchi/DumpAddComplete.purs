@@ -11,7 +11,9 @@
 -- | from the repo root via `make dump-fixtures`, which compiles this module and then:
 -- |   node -e "import('./output/Test.Snarky.Circuit.Kimchi.DumpAddComplete/index.js').then(m=>m.dumpAll())"
 module Test.Snarky.Circuit.Kimchi.DumpAddComplete
-  ( dump
+  ( addCompleteKindsCoeffs
+  , varBaseMulKindsCoeffs
+  , dump
   , dumpPoseidon
   , dumpVarBaseMul
   , dumpEndoMul
@@ -137,6 +139,19 @@ addCompleteCircuit
   -> Snarky Fp (KimchiConstraint Fp) r (AffinePoint (FVar Fp))
 addCompleteCircuit (Tuple p1 p2) = _.p <$> addFast DontCheckFinite p1 p2
 
+-- | Entry point for the Lean CoreFn interpreter (formal/CheckCoreFn.lean): the compiled
+-- | elaboration of the addComplete circuit, as plain (kind, coeffs) rows. No file IO, no
+-- | solver — just what `compile` emits, for cross-validation against the dumped fixture.
+addCompleteKindsCoeffs :: Effect (Array { typ :: String, coeffs :: Array Fp })
+addCompleteKindsCoeffs = do
+  builtState <- compile @Fp noAdvice
+    (Proxy @(Tuple (AffinePoint Fp) (AffinePoint Fp)))
+    (Proxy @(AffinePoint Fp))
+    (Proxy @(KimchiConstraint Fp))
+    addCompleteCircuit
+  pure $ map (\r -> { typ: gateKindToString r.kind, coeffs: r.coeffs })
+    (Array.concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints))
+
 dump :: Effect Unit
 dump = do
   let
@@ -183,6 +198,23 @@ dumpPoseidon = do
 
 --------------------------------------------------------------------------------
 -- varbasemul (VarBaseMul + Zero, plus Generic public rows)
+
+-- | Interpreter entry: the scaleFast1 @51 elaboration as (kind, coeffs) rows.
+varBaseMulKindsCoeffs :: Effect (Array { typ :: String, coeffs :: Array Fp })
+varBaseMulKindsCoeffs = do
+  let
+    circuit
+      :: forall r
+       . Tuple (AffinePoint (FVar Fp)) (FVar Fp)
+      -> Snarky Fp (KimchiConstraint Fp) r (AffinePoint (FVar Fp))
+    circuit (Tuple g scalar) = scaleFast1 @51 g (Type1 scalar)
+  builtState <- compile @Fp noAdvice
+    (Proxy @(Tuple (AffinePoint Fp) (F Fp)))
+    (Proxy @(AffinePoint Fp))
+    (Proxy @(KimchiConstraint Fp))
+    circuit
+  pure $ map (\r -> { typ: gateKindToString r.kind, coeffs: r.coeffs })
+    (Array.concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints))
 
 dumpVarBaseMul :: Effect Unit
 dumpVarBaseMul = do

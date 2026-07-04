@@ -275,7 +275,17 @@ def Value.describe : Value → String
   | .vNum r => s!"Number {r}"
   | .vArr es => s!"Array(size {es.size})"
   | .vObj fs => s!"Object({fs.map Prod.fst})"
-  | .vCtor _ c _ args => s!"{c}({args.length} args)"
+  | .vCtor ty c _ args => s!"{ty}.{c}(" ++ ", ".intercalate (args.map fun a =>
+      match a with
+      | .vObj fs => s!"Object({fs.map Prod.fst})"
+      | .vCtor ty' c' _ as' => s!"{ty'}.{c'}({as'.length})"
+      | .vInt n => s!"Int {n}"
+      | .vBig n => s!"Big {n}"
+      | .vArr es => s!"Arr({es.size})"
+      | .vClosure _ n _ => s!"Clo(\\{n})"
+      | .vForeign m' n' _ _ => s!"For {m'}.{n'}"
+      | .vRef i => s!"Ref{i}"
+      | _ => "?") ++ ")"
   | .vClosure _ a _ => s!"Closure(\\{a} -> _)"
   | .vRecRef _ _ n => s!"RecRef {n}"
   | .vForeign m n a args => s!"Foreign {m}.{n} ({args.length}/{a})"
@@ -291,6 +301,15 @@ private def ordering (n : Int) : Value :=
   if n < 0 then .vCtor "Data.Ordering.Ordering" "LT" 0 []
   else if n = 0 then .vCtor "Data.Ordering.Ordering" "EQ" 0 []
   else .vCtor "Data.Ordering.Ordering" "GT" 0 []
+
+/-- Arities of the `Snarky.Curves.Pasta` napi boundary (the `_vestaScalarField*` family is the
+    `Fp` the circuits run over; bound to `Int` mod `p` below). Unlisted names get arity 1 and
+    error at application. -/
+def pastaArity (name : String) : Nat :=
+  if name ∈ ["_vestaScalarFieldZero", "_vestaScalarFieldOne", "_vestaScalarFieldModulus"] then 1
+  else if name ∈ ["_vestaScalarFieldAdd", "_vestaScalarFieldMul", "_vestaScalarFieldSub",
+    "_vestaScalarFieldDiv", "_vestaScalarFieldEq", "_vestaScalarFieldPow"] then 2
+  else 1
 
 def foreignArity (mod name : String) : Option Nat :=
   match mod, name with
@@ -310,6 +329,8 @@ def foreignArity (mod name : String) : Option Nat :=
   | "Data.Unfoldable", "unfoldrArrayImpl" => some 6
   | "Data.Unfoldable1", "unfoldr1ArrayImpl" => some 7
   | "Data.Array", "sortByImpl" => some 3
+  | "Data.Array", "fromFoldableImpl" => some 2
+  | "$builtin", "listCons" => some 2
   | "Data.Array", "length" => some 1
   | "Data.Array", "concat" => some 1
   | "Data.Array", "indexImpl" => some 4
@@ -320,6 +341,9 @@ def foreignArity (mod name : String) : Option Nat :=
   | "Data.Semiring", "intMul" => some 2
   | "Data.Ring", "intSub" => some 2
   | "Data.Eq", "eqIntImpl" => some 2
+  | "Data.HeytingAlgebra", "boolConj" => some 2
+  | "Data.HeytingAlgebra", "boolDisj" => some 2
+  | "Data.HeytingAlgebra", "boolNot" => some 1
   | "Data.Eq", "eqStringImpl" => some 2
   | "Data.Eq", "eqBooleanImpl" => some 2
   | "Data.Eq", "eqArrayImpl" => some 3
@@ -330,6 +354,8 @@ def foreignArity (mod name : String) : Option Nat :=
   | "Data.Foldable", "foldrArray" => some 3
   | "Data.FunctorWithIndex", "mapWithIndexArray" => some 2
   | "Data.Functor", "arrayMap" => some 2
+  | "Control.Bind", "arrayBind" => some 2
+  | "Control.Apply", "arrayApply" => some 2
   | "Data.Array", "zipWithImpl" => some 3
   | "Data.Array", "filterImpl" => some 2
   | "Data.Array", "reverse" => some 1
@@ -347,6 +373,8 @@ def foreignArity (mod name : String) : Option Nat :=
   | "Control.Monad.ST.Internal", "bind_" => some 2
   | "Control.Monad.ST.Internal", "map_" => some 2
   | "Control.Monad.ST.Internal", "foreach" => some 2
+  | "Control.Monad.ST.Internal", "for" => some 3
+  | "Control.Monad.ST.Internal", "while" => some 2
   | "Control.Monad.ST.Internal", "new" => some 1
   | "Control.Monad.ST.Internal", "read" => some 1
   | "Control.Monad.ST.Internal", "write" => some 2
@@ -365,9 +393,46 @@ def foreignArity (mod name : String) : Option Nat :=
   | "Data.Array.ST", "newImpl" => some 0
   | "Data.Show", "showIntImpl" => some 1
   | "Data.Unit", "unit" => some 0
+  | "Effect", "pureE" => some 1
+  | "Effect", "bindE" => some 2
+  | "Effect", "untilE" => some 1
+  | "Effect", "whileE" => some 2
+  | "Effect", "forE" => some 3
+  | "Effect", "foreachE" => some 2
+  | "Effect.Ref", "_new" => some 1
+  | "Effect.Ref", "read" => some 1
+  | "Effect.Ref", "write" => some 2
+  | "Effect.Ref", "modifyImpl" => some 2
+  | "Effect.Unsafe", "unsafePerformEffect" => some 1
+  | "Unsafe.Coerce", "unsafeCoerce" => some 1
+  | "Data.Reflectable", "unsafeCoerce" => some 1
+  | "Record.Unsafe", "unsafeHas" => some 2
+  | "Record.Unsafe", "unsafeGet" => some 2
+  | "Record.Unsafe", "unsafeSet" => some 3
+  | "Record.Unsafe", "unsafeDelete" => some 2
+  | "Data.Int", "quot" => some 2
+  | "Data.Int", "rem" => some 2
+  | "Data.Int", "pow" => some 2
+  | "Data.Traversable", "traverseArrayImpl" => some 5
+  | "$builtin", "arrPush" => some 2
+  | "$builtin", "array1" => some 1
+  | "$builtin", "concat2" => some 2
+  | "Snarky.Curves.Pasta", _ => some (pastaArity name)
   | "Data.Ordering", _ => none
   | "Data.Show", "showStringImpl" => some 1
   | _, _ => none
+
+/-- Binary modular exponentiation on `Nat` (the toolchain has no `Nat.powMod`). -/
+partial def powMod (b e m : Nat) : Nat :=
+  if m ≤ 1 then 0
+  else if e == 0 then 1
+  else
+    let h := powMod (b * b % m) (e / 2) m
+    if e % 2 == 1 then h * b % m else h
+
+/-- `Fp = Vesta.ScalarField` modulus (the Pallas base-field cardinality). -/
+def vestaScalarModulus : Int :=
+  0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001
 
 /-! ## Module loading and evaluation -/
 
@@ -432,12 +497,18 @@ partial def globalValue (ctx : Ctx) (m ident : String) : IO Value := do
   let md ← loadModule ctx m
   let v ← do
     if let some e := md.decls.get? ident then
-      eval ctx [] e
+      try
+        eval ctx [] e
+      catch ex =>
+        err s!"{ex.toString}\n  in {m}.{ident}"
     else if md.foreigns.contains ident then
       match foreignArity m ident with
       | some 0 => applyForeign ctx m ident []
       | some ar => pure (.vForeign m ident ar [])
-      | none => err s!"unbound foreign: {m}.{ident} (add to foreignArity/applyForeign)"
+      | none =>
+          -- unbound: stay symbolic; the error surfaces only if it is actually applied
+          -- (dictionaries eagerly reference foreigns their consumers never call)
+          pure (.vForeign m ident 1000000 [])
     else
       err s!"unknown identifier {m}.{ident}"
   ctx.globals.modify (·.insert (m, ident) v)
@@ -485,7 +556,7 @@ partial def eval (ctx : Ctx) (env : List (String × Value)) : Expr → IO Value
       apply ctx fv av
   | .caseE scruts alts => do
       let vs ← scruts.mapM (eval ctx env)
-      matchAlts ctx env vs alts
+      matchAlts ctx env vs [] alts
   | .letE binds body => do
       let mut env' := env
       for b in binds do
@@ -501,6 +572,11 @@ partial def eval (ctx : Ctx) (env : List (String × Value)) : Expr → IO Value
 partial def apply (ctx : Ctx) (f a : Value) : IO Value := do
   match f with
   | .vClosure env arg body => eval ctx ((arg, a) :: env) body
+  | .vCtor "$ST" tag ar args =>
+      -- JS semantics: an Effect/ST action is a zero-arg thunk; calling it with an argument
+      -- runs it and discards the argument (the Snarky monad's reader/Effect coercion relies
+      -- on exactly this)
+      runST ctx (.vCtor "$ST" tag ar args)
   | .vCtor ty c arity args =>
       let args' := args ++ [a]
       pure (.vCtor ty c arity args')
@@ -517,9 +593,20 @@ partial def apply (ctx : Ctx) (f a : Value) : IO Value := do
       | none => err s!"letrec member {name} not found"
   | v => err s!"apply on non-function: {v.describe}"
 
-partial def matchAlts (ctx : Ctx) (env : List (String × Value)) (vs : List Value) :
+partial def describeBinder : Binder → String
+  | .wild => "_"
+  | .varB n => n
+  | .litB _ => "lit"
+  | .arrB bs => s!"[{bs.map describeBinder}]"
+  | .objB fs => s!"obj({fs.map Prod.fst})"
+  | .ctorB ty c nt args => s!"{ty}.{c}{if nt then "*" else ""}({args.map describeBinder})"
+  | .namedB n b => s!"{n}@{describeBinder b}"
+
+partial def matchAlts (ctx : Ctx) (env : List (String × Value)) (vs : List Value)
+    (dbg : List (List Binder)) :
     List Alt → IO Value
-  | [] => err s!"case: no alternative matched for {vs.map (·.describe)}"
+  | [] => err s!"case: no alternative matched for {vs.map (·.describe)}; alts were \
+      {dbg.map (·.map describeBinder)}"
   | alt :: rest => do
       let (binders, result) := match alt with
         | .plain bs r => (bs, Sum.inl r)
@@ -532,8 +619,8 @@ partial def matchAlts (ctx : Ctx) (env : List (String × Value)) (vs : List Valu
           | .inr arms => do
               match ← firstGuard ctx env' arms with
               | some v => pure v
-              | none => matchAlts ctx env vs rest
-      | none => matchAlts ctx env vs rest
+              | none => matchAlts ctx env vs (dbg ++ [binders]) rest
+      | none => matchAlts ctx env vs (dbg ++ [binders]) rest
 
 partial def firstGuard (ctx : Ctx) (env : List (String × Value)) :
     List (Expr × Expr) → IO (Option Value)
@@ -603,7 +690,15 @@ partial def runST (ctx : Ctx) (v : Value) : IO Value := do
   | .vCtor "$ST" "pure_" _ [a] => pure a
   | .vCtor "$ST" "bind_" _ [m, f] => do
       let a ← runST ctx m
-      runST ctx (← apply ctx f a)
+      let next ← apply ctx f a
+      match next with
+      | .vCtor "$ST" .. => runST ctx next
+      | .vForeign .. => runST ctx next
+      | v =>
+          -- JS: `f(a())()` — but PS code coerced so the continuation's result is already
+          -- the final value (a zero-arg call on it never happens for pure payloads
+          -- threaded through the Snarky reader). Pass it through.
+          pure v
   | .vCtor "$ST" "map_" _ [f, m] => do
       apply ctx f (← runST ctx m)
   | .vCtor "$ST" "foreach" _ [.vArr es, f] => do
@@ -628,13 +723,83 @@ partial def runST (ctx : Ctx) (v : Value) : IO Value := do
           ctx.heap.modify (·.set! i st)
           pure val
       | v => err s!"modifyImpl: {v.describe}"
+  | .vCtor "$ST" "untilE" _ [act] => do
+      let mut fuel := 10000000
+      while fuel > 0 do
+        fuel := fuel - 1
+        match ← runST ctx act with
+        | .vBool true => return (.vObj [])
+        | .vBool false => pure ()
+        | v => err s!"untilE: {v.describe}"
+      err "untilE: fuel exhausted"
+  | .vCtor "$ST" "whileE" _ [cond, act] => do
+      let mut fuel := 10000000
+      while fuel > 0 do
+        fuel := fuel - 1
+        match ← runST ctx cond with
+        | .vBool true => let _ ← runST ctx act
+        | .vBool false => return (.vObj [])
+        | v => err s!"whileE: {v.describe}"
+      err "whileE: fuel exhausted"
+  | .vCtor "$ST" "while" _ [cond, act] => do
+      let mut fuel := 10000000
+      while fuel > 0 do
+        fuel := fuel - 1
+        match ← runST ctx cond with
+        | .vBool true => let _ ← runST ctx act
+        | .vBool false => return (.vObj [])
+        | v => err s!"ST.while: {v.describe}"
+      err "ST.while: fuel exhausted"
+  | .vCtor "$ST" "for" _ [.vInt lo, .vInt hi, f] => do
+      for k in [0 : (hi - lo).toNat] do
+        let _ ← runST ctx (← apply ctx f (.vInt (lo + k)))
+      pure (.vObj [])
+  | .vCtor "$ST" "forE" _ [.vInt lo, .vInt hi, f] => do
+      for k in [0 : (hi - lo).toNat] do
+        let _ ← runST ctx (← apply ctx f (.vInt (lo + k)))
+      pure (.vObj [])
+  | .vForeign "Data.Array.ST" "new" _ _ => do
+      let heap ← ctx.heap.get
+      ctx.heap.set (heap.push (.vArr #[]))
+      pure (.vRef heap.size)
   | .vCtor "$ST" "STFn" _ (fn :: fnArgs) => stPrim ctx fn fnArgs
-  | .vCtor "$ST" tag _ args => err s!"ST node {tag}/{args.length} not interpreted"
-  | v => err s!"runST on non-ST value: {v.describe}"
+  | .vCtor "$ST" tag _ args =>
+      err s!"ST node {tag}/{args.length} not interpreted: {args.map (·.describe)}"
+  | .vClosure env arg body =>
+      -- JS: a zero-arg invocation of a real closure binds its parameter to `undefined`;
+      -- the sentinel errors loudly if the body ever inspects it
+      eval ctx ((arg, Value.vCtor "$U" "undefined" 0 []) :: env) body
+  | v =>
+      -- already-run payloads reaching action position pass through (reader/Effect coercion)
+      pure v
 
 /-- The `Data.Array.ST` primitives (mutable arrays as heap slots holding `vArr`). -/
 partial def stPrim (ctx : Ctx) (fn : Value) (args : List Value) : IO Value := do
   match fn, args with
+  | .vForeign "Data.Array.ST" "thawImpl" _ _, [.vArr xs] => do
+      let heap ← ctx.heap.get
+      ctx.heap.set (heap.push (.vArr xs))
+      pure (.vRef heap.size)
+  | .vForeign "Data.Array.ST" "freezeImpl" _ _, [.vRef i] => do
+      pure (← ctx.heap.get)[i]!
+  | .vForeign "Data.Array.ST" "popImpl" _ _, [just, nothing, .vRef i] => do
+      let heap ← ctx.heap.get
+      match heap[i]! with
+      | .vArr xs =>
+          if xs.isEmpty then pure nothing
+          else do
+            ctx.heap.set (heap.set! i (.vArr xs.pop))
+            apply ctx just xs.back!
+      | v => err s!"popImpl: slot holds {v.describe}"
+  | .vForeign "Data.Array.ST" "spliceImpl" _ _, [.vInt k, .vInt hm, .vArr bs, .vRef i] => do
+      let heap ← ctx.heap.get
+      match heap[i]! with
+      | .vArr xs => do
+          let removed := xs.extract k.toNat (k.toNat + hm.toNat)
+          let newArr := xs.extract 0 k.toNat ++ bs ++ xs.extract (k.toNat + hm.toNat) xs.size
+          ctx.heap.set (heap.set! i (.vArr newArr))
+          pure (.vArr removed)
+      | v => err s!"spliceImpl: slot holds {v.describe}"
   | .vForeign "Data.Array.ST" "unsafeThawImpl" _ _, [.vArr xs] => do
       let heap ← ctx.heap.get
       ctx.heap.set (heap.push (.vArr xs))
@@ -724,6 +889,30 @@ partial def applyForeign (ctx : Ctx) (m n : String) (args : List Value) : IO Val
             | v => err s!"unfoldr isNothing: {v.describe}"
           err "unfoldrArrayImpl: fuel exhausted"
       | _ => err "unfoldrArrayImpl: expected 6 args"
+  | "$builtin", "listCons" =>
+      match args with
+      | [a, b] => pure (.vCtor "$L" "Cons" 2 [a, b])
+      | _ => err "listCons: bad args"
+  | "Data.Array", "fromFoldableImpl" =>
+      -- (foldr, xs): build a cons-list with a synthetic builtin, then flatten
+      match args with
+      | [foldr, xs] => do
+          let consF := Value.vForeign "$builtin" "listCons" 2 []
+          let nilV := Value.vCtor "$L" "Nil" 0 []
+          let lst ← apply ctx (← apply ctx (← apply ctx foldr consF) nilV) xs
+          let mut acc : Array Value := #[]
+          let mut cur := lst
+          let mut fuel := 10000000
+          while fuel > 0 do
+            fuel := fuel - 1
+            match cur with
+            | .vCtor "$L" "Nil" _ _ => return (.vArr acc)
+            | .vCtor "$L" "Cons" _ [h, t] =>
+                acc := acc.push h
+                cur := t
+            | v => err s!"fromFoldableImpl: bad list node {v.describe}"
+          err "fromFoldableImpl: fuel exhausted"
+      | _ => err "fromFoldableImpl: bad args"
   | "Data.Array", "sortByImpl" =>
       -- comparison (a → a → Ordering-as-int via wrapper), ordering→int, array
       match args with
@@ -796,6 +985,18 @@ partial def applyForeign (ctx : Ctx) (m n : String) (args : List Value) : IO Val
   | "Data.Semiring", "intAdd" => int2 (fun a b => .vInt (a + b))
   | "Data.Semiring", "intMul" => int2 (fun a b => .vInt (a * b))
   | "Data.Ring", "intSub" => int2 (fun a b => .vInt (a - b))
+  | "Data.HeytingAlgebra", "boolConj" =>
+      match args with
+      | [.vBool a, .vBool b] => pure (.vBool (a && b))
+      | _ => err "boolConj: bad args"
+  | "Data.HeytingAlgebra", "boolDisj" =>
+      match args with
+      | [.vBool a, .vBool b] => pure (.vBool (a || b))
+      | _ => err "boolDisj: bad args"
+  | "Data.HeytingAlgebra", "boolNot" =>
+      match args with
+      | [.vBool a] => pure (.vBool !a)
+      | _ => err "boolNot: bad args"
   | "Data.Eq", "eqIntImpl" => int2 (fun a b => .vBool (a == b))
   | "Data.Eq", "eqStringImpl" =>
       match args with
@@ -844,6 +1045,25 @@ partial def applyForeign (ctx : Ctx) (m n : String) (args : List Value) : IO Val
             acc := acc.push (← apply ctx f (.vInt i) >>= fun g => apply ctx g es[i]!)
           pure (.vArr acc)
       | _ => err "mapWithIndexArray: bad args"
+  | "Control.Bind", "arrayBind" =>
+      match args with
+      | [.vArr es, f] => do
+          let mut acc : Array Value := #[]
+          for e in es do
+            match ← apply ctx f e with
+            | .vArr inner => acc := acc ++ inner
+            | v => err s!"arrayBind: non-array {v.describe}"
+          pure (.vArr acc)
+      | _ => err s!"arrayBind: bad args {args.map (·.describe)}"
+  | "Control.Apply", "arrayApply" =>
+      match args with
+      | [.vArr fs, .vArr es] => do
+          let mut acc : Array Value := #[]
+          for f in fs do
+            for e in es do
+              acc := acc.push (← apply ctx f e)
+          pure (.vArr acc)
+      | _ => err s!"arrayApply: bad args {args.map (·.describe)}"
   | "Data.Functor", "arrayMap" =>
       match args with
       | [f, .vArr es] => do
@@ -851,7 +1071,7 @@ partial def applyForeign (ctx : Ctx) (m n : String) (args : List Value) : IO Val
           for e in es do
             acc := acc.push (← apply ctx f e)
           pure (.vArr acc)
-      | _ => err "arrayMap: bad args"
+      | _ => err s!"arrayMap: bad args {args.map (·.describe)}"
   | "Data.Array", "filterImpl" =>
       match args with
       | [f, .vArr es] => do
@@ -928,7 +1148,105 @@ partial def applyForeign (ctx : Ctx) (m n : String) (args : List Value) : IO Val
       match args with
       | [.vInt a] => pure (.vStr (toString a))
       | _ => err "showIntImpl: bad args"
+  | "Effect", "pureE" => pure (.vCtor "$ST" "pure_" args.length args)
+  | "Effect", "bindE" => pure (.vCtor "$ST" "bind_" args.length args)
+  | "Effect", "untilE" => pure (.vCtor "$ST" "untilE" args.length args)
+  | "Effect", "whileE" => pure (.vCtor "$ST" "whileE" args.length args)
+  | "Effect", "forE" => pure (.vCtor "$ST" "forE" args.length args)
+  | "Effect", "foreachE" => pure (.vCtor "$ST" "foreach" args.length args)
+  | "Effect.Ref", "_new" => pure (.vCtor "$ST" "new" args.length args)
+  | "Effect.Ref", "read" => pure (.vCtor "$ST" "read" args.length args)
+  | "Effect.Ref", "write" => pure (.vCtor "$ST" "write" args.length args)
+  | "Effect.Ref", "modifyImpl" => pure (.vCtor "$ST" "modifyImpl" args.length args)
+  | "Effect.Unsafe", "unsafePerformEffect" =>
+      match args with
+      | [m'] => runST ctx m'
+      | _ => err "unsafePerformEffect: bad args"
+  | "Unsafe.Coerce", "unsafeCoerce" | "Data.Reflectable", "unsafeCoerce" =>
+      match args with
+      | [v] => pure v
+      | _ => err "unsafeCoerce: bad args"
+  | "Record.Unsafe", "unsafeHas" =>
+      match args with
+      | [.vStr k, .vObj fs] => pure (.vBool (fs.any (·.1 == k)))
+      | _ => err "unsafeHas: bad args"
+  | "Record.Unsafe", "unsafeGet" =>
+      match args with
+      | [.vStr k, .vObj fs] =>
+          match fs.find? (·.1 == k) with
+          | some (_, v) => pure v
+          | none => err s!"unsafeGet: no field {k}"
+      | _ => err s!"unsafeGet: bad args {args.map (·.describe)}"
+  | "Record.Unsafe", "unsafeSet" =>
+      match args with
+      | [.vStr k, v, .vObj fs] =>
+          pure (.vObj ((k, v) :: fs.filter (·.1 != k)))
+      | _ => err s!"unsafeSet: bad args {args.map (·.describe)}"
+  | "Record.Unsafe", "unsafeDelete" =>
+      match args with
+      | [.vStr k, .vObj fs] => pure (.vObj (fs.filter (·.1 != k)))
+      | _ => err s!"unsafeDelete: bad args {args.map (·.describe)}"
+  | "Data.Int", "quot" => int2 (fun a b => .vInt (a.tdiv b))
+  | "Data.Int", "rem" => int2 (fun a b => .vInt (a.tmod b))
+  | "Data.Int", "pow" => int2 (fun a b => .vInt (a ^ b.toNat))
+  | "Snarky.Curves.Pasta", _ => pasta ctx n args
+  | "$builtin", "arrPush" =>
+      match args with
+      | [.vArr xs, x] => pure (.vArr (xs.push x))
+      | _ => err s!"arrPush: bad args {args.map (·.describe)}"
+  | "$builtin", "array1" =>
+      match args with
+      | [a] => pure (.vArr #[a])
+      | _ => err "array1: bad args"
+  | "$builtin", "concat2" =>
+      match args with
+      | [.vArr xs, .vArr ys] => pure (.vArr (xs ++ ys))
+      | _ => err s!"concat2: bad args {args.map (·.describe)}"
+  | "Data.Traversable", "traverseArrayImpl" =>
+      -- (apply, map, pure, f, array): faithful divide-and-conquer, effects left-to-right —
+      -- singleton leaves via `array1`, merged with `apply (map concat2 left) right`
+      match args with
+      | [applyF, mapF, pureF, f, .vArr es] => do
+          let arr1 := Value.vForeign "$builtin" "array1" 1 []
+          let cat2 := Value.vForeign "$builtin" "concat2" 2 []
+          let rec go (bot top : Nat) : IO Value := do
+            if bot == top then do
+              let fe ← apply ctx f es[bot]!
+              apply ctx (← apply ctx mapF arr1) fe
+            else do
+              let mid := (bot + top) / 2
+              let left ← go bot mid
+              let right ← go (mid + 1) top
+              apply ctx (← apply ctx (← apply ctx mapF cat2) left) right
+          if es.isEmpty then apply ctx pureF (.vArr #[])
+          else go 0 (es.size - 1)
+      | _ => err s!"traverseArrayImpl: bad args {args.map (·.describe)}"
   | _, _ => err s!"foreign {m}.{n} not implemented ({args.length} args)"
+
+/-- The napi field boundary, realized in Lean: `Fp = Vesta.ScalarField` as `Int` mod
+    `vestaScalarModulus` (the Pallas base-field cardinality). Inversion and `pow` use
+    binary exponentiation mod `p`. -/
+partial def pasta (_ctx : Ctx) (n : String) (args : List Value) : IO Value := do
+  let P := vestaScalarModulus
+  let norm (a : Int) : Int := a.emod P
+  match n, args with
+  | "_vestaScalarFieldZero", [_] => pure (.vBig 0)
+  | "_vestaScalarFieldOne", [_] => pure (.vBig 1)
+  | "_vestaScalarFieldModulus", [_] => pure (.vBig P)
+  | "_vestaScalarFieldAdd", [.vBig a, .vBig b] => pure (.vBig (norm (a + b)))
+  | "_vestaScalarFieldSub", [.vBig a, .vBig b] => pure (.vBig (norm (a - b)))
+  | "_vestaScalarFieldMul", [.vBig a, .vBig b] => pure (.vBig (norm (a * b)))
+  | "_vestaScalarFieldEq", [.vBig a, .vBig b] => pure (.vBool (norm a == norm b))
+  | "_vestaScalarFieldInvert", [.vBig a] =>
+      pure (.vBig (Int.ofNat (powMod (norm a).toNat (P.toNat - 2) P.toNat)))
+  | "_vestaScalarFieldDiv", [.vBig a, .vBig b] =>
+      pure (.vBig (norm (a * Int.ofNat (powMod (norm b).toNat (P.toNat - 2) P.toNat))))
+  | "_vestaScalarFieldPow", [.vBig a, .vBig e] =>
+      pure (.vBig (Int.ofNat (powMod (norm a).toNat e.toNat P.toNat)))
+  | "_vestaScalarFieldFromBigInt", [.vBig a] => pure (.vBig (norm a))
+  | "_vestaScalarFieldToBigInt", [.vBig a] => pure (.vBig (norm a))
+  | "_vestaScalarFieldToString", [.vBig a] => pure (.vStr (toString (norm a)))
+  | _, _ => err s!"Snarky.Curves.Pasta.{n}/{args.length} not implemented"
 
 end
 
