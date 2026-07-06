@@ -1,4 +1,5 @@
 import Kimchi.Sponge.GroupMap
+import Kimchi.Fixture.Parse
 import Lean.Data.Json
 
 /-!
@@ -15,23 +16,13 @@ Both vector files are produced by `tools/fixture-dump` (`sponge_dump`) directly 
 Run (after `lake build Kimchi`): `scripts/check_fq_sponge.sh`.
 -/
 
-open Lean Kimchi.Sponge Kimchi.Sponge.FqVesta
+open Lean Kimchi.Fixture Kimchi.Sponge Kimchi.Sponge.FqVesta
 
-def parseNat (s : String) : Except String ℕ :=
-  match s.toNat? with
-  | some n => .ok n
-  | none => .error s!"not a decimal natural: {s.take 40}"
+def parseFq : Json → Except String Fq := parseZMod
 
-def parseFq (j : Json) : Except String Fq := do
-  return ((← parseNat (← j.getStr?)) : ℕ)
+def parseFr : Json → Except String Fr := parseZMod
 
-def parseFr (j : Json) : Except String Fr := do
-  return ((← parseNat (← j.getStr?)) : ℕ)
-
-def parsePt (j : Json) : Except String (Fq × Fq) := do
-  let a ← j.getArr?
-  unless a.size = 2 do throw "point is not a coordinate pair"
-  return (← parseFq a[0]!, ← parseFq a[1]!)
+def parsePt : Json → Except String (Fq × Fq) := parsePoint parseFq
 
 /-- One trace operation: an absorption input or an expected squeeze output. -/
 inductive VOp

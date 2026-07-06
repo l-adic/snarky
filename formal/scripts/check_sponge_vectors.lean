@@ -1,4 +1,5 @@
 import Kimchi.Sponge.Poseidon
+import Kimchi.Fixture.Parse
 import Lean.Data.Json
 
 /-!
@@ -12,7 +13,7 @@ absorb/squeeze traces recorded from proof-systems `mina_poseidon`
 Run (after `lake build Kimchi`): `scripts/check_sponge_vectors.sh`.
 -/
 
-open Lean Kimchi.Sponge CompElliptic.Fields.Pasta
+open Lean Kimchi.Sponge Kimchi.Fixture CompElliptic.Fields.Pasta
 
 structure Op (F : Type) where
   isAbsorb : Bool
@@ -21,8 +22,8 @@ structure Op (F : Type) where
 def parseOp {F : Type} (parseF : Json → Except String F) (j : Json) :
     Except String (Op F) := do
   match ← (← j.getObjVal? "op").getStr? with
-  | "absorb" => return ⟨true, ← (← (← j.getObjVal? "values").getArr?).mapM parseF⟩
-  | "squeeze" => return ⟨false, ← (← (← j.getObjVal? "expect").getArr?).mapM parseF⟩
+  | "absorb" => return ⟨true, ← parseArrOf parseF (← j.getObjVal? "values")⟩
+  | "squeeze" => return ⟨false, ← parseArrOf parseF (← j.getObjVal? "expect")⟩
   | op => throw s!"unknown op: {op}"
 
 /-- Run one trace; `true` iff every squeeze matches the recorded output. -/
@@ -49,11 +50,6 @@ def checkFile {F : Type} [Field F] [DecidableEq F] (params : Params F)
   let failed := cases.foldl (fun n c => if runCase params c then n else n + 1) 0
   IO.println s!"{path}: {cases.size - failed}/{cases.size} OK"
   return failed = 0
-
-def parseZMod {n : ℕ} (j : Json) : Except String (ZMod n) := do
-  match (← j.getStr?).toNat? with
-  | some k => return (k : ZMod n)
-  | none => throw "not a decimal natural"
 
 def main : IO Unit := do
   let okFq ← checkFile Fq.params (parseZMod (n := PALLAS_SCALAR_CARD))
