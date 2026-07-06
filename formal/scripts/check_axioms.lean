@@ -69,14 +69,14 @@ def roots : List Name :=
     `Kimchi.Quotient.multiset_eq_of_grid_prod_evals ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
-    (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta GLV endomorphism inputs (`β`, `λ`,
-    the CM eigenvalue relation). CompElliptic `native_decide` witnesses are permitted separately by
-    `isTrustedNativeDecide`. -/
+    (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations
+    (`{pallas,vesta}_eigen` — the endomorphism coefficients `β` and eigenvalues `λ` themselves
+    are concrete, proved definitions in `Kimchi/Pasta/Constants.lean`). CompElliptic
+    `native_decide` witnesses are permitted separately by `isTrustedNativeDecide`. -/
 def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound, `Lean.ofReduceBool,
     `Kimchi.Pasta.pallas_hasse, `Kimchi.Pasta.vesta_hasse,
-    `Kimchi.Pasta.pallas_endo, `Kimchi.Pasta.pallas_eigen,
-    `Kimchi.Pasta.vesta_endo, `Kimchi.Pasta.vesta_eigen, ]
+    `Kimchi.Pasta.pallas_eigen, `Kimchi.Pasta.vesta_eigen, ]
 
 /-- A CompElliptic `native_decide` witness: an axiom under the `CompElliptic` namespace carrying the
     `native_decide` marker (these back CompElliptic's point counts). A `native_decide` in our own
