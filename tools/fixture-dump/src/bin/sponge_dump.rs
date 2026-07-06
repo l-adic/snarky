@@ -151,21 +151,35 @@ fn emit_fq_sponge<P: ark_ec::short_weierstrass::SWCurveConfig>(
     let rand_pt = |rng: &mut ChaCha20Rng| {
         (<ark_ec::short_weierstrass::Affine<P> as AffineRepr>::Group::rand(rng)).into_affine()
     };
-    let shapes: Vec<Vec<&str>> = vec![
-        vec!["challenge"],
-        vec!["absorb_fr", "challenge"],
-        vec!["absorb_fr", "challenge_fq"],
-        vec!["absorb_g", "squeeze_challenge"],
-        vec!["absorb_g", "challenge", "challenge"],
-        vec![
-            "absorb_fr",
-            "challenge",
-            "absorb_g",
-            "squeeze_challenge",
-            "challenge_fq",
-        ],
-        vec!["challenge_fq", "absorb_fr", "squeeze_challenge"],
+    // Coverage by construction: every ordered pair of op kinds (all transitions of the
+    // op × limb-buffer state machine, including the infinity absorption and consecutive
+    // challenges), plus longer mixed sequences for buffer-lifecycle depth.
+    const OPS: [&str; 6] = [
+        "absorb_fr",
+        "absorb_g",
+        "absorb_g_inf",
+        "challenge_fq",
+        "challenge",
+        "squeeze_challenge",
     ];
+    let mut shapes: Vec<Vec<&str>> = OPS
+        .iter()
+        .flat_map(|a| OPS.iter().map(move |b| vec![*a, *b]))
+        .collect();
+    shapes.push(vec!["absorb_g", "challenge", "challenge", "challenge"]);
+    shapes.push(vec![
+        "absorb_fr",
+        "challenge",
+        "absorb_g_inf",
+        "squeeze_challenge",
+        "challenge_fq",
+    ]);
+    shapes.push(vec![
+        "challenge_fq",
+        "absorb_fr",
+        "squeeze_challenge",
+        "challenge",
+    ]);
     let cases: Vec<_> = shapes
         .iter()
         .map(|shape| {
@@ -182,6 +196,10 @@ fn emit_fq_sponge<P: ark_ec::short_weierstrass::SWCurveConfig>(
                         let p = rand_pt(rng);
                         sp.absorb_g(&[p]);
                         json!({ "op": "absorb_g", "point": [fe(&p.x), fe(&p.y)] })
+                    }
+                    "absorb_g_inf" => {
+                        sp.absorb_g(&[ark_ec::short_weierstrass::Affine::<P>::zero()]);
+                        json!({ "op": "absorb_g_inf" })
                     }
                     "challenge_fq" => {
                         json!({ "op": "challenge_fq", "expect": fe(&sp.challenge_fq()) })

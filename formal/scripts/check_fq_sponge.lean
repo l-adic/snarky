@@ -7,9 +7,10 @@ import Lean.Data.Json
 
 Replays op traces of `DefaultFqSponge` over both Pasta curves
 (`fixtures/fq_sponge_vectors.json` for Vesta, `fixtures/fq_sponge_pallas_vectors.json` for
-Pallas — scalar and point absorption, raw field squeezes, 128-bit prechallenges,
-endo-expanded effective challenges; the Pallas traces exercise the high-bits/low-bit
-`absorb_fr` branch) through the sponge layer (`Kimchi/Sponge/FqSponge.lean`), and the SvdW
+Pallas): every ordered pair of op kinds — scalar, point, and infinity absorption, raw field
+squeezes, 128-bit prechallenges, endo-expanded effective challenges — plus longer mixed
+sequences; the Pallas traces exercise the high-bits/low-bit `absorb_fr` branch. Replayed
+through the sponge layer (`Kimchi/Sponge/FqSponge.lean`), and the SvdW
 map (`fixtures/group_map_vectors.json`, `t ↦ to_group(t)`) through
 `Kimchi/Sponge/GroupMap.lean`, comparing every output with the recorded production values.
 All vector files are produced by `tools/fixture-dump` (`sponge_dump`) directly from
@@ -24,6 +25,7 @@ open Lean Kimchi.Fixture Kimchi.Sponge Kimchi.Sponge.FqSponge
 inductive VOp (Fq Fr : Type)
   | absorbFr (x : Fr)
   | absorbG (p : Fq × Fq)
+  | absorbGInfinity
   | challengeFq (expect : Fq)
   | challenge (expect : Fr)
   | squeezeChallenge (expect : Fr)
@@ -33,6 +35,7 @@ def parseOp {Fq Fr : Type} (pFq : Json → Except String Fq) (pFr : Json → Exc
   match ← (← j.getObjVal? "op").getStr? with
   | "absorb_fr" => return .absorbFr (← pFr (← j.getObjVal? "value"))
   | "absorb_g" => return .absorbG (← parsePoint pFq (← j.getObjVal? "point"))
+  | "absorb_g_inf" => return .absorbGInfinity
   | "challenge_fq" => return .challengeFq (← pFq (← j.getObjVal? "expect"))
   | "challenge" => return .challenge (← pFr (← j.getObjVal? "expect"))
   | "squeeze_challenge" => return .squeezeChallenge (← pFr (← j.getObjVal? "expect"))
@@ -47,6 +50,7 @@ def runCase {q p : ℕ} [Field (ZMod q)] [Field (ZMod p)] (spec : Spec q p)
       match op with
       | .absorbFr x => (absorbFr spec s x, ok)
       | .absorbG pt => (absorbG spec s pt, ok)
+      | .absorbGInfinity => (absorbGInfinity spec s, ok)
       | .challengeFq e => let (x, s) := challengeFq spec s; (s, ok && decide (x = e))
       | .challenge e => let (x, s) := challenge spec s; (s, ok && decide (x = e))
       | .squeezeChallenge e =>
