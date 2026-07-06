@@ -2,6 +2,7 @@ import Mathlib.Algebra.Field.Defs
 import Mathlib.Data.Fin.VecNotation
 import CompElliptic.Fields.Pasta
 import Kimchi.Sponge.PoseidonConstantsFq
+import Kimchi.Sponge.PoseidonConstantsFp
 
 /-!
 # The kimchi Poseidon sponge
@@ -19,10 +20,11 @@ compiler eta-expands function-valued definitions, under which a fold of rounds r
 its whole prefix at every component lookup — exponentially in the round count. Constructor
 arguments are forced at construction, keeping the fold linear.
 
-Everything is executable. `Fq` instantiates the sponge at the Vesta base field with the
-generated `fq_kimchi` parameters (`PoseidonConstantsFq.lean`) — the sponge that kimchi
-proofs over Vesta are transcribed with. Validated against `mina_poseidon` absorb/squeeze
-traces by `scripts/check_sponge_vectors.lean`.
+Everything is executable. `Fq` and `Fp` instantiate the sponge at the Vesta and Pallas base
+fields with the generated `fq_kimchi` / `fp_kimchi` parameters (`PoseidonConstantsFq.lean` /
+`PoseidonConstantsFp.lean`) — the sponges of kimchi proofs over Vesta and Pallas
+respectively. Both validated against `mina_poseidon` absorb/squeeze traces by
+`scripts/check_sponge_vectors.lean`.
 
 The sponge is the *definitional* layer of the Fiat-Shamir instantiation: the security of the
 transform (that these challenges behave as the abstract soundness hypotheses require) is a
@@ -32,7 +34,7 @@ separate, explicitly flagged assumption where the instantiation meets the soundn
 
 * `Triple`, `Params`, `sbox`, `fullRound`, `blockCipher` — the permutation.
 * `Mode`, `State`, `init`, `absorb`, `squeeze`, `squeezeN` — the duplex automaton.
-* `Fq.params`, `Fq.init` — the concrete `fq_kimchi` instantiation.
+* `Fq.params` / `Fp.params` — the concrete `fq_kimchi` / `fp_kimchi` instantiations.
 -/
 
 namespace Kimchi.Sponge
@@ -156,5 +158,28 @@ def params : Params VestaBaseField where
 def init : State VestaBaseField := Kimchi.Sponge.init
 
 end Fq
+
+/-! ## The `fp_kimchi` instantiation -/
+
+namespace Fp
+
+open CompElliptic.Fields.Pasta
+
+/-- The `fp_kimchi` parameters over the Pallas base field, from the generated constant
+tables. -/
+def params : Params PallasBaseField where
+  roundConstants := FpKimchi.roundConstants.map fun row =>
+    (((row[0]! : ℕ) : PallasBaseField), ((row[1]! : ℕ) : PallasBaseField),
+     ((row[2]! : ℕ) : PallasBaseField))
+  mds :=
+    match FpKimchi.mds.map fun row =>
+        (((row[0]! : ℕ) : PallasBaseField), ((row[1]! : ℕ) : PallasBaseField),
+         ((row[2]! : ℕ) : PallasBaseField)) with
+    | m => (m[0]!, m[1]!, m[2]!)
+
+/-- The fresh `fp_kimchi` sponge. -/
+def init : State PallasBaseField := Kimchi.Sponge.init
+
+end Fp
 
 end Kimchi.Sponge
