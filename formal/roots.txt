@@ -119,3 +119,10 @@ Kimchi.Gate.Poseidon.sound
 Kimchi.Gate.Poseidon.complete
 Kimchi.Quotient.Poseidon.rows_iff_dvd
 Kimchi.Quotient.Poseidon.soundness
+
+-- Grand-product core (permutation argument, milestone 1): equal products of linear pair
+-- factors force equal pair multisets (UFD over F[β]); two-variable grid pinning; the
+-- composed headline turning field-level product checks at enough (β,γ) into multiset equality.
+Kimchi.Quotient.multiset_eq_of_pairFactor_prod_eq
+Kimchi.Quotient.identity_of_grid_evals
+Kimchi.Quotient.multiset_eq_of_grid_prod_evals
