@@ -128,6 +128,81 @@ fn emit_poseidon<F: ark_ff::PrimeField>(
     println!("wrote {vec_path} ({} cases)", shapes.len());
 }
 
+/// Emit `DefaultFqSponge<P>` op traces: scalar and point absorption, raw field squeezes,
+/// 128-bit prechallenges, and endo-expanded effective challenges. Covers the limb buffer
+/// across consecutive challenges, each absorb kind resetting it, and (via the scalar/base
+/// modulus comparison) the curve's `absorb_fr` encoding branch.
+fn emit_fq_sponge<P: ark_ec::short_weierstrass::SWCurveConfig>(
+    params: &'static mina_poseidon::poseidon::ArithmeticSpongeParams<P::BaseField, FULL_ROUNDS>,
+    endo_r: P::ScalarField,
+    curve: &str,
+    seed: u8,
+    path: &str,
+) where
+    P::BaseField: ark_ff::PrimeField,
+    <P::BaseField as ark_ff::PrimeField>::BigInt:
+        Into<<P::ScalarField as ark_ff::PrimeField>::BigInt>,
+{
+    use ark_ec::{AffineRepr, CurveGroup};
+    use mina_poseidon::{sponge::ScalarChallenge, FqSponge};
+
+    type FqS<P> = mina_poseidon::sponge::DefaultFqSponge<P, SC, FULL_ROUNDS>;
+    let rng = &mut ChaCha20Rng::from_seed([seed; 32]);
+    let rand_pt = |rng: &mut ChaCha20Rng| {
+        (<ark_ec::short_weierstrass::Affine<P> as AffineRepr>::Group::rand(rng)).into_affine()
+    };
+    let shapes: Vec<Vec<&str>> = vec![
+        vec!["challenge"],
+        vec!["absorb_fr", "challenge"],
+        vec!["absorb_fr", "challenge_fq"],
+        vec!["absorb_g", "squeeze_challenge"],
+        vec!["absorb_g", "challenge", "challenge"],
+        vec![
+            "absorb_fr",
+            "challenge",
+            "absorb_g",
+            "squeeze_challenge",
+            "challenge_fq",
+        ],
+        vec!["challenge_fq", "absorb_fr", "squeeze_challenge"],
+    ];
+    let cases: Vec<_> = shapes
+        .iter()
+        .map(|shape| {
+            let mut sp = FqS::<P>::new(params);
+            let ops: Vec<_> = shape
+                .iter()
+                .map(|op| match *op {
+                    "absorb_fr" => {
+                        let x = P::ScalarField::rand(rng);
+                        sp.absorb_fr(&[x]);
+                        json!({ "op": "absorb_fr", "value": fe(&x) })
+                    }
+                    "absorb_g" => {
+                        let p = rand_pt(rng);
+                        sp.absorb_g(&[p]);
+                        json!({ "op": "absorb_g", "point": [fe(&p.x), fe(&p.y)] })
+                    }
+                    "challenge_fq" => {
+                        json!({ "op": "challenge_fq", "expect": fe(&sp.challenge_fq()) })
+                    }
+                    "challenge" => {
+                        json!({ "op": "challenge", "expect": fe(&sp.challenge()) })
+                    }
+                    _ => {
+                        let c = ScalarChallenge::new(sp.challenge()).to_field(&endo_r);
+                        json!({ "op": "squeeze_challenge", "expect": fe(&c) })
+                    }
+                })
+                .collect();
+            json!({ "ops": ops })
+        })
+        .collect();
+    let vectors = json!({ "curve": curve, "cases": cases });
+    std::fs::write(path, serde_json::to_string_pretty(&vectors).unwrap()).unwrap();
+    println!("wrote {path} ({} cases)", shapes.len());
+}
+
 fn main() {
     let mut args = std::env::args().skip(1);
     let lean_dir = args
@@ -156,77 +231,20 @@ fn main() {
         47,
     );
 
-    // --- DefaultFqSponge op-trace vectors ---
-    // Traces over the consumer-facing sponge: scalar and point absorption, raw field
-    // squeezes, 128-bit prechallenges, and endo-expanded effective challenges. Covers the
-    // limb buffer across consecutive challenges and each absorb kind resetting it.
-    {
-        use ark_ec::CurveGroup;
-        use mina_curves::pasta::{Fp, Vesta};
-        use mina_poseidon::{sponge::ScalarChallenge, FqSponge};
-        use poly_commitment::ipa::endos;
-
-        type FqS = mina_poseidon::sponge::DefaultFqSponge<
-            mina_curves::pasta::VestaParameters,
-            SC,
-            FULL_ROUNDS,
-        >;
-        let rng = &mut ChaCha20Rng::from_seed([45u8; 32]);
-        let (_, endo_r) = endos::<Vesta>();
-        let rand_pt =
-            |rng: &mut ChaCha20Rng| (<Vesta as ark_ec::AffineRepr>::Group::rand(rng)).into_affine();
-        let shapes: Vec<Vec<&str>> = vec![
-            vec!["challenge"],
-            vec!["absorb_fr", "challenge"],
-            vec!["absorb_fr", "challenge_fq"],
-            vec!["absorb_g", "squeeze_challenge"],
-            vec!["absorb_g", "challenge", "challenge"],
-            vec![
-                "absorb_fr",
-                "challenge",
-                "absorb_g",
-                "squeeze_challenge",
-                "challenge_fq",
-            ],
-            vec!["challenge_fq", "absorb_fr", "squeeze_challenge"],
-        ];
-        let cases: Vec<_> = shapes
-            .iter()
-            .map(|shape| {
-                let mut sp = FqS::new(fq_kimchi::static_params());
-                let ops: Vec<_> = shape
-                    .iter()
-                    .map(|op| match *op {
-                        "absorb_fr" => {
-                            let x = Fp::rand(rng);
-                            sp.absorb_fr(&[x]);
-                            json!({ "op": "absorb_fr", "value": fe(&x) })
-                        }
-                        "absorb_g" => {
-                            let p = rand_pt(rng);
-                            sp.absorb_g(&[p]);
-                            json!({ "op": "absorb_g", "point": pt(&p) })
-                        }
-                        "challenge_fq" => {
-                            json!({ "op": "challenge_fq", "expect": fe(&sp.challenge_fq()) })
-                        }
-                        "challenge" => {
-                            json!({ "op": "challenge", "expect": fe(&sp.challenge()) })
-                        }
-                        _ => {
-                            let c = ScalarChallenge::new(sp.challenge()).to_field(&endo_r);
-                            json!({ "op": "squeeze_challenge", "expect": fe(&c) })
-                        }
-                    })
-                    .collect();
-                json!({ "ops": ops })
-            })
-            .collect();
-        let vectors = json!({ "curve": "vesta", "cases": cases });
-        let p = format!("{fix_dir}/fq_sponge_vectors.json");
-        std::fs::write(&p, serde_json::to_string_pretty(&vectors).unwrap()).unwrap();
-        println!("wrote {p} ({} cases)", shapes.len());
-    }
+    emit_fq_sponge::<mina_curves::pasta::VestaParameters>(
+        fq_kimchi::static_params(),
+        poly_commitment::ipa::endos::<mina_curves::pasta::Vesta>().1,
+        "vesta",
+        45,
+        &format!("{fix_dir}/fq_sponge_vectors.json"),
+    );
+    emit_fq_sponge::<mina_curves::pasta::PallasParameters>(
+        mina_poseidon::pasta::fp_kimchi::static_params(),
+        poly_commitment::ipa::endos::<mina_curves::pasta::Pallas>().1,
+        "pallas",
+        48,
+        &format!("{fix_dir}/fq_sponge_pallas_vectors.json"),
+    );
 
     // --- group_map vectors ---
     // `t ↦ to_group(t)` at seeded field elements, from the production map.
