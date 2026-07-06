@@ -22,7 +22,7 @@ Two binaries, both deterministic (seeded ChaCha20), both writing into `formal/`:
 # Sponge-layer artifacts: constants + vectors
 ./target/release/sponge_dump ../../formal/Kimchi/Sponge ../../formal/fixtures
 
-# IPA opening-proof fixtures (wire data + layer-check transcript values)
+# IPA opening-proof fixtures (wire format only)
 ./target/release/ipa_dump ../../formal/fixtures
 ```
 
@@ -35,20 +35,20 @@ Two binaries, both deterministic (seeded ChaCha20), both writing into `formal/`:
 | `Kimchi/Sponge/PoseidonConstantsFq.lean` / `…Fp.lean` | the `fq_kimchi` / `fp_kimchi` Poseidon tables, as generated committed Lean constants | (consumed by the library) |
 | `fixtures/poseidon_{fq,fp}_vectors.json` | `ArithmeticSponge` absorb/squeeze traces, both Pasta fields | `scripts/check_sponge_vectors.sh` |
 | `fixtures/fq_sponge_vectors.json` / `…_pallas_….json` | `DefaultFqSponge` op traces — every ordered pair of the six op kinds plus mixed sequences | `scripts/check_fq_sponge.sh` |
-| `fixtures/group_map_vectors.json` | SvdW `to_group` vectors | `scripts/check_fq_sponge.sh` |
+| `fixtures/group_map_vectors.json` / `…_pallas_….json` | SvdW `to_group` vectors, both curves | `scripts/check_fq_sponge.sh` |
 
 `ipa_dump`:
 
 | artifact | contents | checked by |
 |---|---|---|
-| `fixtures/ipa_opening_vesta.json` | a single opening (1 poly × 1 point) | `scripts/check_ipa_fixture.sh` (wire fields only), `scripts/check_ipa_transcript.sh` (recorded transcript values) |
-| `fixtures/ipa_batch_vesta.json` | a batched opening (2 polys × 2 points) | same |
+| `fixtures/ipa_opening_{vesta,pallas}.json` | a single opening (1 poly × 1 point), wire fields only | `scripts/check_ipa_fixture.sh` |
+| `fixtures/ipa_batch_{vesta,pallas}.json` | a batched opening (2 polys × 2 points), wire fields only | same |
 
 `ipa_dump` is a thin wrapper over the production prover/verifier: proofs come from
 `SRS::commit`/`SRS::open`, the batched `SRS::verify` is asserted at dump time, and the
-harness is proof-systems' own `tests/ipa_commitment.rs::test_opening_proof`. The recorded
-transcript values (`u_base`, `chal`, `c`) exist only for layer bisection — the end-to-end
-check derives them in Lean and never reads them.
+harness is proof-systems' own `tests/ipa_commitment.rs::test_opening_proof`. Nothing
+transcript-derived is recorded: the Lean verifier re-derives the `U` base and every
+Fiat-Shamir challenge from the wire data through its own sponge layer.
 
 ## When to regenerate
 

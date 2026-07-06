@@ -1,4 +1,6 @@
-import Mathlib
+import Mathlib.Algebra.Module.BigOperators
+import Mathlib.Algebra.BigOperators.Fin
+import Mathlib.Algebra.Field.Defs
 
 /-!
 # The kimchi IPA polynomial commitment — structured reference string and commitment

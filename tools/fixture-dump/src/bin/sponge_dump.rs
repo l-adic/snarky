@@ -264,24 +264,50 @@ fn main() {
         &format!("{fix_dir}/fq_sponge_pallas_vectors.json"),
     );
 
-    // --- group_map vectors ---
-    // `t ↦ to_group(t)` at seeded field elements, from the production map.
-    {
-        use groupmap::GroupMap;
-        let rng = &mut ChaCha20Rng::from_seed([46u8; 32]);
-        let gm = groupmap::BWParameters::<mina_curves::pasta::VestaParameters>::setup();
-        let vectors: Vec<_> = (0..8)
-            .map(|_| {
-                let t = Fq::rand(rng);
-                let (x, y) = gm.to_group(t);
-                json!({ "t": fe(&t), "x": fe(&x), "y": fe(&y) })
-            })
-            .collect();
-        let out = json!({ "curve": "vesta", "vectors": vectors });
-        let p = format!("{fix_dir}/group_map_vectors.json");
-        std::fs::write(&p, serde_json::to_string_pretty(&out).unwrap()).unwrap();
-        println!("wrote {p} (8 vectors)");
-    }
+    // --- group_map vectors, both curves ---
+    emit_group_map::<mina_curves::pasta::VestaParameters>(
+        "vesta",
+        46,
+        &format!("{fix_dir}/group_map_vectors.json"),
+    );
+    emit_group_map::<mina_curves::pasta::PallasParameters>(
+        "pallas",
+        49,
+        &format!("{fix_dir}/group_map_pallas_vectors.json"),
+    );
+}
+
+/// Emit `t ↦ to_group(t)` vectors at seeded field elements from the production map, and
+/// print the curve's `setup()` constants (hard-coded as proved numerals on the Lean side —
+/// the printout is the source to diff against).
+fn emit_group_map<P: ark_ec::short_weierstrass::SWCurveConfig>(curve: &str, seed: u8, path: &str)
+where
+    P::BaseField: ark_ff::PrimeField,
+{
+    use groupmap::GroupMap;
+    let rng = &mut ChaCha20Rng::from_seed([seed; 32]);
+    let gm = groupmap::BWParameters::<P>::setup();
+    println!("{curve} group_map setup(): u = {}", fe(&gm.u));
+    println!("  fu = {}", fe(&gm.fu));
+    println!(
+        "  sqrt_neg_three_u_squared = {}",
+        fe(&gm.sqrt_neg_three_u_squared)
+    );
+    println!(
+        "  sqrt_neg_three_u_squared_minus_u_over_2 = {}",
+        fe(&gm.sqrt_neg_three_u_squared_minus_u_over_2)
+    );
+    println!("  inv_three_u_squared = {}", fe(&gm.inv_three_u_squared));
+    let vectors: Vec<_> = (0..8)
+        .map(|_| {
+            let t = P::BaseField::rand(rng);
+            let (x, y) = gm.to_group(t);
+            json!({ "t": fe(&t), "x": fe(&x), "y": fe(&y) })
+        })
+        .collect();
+    let out = json!({ "curve": curve, "vectors": vectors });
+    std::fs::write(path, serde_json::to_string_pretty(&out).unwrap()).unwrap();
+    println!("wrote {path} (8 vectors)");
 }
 
 fn pt(g: &mina_curves::pasta::Vesta) -> serde_json::Value {

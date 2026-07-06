@@ -207,9 +207,8 @@ CI-wired in `.github/workflows/lean.yml`:
 ```sh
 scripts/check_axioms.sh          # every headline theorem reduces to the allowed axiom set
 scripts/check_sponge_vectors.sh  # Poseidon automaton vs mina_poseidon traces (Fq and Fp)
-scripts/check_fq_sponge.sh       # FqSponge op traces (both curves) + group_map vectors
-scripts/check_ipa_fixture.sh     # end-to-end: the executable verifier accepts wire data
-scripts/check_ipa_transcript.sh  # layer bisection: re-derive the recorded FS transcript
+scripts/check_fq_sponge.sh       # FqSponge op traces + group_map vectors (both curves)
+scripts/check_ipa_fixture.sh     # end-to-end: the executable verifiers (both curves) accept wire data
 ```
 
 New trace checks build on `Kimchi.Fixture.Parse` (element decoders) and

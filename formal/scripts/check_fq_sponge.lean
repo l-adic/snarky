@@ -58,27 +58,29 @@ def checkSponge {q p : ℕ} [Field (ZMod q)] [Field (ZMod p)] (spec : Spec q p)
   Trace.check (parseOp (parseZMod (n := q)) (parseZMod (n := p))) FqSponge.init (step spec)
     path
 
-def checkGroupMap : IO Bool := do
-  let parseFq : Json → Except String FqVesta.Fq := parseZMod
-  let raw ← IO.FS.readFile "fixtures/group_map_vectors.json"
+def checkGroupMap {q : ℕ} [Field (ZMod q)] [DecidableEq (ZMod q)]
+    (toGroup : ZMod q → ZMod q × ZMod q) (path : String) : IO Bool := do
+  let parseF : Json → Except String (ZMod q) := parseZMod
+  let raw ← IO.FS.readFile path
   let vs ← match Json.parse raw >>= fun j => do
       (← (← j.getObjVal? "vectors").getArr?).mapM fun v => do
-        return (← parseFq (← v.getObjVal? "t"),
-                ← parseFq (← v.getObjVal? "x"), ← parseFq (← v.getObjVal? "y")) with
+        return (← parseF (← v.getObjVal? "t"),
+                ← parseF (← v.getObjVal? "x"), ← parseF (← v.getObjVal? "y")) with
     | .ok vs => pure vs
-    | .error e => throw (IO.userError s!"group_map vectors parse error: {e}")
+    | .error e => throw (IO.userError s!"{path}: vectors parse error: {e}")
   let failed := vs.foldl
-    (fun n (v : _ × _ × _) =>
-      let u := GroupMapVesta.toGroup v.1
-      if (u.x, u.y) = (v.2.1, v.2.2) then n else n + 1) 0
-  IO.println s!"fixtures/group_map_vectors.json: {vs.size - failed}/{vs.size} OK"
+    (fun n (v : _ × _ × _) => if toGroup v.1 = (v.2.1, v.2.2) then n else n + 1) 0
+  IO.println s!"{path}: {vs.size - failed}/{vs.size} OK"
   return failed = 0
 
 def main : IO Unit := do
   let okV ← checkSponge FqVesta.spec "fixtures/fq_sponge_vectors.json"
   let okP ← checkSponge FqPallas.spec "fixtures/fq_sponge_pallas_vectors.json"
-  let okG ← checkGroupMap
-  unless okV && okP && okG do
+  let okGV ← checkGroupMap (fun t => let u := GroupMapVesta.toGroup t; (u.x, u.y))
+    "fixtures/group_map_vectors.json"
+  let okGP ← checkGroupMap (fun t => let u := GroupMapPallas.toGroup t; (u.x, u.y))
+    "fixtures/group_map_pallas_vectors.json"
+  unless okV && okP && okGV && okGP do
     throw (IO.userError "Fq-sponge / group-map vector check FAILED")
   IO.println
     "✓ the Fq-sponges over both Pasta curves and the map-to-curve match proof-systems"
