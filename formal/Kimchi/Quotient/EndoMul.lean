@@ -44,8 +44,9 @@ Source: kimchi `endosclmul.rs`, module-doc layout table and `constraint_checks`.
 
 * `cellMap` — reads the two rows into a `Gate.EndoMul.Witness`.
 * `rowWitness` / `polyWitness` — the field-valued row witness and its polynomial lift.
-* `bridge` — evaluating the poly constraints at the node `ω^i` reproduces the row constraints.
-* `rows_iff_dvd` / `rowsSel_iff_dvd` — the two engine-instance divisibility corollaries.
+* `argument` — the EndoMul `Argument F` instance, parametrized by `endo : F` (two-row layout).
+* `rows_iff_dvd` / `rowsSel_iff_dvd` — the two divisibility corollaries, specializations of the
+  `Argument` engine theorems.
 
 Source of truth: `blueprint/src/chapters/Kimchi_Quotient_EndoMul.tex`.
 -/
@@ -95,53 +96,48 @@ noncomputable def polyWitness (ω : F) (wTab : Fin n → Fin 15 → F) :
   cellMap (fun c => columnPoly ω (fun j => wTab j c))
     (fun c => shift ω (columnPoly ω (fun j => wTab j c)))
 
-/-! ## The naturality bridge -/
+/-! ## The `Argument` instance -/
 
-/-- **EndoMul per-row bridge.** Evaluating the poly-witness constraints (with `endo = C endo`)
-at the node `ω^i` reproduces the row-witness constraints (with `endo = endo`). This is
-naturality of `Gate.EndoMul.constraints_map` at `f = evalRingHom (ω^i)`, transporting `C endo`
-to `endo` via `eval_C` and matching the witness cells via `eval_columnPoly` (current) and
-`eval_shift_columnPoly` (next). -/
-theorem bridge [NeZero n] (endo : F) (hω : IsPrimitiveRoot ω n)
-    (wTab : Fin n → Fin 15 → F) (i : Fin n) :
-    (Gate.EndoMul.constraints (C endo) (polyWitness ω wTab)).map (·.eval (ω ^ (i : ℕ)))
-      = Gate.EndoMul.constraints endo (rowWitness wTab i) := by
-  -- Evaluation at `ω^i` is the ring hom `evalRingHom (ω^i)`; rewrite the plain map by it.
-  have hfun : (fun E : Polynomial F => E.eval (ω ^ (i : ℕ)))
-      = ⇑(evalRingHom (ω ^ (i : ℕ))) := by
-    funext E; rw [Polynomial.coe_evalRingHom]
-  rw [hfun, Gate.EndoMul.constraints_map]
-  -- The endo constant transports via `eval_C`; the witness cells via `eval_columnPoly`
-  -- (current row) and `eval_shift_columnPoly` (next row).
-  congr 1
-  · rw [Polynomial.coe_evalRingHom, eval_C]
-  · simp only [polyWitness, rowWitness, cellMap, Gate.EndoMul.Witness.map,
-      Polynomial.coe_evalRingHom, eval_columnPoly hω, eval_shift_columnPoly hω]
+/-- **EndoMul `Argument` instance.** Parametrized by the base-field endomorphism coefficient
+`endo : F`; over an `F`-algebra `R` the constant is transported as `algebraMap F R endo`
+(on `R = F[X]` this is `C endo`, cf. `Polynomial.algebraMap_eq`), which every `F`-algebra hom
+fixes (`AlgHom.commutes`) — that is what makes the gate's ring-hom naturality
+`Gate.EndoMul.constraints_map` land back on the same instance. The cell map reads the current
+and next rows (a two-row gate; the coefficient family is unused). -/
+def argument (endo : F) : Argument F where
+  constraints {R} _ _ env :=
+    Gate.EndoMul.constraints (algebraMap F R endo) (cellMap env.witnessCurr env.witnessNext)
+  constraints_map f env := by
+    have h := Gate.EndoMul.constraints_map f.toRingHom (algebraMap F _ endo)
+      (cellMap env.witnessCurr env.witnessNext)
+    rw [show f.toRingHom (algebraMap F _ endo) = algebraMap F _ endo from f.commutes endo] at h
+    exact h
 
 /-! ## Divisibility corollaries -/
 
 /-- **EndoMul rows hold iff divisible.** The full list of poly constraints is divisible by the
-vanishing polynomial `zH` iff every `EndoMul` row-witness satisfies `Holds`. Instance of the
-engine `rows_iff_dvd_of` with the bridge discharged by `bridge`. -/
+vanishing polynomial `zH` iff every `EndoMul` row-witness satisfies `Holds`. Specialization of
+`Argument.rows_iff_dvd` at the instance `argument endo` (bridging
+`algebraMap F F[X] endo = C endo` via `Polynomial.algebraMap_eq`). -/
 theorem rows_iff_dvd [NeZero n] (endo : F) (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     (wTab : Fin n → Fin 15 → F) :
     (∀ E ∈ Gate.EndoMul.constraints (C endo) (polyWitness ω wTab), zH F n ∣ E)
       ↔ ∀ i, Gate.EndoMul.Holds endo (rowWitness wTab i) := by
-  -- Instantiate the ungated engine; `Holds endo w` is defeq to `∀ e ∈ constraints endo w, e = 0`.
-  exact Kimchi.Quotient.rows_iff_dvd_of hω hn _
-    (fun i => Gate.EndoMul.constraints endo (rowWitness wTab i)) (bridge endo hω wTab)
+  have h := (argument endo).rows_iff_dvd hω hn wTab wTab
+  simpa only [argument, polyEnv, rowEnv, Polynomial.algebraMap_eq,
+    Algebra.algebraMap_self_apply, Gate.EndoMul.Holds] using h
 
 /-- **EndoMul selector-gated rows iff divisible.** With a boolean selector `sel : Fin n → F`
 and `S = columnPoly ω sel`, divisibility of every `S · E` by `zH` is equivalent to the row
-constraints holding only on the selected rows. Instance of the engine `rowsSel_iff_dvd`. -/
+constraints holding only on the selected rows. Specialization of `Argument.rowsSel_iff_dvd` at
+the instance `argument endo`. -/
 theorem rowsSel_iff_dvd [NeZero n] (endo : F) (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     (wTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1) :
     (∀ E ∈ Gate.EndoMul.constraints (C endo) (polyWitness ω wTab),
         zH F n ∣ (columnPoly ω sel) * E)
       ↔ ∀ i, sel i = 1 → Gate.EndoMul.Holds endo (rowWitness wTab i) := by
-  -- Instantiate the selector-gated engine; `Holds endo w` is defeq to
-  -- `∀ e ∈ constraints endo w, e = 0`.
-  exact Kimchi.Quotient.rowsSel_iff_dvd hω hn _
-    (fun i => Gate.EndoMul.constraints endo (rowWitness wTab i)) sel hsel (bridge endo hω wTab)
+  have h := (argument endo).rowsSel_iff_dvd hω hn wTab wTab sel hsel
+  simpa only [argument, polyEnv, rowEnv, Polynomial.algebraMap_eq,
+    Algebra.algebraMap_self_apply, Gate.EndoMul.Holds] using h
 
 end Kimchi.Quotient.EndoMul

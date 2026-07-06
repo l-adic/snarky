@@ -1,4 +1,4 @@
-import Kimchi.Quotient.Domain
+import Kimchi.Quotient.Lift
 import Kimchi.Gate.Generic
 
 /-!
@@ -77,6 +77,25 @@ theorem eval_genericE2 (hω : IsPrimitiveRoot ω n)
         + qTab i 8 * (wTab i 3 * wTab i 4) + qTab i 9 := by
   simp only [genericE2, eval_add, eval_mul, eval_columnPoly hω]
 
+/-! ## The `Argument` instance
+
+The generic gate plugs into the `Argument` primitive of `Kimchi.Quotient.Lift` exactly like
+the other five gates: the gate row `Gate.Generic R` is assembled from the current-row cells
+(as `w`) and the coefficient cells (as `q`); the next-row family is unused (single-row). -/
+
+/-- **Generic cell map.** Assemble a `Gate.Generic R` from current-row cells `cur` (→ `w`) and
+coefficient cells `coeff` (→ `q`). -/
+def genericCellMap {R : Type*} (cur coeff : Fin 15 → R) : Gate.Generic R :=
+  ⟨coeff, cur⟩
+
+/-- **Generic `Argument` instance.** The gate's constraint list `Gate.Generic.constraints`
+read through `genericCellMap`; naturality is the gate module's `Generic.constraints_map` at
+the underlying ring hom. -/
+def genericArgument : Argument F where
+  constraints env := (genericCellMap env.witnessCurr env.coeff).constraints
+  constraints_map f env :=
+    Gate.Generic.constraints_map f.toRingHom (genericCellMap env.witnessCurr env.coeff)
+
 /-! ## The divisibility checkpoint
 
 The first end-to-end gate-to-divisibility theorem: the gate holds on every row
@@ -105,18 +124,16 @@ theorem genericRows_iff_dvd (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
         genericE2 (fun c => columnPoly ω (fun i => qTab i c))
           (fun c => columnPoly ω (fun i => wTab i c))) ↔
       ∀ i, (Gate.Generic.mk (qTab i) (wTab i)).Holds := by
-  simp only [Gate.Generic.Holds]
-  rw [zH_dvd_iff hω hn, zH_dvd_iff hω hn]
-  constructor
-  · rintro ⟨h1, h2⟩ i
-    refine ⟨?_, ?_⟩
-    · have := h1 i i.isLt; rwa [eval_genericE1 hω] at this
-    · have := h2 i i.isLt; rwa [eval_genericE2 hω] at this
-  · intro h
-    refine ⟨fun i hi => ?_, fun i hi => ?_⟩
-    · have := (h ⟨i, hi⟩).1
-      rw [← eval_genericE1 hω wTab qTab ⟨i, hi⟩] at this; exact this
-    · have := (h ⟨i, hi⟩).2
-      rw [← eval_genericE2 hω wTab qTab ⟨i, hi⟩] at this; exact this
+  haveI : NeZero n := ⟨Nat.pos_iff_ne_zero.mp hn⟩
+  -- Route through the abstract `Argument` engine at the instance `genericArgument`.
+  have key := (genericArgument (F := F)).rows_iff_dvd hω hn wTab qTab
+  -- Unfold the instance: the polynomial-environment constraint list is
+  -- `[genericE1 Q W, genericE2 Q W]` and the row-environment one is `[c₁ i, c₂ i]`, the two
+  -- entries of `Gate.Generic.Holds`.
+  simp only [genericArgument, polyEnv, rowEnv, genericCellMap,
+    Gate.Generic.constraints, List.forall_mem_cons, List.not_mem_nil, false_implies,
+    forall_const, and_true] at key
+  simp only [Gate.Generic.holds_iff]
+  exact key
 
 end Kimchi.Quotient

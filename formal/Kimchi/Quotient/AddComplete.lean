@@ -17,10 +17,9 @@ naturality of `constraints` under evaluation at the domain nodes.
 * `cellMap` — assemble a `Gate.AddComplete.Witness R` from a row `cur : Fin 15 → R`.
 * `rowWitness` / `polyWitness` — the row-values and column-interpolant witnesses, both via
   the same `cellMap`.
-* `bridge` — evaluating the gate's constraint polynomials at `ω^i` reproduces the gate's
-  constraints at row `i` (pure naturality).
+* `argument` — the CompleteAdd `Argument F` instance (single-row layout).
 * `rows_iff_dvd` / `rowsSel_iff_dvd` — the two divisibility corollaries, immediate instances
-  of the engine theorems.
+  of the `Argument` engine theorems.
 
 Source of truth: `blueprint/src/chapters/Kimchi_Quotient_AddComplete.tex`.
 -/
@@ -68,45 +67,34 @@ noncomputable def polyWitness (ω : F) (wTab : Fin n → Fin 15 → F) :
     Gate.AddComplete.Witness (Polynomial F) :=
   cellMap (fun c => columnPoly ω (fun j => wTab j c))
 
-/-! ## The naturality bridge -/
+/-! ## The `Argument` instance -/
 
-/-- **CompleteAdd per-row bridge.** Evaluating the gate's constraint polynomials at the node
-`ω^i` reproduces the gate's constraints at row `i` — pure naturality of `constraints` under
-`evalRingHom (ω^i)`, discharged via `constraints_map` and `eval_columnPoly`. -/
-theorem bridge (hω : IsPrimitiveRoot ω n) (wTab : Fin n → Fin 15 → F) (i : Fin n) :
-    (Gate.AddComplete.constraints (polyWitness ω wTab)).map (·.eval (ω ^ (i : ℕ)))
-      = Gate.AddComplete.constraints (rowWitness wTab i) := by
-  -- Evaluation at `ω^i` is the ring hom `evalRingHom (ω^i)`; rewrite the plain map by it.
-  have hfun : (fun E : Polynomial F => E.eval (ω ^ (i : ℕ)))
-      = ⇑(evalRingHom (ω ^ (i : ℕ))) := by
-    funext E; rw [Polynomial.coe_evalRingHom]
-  rw [hfun, Gate.AddComplete.constraints_map]
-  -- Now identify the mapped poly-witness with the row witness, cell by cell.
-  congr 1
-  simp only [polyWitness, rowWitness, cellMap, Gate.AddComplete.Witness.map,
-    Polynomial.coe_evalRingHom, eval_columnPoly hω]
+/-- **CompleteAdd `Argument` instance.** The gate's constraints read through the single-row
+cell map (`cellMap env.witnessCurr`; the next-row and coefficient families are unused);
+naturality is the gate's `Gate.AddComplete.constraints_map` at the underlying ring hom. -/
+def argument : Argument F where
+  constraints env := Gate.AddComplete.constraints (cellMap env.witnessCurr)
+  constraints_map f env := Gate.AddComplete.constraints_map f.toRingHom (cellMap env.witnessCurr)
 
 /-! ## Divisibility corollaries -/
 
-/-- **CompleteAdd rows hold iff divisible.** Instance of the ungated engine
-`rows_iff_dvd_of` at the CompleteAdd bridge. -/
-theorem rows_iff_dvd (hω : IsPrimitiveRoot ω n) (hn : 0 < n) (wTab : Fin n → Fin 15 → F) :
+/-- **CompleteAdd rows hold iff divisible.** Immediate specialization of
+`Argument.rows_iff_dvd` at the instance `argument`; single-row, so `qTab := wTab` and the
+next-row / coefficient families are unused. -/
+theorem rows_iff_dvd [NeZero n] (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+    (wTab : Fin n → Fin 15 → F) :
     (∀ E ∈ Gate.AddComplete.constraints (polyWitness ω wTab), zH F n ∣ E)
-      ↔ ∀ i, Gate.AddComplete.Holds (rowWitness wTab i) := by
-  -- Instantiate the ungated engine; `Holds w` is defeq to `∀ e ∈ constraints w, e = 0`.
-  exact Kimchi.Quotient.rows_iff_dvd_of hω hn _
-    (fun i => Gate.AddComplete.constraints (rowWitness wTab i)) (bridge hω wTab)
+      ↔ ∀ i, Gate.AddComplete.Holds (rowWitness wTab i) :=
+  (argument (F := F)).rows_iff_dvd hω hn wTab wTab
 
-/-- **CompleteAdd selector-gated rows iff divisible.** Instance of the selector-gated engine
-`rowsSel_iff_dvd` at the CompleteAdd bridge; the boolean selector column `S = columnPoly ω sel`
-is `1` on the rows the gate occupies and `0` elsewhere. -/
-theorem rowsSel_iff_dvd (hω : IsPrimitiveRoot ω n) (hn : 0 < n) (wTab : Fin n → Fin 15 → F)
-    (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1) :
+/-- **CompleteAdd selector-gated rows iff divisible.** Immediate specialization of
+`Argument.rowsSel_iff_dvd` at the instance `argument`; the boolean selector column
+`S = columnPoly ω sel` is `1` on the rows the gate occupies and `0` elsewhere. -/
+theorem rowsSel_iff_dvd [NeZero n] (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+    (wTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1) :
     (∀ E ∈ Gate.AddComplete.constraints (polyWitness ω wTab),
         zH F n ∣ (columnPoly ω sel) * E)
-      ↔ ∀ i, sel i = 1 → Gate.AddComplete.Holds (rowWitness wTab i) := by
-  -- Instantiate the selector-gated engine; `Holds w` is defeq to `∀ e ∈ constraints w, e = 0`.
-  exact Kimchi.Quotient.rowsSel_iff_dvd hω hn _
-    (fun i => Gate.AddComplete.constraints (rowWitness wTab i)) sel hsel (bridge hω wTab)
+      ↔ ∀ i, sel i = 1 → Gate.AddComplete.Holds (rowWitness wTab i) :=
+  (argument (F := F)).rowsSel_iff_dvd hω hn wTab wTab sel hsel
 
 end Kimchi.Quotient.AddComplete

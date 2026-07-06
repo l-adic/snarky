@@ -79,7 +79,7 @@ selector-active row satisfies the CompleteAdd gate predicate.
 Proof: apply `dvd_of_evalCheck` to the gated family to obtain
 `∀ c, zH ∣ (columnPoly ω sel) * (constraints …).get c`; convert the `Fin length` indexing to
 `∈ constraints …` membership and feed the CompleteAdd `rowsSel_iff_dvd`. -/
-theorem soundness {F : Type*} [Field F] [DecidableEq F] {n N : ℕ} {ω : F}
+theorem soundness {F : Type*} [Field F] [DecidableEq F] {n N : ℕ} [NeZero n] {ω : F}
     (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     (wTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1)
     (ζ : Fin N → F) (hζ : Function.Injective ζ)
@@ -94,14 +94,8 @@ theorem soundness {F : Type*} [Field F] [DecidableEq F] {n N : ℕ} {ω : F}
         (Gate.AddComplete.constraints (polyWitness ω wTab)).get c)).eval (ζ p)
         = (t s * zH F n).eval (ζ p)) :
     ∀ i, sel i = 1 → Gate.AddComplete.Holds (rowWitness wTab i) := by
-  have hdvd := dvd_of_evalCheck hω hn ζ hζ α hα
-    (fun c => columnPoly ω sel * (Gate.AddComplete.constraints (polyWitness ω wTab)).get c)
-    t D hD hCdeg htdeg hcheck
-  apply (rowsSel_iff_dvd hω hn wTab sel hsel).mp
-  intro E hE
-  obtain ⟨c, rfl⟩ := List.mem_iff_get.mp hE
-  exact hdvd c
-
+  exact (argument (F := F)).soundness hω hn wTab wTab sel hsel ζ hζ α hα t D hD
+    hCdeg htdeg hcheck
 
 end Kimchi.Quotient.AddComplete
 
@@ -130,14 +124,8 @@ theorem soundness {F : Type*} [Field F] [DecidableEq F] {n N : ℕ} [NeZero n] {
         (Gate.VarBaseMul.constraints (polyWitness ω wTab)).get c)).eval (ζ p)
         = (t s * zH F n).eval (ζ p)) :
     ∀ i, sel i = 1 → Gate.VarBaseMul.Holds (rowWitness wTab i) := by
-  have hdvd := dvd_of_evalCheck hω hn ζ hζ α hα
-    (fun c => columnPoly ω sel * (Gate.VarBaseMul.constraints (polyWitness ω wTab)).get c)
-    t D hD hCdeg htdeg hcheck
-  apply (rowsSel_iff_dvd hω hn wTab sel hsel).mp
-  intro E hE
-  obtain ⟨c, rfl⟩ := List.mem_iff_get.mp hE
-  exact hdvd c
-
+  exact (argument (F := F)).soundness hω hn wTab wTab sel hsel ζ hζ α hα t D hD
+    hCdeg htdeg hcheck
 
 end Kimchi.Quotient.VarBaseMul
 
@@ -166,14 +154,9 @@ theorem soundness {F : Type*} [Field F] [DecidableEq F] {n N : ℕ} [NeZero n] {
         (Gate.EndoMul.constraints (C endo) (polyWitness ω wTab)).get c)).eval (ζ p)
         = (t s * zH F n).eval (ζ p)) :
     ∀ i, sel i = 1 → Gate.EndoMul.Holds endo (rowWitness wTab i) := by
-  have hdvd := dvd_of_evalCheck hω hn ζ hζ α hα
-    (fun c => columnPoly ω sel *
-      (Gate.EndoMul.constraints (C endo) (polyWitness ω wTab)).get c)
-    t D hD hCdeg htdeg hcheck
-  apply (rowsSel_iff_dvd endo hω hn wTab sel hsel).mp
-  intro E hE
-  obtain ⟨c, rfl⟩ := List.mem_iff_get.mp hE
-  exact hdvd c
-
+  have h := (argument endo).soundness hω hn wTab wTab sel hsel ζ hζ α hα t D hD
+    hCdeg htdeg hcheck
+  simpa only [argument, polyEnv, rowEnv, Polynomial.algebraMap_eq,
+    Algebra.algebraMap_self_apply, Gate.EndoMul.Holds] using h
 
 end Kimchi.Quotient.EndoMul

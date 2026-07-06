@@ -101,3 +101,9 @@ Kimchi.Quotient.EndoMul.rows_iff_dvd
 Kimchi.Quotient.AddComplete.soundness
 Kimchi.Quotient.VarBaseMul.soundness
 Kimchi.Quotient.EndoMul.soundness
+
+-- Argument: the single primitive every gate's quotient lift instantiates (kimchi argument.rs:
+-- an F-algebra-natural constraint family over the ArgumentEnv cell environment);
+-- rows/selector-gated/soundness stated once over it.
+Kimchi.Quotient.Argument.rows_iff_dvd
+Kimchi.Quotient.Argument.soundness
