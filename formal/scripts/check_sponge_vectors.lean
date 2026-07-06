@@ -1,5 +1,5 @@
 import Kimchi.Sponge.Poseidon
-import Kimchi.Fixture.Parse
+import Kimchi.Fixture.Check
 import Lean.Data.Json
 
 /-!
@@ -26,30 +26,18 @@ def parseOp {F : Type} (parseF : Json → Except String F) (j : Json) :
   | "squeeze" => return ⟨false, ← parseArrOf parseF (← j.getObjVal? "expect")⟩
   | op => throw s!"unknown op: {op}"
 
-/-- Run one trace; `true` iff every squeeze matches the recorded output. -/
-def runCase {F : Type} [Field F] [DecidableEq F] (params : Params F) (ops : Array (Op F)) :
-    Bool :=
-  (ops.foldl
-    (fun (acc : State F × Bool) op =>
-      let (sp, ok) := acc
-      if op.isAbsorb then
-        (absorb params sp op.values.toList, ok)
-      else
-        let (outs, sp) := squeezeN params sp op.values.size
-        (sp, ok && decide (outs = op.values.toList)))
-    (Kimchi.Sponge.init, true)).2
+/-- One op's transition and verdict: absorb freely, squeeze against the expectation. -/
+def step {F : Type} [Field F] [DecidableEq F] (params : Params F) (sp : State F) (op : Op F) :
+    State F × Bool :=
+  if op.isAbsorb then
+    (absorb params sp op.values.toList, true)
+  else
+    let (outs, sp) := squeezeN params sp op.values.size
+    (sp, decide (outs = op.values.toList))
 
 def checkFile {F : Type} [Field F] [DecidableEq F] (params : Params F)
-    (parseF : Json → Except String F) (path : String) : IO Bool := do
-  let raw ← IO.FS.readFile path
-  let cases ← match Json.parse raw >>= fun j => do
-      (← (← j.getObjVal? "cases").getArr?).mapM fun c => do
-        (← (← c.getObjVal? "ops").getArr?).mapM (parseOp parseF) with
-    | .ok cs => pure cs
-    | .error e => throw (IO.userError s!"{path}: vector parse error: {e}")
-  let failed := cases.foldl (fun n c => if runCase params c then n else n + 1) 0
-  IO.println s!"{path}: {cases.size - failed}/{cases.size} OK"
-  return failed = 0
+    (parseF : Json → Except String F) (path : String) : IO Bool :=
+  checkCases (parseOp parseF) Kimchi.Sponge.init (step params) path
 
 def main : IO Unit := do
   let okFq ← checkFile Fq.params (parseZMod (n := PALLAS_SCALAR_CARD))

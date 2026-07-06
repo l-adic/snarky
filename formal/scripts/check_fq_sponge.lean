@@ -1,5 +1,5 @@
 import Kimchi.Sponge.GroupMap
-import Kimchi.Fixture.Parse
+import Kimchi.Fixture.Check
 import Lean.Data.Json
 
 /-!
@@ -41,34 +41,22 @@ def parseOp {Fq Fr : Type} (pFq : Json → Except String Fq) (pFr : Json → Exc
   | "squeeze_challenge" => return .squeezeChallenge (← pFr (← j.getObjVal? "expect"))
   | op => throw s!"unknown op: {op}"
 
-/-- Run one trace; `true` iff every output matches. -/
-def runCase {q p : ℕ} [Field (ZMod q)] [Field (ZMod p)] (spec : Spec q p)
-    (ops : Array (VOp (ZMod q) (ZMod p))) : Bool :=
-  (ops.foldl
-    (fun (acc : FqSponge.S q × Bool) op =>
-      let (s, ok) := acc
-      match op with
-      | .absorbFr x => (absorbFr spec s x, ok)
-      | .absorbG pt => (absorbG spec s pt, ok)
-      | .absorbGInfinity => (absorbGInfinity spec s, ok)
-      | .challengeFq e => let (x, s) := challengeFq spec s; (s, ok && decide (x = e))
-      | .challenge e => let (x, s) := challenge spec s; (s, ok && decide (x = e))
-      | .squeezeChallenge e =>
-        let (x, s) := squeezeChallenge spec s; (s, ok && decide (x = e)))
-    (FqSponge.init, true)).2
+/-- One op's transition and verdict: absorptions are free, squeezes compare against the
+expectation. -/
+def step {q p : ℕ} [Field (ZMod q)] [Field (ZMod p)] (spec : Spec q p) (s : FqSponge.S q)
+    (op : VOp (ZMod q) (ZMod p)) : FqSponge.S q × Bool :=
+  match op with
+  | .absorbFr x => (absorbFr spec s x, true)
+  | .absorbG pt => (absorbG spec s pt, true)
+  | .absorbGInfinity => (absorbGInfinity spec s, true)
+  | .challengeFq e => let (x, s) := challengeFq spec s; (s, decide (x = e))
+  | .challenge e => let (x, s) := challenge spec s; (s, decide (x = e))
+  | .squeezeChallenge e => let (x, s) := squeezeChallenge spec s; (s, decide (x = e))
 
 def checkSponge {q p : ℕ} [Field (ZMod q)] [Field (ZMod p)] (spec : Spec q p)
-    (path : String) : IO Bool := do
-  let raw ← IO.FS.readFile path
-  let cases ← match Json.parse raw >>= fun j => do
-      (← (← j.getObjVal? "cases").getArr?).mapM fun c => do
-        (← (← c.getObjVal? "ops").getArr?).mapM
-          (parseOp (parseZMod (n := q)) (parseZMod (n := p))) with
-    | .ok cs => pure cs
-    | .error e => throw (IO.userError s!"{path}: vector parse error: {e}")
-  let failed := cases.foldl (fun n c => if runCase spec c then n else n + 1) 0
-  IO.println s!"{path}: {cases.size - failed}/{cases.size} OK"
-  return failed = 0
+    (path : String) : IO Bool :=
+  checkCases (parseOp (parseZMod (n := q)) (parseZMod (n := p))) FqSponge.init (step spec)
+    path
 
 def checkGroupMap : IO Bool := do
   let parseFq : Json → Except String FqVesta.Fq := parseZMod
