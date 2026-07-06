@@ -18,8 +18,8 @@ naturality of `constraints` under evaluation at the domain nodes.
 * `rowWitness` / `polyWitness` — the row-values and column-interpolant witnesses, both via
   the same `cellMap`.
 * `argument` — the CompleteAdd `Argument F` instance (single-row layout).
-* `rows_iff_dvd` / `rowsSel_iff_dvd` — the two divisibility corollaries, immediate instances
-  of the `Argument` engine theorems.
+* `rows_iff_dvd` — the divisibility corollary, an immediate instance of the `Argument`
+  engine theorems.
 
 Source of truth: `blueprint/src/chapters/Kimchi_Quotient_AddComplete.tex`.
 -/
@@ -76,25 +76,16 @@ def argument : Argument F where
   constraints env := Gate.AddComplete.constraints (cellMap env.witnessCurr)
   constraints_map f env := Gate.AddComplete.constraints_map f.toRingHom (cellMap env.witnessCurr)
 
-/-! ## Divisibility corollaries -/
+/-! ## Divisibility corollary -/
 
 /-- **CompleteAdd rows hold iff divisible.** Immediate specialization of
 `Argument.rows_iff_dvd` at the instance `argument`; single-row, so `qTab := wTab` and the
 next-row / coefficient families are unused. -/
-theorem rows_iff_dvd [NeZero n] (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+theorem rows_iff_dvd (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     (wTab : Fin n → Fin 15 → F) :
     (∀ E ∈ Gate.AddComplete.constraints (polyWitness ω wTab), zH F n ∣ E)
-      ↔ ∀ i, Gate.AddComplete.Holds (rowWitness wTab i) :=
-  (argument (F := F)).rows_iff_dvd hω hn wTab wTab
-
-/-- **CompleteAdd selector-gated rows iff divisible.** Immediate specialization of
-`Argument.rowsSel_iff_dvd` at the instance `argument`; the boolean selector column
-`S = columnPoly ω sel` is `1` on the rows the gate occupies and `0` elsewhere. -/
-theorem rowsSel_iff_dvd [NeZero n] (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
-    (wTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1) :
-    (∀ E ∈ Gate.AddComplete.constraints (polyWitness ω wTab),
-        zH F n ∣ (columnPoly ω sel) * E)
-      ↔ ∀ i, sel i = 1 → Gate.AddComplete.Holds (rowWitness wTab i) :=
-  (argument (F := F)).rowsSel_iff_dvd hω hn wTab wTab sel hsel
+      ↔ ∀ i, Gate.AddComplete.Holds (rowWitness wTab i) := by
+  haveI : NeZero n := ⟨Nat.pos_iff_ne_zero.mp hn⟩
+  exact argument.rows_iff_dvd hω wTab wTab
 
 end Kimchi.Quotient.AddComplete

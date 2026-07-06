@@ -51,32 +51,6 @@ noncomputable def genericE1 (Q W : Fin 15 → Polynomial F) : Polynomial F :=
 noncomputable def genericE2 (Q W : Fin 15 → Polynomial F) : Polynomial F :=
   Q 5 * W 3 + Q 6 * W 4 + Q 7 * W 5 + Q 8 * (W 3 * W 4) + Q 9
 
-/-- **Per-row bridge, first constraint.** For a circuit table `wTab, qTab` with
-column polynomials `W c = columnPoly (fun i => wTab i c)` and
-`Q c = columnPoly (fun i => qTab i c)`, evaluating `E₁` at the node `ω^i`
-recovers the left-hand side of the first constraint at row `i`.
-
-Evaluation at `ω^i` is a ring homomorphism, so it distributes over the sums and
-products of `genericE1`; then `eval_columnPoly` reduces each `W c` / `Q c` to
-the corresponding cell value. -/
-theorem eval_genericE1 (hω : IsPrimitiveRoot ω n)
-    (wTab qTab : Fin n → Fin 15 → F) (i : Fin n) :
-    (genericE1 (fun c => columnPoly ω (fun j => qTab j c))
-        (fun c => columnPoly ω (fun j => wTab j c))).eval (ω ^ (i : ℕ))
-      = qTab i 0 * wTab i 0 + qTab i 1 * wTab i 1 + qTab i 2 * wTab i 2
-        + qTab i 3 * (wTab i 0 * wTab i 1) + qTab i 4 := by
-  simp only [genericE1, eval_add, eval_mul, eval_columnPoly hω]
-
-/-- **Per-row bridge, second constraint.** Identical to `eval_genericE1`, using
-columns `3, 4, 5` and coefficients `5 … 9`. -/
-theorem eval_genericE2 (hω : IsPrimitiveRoot ω n)
-    (wTab qTab : Fin n → Fin 15 → F) (i : Fin n) :
-    (genericE2 (fun c => columnPoly ω (fun j => qTab j c))
-        (fun c => columnPoly ω (fun j => wTab j c))).eval (ω ^ (i : ℕ))
-      = qTab i 5 * wTab i 3 + qTab i 6 * wTab i 4 + qTab i 7 * wTab i 5
-        + qTab i 8 * (wTab i 3 * wTab i 4) + qTab i 9 := by
-  simp only [genericE2, eval_add, eval_mul, eval_columnPoly hω]
-
 /-! ## The `Argument` instance
 
 The generic gate plugs into the `Argument` primitive of `Kimchi.Quotient.Lift` exactly like
@@ -110,11 +84,11 @@ polynomials `W c = columnPoly (fun i => wTab i c)`,
 `Q c = columnPoly (fun i => qTab i c)`. Then both constraint polynomials are
 divisible by `Z_H` iff the double generic gate holds at every row.
 
-By `zH_dvd_iff`, `Z_H ∣ E ↔ ∀ i < n, E(ω^i) = 0`; by `eval_genericE1/2`,
-`E₁(ω^i) = 0` (resp. `E₂`) is exactly the first (resp. second) constraint of
-`Gate.Generic.Holds` at row `i`. Commuting `∧` past `∀` merges the two
-per-constraint statements. Pure polynomial algebra — no probabilistic content
-here. -/
+Specialization of `Argument.rows_iff_dvd` at the instance `genericArgument`:
+unfolding the instance identifies the polynomial-environment constraint list
+with `[E₁, E₂]` and the row-environment one with the two cell equations of
+`Gate.Generic.Holds` (via `holds_iff`). Pure polynomial algebra — no
+probabilistic content here. -/
 theorem genericRows_iff_dvd (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     (wTab qTab : Fin n → Fin 15 → F) :
     (zH F n ∣
@@ -126,7 +100,7 @@ theorem genericRows_iff_dvd (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
       ∀ i, (Gate.Generic.mk (qTab i) (wTab i)).Holds := by
   haveI : NeZero n := ⟨Nat.pos_iff_ne_zero.mp hn⟩
   -- Route through the abstract `Argument` engine at the instance `genericArgument`.
-  have key := (genericArgument (F := F)).rows_iff_dvd hω hn wTab qTab
+  have key := genericArgument.rows_iff_dvd hω wTab qTab
   -- Unfold the instance: the polynomial-environment constraint list is
   -- `[genericE1 Q W, genericE2 Q W]` and the row-environment one is `[c₁ i, c₂ i]`, the two
   -- entries of `Gate.Generic.Holds`.

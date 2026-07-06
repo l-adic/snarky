@@ -50,6 +50,8 @@ proof in the library; every per-gate bridge is `constraints_map` pasted onto it.
 * `rowsSel_iff_dvd` — the selector-gated engine: divisibility of `S · E` (with
   `S = columnPoly ω sel` a boolean selector column) is equivalent to the row constraints
   holding only on the selected rows.
+* `dvd_of_evalCheck` — the composed pinning→separation engine, stated over an abstract family
+  of constraint polynomials with no gate content.
 * `ArgumentEnv`, `rowEnv`, `polyEnv`, `polyEnv_map_aeval` — the cell environment, its two
   carrier instantiations, and the evaluation bridge between them.
 * `Argument` with `bridge` / `rows_iff_dvd` / `rowsSel_iff_dvd` / `soundness` — the per-gate
@@ -120,6 +122,31 @@ theorem rowsSel_iff_dvd (hω : IsPrimitiveRoot ω n) (hn : 0 < n) (P : List (Pol
         rw [← hbridge ⟨i, hi⟩]
         exact List.mem_map.mpr ⟨E, hE, rfl⟩
       exact h ⟨i, hi⟩ h1 (E.eval (ω ^ i)) hmem
+
+/-! ## The composed pinning–separation engine -/
+
+/-- **Divisibility from the aggregated eval-check.** Fix a primitive `n`-th root `ω`, an
+injective node vector `ζ : Fin N → F`, an injective challenge vector `α : Fin k → F`, and two
+families `E, t : Fin k → F[X]`. Under the abstract degree bound `D < N` on the aggregate and
+on `t s · Z_H`, if the aggregated eval-check
+`(aggregate (α s) E)(ζ p) = (t s · Z_H)(ζ p)` holds for every challenge `s` and node `p`, then
+`Z_H ∣ E c` for every constraint index `c`.
+
+Proof: for each `s`, `zH_dvd_of_evals` pins `Z_H ∣ aggregate (α s) E`; feeding
+this to `dvd_separation` across the `k` distinct challenges yields `Z_H ∣ E c`. -/
+theorem dvd_of_evalCheck {k N : ℕ}
+    (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+    (ζ : Fin N → F) (hζ : Function.Injective ζ)
+    (α : Fin k → F) (hα : Function.Injective α)
+    (E t : Fin k → Polynomial F) (D : ℕ) (hD : D < N)
+    (hCdeg : ∀ s, (aggregate (α s) E).natDegree ≤ D)
+    (htdeg : ∀ s, (t s * zH F n).natDegree ≤ D)
+    (hcheck : ∀ s : Fin k, ∀ p : Fin N,
+        (aggregate (α s) E).eval (ζ p) = (t s * zH F n).eval (ζ p)) :
+    ∀ c, zH F n ∣ E c :=
+  dvd_separation hω hn α hα E
+    (fun s => zH_dvd_of_evals hω hn ζ hζ (aggregate (α s) E) (t s) D
+      (hCdeg s) (htdeg s) hD (hcheck s))
 
 /-! ## The cell environment -/
 
@@ -204,11 +231,11 @@ theorem Argument.bridge [NeZero n] (G : Argument F) (hω : IsPrimitiveRoot ω n)
 the polynomial environment) are all divisible by `Z_H` iff its field-level constraints vanish
 at every row. Immediate instance of `rows_iff_dvd_of` at the `Argument` bridge. -/
 theorem Argument.rows_iff_dvd [NeZero n] (G : Argument F) (hω : IsPrimitiveRoot ω n)
-    (hn : 0 < n) (wTab qTab : Fin n → Fin 15 → F) :
+    (wTab qTab : Fin n → Fin 15 → F) :
     (∀ E ∈ G.constraints (polyEnv ω wTab qTab), zH F n ∣ E)
       ↔ ∀ i, ∀ e ∈ G.constraints (rowEnv wTab qTab i), e = 0 :=
-  rows_iff_dvd_of hω hn _ (fun i => G.constraints (rowEnv wTab qTab i))
-    (G.bridge hω wTab qTab)
+  rows_iff_dvd_of hω (Nat.pos_of_neZero n) _
+    (fun i => G.constraints (rowEnv wTab qTab i)) (G.bridge hω wTab qTab)
 
 /-- **`Argument` selector-gated rows iff divisible.** For a boolean selector column
 `S = columnPoly ω sel`, divisibility of every `S · E` by `Z_H` is equivalent to the gate's
@@ -216,12 +243,12 @@ field-level constraints vanishing on the selected rows only. Instance of `rowsSe
 the `Argument` bridge; the selector multiplication mirrors kimchi's
 `index(gate_type) * combined_constraints` gating (`argument.rs`). -/
 theorem Argument.rowsSel_iff_dvd [NeZero n] (G : Argument F) (hω : IsPrimitiveRoot ω n)
-    (hn : 0 < n) (wTab qTab : Fin n → Fin 15 → F) (sel : Fin n → F)
+    (wTab qTab : Fin n → Fin 15 → F) (sel : Fin n → F)
     (hsel : ∀ i, sel i = 0 ∨ sel i = 1) :
     (∀ E ∈ G.constraints (polyEnv ω wTab qTab), zH F n ∣ (columnPoly ω sel) * E)
       ↔ ∀ i, sel i = 1 → ∀ e ∈ G.constraints (rowEnv wTab qTab i), e = 0 :=
-  Kimchi.Quotient.rowsSel_iff_dvd hω hn _ (fun i => G.constraints (rowEnv wTab qTab i))
-    sel hsel (G.bridge hω wTab qTab)
+  Kimchi.Quotient.rowsSel_iff_dvd hω (Nat.pos_of_neZero n) _
+    (fun i => G.constraints (rowEnv wTab qTab i)) sel hsel (G.bridge hω wTab qTab)
 
 /-! ## Quotient-argument soundness -/
 
@@ -232,14 +259,12 @@ an injective node vector `ζ`, an injective challenge vector `α`, an abstract d
 selector-active row satisfies the gate's row constraints, i.e. every constraint expression of
 the row environment is zero.
 
-Proof: the composed pinning→separation engine (`zH_dvd_of_evals` per challenge, fed to
-`dvd_separation` across the distinct challenges — the inline body of `dvd_of_evalCheck`, which
-lives in the downstream `Quotient/Soundness.lean` and so cannot be imported here) yields
+Proof: apply `dvd_of_evalCheck` to the gated family to obtain
 `∀ c, zH ∣ (columnPoly ω sel) * (constraints …).get c`; converting the `Fin length` indexing to
 `∈ constraints …` membership and feeding the instance's selector-gated
 `Argument.rowsSel_iff_dvd` gives the row constraints on the selected rows. -/
 theorem Argument.soundness [DecidableEq F] {N : ℕ} [NeZero n] (G : Argument F)
-    (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+    (hω : IsPrimitiveRoot ω n)
     (wTab qTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1)
     (ζ : Fin N → F) (hζ : Function.Injective ζ)
     (α : Fin (G.constraints (polyEnv ω wTab qTab)).length → F)
@@ -253,15 +278,10 @@ theorem Argument.soundness [DecidableEq F] {N : ℕ} [NeZero n] (G : Argument F)
         (G.constraints (polyEnv ω wTab qTab)).get c)).eval (ζ p)
         = (t s * zH F n).eval (ζ p)) :
     ∀ i, sel i = 1 → ∀ e ∈ G.constraints (rowEnv wTab qTab i), e = 0 := by
-  have hdvd : ∀ c, zH F n ∣ columnPoly ω sel *
-      (G.constraints (polyEnv ω wTab qTab)).get c :=
-    dvd_separation hω hn α hα
-      (fun c => columnPoly ω sel * (G.constraints (polyEnv ω wTab qTab)).get c)
-      (fun s => zH_dvd_of_evals hω hn ζ hζ
-        (aggregate (α s) (fun c => columnPoly ω sel *
-          (G.constraints (polyEnv ω wTab qTab)).get c)) (t s) D
-        (hCdeg s) (htdeg s) hD (hcheck s))
-  apply (G.rowsSel_iff_dvd hω hn wTab qTab sel hsel).mp
+  have hdvd := dvd_of_evalCheck hω (Nat.pos_of_neZero n) ζ hζ α hα
+    (fun c => columnPoly ω sel * (G.constraints (polyEnv ω wTab qTab)).get c)
+    t D hD hCdeg htdeg hcheck
+  apply (G.rowsSel_iff_dvd hω wTab qTab sel hsel).mp
   intro E hE
   obtain ⟨c, rfl⟩ := List.mem_iff_get.mp hE
   exact hdvd c

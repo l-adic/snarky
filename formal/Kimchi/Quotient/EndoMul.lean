@@ -45,8 +45,8 @@ Source: kimchi `endosclmul.rs`, module-doc layout table and `constraint_checks`.
 * `cellMap` — reads the two rows into a `Gate.EndoMul.Witness`.
 * `rowWitness` / `polyWitness` — the field-valued row witness and its polynomial lift.
 * `argument` — the EndoMul `Argument F` instance, parametrized by `endo : F` (two-row layout).
-* `rows_iff_dvd` / `rowsSel_iff_dvd` — the two divisibility corollaries, specializations of the
-  `Argument` engine theorems.
+* `rows_iff_dvd` — the divisibility corollary, a specialization of the `Argument` engine
+  theorems.
 
 Source of truth: `blueprint/src/chapters/Kimchi_Quotient_EndoMul.tex`.
 -/
@@ -113,31 +113,17 @@ def argument (endo : F) : Argument F where
     rw [show f.toRingHom (algebraMap F _ endo) = algebraMap F _ endo from f.commutes endo] at h
     exact h
 
-/-! ## Divisibility corollaries -/
+/-! ## Divisibility corollary -/
 
 /-- **EndoMul rows hold iff divisible.** The full list of poly constraints is divisible by the
-vanishing polynomial `zH` iff every `EndoMul` row-witness satisfies `Holds`. Specialization of
-`Argument.rows_iff_dvd` at the instance `argument endo` (bridging
-`algebraMap F F[X] endo = C endo` via `Polynomial.algebraMap_eq`). -/
-theorem rows_iff_dvd [NeZero n] (endo : F) (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+vanishing polynomial `zH` iff every `EndoMul` row-witness satisfies `Holds`. Immediate
+specialization of `Argument.rows_iff_dvd` at the instance `argument endo`: the constant
+transports definitionally (`algebraMap F F[X] endo` is `C endo`, `algebraMap F F endo` is
+`endo`). -/
+theorem rows_iff_dvd [NeZero n] (endo : F) (hω : IsPrimitiveRoot ω n)
     (wTab : Fin n → Fin 15 → F) :
     (∀ E ∈ Gate.EndoMul.constraints (C endo) (polyWitness ω wTab), zH F n ∣ E)
-      ↔ ∀ i, Gate.EndoMul.Holds endo (rowWitness wTab i) := by
-  have h := (argument endo).rows_iff_dvd hω hn wTab wTab
-  simpa only [argument, polyEnv, rowEnv, Polynomial.algebraMap_eq,
-    Algebra.algebraMap_self_apply, Gate.EndoMul.Holds] using h
-
-/-- **EndoMul selector-gated rows iff divisible.** With a boolean selector `sel : Fin n → F`
-and `S = columnPoly ω sel`, divisibility of every `S · E` by `zH` is equivalent to the row
-constraints holding only on the selected rows. Specialization of `Argument.rowsSel_iff_dvd` at
-the instance `argument endo`. -/
-theorem rowsSel_iff_dvd [NeZero n] (endo : F) (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
-    (wTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1) :
-    (∀ E ∈ Gate.EndoMul.constraints (C endo) (polyWitness ω wTab),
-        zH F n ∣ (columnPoly ω sel) * E)
-      ↔ ∀ i, sel i = 1 → Gate.EndoMul.Holds endo (rowWitness wTab i) := by
-  have h := (argument endo).rowsSel_iff_dvd hω hn wTab wTab sel hsel
-  simpa only [argument, polyEnv, rowEnv, Polynomial.algebraMap_eq,
-    Algebra.algebraMap_self_apply, Gate.EndoMul.Holds] using h
+      ↔ ∀ i, Gate.EndoMul.Holds endo (rowWitness wTab i) :=
+  (argument endo).rows_iff_dvd hω wTab wTab
 
 end Kimchi.Quotient.EndoMul

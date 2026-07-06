@@ -23,8 +23,8 @@ on the last domain row, so this agrees with the intended semantics on every occu
 * `cellMap` — assemble a `Gate.VarBaseMul.Witness R` from a current and next row.
 * `rowWitness` / `polyWitness` — the field-valued row witness and its polynomial lift.
 * `argument` — the VarBaseMul `Argument F` instance (two-row layout).
-* `rows_iff_dvd` / `rowsSel_iff_dvd` — the two divisibility corollaries, immediate instances
-  of the `Argument` engine theorems.
+* `rows_iff_dvd` — the divisibility corollary, an immediate instance of the `Argument`
+  engine theorems.
 
 Source of truth: `blueprint/src/chapters/Kimchi_Quotient_VarBaseMul.tex`.
 -/
@@ -97,26 +97,15 @@ def argument : Argument F where
   constraints_map f env :=
     Gate.VarBaseMul.constraints_map f.toRingHom (cellMap env.witnessCurr env.witnessNext)
 
-/-! ## Divisibility corollaries -/
+/-! ## Divisibility corollary -/
 
 /-- **VarBaseMul rows hold iff divisible.** The gate's constraint polynomials are all divisible
 by the vanishing polynomial `Z_H` iff the gate holds on every row. Immediate specialization of
 `Argument.rows_iff_dvd` at the instance `argument`. -/
-theorem rows_iff_dvd [NeZero n] (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+theorem rows_iff_dvd [NeZero n] (hω : IsPrimitiveRoot ω n)
     (wTab : Fin n → Fin 15 → F) :
     (∀ E ∈ Gate.VarBaseMul.constraints (polyWitness ω wTab), zH F n ∣ E)
       ↔ ∀ i, Gate.VarBaseMul.Holds (rowWitness wTab i) :=
-  (argument (F := F)).rows_iff_dvd hω hn wTab wTab
-
-/-- **VarBaseMul selector-gated rows iff divisible.** With a boolean selector column
-`S = columnPoly ω sel`, divisibility of `S · E` by `Z_H` is equivalent to the gate holding only
-on the selected rows. Immediate specialization of `Argument.rowsSel_iff_dvd` at the instance
-`argument`. -/
-theorem rowsSel_iff_dvd [NeZero n] (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
-    (wTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1) :
-    (∀ E ∈ Gate.VarBaseMul.constraints (polyWitness ω wTab),
-        zH F n ∣ (columnPoly ω sel) * E)
-      ↔ ∀ i, sel i = 1 → Gate.VarBaseMul.Holds (rowWitness wTab i) :=
-  (argument (F := F)).rowsSel_iff_dvd hω hn wTab wTab sel hsel
+  argument.rows_iff_dvd hω wTab wTab
 
 end Kimchi.Quotient.VarBaseMul
