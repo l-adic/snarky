@@ -21,7 +21,7 @@ import Kimchi.Quotient.Poseidon
 import Kimchi.Quotient.GrandProduct
 import Kimchi.Quotient.Soundness
 import Kimchi.Fixture.Parse
-import Kimchi.Fixture.Check
+import Kimchi.Fixture.Trace
 import Kimchi.Sponge.Poseidon
 import Kimchi.Sponge.FqSponge
 import Kimchi.Sponge.GroupMap

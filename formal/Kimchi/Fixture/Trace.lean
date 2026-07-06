@@ -3,18 +3,19 @@ import Kimchi.Fixture.Parse
 /-!
 # The trace-vector check harness
 
-The shared driver of the op-trace vector checks (`scripts/check_sponge_vectors.lean`,
-`scripts/check_fq_sponge.lean`, and the trace checks to come): a vector file is an object
-with a `cases` array, each case an `ops` array; a check supplies the op decoder, an initial
-state, and a step function returning the next state and that op's verdict.
+The driver for the trace-vector file format: an object with a `cases` array, each case an
+`ops` array of state-machine operations (the shape `sponge_dump` records). A check supplies
+the op decoder, an initial state, and a step function returning the next state and that
+op's verdict; the state and op types are abstract. Consumers:
+`scripts/check_sponge_vectors.lean`, `scripts/check_fq_sponge.lean`.
 -/
 
-namespace Kimchi.Fixture
+namespace Kimchi.Fixture.Trace
 
 open Lean
 
 /-- Run one trace: thread the state through `step`, conjoining each op's verdict. -/
-def runTrace {σ Op : Type} (init : σ) (step : σ → Op → σ × Bool) (ops : Array Op) : Bool :=
+def run {σ Op : Type} (init : σ) (step : σ → Op → σ × Bool) (ops : Array Op) : Bool :=
   (ops.foldl
     (fun acc op =>
       let (s, ok) := step acc.1 op
@@ -23,7 +24,7 @@ def runTrace {σ Op : Type} (init : σ) (step : σ → Op → σ × Bool) (ops :
 
 /-- Check a vector file of `cases` × `ops`: decode each op with `parseOp`, run each case
 from `init` by `step`, tally and report. -/
-def checkCases {σ Op : Type} (parseOp : Json → Except String Op) (init : σ)
+def check {σ Op : Type} (parseOp : Json → Except String Op) (init : σ)
     (step : σ → Op → σ × Bool) (path : String) : IO Bool := do
   let raw ← IO.FS.readFile path
   let cases ← match Json.parse raw >>= fun j => do
@@ -31,8 +32,8 @@ def checkCases {σ Op : Type} (parseOp : Json → Except String Op) (init : σ)
         (← (← c.getObjVal? "ops").getArr?).mapM parseOp with
     | .ok cs => pure cs
     | .error e => throw (IO.userError s!"{path}: vector parse error: {e}")
-  let failed := cases.foldl (fun n c => if runTrace init step c then n else n + 1) 0
+  let failed := cases.foldl (fun n c => if run init step c then n else n + 1) 0
   IO.println s!"{path}: {cases.size - failed}/{cases.size} OK"
   return failed = 0
 
-end Kimchi.Fixture
+end Kimchi.Fixture.Trace

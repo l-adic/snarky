@@ -1,5 +1,5 @@
 import Kimchi.Sponge.Poseidon
-import Kimchi.Fixture.Check
+import Kimchi.Fixture.Trace
 import Lean.Data.Json
 
 /-!
@@ -37,7 +37,7 @@ def step {F : Type} [Field F] [DecidableEq F] (params : Params F) (sp : State F)
 
 def checkFile {F : Type} [Field F] [DecidableEq F] (params : Params F)
     (parseF : Json → Except String F) (path : String) : IO Bool :=
-  checkCases (parseOp parseF) Kimchi.Sponge.init (step params) path
+  Trace.check (parseOp parseF) Kimchi.Sponge.init (step params) path
 
 def main : IO Unit := do
   let okFq ← checkFile Fq.params (parseZMod (n := PALLAS_SCALAR_CARD))

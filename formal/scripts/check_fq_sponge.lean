@@ -1,5 +1,5 @@
 import Kimchi.Sponge.GroupMap
-import Kimchi.Fixture.Check
+import Kimchi.Fixture.Trace
 import Lean.Data.Json
 
 /-!
@@ -55,7 +55,7 @@ def step {q p : ℕ} [Field (ZMod q)] [Field (ZMod p)] (spec : Spec q p) (s : Fq
 
 def checkSponge {q p : ℕ} [Field (ZMod q)] [Field (ZMod p)] (spec : Spec q p)
     (path : String) : IO Bool :=
-  checkCases (parseOp (parseZMod (n := q)) (parseZMod (n := p))) FqSponge.init (step spec)
+  Trace.check (parseOp (parseZMod (n := q)) (parseZMod (n := p))) FqSponge.init (step spec)
     path
 
 def checkGroupMap : IO Bool := do

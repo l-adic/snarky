@@ -35,6 +35,27 @@ The library is a strict bottom-up stack (`Cycle` → `Circuit` → `Gate` → `C
 `Kimchi/Gate/Generic.lean` are a runnable demo of "ingest a (gate, witness) and run the
 verified checker".
 
+Above the gate stack, the library has grown four further trees:
+
+- **`Kimchi/Commitment/IPA/`** — the IPA polynomial commitment (opening/batch verifier
+  models and their soundness; trust = DL-binding + the Fiat-Shamir assumption).
+- **`Kimchi/Quotient/`** — the vanishing-argument layer (domain, divisibility engine, the
+  `Argument`/`ArgumentEnv` per-gate lifts, grand-product core).
+- **`Kimchi/Sponge/`** — the Fiat-Shamir instantiation, *executable and definitional*: the
+  Poseidon permutation and duplex automaton over both Pasta base fields, the field-pair
+  generic `FqSponge` consumer layer, and the SvdW map-to-curve. Validated against
+  proof-systems vectors, not proved sound (that is the declared FS assumption).
+- **`Kimchi/Fixture/` + `Kimchi/Verifier/`** — JSON decoders and the trace-check harness
+  for the fixture scripts, and the executable Vesta IPA verifier over wire data.
+
+**Import discipline for the executable trees**: `Sponge/`, `Fixture/`, `Verifier/`,
+`Pasta/Constants.lean`, and the IPA def-modules use *targeted* Mathlib imports (not
+`import Mathlib`) so the `scripts/check_*` drivers load a small closure and run in seconds.
+Keep new modules in these trees targeted; the proof-heavy trees keep the wholesale
+convention. Also: state threaded through executable folds must be concrete data (tuples,
+structures) — the compiler eta-expands function-valued definitions, making folds
+exponential.
+
 ### The Circuit module convention
 
 Each `Circuit/{Name}` is exactly two files:
@@ -174,6 +195,26 @@ axiom-clean Pratt/Lucas primality certificate); `W`, `order`, `beta` are concret
 - **Avoid `native_decide` in our own proofs** — use `decide` or `reduce_mod_char`. It is accepted
   only when inherited from CompElliptic (whose point-count proofs use it); `check_axioms.lean`
   allows `CompElliptic`-namespaced `native_decide` axioms and rejects any from this tree.
+
+## Fixtures and compatibility checks
+
+Everything executable is validated against proof-systems itself. The fixtures and vectors
+under `fixtures/` are recorded from the production Rust code by `tools/fixture-dump`
+(see its README for the binaries, output map, and regeneration workflow — regenerate on a
+proof-systems bump). The drivers, each a few seconds after `lake build Kimchi`, all
+CI-wired in `.github/workflows/lean.yml`:
+
+```sh
+scripts/check_axioms.sh          # every headline theorem reduces to the allowed axiom set
+scripts/check_sponge_vectors.sh  # Poseidon automaton vs mina_poseidon traces (Fq and Fp)
+scripts/check_fq_sponge.sh       # FqSponge op traces (both curves) + group_map vectors
+scripts/check_ipa_fixture.sh     # end-to-end: the executable verifier accepts wire data
+scripts/check_ipa_transcript.sh  # layer bisection: re-derive the recorded FS transcript
+```
+
+New trace checks build on `Kimchi.Fixture.Parse` (element decoders) and
+`Kimchi.Fixture.Trace` (the cases-x-ops driver): supply an op type, a decoder, and a
+`step : state -> op -> state x Bool`.
 
 ## Conventions
 
