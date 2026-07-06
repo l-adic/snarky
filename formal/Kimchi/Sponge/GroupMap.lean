@@ -1,3 +1,4 @@
+import CompElliptic.Curves.Pasta
 import Kimchi.Sponge.FqSponge
 
 /-!
@@ -21,11 +22,12 @@ Rust `unwrap_or(zero)` and `ZMod`'s `0⁻¹ = 0`), then three candidate abscissa
 * `x₃ = u − (t² + f(u))³·α·(3u²)⁻¹`,
 
 of which at least one is the abscissa of a curve point (SvdW06); the image is the first
-`(xᵢ, √(xᵢ³ + B))` that exists. Runtime square roots are CompElliptic's self-validating
-Tonelli–Shanks (`vestaBase.sqrt?`); the fixture check compares the full image point against
-the production verifier's `U`, so a root-choice divergence from arkworks would surface
-there. The Rust panics when no candidate lands on the curve (unreachable by SvdW06); here
-that branch returns the identity sentinel `(0, 0)`.
+`(xᵢ, √(xᵢ³ + B))` that exists, returned as an `SWPoint` — on-curve by construction, since
+the square roots are CompElliptic's self-validating Tonelli–Shanks (`vestaBase.sqrt?`). The
+fixture check compares the full image point against the production verifier's `U`, so a
+root-choice divergence from arkworks would surface there. The Rust panics when no candidate
+lands on the curve (unreachable by SvdW06); here that branch returns the identity
+`𝒪 = (0, 0)`.
 
 Validated against the `u_base` of the production `SRS::verify` transcript by
 `scripts/check_fq_sponge.lean`.
@@ -76,19 +78,33 @@ def potentialXs (t : Fq) : Fq × Fq × Fq :=
   let x3 := u - (t2 + fu) ^ 2 * (alpha * (t2 + fu)) * invThreeUSquared
   (x1, x2, x3)
 
+open CompElliptic.CurveForms.ShortWeierstrass CompElliptic.Curves.Pasta in
+/-- A found candidate is on the curve: `sqrt?` is self-validating (`sqrt?_mul_self`), so
+`getY x = some y` means `y² = f(x)`. -/
+theorem onCurve_of_getY {x y : Fq} (h : getY x = some y) :
+    OnCurve Vesta.curve.A Vesta.curve.B (x, y) := by
+  have hy : y * y = curveEqn x :=
+    CompElliptic.Fields.TonelliShanks.sqrt?_mul_self vestaBase h
+  show y ^ 2 = x ^ 3 + Vesta.curve.A * x + Vesta.curve.B
+  have hA : Vesta.curve.A = 0 := rfl
+  have hB : Vesta.curve.B = 5 := rfl
+  rw [hA, hB, zero_mul, _root_.add_zero, pow_two, hy, curveEqn]
+
+open CompElliptic.CurveForms.ShortWeierstrass CompElliptic.Curves.Pasta in
 /-- The map-to-curve (`to_group`): the first candidate abscissa on the curve, with its
-square root. The no-candidate branch (a Rust panic, unreachable by SvdW06) returns
-`(0, 0)`. -/
-def toGroup (t : Fq) : Fq × Fq :=
+square root — a Vesta point correct by construction (`onCurve_of_getY`). The no-candidate
+branch (a Rust panic, unreachable by SvdW06 — that unreachability is SvdW's theorem and is
+not proved here) returns the identity `𝒪 = (0, 0)`. -/
+def toGroup (t : Fq) : SWPoint Vesta.curve :=
   let (x1, x2, x3) := potentialXs t
-  match getY x1 with
-  | some y => (x1, y)
+  match h1 : getY x1 with
+  | some y => ⟨x1, y, Or.inl (onCurve_of_getY h1)⟩
   | none =>
-    match getY x2 with
-    | some y => (x2, y)
+    match h2 : getY x2 with
+    | some y => ⟨x2, y, Or.inl (onCurve_of_getY h2)⟩
     | none =>
-      match getY x3 with
-      | some y => (x3, y)
-      | none => (0, 0)
+      match h3 : getY x3 with
+      | some y => ⟨x3, y, Or.inl (onCurve_of_getY h3)⟩
+      | none => ⟨0, 0, Or.inr rfl⟩
 
 end Kimchi.Sponge.GroupMapVesta

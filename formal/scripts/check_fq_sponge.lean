@@ -77,7 +77,8 @@ def checkGroupMap : IO Bool := do
     | .error e => throw (IO.userError s!"group_map vectors parse error: {e}")
   let failed := vs.foldl
     (fun n (v : _ × _ × _) =>
-      if GroupMapVesta.toGroup v.1 = (v.2.1, v.2.2) then n else n + 1) 0
+      let u := GroupMapVesta.toGroup v.1
+      if (u.x, u.y) = (v.2.1, v.2.2) then n else n + 1) 0
   IO.println s!"fixtures/group_map_vectors.json: {vs.size - failed}/{vs.size} OK"
   return failed = 0
 
