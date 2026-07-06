@@ -20,3 +20,6 @@ import Kimchi.Quotient.EndoScalar
 import Kimchi.Quotient.Poseidon
 import Kimchi.Quotient.GrandProduct
 import Kimchi.Quotient.Soundness
+import Kimchi.Sponge.Poseidon
+import Kimchi.Sponge.FqSponge
+import Kimchi.Sponge.GroupMap

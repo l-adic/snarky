@@ -1,0 +1,21 @@
+[package]
+name = "fixture-dump"
+version = "0.1.0"
+edition = "2021"
+description = "Dump proof-systems fixtures for the Lean formalization: sponge/group-map constants and vectors (sponge_dump) and IPA opening-proof transcripts (ipa_dump)."
+
+# Standalone: keep out of the snarky root workspace.
+[workspace]
+
+[dependencies]
+poly-commitment = { path = "../../mina/src/lib/crypto/proof-systems/poly-commitment" }
+mina-curves = { path = "../../mina/src/lib/crypto/proof-systems/curves" }
+mina-poseidon = { path = "../../mina/src/lib/crypto/proof-systems/poseidon" }
+groupmap = { path = "../../mina/src/lib/crypto/proof-systems/groupmap" }
+o1-utils = { path = "../../mina/src/lib/crypto/proof-systems/utils" }
+ark-ff = "0.5.0"
+ark-ec = "0.5.0"
+ark-poly = "0.5.0"
+rand = "0.8"
+rand_chacha = "0.3"
+serde_json = "1.0"

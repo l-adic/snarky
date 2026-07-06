@@ -1,4 +1,5 @@
 import Kimchi.Curve
+import Kimchi.Pasta.Constants
 import CompElliptic.Curves.Pasta
 import CompElliptic.Curves.PastaOrder
 import CompElliptic.Fields.Pasta
@@ -83,10 +84,6 @@ reduced-basis certificate) — it is the accumulator non-degeneracy fact. -/
 
 open WeierstrassCurve.Affine
 
-/-- TRUSTED INPUT: the Pallas base-field endomorphism coefficient `β` (a primitive cube root of
-    unity), so `φ(x, y) = (β·x, y)` maps `y² = x³ + 5` to itself. -/
-axiom pallas_endo : PallasBaseField
-
 /-- **No short relation in a rank-2 GLV lattice, from a reduced-basis certificate.** If `(s, t)`
     lies in the lattice `{(a,b) : a + b·λ ≡ 0 (mod n)}` (`s + t·λ = k₂·n`), is primitive
     (`u·s + v·t = 1`), has `|s| > 2¹²⁶`, and the box `[−2¹²⁶, 2¹²⁶]²` fits below the covolume
@@ -129,12 +126,6 @@ theorem glv_no_short_of_cert {n lam s t k2 u v : ℤ} (hn : 0 < n)
   · exact h (by rw [hsm, hm0, mul_zero])
   · exact h (by rw [htm, hm0, mul_zero])
 
-/-- The scalar eigenvalue `λ` of the Pallas endomorphism `φ` — a primitive cube root of unity in
-    the scalar field (`endo_scalar`, from `Snarky.Curves.PastaCurve`). Concrete, so the GLV
-    short-basis fact below is *proved*, not assumed. -/
-def pallas_lam : ℤ :=
-  26005156700822196841419187675678338661165322343552424574062261873906994770353
-
 /-- **AXIOM (CM).** The Pallas endomorphism `φ(x, y) = (β·x, y)` acts as `[λ]` on the group:
     `φ(P) = [λ]·P`. The defining property of the GLV endomorphism — not Mathlib-provable for the
     abstract curve, true by the Pasta construction (same trusted status as the point counts). It
@@ -160,15 +151,6 @@ theorem pallas_glv_no_short_relation {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0)
     (u := -9986202145207451063414818209979305552)
     (v := -9986202145198640800203172615810973695)
     (by decide) (by decide) (by decide) (by decide) (by decide) hne ha hb
-
-/-- TRUSTED INPUT: the Vesta base-field endomorphism coefficient `β` (a primitive cube root of
-    unity), so `φ(x, y) = (β·x, y)` maps `y² = x³ + 5` to itself. -/
-axiom vesta_endo : VestaBaseField
-
-/-- The scalar eigenvalue `λ` of the Vesta endomorphism `φ` — a primitive cube root of unity in
-    the scalar field (`endo_scalar`). Concrete, so the GLV short-basis fact below is proved. -/
-def vesta_lam : ℤ :=
-  8503465768106391777493614032514048814691664078728891710322960303815233784505
 
 /-- **AXIOM (CM).** The Vesta endomorphism `φ(x, y) = (β·x, y)` acts as `[λ]` on the group:
     `φ(P) = [λ]·P` — the defining property of the GLV endomorphism (same trusted status as the
