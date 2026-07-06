@@ -107,3 +107,8 @@ Kimchi.Quotient.EndoMul.soundness
 -- rows/selector-gated/soundness stated once over it.
 Kimchi.Quotient.Argument.rows_iff_dvd
 Kimchi.Quotient.Argument.soundness
+
+-- EndoScalar quotient lift (the gate's constraints read over any commutative F-algebra —
+-- the cPoly/dPoly coefficients enter through algebraMap F R).
+Kimchi.Quotient.EndoScalar.rows_iff_dvd
+Kimchi.Quotient.EndoScalar.soundness
