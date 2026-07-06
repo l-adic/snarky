@@ -63,7 +63,10 @@ def roots : List Name :=
     `Kimchi.Quotient.EndoScalar.soundness,
     `Kimchi.Gate.Poseidon.sound, `Kimchi.Gate.Poseidon.complete,
     `Kimchi.Quotient.Poseidon.rows_iff_dvd,
-    `Kimchi.Quotient.Poseidon.soundness ]
+    `Kimchi.Quotient.Poseidon.soundness,
+    `Kimchi.Quotient.multiset_eq_of_pairFactor_prod_eq,
+    `Kimchi.Quotient.identity_of_grid_evals,
+    `Kimchi.Quotient.multiset_eq_of_grid_prod_evals ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta GLV endomorphism inputs (`β`, `λ`,
