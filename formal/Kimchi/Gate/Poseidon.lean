@@ -69,6 +69,15 @@ structure Witness (F : Type*) where
   s4 : F × F × F
   s5 : F × F × F
 
+/-- Map `f` componentwise across all six state triples of a witness. -/
+def Witness.map {R S : Type*} (f : R → S) (w : Witness R) : Witness S where
+  s0 := (f w.s0.1, f w.s0.2.1, f w.s0.2.2)
+  s1 := (f w.s1.1, f w.s1.2.1, f w.s1.2.2)
+  s2 := (f w.s2.1, f w.s2.2.1, f w.s2.2.2)
+  s3 := (f w.s3.1, f w.s3.2.1, f w.s3.2.2)
+  s4 := (f w.s4.1, f w.s4.2.1, f w.s4.2.2)
+  s5 := (f w.s5.1, f w.s5.2.1, f w.s5.2.2)
+
 /-- The 15 constraint expressions: for each of the five rounds, the three components of
     `sᵢ₊₁ − round(sᵢ, rcᵢ)`. -/
 def constraints [CommRing F] (rc : Fin 5 → F × F × F) (w : Witness F) : List F :=
@@ -82,6 +91,16 @@ def constraints [CommRing F] (rc : Fin 5 → F × F × F) (w : Witness F) : List
     w.s4.2.2 - (round w.s3 (rc 3)).2.2,
     w.s5.1 - (round w.s4 (rc 4)).1, w.s5.2.1 - (round w.s4 (rc 4)).2.1,
     w.s5.2.2 - (round w.s4 (rc 4)).2.2 ]
+
+/-- Naturality of the constraint list: a ring hom `f` distributes over all 15 constraint
+    expressions, so mapping `f` over `constraints rc w` equals the constraints of the mapped
+    round constants and mapped witness. -/
+theorem constraints_map {R S : Type*} [CommRing R] [CommRing S] (f : R →+* S)
+    (rc : Fin 5 → R × R × R) (w : Witness R) :
+    (constraints rc w).map f
+      = constraints (fun j => (f (rc j).1, f (rc j).2.1, f (rc j).2.2)) (Witness.map f w) := by
+  simp [constraints, round, sbox, Witness.map, map_ofNat, m00, m01, m02, m10, m11, m12,
+    m20, m21, m22]
 
 /-- RELATIONAL spec: all 15 constraint expressions vanish. -/
 def Holds [CommRing F] (rc : Fin 5 → F × F × F) (w : Witness F) : Prop :=
