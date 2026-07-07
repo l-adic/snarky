@@ -34,7 +34,7 @@ separate, explicitly flagged assumption where the instantiation meets the soundn
 
 * `Triple`, `Params`, `sbox`, `fullRound`, `blockCipher` — the permutation.
 * `Mode`, `State`, `init`, `absorb`, `squeeze`, `squeezeN` — the duplex automaton.
-* `Fq.params` / `Fp.params` — the concrete `fq_kimchi` / `fp_kimchi` instantiations.
+* `fqParams` / `fpParams` — the concrete `fq_kimchi` / `fp_kimchi` instantiations.
 -/
 
 namespace Kimchi.Sponge
@@ -136,50 +136,32 @@ def squeezeN (p : Params F) (sp : State F) : ℕ → List F × State F
     let (xs, sp) := squeezeN p sp n
     (x :: xs, sp)
 
-/-! ## The `fq_kimchi` instantiation -/
+/-! ## The Pasta instantiations -/
 
-namespace Fq
-
-open CompElliptic.Fields.Pasta
-
+open CompElliptic.Fields.Pasta in
 /-- The `fq_kimchi` parameters over the Vesta base field, from the generated constant
 tables. -/
-def params : Params VestaBaseField where
+def fqParams : Params Fq where
   roundConstants := FqKimchi.roundConstants.map fun row =>
-    (((row[0]! : ℕ) : VestaBaseField), ((row[1]! : ℕ) : VestaBaseField),
-     ((row[2]! : ℕ) : VestaBaseField))
+    (((row[0]! : ℕ) : Fq), ((row[1]! : ℕ) : Fq),
+     ((row[2]! : ℕ) : Fq))
   mds :=
     match FqKimchi.mds.map fun row =>
-        (((row[0]! : ℕ) : VestaBaseField), ((row[1]! : ℕ) : VestaBaseField),
-         ((row[2]! : ℕ) : VestaBaseField)) with
+        (((row[0]! : ℕ) : Fq), ((row[1]! : ℕ) : Fq),
+         ((row[2]! : ℕ) : Fq)) with
     | m => (m[0]!, m[1]!, m[2]!)
 
-/-- The fresh `fq_kimchi` sponge. -/
-def init : State VestaBaseField := Kimchi.Sponge.init
-
-end Fq
-
-/-! ## The `fp_kimchi` instantiation -/
-
-namespace Fp
-
-open CompElliptic.Fields.Pasta
-
+open CompElliptic.Fields.Pasta in
 /-- The `fp_kimchi` parameters over the Pallas base field, from the generated constant
 tables. -/
-def params : Params PallasBaseField where
+def fpParams : Params Fp where
   roundConstants := FpKimchi.roundConstants.map fun row =>
-    (((row[0]! : ℕ) : PallasBaseField), ((row[1]! : ℕ) : PallasBaseField),
-     ((row[2]! : ℕ) : PallasBaseField))
+    (((row[0]! : ℕ) : Fp), ((row[1]! : ℕ) : Fp),
+     ((row[2]! : ℕ) : Fp))
   mds :=
     match FpKimchi.mds.map fun row =>
-        (((row[0]! : ℕ) : PallasBaseField), ((row[1]! : ℕ) : PallasBaseField),
-         ((row[2]! : ℕ) : PallasBaseField)) with
+        (((row[0]! : ℕ) : Fp), ((row[1]! : ℕ) : Fp),
+         ((row[2]! : ℕ) : Fp)) with
     | m => (m[0]!, m[1]!, m[2]!)
-
-/-- The fresh `fp_kimchi` sponge. -/
-def init : State PallasBaseField := Kimchi.Sponge.init
-
-end Fp
 
 end Kimchi.Sponge

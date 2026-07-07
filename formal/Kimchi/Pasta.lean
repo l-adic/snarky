@@ -130,7 +130,7 @@ theorem glv_no_short_of_cert {n lam s t k2 u v : ℤ} (hn : 0 < n)
     `φ(P) = [λ]·P`. The defining property of the GLV endomorphism — not Mathlib-provable for the
     abstract curve, true by the Pasta construction (same trusted status as the point counts). It
     discharges `Kimchi.Circuit.EndoMul.endoMul`'s eigenvalue hypothesis `heig`. -/
-axiom pallas_eigen {x y : PallasBaseField}
+axiom pallas_eigen {x y : Fp}
     (h : Pallas.curve.toAffine.Nonsingular x y)
     (h' : Pallas.curve.toAffine.Nonsingular (pallas_endo * x) y) :
     Point.some _ _ h' = pallas_lam • Point.some _ _ h
@@ -155,7 +155,7 @@ theorem pallas_glv_no_short_relation {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0)
 /-- **AXIOM (CM).** The Vesta endomorphism `φ(x, y) = (β·x, y)` acts as `[λ]` on the group:
     `φ(P) = [λ]·P` — the defining property of the GLV endomorphism (same trusted status as the
     point counts). It discharges `Kimchi.Circuit.EndoMul.endoMul`'s `heig` at Vesta. -/
-axiom vesta_eigen {x y : VestaBaseField}
+axiom vesta_eigen {x y : Fq}
     (h : Vesta.curve.toAffine.Nonsingular x y)
     (h' : Vesta.curve.toAffine.Nonsingular (vesta_endo * x) y) :
     Point.some _ _ h' = vesta_lam • Point.some _ _ h

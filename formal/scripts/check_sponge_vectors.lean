@@ -40,9 +40,9 @@ def checkFile {F : Type} [Field F] [DecidableEq F] (params : Params F)
   Trace.check (parseOp parseF) Kimchi.Sponge.init (step params) path
 
 def main : IO Unit := do
-  let okFq ← checkFile Fq.params (parseZMod (n := PALLAS_SCALAR_CARD))
+  let okFq ← checkFile fqParams (parseZMod (n := PALLAS_SCALAR_CARD))
     "fixtures/poseidon_fq_vectors.json"
-  let okFp ← checkFile Fp.params (parseZMod (n := PALLAS_BASE_CARD))
+  let okFp ← checkFile fpParams (parseZMod (n := PALLAS_BASE_CARD))
     "fixtures/poseidon_fp_vectors.json"
   unless okFq && okFp do
     throw (IO.userError "sponge vector case(s) FAILED")

@@ -34,7 +34,7 @@ def parseSRS (C : Ipa.CommitmentCurve) (j : Json) : Except String (SRS C.Point) 
 
 def parseInput (C : Ipa.CommitmentCurve) (curveName : String) (j : Json) :
     Except String (Ipa.Input C) := do
-  let parseS : Json → Except String C.Fr := parseZMod
+  let parseS : Json → Except String C.ScalarField := parseZMod
   let fld (k : String) : Except String Json := j.getObjVal? k
   let curve ← (← fld "curve").getStr?
   unless curve = curveName do throw s!"unexpected curve: {curve}"
