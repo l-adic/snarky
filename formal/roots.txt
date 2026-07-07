@@ -131,6 +131,12 @@ Kimchi.Quotient.prod_eq_of_accumulator
 -- under the derandomized quotient hypotheses, telescope into the grand-product equality
 -- over the unmasked region.
 Kimchi.Quotient.Permutation.soundness
+
+-- Permutation milestone 4: copy soundness — grand-product equalities at an injective
+-- challenge grid force the witness values to be invariant under the wiring (the abstract
+-- core, and the kimchi headline composing milestones 1-3).
+Kimchi.Quotient.copy_soundness
+Kimchi.Quotient.Permutation.copy_soundness
 Kimchi.Quotient.multiset_eq_of_pairFactor_prod_eq
 Kimchi.Quotient.identity_of_grid_evals
 Kimchi.Quotient.multiset_eq_of_grid_prod_evals
