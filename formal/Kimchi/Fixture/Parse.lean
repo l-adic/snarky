@@ -46,14 +46,13 @@ def parsePoint {F : Type} (f : Json → Except String F) (j : Json) :
   parsePair f j
 
 open CompElliptic.CurveForms.ShortWeierstrass in
-/-- A `[x, y]` coordinate pair validated on the curve `y² = x³ + a·x + b` — or the `(0, 0)`
-identity sentinel (`Valid`, decided disjunct-wise: `Valid` itself carries no `Decidable`
-instance). -/
-def parsePointOnCurve {F : Type} [Field F] [DecidableEq F]
-    (f : Json → Except String F) (a b : F) (j : Json) : Except String (F × F) := do
+/-- A `[x, y]` coordinate pair as a point on `E`: on the curve or the `(0, 0)` identity
+sentinel, with the `Valid` proof carried in the `SWPoint` (decided disjunct-wise). -/
+def parseSWPoint {F : Type} [Field F] [DecidableEq F] (f : Json → Except String F)
+    (E : SWCurve F) (j : Json) : Except String (SWPoint E) := do
   let p ← parsePair f j
-  unless decide (OnCurve a b p) || decide (p = ((0 : F), (0 : F))) do
-    throw "point not on the curve"
-  return p
+  if h : OnCurve E.A E.B p then return ⟨p.1, p.2, Or.inl h⟩
+  else if h0 : p = ((0 : F), (0 : F)) then return ⟨p.1, p.2, Or.inr h0⟩
+  else throw "point not on the curve"
 
 end Kimchi.Fixture
