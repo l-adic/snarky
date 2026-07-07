@@ -137,6 +137,11 @@ Kimchi.Quotient.Permutation.soundness
 -- core, and the kimchi headline composing milestones 1-3).
 Kimchi.Quotient.copy_soundness
 Kimchi.Quotient.Permutation.copy_soundness
+
+-- Permutation milestone 5: the index instantiation — coset shifts give injective cell
+-- addressing, region-preserving wirings restrict, interpolated sigma columns carry the
+-- wiring semantics; copy soundness from the index data alone.
+Kimchi.Quotient.Permutation.copy_soundness_wired
 Kimchi.Quotient.multiset_eq_of_pairFactor_prod_eq
 Kimchi.Quotient.identity_of_grid_evals
 Kimchi.Quotient.multiset_eq_of_grid_prod_evals
