@@ -209,6 +209,7 @@ scripts/check_axioms.sh          # every headline theorem reduces to the allowed
 scripts/check_sponge_vectors.sh  # Poseidon automaton vs mina_poseidon traces (Fq and Fp)
 scripts/check_fq_sponge.sh       # FqSponge op traces + group_map vectors (both curves)
 scripts/check_ipa_fixture.sh     # end-to-end: the executable verifiers (both curves) accept wire data
+scripts/check_perm_fixture.sh    # permutation argument row semantics on production kimchi data
 ```
 
 New trace checks build on `Kimchi.Fixture.Parse` (element decoders) and

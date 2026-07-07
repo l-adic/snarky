@@ -24,6 +24,9 @@ Two binaries, both deterministic (seeded ChaCha20), both writing into `formal/`:
 
 # IPA opening-proof fixtures (wire format only)
 ./target/release/ipa_dump ../../formal/fixtures
+
+# Permutation-argument fixture (wired circuit, production accumulator)
+./target/release/perm_dump ../../formal/fixtures
 ```
 
 ## What each binary emits
@@ -43,6 +46,12 @@ Two binaries, both deterministic (seeded ChaCha20), both writing into `formal/`:
 |---|---|---|
 | `fixtures/ipa_opening_{vesta,pallas}.json` | a single opening (1 poly × 1 point), wire fields only | `scripts/check_ipa_fixture.sh` |
 | `fixtures/ipa_batch_{vesta,pallas}.json` | a batched opening (2 polys × 2 points), wire fields only | same |
+
+`perm_dump`:
+
+| artifact | contents | checked by |
+|---|---|---|
+| `fixtures/perm_vesta.json` | a wired circuit's permutation data — shifts, sigma columns, witness, and the `perm_aggreg` accumulator over the domain (production prove+verify asserted) | `scripts/check_perm_fixture.sh` |
 
 `ipa_dump` is a thin wrapper over the production prover/verifier: proofs come from
 `SRS::commit`/`SRS::open`, the batched `SRS::verify` is asserted at dump time, and the
