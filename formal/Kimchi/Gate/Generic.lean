@@ -45,6 +45,18 @@ def Generic.constraints {R : Type*} [CommRing R] (g : Generic R) : List R :=
 def Generic.Holds (g : Generic F) : Prop :=
   ∀ e ∈ g.constraints, e = 0
 
+/-- The row with a public input folded in: kimchi's row check subtracts `public[row]`
+from the *first* operation's constraint (`verify_generic`:
+`sum + mul + qC − public = 0`), which is the plain constraint of the row whose first
+constant coefficient — `q 4` in the packed `[l, r, o, m, c | l', r', o', m', c']`
+layout — absorbs the public value. -/
+def Generic.withPublic (g : Generic F) (p : F) : Generic F :=
+  ⟨Function.update g.q 4 (g.q 4 - p), g.w⟩
+
+/-- Folding in a zero public input is the identity — the sanity check of the layout. -/
+theorem Generic.withPublic_zero (g : Generic F) : g.withPublic 0 = g := by
+  simp [withPublic]
+
 instance [DecidableEq F] (g : Generic F) : Decidable g.Holds := by
   unfold Generic.Holds
   infer_instance

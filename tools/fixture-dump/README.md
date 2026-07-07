@@ -53,6 +53,12 @@ Two binaries, both deterministic (seeded ChaCha20), both writing into `formal/`:
 |---|---|---|
 | `fixtures/perm_vesta.json` | a wired circuit's permutation data — shifts, sigma columns, witness, and the `perm_aggreg` accumulator over the domain (production prove+verify asserted) | `scripts/check_perm_fixture.sh` |
 
+`index_dump`:
+
+| artifact | contents | checked by |
+|---|---|---|
+| `fixtures/index_vesta.json` | a mixed-gate circuit (public, generic, Poseidon, CompleteAdd, EndoMulScalar; wired) — the padded gate table, domain/permutation constants, witness, and the production derived columns (kimchi's row checker and prove+verify asserted) | `scripts/check_index_fixture.sh` |
+
 `ipa_dump` is a thin wrapper over the production prover/verifier: proofs come from
 `SRS::commit`/`SRS::open`, the batched `SRS::verify` is asserted at dump time, and the
 harness is proof-systems' own `tests/ipa_commitment.rs::test_opening_proof`. Nothing

@@ -52,7 +52,7 @@ inductive GateType where
   | varBaseMul
   | endoMul
   | endoScalar
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Repr, Inhabited
 
 /-- One row of the gate table: the gate type, the fifteen coefficient cells, and the
 seven wire pointers (each permuted cell names the next cell of its copy cycle —

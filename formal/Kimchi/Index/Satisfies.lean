@@ -30,15 +30,24 @@ open Kimchi.Quotient
 
 variable {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n]
 
+/-- The public value at a row: the input for the public rows, zero beyond them. -/
+def pubAt (idx : Index F n) (pub : Fin idx.publicCount → F) (i : Fin n) : F :=
+  if h : (i : ℕ) < idx.publicCount then pub ⟨(i : ℕ), h⟩ else 0
+
 /-- Row `i` satisfies its gate: dispatch on the stored gate type. `zero` rows constrain
-nothing; `generic` reads its coefficients and current-row cells directly; the remaining
-gates go through their quotient-layer `rowWitness` layout transcriptions (two-row where
-the gate spans two rows); Poseidon's round constants are its coefficient row (`rcMap`);
-`endoMul` consumes the index's `endoBase`. -/
-def rowSatisfies (idx : Index F n) (wTab : Fin n → Fin 15 → F) (i : Fin n) : Prop :=
+nothing; `generic` reads its coefficients and current-row cells with the row's public
+value folded in (`Generic.withPublic` — the layout knowledge lives with the gate); the
+remaining gates go through their
+quotient-layer `rowWitness` layout transcriptions (two-row where the gate spans two
+rows); Poseidon's round constants are its coefficient row (`rcMap`); `endoMul` consumes
+the index's `endoBase`. -/
+def rowSatisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin 15 → F) (i : Fin n) : Prop :=
   match (idx.gates i).typ with
   | .zero => True
-  | .generic => Gate.Generic.Holds ⟨idx.coeffTable i, wTab i⟩
+  | .generic =>
+      Gate.Generic.Holds (Gate.Generic.withPublic ⟨idx.coeffTable i, wTab i⟩
+        (pubAt idx pub i))
   | .poseidon =>
       Gate.Poseidon.Holds (Poseidon.rcMap (idx.coeffTable i)) (Poseidon.rowWitness wTab i)
   | .completeAdd => Gate.AddComplete.Holds (AddComplete.rowWitness wTab i)
@@ -54,13 +63,14 @@ def cellValue (wTab : Fin n → Fin 15 → F) (c : Fin 7 × Fin n) : F :=
 permuted cell equals its wired-to cell, and the public rows pin the first column. -/
 def Satisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F) : Prop :=
-  (∀ i, rowSatisfies idx wTab i)
+  (∀ i, rowSatisfies idx pub wTab i)
     ∧ (∀ c : Fin 7 × Fin n, cellValue wTab (idx.wiringMap c) = cellValue wTab c)
     ∧ (∀ i : Fin idx.publicCount,
         wTab ⟨(i : ℕ), by have h1 := idx.public_le; have h2 := idx.zk_le; omega⟩ 0 = pub i)
 
-instance (idx : Index F n) (wTab : Fin n → Fin 15 → F) (i : Fin n) :
-    Decidable (rowSatisfies idx wTab i) := by
+instance (idx : Index F n) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin 15 → F) (i : Fin n) :
+    Decidable (rowSatisfies idx pub wTab i) := by
   unfold rowSatisfies
   split <;> infer_instance
 

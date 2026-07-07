@@ -24,3 +24,7 @@ serde_json = "1.0"
 [[bin]]
 name = "perm_dump"
 path = "src/bin/perm_dump.rs"
+
+[[bin]]
+name = "index_dump"
+path = "src/bin/index_dump.rs"
