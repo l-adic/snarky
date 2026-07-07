@@ -20,43 +20,44 @@ Run (after `lake build Kimchi`): `scripts/check_fq_sponge.sh`.
 -/
 
 open Lean Kimchi.Fixture Kimchi.Sponge Kimchi.Sponge.FqSponge
+open CompElliptic.CurveForms.ShortWeierstrass CompElliptic.Curves.Pasta
 
 /-- One trace operation: an absorption input or an expected squeeze output. -/
-inductive VOp (Fq Fr : Type)
+inductive VOp {F : Type} [Field F] (E : SWCurve F) (Fr : Type)
   | absorbFr (x : Fr)
-  | absorbG (p : Fq × Fq)
-  | absorbGInfinity
-  | challengeFq (expect : Fq)
+  | absorbG (P : SWPoint E)
+  | challengeFq (expect : F)
   | challenge (expect : Fr)
   | squeezeChallenge (expect : Fr)
 
-def parseOp {Fq Fr : Type} (pFq : Json → Except String Fq) (pFr : Json → Except String Fr)
-    (j : Json) : Except String (VOp Fq Fr) := do
+def parseOp {F Fr : Type} [Field F] [DecidableEq F] (E : SWCurve F)
+    (pF : Json → Except String F) (pFr : Json → Except String Fr) (j : Json) :
+    Except String (VOp E Fr) := do
   match ← (← j.getObjVal? "op").getStr? with
   | "absorb_fr" => return .absorbFr (← pFr (← j.getObjVal? "value"))
-  | "absorb_g" => return .absorbG (← parsePoint pFq (← j.getObjVal? "point"))
-  | "absorb_g_inf" => return .absorbGInfinity
-  | "challenge_fq" => return .challengeFq (← pFq (← j.getObjVal? "expect"))
+  | "absorb_g" => return .absorbG (← parseSWPoint pF E (← j.getObjVal? "point"))
+  | "absorb_g_inf" => return .absorbG 0
+  | "challenge_fq" => return .challengeFq (← pF (← j.getObjVal? "expect"))
   | "challenge" => return .challenge (← pFr (← j.getObjVal? "expect"))
   | "squeeze_challenge" => return .squeezeChallenge (← pFr (← j.getObjVal? "expect"))
   | op => throw s!"unknown op: {op}"
 
 /-- One op's transition and verdict: absorptions are free, squeezes compare against the
 expectation. -/
-def step {q p : ℕ} [Field (ZMod q)] [Field (ZMod p)] (spec : Spec q p) (s : FqSponge.S q)
-    (op : VOp (ZMod q) (ZMod p)) : FqSponge.S q × Bool :=
+def step {base scalar : ℕ} [Field (ZMod base)] [Field (ZMod scalar)]
+    (spec : Spec base scalar) {E : SWCurve (ZMod base)} (s : FqSponge.S base)
+    (op : VOp E (ZMod scalar)) : FqSponge.S base × Bool :=
   match op with
   | .absorbFr x => (absorbFr spec s x, true)
-  | .absorbG pt => (absorbG spec s pt, true)
-  | .absorbGInfinity => (absorbGInfinity spec s, true)
+  | .absorbG P => (absorbG spec s P, true)
   | .challengeFq e => let (x, s) := challengeFq spec s; (s, decide (x = e))
   | .challenge e => let (x, s) := challenge spec s; (s, decide (x = e))
   | .squeezeChallenge e => let (x, s) := squeezeChallenge spec s; (s, decide (x = e))
 
-def checkSponge {q p : ℕ} [Field (ZMod q)] [Field (ZMod p)] (spec : Spec q p)
-    (path : String) : IO Bool :=
-  Trace.check (parseOp (parseZMod (n := q)) (parseZMod (n := p))) FqSponge.init (step spec)
-    path
+def checkSponge {base scalar : ℕ} [Field (ZMod base)] [Field (ZMod scalar)]
+    (spec : Spec base scalar) (E : SWCurve (ZMod base)) (path : String) : IO Bool :=
+  Trace.check (parseOp E (parseZMod (n := base)) (parseZMod (n := scalar))) FqSponge.init
+    (step spec) path
 
 def checkGroupMap {q : ℕ} [Field (ZMod q)] [DecidableEq (ZMod q)]
     (toGroup : ZMod q → ZMod q × ZMod q) (path : String) : IO Bool := do
@@ -74,8 +75,8 @@ def checkGroupMap {q : ℕ} [Field (ZMod q)] [DecidableEq (ZMod q)]
   return failed = 0
 
 def main : IO Unit := do
-  let okV ← checkSponge FqVesta.spec "fixtures/fq_sponge_vectors.json"
-  let okP ← checkSponge FqPallas.spec "fixtures/fq_sponge_pallas_vectors.json"
+  let okV ← checkSponge FqVesta.spec Vesta.curve "fixtures/fq_sponge_vectors.json"
+  let okP ← checkSponge FqPallas.spec Pallas.curve "fixtures/fq_sponge_pallas_vectors.json"
   let okGV ← checkGroupMap (fun t => let u := GroupMapVesta.toGroup t; (u.x, u.y))
     "fixtures/group_map_vectors.json"
   let okGP ← checkGroupMap (fun t => let u := GroupMapPallas.toGroup t; (u.x, u.y))
