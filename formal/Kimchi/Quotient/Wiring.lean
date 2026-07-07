@@ -131,6 +131,80 @@ theorem eval_sigmaPoly {ω : F} (hω : IsPrimitiveRoot ω n) (shifts : Fin 7 →
     (sigmaPoly ω shifts σpFull i).eval (ω ^ (j : ℕ)) = addr ω shifts (σpFull (i, j)) :=
   eval_columnPoly hω _ j
 
+/-! ## Executable row forms and certificates
+
+The fixture check (`scripts/check_perm_fixture.lean`) replays the argument on production
+data. So that it exercises *these* definitions rather than a parallel copy, the row-level
+forms and the hypothesis certificates live here, each with a proved bridge: the row forms
+are the polynomial definitions evaluated (`shiftSide_eval_row`/`sigmaSide_eval_row`), and
+the decidable certificates imply the specification `Prop`s
+(`cosetShifts_of_certificate`, `isPrimitiveRoot_of_certificate`). -/
+
+/-- The shift-side row factor product, executably: `∏ᵢ (wᵢ + γ + β·shiftᵢ·x)` over row
+values. -/
+def shiftSideRow (wRow : Fin 7 → F) (shifts : Fin 7 → F) (β γ x : F) : F :=
+  ∏ i, (wRow i + γ + β * shifts i * x)
+
+/-- The σ-side row factor product, executably: `∏ᵢ (wᵢ + γ + β·σᵢ)` over row values. -/
+def sigmaSideRow (wRow σRow : Fin 7 → F) (β γ : F) : F :=
+  ∏ i, (wRow i + γ + β * σRow i)
+
+theorem shiftSide_eval_row (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (β γ x : F) :
+    (shiftSide w shifts β γ).eval x
+      = shiftSideRow (fun i => (w i).eval x) shifts β γ x :=
+  shiftSide_eval w shifts β γ x
+
+theorem sigmaSide_eval_row (w σ : Fin 7 → Polynomial F) (β γ x : F) :
+    (sigmaSide w σ β γ).eval x
+      = sigmaSideRow (fun i => (w i).eval x) (fun i => (σ i).eval x) β γ :=
+  sigmaSide_eval w σ β γ x
+
+/-- The decidable coset certificate: nonzero shifts whose pairwise ratios are not `n`-th
+roots of unity. -/
+def cosetShiftsCertificate [DecidableEq F] (shifts : Fin 7 → F) (n : ℕ) : Bool :=
+  decide ((∀ i, shifts i ≠ 0)
+    ∧ ∀ i j : Fin 7, i ≠ j → (shifts i * (shifts j)⁻¹) ^ n ≠ 1)
+
+/-- The certificate implies the coset specification: a relation `shiftᵢ = shiftⱼ·ωᵉ`
+raises to `(shiftᵢ/shiftⱼ)ⁿ = (ωⁿ)ᵉ = 1`, which the certificate excludes off the
+diagonal. -/
+theorem cosetShifts_of_certificate [DecidableEq F] {ω : F} {n : ℕ}
+    (hω : IsPrimitiveRoot ω n) {shifts : Fin 7 → F}
+    (h : cosetShiftsCertificate shifts n = true) : CosetShifts ω shifts := by
+  rw [cosetShiftsCertificate, decide_eq_true_eq] at h
+  refine ⟨h.1, fun i j e heq => ?_⟩
+  by_contra hij
+  refine h.2 i j hij ?_
+  rw [heq, mul_comm (shifts j), mul_assoc, mul_inv_cancel₀ (h.1 j), mul_one, ← pow_mul,
+    mul_comm e n, pow_mul, hω.pow_eq_one, one_pow]
+
+/-- The decidable primitive-root certificate for two-power orders: `ωⁿ = 1` and
+`ω^(n/2) ≠ 1`. -/
+def primitiveRootCertificate [DecidableEq F] (ω : F) (n : ℕ) : Bool :=
+  decide (ω ^ n = 1 ∧ ω ^ (n / 2) ≠ 1)
+
+/-- For `n = 2^k`, the certificate implies primitivity: the order of `ω` divides `2^k`,
+hence is a two-power; were it proper it would divide `n/2`, contradicting the
+certificate. -/
+theorem isPrimitiveRoot_of_certificate [DecidableEq F] {ω : F} {n k : ℕ}
+    (hn : n = 2 ^ k) (h : primitiveRootCertificate ω n = true) :
+    IsPrimitiveRoot ω n := by
+  rw [primitiveRootCertificate, decide_eq_true_eq] at h
+  obtain ⟨h1, h2⟩ := h
+  have hd : orderOf ω ∣ n := orderOf_dvd_of_pow_eq_one h1
+  obtain ⟨m, hm, hordm⟩ := (Nat.dvd_prime_pow Nat.prime_two).mp (hn ▸ hd)
+  have hmk : m = k := by
+    by_contra hne
+    have hmlt : m < k := lt_of_le_of_ne hm hne
+    have hhalf : n / 2 = 2 ^ (k - 1) := by
+      rw [hn, show k = (k - 1) + 1 by omega, pow_succ]
+      exact Nat.mul_div_cancel _ two_pos
+    refine h2 (orderOf_dvd_iff_pow_eq_one.mp ?_)
+    rw [hhalf, hordm]
+    exact pow_dvd_pow 2 (by omega)
+  have hord : orderOf ω = n := by rw [hordm, hmk, hn]
+  exact hord ▸ IsPrimitiveRoot.orderOf ω
+
 /-! ## The headline -/
 
 /-- **Copy soundness from the index data.** For coset shifts, a region-preserving
