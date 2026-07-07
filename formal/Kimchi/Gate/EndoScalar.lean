@@ -206,6 +206,10 @@ theorem constraints_map {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [
 def Holds (w : Witness F) : Prop :=
   ∀ e ∈ constraints w, e = 0
 
+instance [DecidableEq F] (w : Witness F) : Decidable (Holds w) := by
+  unfold Holds
+  infer_instance
+
 /-- EXECUTABLE checker: every constraint expression evaluates to zero. -/
 def ok [DecidableEq F] (w : Witness F) : Bool :=
   (constraints w).all (· == 0)

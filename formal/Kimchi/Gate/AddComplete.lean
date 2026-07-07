@@ -96,6 +96,10 @@ def constraints [CommRing F] (w : Witness F) : List F :=
 def Holds [CommRing F] (w : Witness F) : Prop :=
   ∀ e ∈ constraints w, e = 0
 
+instance [CommRing F] [DecidableEq F] (w : Witness F) : Decidable (Holds w) := by
+  unfold Holds
+  infer_instance
+
 /-- EXECUTABLE checker — runnable on a concrete witness. -/
 def ok [CommRing F] [DecidableEq F] (w : Witness F) : Bool :=
   (constraints w).all (· == 0)

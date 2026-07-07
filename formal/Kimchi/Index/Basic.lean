@@ -52,7 +52,7 @@ inductive GateType where
   | varBaseMul
   | endoMul
   | endoScalar
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Repr, Inhabited
 
 /-- One row of the gate table: the gate type, the fifteen coefficient cells, and the
 seven wire pointers (each permuted cell names the next cell of its copy cycle —
@@ -172,6 +172,32 @@ theorem sigmaPoly_eq_wiring (idx : Index F n) (col : Fin 7) :
     idx.sigmaPoly col
       = Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm col :=
   rfl
+
+/-- Construct an index from raw data by *deciding* every law — the deserialization
+boundary: the generator and shift laws through the `Wiring.lean` certificates, the rest
+by their `Fintype`/`Decidable` instances. `none` exactly when some law fails. -/
+def build? [DecidableEq F] (gates : Fin n → GateRow F n) (publicCount zkRows : ℕ)
+    (omega endoBase : F) (shifts : Fin 7 → F) : Option (Index F n) :=
+  if h : (∃ k < n + 1, n = 2 ^ k)
+      ∧ primitiveRootCertificate omega n = true
+      ∧ cosetShiftsCertificate shifts n = true
+      ∧ 0 < zkRows ∧ zkRows ≤ n ∧ publicCount ≤ n - zkRows
+      ∧ Function.Bijective (wiringMapOf gates)
+      ∧ (∀ c : Fin 7 × Fin n,
+          ((c.2 : ℕ) < n - zkRows) ↔ (((wiringMapOf gates c).2 : ℕ) < n - zkRows)) then
+    have homega : IsPrimitiveRoot omega n :=
+      isPrimitiveRoot_of_certificate'
+        (let ⟨k, _, hk⟩ := h.1; ⟨k, hk⟩) h.2.1
+    some { gates := gates, publicCount := publicCount, zkRows := zkRows
+           omega := omega, endoBase := endoBase, shifts := shifts
+           omega_prim := homega
+           zk_pos := h.2.2.2.1
+           zk_le := h.2.2.2.2.1
+           public_le := h.2.2.2.2.2.1
+           shifts_coset := cosetShifts_of_certificate homega h.2.2.1
+           wiring_bijective := h.2.2.2.2.2.2.1
+           wiring_region := h.2.2.2.2.2.2.2 }
+  else none
 
 end Index
 
