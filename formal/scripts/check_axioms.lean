@@ -66,6 +66,7 @@ def roots : List Name :=
     `Kimchi.Quotient.Poseidon.soundness,
     `Kimchi.Quotient.prod_eq_of_accumulator,
     `Kimchi.Quotient.Permutation.soundness,
+    `Kimchi.Quotient.copy_soundness, `Kimchi.Quotient.Permutation.copy_soundness,
     `Kimchi.Quotient.multiset_eq_of_pairFactor_prod_eq,
     `Kimchi.Quotient.identity_of_grid_evals,
     `Kimchi.Quotient.multiset_eq_of_grid_prod_evals,
