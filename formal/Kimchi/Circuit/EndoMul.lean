@@ -89,7 +89,7 @@ computes `[s]·T`. The per-row `hxne` is discharged internally from the GLV boun
     `off := pallas_combo_off_targets`), the eigenvalue from `pallas_eigen`, and the
     odd-prime-order conditions from `Kimchi.Pasta`. -/
 theorem pallas_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
-    (g : ℕ → Witness PallasBaseField)
+    (g : ℕ → Witness Fp)
     (hholds : ∀ i, i < m → Holds pallas_endo (g i))
     (T φT : Pallas.curve.toAffine.Point)
     (hTns : Pallas.curve.toAffine.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
@@ -101,14 +101,14 @@ theorem pallas_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
     (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T + (2 : ℤ) • φT) :
     ∃ (hfin : Pallas.curve.toAffine.Nonsingular (accX g m) (accY g m)) (s : ℤ),
       Point.some _ _ hfin = s • T
-        ∧ (s : PallasBaseField)
-            = Kimchi.Circuit.EndoScalar.toField (crumbList g m) (pallas_lam : PallasBaseField) := by
+        ∧ (s : Fp)
+            = Kimchi.Circuit.EndoScalar.toField (crumbList g m) (pallas_lam : Fp) := by
   have ha : Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0
       ∧ Pallas.curve.toAffine.a₃ = 0 := ⟨rfl, rfl, rfl⟩
   haveI : Fact (Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0
       ∧ Pallas.curve.toAffine.a₃ = 0) := ⟨ha⟩
-  have h2 : (2 : PallasBaseField) ≠ 0 := by decide
-  have h3 : (3 : PallasBaseField) ≠ 0 := by decide
+  have h2 : (2 : Fp) ≠ 0 := by decide
+  have h3 : (3 : Fp) ≠ 0 := by decide
   have hodd : Pallas.curve.toAffine.order ≠ 2 := by rw [pallas_card]; decide
   have hTne : T ≠ 0 := by rw [hTeq]; exact Point.some_ne_zero _
   have heig : φT = pallas_lam • T := by rw [hφTeq, hTeq]; exact pallas_eigen hTns hφTns
@@ -123,7 +123,7 @@ theorem pallas_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
 
 /-- **EndoMul at Vesta** — the other half of the 2-cycle, identical modulo `vesta_*`. -/
 theorem vesta_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
-    (g : ℕ → Witness VestaBaseField)
+    (g : ℕ → Witness Fq)
     (hholds : ∀ i, i < m → Holds vesta_endo (g i))
     (T φT : Vesta.curve.toAffine.Point)
     (hTns : Vesta.curve.toAffine.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
@@ -135,14 +135,14 @@ theorem vesta_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
     (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T + (2 : ℤ) • φT) :
     ∃ (hfin : Vesta.curve.toAffine.Nonsingular (accX g m) (accY g m)) (s : ℤ),
       Point.some _ _ hfin = s • T
-        ∧ (s : VestaBaseField)
-            = Kimchi.Circuit.EndoScalar.toField (crumbList g m) (vesta_lam : VestaBaseField) := by
+        ∧ (s : Fq)
+            = Kimchi.Circuit.EndoScalar.toField (crumbList g m) (vesta_lam : Fq) := by
   have ha : Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
       ∧ Vesta.curve.toAffine.a₃ = 0 := ⟨rfl, rfl, rfl⟩
   haveI : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
       ∧ Vesta.curve.toAffine.a₃ = 0) := ⟨ha⟩
-  have h2 : (2 : VestaBaseField) ≠ 0 := by decide
-  have h3 : (3 : VestaBaseField) ≠ 0 := by decide
+  have h2 : (2 : Fq) ≠ 0 := by decide
+  have h3 : (3 : Fq) ≠ 0 := by decide
   have hodd : Vesta.curve.toAffine.order ≠ 2 := by rw [vesta_card]; decide
   have hTne : T ≠ 0 := by rw [hTeq]; exact Point.some_ne_zero _
   have heig : φT = vesta_lam • T := by rw [hφTeq, hTeq]; exact vesta_eigen hTns hφTns

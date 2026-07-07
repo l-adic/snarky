@@ -147,16 +147,10 @@ namespace FqVesta
 
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
-/-- The sponge field: the Vesta base field. -/
-abbrev Fq := VestaBaseField
-
-/-- The challenge field: the Vesta scalar field. -/
-abbrev Fr := VestaScalarField
-
 /-- `DefaultFqSponge<VestaParameters>`: the `fq_kimchi` parameters and the Vesta
 eigenvalue. -/
 def spec : FqSponge.Spec PALLAS_SCALAR_CARD PALLAS_BASE_CARD :=
-  ⟨Fq.params, ((Kimchi.Pasta.vesta_lam : ℤ) : Fr)⟩
+  ⟨fqParams, ((Kimchi.Pasta.vesta_lam : ℤ) : Fp)⟩
 
 /-- The Vesta-side sponge state. -/
 abbrev S := FqSponge.S PALLAS_SCALAR_CARD
@@ -165,11 +159,11 @@ def init : S := FqSponge.init
 def absorbFq : S → List Fq → S := FqSponge.absorbFq spec
 def absorbG : S → CompElliptic.CurveForms.ShortWeierstrass.SWPoint Vesta.curve → S :=
   FqSponge.absorbG spec
-def absorbFr : S → Fr → S := FqSponge.absorbFr spec
+def absorbFr : S → Fp → S := FqSponge.absorbFr spec
 def challengeFq : S → Fq × S := FqSponge.challengeFq spec
 def challengeNat : S → ℕ × S := FqSponge.challengeNat spec
-def challenge : S → Fr × S := FqSponge.challenge spec
-def squeezeChallenge : S → Fr × S := FqSponge.squeezeChallenge spec
+def challenge : S → Fp × S := FqSponge.challenge spec
+def squeezeChallenge : S → Fp × S := FqSponge.squeezeChallenge spec
 
 end FqVesta
 
@@ -177,30 +171,24 @@ namespace FqPallas
 
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
-/-- The sponge field: the Pallas base field. -/
-abbrev Fq := PallasBaseField
-
-/-- The challenge field: the Pallas scalar field. -/
-abbrev Fr := PallasScalarField
-
 /-- `DefaultFqSponge<PallasParameters>`: the `fp_kimchi` parameters and the Pallas
 eigenvalue. The scalar field is the larger of the pair, so `absorbFr` takes the
 high-bits/low-bit branch — selected by the cardinalities, not restated here. -/
 def spec : FqSponge.Spec PALLAS_BASE_CARD PALLAS_SCALAR_CARD :=
-  ⟨Fp.params, ((Kimchi.Pasta.pallas_lam : ℤ) : Fr)⟩
+  ⟨fpParams, ((Kimchi.Pasta.pallas_lam : ℤ) : Fq)⟩
 
 /-- The Pallas-side sponge state. -/
 abbrev S := FqSponge.S PALLAS_BASE_CARD
 
 def init : S := FqSponge.init
-def absorbFq : S → List Fq → S := FqSponge.absorbFq spec
+def absorbFq : S → List Fp → S := FqSponge.absorbFq spec
 def absorbG : S → CompElliptic.CurveForms.ShortWeierstrass.SWPoint Pallas.curve → S :=
   FqSponge.absorbG spec
-def absorbFr : S → Fr → S := FqSponge.absorbFr spec
-def challengeFq : S → Fq × S := FqSponge.challengeFq spec
+def absorbFr : S → Fq → S := FqSponge.absorbFr spec
+def challengeFq : S → Fp × S := FqSponge.challengeFq spec
 def challengeNat : S → ℕ × S := FqSponge.challengeNat spec
-def challenge : S → Fr × S := FqSponge.challenge spec
-def squeezeChallenge : S → Fr × S := FqSponge.squeezeChallenge spec
+def challenge : S → Fq × S := FqSponge.challenge spec
+def squeezeChallenge : S → Fq × S := FqSponge.squeezeChallenge spec
 
 end FqPallas
 

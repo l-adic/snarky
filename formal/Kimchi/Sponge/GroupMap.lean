@@ -96,7 +96,7 @@ end GroupMap
 
 namespace GroupMapVesta
 
-open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Sponge.FqVesta
+open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
 /-- The SvdW seed: the first abscissa with `f(u) ≠ 0`. -/
 def u : Fq := 1
@@ -145,16 +145,16 @@ end GroupMapVesta
 
 namespace GroupMapPallas
 
-open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Sponge.FqPallas
+open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
 /-- The SvdW seed: the first abscissa with `f(u) ≠ 0`. -/
-def u : Fq := 1
+def u : Fp := 1
 
 /-- `f(u)`. -/
-def fu : Fq := 6
+def fu : Fp := 6
 
 /-- `√(-3u²)` — the root `setup()` computes (the opposite sign choice to the Vesta side). -/
-def sqrtNegThreeUSquared : Fq :=
+def sqrtNegThreeUSquared : Fp :=
   17006931536212783554987228065028097629383328157457783420645920607630467569011
 
 example : sqrtNegThreeUSquared ^ 2 = -3 * u ^ 2 := by decide
@@ -162,7 +162,7 @@ example : sqrtNegThreeUSquared ^ 2 = -3 * u ^ 2 := by decide
 /-- `(√(-3u²) − u) / 2`. At `u = 1` this is `(√-3 − 1)/2` at `setup()`'s root choice — the
 *other* primitive cube root of unity from the Pallas endomorphism coefficient, i.e.
 `pallas_endo²`. -/
-def sqrtNegThreeUSquaredMinusUOver2 : Fq :=
+def sqrtNegThreeUSquaredMinusUOver2 : Fp :=
   8503465768106391777493614032514048814691664078728891710322960303815233784505
 
 example : sqrtNegThreeUSquaredMinusUOver2 = Kimchi.Pasta.pallas_endo ^ 2 := by decide
@@ -170,7 +170,7 @@ example : sqrtNegThreeUSquaredMinusUOver2 = Kimchi.Pasta.pallas_endo ^ 2 := by d
 example : 2 * sqrtNegThreeUSquaredMinusUOver2 = sqrtNegThreeUSquared - u := by decide
 
 /-- `(3u²)⁻¹`. -/
-def invThreeUSquared : Fq :=
+def invThreeUSquared : Fp :=
   19298681539552699237261830834781317975575370987961040477303117842899978420225
 
 example : invThreeUSquared * (3 * u ^ 2) = 1 := by decide
@@ -189,7 +189,7 @@ def spec : GroupMap.Spec PALLAS_BASE_CARD where
 example : fu = GroupMap.curveEqn spec u := by decide
 
 /-- The Pallas map-to-curve. -/
-def toGroup : Fq → SWPoint Pallas.curve :=
+def toGroup : Fp → SWPoint Pallas.curve :=
   GroupMap.toGroup spec
 
 end GroupMapPallas

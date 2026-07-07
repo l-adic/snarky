@@ -23,7 +23,7 @@ open CompElliptic.Fields.Pasta
 
 /-- The Pallas base-field endomorphism coefficient `β`: a primitive cube root of unity
     (proved below), so `φ(x, y) = (β·x, y)` maps `y² = x³ + 5` to itself. -/
-def pallas_endo : PallasBaseField :=
+def pallas_endo : Fp :=
   20444556541222657078399132219657928148671392403212669005631716460534733845831
 
 /-- `β³ = 1` on Pallas. -/
@@ -35,7 +35,7 @@ theorem pallas_endo_ne_one : pallas_endo ≠ 1 := by decide
 /-- The Vesta base-field endomorphism coefficient `β`: a primitive cube root of unity
     (proved below), so `φ(x, y) = (β·x, y)` maps `y² = x³ + 5` to itself. It is also the
     SvdW map-to-curve parameter `(√-3 − 1)/2` (`Kimchi.Sponge.GroupMapVesta`). -/
-def vesta_endo : VestaBaseField :=
+def vesta_endo : Fq :=
   2942865608506852014473558576493638302197734138389222805617480874486368177743
 
 /-- `β³ = 1` on Vesta. -/

@@ -90,6 +90,20 @@ theorem ipa_soundnessB (σ : SRS G) (proof : OpeningProof F G σ.k) (P : G)
   rw [hP]
   abel
 
+/-- **Acceptance-generalized single-opening soundness.** `ipa_soundnessB` with the
+acceptance proposition fully abstract: the extraction consumes only the modus ponens of
+the Fiat-Shamir hypothesis against acceptance, never the shape of acceptance itself. This
+is the form the deployed verifier's acceptance (`Ipa.verify … = true`) plugs into. -/
+theorem ipa_soundnessA (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F) (v : F) {A : Prop}
+    (hFS : FiatShamirTreeB σ P b v A) (hacc : A) :
+    ∃ (a : Fin (2 ^ σ.k) → F) (ρ : F), openingRelationB σ P b v a ρ := by
+  obtain ⟨ρ, t, ht⟩ := hFS hacc
+  obtain ⟨a, hP, hv⟩ := ipaRelation_of_acceptV σ b (P - ρ • σ.h) v t ht
+  refine ⟨a, ρ, ?_, hv⟩
+  show commitGen σ.g a + ρ • σ.h = P
+  rw [hP]
+  abel
+
 /-- **Generator-commitment linearity over finite combinations.** Pushes a
 `•`-combination of witnesses through `commitGen`. Pure glue for `commit_sum_smul`. -/
 private theorem commitGen_sum_smul {n N : ℕ} (g : Fin N → G) (l : Fin n → F)
@@ -265,6 +279,96 @@ theorem batch_soundness (σ : SRS G) {n m : ℕ}
     rw [hvan t, mul_zero]
   rw [key3 (fun j => innerProduct (A2 i t₀) (evalVector (2 ^ σ.k) (x j)) - e i j)] at hzero
   simp only [hL, mul_ite, mul_one, mul_zero, Finset.sum_ite_eq', Finset.mem_univ, if_true] at hzero
+  exact (sub_eq_zero.mp hzero).symm
+
+
+/-- **Acceptance-generalized batched opening soundness.** `batch_soundness` with the
+grid acceptance abstracted to an arbitrary family `A`: the proof consumes acceptance only
+through the modus ponens of the Fiat-Shamir hypothesis (`ipa_soundnessA`), so no
+per-grid-point proof or challenge data appears. This is the form the deployed verifier's
+acceptance (`Ipa.verify … = true`, whose challenges are sponge-derived rather than
+carried) plugs into. -/
+theorem batch_soundnessA (σ : SRS G) {n m : ℕ}
+    (ξ : Fin n → F) (hξ : Function.Injective ξ)
+    (r : Fin m → F) (hr : Function.Injective r) (hm : 0 < m)
+    (C : Fin n → G) (x : Fin m → F) (e : Fin n → Fin m → F)
+    (A : Fin n → Fin m → Prop)
+    (hFS : ∀ s t, FiatShamirTreeB σ (combinedCommitment (ξ s) C)
+      (combinedEvalVector (2 ^ σ.k) (r t) x) (combinedInnerProduct (ξ s) (r t) e) (A s t))
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F),
+      DLRelation σ w w_h → w = 0 ∧ w_h = 0)
+    (hacc : ∀ s t, A s t) :
+    ∃ (a : Fin n → Fin (2 ^ σ.k) → F) (ρ : Fin n → F), ∀ i,
+      commit σ (a i) (ρ i) = C i
+        ∧ ∀ j, e i j = innerProduct (a i) (evalVector (2 ^ σ.k) (x j)) := by
+  classical
+  -- **Step 1 (grid witnesses).** Extract a per-grid opening from acceptance alone.
+  have h1 : ∀ (s : Fin n) (t : Fin m), ∃ (aw : Fin (2 ^ σ.k) → F) (ρw : F),
+      commit σ aw ρw = combinedCommitment (ξ s) C
+        ∧ combinedInnerProduct (ξ s) (r t) e
+            = innerProduct aw (combinedEvalVector (2 ^ σ.k) (r t) x) := by
+    intro s t
+    exact ipa_soundnessA σ (combinedCommitment (ξ s) C)
+      (combinedEvalVector (2 ^ σ.k) (r t) x) (combinedInnerProduct (ξ s) (r t) e)
+      (hFS s t) (hacc s t)
+  choose a1 ρ1 hcommit1 hvalue1 using h1
+  -- **Step 2 (per commitment).** Vandermonde in `ξ` separates each `C i`.
+  have h2 : ∀ (i : Fin n) (t : Fin m), ∃ (A : Fin (2 ^ σ.k) → F) (P : F),
+      commit σ A P = C i
+        ∧ innerProduct A (combinedEvalVector (2 ^ σ.k) (r t) x)
+            = ∑ j, e i j * (r t) ^ (j : ℕ) := by
+    intro i t
+    exact perCommitment_separation σ ξ hξ (r t) x C e (fun s => a1 s t) (fun s => ρ1 s t)
+      (fun s => hcommit1 s t) (fun s => (hvalue1 s t).symm) i
+  choose A2 P2 hAcommit hAvalue using h2
+  -- Rewrite the combined-eval inner product into per-point evaluations (∗).
+  have hstar : ∀ (i : Fin n) (t : Fin m),
+      (∑ j : Fin m, (r t) ^ (j : ℕ) * innerProduct (A2 i t) (evalVector (2 ^ σ.k) (x j)))
+        = ∑ j, e i j * (r t) ^ (j : ℕ) := by
+    intro i t
+    rw [← innerProduct_combinedEvalVector]
+    exact hAvalue i t
+  -- **Step 3 (binding).** One witness per commitment, at the base evalscale `t₀`.
+  have hbd : CommitmentBinding (F := F) σ := (commitmentBinding_iff_no_relation σ).mpr hbind
+  set t₀ : Fin m := ⟨0, hm⟩ with ht₀
+  have hAeq : ∀ (i : Fin n) (t : Fin m), A2 i t = A2 i t₀ := by
+    intro i t
+    have hcol : commit σ (A2 i t) (P2 i t) = commit σ (A2 i t₀) (P2 i t₀) := by
+      rw [hAcommit i t, hAcommit i t₀]
+    have hpair := @hbd (A2 i t, P2 i t) (A2 i t₀, P2 i t₀) hcol
+    exact congrArg Prod.fst hpair
+  -- **Step 4 (per point).** Vandermonde in `r` pins every evaluation.
+  refine ⟨fun i => A2 i t₀, fun i => P2 i t₀, ?_⟩
+  intro i
+  refine ⟨hAcommit i t₀, ?_⟩
+  intro j0
+  have hvan : ∀ t : Fin m,
+      (∑ j : Fin m,
+        (innerProduct (A2 i t₀) (evalVector (2 ^ σ.k) (x j)) - e i j)
+          * (r t) ^ (j : ℕ)) = 0 := by
+    intro t
+    have h := hstar i t
+    rw [hAeq i t] at h
+    simp only [sub_mul]
+    rw [Finset.sum_sub_distrib, sub_eq_zero, ← h]
+    exact Finset.sum_congr rfl fun j _ => by ring
+  obtain ⟨L, hL⟩ := vandermondeN r hr j0
+  have key3 : ∀ g : Fin m → F,
+      (∑ t, L t * ∑ j : Fin m, g j * (r t) ^ (j : ℕ))
+        = ∑ j : Fin m, g j * ∑ t, L t * (r t) ^ (j : ℕ) := by
+    intro g
+    simp only [Finset.mul_sum]
+    rw [Finset.sum_comm]
+    exact Finset.sum_congr rfl fun j _ => Finset.sum_congr rfl fun t _ => by ring
+  have hzero : (∑ t, L t * ∑ j : Fin m,
+      (innerProduct (A2 i t₀) (evalVector (2 ^ σ.k) (x j)) - e i j)
+        * (r t) ^ (j : ℕ)) = 0 := by
+    apply Finset.sum_eq_zero
+    intro t _
+    rw [hvan t, mul_zero]
+  rw [key3 (fun j => innerProduct (A2 i t₀) (evalVector (2 ^ σ.k) (x j)) - e i j)] at hzero
+  simp only [hL, mul_ite, mul_one, mul_zero, Finset.sum_ite_eq', Finset.mem_univ,
+    if_true] at hzero
   exact (sub_eq_zero.mp hzero).symm
 
 end Kimchi.Commitment.IPA

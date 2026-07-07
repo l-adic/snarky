@@ -66,7 +66,9 @@ def roots : List Name :=
     `Kimchi.Quotient.Poseidon.soundness,
     `Kimchi.Quotient.multiset_eq_of_pairFactor_prod_eq,
     `Kimchi.Quotient.identity_of_grid_evals,
-    `Kimchi.Quotient.multiset_eq_of_grid_prod_evals ]
+    `Kimchi.Quotient.multiset_eq_of_grid_prod_evals,
+    `Kimchi.Verifier.verify_reflects, `Kimchi.Verifier.ipaVesta_sound,
+    `Kimchi.Verifier.ipaPallas_sound ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations
@@ -76,6 +78,9 @@ def roots : List Name :=
 def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound, `Lean.ofReduceBool,
     `Kimchi.Pasta.pallas_hasse, `Kimchi.Pasta.vesta_hasse,
+    -- The declared Fiat-Shamir assumption: Poseidon-accepted runs admit de-blinded
+    -- accepting transcript trees (`Kimchi/Verifier/Reflection.lean`). One per Pasta curve.
+    `Kimchi.Verifier.poseidon_fiat_shamir_vesta, `Kimchi.Verifier.poseidon_fiat_shamir_pallas,
     `Kimchi.Pasta.pallas_eigen, `Kimchi.Pasta.vesta_eigen, ]
 
 /-- A CompElliptic `native_decide` witness: an axiom under the `CompElliptic` namespace carrying the

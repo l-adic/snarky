@@ -55,7 +55,7 @@ incomplete runtime guard; see `varBaseMul_forbidden_correct` for the faithfulnes
     (one-wrap, regime bounds + `order ≡ 1 mod 4` discharged from the cardinal). See
     `varBaseMul_forbidden_correct` for the band-vs-deployed-check faithfulness caveat. -/
 theorem varBaseMul_scaleFast1
-    (m : ℕ) (g : ℕ → Witness VestaBaseField)
+    (m : ℕ) (g : ℕ → Witness Fq)
     (T : Vesta.curve.toAffine.Point) (s : ℤ) (hTne : T ≠ 0)
     (hholds : ∀ i, i < m → Holds (g i))
     (hTns : Vesta.curve.toAffine.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
@@ -112,8 +112,8 @@ never a deployed entry point on its own. The split itself is modeled by `scalarM
     `gateStep_chain` for the derived `GateStep`s; `scalarMul_type2` then supplies the split +
     correction — matching the PureScript `scaleFast2` exactly. -/
 theorem varBaseMul_scaleFast2
-    (m : ℕ) (hm : 0 < m) (g : ℕ → Witness PallasBaseField)
-    (T : Pallas.curve.toAffine.Point) (N : ℕ → PallasBaseField) (hTne : T ≠ 0)
+    (m : ℕ) (hm : 0 < m) (g : ℕ → Witness Fp)
+    (T : Pallas.curve.toAffine.Point) (N : ℕ → Fp) (hTne : T ≠ 0)
     (hholds : ∀ i, i < m → Holds (g i))
     (hTns : Pallas.curve.toAffine.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
     (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
@@ -125,13 +125,13 @@ theorem varBaseMul_scaleFast2
     (hN0 : N 0 = 0)
     (hbits : 5 * m ≤ pastaFieldBits)
     (hsDiv2 : gateRegister g (5 * m) < 2 ^ (pastaFieldBits - 1))
-    (sOdd : PallasBaseField) (hsOdd : sOdd = 0 ∨ sOdd = 1) :
+    (sOdd : Fp) (hsOdd : sOdd = 0 ∨ sOdd = 1) :
     ∃ (hfin : Pallas.curve.toAffine.Nonsingular (accX g m) (accY g m)) (n : ℤ),
-      (n : PallasBaseField) = unshiftType2 (5 * m) (N m) sOdd
+      (n : Fp) = unshiftType2 (5 * m) (N m) sOdd
         ∧ ((sOdd = 1 ∧ Point.some _ _ hfin = n • T)
             ∨ (sOdd = 0 ∧ Point.some _ _ hfin - T = n • T)) := by
   obtain ⟨k, rfl⟩ := Nat.exists_eq_succ_of_ne_zero (by omega : m ≠ 0)
-  have h2 : (2 : PallasBaseField) ≠ 0 := by decide
+  have h2 : (2 : Fp) ≠ 0 := by decide
   have hodd : Pallas.curve.toAffine.order ≠ 2 := by rw [Kimchi.Pasta.pallas_card]; decide
   have hq : Pallas.curve.toAffine.order = PALLAS_SCALAR_CARD := Kimchi.Pasta.pallas_card
   have hcanon : gateLadder g (5 * (k + 1)) < 2 * (PALLAS_BASE_CARD : ℤ) + 2 ^ (5 * (k + 1)) := by
