@@ -142,6 +142,10 @@ def constraints {R : Type*} [CommRing R] (endo : R) (w : Witness R) : List R :=
 def Holds (endo : F) (w : Witness F) : Prop :=
   ∀ e ∈ constraints endo w, e = 0
 
+instance [DecidableEq F] (endo : F) (w : Witness F) : Decidable (Holds endo w) := by
+  unfold Holds
+  infer_instance
+
 omit [DecidableEq F] in
 /-- `Holds` as the readable 12-conjunction (what the soundness proofs destructure). -/
 theorem holds_iff (endo : F) (w : Witness F) :

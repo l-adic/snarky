@@ -205,6 +205,14 @@ theorem isPrimitiveRoot_of_certificate [DecidableEq F] {ω : F} {n k : ℕ}
   have hord : orderOf ω = n := by rw [hordm, hmk, hn]
   exact hord ▸ IsPrimitiveRoot.orderOf ω
 
+/-- The certificate with the two-power fact existential — the form a deserializer
+decides. -/
+theorem isPrimitiveRoot_of_certificate' [DecidableEq F] {ω : F} {n : ℕ}
+    (hn : ∃ k, n = 2 ^ k) (h : primitiveRootCertificate ω n = true) :
+    IsPrimitiveRoot ω n := by
+  obtain ⟨k, hk⟩ := hn
+  exact isPrimitiveRoot_of_certificate hk h
+
 /-! ## The headline -/
 
 /-- **Copy soundness from the index data.** For coset shifts, a region-preserving

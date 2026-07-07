@@ -21,6 +21,7 @@ import Kimchi.Quotient.Poseidon
 import Kimchi.Quotient.Accumulator
 import Kimchi.Quotient.Copy
 import Kimchi.Index.Basic
+import Kimchi.Index.Satisfies
 import Kimchi.Quotient.Wiring
 import Kimchi.Quotient.Permutation
 import Kimchi.Quotient.GrandProduct
