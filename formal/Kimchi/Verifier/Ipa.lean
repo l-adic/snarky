@@ -134,18 +134,18 @@ def shiftScalar (x : C.Fr) : C.Fr :=
 
 /-- The verifier's Fiat-Shamir schedule (`SRS::verify`): absorb the shifted combined inner
 product; squeeze and map the `U` base; per round absorb `L`, `R` and squeeze a challenge;
-absorb `δ` and squeeze the Schnorr challenge. Points absorb as their coordinates. -/
+absorb `δ` and squeeze the Schnorr challenge. -/
 def transcript (inp : Input C) : C.Point × Array C.Fr × C.Fr :=
   let s := absorbFr C.sponge FqSponge.init (shiftScalar C (cipOf inp))
   let (t, s) := challengeFq C.sponge s
   let uBase := C.toGroup t
   let (chals, s) := inp.proof.lr.foldl
     (fun (acc : Array C.Fr × FqSponge.S C.base) LR =>
-      let s := absorbG C.sponge (absorbG C.sponge acc.2 (LR.1.x, LR.1.y)) (LR.2.x, LR.2.y)
+      let s := absorbG C.sponge (absorbG C.sponge acc.2 LR.1) LR.2
       let (u, s) := squeezeChallenge C.sponge s
       (acc.1.push u, s))
     (#[], s)
-  let s := absorbG C.sponge s (inp.proof.delta.x, inp.proof.delta.y)
+  let s := absorbG C.sponge s inp.proof.delta
   let (c, _) := squeezeChallenge C.sponge s
   (uBase, chals, c)
 
