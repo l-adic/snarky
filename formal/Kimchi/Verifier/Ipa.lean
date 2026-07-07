@@ -54,6 +54,8 @@ production prover/verifier fixtures by `scripts/check_ipa_fixture.lean`.
 * `Proof`, `Input` — the wire data, indexed by the curve.
 * `shiftScalar` — the absorbed-scalar encoding, selected from the cardinalities.
 * `transcript` — the Fiat-Shamir schedule: `(U, chal, c)` from the wire data.
+* `Input.commitmentFn`/`pointFn`/`evalFn`, `transcriptChallenges`, `mkInput` — the named
+  wire→abstract views the reflection statements consume.
 * `verify` — the acceptance decision, against a library `SRS`.
 * `IpaVesta`, `IpaPallas` — the Pasta instantiations.
 -/
@@ -113,11 +115,27 @@ structure Input (C : CommitmentCurve) where
   evalscale : C.ScalarField
   proof : Proof C
 
+/-- The commitments as the `Fin`-indexed function of the abstract claim. -/
+def Input.commitmentFn {C : CommitmentCurve} (inp : Input C) :
+    Fin inp.commitments.size → C.Point :=
+  fun i => inp.commitments[i]
+
+/-- The evaluation points as the `Fin`-indexed function of the abstract claim. -/
+def Input.pointFn {C : CommitmentCurve} (inp : Input C) :
+    Fin inp.xs.size → C.ScalarField :=
+  fun j => inp.xs[j]
+
+/-- The claimed evaluation matrix as the indexed function of the abstract claim. The
+`evals` array is ragged, so this is where the unchecked indexing of the wire form lives —
+once, behind a name used identically on both sides of every statement. -/
+def Input.evalFn {C : CommitmentCurve} (inp : Input C) :
+    Fin inp.commitments.size → Fin inp.xs.size → C.ScalarField :=
+  fun i j => (inp.evals[i.val]!)[j.val]!
+
 /-- The combined inner product of the claimed evaluations
 (`Kimchi.Commitment.IPA.combinedInnerProduct` at the wire arrays). -/
 def cipOf {C : CommitmentCurve} (inp : Input C) : C.ScalarField :=
-  combinedInnerProduct inp.polyscale inp.evalscale
-    (fun (i : Fin inp.commitments.size) (j : Fin inp.xs.size) => (inp.evals[i.val]!)[j.val]!)
+  combinedInnerProduct inp.polyscale inp.evalscale inp.evalFn
 
 /-- The polyscale combination `∑ i, ξ^i • Cᵢ` of the commitments — the group-side mirror
 of `Kimchi.Commitment.IPA.combinedCommitment`, by a running power. -/
@@ -151,6 +169,41 @@ def transcript (inp : Input C) : C.Point × Array C.ScalarField × C.ScalarField
   let (c, _) := squeezeChallenge C.sponge s
   (uBase, chals, c)
 
+/-- A left fold that pushes exactly one element per step grows the array by the list
+length. -/
+private theorem foldl_fst_size {S γ α : Type*} (step : (Array γ × S) → α → (Array γ × S))
+    (hstep : ∀ acc a, (step acc a).1.size = acc.1.size + 1)
+    (l : List α) (init : Array γ × S) :
+    (l.foldl step init).1.size = init.1.size + l.length := by
+  induction l generalizing init with
+  | nil => simp
+  | cons a t ih =>
+    rw [List.foldl_cons, ih, hstep, List.length_cons]
+    omega
+
+/-- The transcript squeezes exactly one round challenge per `(L, R)` pair. -/
+theorem transcript_chals_size (inp : Input C) :
+    (transcript C inp).2.1.size = inp.proof.lr.size := by
+  simp only [transcript]
+  rw [← Array.foldl_toList, foldl_fst_size]
+  · simp
+  · intro acc a
+    simp [Array.size_push]
+
+/-- The derived round challenges as the `Fin`-indexed function the abstract layer
+consumes, under the shape fact. -/
+def transcriptChallenges (inp : Input C) {k : ℕ}
+    (hk : (transcript C inp).2.1.size = k) : Fin k → C.ScalarField :=
+  fun i => (transcript C inp).2.1[i.val]'(by omega)
+
+/-- A batched claim at given combination scalars — the wire input the grid rows of the
+soundness statements range over. -/
+def mkInput (commitments : Array C.Point) (xs : Array C.ScalarField)
+    (evals : Array (Array C.ScalarField)) (ξ r : C.ScalarField) (proof : Proof C) :
+    Input C :=
+  { commitments := commitments, xs := xs, evals := evals
+    polyscale := ξ, evalscale := r, proof := proof }
+
 /-- The acceptance decision, against a library SRS: derive the transcript, combine the
 claim, and check the Schnorr and `sg`-correctness equations. Shape guards (round count
 `σ.k`, evaluation matrix dimensions) reject malformed inputs. `σ.U` is never read — the
@@ -174,6 +227,22 @@ def verify (σ : SRS C.Point) (inp : Input C) : Bool :=
           + inp.proof.z2.val • σ.h)
     let sgOk := decide (inp.proof.sg = msm C σ.g (bPolyCoefficients chal))
     schnorr && sgOk
+
+/-- An accepting run has the announced round count. -/
+theorem verify_shape (σ : SRS C.Point) (inp : Input C)
+    (hv : verify C σ inp = true) : inp.proof.lr.size = σ.k := by
+  unfold verify at hv
+  split at hv
+  · simp at hv
+  · rename_i hguard
+    simp only [Bool.not_eq_true, Bool.or_eq_false_iff, bne_eq_false_iff_eq] at hguard
+    exact hguard.1.1
+
+/-- The round-challenge count of an accepting run, in the form `transcriptChallenges`
+consumes. -/
+theorem transcript_size_of_verify (σ : SRS C.Point) (inp : Input C)
+    (hv : verify C σ inp = true) : (transcript C inp).2.1.size = σ.k :=
+  (transcript_chals_size C inp).trans (verify_shape C σ inp hv)
 
 end Kimchi.Verifier.Ipa
 
