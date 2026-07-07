@@ -18,6 +18,7 @@ import Kimchi.Commitment.IPA.Soundness.Batch
 import Kimchi.Quotient.Generic
 import Kimchi.Quotient.EndoScalar
 import Kimchi.Quotient.Poseidon
+import Kimchi.Quotient.Accumulator
 import Kimchi.Quotient.GrandProduct
 import Kimchi.Quotient.Soundness
 import Kimchi.Fixture.Parse
