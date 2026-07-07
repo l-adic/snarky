@@ -1,0 +1,72 @@
+import Kimchi.Index.Basic
+import Kimchi.Quotient.Generic
+import Kimchi.Quotient.Poseidon
+import Kimchi.Quotient.AddComplete
+import Kimchi.Quotient.VarBaseMul
+import Kimchi.Quotient.EndoMul
+import Kimchi.Quotient.EndoScalar
+
+/-!
+# Satisfiability: a witness table against an index
+
+What it means for a `15 × n` witness table to satisfy a circuit: every row's gate
+predicate holds (`rowSatisfies` — dispatch on the row's gate type, reusing each gate's
+`Holds` through the quotient layer's `rowWitness` layout transcriptions and, for
+Poseidon, the `rcMap` round-constant view of the coefficient row), the copy constraints
+hold along the wiring (every permuted cell equals its wired-to cell — trivially true on
+identity-wired cells, so quantified over the whole grid), and the public rows pin the
+first witness column to the public input.
+
+**There is no hand-written checker.** `Satisfies` is the definition; executability is a
+derived `Decidable` instance — every gate's `Holds` is `∀ e ∈ constraints, e = 0`, so
+each branch is decided by `List.decidableBAll`, and the conjunction over rows and cells
+by the `Fintype` instances. `decide` is the checker, generated from the predicate
+itself; fixture scripts evaluate it and nothing else.
+-/
+
+namespace Kimchi.Index
+
+open Kimchi.Quotient
+
+variable {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n]
+
+/-- Row `i` satisfies its gate: dispatch on the stored gate type. `zero` rows constrain
+nothing; `generic` reads its coefficients and current-row cells directly; the remaining
+gates go through their quotient-layer `rowWitness` layout transcriptions (two-row where
+the gate spans two rows); Poseidon's round constants are its coefficient row (`rcMap`);
+`endoMul` consumes the index's `endoBase`. -/
+def rowSatisfies (idx : Index F n) (wTab : Fin n → Fin 15 → F) (i : Fin n) : Prop :=
+  match (idx.gates i).typ with
+  | .zero => True
+  | .generic => Gate.Generic.Holds ⟨idx.coeffTable i, wTab i⟩
+  | .poseidon =>
+      Gate.Poseidon.Holds (Poseidon.rcMap (idx.coeffTable i)) (Poseidon.rowWitness wTab i)
+  | .completeAdd => Gate.AddComplete.Holds (AddComplete.rowWitness wTab i)
+  | .varBaseMul => Gate.VarBaseMul.Holds (VarBaseMul.rowWitness wTab i)
+  | .endoMul => Gate.EndoMul.Holds idx.endoBase (EndoMul.rowWitness wTab i)
+  | .endoScalar => Gate.EndoScalar.Holds (EndoScalar.rowWitness wTab i)
+
+/-- The value of a permuted cell: column `c.1` (of the seven) at row `c.2`. -/
+def cellValue (wTab : Fin n → Fin 15 → F) (c : Fin 7 × Fin n) : F :=
+  wTab c.2 (Fin.castLE (by omega) c.1)
+
+/-- A witness table satisfies an index at a public input: every row's gate holds, every
+permuted cell equals its wired-to cell, and the public rows pin the first column. -/
+def Satisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin 15 → F) : Prop :=
+  (∀ i, rowSatisfies idx wTab i)
+    ∧ (∀ c : Fin 7 × Fin n, cellValue wTab (idx.wiringMap c) = cellValue wTab c)
+    ∧ (∀ i : Fin idx.publicCount,
+        wTab ⟨(i : ℕ), by have h1 := idx.public_le; have h2 := idx.zk_le; omega⟩ 0 = pub i)
+
+instance (idx : Index F n) (wTab : Fin n → Fin 15 → F) (i : Fin n) :
+    Decidable (rowSatisfies idx wTab i) := by
+  unfold rowSatisfies
+  split <;> infer_instance
+
+instance (idx : Index F n) (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin 15 → F) :
+    Decidable (Satisfies idx pub wTab) := by
+  unfold Satisfies
+  infer_instance
+
+end Kimchi.Index

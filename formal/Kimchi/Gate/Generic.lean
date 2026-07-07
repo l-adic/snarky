@@ -45,6 +45,10 @@ def Generic.constraints {R : Type*} [CommRing R] (g : Generic R) : List R :=
 def Generic.Holds (g : Generic F) : Prop :=
   ∀ e ∈ g.constraints, e = 0
 
+instance [DecidableEq F] (g : Generic F) : Decidable g.Holds := by
+  unfold Generic.Holds
+  infer_instance
+
 /-- `Holds` as the two readable cell equations. -/
 theorem Generic.holds_iff (g : Generic F) :
     g.Holds ↔

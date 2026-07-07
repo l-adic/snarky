@@ -188,6 +188,10 @@ def constraints [CommRing F] (w : Witness F) : List F :=
 def Holds [CommRing F] (w : Witness F) : Prop :=
   ∀ e ∈ constraints w, e = 0
 
+instance [CommRing F] [DecidableEq F] (w : Witness F) : Decidable (Holds w) := by
+  unfold Holds
+  infer_instance
+
 /-- `Holds` as the structured conjunction: the decomposition plus the five bit blocks. -/
 theorem holds_iff [CommRing F] (w : Witness F) :
     Holds w ↔ decompHolds w
