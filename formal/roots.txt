@@ -126,6 +126,11 @@ Kimchi.Quotient.Poseidon.soundness
 -- Permutation milestone 2: the accumulator recurrence with both boundary pins telescopes
 -- into the grand-product equality the multiset core consumes.
 Kimchi.Quotient.prod_eq_of_accumulator
+
+-- Permutation milestone 3: the zkpm-gated aggregation and Lagrange-gated boundary pins,
+-- under the derandomized quotient hypotheses, telescope into the grand-product equality
+-- over the unmasked region.
+Kimchi.Quotient.Permutation.soundness
 Kimchi.Quotient.multiset_eq_of_pairFactor_prod_eq
 Kimchi.Quotient.identity_of_grid_evals
 Kimchi.Quotient.multiset_eq_of_grid_prod_evals
