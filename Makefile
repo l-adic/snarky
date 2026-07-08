@@ -126,8 +126,8 @@ lint: ## Format, tidy, and lint all code (Rust + PureScript + Lean)
 lean-build: ## Build the Lean (formal/) project
 	cd formal && PATH="$$HOME/.elan/bin:$$PATH" lake build
 
-lean-check-witnesses: lean-build ## Run the verified checker on every witness-carrying harness result (run `make test-pickles-circuit-diffs` first to generate circuits/results/)
-	cd formal && PATH="$$HOME/.elan/bin:$$PATH" lake env lean --run Main.lean
+lean-check-witnesses: lean-build ## Check witness-carrying harness results against the index model (run the harness with CIRCUIT_DIFFS_WITNESS_EXPORT=1 first)
+	PATH="$$HOME/.elan/bin:$$PATH" bash formal/scripts/check_ps_witness.sh
 
 lean-style: ## Check Lean style (<=100 cols, no trailing ws/tabs, final newline)
 	bash formal/scripts/check-style.sh

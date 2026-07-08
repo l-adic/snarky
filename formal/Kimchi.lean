@@ -27,6 +27,7 @@ import Kimchi.Quotient.Wiring
 import Kimchi.Quotient.Permutation
 import Kimchi.Quotient.GrandProduct
 import Kimchi.Quotient.Soundness
+import Kimchi.Fixture.PS
 import Kimchi.Fixture.Parse
 import Kimchi.Fixture.Trace
 import Kimchi.Sponge.Poseidon
