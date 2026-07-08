@@ -3,7 +3,9 @@ module Pickles.CircuitDiffs.Circuit
   , GateData
   , CachedConstant
   , comparable
+  , gateDataOf
   , fromCompiledCircuit
+  , fromGateData
   , parseOcamlFixtures
   , parseCircuitJson
   , parseCachedConstants
@@ -30,13 +32,13 @@ import Effect (Effect)
 import Foreign (ForeignError(..), MultipleErrors)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith)
-import Pickles.CircuitDiffs.Types (CircuitComparison, ComparableCircuit, ComparableGate) as ReExports
-import Pickles.CircuitDiffs.Types (ComparableCircuit)
+import Pickles.CircuitDiffs.Types (CircuitComparison, ComparableCircuit, ComparableGate, WitnessExport) as ReExports
+import Pickles.CircuitDiffs.Types (ComparableCircuit, WitnessExport)
 import Simple.JSON (class ReadForeign, readJSON)
 import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray)
 import Snarky.Backend.Kimchi (makeGateData)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateGetWires)
-import Snarky.Backend.Kimchi.Types (gateWiresGetWire, wireGetCol, wireGetRow)
+import Snarky.Backend.Kimchi.Types (Gate, gateWiresGetWire, wireGetCol, wireGetRow)
 import Snarky.Circuit.CVar (getVariable)
 import Snarky.Constraint.Kimchi (KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), GateKind(..), KimchiRow, toKimchiRows)
@@ -77,9 +79,10 @@ varsToMaybe v =
     if Array.all (_ == Nothing) arr then Nothing
     else Just (map toInt arr)
 
-comparable :: forall f. Ord f => PrimeField f => SerdeHex f => Circuit f -> ComparableCircuit
-comparable c =
+comparable :: forall f. Ord f => PrimeField f => SerdeHex f => Maybe WitnessExport -> Circuit f -> ComparableCircuit
+comparable witness c =
   { publicInputSize: c.publicInputSize
+  , witness
   , gates: map
       ( \g ->
           { kind: gateKindToString g.kind
@@ -119,6 +122,24 @@ type Circuit f =
 --------------------------------------------------------------------------------
 -- From compiled PureScript circuit
 
+-- | The one `makeGateData` of a compiled circuit — shared between `fromGateData`
+-- | (the comparable gate list) and witness generation (the per-row variable layout).
+gateDataOf
+  :: forall f g
+   . CircuitGateConstructor f g
+  => PrimeField f
+  => CircuitBuilderState (KimchiGate f) (AuxState f)
+  -> Effect
+       { constraints :: Array (KimchiRow f)
+       , gates :: Array (Gate f)
+       , publicInputSize :: Int
+       }
+gateDataOf s = makeGateData @f
+  { constraints: concatMap (toKimchiRows <<< _.constraint) (constraintsToArray s.constraints)
+  , publicInputs: s.publicInputs
+  , unionFind: (un AuxState s.aux).wireState.unionFind
+  }
+
 fromCompiledCircuit
   :: forall f g
    . CircuitGateConstructor f g
@@ -126,12 +147,22 @@ fromCompiledCircuit
   => Ord f
   => CircuitBuilderState (KimchiGate f) (AuxState f)
   -> Effect (Circuit f)
-fromCompiledCircuit s = do
-  gd <- makeGateData @f
-    { constraints: concatMap (toKimchiRows <<< _.constraint) (constraintsToArray s.constraints)
-    , publicInputs: s.publicInputs
-    , unionFind: (un AuxState s.aux).wireState.unionFind
-    }
+fromCompiledCircuit s = fromGateData s <$> gateDataOf s
+
+-- | Assemble the `Circuit` view from a compiled state and its gate data (pure — the
+-- | effect is `gateDataOf`).
+fromGateData
+  :: forall f g
+   . CircuitGateConstructor f g
+  => PrimeField f
+  => Ord f
+  => CircuitBuilderState (KimchiGate f) (AuxState f)
+  -> { constraints :: Array (KimchiRow f)
+     , gates :: Array (Gate f)
+     , publicInputSize :: Int
+     }
+  -> Circuit f
+fromGateData s gd =
   let
 
     contexts = piContexts <> gateContexts
@@ -178,7 +209,7 @@ fromCompiledCircuit s = do
                 }
             )
         $ (Map.toUnfoldable aux.wireState.cachedConstants)
-  pure
+  in
     { publicInputSize: gd.publicInputSize
     , gates
     , cachedConstants
@@ -187,7 +218,7 @@ fromCompiledCircuit s = do
   unsafeIdx :: forall a. Array a -> Int -> a
   unsafeIdx arr i = case Array.index arr i of
     Just x -> x
-    Nothing -> unsafeCrashWith ("fromCompiledCircuit: gate index out of bounds: " <> show i)
+    Nothing -> unsafeCrashWith ("fromGateData: gate index out of bounds: " <> show i)
 
 --------------------------------------------------------------------------------
 -- From OCaml fixture files

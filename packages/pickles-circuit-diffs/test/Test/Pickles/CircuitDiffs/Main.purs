@@ -5,8 +5,10 @@ import Prelude
 import Control.Monad.Rec.Class (Step(..), tailRecM)
 import Data.Array as Array
 import Data.Either (Either(..))
+import Data.Int as Int
 import Data.Int.Bits as Bits
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Monoid (power)
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
@@ -14,13 +16,15 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import Effect.Console as Console
 import Effect.Exception (throw)
 import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
 import Node.FS.Perms (all, mkPerms)
 import Node.FS.Sync as FS
 import Node.Process as Process
-import Pickles.CircuitDiffs.Circuit (Circuit, ComparableCircuit, comparable, fromCompiledCircuit, parseOcamlFixtures)
+import Partial.Unsafe (unsafeCrashWith)
+import Pickles.CircuitDiffs.Circuit (Circuit, ComparableCircuit, comparable, fromCompiledCircuit, fromGateData, gateDataOf, parseOcamlFixtures)
 import Pickles.CircuitDiffs.PureScript.BCorrect (compileBCorrect)
 import Pickles.CircuitDiffs.PureScript.BulletReduce (compileBulletReduce)
 import Pickles.CircuitDiffs.PureScript.BulletReduceOne (compileBulletReduceOne)
@@ -68,8 +72,9 @@ import Pickles.CircuitDiffs.PureScript.WrapVerify (compileWrapVerify)
 import Pickles.CircuitDiffs.PureScript.WrapVerifyN2 (compileWrapVerifyN2)
 import Pickles.CircuitDiffs.PureScript.Xhat (compileXhat)
 import Pickles.CircuitDiffs.PureScript.XhatStep (compileXhatStep)
-import Pickles.CircuitDiffs.Types (CircuitComparison)
+import Pickles.CircuitDiffs.Types (CircuitComparison, WitnessExport)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
+import Random.LCG (mkSeed)
 import Safe.Coerce (coerce)
 import Simple.JSON (writeJSON)
 import Snarky.Backend.Advice (noAdvice)
@@ -82,7 +87,7 @@ import Snarky.Backend.Kimchi.Impl.Vesta (vestaCrsCreate)
 import Snarky.Backend.Kimchi.Proof (createProof)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (class BasicSystem, BoolVar, F(..), FVar, SizedF, addConstraint, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, pow_, unpack_, xor_)
+import Snarky.Circuit.DSL (class BasicSystem, class CheckedType, class CircuitType, BoolVar, F(..), FVar, SizedF, addConstraint, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, pow_, unpack_, xor_)
 import Snarky.Circuit.DSL.Monad (Snarky)
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
@@ -91,12 +96,14 @@ import Snarky.Circuit.Kimchi.Poseidon (poseidon)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2')
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
-import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoScalar(..), endoScalar)
+import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoScalar(..), endoScalar, generator, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Snarky.Types.Shifted (Type1(..))
+import Test.Pickles.CircuitDiffs.WitnessDump (buildWitnessExport)
+import Test.QuickCheck.Gen (Gen, chooseInt, evalGen)
 import Test.Spec (SpecT, beforeAll_, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Reporter.Console (consoleReporter)
@@ -181,16 +188,6 @@ type TwoPoints = Tuple (AffinePoint Fp) (AffinePoint Fp)
 type Point = AffinePoint Fp
 type PointField = Tuple (AffinePoint Fp) (F Fp)
 type V3 = Vector 3 (F Fp)
-
-compilePP
-  :: ( forall r
-        . PrimeField Fp
-       => Tuple (AffinePoint (FVar Fp)) (AffinePoint (FVar Fp))
-       -> Snarky Fp (KimchiConstraint Fp) r (AffinePoint (FVar Fp))
-     )
-  -> Effect (Circuit Fp)
-compilePP circuit = fromCompiledCircuit =<<
-  (compile noAdvice (Proxy @TwoPoints) (Proxy @Point) (Proxy @(KimchiConstraint Fp)) circuit)
 
 compilePF
   :: ( forall r
@@ -362,6 +359,16 @@ boolAssertCircuit x = assert_ x
 --------------------------------------------------------------------------------
 -- Kimchi gate circuits
 
+-- | A Pallas point as affine coordinates — solver inputs for the gate dumps.
+affinePt :: Pallas.G -> AffinePoint Fp
+affinePt g = case toAffine g of
+  Just c -> AffinePoint c
+  Nothing -> unsafeCrashWith "affinePt: unexpected point at infinity"
+
+-- | A random Pallas point: a nonzero scalar multiple of the generator.
+genPallasPoint :: Gen (AffinePoint Fp)
+genPallasPoint = affinePt <<< power generator <$> chooseInt 1 top
+
 addCompleteCircuit
   :: forall r
    . PrimeField Fp
@@ -424,11 +431,13 @@ loadOcamlCircuit name = do
     Right c -> pure c
     Left e -> throw $ "Failed to parse OCaml fixtures: " <> show e
 
--- | Strip metadata fields for equality comparison (context and variables are not part of the constraint system)
+-- | Strip metadata fields for equality comparison (context, variables, and the solved
+-- | witness are not part of the constraint system)
 stripMetadata :: ComparableCircuit -> ComparableCircuit
 stripMetadata c = c
   { gates = map (_ { context = [], variables = Nothing }) c.gates
   , cachedConstants = Array.sort $ map (\cc -> cc { variable = 0 }) c.cachedConstants
+  , witness = Nothing
   }
 
 exactMatch :: forall f. Ord f => SerdeHex f => PrimeField f => String -> Circuit f -> SpecT Aff Unit Aff Unit
@@ -448,11 +457,24 @@ exactMatchEff
   -> Effect (Circuit f)
   -> SpecT Aff Unit Aff Unit
 exactMatchEff name effPs =
+  exactMatchWith name (effPs <#> { circuit: _, witness: Nothing })
+
+-- | The general form: the produced circuit plus an optional solved-witness export,
+-- | carried on the PureScript side of the comparison JSON written to `circuits/results/`.
+exactMatchWith
+  :: forall f
+   . Ord f
+  => SerdeHex f
+  => PrimeField f
+  => String
+  -> Effect { circuit :: Circuit f, witness :: Maybe WitnessExport }
+  -> SpecT Aff Unit Aff Unit
+exactMatchWith name effPs =
   it (name <> " matches OCaml") do
-    ps <- liftEffect effPs
+    { circuit: ps, witness } <- liftEffect effPs
     ocaml <- liftEffect $ (loadOcamlCircuit name :: Effect (Circuit f))
-    let psCircuit = comparable ps
-    let ocamlCircuit = comparable ocaml
+    let psCircuit = comparable witness ps
+    let ocamlCircuit = comparable Nothing ocaml
     let psNoCtx = stripMetadata psCircuit
     let ocamlNoCtx = stripMetadata ocamlCircuit
     let status = if psNoCtx == ocamlNoCtx then "match" else "mismatch"
@@ -462,6 +484,46 @@ exactMatchEff name effPs =
       appendManifest name status
     unless (status == "match") $
       psNoCtx `shouldEqual` ocamlNoCtx
+
+-- | Like `exactMatchEff`, but when `CIRCUIT_DIFFS_WITNESS_EXPORT` is set the one
+-- | compilation also runs the solver on a `Gen`-sampled input (seeded by
+-- | `CIRCUIT_DIFFS_WITNESS_SEED`, default 42, logged for reproducibility) and carries
+-- | the solved witness on the PureScript side of the comparison JSON.
+exactMatchWitnessEff
+  :: forall @a @b avar bvar
+   . CircuitType Fp a avar
+  => CircuitType Fp b bvar
+  => CheckedType Fp (KimchiConstraint Fp) avar
+  => String
+  -> (forall r. avar -> Snarky Fp (KimchiConstraint Fp) r bvar)
+  -> Gen a
+  -> SpecT Aff Unit Aff Unit
+exactMatchWitnessEff name circuit gen =
+  exactMatchWith name do
+    builtState <- compile @Fp noAdvice (Proxy @a) (Proxy @b) (Proxy @(KimchiConstraint Fp))
+      circuit
+    gd <- gateDataOf builtState
+    exportEnabled <- Process.lookupEnv "CIRCUIT_DIFFS_WITNESS_EXPORT" <#> case _ of
+      Nothing -> false
+      Just v -> not (v == "" || v == "0" || v == "false")
+    witness <-
+      if not exportEnabled then pure Nothing
+      else do
+        seed <- fromMaybe 42 <<< (_ >>= Int.fromString) <$>
+          Process.lookupEnv "CIRCUIT_DIFFS_WITNESS_SEED"
+        Console.log ("[witness export] " <> name <> ": sampling input with seed " <> show seed)
+        let
+          input = evalGen gen { newSeed: mkSeed seed, size: 10 }
+          solver =
+            makeSolver (Proxy @(KimchiConstraint Fp)) circuit
+              :: Solver Fp (KimchiConstraint Fp) a b
+        Just <$> buildWitnessExport
+          { constraints: map _.variables gd.constraints
+          , publicInputs: builtState.publicInputs
+          }
+          solver
+          input
+    pure { circuit: fromGateData builtState gd, witness }
 
 --------------------------------------------------------------------------------
 -- Standalone kimchi prover for chunks2 app body — invokes the kimchi
@@ -594,7 +656,8 @@ spec bundle =
         -- `mina/src/lib/crypto/pickles/dump_circuit_impl.ml`.
         exactMatchEff "schnorr_verify_step_circuit" (fromCompiledCircuit =<< compileSchnorrVerify)
       describe "Kimchi gates" do
-        exactMatchEff "add_complete_step_circuit" (compilePP addCompleteCircuit)
+        exactMatchWitnessEff @TwoPoints @Point "add_complete_step_circuit" addCompleteCircuit
+          (Tuple <$> genPallasPoint <*> genPallasPoint)
         exactMatchEff "endo_scalar_step_circuit" (compileKFF endoScalarCircuit)
         exactMatchEff "var_base_mul_step_circuit" (compilePF varBaseMulCircuit)
         exactMatchEff "endo_mul_step_circuit" (compilePF endoMulCircuit)
