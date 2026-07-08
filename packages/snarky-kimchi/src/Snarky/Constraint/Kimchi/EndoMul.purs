@@ -28,6 +28,7 @@ type Round f =
   , nAcc :: f
   , nAccNext :: f
   , bits :: Vector 4 f
+  , inv :: f
   }
 
 type EndoMul f =
@@ -68,14 +69,15 @@ reduce c = do
     s1 <- reduceToVariable round.s1
     s3 <- reduceToVariable round.s3
     bits <- traverse reduceToVariable round.bits
-    pure { t, p, nAcc, r, s1, s3, bits }
+    inv <- reduceToVariable round.inv
+    pure { t, p, nAcc, r, s1, s3, bits, inv }
 
-  endoMulRound { t, p, nAcc, r, s1, s3, bits } =
+  endoMulRound { t, p, nAcc, r, s1, s3, bits, inv } =
     let
       variables =
         Just t.x
           :< Just t.y
-          :< Nothing
+          :< Just inv
           :< Nothing
           :< Just p.x
           :< Just p.y

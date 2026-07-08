@@ -34,7 +34,13 @@ import Snarky.Data.EllipticCurve.Projective (doubleAddChain)
 -- | Per-round witness record of `endo` — exactly what the gadget's exists
 -- | body witnesses for one 4-bit round (two double-add steps).
 type EndoRow f =
-  { r :: AffinePoint f, s1 :: f, s3 :: f, s :: AffinePoint f, nAccNext :: f }
+  { r :: AffinePoint f
+  , s1 :: f
+  , s3 :: f
+  , s :: AffinePoint f
+  , nAccNext :: f
+  , inv :: f
+  }
 
 -- | The gadget's entire witness chain via `doubleAddChain` (three field
 -- | inversions total instead of four PER ROUND — Montgomery's trick over
@@ -71,17 +77,20 @@ computeEndoChain { xt, yt, eb, acc0, bitRounds } = do
       { n: zero, out: [] }
       bitRounds
     ix arr i = unsafePartial (Array.unsafeIndex arr i)
+    AffinePoint a0 = acc0
   pure $ Array.mapWithIndex
     ( \j nAccNext ->
         let
           e = ix rows (2 * j)
           o = ix rows (2 * j + 1)
+          xp = if j == 0 then a0.x else (ix rows (2 * j - 1)).xRes
         in
           { r: AffinePoint { x: e.xRes, y: e.yRes }
           , s1: e.s1
           , s3: o.s1
           , s: AffinePoint { x: o.xRes, y: o.yRes }
           , nAccNext
+          , inv: recip ((xp - e.xRes) * (e.xRes - o.xRes))
           }
     )
     nAccs
@@ -143,14 +152,24 @@ endo g scalar = label "endo" do
     case computeEndoChain { xt: t0.x, yt: t0.y, eb, acc0, bitRounds } of
       Left e -> throwAsProver e
       Right tbl ->
-        pure (coerce tbl :: Array { r :: AffinePoint f, s1 :: F f, s3 :: F f, s :: AffinePoint f, nAccNext :: F f })
+        pure
+          ( coerce tbl
+              :: Array
+                   { r :: AffinePoint f
+                   , s1 :: F f
+                   , s3 :: F f
+                   , s :: AffinePoint f
+                   , nAccNext :: F f
+                   , inv :: F f
+                   }
+          )
   Tuple rounds { nAcc, acc } <- mapAccumM
     ( \st bs -> do
         -- OCaml uses !acc and !n_acc directly (not mk/exists) for xp, yp, n_acc_prev.
         -- This preserves variable identity for permutation wiring.
-        { r, s1, s3, s, nAccNext } <- exists (chainAt st.idx)
+        { r, s1, s3, s, nAccNext, inv } <- exists (chainAt st.idx)
         pure $ Tuple
-          { bits: bs, p: st.acc, r, s1, s3, t: g, nAcc: st.nAcc, nAccNext, s }
+          { bits: bs, p: st.acc, r, s1, s3, t: g, nAcc: st.nAcc, nAccNext, s, inv }
           { nAcc: nAccNext, acc: s, idx: st.idx + 1 }
     )
     { nAcc: const_ zero, acc: accInit, idx: 0 }
