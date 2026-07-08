@@ -51,8 +51,7 @@ export const Tree = ZkProgram({
 
         // Filler: mirror the PS `mul_ freshZero freshZero` loop.
         for (let i = 0; i < FILLER_ITERS; i++) {
-          const z1 = Provable.witness(Field, () => Field(0));
-          const z2 = Provable.witness(Field, () => Field(0));
+          const [z1, z2] = Provable.witnessFields(2, () => [0n, 0n]);
           z1.mul(z2);
         }
 
