@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Sample the CPU concurrency (cores in use) of a command's whole process tree
-// over time, from /proc — works for native AND wasm (sees Rust/rayon threads
-// and per-trial child processes, which V8 cpuprofiles cannot account for).
+// over time — from /proc on linux, from `ps` on macOS — works for native AND
+// wasm (sees Rust/rayon threads and per-trial child processes, which V8
+// cpuprofiles cannot account for).
 //
 //   node tools/profile/cpu_timeline.mjs <out.json> <label> -- <cmd> [args...]
 //
@@ -13,7 +14,9 @@
 // Output JSON: { label, intervalMs, clkTck, samples:[{t,cores}], markers:[...] }
 
 import fs from "fs";
-import { spawn } from "node:child_process";
+import { spawn, execSync } from "node:child_process";
+
+const IS_DARWIN = process.platform === "darwin";
 
 const args = process.argv.slice(2);
 const dashdash = args.indexOf("--");
@@ -46,8 +49,39 @@ function readStat(pid) {
   }
 }
 
+// macOS has no /proc: one `ps` snapshot gives every process's cumulative CPU
+// time (already summed over its threads — so a multithreaded napi/rayon process
+// reports all its cores here) + ppid + RSS. Parse to the SAME shape as the linux
+// path: ticks in CLK_TCK units, rss in bytes. cputime is `[[DD-]HH:]MM:SS.ss`.
+function parseCpuSeconds(s) {
+  let days = 0;
+  if (s.includes("-")) { const [d, rest] = s.split("-"); days = Number(d); s = rest; }
+  const p = s.split(":").map(Number);
+  let sec = p.at(-1) + (p.length >= 2 ? p.at(-2) * 60 : 0) + (p.length >= 3 ? p.at(-3) * 3600 : 0);
+  return days * 86400 + sec;
+}
+function treeStatsDarwin(root) {
+  let out;
+  try { out = execSync("ps -Ao pid=,ppid=,cputime=,rss=", { encoding: "utf8", maxBuffer: 1 << 26 }); }
+  catch { return { ticks: 0, rss: 0 }; }
+  const stat = new Map(), kids = new Map();
+  for (const line of out.split("\n")) {
+    const m = line.trim().match(/^(\d+)\s+(\d+)\s+(\S+)\s+(\d+)$/);
+    if (!m) continue;
+    const pid = +m[1], ppid = +m[2];
+    stat.set(pid, { ppid, ticks: parseCpuSeconds(m[3]) * CLK_TCK, rss: +m[4] * 1024 });
+    if (!kids.has(ppid)) kids.set(ppid, []);
+    kids.get(ppid).push(pid);
+  }
+  const want = new Set([root]), stack = [root];
+  while (stack.length) { const p = stack.pop(); for (const c of kids.get(p) || []) if (!want.has(c)) { want.add(c); stack.push(c); } }
+  let ticks = 0, rss = 0;
+  for (const p of want) { const s = stat.get(p); if (s) { ticks += s.ticks; rss += s.rss; } }
+  return { ticks, rss };
+}
+
 // sum ticks + RSS over root pid + all descendants
-function treeStats(root) {
+function treeStatsLinux(root) {
   let pids;
   try { pids = fs.readdirSync("/proc").filter((d) => /^\d+$/.test(d)).map(Number); }
   catch { return { ticks: 0, rss: 0 }; }
@@ -63,6 +97,8 @@ function treeStats(root) {
   for (const p of want) { const s = stat.get(p); if (s) { ticks += s.ticks; rss += s.rss; } }
   return { ticks, rss };
 }
+
+const treeStats = IS_DARWIN ? treeStatsDarwin : treeStatsLinux;
 
 const samples = []; // {t, cores, rssMB}
 const markers = []; // {kind, uptimeMs, label}

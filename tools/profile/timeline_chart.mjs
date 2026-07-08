@@ -80,11 +80,13 @@ for (const s of series) {
   }
 }
 
-// 2-color: PS = blue, o1js = red (each chart is one backend, so 2 lines).
+// Color by stack: PS = blue, o1js·witness = red, o1js·witnessFields = green.
 const styleOf = (label) => {
   const stack = /o1js/i.test(label) ? "o1js" : "PS";
   const backend = /wasm/i.test(label) ? "wasm" : "native";
-  return { stroke: stack === "o1js" ? "#d62728" : "#2a7de1", stack, backend };
+  const wf = /witnessfields|\bwf\b/i.test(label);
+  const stroke = stack === "o1js" ? (wf ? "#2ca02c" : "#d62728") : "#2a7de1";
+  return { stroke, stack, backend };
 };
 
 // centered moving-average smoothing over SMOOTH_MS of wall time (0 = raw).
@@ -105,7 +107,10 @@ const maxT = Math.max(...series.flatMap((s) => s.samples.map((p) => p.t)), 1);
 const dataMax = Math.max(...series.flatMap((s) => s.samples.map((p) => p.v)), 1);
 // y axis: cores → 0..max(20, data); rss → 0..(data in GB, rounded up)
 const RSS = METRIC === "rss";
-const maxY = RSS ? Math.ceil(dataMax / 1024 * 1.1) * 1024 : Math.max(20, Math.ceil(dataMax + 1));
+// cores axis tops out just past the machine's core count (NPROC) or the data,
+// whichever is larger — so the reference line sits near the top on any machine.
+const coresCap = process.env.NPROC ? Number(process.env.NPROC) + 1 : 20;
+const maxY = RSS ? Math.ceil(dataMax / 1024 * 1.1) * 1024 : Math.max(coresCap, Math.ceil(dataMax + 1));
 const yStep = RSS ? 1024 : 2; // 1 GB ticks for rss, 2-core ticks for cores
 const yLabel = (val) => (RSS ? (val / 1024).toFixed(0) : String(val));
 const x = (t) => padL + (t / maxT) * plotW;

@@ -80,6 +80,8 @@ if (childGroup) {
 }
 
 console.log(`[backend] ${BACKEND}`);
+const { USE_WITNESS_FIELDS } = await import("./programs.js");
+console.log(`[witness-mode] ${USE_WITNESS_FIELDS ? "witnessFields" : "witness"}`);
 
 function o1jsVersion(): string {
   const pkg = new URL(import.meta.resolve("o1js")).pathname.replace(/dist\/.*/, "package.json");

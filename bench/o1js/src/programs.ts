@@ -17,6 +17,16 @@ import { Field, Provable, SelfProof, ZkProgram } from "o1js";
 
 export const FILLER_ITERS = 1 << 16;
 
+// Frontend-overhead A/B flag. BENCH_WITNESS_FIELDS=1 swaps the filler's two
+// per-element `Provable.witness(Field, …)` calls for one batched
+// `Provable.witnessFields(2, …)`: same two witnessed zeros, same generic-gate
+// constraint, but one `exists` round-trip instead of two — no per-witness
+// snarkContext enter/leave, toFields/fromFields, Field.check. The constraint
+// system is identical either way (same tree.step row count / domain), so it only
+// moves o1js JS-frontend synthesis time, never backend proving. Default off →
+// the historical code path is unchanged.
+export const USE_WITNESS_FIELDS = process.env.BENCH_WITNESS_FIELDS === "1";
+
 export const Nrr = ZkProgram({
   name: "bench-nrr",
   publicOutput: Field,
@@ -49,11 +59,20 @@ export const Tree = ZkProgram({
 
         const out = Provable.if(isBaseCase, Field(0), prevOut.add(1));
 
-        // Filler: mirror the PS `mul_ freshZero freshZero` loop.
-        for (let i = 0; i < FILLER_ITERS; i++) {
-          const z1 = Provable.witness(Field, () => Field(0));
-          const z2 = Provable.witness(Field, () => Field(0));
-          z1.mul(z2);
+        // Filler: mirror the PS `mul_ freshZero freshZero` loop. Two variants
+        // build the SAME constraint (2 witnessed zeros + one mul); the branch is
+        // hoisted so neither path pays a per-iteration flag check.
+        if (USE_WITNESS_FIELDS) {
+          for (let i = 0; i < FILLER_ITERS; i++) {
+            const [z1, z2] = Provable.witnessFields(2, () => [0n, 0n]);
+            z1.mul(z2);
+          }
+        } else {
+          for (let i = 0; i < FILLER_ITERS; i++) {
+            const z1 = Provable.witness(Field, () => Field(0));
+            const z2 = Provable.witness(Field, () => Field(0));
+            z1.mul(z2);
+          }
         }
 
         return { publicOutput: out };
