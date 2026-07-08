@@ -150,3 +150,12 @@ Kimchi.Quotient.multiset_eq_of_grid_prod_evals
 Kimchi.Verifier.verify_reflects
 Kimchi.Verifier.ipaVesta_sound
 Kimchi.Verifier.ipaPallas_sound
+
+-- Phase A3: quotient soundness at the index (per-family bridges consuming Index data).
+Kimchi.Index.Index.addComplete_soundness
+Kimchi.Index.Index.varBaseMul_soundness
+Kimchi.Index.Index.endoMul_soundness
+Kimchi.Index.Index.endoScalar_soundness
+Kimchi.Index.Index.poseidon_soundness
+Kimchi.Index.Index.generic_soundness
+Kimchi.Index.Index.copy_soundness
