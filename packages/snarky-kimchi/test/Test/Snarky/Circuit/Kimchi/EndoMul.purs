@@ -66,7 +66,14 @@ sequentialEndoRows { xt, yt, eb, acc0, bitRounds } =
       xs' = xq2 + sq s4 - s3Squared
       ys' = ((xr - xs') * s4) - yr
       n' = dbl (dbl (dbl (dbl st.n + b1) + b2) + b3) + b4
-      row = { r: AffinePoint { x: xr, y: yr }, s1, s3, s: AffinePoint { x: xs', y: ys' }, nAccNext: n' }
+      row =
+        { r: AffinePoint { x: xr, y: yr }
+        , s1
+        , s3
+        , s: AffinePoint { x: xs', y: ys' }
+        , nAccNext: n'
+        , inv: recip ((xp - xr) * (xr - xs'))
+        }
     in
       { acc: AffinePoint { x: xs', y: ys' }, n: n', out: Array.snoc st.out row }
 
