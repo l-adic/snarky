@@ -102,9 +102,14 @@ structure Index (F : Type*) [Field F] (n : ℕ) where
   public_coeffs : ∀ i : Fin n, (i : ℕ) < publicCount →
     ∀ c : Fin 15, (gates i).coeffs c = if c = 0 then 1 else 0
   /-- …and the masked rows are identity-wired: the zero-knowledge rows carry no copy
-  constraints, so `Satisfies`' whole-grid copy conjunct closes over them trivially. -/
+  constraints, so `Satisfies`' whole-grid copy conjunct closes over them trivially… -/
   masked_identity : ∀ c : Fin 7 × Fin n, n - zkRows ≤ ((c.2 : ℕ)) →
     wiringMapOf gates c = c
+  /-- …and carry no gates either: kimchi's gate table stops at the circuit, and the
+  zero-knowledge rows hold the prover's randomness — the completeness direction needs
+  the gate members to vanish there *because the selectors do*, not because random
+  values satisfy anything. -/
+  masked_zero : ∀ i : Fin n, n - zkRows ≤ (i : ℕ) → (gates i).typ = .zero
 
 namespace Index
 
@@ -205,7 +210,8 @@ def build? [DecidableEq F] (gates : Fin n → GateRow F n) (publicCount zkRows :
       ∧ (∀ i : Fin n, (i : ℕ) < publicCount → (gates i).typ = .generic)
       ∧ (∀ i : Fin n, (i : ℕ) < publicCount →
           ∀ c : Fin 15, (gates i).coeffs c = if c = 0 then 1 else 0)
-      ∧ (∀ c : Fin 7 × Fin n, n - zkRows ≤ ((c.2 : ℕ)) → wiringMapOf gates c = c) then
+      ∧ (∀ c : Fin 7 × Fin n, n - zkRows ≤ ((c.2 : ℕ)) → wiringMapOf gates c = c)
+      ∧ (∀ i : Fin n, n - zkRows ≤ (i : ℕ) → (gates i).typ = .zero) then
     have homega : IsPrimitiveRoot omega n :=
       isPrimitiveRoot_of_certificate'
         (let ⟨k, _, hk⟩ := h.1; ⟨k, hk⟩) h.2.1
@@ -220,7 +226,8 @@ def build? [DecidableEq F] (gates : Fin n → GateRow F n) (publicCount zkRows :
            wiring_region := h.2.2.2.2.2.2.2.1
            public_generic := h.2.2.2.2.2.2.2.2.1
            public_coeffs := h.2.2.2.2.2.2.2.2.2.1
-           masked_identity := h.2.2.2.2.2.2.2.2.2.2 }
+           masked_identity := h.2.2.2.2.2.2.2.2.2.2.1
+           masked_zero := h.2.2.2.2.2.2.2.2.2.2.2 }
   else none
 
 end Index
