@@ -69,10 +69,10 @@ noncomputable def gateConstraints (idx : Index F n) (wTab : Fin n → Fin 15 →
 /-- The shared gate alpha-pool size: kimchi registers the pool at the largest gate's
 count — VarBaseMul's 21 (`linearization.rs`: "Only the max number of constraints
 matters"). -/
-def gateAlphaCount : ℕ := 21
+@[reducible] def gateAlphaCount : ℕ := 21
 
 /-- The permutation's alpha count (`permutation.rs`: `CONSTRAINTS = 3`). -/
-def permAlphaCount : ℕ := 3
+@[reducible] def permAlphaCount : ℕ := 3
 
 /-- The lengths of the gate transcriptions match kimchi's `CONSTRAINTS` constants. -/
 theorem gateConstraints_length (idx : Index F n) (wTab : Fin n → Fin 15 → F) :
@@ -579,6 +579,103 @@ theorem gateMember_dvd_of_rowSatisfies (idx : Index F n) (pub : Fin idx.publicCo
   rw [zH_dvd_iff idx.omega_prim (Nat.pos_of_neZero n)]
   intro i hi
   exact idx.eval_gateMember_of_rowSatisfies pub wTab (hrow ⟨i, hi⟩) k
+
+
+/-! ## Completeness: the permutation members and the headline
+
+The converse assembly: a satisfied table admits honest quotient data at every
+nondegenerate challenge pair. The copy conjunct gives the grand-product identity by
+reindexing, the honest accumulator telescopes it through the three permutation
+constraints, and the gate members vanish row by row. Pointwise in `(β, γ)` — the
+completeness direction needs no challenge grid. -/
+
+open Kimchi.Quotient.Permutation in
+/-- **Permutation completeness at the index** (C2): under nondegenerate `(β, γ)`, a
+copy-invariant witness admits an accumulator whose three permutation constraints are
+`Z_H`-divisible. -/
+theorem permConstraints_dvd_of_copy (idx : Index F n) (wTab : Fin n → Fin 15 → F)
+    (β γ : F)
+    (hnd : Nondegenerate idx.omega idx.zkRows (idx.permWitnessPoly wTab) idx.shifts
+      idx.wiringPerm β γ)
+    (hcopy : ∀ c : Fin 7 × Fin n,
+      cellValue wTab (idx.wiringMap c) = cellValue wTab c) :
+    ∃ z : Polynomial F, ∀ s, zH F n ∣ Permutation.constraints idx.omega idx.zkRows z
+      (idx.permWitnessPoly wTab)
+      (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts β γ
+      (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd s := by
+  have hcopy' : ∀ c : Fin 7 × Fin (n - idx.zkRows),
+      ((idx.permWitnessPoly wTab) (idx.wiringPerm (embCell idx.zkRows c)).1).eval
+          (idx.omega ^ (((idx.wiringPerm (embCell idx.zkRows c)).2 : Fin n) : ℕ))
+        = ((idx.permWitnessPoly wTab) c.1).eval (idx.omega ^ ((c.2 : ℕ))) := by
+    intro c
+    rw [idx.eval_permWitnessPoly,
+      show (idx.omega ^ ((c.2 : ℕ)) : F)
+        = idx.omega ^ (((embCell idx.zkRows c).2 : Fin n) : ℕ) from rfl,
+      idx.eval_permWitnessPoly]
+    simpa using hcopy (embCell idx.zkRows c)
+  exact constraints_dvd_of_prods idx.omega_prim (Nat.pos_of_neZero n) idx.zk_pos
+    idx.zk_le _ _ idx.shifts β γ
+    (fun j hj => sigmaSide_eval_ne_zero idx.omega_prim hnd hj)
+    (prod_shiftSide_eq_prod_sigmaSide idx.omega_prim _ idx.shifts idx.wiringPerm
+      idx.wiringPerm_regionPreserving β γ hcopy')
+
+/-- The gate members of the full family: the entries below `gateAlphaCount`. -/
+theorem fullFamily_gate (idx : Index F n) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (β γ : F)
+    (k : Fin (gateAlphaCount + permAlphaCount)) (hk : (k : ℕ) < gateAlphaCount) :
+    idx.fullFamily pub wTab z β γ k = idx.gateMember pub wTab k := by
+  rw [fullFamily, dif_pos hk]
+
+open Kimchi.Quotient.Permutation in
+/-- **The completeness headline** (C3). A satisfied table admits honest quotient data
+at every nondegenerate challenge pair: an accumulator `z` making the whole `21 + 3`
+family `Z_H`-divisible — gate members from row satisfaction
+(`gateMember_dvd_of_rowSatisfies`), permutation members from the copy conjunct through
+the honest accumulator (`permConstraints_dvd_of_copy`). The converse of
+`satisfies_of_fullFamily_dvd`; with it, satisfiability at a wellformed index is
+*characterized* by the shape of kimchi's one quotient check. -/
+theorem fullFamily_dvd_of_satisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin 15 → F)
+    (hsat : Satisfies idx pub wTab) (β γ : F)
+    (hnd : Nondegenerate idx.omega idx.zkRows (idx.permWitnessPoly wTab) idx.shifts
+      idx.wiringPerm β γ) :
+    ∃ z : Polynomial F, ∀ s, zH F n ∣ idx.fullFamily pub wTab z β γ s := by
+  obtain ⟨hrow, hcopy, -⟩ := hsat
+  obtain ⟨z, hz⟩ := idx.permConstraints_dvd_of_copy wTab β γ hnd hcopy
+  refine ⟨z, fun s => ?_⟩
+  by_cases hk : (s : ℕ) < gateAlphaCount
+  · rw [idx.fullFamily_gate pub wTab z β γ s hk]
+    exact idx.gateMember_dvd_of_rowSatisfies pub wTab hrow s
+  · obtain ⟨j, rfl⟩ : ∃ j : Fin 3, s = Fin.natAdd gateAlphaCount j := by
+      refine ⟨⟨(s : ℕ) - gateAlphaCount, ?_⟩, Fin.ext ?_⟩
+      · have := s.isLt
+        simp only [gateAlphaCount, permAlphaCount] at *
+        omega
+      · simp only [Fin.natAdd]
+        omega
+    rw [idx.fullFamily_perm]
+    exact hz j
+
+open Kimchi.Quotient.Permutation in
+/-- **Exact-quotient completeness.** In the shape of the one production check: the
+honest accumulator and, for every fold challenge, a quotient `t` with
+`aggregate α (family) = t · Z_H` — a *polynomial identity*, so the eval-check passes at
+every node, not merely at sampled ones. -/
+theorem exists_quotient_of_satisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin 15 → F)
+    (hsat : Satisfies idx pub wTab) (β γ : F)
+    (hnd : Nondegenerate idx.omega idx.zkRows (idx.permWitnessPoly wTab) idx.shifts
+      idx.wiringPerm β γ) :
+    ∃ z : Polynomial F, ∀ a : F, ∃ t : Polynomial F,
+      aggregate a (idx.fullFamily pub wTab z β γ) = t * zH F n := by
+  obtain ⟨z, hz⟩ := idx.fullFamily_dvd_of_satisfies pub wTab hsat β γ hnd
+  refine ⟨z, fun a => ?_⟩
+  have hdvd : zH F n ∣ aggregate a (idx.fullFamily pub wTab z β γ) :=
+    Finset.dvd_sum fun c _ => by
+      rw [Polynomial.smul_eq_C_mul]
+      exact (hz c).mul_left _
+  obtain ⟨t, ht⟩ := hdvd
+  exact ⟨t, by rw [ht, mul_comm]⟩
 
 end Index
 
