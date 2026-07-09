@@ -87,6 +87,15 @@ theorem zkpm_eval_ne_zero {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (zkRow
   have : i = j := hω.pow_inj (by omega) hj₂ hEq
   omega
 
+/-- The mask vanishes on the masked rows: `zkpm(ωⁱ) = 0` for `n - zkRows ≤ i < n` —
+the completeness twin of `zkpm_eval_ne_zero`. -/
+theorem zkpm_eval_zero {ω : F} {n : ℕ} (zkRows : ℕ) {i : ℕ}
+    (hlo : n - zkRows ≤ i) (hhi : i < n) : (zkpm ω n zkRows).eval (ω ^ i) = 0 := by
+  unfold zkpm
+  rw [eval_prod]
+  refine Finset.prod_eq_zero (Finset.mem_Ico.mpr ⟨hlo, hhi⟩) ?_
+  simp
+
 /-- A Lagrange-gated pin: if `Z_H ∣ (z - 1) · L_r` then the accumulator is `1` at row
 `r`. -/
 theorem eval_eq_one_of_boundary {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
@@ -158,5 +167,70 @@ theorem soundness {ω : F} {n N : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
   soundness_of_dvd hω hn hzk0 hzkn z w σ shifts β γ
     (dvd_separation hω hn α hα _ fun s =>
       zH_dvd_of_evals hω hn ζ hζ _ (t s) D (hCdeg s) (htdeg s) hD (hcheck s))
+
+
+/-! ## Completeness: the honest accumulator -/
+
+/-- **Permutation completeness.** With nonvanishing σ-side row products (the
+nondegeneracy of `(β, γ)`) and agreeing grand products over the unmasked region, an
+accumulator exists whose three permutation constraints are all divisible by `Z_H`: the
+running-ratio column of `accumulator_of_prod_eq`, interpolated through the domain and
+held constant on the mask (where the zkpm gate erases the recurrence anyway). The
+converse of `soundness_of_dvd`, pointwise in `(β, γ)`. -/
+theorem constraints_dvd_of_prods {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+    {zkRows : ℕ} (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
+    (w σ : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (β γ : F)
+    (hden : ∀ j < n - zkRows, (sigmaSide w σ β γ).eval (ω ^ j) ≠ 0)
+    (hprod : ∏ j ∈ Finset.range (n - zkRows), (shiftSide w shifts β γ).eval (ω ^ j)
+      = ∏ j ∈ Finset.range (n - zkRows), (sigmaSide w σ β γ).eval (ω ^ j)) :
+    ∃ z : Polynomial F, ∀ s, zH F n ∣ constraints ω zkRows z w σ shifts β γ
+      (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩ s := by
+  obtain ⟨zc, hz0, hzm, hstep⟩ := accumulator_of_prod_eq
+    (fun j => (shiftSide w shifts β γ).eval (ω ^ j))
+    (fun j => (sigmaSide w σ β γ).eval (ω ^ j)) hden hprod
+  -- the accumulator column, held constant on the mask
+  set zrow : Fin n → F := fun i => zc (min (i : ℕ) (n - zkRows)) with hzrow
+  refine ⟨columnPoly ω zrow, ?_⟩
+  have hzeval : ∀ i : ℕ, ∀ hi : i < n,
+      (columnPoly ω zrow).eval (ω ^ i) = zc (min i (n - zkRows)) := fun i hi => by
+    rw [show (ω ^ i : F) = ω ^ (((⟨i, hi⟩ : Fin n)) : ℕ) from rfl,
+      eval_columnPoly hω]
+  intro s
+  rw [zH_dvd_iff hω hn]
+  intro i hi
+  match s with
+  | 0 =>
+    show ((zkpm ω n zkRows) * _).eval _ = 0
+    rw [eval_mul]
+    by_cases hmask : i < n - zkRows
+    · -- the recurrence, from the accumulator step
+      have hi1 : i + 1 < n := by omega
+      have hcomp : (shiftRow ω (columnPoly ω zrow)).eval (ω ^ i)
+          = (columnPoly ω zrow).eval (ω ^ (i + 1)) := by
+        rw [shiftRow, eval_comp, eval_mul, eval_C, eval_X, ← pow_succ']
+      rw [eval_sub, eval_mul, eval_mul, hcomp, hzeval i hi, hzeval (i + 1) hi1,
+        Nat.min_eq_left hmask.le, Nat.min_eq_left (by omega)]
+      rw [sub_eq_zero.mpr (hstep i hmask).symm, mul_zero]
+    · -- the mask kills the row
+      rw [zkpm_eval_zero zkRows (Nat.le_of_not_lt hmask) hi, zero_mul]
+  | 1 =>
+    show ((_ - 1) * columnPoly ω (rowIndicator (⟨0, hn⟩ : Fin n))).eval _ = 0
+    rw [eval_mul]
+    by_cases h0 : i = 0
+    · subst h0
+      rw [eval_sub, eval_one, hzeval 0 hn]
+      simp [hz0]
+    · rw [show (ω ^ i : F) = ω ^ (((⟨i, hi⟩ : Fin n)) : ℕ) from rfl,
+        eval_columnPoly hω, rowIndicator, if_neg (by simp [Fin.ext_iff, h0]), mul_zero]
+  | 2 =>
+    show ((_ - 1) * columnPoly ω (rowIndicator (⟨n - zkRows, by omega⟩ : Fin n))).eval _
+      = 0
+    rw [eval_mul]
+    by_cases hb : i = n - zkRows
+    · subst hb
+      rw [eval_sub, eval_one, hzeval (n - zkRows) (by omega)]
+      simp [hzm]
+    · rw [show (ω ^ i : F) = ω ^ (((⟨i, hi⟩ : Fin n)) : ℕ) from rfl,
+        eval_columnPoly hω, rowIndicator, if_neg (by simp [Fin.ext_iff, hb]), mul_zero]
 
 end Kimchi.Quotient.Permutation
