@@ -101,3 +101,10 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         scripts/check_index_fixture.sh
 
+    # The chunk layer's recombination formulas must match production kimchi's
+    # chunk_commitment / combined evaluation on real chunked openings.
+    - name: Check the chunk layer against chunked opening fixtures
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        scripts/check_chunked_fixture.sh
+
