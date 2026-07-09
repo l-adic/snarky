@@ -376,6 +376,122 @@ theorem rowSatisfies_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount �
   idx.rowSatisfies_of_fullFamily_dvd pub wTab z β γ
     (idx.fullFamily_dvd_of_evalCheck pub wTab z β γ ζ hζ α hα t D hD hCdeg htdeg hcheck)
 
+/-! ## The Phase-B headline: the one quotient check gives satisfiability
+
+Everything assembles: the 21 gate members give every row's gate branch (`rowSatisfies`),
+the 3 permutation members give the copy constraints on the unmasked region, the
+`masked_identity` law closes the copy conjunct over the zero-knowledge rows, and the
+`public_generic`/`public_coeffs` laws collapse the slot-`0` member at the public rows to
+the public pinning. The conclusion is `Satisfies` — the A2 predicate the derived checker
+decides — from nothing but the index and the shape of kimchi's one quotient check. -/
+
+open Kimchi.Quotient.Permutation in
+/-- The whole-grid copy conjunct: the unmasked region from the permutation members,
+the masked rows trivially from the `masked_identity` law. -/
+theorem copyAll_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin 15 → F)
+    {M NN : ℕ} (b : Fin M → F) (g : Fin NN → F)
+    (hb : Function.Injective b) (hg : Function.Injective g)
+    (hM : 7 * (n - idx.zkRows) < M) (hN : 7 * (n - idx.zkRows) < NN)
+    (zg : Fin M → Fin NN → Polynomial F)
+    (hdvd : ∀ a c s, zH F n ∣ idx.fullFamily pub wTab (zg a c) (b a) (g c) s) :
+    ∀ c : Fin 7 × Fin n, cellValue wTab (idx.wiringMap c) = cellValue wTab c := by
+  intro c
+  by_cases hc : (c.2 : ℕ) < n - idx.zkRows
+  · have h := idx.copy_of_fullFamily_dvd pub wTab b g hb hg hM hN zg hdvd
+      (c.1, ⟨(c.2 : ℕ), hc⟩)
+    have hemb : embCell idx.zkRows ((c.1, ⟨(c.2 : ℕ), hc⟩) :
+        Fin 7 × Fin (n - idx.zkRows)) = c := Prod.ext rfl (Fin.ext rfl)
+    rwa [hemb] at h
+  · rw [show idx.wiringMap c = c from idx.masked_identity c (Nat.le_of_not_lt hc)]
+
+/-- The public-pinning conjunct: at a public row, the `public_coeffs` law collapses the
+generic slot-`0` equation to `wTab i 0 = pub i`. -/
+theorem publicPinned_of_rowSatisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin 15 → F) (hrow : ∀ i, rowSatisfies idx pub wTab i) :
+    ∀ i : Fin idx.publicCount,
+      wTab ⟨(i : ℕ), by have h1 := idx.public_le; have h2 := idx.zk_le; omega⟩ 0
+        = pub i := by
+  intro i
+  set r : Fin n :=
+    ⟨(i : ℕ), by have h1 := idx.public_le; have h2 := idx.zk_le; omega⟩ with hr
+  have hlt : (r : ℕ) < idx.publicCount := i.isLt
+  have hgen := idx.public_generic r hlt
+  have h := hrow r
+  unfold rowSatisfies at h
+  rw [hgen] at h
+  have h1 := ((Gate.Generic.withPublic_holds_iff ⟨idx.coeffTable r, wTab r⟩ _).mp h).1
+  have hq0 : idx.coeffTable r 0 = 1 := by
+    show (idx.gates r).coeffs 0 = 1
+    rw [idx.public_coeffs r hlt 0]; exact if_pos rfl
+  have hq1 : idx.coeffTable r 1 = 0 := by
+    show (idx.gates r).coeffs 1 = 0
+    rw [idx.public_coeffs r hlt 1]; exact if_neg (by decide)
+  have hq2 : idx.coeffTable r 2 = 0 := by
+    show (idx.gates r).coeffs 2 = 0
+    rw [idx.public_coeffs r hlt 2]; exact if_neg (by decide)
+  have hq3 : idx.coeffTable r 3 = 0 := by
+    show (idx.gates r).coeffs 3 = 0
+    rw [idx.public_coeffs r hlt 3]; exact if_neg (by decide)
+  have hq4 : idx.coeffTable r 4 = 0 := by
+    show (idx.gates r).coeffs 4 = 0
+    rw [idx.public_coeffs r hlt 4]; exact if_neg (by decide)
+  have hpub : pubAt idx pub r = pub i := by
+    unfold pubAt
+    rw [dif_pos hlt]
+  rw [← hpub]
+  linear_combination (h1.symm.trans (by simp only [hq0, hq1, hq2, hq3, hq4]; ring)).symm
+
+open Kimchi.Quotient.Permutation in
+/-- **The Phase-B headline, divisibility form.** An injective `(β, γ)` grid of
+accumulators whose full `21 + 3` families are `Z_H`-divisible gives satisfiability at
+the index: `Satisfies idx pub wTab` — every row's gate holds with the public input
+folded in, the copy constraints hold on the whole grid, and the public rows pin the
+first witness column. -/
+theorem satisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin 15 → F)
+    {M NN : ℕ} (b : Fin M → F) (g : Fin NN → F)
+    (hb : Function.Injective b) (hg : Function.Injective g)
+    (hM : 7 * (n - idx.zkRows) < M) (hN : 7 * (n - idx.zkRows) < NN)
+    (zg : Fin M → Fin NN → Polynomial F)
+    (hdvd : ∀ a c s, zH F n ∣ idx.fullFamily pub wTab (zg a c) (b a) (g c) s) :
+    Satisfies idx pub wTab := by
+  have hrow : ∀ i, rowSatisfies idx pub wTab i :=
+    idx.rowSatisfies_of_fullFamily_dvd pub wTab
+      (zg ⟨0, by omega⟩ ⟨0, by omega⟩) (b ⟨0, by omega⟩) (g ⟨0, by omega⟩)
+      (hdvd ⟨0, by omega⟩ ⟨0, by omega⟩)
+  exact ⟨hrow,
+    idx.copyAll_of_fullFamily_dvd pub wTab b g hb hg hM hN zg hdvd,
+    idx.publicPinned_of_rowSatisfies pub wTab hrow⟩
+
+open Kimchi.Quotient.Permutation in
+/-- **The Phase-B headline.** The shape of kimchi's one quotient check — at every node
+of an injective `(β, γ)` grid, an accumulator whose aggregated `21 + 3`-member family
+passes the derandomized eval-check against `t · Z_H` — gives satisfiability at the
+index. Composes `fullFamily_dvd_of_evalCheck` per grid node with
+`satisfies_of_fullFamily_dvd`. -/
+theorem satisfies_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin 15 → F)
+    {M NN NNN : ℕ} (b : Fin M → F) (g : Fin NN → F)
+    (hb : Function.Injective b) (hg : Function.Injective g)
+    (hM : 7 * (n - idx.zkRows) < M) (hN : 7 * (n - idx.zkRows) < NN)
+    (zg : Fin M → Fin NN → Polynomial F)
+    (ζ : Fin M → Fin NN → Fin NNN → F) (hζ : ∀ a c, Function.Injective (ζ a c))
+    (α : Fin M → Fin NN → Fin (gateAlphaCount + permAlphaCount) → F)
+    (hα : ∀ a c, Function.Injective (α a c))
+    (t : Fin M → Fin NN → Fin (gateAlphaCount + permAlphaCount) → Polynomial F)
+    (D : ℕ) (hD : D < NNN)
+    (hCdeg : ∀ a c s, (aggregate (α a c s)
+      (idx.fullFamily pub wTab (zg a c) (b a) (g c))).natDegree ≤ D)
+    (htdeg : ∀ a c s, (t a c s * zH F n).natDegree ≤ D)
+    (hcheck : ∀ a c s p, (aggregate (α a c s)
+      (idx.fullFamily pub wTab (zg a c) (b a) (g c))).eval (ζ a c p)
+        = (t a c s * zH F n).eval (ζ a c p)) :
+    Satisfies idx pub wTab :=
+  idx.satisfies_of_fullFamily_dvd pub wTab b g hb hg hM hN zg fun a c =>
+    idx.fullFamily_dvd_of_evalCheck pub wTab (zg a c) (b a) (g c) (ζ a c) (hζ a c)
+      (α a c) (hα a c) (t a c) D hD (hCdeg a c) (htdeg a c) (hcheck a c)
+
 end Index
 
 end Kimchi.Index
