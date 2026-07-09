@@ -54,6 +54,13 @@ inductive GateType where
   | endoScalar
   deriving DecidableEq, Repr, Inhabited, Fintype
 
+/-- The gate types whose constraints read the *next* row as well as their own
+(`witness_next` in kimchi's `ArgumentEnv`; the `cellMap cur nxt` transcriptions in the
+quotient layer). Everything else is single-row. -/
+def GateType.twoRow : GateType → Bool
+  | .poseidon | .varBaseMul | .endoMul => true
+  | _ => false
+
 /-- One row of the gate table: the gate type, the fifteen coefficient cells, and the
 seven wire pointers (each permuted cell names the next cell of its copy cycle —
 kimchi's cyclic-successor encoding of the wiring). The coefficients feed
@@ -105,11 +112,18 @@ structure Index (F : Type*) [Field F] (n : ℕ) where
   constraints, so `Satisfies`' whole-grid copy conjunct closes over them trivially… -/
   masked_identity : ∀ c : Fin 7 × Fin n, n - zkRows ≤ ((c.2 : ℕ)) →
     wiringMapOf gates c = c
-  /-- …and carry no gates either: kimchi's gate table stops at the circuit, and the
-  zero-knowledge rows hold the prover's randomness — the completeness direction needs
-  the gate members to vanish there *because the selectors do*, not because random
-  values satisfy anything. -/
+  /-- …and carry no gates either: kimchi's gate table stops at the circuit, so no
+  constraint *sits on* a masked row — the gate members vanish there because the
+  selectors do, whatever the cells hold… -/
   masked_zero : ∀ i : Fin n, n - zkRows ≤ (i : ℕ) → (gates i).typ = .zero
+  /-- …and no constraint *reads into* the mask from outside: a two-row gate at the
+  last unmasked row would have the first masked row in its footprint. With
+  `masked_identity`, `public_le`, and `masked_zero`, this closes the last read edge
+  into the mask — the constraint system's whole footprint is the unmasked region,
+  which is what makes `Satisfies` depend only on the unmasked rows
+  (`satisfies_congr_unmasked`). -/
+  masked_boundary : ∀ i : Fin n, (i : ℕ) + 1 = n - zkRows →
+    (gates i).typ.twoRow = false
 
 namespace Index
 
@@ -211,7 +225,8 @@ def build? [DecidableEq F] (gates : Fin n → GateRow F n) (publicCount zkRows :
       ∧ (∀ i : Fin n, (i : ℕ) < publicCount →
           ∀ c : Fin 15, (gates i).coeffs c = if c = 0 then 1 else 0)
       ∧ (∀ c : Fin 7 × Fin n, n - zkRows ≤ ((c.2 : ℕ)) → wiringMapOf gates c = c)
-      ∧ (∀ i : Fin n, n - zkRows ≤ (i : ℕ) → (gates i).typ = .zero) then
+      ∧ (∀ i : Fin n, n - zkRows ≤ (i : ℕ) → (gates i).typ = .zero)
+      ∧ (∀ i : Fin n, (i : ℕ) + 1 = n - zkRows → (gates i).typ.twoRow = false) then
     have homega : IsPrimitiveRoot omega n :=
       isPrimitiveRoot_of_certificate'
         (let ⟨k, _, hk⟩ := h.1; ⟨k, hk⟩) h.2.1
@@ -227,7 +242,8 @@ def build? [DecidableEq F] (gates : Fin n → GateRow F n) (publicCount zkRows :
            public_generic := h.2.2.2.2.2.2.2.2.1
            public_coeffs := h.2.2.2.2.2.2.2.2.2.1
            masked_identity := h.2.2.2.2.2.2.2.2.2.2.1
-           masked_zero := h.2.2.2.2.2.2.2.2.2.2.2 }
+           masked_zero := h.2.2.2.2.2.2.2.2.2.2.2.1
+           masked_boundary := h.2.2.2.2.2.2.2.2.2.2.2.2 }
   else none
 
 end Index
