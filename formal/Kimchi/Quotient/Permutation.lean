@@ -118,12 +118,29 @@ theorem step_of_aggregation {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn 
 
 /-! ## The headline -/
 
+/-- **Permutation quotient soundness, divisibility form.** With `Z_H` dividing each of
+the three permutation constraints, the accumulator telescopes over the unmasked region:
+the grand products of the shift side and the σ side agree,
+`∏_{j < n-zkRows} shiftSide(ωʲ) = ∏_{j < n-zkRows} sigmaSide(ωʲ)`. This is the core the
+derandomized eval-check form (`soundness`) and the full-aggregate assembly
+(`Kimchi/Index/Aggregate.lean`) both enter through. -/
+theorem soundness_of_dvd {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+    {zkRows : ℕ} (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
+    (z : Polynomial F) (w σ : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (β γ : F)
+    (hdvd : ∀ s, zH F n ∣ constraints ω zkRows z w σ shifts β γ
+      (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩ s) :
+    ∏ j ∈ Finset.range (n - zkRows), (shiftSide w shifts β γ).eval (ω ^ j)
+      = ∏ j ∈ Finset.range (n - zkRows), (sigmaSide w σ β γ).eval (ω ^ j) := by
+  refine prod_eq_of_accumulator _ _ (fun j => z.eval (ω ^ j)) ?_ ?_ ?_
+  · simpa using eval_eq_one_of_boundary hω hn z _ (hdvd 1)
+  · simpa using eval_eq_one_of_boundary hω hn z _ (hdvd 2)
+  · exact fun j hj => step_of_aggregation hω hn zkRows z w σ shifts β γ (hdvd 0) hj
+
 /-- **Permutation quotient soundness.** Under the derandomized quotient-argument
 hypotheses for the three permutation constraints — an injective challenge family `α`
 separating the aggregate, an injective evaluation family `ζ` pinning each aggregate to a
 multiple of `Z_H` within the degree bound — the accumulator telescopes over the unmasked
-region: the grand products of the shift side and the σ side agree,
-`∏_{j < n-zkRows} shiftSide(ωʲ) = ∏_{j < n-zkRows} sigmaSide(ωʲ)`. -/
+region. Routes through `soundness_of_dvd` at the separated divisibilities. -/
 theorem soundness {ω : F} {n N : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     {zkRows : ℕ} (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
     (z : Polynomial F) (w σ : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (β γ : F)
@@ -137,14 +154,9 @@ theorem soundness {ω : F} {n N : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
         (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)).eval (ζ p)
       = (t s * zH F n).eval (ζ p)) :
     ∏ j ∈ Finset.range (n - zkRows), (shiftSide w shifts β γ).eval (ω ^ j)
-      = ∏ j ∈ Finset.range (n - zkRows), (sigmaSide w σ β γ).eval (ω ^ j) := by
-  set E := constraints ω zkRows z w σ shifts β γ (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩ with hE
-  have hdvd : ∀ c, zH F n ∣ E c :=
-    dvd_separation hω hn α hα E fun s =>
-      zH_dvd_of_evals hω hn ζ hζ _ (t s) D (hCdeg s) (htdeg s) hD (hcheck s)
-  refine prod_eq_of_accumulator _ _ (fun j => z.eval (ω ^ j)) ?_ ?_ ?_
-  · simpa using eval_eq_one_of_boundary hω hn z _ (hdvd 1)
-  · simpa using eval_eq_one_of_boundary hω hn z _ (hdvd 2)
-  · exact fun j hj => step_of_aggregation hω hn zkRows z w σ shifts β γ (hdvd 0) hj
+      = ∏ j ∈ Finset.range (n - zkRows), (sigmaSide w σ β γ).eval (ω ^ j) :=
+  soundness_of_dvd hω hn hzk0 hzkn z w σ shifts β γ
+    (dvd_separation hω hn α hα _ fun s =>
+      zH_dvd_of_evals hω hn ζ hζ _ (t s) D (hCdeg s) (htdeg s) hD (hcheck s))
 
 end Kimchi.Quotient.Permutation

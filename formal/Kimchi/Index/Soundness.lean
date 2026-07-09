@@ -219,11 +219,39 @@ theorem eval_permWitnessPoly (idx : Index F n) (wTab : Fin n → Fin 15 → F)
   eval_columnPoly idx.omega_prim _ j
 
 open Kimchi.Quotient.Permutation in
-/-- **Copy soundness at the index.** For the index's wiring, shifts, and sigma columns
-(all bundled laws — nothing to assume beyond the quotient hypotheses): the witness takes
-equal values across every wire of the unmasked region. This is the copy fragment of
-`Satisfies` there; the masked rows are outside the argument's grip by design (zkpm
-gating), and honest witnesses satisfy them because masked rows are identity-wired. -/
+/-- **Copy soundness at the index, divisibility form.** For the index's wiring, shifts,
+and sigma columns (all bundled laws): if at every node of an injective `(β, γ)` grid the
+prover supplies an accumulator whose three permutation constraints are divisible by
+`Z_H`, the witness takes equal values across every wire of the unmasked region. This is
+the copy fragment of `Satisfies` there; the masked rows are outside the argument's grip
+by design (zkpm gating), and honest witnesses satisfy them because masked rows are
+identity-wired. -/
+theorem copy_soundness_of_dvd (idx : Index F n) (wTab : Fin n → Fin 15 → F)
+    {M NN : ℕ} (b : Fin M → F) (g : Fin NN → F)
+    (hb : Function.Injective b) (hg : Function.Injective g)
+    (hM : 7 * (n - idx.zkRows) < M) (hN : 7 * (n - idx.zkRows) < NN)
+    (zg : Fin M → Fin NN → Polynomial F)
+    (hdvd : ∀ a c s, zH F n ∣ Permutation.constraints idx.omega idx.zkRows (zg a c)
+      (idx.permWitnessPoly wTab)
+      (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts
+      (b a) (g c) (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd s) :
+    ∀ c : Fin 7 × Fin (n - idx.zkRows),
+      cellValue wTab (idx.wiringMap (embCell idx.zkRows c))
+        = cellValue wTab (embCell idx.zkRows c) := by
+  intro c
+  have h := copy_soundness_wired_of_dvd idx.omega_prim (Nat.pos_of_neZero n) idx.zk_pos
+    idx.zk_le (idx.permWitnessPoly wTab) idx.shifts idx.shifts_coset idx.wiringPerm
+    idx.wiringPerm_regionPreserving b g hb hg hM hN zg hdvd c
+  rw [show idx.wiringPerm (embCell idx.zkRows c) = idx.wiringMap (embCell idx.zkRows c)
+      from rfl] at h
+  rw [eval_permWitnessPoly] at h
+  rw [show idx.omega ^ ((c.2 : ℕ)) = idx.omega ^ (((embCell idx.zkRows c).2 : Fin n) : ℕ)
+      from rfl, eval_permWitnessPoly] at h
+  exact h
+
+open Kimchi.Quotient.Permutation in
+/-- **Copy soundness at the index.** As `copy_soundness_of_dvd`, with each grid node's
+divisibilities obtained from the derandomized quotient checks. -/
 theorem copy_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     {M NN NNN : ℕ} (b : Fin M → F) (g : Fin NN → F)
     (hb : Function.Injective b) (hg : Function.Injective g)
@@ -236,30 +264,20 @@ theorem copy_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
       (Permutation.constraints idx.omega idx.zkRows (zg a c)
         (idx.permWitnessPoly wTab)
         (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts
-        (b a) (g c) (⟨0, Nat.pos_of_neZero n⟩ : Fin n)
-        ⟨n - idx.zkRows, by have := idx.zk_pos; have := idx.zk_le; omega⟩)).natDegree ≤ D)
+        (b a) (g c) (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd)).natDegree ≤ D)
     (htdeg : ∀ a c s, (t a c s * zH F n).natDegree ≤ D)
     (hcheck : ∀ a c s p, (aggregate (α a c s)
       (Permutation.constraints idx.omega idx.zkRows (zg a c)
         (idx.permWitnessPoly wTab)
         (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts
-        (b a) (g c) (⟨0, Nat.pos_of_neZero n⟩ : Fin n)
-        ⟨n - idx.zkRows, by have := idx.zk_pos; have := idx.zk_le; omega⟩)).eval (ζ a c p)
+        (b a) (g c) (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd)).eval (ζ a c p)
       = (t a c s * zH F n).eval (ζ a c p)) :
     ∀ c : Fin 7 × Fin (n - idx.zkRows),
       cellValue wTab (idx.wiringMap (embCell idx.zkRows c))
-        = cellValue wTab (embCell idx.zkRows c) := by
-  intro c
-  have h := copy_soundness_wired idx.omega_prim (Nat.pos_of_neZero n) idx.zk_pos idx.zk_le
-    (idx.permWitnessPoly wTab) idx.shifts idx.shifts_coset idx.wiringPerm
-    idx.wiringPerm_regionPreserving b g hb hg hM hN zg α hα ζ hζ t D hD hCdeg htdeg
-    hcheck c
-  rw [show idx.wiringPerm (embCell idx.zkRows c) = idx.wiringMap (embCell idx.zkRows c)
-      from rfl] at h
-  rw [eval_permWitnessPoly] at h
-  rw [show idx.omega ^ ((c.2 : ℕ)) = idx.omega ^ (((embCell idx.zkRows c).2 : Fin n) : ℕ)
-      from rfl, eval_permWitnessPoly] at h
-  exact h
+        = cellValue wTab (embCell idx.zkRows c) :=
+  idx.copy_soundness_of_dvd wTab b g hb hg hM hN zg fun a c =>
+    dvd_of_evalCheck idx.omega_prim (Nat.pos_of_neZero n) (ζ a c) (hζ a c) (α a c)
+      (hα a c) _ (t a c) D hD (hCdeg a c) (htdeg a c) (hcheck a c)
 
 end Index
 

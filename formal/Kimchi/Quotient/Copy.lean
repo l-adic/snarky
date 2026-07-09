@@ -97,14 +97,63 @@ theorem sigmaSide_eval (w σ : Fin 7 → Polynomial F) (β γ : F) (x : F) :
     (sigmaSide w σ β γ).eval x = ∏ i, ((w i).eval x + γ + β * (σ i).eval x) := by
   simp [sigmaSide, eval_prod]
 
-/-- **Copy soundness of the kimchi permutation argument.** Fix the committed data — the
-witness columns `w`, the sigma columns `σpoly` (whose row semantics is the wiring: at row
-`j`, `σᵢ(ωʲ)` is the address of the cell that `(i, j)` is wired to), the coset shifts with
-injective cell addressing on the unmasked region. If at every node `(bₐ, g_c)` of an
-injective challenge grid the prover supplies an accumulator `zg a c` passing the
-derandomized quotient checks of the three permutation constraints, then the witness
+/-- **Copy soundness of the kimchi permutation argument, divisibility form.** Fix the
+committed data — the witness columns `w`, the sigma columns `σpoly` (whose row semantics
+is the wiring: at row `j`, `σᵢ(ωʲ)` is the address of the cell that `(i, j)` is wired
+to), the coset shifts with injective cell addressing on the unmasked region. If at every
+node `(bₐ, g_c)` of an injective challenge grid the prover supplies an accumulator
+`zg a c` whose three permutation constraints are divisible by `Z_H`, then the witness
 values are invariant under the wiring on the unmasked region: for every cell `c`,
 `w(σp c) = w(c)`. -/
+theorem copy_soundness_of_dvd {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+    {zkRows : ℕ} (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
+    (w σpoly : Fin 7 → Polynomial F) (shifts : Fin 7 → F)
+    (σp : Equiv.Perm (Fin 7 × Fin (n - zkRows)))
+    (haddr : Function.Injective
+      (fun c : Fin 7 × Fin (n - zkRows) => shifts c.1 * ω ^ (c.2 : ℕ)))
+    (hσ : ∀ c : Fin 7 × Fin (n - zkRows),
+      (σpoly c.1).eval (ω ^ (c.2 : ℕ)) = shifts (σp c).1 * ω ^ ((σp c).2 : ℕ))
+    {M N : ℕ} (b : Fin M → F) (g : Fin N → F)
+    (hb : Function.Injective b) (hg : Function.Injective g)
+    (hM : 7 * (n - zkRows) < M) (hN : 7 * (n - zkRows) < N)
+    (zg : Fin M → Fin N → Polynomial F)
+    (hdvd : ∀ a c s, zH F n ∣ constraints ω zkRows (zg a c) w σpoly shifts
+      (b a) (g c) (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩ s) :
+    ∀ c : Fin 7 × Fin (n - zkRows),
+      (w (σp c).1).eval (ω ^ ((σp c).2 : ℕ)) = (w c.1).eval (ω ^ (c.2 : ℕ)) := by
+  -- The field-level core at the cell data.
+  refine Kimchi.Quotient.copy_soundness b g hb hg ?_ ?_
+    (fun c => (w c.1).eval (ω ^ (c.2 : ℕ)))
+    (fun c => shifts c.1 * ω ^ (c.2 : ℕ)) haddr σp fun a c => ?_
+  · simpa using hM
+  · simpa using hN
+  -- At each grid node, milestone 3 gives the row-product equality; reindex rows × columns
+  -- to cells and rewrite the sigma side through the wiring semantics.
+  have hrows := Permutation.soundness_of_dvd hω hn hzk0 hzkn (zg a c) w σpoly shifts
+    (b a) (g c) (hdvd a c)
+  calc ∏ x : Fin 7 × Fin (n - zkRows),
+        (g c + (w x.1).eval (ω ^ (x.2 : ℕ)) + shifts x.1 * ω ^ (x.2 : ℕ) * b a)
+      = ∏ j ∈ Finset.range (n - zkRows), (shiftSide w shifts (b a) (g c)).eval (ω ^ j) := by
+        rw [← Finset.univ_product_univ, Finset.prod_product_right,
+          ← Fin.prod_univ_eq_prod_range]
+        refine Finset.prod_congr rfl fun j _ => ?_
+        rw [shiftSide_eval]
+        exact Finset.prod_congr rfl fun i _ => by ring
+    _ = ∏ j ∈ Finset.range (n - zkRows), (sigmaSide w σpoly (b a) (g c)).eval (ω ^ j) :=
+        hrows
+    _ = ∏ x : Fin 7 × Fin (n - zkRows),
+        (g c + (w x.1).eval (ω ^ (x.2 : ℕ)) + shifts (σp x).1 * ω ^ ((σp x).2 : ℕ) * b a) := by
+        rw [← Finset.univ_product_univ, Finset.prod_product_right,
+          ← Fin.prod_univ_eq_prod_range]
+        refine Finset.prod_congr rfl fun j _ => ?_
+        rw [sigmaSide_eval]
+        refine Finset.prod_congr rfl fun i _ => ?_
+        rw [hσ (i, j)]
+        ring
+
+/-- **Copy soundness of the kimchi permutation argument.** As `copy_soundness_of_dvd`,
+with each grid node's divisibilities obtained from the derandomized quotient checks
+(`dvd_of_evalCheck`). -/
 theorem copy_soundness {ω : F} {n NN : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     {zkRows : ℕ} (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
     (w σpoly : Fin 7 → Polynomial F) (shifts : Fin 7 → F)
@@ -127,35 +176,10 @@ theorem copy_soundness {ω : F} {n NN : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 
         (b a) (g c) (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)).eval (ζ a c p)
       = (t a c s * zH F n).eval (ζ a c p)) :
     ∀ c : Fin 7 × Fin (n - zkRows),
-      (w (σp c).1).eval (ω ^ ((σp c).2 : ℕ)) = (w c.1).eval (ω ^ (c.2 : ℕ)) := by
-  -- The field-level core at the cell data.
-  refine Kimchi.Quotient.copy_soundness b g hb hg ?_ ?_
-    (fun c => (w c.1).eval (ω ^ (c.2 : ℕ)))
-    (fun c => shifts c.1 * ω ^ (c.2 : ℕ)) haddr σp fun a c => ?_
-  · simpa using hM
-  · simpa using hN
-  -- At each grid node, milestone 3 gives the row-product equality; reindex rows × columns
-  -- to cells and rewrite the sigma side through the wiring semantics.
-  have hrows := Permutation.soundness hω hn hzk0 hzkn (zg a c) w σpoly shifts (b a) (g c)
-    (α a c) (hα a c) (ζ a c) (hζ a c) (t a c) D hD (hCdeg a c) (htdeg a c) (hcheck a c)
-  calc ∏ x : Fin 7 × Fin (n - zkRows),
-        (g c + (w x.1).eval (ω ^ (x.2 : ℕ)) + shifts x.1 * ω ^ (x.2 : ℕ) * b a)
-      = ∏ j ∈ Finset.range (n - zkRows), (shiftSide w shifts (b a) (g c)).eval (ω ^ j) := by
-        rw [← Finset.univ_product_univ, Finset.prod_product_right,
-          ← Fin.prod_univ_eq_prod_range]
-        refine Finset.prod_congr rfl fun j _ => ?_
-        rw [shiftSide_eval]
-        exact Finset.prod_congr rfl fun i _ => by ring
-    _ = ∏ j ∈ Finset.range (n - zkRows), (sigmaSide w σpoly (b a) (g c)).eval (ω ^ j) :=
-        hrows
-    _ = ∏ x : Fin 7 × Fin (n - zkRows),
-        (g c + (w x.1).eval (ω ^ (x.2 : ℕ)) + shifts (σp x).1 * ω ^ ((σp x).2 : ℕ) * b a) := by
-        rw [← Finset.univ_product_univ, Finset.prod_product_right,
-          ← Fin.prod_univ_eq_prod_range]
-        refine Finset.prod_congr rfl fun j _ => ?_
-        rw [sigmaSide_eval]
-        refine Finset.prod_congr rfl fun i _ => ?_
-        rw [hσ (i, j)]
-        ring
+      (w (σp c).1).eval (ω ^ ((σp c).2 : ℕ)) = (w c.1).eval (ω ^ (c.2 : ℕ)) :=
+  copy_soundness_of_dvd hω hn hzk0 hzkn w σpoly shifts σp haddr hσ b g hb hg hM hN zg
+    fun a c => dvd_separation hω hn (α a c) (hα a c) _ fun s =>
+      zH_dvd_of_evals hω hn (ζ a c) (hζ a c) _ (t a c s) D (hCdeg a c s) (htdeg a c s)
+        hD (hcheck a c s)
 
 end Kimchi.Quotient.Permutation

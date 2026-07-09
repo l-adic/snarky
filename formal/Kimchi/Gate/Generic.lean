@@ -69,6 +69,28 @@ theorem Generic.holds_iff (g : Generic F) :
   simp only [Generic.Holds, Generic.constraints, List.forall_mem_cons, List.not_mem_nil,
     false_implies, implies_true, and_true]
 
+/-- `Holds` of a public-folded row, as the *plain* cell equations with the public value
+moved across the first equality: folding `p` into `q 4` is exactly requiring the plain
+first constraint to evaluate to `p`. This is how the aggregate family's slot-`0` public
+subtraction meets `rowSatisfies`' `withPublic` semantics. -/
+theorem Generic.withPublic_holds_iff (g : Generic F) (p : F) :
+    (g.withPublic p).Holds ↔
+      (g.q 0 * g.w 0 + g.q 1 * g.w 1 + g.q 2 * g.w 2 + g.q 3 * (g.w 0 * g.w 1) + g.q 4 = p
+        ∧ g.q 5 * g.w 3 + g.q 6 * g.w 4 + g.q 7 * g.w 5 + g.q 8 * (g.w 3 * g.w 4) + g.q 9
+            = 0) := by
+  have h4 : (g.withPublic p).q 4 = g.q 4 - p := Function.update_self 4 _ g.q
+  have hne : ∀ j : Fin 15, j ≠ 4 → (g.withPublic p).q j = g.q j := fun j hj =>
+    Function.update_of_ne hj _ g.q
+  have hw : (g.withPublic p).w = g.w := rfl
+  rw [Generic.holds_iff, h4, hne 0 (by decide), hne 1 (by decide), hne 2 (by decide),
+    hne 3 (by decide), hne 5 (by decide), hne 6 (by decide), hne 7 (by decide),
+    hne 8 (by decide), hne 9 (by decide), hw]
+  constructor
+  · rintro ⟨h1, h2⟩
+    exact ⟨by linear_combination h1, h2⟩
+  · rintro ⟨h1, h2⟩
+    exact ⟨by linear_combination h1, h2⟩
+
 /-- Executable checker — every constraint expression evaluates to zero. -/
 def Generic.ok [DecidableEq F] (g : Generic F) : Bool :=
   g.constraints.all (· == 0)
