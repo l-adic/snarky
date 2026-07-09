@@ -677,6 +677,30 @@ theorem exists_quotient_of_satisfies (idx : Index F n) (pub : Fin idx.publicCoun
   obtain ⟨t, ht⟩ := hdvd
   exact ⟨t, by rw [ht, mul_comm]⟩
 
+
+open Kimchi.Quotient.Permutation in
+/-- **The characterization.** In a large enough field, a wellformed index is satisfied
+iff honest quotient data exists at every nondegenerate challenge pair — Phase B and
+Phase C fused into one statement. Forward is completeness, pointwise; backward
+manufactures a nondegenerate challenge grid (`exists_nondegenerate_grid` — the
+degenerate pairs are confined to `7·(n − zkRows)` affine lines) and runs the soundness
+headline over it. The field bound is vacuous at Pasta (`(K+1)² ≪ 2²⁵⁵`). -/
+theorem satisfies_iff_fullFamily_dvd [Fintype F] (idx : Index F n)
+    (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin 15 → F)
+    (hF : (7 * (n - idx.zkRows) + 1) * (7 * (n - idx.zkRows) + 1) ≤ Fintype.card F) :
+    Satisfies idx pub wTab
+      ↔ ∀ β γ, Nondegenerate idx.omega idx.zkRows (idx.permWitnessPoly wTab)
+          idx.shifts idx.wiringPerm β γ →
+          ∃ z : Polynomial F, ∀ s, zH F n ∣ idx.fullFamily pub wTab z β γ s := by
+  constructor
+  · exact fun hsat β γ hnd => idx.fullFamily_dvd_of_satisfies pub wTab hsat β γ hnd
+  · intro h
+    obtain ⟨b, g, hb, hg, hnd⟩ := exists_nondegenerate_grid
+      (idx.permWitnessPoly wTab) idx.shifts idx.wiringPerm hF (ω := idx.omega)
+    choose zg hzg using fun a c => h (b a) (g c) (hnd a c)
+    exact idx.satisfies_of_fullFamily_dvd pub wTab b g hb hg (by omega) (by omega)
+      zg hzg
+
 end Index
 
 end Kimchi.Index

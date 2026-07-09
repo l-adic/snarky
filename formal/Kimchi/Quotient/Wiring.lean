@@ -223,6 +223,59 @@ theorem prod_shiftSide_eq_prod_sigmaSide {ω : F} (hω : IsPrimitiveRoot ω n)
           ← Fin.prod_univ_eq_prod_range]
         exact Finset.prod_congr rfl fun j _ => (sigmaSide_eval _ _ _ _ _).symm
 
+/-- An injection avoiding a finite bad set: `Fin m` maps injectively into `F` outside
+`B` when `m + B.card ≤ |F|`. -/
+theorem exists_injective_avoiding {F : Type*} [Fintype F] [DecidableEq F]
+    (B : Finset F) (m : ℕ) (hcard : m + B.card ≤ Fintype.card F) :
+    ∃ f : Fin m → F, Function.Injective f ∧ ∀ i, f i ∉ B := by
+  have hle : m ≤ (Finset.univ \ B).card := by
+    rw [Finset.card_sdiff, Finset.card_univ, Finset.inter_univ]
+    omega
+  obtain ⟨t, ht, htcard⟩ := Finset.exists_subset_card_eq hle
+  let e := t.equivFinOfCardEq htcard
+  refine ⟨fun i => (e.symm i : F), fun a b hab => ?_, fun i => ?_⟩
+  · exact e.symm.injective (Subtype.ext hab)
+  · have hmem : ((e.symm i : t) : F) ∈ t := (e.symm i).2
+    exact (Finset.mem_sdiff.mp (ht hmem)).2
+
+/-- **A nondegenerate challenge grid exists** in a large enough field. Each unmasked
+cell forbids exactly one `γ` per `β` (the factor is affine-linear in `γ`), so with
+`K = 7·(n − zkRows)`: any `K + 1` distinct `β`'s, and `K + 1` distinct `γ`'s dodging
+the at most `(K+1)·K` bad values, give a fully nondegenerate grid — possible once
+`(K+1)² ≤ |F|`. -/
+theorem exists_nondegenerate_grid {F : Type*} [Field F] [Fintype F] [DecidableEq F]
+    {n zkRows : ℕ} {ω : F}
+    (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F)
+    (σpFull : Equiv.Perm (Fin 7 × Fin n))
+    (hF : (7 * (n - zkRows) + 1) * (7 * (n - zkRows) + 1) ≤ Fintype.card F) :
+    ∃ b g : Fin (7 * (n - zkRows) + 1) → F,
+      Function.Injective b ∧ Function.Injective g
+        ∧ ∀ a c, Nondegenerate ω zkRows w shifts σpFull (b a) (g c) := by
+  set K := 7 * (n - zkRows) with hK
+  obtain ⟨b, hb, -⟩ := exists_injective_avoiding (∅ : Finset F) (K + 1)
+    (by simpa using le_trans (Nat.le_mul_of_pos_right _ (by omega)) hF)
+  set Bad : Finset F := (Finset.univ : Finset (Fin (K + 1))).biUnion fun a =>
+    (Finset.univ : Finset (Fin 7 × Fin (n - zkRows))).image fun c =>
+      -((w c.1).eval (ω ^ ((c.2 : ℕ)))
+        + b a * addr ω shifts (σpFull (embCell zkRows c))) with hBadDef
+  have hBad : Bad.card ≤ (K + 1) * K := by
+    refine le_trans Finset.card_biUnion_le ?_
+    refine le_trans (Finset.sum_le_card_nsmul _ _ K fun a _ => ?_) ?_
+    · refine le_trans Finset.card_image_le ?_
+      rw [Finset.card_univ]
+      simp [hK]
+    · simp [Finset.card_univ, mul_comm]
+  obtain ⟨g, hg, hgB⟩ := exists_injective_avoiding Bad (K + 1) (by
+    calc (K + 1) + Bad.card ≤ (K + 1) + (K + 1) * K := by omega
+      _ = (K + 1) * (K + 1) := by ring
+      _ ≤ Fintype.card F := hF)
+  refine ⟨b, g, hb, hg, fun a c cell h0 => ?_⟩
+  refine hgB c ?_
+  rw [hBadDef]
+  refine Finset.mem_biUnion.mpr ⟨a, Finset.mem_univ a, Finset.mem_image.mpr
+    ⟨cell, Finset.mem_univ cell, ?_⟩⟩
+  linear_combination -h0
+
 /-! ## Executable row forms and certificates
 
 The fixture check (`scripts/check_perm_fixture.lean`) replays the argument on production
