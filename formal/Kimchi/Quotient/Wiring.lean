@@ -131,6 +131,151 @@ theorem eval_sigmaPoly {ω : F} (hω : IsPrimitiveRoot ω n) (shifts : Fin 7 →
     (sigmaPoly ω shifts σpFull i).eval (ω ^ (j : ℕ)) = addr ω shifts (σpFull (i, j)) :=
   eval_columnPoly hω _ j
 
+/-! ## Completeness: nondegenerate challenges and the grand-product identity -/
+
+/-- **Challenge nondegeneracy.** No σ-side factor vanishes on the unmasked region: at
+`(β, γ)`, every unmasked cell has `w(c) + γ + β·addr(σ c) ≠ 0`. The honest accumulator
+divides by exactly these factors, so this is the formal rendering of the protocol's
+division-by-zero edge case; each factor is affine-linear in `(β, γ)`, so the degenerate
+pairs lie on at most `7·(n − zkRows)` lines — the small bad locus a Fiat–Shamir sample
+misses. The shift side needs no such hypothesis: once the grand products agree, its
+nonvanishing follows from the σ side's. -/
+def Nondegenerate (ω : F) (zkRows : ℕ) (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F)
+    (σpFull : Equiv.Perm (Fin 7 × Fin n)) (β γ : F) : Prop :=
+  ∀ c : Fin 7 × Fin (n - zkRows),
+    (w c.1).eval (ω ^ ((c.2 : ℕ))) + γ
+      + β * addr ω shifts (σpFull (embCell zkRows c)) ≠ 0
+
+/-- On the unmasked rows, nondegeneracy makes the σ-side row product nonzero. -/
+theorem sigmaSide_eval_ne_zero {ω : F} (hω : IsPrimitiveRoot ω n)
+    {w : Fin 7 → Polynomial F} {shifts : Fin 7 → F}
+    {σpFull : Equiv.Perm (Fin 7 × Fin n)} {β γ : F}
+    (hnd : Nondegenerate ω zkRows w shifts σpFull β γ)
+    {j : ℕ} (hj : j < n - zkRows) :
+    (sigmaSide w (sigmaPoly ω shifts σpFull) β γ).eval (ω ^ j) ≠ 0 := by
+  have hjn : j < n := lt_of_lt_of_le hj (Nat.sub_le n zkRows)
+  rw [sigmaSide_eval]
+  refine Finset.prod_ne_zero_iff.mpr fun i _ => ?_
+  have hs : (sigmaPoly ω shifts σpFull i).eval (ω ^ j)
+      = addr ω shifts (σpFull (embCell zkRows ((i, ⟨j, hj⟩) :
+          Fin 7 × Fin (n - zkRows)))) := by
+    rw [show (ω ^ j : F) = ω ^ (((⟨j, hjn⟩ : Fin n)) : ℕ) from rfl, eval_sigmaPoly hω]
+    rfl
+  rw [hs]
+  exact hnd (i, ⟨j, hj⟩)
+
+/-- **The grand products agree on a copy-invariant witness** — the completeness
+direction of the multiset argument, by pure reindexing: with `w(σ c) = w(c)` on the
+unmasked region, the σ-side factor at `c` *is* the shift-side factor at `σ c`, and the
+cell product transports along the wiring permutation (`Equiv.prod_comp`). No challenge
+grid and no Vandermonde content — pointwise in `(β, γ)`. -/
+theorem prod_shiftSide_eq_prod_sigmaSide {ω : F} (hω : IsPrimitiveRoot ω n)
+    (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F)
+    (σpFull : Equiv.Perm (Fin 7 × Fin n)) (hp : RegionPreserving zkRows σpFull)
+    (β γ : F)
+    (hcopy : ∀ c : Fin 7 × Fin (n - zkRows),
+      (w (σpFull (embCell zkRows c)).1).eval
+          (ω ^ (((σpFull (embCell zkRows c)).2 : Fin n) : ℕ))
+        = (w c.1).eval (ω ^ ((c.2 : ℕ)))) :
+    ∏ j ∈ Finset.range (n - zkRows), (shiftSide w shifts β γ).eval (ω ^ j)
+      = ∏ j ∈ Finset.range (n - zkRows),
+          (sigmaSide w (sigmaPoly ω shifts σpFull) β γ).eval (ω ^ j) := by
+  set σp := restrictCells σpFull hp with hσp
+  calc ∏ j ∈ Finset.range (n - zkRows), (shiftSide w shifts β γ).eval (ω ^ j)
+      = ∏ x : Fin 7 × Fin (n - zkRows),
+          ((w x.1).eval (ω ^ ((x.2 : ℕ))) + γ
+            + β * (shifts x.1 * ω ^ ((x.2 : ℕ)))) := by
+        rw [← Finset.univ_product_univ, Finset.prod_product_right,
+          ← Fin.prod_univ_eq_prod_range]
+        refine Finset.prod_congr rfl fun j _ => ?_
+        rw [shiftSide_eval]
+        exact Finset.prod_congr rfl fun i _ => by ring
+    _ = ∏ x : Fin 7 × Fin (n - zkRows),
+          ((w (σp x).1).eval (ω ^ (((σp x).2 : ℕ))) + γ
+            + β * (shifts (σp x).1 * ω ^ (((σp x).2 : ℕ)))) :=
+        (Equiv.prod_comp σp fun y : Fin 7 × Fin (n - zkRows) =>
+          (w y.1).eval (ω ^ ((y.2 : ℕ))) + γ
+            + β * (shifts y.1 * ω ^ ((y.2 : ℕ)))).symm
+    _ = ∏ x : Fin 7 × Fin (n - zkRows),
+          ((w x.1).eval (ω ^ ((x.2 : ℕ))) + γ
+            + β * (sigmaPoly ω shifts σpFull x.1).eval (ω ^ ((x.2 : ℕ)))) := by
+        refine Finset.prod_congr rfl fun x _ => ?_
+        have hemb := embCell_restrictCells σpFull hp x
+        have hval : (w (σp x).1).eval (ω ^ (((σp x).2 : ℕ)))
+            = (w x.1).eval (ω ^ ((x.2 : ℕ))) := by
+          have hc := hcopy x
+          rw [← hemb] at hc
+          exact hc
+        have haddr : (sigmaPoly ω shifts σpFull x.1).eval (ω ^ ((x.2 : ℕ)))
+            = shifts (σp x).1 * ω ^ (((σp x).2 : ℕ)) := by
+          calc (sigmaPoly ω shifts σpFull x.1).eval (ω ^ ((x.2 : ℕ)))
+              = addr ω shifts (σpFull (embCell zkRows x)) := by
+                rw [show (ω ^ ((x.2 : ℕ)) : F)
+                    = ω ^ (((embCell zkRows x).2 : Fin n) : ℕ) from rfl,
+                  eval_sigmaPoly hω]
+                rfl
+            _ = addr ω shifts (embCell zkRows (σp x)) := by rw [hemb]
+            _ = shifts (σp x).1 * ω ^ (((σp x).2 : ℕ)) := rfl
+        rw [hval, haddr]
+    _ = ∏ j ∈ Finset.range (n - zkRows),
+          (sigmaSide w (sigmaPoly ω shifts σpFull) β γ).eval (ω ^ j) := by
+        rw [← Finset.univ_product_univ, Finset.prod_product_right,
+          ← Fin.prod_univ_eq_prod_range]
+        exact Finset.prod_congr rfl fun j _ => (sigmaSide_eval _ _ _ _ _).symm
+
+/-- An injection avoiding a finite bad set: `Fin m` maps injectively into `F` outside
+`B` when `m + B.card ≤ |F|`. -/
+theorem exists_injective_avoiding {F : Type*} [Fintype F] [DecidableEq F]
+    (B : Finset F) (m : ℕ) (hcard : m + B.card ≤ Fintype.card F) :
+    ∃ f : Fin m → F, Function.Injective f ∧ ∀ i, f i ∉ B := by
+  have hle : m ≤ (Finset.univ \ B).card := by
+    rw [Finset.card_sdiff, Finset.card_univ, Finset.inter_univ]
+    omega
+  obtain ⟨t, ht, htcard⟩ := Finset.exists_subset_card_eq hle
+  let e := t.equivFinOfCardEq htcard
+  refine ⟨fun i => (e.symm i : F), fun a b hab => ?_, fun i => ?_⟩
+  · exact e.symm.injective (Subtype.ext hab)
+  · have hmem : ((e.symm i : t) : F) ∈ t := (e.symm i).2
+    exact (Finset.mem_sdiff.mp (ht hmem)).2
+
+/-- **A nondegenerate challenge grid exists** in a large enough field. Each unmasked
+cell forbids exactly one `γ` per `β` (the factor is affine-linear in `γ`), so with
+`K = 7·(n − zkRows)`: any `K + 1` distinct `β`'s, and `K + 1` distinct `γ`'s dodging
+the at most `(K+1)·K` bad values, give a fully nondegenerate grid — possible once
+`(K+1)² ≤ |F|`. -/
+theorem exists_nondegenerate_grid {F : Type*} [Field F] [Fintype F] [DecidableEq F]
+    {n zkRows : ℕ} {ω : F}
+    (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F)
+    (σpFull : Equiv.Perm (Fin 7 × Fin n))
+    (hF : (7 * (n - zkRows) + 1) * (7 * (n - zkRows) + 1) ≤ Fintype.card F) :
+    ∃ b g : Fin (7 * (n - zkRows) + 1) → F,
+      Function.Injective b ∧ Function.Injective g
+        ∧ ∀ a c, Nondegenerate ω zkRows w shifts σpFull (b a) (g c) := by
+  set K := 7 * (n - zkRows) with hK
+  obtain ⟨b, hb, -⟩ := exists_injective_avoiding (∅ : Finset F) (K + 1)
+    (by simpa using le_trans (Nat.le_mul_of_pos_right _ (by omega)) hF)
+  set Bad : Finset F := (Finset.univ : Finset (Fin (K + 1))).biUnion fun a =>
+    (Finset.univ : Finset (Fin 7 × Fin (n - zkRows))).image fun c =>
+      -((w c.1).eval (ω ^ ((c.2 : ℕ)))
+        + b a * addr ω shifts (σpFull (embCell zkRows c))) with hBadDef
+  have hBad : Bad.card ≤ (K + 1) * K := by
+    refine le_trans Finset.card_biUnion_le ?_
+    refine le_trans (Finset.sum_le_card_nsmul _ _ K fun a _ => ?_) ?_
+    · refine le_trans Finset.card_image_le ?_
+      rw [Finset.card_univ]
+      simp [hK]
+    · simp [Finset.card_univ, mul_comm]
+  obtain ⟨g, hg, hgB⟩ := exists_injective_avoiding Bad (K + 1) (by
+    calc (K + 1) + Bad.card ≤ (K + 1) + (K + 1) * K := by omega
+      _ = (K + 1) * (K + 1) := by ring
+      _ ≤ Fintype.card F := hF)
+  refine ⟨b, g, hb, hg, fun a c cell h0 => ?_⟩
+  refine hgB c ?_
+  rw [hBadDef]
+  refine Finset.mem_biUnion.mpr ⟨a, Finset.mem_univ a, Finset.mem_image.mpr
+    ⟨cell, Finset.mem_univ cell, ?_⟩⟩
+  linear_combination -h0
+
 /-! ## Executable row forms and certificates
 
 The fixture check (`scripts/check_perm_fixture.lean`) replays the argument on production
