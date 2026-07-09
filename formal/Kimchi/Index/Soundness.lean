@@ -234,8 +234,7 @@ theorem copy_soundness_of_dvd (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     (hdvd : ∀ a c s, zH F n ∣ Permutation.constraints idx.omega idx.zkRows (zg a c)
       (idx.permWitnessPoly wTab)
       (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts
-      (b a) (g c) (⟨0, Nat.pos_of_neZero n⟩ : Fin n)
-      ⟨n - idx.zkRows, by have := idx.zk_pos; have := idx.zk_le; omega⟩ s) :
+      (b a) (g c) (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd s) :
     ∀ c : Fin 7 × Fin (n - idx.zkRows),
       cellValue wTab (idx.wiringMap (embCell idx.zkRows c))
         = cellValue wTab (embCell idx.zkRows c) := by
@@ -265,15 +264,13 @@ theorem copy_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
       (Permutation.constraints idx.omega idx.zkRows (zg a c)
         (idx.permWitnessPoly wTab)
         (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts
-        (b a) (g c) (⟨0, Nat.pos_of_neZero n⟩ : Fin n)
-        ⟨n - idx.zkRows, by have := idx.zk_pos; have := idx.zk_le; omega⟩)).natDegree ≤ D)
+        (b a) (g c) (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd)).natDegree ≤ D)
     (htdeg : ∀ a c s, (t a c s * zH F n).natDegree ≤ D)
     (hcheck : ∀ a c s p, (aggregate (α a c s)
       (Permutation.constraints idx.omega idx.zkRows (zg a c)
         (idx.permWitnessPoly wTab)
         (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts
-        (b a) (g c) (⟨0, Nat.pos_of_neZero n⟩ : Fin n)
-        ⟨n - idx.zkRows, by have := idx.zk_pos; have := idx.zk_le; omega⟩)).eval (ζ a c p)
+        (b a) (g c) (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd)).eval (ζ a c p)
       = (t a c s * zH F n).eval (ζ a c p)) :
     ∀ c : Fin 7 × Fin (n - idx.zkRows),
       cellValue wTab (idx.wiringMap (embCell idx.zkRows c))

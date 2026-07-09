@@ -135,6 +135,11 @@ theorem wiringPerm_regionPreserving (idx : Index F n) :
 def coeffTable (idx : Index F n) : Fin n → Fin 15 → F :=
   fun i => (idx.gates i).coeffs
 
+/-- The boundary row of the unmasked region, `n − zkRows` — the `rowLast` argument of
+the permutation constraints. -/
+def unmaskedEnd (idx : Index F n) : Fin n :=
+  ⟨n - idx.zkRows, by have := idx.zk_pos; have := idx.zk_le; omega⟩
+
 /-- The selector column of a gate type: the 0/1 indicator over the rows. -/
 def selectorRow (idx : Index F n) (g : GateType) : Fin n → F :=
   fun i => if (idx.gates i).typ = g then 1 else 0
