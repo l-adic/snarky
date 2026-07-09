@@ -474,6 +474,112 @@ theorem satisfies_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → 
     idx.fullFamily_dvd_of_evalCheck pub wTab (zg a c) (b a) (g c) (ζ a c) (hζ a c)
       (α a c) (hα a c) (t a c) D hD (hCdeg a c) (htdeg a c) (hcheck a c)
 
+/-! ## Completeness: the gate members of a satisfied table
+
+The converse of the separation argument, and the first piece of Phase C: at a satisfied
+row the live gate's constraints vanish (the generic slot `0` carrying exactly the public
+value the member subtracts), every other gate's term dies with its selector, and the
+masked rows contribute nothing because they carry no gates (`masked_zero` — the zk rows
+hold randomness, and it is the selectors, not the values, that kill them). So every gate
+member vanishes on the whole domain and is divisible by `Z_H`. -/
+
+/-- Transport row-constraint vanishing back across a gate's eval bridge. -/
+theorem forall_mem_eval_of_bridge {P : List (Polynomial F)} {L : List F} {x : F}
+    (hb : P.map (·.eval x) = L) (hall : ∀ e ∈ L, e = 0) :
+    ∀ E ∈ P, E.eval x = 0 :=
+  List.forall_mem_map.mp (hb.symm ▸ hall)
+
+/-- A `getD` slot of a list of vanishing evaluations vanishes (in range by membership,
+out of range by the zero default). -/
+theorem eval_getD_zero_of_vanish {P : List (Polynomial F)} {x : F}
+    (h : ∀ E ∈ P, E.eval x = 0) (k : ℕ) : (P.getD k 0).eval x = 0 := by
+  rcases Nat.lt_or_ge k P.length with hk | hk
+  · rw [List.getD_eq_getElem _ _ hk]
+    exact h _ (List.getElem_mem hk)
+  · rw [List.getD_eq_default _ _ hk, eval_zero]
+
+/-- **A satisfied non-generic row's constraints all vanish** — the converse of
+`gateConstraints_vanish_of_dvd`, from the `rowSatisfies` branch through each gate's
+eval bridge. -/
+theorem gateConstraints_vanish_of_rowSatisfies (idx : Index F n)
+    (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin 15 → F) {i : Fin n}
+    (hrow : rowSatisfies idx pub wTab i) (hne : (idx.gates i).typ ≠ .generic) :
+    ∀ E ∈ idx.gateConstraints wTab (idx.gates i).typ,
+      E.eval (idx.omega ^ (i : ℕ)) = 0 := by
+  unfold rowSatisfies at hrow
+  cases htyp : (idx.gates i).typ with
+  | zero => simp [gateConstraints]
+  | generic => exact absurd htyp hne
+  | poseidon =>
+    rw [htyp] at hrow
+    exact forall_mem_eval_of_bridge
+      ((Poseidon.argument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i) hrow
+  | completeAdd =>
+    rw [htyp] at hrow
+    exact forall_mem_eval_of_bridge
+      ((AddComplete.argument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i) hrow
+  | varBaseMul =>
+    rw [htyp] at hrow
+    exact forall_mem_eval_of_bridge
+      ((VarBaseMul.argument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i) hrow
+  | endoMul =>
+    rw [htyp] at hrow
+    exact forall_mem_eval_of_bridge
+      ((EndoMul.argument idx.endoBase).bridge idx.omega_prim wTab idx.coeffTable i) hrow
+  | endoScalar =>
+    rw [htyp] at hrow
+    exact forall_mem_eval_of_bridge
+      ((EndoScalar.argument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i) hrow
+
+/-- **Row completeness.** Every gate member evaluates to `0` at a satisfied row. -/
+theorem eval_gateMember_of_rowSatisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin 15 → F) {i : Fin n}
+    (hrow : rowSatisfies idx pub wTab i) (k : ℕ) :
+    (idx.gateMember pub wTab k).eval (idx.omega ^ (i : ℕ)) = 0 := by
+  rw [idx.eval_gateMember]
+  by_cases hgen : (idx.gates i).typ = .generic
+  · -- the generic slots carry the public-folded equations
+    unfold rowSatisfies at hrow
+    rw [hgen] at hrow
+    obtain ⟨h1, h2⟩ := (Gate.Generic.withPublic_holds_iff _ _).mp hrow
+    have hb := (genericArgument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i
+    simp only [genericArgument, genericCellMap, Gate.Generic.constraints, List.map_cons,
+      List.map_nil, List.cons.injEq, and_true] at hb
+    obtain ⟨hb1, hb2⟩ := hb
+    rw [hgen]
+    match k with
+    | 0 =>
+      simp only [gateConstraints, genericArgument, genericCellMap,
+        Gate.Generic.constraints, List.getD_cons_zero, ite_true]
+      exact sub_eq_zero.mpr (hb1.trans h1)
+    | 1 =>
+      simp only [gateConstraints, genericArgument, genericCellMap,
+        Gate.Generic.constraints, List.getD_cons_succ, List.getD_cons_zero,
+        Nat.one_ne_zero, ite_false, sub_zero]
+      exact hb2.trans h2
+    | (m + 2) =>
+      simp only [gateConstraints, genericArgument, genericCellMap,
+        Gate.Generic.constraints, List.getD_cons_succ, List.getD_nil, eval_zero,
+        Nat.succ_ne_zero, ite_false, sub_zero]
+  · -- non-generic rows: all slots vanish and the public term is 0
+    have hpub0 : pubAt idx pub i = 0 := by
+      unfold pubAt
+      exact dif_neg fun hlt => hgen (idx.public_generic i hlt)
+    rw [hpub0, ite_self, sub_zero]
+    exact eval_getD_zero_of_vanish
+      (idx.gateConstraints_vanish_of_rowSatisfies pub wTab hrow hgen) k
+
+/-- **Gate-member completeness.** Every gate member of a satisfied table is divisible
+by `Z_H` — the converse of the separation argument, for every slot (slots past the
+pool are the zero polynomial). -/
+theorem gateMember_dvd_of_rowSatisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin 15 → F)
+    (hrow : ∀ i, rowSatisfies idx pub wTab i) (k : ℕ) :
+    zH F n ∣ idx.gateMember pub wTab k := by
+  rw [zH_dvd_iff idx.omega_prim (Nat.pos_of_neZero n)]
+  intro i hi
+  exact idx.eval_gateMember_of_rowSatisfies pub wTab (hrow ⟨i, hi⟩) k
+
 end Index
 
 end Kimchi.Index

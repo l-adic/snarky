@@ -78,6 +78,7 @@ def roots : List Name :=
     `Kimchi.Index.Index.rowSatisfies_of_evalCheck,
     `Kimchi.Index.Index.satisfies_of_fullFamily_dvd,
     `Kimchi.Index.Index.satisfies_of_evalCheck,
+    `Kimchi.Index.Index.gateMember_dvd_of_rowSatisfies,
     `Kimchi.Quotient.multiset_eq_of_pairFactor_prod_eq,
     `Kimchi.Quotient.identity_of_grid_evals,
     `Kimchi.Quotient.multiset_eq_of_grid_prod_evals,
