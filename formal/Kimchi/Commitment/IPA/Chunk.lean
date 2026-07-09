@@ -103,24 +103,20 @@ def commitₗ (σ : SRS G) : ((Fin (2 ^ σ.k) → F) × F) →ₗ[F] G where
       smul_add, Finset.smul_sum, RingHom.id_apply]
 
 /-- **Commitment recombination** — kimchi's `chunk_commitment` formula: the `y`-power
-combination of hiding commitments is the hiding commitment of the combined witness.
-The image of `∑ i, yⁱ • (asᵢ, rsᵢ)` under `commitₗ`, with the sum's components read
-off pointwise. -/
+combination of hiding commitments is the hiding commitment of the `y`-power-combined
+witness. `map_sum` of `commitₗ` at the family `i ↦ yⁱ • (asᵢ, rsᵢ)`. -/
 theorem commit_combine (σ : SRS G) (y : F) (c : ℕ)
     (as : ℕ → Fin (2 ^ σ.k) → F) (rs : ℕ → F) :
     ∑ i ∈ Finset.range c, y ^ i • commit σ (as i) (rs i)
-      = commit σ (fun j => ∑ i ∈ Finset.range c, y ^ i * as i j)
-          (∑ i ∈ Finset.range c, y ^ i * rs i) := by
+      = commit σ (∑ i ∈ Finset.range c, y ^ i • as i)
+          (∑ i ∈ Finset.range c, y ^ i • rs i) := by
   have hpair : (∑ i ∈ Finset.range c, y ^ i • ((as i, rs i) : (Fin (2 ^ σ.k) → F) × F))
-      = (fun j => ∑ i ∈ Finset.range c, y ^ i * as i j,
-          ∑ i ∈ Finset.range c, y ^ i * rs i) := by
+      = (∑ i ∈ Finset.range c, y ^ i • as i, ∑ i ∈ Finset.range c, y ^ i • rs i) := by
     refine Prod.ext ?_ ?_
     · rw [Prod.fst_sum]
-      funext j
-      rw [Finset.sum_apply]
-      simp [smul_eq_mul]
+      exact Finset.sum_congr rfl fun i _ => rfl
     · rw [Prod.snd_sum]
-      simp [smul_eq_mul]
+      exact Finset.sum_congr rfl fun i _ => rfl
   have hmap : commitₗ σ (∑ i ∈ Finset.range c,
         y ^ i • ((as i, rs i) : (Fin (2 ^ σ.k) → F) × F))
       = ∑ i ∈ Finset.range c, y ^ i • commit σ (as i) (rs i) := by
@@ -130,18 +126,17 @@ theorem commit_combine (σ : SRS G) (y : F) (c : ℕ)
   rw [← hmap, hpair]
   rfl
 
-/-- Inner products distribute over the combined vector. -/
+/-- The inner product is linear in its first argument — the vector side of the same
+recombination. -/
 theorem innerProduct_combine {n : ℕ} (y : F) (c : ℕ) (as : ℕ → Fin n → F)
     (b : Fin n → F) :
-    innerProduct (fun j => ∑ i ∈ Finset.range c, y ^ i * as i j) b
+    innerProduct (∑ i ∈ Finset.range c, y ^ i • as i) b
       = ∑ i ∈ Finset.range c, y ^ i * innerProduct (as i) b := by
   unfold innerProduct
-  dsimp only
-  simp only [Finset.sum_mul]
+  simp only [Finset.sum_apply, Pi.smul_apply, smul_eq_mul, Finset.sum_mul,
+    Finset.mul_sum]
   rw [Finset.sum_comm]
-  refine Finset.sum_congr rfl fun i _ => ?_
-  rw [Finset.mul_sum]
-  exact Finset.sum_congr rfl fun j _ => by ring
+  exact Finset.sum_congr rfl fun i _ => Finset.sum_congr rfl fun j _ => by ring
 
 /-! ## The headline -/
 
@@ -162,16 +157,14 @@ theorem chunked_ipa_soundness (σ : SRS G) (proof : OpeningProof F G σ.k)
     v = p.eval x := by
   obtain ⟨a, r, hopen⟩ := ipa_soundness σ proof P x v cc u hFS hacc
   have hhonest : commit σ
-      (fun j => ∑ i ∈ Finset.range c, (x ^ 2 ^ σ.k) ^ i * chunkCoeffs (2 ^ σ.k) p i j)
-      (∑ i ∈ Finset.range c, (x ^ 2 ^ σ.k) ^ i * rs i) = P := by
+      (∑ i ∈ Finset.range c, (x ^ 2 ^ σ.k) ^ i • chunkCoeffs (2 ^ σ.k) p i)
+      (∑ i ∈ Finset.range c, (x ^ 2 ^ σ.k) ^ i • rs i) = P := by
     rw [hP, commit_combine]
   have hpair := @hbind (a, r) (_, _) (hopen.1.trans hhonest.symm)
-  have ha : a = fun j => ∑ i ∈ Finset.range c,
-      (x ^ 2 ^ σ.k) ^ i * chunkCoeffs (2 ^ σ.k) p i j :=
+  have ha : a = ∑ i ∈ Finset.range c, (x ^ 2 ^ σ.k) ^ i • chunkCoeffs (2 ^ σ.k) p i :=
     (Prod.ext_iff.mp hpair).1
   have hval : innerProduct
-      (fun j => ∑ i ∈ Finset.range c,
-        (x ^ 2 ^ σ.k) ^ i * chunkCoeffs (2 ^ σ.k) p i j)
+      (∑ i ∈ Finset.range c, (x ^ 2 ^ σ.k) ^ i • chunkCoeffs (2 ^ σ.k) p i)
       (evalVector (2 ^ σ.k) x) = p.eval x := by
     rw [innerProduct_combine, eval_eq_sum_chunkPoly p hdeg x]
     exact Finset.sum_congr rfl fun i _ => by rw [chunkPoly_eval]
