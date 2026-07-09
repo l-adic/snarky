@@ -89,6 +89,7 @@ import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class BasicSystem, class CheckedType, class CircuitType, BoolVar, F(..), FVar, SizedF, addConstraint, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, pow_, unpack_, xor_)
 import Snarky.Circuit.DSL.Monad (Snarky)
+import Snarky.Circuit.DSL.SizedF (toField) as SzF
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
 import Snarky.Circuit.Kimchi.EndoScalar (toField)
@@ -103,6 +104,7 @@ import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Snarky.Types.Shifted (Type1(..))
 import Test.Pickles.CircuitDiffs.WitnessDump (buildWitnessExport)
+import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen, chooseInt, evalGen)
 import Test.Spec (SpecT, beforeAll_, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -198,26 +200,6 @@ compilePF
   -> Effect (Circuit Fp)
 compilePF circuit = fromCompiledCircuit =<<
   (compile noAdvice (Proxy @PointField) (Proxy @Point) (Proxy @(KimchiConstraint Fp)) circuit)
-
-compileKFF
-  :: ( forall r
-        . PrimeField Fp
-       => FVar Fp
-       -> Snarky Fp (KimchiConstraint Fp) r (FVar Fp)
-     )
-  -> Effect (Circuit Fp)
-compileKFF circuit = fromCompiledCircuit =<<
-  (compile noAdvice (Proxy @(F Fp)) (Proxy @(F Fp)) (Proxy @(KimchiConstraint Fp)) circuit)
-
-compileV3
-  :: ( forall r
-        . PrimeField Fp
-       => Vector 3 (FVar Fp)
-       -> Snarky Fp (KimchiConstraint Fp) r (Vector 3 (FVar Fp))
-     )
-  -> Effect (Circuit Fp)
-compileV3 circuit = fromCompiledCircuit =<<
-  (compile noAdvice (Proxy @V3) (Proxy @V3) (Proxy @(KimchiConstraint Fp)) circuit)
 
 --------------------------------------------------------------------------------
 -- Field arithmetic circuits
@@ -368,6 +350,22 @@ affinePt g = case toAffine g of
 -- | A random Pallas point: a nonzero scalar multiple of the generator.
 genPallasPoint :: Gen (AffinePoint Fp)
 genPallasPoint = affinePt <<< power generator <$> chooseInt 1 top
+
+-- | A random 128-bit scalar for the endo-scalar / endo-mul gadgets, which decode their input
+-- | as a `SizedF 128`. Sampling a `SizedF 128` (its `Arbitrary` draws exactly 128 bits) and
+-- | projecting to the field keeps the value inside the gate's real domain.
+-- |
+-- | This can't be a bare `arbitrary :: Gen (F Fp)` like the other gates, and the reason is the
+-- | one place the OCaml diff and the Lean check diverge: the OCaml diff compares only the
+-- | *constraint system* (input-independent), and the PureScript solver happily produces a
+-- | witness for any field element — so both accept a full-range scalar. But the Lean
+-- | index-model checker (`formal/scripts/check_ps_witness.lean`) is faithful to the actual
+-- | EndoMulScalar / EndoMul gate, whose constraints require the 128-bit crumb reconstruction to
+-- | equal the scalar. A full-range (255-bit) value is a malformed 128-bit challenge, so Lean
+-- | rejects it while OCaml/PureScript accept it. Bounding the sample to 128 bits keeps all three
+-- | in agreement.
+genScalar128 :: Gen (F Fp)
+genScalar128 = SzF.toField <$> (arbitrary :: Gen (SizedF 128 (F Fp)))
 
 addCompleteCircuit
   :: forall r
@@ -658,11 +656,14 @@ spec bundle =
       describe "Kimchi gates" do
         exactMatchWitnessEff @TwoPoints @Point "add_complete_step_circuit" addCompleteCircuit
           (Tuple <$> genPallasPoint <*> genPallasPoint)
-        exactMatchEff "endo_scalar_step_circuit" (compileKFF endoScalarCircuit)
-        exactMatchEff "var_base_mul_step_circuit" (compilePF varBaseMulCircuit)
-        exactMatchEff "endo_mul_step_circuit" (compilePF endoMulCircuit)
+        exactMatchWitnessEff @(F Fp) @(F Fp) "endo_scalar_step_circuit" endoScalarCircuit
+          genScalar128
+        exactMatchWitnessEff @PointField @Point "var_base_mul_step_circuit" varBaseMulCircuit
+          (Tuple <$> genPallasPoint <*> arbitrary)
+        exactMatchWitnessEff @PointField @Point "endo_mul_step_circuit" endoMulCircuit
+          (Tuple <$> genPallasPoint <*> genScalar128)
         exactMatchEff "scale_fast2_128_step_circuit" (compilePF scaleFast2_128Circuit)
-        exactMatchEff "poseidon_step_circuit" (compileV3 poseidonCircuit)
+        exactMatchWitnessEff @V3 @V3 "poseidon_step_circuit" poseidonCircuit arbitrary
       describe "Pickles Step sub-circuits" do
         exactMatchEff "pow2_pow_step_circuit" (fromCompiledCircuit =<< compilePow2Pow)
         exactMatchEff "b_correct_step_circuit" (fromCompiledCircuit =<< compileBCorrect)
