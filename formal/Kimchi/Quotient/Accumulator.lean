@@ -51,4 +51,29 @@ theorem prod_eq_of_accumulator {m : ℕ} (num den z : ℕ → F)
   rw [hm, one_mul] at h
   exact h.symm
 
+/-- **Accumulator construction** — the converse of `prod_eq_of_accumulator`, and the
+completeness direction's witness. With nonzero denominators and agreeing grand
+products, the running-ratio column `z k = (∏_{j<k} num) / (∏_{j<k} den)` is an
+accumulator: pinned to `1` at both ends and satisfying the division-free recurrence.
+This is the one place the nonzero-denominator hypothesis is genuinely needed — the
+soundness direction (`prod_eq_of_accumulator`) is division-free. -/
+theorem accumulator_of_prod_eq {m : ℕ} (num den : ℕ → F)
+    (hden : ∀ k < m, den k ≠ 0)
+    (hprod : ∏ k ∈ Finset.range m, num k = ∏ k ∈ Finset.range m, den k) :
+    ∃ z : ℕ → F, z 0 = 1 ∧ z m = 1
+      ∧ ∀ k < m, z (k + 1) * den k = z k * num k := by
+  have hdprod : ∀ k, k ≤ m → (∏ j ∈ Finset.range k, den j) ≠ 0 := fun k hk =>
+    Finset.prod_ne_zero_iff.mpr fun j hj =>
+      hden j (lt_of_lt_of_le (Finset.mem_range.mp hj) hk)
+  refine ⟨fun k => (∏ j ∈ Finset.range k, num j) / (∏ j ∈ Finset.range k, den j),
+    by simp, ?_, ?_⟩
+  · dsimp only
+    rw [hprod, div_self (hdprod m le_rfl)]
+  · intro k hk
+    dsimp only
+    have hd := hdprod k hk.le
+    have hdk := hden k hk
+    rw [Finset.prod_range_succ, Finset.prod_range_succ]
+    field_simp
+
 end Kimchi.Quotient
