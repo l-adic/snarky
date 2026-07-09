@@ -87,21 +87,48 @@ theorem eval_eq_sum_chunkPoly {n c : ℕ} (p : Polynomial F)
 
 /-! ## Commitment recombination -/
 
-/-- **Commit is linear** — the `y`-power combination of hiding commitments is the
-hiding commitment of the combined witness. Kimchi's `chunk_commitment`. -/
+/-- **The hiding commitment is `F`-linear** in the witness pair `(a, r)` — the
+first-class form of "commit is linear"; every recombination fact is an image of a
+module identity under this map. -/
+def commitₗ (σ : SRS G) : ((Fin (2 ^ σ.k) → F) × F) →ₗ[F] G where
+  toFun p := commit σ p.1 p.2
+  map_add' p q := by
+    unfold commit commitGen
+    simp only [Prod.fst_add, Prod.snd_add, Pi.add_apply, add_smul,
+      Finset.sum_add_distrib]
+    abel
+  map_smul' t p := by
+    unfold commit commitGen
+    simp only [Prod.smul_fst, Prod.smul_snd, Pi.smul_apply, smul_eq_mul, mul_smul,
+      smul_add, Finset.smul_sum, RingHom.id_apply]
+
+/-- **Commitment recombination** — kimchi's `chunk_commitment` formula: the `y`-power
+combination of hiding commitments is the hiding commitment of the combined witness.
+The image of `∑ i, yⁱ • (asᵢ, rsᵢ)` under `commitₗ`, with the sum's components read
+off pointwise. -/
 theorem commit_combine (σ : SRS G) (y : F) (c : ℕ)
     (as : ℕ → Fin (2 ^ σ.k) → F) (rs : ℕ → F) :
     ∑ i ∈ Finset.range c, y ^ i • commit σ (as i) (rs i)
       = commit σ (fun j => ∑ i ∈ Finset.range c, y ^ i * as i j)
           (∑ i ∈ Finset.range c, y ^ i * rs i) := by
-  unfold commit commitGen
-  simp only [smul_add, Finset.sum_add_distrib]
-  congr 1
-  · simp only [Finset.smul_sum, smul_smul]
-    rw [Finset.sum_comm]
-    exact Finset.sum_congr rfl fun j _ => by rw [← Finset.sum_smul]
-  · simp only [smul_smul]
-    rw [← Finset.sum_smul]
+  have hpair : (∑ i ∈ Finset.range c, y ^ i • ((as i, rs i) : (Fin (2 ^ σ.k) → F) × F))
+      = (fun j => ∑ i ∈ Finset.range c, y ^ i * as i j,
+          ∑ i ∈ Finset.range c, y ^ i * rs i) := by
+    refine Prod.ext ?_ ?_
+    · rw [Prod.fst_sum]
+      funext j
+      rw [Finset.sum_apply]
+      simp [smul_eq_mul]
+    · rw [Prod.snd_sum]
+      simp [smul_eq_mul]
+  have hmap : commitₗ σ (∑ i ∈ Finset.range c,
+        y ^ i • ((as i, rs i) : (Fin (2 ^ σ.k) → F) × F))
+      = ∑ i ∈ Finset.range c, y ^ i • commit σ (as i) (rs i) := by
+    rw [map_sum]
+    simp only [map_smul]
+    rfl
+  rw [← hmap, hpair]
+  rfl
 
 /-- Inner products distribute over the combined vector. -/
 theorem innerProduct_combine {n : ℕ} (y : F) (c : ℕ) (as : ℕ → Fin n → F)
