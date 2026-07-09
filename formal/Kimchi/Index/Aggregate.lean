@@ -322,6 +322,42 @@ theorem fullFamily_dvd_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount
   dvd_of_evalCheck idx.omega_prim (Nat.pos_of_neZero n) ζ hζ α hα _ t D hD
     hCdeg htdeg hcheck
 
+open Kimchi.Quotient.Permutation in
+/-- The permutation members of the full family: entries `21 + s` are the three
+permutation constraints at the index's wiring data. -/
+theorem fullFamily_perm (idx : Index F n) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (β γ : F) (s : Fin 3) :
+    idx.fullFamily pub wTab z β γ
+        ⟨gateAlphaCount + (s : ℕ), Nat.add_lt_add_left s.isLt gateAlphaCount⟩
+      = Permutation.constraints idx.omega idx.zkRows z (idx.permWitnessPoly wTab)
+          (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts β γ
+          (⟨0, Nat.pos_of_neZero n⟩ : Fin n)
+          ⟨n - idx.zkRows, by have := idx.zk_pos; have := idx.zk_le; omega⟩ s := by
+  rw [fullFamily, dif_neg (by show ¬gateAlphaCount + (s : ℕ) < gateAlphaCount; omega)]
+  congr 1
+  exact Fin.ext (by simp)
+
+open Kimchi.Quotient.Permutation in
+/-- **Phase-B assembly, copy side.** If at every node of an injective `(β, γ)` grid the
+prover supplies an accumulator whose **full family** is `Z_H`-divisible, the witness
+takes equal values across every wire of the unmasked region — the copy fragment of
+`Satisfies` there. The permutation members are the family's last three entries
+(`fullFamily_perm`); `Index.copy_soundness_of_dvd` does the rest. -/
+theorem copy_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin 15 → F)
+    {M NN : ℕ} (b : Fin M → F) (g : Fin NN → F)
+    (hb : Function.Injective b) (hg : Function.Injective g)
+    (hM : 7 * (n - idx.zkRows) < M) (hN : 7 * (n - idx.zkRows) < NN)
+    (zg : Fin M → Fin NN → Polynomial F)
+    (hdvd : ∀ a c s, zH F n ∣ idx.fullFamily pub wTab (zg a c) (b a) (g c) s) :
+    ∀ c : Fin 7 × Fin (n - idx.zkRows),
+      cellValue wTab (idx.wiringMap (embCell idx.zkRows c))
+        = cellValue wTab (embCell idx.zkRows c) :=
+  idx.copy_soundness_of_dvd wTab b g hb hg hM hN zg fun a c s => by
+    have h := hdvd a c
+      ⟨gateAlphaCount + (s : ℕ), Nat.add_lt_add_left s.isLt gateAlphaCount⟩
+    rwa [idx.fullFamily_perm] at h
+
 /-- **Phase-B assembly, gate side.** The aggregated eval-check over the full family —
 the shape of kimchi's one quotient check — gives every row's gate branch of
 `rowSatisfies`: `dvd_of_evalCheck` pins each of the `21 + 3` members, and the

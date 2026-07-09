@@ -215,11 +215,43 @@ theorem isPrimitiveRoot_of_certificate' [DecidableEq F] {ω : F} {n : ℕ}
 
 /-! ## The headline -/
 
-/-- **Copy soundness from the index data.** For coset shifts, a region-preserving
-full-grid wiring, and sigma columns interpolating the wired-to addresses: if at every
-node of an injective `(β, γ)` grid the prover supplies an accumulator passing the
-derandomized quotient checks of the three permutation constraints, then the witness
+/-- **Copy soundness from the index data, divisibility form.** For coset shifts, a
+region-preserving full-grid wiring, and sigma columns interpolating the wired-to
+addresses: if at every node of an injective `(β, γ)` grid the prover supplies an
+accumulator whose three permutation constraints are divisible by `Z_H`, then the witness
 takes equal values across every wire of the unmasked region. -/
+theorem copy_soundness_wired_of_dvd {ω : F} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+    (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
+    (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (hs : CosetShifts ω shifts)
+    (σpFull : Equiv.Perm (Fin 7 × Fin n)) (hp : RegionPreserving zkRows σpFull)
+    {M N : ℕ} (b : Fin M → F) (g : Fin N → F)
+    (hb : Function.Injective b) (hg : Function.Injective g)
+    (hM : 7 * (n - zkRows) < M) (hN : 7 * (n - zkRows) < N)
+    (zg : Fin M → Fin N → Polynomial F)
+    (hdvd : ∀ a c s, zH F n ∣ constraints ω zkRows (zg a c) w
+      (sigmaPoly ω shifts σpFull) shifts (b a) (g c)
+      (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩ s) :
+    ∀ c : Fin 7 × Fin (n - zkRows),
+      (w (σpFull (embCell zkRows c)).1).eval (ω ^ ((σpFull (embCell zkRows c)).2 : ℕ))
+        = (w c.1).eval (ω ^ (c.2 : ℕ)) := by
+  intro c
+  have hmain := Permutation.copy_soundness_of_dvd hω hn hzk0 hzkn w
+    (sigmaPoly ω shifts σpFull) shifts (restrictCells σpFull hp)
+    (fun x y hxy => embCell_injective (addr_injective hω hs (by
+      simpa [addr, embCell] using hxy)))
+    (fun x => by
+      rw [show ω ^ ((x.2 : ℕ)) = ω ^ (((embCell zkRows x).2 : Fin n) : ℕ) from rfl,
+        eval_sigmaPoly hω shifts σpFull, show ((x.1 : Fin 7), (embCell zkRows x).2)
+          = embCell zkRows x from rfl,
+        ← embCell_restrictCells σpFull hp x]
+      rfl)
+    b g hb hg hM hN zg hdvd c
+  rw [← embCell_restrictCells σpFull hp c]
+  exact hmain
+
+/-- **Copy soundness from the index data.** As `copy_soundness_wired_of_dvd`, with each
+grid node's divisibilities obtained from the derandomized quotient checks
+(`dvd_of_evalCheck`). -/
 theorem copy_soundness_wired {ω : F} {NN : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
     (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (hs : CosetShifts ω shifts)
@@ -241,20 +273,10 @@ theorem copy_soundness_wired {ω : F} {NN : ℕ} (hω : IsPrimitiveRoot ω n) (h
       = (t a c s * zH F n).eval (ζ a c p)) :
     ∀ c : Fin 7 × Fin (n - zkRows),
       (w (σpFull (embCell zkRows c)).1).eval (ω ^ ((σpFull (embCell zkRows c)).2 : ℕ))
-        = (w c.1).eval (ω ^ (c.2 : ℕ)) := by
-  intro c
-  have hmain := Permutation.copy_soundness hω hn hzk0 hzkn w
-    (sigmaPoly ω shifts σpFull) shifts (restrictCells σpFull hp)
-    (fun x y hxy => embCell_injective (addr_injective hω hs (by
-      simpa [addr, embCell] using hxy)))
-    (fun x => by
-      rw [show ω ^ ((x.2 : ℕ)) = ω ^ (((embCell zkRows x).2 : Fin n) : ℕ) from rfl,
-        eval_sigmaPoly hω shifts σpFull, show ((x.1 : Fin 7), (embCell zkRows x).2)
-          = embCell zkRows x from rfl,
-        ← embCell_restrictCells σpFull hp x]
-      rfl)
-    b g hb hg hM hN zg α hα ζ hζ t D hD hCdeg htdeg hcheck c
-  rw [← embCell_restrictCells σpFull hp c]
-  exact hmain
+        = (w c.1).eval (ω ^ (c.2 : ℕ)) :=
+  copy_soundness_wired_of_dvd hω hn hzk0 hzkn w shifts hs σpFull hp b g hb hg hM hN zg
+    fun a c => dvd_separation hω hn (α a c) (hα a c) _ fun s =>
+      zH_dvd_of_evals hω hn (ζ a c) (hζ a c) _ (t a c s) D (hCdeg a c s) (htdeg a c s)
+        hD (hcheck a c s)
 
 end Kimchi.Quotient.Permutation
