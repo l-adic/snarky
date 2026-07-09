@@ -11,11 +11,13 @@ on:
     paths:
       - 'formal/**'
       - '.github/workflows/lean.yml'
+      - '.github/actions/setup-lean/**'
   pull_request:
     branches: [ main ]
     paths:
       - 'formal/**'
       - '.github/workflows/lean.yml'
+      - '.github/actions/setup-lean/**'
   workflow_dispatch:
 
 permissions:
@@ -48,37 +50,10 @@ jobs:
       working-directory: .
       run: bash formal/scripts/check-style.sh
 
-    - name: Install elan (reads the pinned toolchain from lean-toolchain)
-      run: |
-        curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
-          | sh -s -- -y --default-toolchain none
-        echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
-
-    - name: Fetch deps + build the library (= check every proof)
-      run: |
-        export PATH="$HOME/.elan/bin:$PATH"
-        # Ensure the manifest matches the Mathlib revision pinned in lakefile.toml
-        # so `lake exe cache get` does not fail on toolchain mismatch checks.
-        lake update mathlib
-        # Mathlib olean cache (does NOT include ProofWidgets' widget JS).
-        lake exe cache get
-        # Older ProofWidgets tags ship prebuilt widget JS in a GitHub release
-        # asset (`ProofWidgets4.tar.gz`) that `lake exe cache get` does not
-        # fetch. Newer tags vendor this differently and may not publish the
-        # tarball, so treat the download as best-effort.
-        pw=.lake/packages/proofwidgets
-        rev=$(jq -r '.packages[] | select(.name=="proofwidgets") | .inputRev' lake-manifest.json)
-        url="https://github.com/leanprover-community/ProofWidgets4/releases/download/${rev}/ProofWidgets4.tar.gz"
-        echo "Checking ProofWidgets cloud release $rev for prebuilt widget JS"
-        mkdir -p "$pw/.lake/build"
-        if curl -fsI "$url" >/dev/null; then
-          echo "Fetching ProofWidgets cloud release asset"
-          curl -fsSL "$url" | tar xz -C "$pw/.lake/build"
-        else
-          echo "No ProofWidgets release tarball for $rev; continuing"
-        fi
-        # Build only our library: typechecks every proof and runs the `#eval`s.
-        lake build Kimchi
+    # elan + Mathlib olean cache + the Kimchi build-directory cache + `lake build
+    # Kimchi` — shared with the `check-ps-witness` job in the CI workflow.
+    - name: Setup Lean + build the library (= check every proof)
+      uses: ./.github/actions/setup-lean
 
     # `lake build` succeeds even with `sorry` (it's only a warning), so gate
     # explicitly: every headline theorem must reduce to the allowed axiom set (the
@@ -111,4 +86,18 @@ jobs:
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         scripts/check_fq_sponge.sh
+
+    # The permutation-argument row semantics must hold on production kimchi data
+    # (fixtures/perm_vesta.json, from tools/fixture-dump's perm_dump).
+    - name: Check the permutation argument against kimchi row data
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        scripts/check_perm_fixture.sh
+
+    # The index model must accept the mixed-gate production circuit: construction
+    # by decision, derived columns, satisfiability, and corruption rejections.
+    - name: Check the index model against the mixed-gate fixture
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        scripts/check_index_fixture.sh
 
