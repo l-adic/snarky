@@ -122,6 +122,177 @@ noncomputable def fullFamily (idx : Index F n) (pub : Fin idx.publicCount → F)
           simp only [gateAlphaCount, permAlphaCount] at *
           omega⟩
 
+/-! ## Separation: the shared pool collapses back to per-gate rows
+
+`selectorRow` is one-hot at every row — `1` at the row's own gate type, `0` at every
+other — so evaluating the `k`-th summed member at a domain node leaves exactly the live
+gate's `k`-th constraint (minus the public value in slot `0`). Divisibility of the 21
+summed members therefore pins, row by row, every constraint of whichever gate lives
+there — the per-gate grip the shared alpha pool appeared to give up. The per-gate
+`Argument.bridge` then carries the polynomial identities to `rowSatisfies`' cell
+equations; the generic slot-`0` public subtraction lands on `withPublic` by
+`Generic.withPublic_holds_iff`. -/
+
+/-- The selector is `0` away from the row's own gate type (one-hotness, with
+`selectorRow_eq_one`). -/
+theorem selectorRow_eq_zero (idx : Index F n) {g : GateType} {i : Fin n}
+    (htyp : (idx.gates i).typ ≠ g) : idx.selectorRow g i = 0 := by
+  simp [selectorRow, htyp]
+
+/-- Every gate's transcription fits inside the shared pool (VarBaseMul's 21). -/
+theorem gateConstraints_length_le (idx : Index F n) (wTab : Fin n → Fin 15 → F)
+    (g : GateType) : (idx.gateConstraints wTab g).length ≤ gateAlphaCount := by
+  obtain ⟨h0, h1, h2, h3, h4, h5, h6⟩ := idx.gateConstraints_length wTab
+  cases g <;> simp [h0, h1, h2, h3, h4, h5, h6, gateAlphaCount]
+
+/-- **Row collapse.** At a domain node, the `k`-th gate member evaluates to the live
+gate's `k`-th constraint value, minus the public value in slot `0`: every other gate's
+term dies with its selector. -/
+theorem eval_gateMember (idx : Index F n) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin 15 → F) (k : ℕ) (i : Fin n) :
+    (idx.gateMember pub wTab k).eval (idx.omega ^ (i : ℕ))
+      = ((idx.gateConstraints wTab (idx.gates i).typ).getD k 0).eval
+          (idx.omega ^ (i : ℕ))
+        - (if k = 0 then pubAt idx pub i else 0) := by
+  unfold gateMember
+  rw [eval_sub]
+  congr 1
+  · rw [eval_finsetSum, Finset.sum_eq_single ((idx.gates i).typ)]
+    · rw [eval_mul, eval_columnPoly idx.omega_prim, idx.selectorRow_eq_one rfl, one_mul]
+    · intro g _ hg
+      rw [eval_mul, eval_columnPoly idx.omega_prim, idx.selectorRow_eq_zero (Ne.symm hg),
+        zero_mul]
+    · intro h
+      exact absurd (Finset.mem_univ _) h
+  · split_ifs
+    · exact idx.eval_pubPoly pub i
+    · exact eval_zero
+
+/-- **Member divisibility pins every slot at every row**: the live gate's `k`-th
+constraint value is the public value in slot `0` and `0` beyond (slots past the gate's
+list are the zero polynomial, so nothing is asserted vacuously — they evaluate to `0`
+outright). -/
+theorem eval_gateConstraints_of_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin 15 → F)
+    (hdvd : ∀ k, k < gateAlphaCount → zH F n ∣ idx.gateMember pub wTab k)
+    (i : Fin n) (k : ℕ) :
+    ((idx.gateConstraints wTab (idx.gates i).typ).getD k 0).eval (idx.omega ^ (i : ℕ))
+      = if k = 0 then pubAt idx pub i else 0 := by
+  by_cases hk : k < gateAlphaCount
+  · have h0 := (zH_dvd_iff idx.omega_prim (Nat.pos_of_neZero n) _).mp (hdvd k hk)
+      (i : ℕ) i.isLt
+    rw [idx.eval_gateMember] at h0
+    exact sub_eq_zero.mp h0
+  · have hlen := idx.gateConstraints_length_le wTab (idx.gates i).typ
+    have hk' : gateAlphaCount ≤ k := Nat.le_of_not_lt hk
+    have hpos : 0 < gateAlphaCount := by norm_num [gateAlphaCount]
+    rw [List.getD_eq_default _ _ (by omega), eval_zero, if_neg (by omega)]
+
+/-- All row constraint values vanish, given the eval bridge for the gate's polynomial
+list and vanishing of every slot. -/
+theorem allZero_of_bridge {P : List (Polynomial F)} {L : List F} {x : F}
+    (hb : P.map (·.eval x) = L)
+    (hvan : ∀ k : ℕ, (P.getD k 0).eval x = 0) :
+    ∀ e ∈ L, e = 0 := by
+  intro e he
+  rw [← hb] at he
+  obtain ⟨E, hE, rfl⟩ := List.mem_map.mp he
+  obtain ⟨c, rfl⟩ := List.mem_iff_get.mp hE
+  have hc := hvan (c : ℕ)
+  rwa [List.getD_eq_getElem _ _ c.isLt, ← List.get_eq_getElem] at hc
+
+/-- **Phase-B gate separation.** If `Z_H` divides all 21 summed gate members, every row
+satisfies its gate branch of `rowSatisfies` — provided the public rows are generic
+gates (kimchi's construction: the first `publicCount` rows *are* the public-input
+generic rows). Selector one-hotness undoes the sharing: at a row of gate `g`, slot `k`
+pins `g`'s `k`-th constraint, with the public value folded into the generic slot `0`
+and vanishing outside the public region on every other gate. -/
+theorem rowSatisfies_of_gateMember_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin 15 → F)
+    (hpubgen : ∀ i : Fin n, (i : ℕ) < idx.publicCount → (idx.gates i).typ = .generic)
+    (hdvd : ∀ k, k < gateAlphaCount → zH F n ∣ idx.gateMember pub wTab k) :
+    ∀ i, rowSatisfies idx pub wTab i := by
+  intro i
+  have hvan := idx.eval_gateConstraints_of_dvd pub wTab hdvd i
+  have hpub0 : (idx.gates i).typ ≠ .generic → pubAt idx pub i = 0 := fun hne => by
+    unfold pubAt
+    exact dif_neg fun h => hne (hpubgen i h)
+  unfold rowSatisfies
+  cases htyp : (idx.gates i).typ with
+  | zero => trivial
+  | generic =>
+    simp only [htyp] at hvan
+    rw [Gate.Generic.withPublic_holds_iff]
+    have hb := (genericArgument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i
+    simp only [genericArgument, genericCellMap, Gate.Generic.constraints, List.map_cons,
+      List.map_nil, List.cons.injEq, and_true] at hb
+    obtain ⟨hb1, hb2⟩ := hb
+    have h0 := hvan 0
+    have h1 := hvan 1
+    simp only [gateConstraints, genericArgument, genericCellMap, Gate.Generic.constraints,
+      List.getD_cons_zero, List.getD_cons_succ, if_pos, one_ne_zero, if_neg,
+      Nat.one_ne_zero, ite_false, ite_true] at h0 h1
+    exact ⟨hb1 ▸ h0, hb2 ▸ h1⟩
+  | poseidon =>
+    have hvan0 : ∀ k : ℕ,
+        ((idx.gateConstraints wTab .poseidon).getD k 0).eval (idx.omega ^ (i : ℕ)) = 0 :=
+      fun k => by
+        have h := hvan k
+        rw [htyp] at h
+        rw [h, hpub0 (by simp [htyp]), ite_self]
+    exact allZero_of_bridge
+      ((Poseidon.argument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i) hvan0
+  | completeAdd =>
+    have hvan0 : ∀ k : ℕ,
+        ((idx.gateConstraints wTab .completeAdd).getD k 0).eval (idx.omega ^ (i : ℕ))
+          = 0 :=
+      fun k => by
+        have h := hvan k
+        rw [htyp] at h
+        rw [h, hpub0 (by simp [htyp]), ite_self]
+    exact allZero_of_bridge
+      ((AddComplete.argument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i) hvan0
+  | varBaseMul =>
+    have hvan0 : ∀ k : ℕ,
+        ((idx.gateConstraints wTab .varBaseMul).getD k 0).eval (idx.omega ^ (i : ℕ))
+          = 0 :=
+      fun k => by
+        have h := hvan k
+        rw [htyp] at h
+        rw [h, hpub0 (by simp [htyp]), ite_self]
+    exact allZero_of_bridge
+      ((VarBaseMul.argument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i) hvan0
+  | endoMul =>
+    have hvan0 : ∀ k : ℕ,
+        ((idx.gateConstraints wTab .endoMul).getD k 0).eval (idx.omega ^ (i : ℕ)) = 0 :=
+      fun k => by
+        have h := hvan k
+        rw [htyp] at h
+        rw [h, hpub0 (by simp [htyp]), ite_self]
+    exact allZero_of_bridge
+      ((EndoMul.argument idx.endoBase).bridge idx.omega_prim wTab idx.coeffTable i) hvan0
+  | endoScalar =>
+    have hvan0 : ∀ k : ℕ,
+        ((idx.gateConstraints wTab .endoScalar).getD k 0).eval (idx.omega ^ (i : ℕ))
+          = 0 :=
+      fun k => by
+        have h := hvan k
+        rw [htyp] at h
+        rw [h, hpub0 (by simp [htyp]), ite_self]
+    exact allZero_of_bridge
+      ((EndoScalar.argument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i) hvan0
+
+/-- The gate branches of `rowSatisfies`, from divisibility of the **full family**: the
+gate members are the first `gateAlphaCount` entries of `fullFamily`. -/
+theorem rowSatisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (β γ : F)
+    (hpubgen : ∀ i : Fin n, (i : ℕ) < idx.publicCount → (idx.gates i).typ = .generic)
+    (hdvd : ∀ s, zH F n ∣ idx.fullFamily pub wTab z β γ s) :
+    ∀ i, rowSatisfies idx pub wTab i :=
+  idx.rowSatisfies_of_gateMember_dvd pub wTab hpubgen fun k hk => by
+    have h := hdvd ⟨k, by omega⟩
+    rwa [fullFamily, dif_pos hk] at h
+
 end Index
 
 end Kimchi.Index
