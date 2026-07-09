@@ -202,21 +202,20 @@ theorem allZero_of_bridge {P : List (Polynomial F)} {L : List F} {x : F}
   rwa [List.getD_eq_getElem _ _ c.isLt, ← List.get_eq_getElem] at hc
 
 /-- **Phase-B gate separation.** If `Z_H` divides all 21 summed gate members, every row
-satisfies its gate branch of `rowSatisfies` — provided the public rows are generic
-gates (kimchi's construction: the first `publicCount` rows *are* the public-input
-generic rows). Selector one-hotness undoes the sharing: at a row of gate `g`, slot `k`
-pins `g`'s `k`-th constraint, with the public value folded into the generic slot `0`
-and vanishing outside the public region on every other gate. -/
+satisfies its gate branch of `rowSatisfies` — the index's `public_generic` law keeps
+non-generic gates out of the public region. Selector one-hotness undoes the sharing:
+at a row of gate `g`, slot `k` pins `g`'s `k`-th constraint, with the public value
+folded into the generic slot `0` and vanishing outside the public region on every
+other gate. -/
 theorem rowSatisfies_of_gateMember_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F)
-    (hpubgen : ∀ i : Fin n, (i : ℕ) < idx.publicCount → (idx.gates i).typ = .generic)
     (hdvd : ∀ k, k < gateAlphaCount → zH F n ∣ idx.gateMember pub wTab k) :
     ∀ i, rowSatisfies idx pub wTab i := by
   intro i
   have hvan := idx.eval_gateConstraints_of_dvd pub wTab hdvd i
   have hpub0 : (idx.gates i).typ ≠ .generic → pubAt idx pub i = 0 := fun hne => by
     unfold pubAt
-    exact dif_neg fun h => hne (hpubgen i h)
+    exact dif_neg fun h => hne (idx.public_generic i h)
   unfold rowSatisfies
   cases htyp : (idx.gates i).typ with
   | zero => trivial
@@ -286,10 +285,9 @@ theorem rowSatisfies_of_gateMember_dvd (idx : Index F n) (pub : Fin idx.publicCo
 gate members are the first `gateAlphaCount` entries of `fullFamily`. -/
 theorem rowSatisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (β γ : F)
-    (hpubgen : ∀ i : Fin n, (i : ℕ) < idx.publicCount → (idx.gates i).typ = .generic)
     (hdvd : ∀ s, zH F n ∣ idx.fullFamily pub wTab z β γ s) :
     ∀ i, rowSatisfies idx pub wTab i :=
-  idx.rowSatisfies_of_gateMember_dvd pub wTab hpubgen fun k hk => by
+  idx.rowSatisfies_of_gateMember_dvd pub wTab fun k hk => by
     have h := hdvd ⟨k, by omega⟩
     rwa [fullFamily, dif_pos hk] at h
 
@@ -373,10 +371,9 @@ theorem rowSatisfies_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount �
     (htdeg : ∀ s, (t s * zH F n).natDegree ≤ D)
     (hcheck : ∀ s p,
       (aggregate (α s) (idx.fullFamily pub wTab z β γ)).eval (ζ p)
-        = (t s * zH F n).eval (ζ p))
-    (hpubgen : ∀ i : Fin n, (i : ℕ) < idx.publicCount → (idx.gates i).typ = .generic) :
+        = (t s * zH F n).eval (ζ p)) :
     ∀ i, rowSatisfies idx pub wTab i :=
-  idx.rowSatisfies_of_fullFamily_dvd pub wTab z β γ hpubgen
+  idx.rowSatisfies_of_fullFamily_dvd pub wTab z β γ
     (idx.fullFamily_dvd_of_evalCheck pub wTab z β γ ζ hζ α hα t D hD hCdeg htdeg hcheck)
 
 end Index

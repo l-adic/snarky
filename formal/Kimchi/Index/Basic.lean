@@ -93,6 +93,18 @@ structure Index (F : Type*) [Field F] (n : ℕ) where
   wiring_bijective : Function.Bijective (wiringMapOf gates)
   wiring_region : ∀ c : Fin 7 × Fin n,
     ((c.2 : ℕ) < n - zkRows) ↔ (((wiringMapOf gates c).2 : ℕ) < n - zkRows)
+  /-- The public region is kimchi's public-input gadget: the first `publicCount` rows
+  are generic gates (`gate.rs` places `GenericGateSpec::Pub` rows first)… -/
+  public_generic : ∀ i : Fin n, (i : ℕ) < publicCount → (gates i).typ = .generic
+  /-- …carrying the `Pub` coefficient row — `1` in the first cell, `0` elsewhere
+  (`generic.rs`: `coeffs[0] = F::one()` over zeros) — so the slot-`0` aggregate member
+  pins the first witness column to the public input there… -/
+  public_coeffs : ∀ i : Fin n, (i : ℕ) < publicCount →
+    ∀ c : Fin 15, (gates i).coeffs c = if c = 0 then 1 else 0
+  /-- …and the masked rows are identity-wired: the zero-knowledge rows carry no copy
+  constraints, so `Satisfies`' whole-grid copy conjunct closes over them trivially. -/
+  masked_identity : ∀ c : Fin 7 × Fin n, n - zkRows ≤ ((c.2 : ℕ)) →
+    wiringMapOf gates c = c
 
 namespace Index
 
@@ -184,7 +196,11 @@ def build? [DecidableEq F] (gates : Fin n → GateRow F n) (publicCount zkRows :
       ∧ 0 < zkRows ∧ zkRows ≤ n ∧ publicCount ≤ n - zkRows
       ∧ Function.Bijective (wiringMapOf gates)
       ∧ (∀ c : Fin 7 × Fin n,
-          ((c.2 : ℕ) < n - zkRows) ↔ (((wiringMapOf gates c).2 : ℕ) < n - zkRows)) then
+          ((c.2 : ℕ) < n - zkRows) ↔ (((wiringMapOf gates c).2 : ℕ) < n - zkRows))
+      ∧ (∀ i : Fin n, (i : ℕ) < publicCount → (gates i).typ = .generic)
+      ∧ (∀ i : Fin n, (i : ℕ) < publicCount →
+          ∀ c : Fin 15, (gates i).coeffs c = if c = 0 then 1 else 0)
+      ∧ (∀ c : Fin 7 × Fin n, n - zkRows ≤ ((c.2 : ℕ)) → wiringMapOf gates c = c) then
     have homega : IsPrimitiveRoot omega n :=
       isPrimitiveRoot_of_certificate'
         (let ⟨k, _, hk⟩ := h.1; ⟨k, hk⟩) h.2.1
@@ -196,7 +212,10 @@ def build? [DecidableEq F] (gates : Fin n → GateRow F n) (publicCount zkRows :
            public_le := h.2.2.2.2.2.1
            shifts_coset := cosetShifts_of_certificate homega h.2.2.1
            wiring_bijective := h.2.2.2.2.2.2.1
-           wiring_region := h.2.2.2.2.2.2.2 }
+           wiring_region := h.2.2.2.2.2.2.2.1
+           public_generic := h.2.2.2.2.2.2.2.2.1
+           public_coeffs := h.2.2.2.2.2.2.2.2.2.1
+           masked_identity := h.2.2.2.2.2.2.2.2.2.2 }
   else none
 
 end Index
