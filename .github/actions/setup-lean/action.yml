@@ -1,0 +1,54 @@
+name: Setup Lean (Kimchi formalization)
+description: >
+  elan (pinned toolchain) + Mathlib olean cloud cache + a build-directory cache for the
+  Kimchi library itself, then `lake build Kimchi`. Shared by the Lean workflow and the
+  witness-check job in the CI workflow so both build the library the same way.
+runs:
+  using: composite
+  steps:
+    - name: Install elan (reads the pinned toolchain from lean-toolchain)
+      shell: bash
+      run: |
+        curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+          | sh -s -- -y --default-toolchain none
+        echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+    # Cache the project's own build directory (Mathlib oleans come from
+    # `lake exe cache get` below, not from here). `restore-keys` lets a run whose
+    # `formal/` sources changed start from the previous build and recompile
+    # incrementally instead of from scratch.
+    - name: Cache the Kimchi build directory
+      uses: actions/cache@v3
+      with:
+        path: formal/.lake/build
+        key: lean-${{ runner.os }}-${{ hashFiles('formal/lean-toolchain', 'formal/lakefile.toml') }}-${{ hashFiles('formal/**/*.lean') }}
+        restore-keys: |
+          lean-${{ runner.os }}-${{ hashFiles('formal/lean-toolchain', 'formal/lakefile.toml') }}-
+
+    - name: Fetch deps + build the library (= check every proof)
+      shell: bash
+      working-directory: formal
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        # Ensure the manifest matches the Mathlib revision pinned in lakefile.toml
+        # so `lake exe cache get` does not fail on toolchain mismatch checks.
+        lake update mathlib
+        # Mathlib olean cache (does NOT include ProofWidgets' widget JS).
+        lake exe cache get
+        # Older ProofWidgets tags ship prebuilt widget JS in a GitHub release
+        # asset (`ProofWidgets4.tar.gz`) that `lake exe cache get` does not
+        # fetch. Newer tags vendor this differently and may not publish the
+        # tarball, so treat the download as best-effort.
+        pw=.lake/packages/proofwidgets
+        rev=$(jq -r '.packages[] | select(.name=="proofwidgets") | .inputRev' lake-manifest.json)
+        url="https://github.com/leanprover-community/ProofWidgets4/releases/download/${rev}/ProofWidgets4.tar.gz"
+        echo "Checking ProofWidgets cloud release $rev for prebuilt widget JS"
+        mkdir -p "$pw/.lake/build"
+        if curl -fsI "$url" >/dev/null; then
+          echo "Fetching ProofWidgets cloud release asset"
+          curl -fsSL "$url" | tar xz -C "$pw/.lake/build"
+        else
+          echo "No ProofWidgets release tarball for $rev; continuing"
+        fi
+        # Build only our library: typechecks every proof and runs the `#eval`s.
+        lake build Kimchi

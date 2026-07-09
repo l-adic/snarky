@@ -244,6 +244,26 @@ jobs:
       run: make test-pickles-circuit-diffs
       env:
         NODE_OPTIONS: "--max-old-space-size=8192"
+        # Witness-carrying registrations also solve on a Gen-sampled input and
+        # embed the witness in their results JSON, for the Lean checker below.
+        CIRCUIT_DIFFS_WITNESS_EXPORT: "1"
+
+    # Run-scoped transport to the `check-ps-witness` job — the checker can only
+    # ever see the witness its own commit generated.
+    - name: Upload witness-carrying results for the Lean checker
+      uses: actions/upload-artifact@v4
+      with:
+        name: circuit-diff-witnesses
+        path: packages/pickles-circuit-diffs/circuits/results/*.json
+        retention-days: 1
+
+    # The visualizer bundles circuits/results/ into its dist (deployed to Pages);
+    # the witness columns are checker input, not visualizer content — strip them.
+    - name: Strip witnesses before the visualizer bundles results
+      run: |
+        for f in packages/pickles-circuit-diffs/circuits/results/*.json; do
+          jq 'del(.purescript.witness)' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+        done
 
     - name: Build circuit diff visualizer
       run: |
@@ -259,6 +279,42 @@ jobs:
         test -f packages/pickles-circuit-diffs/visualizer/dist/index.html
         test -f packages/pickles-circuit-diffs/visualizer/dist/results/manifest.jsonl
         echo "Visualizer build verified: $(ls packages/pickles-circuit-diffs/visualizer/dist/*.js | wc -l) JS bundle(s), $(ls packages/pickles-circuit-diffs/visualizer/dist/*.css | wc -l) CSS bundle(s), $(ls packages/pickles-circuit-diffs/visualizer/dist/results/*.json | wc -l) circuit result(s)"
+
+  # ---- verified witness check (Lean) ----------------------------------
+  # The harness's witness-carrying results are checked against the Lean index
+  # model (formal/scripts/check_ps_witness.sh): decide `Satisfies` on the dumped
+  # witness plus corruption rejections. Lives here (not lean.yml) because it
+  # consumes the artifact from test-circuit-diffs — `needs:`/artifacts only span
+  # a single workflow. On a Kimchi build-cache hit this is a few minutes; it
+  # only rebuilds the library when `formal/` changed (in parallel with lean.yml
+  # doing the same).
+  check-ps-witness:
+    if: github.event_name != 'workflow_dispatch'
+    needs: test-circuit-diffs
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        # Skip the large `mina` submodule; only the Lean dependency submodules
+        # are needed.
+        submodules: false
+
+    - name: Check out the Lean dependency submodules (CompElliptic + ironwood)
+      run: git submodule update --init formal/vendor/CompElliptic formal/vendor/ironwood
+
+    - name: Setup Lean + build the library
+      uses: ./.github/actions/setup-lean
+
+    - name: Download the witness-carrying results
+      uses: actions/download-artifact@v4
+      with:
+        name: circuit-diff-witnesses
+        path: packages/pickles-circuit-diffs/circuits/results/
+
+    - name: Check witnesses against the index model
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        bash formal/scripts/check_ps_witness.sh
 
   # ---- build the example app for GitHub Pages -------------------------
   # The in-browser block-pipeline app: wasm kimchi backend + vite bundle,
