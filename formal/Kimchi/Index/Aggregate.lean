@@ -293,6 +293,56 @@ theorem rowSatisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCo
     have h := hdvd ⟨k, by omega⟩
     rwa [fullFamily, dif_pos hk] at h
 
+/-! ## Alpha instantiation: the one quotient check
+
+Kimchi folds the whole family under a single challenge `α` — powers `α⁰..α²³` weight the
+members — and checks the fold against `t · Z_H` by evaluation. The library's deterministic
+surrogate for "a random `α`, a random evaluation point" is the usual pair of injectivity
+hypotheses (`Quotient/Lift.lean`): enough distinct challenges pin each member by the
+Vandermonde argument (`dvd_separation`), enough distinct nodes pin the polynomial identity
+(`zH_dvd_of_evals`). Specializing the composed engine `dvd_of_evalCheck` at `fullFamily`
+turns the shape of the one production check into per-member divisibility, and the
+separation argument takes it the rest of the way to the rows. -/
+
+/-- **Divisibility of every family member from the aggregated eval-check** — the
+`dvd_of_evalCheck` engine at the full `21 + 3` family. -/
+theorem fullFamily_dvd_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (β γ : F)
+    {N : ℕ} (ζ : Fin N → F) (hζ : Function.Injective ζ)
+    (α : Fin (gateAlphaCount + permAlphaCount) → F) (hα : Function.Injective α)
+    (t : Fin (gateAlphaCount + permAlphaCount) → Polynomial F)
+    (D : ℕ) (hD : D < N)
+    (hCdeg : ∀ s,
+      (aggregate (α s) (idx.fullFamily pub wTab z β γ)).natDegree ≤ D)
+    (htdeg : ∀ s, (t s * zH F n).natDegree ≤ D)
+    (hcheck : ∀ s p,
+      (aggregate (α s) (idx.fullFamily pub wTab z β γ)).eval (ζ p)
+        = (t s * zH F n).eval (ζ p)) :
+    ∀ s, zH F n ∣ idx.fullFamily pub wTab z β γ s :=
+  dvd_of_evalCheck idx.omega_prim (Nat.pos_of_neZero n) ζ hζ α hα _ t D hD
+    hCdeg htdeg hcheck
+
+/-- **Phase-B assembly, gate side.** The aggregated eval-check over the full family —
+the shape of kimchi's one quotient check — gives every row's gate branch of
+`rowSatisfies`: `dvd_of_evalCheck` pins each of the `21 + 3` members, and the
+separation argument collapses the shared pool back to the rows. -/
+theorem rowSatisfies_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → F)
+    (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (β γ : F)
+    {N : ℕ} (ζ : Fin N → F) (hζ : Function.Injective ζ)
+    (α : Fin (gateAlphaCount + permAlphaCount) → F) (hα : Function.Injective α)
+    (t : Fin (gateAlphaCount + permAlphaCount) → Polynomial F)
+    (D : ℕ) (hD : D < N)
+    (hCdeg : ∀ s,
+      (aggregate (α s) (idx.fullFamily pub wTab z β γ)).natDegree ≤ D)
+    (htdeg : ∀ s, (t s * zH F n).natDegree ≤ D)
+    (hcheck : ∀ s p,
+      (aggregate (α s) (idx.fullFamily pub wTab z β γ)).eval (ζ p)
+        = (t s * zH F n).eval (ζ p))
+    (hpubgen : ∀ i : Fin n, (i : ℕ) < idx.publicCount → (idx.gates i).typ = .generic) :
+    ∀ i, rowSatisfies idx pub wTab i :=
+  idx.rowSatisfies_of_fullFamily_dvd pub wTab z β γ hpubgen
+    (idx.fullFamily_dvd_of_evalCheck pub wTab z β γ ζ hζ α hα t D hD hCdeg htdeg hcheck)
+
 end Index
 
 end Kimchi.Index
