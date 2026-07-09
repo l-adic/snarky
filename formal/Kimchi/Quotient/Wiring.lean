@@ -131,6 +131,98 @@ theorem eval_sigmaPoly {ω : F} (hω : IsPrimitiveRoot ω n) (shifts : Fin 7 →
     (sigmaPoly ω shifts σpFull i).eval (ω ^ (j : ℕ)) = addr ω shifts (σpFull (i, j)) :=
   eval_columnPoly hω _ j
 
+/-! ## Completeness: nondegenerate challenges and the grand-product identity -/
+
+/-- **Challenge nondegeneracy.** No σ-side factor vanishes on the unmasked region: at
+`(β, γ)`, every unmasked cell has `w(c) + γ + β·addr(σ c) ≠ 0`. The honest accumulator
+divides by exactly these factors, so this is the formal rendering of the protocol's
+division-by-zero edge case; each factor is affine-linear in `(β, γ)`, so the degenerate
+pairs lie on at most `7·(n − zkRows)` lines — the small bad locus a Fiat–Shamir sample
+misses. The shift side needs no such hypothesis: once the grand products agree, its
+nonvanishing follows from the σ side's. -/
+def Nondegenerate (ω : F) (zkRows : ℕ) (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F)
+    (σpFull : Equiv.Perm (Fin 7 × Fin n)) (β γ : F) : Prop :=
+  ∀ c : Fin 7 × Fin (n - zkRows),
+    (w c.1).eval (ω ^ ((c.2 : ℕ))) + γ
+      + β * addr ω shifts (σpFull (embCell zkRows c)) ≠ 0
+
+/-- On the unmasked rows, nondegeneracy makes the σ-side row product nonzero. -/
+theorem sigmaSide_eval_ne_zero {ω : F} (hω : IsPrimitiveRoot ω n)
+    {w : Fin 7 → Polynomial F} {shifts : Fin 7 → F}
+    {σpFull : Equiv.Perm (Fin 7 × Fin n)} {β γ : F}
+    (hnd : Nondegenerate ω zkRows w shifts σpFull β γ)
+    {j : ℕ} (hj : j < n - zkRows) :
+    (sigmaSide w (sigmaPoly ω shifts σpFull) β γ).eval (ω ^ j) ≠ 0 := by
+  have hjn : j < n := lt_of_lt_of_le hj (Nat.sub_le n zkRows)
+  rw [sigmaSide_eval]
+  refine Finset.prod_ne_zero_iff.mpr fun i _ => ?_
+  have hs : (sigmaPoly ω shifts σpFull i).eval (ω ^ j)
+      = addr ω shifts (σpFull (embCell zkRows ((i, ⟨j, hj⟩) :
+          Fin 7 × Fin (n - zkRows)))) := by
+    rw [show (ω ^ j : F) = ω ^ (((⟨j, hjn⟩ : Fin n)) : ℕ) from rfl, eval_sigmaPoly hω]
+    rfl
+  rw [hs]
+  exact hnd (i, ⟨j, hj⟩)
+
+/-- **The grand products agree on a copy-invariant witness** — the completeness
+direction of the multiset argument, by pure reindexing: with `w(σ c) = w(c)` on the
+unmasked region, the σ-side factor at `c` *is* the shift-side factor at `σ c`, and the
+cell product transports along the wiring permutation (`Equiv.prod_comp`). No challenge
+grid and no Vandermonde content — pointwise in `(β, γ)`. -/
+theorem prod_shiftSide_eq_prod_sigmaSide {ω : F} (hω : IsPrimitiveRoot ω n)
+    (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F)
+    (σpFull : Equiv.Perm (Fin 7 × Fin n)) (hp : RegionPreserving zkRows σpFull)
+    (β γ : F)
+    (hcopy : ∀ c : Fin 7 × Fin (n - zkRows),
+      (w (σpFull (embCell zkRows c)).1).eval
+          (ω ^ (((σpFull (embCell zkRows c)).2 : Fin n) : ℕ))
+        = (w c.1).eval (ω ^ ((c.2 : ℕ)))) :
+    ∏ j ∈ Finset.range (n - zkRows), (shiftSide w shifts β γ).eval (ω ^ j)
+      = ∏ j ∈ Finset.range (n - zkRows),
+          (sigmaSide w (sigmaPoly ω shifts σpFull) β γ).eval (ω ^ j) := by
+  set σp := restrictCells σpFull hp with hσp
+  calc ∏ j ∈ Finset.range (n - zkRows), (shiftSide w shifts β γ).eval (ω ^ j)
+      = ∏ x : Fin 7 × Fin (n - zkRows),
+          ((w x.1).eval (ω ^ ((x.2 : ℕ))) + γ
+            + β * (shifts x.1 * ω ^ ((x.2 : ℕ)))) := by
+        rw [← Finset.univ_product_univ, Finset.prod_product_right,
+          ← Fin.prod_univ_eq_prod_range]
+        refine Finset.prod_congr rfl fun j _ => ?_
+        rw [shiftSide_eval]
+        exact Finset.prod_congr rfl fun i _ => by ring
+    _ = ∏ x : Fin 7 × Fin (n - zkRows),
+          ((w (σp x).1).eval (ω ^ (((σp x).2 : ℕ))) + γ
+            + β * (shifts (σp x).1 * ω ^ (((σp x).2 : ℕ)))) :=
+        (Equiv.prod_comp σp fun y : Fin 7 × Fin (n - zkRows) =>
+          (w y.1).eval (ω ^ ((y.2 : ℕ))) + γ
+            + β * (shifts y.1 * ω ^ ((y.2 : ℕ)))).symm
+    _ = ∏ x : Fin 7 × Fin (n - zkRows),
+          ((w x.1).eval (ω ^ ((x.2 : ℕ))) + γ
+            + β * (sigmaPoly ω shifts σpFull x.1).eval (ω ^ ((x.2 : ℕ)))) := by
+        refine Finset.prod_congr rfl fun x _ => ?_
+        have hemb := embCell_restrictCells σpFull hp x
+        have hval : (w (σp x).1).eval (ω ^ (((σp x).2 : ℕ)))
+            = (w x.1).eval (ω ^ ((x.2 : ℕ))) := by
+          have hc := hcopy x
+          rw [← hemb] at hc
+          exact hc
+        have haddr : (sigmaPoly ω shifts σpFull x.1).eval (ω ^ ((x.2 : ℕ)))
+            = shifts (σp x).1 * ω ^ (((σp x).2 : ℕ)) := by
+          calc (sigmaPoly ω shifts σpFull x.1).eval (ω ^ ((x.2 : ℕ)))
+              = addr ω shifts (σpFull (embCell zkRows x)) := by
+                rw [show (ω ^ ((x.2 : ℕ)) : F)
+                    = ω ^ (((embCell zkRows x).2 : Fin n) : ℕ) from rfl,
+                  eval_sigmaPoly hω]
+                rfl
+            _ = addr ω shifts (embCell zkRows (σp x)) := by rw [hemb]
+            _ = shifts (σp x).1 * ω ^ (((σp x).2 : ℕ)) := rfl
+        rw [hval, haddr]
+    _ = ∏ j ∈ Finset.range (n - zkRows),
+          (sigmaSide w (sigmaPoly ω shifts σpFull) β γ).eval (ω ^ j) := by
+        rw [← Finset.univ_product_univ, Finset.prod_product_right,
+          ← Fin.prod_univ_eq_prod_range]
+        exact Finset.prod_congr rfl fun j _ => (sigmaSide_eval _ _ _ _ _).symm
+
 /-! ## Executable row forms and certificates
 
 The fixture check (`scripts/check_perm_fixture.lean`) replays the argument on production
