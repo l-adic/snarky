@@ -35,17 +35,23 @@ open CompElliptic.CurveForms.ShortWeierstrass
 def parsePt (C : Ipa.CommitmentCurve) : Json → Except String C.Point :=
   parseSWPoint (parseZMod (n := C.base)) C.E
 
-/-- The fixture's `srs_g`/`srs_h` as a library SRS. The abstract randomisation base `U`
-is transcript-derived by the verifier and never read; it is filled with `0`. -/
-def parseSRS (C : Ipa.CommitmentCurve) (j : Json) : Except String (SRS C.Point) := do
+/-- The fixture's `srs_g`/`srs_h` as a library SRS at a given round count `k` (the
+IPA fixtures carry `k` directly; the kimchi-proof fixture derives it from the domain
+size — see `parseSRS`). The abstract randomisation base `U` is transcript-derived by
+the verifier and never read; it is filled with `0`. -/
+def parseSRSAt (C : Ipa.CommitmentCurve) (k : ℕ) (j : Json) :
+    Except String (SRS C.Point) := do
   let g ← parseArrOf (parsePt C) (← j.getObjVal? "srs_g")
-  let k ← (← j.getObjVal? "k").getNat?
   if h : g.size = 2 ^ k then
     return { k := k
              g := fun i => g[i.val]'(by have := i.isLt; omega)
              h := ← parsePt C (← j.getObjVal? "srs_h")
              U := 0 }
   else throw s!"srs_g size {g.size} ≠ 2 ^ {k}"
+
+/-- `parseSRSAt` at the fixture's own `k` field. -/
+def parseSRS (C : Ipa.CommitmentCurve) (j : Json) : Except String (SRS C.Point) := do
+  parseSRSAt C (← (← j.getObjVal? "k").getNat?) j
 
 def parseProof (C : Ipa.CommitmentCurve) (j : Json) : Except String (Ipa.Proof C) := do
   let parseS : Json → Except String C.ScalarField := parseZMod
