@@ -1,5 +1,6 @@
 import Kimchi.Verifier.Linearization
 import Kimchi.Index.Aggregate
+import Kimchi.Index.Degree
 
 /-!
 # The verifier equation — the honest evaluation record
@@ -52,6 +53,40 @@ theorem evalEnv_evalsOf (idx : Index F n) (wTab : Fin n → Fin 15 → F)
   funext c
   simp only [Function.comp_apply, Polynomial.coe_aeval_eq_eval, Kimchi.Quotient.shift,
     eval_comp, eval_mul, eval_C, eval_X]
+
+/-! ## Column extraction
+
+The soundness-direction junction: PCS binding (`chunked_batch_soundness`) delivers
+*polynomials* behind the witness commitments — each of degree `< n` from its chunk
+count — while `Satisfies` and the point-bridge's record speak *tables*. `extractTable`
+reads the table off the bound polynomials; by `columnPoly_eval_self` the honest record
+at that table evaluates the bound polynomials themselves, so the claimed evaluations
+that binding certifies are exactly the record's fields. -/
+
+/-- The witness table read off bound column polynomials: `wTab j c := W_c(ω^j)`. This
+is the table the headline exports in its `∃ wTab, Satisfies` conclusion. -/
+def extractTable (ω : F) (W : Fin 15 → Polynomial F) : Fin n → Fin 15 → F :=
+  fun j c => (W c).eval (ω ^ (j : ℕ))
+
+/-- The honest record at the extracted table evaluates the bound polynomials: the
+current-row field at column `c` is `W_c(ζ)` — binding's claimed evaluation. -/
+theorem evalsOf_extractTable_w [NeZero n] (idx : Index F n)
+    (W : Fin 15 → Polynomial F) (hW : ∀ c, (W c).natDegree < n)
+    (z : Polynomial F) (ζ : F) (c : Fin 15) :
+    (evalsOf idx (extractTable idx.omega W) z ζ).w c = (W c).eval ζ := by
+  show (columnPoly idx.omega fun j => (W c).eval (idx.omega ^ (j : ℕ))).eval ζ = _
+  rw [columnPoly_eval_self idx.omega_prim (Nat.pos_of_neZero n) (W c) (hW c)]
+
+/-- The next-row field at column `c` is `W_c(ωζ)` — binding's claimed evaluation at
+the shifted point. -/
+theorem evalsOf_extractTable_wOmega [NeZero n] (idx : Index F n)
+    (W : Fin 15 → Polynomial F) (hW : ∀ c, (W c).natDegree < n)
+    (z : Polynomial F) (ζ : F) (c : Fin 15) :
+    (evalsOf idx (extractTable idx.omega W) z ζ).wOmega c
+      = (W c).eval (idx.omega * ζ) := by
+  show (columnPoly idx.omega fun j => (W c).eval (idx.omega ^ (j : ℕ))).eval
+      (idx.omega * ζ) = _
+  rw [columnPoly_eval_self idx.omega_prim (Nat.pos_of_neZero n) (W c) (hW c)]
 
 /-! ## The gate side
 
@@ -371,5 +406,98 @@ theorem verifierEquation_iff [DecidableEq F] [NeZero n] (idx : Index F n)
   constructor
   · intro h; linear_combination h - hperm
   · intro h; linear_combination h + hperm
+
+/-! ## The grid headline
+
+The Fiat–Shamir idealization surrogate: the deployed scalar-side acceptance equation,
+required at every node of injective challenge grids, implies `Satisfies` at the index.
+The grids over `(β, γ, α, ζ)` play the same role as the `(ξ, r)` grids of
+`batch_soundness` — milestone 5 discharges them from rewinding the transcript tree — and
+the dependence shape mirrors that tree: `zg` varies with `(β, γ)` only, `t` with
+`(β, γ, α)` only, "committed before `ζ` was sampled". The degree hypotheses `hz`/`ht`
+are what PCS binding (`chunked_batch_soundness`) supplies from the chunk counts; the
+per-point equation `heq` is the deployed verifier's acceptance check, adjudicated
+numerically against production in `scripts/check_linearization.lean`. The route is
+`verifierEquation_iff.mp` per grid point into `Index.satisfies_of_evalCheck` at
+`D := degreeBound n`, its degree side discharged by `aggregate_natDegree_le` and
+`t_zH_natDegree_le`. -/
+
+/-- **The grid headline.** A grid of deployed verifier-equation instances — the
+scalar-side acceptance check `heq` at every node of injective challenge grids — implies
+`Satisfies idx pub wTab`. Per point `(a, c, s, p)`, `heq` is syntactically the LHS of
+`verifierEquation_iff` at `z := zg a c`, `t := t a c s`, `ζ := ζ a c p`, `β := b a`,
+`γ := g c`, `α := α a c s`; the degree data `hz`/`ht` feeds the uniform bound
+`degreeBound n = 9·n` through `aggregate_natDegree_le` and `t_zH_natDegree_le`. -/
+theorem satisfies_of_verifierEquation [DecidableEq F] [NeZero n]
+    (idx : Index F n) (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin 15 → F)
+    {M NN NNN : ℕ} (b : Fin M → F) (g : Fin NN → F)
+    (hb : Function.Injective b) (hg : Function.Injective g)
+    (hM : 7 * (n - idx.zkRows) < M) (hN : 7 * (n - idx.zkRows) < NN)
+    (zg : Fin M → Fin NN → Polynomial F) (hz : ∀ a c, (zg a c).natDegree < n)
+    (ζ : Fin M → Fin NN → Fin NNN → F) (hζ : ∀ a c, Function.Injective (ζ a c))
+    (hζ₁ : ∀ a c p, ζ a c p ≠ 1)
+    (hζb : ∀ a c p, ζ a c p ≠ idx.omega ^ (n - idx.zkRows))
+    (α : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → F)
+    (hα : ∀ a c, Function.Injective (α a c))
+    (t : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount)
+      → Polynomial F)
+    (ht : ∀ a c s, (t a c s).natDegree < 7 * n)
+    (hD : Index.degreeBound n < NNN)
+    (heq : ∀ a c s p,
+      permScalar (b a) (g c) (α a c s)
+          (zkpmEval n idx.zkRows idx.omega (ζ a c p))
+          (evalsOf idx wTab (zg a c) (ζ a c p))
+        * ((Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) 6).eval
+            (ζ a c p)
+        - ((ζ a c p) ^ n - 1) * (t a c s).eval (ζ a c p)
+      = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase (α a c s) (b a) (g c)
+          (ζ a c p) (-((idx.pubPoly pub).eval (ζ a c p)))
+          (evalsOf idx wTab (zg a c) (ζ a c p))) :
+    Satisfies idx pub wTab := by
+  refine idx.satisfies_of_evalCheck pub wTab b g hb hg hM hN zg ζ hζ α hα t
+    (Index.degreeBound n) hD (fun a c s => ?_) (fun a c s => ?_) (fun a c s p => ?_)
+  · exact idx.aggregate_natDegree_le pub wTab (zg a c) (hz a c) (b a) (g c) (α a c s)
+  · exact Index.Index.t_zH_natDegree_le _ (ht a c s)
+  · exact (verifierEquation_iff idx pub wTab (zg a c) (t a c s) (ζ a c p) (b a) (g c)
+      (α a c s) (hζ₁ a c p) (hζb a c p)).mp (heq a c s p)
+
+set_option linter.unusedVariables false in
+/-- **The grid headline at the extracted table.** The corollary at
+`wTab := extractTable idx.omega W` — the table read off the polynomials PCS binding
+delivers behind the witness commitments. The chunk-count degree fact `hW` is carried even
+though this instantiation does not consume it: it is what `chunked_batch_soundness`
+supplies, and milestone 4's claimed-evals conversion (`evalsOf_extractTable_w` /
+`evalsOf_extractTable_wOmega`) consumes it — the corollary fixes that interface. The
+unused-variable linter is silenced for this one theorem precisely because `hW` is
+interface-mandated dead weight here. -/
+theorem satisfies_extractTable_of_verifierEquation [DecidableEq F] [NeZero n]
+    (idx : Index F n) (pub : Fin idx.publicCount → F)
+    (W : Fin 15 → Polynomial F) (hW : ∀ c, (W c).natDegree < n)
+    {M NN NNN : ℕ} (b : Fin M → F) (g : Fin NN → F)
+    (hb : Function.Injective b) (hg : Function.Injective g)
+    (hM : 7 * (n - idx.zkRows) < M) (hN : 7 * (n - idx.zkRows) < NN)
+    (zg : Fin M → Fin NN → Polynomial F) (hz : ∀ a c, (zg a c).natDegree < n)
+    (ζ : Fin M → Fin NN → Fin NNN → F) (hζ : ∀ a c, Function.Injective (ζ a c))
+    (hζ₁ : ∀ a c p, ζ a c p ≠ 1)
+    (hζb : ∀ a c p, ζ a c p ≠ idx.omega ^ (n - idx.zkRows))
+    (α : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → F)
+    (hα : ∀ a c, Function.Injective (α a c))
+    (t : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount)
+      → Polynomial F)
+    (ht : ∀ a c s, (t a c s).natDegree < 7 * n)
+    (hD : Index.degreeBound n < NNN)
+    (heq : ∀ a c s p,
+      permScalar (b a) (g c) (α a c s)
+          (zkpmEval n idx.zkRows idx.omega (ζ a c p))
+          (evalsOf idx (extractTable idx.omega W) (zg a c) (ζ a c p))
+        * ((Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) 6).eval
+            (ζ a c p)
+        - ((ζ a c p) ^ n - 1) * (t a c s).eval (ζ a c p)
+      = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase (α a c s) (b a) (g c)
+          (ζ a c p) (-((idx.pubPoly pub).eval (ζ a c p)))
+          (evalsOf idx (extractTable idx.omega W) (zg a c) (ζ a c p))) :
+    Satisfies idx pub (extractTable idx.omega W) :=
+  satisfies_of_verifierEquation idx pub (extractTable idx.omega W) b g hb hg hM hN
+    zg hz ζ hζ hζ₁ hζb α hα t ht hD heq
 
 end Kimchi.Verifier.Equation
