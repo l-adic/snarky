@@ -9,11 +9,12 @@ chunk-fold mechanisms:
   the `y`-power fold of the chunk evaluations against the combined value (both
   identities at one chunk) — and the executable verifier must accept the combined claim
   and reject a corrupted one.
-* chunked batch (`ipa_chunked_batch_{vesta,pallas}.json`): the chunked-batch combiners
-  must reproduce the production segment-stream combination (`combine_commitments` at
-  `rand_base = 1`, `combined_inner_product`), and the executable verifier must accept
-  the FLATTENED segment view — the flattening lemmas, adjudicated end-to-end — and
-  reject a corrupted one. -/
+* chunked batch (`ipa_chunked_{batch,ragged}_{vesta,pallas}.json` — uniform 2/2 and
+  ragged 1/3 chunk counts, the latter exercising the prefix-sum segment offsets): the
+  chunked-batch combiners must reproduce the production segment-stream combination
+  (`combine_commitments` at `rand_base = 1`, `combined_inner_product`), and the
+  executable verifier must accept the FLATTENED segment view — the flattening lemmas,
+  adjudicated end-to-end — and reject a corrupted one. -/
 
 open Lean Kimchi.Fixture.Ipa Kimchi.Verifier
 
@@ -62,8 +63,8 @@ def checkBatchFixture (C : Ipa.CommitmentCurve) (curveName : String) (path : Str
   let ok := Ipa.verify C σ inp
   let bad := { inp with evals := inp.evals.modify 0 (·.modify 0 (· + 1)) }
   let rejected := !Ipa.verify C σ bad
-  IO.println s!"{path}: {fx.chunkComms.size} poly(s) × {fx.xs.size} point(s) × \
-    {(fx.chunkComms.getD 0 #[]).size} chunk(s), batched — \
+  IO.println s!"{path}: {fx.chunkComms.size} poly(s) × {fx.xs.size} point(s), \
+    chunks {fx.chunkComms.map (·.size)}, batched — \
     segment comm: {if hComm then "✓" else "✗"}, \
     segment cip: {if hCip then "✓" else "✗"}, \
     flat verify: {if ok then "ACCEPT" else "REJECT"}, \
@@ -77,10 +78,11 @@ def main : IO Unit := do
       && (← checkFixture IpaVesta.curve "vesta" s!"fixtures/ipa_{name}_vesta.json")
     allOk := allOk
       && (← checkFixture IpaPallas.curve "pallas" s!"fixtures/ipa_{name}_pallas.json")
-  allOk := allOk && (← checkBatchFixture IpaVesta.curve "vesta"
-    "fixtures/ipa_chunked_batch_vesta.json")
-  allOk := allOk && (← checkBatchFixture IpaPallas.curve "pallas"
-    "fixtures/ipa_chunked_batch_pallas.json")
+  for name in ["chunked_batch", "chunked_ragged"] do
+    allOk := allOk && (← checkBatchFixture IpaVesta.curve "vesta"
+      s!"fixtures/ipa_{name}_vesta.json")
+    allOk := allOk && (← checkBatchFixture IpaPallas.curve "pallas"
+      s!"fixtures/ipa_{name}_pallas.json")
   unless allOk do throw (IO.userError "IPA fixture check FAILED")
   IO.println "✓ recombination and the segment stream match production and the \
     verifier accepts, both mechanisms, both curves"

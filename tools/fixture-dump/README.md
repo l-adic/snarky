@@ -47,7 +47,7 @@ Two binaries, both deterministic (seeded ChaCha20), both writing into `formal/`:
 | `fixtures/ipa_opening_{vesta,pallas}.json` | a single opening (1 poly × 1 point) | `scripts/check_ipa_fixture.sh` |
 | `fixtures/ipa_batch_{vesta,pallas}.json` | a batched opening (2 polys × 2 points) | same |
 | `fixtures/ipa_chunked{2,3}_{vesta,pallas}.json` | combine-then-open chunked openings (1 poly × 1 point × 2/3 chunks; the production `chunk_commitment(x^n)` combination recorded per poly) | same |
-| `fixtures/ipa_chunked_batch_{vesta,pallas}.json` | a chunked batch (2 polys × 2 points × 2 chunks; multi-chunk `PolyComm`s through the batch path, with the production `combine_commitments`/`combined_inner_product` targets recorded) | same |
+| `fixtures/ipa_chunked_{batch,ragged}_{vesta,pallas}.json` | chunked batches (2 polys × 2 points, uniform 2/2 and ragged 1/3 chunk counts; multi-chunk `PolyComm`s through the batch path, with the production `combine_commitments`/`combined_inner_product` targets recorded) | same |
 
 `perm_dump`:
 

@@ -275,22 +275,22 @@ production verify accepts; wrote {out_path}"
     );
 }
 
-/// Produce one chunked-batch fixture (mechanism (b)): `n_polys` random polynomials of
-/// degree `< n_chunks * N`, each committed as an `n_chunks`-chunk `PolyComm`, opened at
-/// `n_points` points through the production batch path directly — `SRS::open` folds the
-/// chunk segments at consecutive polyscale powers (polynomial-outer, chunk-inner) and
-/// `SRS::verify` consumes the multi-chunk commitments as-is. No per-polynomial
-/// combination exists on this path; the fixture records the production flat combination
-/// targets — `combine_commitments` at `rand_base = 1` and `combined_inner_product` —
-/// for the Lean side to adjudicate its chunked combiners against.
-#[allow(clippy::too_many_arguments)]
+/// Produce one chunked-batch fixture (mechanism (b)): one random polynomial per entry
+/// of `n_chunks`, polynomial `i` of degree `< n_chunks[i] * N` committed as an
+/// `n_chunks[i]`-chunk `PolyComm` (ragged counts allowed — the deployed batch mixes
+/// widths), opened at `n_points` points through the production batch path directly —
+/// `SRS::open` folds the chunk segments at consecutive polyscale powers
+/// (polynomial-outer, chunk-inner, no reset at a polynomial boundary) and `SRS::verify`
+/// consumes the multi-chunk commitments as-is. No per-polynomial combination exists on
+/// this path; the fixture records the production flat combination targets —
+/// `combine_commitments` at `rand_base = 1` and `combined_inner_product` — for the Lean
+/// side to adjudicate its chunked combiners against.
 fn dump_chunked_batch_fixture<P: SWCurveConfig>(
     srs: &SRS<Affine<P>>,
     params: &'static ArithmeticSpongeParams<P::BaseField, FULL_ROUNDS>,
     curve: &str,
-    n_polys: usize,
+    n_chunks: &[usize],
     n_points: usize,
-    n_chunks: usize,
     seed: u8,
     out_path: &str,
 ) where
@@ -304,13 +304,11 @@ fn dump_chunked_batch_fixture<P: SWCurveConfig>(
     type Sp<P> = DefaultFqSponge<P, SC, FULL_ROUNDS>;
     let rng = &mut ChaCha20Rng::from_seed([seed; 32]);
 
-    // Polynomials of degree < n_chunks * N, committed as n_chunks-chunk PolyComms.
-    let coeffs_all: Vec<Vec<P::ScalarField>> = (0..n_polys)
-        .map(|_| {
-            (0..n_chunks * N)
-                .map(|_| P::ScalarField::rand(rng))
-                .collect()
-        })
+    // Polynomial i of degree < n_chunks[i] * N, committed as an n_chunks[i]-chunk
+    // PolyComm.
+    let coeffs_all: Vec<Vec<P::ScalarField>> = n_chunks
+        .iter()
+        .map(|&nc| (0..nc * N).map(|_| P::ScalarField::rand(rng)).collect())
         .collect();
     let polys_dense: Vec<DensePolynomial<P::ScalarField>> = coeffs_all
         .iter()
@@ -318,10 +316,11 @@ fn dump_chunked_batch_fixture<P: SWCurveConfig>(
         .collect();
     let comms: Vec<_> = polys_dense
         .iter()
-        .map(|p| srs.commit(p, n_chunks, rng))
+        .zip(n_chunks.iter())
+        .map(|(p, &nc)| srs.commit(p, nc, rng))
         .collect();
-    for c in &comms {
-        assert_eq!(c.commitment.chunks.len(), n_chunks);
+    for (c, &nc) in comms.iter().zip(n_chunks.iter()) {
+        assert_eq!(c.commitment.chunks.len(), nc);
     }
     let xs: Vec<P::ScalarField> = (0..n_points).map(|_| P::ScalarField::rand(rng)).collect();
 
@@ -329,10 +328,11 @@ fn dump_chunked_batch_fixture<P: SWCurveConfig>(
     // combined_inner_product consumes (point rows, segment columns).
     let chunk_evals: Vec<Vec<Vec<P::ScalarField>>> = coeffs_all
         .iter()
-        .map(|cs| {
+        .zip(n_chunks.iter())
+        .map(|(cs, &nc)| {
             xs.iter()
                 .map(|x| {
-                    (0..n_chunks)
+                    (0..nc)
                         .map(|i| {
                             DensePolynomial::from_coefficients_slice(&cs[i * N..(i + 1) * N])
                                 .evaluate(x)
@@ -448,8 +448,9 @@ fn dump_chunked_batch_fixture<P: SWCurveConfig>(
 
     std::fs::write(out_path, serde_json::to_string_pretty(&fixture).unwrap()).unwrap();
     println!(
-        "{curve} chunked batch, {n_polys} poly(s) x {n_points} point(s) x {n_chunks} \
-chunk(s): production verify accepts; wrote {out_path}"
+        "{curve} chunked batch, {} poly(s) x {n_points} point(s), chunks {n_chunks:?}: \
+production verify accepts; wrote {out_path}",
+        n_chunks.len()
     );
 }
 
@@ -487,25 +488,29 @@ fn main() {
             &format!("{out_dir}/ipa_{name}_pallas.json"),
         );
     }
-    // mechanism (b): multi-chunk PolyComms through the batch path, multi-point
-    dump_chunked_batch_fixture::<VestaParameters>(
-        &srs_vesta,
-        fq,
-        "vesta",
-        2,
-        2,
-        2,
-        64,
-        &format!("{out_dir}/ipa_chunked_batch_vesta.json"),
-    );
-    dump_chunked_batch_fixture::<PallasParameters>(
-        &srs_pallas,
-        fp,
-        "pallas",
-        2,
-        2,
-        2,
-        65,
-        &format!("{out_dir}/ipa_chunked_batch_pallas.json"),
-    );
+    // mechanism (b): multi-chunk PolyComms through the batch path, multi-point —
+    // uniform chunk counts, then ragged (the prefix-sum segment offsets)
+    for (name, ncs, sv, sp) in [
+        ("chunked_batch", &[2usize, 2][..], 64, 65),
+        ("chunked_ragged", &[1usize, 3][..], 66, 67),
+    ] {
+        dump_chunked_batch_fixture::<VestaParameters>(
+            &srs_vesta,
+            fq,
+            "vesta",
+            ncs,
+            2,
+            sv,
+            &format!("{out_dir}/ipa_{name}_vesta.json"),
+        );
+        dump_chunked_batch_fixture::<PallasParameters>(
+            &srs_pallas,
+            fp,
+            "pallas",
+            ncs,
+            2,
+            sp,
+            &format!("{out_dir}/ipa_{name}_pallas.json"),
+        );
+    }
 }
