@@ -1,86 +1,51 @@
-import Kimchi.Verifier.Ipa
-import Kimchi.Fixture.Parse
-import Lean.Data.Json
+import Kimchi.Fixture.Ipa
 
-/-!
-# End-to-end IPA verification of kimchi/proof-systems fixtures
+/-! End-to-end IPA compatibility over the unified chunked schema
+(`fixtures/ipa_{opening,batch,chunked2,chunked3}_{vesta,pallas}.json`): for every
+fixture, the chunk layer's recombination formulas must reproduce the production
+combination — the `y = x^(2^k)`-power MSM of the chunk points against the production
+`chunk_commitment`, the `y`-power fold of the chunk evaluations against the combined
+value (both identities at one chunk) — and the executable verifier must accept the
+combined claim and reject a corrupted one. -/
 
-Runs the executable IPA verifier (`Kimchi.Verifier.Ipa`) on fixtures produced by the
-production prover (`tools/fixture-dump`), over both Pasta curves. The parser reads exactly
-the wire data — the SRS (into the library's `Kimchi.Commitment.IPA.SRS`), commitments,
-evaluation points and claimed evaluations, combination scalars, opening proof — and every
-point carries its on-curve proof from parsing; all Fiat-Shamir derivation happens inside
-`verify`. A corrupted claimed evaluation must be rejected.
+open Lean Kimchi.Fixture.Ipa Kimchi.Verifier
 
-Run (after `lake build Kimchi`): `scripts/check_ipa_fixture.sh`.
--/
-
-open Lean Kimchi.Fixture Kimchi.Commitment.IPA Kimchi.Verifier
-
-def parsePt (C : Ipa.CommitmentCurve) : Json → Except String C.Point :=
-  parseSWPoint (parseZMod (n := C.base)) C.E
-
-/-- The fixture's `srs_g`/`srs_h` as a library SRS. The abstract randomisation base `U` is
-transcript-derived by the verifier and never read; it is filled with `0`. -/
-def parseSRS (C : Ipa.CommitmentCurve) (j : Json) : Except String (SRS C.Point) := do
-  let g ← parseArrOf (parsePt C) (← j.getObjVal? "srs_g")
-  let k ← (← j.getObjVal? "k").getNat?
-  if h : g.size = 2 ^ k then
-    return { k := k
-             g := fun i => g[i.val]'(by have := i.isLt; omega)
-             h := ← parsePt C (← j.getObjVal? "srs_h")
-             U := 0 }
-  else throw s!"srs_g size {g.size} ≠ 2 ^ {k}"
-
-def parseInput (C : Ipa.CommitmentCurve) (curveName : String) (j : Json) :
-    Except String (Ipa.Input C) := do
-  let parseS : Json → Except String C.ScalarField := parseZMod
-  let fld (k : String) : Except String Json := j.getObjVal? k
-  let curve ← (← fld "curve").getStr?
-  unless curve = curveName do throw s!"unexpected curve: {curve}"
-  return { commitments := ← parseArrOf (parsePt C) (← fld "commitments")
-           xs := ← parseArrOf parseS (← fld "xs")
-           evals := ← parseArrOf (parseArrOf parseS) (← fld "evals")
-           polyscale := ← parseS (← fld "polyscale")
-           evalscale := ← parseS (← fld "evalscale")
-           proof := { lr := ← parseArrOf (parsePair (parsePt C)) (← fld "lr")
-                      delta := ← parsePt C (← fld "delta")
-                      z1 := ← parseS (← fld "z1")
-                      z2 := ← parseS (← fld "z2")
-                      sg := ← parsePt C (← fld "sg") } }
-
-/-- Verify one fixture end-to-end; when `negative` is set, also check that corrupting the
-first claimed evaluation flips the verdict to REJECT. -/
-def checkFixture (C : Ipa.CommitmentCurve) (curveName : String) (path : String)
-    (negative : Bool) : IO Bool := do
+def checkFixture (C : Ipa.CommitmentCurve) (curveName : String) (path : String) :
+    IO Bool := do
   let raw ← IO.FS.readFile path
-  let (σ, inp) ← match Json.parse raw >>= fun j => do
-      return (← parseSRS C j, ← parseInput C curveName j) with
+  let (σ, fx) ← match Json.parse raw >>= fun j => do
+      return (← parseSRS C j, ← parseRaw C curveName j) with
     | .ok v => pure v
     | .error e => throw (IO.userError s!"{path}: fixture parse error: {e}")
+  let nc := (fx.chunkComms.getD 0 #[]).size
+  -- recombination against production, per polynomial (per point for the evals)
+  let y := fx.xs.getD 0 0 ^ (2 ^ σ.k)
+  let hComm := decide (∀ i < fx.chunkComms.size,
+    recombinePoint C y (fx.chunkComms.getD i #[]) = fx.combinedComms.getD i 0)
+  let hEval := decide (∀ i < fx.chunkEvals.size, ∀ j < fx.xs.size,
+    recombineScalar C (fx.xs.getD j 0 ^ (2 ^ σ.k))
+        ((fx.chunkEvals.getD i #[]).getD j #[])
+      = (fx.evals.getD i #[]).getD j 0)
+  let inp := fx.toInput
   let ok := Ipa.verify C σ inp
-  IO.println s!"{path}: {inp.commitments.size} poly(s) × {inp.xs.size} point(s), \
-    {σ.k} rounds — verify: {if ok then "ACCEPT" else "REJECT"}"
-  if negative then
-    let bad := { inp with evals := inp.evals.modify 0 (·.modify 0 (· + 1)) }
-    let rejected := !Ipa.verify C σ bad
-    IO.println s!"{path}: corrupted evaluation — \
-      {if rejected then "REJECT (expected)" else "ACCEPT (BUG)"}"
-    return ok && rejected
-  return ok
+  let bad := { inp with evals := inp.evals.modify 0 (·.modify 0 (· + 1)) }
+  let rejected := !Ipa.verify C σ bad
+  IO.println s!"{path}: {fx.chunkComms.size} poly(s) × {fx.xs.size} point(s) × \
+    {nc} chunk(s) — recombine comm: {if hComm then "✓" else "✗"}, \
+    recombine eval: {if hEval then "✓" else "✗"}, \
+    verify: {if ok then "ACCEPT" else "REJECT"}, \
+    corrupted: {if rejected then "REJECT (expected)" else "ACCEPT (BUG)"}"
+  return hComm && hEval && ok && rejected
 
 def main : IO Unit := do
-  let okV1 ← checkFixture IpaVesta.curve "vesta" "fixtures/ipa_opening_vesta.json"
-    (negative := true)
-  let okV2 ← checkFixture IpaVesta.curve "vesta" "fixtures/ipa_batch_vesta.json"
-    (negative := false)
-  let okP1 ← checkFixture IpaPallas.curve "pallas" "fixtures/ipa_opening_pallas.json"
-    (negative := true)
-  let okP2 ← checkFixture IpaPallas.curve "pallas" "fixtures/ipa_batch_pallas.json"
-    (negative := false)
-  unless okV1 && okV2 && okP1 && okP2 do
-    throw (IO.userError "IPA end-to-end verification FAILED")
-  IO.println "✓ the executable verifiers over both Pasta curves accept the \
-    kimchi/proof-systems proofs from wire data"
+  let mut allOk := true
+  for name in ["opening", "batch", "chunked2", "chunked3"] do
+    allOk := allOk
+      && (← checkFixture IpaVesta.curve "vesta" s!"fixtures/ipa_{name}_vesta.json")
+    allOk := allOk
+      && (← checkFixture IpaPallas.curve "pallas" s!"fixtures/ipa_{name}_pallas.json")
+  unless allOk do throw (IO.userError "IPA fixture check FAILED")
+  IO.println "✓ recombination matches production and the verifier accepts, \
+    1–3 chunks, both curves"
 
 #eval main

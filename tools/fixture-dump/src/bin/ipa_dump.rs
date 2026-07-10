@@ -18,7 +18,7 @@
 
 use ark_ec::short_weierstrass::{Affine, SWCurveConfig};
 use ark_ec::AffineRepr;
-use ark_ff::{PrimeField, UniformRand};
+use ark_ff::{Field, PrimeField, UniformRand};
 use ark_poly::{
     univariate::DensePolynomial, DenseUVPolynomial, Polynomial, Radix2EvaluationDomain,
 };
@@ -53,8 +53,14 @@ where
     json!([fe(&g.x), fe(&g.y)])
 }
 
-/// Produce one fixture: `n_polys` random degree-<4 polynomials opened at `n_points` random
-/// points, with hiding commitments and random polyscale/evalscale.
+/// Produce one fixture: `n_polys` random polynomials of degree `< n_chunks * N`, each
+/// committed in `n_chunks` chunks, opened at `n_points` random points. Chunking is the
+/// general case — `n_chunks = 1` is the one-element instance of the same schema. For
+/// `n_chunks > 1` the fixture follows the verifier's combine-then-open order
+/// (mechanism (a)): the chunk commitments are combined with `y = x^N` by the production
+/// `chunk_commitment`, and the combined polynomial is opened — which is anchored to THE
+/// evaluation point, so chunked fixtures are single-point (multi-point chunked batches
+/// are the polyscale folding, a separate mechanism).
 #[allow(clippy::too_many_arguments)]
 fn dump_fixture<P: SWCurveConfig>(
     srs: &SRS<Affine<P>>,
@@ -62,6 +68,7 @@ fn dump_fixture<P: SWCurveConfig>(
     curve: &str,
     n_polys: usize,
     n_points: usize,
+    n_chunks: usize,
     seed: u8,
     out_path: &str,
 ) where
@@ -72,46 +79,119 @@ fn dump_fixture<P: SWCurveConfig>(
         + AffineRepr<ScalarField = P::ScalarField, BaseField = P::BaseField>,
     <P::BaseField as PrimeField>::BigInt: Into<<P::ScalarField as PrimeField>::BigInt>,
 {
+    assert!(
+        n_chunks == 1 || n_points == 1,
+        "chunked fixtures are single-point (combine-then-open is anchored to the point)"
+    );
     type Sp<P> = DefaultFqSponge<P, SC, FULL_ROUNDS>;
     let rng = &mut ChaCha20Rng::from_seed([seed; 32]);
 
-    // Polynomials, hiding commitments (one chunk each), evaluation points, eval matrix.
-    let polys_dense: Vec<DensePolynomial<P::ScalarField>> = (0..n_polys)
-        .map(|_| {
-            let coeffs: Vec<P::ScalarField> = (0..N).map(|_| P::ScalarField::rand(rng)).collect();
-            DensePolynomial::from_coefficients_slice(&coeffs)
-        })
+    // Polynomials of degree < n_chunks * N, committed in n_chunks chunks.
+    let coeffs_all: Vec<Vec<P::ScalarField>> = (0..n_polys)
+        .map(|_| (0..n_chunks * N).map(|_| P::ScalarField::rand(rng)).collect())
         .collect();
-    let comms: Vec<_> = polys_dense.iter().map(|p| srs.commit(p, 1, rng)).collect();
+    let polys_dense: Vec<DensePolynomial<P::ScalarField>> = coeffs_all
+        .iter()
+        .map(|cs| DensePolynomial::from_coefficients_slice(cs))
+        .collect();
+    let comms: Vec<_> = polys_dense
+        .iter()
+        .map(|p| srs.commit(p, n_chunks, rng))
+        .collect();
     for c in &comms {
-        assert_eq!(c.commitment.chunks.len(), 1);
+        assert_eq!(c.commitment.chunks.len(), n_chunks);
     }
     let xs: Vec<P::ScalarField> = (0..n_points).map(|_| P::ScalarField::rand(rng)).collect();
-    // es[i][j] = [ f_i(x_j) ]  (one chunk)
-    let es: Vec<Vec<Vec<P::ScalarField>>> = polys_dense
+    let y = xs[0].pow([N as u64]); // x^(srs size); irrelevant at n_chunks = 1
+
+    // Per-poly: production combined commitment, combined blinder, combined polynomial
+    // (all identities at n_chunks = 1).
+    let combined: Vec<_> = comms
         .iter()
-        .map(|p| xs.iter().map(|x| vec![p.evaluate(x)]).collect())
+        .map(|c| c.commitment.chunk_commitment(y))
+        .collect();
+    let r_combs: Vec<P::ScalarField> = comms
+        .iter()
+        .map(|c| {
+            let mut r = P::ScalarField::from(0u64);
+            for b in c.blinders.chunks.iter().rev() {
+                r = r * y + b;
+            }
+            r
+        })
+        .collect();
+    let p_combs: Vec<DensePolynomial<P::ScalarField>> = coeffs_all
+        .iter()
+        .map(|cs| {
+            DensePolynomial::from_coefficients_vec(
+                (0..N)
+                    .map(|j| {
+                        let mut a = P::ScalarField::from(0u64);
+                        for i in (0..n_chunks).rev() {
+                            a = a * y + cs[i * N + j];
+                        }
+                        a
+                    })
+                    .collect(),
+            )
+        })
         .collect();
 
+    // Chunk evaluations chunk_i(x_j) per poly per point, and the combined values;
+    // rust-side adjudication of the eval recombination per point.
+    let chunk_evals: Vec<Vec<Vec<P::ScalarField>>> = coeffs_all
+        .iter()
+        .map(|cs| {
+            xs.iter()
+                .map(|x| {
+                    (0..n_chunks)
+                        .map(|i| {
+                            DensePolynomial::from_coefficients_slice(&cs[i * N..(i + 1) * N])
+                                .evaluate(x)
+                        })
+                        .collect()
+                })
+                .collect()
+        })
+        .collect();
+    let vs: Vec<Vec<P::ScalarField>> = p_combs
+        .iter()
+        .map(|p| xs.iter().map(|x| p.evaluate(x)).collect())
+        .collect();
+    for (i, per_point) in chunk_evals.iter().enumerate() {
+        for (j, ch) in per_point.iter().enumerate() {
+            let yj = xs[j].pow([N as u64]);
+            let mut acc = P::ScalarField::from(0u64);
+            for e in ch.iter().rev() {
+                acc = acc * yj + e;
+            }
+            // at n_chunks > 1 we have n_points = 1, so yj = y and this is the
+            // combined value; at n_chunks = 1 it is trivially the value itself
+            assert_eq!(acc, vs[i][j], "eval recombination mismatch");
+        }
+    }
+
+    // Open the combined polynomials, verified by production code.
     let polyscale = P::ScalarField::rand(rng);
     let evalscale = P::ScalarField::rand(rng);
+    let es: Vec<Vec<Vec<P::ScalarField>>> = vs
+        .iter()
+        .map(|per_point| per_point.iter().map(|v| vec![*v]).collect())
+        .collect();
     let cip = combined_inner_product(&polyscale, &evalscale, &es);
-
-    // Produce the opening proof with the production prover.
     let group_map = <Affine<P> as CommitmentCurve>::Map::setup();
     let sponge = Sp::<P>::new(params);
+    let blinders: Vec<_> = r_combs
+        .iter()
+        .map(|r| poly_commitment::commitment::PolyComm { chunks: vec![*r] })
+        .collect();
     let to_open: Vec<(
         DensePolynomialOrEvaluations<P::ScalarField, Radix2EvaluationDomain<P::ScalarField>>,
         _,
-    )> = polys_dense
+    )> = p_combs
         .iter()
-        .zip(comms.iter())
-        .map(|(p, c)| {
-            (
-                DensePolynomialOrEvaluations::DensePolynomial(p),
-                c.blinders.clone(),
-            )
-        })
+        .zip(blinders.iter())
+        .map(|(p, b)| (DensePolynomialOrEvaluations::DensePolynomial(p), b.clone()))
         .collect();
     let opening = srs.open(
         &group_map,
@@ -123,14 +203,12 @@ fn dump_fixture<P: SWCurveConfig>(
         rng,
     );
     assert_eq!(opening.lr.len(), K);
-
-    // The batched `SRS::verify` accepts the proof.
     {
-        let evaluations: Vec<_> = comms
+        let evaluations: Vec<_> = combined
             .iter()
             .zip(es.iter())
             .map(|(cm, evals)| Evaluation {
-                commitment: cm.commitment.clone(),
+                commitment: cm.clone(),
                 evaluations: evals.clone(),
             })
             .collect();
@@ -152,12 +230,25 @@ fn dump_fixture<P: SWCurveConfig>(
     let fixture = json!({
         "curve": curve,
         "k": K,
+        "num_chunks": n_chunks,
         "srs_g": srs.g.iter().map(pt).collect::<Vec<_>>(),
         "srs_h": pt(&srs.h),
-        "commitments": comms.iter().map(|c| pt(&c.commitment.chunks[0])).collect::<Vec<_>>(),
+        // per poly: the chunk points (the wire object) and the production combination
+        "commitments": comms.iter()
+            .map(|c| c.commitment.chunks.iter().map(pt).collect::<Vec<_>>())
+            .collect::<Vec<_>>(),
+        "combined_commitments": combined.iter()
+            .map(|c| pt(&c.chunks[0]))
+            .collect::<Vec<_>>(),
         "xs": xs.iter().map(fe).collect::<Vec<_>>(),
-        "evals": es.iter()
-            .map(|per_point| per_point.iter().map(|ch| fe(&ch[0])).collect::<Vec<_>>())
+        // per poly per point: the chunk evaluations and the combined value
+        "chunk_evals": chunk_evals.iter()
+            .map(|pp| pp.iter()
+                .map(|ch| ch.iter().map(fe).collect::<Vec<_>>())
+                .collect::<Vec<_>>())
+            .collect::<Vec<_>>(),
+        "evals": vs.iter()
+            .map(|per_point| per_point.iter().map(fe).collect::<Vec<_>>())
             .collect::<Vec<_>>(),
         "polyscale": fe(&polyscale),
         "evalscale": fe(&evalscale),
@@ -170,7 +261,8 @@ fn dump_fixture<P: SWCurveConfig>(
 
     std::fs::write(out_path, serde_json::to_string_pretty(&fixture).unwrap()).unwrap();
     println!(
-        "{curve} {n_polys} poly(s) x {n_points} point(s): production verify accepts; wrote {out_path}"
+        "{curve} {n_polys} poly(s) x {n_points} point(s) x {n_chunks} chunk(s): \
+production verify accepts; wrote {out_path}"
     );
 }
 
@@ -178,42 +270,22 @@ fn main() {
     let out_dir = std::env::args().nth(1).unwrap_or_else(|| ".".to_string());
     let srs_vesta = SRS::<Vesta>::create(N);
     let fq = mina_poseidon::pasta::fq_kimchi::static_params();
-    dump_fixture::<VestaParameters>(
-        &srs_vesta,
-        fq,
-        "vesta",
-        1,
-        1,
-        42,
-        &format!("{out_dir}/ipa_opening_vesta.json"),
-    );
-    dump_fixture::<VestaParameters>(
-        &srs_vesta,
-        fq,
-        "vesta",
-        2,
-        2,
-        43,
-        &format!("{out_dir}/ipa_batch_vesta.json"),
-    );
     let srs_pallas = SRS::<Pallas>::create(N);
     let fp = mina_poseidon::pasta::fp_kimchi::static_params();
-    dump_fixture::<PallasParameters>(
-        &srs_pallas,
-        fp,
-        "pallas",
-        1,
-        1,
-        50,
-        &format!("{out_dir}/ipa_opening_pallas.json"),
-    );
-    dump_fixture::<PallasParameters>(
-        &srs_pallas,
-        fp,
-        "pallas",
-        2,
-        2,
-        51,
-        &format!("{out_dir}/ipa_batch_pallas.json"),
-    );
+    // breadth over (n_polys, n_points, n_chunks): 1x1x1, 2x2x1, 1x1x2, 1x1x3
+    for (name, np, nx, nc, sv, sp) in [
+        ("opening", 1, 1, 1, 42, 50),
+        ("batch", 2, 2, 1, 43, 51),
+        ("chunked2", 1, 1, 2, 60, 61),
+        ("chunked3", 1, 1, 3, 62, 63),
+    ] {
+        dump_fixture::<VestaParameters>(
+            &srs_vesta, fq, "vesta", np, nx, nc, sv,
+            &format!("{out_dir}/ipa_{name}_vesta.json"),
+        );
+        dump_fixture::<PallasParameters>(
+            &srs_pallas, fp, "pallas", np, nx, nc, sp,
+            &format!("{out_dir}/ipa_{name}_pallas.json"),
+        );
+    }
 }

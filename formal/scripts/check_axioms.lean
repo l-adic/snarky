@@ -86,6 +86,7 @@ def roots : List Name :=
     `Kimchi.Quotient.multiset_eq_of_pairFactor_prod_eq,
     `Kimchi.Quotient.identity_of_grid_evals,
     `Kimchi.Quotient.multiset_eq_of_grid_prod_evals,
+    `Kimchi.Commitment.IPA.chunked_ipa_soundness,
     `Kimchi.Verifier.verify_reflects, `Kimchi.Verifier.ipaVesta_sound,
     `Kimchi.Verifier.ipaPallas_sound ]
 

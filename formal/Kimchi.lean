@@ -14,6 +14,7 @@ import Kimchi.Circuit.VarBaseMul
 import Kimchi.Circuit.EndoScalar
 import Kimchi.Circuit.EndoMul
 import Kimchi.Commitment.IPA.Soundness
+import Kimchi.Commitment.IPA.Chunk
 import Kimchi.Commitment.IPA.Soundness.Batch
 import Kimchi.Quotient.Generic
 import Kimchi.Quotient.EndoScalar
@@ -28,6 +29,7 @@ import Kimchi.Quotient.Wiring
 import Kimchi.Quotient.Permutation
 import Kimchi.Quotient.GrandProduct
 import Kimchi.Quotient.Soundness
+import Kimchi.Fixture.Ipa
 import Kimchi.Fixture.PS
 import Kimchi.Fixture.Parse
 import Kimchi.Fixture.Trace
