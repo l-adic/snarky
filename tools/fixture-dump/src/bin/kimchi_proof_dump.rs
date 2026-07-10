@@ -109,8 +109,9 @@ fn main() {
         "digest": fe(&digest),
         "srs_g": verifier_index.srs().g.iter().map(pt).collect::<Vec<_>>(),
         "srs_h": pt(&verifier_index.srs().h),
-        "lagrange_basis": lgr.iter().take(verifier_index.public)
-            .map(comm1).collect::<Vec<_>>(),
+        // the FULL basis (not just the public prefix): the VK-correspondence check
+        // MSMs every committed column's values against it
+        "lagrange_basis": lgr.iter().map(comm1).collect::<Vec<_>>(),
         "sigma_comm": verifier_index.sigma_comm.iter().map(comm1).collect::<Vec<_>>(),
         "coefficients_comm": verifier_index.coefficients_comm.iter()
             .map(comm1).collect::<Vec<_>>(),
