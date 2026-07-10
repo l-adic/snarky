@@ -9,7 +9,13 @@ from `tools/fixture-dump`'s `linearization_dump`): the closed-form linearization
 combined evaluations, the production values of the permutation vanishing evaluation,
 `perm_scalars`, the token-evaluated `linearization.constant_term`, and `ft_eval0`. This
 is where the expression framework's compiled token stream is adjudicated by value — it
-never appears in a Lean statement. -/
+never appears in a Lean statement.
+
+The final check instantiates the point-bridge (`verifierEquation_iff`) numerically:
+`permScalar·σ₆(ζ) − ft_eval0` (production values; `σ₆(ζ)` is the one column the proof
+never evaluates, interpolated by the dumper) must equal the closed-form aggregate
+`Σ αᵏ·memberₖ(ζ)` — the quotient evaluation `t(ζ)` cancels between the two sides, so
+the identity is checkable without prover internals. -/
 
 open Lean Kimchi.Fixture Kimchi.Verifier Kimchi.Verifier.Linearization
 
@@ -73,6 +79,7 @@ def main : IO Unit := do
         emulSelector := emulPE.1, endoScalarSelector := endoselPE.1 }
     let shifts : Fin 7 → F := fun i => shiftsArr.getD i 0
     let pubEval := (pubArr.getD 0 #[]).getD 0 0
+    let sigma6Z ← parseF (← fld "sigma6_zeta")
     let gc ← fld "gate_combined"
     let gateTarget (k : String) : Except String F := do parseF (← gc.getObjVal? k)
     let gEnv := evalEnv e
@@ -102,16 +109,34 @@ def main : IO Unit := do
     let hPerm := decide (permScalar β γ α zkpmZ e = permTarget)
     let hConst := decide (gateLinearization endo α e = constTarget)
     let hFt := decide (ftEval0 n zkRows ω shifts endo α β γ ζ pubEval e = ftEval0Target)
+    -- The assembled acceptance identity — the point-bridge (`verifierEquation_iff`)
+    -- instantiated numerically on the real proof. The quotient evaluation t(ζ) cancels:
+    -- permScalar·σ₆(ζ) − ft_eval0 must equal the aggregate Σ αᵏ·memberₖ(ζ), the left
+    -- side from production values (σ₆(ζ) interpolated by the dumper — the one column
+    -- the proof never evaluates), the right from the closed-form members.
+    let hAgg :=
+      let wF : Fin 7 → F := fun i => e.w ⟨(i : ℕ), by omega⟩
+      let sigmas : Fin 7 → F := fun i =>
+        if h : (i : ℕ) < 6 then e.s ⟨(i : ℕ), h⟩ else sigma6Z
+      let m0 := zkpmZ * (e.z * (∏ i : Fin 7, (wF i + γ + β * shifts i * ζ))
+        - e.zOmega * (∏ i : Fin 7, (wF i + γ + β * sigmas i)))
+      let m1 := (e.z - 1) * ((ζ ^ n - 1) / (ζ - 1))
+      let m2 := (e.z - 1) * ((ζ ^ n - 1) / (ζ - ω ^ (n - zkRows)))
+      let rhs := gateLinearization endo α e + pubEval
+        + α ^ 21 * m0 + α ^ 22 * m1 + α ^ 23 * m2
+      decide (permScalar β γ α zkpmZ e * sigma6Z - ftEval0Target = rhs)
     dbgTrace s!"{path}: zkpm: {if hZkpm then "✓" else "✗"}, \
       perm scalar: {if hPerm then "✓" else "✗"}, \
       gates [{gateReport}], \
       constant term: {if hConst then "✓" else "✗"}, \
-      ft_eval0: {if hFt then "✓" else "✗"}" fun _ =>
-    pure (hZkpm && hPerm && hGates && hConst && hFt)
+      ft_eval0: {if hFt then "✓" else "✗"}, \
+      assembled equation: {if hAgg then "✓" else "✗"}" fun _ =>
+    pure (hZkpm && hPerm && hGates && hConst && hFt && hAgg)
   match r with
   | .error e => throw (IO.userError s!"{path}: {e}")
   | .ok false => throw (IO.userError "linearization check FAILED")
   | .ok true => IO.println "✓ the closed-form linearization matches the production \
-      scalar side (zkpm, perm_scalars, constant term, ft_eval0)"
+      scalar side (zkpm, perm_scalars, constant term, ft_eval0) and the assembled \
+      acceptance identity holds (the verifierEquation_iff instance, numerically)"
 
 #eval main
