@@ -32,6 +32,7 @@ import Kimchi.Quotient.Permutation
 import Kimchi.Quotient.GrandProduct
 import Kimchi.Quotient.Soundness
 import Kimchi.Fixture.Ipa
+import Kimchi.Fixture.Kimchi
 import Kimchi.Fixture.PS
 import Kimchi.Fixture.Parse
 import Kimchi.Fixture.Trace
@@ -40,5 +41,6 @@ import Kimchi.Sponge.FqSponge
 import Kimchi.Sponge.GroupMap
 import Kimchi.Verifier.Ipa
 import Kimchi.Verifier.Linearization
+import Kimchi.Verifier.Kimchi
 import Kimchi.Verifier.Equation
 import Kimchi.Verifier.Reflection

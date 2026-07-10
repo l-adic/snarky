@@ -152,3 +152,38 @@ pub fn mixed_circuit(rng: &mut ChaCha20Rng) -> (Vec<CircuitGate<Fp>>, [Vec<Fp>; 
 
     (gates, witness, pub0)
 }
+
+/// The mixed-gate prover index over a DOMAIN-SIZED SRS (rather than the 2^16
+/// precomputed test SRS): the Lean executable verifier's IPA check does an SRS-sized
+/// MSM per run and the kimchi-proof fixture carries the full generator vector, so
+/// both stay CI-sized. Shared by `linearization_dump` and `kimchi_proof_dump` so the
+/// two fixtures describe the same proof (same seed, same SRS).
+pub fn mixed_index(
+    gates: Vec<kimchi::circuits::gate::CircuitGate<Fp>>,
+) -> kimchi::prover_index::ProverIndex<
+    { mina_poseidon::pasta::FULL_ROUNDS },
+    Vesta,
+    poly_commitment::ipa::SRS<Vesta>,
+> {
+    use poly_commitment::SRS as _;
+    kimchi::prover_index::testing::new_index_for_test_with_lookups_and_custom_srs::<
+        { mina_poseidon::pasta::FULL_ROUNDS },
+        Vesta,
+        _,
+        _,
+    >(
+        gates,
+        1,
+        0,
+        vec![],
+        None,
+        false,
+        None,
+        |d1, size| {
+            let srs = poly_commitment::ipa::SRS::<Vesta>::create(size);
+            srs.get_lagrange_basis(d1);
+            srs
+        },
+        false,
+    )
+}
