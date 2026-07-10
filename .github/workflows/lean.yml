@@ -114,3 +114,12 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         scripts/check_linearization.sh
 
+    # The composed executable kimchi verifier (both sponge schedules, the scalar side,
+    # the to_batch assembly, the warm-started IPA check) must accept a complete
+    # production wire proof and reject corruptions (fixtures/kimchi_proof_vesta.json,
+    # from tools/fixture-dump's kimchi_proof_dump).
+    - name: Check the executable kimchi verifier against a production proof
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        scripts/check_kimchi_verifier.sh
+

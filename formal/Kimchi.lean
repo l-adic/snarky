@@ -40,5 +40,6 @@ import Kimchi.Sponge.FqSponge
 import Kimchi.Sponge.GroupMap
 import Kimchi.Verifier.Ipa
 import Kimchi.Verifier.Linearization
+import Kimchi.Verifier.Kimchi
 import Kimchi.Verifier.Equation
 import Kimchi.Verifier.Reflection
