@@ -28,3 +28,7 @@ path = "src/bin/perm_dump.rs"
 [[bin]]
 name = "index_dump"
 path = "src/bin/index_dump.rs"
+
+[[bin]]
+name = "linearization_dump"
+path = "src/bin/linearization_dump.rs"
