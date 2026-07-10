@@ -23,7 +23,7 @@
 
 use ark_ff::Zero;
 use ark_poly::{EvaluationDomain, Polynomial};
-use fixture_dump::mixed_circuit;
+use fixture_dump::{mixed_circuit, mixed_index};
 use groupmap::GroupMap;
 use kimchi::{
     circuits::{
@@ -39,7 +39,6 @@ use kimchi::{
     },
     curve::KimchiCurve,
     proof::ProverProof,
-    prover_index::testing::new_index_for_test,
     verifier::verify,
     verifier_index::VerifierIndex,
 };
@@ -77,7 +76,7 @@ fn main() {
 
     // A production proof over the shared mixed-gate circuit.
     let (gates, witness, pub0) = mixed_circuit(rng);
-    let index = new_index_for_test::<FULL_ROUNDS, Vesta>(gates, 1);
+    let index = mixed_index(gates);
     index
         .verify(&witness, &[pub0])
         .expect("kimchi row checker rejected the witness");

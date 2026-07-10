@@ -32,3 +32,7 @@ path = "src/bin/index_dump.rs"
 [[bin]]
 name = "linearization_dump"
 path = "src/bin/linearization_dump.rs"
+
+[[bin]]
+name = "kimchi_proof_dump"
+path = "src/bin/kimchi_proof_dump.rs"
