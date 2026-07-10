@@ -38,4 +38,5 @@ import Kimchi.Sponge.Poseidon
 import Kimchi.Sponge.FqSponge
 import Kimchi.Sponge.GroupMap
 import Kimchi.Verifier.Ipa
+import Kimchi.Verifier.Linearization
 import Kimchi.Verifier.Reflection

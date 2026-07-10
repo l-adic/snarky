@@ -105,3 +105,12 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         scripts/check_index_fixture.sh
 
+    # The closed-form verifier linearization (perm_scalars, the gate constant term,
+    # ft_eval0) must reproduce, by value, the production scalar side of a real proof —
+    # including the token-evaluated constant term (fixtures/linearization_vesta.json,
+    # from tools/fixture-dump's linearization_dump).
+    - name: Check the verifier linearization against the production scalar side
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        scripts/check_linearization.sh
+

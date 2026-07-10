@@ -61,6 +61,12 @@ Two binaries, both deterministic (seeded ChaCha20), both writing into `formal/`:
 |---|---|---|
 | `fixtures/index_vesta.json` | a mixed-gate circuit (public, generic, Poseidon, CompleteAdd, EndoMulScalar; wired) — the padded gate table, domain/permutation constants, witness, and the production derived columns (kimchi's row checker and prove+verify asserted) | `scripts/check_index_fixture.sh` |
 
+`linearization_dump`:
+
+| artifact | contents | checked by |
+|---|---|---|
+| `fixtures/linearization_vesta.json` | the verifier's scalar side of a real proof over the same mixed-gate circuit — challenges, combined evaluations at ζ/ζω, and the production outputs (`ft_eval0`, `perm_scalars`, the token-evaluated constant term, per-gate combined constraints) | `scripts/check_linearization.sh` |
+
 `ipa_dump` is a thin wrapper over the production prover/verifier: proofs come from
 `SRS::commit`/`SRS::open`, the batched `SRS::verify` is asserted at dump time, and the
 harness is proof-systems' own `tests/ipa_commitment.rs::test_opening_proof`. Nothing

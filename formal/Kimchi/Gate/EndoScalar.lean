@@ -113,16 +113,18 @@ deriving Repr
 
 /-- The gate constraint expressions (11 at the deployed 8-crumb width: `3 + #crumbs`) — the
     single transcription: the three accumulator folds (`n := 4n+x`, `a := 2a + cPoly x`,
-    `b := 2b + dPoly x`) closing at `a8,b8,n8`, and the range polynomial per crumb. The
+    `b := 2b + dPoly x`) closing at `a8,b8,n8`, and the range polynomial per crumb. Oriented
+    as production writes them (`expected − actual`, `endomul_scalar.rs` `constraint_checks`)
+    so the α-weighted verifier linearization matches by value, not just by vanishing. The
     relational spec (`Holds`) and the checker (`ok`) are read from this list. Stated over an
     arbitrary commutative `F`-algebra `R` — `cPoly`/`dPoly` carry field-constant coefficients
     mapped in through `algebraMap F R`; at `R = F` this is the original field reading, and the
     `R`-generic form is what the quotient layer's `Argument` instance consumes. -/
 def constraints {R : Type u} [CommRing R] (w : Witness R) (F : Type u := R) [Field F]
     [Algebra F R] : List R :=
-  [ w.n8 - w.crumbs.foldl (fun acc x => 4 * acc + x) w.n0
-  , w.a8 - w.crumbs.foldl (fun acc x => 2 * acc + cPoly x (F := F)) w.a0
-  , w.b8 - w.crumbs.foldl (fun acc x => 2 * acc + dPoly x (F := F)) w.b0 ]
+  [ w.crumbs.foldl (fun acc x => 4 * acc + x) w.n0 - w.n8
+  , w.crumbs.foldl (fun acc x => 2 * acc + cPoly x (F := F)) w.a0 - w.a8
+  , w.crumbs.foldl (fun acc x => 2 * acc + dPoly x (F := F)) w.b0 - w.b8 ]
   ++ w.crumbs.map crumbPoly
 
 /-- Push a carrier map `f : R → S` through a witness, cell by cell (the six accumulator cells
@@ -228,6 +230,11 @@ theorem holds_iff (w : Witness F) :
         ∧ ∀ x ∈ w.crumbs, crumbPoly x = 0 := by
   simp only [Holds, constraints, List.cons_append, List.nil_append, List.forall_mem_cons,
     List.forall_mem_map, sub_eq_zero]
+  constructor
+  · rintro ⟨h1, h2, h3, h4⟩
+    exact ⟨h1.symm, h2.symm, h3.symm, h4⟩
+  · rintro ⟨h1, h2, h3, h4⟩
+    exact ⟨h1.symm, h2.symm, h3.symm, h4⟩
 
 /-- Build the canonical satisfying row from valid crumbs and the input accumulators: the three
     outputs are the accumulator folds, run on the given crumbs. -/
