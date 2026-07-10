@@ -14,8 +14,10 @@ evaluation time recombine with powers of `y = x^(2^k)` — one combined commitme
 combined claimed value, one IPA run.
 
 This file is the additive layer over the `nc = 1` argument: the chunk windows
-(`chunkCoeffs`/`chunkPoly`), the eval recombination (`eval_eq_sum_chunkPoly` — the
-reassembly `p = ∑ Xⁱ·²ᵏ · chunkᵢ` read at a point, kimchi's `combined_inner_product`
+(`chunkCoeffs`/`chunkPoly`), the assembly inverse (`assemblePoly` — the long polynomial
+with prescribed windows, the extractor's tool in `Soundness/ChunkedBatch.lean`), the
+eval recombination (`eval_eq_sum_chunkPoly` — the reassembly `p = ∑ Xⁱ·²ᵏ · chunkᵢ`
+read at a point, kimchi's `combined_inner_product`
 identity), the commitment recombination (`commit_combine` — kimchi's
 `chunk_commitment`, by linearity), and the headline `chunked_ipa_soundness`: under
 commitment binding, an accepting IPA run on the combined commitment of honestly
@@ -84,6 +86,63 @@ theorem eval_eq_sum_chunkPoly {n c : ℕ} (p : Polynomial F)
   refine Finset.sum_congr rfl fun j _ => ?_
   rw [eval_monomial, ← pow_mul, ← mul_assoc, mul_comm ((x ^ (n * i))) _, mul_assoc,
     ← pow_add, mul_comm n i]
+
+/-! ## Assembly
+
+The inverse of windowing: build the long polynomial with prescribed width-`n` chunk
+windows. This is the extractor's tool — chunked-batch soundness
+(`Soundness/ChunkedBatch.lean`) produces per-chunk witness vectors and assembles them
+into the one bound polynomial the commitment opens to. -/
+
+/-- The polynomial with chunk window `ci` equal to `as ci`, for `ci < c`
+(`chunkCoeffs_assemblePoly`). -/
+noncomputable def assemblePoly (n c : ℕ) (as : ℕ → Fin n → F) : Polynomial F :=
+  ∑ ci ∈ Finset.range c, ∑ j : Fin n, monomial (ci * n + (j : ℕ)) (as ci j)
+
+theorem assemblePoly_coeff {n c : ℕ} (as : ℕ → Fin n → F) {ci : ℕ} (hci : ci < c)
+    (j : Fin n) : (assemblePoly n c as).coeff (ci * n + (j : ℕ)) = as ci j := by
+  -- The windows are disjoint: `ci' * n + j' = ci * n + j` with `j', j < n` forces
+  -- `ci' = ci` (divide by `n`) and then `j' = j`.
+  have hdiv : ∀ (a b : ℕ), b < n → (a * n + b) / n = a := fun a b hb => by
+    rw [mul_comm, Nat.mul_add_div (by omega), Nat.div_eq_of_lt hb, add_zero]
+  unfold assemblePoly
+  simp only [finsetSum_coeff, coeff_monomial]
+  rw [Finset.sum_eq_single ci, Finset.sum_eq_single j]
+  · rw [if_pos rfl]
+  · intro j' _ hj'
+    rw [if_neg fun h => hj' (Fin.ext (by omega))]
+  · intro h
+    exact absurd (Finset.mem_univ j) h
+  · intro ci' _ hci'
+    refine Finset.sum_eq_zero fun j' _ => if_neg fun h => hci' ?_
+    have h' : ci' = (ci * n + (j : ℕ)) / n := by rw [← hdiv ci' j' j'.isLt, h]
+    rw [hdiv ci j j.isLt] at h'
+    exact h'
+  · intro h
+    exact absurd (Finset.mem_range.mpr hci) h
+
+/-- Assembly inverts windowing: chunk `ci` of `assemblePoly n c as` is `as ci`. -/
+theorem chunkCoeffs_assemblePoly {n c : ℕ} (as : ℕ → Fin n → F) {ci : ℕ}
+    (hci : ci < c) : chunkCoeffs n (assemblePoly n c as) ci = as ci :=
+  funext fun j => assemblePoly_coeff as hci j
+
+/-- The assembled polynomial meets the chunk-count degree bound. -/
+theorem assemblePoly_natDegree_lt {n c : ℕ} (hn : 0 < n) (hc : 0 < c)
+    (as : ℕ → Fin n → F) : (assemblePoly n c as).natDegree < c * n := by
+  have hcn : 0 < c * n := Nat.mul_pos hc hn
+  apply lt_of_le_of_lt (natDegree_sum_le _ _)
+  rw [Finset.fold_max_lt]
+  refine ⟨hcn, fun ci hci => ?_⟩
+  apply lt_of_le_of_lt (natDegree_sum_le _ _)
+  rw [Finset.fold_max_lt]
+  refine ⟨hcn, fun j _ => ?_⟩
+  apply lt_of_le_of_lt (natDegree_monomial_le _)
+  have h1 : ci * n + (j : ℕ) < (ci + 1) * n := by
+    have := j.isLt
+    rw [add_mul, one_mul]
+    omega
+  exact lt_of_lt_of_le h1
+    (Nat.mul_le_mul_right n (Finset.mem_range.mp hci))
 
 /-! ## Commitment recombination -/
 

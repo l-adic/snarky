@@ -21,9 +21,17 @@ These combiners are definitional transcriptions of the deployed verifier's
 commitment/value aggregation and its `b₀` evaluation slot: their faithfulness is by
 transcription, not by proof. The soundness theorem (`Soundness/Batch.lean`) consumes
 them as given and never re-derives the verifier's acceptance equation from them — see
-its header for the trust boundary. Scope: `nc = 1` throughout; the
-`rand_base`/`sg_rand_base` cross-proof MSM batching and the Fiat–Shamir sponge are
-out of scope.
+its header for the trust boundary. The `rand_base`/`sg_rand_base` cross-proof MSM
+batching and the Fiat–Shamir sponge are out of scope.
+
+The chunked-batch section generalizes the combiners to per-polynomial chunk counts
+(`nc : Fin n → ℕ`): in the deployed batch each chunk is one *segment*, consumed
+polynomial-outer, chunk-inner, at one consecutive polyscale power per segment
+(`combined_inner_product` / `combine_commitments`, `poly-commitment/src/commitment.rs`).
+The flattening lemmas show the chunked combiners are the plain combiners of the
+flattened segment family under `finSigmaFinEquiv` — chunking changes the indexing, not
+the combination — which is how `Soundness/ChunkedBatch.lean` reduces chunked-batch
+soundness to `batch_soundness`.
 -/
 
 namespace Kimchi.Commitment.IPA
@@ -91,6 +99,77 @@ def BatchAccepts (σ : SRS G) (proof : OpeningProof F G σ.k) (ξ r c : F)
     (e : Fin n → Fin m → F) : Prop :=
   VerifierAcceptsAt σ proof (combinedCommitment ξ C) (combinedB u r x)
     (combinedInnerProduct ξ r e) c u
+
+/-! ## Chunked batch definitions
+
+Chunked commitments in the batch (`PolyComm` with more than one chunk): each chunk of
+each polynomial is one *segment* of the batch stream, and the stream is consumed
+polynomial-outer, chunk-inner, at one consecutive polyscale power per segment. The
+combiners below transcribe that layout for per-polynomial chunk counts `nc : Fin n → ℕ`;
+the flattening lemmas identify them with the plain combiners of the flattened segment
+family, so the `nc = 1` soundness stack applies verbatim to chunked batches. -/
+
+/-- The polyscale power at which the chunks of polynomial `i` begin: the total chunk
+count of the earlier polynomials. Chunk `c` of polynomial `i` is segment
+`segmentOffset nc i + c` of the batch stream — `finSigmaFinEquiv`'s value
+(`segment_flatten_val`). -/
+def segmentOffset {n : ℕ} (nc : Fin n → ℕ) (i : Fin n) : ℕ :=
+  ∑ i' : Fin i.val, nc (Fin.castLE i.isLt.le i')
+
+/-- The flat position of chunk `c` of polynomial `i` is `segmentOffset nc i + c` —
+`finSigmaFinEquiv` in the batch's vocabulary. -/
+theorem segment_flatten_val {n : ℕ} {nc : Fin n → ℕ} (i : Fin n) (c : Fin (nc i)) :
+    ((finSigmaFinEquiv ⟨i, c⟩ : Fin (∑ i', nc i')) : ℕ)
+      = segmentOffset nc i + (c : ℕ) :=
+  finSigmaFinEquiv_apply ⟨i, c⟩
+
+/-- Chunked combined commitment (`combine_commitments` at `rand_base = 1`): the
+polyscale combination of the segment stream,
+`∑ i, ∑ c, ξ ^ (segmentOffset nc i + c) • C i c`. At one chunk per polynomial the
+offsets collapse to `i` and this is `combinedCommitment`. -/
+def chunkedCombinedCommitment (ξ : F) {n : ℕ} {nc : Fin n → ℕ}
+    (C : (i : Fin n) → Fin (nc i) → G) : G :=
+  ∑ i, ∑ c : Fin (nc i), ξ ^ (segmentOffset nc i + (c : ℕ)) • C i c
+
+/-- Chunked combined inner product (`combined_inner_product`): segment `(i, c)`
+contributes its evalscale-combined point values at the segment's polyscale power,
+`∑ i, ∑ c, ξ ^ (segmentOffset nc i + c) * (∑ j, e i c j * r ^ j)` — the documented
+`Σₖ Σᵢ polyscale^{k·n+i} (Σⱼ polys[k][j][i] · evalscale^j)`, at ragged chunk counts. -/
+def chunkedCombinedInnerProduct (ξ r : F) {n m : ℕ} {nc : Fin n → ℕ}
+    (e : (i : Fin n) → Fin (nc i) → Fin m → F) : F :=
+  ∑ i, ∑ c : Fin (nc i), ξ ^ (segmentOffset nc i + (c : ℕ)) * (∑ j, e i c j * r ^ (j : ℕ))
+
+/-- **Commitment flattening.** The chunked combined commitment is the plain
+`combinedCommitment` of the flattened segment family: chunking changes the indexing,
+not the combination. -/
+theorem chunkedCombinedCommitment_eq_flat (ξ : F) {n : ℕ} {nc : Fin n → ℕ}
+    (C : (i : Fin n) → Fin (nc i) → G) :
+    chunkedCombinedCommitment ξ C
+      = combinedCommitment ξ (fun s : Fin (∑ i, nc i) =>
+          C (finSigmaFinEquiv.symm s).1 (finSigmaFinEquiv.symm s).2) := by
+  rw [combinedCommitment,
+    ← Equiv.sum_comp (finSigmaFinEquiv (n := nc))
+      (fun s : Fin (∑ i, nc i) => ξ ^ (s : ℕ)
+        • C (finSigmaFinEquiv.symm s).1 (finSigmaFinEquiv.symm s).2)]
+  rw [chunkedCombinedCommitment, ← Fintype.sum_sigma']
+  refine Finset.sum_congr rfl fun p _ => ?_
+  rw [Equiv.symm_apply_apply, segment_flatten_val]
+
+/-- **Value flattening.** The chunked combined inner product is the plain
+`combinedInnerProduct` of the flattened evaluation family. -/
+theorem chunkedCombinedInnerProduct_eq_flat (ξ r : F) {n m : ℕ} {nc : Fin n → ℕ}
+    (e : (i : Fin n) → Fin (nc i) → Fin m → F) :
+    chunkedCombinedInnerProduct ξ r e
+      = combinedInnerProduct ξ r (fun s : Fin (∑ i, nc i) =>
+          e (finSigmaFinEquiv.symm s).1 (finSigmaFinEquiv.symm s).2) := by
+  rw [combinedInnerProduct,
+    ← Equiv.sum_comp (finSigmaFinEquiv (n := nc))
+      (fun s : Fin (∑ i, nc i) => ξ ^ (s : ℕ)
+        * ∑ j, e (finSigmaFinEquiv.symm s).1 (finSigmaFinEquiv.symm s).2 j
+            * r ^ (j : ℕ))]
+  rw [chunkedCombinedInnerProduct, ← Fintype.sum_sigma']
+  refine Finset.sum_congr rfl fun p _ => ?_
+  rw [Equiv.symm_apply_apply, segment_flatten_val]
 
 /-- Inner product of the combined eval vector: for any witness `a : Fin N → F`,
 `⟨a, combinedEvalVector N r x⟩ = ∑ j, r ^ j * ⟨a, evalVector N (x j)⟩`.

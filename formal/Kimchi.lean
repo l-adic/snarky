@@ -16,6 +16,7 @@ import Kimchi.Circuit.EndoMul
 import Kimchi.Commitment.IPA.Soundness
 import Kimchi.Commitment.IPA.Chunk
 import Kimchi.Commitment.IPA.Soundness.Batch
+import Kimchi.Commitment.IPA.Soundness.ChunkedBatch
 import Kimchi.Quotient.Generic
 import Kimchi.Quotient.EndoScalar
 import Kimchi.Quotient.Poseidon
