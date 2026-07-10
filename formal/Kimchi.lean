@@ -25,6 +25,7 @@ import Kimchi.Quotient.Copy
 import Kimchi.Index.Basic
 import Kimchi.Index.Satisfies
 import Kimchi.Index.Aggregate
+import Kimchi.Index.Degree
 import Kimchi.Index.Soundness
 import Kimchi.Quotient.Wiring
 import Kimchi.Quotient.Permutation
