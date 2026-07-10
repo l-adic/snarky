@@ -23,6 +23,8 @@ Source: kimchi `domains.rs` (`EvaluationDomains::d1`, the size-`n` radix-2 domai
 * `columnPoly` — the degree-`<n` Lagrange interpolant of a column `v : Fin n → F`.
 * `eval_columnPoly` — the interpolant reproduces its column on `H`.
 * `eq_of_eval_eq_on_domain` — uniqueness of degree-`<n` interpolants.
+* `columnPoly_eval_self` — a degree-`<n` polynomial is the interpolant of its own node
+  values (the commitment-world ↔ table-world seam).
 -/
 
 namespace Kimchi.Quotient
@@ -112,5 +114,20 @@ theorem eq_of_eval_eq_on_domain (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
       rw [zH, ← C_1, degree_X_pow_sub_C hn]
     rw [hdeg]
     exact lt_of_le_of_lt (degree_sub_le p q) (max_lt hp hq)
+
+/-- **A low-degree polynomial is the interpolant of its own node values.** The seam
+between the commitment world and the table world: a commitment binds a *polynomial*,
+satisfiability judges a *table*, and for degree `< n` the two determine each other —
+the column read off a bound polynomial interpolates back to that polynomial. The
+degree hypothesis is the protocol's own chunk/degree discipline: without it a bound
+polynomial could agree with a table on every node yet differ off the domain, where
+the verifier's equation constrains it. -/
+theorem columnPoly_eval_self (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+    (p : Polynomial F) (hdeg : p.natDegree < n) :
+    columnPoly ω (fun j : Fin n => p.eval (ω ^ (j : ℕ))) = p := by
+  refine eq_of_eval_eq_on_domain hω hn (degree_columnPoly_lt hω _)
+    (lt_of_le_of_lt degree_le_natDegree (by exact_mod_cast hdeg)) ?_
+  intro i hi
+  rw [show ((ω : F) ^ i) = ω ^ ((⟨i, hi⟩ : Fin n) : ℕ) from rfl, eval_columnPoly hω]
 
 end Kimchi.Quotient

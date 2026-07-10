@@ -53,6 +53,40 @@ theorem evalEnv_evalsOf (idx : Index F n) (wTab : Fin n → Fin 15 → F)
   simp only [Function.comp_apply, Polynomial.coe_aeval_eq_eval, Kimchi.Quotient.shift,
     eval_comp, eval_mul, eval_C, eval_X]
 
+/-! ## Column extraction
+
+The soundness-direction junction: PCS binding (`chunked_batch_soundness`) delivers
+*polynomials* behind the witness commitments — each of degree `< n` from its chunk
+count — while `Satisfies` and the point-bridge's record speak *tables*. `extractTable`
+reads the table off the bound polynomials; by `columnPoly_eval_self` the honest record
+at that table evaluates the bound polynomials themselves, so the claimed evaluations
+that binding certifies are exactly the record's fields. -/
+
+/-- The witness table read off bound column polynomials: `wTab j c := W_c(ω^j)`. This
+is the table the headline exports in its `∃ wTab, Satisfies` conclusion. -/
+def extractTable (ω : F) (W : Fin 15 → Polynomial F) : Fin n → Fin 15 → F :=
+  fun j c => (W c).eval (ω ^ (j : ℕ))
+
+/-- The honest record at the extracted table evaluates the bound polynomials: the
+current-row field at column `c` is `W_c(ζ)` — binding's claimed evaluation. -/
+theorem evalsOf_extractTable_w [NeZero n] (idx : Index F n)
+    (W : Fin 15 → Polynomial F) (hW : ∀ c, (W c).natDegree < n)
+    (z : Polynomial F) (ζ : F) (c : Fin 15) :
+    (evalsOf idx (extractTable idx.omega W) z ζ).w c = (W c).eval ζ := by
+  show (columnPoly idx.omega fun j => (W c).eval (idx.omega ^ (j : ℕ))).eval ζ = _
+  rw [columnPoly_eval_self idx.omega_prim (Nat.pos_of_neZero n) (W c) (hW c)]
+
+/-- The next-row field at column `c` is `W_c(ωζ)` — binding's claimed evaluation at
+the shifted point. -/
+theorem evalsOf_extractTable_wOmega [NeZero n] (idx : Index F n)
+    (W : Fin 15 → Polynomial F) (hW : ∀ c, (W c).natDegree < n)
+    (z : Polynomial F) (ζ : F) (c : Fin 15) :
+    (evalsOf idx (extractTable idx.omega W) z ζ).wOmega c
+      = (W c).eval (idx.omega * ζ) := by
+  show (columnPoly idx.omega fun j => (W c).eval (idx.omega ^ (j : ℕ))).eval
+      (idx.omega * ζ) = _
+  rw [columnPoly_eval_self idx.omega_prim (Nat.pos_of_neZero n) (W c) (hW c)]
+
 /-! ## The gate side
 
 The α-power sum of the gate members, evaluated at `ζ`, is the closed-form
