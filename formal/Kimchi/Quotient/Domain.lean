@@ -87,6 +87,16 @@ theorem eval_columnPoly (hω : IsPrimitiveRoot ω n) (v : Fin n → F) (i : Fin 
     exact hω.injOn_pow (Finset.mem_range.mpr a.isLt) (Finset.mem_range.mpr b.isLt) heq
   exact Lagrange.eval_interpolate_at_node v hinj (Finset.mem_univ i)
 
+/-- The column polynomial has degree `< n`. -/
+theorem degree_columnPoly_lt (hω : IsPrimitiveRoot ω n) (v : Fin n → F) :
+    (columnPoly ω v).degree < n := by
+  have hinj : Set.InjOn (fun j : Fin n => ω ^ (j : ℕ)) ↑(Finset.univ : Finset (Fin n)) := by
+    intro a _ b _ heq
+    apply Fin.val_injective
+    exact hω.injOn_pow (Finset.mem_range.mpr a.isLt) (Finset.mem_range.mpr b.isLt) heq
+  simpa [columnPoly, Finset.card_univ] using
+    Lagrange.degree_interpolate_lt (v := fun j : Fin n => ω ^ (j : ℕ)) hinj (r := v)
+
 /-- **Uniqueness of degree-`<n` interpolants.** Two polynomials of degree `< n` that agree on
 the whole domain are equal. -/
 theorem eq_of_eval_eq_on_domain (hω : IsPrimitiveRoot ω n) (hn : 0 < n)

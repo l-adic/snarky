@@ -72,6 +72,21 @@ def evalEnv (e : Evals F) : ArgumentEnv F :=
 def alphaCombo (α : F) (L : List F) : F :=
   L.foldr (fun c acc => c + α * acc) 0
 
+/-- Horner ↔ indexed: once `m` covers the list, `alphaCombo` is the `getD`-indexed
+α-power sum — the form the aggregate's shared-pool members consume. -/
+theorem alphaCombo_eq_sum_getD (α : F) :
+    ∀ (L : List F) (m : ℕ), L.length ≤ m →
+      alphaCombo α L = ∑ k ∈ Finset.range m, α ^ k * L.getD k 0
+  | [], m, _ => by simp [alphaCombo]
+  | c :: t, m + 1, h => by
+    have ih := alphaCombo_eq_sum_getD α t m (by simpa using h)
+    rw [show alphaCombo α (c :: t) = c + α * alphaCombo α t from rfl, ih,
+      Finset.sum_range_succ']
+    simp only [List.getD_cons_succ, List.getD_cons_zero, pow_zero, one_mul]
+    rw [add_comm, Finset.mul_sum]
+    congr 1
+    exact Finset.sum_congr rfl fun k _ => by ring
+
 /-- **The gate linearization** — production's `linearization.constant_term`: each
 gate's α-weighted constraint list (the `Argument` primitives, at the evaluation
 environment), weighted by its evaluated selector. The gates share the alpha pool, so

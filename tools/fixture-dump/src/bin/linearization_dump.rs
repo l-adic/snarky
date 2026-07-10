@@ -126,6 +126,14 @@ fn main() {
         .combine(&oracles_res.powers_of_eval_points_for_chunks);
     let zk_rows = verifier_index.zk_rows;
 
+    // The seventh sigma column's evaluation at ζ — the one column the proof does NOT
+    // evaluate (its share travels through the commitment channel as perm_scalars ·
+    // sigma_comm[6]); interpolated here from the prover index so the Lean side can
+    // check the assembled acceptance identity numerically.
+    let sigma6_zeta = index.column_evaluations.get().permutation_coefficients8[6]
+        .interpolate_by_ref()
+        .evaluate(&o.zeta);
+
     // The production scalar-side outputs.
     let zkpm_zeta = verifier_index
         .permutation_vanishing_polynomial_m()
@@ -244,6 +252,7 @@ fn main() {
         "emul_selector": pe(&evals.emul_selector),
         "endomul_scalar_selector": pe(&evals.endomul_scalar_selector),
         "ft_eval1": fe(&proof.ft_eval1),
+        "sigma6_zeta": fe(&sigma6_zeta),
         // the production outputs the Lean closed forms must reproduce
         "ft_eval0": fe(&oracles_res.ft_eval0),
         "perm_scalar": fe(&perm_scalar),
