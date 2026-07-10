@@ -123,3 +123,12 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         scripts/check_kimchi_verifier.sh
 
+    # The verifier-key <-> index correspondence (VKCorresponds), by value: every
+    # committed column of the production VK equals the value-MSM of the Lagrange-basis
+    # commitments against its production-derived column (which check_index_fixture
+    # separately pins to the Index model's own derivations).
+    - name: Check the verifier key corresponds to the index
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        scripts/check_vk_correspond.sh
+
