@@ -18,8 +18,10 @@ indicator):
 
 * `zkpm · (z · ∏ᵢ (wᵢ + γ + β·shiftᵢ·X) - z(ωX) · ∏ᵢ (wᵢ + γ + β·σᵢ))` — the division-free
   accumulator recurrence, gated off the masked rows;
-* `(z - 1) · L₀` — the accumulator initialises to `1`;
-* `(z - 1) · L_{n-zkRows}` — the accumulator returns to `1` at the end of the unmasked region.
+* `(z - 1) · lagNumer 0` — the accumulator initialises to `1` (the pin carried by the
+  un-normalized numerator `(Xⁿ−1)/(X−1)`, the deployed verifier's form);
+* `(z - 1) · lagNumer (n-zkRows)` — the accumulator returns to `1` at the end of the
+  unmasked region.
 
 The permutation is not an `Argument` instance: the aggregation reads the accumulator at
 two rows (`z(X)` and `z(ωX)`) and is gated by the complement of a row set rather than a
@@ -71,6 +73,93 @@ vanishing: the verifier's α-weighted equation uses this form, so the members mu
 for the linearization bridge to be an equality. -/
 noncomputable def lagNumer (ω : F) {n : ℕ} (r : Fin n) : Polynomial F :=
   C ((n : F) * (ω ^ (r : ℕ))⁻¹) * columnPoly ω (rowIndicator r)
+
+/-- `lagNumer` is the Horner quotient `∑ᵢ ω^{r(n−1−i)} Xⁱ`: degree-`< n` agreement on
+the domain — both vanish at every node but `ω^r`, where both take `n·ω^{−r}`. -/
+theorem lagNumer_eq_geom {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+    (r : Fin n) :
+    lagNumer ω r = ∑ i ∈ Finset.range n, C ((ω ^ (r : ℕ)) ^ (n - 1 - i)) * X ^ i := by
+  haveI : NeZero n := ⟨hn.ne'⟩
+  have hωr : (ω ^ (r : ℕ)) ≠ 0 := pow_ne_zero _ (hω.ne_zero hn.ne')
+  have hpow : (ω ^ (r : ℕ)) ^ n = 1 := by
+    rw [← pow_mul, mul_comm, pow_mul, hω.pow_eq_one, one_pow]
+  -- the geom sum times (X − ω^r) is Xⁿ − 1
+  have hgeom : (∑ i ∈ Finset.range n, C ((ω ^ (r : ℕ)) ^ (n - 1 - i)) * X ^ i)
+      * (X - C (ω ^ (r : ℕ))) = zH F n := by
+    have h := geom_sum₂_mul (X : Polynomial F) (C (ω ^ (r : ℕ))) n
+    simp only [← C_pow] at h
+    rw [show (∑ i ∈ Finset.range n, C ((ω ^ (r : ℕ)) ^ (n - 1 - i)) * X ^ i)
+        = ∑ i ∈ Finset.range n, X ^ i * C ((ω ^ (r : ℕ)) ^ (n - 1 - i)) from
+      Finset.sum_congr rfl fun i _ => mul_comm _ _, h, hpow, map_one]
+    rfl
+  have hd1 : (lagNumer ω r).degree < n := by
+    rw [lagNumer, ← smul_eq_C_mul]
+    exact lt_of_le_of_lt (degree_smul_le _ _) (degree_columnPoly_lt hω _)
+  have hd2 : (∑ i ∈ Finset.range n,
+      C ((ω ^ (r : ℕ)) ^ (n - 1 - i)) * X ^ i).natDegree < n := by
+    apply lt_of_le_of_lt (natDegree_sum_le _ _)
+    rw [Finset.fold_max_lt]
+    exact ⟨hn, fun i hi => lt_of_le_of_lt (natDegree_C_mul_le _ _)
+      (by simpa using Finset.mem_range.mp hi)⟩
+  refine eq_of_eval_eq_on_domain hω hn hd1
+    (lt_of_le_of_lt degree_le_natDegree (by exact_mod_cast hd2)) ?_
+  · -- node-by-node agreement
+    intro i hi
+    have hgeval : ∀ x : F, (∑ j ∈ Finset.range n,
+        C ((ω ^ (r : ℕ)) ^ (n - 1 - j)) * X ^ j).eval x
+          * (x - ω ^ (r : ℕ)) = x ^ n - 1 := by
+      intro x
+      have := congrArg (Polynomial.eval x) hgeom
+      simpa [zH] using this
+    by_cases hir : i = (r : ℕ)
+    · -- at the node ω^r both sides take n·ω^{−r}
+      subst hir
+      rw [lagNumer, eval_mul, eval_C, eval_columnPoly hω _ r, rowIndicator,
+        if_pos rfl, mul_one]
+      rw [eval_finsetSum]
+      simp only [eval_mul, eval_C, eval_pow, eval_X]
+      have : ∀ j ∈ Finset.range n,
+          ((ω ^ (r : ℕ)) ^ (n - 1 - j)) * (ω ^ (r : ℕ)) ^ j
+            = (ω ^ (r : ℕ)) ^ (n - 1) := fun j hj => by
+        rw [← pow_add]
+        congr 1
+        have := Finset.mem_range.mp hj
+        omega
+      rw [Finset.sum_congr rfl this, Finset.sum_const, Finset.card_range, nsmul_eq_mul]
+      congr 1
+      field_simp
+      rw [← pow_succ']
+      have : n - 1 + 1 = n := by omega
+      rw [this, hpow]
+    · -- at every other node both sides vanish
+      have hz : (ω : F) ^ i - ω ^ (r : ℕ) ≠ 0 := by
+        rw [sub_ne_zero]
+        exact fun hEq => hir (hω.pow_inj hi r.isLt hEq)
+      have h0 : ((ω : F) ^ i) ^ n - 1 = 0 := by
+        rw [← pow_mul, mul_comm, pow_mul, hω.pow_eq_one, one_pow, sub_self]
+      have := hgeval ((ω : F) ^ i)
+      rw [h0] at this
+      have hgz := (mul_eq_zero.mp this).resolve_right hz
+      rw [hgz, lagNumer, eval_mul,
+        show ((ω : F) ^ i) = ω ^ ((⟨i, hi⟩ : Fin n) : ℕ) from rfl,
+        eval_columnPoly hω, rowIndicator,
+        if_neg (fun hEq => hir (congrArg Fin.val hEq)), mul_zero]
+
+/-- **The numerator identity**: `lagNumer r · (X − ω^r) = Xⁿ − 1`. The boundary pins'
+division-free form — the bridge to `ft_eval0`'s boundary quotient clears its
+denominators through this. -/
+theorem lagNumer_mul_sub {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+    (r : Fin n) :
+    lagNumer ω r * (X - C (ω ^ (r : ℕ))) = zH F n := by
+  rw [lagNumer_eq_geom hω hn r]
+  have h := geom_sum₂_mul (X : Polynomial F) (C (ω ^ (r : ℕ))) n
+  simp only [← C_pow] at h
+  rw [show (∑ i ∈ Finset.range n, C ((ω ^ (r : ℕ)) ^ (n - 1 - i)) * X ^ i)
+      = ∑ i ∈ Finset.range n, X ^ i * C ((ω ^ (r : ℕ)) ^ (n - 1 - i)) from
+    Finset.sum_congr rfl fun i _ => mul_comm _ _, h]
+  rw [show ((ω : F) ^ (r : ℕ)) ^ n = 1 by
+    rw [← pow_mul, mul_comm, pow_mul, hω.pow_eq_one, one_pow], map_one]
+  rfl
 
 /-- The three permutation constraint polynomials (`permutation.rs` / `verifier.rs`
 `ft_eval0`, deployed orientation and scale), with the boundary rows `r₀`
