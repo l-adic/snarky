@@ -121,8 +121,6 @@ structure KimchiVK (C : Ipa.CommitmentCurve) where
   zkRows : ℕ
   /-- `verifier_index.endo`, the `ft_eval0` endo coefficient (see the header note). -/
   endo : C.ScalarField
-  /-- The Lagrange-basis commitments for the public-input commitment. -/
-  lagrangeBasis : Array C.Point
   /-- The scalar-side Poseidon parameters (`G::sponge_params()`), for the fr-sponge. -/
   frParams : Params C.ScalarField
 
@@ -291,18 +289,24 @@ def KimchiProof.evals {C : Ipa.CommitmentCurve} (p : KimchiProof C) :
 
 /-! ## The group side -/
 
-/-- The public-input commitment (verifier.rs:833–858): `srs.h` for empty input (the
-`blinding_commitment()` chunk, :845); else the MSM of the Lagrange-basis commitments
-against the **negated** public input (:847–848), masked with the all-ones blinder
-(`mask_custom`, :849–856) — which adds `srs.h`. `commitment.rs` is not staged; the
-`mask_custom` semantics (`+ 1 • h`) is corroborated by the empty-input branch and
-adjudicated by the fixture. -/
+/-- **The `i`-th Lagrange-basis commitment**, computed lazily per domain
+(`SRS::get_lagrange_basis`, which kimchi caches in-memory but never serializes): the
+commitment of `Lᵢ`, whose coefficient vector is the domain IFFT of the `i`-th unit,
+`Lᵢ.coeff j = n⁻¹ · ω^(−ij)`. So `commit Lᵢ = ∑ⱼ n⁻¹·ω^(−ij) • gⱼ` — one SRS-sized
+MSM, materializing only the slots the public input reaches. -/
+def lagrangeComm (σ : SRS C.Point) (ω : C.ScalarField) (i : ℕ) : C.Point :=
+  Ipa.msm C σ.g
+    (fun j : Fin (2 ^ σ.k) => ((2 ^ σ.k : C.ScalarField))⁻¹ * (ω ^ (i * (j : ℕ)))⁻¹)
+
+/-- The public-input commitment (verifier.rs:833–858): `σ.h` for empty input; else the
+`−pubᵢ` combination of the first `|pub|` Lagrange commitments (computed by `lagrangeComm`,
+not carried on the key) plus the `mask_custom` unit blinder `σ.h`. -/
 def publicCommitment (σ : SRS C.Point) (vk : KimchiVK C)
     (pub : Array C.ScalarField) : C.Point :=
   if pub.size = 0 then σ.h
   else
-    ((vk.lagrangeBasis.extract 0 pub.size).zip pub).foldl
-      (fun acc Pp => acc + (-Pp.2).val • Pp.1) 0
+    (List.range pub.size).foldl
+      (fun acc i => acc + (-(pub.getD i 0)).val • lagrangeComm C σ vk.omega i) 0
     + σ.h
 
 /-! ## The warm-start opening finish -/
@@ -366,7 +370,7 @@ def kimchiVerify (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
   if p.wComm.size != 15 || p.tComm.size != 7 || p.w.size != 15 || p.s.size != 6
       || p.coefficients.size != 15 || vk.sigmaComm.size != 7
       || vk.coefficientsComm.size != 15 || vk.shifts.size != 7
-      || decide (vk.lagrangeBasis.size < pub.size) || decide (n < pub.size)
+      || decide (n < pub.size)
       || 2 ^ σ.k != n then
     false
   else

@@ -309,7 +309,6 @@ structure ReflectedRun (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
   shape_sigmaComm : vk.sigmaComm.size = 7
   shape_coeffsComm : vk.coefficientsComm.size = 15
   shape_shifts : vk.shifts.size = 7
-  shape_lagrange : pub.size ≤ vk.lagrangeBasis.size
   shape_pub : pub.size ≤ vk.n
   shape_srs : 2 ^ σ.k = vk.n
   /-- The warm-sponge opening finish accepts the run's own batch. -/
@@ -349,7 +348,7 @@ theorem kimchiVerify_reflects (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiPr
   replace hv : (if p.wComm.size != 15 || p.tComm.size != 7 || p.w.size != 15
         || p.s.size != 6 || p.coefficients.size != 15 || vk.sigmaComm.size != 7
         || vk.coefficientsComm.size != 15 || vk.shifts.size != 7
-        || decide (vk.lagrangeBasis.size < pub.size) || decide (vk.n < pub.size)
+        || decide (vk.n < pub.size)
         || 2 ^ σ.k != vk.n then
       false
     else
@@ -362,7 +361,7 @@ theorem kimchiVerify_reflects (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiPr
   · rename_i hguard
     simp only [Bool.not_eq_true, Bool.or_eq_false_iff, bne_eq_false_iff_eq,
       decide_eq_false_iff_not, Nat.not_lt] at hguard
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, h10⟩, h11⟩ := hguard
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, h10⟩ := hguard
     -- name the destructured pairs, then land on the closed forms
     rcases hpe : runPubEvals C σ vk p pub with ⟨pe0, pe1⟩
     rw [hpe] at hv
@@ -380,7 +379,7 @@ theorem kimchiVerify_reflects (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiPr
     have hv1 : uu = (runVU C σ vk p pub).2 := by rw [hVU]
     subst hv0
     subst hv1
-    refine ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, hv, ?_, ?_⟩
+    refine ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, hv, ?_, ?_⟩
     · show ((runRowsP C σ vk p pub (runPubEvals C σ vk p pub).1
           (runPubEvals C σ vk p pub).2).map (fun x => x.1)) = _
       unfold runRowsP

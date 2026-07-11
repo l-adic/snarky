@@ -69,7 +69,6 @@ def parseVK (C : Ipa.CommitmentCurve)
            shifts := ← parseArrOf (parseZMod (n := C.scalar)) (← fld "shifts")
            zkRows := ← nat "zk_rows"
            endo := ← parseZMod (← fld "endo")
-           lagrangeBasis := ← parseArrOf (parsePt C) (← fld "lagrange_basis")
            frParams := frParams }
 
 end Kimchi.Fixture.Kimchi
