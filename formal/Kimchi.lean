@@ -45,5 +45,6 @@ import Kimchi.Verifier.Kimchi
 import Kimchi.Verifier.Correspond
 import Kimchi.Verifier.Sound
 import Kimchi.Verifier.KimchiSound
+import Kimchi.Verifier.FtExtract
 import Kimchi.Verifier.Equation
 import Kimchi.Verifier.Reflection
