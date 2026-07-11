@@ -12,6 +12,7 @@ and the Pasta GLV endomorphism inputs. This subsumes the old `sorryAx` grep: a `
 Run from `formal/`:  lake env lean scripts/check_axioms.lean   (or: scripts/check_axioms.sh)
 -/
 import Kimchi
+import Kimchi.Verifier.Thesis
 
 open Lean Lean.Elab.Command
 
@@ -93,7 +94,8 @@ def roots : List Name :=
     `Kimchi.Verifier.Equation.verifierEquation_iff,
     `Kimchi.Verifier.Equation.satisfies_of_verifierEquation,
     `Kimchi.Verifier.kimchiProof_sound,
-    `Kimchi.Verifier.kimchiProof_sound_ft ]
+    `Kimchi.Verifier.kimchiProof_sound_ft,
+    `Kimchi.Verifier.kimchiVesta_sound, `Kimchi.Verifier.kimchiPallas_sound ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations
@@ -106,6 +108,11 @@ def allowed : List Name :=
     -- The declared Fiat-Shamir assumption: Poseidon-accepted runs admit de-blinded
     -- accepting transcript trees (`Kimchi/Verifier/Reflection.lean`). One per Pasta curve.
     `Kimchi.Verifier.poseidon_fiat_shamir_vesta, `Kimchi.Verifier.poseidon_fiat_shamir_pallas,
+    -- The kimchi-level Fiat-Shamir assumption: kimchi-accepted runs admit the full
+    -- transcript tree `KimchiTree` (`Kimchi/Verifier/Thesis.lean`). One per Pasta curve; it
+    -- subsumes the per-node IPA assumption above, and is the sole non-standard axiom of the
+    -- thesis roots `kimchiVesta_sound` / `kimchiPallas_sound`.
+    `Kimchi.Verifier.kimchi_fiat_shamir_vesta, `Kimchi.Verifier.kimchi_fiat_shamir_pallas,
     `Kimchi.Pasta.pallas_eigen, `Kimchi.Pasta.vesta_eigen, ]
 
 /-- A CompElliptic `native_decide` witness: an axiom under the `CompElliptic` namespace carrying the
