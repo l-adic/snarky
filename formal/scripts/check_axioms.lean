@@ -108,10 +108,13 @@ def allowed : List Name :=
     -- The declared Fiat-Shamir assumption: Poseidon-accepted runs admit de-blinded
     -- accepting transcript trees (`Kimchi/Verifier/Reflection.lean`). One per Pasta curve.
     `Kimchi.Verifier.poseidon_fiat_shamir_vesta, `Kimchi.Verifier.poseidon_fiat_shamir_pallas,
-    -- The kimchi-level Fiat-Shamir assumption: kimchi-accepted runs admit the full
-    -- transcript tree `KimchiTree` (`Kimchi/Verifier/Thesis.lean`). One per Pasta curve; it
-    -- subsumes the per-node IPA assumption above, and is the sole non-standard axiom of the
-    -- thesis roots `kimchiVesta_sound` / `kimchiPallas_sound`.
+    -- The kimchi-level Fiat-Shamir assumption: kimchi-accepted runs admit the accumulated
+    -- transcript tree `KimchiTreeAcc` (`Kimchi/Verifier/Thesis.lean`) — the scalar-challenge
+    -- rewinding grids with per-node deployed IPA acceptance, no `FiatShamirTreeB` content.
+    -- One per Pasta curve, INDEPENDENT of the per-node IPA assumption above: the thesis
+    -- roots `kimchiVesta_sound` / `kimchiPallas_sound` derive each node's transcript tree
+    -- from the IPA pair via the bridges, so BOTH Fiat-Shamir pairs appear in their closures
+    -- (kimchi = the scalar-challenge rewinding; poseidon = the per-node transcript trees).
     `Kimchi.Verifier.kimchi_fiat_shamir_vesta, `Kimchi.Verifier.kimchi_fiat_shamir_pallas,
     `Kimchi.Pasta.pallas_eigen, `Kimchi.Pasta.vesta_eigen, ]
 

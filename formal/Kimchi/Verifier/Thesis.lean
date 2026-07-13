@@ -25,14 +25,18 @@ the modeled circuit — `kimchiVesta_sound` / `kimchiPallas_sound`:
   scalar-side extension — the wire key's `omega`/`shifts`/`zkRows`/`endo` agree with the
   Index's — is carried as explicit hypotheses (`homega`/`hshifts`/`hzk`/`hendo`), the
   facts the Rust pipeline enforces by construction and never states.
-* **The ONE Fiat-Shamir axiom per curve** (`kimchi_fiat_shamir_vesta` /
-  `kimchi_fiat_shamir_pallas`): an accepted run admits the full transcript tree
-  (`KimchiTree`) that `kimchiProof_sound_ft` consumes. It packages the rewinding/forking
-  extraction, the random-oracle behaviour of the Poseidon sponge, and the prefix-ordering
-  of the sponge schedule (each datum is committed before the challenges that follow it are
-  squeezed). It **subsumes the per-node IPA axiom**: the tree's `FiatShamirTreeB` families
-  are part of the bundle, so the thesis does NOT additionally invoke
-  `poseidon_fiat_shamir_*`.
+* **Two independent Fiat-Shamir axioms per curve.** The kimchi-level axiom
+  (`kimchi_fiat_shamir_vesta` / `kimchi_fiat_shamir_pallas`) hands back the *accumulated*
+  transcript tree (`KimchiTreeAcc`): the challenge grids of the rewinding/forking
+  extraction together with, per node, wire batch data and the deployed IPA acceptance
+  (`Ipa.verify … = true`) — and **no `FiatShamirTreeB` content**. It packages the
+  scalar-challenge rewinding, the random-oracle behaviour of the Poseidon sponge at the
+  kimchi schedule, and the prefix-ordering of that schedule (each datum is committed
+  before the challenges that follow it are squeezed). Each node's `FiatShamirTreeB`
+  family — the batched-IPA extraction data — is then *derived* from the per-node IPA
+  axiom (`poseidon_fiat_shamir_*`, `Reflection.lean`) by the bridges
+  `kimchiTreeAcc_tree_{vesta,pallas}`, so the two assumptions are independent and both
+  are genuinely invoked by the roots.
 * **Everything else is proved.** The reflection section (`kimchiVerify_reflects`,
   `ReflectedRun`) is trust-free: it reads the accepted run's own batch off the code path —
   the 45-row layout, the sponge-derived challenges, the constructed ft commitment and the
@@ -41,8 +45,9 @@ the modeled circuit — `kimchiVesta_sound` / `kimchiPallas_sound`:
   `kimchiTree_sound` then closes by one application of `kimchiProof_sound_ft`, whose own
   closure is axiom-free.
 
-The axiom closure of the roots is therefore: the three standard logical axioms, the one
-kimchi Fiat-Shamir axiom, and — through the Pasta point-group module instances
+The axiom closure of the roots is therefore: the three standard logical axioms, the
+kimchi Fiat-Shamir axiom and the per-node IPA Fiat-Shamir axiom (one pair per curve),
+and — through the Pasta point-group module instances
 (`vestaPointModule`/`pallasPointModule`) — the Hasse-bound axioms and CompElliptic's
 `native_decide` order witnesses. Verified by `scripts/check_axioms.lean`.
 
@@ -64,7 +69,13 @@ kimchi Fiat-Shamir axiom, and — through the Pasta point-group module instances
   (the squaring ladder is `ζ ^ n`; the ft combination in module vocabulary).
 * `KimchiTree` — the transcript-tree bundle: exactly the hypothesis list of
   `kimchiProof_sound_ft` beyond binding and the key correspondence.
-* `kimchi_fiat_shamir_vesta` / `_pallas` — the declared assumption (Move 2).
+* `KimchiTreeAcc`, `KimchiTreeAcc.nodeInput` — the accumulated bundle: `KimchiTree` with
+  the per-node `FiatShamirTreeB` families replaced by wire batch data and deployed IPA
+  acceptance, and the per-node wire input the IPA axiom is applied to.
+* `kimchi_fiat_shamir_vesta` / `_pallas` — the declared assumption (Move 2), concluding
+  `KimchiTreeAcc`.
+* `kimchiTreeAcc_tree_vesta` / `_pallas` — the bridges: every node's transcript tree
+  derived from `poseidon_fiat_shamir_*`.
 * `kimchiTree_sound`, `kimchiVesta_sound`, `kimchiPallas_sound` — the composition and the
   two thesis roots (Move 3).
 -/
@@ -442,8 +453,9 @@ Field groups, in `kimchiProof_sound_ft`'s order:
   commitments `wC` are tree-wide (a parameter, pinned by the axiom to the run's own),
   the accumulator commitment `zC` varies only with `(β, γ)`, the claims `E` are the
   node's own; `hFS`/`hacc` are the per-node `FiatShamirTreeB` families and their
-  acceptances — the batched-IPA extraction data `batch_soundnessA` consumes (this is
-  what subsumes the per-node IPA Fiat-Shamir axiom).
+  acceptances — the batched-IPA extraction data `batch_soundnessA` consumes (at the
+  Pasta instantiations these are derived from `poseidon_fiat_shamir_*` by the bridges
+  below, not assumed).
 * `TC`/`aft`/`ρft`/`hftC`/`hftE` — the ft-row data of the t extraction: the seven
   quotient-chunk commitments `TC`, `ζ`-free per `(β, γ, α)`-prefix (committed before
   `ζ` is sampled), and per node a bound ft witness committing to the verifier's
@@ -525,31 +537,308 @@ theorem kimchiTree_sound {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
     T.ζ T.hζ T.hζ₁ T.hζb T.hζn T.α T.hα T.hD wC T.zC T.E T.ξ T.hξ T.r T.hr T.A T.hFS
     T.hacc T.TC T.aft T.ρft T.hftC T.hftE T.q T.hq
 
+/-! ## The accumulated tree: the axioms' slimmed content (Move 2) -/
+
+/-- **The accumulated kimchi transcript tree** — the slimmed conclusion of the kimchi
+Fiat-Shamir axioms: everything `KimchiTree` carries EXCEPT the per-node
+`FiatShamirTreeB` families and their acceptance propositions `(A, hFS, hacc)`, which are
+replaced by per-node *wire* data: an opaque commitment array per `(β, γ)` node related
+row-by-row to the abstract 43-row assembly (`cs`/`hcsSize`/`hcs` — an opaque array plus
+a relation hypothesis, never an `Array.ofFn` build), a wire evaluation matrix whose
+entries are the abstract claims (`es`/`hes`), and per `(ξ, r)`-grid point an opening
+proof with the deployed acceptance of the node's batched input at the eval points
+`(ζ, ωζ)` (`prf`/`hacc` — `Ipa.verify … = true`, the executable verifier itself). The
+Pasta bridges below derive each node's `FiatShamirTreeB` family from the per-node IPA
+axiom (`poseidon_fiat_shamir_*`), so this bundle carries no Fiat-Shamir-tree content of
+its own. Generic over the curve bundle `C` (`Ipa.verify C` is curve-generic); only the
+bridges are Pasta-specific. All other fields are verbatim `KimchiTree`'s — see its
+docstring for the field-group story. -/
+structure KimchiTreeAcc [Module C.ScalarField C.Point] {n : ℕ} [NeZero n]
+    (σ : SRS C.Point) (idx : Index C.ScalarField n)
+    (pub : Fin idx.publicCount → C.ScalarField) (comms : IndexComms C.Point)
+    (wC : Fin 15 → C.Point) where
+  M : ℕ
+  NN : ℕ
+  NNN : ℕ
+  b : Fin M → C.ScalarField
+  g : Fin NN → C.ScalarField
+  hb : Function.Injective b
+  hg : Function.Injective g
+  hM : 7 * (n - idx.zkRows) < M
+  hN : 7 * (n - idx.zkRows) < NN
+  ζ : Fin M → Fin NN → Fin NNN → C.ScalarField
+  hζ : ∀ a c, Function.Injective (ζ a c)
+  hζ₁ : ∀ a c p, ζ a c p ≠ 1
+  hζb : ∀ a c p, ζ a c p ≠ idx.omega ^ (n - idx.zkRows)
+  hζn : ∀ a c p, (ζ a c p) ^ n ≠ 1
+  α : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → C.ScalarField
+  hα : ∀ a c, Function.Injective (α a c)
+  hD : Index.degreeBound n < NNN
+  zC : Fin M → Fin NN → C.Point
+  E : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → Fin NNN
+    → Fin 43 → Fin 2 → C.ScalarField
+  ξ : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → Fin NNN
+    → Fin 43 → C.ScalarField
+  hξ : ∀ a c s p, Function.Injective (ξ a c s p)
+  r : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → Fin NNN
+    → Fin 2 → C.ScalarField
+  hr : ∀ a c s p, Function.Injective (r a c s p)
+  /-- Per `(β, γ)` node, the wire commitment array of the rewound batch — opaque. -/
+  cs : Fin M → Fin NN → Array C.Point
+  /-- The wire commitment array has the 43 batch rows. -/
+  hcsSize : ∀ a c, (cs a c).size = 43
+  /-- Row-by-row, the wire array is the abstract assembly `batchC wC (zC a c) comms`. -/
+  hcs : ∀ a c (i : Fin 43), (cs a c).getD (i : ℕ) 0 = batchC wC (zC a c) comms i
+  /-- Per node, the wire evaluation matrix of the rewound batch — opaque. -/
+  es : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → Fin NNN
+    → Array (Array C.ScalarField)
+  /-- Entry-by-entry, the wire matrix carries the abstract claims `E`. -/
+  hes : ∀ a c s p (i : Fin 43) (j : Fin 2),
+    ((es a c s p)[(i : ℕ)]!)[(j : ℕ)]! = E a c s p i j
+  /-- Per `(ξ, r)`-grid point, the node's IPA opening proof. -/
+  prf : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → Fin NNN
+    → Fin 43 → Fin 2 → Ipa.Proof C
+  /-- The deployed verifier accepts every node's batched input — the acceptance the
+  bridges hand to the per-node IPA axiom. -/
+  hacc : ∀ a c s p (i : Fin 43) (j : Fin 2),
+    Ipa.verify C σ (Ipa.mkInput C (cs a c) #[ζ a c p, idx.omega * ζ a c p] (es a c s p)
+      (ξ a c s p i) (r a c s p j) (prf a c s p i j)) = true
+  TC : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → Fin 7
+    → C.Point
+  aft : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → Fin NNN
+    → Fin (2 ^ σ.k) → C.ScalarField
+  ρft : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → Fin NNN
+    → C.ScalarField
+  hftC : ∀ a c s p, commit σ (aft a c s p) (ρft a c s p)
+    = permScalar (b a) (g c) (α a c s) (zkpmEval n idx.zkRows idx.omega (ζ a c p))
+          (claimedEvals (E a c s p))
+        • comms.sigma 6
+      - ((ζ a c p) ^ n - 1) • ∑ i : Fin 7, ((ζ a c p) ^ n) ^ (i : ℕ) • TC a c s i
+  hftE : ∀ a c s p, innerProduct (aft a c s p) (evalVector (2 ^ σ.k) (ζ a c p))
+    = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase (α a c s) (b a) (g c)
+        (ζ a c p) (-((idx.pubPoly pub).eval (ζ a c p))) (claimedEvals (E a c s p))
+  q : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → Fin 7
+    → Fin NNN
+  hq : ∀ a c s, Function.Injective fun j => (ζ a c (q a c s j)) ^ n
+
+/-! ## The per-node Fiat-Shamir derivation -/
+
+/-- `combinedCommitment` congruence across an index-count equality: reindexing the
+commitment family along `Fin.cast` preserves the polyscale combination. -/
+private theorem combinedCommitment_reindex {F G : Type*} [Field F] [AddCommGroup G]
+    [Module F G] (ξ : F) {n m : ℕ} (h : n = m) (Cn : Fin n → G) (Cm : Fin m → G)
+    (hC : ∀ i : Fin n, Cn i = Cm (Fin.cast h i)) :
+    combinedCommitment ξ Cn = combinedCommitment ξ Cm := by
+  unfold combinedCommitment
+  refine Fintype.sum_equiv (finCongr h) _ _ fun i => ?_
+  simp only [finCongr_apply, Fin.val_cast]
+  rw [hC i]
+
+/-- `combinedInnerProduct` congruence across a first-index-count equality. -/
+private theorem combinedInnerProduct_reindex {F : Type*} [Field F] (ξ r : F)
+    {n n' m : ℕ} (h : n = n') (e : Fin n → Fin m → F) (e' : Fin n' → Fin m → F)
+    (he : ∀ (i : Fin n) (j : Fin m), e i j = e' (Fin.cast h i) j) :
+    combinedInnerProduct ξ r e = combinedInnerProduct ξ r e' := by
+  unfold combinedInnerProduct
+  refine Fintype.sum_equiv (finCongr h) _ _ fun i => ?_
+  simp only [finCongr_apply, Fin.val_cast]
+  refine congrArg (ξ ^ (i : ℕ) * ·) ?_
+  exact Finset.sum_congr rfl fun j _ => by rw [he i j]
+
+section TreeOfAcc
+
+variable {C} [Module C.ScalarField C.Point] {n : ℕ} [NeZero n] {σ : SRS C.Point}
+  {idx : Index C.ScalarField n} {pub : Fin idx.publicCount → C.ScalarField}
+  {comms : IndexComms C.Point} {wC : Fin 15 → C.Point}
+
+/-- The wire input of one accumulated-tree node: the node's opaque commitment array and
+evaluation matrix, batched at the `(ξ, r)`-grid scalars over the node's two eval points
+`(ζ, ωζ)`, with the node's opening proof. The accumulated `hacc` states the deployed
+verifier accepts exactly this input; the bridges apply the per-node IPA axiom to it. -/
+def KimchiTreeAcc.nodeInput (T : KimchiTreeAcc C σ idx pub comms wC)
+    (a : Fin T.M) (c : Fin T.NN)
+    (s : Fin (Index.gateAlphaCount + Index.permAlphaCount)) (p : Fin T.NNN)
+    (i : Fin 43) (j : Fin 2) : Ipa.Input C :=
+  Ipa.mkInput C (T.cs a c) #[T.ζ a c p, idx.omega * T.ζ a c p] (T.es a c s p)
+    (T.ξ a c s p i) (T.r a c s p j) (T.prf a c s p i j)
+
+/-- **Per-node Fiat-Shamir transport**: the IPA-axiom-shaped transcript-tree family at a
+node's wire input (`hax`, defeq to `poseidon_fiat_shamir_*` at `nodeInput` — the `hcip`
+move of `ipaVesta_sound`), re-expressed over the abstract batch data: the opaque
+commitment array collapses to the 43-row assembly (`hcs`), the two wire eval points to
+`![ζ, ωζ]`, and the wire combined inner product to the one over the abstract claims
+(`hes`). Sub-terms stay opaque throughout — the acceptance proposition
+`Ipa.verify … = true` is never reduced. -/
+private theorem KimchiTreeAcc.nodeFS (T : KimchiTreeAcc C σ idx pub comms wC)
+    (a : Fin T.M) (c : Fin T.NN)
+    (s : Fin (Index.gateAlphaCount + Index.permAlphaCount)) (p : Fin T.NNN)
+    (i : Fin 43) (j : Fin 2)
+    (hax : FiatShamirTreeB σ
+      (combinedCommitment (T.ξ a c s p i)
+        (fun t : Fin (T.cs a c).size => (T.cs a c)[t]))
+      (combinedEvalVector (2 ^ σ.k) (T.r a c s p j) (T.nodeInput a c s p i j).pointFn)
+      (Ipa.cipOf (T.nodeInput a c s p i j))
+      (Ipa.verify C σ (T.nodeInput a c s p i j) = true)) :
+    FiatShamirTreeB σ
+      (combinedCommitment (T.ξ a c s p i) (batchC wC (T.zC a c) comms))
+      (combinedEvalVector (2 ^ σ.k) (T.r a c s p j)
+        ![T.ζ a c p, idx.omega * T.ζ a c p])
+      (combinedInnerProduct (T.ξ a c s p i) (T.r a c s p j) (T.E a c s p))
+      (Ipa.verify C σ (T.nodeInput a c s p i j) = true) := by
+  have hgetD : ∀ (m : ℕ) (hm : m < (T.cs a c).size),
+      (T.cs a c).getD m 0 = (T.cs a c)[m] := by
+    intro m hm
+    simp [Array.getD, hm]
+  -- the commitment column: the opaque wire array is the 43-row assembly
+  have hP : combinedCommitment (T.ξ a c s p i)
+        (fun t : Fin (T.cs a c).size => (T.cs a c)[t])
+      = combinedCommitment (T.ξ a c s p i) (batchC wC (T.zC a c) comms) := by
+    refine combinedCommitment_reindex _ (T.hcsSize a c) _ _ fun t => ?_
+    have h1 := T.hcs a c (Fin.cast (T.hcsSize a c) t)
+    simp only [Fin.val_cast] at h1
+    rw [hgetD (t : ℕ) t.isLt] at h1
+    exact h1
+  -- the eval points: the wire two-point array is `![ζ, ωζ]`
+  have hx : ∀ t : Fin 2, (T.nodeInput a c s p i j).pointFn t
+      = ![T.ζ a c p, idx.omega * T.ζ a c p] t := by
+    intro t
+    fin_cases t <;> rfl
+  have hb : combinedEvalVector (2 ^ σ.k) (T.r a c s p j)
+        (T.nodeInput a c s p i j).pointFn
+      = combinedEvalVector (2 ^ σ.k) (T.r a c s p j)
+          ![T.ζ a c p, idx.omega * T.ζ a c p] :=
+    congrArg (fun x : Fin 2 → C.ScalarField =>
+      combinedEvalVector (2 ^ σ.k) (T.r a c s p j) x) (funext hx)
+  -- the combined inner product: the wire matrix carries the abstract claims
+  have hv : Ipa.cipOf (T.nodeInput a c s p i j)
+      = combinedInnerProduct (T.ξ a c s p i) (T.r a c s p j) (T.E a c s p) := by
+    show combinedInnerProduct (T.ξ a c s p i) (T.r a c s p j)
+        (fun (t : Fin (T.cs a c).size) (u : Fin 2) =>
+          ((T.es a c s p)[(t : ℕ)]!)[(u : ℕ)]!)
+      = combinedInnerProduct (T.ξ a c s p i) (T.r a c s p j) (T.E a c s p)
+    exact combinedInnerProduct_reindex _ _ (T.hcsSize a c) _ _
+      fun t u => T.hes a c s p (Fin.cast (T.hcsSize a c) t) u
+  rw [hP, hb, hv] at hax
+  exact hax
+
+end TreeOfAcc
+
+/-- **The Vesta bridge (the Fiat-Shamir derivation)**: an accumulated tree yields the
+full transcript tree. Every node's `FiatShamirTreeB` family is *derived* — not assumed —
+from the per-node IPA axiom `poseidon_fiat_shamir_vesta` at the node's own wire input
+(`nodeInput`), transported to the abstract batch data by `nodeFS`; the acceptance
+propositions `A` are instantiated as the deployed per-node acceptances
+`Ipa.verify … = true`, discharged by the accumulated `hacc`. This is where the thesis
+genuinely invokes the IPA-level assumption. -/
+def kimchiTreeAcc_tree_vesta {n : ℕ} [NeZero n] {σ : SRS IpaVesta.Point}
+    {idx : Index Fp n} {pub : Fin idx.publicCount → Fp}
+    {comms : IndexComms IpaVesta.Point} {wC : Fin 15 → IpaVesta.Point}
+    (T : KimchiTreeAcc IpaVesta.curve σ idx pub comms wC) :
+    KimchiTree σ idx pub comms wC where
+  M := T.M
+  NN := T.NN
+  NNN := T.NNN
+  b := T.b
+  g := T.g
+  hb := T.hb
+  hg := T.hg
+  hM := T.hM
+  hN := T.hN
+  ζ := T.ζ
+  hζ := T.hζ
+  hζ₁ := T.hζ₁
+  hζb := T.hζb
+  hζn := T.hζn
+  α := T.α
+  hα := T.hα
+  hD := T.hD
+  zC := T.zC
+  E := T.E
+  ξ := T.ξ
+  hξ := T.hξ
+  r := T.r
+  hr := T.hr
+  A := fun a c s p i j => Ipa.verify IpaVesta.curve σ (T.nodeInput a c s p i j) = true
+  hFS := fun a c s p i j =>
+    T.nodeFS a c s p i j (poseidon_fiat_shamir_vesta σ (T.nodeInput a c s p i j))
+  hacc := fun a c s p i j => T.hacc a c s p i j
+  TC := T.TC
+  aft := T.aft
+  ρft := T.ρft
+  hftC := T.hftC
+  hftE := T.hftE
+  q := T.q
+  hq := T.hq
+
+/-- **The Pallas bridge.** The Pallas-side twin of `kimchiTreeAcc_tree_vesta`, deriving
+every node's `FiatShamirTreeB` family from `poseidon_fiat_shamir_pallas`. -/
+def kimchiTreeAcc_tree_pallas {n : ℕ} [NeZero n] {σ : SRS IpaPallas.Point}
+    {idx : Index Fq n} {pub : Fin idx.publicCount → Fq}
+    {comms : IndexComms IpaPallas.Point} {wC : Fin 15 → IpaPallas.Point}
+    (T : KimchiTreeAcc IpaPallas.curve σ idx pub comms wC) :
+    KimchiTree σ idx pub comms wC where
+  M := T.M
+  NN := T.NN
+  NNN := T.NNN
+  b := T.b
+  g := T.g
+  hb := T.hb
+  hg := T.hg
+  hM := T.hM
+  hN := T.hN
+  ζ := T.ζ
+  hζ := T.hζ
+  hζ₁ := T.hζ₁
+  hζb := T.hζb
+  hζn := T.hζn
+  α := T.α
+  hα := T.hα
+  hD := T.hD
+  zC := T.zC
+  E := T.E
+  ξ := T.ξ
+  hξ := T.hξ
+  r := T.r
+  hr := T.hr
+  A := fun a c s p i j => Ipa.verify IpaPallas.curve σ (T.nodeInput a c s p i j) = true
+  hFS := fun a c s p i j =>
+    T.nodeFS a c s p i j (poseidon_fiat_shamir_pallas σ (T.nodeInput a c s p i j))
+  hacc := fun a c s p i j => T.hacc a c s p i j
+  TC := T.TC
+  aft := T.aft
+  ρft := T.ρft
+  hftC := T.hftC
+  hftE := T.hftE
+  q := T.q
+  hq := T.hq
+
 /-! ## The Fiat-Shamir axioms (Move 2, Pasta) -/
 
 /-- **AXIOM (Fiat-Shamir, kimchi, Vesta).** A run accepted by the deployed Vesta kimchi
-verifier admits the full transcript tree: `KimchiTree` at the run's own data — the wire
-key's committed columns (`vk.comms`) and witness commitments (prefix-sharing: the tree's
-`wC` is the run's own `w_comm`), against an Index whose scalar data matches the wire
-key's (the `homega`/`hzk`/`hshifts`/`hendo`/`hpub` antecedents; the domain-size pin
-`2^σ.k = n` is the run's own guard). This is the project's sole non-standard assumption
-at the kimchi level: it packages the rewinding/forking extraction, the random-oracle
-behaviour of the Poseidon sponge, **and the prefix-ordering of the sponge schedule** —
-witness commitments are absorbed before `β/γ`, the accumulator before `α`, the quotient
-chunks before `ζ` (so `TC` is `ζ`-free per prefix), and the opening argument runs from
-the warm post-`ζ` state. The tree's `FiatShamirTreeB` families are part of the bundle,
-so this axiom **subsumes the per-node IPA axiom** (`poseidon_fiat_shamir_vesta`): the
-thesis does not additionally invoke it.
+verifier admits the *accumulated* transcript tree: `KimchiTreeAcc` at the run's own
+data — the wire key's committed columns (`vk.comms`) and witness commitments
+(prefix-sharing: the tree's `wC` is the run's own `w_comm`), against an Index whose
+scalar data matches the wire key's (the `homega`/`hzk`/`hshifts`/`hendo`/`hpub`
+antecedents; the domain-size pin `2^σ.k = n` is the run's own guard). It packages the
+rewinding/forking extraction of the scalar challenges, the random-oracle behaviour of
+the Poseidon sponge at the kimchi schedule, **and the prefix-ordering of that
+schedule** — witness commitments are absorbed before `β/γ`, the accumulator before `α`,
+the quotient chunks before `ζ` (so `TC` is `ζ`-free per prefix), and the opening
+argument runs from the warm post-`ζ` state. It carries **no `FiatShamirTreeB`
+content**: each rewound node comes with wire batch data and its deployed IPA acceptance
+(`Ipa.verify … = true`) only; the node's transcript tree is derived from the
+*independent* per-node IPA axiom (`poseidon_fiat_shamir_vesta`) by
+`kimchiTreeAcc_tree_vesta`, so both assumptions appear in the thesis roots' closures.
 
 Boundary choice (documented judgment call): the axiom is stated over *reflected abstract
-data* — the `kimchiProof_sound_ft` hypothesis bundle — rather than over per-node wire
-runs; the trust-free `kimchiVerify_reflects` (`ReflectedRun`, with `runFtComm_abstract`
-and `runZetaN_eq`) exhibits the accepted run itself in exactly the bundle's vocabulary
-(the 45-row batch, the constructed ft commitment, the computed `ftEval0` claim), which
-is the base-node consistency of the tree. The bundle's `hftE` is stated at the
-Index-side public polynomial `idx.pubPoly` — the identity between the verifier's
-barycentric public evaluation and the interpolant's value off the domain is part of the
-packaged content (an honest-transcript algebraic fact at `ζⁿ ≠ 1`). -/
+data* — the accumulated form of the `kimchiProof_sound_ft` hypothesis bundle — rather
+than over per-node wire runs; the trust-free `kimchiVerify_reflects` (`ReflectedRun`,
+with `runFtComm_abstract` and `runZetaN_eq`) exhibits the accepted run itself in exactly
+the bundle's vocabulary (the 45-row batch, the constructed ft commitment, the computed
+`ftEval0` claim), which is the base-node consistency of the tree. The bundle's `hftE` is
+stated at the Index-side public polynomial `idx.pubPoly` — the identity between the
+verifier's barycentric public evaluation and the interpolant's value off the domain is
+part of the packaged content (an honest-transcript algebraic fact at `ζⁿ ≠ 1`). -/
 axiom kimchi_fiat_shamir_vesta (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
     (p : KimchiVesta.Proof) (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
     (hk : 2 ^ σ.k = n)
@@ -559,11 +848,13 @@ axiom kimchi_fiat_shamir_vesta (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
     (hendo : vk.endo = idx.endoBase)
     (hpub : pub.size = idx.publicCount)
     (hacc : KimchiVesta.verify σ vk p pub = true) :
-    KimchiTree σ idx (pubView idx pub) vk.comms (fun i => p.wComm.getD (i : ℕ) 0)
+    KimchiTreeAcc IpaVesta.curve σ idx (pubView idx pub) vk.comms
+      (fun i => p.wComm.getD (i : ℕ) 0)
 
 /-- **AXIOM (Fiat-Shamir, kimchi, Pallas).** The Pallas-side twin of
 `kimchi_fiat_shamir_vesta` — see its docstring for the packaged content and the
-boundary-choice notes; it likewise subsumes `poseidon_fiat_shamir_pallas`. -/
+boundary-choice notes; its nodes' transcript trees are likewise derived from the
+independent `poseidon_fiat_shamir_pallas` by `kimchiTreeAcc_tree_pallas`. -/
 axiom kimchi_fiat_shamir_pallas (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
     (p : KimchiPallas.Proof) (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
     (hk : 2 ^ σ.k = n)
@@ -573,7 +864,8 @@ axiom kimchi_fiat_shamir_pallas (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK
     (hendo : vk.endo = idx.endoBase)
     (hpub : pub.size = idx.publicCount)
     (hacc : KimchiPallas.verify σ vk p pub = true) :
-    KimchiTree σ idx (pubView idx pub) vk.comms (fun i => p.wComm.getD (i : ℕ) 0)
+    KimchiTreeAcc IpaPallas.curve σ idx (pubView idx pub) vk.comms
+      (fun i => p.wComm.getD (i : ℕ) 0)
 
 /-! ## The thesis (Move 3) -/
 
@@ -582,9 +874,10 @@ the deployed Vesta verifier — one proof, wire data, all challenges Poseidon-de
 under the no-DL-relation binding hypothesis and the verifier-key correspondence (the
 committed columns via `VKCorresponds` at the `vk.comms` view; the scalar data via the
 explicit `homega`/`hzk`/`hshifts`/`hendo`/`hpub` hypotheses), forces a satisfying witness
-table for the modeled circuit. Composes `kimchi_fiat_shamir_vesta` (the sole
-non-standard assumption) with `kimchiTree_sound`; see the module docstring for the full
-trust story. -/
+table for the modeled circuit. Composes `kimchi_fiat_shamir_vesta` with the bridge
+`kimchiTreeAcc_tree_vesta` — which derives every node's transcript tree from
+`poseidon_fiat_shamir_vesta` — and `kimchiTree_sound`; see the module docstring for the
+full trust story. -/
 theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
     (p : KimchiVesta.Proof) (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
     (hk : 2 ^ σ.k = n)
@@ -599,7 +892,8 @@ theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
     ∃ wTab : Fin n → Fin 15 → Fp, Satisfies idx (pubView idx pub) wTab :=
   kimchiTree_sound σ idx hk hbind vk.comms hvk (pubView idx pub)
     (fun i => p.wComm.getD (i : ℕ) 0)
-    (kimchi_fiat_shamir_vesta σ vk p pub idx hk homega hzk hshifts hendo hpub hacc)
+    (kimchiTreeAcc_tree_vesta
+      (kimchi_fiat_shamir_vesta σ vk p pub idx hk homega hzk hshifts hendo hpub hacc))
 
 /-- **THE THESIS (Pallas).** The Pallas-side twin of `kimchiVesta_sound`. -/
 theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
@@ -616,6 +910,7 @@ theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
     ∃ wTab : Fin n → Fin 15 → Fq, Satisfies idx (pubView idx pub) wTab :=
   kimchiTree_sound σ idx hk hbind vk.comms hvk (pubView idx pub)
     (fun i => p.wComm.getD (i : ℕ) 0)
-    (kimchi_fiat_shamir_pallas σ vk p pub idx hk homega hzk hshifts hendo hpub hacc)
+    (kimchiTreeAcc_tree_pallas
+      (kimchi_fiat_shamir_pallas σ vk p pub idx hk homega hzk hshifts hendo hpub hacc))
 
 end Kimchi.Verifier
