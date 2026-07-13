@@ -1,37 +1,37 @@
-import Kimchi.Verifier.Kimchi
-import Kimchi.Fixture.Ipa
+import Kimchi.Fixture.Kimchi
 import Lean.Data.Json
 
 /-! The verifier-key ↔ index correspondence, by value: every committed column of the
 production verifier key (`fixtures/kimchi_proof_vesta.json`) must equal the value-MSM
-of the production Lagrange-basis commitments against the corresponding derived column
+of the **computed** Lagrange-basis commitments against the corresponding derived column
 (`fixtures/index_vesta.json` — the same circuit; its columns are separately pinned to
 the Index model's derivations by `check_index_fixture`). This is
-`Kimchi.Verifier.VKCorresponds` for the production key, adjudicated numerically
-through `commitPoly_columnPoly`'s formula: `commit (columnPoly v) = ∑ vⱼ • Lcommⱼ`. -/
+`Kimchi.Verifier.VKCorresponds` for the production key, adjudicated numerically through
+`commitPoly_columnPoly`'s formula `commit (columnPoly v) = ∑ⱼ vⱼ • Lcommⱼ` — and since
+the basis is computed here by `lagrangeComm` (not dumped), the 28-column match also
+validates that def across the whole domain (a wrong `ω^(−ij)` exponent at any `i`
+breaks it). -/
 
-open Lean Kimchi.Fixture Kimchi.Fixture.Ipa Kimchi.Verifier
+open Lean Kimchi.Fixture Kimchi.Fixture.Ipa Kimchi.Fixture.Kimchi Kimchi.Verifier
 
 abbrev C := IpaVesta.curve
 abbrev F := C.ScalarField
 
 def parseF : Json → Except String F := parseZMod
 
-/-- The value-MSM of a column against the basis commitments. -/
-def basisMSM (basis : Array C.Point) (col : Array F) : C.Point :=
-  Ipa.msm C (fun j : Fin basis.size => basis.getD j 0)
-    (fun j => col.getD j 0)
-
 def main : IO Unit := do
   let idxPath := "fixtures/index_vesta.json"
   let vkPath := "fixtures/kimchi_proof_vesta.json"
   let idxJ ← IO.FS.readFile idxPath
   let vkJ ← IO.FS.readFile vkPath
-  let r : Except String (Array (String × Array F × C.Point) × ℕ) := do
+  let r : Except String (Array (String × Array F × C.Point) × Array C.Point) := do
     let ji ← Json.parse idxJ
     let jv ← Json.parse vkJ
-    let basis ← parseArrOf (parsePt C) (← jv.getObjVal? "lagrange_basis")
+    let vk ← parseVK C KimchiVesta.frParams jv
+    let σ ← parseSRSAt C vk.domainLog2 jv
     let h ← parsePt C (← jv.getObjVal? "srs_h")
+    -- the Lagrange basis, computed lazily (no longer carried in the fixture)
+    let basis := (Array.range vk.n).map (fun i => lagrangeComm C σ vk.omega i)
     let selJ ← ji.getObjVal? "selectors"
     let col (j : Json) (k : String) : Except String (Array F) := do
       parseArrOf parseF (← j.getObjVal? k)
@@ -61,22 +61,20 @@ def main : IO Unit := do
     checks := checks.push (← sel "varBaseMul" "mul_comm")
     checks := checks.push (← sel "endoMul" "emul_comm")
     checks := checks.push (← sel "endoScalar" "endomul_scalar_comm")
-    return (checks, basis.size)
+    return (checks, basis)
   match r with
   | .error e => throw (IO.userError s!"fixture parse error: {e}")
-  | .ok (checks, bsize) =>
-    let basis ← match Json.parse vkJ >>= fun j => do
-        parseArrOf (parsePt C) (← j.getObjVal? "lagrange_basis") with
-      | .ok b => pure b
-      | .error e => throw (IO.userError e)
+  | .ok (checks, basis) =>
+    let basisMSM (v : Array F) : C.Point :=
+      Ipa.msm C (fun j : Fin basis.size => basis.getD j 0) (fun j => v.getD j 0)
     let mut bad : Array String := #[]
     for (name, v, comm) in checks do
-      unless basisMSM basis v = comm do bad := bad.push name
+      unless basisMSM v = comm do bad := bad.push name
     IO.println s!"{vkPath}: {checks.size} committed columns vs value-MSM of the \
-      {bsize}-point Lagrange basis — \
+      computed {basis.size}-point Lagrange basis — \
       {if bad.isEmpty then "all match" else s!"MISMATCH: {bad}"}"
     unless bad.isEmpty do throw (IO.userError "VK correspondence check FAILED")
     IO.println "✓ the production verifier key corresponds to the index: every \
-      committed column is the value-MSM of its derived column"
+      committed column is the value-MSM of its (computed) derived Lagrange basis"
 
 #eval main

@@ -22,7 +22,7 @@ Scope (shape violations return `false`; every deferral is declared here):
 * no lookups (the wire records carry none) and no recursion (`prev_challenges` absent) —
   but the *constant* fr-sponge absorb of the empty recursion list's digest is
   transcribed (verifier.rs:290–299);
-* the VK digest is an *input* (`KimchiVK.digest`); transcribing `VerifierIndex::digest()`
+* the VK digest is *computed* (`vkDigest`, transcribing `VerifierIndex::digest()`
   (verifier_index.rs:399) is a declared deferral;
 * `linearization.index_terms` is empty at the basic gate set, so `f_comm` is the single
   σ-commitment term (verifier.rs:897–956).
@@ -98,8 +98,7 @@ to what the basic-gate verifier reads. `domainLog2` fixes the domain size
 the `2 ^ σ.k = n` guard (`max_poly_size = n`). `endo` is the production `verifier_index.endo`
 consumed by `ft_eval0` ONLY — challenge expansion uses the sponge spec's `C.sponge.lam`
 (the curve's `endo_r`); the two agree in production but stay distinct here, as in the
-sources. `digest` is the precomputed `VerifierIndex::digest()` (verifier_index.rs:399) —
-an input, its computation a declared deferral. `frParams` are the scalar-side Poseidon
+sources. The digest is computed (`vkDigest`), not carried. `frParams` are the scalar-side Poseidon
 parameters (production `G::sponge_params()`), which the curve bundle does not carry. -/
 structure KimchiVK (C : Ipa.CommitmentCurve) where
   /-- The domain size exponent: `n = 2 ^ domainLog2`. -/
@@ -122,15 +121,29 @@ structure KimchiVK (C : Ipa.CommitmentCurve) where
   zkRows : ℕ
   /-- `verifier_index.endo`, the `ft_eval0` endo coefficient (see the header note). -/
   endo : C.ScalarField
-  /-- The precomputed `VerifierIndex::digest()` — an input here. -/
-  digest : C.BaseField
-  /-- The Lagrange-basis commitments for the public-input commitment. -/
-  lagrangeBasis : Array C.Point
   /-- The scalar-side Poseidon parameters (`G::sponge_params()`), for the fr-sponge. -/
   frParams : Params C.ScalarField
 
 /-- The domain size `n = 2 ^ domainLog2` (`domain.size`). -/
 def KimchiVK.n {C : Ipa.CommitmentCurve} (vk : KimchiVK C) : ℕ := 2 ^ vk.domainLog2
+
+/-- **The verifier-index digest** (`VerifierIndex::digest()`, verifier_index.rs:399–…):
+a fresh fq-sponge absorbs every commitment of the key in declared order — the 7
+permutation commitments, the 15 coefficient commitments, then the six selector
+commitments (generic, psm, completeAdd, mul, emul, endomulScalar); the optional-gate
+and lookup commitments are absent in this regime — and one full base-field squeeze
+(`digest_fq = squeeze_field`) closes it. Computed, not wire input: the one absorb
+schedule 4.1 deferred. -/
+def vkDigest (vk : KimchiVK C) : C.BaseField :=
+  let s := vk.sigmaComm.foldl (fun s P => absorbG C.sponge s P) FqSponge.init
+  let s := vk.coefficientsComm.foldl (fun s P => absorbG C.sponge s P) s
+  let s := absorbG C.sponge s vk.genericComm
+  let s := absorbG C.sponge s vk.poseidonComm
+  let s := absorbG C.sponge s vk.completeAddComm
+  let s := absorbG C.sponge s vk.mulComm
+  let s := absorbG C.sponge s vk.emulComm
+  let s := absorbG C.sponge s vk.endomulScalarComm
+  (challengeFq C.sponge s).1
 
 /-! ## The fr-sponge and the sponge digests -/
 
@@ -184,7 +197,7 @@ commitments (:174–177); squeeze the plain challenges `β` (:233) and `γ` (:23
 clones); the warm state is returned alongside. -/
 def fqOracles (vk : KimchiVK C) (p : KimchiProof C) (publicComm : C.Point) :
     FqOracles C :=
-  let s := absorbFq C.sponge FqSponge.init [vk.digest]
+  let s := absorbFq C.sponge FqSponge.init [vkDigest C vk]
   let s := absorbG C.sponge s publicComm
   let s := p.wComm.foldl (fun s P => absorbG C.sponge s P) s
   let (beta, s) := challenge C.sponge s
@@ -276,18 +289,24 @@ def KimchiProof.evals {C : Ipa.CommitmentCurve} (p : KimchiProof C) :
 
 /-! ## The group side -/
 
-/-- The public-input commitment (verifier.rs:833–858): `srs.h` for empty input (the
-`blinding_commitment()` chunk, :845); else the MSM of the Lagrange-basis commitments
-against the **negated** public input (:847–848), masked with the all-ones blinder
-(`mask_custom`, :849–856) — which adds `srs.h`. `commitment.rs` is not staged; the
-`mask_custom` semantics (`+ 1 • h`) is corroborated by the empty-input branch and
-adjudicated by the fixture. -/
+/-- **The `i`-th Lagrange-basis commitment**, computed lazily per domain
+(`SRS::get_lagrange_basis`, which kimchi caches in-memory but never serializes): the
+commitment of `Lᵢ`, whose coefficient vector is the domain IFFT of the `i`-th unit,
+`Lᵢ.coeff j = n⁻¹ · ω^(−ij)`. So `commit Lᵢ = ∑ⱼ n⁻¹·ω^(−ij) • gⱼ` — one SRS-sized
+MSM, materializing only the slots the public input reaches. -/
+def lagrangeComm (σ : SRS C.Point) (ω : C.ScalarField) (i : ℕ) : C.Point :=
+  Ipa.msm C σ.g
+    (fun j : Fin (2 ^ σ.k) => ((2 ^ σ.k : C.ScalarField))⁻¹ * (ω ^ (i * (j : ℕ)))⁻¹)
+
+/-- The public-input commitment (verifier.rs:833–858): `σ.h` for empty input; else the
+`−pubᵢ` combination of the first `|pub|` Lagrange commitments (computed by `lagrangeComm`,
+not carried on the key) plus the `mask_custom` unit blinder `σ.h`. -/
 def publicCommitment (σ : SRS C.Point) (vk : KimchiVK C)
     (pub : Array C.ScalarField) : C.Point :=
   if pub.size = 0 then σ.h
   else
-    ((vk.lagrangeBasis.extract 0 pub.size).zip pub).foldl
-      (fun acc Pp => acc + (-Pp.2).val • Pp.1) 0
+    (List.range pub.size).foldl
+      (fun acc i => acc + (-(pub.getD i 0)).val • lagrangeComm C σ vk.omega i) 0
     + σ.h
 
 /-! ## The warm-start opening finish -/
@@ -351,7 +370,7 @@ def kimchiVerify (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
   if p.wComm.size != 15 || p.tComm.size != 7 || p.w.size != 15 || p.s.size != 6
       || p.coefficients.size != 15 || vk.sigmaComm.size != 7
       || vk.coefficientsComm.size != 15 || vk.shifts.size != 7
-      || decide (vk.lagrangeBasis.size < pub.size) || decide (n < pub.size)
+      || decide (n < pub.size)
       || 2 ^ σ.k != n then
     false
   else

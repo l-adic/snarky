@@ -28,6 +28,12 @@ def main : IO Unit := do
   match r with
   | .error e => throw (IO.userError s!"{path}: fixture parse error: {e}")
   | .ok (σ, vk, proof, pub) =>
+    -- the computed VK digest must reproduce production's VerifierIndex::digest()
+    let dumpedDigest ← match Json.parse raw >>= fun j => do
+        parseZMod (n := C.base) (← j.getObjVal? "digest") with
+      | .ok d => pure d
+      | .error e => throw (IO.userError s!"{path}: digest parse error: {e}")
+    let hDig := decide (vkDigest C vk = dumpedDigest)
     let ok := kimchiVerify C σ vk proof pub
     let badEval := { proof with
       z := { proof.z with zeta := proof.z.zeta + 1 } }
@@ -36,13 +42,14 @@ def main : IO Unit := do
     let r1 := !kimchiVerify C σ vk badEval pub
     let r2 := !kimchiVerify C σ vk badComm pub
     let r3 := !kimchiVerify C σ vk badFt pub
-    IO.println s!"{path}: verify: {if ok then "ACCEPT" else "REJECT"}, \
+    IO.println s!"{path}: vk digest: {if hDig then "✓" else "✗"}, \
+      verify: {if ok then "ACCEPT" else "REJECT"}, \
       corrupted z eval: {if r1 then "REJECT (expected)" else "ACCEPT (BUG)"}, \
       corrupted t comm: {if r2 then "REJECT (expected)" else "ACCEPT (BUG)"}, \
       corrupted ft_eval1: {if r3 then "REJECT (expected)" else "ACCEPT (BUG)"}"
-    unless ok && r1 && r2 && r3 do
+    unless hDig && ok && r1 && r2 && r3 do
       throw (IO.userError "kimchi verifier check FAILED")
-    IO.println "✓ the executable kimchi verifier accepts the production proof and \
-      rejects corruptions"
+    IO.println "✓ the executable kimchi verifier computes the production VK digest, \
+      accepts the production proof, and rejects corruptions"
 
 #eval main
