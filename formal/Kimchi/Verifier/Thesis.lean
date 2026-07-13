@@ -40,10 +40,12 @@ the modeled circuit — `kimchiVesta_sound` / `kimchiPallas_sound`:
 * **Everything else is proved.** The reflection section (`kimchiVerify_reflects`,
   `ReflectedRun`) is trust-free: it reads the accepted run's own batch off the code path —
   the 45-row layout, the sponge-derived challenges, the constructed ft commitment and the
-  computed `ftEval0` claim — and is the base-node consistency witness for the axiom's
-  bundle (the tree's root is the run itself, with exactly this reflected data).
-  `kimchiTree_sound` then closes by one application of `kimchiProof_sound_ft`, whose own
-  closure is axiom-free.
+  computed `ftEval0` claim. It is the **premise the Fiat-Shamir axiom is stated over**:
+  `kimchiVerify_reflects` turns `verify = true` into a `ReflectedRun`, and each
+  `kimchi_fiat_shamir_*` takes that reflected run as its hypothesis — so the axiom is
+  anchored to the observed transcript, not a bare boolean, and the reflection is
+  load-bearing rather than a side witness. `kimchiTree_sound` then closes by one
+  application of `kimchiProof_sound_ft`, whose own closure is axiom-free.
 
 The axiom closure of the roots is therefore: the three standard logical axioms, the
 kimchi Fiat-Shamir axiom and the per-node IPA Fiat-Shamir axiom (one pair per curve),
@@ -64,9 +66,8 @@ and — through the Pasta point-group module instances
   reduce that bundle, which overruns the recursion limit. The flat form keeps the
   reflection's definitional unfolding shallow (default `maxRecDepth`); the apparent
   non-sharing has no runtime cost because nothing evaluates them.
-* `ReflectedRun`, `kimchiVerify_reflects` — the trust-free reflection (Move 1).
-* `powPow2_eq`, `runZetaN_eq`, `runFtComm_abstract` — the executable-to-abstract bridges
-  (the squaring ladder is `ζ ^ n`; the ft combination in module vocabulary).
+* `ReflectedRun`, `kimchiVerify_reflects` — the trust-free reflection (Move 1); the
+  reflected run is the premise each `kimchi_fiat_shamir_*` axiom is stated over.
 * `KimchiTree` — the transcript-tree bundle: exactly the hypothesis list of
   `kimchiProof_sound_ft` beyond binding and the key correspondence.
 * `lagBasis_eval`, `barycentricPubEval`, `barycentricPubEval_eq` — the barycentric
@@ -186,8 +187,8 @@ def runFComm (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
   (runPScalar C σ vk p pub).val • vk.sigmaComm.getD 6 0
 
 /-- The run's constructed ft commitment (verifier.rs:960–965):
-`f_comm − (ζⁿ − 1) · combine(ζⁿ, t_comm)`, executable vocabulary.
-`runFtComm_abstract` restates it in the module vocabulary of the soundness layer. -/
+`f_comm − (ζⁿ − 1) · combine(ζⁿ, t_comm)`, in executable vocabulary — the same Maller
+combination the tree bundle's `hftC` assumes at the grid, here read off the code path. -/
 def runFtComm (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     (pub : Array C.ScalarField) : C.Point :=
   runFComm C σ vk p pub
@@ -245,28 +246,6 @@ def runWarm (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     (pub : Array C.ScalarField) : FqSponge.S C.base :=
   (runOracles C σ vk p pub).warm
 
-/-! ## The squaring-ladder bridge -/
-
-/-- The verifier's squaring ladder computes the `2^k`-th power. Project-local: `powPow2`
-is this library's own executable power (`Kimchi/Verifier/Kimchi.lean`). -/
-theorem powPow2_eq {F : Type*} [Field F] (x : F) (k : ℕ) : powPow2 x k = x ^ 2 ^ k := by
-  induction k with
-  | zero => simp [powPow2]
-  | succ k ih =>
-    unfold powPow2 at ih ⊢
-    rw [List.range_succ, List.foldl_append, ih]
-    simp only [List.foldl_cons, List.foldl_nil]
-    rw [← pow_add]
-    congr 1
-    rw [pow_succ]
-    omega
-
-/-- The run's ladder value is the genuine domain-size power `ζ ^ n`. -/
-theorem runZetaN_eq (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
-    (pub : Array C.ScalarField) :
-    runZetaN C σ vk p pub = (runOracles C σ vk p pub).zeta ^ vk.n :=
-  powPow2_eq _ _
-
 /-! ## Reflection (Move 1): the accepted run's own batch, read off the code path -/
 
 /-- Fold a zip-row map to its commitment column: first projections give back the
@@ -301,9 +280,9 @@ commitments, then exactly the proof's witness commitments, the key's coefficient
 commitments, and the key's first six σ commitments; the claims column is the pair
 `(computed ftEval0, p.ftEval1)` on the ft row and the proof's own wire evaluation pairs
 on every column row (read by the abstract layer through `Input.evalFn`). The challenges
-`(β, γ, α, ζ, v, u)` are the sponge-derived ones, named by `runOracles`/`runVU`; the
-scalar-action bridge to the module vocabulary is `runFtComm_abstract` below. This is the
-base-node consistency witness for the Fiat-Shamir axiom's transcript tree. -/
+`(β, γ, α, ζ, v, u)` are the sponge-derived ones, named by `runOracles`/`runVU`. This
+reflected run is the premise each `kimchi_fiat_shamir_*` axiom is stated over — the
+axiom is anchored to the observed transcript, not a bare acceptance boolean. -/
 structure ReflectedRun (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     (pub : Array C.ScalarField) : Prop where
   shape_wComm : p.wComm.size = 15
@@ -402,42 +381,6 @@ theorem kimchiVerify_reflects (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiPr
       simp only [List.map_toArray, List.map_cons, List.map_nil]
       rfl
 
-section AbstractConstruction
-
-variable {C}
-variable [Module C.ScalarField C.Point]
-  (hsmul : ∀ (z : C.ScalarField) (P : C.Point), z • P = z.val • P)
-
-include hsmul in
-/-- **The ft construction fact, module vocabulary** (Move 1's scalar-action bridge, the
-`hsmul` pattern of `Reflection.lean`): the run's constructed ft commitment is
-`pS • σ₆-commitment − (ζⁿ-ladder − 1) • ∑ᵢ (ζⁿ-ladder)ⁱ • t_commᵢ` — the exact shape of
-the tree bundle's `hftC` at the wire key's `comms` view (`runZetaN_eq` supplies
-`ladder = ζ ^ n`). -/
-theorem runFtComm_abstract (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
-    (pub : Array C.ScalarField) (ht : p.tComm.size = 7) :
-    runFtComm C σ vk p pub
-      = runPScalar C σ vk p pub • vk.comms.sigma 6
-        - (runZetaN C σ vk p pub - 1)
-            • ∑ i : Fin 7, (runZetaN C σ vk p pub) ^ (i : ℕ) • p.tComm.getD (i : ℕ) 0 := by
-  have hgetD : ∀ (j : ℕ) (h : j < p.tComm.size), p.tComm.getD j 0 = p.tComm[j] := by
-    intro j h
-    simp [Array.getD, h]
-  have hsum : combinedCommitment (runZetaN C σ vk p pub)
-        (fun i : Fin p.tComm.size => p.tComm[i])
-      = ∑ i : Fin 7, (runZetaN C σ vk p pub) ^ (i : ℕ) • p.tComm.getD (i : ℕ) 0 := by
-    refine Fintype.sum_equiv (finCongr ht) _ _ fun i => ?_
-    simp only [finCongr_apply, Fin.val_cast, Fin.getElem_fin]
-    rw [hgetD (i : ℕ) i.isLt]
-  unfold runFtComm runFComm
-  rw [combineCommitments_eq hsmul, hsum,
-    ← hsmul (runPScalar C σ vk p pub) (vk.sigmaComm.getD 6 0),
-    ← hsmul (runZetaN C σ vk p pub - 1)
-      (∑ i : Fin 7, (runZetaN C σ vk p pub) ^ (i : ℕ) • p.tComm.getD (i : ℕ) 0)]
-  rfl
-
-end AbstractConstruction
-
 /-! ## The transcript-tree bundle (Move 2) -/
 
 /-- **The kimchi transcript tree**: the full hypothesis bundle of `kimchiProof_sound_ft`
@@ -464,9 +407,9 @@ Field groups, in `kimchiProof_sound_ft`'s order:
 * `TC`/`aft`/`ρft`/`hftC`/`hftE` — the ft-row data of the t extraction: the seven
   quotient-chunk commitments `TC`, `ζ`-free per `(β, γ, α)`-prefix (committed before
   `ζ` is sampled), and per node a bound ft witness committing to the verifier's
-  `ftComm` combination (`hftC` — the reflected `runFtComm_abstract` shape) whose value
-  is the verifier's computed `ftEval0` (`hftE`, at the claimed record and the Index-side
-  public polynomial).
+  `ftComm` combination (`hftC` — the Maller `permScalar·σ₆ − (ζⁿ−1)·∑ζⁿⁱ·TC` shape)
+  whose value is the verifier's computed `ftEval0` (`hftE`, at the claimed record and
+  the Index-side public polynomial).
 * `q`/`hq` — per prefix, seven designated `ζ`-grid points with injective `ζⁿ`-values
   (the Vandermonde recovery points of `t_extraction`; their `ζⁿ ≠ 1` side comes from
   `hζn`). -/
@@ -998,12 +941,12 @@ content**: each rewound node comes with wire batch data and its deployed IPA acc
 *independent* per-node IPA axiom (`poseidon_fiat_shamir_vesta`) by
 `kimchiTreeAcc_tree_vesta`, so both assumptions appear in the thesis roots' closures.
 
-Boundary choice (documented judgment call): the axiom is stated over *reflected abstract
-data* — the accumulated form of the `kimchiProof_sound_ft` hypothesis bundle — rather
-than over per-node wire runs; the trust-free `kimchiVerify_reflects` (`ReflectedRun`,
-with `runFtComm_abstract` and `runZetaN_eq`) exhibits the accepted run itself in exactly
-the bundle's vocabulary (the 45-row batch, the constructed ft commitment, the computed
-`ftEval0` claim), which is the base-node consistency of the tree. The bundle's `hftE` is
+Premise (not a bare boolean): the axiom is stated over `ReflectedRun` — the trust-free
+reflection of the accepted run, produced by `kimchiVerify_reflects` from `verify = true`
+and fed in by the thesis root. So the axiom is anchored to the observed transcript in the
+verifier's own vocabulary (the 45-row batch, the constructed ft commitment, the computed
+`ftEval0` claim): the reflection is load-bearing, and the rewinding the axiom posits
+extends a run it is forced to be consistent with. The bundle's `hftE` is
 stated at the verifier-computed *barycentric* public evaluation (`barycentricPubEval`);
 its identity with the interpolant's value off the domain is a **proved lemma**
 (`barycentricPubEval_eq`, at `ζⁿ ≠ 1`), applied by the bridge — no algebraic content
@@ -1016,7 +959,7 @@ axiom kimchi_fiat_shamir_vesta (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
     (hshifts : ∀ i : Fin 7, vk.shifts.getD (i : ℕ) 0 = idx.shifts i)
     (hendo : vk.endo = idx.endoBase)
     (hpub : pub.size = idx.publicCount)
-    (hacc : KimchiVesta.verify σ vk p pub = true) :
+    (hrefl : ReflectedRun IpaVesta.curve σ vk p pub) :
     KimchiTreeAcc IpaVesta.curve σ idx (pubView idx pub) vk.comms
       (fun i => p.wComm.getD (i : ℕ) 0)
 
@@ -1032,7 +975,7 @@ axiom kimchi_fiat_shamir_pallas (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK
     (hshifts : ∀ i : Fin 7, vk.shifts.getD (i : ℕ) 0 = idx.shifts i)
     (hendo : vk.endo = idx.endoBase)
     (hpub : pub.size = idx.publicCount)
-    (hacc : KimchiPallas.verify σ vk p pub = true) :
+    (hrefl : ReflectedRun IpaPallas.curve σ vk p pub) :
     KimchiTreeAcc IpaPallas.curve σ idx (pubView idx pub) vk.comms
       (fun i => p.wComm.getD (i : ℕ) 0)
 
@@ -1062,7 +1005,8 @@ theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
   kimchiTree_sound σ idx hk hbind vk.comms hvk (pubView idx pub)
     (fun i => p.wComm.getD (i : ℕ) 0)
     (kimchiTreeAcc_tree_vesta
-      (kimchi_fiat_shamir_vesta σ vk p pub idx hk homega hzk hshifts hendo hpub hacc))
+      (kimchi_fiat_shamir_vesta σ vk p pub idx hk homega hzk hshifts hendo hpub
+        (kimchiVerify_reflects IpaVesta.curve σ vk p pub hacc)))
 
 /-- **THE THESIS (Pallas).** The Pallas-side twin of `kimchiVesta_sound`. -/
 theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
@@ -1080,6 +1024,7 @@ theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
   kimchiTree_sound σ idx hk hbind vk.comms hvk (pubView idx pub)
     (fun i => p.wComm.getD (i : ℕ) 0)
     (kimchiTreeAcc_tree_pallas
-      (kimchi_fiat_shamir_pallas σ vk p pub idx hk homega hzk hshifts hendo hpub hacc))
+      (kimchi_fiat_shamir_pallas σ vk p pub idx hk homega hzk hshifts hendo hpub
+        (kimchiVerify_reflects IpaPallas.curve σ vk p pub hacc)))
 
 end Kimchi.Verifier
