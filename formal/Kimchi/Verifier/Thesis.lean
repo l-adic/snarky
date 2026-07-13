@@ -52,7 +52,13 @@ kimchi Fiat-Shamir axiom, and — through the Pasta point-group module instances
 * `runOracles` … `runInput`, `runWarm` — the run-derived data: the deployed verifier's
   intermediate values as named functions of the wire data (definitional mirrors of
   `kimchiVerify`'s `let`s; the `…P` forms are parameterized by the pair-destructured
-  values so the reflection never has to reduce a sponge computation).
+  values so the reflection never has to reduce a sponge computation). These are kept
+  **flat** — each accessor calls `runOracles` rather than projecting a single shared
+  `runData` bundle — on purpose: they are non-executed specification functions, and
+  bundling the sponge output into one structure forces `kimchiVerify_reflects` to
+  reduce that bundle, which overruns the recursion limit. The flat form keeps the
+  reflection's definitional unfolding shallow (default `maxRecDepth`); the apparent
+  non-sharing has no runtime cost because nothing evaluates them.
 * `ReflectedRun`, `kimchiVerify_reflects` — the trust-free reflection (Move 1).
 * `powPow2_eq`, `runZetaN_eq`, `runFtComm_abstract` — the executable-to-abstract bridges
   (the squaring ladder is `ζ ^ n`; the ft combination in module vocabulary).
@@ -320,7 +326,6 @@ structure ReflectedRun (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
       ++ p.coefficients.map (fun e => #[e.zeta, e.zetaOmega])
       ++ p.s.map (fun e => #[e.zeta, e.zetaOmega])
 
-set_option maxRecDepth 8192 in
 /-- **Reflection** (Move 1): an accepted run yields its `ReflectedRun` — no trust, pure
 code-path reading. The one `replace` re-expresses `kimchiVerify`'s body through the named
 run functions (definitional: the run functions mirror the body's `let`s, and the pair
