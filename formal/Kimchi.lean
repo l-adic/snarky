@@ -43,5 +43,6 @@ import Kimchi.Verifier.Ipa
 import Kimchi.Verifier.Linearization
 import Kimchi.Verifier.Kimchi
 import Kimchi.Verifier.Correspond
+import Kimchi.Verifier.Sound
 import Kimchi.Verifier.Equation
 import Kimchi.Verifier.Reflection
