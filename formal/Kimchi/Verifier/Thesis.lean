@@ -69,6 +69,11 @@ and — through the Pasta point-group module instances
   (the squaring ladder is `ζ ^ n`; the ft combination in module vocabulary).
 * `KimchiTree` — the transcript-tree bundle: exactly the hypothesis list of
   `kimchiProof_sound_ft` beyond binding and the key correspondence.
+* `lagBasis_eval`, `barycentricPubEval`, `barycentricPubEval_eq` — the barycentric
+  public evaluation (the deployed verifier's formula, in Index vocabulary) and its
+  proved identity with the interpolant's value off the domain, so the accumulated
+  bundle's `hftE` speaks the verifier's own value; `publicEvals_ofFn_eq` ties the
+  `Finset.sum` form to the executable `publicEvals` fold.
 * `KimchiTreeAcc`, `KimchiTreeAcc.nodeInput` — the accumulated bundle: `KimchiTree` with
   the per-node `FiatShamirTreeB` families replaced by wire batch data and deployed IPA
   acceptance, and the per-node wire input the IPA axiom is applied to.
@@ -537,6 +542,156 @@ theorem kimchiTree_sound {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
     T.ζ T.hζ T.hζ₁ T.hζb T.hζn T.α T.hα T.hD wC T.zC T.E T.ξ T.hξ T.r T.hr T.A T.hFS
     T.hacc T.TC T.aft T.ρft T.hftC T.hftE T.q T.hq
 
+/-! ## The barycentric public evaluation
+
+The deployed verifier computes the public evaluation at `ζ` by the barycentric formula
+(`publicEvals`, verifier.rs:332–379), not by evaluating the public interpolant. The
+accumulated bundle below states its `hftE` at that verifier-computed value
+(`barycentricPubEval`), and the identity with the interpolant's value off the domain —
+`barycentricPubEval idx ζ pub = −(idx.pubPoly pub).eval ζ` at `ζⁿ ≠ 1` — is **proved**
+(`barycentricPubEval_eq`) and applied by the bridges, so the Fiat-Shamir axioms package
+no algebraic content about the public column. -/
+
+section Barycentric
+
+open Kimchi.Quotient
+
+/-- **The Lagrange basis off the domain**: for `ζ` with `ζⁿ ≠ 1`,
+`Lⱼ(ζ) = ωʲ·(ζⁿ − 1) / (n·(ζ − ωʲ))` — the barycentric summand. Project-local: evaluates
+the numerator identity `lagNumer_mul_sub` (`Quotient/Permutation.lean`) at `ζ` and clears
+denominators (`ζ ≠ ωʲ` because `ζⁿ ≠ 1`; `(n : F) ≠ 0` from the primitive root). -/
+theorem lagBasis_eval {F : Type*} [Field F] {n : ℕ} {ω ζ : F}
+    (hω : IsPrimitiveRoot ω n) (hn : 0 < n) (hζn : ζ ^ n ≠ 1) (j : Fin n) :
+    (columnPoly ω (Permutation.rowIndicator j)).eval ζ
+      = ω ^ (j : ℕ) * (ζ ^ n - 1) / ((n : F) * (ζ - ω ^ (j : ℕ))) := by
+  haveI : NeZero n := ⟨hn.ne'⟩
+  have hnF : ((n : ℕ) : F) ≠ 0 := hω.neZero'.out
+  have hωj : (ω : F) ^ (j : ℕ) ≠ 0 := pow_ne_zero _ (hω.ne_zero hn.ne')
+  have hζω : ζ - ω ^ (j : ℕ) ≠ 0 := by
+    rw [sub_ne_zero]
+    intro hEq
+    apply hζn
+    rw [hEq, ← pow_mul, mul_comm, pow_mul, hω.pow_eq_one, one_pow]
+  have h := congrArg (Polynomial.eval ζ) (Permutation.lagNumer_mul_sub hω hn j)
+  simp only [Permutation.lagNumer, zH, eval_mul, eval_sub, eval_C, eval_X, eval_pow,
+    eval_one] at h
+  rw [eq_div_iff (mul_ne_zero hnF hζω)]
+  field_simp at h
+  linear_combination h
+
+/-- **The barycentric public evaluation**: the `Finset.sum` form of the deployed
+verifier's first `publicEvals` component (verifier.rs:332–379; the summand convention is
+`pubDot`'s, `−(ζ − ωʲ)⁻¹ · pubⱼ · ωʲ`), in the Index vocabulary the tree bundle speaks
+(`pub : Fin idx.publicCount → F`, no wire array). This is the value `KimchiTreeAcc.hftE`
+is stated at. -/
+noncomputable def barycentricPubEval {F : Type*} [Field F] {n : ℕ}
+    (idx : Index F n) (ζ : F) (pub : Fin idx.publicCount → F) : F :=
+  (∑ j : Fin idx.publicCount,
+      -(ζ - idx.omega ^ (j : ℕ))⁻¹ * pub j * idx.omega ^ (j : ℕ))
+    * (ζ ^ n - 1) * (n : F)⁻¹
+
+/-- **Barycentric = interpolant off the domain** — the identity the Fiat-Shamir axioms
+used to assume silently, now proved: at any `ζ` with `ζⁿ ≠ 1`,
+`barycentricPubEval idx ζ pub = −(idx.pubPoly pub).eval ζ`. The interpolant expands over
+the Lagrange basis (`columnPoly_eq_sum_indicator`); the `Fin n` sum collapses to the
+public rows (`pubAt` vanishes beyond `publicCount ≤ n`, from `idx.public_le`); and
+`lagBasis_eval` gives each term. The bridges apply this per node (at the grid's `hζn`)
+to hand `KimchiTree` its interpolant-form `hftE`. -/
+theorem barycentricPubEval_eq {F : Type*} [Field F] {n : ℕ} [NeZero n]
+    (idx : Index F n) (pub : Fin idx.publicCount → F) {ζ : F} (hζn : ζ ^ n ≠ 1) :
+    barycentricPubEval idx ζ pub = -((idx.pubPoly pub).eval ζ) := by
+  have hn : 0 < n := Nat.pos_of_ne_zero (NeZero.ne n)
+  have hω := idx.omega_prim
+  have hnF : ((n : ℕ) : F) ≠ 0 := hω.neZero'.out
+  have hpc : idx.publicCount ≤ n := idx.public_le.trans (Nat.sub_le _ _)
+  have hR : (idx.pubPoly pub).eval ζ
+      = ∑ i ∈ Finset.range idx.publicCount,
+          (if h : i < idx.publicCount then pub ⟨i, h⟩ else 0)
+            * (idx.omega ^ i * (ζ ^ n - 1) / ((n : F) * (ζ - idx.omega ^ i))) := by
+    rw [show idx.pubPoly pub = columnPoly idx.omega (pubAt idx pub) from rfl,
+      columnPoly_eq_sum_indicator hω hn, eval_finsetSum]
+    have hterm : ∀ j : Fin n,
+        (pubAt idx pub j • columnPoly idx.omega (Permutation.rowIndicator j)).eval ζ
+          = (if h : (j : ℕ) < idx.publicCount then pub ⟨(j : ℕ), h⟩ else 0)
+              * (idx.omega ^ (j : ℕ) * (ζ ^ n - 1)
+                  / ((n : F) * (ζ - idx.omega ^ (j : ℕ)))) := by
+      intro j
+      rw [eval_smul, smul_eq_mul, lagBasis_eval hω hn hζn j, pubAt]
+    rw [Finset.sum_congr rfl fun j _ => hterm j,
+      Fin.sum_univ_eq_sum_range (fun i => (if h : i < idx.publicCount then pub ⟨i, h⟩ else 0)
+        * (idx.omega ^ i * (ζ ^ n - 1) / ((n : F) * (ζ - idx.omega ^ i)))) n]
+    exact (Finset.sum_subset (Finset.range_subset_range.mpr hpc) (fun i _ hi => by
+      rw [dif_neg (by simpa using hi), zero_mul])).symm
+  rw [hR, ← Fin.sum_univ_eq_sum_range (fun i =>
+      (if h : i < idx.publicCount then pub ⟨i, h⟩ else 0)
+        * (idx.omega ^ i * (ζ ^ n - 1) / ((n : F) * (ζ - idx.omega ^ i))))
+      idx.publicCount]
+  unfold barycentricPubEval
+  rw [Finset.sum_mul, Finset.sum_mul, ← Finset.sum_neg_distrib]
+  refine Finset.sum_congr rfl fun j _ => ?_
+  rw [dif_pos j.isLt]
+  simp only [Fin.eta]
+  have hζω : ζ - idx.omega ^ (j : ℕ) ≠ 0 := by
+    rw [sub_ne_zero]
+    intro hEq
+    apply hζn
+    rw [hEq, ← pow_mul, mul_comm, pow_mul, hω.pow_eq_one, one_pow]
+  field_simp
+
+/-- The `pubDot` fold, generalized: from state `(a, w)`, the running-`ω`-power fold
+returns `a` plus the indexed barycentric dot at powers `w·ωⁱ`, next power `w·ω^len`
+(the fold→indexed-sum pattern, list carrier with arbitrary start). -/
+private theorem pubDot_foldl {F : Type*} [Field F] (ω pt : F) (l : List F) (a w : F) :
+    l.foldl (fun (acc : F × F) pi =>
+        (acc.1 + -(pt - acc.2)⁻¹ * pi * acc.2, acc.2 * ω)) (a, w)
+      = (a + ∑ i : Fin l.length,
+            -(pt - w * ω ^ (i : ℕ))⁻¹ * l.get i * (w * ω ^ (i : ℕ)),
+          w * ω ^ l.length) := by
+  induction l generalizing a w with
+  | nil => simp
+  | cons x xs ih =>
+    rw [List.foldl_cons, ih]
+    refine Prod.ext ?_ ?_
+    · simp only [List.length_cons, Fin.sum_univ_succ, Fin.val_zero, pow_zero, mul_one,
+        List.get_eq_getElem, Fin.val_succ, List.getElem_cons_zero, List.getElem_cons_succ]
+      rw [_root_.add_assoc]
+      congr 1
+      congr 1
+      refine Finset.sum_congr rfl fun i _ => ?_
+      rw [pow_succ]
+      ring
+    · simp only [List.length_cons, pow_succ]
+      ring
+
+/-- **The executable tie**: the deployed verifier's first `publicEvals` component *is*
+`barycentricPubEval` at the Index view of the public array (`Array.ofFn`), with no
+side condition — the empty-input `(0, 0)` branch matches the empty sum. Project-local:
+grounds the accumulated bundle's `hftE` value in the code the verifier actually runs
+(`pubDot`'s fold via `pubDot_foldl`). -/
+theorem publicEvals_ofFn_eq {F : Type*} [Field F] {n : ℕ} (idx : Index F n) (ζ : F)
+    (pub : Fin idx.publicCount → F) :
+    (publicEvals n idx.omega ζ (idx.omega * ζ) (ζ ^ n) ((idx.omega * ζ) ^ n)
+        (Array.ofFn pub)).1
+      = barycentricPubEval idx ζ pub := by
+  by_cases hpc : idx.publicCount = 0
+  · haveI : IsEmpty (Fin idx.publicCount) := by rw [hpc]; exact Fin.isEmpty'
+    rw [publicEvals, if_pos (by simp [hpc])]
+    rw [barycentricPubEval, Finset.univ_eq_empty, Finset.sum_empty, zero_mul, zero_mul]
+  replace hpc : 0 < idx.publicCount := Nat.pos_of_ne_zero hpc
+  have hdot : pubDot idx.omega ζ (Array.ofFn pub)
+      = ∑ j : Fin idx.publicCount,
+          -(ζ - idx.omega ^ (j : ℕ))⁻¹ * pub j * idx.omega ^ (j : ℕ) := by
+    unfold pubDot
+    rw [← Array.foldl_toList, Array.toList_ofFn, pubDot_foldl]
+    simp only [one_mul, _root_.zero_add]
+    refine Fintype.sum_equiv (finCongr (List.length_ofFn)) _ _ fun i => ?_
+    simp only [List.get_eq_getElem, List.getElem_ofFn, finCongr_apply, Fin.val_cast]
+    rfl
+  rw [publicEvals, if_neg (by simp [hpc.ne'])]
+  rw [hdot, barycentricPubEval]
+
+end Barycentric
+
 /-! ## The accumulated tree: the axioms' slimmed content (Move 2) -/
 
 /-- **The accumulated kimchi transcript tree** — the slimmed conclusion of the kimchi
@@ -552,7 +707,10 @@ Pasta bridges below derive each node's `FiatShamirTreeB` family from the per-nod
 axiom (`poseidon_fiat_shamir_*`), so this bundle carries no Fiat-Shamir-tree content of
 its own. Generic over the curve bundle `C` (`Ipa.verify C` is curve-generic); only the
 bridges are Pasta-specific. All other fields are verbatim `KimchiTree`'s — see its
-docstring for the field-group story. -/
+docstring for the field-group story — except `hftE`, stated here at the verifier's
+*barycentric* public evaluation (`barycentricPubEval`, the value the deployed code
+computes) rather than the interpolant's; the bridges convert by the proved identity
+`barycentricPubEval_eq`. -/
 structure KimchiTreeAcc [Module C.ScalarField C.Point] {n : ℕ} [NeZero n]
     (σ : SRS C.Point) (idx : Index C.ScalarField n)
     (pub : Fin idx.publicCount → C.ScalarField) (comms : IndexComms C.Point)
@@ -614,9 +772,13 @@ structure KimchiTreeAcc [Module C.ScalarField C.Point] {n : ℕ} [NeZero n]
           (claimedEvals (E a c s p))
         • comms.sigma 6
       - ((ζ a c p) ^ n - 1) • ∑ i : Fin 7, ((ζ a c p) ^ n) ^ (i : ℕ) • TC a c s i
+  /-- The bound ft witness's value is the verifier's computed `ftEval0` — at the
+  verifier's own *barycentric* public evaluation (`barycentricPubEval`); the bridges
+  rewrite it to `KimchiTree`'s interpolant form by `barycentricPubEval_eq` at the
+  node's `hζn`. -/
   hftE : ∀ a c s p, innerProduct (aft a c s p) (evalVector (2 ^ σ.k) (ζ a c p))
     = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase (α a c s) (b a) (g c)
-        (ζ a c p) (-((idx.pubPoly pub).eval (ζ a c p))) (claimedEvals (E a c s p))
+        (ζ a c p) (barycentricPubEval idx (ζ a c p) pub) (claimedEvals (E a c s p))
   q : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → Fin 7
     → Fin NNN
   hq : ∀ a c s, Function.Injective fun j => (ζ a c (q a c s j)) ^ n
@@ -729,7 +891,9 @@ from the per-node IPA axiom `poseidon_fiat_shamir_vesta` at the node's own wire 
 (`nodeInput`), transported to the abstract batch data by `nodeFS`; the acceptance
 propositions `A` are instantiated as the deployed per-node acceptances
 `Ipa.verify … = true`, discharged by the accumulated `hacc`. This is where the thesis
-genuinely invokes the IPA-level assumption. -/
+genuinely invokes the IPA-level assumption. The ft value hypothesis is converted from
+the accumulated barycentric form to `KimchiTree`'s interpolant form by
+`barycentricPubEval_eq` at each node's `hζn`. -/
 def kimchiTreeAcc_tree_vesta {n : ℕ} [NeZero n] {σ : SRS IpaVesta.Point}
     {idx : Index Fp n} {pub : Fin idx.publicCount → Fp}
     {comms : IndexComms IpaVesta.Point} {wC : Fin 15 → IpaVesta.Point}
@@ -766,7 +930,9 @@ def kimchiTreeAcc_tree_vesta {n : ℕ} [NeZero n] {σ : SRS IpaVesta.Point}
   aft := T.aft
   ρft := T.ρft
   hftC := T.hftC
-  hftE := T.hftE
+  hftE := fun a c s p => by
+    have h := T.hftE a c s p
+    rwa [barycentricPubEval_eq idx pub (T.hζn a c p)] at h
   q := T.q
   hq := T.hq
 
@@ -808,7 +974,9 @@ def kimchiTreeAcc_tree_pallas {n : ℕ} [NeZero n] {σ : SRS IpaPallas.Point}
   aft := T.aft
   ρft := T.ρft
   hftC := T.hftC
-  hftE := T.hftE
+  hftE := fun a c s p => by
+    have h := T.hftE a c s p
+    rwa [barycentricPubEval_eq idx pub (T.hζn a c p)] at h
   q := T.q
   hq := T.hq
 
@@ -836,9 +1004,10 @@ than over per-node wire runs; the trust-free `kimchiVerify_reflects` (`Reflected
 with `runFtComm_abstract` and `runZetaN_eq`) exhibits the accepted run itself in exactly
 the bundle's vocabulary (the 45-row batch, the constructed ft commitment, the computed
 `ftEval0` claim), which is the base-node consistency of the tree. The bundle's `hftE` is
-stated at the Index-side public polynomial `idx.pubPoly` — the identity between the
-verifier's barycentric public evaluation and the interpolant's value off the domain is
-part of the packaged content (an honest-transcript algebraic fact at `ζⁿ ≠ 1`). -/
+stated at the verifier-computed *barycentric* public evaluation (`barycentricPubEval`);
+its identity with the interpolant's value off the domain is a **proved lemma**
+(`barycentricPubEval_eq`, at `ζⁿ ≠ 1`), applied by the bridge — no algebraic content
+about the public column is packaged with the axiom. -/
 axiom kimchi_fiat_shamir_vesta (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
     (p : KimchiVesta.Proof) (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
     (hk : 2 ^ σ.k = n)
