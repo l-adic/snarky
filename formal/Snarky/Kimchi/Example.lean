@@ -1,4 +1,4 @@
-import Snarky.Kimchi.Backend
+import Snarky.Kimchi.Soundness
 import Snarky.DSL
 
 /-!
@@ -6,9 +6,10 @@ import Snarky.DSL
 
 The `Snarky.Example` multiply circuit, rebuilt against the `GateConstraint` backend and
 carried through to Kimchi's Generic gate: build the circuit, dump its constraints, run the
-prover, translate each emitted constraint to a `Gate.Generic` row against the prover's
-assignment, and `decide` that the whole gate list is satisfied (`Gate.satisfies`). Every
-check reduces, so the file is a regression test for the bridge's executable semantics.
+prover, translate the constraint list against the prover's assignment (`toCircuit`), and
+`decide` that the whole gate list is satisfied (`Gate.satisfies`). Every check reduces, so
+the file is a regression test for the executable semantics of both `Backend` and
+`Soundness`.
 -/
 
 namespace Snarky.Kimchi.Example
@@ -32,10 +33,10 @@ def solved : Assignments F17 :=
   | .ok ⟨_, _, env⟩ => env
   | .error _ => Assignments.empty
 
-/-- Translate every emitted constraint to a Generic gate row against the solved
-assignment (`none` would signal an unevaluable operand — does not happen here). -/
+/-- The circuit's constraints as Generic gate rows against the solved assignment
+(`none` would signal an unevaluable operand — does not happen here). -/
 def rows : Option (List (Generic F17)) :=
-  (constraints mulCircuit).mapM (·.toRow solved)
+  toCircuit (constraints mulCircuit) solved
 
 /-! ## Running it -/
 
@@ -46,7 +47,8 @@ example : (prove GateConstraint.holds mulCircuit 0 Assignments.empty).isOk = tru
 example : (constraints mulCircuit).length = 2 := by decide
 
 /-- Every constraint translates to a Generic row, and the resulting gate list is
-satisfied — the DSL circuit is a valid Kimchi Generic-gate circuit. -/
+satisfied — the DSL circuit is a valid Kimchi Generic-gate circuit, `decide`d end to
+end (the concrete instance of `satisfies_of_prove`). -/
 example : ∃ gs, rows = some gs ∧ Kimchi.Gate.satisfies gs = true := by decide
 
 end Snarky.Kimchi.Example
