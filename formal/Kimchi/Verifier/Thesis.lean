@@ -75,13 +75,19 @@ and — through the Pasta point-group module instances
   proved identity with the interpolant's value off the domain, so the accumulated
   bundle's `hftE` speaks the verifier's own value; `publicEvals_ofFn_eq` ties the
   `Finset.sum` form to the executable `publicEvals` fold.
-* `KimchiTreeAcc`, `KimchiTreeAcc.nodeInput` — the accumulated bundle: `KimchiTree` with
-  the per-node `FiatShamirTreeB` families replaced by wire batch data and deployed IPA
-  acceptance, and the per-node wire input the IPA axiom is applied to.
+* `KimchiTreeAcc`, `KimchiTreeAcc.nodeInput`, `KimchiTreeAcc.ftInput` — the accumulated
+  bundle: `KimchiTree` with the per-node `FiatShamirTreeB` families replaced by wire
+  batch data and deployed IPA acceptance, and the bound ft witness
+  (`aft`/`ρft`/`hftC`/`hftE`) replaced by the ft opening's wire data and its deployed
+  acceptance (`ftHacc`); plus the per-node wire inputs the IPA axiom is applied to.
+* `ftRowOpening` — the ft derivation engine: `batch_soundnessA` at one commitment and
+  two eval points, projected to the single row; the bridges run it at each node's ft
+  opening to *derive* the bound ft witness from `ftHacc` under DL-binding.
 * `kimchi_fiat_shamir_vesta` / `_pallas` — the declared assumption (Move 2), concluding
   `KimchiTreeAcc`.
 * `kimchiTreeAcc_tree_vesta` / `_pallas` — the bridges: every node's transcript tree
-  derived from `poseidon_fiat_shamir_*`.
+  and the bound ft witness derived from `poseidon_fiat_shamir_*` (the latter through
+  `ftRowOpening`, under the DL-binding hypothesis the roots already carry).
 * `kimchiTree_sound`, `kimchiVesta_sound`, `kimchiPallas_sound` — the composition and the
   two thesis roots (Move 3).
 -/
@@ -648,12 +654,18 @@ proof with the deployed acceptance of the node's batched input at the eval point
 `(ζ, ωζ)` (`prf`/`hacc` — `Ipa.verify … = true`, the executable verifier itself). The
 Pasta bridges below derive each node's `FiatShamirTreeB` family from the per-node IPA
 axiom (`poseidon_fiat_shamir_*`), so this bundle carries no Fiat-Shamir-tree content of
-its own. Generic over the curve bundle `C` (`Ipa.verify C` is curve-generic); only the
-bridges are Pasta-specific. All other fields are verbatim `KimchiTree`'s — see its
-docstring for the field-group story — except `hftE`, stated here at the verifier's
-*barycentric* public evaluation (`barycentricPubEval`, the value the deployed code
-computes) rather than the interpolant's; the bridges convert by the proved identity
-`barycentricPubEval_eq`. -/
+its own. `KimchiTree`'s bound ft witness (`aft`/`ρft`/`hftC`/`hftE`) is likewise gone:
+in its place the bundle carries the ft opening's *wire* data — the prover's second
+evaluation `ftEval1`, the combination scalars `ftξ`/`ftr` (the two evalscales
+injective, `hftr`), the opening proofs `ftPrf`, and the deployed acceptance `ftHacc` of
+the constructed (Maller) ft commitment opened at `(ζ, ωζ)` to
+`(ftEval0 at the barycentric public evaluation, ftEval1)`. The bridges *derive* the
+bound witness from it (`ftRowOpening` under DL-binding, the ft claims at the verifier's
+*barycentric* public evaluation `barycentricPubEval` — the value the deployed code
+computes — converted to the interpolant form by the proved identity
+`barycentricPubEval_eq`). Generic over the curve bundle `C` (`Ipa.verify C` is
+curve-generic); only the bridges are Pasta-specific. All other fields are verbatim
+`KimchiTree`'s — see its docstring for the field-group story. -/
 structure KimchiTreeAcc [Module C.ScalarField C.Point] {n : ℕ} [NeZero n]
     (σ : SRS C.Point) (idx : Index C.ScalarField n)
     (pub : Fin idx.publicCount → C.ScalarField) (comms : IndexComms C.Point)
@@ -706,22 +718,36 @@ structure KimchiTreeAcc [Module C.ScalarField C.Point] {n : ℕ} [NeZero n]
       (ξ a c s p i) (r a c s p j) (prf a c s p i j)) = true
   TC : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → Fin 7
     → C.Point
-  aft : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → Fin NNN
-    → Fin (2 ^ σ.k) → C.ScalarField
-  ρft : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → Fin NNN
+  /-- The prover's second ft evaluation (at `ωζ`) — the ft opening's other claim. -/
+  ftEval1 : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → Fin NNN
     → C.ScalarField
-  hftC : ∀ a c s p, commit σ (aft a c s p) (ρft a c s p)
-    = permScalar (b a) (g c) (α a c s) (zkpmEval n idx.zkRows idx.omega (ζ a c p))
-          (claimedEvals (E a c s p))
-        • comms.sigma 6
-      - ((ζ a c p) ^ n - 1) • ∑ i : Fin 7, ((ζ a c p) ^ n) ^ (i : ℕ) • TC a c s i
-  /-- The bound ft witness's value is the verifier's computed `ftEval0` — at the
-  verifier's own *barycentric* public evaluation (`barycentricPubEval`); the bridges
-  rewrite it to `KimchiTree`'s interpolant form by `barycentricPubEval_eq` at the
-  node's `hζn`. -/
-  hftE : ∀ a c s p, innerProduct (aft a c s p) (evalVector (2 ^ σ.k) (ζ a c p))
-    = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase (α a c s) (b a) (g c)
-        (ζ a c p) (barycentricPubEval idx (ζ a c p) pub) (claimedEvals (E a c s p))
+  /-- The ft opening's polyscale (its batch has one commitment). -/
+  ftξ : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → Fin NNN
+    → C.ScalarField
+  /-- The ft opening's two evalscales. -/
+  ftr : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → Fin NNN
+    → Fin 2 → C.ScalarField
+  /-- The two ft evalscales are distinct. -/
+  hftr : ∀ a c s p, Function.Injective (ftr a c s p)
+  /-- The ft opening proof, per evalscale. -/
+  ftPrf : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → Fin NNN
+    → Fin 2 → Ipa.Proof C
+  /-- The deployed verifier accepts the ft opening — the constructed (Maller) ft
+  commitment `permScalar·σ₆ − (ζⁿ−1)·∑(ζⁿ)ⁱ·TCᵢ` opened at the node's two eval points
+  `(ζ, ωζ)` to the verifier's computed `ftEval0` (at the *barycentric* public
+  evaluation) and the prover's `ftEval1`. This is the acceptance the bridges hand to
+  `poseidon_fiat_shamir_*`; the bound ft witness `KimchiTree` carries
+  (`aft`/`ρft`/`hftC`/`hftE`) is *derived* from it by `ftRowOpening` under DL-binding,
+  not assumed. -/
+  ftHacc : ∀ a c s p (j : Fin 2), Ipa.verify C σ (Ipa.mkInput C
+      #[permScalar (b a) (g c) (α a c s) (zkpmEval n idx.zkRows idx.omega (ζ a c p))
+            (claimedEvals (E a c s p)) • comms.sigma 6
+          - ((ζ a c p) ^ n - 1) • ∑ i : Fin 7, ((ζ a c p) ^ n) ^ (i : ℕ) • TC a c s i]
+      #[ζ a c p, idx.omega * ζ a c p]
+      #[#[ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase (α a c s) (b a) (g c)
+            (ζ a c p) (barycentricPubEval idx (ζ a c p) pub) (claimedEvals (E a c s p)),
+          ftEval1 a c s p]]
+      (ftξ a c s p) (ftr a c s p j) (ftPrf a c s p j)) = true
   q : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → Fin 7
     → Fin NNN
   hq : ∀ a c s, Function.Injective fun j => (ζ a c (q a c s j)) ^ n
@@ -749,6 +775,28 @@ private theorem combinedInnerProduct_reindex {F : Type*} [Field F] (ξ r : F)
   simp only [finCongr_apply, Fin.val_cast]
   refine congrArg (ξ ^ (i : ℕ) * ·) ?_
   exact Finset.sum_congr rfl fun j _ => by rw [he i j]
+
+/-- **The ft-row opening engine** — `batch_soundnessA` at one commitment and two
+evaluation points, projected to its single row: an injective pair of evalscales, a
+Fiat-Shamir tree per evalscale over the (trivially) combined single-row claim,
+DL-binding, and acceptance yield a bound witness committing to the row's commitment
+whose value at each of the two points is the claimed one. Project-local: the engine the
+bridges run at each node's ft opening (`n = 1`, `m = 2`; the polyscale combination is
+vacuous at one commitment, so no polyscale injectivity is consumed —
+`Fin 1` is a subsingleton). -/
+theorem ftRowOpening {F G : Type*} [Field F] [AddCommGroup G] [Module F G] (σ : SRS G)
+    (ξ : F) (r : Fin 2 → F) (hr : Function.Injective r) (Cft : G) (x : Fin 2 → F)
+    (e : Fin 2 → F) (A : Fin 2 → Prop)
+    (hFS : ∀ t : Fin 2, FiatShamirTreeB σ (combinedCommitment ξ ![Cft])
+      (combinedEvalVector (2 ^ σ.k) (r t) x) (combinedInnerProduct ξ (r t) ![e]) (A t))
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
+    (hacc : ∀ t, A t) :
+    ∃ (a : Fin (2 ^ σ.k) → F) (ρ : F), commit σ a ρ = Cft
+      ∧ ∀ j : Fin 2, innerProduct a (evalVector (2 ^ σ.k) (x j)) = e j := by
+  obtain ⟨a, ρ, h⟩ := batch_soundnessA σ ![ξ] (Function.injective_of_subsingleton _)
+    r hr Nat.zero_lt_two ![Cft] x ![e] (fun _ t => A t)
+    (fun s t => by fin_cases s; exact hFS t) hbind (fun _ t => hacc t)
+  exact ⟨a 0, ρ 0, (h 0).1, fun j => ((h 0).2 j).symm⟩
 
 section TreeOfAcc
 
@@ -826,102 +874,218 @@ private theorem KimchiTreeAcc.nodeFS (T : KimchiTreeAcc C σ idx pub comms wC)
   rw [hP, hb, hv] at hax
   exact hax
 
+/-- The node's constructed (Maller) ft commitment —
+`permScalar·σ₆ − (ζⁿ−1)·∑(ζⁿ)ⁱ·TCᵢ`, the commitment the ft opening is stated at
+(verbatim the RHS of `KimchiTree.hftC`). -/
+def KimchiTreeAcc.ftComm (T : KimchiTreeAcc C σ idx pub comms wC) (a : Fin T.M)
+    (c : Fin T.NN) (s : Fin (Index.gateAlphaCount + Index.permAlphaCount))
+    (p : Fin T.NNN) : C.Point :=
+  permScalar (T.b a) (T.g c) (T.α a c s) (zkpmEval n idx.zkRows idx.omega (T.ζ a c p))
+      (claimedEvals (T.E a c s p))
+    • comms.sigma 6
+  - ((T.ζ a c p) ^ n - 1) • ∑ i : Fin 7, ((T.ζ a c p) ^ n) ^ (i : ℕ) • T.TC a c s i
+
+/-- The node's computed `ftEval0` claim, at the verifier's *barycentric* public
+evaluation — the ft opening's first claimed value (verbatim the RHS of the accumulated
+value hypothesis; the bridges convert to `KimchiTree.hftE`'s interpolant form by
+`barycentricPubEval_eq`). -/
+noncomputable def KimchiTreeAcc.ftE0 (T : KimchiTreeAcc C σ idx pub comms wC)
+    (a : Fin T.M) (c : Fin T.NN)
+    (s : Fin (Index.gateAlphaCount + Index.permAlphaCount)) (p : Fin T.NNN) :
+    C.ScalarField :=
+  ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase (T.α a c s) (T.b a) (T.g c)
+    (T.ζ a c p) (barycentricPubEval idx (T.ζ a c p) pub) (claimedEvals (T.E a c s p))
+
+/-- The wire input of one accumulated-tree node's ft opening: the constructed ft
+commitment (`ftComm`) opened at the node's two eval points `(ζ, ωζ)` to the two claims
+`(ftE0, ftEval1)`, at the ft combination scalars with the per-evalscale opening proof.
+The accumulated `ftHacc` states the deployed verifier accepts exactly this input; the
+bridges apply the per-node IPA axiom to it. -/
+noncomputable def KimchiTreeAcc.ftInput (T : KimchiTreeAcc C σ idx pub comms wC)
+    (a : Fin T.M) (c : Fin T.NN)
+    (s : Fin (Index.gateAlphaCount + Index.permAlphaCount)) (p : Fin T.NNN)
+    (j : Fin 2) : Ipa.Input C :=
+  Ipa.mkInput C #[T.ftComm a c s p] #[T.ζ a c p, idx.omega * T.ζ a c p]
+    #[#[T.ftE0 a c s p, T.ftEval1 a c s p]]
+    (T.ftξ a c s p) (T.ftr a c s p j) (T.ftPrf a c s p j)
+
+/-- **Per-node ft Fiat-Shamir transport**: the IPA-axiom-shaped transcript-tree family
+at a node's ft input (`hax`, defeq to `poseidon_fiat_shamir_*` at `ftInput` — the same
+move as `nodeFS`), re-expressed over the abstract single-row batch data `ftRowOpening`
+consumes: the singleton wire commitment array collapses to `![ftComm]`, the two wire
+eval points to `![ζ, ωζ]`, and the wire combined inner product to the one over the two
+claims. Sub-terms stay opaque throughout — the acceptance proposition
+`Ipa.verify … = true` is never reduced. -/
+private theorem KimchiTreeAcc.ftNodeFS (T : KimchiTreeAcc C σ idx pub comms wC)
+    (a : Fin T.M) (c : Fin T.NN)
+    (s : Fin (Index.gateAlphaCount + Index.permAlphaCount)) (p : Fin T.NNN) (j : Fin 2)
+    (hax : FiatShamirTreeB σ
+      (combinedCommitment (T.ftξ a c s p) (T.ftInput a c s p j).commitmentFn)
+      (combinedEvalVector (2 ^ σ.k) (T.ftr a c s p j) (T.ftInput a c s p j).pointFn)
+      (Ipa.cipOf (T.ftInput a c s p j))
+      (Ipa.verify C σ (T.ftInput a c s p j) = true)) :
+    FiatShamirTreeB σ
+      (combinedCommitment (T.ftξ a c s p) ![T.ftComm a c s p])
+      (combinedEvalVector (2 ^ σ.k) (T.ftr a c s p j)
+        ![T.ζ a c p, idx.omega * T.ζ a c p])
+      (combinedInnerProduct (T.ftξ a c s p) (T.ftr a c s p j)
+        ![![T.ftE0 a c s p, T.ftEval1 a c s p]])
+      (Ipa.verify C σ (T.ftInput a c s p j) = true) := by
+  -- the commitment column: the singleton wire array is `![ftComm]`
+  have hP : combinedCommitment (T.ftξ a c s p) (T.ftInput a c s p j).commitmentFn
+      = combinedCommitment (T.ftξ a c s p) ![T.ftComm a c s p] := by
+    show combinedCommitment (T.ftξ a c s p)
+        (fun t : Fin 1 => (T.ftInput a c s p j).commitments[t]) = _
+    exact congrArg _ (funext fun t => by fin_cases t; rfl)
+  -- the eval points: the wire two-point array is `![ζ, ωζ]`
+  have hx : combinedEvalVector (2 ^ σ.k) (T.ftr a c s p j)
+        (T.ftInput a c s p j).pointFn
+      = combinedEvalVector (2 ^ σ.k) (T.ftr a c s p j)
+          ![T.ζ a c p, idx.omega * T.ζ a c p] := by
+    show combinedEvalVector (2 ^ σ.k) (T.ftr a c s p j)
+        (fun t : Fin 2 => (T.ftInput a c s p j).xs[t]) = _
+    exact congrArg _ (funext fun t => by fin_cases t <;> rfl)
+  -- the combined inner product: the wire matrix carries the two claims
+  have hv : Ipa.cipOf (T.ftInput a c s p j)
+      = combinedInnerProduct (T.ftξ a c s p) (T.ftr a c s p j)
+          ![![T.ftE0 a c s p, T.ftEval1 a c s p]] := by
+    show combinedInnerProduct (T.ftξ a c s p) (T.ftr a c s p j)
+        (fun (t : Fin 1) (u : Fin 2) =>
+          ((T.ftInput a c s p j).evals[(t : ℕ)]!)[(u : ℕ)]!) = _
+    exact congrArg _ (funext fun t => funext fun u => by
+      fin_cases t; fin_cases u <;> rfl)
+  rw [hP, hx, hv] at hax
+  exact hax
+
 end TreeOfAcc
 
 /-- **The Vesta bridge (the Fiat-Shamir derivation)**: an accumulated tree yields the
-full transcript tree. Every node's `FiatShamirTreeB` family is *derived* — not assumed —
-from the per-node IPA axiom `poseidon_fiat_shamir_vesta` at the node's own wire input
-(`nodeInput`), transported to the abstract batch data by `nodeFS`; the acceptance
-propositions `A` are instantiated as the deployed per-node acceptances
-`Ipa.verify … = true`, discharged by the accumulated `hacc`. This is where the thesis
-genuinely invokes the IPA-level assumption. The ft value hypothesis is converted from
-the accumulated barycentric form to `KimchiTree`'s interpolant form by
-`barycentricPubEval_eq` at each node's `hζn`. -/
-def kimchiTreeAcc_tree_vesta {n : ℕ} [NeZero n] {σ : SRS IpaVesta.Point}
+full transcript tree, under DL-binding. Every node's `FiatShamirTreeB` family is
+*derived* — not assumed — from the per-node IPA axiom `poseidon_fiat_shamir_vesta` at
+the node's own wire input (`nodeInput`), transported to the abstract batch data by
+`nodeFS`; the acceptance propositions `A` are instantiated as the deployed per-node
+acceptances `Ipa.verify … = true`, discharged by the accumulated `hacc`. Likewise the
+bound ft witness (`aft`/`ρft`/`hftC`/`hftE`) is *derived* from the accumulated ft
+acceptance `ftHacc`: the axiom at the node's ft input (`ftInput`), transported by
+`ftNodeFS` and fed to `ftRowOpening` with `hbind`, yields the per-node opening, lifted
+to the field functions by choice. This is where the thesis genuinely invokes the
+IPA-level assumption. The ft value hypothesis is converted from the accumulated
+barycentric form to `KimchiTree`'s interpolant form by `barycentricPubEval_eq` at each
+node's `hζn`. -/
+noncomputable def kimchiTreeAcc_tree_vesta {n : ℕ} [NeZero n] {σ : SRS IpaVesta.Point}
     {idx : Index Fp n} {pub : Fin idx.publicCount → Fp}
     {comms : IndexComms IpaVesta.Point} {wC : Fin 15 → IpaVesta.Point}
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
     (T : KimchiTreeAcc IpaVesta.curve σ idx pub comms wC) :
-    KimchiTree σ idx pub comms wC where
-  M := T.M
-  NN := T.NN
-  NNN := T.NNN
-  b := T.b
-  g := T.g
-  hb := T.hb
-  hg := T.hg
-  hM := T.hM
-  hN := T.hN
-  ζ := T.ζ
-  hζ := T.hζ
-  hζ₁ := T.hζ₁
-  hζb := T.hζb
-  hζn := T.hζn
-  α := T.α
-  hα := T.hα
-  hD := T.hD
-  zC := T.zC
-  E := T.E
-  ξ := T.ξ
-  hξ := T.hξ
-  r := T.r
-  hr := T.hr
-  A := fun a c s p i j => Ipa.verify IpaVesta.curve σ (T.nodeInput a c s p i j) = true
-  hFS := fun a c s p i j =>
-    T.nodeFS a c s p i j (poseidon_fiat_shamir_vesta σ (T.nodeInput a c s p i j))
-  hacc := fun a c s p i j => T.hacc a c s p i j
-  TC := T.TC
-  aft := T.aft
-  ρft := T.ρft
-  hftC := T.hftC
-  hftE := fun a c s p => by
-    have h := T.hftE a c s p
-    rwa [barycentricPubEval_eq idx pub (T.hζn a c p)] at h
-  q := T.q
-  hq := T.hq
+    KimchiTree σ idx pub comms wC :=
+  have hopen : ∀ a c s p, ∃ (aw : Fin (2 ^ σ.k) → Fp) (ρw : Fp),
+      commit σ aw ρw = T.ftComm a c s p
+        ∧ innerProduct aw (evalVector (2 ^ σ.k) (T.ζ a c p)) = T.ftE0 a c s p :=
+    fun a c s p => by
+      obtain ⟨aw, ρw, hC, hE⟩ := ftRowOpening σ (T.ftξ a c s p) (T.ftr a c s p)
+        (T.hftr a c s p) (T.ftComm a c s p) ![T.ζ a c p, idx.omega * T.ζ a c p]
+        ![T.ftE0 a c s p, T.ftEval1 a c s p]
+        (fun j => Ipa.verify IpaVesta.curve σ (T.ftInput a c s p j) = true)
+        (fun j => T.ftNodeFS a c s p j
+          (poseidon_fiat_shamir_vesta σ (T.ftInput a c s p j)))
+        hbind (fun j => T.ftHacc a c s p j)
+      exact ⟨aw, ρw, hC, hE 0⟩
+  { M := T.M
+    NN := T.NN
+    NNN := T.NNN
+    b := T.b
+    g := T.g
+    hb := T.hb
+    hg := T.hg
+    hM := T.hM
+    hN := T.hN
+    ζ := T.ζ
+    hζ := T.hζ
+    hζ₁ := T.hζ₁
+    hζb := T.hζb
+    hζn := T.hζn
+    α := T.α
+    hα := T.hα
+    hD := T.hD
+    zC := T.zC
+    E := T.E
+    ξ := T.ξ
+    hξ := T.hξ
+    r := T.r
+    hr := T.hr
+    A := fun a c s p i j =>
+      Ipa.verify IpaVesta.curve σ (T.nodeInput a c s p i j) = true
+    hFS := fun a c s p i j =>
+      T.nodeFS a c s p i j (poseidon_fiat_shamir_vesta σ (T.nodeInput a c s p i j))
+    hacc := fun a c s p i j => T.hacc a c s p i j
+    TC := T.TC
+    aft := fun a c s p => (hopen a c s p).choose
+    ρft := fun a c s p => (hopen a c s p).choose_spec.choose
+    hftC := fun a c s p => (hopen a c s p).choose_spec.choose_spec.1
+    hftE := fun a c s p => by
+      rw [← barycentricPubEval_eq idx pub (T.hζn a c p)]
+      exact (hopen a c s p).choose_spec.choose_spec.2
+    q := T.q
+    hq := T.hq }
 
 /-- **The Pallas bridge.** The Pallas-side twin of `kimchiTreeAcc_tree_vesta`, deriving
-every node's `FiatShamirTreeB` family from `poseidon_fiat_shamir_pallas`. -/
-def kimchiTreeAcc_tree_pallas {n : ℕ} [NeZero n] {σ : SRS IpaPallas.Point}
+every node's `FiatShamirTreeB` family — and, via `ftRowOpening` under DL-binding, the
+bound ft witness — from `poseidon_fiat_shamir_pallas`. -/
+noncomputable def kimchiTreeAcc_tree_pallas {n : ℕ} [NeZero n] {σ : SRS IpaPallas.Point}
     {idx : Index Fq n} {pub : Fin idx.publicCount → Fq}
     {comms : IndexComms IpaPallas.Point} {wC : Fin 15 → IpaPallas.Point}
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
     (T : KimchiTreeAcc IpaPallas.curve σ idx pub comms wC) :
-    KimchiTree σ idx pub comms wC where
-  M := T.M
-  NN := T.NN
-  NNN := T.NNN
-  b := T.b
-  g := T.g
-  hb := T.hb
-  hg := T.hg
-  hM := T.hM
-  hN := T.hN
-  ζ := T.ζ
-  hζ := T.hζ
-  hζ₁ := T.hζ₁
-  hζb := T.hζb
-  hζn := T.hζn
-  α := T.α
-  hα := T.hα
-  hD := T.hD
-  zC := T.zC
-  E := T.E
-  ξ := T.ξ
-  hξ := T.hξ
-  r := T.r
-  hr := T.hr
-  A := fun a c s p i j => Ipa.verify IpaPallas.curve σ (T.nodeInput a c s p i j) = true
-  hFS := fun a c s p i j =>
-    T.nodeFS a c s p i j (poseidon_fiat_shamir_pallas σ (T.nodeInput a c s p i j))
-  hacc := fun a c s p i j => T.hacc a c s p i j
-  TC := T.TC
-  aft := T.aft
-  ρft := T.ρft
-  hftC := T.hftC
-  hftE := fun a c s p => by
-    have h := T.hftE a c s p
-    rwa [barycentricPubEval_eq idx pub (T.hζn a c p)] at h
-  q := T.q
-  hq := T.hq
+    KimchiTree σ idx pub comms wC :=
+  have hopen : ∀ a c s p, ∃ (aw : Fin (2 ^ σ.k) → Fq) (ρw : Fq),
+      commit σ aw ρw = T.ftComm a c s p
+        ∧ innerProduct aw (evalVector (2 ^ σ.k) (T.ζ a c p)) = T.ftE0 a c s p :=
+    fun a c s p => by
+      obtain ⟨aw, ρw, hC, hE⟩ := ftRowOpening σ (T.ftξ a c s p) (T.ftr a c s p)
+        (T.hftr a c s p) (T.ftComm a c s p) ![T.ζ a c p, idx.omega * T.ζ a c p]
+        ![T.ftE0 a c s p, T.ftEval1 a c s p]
+        (fun j => Ipa.verify IpaPallas.curve σ (T.ftInput a c s p j) = true)
+        (fun j => T.ftNodeFS a c s p j
+          (poseidon_fiat_shamir_pallas σ (T.ftInput a c s p j)))
+        hbind (fun j => T.ftHacc a c s p j)
+      exact ⟨aw, ρw, hC, hE 0⟩
+  { M := T.M
+    NN := T.NN
+    NNN := T.NNN
+    b := T.b
+    g := T.g
+    hb := T.hb
+    hg := T.hg
+    hM := T.hM
+    hN := T.hN
+    ζ := T.ζ
+    hζ := T.hζ
+    hζ₁ := T.hζ₁
+    hζb := T.hζb
+    hζn := T.hζn
+    α := T.α
+    hα := T.hα
+    hD := T.hD
+    zC := T.zC
+    E := T.E
+    ξ := T.ξ
+    hξ := T.hξ
+    r := T.r
+    hr := T.hr
+    A := fun a c s p i j =>
+      Ipa.verify IpaPallas.curve σ (T.nodeInput a c s p i j) = true
+    hFS := fun a c s p i j =>
+      T.nodeFS a c s p i j (poseidon_fiat_shamir_pallas σ (T.nodeInput a c s p i j))
+    hacc := fun a c s p i j => T.hacc a c s p i j
+    TC := T.TC
+    aft := fun a c s p => (hopen a c s p).choose
+    ρft := fun a c s p => (hopen a c s p).choose_spec.choose
+    hftC := fun a c s p => (hopen a c s p).choose_spec.choose_spec.1
+    hftE := fun a c s p => by
+      rw [← barycentricPubEval_eq idx pub (T.hζn a c p)]
+      exact (hopen a c s p).choose_spec.choose_spec.2
+    q := T.q
+    hq := T.hq }
 
 /-! ## The Fiat-Shamir axioms (Move 2, Pasta) -/
 
@@ -1004,7 +1168,7 @@ theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
     ∃ wTab : Fin n → Fin 15 → Fp, Satisfies idx (pubView idx pub) wTab :=
   kimchiTree_sound σ idx hk hbind vk.comms hvk (pubView idx pub)
     (fun i => p.wComm.getD (i : ℕ) 0)
-    (kimchiTreeAcc_tree_vesta
+    (kimchiTreeAcc_tree_vesta hbind
       (kimchi_fiat_shamir_vesta σ vk p pub idx hk homega hzk hshifts hendo hpub
         (kimchiVerify_reflects IpaVesta.curve σ vk p pub hacc)))
 
@@ -1023,7 +1187,7 @@ theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
     ∃ wTab : Fin n → Fin 15 → Fq, Satisfies idx (pubView idx pub) wTab :=
   kimchiTree_sound σ idx hk hbind vk.comms hvk (pubView idx pub)
     (fun i => p.wComm.getD (i : ℕ) 0)
-    (kimchiTreeAcc_tree_pallas
+    (kimchiTreeAcc_tree_pallas hbind
       (kimchi_fiat_shamir_pallas σ vk p pub idx hk homega hzk hshifts hendo hpub
         (kimchiVerify_reflects IpaPallas.curve σ vk p pub hacc)))
 
