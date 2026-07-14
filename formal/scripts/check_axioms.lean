@@ -12,6 +12,7 @@ and the Pasta GLV endomorphism inputs. This subsumes the old `sorryAx` grep: a `
 Run from `formal/`:  lake env lean scripts/check_axioms.lean   (or: scripts/check_axioms.sh)
 -/
 import Kimchi
+import Kimchi.Verifier.Thesis
 
 open Lean Lean.Elab.Command
 
@@ -92,7 +93,9 @@ def roots : List Name :=
     `Kimchi.Verifier.ipaPallas_sound,
     `Kimchi.Verifier.Equation.verifierEquation_iff,
     `Kimchi.Verifier.Equation.satisfies_of_verifierEquation,
-    `Kimchi.Verifier.kimchiProof_sound ]
+    `Kimchi.Verifier.kimchiProof_sound,
+    `Kimchi.Verifier.kimchiProof_sound_ft,
+    `Kimchi.Verifier.kimchiVesta_sound, `Kimchi.Verifier.kimchiPallas_sound ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations
@@ -105,6 +108,14 @@ def allowed : List Name :=
     -- The declared Fiat-Shamir assumption: Poseidon-accepted runs admit de-blinded
     -- accepting transcript trees (`Kimchi/Verifier/Reflection.lean`). One per Pasta curve.
     `Kimchi.Verifier.poseidon_fiat_shamir_vesta, `Kimchi.Verifier.poseidon_fiat_shamir_pallas,
+    -- The kimchi-level Fiat-Shamir assumption: kimchi-accepted runs admit the accumulated
+    -- transcript tree `KimchiTreeAcc` (`Kimchi/Verifier/Thesis.lean`) — the scalar-challenge
+    -- rewinding grids with per-node deployed IPA acceptance, no `FiatShamirTreeB` content.
+    -- One per Pasta curve, INDEPENDENT of the per-node IPA assumption above: the thesis
+    -- roots `kimchiVesta_sound` / `kimchiPallas_sound` derive each node's transcript tree
+    -- from the IPA pair via the bridges, so BOTH Fiat-Shamir pairs appear in their closures
+    -- (kimchi = the scalar-challenge rewinding; poseidon = the per-node transcript trees).
+    `Kimchi.Verifier.kimchi_fiat_shamir_vesta, `Kimchi.Verifier.kimchi_fiat_shamir_pallas,
     `Kimchi.Pasta.pallas_eigen, `Kimchi.Pasta.vesta_eigen, ]
 
 /-- A CompElliptic `native_decide` witness: an axiom under the `CompElliptic` namespace carrying the
