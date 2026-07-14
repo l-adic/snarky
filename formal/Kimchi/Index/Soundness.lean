@@ -246,21 +246,37 @@ the copy fragment of `Satisfies` there; the masked rows are outside the argument
 by design (zkpm gating), and honest witnesses satisfy them because masked rows are
 identity-wired. -/
 theorem copy_soundness_of_dvd (idx : Index F n) (wTab : Fin n → Fin 15 → F)
-    {M NN : ℕ} (b : Fin M → F) (g : Fin NN → F)
-    (hb : Function.Injective b) (hg : Function.Injective g)
-    (hM : 7 * (n - idx.zkRows) < M) (hN : 7 * (n - idx.zkRows) < NN)
-    (zg : Fin M → Fin NN → Polynomial F)
-    (hdvd : ∀ a c s, zH F n ∣ Permutation.constraints idx.omega idx.zkRows (zg a c)
+    (β γ : F)
+    (hβ : β ∉ badBetas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+            * idx.omega
+              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))))
+    (hγ : γ ∉ badGammas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+            * idx.omega
+              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))) β)
+    (zg : Polynomial F)
+    (hdvd : ∀ s, zH F n ∣ Permutation.constraints idx.omega idx.zkRows zg
       (idx.permWitnessPoly wTab)
       (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts
-      (b a) (g c) (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd s) :
+      β γ (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd s) :
     ∀ c : Fin 7 × Fin (n - idx.zkRows),
       cellValue wTab (idx.wiringMap (embCell idx.zkRows c))
         = cellValue wTab (embCell idx.zkRows c) := by
   intro c
   have h := copy_soundness_wired_of_dvd idx.omega_prim (Nat.pos_of_neZero n) idx.zk_pos
     idx.zk_le (idx.permWitnessPoly wTab) idx.shifts idx.shifts_coset idx.wiringPerm
-    idx.wiringPerm_regionPreserving b g hb hg hM hN zg hdvd c
+    idx.wiringPerm_regionPreserving β γ hβ hγ zg hdvd c
   rw [show idx.wiringPerm (embCell idx.zkRows c) = idx.wiringMap (embCell idx.zkRows c)
       from rfl] at h
   rw [eval_permWitnessPoly] at h
@@ -273,36 +289,52 @@ open Kimchi.Quotient.Permutation in
 divisibility obtained from the derandomized single-challenge quotient check: one challenge
 `α a c` per `(β, γ)` node, outside the node's `badAlphas` set, and one quotient `t a c`. -/
 theorem copy_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
-    {M NN NNN : ℕ} (b : Fin M → F) (g : Fin NN → F)
-    (hb : Function.Injective b) (hg : Function.Injective g)
-    (hM : 7 * (n - idx.zkRows) < M) (hN : 7 * (n - idx.zkRows) < NN)
-    (zg : Fin M → Fin NN → Polynomial F)
-    (α : Fin M → Fin NN → F)
-    (hα : ∀ a c, α a c ∉ badAlphas
-      (Permutation.constraints idx.omega idx.zkRows (zg a c)
+    {NNN : ℕ}
+    (β γ : F)
+    (hβ : β ∉ badBetas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+            * idx.omega
+              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))))
+    (hγ : γ ∉ badGammas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+            * idx.omega
+              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))) β)
+    (zg : Polynomial F)
+    (α : F)
+    (hα : α ∉ badAlphas
+      (Permutation.constraints idx.omega idx.zkRows zg
         (idx.permWitnessPoly wTab)
         (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts
-        (b a) (g c) (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd) idx.omega n)
-    (ζ : Fin M → Fin NN → Fin NNN → F) (hζ : ∀ a c, Function.Injective (ζ a c))
-    (t : Fin M → Fin NN → Polynomial F) (D : ℕ) (hD : D < NNN)
-    (hCdeg : ∀ a c, (aggregate (α a c)
-      (Permutation.constraints idx.omega idx.zkRows (zg a c)
+        β γ (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd) idx.omega n)
+    (ζ : Fin NNN → F) (hζ : Function.Injective ζ)
+    (t : Polynomial F) (D : ℕ) (hD : D < NNN)
+    (hCdeg : (aggregate α
+      (Permutation.constraints idx.omega idx.zkRows zg
         (idx.permWitnessPoly wTab)
         (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts
-        (b a) (g c) (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd)).natDegree ≤ D)
-    (htdeg : ∀ a c, (t a c * zH F n).natDegree ≤ D)
-    (hcheck : ∀ a c p, (aggregate (α a c)
-      (Permutation.constraints idx.omega idx.zkRows (zg a c)
+        β γ (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd)).natDegree ≤ D)
+    (htdeg : (t * zH F n).natDegree ≤ D)
+    (hcheck : ∀ p, (aggregate α
+      (Permutation.constraints idx.omega idx.zkRows zg
         (idx.permWitnessPoly wTab)
         (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts
-        (b a) (g c) (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd)).eval (ζ a c p)
-      = (t a c * zH F n).eval (ζ a c p)) :
+        β γ (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd)).eval (ζ p)
+      = (t * zH F n).eval (ζ p)) :
     ∀ c : Fin 7 × Fin (n - idx.zkRows),
       cellValue wTab (idx.wiringMap (embCell idx.zkRows c))
         = cellValue wTab (embCell idx.zkRows c) :=
-  idx.copy_soundness_of_dvd wTab b g hb hg hM hN zg fun a c =>
-    dvd_of_evalCheck_sz idx.omega_prim (ζ a c) (hζ a c) _ (α a c)
-      (hα a c) (t a c) D hD (hCdeg a c) (htdeg a c) (hcheck a c)
+  idx.copy_soundness_of_dvd wTab β γ hβ hγ zg
+    (dvd_of_evalCheck_sz idx.omega_prim ζ hζ _ α hα t D hD hCdeg htdeg hcheck)
 
 end Index
 

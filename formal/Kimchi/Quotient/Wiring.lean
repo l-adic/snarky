@@ -365,16 +365,28 @@ region-preserving full-grid wiring, and sigma columns interpolating the wired-to
 addresses: if at every node of an injective `(β, γ)` grid the prover supplies an
 accumulator whose three permutation constraints are divisible by `Z_H`, then the witness
 takes equal values across every wire of the unmasked region. -/
-theorem copy_soundness_wired_of_dvd {ω : F} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
-    (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
+theorem copy_soundness_wired_of_dvd [DecidableEq F] {ω : F} (hω : IsPrimitiveRoot ω n)
+    (hn : 0 < n) (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
     (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (hs : CosetShifts ω shifts)
     (σpFull : Equiv.Perm (Fin 7 × Fin n)) (hp : RegionPreserving zkRows σpFull)
-    {M N : ℕ} (b : Fin M → F) (g : Fin N → F)
-    (hb : Function.Injective b) (hg : Function.Injective g)
-    (hM : 7 * (n - zkRows) < M) (hN : 7 * (n - zkRows) < N)
-    (zg : Fin M → Fin N → Polynomial F)
-    (hdvd : ∀ a c s, zH F n ∣ constraints ω zkRows (zg a c) w
-      (sigmaPoly ω shifts σpFull) shifts (b a) (g c)
+    (β γ : F)
+    (hβ : β ∉ badBetas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
+        ((w c.1).eval (ω ^ (c.2 : ℕ)), shifts c.1 * ω ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
+        ((w c.1).eval (ω ^ (c.2 : ℕ)),
+          shifts (restrictCells σpFull hp c).1
+            * ω ^ ((restrictCells σpFull hp c).2 : ℕ))))
+    (hγ : γ ∉ badGammas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
+        ((w c.1).eval (ω ^ (c.2 : ℕ)), shifts c.1 * ω ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
+        ((w c.1).eval (ω ^ (c.2 : ℕ)),
+          shifts (restrictCells σpFull hp c).1
+            * ω ^ ((restrictCells σpFull hp c).2 : ℕ))) β)
+    (zg : Polynomial F)
+    (hdvd : ∀ s, zH F n ∣ constraints ω zkRows zg w
+      (sigmaPoly ω shifts σpFull) shifts β γ
       (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩ s) :
     ∀ c : Fin 7 × Fin (n - zkRows),
       (w (σpFull (embCell zkRows c)).1).eval (ω ^ ((σpFull (embCell zkRows c)).2 : ℕ))
@@ -390,38 +402,53 @@ theorem copy_soundness_wired_of_dvd {ω : F} (hω : IsPrimitiveRoot ω n) (hn : 
           = embCell zkRows x from rfl,
         ← embCell_restrictCells σpFull hp x]
       rfl)
-    b g hb hg hM hN zg hdvd c
+    β γ hβ hγ zg hdvd c
   rw [← embCell_restrictCells σpFull hp c]
   exact hmain
 
-/-- **Copy soundness from the index data.** As `copy_soundness_wired_of_dvd`, with each
-grid node's divisibilities obtained from the derandomized quotient checks
-(`dvd_of_evalCheck`). -/
-theorem copy_soundness_wired {ω : F} {NN : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
-    (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
+/-- **Copy soundness from the index data.** As `copy_soundness_wired_of_dvd`, with the
+divisibilities obtained from the derandomized quotient checks in single-challenge counting
+Schwartz–Zippel form (`dvd_of_evalCheck_sz`): ONE aggregation challenge `α` (avoiding
+`badAlphas`) and ONE quotient `t`, at a single good permutation-challenge pair `(β, γ)`. -/
+theorem copy_soundness_wired [DecidableEq F] {ω : F} {NN : ℕ} (hω : IsPrimitiveRoot ω n)
+    (hn : 0 < n) (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
     (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (hs : CosetShifts ω shifts)
     (σpFull : Equiv.Perm (Fin 7 × Fin n)) (hp : RegionPreserving zkRows σpFull)
-    {M N : ℕ} (b : Fin M → F) (g : Fin N → F)
-    (hb : Function.Injective b) (hg : Function.Injective g)
-    (hM : 7 * (n - zkRows) < M) (hN : 7 * (n - zkRows) < N)
-    (zg : Fin M → Fin N → Polynomial F)
-    (α : Fin M → Fin N → Fin 3 → F) (hα : ∀ a c, Function.Injective (α a c))
-    (ζ : Fin M → Fin N → Fin NN → F) (hζ : ∀ a c, Function.Injective (ζ a c))
-    (t : Fin M → Fin N → Fin 3 → Polynomial F) (D : ℕ) (hD : D < NN)
-    (hCdeg : ∀ a c s, (aggregate (α a c s) (constraints ω zkRows (zg a c) w
-      (sigmaPoly ω shifts σpFull) shifts (b a) (g c)
+    (β γ : F)
+    (hβ : β ∉ badBetas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
+        ((w c.1).eval (ω ^ (c.2 : ℕ)), shifts c.1 * ω ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
+        ((w c.1).eval (ω ^ (c.2 : ℕ)),
+          shifts (restrictCells σpFull hp c).1
+            * ω ^ ((restrictCells σpFull hp c).2 : ℕ))))
+    (hγ : γ ∉ badGammas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
+        ((w c.1).eval (ω ^ (c.2 : ℕ)), shifts c.1 * ω ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
+        ((w c.1).eval (ω ^ (c.2 : ℕ)),
+          shifts (restrictCells σpFull hp c).1
+            * ω ^ ((restrictCells σpFull hp c).2 : ℕ))) β)
+    (zg : Polynomial F)
+    (α : F)
+    (hα : α ∉ badAlphas (constraints ω zkRows zg w
+      (sigmaPoly ω shifts σpFull) shifts β γ
+      (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩) ω n)
+    (ζ : Fin NN → F) (hζ : Function.Injective ζ)
+    (t : Polynomial F) (D : ℕ) (hD : D < NN)
+    (hCdeg : (aggregate α (constraints ω zkRows zg w
+      (sigmaPoly ω shifts σpFull) shifts β γ
       (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)).natDegree ≤ D)
-    (htdeg : ∀ a c s, (t a c s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ a c s p, (aggregate (α a c s) (constraints ω zkRows (zg a c) w
-        (sigmaPoly ω shifts σpFull) shifts (b a) (g c)
-        (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)).eval (ζ a c p)
-      = (t a c s * zH F n).eval (ζ a c p)) :
+    (htdeg : (t * zH F n).natDegree ≤ D)
+    (hcheck : ∀ p, (aggregate α (constraints ω zkRows zg w
+        (sigmaPoly ω shifts σpFull) shifts β γ
+        (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)).eval (ζ p)
+      = (t * zH F n).eval (ζ p)) :
     ∀ c : Fin 7 × Fin (n - zkRows),
       (w (σpFull (embCell zkRows c)).1).eval (ω ^ ((σpFull (embCell zkRows c)).2 : ℕ))
         = (w c.1).eval (ω ^ (c.2 : ℕ)) :=
-  copy_soundness_wired_of_dvd hω hn hzk0 hzkn w shifts hs σpFull hp b g hb hg hM hN zg
-    fun a c => dvd_separation hω hn (α a c) (hα a c) _ fun s =>
-      zH_dvd_of_evals hω hn (ζ a c) (hζ a c) _ (t a c s) D (hCdeg a c s) (htdeg a c s)
-        hD (hcheck a c s)
+  have : NeZero n := ⟨hn.ne'⟩
+  copy_soundness_wired_of_dvd hω hn hzk0 hzkn w shifts hs σpFull hp β γ hβ hγ zg
+    (dvd_of_evalCheck_sz hω ζ hζ _ α hα t D hD hCdeg htdeg hcheck)
 
 end Kimchi.Quotient.Permutation

@@ -424,6 +424,7 @@ acceptance check, adjudicated numerically against production in
 into `Index.satisfies_of_evalCheck` at `D := degreeBound n`, its degree side discharged by
 `aggregate_natDegree_le` and `t_zH_natDegree_le`. -/
 
+open Kimchi.Quotient.Permutation in
 /-- **The grid headline.** A grid of deployed verifier-equation instances — the
 scalar-side acceptance check `heq` at every node of the `(β, γ)` × ζ challenge grids, one
 `α a c` per `(β, γ)` node outside `badAlphas` — implies `Satisfies idx pub wTab`. Per point
@@ -433,37 +434,53 @@ scalar-side acceptance check `heq` at every node of the `(β, γ)` × ζ challen
 and `t_zH_natDegree_le`. -/
 theorem satisfies_of_verifierEquation [DecidableEq F] [NeZero n]
     (idx : Index F n) (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin 15 → F)
-    {M NN NNN : ℕ} (b : Fin M → F) (g : Fin NN → F)
-    (hb : Function.Injective b) (hg : Function.Injective g)
-    (hM : 7 * (n - idx.zkRows) < M) (hN : 7 * (n - idx.zkRows) < NN)
-    (zg : Fin M → Fin NN → Polynomial F) (hz : ∀ a c, (zg a c).natDegree < n)
-    (ζ : Fin M → Fin NN → Fin NNN → F) (hζ : ∀ a c, Function.Injective (ζ a c))
-    (hζ₁ : ∀ a c p, ζ a c p ≠ 1)
-    (hζb : ∀ a c p, ζ a c p ≠ idx.omega ^ (n - idx.zkRows))
-    (α : Fin M → Fin NN → F)
-    (hα : ∀ a c,
-      α a c ∉ badAlphas (idx.fullFamily pub wTab (zg a c) (b a) (g c)) idx.omega n)
-    (t : Fin M → Fin NN → Polynomial F)
-    (ht : ∀ a c, (t a c).natDegree < 7 * n)
+    (β γ : F)
+    (hβ : β ∉ badBetas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+            * idx.omega
+              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))))
+    (hγ : γ ∉ badGammas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+            * idx.omega
+              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))) β)
+    {NNN : ℕ}
+    (zg : Polynomial F) (hz : zg.natDegree < n)
+    (ζ : Fin NNN → F) (hζ : Function.Injective ζ)
+    (hζ₁ : ∀ p, ζ p ≠ 1)
+    (hζb : ∀ p, ζ p ≠ idx.omega ^ (n - idx.zkRows))
+    (α : F)
+    (hα : α ∉ badAlphas (idx.fullFamily pub wTab zg β γ) idx.omega n)
+    (t : Polynomial F)
+    (ht : t.natDegree < 7 * n)
     (hD : Index.degreeBound n < NNN)
-    (heq : ∀ a c p,
-      permScalar (b a) (g c) (α a c)
-          (zkpmEval n idx.zkRows idx.omega (ζ a c p))
-          (evalsOf idx wTab (zg a c) (ζ a c p))
+    (heq : ∀ p,
+      permScalar β γ α
+          (zkpmEval n idx.zkRows idx.omega (ζ p))
+          (evalsOf idx wTab zg (ζ p))
         * ((Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) 6).eval
-            (ζ a c p)
-        - ((ζ a c p) ^ n - 1) * (t a c).eval (ζ a c p)
-      = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase (α a c) (b a) (g c)
-          (ζ a c p) (-((idx.pubPoly pub).eval (ζ a c p)))
-          (evalsOf idx wTab (zg a c) (ζ a c p))) :
+            (ζ p)
+        - ((ζ p) ^ n - 1) * t.eval (ζ p)
+      = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
+          (ζ p) (-((idx.pubPoly pub).eval (ζ p)))
+          (evalsOf idx wTab zg (ζ p))) :
     Satisfies idx pub wTab := by
-  refine idx.satisfies_of_evalCheck pub wTab b g hb hg hM hN zg ζ hζ α hα t
-    (Index.degreeBound n) hD (fun a c => ?_) (fun a c => ?_) (fun a c p => ?_)
-  · exact idx.aggregate_natDegree_le pub wTab (zg a c) (hz a c) (b a) (g c) (α a c)
-  · exact Index.Index.t_zH_natDegree_le _ (ht a c)
-  · exact (verifierEquation_iff idx pub wTab (zg a c) (t a c) (ζ a c p) (b a) (g c)
-      (α a c) (hζ₁ a c p) (hζb a c p)).mp (heq a c p)
+  refine idx.satisfies_of_evalCheck pub wTab β γ hβ hγ zg ζ hζ α hα t
+    (Index.degreeBound n) hD ?_ ?_ (fun p => ?_)
+  · exact idx.aggregate_natDegree_le pub wTab zg hz β γ α
+  · exact Index.Index.t_zH_natDegree_le _ ht
+  · exact (verifierEquation_iff idx pub wTab zg t (ζ p) β γ α (hζ₁ p) (hζb p)).mp (heq p)
 
+open Kimchi.Quotient.Permutation in
 set_option linter.unusedVariables false in
 /-- **The grid headline at the extracted table.** The corollary at
 `wTab := extractTable idx.omega W` — the table read off the polynomials PCS binding
@@ -476,31 +493,48 @@ interface-mandated dead weight here. -/
 theorem satisfies_extractTable_of_verifierEquation [DecidableEq F] [NeZero n]
     (idx : Index F n) (pub : Fin idx.publicCount → F)
     (W : Fin 15 → Polynomial F) (hW : ∀ c, (W c).natDegree < n)
-    {M NN NNN : ℕ} (b : Fin M → F) (g : Fin NN → F)
-    (hb : Function.Injective b) (hg : Function.Injective g)
-    (hM : 7 * (n - idx.zkRows) < M) (hN : 7 * (n - idx.zkRows) < NN)
-    (zg : Fin M → Fin NN → Polynomial F) (hz : ∀ a c, (zg a c).natDegree < n)
-    (ζ : Fin M → Fin NN → Fin NNN → F) (hζ : ∀ a c, Function.Injective (ζ a c))
-    (hζ₁ : ∀ a c p, ζ a c p ≠ 1)
-    (hζb : ∀ a c p, ζ a c p ≠ idx.omega ^ (n - idx.zkRows))
-    (α : Fin M → Fin NN → F)
-    (hα : ∀ a c, α a c ∉ badAlphas
-      (idx.fullFamily pub (extractTable idx.omega W) (zg a c) (b a) (g c)) idx.omega n)
-    (t : Fin M → Fin NN → Polynomial F)
-    (ht : ∀ a c, (t a c).natDegree < 7 * n)
+    (β γ : F)
+    (hβ : β ∉ badBetas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+            * idx.omega
+              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))))
+    (hγ : γ ∉ badGammas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+            * idx.omega
+              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))) β)
+    {NNN : ℕ}
+    (zg : Polynomial F) (hz : zg.natDegree < n)
+    (ζ : Fin NNN → F) (hζ : Function.Injective ζ)
+    (hζ₁ : ∀ p, ζ p ≠ 1)
+    (hζb : ∀ p, ζ p ≠ idx.omega ^ (n - idx.zkRows))
+    (α : F)
+    (hα : α ∉ badAlphas
+      (idx.fullFamily pub (extractTable idx.omega W) zg β γ) idx.omega n)
+    (t : Polynomial F)
+    (ht : t.natDegree < 7 * n)
     (hD : Index.degreeBound n < NNN)
-    (heq : ∀ a c p,
-      permScalar (b a) (g c) (α a c)
-          (zkpmEval n idx.zkRows idx.omega (ζ a c p))
-          (evalsOf idx (extractTable idx.omega W) (zg a c) (ζ a c p))
+    (heq : ∀ p,
+      permScalar β γ α
+          (zkpmEval n idx.zkRows idx.omega (ζ p))
+          (evalsOf idx (extractTable idx.omega W) zg (ζ p))
         * ((Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) 6).eval
-            (ζ a c p)
-        - ((ζ a c p) ^ n - 1) * (t a c).eval (ζ a c p)
-      = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase (α a c) (b a) (g c)
-          (ζ a c p) (-((idx.pubPoly pub).eval (ζ a c p)))
-          (evalsOf idx (extractTable idx.omega W) (zg a c) (ζ a c p))) :
+            (ζ p)
+        - ((ζ p) ^ n - 1) * t.eval (ζ p)
+      = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
+          (ζ p) (-((idx.pubPoly pub).eval (ζ p)))
+          (evalsOf idx (extractTable idx.omega W) zg (ζ p))) :
     Satisfies idx pub (extractTable idx.omega W) :=
-  satisfies_of_verifierEquation idx pub (extractTable idx.omega W) b g hb hg hM hN
+  satisfies_of_verifierEquation idx pub (extractTable idx.omega W) β γ hβ hγ
     zg hz ζ hζ hζ₁ hζb α hα t ht hD heq
 
 end Kimchi.Verifier.Equation

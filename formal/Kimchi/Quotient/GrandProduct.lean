@@ -226,4 +226,121 @@ theorem multiset_eq_of_grid_prod_evals {M N : ℕ} (b : Fin M → F) (g : Fin N 
   rw [eval2_prod_pairFactor, eval2_prod_pairFactor]
   exact h i j
 
+/-! ## Project-local Mathlib supplement — single-challenge Schwartz–Zippel (β,γ collapse)
+
+The S2 layer: replace the injective β,γ **grid** of `multiset_eq_of_grid_prod_evals` with the
+standard single-challenge (counting) Schwartz–Zippel argument. Working in `F[β][γ]` with
+`Δ := (m₁.map pairFactor).prod - (m₂.map pairFactor).prod`, a *good* pair `(β,γ)` — one avoiding
+two explicitly-small bad sets — already forces the two grand products to agree, hence the pair
+multisets to coincide. Bad β's are the roots of the outer (γ-leading) coefficient of `Δ`; bad γ's
+(given β) are the roots of `Δ` specialised at `β`. Both bad sets are empty when `m₁ = m₂`, so the
+`∉ bad…` hypotheses are never vacuous. Mirrors `Kimchi/Quotient/SchwartzZippel.lean`'s α-collapse.
+-/
+
+/-- The difference of the two grand products in `F[β][γ]` (outer variable `γ`, inner `β`).
+`Δ = 0 ↔ m₁ = m₂` via `multiset_eq_of_pairFactor_prod_eq`; its outer-leading coefficient and its
+`β`-specialisation drive the bad-set definitions below. -/
+private noncomputable def gpDiff (m₁ m₂ : Multiset (F × F)) : Polynomial (Polynomial F) :=
+  (m₁.map pairFactor).prod - (m₂.map pairFactor).prod
+
+section
+variable [DecidableEq F]
+
+/-- **Bad β.** Those `β` at which the γ-polynomial of `m₁` minus that of `m₂` collapses to zero
+even though `m₁ ≠ m₂`: concretely the roots of `Δ`'s outer-leading (γ-degree) coefficient, a
+nonzero inner β-polynomial when `Δ ≠ 0`. EMPTY when `m₁ = m₂`, keeping the hypotheses
+satisfiable. Project-local: the β-axis of the S2 grand-product SZ collapse. -/
+noncomputable def badBetas (m₁ m₂ : Multiset (F × F)) : Finset F :=
+  if m₁ = m₂ then ∅ else (gpDiff m₁ m₂).leadingCoeff.roots.toFinset
+
+/-- **Card bound for bad β** — at most `max |m₁| |m₂|`. The empty case is trivial; otherwise the
+distinct roots of `Δ.leadingCoeff` number at most its degree, and `Δ.leadingCoeff = Δ.coeff
+Δ.natDegree` is a coefficient of a degree-`Δ` polynomial, each coefficient of inner degree
+`≤ max |m₁| |m₂|` via `natDegree_coeff_prod_pairFactor`. Project-local: makes `∉ badBetas`
+non-vacuous. -/
+theorem card_badBetas_le (m₁ m₂ : Multiset (F × F)) :
+    (badBetas m₁ m₂).card ≤ max (Multiset.card m₁) (Multiset.card m₂) := by
+  have hcoeff : ∀ k, ((gpDiff m₁ m₂).coeff k).natDegree
+      ≤ max (Multiset.card m₁) (Multiset.card m₂) := by
+    intro k
+    unfold gpDiff
+    rw [Polynomial.coeff_sub]
+    refine le_trans (Polynomial.natDegree_sub_le _ _) ?_
+    exact max_le_max (natDegree_coeff_prod_pairFactor m₁ k) (natDegree_coeff_prod_pairFactor m₂ k)
+  unfold badBetas
+  split_ifs with h
+  · simp
+  · refine le_trans (Multiset.toFinset_card_le _) ?_
+    refine le_trans (Polynomial.card_roots' _) ?_
+    exact hcoeff _
+
+/-- **Bad γ at a good β.** The roots of `Δ` specialised at `β` (the γ-polynomial `Δ.map
+(evalRingHom β)`), which is nonzero when `β ∉ badBetas`. EMPTY when `m₁ = m₂`. Project-local:
+the γ-axis of the S2 grand-product SZ collapse. -/
+noncomputable def badGammas (m₁ m₂ : Multiset (F × F)) (β : F) : Finset F :=
+  if m₁ = m₂ then ∅ else ((gpDiff m₁ m₂).map (Polynomial.evalRingHom β)).roots.toFinset
+
+/-- **Card bound for bad γ** — at most `max |m₁| |m₂|`, for every `β`. The specialised polynomial
+has degree at most `Δ.natDegree ≤ max |m₁| |m₂|` (via `natDegree_map_le` and
+`natDegree_prod_pairFactor`), so its distinct roots number no more. Project-local: makes
+`∉ badGammas` non-vacuous. -/
+theorem card_badGammas_le (m₁ m₂ : Multiset (F × F)) (β : F) :
+    (badGammas m₁ m₂ β).card ≤ max (Multiset.card m₁) (Multiset.card m₂) := by
+  unfold badGammas
+  split_ifs with h
+  · simp
+  · refine le_trans (Multiset.toFinset_card_le _) ?_
+    refine le_trans (Polynomial.card_roots' _) ?_
+    refine le_trans Polynomial.natDegree_map_le ?_
+    unfold gpDiff
+    refine le_trans (Polynomial.natDegree_sub_le _ _) ?_
+    exact max_le_max (natDegree_prod_pairFactor m₁) (natDegree_prod_pairFactor m₂)
+
+/-- **The grand product at ONE `(β,γ)`** — replaces `multiset_eq_of_grid_prod_evals`. If the
+field-level products `∏ (γ + p.1 + p.2·β)` over `m₁` and `m₂` agree at a single good pair `(β,γ)`
+(β outside `badBetas`, γ outside `badGammas … β`), then `m₁ = m₂`. Iterated univariate SZ: a good
+β keeps the γ-specialisation `Δ.map (evalRingHom β)` nonzero, a good γ is not among its roots, yet
+the product equality forces `(Δ.map (evalRingHom β)).eval γ = 0` — contradiction unless `Δ = 0`,
+i.e. `m₁ = m₂`. Project-local: the S2 single-challenge grand-product core. -/
+theorem multiset_eq_of_prod_eval_sz (m₁ m₂ : Multiset (F × F)) (β γ : F)
+    (hβ : β ∉ badBetas m₁ m₂) (hγ : γ ∉ badGammas m₁ m₂ β)
+    (h : (m₁.map (fun p => γ + p.1 + p.2 * β)).prod
+       = (m₂.map (fun p => γ + p.1 + p.2 * β)).prod) :
+    m₁ = m₂ := by
+  by_contra hne
+  -- `Δ ≠ 0`: else the pair-factor products agree, forcing `m₁ = m₂`.
+  have hΔ : gpDiff m₁ m₂ ≠ 0 := by
+    intro h0
+    refine hne (multiset_eq_of_pairFactor_prod_eq m₁ m₂ ?_)
+    have h0' : (m₁.map pairFactor).prod - (m₂.map pairFactor).prod = 0 := h0
+    exact sub_eq_zero.mp h0'
+  -- Good β ⇒ the outer-leading coefficient does not vanish at β.
+  have hL : (gpDiff m₁ m₂).leadingCoeff ≠ 0 := Polynomial.leadingCoeff_ne_zero.mpr hΔ
+  unfold badBetas at hβ
+  rw [if_neg hne, Multiset.mem_toFinset] at hβ
+  have hLeval : (gpDiff m₁ m₂).leadingCoeff.eval β ≠ 0 := fun he =>
+    hβ (Polynomial.mem_roots'.mpr ⟨hL, he⟩)
+  -- Hence the γ-specialisation is a nonzero polynomial (its top coefficient survives).
+  have hMne : (gpDiff m₁ m₂).map (Polynomial.evalRingHom β) ≠ 0 := by
+    intro hM0
+    apply hLeval
+    have hc := congrArg (fun q => Polynomial.coeff q (gpDiff m₁ m₂).natDegree) hM0
+    simp only [Polynomial.coeff_map, Polynomial.coeff_zero, Polynomial.coe_evalRingHom] at hc
+    exact hc
+  -- Good γ ⇒ it is not a root of that nonzero polynomial.
+  unfold badGammas at hγ
+  rw [if_neg hne, Multiset.mem_toFinset] at hγ
+  have hMeval : ((gpDiff m₁ m₂).map (Polynomial.evalRingHom β)).eval γ ≠ 0 := fun he =>
+    hγ (Polynomial.mem_roots'.mpr ⟨hMne, he⟩)
+  -- But the product equality forces exactly that specialised evaluation to vanish.
+  have hadd : eval2 β γ (gpDiff m₁ m₂)
+      = eval2 β γ (m₁.map pairFactor).prod - eval2 β γ (m₂.map pairFactor).prod := by
+    simp only [eval2, gpDiff, Polynomial.eval_sub]
+  have hev : eval2 β γ (gpDiff m₁ m₂) = 0 := by
+    rw [hadd, eval2_prod_pairFactor, eval2_prod_pairFactor, h, sub_self]
+  rw [eval2_eq_eval_map] at hev
+  exact hMeval hev
+
+end
+
 end Kimchi.Quotient
