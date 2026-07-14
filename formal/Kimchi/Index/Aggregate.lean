@@ -286,29 +286,26 @@ account of "a random `α`" is now the standard **counting** Schwartz–Zippel ar
 quotient `t`, suffices to separate divisibility across the members, provided `α` avoids the
 explicit **bad set** `badAlphas (idx.fullFamily …) idx.omega n`, whose cardinality is proved
 `≤ n · (K − 1)` (`card_badAlphas_le`). No injective α-family, no Vandermonde. The evaluation
-point still comes from an injective ζ-node family, pinning the polynomial identity
-(`zH_dvd_of_evals`) — that surrogate is a later increment. Specializing the composed engine
+point is likewise a single good `ζ` outside the explicit bad set
+`badZetas (aggregate α …) t n`, pinning the polynomial identity by the same counting
+argument (`zH_dvd_of_eval_sz`). Specializing the composed engine
 `dvd_of_evalCheck_sz` at `fullFamily` turns the shape of the one production check into
 per-member divisibility, and the separation argument takes it the rest of the way to the
 rows. -/
 
 /-- **Divisibility of every family member from the aggregated eval-check** — the
 single-challenge `dvd_of_evalCheck_sz` engine at the full `21 + 3` family. One `α` outside
-`badAlphas`, one quotient `t`. -/
+`badAlphas`, one quotient `t`, one good `ζ` outside `badZetas`. -/
 theorem fullFamily_dvd_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (β γ : F)
-    {N : ℕ} (ζ : Fin N → F) (hζ : Function.Injective ζ)
     (α : F) (hα : α ∉ badAlphas (idx.fullFamily pub wTab z β γ) idx.omega n)
     (t : Polynomial F)
-    (D : ℕ) (hD : D < N)
-    (hCdeg : (aggregate α (idx.fullFamily pub wTab z β γ)).natDegree ≤ D)
-    (htdeg : (t * zH F n).natDegree ≤ D)
-    (hcheck : ∀ p,
-      (aggregate α (idx.fullFamily pub wTab z β γ)).eval (ζ p)
-        = (t * zH F n).eval (ζ p)) :
+    (ζ : F)
+    (hζ : ζ ∉ badZetas (aggregate α (idx.fullFamily pub wTab z β γ)) t n)
+    (hcheck : (aggregate α (idx.fullFamily pub wTab z β γ)).eval ζ
+        = (t * zH F n).eval ζ) :
     ∀ s, zH F n ∣ idx.fullFamily pub wTab z β γ s :=
-  dvd_of_evalCheck_sz idx.omega_prim ζ hζ (idx.fullFamily pub wTab z β γ) α hα t D hD
-    hCdeg htdeg hcheck
+  dvd_of_evalCheck_sz idx.omega_prim (idx.fullFamily pub wTab z β γ) α hα t ζ hζ hcheck
 
 open Kimchi.Quotient.Permutation in
 /-- The permutation members of the full family: entries `21 + s` are the three
@@ -365,18 +362,15 @@ the shape of kimchi's one quotient check — gives every row's gate branch of
 separation argument collapses the shared pool back to the rows. -/
 theorem rowSatisfies_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (β γ : F)
-    {N : ℕ} (ζ : Fin N → F) (hζ : Function.Injective ζ)
     (α : F) (hα : α ∉ badAlphas (idx.fullFamily pub wTab z β γ) idx.omega n)
     (t : Polynomial F)
-    (D : ℕ) (hD : D < N)
-    (hCdeg : (aggregate α (idx.fullFamily pub wTab z β γ)).natDegree ≤ D)
-    (htdeg : (t * zH F n).natDegree ≤ D)
-    (hcheck : ∀ p,
-      (aggregate α (idx.fullFamily pub wTab z β γ)).eval (ζ p)
-        = (t * zH F n).eval (ζ p)) :
+    (ζ : F)
+    (hζ : ζ ∉ badZetas (aggregate α (idx.fullFamily pub wTab z β γ)) t n)
+    (hcheck : (aggregate α (idx.fullFamily pub wTab z β γ)).eval ζ
+        = (t * zH F n).eval ζ) :
     ∀ i, rowSatisfies idx pub wTab i :=
   idx.rowSatisfies_of_fullFamily_dvd pub wTab z β γ
-    (idx.fullFamily_dvd_of_evalCheck pub wTab z β γ ζ hζ α hα t D hD hCdeg htdeg hcheck)
+    (idx.fullFamily_dvd_of_evalCheck pub wTab z β γ α hα t ζ hζ hcheck)
 
 /-! ## The Phase-B headline: the one quotient check gives satisfiability
 
@@ -523,20 +517,17 @@ theorem satisfies_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → 
           idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
             * idx.omega
               ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))) β)
-    {NNN : ℕ}
     (zg : Polynomial F)
-    (ζ : Fin NNN → F) (hζ : Function.Injective ζ)
     (α : F)
     (hα : α ∉ badAlphas (idx.fullFamily pub wTab zg β γ) idx.omega n)
     (t : Polynomial F)
-    (D : ℕ) (hD : D < NNN)
-    (hCdeg : (aggregate α (idx.fullFamily pub wTab zg β γ)).natDegree ≤ D)
-    (htdeg : (t * zH F n).natDegree ≤ D)
-    (hcheck : ∀ p, (aggregate α (idx.fullFamily pub wTab zg β γ)).eval (ζ p)
-        = (t * zH F n).eval (ζ p)) :
+    (ζ : F)
+    (hζ : ζ ∉ badZetas (aggregate α (idx.fullFamily pub wTab zg β γ)) t n)
+    (hcheck : (aggregate α (idx.fullFamily pub wTab zg β γ)).eval ζ
+        = (t * zH F n).eval ζ) :
     Satisfies idx pub wTab :=
   idx.satisfies_of_fullFamily_dvd pub wTab β γ hβ hγ zg
-    (idx.fullFamily_dvd_of_evalCheck pub wTab zg β γ ζ hζ α hα t D hD hCdeg htdeg hcheck)
+    (idx.fullFamily_dvd_of_evalCheck pub wTab zg β γ α hα t ζ hζ hcheck)
 
 /-! ## Completeness: the gate members of a satisfied table
 

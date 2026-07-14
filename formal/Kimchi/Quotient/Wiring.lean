@@ -409,8 +409,10 @@ theorem copy_soundness_wired_of_dvd [DecidableEq F] {ω : F} (hω : IsPrimitiveR
 /-- **Copy soundness from the index data.** As `copy_soundness_wired_of_dvd`, with the
 divisibilities obtained from the derandomized quotient checks in single-challenge counting
 Schwartz–Zippel form (`dvd_of_evalCheck_sz`): ONE aggregation challenge `α` (avoiding
-`badAlphas`) and ONE quotient `t`, at a single good permutation-challenge pair `(β, γ)`. -/
-theorem copy_soundness_wired [DecidableEq F] {ω : F} {NN : ℕ} (hω : IsPrimitiveRoot ω n)
+`badAlphas`) and ONE quotient `t`, at a single good permutation-challenge pair `(β, γ)`, and
+the quotient check evaluated at a single good challenge `ζ` outside the counting bad set
+`badZetas (aggregate α C) t n`. Conclusion unchanged. -/
+theorem copy_soundness_wired [DecidableEq F] {ω : F} (hω : IsPrimitiveRoot ω n)
     (hn : 0 < n) (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
     (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (hs : CosetShifts ω shifts)
     (σpFull : Equiv.Perm (Fin 7 × Fin n)) (hp : RegionPreserving zkRows σpFull)
@@ -434,21 +436,20 @@ theorem copy_soundness_wired [DecidableEq F] {ω : F} {NN : ℕ} (hω : IsPrimit
     (hα : α ∉ badAlphas (constraints ω zkRows zg w
       (sigmaPoly ω shifts σpFull) shifts β γ
       (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩) ω n)
-    (ζ : Fin NN → F) (hζ : Function.Injective ζ)
-    (t : Polynomial F) (D : ℕ) (hD : D < NN)
-    (hCdeg : (aggregate α (constraints ω zkRows zg w
+    (t : Polynomial F)
+    (ζ : F)
+    (hζ : ζ ∉ badZetas (aggregate α (constraints ω zkRows zg w
       (sigmaPoly ω shifts σpFull) shifts β γ
-      (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)).natDegree ≤ D)
-    (htdeg : (t * zH F n).natDegree ≤ D)
-    (hcheck : ∀ p, (aggregate α (constraints ω zkRows zg w
+      (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)) t n)
+    (hcheck : (aggregate α (constraints ω zkRows zg w
         (sigmaPoly ω shifts σpFull) shifts β γ
-        (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)).eval (ζ p)
-      = (t * zH F n).eval (ζ p)) :
+        (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)).eval ζ
+      = (t * zH F n).eval ζ) :
     ∀ c : Fin 7 × Fin (n - zkRows),
       (w (σpFull (embCell zkRows c)).1).eval (ω ^ ((σpFull (embCell zkRows c)).2 : ℕ))
         = (w c.1).eval (ω ^ (c.2 : ℕ)) :=
   have : NeZero n := ⟨hn.ne'⟩
   copy_soundness_wired_of_dvd hω hn hzk0 hzkn w shifts hs σpFull hp β γ hβ hγ zg
-    (dvd_of_evalCheck_sz hω ζ hζ _ α hα t D hD hCdeg htdeg hcheck)
+    (dvd_of_evalCheck_sz hω _ α hα t ζ hζ hcheck)
 
 end Kimchi.Quotient.Permutation

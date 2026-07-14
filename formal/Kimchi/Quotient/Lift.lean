@@ -290,35 +290,33 @@ theorem Argument.soundness [DecidableEq F] {N : ℕ} [NeZero n] (G : Argument F)
 /-! ## Quotient-argument soundness — single-challenge (counting) form -/
 
 /-- **`Argument` quotient soundness, single-challenge form.** The counting–Schwartz–Zippel
-analogue of `Argument.soundness`: the injective challenge family `α : Fin _ → F` and the
-per-challenge quotient family `t : Fin _ → F[X]` collapse to a *single* challenge `α` and a
-*single* quotient `t`, at the cost of requiring `α` to avoid the proved-small bad set
-`badAlphas` of the selector-gated constraint family. The ζ-node family stays. Conclusion is
-identical to `Argument.soundness`: every selector-active row satisfies the gate's row
-constraints.
+analogue of `Argument.soundness`: the injective challenge family `α : Fin _ → F`, the injective
+node family `ζ : Fin N → F`, and the per-challenge quotient family `t : Fin _ → F[X]` all
+collapse — to a *single* challenge `α` (avoiding the proved-small `badAlphas` set), a *single*
+good node `ζ` (avoiding the proved-small `badZetas` set of the aggregate), and a *single*
+quotient `t`. No injectivity, no degree bounds. Conclusion is identical to `Argument.soundness`:
+every selector-active row satisfies the gate's row constraints.
 
 Project-local: this is the bridge W2 consumers (`Index/Soundness.lean` and the per-gate
-wrappers) delegate to once the α-family surrogate is retired; it composes
+wrappers) delegate to once the surrogate is retired; it composes the single-ζ counting
 `dvd_of_evalCheck_sz` exactly as `Argument.soundness` composes `dvd_of_evalCheck`. -/
-theorem Argument.soundness_sz [DecidableEq F] {N : ℕ} [NeZero n] (G : Argument F)
+theorem Argument.soundness_sz [DecidableEq F] [NeZero n] (G : Argument F)
     (hω : IsPrimitiveRoot ω n)
     (wTab qTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1)
-    (ζ : Fin N → F) (hζ : Function.Injective ζ)
     (α : F)
     (hα : α ∉ badAlphas (fun c => columnPoly ω sel *
         (G.constraints (polyEnv ω wTab qTab)).get c) ω n)
     (t : Polynomial F)
-    (D : ℕ) (hD : D < N)
-    (hCdeg : (aggregate α (fun c => columnPoly ω sel *
-        (G.constraints (polyEnv ω wTab qTab)).get c)).natDegree ≤ D)
-    (htdeg : (t * zH F n).natDegree ≤ D)
-    (hcheck : ∀ p, (aggregate α (fun c => columnPoly ω sel *
-        (G.constraints (polyEnv ω wTab qTab)).get c)).eval (ζ p)
-        = (t * zH F n).eval (ζ p)) :
+    (ζ : F)
+    (hζ : ζ ∉ badZetas (aggregate α (fun c => columnPoly ω sel *
+        (G.constraints (polyEnv ω wTab qTab)).get c)) t n)
+    (hcheck : (aggregate α (fun c => columnPoly ω sel *
+        (G.constraints (polyEnv ω wTab qTab)).get c)).eval ζ
+        = (t * zH F n).eval ζ) :
     ∀ i, sel i = 1 → ∀ e ∈ G.constraints (rowEnv wTab qTab i), e = 0 := by
-  have hdvd := dvd_of_evalCheck_sz hω ζ hζ
+  have hdvd := dvd_of_evalCheck_sz hω
     (fun c => columnPoly ω sel * (G.constraints (polyEnv ω wTab qTab)).get c)
-    α hα t D hD hCdeg htdeg hcheck
+    α hα t ζ hζ hcheck
   apply (G.rowsSel_iff_dvd hω wTab qTab sel hsel).mp
   intro E hE
   obtain ⟨c, rfl⟩ := List.mem_iff_get.mp hE

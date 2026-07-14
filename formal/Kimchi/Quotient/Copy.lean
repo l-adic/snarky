@@ -159,9 +159,10 @@ theorem copy_soundness_of_dvd [DecidableEq F] {ω : F} {n : ℕ}
 with the divisibilities obtained from the derandomized quotient checks in
 **single-challenge counting Schwartz–Zippel form** (`dvd_of_evalCheck_sz`): the prover
 supplies ONE aggregation challenge `α` (avoiding the proved-small bad set `badAlphas`) and
-ONE quotient `t`, at a single good permutation-challenge pair `(β, γ)`. The ζ
-evaluation-point family stays. Conclusion unchanged. -/
-theorem copy_soundness [DecidableEq F] {ω : F} {n NN : ℕ}
+ONE quotient `t`, at a single good permutation-challenge pair `(β, γ)`, and evaluates the
+quotient check at a single good challenge `ζ` outside the counting bad set
+`badZetas (aggregate α C) t n`. Conclusion unchanged. -/
+theorem copy_soundness [DecidableEq F] {ω : F} {n : ℕ}
     (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     {zkRows : ℕ} (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
     (w σpoly : Fin 7 → Polynomial F) (shifts : Fin 7 → F)
@@ -185,18 +186,17 @@ theorem copy_soundness [DecidableEq F] {ω : F} {n NN : ℕ}
     (α : F)
     (hα : α ∉ badAlphas (constraints ω zkRows zg w σpoly shifts
       β γ (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩) ω n)
-    (ζ : Fin NN → F) (hζ : Function.Injective ζ)
-    (t : Polynomial F) (D : ℕ) (hD : D < NN)
-    (hCdeg : (aggregate α (constraints ω zkRows zg w σpoly shifts
-      β γ (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)).natDegree ≤ D)
-    (htdeg : (t * zH F n).natDegree ≤ D)
-    (hcheck : ∀ p, (aggregate α (constraints ω zkRows zg w σpoly shifts
-        β γ (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)).eval (ζ p)
-      = (t * zH F n).eval (ζ p)) :
+    (t : Polynomial F)
+    (ζ : F)
+    (hζ : ζ ∉ badZetas (aggregate α (constraints ω zkRows zg w σpoly shifts
+      β γ (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)) t n)
+    (hcheck : (aggregate α (constraints ω zkRows zg w σpoly shifts
+        β γ (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)).eval ζ
+      = (t * zH F n).eval ζ) :
     ∀ c : Fin 7 × Fin (n - zkRows),
       (w (σp c).1).eval (ω ^ ((σp c).2 : ℕ)) = (w c.1).eval (ω ^ (c.2 : ℕ)) :=
   have : NeZero n := ⟨hn.ne'⟩
   copy_soundness_of_dvd hω hn hzk0 hzkn w σpoly shifts σp haddr hσ β γ hβ hγ zg
-    (dvd_of_evalCheck_sz hω ζ hζ _ α hα t D hD hCdeg htdeg hcheck)
+    (dvd_of_evalCheck_sz hω _ α hα t ζ hζ hcheck)
 
 end Kimchi.Quotient.Permutation

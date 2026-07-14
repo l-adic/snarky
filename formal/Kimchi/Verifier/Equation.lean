@@ -410,28 +410,26 @@ theorem verifierEquation_iff [DecidableEq F] [NeZero n] (idx : Index F n)
 /-! ## The grid headline
 
 The Fiat–Shamir idealization surrogate: the deployed scalar-side acceptance equation,
-required at every node of the `(β, γ)` × ζ challenge grids, implies `Satisfies` at the
-index. The α challenge has collapsed to a *single* value per `(β, γ)` node (the counting
-Schwartz–Zippel account of `Quotient/SchwartzZippel.lean`): `α a c` must merely avoid the
-explicit bad set `badAlphas (idx.fullFamily …) idx.omega n`. The remaining injective
-`(β, γ)` and ζ grids play the same role as the `(ξ, r)` grids of `batch_soundness` —
-milestone 5 discharges them from rewinding the transcript tree — and the dependence shape
-mirrors that tree: `zg`/`α`/`t` vary with `(β, γ)` only, "committed before `ζ` was
-sampled". The degree hypotheses `hz`/`ht` are what PCS binding (`chunked_batch_soundness`)
-supplies from the chunk counts; the per-point equation `heq` is the deployed verifier's
-acceptance check, adjudicated numerically against production in
-`scripts/check_linearization.lean`. The route is `verifierEquation_iff.mp` per grid point
-into `Index.satisfies_of_evalCheck` at `D := degreeBound n`, its degree side discharged by
-`aggregate_natDegree_le` and `t_zH_natDegree_le`. -/
+holding at a *single* good challenge, implies `Satisfies` at the index. Every challenge
+has now collapsed to one value outside an explicit bad set (the counting Schwartz–Zippel
+account of `Quotient/SchwartzZippel.lean`): `β`/`γ` avoid `badBetas`/`badGammas`, `α`
+avoids `badAlphas (idx.fullFamily …) idx.omega n`, and the evaluation point `ζ` avoids
+`badZetas (aggregate α (idx.fullFamily …)) t n`. The ζ-family axis and the deterministic
+interpolation it fed are gone: a single `ζ ∉ badZetas` pins the identity by the counting
+bound `card_badZetas_le`, so no injective grid, no `D := degreeBound n` cardinality gap,
+and no degree side-conditions (`hz`/`ht`) survive. The single-point equation `heq` is the
+deployed verifier's acceptance check, adjudicated numerically against production in
+`scripts/check_linearization.lean`. The route is `verifierEquation_iff.mp` at that one
+point into `Index.satisfies_of_evalCheck`. -/
 
 open Kimchi.Quotient.Permutation in
-/-- **The grid headline.** A grid of deployed verifier-equation instances — the
-scalar-side acceptance check `heq` at every node of the `(β, γ)` × ζ challenge grids, one
-`α a c` per `(β, γ)` node outside `badAlphas` — implies `Satisfies idx pub wTab`. Per point
-`(a, c, p)`, `heq` is syntactically the LHS of `verifierEquation_iff` at `z := zg a c`,
-`t := t a c`, `ζ := ζ a c p`, `β := b a`, `γ := g c`, `α := α a c`; the degree data
-`hz`/`ht` feeds the uniform bound `degreeBound n = 9·n` through `aggregate_natDegree_le`
-and `t_zH_natDegree_le`. -/
+/-- **The grid headline.** A single deployed verifier-equation instance — the scalar-side
+acceptance check `heq` at one good challenge tuple: `β ∉ badBetas`, `γ ∉ badGammas`,
+`α ∉ badAlphas`, and evaluation point `ζ ∉ badZetas (aggregate α (idx.fullFamily …)) t n`
+— implies `Satisfies idx pub wTab`. `heq` is syntactically the LHS of `verifierEquation_iff`
+at `z := zg`, `t`, `ζ`, `β`, `γ`, `α`; its `.mp` turns that per-point acceptance equation
+into the quotient `evalCheck`, which `Index.satisfies_of_evalCheck` promotes to
+`Satisfies` via the single-challenge counting bound. -/
 theorem satisfies_of_verifierEquation [DecidableEq F] [NeZero n]
     (idx : Index F n) (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin 15 → F)
     (β γ : F)
@@ -453,32 +451,27 @@ theorem satisfies_of_verifierEquation [DecidableEq F] [NeZero n]
           idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
             * idx.omega
               ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))) β)
-    {NNN : ℕ}
-    (zg : Polynomial F) (hz : zg.natDegree < n)
-    (ζ : Fin NNN → F) (hζ : Function.Injective ζ)
-    (hζ₁ : ∀ p, ζ p ≠ 1)
-    (hζb : ∀ p, ζ p ≠ idx.omega ^ (n - idx.zkRows))
+    (zg : Polynomial F)
     (α : F)
     (hα : α ∉ badAlphas (idx.fullFamily pub wTab zg β γ) idx.omega n)
     (t : Polynomial F)
-    (ht : t.natDegree < 7 * n)
-    (hD : Index.degreeBound n < NNN)
-    (heq : ∀ p,
+    (ζ : F)
+    (hζ : ζ ∉ badZetas (aggregate α (idx.fullFamily pub wTab zg β γ)) t n)
+    (hζ₁ : ζ ≠ 1)
+    (hζb : ζ ≠ idx.omega ^ (n - idx.zkRows))
+    (heq :
       permScalar β γ α
-          (zkpmEval n idx.zkRows idx.omega (ζ p))
-          (evalsOf idx wTab zg (ζ p))
+          (zkpmEval n idx.zkRows idx.omega ζ)
+          (evalsOf idx wTab zg ζ)
         * ((Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) 6).eval
-            (ζ p)
-        - ((ζ p) ^ n - 1) * t.eval (ζ p)
+            ζ
+        - (ζ ^ n - 1) * t.eval ζ
       = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
-          (ζ p) (-((idx.pubPoly pub).eval (ζ p)))
-          (evalsOf idx wTab zg (ζ p))) :
+          ζ (-((idx.pubPoly pub).eval ζ))
+          (evalsOf idx wTab zg ζ)) :
     Satisfies idx pub wTab := by
-  refine idx.satisfies_of_evalCheck pub wTab β γ hβ hγ zg ζ hζ α hα t
-    (Index.degreeBound n) hD ?_ ?_ (fun p => ?_)
-  · exact idx.aggregate_natDegree_le pub wTab zg hz β γ α
-  · exact Index.Index.t_zH_natDegree_le _ ht
-  · exact (verifierEquation_iff idx pub wTab zg t (ζ p) β γ α (hζ₁ p) (hζb p)).mp (heq p)
+  refine idx.satisfies_of_evalCheck pub wTab β γ hβ hγ zg α hα t ζ hζ ?_
+  exact (verifierEquation_iff idx pub wTab zg t ζ β γ α hζ₁ hζb).mp heq
 
 open Kimchi.Quotient.Permutation in
 set_option linter.unusedVariables false in
@@ -512,29 +505,28 @@ theorem satisfies_extractTable_of_verifierEquation [DecidableEq F] [NeZero n]
           idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
             * idx.omega
               ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))) β)
-    {NNN : ℕ}
-    (zg : Polynomial F) (hz : zg.natDegree < n)
-    (ζ : Fin NNN → F) (hζ : Function.Injective ζ)
-    (hζ₁ : ∀ p, ζ p ≠ 1)
-    (hζb : ∀ p, ζ p ≠ idx.omega ^ (n - idx.zkRows))
+    (zg : Polynomial F)
     (α : F)
     (hα : α ∉ badAlphas
       (idx.fullFamily pub (extractTable idx.omega W) zg β γ) idx.omega n)
     (t : Polynomial F)
-    (ht : t.natDegree < 7 * n)
-    (hD : Index.degreeBound n < NNN)
-    (heq : ∀ p,
+    (ζ : F)
+    (hζ : ζ ∉ badZetas
+      (aggregate α (idx.fullFamily pub (extractTable idx.omega W) zg β γ)) t n)
+    (hζ₁ : ζ ≠ 1)
+    (hζb : ζ ≠ idx.omega ^ (n - idx.zkRows))
+    (heq :
       permScalar β γ α
-          (zkpmEval n idx.zkRows idx.omega (ζ p))
-          (evalsOf idx (extractTable idx.omega W) zg (ζ p))
+          (zkpmEval n idx.zkRows idx.omega ζ)
+          (evalsOf idx (extractTable idx.omega W) zg ζ)
         * ((Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) 6).eval
-            (ζ p)
-        - ((ζ p) ^ n - 1) * t.eval (ζ p)
+            ζ
+        - (ζ ^ n - 1) * t.eval ζ
       = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
-          (ζ p) (-((idx.pubPoly pub).eval (ζ p)))
-          (evalsOf idx (extractTable idx.omega W) zg (ζ p))) :
+          ζ (-((idx.pubPoly pub).eval ζ))
+          (evalsOf idx (extractTable idx.omega W) zg ζ)) :
     Satisfies idx pub (extractTable idx.omega W) :=
   satisfies_of_verifierEquation idx pub (extractTable idx.omega W) β γ hβ hγ
-    zg hz ζ hζ hζ₁ hζb α hα t ht hD heq
+    zg α hα t ζ hζ hζ₁ hζb heq
 
 end Kimchi.Verifier.Equation

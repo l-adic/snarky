@@ -251,96 +251,98 @@ theorem claimedEvals_eq_evalsOf [Field F] {n : ℕ} [NeZero n] (idx : Index F n)
 /-! ## The headline -/
 
 set_option linter.unusedVariables false in
-/-- **The composed kimchi soundness headline (milestone 4.5), single-challenge form.**
-Batched IPA acceptance on the 43-row assembly at every node of the injective challenge
-grids, DL-binding, and `VKCorresponds` force a satisfying witness table:
-`∃ wTab, Satisfies idx pub wTab`, with witness `extractTable idx.omega W` for the bound
-witness-column polynomials `W`.
+/-- **The composed kimchi soundness headline (milestone 4.5), counting form.**
+Batched IPA acceptance on the 43-row assembly, DL-binding, and `VKCorresponds` force a
+satisfying witness table: `∃ wTab, Satisfies idx pub wTab`, with witness
+`extractTable idx.omega W` for the bound witness-column polynomials `W`.
 
-**Single-α trust story.** The former per-node α *grid axis*
-(`Fin (gateAlphaCount + permAlphaCount)`, driven by an injective family + Vandermonde) is
-GONE: this layer now uses the counting Schwartz–Zippel argument (`badAlphas`,
-`card_badAlphas_le`). The verifier draws ONE constraint-combining challenge `α a c` per
-`(β, γ)` node, together with ONE quotient `t a c`; the ζ grid and the per-point `(ξ, r)`
-batch grids remain the Fiat–Shamir idealization surrogate (milestone 5 discharges them),
-and `hbind` is the DL idealization.
+**Reference / consumer split (the ζ collapse).** The former per-node ζ *grid axis*
+(`Fin NNN`, driven by an injective family + a degree gap) is GONE: this layer now uses the
+counting Schwartz–Zippel argument (`badZetas`, `card_badZetas_le`) on all four challenge
+axes β, γ, α, ζ. Unlike the α/β/γ axes, whose batch extraction is ζ-free, **the claimed
+evals `E` are the openings AT ζ** — a naive single-point collapse with `ζ` top-level would
+extract `W` from the transcript at ζ, making the bad-ζ set depend on ζ and letting the
+prover pick `badZ := {ζ}` for a VACUOUS statement. To avoid that, the transcript is split:
+one **reference** transcript at a reference point `ζ₀` (top-level) extracts the ζ-FREE
+`W`/`zg`; the bad sets — including `badZ = badZetas (aggregate α (fullFamily … W zg …)) t n`
+— are built from that ζ-FREE data and quantified BEFORE the challenges. The per-challenge
+**consumer** transcript at `ζ` then binds its openings back to the reference `W`/`zg` via
+`bound_unique`, and every avoiding `(β, γ, α, t, ζ)` delivers `Satisfies`.
 
-**Quantifier order is the point.** The bad set is *extracted*, hence α-DEPENDENT-LOOKING;
-to keep the statement non-vacuous the α-goodness condition lives INSIDE the conclusion as
-a proved-small existential — `∃ badA`, of cardinality `≤ n · (K − 1)`
-(`card_badAlphas_le`), chosen from the α-FREE extracted data (the witness/accumulator
-polynomials produced by `batch_soundnessA` from `E`, `ξ`, `r`, `A`, `hFS`, `hacc`, none of
-which mention `α`), and only THEN quantifying over every `α`/`t`/`hteq` that avoids it.
-Because `badA` is fixed before `α` is introduced, the vacuous `badA a c := {α a c}` witness
-is unavailable: the implication genuinely delivers `Satisfies` for each avoiding challenge.
+**Quantifier order is the point.** Each bad set is *extracted* from the ζ-free reference
+data, hence β/γ/α/ζ-DEPENDENT-LOOKING; to keep the statement non-vacuous every goodness
+condition lives INSIDE the conclusion as a proved-small existential — `∃ badB badG badA
+badZ`, of the stated cardinalities (`card_badBetas_le`/`card_badGammas_le`/
+`card_badAlphas_le`/`card_badZetas_le`), chosen from the challenge-FREE extracted data (the
+witness/accumulator polynomials produced by `batch_soundnessA` from the REFERENCE
+`E₀`/`ξ₀`/`r₀`/`A₀`, none of which mention any live challenge), and only THEN quantifying
+over every `β`/`γ`/`α`/`t`/`ζ` that avoids them. Because `badZ` is fixed before `ζ` is
+introduced, the vacuous `badZ := {ζ}` witness is unavailable: the implication genuinely
+delivers `Satisfies` for each avoiding challenge tuple whose consumer transcript accepts.
 
 Hypothesis shape (see the module preamble for the trust story):
 * `hk` pins the SRS width to the domain size (`max_poly_size = n`), so every bound row
   polynomial has degree `< n` and column extraction applies;
-* the ζ grid and per-point `(ξ, r)` grids with their `FiatShamirTreeB` families are the
-  Fiat–Shamir idealization surrogate; `hbind` is the DL idealization;
-* the claims `E` may vary with the grid point `(a, c, p)` — every needed
-  point-independence is *derived* from binding (`bound_unique`), never assumed;
-* `hζn` (`ζ^n ≠ 1` per point) is interface-mandated grid data — not consumed here,
-  hence the silenced unused-variable linter (precedent: `ft_equation`,
-  `satisfies_extractTable_of_verifierEquation`). -/
+* the single reference transcript (`ζ₀ … hFS₀ hacc₀`) and, per challenge tuple, the
+  consumer transcript with its per-point `(ξ, r)` batch grid and `FiatShamirTreeB` family
+  are the Fiat–Shamir idealization surrogate; `hbind` is the DL idealization;
+* the claims `E` may vary between reference and consumer — every needed point-independence
+  is *derived* from binding (`bound_unique`), never assumed. -/
 theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
     {n : ℕ} [NeZero n] [DecidableEq F] (σ : SRS G)
     (idx : Index F n) (hk : 2 ^ σ.k = n)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
     (comms : IndexComms G) (hvk : VKCorresponds σ comms idx)
     (pub : Fin idx.publicCount → F)
-    {NNN : ℕ}
-    (ζ : Fin NNN → F) (hζ : Function.Injective ζ)
-    (hζ₁ : ∀ p, ζ p ≠ 1)
-    (hζb : ∀ p, ζ p ≠ idx.omega ^ (n - idx.zkRows))
-    (hζn : ∀ p, (ζ p) ^ n ≠ 1)
-    (hD : Index.degreeBound n < NNN)
     (wC : Fin 15 → G) (zC : G)
-    (E : Fin NNN → Fin 43 → Fin 2 → F)
-    (ξ : Fin NNN → Fin 43 → F)
-    (hξ : ∀ p, Function.Injective (ξ p))
-    (r : Fin NNN → Fin 2 → F)
-    (hr : ∀ p, Function.Injective (r p))
-    (A : Fin NNN → Fin 43 → Fin 2 → Prop)
-    (hFS : ∀ p (i : Fin 43) (j : Fin 2),
-      FiatShamirTreeB σ (combinedCommitment (ξ p i) (batchC wC zC comms))
-        (combinedEvalVector (2 ^ σ.k) (r p j) ![ζ p, idx.omega * ζ p])
-        (combinedInnerProduct (ξ p i) (r p j) (E p))
-        (A p i j))
-    (hacc : ∀ p i j, A p i j) :
-    ∃ (badB : Finset F) (badG : F → Finset F) (badA : F → F → Finset F),
+    -- REFERENCE transcript (single, at a reference point ζ₀): extracts the ζ-FREE W, zg.
+    (ζ₀ : F)
+    (E₀ : Fin 43 → Fin 2 → F)
+    (ξ₀ : Fin 43 → F) (hξ₀ : Function.Injective ξ₀)
+    (r₀ : Fin 2 → F) (hr₀ : Function.Injective r₀)
+    (A₀ : Fin 43 → Fin 2 → Prop)
+    (hFS₀ : ∀ (i : Fin 43) (j : Fin 2),
+      FiatShamirTreeB σ (combinedCommitment (ξ₀ i) (batchC wC zC comms))
+        (combinedEvalVector (2 ^ σ.k) (r₀ j) ![ζ₀, idx.omega * ζ₀])
+        (combinedInnerProduct (ξ₀ i) (r₀ j) E₀) (A₀ i j))
+    (hacc₀ : ∀ i j, A₀ i j) :
+    ∃ (badB : Finset F) (badG : F → Finset F) (badA : F → F → Finset F)
+        (badZ : F → F → F → Polynomial F → Finset F),
       (badB.card ≤ 7 * (n - idx.zkRows)
         ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
         ∧ (∀ β γ,
-            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1)))
-      ∧ ∀ (β γ α : F) (t : Polynomial F),
-          β ∉ badB → γ ∉ badG β → α ∉ badA β γ →
+            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
+        ∧ (∀ β γ α (t : Polynomial F), t.natDegree < 7 * n →
+            (badZ β γ α t).card ≤ Index.degreeBound n))
+      ∧ ∀ (β γ α : F) (t : Polynomial F) (ζ : F)
+          (E : Fin 43 → Fin 2 → F) (ξ : Fin 43 → F) (r : Fin 2 → F)
+          (A : Fin 43 → Fin 2 → Prop),
+          β ∉ badB → γ ∉ badG β → α ∉ badA β γ → ζ ∉ badZ β γ α t →
+          ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) →
           t.natDegree < 7 * n →
-          (∀ p,
-            permScalar β γ α (zkpmEval n idx.zkRows idx.omega (ζ p))
-                (claimedEvals (E p))
-              * (idx.sigmaPoly 6).eval (ζ p)
-              - ((ζ p) ^ n - 1) * t.eval (ζ p)
+          Function.Injective ξ → Function.Injective r →
+          (∀ (i : Fin 43) (j : Fin 2),
+            FiatShamirTreeB σ (combinedCommitment (ξ i) (batchC wC zC comms))
+              (combinedEvalVector (2 ^ σ.k) (r j) ![ζ, idx.omega * ζ])
+              (combinedInnerProduct (ξ i) (r j) E) (A i j)) →
+          (∀ i j, A i j) →
+          (permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
+              * (idx.sigmaPoly 6).eval ζ
+            - (ζ ^ n - 1) * t.eval ζ
             = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
-                (ζ p) (-((idx.pubPoly pub).eval (ζ p)))
-                (claimedEvals (E p))) →
+                ζ (-((idx.pubPoly pub).eval ζ)) (claimedEvals E)) →
           ∃ wTab : Fin n → Fin 15 → F, Satisfies idx pub wTab := by
   classical
   -- the verifier key is the honest indexer's
   have hvk' : comms = indexerOf σ idx := hvk
   subst hvk'
-  -- batch extraction at every ζ-grid point: one witness pair per row (challenge-free data)
-  choose aw ρw hrow using fun p =>
-    batch_soundnessA σ (ξ p) (hξ p) (r p) (hr p) (by omega)
-      (batchC wC zC (indexerOf σ idx)) ![ζ p, idx.omega * ζ p]
-      (E p) (A p) (hFS p) hbind (hacc p)
-  -- a base ζ-grid point (`degreeBound < NNN` forces `NNN` positive)
-  have p₀ : Fin NNN := ⟨0, by omega⟩
+  -- REFERENCE batch extraction at ζ₀: one witness pair per row (challenge-free data)
+  obtain ⟨aw₀, ρw₀, hrow₀⟩ :=
+    batch_soundnessA σ ξ₀ hξ₀ r₀ hr₀ (by omega)
+      (batchC wC zC (indexerOf σ idx)) ![ζ₀, idx.omega * ζ₀] E₀ A₀ hFS₀ hbind hacc₀
   -- the bound witness-column and accumulator polynomials (all challenge-free)
-  set W : Fin 15 → Polynomial F := fun col => rowPoly (aw p₀ (wRow col))
-    with hWdef
-  set zg : Polynomial F := rowPoly (aw p₀ zRow) with hzgdef
+  set W : Fin 15 → Polynomial F := fun col => rowPoly (aw₀ (wRow col)) with hWdef
+  set zg : Polynomial F := rowPoly (aw₀ zRow) with hzgdef
   have hW : ∀ col, (W col).natDegree < n := by
     intro col
     simp only [hWdef]
@@ -350,30 +352,7 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
     simp only [hzgdef]
     rw [← hk]
     exact rowPoly_natDegree_lt_two_pow _
-  -- cross-point uniqueness: the FIXED commitments bind the same polynomial everywhere
-  have hwpoly : ∀ p col, rowPoly (aw p (wRow col)) = W col := by
-    intro p col
-    simp only [hWdef]
-    exact bound_unique σ hbind
-      (((hrow p (wRow col)).1.trans
-          (batchC_wRow wC zC (indexerOf σ idx) col)).trans
-        (((hrow p₀ (wRow col)).1.trans
-          (batchC_wRow wC zC (indexerOf σ idx) col)).symm))
-  have hzpoly : ∀ p, rowPoly (aw p zRow) = zg := by
-    intro p
-    simp only [hzgdef]
-    exact bound_unique σ hbind
-      ((hrow p zRow).1.trans ((hrow p₀ zRow).1.symm))
-  -- the witness and accumulator claims, at both eval points
-  have hwE : ∀ p col (j : Fin 2),
-      E p (wRow col) j = (W col).eval (![ζ p, idx.omega * ζ p] j) := by
-    intro p col j
-    rw [(hrow p (wRow col)).2 j, ← rowPoly_eval, hwpoly p col]
-  have hzE : ∀ p (j : Fin 2),
-      E p zRow j = zg.eval (![ζ p, idx.omega * ζ p] j) := by
-    intro p j
-    rw [(hrow p zRow).2 j, ← rowPoly_eval, hzpoly p]
-  -- degree feeders for the VK-row pinning
+  -- degree feeders for the VK-row pinning (challenge-free)
   have hdσ : ∀ jj : Fin 7, (idx.sigmaPoly jj).natDegree < 2 ^ σ.k := by
     intro jj
     rw [hk]
@@ -386,36 +365,6 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
     intro gg
     rw [hk]
     exact columnPoly_natDegree_lt idx.omega_prim _
-  -- VK-row pinning: σ, coefficient, and selector claims are the Index's own values
-  have hsE : ∀ p (i : Fin 6),
-      E p (sRow i) 0 = (idx.sigmaPoly ⟨(i : ℕ), by omega⟩).eval (ζ p) := by
-    intro p i
-    have hcommit : commit σ (aw p (sRow i)) (ρw p (sRow i))
-        = commitPoly σ (idx.sigmaPoly ⟨(i : ℕ), by omega⟩) :=
-      (hrow p (sRow i)).1.trans (batchC_sRow wC zC (indexerOf σ idx) i)
-    have h := bound_eval_of_commitPoly σ hbind hcommit (hdσ _)
-      ((hrow p (sRow i)).2 0)
-    simpa using h
-  have hcE : ∀ p (cc : Fin 15),
-      E p (cRow cc) 0 = (idx.coeffPoly cc).eval (ζ p) := by
-    intro p cc
-    have hcommit : commit σ (aw p (cRow cc)) (ρw p (cRow cc))
-        = commitPoly σ (idx.coeffPoly cc) :=
-      (hrow p (cRow cc)).1.trans (batchC_cRow wC zC (indexerOf σ idx) cc)
-    have h := bound_eval_of_commitPoly σ hbind hcommit (hdc _)
-      ((hrow p (cRow cc)).2 0)
-    simpa using h
-  have hselE : ∀ p (jj : Fin 6),
-      E p (selRow jj) 0 = (idx.selectorPoly (selGate jj)).eval (ζ p) := by
-    intro p jj
-    have hcommit : commit σ (aw p (selRow jj)) (ρw p (selRow jj))
-        = commitPolyMasked σ (idx.selectorPoly (selGate jj)) :=
-      (hrow p (selRow jj)).1.trans
-        ((batchC_selRow wC zC (indexerOf σ idx) jj).trans
-          (selComm_indexerOf σ idx jj))
-    have h := bound_eval_of_commitPolyMasked σ hbind hcommit (hdsel _)
-      ((hrow p (selRow jj)).2 0)
-    simpa using h
   -- the challenge-free (value, address) pair multisets (m₁ current-row, m₂ wired-row);
   -- both have `7 · (n − zkRows)` members, bounding the bad β/γ sets.
   set m₁ : Multiset (F × F) :=
@@ -437,11 +386,14 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
     rw [Multiset.card_map]
     simp [Finset.card_univ, Fintype.card_prod, Fintype.card_fin]
   -- the extracted bad sets — quantified BEFORE the challenges, built from challenge-free
-  -- extracted data, each provably small; only THEN quantify over β/γ/α/t
+  -- REFERENCE-extracted data, each provably small; only THEN quantify over β/γ/α/t/ζ
   refine ⟨Kimchi.Quotient.badBetas m₁ m₂, fun β => Kimchi.Quotient.badGammas m₁ m₂ β,
     fun β γ => Kimchi.Quotient.badAlphas
       (idx.fullFamily pub (extractTable idx.omega W) zg β γ) idx.omega n,
-    ⟨?_, ?_, ?_⟩, ?_⟩
+    fun β γ α t => Kimchi.Quotient.badZetas
+      (Kimchi.Quotient.aggregate α
+        (idx.fullFamily pub (extractTable idx.omega W) zg β γ)) t n,
+    ⟨?_, ?_, ?_, ?_⟩, ?_⟩
   · -- anti-vacuity (β axis): `card_badBetas_le` bounds by `max |m₁| |m₂| = 7·(n − zkRows)`
     refine le_trans (Kimchi.Quotient.card_badBetas_le m₁ m₂) ?_
     rw [hm₁def, hm₂def, hcard, hcard]
@@ -455,15 +407,76 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
     intro β γ
     exact Kimchi.Quotient.card_badAlphas_le
       (idx.fullFamily pub (extractTable idx.omega W) zg β γ) idx.omega n
-  · -- every avoiding challenge triple yields a satisfying witness, via the grid consumer
-    intro β γ α t hβ hγ havoid ht hteq
+  · -- anti-vacuity (ζ axis): `card_badZetas_le` bounds the extracted bad set by `degreeBound n`
+    intro β γ α t ht
+    exact Kimchi.Quotient.card_badZetas_le
+      (Kimchi.Quotient.aggregate α
+        (idx.fullFamily pub (extractTable idx.omega W) zg β γ)) t
+      (Index.aggregate_natDegree_le idx pub (extractTable idx.omega W) zg hzdeg β γ α)
+      (Index.t_zH_natDegree_le t ht)
+  · -- every avoiding challenge tuple with an accepting consumer transcript yields Satisfies
+    intro β γ α t ζ E ξ r A hβ hγ hα hζ hζ₁ hζb ht hξ hr hFS hacc hteq
+    -- CONSUMER batch extraction at ζ: one witness pair per row
+    obtain ⟨aw, ρw, hrow⟩ :=
+      batch_soundnessA σ ξ hξ r hr (by omega)
+        (batchC wC zC (indexerOf σ idx)) ![ζ, idx.omega * ζ] E A hFS hbind hacc
+    -- cross-point uniqueness: FIXED commitments bind the reference W, zg
+    have hwpoly : ∀ col, rowPoly (aw (wRow col)) = W col := by
+      intro col
+      simp only [hWdef]
+      exact bound_unique σ hbind
+        (((hrow (wRow col)).1.trans
+            (batchC_wRow wC zC (indexerOf σ idx) col)).trans
+          (((hrow₀ (wRow col)).1.trans
+            (batchC_wRow wC zC (indexerOf σ idx) col)).symm))
+    have hzpoly : rowPoly (aw zRow) = zg := by
+      simp only [hzgdef]
+      exact bound_unique σ hbind
+        ((hrow zRow).1.trans ((hrow₀ zRow).1.symm))
+    -- the witness and accumulator claims at ζ, at both eval points
+    have hwE : ∀ col (j : Fin 2),
+        E (wRow col) j = (W col).eval (![ζ, idx.omega * ζ] j) := by
+      intro col j
+      rw [(hrow (wRow col)).2 j, ← rowPoly_eval, hwpoly col]
+    have hzE : ∀ (j : Fin 2),
+        E zRow j = zg.eval (![ζ, idx.omega * ζ] j) := by
+      intro j
+      rw [(hrow zRow).2 j, ← rowPoly_eval, hzpoly]
+    -- VK-row pinning at ζ: σ, coefficient, and selector claims are the Index's own values
+    have hsE : ∀ (i : Fin 6),
+        E (sRow i) 0 = (idx.sigmaPoly ⟨(i : ℕ), by omega⟩).eval ζ := by
+      intro i
+      have hcommit : commit σ (aw (sRow i)) (ρw (sRow i))
+          = commitPoly σ (idx.sigmaPoly ⟨(i : ℕ), by omega⟩) :=
+        (hrow (sRow i)).1.trans (batchC_sRow wC zC (indexerOf σ idx) i)
+      have h := bound_eval_of_commitPoly σ hbind hcommit (hdσ _)
+        ((hrow (sRow i)).2 0)
+      simpa using h
+    have hcE : ∀ (cc : Fin 15),
+        E (cRow cc) 0 = (idx.coeffPoly cc).eval ζ := by
+      intro cc
+      have hcommit : commit σ (aw (cRow cc)) (ρw (cRow cc))
+          = commitPoly σ (idx.coeffPoly cc) :=
+        (hrow (cRow cc)).1.trans (batchC_cRow wC zC (indexerOf σ idx) cc)
+      have h := bound_eval_of_commitPoly σ hbind hcommit (hdc _)
+        ((hrow (cRow cc)).2 0)
+      simpa using h
+    have hselE : ∀ (jj : Fin 6),
+        E (selRow jj) 0 = (idx.selectorPoly (selGate jj)).eval ζ := by
+      intro jj
+      have hcommit : commit σ (aw (selRow jj)) (ρw (selRow jj))
+          = commitPolyMasked σ (idx.selectorPoly (selGate jj)) :=
+        (hrow (selRow jj)).1.trans
+          ((batchC_selRow wC zC (indexerOf σ idx) jj).trans
+            (selComm_indexerOf σ idx jj))
+      have h := bound_eval_of_commitPolyMasked σ hbind hcommit (hdsel _)
+        ((hrow (selRow jj)).2 0)
+      simpa using h
     refine ⟨extractTable idx.omega W,
-      satisfies_extractTable_of_verifierEquation idx pub W hW β γ hβ hγ zg hzdeg
-        ζ hζ hζ₁ hζb α havoid t ht hD ?_⟩
-    intro p
-    have hrec := claimedEvals_eq_evalsOf idx W hW zg (ζ p) (E p)
-      (hwE p) (hzE p) (hsE p) (hcE p) (hselE p)
-    have h := hteq p
+      satisfies_extractTable_of_verifierEquation idx pub W hW β γ hβ hγ zg α hα t ζ hζ
+        hζ₁ hζb ?_⟩
+    have hrec := claimedEvals_eq_evalsOf idx W hW zg ζ E hwE hzE hsE hcE hselE
+    have h := hteq
     rw [hrec, Index.sigmaPoly_eq_wiring idx 6] at h
     exact h
 
