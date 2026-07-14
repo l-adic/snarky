@@ -14,6 +14,7 @@ Run from `formal/`:  lake env lean scripts/check_axioms.lean   (or: scripts/chec
 import Kimchi
 import Snarky
 import Snarky.Kimchi.Soundness
+import Snarky.Kimchi.CompileSound
 
 open Lean Lean.Elab.Command
 
@@ -104,7 +105,10 @@ def roots : List Name :=
     -- The Kimchi Generic-gate bridge (Snarky/Kimchi/): a successful prover run is a
     -- satisfied Generic gate list.
     `Snarky.Kimchi.GateConstraint.holds_iff_row,
-    `Snarky.Kimchi.satisfies_of_prove ]
+    `Snarky.Kimchi.satisfies_of_prove,
+    -- The wired bridge (Snarky/Kimchi/Compile*): a compiled index is satisfied by the
+    -- honest prover's witness table, copy constraints included.
+    `Snarky.Kimchi.Compile.satisfies_of_compile ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations
