@@ -1,5 +1,6 @@
 import Kimchi.Quotient.GrandProduct
 import Kimchi.Quotient.Permutation
+import Kimchi.Quotient.SchwartzZippel
 
 /-!
 # Copy soundness: from grand products to values constant on the wiring
@@ -152,9 +153,13 @@ theorem copy_soundness_of_dvd {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (h
         ring
 
 /-- **Copy soundness of the kimchi permutation argument.** As `copy_soundness_of_dvd`,
-with each grid node's divisibilities obtained from the derandomized quotient checks
-(`dvd_of_evalCheck`). -/
-theorem copy_soundness {ω : F} {n NN : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+with each grid node's divisibilities obtained from the derandomized quotient checks — now in
+**single-challenge counting Schwartz–Zippel form** (`dvd_of_evalCheck_sz`): at each node
+`(bₐ, g_c)` the prover supplies ONE aggregation challenge `α a c` (avoiding the proved-small
+bad set `badAlphas`) and ONE quotient `t a c`, in place of the former injective `Fin 3`-family
+of challenges and quotients. The ζ evaluation-point family stays. Conclusion unchanged. -/
+theorem copy_soundness [DecidableEq F] {ω : F} {n NN : ℕ}
+    (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     {zkRows : ℕ} (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
     (w σpoly : Fin 7 → Polynomial F) (shifts : Fin 7 → F)
     (σp : Equiv.Perm (Fin 7 × Fin (n - zkRows)))
@@ -166,20 +171,22 @@ theorem copy_soundness {ω : F} {n NN : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 
     (hb : Function.Injective b) (hg : Function.Injective g)
     (hM : 7 * (n - zkRows) < M) (hN : 7 * (n - zkRows) < N)
     (zg : Fin M → Fin N → Polynomial F)
-    (α : Fin M → Fin N → Fin 3 → F) (hα : ∀ a c, Function.Injective (α a c))
+    (α : Fin M → Fin N → F)
+    (hα : ∀ a c, α a c ∉ badAlphas (constraints ω zkRows (zg a c) w σpoly shifts
+      (b a) (g c) (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩) ω n)
     (ζ : Fin M → Fin N → Fin NN → F) (hζ : ∀ a c, Function.Injective (ζ a c))
-    (t : Fin M → Fin N → Fin 3 → Polynomial F) (D : ℕ) (hD : D < NN)
-    (hCdeg : ∀ a c s, (aggregate (α a c s) (constraints ω zkRows (zg a c) w σpoly shifts
+    (t : Fin M → Fin N → Polynomial F) (D : ℕ) (hD : D < NN)
+    (hCdeg : ∀ a c, (aggregate (α a c) (constraints ω zkRows (zg a c) w σpoly shifts
       (b a) (g c) (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)).natDegree ≤ D)
-    (htdeg : ∀ a c s, (t a c s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ a c s p, (aggregate (α a c s) (constraints ω zkRows (zg a c) w σpoly shifts
+    (htdeg : ∀ a c, (t a c * zH F n).natDegree ≤ D)
+    (hcheck : ∀ a c p, (aggregate (α a c) (constraints ω zkRows (zg a c) w σpoly shifts
         (b a) (g c) (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)).eval (ζ a c p)
-      = (t a c s * zH F n).eval (ζ a c p)) :
+      = (t a c * zH F n).eval (ζ a c p)) :
     ∀ c : Fin 7 × Fin (n - zkRows),
       (w (σp c).1).eval (ω ^ ((σp c).2 : ℕ)) = (w c.1).eval (ω ^ (c.2 : ℕ)) :=
+  have : NeZero n := ⟨hn.ne'⟩
   copy_soundness_of_dvd hω hn hzk0 hzkn w σpoly shifts σp haddr hσ b g hb hg hM hN zg
-    fun a c => dvd_separation hω hn (α a c) (hα a c) _ fun s =>
-      zH_dvd_of_evals hω hn (ζ a c) (hζ a c) _ (t a c s) D (hCdeg a c s) (htdeg a c s)
-        hD (hcheck a c s)
+    fun a c => dvd_of_evalCheck_sz hω (ζ a c) (hζ a c) _ (α a c) (hα a c) (t a c) D hD
+      (hCdeg a c) (htdeg a c) (hcheck a c)
 
 end Kimchi.Quotient.Permutation

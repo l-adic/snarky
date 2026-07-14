@@ -1,5 +1,6 @@
 import Kimchi.Index.Satisfies
 import Kimchi.Quotient.Soundness
+import Kimchi.Quotient.SchwartzZippel
 
 /-!
 # Quotient soundness at the index
@@ -13,6 +14,16 @@ permutation side consumes the index's wiring permutation, shifts, and their bund
 Each conclusion is phrased on gate-typed rows — `(idx.gates i).typ = g → Holds …` —
 matching the corresponding `rowSatisfies` branch, and the permutation conclusion is the
 copy fragment of `Satisfies` on the unmasked region.
+
+## Single-challenge (counting Schwartz–Zippel) form
+
+The random-challenge surrogate is now the **counting** argument, not the injective-α family:
+each theorem consumes ONE challenge `α : F` known to lie outside the proved-small bad set
+`badAlphas <constraint family> ω n` (`|badAlphas| ≤ n · (K − 1)` by `card_badAlphas_le`), and
+ONE quotient `t : Polynomial F`. The per-challenge `∀ s` quantifier is gone. The ζ-node family
+still supplies the Fiat–Shamir evaluation points (collapsing ζ is a later increment). Every
+delegation goes through `argumentSoundnessSZ`, the single-α analogue of
+`Kimchi.Quotient.Argument.soundness` composing `dvd_of_evalCheck_sz`.
 
 Two deliberate gaps, both Phase-B assembly work, documented where they bite:
 
@@ -32,62 +43,94 @@ namespace Index
 
 variable {F : Type*} [Field F] [DecidableEq F] {n N : ℕ} [NeZero n]
 
+/-! ## Project-local Mathlib supplement — single-α Argument soundness -/
+
+/-- **Single-α `Argument` soundness** (project-local; the exported bridge is
+`Kimchi.Quotient.Argument.soundness_sz` in `Quotient/Lift.lean`, added by the parallel Lift
+lane). One challenge `α` outside the proved-small `badAlphas` set replaces the injective
+α-family of `Argument.soundness`; the body composes `dvd_of_evalCheck_sz` (Schwartz–Zippel
+counting) exactly as `Argument.soundness` composes the family-form `dvd_of_evalCheck`. Kept
+private and self-contained so this lane does not depend on the Lift lane landing first. -/
+private theorem argumentSoundnessSZ {ω : F} (G : Argument F) (hω : IsPrimitiveRoot ω n)
+    (wTab qTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1)
+    (ζ : Fin N → F) (hζ : Function.Injective ζ)
+    (α : F)
+    (hα : α ∉ badAlphas (fun c => columnPoly ω sel *
+        (G.constraints (polyEnv ω wTab qTab)).get c) ω n)
+    (t : Polynomial F) (D : ℕ) (hD : D < N)
+    (hCdeg : (aggregate α (fun c => columnPoly ω sel *
+        (G.constraints (polyEnv ω wTab qTab)).get c)).natDegree ≤ D)
+    (htdeg : (t * zH F n).natDegree ≤ D)
+    (hcheck : ∀ p, (aggregate α (fun c => columnPoly ω sel *
+        (G.constraints (polyEnv ω wTab qTab)).get c)).eval (ζ p)
+        = (t * zH F n).eval (ζ p)) :
+    ∀ i, sel i = 1 → ∀ e ∈ G.constraints (rowEnv wTab qTab i), e = 0 := by
+  have hdvd := dvd_of_evalCheck_sz hω ζ hζ
+    (fun c => columnPoly ω sel * (G.constraints (polyEnv ω wTab qTab)).get c) α hα t D hD
+    hCdeg htdeg hcheck
+  apply (G.rowsSel_iff_dvd hω wTab qTab sel hsel).mp
+  intro E hE
+  obtain ⟨c, rfl⟩ := List.mem_iff_get.mp hE
+  exact hdvd c
+
 /-- A selector value of `1` names the row's gate type. -/
 theorem selectorRow_eq_one (idx : Index F n) {g : GateType} {i : Fin n}
     (htyp : (idx.gates i).typ = g) : idx.selectorRow g i = 1 := by
   simp [selectorRow, htyp]
 
-/-- **CompleteAdd quotient soundness at the index.** The quotient hypotheses over the
-selector-gated constraint family — the selector being the index's own indicator column —
-give the gate's `Holds` on every CompleteAdd-typed row. -/
+/-- **CompleteAdd quotient soundness at the index.** The single-α quotient hypotheses over the
+selector-gated constraint family — the selector being the index's own indicator column, the
+challenge `α` outside `badAlphas` — give the gate's `Holds` on every CompleteAdd-typed row. -/
 theorem addComplete_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     (ζ : Fin N → F) (hζ : Function.Injective ζ)
-    (α : Fin (Gate.AddComplete.constraints (AddComplete.polyWitness idx.omega wTab)).length
-      → F)
-    (hα : Function.Injective α)
-    (t : Fin (Gate.AddComplete.constraints (AddComplete.polyWitness idx.omega wTab)).length
-      → Polynomial F)
+    (α : F)
+    (hα : α ∉ badAlphas (fun c =>
+        columnPoly idx.omega (idx.selectorRow .completeAdd) *
+        (Gate.AddComplete.constraints (AddComplete.polyWitness idx.omega wTab)).get c)
+      idx.omega n)
+    (t : Polynomial F)
     (D : ℕ) (hD : D < N)
-    (hCdeg : ∀ s, (aggregate (α s) (fun c =>
+    (hCdeg : (aggregate α (fun c =>
         columnPoly idx.omega (idx.selectorRow .completeAdd) *
         (Gate.AddComplete.constraints (AddComplete.polyWitness idx.omega wTab)).get
           c)).natDegree ≤ D)
-    (htdeg : ∀ s, (t s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ s p, (aggregate (α s) (fun c =>
+    (htdeg : (t * zH F n).natDegree ≤ D)
+    (hcheck : ∀ p, (aggregate α (fun c =>
         columnPoly idx.omega (idx.selectorRow .completeAdd) *
         (Gate.AddComplete.constraints (AddComplete.polyWitness idx.omega wTab)).get
           c)).eval (ζ p)
-        = (t s * zH F n).eval (ζ p)) :
+        = (t * zH F n).eval (ζ p)) :
     ∀ i, (idx.gates i).typ = .completeAdd →
       Gate.AddComplete.Holds (AddComplete.rowWitness wTab i) := by
   intro i htyp
-  exact AddComplete.soundness idx.omega_prim (Nat.pos_of_neZero n) wTab
+  exact argumentSoundnessSZ AddComplete.argument idx.omega_prim wTab wTab
     (idx.selectorRow .completeAdd) (idx.selectorRow_boolean _) ζ hζ α hα t D hD
     hCdeg htdeg hcheck i (idx.selectorRow_eq_one htyp)
 
 /-- **VarBaseMul quotient soundness at the index.** -/
 theorem varBaseMul_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     (ζ : Fin N → F) (hζ : Function.Injective ζ)
-    (α : Fin (Gate.VarBaseMul.constraints (VarBaseMul.polyWitness idx.omega wTab)).length
-      → F)
-    (hα : Function.Injective α)
-    (t : Fin (Gate.VarBaseMul.constraints (VarBaseMul.polyWitness idx.omega wTab)).length
-      → Polynomial F)
+    (α : F)
+    (hα : α ∉ badAlphas (fun c =>
+        columnPoly idx.omega (idx.selectorRow .varBaseMul) *
+        (Gate.VarBaseMul.constraints (VarBaseMul.polyWitness idx.omega wTab)).get c)
+      idx.omega n)
+    (t : Polynomial F)
     (D : ℕ) (hD : D < N)
-    (hCdeg : ∀ s, (aggregate (α s) (fun c =>
+    (hCdeg : (aggregate α (fun c =>
         columnPoly idx.omega (idx.selectorRow .varBaseMul) *
         (Gate.VarBaseMul.constraints (VarBaseMul.polyWitness idx.omega wTab)).get
           c)).natDegree ≤ D)
-    (htdeg : ∀ s, (t s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ s p, (aggregate (α s) (fun c =>
+    (htdeg : (t * zH F n).natDegree ≤ D)
+    (hcheck : ∀ p, (aggregate α (fun c =>
         columnPoly idx.omega (idx.selectorRow .varBaseMul) *
         (Gate.VarBaseMul.constraints (VarBaseMul.polyWitness idx.omega wTab)).get
           c)).eval (ζ p)
-        = (t s * zH F n).eval (ζ p)) :
+        = (t * zH F n).eval (ζ p)) :
     ∀ i, (idx.gates i).typ = .varBaseMul →
       Gate.VarBaseMul.Holds (VarBaseMul.rowWitness wTab i) := by
   intro i htyp
-  exact VarBaseMul.soundness idx.omega_prim wTab
+  exact argumentSoundnessSZ VarBaseMul.argument idx.omega_prim wTab wTab
     (idx.selectorRow .varBaseMul) (idx.selectorRow_boolean _) ζ hζ α hα t D hD
     hCdeg htdeg hcheck i (idx.selectorRow_eq_one htyp)
 
@@ -95,52 +138,54 @@ theorem varBaseMul_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
 index's `endoBase`. -/
 theorem endoMul_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     (ζ : Fin N → F) (hζ : Function.Injective ζ)
-    (α : Fin (Gate.EndoMul.constraints (C idx.endoBase)
-      (EndoMul.polyWitness idx.omega wTab)).length → F)
-    (hα : Function.Injective α)
-    (t : Fin (Gate.EndoMul.constraints (C idx.endoBase)
-      (EndoMul.polyWitness idx.omega wTab)).length → Polynomial F)
+    (α : F)
+    (hα : α ∉ badAlphas (fun c =>
+        columnPoly idx.omega (idx.selectorRow .endoMul) *
+        (Gate.EndoMul.constraints (C idx.endoBase)
+          (EndoMul.polyWitness idx.omega wTab)).get c) idx.omega n)
+    (t : Polynomial F)
     (D : ℕ) (hD : D < N)
-    (hCdeg : ∀ s, (aggregate (α s) (fun c =>
+    (hCdeg : (aggregate α (fun c =>
         columnPoly idx.omega (idx.selectorRow .endoMul) *
         (Gate.EndoMul.constraints (C idx.endoBase)
           (EndoMul.polyWitness idx.omega wTab)).get c)).natDegree ≤ D)
-    (htdeg : ∀ s, (t s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ s p, (aggregate (α s) (fun c =>
+    (htdeg : (t * zH F n).natDegree ≤ D)
+    (hcheck : ∀ p, (aggregate α (fun c =>
         columnPoly idx.omega (idx.selectorRow .endoMul) *
         (Gate.EndoMul.constraints (C idx.endoBase)
           (EndoMul.polyWitness idx.omega wTab)).get c)).eval (ζ p)
-        = (t s * zH F n).eval (ζ p)) :
+        = (t * zH F n).eval (ζ p)) :
     ∀ i, (idx.gates i).typ = .endoMul →
       Gate.EndoMul.Holds idx.endoBase (EndoMul.rowWitness wTab i) := by
   intro i htyp
-  exact EndoMul.soundness idx.endoBase idx.omega_prim wTab
+  exact argumentSoundnessSZ (EndoMul.argument idx.endoBase) idx.omega_prim wTab wTab
     (idx.selectorRow .endoMul) (idx.selectorRow_boolean _) ζ hζ α hα t D hD
     hCdeg htdeg hcheck i (idx.selectorRow_eq_one htyp)
 
 /-- **EndoScalar quotient soundness at the index.** -/
 theorem endoScalar_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     (ζ : Fin N → F) (hζ : Function.Injective ζ)
-    (α : Fin (Gate.EndoScalar.constraints
-      (EndoScalar.polyWitness idx.omega wTab) (F := F)).length → F)
-    (hα : Function.Injective α)
-    (t : Fin (Gate.EndoScalar.constraints
-      (EndoScalar.polyWitness idx.omega wTab) (F := F)).length → Polynomial F)
+    (α : F)
+    (hα : α ∉ badAlphas (fun c =>
+        columnPoly idx.omega (idx.selectorRow .endoScalar) *
+        (Gate.EndoScalar.constraints
+          (EndoScalar.polyWitness idx.omega wTab) (F := F)).get c) idx.omega n)
+    (t : Polynomial F)
     (D : ℕ) (hD : D < N)
-    (hCdeg : ∀ s, (aggregate (α s) (fun c =>
+    (hCdeg : (aggregate α (fun c =>
         columnPoly idx.omega (idx.selectorRow .endoScalar) *
         (Gate.EndoScalar.constraints
           (EndoScalar.polyWitness idx.omega wTab) (F := F)).get c)).natDegree ≤ D)
-    (htdeg : ∀ s, (t s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ s p, (aggregate (α s) (fun c =>
+    (htdeg : (t * zH F n).natDegree ≤ D)
+    (hcheck : ∀ p, (aggregate α (fun c =>
         columnPoly idx.omega (idx.selectorRow .endoScalar) *
         (Gate.EndoScalar.constraints
           (EndoScalar.polyWitness idx.omega wTab) (F := F)).get c)).eval (ζ p)
-        = (t s * zH F n).eval (ζ p)) :
+        = (t * zH F n).eval (ζ p)) :
     ∀ i, (idx.gates i).typ = .endoScalar →
       Gate.EndoScalar.Holds (EndoScalar.rowWitness wTab i) := by
   intro i htyp
-  exact EndoScalar.soundness idx.omega_prim (Nat.pos_of_neZero n) wTab
+  exact argumentSoundnessSZ EndoScalar.argument idx.omega_prim wTab wTab
     (idx.selectorRow .endoScalar) (idx.selectorRow_boolean _) ζ hζ α hα t D hD
     hCdeg htdeg hcheck i (idx.selectorRow_eq_one htyp)
 
@@ -149,27 +194,28 @@ coefficient columns (`rcPoly` over `coeffTable`); the conclusion's round-constan
 is `rcMap (idx.coeffTable i)` — the `rowSatisfies` spelling — definitionally. -/
 theorem poseidon_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     (ζ : Fin N → F) (hζ : Function.Injective ζ)
-    (α : Fin (Gate.Poseidon.constraints (Poseidon.rcPoly idx.omega idx.coeffTable)
-      (Poseidon.polyWitness idx.omega wTab)).length → F)
-    (hα : Function.Injective α)
-    (t : Fin (Gate.Poseidon.constraints (Poseidon.rcPoly idx.omega idx.coeffTable)
-      (Poseidon.polyWitness idx.omega wTab)).length → Polynomial F)
+    (α : F)
+    (hα : α ∉ badAlphas (fun c =>
+        columnPoly idx.omega (idx.selectorRow .poseidon) *
+        (Gate.Poseidon.constraints (Poseidon.rcPoly idx.omega idx.coeffTable)
+          (Poseidon.polyWitness idx.omega wTab)).get c) idx.omega n)
+    (t : Polynomial F)
     (D : ℕ) (hD : D < N)
-    (hCdeg : ∀ s, (aggregate (α s) (fun c =>
+    (hCdeg : (aggregate α (fun c =>
         columnPoly idx.omega (idx.selectorRow .poseidon) *
         (Gate.Poseidon.constraints (Poseidon.rcPoly idx.omega idx.coeffTable)
           (Poseidon.polyWitness idx.omega wTab)).get c)).natDegree ≤ D)
-    (htdeg : ∀ s, (t s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ s p, (aggregate (α s) (fun c =>
+    (htdeg : (t * zH F n).natDegree ≤ D)
+    (hcheck : ∀ p, (aggregate α (fun c =>
         columnPoly idx.omega (idx.selectorRow .poseidon) *
         (Gate.Poseidon.constraints (Poseidon.rcPoly idx.omega idx.coeffTable)
           (Poseidon.polyWitness idx.omega wTab)).get c)).eval (ζ p)
-        = (t s * zH F n).eval (ζ p)) :
+        = (t * zH F n).eval (ζ p)) :
     ∀ i, (idx.gates i).typ = .poseidon →
       Gate.Poseidon.Holds (Poseidon.rcMap (idx.coeffTable i))
         (Poseidon.rowWitness wTab i) := by
   intro i htyp
-  exact Poseidon.soundness idx.omega_prim wTab idx.coeffTable
+  exact argumentSoundnessSZ Poseidon.argument idx.omega_prim wTab idx.coeffTable
     (idx.selectorRow .poseidon) (idx.selectorRow_boolean _) ζ hζ α hα t D hD
     hCdeg htdeg hcheck i (idx.selectorRow_eq_one htyp)
 
@@ -180,26 +226,27 @@ deployed aggregate adds the public polynomial to the first generic constraint
 full-aggregate assembly (Phase B). -/
 theorem generic_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     (ζ : Fin N → F) (hζ : Function.Injective ζ)
-    (α : Fin ((genericArgument (F := F)).constraints
-      (polyEnv idx.omega wTab idx.coeffTable)).length → F)
-    (hα : Function.Injective α)
-    (t : Fin ((genericArgument (F := F)).constraints
-      (polyEnv idx.omega wTab idx.coeffTable)).length → Polynomial F)
+    (α : F)
+    (hα : α ∉ badAlphas (fun c =>
+        columnPoly idx.omega (idx.selectorRow .generic) *
+        ((genericArgument (F := F)).constraints
+          (polyEnv idx.omega wTab idx.coeffTable)).get c) idx.omega n)
+    (t : Polynomial F)
     (D : ℕ) (hD : D < N)
-    (hCdeg : ∀ s, (aggregate (α s) (fun c =>
+    (hCdeg : (aggregate α (fun c =>
         columnPoly idx.omega (idx.selectorRow .generic) *
         ((genericArgument (F := F)).constraints
           (polyEnv idx.omega wTab idx.coeffTable)).get c)).natDegree ≤ D)
-    (htdeg : ∀ s, (t s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ s p, (aggregate (α s) (fun c =>
+    (htdeg : (t * zH F n).natDegree ≤ D)
+    (hcheck : ∀ p, (aggregate α (fun c =>
         columnPoly idx.omega (idx.selectorRow .generic) *
         ((genericArgument (F := F)).constraints
           (polyEnv idx.omega wTab idx.coeffTable)).get c)).eval (ζ p)
-        = (t s * zH F n).eval (ζ p)) :
+        = (t * zH F n).eval (ζ p)) :
     ∀ i, (idx.gates i).typ = .generic →
       Gate.Generic.Holds ⟨idx.coeffTable i, wTab i⟩ := by
   intro i htyp
-  have h := (genericArgument (F := F)).soundness idx.omega_prim wTab idx.coeffTable
+  have h := argumentSoundnessSZ (genericArgument (F := F)) idx.omega_prim wTab idx.coeffTable
     (idx.selectorRow .generic) (idx.selectorRow_boolean _) ζ hζ α hα t D hD
     hCdeg htdeg hcheck i (idx.selectorRow_eq_one htyp)
   simpa [genericArgument, genericCellMap, rowEnv, Gate.Generic.Holds] using h
@@ -251,33 +298,39 @@ theorem copy_soundness_of_dvd (idx : Index F n) (wTab : Fin n → Fin 15 → F)
 
 open Kimchi.Quotient.Permutation in
 /-- **Copy soundness at the index.** As `copy_soundness_of_dvd`, with each grid node's
-divisibilities obtained from the derandomized quotient checks. -/
+divisibility obtained from the derandomized single-challenge quotient check: one challenge
+`α a c` per `(β, γ)` node, outside the node's `badAlphas` set, and one quotient `t a c`. -/
 theorem copy_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     {M NN NNN : ℕ} (b : Fin M → F) (g : Fin NN → F)
     (hb : Function.Injective b) (hg : Function.Injective g)
     (hM : 7 * (n - idx.zkRows) < M) (hN : 7 * (n - idx.zkRows) < NN)
     (zg : Fin M → Fin NN → Polynomial F)
-    (α : Fin M → Fin NN → Fin 3 → F) (hα : ∀ a c, Function.Injective (α a c))
+    (α : Fin M → Fin NN → F)
+    (hα : ∀ a c, α a c ∉ badAlphas
+      (Permutation.constraints idx.omega idx.zkRows (zg a c)
+        (idx.permWitnessPoly wTab)
+        (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts
+        (b a) (g c) (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd) idx.omega n)
     (ζ : Fin M → Fin NN → Fin NNN → F) (hζ : ∀ a c, Function.Injective (ζ a c))
-    (t : Fin M → Fin NN → Fin 3 → Polynomial F) (D : ℕ) (hD : D < NNN)
-    (hCdeg : ∀ a c s, (aggregate (α a c s)
+    (t : Fin M → Fin NN → Polynomial F) (D : ℕ) (hD : D < NNN)
+    (hCdeg : ∀ a c, (aggregate (α a c)
       (Permutation.constraints idx.omega idx.zkRows (zg a c)
         (idx.permWitnessPoly wTab)
         (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts
         (b a) (g c) (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd)).natDegree ≤ D)
-    (htdeg : ∀ a c s, (t a c s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ a c s p, (aggregate (α a c s)
+    (htdeg : ∀ a c, (t a c * zH F n).natDegree ≤ D)
+    (hcheck : ∀ a c p, (aggregate (α a c)
       (Permutation.constraints idx.omega idx.zkRows (zg a c)
         (idx.permWitnessPoly wTab)
         (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts
         (b a) (g c) (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd)).eval (ζ a c p)
-      = (t a c s * zH F n).eval (ζ a c p)) :
+      = (t a c * zH F n).eval (ζ a c p)) :
     ∀ c : Fin 7 × Fin (n - idx.zkRows),
       cellValue wTab (idx.wiringMap (embCell idx.zkRows c))
         = cellValue wTab (embCell idx.zkRows c) :=
   idx.copy_soundness_of_dvd wTab b g hb hg hM hN zg fun a c =>
-    dvd_of_evalCheck idx.omega_prim (Nat.pos_of_neZero n) (ζ a c) (hζ a c) (α a c)
-      (hα a c) _ (t a c) D hD (hCdeg a c) (htdeg a c) (hcheck a c)
+    dvd_of_evalCheck_sz idx.omega_prim (ζ a c) (hζ a c) _ (α a c)
+      (hα a c) (t a c) D hD (hCdeg a c) (htdeg a c) (hcheck a c)
 
 end Index
 

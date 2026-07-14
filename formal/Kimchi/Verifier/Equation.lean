@@ -410,24 +410,27 @@ theorem verifierEquation_iff [DecidableEq F] [NeZero n] (idx : Index F n)
 /-! ## The grid headline
 
 The Fiat–Shamir idealization surrogate: the deployed scalar-side acceptance equation,
-required at every node of injective challenge grids, implies `Satisfies` at the index.
-The grids over `(β, γ, α, ζ)` play the same role as the `(ξ, r)` grids of
-`batch_soundness` — milestone 5 discharges them from rewinding the transcript tree — and
-the dependence shape mirrors that tree: `zg` varies with `(β, γ)` only, `t` with
-`(β, γ, α)` only, "committed before `ζ` was sampled". The degree hypotheses `hz`/`ht`
-are what PCS binding (`chunked_batch_soundness`) supplies from the chunk counts; the
-per-point equation `heq` is the deployed verifier's acceptance check, adjudicated
-numerically against production in `scripts/check_linearization.lean`. The route is
-`verifierEquation_iff.mp` per grid point into `Index.satisfies_of_evalCheck` at
-`D := degreeBound n`, its degree side discharged by `aggregate_natDegree_le` and
-`t_zH_natDegree_le`. -/
+required at every node of the `(β, γ)` × ζ challenge grids, implies `Satisfies` at the
+index. The α challenge has collapsed to a *single* value per `(β, γ)` node (the counting
+Schwartz–Zippel account of `Quotient/SchwartzZippel.lean`): `α a c` must merely avoid the
+explicit bad set `badAlphas (idx.fullFamily …) idx.omega n`. The remaining injective
+`(β, γ)` and ζ grids play the same role as the `(ξ, r)` grids of `batch_soundness` —
+milestone 5 discharges them from rewinding the transcript tree — and the dependence shape
+mirrors that tree: `zg`/`α`/`t` vary with `(β, γ)` only, "committed before `ζ` was
+sampled". The degree hypotheses `hz`/`ht` are what PCS binding (`chunked_batch_soundness`)
+supplies from the chunk counts; the per-point equation `heq` is the deployed verifier's
+acceptance check, adjudicated numerically against production in
+`scripts/check_linearization.lean`. The route is `verifierEquation_iff.mp` per grid point
+into `Index.satisfies_of_evalCheck` at `D := degreeBound n`, its degree side discharged by
+`aggregate_natDegree_le` and `t_zH_natDegree_le`. -/
 
 /-- **The grid headline.** A grid of deployed verifier-equation instances — the
-scalar-side acceptance check `heq` at every node of injective challenge grids — implies
-`Satisfies idx pub wTab`. Per point `(a, c, s, p)`, `heq` is syntactically the LHS of
-`verifierEquation_iff` at `z := zg a c`, `t := t a c s`, `ζ := ζ a c p`, `β := b a`,
-`γ := g c`, `α := α a c s`; the degree data `hz`/`ht` feeds the uniform bound
-`degreeBound n = 9·n` through `aggregate_natDegree_le` and `t_zH_natDegree_le`. -/
+scalar-side acceptance check `heq` at every node of the `(β, γ)` × ζ challenge grids, one
+`α a c` per `(β, γ)` node outside `badAlphas` — implies `Satisfies idx pub wTab`. Per point
+`(a, c, p)`, `heq` is syntactically the LHS of `verifierEquation_iff` at `z := zg a c`,
+`t := t a c`, `ζ := ζ a c p`, `β := b a`, `γ := g c`, `α := α a c`; the degree data
+`hz`/`ht` feeds the uniform bound `degreeBound n = 9·n` through `aggregate_natDegree_le`
+and `t_zH_natDegree_le`. -/
 theorem satisfies_of_verifierEquation [DecidableEq F] [NeZero n]
     (idx : Index F n) (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin 15 → F)
     {M NN NNN : ℕ} (b : Fin M → F) (g : Fin NN → F)
@@ -437,29 +440,29 @@ theorem satisfies_of_verifierEquation [DecidableEq F] [NeZero n]
     (ζ : Fin M → Fin NN → Fin NNN → F) (hζ : ∀ a c, Function.Injective (ζ a c))
     (hζ₁ : ∀ a c p, ζ a c p ≠ 1)
     (hζb : ∀ a c p, ζ a c p ≠ idx.omega ^ (n - idx.zkRows))
-    (α : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → F)
-    (hα : ∀ a c, Function.Injective (α a c))
-    (t : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount)
-      → Polynomial F)
-    (ht : ∀ a c s, (t a c s).natDegree < 7 * n)
+    (α : Fin M → Fin NN → F)
+    (hα : ∀ a c,
+      α a c ∉ badAlphas (idx.fullFamily pub wTab (zg a c) (b a) (g c)) idx.omega n)
+    (t : Fin M → Fin NN → Polynomial F)
+    (ht : ∀ a c, (t a c).natDegree < 7 * n)
     (hD : Index.degreeBound n < NNN)
-    (heq : ∀ a c s p,
-      permScalar (b a) (g c) (α a c s)
+    (heq : ∀ a c p,
+      permScalar (b a) (g c) (α a c)
           (zkpmEval n idx.zkRows idx.omega (ζ a c p))
           (evalsOf idx wTab (zg a c) (ζ a c p))
         * ((Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) 6).eval
             (ζ a c p)
-        - ((ζ a c p) ^ n - 1) * (t a c s).eval (ζ a c p)
-      = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase (α a c s) (b a) (g c)
+        - ((ζ a c p) ^ n - 1) * (t a c).eval (ζ a c p)
+      = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase (α a c) (b a) (g c)
           (ζ a c p) (-((idx.pubPoly pub).eval (ζ a c p)))
           (evalsOf idx wTab (zg a c) (ζ a c p))) :
     Satisfies idx pub wTab := by
   refine idx.satisfies_of_evalCheck pub wTab b g hb hg hM hN zg ζ hζ α hα t
-    (Index.degreeBound n) hD (fun a c s => ?_) (fun a c s => ?_) (fun a c s p => ?_)
-  · exact idx.aggregate_natDegree_le pub wTab (zg a c) (hz a c) (b a) (g c) (α a c s)
-  · exact Index.Index.t_zH_natDegree_le _ (ht a c s)
-  · exact (verifierEquation_iff idx pub wTab (zg a c) (t a c s) (ζ a c p) (b a) (g c)
-      (α a c s) (hζ₁ a c p) (hζb a c p)).mp (heq a c s p)
+    (Index.degreeBound n) hD (fun a c => ?_) (fun a c => ?_) (fun a c p => ?_)
+  · exact idx.aggregate_natDegree_le pub wTab (zg a c) (hz a c) (b a) (g c) (α a c)
+  · exact Index.Index.t_zH_natDegree_le _ (ht a c)
+  · exact (verifierEquation_iff idx pub wTab (zg a c) (t a c) (ζ a c p) (b a) (g c)
+      (α a c) (hζ₁ a c p) (hζb a c p)).mp (heq a c p)
 
 set_option linter.unusedVariables false in
 /-- **The grid headline at the extracted table.** The corollary at
@@ -480,20 +483,20 @@ theorem satisfies_extractTable_of_verifierEquation [DecidableEq F] [NeZero n]
     (ζ : Fin M → Fin NN → Fin NNN → F) (hζ : ∀ a c, Function.Injective (ζ a c))
     (hζ₁ : ∀ a c p, ζ a c p ≠ 1)
     (hζb : ∀ a c p, ζ a c p ≠ idx.omega ^ (n - idx.zkRows))
-    (α : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount) → F)
-    (hα : ∀ a c, Function.Injective (α a c))
-    (t : Fin M → Fin NN → Fin (Index.gateAlphaCount + Index.permAlphaCount)
-      → Polynomial F)
-    (ht : ∀ a c s, (t a c s).natDegree < 7 * n)
+    (α : Fin M → Fin NN → F)
+    (hα : ∀ a c, α a c ∉ badAlphas
+      (idx.fullFamily pub (extractTable idx.omega W) (zg a c) (b a) (g c)) idx.omega n)
+    (t : Fin M → Fin NN → Polynomial F)
+    (ht : ∀ a c, (t a c).natDegree < 7 * n)
     (hD : Index.degreeBound n < NNN)
-    (heq : ∀ a c s p,
-      permScalar (b a) (g c) (α a c s)
+    (heq : ∀ a c p,
+      permScalar (b a) (g c) (α a c)
           (zkpmEval n idx.zkRows idx.omega (ζ a c p))
           (evalsOf idx (extractTable idx.omega W) (zg a c) (ζ a c p))
         * ((Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) 6).eval
             (ζ a c p)
-        - ((ζ a c p) ^ n - 1) * (t a c s).eval (ζ a c p)
-      = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase (α a c s) (b a) (g c)
+        - ((ζ a c p) ^ n - 1) * (t a c).eval (ζ a c p)
+      = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase (α a c) (b a) (g c)
           (ζ a c p) (-((idx.pubPoly pub).eval (ζ a c p)))
           (evalsOf idx (extractTable idx.omega W) (zg a c) (ζ a c p))) :
     Satisfies idx pub (extractTable idx.omega W) :=

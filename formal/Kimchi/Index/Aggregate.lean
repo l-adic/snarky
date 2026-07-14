@@ -1,4 +1,5 @@
 import Kimchi.Index.Soundness
+import Kimchi.Quotient.SchwartzZippel
 
 /-!
 # The full kimchi aggregate family
@@ -280,29 +281,33 @@ theorem rowSatisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCo
 
 Kimchi folds the whole family under a single challenge `α` — powers `α⁰..α²³` weight the
 members — and checks the fold against `t · Z_H` by evaluation. The library's deterministic
-surrogate for "a random `α`, a random evaluation point" is the usual pair of injectivity
-hypotheses (`Quotient/Lift.lean`): enough distinct challenges pin each member by the
-Vandermonde argument (`dvd_separation`), enough distinct nodes pin the polynomial identity
-(`zH_dvd_of_evals`). Specializing the composed engine `dvd_of_evalCheck` at `fullFamily`
-turns the shape of the one production check into per-member divisibility, and the
-separation argument takes it the rest of the way to the rows. -/
+account of "a random `α`" is now the standard **counting** Schwartz–Zippel argument
+(`Quotient/SchwartzZippel.lean`): a *single* challenge `α`, together with a *single*
+quotient `t`, suffices to separate divisibility across the members, provided `α` avoids the
+explicit **bad set** `badAlphas (idx.fullFamily …) idx.omega n`, whose cardinality is proved
+`≤ n · (K − 1)` (`card_badAlphas_le`). No injective α-family, no Vandermonde. The evaluation
+point still comes from an injective ζ-node family, pinning the polynomial identity
+(`zH_dvd_of_evals`) — that surrogate is a later increment. Specializing the composed engine
+`dvd_of_evalCheck_sz` at `fullFamily` turns the shape of the one production check into
+per-member divisibility, and the separation argument takes it the rest of the way to the
+rows. -/
 
 /-- **Divisibility of every family member from the aggregated eval-check** — the
-`dvd_of_evalCheck` engine at the full `21 + 3` family. -/
+single-challenge `dvd_of_evalCheck_sz` engine at the full `21 + 3` family. One `α` outside
+`badAlphas`, one quotient `t`. -/
 theorem fullFamily_dvd_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (β γ : F)
     {N : ℕ} (ζ : Fin N → F) (hζ : Function.Injective ζ)
-    (α : Fin (gateAlphaCount + permAlphaCount) → F) (hα : Function.Injective α)
-    (t : Fin (gateAlphaCount + permAlphaCount) → Polynomial F)
+    (α : F) (hα : α ∉ badAlphas (idx.fullFamily pub wTab z β γ) idx.omega n)
+    (t : Polynomial F)
     (D : ℕ) (hD : D < N)
-    (hCdeg : ∀ s,
-      (aggregate (α s) (idx.fullFamily pub wTab z β γ)).natDegree ≤ D)
-    (htdeg : ∀ s, (t s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ s p,
-      (aggregate (α s) (idx.fullFamily pub wTab z β γ)).eval (ζ p)
-        = (t s * zH F n).eval (ζ p)) :
+    (hCdeg : (aggregate α (idx.fullFamily pub wTab z β γ)).natDegree ≤ D)
+    (htdeg : (t * zH F n).natDegree ≤ D)
+    (hcheck : ∀ p,
+      (aggregate α (idx.fullFamily pub wTab z β γ)).eval (ζ p)
+        = (t * zH F n).eval (ζ p)) :
     ∀ s, zH F n ∣ idx.fullFamily pub wTab z β γ s :=
-  dvd_of_evalCheck idx.omega_prim (Nat.pos_of_neZero n) ζ hζ α hα _ t D hD
+  dvd_of_evalCheck_sz idx.omega_prim ζ hζ (idx.fullFamily pub wTab z β γ) α hα t D hD
     hCdeg htdeg hcheck
 
 open Kimchi.Quotient.Permutation in
@@ -345,15 +350,14 @@ separation argument collapses the shared pool back to the rows. -/
 theorem rowSatisfies_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (β γ : F)
     {N : ℕ} (ζ : Fin N → F) (hζ : Function.Injective ζ)
-    (α : Fin (gateAlphaCount + permAlphaCount) → F) (hα : Function.Injective α)
-    (t : Fin (gateAlphaCount + permAlphaCount) → Polynomial F)
+    (α : F) (hα : α ∉ badAlphas (idx.fullFamily pub wTab z β γ) idx.omega n)
+    (t : Polynomial F)
     (D : ℕ) (hD : D < N)
-    (hCdeg : ∀ s,
-      (aggregate (α s) (idx.fullFamily pub wTab z β γ)).natDegree ≤ D)
-    (htdeg : ∀ s, (t s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ s p,
-      (aggregate (α s) (idx.fullFamily pub wTab z β γ)).eval (ζ p)
-        = (t s * zH F n).eval (ζ p)) :
+    (hCdeg : (aggregate α (idx.fullFamily pub wTab z β γ)).natDegree ≤ D)
+    (htdeg : (t * zH F n).natDegree ≤ D)
+    (hcheck : ∀ p,
+      (aggregate α (idx.fullFamily pub wTab z β γ)).eval (ζ p)
+        = (t * zH F n).eval (ζ p)) :
     ∀ i, rowSatisfies idx pub wTab i :=
   idx.rowSatisfies_of_fullFamily_dvd pub wTab z β γ
     (idx.fullFamily_dvd_of_evalCheck pub wTab z β γ ζ hζ α hα t D hD hCdeg htdeg hcheck)
@@ -459,16 +463,17 @@ theorem satisfies_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → 
     (hM : 7 * (n - idx.zkRows) < M) (hN : 7 * (n - idx.zkRows) < NN)
     (zg : Fin M → Fin NN → Polynomial F)
     (ζ : Fin M → Fin NN → Fin NNN → F) (hζ : ∀ a c, Function.Injective (ζ a c))
-    (α : Fin M → Fin NN → Fin (gateAlphaCount + permAlphaCount) → F)
-    (hα : ∀ a c, Function.Injective (α a c))
-    (t : Fin M → Fin NN → Fin (gateAlphaCount + permAlphaCount) → Polynomial F)
+    (α : Fin M → Fin NN → F)
+    (hα : ∀ a c,
+      α a c ∉ badAlphas (idx.fullFamily pub wTab (zg a c) (b a) (g c)) idx.omega n)
+    (t : Fin M → Fin NN → Polynomial F)
     (D : ℕ) (hD : D < NNN)
-    (hCdeg : ∀ a c s, (aggregate (α a c s)
+    (hCdeg : ∀ a c, (aggregate (α a c)
       (idx.fullFamily pub wTab (zg a c) (b a) (g c))).natDegree ≤ D)
-    (htdeg : ∀ a c s, (t a c s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ a c s p, (aggregate (α a c s)
+    (htdeg : ∀ a c, (t a c * zH F n).natDegree ≤ D)
+    (hcheck : ∀ a c p, (aggregate (α a c)
       (idx.fullFamily pub wTab (zg a c) (b a) (g c))).eval (ζ a c p)
-        = (t a c s * zH F n).eval (ζ a c p)) :
+        = (t a c * zH F n).eval (ζ a c p)) :
     Satisfies idx pub wTab :=
   idx.satisfies_of_fullFamily_dvd pub wTab b g hb hg hM hN zg fun a c =>
     idx.fullFamily_dvd_of_evalCheck pub wTab (zg a c) (b a) (g c) (ζ a c) (hζ a c)
