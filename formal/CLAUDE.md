@@ -16,11 +16,18 @@ tree `CircuitM` (constraint type kept abstract), pure `build`/`prove` interprete
 mirroring `Snarky.Backend.Builder`/`Prover`, and the interpreter laws in
 `Snarky/Laws.lean` (witness-independence of the builder, builder/prover allocation
 agreement, and completeness: a successful prover run satisfies every built constraint).
-It is **Mathlib-free by design** (core Lean only, builds in seconds) — keep it that way;
-concrete backends live in downstream files (see `Snarky/Constraint/R1CS.lean` for the
-plain R1CS model). Kernel-reducibility matters there: everything is validated by `decide`, so avoid
-core functions compiled by well-founded recursion in executable paths (e.g. `Vector.map`
-— use `Snarky.mapVec` from `Snarky/Vec.lean`).
+The core (`import Snarky`) is **Mathlib-free by design** (core Lean only, builds in
+seconds) — keep it that way; concrete backends live in downstream files (see
+`Snarky/Constraint/R1CS.lean` for the plain R1CS model). Kernel-reducibility matters
+there: everything is validated by `decide`, so avoid core functions compiled by
+well-founded recursion in executable paths (e.g. `Vector.map` — use `Snarky.mapVec`
+from `Snarky/Vec.lean`). The `Snarky/Kimchi/` bridge (which imports `Kimchi`, built via
+the lib's glob) instantiates the constraint type at a symbolic Generic gate and lands on
+the `Kimchi` stack twice: `Soundness.lean` on the un-wired gate list
+(`satisfies_of_prove`), and `Compile.lean`/`CompileSound.lean` on a wired `Kimchi.Index`
+— `compile` builds the gate table, copy-cycle wiring, and witness table, `Index.build?`
+decides the laws, and `satisfies_of_compile` proves the honest prover's table satisfies
+the compiled index (validated executably by `scripts/check_snarky_index.sh`).
 
 Build: `make lean-build` (from repo root) or `lake build` (from `formal/`). The toolchain
 is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakefile.toml`
