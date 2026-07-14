@@ -22,7 +22,7 @@ each theorem consumes ONE challenge `α : F` known to lie outside the proved-sma
 `badAlphas <constraint family> ω n` (`|badAlphas| ≤ n · (K − 1)` by `card_badAlphas_le`), and
 ONE quotient `t : Polynomial F`. The per-challenge `∀ s` quantifier is gone. The ζ-node family
 still supplies the Fiat–Shamir evaluation points (collapsing ζ is a later increment). Every
-delegation goes through `argumentSoundnessSZ`, the single-α analogue of
+delegation goes through `Argument.soundness_sz`, the single-α analogue of
 `Kimchi.Quotient.Argument.soundness` composing `dvd_of_evalCheck_sz`.
 
 Two deliberate gaps, both Phase-B assembly work, documented where they bite:
@@ -44,34 +44,6 @@ namespace Index
 variable {F : Type*} [Field F] [DecidableEq F] {n N : ℕ} [NeZero n]
 
 /-! ## Project-local Mathlib supplement — single-α Argument soundness -/
-
-/-- **Single-α `Argument` soundness** (project-local; the exported bridge is
-`Kimchi.Quotient.Argument.soundness_sz` in `Quotient/Lift.lean`, added by the parallel Lift
-lane). One challenge `α` outside the proved-small `badAlphas` set replaces the injective
-α-family of `Argument.soundness`; the body composes `dvd_of_evalCheck_sz` (Schwartz–Zippel
-counting) exactly as `Argument.soundness` composes the family-form `dvd_of_evalCheck`. Kept
-private and self-contained so this lane does not depend on the Lift lane landing first. -/
-private theorem argumentSoundnessSZ {ω : F} (G : Argument F) (hω : IsPrimitiveRoot ω n)
-    (wTab qTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1)
-    (ζ : Fin N → F) (hζ : Function.Injective ζ)
-    (α : F)
-    (hα : α ∉ badAlphas (fun c => columnPoly ω sel *
-        (G.constraints (polyEnv ω wTab qTab)).get c) ω n)
-    (t : Polynomial F) (D : ℕ) (hD : D < N)
-    (hCdeg : (aggregate α (fun c => columnPoly ω sel *
-        (G.constraints (polyEnv ω wTab qTab)).get c)).natDegree ≤ D)
-    (htdeg : (t * zH F n).natDegree ≤ D)
-    (hcheck : ∀ p, (aggregate α (fun c => columnPoly ω sel *
-        (G.constraints (polyEnv ω wTab qTab)).get c)).eval (ζ p)
-        = (t * zH F n).eval (ζ p)) :
-    ∀ i, sel i = 1 → ∀ e ∈ G.constraints (rowEnv wTab qTab i), e = 0 := by
-  have hdvd := dvd_of_evalCheck_sz hω ζ hζ
-    (fun c => columnPoly ω sel * (G.constraints (polyEnv ω wTab qTab)).get c) α hα t D hD
-    hCdeg htdeg hcheck
-  apply (G.rowsSel_iff_dvd hω wTab qTab sel hsel).mp
-  intro E hE
-  obtain ⟨c, rfl⟩ := List.mem_iff_get.mp hE
-  exact hdvd c
 
 /-- A selector value of `1` names the row's gate type. -/
 theorem selectorRow_eq_one (idx : Index F n) {g : GateType} {i : Fin n}
@@ -103,7 +75,7 @@ theorem addComplete_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     ∀ i, (idx.gates i).typ = .completeAdd →
       Gate.AddComplete.Holds (AddComplete.rowWitness wTab i) := by
   intro i htyp
-  exact argumentSoundnessSZ AddComplete.argument idx.omega_prim wTab wTab
+  exact Argument.soundness_sz AddComplete.argument idx.omega_prim wTab wTab
     (idx.selectorRow .completeAdd) (idx.selectorRow_boolean _) ζ hζ α hα t D hD
     hCdeg htdeg hcheck i (idx.selectorRow_eq_one htyp)
 
@@ -130,7 +102,7 @@ theorem varBaseMul_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     ∀ i, (idx.gates i).typ = .varBaseMul →
       Gate.VarBaseMul.Holds (VarBaseMul.rowWitness wTab i) := by
   intro i htyp
-  exact argumentSoundnessSZ VarBaseMul.argument idx.omega_prim wTab wTab
+  exact Argument.soundness_sz VarBaseMul.argument idx.omega_prim wTab wTab
     (idx.selectorRow .varBaseMul) (idx.selectorRow_boolean _) ζ hζ α hα t D hD
     hCdeg htdeg hcheck i (idx.selectorRow_eq_one htyp)
 
@@ -158,7 +130,7 @@ theorem endoMul_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     ∀ i, (idx.gates i).typ = .endoMul →
       Gate.EndoMul.Holds idx.endoBase (EndoMul.rowWitness wTab i) := by
   intro i htyp
-  exact argumentSoundnessSZ (EndoMul.argument idx.endoBase) idx.omega_prim wTab wTab
+  exact Argument.soundness_sz (EndoMul.argument idx.endoBase) idx.omega_prim wTab wTab
     (idx.selectorRow .endoMul) (idx.selectorRow_boolean _) ζ hζ α hα t D hD
     hCdeg htdeg hcheck i (idx.selectorRow_eq_one htyp)
 
@@ -185,7 +157,7 @@ theorem endoScalar_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     ∀ i, (idx.gates i).typ = .endoScalar →
       Gate.EndoScalar.Holds (EndoScalar.rowWitness wTab i) := by
   intro i htyp
-  exact argumentSoundnessSZ EndoScalar.argument idx.omega_prim wTab wTab
+  exact Argument.soundness_sz EndoScalar.argument idx.omega_prim wTab wTab
     (idx.selectorRow .endoScalar) (idx.selectorRow_boolean _) ζ hζ α hα t D hD
     hCdeg htdeg hcheck i (idx.selectorRow_eq_one htyp)
 
@@ -215,7 +187,7 @@ theorem poseidon_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
       Gate.Poseidon.Holds (Poseidon.rcMap (idx.coeffTable i))
         (Poseidon.rowWitness wTab i) := by
   intro i htyp
-  exact argumentSoundnessSZ Poseidon.argument idx.omega_prim wTab idx.coeffTable
+  exact Argument.soundness_sz Poseidon.argument idx.omega_prim wTab idx.coeffTable
     (idx.selectorRow .poseidon) (idx.selectorRow_boolean _) ζ hζ α hα t D hD
     hCdeg htdeg hcheck i (idx.selectorRow_eq_one htyp)
 
@@ -246,7 +218,7 @@ theorem generic_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     ∀ i, (idx.gates i).typ = .generic →
       Gate.Generic.Holds ⟨idx.coeffTable i, wTab i⟩ := by
   intro i htyp
-  have h := argumentSoundnessSZ (genericArgument (F := F)) idx.omega_prim wTab idx.coeffTable
+  have h := Argument.soundness_sz (genericArgument (F := F)) idx.omega_prim wTab idx.coeffTable
     (idx.selectorRow .generic) (idx.selectorRow_boolean _) ζ hζ α hα t D hD
     hCdeg htdeg hcheck i (idx.selectorRow_eq_one htyp)
   simpa [genericArgument, genericCellMap, rowEnv, Gate.Generic.Holds] using h
