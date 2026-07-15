@@ -761,18 +761,6 @@ private theorem card_filter_last_eq {κ : Type*} [Fintype κ] [DecidableEq κ] {
   exact card_filter_pos4 (s := fun _ _ _ => ({c} : Finset κ)) (m := 1)
     fun _ _ _ => le_of_eq (Finset.card_singleton c)
 
-/-- The fraction reading of a `B · |F|³` tuple bound: dividing by the `|F|⁴` tuples of
-the challenge space yields the error fraction `B / |F|`. -/
-private theorem card_div_pow_le {F : Type*} [Fintype F] [Nonempty F]
-    (S : Finset (F × F × F × F)) (B : ℕ)
-    (h : S.card ≤ B * Fintype.card F ^ 3) :
-    (S.card : ℚ) / (Fintype.card F : ℚ) ^ 4 ≤ (B : ℚ) / (Fintype.card F : ℚ) := by
-  have hpos : (0 : ℚ) < (Fintype.card F : ℚ) := by exact_mod_cast Fintype.card_pos
-  have hc : (S.card : ℚ) ≤ (B : ℚ) * (Fintype.card F : ℚ) ^ 3 := by exact_mod_cast h
-  calc (S.card : ℚ) / (Fintype.card F : ℚ) ^ 4
-      ≤ ((B : ℚ) * (Fintype.card F : ℚ) ^ 3) / (Fintype.card F : ℚ) ^ 4 := by gcongr
-    _ = (B : ℚ) / (Fintype.card F : ℚ) := by field_simp
-
 /-- The union-bound numerator of the soundness error: the four bad-set cardinality
 bounds of `kimchiBundle_sound` — `7·(n − zkRows)` for `β`, the same for `γ`,
 `n·(gateAlphaCount + permAlphaCount − 1)` for `α`, `degreeBound n` for `ζ` — plus the
@@ -790,8 +778,10 @@ def soundnessErrorBound (n zkRows : ℕ) : ℕ :=
 cardinalities of `kimchiBundle_sound` collapse into ONE bad-tuple count over the
 challenge space `F⁴` — a set `badTuples` of at most
 `soundnessErrorBound n zkRows · |F|³` challenge tuples (union bound over the four
-challenge axes plus the two degenerate `ζ` values), i.e. a `soundnessErrorBound / |F|`
-fraction of all `|F|⁴` tuples (the second clause) — outside of which the consumer
+challenge axes plus the two degenerate `ζ` values) — equivalently, at most a
+`soundnessErrorBound / |F|` fraction of the `|F|⁴` tuples; the `ℚ`-division form is
+interderivable with the counting bound and deliberately not duplicated — outside of
+which the consumer
 implication holds with NO residual side conditions: the tail after `∉ badTuples` is
 verbatim `kimchiBundle_sound`'s, with the memberships, both `ζ ≠` guards, and the
 degree bound absorbed into `badTuples`. The quotient strategy `tOf` is ADAPTIVE — a
@@ -810,8 +800,6 @@ theorem kimchiBundle_sound_error {F G : Type*} [Field F] [Fintype F] [DecidableE
     (htdeg : ∀ β γ α, (tOf β γ α).natDegree < 7 * n) :
     ∃ badTuples : Finset (F × F × F × F),
       badTuples.card ≤ soundnessErrorBound n idx.zkRows * Fintype.card F ^ 3
-      ∧ (badTuples.card : ℚ) / (Fintype.card F : ℚ) ^ 4
-          ≤ (soundnessErrorBound n idx.zkRows : ℚ) / (Fintype.card F : ℚ)
       ∧ ∀ β γ α ζ : F, (β, γ, α, ζ) ∉ badTuples →
           ∀ (E : Fin 43 → Fin 2 → F) (ξ : Fin 43 → F) (r : Fin 2 → F)
             (A : Fin 43 → Fin 2 → Prop),
@@ -844,7 +832,7 @@ theorem kimchiBundle_sound_error {F G : Type*} [Field F] [Fintype F] [DecidableE
           (hle card_filter_last_eq card_filter_last_eq))))) (le_of_eq ?_)
     simp only [soundnessErrorBound]
     ring
-  refine ⟨_, hcard, card_div_pow_le _ _ hcard, ?_⟩
+  refine ⟨_, hcard, ?_⟩
   intro β γ α ζ hnot E ξ r A hξ hr hFS hacc heq
   have hmem : ¬(β ∈ badB ∨ γ ∈ badG β ∨ α ∈ badA β γ
       ∨ ζ ∈ badZ β γ α (tOf β γ α) ∨ ζ = 1 ∨ ζ = idx.omega ^ (n - idx.zkRows)) :=
@@ -856,8 +844,8 @@ theorem kimchiBundle_sound_error {F G : Type*} [Field F] [Fintype F] [DecidableE
 
 /-- **The soundness error of the deployed Vesta kimchi verifier**:
 `kimchiVesta_sound`'s conclusion in the bad-tuple form — one set of at most
-`soundnessErrorBound n zkRows · |F|³` challenge tuples (the `/ |F|` fraction clause
-included), outside of which the consumer implication holds at the adaptive quotient
+`soundnessErrorBound n zkRows · |F|³` challenge tuples (a `soundnessErrorBound / |F|`
+fraction), outside of which the consumer implication holds at the adaptive quotient
 strategy `tOf` with no residual side conditions. One application of
 `kimchiBundle_sound_error` through the Vesta bridge; the trust story (the grid
 hypothesis `T`, the per-node `poseidon_fiat_shamir_vesta`, DL-binding) is exactly
@@ -873,8 +861,6 @@ theorem kimchiVesta_sound_error (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
     (htdeg : ∀ β γ α, (tOf β γ α).natDegree < 7 * n) :
     ∃ badTuples : Finset (Fp × Fp × Fp × Fp),
       badTuples.card ≤ soundnessErrorBound n idx.zkRows * Fintype.card Fp ^ 3
-      ∧ (badTuples.card : ℚ) / (Fintype.card Fp : ℚ) ^ 4
-          ≤ (soundnessErrorBound n idx.zkRows : ℚ) / (Fintype.card Fp : ℚ)
       ∧ ∀ β γ α ζ : Fp, (β, γ, α, ζ) ∉ badTuples →
           ∀ (E : Fin 43 → Fin 2 → Fp) (ξ : Fin 43 → Fp) (r : Fin 2 → Fp)
             (A : Fin 43 → Fin 2 → Prop),
@@ -907,8 +893,6 @@ theorem kimchiPallas_sound_error (σ : SRS IpaPallas.Point) (vk : KimchiPallas.V
     (htdeg : ∀ β γ α, (tOf β γ α).natDegree < 7 * n) :
     ∃ badTuples : Finset (Fq × Fq × Fq × Fq),
       badTuples.card ≤ soundnessErrorBound n idx.zkRows * Fintype.card Fq ^ 3
-      ∧ (badTuples.card : ℚ) / (Fintype.card Fq : ℚ) ^ 4
-          ≤ (soundnessErrorBound n idx.zkRows : ℚ) / (Fintype.card Fq : ℚ)
       ∧ ∀ β γ α ζ : Fq, (β, γ, α, ζ) ∉ badTuples →
           ∀ (E : Fin 43 → Fin 2 → Fq) (ξ : Fin 43 → Fq) (r : Fin 2 → Fq)
             (A : Fin 43 → Fin 2 → Prop),
