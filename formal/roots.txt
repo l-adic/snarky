@@ -208,3 +208,11 @@ Kimchi.Verifier.kimchiPallas_sound_error
 Kimchi.Quotient.exists_rectangle
 Kimchi.Verifier.kimchiVesta_sound_density
 Kimchi.Verifier.kimchiPallas_sound_density
+
+-- Forking stage (b3), the rest of the counting toolkit: heavy rows from density (Markov) and
+-- distinct-n-th-powers selection (power fibers are root sets) — composed with the rectangle by
+-- the full-protocol strategy model to derive the transcript tree from accepting density.
+Kimchi.Quotient.card_heavyRows
+Kimchi.Quotient.exists_distinct_powers
+Kimchi.Quotient.mem_heavyRows
+Kimchi.Quotient.mem_rowSlice
