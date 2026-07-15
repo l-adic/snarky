@@ -93,7 +93,8 @@ def roots : List Name :=
     `Kimchi.Verifier.Equation.satisfies_of_verifierEquation,
     `Kimchi.Verifier.kimchiProof_sound,
     `Kimchi.Verifier.kimchiBundle_sound,
-    `Kimchi.Verifier.kimchiVesta_sound, `Kimchi.Verifier.kimchiPallas_sound ]
+    `Kimchi.Verifier.kimchiVesta_sound, `Kimchi.Verifier.kimchiPallas_sound,
+    `Kimchi.Verifier.kimchiVesta_run_sound, `Kimchi.Verifier.kimchiPallas_run_sound ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations

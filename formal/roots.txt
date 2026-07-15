@@ -181,3 +181,11 @@ Kimchi.Verifier.kimchiBundle_sound
 -- key correspondence are hypotheses.
 Kimchi.Verifier.kimchiVesta_sound
 Kimchi.Verifier.kimchiPallas_sound
+
+-- The run-level finale: the capstones' consumer implication instantiated at a real accepted
+-- run's own sponge challenges over the run's own commitments — unless the run's (β, γ, α, ζ)
+-- land in the four bounded bad sets, the index is satisfiable. The quotient residue (t, hdeg,
+-- heq) is the one explicit hypothesis beyond the grids (t-chunk extractability; the deployed
+-- verifier checks only its scalar image through the Maller ft row).
+Kimchi.Verifier.kimchiVesta_run_sound
+Kimchi.Verifier.kimchiPallas_run_sound

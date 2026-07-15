@@ -2,6 +2,7 @@ import Mathlib
 import Kimchi.Verifier.KimchiSound
 import Kimchi.Verifier.Kimchi
 import Kimchi.Verifier.Reflection
+import Kimchi.Verifier.Reflect
 
 /-!
 # The idealized composition (capstone 1.3a): `KimchiBundle` and `kimchiBundle_sound`
@@ -53,6 +54,25 @@ the wire public-input array (through `pubView`). The trust story, in three strat
 * **PROVED — everything else.** The bridges instantiate `KimchiBundle` from the grid;
   the capstones are one application of `kimchiBundle_sound` through the wire views,
   their conclusions byte-identical to its (mod the stated instantiation).
+
+Below the concrete capstones this module ends at the **run-level corollaries**
+(capstone 1.3c, the finale): `kimchiVesta_run_sound` / `kimchiPallas_run_sound`, the
+capstones' consumer implication INSTANTIATED at a real accepted run's own sponge
+challenges — the literal `runOracles` fields of `Kimchi/Verifier/Reflect.lean` — over
+the run's own commitments (the witness view `fun i => p.wComm.getD i 0`, the
+accumulator `p.zComm`). What is DISCHARGED at the run: every node's Fiat–Shamir
+transcript-tree family (`nodeFS` + the per-node `poseidon_fiat_shamir_*` axiom at the
+consumer grid's own inputs), the grid acceptances (`T'.hacc`), the batch-challenge
+injectivity (`T'.hξ₀`/`T'.hr₀`). What remains HYPOTHESIS: the two extraction grids
+(`T`/`T'`, the rewinding/forking idiom — never derivable from one run), DL-binding
+(`hbind`), the verifier-key correspondence (`hvk`), the run-`ζ` nondegeneracy
+(`hζ1`/`hζb`), and the quotient residue (`t`/`hdeg`/`heq` — see the theorem
+docstrings). The run acceptance `hacc` is the headline claim being witnessed: via
+reflection (`kimchiVerify_reflects`) it pins the wire shapes of the run
+(`p.wComm.size = 15`, …), so the `getD` views read genuine entries; the derivation
+itself never needs the shape guards (the capstone quantifies over arbitrary `wC`), so
+`hacc` — like `hzrun`, the pin tying the reference grid's accumulator to the run's
+`z` commitment — enters as a deliberate statement pin.
 -/
 
 namespace Kimchi.Verifier
@@ -437,5 +457,173 @@ theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
           ∃ wTab : Fin n → Fin 15 → Fq, Satisfies idx (pubView idx pub) wTab :=
   kimchiBundle_sound σ idx hk hbind vk.comms hvk (pubView idx pub) wC
     (kimchiBatchAcc_bundle_pallas (pubView idx pub) T)
+
+/-! ## The run-level corollaries (capstone 1.3c — the finale) -/
+
+/-- **Run-level soundness of the deployed Vesta kimchi verifier** (the finale):
+`kimchiVesta_sound`'s consumer implication instantiated at a real accepted run's own
+sponge challenges — the literal `runOracles` fields — over the run's own commitments
+(`wC := fun i => p.wComm.getD i 0`; the reference grid opens the run's accumulator,
+`hzrun : T.zC = p.zComm`). The consumer grid `T'` shares the accumulator (`hzC`) and
+sits at the run's own `ζ` (`hζ'`); its Fiat–Shamir trees, acceptances, and challenge
+injectivity discharge the capstone's transcript antecedents, so the four bad sets
+guard `∃ wTab, Satisfies idx (pubView idx pub) wTab` at the run's `(β, γ, α, ζ)`.
+
+The quotient residue `(t, hdeg, heq)` is the ONE antecedent not discharged from
+deployed acceptances: kimchi never opens the `t_comm` chunks directly — the verifier
+checks only the scalar image of the quotient identity through the Maller `ft` row
+(`runFtComm`/`runFtEval0`). Extracting an actual `t` with `t.natDegree < 7 * n` and
+the identity at the run's `ζ` requires opening the t-chunk commitments — commitment
+extractability beyond the batch grid — which the counting form deliberately does not
+posit. It stays an explicit hypothesis; no axiom manufactures it.
+
+`hacc` (the deployed acceptance — the headline claim) and `hzrun` are statement pins:
+the derivation quantifies over arbitrary `wC`, so neither is load-bearing below, but
+they are part of the claim's meaning (via `kimchiVerify_reflects`, `hacc` pins that
+the `getD` views read genuine wire entries). Project-local: the Vesta run root. -/
+theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
+    (p : KimchiVesta.Proof) (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
+    (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
+    (hpub : pub.size = idx.publicCount)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
+    (hacc : KimchiVesta.verify σ vk p pub = true)
+    (T : KimchiBatchAcc IpaVesta.curve σ idx vk.comms
+      (fun i => p.wComm.getD (i : ℕ) 0))
+    (T' : KimchiBatchAcc IpaVesta.curve σ idx vk.comms
+      (fun i => p.wComm.getD (i : ℕ) 0))
+    (hzrun : T.zC = p.zComm)
+    (hzC : T'.zC = T.zC)
+    (hζ' : T'.ζ₀ = (runOracles IpaVesta.curve σ vk p pub).zeta)
+    (hζ1 : (runOracles IpaVesta.curve σ vk p pub).zeta ≠ 1)
+    (hζb : (runOracles IpaVesta.curve σ vk p pub).zeta
+      ≠ idx.omega ^ (n - idx.zkRows))
+    (t : Polynomial Fp) (hdeg : t.natDegree < 7 * n)
+    (heq :
+      permScalar (runOracles IpaVesta.curve σ vk p pub).beta
+          (runOracles IpaVesta.curve σ vk p pub).gamma
+          (runOracles IpaVesta.curve σ vk p pub).alpha
+          (zkpmEval n idx.zkRows idx.omega (runOracles IpaVesta.curve σ vk p pub).zeta)
+          (claimedEvals T'.E₀)
+          * (idx.sigmaPoly 6).eval (runOracles IpaVesta.curve σ vk p pub).zeta
+        - ((runOracles IpaVesta.curve σ vk p pub).zeta ^ n - 1)
+            * t.eval (runOracles IpaVesta.curve σ vk p pub).zeta
+        = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase
+            (runOracles IpaVesta.curve σ vk p pub).alpha
+            (runOracles IpaVesta.curve σ vk p pub).beta
+            (runOracles IpaVesta.curve σ vk p pub).gamma
+            (runOracles IpaVesta.curve σ vk p pub).zeta
+            (-((idx.pubPoly (pubView idx pub)).eval
+              (runOracles IpaVesta.curve σ vk p pub).zeta))
+            (claimedEvals T'.E₀)) :
+    ∃ (badB : Finset Fp) (badG : Fp → Finset Fp) (badA : Fp → Fp → Finset Fp)
+        (badZ : Fp → Fp → Fp → Polynomial Fp → Finset Fp),
+      (badB.card ≤ 7 * (n - idx.zkRows)
+        ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
+        ∧ (∀ β γ,
+            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
+        ∧ (∀ β γ α (t : Polynomial Fp), t.natDegree < 7 * n →
+            (badZ β γ α t).card ≤ Index.degreeBound n))
+      ∧ ((runOracles IpaVesta.curve σ vk p pub).beta ∉ badB →
+          (runOracles IpaVesta.curve σ vk p pub).gamma
+            ∉ badG (runOracles IpaVesta.curve σ vk p pub).beta →
+          (runOracles IpaVesta.curve σ vk p pub).alpha
+            ∉ badA (runOracles IpaVesta.curve σ vk p pub).beta
+                (runOracles IpaVesta.curve σ vk p pub).gamma →
+          (runOracles IpaVesta.curve σ vk p pub).zeta
+            ∉ badZ (runOracles IpaVesta.curve σ vk p pub).beta
+                (runOracles IpaVesta.curve σ vk p pub).gamma
+                (runOracles IpaVesta.curve σ vk p pub).alpha t →
+          ∃ wTab : Fin n → Fin 15 → Fp, Satisfies idx (pubView idx pub) wTab) := by
+  obtain ⟨badB, badG, badA, badZ, hbounds, himp⟩ :=
+    kimchiVesta_sound σ vk pub idx hk hvk hpub hbind
+      (fun i => p.wComm.getD (i : ℕ) 0) T
+  refine ⟨badB, badG, badA, badZ, hbounds, fun hβ hγ hα hζ => ?_⟩
+  refine himp (runOracles IpaVesta.curve σ vk p pub).beta
+    (runOracles IpaVesta.curve σ vk p pub).gamma
+    (runOracles IpaVesta.curve σ vk p pub).alpha t
+    (runOracles IpaVesta.curve σ vk p pub).zeta
+    T'.E₀ T'.ξ₀ T'.r₀
+    (fun i j => Ipa.verify IpaVesta.curve σ (T'.nodeInput i j) = true)
+    hβ hγ hα hζ hζ1 hζb hdeg T'.hξ₀ T'.hr₀ ?_ T'.hacc heq
+  intro i j
+  have h := T'.nodeFS i j (poseidon_fiat_shamir_vesta σ (T'.nodeInput i j))
+  simp only [hzC, hζ'] at h
+  exact h
+
+/-- **Run-level soundness of the deployed Pallas kimchi verifier.** The Pallas-side
+twin of `kimchiVesta_run_sound`, over `Fq`/`IpaPallas`, its Fiat–Shamir trees from
+`poseidon_fiat_shamir_pallas`. See the Vesta docstring for the trust story — in
+particular the quotient residue `(t, hdeg, heq)`, the one antecedent not discharged
+from deployed acceptances, and the statement pins `hacc`/`hzrun`. Project-local: the
+Pallas run root. -/
+theorem kimchiPallas_run_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
+    (p : KimchiPallas.Proof) (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
+    (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
+    (hpub : pub.size = idx.publicCount)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
+    (hacc : KimchiPallas.verify σ vk p pub = true)
+    (T : KimchiBatchAcc IpaPallas.curve σ idx vk.comms
+      (fun i => p.wComm.getD (i : ℕ) 0))
+    (T' : KimchiBatchAcc IpaPallas.curve σ idx vk.comms
+      (fun i => p.wComm.getD (i : ℕ) 0))
+    (hzrun : T.zC = p.zComm)
+    (hzC : T'.zC = T.zC)
+    (hζ' : T'.ζ₀ = (runOracles IpaPallas.curve σ vk p pub).zeta)
+    (hζ1 : (runOracles IpaPallas.curve σ vk p pub).zeta ≠ 1)
+    (hζb : (runOracles IpaPallas.curve σ vk p pub).zeta
+      ≠ idx.omega ^ (n - idx.zkRows))
+    (t : Polynomial Fq) (hdeg : t.natDegree < 7 * n)
+    (heq :
+      permScalar (runOracles IpaPallas.curve σ vk p pub).beta
+          (runOracles IpaPallas.curve σ vk p pub).gamma
+          (runOracles IpaPallas.curve σ vk p pub).alpha
+          (zkpmEval n idx.zkRows idx.omega
+            (runOracles IpaPallas.curve σ vk p pub).zeta)
+          (claimedEvals T'.E₀)
+          * (idx.sigmaPoly 6).eval (runOracles IpaPallas.curve σ vk p pub).zeta
+        - ((runOracles IpaPallas.curve σ vk p pub).zeta ^ n - 1)
+            * t.eval (runOracles IpaPallas.curve σ vk p pub).zeta
+        = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase
+            (runOracles IpaPallas.curve σ vk p pub).alpha
+            (runOracles IpaPallas.curve σ vk p pub).beta
+            (runOracles IpaPallas.curve σ vk p pub).gamma
+            (runOracles IpaPallas.curve σ vk p pub).zeta
+            (-((idx.pubPoly (pubView idx pub)).eval
+              (runOracles IpaPallas.curve σ vk p pub).zeta))
+            (claimedEvals T'.E₀)) :
+    ∃ (badB : Finset Fq) (badG : Fq → Finset Fq) (badA : Fq → Fq → Finset Fq)
+        (badZ : Fq → Fq → Fq → Polynomial Fq → Finset Fq),
+      (badB.card ≤ 7 * (n - idx.zkRows)
+        ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
+        ∧ (∀ β γ,
+            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
+        ∧ (∀ β γ α (t : Polynomial Fq), t.natDegree < 7 * n →
+            (badZ β γ α t).card ≤ Index.degreeBound n))
+      ∧ ((runOracles IpaPallas.curve σ vk p pub).beta ∉ badB →
+          (runOracles IpaPallas.curve σ vk p pub).gamma
+            ∉ badG (runOracles IpaPallas.curve σ vk p pub).beta →
+          (runOracles IpaPallas.curve σ vk p pub).alpha
+            ∉ badA (runOracles IpaPallas.curve σ vk p pub).beta
+                (runOracles IpaPallas.curve σ vk p pub).gamma →
+          (runOracles IpaPallas.curve σ vk p pub).zeta
+            ∉ badZ (runOracles IpaPallas.curve σ vk p pub).beta
+                (runOracles IpaPallas.curve σ vk p pub).gamma
+                (runOracles IpaPallas.curve σ vk p pub).alpha t →
+          ∃ wTab : Fin n → Fin 15 → Fq, Satisfies idx (pubView idx pub) wTab) := by
+  obtain ⟨badB, badG, badA, badZ, hbounds, himp⟩ :=
+    kimchiPallas_sound σ vk pub idx hk hvk hpub hbind
+      (fun i => p.wComm.getD (i : ℕ) 0) T
+  refine ⟨badB, badG, badA, badZ, hbounds, fun hβ hγ hα hζ => ?_⟩
+  refine himp (runOracles IpaPallas.curve σ vk p pub).beta
+    (runOracles IpaPallas.curve σ vk p pub).gamma
+    (runOracles IpaPallas.curve σ vk p pub).alpha t
+    (runOracles IpaPallas.curve σ vk p pub).zeta
+    T'.E₀ T'.ξ₀ T'.r₀
+    (fun i j => Ipa.verify IpaPallas.curve σ (T'.nodeInput i j) = true)
+    hβ hγ hα hζ hζ1 hζb hdeg T'.hξ₀ T'.hr₀ ?_ T'.hacc heq
+  intro i j
+  have h := T'.nodeFS i j (poseidon_fiat_shamir_pallas σ (T'.nodeInput i j))
+  simp only [hzC, hζ'] at h
+  exact h
 
 end Kimchi.Verifier
