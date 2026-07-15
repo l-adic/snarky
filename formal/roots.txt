@@ -172,3 +172,12 @@ Kimchi.Index.Index.copy_soundness
 -- application of the core; the concrete Fiat-Shamir capstone discharges it.
 Kimchi.Verifier.kimchiProof_sound
 Kimchi.Verifier.kimchiBundle_sound
+
+-- The concrete Fiat-Shamir-instantiated capstones (option B, IPA-parity): the special-soundness
+-- grid (accepting deployed Ipa.verify batch openings at injectively-varied ξ/r over the wire
+-- key's committed columns) is a HYPOTHESIS — never manufactured from a single run; each node's
+-- transcript tree is derived from poseidon_fiat_shamir_{vesta,pallas}. Trust per curve:
+-- that FS axiom + the hasse-pinned group order + CompElliptic certificates; binding and the
+-- key correspondence are hypotheses.
+Kimchi.Verifier.kimchiVesta_sound
+Kimchi.Verifier.kimchiPallas_sound
