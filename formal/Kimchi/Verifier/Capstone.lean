@@ -104,6 +104,22 @@ itself, DL-binding, and the key correspondence (plus, at the run level only, the
 quotient residue); Fiat–Shamir stays with the poseidon axioms, consumed per grid node
 exactly as in the 1.3b capstones. The `[Fintype]` instances live only in this counting
 layer, never on a core statement.
+
+Finally, the **algebraic-prover reading** (the AGM corollary):
+`kimchiProof_sound_algebraic` and its curve roots `kimchi{Vesta,Pallas}_sound_algebraic`
+quantify over provers that SUPPLY SRS-basis representations `aw₀`/`ρw₀` of their
+committed rows (the algebraic-group-model idiom), so a SINGLE accepted IPA opening
+suffices — no grid, no density. The content delivered here: representations + ONE
+accepted opening ⟹ the per-row eval pins (`eval_pins_of_opening`), replacing the
+special-soundness grid; the pins land in `kimchiProof_sound_of_openings`' consumer
+verbatim. Two new bad axes appear — the combination challenges `(ξ, r)` — with
+proved-small bad sets (≤ 84 and ≤ 1, counting SZ via `SZ.badComb`), curried by the
+consumer data `(E, ζ)`/`(E, ζ, ξ)` so they are quantified BEFORE `(ξ, r)`. Honest scope
+note: this corollary KEEPS the ft/quotient identity `hteq` (and `t`, `t.natDegree`) as a
+hypothesis — the same residue as the run-level capstones. The AGM also dissolves that
+residue by extracting `t` from the `tComm` representation via the Maller relation; that
+"algebraic quotient" step is a deliberate follow-on, not this layer. The standard-model
+statement remains `*_sound_density`.
 -/
 
 namespace Kimchi.Verifier
@@ -1113,5 +1129,329 @@ theorem kimchiPallas_sound_density (σ : SRS IpaPallas.Point) (vk : KimchiPallas
     ζ₀ E₀ cs hcsSize hcs es hes P hdens
   rw [← hzC]
   exact kimchiPallas_sound σ vk pub idx hk hvk hpub hbind wC T
+
+/-! ## The algebraic-prover corollary (the AGM reading)
+
+An ALGEBRAIC prover carries, with each commitment it sends, an SRS-basis representation
+of the committed data — here the witness pairs `aw₀`/`ρw₀` with
+`commit σ (aw₀ i) (ρw₀ i) = batchC wC zC comms i`. Those representations discharge the
+REFERENCE side of `kimchiProof_sound_of_openings` outright, and the bridge below
+(`eval_pins_of_opening`) discharges its CONSUMER side from ONE accepted batch opening:
+by commitment linearity the combined commitment is the commitment of the ξ-combined
+representation; by binding the opened witness IS that combination; substituting into the
+opening's value equation leaves the single field identity
+`∑ i, ξ^i · (∑ j, D i j · r^j) = 0` in the discrepancies
+`D i j = E i j − ⟨aw₀ i, evalVector (x j)⟩`, and two counting-Schwartz–Zippel steps
+(`SZ.badComb`, first at `r`, then at `ξ`) kill every `D i j` — the eval pins. The bad
+`(ξ, r)` sets are COUNTED, never assumed: `badXiOf` (≤ 84 = 2·(43−1)) depends only on
+`(σ, aw₀, x, E)`, `badROf` (≤ 1 = 2−1) additionally on `ξ` — neither mentions the
+challenge it guards, which is what lets the capstones quantify them BEFORE `(ξ, r)`. -/
+
+/-- The bad row-combination challenges of one claimed-vs-represented evaluation matrix:
+the union over the two eval points of the counting-SZ bad sets of the discrepancy
+columns `i ↦ E i j − ⟨aw₀ i, evalVector (x j)⟩`. Depends only on `(σ, aw₀, x, E)` —
+never on `ξ` or `r` (anti-vacuity: the capstone quantifies it before both). -/
+private noncomputable def badXiOf {F G : Type*} [Field F] [DecidableEq F]
+    [AddCommGroup G] [Module F G] (σ : SRS G) (aw₀ : Fin 43 → Fin (2 ^ σ.k) → F)
+    (x : Fin 2 → F) (E : Fin 43 → Fin 2 → F) : Finset F :=
+  Kimchi.Quotient.SZ.badComb
+      (fun i : Fin 43 => E i 0 - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x 0)))
+    ∪ Kimchi.Quotient.SZ.badComb
+      (fun i : Fin 43 => E i 1 - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x 1)))
+
+/-- The bad point-combination challenges at a fixed `ξ`: the counting-SZ bad set of the
+two ξ-combined discrepancy columns. Depends on `(σ, aw₀, x, E, ξ)` — never on `r`. -/
+private noncomputable def badROf {F G : Type*} [Field F] [DecidableEq F]
+    [AddCommGroup G] [Module F G] (σ : SRS G) (aw₀ : Fin 43 → Fin (2 ^ σ.k) → F)
+    (x : Fin 2 → F) (E : Fin 43 → Fin 2 → F) (ξ : F) : Finset F :=
+  Kimchi.Quotient.SZ.badComb (fun j : Fin 2 => ∑ i : Fin 43,
+    ξ ^ (i : ℕ) * (E i j - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j))))
+
+/-- `badXiOf` counts at most `84 = 2 · (43 − 1)` challenges: a union of two counting-SZ
+bad sets over `Fin 43`. -/
+private theorem card_badXiOf_le {F G : Type*} [Field F] [DecidableEq F]
+    [AddCommGroup G] [Module F G] (σ : SRS G) (aw₀ : Fin 43 → Fin (2 ^ σ.k) → F)
+    (x : Fin 2 → F) (E : Fin 43 → Fin 2 → F) : (badXiOf σ aw₀ x E).card ≤ 84 := by
+  unfold badXiOf
+  refine le_trans (Finset.card_union_le _ _) ?_
+  have h0 := Kimchi.Quotient.SZ.card_badComb_le
+    (fun i : Fin 43 => E i 0 - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x 0)))
+  have h1 := Kimchi.Quotient.SZ.card_badComb_le
+    (fun i : Fin 43 => E i 1 - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x 1)))
+  omega
+
+/-- `badROf` counts at most `1 = 2 − 1` challenge: one counting-SZ bad set over
+`Fin 2`. -/
+private theorem card_badROf_le {F G : Type*} [Field F] [DecidableEq F]
+    [AddCommGroup G] [Module F G] (σ : SRS G) (aw₀ : Fin 43 → Fin (2 ^ σ.k) → F)
+    (x : Fin 2 → F) (E : Fin 43 → Fin 2 → F) (ξ : F) :
+    (badROf σ aw₀ x E ξ).card ≤ 1 := by
+  unfold badROf
+  exact Kimchi.Quotient.SZ.card_badComb_le _
+
+/-- **The eval pins from one opening** (the AGM bridge): SRS-basis representations of
+the 43 batch rows plus ONE accepted batch opening at good `(ξ, r)` pin every claimed
+evaluation to the represented row's true evaluation. Linearity collapses the combined
+commitment to one commitment of the ξ-combined representation (`commitₗ`, `map_sum`);
+binding (`hbind`, through `commitmentBinding_iff_no_relation`) forces the opened witness
+to BE that combination; the opening's value equation then reduces to
+`∑ j, r^j · (∑ i, ξ^i · D i j) = 0` in the discrepancies `D`, and
+`SZ.eq_zero_of_comb_eq_zero` — first at `r`, then per point at `ξ` — kills every
+`D i j`. -/
+private theorem eval_pins_of_opening {F G : Type*} [Field F] [DecidableEq F]
+    [AddCommGroup G] [Module F G] (σ : SRS G)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (wh : F), DLRelation σ w wh → w = 0 ∧ wh = 0)
+    (C : Fin 43 → G) (x : Fin 2 → F)
+    (aw₀ : Fin 43 → Fin (2 ^ σ.k) → F) (ρw₀ : Fin 43 → F)
+    (hrep : ∀ i, commit σ (aw₀ i) (ρw₀ i) = C i)
+    (E : Fin 43 → Fin 2 → F) (ξ r : F)
+    (hξ : ξ ∉ badXiOf σ aw₀ x E) (hr : r ∉ badROf σ aw₀ x E ξ)
+    (a : Fin (2 ^ σ.k) → F) (ρ : F)
+    (hopen : openingRelationB σ (combinedCommitment ξ C)
+      (combinedEvalVector (2 ^ σ.k) r x) (combinedInnerProduct ξ r E) a ρ) :
+    ∀ (i : Fin 43) (j : Fin 2),
+      E i j = innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j)) := by
+  -- Step A (linearity): the combined commitment is ONE commitment of the ξ-combined
+  -- representation — `map_sum` of `commitₗ` at `Fin 43`, mirroring `commit_combine`.
+  have hpair : (∑ i : Fin 43, ξ ^ (i : ℕ)
+        • ((aw₀ i, ρw₀ i) : (Fin (2 ^ σ.k) → F) × F))
+      = (∑ i : Fin 43, ξ ^ (i : ℕ) • aw₀ i, ∑ i : Fin 43, ξ ^ (i : ℕ) • ρw₀ i) := by
+    refine Prod.ext ?_ ?_
+    · rw [Prod.fst_sum]
+      exact Finset.sum_congr rfl fun i _ => rfl
+    · rw [Prod.snd_sum]
+      exact Finset.sum_congr rfl fun i _ => rfl
+  have hA : combinedCommitment ξ C
+      = commit σ (∑ i : Fin 43, ξ ^ (i : ℕ) • aw₀ i)
+          (∑ i : Fin 43, ξ ^ (i : ℕ) • ρw₀ i) := by
+    calc combinedCommitment ξ C
+        = ∑ i : Fin 43, ξ ^ (i : ℕ) • commit σ (aw₀ i) (ρw₀ i) := by
+          unfold combinedCommitment
+          exact Finset.sum_congr rfl fun i _ => by rw [hrep i]
+      _ = commitₗ σ (∑ i : Fin 43, ξ ^ (i : ℕ)
+            • ((aw₀ i, ρw₀ i) : (Fin (2 ^ σ.k) → F) × F)) := by
+          rw [map_sum]
+          simp only [map_smul]
+          rfl
+      _ = commit σ (∑ i : Fin 43, ξ ^ (i : ℕ) • aw₀ i)
+            (∑ i : Fin 43, ξ ^ (i : ℕ) • ρw₀ i) := by rw [hpair]; rfl
+  -- Step B (binding): the opened witness IS the ξ-combined representation — the
+  -- interior of `bound_unique`, kept at witness level via `congrArg Prod.fst`.
+  have hbd : CommitmentBinding (F := F) σ :=
+    (commitmentBinding_iff_no_relation σ).mpr hbind
+  have hcommit : commit σ a ρ
+      = commit σ (∑ i : Fin 43, ξ ^ (i : ℕ) • aw₀ i)
+          (∑ i : Fin 43, ξ ^ (i : ℕ) • ρw₀ i) := hopen.1.trans hA
+  have ha : a = ∑ i : Fin 43, ξ ^ (i : ℕ) • aw₀ i :=
+    congrArg Prod.fst (@hbd (a, ρ)
+      (∑ i : Fin 43, ξ ^ (i : ℕ) • aw₀ i, ∑ i : Fin 43, ξ ^ (i : ℕ) • ρw₀ i) hcommit)
+  -- Step C (substitute + expand): the value equation becomes the double-sum identity
+  -- `∑ j, r^j · (∑ i, ξ^i · D i j) = 0` in the discrepancies `D`.
+  have hip : ∀ b : Fin (2 ^ σ.k) → F,
+      innerProduct (∑ i : Fin 43, ξ ^ (i : ℕ) • aw₀ i) b
+        = ∑ i : Fin 43, ξ ^ (i : ℕ) * innerProduct (aw₀ i) b := by
+    intro b
+    unfold innerProduct
+    simp only [Finset.sum_apply, Pi.smul_apply, smul_eq_mul, Finset.sum_mul,
+      Finset.mul_sum]
+    rw [Finset.sum_comm]
+    exact Finset.sum_congr rfl fun i _ => Finset.sum_congr rfl fun l _ => by ring
+  have h1 : combinedInnerProduct ξ r E
+      = ∑ j : Fin 2, r ^ (j : ℕ)
+          * ∑ i : Fin 43, ξ ^ (i : ℕ)
+              * innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j)) := by
+    rw [hopen.2, ha, innerProduct_combinedEvalVector]
+    exact Finset.sum_congr rfl fun j _ => by rw [hip]
+  have h2 : combinedInnerProduct ξ r E
+      = ∑ j : Fin 2, r ^ (j : ℕ) * ∑ i : Fin 43, ξ ^ (i : ℕ) * E i j := by
+    unfold combinedInnerProduct
+    simp only [Finset.mul_sum]
+    rw [Finset.sum_comm]
+    exact Finset.sum_congr rfl fun j _ => Finset.sum_congr rfl fun i _ => by ring
+  have hsum : ∑ j : Fin 2, r ^ (j : ℕ) * (∑ i : Fin 43, ξ ^ (i : ℕ)
+      * (E i j - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j)))) = 0 := by
+    calc ∑ j : Fin 2, r ^ (j : ℕ) * (∑ i : Fin 43, ξ ^ (i : ℕ)
+          * (E i j - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j))))
+        = (∑ j : Fin 2, r ^ (j : ℕ) * ∑ i : Fin 43, ξ ^ (i : ℕ) * E i j)
+          - ∑ j : Fin 2, r ^ (j : ℕ) * ∑ i : Fin 43, ξ ^ (i : ℕ)
+              * innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j)) := by
+          rw [← Finset.sum_sub_distrib]
+          refine Finset.sum_congr rfl fun j _ => ?_
+          rw [← mul_sub, ← Finset.sum_sub_distrib]
+          refine congrArg (r ^ (j : ℕ) * ·)
+            (Finset.sum_congr rfl fun i _ => ?_)
+          ring
+      _ = 0 := by rw [← h2, ← h1, sub_self]
+  -- Step D (iterated counting SZ): first at `r` (the two point-columns), then per
+  -- point at `ξ` (the 43 row-discrepancies).
+  simp only [badROf] at hr
+  have hcol : ∀ j : Fin 2, ∑ i : Fin 43, ξ ^ (i : ℕ)
+      * (E i j - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j))) = 0 :=
+    Kimchi.Quotient.SZ.eq_zero_of_comb_eq_zero _ r hr hsum
+  simp only [badXiOf, Finset.notMem_union] at hξ
+  intro i j
+  have hj : ξ ∉ Kimchi.Quotient.SZ.badComb (fun i : Fin 43 =>
+      E i j - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j))) := by
+    fin_cases j
+    · exact hξ.1
+    · exact hξ.2
+  exact sub_eq_zero.mp (Kimchi.Quotient.SZ.eq_zero_of_comb_eq_zero _ ξ hj (hcol j) i)
+
+/-- **Algebraic-prover soundness from ONE transcript** (the AGM corollary): the
+representations `aw₀`/`ρw₀` of the 43 batch rows discharge the openings interface of
+`kimchiProof_sound_of_openings` on BOTH sides — the reference side outright (`hrep` IS
+its `hbound₀`), the consumer side from a single accepted opening via
+`ipa_soundnessA` + `eval_pins_of_opening`. The four bad-set bounds and the
+ft-equation/`Satisfies` tail are verbatim `of_openings`'; the only new axis is the
+combination-challenge pair `(ξ, r)`, guarded by the counted sets `badXi` (≤ 84) and
+`badR` (≤ 1), curried by the consumer data `(E, ζ)`/`(E, ζ, ξ)` and quantified BEFORE
+`(ξ, r)` — anti-vacuity exactly as for the four challenge axes. Honest scope note: the
+quotient identity `hteq` (with `t` and its degree bound) REMAINS a hypothesis — the same
+residue as the run-level capstones; dissolving it from the `tComm` representation via
+the Maller relation is the follow-on "algebraic quotient" step. Model note: this theorem
+quantifies over provers that SUPPLY representations; the standard-model statement is
+`*_sound_density`. Project-local: the general AGM root. -/
+theorem kimchiProof_sound_algebraic {F G : Type*} [Field F] [AddCommGroup G]
+    [Module F G] {n : ℕ} [NeZero n] [DecidableEq F] (σ : SRS G)
+    (idx : Index F n) (hk : 2 ^ σ.k = n)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
+    (comms : IndexComms G) (hvk : VKCorresponds σ comms idx)
+    (pub : Fin idx.publicCount → F)
+    (wC : Fin 15 → G) (zC : G)
+    (aw₀ : Fin 43 → Fin (2 ^ σ.k) → F) (ρw₀ : Fin 43 → F)
+    (hrep : ∀ i, commit σ (aw₀ i) (ρw₀ i) = batchC wC zC comms i) :
+    ∃ (badB : Finset F) (badG : F → Finset F) (badA : F → F → Finset F)
+        (badZ : F → F → F → Polynomial F → Finset F)
+        (badXi : (Fin 43 → Fin 2 → F) → F → Finset F)
+        (badR : (Fin 43 → Fin 2 → F) → F → F → Finset F),
+      (badB.card ≤ 7 * (n - idx.zkRows)
+        ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
+        ∧ (∀ β γ,
+            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
+        ∧ (∀ β γ α (t : Polynomial F), t.natDegree < 7 * n →
+            (badZ β γ α t).card ≤ Index.degreeBound n)
+        ∧ (∀ (E : Fin 43 → Fin 2 → F) (ζ : F), (badXi E ζ).card ≤ 84)
+        ∧ (∀ (E : Fin 43 → Fin 2 → F) (ζ ξ : F), (badR E ζ ξ).card ≤ 1))
+      ∧ ∀ (β γ α : F) (t : Polynomial F) (ζ : F)
+          (E : Fin 43 → Fin 2 → F) (ξ r : F) (A : Prop),
+          β ∉ badB → γ ∉ badG β → α ∉ badA β γ → ζ ∉ badZ β γ α t →
+          ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) →
+          t.natDegree < 7 * n →
+          ξ ∉ badXi E ζ → r ∉ badR E ζ ξ →
+          FiatShamirTreeB σ (combinedCommitment ξ (batchC wC zC comms))
+            (combinedEvalVector (2 ^ σ.k) r ![ζ, idx.omega * ζ])
+            (combinedInnerProduct ξ r E) A →
+          A →
+          (permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
+              * (idx.sigmaPoly 6).eval ζ
+            - (ζ ^ n - 1) * t.eval ζ
+            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
+                ζ (-((idx.pubPoly pub).eval ζ)) (claimedEvals E)) →
+          ∃ wTab : Fin n → Fin 15 → F, Satisfies idx pub wTab := by
+  obtain ⟨badB, badG, badA, badZ, ⟨hB, hG, hA, hZ⟩, himp⟩ :=
+    kimchiProof_sound_of_openings σ idx hk hbind comms hvk pub wC zC aw₀ ρw₀ hrep
+  refine ⟨badB, badG, badA, badZ,
+    fun E ζ => badXiOf σ aw₀ ![ζ, idx.omega * ζ] E,
+    fun E ζ ξ => badROf σ aw₀ ![ζ, idx.omega * ζ] E ξ,
+    ⟨hB, hG, hA, hZ, fun E ζ => card_badXiOf_le σ aw₀ ![ζ, idx.omega * ζ] E,
+      fun E ζ ξ => card_badROf_le σ aw₀ ![ζ, idx.omega * ζ] E ξ⟩, ?_⟩
+  intro β γ α t ζ E ξ r A hβ hγ hα hζ hζ1 hζb ht hξ hr hFS hAcc hteq
+  obtain ⟨a, ρ, hopen⟩ := ipa_soundnessA σ _ _ _ hFS hAcc
+  have hpins := eval_pins_of_opening σ hbind (batchC wC zC comms)
+    ![ζ, idx.omega * ζ] aw₀ ρw₀ hrep E ξ r hξ hr a ρ hopen
+  exact himp β γ α t ζ E aw₀ ρw₀ hβ hγ hα hζ hζ1 hζb ht
+    (fun i => ⟨hrep i, fun j => hpins i j⟩) hteq
+
+/-- **Algebraic-prover soundness of the deployed Vesta kimchi verifier** (the Vesta AGM
+root): `kimchiProof_sound_algebraic` at the wire views — the wire key's committed
+columns (`vk.comms`), the wire public array (`pubView idx pub`, made honest by `hpub`).
+An algebraic prover's representations of the 43 batch rows replace the
+special-soundness grid: ONE accepted IPA opening (the `FiatShamirTreeB` antecedent +
+`A`, exactly as the general theorem exposes them — the caller supplies the accepted
+transcript) delivers the consumer implication. Honest scope note: the quotient identity
+`hteq` (with `t` and its degree bound) remains a hypothesis, as in the run-level
+capstones; the standard-model statement is `kimchiVesta_sound_density`. Project-local:
+the Vesta AGM root. -/
+theorem kimchiVesta_sound_algebraic (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
+    (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
+    (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
+    (hpub : pub.size = idx.publicCount)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
+    (wC : Fin 15 → IpaVesta.Point) (zC : IpaVesta.Point)
+    (aw₀ : Fin 43 → Fin (2 ^ σ.k) → Fp) (ρw₀ : Fin 43 → Fp)
+    (hrep : ∀ i, commit σ (aw₀ i) (ρw₀ i) = batchC wC zC vk.comms i) :
+    ∃ (badB : Finset Fp) (badG : Fp → Finset Fp) (badA : Fp → Fp → Finset Fp)
+        (badZ : Fp → Fp → Fp → Polynomial Fp → Finset Fp)
+        (badXi : (Fin 43 → Fin 2 → Fp) → Fp → Finset Fp)
+        (badR : (Fin 43 → Fin 2 → Fp) → Fp → Fp → Finset Fp),
+      (badB.card ≤ 7 * (n - idx.zkRows)
+        ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
+        ∧ (∀ β γ,
+            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
+        ∧ (∀ β γ α (t : Polynomial Fp), t.natDegree < 7 * n →
+            (badZ β γ α t).card ≤ Index.degreeBound n)
+        ∧ (∀ (E : Fin 43 → Fin 2 → Fp) (ζ : Fp), (badXi E ζ).card ≤ 84)
+        ∧ (∀ (E : Fin 43 → Fin 2 → Fp) (ζ ξ : Fp), (badR E ζ ξ).card ≤ 1))
+      ∧ ∀ (β γ α : Fp) (t : Polynomial Fp) (ζ : Fp)
+          (E : Fin 43 → Fin 2 → Fp) (ξ r : Fp) (A : Prop),
+          β ∉ badB → γ ∉ badG β → α ∉ badA β γ → ζ ∉ badZ β γ α t →
+          ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) →
+          t.natDegree < 7 * n →
+          ξ ∉ badXi E ζ → r ∉ badR E ζ ξ →
+          FiatShamirTreeB σ (combinedCommitment ξ (batchC wC zC vk.comms))
+            (combinedEvalVector (2 ^ σ.k) r ![ζ, idx.omega * ζ])
+            (combinedInnerProduct ξ r E) A →
+          A →
+          (permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
+              * (idx.sigmaPoly 6).eval ζ
+            - (ζ ^ n - 1) * t.eval ζ
+            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
+                ζ (-((idx.pubPoly (pubView idx pub)).eval ζ)) (claimedEvals E)) →
+          ∃ wTab : Fin n → Fin 15 → Fp, Satisfies idx (pubView idx pub) wTab :=
+  kimchiProof_sound_algebraic σ idx hk hbind vk.comms hvk (pubView idx pub) wC zC
+    aw₀ ρw₀ hrep
+
+/-- **Algebraic-prover soundness of the deployed Pallas kimchi verifier.** The
+Pallas-side twin of `kimchiVesta_sound_algebraic`, over `Fq`/`IpaPallas`. See the Vesta
+docstring for the trust story — in particular the quotient residue `hteq`, the one
+antecedent the AGM reading keeps. Project-local: the Pallas AGM root. -/
+theorem kimchiPallas_sound_algebraic (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
+    (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
+    (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
+    (hpub : pub.size = idx.publicCount)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
+    (wC : Fin 15 → IpaPallas.Point) (zC : IpaPallas.Point)
+    (aw₀ : Fin 43 → Fin (2 ^ σ.k) → Fq) (ρw₀ : Fin 43 → Fq)
+    (hrep : ∀ i, commit σ (aw₀ i) (ρw₀ i) = batchC wC zC vk.comms i) :
+    ∃ (badB : Finset Fq) (badG : Fq → Finset Fq) (badA : Fq → Fq → Finset Fq)
+        (badZ : Fq → Fq → Fq → Polynomial Fq → Finset Fq)
+        (badXi : (Fin 43 → Fin 2 → Fq) → Fq → Finset Fq)
+        (badR : (Fin 43 → Fin 2 → Fq) → Fq → Fq → Finset Fq),
+      (badB.card ≤ 7 * (n - idx.zkRows)
+        ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
+        ∧ (∀ β γ,
+            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
+        ∧ (∀ β γ α (t : Polynomial Fq), t.natDegree < 7 * n →
+            (badZ β γ α t).card ≤ Index.degreeBound n)
+        ∧ (∀ (E : Fin 43 → Fin 2 → Fq) (ζ : Fq), (badXi E ζ).card ≤ 84)
+        ∧ (∀ (E : Fin 43 → Fin 2 → Fq) (ζ ξ : Fq), (badR E ζ ξ).card ≤ 1))
+      ∧ ∀ (β γ α : Fq) (t : Polynomial Fq) (ζ : Fq)
+          (E : Fin 43 → Fin 2 → Fq) (ξ r : Fq) (A : Prop),
+          β ∉ badB → γ ∉ badG β → α ∉ badA β γ → ζ ∉ badZ β γ α t →
+          ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) →
+          t.natDegree < 7 * n →
+          ξ ∉ badXi E ζ → r ∉ badR E ζ ξ →
+          FiatShamirTreeB σ (combinedCommitment ξ (batchC wC zC vk.comms))
+            (combinedEvalVector (2 ^ σ.k) r ![ζ, idx.omega * ζ])
+            (combinedInnerProduct ξ r E) A →
+          A →
+          (permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
+              * (idx.sigmaPoly 6).eval ζ
+            - (ζ ^ n - 1) * t.eval ζ
+            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
+                ζ (-((idx.pubPoly (pubView idx pub)).eval ζ)) (claimedEvals E)) →
+          ∃ wTab : Fin n → Fin 15 → Fq, Satisfies idx (pubView idx pub) wTab :=
+  kimchiProof_sound_algebraic σ idx hk hbind vk.comms hvk (pubView idx pub) wC zC
+    aw₀ ρw₀ hrep
 
 end Kimchi.Verifier

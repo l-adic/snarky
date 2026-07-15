@@ -221,3 +221,14 @@ Kimchi.Quotient.card_heavyRows
 Kimchi.Quotient.exists_distinct_powers
 Kimchi.Quotient.mem_heavyRows
 Kimchi.Quotient.mem_rowSlice
+
+-- The algebraic-group-model reading: an algebraic prover supplies SRS-basis representations of
+-- its committed rows, so a SINGLE accepted opening suffices (no grid, no density) — the eval
+-- pins follow off a small discrepancy (ξ, r) bad set (a bivariate Schwartz–Zippel event, ≤ 84
+-- and ≤ 1). Consumes the openings seam. NOTE these roots keep the FiatShamirTreeB tree as a
+-- caller-supplied hypothesis (not derived from an Ipa.verify acceptance), so their axiom set is
+-- the density capstones' MINUS poseidon_fiat_shamir; the ft/quotient identity is kept as the
+-- residue hypothesis (the algebraic-quotient dissolution is a follow-on).
+Kimchi.Verifier.kimchiProof_sound_algebraic
+Kimchi.Verifier.kimchiVesta_sound_algebraic
+Kimchi.Verifier.kimchiPallas_sound_algebraic

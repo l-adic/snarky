@@ -101,7 +101,10 @@ def roots : List Name :=
     `Kimchi.Quotient.exists_rectangle,
     `Kimchi.Verifier.kimchiVesta_sound_density,
     `Kimchi.Verifier.kimchiPallas_sound_density,
-    `Kimchi.Quotient.card_heavyRows, `Kimchi.Quotient.exists_distinct_powers ]
+    `Kimchi.Quotient.card_heavyRows, `Kimchi.Quotient.exists_distinct_powers,
+    `Kimchi.Verifier.kimchiProof_sound_algebraic,
+    `Kimchi.Verifier.kimchiVesta_sound_algebraic,
+    `Kimchi.Verifier.kimchiPallas_sound_algebraic ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations
