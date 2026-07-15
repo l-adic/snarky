@@ -88,6 +88,7 @@ def roots : List Name :=
     `Kimchi.Commitment.IPA.chunked_batch_soundness,
     `Kimchi.Verifier.verify_reflects, `Kimchi.Verifier.ipaVesta_sound,
     `Kimchi.Verifier.ipaPallas_sound,
+    `Kimchi.Verifier.kimchiVerify_reflects, `Kimchi.Verifier.barycentricPubEval_eq,
     `Kimchi.Verifier.Equation.verifierEquation_iff,
     `Kimchi.Verifier.Equation.satisfies_of_verifierEquation,
     `Kimchi.Verifier.kimchiProof_sound ]

@@ -149,6 +149,12 @@ Kimchi.Verifier.verify_reflects
 Kimchi.Verifier.ipaVesta_sound
 Kimchi.Verifier.ipaPallas_sound
 
+-- Kimchi verifier reflection (trust-free): the deployed `kimchiVerify` code path read into a
+-- well-formed `ReflectedRun`, and the barycentric public-evaluation identity the verifier
+-- computes shown equal to the interpolant form. Foundations for the executable soundness capstone.
+Kimchi.Verifier.kimchiVerify_reflects
+Kimchi.Verifier.barycentricPubEval_eq
+
 -- Phase A3: quotient soundness at the index (per-family bridges consuming Index data).
 Kimchi.Index.Index.addComplete_soundness
 Kimchi.Index.Index.varBaseMul_soundness
