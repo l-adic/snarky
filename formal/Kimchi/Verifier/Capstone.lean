@@ -120,6 +120,17 @@ hypothesis — the same residue as the run-level capstones. The AGM also dissolv
 residue by extracting `t` from the `tComm` representation via the Maller relation; that
 "algebraic quotient" step is a deliberate follow-on, not this layer. The standard-model
 statement remains `*_sound_density`.
+
+The **algebraic quotient** (the follow-on the AGM section promises) is delivered at the
+end of the file: `kimchiProof_sound_algebraic_ft` and its curve roots
+`kimchi{Vesta,Pallas}_sound_algebraic_ft`. The algebraic prover additionally supplies
+the 7 `tComm`-chunk representations, and the quotient `t` — now the genuine
+degree-`< 7n` assembly `ftChunkAssembly` of the committed chunks — and the Maller/ft
+identity `hteq` are DERIVED from a checked ft opening via `ft_identity_of_chunks`; the
+residue hypotheses disappear from the statement. What stays hypothetical there is
+unchanged from the AGM corollary: the ft opening itself (which a fully deployed variant
+would derive from `poseidon_fiat_shamir` on the ft row), DL-binding, the key
+correspondence, and the per-transcript Fiat–Shamir families.
 -/
 
 namespace Kimchi.Verifier
@@ -1453,5 +1464,308 @@ theorem kimchiPallas_sound_algebraic (σ : SRS IpaPallas.Point) (vk : KimchiPall
           ∃ wTab : Fin n → Fin 15 → Fq, Satisfies idx (pubView idx pub) wTab :=
   kimchiProof_sound_algebraic σ idx hk hbind vk.comms hvk (pubView idx pub) wC zC
     aw₀ ρw₀ hrep
+
+/-! ## The algebraic quotient — the ft residue dissolved from the chunk representations -/
+
+/-- **The assembled quotient** — the genuine degree-`< 7·2^k` polynomial the 7 committed
+`tComm` chunk rows represent: chunk `j` contributes its row polynomial shifted by
+`X^(j·2^k)`, exactly kimchi's `t = ∑ⱼ X^(j·n) · tⱼ` chunking (`Chunk.lean`'s
+`assemblePoly` at width `2^k`, phrased over `rowPoly` so the capstone statements read at
+the committed vectors directly). Project-local: the named `t` of the residue-free
+capstones — the `badZ` antecedent and the derived Maller identity are stated against THIS
+polynomial, never an opaque existential witness. -/
+noncomputable def ftChunkAssembly {F : Type*} [Field F] (k : ℕ)
+    (aT : Fin 7 → Fin (2 ^ k) → F) : Polynomial F :=
+  ∑ j : Fin 7, rowPoly (aT j) * Polynomial.X ^ ((j : ℕ) * 2 ^ k)
+
+/-- The assembly meets the 7-chunk degree bound: each summand has degree
+`≤ (2^k − 1) + j·2^k ≤ 7·2^k − 1`. -/
+private theorem ftChunkAssembly_natDegree_lt {F : Type*} [Field F] (k : ℕ)
+    (aT : Fin 7 → Fin (2 ^ k) → F) :
+    (ftChunkAssembly k aT).natDegree < 7 * 2 ^ k := by
+  have h2k : 0 < 2 ^ k := Nat.two_pow_pos k
+  have hle : (ftChunkAssembly k aT).natDegree ≤ 7 * 2 ^ k - 1 := by
+    refine natDegree_sum_le_of_forall_le _ _ fun j _ => ?_
+    refine le_trans (natDegree_mul_le) ?_
+    rw [natDegree_X_pow]
+    have hrow := rowPoly_natDegree_lt_two_pow (aT j)
+    have hj : (j : ℕ) ≤ 6 := by omega
+    have hjm : (j : ℕ) * 2 ^ k ≤ 6 * 2 ^ k := Nat.mul_le_mul_right _ hj
+    omega
+  omega
+
+/-- The assembly evaluates as the `(ζ^(2^k))`-power combination of the chunk-row
+evaluations — kimchi's `combined_inner_product` recombination, at the assembly. -/
+private theorem ftChunkAssembly_eval {F : Type*} [Field F] (k : ℕ)
+    (aT : Fin 7 → Fin (2 ^ k) → F) (ζ : F) :
+    (ftChunkAssembly k aT).eval ζ
+      = ∑ j : Fin 7, (ζ ^ 2 ^ k) ^ (j : ℕ) * (rowPoly (aT j)).eval ζ := by
+  unfold ftChunkAssembly
+  rw [eval_finsetSum]
+  refine Finset.sum_congr rfl fun j _ => ?_
+  rw [eval_mul, eval_pow, eval_X, mul_comm ((j : ℕ)) (2 ^ k), pow_mul]
+  ring
+
+/-- **The Maller/ft identity from the chunk representations** (the algebraic-quotient
+engine): representations of the 7 `tComm` chunks plus ONE accepted ft opening — the
+commitment equation `hcommit` (the verifier's ft row: `pScalar • Cσ6` minus the
+`(ζ^n − 1)`-scaled `(ζ^n)`-power combination of the chunk commitments) and its value
+equation `heval` — pin the opened row, via binding (`commitₗ`-linearity collapses the
+combination to ONE commitment, exactly as in `eval_pins_of_opening`), to the
+corresponding pointwise combination of the represented rows; reading that combination
+through `rowPoly` yields BOTH residue facts at once: the assembled quotient's degree
+bound `< 7n` and the ft equation `pScalar · σ₆(ζ) − (ζ^n − 1) · t(ζ) = v0` with
+`t = ftChunkAssembly σ.k aT`. This is `ft_equation` (`Sound.lean`) generalized from its
+`nc = 1` degenerate case (degree `< 2^k`, vacuous for the deployed 7-chunk
+configuration) to the genuine chunked quotient. -/
+private theorem ft_identity_of_chunks {F G : Type*} [Field F] [AddCommGroup G]
+    [Module F G] (σ : SRS G)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
+    (σ₆ : Polynomial F) (hσ₆ : σ₆.natDegree < 2 ^ σ.k)
+    (Cσ6 : G) (hC : Cσ6 = commitPoly σ σ₆)
+    (TC : Fin 7 → G) (aT : Fin 7 → Fin (2 ^ σ.k) → F) (ρT : Fin 7 → F)
+    (htc : ∀ j, commit σ (aT j) (ρT j) = TC j)
+    (pScalar ζ v0 : F) (n : ℕ) (hk : 2 ^ σ.k = n)
+    (a : Fin (2 ^ σ.k) → F) (ρ : F)
+    (hcommit : commit σ a ρ
+      = pScalar • Cσ6 - (ζ ^ n - 1) • ∑ j : Fin 7, (ζ ^ n) ^ (j : ℕ) • TC j)
+    (heval : innerProduct a (evalVector (2 ^ σ.k) ζ) = v0) :
+    (ftChunkAssembly σ.k aT).natDegree < 7 * n
+      ∧ pScalar * σ₆.eval ζ - (ζ ^ n - 1) * (ftChunkAssembly σ.k aT).eval ζ = v0 := by
+  subst hk
+  -- Step A: σ₆'s commitment witness — the coefficient vector at blinder `0`.
+  set w6 : Fin (2 ^ σ.k) → F := fun i => σ₆.coeff (i : ℕ) with hw6
+  have hC6 : Cσ6 = commit σ w6 0 := hC.trans (commitPoly_eq_commit σ σ₆)
+  have hip6 : innerProduct w6 (evalVector (2 ^ σ.k) ζ) = σ₆.eval ζ := by
+    rw [← rowPoly_eval, rowPoly_coeff_self hσ₆]
+  -- Step B: the ft commitment as ONE commitment of the pointwise-combined witness —
+  -- `commitₗ`-linearity at the pair family, mirroring `eval_pins_of_opening` Step A.
+  set b : Fin (2 ^ σ.k) → F :=
+    pScalar • w6 - (ζ ^ 2 ^ σ.k - 1)
+      • ∑ j : Fin 7, (ζ ^ 2 ^ σ.k) ^ (j : ℕ) • aT j with hb
+  set ρb : F :=
+    -((ζ ^ 2 ^ σ.k - 1) • ∑ j : Fin 7, (ζ ^ 2 ^ σ.k) ^ (j : ℕ) • ρT j) with hρb
+  have hpair : ((b, ρb) : (Fin (2 ^ σ.k) → F) × F)
+      = pScalar • ((w6, 0) : (Fin (2 ^ σ.k) → F) × F)
+        - (ζ ^ 2 ^ σ.k - 1) • ∑ j : Fin 7, (ζ ^ 2 ^ σ.k) ^ (j : ℕ)
+            • ((aT j, ρT j) : (Fin (2 ^ σ.k) → F) × F) := by
+    refine Prod.ext ?_ ?_
+    · simp only [hb, Prod.fst_sub, Prod.smul_fst, Prod.fst_sum]
+    · simp only [hρb, Prod.snd_sub, Prod.smul_snd, Prod.snd_sum, smul_zero, zero_sub]
+  have hB : commit σ b ρb
+      = pScalar • Cσ6
+        - (ζ ^ 2 ^ σ.k - 1) • ∑ j : Fin 7, (ζ ^ 2 ^ σ.k) ^ (j : ℕ) • TC j := by
+    have h0 : commit σ b ρb = commitₗ σ (b, ρb) := rfl
+    have h1 : commitₗ σ ((w6, 0) : (Fin (2 ^ σ.k) → F) × F) = commit σ w6 0 := rfl
+    rw [h0, hpair, map_sub, map_smul, map_smul, map_sum, h1, ← hC6]
+    congr 2
+    refine Finset.sum_congr rfl fun j _ => ?_
+    rw [map_smul]
+    exact congrArg _ (htc j)
+  -- Step C: binding, at witness level — the opened row IS the combination.
+  have hbd : CommitmentBinding (F := F) σ :=
+    (commitmentBinding_iff_no_relation σ).mpr hbind
+  have hab : a = b :=
+    congrArg Prod.fst (@hbd (a, ρ) (b, ρb) (hcommit.trans hB.symm))
+  refine ⟨ftChunkAssembly_natDegree_lt σ.k aT, ?_⟩
+  -- Step E: expand the inner product of `b` linearly and conclude.
+  have hsub : innerProduct b (evalVector (2 ^ σ.k) ζ)
+      = pScalar * innerProduct w6 (evalVector (2 ^ σ.k) ζ)
+        - (ζ ^ 2 ^ σ.k - 1)
+          * innerProduct (∑ j : Fin 7, (ζ ^ 2 ^ σ.k) ^ (j : ℕ) • aT j)
+              (evalVector (2 ^ σ.k) ζ) := by
+    rw [hb]
+    unfold innerProduct
+    rw [Finset.mul_sum, Finset.mul_sum, ← Finset.sum_sub_distrib]
+    refine Finset.sum_congr rfl fun i _ => ?_
+    simp only [Pi.sub_apply, Pi.smul_apply, smul_eq_mul]
+    ring
+  have hipS : innerProduct (∑ j : Fin 7, (ζ ^ 2 ^ σ.k) ^ (j : ℕ) • aT j)
+      (evalVector (2 ^ σ.k) ζ)
+      = ∑ j : Fin 7, (ζ ^ 2 ^ σ.k) ^ (j : ℕ)
+          * innerProduct (aT j) (evalVector (2 ^ σ.k) ζ) := by
+    unfold innerProduct
+    simp only [Finset.sum_apply, Pi.smul_apply, smul_eq_mul, Finset.sum_mul,
+      Finset.mul_sum]
+    rw [Finset.sum_comm]
+    exact Finset.sum_congr rfl fun i _ => Finset.sum_congr rfl fun l _ => by ring
+  rw [← heval, hab, hsub, hipS, hip6, ftChunkAssembly_eval]
+  simp only [rowPoly_eval]
+
+/-- **Algebraic-prover soundness, residue-free** (the algebraic quotient):
+`kimchiProof_sound_algebraic` with the ft/quotient residue DISSOLVED — the algebraic
+prover additionally supplies the 7 `tComm`-chunk representations (`aT`/`ρT`, tied to the
+chunk commitments by `hTC`), and the quotient `t` and the Maller identity `hteq` are
+DERIVED, no longer hypotheses. The trade is honest: `hteq` was an unchecked "∃ valid
+`t`"; here it is replaced by a CHECKED fact — the ft opening (the two antecedents after
+`A`), which the deployed verifier's ft-row acceptance provides — fed to
+`ft_identity_of_chunks`. The ft opening is a hypothesis because this abstract capstone
+does not reflect a deployed run; a fully deployed AGM variant would derive it from
+`poseidon_fiat_shamir` on the ft row. The quotient is now the genuine degree-`< 7n`
+polynomial `ftChunkAssembly σ.k aT` assembled from the committed chunks — NOT the
+degree-`< 2^k` `ftQuotient` of `ft_equation` (`Sound.lean`), whose `nc = 1` shortcut is
+vacuous for the deployed 7-chunk configuration. No-vacuity: an honest 7-chunk prover
+satisfies every antecedent — `hCσ6` is discharged by `hvk` (`VKCorresponds` is
+`indexerOf`, whose `sigma i` IS `commitPoly σ (idx.sigmaPoly i)`, `Correspond.lean`),
+and the honest chunk vectors make `ftChunkAssembly` the real quotient. The six bad-set
+bounds and the FS/acceptance/`Satisfies` consumer tail are verbatim
+`kimchiProof_sound_algebraic`'s; `ζ ^ n ≠ 1` is the ft non-degeneracy pin.
+Project-local: the residue-free AGM root. -/
+theorem kimchiProof_sound_algebraic_ft {F G : Type*} [Field F] [AddCommGroup G]
+    [Module F G] {n : ℕ} [NeZero n] [DecidableEq F] (σ : SRS G)
+    (idx : Index F n) (hk : 2 ^ σ.k = n)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
+    (comms : IndexComms G) (hvk : VKCorresponds σ comms idx)
+    (pub : Fin idx.publicCount → F)
+    (wC : Fin 15 → G) (zC : G)
+    (aw₀ : Fin 43 → Fin (2 ^ σ.k) → F) (ρw₀ : Fin 43 → F)
+    (hrep : ∀ i, commit σ (aw₀ i) (ρw₀ i) = batchC wC zC comms i)
+    (TC : Fin 7 → G) (aT : Fin 7 → Fin (2 ^ σ.k) → F) (ρT : Fin 7 → F)
+    (hTC : ∀ j, commit σ (aT j) (ρT j) = TC j)
+    (Cσ6 : G) (hCσ6 : Cσ6 = commitPoly σ (idx.sigmaPoly 6)) :
+    ∃ (badB : Finset F) (badG : F → Finset F) (badA : F → F → Finset F)
+        (badZ : F → F → F → Polynomial F → Finset F)
+        (badXi : (Fin 43 → Fin 2 → F) → F → Finset F)
+        (badR : (Fin 43 → Fin 2 → F) → F → F → Finset F),
+      (badB.card ≤ 7 * (n - idx.zkRows)
+        ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
+        ∧ (∀ β γ,
+            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
+        ∧ (∀ β γ α (t : Polynomial F), t.natDegree < 7 * n →
+            (badZ β γ α t).card ≤ Index.degreeBound n)
+        ∧ (∀ (E : Fin 43 → Fin 2 → F) (ζ : F), (badXi E ζ).card ≤ 84)
+        ∧ (∀ (E : Fin 43 → Fin 2 → F) (ζ ξ : F), (badR E ζ ξ).card ≤ 1))
+      ∧ ∀ (β γ α ζ : F)
+          (E : Fin 43 → Fin 2 → F) (ξ r : F) (A : Prop)
+          (aft : Fin (2 ^ σ.k) → F) (ρft : F),
+          β ∉ badB → γ ∉ badG β → α ∉ badA β γ →
+          ζ ∉ badZ β γ α (ftChunkAssembly σ.k aT) →
+          ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) → ζ ^ n ≠ 1 →
+          ξ ∉ badXi E ζ → r ∉ badR E ζ ξ →
+          FiatShamirTreeB σ (combinedCommitment ξ (batchC wC zC comms))
+            (combinedEvalVector (2 ^ σ.k) r ![ζ, idx.omega * ζ])
+            (combinedInnerProduct ξ r E) A →
+          A →
+          (commit σ aft ρft
+            = permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
+                • Cσ6 - (ζ ^ n - 1) • ∑ j : Fin 7, (ζ ^ n) ^ (j : ℕ) • TC j) →
+          (innerProduct aft (evalVector (2 ^ σ.k) ζ)
+            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
+                ζ (-((idx.pubPoly pub).eval ζ)) (claimedEvals E)) →
+          ∃ wTab : Fin n → Fin 15 → F, Satisfies idx pub wTab := by
+  obtain ⟨badB, badG, badA, badZ, badXi, badR, hbounds, himp⟩ :=
+    kimchiProof_sound_algebraic σ idx hk hbind comms hvk pub wC zC aw₀ ρw₀ hrep
+  refine ⟨badB, badG, badA, badZ, badXi, badR, hbounds, ?_⟩
+  intro β γ α ζ E ξ r A aft ρft hβ hγ hα hζ hζ1 hζb hζn hξ hr hFS hAcc hftc hftv
+  have hσ₆ : (idx.sigmaPoly 6).natDegree < 2 ^ σ.k := by
+    rw [hk]
+    exact columnPoly_natDegree_lt idx.omega_prim _
+  obtain ⟨htdeg, hteq⟩ := ft_identity_of_chunks σ hbind (idx.sigmaPoly 6) hσ₆ Cσ6 hCσ6
+    TC aT ρT hTC
+    (permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)) ζ
+    (ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ ζ
+      (-((idx.pubPoly pub).eval ζ)) (claimedEvals E)) n hk aft ρft hftc hftv
+  exact himp β γ α (ftChunkAssembly σ.k aT) ζ E ξ r A hβ hγ hα hζ hζ1 hζb htdeg
+    hξ hr hFS hAcc hteq
+
+/-- **Residue-free algebraic-prover soundness of the deployed Vesta kimchi verifier**:
+`kimchiVesta_sound_algebraic` with the quotient residue dissolved —
+`kimchiProof_sound_algebraic_ft` at the wire views (the wire key's committed columns
+`vk.comms`, the wire public array through `pubView idx pub`). The algebraic prover
+additionally supplies the 7 `tComm`-chunk representations; the quotient `t` and the
+Maller identity are DERIVED from the checked ft opening (the two antecedents after `A`).
+See the general theorem's docstring for the trust accounting. Project-local: the
+residue-free Vesta AGM root. -/
+theorem kimchiVesta_sound_algebraic_ft (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
+    (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
+    (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
+    (hpub : pub.size = idx.publicCount)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
+    (wC : Fin 15 → IpaVesta.Point) (zC : IpaVesta.Point)
+    (aw₀ : Fin 43 → Fin (2 ^ σ.k) → Fp) (ρw₀ : Fin 43 → Fp)
+    (hrep : ∀ i, commit σ (aw₀ i) (ρw₀ i) = batchC wC zC vk.comms i)
+    (TC : Fin 7 → IpaVesta.Point) (aT : Fin 7 → Fin (2 ^ σ.k) → Fp) (ρT : Fin 7 → Fp)
+    (hTC : ∀ j, commit σ (aT j) (ρT j) = TC j)
+    (Cσ6 : IpaVesta.Point) (hCσ6 : Cσ6 = commitPoly σ (idx.sigmaPoly 6)) :
+    ∃ (badB : Finset Fp) (badG : Fp → Finset Fp) (badA : Fp → Fp → Finset Fp)
+        (badZ : Fp → Fp → Fp → Polynomial Fp → Finset Fp)
+        (badXi : (Fin 43 → Fin 2 → Fp) → Fp → Finset Fp)
+        (badR : (Fin 43 → Fin 2 → Fp) → Fp → Fp → Finset Fp),
+      (badB.card ≤ 7 * (n - idx.zkRows)
+        ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
+        ∧ (∀ β γ,
+            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
+        ∧ (∀ β γ α (t : Polynomial Fp), t.natDegree < 7 * n →
+            (badZ β γ α t).card ≤ Index.degreeBound n)
+        ∧ (∀ (E : Fin 43 → Fin 2 → Fp) (ζ : Fp), (badXi E ζ).card ≤ 84)
+        ∧ (∀ (E : Fin 43 → Fin 2 → Fp) (ζ ξ : Fp), (badR E ζ ξ).card ≤ 1))
+      ∧ ∀ (β γ α ζ : Fp)
+          (E : Fin 43 → Fin 2 → Fp) (ξ r : Fp) (A : Prop)
+          (aft : Fin (2 ^ σ.k) → Fp) (ρft : Fp),
+          β ∉ badB → γ ∉ badG β → α ∉ badA β γ →
+          ζ ∉ badZ β γ α (ftChunkAssembly σ.k aT) →
+          ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) → ζ ^ n ≠ 1 →
+          ξ ∉ badXi E ζ → r ∉ badR E ζ ξ →
+          FiatShamirTreeB σ (combinedCommitment ξ (batchC wC zC vk.comms))
+            (combinedEvalVector (2 ^ σ.k) r ![ζ, idx.omega * ζ])
+            (combinedInnerProduct ξ r E) A →
+          A →
+          (commit σ aft ρft
+            = permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
+                • Cσ6 - (ζ ^ n - 1) • ∑ j : Fin 7, (ζ ^ n) ^ (j : ℕ) • TC j) →
+          (innerProduct aft (evalVector (2 ^ σ.k) ζ)
+            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
+                ζ (-((idx.pubPoly (pubView idx pub)).eval ζ)) (claimedEvals E)) →
+          ∃ wTab : Fin n → Fin 15 → Fp, Satisfies idx (pubView idx pub) wTab :=
+  kimchiProof_sound_algebraic_ft σ idx hk hbind vk.comms hvk (pubView idx pub) wC zC
+    aw₀ ρw₀ hrep TC aT ρT hTC Cσ6 hCσ6
+
+/-- **Residue-free algebraic-prover soundness of the deployed Pallas kimchi verifier.**
+The Pallas-side twin of `kimchiVesta_sound_algebraic_ft`, over `Fq`/`IpaPallas` — see
+the Vesta docstring, and the general theorem's for the trust accounting. Project-local:
+the residue-free Pallas AGM root. -/
+theorem kimchiPallas_sound_algebraic_ft (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
+    (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
+    (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
+    (hpub : pub.size = idx.publicCount)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
+    (wC : Fin 15 → IpaPallas.Point) (zC : IpaPallas.Point)
+    (aw₀ : Fin 43 → Fin (2 ^ σ.k) → Fq) (ρw₀ : Fin 43 → Fq)
+    (hrep : ∀ i, commit σ (aw₀ i) (ρw₀ i) = batchC wC zC vk.comms i)
+    (TC : Fin 7 → IpaPallas.Point) (aT : Fin 7 → Fin (2 ^ σ.k) → Fq) (ρT : Fin 7 → Fq)
+    (hTC : ∀ j, commit σ (aT j) (ρT j) = TC j)
+    (Cσ6 : IpaPallas.Point) (hCσ6 : Cσ6 = commitPoly σ (idx.sigmaPoly 6)) :
+    ∃ (badB : Finset Fq) (badG : Fq → Finset Fq) (badA : Fq → Fq → Finset Fq)
+        (badZ : Fq → Fq → Fq → Polynomial Fq → Finset Fq)
+        (badXi : (Fin 43 → Fin 2 → Fq) → Fq → Finset Fq)
+        (badR : (Fin 43 → Fin 2 → Fq) → Fq → Fq → Finset Fq),
+      (badB.card ≤ 7 * (n - idx.zkRows)
+        ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
+        ∧ (∀ β γ,
+            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
+        ∧ (∀ β γ α (t : Polynomial Fq), t.natDegree < 7 * n →
+            (badZ β γ α t).card ≤ Index.degreeBound n)
+        ∧ (∀ (E : Fin 43 → Fin 2 → Fq) (ζ : Fq), (badXi E ζ).card ≤ 84)
+        ∧ (∀ (E : Fin 43 → Fin 2 → Fq) (ζ ξ : Fq), (badR E ζ ξ).card ≤ 1))
+      ∧ ∀ (β γ α ζ : Fq)
+          (E : Fin 43 → Fin 2 → Fq) (ξ r : Fq) (A : Prop)
+          (aft : Fin (2 ^ σ.k) → Fq) (ρft : Fq),
+          β ∉ badB → γ ∉ badG β → α ∉ badA β γ →
+          ζ ∉ badZ β γ α (ftChunkAssembly σ.k aT) →
+          ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) → ζ ^ n ≠ 1 →
+          ξ ∉ badXi E ζ → r ∉ badR E ζ ξ →
+          FiatShamirTreeB σ (combinedCommitment ξ (batchC wC zC vk.comms))
+            (combinedEvalVector (2 ^ σ.k) r ![ζ, idx.omega * ζ])
+            (combinedInnerProduct ξ r E) A →
+          A →
+          (commit σ aft ρft
+            = permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
+                • Cσ6 - (ζ ^ n - 1) • ∑ j : Fin 7, (ζ ^ n) ^ (j : ℕ) • TC j) →
+          (innerProduct aft (evalVector (2 ^ σ.k) ζ)
+            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
+                ζ (-((idx.pubPoly (pubView idx pub)).eval ζ)) (claimedEvals E)) →
+          ∃ wTab : Fin n → Fin 15 → Fq, Satisfies idx (pubView idx pub) wTab :=
+  kimchiProof_sound_algebraic_ft σ idx hk hbind vk.comms hvk (pubView idx pub) wC zC
+    aw₀ ρw₀ hrep TC aT ρT hTC Cσ6 hCσ6
 
 end Kimchi.Verifier

@@ -228,7 +228,17 @@ Kimchi.Quotient.mem_rowSlice
 -- and ≤ 1). Consumes the openings seam. NOTE these roots keep the FiatShamirTreeB tree as a
 -- caller-supplied hypothesis (not derived from an Ipa.verify acceptance), so their axiom set is
 -- the density capstones' MINUS poseidon_fiat_shamir; the ft/quotient identity is kept as the
--- residue hypothesis (the algebraic-quotient dissolution is a follow-on).
+-- residue hypothesis (dissolved by the `_ft` roots below).
 Kimchi.Verifier.kimchiProof_sound_algebraic
 Kimchi.Verifier.kimchiVesta_sound_algebraic
 Kimchi.Verifier.kimchiPallas_sound_algebraic
+
+-- The algebraic quotient: the ft/quotient residue DISSOLVED. The algebraic prover additionally
+-- supplies the 7 `tComm`-chunk representations, so the quotient `t` — now the genuine
+-- degree-`< 7n` assembly `ftChunkAssembly` of the committed chunks — and the Maller/ft identity
+-- are DERIVED from a checked ft opening via `ft_identity_of_chunks`; the residue hypothesis is
+-- gone from the statement. Axiom set unchanged from the algebraic roots above (the ft opening,
+-- FiatShamirTreeB, and DL-binding remain hypotheses; still MINUS poseidon_fiat_shamir).
+Kimchi.Verifier.kimchiProof_sound_algebraic_ft
+Kimchi.Verifier.kimchiVesta_sound_algebraic_ft
+Kimchi.Verifier.kimchiPallas_sound_algebraic_ft
