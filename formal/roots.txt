@@ -199,3 +199,12 @@ Kimchi.Verifier.kimchiPallas_run_sound
 Kimchi.Verifier.kimchiBundle_sound_error
 Kimchi.Verifier.kimchiVesta_sound_error
 Kimchi.Verifier.kimchiPallas_sound_error
+
+-- Forking stage (a): the combinatorial core of the forking lemma, PROVED — a dense subset of a
+-- product contains a K×2 rectangle (heavy-rows/Zarankiewicz double count) — and the density
+-- capstones it yields: a prover STRATEGY accepted on enough (ξ, r) pairs (density ≳ √(42/|F|),
+-- ≈ 2⁻¹²⁴ at Pasta) yields the 43×2 extraction grid, hence the capstone conclusion. The grid is
+-- no longer a hypothesis anywhere in these roots — only strategy + density + binding + key.
+Kimchi.Quotient.exists_rectangle
+Kimchi.Verifier.kimchiVesta_sound_density
+Kimchi.Verifier.kimchiPallas_sound_density

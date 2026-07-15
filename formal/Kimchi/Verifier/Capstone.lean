@@ -3,6 +3,7 @@ import Kimchi.Verifier.KimchiSound
 import Kimchi.Verifier.Kimchi
 import Kimchi.Verifier.Reflection
 import Kimchi.Verifier.Reflect
+import Kimchi.Quotient.Rectangle
 
 /-!
 # The idealized composition (capstone 1.3a): `KimchiBundle` and `kimchiBundle_sound`
@@ -90,6 +91,19 @@ The run-level corollaries (`*_run_sound`) deliberately do NOT get this wrapper: 
 run's sponge outputs are not random, so a probability reading over them IS the
 Fiat–Shamir heuristic itself — that stays the declared assumption
 (`poseidon_fiat_shamir_*`), never a theorem.
+
+The file ends with the **grid-from-density layer** (forking stage (a)): the
+combinatorial core of the forking lemma, PROVED — no new axiom. `batchAcceptSet` is the
+accepting set of a batch-opening *strategy* `P : (ξ, r) ↦ opening proof` for one fixed
+batched claim; the K×2 rectangle theorem (`exists_rectangle`, the heavy-rows /
+Kővári–Sós–Turán counting idea) turns a density hypothesis on that set into the 43×2
+extraction grid (`kimchiBatchAcc_of_density`), and the density capstones
+`kimchi{Vesta,Pallas}_sound_density` restate the concrete capstones with the grid
+HYPOTHESIS replaced by strategy + density. What remains hypothesis there: the density
+itself, DL-binding, and the key correspondence (plus, at the run level only, the
+quotient residue); Fiat–Shamir stays with the poseidon axioms, consumed per grid node
+exactly as in the 1.3b capstones. The `[Fintype]` instances live only in this counting
+layer, never on a core statement.
 -/
 
 namespace Kimchi.Verifier
@@ -910,5 +924,194 @@ theorem kimchiPallas_sound_error (σ : SRS IpaPallas.Point) (vk : KimchiPallas.V
             ∃ wTab : Fin n → Fin 15 → Fq, Satisfies idx (pubView idx pub) wTab :=
   kimchiBundle_sound_error σ idx hk hbind vk.comms hvk (pubView idx pub) wC
     (kimchiBatchAcc_bundle_pallas (pubView idx pub) T) tOf htdeg
+
+/-! ## The grid from density (forking stage (a))
+
+The combinatorial core of the forking lemma (BCC+16 Theorem 6, Bulletproofs Theorem 6),
+PROVED — no new axiom: a prover *strategy* `P : (ξ, r) ↦ opening proof` for one fixed
+batched claim that the deployed verifier accepts on enough `(ξ, r)` pairs yields the
+43×2 extraction grid `KimchiBatchAcc`, hence the full capstone conclusions. The engine
+is `Kimchi.Quotient.exists_rectangle` (`Kimchi/Quotient/Rectangle.lean`), a K×2
+combinatorial rectangle inside a dense subset of a product —
+the heavy-rows / Zarankiewicz / Kővári–Sós–Turán counting idea: Cauchy–Schwarz over
+the row degrees bounds the ordered-distinct-column-pair count from below, and
+pigeonhole over the `|β|·(|β|−1)` ordered pairs hands one pair shared by `K` distinct
+rows. Extracting a K×2 PRODUCT grid costs a quadratic (√) density threshold: the
+`(K−1)·|α|·|β|·(|β|−1) < |S|·(|S|−|α|)` hypothesis asks for accepting density
+`≳ √(42/|F|)` — about `2⁻¹²⁴` at the `≈ 2²⁵⁴` Pasta scalar fields — versus the
+`~ K·|α|·|β|`-count threshold of a (K,2)-TREE of transcripts, which is why the bound is
+what it is. What remains hypothesis in the density capstones: the density itself,
+DL-binding (`hbind`), and the key correspondence (`hvk`); Fiat–Shamir stays with the
+poseidon axioms, consumed per grid node exactly as in the 1.3b capstones. The
+`[Fintype]` instances belong to this counting layer only — no core statement grows one.
+-/
+
+/-- The accepting set of a batch-opening strategy: the (ξ, r) pairs at which the
+deployed verifier accepts the strategy's opening of the fixed batch (cs, es) at the two
+points. The membership predicate is the deployed acceptance `Ipa.verify … = true`
+itself — a `Bool` equality, decidable without ever reducing `Ipa.verify`. Project-local:
+the strategy-side object the density capstones count. -/
+def batchAcceptSet (C : Ipa.CommitmentCurve) [Module C.ScalarField C.Point]
+    (σ : SRS C.Point) (cs : Array C.Point) (es : Array (Array C.ScalarField))
+    (x₀ x₁ : C.ScalarField) (P : C.ScalarField → C.ScalarField → Ipa.Proof C)
+    [Fintype C.ScalarField] [DecidableEq C.ScalarField] :
+    Finset (C.ScalarField × C.ScalarField) :=
+  Finset.univ.filter fun p =>
+    Ipa.verify C σ (Ipa.mkInput C cs #[x₀, x₁] es p.1 p.2 (P p.1 p.2)) = true
+
+/-- **The grid from density**: a strategy accepted on enough (ξ, r) pairs yields the
+accumulated grid — the forking lemma's combinatorial stage, proved. 42 = 43 − 1; the
+threshold is the `exists_rectangle` one at K = 43. The grid is built with the local
+`zC` literally as its accumulator field, so the conclusion pins `T.zC = zC` by `rfl` —
+exactly the link the density capstones need to state their conclusions at the local
+batch assembly `batchC wC zC comms`. Project-local: the stage-(a) bridge from strategy
++ density to the special-soundness hypothesis of the concrete capstones. -/
+theorem kimchiBatchAcc_of_density (C : Ipa.CommitmentCurve)
+    [Module C.ScalarField C.Point] [Fintype C.ScalarField] [DecidableEq C.ScalarField]
+    {n : ℕ} [NeZero n] (σ : SRS C.Point) (idx : Index C.ScalarField n)
+    (comms : IndexComms C.Point) (wC : Fin 15 → C.Point) (zC : C.Point)
+    (ζ₀ : C.ScalarField) (E₀ : Fin 43 → Fin 2 → C.ScalarField)
+    (cs : Array C.Point) (hcsSize : cs.size = 43)
+    (hcs : ∀ i : Fin 43, cs.getD (i : ℕ) 0 = batchC wC zC comms i)
+    (es : Array (Array C.ScalarField))
+    (hes : ∀ (i : Fin 43) (j : Fin 2), (es[(i : ℕ)]!)[(j : ℕ)]! = E₀ i j)
+    (P : C.ScalarField → C.ScalarField → Ipa.Proof C)
+    (hdens : 42 * Fintype.card C.ScalarField
+        * (Fintype.card C.ScalarField * (Fintype.card C.ScalarField - 1))
+        < (batchAcceptSet C σ cs es ζ₀ (idx.omega * ζ₀) P).card
+          * ((batchAcceptSet C σ cs es ζ₀ (idx.omega * ζ₀) P).card
+              - Fintype.card C.ScalarField)) :
+    ∃ T : KimchiBatchAcc C σ idx comms wC, T.zC = zC := by
+  obtain ⟨ξ₀, b₁, b₂, hξ, hbne, hmem⟩ :=
+    Kimchi.Quotient.exists_rectangle
+      (batchAcceptSet C σ cs es ζ₀ (idx.omega * ζ₀) P) 43 (by
+      have h42 : (43 : ℕ) - 1 = 42 := rfl
+      rw [h42]
+      exact hdens)
+  have hr : Function.Injective ![b₁, b₂] := by
+    intro u v huv
+    fin_cases u <;> fin_cases v <;> simp_all
+  have hacc : ∀ (i : Fin 43) (j : Fin 2),
+      Ipa.verify C σ (Ipa.mkInput C cs #[ζ₀, idx.omega * ζ₀] es (ξ₀ i) (![b₁, b₂] j)
+        (P (ξ₀ i) (![b₁, b₂] j))) = true := by
+    intro i j
+    fin_cases j
+    · simpa [batchAcceptSet, Finset.mem_filter] using (hmem i).1
+    · simpa [batchAcceptSet, Finset.mem_filter] using (hmem i).2
+  exact ⟨⟨zC, ζ₀, E₀, ξ₀, hξ, ![b₁, b₂], hr, cs, hcsSize, hcs, es, hes,
+    fun i j => P (ξ₀ i) (![b₁, b₂] j), hacc⟩, rfl⟩
+
+/-- **Density soundness of the deployed Vesta kimchi verifier** (forking stage (a)):
+`kimchiVesta_sound` with the grid HYPOTHESIS replaced by strategy + density — a
+batch-opening strategy `P` whose accepting set at the reference points `(ζ₀, ω·ζ₀)` is
+dense enough (`hdens`, the `exists_rectangle` threshold at K = 43: accepting density
+`≳ √(42/|F|)`, about `2⁻¹²⁴` at the Pasta scalar field) yields the four bad sets and
+the guarded consumer implication, VERBATIM the 1.3b conclusion at the LOCAL batch
+assembly `batchC wC zC vk.comms`. No `KimchiBatchAcc` appears among the hypotheses:
+the grid is constructed by `kimchiBatchAcc_of_density`. The trust story is otherwise
+`kimchiVesta_sound`'s — `poseidon_fiat_shamir_vesta` per grid node, DL-binding, key
+correspondence. Project-local: the Vesta density root. -/
+theorem kimchiVesta_sound_density (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
+    (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
+    (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
+    (hpub : pub.size = idx.publicCount)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
+    (wC : Fin 15 → IpaVesta.Point) (zC : IpaVesta.Point) (ζ₀ : Fp)
+    (E₀ : Fin 43 → Fin 2 → Fp)
+    (cs : Array IpaVesta.Point) (hcsSize : cs.size = 43)
+    (hcs : ∀ i : Fin 43, cs.getD (i : ℕ) 0 = batchC wC zC vk.comms i)
+    (es : Array (Array Fp))
+    (hes : ∀ (i : Fin 43) (j : Fin 2), (es[(i : ℕ)]!)[(j : ℕ)]! = E₀ i j)
+    (P : Fp → Fp → Ipa.Proof IpaVesta.curve)
+    (hdens : 42 * Fintype.card IpaVesta.curve.ScalarField
+        * (Fintype.card IpaVesta.curve.ScalarField
+            * (Fintype.card IpaVesta.curve.ScalarField - 1))
+        < (batchAcceptSet IpaVesta.curve σ cs es ζ₀ (idx.omega * ζ₀) P).card
+          * ((batchAcceptSet IpaVesta.curve σ cs es ζ₀ (idx.omega * ζ₀) P).card
+              - Fintype.card IpaVesta.curve.ScalarField)) :
+    ∃ (badB : Finset Fp) (badG : Fp → Finset Fp) (badA : Fp → Fp → Finset Fp)
+        (badZ : Fp → Fp → Fp → Polynomial Fp → Finset Fp),
+      (badB.card ≤ 7 * (n - idx.zkRows)
+        ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
+        ∧ (∀ β γ,
+            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
+        ∧ (∀ β γ α (t : Polynomial Fp), t.natDegree < 7 * n →
+            (badZ β γ α t).card ≤ Index.degreeBound n))
+      ∧ ∀ (β γ α : Fp) (t : Polynomial Fp) (ζ : Fp)
+          (E : Fin 43 → Fin 2 → Fp) (ξ : Fin 43 → Fp) (r : Fin 2 → Fp)
+          (A : Fin 43 → Fin 2 → Prop),
+          β ∉ badB → γ ∉ badG β → α ∉ badA β γ → ζ ∉ badZ β γ α t →
+          ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) →
+          t.natDegree < 7 * n →
+          Function.Injective ξ → Function.Injective r →
+          (∀ (i : Fin 43) (j : Fin 2),
+            FiatShamirTreeB σ (combinedCommitment (ξ i) (batchC wC zC vk.comms))
+              (combinedEvalVector (2 ^ σ.k) (r j) ![ζ, idx.omega * ζ])
+              (combinedInnerProduct (ξ i) (r j) E) (A i j)) →
+          (∀ i j, A i j) →
+          (permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
+              * (idx.sigmaPoly 6).eval ζ
+            - (ζ ^ n - 1) * t.eval ζ
+            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
+                ζ (-((idx.pubPoly (pubView idx pub)).eval ζ)) (claimedEvals E)) →
+          ∃ wTab : Fin n → Fin 15 → Fp, Satisfies idx (pubView idx pub) wTab := by
+  obtain ⟨T, hzC⟩ := kimchiBatchAcc_of_density IpaVesta.curve σ idx vk.comms wC zC
+    ζ₀ E₀ cs hcsSize hcs es hes P hdens
+  rw [← hzC]
+  exact kimchiVesta_sound σ vk pub idx hk hvk hpub hbind wC T
+
+/-- **Density soundness of the deployed Pallas kimchi verifier.** The Pallas-side twin
+of `kimchiVesta_sound_density`: strategy + density yield the VERBATIM 1.3b conclusion
+of `kimchiPallas_sound` at the LOCAL batch assembly `batchC wC zC vk.comms`, over
+`Fq`/`IpaPallas`, the per-node Fiat–Shamir from `poseidon_fiat_shamir_pallas`.
+Project-local: the Pallas density root. -/
+theorem kimchiPallas_sound_density (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
+    (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
+    (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
+    (hpub : pub.size = idx.publicCount)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
+    (wC : Fin 15 → IpaPallas.Point) (zC : IpaPallas.Point) (ζ₀ : Fq)
+    (E₀ : Fin 43 → Fin 2 → Fq)
+    (cs : Array IpaPallas.Point) (hcsSize : cs.size = 43)
+    (hcs : ∀ i : Fin 43, cs.getD (i : ℕ) 0 = batchC wC zC vk.comms i)
+    (es : Array (Array Fq))
+    (hes : ∀ (i : Fin 43) (j : Fin 2), (es[(i : ℕ)]!)[(j : ℕ)]! = E₀ i j)
+    (P : Fq → Fq → Ipa.Proof IpaPallas.curve)
+    (hdens : 42 * Fintype.card IpaPallas.curve.ScalarField
+        * (Fintype.card IpaPallas.curve.ScalarField
+            * (Fintype.card IpaPallas.curve.ScalarField - 1))
+        < (batchAcceptSet IpaPallas.curve σ cs es ζ₀ (idx.omega * ζ₀) P).card
+          * ((batchAcceptSet IpaPallas.curve σ cs es ζ₀ (idx.omega * ζ₀) P).card
+              - Fintype.card IpaPallas.curve.ScalarField)) :
+    ∃ (badB : Finset Fq) (badG : Fq → Finset Fq) (badA : Fq → Fq → Finset Fq)
+        (badZ : Fq → Fq → Fq → Polynomial Fq → Finset Fq),
+      (badB.card ≤ 7 * (n - idx.zkRows)
+        ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
+        ∧ (∀ β γ,
+            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
+        ∧ (∀ β γ α (t : Polynomial Fq), t.natDegree < 7 * n →
+            (badZ β γ α t).card ≤ Index.degreeBound n))
+      ∧ ∀ (β γ α : Fq) (t : Polynomial Fq) (ζ : Fq)
+          (E : Fin 43 → Fin 2 → Fq) (ξ : Fin 43 → Fq) (r : Fin 2 → Fq)
+          (A : Fin 43 → Fin 2 → Prop),
+          β ∉ badB → γ ∉ badG β → α ∉ badA β γ → ζ ∉ badZ β γ α t →
+          ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) →
+          t.natDegree < 7 * n →
+          Function.Injective ξ → Function.Injective r →
+          (∀ (i : Fin 43) (j : Fin 2),
+            FiatShamirTreeB σ (combinedCommitment (ξ i) (batchC wC zC vk.comms))
+              (combinedEvalVector (2 ^ σ.k) (r j) ![ζ, idx.omega * ζ])
+              (combinedInnerProduct (ξ i) (r j) E) (A i j)) →
+          (∀ i j, A i j) →
+          (permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
+              * (idx.sigmaPoly 6).eval ζ
+            - (ζ ^ n - 1) * t.eval ζ
+            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
+                ζ (-((idx.pubPoly (pubView idx pub)).eval ζ)) (claimedEvals E)) →
+          ∃ wTab : Fin n → Fin 15 → Fq, Satisfies idx (pubView idx pub) wTab := by
+  obtain ⟨T, hzC⟩ := kimchiBatchAcc_of_density IpaPallas.curve σ idx vk.comms wC zC
+    ζ₀ E₀ cs hcsSize hcs es hes P hdens
+  rw [← hzC]
+  exact kimchiPallas_sound σ vk pub idx hk hvk hpub hbind wC T
 
 end Kimchi.Verifier
