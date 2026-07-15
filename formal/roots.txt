@@ -170,6 +170,11 @@ Kimchi.Index.Index.copy_soundness
 -- `kimchiBundle_sound` is the idealized composition: the transcript bundle is the
 -- special-soundness HYPOTHESIS (the tree-of-accepting-transcripts idiom), consumed by one
 -- application of the core; the concrete Fiat-Shamir capstone discharges it.
+-- `kimchiProof_sound_of_openings` is the openings-interface seam (forking b1): the shared
+-- junction of the extraction models — the standard-model path (density → rectangle →
+-- batch_soundnessA) and the algebraic-prover path (representations carried with messages) both
+-- discharge it. Reference side = pure commitment-knowledge; consumer side = per-row openings.
+Kimchi.Verifier.kimchiProof_sound_of_openings
 Kimchi.Verifier.kimchiProof_sound
 Kimchi.Verifier.kimchiBundle_sound
 

@@ -91,6 +91,7 @@ def roots : List Name :=
     `Kimchi.Verifier.kimchiVerify_reflects, `Kimchi.Verifier.barycentricPubEval_eq,
     `Kimchi.Verifier.Equation.verifierEquation_iff,
     `Kimchi.Verifier.Equation.satisfies_of_verifierEquation,
+    `Kimchi.Verifier.kimchiProof_sound_of_openings,
     `Kimchi.Verifier.kimchiProof_sound,
     `Kimchi.Verifier.kimchiBundle_sound,
     `Kimchi.Verifier.kimchiVesta_sound, `Kimchi.Verifier.kimchiPallas_sound,
