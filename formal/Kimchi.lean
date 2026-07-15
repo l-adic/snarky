@@ -48,3 +48,4 @@ import Kimchi.Verifier.KimchiSound
 import Kimchi.Verifier.Equation
 import Kimchi.Verifier.Reflection
 import Kimchi.Verifier.Reflect
+import Kimchi.Verifier.Capstone

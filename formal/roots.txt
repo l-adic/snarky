@@ -167,4 +167,8 @@ Kimchi.Index.Index.copy_soundness
 -- The capstone: executable-verifier acceptance ⟹ the index is satisfiable, at every challenge
 -- tuple outside the bounded (counting Schwartz–Zippel) bad sets. Combines the Fiat-Shamir
 -- junction, the counting quotient soundness, and the IPA special-soundness extraction.
+-- `kimchiBundle_sound` is the idealized composition: the transcript bundle is the
+-- special-soundness HYPOTHESIS (the tree-of-accepting-transcripts idiom), consumed by one
+-- application of the core; the concrete Fiat-Shamir capstone discharges it.
 Kimchi.Verifier.kimchiProof_sound
+Kimchi.Verifier.kimchiBundle_sound
