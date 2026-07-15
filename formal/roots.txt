@@ -189,3 +189,13 @@ Kimchi.Verifier.kimchiPallas_sound
 -- verifier checks only its scalar image through the Maller ft row).
 Kimchi.Verifier.kimchiVesta_run_sound
 Kimchi.Verifier.kimchiPallas_run_sound
+
+-- The B/|F| soundness-error reading of the interactive layer: for every adaptive quotient
+-- strategy, all but soundnessErrorBound·|F|³ of the |F|⁴ challenge tuples (a
+-- soundnessErrorBound/|F| fraction — the clause is in the statement) are good, with no residual
+-- side conditions. Pure counting over the bad sets; the run-level corollaries deliberately do
+-- not carry this reading (a fixed run's sponge outputs are not random — that reading is the
+-- Fiat-Shamir heuristic itself).
+Kimchi.Verifier.kimchiBundle_sound_error
+Kimchi.Verifier.kimchiVesta_sound_error
+Kimchi.Verifier.kimchiPallas_sound_error

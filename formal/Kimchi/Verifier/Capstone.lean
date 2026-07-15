@@ -73,6 +73,23 @@ reflection (`kimchiVerify_reflects`) it pins the wire shapes of the run
 itself never needs the shape guards (the capstone quantifies over arbitrary `wC`), so
 `hacc` — like `hzrun`, the pin tying the reference grid's accumulator to the run's
 `z` commitment — enters as a deliberate statement pin.
+
+The file closes with the **soundness-error reading** (capstone 1.4):
+`kimchiBundle_sound_error` converts the four bad-set cardinalities of
+`kimchiBundle_sound` into ONE bad-tuple count over the challenge space `F⁴` — at most
+`soundnessErrorBound n zkRows · |F|³` of the `|F|⁴` challenge tuples `(β, γ, α, ζ)` are
+bad, so under uniform challenges the interactive layer errs with probability at most
+`soundnessErrorBound n zkRows / |F|` (the fraction clause of the statement; the proof
+is pure counting — a union bound over the four challenge axes plus the two degenerate
+`ζ` values, no probability library). The quotient strategy `tOf` is ADAPTIVE — a
+function of `(β, γ, α)`, matching the Fiat–Shamir message order in which the prover
+commits to `t` only after seeing those challenges — and the degenerate values `ζ = 1`
+and `ζ = ω^(n−zkRows)` join the union bound, so a good tuple carries NO residual side
+conditions: the consumer tail after `∉ badTuples` is verbatim `kimchiBundle_sound`'s.
+The run-level corollaries (`*_run_sound`) deliberately do NOT get this wrapper: a fixed
+run's sponge outputs are not random, so a probability reading over them IS the
+Fiat–Shamir heuristic itself — that stays the declared assumption
+(`poseidon_fiat_shamir_*`), never a theorem.
 -/
 
 namespace Kimchi.Verifier
@@ -625,5 +642,289 @@ theorem kimchiPallas_run_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
   have h := T'.nodeFS i j (poseidon_fiat_shamir_pallas σ (T'.nodeInput i j))
   simp only [hzC, hζ'] at h
   exact h
+
+/-! ## The soundness error (capstone 1.4)
+
+The counting kernel below is elementary and generic: a filtered-tuple cardinality over
+`κ × κ × κ × κ` is bounded slice by slice — one lemma per coordinate position, each a
+`Finset.card_filter`/`Fintype.sum_prod_type` computation — and the six slices of the
+bad-tuple predicate (four bad-set memberships, two degenerate `ζ` values) are then
+assembled by `Finset.filter_or` + `Finset.card_union_le`. -/
+
+/-- One product step of the tuple counting: if every `a`-slice of a predicate on
+`α × β` has at most `m` members, the filtered product has at most `|α| · m`.
+Project-local: the recursion step of the position bounds below. -/
+private theorem card_filter_pair {α β : Type*} [Fintype α] [Fintype β]
+    (p : α → β → Prop) [∀ a b, Decidable (p a b)] {m : ℕ}
+    (h : ∀ a, (Finset.univ.filter (p a)).card ≤ m) :
+    (Finset.univ.filter fun x : α × β => p x.1 x.2).card ≤ Fintype.card α * m := by
+  rw [Finset.card_filter, Fintype.sum_prod_type]
+  have step : ∀ a : α, (∑ b : β, if p a b then 1 else 0) ≤ m := by
+    intro a
+    rw [← Finset.card_filter]
+    exact h a
+  calc (∑ a : α, ∑ b : β, if p a b then 1 else 0)
+      ≤ ∑ _a : α, m := Finset.sum_le_sum fun a _ => step a
+    _ = Fintype.card α * m := by
+        rw [Finset.sum_const, Finset.card_univ, smul_eq_mul]
+
+/-- The head slice of the tuple counting: filtering `α × β` by a condition on the
+first coordinate alone counts `|t| · |β|` exactly. -/
+private theorem card_filter_head {α β : Type*} [Fintype α] [Fintype β] [DecidableEq α]
+    (t : Finset α) :
+    (Finset.univ.filter fun x : α × β => x.1 ∈ t).card = t.card * Fintype.card β := by
+  have h : (Finset.univ.filter fun x : α × β => x.1 ∈ t) = t ×ˢ Finset.univ := by
+    ext x
+    simp
+  rw [h, Finset.card_product, Finset.card_univ]
+
+/-- Position-1 slice bound: a condition on the first coordinate of a quadruple cuts
+out at most `m · |κ|³` tuples. -/
+private theorem card_filter_pos1 {κ : Type*} [Fintype κ] [DecidableEq κ]
+    {s : Finset κ} {m : ℕ} (hs : s.card ≤ m) :
+    (Finset.univ.filter fun x : κ × κ × κ × κ => x.1 ∈ s).card
+      ≤ m * Fintype.card κ ^ 3 := by
+  rw [card_filter_head]
+  calc s.card * Fintype.card (κ × κ × κ) ≤ m * Fintype.card (κ × κ × κ) :=
+        Nat.mul_le_mul_right _ hs
+    _ = m * Fintype.card κ ^ 3 := by simp only [Fintype.card_prod]; ring
+
+/-- Position-2 slice bound: a condition on the second coordinate of a quadruple,
+depending on the first, cuts out at most `m · |κ|³` tuples. -/
+private theorem card_filter_pos2 {κ : Type*} [Fintype κ] [DecidableEq κ]
+    {s : κ → Finset κ} {m : ℕ} (hs : ∀ a, (s a).card ≤ m) :
+    (Finset.univ.filter fun x : κ × κ × κ × κ => x.2.1 ∈ s x.1).card
+      ≤ m * Fintype.card κ ^ 3 := by
+  have h := card_filter_pair (fun (a : κ) (y : κ × κ × κ) => y.1 ∈ s a)
+    (m := m * Fintype.card κ ^ 2) (fun a => by
+      rw [card_filter_head]
+      calc (s a).card * Fintype.card (κ × κ) ≤ m * Fintype.card (κ × κ) :=
+            Nat.mul_le_mul_right _ (hs a)
+        _ = m * Fintype.card κ ^ 2 := by simp only [Fintype.card_prod]; ring)
+  calc (Finset.univ.filter fun x : κ × κ × κ × κ => x.2.1 ∈ s x.1).card
+      ≤ Fintype.card κ * (m * Fintype.card κ ^ 2) := h
+    _ = m * Fintype.card κ ^ 3 := by ring
+
+/-- Position-3 slice bound: a condition on the third coordinate of a quadruple,
+depending on the first two, cuts out at most `m · |κ|³` tuples. -/
+private theorem card_filter_pos3 {κ : Type*} [Fintype κ] [DecidableEq κ]
+    {s : κ → κ → Finset κ} {m : ℕ} (hs : ∀ a b, (s a b).card ≤ m) :
+    (Finset.univ.filter fun x : κ × κ × κ × κ => x.2.2.1 ∈ s x.1 x.2.1).card
+      ≤ m * Fintype.card κ ^ 3 := by
+  have h := card_filter_pair (fun (a : κ) (y : κ × κ × κ) => y.2.1 ∈ s a y.1)
+    (m := m * Fintype.card κ ^ 2) (fun a => by
+      have h2 := card_filter_pair (fun (b : κ) (z : κ × κ) => z.1 ∈ s a b)
+        (m := m * Fintype.card κ) (fun b => by
+          rw [card_filter_head]
+          exact Nat.mul_le_mul_right _ (hs a b))
+      calc (Finset.univ.filter fun y : κ × κ × κ => y.2.1 ∈ s a y.1).card
+          ≤ Fintype.card κ * (m * Fintype.card κ) := h2
+        _ = m * Fintype.card κ ^ 2 := by ring)
+  calc (Finset.univ.filter fun x : κ × κ × κ × κ => x.2.2.1 ∈ s x.1 x.2.1).card
+      ≤ Fintype.card κ * (m * Fintype.card κ ^ 2) := h
+    _ = m * Fintype.card κ ^ 3 := by ring
+
+/-- Position-4 slice bound: a condition on the last coordinate of a quadruple,
+depending on the first three, cuts out at most `m · |κ|³` tuples. -/
+private theorem card_filter_pos4 {κ : Type*} [Fintype κ] [DecidableEq κ]
+    {s : κ → κ → κ → Finset κ} {m : ℕ} (hs : ∀ a b c, (s a b c).card ≤ m) :
+    (Finset.univ.filter fun x : κ × κ × κ × κ =>
+      x.2.2.2 ∈ s x.1 x.2.1 x.2.2.1).card ≤ m * Fintype.card κ ^ 3 := by
+  have h := card_filter_pair (fun (a : κ) (y : κ × κ × κ) => y.2.2 ∈ s a y.1 y.2.1)
+    (m := m * Fintype.card κ ^ 2) (fun a => by
+      have h2 := card_filter_pair (fun (b : κ) (z : κ × κ) => z.2 ∈ s a b z.1)
+        (m := m * Fintype.card κ) (fun b => by
+          have h3 := card_filter_pair (fun (c : κ) (d : κ) => d ∈ s a b c)
+            (m := m) (fun c => by rw [Finset.filter_univ_mem]; exact hs a b c)
+          calc (Finset.univ.filter fun z : κ × κ => z.2 ∈ s a b z.1).card
+              ≤ Fintype.card κ * m := h3
+            _ = m * Fintype.card κ := by ring)
+      calc (Finset.univ.filter fun y : κ × κ × κ => y.2.2 ∈ s a y.1 y.2.1).card
+          ≤ Fintype.card κ * (m * Fintype.card κ) := h2
+        _ = m * Fintype.card κ ^ 2 := by ring)
+  calc (Finset.univ.filter fun x : κ × κ × κ × κ =>
+        x.2.2.2 ∈ s x.1 x.2.1 x.2.2.1).card
+      ≤ Fintype.card κ * (m * Fintype.card κ ^ 2) := h
+    _ = m * Fintype.card κ ^ 3 := by ring
+
+/-- Degenerate-value slice bound: pinning the last coordinate of a quadruple to one
+value cuts out at most `1 · |κ|³` tuples (stated with the `1 ·` so the six slices
+assemble uniformly). -/
+private theorem card_filter_last_eq {κ : Type*} [Fintype κ] [DecidableEq κ] {c : κ} :
+    (Finset.univ.filter fun x : κ × κ × κ × κ => x.2.2.2 = c).card
+      ≤ 1 * Fintype.card κ ^ 3 := by
+  have he : (Finset.univ.filter fun x : κ × κ × κ × κ => x.2.2.2 = c)
+      = Finset.univ.filter fun x : κ × κ × κ × κ => x.2.2.2 ∈ ({c} : Finset κ) := by
+    ext x
+    simp
+  rw [he]
+  exact card_filter_pos4 (s := fun _ _ _ => ({c} : Finset κ)) (m := 1)
+    fun _ _ _ => le_of_eq (Finset.card_singleton c)
+
+/-- The fraction reading of a `B · |F|³` tuple bound: dividing by the `|F|⁴` tuples of
+the challenge space yields the error fraction `B / |F|`. -/
+private theorem card_div_pow_le {F : Type*} [Fintype F] [Nonempty F]
+    (S : Finset (F × F × F × F)) (B : ℕ)
+    (h : S.card ≤ B * Fintype.card F ^ 3) :
+    (S.card : ℚ) / (Fintype.card F : ℚ) ^ 4 ≤ (B : ℚ) / (Fintype.card F : ℚ) := by
+  have hpos : (0 : ℚ) < (Fintype.card F : ℚ) := by exact_mod_cast Fintype.card_pos
+  have hc : (S.card : ℚ) ≤ (B : ℚ) * (Fintype.card F : ℚ) ^ 3 := by exact_mod_cast h
+  calc (S.card : ℚ) / (Fintype.card F : ℚ) ^ 4
+      ≤ ((B : ℚ) * (Fintype.card F : ℚ) ^ 3) / (Fintype.card F : ℚ) ^ 4 := by gcongr
+    _ = (B : ℚ) / (Fintype.card F : ℚ) := by field_simp
+
+/-- The union-bound numerator of the soundness error: the four bad-set cardinality
+bounds of `kimchiBundle_sound` — `7·(n − zkRows)` for `β`, the same for `γ`,
+`n·(gateAlphaCount + permAlphaCount − 1)` for `α`, `degreeBound n` for `ζ` — plus the
+two degenerate `ζ` values (`1` and `ω^(n − zkRows)`). Out of the `|F|⁴` challenge
+tuples, at most `soundnessErrorBound n zkRows · |F|³` are bad
+(`kimchiBundle_sound_error`), so the interactive soundness error is at most
+`soundnessErrorBound n zkRows / |F|`. Project-local: kept symbolic — the four capstone
+bounds plus `2` — so the error constant reads off the statement. -/
+def soundnessErrorBound (n zkRows : ℕ) : ℕ :=
+  7 * (n - zkRows) + 7 * (n - zkRows)
+    + n * (Index.gateAlphaCount + Index.permAlphaCount - 1)
+    + Index.degreeBound n + 2
+
+/-- **The soundness error of the interactive layer** (capstone 1.4): the four bad-set
+cardinalities of `kimchiBundle_sound` collapse into ONE bad-tuple count over the
+challenge space `F⁴` — a set `badTuples` of at most
+`soundnessErrorBound n zkRows · |F|³` challenge tuples (union bound over the four
+challenge axes plus the two degenerate `ζ` values), i.e. a `soundnessErrorBound / |F|`
+fraction of all `|F|⁴` tuples (the second clause) — outside of which the consumer
+implication holds with NO residual side conditions: the tail after `∉ badTuples` is
+verbatim `kimchiBundle_sound`'s, with the memberships, both `ζ ≠` guards, and the
+degree bound absorbed into `badTuples`. The quotient strategy `tOf` is ADAPTIVE — a
+function of `(β, γ, α)`, the Fiat–Shamir order in which the prover commits to `t` only
+after those challenges — with its degree bound `htdeg` a strategy-level hypothesis.
+Pure counting; no probability library enters. Project-local: the error-constant
+reading of the idealized composition. -/
+theorem kimchiBundle_sound_error {F G : Type*} [Field F] [Fintype F] [DecidableEq F]
+    [AddCommGroup G] [Module F G] {n : ℕ} [NeZero n] (σ : SRS G)
+    (idx : Index F n) (hk : 2 ^ σ.k = n)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
+    (comms : IndexComms G) (hvk : VKCorresponds σ comms idx)
+    (pub : Fin idx.publicCount → F) (wC : Fin 15 → G)
+    (T : KimchiBundle σ idx pub comms wC)
+    (tOf : F → F → F → Polynomial F)
+    (htdeg : ∀ β γ α, (tOf β γ α).natDegree < 7 * n) :
+    ∃ badTuples : Finset (F × F × F × F),
+      badTuples.card ≤ soundnessErrorBound n idx.zkRows * Fintype.card F ^ 3
+      ∧ (badTuples.card : ℚ) / (Fintype.card F : ℚ) ^ 4
+          ≤ (soundnessErrorBound n idx.zkRows : ℚ) / (Fintype.card F : ℚ)
+      ∧ ∀ β γ α ζ : F, (β, γ, α, ζ) ∉ badTuples →
+          ∀ (E : Fin 43 → Fin 2 → F) (ξ : Fin 43 → F) (r : Fin 2 → F)
+            (A : Fin 43 → Fin 2 → Prop),
+            Function.Injective ξ → Function.Injective r →
+            (∀ (i : Fin 43) (j : Fin 2),
+              FiatShamirTreeB σ (combinedCommitment (ξ i) (batchC wC T.zC comms))
+                (combinedEvalVector (2 ^ σ.k) (r j) ![ζ, idx.omega * ζ])
+                (combinedInnerProduct (ξ i) (r j) E) (A i j)) →
+            (∀ i j, A i j) →
+            (permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
+                * (idx.sigmaPoly 6).eval ζ
+              - (ζ ^ n - 1) * (tOf β γ α).eval ζ
+              = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
+                  ζ (-((idx.pubPoly pub).eval ζ)) (claimedEvals E)) →
+            ∃ wTab : Fin n → Fin 15 → F, Satisfies idx pub wTab := by
+  obtain ⟨badB, badG, badA, badZ, ⟨hB, hG, hA, hZ⟩, himp⟩ :=
+    kimchiBundle_sound σ idx hk hbind comms hvk pub wC T
+  have hle : ∀ {s t : Finset (F × F × F × F)} {a b : ℕ}, s.card ≤ a → t.card ≤ b →
+      (s ∪ t).card ≤ a + b := fun hs ht =>
+    le_trans (Finset.card_union_le _ _) (Nat.add_le_add hs ht)
+  have hcard : (Finset.univ.filter fun x : F × F × F × F =>
+      x.1 ∈ badB ∨ x.2.1 ∈ badG x.1 ∨ x.2.2.1 ∈ badA x.1 x.2.1
+        ∨ x.2.2.2 ∈ badZ x.1 x.2.1 x.2.2.1 (tOf x.1 x.2.1 x.2.2.1)
+        ∨ x.2.2.2 = 1 ∨ x.2.2.2 = idx.omega ^ (n - idx.zkRows)).card
+      ≤ soundnessErrorBound n idx.zkRows * Fintype.card F ^ 3 := by
+    simp only [Finset.filter_or]
+    refine le_trans (hle (card_filter_pos1 hB) (hle (card_filter_pos2 hG)
+      (hle (card_filter_pos3 hA)
+        (hle (card_filter_pos4 fun a b c => hZ a b c (tOf a b c) (htdeg a b c))
+          (hle card_filter_last_eq card_filter_last_eq))))) (le_of_eq ?_)
+    simp only [soundnessErrorBound]
+    ring
+  refine ⟨_, hcard, card_div_pow_le _ _ hcard, ?_⟩
+  intro β γ α ζ hnot E ξ r A hξ hr hFS hacc heq
+  have hmem : ¬(β ∈ badB ∨ γ ∈ badG β ∨ α ∈ badA β γ
+      ∨ ζ ∈ badZ β γ α (tOf β γ α) ∨ ζ = 1 ∨ ζ = idx.omega ^ (n - idx.zkRows)) :=
+    fun h => hnot (Finset.mem_filter.mpr ⟨Finset.mem_univ _, h⟩)
+  simp only [not_or] at hmem
+  obtain ⟨h1, h2, h3, h4, h5, h6⟩ := hmem
+  exact himp β γ α (tOf β γ α) ζ E ξ r A h1 h2 h3 h4 h5 h6 (htdeg β γ α) hξ hr
+    hFS hacc heq
+
+/-- **The soundness error of the deployed Vesta kimchi verifier**:
+`kimchiVesta_sound`'s conclusion in the bad-tuple form — one set of at most
+`soundnessErrorBound n zkRows · |F|³` challenge tuples (the `/ |F|` fraction clause
+included), outside of which the consumer implication holds at the adaptive quotient
+strategy `tOf` with no residual side conditions. One application of
+`kimchiBundle_sound_error` through the Vesta bridge; the trust story (the grid
+hypothesis `T`, the per-node `poseidon_fiat_shamir_vesta`, DL-binding) is exactly
+`kimchiVesta_sound`'s. Project-local: the Vesta error-constant root. -/
+theorem kimchiVesta_sound_error (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
+    (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
+    (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
+    (hpub : pub.size = idx.publicCount)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
+    (wC : Fin 15 → IpaVesta.Point)
+    (T : KimchiBatchAcc IpaVesta.curve σ idx vk.comms wC)
+    (tOf : Fp → Fp → Fp → Polynomial Fp)
+    (htdeg : ∀ β γ α, (tOf β γ α).natDegree < 7 * n) :
+    ∃ badTuples : Finset (Fp × Fp × Fp × Fp),
+      badTuples.card ≤ soundnessErrorBound n idx.zkRows * Fintype.card Fp ^ 3
+      ∧ (badTuples.card : ℚ) / (Fintype.card Fp : ℚ) ^ 4
+          ≤ (soundnessErrorBound n idx.zkRows : ℚ) / (Fintype.card Fp : ℚ)
+      ∧ ∀ β γ α ζ : Fp, (β, γ, α, ζ) ∉ badTuples →
+          ∀ (E : Fin 43 → Fin 2 → Fp) (ξ : Fin 43 → Fp) (r : Fin 2 → Fp)
+            (A : Fin 43 → Fin 2 → Prop),
+            Function.Injective ξ → Function.Injective r →
+            (∀ (i : Fin 43) (j : Fin 2),
+              FiatShamirTreeB σ (combinedCommitment (ξ i) (batchC wC T.zC vk.comms))
+                (combinedEvalVector (2 ^ σ.k) (r j) ![ζ, idx.omega * ζ])
+                (combinedInnerProduct (ξ i) (r j) E) (A i j)) →
+            (∀ i j, A i j) →
+            (permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
+                * (idx.sigmaPoly 6).eval ζ
+              - (ζ ^ n - 1) * (tOf β γ α).eval ζ
+              = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
+                  ζ (-((idx.pubPoly (pubView idx pub)).eval ζ)) (claimedEvals E)) →
+            ∃ wTab : Fin n → Fin 15 → Fp, Satisfies idx (pubView idx pub) wTab :=
+  kimchiBundle_sound_error σ idx hk hbind vk.comms hvk (pubView idx pub) wC
+    (kimchiBatchAcc_bundle_vesta (pubView idx pub) T) tOf htdeg
+
+/-- **The soundness error of the deployed Pallas kimchi verifier.** The Pallas-side
+twin of `kimchiVesta_sound_error`: `kimchiBundle_sound_error` through the Pallas
+bridge, over `Fq`/`IpaPallas`. Project-local: the Pallas error-constant root. -/
+theorem kimchiPallas_sound_error (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
+    (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
+    (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
+    (hpub : pub.size = idx.publicCount)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
+    (wC : Fin 15 → IpaPallas.Point)
+    (T : KimchiBatchAcc IpaPallas.curve σ idx vk.comms wC)
+    (tOf : Fq → Fq → Fq → Polynomial Fq)
+    (htdeg : ∀ β γ α, (tOf β γ α).natDegree < 7 * n) :
+    ∃ badTuples : Finset (Fq × Fq × Fq × Fq),
+      badTuples.card ≤ soundnessErrorBound n idx.zkRows * Fintype.card Fq ^ 3
+      ∧ (badTuples.card : ℚ) / (Fintype.card Fq : ℚ) ^ 4
+          ≤ (soundnessErrorBound n idx.zkRows : ℚ) / (Fintype.card Fq : ℚ)
+      ∧ ∀ β γ α ζ : Fq, (β, γ, α, ζ) ∉ badTuples →
+          ∀ (E : Fin 43 → Fin 2 → Fq) (ξ : Fin 43 → Fq) (r : Fin 2 → Fq)
+            (A : Fin 43 → Fin 2 → Prop),
+            Function.Injective ξ → Function.Injective r →
+            (∀ (i : Fin 43) (j : Fin 2),
+              FiatShamirTreeB σ (combinedCommitment (ξ i) (batchC wC T.zC vk.comms))
+                (combinedEvalVector (2 ^ σ.k) (r j) ![ζ, idx.omega * ζ])
+                (combinedInnerProduct (ξ i) (r j) E) (A i j)) →
+            (∀ i j, A i j) →
+            (permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
+                * (idx.sigmaPoly 6).eval ζ
+              - (ζ ^ n - 1) * (tOf β γ α).eval ζ
+              = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
+                  ζ (-((idx.pubPoly (pubView idx pub)).eval ζ)) (claimedEvals E)) →
+            ∃ wTab : Fin n → Fin 15 → Fq, Satisfies idx (pubView idx pub) wTab :=
+  kimchiBundle_sound_error σ idx hk hbind vk.comms hvk (pubView idx pub) wC
+    (kimchiBatchAcc_bundle_pallas (pubView idx pub) T) tOf htdeg
 
 end Kimchi.Verifier
