@@ -1,5 +1,4 @@
 import Kimchi.Quotient.Accumulator
-import Kimchi.Quotient.Pinning
 import Kimchi.Quotient.Aggregate
 import Kimchi.Quotient.SchwartzZippel
 
@@ -27,7 +26,7 @@ indicator):
 The permutation is not an `Argument` instance: the aggregation reads the accumulator at
 two rows (`z(X)` and `z(ωX)`) and is gated by the complement of a row set rather than a
 selector column. Its soundness therefore composes the shared quotient machinery directly
-(`zH_dvd_of_evals`, `dvd_separation`, `zH_dvd_iff`) with two bespoke row lemmas: the
+(`zH_dvd_of_eval`, `dvd_separation`, `zH_dvd_iff`) with two bespoke row lemmas: the
 gate's nonvanishing off the masked rows, and the Lagrange pins.
 
 The conclusion feeds milestone 4: at the challenges `(β, γ)` the two sides are the pair
@@ -273,9 +272,9 @@ theorem soundness [DecidableEq F] {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n
       = ∏ j ∈ Finset.range (n - zkRows), (sigmaSide w σ β γ).eval (ω ^ j) := by
   haveI : NeZero n := ⟨Nat.pos_iff_ne_zero.mp hn⟩
   exact soundness_of_dvd hω hn hzk0 hzkn z w σ shifts β γ
-    (dvd_separation_sz hω hn (constraints ω zkRows z w σ shifts β γ
+    (dvd_separation hω hn (constraints ω zkRows z w σ shifts β γ
         (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩) α hα
-      (zH_dvd_of_eval_sz (aggregate α (constraints ω zkRows z w σ shifts β γ
+      (zH_dvd_of_eval (aggregate α (constraints ω zkRows z w σ shifts β γ
         (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)) t ζ hζ hcheck))
 
 

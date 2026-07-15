@@ -24,8 +24,8 @@ ONE quotient `t : Polynomial F`. The per-challenge `∀ s` quantifier is gone. T
 challenge is likewise a single `ζ : F` known to lie outside `badZetas <aggregate> t n` — the
 ζ-node family has been collapsed to one counting challenge, so the injective ζ vector, its
 degree bounds `D`, and the per-node `∀ p` are all gone. Every delegation goes through
-`Argument.soundness_sz`, the single-(α, ζ) analogue of `Kimchi.Quotient.Argument.soundness`
-composing `dvd_of_evalCheck_sz`.
+`Argument.soundness`, the single-(α, ζ) analogue of `Kimchi.Quotient.Argument.soundness`
+composing `dvd_of_evalCheck`.
 
 Two deliberate gaps, both Phase-B assembly work, documented where they bite:
 
@@ -75,7 +75,7 @@ theorem addComplete_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     ∀ i, (idx.gates i).typ = .completeAdd →
       Gate.AddComplete.Holds (AddComplete.rowWitness wTab i) := by
   intro i htyp
-  exact Argument.soundness_sz AddComplete.argument idx.omega_prim wTab wTab
+  exact Argument.soundness AddComplete.argument idx.omega_prim wTab wTab
     (idx.selectorRow .completeAdd) (idx.selectorRow_boolean _) α hα t ζ hζ
     hcheck i (idx.selectorRow_eq_one htyp)
 
@@ -100,7 +100,7 @@ theorem varBaseMul_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     ∀ i, (idx.gates i).typ = .varBaseMul →
       Gate.VarBaseMul.Holds (VarBaseMul.rowWitness wTab i) := by
   intro i htyp
-  exact Argument.soundness_sz VarBaseMul.argument idx.omega_prim wTab wTab
+  exact Argument.soundness VarBaseMul.argument idx.omega_prim wTab wTab
     (idx.selectorRow .varBaseMul) (idx.selectorRow_boolean _) α hα t ζ hζ
     hcheck i (idx.selectorRow_eq_one htyp)
 
@@ -126,7 +126,7 @@ theorem endoMul_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     ∀ i, (idx.gates i).typ = .endoMul →
       Gate.EndoMul.Holds idx.endoBase (EndoMul.rowWitness wTab i) := by
   intro i htyp
-  exact Argument.soundness_sz (EndoMul.argument idx.endoBase) idx.omega_prim wTab wTab
+  exact Argument.soundness (EndoMul.argument idx.endoBase) idx.omega_prim wTab wTab
     (idx.selectorRow .endoMul) (idx.selectorRow_boolean _) α hα t ζ hζ
     hcheck i (idx.selectorRow_eq_one htyp)
 
@@ -151,7 +151,7 @@ theorem endoScalar_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     ∀ i, (idx.gates i).typ = .endoScalar →
       Gate.EndoScalar.Holds (EndoScalar.rowWitness wTab i) := by
   intro i htyp
-  exact Argument.soundness_sz EndoScalar.argument idx.omega_prim wTab wTab
+  exact Argument.soundness EndoScalar.argument idx.omega_prim wTab wTab
     (idx.selectorRow .endoScalar) (idx.selectorRow_boolean _) α hα t ζ hζ
     hcheck i (idx.selectorRow_eq_one htyp)
 
@@ -179,7 +179,7 @@ theorem poseidon_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
       Gate.Poseidon.Holds (Poseidon.rcMap (idx.coeffTable i))
         (Poseidon.rowWitness wTab i) := by
   intro i htyp
-  exact Argument.soundness_sz Poseidon.argument idx.omega_prim wTab idx.coeffTable
+  exact Argument.soundness Poseidon.argument idx.omega_prim wTab idx.coeffTable
     (idx.selectorRow .poseidon) (idx.selectorRow_boolean _) α hα t ζ hζ
     hcheck i (idx.selectorRow_eq_one htyp)
 
@@ -208,7 +208,7 @@ theorem generic_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     ∀ i, (idx.gates i).typ = .generic →
       Gate.Generic.Holds ⟨idx.coeffTable i, wTab i⟩ := by
   intro i htyp
-  have h := Argument.soundness_sz (genericArgument (F := F)) idx.omega_prim wTab idx.coeffTable
+  have h := Argument.soundness (genericArgument (F := F)) idx.omega_prim wTab idx.coeffTable
     (idx.selectorRow .generic) (idx.selectorRow_boolean _) α hα t ζ hζ
     hcheck i (idx.selectorRow_eq_one htyp)
   simpa [genericArgument, genericCellMap, rowEnv, Gate.Generic.Holds] using h
@@ -322,7 +322,7 @@ theorem copy_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
       cellValue wTab (idx.wiringMap (embCell idx.zkRows c))
         = cellValue wTab (embCell idx.zkRows c) :=
   idx.copy_soundness_of_dvd wTab β γ hβ hγ zg
-    (dvd_of_evalCheck_sz idx.omega_prim _ α hα t ζ hζ hcheck)
+    (dvd_of_evalCheck idx.omega_prim _ α hα t ζ hζ hcheck)
 
 end Index
 

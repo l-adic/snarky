@@ -408,7 +408,7 @@ theorem copy_soundness_wired_of_dvd [DecidableEq F] {ω : F} (hω : IsPrimitiveR
 
 /-- **Copy soundness from the index data.** As `copy_soundness_wired_of_dvd`, with the
 divisibilities obtained from the derandomized quotient checks in single-challenge counting
-Schwartz–Zippel form (`dvd_of_evalCheck_sz`): ONE aggregation challenge `α` (avoiding
+Schwartz–Zippel form (`dvd_of_evalCheck`): ONE aggregation challenge `α` (avoiding
 `badAlphas`) and ONE quotient `t`, at a single good permutation-challenge pair `(β, γ)`, and
 the quotient check evaluated at a single good challenge `ζ` outside the counting bad set
 `badZetas (aggregate α C) t n`. Conclusion unchanged. -/
@@ -450,6 +450,6 @@ theorem copy_soundness_wired [DecidableEq F] {ω : F} (hω : IsPrimitiveRoot ω 
         = (w c.1).eval (ω ^ (c.2 : ℕ)) :=
   have : NeZero n := ⟨hn.ne'⟩
   copy_soundness_wired_of_dvd hω hn hzk0 hzkn w shifts hs σpFull hp β γ hβ hγ zg
-    (dvd_of_evalCheck_sz hω _ α hα t ζ hζ hcheck)
+    (dvd_of_evalCheck hω _ α hα t ζ hζ hcheck)
 
 end Kimchi.Quotient.Permutation

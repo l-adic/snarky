@@ -117,7 +117,7 @@ theorem rows_iff_dvd [NeZero n] (hω : IsPrimitiveRoot ω n)
 
 /-- **Poseidon quotient soundness.** With the single-challenge counting-form quotient-argument
 hypotheses over the selector-gated Poseidon family, every selector-active row satisfies
-`Gate.Poseidon.Holds`. Specialization of `Argument.soundness_sz` at `argument`. -/
+`Gate.Poseidon.Holds`. Specialization of `Argument.soundness` at `argument`. -/
 theorem soundness [NeZero n] [DecidableEq F] (hω : IsPrimitiveRoot ω n)
     (wTab qTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1)
     (α : F)
@@ -131,6 +131,6 @@ theorem soundness [NeZero n] [DecidableEq F] (hω : IsPrimitiveRoot ω n)
         (Gate.Poseidon.constraints (rcPoly ω qTab) (polyWitness ω wTab)).get c)).eval ζ
         = (t * zH F n).eval ζ) :
     ∀ i, sel i = 1 → Gate.Poseidon.Holds (rcRow qTab i) (rowWitness wTab i) :=
-  argument.soundness_sz hω wTab qTab sel hsel α hα t ζ hζ hcheck
+  argument.soundness hω wTab qTab sel hsel α hα t ζ hζ hcheck
 
 end Kimchi.Quotient.Poseidon

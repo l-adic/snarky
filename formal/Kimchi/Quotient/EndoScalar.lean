@@ -119,6 +119,6 @@ theorem soundness [DecidableEq F]
         = (t * zH F n).eval ζ) :
     ∀ i, sel i = 1 → Gate.EndoScalar.Holds (rowWitness wTab i) := by
   haveI : NeZero n := ⟨Nat.pos_iff_ne_zero.mp hn⟩
-  exact argument.soundness_sz hω wTab wTab sel hsel α hα t ζ hζ hcheck
+  exact argument.soundness hω wTab wTab sel hsel α hα t ζ hζ hcheck
 
 end Kimchi.Quotient.EndoScalar

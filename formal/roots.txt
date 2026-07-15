@@ -83,15 +83,14 @@ Kimchi.Commitment.IPA.batch_soundness
 Kimchi.Quotient.zH_dvd_iff
 Kimchi.Quotient.genericRows_iff_dvd
 
--- Kimchi quotient argument (soundness engine + gate lifts). Random-evaluation soundness: the
--- quotient identity at more-than-degree-many distinct points forces it as polynomials
--- (`identity_of_evals`); the alpha-aggregate divisible at enough distinct alphas forces each
--- constraint divisible (`dvd_separation`). The generic lift engine (`rows_iff_dvd_of`,
+-- Kimchi quotient argument (soundness engine + gate lifts). Counting Schwartz–Zippel soundness:
+-- one aggregation challenge outside `badAlphas` separates the aggregate into per-constraint
+-- divisibility (`dvd_separation`), and one evaluation point outside `badZetas` pins each quotient
+-- identity. The generic lift engine (`rows_iff_dvd_of`,
 -- selector-gated `rowsSel_iff_dvd`) turns any eval bridge into a divisibility-iff-rows theorem;
 -- instantiated per gate via cell maps and `constraints_map` naturality (`<G>.rows_iff_dvd`).
 -- Headline per gate: for every selector-active row the gate's Holds follows
 -- (`<G>.soundness`); the EC meaning is obtained by citing Gate.<G>.sound where consumed.
-Kimchi.Quotient.identity_of_evals
 Kimchi.Quotient.dvd_separation
 Kimchi.Quotient.rows_iff_dvd_of
 Kimchi.Quotient.rowsSel_iff_dvd
@@ -132,9 +131,9 @@ Kimchi.Quotient.prod_eq_of_accumulator
 -- over the unmasked region.
 Kimchi.Quotient.Permutation.soundness
 
--- Permutation milestone 4: copy soundness — grand-product equalities at an injective
--- challenge grid force the witness values to be invariant under the wiring (the abstract
--- core, and the kimchi headline composing milestones 1-3).
+-- Permutation milestone 4: copy soundness — grand-product equality at one challenge pair
+-- (β, γ) outside the bad set forces the witness values to be invariant under the wiring (the
+-- abstract core, and the kimchi headline composing milestones 1-3).
 Kimchi.Quotient.copy_soundness
 Kimchi.Quotient.Permutation.copy_soundness
 
@@ -143,8 +142,7 @@ Kimchi.Quotient.Permutation.copy_soundness
 -- wiring semantics; copy soundness from the index data alone.
 Kimchi.Quotient.Permutation.copy_soundness_wired
 Kimchi.Quotient.multiset_eq_of_pairFactor_prod_eq
-Kimchi.Quotient.identity_of_grid_evals
-Kimchi.Quotient.multiset_eq_of_grid_prod_evals
+Kimchi.Quotient.multiset_eq_of_prod_eval
 
 -- The Fiat-Shamir junction: the executable verifier meets the soundness layer.
 Kimchi.Verifier.verify_reflects

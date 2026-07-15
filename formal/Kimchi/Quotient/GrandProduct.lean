@@ -1,4 +1,4 @@
-import Kimchi.Quotient.Pinning
+import Kimchi.Quotient.Domain
 
 /-!
 # The grand-product core: linear-factor multisets and two-variable pinning
@@ -8,8 +8,7 @@ Polynomial-algebra infrastructure for the kimchi permutation argument (proof-sys
 `∏ (wᵢ + β·posᵢ + γ) = ∏ (wᵢ + β·σ(pos)ᵢ + γ)` at the challenges `β, γ`, and the soundness
 core — proved here — is that such an equality forces the multisets of pairs `(wᵢ, posᵢ)` to
 coincide. This is **pure algebra**: no protocol content whatsoever (no `Z_H`, no domain `H`,
-no root of unity `ω`, no gate). The only project dependency is `Kimchi.Quotient.Pinning`
-(`identity_of_evals`).
+no root of unity `ω`, no gate). The only project dependency is `Kimchi.Quotient.Domain`.
 
 We work in the two-variable polynomial ring `F[β][γ] := Polynomial (Polynomial F)` with inner
 variable `β` and outer variable `γ`, over an abstract field `F`. A pair `(w, a) ∈ F × F` gives
@@ -22,10 +21,10 @@ what the permutation accumulator forces to agree on both sides.
 * `eval2` — two-variable evaluation `(P.eval (C g)).eval b`.
 * `multiset_eq_of_pairFactor_prod_eq` — equal products of pair factors force equal multisets
   (unique factorisation of monic linear factors over the domain `Polynomial F`).
-* `identity_of_grid_evals` — two-variable polynomials agreeing on a large enough injective grid
-  are equal (iterate `identity_of_evals` once per variable).
-* `multiset_eq_of_grid_prod_evals` — the headline: field-level products agreeing on an injective
-  grid force multiset equality.
+* `badBetas` / `badGammas` (with `card_badBetas_le` / `card_badGammas_le`) — the counting
+  Schwartz–Zippel bad sets for the two challenges.
+* `multiset_eq_of_prod_eval` — the headline: field-level products agreeing at one `(β, γ)`
+  outside the bad sets force multiset equality.
 
 Source of truth: `blueprint/src/chapters/Kimchi_Quotient_GrandProduct.tex`.
 -/
@@ -102,35 +101,6 @@ private lemma eval2_eq_eval_map (b g : F) (P : Polynomial (Polynomial F)) :
   rw [← Polynomial.coe_evalRingHom, Polynomial.hom_eval₂]
   simp
 
-/-- **Identity from grid evaluations.** Two two-variable polynomials `P, Q` with outer degree
-`≤ D` and all coefficients of inner degree `≤ D` that agree on an injective grid
-`(b i, g j)` with `D < N` and `D < M` are equal. Proved by iterating `identity_of_evals` once
-per variable. -/
-theorem identity_of_grid_evals {M N : ℕ} (b : Fin M → F) (g : Fin N → F)
-    (hb : Function.Injective b) (hg : Function.Injective g)
-    (P Q : Polynomial (Polynomial F)) (D : ℕ)
-    (hP : P.natDegree ≤ D) (hQ : Q.natDegree ≤ D)
-    (hPc : ∀ k, (P.coeff k).natDegree ≤ D) (hQc : ∀ k, (Q.coeff k).natDegree ≤ D)
-    (hDN : D < N) (hDM : D < M)
-    (h : ∀ (i : Fin M) (j : Fin N), eval2 (b i) (g j) P = eval2 (b i) (g j) Q) :
-    P = Q := by
-  -- Outer pass: at each inner node `b i`, the outer polynomials agree on the `g`-grid.
-  have houter : ∀ i : Fin M,
-      P.map (Polynomial.evalRingHom (b i)) = Q.map (Polynomial.evalRingHom (b i)) := by
-    intro i
-    refine identity_of_evals g _ _ hg D (le_trans Polynomial.natDegree_map_le hP)
-      (le_trans Polynomial.natDegree_map_le hQ) hDN ?_
-    intro j
-    rw [← eval2_eq_eval_map, ← eval2_eq_eval_map]
-    exact h i j
-  -- Inner pass: coefficient by coefficient, agree on the `b`-grid.
-  apply Polynomial.ext
-  intro k
-  refine identity_of_evals b (P.coeff k) (Q.coeff k) hb D (hPc k) (hQc k) hDM ?_
-  intro i
-  have hc := congrArg (fun t => Polynomial.coeff t k) (houter i)
-  simpa [Polynomial.coeff_map] using hc
-
 /-! ## The headline: grid products force multiset equality -/
 
 /-- **(a) Evaluation bridge for the product.** Evaluating the pair-factor product at `(b, g)`
@@ -198,38 +168,10 @@ private lemma natDegree_coeff_prod_pairFactor (m : Multiset (F × F)) :
       have := ih k
       omega
 
-/-- **Grand-product from grid evaluations.** If for every node `(b i, g j)` on an injective grid
-the field-level products `∏ (g j + p.1 + p.2·b i)` over `m₁` and `m₂` agree, and both
-multisets have cardinality strictly below `M` and `N`, then `m₁ = m₂`. Composes
-`multiset_eq_of_pairFactor_prod_eq` with `identity_of_grid_evals` through the pair-factor
-evaluation bridge. -/
-theorem multiset_eq_of_grid_prod_evals {M N : ℕ} (b : Fin M → F) (g : Fin N → F)
-    (hb : Function.Injective b) (hg : Function.Injective g)
-    (m₁ m₂ : Multiset (F × F))
-    (hm₁N : Multiset.card m₁ < N) (hm₁M : Multiset.card m₁ < M)
-    (hm₂N : Multiset.card m₂ < N) (hm₂M : Multiset.card m₂ < M)
-    (h : ∀ (i : Fin M) (j : Fin N),
-      (m₁.map (fun p => g j + p.1 + p.2 * b i)).prod
-        = (m₂.map (fun p => g j + p.1 + p.2 * b i)).prod) :
-    m₁ = m₂ := by
-  -- Reduce to equality of the pair-factor products via the UFD core.
-  apply multiset_eq_of_pairFactor_prod_eq
-  -- Pin the two products on the injective grid, with degree bound `D := max |m₁| |m₂|`.
-  refine identity_of_grid_evals b g hb hg _ _ (max (Multiset.card m₁) (Multiset.card m₂))
-    (le_trans (natDegree_prod_pairFactor m₁) (le_max_left _ _))
-    (le_trans (natDegree_prod_pairFactor m₂) (le_max_right _ _))
-    (fun k => le_trans (natDegree_coeff_prod_pairFactor m₁ k) (le_max_left _ _))
-    (fun k => le_trans (natDegree_coeff_prod_pairFactor m₂ k) (le_max_right _ _))
-    (max_lt hm₁N hm₂N) (max_lt hm₁M hm₂M) ?_
-  -- The grid hypothesis, rewritten through the evaluation bridge (a), is exactly what we need.
-  intro i j
-  rw [eval2_prod_pairFactor, eval2_prod_pairFactor]
-  exact h i j
-
 /-! ## Project-local Mathlib supplement — single-challenge Schwartz–Zippel (β,γ collapse)
 
-The S2 layer: replace the injective β,γ **grid** of `multiset_eq_of_grid_prod_evals` with the
-standard single-challenge (counting) Schwartz–Zippel argument. Working in `F[β][γ]` with
+The single-challenge (counting) Schwartz–Zippel argument for the β,γ collapse, in place of a
+two-variable injective grid. Working in `F[β][γ]` with
 `Δ := (m₁.map pairFactor).prod - (m₂.map pairFactor).prod`, a *good* pair `(β,γ)` — one avoiding
 two explicitly-small bad sets — already forces the two grand products to agree, hence the pair
 multisets to coincide. Bad β's are the roots of the outer (γ-leading) coefficient of `Δ`; bad γ's
@@ -296,13 +238,13 @@ theorem card_badGammas_le (m₁ m₂ : Multiset (F × F)) (β : F) :
     refine le_trans (Polynomial.natDegree_sub_le _ _) ?_
     exact max_le_max (natDegree_prod_pairFactor m₁) (natDegree_prod_pairFactor m₂)
 
-/-- **The grand product at ONE `(β,γ)`** — replaces `multiset_eq_of_grid_prod_evals`. If the
+/-- **The grand product at ONE `(β,γ)`** — the counting-form headline. If the
 field-level products `∏ (γ + p.1 + p.2·β)` over `m₁` and `m₂` agree at a single good pair `(β,γ)`
 (β outside `badBetas`, γ outside `badGammas … β`), then `m₁ = m₂`. Iterated univariate SZ: a good
 β keeps the γ-specialisation `Δ.map (evalRingHom β)` nonzero, a good γ is not among its roots, yet
 the product equality forces `(Δ.map (evalRingHom β)).eval γ = 0` — contradiction unless `Δ = 0`,
 i.e. `m₁ = m₂`. Project-local: the S2 single-challenge grand-product core. -/
-theorem multiset_eq_of_prod_eval_sz (m₁ m₂ : Multiset (F × F)) (β γ : F)
+theorem multiset_eq_of_prod_eval (m₁ m₂ : Multiset (F × F)) (β γ : F)
     (hβ : β ∉ badBetas m₁ m₂) (hγ : γ ∉ badGammas m₁ m₂ β)
     (h : (m₁.map (fun p => γ + p.1 + p.2 * β)).prod
        = (m₂.map (fun p => γ + p.1 + p.2 * β)).prod) :

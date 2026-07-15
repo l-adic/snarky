@@ -1,5 +1,4 @@
 import Kimchi.Quotient.Aggregate
-import Kimchi.Quotient.Pinning
 
 /-!
 # Counting Schwartz–Zippel: single-challenge α-separation
@@ -34,14 +33,14 @@ The main section assembles the rows of the evaluation domain:
 * `badAlphas` — the bad challenges of a constraint *family*: the union over domain rows of
   the row-wise bad sets.
 * `card_badAlphas_le` — the bad set has at most `n · (K − 1)` elements.
-* `dvd_separation_sz` — single-challenge α-separation: divisibility of the α-aggregate for
+* `dvd_separation` — single-challenge α-separation: divisibility of the α-aggregate for
   ONE good `α` separates across the individual constraint polynomials.
 * `badZetas` — the bad ζ for a claimed quotient `C = t · Z_H`: empty when they agree, else
   the roots of `C − t · Z_H`.
 * `card_badZetas_le` — **counting SZ, ζ-axis**: at most `D` bad ζ when both sides have degree
   `≤ D`.
-* `zH_dvd_of_eval_sz` — a single good ζ pins `C = t · Z_H`, hence `Z_H ∣ C`.
-* `dvd_of_evalCheck_sz` — the composed pinning–separation engine of
+* `zH_dvd_of_eval` — a single good ζ pins `C = t · Z_H`, hence `Z_H ∣ C`.
+* `dvd_of_evalCheck` — the composed pinning–separation engine of
   `dvd_of_evalCheck` (`Kimchi/Quotient/Lift.lean`), with the α-, ζ- and quotient-families all
   collapsed to a single `α`, a single ζ, and a single quotient `t`.
 -/
@@ -158,7 +157,7 @@ If `Z_H` divides the α-aggregate for ONE challenge `α` outside `badAlphas C ω
 divides each individual constraint polynomial. Argue pointwise on the domain: at each node
 `ω^i` the aggregate's value is the α-combination of the row vector `k ↦ (C k)(ω^i)`, and a
 good `α` annihilating the combination annihilates every entry. -/
-theorem dvd_separation_sz {K n : ℕ} [NeZero n] {ω : F}
+theorem dvd_separation {K n : ℕ} [NeZero n] {ω : F}
     (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     (C : Fin K → Polynomial F) (α : F) (hα : α ∉ badAlphas C ω n)
     (hdvd : zH F n ∣ aggregate α C) : ∀ k, zH F n ∣ C k := by
@@ -189,7 +188,7 @@ noncomputable def badZetas (C t : Polynomial F) (n : ℕ) : Finset F :=
 /-- **Counting SZ, ζ-axis**: at most `D` bad ζ, when both `C` and `t·zH` have degree `≤ D`.
 The agreeing case is the empty set; otherwise the bad set is the distinct roots of the
 nonzero polynomial `C − t·zH`, whose degree is `≤ D`. The degree hypotheses exist ONLY for
-this cardinality bound, not for the implication `zH_dvd_of_eval_sz`. -/
+this cardinality bound, not for the implication `zH_dvd_of_eval`. -/
 theorem card_badZetas_le (C t : Polynomial F) {n D : ℕ}
     (hC : C.natDegree ≤ D) (ht : (t * zH F n).natDegree ≤ D) :
     (badZetas C t n).card ≤ D := by
@@ -202,7 +201,7 @@ theorem card_badZetas_le (C t : Polynomial F) {n D : ℕ}
 
 /-- **Single good ζ pins the quotient**: a challenge ζ outside `badZetas C t n` at which
 `C` and `t·zH` agree forces `C = t·zH`, hence `zH ∣ C`. -/
-theorem zH_dvd_of_eval_sz {n : ℕ} (C t : Polynomial F) (ζ : F)
+theorem zH_dvd_of_eval {n : ℕ} (C t : Polynomial F) (ζ : F)
     (hζ : ζ ∉ badZetas C t n)
     (h : C.eval ζ = (t * zH F n).eval ζ) : zH F n ∣ C := by
   have : C = t * zH F n := by
@@ -215,16 +214,16 @@ theorem zH_dvd_of_eval_sz {n : ℕ} (C t : Polynomial F) (ζ : F)
 
 /-- **`dvd_of_evalCheck`, single-challenge form.** One α, one ζ, ONE quotient `t`. A good ζ
 outside `badZetas (aggregate α C) t n` at which the aggregate agrees with `t · Z_H` pins
-`aggregate α C = t · Z_H` via `zH_dvd_of_eval_sz`, and `dvd_separation_sz` separates across
+`aggregate α C = t · Z_H` via `zH_dvd_of_eval`, and `dvd_separation` separates across
 the constraint indices. -/
-theorem dvd_of_evalCheck_sz {K n : ℕ} [NeZero n] {ω : F} (hω : IsPrimitiveRoot ω n)
+theorem dvd_of_evalCheck {K n : ℕ} [NeZero n] {ω : F} (hω : IsPrimitiveRoot ω n)
     (C : Fin K → Polynomial F)
     (α : F) (hα : α ∉ badAlphas C ω n)
     (t : Polynomial F)
     (ζ : F) (hζ : ζ ∉ badZetas (aggregate α C) t n)
     (hcheck : (aggregate α C).eval ζ = (t * zH F n).eval ζ) :
     ∀ k, zH F n ∣ C k :=
-  dvd_separation_sz hω (Nat.pos_of_ne_zero (NeZero.ne n)) C α hα
-    (zH_dvd_of_eval_sz (aggregate α C) t ζ hζ hcheck)
+  dvd_separation hω (Nat.pos_of_ne_zero (NeZero.ne n)) C α hα
+    (zH_dvd_of_eval (aggregate α C) t ζ hζ hcheck)
 
 end Kimchi.Quotient

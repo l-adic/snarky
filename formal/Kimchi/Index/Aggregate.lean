@@ -288,13 +288,13 @@ explicit **bad set** `badAlphas (idx.fullFamily …) idx.omega n`, whose cardina
 `≤ n · (K − 1)` (`card_badAlphas_le`). No injective α-family, no Vandermonde. The evaluation
 point is likewise a single good `ζ` outside the explicit bad set
 `badZetas (aggregate α …) t n`, pinning the polynomial identity by the same counting
-argument (`zH_dvd_of_eval_sz`). Specializing the composed engine
-`dvd_of_evalCheck_sz` at `fullFamily` turns the shape of the one production check into
+argument (`zH_dvd_of_eval`). Specializing the composed engine
+`dvd_of_evalCheck` at `fullFamily` turns the shape of the one production check into
 per-member divisibility, and the separation argument takes it the rest of the way to the
 rows. -/
 
 /-- **Divisibility of every family member from the aggregated eval-check** — the
-single-challenge `dvd_of_evalCheck_sz` engine at the full `21 + 3` family. One `α` outside
+single-challenge `dvd_of_evalCheck` engine at the full `21 + 3` family. One `α` outside
 `badAlphas`, one quotient `t`, one good `ζ` outside `badZetas`. -/
 theorem fullFamily_dvd_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (β γ : F)
@@ -305,7 +305,7 @@ theorem fullFamily_dvd_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount
     (hcheck : (aggregate α (idx.fullFamily pub wTab z β γ)).eval ζ
         = (t * zH F n).eval ζ) :
     ∀ s, zH F n ∣ idx.fullFamily pub wTab z β γ s :=
-  dvd_of_evalCheck_sz idx.omega_prim (idx.fullFamily pub wTab z β γ) α hα t ζ hζ hcheck
+  dvd_of_evalCheck idx.omega_prim (idx.fullFamily pub wTab z β γ) α hα t ζ hζ hcheck
 
 open Kimchi.Quotient.Permutation in
 /-- The permutation members of the full family: entries `21 + s` are the three

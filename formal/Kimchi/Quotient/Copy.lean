@@ -16,7 +16,7 @@ Two strata:
   `(value, address)` pairs — the own-address tagging against the wired-to-address
   tagging — forces `v ∘ σp = v`, by membership alone: the pair `(v c, addr (σp c))`
   must occur among the own-address pairs, and address injectivity pins its cell to
-  `σp c`. The single-challenge form feeds `multiset_eq_of_prod_eval_sz` (the S2 grand-product
+  `σp c`. The single-challenge form feeds `multiset_eq_of_prod_eval` (the S2 grand-product
   Schwartz–Zippel core) with the product equality at one good pair `(β, γ)` and descends.
 
 * **The kimchi headline** (`Permutation.copy_soundness`): the per-challenge
@@ -59,7 +59,7 @@ theorem values_eq_of_multiset_eq {cells : Type*} [Fintype cells]
 /-- **Copy soundness, field level.** Products of `(γ + value + address·β)` over the cells
 agreeing at a **single good challenge pair** `(β, γ)` — own addresses on the left,
 wired-to addresses on the right — force the values to be invariant under the wiring.
-The single-challenge Schwartz–Zippel core (`multiset_eq_of_prod_eval_sz`) turns the product
+The single-challenge Schwartz–Zippel core (`multiset_eq_of_prod_eval`) turns the product
 equality into multiset equality once `β` and `γ` avoid the proved-small bad sets
 `badBetas`/`badGammas` of the `(value, address)` pair multisets; injective addressing then
 descends to the values. -/
@@ -73,7 +73,7 @@ theorem copy_soundness [DecidableEq F] {cells : Type*} [Fintype cells]
     (h : ∏ c, (γ + v c + addr c * β) = ∏ c, (γ + v c + addr (σp c) * β)) :
     ∀ c, v (σp c) = v c := by
   refine values_eq_of_multiset_eq v addr haddr σp
-    (multiset_eq_of_prod_eval_sz _ _ β γ hβ hγ ?_)
+    (multiset_eq_of_prod_eval _ _ β γ hβ hγ ?_)
   rw [Multiset.map_map, Multiset.map_map]
   simpa only [Function.comp_def, ← Finset.prod_eq_multiset_prod] using h
 
@@ -157,7 +157,7 @@ theorem copy_soundness_of_dvd [DecidableEq F] {ω : F} {n : ℕ}
 
 /-- **Copy soundness of the kimchi permutation argument.** As `copy_soundness_of_dvd`,
 with the divisibilities obtained from the derandomized quotient checks in
-**single-challenge counting Schwartz–Zippel form** (`dvd_of_evalCheck_sz`): the prover
+**single-challenge counting Schwartz–Zippel form** (`dvd_of_evalCheck`): the prover
 supplies ONE aggregation challenge `α` (avoiding the proved-small bad set `badAlphas`) and
 ONE quotient `t`, at a single good permutation-challenge pair `(β, γ)`, and evaluates the
 quotient check at a single good challenge `ζ` outside the counting bad set
@@ -197,6 +197,6 @@ theorem copy_soundness [DecidableEq F] {ω : F} {n : ℕ}
       (w (σp c).1).eval (ω ^ ((σp c).2 : ℕ)) = (w c.1).eval (ω ^ (c.2 : ℕ)) :=
   have : NeZero n := ⟨hn.ne'⟩
   copy_soundness_of_dvd hω hn hzk0 hzkn w σpoly shifts σp haddr hσ β γ hβ hγ zg
-    (dvd_of_evalCheck_sz hω _ α hα t ζ hζ hcheck)
+    (dvd_of_evalCheck hω _ α hα t ζ hζ hcheck)
 
 end Kimchi.Quotient.Permutation
