@@ -15,8 +15,8 @@ parameter without disturbing anything built on top.
 
 `AsProver` values are what the deep-embedded `CircuitM` (see `Snarky.Monad`) stores at its
 `existsOp`/`assignOp` nodes: the embedding is deep in the circuit structure but *shallow*
-in the witness functions, which stay semantic. The constraint builder (a follow-up module)
-never runs them — provably so, since continuations only ever see `Variable`s.
+in the witness functions, which stay semantic. The constraint builder provably never runs
+them (`Snarky.Laws.build_eq_of_sameShape`).
 -/
 
 namespace Snarky

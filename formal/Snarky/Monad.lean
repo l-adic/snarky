@@ -13,12 +13,11 @@ instead: one constructor per `CircuitOps` field, with continuations stored expli
 The embedding is deep in the *circuit structure* only — the witness payloads at
 `existsOp`/`assignOp` are semantic `AsProver` functions, not syntax. Continuations receive
 only freshly allocated `Variable`s, never field values, so the shape of a circuit provably
-cannot depend on witness data.
+cannot depend on witness data (`Snarky.Laws.build_eq_of_sameShape`).
 
-The interpreters land as pure recursive functions in follow-up modules: `Snarky.Builder`
-(constraint generation, PS `Snarky.Backend.Builder`) and `Snarky.Prover` (witness
-generation, PS `Snarky.Backend.Prover`), together with the interpreter laws
-(witness-independence, allocation agreement, completeness).
+The interpreters are pure recursive functions in `Snarky.Builder` (constraint generation,
+PS `Snarky.Backend.Builder`) and `Snarky.Prover` (witness generation,
+PS `Snarky.Backend.Prover`).
 
 Deviations from PS: `pushLabelOp`/`popLabelOp` collapse into one scoped `labelOp` node;
 `MonadRec` is unnecessary (Lean recursion over build-time data produces a fixed tree);
