@@ -157,3 +157,8 @@ Kimchi.Index.Index.endoScalar_soundness
 Kimchi.Index.Index.poseidon_soundness
 Kimchi.Index.Index.generic_soundness
 Kimchi.Index.Index.copy_soundness
+
+-- The capstone: executable-verifier acceptance ⟹ the index is satisfiable, at every challenge
+-- tuple outside the bounded (counting Schwartz–Zippel) bad sets. Combines the Fiat-Shamir
+-- junction, the counting quotient soundness, and the IPA special-soundness extraction.
+Kimchi.Verifier.kimchiProof_sound
