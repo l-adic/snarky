@@ -237,30 +237,15 @@ One `native_decide` certificate per curve, in the style of CompElliptic's point 
 through the binary double-and-add `nsmul`. These are the only `native_decide`s in the
 workspace packages; the axiom gates permit exactly these two declarations by name. -/
 
-/-- The image of the standard Pallas generator under `φ(x, y) = (β·x, y)` — on the curve
-    since `(β·x)³ = x³`. -/
-private def pallas_endoGpt : SWPoint Pallas.curve :=
-  ⟨pallas_endo * Pallas.G.1, Pallas.G.2, by
-    left
-    show Pallas.G.2 ^ 2
-      = (pallas_endo * Pallas.G.1) ^ 3 + Pallas.a * (pallas_endo * Pallas.G.1) + Pallas.b
-    decide⟩
-
-/-- **The Pallas eigenvalue anchor**: `λ • G = φ(G)` at the standard generator
-    (`.toNat` puts the `ℤ` eigenvalue in `nsmul` position). -/
-theorem pallas_lam_nsmul_Gpt : pallas_lam.toNat • Pallas.Gpt = pallas_endoGpt := by
+/-- **The Pallas eigenvalue anchor**: `λ • G = φ(G)` at the standard generator, stated
+    against `φ` itself (`.toNat` puts the `ℤ` eigenvalue in `nsmul` position). -/
+theorem pallas_lam_nsmul_Gpt :
+    pallas_lam.toNat • Pallas.Gpt = endoPt Pallas.curve rfl pallas_endo_cube Pallas.Gpt := by
   native_decide
 
-/-- The image of the standard Vesta generator under `φ(x, y) = (β·x, y)`. -/
-private def vesta_endoGpt : SWPoint Vesta.curve :=
-  ⟨vesta_endo * Vesta.G.1, Vesta.G.2, by
-    left
-    show Vesta.G.2 ^ 2
-      = (vesta_endo * Vesta.G.1) ^ 3 + Vesta.a * (vesta_endo * Vesta.G.1) + Vesta.b
-    decide⟩
-
 /-- **The Vesta eigenvalue anchor**: `λ • G = φ(G)` at the standard generator. -/
-theorem vesta_lam_nsmul_Gpt : vesta_lam.toNat • Vesta.Gpt = vesta_endoGpt := by
+theorem vesta_lam_nsmul_Gpt :
+    vesta_lam.toNat • Vesta.Gpt = endoPt Vesta.curve rfl vesta_endo_cube Vesta.Gpt := by
   native_decide
 
 /-! ## The transport homomorphism into Mathlib's point group
@@ -282,12 +267,6 @@ Each Pasta group has prime order (the unconditional `card_eq`), so any nonzero p
 generates — in particular `Gpt` does. The anchor certificate `*_lam_nsmul_Gpt` at `Gpt`
 then extends to all of `SWPoint curve` by additivity of `φ`. -/
 
-/-- `φ` at the order-witness generator is `pallas_endoGpt` — both sides carry the same
-    `β` numeral, so the coordinates agree definitionally. -/
-private theorem pallas_endoPt_Gpt :
-    endoPt Pallas.curve rfl pallas_endo_cube Pallas.Gpt = pallas_endoGpt :=
-  SWPoint.ext_pair rfl
-
 /-- **The Pallas eigenvalue relation on `SWPoint`**: `φ(P) = [λ]·P` for every point.
     The group is cyclic of prime order (`card_eq`), so `P = k • Gpt`; `endoHom` and the
     `native_decide` anchor `pallas_lam_nsmul_Gpt` do the rest. -/
@@ -299,13 +278,8 @@ private theorem pallas_endoPt_eq_lam_smul (P : SWPoint Pallas.curve) :
   have hhom : endoPt Pallas.curve rfl pallas_endo_cube (k • Pallas.Gpt)
       = k • endoPt Pallas.curve rfl pallas_endo_cube Pallas.Gpt :=
     map_zsmul (endoHom Pallas.curve rfl pallas_endo_cube) k Pallas.Gpt
-  rw [← hk, hhom, pallas_endoPt_Gpt, ← pallas_lam_nsmul_Gpt,
+  rw [← hk, hhom, ← pallas_lam_nsmul_Gpt,
     ← natCast_zsmul, ← natCast_zsmul, ← mul_smul, ← mul_smul, mul_comm]
-
-/-- `φ` at the order-witness generator is `vesta_endoGpt` (Vesta). -/
-private theorem vesta_endoPt_Gpt :
-    endoPt Vesta.curve rfl vesta_endo_cube Vesta.Gpt = vesta_endoGpt :=
-  SWPoint.ext_pair rfl
 
 /-- **The Vesta eigenvalue relation on `SWPoint`**: `φ(P) = [λ]·P` for every point. -/
 private theorem vesta_endoPt_eq_lam_smul (P : SWPoint Vesta.curve) :
@@ -316,7 +290,7 @@ private theorem vesta_endoPt_eq_lam_smul (P : SWPoint Vesta.curve) :
   have hhom : endoPt Vesta.curve rfl vesta_endo_cube (k • Vesta.Gpt)
       = k • endoPt Vesta.curve rfl vesta_endo_cube Vesta.Gpt :=
     map_zsmul (endoHom Vesta.curve rfl vesta_endo_cube) k Vesta.Gpt
-  rw [← hk, hhom, vesta_endoPt_Gpt, ← vesta_lam_nsmul_Gpt,
+  rw [← hk, hhom, ← vesta_lam_nsmul_Gpt,
     ← natCast_zsmul, ← natCast_zsmul, ← mul_smul, ← mul_smul, mul_comm]
 
 /-! ## Step 4 — the Mathlib-`Point` eigenvalue statements
