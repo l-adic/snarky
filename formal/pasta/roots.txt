@@ -2,11 +2,9 @@
 -- Consumed by the workspace dead-code pass (formal/scripts/deadcode.sh), which unions
 -- every package's roots.txt.
 
--- The trust surface: the declared axioms.
+-- The trust surface: the declared axioms (the Hasse bounds — the ONLY axioms here).
 Pasta.pallas_hasse
 Pasta.vesta_hasse
-Pasta.pallas_eigen
-Pasta.vesta_eigen
 
 -- The GLV constants and derived primitive-cube-root facts.
 Pasta.pallas_endo
@@ -14,11 +12,13 @@ Pasta.vesta_endo
 Pasta.pallas_lam
 Pasta.vesta_lam
 Pasta.pallas_endo_cube
-Pasta.pallas_endo_ne_one
 Pasta.vesta_endo_cube
-Pasta.vesta_endo_ne_one
 
--- Derived: group orders, primality, GLV short-basis bounds, the field-bit width.
+-- Derived: the CM eigenvalue relations (φ = [λ], proved — homomorphism + prime-order
+-- cyclicity + the two native_decide anchors at the generators), group orders, primality,
+-- GLV short-basis bounds, the field-bit width.
+Pasta.pallas_eigen
+Pasta.vesta_eigen
 Pasta.pallas_card
 Pasta.vesta_card
 Pasta.pallas_order_prime
@@ -30,9 +30,9 @@ Pasta.two_pow_le_pallas_base
 
 -- The generic EC order/shape sugar.
 WeierstrassCurve.Affine.order_smul
-WeierstrassCurve.Affine.zsmul_mod
 WeierstrassCurve.Affine.order_prime
 WeierstrassCurve.Affine.short
+CompElliptic.CurveForms.ShortWeierstrass.SWCurve.toAffine
 
 -- The point-group module structure and its computational reading.
 Pasta.vestaPointModule

@@ -29,8 +29,6 @@ def pallas_endo : Fp :=
 /-- `β³ = 1` on Pallas. -/
 theorem pallas_endo_cube : pallas_endo ^ 3 = 1 := by decide
 
-/-- `β ≠ 1` on Pallas (with `pallas_endo_cube`: `β` is a *primitive* cube root). -/
-theorem pallas_endo_ne_one : pallas_endo ≠ 1 := by decide
 
 /-- The Vesta base-field endomorphism coefficient `β`: a primitive cube root of unity
     (proved below), so `φ(x, y) = (β·x, y)` maps `y² = x³ + 5` to itself. It is also the
@@ -41,8 +39,6 @@ def vesta_endo : Fq :=
 /-- `β³ = 1` on Vesta. -/
 theorem vesta_endo_cube : vesta_endo ^ 3 = 1 := by decide
 
-/-- `β ≠ 1` on Vesta (with `vesta_endo_cube`: `β` is a *primitive* cube root). -/
-theorem vesta_endo_ne_one : vesta_endo ≠ 1 := by decide
 
 /-- The scalar eigenvalue `λ` of the Pallas endomorphism `φ` — a primitive cube root of unity
     in the scalar field (`endo_scalar`, from `Snarky.Curves.PastaCurve`). Concrete, so the

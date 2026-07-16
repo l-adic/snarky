@@ -36,19 +36,12 @@ noncomputable def order (W : Affine F) : ℕ := Nat.card W.Point
 lemma order_smul (W : Affine F) (P : W.Point) : (W.order : ℤ) • P = 0 := by
   rw [natCast_zsmul]; exact card_nsmul_eq_zero'
 
-/-- `[n]·P` reduces its scalar modulo the group order: `(n % order) • P = n • P` — the bridge
-    from integer scalars to the finite scalar group. Immediate from `order_smul`. -/
-lemma zsmul_mod (W : Affine F) (n : ℤ) (P : W.Point) :
-    (n % (W.order : ℤ)) • P = n • P := by
-  have h : n • P
-      = (n % (W.order : ℤ)) • P + (W.order : ℤ) • ((n / (W.order : ℤ)) • P) := by
-    rw [← mul_smul, ← add_smul, Int.emod_add_mul_ediv]
-  rw [h, W.order_smul, add_zero]
-
+omit [DecidableEq F] in
 /-- The prime-order hypothesis as a `Fact`-backed accessor — reads like a field (`c.order_prime`)
     and threads through the development by instance inference. -/
 lemma order_prime (W : Affine F) [Fact (Nat.Prime W.order)] : Nat.Prime W.order := Fact.out
 
+omit [DecidableEq F] in
 /-- The short-Weierstrass coefficients `a₁ = a₂ = a₃ = 0` as a `Fact`-backed accessor
     (`c.short`). This is *all* VarBaseMul needs (no `a₄ = 0`), and every CompElliptic `SWCurve`
     satisfies it by `rfl` — so at a concrete `toW` curve the `Fact` is discharged by
@@ -60,13 +53,9 @@ end WeierstrassCurve.Affine
 
 namespace CompElliptic.CurveForms.ShortWeierstrass
 
-variable {F : Type*} [Field F] [DecidableEq F]
+variable {F : Type*} [Field F]
 
 /-- The `SWCurve` as a Mathlib affine Weierstrass curve `y² = x³ + A·x + B`. -/
 abbrev SWCurve.toAffine (C : SWCurve F) : WeierstrassCurve.Affine F := toW C.A C.B
-
-/-- The Mathlib point group of the curve (with Mathlib's proven `AddCommGroup`; the
-    `IsElliptic` instance it needs comes from `instIsElliptic`). -/
-abbrev SWCurve.Pt (C : SWCurve F) : Type _ := C.toAffine.Point
 
 end CompElliptic.CurveForms.ShortWeierstrass

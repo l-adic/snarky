@@ -1,5 +1,6 @@
 import Pasta.Curve
 import Pasta.Constants
+import Pasta.Endo
 import CompElliptic.Curves.Pasta
 import CompElliptic.Curves.PastaOrder
 import CompElliptic.Fields.Pasta
@@ -90,7 +91,7 @@ open WeierstrassCurve.Affine
     (`2¹²⁶·(|s|+|t|) < n`), then no nonzero `(a,b)` in that box lies in the lattice. Proof: the
     cross product `a·t − b·s` is divisible by `n` yet `|a·t − b·s| < n`, so it is `0`; primitivity
     makes `(a,b)` a multiple of `(s,t)`, ruled out by `|a| ≤ 2¹²⁶ < |s|`. -/
-theorem glv_no_short_of_cert {n lam s t k2 u v : ℤ} (hn : 0 < n)
+private theorem glv_no_short_of_cert {n lam s t k2 u v : ℤ} (hn : 0 < n)
     (hcert : s + t * lam = k2 * n) (hbez : u * s + v * t = 1)
     (hsabs : 2 ^ 126 < |s|) (hbnd : 2 ^ 126 * |t| + 2 ^ 126 * |s| < n)
     {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0) (ha : |a| ≤ 2 ^ 126) (hb : |b| ≤ 2 ^ 126) :
@@ -126,14 +127,17 @@ theorem glv_no_short_of_cert {n lam s t k2 u v : ℤ} (hn : 0 < n)
   · exact h (by rw [hsm, hm0, mul_zero])
   · exact h (by rw [htm, hm0, mul_zero])
 
-/-- **AXIOM (CM).** The Pallas endomorphism `φ(x, y) = (β·x, y)` acts as `[λ]` on the group:
-    `φ(P) = [λ]·P`. The defining property of the GLV endomorphism — not Mathlib-provable for the
-    abstract curve, true by the Pasta construction (same trusted status as the point counts). It
-    discharges `Kimchi.Circuit.EndoMul.endoMul`'s eigenvalue hypothesis `heig`. -/
-axiom pallas_eigen {x y : Fp}
+/-- The Pallas endomorphism `φ(x, y) = (β·x, y)` acts as `[λ]` on the group: `φ(P) = [λ]·P`.
+    PROVED (`Pasta/Endo.lean`): `φ` is a group homomorphism (the addition formulas are
+    homogeneous under the `(u², u³)`-rescaling with `u = β⁻¹`), the group is cyclic of prime
+    order under the Hasse axiom, and the `native_decide` certificate `pallas_lam_nsmul_Gpt`
+    anchors the eigenvalue at the generator. Discharges `Kimchi.Circuit.EndoMul.endoMul`'s
+    hypothesis `heig`; trust = the Hasse axiom + the `native_decide` certificates. -/
+theorem pallas_eigen {x y : Fp}
     (h : Pallas.curve.toAffine.Nonsingular x y)
     (h' : Pallas.curve.toAffine.Nonsingular (pallas_endo * x) y) :
-    Point.some _ _ h' = pallas_lam • Point.some _ _ h
+    Point.some _ _ h' = pallas_lam • Point.some _ _ h :=
+  pallas_eigen_of_hasse pallas_hasse h h'
 
 /-- **No short relation in the Pallas GLV lattice.** For `(a, b) ≠ 0` with `|a|, |b| ≤ 2¹²⁶`,
     `a + b·λ ≢ 0 (mod order)`. Proved from the reduced-basis certificate via `glv_no_short_of_cert`
@@ -152,13 +156,13 @@ theorem pallas_glv_no_short_relation {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0)
     (v := -9986202145198640800203172615810973695)
     (by decide) (by decide) (by decide) (by decide) (by decide) hne ha hb
 
-/-- **AXIOM (CM).** The Vesta endomorphism `φ(x, y) = (β·x, y)` acts as `[λ]` on the group:
-    `φ(P) = [λ]·P` — the defining property of the GLV endomorphism (same trusted status as the
-    point counts). It discharges `Kimchi.Circuit.EndoMul.endoMul`'s `heig` at Vesta. -/
-axiom vesta_eigen {x y : Fq}
+/-- The Vesta endomorphism acts as `[λ]`: `φ(P) = [λ]·P` — PROVED, the Vesta twin of
+    `pallas_eigen` (see its docstring for the derivation and trust accounting). -/
+theorem vesta_eigen {x y : Fq}
     (h : Vesta.curve.toAffine.Nonsingular x y)
     (h' : Vesta.curve.toAffine.Nonsingular (vesta_endo * x) y) :
-    Point.some _ _ h' = vesta_lam • Point.some _ _ h
+    Point.some _ _ h' = vesta_lam • Point.some _ _ h :=
+  vesta_eigen_of_hasse vesta_hasse h h'
 
 /-- **No short relation in the Vesta GLV lattice.** For `(a, b) ≠ 0` with `|a|, |b| ≤ 2¹²⁶`,
     `a + b·λ ≢ 0 (mod order)`. Proved from the reduced-basis certificate (`order = PALLAS_BASE_CARD`

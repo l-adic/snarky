@@ -52,11 +52,16 @@ def isAuxiliary (env : Environment) (n : Name) : Bool :=
             "sizeOf_spec", "injEq", "inj", "eq_def", "congr_simp", "mk" ].contains s
           || s.startsWith "proof_" || s.startsWith "match_" || s.startsWith "eq_"
           || s.startsWith "_"
+          -- compiler-generated helpers nested under a `match_N` (e.g. `….match_1.splitter`)
+          || n.components.any (fun c => c.toString.startsWith "match_")
       | _ => false
 
 /-- Is `n` one of ours — authored in this repo's packages (kimchi + the extracted
-    pasta / poseidon / bulletproof-pcs packages)? -/
+    pasta / poseidon / bulletproof-pcs packages)? `private` declarations get a mangled
+    `_private.<module>.0.`-prefixed name, so demangle first — otherwise the walk refuses to
+    enter them and everything referenced only *through* a private helper reports dead. -/
 def isOurs (n : Name) : Bool :=
+  let n := (privateToUserName? n).getD n
   (`Kimchi).isPrefixOf n || (`Pasta).isPrefixOf n || (`Poseidon).isPrefixOf n
     || (`FixtureKit).isPrefixOf n || (`Bulletproof).isPrefixOf n
 

@@ -1,10 +1,9 @@
 /-
 Axiom-closure gate for the Pasta trust base. This package DECLARES the curve axioms
-(`Pasta.{pallas,vesta}_hasse`, `Pasta.{pallas,vesta}_eigen`); the gate checks that every
+(`Pasta.{pallas,vesta}_hasse`); the gate checks that every
 theorem DERIVED here reduces to the standard logical axioms + the Hasse bounds + the
-CompElliptic point-count certificates and nothing else — in particular the eigen (CM)
-axioms are consumed only downstream (kimchi's EndoMul), never by this package's own
-derivations.
+trusted `native_decide` certificates and nothing else — the CM eigenvalue relations
+(`pallas_eigen`/`vesta_eigen`) are THEOREMS here, not axioms.
 
 Run from `formal/pasta/`:  lake env lean scripts/check_axioms.lean
 (or from `formal/`:        lake env lean pasta/scripts/check_axioms.lean)
@@ -24,18 +23,26 @@ def roots : List Name :=
     `Pasta.vesta_smul_val, `Pasta.pallas_smul_val,
     `Pasta.Shifted.unshiftType1_shiftType1, `Pasta.Shifted.shiftType1_unshiftType1,
     `Pasta.Shifted.shiftType2_unshiftType2,
-    `WeierstrassCurve.Affine.zsmul_mod, `WeierstrassCurve.Affine.order_smul ]
+    `WeierstrassCurve.Affine.order_smul,
+    `Pasta.pallas_eigen, `Pasta.vesta_eigen ]
 
 /-- Standard logical axioms, the Hasse bounds (declared here), and `Lean.ofReduceBool`
-    (inherited from CompElliptic's `native_decide` order witnesses). NO eigen. -/
+    (the `native_decide` witnesses: CompElliptic's order counts + this package's two
+    eigenvalue anchors). NO eigen. -/
 def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound, `Lean.ofReduceBool,
     `Pasta.pallas_hasse, `Pasta.vesta_hasse ]
 
-/-- A CompElliptic `native_decide` point-count witness (trusted; see kimchi's gate). -/
+/-- A trusted `native_decide` certificate: CompElliptic's point-count witnesses, or this
+    package's two eigenvalue anchors (`Pasta.{pallas,vesta}_lam_nsmul_Gpt` in
+    `Pasta/Endo.lean`) — exactly those declarations, by name. Any other `native_decide`
+    in our tree is still rejected. -/
 def isTrustedNativeDecide (ax : Name) : Bool :=
   let s := ax.toString
-  "CompElliptic.".isPrefixOf s && (s.splitOn "native_decide").length > 1
+  (s.splitOn "native_decide").length > 1 &&
+    ("CompElliptic.".isPrefixOf s
+      || "Pasta.pallas_lam_nsmul_Gpt.".isPrefixOf s
+      || "Pasta.vesta_lam_nsmul_Gpt.".isPrefixOf s)
 
 def isAllowed (ax : Name) : Bool := allowed.contains ax || isTrustedNativeDecide ax
 
@@ -52,7 +59,7 @@ run_cmd do
         bad := bad.push (root, ax)
   if bad.isEmpty then
     IO.println s!"✓ all {Pasta.CheckAxioms.roots.length} Pasta roots reduce to the standard \
-      axioms + the Hasse bounds + CompElliptic certificates (no eigen)"
+      axioms + the Hasse bounds + trusted native_decide certificates (no eigen)"
   else
     for (r, a) in bad do
       IO.eprintln s!"::error::{r} depends on disallowed axiom {a}"
