@@ -1,44 +1,45 @@
-name = "kimchi"
-defaultTargets = ["Kimchi", "kimchi-demo"]
+# The l-adic formal-verification workspace. This root package is a pure AGGREGATOR — it
+# owns no libraries. Every component is a standalone path-required package, none
+# privileged:
+#
+#   pasta/           the Pasta curve trust base (Hasse/CM axioms live here)
+#   poseidon/        the Poseidon sponge spec + the shared fixture kit
+#   bulletproof-pcs/ the IPA polynomial commitment + its Fiat-Shamir instantiation
+#   kimchi/          the kimchi protocol formalization (arithmetization, PIOP, verifier,
+#                    soundness capstones)
+#   snarky/          the deep-embedded circuit DSL (sits on top of kimchi via its bridge)
+#
+# Each package builds standalone from its own directory and carries its own scripts
+# (axiom gates, fixture checks, API manifest). Building/running from HERE puts everything
+# in one shared workspace (one Mathlib), which is how CI drives all of it. The only
+# scripts at this level are the genuinely workspace-wide tools: scripts/check-style.sh
+# (the formatter contract) and scripts/deadcode.{lean,sh} (cross-package reachability
+# over the union of the packages' roots.txt manifests).
+name = "formal"
 
-# CompElliptic: concrete short-Weierstrass `SWCurve` / `SWPoint` with a proven group law,
-# and the Pasta curve instances. Vendored as a git submodule at vendor/CompElliptic so the
-# revision is locked to this repo rather than floating on upstream main.
-[[require]]
-name = "CompElliptic"
-path = "vendor/CompElliptic"
-
-# The Pasta curve trust base: the generic EC order/shape sugar, the concrete GLV constants,
-# the Hasse/CM axioms and their derived orders, and the point-group module structure.
-# Lives in-repo as a standalone path package (formal/pasta).
 [[require]]
 name = "pasta"
 path = "pasta"
 
-# The Poseidon sponge specification + the shared fixture kit (formal/poseidon).
 [[require]]
 name = "poseidon"
 path = "poseidon"
 
-# The IPA polynomial commitment scheme: abstract soundness, the executable wire verifier,
-# and its Poseidon Fiat-Shamir instantiation (formal/bulletproof-pcs).
 [[require]]
 name = "bulletproof-pcs"
 path = "bulletproof-pcs"
 
-# Mathlib gives us prime fields (`ZMod p`) and the elliptic-curve group law
-# (`WeierstrassCurve.Affine`), the trusted oracle the EC gates are checked against. Pinned to
-# the tag matching our Lean toolchain (v4.30.0). Kept LAST so this direct pin wins over the
-# mathlib revision CompElliptic/CompPoly/Zcash pull in transitively.
+[[require]]
+name = "kimchi"
+path = "kimchi"
+
+[[require]]
+name = "snarky"
+path = "snarky"
+
+# Direct mathlib pin (matching the toolchain) so this workspace's resolution wins over
+# anything the packages pull in transitively.
 [[require]]
 name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4.git"
 rev = "v4.30.0"
-
-[[lean_lib]]
-name = "Kimchi"
-
-
-[[lean_exe]]
-name = "kimchi-demo"
-root = "Main"

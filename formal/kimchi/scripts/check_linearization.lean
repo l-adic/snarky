@@ -31,7 +31,8 @@ def parsePE (j : Json) : Except String (F × F) := do
   return (a.getD 0 0, a.getD 1 0)
 
 def main : IO Unit := do
-  let path := "fixtures/linearization_vesta.json"
+  let dir := (← IO.getEnv "KIMCHI_FIXTURES_DIR").getD "fixtures"
+  let path := s!"{dir}/linearization_vesta.json"
   let raw ← IO.FS.readFile path
   let r : Except String Bool := do
     let j ← Json.parse raw

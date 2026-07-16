@@ -9,7 +9,8 @@ CompElliptic), `Lean.ofReduceBool` (inherited from CompElliptic's `native_decide
 and the Pasta GLV endomorphism inputs. This subsumes the old `sorryAx` grep: a `sorry` shows up as
 `sorryAx`, which is not in the allowlist, and any *other* stray axiom that slips in is caught too.
 
-Run from `formal/`:  lake env lean scripts/check_axioms.lean   (or: scripts/check_axioms.sh)
+Run from `formal/kimchi/`:  lake env lean scripts/check_axioms.lean
+(or from `formal/`:         lake env lean kimchi/scripts/check_axioms.lean)
 -/
 import Kimchi
 

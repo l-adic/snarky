@@ -16,7 +16,8 @@ open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi.Fixture.Kimchi Kimch
 abbrev C := IpaVesta.curve
 
 def main : IO Unit := do
-  let path := "fixtures/kimchi_proof_vesta.json"
+  let dir := (← IO.getEnv "KIMCHI_FIXTURES_DIR").getD "fixtures"
+  let path := s!"{dir}/kimchi_proof_vesta.json"
   let raw ← IO.FS.readFile path
   let r : Except String (_ × KimchiVK C × KimchiProof C × Array C.ScalarField) := do
     let j ← Json.parse raw

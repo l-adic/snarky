@@ -154,7 +154,8 @@ def run {n : ℕ} [NeZero n] (fx : RawFixture) (hn : fx.n = n) : IO Unit := do
     (n={n}, gates incl. generic/poseidon/completeAdd/endoScalar)"
 
 def main : IO Unit := do
-  let raw ← IO.FS.readFile "fixtures/index_vesta.json"
+  let dir := (← IO.getEnv "KIMCHI_FIXTURES_DIR").getD "fixtures"
+  let raw ← IO.FS.readFile s!"{dir}/index_vesta.json"
   let fx ← match Json.parse raw >>= parseRaw with
     | .ok fx => pure fx
     | .error e => throw (IO.userError s!"index fixture parse error: {e}")

@@ -21,7 +21,10 @@ runs:
     - name: Cache the Kimchi build directory
       uses: actions/cache@v3
       with:
-        path: formal/.lake/build
+        path: |
+          formal/.lake/build
+          formal/*/.lake/build
+          formal/vendor/*/.lake/build
         key: lean-${{ runner.os }}-${{ hashFiles('formal/lean-toolchain', 'formal/lakefile.toml') }}-${{ hashFiles('formal/**/*.lean') }}
         restore-keys: |
           lean-${{ runner.os }}-${{ hashFiles('formal/lean-toolchain', 'formal/lakefile.toml') }}-

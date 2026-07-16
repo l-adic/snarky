@@ -62,7 +62,7 @@ jobs:
     - name: Verify headline proofs use only the allowed axioms
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        scripts/check_axioms.sh
+        lake env lean kimchi/scripts/check_axioms.lean
 
     # Per-package trust-surface gates: each package audits the axiom closure of its own
     # surface (pasta: the derived trust base, no eigen; bulletproof-pcs: the PCS
@@ -83,7 +83,7 @@ jobs:
         cd snarky
         lake exe cache get
         lake build Snarky
-        scripts/check_axioms.sh
+        lake env lean kimchi/scripts/check_axioms.lean
 
     # Compatibility: the IPA verifier model must accept real kimchi/proof-systems
     # transcripts, and both chunk-fold mechanisms must match production — the chunk
@@ -120,14 +120,16 @@ jobs:
     - name: Check the permutation argument against kimchi row data
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        scripts/check_perm_fixture.sh
+        KIMCHI_FIXTURES_DIR=kimchi/fixtures \
+          lake env lean kimchi/scripts/check_perm_fixture.lean
 
     # The index model must accept the mixed-gate production circuit: construction
     # by decision, derived columns, satisfiability, and corruption rejections.
     - name: Check the index model against the mixed-gate fixture
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        scripts/check_index_fixture.sh
+        KIMCHI_FIXTURES_DIR=kimchi/fixtures \
+          lake env lean kimchi/scripts/check_index_fixture.lean
 
     # The closed-form verifier linearization (perm_scalars, the gate constant term,
     # ft_eval0) must reproduce, by value, the production scalar side of a real proof —
@@ -136,7 +138,8 @@ jobs:
     - name: Check the verifier linearization against the production scalar side
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        scripts/check_linearization.sh
+        KIMCHI_FIXTURES_DIR=kimchi/fixtures \
+          lake env lean kimchi/scripts/check_linearization.lean
 
     # The composed executable kimchi verifier (both sponge schedules, the scalar side,
     # the to_batch assembly, the warm-started IPA check) must accept a complete
@@ -145,7 +148,8 @@ jobs:
     - name: Check the executable kimchi verifier against a production proof
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        scripts/check_kimchi_verifier.sh
+        KIMCHI_FIXTURES_DIR=kimchi/fixtures \
+          lake env lean kimchi/scripts/check_kimchi_verifier.lean
 
     # The verifier-key <-> index correspondence (VKCorresponds), by value: every
     # committed column of the production VK equals the value-MSM of the Lagrange-basis
@@ -154,5 +158,6 @@ jobs:
     - name: Check the verifier key corresponds to the index
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        scripts/check_vk_correspond.sh
+        KIMCHI_FIXTURES_DIR=kimchi/fixtures \
+          lake env lean kimchi/scripts/check_vk_correspond.lean
 

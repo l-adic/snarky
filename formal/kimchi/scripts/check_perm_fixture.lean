@@ -90,7 +90,8 @@ def check (fx : PermFixture) : List (String × Bool) :=
       !recurrenceHolds fx (fx.witness.modify 1 (·.modify 0 (· + 1)))) ]
 
 def main : IO Unit := do
-  let raw ← IO.FS.readFile "fixtures/perm_vesta.json"
+  let dir := (← IO.getEnv "KIMCHI_FIXTURES_DIR").getD "fixtures"
+  let raw ← IO.FS.readFile s!"{dir}/perm_vesta.json"
   let fx ← match Json.parse raw >>= parseFixture with
     | .ok fx => pure fx
     | .error e => throw (IO.userError s!"perm fixture parse error: {e}")

@@ -6,7 +6,7 @@ defaultTargets = ["Snarky"]
 # (`import Snarky`) is dependency-free and Mathlib-free — only the bridge pulls this in.
 [[require]]
 name = "kimchi"
-path = ".."
+path = "../kimchi"
 
 [[lean_lib]]
 name = "Snarky"

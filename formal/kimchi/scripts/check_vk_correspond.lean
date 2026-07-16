@@ -23,8 +23,9 @@ def basisMSM (basis : Array C.Point) (col : Array F) : C.Point :=
     (fun j => col.getD j 0)
 
 def main : IO Unit := do
-  let idxPath := "fixtures/index_vesta.json"
-  let vkPath := "fixtures/kimchi_proof_vesta.json"
+  let dir := (← IO.getEnv "KIMCHI_FIXTURES_DIR").getD "fixtures"
+  let idxPath := s!"{dir}/index_vesta.json"
+  let vkPath := s!"{dir}/kimchi_proof_vesta.json"
   let idxJ ← IO.FS.readFile idxPath
   let vkJ ← IO.FS.readFile vkPath
   let r : Except String (Array (String × Array F × C.Point) × ℕ) := do

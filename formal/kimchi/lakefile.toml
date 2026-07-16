@@ -1,0 +1,44 @@
+name = "kimchi"
+defaultTargets = ["Kimchi", "kimchi-demo"]
+
+# CompElliptic: concrete short-Weierstrass `SWCurve` / `SWPoint` with a proven group law,
+# and the Pasta curve instances. Vendored as a git submodule at vendor/CompElliptic so the
+# revision is locked to this repo rather than floating on upstream main.
+[[require]]
+name = "CompElliptic"
+path = "../vendor/CompElliptic"
+
+# The Pasta curve trust base: the generic EC order/shape sugar, the concrete GLV constants,
+# the Hasse/CM axioms and their derived orders, and the point-group module structure.
+# Lives in-repo as a standalone path package (formal/pasta).
+[[require]]
+name = "pasta"
+path = "../pasta"
+
+# The Poseidon sponge specification + the shared fixture kit (formal/poseidon).
+[[require]]
+name = "poseidon"
+path = "../poseidon"
+
+# The IPA polynomial commitment scheme: abstract soundness, the executable wire verifier,
+# and its Poseidon Fiat-Shamir instantiation (formal/bulletproof-pcs).
+[[require]]
+name = "bulletproof-pcs"
+path = "../bulletproof-pcs"
+
+# Mathlib gives us prime fields (`ZMod p`) and the elliptic-curve group law
+# (`WeierstrassCurve.Affine`), the trusted oracle the EC gates are checked against. Pinned to
+# the tag matching our Lean toolchain (v4.30.0). Kept LAST so this direct pin wins over the
+# mathlib revision CompElliptic/CompPoly/Zcash pull in transitively.
+[[require]]
+name = "mathlib"
+git = "https://github.com/leanprover-community/mathlib4.git"
+rev = "v4.30.0"
+
+[[lean_lib]]
+name = "Kimchi"
+
+
+[[lean_exe]]
+name = "kimchi-demo"
+root = "Main"

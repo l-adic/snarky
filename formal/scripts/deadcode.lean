@@ -8,7 +8,7 @@ the extracted pasta/poseidon/bulletproof-pcs packages — NOT
 reachable from the roots. Auto-generated decls (recursors, constructors, projections, and
 `match_`/`proof_`/`eq_` auxiliaries) are excluded — they are noise, not authored code.
 
-Run from `formal/`:  lake env lean scripts/deadcode.lean   (or: scripts/deadcode.sh)
+Run from `formal/` (the aggregator workspace):  scripts/deadcode.sh
 -/
 import Kimchi
 
@@ -76,7 +76,7 @@ end Kimchi.DeadCode
 
 run_cmd do
   let env ← getEnv
-  let manifests := ["roots.txt", "pasta/roots.txt", "poseidon/roots.txt",
+  let manifests := ["kimchi/roots.txt", "pasta/roots.txt", "poseidon/roots.txt",
     "bulletproof-pcs/roots.txt"]
   let mut raw := ""
   for m in manifests do

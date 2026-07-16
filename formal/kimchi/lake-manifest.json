@@ -3,15 +3,6 @@
  "packagesDir": ".lake/packages",
  "packages": [
   {
-   "type": "path",
-   "scope": "",
-   "name": "kimchi",
-   "manifestFile": "lake-manifest.json",
-   "inherited": false,
-   "dir": "../kimchi",
-   "configFile": "lakefile.toml"
-  },
-  {
    "url": "https://github.com/leanprover-community/mathlib4.git",
    "type": "git",
    "subDir": null,
@@ -20,7 +11,7 @@
    "name": "mathlib",
    "manifestFile": "lake-manifest.json",
    "inputRev": "v4.30.0",
-   "inherited": true,
+   "inherited": false,
    "configFile": "lakefile.lean"
   },
   {
@@ -28,7 +19,7 @@
    "scope": "",
    "name": "\u00abbulletproof-pcs\u00bb",
    "manifestFile": "lake-manifest.json",
-   "inherited": true,
+   "inherited": false,
    "dir": "../bulletproof-pcs",
    "configFile": "lakefile.toml"
   },
@@ -37,7 +28,7 @@
    "scope": "",
    "name": "poseidon",
    "manifestFile": "lake-manifest.json",
-   "inherited": true,
+   "inherited": false,
    "dir": "../poseidon",
    "configFile": "lakefile.toml"
   },
@@ -46,7 +37,7 @@
    "scope": "",
    "name": "pasta",
    "manifestFile": "lake-manifest.json",
-   "inherited": true,
+   "inherited": false,
    "dir": "../pasta",
    "configFile": "lakefile.toml"
   },
@@ -55,7 +46,7 @@
    "scope": "",
    "name": "CompElliptic",
    "manifestFile": "lake-manifest.json",
-   "inherited": true,
+   "inherited": false,
    "dir": "../vendor/CompElliptic",
    "configFile": "lakefile.lean"
   },
@@ -168,7 +159,7 @@
    "configFile": "lakefile.lean"
   }
  ],
- "name": "snarky",
+ "name": "\u00abkimchi\u00bb",
  "lakeDir": ".lake",
  "fixedToolchain": false
 }

@@ -11,8 +11,10 @@ no witnesses. -/
 
 open Lean Kimchi.Index Kimchi.Fixture.PS CompElliptic.Fields.Pasta
 
-def resultsDir : System.FilePath :=
-  ".." / "packages" / "pickles-circuit-diffs" / "circuits" / "results"
+def resultsDir : IO System.FilePath := do
+  match (← IO.getEnv "KIMCHI_PS_RESULTS_DIR") with
+  | some d => return d
+  | none   => return ".." / "packages" / "pickles-circuit-diffs" / "circuits" / "results"
 
 /-- The checks for one ingested instance, named for the report. `none` = no target. -/
 def checks (inst : Instance) : List (String × Option Bool) :=
@@ -38,6 +40,7 @@ def checks (inst : Instance) : List (String × Option Bool) :=
       else some (!sat wit.tab (fun i => wit.pub i + 1))) ]
 
 def main : IO Unit := do
+  let resultsDir ← resultsDir
   let entries ← resultsDir.readDir
   let jsons := (entries.filterMap fun e =>
     if e.fileName.endsWith ".json" then some e.path else none).qsort
