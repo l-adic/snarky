@@ -40,8 +40,8 @@ exactly the shape of the former axioms; the short-basis bounds are derived from 
 reduced-basis certificates.
 
 **Public surface**: the constants (`*_endo`, `*_endo_cube`, `*_lam`), the anchor
-certificates with their statement components (`*_lam_nat`, `*_endoGpt`, `*_lam_nsmul_Gpt`
-— the axiom gates allow exactly these two `native_decide`s by name), and the consumer
+certificates `*_lam_nsmul_Gpt` (the axiom gates allow exactly these two `native_decide`s
+by name), and the consumer
 theorems `{pallas,vesta}_eigen` / `{pallas,vesta}_glv_no_short_relation`. Every
 intermediate — the raw endomorphism, its additivity, the homs, the `SWPoint`-level
 eigenvalue relations, the lattice lemma — is `private`.
@@ -66,7 +66,7 @@ def pallas_endo : Fp :=
   20444556541222657078399132219657928148671392403212669005631716460534733845831
 
 /-- `β³ = 1` on Pallas. -/
-theorem pallas_endo_cube : pallas_endo ^ 3 = 1 := by decide
+private theorem pallas_endo_cube : pallas_endo ^ 3 = 1 := by decide
 
 
 /-- The Vesta base-field endomorphism coefficient `β`: a primitive cube root of unity
@@ -76,7 +76,7 @@ def vesta_endo : Fq :=
   2942865608506852014473558576493638302197734138389222805617480874486368177743
 
 /-- `β³ = 1` on Vesta. -/
-theorem vesta_endo_cube : vesta_endo ^ 3 = 1 := by decide
+private theorem vesta_endo_cube : vesta_endo ^ 3 = 1 := by decide
 
 
 /-- The scalar eigenvalue `λ` of the Pallas endomorphism `φ` — a primitive cube root of unity
@@ -237,30 +237,22 @@ One `native_decide` certificate per curve, in the style of CompElliptic's point 
 through the binary double-and-add `nsmul`. These are the only `native_decide`s in the
 workspace packages; the axiom gates permit exactly these two declarations by name. -/
 
-/-- `Pasta.pallas_lam` as a bare `ℕ` numeral — the `nsmul` scalar of the anchor.
-    `pallas_lam = ↑pallas_lam_nat` is a `decide` step inside `pallas_eigen`. -/
-def pallas_lam_nat : ℕ :=
-  26005156700822196841419187675678338661165322343552424574062261873906994770353
-
 /-- The image of the standard Pallas generator under `φ(x, y) = (β·x, y)` — on the curve
     since `(β·x)³ = x³`. -/
-def pallas_endoGpt : SWPoint Pallas.curve :=
+private def pallas_endoGpt : SWPoint Pallas.curve :=
   ⟨pallas_endo * Pallas.G.1, Pallas.G.2, by
     left
     show Pallas.G.2 ^ 2
       = (pallas_endo * Pallas.G.1) ^ 3 + Pallas.a * (pallas_endo * Pallas.G.1) + Pallas.b
     decide⟩
 
-/-- **The Pallas eigenvalue anchor**: `λ • G = φ(G)` at the standard generator. -/
-theorem pallas_lam_nsmul_Gpt : pallas_lam_nat • Pallas.Gpt = pallas_endoGpt := by
+/-- **The Pallas eigenvalue anchor**: `λ • G = φ(G)` at the standard generator
+    (`.toNat` puts the `ℤ` eigenvalue in `nsmul` position). -/
+theorem pallas_lam_nsmul_Gpt : pallas_lam.toNat • Pallas.Gpt = pallas_endoGpt := by
   native_decide
 
-/-- `Pasta.vesta_lam` as a bare `ℕ` numeral — the `nsmul` scalar of the anchor. -/
-def vesta_lam_nat : ℕ :=
-  8503465768106391777493614032514048814691664078728891710322960303815233784505
-
 /-- The image of the standard Vesta generator under `φ(x, y) = (β·x, y)`. -/
-def vesta_endoGpt : SWPoint Vesta.curve :=
+private def vesta_endoGpt : SWPoint Vesta.curve :=
   ⟨vesta_endo * Vesta.G.1, Vesta.G.2, by
     left
     show Vesta.G.2 ^ 2
@@ -268,7 +260,7 @@ def vesta_endoGpt : SWPoint Vesta.curve :=
     decide⟩
 
 /-- **The Vesta eigenvalue anchor**: `λ • G = φ(G)` at the standard generator. -/
-theorem vesta_lam_nsmul_Gpt : vesta_lam_nat • Vesta.Gpt = vesta_endoGpt := by
+theorem vesta_lam_nsmul_Gpt : vesta_lam.toNat • Vesta.Gpt = vesta_endoGpt := by
   native_decide
 
 /-! ## The transport homomorphism into Mathlib's point group
@@ -300,7 +292,7 @@ private theorem pallas_endoPt_Gpt :
     The group is cyclic of prime order (`card_eq`), so `P = k • Gpt`; `endoHom` and the
     `native_decide` anchor `pallas_lam_nsmul_Gpt` do the rest. -/
 private theorem pallas_endoPt_eq_lam_smul (P : SWPoint Pallas.curve) :
-    endoPt Pallas.curve rfl pallas_endo_cube P = pallas_lam_nat • P := by
+    endoPt Pallas.curve rfl pallas_endo_cube P = pallas_lam.toNat • P := by
   have hmem : P ∈ AddSubgroup.zmultiples Pallas.Gpt :=
     mem_zmultiples_of_prime_card Pallas.card_eq Pallas.Gpt_ne_zero
   obtain ⟨k, hk⟩ := AddSubgroup.mem_zmultiples_iff.mp hmem
@@ -317,7 +309,7 @@ private theorem vesta_endoPt_Gpt :
 
 /-- **The Vesta eigenvalue relation on `SWPoint`**: `φ(P) = [λ]·P` for every point. -/
 private theorem vesta_endoPt_eq_lam_smul (P : SWPoint Vesta.curve) :
-    endoPt Vesta.curve rfl vesta_endo_cube P = vesta_lam_nat • P := by
+    endoPt Vesta.curve rfl vesta_endo_cube P = vesta_lam.toNat • P := by
   have hmem : P ∈ AddSubgroup.zmultiples Vesta.Gpt :=
     mem_zmultiples_of_prime_card Vesta.card_eq Vesta.Gpt_ne_zero
   obtain ⟨k, hk⟩ := AddSubgroup.mem_zmultiples_iff.mp hmem
@@ -331,8 +323,8 @@ private theorem vesta_endoPt_eq_lam_smul (P : SWPoint Vesta.curve) :
 
 Exactly the shape of the (former) `pallas_eigen`/`vesta_eigen` axioms. The
 `Nonsingular → OnCurve` bridge is `equation_toW`, and `toPtHom` + `map_nsmul` carry the
-`SWPoint` relation across; the scalar changes type by `natCast_zsmul` (`pallas_lam` is the
-`ℤ`-numeral of `pallas_lam_nat`). -/
+`SWPoint` relation across; the scalar changes type by `natCast_zsmul`
+(`pallas_lam = ↑pallas_lam.toNat` by `decide`). -/
 
 /-- The Pallas endomorphism `φ(x, y) = (β·x, y)` acts as `[λ]` on the group: `φ(P) = [λ]·P`.
     PROVED above: `φ` is a group homomorphism (the addition formulas are homogeneous under
@@ -358,7 +350,7 @@ theorem pallas_eigen {x y : Fp}
     show toPt Pallas.curve.A Pallas.curve.B (x, y) = _
     rw [toPt_some honc]
   rw [hL, hR] at hmap
-  rw [show pallas_lam = (pallas_lam_nat : ℤ) from by decide, natCast_zsmul]
+  rw [show pallas_lam = (pallas_lam.toNat : ℤ) from by decide, natCast_zsmul]
   exact hmap
 
 /-- The Vesta endomorphism acts as `[λ]`: `φ(P) = [λ]·P` — PROVED, the Vesta twin of
@@ -381,7 +373,7 @@ theorem vesta_eigen {x y : Fq}
     show toPt Vesta.curve.A Vesta.curve.B (x, y) = _
     rw [toPt_some honc]
   rw [hL, hR] at hmap
-  rw [show vesta_lam = (vesta_lam_nat : ℤ) from by decide, natCast_zsmul]
+  rw [show vesta_lam = (vesta_lam.toNat : ℤ) from by decide, natCast_zsmul]
   exact hmap
 
 /-! ## The GLV lattice short-basis bounds
