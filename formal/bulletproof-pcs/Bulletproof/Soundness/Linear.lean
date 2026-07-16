@@ -1,5 +1,5 @@
 import Mathlib
-import Kimchi.Commitment.IPA.Basic
+import Bulletproof.Basic
 
 /-!
 # The linear algebra of one IPA round (soundness)
@@ -15,7 +15,7 @@ combination of the three folded witnesses opens the parent commitment `P`, with 
 binding assumption — pure module linear algebra.
 -/
 
-namespace Kimchi.Commitment.IPA
+namespace Bulletproof
 
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
@@ -121,4 +121,4 @@ theorem ipa_round_commit_with_coeffs {m : ℕ} (g_lo g_hi : Fin m → G) (P L R 
       | linear_combination hl2
       | ring
 
-end Kimchi.Commitment.IPA
+end Bulletproof

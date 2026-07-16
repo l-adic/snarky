@@ -30,7 +30,7 @@ point-count axiom; the abstract development stays axiom-free.
 namespace Kimchi.Circuit.VarBaseMul
 
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta CompElliptic.CurveForms.ShortWeierstrass
-open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine Kimchi.Shifted Pasta
+open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine Pasta.Shifted Pasta
 
 /-! ## The `scaleFast1` / Type1 direction: soundness via the forbidden band (Vesta)
 

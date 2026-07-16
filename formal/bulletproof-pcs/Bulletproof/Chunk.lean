@@ -1,4 +1,4 @@
-import Kimchi.Commitment.IPA.Soundness
+import Bulletproof.Soundness
 import Mathlib.Algebra.Polynomial.Eval.Defs
 import Mathlib.Algebra.Polynomial.Degree.Lemmas
 import Mathlib.Algebra.Polynomial.Inductions
@@ -28,7 +28,7 @@ bound (`natDegree_lt_of_chunks` is deferred to the consumer — here the bound e
 the hypothesis `p.natDegree < c · 2^k`).
 -/
 
-namespace Kimchi.Commitment.IPA
+namespace Bulletproof
 
 open Polynomial
 
@@ -230,4 +230,4 @@ theorem chunked_ipa_soundness (σ : SRS G) (proof : OpeningProof F G σ.k)
   rw [hopen.2, ha]
   exact hval
 
-end Kimchi.Commitment.IPA
+end Bulletproof

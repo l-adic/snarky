@@ -1,7 +1,7 @@
 import Mathlib
 import Kimchi.Verifier.KimchiSound
 import Kimchi.Verifier.Kimchi
-import Kimchi.Verifier.Reflection
+import Bulletproof.Reflection
 import Kimchi.Verifier.Reflect
 import Kimchi.Quotient.Rectangle
 
@@ -160,9 +160,11 @@ bridges (`homega`/`hzk`/`hshift`/`hendo`) remain genuine hypotheses, since
 `VKCorresponds` pins only commitments.
 -/
 
+open Bulletproof
+
 namespace Kimchi.Verifier
 
-open Polynomial Kimchi.Commitment.IPA Kimchi.Index Kimchi.Verifier.Linearization
+open Polynomial Bulletproof Kimchi.Index Kimchi.Verifier.Linearization
   Kimchi.Verifier.Equation CompElliptic.Fields.Pasta
 
 /-! ## The transcript bundle -/

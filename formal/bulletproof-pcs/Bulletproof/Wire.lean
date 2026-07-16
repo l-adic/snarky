@@ -1,7 +1,7 @@
 import CompElliptic.Curves.Pasta
-import Kimchi.Shifted
+import Pasta.Shifted
 import Poseidon.GroupMap
-import Kimchi.Commitment.IPA.Batch
+import Bulletproof.Batch
 
 /-!
 # The executable kimchi IPA verifier
@@ -10,7 +10,7 @@ The batched IPA opening verifier of kimchi (`SRS::verify`, proof-systems
 `poly-commitment/src/ipa.rs`), composed as one executable function over exactly the wire
 data: the per-polynomial commitments, evaluation points and claimed evaluations, the
 combination scalars, and the opening proof, against a separately supplied SRS
-(`Kimchi.Commitment.IPA.SRS`, as everywhere in the library). Everything
+(`Bulletproof.SRS`, as everywhere in the library). Everything
 transcript-derived — the `U` base, the round challenges, the Schnorr challenge — is
 recomputed here through the sponge layer (`Kimchi/Sponge`); nothing is taken as input that
 the wire protocol does not carry. In particular the abstract SRS's randomisation base
@@ -27,7 +27,7 @@ structure is inherited: `+`/`0` and the binary-nsmul scalar action from CompElli
 `AddCommGroup` instance, point equality from its `DecidableEq`. `Proof`, `Input`, and
 `verify` are indexed by the bundle, so a proof's type names its curve.
 
-The scalar side reuses the `Kimchi.Commitment.IPA` definitions (`bPoly`,
+The scalar side reuses the `Bulletproof` definitions (`bPoly`,
 `bPolyCoefficients`, `combinedB`, `combinedInnerProduct`) at the concrete scalar field.
 Scalars act on points as `z.val • _` (the ℕ-action of the group): the `C.ScalarField`-module
 structure on `Point` is the reflection concern relating this verifier to the `Prop`-level
@@ -60,10 +60,10 @@ production prover/verifier fixtures by `scripts/check_ipa_fixture.lean`.
 * `IpaVesta`, `IpaPallas` — the Pasta instantiations.
 -/
 
-namespace Kimchi.Verifier.Ipa
+namespace Bulletproof.Ipa
 
 open CompElliptic.CurveForms.ShortWeierstrass
-open Poseidon Poseidon.FqSponge Kimchi.Commitment.IPA
+open Poseidon Poseidon.FqSponge Bulletproof
 
 /-- The per-curve data of the verifier, bundled as a single index — base and scalar
 cardinalities with their primality facts, the Fq-sponge spec, the curve, and the
@@ -92,7 +92,7 @@ abbrev CommitmentCurve.Point (C : CommitmentCurve) := SWPoint C.E
 variable (C : CommitmentCurve)
 
 /-- Multi-scalar multiplication `∑ i, aᵢ • gᵢ` — the group-side mirror of
-`Kimchi.Commitment.IPA.commitGen`, with the scalars acting through `val`. -/
+`Bulletproof.commitGen`, with the scalars acting through `val`. -/
 def msm {n : ℕ} (g : Fin n → C.Point) (a : Fin n → C.ScalarField) : C.Point :=
   ∑ i, (a i).val • g i
 
@@ -133,12 +133,12 @@ def Input.evalFn {C : CommitmentCurve} (inp : Input C) :
   fun i j => (inp.evals[i.val]!)[j.val]!
 
 /-- The combined inner product of the claimed evaluations
-(`Kimchi.Commitment.IPA.combinedInnerProduct` at the wire arrays). -/
+(`Bulletproof.combinedInnerProduct` at the wire arrays). -/
 def cipOf {C : CommitmentCurve} (inp : Input C) : C.ScalarField :=
   combinedInnerProduct inp.polyscale inp.evalscale inp.evalFn
 
 /-- The polyscale combination `∑ i, ξ^i • Cᵢ` of the commitments — the group-side mirror
-of `Kimchi.Commitment.IPA.combinedCommitment`, by a running power. -/
+of `Bulletproof.combinedCommitment`, by a running power. -/
 def combineCommitments (ξ : C.ScalarField) (cs : Array C.Point) : C.Point :=
   (cs.foldl (fun (acc : C.Point × C.ScalarField) P => (acc.1 + acc.2.val • P, acc.2 * ξ))
     (0, 1)).1
@@ -149,8 +149,8 @@ scalar-modulus bit size `Nat.size scalar` (the Rust `MODULUS_BIT_SIZE`) — Type
 (`(x − 2ᵇ − 1)/2`) when the scalar modulus is below the base modulus, the Type2 shift
 (`x − 2ᵇ`) otherwise. The branch is the Rust `n1 < n2`, decided from the cardinalities. -/
 def shiftScalar (x : C.ScalarField) : C.ScalarField :=
-  if C.scalar < C.base then Kimchi.Shifted.shiftType1 (Nat.size C.scalar) x
-  else Kimchi.Shifted.shiftType2 (Nat.size C.scalar) x
+  if C.scalar < C.base then Pasta.Shifted.shiftType1 (Nat.size C.scalar) x
+  else Pasta.Shifted.shiftType2 (Nat.size C.scalar) x
 
 /-- The verifier's Fiat-Shamir schedule (`SRS::verify`): absorb the shifted combined inner
 product; squeeze and map the `U` base; per round absorb `L`, `R` and squeeze a challenge;
@@ -244,13 +244,13 @@ theorem transcript_size_of_verify (σ : SRS C.Point) (inp : Input C)
     (hv : verify C σ inp = true) : (transcript C inp).2.1.size = σ.k :=
   (transcript_chals_size C inp).trans (verify_shape C σ inp hv)
 
-end Kimchi.Verifier.Ipa
+end Bulletproof.Ipa
 
 /-! ## The Pasta instantiations -/
 
-namespace Kimchi.Verifier.IpaVesta
+namespace Bulletproof.IpaVesta
 
-open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Poseidon Kimchi.Verifier
+open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Poseidon Bulletproof
 
 /-- The Vesta bundle. The scalar modulus is below the base modulus, so scalars absorb in
 Type1 form. -/
@@ -265,13 +265,13 @@ abbrev Point := Ipa.CommitmentCurve.Point curve
 abbrev Proof := Ipa.Proof curve
 abbrev Input := Ipa.Input curve
 
-def verify : Kimchi.Commitment.IPA.SRS Point → Input → Bool := Ipa.verify curve
+def verify : Bulletproof.SRS Point → Input → Bool := Ipa.verify curve
 
-end Kimchi.Verifier.IpaVesta
+end Bulletproof.IpaVesta
 
-namespace Kimchi.Verifier.IpaPallas
+namespace Bulletproof.IpaPallas
 
-open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Poseidon Kimchi.Verifier
+open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Poseidon Bulletproof
 
 /-- The Pallas bundle. The scalar modulus is above the base modulus, so scalars absorb in
 Type2 form — selected by the cardinalities, not restated here. -/
@@ -286,6 +286,6 @@ abbrev Point := Ipa.CommitmentCurve.Point curve
 abbrev Proof := Ipa.Proof curve
 abbrev Input := Ipa.Input curve
 
-def verify : Kimchi.Commitment.IPA.SRS Point → Input → Bool := Ipa.verify curve
+def verify : Bulletproof.SRS Point → Input → Bool := Ipa.verify curve
 
-end Kimchi.Verifier.IpaPallas
+end Bulletproof.IpaPallas

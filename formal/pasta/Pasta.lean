@@ -2,6 +2,7 @@ import Pasta.Curve
 import Pasta.Constants
 import Pasta.Basic
 import Pasta.Module
+import Pasta.Shifted
 
 /-!
 # Pasta — the Pasta curves' trust base

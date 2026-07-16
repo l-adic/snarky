@@ -31,6 +31,12 @@ path = "pasta"
 name = "poseidon"
 path = "poseidon"
 
+# The IPA polynomial commitment scheme: abstract soundness, the executable wire verifier,
+# and its Poseidon Fiat-Shamir instantiation (formal/bulletproof-pcs).
+[[require]]
+name = "bulletproof-pcs"
+path = "bulletproof-pcs"
+
 # Mathlib gives us prime fields (`ZMod p`) and the elliptic-curve group law
 # (`WeierstrassCurve.Affine`), the trusted oracle the EC gates are checked against. Pinned to
 # the tag matching our Lean toolchain (v4.30.0). Kept LAST so this direct pin wins over the

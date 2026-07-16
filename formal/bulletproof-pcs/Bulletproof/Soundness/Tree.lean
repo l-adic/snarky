@@ -1,6 +1,6 @@
 import Mathlib
-import Kimchi.Commitment.IPA.Basic
-import Kimchi.Commitment.IPA.Soundness.Linear
+import Bulletproof.Basic
+import Bulletproof.Soundness.Linear
 
 /-!
 # IPA soundness: the transcript tree and 3-special soundness
@@ -17,7 +17,7 @@ with `commitGen_append`. The generators fold by the challenge `u`
 (`g ↦ gLo + u • gHi`) and the commitment recombines by `u⁻¹ • L + u • R`.
 -/
 
-namespace Kimchi.Commitment.IPA
+namespace Bulletproof
 
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
@@ -140,4 +140,4 @@ theorem ipa_soundV : {d : ℕ} → (g : Fin (2 ^ d) → G) → (b : Fin (2 ^ d) 
         exact ipa_round_commit_with_coeffs (loHalf b) (hiHalf b) v Lv Rv
           c₁ c₂ c₃ u₁ u₂ u₃ l₁ l₂ l₃ hl0 hl1 hl2 hu₁ hu₂ hu₃ hv₁ hv₂ hv₃
 
-end Kimchi.Commitment.IPA
+end Bulletproof

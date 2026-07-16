@@ -50,9 +50,11 @@ the equation; milestone 5 lifts it to the `p`-uniform family. Accordingly no
 `ftComm`/`Tcomm`/ft-row data is modeled here.
 -/
 
+open Bulletproof
+
 namespace Kimchi.Verifier
 
-open Polynomial Kimchi.Commitment.IPA Kimchi.Index Kimchi.Verifier.Linearization
+open Polynomial Bulletproof Kimchi.Index Kimchi.Verifier.Linearization
   Kimchi.Verifier.Equation
 
 variable {F G : Type*}

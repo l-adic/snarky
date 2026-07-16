@@ -1,5 +1,5 @@
 import Kimchi.Verifier.Kimchi
-import Kimchi.Fixture.Ipa
+import Bulletproof.Fixture
 
 /-!
 # Kimchi wire-proof fixture ingestion
@@ -13,11 +13,13 @@ Poseidon parameters are not wire data — the caller pins them (the per-curve
 `KimchiVesta.frParams`/`KimchiPallas.frParams`).
 -/
 
+open Bulletproof
+
 namespace Kimchi.Fixture.Kimchi
 
 open FixtureKit
 
-open Lean Kimchi.Fixture Kimchi.Fixture.Ipa Kimchi.Verifier
+open Lean Kimchi.Fixture Bulletproof.Fixture Kimchi.Verifier
 
 /-- A `[zeta, zeta_omega]` evaluation pair. -/
 def parsePointEval (C : Ipa.CommitmentCurve) (j : Json) :

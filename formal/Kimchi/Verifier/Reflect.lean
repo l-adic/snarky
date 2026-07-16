@@ -1,6 +1,6 @@
 import Mathlib
 import Kimchi.Verifier.Kimchi
-import Kimchi.Verifier.Reflection
+import Bulletproof.Reflection
 import Kimchi.Verifier.Correspond
 import Kimchi.Verifier.Equation
 import Kimchi.Quotient.Permutation
@@ -20,10 +20,12 @@ These are grid-independent: they describe one accepted run. The challenge-grid e
 and the composition to `Satisfies` live above this file (the Fiat-Shamir bridge + capstone).
 -/
 
+open Bulletproof
+
 namespace Kimchi.Verifier
 
 open CompElliptic.CurveForms.ShortWeierstrass
-open Poseidon Poseidon.FqSponge Kimchi.Commitment.IPA Kimchi.Index
+open Poseidon Poseidon.FqSponge Bulletproof Kimchi.Index
 open Kimchi.Verifier.Linearization Polynomial
 open CompElliptic.Fields.Pasta
 

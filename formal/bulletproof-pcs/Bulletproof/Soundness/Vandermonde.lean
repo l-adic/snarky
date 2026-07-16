@@ -17,7 +17,7 @@ This generalizes the three-node `vandermonde3` (Soundness/Linear.lean) to any
 under injectivity, so the Vandermonde matrix is invertible over the field).
 -/
 
-namespace Kimchi.Commitment.IPA
+namespace Bulletproof
 
 variable {F : Type*} [Field F] [DecidableEq F]
 
@@ -52,4 +52,4 @@ theorem vandermondeN {n : ℕ} (ξ : Fin n → F) (hξ : Function.Injective ξ)
     exact Finset.sum_congr rfl fun s _ => by ring
   rw [hval, hmul, Pi.single_apply]
 
-end Kimchi.Commitment.IPA
+end Bulletproof

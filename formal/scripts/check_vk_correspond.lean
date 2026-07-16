@@ -1,5 +1,5 @@
 import Kimchi.Verifier.Kimchi
-import Kimchi.Fixture.Ipa
+import Bulletproof.Fixture
 import Lean.Data.Json
 
 /-! The verifier-key ↔ index correspondence, by value: every committed column of the
@@ -10,7 +10,7 @@ the Index model's derivations by `check_index_fixture`). This is
 `Kimchi.Verifier.VKCorresponds` for the production key, adjudicated numerically
 through `commitPoly_columnPoly`'s formula: `commit (columnPoly v) = ∑ vⱼ • Lcommⱼ`. -/
 
-open Lean Kimchi.Fixture Kimchi.Fixture.Ipa Kimchi.Verifier
+open Lean Kimchi.Fixture Bulletproof.Fixture Kimchi.Verifier
 
 abbrev C := IpaVesta.curve
 abbrev F := C.ScalarField

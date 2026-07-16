@@ -1,5 +1,5 @@
 import Kimchi.Index.Aggregate
-import Kimchi.Commitment.IPA.Basic
+import Bulletproof.Basic
 
 /-!
 # The verifier key ↔ index correspondence
@@ -26,9 +26,11 @@ connection to `KimchiVK`'s concrete points is part of the milestone-4 compositio
 through the same reflection layer that carries `Ipa.verify` to `batch_soundness`.
 -/
 
+open Bulletproof
+
 namespace Kimchi.Verifier
 
-open Polynomial Kimchi.Quotient Kimchi.Index Kimchi.Commitment.IPA
+open Polynomial Kimchi.Quotient Kimchi.Index Bulletproof
 
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G] {n : ℕ}
 

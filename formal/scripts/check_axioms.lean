@@ -41,11 +41,11 @@ def roots : List Name :=
     `Kimchi.Circuit.EndoMul.pallas_endoMul, `Kimchi.Circuit.EndoMul.vesta_endoMul,
     `Kimchi.Circuit.EndoMul.pallas_combo_off_targets,
     `Kimchi.Circuit.EndoMul.vesta_combo_off_targets,
-    `Kimchi.Commitment.IPA.ipa_soundness,
-    `Kimchi.Commitment.IPA.commitmentBinding_iff_no_relation,
-    `Kimchi.Commitment.IPA.ipaRelation_unique,
-    `Kimchi.Commitment.IPA.vandermondeN,
-    `Kimchi.Commitment.IPA.batch_soundness,
+    `Bulletproof.ipa_soundness,
+    `Bulletproof.commitmentBinding_iff_no_relation,
+    `Bulletproof.ipaRelation_unique,
+    `Bulletproof.vandermondeN,
+    `Bulletproof.batch_soundness,
     `Kimchi.Quotient.zH_dvd_iff,
     `Kimchi.Quotient.genericRows_iff_dvd,
     `Kimchi.Quotient.dvd_separation,
@@ -85,10 +85,10 @@ def roots : List Name :=
     `Kimchi.Index.satisfies_congr_unmasked,
     `Kimchi.Quotient.multiset_eq_of_pairFactor_prod_eq,
     `Kimchi.Quotient.multiset_eq_of_prod_eval,
-    `Kimchi.Commitment.IPA.chunked_ipa_soundness,
-    `Kimchi.Commitment.IPA.chunked_batch_soundness,
-    `Kimchi.Verifier.verify_reflects, `Kimchi.Verifier.ipaVesta_sound,
-    `Kimchi.Verifier.ipaPallas_sound,
+    `Bulletproof.chunked_ipa_soundness,
+    `Bulletproof.chunked_batch_soundness,
+    `Bulletproof.verify_reflects, `Bulletproof.ipaVesta_sound,
+    `Bulletproof.ipaPallas_sound,
     `Kimchi.Verifier.kimchiVerify_reflects, `Kimchi.Verifier.barycentricPubEval_eq,
     `Kimchi.Verifier.Equation.verifierEquation_iff,
     `Kimchi.Verifier.Equation.satisfies_of_verifierEquation,
@@ -123,7 +123,7 @@ def allowed : List Name :=
     `Pasta.pallas_hasse, `Pasta.vesta_hasse,
     -- The declared Fiat-Shamir assumption: Poseidon-accepted runs admit de-blinded
     -- accepting transcript trees (`Kimchi/Verifier/Reflection.lean`). One per Pasta curve.
-    `Kimchi.Verifier.poseidon_fiat_shamir_vesta, `Kimchi.Verifier.poseidon_fiat_shamir_pallas,
+    `Bulletproof.poseidon_fiat_shamir_vesta, `Bulletproof.poseidon_fiat_shamir_pallas,
     -- The deployed-run Fiat–Shamir assumption, anchored on the warm reflected run
     -- (`Ipa.verifyFrom (runWarm) (runInput)`) rather than the cold `Ipa.verify`. One per curve;
     -- the residue-free ft opening (`ft_opening_of_reflected_*`) is stated over this.

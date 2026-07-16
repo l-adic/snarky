@@ -9,7 +9,7 @@ gate. None of this depends on the curve or the scalar-mul circuit — it is exac
 `Shifted_value.to_field` / `of_field` arithmetic, so the circuit theorems can take it as a
 primitive. -/
 
-namespace Kimchi.Shifted
+namespace Pasta.Shifted
 
 variable {F : Type*} [Field F]
 
@@ -53,4 +53,4 @@ theorem shiftType2_unshiftType2 (numBits : ℕ) (sHi sOdd : F) :
   unfold shiftType2 unshiftType2
   ring
 
-end Kimchi.Shifted
+end Pasta.Shifted

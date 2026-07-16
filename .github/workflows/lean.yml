@@ -75,7 +75,8 @@ jobs:
     - name: Check the IPA model against kimchi transcript fixtures
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        scripts/check_ipa_fixture.sh
+        BULLETPROOF_FIXTURES_DIR=bulletproof-pcs/fixtures \
+          lake env lean bulletproof-pcs/scripts/check_ipa_fixture.lean
 
     # The Poseidon sponges over both Pasta fields must match mina_poseidon
     # absorb/squeeze traces (poseidon/fixtures/poseidon_{fq,fp}_vectors.json, from sponge_dump).

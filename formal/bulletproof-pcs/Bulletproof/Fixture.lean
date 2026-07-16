@@ -1,4 +1,4 @@
-import Kimchi.Verifier.Ipa
+import Bulletproof.Wire
 import FixtureKit.Parse
 import Lean.Data.Json
 
@@ -27,11 +27,11 @@ Two fixture kinds, one per production chunk-fold mechanism:
   flattening lemma as data — the segment stream presented to the `nc = 1` verifier.
 -/
 
-namespace Kimchi.Fixture.Ipa
+namespace Bulletproof.Fixture
 
 open FixtureKit
 
-open Lean Kimchi.Fixture Kimchi.Commitment.IPA Kimchi.Verifier
+open Lean FixtureKit Bulletproof Bulletproof
 open CompElliptic.CurveForms.ShortWeierstrass
 
 def parsePt (C : Ipa.CommitmentCurve) : Json → Except String C.Point :=
@@ -178,4 +178,4 @@ def RawBatch.toFlatInput {C : Ipa.CommitmentCurve} (raw : RawBatch C) : Ipa.Inpu
     evalscale := raw.evalscale
     proof := raw.proof }
 
-end Kimchi.Fixture.Ipa
+end Bulletproof.Fixture

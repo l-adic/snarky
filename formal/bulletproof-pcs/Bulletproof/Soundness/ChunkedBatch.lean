@@ -1,7 +1,7 @@
 import Mathlib
-import Kimchi.Commitment.IPA.Batch
-import Kimchi.Commitment.IPA.Chunk
-import Kimchi.Commitment.IPA.Soundness.Batch
+import Bulletproof.Batch
+import Bulletproof.Chunk
+import Bulletproof.Soundness.Batch
 
 /-!
 # Knowledge soundness of the chunked batched kimchi IPA opening
@@ -28,7 +28,7 @@ The grid is `(∑ i, nc i) × m`: the polyscale Vandermonde must separate *segme
 the polyscale row count is the total chunk count, not the polynomial count.
 -/
 
-namespace Kimchi.Commitment.IPA
+namespace Bulletproof
 
 open Polynomial
 
@@ -112,4 +112,4 @@ theorem chunked_batch_soundness (σ : SRS G) {n m : ℕ} {nc : Fin n → ℕ}
   refine Finset.sum_congr rfl fun c _ => ?_
   rw [chunkPoly_eval, hwin c, ← hEseg i c j]
 
-end Kimchi.Commitment.IPA
+end Bulletproof

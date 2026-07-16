@@ -1,6 +1,6 @@
 import Pasta.Curve
 import Kimchi.Gate.VarBaseMul
-import Kimchi.Shifted
+import Pasta.Shifted
 import Mathlib
 
 /-!
@@ -424,7 +424,7 @@ end Kimchi.Circuit.VarBaseMul.Ladder
 
 namespace Kimchi.Circuit.VarBaseMul
 
-open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine Kimchi.Shifted
+open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine Pasta.Shifted
 
 variable {F : Type*} [Field F] [DecidableEq F]
 

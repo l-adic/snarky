@@ -11,7 +11,7 @@ adjudication: every transcription judgment in `Kimchi/Verifier/Kimchi.lean` (abs
 orders, the public-commitment blinding, the warm-sponge handoff) either reproduces
 production's accept bit or fails here. -/
 
-open Lean Kimchi.Fixture Kimchi.Fixture.Ipa Kimchi.Fixture.Kimchi Kimchi.Verifier
+open Lean Kimchi.Fixture Bulletproof.Fixture Kimchi.Fixture.Kimchi Kimchi.Verifier
 
 abbrev C := IpaVesta.curve
 

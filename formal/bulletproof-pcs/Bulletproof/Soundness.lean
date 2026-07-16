@@ -1,7 +1,7 @@
 import Mathlib
-import Kimchi.Commitment.IPA.Verify
-import Kimchi.Commitment.IPA.Soundness.Tree
-import Kimchi.Commitment.IPA.Soundness.Binding
+import Bulletproof.Verify
+import Bulletproof.Soundness.Tree
+import Bulletproof.Soundness.Binding
 
 /-!
 # The Fiat–Shamir bridge and the headline soundness of the kimchi IPA
@@ -20,7 +20,7 @@ non-hiding commitment `P - r • σ.h`). Given the tree, `ipaRelation_of_acceptV
 opening relation.
 -/
 
-namespace Kimchi.Commitment.IPA
+namespace Bulletproof
 
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
@@ -86,4 +86,4 @@ theorem ipa_soundness (σ : SRS G) (proof : OpeningProof F G σ.k) (P : G) (x v 
   rw [hP]
   abel
 
-end Kimchi.Commitment.IPA
+end Bulletproof

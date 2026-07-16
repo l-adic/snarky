@@ -1,4 +1,4 @@
-import Kimchi.Commitment.IPA.Basic
+import Bulletproof.Basic
 
 /-!
 # The kimchi IPA opening proof and verifier
@@ -12,7 +12,7 @@ uses `u⁻¹ • L + u • R`. The opening proof has no final-scalar field — t
 folded scalar `a₀` is absorbed into the Schnorr response `z1 = a₀ · c + d`.
 -/
 
-namespace Kimchi.Commitment.IPA
+namespace Bulletproof
 
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
@@ -74,4 +74,4 @@ def VerifierAccepts (σ : SRS G) (proof : OpeningProof F G σ.k) (P : G) (x v c 
     (u : Fin σ.k → F) : Prop :=
   VerifierAcceptsAt σ proof P (bPoly u x) v c u
 
-end Kimchi.Commitment.IPA
+end Bulletproof

@@ -1,4 +1,4 @@
-import Kimchi.Verifier.Ipa
+import Bulletproof.Wire
 import Kimchi.Verifier.Linearization
 import Poseidon.FqSponge
 
@@ -11,7 +11,7 @@ verification (`to_batch`, :781–1194), finished by the batched IPA opening chec
 scalar-side closed forms are the landed `Kimchi.Verifier.Linearization`
 (`ftEval0`/`permScalar`/`zkpmEval`); the sponge layer is the landed
 `Poseidon.FqSponge` machinery, reused at both fields; the opening finish is the
-landed `Kimchi.Verifier.Ipa` acceptance, restarted from the **warm** fq-sponge state
+landed `Bulletproof.Ipa` acceptance, restarted from the **warm** fq-sponge state
 (`BatchEvaluationProof { sponge: fq_sponge, .. }`, verifier.rs:1184–1193).
 
 Scope (shape violations return `false`; every deferral is declared here):
@@ -44,10 +44,12 @@ production fold shapes) so any divergence localizes.
 * `KimchiVesta`, `KimchiPallas` — the Pasta instantiations.
 -/
 
+open Bulletproof
+
 namespace Kimchi.Verifier
 
 open CompElliptic.CurveForms.ShortWeierstrass
-open Poseidon Poseidon.FqSponge Kimchi.Commitment.IPA
+open Poseidon Poseidon.FqSponge Bulletproof
 
 variable (C : Ipa.CommitmentCurve)
 
@@ -412,7 +414,7 @@ def frParams : Params Fp := fpParams
 abbrev Proof := KimchiProof IpaVesta.curve
 abbrev VK := KimchiVK IpaVesta.curve
 
-def verify : Kimchi.Commitment.IPA.SRS IpaVesta.Point → VK → Proof → Array Fp → Bool :=
+def verify : Bulletproof.SRS IpaVesta.Point → VK → Proof → Array Fp → Bool :=
   kimchiVerify IpaVesta.curve
 
 end Kimchi.Verifier.KimchiVesta
@@ -429,7 +431,7 @@ def frParams : Params Fq := fqParams
 abbrev Proof := KimchiProof IpaPallas.curve
 abbrev VK := KimchiVK IpaPallas.curve
 
-def verify : Kimchi.Commitment.IPA.SRS IpaPallas.Point → VK → Proof → Array Fq → Bool :=
+def verify : Bulletproof.SRS IpaPallas.Point → VK → Proof → Array Fq → Bool :=
   kimchiVerify IpaPallas.curve
 
 end Kimchi.Verifier.KimchiPallas

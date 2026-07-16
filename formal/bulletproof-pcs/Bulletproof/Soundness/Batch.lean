@@ -1,7 +1,7 @@
 import Mathlib
-import Kimchi.Commitment.IPA.Batch
-import Kimchi.Commitment.IPA.Soundness
-import Kimchi.Commitment.IPA.Soundness.Vandermonde
+import Bulletproof.Batch
+import Bulletproof.Soundness
+import Bulletproof.Soundness.Vandermonde
 
 /-!
 # Knowledge soundness of the batched kimchi IPA opening
@@ -56,7 +56,7 @@ gap would take formalizing the rewinding (to discharge `BatchFiatShamir`) and a
 computational layer (to discharge binding).
 -/
 
-namespace Kimchi.Commitment.IPA
+namespace Bulletproof
 
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
@@ -371,4 +371,4 @@ theorem batch_soundnessA (σ : SRS G) {n m : ℕ}
     if_true] at hzero
   exact (sub_eq_zero.mp hzero).symm
 
-end Kimchi.Commitment.IPA
+end Bulletproof

@@ -1,11 +1,11 @@
-import Kimchi.Verifier.Ipa
-import Kimchi.Commitment.IPA.Soundness.Batch
+import Bulletproof.Wire
+import Bulletproof.Soundness.Batch
 import Pasta
 
 /-!
 # Reflection: the executable verifier meets the soundness layer
 
-The bridge between `Kimchi.Verifier.Ipa.verify` (executable, over wire data, challenges
+The bridge between `Bulletproof.Ipa.verify` (executable, over wire data, challenges
 derived by the Poseidon sponge) and the `Prop`-level acceptance `BatchAccepts` of the IPA
 soundness development — and, through the Fiat-Shamir axiom, the batch knowledge-soundness
 theorem itself.
@@ -40,12 +40,12 @@ Three strata:
   (see `Soundness/Batch.lean`).
 -/
 
-namespace Kimchi.Verifier
+namespace Bulletproof
 
 open CompElliptic.CurveForms.ShortWeierstrass CompElliptic.Curves.Pasta
 open CompElliptic.Curves.Pasta.Vesta renaming curve → vestaCurve
 open CompElliptic.Curves.Pasta.Pallas renaming curve → pallasCurve
-open CompElliptic.Fields.Pasta Kimchi.Commitment.IPA Kimchi.Verifier.Ipa
+open CompElliptic.Fields.Pasta Bulletproof Bulletproof.Ipa
 
 /-! ## The wire proof as an abstract opening proof -/
 
@@ -170,7 +170,7 @@ theorem verify_reflects (σ : SRS C.Point) (inp : Ipa.Input C)
     · rw [zipFold_eq_recombine _ inp.proof.lr (transcript C inp).2.1 σ.k hsize hchsz]
         at hsch
       rw [combineCommitments_eq hsmul] at hsch
-      unfold Kimchi.Commitment.IPA.recombine Ipa.Proof.toOpening
+      unfold Bulletproof.recombine Ipa.Proof.toOpening
       simp only [hsmul, Ipa.transcriptChallenges, Ipa.Input.commitmentFn]
       exact hsch
     · exact hsg.trans (msm_eq_commitGen hsmul _ _)
@@ -297,4 +297,4 @@ theorem ipaPallas_sound (σ : SRS IpaPallas.Point)
     hFS hbind hacc
   exact ⟨a, ρ, fun i => ⟨(h i).1, fun j => (h i).2 j⟩⟩
 
-end Kimchi.Verifier
+end Bulletproof

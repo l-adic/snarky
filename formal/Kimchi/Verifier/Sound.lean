@@ -1,6 +1,6 @@
 import Mathlib
-import Kimchi.Commitment.IPA.Soundness.Batch
-import Kimchi.Commitment.IPA.Chunk
+import Bulletproof.Soundness.Batch
+import Bulletproof.Chunk
 import Kimchi.Verifier.Correspond
 
 /-!
@@ -33,9 +33,11 @@ no-DL-relation form so these lemmas compose with `batch_soundnessA` verbatim.
 `ft_identity_of_chunks` in `Kimchi/Verifier/Capstone.lean`.)
 -/
 
+open Bulletproof
+
 namespace Kimchi.Verifier
 
-open Polynomial Kimchi.Commitment.IPA
+open Polynomial Bulletproof
 
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 

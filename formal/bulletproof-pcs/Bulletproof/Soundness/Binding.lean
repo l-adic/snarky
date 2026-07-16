@@ -1,6 +1,6 @@
 import Mathlib
-import Kimchi.Commitment.IPA.Basic
-import Kimchi.Commitment.IPA.Soundness.Linear
+import Bulletproof.Basic
+import Bulletproof.Soundness.Linear
 
 /-!
 # Binding of the kimchi IPA commitment as discrete-log-relation hardness
@@ -15,7 +15,7 @@ the pair `(a, r)` and a discrete-log relation ranges over `[σ.g, σ.h]`: a pair
 `(r, r_h)` with `⟨r, σ.g⟩ + r_h • σ.h = 0`.
 -/
 
-namespace Kimchi.Commitment.IPA
+namespace Bulletproof
 
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
@@ -68,4 +68,4 @@ theorem ipaRelation_unique {σ : SRS G} {P : G} {x v : F}
   -- Both witnesses satisfy `commit σ · · = P`; injectivity forces them equal.
   exact @hb (a, r) (a', r') (h.1.trans h'.1.symm)
 
-end Kimchi.Commitment.IPA
+end Bulletproof

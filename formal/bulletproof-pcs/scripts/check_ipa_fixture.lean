@@ -1,4 +1,4 @@
-import Kimchi.Fixture.Ipa
+import Bulletproof.Fixture
 
 /-! End-to-end IPA compatibility over the unified chunked schema, both production
 chunk-fold mechanisms:
@@ -16,7 +16,7 @@ chunk-fold mechanisms:
   executable verifier must accept the FLATTENED segment view — the flattening lemmas,
   adjudicated end-to-end — and reject a corrupted one. -/
 
-open Lean Kimchi.Fixture.Ipa Kimchi.Verifier
+open Lean Bulletproof.Fixture Bulletproof
 
 def checkFixture (C : Ipa.CommitmentCurve) (curveName : String) (path : String) :
     IO Bool := do
@@ -72,17 +72,18 @@ def checkBatchFixture (C : Ipa.CommitmentCurve) (curveName : String) (path : Str
   return hComm && hCip && ok && rejected
 
 def main : IO Unit := do
+  let dir := (← IO.getEnv "BULLETPROOF_FIXTURES_DIR").getD "fixtures"
   let mut allOk := true
   for name in ["opening", "batch", "chunked2", "chunked3"] do
     allOk := allOk
-      && (← checkFixture IpaVesta.curve "vesta" s!"fixtures/ipa_{name}_vesta.json")
+      && (← checkFixture IpaVesta.curve "vesta" s!"{dir}/ipa_{name}_vesta.json")
     allOk := allOk
-      && (← checkFixture IpaPallas.curve "pallas" s!"fixtures/ipa_{name}_pallas.json")
+      && (← checkFixture IpaPallas.curve "pallas" s!"{dir}/ipa_{name}_pallas.json")
   for name in ["chunked_batch", "chunked_ragged"] do
     allOk := allOk && (← checkBatchFixture IpaVesta.curve "vesta"
-      s!"fixtures/ipa_{name}_vesta.json")
+      s!"{dir}/ipa_{name}_vesta.json")
     allOk := allOk && (← checkBatchFixture IpaPallas.curve "pallas"
-      s!"fixtures/ipa_{name}_pallas.json")
+      s!"{dir}/ipa_{name}_pallas.json")
   unless allOk do throw (IO.userError "IPA fixture check FAILED")
   IO.println "✓ recombination and the segment stream match production and the \
     verifier accepts, both mechanisms, both curves"

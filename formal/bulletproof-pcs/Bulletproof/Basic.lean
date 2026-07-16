@@ -18,7 +18,7 @@ assumption is invoked. `k` is the number of IPA rounds; the argument operates on
 `2 ^ k` generators / coefficients.
 -/
 
-namespace Kimchi.Commitment.IPA
+namespace Bulletproof
 
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
@@ -72,4 +72,4 @@ the inner-product argument is an argument of knowledge for. -/
 def openingRelation (σ : SRS G) (P : G) (x v : F) (a : Fin (2 ^ σ.k) → F) (r : F) : Prop :=
   commit σ a r = P ∧ v = innerProduct a (evalVector (2 ^ σ.k) x)
 
-end Kimchi.Commitment.IPA
+end Bulletproof

@@ -1,5 +1,5 @@
 import Kimchi.Verifier.Linearization
-import Kimchi.Verifier.Ipa
+import Bulletproof.Wire
 import FixtureKit.Parse
 import Lean.Data.Json
 

@@ -1,4 +1,4 @@
-import Kimchi.Commitment.IPA.Verify
+import Bulletproof.Verify
 
 /-!
 # Batched multi-polynomial, multi-point opening of the kimchi IPA commitment
@@ -34,7 +34,7 @@ the combination — which is how `Soundness/ChunkedBatch.lean` reduces chunked-b
 soundness to `batch_soundness`.
 -/
 
-namespace Kimchi.Commitment.IPA
+namespace Bulletproof
 
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
@@ -188,4 +188,4 @@ theorem innerProduct_combinedEvalVector {N : ℕ} (a : Fin N → F) (r : F) {m :
   refine Finset.sum_congr rfl fun i _ => ?_
   ring
 
-end Kimchi.Commitment.IPA
+end Bulletproof
