@@ -254,3 +254,14 @@ Kimchi.Verifier.kimchiPallas_sound_algebraic_ft
 Kimchi.Verifier.ft_opening_of_reflected
 Kimchi.Verifier.ft_opening_of_reflected_vesta
 Kimchi.Verifier.ft_opening_of_reflected_pallas
+
+-- THE TERMINAL THEOREM — AGM soundness of the deployed kimchi verifier. From a genuine
+-- `verify = true`, for an algebraic prover (SRS-basis representations of the run's 45 batch rows
+-- and 7 tComm chunks), derive `∃ wTab, Satisfies` at the run's own sponge challenges — the
+-- ft/quotient residue DISSOLVED (no `t`/`hteq`), the grid BYPASSED (fed the openings seam directly,
+-- so no poseidon_fiat_shamir). Trust surface = kimchi_fiat_shamir (Poseidon-RO) + DL-binding (hbind)
+-- + hasse + CompElliptic — and nothing else. The guarded conclusion (challenges avoid the negligible
+-- bad sets) is the FS heuristic in the type; the honest-key hypotheses (hvk + omega/zkRows/shifts/endo
+-- bridges) say the wire VK corresponds to the circuit. This is the endpoint (AGM, as in PLONK).
+Kimchi.Verifier.kimchiVesta_run_sound_algebraic_ft
+Kimchi.Verifier.kimchiPallas_run_sound_algebraic_ft
