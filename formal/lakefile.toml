@@ -38,7 +38,7 @@ name = "Kimchi"
 # Kimchi (and thus Mathlib), so the glob builds them without the root pulling them in.
 [[lean_lib]]
 name = "Snarky"
-globs = ["Snarky.+"]
+globs = ["Snarky", "Snarky.+"]
 
 [[lean_exe]]
 name = "kimchi-demo"
