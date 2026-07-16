@@ -131,6 +131,20 @@ residue hypotheses disappear from the statement. What stays hypothetical there i
 unchanged from the AGM corollary: the ft opening itself (which a fully deployed variant
 would derive from `poseidon_fiat_shamir` on the ft row), DL-binding, the key
 correspondence, and the per-transcript Fiat–Shamir families.
+
+The **FS-reflection ft opening** (the Fiat–Shamir discharge, part 1) closes the file:
+`kimchi_fiat_shamir_{vesta,pallas}` re-anchor the Fiat–Shamir axiom on the deployed
+verifier's OWN transcript — the warm-sponge finish `Ipa.verifyFrom … (runWarm …)
+(runInput …)` a `kimchiVerify`-accepted run actually executes (`ReflectedRun.accepts`,
+`Kimchi/Verifier/Reflect.lean`) — rather than the cold `Ipa.verify` of
+`poseidon_fiat_shamir_*`; and `ft_opening_of_reflected` (PROVED, the transcript tree as
+a hypothesis) derives the ft opening from a genuine acceptance: the constructed ft
+commitment is slot 1 of the run's own accepted 45-row batch, so `ipa_soundnessA` plus
+the arity-generic `eval_pins_of_opening` pin `runFtComm` to a representation whose
+evaluation at the run's own `ζ` is `runFtEval0`. The curve wrappers
+`ft_opening_of_reflected_{vesta,pallas}` discharge the run by reflection
+(`kimchiVerify_reflects`) and the tree by the new axioms, so a single
+`KimchiVesta.verify … = true` yields the ft opening outright.
 -/
 
 namespace Kimchi.Verifier
@@ -1161,106 +1175,109 @@ challenge it guards, which is what lets the capstones quantify them BEFORE `(ξ,
 /-- The bad row-combination challenges of one claimed-vs-represented evaluation matrix:
 the union over the two eval points of the counting-SZ bad sets of the discrepancy
 columns `i ↦ E i j − ⟨aw₀ i, evalVector (x j)⟩`. Depends only on `(σ, aw₀, x, E)` —
-never on `ξ` or `r` (anti-vacuity: the capstone quantifies it before both). -/
+never on `ξ` or `r` (anti-vacuity: the capstone quantifies it before both). Arity-generic
+(`Fin m` rows): the AGM capstones use it at the 43-row `batchC`, the FS-reflection layer
+at the reflected run's own 45-row batch. -/
 private noncomputable def badXiOf {F G : Type*} [Field F] [DecidableEq F]
-    [AddCommGroup G] [Module F G] (σ : SRS G) (aw₀ : Fin 43 → Fin (2 ^ σ.k) → F)
-    (x : Fin 2 → F) (E : Fin 43 → Fin 2 → F) : Finset F :=
+    [AddCommGroup G] [Module F G] (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
+    (x : Fin 2 → F) (E : Fin m → Fin 2 → F) : Finset F :=
   Kimchi.Quotient.SZ.badComb
-      (fun i : Fin 43 => E i 0 - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x 0)))
+      (fun i : Fin m => E i 0 - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x 0)))
     ∪ Kimchi.Quotient.SZ.badComb
-      (fun i : Fin 43 => E i 1 - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x 1)))
+      (fun i : Fin m => E i 1 - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x 1)))
 
 /-- The bad point-combination challenges at a fixed `ξ`: the counting-SZ bad set of the
 two ξ-combined discrepancy columns. Depends on `(σ, aw₀, x, E, ξ)` — never on `r`. -/
 private noncomputable def badROf {F G : Type*} [Field F] [DecidableEq F]
-    [AddCommGroup G] [Module F G] (σ : SRS G) (aw₀ : Fin 43 → Fin (2 ^ σ.k) → F)
-    (x : Fin 2 → F) (E : Fin 43 → Fin 2 → F) (ξ : F) : Finset F :=
-  Kimchi.Quotient.SZ.badComb (fun j : Fin 2 => ∑ i : Fin 43,
+    [AddCommGroup G] [Module F G] (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
+    (x : Fin 2 → F) (E : Fin m → Fin 2 → F) (ξ : F) : Finset F :=
+  Kimchi.Quotient.SZ.badComb (fun j : Fin 2 => ∑ i : Fin m,
     ξ ^ (i : ℕ) * (E i j - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j))))
 
-/-- `badXiOf` counts at most `84 = 2 · (43 − 1)` challenges: a union of two counting-SZ
-bad sets over `Fin 43`. -/
+/-- `badXiOf` counts at most `2 · (m − 1)` challenges (at the 43-row batch: `84`): a
+union of two counting-SZ bad sets over `Fin m`. -/
 private theorem card_badXiOf_le {F G : Type*} [Field F] [DecidableEq F]
-    [AddCommGroup G] [Module F G] (σ : SRS G) (aw₀ : Fin 43 → Fin (2 ^ σ.k) → F)
-    (x : Fin 2 → F) (E : Fin 43 → Fin 2 → F) : (badXiOf σ aw₀ x E).card ≤ 84 := by
+    [AddCommGroup G] [Module F G] (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
+    (x : Fin 2 → F) (E : Fin m → Fin 2 → F) : (badXiOf σ aw₀ x E).card ≤ 2 * (m - 1) := by
   unfold badXiOf
   refine le_trans (Finset.card_union_le _ _) ?_
   have h0 := Kimchi.Quotient.SZ.card_badComb_le
-    (fun i : Fin 43 => E i 0 - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x 0)))
+    (fun i : Fin m => E i 0 - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x 0)))
   have h1 := Kimchi.Quotient.SZ.card_badComb_le
-    (fun i : Fin 43 => E i 1 - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x 1)))
+    (fun i : Fin m => E i 1 - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x 1)))
   omega
 
 /-- `badROf` counts at most `1 = 2 − 1` challenge: one counting-SZ bad set over
 `Fin 2`. -/
 private theorem card_badROf_le {F G : Type*} [Field F] [DecidableEq F]
-    [AddCommGroup G] [Module F G] (σ : SRS G) (aw₀ : Fin 43 → Fin (2 ^ σ.k) → F)
-    (x : Fin 2 → F) (E : Fin 43 → Fin 2 → F) (ξ : F) :
+    [AddCommGroup G] [Module F G] (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
+    (x : Fin 2 → F) (E : Fin m → Fin 2 → F) (ξ : F) :
     (badROf σ aw₀ x E ξ).card ≤ 1 := by
   unfold badROf
   exact Kimchi.Quotient.SZ.card_badComb_le _
 
 /-- **The eval pins from one opening** (the AGM bridge): SRS-basis representations of
-the 43 batch rows plus ONE accepted batch opening at good `(ξ, r)` pin every claimed
+the `m` batch rows plus ONE accepted batch opening at good `(ξ, r)` pin every claimed
 evaluation to the represented row's true evaluation. Linearity collapses the combined
 commitment to one commitment of the ξ-combined representation (`commitₗ`, `map_sum`);
 binding (`hbind`, through `commitmentBinding_iff_no_relation`) forces the opened witness
 to BE that combination; the opening's value equation then reduces to
 `∑ j, r^j · (∑ i, ξ^i · D i j) = 0` in the discrepancies `D`, and
 `SZ.eq_zero_of_comb_eq_zero` — first at `r`, then per point at `ξ` — kills every
-`D i j`. -/
+`D i j`. Arity-generic: the AGM capstones consume it at the 43-row `batchC`, the
+FS-reflection layer at the reflected run's own 45-row batch. -/
 private theorem eval_pins_of_opening {F G : Type*} [Field F] [DecidableEq F]
     [AddCommGroup G] [Module F G] (σ : SRS G)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (wh : F), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (C : Fin 43 → G) (x : Fin 2 → F)
-    (aw₀ : Fin 43 → Fin (2 ^ σ.k) → F) (ρw₀ : Fin 43 → F)
+    {m : ℕ} (C : Fin m → G) (x : Fin 2 → F)
+    (aw₀ : Fin m → Fin (2 ^ σ.k) → F) (ρw₀ : Fin m → F)
     (hrep : ∀ i, commit σ (aw₀ i) (ρw₀ i) = C i)
-    (E : Fin 43 → Fin 2 → F) (ξ r : F)
+    (E : Fin m → Fin 2 → F) (ξ r : F)
     (hξ : ξ ∉ badXiOf σ aw₀ x E) (hr : r ∉ badROf σ aw₀ x E ξ)
     (a : Fin (2 ^ σ.k) → F) (ρ : F)
     (hopen : openingRelationB σ (combinedCommitment ξ C)
       (combinedEvalVector (2 ^ σ.k) r x) (combinedInnerProduct ξ r E) a ρ) :
-    ∀ (i : Fin 43) (j : Fin 2),
+    ∀ (i : Fin m) (j : Fin 2),
       E i j = innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j)) := by
   -- Step A (linearity): the combined commitment is ONE commitment of the ξ-combined
-  -- representation — `map_sum` of `commitₗ` at `Fin 43`, mirroring `commit_combine`.
-  have hpair : (∑ i : Fin 43, ξ ^ (i : ℕ)
+  -- representation — `map_sum` of `commitₗ` at `Fin m`, mirroring `commit_combine`.
+  have hpair : (∑ i : Fin m, ξ ^ (i : ℕ)
         • ((aw₀ i, ρw₀ i) : (Fin (2 ^ σ.k) → F) × F))
-      = (∑ i : Fin 43, ξ ^ (i : ℕ) • aw₀ i, ∑ i : Fin 43, ξ ^ (i : ℕ) • ρw₀ i) := by
+      = (∑ i : Fin m, ξ ^ (i : ℕ) • aw₀ i, ∑ i : Fin m, ξ ^ (i : ℕ) • ρw₀ i) := by
     refine Prod.ext ?_ ?_
     · rw [Prod.fst_sum]
       exact Finset.sum_congr rfl fun i _ => rfl
     · rw [Prod.snd_sum]
       exact Finset.sum_congr rfl fun i _ => rfl
   have hA : combinedCommitment ξ C
-      = commit σ (∑ i : Fin 43, ξ ^ (i : ℕ) • aw₀ i)
-          (∑ i : Fin 43, ξ ^ (i : ℕ) • ρw₀ i) := by
+      = commit σ (∑ i : Fin m, ξ ^ (i : ℕ) • aw₀ i)
+          (∑ i : Fin m, ξ ^ (i : ℕ) • ρw₀ i) := by
     calc combinedCommitment ξ C
-        = ∑ i : Fin 43, ξ ^ (i : ℕ) • commit σ (aw₀ i) (ρw₀ i) := by
+        = ∑ i : Fin m, ξ ^ (i : ℕ) • commit σ (aw₀ i) (ρw₀ i) := by
           unfold combinedCommitment
           exact Finset.sum_congr rfl fun i _ => by rw [hrep i]
-      _ = commitₗ σ (∑ i : Fin 43, ξ ^ (i : ℕ)
+      _ = commitₗ σ (∑ i : Fin m, ξ ^ (i : ℕ)
             • ((aw₀ i, ρw₀ i) : (Fin (2 ^ σ.k) → F) × F)) := by
           rw [map_sum]
           simp only [map_smul]
           rfl
-      _ = commit σ (∑ i : Fin 43, ξ ^ (i : ℕ) • aw₀ i)
-            (∑ i : Fin 43, ξ ^ (i : ℕ) • ρw₀ i) := by rw [hpair]; rfl
+      _ = commit σ (∑ i : Fin m, ξ ^ (i : ℕ) • aw₀ i)
+            (∑ i : Fin m, ξ ^ (i : ℕ) • ρw₀ i) := by rw [hpair]; rfl
   -- Step B (binding): the opened witness IS the ξ-combined representation — the
   -- interior of `bound_unique`, kept at witness level via `congrArg Prod.fst`.
   have hbd : CommitmentBinding (F := F) σ :=
     (commitmentBinding_iff_no_relation σ).mpr hbind
   have hcommit : commit σ a ρ
-      = commit σ (∑ i : Fin 43, ξ ^ (i : ℕ) • aw₀ i)
-          (∑ i : Fin 43, ξ ^ (i : ℕ) • ρw₀ i) := hopen.1.trans hA
-  have ha : a = ∑ i : Fin 43, ξ ^ (i : ℕ) • aw₀ i :=
+      = commit σ (∑ i : Fin m, ξ ^ (i : ℕ) • aw₀ i)
+          (∑ i : Fin m, ξ ^ (i : ℕ) • ρw₀ i) := hopen.1.trans hA
+  have ha : a = ∑ i : Fin m, ξ ^ (i : ℕ) • aw₀ i :=
     congrArg Prod.fst (@hbd (a, ρ)
-      (∑ i : Fin 43, ξ ^ (i : ℕ) • aw₀ i, ∑ i : Fin 43, ξ ^ (i : ℕ) • ρw₀ i) hcommit)
+      (∑ i : Fin m, ξ ^ (i : ℕ) • aw₀ i, ∑ i : Fin m, ξ ^ (i : ℕ) • ρw₀ i) hcommit)
   -- Step C (substitute + expand): the value equation becomes the double-sum identity
   -- `∑ j, r^j · (∑ i, ξ^i · D i j) = 0` in the discrepancies `D`.
   have hip : ∀ b : Fin (2 ^ σ.k) → F,
-      innerProduct (∑ i : Fin 43, ξ ^ (i : ℕ) • aw₀ i) b
-        = ∑ i : Fin 43, ξ ^ (i : ℕ) * innerProduct (aw₀ i) b := by
+      innerProduct (∑ i : Fin m, ξ ^ (i : ℕ) • aw₀ i) b
+        = ∑ i : Fin m, ξ ^ (i : ℕ) * innerProduct (aw₀ i) b := by
     intro b
     unfold innerProduct
     simp only [Finset.sum_apply, Pi.smul_apply, smul_eq_mul, Finset.sum_mul,
@@ -1269,22 +1286,22 @@ private theorem eval_pins_of_opening {F G : Type*} [Field F] [DecidableEq F]
     exact Finset.sum_congr rfl fun i _ => Finset.sum_congr rfl fun l _ => by ring
   have h1 : combinedInnerProduct ξ r E
       = ∑ j : Fin 2, r ^ (j : ℕ)
-          * ∑ i : Fin 43, ξ ^ (i : ℕ)
+          * ∑ i : Fin m, ξ ^ (i : ℕ)
               * innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j)) := by
     rw [hopen.2, ha, innerProduct_combinedEvalVector]
     exact Finset.sum_congr rfl fun j _ => by rw [hip]
   have h2 : combinedInnerProduct ξ r E
-      = ∑ j : Fin 2, r ^ (j : ℕ) * ∑ i : Fin 43, ξ ^ (i : ℕ) * E i j := by
+      = ∑ j : Fin 2, r ^ (j : ℕ) * ∑ i : Fin m, ξ ^ (i : ℕ) * E i j := by
     unfold combinedInnerProduct
     simp only [Finset.mul_sum]
     rw [Finset.sum_comm]
     exact Finset.sum_congr rfl fun j _ => Finset.sum_congr rfl fun i _ => by ring
-  have hsum : ∑ j : Fin 2, r ^ (j : ℕ) * (∑ i : Fin 43, ξ ^ (i : ℕ)
+  have hsum : ∑ j : Fin 2, r ^ (j : ℕ) * (∑ i : Fin m, ξ ^ (i : ℕ)
       * (E i j - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j)))) = 0 := by
-    calc ∑ j : Fin 2, r ^ (j : ℕ) * (∑ i : Fin 43, ξ ^ (i : ℕ)
+    calc ∑ j : Fin 2, r ^ (j : ℕ) * (∑ i : Fin m, ξ ^ (i : ℕ)
           * (E i j - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j))))
-        = (∑ j : Fin 2, r ^ (j : ℕ) * ∑ i : Fin 43, ξ ^ (i : ℕ) * E i j)
-          - ∑ j : Fin 2, r ^ (j : ℕ) * ∑ i : Fin 43, ξ ^ (i : ℕ)
+        = (∑ j : Fin 2, r ^ (j : ℕ) * ∑ i : Fin m, ξ ^ (i : ℕ) * E i j)
+          - ∑ j : Fin 2, r ^ (j : ℕ) * ∑ i : Fin m, ξ ^ (i : ℕ)
               * innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j)) := by
           rw [← Finset.sum_sub_distrib]
           refine Finset.sum_congr rfl fun j _ => ?_
@@ -1294,14 +1311,14 @@ private theorem eval_pins_of_opening {F G : Type*} [Field F] [DecidableEq F]
           ring
       _ = 0 := by rw [← h2, ← h1, sub_self]
   -- Step D (iterated counting SZ): first at `r` (the two point-columns), then per
-  -- point at `ξ` (the 43 row-discrepancies).
+  -- point at `ξ` (the `m` row-discrepancies).
   simp only [badROf] at hr
-  have hcol : ∀ j : Fin 2, ∑ i : Fin 43, ξ ^ (i : ℕ)
+  have hcol : ∀ j : Fin 2, ∑ i : Fin m, ξ ^ (i : ℕ)
       * (E i j - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j))) = 0 :=
     Kimchi.Quotient.SZ.eq_zero_of_comb_eq_zero _ r hr hsum
   simp only [badXiOf, Finset.notMem_union] at hξ
   intro i j
-  have hj : ξ ∉ Kimchi.Quotient.SZ.badComb (fun i : Fin 43 =>
+  have hj : ξ ∉ Kimchi.Quotient.SZ.badComb (fun i : Fin m =>
       E i j - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j))) := by
     fin_cases j
     · exact hξ.1
@@ -1767,5 +1784,196 @@ theorem kimchiPallas_sound_algebraic_ft (σ : SRS IpaPallas.Point) (vk : KimchiP
           ∃ wTab : Fin n → Fin 15 → Fq, Satisfies idx (pubView idx pub) wTab :=
   kimchiProof_sound_algebraic_ft σ idx hk hbind vk.comms hvk (pubView idx pub) wC zC
     aw₀ ρw₀ hrep TC aT ρT hTC Cσ6 hCσ6
+
+/-! ## The FS-reflection ft opening (the Fiat–Shamir discharge, part 1)
+
+The Fiat–Shamir assumption re-anchored on the deployed verifier's OWN transcript:
+`kimchi_fiat_shamir_{vesta,pallas}` state the transcript-tree extraction over the WARM
+data of a reflected run — the warm-sponge finish `Ipa.verifyFrom … (runWarm …)
+(runInput …)` that `kimchiVerify` itself executes (the `ReflectedRun.accepts` field of
+`Kimchi/Verifier/Reflect.lean`) — rather than the cold `Ipa.verify` of
+`poseidon_fiat_shamir_*`. On top of them, `ft_opening_of_reflected` (PROVED,
+tree-as-hypothesis) derives the ft opening from a genuine acceptance: the constructed
+ft commitment is slot 1 of the run's own accepted 45-row batch
+(`ReflectedRun.comm_eq`), so `ipa_soundnessA` extracts the batch-opening witness and
+the arity-generic `eval_pins_of_opening` pins slot `(1, 0)` — the ft row at the run's
+own `ζ` — to the represented row: `runFtComm` opens to a vector whose evaluation at
+`ζ` is exactly `runFtEval0`. The curve wrappers `ft_opening_of_reflected_{vesta,pallas}`
+discharge the run by reflection (`kimchiVerify_reflects`) and the tree by the new
+axioms, so a single `KimchiVesta.verify … = true` yields the ft opening. Scope
+boundary: ONLY the ft opening — reconciling the reflected 45-row layout with the
+43-row `batchC` (raw vs masked selectors) is a deferred follow-on. -/
+
+/-- `getElem!` distributes over an append when the index lands in the left part —
+the `getElem!` companion of `Array.getElem_append_left`, threading the three
+`getElem!`-spelled batch-array reads below through `ReflectedRun`'s append-shaped
+`comm_eq`/`evals_eq`. Project-local glue. -/
+private theorem getBang_append_left {α : Type*} [Inhabited α] (as bs : Array α)
+    (i : ℕ) (h : i < as.size) : (as ++ bs)[i]! = as[i]! := by
+  rw [getElem!_pos (as ++ bs) i (by rw [Array.size_append]; omega),
+    getElem!_pos as i h, Array.getElem_append_left h]
+
+/-- **AXIOM (Fiat–Shamir, Poseidon instantiation over the deployed run, Vesta).** A run
+accepted by the deployed warm-sponge finish (`Ipa.verifyFrom … (runWarm …) (runInput …)
+= true`, the `ReflectedRun.accepts` field) admits a de-blinded accepting transcript
+tree over the run's own 45-row batch. This is `poseidon_fiat_shamir_vesta` re-anchored
+on the OBSERVED transcript — the reflected run's batched input `runInput` and post-`ζ`
+warm sponge state `runWarm` — rather than the cold `Ipa.verify`: the same declared
+assumption that the Poseidon sponge provides a valid Fiat–Shamir transform, stated at
+the transcript the deployed kimchi verifier actually runs. -/
+axiom kimchi_fiat_shamir_vesta (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
+    (p : KimchiVesta.Proof) (pub : Array Fp) :
+  FiatShamirTreeB σ
+    (combinedCommitment (runInput IpaVesta.curve σ vk p pub).polyscale
+      (runInput IpaVesta.curve σ vk p pub).commitmentFn)
+    (combinedEvalVector (2 ^ σ.k) (runInput IpaVesta.curve σ vk p pub).evalscale
+      (runInput IpaVesta.curve σ vk p pub).pointFn)
+    (Ipa.cipOf (runInput IpaVesta.curve σ vk p pub))
+    (Ipa.verifyFrom IpaVesta.curve σ (runWarm IpaVesta.curve σ vk p pub)
+      (runInput IpaVesta.curve σ vk p pub) = true)
+
+/-- **AXIOM (Fiat–Shamir, Poseidon instantiation over the deployed run, Pallas).** The
+Pallas-side twin of `kimchi_fiat_shamir_vesta` — see its docstring for the trust
+story. -/
+axiom kimchi_fiat_shamir_pallas (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
+    (p : KimchiPallas.Proof) (pub : Array Fq) :
+  FiatShamirTreeB σ
+    (combinedCommitment (runInput IpaPallas.curve σ vk p pub).polyscale
+      (runInput IpaPallas.curve σ vk p pub).commitmentFn)
+    (combinedEvalVector (2 ^ σ.k) (runInput IpaPallas.curve σ vk p pub).evalscale
+      (runInput IpaPallas.curve σ vk p pub).pointFn)
+    (Ipa.cipOf (runInput IpaPallas.curve σ vk p pub))
+    (Ipa.verifyFrom IpaPallas.curve σ (runWarm IpaPallas.curve σ vk p pub)
+      (runInput IpaPallas.curve σ vk p pub) = true)
+
+/-- **The ft opening from a reflected run** (tree-as-hypothesis, PROVED — no axiom):
+DL-binding, a reflected accepted run, SRS-basis representations `aRef`/`ρRef` of the
+run's own 45 batch rows, the run's transcript tree (the `kimchi_fiat_shamir_*` shape,
+here a hypothesis), and good combination challenges yield the ft opening — a
+representation of the constructed ft commitment `runFtComm` whose evaluation at the
+run's own `ζ` is the computed claim `runFtEval0`. Route: `ipa_soundnessA` extracts the
+batch-opening witness from the run's acceptance (`ReflectedRun.accepts`);
+`eval_pins_of_opening` (at the run's 45-row arity) pins every claimed evaluation to its
+represented row; slot `(1, 0)` — the ft row (`comm_eq`/`evals_eq`) at the first batch
+point `ζ` — reads off both facts. Project-local: the FS-reflection bridge the curve
+wrappers instantiate. -/
+theorem ft_opening_of_reflected {C : Ipa.CommitmentCurve} [Module C.ScalarField C.Point]
+    (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C) (pub : Array C.ScalarField)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → C.ScalarField) (wh : C.ScalarField),
+      DLRelation σ w wh → w = 0 ∧ wh = 0)
+    (hrun : ReflectedRun C σ vk p pub)
+    (aRef : Fin (runInput C σ vk p pub).commitments.size → Fin (2 ^ σ.k)
+      → C.ScalarField)
+    (ρRef : Fin (runInput C σ vk p pub).commitments.size → C.ScalarField)
+    (hrep : ∀ i, commit σ (aRef i) (ρRef i) = (runInput C σ vk p pub).commitmentFn i)
+    (hFS : FiatShamirTreeB σ
+      (combinedCommitment (runInput C σ vk p pub).polyscale
+        (runInput C σ vk p pub).commitmentFn)
+      (combinedEvalVector (2 ^ σ.k) (runInput C σ vk p pub).evalscale
+        (runInput C σ vk p pub).pointFn)
+      (Ipa.cipOf (runInput C σ vk p pub))
+      (Ipa.verifyFrom C σ (runWarm C σ vk p pub) (runInput C σ vk p pub) = true))
+    (hξ : (runInput C σ vk p pub).polyscale
+      ∉ badXiOf σ aRef (runInput C σ vk p pub).pointFn (runInput C σ vk p pub).evalFn)
+    (hr : (runInput C σ vk p pub).evalscale
+      ∉ badROf σ aRef (runInput C σ vk p pub).pointFn (runInput C σ vk p pub).evalFn
+          (runInput C σ vk p pub).polyscale) :
+    ∃ (aft : Fin (2 ^ σ.k) → C.ScalarField) (ρft : C.ScalarField),
+      commit σ aft ρft = runFtComm C σ vk p pub
+        ∧ innerProduct aft (evalVector (2 ^ σ.k) (runOracles C σ vk p pub).zeta)
+            = runFtEval0 C σ vk p pub := by
+  obtain ⟨a, ρ, hopen⟩ := ipa_soundnessA σ _ _ _ hFS hrun.accepts
+  have hpins := eval_pins_of_opening σ hbind (runInput C σ vk p pub).commitmentFn
+    (runInput C σ vk p pub).pointFn aRef ρRef hrep (runInput C σ vk p pub).evalFn
+    (runInput C σ vk p pub).polyscale (runInput C σ vk p pub).evalscale hξ hr a ρ hopen
+  have hsize : (runInput C σ vk p pub).commitments.size = 45 := by
+    rw [hrun.comm_eq]
+    simp [Array.size_append, hrun.shape_wComm, hrun.shape_coeffsComm,
+      hrun.shape_sigmaComm]
+  have h1m : 1 < (runInput C σ vk p pub).commitments.size := by rw [hsize]; norm_num
+  refine ⟨aRef ⟨1, h1m⟩, ρRef ⟨1, h1m⟩, ?_, ?_⟩
+  · -- The commitment side: slot 1 of `comm_eq` is the constructed ft commitment.
+    rw [hrep ⟨1, h1m⟩]
+    show (runInput C σ vk p pub).commitments[(1 : ℕ)]'h1m = runFtComm C σ vk p pub
+    simp only [hrun.comm_eq]
+    rw [Array.getElem_append_left (by simp [Array.size_append]; omega),
+      Array.getElem_append_left (by simp [Array.size_append]; omega),
+      Array.getElem_append_left (by simp)]
+    rfl
+  · -- The value side: the eval pin at slot `(1, 0)` reads `evals_eq` at the point `ζ`.
+    have hpt : (runInput C σ vk p pub).pointFn (0 : Fin 2)
+        = (runOracles C σ vk p pub).zeta := rfl
+    have hpin := hpins ⟨1, h1m⟩ (0 : Fin 2)
+    rw [hpt] at hpin
+    rw [← hpin]
+    show ((runInput C σ vk p pub).evals[(1 : ℕ)]!)[(0 : ℕ)]!
+      = runFtEval0 C σ vk p pub
+    rw [hrun.evals_eq, getBang_append_left, getBang_append_left, getBang_append_left]
+    · rfl
+    · simp
+    · simp [Array.size_append]
+      omega
+    · simp [Array.size_append]
+      omega
+
+/-- **The ft opening of the deployed Vesta kimchi verifier** (the Vesta FS-reflection
+root): a genuine acceptance `KimchiVesta.verify … = true`, DL-binding, SRS-basis
+representations of the run's own batch rows, and good combination challenges yield the
+ft opening — `runFtComm` opens to a vector whose evaluation at the run's own `ζ` is
+`runFtEval0`. The run is reflected trust-free (`kimchiVerify_reflects`); the transcript
+tree is `kimchi_fiat_shamir_vesta` at the run's own warm data — the sole axiom
+consumed. Project-local: the Vesta FS-reflection root. -/
+theorem ft_opening_of_reflected_vesta (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
+    (p : KimchiVesta.Proof) (pub : Array Fp)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
+    (hacc : KimchiVesta.verify σ vk p pub = true)
+    (aRef : Fin (runInput IpaVesta.curve σ vk p pub).commitments.size
+      → Fin (2 ^ σ.k) → Fp)
+    (ρRef : Fin (runInput IpaVesta.curve σ vk p pub).commitments.size → Fp)
+    (hrep : ∀ i, commit σ (aRef i) (ρRef i)
+      = (runInput IpaVesta.curve σ vk p pub).commitmentFn i)
+    (hξ : (runInput IpaVesta.curve σ vk p pub).polyscale
+      ∉ badXiOf σ aRef (runInput IpaVesta.curve σ vk p pub).pointFn
+          (runInput IpaVesta.curve σ vk p pub).evalFn)
+    (hr : (runInput IpaVesta.curve σ vk p pub).evalscale
+      ∉ badROf σ aRef (runInput IpaVesta.curve σ vk p pub).pointFn
+          (runInput IpaVesta.curve σ vk p pub).evalFn
+          (runInput IpaVesta.curve σ vk p pub).polyscale) :
+    ∃ (aft : Fin (2 ^ σ.k) → Fp) (ρft : Fp),
+      commit σ aft ρft = runFtComm IpaVesta.curve σ vk p pub
+        ∧ innerProduct aft
+            (evalVector (2 ^ σ.k) (runOracles IpaVesta.curve σ vk p pub).zeta)
+            = runFtEval0 IpaVesta.curve σ vk p pub :=
+  ft_opening_of_reflected σ vk p pub hbind
+    (kimchiVerify_reflects IpaVesta.curve σ vk p pub hacc) aRef ρRef hrep
+    (kimchi_fiat_shamir_vesta σ vk p pub) hξ hr
+
+/-- **The ft opening of the deployed Pallas kimchi verifier.** The Pallas-side twin of
+`ft_opening_of_reflected_vesta`, over `Fq`/`IpaPallas` — see the Vesta docstring for
+the trust story. Project-local: the Pallas FS-reflection root. -/
+theorem ft_opening_of_reflected_pallas (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
+    (p : KimchiPallas.Proof) (pub : Array Fq)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
+    (hacc : KimchiPallas.verify σ vk p pub = true)
+    (aRef : Fin (runInput IpaPallas.curve σ vk p pub).commitments.size
+      → Fin (2 ^ σ.k) → Fq)
+    (ρRef : Fin (runInput IpaPallas.curve σ vk p pub).commitments.size → Fq)
+    (hrep : ∀ i, commit σ (aRef i) (ρRef i)
+      = (runInput IpaPallas.curve σ vk p pub).commitmentFn i)
+    (hξ : (runInput IpaPallas.curve σ vk p pub).polyscale
+      ∉ badXiOf σ aRef (runInput IpaPallas.curve σ vk p pub).pointFn
+          (runInput IpaPallas.curve σ vk p pub).evalFn)
+    (hr : (runInput IpaPallas.curve σ vk p pub).evalscale
+      ∉ badROf σ aRef (runInput IpaPallas.curve σ vk p pub).pointFn
+          (runInput IpaPallas.curve σ vk p pub).evalFn
+          (runInput IpaPallas.curve σ vk p pub).polyscale) :
+    ∃ (aft : Fin (2 ^ σ.k) → Fq) (ρft : Fq),
+      commit σ aft ρft = runFtComm IpaPallas.curve σ vk p pub
+        ∧ innerProduct aft
+            (evalVector (2 ^ σ.k) (runOracles IpaPallas.curve σ vk p pub).zeta)
+            = runFtEval0 IpaPallas.curve σ vk p pub :=
+  ft_opening_of_reflected σ vk p pub hbind
+    (kimchiVerify_reflects IpaPallas.curve σ vk p pub hacc) aRef ρRef hrep
+    (kimchi_fiat_shamir_pallas σ vk p pub) hξ hr
 
 end Kimchi.Verifier

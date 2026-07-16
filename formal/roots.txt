@@ -242,3 +242,15 @@ Kimchi.Verifier.kimchiPallas_sound_algebraic
 Kimchi.Verifier.kimchiProof_sound_algebraic_ft
 Kimchi.Verifier.kimchiVesta_sound_algebraic_ft
 Kimchi.Verifier.kimchiPallas_sound_algebraic_ft
+
+-- The FS-reflection ft opening (PART 1 of the deployed-run discharge): the ft commitment is slot 1
+-- of the run's own accepted 45-row batch, so its opening at ζ to `runFtEval0` is DERIVED from a
+-- genuine `verify = true` — `ipa_soundnessA` + the general-arity `eval_pins_of_opening` at that
+-- slot. `ft_opening_of_reflected` is axiom-free (the transcript tree is a hypothesis); the curve
+-- wrappers discharge it via the new `kimchi_fiat_shamir_{vesta,pallas}` axiom (warm reflected run)
+-- + `kimchiVerify_reflects`, so their closure is base + that axiom + hasse + CompElliptic (no
+-- poseidon FS, no eigen). Deferred follow-on: reconcile the 45-row batch with `batchC` to feed
+-- `kimchiProof_sound_algebraic_ft` and reach a full run-level residue-free `Satisfies` root.
+Kimchi.Verifier.ft_opening_of_reflected
+Kimchi.Verifier.ft_opening_of_reflected_vesta
+Kimchi.Verifier.ft_opening_of_reflected_pallas

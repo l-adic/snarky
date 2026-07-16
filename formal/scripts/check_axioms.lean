@@ -107,7 +107,10 @@ def roots : List Name :=
     `Kimchi.Verifier.kimchiPallas_sound_algebraic,
     `Kimchi.Verifier.kimchiProof_sound_algebraic_ft,
     `Kimchi.Verifier.kimchiVesta_sound_algebraic_ft,
-    `Kimchi.Verifier.kimchiPallas_sound_algebraic_ft ]
+    `Kimchi.Verifier.kimchiPallas_sound_algebraic_ft,
+    `Kimchi.Verifier.ft_opening_of_reflected,
+    `Kimchi.Verifier.ft_opening_of_reflected_vesta,
+    `Kimchi.Verifier.ft_opening_of_reflected_pallas ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations
@@ -120,6 +123,10 @@ def allowed : List Name :=
     -- The declared Fiat-Shamir assumption: Poseidon-accepted runs admit de-blinded
     -- accepting transcript trees (`Kimchi/Verifier/Reflection.lean`). One per Pasta curve.
     `Kimchi.Verifier.poseidon_fiat_shamir_vesta, `Kimchi.Verifier.poseidon_fiat_shamir_pallas,
+    -- The deployed-run Fiat–Shamir assumption, anchored on the warm reflected run
+    -- (`Ipa.verifyFrom (runWarm) (runInput)`) rather than the cold `Ipa.verify`. One per curve;
+    -- the residue-free ft opening (`ft_opening_of_reflected_*`) is stated over this.
+    `Kimchi.Verifier.kimchi_fiat_shamir_vesta, `Kimchi.Verifier.kimchi_fiat_shamir_pallas,
     `Kimchi.Pasta.pallas_eigen, `Kimchi.Pasta.vesta_eigen, ]
 
 /-- A CompElliptic `native_decide` witness: an axiom under the `CompElliptic` namespace carrying the
