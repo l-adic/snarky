@@ -1,4 +1,4 @@
-.PHONY: help all clean build-napi test-curves test-snarky test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint lean-build lean-check-witnesses lean-style lean-style-fix build-ps gen-linearization dep-graph pickles-inventory
+.PHONY: help all clean build-napi test-curves test-snarky test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint lean-build lean-check-witnesses lean-style lean-style-fix lean-dep-graph build-ps gen-linearization dep-graph pickles-inventory
 
 .DEFAULT_GOAL := help
 
@@ -128,6 +128,9 @@ lean-build: ## Build the Lean (formal/) project
 
 lean-check-witnesses: lean-build ## Check witness-carrying harness results against the index model (run the harness with CIRCUIT_DIFFS_WITNESS_EXPORT=1 first)
 	cd formal && PATH="$$HOME/.elan/bin:$$PATH" lake env lean kimchi/scripts/check_ps_witness.lean
+
+lean-dep-graph: ## Generate the Lean module dependency graph (formal/docs/module-deps.dot)
+	bash formal/scripts/module-deps.sh
 
 lean-style: ## Check Lean style (<=100 cols, no trailing ws/tabs, final newline)
 	bash formal/scripts/check-style.sh
