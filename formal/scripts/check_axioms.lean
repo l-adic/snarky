@@ -12,7 +12,6 @@ and the Pasta GLV endomorphism inputs. This subsumes the old `sorryAx` grep: a `
 Run from `formal/`:  lake env lean scripts/check_axioms.lean   (or: scripts/check_axioms.sh)
 -/
 import Kimchi
-import Snarky
 
 open Lean Lean.Elab.Command
 
@@ -105,13 +104,7 @@ def roots : List Name :=
     `Kimchi.Verifier.ft_opening_of_reflected_vesta,
     `Kimchi.Verifier.ft_opening_of_reflected_pallas,
     `Kimchi.Verifier.kimchiVesta_run_sound_algebraic_ft,
-    `Kimchi.Verifier.kimchiPallas_run_sound_algebraic_ft,
-    -- The Snarky DSL library (see Snarky/Laws.lean): the interpreter laws.
-    `Snarky.build_eraseWitness,
-    `Snarky.prove_assignments_le,
-    `Snarky.prove_build_agrees,
-    `Snarky.prove_sound,
-    `Snarky.CVar.eval_le ]
+    `Kimchi.Verifier.kimchiPallas_run_sound_algebraic_ft ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
     (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations

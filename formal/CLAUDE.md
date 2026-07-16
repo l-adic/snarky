@@ -8,8 +8,10 @@ Gates are modelled as **plain Lean predicates over witness structures**, and pro
 faithful to **Mathlib's elliptic-curve group law** (`WeierstrassCurve.Affine`). If you've
 seen the Clean framework, forget its vocabulary here — none of it applies.
 
-The package also hosts a second, independent library: **`Snarky/`** (namespace
-`Snarky.*`), a deep-embedded Lean port of the PureScript circuit-building DSL
+A second library lives in its own package **`snarky/`** (namespace `Snarky.*`, package
+`snarky`, which *requires kimchi* — its `Snarky.Kimchi.*` bridge interprets reified
+circuits against the verified generic-gate checker): a deep-embedded Lean port of the
+PureScript circuit-building DSL
 (`packages/snarky/src/Snarky/Circuit/DSL/Monad.purs`). It models how constraint systems
 are *constructed*, complementing `Kimchi`'s constraint-systems-as-data view: a reified op
 tree `CircuitM` (constraint type kept abstract), pure `build`/`prove` interpreters
@@ -34,7 +36,8 @@ is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakef
 | `pasta/` | `Pasta` | the Pasta curve trust base: the generic EC order/shape sugar, the GLV constants, the **Hasse/CM axioms** and derived orders, point-group module instances, the wire scalar-shift algebra (`Pasta.Shifted`) |
 | `poseidon/` | `Poseidon`, `FixtureKit` | the Poseidon permutation + duplex sponge over both Pasta base fields, the `FqSponge` consumer layer, SvdW map-to-curve; plus the shared JSON-fixture/trace kit. Own fixtures + check scripts (`poseidon/scripts/`) |
 | `bulletproof-pcs/` | `Bulletproof` | the IPA polynomial commitment: abstract scheme + soundness, the executable Pasta wire verifier (Poseidon-driven), the **`poseidon_fiat_shamir_*` axioms** + `ipa{Vesta,Pallas}_sound`, IPA fixtures + check script |
-| `.` (kimchi) | `Kimchi`, `Snarky` | the kimchi protocol: gates/circuits (arithmetization), `Quotient/` (PIOP), `Index/`, the kimchi verifier + linearization + soundness capstones; and the deep-embedded `Snarky` DSL |
+| `.` (kimchi) | `Kimchi` | the kimchi protocol: gates/circuits (arithmetization), `Quotient/` (PIOP), `Index/`, the kimchi verifier + linearization + soundness capstones |
+| `snarky/` | `Snarky` | the deep-embedded circuit-DSL port + its `Snarky.Kimchi.*` bridge; sits ON TOP (requires kimchi); own axiom gate (`snarky/scripts/check_axioms.sh`) |
 
 Each package builds standalone (`cd pasta && lake build`); from `formal/` the root
 workspace builds everything with shared artifact dirs.

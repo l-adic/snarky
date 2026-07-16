@@ -1,5 +1,5 @@
 name = "kimchi"
-defaultTargets = ["Kimchi", "Snarky", "kimchi-demo"]
+defaultTargets = ["Kimchi", "kimchi-demo"]
 
 # CompElliptic: concrete short-Weierstrass `SWCurve` / `SWPoint` with a proven group law,
 # and the Pasta curve instances. Vendored as a git submodule at vendor/CompElliptic so the
@@ -38,14 +38,6 @@ rev = "v4.30.0"
 [[lean_lib]]
 name = "Kimchi"
 
-# Snarky: a deep-embedded port of the PureScript circuit-building DSL
-# (packages/snarky/src/Snarky/Circuit/DSL/Monad.purs). Lives beside Kimchi so the
-# "no circuit monad" stance of the Kimchi.* namespace stays true. The core (`import Snarky`)
-# is Mathlib-free and builds in seconds; the `Snarky.Kimchi.*` bridge submodules import
-# Kimchi (and thus Mathlib), so the glob builds them without the root pulling them in.
-[[lean_lib]]
-name = "Snarky"
-globs = ["Snarky", "Snarky.+"]
 
 [[lean_exe]]
 name = "kimchi-demo"

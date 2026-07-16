@@ -1,0 +1,13 @@
+name = "snarky"
+defaultTargets = ["Snarky"]
+
+# The kimchi formalization: the `Snarky.Kimchi.*` bridge modules interpret the DSL's
+# reified circuits against the verified `Kimchi.Gate.Generic` checker. The core
+# (`import Snarky`) is dependency-free and Mathlib-free — only the bridge pulls this in.
+[[require]]
+name = "kimchi"
+path = ".."
+
+[[lean_lib]]
+name = "Snarky"
+globs = ["Snarky", "Snarky.+"]

@@ -64,6 +64,18 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         scripts/check_axioms.sh
 
+    # The Snarky DSL package sits ON TOP of kimchi (its bridge interprets reified
+    # circuits against the verified generic-gate checker), so it is its own lake
+    # workspace: fetch its mathlib oleans, build, and gate the interpreter laws
+    # (pure core Lean — standard axioms only).
+    - name: Build the snarky DSL package and gate its interpreter laws
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        cd snarky
+        lake exe cache get
+        lake build Snarky
+        scripts/check_axioms.sh
+
     # Compatibility: the IPA verifier model must accept real kimchi/proof-systems
     # transcripts, and both chunk-fold mechanisms must match production — the chunk
     # layer's recombination (fixtures/ipa_{opening,batch,chunked2,chunked3}_*.json,
