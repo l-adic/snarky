@@ -7,8 +7,6 @@ Pasta.pallas_endo
 Pasta.vesta_endo
 Pasta.pallas_lam
 Pasta.vesta_lam
-Pasta.pallas_endo_cube
-Pasta.vesta_endo_cube
 
 -- This package declares NO axioms: the group orders are unconditional (CompElliptic's
 -- fibre-bound argument) and the trust is native_decide certificates alone.

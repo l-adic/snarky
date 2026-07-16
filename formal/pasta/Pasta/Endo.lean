@@ -39,7 +39,7 @@ The proof is the classical three-step extension of a single-point certificate:
 exactly the shape of the former axioms; the short-basis bounds are derived from their
 reduced-basis certificates.
 
-**Public surface**: the constants (`*_endo`, `*_endo_cube`, `*_lam`), the anchor
+**Public surface**: the constants (`*_endo`, `*_lam`), `*_endo_nonsingular`, the anchor
 certificates `*_lam_nsmul_Gpt` (the axiom gates allow exactly these two `native_decide`s
 by name), and the consumer
 theorems `{pallas,vesta}_eigen` / `{pallas,vesta}_glv_no_short_relation`. Every
@@ -326,16 +326,31 @@ Exactly the shape of the (former) `pallas_eigen`/`vesta_eigen` axioms. The
 `SWPoint` relation across; the scalar changes type by `natCast_zsmul`
 (`pallas_lam = ↑pallas_lam.toNat` by `decide`). -/
 
+/-- The Pallas endomorphism `φ` maps curve points to curve points: `(β·x)³ = x³` keeps the
+    equation, and every on-curve point of a nonsingular curve is nonsingular. This is the
+    `Point.some` obligation of `pallas_eigen`'s conclusion — `φ(P)` is a genuine point, not
+    a hypothesis. -/
+theorem pallas_endo_nonsingular {x y : Fp}
+    (h : Pallas.curve.toAffine.Nonsingular x y) :
+    Pallas.curve.toAffine.Nonsingular (pallas_endo * x) y := by
+  have honc : OnCurve Pallas.curve.A Pallas.curve.B (x, y) := equation_toW.mp h.1
+  refine nonsingular_toW ?_
+  show y ^ 2 = (pallas_endo * x) ^ 3 + Pallas.curve.A * (pallas_endo * x) + Pallas.curve.B
+  have heq : y ^ 2 = x ^ 3 + Pallas.curve.A * x + Pallas.curve.B := honc
+  rw [show Pallas.curve.A = 0 from rfl] at heq ⊢
+  linear_combination heq - x ^ 3 * pallas_endo_cube
+
 /-- The Pallas endomorphism `φ(x, y) = (β·x, y)` acts as `[λ]` on the group: `φ(P) = [λ]·P`.
     PROVED above: `φ` is a group homomorphism (the addition formulas are homogeneous under
     the `(u², u³)`-rescaling with `u = β⁻¹`), the group is cyclic of prime order, and the
     `native_decide` certificate `pallas_lam_nsmul_Gpt` anchors the eigenvalue at the
-    generator. Discharges `Kimchi.Circuit.EndoMul.endoMul`'s hypothesis `heig`; trust =
+    generator. That `φ(P)` is on the curve is not assumed — `pallas_endo_nonsingular`
+    supplies it. Discharges `Kimchi.Circuit.EndoMul.endoMul`'s hypothesis `heig`; trust =
     the `native_decide` certificates alone. -/
 theorem pallas_eigen {x y : Fp}
-    (h : Pallas.curve.toAffine.Nonsingular x y)
-    (h' : Pallas.curve.toAffine.Nonsingular (pallas_endo * x) y) :
-    Point.some _ _ h' = pallas_lam • Point.some _ _ h := by
+    (h : Pallas.curve.toAffine.Nonsingular x y) :
+    Point.some _ _ (pallas_endo_nonsingular h) = pallas_lam • Point.some _ _ h := by
+  have h' := pallas_endo_nonsingular h
   have honc : OnCurve Pallas.curve.A Pallas.curve.B (x, y) := equation_toW.mp h.1
   have honc' : OnCurve Pallas.curve.A Pallas.curve.B (pallas_endo * x, y) :=
     equation_toW.mp h'.1
@@ -353,12 +368,24 @@ theorem pallas_eigen {x y : Fp}
   rw [show pallas_lam = (pallas_lam.toNat : ℤ) from by decide, natCast_zsmul]
   exact hmap
 
+/-- The Vesta endomorphism `φ` maps curve points to curve points — the Vesta twin of
+    `pallas_endo_nonsingular`. -/
+theorem vesta_endo_nonsingular {x y : Fq}
+    (h : Vesta.curve.toAffine.Nonsingular x y) :
+    Vesta.curve.toAffine.Nonsingular (vesta_endo * x) y := by
+  have honc : OnCurve Vesta.curve.A Vesta.curve.B (x, y) := equation_toW.mp h.1
+  refine nonsingular_toW ?_
+  show y ^ 2 = (vesta_endo * x) ^ 3 + Vesta.curve.A * (vesta_endo * x) + Vesta.curve.B
+  have heq : y ^ 2 = x ^ 3 + Vesta.curve.A * x + Vesta.curve.B := honc
+  rw [show Vesta.curve.A = 0 from rfl] at heq ⊢
+  linear_combination heq - x ^ 3 * vesta_endo_cube
+
 /-- The Vesta endomorphism acts as `[λ]`: `φ(P) = [λ]·P` — PROVED, the Vesta twin of
     `pallas_eigen` (see its docstring for the derivation and trust accounting). -/
 theorem vesta_eigen {x y : Fq}
-    (h : Vesta.curve.toAffine.Nonsingular x y)
-    (h' : Vesta.curve.toAffine.Nonsingular (vesta_endo * x) y) :
-    Point.some _ _ h' = vesta_lam • Point.some _ _ h := by
+    (h : Vesta.curve.toAffine.Nonsingular x y) :
+    Point.some _ _ (vesta_endo_nonsingular h) = vesta_lam • Point.some _ _ h := by
+  have h' := vesta_endo_nonsingular h
   have honc : OnCurve Vesta.curve.A Vesta.curve.B (x, y) := equation_toW.mp h.1
   have honc' : OnCurve Vesta.curve.A Vesta.curve.B (vesta_endo * x, y) :=
     equation_toW.mp h'.1

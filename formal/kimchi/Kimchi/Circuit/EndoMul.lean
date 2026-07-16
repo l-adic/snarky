@@ -111,7 +111,7 @@ theorem pallas_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
   have h3 : (3 : Fp) ≠ 0 := by decide
   have hodd : Pallas.curve.toAffine.order ≠ 2 := by rw [pallas_card]; decide
   have hTne : T ≠ 0 := by rw [hTeq]; exact Point.some_ne_zero _
-  have heig : φT = pallas_lam • T := by rw [hφTeq, hTeq]; exact pallas_eigen hTns hφTns
+  have heig : φT = pallas_lam • T := by rw [hφTeq, hTeq]; exact pallas_eigen hTns
   have off : ∀ a b : ℤ, a ≠ 0 → b ≠ 0 → |a| < 2 ^ 126 → |b| < 2 ^ 126 →
       a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
         ∧ a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT :=
@@ -145,7 +145,7 @@ theorem vesta_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
   have h3 : (3 : Fq) ≠ 0 := by decide
   have hodd : Vesta.curve.toAffine.order ≠ 2 := by rw [vesta_card]; decide
   have hTne : T ≠ 0 := by rw [hTeq]; exact Point.some_ne_zero _
-  have heig : φT = vesta_lam • T := by rw [hφTeq, hTeq]; exact vesta_eigen hTns hφTns
+  have heig : φT = vesta_lam • T := by rw [hφTeq, hTeq]; exact vesta_eigen hTns
   have off : ∀ a b : ℤ, a ≠ 0 → b ≠ 0 → |a| < 2 ^ 126 → |b| < 2 ^ 126 →
       a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
         ∧ a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT :=
