@@ -1,9 +1,9 @@
 /-
-Axiom-closure gate for the Pasta trust base. This package DECLARES the curve axioms
-(`Pasta.{pallas,vesta}_hasse`); the gate checks that every
-theorem DERIVED here reduces to the standard logical axioms + the Hasse bounds + the
-trusted `native_decide` certificates and nothing else — the CM eigenvalue relations
-(`pallas_eigen`/`vesta_eigen`) are THEOREMS here, not axioms.
+Axiom-closure gate for the Pasta trust base. This package declares NO axioms; the gate
+checks that every theorem here reduces to the standard logical axioms + the trusted
+`native_decide` certificates and nothing else — the group orders are unconditional
+(CompElliptic's fibre-bound argument) and the CM eigenvalue relations
+(`pallas_eigen`/`vesta_eigen`) are theorems.
 
 Run from `formal/pasta/`:  lake env lean scripts/check_axioms.lean
 (or from `formal/`:        lake env lean pasta/scripts/check_axioms.lean)
@@ -26,12 +26,11 @@ def roots : List Name :=
     `WeierstrassCurve.Affine.order_smul,
     `Pasta.pallas_eigen, `Pasta.vesta_eigen ]
 
-/-- Standard logical axioms, the Hasse bounds (declared here), and `Lean.ofReduceBool`
-    (the `native_decide` witnesses: CompElliptic's order counts + this package's two
-    eigenvalue anchors). NO eigen. -/
+/-- Standard logical axioms and `Lean.ofReduceBool` (the `native_decide` witnesses:
+    CompElliptic's prime-order witnesses + this package's two eigenvalue anchors).
+    NO declared axioms of our own. -/
 def allowed : List Name :=
-  [ `propext, `Classical.choice, `Quot.sound, `Lean.ofReduceBool,
-    `Pasta.pallas_hasse, `Pasta.vesta_hasse ]
+  [ `propext, `Classical.choice, `Quot.sound, `Lean.ofReduceBool ]
 
 /-- A trusted `native_decide` certificate: CompElliptic's point-count witnesses, or this
     package's two eigenvalue anchors (`Pasta.{pallas,vesta}_lam_nsmul_Gpt` in
@@ -59,7 +58,7 @@ run_cmd do
         bad := bad.push (root, ax)
   if bad.isEmpty then
     IO.println s!"✓ all {Pasta.CheckAxioms.roots.length} Pasta roots reduce to the standard \
-      axioms + the Hasse bounds + trusted native_decide certificates (no eigen)"
+      axioms + trusted native_decide certificates (no Hasse, no eigen)"
   else
     for (r, a) in bad do
       IO.eprintln s!"::error::{r} depends on disallowed axiom {a}"

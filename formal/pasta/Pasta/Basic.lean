@@ -8,10 +8,11 @@ import CompElliptic.Fields.Pasta
 
 The Pallas group order is the prime `q = PALLAS_SCALAR_CARD` and the Vesta group order is the
 prime `p = PALLAS_BASE_CARD` (the Pasta cycle: each curve's order is the other's base-field
-size). Both are obtained from Hasse's bound `#E(𝔽) ∈ [q+1−2√q, q+1+2√q]` and the point order of a
-generator `G` (`[q]·G = 𝒪`): the bound leaves the point order as the only in-interval
-possibility. Hasse's bound is the one input Mathlib cannot supply, so it is an axiom
-(`pallas_hasse`/`vesta_hasse`); everything else is discharged by `CompElliptic.Curves.PastaOrder`.
+size). Both are `CompElliptic.Curves.PastaOrder.card_eq`, which is **unconditional**: the
+elementary fibre bound `#E(𝔽) ≤ 2·#𝔽 + 1` plus the `native_decide` prime-order witness
+`[order]·G = 𝒪` pin the order outright (Vesta's leftover `#E = 2p` case is excluded because
+`-5` is not a cube). No Hasse bound, no axioms — this file only transports the counts to the
+Mathlib-`Point` reading and packages primality as `Fact` instances.
 -/
 
 namespace Pasta
@@ -19,22 +20,16 @@ namespace Pasta
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta CompElliptic.CurveForms.ShortWeierstrass
   CompElliptic.CurveOrder
 
-/-- **AXIOM (Hasse).** The Pallas group order lies in the Hasse interval
-    `[q+1−2√q, q+1+2√q]` (`#E(𝔽) ∈ hasseInterval (#𝔽)`). -/
-axiom pallas_hasse : HasseBound Pallas.curve
-
-/-- **AXIOM (Hasse).** The Vesta group order lies in the Hasse interval. -/
-axiom vesta_hasse : HasseBound Vesta.curve
-
-/-- The Pallas group order is the prime scalar-field cardinality `q`. -/
+/-- The Pallas group order is the prime scalar-field cardinality `q` — the unconditional
+    `card_eq`, read through the `SWPoint ≃ Point` bridge. -/
 theorem pallas_card : Pallas.curve.toAffine.order = PALLAS_SCALAR_CARD := by
-  have h := Pallas.card_eq pallas_hasse
+  have h := Pallas.card_eq
   rw [SWPoint.card_eq_point Pallas.curve] at h
   exact h
 
 /-- The Vesta group order is the prime cardinality `p`. -/
 theorem vesta_card : Vesta.curve.toAffine.order = PALLAS_BASE_CARD := by
-  have h := Vesta.card_eq vesta_hasse
+  have h := Vesta.card_eq
   rw [SWPoint.card_eq_point Vesta.curve] at h
   exact h
 

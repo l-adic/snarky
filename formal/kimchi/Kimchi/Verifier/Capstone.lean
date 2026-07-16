@@ -48,8 +48,8 @@ the wire public-input array (through `pubView`). The trust story, in three strat
 * **AXIOM — `poseidon_fiat_shamir_{vesta,pallas}` only**, applied per grid node inside
   the bridges `kimchiBatchAcc_bundle_{vesta,pallas}`: each node's `FiatShamirTreeB`
   family is *derived* from the node's own deployed acceptance, never assumed. (The
-  Pasta `Module` instances additionally carry the Hasse-bound axioms
-  `{vesta,pallas}_hasse` through `vestaPointModule`/`pallasPointModule`, exactly as in
+  Pasta `Module` instances additionally carry the unconditional point counts
+  through `vestaPointModule`/`pallasPointModule`, exactly as in
   `ipaVesta_sound` — pre-justified in TO_USER.md.)
 
 * **PROVED — everything else.** The bridges instantiate `KimchiBundle` from the grid;
@@ -466,7 +466,7 @@ implication of `kimchiBundle_sound` — byte-identical, at the wire views
 (`pubView idx pub` for the public input), ending in
 `∃ wTab, Satisfies idx (pubView idx pub) wTab`. The proof is `kimchiBundle_sound`
 through the Vesta bridge; the only axiom consumed is `poseidon_fiat_shamir_vesta`, once
-per grid node (plus the hasse-forced `Module` instance — see the module preamble).
+per grid node (plus the point-count-backed `Module` instance — see the module preamble).
 `hpub` pins the wire public array to the circuit's count, making the `getD` view
 honest. Project-local: the Vesta root of the concrete composition. -/
 theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
@@ -507,7 +507,7 @@ theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
 
 /-- **Soundness of the deployed Pallas kimchi verifier.** The Pallas-side twin of
 `kimchiVesta_sound`: `kimchiBundle_sound` through the Pallas bridge; the only axiom
-consumed is `poseidon_fiat_shamir_pallas`, once per grid node (plus the hasse-forced
+consumed is `poseidon_fiat_shamir_pallas`, once per grid node (plus the point-count-backed
 `Module` instance). Project-local: the Pallas root of the concrete composition. -/
 theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
     (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
@@ -2324,7 +2324,7 @@ eval pins of the run's one accepted opening), and the quotient
 opening through `ft_identity_of_chunks`. The four VK-parameter bridges
 `homega`/`hzk`/`hshift`/`hendo` are genuine hypotheses (`VKCorresponds` pins only
 commitments). Axioms consumed: `kimchi_fiat_shamir_vesta` (the Fiat–Shamir assumption
-at the run's own transcript) plus the Hasse-bound `Module` instance — no
+at the run's own transcript) plus the point-count-backed `Module` instance — no
 `poseidon_fiat_shamir`, no grid. Bad-set bounds verbatim `of_openings`'; the
 conclusion is guarded by the run challenges avoiding them, the two `ζ` degeneracies,
 and the ft non-degeneracy `ζ ^ n ≠ 1`. Project-local: the Vesta run-level

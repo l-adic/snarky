@@ -3,10 +3,10 @@ Axiom-closure gate for the Kimchi formalization.
 
 `lake build` succeeds even with `sorry` (it is only a warning), so this script gates the headline
 theorems explicitly: it collects the full axiom closure of each root and fails unless every axiom
-is in the allowlist below — the three standard logical axioms, the two trusted Pasta Hasse-bound
-axioms (`Pasta.{pallas_hasse, vesta_hasse}`, from which the group orders are *derived* via
-CompElliptic), `Lean.ofReduceBool` (inherited from CompElliptic's `native_decide` order witness),
-and the Pasta GLV endomorphism inputs. This subsumes the old `sorryAx` grep: a `sorry` shows up as
+is in the allowlist below — the three standard logical axioms and the trusted `native_decide`
+certificates (the Pasta group orders are *unconditional*, derived via
+CompElliptic's fibre-bound argument) — `Lean.ofReduceBool` plus the named certificate
+declarations. This subsumes the old `sorryAx` grep: a `sorry` shows up as
 `sorryAx`, which is not in the allowlist, and any *other* stray axiom that slips in is caught too.
 
 Run from `formal/kimchi/`:  lake env lean scripts/check_axioms.lean
@@ -97,14 +97,14 @@ def roots : List Name :=
     `Kimchi.Verifier.kimchiVesta_run_sound_algebraic_ft,
     `Kimchi.Verifier.kimchiPallas_run_sound_algebraic_ft ]
 
-/-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
-    (`Pasta.{pallas,vesta}_hasse`); and `Lean.ofReduceBool`. The CM eigenvalue relations are
-    THEOREMS in the pasta package (homomorphism + prime-order cyclicity + `native_decide`
-    anchors at the generators) — no longer on the trust surface. The `native_decide`
-    witnesses are permitted separately by `isTrustedNativeDecide`. -/
+/-- The only axioms the roots may depend on: the standard logical axioms and
+    `Lean.ofReduceBool`. The pasta package declares NO axioms — the group orders are
+    unconditional (CompElliptic's fibre-bound argument) and the CM eigenvalue relations are
+    THEOREMS (homomorphism + prime-order cyclicity + `native_decide` anchors at the
+    generators). The `native_decide` witnesses are permitted separately by
+    `isTrustedNativeDecide`. -/
 def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound, `Lean.ofReduceBool,
-    `Pasta.pallas_hasse, `Pasta.vesta_hasse,
     -- The declared Fiat-Shamir assumption: Poseidon-accepted runs admit de-blinded
     -- accepting transcript trees (`Kimchi/Verifier/Reflection.lean`). One per Pasta curve.
     `Bulletproof.poseidon_fiat_shamir_vesta, `Bulletproof.poseidon_fiat_shamir_pallas,

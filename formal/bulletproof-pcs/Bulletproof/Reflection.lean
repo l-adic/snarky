@@ -13,7 +13,7 @@ theorem itself.
 Three strata:
 
 * **The scalar action.** The Pasta point groups are `p`-torsion for their group orders
-  (`CompElliptic.Curves.PastaOrder`, under the Hasse axioms), so each carries a
+  (`CompElliptic.Curves.PastaOrder`, unconditional), so each carries a
   `Module (ZMod p)` structure by `AddCommGroup.zmodModule`; its action is definitionally
   `z.val • _`, the ℕ-action the executable verifier computes with. This instantiates the
   abstract `[Module F G]` of the soundness layer at the executable types.

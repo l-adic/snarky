@@ -8,15 +8,15 @@ import Pasta.Shifted
 # Pasta — the Pasta curves' trust base
 
 Root module of the `Pasta` library: the generic elliptic-curve order/shape sugar over
-Mathlib's `WeierstrassCurve.Affine` (`Pasta/Curve.lean`), the concrete Pasta GLV constants
-(`Pasta/Constants.lean`), the curve trust base — the Hasse-bound and CM-eigenvalue axioms
-and everything derived from them: group orders, primality, the GLV short-basis bounds
-(`Pasta/Basic.lean`), the GLV eigenvalue relations PROVED from the endomorphism's
-homomorphism property + prime-order cyclicity + `native_decide` anchors at the generators
-(`Pasta/Endo.lean`), and the scalar-field module structure on the point groups
-(`Pasta/Module.lean`).
+Mathlib's `WeierstrassCurve.Affine` (`Pasta/Curve.lean`), the group orders and primality —
+unconditional, via CompElliptic's fibre-bound argument (`Pasta/Basic.lean`), the GLV
+endomorphisms in full — constants, the eigenvalue relations PROVED from the endomorphism's
+homomorphism property + prime-order cyclicity + `native_decide` anchors at the generators,
+and the short-basis bounds (`Pasta/Endo.lean`) — and the scalar-field module structure on
+the point groups (`Pasta/Module.lean`).
 
-This package is the single home of the Pasta curve axioms — now ONLY the Hasse bounds
-(`Pasta.{pallas,vesta}_hasse`); the CM eigenvalue relations are theorems; every consumer
-(the bulletproof PCS, the kimchi formalization) inherits its trust surface from here.
+This package declares NO axioms: the group orders are unconditional and the CM eigenvalue
+relations are theorems — the entire curve trust is `native_decide` certificates. Every
+consumer (the bulletproof PCS, the kimchi formalization) inherits its trust surface from
+here.
 -/
