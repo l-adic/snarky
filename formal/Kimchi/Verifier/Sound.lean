@@ -4,12 +4,12 @@ import Kimchi.Commitment.IPA.Chunk
 import Kimchi.Verifier.Correspond
 
 /-!
-# Batch binding and the ft equation
+# Batch binding
 
-Two pieces of the milestone-4 soundness composition, stated at the abstract level of
+The batch-binding piece of the soundness composition, stated at the abstract level of
 the IPA soundness stack (a scalar field `F`, an `F`-module `G`, an `SRS G`, exactly as
 `Kimchi/Commitment/IPA/Soundness/Batch.lean`) — no wire types appear; the reflection
-layer connects them to the executable verifier in the composition step (4.5).
+layer connects it to the executable verifier in the composition step.
 
 **Batch binding (4.3): what a bound batch row *is*.** `batch_soundnessA` ends with, per
 commitment row, an extracted witness pair `(a, ρ)` with `commit σ a ρ = C i` and every
@@ -28,18 +28,9 @@ itself (`bound_eval_of_commitPoly`, `bound_eval_of_commitPolyMasked`). Through
 read the Index's own interpolants". The binding hypothesis is carried in the
 no-DL-relation form so these lemmas compose with `batch_soundnessA` verbatim.
 
-**The ft equation (4.4): the ft row yields the deployed scalar equation.** The verifier
-constructs `ftComm = pScalar • Cσ6 − (ζ^n − 1) • Tcomm` (`Cσ6` the seventh sigma
-commitment, `Tcomm` the `ζ^n`-power combination of the `t` chunks — inner structure
-irrelevant here). A bound ft row with claimed value `ftEval0` at `ζ` yields a quotient
-`t` satisfying the deployed equation
-`pScalar * σ₆.eval ζ − (ζ^n − 1) * t.eval ζ = ftEval0` — with `t` *defined* from the
-identity (`ftQuotient`): at chunk count `nc = 1` no per-chunk extraction is needed,
-which is why `chunked_ipa_soundness` is not consumed here (it guards the `nc > 1`
-width pass). The all-points identity `ftQuotient_eval` is the primary statement (the
-`ζω` companion is its instance at `y = ζω`); `ft_equation` is the `ζ` instance in the
-deployed shape, and `ftComm_eq_commit` is the commit-linearity reading of the `ftComm`
-construction that justifies its hypothesis set.
+(The ft/quotient identity that once lived here as the `nc = 1` shortcut `ftQuotient`/
+`ft_equation` was superseded by the genuine 7-chunk discharge `ftChunkAssembly` +
+`ft_identity_of_chunks` in `Kimchi/Verifier/Capstone.lean`.)
 -/
 
 namespace Kimchi.Verifier
@@ -170,90 +161,5 @@ theorem bound_eval_of_commitPolyMasked (σ : SRS G)
     {x e : F} (he : e = innerProduct a (evalVector (2 ^ σ.k) x)) :
     e = p.eval x := by
   rw [he, ← rowPoly_eval, (bound_eq_of_commitPolyMasked σ hbind hcommit hdeg).1]
-
-/-! ## The ft equation -/
-
-/-- Two-term homogeneity of the hiding commitment,
-`commit σ (c • a) (c * r) = c • commit σ a r` — the two-term instance of
-`commit_sum_smul` (`Soundness/Batch.lean`), stated separately so the `ftComm`
-rearrangement needs no `Fin 2` packaging. -/
-theorem commit_smul (σ : SRS G) (c : F) (a : Fin (2 ^ σ.k) → F) (r : F) :
-    commit σ (c • a) (c * r) = c • commit σ a r := by
-  simp only [commit, commitGen_smul_left, mul_smul, smul_add]
-
-/-- Two-term subtractivity of the hiding commitment,
-`commit σ (a - b) (r - s) = commit σ a r - commit σ b s`. -/
-theorem commit_sub (σ : SRS G) (a b : Fin (2 ^ σ.k) → F) (r s : F) :
-    commit σ (a - b) (r - s) = commit σ a r - commit σ b s := by
-  simp only [commit, commitGen_sub, sub_smul]
-  abel
-
-/-- The quotient the ft identity *defines*: `t := (ζ^n − 1)⁻¹ • (pScalar • σ₆ −
-rowPoly a)`. At chunk count `nc = 1` the honest `t` need not be extracted — the bound
-ft row determines it exactly, and `ftQuotient_spec` is the defining identity. -/
-noncomputable def ftQuotient (n : ℕ) (σ₆ : Polynomial F) (pScalar ζ : F)
-    {N : ℕ} (a : Fin N → F) : Polynomial F :=
-  (ζ ^ n - 1)⁻¹ • (pScalar • σ₆ - rowPoly a)
-
-/-- The defining identity of the ft quotient, **as polynomials**:
-`pScalar • σ₆ − (ζ^n − 1) • t = rowPoly a`. Requires only `ζ^n ≠ 1` (so `ζ^n − 1` is
-invertible); no commitment data enters. -/
-theorem ftQuotient_spec (n : ℕ) (σ₆ : Polynomial F) (pScalar ζ : F) (hζ : ζ ^ n ≠ 1)
-    {N : ℕ} (a : Fin N → F) :
-    pScalar • σ₆ - (ζ ^ n - 1) • ftQuotient n σ₆ pScalar ζ a = rowPoly a := by
-  unfold ftQuotient
-  rw [smul_smul, mul_inv_cancel₀ (sub_ne_zero.mpr hζ), one_smul, sub_sub_cancel]
-
-/-- **The all-points ft identity** — the primary 4.4 statement: at *every* point `y`,
-the combination `pScalar • σ₆ − (ζ^n − 1) • t` evaluates to the row's inner product
-with the evaluation vector at `y`. The deployed `ζ` instance is `ft_equation`; the
-`ζω` companion is this lemma at `y = ζω`, for free. -/
-theorem ftQuotient_eval (n : ℕ) (σ₆ : Polynomial F) (pScalar ζ : F) (hζ : ζ ^ n ≠ 1)
-    {N : ℕ} (a : Fin N → F) (y : F) :
-    (pScalar • σ₆ - (ζ ^ n - 1) • ftQuotient n σ₆ pScalar ζ a).eval y
-      = innerProduct a (evalVector N y) := by
-  rw [ftQuotient_spec n σ₆ pScalar ζ hζ a, rowPoly_eval]
-
-/-- **The commit-linearity reading of the ft construction** — what the hypothesis set
-of `ft_equation` says: given `hC` and `hcommit`, the `t`-side commitment is itself a
-hiding commitment, of the vector `pScalar • coeffs σ₆ − a` at blinder `−ρ`. This is
-the two-term instance of the `commit_sum_smul` rearrangement; it justifies carrying
-`Cσ6`/`Tcomm`/`hcommit` in the deployed statement even though the scalar equation
-itself needs none of them. -/
-theorem ftComm_eq_commit (σ : SRS G) (n : ℕ) (σ₆ : Polynomial F)
-    {Cσ6 Tcomm : G} (hC : Cσ6 = commitPoly σ σ₆) (pScalar ζ : F)
-    {a : Fin (2 ^ σ.k) → F} {ρ : F}
-    (hcommit : commit σ a ρ = pScalar • Cσ6 - (ζ ^ n - 1) • Tcomm) :
-    (ζ ^ n - 1) • Tcomm
-      = commit σ (pScalar • (fun i : Fin (2 ^ σ.k) => σ₆.coeff (i : ℕ)) - a) (-ρ) := by
-  have h1 : (ζ ^ n - 1) • Tcomm = pScalar • Cσ6 - commit σ a ρ := by
-    rw [hcommit]; abel
-  rw [h1, hC, commitPoly_eq_commit, ← commit_smul, ← commit_sub, mul_zero, zero_sub]
-
-set_option linter.unusedVariables false in
-/-- **The ft equation (4.4)** — the deployed scalar equation, in the deployed shape:
-a bound ft row (`hcommit`, against the verifier's
-`ftComm = pScalar • Cσ6 − (ζ^n − 1) • Tcomm`) whose claimed value at `ζ` is `ftEval0`
-(`heval`) yields a quotient `t` with
-`pScalar * σ₆.eval ζ − (ζ^n − 1) * t.eval ζ = ftEval0`.
-
-Hypothesis-minimal by design: the proof consumes only `hζ` and `heval` — the witness
-`t := ftQuotient n σ₆ pScalar ζ a` is *defined* from the identity, so no binding and
-no commitment algebra is needed for this statement (`hσ₆`, `hC`, `hcommit` document
-the deployment reading — see `ftComm_eq_commit` — and keep the binder set 4.5
-instantiates; the dictated `hbind` is dropped as unused). -/
-theorem ft_equation (σ : SRS G)
-    (σ₆ : Polynomial F) (hσ₆ : σ₆.natDegree < 2 ^ σ.k)
-    (Cσ6 Tcomm : G) (hC : Cσ6 = commitPoly σ σ₆)
-    (pScalar ζ ftEval0 : F) (n : ℕ) (hζ : ζ ^ n ≠ 1)
-    (a : Fin (2 ^ σ.k) → F) (ρ : F)
-    (hcommit : commit σ a ρ = pScalar • Cσ6 - (ζ ^ n - 1) • Tcomm)
-    (heval : innerProduct a (evalVector (2 ^ σ.k) ζ) = ftEval0) :
-    ∃ t : Polynomial F,
-      pScalar * σ₆.eval ζ - (ζ ^ n - 1) * t.eval ζ = ftEval0 := by
-  refine ⟨ftQuotient n σ₆ pScalar ζ a, ?_⟩
-  have h := ftQuotient_eval n σ₆ pScalar ζ hζ a ζ
-  rw [eval_sub, eval_smul, eval_smul, smul_eq_mul, smul_eq_mul, heval] at h
-  exact h
 
 end Kimchi.Verifier

@@ -106,8 +106,8 @@ exactly as in the 1.3b capstones. The `[Fintype]` instances live only in this co
 layer, never on a core statement.
 
 Finally, the **algebraic-prover reading** (the AGM corollary):
-`kimchiProof_sound_algebraic` and its curve roots `kimchi{Vesta,Pallas}_sound_algebraic`
-quantify over provers that SUPPLY SRS-basis representations `aw₀`/`ρw₀` of their
+`kimchiProof_sound_algebraic` quantifies over provers that SUPPLY SRS-basis
+representations `aw₀`/`ρw₀` of their
 committed rows (the algebraic-group-model idiom), so a SINGLE accepted IPA opening
 suffices — no grid, no density. The content delivered here: representations + ONE
 accepted opening ⟹ the per-row eval pins (`eval_pins_of_opening`), replacing the
@@ -122,8 +122,7 @@ residue by extracting `t` from the `tComm` representation via the Maller relatio
 statement remains `*_sound_density`.
 
 The **algebraic quotient** (the follow-on the AGM section promises) is delivered at the
-end of the file: `kimchiProof_sound_algebraic_ft` and its curve roots
-`kimchi{Vesta,Pallas}_sound_algebraic_ft`. The algebraic prover additionally supplies
+end of the file: `kimchiProof_sound_algebraic_ft`. The algebraic prover additionally supplies
 the 7 `tComm`-chunk representations, and the quotient `t` — now the genuine
 degree-`< 7n` assembly `ftChunkAssembly` of the committed chunks — and the Maller/ft
 identity `hteq` are DERIVED from a checked ft opening via `ft_identity_of_chunks`; the
@@ -1404,98 +1403,6 @@ theorem kimchiProof_sound_algebraic {F G : Type*} [Field F] [AddCommGroup G]
   exact himp β γ α t ζ E aw₀ ρw₀ hβ hγ hα hζ hζ1 hζb ht
     (fun i => ⟨hrep i, fun j => hpins i j⟩) hteq
 
-/-- **Algebraic-prover soundness of the deployed Vesta kimchi verifier** (the Vesta AGM
-root): `kimchiProof_sound_algebraic` at the wire views — the wire key's committed
-columns (`vk.comms`), the wire public array (`pubView idx pub`, made honest by `hpub`).
-An algebraic prover's representations of the 43 batch rows replace the
-special-soundness grid: ONE accepted IPA opening (the `FiatShamirTreeB` antecedent +
-`A`, exactly as the general theorem exposes them — the caller supplies the accepted
-transcript) delivers the consumer implication. Honest scope note: the quotient identity
-`hteq` (with `t` and its degree bound) remains a hypothesis, as in the run-level
-capstones; the standard-model statement is `kimchiVesta_sound_density`. Project-local:
-the Vesta AGM root. -/
-theorem kimchiVesta_sound_algebraic (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
-    (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
-    (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
-    (hpub : pub.size = idx.publicCount)
-    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (wC : Fin 15 → IpaVesta.Point) (zC : IpaVesta.Point)
-    (aw₀ : Fin 43 → Fin (2 ^ σ.k) → Fp) (ρw₀ : Fin 43 → Fp)
-    (hrep : ∀ i, commit σ (aw₀ i) (ρw₀ i) = batchC wC zC vk.comms i) :
-    ∃ (badB : Finset Fp) (badG : Fp → Finset Fp) (badA : Fp → Fp → Finset Fp)
-        (badZ : Fp → Fp → Fp → Polynomial Fp → Finset Fp)
-        (badXi : (Fin 43 → Fin 2 → Fp) → Fp → Finset Fp)
-        (badR : (Fin 43 → Fin 2 → Fp) → Fp → Fp → Finset Fp),
-      (badB.card ≤ 7 * (n - idx.zkRows)
-        ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
-        ∧ (∀ β γ,
-            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
-        ∧ (∀ β γ α (t : Polynomial Fp), t.natDegree < 7 * n →
-            (badZ β γ α t).card ≤ Index.degreeBound n)
-        ∧ (∀ (E : Fin 43 → Fin 2 → Fp) (ζ : Fp), (badXi E ζ).card ≤ 84)
-        ∧ (∀ (E : Fin 43 → Fin 2 → Fp) (ζ ξ : Fp), (badR E ζ ξ).card ≤ 1))
-      ∧ ∀ (β γ α : Fp) (t : Polynomial Fp) (ζ : Fp)
-          (E : Fin 43 → Fin 2 → Fp) (ξ r : Fp) (A : Prop),
-          β ∉ badB → γ ∉ badG β → α ∉ badA β γ → ζ ∉ badZ β γ α t →
-          ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) →
-          t.natDegree < 7 * n →
-          ξ ∉ badXi E ζ → r ∉ badR E ζ ξ →
-          FiatShamirTreeB σ (combinedCommitment ξ (batchC wC zC vk.comms))
-            (combinedEvalVector (2 ^ σ.k) r ![ζ, idx.omega * ζ])
-            (combinedInnerProduct ξ r E) A →
-          A →
-          (permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
-              * (idx.sigmaPoly 6).eval ζ
-            - (ζ ^ n - 1) * t.eval ζ
-            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
-                ζ (-((idx.pubPoly (pubView idx pub)).eval ζ)) (claimedEvals E)) →
-          ∃ wTab : Fin n → Fin 15 → Fp, Satisfies idx (pubView idx pub) wTab :=
-  kimchiProof_sound_algebraic σ idx hk hbind vk.comms hvk (pubView idx pub) wC zC
-    aw₀ ρw₀ hrep
-
-/-- **Algebraic-prover soundness of the deployed Pallas kimchi verifier.** The
-Pallas-side twin of `kimchiVesta_sound_algebraic`, over `Fq`/`IpaPallas`. See the Vesta
-docstring for the trust story — in particular the quotient residue `hteq`, the one
-antecedent the AGM reading keeps. Project-local: the Pallas AGM root. -/
-theorem kimchiPallas_sound_algebraic (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
-    (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
-    (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
-    (hpub : pub.size = idx.publicCount)
-    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (wC : Fin 15 → IpaPallas.Point) (zC : IpaPallas.Point)
-    (aw₀ : Fin 43 → Fin (2 ^ σ.k) → Fq) (ρw₀ : Fin 43 → Fq)
-    (hrep : ∀ i, commit σ (aw₀ i) (ρw₀ i) = batchC wC zC vk.comms i) :
-    ∃ (badB : Finset Fq) (badG : Fq → Finset Fq) (badA : Fq → Fq → Finset Fq)
-        (badZ : Fq → Fq → Fq → Polynomial Fq → Finset Fq)
-        (badXi : (Fin 43 → Fin 2 → Fq) → Fq → Finset Fq)
-        (badR : (Fin 43 → Fin 2 → Fq) → Fq → Fq → Finset Fq),
-      (badB.card ≤ 7 * (n - idx.zkRows)
-        ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
-        ∧ (∀ β γ,
-            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
-        ∧ (∀ β γ α (t : Polynomial Fq), t.natDegree < 7 * n →
-            (badZ β γ α t).card ≤ Index.degreeBound n)
-        ∧ (∀ (E : Fin 43 → Fin 2 → Fq) (ζ : Fq), (badXi E ζ).card ≤ 84)
-        ∧ (∀ (E : Fin 43 → Fin 2 → Fq) (ζ ξ : Fq), (badR E ζ ξ).card ≤ 1))
-      ∧ ∀ (β γ α : Fq) (t : Polynomial Fq) (ζ : Fq)
-          (E : Fin 43 → Fin 2 → Fq) (ξ r : Fq) (A : Prop),
-          β ∉ badB → γ ∉ badG β → α ∉ badA β γ → ζ ∉ badZ β γ α t →
-          ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) →
-          t.natDegree < 7 * n →
-          ξ ∉ badXi E ζ → r ∉ badR E ζ ξ →
-          FiatShamirTreeB σ (combinedCommitment ξ (batchC wC zC vk.comms))
-            (combinedEvalVector (2 ^ σ.k) r ![ζ, idx.omega * ζ])
-            (combinedInnerProduct ξ r E) A →
-          A →
-          (permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
-              * (idx.sigmaPoly 6).eval ζ
-            - (ζ ^ n - 1) * t.eval ζ
-            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
-                ζ (-((idx.pubPoly (pubView idx pub)).eval ζ)) (claimedEvals E)) →
-          ∃ wTab : Fin n → Fin 15 → Fq, Satisfies idx (pubView idx pub) wTab :=
-  kimchiProof_sound_algebraic σ idx hk hbind vk.comms hvk (pubView idx pub) wC zC
-    aw₀ ρw₀ hrep
-
 /-! ## The algebraic quotient — the ft residue dissolved from the chunk representations -/
 
 /-- **The assembled quotient** — the genuine degree-`< 7·2^k` polynomial the 7 committed
@@ -1698,106 +1605,6 @@ theorem kimchiProof_sound_algebraic_ft {F G : Type*} [Field F] [AddCommGroup G]
       (-((idx.pubPoly pub).eval ζ)) (claimedEvals E)) n hk aft ρft hftc hftv
   exact himp β γ α (ftChunkAssembly σ.k aT) ζ E ξ r A hβ hγ hα hζ hζ1 hζb htdeg
     hξ hr hFS hAcc hteq
-
-/-- **Residue-free algebraic-prover soundness of the deployed Vesta kimchi verifier**:
-`kimchiVesta_sound_algebraic` with the quotient residue dissolved —
-`kimchiProof_sound_algebraic_ft` at the wire views (the wire key's committed columns
-`vk.comms`, the wire public array through `pubView idx pub`). The algebraic prover
-additionally supplies the 7 `tComm`-chunk representations; the quotient `t` and the
-Maller identity are DERIVED from the checked ft opening (the two antecedents after `A`).
-See the general theorem's docstring for the trust accounting. Project-local: the
-residue-free Vesta AGM root. -/
-theorem kimchiVesta_sound_algebraic_ft (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
-    (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
-    (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
-    (hpub : pub.size = idx.publicCount)
-    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (wC : Fin 15 → IpaVesta.Point) (zC : IpaVesta.Point)
-    (aw₀ : Fin 43 → Fin (2 ^ σ.k) → Fp) (ρw₀ : Fin 43 → Fp)
-    (hrep : ∀ i, commit σ (aw₀ i) (ρw₀ i) = batchC wC zC vk.comms i)
-    (TC : Fin 7 → IpaVesta.Point) (aT : Fin 7 → Fin (2 ^ σ.k) → Fp) (ρT : Fin 7 → Fp)
-    (hTC : ∀ j, commit σ (aT j) (ρT j) = TC j)
-    (Cσ6 : IpaVesta.Point) (hCσ6 : Cσ6 = commitPoly σ (idx.sigmaPoly 6)) :
-    ∃ (badB : Finset Fp) (badG : Fp → Finset Fp) (badA : Fp → Fp → Finset Fp)
-        (badZ : Fp → Fp → Fp → Polynomial Fp → Finset Fp)
-        (badXi : (Fin 43 → Fin 2 → Fp) → Fp → Finset Fp)
-        (badR : (Fin 43 → Fin 2 → Fp) → Fp → Fp → Finset Fp),
-      (badB.card ≤ 7 * (n - idx.zkRows)
-        ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
-        ∧ (∀ β γ,
-            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
-        ∧ (∀ β γ α (t : Polynomial Fp), t.natDegree < 7 * n →
-            (badZ β γ α t).card ≤ Index.degreeBound n)
-        ∧ (∀ (E : Fin 43 → Fin 2 → Fp) (ζ : Fp), (badXi E ζ).card ≤ 84)
-        ∧ (∀ (E : Fin 43 → Fin 2 → Fp) (ζ ξ : Fp), (badR E ζ ξ).card ≤ 1))
-      ∧ ∀ (β γ α ζ : Fp)
-          (E : Fin 43 → Fin 2 → Fp) (ξ r : Fp) (A : Prop)
-          (aft : Fin (2 ^ σ.k) → Fp) (ρft : Fp),
-          β ∉ badB → γ ∉ badG β → α ∉ badA β γ →
-          ζ ∉ badZ β γ α (ftChunkAssembly σ.k aT) →
-          ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) → ζ ^ n ≠ 1 →
-          ξ ∉ badXi E ζ → r ∉ badR E ζ ξ →
-          FiatShamirTreeB σ (combinedCommitment ξ (batchC wC zC vk.comms))
-            (combinedEvalVector (2 ^ σ.k) r ![ζ, idx.omega * ζ])
-            (combinedInnerProduct ξ r E) A →
-          A →
-          (commit σ aft ρft
-            = permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
-                • Cσ6 - (ζ ^ n - 1) • ∑ j : Fin 7, (ζ ^ n) ^ (j : ℕ) • TC j) →
-          (innerProduct aft (evalVector (2 ^ σ.k) ζ)
-            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
-                ζ (-((idx.pubPoly (pubView idx pub)).eval ζ)) (claimedEvals E)) →
-          ∃ wTab : Fin n → Fin 15 → Fp, Satisfies idx (pubView idx pub) wTab :=
-  kimchiProof_sound_algebraic_ft σ idx hk hbind vk.comms hvk (pubView idx pub) wC zC
-    aw₀ ρw₀ hrep TC aT ρT hTC Cσ6 hCσ6
-
-/-- **Residue-free algebraic-prover soundness of the deployed Pallas kimchi verifier.**
-The Pallas-side twin of `kimchiVesta_sound_algebraic_ft`, over `Fq`/`IpaPallas` — see
-the Vesta docstring, and the general theorem's for the trust accounting. Project-local:
-the residue-free Pallas AGM root. -/
-theorem kimchiPallas_sound_algebraic_ft (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
-    (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
-    (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
-    (hpub : pub.size = idx.publicCount)
-    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (wC : Fin 15 → IpaPallas.Point) (zC : IpaPallas.Point)
-    (aw₀ : Fin 43 → Fin (2 ^ σ.k) → Fq) (ρw₀ : Fin 43 → Fq)
-    (hrep : ∀ i, commit σ (aw₀ i) (ρw₀ i) = batchC wC zC vk.comms i)
-    (TC : Fin 7 → IpaPallas.Point) (aT : Fin 7 → Fin (2 ^ σ.k) → Fq) (ρT : Fin 7 → Fq)
-    (hTC : ∀ j, commit σ (aT j) (ρT j) = TC j)
-    (Cσ6 : IpaPallas.Point) (hCσ6 : Cσ6 = commitPoly σ (idx.sigmaPoly 6)) :
-    ∃ (badB : Finset Fq) (badG : Fq → Finset Fq) (badA : Fq → Fq → Finset Fq)
-        (badZ : Fq → Fq → Fq → Polynomial Fq → Finset Fq)
-        (badXi : (Fin 43 → Fin 2 → Fq) → Fq → Finset Fq)
-        (badR : (Fin 43 → Fin 2 → Fq) → Fq → Fq → Finset Fq),
-      (badB.card ≤ 7 * (n - idx.zkRows)
-        ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
-        ∧ (∀ β γ,
-            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
-        ∧ (∀ β γ α (t : Polynomial Fq), t.natDegree < 7 * n →
-            (badZ β γ α t).card ≤ Index.degreeBound n)
-        ∧ (∀ (E : Fin 43 → Fin 2 → Fq) (ζ : Fq), (badXi E ζ).card ≤ 84)
-        ∧ (∀ (E : Fin 43 → Fin 2 → Fq) (ζ ξ : Fq), (badR E ζ ξ).card ≤ 1))
-      ∧ ∀ (β γ α ζ : Fq)
-          (E : Fin 43 → Fin 2 → Fq) (ξ r : Fq) (A : Prop)
-          (aft : Fin (2 ^ σ.k) → Fq) (ρft : Fq),
-          β ∉ badB → γ ∉ badG β → α ∉ badA β γ →
-          ζ ∉ badZ β γ α (ftChunkAssembly σ.k aT) →
-          ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) → ζ ^ n ≠ 1 →
-          ξ ∉ badXi E ζ → r ∉ badR E ζ ξ →
-          FiatShamirTreeB σ (combinedCommitment ξ (batchC wC zC vk.comms))
-            (combinedEvalVector (2 ^ σ.k) r ![ζ, idx.omega * ζ])
-            (combinedInnerProduct ξ r E) A →
-          A →
-          (commit σ aft ρft
-            = permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
-                • Cσ6 - (ζ ^ n - 1) • ∑ j : Fin 7, (ζ ^ n) ^ (j : ℕ) • TC j) →
-          (innerProduct aft (evalVector (2 ^ σ.k) ζ)
-            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
-                ζ (-((idx.pubPoly (pubView idx pub)).eval ζ)) (claimedEvals E)) →
-          ∃ wTab : Fin n → Fin 15 → Fq, Satisfies idx (pubView idx pub) wTab :=
-  kimchiProof_sound_algebraic_ft σ idx hk hbind vk.comms hvk (pubView idx pub) wC zC
-    aw₀ ρw₀ hrep TC aT ρT hTC Cσ6 hCσ6
 
 /-! ## The FS-reflection ft opening (the Fiat–Shamir discharge, part 1)
 

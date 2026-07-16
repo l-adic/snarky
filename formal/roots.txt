@@ -175,23 +175,15 @@ Kimchi.Index.Index.copy_soundness
 -- batch_soundnessA) and the algebraic-prover path (representations carried with messages) both
 -- discharge it. Reference side = pure commitment-knowledge; consumer side = per-row openings.
 Kimchi.Verifier.kimchiProof_sound_of_openings
-Kimchi.Verifier.kimchiProof_sound
-Kimchi.Verifier.kimchiBundle_sound
 
--- The concrete Fiat-Shamir-instantiated capstones (option B, IPA-parity): the special-soundness
--- grid (accepting deployed Ipa.verify batch openings at injectively-varied ξ/r over the wire
--- key's committed columns) is a HYPOTHESIS — never manufactured from a single run; each node's
--- transcript tree is derived from poseidon_fiat_shamir_{vesta,pallas}. Trust per curve:
--- that FS axiom + the hasse-pinned group order + CompElliptic certificates; binding and the
--- key correspondence are hypotheses.
-Kimchi.Verifier.kimchiVesta_sound
-Kimchi.Verifier.kimchiPallas_sound
-
--- The run-level finale: the capstones' consumer implication instantiated at a real accepted
--- run's own sponge challenges over the run's own commitments — unless the run's (β, γ, α, ζ)
--- land in the four bounded bad sets, the index is satisfiable. The quotient residue (t, hdeg,
--- heq) is the one explicit hypothesis beyond the grids (t-chunk extractability; the deployed
--- verifier checks only its scalar image through the Maller ft row).
+-- The standard-model run-level capstones (grid path): a real accepted run's own sponge
+-- challenges over the run's own commitments — unless the run's (β, γ, α, ζ) land in the four
+-- bounded bad sets, the index is satisfiable. The special-soundness grid (accepting deployed
+-- Ipa.verify batch openings at injectively-varied ξ/r) is a HYPOTHESIS; each node's transcript
+-- tree is derived from poseidon_fiat_shamir_{vesta,pallas}. The quotient residue (t, hdeg, heq)
+-- is the one explicit hypothesis beyond the grids. The intermediate capstones these compose
+-- (kimchiProof_sound → kimchiBundle_sound → kimchi{Vesta,Pallas}_sound) are live via
+-- reachability, no longer listed.
 Kimchi.Verifier.kimchiVesta_run_sound
 Kimchi.Verifier.kimchiPallas_run_sound
 
@@ -201,7 +193,6 @@ Kimchi.Verifier.kimchiPallas_run_sound
 -- side conditions. Pure counting over the bad sets; the run-level corollaries deliberately do
 -- not carry this reading (a fixed run's sponge outputs are not random — that reading is the
 -- Fiat-Shamir heuristic itself).
-Kimchi.Verifier.kimchiBundle_sound_error
 Kimchi.Verifier.kimchiVesta_sound_error
 Kimchi.Verifier.kimchiPallas_sound_error
 
@@ -230,8 +221,6 @@ Kimchi.Quotient.mem_rowSlice
 -- the density capstones' MINUS poseidon_fiat_shamir; the ft/quotient identity is kept as the
 -- residue hypothesis (dissolved by the `_ft` roots below).
 Kimchi.Verifier.kimchiProof_sound_algebraic
-Kimchi.Verifier.kimchiVesta_sound_algebraic
-Kimchi.Verifier.kimchiPallas_sound_algebraic
 
 -- The algebraic quotient: the ft/quotient residue DISSOLVED. The algebraic prover additionally
 -- supplies the 7 `tComm`-chunk representations, so the quotient `t` — now the genuine
@@ -240,8 +229,6 @@ Kimchi.Verifier.kimchiPallas_sound_algebraic
 -- gone from the statement. Axiom set unchanged from the algebraic roots above (the ft opening,
 -- FiatShamirTreeB, and DL-binding remain hypotheses; still MINUS poseidon_fiat_shamir).
 Kimchi.Verifier.kimchiProof_sound_algebraic_ft
-Kimchi.Verifier.kimchiVesta_sound_algebraic_ft
-Kimchi.Verifier.kimchiPallas_sound_algebraic_ft
 
 -- The FS-reflection ft opening (PART 1 of the deployed-run discharge): the ft commitment is slot 1
 -- of the run's own accepted 45-row batch, so its opening at ζ to `runFtEval0` is DERIVED from a
