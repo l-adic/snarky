@@ -1,5 +1,4 @@
 import Pasta.Curve
-import Pasta.Constants
 import Pasta.Basic
 import Pasta.Endo
 import Pasta.Module

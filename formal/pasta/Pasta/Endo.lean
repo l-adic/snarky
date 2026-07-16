@@ -1,18 +1,19 @@
 import Mathlib
-import Pasta.Constants
+import Pasta.Basic
 import Pasta.Curve
 import CompElliptic.Curves.Pasta
 import CompElliptic.Curves.PastaOrder
 
 /-!
-# The Pasta GLV eigenvalue relations — discharging the CM axioms
+# The Pasta GLV endomorphisms — constants, eigenvalue relations, short-basis bounds
 
-Both Pasta curves `y² = x³ + 5` carry the GLV endomorphism `φ(x, y) = (β·x, y)`, `β` a
-primitive cube root of unity in the base field, acting on the point group as multiplication
-by a scalar eigenvalue `λ`. This file **proves** `φ(P) = [λ]·P` for every point, under the
-Hasse bound — turning `Pasta.pallas_eigen` / `Pasta.vesta_eigen` from axioms into theorems
-(the swap itself happens in `Pasta/Basic.lean`, which consumes `{pallas,vesta}_eigen_of_hasse`
-from here). The trust surface shrinks to Hasse + two `native_decide` anchors declared below.
+Everything about the GLV endomorphism `φ(x, y) = (β·x, y)` of the Pasta curves
+`y² = x³ + 5` lives here: the concrete coefficients `β` (primitive cube roots of unity in
+the base fields) and scalar eigenvalues `λ`, the **proof** that `φ(P) = [λ]·P` on every
+point (`{pallas,vesta}_eigen` — the former CM axioms, now theorems whose trust is the
+Hasse axioms + two `native_decide` anchors declared below), and the GLV lattice's
+short-basis bounds (`{pallas,vesta}_glv_no_short_relation` — `EndoMul`'s accumulator
+non-degeneracy fact, from concrete reduced-basis certificates).
 
 The proof is the classical three-step extension of a single-point certificate:
 
@@ -32,16 +33,19 @@ The proof is the classical three-step extension of a single-point certificate:
    declared here, in the style of CompElliptic's point counts — then propagates:
    `φ(k • Gpt) = k • φ(Gpt) = k • λ • Gpt = λ • (k • Gpt)`.
 
-Finally `toPtHom` bundles CompElliptic's `toPt` transport as an `AddMonoidHom` into
-Mathlib's `WeierstrassCurve.Affine.Point` group, and `{pallas,vesta}_eigen_of_hasse` restate
-the eigenvalue relation in exactly the shape of the (former) axioms, parametrized by the
-Hasse bound that `Pasta/Basic.lean` supplies from `{pallas,vesta}_hasse`.
+`toPtHom` then bundles CompElliptic's `toPt` transport as an `AddMonoidHom` into Mathlib's
+`WeierstrassCurve.Affine.Point` group, carrying the relation to `{pallas,vesta}_eigen_of_hasse`
+— the eigenvalue statement parametrized by the Hasse bound. Finally the hypothesis is closed
+with `Pasta.{pallas,vesta}_hasse` (from `Pasta/Basic.lean`), giving `{pallas,vesta}_eigen` in
+exactly the shape of the former axioms, and the short-basis bounds are derived from their
+reduced-basis certificates.
 
-**Public surface**: `{pallas,vesta}_eigen_of_hasse` (what `Basic.lean` consumes) and the
-anchor certificates with their statement components (`*_lam_nat`, `*_endoGpt`,
-`*_lam_nsmul_Gpt` — the axiom gates allow exactly these two `native_decide`s by name).
-Every intermediate — the raw endomorphism, its additivity, the homs, the `SWPoint`-level
-eigenvalue relations — is `private`.
+**Public surface**: the constants (`*_endo`, `*_endo_cube`, `*_lam`), the anchor
+certificates with their statement components (`*_lam_nat`, `*_endoGpt`, `*_lam_nsmul_Gpt`
+— the axiom gates allow exactly these two `native_decide`s by name), and the consumer
+theorems `{pallas,vesta}_eigen` / `{pallas,vesta}_glv_no_short_relation`. Every
+intermediate — the raw endomorphism, its additivity, the homs, the `SWPoint`-level and
+Hasse-parametrized eigenvalue relations, the lattice lemma — is `private`.
 -/
 
 namespace Pasta
@@ -49,6 +53,45 @@ namespace Pasta
 open CompElliptic.CurveForms CompElliptic.CurveForms.ShortWeierstrass
 open CompElliptic.Curves.Pasta CompElliptic.CurveOrder CompElliptic.Fields.Pasta
 open WeierstrassCurve.Affine
+
+/-! ## The GLV constants
+
+The endomorphism coefficients `β` and scalar eigenvalues `λ`, as concrete numerals. Each
+`β` is *proved* a primitive cube root of unity beside its definition — the property that
+makes `φ` a curve endomorphism on `y² = x³ + b`. `vesta_lam`/`vesta_endo` are also what
+the Fiat-Shamir layer (the `poseidon` package) consumes. -/
+
+/-- The Pallas base-field endomorphism coefficient `β`: a primitive cube root of unity
+    (proved below), so `φ(x, y) = (β·x, y)` maps `y² = x³ + 5` to itself. -/
+def pallas_endo : Fp :=
+  20444556541222657078399132219657928148671392403212669005631716460534733845831
+
+/-- `β³ = 1` on Pallas. -/
+theorem pallas_endo_cube : pallas_endo ^ 3 = 1 := by decide
+
+
+/-- The Vesta base-field endomorphism coefficient `β`: a primitive cube root of unity
+    (proved below), so `φ(x, y) = (β·x, y)` maps `y² = x³ + 5` to itself. It is also the
+    SvdW map-to-curve parameter `(√-3 − 1)/2` (`Poseidon.GroupMapVesta`). -/
+def vesta_endo : Fq :=
+  2942865608506852014473558576493638302197734138389222805617480874486368177743
+
+/-- `β³ = 1` on Vesta. -/
+theorem vesta_endo_cube : vesta_endo ^ 3 = 1 := by decide
+
+
+/-- The scalar eigenvalue `λ` of the Pallas endomorphism `φ` — a primitive cube root of unity
+    in the scalar field (`endo_scalar`, from `Snarky.Curves.PastaCurve`). Concrete, so the
+    GLV short-basis fact below is *proved*, not assumed. -/
+def pallas_lam : ℤ :=
+  26005156700822196841419187675678338661165322343552424574062261873906994770353
+
+/-- The scalar eigenvalue `λ` of the Vesta endomorphism `φ` — a primitive cube root of unity
+    in the scalar field (`endo_scalar`). Concrete, so the GLV short-basis fact below is
+    proved; it is also the `λ` of the Fiat-Shamir challenge expansion (proof-systems
+    `endos::<Vesta>().1`). -/
+def vesta_lam : ℤ :=
+  8503465768106391777493614032514048814691664078728891710322960303815233784505
 
 variable {F : Type*} [Field F] [DecidableEq F]
 
@@ -292,15 +335,14 @@ private theorem vesta_endoPt_eq_lam_smul (hH : HasseBound Vesta.curve)
 /-! ## Step 4 — the Mathlib-`Point` eigenvalue statements
 
 Exactly the shape of the (former) `pallas_eigen`/`vesta_eigen` axioms, parametrized by the
-Hasse bound; `Pasta/Basic.lean` closes them with `pallas_hasse`/`vesta_hasse`. The
+Hasse bound and closed with `pallas_hasse`/`vesta_hasse` in the final section below. The
 `Nonsingular → OnCurve` bridge is `equation_toW`, and `toPtHom` + `map_nsmul` carry the
 `SWPoint` relation across; the scalar changes type by `natCast_zsmul` (`pallas_lam` is the
 `ℤ`-numeral of `pallas_lam_nat`). -/
 
-/-- **The Pallas eigenvalue relation, Mathlib-`Point` form, under Hasse.** This is the
-    exact statement of the former `Pasta.pallas_eigen` axiom with the Hasse bound made an
-    explicit hypothesis. -/
-theorem pallas_eigen_of_hasse (hH : HasseBound Pallas.curve) {x y : Fp}
+/-- **The Pallas eigenvalue relation, Mathlib-`Point` form, under Hasse.** The statement of
+    `pallas_eigen` below with the Hasse bound as an explicit hypothesis. -/
+private theorem pallas_eigen_of_hasse (hH : HasseBound Pallas.curve) {x y : Fp}
     (h : Pallas.curve.toAffine.Nonsingular x y)
     (h' : Pallas.curve.toAffine.Nonsingular (pallas_endo * x) y) :
     Point.some _ _ h' = pallas_lam • Point.some _ _ h := by
@@ -321,9 +363,9 @@ theorem pallas_eigen_of_hasse (hH : HasseBound Pallas.curve) {x y : Fp}
   rw [show pallas_lam = (pallas_lam_nat : ℤ) from by decide, natCast_zsmul]
   exact hmap
 
-/-- **The Vesta eigenvalue relation, Mathlib-`Point` form, under Hasse.** The exact
-    statement of the former `Pasta.vesta_eigen` axiom with the Hasse bound explicit. -/
-theorem vesta_eigen_of_hasse (hH : HasseBound Vesta.curve) {x y : Fq}
+/-- **The Vesta eigenvalue relation, Mathlib-`Point` form, under Hasse.** The statement of
+    `vesta_eigen` below with the Hasse bound explicit. -/
+private theorem vesta_eigen_of_hasse (hH : HasseBound Vesta.curve) {x y : Fq}
     (h : Vesta.curve.toAffine.Nonsingular x y)
     (h' : Vesta.curve.toAffine.Nonsingular (vesta_endo * x) y) :
     Point.some _ _ h' = vesta_lam • Point.some _ _ h := by
@@ -343,5 +385,105 @@ theorem vesta_eigen_of_hasse (hH : HasseBound Vesta.curve) {x y : Fq}
   rw [hL, hR] at hmap
   rw [show vesta_lam = (vesta_lam_nat : ℤ) from by decide, natCast_zsmul]
   exact hmap
+
+/-! ## The consumer-facing GLV facts
+
+What `EndoMul` consumes, in final form: the eigenvalue relations closed with the
+`{pallas,vesta}_hasse` axioms (exactly what the former CM axioms asserted), and the
+no-short-relation bounds from concrete reduced-basis certificates. -/
+
+/-- **No short relation in a rank-2 GLV lattice, from a reduced-basis certificate.** If `(s, t)`
+    lies in the lattice `{(a,b) : a + b·λ ≡ 0 (mod n)}` (`s + t·λ = k₂·n`), is primitive
+    (`u·s + v·t = 1`), has `|s| > 2¹²⁶`, and the box `[−2¹²⁶, 2¹²⁶]²` fits below the covolume
+    (`2¹²⁶·(|s|+|t|) < n`), then no nonzero `(a,b)` in that box lies in the lattice. Proof: the
+    cross product `a·t − b·s` is divisible by `n` yet `|a·t − b·s| < n`, so it is `0`; primitivity
+    makes `(a,b)` a multiple of `(s,t)`, ruled out by `|a| ≤ 2¹²⁶ < |s|`. -/
+private theorem glv_no_short_of_cert {n lam s t k2 u v : ℤ} (hn : 0 < n)
+    (hcert : s + t * lam = k2 * n) (hbez : u * s + v * t = 1)
+    (hsabs : 2 ^ 126 < |s|) (hbnd : 2 ^ 126 * |t| + 2 ^ 126 * |s| < n)
+    {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0) (ha : |a| ≤ 2 ^ 126) (hb : |b| ≤ 2 ^ 126) :
+    ¬ n ∣ (a + b * lam) := by
+  intro hdvd
+  have hdvd2 : n ∣ (a * t - b * s) := by
+    have e : a * t - b * s = t * (a + b * lam) - b * (k2 * n) := by rw [← hcert]; ring
+    rw [e]; exact dvd_sub (hdvd.mul_left t) ⟨b * k2, by ring⟩
+  have hsmall : |a * t - b * s| < n := by
+    have key : |a * t - b * s| ≤ |a| * |t| + |b| * |s| := by
+      calc |a * t - b * s| = |a * t + -(b * s)| := by rw [sub_eq_add_neg]
+        _ ≤ |a * t| + |-(b * s)| := abs_add_le _ _
+        _ = |a| * |t| + |b| * |s| := by rw [abs_neg, abs_mul, abs_mul]
+    have hbound : |a| * |t| + |b| * |s| ≤ 2 ^ 126 * |t| + 2 ^ 126 * |s| := by gcongr
+    linarith
+  have hzero : a * t - b * s = 0 := by
+    rcases hdvd2 with ⟨c, hc⟩
+    by_contra h0
+    have hcne : c ≠ 0 := by rintro rfl; simp at hc; exact h0 hc
+    have hge : n ≤ |a * t - b * s| := by
+      rw [hc, abs_mul, abs_of_pos hn]
+      exact le_mul_of_one_le_right hn.le (Int.one_le_abs hcne)
+    linarith
+  have hat : a * t = b * s := by linarith
+  have hsm : a = s * (u * a + v * b) := by linear_combination v * hat - a * hbez
+  have htm : b = t * (u * a + v * b) := by linear_combination -u * hat - b * hbez
+  have hm0 : u * a + v * b = 0 := by
+    by_contra hmne
+    have : |s| ≤ |a| := by
+      rw [hsm, abs_mul]; exact le_mul_of_one_le_right (abs_nonneg s) (Int.one_le_abs hmne)
+    linarith
+  rcases hne with h | h
+  · exact h (by rw [hsm, hm0, mul_zero])
+  · exact h (by rw [htm, hm0, mul_zero])
+
+/-- The Pallas endomorphism `φ(x, y) = (β·x, y)` acts as `[λ]` on the group: `φ(P) = [λ]·P`.
+    PROVED above: `φ` is a group homomorphism (the addition formulas are
+    homogeneous under the `(u², u³)`-rescaling with `u = β⁻¹`), the group is cyclic of prime
+    order under the Hasse axiom, and the `native_decide` certificate `pallas_lam_nsmul_Gpt`
+    anchors the eigenvalue at the generator. Discharges `Kimchi.Circuit.EndoMul.endoMul`'s
+    hypothesis `heig`; trust = the Hasse axiom + the `native_decide` certificates. -/
+theorem pallas_eigen {x y : Fp}
+    (h : Pallas.curve.toAffine.Nonsingular x y)
+    (h' : Pallas.curve.toAffine.Nonsingular (pallas_endo * x) y) :
+    Point.some _ _ h' = pallas_lam • Point.some _ _ h :=
+  pallas_eigen_of_hasse pallas_hasse h h'
+
+/-- **No short relation in the Pallas GLV lattice.** For `(a, b) ≠ 0` with `|a|, |b| ≤ 2¹²⁶`,
+    `a + b·λ ≢ 0 (mod order)`. Proved from the reduced-basis certificate via `glv_no_short_of_cert`
+    (`order = PALLAS_SCALAR_CARD` by `pallas_card`). The bound is `2¹²⁶`, not `2¹²⁷`: the shortest
+    lattice vector has sup-norm `≈ 9.82·10³⁷ ∈ (2¹²⁶, 2¹²⁷)`, so `2¹²⁷` would be *false* (EndoMul
+    only ever needs `< 2¹²⁴`). Keeps the accumulator off `±T`/`±φT` (`hxne`). -/
+theorem pallas_glv_no_short_relation {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0)
+    (ha : |a| ≤ 2 ^ 126) (hb : |b| ≤ 2 ^ 126) :
+    ¬ (Pallas.curve.toAffine.order : ℤ) ∣ (a + b * pallas_lam) := by
+  rw [pallas_card]
+  exact glv_no_short_of_cert (n := (PALLAS_SCALAR_CARD : ℤ)) (lam := pallas_lam)
+    (s := -98231058071100081932162823354453065728)
+    (t := 98231058071186745657228807397848383489)
+    (k2 := 88244855925979294593813989187869077937)
+    (u := -9986202145207451063414818209979305552)
+    (v := -9986202145198640800203172615810973695)
+    (by decide) (by decide) (by decide) (by decide) (by decide) hne ha hb
+
+/-- The Vesta endomorphism acts as `[λ]`: `φ(P) = [λ]·P` — PROVED, the Vesta twin of
+    `pallas_eigen` (see its docstring for the derivation and trust accounting). -/
+theorem vesta_eigen {x y : Fq}
+    (h : Vesta.curve.toAffine.Nonsingular x y)
+    (h' : Vesta.curve.toAffine.Nonsingular (vesta_endo * x) y) :
+    Point.some _ _ h' = vesta_lam • Point.some _ _ h :=
+  vesta_eigen_of_hasse vesta_hasse h h'
+
+/-- **No short relation in the Vesta GLV lattice.** For `(a, b) ≠ 0` with `|a|, |b| ≤ 2¹²⁶`,
+    `a + b·λ ≢ 0 (mod order)`. Proved from the reduced-basis certificate (`order = PALLAS_BASE_CARD`
+    by `vesta_card`); bound `2¹²⁶` for the same shortest-vector reason as Pallas. -/
+theorem vesta_glv_no_short_relation {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0)
+    (ha : |a| ≤ 2 ^ 126) (hb : |b| ≤ 2 ^ 126) :
+    ¬ (Vesta.curve.toAffine.order : ℤ) ∣ (a + b * vesta_lam) := by
+  rw [vesta_card]
+  exact glv_no_short_of_cert (n := (PALLAS_BASE_CARD : ℤ)) (lam := vesta_lam)
+    (s := -98231058071186745657228807397848383488)
+    (t := 98231058071100081932162823354453065729)
+    (k2 := 28855319743320701602732952904011762361)
+    (u := 28855319743320701602732952904011762361)
+    (v := 28855319743346159024713648477422223361)
+    (by decide) (by decide) (by decide) (by decide) (by decide) hne ha hb
 
 end Pasta
