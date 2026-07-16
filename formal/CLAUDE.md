@@ -2,11 +2,25 @@
 
 This directory is a **Lean 4 + Mathlib** formalization of the kimchi custom EC gates
 (AddComplete, VarBaseMul, EndoMul, EndoScalar, Generic) used by the Pasta-curve proof
-system. It is **not** a circuit-DSL embedding: there is no `Circuit` monad, no
-`FormalCircuit`/`ProvableType`/`ElaboratedCircuit`, no `circuit_proof_start`. Gates are
-modelled as **plain Lean predicates over witness structures**, and proved faithful to
-**Mathlib's elliptic-curve group law** (`WeierstrassCurve.Affine`). If you've seen the
-Clean framework, forget its vocabulary here — none of it applies.
+system. The `Kimchi.*` namespace is **not** a circuit-DSL embedding: there is no `Circuit`
+monad, no `FormalCircuit`/`ProvableType`/`ElaboratedCircuit`, no `circuit_proof_start`.
+Gates are modelled as **plain Lean predicates over witness structures**, and proved
+faithful to **Mathlib's elliptic-curve group law** (`WeierstrassCurve.Affine`). If you've
+seen the Clean framework, forget its vocabulary here — none of it applies.
+
+The package also hosts a second, independent library: **`Snarky/`** (namespace
+`Snarky.*`), a deep-embedded Lean port of the PureScript circuit-building DSL
+(`packages/snarky/src/Snarky/Circuit/DSL/Monad.purs`). It models how constraint systems
+are *constructed*, complementing `Kimchi`'s constraint-systems-as-data view: a reified op
+tree `CircuitM` (constraint type kept abstract), pure `build`/`prove` interpreters
+mirroring `Snarky.Backend.Builder`/`Prover`, and the interpreter laws in
+`Snarky/Laws.lean` (witness-independence of the builder, builder/prover allocation
+agreement, and completeness: a successful prover run satisfies every built constraint).
+It is **Mathlib-free by design** (core Lean only, builds in seconds) — keep it that way;
+concrete backends live in downstream files (see `Snarky/Constraint/R1CS.lean` for the
+plain R1CS model). Kernel-reducibility matters there: everything is validated by `decide`, so avoid
+core functions compiled by well-founded recursion in executable paths (e.g. `Vector.map`
+— use `Snarky.mapVec` from `Snarky/Vec.lean`).
 
 Build: `make lean-build` (from repo root) or `lake build` (from `formal/`). The toolchain
 is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakefile.toml`
