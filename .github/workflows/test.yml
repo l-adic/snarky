@@ -299,8 +299,8 @@ jobs:
         # are needed.
         submodules: false
 
-    - name: Check out the Lean dependency submodules (CompElliptic + ironwood)
-      run: git submodule update --init formal/vendor/CompElliptic formal/vendor/ironwood
+    - name: Check out the Lean dependency submodule (CompElliptic)
+      run: git submodule update --init formal/vendor/CompElliptic
 
     - name: Setup Lean + build the library
       uses: ./.github/actions/setup-lean
