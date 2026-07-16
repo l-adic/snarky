@@ -210,17 +210,13 @@ private theorem valid_endoPair {E : SWCurve F} (hA : E.A = 0) {β : F} (hβ : β
     rw [h]
     simp [endoPair]
 
-/-- The GLV endomorphism on `SWPoint E` (for a curve with `A = 0` and a cube root of
-    unity `β`): `φ⟨x, y⟩ = ⟨β·x, y⟩`. -/
-private def endoPt (E : SWCurve F) (hA : E.A = 0) {β : F} (hβ : β ^ 3 = 1) (P : SWPoint E) :
-    SWPoint E :=
-  ⟨β * P.x, P.y, valid_endoPair hA hβ P.onCurve⟩
-
-/-- `endoPt` bundled as a group endomorphism of `SWPoint E` — additivity is
-    `endoPair_add` transported through `SWPoint.ext_pair`. -/
+/-- The GLV endomorphism `φ⟨x, y⟩ = ⟨β·x, y⟩` as a group endomorphism of `SWPoint E`
+    (for a curve with `A = 0` and a cube root of unity `β`) — representability is
+    `valid_endoPair`, additivity is `endoPair_add` transported through
+    `SWPoint.ext_pair`. -/
 private def endoHom (E : SWCurve F) (hA : E.A = 0) {β : F} (hβ : β ^ 3 = 1) :
     SWPoint E →+ SWPoint E where
-  toFun := endoPt E hA hβ
+  toFun P := ⟨β * P.x, P.y, valid_endoPair hA hβ P.onCurve⟩
   map_zero' := SWPoint.ext_pair (by
     show (β * (0 : F), (0 : F)) = ((0 : F), (0 : F))
     rw [mul_zero])
@@ -240,12 +236,12 @@ workspace packages; the axiom gates permit exactly these two declarations by nam
 /-- **The Pallas eigenvalue anchor**: `λ • G = φ(G)` at the standard generator, stated
     against `φ` itself (`.toNat` puts the `ℤ` eigenvalue in `nsmul` position). -/
 theorem pallas_lam_nsmul_Gpt :
-    pallas_lam.toNat • Pallas.Gpt = endoPt Pallas.curve rfl pallas_endo_cube Pallas.Gpt := by
+    pallas_lam.toNat • Pallas.Gpt = endoHom Pallas.curve rfl pallas_endo_cube Pallas.Gpt := by
   native_decide
 
 /-- **The Vesta eigenvalue anchor**: `λ • G = φ(G)` at the standard generator. -/
 theorem vesta_lam_nsmul_Gpt :
-    vesta_lam.toNat • Vesta.Gpt = endoPt Vesta.curve rfl vesta_endo_cube Vesta.Gpt := by
+    vesta_lam.toNat • Vesta.Gpt = endoHom Vesta.curve rfl vesta_endo_cube Vesta.Gpt := by
   native_decide
 
 /-! ## The transport homomorphism into Mathlib's point group
@@ -270,27 +266,21 @@ then extends to all of `SWPoint curve` by additivity of `φ`. -/
 /-- **The Pallas eigenvalue relation on `SWPoint`**: `φ(P) = [λ]·P` for every point.
     The group is cyclic of prime order (`card_eq`), so `P = k • Gpt`; `endoHom` and the
     `native_decide` anchor `pallas_lam_nsmul_Gpt` do the rest. -/
-private theorem pallas_endoPt_eq_lam_smul (P : SWPoint Pallas.curve) :
-    endoPt Pallas.curve rfl pallas_endo_cube P = pallas_lam.toNat • P := by
+private theorem pallas_endoHom_eq_lam_smul (P : SWPoint Pallas.curve) :
+    endoHom Pallas.curve rfl pallas_endo_cube P = pallas_lam.toNat • P := by
   have hmem : P ∈ AddSubgroup.zmultiples Pallas.Gpt :=
     mem_zmultiples_of_prime_card Pallas.card_eq Pallas.Gpt_ne_zero
   obtain ⟨k, hk⟩ := AddSubgroup.mem_zmultiples_iff.mp hmem
-  have hhom : endoPt Pallas.curve rfl pallas_endo_cube (k • Pallas.Gpt)
-      = k • endoPt Pallas.curve rfl pallas_endo_cube Pallas.Gpt :=
-    map_zsmul (endoHom Pallas.curve rfl pallas_endo_cube) k Pallas.Gpt
-  rw [← hk, hhom, ← pallas_lam_nsmul_Gpt,
+  rw [← hk, map_zsmul, ← pallas_lam_nsmul_Gpt,
     ← natCast_zsmul, ← natCast_zsmul, ← mul_smul, ← mul_smul, mul_comm]
 
 /-- **The Vesta eigenvalue relation on `SWPoint`**: `φ(P) = [λ]·P` for every point. -/
-private theorem vesta_endoPt_eq_lam_smul (P : SWPoint Vesta.curve) :
-    endoPt Vesta.curve rfl vesta_endo_cube P = vesta_lam.toNat • P := by
+private theorem vesta_endoHom_eq_lam_smul (P : SWPoint Vesta.curve) :
+    endoHom Vesta.curve rfl vesta_endo_cube P = vesta_lam.toNat • P := by
   have hmem : P ∈ AddSubgroup.zmultiples Vesta.Gpt :=
     mem_zmultiples_of_prime_card Vesta.card_eq Vesta.Gpt_ne_zero
   obtain ⟨k, hk⟩ := AddSubgroup.mem_zmultiples_iff.mp hmem
-  have hhom : endoPt Vesta.curve rfl vesta_endo_cube (k • Vesta.Gpt)
-      = k • endoPt Vesta.curve rfl vesta_endo_cube Vesta.Gpt :=
-    map_zsmul (endoHom Vesta.curve rfl vesta_endo_cube) k Vesta.Gpt
-  rw [← hk, hhom, ← vesta_lam_nsmul_Gpt,
+  rw [← hk, map_zsmul, ← vesta_lam_nsmul_Gpt,
     ← natCast_zsmul, ← natCast_zsmul, ← mul_smul, ← mul_smul, mul_comm]
 
 /-! ## Step 4 — the Mathlib-`Point` eigenvalue statements
@@ -329,9 +319,9 @@ theorem pallas_eigen {x y : Fp}
   have honc' : OnCurve Pallas.curve.A Pallas.curve.B (pallas_endo * x, y) :=
     equation_toW.mp h'.1
   set P : SWPoint Pallas.curve := ⟨x, y, Or.inl honc⟩ with hPdef
-  have hmap := congrArg (toPtHom Pallas.curve) (pallas_endoPt_eq_lam_smul P)
+  have hmap := congrArg (toPtHom Pallas.curve) (pallas_endoHom_eq_lam_smul P)
   rw [map_nsmul] at hmap
-  have hL : toPtHom Pallas.curve (endoPt Pallas.curve rfl pallas_endo_cube P)
+  have hL : toPtHom Pallas.curve (endoHom Pallas.curve rfl pallas_endo_cube P)
       = Point.some (pallas_endo * x) y h' := by
     show toPt Pallas.curve.A Pallas.curve.B (pallas_endo * x, y) = _
     rw [toPt_some honc']
@@ -364,9 +354,9 @@ theorem vesta_eigen {x y : Fq}
   have honc' : OnCurve Vesta.curve.A Vesta.curve.B (vesta_endo * x, y) :=
     equation_toW.mp h'.1
   set P : SWPoint Vesta.curve := ⟨x, y, Or.inl honc⟩ with hPdef
-  have hmap := congrArg (toPtHom Vesta.curve) (vesta_endoPt_eq_lam_smul P)
+  have hmap := congrArg (toPtHom Vesta.curve) (vesta_endoHom_eq_lam_smul P)
   rw [map_nsmul] at hmap
-  have hL : toPtHom Vesta.curve (endoPt Vesta.curve rfl vesta_endo_cube P)
+  have hL : toPtHom Vesta.curve (endoHom Vesta.curve rfl vesta_endo_cube P)
       = Point.some (vesta_endo * x) y h' := by
     show toPt Vesta.curve.A Vesta.curve.B (vesta_endo * x, y) = _
     rw [toPt_some honc']
