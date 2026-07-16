@@ -2,7 +2,7 @@ name = "pasta"
 defaultTargets = ["Pasta"]
 
 # CompElliptic: concrete short-Weierstrass `SWCurve` / `SWPoint` with a proven group law and
-# the Pasta curve instances. Shared with the parent kimchi-formal package (same submodule
+# the Pasta curve instances. Shared with the parent kimchi package (same submodule
 # checkout); when built from the parent, its path-require resolves to the same directory.
 [[require]]
 name = "CompElliptic"

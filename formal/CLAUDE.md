@@ -34,7 +34,7 @@ is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakef
 | `pasta/` | `Pasta` | the Pasta curve trust base: the generic EC order/shape sugar, the GLV constants, the **Hasse/CM axioms** and derived orders, point-group module instances, the wire scalar-shift algebra (`Pasta.Shifted`) |
 | `poseidon/` | `Poseidon`, `FixtureKit` | the Poseidon permutation + duplex sponge over both Pasta base fields, the `FqSponge` consumer layer, SvdW map-to-curve; plus the shared JSON-fixture/trace kit. Own fixtures + check scripts (`poseidon/scripts/`) |
 | `bulletproof-pcs/` | `Bulletproof` | the IPA polynomial commitment: abstract scheme + soundness, the executable Pasta wire verifier (Poseidon-driven), the **`poseidon_fiat_shamir_*` axioms** + `ipa{Vesta,Pallas}_sound`, IPA fixtures + check script |
-| `.` (kimchi-formal) | `Kimchi`, `Snarky` | the kimchi protocol: gates/circuits (arithmetization), `Quotient/` (PIOP), `Index/`, the kimchi verifier + linearization + soundness capstones; and the deep-embedded `Snarky` DSL |
+| `.` (kimchi) | `Kimchi`, `Snarky` | the kimchi protocol: gates/circuits (arithmetization), `Quotient/` (PIOP), `Index/`, the kimchi verifier + linearization + soundness capstones; and the deep-embedded `Snarky` DSL |
 
 Each package builds standalone (`cd pasta && lake build`); from `formal/` the root
 workspace builds everything with shared artifact dirs.

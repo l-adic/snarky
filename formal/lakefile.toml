@@ -1,4 +1,4 @@
-name = "kimchi-formal"
+name = "kimchi"
 defaultTargets = ["Kimchi", "Snarky", "kimchi-demo"]
 
 # CompElliptic: concrete short-Weierstrass `SWCurve` / `SWPoint` with a proven group law,

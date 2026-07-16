@@ -1,4 +1,4 @@
--- Library API root set for kimchi-formal.
+-- Library API root set for the kimchi package.
 --
 -- The curated top-level surface the library exists to provide. Lean has no export-list
 -- mechanism (everything non-`private` is visible once imported), so this manifest — not the
