@@ -5,7 +5,3 @@
 	path = formal/vendor/CompElliptic
 	url = https://github.com/l-adic/CompElliptic.git
 	branch = main
-[submodule "formal/vendor/ironwood"]
-	path = formal/vendor/ironwood
-	url = https://github.com/l-adic/ironwood.git
-	branch = main

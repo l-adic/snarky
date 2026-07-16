@@ -1,7 +1,8 @@
 name: Setup Lean (Kimchi formalization)
 description: >
   elan (pinned toolchain) + Mathlib olean cloud cache + a build-directory cache for the
-  Kimchi + Snarky libraries, then `lake build Kimchi Snarky`. Shared by the Lean workflow and the
+  libraries (Kimchi, Snarky, and the pasta/poseidon/bulletproof-pcs packages), then a full
+  `lake build`. Shared by the Lean workflow and the
   witness-check job in the CI workflow so both build the library the same way.
 runs:
   using: composite
@@ -50,6 +51,6 @@ runs:
         else
           echo "No ProofWidgets release tarball for $rev; continuing"
         fi
-        # Build our libraries: typechecks every proof and runs the `#eval`s. Both
-        # `Kimchi` and `Snarky` (the deep-embedded DSL port) — the axiom gate imports both.
-        lake build Kimchi Snarky
+        # Build every library across the workspace packages: typechecks every proof
+        # and runs the `#eval`s (Kimchi, Snarky, pasta, poseidon, bulletproof-pcs).
+        lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof

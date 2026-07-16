@@ -3,7 +3,8 @@ Dead-code / reachability report for the Kimchi library.
 
 Lean has no export-list mechanism, so `roots.txt` is the manifest that *defines* the public API
 surface. This script treats it as the root set: it imports `Kimchi`, walks the constant-dependency
-graph (each declaration's type + value), and lists every authored `Kimchi.*` declaration NOT
+graph (each declaration's type + value), and lists every authored declaration — kimchi and
+the extracted pasta/poseidon/bulletproof-pcs packages — NOT
 reachable from the roots. Auto-generated decls (recursors, constructors, projections, and
 `match_`/`proof_`/`eq_` auxiliaries) are excluded — they are noise, not authored code.
 
@@ -53,14 +54,21 @@ def isAuxiliary (env : Environment) (n : Name) : Bool :=
           || s.startsWith "_"
       | _ => false
 
-/-- Transitive closure of the dependency graph from `roots`, restricted to `Kimchi.*` edges
-    (Mathlib/CompElliptic never reference our code, so no `Kimchi` decl is reachable that way). -/
+/-- Is `n` one of ours — authored in this repo's packages (kimchi + the extracted
+    pasta / poseidon / bulletproof-pcs packages)? -/
+def isOurs (n : Name) : Bool :=
+  (`Kimchi).isPrefixOf n || (`Pasta).isPrefixOf n || (`Poseidon).isPrefixOf n
+    || (`FixtureKit).isPrefixOf n || (`Bulletproof).isPrefixOf n
+
+/-- Transitive closure of the dependency graph from `roots`, restricted to our packages'
+    edges (Mathlib/CompElliptic never reference our code, so nothing of ours is reachable
+    that way). -/
 partial def reachable (env : Environment) (roots : Array Name) : NameSet :=
   let rec go (seen : NameSet) : List Name → NameSet
     | [] => seen
     | n :: rest =>
       let fresh := (directDeps env n).filter fun d =>
-        (`Kimchi).isPrefixOf d && !seen.contains d
+        isOurs d && !seen.contains d
       go (fresh.foldl (·.insert ·) seen) (fresh.toList ++ rest)
   go (roots.foldl (·.insert ·) ∅) roots.toList
 
@@ -81,13 +89,14 @@ run_cmd do
   -- all authored Kimchi.* declarations
   let authored : Array Name :=
     (env.constants.fold (init := #[]) fun acc n _ =>
-      if (`Kimchi).isPrefixOf n && !Kimchi.DeadCode.isAuxiliary env n then acc.push n else acc)
+      if Kimchi.DeadCode.isOurs n && !Kimchi.DeadCode.isAuxiliary env n then acc.push n
+      else acc)
     |>.qsort (·.toString < ·.toString)
   let dead := authored.filter fun n => !live.contains n
   IO.println s!"roots: {roots.size} resolved, {missing.size} missing"
   for n in missing do IO.println s!"  ⚠ root not in env: {n}"
-  IO.println s!"authored Kimchi.* decls: {authored.size}   live: {authored.size - dead.size}   \
-dead: {dead.size}"
+  IO.println s!"authored decls (all packages): {authored.size}   \
+live: {authored.size - dead.size}   dead: {dead.size}"
   IO.println "── dead (authored, unreachable from roots) ──"
   if dead.isEmpty then IO.println "  (none)"
   for n in dead do IO.println s!"  {n}"

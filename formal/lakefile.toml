@@ -8,17 +8,6 @@ defaultTargets = ["Kimchi", "Snarky", "kimchi-demo"]
 name = "CompElliptic"
 path = "vendor/CompElliptic"
 
-# Ironwood (l-adic fork of zcash/ironwood): the Zcash team's Lean formalization of the Orchard/halo2
-# inner-product-argument polynomial commitment — the SAME protocol as kimchi's IPA (identical
-# `b_poly = ∏(1 + uⱼ·x^{2ʲ})` and `[uⱼ⁻¹]Lⱼ + [uⱼ]Rⱼ` recombination). Provides the sorry/axiom-free
-# `ipa_soundV` tree-extraction and `commitmentBinding_iff_no_relation`. Vendored as a submodule at
-# vendor/ironwood; forked to l-adic and pinned to official Lean/Mathlib v4.30.0. The Lake package name
-# is `Zcash` (`import Zcash.Snark.Soundness.IpaSoundness`). It requires CompElliptic from git, but our
-# root path-require above (same commit 12c0bc5) takes precedence, so there is one shared CompElliptic.
-[[require]]
-name = "Zcash"
-path = "vendor/ironwood"
-
 # The Pasta curve trust base: the generic EC order/shape sugar, the concrete GLV constants,
 # the Hasse/CM axioms and their derived orders, and the point-group module structure.
 # Lives in-repo as a standalone path package (formal/pasta).
