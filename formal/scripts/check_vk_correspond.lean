@@ -10,7 +10,7 @@ the Index model's derivations by `check_index_fixture`). This is
 `Kimchi.Verifier.VKCorresponds` for the production key, adjudicated numerically
 through `commitPoly_columnPoly`'s formula: `commit (columnPoly v) = ∑ vⱼ • Lcommⱼ`. -/
 
-open Lean Kimchi.Fixture Bulletproof.Fixture Kimchi.Verifier
+open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi.Verifier
 
 abbrev C := IpaVesta.curve
 abbrev F := C.ScalarField

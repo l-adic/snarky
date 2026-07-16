@@ -29,7 +29,7 @@ formalization's own definitions: the row forms `shiftSideRow`/`sigmaSideRow`
 Run (after `lake build Kimchi`): `scripts/check_perm_fixture.sh`.
 -/
 
-open Lean Kimchi.Fixture Kimchi.Quotient.Permutation CompElliptic.Fields.Pasta
+open Lean FixtureKit Kimchi.Quotient.Permutation CompElliptic.Fields.Pasta
 
 structure PermFixture where
   n : ℕ
