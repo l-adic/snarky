@@ -1,0 +1,50 @@
+-- API root set for the pasta package (the Pasta curve trust base).
+-- Consumed by the workspace dead-code pass (formal/scripts/deadcode.sh), which unions
+-- every package's roots.txt.
+
+-- The trust surface: the declared axioms.
+Pasta.pallas_hasse
+Pasta.vesta_hasse
+Pasta.pallas_eigen
+Pasta.vesta_eigen
+
+-- The GLV constants and derived primitive-cube-root facts.
+Pasta.pallas_endo
+Pasta.vesta_endo
+Pasta.pallas_lam
+Pasta.vesta_lam
+Pasta.pallas_endo_cube
+Pasta.pallas_endo_ne_one
+Pasta.vesta_endo_cube
+Pasta.vesta_endo_ne_one
+
+-- Derived: group orders, primality, GLV short-basis bounds, the field-bit width.
+Pasta.pallas_card
+Pasta.vesta_card
+Pasta.pallas_order_prime
+Pasta.vesta_order_prime
+Pasta.pallas_glv_no_short_relation
+Pasta.vesta_glv_no_short_relation
+Pasta.pastaFieldBits
+Pasta.two_pow_le_pallas_base
+
+-- The generic EC order/shape sugar.
+WeierstrassCurve.Affine.order_smul
+WeierstrassCurve.Affine.zsmul_mod
+WeierstrassCurve.Affine.order_prime
+WeierstrassCurve.Affine.short
+
+-- The point-group module structure and its computational reading.
+Pasta.vestaPointModule
+Pasta.pallasPointModule
+Pasta.vesta_smul_val
+Pasta.pallas_smul_val
+
+-- The wire scalar-shift algebra and its round-trips.
+Pasta.Shifted.shiftType1
+Pasta.Shifted.unshiftType1
+Pasta.Shifted.shiftType2
+Pasta.Shifted.unshiftType2
+Pasta.Shifted.unshiftType1_shiftType1
+Pasta.Shifted.shiftType1_unshiftType1
+Pasta.Shifted.shiftType2_unshiftType2

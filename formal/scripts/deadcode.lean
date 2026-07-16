@@ -76,7 +76,11 @@ end Kimchi.DeadCode
 
 run_cmd do
   let env ← getEnv
-  let raw ← IO.FS.readFile "roots.txt"
+  let manifests := ["roots.txt", "pasta/roots.txt", "poseidon/roots.txt",
+    "bulletproof-pcs/roots.txt"]
+  let mut raw := ""
+  for m in manifests do
+    raw := raw ++ (← IO.FS.readFile m) ++ "\n"
   -- parse roots.txt: one fully-qualified name per line; skip blanks and `--` comments
   let mut roots : Array Name := #[]
   let mut missing : Array Name := #[]

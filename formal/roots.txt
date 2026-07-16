@@ -59,23 +59,6 @@ Kimchi.Circuit.EndoMul.vesta_combo_off_targets
 Kimchi.Circuit.EndoMul.pallas_endoMul
 Kimchi.Circuit.EndoMul.vesta_endoMul
 
--- Kimchi IPA polynomial commitment (soundness + binding). Knowledge soundness: under the single
--- Fiat–Shamir rewinding hypothesis, an accepting verifier run yields a witness in the opening
--- relation (`ipa_soundness`). Binding: commitment binding is *exactly* discrete-log-relation
--- triviality among the generators (`commitmentBinding_iff_no_relation`), and the opening is unique
--- under binding (`ipaRelation_unique`).
-Bulletproof.ipa_soundness
-Bulletproof.commitmentBinding_iff_no_relation
-Bulletproof.ipaRelation_unique
-
--- Kimchi IPA batched opening (multi-polynomial, multi-point — the form the kimchi verifier
--- actually calls). Under the grid Fiat–Shamir hypothesis and no-DL-relation binding, batched
--- acceptance at pairwise-distinct (polyscale, evalscale) pairs yields per-commitment openings
--- with every individual claimed evaluation genuine (`batch_soundness`); the algebraic engine is
--- the n-point Vandermonde dual basis (`vandermondeN`).
-Bulletproof.vandermondeN
-Bulletproof.batch_soundness
-
 -- Kimchi quotient/vanishing argument (implementation checkpoint). Over the size-n evaluation
 -- domain, a constraint polynomial is divisible by Z_H = X^n - 1 iff it vanishes on every row
 -- (`zH_dvd_iff`); instantiated at the double generic gate: both constraint polynomials divisible
@@ -144,10 +127,6 @@ Kimchi.Quotient.Permutation.copy_soundness_wired
 Kimchi.Quotient.multiset_eq_of_pairFactor_prod_eq
 Kimchi.Quotient.multiset_eq_of_prod_eval
 
--- The Fiat-Shamir junction: the executable verifier meets the soundness layer.
-Bulletproof.verify_reflects
-Bulletproof.ipaVesta_sound
-Bulletproof.ipaPallas_sound
 
 -- Kimchi verifier reflection (trust-free): the deployed `kimchiVerify` code path read into a
 -- well-formed `ReflectedRun`, and the barycentric public-evaluation identity the verifier

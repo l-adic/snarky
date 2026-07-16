@@ -1,0 +1,33 @@
+-- API root set for the bulletproof-pcs package (the IPA polynomial commitment).
+-- Consumed by the workspace dead-code pass (formal/scripts/deadcode.sh), which unions
+-- every package's roots.txt. The axiom audit lives in scripts/check_axioms.lean.
+
+-- Opening soundness and binding. Knowledge soundness: under the single Fiat-Shamir
+-- rewinding hypothesis, an accepting verifier run yields a witness in the opening
+-- relation. Binding is exactly discrete-log-relation triviality among the generators,
+-- and the opening is unique under binding.
+Bulletproof.ipa_soundness
+Bulletproof.commitmentBinding_iff_no_relation
+Bulletproof.ipaRelation_unique
+
+-- Batched opening (multi-polynomial, multi-point — the form the kimchi verifier calls):
+-- batched acceptance at pairwise-distinct (polyscale, evalscale) pairs yields
+-- per-commitment openings with every claimed evaluation genuine; the algebraic engine
+-- is the n-point Vandermonde dual basis.
+Bulletproof.vandermondeN
+Bulletproof.batch_soundness
+
+-- The chunked width pass (polynomials wider than the SRS).
+Bulletproof.chunked_ipa_soundness
+Bulletproof.chunked_batch_soundness
+
+-- The Fiat-Shamir junction: the executable wire verifier meets the soundness layer,
+-- and the per-curve headline — a grid of Poseidon-accepted runs yields genuine openings
+-- (composing the declared FS axioms with batch_soundness).
+Bulletproof.verify_reflects
+Bulletproof.ipaVesta_sound
+Bulletproof.ipaPallas_sound
+
+-- The declared trust surface.
+Bulletproof.poseidon_fiat_shamir_vesta
+Bulletproof.poseidon_fiat_shamir_pallas

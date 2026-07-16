@@ -64,6 +64,15 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         scripts/check_axioms.sh
 
+    # Per-package trust-surface gates: each package audits the axiom closure of its own
+    # surface (pasta: the derived trust base, no eigen; bulletproof-pcs: the PCS
+    # soundness surface over its declared FS axioms). Run from the root workspace.
+    - name: Gate the pasta and bulletproof-pcs trust surfaces
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        lake env lean pasta/scripts/check_axioms.lean
+        lake env lean bulletproof-pcs/scripts/check_axioms.lean
+
     # The Snarky DSL package sits ON TOP of kimchi (its bridge interprets reified
     # circuits against the verified generic-gate checker), so it is its own lake
     # workspace: fetch its mathlib oleans, build, and gate the interpreter laws
