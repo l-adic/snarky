@@ -1,6 +1,6 @@
 import CompElliptic.Curves.Pasta
 import Kimchi.Shifted
-import Kimchi.Sponge.GroupMap
+import Poseidon.GroupMap
 import Kimchi.Commitment.IPA.Batch
 
 /-!
@@ -63,7 +63,7 @@ production prover/verifier fixtures by `scripts/check_ipa_fixture.lean`.
 namespace Kimchi.Verifier.Ipa
 
 open CompElliptic.CurveForms.ShortWeierstrass
-open Kimchi.Sponge Kimchi.Sponge.FqSponge Kimchi.Commitment.IPA
+open Poseidon Poseidon.FqSponge Kimchi.Commitment.IPA
 
 /-- The per-curve data of the verifier, bundled as a single index — base and scalar
 cardinalities with their primality facts, the Fq-sponge spec, the curve, and the
@@ -250,7 +250,7 @@ end Kimchi.Verifier.Ipa
 
 namespace Kimchi.Verifier.IpaVesta
 
-open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Sponge Kimchi.Verifier
+open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Poseidon Kimchi.Verifier
 
 /-- The Vesta bundle. The scalar modulus is below the base modulus, so scalars absorb in
 Type1 form. -/
@@ -271,7 +271,7 @@ end Kimchi.Verifier.IpaVesta
 
 namespace Kimchi.Verifier.IpaPallas
 
-open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Sponge Kimchi.Verifier
+open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Poseidon Kimchi.Verifier
 
 /-- The Pallas bundle. The scalar modulus is above the base modulus, so scalars absorb in
 Type2 form — selected by the cardinalities, not restated here. -/

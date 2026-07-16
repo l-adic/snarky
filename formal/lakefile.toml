@@ -26,6 +26,11 @@ path = "vendor/ironwood"
 name = "pasta"
 path = "pasta"
 
+# The Poseidon sponge specification + the shared fixture kit (formal/poseidon).
+[[require]]
+name = "poseidon"
+path = "poseidon"
+
 # Mathlib gives us prime fields (`ZMod p`) and the elliptic-curve group law
 # (`WeierstrassCurve.Affine`), the trusted oracle the EC gates are checked against. Pinned to
 # the tag matching our Lean toolchain (v4.30.0). Kept LAST so this direct pin wins over the

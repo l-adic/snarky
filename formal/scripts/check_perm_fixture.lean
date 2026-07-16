@@ -1,6 +1,6 @@
 import CompElliptic.Fields.Pasta
 import Kimchi.Quotient.Wiring
-import Kimchi.Fixture.Parse
+import FixtureKit.Parse
 import Lean.Data.Json
 
 /-!

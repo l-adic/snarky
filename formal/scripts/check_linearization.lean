@@ -1,6 +1,6 @@
 import Kimchi.Verifier.Linearization
 import Kimchi.Verifier.Ipa
-import Kimchi.Fixture.Parse
+import FixtureKit.Parse
 import Lean.Data.Json
 
 /-! The verifier's scalar side against production (`fixtures/linearization_vesta.json`,

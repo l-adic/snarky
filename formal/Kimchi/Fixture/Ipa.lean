@@ -1,5 +1,5 @@
 import Kimchi.Verifier.Ipa
-import Kimchi.Fixture.Parse
+import FixtureKit.Parse
 import Lean.Data.Json
 
 /-!
@@ -28,6 +28,8 @@ Two fixture kinds, one per production chunk-fold mechanism:
 -/
 
 namespace Kimchi.Fixture.Ipa
+
+open FixtureKit
 
 open Lean Kimchi.Fixture Kimchi.Commitment.IPA Kimchi.Verifier
 open CompElliptic.CurveForms.ShortWeierstrass

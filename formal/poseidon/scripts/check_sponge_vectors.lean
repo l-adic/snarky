@@ -1,19 +1,19 @@
-import Kimchi.Sponge.Poseidon
-import Kimchi.Fixture.Trace
+import Poseidon.Basic
+import FixtureKit.Trace
 import Lean.Data.Json
 
 /-!
 # Poseidon sponge checks against mina_poseidon traces
 
-Runs the `fq_kimchi` and `fp_kimchi` sponges (`Kimchi.Sponge`, `Poseidon.lean`) over
+Runs the `fq_kimchi` and `fp_kimchi` sponges (`Poseidon`, `Poseidon.lean`) over
 absorb/squeeze traces recorded from proof-systems `mina_poseidon`
 (`fixtures/poseidon_{fq,fp}_vectors.json`, produced by `tools/fixture-dump`'s
 `sponge_dump`) and compares every squeezed element.
 
-Run (after `lake build Kimchi`): `scripts/check_sponge_vectors.sh`.
+Run (after `lake build Poseidon`): `scripts/check_sponge_vectors.sh`.
 -/
 
-open Lean Kimchi.Sponge Kimchi.Fixture CompElliptic.Fields.Pasta
+open Lean Poseidon FixtureKit CompElliptic.Fields.Pasta
 
 structure Op (F : Type) where
   isAbsorb : Bool
@@ -37,13 +37,14 @@ def step {F : Type} [Field F] [DecidableEq F] (params : Params F) (sp : State F)
 
 def checkFile {F : Type} [Field F] [DecidableEq F] (params : Params F)
     (parseF : Json → Except String F) (path : String) : IO Bool :=
-  Trace.check (parseOp parseF) Kimchi.Sponge.init (step params) path
+  Trace.check (parseOp parseF) Poseidon.init (step params) path
 
 def main : IO Unit := do
+  let dir := (← IO.getEnv "POSEIDON_FIXTURES_DIR").getD "fixtures"
   let okFq ← checkFile fqParams (parseZMod (n := PALLAS_SCALAR_CARD))
-    "fixtures/poseidon_fq_vectors.json"
+    s!"{dir}/poseidon_fq_vectors.json"
   let okFp ← checkFile fpParams (parseZMod (n := PALLAS_BASE_CARD))
-    "fixtures/poseidon_fp_vectors.json"
+    s!"{dir}/poseidon_fp_vectors.json"
   unless okFq && okFp do
     throw (IO.userError "sponge vector case(s) FAILED")
   IO.println "✓ the Poseidon sponges over both Pasta fields match mina_poseidon"

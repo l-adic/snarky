@@ -1,8 +1,8 @@
 import Mathlib.Algebra.Field.Defs
 import Mathlib.Data.Fin.VecNotation
 import CompElliptic.Fields.Pasta
-import Kimchi.Sponge.PoseidonConstantsFq
-import Kimchi.Sponge.PoseidonConstantsFp
+import Poseidon.ConstantsFq
+import Poseidon.ConstantsFp
 
 /-!
 # The kimchi Poseidon sponge
@@ -37,7 +37,7 @@ separate, explicitly flagged assumption where the instantiation meets the soundn
 * `fqParams` / `fpParams` — the concrete `fq_kimchi` / `fp_kimchi` instantiations.
 -/
 
-namespace Kimchi.Sponge
+namespace Poseidon
 
 variable {F : Type*} [Field F]
 
@@ -164,4 +164,4 @@ def fpParams : Params Fp where
          ((row[2]! : ℕ) : Fp)) with
     | m => (m[0]!, m[1]!, m[2]!)
 
-end Kimchi.Sponge
+end Poseidon

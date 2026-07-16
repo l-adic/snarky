@@ -1,5 +1,5 @@
 import CompElliptic.Curves.Pasta
-import Kimchi.Sponge.FqSponge
+import Poseidon.FqSponge
 
 /-!
 # The SvdW map-to-curve
@@ -31,7 +31,7 @@ both with seed `u = 1`, `f(u) = 6`). Validated against production `to_group` vec
 `scripts/check_fq_sponge.lean`.
 -/
 
-namespace Kimchi.Sponge
+namespace Poseidon
 
 open CompElliptic.Fields CompElliptic.CurveForms.ShortWeierstrass
 
@@ -194,4 +194,4 @@ def toGroup : Fp → SWPoint Pallas.curve :=
 
 end GroupMapPallas
 
-end Kimchi.Sponge
+end Poseidon

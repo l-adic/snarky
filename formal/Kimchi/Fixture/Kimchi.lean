@@ -15,6 +15,8 @@ Poseidon parameters are not wire data — the caller pins them (the per-curve
 
 namespace Kimchi.Fixture.Kimchi
 
+open FixtureKit
+
 open Lean Kimchi.Fixture Kimchi.Fixture.Ipa Kimchi.Verifier
 
 /-- A `[zeta, zeta_omega]` evaluation pair. -/
@@ -48,7 +50,7 @@ def parseKimchiProof (C : Ipa.CommitmentCurve) (j : Json) :
 /-- The verifier key (SRS excluded — parse it with `parseSRSAt` at
 `Nat.log2 n`), with the fr-sponge parameters pinned by the caller. -/
 def parseVK (C : Ipa.CommitmentCurve)
-    (frParams : Kimchi.Sponge.Params C.ScalarField) (j : Json) :
+    (frParams : Poseidon.Params C.ScalarField) (j : Json) :
     Except String (KimchiVK C) := do
   let fld (k : String) : Except String Json := j.getObjVal? k
   let nat (k : String) : Except String ℕ := do

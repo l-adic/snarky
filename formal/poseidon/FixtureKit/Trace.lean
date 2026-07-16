@@ -1,4 +1,4 @@
-import Kimchi.Fixture.Parse
+import FixtureKit.Parse
 
 /-!
 # The trace-vector check harness
@@ -10,7 +10,7 @@ op's verdict; the state and op types are abstract. Consumers:
 `scripts/check_sponge_vectors.lean`, `scripts/check_fq_sponge.lean`.
 -/
 
-namespace Kimchi.Fixture.Trace
+namespace FixtureKit.Trace
 
 open Lean
 
@@ -36,4 +36,4 @@ def check {σ Op : Type} (parseOp : Json → Except String Op) (init : σ)
   IO.println s!"{path}: {cases.size - failed}/{cases.size} OK"
   return failed = 0
 
-end Kimchi.Fixture.Trace
+end FixtureKit.Trace

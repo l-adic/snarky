@@ -23,7 +23,7 @@ and the composition to `Satisfies` live above this file (the Fiat-Shamir bridge 
 namespace Kimchi.Verifier
 
 open CompElliptic.CurveForms.ShortWeierstrass
-open Kimchi.Sponge Kimchi.Sponge.FqSponge Kimchi.Commitment.IPA Kimchi.Index
+open Poseidon Poseidon.FqSponge Kimchi.Commitment.IPA Kimchi.Index
 open Kimchi.Verifier.Linearization Polynomial
 open CompElliptic.Fields.Pasta
 

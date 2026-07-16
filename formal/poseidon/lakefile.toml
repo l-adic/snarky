@@ -1,0 +1,28 @@
+name = "poseidon"
+defaultTargets = ["Poseidon", "FixtureKit"]
+
+# CompElliptic: the Pasta fields (`ZMod p` with primality certificates) and curves.
+[[require]]
+name = "CompElliptic"
+path = "../vendor/CompElliptic"
+
+# The Pasta trust base: the GLV constants (`Pasta.vesta_lam` seeds the Fr-sponge
+# challenge-expansion spec).
+[[require]]
+name = "pasta"
+path = "../pasta"
+
+# Mathlib (targeted imports only — the sponge stack stays on the fast lane).
+[[require]]
+name = "mathlib"
+git = "https://github.com/leanprover-community/mathlib4.git"
+rev = "v4.30.0"
+
+[[lean_lib]]
+name = "Poseidon"
+globs = ["Poseidon", "Poseidon.+"]
+
+# Shared fixture-parsing/trace-check kit (not Poseidon-specific; reused downstream).
+[[lean_lib]]
+name = "FixtureKit"
+globs = ["FixtureKit", "FixtureKit.+"]

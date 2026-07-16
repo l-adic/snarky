@@ -1,6 +1,6 @@
 import CompElliptic.Fields.Pasta
 import Kimchi.Index.Satisfies
-import Kimchi.Fixture.Parse
+import FixtureKit.Parse
 import Pasta.Constants
 import Lean.Data.Json
 
@@ -28,6 +28,8 @@ this ingests; whole-circuit dumps would need a smarter checker.
 -/
 
 namespace Kimchi.Fixture.PS
+
+open FixtureKit
 
 open Lean Kimchi.Index CompElliptic.Fields.Pasta
 

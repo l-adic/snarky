@@ -1,6 +1,6 @@
 import Kimchi.Verifier.Ipa
 import Kimchi.Verifier.Linearization
-import Kimchi.Sponge.FqSponge
+import Poseidon.FqSponge
 
 /-!
 # The executable kimchi verifier
@@ -10,7 +10,7 @@ The full kimchi verifier over wire data, transcribed from proof-systems
 verification (`to_batch`, :781–1194), finished by the batched IPA opening check. The
 scalar-side closed forms are the landed `Kimchi.Verifier.Linearization`
 (`ftEval0`/`permScalar`/`zkpmEval`); the sponge layer is the landed
-`Kimchi.Sponge.FqSponge` machinery, reused at both fields; the opening finish is the
+`Poseidon.FqSponge` machinery, reused at both fields; the opening finish is the
 landed `Kimchi.Verifier.Ipa` acceptance, restarted from the **warm** fq-sponge state
 (`BatchEvaluationProof { sponge: fq_sponge, .. }`, verifier.rs:1184–1193).
 
@@ -47,7 +47,7 @@ production fold shapes) so any divergence localizes.
 namespace Kimchi.Verifier
 
 open CompElliptic.CurveForms.ShortWeierstrass
-open Kimchi.Sponge Kimchi.Sponge.FqSponge Kimchi.Commitment.IPA
+open Poseidon Poseidon.FqSponge Kimchi.Commitment.IPA
 
 variable (C : Ipa.CommitmentCurve)
 
@@ -402,7 +402,7 @@ end Kimchi.Verifier
 
 namespace Kimchi.Verifier.KimchiVesta
 
-open CompElliptic.Fields.Pasta Kimchi.Sponge Kimchi.Verifier
+open CompElliptic.Fields.Pasta Poseidon Kimchi.Verifier
 
 /-- The Vesta-side fr-sponge Poseidon parameters: the scalar field is `Fp`, so the
 production `G::sponge_params()` is the `fp_kimchi` table. The fixture decoder pins
@@ -419,7 +419,7 @@ end Kimchi.Verifier.KimchiVesta
 
 namespace Kimchi.Verifier.KimchiPallas
 
-open CompElliptic.Fields.Pasta Kimchi.Sponge Kimchi.Verifier
+open CompElliptic.Fields.Pasta Poseidon Kimchi.Verifier
 
 /-- The Pallas-side fr-sponge Poseidon parameters: the scalar field is `Fq`, so the
 production `G::sponge_params()` is the `fq_kimchi` table. The fixture decoder pins

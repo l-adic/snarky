@@ -1,5 +1,5 @@
 import CompElliptic.Curves.Pasta
-import Kimchi.Sponge.Poseidon
+import Poseidon.Basic
 import Pasta.Constants
 
 /-!
@@ -42,7 +42,7 @@ identity (`sponge.rs` `absorb_g`, both cases).
 * `FqVesta`, `FqPallas` — the Pasta instantiations.
 -/
 
-namespace Kimchi.Sponge.FqSponge
+namespace Poseidon.FqSponge
 
 /-- The field-pair data of a curve's Fq-sponge: the Poseidon parameters over the base field
 and the endomorphism eigenvalue `λ` of the scalar field's challenge expansion. Everything
@@ -62,7 +62,7 @@ structure S (base : ℕ) where
   lastSqueezed : List ℕ
 
 /-- The fresh sponge: fresh automaton, empty buffer. -/
-def init : S base := ⟨Kimchi.Sponge.init, []⟩
+def init : S base := ⟨Poseidon.init, []⟩
 
 
 
@@ -137,9 +137,9 @@ def squeezeChallenge (spec : Spec base scalar) (s : S base) : ZMod scalar × S b
   let (n, s) := challengeNat spec s
   (endoExpand spec.lam n, s)
 
-end Kimchi.Sponge.FqSponge
+end Poseidon.FqSponge
 
-namespace Kimchi.Sponge
+namespace Poseidon
 
 /-! ## The Pasta instantiations -/
 
@@ -192,4 +192,4 @@ def squeezeChallenge : S → Fq × S := FqSponge.squeezeChallenge spec
 
 end FqPallas
 
-end Kimchi.Sponge
+end Poseidon

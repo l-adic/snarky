@@ -13,7 +13,7 @@ element parser, so a driver fixes its fields once (`parseZMod` at the concrete c
 and builds the rest from these.
 -/
 
-namespace Kimchi.Fixture
+namespace FixtureKit
 
 open Lean
 
@@ -55,4 +55,4 @@ def parseSWPoint {F : Type} [Field F] [DecidableEq F] (f : Json → Except Strin
   else if h0 : p = ((0 : F), (0 : F)) then return ⟨p.1, p.2, Or.inr h0⟩
   else throw "point not on the curve"
 
-end Kimchi.Fixture
+end FixtureKit
