@@ -73,17 +73,12 @@ jobs:
         lake env lean pasta/scripts/check_axioms.lean
         lake env lean bulletproof-pcs/scripts/check_axioms.lean
 
-    # The Snarky DSL package sits ON TOP of kimchi (its bridge interprets reified
-    # circuits against the verified generic-gate checker), so it is its own lake
-    # workspace: fetch its mathlib oleans, build, and gate the interpreter laws
-    # (pure core Lean — standard axioms only).
-    - name: Build the snarky DSL package and gate its interpreter laws
+    # The snarky DSL package's interpreter laws (pure core Lean — standard axioms
+    # only). The aggregator workspace requires snarky, so this runs here directly.
+    - name: Gate the snarky DSL interpreter laws
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        cd snarky
-        lake exe cache get
-        lake build Snarky
-        lake env lean kimchi/scripts/check_axioms.lean
+        lake env lean snarky/scripts/check_axioms.lean
 
     # Compatibility: the IPA verifier model must accept real kimchi/proof-systems
     # transcripts, and both chunk-fold mechanisms must match production — the chunk
