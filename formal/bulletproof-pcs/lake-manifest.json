@@ -3,6 +3,15 @@
  "packagesDir": "../.lake/packages",
  "packages": [
   {
+   "type": "path",
+   "scope": "",
+   "name": "poseidon",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../poseidon",
+   "configFile": "lakefile.toml"
+  },
+  {
    "url": "https://github.com/leanprover-community/mathlib4.git",
    "type": "git",
    "subDir": null,
@@ -13,24 +22,6 @@
    "inputRev": "v4.30.0",
    "inherited": false,
    "configFile": "lakefile.lean"
-  },
-  {
-   "type": "path",
-   "scope": "",
-   "name": "\u00abbulletproof-pcs\u00bb",
-   "manifestFile": "lake-manifest.json",
-   "inherited": false,
-   "dir": "../bulletproof-pcs",
-   "configFile": "lakefile.toml"
-  },
-  {
-   "type": "path",
-   "scope": "",
-   "name": "poseidon",
-   "manifestFile": "lake-manifest.json",
-   "inherited": false,
-   "dir": "../poseidon",
-   "configFile": "lakefile.toml"
   },
   {
    "type": "path",
@@ -159,7 +150,7 @@
    "configFile": "lakefile.lean"
   }
  ],
- "name": "\u00abkimchi\u00bb",
+ "name": "\u00abbulletproof-pcs\u00bb",
  "lakeDir": ".lake",
  "fixedToolchain": false
 }
