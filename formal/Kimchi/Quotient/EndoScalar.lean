@@ -104,22 +104,21 @@ selector-gated EndoScalar family
 `c ↦ (columnPoly ω sel) * (constraints (polyWitness ω wTab)).get c`, every selector-active row
 satisfies the EndoScalar gate predicate `Gate.EndoScalar.Holds`. Specialization of
 `Argument.soundness` at the instance `argument`. -/
-theorem soundness [DecidableEq F] {N : ℕ}
+theorem soundness [DecidableEq F]
     (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     (wTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1)
-    (ζ : Fin N → F) (hζ : Function.Injective ζ)
-    (α : Fin (Gate.EndoScalar.constraints (polyWitness ω wTab) (F := F)).length → F)
-    (hα : Function.Injective α)
-    (t : Fin (Gate.EndoScalar.constraints (polyWitness ω wTab) (F := F)).length → Polynomial F)
-    (D : ℕ) (hD : D < N)
-    (hCdeg : ∀ s, (aggregate (α s) (fun c => columnPoly ω sel *
-        (Gate.EndoScalar.constraints (polyWitness ω wTab) (F := F)).get c)).natDegree ≤ D)
-    (htdeg : ∀ s, (t s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ s p, (aggregate (α s) (fun c => columnPoly ω sel *
-        (Gate.EndoScalar.constraints (polyWitness ω wTab) (F := F)).get c)).eval (ζ p)
-        = (t s * zH F n).eval (ζ p)) :
+    (α : F)
+    (hα : α ∉ badAlphas (fun c => columnPoly ω sel *
+        (Gate.EndoScalar.constraints (polyWitness ω wTab) (F := F)).get c) ω n)
+    (t : Polynomial F)
+    (ζ : F)
+    (hζ : ζ ∉ badZetas (aggregate α (fun c => columnPoly ω sel *
+        (Gate.EndoScalar.constraints (polyWitness ω wTab) (F := F)).get c)) t n)
+    (hcheck : (aggregate α (fun c => columnPoly ω sel *
+        (Gate.EndoScalar.constraints (polyWitness ω wTab) (F := F)).get c)).eval ζ
+        = (t * zH F n).eval ζ) :
     ∀ i, sel i = 1 → Gate.EndoScalar.Holds (rowWitness wTab i) := by
   haveI : NeZero n := ⟨Nat.pos_iff_ne_zero.mp hn⟩
-  exact argument.soundness hω wTab wTab sel hsel ζ hζ α hα t D hD hCdeg htdeg hcheck
+  exact argument.soundness hω wTab wTab sel hsel α hα t ζ hζ hcheck
 
 end Kimchi.Quotient.EndoScalar

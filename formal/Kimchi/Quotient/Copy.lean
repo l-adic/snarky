@@ -1,5 +1,6 @@
 import Kimchi.Quotient.GrandProduct
 import Kimchi.Quotient.Permutation
+import Kimchi.Quotient.SchwartzZippel
 
 /-!
 # Copy soundness: from grand products to values constant on the wiring
@@ -15,12 +16,12 @@ Two strata:
   `(value, address)` pairs — the own-address tagging against the wired-to-address
   tagging — forces `v ∘ σp = v`, by membership alone: the pair `(v c, addr (σp c))`
   must occur among the own-address pairs, and address injectivity pins its cell to
-  `σp c`. The grid form feeds `multiset_eq_of_grid_prod_evals` (milestone 1) with the
-  per-point product equalities and descends.
+  `σp c`. The single-challenge form feeds `multiset_eq_of_prod_eval` (the S2 grand-product
+  Schwartz–Zippel core) with the product equality at one good pair `(β, γ)` and descends.
 
-* **The kimchi headline** (`Permutation.copy_soundness`): the grid of per-challenge
-  quotient-argument hypotheses — at each grid node `(βₐ, γ_b)` the prover supplies an
-  accumulator `zg a b` and the three permutation constraints pass the derandomized
+* **The kimchi headline** (`Permutation.copy_soundness`): the per-challenge
+  quotient-argument hypotheses — at a single good challenge pair `(β, γ)` the prover supplies an
+  accumulator `zg` and the three permutation constraints pass the derandomized
   quotient checks (`Permutation.soundness`, milestones 2–3) — composed with the
   semantics of the sigma polynomials (`σᵢ(ωʲ)` is the address of the wired-to cell) and
   the injectivity of the cell addressing `(i, j) ↦ shiftᵢ·ωʲ` (the coset-disjointness of
@@ -56,26 +57,25 @@ theorem values_eq_of_multiset_eq {cells : Type*} [Fintype cells]
   rwa [h₂] at h₁
 
 /-- **Copy soundness, field level.** Products of `(γ + value + address·β)` over the cells
-agreeing at every node of an injective challenge grid — own addresses on the left,
+agreeing at a **single good challenge pair** `(β, γ)` — own addresses on the left,
 wired-to addresses on the right — force the values to be invariant under the wiring.
-Milestone 1's grid core turns the products into multiset equality; injective addressing
+The single-challenge Schwartz–Zippel core (`multiset_eq_of_prod_eval`) turns the product
+equality into multiset equality once `β` and `γ` avoid the proved-small bad sets
+`badBetas`/`badGammas` of the `(value, address)` pair multisets; injective addressing then
 descends to the values. -/
-theorem copy_soundness {cells : Type*} [Fintype cells] {M N : ℕ}
-    (b : Fin M → F) (g : Fin N → F)
-    (hb : Function.Injective b) (hg : Function.Injective g)
-    (hM : Fintype.card cells < M) (hN : Fintype.card cells < N)
+theorem copy_soundness [DecidableEq F] {cells : Type*} [Fintype cells]
+    (β γ : F)
     (v addr : cells → F) (haddr : Function.Injective addr) (σp : Equiv.Perm cells)
-    (h : ∀ (i : Fin M) (j : Fin N),
-      ∏ c, (g j + v c + addr c * b i) = ∏ c, (g j + v c + addr (σp c) * b i)) :
+    (hβ : β ∉ badBetas (Finset.univ.val.map fun c => (v c, addr c))
+      (Finset.univ.val.map fun c => (v c, addr (σp c))))
+    (hγ : γ ∉ badGammas (Finset.univ.val.map fun c => (v c, addr c))
+      (Finset.univ.val.map fun c => (v c, addr (σp c))) β)
+    (h : ∏ c, (γ + v c + addr c * β) = ∏ c, (γ + v c + addr (σp c) * β)) :
     ∀ c, v (σp c) = v c := by
   refine values_eq_of_multiset_eq v addr haddr σp
-    (multiset_eq_of_grid_prod_evals b g hb hg _ _ ?_ ?_ ?_ ?_ fun i j => ?_)
-  · simpa using hN
-  · simpa using hM
-  · simpa using hN
-  · simpa using hM
-  · rw [Multiset.map_map, Multiset.map_map]
-    simpa only [Function.comp_def, ← Finset.prod_eq_multiset_prod] using h i j
+    (multiset_eq_of_prod_eval _ _ β γ hβ hγ ?_)
+  rw [Multiset.map_map, Multiset.map_map]
+  simpa only [Function.comp_def, ← Finset.prod_eq_multiset_prod] using h
 
 end Kimchi.Quotient
 
@@ -100,12 +100,13 @@ theorem sigmaSide_eval (w σ : Fin 7 → Polynomial F) (β γ : F) (x : F) :
 /-- **Copy soundness of the kimchi permutation argument, divisibility form.** Fix the
 committed data — the witness columns `w`, the sigma columns `σpoly` (whose row semantics
 is the wiring: at row `j`, `σᵢ(ωʲ)` is the address of the cell that `(i, j)` is wired
-to), the coset shifts with injective cell addressing on the unmasked region. If at every
-node `(bₐ, g_c)` of an injective challenge grid the prover supplies an accumulator
-`zg a c` whose three permutation constraints are divisible by `Z_H`, then the witness
-values are invariant under the wiring on the unmasked region: for every cell `c`,
-`w(σp c) = w(c)`. -/
-theorem copy_soundness_of_dvd {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+to), the coset shifts with injective cell addressing on the unmasked region. If at a
+**single good challenge pair** `(β, γ)` — avoiding the small bad sets of the cell's
+`(value, address)` pair multisets — the prover supplies an accumulator `zg` whose three
+permutation constraints are divisible by `Z_H`, then the witness values are invariant under
+the wiring on the unmasked region: for every cell `c`, `w(σp c) = w(c)`. -/
+theorem copy_soundness_of_dvd [DecidableEq F] {ω : F} {n : ℕ}
+    (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     {zkRows : ℕ} (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
     (w σpoly : Fin 7 → Polynomial F) (shifts : Fin 7 → F)
     (σp : Equiv.Perm (Fin 7 × Fin (n - zkRows)))
@@ -113,36 +114,39 @@ theorem copy_soundness_of_dvd {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (h
       (fun c : Fin 7 × Fin (n - zkRows) => shifts c.1 * ω ^ (c.2 : ℕ)))
     (hσ : ∀ c : Fin 7 × Fin (n - zkRows),
       (σpoly c.1).eval (ω ^ (c.2 : ℕ)) = shifts (σp c).1 * ω ^ ((σp c).2 : ℕ))
-    {M N : ℕ} (b : Fin M → F) (g : Fin N → F)
-    (hb : Function.Injective b) (hg : Function.Injective g)
-    (hM : 7 * (n - zkRows) < M) (hN : 7 * (n - zkRows) < N)
-    (zg : Fin M → Fin N → Polynomial F)
-    (hdvd : ∀ a c s, zH F n ∣ constraints ω zkRows (zg a c) w σpoly shifts
-      (b a) (g c) (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩ s) :
+    (β γ : F)
+    (hβ : β ∉ badBetas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
+        ((w c.1).eval (ω ^ (c.2 : ℕ)), shifts c.1 * ω ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
+        ((w c.1).eval (ω ^ (c.2 : ℕ)), shifts (σp c).1 * ω ^ ((σp c).2 : ℕ))))
+    (hγ : γ ∉ badGammas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
+        ((w c.1).eval (ω ^ (c.2 : ℕ)), shifts c.1 * ω ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
+        ((w c.1).eval (ω ^ (c.2 : ℕ)), shifts (σp c).1 * ω ^ ((σp c).2 : ℕ))) β)
+    (zg : Polynomial F)
+    (hdvd : ∀ s, zH F n ∣ constraints ω zkRows zg w σpoly shifts
+      β γ (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩ s) :
     ∀ c : Fin 7 × Fin (n - zkRows),
       (w (σp c).1).eval (ω ^ ((σp c).2 : ℕ)) = (w c.1).eval (ω ^ (c.2 : ℕ)) := by
   -- The field-level core at the cell data.
-  refine Kimchi.Quotient.copy_soundness b g hb hg ?_ ?_
-    (fun c => (w c.1).eval (ω ^ (c.2 : ℕ)))
-    (fun c => shifts c.1 * ω ^ (c.2 : ℕ)) haddr σp fun a c => ?_
-  · simpa using hM
-  · simpa using hN
-  -- At each grid node, milestone 3 gives the row-product equality; reindex rows × columns
-  -- to cells and rewrite the sigma side through the wiring semantics.
-  have hrows := Permutation.soundness_of_dvd hω hn hzk0 hzkn (zg a c) w σpoly shifts
-    (b a) (g c) (hdvd a c)
+  refine Kimchi.Quotient.copy_soundness β γ _ _ haddr σp hβ hγ ?_
+  -- Milestone 3 gives the row-product equality; reindex rows × columns to cells and
+  -- rewrite the sigma side through the wiring semantics.
+  have hrows := Permutation.soundness_of_dvd hω hn hzk0 hzkn zg w σpoly shifts β γ hdvd
   calc ∏ x : Fin 7 × Fin (n - zkRows),
-        (g c + (w x.1).eval (ω ^ (x.2 : ℕ)) + shifts x.1 * ω ^ (x.2 : ℕ) * b a)
-      = ∏ j ∈ Finset.range (n - zkRows), (shiftSide w shifts (b a) (g c)).eval (ω ^ j) := by
+        (γ + (w x.1).eval (ω ^ (x.2 : ℕ)) + shifts x.1 * ω ^ (x.2 : ℕ) * β)
+      = ∏ j ∈ Finset.range (n - zkRows), (shiftSide w shifts β γ).eval (ω ^ j) := by
         rw [← Finset.univ_product_univ, Finset.prod_product_right,
           ← Fin.prod_univ_eq_prod_range]
         refine Finset.prod_congr rfl fun j _ => ?_
         rw [shiftSide_eval]
         exact Finset.prod_congr rfl fun i _ => by ring
-    _ = ∏ j ∈ Finset.range (n - zkRows), (sigmaSide w σpoly (b a) (g c)).eval (ω ^ j) :=
+    _ = ∏ j ∈ Finset.range (n - zkRows), (sigmaSide w σpoly β γ).eval (ω ^ j) :=
         hrows
     _ = ∏ x : Fin 7 × Fin (n - zkRows),
-        (g c + (w x.1).eval (ω ^ (x.2 : ℕ)) + shifts (σp x).1 * ω ^ ((σp x).2 : ℕ) * b a) := by
+        (γ + (w x.1).eval (ω ^ (x.2 : ℕ)) + shifts (σp x).1 * ω ^ ((σp x).2 : ℕ) * β) := by
         rw [← Finset.univ_product_univ, Finset.prod_product_right,
           ← Fin.prod_univ_eq_prod_range]
         refine Finset.prod_congr rfl fun j _ => ?_
@@ -152,9 +156,14 @@ theorem copy_soundness_of_dvd {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (h
         ring
 
 /-- **Copy soundness of the kimchi permutation argument.** As `copy_soundness_of_dvd`,
-with each grid node's divisibilities obtained from the derandomized quotient checks
-(`dvd_of_evalCheck`). -/
-theorem copy_soundness {ω : F} {n NN : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+with the divisibilities obtained from the derandomized quotient checks in
+**single-challenge counting Schwartz–Zippel form** (`dvd_of_evalCheck`): the prover
+supplies ONE aggregation challenge `α` (avoiding the proved-small bad set `badAlphas`) and
+ONE quotient `t`, at a single good permutation-challenge pair `(β, γ)`, and evaluates the
+quotient check at a single good challenge `ζ` outside the counting bad set
+`badZetas (aggregate α C) t n`. Conclusion unchanged. -/
+theorem copy_soundness [DecidableEq F] {ω : F} {n : ℕ}
+    (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     {zkRows : ℕ} (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
     (w σpoly : Fin 7 → Polynomial F) (shifts : Fin 7 → F)
     (σp : Equiv.Perm (Fin 7 × Fin (n - zkRows)))
@@ -162,24 +171,32 @@ theorem copy_soundness {ω : F} {n NN : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 
       (fun c : Fin 7 × Fin (n - zkRows) => shifts c.1 * ω ^ (c.2 : ℕ)))
     (hσ : ∀ c : Fin 7 × Fin (n - zkRows),
       (σpoly c.1).eval (ω ^ (c.2 : ℕ)) = shifts (σp c).1 * ω ^ ((σp c).2 : ℕ))
-    {M N : ℕ} (b : Fin M → F) (g : Fin N → F)
-    (hb : Function.Injective b) (hg : Function.Injective g)
-    (hM : 7 * (n - zkRows) < M) (hN : 7 * (n - zkRows) < N)
-    (zg : Fin M → Fin N → Polynomial F)
-    (α : Fin M → Fin N → Fin 3 → F) (hα : ∀ a c, Function.Injective (α a c))
-    (ζ : Fin M → Fin N → Fin NN → F) (hζ : ∀ a c, Function.Injective (ζ a c))
-    (t : Fin M → Fin N → Fin 3 → Polynomial F) (D : ℕ) (hD : D < NN)
-    (hCdeg : ∀ a c s, (aggregate (α a c s) (constraints ω zkRows (zg a c) w σpoly shifts
-      (b a) (g c) (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)).natDegree ≤ D)
-    (htdeg : ∀ a c s, (t a c s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ a c s p, (aggregate (α a c s) (constraints ω zkRows (zg a c) w σpoly shifts
-        (b a) (g c) (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)).eval (ζ a c p)
-      = (t a c s * zH F n).eval (ζ a c p)) :
+    (β γ : F)
+    (hβ : β ∉ badBetas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
+        ((w c.1).eval (ω ^ (c.2 : ℕ)), shifts c.1 * ω ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
+        ((w c.1).eval (ω ^ (c.2 : ℕ)), shifts (σp c).1 * ω ^ ((σp c).2 : ℕ))))
+    (hγ : γ ∉ badGammas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
+        ((w c.1).eval (ω ^ (c.2 : ℕ)), shifts c.1 * ω ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
+        ((w c.1).eval (ω ^ (c.2 : ℕ)), shifts (σp c).1 * ω ^ ((σp c).2 : ℕ))) β)
+    (zg : Polynomial F)
+    (α : F)
+    (hα : α ∉ badAlphas (constraints ω zkRows zg w σpoly shifts
+      β γ (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩) ω n)
+    (t : Polynomial F)
+    (ζ : F)
+    (hζ : ζ ∉ badZetas (aggregate α (constraints ω zkRows zg w σpoly shifts
+      β γ (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)) t n)
+    (hcheck : (aggregate α (constraints ω zkRows zg w σpoly shifts
+        β γ (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)).eval ζ
+      = (t * zH F n).eval ζ) :
     ∀ c : Fin 7 × Fin (n - zkRows),
       (w (σp c).1).eval (ω ^ ((σp c).2 : ℕ)) = (w c.1).eval (ω ^ (c.2 : ℕ)) :=
-  copy_soundness_of_dvd hω hn hzk0 hzkn w σpoly shifts σp haddr hσ b g hb hg hM hN zg
-    fun a c => dvd_separation hω hn (α a c) (hα a c) _ fun s =>
-      zH_dvd_of_evals hω hn (ζ a c) (hζ a c) _ (t a c s) D (hCdeg a c s) (htdeg a c s)
-        hD (hcheck a c s)
+  have : NeZero n := ⟨hn.ne'⟩
+  copy_soundness_of_dvd hω hn hzk0 hzkn w σpoly shifts σp haddr hσ β γ hβ hγ zg
+    (dvd_of_evalCheck hω _ α hα t ζ hζ hcheck)
 
 end Kimchi.Quotient.Permutation

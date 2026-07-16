@@ -115,24 +115,22 @@ theorem rows_iff_dvd [NeZero n] (hω : IsPrimitiveRoot ω n)
 
 /-! ## Quotient-argument soundness -/
 
-/-- **Poseidon quotient soundness.** With the abstract quotient-argument hypotheses over the
-selector-gated Poseidon family, every selector-active row satisfies `Gate.Poseidon.Holds`.
-Specialization of `Argument.soundness` at `argument`. -/
+/-- **Poseidon quotient soundness.** With the single-challenge counting-form quotient-argument
+hypotheses over the selector-gated Poseidon family, every selector-active row satisfies
+`Gate.Poseidon.Holds`. Specialization of `Argument.soundness` at `argument`. -/
 theorem soundness [NeZero n] [DecidableEq F] (hω : IsPrimitiveRoot ω n)
     (wTab qTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1)
-    (ζ : Fin N → F) (hζ : Function.Injective ζ)
-    (α : Fin (Gate.Poseidon.constraints (rcPoly ω qTab) (polyWitness ω wTab)).length → F)
-    (hα : Function.Injective α)
-    (t : Fin (Gate.Poseidon.constraints (rcPoly ω qTab) (polyWitness ω wTab)).length
-        → Polynomial F)
-    (D : ℕ) (hD : D < N)
-    (hCdeg : ∀ s, (aggregate (α s) (fun c => columnPoly ω sel *
-        (Gate.Poseidon.constraints (rcPoly ω qTab) (polyWitness ω wTab)).get c)).natDegree ≤ D)
-    (htdeg : ∀ s, (t s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ s p, (aggregate (α s) (fun c => columnPoly ω sel *
-        (Gate.Poseidon.constraints (rcPoly ω qTab) (polyWitness ω wTab)).get c)).eval (ζ p)
-        = (t s * zH F n).eval (ζ p)) :
+    (α : F)
+    (hα : α ∉ badAlphas (fun c => columnPoly ω sel *
+        (Gate.Poseidon.constraints (rcPoly ω qTab) (polyWitness ω wTab)).get c) ω n)
+    (t : Polynomial F)
+    (ζ : F)
+    (hζ : ζ ∉ badZetas (aggregate α (fun c => columnPoly ω sel *
+        (Gate.Poseidon.constraints (rcPoly ω qTab) (polyWitness ω wTab)).get c)) t n)
+    (hcheck : (aggregate α (fun c => columnPoly ω sel *
+        (Gate.Poseidon.constraints (rcPoly ω qTab) (polyWitness ω wTab)).get c)).eval ζ
+        = (t * zH F n).eval ζ) :
     ∀ i, sel i = 1 → Gate.Poseidon.Holds (rcRow qTab i) (rowWitness wTab i) :=
-  argument.soundness hω wTab qTab sel hsel ζ hζ α hα t D hD hCdeg htdeg hcheck
+  argument.soundness hω wTab qTab sel hsel α hα t ζ hζ hcheck
 
 end Kimchi.Quotient.Poseidon

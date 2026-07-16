@@ -1,4 +1,5 @@
 import Kimchi.Index.Soundness
+import Kimchi.Quotient.SchwartzZippel
 
 /-!
 # The full kimchi aggregate family
@@ -280,30 +281,31 @@ theorem rowSatisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCo
 
 Kimchi folds the whole family under a single challenge `α` — powers `α⁰..α²³` weight the
 members — and checks the fold against `t · Z_H` by evaluation. The library's deterministic
-surrogate for "a random `α`, a random evaluation point" is the usual pair of injectivity
-hypotheses (`Quotient/Lift.lean`): enough distinct challenges pin each member by the
-Vandermonde argument (`dvd_separation`), enough distinct nodes pin the polynomial identity
-(`zH_dvd_of_evals`). Specializing the composed engine `dvd_of_evalCheck` at `fullFamily`
-turns the shape of the one production check into per-member divisibility, and the
-separation argument takes it the rest of the way to the rows. -/
+account of "a random `α`" is now the standard **counting** Schwartz–Zippel argument
+(`Quotient/SchwartzZippel.lean`): a *single* challenge `α`, together with a *single*
+quotient `t`, suffices to separate divisibility across the members, provided `α` avoids the
+explicit **bad set** `badAlphas (idx.fullFamily …) idx.omega n`, whose cardinality is proved
+`≤ n · (K − 1)` (`card_badAlphas_le`). No injective α-family, no Vandermonde. The evaluation
+point is likewise a single good `ζ` outside the explicit bad set
+`badZetas (aggregate α …) t n`, pinning the polynomial identity by the same counting
+argument (`zH_dvd_of_eval`). Specializing the composed engine
+`dvd_of_evalCheck` at `fullFamily` turns the shape of the one production check into
+per-member divisibility, and the separation argument takes it the rest of the way to the
+rows. -/
 
 /-- **Divisibility of every family member from the aggregated eval-check** — the
-`dvd_of_evalCheck` engine at the full `21 + 3` family. -/
+single-challenge `dvd_of_evalCheck` engine at the full `21 + 3` family. One `α` outside
+`badAlphas`, one quotient `t`, one good `ζ` outside `badZetas`. -/
 theorem fullFamily_dvd_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (β γ : F)
-    {N : ℕ} (ζ : Fin N → F) (hζ : Function.Injective ζ)
-    (α : Fin (gateAlphaCount + permAlphaCount) → F) (hα : Function.Injective α)
-    (t : Fin (gateAlphaCount + permAlphaCount) → Polynomial F)
-    (D : ℕ) (hD : D < N)
-    (hCdeg : ∀ s,
-      (aggregate (α s) (idx.fullFamily pub wTab z β γ)).natDegree ≤ D)
-    (htdeg : ∀ s, (t s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ s p,
-      (aggregate (α s) (idx.fullFamily pub wTab z β γ)).eval (ζ p)
-        = (t s * zH F n).eval (ζ p)) :
+    (α : F) (hα : α ∉ badAlphas (idx.fullFamily pub wTab z β γ) idx.omega n)
+    (t : Polynomial F)
+    (ζ : F)
+    (hζ : ζ ∉ badZetas (aggregate α (idx.fullFamily pub wTab z β γ)) t n)
+    (hcheck : (aggregate α (idx.fullFamily pub wTab z β γ)).eval ζ
+        = (t * zH F n).eval ζ) :
     ∀ s, zH F n ∣ idx.fullFamily pub wTab z β γ s :=
-  dvd_of_evalCheck idx.omega_prim (Nat.pos_of_neZero n) ζ hζ α hα _ t D hD
-    hCdeg htdeg hcheck
+  dvd_of_evalCheck idx.omega_prim (idx.fullFamily pub wTab z β γ) α hα t ζ hζ hcheck
 
 open Kimchi.Quotient.Permutation in
 /-- The permutation members of the full family: entries `21 + s` are the three
@@ -326,16 +328,32 @@ takes equal values across every wire of the unmasked region — the copy fragmen
 (`fullFamily_perm`); `Index.copy_soundness_of_dvd` does the rest. -/
 theorem copy_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F)
-    {M NN : ℕ} (b : Fin M → F) (g : Fin NN → F)
-    (hb : Function.Injective b) (hg : Function.Injective g)
-    (hM : 7 * (n - idx.zkRows) < M) (hN : 7 * (n - idx.zkRows) < NN)
-    (zg : Fin M → Fin NN → Polynomial F)
-    (hdvd : ∀ a c s, zH F n ∣ idx.fullFamily pub wTab (zg a c) (b a) (g c) s) :
+    (β γ : F)
+    (hβ : β ∉ badBetas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+            * idx.omega
+              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))))
+    (hγ : γ ∉ badGammas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+            * idx.omega
+              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))) β)
+    (zg : Polynomial F)
+    (hdvd : ∀ s, zH F n ∣ idx.fullFamily pub wTab zg β γ s) :
     ∀ c : Fin 7 × Fin (n - idx.zkRows),
       cellValue wTab (idx.wiringMap (embCell idx.zkRows c))
         = cellValue wTab (embCell idx.zkRows c) :=
-  idx.copy_soundness_of_dvd wTab b g hb hg hM hN zg fun a c s => by
-    have h := hdvd a c (Fin.natAdd gateAlphaCount s)
+  idx.copy_soundness_of_dvd wTab β γ hβ hγ zg fun s => by
+    have h := hdvd (Fin.natAdd gateAlphaCount s)
     rwa [idx.fullFamily_perm] at h
 
 /-- **Phase-B assembly, gate side.** The aggregated eval-check over the full family —
@@ -344,19 +362,15 @@ the shape of kimchi's one quotient check — gives every row's gate branch of
 separation argument collapses the shared pool back to the rows. -/
 theorem rowSatisfies_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (β γ : F)
-    {N : ℕ} (ζ : Fin N → F) (hζ : Function.Injective ζ)
-    (α : Fin (gateAlphaCount + permAlphaCount) → F) (hα : Function.Injective α)
-    (t : Fin (gateAlphaCount + permAlphaCount) → Polynomial F)
-    (D : ℕ) (hD : D < N)
-    (hCdeg : ∀ s,
-      (aggregate (α s) (idx.fullFamily pub wTab z β γ)).natDegree ≤ D)
-    (htdeg : ∀ s, (t s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ s p,
-      (aggregate (α s) (idx.fullFamily pub wTab z β γ)).eval (ζ p)
-        = (t s * zH F n).eval (ζ p)) :
+    (α : F) (hα : α ∉ badAlphas (idx.fullFamily pub wTab z β γ) idx.omega n)
+    (t : Polynomial F)
+    (ζ : F)
+    (hζ : ζ ∉ badZetas (aggregate α (idx.fullFamily pub wTab z β γ)) t n)
+    (hcheck : (aggregate α (idx.fullFamily pub wTab z β γ)).eval ζ
+        = (t * zH F n).eval ζ) :
     ∀ i, rowSatisfies idx pub wTab i :=
   idx.rowSatisfies_of_fullFamily_dvd pub wTab z β γ
-    (idx.fullFamily_dvd_of_evalCheck pub wTab z β γ ζ hζ α hα t D hD hCdeg htdeg hcheck)
+    (idx.fullFamily_dvd_of_evalCheck pub wTab z β γ α hα t ζ hζ hcheck)
 
 /-! ## The Phase-B headline: the one quotient check gives satisfiability
 
@@ -372,15 +386,31 @@ open Kimchi.Quotient.Permutation in
 the masked rows trivially from the `masked_identity` law. -/
 theorem copyAll_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F)
-    {M NN : ℕ} (b : Fin M → F) (g : Fin NN → F)
-    (hb : Function.Injective b) (hg : Function.Injective g)
-    (hM : 7 * (n - idx.zkRows) < M) (hN : 7 * (n - idx.zkRows) < NN)
-    (zg : Fin M → Fin NN → Polynomial F)
-    (hdvd : ∀ a c s, zH F n ∣ idx.fullFamily pub wTab (zg a c) (b a) (g c) s) :
+    (β γ : F)
+    (hβ : β ∉ badBetas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+            * idx.omega
+              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))))
+    (hγ : γ ∉ badGammas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+            * idx.omega
+              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))) β)
+    (zg : Polynomial F)
+    (hdvd : ∀ s, zH F n ∣ idx.fullFamily pub wTab zg β γ s) :
     ∀ c : Fin 7 × Fin n, cellValue wTab (idx.wiringMap c) = cellValue wTab c := by
   intro c
   by_cases hc : (c.2 : ℕ) < n - idx.zkRows
-  · have h := idx.copy_of_fullFamily_dvd pub wTab b g hb hg hM hN zg hdvd
+  · have h := idx.copy_of_fullFamily_dvd pub wTab β γ hβ hγ zg hdvd
       (c.1, ⟨(c.2 : ℕ), hc⟩)
     have hemb : embCell idx.zkRows ((c.1, ⟨(c.2 : ℕ), hc⟩) :
         Fin 7 × Fin (n - idx.zkRows)) = c := Prod.ext rfl (Fin.ext rfl)
@@ -432,18 +462,32 @@ folded in, the copy constraints hold on the whole grid, and the public rows pin 
 first witness column. -/
 theorem satisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F)
-    {M NN : ℕ} (b : Fin M → F) (g : Fin NN → F)
-    (hb : Function.Injective b) (hg : Function.Injective g)
-    (hM : 7 * (n - idx.zkRows) < M) (hN : 7 * (n - idx.zkRows) < NN)
-    (zg : Fin M → Fin NN → Polynomial F)
-    (hdvd : ∀ a c s, zH F n ∣ idx.fullFamily pub wTab (zg a c) (b a) (g c) s) :
+    (β γ : F)
+    (hβ : β ∉ badBetas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+            * idx.omega
+              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))))
+    (hγ : γ ∉ badGammas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+            * idx.omega
+              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))) β)
+    (zg : Polynomial F)
+    (hdvd : ∀ s, zH F n ∣ idx.fullFamily pub wTab zg β γ s) :
     Satisfies idx pub wTab := by
   have hrow : ∀ i, rowSatisfies idx pub wTab i :=
-    idx.rowSatisfies_of_fullFamily_dvd pub wTab
-      (zg ⟨0, by omega⟩ ⟨0, by omega⟩) (b ⟨0, by omega⟩) (g ⟨0, by omega⟩)
-      (hdvd ⟨0, by omega⟩ ⟨0, by omega⟩)
+    idx.rowSatisfies_of_fullFamily_dvd pub wTab zg β γ hdvd
   exact ⟨hrow,
-    idx.copyAll_of_fullFamily_dvd pub wTab b g hb hg hM hN zg hdvd,
+    idx.copyAll_of_fullFamily_dvd pub wTab β γ hβ hγ zg hdvd,
     idx.publicPinned_of_rowSatisfies pub wTab hrow⟩
 
 open Kimchi.Quotient.Permutation in
@@ -454,25 +498,36 @@ index. Composes `fullFamily_dvd_of_evalCheck` per grid node with
 `satisfies_of_fullFamily_dvd`. -/
 theorem satisfies_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F)
-    {M NN NNN : ℕ} (b : Fin M → F) (g : Fin NN → F)
-    (hb : Function.Injective b) (hg : Function.Injective g)
-    (hM : 7 * (n - idx.zkRows) < M) (hN : 7 * (n - idx.zkRows) < NN)
-    (zg : Fin M → Fin NN → Polynomial F)
-    (ζ : Fin M → Fin NN → Fin NNN → F) (hζ : ∀ a c, Function.Injective (ζ a c))
-    (α : Fin M → Fin NN → Fin (gateAlphaCount + permAlphaCount) → F)
-    (hα : ∀ a c, Function.Injective (α a c))
-    (t : Fin M → Fin NN → Fin (gateAlphaCount + permAlphaCount) → Polynomial F)
-    (D : ℕ) (hD : D < NNN)
-    (hCdeg : ∀ a c s, (aggregate (α a c s)
-      (idx.fullFamily pub wTab (zg a c) (b a) (g c))).natDegree ≤ D)
-    (htdeg : ∀ a c s, (t a c s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ a c s p, (aggregate (α a c s)
-      (idx.fullFamily pub wTab (zg a c) (b a) (g c))).eval (ζ a c p)
-        = (t a c s * zH F n).eval (ζ a c p)) :
+    (β γ : F)
+    (hβ : β ∉ badBetas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+            * idx.omega
+              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))))
+    (hγ : γ ∉ badGammas
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
+      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+            * idx.omega
+              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))) β)
+    (zg : Polynomial F)
+    (α : F)
+    (hα : α ∉ badAlphas (idx.fullFamily pub wTab zg β γ) idx.omega n)
+    (t : Polynomial F)
+    (ζ : F)
+    (hζ : ζ ∉ badZetas (aggregate α (idx.fullFamily pub wTab zg β γ)) t n)
+    (hcheck : (aggregate α (idx.fullFamily pub wTab zg β γ)).eval ζ
+        = (t * zH F n).eval ζ) :
     Satisfies idx pub wTab :=
-  idx.satisfies_of_fullFamily_dvd pub wTab b g hb hg hM hN zg fun a c =>
-    idx.fullFamily_dvd_of_evalCheck pub wTab (zg a c) (b a) (g c) (ζ a c) (hζ a c)
-      (α a c) (hα a c) (t a c) D hD (hCdeg a c) (htdeg a c) (hcheck a c)
+  idx.satisfies_of_fullFamily_dvd pub wTab β γ hβ hγ zg
+    (idx.fullFamily_dvd_of_evalCheck pub wTab zg β γ α hα t ζ hζ hcheck)
 
 /-! ## Completeness: the gate members of a satisfied table
 
@@ -678,6 +733,26 @@ theorem exists_quotient_of_satisfies (idx : Index F n) (pub : Fin idx.publicCoun
   exact ⟨t, by rw [ht, mul_comm]⟩
 
 
+/-! ## Project-local Mathlib supplement — pigeonhole on an injective family -/
+
+/-- An injective family `f : Fin m → F` overshoots any finset `B` with `B.card < m`:
+some index lands outside `B`. Project-local: in the backward direction of
+`satisfies_iff_fullFamily_dvd` it picks one good `β` (resp. `γ`) from the nondegenerate
+grid, dodging the small `badBetas`/`badGammas` set. -/
+private theorem exists_notMem_of_card_lt {m : ℕ} {f : Fin m → F}
+    (hf : Function.Injective f) (B : Finset F) (hB : B.card < m) :
+    ∃ i, f i ∉ B := by
+  by_contra h
+  push_neg at h
+  have hsub : (Finset.univ.image f) ⊆ B := by
+    intro x hx
+    obtain ⟨i, _, rfl⟩ := Finset.mem_image.mp hx
+    exact h i
+  have hcard : (Finset.univ.image f).card = m := by
+    rw [Finset.card_image_of_injective _ hf, Finset.card_univ, Fintype.card_fin]
+  have := Finset.card_le_card hsub
+  omega
+
 open Kimchi.Quotient.Permutation in
 /-- **The characterization.** In a large enough field, a wellformed index is satisfied
 iff honest quotient data exists at every nondegenerate challenge pair — Phase B and
@@ -697,9 +772,58 @@ theorem satisfies_iff_fullFamily_dvd [Fintype F] (idx : Index F n)
   · intro h
     obtain ⟨b, g, hb, hg, hnd⟩ := exists_nondegenerate_grid
       (idx.permWitnessPoly wTab) idx.shifts idx.wiringPerm hF (ω := idx.omega)
-    choose zg hzg using fun a c => h (b a) (g c) (hnd a c)
-    exact idx.satisfies_of_fullFamily_dvd pub wTab b g hb hg (by omega) (by omega)
-      zg hzg
+    -- the (value, address) pair multisets of the index wiring (as in `copy_soundness_of_dvd`)
+    have hcard₁ : Multiset.card
+        (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+          ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+            idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
+          = 7 * (n - idx.zkRows) := by
+      rw [Multiset.card_map]
+      show (Finset.univ : Finset (Fin 7 × Fin (n - idx.zkRows))).card = _
+      rw [Finset.card_univ, Fintype.card_prod, Fintype.card_fin, Fintype.card_fin]
+    have hcard₂ : Multiset.card
+        (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+          ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+            idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+              * idx.omega
+                ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ)))
+          = 7 * (n - idx.zkRows) := by
+      rw [Multiset.card_map]
+      show (Finset.univ : Finset (Fin 7 × Fin (n - idx.zkRows))).card = _
+      rw [Finset.card_univ, Fintype.card_prod, Fintype.card_fin, Fintype.card_fin]
+    -- pigeonhole: the bad sets have card ≤ 7·(n−zkRows) < 7·(n−zkRows)+1, so the
+    -- injective grid families `b`, `g` each hit a good challenge outside them.
+    obtain ⟨a, ha⟩ := exists_notMem_of_card_lt hb
+      (badBetas
+        (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+          ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+            idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
+        (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+          ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+            idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+              * idx.omega
+                ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))))
+      (by
+        refine lt_of_le_of_lt (card_badBetas_le _ _) ?_
+        rw [hcard₁, hcard₂]
+        omega)
+    obtain ⟨c, hc⟩ := exists_notMem_of_card_lt hg
+      (badGammas
+        (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+          ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+            idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
+        (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+          ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
+            idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
+              * idx.omega
+                ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ)))
+        (b a))
+      (by
+        refine lt_of_le_of_lt (card_badGammas_le _ _ _) ?_
+        rw [hcard₁, hcard₂]
+        omega)
+    obtain ⟨z, hz⟩ := h (b a) (g c) (hnd a c)
+    exact idx.satisfies_of_fullFamily_dvd pub wTab (b a) (g c) ha hc z hz
 
 end Index
 

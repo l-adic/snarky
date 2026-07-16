@@ -48,7 +48,6 @@ def roots : List Name :=
     `Kimchi.Commitment.IPA.batch_soundness,
     `Kimchi.Quotient.zH_dvd_iff,
     `Kimchi.Quotient.genericRows_iff_dvd,
-    `Kimchi.Quotient.identity_of_evals,
     `Kimchi.Quotient.dvd_separation,
     `Kimchi.Quotient.rows_iff_dvd_of,
     `Kimchi.Quotient.rowsSel_iff_dvd,
@@ -85,15 +84,36 @@ def roots : List Name :=
     `Kimchi.Index.Index.satisfies_iff_fullFamily_dvd,
     `Kimchi.Index.satisfies_congr_unmasked,
     `Kimchi.Quotient.multiset_eq_of_pairFactor_prod_eq,
-    `Kimchi.Quotient.identity_of_grid_evals,
-    `Kimchi.Quotient.multiset_eq_of_grid_prod_evals,
+    `Kimchi.Quotient.multiset_eq_of_prod_eval,
     `Kimchi.Commitment.IPA.chunked_ipa_soundness,
     `Kimchi.Commitment.IPA.chunked_batch_soundness,
     `Kimchi.Verifier.verify_reflects, `Kimchi.Verifier.ipaVesta_sound,
     `Kimchi.Verifier.ipaPallas_sound,
+    `Kimchi.Verifier.kimchiVerify_reflects, `Kimchi.Verifier.barycentricPubEval_eq,
     `Kimchi.Verifier.Equation.verifierEquation_iff,
     `Kimchi.Verifier.Equation.satisfies_of_verifierEquation,
+    `Kimchi.Verifier.kimchiProof_sound_of_openings,
     `Kimchi.Verifier.kimchiProof_sound,
+    `Kimchi.Verifier.kimchiBundle_sound,
+    `Kimchi.Verifier.kimchiVesta_sound, `Kimchi.Verifier.kimchiPallas_sound,
+    `Kimchi.Verifier.kimchiVesta_run_sound, `Kimchi.Verifier.kimchiPallas_run_sound,
+    `Kimchi.Verifier.kimchiBundle_sound_error,
+    `Kimchi.Verifier.kimchiVesta_sound_error, `Kimchi.Verifier.kimchiPallas_sound_error,
+    `Kimchi.Quotient.exists_rectangle,
+    `Kimchi.Verifier.kimchiVesta_sound_density,
+    `Kimchi.Verifier.kimchiPallas_sound_density,
+    `Kimchi.Quotient.card_heavyRows, `Kimchi.Quotient.exists_distinct_powers,
+    `Kimchi.Verifier.kimchiProof_sound_algebraic,
+    `Kimchi.Verifier.kimchiVesta_sound_algebraic,
+    `Kimchi.Verifier.kimchiPallas_sound_algebraic,
+    `Kimchi.Verifier.kimchiProof_sound_algebraic_ft,
+    `Kimchi.Verifier.kimchiVesta_sound_algebraic_ft,
+    `Kimchi.Verifier.kimchiPallas_sound_algebraic_ft,
+    `Kimchi.Verifier.ft_opening_of_reflected,
+    `Kimchi.Verifier.ft_opening_of_reflected_vesta,
+    `Kimchi.Verifier.ft_opening_of_reflected_pallas,
+    `Kimchi.Verifier.kimchiVesta_run_sound_algebraic_ft,
+    `Kimchi.Verifier.kimchiPallas_run_sound_algebraic_ft,
     -- The Snarky DSL library (see Snarky/Laws.lean): the interpreter laws.
     `Snarky.build_eraseWitness,
     `Snarky.prove_assignments_le,
@@ -112,6 +132,10 @@ def allowed : List Name :=
     -- The declared Fiat-Shamir assumption: Poseidon-accepted runs admit de-blinded
     -- accepting transcript trees (`Kimchi/Verifier/Reflection.lean`). One per Pasta curve.
     `Kimchi.Verifier.poseidon_fiat_shamir_vesta, `Kimchi.Verifier.poseidon_fiat_shamir_pallas,
+    -- The deployed-run Fiat–Shamir assumption, anchored on the warm reflected run
+    -- (`Ipa.verifyFrom (runWarm) (runInput)`) rather than the cold `Ipa.verify`. One per curve;
+    -- the residue-free ft opening (`ft_opening_of_reflected_*`) is stated over this.
+    `Kimchi.Verifier.kimchi_fiat_shamir_vesta, `Kimchi.Verifier.kimchi_fiat_shamir_pallas,
     `Kimchi.Pasta.pallas_eigen, `Kimchi.Pasta.vesta_eigen, ]
 
 /-- A CompElliptic `native_decide` witness: an axiom under the `CompElliptic` namespace carrying the

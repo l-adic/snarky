@@ -7,15 +7,16 @@ import Kimchi.Quotient.EndoMul
 # The quotient-argument soundness
 
 The headline of the commitment-free quotient argument, one statement per gate: "if the
-aggregated eval-check passes at enough distinct `ζ` over enough distinct `α`, then every
-selector-active row of the gate satisfies its `Gate.<G>.Holds`". Each is an immediate
-specialization of the engine `Kimchi.Quotient.Argument.soundness`
-(`Kimchi/Quotient/Lift.lean`) at that gate's `argument` instance.
+aggregated eval-check passes at a single good challenge `ζ` over a single good aggregation
+challenge `α`, then every selector-active row of the gate satisfies its `Gate.<G>.Holds`".
+Each is an immediate specialization of the single-challenge counting engine
+`Kimchi.Quotient.Argument.soundness` (`Kimchi/Quotient/Lift.lean`) at that gate's
+`argument` instance.
 
-It is entirely **commitment-free**: the "enough distinct challenges" premises are ordinary
-injectivity hypotheses on the evaluation nodes `ζ : Fin N → F` and the aggregation challenges
-`α : Fin k → F`, and the degree accounting is kept abstract through a single bound `D`. There
-is no group, no SRS, no Fiat–Shamir.
+It is entirely **commitment-free**: the "good challenge" premises are the counting
+(Schwartz–Zippel) hypotheses that the single aggregation challenge `α` avoids the proved-small
+`badAlphas` set and the single evaluation node `ζ` avoids the proved-small `badZetas` set of the
+aggregate. No injectivity, no degree bounds, no group, no SRS, no Fiat–Shamir.
 
 No gate formula is restated anywhere in this file — the per-gate soundness only reuses the
 read-only `Gate.<G>.constraints` applied to the gate's poly-witness together with that gate's
@@ -43,23 +44,22 @@ selector-active row satisfies the CompleteAdd gate predicate.
 
 Proof: specialization of `Argument.soundness` at the instance `argument`; single-row, so
 `qTab := wTab` and the next-row / coefficient families are unused. -/
-theorem soundness {F : Type*} [Field F] [DecidableEq F] {n N : ℕ} {ω : F}
+theorem soundness {F : Type*} [Field F] [DecidableEq F] {n : ℕ} {ω : F}
     (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     (wTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1)
-    (ζ : Fin N → F) (hζ : Function.Injective ζ)
-    (α : Fin (Gate.AddComplete.constraints (polyWitness ω wTab)).length → F)
-    (hα : Function.Injective α)
-    (t : Fin (Gate.AddComplete.constraints (polyWitness ω wTab)).length → Polynomial F)
-    (D : ℕ) (hD : D < N)
-    (hCdeg : ∀ s, (aggregate (α s) (fun c => columnPoly ω sel *
-        (Gate.AddComplete.constraints (polyWitness ω wTab)).get c)).natDegree ≤ D)
-    (htdeg : ∀ s, (t s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ s p, (aggregate (α s) (fun c => columnPoly ω sel *
-        (Gate.AddComplete.constraints (polyWitness ω wTab)).get c)).eval (ζ p)
-        = (t s * zH F n).eval (ζ p)) :
+    (α : F)
+    (hα : α ∉ badAlphas (fun c => columnPoly ω sel *
+        (Gate.AddComplete.constraints (polyWitness ω wTab)).get c) ω n)
+    (t : Polynomial F)
+    (ζ : F)
+    (hζ : ζ ∉ badZetas (aggregate α (fun c => columnPoly ω sel *
+        (Gate.AddComplete.constraints (polyWitness ω wTab)).get c)) t n)
+    (hcheck : (aggregate α (fun c => columnPoly ω sel *
+        (Gate.AddComplete.constraints (polyWitness ω wTab)).get c)).eval ζ
+        = (t * zH F n).eval ζ) :
     ∀ i, sel i = 1 → Gate.AddComplete.Holds (rowWitness wTab i) := by
   haveI : NeZero n := ⟨Nat.pos_iff_ne_zero.mp hn⟩
-  exact argument.soundness hω wTab wTab sel hsel ζ hζ α hα t D hD hCdeg htdeg hcheck
+  exact argument.soundness hω wTab wTab sel hsel α hα t ζ hζ hcheck
 
 end Kimchi.Quotient.AddComplete
 
@@ -72,22 +72,21 @@ VarBaseMul gate (`[NeZero n]` for the cyclic successor; the poly-witness next-ro
 through `shift`). Every selector-active row satisfies the VarBaseMul gate predicate.
 
 Proof: specialization of `Argument.soundness` at the instance `argument`. -/
-theorem soundness {F : Type*} [Field F] [DecidableEq F] {n N : ℕ} [NeZero n] {ω : F}
+theorem soundness {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n] {ω : F}
     (hω : IsPrimitiveRoot ω n)
     (wTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1)
-    (ζ : Fin N → F) (hζ : Function.Injective ζ)
-    (α : Fin (Gate.VarBaseMul.constraints (polyWitness ω wTab)).length → F)
-    (hα : Function.Injective α)
-    (t : Fin (Gate.VarBaseMul.constraints (polyWitness ω wTab)).length → Polynomial F)
-    (D : ℕ) (hD : D < N)
-    (hCdeg : ∀ s, (aggregate (α s) (fun c => columnPoly ω sel *
-        (Gate.VarBaseMul.constraints (polyWitness ω wTab)).get c)).natDegree ≤ D)
-    (htdeg : ∀ s, (t s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ s p, (aggregate (α s) (fun c => columnPoly ω sel *
-        (Gate.VarBaseMul.constraints (polyWitness ω wTab)).get c)).eval (ζ p)
-        = (t s * zH F n).eval (ζ p)) :
+    (α : F)
+    (hα : α ∉ badAlphas (fun c => columnPoly ω sel *
+        (Gate.VarBaseMul.constraints (polyWitness ω wTab)).get c) ω n)
+    (t : Polynomial F)
+    (ζ : F)
+    (hζ : ζ ∉ badZetas (aggregate α (fun c => columnPoly ω sel *
+        (Gate.VarBaseMul.constraints (polyWitness ω wTab)).get c)) t n)
+    (hcheck : (aggregate α (fun c => columnPoly ω sel *
+        (Gate.VarBaseMul.constraints (polyWitness ω wTab)).get c)).eval ζ
+        = (t * zH F n).eval ζ) :
     ∀ i, sel i = 1 → Gate.VarBaseMul.Holds (rowWitness wTab i) :=
-  argument.soundness hω wTab wTab sel hsel ζ hζ α hα t D hD hCdeg htdeg hcheck
+  argument.soundness hω wTab wTab sel hsel α hα t ζ hζ hcheck
 
 end Kimchi.Quotient.VarBaseMul
 
@@ -101,21 +100,20 @@ EndoMul gate, with an extra endomorphism constant `endo : F` (the polynomial sid
 
 Proof: specialization of `Argument.soundness` at the instance `argument endo`; the endo
 constant transports definitionally between the two carriers. -/
-theorem soundness {F : Type*} [Field F] [DecidableEq F] {n N : ℕ} [NeZero n] {ω : F}
+theorem soundness {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n] {ω : F}
     (endo : F) (hω : IsPrimitiveRoot ω n)
     (wTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1)
-    (ζ : Fin N → F) (hζ : Function.Injective ζ)
-    (α : Fin (Gate.EndoMul.constraints (C endo) (polyWitness ω wTab)).length → F)
-    (hα : Function.Injective α)
-    (t : Fin (Gate.EndoMul.constraints (C endo) (polyWitness ω wTab)).length → Polynomial F)
-    (D : ℕ) (hD : D < N)
-    (hCdeg : ∀ s, (aggregate (α s) (fun c => columnPoly ω sel *
-        (Gate.EndoMul.constraints (C endo) (polyWitness ω wTab)).get c)).natDegree ≤ D)
-    (htdeg : ∀ s, (t s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ s p, (aggregate (α s) (fun c => columnPoly ω sel *
-        (Gate.EndoMul.constraints (C endo) (polyWitness ω wTab)).get c)).eval (ζ p)
-        = (t s * zH F n).eval (ζ p)) :
+    (α : F)
+    (hα : α ∉ badAlphas (fun c => columnPoly ω sel *
+        (Gate.EndoMul.constraints (C endo) (polyWitness ω wTab)).get c) ω n)
+    (t : Polynomial F)
+    (ζ : F)
+    (hζ : ζ ∉ badZetas (aggregate α (fun c => columnPoly ω sel *
+        (Gate.EndoMul.constraints (C endo) (polyWitness ω wTab)).get c)) t n)
+    (hcheck : (aggregate α (fun c => columnPoly ω sel *
+        (Gate.EndoMul.constraints (C endo) (polyWitness ω wTab)).get c)).eval ζ
+        = (t * zH F n).eval ζ) :
     ∀ i, sel i = 1 → Gate.EndoMul.Holds endo (rowWitness wTab i) :=
-  (argument endo).soundness hω wTab wTab sel hsel ζ hζ α hα t D hD hCdeg htdeg hcheck
+  (argument endo).soundness hω wTab wTab sel hsel α hα t ζ hζ hcheck
 
 end Kimchi.Quotient.EndoMul

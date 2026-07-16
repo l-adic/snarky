@@ -9,7 +9,7 @@ The bridge between the row-level permutation constraint and the grand-product al
 `z(k+1) · denₖ = z(k) · numₖ`, and the boundary pin `z(row m) = 1`; telescoping the
 recurrence forces `∏ num = ∏ den`. At the challenges `(β, γ)` the factors are the pair
 factors `wᵢ + β·posᵢ + γ`, so the conclusion is exactly the hypothesis of
-`multiset_eq_of_grid_prod_evals`.
+`multiset_eq_of_prod_eval`.
 
 This is **pure finite induction**: no domain, no root of unity, no polynomials — indexed
 families over an abstract field. The kimchi-facing content (the `zkpm`-gated wire

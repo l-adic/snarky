@@ -1,7 +1,7 @@
 import Kimchi.Quotient.Domain
 import Kimchi.Quotient.Shifted
 import Kimchi.Quotient.Aggregate
-import Kimchi.Quotient.Pinning
+import Kimchi.Quotient.SchwartzZippel
 
 /-!
 # The generic lift engine
@@ -123,30 +123,6 @@ theorem rowsSel_iff_dvd (hω : IsPrimitiveRoot ω n) (hn : 0 < n) (P : List (Pol
         exact List.mem_map.mpr ⟨E, hE, rfl⟩
       exact h ⟨i, hi⟩ h1 (E.eval (ω ^ i)) hmem
 
-/-! ## The composed pinning–separation engine -/
-
-/-- **Divisibility from the aggregated eval-check.** Fix a primitive `n`-th root `ω`, an
-injective node vector `ζ : Fin N → F`, an injective challenge vector `α : Fin k → F`, and two
-families `E, t : Fin k → F[X]`. Under the abstract degree bound `D < N` on the aggregate and
-on `t s · Z_H`, if the aggregated eval-check
-`(aggregate (α s) E)(ζ p) = (t s · Z_H)(ζ p)` holds for every challenge `s` and node `p`, then
-`Z_H ∣ E c` for every constraint index `c`.
-
-Proof: for each `s`, `zH_dvd_of_evals` pins `Z_H ∣ aggregate (α s) E`; feeding
-this to `dvd_separation` across the `k` distinct challenges yields `Z_H ∣ E c`. -/
-theorem dvd_of_evalCheck {k N : ℕ}
-    (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
-    (ζ : Fin N → F) (hζ : Function.Injective ζ)
-    (α : Fin k → F) (hα : Function.Injective α)
-    (E t : Fin k → Polynomial F) (D : ℕ) (hD : D < N)
-    (hCdeg : ∀ s, (aggregate (α s) E).natDegree ≤ D)
-    (htdeg : ∀ s, (t s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ s : Fin k, ∀ p : Fin N,
-        (aggregate (α s) E).eval (ζ p) = (t s * zH F n).eval (ζ p)) :
-    ∀ c, zH F n ∣ E c :=
-  dvd_separation hω hn α hα E
-    (fun s => zH_dvd_of_evals hω hn ζ hζ (aggregate (α s) E) (t s) D
-      (hCdeg s) (htdeg s) hD (hcheck s))
 
 /-! ## The cell environment -/
 
@@ -250,37 +226,37 @@ theorem Argument.rowsSel_iff_dvd [NeZero n] (G : Argument F) (hω : IsPrimitiveR
   Kimchi.Quotient.rowsSel_iff_dvd hω (Nat.pos_of_neZero n) _
     (fun i => G.constraints (rowEnv wTab qTab i)) sel hsel (G.bridge hω wTab qTab)
 
-/-! ## Quotient-argument soundness -/
 
-/-- **`Argument` quotient soundness.** With the abstract quotient-argument hypotheses over the
-selector-gated family `c ↦ (columnPoly ω sel) * (constraints (polyEnv ω wTab qTab)).get c` —
-an injective node vector `ζ`, an injective challenge vector `α`, an abstract degree bound
-`D < N`, and the aggregated eval-check passing at every challenge and node — every
-selector-active row satisfies the gate's row constraints, i.e. every constraint expression of
-the row environment is zero.
+/-! ## Quotient-argument soundness — single-challenge (counting) form -/
 
-Proof: apply `dvd_of_evalCheck` to the gated family to obtain
-`∀ c, zH ∣ (columnPoly ω sel) * (constraints …).get c`; converting the `Fin length` indexing to
-`∈ constraints …` membership and feeding the instance's selector-gated
-`Argument.rowsSel_iff_dvd` gives the row constraints on the selected rows. -/
-theorem Argument.soundness [DecidableEq F] {N : ℕ} [NeZero n] (G : Argument F)
+/-- **`Argument` quotient soundness, single-challenge form.** The counting–Schwartz–Zippel
+analogue of `Argument.soundness`: the injective challenge family `α : Fin _ → F`, the injective
+node family `ζ : Fin N → F`, and the per-challenge quotient family `t : Fin _ → F[X]` all
+collapse — to a *single* challenge `α` (avoiding the proved-small `badAlphas` set), a *single*
+good node `ζ` (avoiding the proved-small `badZetas` set of the aggregate), and a *single*
+quotient `t`. No injectivity, no degree bounds. Conclusion is identical to `Argument.soundness`:
+every selector-active row satisfies the gate's row constraints.
+
+Project-local: this is the bridge W2 consumers (`Index/Soundness.lean` and the per-gate
+wrappers) delegate to once the surrogate is retired; it composes the single-ζ counting
+`dvd_of_evalCheck` exactly as `Argument.soundness` composes `dvd_of_evalCheck`. -/
+theorem Argument.soundness [DecidableEq F] [NeZero n] (G : Argument F)
     (hω : IsPrimitiveRoot ω n)
     (wTab qTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1)
-    (ζ : Fin N → F) (hζ : Function.Injective ζ)
-    (α : Fin (G.constraints (polyEnv ω wTab qTab)).length → F)
-    (hα : Function.Injective α)
-    (t : Fin (G.constraints (polyEnv ω wTab qTab)).length → Polynomial F)
-    (D : ℕ) (hD : D < N)
-    (hCdeg : ∀ s, (aggregate (α s) (fun c => columnPoly ω sel *
-        (G.constraints (polyEnv ω wTab qTab)).get c)).natDegree ≤ D)
-    (htdeg : ∀ s, (t s * zH F n).natDegree ≤ D)
-    (hcheck : ∀ s p, (aggregate (α s) (fun c => columnPoly ω sel *
-        (G.constraints (polyEnv ω wTab qTab)).get c)).eval (ζ p)
-        = (t s * zH F n).eval (ζ p)) :
+    (α : F)
+    (hα : α ∉ badAlphas (fun c => columnPoly ω sel *
+        (G.constraints (polyEnv ω wTab qTab)).get c) ω n)
+    (t : Polynomial F)
+    (ζ : F)
+    (hζ : ζ ∉ badZetas (aggregate α (fun c => columnPoly ω sel *
+        (G.constraints (polyEnv ω wTab qTab)).get c)) t n)
+    (hcheck : (aggregate α (fun c => columnPoly ω sel *
+        (G.constraints (polyEnv ω wTab qTab)).get c)).eval ζ
+        = (t * zH F n).eval ζ) :
     ∀ i, sel i = 1 → ∀ e ∈ G.constraints (rowEnv wTab qTab i), e = 0 := by
-  have hdvd := dvd_of_evalCheck hω (Nat.pos_of_neZero n) ζ hζ α hα
+  have hdvd := dvd_of_evalCheck hω
     (fun c => columnPoly ω sel * (G.constraints (polyEnv ω wTab qTab)).get c)
-    t D hD hCdeg htdeg hcheck
+    α hα t ζ hζ hcheck
   apply (G.rowsSel_iff_dvd hω wTab qTab sel hsel).mp
   intro E hE
   obtain ⟨c, rfl⟩ := List.mem_iff_get.mp hE
