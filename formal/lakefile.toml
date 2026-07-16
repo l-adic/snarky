@@ -1,45 +1,45 @@
-name = "kimchi-formal"
-defaultTargets = ["Kimchi", "Snarky", "kimchi-demo"]
+# The l-adic formal-verification workspace. This root package is a pure AGGREGATOR — it
+# owns no libraries. Every component is a standalone path-required package, none
+# privileged:
+#
+#   pasta/           the Pasta curve trust base (Hasse/CM axioms live here)
+#   poseidon/        the Poseidon sponge spec + the shared fixture kit
+#   bulletproof-pcs/ the IPA polynomial commitment + its Fiat-Shamir instantiation
+#   kimchi/          the kimchi protocol formalization (arithmetization, PIOP, verifier,
+#                    soundness capstones)
+#   snarky/          the deep-embedded circuit DSL (sits on top of kimchi via its bridge)
+#
+# Each package builds standalone from its own directory and carries its own scripts
+# (axiom gates, fixture checks, API manifest). Building/running from HERE puts everything
+# in one shared workspace (one Mathlib), which is how CI drives all of it. The only
+# scripts at this level are the genuinely workspace-wide tools: scripts/check-style.sh
+# (the formatter contract) and scripts/deadcode.{lean,sh} (cross-package reachability
+# over the union of the packages' roots.txt manifests).
+name = "formal"
 
-# CompElliptic: concrete short-Weierstrass `SWCurve` / `SWPoint` with a proven group law,
-# and the Pasta curve instances. Vendored as a git submodule at vendor/CompElliptic so the
-# revision is locked to this repo rather than floating on upstream main.
 [[require]]
-name = "CompElliptic"
-path = "vendor/CompElliptic"
+name = "pasta"
+path = "pasta"
 
-# Ironwood (l-adic fork of zcash/ironwood): the Zcash team's Lean formalization of the Orchard/halo2
-# inner-product-argument polynomial commitment — the SAME protocol as kimchi's IPA (identical
-# `b_poly = ∏(1 + uⱼ·x^{2ʲ})` and `[uⱼ⁻¹]Lⱼ + [uⱼ]Rⱼ` recombination). Provides the sorry/axiom-free
-# `ipa_soundV` tree-extraction and `commitmentBinding_iff_no_relation`. Vendored as a submodule at
-# vendor/ironwood; forked to l-adic and pinned to official Lean/Mathlib v4.30.0. The Lake package name
-# is `Zcash` (`import Zcash.Snark.Soundness.IpaSoundness`). It requires CompElliptic from git, but our
-# root path-require above (same commit 12c0bc5) takes precedence, so there is one shared CompElliptic.
 [[require]]
-name = "Zcash"
-path = "vendor/ironwood"
+name = "poseidon"
+path = "poseidon"
 
-# Mathlib gives us prime fields (`ZMod p`) and the elliptic-curve group law
-# (`WeierstrassCurve.Affine`), the trusted oracle the EC gates are checked against. Pinned to
-# the tag matching our Lean toolchain (v4.30.0). Kept LAST so this direct pin wins over the
-# mathlib revision CompElliptic/CompPoly/Zcash pull in transitively.
+[[require]]
+name = "bulletproof-pcs"
+path = "bulletproof-pcs"
+
+[[require]]
+name = "kimchi"
+path = "kimchi"
+
+[[require]]
+name = "snarky"
+path = "snarky"
+
+# Direct mathlib pin (matching the toolchain) so this workspace's resolution wins over
+# anything the packages pull in transitively.
 [[require]]
 name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4.git"
 rev = "v4.30.0"
-
-[[lean_lib]]
-name = "Kimchi"
-
-# Snarky: a deep-embedded port of the PureScript circuit-building DSL
-# (packages/snarky/src/Snarky/Circuit/DSL/Monad.purs). Lives beside Kimchi so the
-# "no circuit monad" stance of the Kimchi.* namespace stays true. The core (`import Snarky`)
-# is Mathlib-free and builds in seconds; the `Snarky.Kimchi.*` bridge submodules import
-# Kimchi (and thus Mathlib), so the glob builds them without the root pulling them in.
-[[lean_lib]]
-name = "Snarky"
-globs = ["Snarky", "Snarky.+"]
-
-[[lean_exe]]
-name = "kimchi-demo"
-root = "Main"

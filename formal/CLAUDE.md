@@ -8,8 +8,10 @@ Gates are modelled as **plain Lean predicates over witness structures**, and pro
 faithful to **Mathlib's elliptic-curve group law** (`WeierstrassCurve.Affine`). If you've
 seen the Clean framework, forget its vocabulary here — none of it applies.
 
-The package also hosts a second, independent library: **`Snarky/`** (namespace
-`Snarky.*`), a deep-embedded Lean port of the PureScript circuit-building DSL
+A second library lives in its own package **`snarky/`** (namespace `Snarky.*`, package
+`snarky`, which *requires kimchi* — its `Snarky.Kimchi.*` bridge interprets reified
+circuits against the verified generic-gate checker): a deep-embedded Lean port of the
+PureScript circuit-building DSL
 (`packages/snarky/src/Snarky/Circuit/DSL/Monad.purs`). It models how constraint systems
 are *constructed*, complementing `Kimchi`'s constraint-systems-as-data view: a reified op
 tree `CircuitM` (constraint type kept abstract), pure `build`/`prove` interpreters
@@ -24,9 +26,26 @@ core functions compiled by well-founded recursion in executable paths (e.g. `Vec
 
 Build: `make lean-build` (from repo root) or `lake build` (from `formal/`). The toolchain
 is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakefile.toml`
-(Mathlib + `CompElliptic` at `vendor/CompElliptic`, which transitively pulls `CompPoly`, plus
-the vendored `Zcash`/Ironwood IPA formalization at `vendor/ironwood`). `import Mathlib` is used
-wholesale.
+(Mathlib + `CompElliptic` at `vendor/CompElliptic`, which transitively pulls `CompPoly`).
+`import Mathlib` is used wholesale in the proof-heavy trees.
+
+**Package layout.** `formal/` is a lake workspace of standalone path-required packages:
+
+| Package | Lib(s) | Contents |
+| --- | --- | --- |
+| `pasta/` | `Pasta` | the Pasta curve trust base: the generic EC order/shape sugar, the GLV constants, the **Hasse/CM axioms** and derived orders, point-group module instances, the wire scalar-shift algebra (`Pasta.Shifted`) |
+| `poseidon/` | `Poseidon`, `FixtureKit` | the Poseidon permutation + duplex sponge over both Pasta base fields, the `FqSponge` consumer layer, SvdW map-to-curve; plus the shared JSON-fixture/trace kit. Own fixtures + check scripts (`poseidon/scripts/`) |
+| `bulletproof-pcs/` | `Bulletproof` | the IPA polynomial commitment: abstract scheme + soundness, the executable Pasta wire verifier (Poseidon-driven), the **`poseidon_fiat_shamir_*` axioms** + `ipa{Vesta,Pallas}_sound`, IPA fixtures + check script |
+| `kimchi/` | `Kimchi` | the kimchi protocol: gates/circuits (arithmetization), `Quotient/` (PIOP), `Index/`, the kimchi verifier + linearization + soundness capstones |
+| `snarky/` | `Snarky` | the deep-embedded circuit-DSL port + its `Snarky.Kimchi.*` bridge; sits ON TOP (requires kimchi); own axiom gate (`snarky/scripts/check_axioms.sh`) |
+
+No package is privileged: `formal/` itself is a pure aggregator workspace (its lakefile
+owns no libraries, only requires). Each package builds standalone from its own directory
+and owns its scripts (axiom gate, fixture checks, `roots.txt` API manifest); building or
+running gates from `formal/` puts everything in one shared workspace (one Mathlib) — how
+CI drives it. The only workspace-level scripts are `scripts/check-style.sh` (the
+formatter contract) and `scripts/deadcode.{lean,sh}` (cross-package reachability over
+the union of the packages' manifests).
 
 **Always run `formal/scripts/check-style.sh` before committing any change under `formal/`** —
 and fix anything it reports. Lean 4 has no autoformatter, so this script is the formatter
@@ -51,19 +70,16 @@ verified checker".
 
 Above the gate stack, the library has grown four further trees:
 
-- **`Kimchi/Commitment/IPA/`** — the IPA polynomial commitment (opening/batch verifier
-  models and their soundness; trust = DL-binding + the Fiat-Shamir assumption).
 - **`Kimchi/Quotient/`** — the vanishing-argument layer (domain, divisibility engine, the
   `Argument`/`ArgumentEnv` per-gate lifts, grand-product core).
-- **`Kimchi/Sponge/`** — the Fiat-Shamir instantiation, *executable and definitional*: the
-  Poseidon permutation and duplex automaton over both Pasta base fields, the field-pair
-  generic `FqSponge` consumer layer, and the SvdW map-to-curve. Validated against
-  proof-systems vectors, not proved sound (that is the declared FS assumption).
-- **`Kimchi/Fixture/` + `Kimchi/Verifier/`** — JSON decoders and the trace-check harness
-  for the fixture scripts, and the executable Vesta IPA verifier over wire data.
+- **`Kimchi/Fixture/` + `Kimchi/Verifier/`** — the kimchi-proof JSON decoders and the
+  executable kimchi verifier, its reflection, and the soundness capstones.
+- The IPA commitment lives in the `bulletproof-pcs` package (`Bulletproof.*`), the sponge
+  in the `poseidon` package (`Poseidon.*`); see the package table above.
 
-**Import discipline for the executable trees**: `Sponge/`, `Fixture/`, `Verifier/`,
-`Pasta/Constants.lean`, and the IPA def-modules use *targeted* Mathlib imports (not
+**Import discipline for the executable trees**: the `poseidon` package, `Fixture/`,
+`Verifier/`, `pasta/Pasta/Constants.lean`, and the `Bulletproof` def-modules use
+*targeted* Mathlib imports (not
 `import Mathlib`) so the `scripts/check_*` drivers load a small closure and run in seconds.
 Keep new modules in these trees targeted; the proof-heavy trees keep the wholesale
 convention. Also: state threaded through executable folds must be concrete data (tuples,
@@ -219,17 +235,24 @@ proof-systems bump). The drivers, each a few seconds after `lake build Kimchi`, 
 CI-wired in `.github/workflows/lean.yml`:
 
 ```sh
-scripts/check_axioms.sh          # every headline theorem reduces to the allowed axiom set
-scripts/check_sponge_vectors.sh  # Poseidon automaton vs mina_poseidon traces (Fq and Fp)
-scripts/check_fq_sponge.sh       # FqSponge op traces + group_map vectors (both curves)
-scripts/check_ipa_fixture.sh     # end-to-end: the executable verifiers (both curves) accept wire data
-scripts/check_perm_fixture.sh    # permutation argument row semantics on production kimchi data
-scripts/check_index_fixture.sh   # index model: build-by-decision, derived columns, satisfiability
+kimchi/scripts/check_axioms.sh               # kimchi's headline theorems reduce to the allowed axiom set
+pasta/scripts/check_axioms.sh                # the derived trust base (no eigen)
+bulletproof-pcs/scripts/check_axioms.sh      # the PCS soundness surface over its declared FS axioms
+snarky/scripts/check_axioms.sh               # the DSL interpreter laws (standard axioms only)
+poseidon/scripts/check_sponge_vectors.sh     # Poseidon automaton vs mina_poseidon traces (Fq and Fp)
+poseidon/scripts/check_fq_sponge.sh          # FqSponge op traces + group_map vectors (both curves)
+bulletproof-pcs/scripts/check_ipa_fixture.sh # the executable IPA verifiers accept wire data
+kimchi/scripts/check_perm_fixture.sh         # permutation argument row semantics on production data
+kimchi/scripts/check_index_fixture.sh        # index model: build-by-decision, derived columns, satisfiability
 ```
 
-New trace checks build on `Kimchi.Fixture.Parse` (element decoders) and
-`Kimchi.Fixture.Trace` (the cases-x-ops driver): supply an op type, a decoder, and a
-`step : state -> op -> state x Bool`.
+(Every package-local check runs standalone from its package dir, or from `formal/` with
+its `*_FIXTURES_DIR` env var pointing at the package's fixtures — that is how CI invokes
+them all, sharing the aggregator workspace.)
+
+New trace checks build on `FixtureKit.Parse` (element decoders) and
+`FixtureKit.Trace` (the cases-x-ops driver, both in the `poseidon` package): supply an
+op type, a decoder, and a `step : state -> op -> state x Bool`.
 
 ## Conventions
 

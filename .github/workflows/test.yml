@@ -282,7 +282,7 @@ jobs:
 
   # ---- verified witness check (Lean) ----------------------------------
   # The harness's witness-carrying results are checked against the Lean index
-  # model (formal/scripts/check_ps_witness.sh): decide `Satisfies` on the dumped
+  # model (formal/kimchi/scripts/check_ps_witness.lean): decide `Satisfies` on the dumped
   # witness plus corruption rejections. Lives here (not lean.yml) because it
   # consumes the artifact from test-circuit-diffs — `needs:`/artifacts only span
   # a single workflow. On a Kimchi build-cache hit this is a few minutes; it
@@ -299,8 +299,8 @@ jobs:
         # are needed.
         submodules: false
 
-    - name: Check out the Lean dependency submodules (CompElliptic + ironwood)
-      run: git submodule update --init formal/vendor/CompElliptic formal/vendor/ironwood
+    - name: Check out the Lean dependency submodule (CompElliptic)
+      run: git submodule update --init formal/vendor/CompElliptic
 
     - name: Setup Lean + build the library
       uses: ./.github/actions/setup-lean
@@ -314,7 +314,9 @@ jobs:
     - name: Check witnesses against the index model
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        bash formal/scripts/check_ps_witness.sh
+        cd formal
+        export PATH="$HOME/.elan/bin:$PATH"
+        lake env lean kimchi/scripts/check_ps_witness.lean
 
   # ---- build the example app for GitHub Pages -------------------------
   # The in-browser block-pipeline app: wasm kimchi backend + vite bundle,

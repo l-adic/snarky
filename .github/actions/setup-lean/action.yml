@@ -1,7 +1,8 @@
 name: Setup Lean (Kimchi formalization)
 description: >
   elan (pinned toolchain) + Mathlib olean cloud cache + a build-directory cache for the
-  Kimchi + Snarky libraries, then `lake build Kimchi Snarky`. Shared by the Lean workflow and the
+  libraries (Kimchi, Snarky, and the pasta/poseidon/bulletproof-pcs packages), then a full
+  `lake build`. Shared by the Lean workflow and the
   witness-check job in the CI workflow so both build the library the same way.
 runs:
   using: composite
@@ -20,7 +21,10 @@ runs:
     - name: Cache the Kimchi build directory
       uses: actions/cache@v3
       with:
-        path: formal/.lake/build
+        path: |
+          formal/.lake/build
+          formal/*/.lake/build
+          formal/vendor/*/.lake/build
         key: lean-${{ runner.os }}-${{ hashFiles('formal/lean-toolchain', 'formal/lakefile.toml') }}-${{ hashFiles('formal/**/*.lean') }}
         restore-keys: |
           lean-${{ runner.os }}-${{ hashFiles('formal/lean-toolchain', 'formal/lakefile.toml') }}-
@@ -50,6 +54,6 @@ runs:
         else
           echo "No ProofWidgets release tarball for $rev; continuing"
         fi
-        # Build our libraries: typechecks every proof and runs the `#eval`s. Both
-        # `Kimchi` and `Snarky` (the deep-embedded DSL port) — the axiom gate imports both.
-        lake build Kimchi Snarky
+        # Build every library across the workspace packages: typechecks every proof
+        # and runs the `#eval`s (Kimchi, Snarky, pasta, poseidon, bulletproof-pcs).
+        lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof

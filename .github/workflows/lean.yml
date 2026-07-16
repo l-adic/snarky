@@ -3,7 +3,7 @@ name: Lean
 # Separate from the main `CI` workflow: the Kimchi formalization has its own
 # toolchain (elan / lake / Mathlib) and is independent of the PureScript/Rust
 # build — so it runs in parallel and only when `formal/` (or this file) changes.
-# It needs two git submodules, the CompElliptic and ironwood dependencies (initialized
+# It needs one git submodule, the CompElliptic dependency (initialized
 # below); the large `mina` submodule is skipped.
 on:
   push:
@@ -39,12 +39,12 @@ jobs:
     - uses: actions/checkout@v4
       with:
         # Skip submodules here so the large `mina` submodule isn't fetched; the
-        # CompElliptic + ironwood dependency submodules are initialized on their own below.
+        # CompElliptic dependency submodule is initialized on its own below.
         submodules: false
 
-    - name: Check out the Lean dependency submodules (CompElliptic + ironwood)
+    - name: Check out the Lean dependency submodule (CompElliptic)
       working-directory: .
-      run: git submodule update --init formal/vendor/CompElliptic formal/vendor/ironwood
+      run: git submodule update --init formal/vendor/CompElliptic
 
     - name: Lean style check
       working-directory: .
@@ -62,7 +62,23 @@ jobs:
     - name: Verify headline proofs use only the allowed axioms
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        scripts/check_axioms.sh
+        lake env lean kimchi/scripts/check_axioms.lean
+
+    # Per-package trust-surface gates: each package audits the axiom closure of its own
+    # surface (pasta: the derived trust base, no eigen; bulletproof-pcs: the PCS
+    # soundness surface over its declared FS axioms). Run from the root workspace.
+    - name: Gate the pasta and bulletproof-pcs trust surfaces
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        lake env lean pasta/scripts/check_axioms.lean
+        lake env lean bulletproof-pcs/scripts/check_axioms.lean
+
+    # The snarky DSL package's interpreter laws (pure core Lean — standard axioms
+    # only). The aggregator workspace requires snarky, so this runs here directly.
+    - name: Gate the snarky DSL interpreter laws
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        lake env lean snarky/scripts/check_axioms.lean
 
     # Compatibility: the IPA verifier model must accept real kimchi/proof-systems
     # transcripts, and both chunk-fold mechanisms must match production — the chunk
@@ -75,35 +91,40 @@ jobs:
     - name: Check the IPA model against kimchi transcript fixtures
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        scripts/check_ipa_fixture.sh
+        BULLETPROOF_FIXTURES_DIR=bulletproof-pcs/fixtures \
+          lake env lean bulletproof-pcs/scripts/check_ipa_fixture.lean
 
     # The Poseidon sponges over both Pasta fields must match mina_poseidon
-    # absorb/squeeze traces (fixtures/poseidon_{fq,fp}_vectors.json, from sponge_dump).
+    # absorb/squeeze traces (poseidon/fixtures/poseidon_{fq,fp}_vectors.json, from sponge_dump).
     - name: Check the Poseidon sponges against mina_poseidon traces
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        scripts/check_sponge_vectors.sh
+        POSEIDON_FIXTURES_DIR=poseidon/fixtures \
+          lake env lean poseidon/scripts/check_sponge_vectors.lean
 
     # The Fq-sponge and map-to-curve must match DefaultFqSponge op traces and
     # group_map vectors recorded from proof-systems directly.
     - name: Check the Fq-sponge and map-to-curve against vectors
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        scripts/check_fq_sponge.sh
+        POSEIDON_FIXTURES_DIR=poseidon/fixtures \
+          lake env lean poseidon/scripts/check_fq_sponge.lean
 
     # The permutation-argument row semantics must hold on production kimchi data
     # (fixtures/perm_vesta.json, from tools/fixture-dump's perm_dump).
     - name: Check the permutation argument against kimchi row data
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        scripts/check_perm_fixture.sh
+        KIMCHI_FIXTURES_DIR=kimchi/fixtures \
+          lake env lean kimchi/scripts/check_perm_fixture.lean
 
     # The index model must accept the mixed-gate production circuit: construction
     # by decision, derived columns, satisfiability, and corruption rejections.
     - name: Check the index model against the mixed-gate fixture
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        scripts/check_index_fixture.sh
+        KIMCHI_FIXTURES_DIR=kimchi/fixtures \
+          lake env lean kimchi/scripts/check_index_fixture.lean
 
     # The closed-form verifier linearization (perm_scalars, the gate constant term,
     # ft_eval0) must reproduce, by value, the production scalar side of a real proof —
@@ -112,7 +133,8 @@ jobs:
     - name: Check the verifier linearization against the production scalar side
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        scripts/check_linearization.sh
+        KIMCHI_FIXTURES_DIR=kimchi/fixtures \
+          lake env lean kimchi/scripts/check_linearization.lean
 
     # The composed executable kimchi verifier (both sponge schedules, the scalar side,
     # the to_batch assembly, the warm-started IPA check) must accept a complete
@@ -121,7 +143,8 @@ jobs:
     - name: Check the executable kimchi verifier against a production proof
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        scripts/check_kimchi_verifier.sh
+        KIMCHI_FIXTURES_DIR=kimchi/fixtures \
+          lake env lean kimchi/scripts/check_kimchi_verifier.lean
 
     # The verifier-key <-> index correspondence (VKCorresponds), by value: every
     # committed column of the production VK equals the value-MSM of the Lagrange-basis
@@ -130,5 +153,6 @@ jobs:
     - name: Check the verifier key corresponds to the index
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        scripts/check_vk_correspond.sh
+        KIMCHI_FIXTURES_DIR=kimchi/fixtures \
+          lake env lean kimchi/scripts/check_vk_correspond.lean
 

@@ -1,0 +1,47 @@
+-- Library root: a formalization of the kimchi proof system.
+-- Re-exports the EC oracle, the generic gate, and the custom-gate identities, plus the
+-- VarBaseMul scalar-multiplication soundness (abstract + instantiated at the Pasta curves).
+import Pasta.Shifted
+import Kimchi.Gate.Generic
+import Kimchi.Gate.AddComplete
+import Kimchi.Gate.VarBaseMul
+import Kimchi.Gate.EndoScalar
+import Kimchi.Gate.EndoMul
+import Kimchi.Gate.Poseidon
+import Kimchi.Circuit.VarBaseMul
+import Kimchi.Circuit.EndoScalar
+import Kimchi.Circuit.EndoMul
+import Bulletproof.Soundness
+import Bulletproof.Chunk
+import Bulletproof.Soundness.Batch
+import Bulletproof.Soundness.ChunkedBatch
+import Kimchi.Quotient.Generic
+import Kimchi.Quotient.EndoScalar
+import Kimchi.Quotient.Poseidon
+import Kimchi.Quotient.Accumulator
+import Kimchi.Quotient.Copy
+import Kimchi.Index.Basic
+import Kimchi.Index.Satisfies
+import Kimchi.Index.Aggregate
+import Kimchi.Index.Degree
+import Kimchi.Index.Soundness
+import Kimchi.Quotient.Wiring
+import Kimchi.Quotient.Permutation
+import Kimchi.Quotient.GrandProduct
+import Kimchi.Quotient.Soundness
+import Bulletproof.Fixture
+import Kimchi.Fixture.Kimchi
+import Kimchi.Fixture.PS
+import FixtureKit.Parse
+import FixtureKit.Trace
+import Bulletproof.Wire
+import Kimchi.Verifier.Linearization
+import Kimchi.Verifier.Kimchi
+import Kimchi.Verifier.Correspond
+import Kimchi.Verifier.Sound
+import Kimchi.Verifier.KimchiSound
+import Kimchi.Verifier.Equation
+import Kimchi.Quotient.Rectangle
+import Bulletproof.Reflection
+import Kimchi.Verifier.Reflect
+import Kimchi.Verifier.Capstone

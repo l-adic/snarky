@@ -1,0 +1,29 @@
+-- API root set for the poseidon package (the sponge specification + fixture kit).
+-- Consumed by the workspace dead-code pass (formal/scripts/deadcode.sh). Everything here
+-- is specification (validated against proof-systems vectors by scripts/), not theorems.
+
+-- The permutation/duplex automaton and the production parameter tables.
+Poseidon.init
+Poseidon.absorb
+Poseidon.squeeze
+Poseidon.squeezeN
+Poseidon.fqParams
+Poseidon.fpParams
+
+-- The field-pair FqSponge consumer layer, instantiated per curve.
+Poseidon.FqVesta.spec
+Poseidon.FqPallas.spec
+
+-- The SvdW map-to-curve.
+Poseidon.GroupMapVesta.toGroup
+Poseidon.GroupMapPallas.toGroup
+
+-- The shared fixture kit (JSON decoders + the cases-x-ops trace driver).
+FixtureKit.parseNat
+FixtureKit.parseZMod
+FixtureKit.parseArrOf
+FixtureKit.parsePair
+FixtureKit.parsePoint
+FixtureKit.parseSWPoint
+FixtureKit.Trace.run
+FixtureKit.Trace.check
