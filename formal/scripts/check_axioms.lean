@@ -4,7 +4,7 @@ Axiom-closure gate for the Kimchi formalization.
 `lake build` succeeds even with `sorry` (it is only a warning), so this script gates the headline
 theorems explicitly: it collects the full axiom closure of each root and fails unless every axiom
 is in the allowlist below — the three standard logical axioms, the two trusted Pasta Hasse-bound
-axioms (`Kimchi.Pasta.{pallas_hasse, vesta_hasse}`, from which the group orders are *derived* via
+axioms (`Pasta.{pallas_hasse, vesta_hasse}`, from which the group orders are *derived* via
 CompElliptic), `Lean.ofReduceBool` (inherited from CompElliptic's `native_decide` order witness),
 and the Pasta GLV endomorphism inputs. This subsumes the old `sorryAx` grep: a `sorry` shows up as
 `sorryAx`, which is not in the allowlist, and any *other* stray axiom that slips in is caught too.
@@ -120,7 +120,7 @@ def roots : List Name :=
     `native_decide` witnesses are permitted separately by `isTrustedNativeDecide`. -/
 def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound, `Lean.ofReduceBool,
-    `Kimchi.Pasta.pallas_hasse, `Kimchi.Pasta.vesta_hasse,
+    `Pasta.pallas_hasse, `Pasta.vesta_hasse,
     -- The declared Fiat-Shamir assumption: Poseidon-accepted runs admit de-blinded
     -- accepting transcript trees (`Kimchi/Verifier/Reflection.lean`). One per Pasta curve.
     `Kimchi.Verifier.poseidon_fiat_shamir_vesta, `Kimchi.Verifier.poseidon_fiat_shamir_pallas,
@@ -128,7 +128,7 @@ def allowed : List Name :=
     -- (`Ipa.verifyFrom (runWarm) (runInput)`) rather than the cold `Ipa.verify`. One per curve;
     -- the residue-free ft opening (`ft_opening_of_reflected_*`) is stated over this.
     `Kimchi.Verifier.kimchi_fiat_shamir_vesta, `Kimchi.Verifier.kimchi_fiat_shamir_pallas,
-    `Kimchi.Pasta.pallas_eigen, `Kimchi.Pasta.vesta_eigen, ]
+    `Pasta.pallas_eigen, `Pasta.vesta_eigen, ]
 
 /-- A CompElliptic `native_decide` witness: an axiom under the `CompElliptic` namespace carrying the
     `native_decide` marker (these back CompElliptic's point counts). A `native_decide` in our own

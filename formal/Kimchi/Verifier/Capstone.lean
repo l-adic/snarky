@@ -1939,7 +1939,7 @@ private theorem batchC_eq_commitmentFn {C : Ipa.CommitmentCurve} (σ : SRS C.Poi
 run's `runFtComm` — the executable `f_comm − (ζⁿ − 1).val • combine(ζⁿ, t_comm)` — is
 the abstract `•`-combination `pScalar • σ₆C − (ζⁿ − 1) • ∑ⱼ (ζⁿ)ʲ • tCommⱼ` that
 `ft_identity_of_chunks` consumes. Stated per curve: the `.val`-collapse
-`vesta_smul_val` is `rfl` only at `Fp`. -/
+`Pasta.vesta_smul_val` is `rfl` only at `Fp`. -/
 private theorem runFtComm_eq_vesta (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
     (p : KimchiVesta.Proof) (pub : Array Fp)
     (hrun : ReflectedRun IpaVesta.curve σ vk p pub) {n : ℕ} (hn : vk.n = n) :
@@ -1955,7 +1955,8 @@ private theorem runFtComm_eq_vesta (σ : SRS IpaVesta.Point) (vk : KimchiVesta.V
     rw [powPow2_eq, ← hn]
     rfl
   unfold runFtComm runFComm
-  rw [← vesta_smul_val, ← vesta_smul_val, combineCommitments_eq vesta_smul_val, hζN]
+  rw [← Pasta.vesta_smul_val, ← Pasta.vesta_smul_val,
+    combineCommitments_eq Pasta.vesta_smul_val, hζN]
   congr 1
   congr 1
   rw [combinedCommitment]
@@ -1981,7 +1982,8 @@ private theorem runFtComm_eq_pallas (σ : SRS IpaPallas.Point) (vk : KimchiPalla
     rw [powPow2_eq, ← hn]
     rfl
   unfold runFtComm runFComm
-  rw [← pallas_smul_val, ← pallas_smul_val, combineCommitments_eq pallas_smul_val, hζN]
+  rw [← Pasta.pallas_smul_val, ← Pasta.pallas_smul_val,
+    combineCommitments_eq Pasta.pallas_smul_val, hζN]
   congr 1
   congr 1
   rw [combinedCommitment]

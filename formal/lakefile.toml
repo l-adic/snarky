@@ -19,6 +19,13 @@ path = "vendor/CompElliptic"
 name = "Zcash"
 path = "vendor/ironwood"
 
+# The Pasta curve trust base: the generic EC order/shape sugar, the concrete GLV constants,
+# the Hasse/CM axioms and their derived orders, and the point-group module structure.
+# Lives in-repo as a standalone path package (formal/pasta).
+[[require]]
+name = "pasta"
+path = "pasta"
+
 # Mathlib gives us prime fields (`ZMod p`) and the elliptic-curve group law
 # (`WeierstrassCurve.Affine`), the trusted oracle the EC gates are checked against. Pinned to
 # the tag matching our Lean toolchain (v4.30.0). Kept LAST so this direct pin wins over the

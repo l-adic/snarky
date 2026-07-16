@@ -1,5 +1,5 @@
 import Kimchi.Circuit.VarBaseMul.Internal
-import Kimchi.Pasta
+import Pasta
 
 /-!
 # The `VarBaseMul` circuit
@@ -22,7 +22,7 @@ each at its concrete curve:
 
 A bare `varBaseMul` is never deployed on its own — only these two — so the field-bound Pallas
 correctness is *inlined* into `scaleFast2`. The `Fact`s
-are discharged from `Kimchi.Pasta`, the prime-order one through the trusted point count
+are discharged from `Pasta`, the prime-order one through the trusted point count
 (`pallas_card` / `vesta_card`). So these corollaries are the only things that depend on a
 point-count axiom; the abstract development stays axiom-free.
 -/
@@ -30,7 +30,7 @@ point-count axiom; the abstract development stays axiom-free.
 namespace Kimchi.Circuit.VarBaseMul
 
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta CompElliptic.CurveForms.ShortWeierstrass
-open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine Kimchi.Shifted Kimchi.Pasta
+open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine Kimchi.Shifted Pasta
 
 /-! ## The `scaleFast1` / Type1 direction: soundness via the forbidden band (Vesta)
 
@@ -68,13 +68,13 @@ theorem varBaseMul_scaleFast1
     (hnf : 5 * m = pastaFieldBits → s ∉ forbiddenValues Vesta.curve.toAffine.order) :
     ∃ hfin : Vesta.curve.toAffine.Nonsingular (accX g m) (accY g m),
       Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
-  have hodd : Vesta.curve.toAffine.order ≠ 2 := by rw [Kimchi.Pasta.vesta_card]; decide
+  have hodd : Vesta.curve.toAffine.order ≠ 2 := by rw [Pasta.vesta_card]; decide
   rcases Nat.lt_or_ge (5 * m) pastaFieldBits with hlt | hge
   · -- sub-wrap: `5m` below `pastaFieldBits` with `5 ∣ 5m` ⟹ `5m ≤ pastaFieldBits - 5` ⟹ safe.
     refine varBaseMul_subwrap_correct Vesta.curve.toAffine m g T s hTne hholds hTns hTeq hbase
       hthread hP0ns hP0
       (by decide) hodd ?_ hs
-    rw [Kimchi.Pasta.vesta_card]
+    rw [Pasta.vesta_card]
     have hp : (2 : ℕ) ^ (5 * m) ≤ 2 ^ (pastaFieldBits - 5) :=
       Nat.pow_le_pow_right (by norm_num) (by have : pastaFieldBits = 255 := rfl; omega)
     have : (3 : ℕ) * 2 ^ (pastaFieldBits - 5) ≤ PALLAS_BASE_CARD := by norm_num [PALLAS_BASE_CARD]
@@ -84,9 +84,9 @@ theorem varBaseMul_scaleFast1
     exact varBaseMul_forbidden_correct Vesta.curve.toAffine m g T s hTne hholds hTns hTeq hbase
       hthread hP0ns hP0
       (by decide) hodd
-      (by rw [Kimchi.Pasta.vesta_card, hfull]; norm_num [PALLAS_BASE_CARD])
-      (by rw [Kimchi.Pasta.vesta_card, hfull]; norm_num [PALLAS_BASE_CARD])
-      (by rw [Kimchi.Pasta.vesta_card]; norm_num [PALLAS_BASE_CARD])
+      (by rw [Pasta.vesta_card, hfull]; norm_num [PALLAS_BASE_CARD])
+      (by rw [Pasta.vesta_card, hfull]; norm_num [PALLAS_BASE_CARD])
+      (by rw [Pasta.vesta_card]; norm_num [PALLAS_BASE_CARD])
       hs (hnf hfull)
 
 /-! ## scaleFast2 / Type2: the parity-split entry point (Pallas direction)
@@ -132,8 +132,8 @@ theorem varBaseMul_scaleFast2
             ∨ (sOdd = 0 ∧ Point.some _ _ hfin - T = n • T)) := by
   obtain ⟨k, rfl⟩ := Nat.exists_eq_succ_of_ne_zero (by omega : m ≠ 0)
   have h2 : (2 : Fp) ≠ 0 := by decide
-  have hodd : Pallas.curve.toAffine.order ≠ 2 := by rw [Kimchi.Pasta.pallas_card]; decide
-  have hq : Pallas.curve.toAffine.order = PALLAS_SCALAR_CARD := Kimchi.Pasta.pallas_card
+  have hodd : Pallas.curve.toAffine.order ≠ 2 := by rw [Pasta.pallas_card]; decide
+  have hq : Pallas.curve.toAffine.order = PALLAS_SCALAR_CARD := Pasta.pallas_card
   have hcanon : gateLadder g (5 * (k + 1)) < 2 * (PALLAS_BASE_CARD : ℤ) + 2 ^ (5 * (k + 1)) := by
     rw [gateLadder_eq_register]
     have hp : (2 ^ (pastaFieldBits - 1) : ℤ) ≤ PALLAS_BASE_CARD := by

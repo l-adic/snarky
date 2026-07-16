@@ -1,6 +1,6 @@
 import CompElliptic.Curves.Pasta
 import Kimchi.Sponge.Poseidon
-import Kimchi.Pasta.Constants
+import Pasta.Constants
 
 /-!
 # The kimchi Fq-sponge
@@ -150,7 +150,7 @@ open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 /-- `DefaultFqSponge<VestaParameters>`: the `fq_kimchi` parameters and the Vesta
 eigenvalue. -/
 def spec : FqSponge.Spec PALLAS_SCALAR_CARD PALLAS_BASE_CARD :=
-  ⟨fqParams, ((Kimchi.Pasta.vesta_lam : ℤ) : Fp)⟩
+  ⟨fqParams, ((Pasta.vesta_lam : ℤ) : Fp)⟩
 
 /-- The Vesta-side sponge state. -/
 abbrev S := FqSponge.S PALLAS_SCALAR_CARD
@@ -175,7 +175,7 @@ open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 eigenvalue. The scalar field is the larger of the pair, so `absorbFr` takes the
 high-bits/low-bit branch — selected by the cardinalities, not restated here. -/
 def spec : FqSponge.Spec PALLAS_BASE_CARD PALLAS_SCALAR_CARD :=
-  ⟨fpParams, ((Kimchi.Pasta.pallas_lam : ℤ) : Fq)⟩
+  ⟨fpParams, ((Pasta.pallas_lam : ℤ) : Fq)⟩
 
 /-- The Pallas-side sponge state. -/
 abbrev S := FqSponge.S PALLAS_BASE_CARD

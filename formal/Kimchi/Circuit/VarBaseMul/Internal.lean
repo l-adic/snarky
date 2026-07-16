@@ -1,4 +1,4 @@
-import Kimchi.Curve
+import Pasta.Curve
 import Kimchi.Gate.VarBaseMul
 import Kimchi.Shifted
 import Mathlib

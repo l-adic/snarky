@@ -185,7 +185,7 @@ theorem decompose_crumbList (g : ℕ → Witness F) (m : ℕ) :
 The first-addition condition `hxne` is `Pᵢ ∉ {±T, ±φT}` (same `x` ⟺ `±` point). Writing the
 accumulator as `[a]·T + [b]·φT` and collapsing with the eigenvalue `φT = [λ]·T`, this reduces to
 `a + b·λ ≢ {±1, ±λ} (mod order)` — four "no short relation" facts, supplied for the small
-accumulator coefficients by the GLV bound (`Kimchi.Pasta.pallas_glv_no_short_relation`). The
+accumulator coefficients by the GLV bound (`Pasta.pallas_glv_no_short_relation`). The
 second-addition condition is self-enforced by the gate constraints. -/
 
 /-- One block's second-addition non-degeneracy, self-enforced. If `2·xI − s² + xq = 0`, the

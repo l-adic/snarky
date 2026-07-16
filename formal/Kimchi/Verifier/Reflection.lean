@@ -1,6 +1,6 @@
 import Kimchi.Verifier.Ipa
 import Kimchi.Commitment.IPA.Soundness.Batch
-import Kimchi.Pasta
+import Pasta
 
 /-!
 # Reflection: the executable verifier meets the soundness layer
@@ -46,30 +46,6 @@ open CompElliptic.CurveForms.ShortWeierstrass CompElliptic.Curves.Pasta
 open CompElliptic.Curves.Pasta.Vesta renaming curve → vestaCurve
 open CompElliptic.Curves.Pasta.Pallas renaming curve → pallasCurve
 open CompElliptic.Fields.Pasta Kimchi.Commitment.IPA Kimchi.Verifier.Ipa
-
-/-! ## The scalar action on the Pasta point groups -/
-
-/-- The Vesta point group is `PALLAS_BASE_CARD`-torsion (its group order, under the Hasse
-axiom), hence a module over its scalar field. The action is definitionally `z.val • _`. -/
-instance vestaPointModule : Module Fp (SWPoint vestaCurve) :=
-  AddCommGroup.zmodModule fun P => by
-    rw [← Vesta.card_eq Kimchi.Pasta.vesta_hasse]
-    exact card_nsmul_eq_zero'
-
-/-- The Pallas point group is `PALLAS_SCALAR_CARD`-torsion (its group order, under the
-Hasse axiom), hence a module over its scalar field. -/
-instance pallasPointModule : Module Fq (SWPoint pallasCurve) :=
-  AddCommGroup.zmodModule fun P => by
-    rw [← Pallas.card_eq Kimchi.Pasta.pallas_hasse]
-    exact card_nsmul_eq_zero'
-
-/-- The module action is the ℕ-action at the canonical representative — the form the
-executable verifier computes with. -/
-theorem vesta_smul_val (z : Fp) (P : SWPoint vestaCurve) : z • P = z.val • P :=
-  rfl
-
-theorem pallas_smul_val (z : Fq) (P : SWPoint pallasCurve) : z • P = z.val • P :=
-  rfl
 
 /-! ## The wire proof as an abstract opening proof -/
 

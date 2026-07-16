@@ -112,7 +112,7 @@ example : sqrtNegThreeUSquared ^ 2 = -3 * u ^ 2 := by decide
 
 /-- `(√(-3u²) − u) / 2`. At `u = 1` this is `(√-3 − 1)/2`, a primitive cube root of unity —
 the Vesta base-field endomorphism coefficient `β`, of which it is a reuse. -/
-def sqrtNegThreeUSquaredMinusUOver2 : Fq := Kimchi.Pasta.vesta_endo
+def sqrtNegThreeUSquaredMinusUOver2 : Fq := Pasta.vesta_endo
 
 example : 2 * sqrtNegThreeUSquaredMinusUOver2 = sqrtNegThreeUSquared - u := by decide
 
@@ -165,7 +165,7 @@ example : sqrtNegThreeUSquared ^ 2 = -3 * u ^ 2 := by decide
 def sqrtNegThreeUSquaredMinusUOver2 : Fp :=
   8503465768106391777493614032514048814691664078728891710322960303815233784505
 
-example : sqrtNegThreeUSquaredMinusUOver2 = Kimchi.Pasta.pallas_endo ^ 2 := by decide
+example : sqrtNegThreeUSquaredMinusUOver2 = Pasta.pallas_endo ^ 2 := by decide
 
 example : 2 * sqrtNegThreeUSquaredMinusUOver2 = sqrtNegThreeUSquared - u := by decide
 

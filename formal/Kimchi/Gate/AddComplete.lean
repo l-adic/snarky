@@ -1,4 +1,4 @@
-import Kimchi.Curve
+import Pasta.Curve
 
 /-!
 # The kimchi `CompleteAdd` gate

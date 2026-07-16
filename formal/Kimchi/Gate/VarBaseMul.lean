@@ -1,4 +1,4 @@
-import Kimchi.Curve
+import Pasta.Curve
 import Kimchi.Gate.AddComplete
 
 /-!

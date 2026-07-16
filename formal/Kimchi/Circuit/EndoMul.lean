@@ -1,5 +1,5 @@
 import Kimchi.Circuit.EndoMul.Internal
-import Kimchi.Pasta
+import Pasta
 
 /-!
 # The `EndoMul` circuit
@@ -16,7 +16,7 @@ gate constraint `Holds` per row, the base nonsingularity (row 0 — genuinely ex
 threading, and the initial accumulator `P₀ = 2(T + φT)`. Every intermediate accumulator's
 nonsingularity is *derived* (`endoMul`), and the per-row first-addition non-degeneracy `hxne` is
 *derived* — not assumed — from the GLV short-basis bound. The prime-order / `hodd` / short-shape
-facts come from `Kimchi.Pasta`, and the eigenvalue `φT = [λ]·T` is discharged by the curve's CM
+facts come from `Pasta`, and the eigenvalue `φT = [λ]·T` is discharged by the curve's CM
 axiom (`{pallas,vesta}_eigen`).
 
 ## Main results
@@ -29,7 +29,7 @@ axiom (`{pallas,vesta}_eigen`).
 
 namespace Kimchi.Circuit.EndoMul
 
-open Kimchi.Gate.EndoMul Kimchi.Pasta WeierstrassCurve.Affine
+open Kimchi.Gate.EndoMul Pasta WeierstrassCurve.Affine
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta
 
 /-! ## GLV non-degeneracy: the two-base accumulator avoids the targets
@@ -87,7 +87,7 @@ computes `[s]·T`. The per-row `hxne` is discharged internally from the GLV boun
     `m = 32`, far under). Every intermediate accumulator's nonsingularity is *derived*
     (`endoMul`), the per-row `hxne` from the GLV short-basis bound (`accumulator_chain`,
     `off := pallas_combo_off_targets`), the eigenvalue from `pallas_eigen`, and the
-    odd-prime-order conditions from `Kimchi.Pasta`. -/
+    odd-prime-order conditions from `Pasta`. -/
 theorem pallas_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
     (g : ℕ → Witness Fp)
     (hholds : ∀ i, i < m → Holds pallas_endo (g i))
