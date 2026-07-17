@@ -1,7 +1,7 @@
 import CompElliptic.Fields.Pasta
 import Kimchi.Index.Satisfies
 import FixtureKit.Parse
-import Pasta.Constants
+import Pasta.Endo
 import Lean.Data.Json
 
 /-!

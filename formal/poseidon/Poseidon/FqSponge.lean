@@ -1,6 +1,6 @@
 import CompElliptic.Curves.Pasta
 import Poseidon.Basic
-import Pasta.Constants
+import Pasta.Endo
 
 /-!
 # The kimchi Fq-sponge

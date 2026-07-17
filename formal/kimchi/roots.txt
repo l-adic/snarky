@@ -214,7 +214,7 @@ Kimchi.Verifier.kimchiProof_sound_algebraic_ft
 -- genuine `verify = true` — `ipa_soundnessA` + the general-arity `eval_pins_of_opening` at that
 -- slot. `ft_opening_of_reflected` is axiom-free (the transcript tree is a hypothesis); the curve
 -- wrappers discharge it via the new `kimchi_fiat_shamir_{vesta,pallas}` axiom (warm reflected run)
--- + `kimchiVerify_reflects`, so their closure is base + that axiom + hasse + CompElliptic (no
+-- + `kimchiVerify_reflects`, so their closure is base + that axiom + CompElliptic (no
 -- poseidon FS, no eigen). Deferred follow-on: reconcile the 45-row batch with `batchC` to feed
 -- `kimchiProof_sound_algebraic_ft` and reach a full run-level residue-free `Satisfies` root.
 Kimchi.Verifier.ft_opening_of_reflected
@@ -226,7 +226,7 @@ Kimchi.Verifier.ft_opening_of_reflected_pallas
 -- and 7 tComm chunks), derive `∃ wTab, Satisfies` at the run's own sponge challenges — the
 -- ft/quotient residue DISSOLVED (no `t`/`hteq`), the grid BYPASSED (fed the openings seam directly,
 -- so no poseidon_fiat_shamir). Trust surface = kimchi_fiat_shamir (Poseidon-RO) + DL-binding (hbind)
--- + hasse + CompElliptic — and nothing else. The guarded conclusion (challenges avoid the negligible
+-- + CompElliptic — and nothing else. The guarded conclusion (challenges avoid the negligible
 -- bad sets) is the FS heuristic in the type; the honest-key hypotheses (hvk + omega/zkRows/shifts/endo
 -- bridges) say the wire VK corresponds to the circuit. This is the endpoint (AGM, as in PLONK).
 Kimchi.Verifier.kimchiVesta_run_sound_algebraic_ft

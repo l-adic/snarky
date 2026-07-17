@@ -18,7 +18,6 @@ def roots : List Name :=
     `Kimchi.Gate.AddComplete.complete_inf, `Kimchi.Gate.AddComplete.complete,
     `Kimchi.Gate.AddComplete.sound,
     `Kimchi.Gate.VarBaseMul.sound, `Kimchi.Gate.VarBaseMul.complete,
-    `WeierstrassCurve.Affine.zsmul_mod, `WeierstrassCurve.Affine.order_smul,
     `Kimchi.Circuit.VarBaseMul.varBaseMul_forbidden_correct,
     `Kimchi.Circuit.VarBaseMul.varBaseMul_subwrap_correct,
     `Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast1,

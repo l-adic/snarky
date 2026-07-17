@@ -2,23 +2,18 @@
 -- Consumed by the workspace dead-code pass (formal/scripts/deadcode.sh), which unions
 -- every package's roots.txt.
 
--- The trust surface: the declared axioms.
-Pasta.pallas_hasse
-Pasta.vesta_hasse
-Pasta.pallas_eigen
-Pasta.vesta_eigen
-
 -- The GLV constants and derived primitive-cube-root facts.
 Pasta.pallas_endo
 Pasta.vesta_endo
 Pasta.pallas_lam
 Pasta.vesta_lam
-Pasta.pallas_endo_cube
-Pasta.pallas_endo_ne_one
-Pasta.vesta_endo_cube
-Pasta.vesta_endo_ne_one
 
--- Derived: group orders, primality, GLV short-basis bounds, the field-bit width.
+-- The package declares no axioms; the curve trust is native_decide certificates alone.
+--
+-- The CM eigenvalue relations, group orders, primality, GLV short-basis bounds, the
+-- field-bit width.
+Pasta.pallas_eigen
+Pasta.vesta_eigen
 Pasta.pallas_card
 Pasta.vesta_card
 Pasta.pallas_order_prime
@@ -28,11 +23,9 @@ Pasta.vesta_glv_no_short_relation
 Pasta.pastaFieldBits
 Pasta.two_pow_le_pallas_base
 
--- The generic EC order/shape sugar.
-WeierstrassCurve.Affine.order_smul
-WeierstrassCurve.Affine.zsmul_mod
-WeierstrassCurve.Affine.order_prime
-WeierstrassCurve.Affine.short
+-- The generic EC order/shape vocabulary (the statement language of the kimchi EC gates).
+WeierstrassCurve.Affine.order
+CompElliptic.CurveForms.ShortWeierstrass.SWCurve.toAffine
 
 -- The point-group module structure and its computational reading.
 Pasta.vestaPointModule

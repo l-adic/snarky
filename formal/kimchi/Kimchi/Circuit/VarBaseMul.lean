@@ -143,7 +143,7 @@ theorem varBaseMul_scaleFast2
     Nat.pow_le_pow_right (by norm_num) (by omega)
   have hND := Ladder.ladder_x_nondegen Pallas.curve.toAffine.order PALLAS_BASE_CARD (5 * (k + 1))
     (by rw [hq]; exact lt_of_le_of_lt hpow (by norm_num [PALLAS_SCALAR_CARD]))
-    (Pallas.curve.toAffine.order_prime.odd_of_ne_two hodd)
+    ((Fact.out : Nat.Prime Pallas.curve.toAffine.order).odd_of_ne_two hodd)
     (by rw [hq]; norm_num [PALLAS_SCALAR_CARD])
     (by rw [hq]
         have hc : PALLAS_BASE_CARD + 2 ^ (pastaFieldBits - 1) + 2 ≤ 2 * PALLAS_SCALAR_CARD := by

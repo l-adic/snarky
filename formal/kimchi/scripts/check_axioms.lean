@@ -3,10 +3,10 @@ Axiom-closure gate for the Kimchi formalization.
 
 `lake build` succeeds even with `sorry` (it is only a warning), so this script gates the headline
 theorems explicitly: it collects the full axiom closure of each root and fails unless every axiom
-is in the allowlist below — the three standard logical axioms, the two trusted Pasta Hasse-bound
-axioms (`Pasta.{pallas_hasse, vesta_hasse}`, from which the group orders are *derived* via
-CompElliptic), `Lean.ofReduceBool` (inherited from CompElliptic's `native_decide` order witness),
-and the Pasta GLV endomorphism inputs. This subsumes the old `sorryAx` grep: a `sorry` shows up as
+is in the allowlist below — the three standard logical axioms and the trusted `native_decide`
+certificates (the Pasta group orders are *unconditional*, derived via
+CompElliptic's fibre-bound argument) — `Lean.ofReduceBool` plus the named certificate
+declarations. This subsumes the old `sorryAx` grep: a `sorry` shows up as
 `sorryAx`, which is not in the allowlist, and any *other* stray axiom that slips in is caught too.
 
 Run from `formal/kimchi/`:  lake env lean scripts/check_axioms.lean
@@ -97,14 +97,14 @@ def roots : List Name :=
     `Kimchi.Verifier.kimchiVesta_run_sound_algebraic_ft,
     `Kimchi.Verifier.kimchiPallas_run_sound_algebraic_ft ]
 
-/-- The only axioms the roots may depend on: the standard logical axioms; the Pasta Hasse bounds
-    (`{pallas,vesta}_hasse`); `Lean.ofReduceBool`; and the Pasta CM eigenvalue relations
-    (`{pallas,vesta}_eigen` — the endomorphism coefficients `β` and eigenvalues `λ` themselves
-    are concrete, proved definitions in `Kimchi/Pasta/Constants.lean`). CompElliptic
-    `native_decide` witnesses are permitted separately by `isTrustedNativeDecide`. -/
+/-- The only axioms the roots may depend on: the standard logical axioms and
+    `Lean.ofReduceBool`. The pasta package declares NO axioms — the group orders are
+    unconditional (CompElliptic's fibre-bound argument) and the CM eigenvalue relations are
+    THEOREMS (homomorphism + prime-order cyclicity + `native_decide` anchors at the
+    generators). The `native_decide` witnesses are permitted separately by
+    `isTrustedNativeDecide`. -/
 def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound, `Lean.ofReduceBool,
-    `Pasta.pallas_hasse, `Pasta.vesta_hasse,
     -- The declared Fiat-Shamir assumption: Poseidon-accepted runs admit de-blinded
     -- accepting transcript trees (`Kimchi/Verifier/Reflection.lean`). One per Pasta curve.
     `Bulletproof.poseidon_fiat_shamir_vesta, `Bulletproof.poseidon_fiat_shamir_pallas,
@@ -112,14 +112,18 @@ def allowed : List Name :=
     -- (`Ipa.verifyFrom (runWarm) (runInput)`) rather than the cold `Ipa.verify`. One per curve;
     -- the residue-free ft opening (`ft_opening_of_reflected_*`) is stated over this.
     `Kimchi.Verifier.kimchi_fiat_shamir_vesta, `Kimchi.Verifier.kimchi_fiat_shamir_pallas,
-    `Pasta.pallas_eigen, `Pasta.vesta_eigen, ]
+ ]
 
-/-- A CompElliptic `native_decide` witness: an axiom under the `CompElliptic` namespace carrying the
-    `native_decide` marker (these back CompElliptic's point counts). A `native_decide` in our own
-    tree is not `CompElliptic`-namespaced, so it is still rejected. -/
+/-- A trusted `native_decide` witness: CompElliptic's point counts, or pasta's two GLV
+    eigenvalue anchors (`Pasta.{pallas,vesta}_lam_nsmul_Gpt`, `pasta/Pasta/Endo.lean`) —
+    exactly those declarations, by name. Any other `native_decide` in our tree is still
+    rejected. -/
 def isTrustedNativeDecide (ax : Name) : Bool :=
   let s := ax.toString
-  "CompElliptic.".isPrefixOf s && (s.splitOn "native_decide").length > 1
+  (s.splitOn "native_decide").length > 1 &&
+    ("CompElliptic.".isPrefixOf s
+      || "Pasta.pallas_lam_nsmul_Gpt.".isPrefixOf s
+      || "Pasta.vesta_lam_nsmul_Gpt.".isPrefixOf s)
 
 /-- An axiom is permitted if it is in the explicit allowlist or is a CompElliptic `native_decide`
     witness. -/

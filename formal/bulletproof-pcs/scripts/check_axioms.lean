@@ -3,7 +3,7 @@ Axiom-closure gate for the bulletproof PCS. This package DECLARES the Fiat-Shami
 (`Bulletproof.poseidon_fiat_shamir_{vesta,pallas}` — the Poseidon sponge, from the
 `poseidon` package, provides a valid Fiat-Shamir transform); the gate checks that the
 soundness surface reduces to the standard logical axioms + those FS axioms + the Pasta
-trust base (Hasse bounds, CompElliptic certificates) and nothing else. DL-binding is a
+trust base (native_decide certificates only — no axioms) and nothing else. DL-binding is a
 hypothesis throughout, never an axiom.
 
 Run from `formal/bulletproof-pcs/`:  lake env lean scripts/check_axioms.lean
@@ -29,12 +29,12 @@ def roots : List Name :=
     `Bulletproof.ipaVesta_sound,
     `Bulletproof.ipaPallas_sound ]
 
-/-- Standard logical axioms; the FS axioms declared here; the Pasta Hasse bounds;
+/-- Standard logical axioms; the FS axioms declared here;
     `Lean.ofReduceBool` (CompElliptic's `native_decide` witnesses). -/
 def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound, `Lean.ofReduceBool,
     `Bulletproof.poseidon_fiat_shamir_vesta, `Bulletproof.poseidon_fiat_shamir_pallas,
-    `Pasta.pallas_hasse, `Pasta.vesta_hasse ]
+ ]
 
 /-- A CompElliptic `native_decide` point-count witness (trusted; see kimchi's gate). -/
 def isTrustedNativeDecide (ax : Name) : Bool :=

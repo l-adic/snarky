@@ -1,4 +1,4 @@
-import Pasta.Curve
+import Pasta.Basic
 import Kimchi.Gate.VarBaseMul
 import Pasta.Shifted
 import Mathlib
@@ -719,7 +719,8 @@ lemma smul_ne_zero_of_lt (c : WeierstrassCurve.Affine F)
   intro h_contra
   -- prime `order` together with `0 < k < order` forces `gcd k order = 1`
   have h_coprime : Int.gcd k (c.order : ℤ) = 1 := by
-    refine Nat.coprime_comm.mp (c.order_prime.coprime_iff_not_dvd.mpr fun hd => ?_)
+    refine Nat.coprime_comm.mp
+      ((Fact.out : Nat.Prime c.order).coprime_iff_not_dvd.mpr fun hd => ?_)
     have := Int.le_of_dvd (by positivity) (Int.natCast_dvd.mpr hd)
     omega
   -- Bézout: `k * a + order * b = 1`
@@ -730,7 +731,8 @@ lemma smul_ne_zero_of_lt (c : WeierstrassCurve.Affine F)
   have h_decomp : T = a • (k • T) + b • ((c.order : ℤ) • T) := by
     rw [← mul_smul, ← mul_smul, ← add_smul, mul_comm a k, mul_comm b (c.order : ℤ), hab,
       one_zsmul]
-  rw [h_contra, c.order_smul, smul_zero, smul_zero, add_zero] at h_decomp
+  have hord : (c.order : ℤ) • T = 0 := by rw [natCast_zsmul]; exact card_nsmul_eq_zero'
+  rw [h_contra, hord, smul_zero, smul_zero, add_zero] at h_decomp
   exact hT h_decomp
 
 /-- **x-coordinate bridge.** On a short-Weierstrass curve, a point that is neither `T`
@@ -768,7 +770,7 @@ lemma singleBit_tne_of_double_ne (c : WeierstrassCurve.Affine F)
   have hR : ∃ hR : c.Nonsingular (s1 * s1 - xi - xb)
       (s1 * (xi - (s1 * s1 - xi - xb)) - yi),
       Point.some _ _ hI + Point.some _ _ hQ = Point.some _ _ hR := by
-    apply secant_add c c.short hI hQ hxne (l := s1)
+    apply secant_add c (Fact.out : c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0) hI hQ hxne (l := s1)
     · rw [eq_div_iff (sub_ne_zero_of_ne hxne)]
       linear_combination' ((singleBitHolds_iff _ _ _ _ _ _ _ _).mp h).2.1
     · rfl
@@ -812,7 +814,7 @@ lemma tne_of_holds (c : WeierstrassCurve.Affine F)
       exact (mul_eq_zero.mp hfour).resolve_left h4ne
     exact mul_self_eq_zero.mp hy2
   -- Step 2: with `yi = 0` (and short shape `a₁ = a₃ = 0`), `negY = yi`, so `P = -P`.
-  obtain ⟨ha1, -, ha3⟩ := c.short
+  obtain ⟨ha1, -, ha3⟩ := (Fact.out : c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)
   have hneg : negY c xi yi = yi := by
     simp [WeierstrassCurve.Affine.negY, ha1, ha3, hyi]
   have hPselfneg : -(Point.some _ _ hI) = Point.some _ _ hI := by
@@ -823,7 +825,7 @@ lemma tne_of_holds (c : WeierstrassCurve.Affine F)
     rw [two_zsmul]; nth_rewrite 2 [← hPselfneg]; rw [add_neg_cancel]
   -- Step 4: `0 < 2 < order` (prime, `≠ 2`) contradicts `2 • P = 0` for `P ≠ 0`.
   have hlt : (2 : ℤ) < (c.order : ℤ) := by
-    have : 3 ≤ c.order := by have := c.order_prime.two_le; omega
+    have : 3 ≤ c.order := by have := (Fact.out : Nat.Prime c.order).two_le; omega
     exact_mod_cast this
   exact smul_ne_zero_of_lt c hPne (by norm_num) hlt h2P
 
@@ -855,10 +857,10 @@ lemma zsmul_eq_zero_iff_order_dvd (c : WeierstrassCurve.Affine F)
     [Fact (Nat.Prime c.order)] {T : c.Point} (hT : T ≠ 0) (m : ℤ) :
     m • T = 0 ↔ (c.order : ℤ) ∣ m := by
   have hdvd : (addOrderOf T : ℤ) ∣ (c.order : ℤ) :=
-    addOrderOf_dvd_iff_zsmul_eq_zero.mpr (c.order_smul T)
+    addOrderOf_dvd_iff_zsmul_eq_zero.mpr (by rw [natCast_zsmul]; exact card_nsmul_eq_zero')
   have horder : addOrderOf T = c.order := by
     have hnat : addOrderOf T ∣ c.order := by exact_mod_cast hdvd
-    rcases (Nat.Prime.eq_one_or_self_of_dvd c.order_prime _ hnat) with h1 | h1
+    rcases Nat.Prime.eq_one_or_self_of_dvd (Fact.out : Nat.Prime c.order) _ hnat with h1 | h1
     · exact absurd (AddMonoid.addOrderOf_eq_one_iff.mp h1) hT
     · exact h1
   rw [← addOrderOf_dvd_iff_zsmul_eq_zero, horder]
@@ -954,7 +956,8 @@ lemma gate_step_advance' (c : WeierstrassCurve.Affine F)
       ∃ (hO : c.Nonsingular xo yo) (e : ℤ),
         (e = 1 ∨ e = -1) ∧ (e : F) = 2 * b - 1 ∧
           Point.some _ _ hO = (2 * k + e) • Point.some _ _ hTns := by
-  obtain ⟨e, he, he'⟩ := signed_target c c.short hTns hQ hbit
+  have hshort : c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0 := Fact.out
+  obtain ⟨e, he, he'⟩ := signed_target c hshort hTns hQ hbit
   have hxne : xi ≠ xT := by
     apply x_ne_xT_of_ne_base c hI hTns
     · contrapose! hkx1
@@ -965,7 +968,7 @@ lemma gate_step_advance' (c : WeierstrassCurve.Affine F)
       rw [← zsmul_eq_zero_iff_order_dvd c hTne, add_zsmul, one_zsmul, ← hIk, hkx2,
         neg_add_cancel]
   have htne : 2 * xi + xT - s1 * s1 ≠ 0 := tne_of_holds c h2 hodd hI hh
-  obtain ⟨hO, hOeq⟩ := singleBit_sound c c.short b xT yT s1 xi yi xo yo hI hQ hxne htne hh
+  obtain ⟨hO, hOeq⟩ := singleBit_sound c hshort b xT yT s1 xi yi xo yo hI hQ hxne htne hh
   refine ⟨hxne, htne, hO, e, he'.2, he'.1, ?_⟩
   rw [hOeq, hIk, he]
   module
@@ -992,6 +995,7 @@ lemma gate_block_produce (c : WeierstrassCurve.Affine F)
   have hT0 : Point.some _ _ hTns ≠ 0 := by rw [← hTeq]; exact hTne
   obtain ⟨_hdec, hsb0, hsb1, hsb2, hsb3, hsb4⟩ := (holds_iff _).mp hh
   obtain ⟨gb0, gb1, gb2, gb3, gb4⟩ := gateBit_block g i
+  have hshort : c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0 := Fact.out
   have bit : ∀ {x : F}, x * x - x = 0 → x = 0 ∨ x = 1 := by
     intro x hx
     rcases mul_eq_zero.mp (show x * (x - 1) = 0 by linear_combination hx) with h | h
@@ -1001,31 +1005,31 @@ lemma gate_block_produce (c : WeierstrassCurve.Affine F)
     rw [hTeq] at ha0; exact ha0
   obtain ⟨hx0, ht0, hO0, e0, hepm0, hef0, hOeq0⟩ :=
     gate_step_advance' c h2 hodd hTns ha0ns
-      (signed_target_nonsingular c c.short hTns (bit hsb0.bool))
+      (signed_target_nonsingular c hshort hTns (bit hsb0.bool))
       (bit hsb0.bool) hT0 (gateLadder g (5 * i)) ha0'
       (hnd 0 (by omega)).1 (hnd 0 (by omega)).2 hsb0
   have ha1 : Point.some _ _ hO0 = gateLadder g (5 * i + 1) • Point.some _ _ hTns := by
     rw [hOeq0, e_eq_gateBitSign g (5 * i) gb0 (bit hsb0.bool) hef0 hepm0 h2, ← gateLadder_succ]
   obtain ⟨hx1, ht1, hO1, e1, hepm1, hef1, hOeq1⟩ :=
-    gate_step_advance' c h2 hodd hTns hO0 (signed_target_nonsingular c c.short hTns (bit hsb1.bool))
+    gate_step_advance' c h2 hodd hTns hO0 (signed_target_nonsingular c hshort hTns (bit hsb1.bool))
       (bit hsb1.bool) hT0 (gateLadder g (5 * i + 1)) ha1
       (hnd 1 (by omega)).1 (hnd 1 (by omega)).2 hsb1
   have ha2 : Point.some _ _ hO1 = gateLadder g (5 * i + 2) • Point.some _ _ hTns := by
     rw [hOeq1, e_eq_gateBitSign g (5 * i + 1) gb1 (bit hsb1.bool) hef1 hepm1 h2, ← gateLadder_succ]
   obtain ⟨hx2, ht2, hO2, e2, hepm2, hef2, hOeq2⟩ :=
-    gate_step_advance' c h2 hodd hTns hO1 (signed_target_nonsingular c c.short hTns (bit hsb2.bool))
+    gate_step_advance' c h2 hodd hTns hO1 (signed_target_nonsingular c hshort hTns (bit hsb2.bool))
       (bit hsb2.bool) hT0 (gateLadder g (5 * i + 2)) ha2
       (hnd 2 (by omega)).1 (hnd 2 (by omega)).2 hsb2
   have ha3 : Point.some _ _ hO2 = gateLadder g (5 * i + 3) • Point.some _ _ hTns := by
     rw [hOeq2, e_eq_gateBitSign g (5 * i + 2) gb2 (bit hsb2.bool) hef2 hepm2 h2, ← gateLadder_succ]
   obtain ⟨hx3, ht3, hO3, e3, hepm3, hef3, hOeq3⟩ :=
-    gate_step_advance' c h2 hodd hTns hO2 (signed_target_nonsingular c c.short hTns (bit hsb3.bool))
+    gate_step_advance' c h2 hodd hTns hO2 (signed_target_nonsingular c hshort hTns (bit hsb3.bool))
       (bit hsb3.bool) hT0 (gateLadder g (5 * i + 3)) ha3
       (hnd 3 (by omega)).1 (hnd 3 (by omega)).2 hsb3
   have ha4 : Point.some _ _ hO3 = gateLadder g (5 * i + 4) • Point.some _ _ hTns := by
     rw [hOeq3, e_eq_gateBitSign g (5 * i + 3) gb3 (bit hsb3.bool) hef3 hepm3 h2, ← gateLadder_succ]
   obtain ⟨hx4, ht4, hO4, e4, hepm4, hef4, hOeq4⟩ :=
-    gate_step_advance' c h2 hodd hTns hO3 (signed_target_nonsingular c c.short hTns (bit hsb4.bool))
+    gate_step_advance' c h2 hodd hTns hO3 (signed_target_nonsingular c hshort hTns (bit hsb4.bool))
       (bit hsb4.bool) hT0 (gateLadder g (5 * i + 4)) ha4
       (hnd 4 (by omega)).1 (hnd 4 (by omega)).2 hsb4
   have ha5 : Point.some _ _ hO4 = gateLadder g (5 * i + 5) • Point.some _ _ hTns := by
@@ -1054,6 +1058,7 @@ lemma gate_block_full (c : WeierstrassCurve.Affine F)
   have hT0 : Point.some _ _ hTns ≠ 0 := by rw [← hTeq]; exact hTne
   obtain ⟨_hdec, hsb0, hsb1, hsb2, hsb3, hsb4⟩ := (holds_iff _).mp hh
   obtain ⟨gb0, gb1, gb2, gb3, gb4⟩ := gateBit_block g i
+  have hshort : c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0 := Fact.out
   have bit : ∀ {x : F}, x * x - x = 0 → x = 0 ∨ x = 1 := by
     intro x hx
     rcases mul_eq_zero.mp (show x * (x - 1) = 0 by linear_combination hx) with h | h
@@ -1063,31 +1068,31 @@ lemma gate_block_full (c : WeierstrassCurve.Affine F)
     rw [hTeq] at ha0; exact ha0
   obtain ⟨hx0, ht0, hO0, e0, hepm0, hef0, hOeq0⟩ :=
     gate_step_advance' c h2 hodd hTns ha0ns
-      (signed_target_nonsingular c c.short hTns (bit hsb0.bool))
+      (signed_target_nonsingular c hshort hTns (bit hsb0.bool))
       (bit hsb0.bool) hT0 (gateLadder g (5 * i)) ha0'
       (hnd 0 (by omega)).1 (hnd 0 (by omega)).2 hsb0
   have ha1 : Point.some _ _ hO0 = gateLadder g (5 * i + 1) • Point.some _ _ hTns := by
     rw [hOeq0, e_eq_gateBitSign g (5 * i) gb0 (bit hsb0.bool) hef0 hepm0 h2, ← gateLadder_succ]
   obtain ⟨hx1, ht1, hO1, e1, hepm1, hef1, hOeq1⟩ :=
-    gate_step_advance' c h2 hodd hTns hO0 (signed_target_nonsingular c c.short hTns (bit hsb1.bool))
+    gate_step_advance' c h2 hodd hTns hO0 (signed_target_nonsingular c hshort hTns (bit hsb1.bool))
       (bit hsb1.bool) hT0 (gateLadder g (5 * i + 1)) ha1
       (hnd 1 (by omega)).1 (hnd 1 (by omega)).2 hsb1
   have ha2 : Point.some _ _ hO1 = gateLadder g (5 * i + 2) • Point.some _ _ hTns := by
     rw [hOeq1, e_eq_gateBitSign g (5 * i + 1) gb1 (bit hsb1.bool) hef1 hepm1 h2, ← gateLadder_succ]
   obtain ⟨hx2, ht2, hO2, e2, hepm2, hef2, hOeq2⟩ :=
-    gate_step_advance' c h2 hodd hTns hO1 (signed_target_nonsingular c c.short hTns (bit hsb2.bool))
+    gate_step_advance' c h2 hodd hTns hO1 (signed_target_nonsingular c hshort hTns (bit hsb2.bool))
       (bit hsb2.bool) hT0 (gateLadder g (5 * i + 2)) ha2
       (hnd 2 (by omega)).1 (hnd 2 (by omega)).2 hsb2
   have ha3 : Point.some _ _ hO2 = gateLadder g (5 * i + 3) • Point.some _ _ hTns := by
     rw [hOeq2, e_eq_gateBitSign g (5 * i + 2) gb2 (bit hsb2.bool) hef2 hepm2 h2, ← gateLadder_succ]
   obtain ⟨hx3, ht3, hO3, e3, hepm3, hef3, hOeq3⟩ :=
-    gate_step_advance' c h2 hodd hTns hO2 (signed_target_nonsingular c c.short hTns (bit hsb3.bool))
+    gate_step_advance' c h2 hodd hTns hO2 (signed_target_nonsingular c hshort hTns (bit hsb3.bool))
       (bit hsb3.bool) hT0 (gateLadder g (5 * i + 3)) ha3
       (hnd 3 (by omega)).1 (hnd 3 (by omega)).2 hsb3
   have ha4 : Point.some _ _ hO3 = gateLadder g (5 * i + 4) • Point.some _ _ hTns := by
     rw [hOeq3, e_eq_gateBitSign g (5 * i + 3) gb3 (bit hsb3.bool) hef3 hepm3 h2, ← gateLadder_succ]
   obtain ⟨hx4, ht4, hO4, e4, hepm4, hef4, hOeq4⟩ :=
-    gate_step_advance' c h2 hodd hTns hO3 (signed_target_nonsingular c c.short hTns (bit hsb4.bool))
+    gate_step_advance' c h2 hodd hTns hO3 (signed_target_nonsingular c hshort hTns (bit hsb4.bool))
       (bit hsb4.bool) hT0 (gateLadder g (5 * i + 4)) ha4
       (hnd 4 (by omega)).1 (hnd 4 (by omega)).2 hsb4
   have ha5 : Point.some _ _ hO4 = gateLadder g (5 * i + 5) • Point.some _ _ hTns := by
@@ -1289,7 +1294,7 @@ theorem varBaseMul_forbidden_correct (c : WeierstrassCurve.Affine F)
   have hnf' : ∀ t ∈ Ladder.forbiddenResidues, ¬ (c.order : ℤ) ∣ (gateLadder g (5 * m) - t) := by
     intro t ht hdvd; exact hnf ⟨t, ht, by rw [hs]; exact hdvd⟩
   exact gate_chain_produce c m g T s hTne hholds hTns hTeq hbase hthread hP0ns hP0 h2 hodd
-    (Ladder.ladder_nondegen_tight c.order (5 * m) c.order_prime hq4 hreg₁ hreg₂
+    (Ladder.ladder_nondegen_tight c.order (5 * m) (Fact.out : Nat.Prime c.order) hq4 hreg₁ hreg₂
       (gateLadder g) (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
       (fun j _ => gateLadder_succ g j) hnf') hs
 
