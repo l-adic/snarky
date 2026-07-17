@@ -8,12 +8,10 @@ Pasta.vesta_endo
 Pasta.pallas_lam
 Pasta.vesta_lam
 
--- This package declares NO axioms: the group orders are unconditional (CompElliptic's
--- fibre-bound argument) and the trust is native_decide certificates alone.
+-- The package declares no axioms; the curve trust is native_decide certificates alone.
 --
--- The CM eigenvalue relations (φ = [λ], proved — homomorphism + prime-order cyclicity +
--- the two native_decide anchors at the generators), group orders, primality, GLV
--- short-basis bounds, the field-bit width.
+-- The CM eigenvalue relations, group orders, primality, GLV short-basis bounds, the
+-- field-bit width.
 Pasta.pallas_eigen
 Pasta.vesta_eigen
 Pasta.pallas_card

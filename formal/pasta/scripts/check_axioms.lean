@@ -1,9 +1,7 @@
 /-
-Axiom-closure gate for the Pasta trust base. This package declares NO axioms; the gate
-checks that every theorem here reduces to the standard logical axioms + the trusted
-`native_decide` certificates and nothing else — the group orders are unconditional
-(CompElliptic's fibre-bound argument) and the CM eigenvalue relations
-(`pallas_eigen`/`vesta_eigen`) are theorems.
+Axiom-closure gate for the Pasta trust base. The package declares no axioms; the gate
+checks that every root reduces to the standard logical axioms + the trusted
+`native_decide` certificates and nothing else.
 
 Run from `formal/pasta/`:  lake env lean scripts/check_axioms.lean
 (or from `formal/`:        lake env lean pasta/scripts/check_axioms.lean)
@@ -26,8 +24,7 @@ def roots : List Name :=
     `Pasta.pallas_eigen, `Pasta.vesta_eigen ]
 
 /-- Standard logical axioms and `Lean.ofReduceBool` (the `native_decide` witnesses:
-    CompElliptic's prime-order witnesses + this package's two eigenvalue anchors).
-    NO declared axioms of our own. -/
+    CompElliptic's prime-order witnesses + this package's two eigenvalue anchors). -/
 def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound, `Lean.ofReduceBool ]
 
@@ -57,7 +54,7 @@ run_cmd do
         bad := bad.push (root, ax)
   if bad.isEmpty then
     IO.println s!"✓ all {Pasta.CheckAxioms.roots.length} Pasta roots reduce to the standard \
-      axioms + trusted native_decide certificates (no Hasse, no eigen)"
+      axioms + trusted native_decide certificates"
   else
     for (r, a) in bad do
       IO.eprintln s!"::error::{r} depends on disallowed axiom {a}"
