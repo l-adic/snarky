@@ -1,4 +1,7 @@
 name = "kimchi"
+# Share the aggregator workspace's dependency checkouts (one Mathlib for every
+# package workspace — the editor opens files with the package as the root).
+packagesDir = "../.lake/packages"
 defaultTargets = ["Kimchi", "kimchi-demo"]
 
 # CompElliptic: concrete short-Weierstrass `SWCurve` / `SWPoint` with a proven group law,

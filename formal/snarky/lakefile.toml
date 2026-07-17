@@ -1,4 +1,7 @@
 name = "snarky"
+# Share the aggregator workspace's dependency checkouts (one Mathlib for every
+# package workspace — the editor opens files with the package as the root).
+packagesDir = "../.lake/packages"
 defaultTargets = ["Snarky"]
 
 # The kimchi formalization: the `Snarky.Kimchi.*` bridge modules interpret the DSL's

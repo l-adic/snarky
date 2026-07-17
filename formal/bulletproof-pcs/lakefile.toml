@@ -1,4 +1,7 @@
 name = "bulletproof-pcs"
+# Share the aggregator workspace's dependency checkouts (one Mathlib for every
+# package workspace — the editor opens files with the package as the root).
+packagesDir = "../.lake/packages"
 defaultTargets = ["Bulletproof"]
 
 # CompElliptic: the Pasta fields and curves the wire verifier is instantiated at.
