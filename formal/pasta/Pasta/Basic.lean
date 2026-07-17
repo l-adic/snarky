@@ -66,19 +66,14 @@ abbrev pastaFieldBits : ℕ := 255
 lemma two_pow_le_pallas_base : 2 ^ (pastaFieldBits - 1) ≤ PALLAS_BASE_CARD := by
   norm_num [PALLAS_BASE_CARD]
 
-/-- The Pallas group order is prime — the point count plus `PALLAS_SCALAR_is_prime`. -/
-theorem pallas_order_prime : Nat.Prime Pallas.curve.toAffine.order := by
-  rw [pallas_card]; exact PALLAS_SCALAR_is_prime
+/-- The Pallas group order is prime — the point count plus `PALLAS_SCALAR_is_prime` — as
+    the auto-threading `Fact` the soundness theorems consume (read back by `Fact.out`). -/
+instance pallas_order_prime : Fact (Nat.Prime Pallas.curve.toAffine.order) :=
+  ⟨by rw [pallas_card]; exact PALLAS_SCALAR_is_prime⟩
 
-/-- The Vesta group order is prime — the point count plus `PALLAS_BASE_is_prime`. -/
-theorem vesta_order_prime : Nat.Prime Vesta.curve.toAffine.order := by
-  rw [vesta_card]; exact PALLAS_BASE_is_prime
-
-/-- `order_prime` for Pallas as the auto-threading `Fact` the soundness theorems consume. -/
-instance : Fact (Nat.Prime Pallas.curve.toAffine.order) := ⟨pallas_order_prime⟩
-
-/-- `order_prime` for Vesta likewise. -/
-instance : Fact (Nat.Prime Vesta.curve.toAffine.order) := ⟨vesta_order_prime⟩
+/-- The Vesta group order is prime, as the auto-threading `Fact`. -/
+instance vesta_order_prime : Fact (Nat.Prime Vesta.curve.toAffine.order) :=
+  ⟨by rw [vesta_card]; exact PALLAS_BASE_is_prime⟩
 
 /-- The short-Weierstrass `Fact` the VarBaseMul soundness consumes — `a₁=a₂=a₃=0`, which every
     `toW` curve satisfies by `rfl` (no `a₄=0`/`A=0` needed). -/
