@@ -5,12 +5,21 @@
 # each package's scripts/ drivers and .lake/ build dirs are excluded.
 #
 # Usage:  scripts/module-deps.sh [out.dot]     (default: docs/module-deps.dot)
-# Render: dot -Tsvg docs/module-deps.dot -o docs/module-deps.svg
+# Render: dot -Tsvg docs/module-deps.dot -o docs/module-deps.svg  (or `make lean-dep-graph`)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 out="${1:-docs/module-deps.dot}"
 
 pkgs=(pasta poseidon bulletproof-pcs kimchi snarky)
+
+# Per-package fill colour (light tint; nodes stay white for readable text).
+declare -A pkg_color=(
+  [pasta]="#cfe8ff"          # blue
+  [poseidon]="#d5f0d0"       # green
+  [bulletproof-pcs]="#ffe0c2" # orange
+  [kimchi]="#e6d5f0"         # purple
+  [snarky]="#ffd6d6"         # red
+)
 
 srcs() { # $1 = package dir
   find "$1" -name '*.lean' -not -path '*/.lake/*' -not -path '*/scripts/*' | sort
@@ -24,12 +33,15 @@ mod_of() { # $1 = package dir, $2 = file path -> module name
 
 {
   echo 'digraph "formal-modules" {'
-  echo '  rankdir=LR;'
-  echo '  node [shape=box, fontsize=10, fontname="Helvetica"];'
+  # Top-to-bottom: an edge `A -> B` (module A imports B) points downward, so an
+  # arrow pointing down reads "depends on" — dependencies sink toward the bottom.
+  echo '  rankdir=TB;'
+  echo '  node [shape=box, style=filled, fillcolor=white, fontsize=10, fontname="Helvetica"];'
   echo '  edge [color=gray40, arrowsize=0.6];'
   for p in "${pkgs[@]}"; do
     echo "  subgraph \"cluster_${p}\" {"
-    echo "    label=\"${p}\"; color=gray60; fontsize=12; fontname=\"Helvetica-Bold\";"
+    echo "    label=\"${p}\"; style=filled; fillcolor=\"${pkg_color[$p]}\";"
+    echo "    color=gray50; fontsize=12; fontname=\"Helvetica-Bold\";"
     while IFS= read -r f; do
       echo "    \"$(mod_of "$p" "$f")\";"
     done < <(srcs "$p")
