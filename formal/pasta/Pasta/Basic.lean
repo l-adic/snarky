@@ -1,10 +1,17 @@
-import Pasta.Curve
+import Mathlib
+import CompElliptic.CurveForms.ShortWeierstrass
 import CompElliptic.Curves.Pasta
 import CompElliptic.Curves.PastaOrder
 import CompElliptic.Fields.Pasta
 
 /-!
-# The Pasta curves' group orders
+# The Pasta curves' group orders and the point-group module structure
+
+Also home to the two-declaration generic vocabulary the kimchi EC gates state their
+soundness in: `c.order` (the group order `#E(F)` of a Mathlib affine curve, as a name) and
+`C.toAffine` (a CompElliptic `SWCurve` realized as a Mathlib curve). The short-shape and
+prime-order hypotheses thread through the abstract development as `Fact` instances,
+discharged here for the concrete curves and read back with a bare `Fact.out` at use sites.
 
 The Pallas group order is the prime `q = PALLAS_SCALAR_CARD` and the Vesta group order is the
 prime `p = PALLAS_BASE_CARD` (the Pasta cycle: each curve's order is the other's base-field
@@ -14,6 +21,22 @@ elementary fibre bound `#E(𝔽) ≤ 2·#𝔽 + 1` plus the `native_decide` prim
 `-5` is not a cube). No Hasse bound, no axioms — this file only transports the counts to the
 Mathlib-`Point` reading and packages primality as `Fact` instances.
 -/
+
+namespace WeierstrassCurve.Affine
+
+/-- The group order `#E(F)` — the scalar modulus every VarBaseMul/EndoMul statement
+    quantifies over. -/
+noncomputable def order {F : Type*} [Field F] (W : Affine F) : ℕ := Nat.card W.Point
+
+end WeierstrassCurve.Affine
+
+namespace CompElliptic.CurveForms.ShortWeierstrass
+
+/-- The `SWCurve` as a Mathlib affine Weierstrass curve `y² = x³ + A·x + B`. -/
+abbrev SWCurve.toAffine {F : Type*} [Field F] (C : SWCurve F) : WeierstrassCurve.Affine F :=
+  toW C.A C.B
+
+end CompElliptic.CurveForms.ShortWeierstrass
 
 namespace Pasta
 
@@ -65,5 +88,39 @@ instance : Fact (Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ =
 /-- The short-Weierstrass `Fact` for Vesta likewise. -/
 instance : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0 ∧
     Vesta.curve.toAffine.a₃ = 0) := ⟨⟨rfl, rfl, rfl⟩⟩
+
+/-! ## The scalar action on the Pasta point groups
+
+Each point group is a module over its scalar field: it is prime-order (the unconditional
+point counts), so it is torsion at that prime and `AddCommGroup.zmodModule` equips it with
+the `ZMod`-module structure. The action is definitionally the ℕ-action at the canonical
+representative (`{vesta,pallas}_smul_val` — `rfl`), which is the form the executable
+verifiers compute with. -/
+
+open CompElliptic.Curves.Pasta.Vesta renaming curve → vestaCurve
+open CompElliptic.Curves.Pasta.Pallas renaming curve → pallasCurve
+open CompElliptic.Fields.Pasta
+
+/-- The Vesta point group is `PALLAS_BASE_CARD`-torsion (its group order, by the unconditional
+axiom), hence a module over its scalar field. The action is definitionally `z.val • _`. -/
+instance vestaPointModule : Module Fp (SWPoint vestaCurve) :=
+  AddCommGroup.zmodModule fun P => by
+    rw [← Vesta.card_eq]
+    exact card_nsmul_eq_zero'
+
+/-- The Pallas point group is `PALLAS_SCALAR_CARD`-torsion (its group order, under the
+point count), hence a module over its scalar field. -/
+instance pallasPointModule : Module Fq (SWPoint pallasCurve) :=
+  AddCommGroup.zmodModule fun P => by
+    rw [← Pallas.card_eq]
+    exact card_nsmul_eq_zero'
+
+/-- The module action is the ℕ-action at the canonical representative — the form the
+executable verifiers compute with. -/
+theorem vesta_smul_val (z : Fp) (P : SWPoint vestaCurve) : z • P = z.val • P :=
+  rfl
+
+theorem pallas_smul_val (z : Fq) (P : SWPoint pallasCurve) : z • P = z.val • P :=
+  rfl
 
 end Pasta

@@ -23,7 +23,6 @@ def roots : List Name :=
     `Pasta.vesta_smul_val, `Pasta.pallas_smul_val,
     `Pasta.Shifted.unshiftType1_shiftType1, `Pasta.Shifted.shiftType1_unshiftType1,
     `Pasta.Shifted.shiftType2_unshiftType2,
-    `WeierstrassCurve.Affine.order_smul,
     `Pasta.pallas_eigen, `Pasta.vesta_eigen ]
 
 /-- Standard logical axioms and `Lean.ofReduceBool` (the `native_decide` witnesses:

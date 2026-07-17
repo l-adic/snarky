@@ -1,6 +1,5 @@
 import Mathlib
 import Pasta.Basic
-import Pasta.Curve
 import CompElliptic.Curves.Pasta
 import CompElliptic.Curves.PastaOrder
 

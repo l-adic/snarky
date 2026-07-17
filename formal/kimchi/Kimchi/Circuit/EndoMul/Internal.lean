@@ -212,7 +212,8 @@ theorem block_tne (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
   have h2P : (2 : ℤ) • Point.some _ _ hI = 0 := by
     rw [two_zsmul]; nth_rewrite 2 [← hself]; rw [add_neg_cancel]
   have hlt : (2 : ℤ) < (W.order : ℤ) := by
-    have : (2 : ℕ) < W.order := lt_of_le_of_ne W.order_prime.two_le (Ne.symm hodd)
+    have : (2 : ℕ) < W.order :=
+      lt_of_le_of_ne (Fact.out : Nat.Prime W.order).two_le (Ne.symm hodd)
     exact_mod_cast this
   exact Kimchi.Circuit.VarBaseMul.smul_ne_zero_of_lt W hPne (by norm_num) hlt h2P
 

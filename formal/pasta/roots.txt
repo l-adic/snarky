@@ -25,10 +25,8 @@ Pasta.vesta_glv_no_short_relation
 Pasta.pastaFieldBits
 Pasta.two_pow_le_pallas_base
 
--- The generic EC order/shape sugar.
-WeierstrassCurve.Affine.order_smul
-WeierstrassCurve.Affine.order_prime
-WeierstrassCurve.Affine.short
+-- The generic EC order/shape vocabulary (the statement language of the kimchi EC gates).
+WeierstrassCurve.Affine.order
 CompElliptic.CurveForms.ShortWeierstrass.SWCurve.toAffine
 
 -- The point-group module structure and its computational reading.
