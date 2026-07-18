@@ -329,10 +329,9 @@ theorem claimedEvals_eq_evalsOf [Field F] {n : ℕ} [NeZero n] (idx : Index F n)
 
 /-- **The openings-interface soundness seam** (the factored core of `kimchiProof_sound`).
 The headline split at its two `batch_openings_nc1` call sites, making the openings
-interface the shared junction of the extraction models: the standard-model path
-(density → rectangle → `batch_openings_nc1`) and the algebraic-prover path
-(representations carried with the prover's messages) both discharge it. The REFERENCE
-side is pure commitment knowledge — `hbound₀` binds every batch row to a known witness
+interface a junction discharged by the algebraic-prover extraction model (SRS-basis
+representations carried with the prover's messages supply the per-row openings). The
+REFERENCE side is pure commitment knowledge — `hbound₀` binds every batch row to a known witness
 pair, the reference transcript's only surviving content (its eval data was never
 load-bearing). The CONSUMER side replaces the per-point Fiat–Shamir trees with per-row
 openings: each avoiding challenge tuple supplies bound openings `aw`/`ρw` whose per-row
