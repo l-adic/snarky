@@ -1,7 +1,7 @@
 import CompElliptic.Curves.Pasta
 import Pasta.Shifted
 import Poseidon.GroupMap
-import Bulletproof.Batch
+import Bulletproof.Protocol
 
 /-!
 # The executable kimchi IPA verifier
@@ -10,9 +10,9 @@ The batched IPA opening verifier of kimchi (`SRS::verify`, proof-systems
 `poly-commitment/src/ipa.rs`), composed as one executable function over exactly the wire
 data: the per-polynomial commitments, evaluation points and claimed evaluations, the
 combination scalars, and the opening proof, against a separately supplied SRS
-(`Bulletproof.SRS`, as everywhere in the library). Everything
+(`Bulletproof.SRS`). Everything
 transcript-derived — the `U` base, the round challenges, the Schnorr challenge — is
-recomputed here through the sponge layer (`Kimchi/Sponge`); nothing is taken as input that
+recomputed here through the sponge layer (the `poseidon` package); nothing is taken as input that
 the wire protocol does not carry. In particular the abstract SRS's randomisation base
 `σ.U` is never read: the deployed protocol derives `U` from the transcript, and relating
 the derived base to the abstract one is exactly the Fiat-Shamir assumption's junction.
@@ -29,9 +29,8 @@ structure is inherited: `+`/`0` and the binary-nsmul scalar action from CompElli
 
 The scalar side reuses the `Bulletproof` definitions (`bPoly`,
 `bPolyCoefficients`, `combinedB`, `combinedInnerProduct`) at the concrete scalar field.
-Scalars act on points as `z.val • _` (the ℕ-action of the group): the `C.ScalarField`-module
-structure on `Point` is the reflection concern relating this verifier to the `Prop`-level
-`BatchAccepts`, not stated here.
+Scalars act on points as `z.val • _` (the ℕ-action of the group); `Reflection.lean`
+relates this verifier to the `Prop`-level `BatchAccepts`.
 
 The absorbed-scalar encoding (`shift_scalar`) is selected by the modulus comparison from
 the cardinalities — the `Shifted_value` Type1 register when the scalar modulus is below
@@ -48,16 +47,6 @@ the base modulus, the Type2 shift otherwise — at the scalar-modulus bit size
 `IpaVesta` and `IpaPallas` instantiate the two Pasta curves; both are validated against
 production prover/verifier fixtures by `scripts/check_ipa_fixture.lean`.
 
-## Contents
-
-* `CommitmentCurve`, `Point` — the curve bundle and the inherited point type.
-* `Proof`, `Input` — the wire data, indexed by the curve.
-* `shiftScalar` — the absorbed-scalar encoding, selected from the cardinalities.
-* `transcript` — the Fiat-Shamir schedule: `(U, chal, c)` from the wire data.
-* `Input.commitmentFn`/`pointFn`/`evalFn`, `transcriptChallenges`, `mkInput` — the named
-  wire→abstract views the reflection statements consume.
-* `verify` — the acceptance decision, against a library `SRS`.
-* `IpaVesta`, `IpaPallas` — the Pasta instantiations.
 -/
 
 namespace Bulletproof.Ipa
@@ -105,7 +94,7 @@ structure Proof (C : CommitmentCurve) where
   sg : C.Point
 
 /-- A batched opening claim, uncombined — the verifier's wire input: the per-polynomial
-commitments (one chunk each), the evaluation points, the claimed evaluation matrix
+commitments (one segment each), the evaluation points, the claimed evaluation matrix
 (`evals[i][j]` = polynomial `i` at point `j`), the combination scalars, and the proof. -/
 structure Input (C : CommitmentCurve) where
   commitments : Array C.Point
@@ -182,7 +171,7 @@ private theorem foldl_fst_size {S γ α : Type*} (step : (Array γ × S) → α 
     omega
 
 /-- The transcript squeezes exactly one round challenge per `(L, R)` pair. -/
-theorem transcript_chals_size (inp : Input C) :
+private theorem transcript_chals_size (inp : Input C) :
     (transcript C inp).2.1.size = inp.proof.lr.size := by
   simp only [transcript]
   rw [← Array.foldl_toList, foldl_fst_size]
@@ -274,7 +263,7 @@ namespace Bulletproof.IpaPallas
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Poseidon Bulletproof
 
 /-- The Pallas bundle. The scalar modulus is above the base modulus, so scalars absorb in
-Type2 form — selected by the cardinalities, not restated here. -/
+Type2 form (selected by the cardinalities). -/
 abbrev curve : Ipa.CommitmentCurve where
   base := PALLAS_BASE_CARD
   scalar := PALLAS_SCALAR_CARD

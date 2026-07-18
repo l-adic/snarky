@@ -18,11 +18,8 @@ namespace Bulletproof.CheckAxioms
 
 /-- The PCS soundness surface. -/
 def roots : List Name :=
-  [ `Bulletproof.ipa_soundness,
-    `Bulletproof.commitmentBinding_iff_no_relation,
+  [ `Bulletproof.commitmentBinding_iff_no_relation,
     `Bulletproof.ipaRelation_unique,
-    `Bulletproof.vandermondeN,
-    `Bulletproof.batch_soundness,
     `Bulletproof.chunked_ipa_soundness,
     `Bulletproof.chunked_batch_soundness,
     `Bulletproof.verify_reflects,

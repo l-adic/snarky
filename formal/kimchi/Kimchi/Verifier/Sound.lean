@@ -1,6 +1,6 @@
 import Mathlib
-import Bulletproof.Soundness.Batch
-import Bulletproof.Chunk
+import Bulletproof.Protocol
+import Bulletproof.Soundness
 import Kimchi.Verifier.Correspond
 
 /-!
@@ -17,7 +17,7 @@ claimed evaluation equal to `⟨a, evalVector (x j)⟩`. `rowPoly a` names the p
 with coefficient vector `a`; its kit (`rowPoly_eval`, `rowPoly_natDegree_lt`,
 `rowPoly_coeff`, `rowPoly_coeff_self`) is the degree-`< 2^k` vector ↔ polynomial
 dictionary — the chunk-index-`0` instance of the window kit in
-`Kimchi/Commitment/IPA/Chunk.lean` (`chunkPoly_eval`, `assemblePoly_coeff`), whose
+the bulletproof-pcs `Chunk.lean` (`chunkPoly_eval`, `assemblePoly_coeff`), whose
 proofs it mirrors. **Pinned rows** then identify the VK columns with the Index's own
 polynomials: when a bound row's commitment is a pinned column `commitPoly σ p` (or the
 fixed-blinder `commitPolyMasked σ p` — production's selector masking, see

@@ -7,7 +7,7 @@ import Lean.Data.Json
 
 Decoders for the IPA wire-format fixtures (`tools/fixture-dump`'s `ipa_dump`), shared by
 the fixture scripts. Chunking is the general case: every commitment is an array of chunk
-points and every evaluation a chunk list — `nc = 1` is the one-element instance of the
+points and every evaluation a chunk list — a single chunk is the one-element instance of the
 same schema, exactly as `PolyComm` is always a chunk vector in proof-systems.
 
 Two fixture kinds, one per production chunk-fold mechanism:
@@ -16,15 +16,15 @@ Two fixture kinds, one per production chunk-fold mechanism:
   combined by `chunk_commitment(x^(2^k))` and the combined polynomial is opened. The
   fixture records the production-combined commitment and value per polynomial, so a
   script can adjudicate the chunk layer's recombination formulas
-  (`Kimchi/Commitment/IPA/Chunk.lean`) against production output; the recombinators here
+  (`Chunk.lean`) against production output; the recombinators here
   (`recombinePoint`/`recombineScalar`) are those formulas, executably.
 * **Chunked batch** (`RawBatch`, mechanism (b)): the multi-chunk `PolyComm`s enter the
   batch as-is — each chunk one segment, polynomial-outer, chunk-inner, one consecutive
   polyscale power per segment. The fixture records the production flat combination
   targets (`combine_commitments` at `rand_base = 1`, `combined_inner_product`); the
   combiners here (`segmentCombinePoint`/`segmentCombineScalar`) are the chunked-batch
-  combiners of `Kimchi/Commitment/IPA/Batch.lean`, executably, and `toFlatInput` is the
-  flattening lemma as data — the segment stream presented to the `nc = 1` verifier.
+  combiners of `Batch.lean`, executably, and `toFlatInput` is the
+  flattening lemma as data — the segment stream presented to the wire verifier.
 -/
 
 namespace Bulletproof.Fixture
@@ -166,7 +166,7 @@ def segmentCombineScalar (C : Ipa.CommitmentCurve) (ξ r : C.ScalarField)
 
 /-- The flattened segment view — every chunk as its own claim row, the flattening lemmas
 (`chunkedCombined*_eq_flat`) as data. The production opening of a chunked batch IS the
-opening of this flat batch, so the `nc = 1` executable verifier adjudicates the whole
+opening of this flat batch, so the executable verifier adjudicates the whole
 segment layout by accepting it. -/
 def RawBatch.toFlatInput {C : Ipa.CommitmentCurve} (raw : RawBatch C) : Ipa.Input C :=
   { commitments := raw.chunkComms.flatMap id

@@ -1,11 +1,12 @@
 import Mathlib
+import Bulletproof.Soundness
 import Kimchi.Verifier.Sound
 import Kimchi.Verifier.Equation
 
 /-!
 # The composed soundness headline (milestone 4.5): `kimchiProof_sound`
 
-The milestone-4 capstone: batched IPA acceptance (`batch_soundnessA`), DL-binding, and
+The milestone-4 capstone: batched IPA acceptance (`batch_openings_nc1`), DL-binding, and
 the verifier-key correspondence (`VKCorresponds`) compose into
 `∃ wTab, Satisfies idx pub wTab` — acceptance of the whole challenge grid forces a
 satisfying witness table for the modeled circuit. Everything underneath is on the shelf:
@@ -17,7 +18,7 @@ congruence (`claimedEvals_eq_evalsOf`), and the headline itself.
 
 **The trust story.** The challenge grids over `(β, γ, α, ζ)` and, per grid point, over
 the batch's `(ξ, r)` are the Fiat–Shamir idealization surrogate — exactly the role they
-play in `batch_soundness` and `satisfies_of_verifierEquation`; milestone 5 discharges
+play in `batch_openings_nc1` and `satisfies_of_verifierEquation`; milestone 5 discharges
 them from rewinding the transcript tree. Binding is carried as the no-DL-relation
 hypothesis, the computational discrete-log idealization (information-theoretically false
 at real parameters — see the scope note of `Soundness/Batch.lean`); the per-point
@@ -58,6 +59,80 @@ open Polynomial Bulletproof Kimchi.Index Kimchi.Verifier.Linearization
   Kimchi.Verifier.Equation
 
 variable {F G : Type*}
+
+/-! ## The batch extraction, at its declared chunk structure
+
+The deployed batch presents every commitment as a single-chunk `PolyComm`: the quotient's
+chunks are folded into `ft` upstream (proof-systems `verifier.rs`, `ft_comm` — the
+`chunk_commitment` at `ζ^(2^k)`), so no multi-chunk commitment reaches the opening. The
+extraction runs `chunked_batch_soundness` at the declared `nc = 1` per row and reads the
+flat witness vectors off the window-0 chunks. -/
+
+/-- Batched-opening extraction with the batch's chunk structure declared: `nc = 1` per
+row. The interface is flat (what the 43-row batch and the FS axioms carry); the proof is
+`chunked_batch_soundness` at the constant-one chunk family. -/
+private theorem batch_openings_nc1 [Field F] [AddCommGroup G] [Module F G]
+    (σ : SRS G) {n m : ℕ}
+    (ξ : Fin n → F) (hξ : Function.Injective ξ)
+    (r : Fin m → F) (hr : Function.Injective r) (hm : 0 < m)
+    (C : Fin n → G) (x : Fin m → F) (e : Fin n → Fin m → F)
+    (A : Fin n → Fin m → Prop)
+    (hFS : ∀ s t, FiatShamirTreeB σ (combinedCommitment (ξ s) C)
+      (combinedEvalVector (2 ^ σ.k) (r t) x) (combinedInnerProduct (ξ s) (r t) e) (A s t))
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F),
+      DLRelation σ w w_h → w = 0 ∧ w_h = 0)
+    (hacc : ∀ s t, A s t) :
+    ∃ (a : Fin n → Fin (2 ^ σ.k) → F) (ρ : Fin n → F), ∀ i,
+      commit σ (a i) (ρ i) = C i
+        ∧ ∀ j, e i j = innerProduct (a i) (evalVector (2 ^ σ.k) (x j)) := by
+  classical
+  -- the declared chunk structure: one chunk per row
+  set nc : Fin n → ℕ := fun _ => 1 with hnc
+  have hsum : (∑ i, nc i) = n := by simp [hnc]
+  -- at `nc = 1` the segment equivalence is the identity on values
+  have hsig : ∀ v : Fin (∑ i, nc i), finSigmaFinEquiv.symm v
+      = (⟨finCongr hsum v, ⟨0, Nat.one_pos⟩⟩ : (i : Fin n) × Fin (nc i)) := by
+    intro v
+    rw [Equiv.symm_apply_eq]
+    refine (Fin.ext ?_).symm
+    rw [finSigmaFinEquiv_apply]
+    simp [hnc]
+    exact Fintype.card_fin _
+  obtain ⟨q, hq⟩ := chunked_batch_soundness σ (nc := nc) (fun _ => Nat.one_pos)
+    (fun v => ξ (finCongr hsum v)) (hξ.comp (finCongr hsum).injective)
+    r hr hm (fun i _ => C i) x (fun i _ j => e i j)
+    (fun v t => A (finCongr hsum v) t)
+    (fun v t => by
+      have h := hFS (finCongr hsum v) t
+      have hC : chunkedCombinedCommitment (ξ (finCongr hsum v))
+            (fun i (_ : Fin (nc i)) => C i)
+          = combinedCommitment (ξ (finCongr hsum v)) C := by
+        rw [chunkedCombinedCommitment_eq_flat, combinedCommitment, combinedCommitment]
+        refine Finset.sum_equiv (finCongr hsum) (by simp) fun w _ => ?_
+        rw [hsig w]
+        simp [finCongr_apply]
+      have hcip : chunkedCombinedInnerProduct (ξ (finCongr hsum v)) (r t)
+            (fun i (_ : Fin (nc i)) j => e i j)
+          = combinedInnerProduct (ξ (finCongr hsum v)) (r t) e := by
+        rw [chunkedCombinedInnerProduct_eq_flat, combinedInnerProduct,
+          combinedInnerProduct]
+        refine Finset.sum_equiv (finCongr hsum) (by simp) fun w _ => ?_
+        rw [hsig w]
+        simp [finCongr_apply]
+      rw [hC, hcip]
+      exact h)
+    hbind (fun v t => hacc (finCongr hsum v) t)
+  -- read the flat witnesses off the window-0 chunks (type ascriptions coerce the
+  -- `nc`-shaped conclusions to their `nc = 1` values)
+  choose ρ hρ using fun i => (hq i).2.1 ⟨0, Nat.one_pos⟩
+  refine ⟨fun i => chunkCoeffs (2 ^ σ.k) (q i) 0, ρ, fun i => ⟨hρ i, fun j => ?_⟩⟩
+  have hdeg : (q i).natDegree < 1 * 2 ^ σ.k := (hq i).1
+  have heval : (q i).eval (x j)
+      = ∑ c : Fin 1, ((x j) ^ 2 ^ σ.k) ^ (c : ℕ) * e i j := (hq i).2.2 j
+  rw [eval_eq_sum_chunkPoly (q i) hdeg, Finset.sum_range_one, pow_zero, one_mul,
+    chunkPoly_eval] at heval
+  simp only [Fin.sum_univ_one, Fin.val_zero, pow_zero, one_mul] at heval
+  exact heval.symm
 
 /-! ## Cross-point uniqueness -/
 
@@ -253,15 +328,15 @@ theorem claimedEvals_eq_evalsOf [Field F] {n : ℕ} [NeZero n] (idx : Index F n)
 /-! ## The headline -/
 
 /-- **The openings-interface soundness seam** (the factored core of `kimchiProof_sound`).
-The headline split at its two `batch_soundnessA` call sites, making the openings
+The headline split at its two `batch_openings_nc1` call sites, making the openings
 interface the shared junction of the extraction models: the standard-model path
-(density → rectangle → `batch_soundnessA`) and the algebraic-prover path
+(density → rectangle → `batch_openings_nc1`) and the algebraic-prover path
 (representations carried with the prover's messages) both discharge it. The REFERENCE
 side is pure commitment knowledge — `hbound₀` binds every batch row to a known witness
 pair, the reference transcript's only surviving content (its eval data was never
 load-bearing). The CONSUMER side replaces the per-point Fiat–Shamir trees with per-row
 openings: each avoiding challenge tuple supplies bound openings `aw`/`ρw` whose per-row
-conjunction mirrors `batch_soundnessA`'s conclusion verbatim, so a grid extraction
+conjunction mirrors `batch_openings_nc1`'s conclusion verbatim, so a grid extraction
 passes its `hrow` straight through. Everything else — the extracted bad sets, their
 cardinality bounds, and the verifier-equation consumer — is the headline's own
 composition, transplanted. -/
@@ -463,7 +538,7 @@ data, hence β/γ/α/ζ-DEPENDENT-LOOKING; to keep the statement non-vacuous eve
 condition lives INSIDE the conclusion as a proved-small existential — `∃ badB badG badA
 badZ`, of the stated cardinalities (`card_badBetas_le`/`card_badGammas_le`/
 `card_badAlphas_le`/`card_badZetas_le`), chosen from the challenge-FREE extracted data (the
-witness/accumulator polynomials produced by `batch_soundnessA` from the REFERENCE
+witness/accumulator polynomials produced by `batch_openings_nc1` from the REFERENCE
 `E₀`/`ξ₀`/`r₀`/`A₀`, none of which mention any live challenge), and only THEN quantifying
 over every `β`/`γ`/`α`/`t`/`ζ` that avoids them. Because `badZ` is fixed before `ζ` is
 introduced, the vacuous `badZ := {ζ}` witness is unavailable: the implication genuinely
@@ -479,7 +554,7 @@ Hypothesis shape (see the module preamble for the trust story):
   is *derived* from binding (`bound_unique`), never assumed.
 
 Now the grid-instantiated corollary of `kimchiProof_sound_of_openings`: the two
-`batch_soundnessA` extractions (reference and consumer) discharge its openings
+`batch_openings_nc1` extractions (reference and consumer) discharge its openings
 hypotheses. -/
 theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
     {n : ℕ} [NeZero n] [DecidableEq F] (σ : SRS G)
@@ -526,7 +601,7 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
                 ζ (-((idx.pubPoly pub).eval ζ)) (claimedEvals E)) →
           ∃ wTab : Fin n → Fin 15 → F, Satisfies idx pub wTab := by
   obtain ⟨aw₀, ρw₀, hrow₀⟩ :=
-    batch_soundnessA σ ξ₀ hξ₀ r₀ hr₀ (by omega)
+    batch_openings_nc1 σ ξ₀ hξ₀ r₀ hr₀ (by omega)
       (batchC wC zC comms) ![ζ₀, idx.omega * ζ₀] E₀ A₀ hFS₀ hbind hacc₀
   obtain ⟨badB, badG, badA, badZ, hbounds, himp⟩ :=
     kimchiProof_sound_of_openings σ idx hk hbind comms hvk pub wC zC
@@ -534,7 +609,7 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
   refine ⟨badB, badG, badA, badZ, hbounds, ?_⟩
   intro β γ α t ζ E ξ r A hβ hγ hα hζ hζ₁ hζb ht hξ hr hFS hacc hteq
   obtain ⟨aw, ρw, hrow⟩ :=
-    batch_soundnessA σ ξ hξ r hr (by omega)
+    batch_openings_nc1 σ ξ hξ r hr (by omega)
       (batchC wC zC comms) ![ζ, idx.omega * ζ] E A hFS hbind hacc
   exact himp β γ α t ζ E aw ρw hβ hγ hα hζ hζ₁ hζb ht hrow hteq
 
