@@ -52,14 +52,14 @@ structure Spec (q : ℕ) [Field (ZMod q)] [Fintype (ZMod q)] [DecidableEq (ZMod 
 variable {q : ℕ} [Field (ZMod q)] [Fintype (ZMod q)] [DecidableEq (ZMod q)]
 
 /-- The curve equation right-hand side `f(x) = x³ + B`. -/
-def curveEqn (spec : Spec q) (x : ZMod q) : ZMod q := x ^ 3 + spec.E.B
+private def curveEqn (spec : Spec q) (x : ZMod q) : ZMod q := x ^ 3 + spec.E.B
 
 /-- `√(f(x))`, when `x` is the abscissa of a curve point (`get_y`). -/
-def getY (spec : Spec q) (x : ZMod q) : Option (ZMod q) :=
+private def getY (spec : Spec q) (x : ZMod q) : Option (ZMod q) :=
   spec.sqrt.sqrt? (curveEqn spec x)
 
 /-- The three SvdW candidate abscissae for `t` (`potential_xs`). -/
-def potentialXs (spec : Spec q) (t : ZMod q) : ZMod q × ZMod q × ZMod q :=
+private def potentialXs (spec : Spec q) (t : ZMod q) : ZMod q × ZMod q × ZMod q :=
   let t2 := t ^ 2
   let alpha := (t2 * (t2 + spec.fu))⁻¹
   let x1 := spec.sqrtNegThreeUSquaredMinusUOver2 - t2 ^ 2 * alpha * spec.sqrtNegThreeUSquared
@@ -69,7 +69,7 @@ def potentialXs (spec : Spec q) (t : ZMod q) : ZMod q × ZMod q × ZMod q :=
 
 /-- A found candidate is on the curve: `sqrt?` is self-validating (`sqrt?_mul_self`), so
 `getY spec x = some y` means `y² = f(x)`. -/
-theorem onCurve_of_getY (spec : Spec q) {x y : ZMod q} (h : getY spec x = some y) :
+private theorem onCurve_of_getY (spec : Spec q) {x y : ZMod q} (h : getY spec x = some y) :
     OnCurve spec.E.A spec.E.B (x, y) := by
   have hy : y * y = curveEqn spec x := TonelliShanks.sqrt?_mul_self spec.sqrt h
   show y ^ 2 = x ^ 3 + spec.E.A * x + spec.E.B
@@ -102,22 +102,22 @@ open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 def u : Fq := 1
 
 /-- `f(u)`. -/
-def fu : Fq := 6
+private def fu : Fq := 6
 
 /-- `√(-3u²)` — the root `setup()` computes. -/
-def sqrtNegThreeUSquared : Fq :=
+private def sqrtNegThreeUSquared : Fq :=
   5885731217013704028947117152987276604395468276778445611234961748972736355487
 
 example : sqrtNegThreeUSquared ^ 2 = -3 * u ^ 2 := by decide
 
 /-- `(√(-3u²) − u) / 2`. At `u = 1` this is `(√-3 − 1)/2`, a primitive cube root of unity —
 the Vesta base-field endomorphism coefficient `β`, of which it is a reuse. -/
-def sqrtNegThreeUSquaredMinusUOver2 : Fq := Pasta.vesta_endo
+private def sqrtNegThreeUSquaredMinusUOver2 : Fq := Pasta.vesta_endo
 
 example : 2 * sqrtNegThreeUSquaredMinusUOver2 = sqrtNegThreeUSquared - u := by decide
 
 /-- `(3u²)⁻¹`. -/
-def invThreeUSquared : Fq :=
+private def invThreeUSquared : Fq :=
   19298681539552699237261830834781317975575370987961098253119828498928908632065
 
 example : invThreeUSquared * (3 * u ^ 2) = 1 := by decide
@@ -151,10 +151,10 @@ open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 def u : Fp := 1
 
 /-- `f(u)`. -/
-def fu : Fp := 6
+private def fu : Fp := 6
 
 /-- `√(-3u²)` — the root `setup()` computes (the opposite sign choice to the Vesta side). -/
-def sqrtNegThreeUSquared : Fp :=
+private def sqrtNegThreeUSquared : Fp :=
   17006931536212783554987228065028097629383328157457783420645920607630467569011
 
 example : sqrtNegThreeUSquared ^ 2 = -3 * u ^ 2 := by decide
@@ -162,7 +162,7 @@ example : sqrtNegThreeUSquared ^ 2 = -3 * u ^ 2 := by decide
 /-- `(√(-3u²) − u) / 2`. At `u = 1` this is `(√-3 − 1)/2` at `setup()`'s root choice — the
 *other* primitive cube root of unity from the Pallas endomorphism coefficient, i.e.
 `pallas_endo²`. -/
-def sqrtNegThreeUSquaredMinusUOver2 : Fp :=
+private def sqrtNegThreeUSquaredMinusUOver2 : Fp :=
   8503465768106391777493614032514048814691664078728891710322960303815233784505
 
 example : sqrtNegThreeUSquaredMinusUOver2 = Pasta.pallas_endo ^ 2 := by decide
@@ -170,7 +170,7 @@ example : sqrtNegThreeUSquaredMinusUOver2 = Pasta.pallas_endo ^ 2 := by decide
 example : 2 * sqrtNegThreeUSquaredMinusUOver2 = sqrtNegThreeUSquared - u := by decide
 
 /-- `(3u²)⁻¹`. -/
-def invThreeUSquared : Fp :=
+private def invThreeUSquared : Fp :=
   19298681539552699237261830834781317975575370987961040477303117842899978420225
 
 example : invThreeUSquared * (3 * u ^ 2) = 1 := by decide
