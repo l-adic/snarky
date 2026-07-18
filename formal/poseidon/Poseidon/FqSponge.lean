@@ -32,14 +32,6 @@ identity (`sponge.rs` `absorb_g`, both cases).
 (`DefaultFqSponge<VestaParameters>` / `DefaultFqSponge<PallasParameters>`); each is its
 `Spec` plus name re-exports. Both are validated against `DefaultFqSponge` op traces by
 `scripts/check_fq_sponge.lean`.
-
-## Contents
-
-* `Spec`, `S`, `init` — the field-pair data and the sponge-plus-limb-buffer state.
-* `absorbFq`, `absorbG`, `absorbFr` — the absorption encodings.
-* `challengeFq`, `challengeNat`, `challenge` — raw and 128-bit squeezes.
-* `endoExpand`, `squeezeChallenge` — the effective-scalar expansion.
-* `FqVesta`, `FqPallas` — the Pasta instantiations.
 -/
 
 namespace Poseidon.FqSponge
@@ -68,7 +60,7 @@ def init : S base := ⟨Poseidon.init, []⟩
 
 /-- The two low 64-bit limbs of a squeezed element — its 128 high-entropy bits
 (`HIGH_ENTROPY_LIMBS = 2`). -/
-def lowLimbs (x : ZMod base) : List ℕ :=
+private def lowLimbs (x : ZMod base) : List ℕ :=
   [x.val % 2 ^ 64, x.val / 2 ^ 64 % 2 ^ 64]
 
 /-- Absorb base-field elements (`absorb_fq`): clear the buffer, absorb each. -/
@@ -99,7 +91,7 @@ def challengeFq (spec : Spec base scalar) (s : S base) : ZMod base × S base :=
 /-- Take two 64-bit limbs from the buffer, refilling it from the sponge as needed
 (`squeeze_limbs` at `CHALLENGE_LENGTH_IN_LIMBS = 2`); the packed 128-bit value. The fuel
 argument bounds the refills (each adds two limbs, so one suffices from empty). -/
-def squeezeLimbsPacked (spec : Spec base scalar) : ℕ → S base → ℕ × S base
+private def squeezeLimbsPacked (spec : Spec base scalar) : ℕ → S base → ℕ × S base
   | 0, s => (0, s)
   | fuel + 1, s =>
     match s.lastSqueezed with

@@ -29,12 +29,6 @@ respectively. Both validated against `mina_poseidon` absorb/squeeze traces by
 The sponge is the *definitional* layer of the Fiat-Shamir instantiation: the security of the
 transform (that these challenges behave as the abstract soundness hypotheses require) is a
 separate, explicitly flagged assumption where the instantiation meets the soundness theorems.
-
-## Contents
-
-* `Triple`, `Params`, `sbox`, `fullRound`, `blockCipher` — the permutation.
-* `Mode`, `State`, `init`, `absorb`, `squeeze`, `squeezeN` — the duplex automaton.
-* `fqParams` / `fpParams` — the concrete `fq_kimchi` / `fp_kimchi` instantiations.
 -/
 
 namespace Poseidon
@@ -44,7 +38,7 @@ variable {F : Type*} [Field F]
 /-! ## The permutation -/
 
 /-- A width-3 state: the components `(s₀, s₁, s₂)`. -/
-abbrev Triple (F : Type*) := F × F × F
+private abbrev Triple (F : Type*) := F × F × F
 
 /-- Poseidon parameters: one constant triple per round, and the MDS matrix as three rows. -/
 structure Params (F : Type*) where
@@ -52,11 +46,11 @@ structure Params (F : Type*) where
   mds : Triple (Triple F)
 
 /-- The S-box `x ↦ x^7`. -/
-def sbox (x : F) : F := x ^ 7
+private def sbox (x : F) : F := x ^ 7
 
 /-- One full round: S-box every state element, apply the MDS matrix, add the round
 constants (`permutation.rs` `full_round`). -/
-def fullRound (mds : Triple (Triple F)) (rc : Triple F) (s : Triple F) : Triple F :=
+private def fullRound (mds : Triple (Triple F)) (rc : Triple F) (s : Triple F) : Triple F :=
   let t0 := sbox s.1; let t1 := sbox s.2.1; let t2 := sbox s.2.2
   let m0 := mds.1; let m1 := mds.2.1; let m2 := mds.2.2
   (m0.1 * t0 + m0.2.1 * t1 + m0.2.2 * t2 + rc.1,
@@ -65,14 +59,14 @@ def fullRound (mds : Triple (Triple F)) (rc : Triple F) (s : Triple F) : Triple 
 
 /-- The Poseidon permutation: the full rounds folded over the round-constant table
 (`permutation.rs` `poseidon_block_cipher`, no initial ARK). -/
-def blockCipher (p : Params F) (s : Triple F) : Triple F :=
+private def blockCipher (p : Params F) (s : Triple F) : Triple F :=
   p.roundConstants.foldl (fun s rc => fullRound p.mds rc s) s
 
 /-! ## The duplex automaton -/
 
 /-- The sponge direction and intra-block position: `absorbed n` after `n` absorptions into
 the current block, `squeezed n` after `n` squeezes from the current block (`n ≤ 2`). -/
-inductive Mode
+private inductive Mode
   | absorbed (n : Fin 3)
   | squeezed (n : Fin 3)
 deriving Repr, DecidableEq
@@ -83,13 +77,13 @@ structure State (F : Type*) where
   mode : Mode
 
 /-- Read rate slot `n` (`n < 2`). -/
-def slot (s : Triple F) : Fin 3 → F
+private def slot (s : Triple F) : Fin 3 → F
   | 0 => s.1
   | 1 => s.2.1
   | _ => s.2.2
 
 /-- Add `x` into rate slot `n` (`n < 2`). -/
-def addSlot (s : Triple F) (n : Fin 3) (x : F) : Triple F :=
+private def addSlot (s : Triple F) (n : Fin 3) (x : F) : Triple F :=
   match n with
   | 0 => (s.1 + x, s.2.1, s.2.2)
   | 1 => (s.1, s.2.1 + x, s.2.2)
@@ -100,7 +94,7 @@ def init : State F := ⟨(0, 0, 0), .absorbed 0⟩
 
 /-- Absorb one field element (`poseidon.rs` `absorb`): add into the next rate slot,
 permuting first when the rate is full; absorbing after a squeeze restarts at slot 0. -/
-def absorb1 (p : Params F) (sp : State F) (x : F) : State F :=
+private def absorb1 (p : Params F) (sp : State F) (x : F) : State F :=
   match sp.mode with
   | .absorbed n =>
     if n.val = 2 then
