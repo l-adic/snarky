@@ -166,32 +166,6 @@ Kimchi.Verifier.kimchiProof_sound_of_openings
 Kimchi.Verifier.kimchiVesta_run_sound
 Kimchi.Verifier.kimchiPallas_run_sound
 
--- The B/|F| soundness-error reading of the interactive layer: for every adaptive quotient
--- strategy, all but soundnessErrorBound·|F|³ of the |F|⁴ challenge tuples (a
--- soundnessErrorBound/|F| fraction — the clause is in the statement) are good, with no residual
--- side conditions. Pure counting over the bad sets; the run-level corollaries deliberately do
--- not carry this reading (a fixed run's sponge outputs are not random — that reading is the
--- Fiat-Shamir heuristic itself).
-Kimchi.Verifier.kimchiVesta_sound_error
-Kimchi.Verifier.kimchiPallas_sound_error
-
--- Forking stage (a): the combinatorial core of the forking lemma, PROVED — a dense subset of a
--- product contains a K×2 rectangle (heavy-rows/Zarankiewicz double count) — and the density
--- capstones it yields: a prover STRATEGY accepted on enough (ξ, r) pairs (density ≳ √(42/|F|),
--- ≈ 2⁻¹²⁴ at Pasta) yields the 43×2 extraction grid, hence the capstone conclusion. The grid is
--- no longer a hypothesis anywhere in these roots — only strategy + density + binding + key.
-Kimchi.Quotient.exists_rectangle
-Kimchi.Verifier.kimchiVesta_sound_density
-Kimchi.Verifier.kimchiPallas_sound_density
-
--- Forking stage (b3), the rest of the counting toolkit: heavy rows from density (Markov) and
--- distinct-n-th-powers selection (power fibers are root sets) — composed with the rectangle by
--- the full-protocol strategy model to derive the transcript tree from accepting density.
-Kimchi.Quotient.card_heavyRows
-Kimchi.Quotient.exists_distinct_powers
-Kimchi.Quotient.mem_heavyRows
-Kimchi.Quotient.mem_rowSlice
-
 -- The algebraic-group-model reading: an algebraic prover supplies SRS-basis representations of
 -- its committed rows, so a SINGLE accepted opening suffices (no grid, no density) — the eval
 -- pins follow off a small discrepancy (ξ, r) bad set (a bivariate Schwartz–Zippel event, ≤ 84

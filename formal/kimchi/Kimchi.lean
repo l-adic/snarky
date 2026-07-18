@@ -39,7 +39,6 @@ import Kimchi.Verifier.Correspond
 import Kimchi.Verifier.Sound
 import Kimchi.Verifier.KimchiSound
 import Kimchi.Verifier.Equation
-import Kimchi.Quotient.Rectangle
 import Bulletproof.Reflection
 import Kimchi.Verifier.Reflect
 import Kimchi.Verifier.Capstone
