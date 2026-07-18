@@ -28,3 +28,9 @@ rev = "v4.30.0"
 [[lean_lib]]
 name = "Bulletproof"
 globs = ["Bulletproof", "Bulletproof.+"]
+
+# Fixture ingestion for the proof-systems IPA dumps — the fixture-validation tier,
+# outside the proof library (the poseidon package's FixtureKit split, likewise).
+[[lean_lib]]
+name = "BulletproofFixture"
+globs = ["BulletproofFixture"]

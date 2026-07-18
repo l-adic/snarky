@@ -124,13 +124,15 @@ lint: ## Format, tidy, and lint all code (Rust + PureScript + Lean)
 	cargo clippy --all-targets -- -D warnings
 
 lean-build: ## Build the Lean (formal/) project
-	cd formal && PATH="$$HOME/.elan/bin:$$PATH" lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof
+	cd formal && PATH="$$HOME/.elan/bin:$$PATH" lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture
 
 lean-check-witnesses: lean-build ## Check witness-carrying harness results against the index model (run the harness with CIRCUIT_DIFFS_WITNESS_EXPORT=1 first)
 	cd formal && PATH="$$HOME/.elan/bin:$$PATH" lake env lean kimchi/scripts/check_ps_witness.lean
 
-lean-dep-graph: ## Generate the Lean module dependency graph (formal/docs/module-deps.dot)
+lean-dep-graph: ## Generate the Lean module dependency graph (formal/docs/module-deps.{dot,svg})
 	bash formal/scripts/module-deps.sh
+	dot -Tsvg formal/docs/module-deps.dot -o formal/docs/module-deps.svg
+	@echo "wrote formal/docs/module-deps.svg"
 
 lean-style: ## Check Lean style (<=100 cols, no trailing ws/tabs, final newline)
 	bash formal/scripts/check-style.sh

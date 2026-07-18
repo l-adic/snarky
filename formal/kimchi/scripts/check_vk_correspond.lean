@@ -1,5 +1,5 @@
 import Kimchi.Verifier.Kimchi
-import Bulletproof.Fixture
+import BulletproofFixture
 import Lean.Data.Json
 
 /-! The verifier-key ↔ index correspondence, by value: every committed column of the

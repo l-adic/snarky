@@ -1,5 +1,5 @@
 import Kimchi.Verifier.Kimchi
-import Bulletproof.Fixture
+import BulletproofFixture
 
 /-!
 # Kimchi wire-proof fixture ingestion

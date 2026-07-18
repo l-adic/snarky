@@ -1,4 +1,4 @@
-import Bulletproof.Fixture
+import BulletproofFixture
 
 /-! End-to-end IPA compatibility over the unified chunked schema, both production
 chunk-fold mechanisms:

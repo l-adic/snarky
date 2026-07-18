@@ -11,10 +11,8 @@ import Kimchi.Gate.Poseidon
 import Kimchi.Circuit.VarBaseMul
 import Kimchi.Circuit.EndoScalar
 import Kimchi.Circuit.EndoMul
+import Bulletproof.Protocol
 import Bulletproof.Soundness
-import Bulletproof.Chunk
-import Bulletproof.Soundness.Batch
-import Bulletproof.Soundness.ChunkedBatch
 import Kimchi.Quotient.Generic
 import Kimchi.Quotient.EndoScalar
 import Kimchi.Quotient.Poseidon
@@ -29,7 +27,7 @@ import Kimchi.Quotient.Wiring
 import Kimchi.Quotient.Permutation
 import Kimchi.Quotient.GrandProduct
 import Kimchi.Quotient.Soundness
-import Bulletproof.Fixture
+import BulletproofFixture
 import Kimchi.Fixture.Kimchi
 import Kimchi.Fixture.PS
 import FixtureKit.Parse

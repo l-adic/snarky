@@ -1,5 +1,5 @@
 import Bulletproof.Wire
-import Bulletproof.Soundness.Batch
+import Bulletproof.Soundness
 import Pasta
 
 /-!
@@ -12,11 +12,10 @@ theorem itself.
 
 Three strata:
 
-* **The scalar action.** The Pasta point groups are `p`-torsion for their group orders
-  (`CompElliptic.Curves.PastaOrder`, unconditional), so each carries a
-  `Module (ZMod p)` structure by `AddCommGroup.zmodModule`; its action is definitionally
-  `z.val • _`, the ℕ-action the executable verifier computes with. This instantiates the
-  abstract `[Module F G]` of the soundness layer at the executable types.
+* **The scalar action.** The Pasta point-group module structure (`Pasta/Basic.lean`)
+  instantiates the soundness layer's abstract `[Module F G]` at the executable types;
+  the action is definitionally `z.val • _`, the ℕ-action the executable verifier
+  computes with.
 
 * **Reflection.** `verify` and `BatchAccepts` are the same equations in two spellings:
   the executable combiners equal the library combiners (`msm_eq_commitGen`,
@@ -33,11 +32,14 @@ Three strata:
   combined eval vector (`FiatShamirTreeB`, with the deployed acceptance
   `verify … = true` as the antecedent). It packages the rewinding/forking extraction and
   the random-oracle behaviour of the sponge; everything downstream of it is proved.
-  `ipaVesta_sound` composes the axiom and `batch_soundness`: a grid of accepting runs at
-  pairwise-distinct combination scalars, under the no-DL-relation binding *hypothesis*,
-  yields genuine openings for every commitment. Binding stays a hypothesis — it is
-  information-theoretically false at real parameters and meaningful only computationally
-  (see `Soundness/Batch.lean`).
+  `ipaVesta_sound` composes the axiom, the flattening lemmas, and
+  `chunked_batch_soundness`: the claim declares its segment structure (`nc` chunks per
+  polynomial), the wire verifier consumes the flattened segment stream
+  (`segmentStream`), and a grid of accepting runs at pairwise-distinct combination
+  scalars, under the no-DL-relation binding *hypothesis*, binds every commitment family
+  to one genuine polynomial with its chunk windows and evaluations. Binding stays a
+  hypothesis — it is information-theoretically false at real parameters and meaningful
+  only computationally (see `Soundness/Batch.lean`).
 -/
 
 namespace Bulletproof
@@ -50,7 +52,7 @@ open CompElliptic.Fields.Pasta Bulletproof Bulletproof.Ipa
 /-! ## The wire proof as an abstract opening proof -/
 
 /-- The wire proof, reindexed to the abstract `OpeningProof` at its round count. -/
-def Ipa.Proof.toOpening {C : CommitmentCurve} (p : Ipa.Proof C) {k : ℕ}
+private def Ipa.Proof.toOpening {C : CommitmentCurve} (p : Ipa.Proof C) {k : ℕ}
     (hk : p.lr.size = k) : OpeningProof C.ScalarField C.Point k where
   lr := fun j => p.lr[j.val]'(by omega)
   delta := p.delta
@@ -67,11 +69,12 @@ variable {C : CommitmentCurve} [Module C.ScalarField C.Point]
 
 include hsmul in
 /-- The executable MSM is `commitGen`. -/
-theorem msm_eq_commitGen {n : ℕ} (g : Fin n → C.Point) (a : Fin n → C.ScalarField) :
+private theorem msm_eq_commitGen {n : ℕ} (g : Fin n → C.Point) (a : Fin n → C.ScalarField) :
     msm C g a = commitGen g a := by
   simp only [Ipa.msm, commitGen]
   exact Finset.sum_congr rfl (fun i _ => (hsmul (a i) (g i)).symm)
 
+omit [Module C.ScalarField C.Point] in
 /-- Generalized-accumulator running-power fold over a list: from any starting
 accumulator `acc` and running power `p`, the first component is `acc` plus the
 `(p · ξ^i)`-scaled sum of the list entries. The engine behind `combineCommitments_eq`. -/
@@ -103,6 +106,7 @@ theorem combineCommitments_eq (ξ : C.ScalarField) (cs : Array C.Point) :
   refine Finset.sum_congr rfl fun i _ => ?_
   rw [hsmul]; congr 1
 
+omit [Module C.ScalarField C.Point] in
 /-- A left fold that adds `g x` for each list element equals the start plus the sum of
 `g` over the list. The engine behind the recombination bridge. -/
 private theorem foldl_add_eq_sum {D : Type*} (g : D → C.Point) (l : List D)
@@ -114,6 +118,7 @@ private theorem foldl_add_eq_sum {D : Type*} (g : D → C.Point) (l : List D)
     rw [List.foldl_cons, ih, _root_.add_assoc]
     simp [Fin.sum_univ_succ]
 
+omit [Module C.ScalarField C.Point] in
 /-- The executable zip-fold recombination equals the abstract indexed sum: folding
 `(L, R, u)` triples matches `∑ j, (uⱼ⁻¹ • Lⱼ + uⱼ • Rⱼ)` scaled through `val`. -/
 private theorem zipFold_eq_recombine (init : C.Point)
@@ -171,7 +176,7 @@ theorem verify_reflects (σ : SRS C.Point) (inp : Ipa.Input C)
         at hsch
       rw [combineCommitments_eq hsmul] at hsch
       unfold Bulletproof.recombine Ipa.Proof.toOpening
-      simp only [hsmul, Ipa.transcriptChallenges, Ipa.Input.commitmentFn]
+      simp only [hsmul, Ipa.transcriptChallenges]
       exact hsch
     · exact hsg.trans (msm_eq_commitGen hsmul _ _)
 
@@ -204,97 +209,145 @@ axiom poseidon_fiat_shamir_pallas (σ : SRS IpaPallas.Point) (inp : IpaPallas.In
 
 /-! ## The headline -/
 
-/-- **Soundness of the deployed Vesta verifier.** A grid of Poseidon-accepted runs of the
-same claim — commitments `cs`, points `xs`, claimed evaluations `evals` — at
-pairwise-distinct polyscales `ξ` and evalscales `r`, under the no-DL-relation binding
-hypothesis, yields genuine openings: every commitment opens to a witness whose evaluation
-at every point is the claimed one. Composes `poseidon_fiat_shamir_vesta` and
-`batch_soundness`; binding remains a hypothesis (see the module docstring). -/
-theorem ipaVesta_sound (σ : SRS IpaVesta.Point)
-    (cs : Array IpaVesta.Point) (xs : Array Fp) (evals : Array (Array Fp))
-    (hm : 0 < xs.size)
-    (ξ : Fin cs.size → Fp) (hξ : Function.Injective ξ)
+/-- The flattened segment stream of a chunked family, as the wire array:
+polynomial-outer, chunk-inner (`finSigmaFinEquiv`), the deployed `combine_commitments`
+order. -/
+private def segmentStream {α : Type*} {n : ℕ} {nc : Fin n → ℕ}
+    (f : (i : Fin n) → Fin (nc i) → α) : Array α :=
+  Array.ofFn fun s : Fin (∑ i, nc i) =>
+    f (finSigmaFinEquiv.symm s).1 (finSigmaFinEquiv.symm s).2
+
+section ChunkedHeadline
+
+variable {Cc : CommitmentCurve} [Module Cc.ScalarField Cc.Point]
+
+/-- The Fiat-Shamir axiom's flat tree, reshaped to the chunked combiners of the segment
+stream through the flattening lemmas. Generic over the curve bundle; the per-curve
+headlines instantiate it at their axiom. -/
+private theorem fs_tree_chunked
+    (ax : ∀ (σ : SRS Cc.Point) (inp : Ipa.Input Cc),
+      FiatShamirTreeB σ
+        (combinedCommitment inp.polyscale inp.commitmentFn)
+        (combinedEvalVector (2 ^ σ.k) inp.evalscale inp.pointFn)
+        (cipOf inp)
+        (Ipa.verify Cc σ inp = true))
+    (σ : SRS Cc.Point) {n : ℕ} {nc : Fin n → ℕ}
+    (C : (i : Fin n) → Fin (nc i) → Cc.Point)
+    (xs : Array Cc.ScalarField)
+    (e : (i : Fin n) → Fin (nc i) → Fin xs.size → Cc.ScalarField)
+    (ξ rr : Cc.ScalarField) (proof : Ipa.Proof Cc) :
+    FiatShamirTreeB σ (chunkedCombinedCommitment ξ C)
+      (combinedEvalVector (2 ^ σ.k) rr fun j : Fin xs.size => xs[j])
+      (chunkedCombinedInnerProduct ξ rr e)
+      (Ipa.verify Cc σ
+        (mkInput Cc (segmentStream C) xs
+          (segmentStream fun i c => Array.ofFn (e i c)) ξ rr proof) = true) := by
+  set inp : Ipa.Input Cc :=
+    mkInput Cc (segmentStream C) xs
+      (segmentStream fun i c => Array.ofFn (e i c)) ξ rr proof with hinp
+  have hsz : inp.commitments.size = ∑ i, nc i := Array.size_ofFn ..
+  have h := ax σ inp
+  have hC : combinedCommitment inp.polyscale inp.commitmentFn
+      = chunkedCombinedCommitment ξ C := by
+    rw [chunkedCombinedCommitment_eq_flat, combinedCommitment, combinedCommitment]
+    refine Finset.sum_equiv (finCongr hsz) (by simp) fun v _ => ?_
+    simp only [hinp, Ipa.Input.commitmentFn, Ipa.mkInput, segmentStream,
+      finCongr_apply, Fin.val_cast]
+    congr 1
+    rw [Fin.getElem_fin, Array.getElem_ofFn]
+    exact congrArg (fun p : (i : Fin n) × Fin (nc i) => C p.1 p.2)
+      (congrArg finSigmaFinEquiv.symm (Fin.ext rfl))
+  have hcip : cipOf inp = chunkedCombinedInnerProduct ξ rr e := by
+    rw [chunkedCombinedInnerProduct_eq_flat, cipOf, combinedInnerProduct,
+      combinedInnerProduct]
+    refine Finset.sum_equiv (finCongr hsz) (by simp) fun v _ => ?_
+    simp only [hinp, Ipa.Input.evalFn, Ipa.mkInput, segmentStream, finCongr_apply,
+      Fin.val_cast]
+    congr 1
+    refine Finset.sum_congr rfl fun j _ => ?_
+    congr 1
+    have hv : (v : ℕ) < ∑ i, nc i := hsz ▸ v.isLt
+    have h1 : (Array.ofFn fun s : Fin (∑ i, nc i) =>
+          Array.ofFn (e (finSigmaFinEquiv.symm s).1 (finSigmaFinEquiv.symm s).2))[(v : ℕ)]!
+        = Array.ofFn (e (finSigmaFinEquiv.symm (Fin.cast hsz v)).1
+            (finSigmaFinEquiv.symm (Fin.cast hsz v)).2) := by
+      rw [getElem!_pos (Array.ofFn _) _ (by simp only [Array.size_ofFn]; exact hv),
+        Array.getElem_ofFn]
+      exact congrArg (fun p : (i : Fin n) × Fin (nc i) => Array.ofFn (e p.1 p.2))
+        (congrArg finSigmaFinEquiv.symm (Fin.ext rfl))
+    rw [h1, getElem!_pos (Array.ofFn _) _ (by simp only [Array.size_ofFn]; exact j.isLt),
+      Array.getElem_ofFn]
+    exact congrArg _ (Fin.ext rfl)
+  rw [hC, hcip] at h
+  exact h
+
+end ChunkedHeadline
+
+/-- **Soundness of the deployed Vesta verifier, at the declared chunk structure.** The
+claim carries its segment structure: `n` polynomials with chunk counts `nc`, chunk
+commitments `C i c`, and claimed chunk evaluations `e i c j`; the wire verifier consumes
+the flattened segment stream. A grid of Poseidon-accepted runs at pairwise-distinct
+polyscales `ξ` and evalscales `r`, under the no-DL-relation binding hypothesis, binds
+every commitment family to one genuine polynomial: `q i` of degree `< nc i · 2^k`, whose
+chunk windows are the committed chunks and whose evaluations recombine the claimed chunk
+values. Composes `poseidon_fiat_shamir_vesta`, the flattening lemmas, and
+`chunked_batch_soundness`; binding remains a hypothesis (see the module docstring). -/
+theorem ipaVesta_sound (σ : SRS IpaVesta.Point) {n : ℕ} {nc : Fin n → ℕ}
+    (hnc : ∀ i, 0 < nc i)
+    (C : (i : Fin n) → Fin (nc i) → IpaVesta.Point)
+    (xs : Array Fp) (hm : 0 < xs.size)
+    (e : (i : Fin n) → Fin (nc i) → Fin xs.size → Fp)
+    (ξ : Fin (∑ i, nc i) → Fp) (hξ : Function.Injective ξ)
     (r : Fin xs.size → Fp) (hr : Function.Injective r)
-    (proofs : Fin cs.size → Fin xs.size → IpaVesta.Proof)
+    (proofs : Fin (∑ i, nc i) → Fin xs.size → IpaVesta.Proof)
     (hacc : ∀ s t, Ipa.verify IpaVesta.curve σ
-      (mkInput IpaVesta.curve cs xs evals (ξ s) (r t) (proofs s t)) = true)
+      (mkInput IpaVesta.curve (segmentStream C) xs
+        (segmentStream fun i c => Array.ofFn (e i c))
+        (ξ s) (r t) (proofs s t)) = true)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp),
       DLRelation σ w wh → w = 0 ∧ wh = 0) :
-    ∃ (a : Fin cs.size → Fin (2 ^ σ.k) → Fp) (ρ : Fin cs.size → Fp),
-      ∀ i, commit σ (a i) (ρ i) = cs[i]
-        ∧ ∀ j : Fin xs.size,
-            (evals[i.val]!)[j.val]! = innerProduct (a i) (evalVector (2 ^ σ.k) xs[j]) := by
-  -- The grid input at combination scalars `(ξ s, r t)`.
-  set inp : Fin cs.size → Fin xs.size → IpaVesta.Input := fun s t =>
-    mkInput IpaVesta.curve cs xs evals (ξ s) (r t) (proofs s t) with hinp
-  -- The Poseidon Fiat–Shamir axiom at every grid point: an accepting Poseidon run yields
-  -- a de-blinded accepting tree over the combined eval vector, with the deployed
-  -- acceptance `Ipa.verify … = true` as the antecedent.
-  have hFS : ∀ (s : Fin cs.size) (t : Fin xs.size),
-      FiatShamirTreeB σ
-        (combinedCommitment (ξ s) (fun i : Fin cs.size => cs[i]))
-        (combinedEvalVector (2 ^ σ.k) (r t) (fun j : Fin xs.size => xs[j]))
-        (cipOf (inp s t))
-        (Ipa.verify IpaVesta.curve σ (inp s t) = true) :=
-    fun s t => poseidon_fiat_shamir_vesta σ (inp s t)
-  -- `cipOf (inp s t)` is exactly the combined inner product of the claimed evaluations.
-  have hcip : ∀ (s : Fin cs.size) (t : Fin xs.size),
-      cipOf (inp s t)
-        = combinedInnerProduct (ξ s) (r t)
-            (fun (i : Fin cs.size) (j : Fin xs.size) => (evals[i.val]!)[j.val]!) :=
-    fun s t => rfl
-  simp only [hcip] at hFS
-  obtain ⟨a, ρ, h⟩ := batch_soundnessA σ ξ hξ r hr hm
-    (fun i : Fin cs.size => cs[i]) (fun j : Fin xs.size => xs[j])
-    (fun (i : Fin cs.size) (j : Fin xs.size) => (evals[i.val]!)[j.val]!)
-    (fun s t => Ipa.verify IpaVesta.curve σ (inp s t) = true)
-    hFS hbind hacc
-  exact ⟨a, ρ, fun i => ⟨(h i).1, fun j => (h i).2 j⟩⟩
+    ∃ q : Fin n → Polynomial Fp, ∀ i,
+      (q i).natDegree < nc i * 2 ^ σ.k
+        ∧ (∀ c : Fin (nc i), ∃ ρ,
+            commit σ (chunkCoeffs (2 ^ σ.k) (q i) (c : ℕ)) ρ = C i c)
+        ∧ ∀ j : Fin xs.size, (q i).eval xs[j]
+            = ∑ c : Fin (nc i), (xs[j] ^ 2 ^ σ.k) ^ (c : ℕ) * e i c j :=
+  chunked_batch_soundness σ hnc ξ hξ r hr hm C (fun j : Fin xs.size => xs[j]) e
+    (fun s t => Ipa.verify IpaVesta.curve σ
+      (mkInput IpaVesta.curve (segmentStream C) xs
+        (segmentStream fun i c => Array.ofFn (e i c)) (ξ s) (r t) (proofs s t)) = true)
+    (fun s t => fs_tree_chunked poseidon_fiat_shamir_vesta σ C xs e (ξ s) (r t)
+      (proofs s t))
+    hbind hacc
 
-/-- **Soundness of the deployed Pallas verifier.** A grid of Poseidon-accepted runs of the
-same claim — commitments `cs`, points `xs`, claimed evaluations `evals` — at
-pairwise-distinct polyscales `ξ` and evalscales `r`, under the no-DL-relation binding
-hypothesis, yields genuine openings: every commitment opens to a witness whose evaluation
-at every point is the claimed one. The Pallas-side twin of `ipaPallas_sound`. -/
-theorem ipaPallas_sound (σ : SRS IpaPallas.Point)
-    (cs : Array IpaPallas.Point) (xs : Array Fq) (evals : Array (Array Fq))
-    (hm : 0 < xs.size)
-    (ξ : Fin cs.size → Fq) (hξ : Function.Injective ξ)
+/-- **Soundness of the deployed Pallas verifier, at the declared chunk structure.** The
+Pallas-side twin of `ipaVesta_sound`. -/
+theorem ipaPallas_sound (σ : SRS IpaPallas.Point) {n : ℕ} {nc : Fin n → ℕ}
+    (hnc : ∀ i, 0 < nc i)
+    (C : (i : Fin n) → Fin (nc i) → IpaPallas.Point)
+    (xs : Array Fq) (hm : 0 < xs.size)
+    (e : (i : Fin n) → Fin (nc i) → Fin xs.size → Fq)
+    (ξ : Fin (∑ i, nc i) → Fq) (hξ : Function.Injective ξ)
     (r : Fin xs.size → Fq) (hr : Function.Injective r)
-    (proofs : Fin cs.size → Fin xs.size → IpaPallas.Proof)
+    (proofs : Fin (∑ i, nc i) → Fin xs.size → IpaPallas.Proof)
     (hacc : ∀ s t, Ipa.verify IpaPallas.curve σ
-      (mkInput IpaPallas.curve cs xs evals (ξ s) (r t) (proofs s t)) = true)
+      (mkInput IpaPallas.curve (segmentStream C) xs
+        (segmentStream fun i c => Array.ofFn (e i c))
+        (ξ s) (r t) (proofs s t)) = true)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq),
       DLRelation σ w wh → w = 0 ∧ wh = 0) :
-    ∃ (a : Fin cs.size → Fin (2 ^ σ.k) → Fq) (ρ : Fin cs.size → Fq),
-      ∀ i, commit σ (a i) (ρ i) = cs[i]
-        ∧ ∀ j : Fin xs.size,
-            (evals[i.val]!)[j.val]! = innerProduct (a i) (evalVector (2 ^ σ.k) xs[j]) := by
-  -- The grid input at combination scalars `(ξ s, r t)`.
-  set inp : Fin cs.size → Fin xs.size → IpaPallas.Input := fun s t =>
-    mkInput IpaPallas.curve cs xs evals (ξ s) (r t) (proofs s t) with hinp
-  -- The Poseidon Fiat–Shamir axiom at every grid point: an accepting Poseidon run yields
-  -- a de-blinded accepting tree over the combined eval vector, with the deployed
-  -- acceptance `Ipa.verify … = true` as the antecedent.
-  have hFS : ∀ (s : Fin cs.size) (t : Fin xs.size),
-      FiatShamirTreeB σ
-        (combinedCommitment (ξ s) (fun i : Fin cs.size => cs[i]))
-        (combinedEvalVector (2 ^ σ.k) (r t) (fun j : Fin xs.size => xs[j]))
-        (cipOf (inp s t))
-        (Ipa.verify IpaPallas.curve σ (inp s t) = true) :=
-    fun s t => poseidon_fiat_shamir_pallas σ (inp s t)
-  -- `cipOf (inp s t)` is exactly the combined inner product of the claimed evaluations.
-  have hcip : ∀ (s : Fin cs.size) (t : Fin xs.size),
-      cipOf (inp s t)
-        = combinedInnerProduct (ξ s) (r t)
-            (fun (i : Fin cs.size) (j : Fin xs.size) => (evals[i.val]!)[j.val]!) :=
-    fun s t => rfl
-  simp only [hcip] at hFS
-  obtain ⟨a, ρ, h⟩ := batch_soundnessA σ ξ hξ r hr hm
-    (fun i : Fin cs.size => cs[i]) (fun j : Fin xs.size => xs[j])
-    (fun (i : Fin cs.size) (j : Fin xs.size) => (evals[i.val]!)[j.val]!)
-    (fun s t => Ipa.verify IpaPallas.curve σ (inp s t) = true)
-    hFS hbind hacc
-  exact ⟨a, ρ, fun i => ⟨(h i).1, fun j => (h i).2 j⟩⟩
+    ∃ q : Fin n → Polynomial Fq, ∀ i,
+      (q i).natDegree < nc i * 2 ^ σ.k
+        ∧ (∀ c : Fin (nc i), ∃ ρ,
+            commit σ (chunkCoeffs (2 ^ σ.k) (q i) (c : ℕ)) ρ = C i c)
+        ∧ ∀ j : Fin xs.size, (q i).eval xs[j]
+            = ∑ c : Fin (nc i), (xs[j] ^ 2 ^ σ.k) ^ (c : ℕ) * e i c j :=
+  chunked_batch_soundness σ hnc ξ hξ r hr hm C (fun j : Fin xs.size => xs[j]) e
+    (fun s t => Ipa.verify IpaPallas.curve σ
+      (mkInput IpaPallas.curve (segmentStream C) xs
+        (segmentStream fun i c => Array.ofFn (e i c)) (ξ s) (r t) (proofs s t)) = true)
+    (fun s t => fs_tree_chunked poseidon_fiat_shamir_pallas σ C xs e (ξ s) (r t)
+      (proofs s t))
+    hbind hacc
 
 end Bulletproof

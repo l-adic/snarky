@@ -1,5 +1,5 @@
 import Kimchi.Index.Aggregate
-import Bulletproof.Basic
+import Bulletproof.Protocol
 
 /-!
 # The verifier key ↔ index correspondence
