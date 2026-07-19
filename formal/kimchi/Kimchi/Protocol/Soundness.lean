@@ -22,9 +22,10 @@ play in `batch_openings_nc1` and `satisfies_of_verifierEquation`; milestone 5 di
 them from rewinding the transcript tree. Binding is carried as the no-DL-relation
 hypothesis, the computational discrete-log idealization (information-theoretically false
 at real parameters — see the scope note of `Soundness/Batch.lean`); the per-point
-`FiatShamirTreeB` family is the declared Fiat–Shamir assumption. `VKCorresponds` is
-discharged constructively for honest keys (`vkCorresponds_indexerOf`) and by the fixture
-MSM check for the production key (`scripts/check_vk_correspond.lean`).
+`FiatShamirTreeB` family is the declared Fiat–Shamir assumption. `VKCorresponds` is a
+standing hypothesis: honest keys satisfy it by construction, and the production key is
+checked against the honest indexer by the fixture MSM check
+(`scripts/check_vk_correspond.lean`).
 
 **The batch.** 43 rows: the 15 witness columns (commitments FIXED across the whole
 grid), the accumulator `z` (commitment per `(β, γ)`), the FIRST SIX σ columns, the 15

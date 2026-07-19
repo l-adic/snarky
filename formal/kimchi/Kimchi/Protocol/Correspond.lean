@@ -12,9 +12,8 @@ becomes a proposition: `VKCorresponds` — the key's committed columns are commi
 of the Index's own interpolants. It is discharged two ways:
 
 * **constructively**: `indexerOf` is the Lean-side indexer — the commitments of
-  `idx`'s interpolants — and `VKCorresponds σ (indexerOf σ idx) idx` holds by
-  definition (`vkCorresponds_indexerOf`), mirroring how the Rust pipeline discharges
-  the fact by construction;
+  `idx`'s interpolants — and a key it produces satisfies `VKCorresponds` by definition
+  (`rfl`), mirroring how the Rust pipeline discharges the fact by construction;
 * **by value**: for the production key, `commitPoly_columnPoly` reduces each
   commitment to the value-MSM of the Lagrange-basis commitments, which
   `scripts/check_vk_correspond.lean` checks numerically against the dumped VK
@@ -71,7 +70,7 @@ theorem columnPoly_eq_sum_indicator {ω : F} (hω : IsPrimitiveRoot ω n) (hn : 
 `commitPoly (columnPoly v) = ∑ⱼ vⱼ • commitPoly Lⱼ`. This is what makes
 `VKCorresponds` checkable by value — the fixture script MSMs the production column
 values against the production Lagrange-basis commitments. -/
-theorem commitPoly_columnPoly (σ : SRS G) {ω : F} (hω : IsPrimitiveRoot ω n)
+private theorem commitPoly_columnPoly (σ : SRS G) {ω : F} (hω : IsPrimitiveRoot ω n)
     (hn : 0 < n) (v : Fin n → F) :
     commitPoly σ (columnPoly ω v)
       = ∑ j : Fin n, v j
@@ -119,13 +118,10 @@ noncomputable def indexerOf (σ : SRS G) (idx : Index F n) : IndexComms G where
 
 /-- **The key ↔ index correspondence**: the committed columns are the Index's own —
 the key is in the image of the indexer. The soundness composition consumes this as a
-hypothesis; honest keys discharge it by `vkCorresponds_indexerOf`, and the production
-key by the fixture MSM check. -/
+standing hypothesis: a key produced by `indexerOf` satisfies it by definition (`rfl`),
+and the production key is checked against `indexerOf` numerically by the fixture MSM
+check (`scripts/check_vk_correspond.lean`). -/
 def VKCorresponds (σ : SRS G) (comms : IndexComms G) (idx : Index F n) : Prop :=
   comms = indexerOf σ idx
-
-/-- Honest keys correspond by construction — the constructive discharge. -/
-theorem vkCorresponds_indexerOf (σ : SRS G) (idx : Index F n) :
-    VKCorresponds σ (indexerOf σ idx) idx := rfl
 
 end Kimchi.Protocol
