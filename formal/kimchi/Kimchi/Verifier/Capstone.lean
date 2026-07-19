@@ -5,32 +5,20 @@ import Bulletproof.Reflection
 import Kimchi.Verifier.Reflect
 
 /-!
-# The idealized composition (capstone 1.3a): `KimchiBundle` and `kimchiBundle_sound`
+# The concrete Fiat–Shamir capstones (1.3b) and the run-level finale (1.3c)
 
-`Kimchi/Verifier/KimchiSound.lean` proves the audited counting core `kimchiProof_sound`:
-from DL-binding, the verifier-key correspondence, and a single accepting REFERENCE
-transcript (the batch data at a reference point `ζ₀`), it produces the four bad sets and
-the guarded consumer implication ending in `∃ wTab, Satisfies idx pub wTab`. This module
-repackages the transcript-side hypotheses of that theorem as ONE structure,
-`KimchiBundle`, and restates the core as `kimchiBundle_sound` — the idealized soundness
-statement in the special-soundness idiom of the IPA literature: the bundle is the
-accepting-transcripts HYPOTHESIS, posited outright and never derived from a single run;
-the concrete Fiat–Shamir-instantiated capstone discharges it later by exhibiting the
-bundle from the deployed verifier's own transcript. The computational hypotheses stay
-OUTSIDE the bundle as theorem hypotheses — `hk` (the SRS-width pin), `hbind` (the
-discrete-log idealization), and `hvk` (the verifier-key correspondence) are assumptions
-about the key and the group, not transcript data.
+`Kimchi/Protocol/Soundness.lean` proves the idealized soundness core `kimchiProof_sound`:
+from DL-binding, the verifier-key correspondence, and an accepting REFERENCE transcript
+(the batch data at a reference point `ζ₀`, as a per-point Fiat–Shamir transcript-tree
+family), it produces the four bad sets and the guarded consumer implication ending in
+`∃ wTab, Satisfies idx pub wTab`. The computational hypotheses `hk` (the SRS-width pin),
+`hbind` (the discrete-log idealization), and `hvk` (the verifier-key correspondence) are
+assumptions about the key and the group, not transcript data. See the preamble of
+`Protocol/Soundness.lean` for the full trust story (what the challenge data surrogates,
+why binding is a hypothesis, and how `VKCorresponds` is discharged).
 
-The field types are copied VERBATIM from `kimchiProof_sound`'s binder list
-(`KimchiSound.lean`), and the conclusion of `kimchiBundle_sound` is the byte-identical
-4-bad-set existential of the core (the sole textual delta: the bundled accumulator
-commitment appears as `T.zC`). The proof is a single application of `kimchiProof_sound`
-through the projections. See the module preamble of `KimchiSound.lean` for the full
-trust story (what the challenge data surrogates, why binding is a hypothesis, and how
-`VKCorresponds` is discharged for honest and production keys).
-
-Below the idealized composition this module descends to the **concrete,
-Fiat–Shamir-instantiated capstones** (capstone 1.3b): `kimchiVesta_sound` /
+This module instantiates that core at the deployed Pasta verifier: the **concrete,
+Fiat–Shamir-instantiated capstones** (capstone 1.3b) `kimchiVesta_sound` /
 `kimchiPallas_sound`, stated over the wire verifier key (through `KimchiVK.comms`) and
 the wire public-input array (through `pubView`). The trust story, in three strata:
 
@@ -44,16 +32,17 @@ the wire public-input array (through `pubView`). The trust story, in three strat
   what stays hypothetical here, exactly as in `ipaVesta_sound`'s grid hypothesis
   (`Reflection.lean`).
 
-* **AXIOM — `poseidon_fiat_shamir_{vesta,pallas}` only**, applied per grid node inside
-  the bridges `kimchiBatchAcc_bundle_{vesta,pallas}`: each node's `FiatShamirTreeB`
-  family is *derived* from the node's own deployed acceptance, never assumed. (The
-  Pasta `Module` instances additionally carry the unconditional point counts
-  through `vestaPointModule`/`pallasPointModule`, exactly as in
+* **AXIOM — `poseidon_fiat_shamir_{vesta,pallas}` only**, applied per grid node in the
+  capstone proof: each node's `FiatShamirTreeB` family is *derived* from the node's own
+  deployed acceptance (`Ipa.verify … = true` at `nodeInput`, transported by `nodeFS`),
+  never assumed. (The Pasta `Module` instances additionally carry the unconditional point
+  counts through `vestaPointModule`/`pallasPointModule`, exactly as in
   `ipaVesta_sound` — pre-justified in TO_USER.md.)
 
-* **PROVED — everything else.** The bridges instantiate `KimchiBundle` from the grid;
-  the capstones are one application of `kimchiBundle_sound` through the wire views,
-  their conclusions byte-identical to its (mod the stated instantiation).
+* **PROVED — everything else.** The capstones feed the grid's transcript data directly to
+  `kimchiProof_sound` (`Protocol/Soundness.lean`) — the reference point `ζ₀`, the batch
+  challenges/evals, the per-node acceptances as `A₀`, and their `FiatShamirTreeB` families
+  — their conclusions byte-identical to its (mod the stated wire-view instantiation).
 
 Below the concrete capstones this module ends at the **run-level corollaries**
 (capstone 1.3c, the finale): `kimchiVesta_run_sound` / `kimchiPallas_run_sound`, the
@@ -171,11 +160,12 @@ array pinned row-by-row to the abstract 43-row assembly `batchC wC zC comms`
 (`cs`/`hcsSize`/`hcs` — a relation hypothesis, never an `Array.ofFn` build), a wire
 evaluation matrix carrying the abstract claims (`es`/`hes`), the two eval points
 `(ζ₀, ω·ζ₀)`, and per node an opening proof with the deployed acceptance
-(`prf`/`hacc`). Posited outright, never derived from one run. The Pasta bridges below
-derive each node's `FiatShamirTreeB` family from the per-node IPA axiom
+(`prf`/`hacc`). Posited outright, never derived from one run. The concrete capstones
+below derive each node's `FiatShamirTreeB` family from the per-node IPA axiom
 (`poseidon_fiat_shamir_*`), so the grid carries no Fiat–Shamir-tree content of its own.
-Generic over the curve bundle `C` (`Ipa.verify C` is curve-generic); only the bridges
-are Pasta-specific. Project-local: the concrete instantiation data of `KimchiBundle`. -/
+Generic over the curve bundle `C` (`Ipa.verify C` is curve-generic); only the capstones
+are Pasta-specific. Project-local: the transcript data the capstones feed to
+`kimchiProof_sound`. -/
 structure KimchiBatchAcc (C : Ipa.CommitmentCurve) [Module C.ScalarField C.Point]
     {n : ℕ} [NeZero n] (σ : SRS C.Point) (idx : Index C.ScalarField n)
     (comms : IndexComms C.Point) (wC : Fin 15 → C.Point) where
@@ -301,60 +291,17 @@ private theorem KimchiBatchAcc.nodeFS (T : KimchiBatchAcc C σ idx comms wC)
 
 end BatchOfAcc
 
-/-! ## The Pasta bridges -/
-
-/-- **The Vesta bridge (the Fiat–Shamir derivation)**: an accumulated grid yields the
-transcript bundle. Every node's `FiatShamirTreeB` family is *derived* — not assumed —
-from the per-node IPA axiom `poseidon_fiat_shamir_vesta` at the node's own wire input
-(`nodeInput`), transported to the abstract batch data by `nodeFS`; the acceptance
-propositions `A₀` are the deployed per-node acceptances `Ipa.verify … = true`,
-discharged by the accumulated `hacc`. This is where the concrete capstone invokes the
-IPA-level assumption. `pub` enters only through the target type (`KimchiBundle` carries
-the public input as a parameter; the grid does not mention it). -/
-def kimchiBatchAcc_bundle_vesta {n : ℕ} [NeZero n] {σ : SRS IpaVesta.Point}
-    {idx : Index Fp n} {comms : IndexComms IpaVesta.Point}
-    {wC : Fin 15 → IpaVesta.Point} (pub : Fin idx.publicCount → Fp)
-    (T : KimchiBatchAcc IpaVesta.curve σ idx comms wC) :
-    KimchiBundle σ idx pub comms wC where
-  zC := T.zC
-  ζ₀ := T.ζ₀
-  E₀ := T.E₀
-  ξ₀ := T.ξ₀
-  hξ₀ := T.hξ₀
-  r₀ := T.r₀
-  hr₀ := T.hr₀
-  A₀ := fun i j => Ipa.verify IpaVesta.curve σ (T.nodeInput i j) = true
-  hFS₀ := fun i j => T.nodeFS i j (poseidon_fiat_shamir_vesta σ (T.nodeInput i j))
-  hacc₀ := fun i j => T.hacc i j
-
-/-- **The Pallas bridge.** The Pallas-side twin of `kimchiBatchAcc_bundle_vesta`,
-deriving every node's `FiatShamirTreeB` family from `poseidon_fiat_shamir_pallas`. -/
-def kimchiBatchAcc_bundle_pallas {n : ℕ} [NeZero n] {σ : SRS IpaPallas.Point}
-    {idx : Index Fq n} {comms : IndexComms IpaPallas.Point}
-    {wC : Fin 15 → IpaPallas.Point} (pub : Fin idx.publicCount → Fq)
-    (T : KimchiBatchAcc IpaPallas.curve σ idx comms wC) :
-    KimchiBundle σ idx pub comms wC where
-  zC := T.zC
-  ζ₀ := T.ζ₀
-  E₀ := T.E₀
-  ξ₀ := T.ξ₀
-  hξ₀ := T.hξ₀
-  r₀ := T.r₀
-  hr₀ := T.hr₀
-  A₀ := fun i j => Ipa.verify IpaPallas.curve σ (T.nodeInput i j) = true
-  hFS₀ := fun i j => T.nodeFS i j (poseidon_fiat_shamir_pallas σ (T.nodeInput i j))
-  hacc₀ := fun i j => T.hacc i j
-
 /-! ## The concrete capstones -/
 
 /-- **Soundness of the deployed Vesta kimchi verifier** (the concrete capstone): a
 special-soundness grid `KimchiBatchAcc` at the wire key's committed columns
 (`vk.comms`), under DL-binding (`hbind`), the SRS-width pin (`hk`), and the
 verifier-key correspondence (`hvk`), yields the four bad sets and the guarded consumer
-implication of `kimchiBundle_sound` — byte-identical, at the wire views
+implication of `kimchiProof_sound` — byte-identical, at the wire views
 (`pubView idx pub` for the public input), ending in
-`∃ wTab, Satisfies idx (pubView idx pub) wTab`. The proof is `kimchiBundle_sound`
-through the Vesta bridge; the only axiom consumed is `poseidon_fiat_shamir_vesta`, once
+`∃ wTab, Satisfies idx (pubView idx pub) wTab`. The proof feeds the grid's transcript
+data to `kimchiProof_sound`, deriving each node's `FiatShamirTreeB` from the per-node
+axiom `poseidon_fiat_shamir_vesta`; that axiom is the only one consumed, once
 per grid node (plus the point-count-backed `Module` instance — see the module preamble).
 `hpub` pins the wire public array to the circuit's count, making the `getD` view
 honest. Project-local: the Vesta root of the concrete composition. -/
@@ -391,11 +338,14 @@ theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
             = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
                 ζ (-((idx.pubPoly (pubView idx pub)).eval ζ)) (claimedEvals E)) →
           ∃ wTab : Fin n → Fin 15 → Fp, Satisfies idx (pubView idx pub) wTab :=
-  kimchiBundle_sound σ idx hk hbind vk.comms hvk (pubView idx pub) wC
-    (kimchiBatchAcc_bundle_vesta (pubView idx pub) T)
+  kimchiProof_sound σ idx hk hbind vk.comms hvk (pubView idx pub) wC
+    T.zC T.ζ₀ T.E₀ T.ξ₀ T.hξ₀ T.r₀ T.hr₀
+    (fun i j => Ipa.verify IpaVesta.curve σ (T.nodeInput i j) = true)
+    (fun i j => T.nodeFS i j (poseidon_fiat_shamir_vesta σ (T.nodeInput i j)))
+    (fun i j => T.hacc i j)
 
 /-- **Soundness of the deployed Pallas kimchi verifier.** The Pallas-side twin of
-`kimchiVesta_sound`: `kimchiBundle_sound` through the Pallas bridge; the only axiom
+`kimchiVesta_sound`: the grid's transcript data fed to `kimchiProof_sound`; the only axiom
 consumed is `poseidon_fiat_shamir_pallas`, once per grid node (plus the point-count-backed
 `Module` instance). Project-local: the Pallas root of the concrete composition. -/
 theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
@@ -431,8 +381,11 @@ theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
             = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
                 ζ (-((idx.pubPoly (pubView idx pub)).eval ζ)) (claimedEvals E)) →
           ∃ wTab : Fin n → Fin 15 → Fq, Satisfies idx (pubView idx pub) wTab :=
-  kimchiBundle_sound σ idx hk hbind vk.comms hvk (pubView idx pub) wC
-    (kimchiBatchAcc_bundle_pallas (pubView idx pub) T)
+  kimchiProof_sound σ idx hk hbind vk.comms hvk (pubView idx pub) wC
+    T.zC T.ζ₀ T.E₀ T.ξ₀ T.hξ₀ T.r₀ T.hr₀
+    (fun i j => Ipa.verify IpaPallas.curve σ (T.nodeInput i j) = true)
+    (fun i j => T.nodeFS i j (poseidon_fiat_shamir_pallas σ (T.nodeInput i j)))
+    (fun i j => T.hacc i j)
 
 /-! ## The run-level corollaries (capstone 1.3c — the finale) -/
 
