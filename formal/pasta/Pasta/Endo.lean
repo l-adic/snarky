@@ -242,7 +242,7 @@ theorem pallas_endo_nonsingular {x y : Fp}
 
 /-- The Pallas endomorphism acts as `[λ]` on the point group: `φ(P) = [λ]·P`, the image
     point supplied by `pallas_endo_nonsingular`. Discharges
-    `Kimchi.Circuit.EndoMul.endoMul`'s hypothesis `heig`. -/
+    `Kimchi.Gate.EndoMul.endoMul`'s hypothesis `heig`. -/
 theorem pallas_eigen {x y : Fp}
     (h : Pallas.curve.toAffine.Nonsingular x y) :
     Point.some _ _ (pallas_endo_nonsingular h) = pallas_lam • Point.some _ _ h := by

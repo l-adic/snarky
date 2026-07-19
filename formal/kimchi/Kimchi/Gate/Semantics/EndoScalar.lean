@@ -1,5 +1,94 @@
 import Kimchi.Gate.EndoScalar
 
+/-! # EndoScalar gate & circuit semantics: the row runs Halo's Algorithm 2
+    (soundness/completeness, bare-table form), and the multi-row chain composes
+    rows into the effective scalar `a·λ + b`. -/
+
+namespace Kimchi.Gate.EndoScalar
+
+variable {F : Type u} [Field F]
+
+/-- **Completeness.** The witness the honest prover constructs (`build`) satisfies all the gate
+    constraints, given that every crumb is a genuine 2-bit value — the folds close by
+    construction, and the range constraint follows from `crumb_iff`. -/
+theorem complete (a0 b0 n0 : F) (crumbs : List F)
+    (hvalid : ∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
+    Holds (build a0 b0 n0 crumbs) :=
+  (holds_iff _).mpr ⟨rfl, rfl, rfl, fun x hx => (crumb_iff x).mpr (hvalid x hx)⟩
+
+/-! ## The bare-table form of the folds.
+
+    The `a`/`b` constraints use the interpolating cubics; on valid crumbs they run
+    the same fold with the bare `c_func`/`d_func` tables. -/
+
+/-- Replacing the per-crumb function leaves the `2·acc + f x` fold unchanged when
+    the two functions agree on every crumb. -/
+theorem foldl_table {φ ψ : F → F} :
+    ∀ (xs : List F) (init : F), (∀ x ∈ xs, φ x = ψ x) →
+      xs.foldl (fun acc x => 2 * acc + φ x) init
+        = xs.foldl (fun acc x => 2 * acc + ψ x) init
+  | [], _, _ => rfl
+  | y :: ys, init, h => by
+    simp only [List.foldl_cons]
+    rw [h y (by simp), foldl_table ys _ (fun x hx => h x (by simp [hx]))]
+
+variable [DecidableEq F]
+
+/-- `c_func` as the bare `(0,0,−1,1)` table. -/
+def cFunc (x : F) : F := if x = 2 then -1 else if x = 3 then 1 else 0
+
+/-- `d_func` as the bare `(−1,1,0,0)` table. -/
+def dFunc (x : F) : F := if x = 0 then -1 else if x = 1 then 1 else 0
+
+/-- On a valid crumb the interpolating cubic `cPoly` equals the bare table `cFunc`. -/
+theorem cPoly_eq_cFunc (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
+    (hx : x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) : cPoly x = cFunc x := by
+  obtain ⟨c0, c1, c2, c3⟩ := cPoly_table h2 h3
+  have e02 : (0 : F) ≠ 2 := fun h => h2 h.symm
+  have e03 : (0 : F) ≠ 3 := fun h => h3 h.symm
+  have e12 : (1 : F) ≠ 2 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination -h)
+  have e13 : (1 : F) ≠ 3 := fun h => h2 (by linear_combination -h)
+  have e32 : (3 : F) ≠ 2 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination h)
+  rcases hx with rfl | rfl | rfl | rfl
+  · rw [c0, cFunc, if_neg e02, if_neg e03]
+  · rw [c1, cFunc, if_neg e12, if_neg e13]
+  · rw [c2, cFunc, if_pos rfl]
+  · rw [c3, cFunc, if_neg e32, if_pos rfl]
+
+/-- On a valid crumb the interpolating cubic `dPoly` equals the bare table `dFunc`. -/
+theorem dPoly_eq_dFunc (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
+    (hx : x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) : dPoly x = dFunc x := by
+  obtain ⟨d0, d1, d2, d3⟩ := dPoly_table h2 h3
+  have e21 : (2 : F) ≠ 1 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination h)
+  have e31 : (3 : F) ≠ 1 := fun h => h2 (by linear_combination h)
+  rcases hx with rfl | rfl | rfl | rfl
+  · rw [d0, dFunc, if_pos rfl]
+  · rw [d1, dFunc, if_neg ((one_ne_zero : (1 : F) ≠ 0)), if_pos rfl]
+  · rw [d2, dFunc, if_neg h2, if_neg e21]
+  · rw [d3, dFunc, if_neg h3, if_neg e31]
+
+/-- **Soundness.** A satisfying row genuinely runs Halo's Algorithm 2: the crumbs are valid 2-bit
+    values, and the `a`/`b`/`n` accumulators are the Algorithm-2 folds — with the `a`/`b` folds
+    using the *literal* `c_func`/`d_func` lookup tables (the cubics in `Holds` interpolate them, so
+    `2,3 ≠ 0` — true on the Pasta scalar fields). -/
+theorem sound (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (w : Witness F) (h : Holds w) :
+    (∀ x ∈ w.crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3)
+      ∧ w.n8 = w.crumbs.foldl (fun n x => 4 * n + x) w.n0
+      ∧ w.a8 = w.crumbs.foldl (fun a x => 2 * a + cFunc x) w.a0
+      ∧ w.b8 = w.crumbs.foldl (fun b x => 2 * b + dFunc x) w.b0 := by
+  obtain ⟨hn, ha, hb, hc⟩ := (holds_iff w).mp h
+  have hv : ∀ x ∈ w.crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3 :=
+    fun x hx => (crumb_iff x).mp (hc x hx)
+  refine ⟨hv, hn, ?_, ?_⟩
+  · rw [ha]; exact foldl_table w.crumbs w.a0 (fun x hx => cPoly_eq_cFunc h2 h3 (hv x hx))
+  · rw [hb]; exact foldl_table w.crumbs w.b0 (fun x hx => dPoly_eq_dFunc h2 h3 (hv x hx))
+
+end Kimchi.Gate.EndoScalar
+
+/-! ## Multi-row chain: supporting development (folded from `Circuit/EndoScalar/Internal`). -/
+
+
 /-!
 # The `EndoScalar` circuit: supporting development
 
@@ -8,7 +97,7 @@ scalar `a·λ + b`. A challenge is processed eight crumbs at a time, each row th
 `(a, b, n)` accumulators; the result is the effective scalar `a·λ + b` together with the raw
 register `n`, which the wrapper asserts equals the input challenge. This module collects the
 definitions and lemmas on which the three headline theorems (`chain_toField`, `chain_complete`,
-`endoScalar_unique`, in `Kimchi.Circuit.EndoScalar`) rest. It mirrors the OCaml/PureScript
+`endoScalar_unique`, in `Kimchi.Gate.EndoScalar`) rest. It mirrors the OCaml/PureScript
 `to_field_checked'`, which runs `mapAccumM` over the row chunks.
 
 ## Multi-row composition
@@ -50,7 +139,7 @@ decoding is injective once it stays below the field size.
   shadow, and the resulting injectivity of base-4 decoding under the no-wrap bound.
 -/
 
-namespace Kimchi.Circuit.EndoScalar
+namespace Kimchi.Gate.EndoScalar
 
 open Kimchi.Gate.EndoScalar
 
@@ -298,4 +387,116 @@ theorem nReconstruct_inj {p : ℕ} [CharP F p] (xs ys : List F)
     CharP.natCast_injOn_Iio F p (Set.mem_Iio.mpr hxlt) (Set.mem_Iio.mpr hylt) hcast
   exact valNat_inj h2 h3 xs ys hx hy hlen hnat
 
-end Kimchi.Circuit.EndoScalar
+end Kimchi.Gate.EndoScalar
+
+/-! ## Multi-row chain: the effective scalar (folded from `Circuit/EndoScalar`). -/
+
+
+/-!
+# The `EndoScalar` circuit: the effective scalar `a·λ + b`
+
+The endo-scalar decomposition composes `Kimchi.Gate.EndoScalar` rows into the effective scalar
+`a·λ + b`. A challenge is processed eight crumbs at a time, each row threading the `(a, b, n)`
+accumulators; the result is the effective scalar `a·λ + b` and the raw register `n`, which the
+wrapper asserts equals the input challenge. The construction follows the OCaml/PureScript
+`to_field_checked'`, which runs `mapAccumM` over the row chunks.
+
+This module states the three headline theorems; their supporting development —
+the accumulator folds, the multi-row reconstruction, and the base-4 uniqueness kernel — lives in
+`Kimchi.Gate.EndoScalar.Internal`.
+
+* `chain_toField` — a satisfying run of `m + 1` sequential gate rows, threaded from the canonical
+  init `(a, b, n) = (2, 2, 0)` (`varBaseMul`'s multi-row shape), outputs the effective scalar
+  `a·λ + b` and the register reconstructing the whole challenge (a single row is the `m = 0` case).
+* `chain_complete` — the completeness counterpart: for any rows of valid crumbs the honest prover
+  threads the gate's `build` into a satisfying run, with no global side-condition, since the gate's
+  completeness precondition is per-row.
+* `endoScalar_unique` — self-contained soundness. Under the no-wrap bound `4 ^ #crumbs ≤ p` (the
+  challenge's bit-size below the field size), the base-4 decomposition is unique, so the effective
+  scalar `a·λ + b` is a well-defined function of the challenge alone, independent of the prover's
+  witness.
+-/
+
+namespace Kimchi.Gate.EndoScalar
+
+open Kimchi.Gate.EndoScalar
+
+variable {F : Type*} [Field F]
+
+/-- The effective scalar of a multi-row run: `a·λ + b` over the whole challenge, with the
+    register reconstructing the full concatenated crumb stream. The wrapper asserts that
+    register equals the input challenge. -/
+theorem chain_toField (lam : F) (m : ℕ) (w : ℕ → Witness F)
+    (hHolds : ∀ i, i ≤ m → Holds (w i))
+    (ha0 : (w 0).a0 = 2) (hb0 : (w 0).b0 = 2) (hn0 : (w 0).n0 = 0)
+    (haStep : ∀ i, i < m → (w (i + 1)).a0 = (w i).a8)
+    (hbStep : ∀ i, i < m → (w (i + 1)).b0 = (w i).b8)
+    (hnStep : ∀ i, i < m → (w (i + 1)).n0 = (w i).n8) :
+    (w m).a8 * lam + (w m).b8 = toField (chainCrumbs w (m + 1)) lam
+      ∧ (w m).n8 = nReconstruct (chainCrumbs w (m + 1)) := by
+  obtain ⟨hA, hB, hN⟩ := chain_decompose m w hHolds ha0 hb0 hn0 haStep hbStep hnStep
+  exact ⟨by rw [hA, hB, toField], hN⟩
+
+/-- **Completeness.** For any rows of valid crumbs, the threaded honest witness `chainBuild`
+    satisfies the entire multi-row run — every row `Holds`, the first starts at `(2, 2, 0)`, the
+    accumulators thread, and each row carries the given crumbs. Feeding this into `chain_toField`
+    shows the honest prover computes the challenge's effective scalar. The threading and init are
+    definitional; the only real input is `Gate.complete` per row. -/
+theorem chain_complete (m : ℕ) (rows : ℕ → List F)
+    (hvalid : ∀ i, i ≤ m → ∀ x ∈ rows i, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
+    (∀ i, i ≤ m → Holds (chainBuild rows i))
+      ∧ (chainBuild rows 0).a0 = 2 ∧ (chainBuild rows 0).b0 = 2 ∧ (chainBuild rows 0).n0 = 0
+      ∧ (∀ i, i < m → (chainBuild rows (i + 1)).a0 = (chainBuild rows i).a8)
+      ∧ (∀ i, i < m → (chainBuild rows (i + 1)).b0 = (chainBuild rows i).b8)
+      ∧ (∀ i, i < m → (chainBuild rows (i + 1)).n0 = (chainBuild rows i).n8)
+      ∧ (∀ i, i ≤ m → (chainBuild rows i).crumbs = rows i) := by
+  refine ⟨?_, rfl, rfl, rfl, fun i _ => rfl, fun i _ => rfl, fun i _ => rfl, ?_⟩
+  · intro i hi
+    cases i with
+    | zero => exact complete 2 2 0 (rows 0) (hvalid 0 hi)
+    | succ k => exact complete _ _ _ (rows (k + 1)) (hvalid (k + 1) hi)
+  · intro i _
+    cases i with
+    | zero => rfl
+    | succ k => rfl
+
+variable [DecidableEq F]
+
+/-- **Self-contained circuit soundness.** Two multi-row `EndoScalar` runs of the same crumb
+    width that decode to the same challenge produce the *same* effective scalar `a·λ + b`.
+
+    Combined with `chain_toField`, this is the honest statement that the gate realizes a
+    well-defined function `challenge ↦ a·λ + b`: it depends only on the challenge, not on the
+    prover's witness. The hypotheses are exactly `varBaseMul`'s shape — a chain over `m + 1`
+    rows threaded from `(2, 2, 0)`, plus the no-wrap bound `4 ^ width ≤ p` tying the challenge's
+    bit size to the field size. -/
+theorem endoScalar_unique {p : ℕ} [CharP F p] (lam : F) (m : ℕ) (w w' : ℕ → Witness F)
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (hHolds : ∀ i, i ≤ m → Holds (w i)) (hHolds' : ∀ i, i ≤ m → Holds (w' i))
+    (ha0 : (w 0).a0 = 2) (hb0 : (w 0).b0 = 2) (hn0 : (w 0).n0 = 0)
+    (ha0' : (w' 0).a0 = 2) (hb0' : (w' 0).b0 = 2) (hn0' : (w' 0).n0 = 0)
+    (haStep : ∀ i, i < m → (w (i + 1)).a0 = (w i).a8)
+    (hbStep : ∀ i, i < m → (w (i + 1)).b0 = (w i).b8)
+    (hnStep : ∀ i, i < m → (w (i + 1)).n0 = (w i).n8)
+    (haStep' : ∀ i, i < m → (w' (i + 1)).a0 = (w' i).a8)
+    (hbStep' : ∀ i, i < m → (w' (i + 1)).b0 = (w' i).b8)
+    (hnStep' : ∀ i, i < m → (w' (i + 1)).n0 = (w' i).n8)
+    (hwidth : (chainCrumbs w (m + 1)).length = (chainCrumbs w' (m + 1)).length)
+    (hbound : (4 : ℕ) ^ (chainCrumbs w (m + 1)).length ≤ p)
+    (hchal : (w m).n8 = (w' m).n8) :
+    (w m).a8 * lam + (w m).b8 = (w' m).a8 * lam + (w' m).b8 := by
+  obtain ⟨hA, hB, hN⟩ := chain_decompose m w hHolds ha0 hb0 hn0 haStep hbStep hnStep
+  obtain ⟨hA', hB', hN'⟩ := chain_decompose m w' hHolds' ha0' hb0' hn0' haStep' hbStep' hnStep'
+  -- both runs' crumbs are valid 2-bit values, and reconstruct to the shared challenge
+  have hvalid : ∀ (u : ℕ → Witness F), (∀ i, i ≤ m → Holds (u i)) →
+      ∀ x ∈ chainCrumbs u (m + 1), x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3 := by
+    intro u hu x hxmem
+    simp only [chainCrumbs, List.mem_flatMap, List.mem_range] at hxmem
+    obtain ⟨i, hi, hxi⟩ := hxmem
+    exact (sound h2 h3 (u i) (hu i (by omega))).1 x hxi
+  have hcrumbs : chainCrumbs w (m + 1) = chainCrumbs w' (m + 1) :=
+    nReconstruct_inj (chainCrumbs w (m + 1)) (chainCrumbs w' (m + 1)) h2 h3
+      (hvalid w hHolds) (hvalid w' hHolds') hwidth hbound (by rw [← hN, ← hN', hchal])
+  rw [hA, hB, hA', hB', hcrumbs]
+
+end Kimchi.Gate.EndoScalar

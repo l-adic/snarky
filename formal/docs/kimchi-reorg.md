@@ -15,7 +15,7 @@ afterward, once each file's concern is settled.
 Pure polynomials, evaluations, and the abstract relation `Satisfies`. No commitments, no
 sponge, no FS axiom, no `Bulletproof`.
 
-### `Kimchi/Gates/` — the gate primitives
+### `Kimchi/Gate/` — the gate primitives
 
 Each gate splits into its **definition** and its **semantics** (faithfulness — the gate
 computes the intended elliptic-curve operation over Mathlib's group law). Row-level and
@@ -24,14 +24,14 @@ each gate's `Semantics`.
 
 | new file | from | contents |
 | --- | --- | --- |
-| `Gates/AddComplete.lean` | `Gate/AddComplete.lean` [38–142] | `Witness`, `Holds`, `ok`, `ok_iff` |
-| `Gates/Semantics/AddComplete.lean` | `Gate/AddComplete.lean` [144–] | `sound_*`, `complete_*` |
-| `Gates/VarBaseMul.lean` | `Gate/VarBaseMul.lean` [60–506] | definition |
-| `Gates/Semantics/VarBaseMul.lean` | `Gate/VarBaseMul.lean` [507–] + `Circuit/VarBaseMul{.lean,/Internal.lean}` | row + ladder chain (~1600L, one file, private internals) |
-| `Gates/EndoMul.lean` / `Gates/Semantics/EndoMul.lean` | `Gate/EndoMul.lean` + `Circuit/EndoMul{.lean,/Internal.lean}` | def / row + chain |
-| `Gates/EndoScalar.lean` / `Gates/Semantics/EndoScalar.lean` | `Gate/EndoScalar.lean` + `Circuit/EndoScalar{.lean,/Internal.lean}` | def / row + chain |
-| `Gates/Generic.lean` / `Gates/Semantics/Generic.lean` | `Gate/Generic.lean` | def / semantics |
-| `Gates/Poseidon.lean` / `Gates/Semantics/Poseidon.lean` | `Gate/Poseidon.lean` | def / semantics |
+| `Gate/AddComplete.lean` | `Gate/AddComplete.lean` [38–142] | `Witness`, `Holds`, `ok`, `ok_iff` |
+| `Gate/Semantics/AddComplete.lean` | `Gate/AddComplete.lean` [144–] | `sound_*`, `complete_*` |
+| `Gate/VarBaseMul.lean` | `Gate/VarBaseMul.lean` [60–506] | definition |
+| `Gate/Semantics/VarBaseMul.lean` | `Gate/VarBaseMul.lean` [507–] + `Circuit/VarBaseMul{.lean,/Internal.lean}` | row + ladder chain (~1600L, one file, private internals) |
+| `Gate/EndoMul.lean` / `Gate/Semantics/EndoMul.lean` | `Gate/EndoMul.lean` + `Circuit/EndoMul{.lean,/Internal.lean}` | def / row + chain |
+| `Gate/EndoScalar.lean` / `Gate/Semantics/EndoScalar.lean` | `Gate/EndoScalar.lean` + `Circuit/EndoScalar{.lean,/Internal.lean}` | def / row + chain |
+| `Gate/Generic.lean` / `Gate/Semantics/Generic.lean` | `Gate/Generic.lean` | def / semantics |
+| `Gate/Poseidon.lean` / `Gate/Semantics/Poseidon.lean` | `Gate/Poseidon.lean` | def / semantics |
 
 The Pasta EC-gate corollaries (`pallas_endoMul`, `varBaseMul_scaleFast1`, …) are the
 gate/chain semantics at the concrete curve — they stay in `Semantics/`, still tracked by
@@ -104,7 +104,10 @@ for density-only helpers elsewhere).
 1. **Cut the standard-model line** — document it in `standard-model-line.md`, remove its
    roots, delete Capstone §716–1172 + `Quotient/Rectangle.lean` (dead-code-confirmed).
    Shrinks Capstone before the split. Verify the terminal closure is unchanged.
-2. **Gates split** — `Gate/` → `Gates/` + `Gates/Semantics/`, folding `Circuit/` chains in.
+2. **Gates split** — split each `Gate/<G>.lean` into a def module + a new
+   `Gate/Semantics/<G>.lean`, folding the `Circuit/` chains into the latter. The
+   `Kimchi.Gate.*` namespace is unchanged (singular `Gate/` kept); only the folded
+   circuit's decls move `Kimchi.Circuit.<G>.*` → `Kimchi.Gate.<G>.*`.
    Self-contained, low risk, high clarity.
 3. **Pull Side A out of `Verifier/`** — `Equation`/`Linearization`/`KimchiSound` →
    `Protocol/`, plus the `kimchiBundle_sound` composition core; `Index/Soundness` →

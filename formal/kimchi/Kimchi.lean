@@ -8,9 +8,12 @@ import Kimchi.Gate.VarBaseMul
 import Kimchi.Gate.EndoScalar
 import Kimchi.Gate.EndoMul
 import Kimchi.Gate.Poseidon
-import Kimchi.Circuit.VarBaseMul
-import Kimchi.Circuit.EndoScalar
-import Kimchi.Circuit.EndoMul
+import Kimchi.Gate.Semantics.Generic
+import Kimchi.Gate.Semantics.AddComplete
+import Kimchi.Gate.Semantics.VarBaseMul
+import Kimchi.Gate.Semantics.EndoScalar
+import Kimchi.Gate.Semantics.EndoMul
+import Kimchi.Gate.Semantics.Poseidon
 import Bulletproof.Protocol
 import Bulletproof.Soundness
 import Kimchi.Quotient.Generic
