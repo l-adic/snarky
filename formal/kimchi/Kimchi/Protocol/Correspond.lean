@@ -14,8 +14,8 @@ of the Index's own interpolants. It is discharged two ways:
 * **constructively**: `indexerOf` is the Lean-side indexer — the commitments of
   `idx`'s interpolants — and a key it produces satisfies `VKCorresponds` by definition
   (`rfl`), mirroring how the Rust pipeline discharges the fact by construction;
-* **by value**: for the production key, `commitPoly_columnPoly` reduces each
-  commitment to the value-MSM of the Lagrange-basis commitments, which
+* **by value**: for the production key, each committed column is the value-MSM of the
+  Lagrange-basis commitments (`commit (columnPoly v) = ∑ⱼ vⱼ • Lcommⱼ`), which
   `scripts/check_vk_correspond.lean` checks numerically against the dumped VK
   (`fixtures/kimchi_proof_vesta.json`) using the production-validated column values
   (`fixtures/index_vesta.json`).
@@ -39,47 +39,6 @@ at or above `2^σ.k` are not read — the keys this file speaks about hold inter
 of degree `< n ≤ 2^σ.k`. -/
 noncomputable def commitPoly (σ : SRS G) (p : Polynomial F) : G :=
   commitGen σ.g (fun i => p.coeff i)
-
-/-- Interpolation is linear in the column: `columnPoly v = ∑ⱼ vⱼ • Lⱼ` with
-`Lⱼ = columnPoly (rowIndicator j)` the Lagrange basis. Degree-`< n` agreement on the
-domain: at node `i` the left side reads `vᵢ` and the right collapses to the `j = i`
-term. -/
-theorem columnPoly_eq_sum_indicator {ω : F} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
-    (v : Fin n → F) :
-    columnPoly ω v
-      = ∑ j : Fin n, v j • columnPoly ω (Permutation.rowIndicator j) := by
-  have hd2 : (∑ j : Fin n, v j • columnPoly ω (Permutation.rowIndicator j)).degree
-      < n := by
-    apply lt_of_le_of_lt (degree_sum_le _ _)
-    rw [Finset.sup_lt_iff (by exact_mod_cast WithBot.bot_lt_coe (n : ℕ))]
-    exact fun j _ => lt_of_le_of_lt (degree_smul_le _ _) (degree_columnPoly_lt hω _)
-  refine eq_of_eval_eq_on_domain hω hn (degree_columnPoly_lt hω _) hd2 ?_
-  intro i hi
-  rw [show ((ω : F) ^ i) = ω ^ ((⟨i, hi⟩ : Fin n) : ℕ) from rfl, eval_columnPoly hω,
-    eval_finsetSum]
-  rw [Finset.sum_eq_single (⟨i, hi⟩ : Fin n)]
-  · rw [eval_smul, eval_columnPoly hω, Permutation.rowIndicator, if_pos rfl,
-      smul_eq_mul, mul_one]
-  · intro j _ hj
-    rw [eval_smul, eval_columnPoly hω, Permutation.rowIndicator,
-      if_neg (fun hEq => hj hEq.symm), smul_eq_mul, mul_zero]
-  · intro h
-    exact absurd (Finset.mem_univ _) h
-
-/-- **Committing an interpolant is the value-MSM of the basis commitments**:
-`commitPoly (columnPoly v) = ∑ⱼ vⱼ • commitPoly Lⱼ`. This is what makes
-`VKCorresponds` checkable by value — the fixture script MSMs the production column
-values against the production Lagrange-basis commitments. -/
-private theorem commitPoly_columnPoly (σ : SRS G) {ω : F} (hω : IsPrimitiveRoot ω n)
-    (hn : 0 < n) (v : Fin n → F) :
-    commitPoly σ (columnPoly ω v)
-      = ∑ j : Fin n, v j
-          • commitPoly σ (columnPoly ω (Permutation.rowIndicator j)) := by
-  rw [commitPoly, columnPoly_eq_sum_indicator hω hn v]
-  unfold commitPoly commitGen
-  simp only [finsetSum_coeff, coeff_smul, smul_eq_mul, Finset.sum_smul, mul_smul,
-    Finset.smul_sum]
-  exact Finset.sum_comm
 
 /-- The committed-column view of a verifier key, abstractly: one commitment per
 Index column family the verifier reads — the 7 permutation columns, the 15
