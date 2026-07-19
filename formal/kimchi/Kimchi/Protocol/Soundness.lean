@@ -1,6 +1,6 @@
 import Mathlib
 import Bulletproof.Soundness
-import Kimchi.Protocol.Sound
+import Kimchi.Protocol.Binding
 import Kimchi.Protocol.Equation
 
 /-!
@@ -11,7 +11,7 @@ the verifier-key correspondence (`VKCorresponds`) compose into
 `∃ wTab, Satisfies idx pub wTab` — acceptance of the whole challenge grid forces a
 satisfying witness table for the modeled circuit. Everything underneath is on the shelf:
 the batch extraction is `Soundness/Batch.lean`, the `rowPoly` and pinned-row kits are
-`Sound.lean`, the evaluation record and the grid consumer are `Equation.lean`. This file
+`Binding.lean`, the evaluation record and the grid consumer are `Equation.lean`. This file
 contributes the composition: cross-point binding uniqueness (`bound_unique`), the 43-row
 batch assembly and its claimed-evaluations record (`batchC`/`claimedEvals`), the record
 congruence (`claimedEvals_eq_evalsOf`), and the headline itself.
@@ -45,9 +45,8 @@ Production commits the quotient chunks before `ζ` is sampled, but the verifier'
 of the grid is a transcript-prefix fact that only the Fiat–Shamir layer (milestone 5)
 can supply. At this layer the quotient family `t`, its degree bound `ht`, and its scalar
 equation `hteq` are hypothesis data, in exactly the consumer's shape — stated at the
-claimed record and transported to the honest record by the congruence. `ft_equation`
-(`Sound.lean`) documents how a single transcript's bound ft row yields one instance of
-the equation; milestone 5 lifts it to the `p`-uniform family. Accordingly no
+claimed record and transported to the honest record by the congruence; milestone 5 lifts
+it to the `p`-uniform family. Accordingly no
 `ftComm`/`Tcomm`/ft-row data is modeled here.
 -/
 

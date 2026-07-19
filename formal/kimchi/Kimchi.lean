@@ -40,7 +40,7 @@ import Bulletproof.Wire
 import Kimchi.Protocol.Linearization
 import Kimchi.Protocol.Equation
 import Kimchi.Protocol.Correspond
-import Kimchi.Protocol.Sound
+import Kimchi.Protocol.Binding
 import Kimchi.Protocol.Soundness
 -- Side B — the concrete PCS instantiation
 import Bulletproof.Reflection
