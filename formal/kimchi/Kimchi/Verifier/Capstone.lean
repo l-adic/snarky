@@ -56,12 +56,10 @@ injectivity (`T'.hξ₀`/`T'.hr₀`). What remains HYPOTHESIS: the two extractio
 (`T`/`T'`, the rewinding/forking idiom — never derivable from one run), DL-binding
 (`hbind`), the verifier-key correspondence (`hvk`), the run-`ζ` nondegeneracy
 (`hζ1`/`hζb`), and the quotient residue (`t`/`hdeg`/`heq` — see the theorem
-docstrings). The run acceptance `hacc` is the headline claim being witnessed: via
-reflection (`kimchiVerify_reflects`) it pins the wire shapes of the run
-(`p.wComm.size = 15`, …), so the `getD` views read genuine entries; the derivation
-itself never needs the shape guards (the capstone quantifies over arbitrary `wC`), so
-`hacc` — like `hzrun`, the pin tying the reference grid's accumulator to the run's
-`z` commitment — enters as a deliberate statement pin.
+docstrings). The derivation quantifies over arbitrary `wC`, so the run's own `verify =
+true` and wire shapes are not needed: the two grids `T`/`T'` already carry the deployed
+acceptance node by node, so no separate acceptance or accumulator-link hypothesis
+appears in the run capstones.
 
 The **algebraic-prover reading** (the AGM corollary):
 `kimchiProof_sound_algebraic` quantifies over provers that SUPPLY SRS-basis
@@ -303,12 +301,10 @@ implication of `kimchiProof_sound` — byte-identical, at the wire views
 data to `kimchiProof_sound`, deriving each node's `FiatShamirTreeB` from the per-node
 axiom `poseidon_fiat_shamir_vesta`; that axiom is the only one consumed, once
 per grid node (plus the point-count-backed `Module` instance — see the module preamble).
-`hpub` pins the wire public array to the circuit's count, making the `getD` view
-honest. Project-local: the Vesta root of the concrete composition. -/
+Project-local: the Vesta root of the concrete composition. -/
 theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
     (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
     (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
-    (hpub : pub.size = idx.publicCount)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
     (wC : Fin 15 → IpaVesta.Point)
     (T : KimchiBatchAcc IpaVesta.curve σ idx vk.comms wC) :
@@ -351,7 +347,6 @@ consumed is `poseidon_fiat_shamir_pallas`, once per grid node (plus the point-co
 theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
     (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
     (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
-    (hpub : pub.size = idx.publicCount)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
     (wC : Fin 15 → IpaPallas.Point)
     (T : KimchiBatchAcc IpaPallas.curve σ idx vk.comms wC) :
@@ -406,21 +401,18 @@ the identity at the run's `ζ` requires opening the t-chunk commitments — comm
 extractability beyond the batch grid — which the counting form deliberately does not
 posit. It stays an explicit hypothesis; no axiom manufactures it.
 
-`hacc` (the deployed acceptance — the headline claim) and `hzrun` are statement pins:
-the derivation quantifies over arbitrary `wC`, so neither is load-bearing below, but
-they are part of the claim's meaning (via `kimchiVerify_reflects`, `hacc` pins that
-the `getD` views read genuine wire entries). Project-local: the Vesta run root. -/
+The derivation quantifies over arbitrary `wC`, so the run's own `verify = true` is not a
+hypothesis: the grids `T`/`T'` carry the deployed acceptance node by node, and the
+conclusion is stated at the run's own `runOracles` challenges. Project-local: the Vesta
+run root. -/
 theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
     (p : KimchiVesta.Proof) (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
     (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
-    (hpub : pub.size = idx.publicCount)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (hacc : KimchiVesta.verify σ vk p pub = true)
     (T : KimchiBatchAcc IpaVesta.curve σ idx vk.comms
       (fun i => p.wComm.getD (i : ℕ) 0))
     (T' : KimchiBatchAcc IpaVesta.curve σ idx vk.comms
       (fun i => p.wComm.getD (i : ℕ) 0))
-    (hzrun : T.zC = p.zComm)
     (hzC : T'.zC = T.zC)
     (hζ' : T'.ζ₀ = (runOracles IpaVesta.curve σ vk p pub).zeta)
     (hζ1 : (runOracles IpaVesta.curve σ vk p pub).zeta ≠ 1)
@@ -464,7 +456,7 @@ theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
                 (runOracles IpaVesta.curve σ vk p pub).alpha t →
           ∃ wTab : Fin n → Fin 15 → Fp, Satisfies idx (pubView idx pub) wTab) := by
   obtain ⟨badB, badG, badA, badZ, hbounds, himp⟩ :=
-    kimchiVesta_sound σ vk pub idx hk hvk hpub hbind
+    kimchiVesta_sound σ vk pub idx hk hvk hbind
       (fun i => p.wComm.getD (i : ℕ) 0) T
   refine ⟨badB, badG, badA, badZ, hbounds, fun hβ hγ hα hζ => ?_⟩
   refine himp (runOracles IpaVesta.curve σ vk p pub).beta
@@ -483,19 +475,15 @@ theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
 twin of `kimchiVesta_run_sound`, over `Fq`/`IpaPallas`, its Fiat–Shamir trees from
 `poseidon_fiat_shamir_pallas`. See the Vesta docstring for the trust story — in
 particular the quotient residue `(t, hdeg, heq)`, the one antecedent not discharged
-from deployed acceptances, and the statement pins `hacc`/`hzrun`. Project-local: the
-Pallas run root. -/
+from deployed acceptances. Project-local: the Pallas run root. -/
 theorem kimchiPallas_run_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
     (p : KimchiPallas.Proof) (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
     (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
-    (hpub : pub.size = idx.publicCount)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (hacc : KimchiPallas.verify σ vk p pub = true)
     (T : KimchiBatchAcc IpaPallas.curve σ idx vk.comms
       (fun i => p.wComm.getD (i : ℕ) 0))
     (T' : KimchiBatchAcc IpaPallas.curve σ idx vk.comms
       (fun i => p.wComm.getD (i : ℕ) 0))
-    (hzrun : T.zC = p.zComm)
     (hzC : T'.zC = T.zC)
     (hζ' : T'.ζ₀ = (runOracles IpaPallas.curve σ vk p pub).zeta)
     (hζ1 : (runOracles IpaPallas.curve σ vk p pub).zeta ≠ 1)
@@ -540,7 +528,7 @@ theorem kimchiPallas_run_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
                 (runOracles IpaPallas.curve σ vk p pub).alpha t →
           ∃ wTab : Fin n → Fin 15 → Fq, Satisfies idx (pubView idx pub) wTab) := by
   obtain ⟨badB, badG, badA, badZ, hbounds, himp⟩ :=
-    kimchiPallas_sound σ vk pub idx hk hvk hpub hbind
+    kimchiPallas_sound σ vk pub idx hk hvk hbind
       (fun i => p.wComm.getD (i : ℕ) 0) T
   refine ⟨badB, badG, badA, badZ, hbounds, fun hβ hγ hα hζ => ?_⟩
   refine himp (runOracles IpaPallas.curve σ vk p pub).beta

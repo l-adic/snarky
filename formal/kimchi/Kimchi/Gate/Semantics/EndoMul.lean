@@ -232,7 +232,7 @@ omit [DecidableEq F] in
 /-- One window's two cleared EC constraints (the `xR`/`yR` relations) hold for any
     `(s1, s2, xR, yR)` linked by the generation relations — slopes in multiplicative form, so it
     is pure polynomial algebra. -/
-private theorem window_holds (xq yq xP yP s1 s2 xR yR : F)
+private theorem window_holds (xq xP yP s1 s2 xR yR : F)
     (hs2 : (2 * xP - s1 ^ 2 + xq) * s2 = 2 * yP - (2 * xP - s1 ^ 2 + xq) * s1)
     (hxR : xR = s2 ^ 2 - s1 ^ 2 + xq)
     (hyR : yR = (xP - xR) * s2 - yP) :
@@ -274,7 +274,7 @@ private theorem stepWindow_holds (xq yq xP yP : F) (hxne : xP ≠ xq)
   have hC1 : (xq - xP) * s1 = yq - yP := by rw [hs1]; field_simp
   have hs2m : (2 * xP - s1 ^ 2 + xq) * s2 = 2 * yP - (2 * xP - s1 ^ 2 + xq) * s1 := by
     rw [hs2d]; field_simp
-  exact ⟨hC1, window_holds xq yq xP yP s1 s2 (s2 ^ 2 - s1 ^ 2 + xq)
+  exact ⟨hC1, window_holds xq xP yP s1 s2 (s2 ^ 2 - s1 ^ 2 + xq)
     ((xP - (s2 ^ 2 - s1 ^ 2 + xq)) * s2 - yP) hs2m rfl rfl⟩
 
 omit [DecidableEq F] in
