@@ -1,6 +1,5 @@
 import Mathlib
 import Kimchi.Protocol.Soundness
-import Kimchi.Protocol.Composition
 import Kimchi.Verifier.Kimchi
 import Bulletproof.Reflection
 import Kimchi.Verifier.Reflect

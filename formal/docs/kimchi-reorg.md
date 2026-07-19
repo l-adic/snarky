@@ -59,8 +59,7 @@ commitments or FS, so it belongs on Side A, not with the concrete verifier.
 | --- | --- |
 | `Protocol/Equation.lean` | `Verifier/Equation.lean` (the verifier equation / honest evaluation record) |
 | `Protocol/Linearization.lean` | `Verifier/Linearization.lean` (the scalar side, closed form) |
-| `Protocol/Soundness.lean` | `Verifier/KimchiSound.lean` (`kimchiProof_sound_of_openings`: openings + identity at good challenges ⟹ `Satisfies`) |
-| `Protocol/Composition.lean` | `Verifier/Capstone.lean` §170–250 (`kimchiBundle_sound`, the idealized composition — takes openings as hypotheses, no PCS) |
+| `Protocol/Soundness.lean` | `Verifier/KimchiSound.lean` (`kimchiProof_sound_of_openings`: openings + identity at good challenges ⟹ `Satisfies`) + the idealized composition `KimchiBundle`/`kimchiBundle_sound` (from `Verifier/Capstone.lean` §170–250) |
 
 Dir name: `Protocol/`.
 

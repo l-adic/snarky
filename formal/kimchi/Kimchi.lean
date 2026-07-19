@@ -42,7 +42,6 @@ import Kimchi.Protocol.Equation
 import Kimchi.Protocol.Correspond
 import Kimchi.Protocol.Sound
 import Kimchi.Protocol.Soundness
-import Kimchi.Protocol.Composition
 -- Side B — the concrete PCS instantiation
 import Bulletproof.Reflection
 import Kimchi.Verifier.Kimchi
