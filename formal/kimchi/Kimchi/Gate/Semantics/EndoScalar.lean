@@ -23,7 +23,7 @@ theorem complete (a0 b0 n0 : F) (crumbs : List F)
 
 /-- Replacing the per-crumb function leaves the `2·acc + f x` fold unchanged when
     the two functions agree on every crumb. -/
-theorem foldl_table {φ ψ : F → F} :
+private theorem foldl_table {φ ψ : F → F} :
     ∀ (xs : List F) (init : F), (∀ x ∈ xs, φ x = ψ x) →
       xs.foldl (fun acc x => 2 * acc + φ x) init
         = xs.foldl (fun acc x => 2 * acc + ψ x) init
@@ -41,7 +41,7 @@ def cFunc (x : F) : F := if x = 2 then -1 else if x = 3 then 1 else 0
 def dFunc (x : F) : F := if x = 0 then -1 else if x = 1 then 1 else 0
 
 /-- On a valid crumb the interpolating cubic `cPoly` equals the bare table `cFunc`. -/
-theorem cPoly_eq_cFunc (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
+private theorem cPoly_eq_cFunc (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
     (hx : x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) : cPoly x = cFunc x := by
   obtain ⟨c0, c1, c2, c3⟩ := cPoly_table h2 h3
   have e02 : (0 : F) ≠ 2 := fun h => h2 h.symm
@@ -56,7 +56,7 @@ theorem cPoly_eq_cFunc (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
   · rw [c3, cFunc, if_neg e32, if_pos rfl]
 
 /-- On a valid crumb the interpolating cubic `dPoly` equals the bare table `dFunc`. -/
-theorem dPoly_eq_dFunc (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
+private theorem dPoly_eq_dFunc (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
     (hx : x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) : dPoly x = dFunc x := by
   obtain ⟨d0, d1, d2, d3⟩ := dPoly_table h2 h3
   have e21 : (2 : F) ≠ 1 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination h)
@@ -179,7 +179,7 @@ theorem decomposeB_append (xs ys : List F) :
   simp only [decomposeB, List.foldl_append]
 
 /-- Resuming the `n`-fold across a row boundary from `nReconstruct xs`. -/
-theorem nReconstruct_append (xs ys : List F) :
+private theorem nReconstruct_append (xs ys : List F) :
     nReconstruct (xs ++ ys) = ys.foldl (fun n x => 4 * n + x) (nReconstruct xs) := by
   simp only [nReconstruct, List.foldl_append]
 
@@ -192,7 +192,7 @@ omit [Field F] in
 
 omit [Field F] in
 /-- The crumbs through row `m` extend those through the first `m` rows by row `m`'s crumbs. -/
-theorem chainCrumbs_succ (w : ℕ → Witness F) (m : ℕ) :
+private theorem chainCrumbs_succ (w : ℕ → Witness F) (m : ℕ) :
     chainCrumbs w (m + 1) = chainCrumbs w m ++ (w m).crumbs := by
   simp only [chainCrumbs, List.range_succ, List.flatMap_append, List.flatMap_cons,
     List.flatMap_nil, List.append_nil]
@@ -203,7 +203,7 @@ theorem chainCrumbs_succ (w : ℕ → Witness F) (m : ℕ) :
     Algorithm-2 decomposition of its whole concatenated crumb stream — exactly as a one-row
     `Holds` over `chainCrumbs w (m + 1)` would. The multi-row layout adds nothing to the
     arithmetic, as for `varBaseMul`'s `gateLadder` over its rows. -/
-theorem chain_decompose (m : ℕ) (w : ℕ → Witness F)
+private theorem chain_decompose (m : ℕ) (w : ℕ → Witness F)
     (hHolds : ∀ i, i ≤ m → Holds (w i))
     (ha0 : (w 0).a0 = 2) (hb0 : (w 0).b0 = 2) (hn0 : (w 0).n0 = 0)
     (haStep : ∀ i, i < m → (w (i + 1)).a0 = (w i).a8)
@@ -260,18 +260,18 @@ def chainBuild (rows : ℕ → List F) : ℕ → Witness F
 variable [DecidableEq F]
 
 /-- The base-4 digit a crumb stands for (`0` off the valid set). -/
-def digit (x : F) : ℕ := if x = 1 then 1 else if x = 2 then 2 else if x = 3 then 3 else 0
+private def digit (x : F) : ℕ := if x = 1 then 1 else if x = 2 then 2 else if x = 3 then 3 else 0
 
 /-- The natural-number value a crumb list reconstructs to, base-4 MSB-first — the `ℕ`
     shadow of `nReconstruct`, on which the no-wrap bound makes base-4 decoding injective. -/
-def valNat (xs : List F) : ℕ := xs.foldl (fun n x => 4 * n + digit x) 0
+private def valNat (xs : List F) : ℕ := xs.foldl (fun n x => 4 * n + digit x) 0
 
 /-- Every digit is a base-4 digit. -/
-theorem digit_lt_four (x : F) : digit x < 4 := by
+private theorem digit_lt_four (x : F) : digit x < 4 := by
   unfold digit; split_ifs <;> omega
 
 /-- On a valid crumb the digit casts back to the crumb. -/
-theorem digit_cast (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
+private theorem digit_cast (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
     (hx : x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) : ((digit x : ℕ) : F) = x := by
   have h1 : (1 : F) ≠ 0 := one_ne_zero
   rcases hx with rfl | rfl | rfl | rfl
@@ -286,7 +286,7 @@ theorem digit_cast (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
       if_neg (fun h => h1 (by linear_combination h)), if_pos rfl, Nat.cast_ofNat]
 
 /-- Peeling the most significant crumb: `valNat (x :: xs) = digit x · 4^|xs| + valNat xs`. -/
-theorem valNat_cons (x : F) (xs : List F) :
+private theorem valNat_cons (x : F) (xs : List F) :
     valNat (x :: xs) = digit x * 4 ^ xs.length + valNat xs := by
   -- folding from an arbitrary carry is that carry shifted up by `4^|ys|`, plus `valNat`
   have gen : ∀ (ys : List F) (acc : ℕ),
@@ -307,7 +307,7 @@ theorem valNat_cons (x : F) (xs : List F) :
   ring
 
 /-- The base-4 value of a length-`n` crumb list lies below `4 ^ n` — the no-wrap budget. -/
-theorem valNat_lt (xs : List F) : valNat xs < 4 ^ xs.length := by
+private theorem valNat_lt (xs : List F) : valNat xs < 4 ^ xs.length := by
   induction xs with
   | nil => simp [valNat]
   | cons x xs ih =>
@@ -318,7 +318,7 @@ theorem valNat_lt (xs : List F) : valNat xs < 4 ^ xs.length := by
 omit [Field F] [DecidableEq F] in
 /-- Euclidean split at base `M`: a low part below `M` and a high digit are uniquely
     recoverable from `high · M + low`. The base-4 digit-recovery step. -/
-theorem euclid_split {a b c d M : ℕ} (hb : b < M) (hd : d < M)
+private theorem euclid_split {a b c d M : ℕ} (hb : b < M) (hd : d < M)
     (h : a * M + b = c * M + d) : a = c ∧ b = d := by
   have hM : 0 < M := lt_of_le_of_lt (Nat.zero_le b) hb
   have ha : (a * M + b) / M = a := by
@@ -330,7 +330,7 @@ theorem euclid_split {a b c d M : ℕ} (hb : b < M) (hd : d < M)
 
 /-- Nat-level base-4 uniqueness: valid same-length crumb lists with equal `valNat` are
     equal. The crumbs being digits `< 4` makes each `valNat_cons` layer a `euclid_split`. -/
-theorem valNat_inj (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (xs ys : List F)
+private theorem valNat_inj (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (xs ys : List F)
     (hx : ∀ x ∈ xs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3)
     (hy : ∀ x ∈ ys, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3)
     (hlen : xs.length = ys.length) (hnat : valNat xs = valNat ys) : xs = ys := by
@@ -351,7 +351,7 @@ theorem valNat_inj (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (xs ys : List F)
 
 /-- The field reconstruction is the cast of its `ℕ` shadow `valNat`, on valid crumbs. The
     bridge from the base-4 kernel to the circuit's field-valued register. -/
-theorem nReconstruct_eq_valNat (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (xs : List F)
+private theorem nReconstruct_eq_valNat (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (xs : List F)
     (hv : ∀ x ∈ xs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
     nReconstruct xs = ((valNat xs : ℕ) : F) := by
   have gen : ∀ (ys : List F) (acc : ℕ), (∀ x ∈ ys, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) →
@@ -372,7 +372,7 @@ theorem nReconstruct_eq_valNat (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (xs : L
 /-- **Base-4 digit recovery.** Same-length valid crumb lists whose reconstruction fits the
     field (`4 ^ len ≤ p`) and that reconstruct to the same challenge are equal — the
     decomposition a satisfying gate exposes is the *unique* one. -/
-theorem nReconstruct_inj {p : ℕ} [CharP F p] (xs ys : List F)
+private theorem nReconstruct_inj {p : ℕ} [CharP F p] (xs ys : List F)
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (hx : ∀ x ∈ xs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3)
     (hy : ∀ x ∈ ys, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3)

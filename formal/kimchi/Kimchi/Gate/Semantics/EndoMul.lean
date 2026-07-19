@@ -15,7 +15,7 @@ variable {F : Type*} [Field F] [DecidableEq F]
 
 omit [DecidableEq F] in
 /-- Booleanity: the constraint `b·(b−1) = 0` forces `b ∈ {0,1}` (field = domain). -/
-theorem bool_of_mul {b : F} (h : b * (b - 1) = 0) : b = 0 ∨ b = 1 := by
+private theorem bool_of_mul {b : F} (h : b * (b - 1) = 0) : b = 0 ∨ b = 1 := by
   rcases mul_eq_zero.mp h with h | h
   · exact Or.inl h
   · exact Or.inr (by linear_combination h)
@@ -24,7 +24,7 @@ omit [DecidableEq F] in
 /-- The distinct-point check discharges the non-degeneracy both windows need:
     `(xP − xR)·(xR − xS)·inv = 1` makes both factors units, so `xP ≠ xR` (first
     window, `R ≠ −P`) and `xR ≠ xS` (second window, `S ≠ −R`). -/
-theorem distinctPoints (endo : F) (w : Witness F) (h : Holds endo w) :
+private theorem distinctPoints (endo : F) (w : Witness F) (h : Holds endo w) :
     w.xP ≠ w.xR ∧ w.xR ≠ w.xS := by
   rw [holds_iff] at h
   have hinv := h.2.2.2.2.2.2.1
@@ -46,7 +46,7 @@ theorem some_congr (W : WeierstrassCurve.Affine F) {x x' y y' : F}
     `Q = ((1 + (endo−1)·b₁)·xT, (2·b₂−1)·yT)` with `b₁, b₂ ∈ {0,1}` is `±T` (when
     `b₁ = 0`, so `xq = xT`) or `±φ(T)` (when `b₁ = 1`, so `xq = endo·xT`), where
     `φ(T) = (endo·xT, yT)`. Reuses `Kimchi.signed_target` with base `T` or `φ(T)`. -/
-theorem selectQ (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
+private theorem selectQ (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
     {endo b1 b2 xT yT : F}
     (hT : W.Nonsingular xT yT) (hφT : W.Nonsingular (endo * xT) yT)
     (hQ : W.Nonsingular ((1 + (endo - 1) * b1) * xT) ((2 * b2 - 1) * yT))
@@ -72,7 +72,8 @@ omit [DecidableEq F] in
     `T` and its endo-image `φ(T) = (endo·xT, yT)` are: `b₁` selects the base, `b₂` the sign. So
     the target's nonsingularity need never be assumed — it follows from `hT`/`hφT` and the bits'
     booleanity (the EndoMul analog of VarBaseMul's `signed_target_nonsingular`). -/
-theorem target_nonsingular (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
+private theorem target_nonsingular (W : WeierstrassCurve.Affine F)
+    (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
     {endo b1 b2 xT yT : F} (hT : W.Nonsingular xT yT) (hφT : W.Nonsingular (endo * xT) yT)
     (hb1 : b1 = 0 ∨ b1 = 1) (hb2 : b2 = 0 ∨ b2 = 1) :
     W.Nonsingular ((1 + (endo - 1) * b1) * xT) ((2 * b2 - 1) * yT) := by
@@ -85,7 +86,8 @@ theorem target_nonsingular (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧
 omit [DecidableEq F] in
 /-- Both window targets are nonsingular, read off the bases `hT`/`hφT` and the four bits'
     booleanity in `Holds` — so a row's targets are derived, not assumed. -/
-theorem targets_nonsingular (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
+private theorem targets_nonsingular (W : WeierstrassCurve.Affine F)
+    (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
     (endo : F) (w : Witness F) (h : Holds endo w)
     (hT : W.Nonsingular w.xT w.yT) (hφT : W.Nonsingular (endo * w.xT) w.yT) :
     W.Nonsingular ((1 + (endo - 1) * w.b1) * w.xT) ((2 * w.b2 - 1) * w.yT)
@@ -108,7 +110,7 @@ theorem targets_nonsingular (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 �
     `(P+Q)+P = (2,−3) ≠ (0,−1)`. The gate's distinct-point constraint supplies it
     (via `distinctPoints`); it is a per-window parameter here because the two
     windows need `xR ≠ xP` and `xS ≠ xR` respectively. -/
-theorem block_sound (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
+private theorem block_sound (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
     {xq yq xP yP s xR yR : F}
     (hP : W.Nonsingular xP yP) (hQ : W.Nonsingular xq yq) (hR : W.Nonsingular xR yR)
     (hxne : xP ≠ xq) (htne : 2 * xP - s ^ 2 + xq ≠ 0) (hxRne : xR ≠ xP)
@@ -166,7 +168,7 @@ theorem block_sound (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂
     non-degeneracies `xP ≠ xq` and `2·xP − s² + xq ≠ 0` are the remaining honest-
     witness conditions (as in VarBaseMul). Identify `Q₁, Q₂` as `±T` / `±φ(T)` with
     `selectQ` to feed the GLV accumulation. -/
-theorem row_sound (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
+private theorem row_sound (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
     (endo : F) (w : Witness F) (h : Holds endo w)
     (hP : W.Nonsingular w.xP w.yP) (hR : W.Nonsingular w.xR w.yR)
     (hS : W.Nonsingular w.xS w.yS)
@@ -230,7 +232,7 @@ omit [DecidableEq F] in
 /-- One window's two cleared EC constraints (the `xR`/`yR` relations) hold for any
     `(s1, s2, xR, yR)` linked by the generation relations — slopes in multiplicative form, so it
     is pure polynomial algebra. -/
-theorem window_holds (xq yq xP yP s1 s2 xR yR : F)
+private theorem window_holds (xq yq xP yP s1 s2 xR yR : F)
     (hs2 : (2 * xP - s1 ^ 2 + xq) * s2 = 2 * yP - (2 * xP - s1 ^ 2 + xq) * s1)
     (hxR : xR = s2 ^ 2 - s1 ^ 2 + xq)
     (hyR : yR = (xP - xR) * s2 - yP) :
@@ -242,7 +244,7 @@ theorem window_holds (xq yq xP yP s1 s2 xR yR : F)
 
 omit [DecidableEq F] in
 /-- The generated window step `(s1, xR, yR)` for `R = (P + Q) + P`, `Q = (xq, yq)`. -/
-def stepWindow (xq yq xP yP : F) : F × F × F :=
+private def stepWindow (xq yq xP yP : F) : F × F × F :=
   let s1 := (yq - yP) / (xq - xP)
   let s2 := 2 * yP / (2 * xP - s1 ^ 2 + xq) - s1
   let xR := s2 ^ 2 - s1 ^ 2 + xq
@@ -251,7 +253,7 @@ def stepWindow (xq yq xP yP : F) : F × F × F :=
 omit [DecidableEq F] in
 /-- The generated window satisfies the window's slope + `xR` + `yR` constraints, given the two
     non-degeneracy conditions (`xP ≠ xq` and `t ≠ 0`) — the denominators in `stepWindow`. -/
-theorem stepWindow_holds (xq yq xP yP : F) (hxne : xP ≠ xq)
+private theorem stepWindow_holds (xq yq xP yP : F) (hxne : xP ≠ xq)
     (htne : 2 * xP - (stepWindow xq yq xP yP).1 ^ 2 + xq ≠ 0) :
     ((xq - xP) * (stepWindow xq yq xP yP).1 = yq - yP)
       ∧ (2 * xP - (stepWindow xq yq xP yP).1 ^ 2 + xq)
@@ -412,7 +414,7 @@ open Kimchi.Gate.EndoScalar in
     aligned (`EndoMul`'s `4^m·P₀` carry ↔ `EndoScalar`'s `a=b=2`) — yields
     `(k₂, k₁) = (a, b)`, i.e. `endoMul`'s scalar equals
     `EndoScalar.toField challenge λ`. -/
-theorem recoding_digit (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {b1 b2 : F}
+private theorem recoding_digit (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {b1 b2 : F}
     (hb1 : b1 = 0 ∨ b1 = 1) (hb2 : b2 = 0 ∨ b2 = 1) :
     cPoly (b2 + 2 * b1) = (2 * b2 - 1) * b1
       ∧ dPoly (b2 + 2 * b1) = (2 * b2 - 1) * (1 - b1) := by
@@ -434,7 +436,7 @@ theorem recoding_digit (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {b1 b2 : F}
     `2^(2m-1-j)`. The two agree (the row's `×4 = ×2` twice splits across its two
     crumbs). Over any `CommRing` — used at `ℤ` (the GLV coefficients) and `F` (the
     `cPoly`/`dPoly` digits). -/
-theorem sum_reindex {R : Type*} [CommRing R] (m : ℕ) (g : ℕ → R) :
+private theorem sum_reindex {R : Type*} [CommRing R] (m : ℕ) (g : ℕ → R) :
     ∑ i ∈ Finset.range m, (4 : R) ^ (m - 1 - i) * (2 * g (2 * i) + g (2 * i + 1))
       = ∑ j ∈ Finset.range (2 * m), (2 : R) ^ (2 * m - 1 - j) * g j := by
   induction m with
@@ -461,13 +463,13 @@ open Kimchi.Gate.EndoScalar (cPoly) in
 /-- `EndoScalar`'s `a`-digit (`cPoly`, the `φ(T)`/λ component) of crumb `j` built from
     the rows `g`: crumb `2i` is row `i`'s first window `(b₂,b₁)`, crumb `2i+1` its
     second `(b₄,b₃)`. -/
-def aDigit (g : ℕ → Witness F) (j : ℕ) : F :=
+private def aDigit (g : ℕ → Witness F) (j : ℕ) : F :=
   if j % 2 = 0 then cPoly ((g (j / 2)).b2 + 2 * (g (j / 2)).b1)
   else cPoly ((g (j / 2)).b4 + 2 * (g (j / 2)).b3)
 
 open Kimchi.Gate.EndoScalar (dPoly) in
 /-- `EndoScalar`'s `b`-digit (`dPoly`, the `T`/1 component) of crumb `j`. -/
-def bDigit (g : ℕ → Witness F) (j : ℕ) : F :=
+private def bDigit (g : ℕ → Witness F) (j : ℕ) : F :=
   if j % 2 = 0 then dPoly ((g (j / 2)).b2 + 2 * (g (j / 2)).b1)
   else dPoly ((g (j / 2)).b4 + 2 * (g (j / 2)).b3)
 
@@ -479,7 +481,7 @@ def crumbList (g : ℕ → Witness F) (m : ℕ) : List F :=
 
 omit [DecidableEq F] in
 /-- Each additional row appends its two window crumbs to the crumb list. -/
-theorem crumbList_succ (g : ℕ → Witness F) (m : ℕ) :
+private theorem crumbList_succ (g : ℕ → Witness F) (m : ℕ) :
     crumbList g (m + 1)
       = crumbList g m ++ [(g m).b2 + 2 * (g m).b1, (g m).b4 + 2 * (g m).b3] := by
   simp [crumbList, List.range_succ, List.flatMap_append]
@@ -489,7 +491,7 @@ omit [DecidableEq F] in
     list (folded from the `a = b = 2` init) is its `2·4^m` carry plus the
     Algorithm-2 digit sums — exactly `endoMul_ab`'s `(k₂:F)` / `(k₁:F)`. By induction
     on `m` (each row appends 2 crumbs; `List.foldl_append`). -/
-theorem decompose_crumbList (g : ℕ → Witness F) (m : ℕ) :
+private theorem decompose_crumbList (g : ℕ → Witness F) (m : ℕ) :
     Kimchi.Gate.EndoScalar.decomposeA (crumbList g m)
         = 2 * (4 : F) ^ m + ∑ j ∈ Finset.range (2 * m), (2 : F) ^ (2 * m - 1 - j) * aDigit g j
       ∧ Kimchi.Gate.EndoScalar.decomposeB (crumbList g m)
@@ -520,7 +522,7 @@ second-addition condition is self-enforced by the gate constraints. -/
     block constraint `(2·xI − s² + xq)·(…) = (xI − xO)·(2·yI)` gives `(xI − xO)·(2·yI) = 0`;
     with `xI ≠ xO` and char ≠ 2 this forces `yI = 0`, making `I` 2-torsion — ruled out on an
     odd-prime-order group. (The EndoMul analog of VarBaseMul's `tne_of_holds`.) -/
-theorem block_tne (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
+private theorem block_tne (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
     (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0) (h2 : (2 : F) ≠ 0) (hodd : W.order ≠ 2)
     {xI yI xO yO s xq : F} (hI : W.Nonsingular xI yI) (hxne : xI ≠ xO)
     (hc : (2 * xI - s ^ 2 + xq) * ((xI - xO) * s + yO + yI) = (xI - xO) * (2 * yI)) :
@@ -548,7 +550,7 @@ theorem block_tne (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
 /-- **GLV off-targets.** With the eigenvalue `φT = [λ]·T` and the four no-short-relation facts
     for the accumulator's offset coefficients, the two-base combination `[a]·T + [b]·φT` is none
     of `±T`, `±φT`. The geometric core of `hxne`. -/
-theorem combo_off_targets (W : WeierstrassCurve.Affine F)
+private theorem combo_off_targets (W : WeierstrassCurve.Affine F)
     [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)]
     {T φT : W.Point} (hTne : T ≠ 0) {lam : ℤ} (heig : φT = lam • T) {a b : ℤ}
     (h1 : ¬ (W.order : ℤ) ∣ (a - 1 + b * lam))
@@ -578,7 +580,7 @@ theorem combo_off_targets (W : WeierstrassCurve.Affine F)
 /-- A bounded variant of `Gate.EndoMul.selectQ` that additionally returns the integer fact
     `e = 1 ∨ e = -1` (the sign), which `selectQ` discards. Same case split, threading the fourth
     component of `Kimchi.Gate.VarBaseMul.signed_target`. -/
-theorem selectQ' (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
+private theorem selectQ' (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
     {endo b1 b2 xT yT : F}
     (hT : W.Nonsingular xT yT) (hφT : W.Nonsingular (endo * xT) yT)
     (hQ : W.Nonsingular ((1 + (endo - 1) * b1) * xT) ((2 * b2 - 1) * yT))
@@ -600,7 +602,7 @@ theorem selectQ' (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 
 /-- The two-base GLV fold: chaining `P_{i+1} = 4·P_i + c₁ᵢ·T + c₂ᵢ·φT` over `m` rows
     gives `P_m = 4^m·P₀ + (∑ 4^(m-1-i)·c₁ᵢ)·T + (∑ 4^(m-1-i)·c₂ᵢ)·φT`. Pure group
     algebra (cf. VarBaseMul's `chain_scalarMul`, here with a second base). -/
-theorem chain_endo (W : WeierstrassCurve.Affine F)
+private theorem chain_endo (W : WeierstrassCurve.Affine F)
     (m : ℕ) (P : ℕ → W.Point) (T φT : W.Point) (c1 c2 : ℕ → ℤ)
     (hstep : ∀ i, i < m → P (i + 1) = (4 : ℤ) • P i + c1 i • T + c2 i • φT) :
     P m = (4 : ℤ) ^ m • P 0
@@ -641,7 +643,7 @@ def accY (g : ℕ → Witness F) : ℕ → F
     output accumulator's nonsingularity (`hR`) is *produced* (existential) via `secant_add`,
     rather than consumed as a hypothesis. This is the producer that `gate_advance` / the chain
     proofs call to derive per-row nonsingularity. -/
-theorem block_produce (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
+private theorem block_produce (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     {xq yq xP yP s xR yR : F}
     (hP : W.Nonsingular xP yP) (hQ : W.Nonsingular xq yq)
     (hxne : xP ≠ xq) (htne : 2 * xP - s ^ 2 + xq ≠ 0) (hxRne : xR ≠ xP)
@@ -690,7 +692,7 @@ theorem block_produce (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a�
     gate *produces* the output point on-curve (`hS`, existential — via the secant additions, not
     assumed) together with the GLV contribution. The `(c1, c2)` digit identities are the GLV
     window digits, plus the `|·| ≤ 3` bound used by the accumulator invariant. -/
-theorem gate_advance (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
+private theorem gate_advance (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
     (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (hodd : W.order ≠ 2)
     (endo : F) (w : Witness F) (h : Holds endo w)
@@ -802,7 +804,7 @@ theorem gate_advance (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
     the GLV coefficients `(k₂, k₁)` are exactly `EndoScalar`'s Algorithm-2 `a`, `b` digit-sums over
     the shared crumbs. Every intermediate accumulator's nonsingularity is *derived* via
     `gate_advance`, so the prover supplies only `Holds`. -/
-theorem endoMul_ab (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
+private theorem endoMul_ab (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
     (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (hodd : W.order ≠ 2) (endo : F)
     (m : ℕ) (g : ℕ → Witness F) (hholds : ∀ i, i < m → Holds endo (g i))
@@ -935,7 +937,7 @@ theorem endoMul (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
     and a window's constraints, derives the window's first-addition non-degeneracy `hxne` and
     advances to the next bounded form, handing back the on-curve output point — the output
     accumulator's nonsingularity `hO` is *produced* (via `block_produce`) rather than consumed. -/
-theorem one_window_produce (W : WeierstrassCurve.Affine F)
+private theorem one_window_produce (W : WeierstrassCurve.Affine F)
     [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)]
     (T φT : W.Point)
     (off : ∀ a b : ℤ, a ≠ 0 → b ≠ 0 → |a| < 2 ^ 126 → |b| < 2 ^ 126 →
@@ -990,7 +992,7 @@ theorem one_window_produce (W : WeierstrassCurve.Affine F)
     with `A, B ∈ [4ⁱ+1, 3·4ⁱ−1]` (so `< 2¹²⁶`), which yields the per-row first-addition
     non-degeneracy `hxne`. The nonsingularity is derived inside the same induction (via
     `gate_advance`), not consumed from a bundle. -/
-theorem accumulator_chain (W : WeierstrassCurve.Affine F)
+private theorem accumulator_chain (W : WeierstrassCurve.Affine F)
     [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)]
     (h2 : (2 : F) ≠ 0) (hodd : W.order ≠ 2) (endo : F)
     (T φT : W.Point)

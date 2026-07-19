@@ -90,7 +90,7 @@ lemma secant_add
     arbitrary `b`, since `Q`'s validity as a curve point is supplied directly by
     `hQ`. (At the gate level the `b ∈ {0,1}` constraint is what makes
     `Q = (2b−1)·target` equal `±target`.) -/
-theorem singleBit_sound
+private theorem singleBit_sound
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     (b xb yb s1 xi yi xo yo : F)
     (hI : W.Nonsingular xi yi)
@@ -149,7 +149,7 @@ theorem singleBit_sound
 
     `Pᵢ` nonsingularity and the per-step non-degeneracy (`xᵢ ≠ xT`, `tᵢ ≠ 0`) are
     hypotheses; booleanity of each `bᵢ` is available from `Holds` if needed. -/
-theorem gate_scalarMul
+private theorem gate_scalarMul
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0) (w : Witness F)
     (h0 : W.Nonsingular w.x0 w.y0) (h1 : W.Nonsingular w.x1 w.y1)
     (h2 : W.Nonsingular w.x2 w.y2) (h3 : W.Nonsingular w.x3 w.y3)
@@ -316,7 +316,7 @@ membership is required. -/
 /-- A single block's constraints hold for any `(s1, s2, xo, yo)` linked by the generation
     relations (slope `s1` chord, slope `s2` tangent, and the output point), given booleanity.
     Stated with the slopes in *multiplicative* form so it is pure polynomial algebra. -/
-theorem singleBitHolds_of_step [CommRing F] (b xb yb s1 s2 xi yi xo yo : F)
+private theorem singleBitHolds_of_step [CommRing F] (b xb yb s1 s2 xi yi xo yo : F)
     (hb : b * b - b = 0)
     (hsl : (xi - xb) * s1 = yi - (2 * b - 1) * yb)
     (hs2 : (2 * xi + xb - s1 * s1) * s2 = 2 * yi - (2 * xi + xb - s1 * s1) * s1)
@@ -333,7 +333,7 @@ theorem singleBitHolds_of_step [CommRing F] (b xb yb s1 s2 xi yi xo yo : F)
 
 /-- The generated single-bit step satisfies the single-bit constraints, given booleanity of `b`
     and the two non-degeneracy conditions (`xi ≠ xb`, `t ≠ 0`) — the denominators in `stepBit`. -/
-theorem stepBit_holds [Field F] (b xb yb xi yi : F)
+private theorem stepBit_holds [Field F] (b xb yb xi yi : F)
     (hb : b * b - b = 0) (hx : xi - xb ≠ 0)
     (ht : 2 * xi + xb - (stepBit b xb yb xi yi).1 * (stepBit b xb yb xi yi).1 ≠ 0) :
     singleBitHolds b xb yb (stepBit b xb yb xi yi).1 xi yi
@@ -445,7 +445,7 @@ lower regime bound `2^(L-1) < q` situates the one-wrap regime; for the real para
 namespace Kimchi.Gate.VarBaseMul.Ladder
 
 /-- Lower/upper envelope of the ladder: `2^j + 1 ≤ k j ≤ 3·2^j - 1` for `j ≤ L`. -/
-lemma ladder_bounds (L : ℕ) (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
+private lemma ladder_bounds (L : ℕ) (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
     (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
     (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j) :
     ∀ j, j ≤ L → 2 ^ j + 1 ≤ k j ∧ k j ≤ 3 * 2 ^ j - 1 := by
@@ -456,7 +456,7 @@ lemma ladder_bounds (L : ℕ) (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
 
 /-- Forward-propagation bound: after `d` doubling steps the value differs from `2^d · k j`
     by at most `2^d - 1` (because each step adds `ε ∈ {-1, 1}`). -/
-lemma ladder_step (L : ℕ) (k ε : ℕ → ℤ)
+private lemma ladder_step (L : ℕ) (k ε : ℕ → ℤ)
     (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
     (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j) :
     ∀ d j, j + d ≤ L → |k (j + d) - 2 ^ d * k j| ≤ 2 ^ d - 1 := by
@@ -466,7 +466,7 @@ lemma ladder_step (L : ℕ) (k ε : ℕ → ℤ)
 
 /-- Non-degeneracy of the "deep" inputs (`d = L - j ≥ 4`) by a pure size argument:
     `k j` and `2·k j` are then strictly between `1` and `q - 1`. -/
-lemma ladder_size (q L : ℕ) (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
+private lemma ladder_size (q L : ℕ) (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
     (hreg₁ : 2 ^ (L - 1) < q)
     (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
     (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j) :
@@ -485,7 +485,7 @@ lemma ladder_size (q L : ℕ) (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
       pow_le_pow_right₀ (by decide : 1 ≤ 2) (show j ≤ L - 4 by omega)]
 
 /-- Every accumulator after the first step is odd (each step adds `ε ∈ {-1,1}`). -/
-lemma ladder_odd (L : ℕ) (k ε : ℕ → ℤ)
+private lemma ladder_odd (L : ℕ) (k ε : ℕ → ℤ)
     (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
     (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j) :
     ∀ j, 1 ≤ j → j ≤ L → Odd (k j) := by
@@ -500,10 +500,10 @@ lemma ladder_odd (L : ℕ) (k ε : ℕ → ℤ)
     doublings. For ANY prime `q ≡ 1 (mod 4)` in the one-wrap regime, the actual
     reachable degenerate set is a subset of these, so excluding them is sound; for the
     Pasta primes it is exactly this set. -/
-def forbiddenResidues : List ℤ := [0, 1, -1, 2, -2, 3, -3, 5, 7, 9, 11]
+private def forbiddenResidues : List ℤ := [0, 1, -1, 2, -2, 3, -3, 5, 7, 9, 11]
 
 /-- Depth-1 input (`L = j + 1`): every degeneracy branch lands on a forbidden residue. -/
-lemma degen_d1 (q L : ℕ)
+private lemma degen_d1 (q L : ℕ)
     (k ε : ℕ → ℤ)
     (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
     (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j) (j : ℕ) (hj : j < L) (hL : L = j + 1)
@@ -527,7 +527,7 @@ lemma degen_d1 (q L : ℕ)
 /-- Depth-2 input (`L = j + 2`). Branches `q∣(k j-1)` and `q∣(2 k j-1)` land on forbidden
     residues; `q∣(k j+1)` is impossible by parity+size; `q∣(2 k j+1)` is impossible by
     `q ≡ 1 (mod 4)`. -/
-lemma degen_d2 (q L : ℕ) (hq4 : q % 4 = 1)
+private lemma degen_d2 (q L : ℕ) (hq4 : q % 4 = 1)
     (hreg₁ : 2 ^ (L - 1) < q) (hreg₂ : q < 2 ^ L)
     (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
     (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
@@ -591,7 +591,7 @@ lemma degen_d2 (q L : ℕ) (hq4 : q % 4 = 1)
 /-- Depth-3 input (`L = j + 3`). Branch `q∣(2 k j-1)` lands on a forbidden residue;
     `q∣(k j±1)` are impossible by size; `q∣(2 k j+1)` is impossible by `q ≡ 1 (mod 4)`
     (or, when `j = 0`, forces `q = 5`, where forbiddenResidues covers every residue). -/
-lemma degen_d3 (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
+private lemma degen_d3 (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
     (hreg₁ : 2 ^ (L - 1) < q) (hreg₂ : q < 2 ^ L)
     (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
     (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
@@ -646,7 +646,7 @@ lemma degen_d3 (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
     `d = L - j ≥ 4` cannot be degenerate (`ladder_size`); for `d ≤ 3` the four degeneracy
     branches either land on an explicit forbidden residue, or are ruled out by a size /
     parity / `q ≡ 1 (mod 4)` argument. -/
-lemma degenerate_input_forces_forbidden (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
+private lemma degenerate_input_forces_forbidden (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
     (hreg₁ : 2 ^ (L - 1) < q) (hreg₂ : q < 2 ^ L)
     (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
     (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
@@ -675,7 +675,7 @@ lemma degenerate_input_forces_forbidden (q L : ℕ) (hq : Nat.Prime q) (hq4 : q 
     reachable odd accumulator at the deep inputs), which is what would otherwise add the
     residues `-5, -7, -9, -11`. If `s = k L` avoids these 11 residues, every input
     `k j` (`j < L`) is non-degenerate. -/
-theorem ladder_nondegen_tight (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
+private theorem ladder_nondegen_tight (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
     (hreg₁ : 2 ^ (L - 1) < q) (hreg₂ : q < 2 ^ L)
     (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
     (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
@@ -696,7 +696,7 @@ theorem ladder_nondegen_tight (q L : ℕ) (hq : Nat.Prime q) (hq4 : q % 4 = 1)
     `2·k j ± 1` strictly inside `(0, q)`, so none can be a multiple of `q`. This is the small-`L`
     regime (`5m ≤ bitlength(order) - 1`), where the scalar is too small to ever drive an
     accumulator onto `±T`, so the gate is safe with no guard at all. -/
-lemma ladder_subwrap_nondegen (q L : ℕ) (hsub : 3 * 2 ^ L ≤ q)
+private lemma ladder_subwrap_nondegen (q L : ℕ) (hsub : 3 * 2 ^ L ≤ q)
     (k ε : ℕ → ℤ) (hk0 : k 0 = 2)
     (hε : ∀ j, j < L → ε j = 1 ∨ ε j = -1)
     (hrec : ∀ j, j < L → k (j + 1) = 2 * k j + ε j) :
@@ -744,7 +744,7 @@ lemma ladder_subwrap_nondegen (q L : ℕ) (hsub : 3 * 2 ^ L ≤ q)
     All three hold comfortably for the real Pasta parameters (`L = 255`,
     `order ≈ 2^254 + 4.56·10^37` a large prime, `2δ > δ'`).
 -/
-theorem ladder_x_nondegen (order baseFieldOrder L : ℕ)
+private theorem ladder_x_nondegen (order baseFieldOrder L : ℕ)
     (hreg₁ : 2 ^ (L - 1) < order)
     (hodd : Odd order) (horder : 3 < order)
     (hbound : baseFieldOrder + 2 ^ (L - 1) + 2 ≤ 2 * order)
@@ -815,7 +815,7 @@ variable {F : Type*} [Field F] [DecidableEq F]
     multiplication by the `5m`-bit scalar `k = ∑_{i<m} 32^(m-1-i)·cᵢ` (plus the
     carried `32^m·P₀`). The per-gate relation is supplied by `sound`
     after folding its `Qⱼ` points into `±T` via booleanity. -/
-theorem chain_scalarMul
+private theorem chain_scalarMul
     (W : WeierstrassCurve.Affine F)
     (m : ℕ) (P : ℕ → W.Point) (T : W.Point) (c : ℕ → ℤ)
     (hstep : ∀ i, i < m → P (i + 1) = (32 : ℤ) • P i + c i • T) :
@@ -846,7 +846,7 @@ omit [DecidableEq F] in
     `(c i : F) = 2·N (i+1) − 64·N i − 31`, then the folded scalar
     `k = ∑ 32^(m-1-i)·c i` satisfies `(k : F) = 2·N m − 2·32^m·N 0 − (32^m − 1)`.
     (The `−31`s sum to `−(32^m−1)`; the register terms telescope.) -/
-theorem chain_register (m : ℕ) (N : ℕ → F) (c : ℕ → ℤ)
+private theorem chain_register (m : ℕ) (N : ℕ → F) (c : ℕ → ℤ)
     (hstep : ∀ i, i < m → (c i : F) = 2 * N (i + 1) - 64 * N i - 31) :
     ((∑ i ∈ Finset.range m, (32 : ℤ) ^ (m - 1 - i) * c i : ℤ) : F)
       = 2 * N m - 2 * (32 : F) ^ m * N 0 - ((32 : F) ^ m - 1) := by
@@ -863,7 +863,7 @@ theorem chain_register (m : ℕ) (N : ℕ → F) (c : ℕ → ℤ)
     `c i` has `|c i| ≤ 31`, then the accumulated scalar
     `k = ∑_{i<m} 32^(m-1-i)·c i` satisfies `|k| ≤ 32^m − 1`. (Induction: the
     recurrence `k_{m+1} = 32·k_m + c m` and `32·(32^m−1) + 31 = 32^(m+1)−1`.) -/
-theorem chain_sum_bound (m : ℕ) (c : ℕ → ℤ) (hc : ∀ i, i < m → (c i).natAbs ≤ 31) :
+private theorem chain_sum_bound (m : ℕ) (c : ℕ → ℤ) (hc : ∀ i, i < m → (c i).natAbs ≤ 31) :
     (∑ i ∈ Finset.range m, (32 : ℤ) ^ (m - 1 - i) * c i).natAbs ≤ 32 ^ m - 1 := by
   induction m with
   | zero => simp
@@ -947,7 +947,7 @@ structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
     signed-digit form. The proof folds the point chain with `chain_scalarMul` and
     the register chain with `chain_register`, both fed by the gate's
     `sound`. -/
-theorem scalarMul
+private theorem scalarMul
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep W (g i))
     (P : ℕ → W.Point) (T : W.Point) (N : ℕ → F)
@@ -986,7 +986,7 @@ theorem scalarMul
     `VarBaseMul` gates compute `[n]·T`: variable-base scalar multiplication of the
     base point `T`, the scalar `n` determined by the init `a` and the scalar
     register (`N 0 → N m`), in signed-digit form. -/
-theorem scalarMul_baseMul
+private theorem scalarMul_baseMul
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep W (g i))
     (T : W.Point) (N : ℕ → F) (a : ℤ) (P : ℕ → W.Point)
@@ -1026,7 +1026,7 @@ theorem scalarMul_baseMul
     `t = shift(s)` (`N m = t`) makes it compute `[s]·T` — variable-base scalar
     multiplication by the original scalar `s`, the cross-field shift being the
     pickles `Shifted_value` contract. -/
-theorem scalarMul_shifted
+private theorem scalarMul_shifted
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep W (g i))
     (T : W.Point) (N : ℕ → F) (P : ℕ → W.Point)
@@ -1059,7 +1059,7 @@ theorem scalarMul_shifted
     `n·T` with `(n : F) = unshiftType2 (5m) (N m) sOdd = 2·(N m) + sOdd + 2^(5m)` — the
     Type2 scalar — in both bit cases. The correction is stated on `P m` directly (no
     prover-supplied output point or correction relation). -/
-theorem scalarMul_type2
+private theorem scalarMul_type2
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep W (g i))
     (T : W.Point) (N : ℕ → F) (P : ℕ → W.Point)
@@ -1133,7 +1133,7 @@ lemma x_ne_xT_of_ne_base (c : WeierstrassCurve.Affine F)
 /-- **Second-addition non-vertical guarantee.** The geometric non-degeneracy
     `2·I + Q ≠ 0` forces the field condition `tⱼ = 2·xi + xb − s1² ≠ 0` that the
     `VarBaseMul` gate bundles. -/
-lemma singleBit_tne_of_double_ne (c : WeierstrassCurve.Affine F)
+private lemma singleBit_tne_of_double_ne (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
     [Fact (Nat.Prime c.order)]
     {b xb yb s1 xi yi xo yo : F}
@@ -1170,7 +1170,7 @@ lemma singleBit_tne_of_double_ne (c : WeierstrassCurve.Affine F)
     yet `2·xi + xb − s1² = 2·1 + 5 − 0 = 7 = 0`. The Pasta `order` is a 255-bit prime,
     so `order ≠ 2` there. But `order ≠ 2` does not follow from `order` being prime (`2`
     is prime) or from the short shape, so it is taken as a separate hypothesis. -/
-lemma tne_of_holds (c : WeierstrassCurve.Affine F)
+private lemma tne_of_holds (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
     [Fact (Nat.Prime c.order)] (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2)
     {b xb yb s1 xi yi xo yo : F}
@@ -1244,7 +1244,7 @@ lemma zsmul_eq_zero_iff_order_dvd (c : WeierstrassCurve.Affine F)
   rw [← addOrderOf_dvd_iff_zsmul_eq_zero, horder]
 
 /-- The raw bit processed at sub-step `j`: bit `j % 5` of gate `j / 5`. -/
-def gateBit (g : ℕ → Witness F) (j : ℕ) : F :=
+private def gateBit (g : ℕ → Witness F) (j : ℕ) : F :=
   match j % 5 with
   | 0 => (g (j / 5)).b0
   | 1 => (g (j / 5)).b1
@@ -1253,7 +1253,7 @@ def gateBit (g : ℕ → Witness F) (j : ℕ) : F :=
   | _ => (g (j / 5)).b4
 
 /-- The signed bit `±1` at sub-step `j`. -/
-def gateBitSign (g : ℕ → Witness F) (j : ℕ) : ℤ := if gateBit g j = 1 then 1 else -1
+private def gateBitSign (g : ℕ → Witness F) (j : ℕ) : ℤ := if gateBit g j = 1 then 1 else -1
 
 /-- The integer double-and-add ladder over the gate bits, with `k 0 = 2`. -/
 def gateLadder (g : ℕ → Witness F) : ℕ → ℤ
@@ -1262,18 +1262,18 @@ def gateLadder (g : ℕ → Witness F) : ℕ → ℤ
 
 @[simp] lemma gateLadder_zero (g : ℕ → Witness F) : gateLadder g 0 = 2 := rfl
 
-lemma gateLadder_succ (g : ℕ → Witness F) (j : ℕ) :
+private lemma gateLadder_succ (g : ℕ → Witness F) (j : ℕ) :
     gateLadder g (j + 1) = 2 * gateLadder g j + gateBitSign g j := rfl
 
-lemma gateBitSign_eq (g : ℕ → Witness F) (j : ℕ) :
+private lemma gateBitSign_eq (g : ℕ → Witness F) (j : ℕ) :
     gateBitSign g j = 1 ∨ gateBitSign g j = -1 := by
   unfold gateBitSign; split <;> simp
 
 /-- The unsigned bit at sub-step `j`: `1` if set, else `0` (same `= 1` test as `gateBitSign`). -/
-def ubit (g : ℕ → Witness F) (j : ℕ) : ℤ := if gateBit g j = 1 then 1 else 0
+private def ubit (g : ℕ → Witness F) (j : ℕ) : ℤ := if gateBit g j = 1 then 1 else 0
 
 /-- The signed digit is `2·(unsigned bit) − 1`, unconditionally (same `gateBit = 1` test). -/
-lemma gateBitSign_eq_ubit (g : ℕ → Witness F) (j : ℕ) :
+private lemma gateBitSign_eq_ubit (g : ℕ → Witness F) (j : ℕ) :
     gateBitSign g j = 2 * ubit g j - 1 := by
   unfold gateBitSign ubit; split <;> ring
 
@@ -1282,7 +1282,7 @@ def gateRegister (g : ℕ → Witness F) : ℕ → ℤ
   | 0 => 0
   | j + 1 => 2 * gateRegister g j + ubit g j
 
-lemma gateRegister_succ (g : ℕ → Witness F) (j : ℕ) :
+private lemma gateRegister_succ (g : ℕ → Witness F) (j : ℕ) :
     gateRegister g (j + 1) = 2 * gateRegister g j + ubit g j := rfl
 
 /-- **Signed ladder ↔ unsigned register bridge.** The signed double-and-add top is the `Type1`
@@ -1290,7 +1290,7 @@ lemma gateRegister_succ (g : ℕ → Witness F) (j : ℕ) :
     the signed digits are `2·ubit − 1`): `gateLadder g L = 2·gateRegister g L + 2^L + 1`. This links
     the non-degeneracy path (`gateLadder`) to the scalar-register path: a range-check
     `gateRegister < 2^k` directly bounds the ladder top, hence the deployed `hcanonical`. -/
-lemma gateLadder_eq_register (g : ℕ → Witness F) (L : ℕ) :
+private lemma gateLadder_eq_register (g : ℕ → Witness F) (L : ℕ) :
     gateLadder g L = 2 * gateRegister g L + 2 ^ L + 1 := by
   induction L with
   | zero => norm_num [gateLadder, gateRegister]
@@ -1299,7 +1299,7 @@ lemma gateLadder_eq_register (g : ℕ → Witness F) (L : ℕ) :
 
 omit [Field F] [DecidableEq F] in
 /-- The five raw bits of gate `i` are the sub-step bits `5i … 5i+4`. -/
-lemma gateBit_block (g : ℕ → Witness F) (i : ℕ) :
+private lemma gateBit_block (g : ℕ → Witness F) (i : ℕ) :
     gateBit g (5 * i) = (g i).b0 ∧ gateBit g (5 * i + 1) = (g i).b1
       ∧ gateBit g (5 * i + 2) = (g i).b2 ∧ gateBit g (5 * i + 3) = (g i).b3
       ∧ gateBit g (5 * i + 4) = (g i).b4 := by
@@ -1307,7 +1307,7 @@ lemma gateBit_block (g : ℕ → Witness F) (i : ℕ) :
   norm_num [ Nat.add_div ]
 
 /-- The signed bit `e` produced by `signed_target` matches `gateBitSign`. -/
-lemma e_eq_gateBitSign (g : ℕ → Witness F) (j : ℕ) {b : F} (hgb : gateBit g j = b)
+private lemma e_eq_gateBitSign (g : ℕ → Witness F) (j : ℕ) {b : F} (hgb : gateBit g j = b)
     (hbit : b = 0 ∨ b = 1) {e : ℤ} (he2 : (e : F) = 2 * b - 1) (he : e = 1 ∨ e = -1)
     (h2 : (2 : F) ≠ 0) : e = gateBitSign g j := by
   cases hbit <;> simp_all +decide [ gateBitSign ];
@@ -1318,7 +1318,7 @@ lemma e_eq_gateBitSign (g : ℕ → Witness F) (j : ℕ) {b : F} (hgb : gateBit 
 
 /-- Per sub-step advance using ONLY the x-condition `k ≢ ±1`; the t-condition `t ≠ 0`
     is supplied by `tne_of_holds` (the constraints + prime order), not by `2k ≢ ±1`. -/
-lemma gate_step_advance' (c : WeierstrassCurve.Affine F)
+private lemma gate_step_advance' (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
     [Fact (Nat.Prime c.order)] (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2)
     {xT yT b s1 xi yi xo yo : F}
@@ -1356,7 +1356,7 @@ lemma gate_step_advance' (c : WeierstrassCurve.Affine F)
     `gate_step_advance'` steps and produces `a5` existentially, together with the row's `NonDegen`
     side conditions. The deployed soundness needs only the threaded input. This mirrors EndoMul's
     `gate_advance`. -/
-lemma gate_block_produce (c : WeierstrassCurve.Affine F)
+private lemma gate_block_produce (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
     [Fact (Nat.Prime c.order)] (g : ℕ → Witness F) (i : ℕ)
     (h2 : (2 : F) ≠ 0)
@@ -1417,7 +1417,7 @@ lemma gate_block_produce (c : WeierstrassCurve.Affine F)
 /-- Like `gate_block_produce`, but returns all five derived accumulator points `a1..a5` (not just
     `a5`), so the register subsystem (`scalarMul` / `scalarMul_type2`, which consume the whole
     `GateStep` bundle) can be fed the full per-row data. Same five-`gate_step_advance'` chain. -/
-lemma gate_block_full (c : WeierstrassCurve.Affine F)
+private lemma gate_block_full (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
     [Fact (Nat.Prime c.order)] (g : ℕ → Witness F) (i : ℕ)
     (h2 : (2 : F) ≠ 0)
@@ -1497,7 +1497,7 @@ def accY (g : ℕ → Witness F) : ℕ → F
     `∃ hk, Point.some _ _ hk = gateLadder g (5·k) • T`: the base case is `hP0ns`/`hP0`
     (`gateLadder g 0 = 2`), and each step feeds the threaded input (base transported to row `k` via
     `hbase`) to `gate_block_produce`. -/
-lemma gate_chain_produce (c : WeierstrassCurve.Affine F)
+private lemma gate_chain_produce (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
     (m : ℕ) (g : ℕ → Witness F) (T : c.Point) (s : ℤ) (hTne : T ≠ 0)
     (hholds : ∀ i, i < m → Holds (g i))
@@ -1567,7 +1567,7 @@ lemma gate_chain_produce (c : WeierstrassCurve.Affine F)
     `gate_block_full`) together with the threaded point sequence `P` — exactly the inputs the
     register subsystem (`scalarMul` / `scalarMul_type2`) consumes. The `scaleFast2` analog of
     `gate_chain_produce`. -/
-lemma gateStep_chain (c : WeierstrassCurve.Affine F)
+private lemma gateStep_chain (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
     (m : ℕ) (g : ℕ → Witness F) (T : c.Point) (hTne : T ≠ 0)
     (hholds : ∀ i, i < m → Holds (g i))

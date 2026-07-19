@@ -319,7 +319,7 @@ end Point
     tangent is horizontal (slope 0), so `2·(0,2) = (0,-2) = (0,15)`.
     Same-x doubling ⇒ `sameX = 1`, `s = 0`, `x21Inv = 0`, `inf = 0`. -/
 
-def egDouble : Witness (ZMod 17) :=
+private def egDouble : Witness (ZMod 17) :=
   { x1 := 0, y1 := 2, x2 := 0, y2 := 2, x3 := 0, y3 := 15
   , inf := 0, sameX := 1, s := 0, infZ := 0, x21Inv := 0 }
 

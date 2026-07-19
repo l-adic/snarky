@@ -48,7 +48,7 @@ theorem complete [CommRing F] (s0 : F × F × F) (rc : Fin 5 → F × F × F) :
 /-! ## Runnable example. -/
 
 /-- A concrete satisfying row over a small field: `build` always satisfies `ok`. -/
-def egPoseidon : Witness (ZMod 101) :=
+private def egPoseidon : Witness (ZMod 101) :=
   build (1, 2, 3) (fun _ => (1, 1, 1))
 
 #eval ok (fun _ => (1, 1, 1)) egPoseidon   -- expect true
