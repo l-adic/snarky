@@ -1,7 +1,7 @@
 import Mathlib
 import Bulletproof.Protocol
 import Bulletproof.Soundness
-import Kimchi.Verifier.Correspond
+import Kimchi.Protocol.Correspond
 
 /-!
 # Batch binding
@@ -35,7 +35,7 @@ no-DL-relation form so these lemmas compose with `batch_soundnessA` verbatim.
 
 open Bulletproof
 
-namespace Kimchi.Verifier
+namespace Kimchi.Protocol
 
 open Polynomial Bulletproof
 
@@ -164,4 +164,4 @@ theorem bound_eval_of_commitPolyMasked (σ : SRS G)
     e = p.eval x := by
   rw [he, ← rowPoly_eval, (bound_eq_of_commitPolyMasked σ hbind hcommit hdeg).1]
 
-end Kimchi.Verifier
+end Kimchi.Protocol

@@ -39,7 +39,7 @@ three powers `α^21, α^22, α^23`.
 * `ftEval0` — the verifier's `ft(ζ)`.
 -/
 
-namespace Kimchi.Verifier.Linearization
+namespace Kimchi.Protocol.Linearization
 
 open Kimchi.Quotient
 
@@ -133,4 +133,4 @@ def ftEval0 (n zkRows : ℕ) (ω : F) (shifts : Fin 7 → F) (endo : F)
     * (1 - e.z)) / ((ζ - wBoundary) * (ζ - 1))
   sigmaSide - pubEval - shiftSide + boundary - gateLinearization endo α e
 
-end Kimchi.Verifier.Linearization
+end Kimchi.Protocol.Linearization

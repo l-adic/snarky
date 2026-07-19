@@ -1,7 +1,7 @@
 import Mathlib
 import Bulletproof.Soundness
-import Kimchi.Verifier.Sound
-import Kimchi.Verifier.Equation
+import Kimchi.Protocol.Sound
+import Kimchi.Protocol.Equation
 
 /-!
 # The composed soundness headline (milestone 4.5): `kimchiProof_sound`
@@ -53,10 +53,10 @@ the equation; milestone 5 lifts it to the `p`-uniform family. Accordingly no
 
 open Bulletproof
 
-namespace Kimchi.Verifier
+namespace Kimchi.Protocol
 
-open Polynomial Bulletproof Kimchi.Index Kimchi.Verifier.Linearization
-  Kimchi.Verifier.Equation
+open Polynomial Bulletproof Kimchi.Index Kimchi.Protocol.Linearization
+  Kimchi.Protocol.Equation
 
 variable {F G : Type*}
 
@@ -612,4 +612,4 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
       (batchC wC zC comms) ![ζ, idx.omega * ζ] E A hFS hbind hacc
   exact himp β γ α t ζ E aw ρw hβ hγ hα hζ hζ₁ hζb ht hrow hteq
 
-end Kimchi.Verifier
+end Kimchi.Protocol

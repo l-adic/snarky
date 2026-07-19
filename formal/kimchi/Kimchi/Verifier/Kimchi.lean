@@ -1,5 +1,5 @@
 import Bulletproof.Wire
-import Kimchi.Verifier.Linearization
+import Kimchi.Protocol.Linearization
 import Poseidon.FqSponge
 
 /-!
@@ -8,7 +8,7 @@ import Poseidon.FqSponge
 The full kimchi verifier over wire data, transcribed from proof-systems
 `kimchi/src/verifier.rs`: the Fiat-Shamir argument (`oracles`, :126–634) and the partial
 verification (`to_batch`, :781–1194), finished by the batched IPA opening check. The
-scalar-side closed forms are the landed `Kimchi.Verifier.Linearization`
+scalar-side closed forms are the landed `Kimchi.Protocol.Linearization`
 (`ftEval0`/`permScalar`/`zkpmEval`); the sponge layer is the landed
 `Poseidon.FqSponge` machinery, reused at both fields; the opening finish is the
 landed `Bulletproof.Ipa` acceptance, restarted from the **warm** fq-sponge state
@@ -47,6 +47,8 @@ production fold shapes) so any divergence localizes.
 open Bulletproof
 
 namespace Kimchi.Verifier
+
+open Kimchi.Protocol
 
 open CompElliptic.CurveForms.ShortWeierstrass
 open Poseidon Poseidon.FqSponge Bulletproof

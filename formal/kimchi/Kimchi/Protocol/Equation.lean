@@ -1,4 +1,4 @@
-import Kimchi.Verifier.Linearization
+import Kimchi.Protocol.Linearization
 import Kimchi.Index.Aggregate
 import Kimchi.Index.Degree
 
@@ -14,9 +14,9 @@ honest protocol hands the scalar side — every column read through its interpol
 bridge identities are naturality squares of the same objects `fullFamily` is built on.
 -/
 
-namespace Kimchi.Verifier.Equation
+namespace Kimchi.Protocol.Equation
 
-open Polynomial Kimchi.Quotient Kimchi.Index Kimchi.Verifier.Linearization
+open Polynomial Kimchi.Quotient Kimchi.Index Kimchi.Protocol.Linearization
 
 variable {F : Type*} [Field F] {n : ℕ}
 
@@ -529,4 +529,4 @@ theorem satisfies_extractTable_of_verifierEquation [DecidableEq F] [NeZero n]
   satisfies_of_verifierEquation idx pub (extractTable idx.omega W) β γ hβ hγ
     zg α hα t ζ hζ hζ₁ hζb heq
 
-end Kimchi.Verifier.Equation
+end Kimchi.Protocol.Equation

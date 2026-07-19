@@ -1,8 +1,8 @@
 import Mathlib
 import Kimchi.Verifier.Kimchi
 import Bulletproof.Reflection
-import Kimchi.Verifier.Correspond
-import Kimchi.Verifier.Equation
+import Kimchi.Protocol.Correspond
+import Kimchi.Protocol.Equation
 import Kimchi.Quotient.Permutation
 
 /-!
@@ -24,9 +24,11 @@ open Bulletproof
 
 namespace Kimchi.Verifier
 
+open Kimchi.Protocol
+
 open CompElliptic.CurveForms.ShortWeierstrass
 open Poseidon Poseidon.FqSponge Bulletproof Kimchi.Index
-open Kimchi.Verifier.Linearization Polynomial
+open Kimchi.Protocol.Linearization Polynomial
 open CompElliptic.Fields.Pasta
 
 open CompElliptic.Fields.Pasta

@@ -28,7 +28,7 @@ through the same reflection layer that carries `Ipa.verify` to `batch_soundness`
 
 open Bulletproof
 
-namespace Kimchi.Verifier
+namespace Kimchi.Protocol
 
 open Polynomial Kimchi.Quotient Kimchi.Index Bulletproof
 
@@ -128,4 +128,4 @@ def VKCorresponds (σ : SRS G) (comms : IndexComms G) (idx : Index F n) : Prop :
 theorem vkCorresponds_indexerOf (σ : SRS G) (idx : Index F n) :
     VKCorresponds σ (indexerOf σ idx) idx := rfl
 
-end Kimchi.Verifier
+end Kimchi.Protocol
