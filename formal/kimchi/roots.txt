@@ -27,8 +27,8 @@ Kimchi.Gate.VarBaseMul.sound
 Kimchi.Gate.VarBaseMul.complete
 
 -- Variable-base scalar multiplication (circuit): the two deployed entry points
-Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast1
-Kimchi.Circuit.VarBaseMul.varBaseMul_scaleFast2
+Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast1
+Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast2
 
 -- Endo-scalar decomposition (gate)
 Kimchi.Gate.EndoScalar.sound
@@ -37,9 +37,9 @@ Kimchi.Gate.EndoScalar.complete
 -- Endo-scalar decomposition (circuit): over a multi-row run of sequential gates, the effective
 -- scalar a·λ + b (sound), the honest prover fills the run (complete), and the decomposition is
 -- unique under the bit-size/field-size bound (so challenge ↦ a·λ + b is well defined)
-Kimchi.Circuit.EndoScalar.chain_toField
-Kimchi.Circuit.EndoScalar.chain_complete
-Kimchi.Circuit.EndoScalar.endoScalar_unique
+Kimchi.Gate.EndoScalar.chain_toField
+Kimchi.Gate.EndoScalar.chain_complete
+Kimchi.Gate.EndoScalar.endoScalar_unique
 
 -- GLV endomorphism scalar multiplication (gate)
 Kimchi.Gate.EndoMul.sound
@@ -48,16 +48,16 @@ Kimchi.Gate.EndoMul.complete
 -- GLV endomorphism scalar multiplication (circuit): the generic capstone over `Holds` — a run of
 -- valid EndoMul rows + base + threading + initial conditions computes [s]·T, with intermediate
 -- nonsingularity derived (no per-row bundle). Ties EndoScalar ↔ EndoMul ↔ [s]·T.
-Kimchi.Circuit.EndoMul.endoMul
+Kimchi.Gate.EndoMul.endoMul
 -- GLV non-degeneracy at the Pasta curves: a bounded two-base accumulator avoids ±T/±φT (the
 -- hxne core, via the GLV short-basis bound)
-Kimchi.Circuit.EndoMul.pallas_combo_off_targets
-Kimchi.Circuit.EndoMul.vesta_combo_off_targets
+Kimchi.Gate.EndoMul.pallas_combo_off_targets
+Kimchi.Gate.EndoMul.vesta_combo_off_targets
 -- EndoMul at the real Pasta curves: the deployed entry points. The prover supplies only the gate
 -- constraint Holds per row + base + threading + initial conditions; the eigenvalue is discharged
 -- via the CM axiom and the per-row hxne is *derived* from the GLV bound (not assumed)
-Kimchi.Circuit.EndoMul.pallas_endoMul
-Kimchi.Circuit.EndoMul.vesta_endoMul
+Kimchi.Gate.EndoMul.pallas_endoMul
+Kimchi.Gate.EndoMul.vesta_endoMul
 
 -- Kimchi quotient/vanishing argument (implementation checkpoint). Over the size-n evaluation
 -- domain, a constraint polynomial is divisible by Z_H = X^n - 1 iff it vanishes on every row

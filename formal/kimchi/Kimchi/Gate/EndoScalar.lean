@@ -40,7 +40,7 @@ identity covers all four cases).
 
 The constraint model (`Witness` / `Holds` / `ok` / `ok_iff`) and the cubic↔table bridge
 (`cFunc` / `dFunc`, `cPoly_eq_cFunc` / `dPoly_eq_dFunc`, `foldl_table`). The effective scalar
-`a·λ + b` and the multi-row composition live in `Kimchi.Circuit.EndoScalar`.
+`a·λ + b` and the multi-row composition live in `Kimchi.Gate.EndoScalar`.
 -/
 
 namespace Kimchi.Gate.EndoScalar
@@ -244,81 +244,5 @@ def build (a0 b0 n0 : F) (crumbs : List F) : Witness F :=
   , a8 := crumbs.foldl (fun acc x => 2 * acc + cPoly x) a0
   , b8 := crumbs.foldl (fun acc x => 2 * acc + dPoly x) b0
   , crumbs }
-
-/-- **Completeness.** The witness the honest prover constructs (`build`) satisfies all the gate
-    constraints, given that every crumb is a genuine 2-bit value — the folds close by
-    construction, and the range constraint follows from `crumb_iff`. -/
-theorem complete (a0 b0 n0 : F) (crumbs : List F)
-    (hvalid : ∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
-    Holds (build a0 b0 n0 crumbs) :=
-  (holds_iff _).mpr ⟨rfl, rfl, rfl, fun x hx => (crumb_iff x).mpr (hvalid x hx)⟩
-
-/-! ## The bare-table form of the folds.
-
-    The `a`/`b` constraints use the interpolating cubics; on valid crumbs they run
-    the same fold with the bare `c_func`/`d_func` tables. -/
-
-/-- Replacing the per-crumb function leaves the `2·acc + f x` fold unchanged when
-    the two functions agree on every crumb. -/
-theorem foldl_table {φ ψ : F → F} :
-    ∀ (xs : List F) (init : F), (∀ x ∈ xs, φ x = ψ x) →
-      xs.foldl (fun acc x => 2 * acc + φ x) init
-        = xs.foldl (fun acc x => 2 * acc + ψ x) init
-  | [], _, _ => rfl
-  | y :: ys, init, h => by
-    simp only [List.foldl_cons]
-    rw [h y (by simp), foldl_table ys _ (fun x hx => h x (by simp [hx]))]
-
-variable [DecidableEq F]
-
-/-- `c_func` as the bare `(0,0,−1,1)` table. -/
-def cFunc (x : F) : F := if x = 2 then -1 else if x = 3 then 1 else 0
-
-/-- `d_func` as the bare `(−1,1,0,0)` table. -/
-def dFunc (x : F) : F := if x = 0 then -1 else if x = 1 then 1 else 0
-
-/-- On a valid crumb the interpolating cubic `cPoly` equals the bare table `cFunc`. -/
-theorem cPoly_eq_cFunc (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
-    (hx : x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) : cPoly x = cFunc x := by
-  obtain ⟨c0, c1, c2, c3⟩ := cPoly_table h2 h3
-  have e02 : (0 : F) ≠ 2 := fun h => h2 h.symm
-  have e03 : (0 : F) ≠ 3 := fun h => h3 h.symm
-  have e12 : (1 : F) ≠ 2 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination -h)
-  have e13 : (1 : F) ≠ 3 := fun h => h2 (by linear_combination -h)
-  have e32 : (3 : F) ≠ 2 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination h)
-  rcases hx with rfl | rfl | rfl | rfl
-  · rw [c0, cFunc, if_neg e02, if_neg e03]
-  · rw [c1, cFunc, if_neg e12, if_neg e13]
-  · rw [c2, cFunc, if_pos rfl]
-  · rw [c3, cFunc, if_neg e32, if_pos rfl]
-
-/-- On a valid crumb the interpolating cubic `dPoly` equals the bare table `dFunc`. -/
-theorem dPoly_eq_dFunc (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
-    (hx : x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) : dPoly x = dFunc x := by
-  obtain ⟨d0, d1, d2, d3⟩ := dPoly_table h2 h3
-  have e21 : (2 : F) ≠ 1 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination h)
-  have e31 : (3 : F) ≠ 1 := fun h => h2 (by linear_combination h)
-  rcases hx with rfl | rfl | rfl | rfl
-  · rw [d0, dFunc, if_pos rfl]
-  · rw [d1, dFunc, if_neg ((one_ne_zero : (1 : F) ≠ 0)), if_pos rfl]
-  · rw [d2, dFunc, if_neg h2, if_neg e21]
-  · rw [d3, dFunc, if_neg h3, if_neg e31]
-
-/-- **Soundness.** A satisfying row genuinely runs Halo's Algorithm 2: the crumbs are valid 2-bit
-    values, and the `a`/`b`/`n` accumulators are the Algorithm-2 folds — with the `a`/`b` folds
-    using the *literal* `c_func`/`d_func` lookup tables (the cubics in `Holds` interpolate them, so
-    `2,3 ≠ 0` — true on the Pasta scalar fields). -/
-theorem sound (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
-    (w : Witness F) (h : Holds w) :
-    (∀ x ∈ w.crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3)
-      ∧ w.n8 = w.crumbs.foldl (fun n x => 4 * n + x) w.n0
-      ∧ w.a8 = w.crumbs.foldl (fun a x => 2 * a + cFunc x) w.a0
-      ∧ w.b8 = w.crumbs.foldl (fun b x => 2 * b + dFunc x) w.b0 := by
-  obtain ⟨hn, ha, hb, hc⟩ := (holds_iff w).mp h
-  have hv : ∀ x ∈ w.crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3 :=
-    fun x hx => (crumb_iff x).mp (hc x hx)
-  refine ⟨hv, hn, ?_, ?_⟩
-  · rw [ha]; exact foldl_table w.crumbs w.a0 (fun x hx => cPoly_eq_cFunc h2 h3 (hv x hx))
-  · rw [hb]; exact foldl_table w.crumbs w.b0 (fun x hx => dPoly_eq_dFunc h2 h3 (hv x hx))
 
 end Kimchi.Gate.EndoScalar

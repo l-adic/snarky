@@ -105,15 +105,6 @@ theorem Generic.constraints_map {R S : Type*} [CommRing R] [CommRing S] (f : R �
     (g : Generic R) : g.constraints.map f = (g.map f).constraints := by
   simp [Generic.constraints, Generic.map]
 
-/-- **Soundness:** a row accepted by the executable checker satisfies both constraints.
-    (The gate is a decidable predicate, so soundness is one direction of `ok_iff`; the
-    other is `complete`.) -/
-theorem Generic.sound [DecidableEq F] (g : Generic F) : g.ok = true → g.Holds := g.ok_iff.mp
-
-/-- **Completeness:** a row satisfying both constraints is accepted by the executable
-    checker. (The converse direction of `ok_iff`.) -/
-theorem Generic.complete [DecidableEq F] (g : Generic F) : g.Holds → g.ok = true := g.ok_iff.mpr
-
 /-- A generic circuit is a list of rows; it holds when every row does. -/
 def Satisfies (rows : List (Generic F)) : Prop := ∀ g ∈ rows, g.Holds
 
