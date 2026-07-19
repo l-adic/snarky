@@ -1527,13 +1527,13 @@ private theorem runEvals_read_lit {C : Ipa.CommitmentCurve} {σ : SRS C.Point}
     (runInput C σ vk p pub).evals[k]!
       = #[#[(runPubEvals C σ vk p pub).1, (runPubEvals C σ vk p pub).2],
           #[runFtEval0 C σ vk p pub, p.ftEval1],
-          #[p.z.zeta, p.z.zetaOmega],
-          #[p.genericSelector.zeta, p.genericSelector.zetaOmega],
-          #[p.poseidonSelector.zeta, p.poseidonSelector.zetaOmega],
-          #[p.completeAddSelector.zeta, p.completeAddSelector.zetaOmega],
-          #[p.mulSelector.zeta, p.mulSelector.zetaOmega],
-          #[p.emulSelector.zeta, p.emulSelector.zetaOmega],
-          #[p.endomulScalarSelector.zeta, p.endomulScalarSelector.zetaOmega]][k]! := by
+          #[p.evals.z.zeta, p.evals.z.zetaOmega],
+          #[p.evals.genericSelector.zeta, p.evals.genericSelector.zetaOmega],
+          #[p.evals.poseidonSelector.zeta, p.evals.poseidonSelector.zetaOmega],
+          #[p.evals.completeAddSelector.zeta, p.evals.completeAddSelector.zetaOmega],
+          #[p.evals.mulSelector.zeta, p.evals.mulSelector.zetaOmega],
+          #[p.evals.emulSelector.zeta, p.evals.emulSelector.zetaOmega],
+          #[p.evals.endomulScalarSelector.zeta, p.evals.endomulScalarSelector.zetaOmega]][k]! := by
   rw [hrun.evals_eq,
     getBang_append_left _ _ _ (by
       simp only [Array.size_append, Array.size_map, List.size_toArray,
@@ -1553,7 +1553,7 @@ private theorem runEvals_read_w {C : Ipa.CommitmentCurve} {σ : SRS C.Point}
     {vk : KimchiVK C} {p : KimchiProof C} {pub : Array C.ScalarField}
     (hrun : ReflectedRun C σ vk p pub) (c : ℕ) (hc : c < 15) :
     (runInput C σ vk p pub).evals[9 + c]!
-      = #[(p.w[c]!).zeta, (p.w[c]!).zetaOmega] := by
+      = #[(p.evals.w[c]!).zeta, (p.evals.w[c]!).zetaOmega] := by
   have hw := hrun.shape_w
   rw [hrun.evals_eq,
     getBang_append_left _ _ _ (by
@@ -1572,17 +1572,17 @@ private theorem runEvals_read_w {C : Ipa.CommitmentCurve} {σ : SRS C.Point}
       omega)]
   simp only [List.size_toArray, List.length_cons, List.length_nil,
     Nat.add_sub_cancel_left]
-  rw [getElem!_pos (p.w.map fun e => #[e.zeta, e.zetaOmega]) c (by
+  rw [getElem!_pos (p.evals.w.map fun e => #[e.zeta, e.zetaOmega]) c (by
       simp only [Array.size_map, hw]
       omega),
-    Array.getElem_map, getElem!_pos p.w c (by omega)]
+    Array.getElem_map, getElem!_pos p.evals.w c (by omega)]
 
 /-- Reading a coefficient row (`24 + c`) of the reflected run's evaluation matrix. -/
 private theorem runEvals_read_c {C : Ipa.CommitmentCurve} {σ : SRS C.Point}
     {vk : KimchiVK C} {p : KimchiProof C} {pub : Array C.ScalarField}
     (hrun : ReflectedRun C σ vk p pub) (c : ℕ) (hc : c < 15) :
     (runInput C σ vk p pub).evals[24 + c]!
-      = #[(p.coefficients[c]!).zeta, (p.coefficients[c]!).zetaOmega] := by
+      = #[(p.evals.coefficients[c]!).zeta, (p.evals.coefficients[c]!).zetaOmega] := by
   have hw := hrun.shape_w
   have hcf := hrun.shape_coeffs
   rw [hrun.evals_eq,
@@ -1599,17 +1599,17 @@ private theorem runEvals_read_c {C : Ipa.CommitmentCurve} {σ : SRS C.Point}
       omega)]
   simp only [Array.size_append, Array.size_map, List.size_toArray, List.length_cons,
     List.length_nil, hw, Nat.add_sub_cancel_left]
-  rw [getElem!_pos (p.coefficients.map fun e => #[e.zeta, e.zetaOmega]) c (by
+  rw [getElem!_pos (p.evals.coefficients.map fun e => #[e.zeta, e.zetaOmega]) c (by
       simp only [Array.size_map, hcf]
       omega),
-    Array.getElem_map, getElem!_pos p.coefficients c (by omega)]
+    Array.getElem_map, getElem!_pos p.evals.coefficients c (by omega)]
 
 /-- Reading a σ row (`39 + i`) of the reflected run's evaluation matrix. -/
 private theorem runEvals_read_s {C : Ipa.CommitmentCurve} {σ : SRS C.Point}
     {vk : KimchiVK C} {p : KimchiProof C} {pub : Array C.ScalarField}
     (hrun : ReflectedRun C σ vk p pub) (i : ℕ) (hi : i < 6) :
     (runInput C σ vk p pub).evals[39 + i]!
-      = #[(p.s[i]!).zeta, (p.s[i]!).zetaOmega] := by
+      = #[(p.evals.s[i]!).zeta, (p.evals.s[i]!).zetaOmega] := by
   have hw := hrun.shape_w
   have hcf := hrun.shape_coeffs
   have hs := hrun.shape_s
@@ -1623,14 +1623,14 @@ private theorem runEvals_read_s {C : Ipa.CommitmentCurve} {σ : SRS C.Point}
       omega)]
   simp only [Array.size_append, Array.size_map, List.size_toArray, List.length_cons,
     List.length_nil, hw, hcf, Nat.add_sub_cancel_left]
-  rw [getElem!_pos (p.s.map fun e => #[e.zeta, e.zetaOmega]) i (by
+  rw [getElem!_pos (p.evals.s.map fun e => #[e.zeta, e.zetaOmega]) i (by
       simp only [Array.size_map, hs]
       omega),
-    Array.getElem_map, getElem!_pos p.s i (by omega)]
+    Array.getElem_map, getElem!_pos p.evals.s i (by omega)]
 
 /-- **The batch reindex is claim-faithful** (the record matching): the abstract
 claimed-evaluations record read off the reflected run's deployed batch through
-`runReindex` IS the proof's own evaluation record `p.evals` — field by field, the
+`runReindex` IS the proof's own evaluation record `p.linEvals` — field by field, the
 deployed rows carry exactly the wire evaluation pairs the scalar side consumes. Pure
 layout reading of `ReflectedRun.evals_eq`. -/
 private theorem claimedEvals_runReindex_eq {C : Ipa.CommitmentCurve} (σ : SRS C.Point)
@@ -1639,60 +1639,60 @@ private theorem claimedEvals_runReindex_eq {C : Ipa.CommitmentCurve} (σ : SRS C
     (hsize : (runInput C σ vk p pub).commitments.size = 45) :
     claimedEvals (fun (i : Fin 43) (j : Fin 2) =>
         (runInput C σ vk p pub).evalFn (runReindex C σ vk p pub hsize i) j)
-      = p.evals := by
+      = p.linEvals := by
   refine evals_ext ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
   · funext c
-    simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+    simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_wRow, runEvals_read_w hrun (c : ℕ) c.isLt]
     rfl
   · funext c
-    simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+    simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_wRow, runEvals_read_w hrun (c : ℕ) c.isLt]
     rfl
-  · simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+  · simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_zRow, runEvals_read_lit hrun 2 (by omega)]
     rfl
-  · simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+  · simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_zRow, runEvals_read_lit hrun 2 (by omega)]
     rfl
   · funext i
-    simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+    simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_sRow, runEvals_read_s hrun (i : ℕ) i.isLt]
     rfl
   · funext c
-    simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+    simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_cRow, runEvals_read_c hrun (c : ℕ) c.isLt]
     rfl
-  · simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+  · simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_selRow]
-    show ((runInput C σ vk p pub).evals[(3 : ℕ)]!)[(0 : ℕ)]! = p.genericSelector.zeta
+    show ((runInput C σ vk p pub).evals[(3 : ℕ)]!)[(0 : ℕ)]! = p.evals.genericSelector.zeta
     rw [runEvals_read_lit hrun 3 (by omega)]
     rfl
-  · simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+  · simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_selRow]
-    show ((runInput C σ vk p pub).evals[(4 : ℕ)]!)[(0 : ℕ)]! = p.poseidonSelector.zeta
+    show ((runInput C σ vk p pub).evals[(4 : ℕ)]!)[(0 : ℕ)]! = p.evals.poseidonSelector.zeta
     rw [runEvals_read_lit hrun 4 (by omega)]
     rfl
-  · simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+  · simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_selRow]
     show ((runInput C σ vk p pub).evals[(5 : ℕ)]!)[(0 : ℕ)]!
-      = p.completeAddSelector.zeta
+      = p.evals.completeAddSelector.zeta
     rw [runEvals_read_lit hrun 5 (by omega)]
     rfl
-  · simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+  · simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_selRow]
-    show ((runInput C σ vk p pub).evals[(6 : ℕ)]!)[(0 : ℕ)]! = p.mulSelector.zeta
+    show ((runInput C σ vk p pub).evals[(6 : ℕ)]!)[(0 : ℕ)]! = p.evals.mulSelector.zeta
     rw [runEvals_read_lit hrun 6 (by omega)]
     rfl
-  · simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+  · simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_selRow]
-    show ((runInput C σ vk p pub).evals[(7 : ℕ)]!)[(0 : ℕ)]! = p.emulSelector.zeta
+    show ((runInput C σ vk p pub).evals[(7 : ℕ)]!)[(0 : ℕ)]! = p.evals.emulSelector.zeta
     rw [runEvals_read_lit hrun 7 (by omega)]
     rfl
-  · simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+  · simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_selRow]
     show ((runInput C σ vk p pub).evals[(8 : ℕ)]!)[(0 : ℕ)]!
-      = p.endomulScalarSelector.zeta
+      = p.evals.endomulScalarSelector.zeta
     rw [runEvals_read_lit hrun 8 (by omega)]
     rfl
 

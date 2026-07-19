@@ -86,7 +86,7 @@ def runFtEval0P (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     (pub : Array C.ScalarField) (pubEval0 : C.ScalarField) : C.ScalarField :=
   Linearization.ftEval0 vk.n vk.zkRows vk.omega (fun i => vk.shifts[i.val]!) vk.endo
     (runOracles C σ vk p pub).alpha (runOracles C σ vk p pub).beta
-    (runOracles C σ vk p pub).gamma (runOracles C σ vk p pub).zeta pubEval0 p.evals
+    (runOracles C σ vk p pub).gamma (runOracles C σ vk p pub).zeta pubEval0 p.linEvals
 
 /-- The run's computed `ft(ζ)` claim (closed form). -/
 def runFtEval0 (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
@@ -99,7 +99,7 @@ def runPScalar (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
   Linearization.permScalar (runOracles C σ vk p pub).beta (runOracles C σ vk p pub).gamma
     (runOracles C σ vk p pub).alpha
     (Linearization.zkpmEval vk.n vk.zkRows vk.omega (runOracles C σ vk p pub).zeta)
-    p.evals
+    p.linEvals
 
 /-- The run's `f_comm` — the single σ-commitment term at this gate set. -/
 def runFComm (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
@@ -123,17 +123,17 @@ def runRowsP (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     Array (C.Point × C.ScalarField × C.ScalarField) :=
   #[(publicCommitment C σ vk pub, pubEval0, pubEval1),
     (runFtComm C σ vk p pub, runFtEval0P C σ vk p pub pubEval0, p.ftEval1),
-    (p.zComm, p.z.zeta, p.z.zetaOmega),
-    (vk.genericComm, p.genericSelector.zeta, p.genericSelector.zetaOmega),
-    (vk.poseidonComm, p.poseidonSelector.zeta, p.poseidonSelector.zetaOmega),
-    (vk.completeAddComm, p.completeAddSelector.zeta, p.completeAddSelector.zetaOmega),
-    (vk.mulComm, p.mulSelector.zeta, p.mulSelector.zetaOmega),
-    (vk.emulComm, p.emulSelector.zeta, p.emulSelector.zetaOmega),
-    (vk.endomulScalarComm, p.endomulScalarSelector.zeta,
-      p.endomulScalarSelector.zetaOmega)]
-  ++ (p.wComm.zip p.w).map (fun x => (x.1, x.2.zeta, x.2.zetaOmega))
-  ++ (vk.coefficientsComm.zip p.coefficients).map (fun x => (x.1, x.2.zeta, x.2.zetaOmega))
-  ++ ((vk.sigmaComm.extract 0 6).zip p.s).map (fun x => (x.1, x.2.zeta, x.2.zetaOmega))
+    (p.zComm, p.evals.z.zeta, p.evals.z.zetaOmega),
+    (vk.genericComm, p.evals.genericSelector.zeta, p.evals.genericSelector.zetaOmega),
+    (vk.poseidonComm, p.evals.poseidonSelector.zeta, p.evals.poseidonSelector.zetaOmega),
+    (vk.completeAddComm, p.evals.completeAddSelector.zeta, p.evals.completeAddSelector.zetaOmega),
+    (vk.mulComm, p.evals.mulSelector.zeta, p.evals.mulSelector.zetaOmega),
+    (vk.emulComm, p.evals.emulSelector.zeta, p.evals.emulSelector.zetaOmega),
+    (vk.endomulScalarComm, p.evals.endomulScalarSelector.zeta,
+      p.evals.endomulScalarSelector.zetaOmega)]
+  ++ (p.wComm.zip p.evals.w).map (fun x => (x.1, x.2.zeta, x.2.zetaOmega))
+  ++ (vk.coefficientsComm.zip p.evals.coefficients).map (fun x => (x.1, x.2.zeta, x.2.zetaOmega))
+  ++ ((vk.sigmaComm.extract 0 6).zip p.evals.s).map (fun x => (x.1, x.2.zeta, x.2.zetaOmega))
 
 /-- The batched IPA input at given public evaluations and combination scalars. -/
 def runInputP (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
@@ -170,7 +170,7 @@ def runWarm (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
 
 /-- Fold a zip-row map to its commitment column: first projections give back the
 commitment array. -/
-private theorem zipRows_map_fst (A : Array C.Point) (B : Array (PointEval C.ScalarField))
+private theorem zipRows_map_fst (A : Array C.Point) (B : Array (PointEvaluations C.ScalarField))
     (h : A.size ≤ B.size) :
     ((A.zip B).map (fun x => (x.1, x.2.zeta, x.2.zetaOmega))).map (fun r => r.1) = A := by
   apply Array.ext'
@@ -179,7 +179,7 @@ private theorem zipRows_map_fst (A : Array C.Point) (B : Array (PointEval C.Scal
 
 /-- Fold a zip-row map to its claims column: the paired evaluations give back the
 per-column `(at ζ, at ζω)` pairs. -/
-private theorem zipRows_map_snd (A : Array C.Point) (B : Array (PointEval C.ScalarField))
+private theorem zipRows_map_snd (A : Array C.Point) (B : Array (PointEvaluations C.ScalarField))
     (h : B.size ≤ A.size) :
     ((A.zip B).map (fun x => (x.1, x.2.zeta, x.2.zetaOmega))).map
         (fun r => #[r.2.1, r.2.2])
@@ -187,8 +187,8 @@ private theorem zipRows_map_snd (A : Array C.Point) (B : Array (PointEval C.Scal
   apply Array.ext'
   simp only [Array.toList_map, Array.toList_zip, List.map_map]
   have hcomp : ((fun r : C.Point × C.ScalarField × C.ScalarField => #[r.2.1, r.2.2])
-        ∘ fun x : C.Point × PointEval C.ScalarField => (x.1, x.2.zeta, x.2.zetaOmega))
-      = (fun e : PointEval C.ScalarField => #[e.zeta, e.zetaOmega]) ∘ Prod.snd := rfl
+        ∘ fun x : C.Point × PointEvaluations C.ScalarField => (x.1, x.2.zeta, x.2.zetaOmega))
+      = (fun e : PointEvaluations C.ScalarField => #[e.zeta, e.zetaOmega]) ∘ Prod.snd := rfl
   rw [hcomp, ← List.map_map, List.map_snd_zip (by simpa using h)]
 
 /-- **The reflected run** (Move 1, trust-free): what a `kimchiVerify`-accepted run *is*,
@@ -207,9 +207,9 @@ structure ReflectedRun (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     (pub : Array C.ScalarField) : Prop where
   shape_wComm : p.wComm.size = 15
   shape_tComm : p.tComm.size = 7
-  shape_w : p.w.size = 15
-  shape_s : p.s.size = 6
-  shape_coeffs : p.coefficients.size = 15
+  shape_w : p.evals.w.size = 15
+  shape_s : p.evals.s.size = 6
+  shape_coeffs : p.evals.coefficients.size = 15
   shape_sigmaComm : vk.sigmaComm.size = 7
   shape_coeffsComm : vk.coefficientsComm.size = 15
   shape_shifts : vk.shifts.size = 7
@@ -230,16 +230,16 @@ structure ReflectedRun (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
   evals_eq : (runInput C σ vk p pub).evals
     = #[#[(runPubEvals C σ vk p pub).1, (runPubEvals C σ vk p pub).2],
         #[runFtEval0 C σ vk p pub, p.ftEval1],
-        #[p.z.zeta, p.z.zetaOmega],
-        #[p.genericSelector.zeta, p.genericSelector.zetaOmega],
-        #[p.poseidonSelector.zeta, p.poseidonSelector.zetaOmega],
-        #[p.completeAddSelector.zeta, p.completeAddSelector.zetaOmega],
-        #[p.mulSelector.zeta, p.mulSelector.zetaOmega],
-        #[p.emulSelector.zeta, p.emulSelector.zetaOmega],
-        #[p.endomulScalarSelector.zeta, p.endomulScalarSelector.zetaOmega]]
-      ++ p.w.map (fun e => #[e.zeta, e.zetaOmega])
-      ++ p.coefficients.map (fun e => #[e.zeta, e.zetaOmega])
-      ++ p.s.map (fun e => #[e.zeta, e.zetaOmega])
+        #[p.evals.z.zeta, p.evals.z.zetaOmega],
+        #[p.evals.genericSelector.zeta, p.evals.genericSelector.zetaOmega],
+        #[p.evals.poseidonSelector.zeta, p.evals.poseidonSelector.zetaOmega],
+        #[p.evals.completeAddSelector.zeta, p.evals.completeAddSelector.zetaOmega],
+        #[p.evals.mulSelector.zeta, p.evals.mulSelector.zetaOmega],
+        #[p.evals.emulSelector.zeta, p.evals.emulSelector.zetaOmega],
+        #[p.evals.endomulScalarSelector.zeta, p.evals.endomulScalarSelector.zetaOmega]]
+      ++ p.evals.w.map (fun e => #[e.zeta, e.zetaOmega])
+      ++ p.evals.coefficients.map (fun e => #[e.zeta, e.zetaOmega])
+      ++ p.evals.s.map (fun e => #[e.zeta, e.zetaOmega])
 
 /-- **Reflection** (Move 1): an accepted run yields its `ReflectedRun` — no trust, pure
 code-path reading. The one `replace` re-expresses `kimchiVerify`'s body through the named
@@ -250,8 +250,8 @@ sizes. -/
 theorem kimchiVerify_reflects (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     (pub : Array C.ScalarField) (hv : kimchiVerify C σ vk p pub = true) :
     ReflectedRun C σ vk p pub := by
-  replace hv : (if p.wComm.size != 15 || p.tComm.size != 7 || p.w.size != 15
-        || p.s.size != 6 || p.coefficients.size != 15 || vk.sigmaComm.size != 7
+  replace hv : (if p.wComm.size != 15 || p.tComm.size != 7 || p.evals.w.size != 15
+        || p.evals.s.size != 6 || p.evals.coefficients.size != 15 || vk.sigmaComm.size != 7
         || vk.coefficientsComm.size != 15 || vk.shifts.size != 7
         || decide (vk.lagrangeBasis.size < pub.size) || decide (vk.n < pub.size)
         || 2 ^ σ.k != vk.n then
