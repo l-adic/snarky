@@ -7,8 +7,8 @@ production verifier key (`fixtures/kimchi_proof_vesta.json`) must equal the valu
 of the production Lagrange-basis commitments against the corresponding derived column
 (`fixtures/index_vesta.json` — the same circuit; its columns are separately pinned to
 the Index model's derivations by `check_index_fixture`). This is
-`Kimchi.Verifier.VKCorresponds` for the production key, adjudicated numerically
-through `commitPoly_columnPoly`'s formula: `commit (columnPoly v) = ∑ vⱼ • Lcommⱼ`. -/
+`Kimchi.Protocol.VKCorresponds` for the production key, adjudicated numerically through
+the value-MSM formula `commit (columnPoly v) = ∑ vⱼ • Lcommⱼ`. -/
 
 open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi.Verifier
 

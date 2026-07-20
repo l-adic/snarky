@@ -1429,7 +1429,7 @@ private lemma gate_block_full (c : WeierstrassCurve.Affine F)
     (hnd : ∀ ℓ, ℓ < 5 →
         ¬ (c.order : ℤ) ∣ (gateLadder g (5 * i + ℓ) - 1)
           ∧ ¬ (c.order : ℤ) ∣ (gateLadder g (5 * i + ℓ) + 1)) :
-    NonDegen (g i) ∧ ∃ (a1 : c.Nonsingular (g i).x1 (g i).y1)
+    NonDegen (g i) ∧ ∃ (_a1 : c.Nonsingular (g i).x1 (g i).y1)
       (_a2 : c.Nonsingular (g i).x2 (g i).y2) (_a3 : c.Nonsingular (g i).x3 (g i).y3)
       (_a4 : c.Nonsingular (g i).x4 (g i).y4) (a5 : c.Nonsingular (g i).x5 (g i).y5),
       Point.some _ _ a5 = gateLadder g (5 * i + 5) • T := by

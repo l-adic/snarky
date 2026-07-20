@@ -36,12 +36,14 @@ import Kimchi.Fixture.PS
 import FixtureKit.Parse
 import FixtureKit.Trace
 import Bulletproof.Wire
-import Kimchi.Verifier.Linearization
-import Kimchi.Verifier.Kimchi
-import Kimchi.Verifier.Correspond
-import Kimchi.Verifier.Sound
-import Kimchi.Verifier.KimchiSound
-import Kimchi.Verifier.Equation
+-- Side A — the idealized polynomial protocol and its soundness
+import Kimchi.Protocol.Linearization
+import Kimchi.Protocol.Equation
+import Kimchi.Protocol.Correspond
+import Kimchi.Protocol.Binding
+import Kimchi.Protocol.Soundness
+-- Side B — the concrete PCS instantiation
 import Bulletproof.Reflection
+import Kimchi.Verifier.Kimchi
 import Kimchi.Verifier.Reflect
 import Kimchi.Verifier.Capstone

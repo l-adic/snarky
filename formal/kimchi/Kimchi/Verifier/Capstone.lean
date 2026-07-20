@@ -1,36 +1,24 @@
 import Mathlib
-import Kimchi.Verifier.KimchiSound
+import Kimchi.Protocol.Soundness
 import Kimchi.Verifier.Kimchi
 import Bulletproof.Reflection
 import Kimchi.Verifier.Reflect
 
 /-!
-# The idealized composition (capstone 1.3a): `KimchiBundle` and `kimchiBundle_sound`
+# The concrete Fiat–Shamir capstones (1.3b) and the run-level finale (1.3c)
 
-`Kimchi/Verifier/KimchiSound.lean` proves the audited counting core `kimchiProof_sound`:
-from DL-binding, the verifier-key correspondence, and a single accepting REFERENCE
-transcript (the batch data at a reference point `ζ₀`), it produces the four bad sets and
-the guarded consumer implication ending in `∃ wTab, Satisfies idx pub wTab`. This module
-repackages the transcript-side hypotheses of that theorem as ONE structure,
-`KimchiBundle`, and restates the core as `kimchiBundle_sound` — the idealized soundness
-statement in the special-soundness idiom of the IPA literature: the bundle is the
-accepting-transcripts HYPOTHESIS, posited outright and never derived from a single run;
-the concrete Fiat–Shamir-instantiated capstone discharges it later by exhibiting the
-bundle from the deployed verifier's own transcript. The computational hypotheses stay
-OUTSIDE the bundle as theorem hypotheses — `hk` (the SRS-width pin), `hbind` (the
-discrete-log idealization), and `hvk` (the verifier-key correspondence) are assumptions
-about the key and the group, not transcript data.
+`Kimchi/Protocol/Soundness.lean` proves the idealized soundness core `kimchiProof_sound`:
+from DL-binding, the verifier-key correspondence, and an accepting REFERENCE transcript
+(the batch data at a reference point `ζ₀`, as a per-point Fiat–Shamir transcript-tree
+family), it produces the four bad sets and the guarded consumer implication ending in
+`∃ wTab, Satisfies idx pub wTab`. The computational hypotheses `hk` (the SRS-width pin),
+`hbind` (the discrete-log idealization), and `hvk` (the verifier-key correspondence) are
+assumptions about the key and the group, not transcript data. See the preamble of
+`Protocol/Soundness.lean` for the full trust story (what the challenge data surrogates,
+why binding is a hypothesis, and how `VKCorresponds` is discharged).
 
-The field types are copied VERBATIM from `kimchiProof_sound`'s binder list
-(`KimchiSound.lean`), and the conclusion of `kimchiBundle_sound` is the byte-identical
-4-bad-set existential of the core (the sole textual delta: the bundled accumulator
-commitment appears as `T.zC`). The proof is a single application of `kimchiProof_sound`
-through the projections. See the module preamble of `KimchiSound.lean` for the full
-trust story (what the challenge data surrogates, why binding is a hypothesis, and how
-`VKCorresponds` is discharged for honest and production keys).
-
-Below the idealized composition this module descends to the **concrete,
-Fiat–Shamir-instantiated capstones** (capstone 1.3b): `kimchiVesta_sound` /
+This module instantiates that core at the deployed Pasta verifier: the **concrete,
+Fiat–Shamir-instantiated capstones** (capstone 1.3b) `kimchiVesta_sound` /
 `kimchiPallas_sound`, stated over the wire verifier key (through `KimchiVK.comms`) and
 the wire public-input array (through `pubView`). The trust story, in three strata:
 
@@ -44,16 +32,17 @@ the wire public-input array (through `pubView`). The trust story, in three strat
   what stays hypothetical here, exactly as in `ipaVesta_sound`'s grid hypothesis
   (`Reflection.lean`).
 
-* **AXIOM — `poseidon_fiat_shamir_{vesta,pallas}` only**, applied per grid node inside
-  the bridges `kimchiBatchAcc_bundle_{vesta,pallas}`: each node's `FiatShamirTreeB`
-  family is *derived* from the node's own deployed acceptance, never assumed. (The
-  Pasta `Module` instances additionally carry the unconditional point counts
-  through `vestaPointModule`/`pallasPointModule`, exactly as in
+* **AXIOM — `poseidon_fiat_shamir_{vesta,pallas}` only**, applied per grid node in the
+  capstone proof: each node's `FiatShamirTreeB` family is *derived* from the node's own
+  deployed acceptance (`Ipa.verify … = true` at `nodeInput`, transported by `nodeFS`),
+  never assumed. (The Pasta `Module` instances additionally carry the unconditional point
+  counts through `vestaPointModule`/`pallasPointModule`, exactly as in
   `ipaVesta_sound` — pre-justified in TO_USER.md.)
 
-* **PROVED — everything else.** The bridges instantiate `KimchiBundle` from the grid;
-  the capstones are one application of `kimchiBundle_sound` through the wire views,
-  their conclusions byte-identical to its (mod the stated instantiation).
+* **PROVED — everything else.** The capstones feed the grid's transcript data directly to
+  `kimchiProof_sound` (`Protocol/Soundness.lean`) — the reference point `ζ₀`, the batch
+  challenges/evals, the per-node acceptances as `A₀`, and their `FiatShamirTreeB` families
+  — their conclusions byte-identical to its (mod the stated wire-view instantiation).
 
 Below the concrete capstones this module ends at the **run-level corollaries**
 (capstone 1.3c, the finale): `kimchiVesta_run_sound` / `kimchiPallas_run_sound`, the
@@ -67,12 +56,10 @@ injectivity (`T'.hξ₀`/`T'.hr₀`). What remains HYPOTHESIS: the two extractio
 (`T`/`T'`, the rewinding/forking idiom — never derivable from one run), DL-binding
 (`hbind`), the verifier-key correspondence (`hvk`), the run-`ζ` nondegeneracy
 (`hζ1`/`hζb`), and the quotient residue (`t`/`hdeg`/`heq` — see the theorem
-docstrings). The run acceptance `hacc` is the headline claim being witnessed: via
-reflection (`kimchiVerify_reflects`) it pins the wire shapes of the run
-(`p.wComm.size = 15`, …), so the `getD` views read genuine entries; the derivation
-itself never needs the shape guards (the capstone quantifies over arbitrary `wC`), so
-`hacc` — like `hzrun`, the pin tying the reference grid's accumulator to the run's
-`z` commitment — enters as a deliberate statement pin.
+docstrings). The derivation quantifies over arbitrary `wC`, so the run's own `verify =
+true` and wire shapes are not needed: the two grids `T`/`T'` already carry the deployed
+acceptance node by node, so no separate acceptance or accumulator-link hypothesis
+appears in the run capstones.
 
 The **algebraic-prover reading** (the AGM corollary):
 `kimchiProof_sound_algebraic` quantifies over provers that SUPPLY SRS-basis
@@ -132,89 +119,10 @@ open Bulletproof
 
 namespace Kimchi.Verifier
 
-open Polynomial Bulletproof Kimchi.Index Kimchi.Verifier.Linearization
-  Kimchi.Verifier.Equation CompElliptic.Fields.Pasta
+open Kimchi.Protocol
 
-/-! ## The transcript bundle -/
-
-/-- The transcript-side hypothesis bundle of `kimchiProof_sound`: the accumulator
-commitment `zC` and the single accepting reference transcript at the reference point
-`ζ₀` — its claimed evaluations `E₀`, its injective batch challenges `ξ₀`/`r₀`, its
-acceptance predicates `A₀`, the per-point `FiatShamirTreeB` family `hFS₀`, and the
-acceptances `hacc₀`. Field types are verbatim from the binder list of
-`kimchiProof_sound`; the witness commitments `wC` are a structure PARAMETER (fixed
-across the whole bundle, as across the whole challenge grid of the core). Project-local:
-this is the packaging the concrete capstone instantiates. -/
-structure KimchiBundle {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
-    {n : ℕ} [NeZero n] (σ : SRS G) (idx : Index F n) (pub : Fin idx.publicCount → F)
-    (comms : IndexComms G) (wC : Fin 15 → G) where
-  /-- The accumulator (`z`) commitment of the reference transcript. -/
-  zC : G
-  /-- The reference evaluation point. -/
-  ζ₀ : F
-  /-- The claimed evaluations of the 43-row batch at `ζ₀` and `ω·ζ₀`. -/
-  E₀ : Fin 43 → Fin 2 → F
-  /-- The row-combination challenges of the reference batch. -/
-  ξ₀ : Fin 43 → F
-  /-- Distinctness of the row-combination challenges. -/
-  hξ₀ : Function.Injective ξ₀
-  /-- The point-combination challenges of the reference batch. -/
-  r₀ : Fin 2 → F
-  /-- Distinctness of the point-combination challenges. -/
-  hr₀ : Function.Injective r₀
-  /-- The acceptance predicates of the reference batch, per challenge pair. -/
-  A₀ : Fin 43 → Fin 2 → Prop
-  /-- The per-point Fiat–Shamir transcript-tree family of the reference batch. -/
-  hFS₀ : ∀ (i : Fin 43) (j : Fin 2),
-    FiatShamirTreeB σ (combinedCommitment (ξ₀ i) (batchC wC zC comms))
-      (combinedEvalVector (2 ^ σ.k) (r₀ j) ![ζ₀, idx.omega * ζ₀])
-      (combinedInnerProduct (ξ₀ i) (r₀ j) E₀) (A₀ i j)
-  /-- The verifier accepts at every challenge pair. -/
-  hacc₀ : ∀ i j, A₀ i j
-
-/-! ## The idealized composition -/
-
-/-- **The bundle closes the circuit** (idealized composition): a `KimchiBundle`,
-DL-binding (`hbind`), the SRS-width pin (`hk`), and the verifier-key correspondence
-(`hvk`) yield the four bad sets and the guarded consumer implication of
-`kimchiProof_sound` — byte-identical, ending in `∃ wTab, Satisfies idx pub wTab`. The
-proof is one application of the core through the bundle's projections. Project-local:
-the idealized soundness statement the concrete Fiat–Shamir capstone consumes. -/
-theorem kimchiBundle_sound {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
-    {n : ℕ} [NeZero n] [DecidableEq F] (σ : SRS G)
-    (idx : Index F n) (hk : 2 ^ σ.k = n)
-    (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
-    (comms : IndexComms G) (hvk : VKCorresponds σ comms idx)
-    (pub : Fin idx.publicCount → F) (wC : Fin 15 → G)
-    (T : KimchiBundle σ idx pub comms wC) :
-    ∃ (badB : Finset F) (badG : F → Finset F) (badA : F → F → Finset F)
-        (badZ : F → F → F → Polynomial F → Finset F),
-      (badB.card ≤ 7 * (n - idx.zkRows)
-        ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
-        ∧ (∀ β γ,
-            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
-        ∧ (∀ β γ α (t : Polynomial F), t.natDegree < 7 * n →
-            (badZ β γ α t).card ≤ Index.degreeBound n))
-      ∧ ∀ (β γ α : F) (t : Polynomial F) (ζ : F)
-          (E : Fin 43 → Fin 2 → F) (ξ : Fin 43 → F) (r : Fin 2 → F)
-          (A : Fin 43 → Fin 2 → Prop),
-          β ∉ badB → γ ∉ badG β → α ∉ badA β γ → ζ ∉ badZ β γ α t →
-          ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) →
-          t.natDegree < 7 * n →
-          Function.Injective ξ → Function.Injective r →
-          (∀ (i : Fin 43) (j : Fin 2),
-            FiatShamirTreeB σ (combinedCommitment (ξ i) (batchC wC T.zC comms))
-              (combinedEvalVector (2 ^ σ.k) (r j) ![ζ, idx.omega * ζ])
-              (combinedInnerProduct (ξ i) (r j) E) (A i j)) →
-          (∀ i j, A i j) →
-          (permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
-              * (idx.sigmaPoly 6).eval ζ
-            - (ζ ^ n - 1) * t.eval ζ
-            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
-                ζ (-((idx.pubPoly pub).eval ζ)) (claimedEvals E)) →
-          ∃ wTab : Fin n → Fin 15 → F, Satisfies idx pub wTab :=
-  kimchiProof_sound σ idx hk hbind comms hvk pub wC T.zC T.ζ₀ T.E₀ T.ξ₀ T.hξ₀ T.r₀
-    T.hr₀ T.A₀ T.hFS₀ T.hacc₀
+open Polynomial Bulletproof Kimchi.Index Kimchi.Protocol.Linearization
+  Kimchi.Protocol.Equation CompElliptic.Fields.Pasta
 
 /-! ## The wire views -/
 
@@ -250,11 +158,12 @@ array pinned row-by-row to the abstract 43-row assembly `batchC wC zC comms`
 (`cs`/`hcsSize`/`hcs` — a relation hypothesis, never an `Array.ofFn` build), a wire
 evaluation matrix carrying the abstract claims (`es`/`hes`), the two eval points
 `(ζ₀, ω·ζ₀)`, and per node an opening proof with the deployed acceptance
-(`prf`/`hacc`). Posited outright, never derived from one run. The Pasta bridges below
-derive each node's `FiatShamirTreeB` family from the per-node IPA axiom
+(`prf`/`hacc`). Posited outright, never derived from one run. The concrete capstones
+below derive each node's `FiatShamirTreeB` family from the per-node IPA axiom
 (`poseidon_fiat_shamir_*`), so the grid carries no Fiat–Shamir-tree content of its own.
-Generic over the curve bundle `C` (`Ipa.verify C` is curve-generic); only the bridges
-are Pasta-specific. Project-local: the concrete instantiation data of `KimchiBundle`. -/
+Generic over the curve bundle `C` (`Ipa.verify C` is curve-generic); only the capstones
+are Pasta-specific. Project-local: the transcript data the capstones feed to
+`kimchiProof_sound`. -/
 structure KimchiBatchAcc (C : Ipa.CommitmentCurve) [Module C.ScalarField C.Point]
     {n : ℕ} [NeZero n] (σ : SRS C.Point) (idx : Index C.ScalarField n)
     (comms : IndexComms C.Point) (wC : Fin 15 → C.Point) where
@@ -380,67 +289,22 @@ private theorem KimchiBatchAcc.nodeFS (T : KimchiBatchAcc C σ idx comms wC)
 
 end BatchOfAcc
 
-/-! ## The Pasta bridges -/
-
-/-- **The Vesta bridge (the Fiat–Shamir derivation)**: an accumulated grid yields the
-transcript bundle. Every node's `FiatShamirTreeB` family is *derived* — not assumed —
-from the per-node IPA axiom `poseidon_fiat_shamir_vesta` at the node's own wire input
-(`nodeInput`), transported to the abstract batch data by `nodeFS`; the acceptance
-propositions `A₀` are the deployed per-node acceptances `Ipa.verify … = true`,
-discharged by the accumulated `hacc`. This is where the concrete capstone invokes the
-IPA-level assumption. `pub` enters only through the target type (`KimchiBundle` carries
-the public input as a parameter; the grid does not mention it). -/
-def kimchiBatchAcc_bundle_vesta {n : ℕ} [NeZero n] {σ : SRS IpaVesta.Point}
-    {idx : Index Fp n} {comms : IndexComms IpaVesta.Point}
-    {wC : Fin 15 → IpaVesta.Point} (pub : Fin idx.publicCount → Fp)
-    (T : KimchiBatchAcc IpaVesta.curve σ idx comms wC) :
-    KimchiBundle σ idx pub comms wC where
-  zC := T.zC
-  ζ₀ := T.ζ₀
-  E₀ := T.E₀
-  ξ₀ := T.ξ₀
-  hξ₀ := T.hξ₀
-  r₀ := T.r₀
-  hr₀ := T.hr₀
-  A₀ := fun i j => Ipa.verify IpaVesta.curve σ (T.nodeInput i j) = true
-  hFS₀ := fun i j => T.nodeFS i j (poseidon_fiat_shamir_vesta σ (T.nodeInput i j))
-  hacc₀ := fun i j => T.hacc i j
-
-/-- **The Pallas bridge.** The Pallas-side twin of `kimchiBatchAcc_bundle_vesta`,
-deriving every node's `FiatShamirTreeB` family from `poseidon_fiat_shamir_pallas`. -/
-def kimchiBatchAcc_bundle_pallas {n : ℕ} [NeZero n] {σ : SRS IpaPallas.Point}
-    {idx : Index Fq n} {comms : IndexComms IpaPallas.Point}
-    {wC : Fin 15 → IpaPallas.Point} (pub : Fin idx.publicCount → Fq)
-    (T : KimchiBatchAcc IpaPallas.curve σ idx comms wC) :
-    KimchiBundle σ idx pub comms wC where
-  zC := T.zC
-  ζ₀ := T.ζ₀
-  E₀ := T.E₀
-  ξ₀ := T.ξ₀
-  hξ₀ := T.hξ₀
-  r₀ := T.r₀
-  hr₀ := T.hr₀
-  A₀ := fun i j => Ipa.verify IpaPallas.curve σ (T.nodeInput i j) = true
-  hFS₀ := fun i j => T.nodeFS i j (poseidon_fiat_shamir_pallas σ (T.nodeInput i j))
-  hacc₀ := fun i j => T.hacc i j
-
 /-! ## The concrete capstones -/
 
 /-- **Soundness of the deployed Vesta kimchi verifier** (the concrete capstone): a
 special-soundness grid `KimchiBatchAcc` at the wire key's committed columns
 (`vk.comms`), under DL-binding (`hbind`), the SRS-width pin (`hk`), and the
 verifier-key correspondence (`hvk`), yields the four bad sets and the guarded consumer
-implication of `kimchiBundle_sound` — byte-identical, at the wire views
+implication of `kimchiProof_sound` — byte-identical, at the wire views
 (`pubView idx pub` for the public input), ending in
-`∃ wTab, Satisfies idx (pubView idx pub) wTab`. The proof is `kimchiBundle_sound`
-through the Vesta bridge; the only axiom consumed is `poseidon_fiat_shamir_vesta`, once
+`∃ wTab, Satisfies idx (pubView idx pub) wTab`. The proof feeds the grid's transcript
+data to `kimchiProof_sound`, deriving each node's `FiatShamirTreeB` from the per-node
+axiom `poseidon_fiat_shamir_vesta`; that axiom is the only one consumed, once
 per grid node (plus the point-count-backed `Module` instance — see the module preamble).
-`hpub` pins the wire public array to the circuit's count, making the `getD` view
-honest. Project-local: the Vesta root of the concrete composition. -/
+Project-local: the Vesta root of the concrete composition. -/
 theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
     (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
     (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
-    (hpub : pub.size = idx.publicCount)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
     (wC : Fin 15 → IpaVesta.Point)
     (T : KimchiBatchAcc IpaVesta.curve σ idx vk.comms wC) :
@@ -470,17 +334,19 @@ theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
             = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
                 ζ (-((idx.pubPoly (pubView idx pub)).eval ζ)) (claimedEvals E)) →
           ∃ wTab : Fin n → Fin 15 → Fp, Satisfies idx (pubView idx pub) wTab :=
-  kimchiBundle_sound σ idx hk hbind vk.comms hvk (pubView idx pub) wC
-    (kimchiBatchAcc_bundle_vesta (pubView idx pub) T)
+  kimchiProof_sound σ idx hk hbind vk.comms hvk (pubView idx pub) wC
+    T.zC T.ζ₀ T.E₀ T.ξ₀ T.hξ₀ T.r₀ T.hr₀
+    (fun i j => Ipa.verify IpaVesta.curve σ (T.nodeInput i j) = true)
+    (fun i j => T.nodeFS i j (poseidon_fiat_shamir_vesta σ (T.nodeInput i j)))
+    (fun i j => T.hacc i j)
 
 /-- **Soundness of the deployed Pallas kimchi verifier.** The Pallas-side twin of
-`kimchiVesta_sound`: `kimchiBundle_sound` through the Pallas bridge; the only axiom
+`kimchiVesta_sound`: the grid's transcript data fed to `kimchiProof_sound`; the only axiom
 consumed is `poseidon_fiat_shamir_pallas`, once per grid node (plus the point-count-backed
 `Module` instance). Project-local: the Pallas root of the concrete composition. -/
 theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
     (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
     (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
-    (hpub : pub.size = idx.publicCount)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
     (wC : Fin 15 → IpaPallas.Point)
     (T : KimchiBatchAcc IpaPallas.curve σ idx vk.comms wC) :
@@ -510,8 +376,11 @@ theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
             = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
                 ζ (-((idx.pubPoly (pubView idx pub)).eval ζ)) (claimedEvals E)) →
           ∃ wTab : Fin n → Fin 15 → Fq, Satisfies idx (pubView idx pub) wTab :=
-  kimchiBundle_sound σ idx hk hbind vk.comms hvk (pubView idx pub) wC
-    (kimchiBatchAcc_bundle_pallas (pubView idx pub) T)
+  kimchiProof_sound σ idx hk hbind vk.comms hvk (pubView idx pub) wC
+    T.zC T.ζ₀ T.E₀ T.ξ₀ T.hξ₀ T.r₀ T.hr₀
+    (fun i j => Ipa.verify IpaPallas.curve σ (T.nodeInput i j) = true)
+    (fun i j => T.nodeFS i j (poseidon_fiat_shamir_pallas σ (T.nodeInput i j)))
+    (fun i j => T.hacc i j)
 
 /-! ## The run-level corollaries (capstone 1.3c — the finale) -/
 
@@ -532,21 +401,18 @@ the identity at the run's `ζ` requires opening the t-chunk commitments — comm
 extractability beyond the batch grid — which the counting form deliberately does not
 posit. It stays an explicit hypothesis; no axiom manufactures it.
 
-`hacc` (the deployed acceptance — the headline claim) and `hzrun` are statement pins:
-the derivation quantifies over arbitrary `wC`, so neither is load-bearing below, but
-they are part of the claim's meaning (via `kimchiVerify_reflects`, `hacc` pins that
-the `getD` views read genuine wire entries). Project-local: the Vesta run root. -/
+The derivation quantifies over arbitrary `wC`, so the run's own `verify = true` is not a
+hypothesis: the grids `T`/`T'` carry the deployed acceptance node by node, and the
+conclusion is stated at the run's own `runOracles` challenges. Project-local: the Vesta
+run root. -/
 theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
     (p : KimchiVesta.Proof) (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
     (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
-    (hpub : pub.size = idx.publicCount)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (hacc : KimchiVesta.verify σ vk p pub = true)
     (T : KimchiBatchAcc IpaVesta.curve σ idx vk.comms
       (fun i => p.wComm.getD (i : ℕ) 0))
     (T' : KimchiBatchAcc IpaVesta.curve σ idx vk.comms
       (fun i => p.wComm.getD (i : ℕ) 0))
-    (hzrun : T.zC = p.zComm)
     (hzC : T'.zC = T.zC)
     (hζ' : T'.ζ₀ = (runOracles IpaVesta.curve σ vk p pub).zeta)
     (hζ1 : (runOracles IpaVesta.curve σ vk p pub).zeta ≠ 1)
@@ -590,7 +456,7 @@ theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
                 (runOracles IpaVesta.curve σ vk p pub).alpha t →
           ∃ wTab : Fin n → Fin 15 → Fp, Satisfies idx (pubView idx pub) wTab) := by
   obtain ⟨badB, badG, badA, badZ, hbounds, himp⟩ :=
-    kimchiVesta_sound σ vk pub idx hk hvk hpub hbind
+    kimchiVesta_sound σ vk pub idx hk hvk hbind
       (fun i => p.wComm.getD (i : ℕ) 0) T
   refine ⟨badB, badG, badA, badZ, hbounds, fun hβ hγ hα hζ => ?_⟩
   refine himp (runOracles IpaVesta.curve σ vk p pub).beta
@@ -609,19 +475,15 @@ theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
 twin of `kimchiVesta_run_sound`, over `Fq`/`IpaPallas`, its Fiat–Shamir trees from
 `poseidon_fiat_shamir_pallas`. See the Vesta docstring for the trust story — in
 particular the quotient residue `(t, hdeg, heq)`, the one antecedent not discharged
-from deployed acceptances, and the statement pins `hacc`/`hzrun`. Project-local: the
-Pallas run root. -/
+from deployed acceptances. Project-local: the Pallas run root. -/
 theorem kimchiPallas_run_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
     (p : KimchiPallas.Proof) (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
     (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
-    (hpub : pub.size = idx.publicCount)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (hacc : KimchiPallas.verify σ vk p pub = true)
     (T : KimchiBatchAcc IpaPallas.curve σ idx vk.comms
       (fun i => p.wComm.getD (i : ℕ) 0))
     (T' : KimchiBatchAcc IpaPallas.curve σ idx vk.comms
       (fun i => p.wComm.getD (i : ℕ) 0))
-    (hzrun : T.zC = p.zComm)
     (hzC : T'.zC = T.zC)
     (hζ' : T'.ζ₀ = (runOracles IpaPallas.curve σ vk p pub).zeta)
     (hζ1 : (runOracles IpaPallas.curve σ vk p pub).zeta ≠ 1)
@@ -666,7 +528,7 @@ theorem kimchiPallas_run_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
                 (runOracles IpaPallas.curve σ vk p pub).alpha t →
           ∃ wTab : Fin n → Fin 15 → Fq, Satisfies idx (pubView idx pub) wTab) := by
   obtain ⟨badB, badG, badA, badZ, hbounds, himp⟩ :=
-    kimchiPallas_sound σ vk pub idx hk hvk hpub hbind
+    kimchiPallas_sound σ vk pub idx hk hvk hbind
       (fun i => p.wComm.getD (i : ℕ) 0) T
   refine ⟨badB, badG, badA, badZ, hbounds, fun hβ hγ hα hζ => ?_⟩
   refine himp (runOracles IpaPallas.curve σ vk p pub).beta
@@ -1653,13 +1515,13 @@ private theorem runEvals_read_lit {C : Ipa.CommitmentCurve} {σ : SRS C.Point}
     (runInput C σ vk p pub).evals[k]!
       = #[#[(runPubEvals C σ vk p pub).1, (runPubEvals C σ vk p pub).2],
           #[runFtEval0 C σ vk p pub, p.ftEval1],
-          #[p.z.zeta, p.z.zetaOmega],
-          #[p.genericSelector.zeta, p.genericSelector.zetaOmega],
-          #[p.poseidonSelector.zeta, p.poseidonSelector.zetaOmega],
-          #[p.completeAddSelector.zeta, p.completeAddSelector.zetaOmega],
-          #[p.mulSelector.zeta, p.mulSelector.zetaOmega],
-          #[p.emulSelector.zeta, p.emulSelector.zetaOmega],
-          #[p.endomulScalarSelector.zeta, p.endomulScalarSelector.zetaOmega]][k]! := by
+          #[p.evals.z.zeta, p.evals.z.zetaOmega],
+          #[p.evals.genericSelector.zeta, p.evals.genericSelector.zetaOmega],
+          #[p.evals.poseidonSelector.zeta, p.evals.poseidonSelector.zetaOmega],
+          #[p.evals.completeAddSelector.zeta, p.evals.completeAddSelector.zetaOmega],
+          #[p.evals.mulSelector.zeta, p.evals.mulSelector.zetaOmega],
+          #[p.evals.emulSelector.zeta, p.evals.emulSelector.zetaOmega],
+          #[p.evals.endomulScalarSelector.zeta, p.evals.endomulScalarSelector.zetaOmega]][k]! := by
   rw [hrun.evals_eq,
     getBang_append_left _ _ _ (by
       simp only [Array.size_append, Array.size_map, List.size_toArray,
@@ -1679,7 +1541,7 @@ private theorem runEvals_read_w {C : Ipa.CommitmentCurve} {σ : SRS C.Point}
     {vk : KimchiVK C} {p : KimchiProof C} {pub : Array C.ScalarField}
     (hrun : ReflectedRun C σ vk p pub) (c : ℕ) (hc : c < 15) :
     (runInput C σ vk p pub).evals[9 + c]!
-      = #[(p.w[c]!).zeta, (p.w[c]!).zetaOmega] := by
+      = #[(p.evals.w[c]!).zeta, (p.evals.w[c]!).zetaOmega] := by
   have hw := hrun.shape_w
   rw [hrun.evals_eq,
     getBang_append_left _ _ _ (by
@@ -1698,17 +1560,17 @@ private theorem runEvals_read_w {C : Ipa.CommitmentCurve} {σ : SRS C.Point}
       omega)]
   simp only [List.size_toArray, List.length_cons, List.length_nil,
     Nat.add_sub_cancel_left]
-  rw [getElem!_pos (p.w.map fun e => #[e.zeta, e.zetaOmega]) c (by
+  rw [getElem!_pos (p.evals.w.map fun e => #[e.zeta, e.zetaOmega]) c (by
       simp only [Array.size_map, hw]
       omega),
-    Array.getElem_map, getElem!_pos p.w c (by omega)]
+    Array.getElem_map, getElem!_pos p.evals.w c (by omega)]
 
 /-- Reading a coefficient row (`24 + c`) of the reflected run's evaluation matrix. -/
 private theorem runEvals_read_c {C : Ipa.CommitmentCurve} {σ : SRS C.Point}
     {vk : KimchiVK C} {p : KimchiProof C} {pub : Array C.ScalarField}
     (hrun : ReflectedRun C σ vk p pub) (c : ℕ) (hc : c < 15) :
     (runInput C σ vk p pub).evals[24 + c]!
-      = #[(p.coefficients[c]!).zeta, (p.coefficients[c]!).zetaOmega] := by
+      = #[(p.evals.coefficients[c]!).zeta, (p.evals.coefficients[c]!).zetaOmega] := by
   have hw := hrun.shape_w
   have hcf := hrun.shape_coeffs
   rw [hrun.evals_eq,
@@ -1725,17 +1587,17 @@ private theorem runEvals_read_c {C : Ipa.CommitmentCurve} {σ : SRS C.Point}
       omega)]
   simp only [Array.size_append, Array.size_map, List.size_toArray, List.length_cons,
     List.length_nil, hw, Nat.add_sub_cancel_left]
-  rw [getElem!_pos (p.coefficients.map fun e => #[e.zeta, e.zetaOmega]) c (by
+  rw [getElem!_pos (p.evals.coefficients.map fun e => #[e.zeta, e.zetaOmega]) c (by
       simp only [Array.size_map, hcf]
       omega),
-    Array.getElem_map, getElem!_pos p.coefficients c (by omega)]
+    Array.getElem_map, getElem!_pos p.evals.coefficients c (by omega)]
 
 /-- Reading a σ row (`39 + i`) of the reflected run's evaluation matrix. -/
 private theorem runEvals_read_s {C : Ipa.CommitmentCurve} {σ : SRS C.Point}
     {vk : KimchiVK C} {p : KimchiProof C} {pub : Array C.ScalarField}
     (hrun : ReflectedRun C σ vk p pub) (i : ℕ) (hi : i < 6) :
     (runInput C σ vk p pub).evals[39 + i]!
-      = #[(p.s[i]!).zeta, (p.s[i]!).zetaOmega] := by
+      = #[(p.evals.s[i]!).zeta, (p.evals.s[i]!).zetaOmega] := by
   have hw := hrun.shape_w
   have hcf := hrun.shape_coeffs
   have hs := hrun.shape_s
@@ -1749,14 +1611,14 @@ private theorem runEvals_read_s {C : Ipa.CommitmentCurve} {σ : SRS C.Point}
       omega)]
   simp only [Array.size_append, Array.size_map, List.size_toArray, List.length_cons,
     List.length_nil, hw, hcf, Nat.add_sub_cancel_left]
-  rw [getElem!_pos (p.s.map fun e => #[e.zeta, e.zetaOmega]) i (by
+  rw [getElem!_pos (p.evals.s.map fun e => #[e.zeta, e.zetaOmega]) i (by
       simp only [Array.size_map, hs]
       omega),
-    Array.getElem_map, getElem!_pos p.s i (by omega)]
+    Array.getElem_map, getElem!_pos p.evals.s i (by omega)]
 
 /-- **The batch reindex is claim-faithful** (the record matching): the abstract
 claimed-evaluations record read off the reflected run's deployed batch through
-`runReindex` IS the proof's own evaluation record `p.evals` — field by field, the
+`runReindex` IS the proof's own evaluation record `p.linEvals` — field by field, the
 deployed rows carry exactly the wire evaluation pairs the scalar side consumes. Pure
 layout reading of `ReflectedRun.evals_eq`. -/
 private theorem claimedEvals_runReindex_eq {C : Ipa.CommitmentCurve} (σ : SRS C.Point)
@@ -1765,60 +1627,60 @@ private theorem claimedEvals_runReindex_eq {C : Ipa.CommitmentCurve} (σ : SRS C
     (hsize : (runInput C σ vk p pub).commitments.size = 45) :
     claimedEvals (fun (i : Fin 43) (j : Fin 2) =>
         (runInput C σ vk p pub).evalFn (runReindex C σ vk p pub hsize i) j)
-      = p.evals := by
+      = p.linEvals := by
   refine evals_ext ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
   · funext c
-    simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+    simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_wRow, runEvals_read_w hrun (c : ℕ) c.isLt]
     rfl
   · funext c
-    simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+    simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_wRow, runEvals_read_w hrun (c : ℕ) c.isLt]
     rfl
-  · simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+  · simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_zRow, runEvals_read_lit hrun 2 (by omega)]
     rfl
-  · simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+  · simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_zRow, runEvals_read_lit hrun 2 (by omega)]
     rfl
   · funext i
-    simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+    simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_sRow, runEvals_read_s hrun (i : ℕ) i.isLt]
     rfl
   · funext c
-    simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+    simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_cRow, runEvals_read_c hrun (c : ℕ) c.isLt]
     rfl
-  · simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+  · simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_selRow]
-    show ((runInput C σ vk p pub).evals[(3 : ℕ)]!)[(0 : ℕ)]! = p.genericSelector.zeta
+    show ((runInput C σ vk p pub).evals[(3 : ℕ)]!)[(0 : ℕ)]! = p.evals.genericSelector.zeta
     rw [runEvals_read_lit hrun 3 (by omega)]
     rfl
-  · simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+  · simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_selRow]
-    show ((runInput C σ vk p pub).evals[(4 : ℕ)]!)[(0 : ℕ)]! = p.poseidonSelector.zeta
+    show ((runInput C σ vk p pub).evals[(4 : ℕ)]!)[(0 : ℕ)]! = p.evals.poseidonSelector.zeta
     rw [runEvals_read_lit hrun 4 (by omega)]
     rfl
-  · simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+  · simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_selRow]
     show ((runInput C σ vk p pub).evals[(5 : ℕ)]!)[(0 : ℕ)]!
-      = p.completeAddSelector.zeta
+      = p.evals.completeAddSelector.zeta
     rw [runEvals_read_lit hrun 5 (by omega)]
     rfl
-  · simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+  · simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_selRow]
-    show ((runInput C σ vk p pub).evals[(6 : ℕ)]!)[(0 : ℕ)]! = p.mulSelector.zeta
+    show ((runInput C σ vk p pub).evals[(6 : ℕ)]!)[(0 : ℕ)]! = p.evals.mulSelector.zeta
     rw [runEvals_read_lit hrun 6 (by omega)]
     rfl
-  · simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+  · simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_selRow]
-    show ((runInput C σ vk p pub).evals[(7 : ℕ)]!)[(0 : ℕ)]! = p.emulSelector.zeta
+    show ((runInput C σ vk p pub).evals[(7 : ℕ)]!)[(0 : ℕ)]! = p.evals.emulSelector.zeta
     rw [runEvals_read_lit hrun 7 (by omega)]
     rfl
-  · simp only [claimedEvals, KimchiProof.evals, Ipa.Input.evalFn]
+  · simp only [claimedEvals, KimchiProof.linEvals, Ipa.Input.evalFn]
     rw [runReindex_val_selRow]
     show ((runInput C σ vk p pub).evals[(8 : ℕ)]!)[(0 : ℕ)]!
-      = p.endomulScalarSelector.zeta
+      = p.evals.endomulScalarSelector.zeta
     rw [runEvals_read_lit hrun 8 (by omega)]
     rfl
 

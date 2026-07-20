@@ -23,7 +23,7 @@ open Lean Kimchi.Fixture Bulletproof.Fixture Kimchi.Verifier
 
 /-- A `[zeta, zeta_omega]` evaluation pair. -/
 def parsePointEval (C : Ipa.CommitmentCurve) (j : Json) :
-    Except String (PointEval C.ScalarField) := do
+    Except String (PointEvaluations C.ScalarField) := do
   let a ← parseArrOf (parseZMod (n := C.scalar)) j
   unless a.size = 2 do throw s!"expected an evaluation pair, got {a.size} entries"
   return { zeta := a.getD 0 0, zetaOmega := a.getD 1 0 }
@@ -33,19 +33,21 @@ def parseKimchiProof (C : Ipa.CommitmentCurve) (j : Json) :
     Except String (KimchiProof C) := do
   let fld (k : String) : Except String Json := j.getObjVal? k
   let pe := parsePointEval C
+  let evals : ProofEvaluations C.ScalarField :=
+    { w := ← parseArrOf pe (← fld "evals_w")
+      z := ← pe (← fld "evals_z")
+      s := ← parseArrOf pe (← fld "evals_s")
+      coefficients := ← parseArrOf pe (← fld "evals_coefficients")
+      genericSelector := ← pe (← fld "evals_generic_selector")
+      poseidonSelector := ← pe (← fld "evals_poseidon_selector")
+      completeAddSelector := ← pe (← fld "evals_complete_add_selector")
+      mulSelector := ← pe (← fld "evals_mul_selector")
+      emulSelector := ← pe (← fld "evals_emul_selector")
+      endomulScalarSelector := ← pe (← fld "evals_endomul_scalar_selector") }
   return { wComm := ← parseArrOf (parsePt C) (← fld "w_comm")
            zComm := ← parsePt C (← fld "z_comm")
            tComm := ← parseArrOf (parsePt C) (← fld "t_comm")
-           w := ← parseArrOf pe (← fld "evals_w")
-           z := ← pe (← fld "evals_z")
-           s := ← parseArrOf pe (← fld "evals_s")
-           coefficients := ← parseArrOf pe (← fld "evals_coefficients")
-           genericSelector := ← pe (← fld "evals_generic_selector")
-           poseidonSelector := ← pe (← fld "evals_poseidon_selector")
-           completeAddSelector := ← pe (← fld "evals_complete_add_selector")
-           mulSelector := ← pe (← fld "evals_mul_selector")
-           emulSelector := ← pe (← fld "evals_emul_selector")
-           endomulScalarSelector := ← pe (← fld "evals_endomul_scalar_selector")
+           evals
            ftEval1 := ← parseZMod (← fld "ft_eval1")
            opening := ← parseProof C j }
 

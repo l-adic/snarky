@@ -1,4 +1,4 @@
-import Kimchi.Verifier.Linearization
+import Kimchi.Protocol.Linearization
 import Bulletproof.Wire
 import FixtureKit.Parse
 import Lean.Data.Json
@@ -17,7 +17,7 @@ never evaluates, interpolated by the dumper) must equal the closed-form aggregat
 `Σ αᵏ·memberₖ(ζ)` — the quotient evaluation `t(ζ)` cancels between the two sides, so
 the identity is checkable without prover internals. -/
 
-open Lean FixtureKit Bulletproof Kimchi.Verifier Kimchi.Verifier.Linearization
+open Lean FixtureKit Bulletproof Kimchi.Protocol Kimchi.Protocol.Linearization
 
 abbrev C := IpaVesta.curve
 abbrev F := C.ScalarField

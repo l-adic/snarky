@@ -153,7 +153,7 @@ Kimchi.Index.Index.copy_soundness
 -- junction of the extraction models — the standard-model path (density → rectangle →
 -- batch_soundnessA) and the algebraic-prover path (representations carried with messages) both
 -- discharge it. Reference side = pure commitment-knowledge; consumer side = per-row openings.
-Kimchi.Verifier.kimchiProof_sound_of_openings
+Kimchi.Protocol.kimchiProof_sound_of_openings
 
 -- The standard-model run-level capstones (grid path): a real accepted run's own sponge
 -- challenges over the run's own commitments — unless the run's (β, γ, α, ζ) land in the four

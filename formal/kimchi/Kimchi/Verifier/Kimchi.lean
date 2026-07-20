@@ -1,5 +1,5 @@
 import Bulletproof.Wire
-import Kimchi.Verifier.Linearization
+import Kimchi.Protocol.Linearization
 import Poseidon.FqSponge
 
 /-!
@@ -8,7 +8,7 @@ import Poseidon.FqSponge
 The full kimchi verifier over wire data, transcribed from proof-systems
 `kimchi/src/verifier.rs`: the Fiat-Shamir argument (`oracles`, :126–634) and the partial
 verification (`to_batch`, :781–1194), finished by the batched IPA opening check. The
-scalar-side closed forms are the landed `Kimchi.Verifier.Linearization`
+scalar-side closed forms are the landed `Kimchi.Protocol.Linearization`
 (`ftEval0`/`permScalar`/`zkpmEval`); the sponge layer is the landed
 `Poseidon.FqSponge` machinery, reused at both fields; the opening finish is the
 landed `Bulletproof.Ipa` acceptance, restarted from the **warm** fq-sponge state
@@ -37,7 +37,7 @@ production fold shapes) so any divergence localizes.
 * `KimchiVK.frSpec`, `frDigest`, `fqDigest` — the fr-sponge instantiation and the two
   sponge digests.
 * `FqOracles`, `fqOracles`, `frOracles` — the two Fiat-Shamir schedules.
-* `powPow2`, `pubDot`, `publicEvals`, `KimchiProof.evals` — the scalar side.
+* `powPow2`, `pubDot`, `publicEvals`, `KimchiProof.linEvals` — the scalar side.
 * `publicCommitment` — the public-input commitment.
 * `Ipa.verifyFrom` — the opening acceptance from a warm sponge state.
 * `kimchiVerify` — the verifier.
@@ -48,6 +48,8 @@ open Bulletproof
 
 namespace Kimchi.Verifier
 
+open Kimchi.Protocol
+
 open CompElliptic.CurveForms.ShortWeierstrass
 open Poseidon Poseidon.FqSponge Bulletproof
 
@@ -57,10 +59,30 @@ variable (C : Ipa.CommitmentCurve)
 
 /-- An evaluation pair at the two batch points — production's `PointEvaluations`
 (`proof.rs`): the column at `ζ` and at `ζω`. -/
-structure PointEval (F : Type*) where
+structure PointEvaluations (F : Type*) where
   zeta : F
   zetaOmega : F
 deriving Inhabited
+
+/-- The proof's claimed evaluations, one `PointEvaluations` per column family
+(`ProofEvaluations`, proof.rs): the witness/permutation/coefficient columns and the six
+gate selectors, each evaluated at `ζ` and `ζω`. At one chunk per column and the basic
+gate set — optional gates and lookup data are declared deferrals. -/
+structure ProofEvaluations (F : Type*) where
+  /-- The 15 witness-column evaluation pairs, `w[i] = (wᵢ(ζ), wᵢ(ζω))`. -/
+  w : Array (PointEvaluations F)
+  /-- The permutation-aggregation evaluation pair. -/
+  z : PointEvaluations F
+  /-- The first 6 σ-polynomial evaluation pairs (the 7th is commitment-only). -/
+  s : Array (PointEvaluations F)
+  /-- The 15 coefficient-column evaluation pairs. -/
+  coefficients : Array (PointEvaluations F)
+  genericSelector : PointEvaluations F
+  poseidonSelector : PointEvaluations F
+  completeAddSelector : PointEvaluations F
+  mulSelector : PointEvaluations F
+  emulSelector : PointEvaluations F
+  endomulScalarSelector : PointEvaluations F
 
 /-- The kimchi proof wire record (`ProverProof` + `ProofEvaluations`, proof.rs:50–170),
 at one chunk per column and the basic gate set: the witness/permutation/quotient
@@ -74,20 +96,8 @@ structure KimchiProof (C : Ipa.CommitmentCurve) where
   zComm : C.Point
   /-- The 7 quotient chunks (`t_comm`). -/
   tComm : Array C.Point
-  /-- The 15 witness evaluation pairs, `w[i] = (wᵢ(ζ), wᵢ(ζω))`. -/
-  w : Array (PointEval C.ScalarField)
-  /-- The permutation-aggregation evaluation pair. -/
-  z : PointEval C.ScalarField
-  /-- The first 6 σ-polynomial evaluation pairs (the 7th is commitment-only). -/
-  s : Array (PointEval C.ScalarField)
-  /-- The 15 coefficient-column evaluation pairs. -/
-  coefficients : Array (PointEval C.ScalarField)
-  genericSelector : PointEval C.ScalarField
-  poseidonSelector : PointEval C.ScalarField
-  completeAddSelector : PointEval C.ScalarField
-  mulSelector : PointEval C.ScalarField
-  emulSelector : PointEval C.ScalarField
-  endomulScalarSelector : PointEval C.ScalarField
+  /-- The claimed evaluations at `(ζ, ζω)` per column family (`ProofEvaluations`). -/
+  evals : ProofEvaluations C.ScalarField
   /-- `ft(ζω)` (Maller's optimization; proof.rs:170). -/
   ftEval1 : C.ScalarField
   /-- The batched IPA opening proof. -/
@@ -210,23 +220,23 @@ eigenvalue `C.sponge.lam` (the curve's `endo_r`). -/
 def frOracles (vk : KimchiVK C) (p : KimchiProof C)
     (fqDig pubEval0 pubEval1 : C.ScalarField) : C.ScalarField × C.ScalarField :=
   let sp := vk.frSpec
-  let ab := fun (s : FqSponge.S C.scalar) (e : PointEval C.ScalarField) =>
+  let ab := fun (s : FqSponge.S C.scalar) (e : PointEvaluations C.ScalarField) =>
     absorbFq sp (absorbFq sp s [e.zeta]) [e.zetaOmega]
   let s := absorbFq sp FqSponge.init [fqDig]
   let s := absorbFq sp s [frDigest C sp FqSponge.init]
   let s := absorbFq sp s [p.ftEval1]
   let s := absorbFq sp s [pubEval0]
   let s := absorbFq sp s [pubEval1]
-  let s := ab s p.z
-  let s := ab s p.genericSelector
-  let s := ab s p.poseidonSelector
-  let s := ab s p.completeAddSelector
-  let s := ab s p.mulSelector
-  let s := ab s p.emulSelector
-  let s := ab s p.endomulScalarSelector
-  let s := p.w.foldl ab s
-  let s := p.coefficients.foldl ab s
-  let s := p.s.foldl ab s
+  let s := ab s p.evals.z
+  let s := ab s p.evals.genericSelector
+  let s := ab s p.evals.poseidonSelector
+  let s := ab s p.evals.completeAddSelector
+  let s := ab s p.evals.mulSelector
+  let s := ab s p.evals.emulSelector
+  let s := ab s p.evals.endomulScalarSelector
+  let s := p.evals.w.foldl ab s
+  let s := p.evals.coefficients.foldl ab s
+  let s := p.evals.s.foldl ab s
   let (v', s) := challengeNat sp s
   let (u', _) := challengeNat sp s
   (endoExpand C.sponge.lam v', endoExpand C.sponge.lam u')
@@ -261,20 +271,20 @@ def publicEvals {F : Type*} [Field F] (n : ℕ)
 `evals.combine`, identity at one chunk — verifier.rs:409): `ζ`-components everywhere,
 `ζω`-components for the witness and `z`. Indexing is `getElem!` — the shape guards of
 `kimchiVerify` run first. -/
-def KimchiProof.evals {C : Ipa.CommitmentCurve} (p : KimchiProof C) :
+def KimchiProof.linEvals {C : Ipa.CommitmentCurve} (p : KimchiProof C) :
     Linearization.Evals C.ScalarField where
-  w i := (p.w[i.val]!).zeta
-  wOmega i := (p.w[i.val]!).zetaOmega
-  z := p.z.zeta
-  zOmega := p.z.zetaOmega
-  s i := (p.s[i.val]!).zeta
-  coeffs i := (p.coefficients[i.val]!).zeta
-  genericSelector := p.genericSelector.zeta
-  poseidonSelector := p.poseidonSelector.zeta
-  completeAddSelector := p.completeAddSelector.zeta
-  mulSelector := p.mulSelector.zeta
-  emulSelector := p.emulSelector.zeta
-  endoScalarSelector := p.endomulScalarSelector.zeta
+  w i := (p.evals.w[i.val]!).zeta
+  wOmega i := (p.evals.w[i.val]!).zetaOmega
+  z := p.evals.z.zeta
+  zOmega := p.evals.z.zetaOmega
+  s i := (p.evals.s[i.val]!).zeta
+  coeffs i := (p.evals.coefficients[i.val]!).zeta
+  genericSelector := p.evals.genericSelector.zeta
+  poseidonSelector := p.evals.poseidonSelector.zeta
+  completeAddSelector := p.evals.completeAddSelector.zeta
+  mulSelector := p.evals.mulSelector.zeta
+  emulSelector := p.evals.emulSelector.zeta
+  endoScalarSelector := p.evals.endomulScalarSelector.zeta
 
 /-! ## The group side -/
 
@@ -350,8 +360,8 @@ of evaluations is the identity. -/
 def kimchiVerify (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     (pub : Array C.ScalarField) : Bool :=
   let n := vk.n
-  if p.wComm.size != 15 || p.tComm.size != 7 || p.w.size != 15 || p.s.size != 6
-      || p.coefficients.size != 15 || vk.sigmaComm.size != 7
+  if p.wComm.size != 15 || p.tComm.size != 7 || p.evals.w.size != 15 || p.evals.s.size != 6
+      || p.evals.coefficients.size != 15 || vk.sigmaComm.size != 7
       || vk.coefficientsComm.size != 15 || vk.shifts.size != 7
       || decide (vk.lagrangeBasis.size < pub.size) || decide (n < pub.size)
       || 2 ^ σ.k != n then
@@ -364,7 +374,7 @@ def kimchiVerify (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     let zetaOmegaN := powPow2 zetaOmega vk.domainLog2
     let (pubEval0, pubEval1) :=
       publicEvals n vk.omega o.zeta zetaOmega zetaN zetaOmegaN pub
-    let e := p.evals
+    let e := p.linEvals
     let shifts : Fin 7 → C.ScalarField := fun i => vk.shifts[i.val]!
     let ftEval0 := Linearization.ftEval0 n vk.zkRows vk.omega shifts vk.endo
       o.alpha o.beta o.gamma o.zeta pubEval0 e
@@ -376,18 +386,19 @@ def kimchiVerify (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     let rows : Array (C.Point × C.ScalarField × C.ScalarField) :=
       #[(publicComm, pubEval0, pubEval1),
         (ftComm, ftEval0, p.ftEval1),
-        (p.zComm, p.z.zeta, p.z.zetaOmega),
-        (vk.genericComm, p.genericSelector.zeta, p.genericSelector.zetaOmega),
-        (vk.poseidonComm, p.poseidonSelector.zeta, p.poseidonSelector.zetaOmega),
-        (vk.completeAddComm, p.completeAddSelector.zeta, p.completeAddSelector.zetaOmega),
-        (vk.mulComm, p.mulSelector.zeta, p.mulSelector.zetaOmega),
-        (vk.emulComm, p.emulSelector.zeta, p.emulSelector.zetaOmega),
-        (vk.endomulScalarComm, p.endomulScalarSelector.zeta,
-          p.endomulScalarSelector.zetaOmega)]
-      ++ (p.wComm.zip p.w).map (fun x => (x.1, x.2.zeta, x.2.zetaOmega))
-      ++ (vk.coefficientsComm.zip p.coefficients).map
+        (p.zComm, p.evals.z.zeta, p.evals.z.zetaOmega),
+        (vk.genericComm, p.evals.genericSelector.zeta, p.evals.genericSelector.zetaOmega),
+        (vk.poseidonComm, p.evals.poseidonSelector.zeta, p.evals.poseidonSelector.zetaOmega),
+        (vk.completeAddComm, p.evals.completeAddSelector.zeta,
+          p.evals.completeAddSelector.zetaOmega),
+        (vk.mulComm, p.evals.mulSelector.zeta, p.evals.mulSelector.zetaOmega),
+        (vk.emulComm, p.evals.emulSelector.zeta, p.evals.emulSelector.zetaOmega),
+        (vk.endomulScalarComm, p.evals.endomulScalarSelector.zeta,
+          p.evals.endomulScalarSelector.zetaOmega)]
+      ++ (p.wComm.zip p.evals.w).map (fun x => (x.1, x.2.zeta, x.2.zetaOmega))
+      ++ (vk.coefficientsComm.zip p.evals.coefficients).map
           (fun x => (x.1, x.2.zeta, x.2.zetaOmega))
-      ++ ((vk.sigmaComm.extract 0 6).zip p.s).map
+      ++ ((vk.sigmaComm.extract 0 6).zip p.evals.s).map
           (fun x => (x.1, x.2.zeta, x.2.zetaOmega))
     let inp : Ipa.Input C :=
       { commitments := rows.map (·.1)

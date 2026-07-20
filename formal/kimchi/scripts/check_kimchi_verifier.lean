@@ -31,7 +31,8 @@ def main : IO Unit := do
   | .ok (σ, vk, proof, pub) =>
     let ok := kimchiVerify C σ vk proof pub
     let badEval := { proof with
-      z := { proof.z with zeta := proof.z.zeta + 1 } }
+      evals := { proof.evals with
+        z := { proof.evals.z with zeta := proof.evals.z.zeta + 1 } } }
     let badComm := { proof with tComm := proof.tComm.modify 0 (· + σ.h) }
     let badFt := { proof with ftEval1 := proof.ftEval1 + 1 }
     let r1 := !kimchiVerify C σ vk badEval pub
