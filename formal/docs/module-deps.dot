@@ -62,7 +62,6 @@ digraph "formal-modules" {
     "Kimchi.Protocol.Equation";
     "Kimchi.Protocol.Linearization";
     "Kimchi.Protocol.Soundness";
-    "Kimchi.Quotient.Accumulator";
     "Kimchi.Quotient.Aggregate";
     "Kimchi.Quotient.Copy";
     "Kimchi.Quotient.Domain";
@@ -184,7 +183,6 @@ digraph "formal-modules" {
   "Kimchi" -> "Kimchi.Quotient.Gate.Generic";
   "Kimchi" -> "Kimchi.Quotient.Gate.EndoScalar";
   "Kimchi" -> "Kimchi.Quotient.Gate.Poseidon";
-  "Kimchi" -> "Kimchi.Quotient.Accumulator";
   "Kimchi" -> "Kimchi.Quotient.Copy";
   "Kimchi" -> "Kimchi.Index.Basic";
   "Kimchi" -> "Kimchi.Index.Satisfies";
@@ -245,7 +243,6 @@ digraph "formal-modules" {
   "Kimchi.Quotient.Lift" -> "Kimchi.Quotient.Shifted";
   "Kimchi.Quotient.Lift" -> "Kimchi.Quotient.Aggregate";
   "Kimchi.Quotient.Lift" -> "Kimchi.Quotient.SchwartzZippel";
-  "Kimchi.Quotient.Permutation" -> "Kimchi.Quotient.Accumulator";
   "Kimchi.Quotient.Permutation" -> "Kimchi.Quotient.Aggregate";
   "Kimchi.Quotient.Permutation" -> "Kimchi.Quotient.SchwartzZippel";
   "Kimchi.Quotient.SchwartzZippel" -> "Kimchi.Quotient.Aggregate";

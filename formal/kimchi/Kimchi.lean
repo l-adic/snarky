@@ -19,7 +19,6 @@ import Bulletproof.Soundness
 import Kimchi.Quotient.Gate.Generic
 import Kimchi.Quotient.Gate.EndoScalar
 import Kimchi.Quotient.Gate.Poseidon
-import Kimchi.Quotient.Accumulator
 import Kimchi.Quotient.Copy
 import Kimchi.Index.Basic
 import Kimchi.Index.Satisfies
