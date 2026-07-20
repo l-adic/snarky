@@ -30,7 +30,6 @@ import Kimchi.Index.CopySoundness
 import Kimchi.Quotient.Wiring
 import Kimchi.Quotient.Permutation
 import Kimchi.Quotient.GrandProduct
-import Kimchi.Quotient.Soundness
 import Bulletproof.Wire
 -- Side A — the idealized polynomial protocol and its soundness
 import Kimchi.Protocol.Linearization

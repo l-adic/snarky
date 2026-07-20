@@ -1,5 +1,4 @@
 import Kimchi.Index.Satisfies
-import Kimchi.Quotient.Soundness
 import Kimchi.Quotient.SchwartzZippel
 
 /-!

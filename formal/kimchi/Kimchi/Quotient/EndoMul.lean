@@ -47,6 +47,8 @@ Source: kimchi `endosclmul.rs`, module-doc layout table and `constraint_checks`.
 * `argument` — the EndoMul `Argument F` instance, parametrized by `endo : F` (two-row layout).
 * `rows_iff_dvd` — the divisibility corollary, a specialization of the `Argument` engine
   theorems.
+* `soundness` — the counting-form soundness corollary at a single good `(α, ζ)`, likewise a
+  specialization of the `Argument` engine.
 -/
 
 namespace Kimchi.Quotient.EndoMul
@@ -123,5 +125,28 @@ theorem rows_iff_dvd [NeZero n] (endo : F) (hω : IsPrimitiveRoot ω n)
     (∀ E ∈ Gate.EndoMul.constraints (C endo) (polyWitness ω wTab), zH F n ∣ E)
       ↔ ∀ i, Gate.EndoMul.Holds endo (rowWitness wTab i) :=
   (argument endo).rows_iff_dvd hω wTab wTab
+
+
+/-- **EndoMul quotient soundness.** Same shape as `AddComplete.soundness` for the two-row
+EndoMul gate, with an extra endomorphism constant `endo : F` (the polynomial side uses
+`C endo`, the row side `endo`). Every selector-active row satisfies the EndoMul gate predicate.
+
+Proof: specialization of `Argument.soundness` at the instance `argument endo`; the endo
+constant transports definitionally between the two carriers. -/
+theorem soundness {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n] {ω : F}
+    (endo : F) (hω : IsPrimitiveRoot ω n)
+    (wTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1)
+    (α : F)
+    (hα : α ∉ badAlphas (fun c => columnPoly ω sel *
+        (Gate.EndoMul.constraints (C endo) (polyWitness ω wTab)).get c) ω n)
+    (t : Polynomial F)
+    (ζ : F)
+    (hζ : ζ ∉ badZetas (aggregate α (fun c => columnPoly ω sel *
+        (Gate.EndoMul.constraints (C endo) (polyWitness ω wTab)).get c)) t n)
+    (hcheck : (aggregate α (fun c => columnPoly ω sel *
+        (Gate.EndoMul.constraints (C endo) (polyWitness ω wTab)).get c)).eval ζ
+        = (t * zH F n).eval ζ) :
+    ∀ i, sel i = 1 → Gate.EndoMul.Holds endo (rowWitness wTab i) :=
+  (argument endo).soundness hω wTab wTab sel hsel α hα t ζ hζ hcheck
 
 end Kimchi.Quotient.EndoMul

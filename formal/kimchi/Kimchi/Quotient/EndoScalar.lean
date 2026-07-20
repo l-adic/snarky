@@ -1,5 +1,4 @@
 import Kimchi.Quotient.Lift
-import Kimchi.Quotient.Soundness
 import Kimchi.Gate.EndoScalar
 
 /-!
