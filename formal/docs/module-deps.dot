@@ -1,290 +1,271 @@
 digraph "formal-modules" {
-  rankdir=TB;
-  ranksep=1.6; nodesep=0.25;
-  node [shape=box, style=filled, fillcolor=white, fontsize=10, fontname="Helvetica"];
-  edge [color=gray40, arrowsize=0.6];
-  subgraph "cluster_pasta" {
-    label="pasta"; style=filled; fillcolor="#cfe8ff";
-    color=gray50; fontsize=12; fontname="Helvetica-Bold";
-    "Pasta.Basic";
-    "Pasta.Endo";
-    "Pasta";
-    "Pasta.Shifted";
-  }
-  subgraph "cluster_poseidon" {
-    label="poseidon"; style=filled; fillcolor="#d5f0d0";
-    color=gray50; fontsize=12; fontname="Helvetica-Bold";
-    "FixtureKit";
-    "FixtureKit.Parse";
-    "FixtureKit.Trace";
-    "Poseidon.Basic";
-    "Poseidon.ConstantsFp";
-    "Poseidon.ConstantsFq";
-    "Poseidon.FqSponge";
-    "Poseidon.GroupMap";
-    "Poseidon";
-  }
-  subgraph "cluster_bulletproof-pcs" {
-    label="bulletproof-pcs"; style=filled; fillcolor="#ffe0c2";
-    color=gray50; fontsize=12; fontname="Helvetica-Bold";
-    "BulletproofFixture";
-    "Bulletproof";
-    "Bulletproof.Protocol";
-    "Bulletproof.Reflection";
-    "Bulletproof.Soundness";
-    "Bulletproof.Soundness.SingleOpening";
-    "Bulletproof.Wire";
-  }
-  subgraph "cluster_kimchi" {
-    label="kimchi"; style=filled; fillcolor="#e6d5f0";
-    color=gray50; fontsize=12; fontname="Helvetica-Bold";
-    "Kimchi.Aggregate";
-    "Kimchi.Domain";
-    "KimchiFixture.Kimchi";
-    "KimchiFixture.PS";
-    "Kimchi.GrandProduct";
-    "Kimchi";
-    "Kimchi.Lift";
-    "Kimchi.SchwartzZippel";
-    "Kimchi.Shifted";
-    "Main";
-    subgraph "cluster_kimchi_Kimchi_Gate" {
-      label="Kimchi.Gate"; style="filled,dashed"; fillcolor=white;
-      color=gray55; fontsize=11; fontname="Helvetica-Oblique";
-      "Kimchi.Gate.AddComplete";
-      "Kimchi.Gate.EndoMul";
-      "Kimchi.Gate.EndoScalar";
-      "Kimchi.Gate.Generic";
-      "Kimchi.Gate.Poseidon";
-      "Kimchi.Gate.Semantics.AddComplete";
-      "Kimchi.Gate.Semantics.EndoMul";
-      "Kimchi.Gate.Semantics.EndoScalar";
-      "Kimchi.Gate.Semantics.Generic";
-      "Kimchi.Gate.Semantics.Poseidon";
-      "Kimchi.Gate.Semantics.VarBaseMul";
-      "Kimchi.Gate.VarBaseMul";
-    }
-    subgraph "cluster_kimchi_Kimchi_Index" {
-      label="Kimchi.Index"; style="filled,dashed"; fillcolor=white;
-      color=gray55; fontsize=11; fontname="Helvetica-Oblique";
-      "Kimchi.Index.Aggregate";
-      "Kimchi.Index.Basic";
-      "Kimchi.Index.CopySoundness";
-      "Kimchi.Index.Degree";
-      "Kimchi.Index.Satisfies";
-    }
-    subgraph "cluster_kimchi_Kimchi_Permutation" {
-      label="Kimchi.Permutation"; style="filled,dashed"; fillcolor=white;
-      color=gray55; fontsize=11; fontname="Helvetica-Oblique";
-      "Kimchi.Permutation.Copy";
-      "Kimchi.Permutation.Permutation";
-      "Kimchi.Permutation.Wiring";
-    }
-    subgraph "cluster_kimchi_Kimchi_Protocol" {
-      label="Kimchi.Protocol"; style="filled,dashed"; fillcolor=white;
-      color=gray55; fontsize=11; fontname="Helvetica-Oblique";
-      "Kimchi.Protocol.Binding";
-      "Kimchi.Protocol.Correspond";
-      "Kimchi.Protocol.Equation";
-      "Kimchi.Protocol.Linearization";
-      "Kimchi.Protocol.Soundness";
-    }
-    subgraph "cluster_kimchi_Kimchi_Verifier" {
-      label="Kimchi.Verifier"; style="filled,dashed"; fillcolor=white;
-      color=gray55; fontsize=11; fontname="Helvetica-Oblique";
-      "Kimchi.Verifier.Capstone";
-      "Kimchi.Verifier.Kimchi";
-      "Kimchi.Verifier.Reflect";
-    }
-  }
-  subgraph "cluster_snarky" {
-    label="snarky"; style=filled; fillcolor="#ffd6d6";
-    color=gray50; fontsize=12; fontname="Helvetica-Bold";
-    "Snarky.AsProver";
-    "Snarky.Builder";
-    "Snarky.Constraint.Basic";
-    "Snarky.Constraint.R1CS";
-    "Snarky.CVar";
-    "Snarky.DSL";
-    "Snarky.Example";
-    "Snarky.Kimchi.Backend";
-    "Snarky.Kimchi.Example";
-    "Snarky.Laws";
-    "Snarky";
-    "Snarky.Monad";
-    "Snarky.Prover";
-    "Snarky.Types";
-    "Snarky.Vec";
-  }
-  "Pasta.Endo" -> "Pasta.Basic";
-  "Pasta" -> "Pasta.Basic";
-  "Pasta" -> "Pasta.Endo";
-  "Pasta" -> "Pasta.Shifted";
-  "FixtureKit" -> "FixtureKit.Parse";
-  "FixtureKit" -> "FixtureKit.Trace";
-  "FixtureKit.Trace" -> "FixtureKit.Parse";
-  "Poseidon.Basic" -> "Poseidon.ConstantsFq";
-  "Poseidon.Basic" -> "Poseidon.ConstantsFp";
-  "Poseidon.FqSponge" -> "Poseidon.Basic";
-  "Poseidon.FqSponge" -> "Pasta.Endo";
-  "Poseidon.GroupMap" -> "Poseidon.FqSponge";
-  "Poseidon" -> "Poseidon.ConstantsFp";
-  "Poseidon" -> "Poseidon.ConstantsFq";
-  "Poseidon" -> "Poseidon.Basic";
-  "Poseidon" -> "Poseidon.FqSponge";
-  "Poseidon" -> "Poseidon.GroupMap";
-  "BulletproofFixture" -> "Bulletproof.Wire";
-  "BulletproofFixture" -> "FixtureKit.Parse";
-  "Bulletproof" -> "Bulletproof.Protocol";
-  "Bulletproof" -> "Bulletproof.Wire";
-  "Bulletproof" -> "Bulletproof.Soundness";
-  "Bulletproof" -> "Bulletproof.Reflection";
-  "Bulletproof.Reflection" -> "Bulletproof.Wire";
-  "Bulletproof.Reflection" -> "Bulletproof.Soundness";
-  "Bulletproof.Reflection" -> "Pasta";
-  "Bulletproof.Soundness" -> "Bulletproof.Soundness.SingleOpening";
-  "Bulletproof.Soundness.SingleOpening" -> "Bulletproof.Protocol";
-  "Bulletproof.Wire" -> "Pasta.Shifted";
-  "Bulletproof.Wire" -> "Poseidon.GroupMap";
-  "Bulletproof.Wire" -> "Bulletproof.Protocol";
-  "Kimchi.Aggregate" -> "Kimchi.Domain";
-  "KimchiFixture.Kimchi" -> "Kimchi.Verifier.Kimchi";
-  "KimchiFixture.PS" -> "Kimchi.Index.Satisfies";
-  "KimchiFixture.PS" -> "FixtureKit.Parse";
-  "KimchiFixture.PS" -> "Pasta.Endo";
-  "Kimchi.Gate.AddComplete" -> "Pasta.Basic";
-  "Kimchi.Gate.EndoMul" -> "Kimchi.Gate.VarBaseMul";
-  "Kimchi.Gate.Semantics.AddComplete" -> "Kimchi.Gate.AddComplete";
-  "Kimchi.Gate.Semantics.EndoMul" -> "Kimchi.Gate.EndoMul";
-  "Kimchi.Gate.Semantics.EndoMul" -> "Kimchi.Gate.Semantics.VarBaseMul";
-  "Kimchi.Gate.Semantics.EndoMul" -> "Kimchi.Gate.Semantics.EndoScalar";
-  "Kimchi.Gate.Semantics.EndoMul" -> "Pasta";
-  "Kimchi.Gate.Semantics.EndoScalar" -> "Kimchi.Gate.EndoScalar";
-  "Kimchi.Gate.Semantics.Generic" -> "Kimchi.Gate.Generic";
-  "Kimchi.Gate.Semantics.Poseidon" -> "Kimchi.Gate.Poseidon";
-  "Kimchi.Gate.Semantics.VarBaseMul" -> "Kimchi.Gate.VarBaseMul";
-  "Kimchi.Gate.Semantics.VarBaseMul" -> "Kimchi.Gate.Semantics.AddComplete";
-  "Kimchi.Gate.Semantics.VarBaseMul" -> "Pasta";
-  "Kimchi.Gate.Semantics.VarBaseMul" -> "Pasta.Shifted";
-  "Kimchi.Gate.VarBaseMul" -> "Pasta.Basic";
-  "Kimchi.Gate.VarBaseMul" -> "Kimchi.Gate.AddComplete";
-  "Kimchi.GrandProduct" -> "Kimchi.Domain";
-  "Kimchi.Index.Aggregate" -> "Kimchi.Index.CopySoundness";
-  "Kimchi.Index.Aggregate" -> "Kimchi.SchwartzZippel";
-  "Kimchi.Index.Basic" -> "Kimchi.Permutation.Wiring";
-  "Kimchi.Index.CopySoundness" -> "Kimchi.Index.Satisfies";
-  "Kimchi.Index.CopySoundness" -> "Kimchi.SchwartzZippel";
-  "Kimchi.Index.Degree" -> "Kimchi.Index.Aggregate";
-  "Kimchi.Index.Satisfies" -> "Kimchi.Index.Basic";
-  "Kimchi.Index.Satisfies" -> "Kimchi.Lift";
-  "Kimchi" -> "Pasta.Shifted";
-  "Kimchi" -> "Kimchi.Gate.Generic";
-  "Kimchi" -> "Kimchi.Gate.AddComplete";
-  "Kimchi" -> "Kimchi.Gate.VarBaseMul";
-  "Kimchi" -> "Kimchi.Gate.EndoScalar";
-  "Kimchi" -> "Kimchi.Gate.EndoMul";
-  "Kimchi" -> "Kimchi.Gate.Poseidon";
-  "Kimchi" -> "Kimchi.Gate.Semantics.Generic";
-  "Kimchi" -> "Kimchi.Gate.Semantics.AddComplete";
-  "Kimchi" -> "Kimchi.Gate.Semantics.VarBaseMul";
-  "Kimchi" -> "Kimchi.Gate.Semantics.EndoScalar";
-  "Kimchi" -> "Kimchi.Gate.Semantics.EndoMul";
-  "Kimchi" -> "Kimchi.Gate.Semantics.Poseidon";
-  "Kimchi" -> "Bulletproof.Protocol";
-  "Kimchi" -> "Bulletproof.Soundness";
-  "Kimchi" -> "Kimchi.Lift";
-  "Kimchi" -> "Kimchi.Permutation.Copy";
-  "Kimchi" -> "Kimchi.Index.Basic";
-  "Kimchi" -> "Kimchi.Index.Satisfies";
-  "Kimchi" -> "Kimchi.Index.Aggregate";
-  "Kimchi" -> "Kimchi.Index.Degree";
-  "Kimchi" -> "Kimchi.Index.CopySoundness";
-  "Kimchi" -> "Kimchi.Permutation.Wiring";
-  "Kimchi" -> "Kimchi.Permutation.Permutation";
-  "Kimchi" -> "Kimchi.GrandProduct";
-  "Kimchi" -> "Bulletproof.Wire";
-  "Kimchi" -> "Kimchi.Protocol.Linearization";
-  "Kimchi" -> "Kimchi.Protocol.Equation";
-  "Kimchi" -> "Kimchi.Protocol.Correspond";
-  "Kimchi" -> "Kimchi.Protocol.Binding";
-  "Kimchi" -> "Kimchi.Protocol.Soundness";
-  "Kimchi" -> "Bulletproof.Reflection";
-  "Kimchi" -> "Kimchi.Verifier.Kimchi";
-  "Kimchi" -> "Kimchi.Verifier.Reflect";
-  "Kimchi" -> "Kimchi.Verifier.Capstone";
-  "Kimchi.Lift" -> "Kimchi.Domain";
-  "Kimchi.Lift" -> "Kimchi.Shifted";
-  "Kimchi.Lift" -> "Kimchi.Aggregate";
-  "Kimchi.Lift" -> "Kimchi.SchwartzZippel";
-  "Kimchi.Lift" -> "Kimchi.Gate.AddComplete";
-  "Kimchi.Lift" -> "Kimchi.Gate.VarBaseMul";
-  "Kimchi.Lift" -> "Kimchi.Gate.EndoMul";
-  "Kimchi.Lift" -> "Kimchi.Gate.EndoScalar";
-  "Kimchi.Lift" -> "Kimchi.Gate.Poseidon";
-  "Kimchi.Lift" -> "Kimchi.Gate.Generic";
-  "Kimchi.Permutation.Copy" -> "Kimchi.GrandProduct";
-  "Kimchi.Permutation.Copy" -> "Kimchi.Permutation.Permutation";
-  "Kimchi.Permutation.Copy" -> "Kimchi.SchwartzZippel";
-  "Kimchi.Permutation.Permutation" -> "Kimchi.Aggregate";
-  "Kimchi.Permutation.Permutation" -> "Kimchi.SchwartzZippel";
-  "Kimchi.Permutation.Permutation" -> "Kimchi.GrandProduct";
-  "Kimchi.Permutation.Wiring" -> "Kimchi.Permutation.Copy";
-  "Kimchi.Protocol.Binding" -> "Bulletproof.Protocol";
-  "Kimchi.Protocol.Binding" -> "Bulletproof.Soundness";
-  "Kimchi.Protocol.Binding" -> "Kimchi.Protocol.Correspond";
-  "Kimchi.Protocol.Correspond" -> "Kimchi.Index.Aggregate";
-  "Kimchi.Protocol.Correspond" -> "Bulletproof.Protocol";
-  "Kimchi.Protocol.Equation" -> "Kimchi.Protocol.Linearization";
-  "Kimchi.Protocol.Equation" -> "Kimchi.Index.Aggregate";
-  "Kimchi.Protocol.Equation" -> "Kimchi.Index.Degree";
-  "Kimchi.Protocol.Linearization" -> "Kimchi.Lift";
-  "Kimchi.Protocol.Soundness" -> "Bulletproof.Soundness";
-  "Kimchi.Protocol.Soundness" -> "Kimchi.Protocol.Binding";
-  "Kimchi.Protocol.Soundness" -> "Kimchi.Protocol.Equation";
-  "Kimchi.SchwartzZippel" -> "Kimchi.Aggregate";
-  "Kimchi.Shifted" -> "Kimchi.Domain";
-  "Kimchi.Verifier.Capstone" -> "Kimchi.Protocol.Soundness";
-  "Kimchi.Verifier.Capstone" -> "Kimchi.Verifier.Kimchi";
-  "Kimchi.Verifier.Capstone" -> "Bulletproof.Reflection";
-  "Kimchi.Verifier.Capstone" -> "Kimchi.Verifier.Reflect";
-  "Kimchi.Verifier.Kimchi" -> "Bulletproof.Wire";
-  "Kimchi.Verifier.Kimchi" -> "Kimchi.Protocol.Linearization";
-  "Kimchi.Verifier.Kimchi" -> "Poseidon.FqSponge";
-  "Kimchi.Verifier.Reflect" -> "Kimchi.Verifier.Kimchi";
-  "Kimchi.Verifier.Reflect" -> "Bulletproof.Reflection";
-  "Kimchi.Verifier.Reflect" -> "Kimchi.Protocol.Correspond";
-  "Kimchi.Verifier.Reflect" -> "Kimchi.Protocol.Equation";
-  "Kimchi.Verifier.Reflect" -> "Kimchi.Permutation.Permutation";
-  "Main" -> "Kimchi.Gate.Generic";
-  "Snarky.AsProver" -> "Snarky.CVar";
-  "Snarky.Builder" -> "Snarky.Monad";
-  "Snarky.Constraint.Basic" -> "Snarky.CVar";
-  "Snarky.Constraint.R1CS" -> "Snarky.Constraint.Basic";
-  "Snarky.DSL" -> "Snarky.Types";
-  "Snarky.Example" -> "Snarky.DSL";
-  "Snarky.Example" -> "Snarky.Constraint.R1CS";
-  "Snarky.Example" -> "Snarky.Laws";
-  "Snarky.Kimchi.Backend" -> "Snarky.Constraint.Basic";
-  "Snarky.Kimchi.Backend" -> "Snarky.Prover";
-  "Snarky.Kimchi.Backend" -> "Kimchi.Gate.Generic";
-  "Snarky.Kimchi.Example" -> "Snarky.Kimchi.Backend";
-  "Snarky.Kimchi.Example" -> "Snarky.DSL";
-  "Snarky.Laws" -> "Snarky.Prover";
-  "Snarky" -> "Snarky.CVar";
-  "Snarky" -> "Snarky.AsProver";
-  "Snarky" -> "Snarky.Monad";
-  "Snarky" -> "Snarky.Builder";
-  "Snarky" -> "Snarky.Prover";
-  "Snarky" -> "Snarky.Vec";
-  "Snarky" -> "Snarky.Constraint.Basic";
-  "Snarky" -> "Snarky.Constraint.R1CS";
-  "Snarky" -> "Snarky.Types";
-  "Snarky" -> "Snarky.DSL";
-  "Snarky" -> "Snarky.Laws";
-  "Snarky" -> "Snarky.Example";
-  "Snarky.Monad" -> "Snarky.AsProver";
-  "Snarky.Prover" -> "Snarky.Builder";
-  "Snarky.Types" -> "Snarky.Monad";
-  "Snarky.Types" -> "Snarky.Vec";
-  "Snarky.Types" -> "Snarky.Constraint.Basic";
+	graph [nodesep=0.25,
+		rankdir=TB,
+		ranksep=1.6
+	];
+	node [fillcolor=white,
+		fontname=Helvetica,
+		fontsize=10,
+		shape=box,
+		style=filled
+	];
+	edge [arrowsize=0.6,
+		color=gray40
+	];
+	subgraph cluster_pasta {
+		graph [color=gray50,
+			fillcolor="#cfe8ff",
+			fontname="Helvetica-Bold",
+			fontsize=12,
+			label=pasta,
+			style=filled
+		];
+		"Pasta.Basic";
+		"Pasta.Endo";
+		Pasta;
+		"Pasta.Shifted";
+	}
+	subgraph cluster_poseidon {
+		graph [color=gray50,
+			fillcolor="#d5f0d0",
+			fontname="Helvetica-Bold",
+			fontsize=12,
+			label=poseidon,
+			style=filled
+		];
+		FixtureKit;
+		"FixtureKit.Parse";
+		"FixtureKit.Trace";
+		"Poseidon.Basic";
+		"Poseidon.ConstantsFp";
+		"Poseidon.ConstantsFq";
+		"Poseidon.FqSponge";
+		"Poseidon.GroupMap";
+		Poseidon;
+	}
+	subgraph "cluster_bulletproof-pcs" {
+		graph [color=gray50,
+			fillcolor="#ffe0c2",
+			fontname="Helvetica-Bold",
+			fontsize=12,
+			label="bulletproof-pcs",
+			style=filled
+		];
+		BulletproofFixture;
+		Bulletproof;
+		"Bulletproof.Protocol";
+		"Bulletproof.Reflection";
+		"Bulletproof.Soundness";
+		"Bulletproof.Soundness.SingleOpening";
+		"Bulletproof.Wire";
+	}
+	subgraph cluster_kimchi {
+		graph [color=gray50,
+			fillcolor="#e6d5f0",
+			fontname="Helvetica-Bold",
+			fontsize=12,
+			label=kimchi,
+			style=filled
+		];
+		subgraph cluster_kimchi_Kimchi_Gate {
+			graph [color=gray55,
+				fillcolor=white,
+				fontname="Helvetica-Oblique",
+				fontsize=11,
+				label="Kimchi.Gate",
+				style="filled,dashed"
+			];
+			"Kimchi.Gate.AddComplete";
+			"Kimchi.Gate.EndoMul";
+			"Kimchi.Gate.EndoScalar";
+			"Kimchi.Gate.Generic";
+			"Kimchi.Gate.Poseidon";
+			"Kimchi.Gate.Semantics.AddComplete";
+			"Kimchi.Gate.Semantics.EndoMul";
+			"Kimchi.Gate.Semantics.EndoScalar";
+			"Kimchi.Gate.Semantics.Generic";
+			"Kimchi.Gate.Semantics.Poseidon";
+			"Kimchi.Gate.Semantics.VarBaseMul";
+			"Kimchi.Gate.VarBaseMul";
+		}
+		subgraph cluster_kimchi_Kimchi_Index {
+			graph [color=gray55,
+				fillcolor=white,
+				fontname="Helvetica-Oblique",
+				fontsize=11,
+				label="Kimchi.Index",
+				style="filled,dashed"
+			];
+			"Kimchi.Index.Aggregate";
+			"Kimchi.Index.Basic";
+			"Kimchi.Index.CopySoundness";
+			"Kimchi.Index.Degree";
+			"Kimchi.Index.Satisfies";
+		}
+		subgraph cluster_kimchi_Kimchi_Permutation {
+			graph [color=gray55,
+				fillcolor=white,
+				fontname="Helvetica-Oblique",
+				fontsize=11,
+				label="Kimchi.Permutation",
+				style="filled,dashed"
+			];
+			"Kimchi.Permutation.Copy";
+			"Kimchi.Permutation.Permutation";
+			"Kimchi.Permutation.Wiring";
+		}
+		subgraph cluster_kimchi_Kimchi_Protocol {
+			graph [color=gray55,
+				fillcolor=white,
+				fontname="Helvetica-Oblique",
+				fontsize=11,
+				label="Kimchi.Protocol",
+				style="filled,dashed"
+			];
+			"Kimchi.Protocol.Binding";
+			"Kimchi.Protocol.Correspond";
+			"Kimchi.Protocol.Equation";
+			"Kimchi.Protocol.Linearization";
+			"Kimchi.Protocol.Soundness";
+		}
+		subgraph cluster_kimchi_Kimchi_Verifier {
+			graph [color=gray55,
+				fillcolor=white,
+				fontname="Helvetica-Oblique",
+				fontsize=11,
+				label="Kimchi.Verifier",
+				style="filled,dashed"
+			];
+			"Kimchi.Verifier.Capstone";
+			"Kimchi.Verifier.Kimchi";
+			"Kimchi.Verifier.Reflect";
+		}
+		"Kimchi.Aggregate";
+		"Kimchi.Domain";
+		"Kimchi.GrandProduct";
+		Kimchi;
+		"Kimchi.Lift";
+		"Kimchi.SchwartzZippel";
+		"Kimchi.Shifted";
+	}
+	subgraph cluster_snarky {
+		graph [color=gray50,
+			fillcolor="#ffd6d6",
+			fontname="Helvetica-Bold",
+			fontsize=12,
+			label=snarky,
+			style=filled
+		];
+		"Snarky.AsProver";
+		"Snarky.Builder";
+		"Snarky.Constraint.Basic";
+		"Snarky.Constraint.R1CS";
+		"Snarky.CVar";
+		"Snarky.DSL";
+		"Snarky.Example";
+		"Snarky.Kimchi.Backend";
+		"Snarky.Kimchi.Example";
+		"Snarky.Laws";
+		Snarky;
+		"Snarky.Monad";
+		"Snarky.Prover";
+		"Snarky.Types";
+		"Snarky.Vec";
+	}
+	"Pasta.Endo" -> "Pasta.Basic";
+	Pasta -> "Pasta.Endo";
+	Pasta -> "Pasta.Shifted";
+	FixtureKit -> "FixtureKit.Trace";
+	"FixtureKit.Trace" -> "FixtureKit.Parse";
+	"Poseidon.Basic" -> "Poseidon.ConstantsFp";
+	"Poseidon.Basic" -> "Poseidon.ConstantsFq";
+	"Poseidon.FqSponge" -> "Pasta.Endo";
+	"Poseidon.FqSponge" -> "Poseidon.Basic";
+	"Poseidon.GroupMap" -> "Poseidon.FqSponge";
+	Poseidon -> "Poseidon.GroupMap";
+	BulletproofFixture -> "FixtureKit.Parse";
+	BulletproofFixture -> "Bulletproof.Wire";
+	Bulletproof -> "Bulletproof.Reflection";
+	"Bulletproof.Reflection" -> Pasta;
+	"Bulletproof.Reflection" -> "Bulletproof.Soundness";
+	"Bulletproof.Reflection" -> "Bulletproof.Wire";
+	"Bulletproof.Soundness" -> "Bulletproof.Soundness.SingleOpening";
+	"Bulletproof.Soundness.SingleOpening" -> "Bulletproof.Protocol";
+	"Bulletproof.Wire" -> "Pasta.Shifted";
+	"Bulletproof.Wire" -> "Poseidon.GroupMap";
+	"Bulletproof.Wire" -> "Bulletproof.Protocol";
+	"Kimchi.Aggregate" -> "Kimchi.Domain";
+	"Kimchi.GrandProduct" -> "Kimchi.Domain";
+	Kimchi -> "Kimchi.Gate.Semantics.EndoMul";
+	Kimchi -> "Kimchi.Gate.Semantics.Generic";
+	Kimchi -> "Kimchi.Gate.Semantics.Poseidon";
+	Kimchi -> "Kimchi.Verifier.Capstone";
+	"Kimchi.Lift" -> "Kimchi.SchwartzZippel";
+	"Kimchi.Lift" -> "Kimchi.Shifted";
+	"Kimchi.Lift" -> "Kimchi.Gate.EndoMul";
+	"Kimchi.Lift" -> "Kimchi.Gate.EndoScalar";
+	"Kimchi.Lift" -> "Kimchi.Gate.Generic";
+	"Kimchi.Lift" -> "Kimchi.Gate.Poseidon";
+	"Kimchi.SchwartzZippel" -> "Kimchi.Aggregate";
+	"Kimchi.Shifted" -> "Kimchi.Domain";
+	"Kimchi.Gate.AddComplete" -> "Pasta.Basic";
+	"Kimchi.Gate.EndoMul" -> "Kimchi.Gate.VarBaseMul";
+	"Kimchi.Gate.Semantics.AddComplete" -> "Kimchi.Gate.AddComplete";
+	"Kimchi.Gate.Semantics.EndoMul" -> "Kimchi.Gate.EndoMul";
+	"Kimchi.Gate.Semantics.EndoMul" -> "Kimchi.Gate.Semantics.EndoScalar";
+	"Kimchi.Gate.Semantics.EndoMul" -> "Kimchi.Gate.Semantics.VarBaseMul";
+	"Kimchi.Gate.Semantics.EndoScalar" -> "Kimchi.Gate.EndoScalar";
+	"Kimchi.Gate.Semantics.Generic" -> "Kimchi.Gate.Generic";
+	"Kimchi.Gate.Semantics.Poseidon" -> "Kimchi.Gate.Poseidon";
+	"Kimchi.Gate.Semantics.VarBaseMul" -> Pasta;
+	"Kimchi.Gate.Semantics.VarBaseMul" -> "Kimchi.Gate.Semantics.AddComplete";
+	"Kimchi.Gate.Semantics.VarBaseMul" -> "Kimchi.Gate.VarBaseMul";
+	"Kimchi.Gate.VarBaseMul" -> "Kimchi.Gate.AddComplete";
+	"Kimchi.Index.Aggregate" -> "Kimchi.Index.CopySoundness";
+	"Kimchi.Index.Basic" -> "Kimchi.Permutation.Wiring";
+	"Kimchi.Index.CopySoundness" -> "Kimchi.Index.Satisfies";
+	"Kimchi.Index.Degree" -> "Kimchi.Index.Aggregate";
+	"Kimchi.Index.Satisfies" -> "Kimchi.Lift";
+	"Kimchi.Index.Satisfies" -> "Kimchi.Index.Basic";
+	"Kimchi.Permutation.Copy" -> "Kimchi.Permutation.Permutation";
+	"Kimchi.Permutation.Permutation" -> "Kimchi.GrandProduct";
+	"Kimchi.Permutation.Permutation" -> "Kimchi.SchwartzZippel";
+	"Kimchi.Permutation.Wiring" -> "Kimchi.Permutation.Copy";
+	"Kimchi.Protocol.Binding" -> "Bulletproof.Soundness";
+	"Kimchi.Protocol.Binding" -> "Kimchi.Protocol.Correspond";
+	"Kimchi.Protocol.Correspond" -> "Bulletproof.Protocol";
+	"Kimchi.Protocol.Correspond" -> "Kimchi.Index.Aggregate";
+	"Kimchi.Protocol.Equation" -> "Kimchi.Index.Degree";
+	"Kimchi.Protocol.Equation" -> "Kimchi.Protocol.Linearization";
+	"Kimchi.Protocol.Linearization" -> "Kimchi.Lift";
+	"Kimchi.Protocol.Soundness" -> "Kimchi.Protocol.Binding";
+	"Kimchi.Protocol.Soundness" -> "Kimchi.Protocol.Equation";
+	"Kimchi.Verifier.Capstone" -> "Kimchi.Protocol.Soundness";
+	"Kimchi.Verifier.Capstone" -> "Kimchi.Verifier.Reflect";
+	"Kimchi.Verifier.Kimchi" -> "Bulletproof.Wire";
+	"Kimchi.Verifier.Kimchi" -> "Kimchi.Protocol.Linearization";
+	"Kimchi.Verifier.Reflect" -> "Bulletproof.Reflection";
+	"Kimchi.Verifier.Reflect" -> "Kimchi.Protocol.Correspond";
+	"Kimchi.Verifier.Reflect" -> "Kimchi.Protocol.Equation";
+	"Kimchi.Verifier.Reflect" -> "Kimchi.Verifier.Kimchi";
+	"Snarky.AsProver" -> "Snarky.CVar";
+	"Snarky.Builder" -> "Snarky.Monad";
+	"Snarky.Constraint.Basic" -> "Snarky.CVar";
+	"Snarky.Constraint.R1CS" -> "Snarky.Constraint.Basic";
+	"Snarky.DSL" -> "Snarky.Types";
+	"Snarky.Example" -> "Snarky.Constraint.R1CS";
+	"Snarky.Example" -> "Snarky.DSL";
+	"Snarky.Example" -> "Snarky.Laws";
+	"Snarky.Kimchi.Backend" -> "Kimchi.Gate.Generic";
+	"Snarky.Kimchi.Backend" -> "Snarky.Constraint.Basic";
+	"Snarky.Kimchi.Backend" -> "Snarky.Prover";
+	"Snarky.Kimchi.Example" -> "Snarky.DSL";
+	"Snarky.Kimchi.Example" -> "Snarky.Kimchi.Backend";
+	"Snarky.Laws" -> "Snarky.Prover";
+	Snarky -> "Snarky.Example";
+	"Snarky.Monad" -> "Snarky.AsProver";
+	"Snarky.Prover" -> "Snarky.Builder";
+	"Snarky.Types" -> "Snarky.Constraint.Basic";
+	"Snarky.Types" -> "Snarky.Monad";
+	"Snarky.Types" -> "Snarky.Vec";
 }

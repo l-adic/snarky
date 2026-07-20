@@ -21,8 +21,11 @@ declare -A pkg_color=(
   [snarky]="#ffd6d6"         # red
 )
 
-srcs() { # $1 = package dir
-  find "$1" -name '*.lean' -not -path '*/.lake/*' -not -path '*/scripts/*' | sort
+srcs() { # $1 = package dir -- library sources only
+  # Excludes: build/script drivers, the fixture library (`KimchiFixture/`, test-only),
+  # and executable entry points (`Main.lean`, the kimchi-demo) — none are library API.
+  find "$1" -name '*.lean' -not -path '*/.lake/*' -not -path '*/scripts/*' \
+    -not -path '*/KimchiFixture/*' -not -name 'Main.lean' | sort
 }
 
 mod_of() { # $1 = package dir, $2 = file path -> module name
@@ -96,4 +99,11 @@ emit_grouped_nodes() { # $1 = package dir
   echo '}'
 } > "$out"
 
-echo "wrote ${out}: $(grep -cE '^ +"[^"]+";$' "$out") module node(s), $(grep -c ' -> ' "$out") edge(s)"
+# Transitive reduction: drop edges implied by transitivity (the import DAG is acyclic,
+# so the reduction is unique), leaving only direct dependencies. `tred` preserves the
+# clusters and node styling.
+if command -v tred >/dev/null 2>&1; then
+  tred "$out" > "$out.tmp" && mv "$out.tmp" "$out"
+fi
+
+echo "wrote ${out}: $(grep -cE '^[[:space:]]+"[^"]+";$' "$out") module node(s), $(grep -c ' -> ' "$out") edge(s)"
