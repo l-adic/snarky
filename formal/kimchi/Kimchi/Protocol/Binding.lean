@@ -59,7 +59,7 @@ theorem rowPoly_eval {n : ℕ} (a : Fin n → F) (x : F) :
   simp only [eval_monomial]
 
 /-- A row polynomial of `n` coefficients has degree `< n`. -/
-theorem rowPoly_natDegree_lt {n : ℕ} (hn : 0 < n) (a : Fin n → F) :
+private theorem rowPoly_natDegree_lt {n : ℕ} (hn : 0 < n) (a : Fin n → F) :
     (rowPoly a).natDegree < n := by
   apply lt_of_le_of_lt (natDegree_sum_le _ _)
   rw [Finset.fold_max_lt]
@@ -71,7 +71,7 @@ theorem rowPoly_natDegree_lt_two_pow {k : ℕ} (a : Fin (2 ^ k) → F) :
   rowPoly_natDegree_lt (Nat.two_pow_pos k) a
 
 /-- The row polynomial's coefficients are the witness entries. -/
-theorem rowPoly_coeff {n : ℕ} (a : Fin n → F) (i : Fin n) :
+private theorem rowPoly_coeff {n : ℕ} (a : Fin n → F) (i : Fin n) :
     (rowPoly a).coeff (i : ℕ) = a i := by
   unfold rowPoly
   simp only [finsetSum_coeff, coeff_monomial]
@@ -102,7 +102,7 @@ theorem commitPoly_eq_commit (σ : SRS G) (p : Polynomial F) :
 
 /-- A fixed-blinder column commitment is the hiding commitment of the coefficient
 vector at blinder `1` — production's `mask_fixed` on the six selectors. -/
-theorem commitPolyMasked_eq_commit (σ : SRS G) (p : Polynomial F) :
+private theorem commitPolyMasked_eq_commit (σ : SRS G) (p : Polynomial F) :
     commitPolyMasked σ p = commit σ (fun i => p.coeff (i : ℕ)) 1 := by
   simp only [commitPolyMasked, commitPoly, commit, one_smul]
 
@@ -111,7 +111,7 @@ extracted witness pair `(a, ρ)` commits to an unblinded column commitment
 `commitPoly σ p` with `p` inside the SRS degree bound, binding pins the pair: the row
 polynomial is `p` itself and the blinder is `0`. The binding hypothesis is the
 no-DL-relation form, matching `batch_soundnessA`'s. -/
-theorem bound_eq_of_commitPoly (σ : SRS G)
+private theorem bound_eq_of_commitPoly (σ : SRS G)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
     {a : Fin (2 ^ σ.k) → F} {ρ : F} {p : Polynomial F}
     (hcommit : commit σ a ρ = commitPoly σ p) (hdeg : p.natDegree < 2 ^ σ.k) :
@@ -128,7 +128,7 @@ theorem bound_eq_of_commitPoly (σ : SRS G)
 /-- **A bound row against a masked pinned column is that column's polynomial.** The
 fixed-blinder (`commitPolyMasked`) analogue of `bound_eq_of_commitPoly`: binding pins
 the row polynomial to `p` and the blinder to `1`. -/
-theorem bound_eq_of_commitPolyMasked (σ : SRS G)
+private theorem bound_eq_of_commitPolyMasked (σ : SRS G)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
     {a : Fin (2 ^ σ.k) → F} {ρ : F} {p : Polynomial F}
     (hcommit : commit σ a ρ = commitPolyMasked σ p) (hdeg : p.natDegree < 2 ^ σ.k) :

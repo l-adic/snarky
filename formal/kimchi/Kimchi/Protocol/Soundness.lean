@@ -142,7 +142,7 @@ same point carry the same row polynomial. From the no-DL-relation binding hypoth
 `congrArg Prod.fst`, mirroring `bound_eq_of_commitPoly`). Consumed wherever a commitment
 is FIXED across the challenge grid: the witness rows and, per `(β, γ)`, the accumulator
 row. -/
-theorem bound_unique [Field F] [AddCommGroup G] [Module F G] (σ : SRS G)
+private theorem bound_unique [Field F] [AddCommGroup G] [Module F G] (σ : SRS G)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
     {a a' : Fin (2 ^ σ.k) → F} {ρ ρ' : F}
     (h : commit σ a ρ = commit σ a' ρ') : rowPoly a = rowPoly a' := by
@@ -162,13 +162,13 @@ coefficient columns, `37–42` the six selectors in `GateType` enumeration order
 /-- The six selector commitments of a verifier key, as a vector in `GateType`
 enumeration order (the zero gate has no selector). Project-local packaging for the batch
 assembly. -/
-def selComm (comms : IndexComms G) : Fin 6 → G :=
+private def selComm (comms : IndexComms G) : Fin 6 → G :=
   ![comms.generic, comms.poseidon, comms.completeAdd, comms.varBaseMul,
     comms.endoMul, comms.endoScalar]
 
 /-- The gate type of the `j`-th selector row, in the same enumeration order as
 `selComm`. -/
-def selGate : Fin 6 → GateType :=
+private def selGate : Fin 6 → GateType :=
   ![.generic, .poseidon, .completeAdd, .varBaseMul, .endoMul, .endoScalar]
 
 /-- Batch row of witness column `c`. -/
@@ -196,13 +196,13 @@ def batchC (wC : Fin 15 → G) (zC : G) (comms : IndexComms G) : Fin 43 → G :=
   else selComm comms ⟨(i : ℕ) - 37, by omega⟩
 
 /-- Row extraction: a witness row holds its witness commitment. -/
-theorem batchC_wRow (wC : Fin 15 → G) (zC : G) (comms : IndexComms G) (c : Fin 15) :
+private theorem batchC_wRow (wC : Fin 15 → G) (zC : G) (comms : IndexComms G) (c : Fin 15) :
     batchC wC zC comms (wRow c) = wC c := by
   simp only [batchC, wRow]
   rw [dif_pos c.isLt]
 
 /-- Row extraction: the accumulator row holds the accumulator commitment. -/
-theorem batchC_zRow (wC : Fin 15 → G) (zC : G) (comms : IndexComms G) :
+private theorem batchC_zRow (wC : Fin 15 → G) (zC : G) (comms : IndexComms G) :
     batchC wC zC comms zRow = zC := by
   have h1 : ¬ (15 : ℕ) < 15 := by omega
   have h2 : (15 : ℕ) < 16 := by omega
@@ -210,7 +210,7 @@ theorem batchC_zRow (wC : Fin 15 → G) (zC : G) (comms : IndexComms G) :
   rw [dif_neg h1, if_pos h2]
 
 /-- Row extraction: a σ row holds its verifier-key σ commitment. -/
-theorem batchC_sRow (wC : Fin 15 → G) (zC : G) (comms : IndexComms G) (i : Fin 6) :
+private theorem batchC_sRow (wC : Fin 15 → G) (zC : G) (comms : IndexComms G) (i : Fin 6) :
     batchC wC zC comms (sRow i) = comms.sigma ⟨(i : ℕ), by omega⟩ := by
   have h1 : ¬ 16 + (i : ℕ) < 15 := by omega
   have h2 : ¬ 16 + (i : ℕ) < 16 := by omega
@@ -222,7 +222,7 @@ theorem batchC_sRow (wC : Fin 15 → G) (zC : G) (comms : IndexComms G) (i : Fin
   omega
 
 /-- Row extraction: a coefficient row holds its verifier-key coefficient commitment. -/
-theorem batchC_cRow (wC : Fin 15 → G) (zC : G) (comms : IndexComms G) (c : Fin 15) :
+private theorem batchC_cRow (wC : Fin 15 → G) (zC : G) (comms : IndexComms G) (c : Fin 15) :
     batchC wC zC comms (cRow c) = comms.coefficients c := by
   have h1 : ¬ 22 + (c : ℕ) < 15 := by omega
   have h2 : ¬ 22 + (c : ℕ) < 16 := by omega
@@ -236,7 +236,7 @@ theorem batchC_cRow (wC : Fin 15 → G) (zC : G) (comms : IndexComms G) (c : Fin
   omega
 
 /-- Row extraction: a selector row holds its verifier-key selector commitment. -/
-theorem batchC_selRow (wC : Fin 15 → G) (zC : G) (comms : IndexComms G) (j : Fin 6) :
+private theorem batchC_selRow (wC : Fin 15 → G) (zC : G) (comms : IndexComms G) (j : Fin 6) :
     batchC wC zC comms (selRow j) = selComm comms j := by
   have h1 : ¬ 37 + (j : ℕ) < 15 := by omega
   have h2 : ¬ 37 + (j : ℕ) < 16 := by omega
@@ -252,7 +252,7 @@ theorem batchC_selRow (wC : Fin 15 → G) (zC : G) (comms : IndexComms G) (j : F
 /-- On the honest indexer, the `j`-th selector commitment is the masked commitment of
 the `selGate j` selector interpolant — the shape `bound_eval_of_commitPolyMasked`
 consumes. -/
-theorem selComm_indexerOf [Field F] [AddCommGroup G] [Module F G] {n : ℕ}
+private theorem selComm_indexerOf [Field F] [AddCommGroup G] [Module F G] {n : ℕ}
     (σ : SRS G) (idx : Index F n) (j : Fin 6) :
     selComm (indexerOf σ idx) j = commitPolyMasked σ (idx.selectorPoly (selGate j)) := by
   fin_cases j <;> rfl
@@ -296,7 +296,7 @@ record IS the honest record `evalsOf` at the extracted table. The witness fields
 through `evalsOf_extractTable_w`/`_wOmega`; the `z`, σ, coefficient, and selector fields
 are definitional (`coeffPoly`/`coeffRow`/`sigmaPoly` unfold to the `columnPoly` forms
 `evalsOf` carries). -/
-theorem claimedEvals_eq_evalsOf [Field F] {n : ℕ} [NeZero n] (idx : Index F n)
+private theorem claimedEvals_eq_evalsOf [Field F] {n : ℕ} [NeZero n] (idx : Index F n)
     (W : Fin 15 → Polynomial F) (hW : ∀ c, (W c).natDegree < n)
     (z : Polynomial F) (ζ : F) (E : Fin 43 → Fin 2 → F)
     (hw : ∀ (c : Fin 15) (j : Fin 2), E (wRow c) j = (W c).eval (![ζ, idx.omega * ζ] j))

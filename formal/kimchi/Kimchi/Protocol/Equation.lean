@@ -43,7 +43,7 @@ noncomputable def evalsOf (idx : Index F n) (wTab : Fin n → Fin 15 → F)
 /-- The evaluation environment of the honest record is the polynomial environment
 mapped through evaluation at `ζ` — the junction the gate-side naturality squares
 plug into. The next-row side is `eval_comp`: `(p.comp (C ω · X)).eval ζ = p.eval (ω·ζ)`. -/
-theorem evalEnv_evalsOf (idx : Index F n) (wTab : Fin n → Fin 15 → F)
+private theorem evalEnv_evalsOf (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     (z : Polynomial F) (ζ : F) :
     evalEnv (evalsOf idx wTab z ζ)
       = (polyEnv idx.omega wTab idx.coeffTable).map
@@ -98,7 +98,7 @@ by the `Argument` naturality square at `aeval ζ` (through the junction
 `alphaCombo_eq_sum_getD`. -/
 
 /-- Evaluation commutes with defaulted indexing (the default `0` evaluates to `0`). -/
-theorem eval_getD (ζ : F) :
+private theorem eval_getD (ζ : F) :
     ∀ (L : List (Polynomial F)) (k : ℕ),
       (L.getD k 0).eval ζ = (L.map (Polynomial.eval ζ)).getD k 0
   | [], _ => by simp
@@ -108,7 +108,7 @@ theorem eval_getD (ζ : F) :
 /-- Any argument's polynomial constraint list, evaluated at `ζ`, is its field-level
 list at the honest record — the naturality square at `aeval ζ`, pasted onto the
 junction `evalEnv_evalsOf`. -/
-theorem constraints_map_evalsOf (A : Argument F) (idx : Index F n)
+private theorem constraints_map_evalsOf (A : Argument F) (idx : Index F n)
     (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (ζ : F) :
     (A.constraints (polyEnv idx.omega wTab idx.coeffTable)).map (Polynomial.eval ζ)
       = A.constraints (evalEnv (evalsOf idx wTab z ζ)) := by
@@ -118,7 +118,7 @@ theorem constraints_map_evalsOf (A : Argument F) (idx : Index F n)
   simpa [Polynomial.coe_aeval_eq_eval] using h
 
 /-- A sum over the gate types, in enumeration order. -/
-theorem sum_gateType {M : Type*} [AddCommMonoid M] (f : GateType → M) :
+private theorem sum_gateType {M : Type*} [AddCommMonoid M] (f : GateType → M) :
     ∑ g : GateType, f g
       = f .zero + f .generic + f .poseidon + f .completeAdd + f .varBaseMul
         + f .endoMul + f .endoScalar := by
@@ -132,7 +132,7 @@ theorem sum_gateType {M : Type*} [AddCommMonoid M] (f : GateType → M) :
 /-- **The gate side of the verifier equation.** The shared-pool α-sum of the gate
 members at `ζ` is the closed-form gate linearization at the honest record, minus the
 public interpolant. -/
-theorem gateMember_sum_eval [DecidableEq F] [NeZero n] (idx : Index F n)
+private theorem gateMember_sum_eval [DecidableEq F] [NeZero n] (idx : Index F n)
     (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (ζ α : F) :
     ∑ k ∈ Finset.range Index.gateAlphaCount, α ^ k * (idx.gateMember pub wTab k).eval ζ
@@ -207,7 +207,7 @@ the same masked window `[n − zkRows, n)`, so the identity is `eval_prod` on th
 
 /-- The verifier's masked-row product `zkpmEval` is the evaluation of the quotient's
 `Permutation.zkpm` polynomial at `ζ`. -/
-theorem zkpmEval_eq (nn zkRows : ℕ) (ω ζ : F) :
+private theorem zkpmEval_eq (nn zkRows : ℕ) (ω ζ : F) :
     zkpmEval nn zkRows ω ζ = (Permutation.zkpm ω nn zkRows).eval ζ := by
   simp only [zkpmEval, Permutation.zkpm, Polynomial.eval_prod, eval_sub, eval_X, eval_C]
 
@@ -220,7 +220,7 @@ this is the tiny naturality square that lets the σ-side recurrence recombine. -
 
 /-- The `permWitnessPoly` interpolant of column `col`, evaluated at `ζ`, is the honest
 record's witness value in that column. -/
-theorem eval_permWitnessPoly_eq_w [NeZero n] (idx : Index F n)
+private theorem eval_permWitnessPoly_eq_w [NeZero n] (idx : Index F n)
     (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (ζ : F) (col : Fin 7)
     (h : (col : ℕ) < 15) :
     (idx.permWitnessPoly wTab col).eval ζ = (evalsOf idx wTab z ζ).w ⟨(col : ℕ), h⟩ := by
@@ -238,7 +238,7 @@ two products here are kept syntactically identical to `ftEval0`'s lets so the he
 `ftEval0`'s σ-side product against `z(ζω)`, plus its shift-side product against `z(ζ)`,
 all at `α²¹·zkpm(ζ)`, equals `α²¹` times the quotient's `0`-th permutation constraint at
 the honest record. -/
-theorem permMember_eval [NeZero n] (idx : Index F n) (wTab : Fin n → Fin 15 → F)
+private theorem permMember_eval [NeZero n] (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     (z : Polynomial F) (ζ β γ α : F) (σ : Fin 7 → Polynomial F)
     (hσ : ∀ i : Fin 6, (σ ⟨(i : ℕ), by omega⟩).eval ζ = (evalsOf idx wTab z ζ).s i)
     (r₀ r₁ : Fin n) :
@@ -296,7 +296,7 @@ signed sum of the two quotient permutation-boundary members `(z − 1)·lagNumer
 /-- **Boundary side of the verifier equation.** `ftEval0`'s boundary quotient equals
 `−α²²·m₁(ζ) − α²³·m₂(ζ)`, the two accumulator-boundary permutation members `(z−1)·lagNumer`
 at rows `0` and `n − zkRows`, under `ζ ≠ 1` and `ζ ≠ ω^(n−zkRows)`. -/
-theorem boundary_eval [NeZero n] (idx : Index F n) (wTab : Fin n → Fin 15 → F)
+private theorem boundary_eval [NeZero n] (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     (z : Polynomial F) (ζ α : F)
     (hζ₁ : ζ ≠ 1) (hζb : ζ ≠ idx.omega ^ (n - idx.zkRows)) :
     ((ζ ^ n - 1) * α ^ 22 * (ζ - idx.omega ^ (n - idx.zkRows))
