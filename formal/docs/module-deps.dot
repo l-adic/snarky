@@ -1,5 +1,6 @@
 digraph "formal-modules" {
   rankdir=TB;
+  ranksep=1.6; nodesep=0.25;
   node [shape=box, style=filled, fillcolor=white, fontsize=10, fontname="Helvetica"];
   edge [color=gray40, arrowsize=0.6];
   subgraph "cluster_pasta" {

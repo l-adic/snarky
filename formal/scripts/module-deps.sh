@@ -65,6 +65,9 @@ emit_grouped_nodes() { # $1 = package dir
   # Top-to-bottom: an edge `A -> B` (module A imports B) points downward, so an
   # arrow pointing down reads "depends on" — dependencies sink toward the bottom.
   echo '  rankdir=TB;'
+  # Wide, shallow DAG: give each dependency level generous vertical separation so the
+  # layers read clearly, and keep nodes horizontally tight so it does not sprawl wider.
+  echo '  ranksep=1.6; nodesep=0.25;'
   echo '  node [shape=box, style=filled, fillcolor=white, fontsize=10, fontname="Helvetica"];'
   echo '  edge [color=gray40, arrowsize=0.6];'
   for p in "${pkgs[@]}"; do
