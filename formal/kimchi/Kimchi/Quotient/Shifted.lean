@@ -44,7 +44,7 @@ noncomputable def shift (ω : F) (W : Polynomial F) : Polynomial F :=
 
 /-- **The shift evaluates at the rotated point.** For every `ω x : F` and `W ∈ F[X]`,
 `(shift ω W)(x) = W(ω·x)`. -/
-theorem eval_shift (ω : F) (W : Polynomial F) (x : F) :
+private theorem eval_shift (ω : F) (W : Polynomial F) (x : F) :
     (shift ω W).eval x = W.eval (ω * x) := by
   unfold shift
   rw [eval_comp, eval_mul, eval_C, eval_X]

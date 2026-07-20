@@ -56,7 +56,7 @@ namespace SZ
 variable {F : Type*} [Field F] [DecidableEq F]
 
 /-- The combining polynomial of a coefficient vector: `∑ k, c k · X^k`. -/
-noncomputable def combPoly {K : ℕ} (c : Fin K → F) : Polynomial F :=
+private noncomputable def combPoly {K : ℕ} (c : Fin K → F) : Polynomial F :=
   ∑ k : Fin K, Polynomial.C (c k) * Polynomial.X ^ (k : ℕ)
 
 omit [DecidableEq F] in
@@ -73,7 +73,7 @@ private theorem combPoly_coeff {K : ℕ} (c : Fin K → F) (k : Fin K) :
 
 omit [DecidableEq F] in
 /-- The combining polynomial vanishes identically iff the vector is zero. -/
-theorem combPoly_eq_zero_iff {K : ℕ} (c : Fin K → F) : combPoly c = 0 ↔ ∀ k, c k = 0 := by
+private theorem combPoly_eq_zero_iff {K : ℕ} (c : Fin K → F) : combPoly c = 0 ↔ ∀ k, c k = 0 := by
   constructor
   · intro h k
     have hc := combPoly_coeff c k
@@ -85,7 +85,7 @@ theorem combPoly_eq_zero_iff {K : ℕ} (c : Fin K → F) : combPoly c = 0 ↔ �
 
 omit [DecidableEq F] in
 /-- Evaluating the combining polynomial computes the α-combination of the vector. -/
-theorem combPoly_eval {K : ℕ} (c : Fin K → F) (α : F) :
+private theorem combPoly_eval {K : ℕ} (c : Fin K → F) (α : F) :
     (combPoly c).eval α = ∑ k : Fin K, α ^ (k : ℕ) * c k := by
   unfold combPoly
   rw [Polynomial.eval_finsetSum]

@@ -47,8 +47,6 @@ Source: kimchi `endosclmul.rs`, module-doc layout table and `constraint_checks`.
 * `argument` — the EndoMul `Argument F` instance, parametrized by `endo : F` (two-row layout).
 * `rows_iff_dvd` — the divisibility corollary, a specialization of the `Argument` engine
   theorems.
-
-Source of truth: `blueprint/src/chapters/Kimchi_Quotient_EndoMul.tex`.
 -/
 
 namespace Kimchi.Quotient.EndoMul

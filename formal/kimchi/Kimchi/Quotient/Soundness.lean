@@ -28,8 +28,6 @@ by citing `Gate.<G>.sound` — not restated here.
 * `AddComplete.soundness` / `VarBaseMul.soundness` / `EndoMul.soundness` — the per-gate
   soundness statements, pure specializations of `Argument.soundness` at each gate's
   `argument` instance.
-
-Source of truth: `blueprint/src/chapters/Kimchi_Quotient_Soundness.tex`.
 -/
 
 /-! ## Per-gate soundness -/

@@ -25,8 +25,6 @@ what the permutation accumulator forces to agree on both sides.
   Schwartz–Zippel bad sets for the two challenges.
 * `multiset_eq_of_prod_eval` — the headline: field-level products agreeing at one `(β, γ)`
   outside the bad sets force multiset equality.
-
-Source of truth: `blueprint/src/chapters/Kimchi_Quotient_GrandProduct.tex`.
 -/
 
 namespace Kimchi.Quotient
@@ -41,13 +39,13 @@ variable {F : Type*} [Field F]
 `X + C (C p.1 + C p.2 * X) ∈ Polynomial (Polynomial F)`, where the outer `X` is the `γ` variable,
 the inner `X` is the `β` variable, and the two `C`s are the inner/outer constant embeddings. As
 an element of `F[β][γ]` this is `γ + p.1 + p.2·β`. -/
-noncomputable def pairFactor (p : F × F) : Polynomial (Polynomial F) :=
+private noncomputable def pairFactor (p : F × F) : Polynomial (Polynomial F) :=
   Polynomial.X + Polynomial.C (Polynomial.C p.1 + Polynomial.C p.2 * Polynomial.X)
 
 /-- **Two-variable evaluation.** For `b g : F` and `P ∈ Polynomial (Polynomial F)`, substitute
 the outer variable `γ := g` (landing in `Polynomial F`), then the inner variable `β := b`. Thus
 `eval2 b g P` is the value of `P` at `β = b`, `γ = g`. -/
-noncomputable def eval2 (b g : F) (P : Polynomial (Polynomial F)) : F :=
+private noncomputable def eval2 (b g : F) (P : Polynomial (Polynomial F)) : F :=
   (P.eval (Polynomial.C g)).eval b
 
 /-! ## The core: equal products force equal multisets -/
@@ -168,7 +166,7 @@ private lemma natDegree_coeff_prod_pairFactor (m : Multiset (F × F)) :
       have := ih k
       omega
 
-/-! ## Project-local Mathlib supplement — single-challenge Schwartz–Zippel (β,γ collapse)
+/-! ## Mathlib supplement — single-challenge Schwartz–Zippel (β,γ collapse)
 
 The single-challenge (counting) Schwartz–Zippel argument for the β,γ collapse, in place of a
 two-variable injective grid. Working in `F[β][γ]` with
@@ -191,14 +189,14 @@ variable [DecidableEq F]
 /-- **Bad β.** Those `β` at which the γ-polynomial of `m₁` minus that of `m₂` collapses to zero
 even though `m₁ ≠ m₂`: concretely the roots of `Δ`'s outer-leading (γ-degree) coefficient, a
 nonzero inner β-polynomial when `Δ ≠ 0`. EMPTY when `m₁ = m₂`, keeping the hypotheses
-satisfiable. Project-local: the β-axis of the S2 grand-product SZ collapse. -/
+satisfiable — the β-axis of the grand-product collapse. -/
 noncomputable def badBetas (m₁ m₂ : Multiset (F × F)) : Finset F :=
   if m₁ = m₂ then ∅ else (gpDiff m₁ m₂).leadingCoeff.roots.toFinset
 
 /-- **Card bound for bad β** — at most `max |m₁| |m₂|`. The empty case is trivial; otherwise the
 distinct roots of `Δ.leadingCoeff` number at most its degree, and `Δ.leadingCoeff = Δ.coeff
 Δ.natDegree` is a coefficient of a degree-`Δ` polynomial, each coefficient of inner degree
-`≤ max |m₁| |m₂|` via `natDegree_coeff_prod_pairFactor`. Project-local: makes `∉ badBetas`
+`≤ max |m₁| |m₂|` via `natDegree_coeff_prod_pairFactor`; the bound is what keeps `∉ badBetas`
 non-vacuous. -/
 theorem card_badBetas_le (m₁ m₂ : Multiset (F × F)) :
     (badBetas m₁ m₂).card ≤ max (Multiset.card m₁) (Multiset.card m₂) := by
@@ -217,15 +215,15 @@ theorem card_badBetas_le (m₁ m₂ : Multiset (F × F)) :
     exact hcoeff _
 
 /-- **Bad γ at a good β.** The roots of `Δ` specialised at `β` (the γ-polynomial `Δ.map
-(evalRingHom β)`), which is nonzero when `β ∉ badBetas`. EMPTY when `m₁ = m₂`. Project-local:
-the γ-axis of the S2 grand-product SZ collapse. -/
+(evalRingHom β)`), which is nonzero when `β ∉ badBetas`. EMPTY when `m₁ = m₂` — the γ-axis
+of the grand-product collapse. -/
 noncomputable def badGammas (m₁ m₂ : Multiset (F × F)) (β : F) : Finset F :=
   if m₁ = m₂ then ∅ else ((gpDiff m₁ m₂).map (Polynomial.evalRingHom β)).roots.toFinset
 
 /-- **Card bound for bad γ** — at most `max |m₁| |m₂|`, for every `β`. The specialised polynomial
 has degree at most `Δ.natDegree ≤ max |m₁| |m₂|` (via `natDegree_map_le` and
-`natDegree_prod_pairFactor`), so its distinct roots number no more. Project-local: makes
-`∉ badGammas` non-vacuous. -/
+`natDegree_prod_pairFactor`), so its distinct roots number no more, which keeps `∉ badGammas`
+non-vacuous. -/
 theorem card_badGammas_le (m₁ m₂ : Multiset (F × F)) (β : F) :
     (badGammas m₁ m₂ β).card ≤ max (Multiset.card m₁) (Multiset.card m₂) := by
   unfold badGammas
@@ -243,7 +241,7 @@ field-level products `∏ (γ + p.1 + p.2·β)` over `m₁` and `m₂` agree at 
 (β outside `badBetas`, γ outside `badGammas … β`), then `m₁ = m₂`. Iterated univariate SZ: a good
 β keeps the γ-specialisation `Δ.map (evalRingHom β)` nonzero, a good γ is not among its roots, yet
 the product equality forces `(Δ.map (evalRingHom β)).eval γ = 0` — contradiction unless `Δ = 0`,
-i.e. `m₁ = m₂`. Project-local: the S2 single-challenge grand-product core. -/
+i.e. `m₁ = m₂`. The single-challenge grand-product core. -/
 theorem multiset_eq_of_prod_eval (m₁ m₂ : Multiset (F × F)) (β γ : F)
     (hβ : β ∉ badBetas m₁ m₂) (hγ : γ ∉ badGammas m₁ m₂ β)
     (h : (m₁.map (fun p => γ + p.1 + p.2 * β)).prod

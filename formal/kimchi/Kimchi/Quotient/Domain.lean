@@ -40,7 +40,7 @@ noncomputable def zH (F : Type*) [Field F] (n : ℕ) : Polynomial F := X ^ n - 1
 
 /-- **Factorization of `Z_H`.** For a primitive `n`-th root of unity `ω` with `0 < n`,
 `Z_H = ∏_{i<n} (X - ω^i)`. -/
-theorem zH_eq_prod (hω : IsPrimitiveRoot ω n) (hn : 0 < n) :
+private theorem zH_eq_prod (hω : IsPrimitiveRoot ω n) (hn : 0 < n) :
     zH F n = ∏ i ∈ Finset.range n, (X - C (ω ^ i)) := by
   unfold zH
   rw [← C_1, X_pow_sub_C_eq_prod hω hn (one_pow n)]

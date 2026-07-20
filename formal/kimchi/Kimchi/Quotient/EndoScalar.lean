@@ -40,8 +40,6 @@ where each `xi` is a two-bit "crumb".
   (`thm:quotient_endoscalar_rows_iff_dvd`).
 * `soundness` — the abstract quotient-argument soundness statement
   (`thm:quotient_endoscalar_soundness`).
-
-Source of truth: `blueprint/src/chapters/Kimchi_Quotient_EndoScalar.tex`.
 -/
 
 namespace Kimchi.Quotient.EndoScalar

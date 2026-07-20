@@ -16,7 +16,7 @@ Two strata:
   `(value, address)` pairs — the own-address tagging against the wired-to-address
   tagging — forces `v ∘ σp = v`, by membership alone: the pair `(v c, addr (σp c))`
   must occur among the own-address pairs, and address injectivity pins its cell to
-  `σp c`. The single-challenge form feeds `multiset_eq_of_prod_eval` (the S2 grand-product
+  `σp c`. The single-challenge form feeds `multiset_eq_of_prod_eval` (the grand-product
   Schwartz–Zippel core) with the product equality at one good pair `(β, γ)` and descends.
 
 * **The kimchi headline** (`Permutation.copy_soundness`): the per-challenge
@@ -42,7 +42,7 @@ omit [Field F] in
 multiset of `(value, wired-to address)` pairs and addresses are injective, values are
 invariant under the wiring: the pair `(v c, addr (σp c))` occurs among the own-address
 pairs, and its address pins its cell to `σp c`. -/
-theorem values_eq_of_multiset_eq {cells : Type*} [Fintype cells]
+private theorem values_eq_of_multiset_eq {cells : Type*} [Fintype cells]
     (v addr : cells → F) (haddr : Function.Injective addr) (σp : Equiv.Perm cells)
     (h : (Finset.univ.val.map fun c => (v c, addr c))
       = (Finset.univ.val.map fun c => (v c, addr (σp c)))) :
@@ -132,7 +132,7 @@ theorem copy_soundness_of_dvd [DecidableEq F] {ω : F} {n : ℕ}
       (w (σp c).1).eval (ω ^ ((σp c).2 : ℕ)) = (w c.1).eval (ω ^ (c.2 : ℕ)) := by
   -- The field-level core at the cell data.
   refine Kimchi.Quotient.copy_soundness β γ _ _ haddr σp hβ hγ ?_
-  -- Milestone 3 gives the row-product equality; reindex rows × columns to cells and
+  -- The grand-product argument gives the row-product equality; reindex rows × columns to cells and
   -- rewrite the sigma side through the wiring semantics.
   have hrows := Permutation.soundness_of_dvd hω hn hzk0 hzkn zg w σpoly shifts β γ hdvd
   calc ∏ x : Fin 7 × Fin (n - zkRows),

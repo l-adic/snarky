@@ -36,8 +36,6 @@ sits on the next row; the round constants `rc` come from the coefficient row (`r
 * `argument` — the Poseidon `Argument F` instance.
 * `rows_iff_dvd` — the divisibility corollary, specialization of `Argument.rows_iff_dvd`.
 * `soundness` — the quotient-argument soundness, specialization of `Argument.soundness`.
-
-Source of truth: `blueprint/src/chapters/Kimchi_Quotient_Poseidon.tex`.
 -/
 
 namespace Kimchi.Quotient.Poseidon
@@ -73,7 +71,7 @@ def rowWitness [NeZero n] (wTab : Fin n → Fin 15 → F) (i : Fin n) : Gate.Pos
 
 /-- **Poseidon row round constants.** The round-constant triples at row `i` of a coefficient
 table. -/
-def rcRow (qTab : Fin n → Fin 15 → F) (i : Fin n) : Fin 5 → F × F × F :=
+private def rcRow (qTab : Fin n → Fin 15 → F) (i : Fin n) : Fin 5 → F × F × F :=
   rcMap (qTab i)
 
 /-- **Poseidon poly witness.** The state cells as column interpolants: `columnPoly` on the

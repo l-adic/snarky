@@ -76,7 +76,7 @@ noncomputable def lagNumer (ω : F) {n : ℕ} (r : Fin n) : Polynomial F :=
 
 /-- `lagNumer` is the Horner quotient `∑ᵢ ω^{r(n−1−i)} Xⁱ`: degree-`< n` agreement on
 the domain — both vanish at every node but `ω^r`, where both take `n·ω^{−r}`. -/
-theorem lagNumer_eq_geom {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+private theorem lagNumer_eq_geom {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     (r : Fin n) :
     lagNumer ω r = ∑ i ∈ Finset.range n, C ((ω ^ (r : ℕ)) ^ (n - 1 - i)) * X ^ i := by
   haveI : NeZero n := ⟨hn.ne'⟩
@@ -174,7 +174,7 @@ noncomputable def constraints {n : ℕ} (ω : F) (zkRows : ℕ) (z : Polynomial 
 /-! ## Row lemmas -/
 
 /-- The mask does not vanish on the unmasked rows: `zkpm(ωⁱ) ≠ 0` for `i < n - zkRows`. -/
-theorem zkpm_eval_ne_zero {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (zkRows : ℕ) {i : ℕ}
+private theorem zkpm_eval_ne_zero {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (zkRows : ℕ) {i : ℕ}
     (hi : i < n - zkRows) : (zkpm ω n zkRows).eval (ω ^ i) ≠ 0 := by
   unfold zkpm
   rw [eval_prod]
@@ -187,7 +187,7 @@ theorem zkpm_eval_ne_zero {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (zkRow
 
 /-- The mask vanishes on the masked rows: `zkpm(ωⁱ) = 0` for `n - zkRows ≤ i < n` —
 the completeness twin of `zkpm_eval_ne_zero`. -/
-theorem zkpm_eval_zero {ω : F} {n : ℕ} (zkRows : ℕ) {i : ℕ}
+private theorem zkpm_eval_zero {ω : F} {n : ℕ} (zkRows : ℕ) {i : ℕ}
     (hlo : n - zkRows ≤ i) (hhi : i < n) : (zkpm ω n zkRows).eval (ω ^ i) = 0 := by
   unfold zkpm
   rw [eval_prod]
@@ -197,7 +197,7 @@ theorem zkpm_eval_zero {ω : F} {n : ℕ} (zkRows : ℕ) {i : ℕ}
 /-- A Lagrange-gated pin: if `Z_H ∣ (z - 1) · lagNumer r` then the accumulator is `1`
 at row `r` — the numerator's value at its own node is `n·ω^{−r} ≠ 0` (a primitive root
 forces `(n : F) ≠ 0`), so the pin factor must vanish. -/
-theorem eval_eq_one_of_boundary {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+private theorem eval_eq_one_of_boundary {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     (z : Polynomial F) (r : Fin n)
     (h : zH F n ∣ (z - 1) * lagNumer ω r) :
     z.eval (ω ^ (r : ℕ)) = 1 := by
@@ -213,7 +213,7 @@ theorem eval_eq_one_of_boundary {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) 
 
 /-- The gated aggregation forces the division-free recurrence on the unmasked rows:
 `z(ωⁱ⁺¹) · sigmaSide(ωⁱ) = z(ωⁱ) · shiftSide(ωⁱ)` for `i < n - zkRows`. -/
-theorem step_of_aggregation {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+private theorem step_of_aggregation {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     (zkRows : ℕ) (z : Polynomial F) (w σ : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (β γ : F)
     (h : zH F n ∣ zkpm ω n zkRows
       * (z * shiftSide w shifts β γ - shiftRow ω z * sigmaSide w σ β γ))

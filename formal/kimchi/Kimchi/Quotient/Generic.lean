@@ -43,12 +43,12 @@ column polynomial. -/
 
 /-- The first constraint polynomial
 `E₁ = Q₀·W₀ + Q₁·W₁ + Q₂·W₂ + Q₃·(W₀·W₁) + Q₄`. -/
-noncomputable def genericE1 (Q W : Fin 15 → Polynomial F) : Polynomial F :=
+private noncomputable def genericE1 (Q W : Fin 15 → Polynomial F) : Polynomial F :=
   Q 0 * W 0 + Q 1 * W 1 + Q 2 * W 2 + Q 3 * (W 0 * W 1) + Q 4
 
 /-- The second constraint polynomial
 `E₂ = Q₅·W₃ + Q₆·W₄ + Q₇·W₅ + Q₈·(W₃·W₄) + Q₉`. -/
-noncomputable def genericE2 (Q W : Fin 15 → Polynomial F) : Polynomial F :=
+private noncomputable def genericE2 (Q W : Fin 15 → Polynomial F) : Polynomial F :=
   Q 5 * W 3 + Q 6 * W 4 + Q 7 * W 5 + Q 8 * (W 3 * W 4) + Q 9
 
 /-! ## The `Argument` instance

@@ -20,8 +20,6 @@ naturality of `constraints` under evaluation at the domain nodes.
 * `argument` — the CompleteAdd `Argument F` instance (single-row layout).
 * `rows_iff_dvd` — the divisibility corollary, an immediate instance of the `Argument`
   engine theorems.
-
-Source of truth: `blueprint/src/chapters/Kimchi_Quotient_AddComplete.tex`.
 -/
 
 namespace Kimchi.Quotient.AddComplete

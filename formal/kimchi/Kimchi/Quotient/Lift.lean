@@ -56,8 +56,6 @@ proof in the library; every per-gate bridge is `constraints_map` pasted onto it.
   carrier instantiations, and the evaluation bridge between them.
 * `Argument` with `bridge` / `rows_iff_dvd` / `rowsSel_iff_dvd` / `soundness` — the per-gate
   interface and its four engine corollaries, each stated once.
-
-Source of truth: `blueprint/src/chapters/Kimchi_Quotient_Lift.tex`.
 -/
 
 namespace Kimchi.Quotient
@@ -160,7 +158,7 @@ noncomputable def polyEnv (ω : F) (wTab qTab : Fin n → Fin 15 → F) :
 `i`: `eval_columnPoly` on the current and coefficient sides, `eval_shift_columnPoly` on the
 next side. This is the one evaluation bridge in the library; every gate reaches its own bridge
 by pasting its naturality square onto this equation. -/
-theorem polyEnv_map_aeval [NeZero n] (hω : IsPrimitiveRoot ω n)
+private theorem polyEnv_map_aeval [NeZero n] (hω : IsPrimitiveRoot ω n)
     (wTab qTab : Fin n → Fin 15 → F) (i : Fin n) :
     (polyEnv ω wTab qTab).map ⇑(aeval (ω ^ (i : ℕ)) : Polynomial F →ₐ[F] F)
       = rowEnv wTab qTab i := by
@@ -237,9 +235,9 @@ good node `ζ` (avoiding the proved-small `badZetas` set of the aggregate), and 
 quotient `t`. No injectivity, no degree bounds. Conclusion is identical to `Argument.soundness`:
 every selector-active row satisfies the gate's row constraints.
 
-Project-local: this is the bridge W2 consumers (`Index/GateSoundness.lean` and the per-gate
-wrappers) delegate to once the surrogate is retired; it composes the single-ζ counting
-`dvd_of_evalCheck` exactly as `Argument.soundness` composes `dvd_of_evalCheck`. -/
+The single-ζ counting bridge the per-gate soundness wrappers (`Index/GateSoundness.lean`
+and the gate-quotient modules) delegate to; it composes the single-ζ counting
+`dvd_of_evalCheck`. -/
 theorem Argument.soundness [DecidableEq F] [NeZero n] (G : Argument F)
     (hω : IsPrimitiveRoot ω n)
     (wTab qTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1)

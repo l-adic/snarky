@@ -25,8 +25,6 @@ on the last domain row, so this agrees with the intended semantics on every occu
 * `argument` — the VarBaseMul `Argument F` instance (two-row layout).
 * `rows_iff_dvd` — the divisibility corollary, an immediate instance of the `Argument`
   engine theorems.
-
-Source of truth: `blueprint/src/chapters/Kimchi_Quotient_VarBaseMul.tex`.
 -/
 
 namespace Kimchi.Quotient.VarBaseMul
