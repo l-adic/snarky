@@ -31,7 +31,7 @@ namespace Kimchi.Fixture.PS
 
 open FixtureKit
 
-open Lean Kimchi.Index CompElliptic.Fields.Pasta
+open Lean Kimchi Kimchi.Index CompElliptic.Fields.Pasta
 
 /-! ## Element decoders (the PureScript encodings) -/
 

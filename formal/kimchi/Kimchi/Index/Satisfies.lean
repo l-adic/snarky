@@ -88,8 +88,9 @@ sits on a masked row), `masked_boundary` (no two-row gate reads across the bound
 pins are unmasked) — so satisfiability is a property of the unmasked restriction: the
 mask's contents are simply outside the constraint system's footprint. -/
 
+omit [DecidableEq F] in
 /-- `rowSatisfies` reads only unmasked cells. -/
-theorem rowSatisfies_congr_unmasked (idx : Index F n) (pub : Fin idx.publicCount → F)
+private theorem rowSatisfies_congr_unmasked (idx : Index F n) (pub : Fin idx.publicCount → F)
     {w w' : Fin n → Fin 15 → F}
     (hagree : ∀ i : Fin n, (i : ℕ) < n - idx.zkRows → w i = w' i)
     {i : Fin n} (h : rowSatisfies idx pub w i) : rowSatisfies idx pub w' i := by
@@ -153,6 +154,7 @@ theorem rowSatisfies_congr_unmasked (idx : Index F n) (pub : Fin idx.publicCount
     unfold rowSatisfies
     simp only [hz]
 
+omit [DecidableEq F] in
 /-- **`Satisfies` depends only on the unmasked rows.** Tables agreeing off the mask are
 satisfiability-equivalent — the mask is outside the constraint system's read
 footprint. In particular the honest prover may put anything in the zero-knowledge

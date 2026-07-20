@@ -237,7 +237,7 @@ good node `ζ` (avoiding the proved-small `badZetas` set of the aggregate), and 
 quotient `t`. No injectivity, no degree bounds. Conclusion is identical to `Argument.soundness`:
 every selector-active row satisfies the gate's row constraints.
 
-Project-local: this is the bridge W2 consumers (`Index/Soundness.lean` and the per-gate
+Project-local: this is the bridge W2 consumers (`Index/GateSoundness.lean` and the per-gate
 wrappers) delegate to once the surrogate is retired; it composes the single-ζ counting
 `dvd_of_evalCheck` exactly as `Argument.soundness` composes `dvd_of_evalCheck`. -/
 theorem Argument.soundness [DecidableEq F] [NeZero n] (G : Argument F)

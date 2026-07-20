@@ -72,7 +72,7 @@ structure GateRow (F : Type*) (n : ℕ) where
 
 /-- The wiring as a map on cells, read off a gate table: the stored successor
 pointers. -/
-def wiringMapOf {F : Type*} {n : ℕ} (gates : Fin n → GateRow F n)
+private def wiringMapOf {F : Type*} {n : ℕ} (gates : Fin n → GateRow F n)
     (c : Fin 7 × Fin n) : Fin 7 × Fin n :=
   (gates c.2).wires c.1
 
@@ -81,7 +81,7 @@ def wiringMapOf {F : Type*} {n : ℕ} (gates : Fin n → GateRow F n)
 construction. On concrete data every law is decidable (the generator and shift
 conditions through the `Wiring.lean` certificates), so parsers decide them rather than
 assume them. -/
-structure Index (F : Type*) [Field F] (n : ℕ) where
+structure _root_.Kimchi.Index (F : Type*) [Field F] (n : ℕ) where
   gates : Fin n → GateRow F n
   publicCount : ℕ
   zkRows : ℕ
@@ -125,7 +125,6 @@ structure Index (F : Type*) [Field F] (n : ℕ) where
   masked_boundary : ∀ i : Fin n, (i : ℕ) + 1 = n - zkRows →
     (gates i).typ.twoRow = false
 
-namespace Index
 
 variable {F : Type*} [Field F] {n : ℕ}
 
@@ -138,11 +137,6 @@ def wiringMap (idx : Index F n) : Fin 7 × Fin n → Fin 7 × Fin n :=
 /-- The wiring as a permutation — the proofs' view of the stored successor map. -/
 noncomputable def wiringPerm (idx : Index F n) : Equiv.Perm (Fin 7 × Fin n) :=
   Equiv.ofBijective _ idx.wiring_bijective
-
-@[simp]
-theorem wiringPerm_apply (idx : Index F n) (c : Fin 7 × Fin n) :
-    idx.wiringPerm c = idx.wiringMap c :=
-  rfl
 
 theorem wiringPerm_regionPreserving (idx : Index F n) :
     RegionPreserving idx.zkRows idx.wiringPerm :=
@@ -189,14 +183,6 @@ noncomputable def coeffPoly (idx : Index F n) (c : Fin 15) : Polynomial F :=
 /-- The sigma polynomial of column `col`. -/
 noncomputable def sigmaPoly (idx : Index F n) (col : Fin 7) : Polynomial F :=
   columnPoly idx.omega (idx.sigmaAddrRow col)
-
-theorem eval_selectorPoly (idx : Index F n) (g : GateType) (i : Fin n) :
-    (idx.selectorPoly g).eval (idx.omega ^ (i : ℕ)) = idx.selectorRow g i :=
-  eval_columnPoly idx.omega_prim _ i
-
-theorem eval_coeffPoly (idx : Index F n) (c : Fin 15) (i : Fin n) :
-    (idx.coeffPoly c).eval (idx.omega ^ (i : ℕ)) = idx.coeffRow c i :=
-  eval_columnPoly idx.omega_prim _ i
 
 theorem eval_sigmaPoly (idx : Index F n) (col : Fin 7) (i : Fin n) :
     (idx.sigmaPoly col).eval (idx.omega ^ (i : ℕ)) = idx.sigmaAddrRow col i :=
@@ -246,6 +232,5 @@ def build? [DecidableEq F] (gates : Fin n → GateRow F n) (publicCount zkRows :
            masked_boundary := h.2.2.2.2.2.2.2.2.2.2.2.2 }
   else none
 
-end Index
 
 end Kimchi.Index

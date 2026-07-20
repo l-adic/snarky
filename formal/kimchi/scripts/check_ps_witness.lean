@@ -9,7 +9,7 @@ wired cell, and a public input must each be rejected (targets derived from the i
 an absent target is reported and skipped). Fails if any check fails or the scan finds
 no witnesses. -/
 
-open Lean Kimchi.Index Kimchi.Fixture.PS CompElliptic.Fields.Pasta
+open Lean Kimchi Kimchi.Index Kimchi.Fixture.PS CompElliptic.Fields.Pasta
 
 /-- Where the harness results live. As with every other check in the workspace, the
 default is relative to the *package* directory, and the env var overrides it (which is
