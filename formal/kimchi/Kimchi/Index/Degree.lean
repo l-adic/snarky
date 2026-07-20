@@ -42,8 +42,8 @@ within the heartbeat budget. The headline family/aggregate/`t·Z_H` bounds reduc
 
 namespace Kimchi.Index
 
-open Polynomial Kimchi.Quotient
-open Kimchi.Quotient.Gate
+open Polynomial Kimchi.Lift
+open Kimchi.Lift.Gate
 
 variable {F : Type*} [Field F] [DecidableEq F] {n : ℕ}
 

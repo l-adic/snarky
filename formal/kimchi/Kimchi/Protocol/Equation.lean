@@ -13,9 +13,9 @@ objects the aggregate family is built on.
 -/
 namespace Kimchi.Protocol.Equation
 
-open Polynomial Kimchi.Quotient Kimchi.Index Kimchi.Protocol.Linearization
+open Polynomial Kimchi.Lift Kimchi.Index Kimchi.Protocol.Linearization
 open Kimchi.GrandProduct
-open Kimchi.Quotient.Gate
+open Kimchi.Lift.Gate
 
 variable {F : Type*} [Field F] {n : ℕ}
 

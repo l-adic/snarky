@@ -22,7 +22,7 @@ open Bulletproof
 
 namespace Kimchi.Protocol
 
-open Polynomial Kimchi.Quotient Kimchi.Index Bulletproof
+open Polynomial Kimchi.Lift Kimchi.Index Bulletproof
 
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G] {n : ℕ}
 

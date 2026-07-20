@@ -16,9 +16,7 @@ import Kimchi.Gate.Semantics.EndoMul
 import Kimchi.Gate.Semantics.Poseidon
 import Bulletproof.Protocol
 import Bulletproof.Soundness
-import Kimchi.Quotient.Gate.Generic
-import Kimchi.Quotient.Gate.EndoScalar
-import Kimchi.Quotient.Gate.Poseidon
+import Kimchi.Lift
 import Kimchi.Permutation.Copy
 import Kimchi.Index.Basic
 import Kimchi.Index.Satisfies

@@ -8,7 +8,7 @@ Polynomial-algebra infrastructure for the kimchi permutation argument (proof-sys
 `∏ (wᵢ + β·posᵢ + γ) = ∏ (wᵢ + β·σ(pos)ᵢ + γ)` at the challenges `β, γ`, and the soundness
 core — proved here — is that such an equality forces the multisets of pairs `(wᵢ, posᵢ)` to
 coincide. This is **pure algebra**: no protocol content whatsoever (no `Z_H`, no domain `H`,
-no root of unity `ω`, no gate). The only project dependency is `Kimchi.Quotient.Domain`.
+no root of unity `ω`, no gate). The only project dependency is `Kimchi.Lift.Domain`.
 
 We work in the two-variable polynomial ring `F[β][γ] := Polynomial (Polynomial F)` with inner
 variable `β` and outer variable `γ`, over an abstract field `F`. A pair `(w, a) ∈ F × F` gives

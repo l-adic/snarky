@@ -304,7 +304,7 @@ theorem kimchiVerify_reflects (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiPr
 
 section Barycentric
 
-open Kimchi.Quotient
+open Kimchi.Lift
 
 /-- **The Lagrange basis off the domain**: for `ζ` with `ζⁿ ≠ 1`,
 `Lⱼ(ζ) = ωʲ·(ζⁿ − 1) / (n·(ζ − ωʲ))` — the barycentric summand. Project-local: evaluates

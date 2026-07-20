@@ -1,9 +1,4 @@
-import Kimchi.Quotient.Gate.Generic
-import Kimchi.Quotient.Gate.Poseidon
-import Kimchi.Quotient.Gate.AddComplete
-import Kimchi.Quotient.Gate.VarBaseMul
-import Kimchi.Quotient.Gate.EndoMul
-import Kimchi.Quotient.Gate.EndoScalar
+import Kimchi.Lift
 
 /-!
 # The verifier's scalar side, in closed form
@@ -23,8 +18,8 @@ permutation argument holds the next three powers `α²¹, α²², α²³`.
 -/
 namespace Kimchi.Protocol.Linearization
 
-open Kimchi.Quotient
-open Kimchi.Quotient.Gate
+open Kimchi.Lift
+open Kimchi.Lift.Gate
 
 variable {F : Type*} [Field F]
 

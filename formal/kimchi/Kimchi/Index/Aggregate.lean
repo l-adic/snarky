@@ -34,9 +34,9 @@ per-gate divisibility from the summed members via selector row-disjointness
 
 namespace Kimchi.Index
 
-open Polynomial Kimchi.Quotient
+open Polynomial Kimchi.Lift
 open Kimchi.GrandProduct
-open Kimchi.Quotient.Gate
+open Kimchi.Lift.Gate
 
 
 variable {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n]

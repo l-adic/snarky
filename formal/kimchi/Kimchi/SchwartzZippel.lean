@@ -41,7 +41,7 @@ The main section assembles the rows of the evaluation domain:
   `≤ D`.
 * `zH_dvd_of_eval` — a single good ζ pins `C = t · Z_H`, hence `Z_H ∣ C`.
 * `dvd_of_evalCheck` — the composed pinning–separation engine of
-  `dvd_of_evalCheck` (`Kimchi/Quotient/Lift.lean`), with the α-, ζ- and quotient-families all
+  `dvd_of_evalCheck` (`Kimchi/Lift.lean`), with the α-, ζ- and quotient-families all
   collapsed to a single `α`, a single ζ, and a single quotient `t`.
 -/
 

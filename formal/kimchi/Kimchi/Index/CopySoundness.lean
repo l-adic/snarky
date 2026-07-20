@@ -16,7 +16,7 @@ holds there for honest witnesses because masked rows are identity-wired.
 
 namespace Kimchi.Index
 
-open Polynomial Kimchi.Quotient
+open Polynomial Kimchi.Lift
 open Kimchi.GrandProduct
 
 variable {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n]
