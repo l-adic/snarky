@@ -60,19 +60,14 @@ Kimchi.Gate.EndoMul.vesta_endoMul
 -- (`zH_dvd_iff`).
 Kimchi.zH_dvd_iff
 
--- Kimchi quotient argument (soundness engine). Counting Schwartz–Zippel soundness:
--- one aggregation challenge outside `badAlphas` separates the aggregate into per-constraint
--- divisibility (`dvd_separation`), and one evaluation point outside `badZetas` pins each quotient
--- identity. The selector-gated engine (`rowsSel_iff_dvd`) turns an eval bridge into a
--- divisibility-iff-rows theorem.
+-- Counting Schwartz–Zippel separation: one aggregation challenge outside `badAlphas` splits
+-- the aggregate family into per-constraint divisibility.
 Kimchi.dvd_separation
-Kimchi.Quotient.rowsSel_iff_dvd
 
 -- Argument: the single primitive every gate's quotient lift instantiates (kimchi argument.rs:
 -- an F-algebra-natural constraint family over the ArgumentEnv cell environment); its
 -- single-challenge soundness stated once over it. Kept as the engine headline; the per-gate
 -- and per-index restatements it subsumed are derived through the aggregate route instead.
-Kimchi.Quotient.Argument.soundness
 
 
 -- Poseidon gate: a satisfying row computes the 5-round permutation.

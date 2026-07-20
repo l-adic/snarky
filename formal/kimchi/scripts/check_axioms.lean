@@ -40,8 +40,6 @@ def roots : List Name :=
     `Kimchi.Gate.EndoMul.pallas_endoMul, `Kimchi.Gate.EndoMul.vesta_endoMul,
     `Kimchi.zH_dvd_iff,
     `Kimchi.dvd_separation,
-    `Kimchi.Quotient.rowsSel_iff_dvd,
-    `Kimchi.Quotient.Argument.soundness,
     `Kimchi.Gate.Poseidon.sound, `Kimchi.Gate.Poseidon.complete,
     `Kimchi.Index.satisfies_iff_fullFamily_dvd,
     `Kimchi.Verifier.kimchiVerify_reflects, `Kimchi.Verifier.barycentricPubEval_eq,
