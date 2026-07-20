@@ -250,9 +250,12 @@ kimchi/scripts/check_perm_fixture.sh         # permutation argument row semantic
 kimchi/scripts/check_index_fixture.sh        # index model: build-by-decision, derived columns, satisfiability
 ```
 
-(Every package-local check runs standalone from its package dir, or from `formal/` with
-its `*_FIXTURES_DIR` env var pointing at the package's fixtures — that is how CI invokes
-them all, sharing the aggregator workspace.)
+(Every package-local check reads its data through an env var whose **default is relative
+to the package directory** — `KIMCHI_FIXTURES_DIR`, `POSEIDON_FIXTURES_DIR`,
+`BULLETPROOF_FIXTURES_DIR`, and `KIMCHI_PS_RESULTS_DIR` — so each runs standalone from
+its package dir with no setup, or from `formal/` by setting that variable, which is how
+CI invokes them all, sharing the aggregator workspace. Keep new checks on this
+convention: a package-relative default, overridable by env var.)
 
 New trace checks build on `FixtureKit.Parse` (element decoders) and
 `FixtureKit.Trace` (the cases-x-ops driver, both in the `poseidon` package): supply an

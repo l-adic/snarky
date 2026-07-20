@@ -316,7 +316,8 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         cd formal
         export PATH="$HOME/.elan/bin:$PATH"
-        lake env lean kimchi/scripts/check_ps_witness.lean
+        KIMCHI_PS_RESULTS_DIR=../packages/pickles-circuit-diffs/circuits/results \
+          lake env lean kimchi/scripts/check_ps_witness.lean
 
   # ---- build the example app for GitHub Pages -------------------------
   # The in-browser block-pipeline app: wasm kimchi backend + vite bundle,
