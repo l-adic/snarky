@@ -364,22 +364,6 @@ private theorem copy_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCo
     have h := hdvd (Fin.natAdd gateAlphaCount s)
     rwa [idx.fullFamily_perm] at h
 
-/-- **Phase-B assembly, gate side.** The aggregated eval-check over the full family —
-the shape of kimchi's one quotient check — gives every row's gate branch of
-`rowSatisfies`: `dvd_of_evalCheck` pins each of the `21 + 3` members, and the
-separation argument collapses the shared pool back to the rows. -/
-theorem rowSatisfies_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → F)
-    (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (β γ : F)
-    (α : F) (hα : α ∉ badAlphas (idx.fullFamily pub wTab z β γ) idx.omega n)
-    (t : Polynomial F)
-    (ζ : F)
-    (hζ : ζ ∉ badZetas (aggregate α (idx.fullFamily pub wTab z β γ)) t n)
-    (hcheck : (aggregate α (idx.fullFamily pub wTab z β γ)).eval ζ
-        = (t * zH F n).eval ζ) :
-    ∀ i, rowSatisfies idx pub wTab i :=
-  idx.rowSatisfies_of_fullFamily_dvd pub wTab z β γ
-    (idx.fullFamily_dvd_of_evalCheck pub wTab z β γ α hα t ζ hζ hcheck)
-
 /-! ## The Phase-B headline: the one quotient check gives satisfiability
 
 Everything assembles: the 21 gate members give every row's gate branch (`rowSatisfies`),

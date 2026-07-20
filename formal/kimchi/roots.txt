@@ -110,13 +110,9 @@ Kimchi.Quotient.multiset_eq_of_prod_eval
 Kimchi.Verifier.kimchiVerify_reflects
 Kimchi.Verifier.barycentricPubEval_eq
 
--- The arithmetization interface: the satisfiability characterization against divisibility of the
--- aggregate family (`satisfies_iff_fullFamily_dvd`), and the per-row/eval bridges it composes.
--- Gated by `scripts/check_axioms.lean`.
+-- The arithmetization interface: satisfiability characterized by divisibility of the aggregate
+-- family. Gated by `scripts/check_axioms.lean`.
 Kimchi.Index.satisfies_iff_fullFamily_dvd
-Kimchi.Index.gateMember_dvd_of_rowSatisfies
-Kimchi.Index.rowSatisfies_of_evalCheck
-Kimchi.Index.satisfies_of_evalCheck
 
 -- The capstone: executable-verifier acceptance ⟹ the index is satisfiable, at every challenge
 -- tuple outside the bounded (counting Schwartz–Zippel) bad sets. Combines the Fiat-Shamir
