@@ -27,7 +27,7 @@ Source: kimchi `domains.rs` (`EvaluationDomains::d1`, the size-`n` radix-2 domai
   values (the commitment-world ↔ table-world seam).
 -/
 
-namespace Kimchi.Quotient
+namespace Kimchi
 
 open Polynomial
 
@@ -130,4 +130,4 @@ theorem columnPoly_eval_self (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
   intro i hi
   rw [show ((ω : F) ^ i) = ω ^ ((⟨i, hi⟩ : Fin n) : ℕ) from rfl, eval_columnPoly hω]
 
-end Kimchi.Quotient
+end Kimchi

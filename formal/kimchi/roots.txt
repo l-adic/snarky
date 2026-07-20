@@ -58,14 +58,14 @@ Kimchi.Gate.EndoMul.vesta_endoMul
 -- Kimchi quotient/vanishing argument (implementation checkpoint). Over the size-n evaluation
 -- domain, a constraint polynomial is divisible by Z_H = X^n - 1 iff it vanishes on every row
 -- (`zH_dvd_iff`).
-Kimchi.Quotient.zH_dvd_iff
+Kimchi.zH_dvd_iff
 
 -- Kimchi quotient argument (soundness engine). Counting Schwartz–Zippel soundness:
 -- one aggregation challenge outside `badAlphas` separates the aggregate into per-constraint
 -- divisibility (`dvd_separation`), and one evaluation point outside `badZetas` pins each quotient
 -- identity. The selector-gated engine (`rowsSel_iff_dvd`) turns an eval bridge into a
 -- divisibility-iff-rows theorem.
-Kimchi.Quotient.dvd_separation
+Kimchi.dvd_separation
 Kimchi.Quotient.rowsSel_iff_dvd
 
 -- Argument: the single primitive every gate's quotient lift instantiates (kimchi argument.rs:

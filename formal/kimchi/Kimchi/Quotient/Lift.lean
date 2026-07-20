@@ -1,7 +1,7 @@
-import Kimchi.Quotient.Domain
-import Kimchi.Quotient.Shifted
-import Kimchi.Quotient.Aggregate
-import Kimchi.Quotient.SchwartzZippel
+import Kimchi.Domain
+import Kimchi.Shifted
+import Kimchi.Aggregate
+import Kimchi.SchwartzZippel
 
 /-!
 # The generic lift engine

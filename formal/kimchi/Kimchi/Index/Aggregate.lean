@@ -1,5 +1,5 @@
 import Kimchi.Index.CopySoundness
-import Kimchi.Quotient.SchwartzZippel
+import Kimchi.SchwartzZippel
 
 /-!
 # The full kimchi aggregate family

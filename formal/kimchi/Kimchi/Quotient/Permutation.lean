@@ -1,5 +1,5 @@
-import Kimchi.Quotient.Aggregate
-import Kimchi.Quotient.SchwartzZippel
+import Kimchi.Aggregate
+import Kimchi.SchwartzZippel
 
 /-!
 # The permutation argument: constraints and quotient soundness

@@ -386,10 +386,10 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
   -- the extracted bad sets — quantified BEFORE the challenges, built from challenge-free
   -- REFERENCE-extracted data, each provably small; only THEN quantify over β/γ/α/t/ζ
   refine ⟨Kimchi.Quotient.badBetas m₁ m₂, fun β => Kimchi.Quotient.badGammas m₁ m₂ β,
-    fun β γ => Kimchi.Quotient.badAlphas
+    fun β γ => Kimchi.badAlphas
       (idx.fullFamily pub (extractTable idx.omega W) zg β γ) idx.omega n,
-    fun β γ α t => Kimchi.Quotient.badZetas
-      (Kimchi.Quotient.aggregate α
+    fun β γ α t => Kimchi.badZetas
+      (Kimchi.aggregate α
         (idx.fullFamily pub (extractTable idx.omega W) zg β γ)) t n,
     ⟨?_, ?_, ?_, ?_⟩, ?_⟩
   · -- anti-vacuity (β axis): `card_badBetas_le` bounds by `max |m₁| |m₂| = 7·(n − zkRows)`
@@ -403,12 +403,12 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
     exact le_of_eq (max_self _)
   · -- anti-vacuity (α axis): `card_badAlphas_le` bounds the extracted bad set by `n · (K − 1)`
     intro β γ
-    exact Kimchi.Quotient.card_badAlphas_le
+    exact Kimchi.card_badAlphas_le
       (idx.fullFamily pub (extractTable idx.omega W) zg β γ) idx.omega n
   · -- anti-vacuity (ζ axis): `card_badZetas_le` bounds the extracted bad set by `degreeBound n`
     intro β γ α t ht
-    exact Kimchi.Quotient.card_badZetas_le
-      (Kimchi.Quotient.aggregate α
+    exact Kimchi.card_badZetas_le
+      (Kimchi.aggregate α
         (idx.fullFamily pub (extractTable idx.omega W) zg β γ)) t
       (Index.aggregate_natDegree_le idx pub (extractTable idx.omega W) zg hzdeg β γ α)
       (Index.t_zH_natDegree_le t ht)

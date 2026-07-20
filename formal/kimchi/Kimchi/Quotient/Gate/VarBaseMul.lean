@@ -1,5 +1,5 @@
 import Kimchi.Quotient.Lift
-import Kimchi.Quotient.Shifted
+import Kimchi.Shifted
 import Kimchi.Gate.VarBaseMul
 
 /-!
@@ -10,8 +10,8 @@ The polynomial-algebra lift of kimchi's variable-base scalar-multiplication gate
 `n`-th root of unity supplied as a hypothesis (`ω : F`, `hω : IsPrimitiveRoot ω n`).
 
 This is a **two-row** gate: a `VBSM` row `i` followed by a `ZERO` row `i+1`. Its cell map reads
-*both* rows, so the poly witness needs the next-row shift (`Kimchi.Quotient.shift`,
-`Kimchi/Quotient/Shifted.lean`) in addition to the column interpolants. The gate's field-level
+*both* rows, so the poly witness needs the next-row shift (`Kimchi.shift`,
+`Kimchi/Shifted.lean`) in addition to the column interpolants. The gate's field-level
 constraint model (`Kimchi.Gate.VarBaseMul.constraints` / `Holds`) is **read-only** and reused
 verbatim: no constraint formula is restated — the lift is naturality plus the shift.
 

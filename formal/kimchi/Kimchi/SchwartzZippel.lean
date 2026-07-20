@@ -1,10 +1,10 @@
-import Kimchi.Quotient.Aggregate
+import Kimchi.Aggregate
 
 /-!
 # Counting Schwartz–Zippel: single-challenge α-separation
 
 This file replaces the injective-α-family surrogate of `dvd_separation`
-(`Kimchi/Quotient/Aggregate.lean`) with the standard **counting** form of the
+(`Kimchi/Aggregate.lean`) with the standard **counting** form of the
 Schwartz–Zippel argument for kimchi's α-aggregation: a *single* challenge `α` suffices to
 separate divisibility across a family of constraint polynomials, provided `α` avoids an
 explicit **bad set** whose cardinality is proved small. Statements stay fully deterministic —
@@ -45,7 +45,7 @@ The main section assembles the rows of the evaluation domain:
   collapsed to a single `α`, a single ζ, and a single quotient `t`.
 -/
 
-namespace Kimchi.Quotient
+namespace Kimchi
 
 open Polynomial
 
@@ -226,4 +226,4 @@ theorem dvd_of_evalCheck {K n : ℕ} [NeZero n] {ω : F} (hω : IsPrimitiveRoot 
   dvd_separation hω (Nat.pos_of_ne_zero (NeZero.ne n)) C α hα
     (zH_dvd_of_eval (aggregate α C) t ζ hζ hcheck)
 
-end Kimchi.Quotient
+end Kimchi

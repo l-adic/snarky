@@ -569,9 +569,9 @@ at the reflected run's own 45-row batch. -/
 private noncomputable def badXiOf {F G : Type*} [Field F] [DecidableEq F]
     [AddCommGroup G] [Module F G] (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
     (x : Fin 2 → F) (E : Fin m → Fin 2 → F) : Finset F :=
-  Kimchi.Quotient.SZ.badComb
+  Kimchi.SZ.badComb
       (fun i : Fin m => E i 0 - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x 0)))
-    ∪ Kimchi.Quotient.SZ.badComb
+    ∪ Kimchi.SZ.badComb
       (fun i : Fin m => E i 1 - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x 1)))
 
 /-- The bad point-combination challenges at a fixed `ξ`: the counting-SZ bad set of the
@@ -579,7 +579,7 @@ two ξ-combined discrepancy columns. Depends on `(σ, aw₀, x, E, ξ)` — neve
 private noncomputable def badROf {F G : Type*} [Field F] [DecidableEq F]
     [AddCommGroup G] [Module F G] (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
     (x : Fin 2 → F) (E : Fin m → Fin 2 → F) (ξ : F) : Finset F :=
-  Kimchi.Quotient.SZ.badComb (fun j : Fin 2 => ∑ i : Fin m,
+  Kimchi.SZ.badComb (fun j : Fin 2 => ∑ i : Fin m,
     ξ ^ (i : ℕ) * (E i j - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j))))
 
 /-- `badXiOf` counts at most `2 · (m − 1)` challenges (at the 43-row batch: `84`): a
@@ -589,9 +589,9 @@ private theorem card_badXiOf_le {F G : Type*} [Field F] [DecidableEq F]
     (x : Fin 2 → F) (E : Fin m → Fin 2 → F) : (badXiOf σ aw₀ x E).card ≤ 2 * (m - 1) := by
   unfold badXiOf
   refine le_trans (Finset.card_union_le _ _) ?_
-  have h0 := Kimchi.Quotient.SZ.card_badComb_le
+  have h0 := Kimchi.SZ.card_badComb_le
     (fun i : Fin m => E i 0 - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x 0)))
-  have h1 := Kimchi.Quotient.SZ.card_badComb_le
+  have h1 := Kimchi.SZ.card_badComb_le
     (fun i : Fin m => E i 1 - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x 1)))
   omega
 
@@ -602,7 +602,7 @@ private theorem card_badROf_le {F G : Type*} [Field F] [DecidableEq F]
     (x : Fin 2 → F) (E : Fin m → Fin 2 → F) (ξ : F) :
     (badROf σ aw₀ x E ξ).card ≤ 1 := by
   unfold badROf
-  exact Kimchi.Quotient.SZ.card_badComb_le _
+  exact Kimchi.SZ.card_badComb_le _
 
 /-- **The eval pins from one opening** (the AGM bridge): SRS-basis representations of
 the `m` batch rows plus ONE accepted batch opening at good `(ξ, r)` pin every claimed
@@ -703,15 +703,15 @@ private theorem eval_pins_of_opening {F G : Type*} [Field F] [DecidableEq F]
   simp only [badROf] at hr
   have hcol : ∀ j : Fin 2, ∑ i : Fin m, ξ ^ (i : ℕ)
       * (E i j - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j))) = 0 :=
-    Kimchi.Quotient.SZ.eq_zero_of_comb_eq_zero _ r hr hsum
+    Kimchi.SZ.eq_zero_of_comb_eq_zero _ r hr hsum
   simp only [badXiOf, Finset.notMem_union] at hξ
   intro i j
-  have hj : ξ ∉ Kimchi.Quotient.SZ.badComb (fun i : Fin m =>
+  have hj : ξ ∉ Kimchi.SZ.badComb (fun i : Fin m =>
       E i j - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j))) := by
     fin_cases j
     · exact hξ.1
     · exact hξ.2
-  exact sub_eq_zero.mp (Kimchi.Quotient.SZ.eq_zero_of_comb_eq_zero _ ξ hj (hcol j) i)
+  exact sub_eq_zero.mp (Kimchi.SZ.eq_zero_of_comb_eq_zero _ ξ hj (hcol j) i)
 
 /-- **Algebraic-prover soundness from ONE transcript** (the AGM corollary): the
 representations `aw₀`/`ρw₀` of the 43 batch rows discharge the openings interface of

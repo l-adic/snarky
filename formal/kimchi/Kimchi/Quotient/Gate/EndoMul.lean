@@ -1,5 +1,5 @@
 import Kimchi.Quotient.Lift
-import Kimchi.Quotient.Shifted
+import Kimchi.Shifted
 import Kimchi.Gate.EndoMul
 
 /-!
@@ -9,7 +9,7 @@ The polynomial-algebra lift of kimchi's `EndoMul` (endomorphism-optimized
 `VarBaseMul`) gate, following the cell-map and `Argument`-instance pattern of
 `Kimchi/Quotient/Gate/AddComplete.lean` and `Kimchi/Quotient/Gate/VarBaseMul.lean`. Like
 `VarBaseMul` it is a **two-row** gate (a pair of `EVBSM` rows `i`, `i+1`), so the poly witness
-reads the next-row outputs `xS, yS, n'` through the shift operator (`Kimchi/Quotient/Shifted.lean`).
+reads the next-row outputs `xS, yS, n'` through the shift operator (`Kimchi/Shifted.lean`).
 
 Two wrinkles over `VarBaseMul`:
 

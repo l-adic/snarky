@@ -1,6 +1,6 @@
 import Kimchi.Quotient.GrandProduct
 import Kimchi.Quotient.Permutation
-import Kimchi.Quotient.SchwartzZippel
+import Kimchi.SchwartzZippel
 
 /-!
 # Copy soundness: from grand products to values constant on the wiring

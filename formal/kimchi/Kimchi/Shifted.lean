@@ -1,4 +1,4 @@
-import Kimchi.Quotient.Domain
+import Kimchi.Domain
 
 /-!
 # Shifted columns: the two-row-gate mechanism
@@ -8,7 +8,7 @@ an abstract field `[Field F]` with a primitive `n`-th root of unity supplied as 
 This file provides the "next row" access that a two-row custom gate (`VarBaseMul`, `EndoMul`)
 needs on the polynomial side.
 
-**NOTE:** this is a NEW file `Kimchi/Quotient/Shifted.lean`, distinct from the read-only
+**NOTE:** this is a NEW file `Kimchi/Shifted.lean`, distinct from the read-only
 `Kimchi/Shifted.lean`.
 
 A two-row custom gate constrains cells of the current row *and* of the next row. On the
@@ -29,7 +29,7 @@ gate actually occupies.
   (ω^i) = v (i + 1)` (cyclic).
 -/
 
-namespace Kimchi.Quotient
+namespace Kimchi
 
 open Polynomial
 
@@ -69,4 +69,4 @@ theorem eval_shift_columnPoly [NeZero n] (hω : IsPrimitiveRoot ω n) (v : Fin n
     conv_lhs => rw [Nat.add_mod]
   rw [key, eval_columnPoly hω]
 
-end Kimchi.Quotient
+end Kimchi

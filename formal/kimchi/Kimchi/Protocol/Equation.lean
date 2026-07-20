@@ -48,7 +48,7 @@ private theorem evalEnv_evalsOf (idx : Index F n) (wTab : Fin n → Fin 15 → F
   simp only [evalEnv, evalsOf, polyEnv, ArgumentEnv.map]
   refine congrArg₂ (ArgumentEnv.mk _) ?_ rfl
   funext c
-  simp only [Function.comp_apply, Polynomial.coe_aeval_eq_eval, Kimchi.Quotient.shift,
+  simp only [Function.comp_apply, Polynomial.coe_aeval_eq_eval, Kimchi.shift,
     eval_comp, eval_mul, eval_C, eval_X]
 
 /-! ## Column extraction

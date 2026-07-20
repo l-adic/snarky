@@ -340,8 +340,26 @@
 <path fill="none" stroke="#666666" d="M372.66,-746.92C375.17,-721.15 379.92,-672.29 382.74,-643.28"/>
 <polygon fill="#666666" stroke="#666666" points="384.85,-643.24 383.34,-637.06 380.67,-642.83 384.85,-643.24"/>
 </g>
-<!-- KimchiFixture.Kimchi -->
+<!-- Kimchi.Aggregate -->
 <g id="node21" class="node">
+<title>Kimchi.Aggregate</title>
+<polygon fill="white" stroke="black" points="2066,-124 1962,-124 1962,-88 2066,-88 2066,-124"/>
+<text text-anchor="middle" x="2014" y="-103.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Aggregate</text>
+</g>
+<!-- Kimchi.Domain -->
+<g id="node22" class="node">
+<title>Kimchi.Domain</title>
+<polygon fill="white" stroke="black" points="2024,-52 1932,-52 1932,-16 2024,-16 2024,-52"/>
+<text text-anchor="middle" x="1978" y="-31.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Domain</text>
+</g>
+<!-- Kimchi.Aggregate&#45;&gt;Kimchi.Domain -->
+<g id="edge32" class="edge">
+<title>Kimchi.Aggregate&#45;&gt;Kimchi.Domain</title>
+<path fill="none" stroke="#666666" d="M2005.1,-87.7C2000.44,-78.63 1994.67,-67.4 1989.65,-57.65"/>
+<polygon fill="#666666" stroke="#666666" points="1991.41,-56.48 1986.8,-52.1 1987.67,-58.4 1991.41,-56.48"/>
+</g>
+<!-- KimchiFixture.Kimchi -->
+<g id="node23" class="node">
 <title>KimchiFixture.Kimchi</title>
 <polygon fill="white" stroke="black" points="1255.5,-927 1134.5,-927 1134.5,-891 1255.5,-891 1255.5,-927"/>
 <text text-anchor="middle" x="1195" y="-906.5" font-family="Helvetica,sans-Serif" font-size="10.00">KimchiFixture.Kimchi</text>
@@ -353,283 +371,283 @@
 <text text-anchor="middle" x="1142" y="-834.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Verifier.Kimchi</text>
 </g>
 <!-- KimchiFixture.Kimchi&#45;&gt;Kimchi.Verifier.Kimchi -->
-<g id="edge32" class="edge">
+<g id="edge33" class="edge">
 <title>KimchiFixture.Kimchi&#45;&gt;Kimchi.Verifier.Kimchi</title>
 <path fill="none" stroke="#666666" d="M1181.9,-890.7C1174.9,-881.46 1166.22,-869.98 1158.74,-860.11"/>
 <polygon fill="#666666" stroke="#666666" points="1160.25,-858.62 1154.95,-855.1 1156.9,-861.16 1160.25,-858.62"/>
 </g>
 <!-- KimchiFixture.PS -->
-<g id="node22" class="node">
+<g id="node24" class="node">
 <title>KimchiFixture.PS</title>
 <polygon fill="white" stroke="black" points="1029.5,-637 930.5,-637 930.5,-601 1029.5,-601 1029.5,-637"/>
 <text text-anchor="middle" x="980" y="-616.5" font-family="Helvetica,sans-Serif" font-size="10.00">KimchiFixture.PS</text>
 </g>
 <!-- KimchiFixture.PS&#45;&gt;Pasta.Endo -->
-<g id="edge35" class="edge">
+<g id="edge36" class="edge">
 <title>KimchiFixture.PS&#45;&gt;Pasta.Endo</title>
-<path fill="none" stroke="#666666" d="M956.63,-600.93C945.27,-591.51 932.3,-578.91 924,-565 903,-529.82 900,-516.97 900,-476 900,-476 900,-476 900,-402 900,-284.95 718.08,-258.63 634.32,-252.71"/>
+<path fill="none" stroke="#666666" d="M958.35,-600.83C947.58,-591.29 935.16,-578.62 927,-565 905.75,-529.55 900,-517.34 900,-476 900,-476 900,-476 900,-402 900,-284.95 718.08,-258.63 634.32,-252.71"/>
 <polygon fill="#666666" stroke="#666666" points="634.34,-250.61 628.22,-252.31 634.06,-254.8 634.34,-250.61"/>
 </g>
 <!-- KimchiFixture.PS&#45;&gt;FixtureKit.Parse -->
-<g id="edge34" class="edge">
+<g id="edge35" class="edge">
 <title>KimchiFixture.PS&#45;&gt;FixtureKit.Parse</title>
 <path fill="none" stroke="#666666" d="M939.88,-600.88C916.27,-590.8 886.32,-578.01 861.78,-567.54"/>
 <polygon fill="#666666" stroke="#666666" points="862.33,-565.49 855.99,-565.07 860.68,-569.36 862.33,-565.49"/>
 </g>
 <!-- Kimchi.Index.Satisfies -->
-<g id="node39" class="node">
+<g id="node41" class="node">
 <title>Kimchi.Index.Satisfies</title>
 <polygon fill="white" stroke="black" points="1793.5,-565 1668.5,-565 1668.5,-529 1793.5,-529 1793.5,-565"/>
 <text text-anchor="middle" x="1731" y="-544.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Index.Satisfies</text>
 </g>
 <!-- KimchiFixture.PS&#45;&gt;Kimchi.Index.Satisfies -->
-<g id="edge33" class="edge">
+<g id="edge34" class="edge">
 <title>KimchiFixture.PS&#45;&gt;Kimchi.Index.Satisfies</title>
 <path fill="none" stroke="#666666" d="M1029.75,-615C1137.3,-608.26 1399.41,-590.49 1618,-565 1632.31,-563.33 1647.6,-561.24 1662.15,-559.1"/>
 <polygon fill="#666666" stroke="#666666" points="1662.71,-561.14 1668.34,-558.18 1662.1,-556.99 1662.71,-561.14"/>
 </g>
 <!-- Kimchi.Gate.AddComplete -->
-<g id="node23" class="node">
+<g id="node25" class="node">
 <title>Kimchi.Gate.AddComplete</title>
 <polygon fill="white" stroke="black" points="1168,-268 1022,-268 1022,-232 1168,-232 1168,-268"/>
 <text text-anchor="middle" x="1095" y="-247.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Gate.AddComplete</text>
 </g>
 <!-- Kimchi.Gate.AddComplete&#45;&gt;Pasta.Basic -->
-<g id="edge36" class="edge">
+<g id="edge37" class="edge">
 <title>Kimchi.Gate.AddComplete&#45;&gt;Pasta.Basic</title>
 <path fill="none" stroke="#666666" d="M1021.86,-238.82C915.03,-223.95 719.73,-196.78 634.11,-184.86"/>
 <polygon fill="#666666" stroke="#666666" points="634.37,-182.78 628.14,-184.03 633.79,-186.94 634.37,-182.78"/>
 </g>
 <!-- Kimchi.Gate.EndoMul -->
-<g id="node24" class="node">
+<g id="node26" class="node">
 <title>Kimchi.Gate.EndoMul</title>
-<polygon fill="white" stroke="black" points="1365,-421 1243,-421 1243,-385 1365,-385 1365,-421"/>
-<text text-anchor="middle" x="1304" y="-400.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Gate.EndoMul</text>
+<polygon fill="white" stroke="black" points="1337,-421 1215,-421 1215,-385 1337,-385 1337,-421"/>
+<text text-anchor="middle" x="1276" y="-400.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Gate.EndoMul</text>
 </g>
 <!-- Kimchi.Gate.VarBaseMul -->
-<g id="node34" class="node">
+<g id="node36" class="node">
 <title>Kimchi.Gate.VarBaseMul</title>
 <polygon fill="white" stroke="black" points="1163.5,-340 1026.5,-340 1026.5,-304 1163.5,-304 1163.5,-340"/>
 <text text-anchor="middle" x="1095" y="-319.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Gate.VarBaseMul</text>
 </g>
 <!-- Kimchi.Gate.EndoMul&#45;&gt;Kimchi.Gate.VarBaseMul -->
-<g id="edge37" class="edge">
+<g id="edge38" class="edge">
 <title>Kimchi.Gate.EndoMul&#45;&gt;Kimchi.Gate.VarBaseMul</title>
-<path fill="none" stroke="#666666" d="M1258.91,-384.96C1225.67,-372.39 1180.43,-355.29 1145.89,-342.24"/>
-<polygon fill="#666666" stroke="#666666" points="1146.37,-340.17 1140.01,-340.01 1144.88,-344.1 1146.37,-340.17"/>
+<path fill="none" stroke="#666666" d="M1236.73,-384.86C1208.26,-372.44 1169.72,-355.61 1140.02,-342.65"/>
+<polygon fill="#666666" stroke="#666666" points="1140.54,-340.58 1134.2,-340.11 1138.86,-344.43 1140.54,-340.58"/>
 </g>
 <!-- Kimchi.Gate.EndoScalar -->
-<g id="node25" class="node">
+<g id="node27" class="node">
 <title>Kimchi.Gate.EndoScalar</title>
 <polygon fill="white" stroke="black" points="2163,-421 2029,-421 2029,-385 2163,-385 2163,-421"/>
 <text text-anchor="middle" x="2096" y="-400.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Gate.EndoScalar</text>
 </g>
 <!-- Kimchi.Gate.Generic -->
-<g id="node26" class="node">
+<g id="node28" class="node">
 <title>Kimchi.Gate.Generic</title>
 <polygon fill="white" stroke="black" points="2486.5,-421 2369.5,-421 2369.5,-385 2486.5,-385 2486.5,-421"/>
 <text text-anchor="middle" x="2428" y="-400.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Gate.Generic</text>
 </g>
 <!-- Kimchi.Gate.Poseidon -->
-<g id="node27" class="node">
+<g id="node29" class="node">
 <title>Kimchi.Gate.Poseidon</title>
 <polygon fill="white" stroke="black" points="2629,-421 2505,-421 2505,-385 2629,-385 2629,-421"/>
 <text text-anchor="middle" x="2567" y="-400.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Gate.Poseidon</text>
 </g>
 <!-- Kimchi.Gate.Semantics.AddComplete -->
-<g id="node28" class="node">
+<g id="node30" class="node">
 <title>Kimchi.Gate.Semantics.AddComplete</title>
 <polygon fill="white" stroke="black" points="1756,-855 1556,-855 1556,-819 1756,-819 1756,-855"/>
 <text text-anchor="middle" x="1656" y="-834.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Gate.Semantics.AddComplete</text>
 </g>
 <!-- Kimchi.Gate.Semantics.AddComplete&#45;&gt;Kimchi.Gate.AddComplete -->
-<g id="edge38" class="edge">
+<g id="edge39" class="edge">
 <title>Kimchi.Gate.Semantics.AddComplete&#45;&gt;Kimchi.Gate.AddComplete</title>
-<path fill="none" stroke="#666666" d="M1644.61,-818.79C1619.23,-780.95 1557.85,-692.46 1527,-674 1509.94,-663.8 1502.16,-671.3 1483,-666 1272.9,-607.82 1173.15,-652 1024,-493 966.14,-431.32 959.51,-377.12 1002,-304 1010.32,-289.69 1024.1,-278.92 1038.54,-270.96"/>
+<path fill="none" stroke="#666666" d="M1643.51,-818.94C1614.27,-779.23 1542.67,-683.26 1527,-674 1508.75,-663.22 1500.45,-671.56 1480,-666 1270.84,-609.1 1172.13,-651.25 1024,-493 966.21,-431.26 959.51,-377.12 1002,-304 1010.32,-289.69 1024.1,-278.92 1038.54,-270.96"/>
 <polygon fill="#666666" stroke="#666666" points="1039.55,-272.81 1043.89,-268.16 1037.6,-269.09 1039.55,-272.81"/>
 </g>
 <!-- Kimchi.Gate.Semantics.EndoMul -->
-<g id="node29" class="node">
+<g id="node31" class="node">
 <title>Kimchi.Gate.Semantics.EndoMul</title>
 <polygon fill="white" stroke="black" points="2070,-1000 1894,-1000 1894,-964 2070,-964 2070,-1000"/>
 <text text-anchor="middle" x="1982" y="-979.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Gate.Semantics.EndoMul</text>
 </g>
 <!-- Kimchi.Gate.Semantics.EndoMul&#45;&gt;Pasta -->
-<g id="edge42" class="edge">
+<g id="edge43" class="edge">
 <title>Kimchi.Gate.Semantics.EndoMul&#45;&gt;Pasta</title>
-<path fill="none" stroke="#666666" d="M2070.17,-977.77C2286.4,-967.08 2813.05,-922.72 2638,-747 2617.42,-726.34 561.23,-756.64 538,-739 467.75,-685.65 484,-636.22 484,-548 484,-548 484,-548 484,-474 484,-428.44 476.26,-375.62 471.23,-346.08"/>
+<path fill="none" stroke="#666666" d="M2070.13,-976.07C2275.13,-961.75 2754.6,-910.23 2592,-747 2571.87,-726.79 560.72,-756.26 538,-739 467.75,-685.64 484,-636.22 484,-548 484,-548 484,-548 484,-474 484,-428.44 476.26,-375.62 471.23,-346.08"/>
 <polygon fill="#666666" stroke="#666666" points="473.29,-345.69 470.2,-340.14 469.15,-346.41 473.29,-345.69"/>
 </g>
 <!-- Kimchi.Gate.Semantics.EndoMul&#45;&gt;Kimchi.Gate.EndoMul -->
-<g id="edge39" class="edge">
+<g id="edge40" class="edge">
 <title>Kimchi.Gate.Semantics.EndoMul&#45;&gt;Kimchi.Gate.EndoMul</title>
-<path fill="none" stroke="#666666" d="M1986.56,-963.94C1998,-919.61 2027,-797 2027,-693 2027,-693 2027,-693 2027,-618 2027,-582.17 2043.11,-482.57 2018,-457 1995.52,-434.1 1544.51,-413.65 1371.11,-406.61"/>
-<polygon fill="#666666" stroke="#666666" points="1371.14,-404.5 1365.06,-406.36 1370.97,-408.7 1371.14,-404.5"/>
+<path fill="none" stroke="#666666" d="M1990.9,-963.91C2003.76,-937.61 2026,-885.27 2026,-838 2026,-838 2026,-838 2026,-764 2026,-695.75 2065.15,-506.34 2018,-457 1994.86,-432.79 1522.13,-413.02 1343.53,-406.39"/>
+<polygon fill="#666666" stroke="#666666" points="1343.38,-404.28 1337.3,-406.16 1343.22,-408.48 1343.38,-404.28"/>
 </g>
 <!-- Kimchi.Gate.Semantics.EndoScalar -->
-<g id="node30" class="node">
+<g id="node32" class="node">
 <title>Kimchi.Gate.Semantics.EndoScalar</title>
 <polygon fill="white" stroke="black" points="2253,-927 2065,-927 2065,-891 2253,-891 2253,-927"/>
 <text text-anchor="middle" x="2159" y="-906.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Gate.Semantics.EndoScalar</text>
 </g>
 <!-- Kimchi.Gate.Semantics.EndoMul&#45;&gt;Kimchi.Gate.Semantics.EndoScalar -->
-<g id="edge41" class="edge">
+<g id="edge42" class="edge">
 <title>Kimchi.Gate.Semantics.EndoMul&#45;&gt;Kimchi.Gate.Semantics.EndoScalar</title>
 <path fill="none" stroke="#666666" d="M2024.4,-963.99C2050.37,-953.58 2083.69,-940.21 2110.68,-929.38"/>
 <polygon fill="#666666" stroke="#666666" points="2111.55,-931.3 2116.34,-927.11 2109.99,-927.4 2111.55,-931.3"/>
 </g>
 <!-- Kimchi.Gate.Semantics.VarBaseMul -->
-<g id="node33" class="node">
+<g id="node35" class="node">
 <title>Kimchi.Gate.Semantics.VarBaseMul</title>
 <polygon fill="white" stroke="black" points="1775.5,-927 1584.5,-927 1584.5,-891 1775.5,-891 1775.5,-927"/>
 <text text-anchor="middle" x="1680" y="-906.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Gate.Semantics.VarBaseMul</text>
 </g>
 <!-- Kimchi.Gate.Semantics.EndoMul&#45;&gt;Kimchi.Gate.Semantics.VarBaseMul -->
-<g id="edge40" class="edge">
+<g id="edge41" class="edge">
 <title>Kimchi.Gate.Semantics.EndoMul&#45;&gt;Kimchi.Gate.Semantics.VarBaseMul</title>
 <path fill="none" stroke="#666666" d="M1909.66,-963.99C1864.06,-953.27 1805.18,-939.43 1758.46,-928.45"/>
 <polygon fill="#666666" stroke="#666666" points="1758.85,-926.38 1752.53,-927.05 1757.89,-930.47 1758.85,-926.38"/>
 </g>
 <!-- Kimchi.Gate.Semantics.EndoScalar&#45;&gt;Kimchi.Gate.EndoScalar -->
-<g id="edge43" class="edge">
+<g id="edge44" class="edge">
 <title>Kimchi.Gate.Semantics.EndoScalar&#45;&gt;Kimchi.Gate.EndoScalar</title>
 <path fill="none" stroke="#666666" d="M2166.07,-890.57C2195.57,-816.61 2304.89,-529.28 2253,-457 2247.3,-449.06 2203.46,-434.63 2163.55,-422.83"/>
 <polygon fill="#666666" stroke="#666666" points="2164.04,-420.78 2157.69,-421.11 2162.86,-424.81 2164.04,-420.78"/>
 </g>
 <!-- Kimchi.Gate.Semantics.Generic -->
-<g id="node31" class="node">
+<g id="node33" class="node">
 <title>Kimchi.Gate.Semantics.Generic</title>
-<polygon fill="white" stroke="black" points="2587.5,-710 2416.5,-710 2416.5,-674 2587.5,-674 2587.5,-710"/>
-<text text-anchor="middle" x="2502" y="-689.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Gate.Semantics.Generic</text>
+<polygon fill="white" stroke="black" points="2582.5,-783 2411.5,-783 2411.5,-747 2582.5,-747 2582.5,-783"/>
+<text text-anchor="middle" x="2497" y="-762.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Gate.Semantics.Generic</text>
 </g>
 <!-- Kimchi.Gate.Semantics.Generic&#45;&gt;Kimchi.Gate.Generic -->
-<g id="edge44" class="edge">
+<g id="edge45" class="edge">
 <title>Kimchi.Gate.Semantics.Generic&#45;&gt;Kimchi.Gate.Generic</title>
-<path fill="none" stroke="#666666" d="M2524.75,-674C2527.1,-671.52 2529.27,-668.84 2531,-666 2580.42,-585.17 2627.29,-534.65 2573,-457 2567.75,-449.49 2526.77,-434.89 2489.71,-422.91"/>
+<path fill="none" stroke="#666666" d="M2434.28,-746.86C2431.54,-744.56 2429.08,-741.95 2427,-739 2410.36,-715.39 2408.16,-695.9 2427,-674 2442.54,-655.94 2460.52,-679.72 2480,-666 2515.68,-640.86 2562.34,-535.33 2573,-493 2576.91,-477.48 2582.17,-470.11 2573,-457 2567.75,-449.49 2526.77,-434.89 2489.71,-422.91"/>
 <polygon fill="#666666" stroke="#666666" points="2490.16,-420.85 2483.8,-421.02 2488.87,-424.85 2490.16,-420.85"/>
 </g>
 <!-- Kimchi.Gate.Semantics.Poseidon -->
-<g id="node32" class="node">
+<g id="node34" class="node">
 <title>Kimchi.Gate.Semantics.Poseidon</title>
-<polygon fill="white" stroke="black" points="2629,-783 2451,-783 2451,-747 2629,-747 2629,-783"/>
-<text text-anchor="middle" x="2540" y="-762.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Gate.Semantics.Poseidon</text>
+<polygon fill="white" stroke="black" points="2629,-710 2451,-710 2451,-674 2629,-674 2629,-710"/>
+<text text-anchor="middle" x="2540" y="-689.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Gate.Semantics.Poseidon</text>
 </g>
 <!-- Kimchi.Gate.Semantics.Poseidon&#45;&gt;Kimchi.Gate.Poseidon -->
-<g id="edge45" class="edge">
+<g id="edge46" class="edge">
 <title>Kimchi.Gate.Semantics.Poseidon&#45;&gt;Kimchi.Gate.Poseidon</title>
-<path fill="none" stroke="#666666" d="M2604.62,-747C2607.71,-744.66 2610.55,-742.01 2613,-739 2646.65,-697.65 2628,-673.31 2628,-620 2628,-620 2628,-620 2628,-546 2628,-505.89 2630.12,-493.28 2613,-457 2607.65,-445.66 2599.16,-434.87 2590.93,-426.02"/>
-<polygon fill="#666666" stroke="#666666" points="2592.07,-424.18 2586.4,-421.31 2589.05,-427.09 2592.07,-424.18"/>
+<path fill="none" stroke="#666666" d="M2550.06,-674C2551.46,-671.36 2552.82,-668.63 2554,-666 2587.09,-591.81 2599.71,-573.14 2613,-493 2615.62,-477.22 2618.6,-471.99 2613,-457 2608.68,-445.44 2600.59,-434.74 2592.37,-426.02"/>
+<polygon fill="#666666" stroke="#666666" points="2593.53,-424.19 2587.82,-421.38 2590.53,-427.14 2593.53,-424.19"/>
 </g>
 <!-- Kimchi.Gate.Semantics.VarBaseMul&#45;&gt;Pasta -->
-<g id="edge48" class="edge">
+<g id="edge49" class="edge">
 <title>Kimchi.Gate.Semantics.VarBaseMul&#45;&gt;Pasta</title>
 <path fill="none" stroke="#666666" d="M1584.3,-901.58C1409.83,-889.84 1046.4,-865.17 920,-855 898.04,-853.23 147.26,-796.7 130,-783 70.22,-735.56 76,-696.32 76,-620 76,-620 76,-620 76,-474 76,-397.54 339.45,-344.86 433.85,-328.44"/>
 <polygon fill="#666666" stroke="#666666" points="434.26,-330.5 439.82,-327.41 433.55,-326.36 434.26,-330.5"/>
 </g>
 <!-- Kimchi.Gate.Semantics.VarBaseMul&#45;&gt;Pasta.Shifted -->
-<g id="edge49" class="edge">
+<g id="edge50" class="edge">
 <title>Kimchi.Gate.Semantics.VarBaseMul&#45;&gt;Pasta.Shifted</title>
-<path fill="none" stroke="#666666" d="M1775.59,-901.24C2004.86,-884.22 2571.93,-837.09 2638,-783 2683.44,-745.8 2667.15,-637.98 2653,-593 2630.87,-522.67 2622.91,-491.97 2558,-457 2493.22,-422.1 1307.02,-430.06 1234,-421 924.43,-382.58 849.07,-353.26 549,-268 548.02,-267.72 547.03,-267.43 546.03,-267.14"/>
-<polygon fill="#666666" stroke="#666666" points="546.61,-265.12 540.26,-265.38 545.39,-269.14 546.61,-265.12"/>
+<path fill="none" stroke="#666666" d="M1775.84,-900.77C1978.7,-884.51 2444.92,-841.84 2592,-783 2623.04,-770.58 2637.77,-768.76 2653,-739 2682.56,-681.23 2672.48,-654.9 2653,-593 2630.87,-522.67 2622.92,-491.95 2558,-457 2491.84,-421.38 1280.53,-430.57 1206,-421 908.63,-382.81 837.02,-351.25 549,-268 547.99,-267.71 546.97,-267.41 545.94,-267.1"/>
+<polygon fill="#666666" stroke="#666666" points="546.35,-265.03 540,-265.26 545.11,-269.04 546.35,-265.03"/>
 </g>
 <!-- Kimchi.Gate.Semantics.VarBaseMul&#45;&gt;Kimchi.Gate.Semantics.AddComplete -->
-<g id="edge47" class="edge">
+<g id="edge48" class="edge">
 <title>Kimchi.Gate.Semantics.VarBaseMul&#45;&gt;Kimchi.Gate.Semantics.AddComplete</title>
 <path fill="none" stroke="#666666" d="M1674.07,-890.7C1670.99,-881.71 1667.18,-870.61 1663.86,-860.92"/>
 <polygon fill="#666666" stroke="#666666" points="1665.8,-860.1 1661.86,-855.1 1661.82,-861.46 1665.8,-860.1"/>
 </g>
 <!-- Kimchi.Gate.Semantics.VarBaseMul&#45;&gt;Kimchi.Gate.VarBaseMul -->
-<g id="edge46" class="edge">
+<g id="edge47" class="edge">
 <title>Kimchi.Gate.Semantics.VarBaseMul&#45;&gt;Kimchi.Gate.VarBaseMul</title>
-<path fill="none" stroke="#666666" d="M1725.03,-890.86C1740.55,-882.53 1756.22,-870.81 1765,-855 1772.76,-841.01 1772.47,-833.15 1765,-819 1757.65,-805.07 1660.79,-748.19 1648,-739 1609.1,-711.03 1604.27,-696.56 1562,-674 1558.61,-672.19 1041.23,-496.13 1039,-493 1005.93,-446.56 1049.03,-379.36 1076.1,-345.02"/>
-<polygon fill="#666666" stroke="#666666" points="1077.85,-346.19 1079.97,-340.2 1074.58,-343.56 1077.85,-346.19"/>
+<path fill="none" stroke="#666666" d="M1725.03,-890.86C1740.55,-882.53 1756.22,-870.81 1765,-855 1772.76,-841.01 1772.47,-833.15 1765,-819 1757.65,-805.07 1660.84,-748.12 1648,-739 1608.37,-710.83 1603.01,-696.68 1560,-674 1553.22,-670.43 1043.44,-499.24 1039,-493 1005.96,-446.54 1049.04,-379.35 1076.11,-345.01"/>
+<polygon fill="#666666" stroke="#666666" points="1077.86,-346.19 1079.97,-340.19 1074.58,-343.56 1077.86,-346.19"/>
 </g>
 <!-- Kimchi.Gate.VarBaseMul&#45;&gt;Pasta.Basic -->
-<g id="edge50" class="edge">
+<g id="edge51" class="edge">
 <title>Kimchi.Gate.VarBaseMul&#45;&gt;Pasta.Basic</title>
 <path fill="none" stroke="#666666" d="M1034.33,-303.87C930.88,-274.67 722.94,-215.97 633.96,-190.84"/>
 <polygon fill="#666666" stroke="#666666" points="634.36,-188.78 628.02,-189.17 633.22,-192.82 634.36,-188.78"/>
 </g>
 <!-- Kimchi.Gate.VarBaseMul&#45;&gt;Kimchi.Gate.AddComplete -->
-<g id="edge51" class="edge">
+<g id="edge52" class="edge">
 <title>Kimchi.Gate.VarBaseMul&#45;&gt;Kimchi.Gate.AddComplete</title>
 <path fill="none" stroke="#666666" d="M1095,-303.7C1095,-294.8 1095,-283.82 1095,-274.2"/>
 <polygon fill="#666666" stroke="#666666" points="1097.1,-274.1 1095,-268.1 1092.9,-274.1 1097.1,-274.1"/>
 </g>
 <!-- Kimchi.Index.Aggregate -->
-<g id="node35" class="node">
+<g id="node37" class="node">
 <title>Kimchi.Index.Aggregate</title>
 <polygon fill="white" stroke="black" points="1518,-710 1384,-710 1384,-674 1518,-674 1518,-710"/>
 <text text-anchor="middle" x="1451" y="-689.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Index.Aggregate</text>
 </g>
 <!-- Kimchi.Index.CopySoundness -->
-<g id="node37" class="node">
+<g id="node39" class="node">
 <title>Kimchi.Index.CopySoundness</title>
 <polygon fill="white" stroke="black" points="1815.5,-637 1654.5,-637 1654.5,-601 1815.5,-601 1815.5,-637"/>
 <text text-anchor="middle" x="1735" y="-616.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Index.CopySoundness</text>
 </g>
 <!-- Kimchi.Index.Aggregate&#45;&gt;Kimchi.Index.CopySoundness -->
-<g id="edge52" class="edge">
+<g id="edge53" class="edge">
 <title>Kimchi.Index.Aggregate&#45;&gt;Kimchi.Index.CopySoundness</title>
 <path fill="none" stroke="#666666" d="M1518.3,-674.17C1561.16,-663.46 1616.7,-649.57 1660.83,-638.54"/>
 <polygon fill="#666666" stroke="#666666" points="1661.39,-640.57 1666.7,-637.07 1660.37,-636.49 1661.39,-640.57"/>
 </g>
-<!-- Kimchi.Quotient.SchwartzZippel -->
-<g id="node58" class="node">
-<title>Kimchi.Quotient.SchwartzZippel</title>
-<polygon fill="white" stroke="black" points="2108.5,-196 1935.5,-196 1935.5,-160 2108.5,-160 2108.5,-196"/>
-<text text-anchor="middle" x="2022" y="-175.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Quotient.SchwartzZippel</text>
+<!-- Kimchi.SchwartzZippel -->
+<g id="node59" class="node">
+<title>Kimchi.SchwartzZippel</title>
+<polygon fill="white" stroke="black" points="2094,-196 1966,-196 1966,-160 2094,-160 2094,-196"/>
+<text text-anchor="middle" x="2030" y="-175.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.SchwartzZippel</text>
 </g>
-<!-- Kimchi.Index.Aggregate&#45;&gt;Kimchi.Quotient.SchwartzZippel -->
-<g id="edge53" class="edge">
-<title>Kimchi.Index.Aggregate&#45;&gt;Kimchi.Quotient.SchwartzZippel</title>
-<path fill="none" stroke="#666666" d="M1383.81,-690.76C1302.07,-689.62 1169.36,-684.8 1124,-666 1078,-646.93 1082.53,-617.19 1039,-593 1002.75,-572.86 975.9,-597.38 950,-565 902.96,-506.18 951.2,-275.04 1013,-232 1087.01,-180.45 1693.4,-177.52 1928.94,-178.36"/>
-<polygon fill="#666666" stroke="#666666" points="1929.11,-180.46 1935.12,-178.39 1929.12,-176.26 1929.11,-180.46"/>
+<!-- Kimchi.Index.Aggregate&#45;&gt;Kimchi.SchwartzZippel -->
+<g id="edge54" class="edge">
+<title>Kimchi.Index.Aggregate&#45;&gt;Kimchi.SchwartzZippel</title>
+<path fill="none" stroke="#666666" d="M1383.81,-690.76C1302.07,-689.62 1169.36,-684.8 1124,-666 1078,-646.93 1082.41,-617.4 1039,-593 1003.96,-573.3 978.59,-596 953,-565 905.13,-507.02 951.29,-274.96 1013,-232 1090.19,-178.27 1741.63,-177.24 1959.42,-178.43"/>
+<polygon fill="#666666" stroke="#666666" points="1959.72,-180.53 1965.73,-178.46 1959.74,-176.33 1959.72,-180.53"/>
 </g>
 <!-- Kimchi.Index.Basic -->
-<g id="node36" class="node">
+<g id="node38" class="node">
 <title>Kimchi.Index.Basic</title>
 <polygon fill="white" stroke="black" points="2397,-493 2287,-493 2287,-457 2397,-457 2397,-493"/>
 <text text-anchor="middle" x="2342" y="-472.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Index.Basic</text>
 </g>
 <!-- Kimchi.Quotient.Wiring -->
-<g id="node60" class="node">
+<g id="node58" class="node">
 <title>Kimchi.Quotient.Wiring</title>
 <polygon fill="white" stroke="black" points="2311,-421 2181,-421 2181,-385 2311,-385 2311,-421"/>
 <text text-anchor="middle" x="2246" y="-400.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Quotient.Wiring</text>
 </g>
 <!-- Kimchi.Index.Basic&#45;&gt;Kimchi.Quotient.Wiring -->
-<g id="edge54" class="edge">
+<g id="edge55" class="edge">
 <title>Kimchi.Index.Basic&#45;&gt;Kimchi.Quotient.Wiring</title>
 <path fill="none" stroke="#666666" d="M2318.27,-456.7C2305.02,-447.03 2288.41,-434.93 2274.47,-424.76"/>
 <polygon fill="#666666" stroke="#666666" points="2275.54,-422.94 2269.46,-421.1 2273.07,-426.34 2275.54,-422.94"/>
 </g>
 <!-- Kimchi.Index.CopySoundness&#45;&gt;Kimchi.Index.Satisfies -->
-<g id="edge55" class="edge">
+<g id="edge56" class="edge">
 <title>Kimchi.Index.CopySoundness&#45;&gt;Kimchi.Index.Satisfies</title>
 <path fill="none" stroke="#666666" d="M1734.01,-600.7C1733.5,-591.8 1732.88,-580.82 1732.33,-571.2"/>
 <polygon fill="#666666" stroke="#666666" points="1734.42,-570.97 1731.98,-565.1 1730.22,-571.21 1734.42,-570.97"/>
 </g>
-<!-- Kimchi.Index.CopySoundness&#45;&gt;Kimchi.Quotient.SchwartzZippel -->
-<g id="edge56" class="edge">
-<title>Kimchi.Index.CopySoundness&#45;&gt;Kimchi.Quotient.SchwartzZippel</title>
-<path fill="none" stroke="#666666" d="M1815.54,-608.98C1939.8,-593.22 2169.09,-556.18 2218,-493 2227.79,-480.35 2228.25,-469.28 2218,-457 2160.69,-388.33 2077.53,-489.48 2020,-421 1992.67,-388.46 2009.78,-256.26 2018.16,-202.2"/>
-<polygon fill="#666666" stroke="#666666" points="2020.28,-202.26 2019.14,-196.01 2016.13,-201.61 2020.28,-202.26"/>
+<!-- Kimchi.Index.CopySoundness&#45;&gt;Kimchi.SchwartzZippel -->
+<g id="edge57" class="edge">
+<title>Kimchi.Index.CopySoundness&#45;&gt;Kimchi.SchwartzZippel</title>
+<path fill="none" stroke="#666666" d="M1815.54,-608.98C1939.8,-593.22 2169.09,-556.18 2218,-493 2227.79,-480.35 2228.25,-469.28 2218,-457 2160.69,-388.33 2077.31,-489.67 2020,-421 1992.76,-388.36 2014.79,-256.3 2025.25,-202.24"/>
+<polygon fill="#666666" stroke="#666666" points="2027.31,-202.64 2026.41,-196.35 2023.19,-201.83 2027.31,-202.64"/>
 </g>
 <!-- Kimchi.Index.Degree -->
-<g id="node38" class="node">
+<g id="node40" class="node">
 <title>Kimchi.Index.Degree</title>
 <polygon fill="white" stroke="black" points="1517.5,-783 1398.5,-783 1398.5,-747 1517.5,-747 1517.5,-783"/>
 <text text-anchor="middle" x="1458" y="-762.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Index.Degree</text>
 </g>
 <!-- Kimchi.Index.Degree&#45;&gt;Kimchi.Index.Aggregate -->
-<g id="edge57" class="edge">
+<g id="edge58" class="edge">
 <title>Kimchi.Index.Degree&#45;&gt;Kimchi.Index.Aggregate</title>
 <path fill="none" stroke="#666666" d="M1456.31,-746.81C1455.39,-737.57 1454.26,-726.04 1453.27,-716.03"/>
 <polygon fill="#666666" stroke="#666666" points="1455.36,-715.79 1452.68,-710.03 1451.18,-716.21 1455.36,-715.79"/>
 </g>
 <!-- Kimchi.Index.Satisfies&#45;&gt;Kimchi.Index.Basic -->
-<g id="edge58" class="edge">
+<g id="edge59" class="edge">
 <title>Kimchi.Index.Satisfies&#45;&gt;Kimchi.Index.Basic</title>
 <path fill="none" stroke="#666666" d="M1793.72,-539.74C1886.52,-530.35 2065.85,-511.71 2218,-493 2238.42,-490.49 2260.71,-487.51 2280.68,-484.75"/>
 <polygon fill="#666666" stroke="#666666" points="2281.14,-486.81 2286.8,-483.9 2280.57,-482.65 2281.14,-486.81"/>
@@ -641,7 +659,7 @@
 <text text-anchor="middle" x="1529" y="-472.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Quotient.Gate.AddComplete</text>
 </g>
 <!-- Kimchi.Index.Satisfies&#45;&gt;Kimchi.Quotient.Gate.AddComplete -->
-<g id="edge61" class="edge">
+<g id="edge62" class="edge">
 <title>Kimchi.Index.Satisfies&#45;&gt;Kimchi.Quotient.Gate.AddComplete</title>
 <path fill="none" stroke="#666666" d="M1681.84,-528.97C1652.39,-518.76 1614.87,-505.76 1584.38,-495.19"/>
 <polygon fill="#666666" stroke="#666666" points="1584.73,-493.09 1578.38,-493.11 1583.36,-497.06 1584.73,-493.09"/>
@@ -653,7 +671,7 @@
 <text text-anchor="middle" x="1332" y="-472.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Quotient.Gate.EndoMul</text>
 </g>
 <!-- Kimchi.Index.Satisfies&#45;&gt;Kimchi.Quotient.Gate.EndoMul -->
-<g id="edge63" class="edge">
+<g id="edge64" class="edge">
 <title>Kimchi.Index.Satisfies&#45;&gt;Kimchi.Quotient.Gate.EndoMul</title>
 <path fill="none" stroke="#666666" d="M1668.26,-535.31C1606.39,-524.72 1509.13,-507.98 1425,-493 1423.94,-492.81 1422.88,-492.62 1421.81,-492.43"/>
 <polygon fill="#666666" stroke="#666666" points="1421.92,-490.32 1415.64,-491.33 1421.18,-494.45 1421.92,-490.32"/>
@@ -665,7 +683,7 @@
 <text text-anchor="middle" x="1919" y="-472.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Quotient.Gate.EndoScalar</text>
 </g>
 <!-- Kimchi.Index.Satisfies&#45;&gt;Kimchi.Quotient.Gate.EndoScalar -->
-<g id="edge64" class="edge">
+<g id="edge65" class="edge">
 <title>Kimchi.Index.Satisfies&#45;&gt;Kimchi.Quotient.Gate.EndoScalar</title>
 <path fill="none" stroke="#666666" d="M1776.99,-528.88C1804.29,-518.71 1838.97,-505.8 1867.23,-495.28"/>
 <polygon fill="#666666" stroke="#666666" points="1868.27,-497.13 1873.16,-493.07 1866.8,-493.19 1868.27,-497.13"/>
@@ -677,7 +695,7 @@
 <text text-anchor="middle" x="2128" y="-472.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Quotient.Gate.Generic</text>
 </g>
 <!-- Kimchi.Index.Satisfies&#45;&gt;Kimchi.Quotient.Gate.Generic -->
-<g id="edge59" class="edge">
+<g id="edge60" class="edge">
 <title>Kimchi.Index.Satisfies&#45;&gt;Kimchi.Quotient.Gate.Generic</title>
 <path fill="none" stroke="#666666" d="M1793.91,-534.91C1860.47,-523.17 1966,-504.56 2040.62,-491.41"/>
 <polygon fill="#666666" stroke="#666666" points="2041.29,-493.42 2046.84,-490.31 2040.56,-489.28 2041.29,-493.42"/>
@@ -689,7 +707,7 @@
 <text text-anchor="middle" x="1727" y="-472.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Quotient.Gate.Poseidon</text>
 </g>
 <!-- Kimchi.Index.Satisfies&#45;&gt;Kimchi.Quotient.Gate.Poseidon -->
-<g id="edge60" class="edge">
+<g id="edge61" class="edge">
 <title>Kimchi.Index.Satisfies&#45;&gt;Kimchi.Quotient.Gate.Poseidon</title>
 <path fill="none" stroke="#666666" d="M1730.01,-528.7C1729.5,-519.8 1728.88,-508.82 1728.33,-499.2"/>
 <polygon fill="#666666" stroke="#666666" points="1730.42,-498.97 1727.98,-493.1 1726.22,-499.21 1730.42,-498.97"/>
@@ -701,235 +719,235 @@
 <text text-anchor="middle" x="1139" y="-472.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Quotient.Gate.VarBaseMul</text>
 </g>
 <!-- Kimchi.Index.Satisfies&#45;&gt;Kimchi.Quotient.Gate.VarBaseMul -->
-<g id="edge62" class="edge">
+<g id="edge63" class="edge">
 <title>Kimchi.Index.Satisfies&#45;&gt;Kimchi.Quotient.Gate.VarBaseMul</title>
 <path fill="none" stroke="#666666" d="M1668.32,-535.95C1651.97,-533.5 1634.34,-531.01 1618,-529 1450.5,-508.44 1407.32,-515.02 1240,-493 1238.78,-492.84 1237.55,-492.67 1236.31,-492.51"/>
 <polygon fill="#666666" stroke="#666666" points="1236.3,-490.39 1230.07,-491.64 1235.73,-494.55 1236.3,-490.39"/>
 </g>
 <!-- Kimchi -->
-<g id="node40" class="node">
+<g id="node42" class="node">
 <title>Kimchi</title>
 <polygon fill="white" stroke="black" points="1842,-1072 1788,-1072 1788,-1036 1842,-1036 1842,-1072"/>
 <text text-anchor="middle" x="1815" y="-1051.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi</text>
 </g>
 <!-- Kimchi&#45;&gt;Pasta.Shifted -->
-<g id="edge65" class="edge">
+<g id="edge66" class="edge">
 <title>Kimchi&#45;&gt;Pasta.Shifted</title>
 <path fill="none" stroke="#666666" d="M1787.85,-1052.79C1588.11,-1051.15 349.47,-1039.43 188,-1000 98.01,-978.02 0,-1002.64 0,-910 0,-910 0,-910 0,-402 0,-307.7 330.04,-266.96 453.84,-254.99"/>
 <polygon fill="#666666" stroke="#666666" points="454.15,-257.07 459.93,-254.41 453.76,-252.89 454.15,-257.07"/>
 </g>
 <!-- Kimchi&#45;&gt;Bulletproof.Protocol -->
-<g id="edge78" class="edge">
+<g id="edge79" class="edge">
 <title>Kimchi&#45;&gt;Bulletproof.Protocol</title>
-<path fill="none" stroke="#666666" d="M1842.42,-1052.52C1978.64,-1049.98 2578.98,-1036.75 2653,-1000 2696.51,-978.4 2715,-958.57 2715,-910 2715,-910 2715,-910 2715,-836 2715,-783.7 2685.53,-768.84 2638,-747 2611.5,-734.82 565.34,-749.16 538,-739 496.34,-723.52 497.12,-701.24 462,-674 447.18,-662.5 430.15,-650.45 415.88,-640.66"/>
+<path fill="none" stroke="#666666" d="M1842.22,-1052.51C1977.47,-1049.92 2573.52,-1036.5 2647,-1000 2690.5,-978.39 2709,-958.57 2709,-910 2709,-910 2709,-910 2709,-836 2709,-770.67 2653.87,-767.99 2592,-747 2537.97,-728.67 591.48,-758.87 538,-739 496.34,-723.52 497.12,-701.24 462,-674 447.18,-662.5 430.15,-650.45 415.88,-640.66"/>
 <polygon fill="#666666" stroke="#666666" points="416.9,-638.81 410.76,-637.15 414.53,-642.27 416.9,-638.81"/>
 </g>
 <!-- Kimchi&#45;&gt;Bulletproof.Reflection -->
-<g id="edge98" class="edge">
+<g id="edge99" class="edge">
 <title>Kimchi&#45;&gt;Bulletproof.Reflection</title>
 <path fill="none" stroke="#666666" d="M1787.86,-1052.4C1582.94,-1047.78 285.49,-1016.19 231,-956 207.74,-930.31 220.25,-887.41 231.55,-861.02"/>
 <polygon fill="#666666" stroke="#666666" points="233.56,-861.67 234.07,-855.34 229.72,-859.97 233.56,-861.67"/>
 </g>
 <!-- Kimchi&#45;&gt;Bulletproof.Soundness -->
-<g id="edge79" class="edge">
+<g id="edge80" class="edge">
 <title>Kimchi&#45;&gt;Bulletproof.Soundness</title>
 <path fill="none" stroke="#666666" d="M1787.7,-1052.79C1584.4,-1051.15 312.17,-1039.33 242,-1000 165.43,-957.08 121.47,-896.33 163,-819 170.45,-805.14 183.29,-794.29 196.53,-786.12"/>
 <polygon fill="#666666" stroke="#666666" points="197.71,-787.86 201.82,-783 195.58,-784.24 197.71,-787.86"/>
 </g>
 <!-- Kimchi&#45;&gt;Bulletproof.Wire -->
-<g id="edge92" class="edge">
+<g id="edge93" class="edge">
 <title>Kimchi&#45;&gt;Bulletproof.Wire</title>
 <path fill="none" stroke="#666666" d="M1787.82,-1052.55C1658.78,-1050.26 1107.25,-1038.34 940,-1000 728.91,-951.61 495.27,-833.09 407.21,-785.88"/>
 <polygon fill="#666666" stroke="#666666" points="408.15,-784 401.87,-783.01 406.16,-787.7 408.15,-784"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Gate.AddComplete -->
-<g id="edge67" class="edge">
+<g id="edge68" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Gate.AddComplete</title>
-<path fill="none" stroke="#666666" d="M1842.2,-1051.74C1903.46,-1048.29 2049.23,-1036.34 2079,-1000 2089.14,-987.62 2088.27,-977.04 2079,-964 2072.73,-955.18 2062.27,-964.82 2056,-956 2039.26,-932.45 2050.45,-919.35 2056,-891 2075.77,-789.97 2283.96,-536.04 2218,-457 2160.69,-388.33 2104.43,-450.51 2020,-421 1916.2,-384.72 1907.57,-334.78 1802,-304 1686.21,-270.24 1333.36,-257.11 1174.27,-252.81"/>
-<polygon fill="#666666" stroke="#666666" points="1174.28,-250.71 1168.23,-252.65 1174.17,-254.9 1174.28,-250.71"/>
+<path fill="none" stroke="#666666" d="M1842.2,-1051.74C1903.46,-1048.29 2049.23,-1036.34 2079,-1000 2089.14,-987.62 2088.27,-977.04 2079,-964 2072.73,-955.18 2062.27,-964.82 2056,-956 2039.26,-932.45 2050.45,-919.35 2056,-891 2075.77,-789.97 2283.96,-536.04 2218,-457 2160.69,-388.33 2104.99,-448.86 2020,-421 1907.24,-384.04 1894.51,-335.13 1780,-304 1667.89,-273.53 1329.77,-258.74 1174.51,-253.41"/>
+<polygon fill="#666666" stroke="#666666" points="1174.22,-251.3 1168.16,-253.2 1174.08,-255.5 1174.22,-251.3"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Gate.EndoMul -->
-<g id="edge70" class="edge">
+<g id="edge71" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Gate.EndoMul</title>
-<path fill="none" stroke="#666666" d="M1787.78,-1052.31C1717.51,-1049.98 1532.48,-1040.07 1489,-1000 1452.3,-966.18 1496.07,-927.47 1462,-891 1426.31,-852.79 1387.92,-891 1350,-855 1312.77,-819.65 1337.54,-789.68 1309,-747 1303.28,-738.44 1043.09,-502.45 1039,-493 1032.65,-478.31 1028.86,-469.37 1039,-457 1063.54,-427.06 1166.56,-413.7 1236.68,-407.98"/>
-<polygon fill="#666666" stroke="#666666" points="1237.12,-410.05 1242.93,-407.48 1236.79,-405.87 1237.12,-410.05"/>
+<path fill="none" stroke="#666666" d="M1787.78,-1052.31C1717.51,-1049.98 1532.48,-1040.07 1489,-1000 1452.3,-966.18 1496.07,-927.47 1462,-891 1426.31,-852.79 1387.92,-891 1350,-855 1312.77,-819.65 1337.5,-789.7 1309,-747 1230.63,-629.59 1181.2,-625.32 1078,-529 1060.76,-512.9 1048.46,-514.61 1039,-493 1008.42,-423.15 1128.12,-407.1 1208.47,-404.01"/>
+<polygon fill="#666666" stroke="#666666" points="1208.74,-406.1 1214.66,-403.79 1208.59,-401.9 1208.74,-406.1"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Gate.EndoScalar -->
-<g id="edge69" class="edge">
+<g id="edge70" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Gate.EndoScalar</title>
-<path fill="none" stroke="#666666" d="M1842.04,-1052.21C1925.86,-1049.37 2180.01,-1037.77 2252,-1000 2275.14,-987.86 2280.2,-979.8 2291,-956 2343.22,-840.95 2293.39,-795.8 2327,-674 2340.65,-624.53 2439.42,-495.95 2406,-457 2371.74,-417.07 2223.7,-430.75 2172,-421 2171.09,-420.83 2170.17,-420.65 2169.24,-420.47"/>
+<path fill="none" stroke="#666666" d="M1842.04,-1052.21C1925.86,-1049.37 2180.01,-1037.77 2252,-1000 2347.08,-950.12 2312,-873.36 2312,-766 2312,-766 2312,-766 2312,-691 2312,-618.34 2291.72,-588.09 2334,-529 2354.82,-499.9 2387.19,-523.43 2406,-493 2414.41,-479.39 2416.42,-469.14 2406,-457 2371.74,-417.07 2223.7,-430.75 2172,-421 2171.09,-420.83 2170.17,-420.65 2169.24,-420.47"/>
 <polygon fill="#666666" stroke="#666666" points="2169.38,-418.36 2163.09,-419.26 2168.57,-422.48 2169.38,-418.36"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Gate.Generic -->
-<g id="edge66" class="edge">
+<g id="edge67" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Gate.Generic</title>
-<path fill="none" stroke="#666666" d="M1842.14,-1052.35C1949.1,-1049.53 2337.47,-1036.82 2377,-1000 2406.68,-972.36 2392,-950.55 2392,-910 2392,-910 2392,-910 2392,-836 2392,-763.65 2357.36,-725.68 2408,-674 2428.99,-652.58 2450.61,-683.45 2475,-666 2509.68,-641.18 2548.54,-534.58 2558,-493 2561.55,-477.4 2566.93,-470.28 2558,-457 2549.91,-444.96 2521.23,-432.66 2492.87,-422.94"/>
+<path fill="none" stroke="#666666" d="M1842.14,-1052.35C1949.1,-1049.53 2337.47,-1036.82 2377,-1000 2406.68,-972.36 2392,-950.55 2392,-910 2392,-910 2392,-910 2392,-764 2392,-723.29 2382.04,-704.5 2409,-674 2416.73,-665.26 2424.78,-673.14 2434,-666 2464.32,-642.51 2457.96,-624.38 2480,-593 2512.4,-546.88 2539.67,-546.3 2558,-493 2563.2,-477.87 2566.93,-470.28 2558,-457 2549.91,-444.96 2521.23,-432.66 2492.87,-422.94"/>
 <polygon fill="#666666" stroke="#666666" points="2493.19,-420.83 2486.83,-420.91 2491.85,-424.81 2493.19,-420.83"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Gate.Poseidon -->
-<g id="edge71" class="edge">
+<g id="edge72" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Gate.Poseidon</title>
-<path fill="none" stroke="#666666" d="M1842.19,-1052.43C1953.11,-1049.84 2367.57,-1037.72 2411,-1000 2442.01,-973.07 2432,-951.07 2432,-910 2432,-910 2432,-910 2432,-836 2432,-796.2 2413.02,-774.28 2442,-747 2454.56,-735.18 2584.56,-750.94 2597,-739 2616.16,-720.61 2608,-646.56 2608,-620 2608,-620 2608,-620 2608,-546 2608,-502.4 2589.94,-454.12 2577.79,-426.58"/>
-<polygon fill="#666666" stroke="#666666" points="2579.67,-425.64 2575.3,-421.03 2575.84,-427.36 2579.67,-425.64"/>
+<path fill="none" stroke="#666666" d="M1842.25,-1051.94C1944.89,-1047.75 2307.98,-1031 2419,-1000 2506.3,-975.62 2602,-1000.64 2602,-910 2602,-910 2602,-910 2602,-836 2602,-816.1 2606.48,-760.65 2592,-747 2579.86,-735.55 2453.48,-751.11 2442,-739 2422.12,-718.04 2422.78,-695.57 2442,-674 2452.27,-662.47 2498.49,-675.04 2511,-666 2551.14,-637.02 2540.28,-611.23 2558,-565 2575.53,-519.26 2585.88,-505.63 2580,-457 2578.82,-447.22 2576.45,-436.64 2574.06,-427.52"/>
+<polygon fill="#666666" stroke="#666666" points="2576.01,-426.71 2572.41,-421.47 2571.96,-427.81 2576.01,-426.71"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Gate.Semantics.AddComplete -->
-<g id="edge73" class="edge">
+<g id="edge74" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Gate.Semantics.AddComplete</title>
 <path fill="none" stroke="#666666" d="M1787.87,-1051.33C1736.18,-1046.51 1624.4,-1027.87 1576,-956 1559.86,-932.04 1562.33,-916.45 1576,-891 1583.45,-877.14 1596.29,-866.29 1609.53,-858.12"/>
 <polygon fill="#666666" stroke="#666666" points="1610.71,-859.86 1614.82,-855 1608.58,-856.24 1610.71,-859.86"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Gate.Semantics.EndoMul -->
-<g id="edge76" class="edge">
+<g id="edge77" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Gate.Semantics.EndoMul</title>
 <path fill="none" stroke="#666666" d="M1842.2,-1041.6C1867.42,-1031.03 1905.45,-1015.09 1935.49,-1002.5"/>
 <polygon fill="#666666" stroke="#666666" points="1936.66,-1004.28 1941.38,-1000.03 1935.03,-1000.41 1936.66,-1004.28"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Gate.Semantics.EndoScalar -->
-<g id="edge75" class="edge">
+<g id="edge76" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Gate.Semantics.EndoScalar</title>
 <path fill="none" stroke="#666666" d="M1842.31,-1050.39C1904.04,-1044.1 2052.19,-1026.59 2094,-1000 2119.42,-983.83 2138.03,-953.86 2148.67,-932.96"/>
 <polygon fill="#666666" stroke="#666666" points="2150.68,-933.64 2151.46,-927.33 2146.91,-931.77 2150.68,-933.64"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Gate.Semantics.Generic -->
-<g id="edge72" class="edge">
+<g id="edge73" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Gate.Semantics.Generic</title>
-<path fill="none" stroke="#666666" d="M1842.36,-1052.44C1952.03,-1049.93 2355.92,-1038.14 2397,-1000 2426.72,-972.41 2412,-950.55 2412,-910 2412,-910 2412,-910 2412,-836 2412,-795.89 2405.8,-781.05 2427,-747 2435.53,-733.29 2448.95,-722.02 2462.09,-713.38"/>
-<polygon fill="#666666" stroke="#666666" points="2463.35,-715.07 2467.3,-710.08 2461.1,-711.52 2463.35,-715.07"/>
+<path fill="none" stroke="#666666" d="M1842.12,-1052.15C1950.87,-1048.51 2351.67,-1032.97 2397,-1000 2467.44,-948.77 2488.69,-837.66 2494.74,-789.29"/>
+<polygon fill="#666666" stroke="#666666" points="2496.85,-789.37 2495.47,-783.17 2492.68,-788.88 2496.85,-789.37"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Gate.Semantics.Poseidon -->
-<g id="edge77" class="edge">
+<g id="edge78" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Gate.Semantics.Poseidon</title>
-<path fill="none" stroke="#666666" d="M1842.03,-1052.31C1955.28,-1049.18 2388.01,-1035.02 2437,-1000 2508.19,-949.11 2530.82,-837.83 2537.46,-789.35"/>
-<polygon fill="#666666" stroke="#666666" points="2539.57,-789.43 2538.26,-783.21 2535.4,-788.89 2539.57,-789.43"/>
+<path fill="none" stroke="#666666" d="M1842.26,-1053.14C1974.96,-1053.56 2549.24,-1052.34 2607,-1000 2637.05,-972.77 2622,-950.55 2622,-910 2622,-910 2622,-910 2622,-836 2622,-795.89 2627.27,-781.62 2607,-747 2599.27,-733.8 2587.01,-722.52 2575.08,-713.74"/>
+<polygon fill="#666666" stroke="#666666" points="2576.1,-711.89 2570,-710.13 2573.67,-715.32 2576.1,-711.89"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Gate.Semantics.VarBaseMul -->
-<g id="edge74" class="edge">
+<g id="edge75" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Gate.Semantics.VarBaseMul</title>
 <path fill="none" stroke="#666666" d="M1798.72,-1035.75C1774.09,-1009.66 1727.39,-960.19 1700.48,-931.7"/>
 <polygon fill="#666666" stroke="#666666" points="1701.99,-930.23 1696.34,-927.31 1698.93,-933.11 1701.99,-930.23"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Gate.VarBaseMul -->
-<g id="edge68" class="edge">
+<g id="edge69" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Gate.VarBaseMul</title>
-<path fill="none" stroke="#666666" d="M1787.8,-1052.51C1714.71,-1050.65 1516.34,-1041.76 1469,-1000 1431.23,-966.68 1473.1,-927.12 1438,-891 1400.97,-852.89 1362.02,-892.11 1324,-855 1287.69,-819.56 1326.2,-779.21 1287,-747 1266.55,-730.2 1252.23,-749.64 1228,-739 1181.47,-718.57 1173.75,-703.99 1140,-666 1079.16,-597.53 1053.95,-580.84 1028,-493 1021.71,-471.72 1024.14,-393.02 1032,-377 1038.5,-363.76 1049.87,-352.47 1061.18,-343.7"/>
-<polygon fill="#666666" stroke="#666666" points="1062.46,-345.36 1066.01,-340.09 1059.95,-342 1062.46,-345.36"/>
+<path fill="none" stroke="#666666" d="M1787.8,-1052.51C1714.71,-1050.65 1516.34,-1041.76 1469,-1000 1431.23,-966.68 1473.1,-927.12 1438,-891 1400.97,-852.89 1362.02,-892.11 1324,-855 1287.69,-819.56 1325.18,-780.42 1287,-747 1273.36,-735.06 1263.54,-746.41 1247,-739 1197.76,-716.94 1187.66,-704.64 1150,-666 1084.69,-598.98 1057.12,-582.56 1030,-493 1024.21,-473.89 1022.2,-397.62 1032,-377 1038.33,-363.68 1049.67,-352.38 1061.01,-343.61"/>
+<polygon fill="#666666" stroke="#666666" points="1062.29,-345.27 1065.85,-340.01 1059.78,-341.9 1062.29,-345.27"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Index.Aggregate -->
-<g id="edge86" class="edge">
+<g id="edge87" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Index.Aggregate</title>
 <path fill="none" stroke="#666666" d="M1787.6,-1049.84C1732.77,-1043.05 1612.04,-1025.56 1580,-1000 1545.35,-972.35 1537,-954.33 1537,-910 1537,-910 1537,-910 1537,-836 1537,-796.2 1547.21,-781.29 1527,-747 1518.88,-733.21 1505.69,-722.02 1492.56,-713.47"/>
 <polygon fill="#666666" stroke="#666666" points="1493.55,-711.61 1487.35,-710.21 1491.32,-715.17 1493.55,-711.61"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Index.Basic -->
-<g id="edge84" class="edge">
+<g id="edge85" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Index.Basic</title>
-<path fill="none" stroke="#666666" d="M1842.08,-1051.45C1921.36,-1046.6 2151.66,-1030.21 2220,-1000 2266.85,-979.29 2292,-961.22 2292,-910 2292,-910 2292,-910 2292,-618 2292,-573.83 2313.79,-526.1 2328.6,-498.76"/>
-<polygon fill="#666666" stroke="#666666" points="2330.58,-499.51 2331.64,-493.24 2326.9,-497.48 2330.58,-499.51"/>
+<path fill="none" stroke="#666666" d="M1842.08,-1051.45C1921.36,-1046.6 2151.66,-1030.21 2220,-1000 2266.85,-979.29 2292,-961.22 2292,-910 2292,-910 2292,-910 2292,-618 2292,-577.73 2294.33,-566.5 2309,-529 2313.16,-518.37 2319.48,-507.51 2325.48,-498.42"/>
+<polygon fill="#666666" stroke="#666666" points="2327.34,-499.43 2328.96,-493.28 2323.86,-497.07 2327.34,-499.43"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Index.CopySoundness -->
-<g id="edge88" class="edge">
+<g id="edge89" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Index.CopySoundness</title>
 <path fill="none" stroke="#666666" d="M1815,-1035.83C1815,-1008.98 1815,-955.43 1815,-910 1815,-910 1815,-910 1815,-764 1815,-715.81 1780.34,-668.67 1756.64,-642.07"/>
 <polygon fill="#666666" stroke="#666666" points="1757.95,-640.38 1752.36,-637.35 1754.84,-643.21 1757.95,-640.38"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Index.Degree -->
-<g id="edge87" class="edge">
+<g id="edge88" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Index.Degree</title>
 <path fill="none" stroke="#666666" d="M1787.66,-1051.82C1723.67,-1048.47 1566.92,-1036.63 1532,-1000 1475.97,-941.22 1541.72,-892.41 1507,-819 1501.38,-807.12 1492.15,-796.08 1483.2,-787.19"/>
 <polygon fill="#666666" stroke="#666666" points="1484.63,-785.65 1478.85,-783 1481.72,-788.68 1484.63,-785.65"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Index.Satisfies -->
-<g id="edge85" class="edge">
+<g id="edge86" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Index.Satisfies</title>
 <path fill="none" stroke="#666666" d="M1818.95,-1035.94C1824.78,-1009.24 1835,-955.87 1835,-910 1835,-910 1835,-910 1835,-691 1835,-647.22 1850.19,-628.81 1825,-593 1817.51,-582.35 1806.8,-574.13 1795.27,-567.82"/>
 <polygon fill="#666666" stroke="#666666" points="1796.22,-565.94 1789.93,-565.05 1794.29,-569.67 1796.22,-565.94"/>
 </g>
 <!-- Kimchi.Protocol.Binding -->
-<g id="node41" class="node">
+<g id="node43" class="node">
 <title>Kimchi.Protocol.Binding</title>
 <polygon fill="white" stroke="black" points="1061.5,-855 928.5,-855 928.5,-819 1061.5,-819 1061.5,-855"/>
 <text text-anchor="middle" x="995" y="-834.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Protocol.Binding</text>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Protocol.Binding -->
-<g id="edge96" class="edge">
+<g id="edge97" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Protocol.Binding</title>
 <path fill="none" stroke="#666666" d="M1787.66,-1052.83C1665,-1051.81 1165.08,-1044.92 1016,-1000 978.26,-988.63 958.78,-990.09 939,-956 924.5,-931.01 927.58,-917.54 939,-891 944.32,-878.64 954.1,-867.81 964.02,-859.22"/>
 <polygon fill="#666666" stroke="#666666" points="965.6,-860.63 968.88,-855.18 962.92,-857.4 965.6,-860.63"/>
 </g>
 <!-- Kimchi.Protocol.Correspond -->
-<g id="node42" class="node">
+<g id="node44" class="node">
 <title>Kimchi.Protocol.Correspond</title>
 <polygon fill="white" stroke="black" points="1260,-783 1108,-783 1108,-747 1260,-747 1260,-783"/>
 <text text-anchor="middle" x="1184" y="-762.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Protocol.Correspond</text>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Protocol.Correspond -->
-<g id="edge95" class="edge">
+<g id="edge96" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Protocol.Correspond</title>
 <path fill="none" stroke="#666666" d="M1787.73,-1052.86C1711.91,-1051.9 1500.92,-1045.13 1452,-1000 1415.47,-966.3 1460.66,-927.57 1427,-891 1391.31,-852.22 1361.36,-878.13 1314,-855 1303.4,-849.82 1248.05,-811.21 1213.08,-786.57"/>
 <polygon fill="#666666" stroke="#666666" points="1214.19,-784.78 1208.07,-783.04 1211.77,-788.22 1214.19,-784.78"/>
 </g>
 <!-- Kimchi.Protocol.Equation -->
-<g id="node43" class="node">
+<g id="node45" class="node">
 <title>Kimchi.Protocol.Equation</title>
 <polygon fill="white" stroke="black" points="1497.5,-855 1358.5,-855 1358.5,-819 1497.5,-819 1497.5,-855"/>
 <text text-anchor="middle" x="1428" y="-834.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Protocol.Equation</text>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Protocol.Equation -->
-<g id="edge94" class="edge">
+<g id="edge95" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Protocol.Equation</title>
 <path fill="none" stroke="#666666" d="M1787.56,-1051.86C1720.78,-1048.54 1552.31,-1036.64 1512,-1000 1474.82,-966.21 1507.47,-934.31 1482,-891 1475.02,-879.13 1464.7,-868.09 1454.94,-859.2"/>
 <polygon fill="#666666" stroke="#666666" points="1456.1,-857.42 1450.22,-855.01 1453.32,-860.56 1456.1,-857.42"/>
 </g>
 <!-- Kimchi.Protocol.Linearization -->
-<g id="node44" class="node">
+<g id="node46" class="node">
 <title>Kimchi.Protocol.Linearization</title>
 <polygon fill="white" stroke="black" points="1608.5,-565 1449.5,-565 1449.5,-529 1608.5,-529 1608.5,-565"/>
 <text text-anchor="middle" x="1529" y="-544.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Protocol.Linearization</text>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Protocol.Linearization -->
-<g id="edge93" class="edge">
+<g id="edge94" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Protocol.Linearization</title>
 <path fill="none" stroke="#666666" d="M1813.75,-1035.81C1810.1,-988.54 1798.54,-857.6 1780,-819 1765.56,-788.93 1608.77,-628.7 1550.57,-569.77"/>
 <polygon fill="#666666" stroke="#666666" points="1551.94,-568.17 1546.23,-565.38 1548.95,-571.12 1551.94,-568.17"/>
 </g>
 <!-- Kimchi.Protocol.Soundness -->
-<g id="node45" class="node">
+<g id="node47" class="node">
 <title>Kimchi.Protocol.Soundness</title>
 <polygon fill="white" stroke="black" points="1096.5,-927 947.5,-927 947.5,-891 1096.5,-891 1096.5,-927"/>
 <text text-anchor="middle" x="1022" y="-906.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Protocol.Soundness</text>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Protocol.Soundness -->
-<g id="edge97" class="edge">
+<g id="edge98" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Protocol.Soundness</title>
 <path fill="none" stroke="#666666" d="M1787.83,-1053.09C1656.89,-1053.27 1094.85,-1051.03 1038,-1000 1019.7,-983.57 1017.69,-954.05 1018.96,-933.31"/>
 <polygon fill="#666666" stroke="#666666" points="1021.06,-933.33 1019.44,-927.18 1016.88,-933 1021.06,-933.33"/>
 </g>
 <!-- Kimchi.Quotient.Copy -->
-<g id="node47" class="node">
+<g id="node48" class="node">
 <title>Kimchi.Quotient.Copy</title>
 <polygon fill="white" stroke="black" points="2307.5,-340 2184.5,-340 2184.5,-304 2307.5,-304 2307.5,-340"/>
 <text text-anchor="middle" x="2246" y="-319.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Quotient.Copy</text>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Quotient.Copy -->
-<g id="edge83" class="edge">
+<g id="edge84" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Quotient.Copy</title>
-<path fill="none" stroke="#666666" d="M1842.19,-1052.42C1928.98,-1050.16 2198.19,-1040.03 2274,-1000 2320.81,-975.28 2352,-962.93 2352,-910 2352,-910 2352,-910 2352,-764 2352,-723.37 2351.82,-711.26 2368,-674 2369.77,-669.92 2371.93,-669.93 2374,-666 2396.04,-624.08 2395.29,-610.63 2408,-565 2421.02,-518.26 2450.25,-497.81 2424,-457 2403.13,-424.55 2373.47,-447.04 2345,-421 2328.4,-405.82 2334.97,-393.78 2320,-377 2308.69,-364.32 2293.93,-352.82 2280.58,-343.73"/>
+<path fill="none" stroke="#666666" d="M1842.22,-1052.54C1929.77,-1050.67 2202.84,-1041.55 2279,-1000 2324.21,-975.33 2352,-961.5 2352,-910 2352,-910 2352,-910 2352,-764 2352,-639.71 2403.05,-615.98 2421,-493 2423.31,-477.17 2429.56,-470.52 2421,-457 2401.01,-425.42 2372.39,-446.43 2345,-421 2328.52,-405.7 2334.97,-393.78 2320,-377 2308.69,-364.32 2293.93,-352.82 2280.58,-343.73"/>
 <polygon fill="#666666" stroke="#666666" points="2281.5,-341.82 2275.34,-340.23 2279.17,-345.31 2281.5,-341.82"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Quotient.Gate.EndoScalar -->
-<g id="edge81" class="edge">
+<g id="edge82" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Quotient.Gate.EndoScalar</title>
 <path fill="none" stroke="#666666" d="M1827.43,-1035.92C1845.01,-1010.04 1875,-958.73 1875,-910 1875,-910 1875,-910 1875,-618 1875,-574.39 1894.17,-526.48 1907.2,-498.95"/>
 <polygon fill="#666666" stroke="#666666" points="1909.17,-499.71 1909.88,-493.39 1905.39,-497.89 1909.17,-499.71"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Quotient.Gate.Generic -->
-<g id="edge80" class="edge">
+<g id="edge81" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Quotient.Gate.Generic</title>
 <path fill="none" stroke="#666666" d="M1842.18,-1051.09C1930.08,-1044.32 2204.26,-1018.47 2262,-956 2276.2,-940.64 2272,-930.92 2272,-910 2272,-910 2272,-910 2272,-836 2272,-699.06 2181.06,-552.42 2143.72,-497.98"/>
 <polygon fill="#666666" stroke="#666666" points="2145.42,-496.74 2140.28,-493 2141.96,-499.13 2145.42,-496.74"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Quotient.Gate.Poseidon -->
-<g id="edge82" class="edge">
+<g id="edge83" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Quotient.Gate.Poseidon</title>
 <path fill="none" stroke="#666666" d="M1823.09,-1035.82C1834.78,-1009.4 1855,-956.92 1855,-910 1855,-910 1855,-910 1855,-618 1855,-563.43 1802.2,-520.38 1764.43,-496.57"/>
 <polygon fill="#666666" stroke="#666666" points="1765.18,-494.56 1758.97,-493.19 1762.97,-498.13 1765.18,-494.56"/>
@@ -941,9 +959,9 @@
 <text text-anchor="middle" x="2307" y="-247.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Quotient.GrandProduct</text>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Quotient.GrandProduct -->
-<g id="edge91" class="edge">
+<g id="edge92" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Quotient.GrandProduct</title>
-<path fill="none" stroke="#666666" d="M1842.19,-1052.07C1948.99,-1048.21 2339.71,-1032.15 2459,-1000 2548.83,-975.79 2648,-1003.04 2648,-910 2648,-910 2648,-910 2648,-402 2648,-291.49 2496.43,-261.22 2395.39,-253.31"/>
+<path fill="none" stroke="#666666" d="M1842.23,-1053.1C1976.1,-1053.33 2560.45,-1051.37 2621,-1000 2652.32,-973.43 2642,-951.07 2642,-910 2642,-910 2642,-910 2642,-836 2642,-739.96 2648,-716.04 2648,-620 2648,-620 2648,-620 2648,-402 2648,-291.49 2496.43,-261.22 2395.39,-253.31"/>
 <polygon fill="#666666" stroke="#666666" points="2395.25,-251.2 2389.11,-252.85 2394.94,-255.39 2395.25,-251.2"/>
 </g>
 <!-- Kimchi.Quotient.Permutation -->
@@ -953,15 +971,15 @@
 <text text-anchor="middle" x="2128" y="-247.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Quotient.Permutation</text>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Quotient.Permutation -->
-<g id="edge90" class="edge">
+<g id="edge91" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Quotient.Permutation</title>
-<path fill="none" stroke="#666666" d="M1842.18,-1052.51C1933,-1050.51 2224.9,-1040.95 2308,-1000 2352.03,-978.3 2372,-959.08 2372,-910 2372,-910 2372,-910 2372,-836 2372,-799.98 2359.34,-704.82 2378,-674 2381.71,-667.87 2387.63,-671.68 2392,-666 2420.36,-629.19 2408.26,-610.21 2419,-565 2430.2,-517.85 2459.59,-498.15 2434,-457 2414.9,-426.28 2385.29,-447.81 2361,-421 2323.7,-379.83 2357.94,-341.55 2317,-304 2308.39,-296.1 2254.77,-281.46 2206.83,-269.56"/>
+<path fill="none" stroke="#666666" d="M1842.31,-1052.56C1933.56,-1050.71 2226.8,-1041.6 2310,-1000 2353.44,-978.28 2372,-958.57 2372,-910 2372,-910 2372,-910 2372,-764 2372,-723.52 2377.84,-713.65 2386,-674 2396.08,-625.01 2403,-613.79 2414,-565 2421.17,-533.2 2424.87,-525.45 2428,-493 2429.53,-477.07 2436.21,-470.73 2428,-457 2410.65,-427.99 2383.26,-446.44 2361,-421 2324.42,-379.19 2357.94,-341.55 2317,-304 2308.39,-296.1 2254.77,-281.46 2206.83,-269.56"/>
 <polygon fill="#666666" stroke="#666666" points="2207.05,-267.45 2200.72,-268.05 2206.04,-271.53 2207.05,-267.45"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Quotient.Wiring -->
-<g id="edge89" class="edge">
+<g id="edge90" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Quotient.Wiring</title>
-<path fill="none" stroke="#666666" d="M1842.04,-1052.21C1925.86,-1049.37 2180.01,-1037.77 2252,-1000 2275.14,-987.86 2279.38,-979.41 2291,-956 2347.8,-841.54 2294.92,-790.69 2347,-674 2348.81,-669.94 2350.78,-669.85 2353,-666 2377.37,-623.73 2380.48,-611.25 2396,-565 2411.48,-518.87 2442.77,-496.25 2414,-457 2407.8,-448.55 2360.09,-433.96 2317.09,-422.22"/>
+<path fill="none" stroke="#666666" d="M1842.04,-1052.21C1925.86,-1049.37 2180.01,-1037.77 2252,-1000 2275.14,-987.86 2279.73,-979.58 2291,-956 2361.55,-808.4 2296.62,-746.94 2352,-593 2363.12,-562.08 2371.39,-556.74 2389,-529 2399.44,-512.55 2408.18,-511.59 2414,-493 2418.78,-477.73 2423.46,-469.9 2414,-457 2407.8,-448.55 2360.09,-433.96 2317.09,-422.22"/>
 <polygon fill="#666666" stroke="#666666" points="2317.4,-420.13 2311.06,-420.58 2316.3,-424.18 2317.4,-420.13"/>
 </g>
 <!-- Kimchi.Verifier.Capstone -->
@@ -971,13 +989,13 @@
 <text text-anchor="middle" x="1115" y="-979.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Verifier.Capstone</text>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Verifier.Capstone -->
-<g id="edge101" class="edge">
+<g id="edge102" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Verifier.Capstone</title>
 <path fill="none" stroke="#666666" d="M1787.77,-1050.47C1708.1,-1043.05 1468.58,-1020.54 1270,-1000 1243.7,-997.28 1214.91,-994.16 1189.35,-991.34"/>
 <polygon fill="#666666" stroke="#666666" points="1189.46,-989.24 1183.27,-990.67 1189,-993.42 1189.46,-989.24"/>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Verifier.Kimchi -->
-<g id="edge99" class="edge">
+<g id="edge100" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Verifier.Kimchi</title>
 <path fill="none" stroke="#666666" d="M1787.93,-1052.24C1689.54,-1048.88 1353.07,-1031.91 1285,-956 1264.82,-933.5 1285.18,-913.5 1265,-891 1250.38,-874.7 1229.88,-863.23 1209.8,-855.23"/>
 <polygon fill="#666666" stroke="#666666" points="1210.5,-853.25 1204.15,-853.06 1209,-857.17 1210.5,-853.25"/>
@@ -989,130 +1007,112 @@
 <text text-anchor="middle" x="1356" y="-906.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Verifier.Reflect</text>
 </g>
 <!-- Kimchi&#45;&gt;Kimchi.Verifier.Reflect -->
-<g id="edge100" class="edge">
+<g id="edge101" class="edge">
 <title>Kimchi&#45;&gt;Kimchi.Verifier.Reflect</title>
 <path fill="none" stroke="#666666" d="M1787.78,-1051.75C1710.87,-1047.82 1493.59,-1033.93 1432,-1000 1403.6,-984.35 1381.22,-953.56 1368.3,-932.39"/>
 <polygon fill="#666666" stroke="#666666" points="1370.1,-931.31 1365.23,-927.23 1366.5,-933.46 1370.1,-931.31"/>
 </g>
 <!-- Kimchi.Protocol.Binding&#45;&gt;Bulletproof.Protocol -->
-<g id="edge102" class="edge">
+<g id="edge103" class="edge">
 <title>Kimchi.Protocol.Binding&#45;&gt;Bulletproof.Protocol</title>
 <path fill="none" stroke="#666666" d="M928.42,-833.14C794.46,-826.07 498.75,-803.4 424,-739 396.1,-714.96 388.04,-670.62 385.79,-643.38"/>
 <polygon fill="#666666" stroke="#666666" points="387.87,-643.01 385.35,-637.18 383.68,-643.31 387.87,-643.01"/>
 </g>
 <!-- Kimchi.Protocol.Binding&#45;&gt;Bulletproof.Soundness -->
-<g id="edge103" class="edge">
+<g id="edge104" class="edge">
 <title>Kimchi.Protocol.Binding&#45;&gt;Bulletproof.Soundness</title>
 <path fill="none" stroke="#666666" d="M928.42,-828.84C897.32,-825.61 859.79,-821.89 826,-819 599.15,-799.6 540.08,-817.27 315,-783 313.95,-782.84 312.9,-782.67 311.84,-782.5"/>
 <polygon fill="#666666" stroke="#666666" points="311.98,-780.39 305.71,-781.44 311.26,-784.53 311.98,-780.39"/>
 </g>
 <!-- Kimchi.Protocol.Binding&#45;&gt;Kimchi.Protocol.Correspond -->
-<g id="edge104" class="edge">
+<g id="edge105" class="edge">
 <title>Kimchi.Protocol.Binding&#45;&gt;Kimchi.Protocol.Correspond</title>
 <path fill="none" stroke="#666666" d="M1041.23,-818.88C1068.68,-808.71 1103.55,-795.8 1131.96,-785.28"/>
 <polygon fill="#666666" stroke="#666666" points="1133.02,-787.12 1137.92,-783.07 1131.56,-783.18 1133.02,-787.12"/>
 </g>
 <!-- Kimchi.Protocol.Correspond&#45;&gt;Bulletproof.Protocol -->
-<g id="edge106" class="edge">
+<g id="edge107" class="edge">
 <title>Kimchi.Protocol.Correspond&#45;&gt;Bulletproof.Protocol</title>
 <path fill="none" stroke="#666666" d="M1107.99,-763.11C930.13,-760.79 499.7,-753.68 472,-739 470.7,-738.31 426.02,-676.72 401.21,-642.43"/>
 <polygon fill="#666666" stroke="#666666" points="402.63,-640.81 397.41,-637.18 399.23,-643.27 402.63,-640.81"/>
 </g>
 <!-- Kimchi.Protocol.Correspond&#45;&gt;Kimchi.Index.Aggregate -->
-<g id="edge105" class="edge">
+<g id="edge106" class="edge">
 <title>Kimchi.Protocol.Correspond&#45;&gt;Kimchi.Index.Aggregate</title>
 <path fill="none" stroke="#666666" d="M1247.95,-746.99C1287.95,-736.36 1339.5,-722.65 1380.65,-711.71"/>
 <polygon fill="#666666" stroke="#666666" points="1381.38,-713.69 1386.64,-710.11 1380.31,-709.63 1381.38,-713.69"/>
 </g>
 <!-- Kimchi.Protocol.Equation&#45;&gt;Kimchi.Index.Aggregate -->
-<g id="edge108" class="edge">
+<g id="edge109" class="edge">
 <title>Kimchi.Protocol.Equation&#45;&gt;Kimchi.Index.Aggregate</title>
 <path fill="none" stroke="#666666" d="M1411.54,-818.92C1403.35,-809.22 1394.3,-796.37 1390,-783 1385.1,-767.77 1383.43,-761.59 1390,-747 1395.89,-733.92 1406.7,-722.72 1417.59,-713.97"/>
 <polygon fill="#666666" stroke="#666666" points="1419.11,-715.45 1422.59,-710.13 1416.55,-712.12 1419.11,-715.45"/>
 </g>
 <!-- Kimchi.Protocol.Equation&#45;&gt;Kimchi.Index.Degree -->
-<g id="edge109" class="edge">
+<g id="edge110" class="edge">
 <title>Kimchi.Protocol.Equation&#45;&gt;Kimchi.Index.Degree</title>
 <path fill="none" stroke="#666666" d="M1435.42,-818.7C1439.3,-809.63 1444.11,-798.4 1448.29,-788.65"/>
 <polygon fill="#666666" stroke="#666666" points="1450.24,-789.45 1450.67,-783.1 1446.38,-787.79 1450.24,-789.45"/>
 </g>
 <!-- Kimchi.Protocol.Equation&#45;&gt;Kimchi.Protocol.Linearization -->
-<g id="edge107" class="edge">
+<g id="edge108" class="edge">
 <title>Kimchi.Protocol.Equation&#45;&gt;Kimchi.Protocol.Linearization</title>
 <path fill="none" stroke="#666666" d="M1408,-818.85C1398.23,-809.31 1387.26,-796.63 1381,-783 1360.75,-738.91 1354.22,-717.84 1375,-674 1398.19,-625.06 1450.74,-588.8 1487.99,-568.05"/>
 <polygon fill="#666666" stroke="#666666" points="1489.12,-569.83 1493.37,-565.1 1487.1,-566.15 1489.12,-569.83"/>
 </g>
 <!-- Kimchi.Protocol.Linearization&#45;&gt;Kimchi.Quotient.Gate.AddComplete -->
-<g id="edge112" class="edge">
+<g id="edge113" class="edge">
 <title>Kimchi.Protocol.Linearization&#45;&gt;Kimchi.Quotient.Gate.AddComplete</title>
 <path fill="none" stroke="#666666" d="M1529,-528.7C1529,-519.8 1529,-508.82 1529,-499.2"/>
 <polygon fill="#666666" stroke="#666666" points="1531.1,-499.1 1529,-493.1 1526.9,-499.1 1531.1,-499.1"/>
 </g>
 <!-- Kimchi.Protocol.Linearization&#45;&gt;Kimchi.Quotient.Gate.EndoMul -->
-<g id="edge114" class="edge">
+<g id="edge115" class="edge">
 <title>Kimchi.Protocol.Linearization&#45;&gt;Kimchi.Quotient.Gate.EndoMul</title>
 <path fill="none" stroke="#666666" d="M1481.06,-528.97C1452.34,-518.76 1415.75,-505.76 1386.01,-495.19"/>
 <polygon fill="#666666" stroke="#666666" points="1386.51,-493.14 1380.15,-493.11 1385.11,-497.1 1386.51,-493.14"/>
 </g>
 <!-- Kimchi.Protocol.Linearization&#45;&gt;Kimchi.Quotient.Gate.EndoScalar -->
-<g id="edge115" class="edge">
+<g id="edge116" class="edge">
 <title>Kimchi.Protocol.Linearization&#45;&gt;Kimchi.Quotient.Gate.EndoScalar</title>
 <path fill="none" stroke="#666666" d="M1608.86,-531.67C1671.06,-520.5 1757.59,-504.97 1823.46,-493.15"/>
 <polygon fill="#666666" stroke="#666666" points="1823.83,-495.22 1829.36,-492.09 1823.09,-491.08 1823.83,-495.22"/>
 </g>
 <!-- Kimchi.Protocol.Linearization&#45;&gt;Kimchi.Quotient.Gate.Generic -->
-<g id="edge110" class="edge">
+<g id="edge111" class="edge">
 <title>Kimchi.Protocol.Linearization&#45;&gt;Kimchi.Quotient.Gate.Generic</title>
 <path fill="none" stroke="#666666" d="M1608.62,-535.29C1625.57,-533.12 1643.37,-530.91 1660,-529 1818.86,-510.71 1859.37,-513.22 2018,-493 2025.48,-492.05 2033.25,-490.99 2041.02,-489.88"/>
 <polygon fill="#666666" stroke="#666666" points="2041.33,-491.96 2046.97,-489.02 2040.73,-487.8 2041.33,-491.96"/>
 </g>
 <!-- Kimchi.Protocol.Linearization&#45;&gt;Kimchi.Quotient.Gate.Poseidon -->
-<g id="edge111" class="edge">
+<g id="edge112" class="edge">
 <title>Kimchi.Protocol.Linearization&#45;&gt;Kimchi.Quotient.Gate.Poseidon</title>
 <path fill="none" stroke="#666666" d="M1577.18,-528.97C1606.05,-518.76 1642.83,-505.76 1672.72,-495.19"/>
 <polygon fill="#666666" stroke="#666666" points="1673.64,-497.09 1678.6,-493.11 1672.24,-493.13 1673.64,-497.09"/>
 </g>
 <!-- Kimchi.Protocol.Linearization&#45;&gt;Kimchi.Quotient.Gate.VarBaseMul -->
-<g id="edge113" class="edge">
+<g id="edge114" class="edge">
 <title>Kimchi.Protocol.Linearization&#45;&gt;Kimchi.Quotient.Gate.VarBaseMul</title>
 <path fill="none" stroke="#666666" d="M1449.14,-531.67C1387.5,-520.6 1301.96,-505.25 1236.32,-493.47"/>
 <polygon fill="#666666" stroke="#666666" points="1236.31,-491.33 1230.03,-492.34 1235.56,-495.47 1236.31,-491.33"/>
 </g>
 <!-- Kimchi.Protocol.Soundness&#45;&gt;Bulletproof.Soundness -->
-<g id="edge116" class="edge">
+<g id="edge117" class="edge">
 <title>Kimchi.Protocol.Soundness&#45;&gt;Bulletproof.Soundness</title>
 <path fill="none" stroke="#666666" d="M947.43,-896.25C818.21,-875.56 544.5,-830.34 315,-783 313.96,-782.79 312.92,-782.57 311.86,-782.35"/>
 <polygon fill="#666666" stroke="#666666" points="312.09,-780.25 305.78,-781.05 311.21,-784.35 312.09,-780.25"/>
 </g>
 <!-- Kimchi.Protocol.Soundness&#45;&gt;Kimchi.Protocol.Binding -->
-<g id="edge117" class="edge">
+<g id="edge118" class="edge">
 <title>Kimchi.Protocol.Soundness&#45;&gt;Kimchi.Protocol.Binding</title>
 <path fill="none" stroke="#666666" d="M1015.33,-890.7C1011.86,-881.71 1007.58,-870.61 1003.84,-860.92"/>
 <polygon fill="#666666" stroke="#666666" points="1005.72,-859.95 1001.6,-855.1 1001.8,-861.46 1005.72,-859.95"/>
 </g>
 <!-- Kimchi.Protocol.Soundness&#45;&gt;Kimchi.Protocol.Equation -->
-<g id="edge118" class="edge">
+<g id="edge119" class="edge">
 <title>Kimchi.Protocol.Soundness&#45;&gt;Kimchi.Protocol.Equation</title>
 <path fill="none" stroke="#666666" d="M1096.94,-895.08C1169.59,-882.55 1279.23,-863.65 1352.18,-851.07"/>
 <polygon fill="#666666" stroke="#666666" points="1352.69,-853.12 1358.24,-850.03 1351.97,-848.98 1352.69,-853.12"/>
-</g>
-<!-- Kimchi.Quotient.Aggregate -->
-<g id="node46" class="node">
-<title>Kimchi.Quotient.Aggregate</title>
-<polygon fill="white" stroke="black" points="2080.5,-124 1931.5,-124 1931.5,-88 2080.5,-88 2080.5,-124"/>
-<text text-anchor="middle" x="2006" y="-103.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Quotient.Aggregate</text>
-</g>
-<!-- Kimchi.Quotient.Domain -->
-<g id="node48" class="node">
-<title>Kimchi.Quotient.Domain</title>
-<polygon fill="white" stroke="black" points="2027.5,-52 1890.5,-52 1890.5,-16 2027.5,-16 2027.5,-52"/>
-<text text-anchor="middle" x="1959" y="-31.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Quotient.Domain</text>
-</g>
-<!-- Kimchi.Quotient.Aggregate&#45;&gt;Kimchi.Quotient.Domain -->
-<g id="edge119" class="edge">
-<title>Kimchi.Quotient.Aggregate&#45;&gt;Kimchi.Quotient.Domain</title>
-<path fill="none" stroke="#666666" d="M1994.38,-87.7C1988.18,-78.46 1980.48,-66.98 1973.84,-57.11"/>
-<polygon fill="#666666" stroke="#666666" points="1975.57,-55.92 1970.48,-52.1 1972.09,-58.26 1975.57,-55.92"/>
 </g>
 <!-- Kimchi.Quotient.Copy&#45;&gt;Kimchi.Quotient.GrandProduct -->
 <g id="edge120" class="edge">
@@ -1126,53 +1126,53 @@
 <path fill="none" stroke="#666666" d="M2217.13,-303.88C2200.56,-294.05 2179.66,-281.64 2162.26,-271.32"/>
 <polygon fill="#666666" stroke="#666666" points="2163.21,-269.44 2156.98,-268.19 2161.07,-273.06 2163.21,-269.44"/>
 </g>
-<!-- Kimchi.Quotient.Copy&#45;&gt;Kimchi.Quotient.SchwartzZippel -->
+<!-- Kimchi.Quotient.Copy&#45;&gt;Kimchi.SchwartzZippel -->
 <g id="edge122" class="edge">
-<title>Kimchi.Quotient.Copy&#45;&gt;Kimchi.Quotient.SchwartzZippel</title>
-<path fill="none" stroke="#666666" d="M2184.31,-312.45C2131.06,-303.81 2059.7,-288.76 2040,-268 2023.45,-250.56 2020.23,-222.32 2020.33,-202.33"/>
-<polygon fill="#666666" stroke="#666666" points="2022.44,-202.2 2020.47,-196.15 2018.24,-202.11 2022.44,-202.2"/>
+<title>Kimchi.Quotient.Copy&#45;&gt;Kimchi.SchwartzZippel</title>
+<path fill="none" stroke="#666666" d="M2184.39,-312.93C2130.79,-304.57 2058.83,-289.67 2040,-268 2024.54,-250.21 2023.88,-222.28 2025.92,-202.46"/>
+<polygon fill="#666666" stroke="#666666" points="2028.02,-202.54 2026.66,-196.33 2023.85,-202.03 2028.02,-202.54"/>
 </g>
 <!-- Kimchi.Quotient.Gate.AddComplete&#45;&gt;Kimchi.Gate.AddComplete -->
 <g id="edge124" class="edge">
 <title>Kimchi.Quotient.Gate.AddComplete&#45;&gt;Kimchi.Gate.AddComplete</title>
-<path fill="none" stroke="#666666" d="M1504.12,-456.96C1474,-436.69 1421.43,-402.4 1374,-377 1295.18,-334.79 1199.48,-293.65 1143.11,-270.39"/>
-<polygon fill="#666666" stroke="#666666" points="1143.79,-268.4 1137.45,-268.06 1142.19,-272.29 1143.79,-268.4"/>
+<path fill="none" stroke="#666666" d="M1497.37,-456.96C1460.98,-437.42 1399.37,-404.53 1346,-377 1271.94,-338.79 1184.89,-295.44 1135.21,-270.84"/>
+<polygon fill="#666666" stroke="#666666" points="1135.94,-268.86 1129.63,-268.08 1134.08,-272.63 1135.94,-268.86"/>
 </g>
 <!-- Kimchi.Quotient.Lift -->
 <g id="node56" class="node">
 <title>Kimchi.Quotient.Lift</title>
-<polygon fill="white" stroke="black" points="1905.5,-421 1792.5,-421 1792.5,-385 1905.5,-385 1905.5,-421"/>
-<text text-anchor="middle" x="1849" y="-400.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Quotient.Lift</text>
+<polygon fill="white" stroke="black" points="1914.5,-421 1801.5,-421 1801.5,-385 1914.5,-385 1914.5,-421"/>
+<text text-anchor="middle" x="1858" y="-400.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Quotient.Lift</text>
 </g>
 <!-- Kimchi.Quotient.Gate.AddComplete&#45;&gt;Kimchi.Quotient.Lift -->
 <g id="edge123" class="edge">
 <title>Kimchi.Quotient.Gate.AddComplete&#45;&gt;Kimchi.Quotient.Lift</title>
-<path fill="none" stroke="#666666" d="M1606.87,-456.97C1661.98,-444.91 1734.93,-428.95 1786.3,-417.72"/>
-<polygon fill="#666666" stroke="#666666" points="1787.04,-419.7 1792.45,-416.37 1786.14,-415.6 1787.04,-419.7"/>
+<path fill="none" stroke="#666666" d="M1609.06,-456.97C1666.39,-444.77 1742.48,-428.58 1795.38,-417.32"/>
+<polygon fill="#666666" stroke="#666666" points="1795.96,-419.35 1801.4,-416.04 1795.09,-415.24 1795.96,-419.35"/>
 </g>
 <!-- Kimchi.Quotient.Gate.EndoMul&#45;&gt;Kimchi.Gate.EndoMul -->
 <g id="edge127" class="edge">
 <title>Kimchi.Quotient.Gate.EndoMul&#45;&gt;Kimchi.Gate.EndoMul</title>
-<path fill="none" stroke="#666666" d="M1325.08,-456.7C1321.48,-447.71 1317.05,-436.61 1313.17,-426.92"/>
-<polygon fill="#666666" stroke="#666666" points="1315.02,-425.9 1310.84,-421.1 1311.12,-427.46 1315.02,-425.9"/>
+<path fill="none" stroke="#666666" d="M1318.16,-456.7C1310.7,-447.37 1301.42,-435.77 1293.47,-425.83"/>
+<polygon fill="#666666" stroke="#666666" points="1295.07,-424.48 1289.68,-421.1 1291.79,-427.1 1295.07,-424.48"/>
 </g>
 <!-- Kimchi.Quotient.Gate.EndoMul&#45;&gt;Kimchi.Quotient.Lift -->
 <g id="edge125" class="edge">
 <title>Kimchi.Quotient.Gate.EndoMul&#45;&gt;Kimchi.Quotient.Lift</title>
-<path fill="none" stroke="#666666" d="M1415.61,-458.49C1418.78,-457.97 1421.92,-457.47 1425,-457 1552.74,-437.36 1702.97,-419.9 1785.93,-410.76"/>
-<polygon fill="#666666" stroke="#666666" points="1786.54,-412.8 1792.28,-410.06 1786.08,-408.63 1786.54,-412.8"/>
+<path fill="none" stroke="#666666" d="M1415.61,-458.48C1418.78,-457.96 1421.92,-457.47 1425,-457 1556.29,-436.98 1710.89,-419.52 1795.26,-410.5"/>
+<polygon fill="#666666" stroke="#666666" points="1795.72,-412.57 1801.46,-409.84 1795.27,-408.39 1795.72,-412.57"/>
 </g>
-<!-- Kimchi.Quotient.Shifted -->
-<g id="node59" class="node">
-<title>Kimchi.Quotient.Shifted</title>
-<polygon fill="white" stroke="black" points="1793,-340 1661,-340 1661,-304 1793,-304 1793,-340"/>
-<text text-anchor="middle" x="1727" y="-319.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Quotient.Shifted</text>
+<!-- Kimchi.Shifted -->
+<g id="node60" class="node">
+<title>Kimchi.Shifted</title>
+<polygon fill="white" stroke="black" points="1770.5,-340 1683.5,-340 1683.5,-304 1770.5,-304 1770.5,-340"/>
+<text text-anchor="middle" x="1727" y="-319.5" font-family="Helvetica,sans-Serif" font-size="10.00">Kimchi.Shifted</text>
 </g>
-<!-- Kimchi.Quotient.Gate.EndoMul&#45;&gt;Kimchi.Quotient.Shifted -->
+<!-- Kimchi.Quotient.Gate.EndoMul&#45;&gt;Kimchi.Shifted -->
 <g id="edge126" class="edge">
-<title>Kimchi.Quotient.Gate.EndoMul&#45;&gt;Kimchi.Quotient.Shifted</title>
-<path fill="none" stroke="#666666" d="M1376.54,-456.97C1450.58,-428.67 1598.5,-372.12 1676.38,-342.35"/>
-<polygon fill="#666666" stroke="#666666" points="1677.46,-344.19 1682.32,-340.08 1675.96,-340.26 1677.46,-344.19"/>
+<title>Kimchi.Quotient.Gate.EndoMul&#45;&gt;Kimchi.Shifted</title>
+<path fill="none" stroke="#666666" d="M1376.54,-456.97C1450.87,-428.56 1599.68,-371.67 1677.3,-342"/>
+<polygon fill="#666666" stroke="#666666" points="1678.37,-343.84 1683.22,-339.74 1676.87,-339.92 1678.37,-343.84"/>
 </g>
 <!-- Kimchi.Quotient.Gate.EndoScalar&#45;&gt;Kimchi.Gate.EndoScalar -->
 <g id="edge129" class="edge">
@@ -1183,8 +1183,8 @@
 <!-- Kimchi.Quotient.Gate.EndoScalar&#45;&gt;Kimchi.Quotient.Lift -->
 <g id="edge128" class="edge">
 <title>Kimchi.Quotient.Gate.EndoScalar&#45;&gt;Kimchi.Quotient.Lift</title>
-<path fill="none" stroke="#666666" d="M1901.7,-456.7C1892.29,-447.29 1880.56,-435.56 1870.56,-425.56"/>
-<polygon fill="#666666" stroke="#666666" points="1871.83,-423.86 1866.1,-421.1 1868.86,-426.83 1871.83,-423.86"/>
+<path fill="none" stroke="#666666" d="M1903.92,-456.7C1895.8,-447.37 1885.69,-435.77 1877.03,-425.83"/>
+<polygon fill="#666666" stroke="#666666" points="1878.43,-424.25 1872.91,-421.1 1875.26,-427.01 1878.43,-424.25"/>
 </g>
 <!-- Kimchi.Quotient.Gate.Generic&#45;&gt;Kimchi.Gate.Generic -->
 <g id="edge131" class="edge">
@@ -1195,8 +1195,8 @@
 <!-- Kimchi.Quotient.Gate.Generic&#45;&gt;Kimchi.Quotient.Lift -->
 <g id="edge130" class="edge">
 <title>Kimchi.Quotient.Gate.Generic&#45;&gt;Kimchi.Quotient.Lift</title>
-<path fill="none" stroke="#666666" d="M2060.11,-456.97C2014.88,-445.62 1955.87,-430.81 1911.74,-419.74"/>
-<polygon fill="#666666" stroke="#666666" points="1912.22,-417.7 1905.89,-418.27 1911.2,-421.77 1912.22,-417.7"/>
+<path fill="none" stroke="#666666" d="M2062.3,-456.97C2019.21,-445.8 1963.21,-431.28 1920.73,-420.26"/>
+<polygon fill="#666666" stroke="#666666" points="1921.17,-418.21 1914.83,-418.73 1920.11,-422.27 1921.17,-418.21"/>
 </g>
 <!-- Kimchi.Quotient.Gate.Poseidon&#45;&gt;Kimchi.Gate.Poseidon -->
 <g id="edge134" class="edge">
@@ -1207,12 +1207,12 @@
 <!-- Kimchi.Quotient.Gate.Poseidon&#45;&gt;Kimchi.Quotient.Lift -->
 <g id="edge132" class="edge">
 <title>Kimchi.Quotient.Gate.Poseidon&#45;&gt;Kimchi.Quotient.Lift</title>
-<path fill="none" stroke="#666666" d="M1756.84,-456.88C1773.98,-447.05 1795.59,-434.64 1813.58,-424.32"/>
-<polygon fill="#666666" stroke="#666666" points="1814.88,-426 1819.04,-421.19 1812.79,-422.35 1814.88,-426"/>
+<path fill="none" stroke="#666666" d="M1759.05,-456.88C1777.6,-446.96 1801.05,-434.43 1820.47,-424.05"/>
+<polygon fill="#666666" stroke="#666666" points="1821.53,-425.87 1825.83,-421.19 1819.55,-422.17 1821.53,-425.87"/>
 </g>
-<!-- Kimchi.Quotient.Gate.Poseidon&#45;&gt;Kimchi.Quotient.Shifted -->
+<!-- Kimchi.Quotient.Gate.Poseidon&#45;&gt;Kimchi.Shifted -->
 <g id="edge133" class="edge">
-<title>Kimchi.Quotient.Gate.Poseidon&#45;&gt;Kimchi.Quotient.Shifted</title>
+<title>Kimchi.Quotient.Gate.Poseidon&#45;&gt;Kimchi.Shifted</title>
 <path fill="none" stroke="#666666" d="M1727,-456.97C1727,-429.9 1727,-376.97 1727,-346.37"/>
 <polygon fill="#666666" stroke="#666666" points="1729.1,-346.2 1727,-340.2 1724.9,-346.2 1729.1,-346.2"/>
 </g>
@@ -1225,74 +1225,74 @@
 <!-- Kimchi.Quotient.Gate.VarBaseMul&#45;&gt;Kimchi.Quotient.Lift -->
 <g id="edge135" class="edge">
 <title>Kimchi.Quotient.Gate.VarBaseMul&#45;&gt;Kimchi.Quotient.Lift</title>
-<path fill="none" stroke="#666666" d="M1230.07,-458.33C1233.42,-457.86 1236.74,-457.42 1240,-457 1438.64,-431.68 1675.3,-414.89 1786.02,-407.81"/>
-<polygon fill="#666666" stroke="#666666" points="1786.31,-409.9 1792.17,-407.42 1786.04,-405.71 1786.31,-409.9"/>
+<path fill="none" stroke="#666666" d="M1230.07,-458.32C1233.42,-457.86 1236.74,-457.41 1240,-457 1442.09,-431.37 1682.97,-414.68 1794.96,-407.71"/>
+<polygon fill="#666666" stroke="#666666" points="1795.32,-409.79 1801.18,-407.32 1795.06,-405.6 1795.32,-409.79"/>
 </g>
-<!-- Kimchi.Quotient.Gate.VarBaseMul&#45;&gt;Kimchi.Quotient.Shifted -->
+<!-- Kimchi.Quotient.Gate.VarBaseMul&#45;&gt;Kimchi.Shifted -->
 <g id="edge136" class="edge">
-<title>Kimchi.Quotient.Gate.VarBaseMul&#45;&gt;Kimchi.Quotient.Shifted</title>
-<path fill="none" stroke="#666666" d="M1150.1,-456.82C1165.78,-434.18 1196.69,-395.14 1234,-377 1306.37,-341.82 1535.86,-329.23 1654.46,-324.99"/>
-<polygon fill="#666666" stroke="#666666" points="1654.8,-327.08 1660.72,-324.77 1654.65,-322.88 1654.8,-327.08"/>
+<title>Kimchi.Quotient.Gate.VarBaseMul&#45;&gt;Kimchi.Shifted</title>
+<path fill="none" stroke="#666666" d="M1145.46,-456.88C1154.96,-434.32 1175.01,-395.36 1206,-377 1284.8,-330.32 1562.18,-323.67 1676.83,-322.95"/>
+<polygon fill="#666666" stroke="#666666" points="1677.17,-325.05 1683.16,-322.92 1677.15,-320.85 1677.17,-325.05"/>
 </g>
-<!-- Kimchi.Quotient.GrandProduct&#45;&gt;Kimchi.Quotient.Domain -->
+<!-- Kimchi.Quotient.GrandProduct&#45;&gt;Kimchi.Domain -->
 <g id="edge138" class="edge">
-<title>Kimchi.Quotient.GrandProduct&#45;&gt;Kimchi.Quotient.Domain</title>
-<path fill="none" stroke="#666666" d="M2289.32,-231.83C2254.08,-198.42 2171.46,-124.11 2090,-80 2070.67,-69.53 2048.44,-60.8 2027.85,-53.91"/>
-<polygon fill="#666666" stroke="#666666" points="2028.45,-51.89 2022.09,-52.01 2027.13,-55.88 2028.45,-51.89"/>
+<title>Kimchi.Quotient.GrandProduct&#45;&gt;Kimchi.Domain</title>
+<path fill="none" stroke="#666666" d="M2286.52,-231.95C2247.19,-199.7 2157.67,-128.66 2075,-80 2059.33,-70.77 2041.44,-62.02 2025.34,-54.73"/>
+<polygon fill="#666666" stroke="#666666" points="2025.82,-52.64 2019.49,-52.11 2024.11,-56.48 2025.82,-52.64"/>
 </g>
-<!-- Kimchi.Quotient.Lift&#45;&gt;Kimchi.Quotient.Aggregate -->
+<!-- Kimchi.Quotient.Lift&#45;&gt;Kimchi.Aggregate -->
 <g id="edge141" class="edge">
-<title>Kimchi.Quotient.Lift&#45;&gt;Kimchi.Quotient.Aggregate</title>
-<path fill="none" stroke="#666666" d="M1885.41,-384.89C1891.48,-380.52 1897.07,-375.24 1901,-369 1952.78,-286.82 1873.27,-232.92 1927,-152 1933.83,-141.72 1943.86,-133.52 1954.49,-127.09"/>
-<polygon fill="#666666" stroke="#666666" points="1955.59,-128.88 1959.75,-124.07 1953.5,-125.23 1955.59,-128.88"/>
+<title>Kimchi.Quotient.Lift&#45;&gt;Kimchi.Aggregate</title>
+<path fill="none" stroke="#666666" d="M1914.03,-384.9C1920.96,-380.69 1927.26,-375.46 1932,-369 1960.72,-329.86 1933.36,-194.4 1957,-152 1962.19,-142.7 1970.16,-134.64 1978.51,-128.01"/>
+<polygon fill="#666666" stroke="#666666" points="1980.21,-129.36 1983.73,-124.07 1977.68,-126 1980.21,-129.36"/>
 </g>
-<!-- Kimchi.Quotient.Lift&#45;&gt;Kimchi.Quotient.Domain -->
+<!-- Kimchi.Quotient.Lift&#45;&gt;Kimchi.Domain -->
 <g id="edge139" class="edge">
-<title>Kimchi.Quotient.Lift&#45;&gt;Kimchi.Quotient.Domain</title>
-<path fill="none" stroke="#666666" d="M1858.06,-384.87C1871.72,-357.42 1896,-301.52 1896,-251 1896,-251 1896,-251 1896,-177 1896,-132.25 1902.61,-119.83 1923,-80 1927.15,-71.9 1932.9,-63.87 1938.58,-56.88"/>
-<polygon fill="#666666" stroke="#666666" points="1940.24,-58.17 1942.49,-52.23 1937.02,-55.48 1940.24,-58.17"/>
+<title>Kimchi.Quotient.Lift&#45;&gt;Kimchi.Domain</title>
+<path fill="none" stroke="#666666" d="M1871.96,-384.59C1892.13,-357.65 1927,-303.46 1927,-251 1927,-251 1927,-251 1927,-177 1927,-132.74 1949.22,-85.04 1964.33,-57.72"/>
+<polygon fill="#666666" stroke="#666666" points="1966.32,-58.47 1967.43,-52.21 1962.66,-56.41 1966.32,-58.47"/>
 </g>
-<!-- Kimchi.Quotient.Lift&#45;&gt;Kimchi.Quotient.SchwartzZippel -->
+<!-- Kimchi.Quotient.Lift&#45;&gt;Kimchi.SchwartzZippel -->
 <g id="edge142" class="edge">
-<title>Kimchi.Quotient.Lift&#45;&gt;Kimchi.Quotient.SchwartzZippel</title>
-<path fill="none" stroke="#666666" d="M1897.83,-384.93C1906.17,-380.59 1914.3,-375.32 1921,-369 1972.09,-320.84 2002.6,-240.98 2015.21,-201.93"/>
-<polygon fill="#666666" stroke="#666666" points="2017.27,-202.38 2017.08,-196.03 2013.27,-201.11 2017.27,-202.38"/>
+<title>Kimchi.Quotient.Lift&#45;&gt;Kimchi.SchwartzZippel</title>
+<path fill="none" stroke="#666666" d="M1914.64,-390.84C1928.18,-385.97 1941.69,-378.99 1952,-369 1998.89,-323.57 1979.28,-292.01 2005,-232 2009.31,-221.93 2014.42,-210.96 2018.89,-201.62"/>
+<polygon fill="#666666" stroke="#666666" points="2020.87,-202.36 2021.58,-196.04 2017.08,-200.54 2020.87,-202.36"/>
 </g>
-<!-- Kimchi.Quotient.Lift&#45;&gt;Kimchi.Quotient.Shifted -->
+<!-- Kimchi.Quotient.Lift&#45;&gt;Kimchi.Shifted -->
 <g id="edge140" class="edge">
-<title>Kimchi.Quotient.Lift&#45;&gt;Kimchi.Quotient.Shifted</title>
-<path fill="none" stroke="#666666" d="M1822.53,-384.86C1803.74,-372.69 1778.44,-356.31 1758.6,-343.46"/>
-<polygon fill="#666666" stroke="#666666" points="1759.6,-341.61 1753.42,-340.11 1757.32,-345.13 1759.6,-341.61"/>
+<title>Kimchi.Quotient.Lift&#45;&gt;Kimchi.Shifted</title>
+<path fill="none" stroke="#666666" d="M1829.57,-384.86C1809.32,-372.64 1782.01,-356.17 1760.66,-343.3"/>
+<polygon fill="#666666" stroke="#666666" points="1761.59,-341.41 1755.37,-340.11 1759.42,-345.01 1761.59,-341.41"/>
 </g>
-<!-- Kimchi.Quotient.Permutation&#45;&gt;Kimchi.Quotient.Aggregate -->
+<!-- Kimchi.Quotient.Permutation&#45;&gt;Kimchi.Aggregate -->
 <g id="edge143" class="edge">
-<title>Kimchi.Quotient.Permutation&#45;&gt;Kimchi.Quotient.Aggregate</title>
-<path fill="none" stroke="#666666" d="M2131.19,-231.67C2134.03,-210.63 2135.42,-175.12 2118,-152 2109.8,-141.12 2098.53,-132.86 2086.29,-126.59"/>
-<polygon fill="#666666" stroke="#666666" points="2086.93,-124.57 2080.61,-123.85 2085.1,-128.35 2086.93,-124.57"/>
+<title>Kimchi.Quotient.Permutation&#45;&gt;Kimchi.Aggregate</title>
+<path fill="none" stroke="#666666" d="M2127.73,-231.68C2126.53,-210.67 2121.64,-175.17 2103,-152 2094.62,-141.59 2083.21,-133.36 2071.35,-126.95"/>
+<polygon fill="#666666" stroke="#666666" points="2072.17,-125.02 2065.88,-124.14 2070.25,-128.75 2072.17,-125.02"/>
 </g>
-<!-- Kimchi.Quotient.Permutation&#45;&gt;Kimchi.Quotient.SchwartzZippel -->
+<!-- Kimchi.Quotient.Permutation&#45;&gt;Kimchi.SchwartzZippel -->
 <g id="edge144" class="edge">
-<title>Kimchi.Quotient.Permutation&#45;&gt;Kimchi.Quotient.SchwartzZippel</title>
-<path fill="none" stroke="#666666" d="M2102.07,-231.88C2087.31,-222.13 2068.73,-209.86 2053.18,-199.59"/>
-<polygon fill="#666666" stroke="#666666" points="2054.19,-197.74 2048.03,-196.19 2051.88,-201.25 2054.19,-197.74"/>
-</g>
-<!-- Kimchi.Quotient.SchwartzZippel&#45;&gt;Kimchi.Quotient.Aggregate -->
-<g id="edge145" class="edge">
-<title>Kimchi.Quotient.SchwartzZippel&#45;&gt;Kimchi.Quotient.Aggregate</title>
-<path fill="none" stroke="#666666" d="M2018.04,-159.7C2016.01,-150.8 2013.5,-139.82 2011.3,-130.2"/>
-<polygon fill="#666666" stroke="#666666" points="2013.29,-129.49 2009.91,-124.1 2009.2,-130.42 2013.29,-129.49"/>
-</g>
-<!-- Kimchi.Quotient.Shifted&#45;&gt;Kimchi.Quotient.Domain -->
-<g id="edge146" class="edge">
-<title>Kimchi.Quotient.Shifted&#45;&gt;Kimchi.Quotient.Domain</title>
-<path fill="none" stroke="#666666" d="M1735.62,-303.88C1757.31,-261.96 1817.71,-152.35 1891,-80 1900.26,-70.85 1911.65,-62.47 1922.43,-55.49"/>
-<polygon fill="#666666" stroke="#666666" points="1923.72,-57.16 1927.66,-52.17 1921.47,-53.61 1923.72,-57.16"/>
+<title>Kimchi.Quotient.Permutation&#45;&gt;Kimchi.SchwartzZippel</title>
+<path fill="none" stroke="#666666" d="M2104.03,-231.88C2090.5,-222.22 2073.5,-210.07 2059.2,-199.86"/>
+<polygon fill="#666666" stroke="#666666" points="2060.17,-197.97 2054.07,-196.19 2057.73,-201.39 2060.17,-197.97"/>
 </g>
 <!-- Kimchi.Quotient.Wiring&#45;&gt;Kimchi.Quotient.Copy -->
-<g id="edge147" class="edge">
+<g id="edge145" class="edge">
 <title>Kimchi.Quotient.Wiring&#45;&gt;Kimchi.Quotient.Copy</title>
 <path fill="none" stroke="#666666" d="M2246,-384.86C2246,-373.57 2246,-358.66 2246,-346.3"/>
 <polygon fill="#666666" stroke="#666666" points="2248.1,-346.11 2246,-340.11 2243.9,-346.11 2248.1,-346.11"/>
+</g>
+<!-- Kimchi.SchwartzZippel&#45;&gt;Kimchi.Aggregate -->
+<g id="edge146" class="edge">
+<title>Kimchi.SchwartzZippel&#45;&gt;Kimchi.Aggregate</title>
+<path fill="none" stroke="#666666" d="M2026.04,-159.7C2024.01,-150.8 2021.5,-139.82 2019.3,-130.2"/>
+<polygon fill="#666666" stroke="#666666" points="2021.29,-129.49 2017.91,-124.1 2017.2,-130.42 2021.29,-129.49"/>
+</g>
+<!-- Kimchi.Shifted&#45;&gt;Kimchi.Domain -->
+<g id="edge147" class="edge">
+<title>Kimchi.Shifted&#45;&gt;Kimchi.Domain</title>
+<path fill="none" stroke="#666666" d="M1738.88,-303.9C1767.72,-262.95 1844.8,-156.94 1922,-80 1930.42,-71.61 1940.34,-63.22 1949.47,-56.01"/>
+<polygon fill="#666666" stroke="#666666" points="1951.01,-57.47 1954.45,-52.12 1948.42,-54.16 1951.01,-57.47"/>
 </g>
 <!-- Kimchi.Verifier.Capstone&#45;&gt;Bulletproof.Reflection -->
 <g id="edge150" class="edge">
@@ -1357,7 +1357,7 @@
 <!-- Kimchi.Verifier.Reflect&#45;&gt;Kimchi.Quotient.Permutation -->
 <g id="edge159" class="edge">
 <title>Kimchi.Verifier.Reflect&#45;&gt;Kimchi.Quotient.Permutation</title>
-<path fill="none" stroke="#666666" d="M1340.32,-890.74C1331.8,-880.78 1321.51,-867.74 1314,-855 1287.6,-810.2 1311.63,-776.78 1269,-747 1252.32,-735.34 1102.18,-751.34 1086,-739 1031.8,-697.66 1065.99,-655.6 1039,-593 1018.91,-546.42 996.62,-542.13 984,-493 980.02,-477.5 982.25,-472.9 984,-457 985.9,-439.69 1004.68,-315.22 1018,-304 1057.01,-271.15 1789.07,-256.4 2042.5,-252.27"/>
+<path fill="none" stroke="#666666" d="M1340.32,-890.74C1331.8,-880.78 1321.51,-867.74 1314,-855 1287.6,-810.2 1311.62,-776.8 1269,-747 1252.59,-735.53 1105.03,-751 1089,-739 1034.09,-697.89 1066.74,-655.73 1039,-593 1018.48,-546.61 996.62,-542.13 984,-493 980.02,-477.5 982.25,-472.9 984,-457 985.9,-439.69 1004.68,-315.22 1018,-304 1057.01,-271.15 1789.07,-256.4 2042.5,-252.27"/>
 <polygon fill="#666666" stroke="#666666" points="2042.8,-254.37 2048.77,-252.17 2042.73,-250.17 2042.8,-254.37"/>
 </g>
 <!-- Kimchi.Verifier.Reflect&#45;&gt;Kimchi.Verifier.Kimchi -->

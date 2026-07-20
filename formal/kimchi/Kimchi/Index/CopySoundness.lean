@@ -1,5 +1,5 @@
 import Kimchi.Index.Satisfies
-import Kimchi.Quotient.SchwartzZippel
+import Kimchi.SchwartzZippel
 
 /-!
 # Copy soundness at the index

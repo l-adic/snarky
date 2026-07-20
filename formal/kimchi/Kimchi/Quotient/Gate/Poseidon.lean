@@ -1,5 +1,5 @@
 import Kimchi.Quotient.Lift
-import Kimchi.Quotient.Shifted
+import Kimchi.Shifted
 import Kimchi.Gate.Poseidon
 
 /-!

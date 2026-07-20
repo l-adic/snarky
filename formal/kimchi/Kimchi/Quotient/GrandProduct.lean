@@ -1,4 +1,4 @@
-import Kimchi.Quotient.Domain
+import Kimchi.Domain
 
 /-!
 # The grand-product core: linear-factor multisets and two-variable pinning
@@ -174,7 +174,7 @@ two-variable injective grid. Working in `F[β][γ]` with
 two explicitly-small bad sets — already forces the two grand products to agree, hence the pair
 multisets to coincide. Bad β's are the roots of the outer (γ-leading) coefficient of `Δ`; bad γ's
 (given β) are the roots of `Δ` specialised at `β`. Both bad sets are empty when `m₁ = m₂`, so the
-`∉ bad…` hypotheses are never vacuous. Mirrors `Kimchi/Quotient/SchwartzZippel.lean`'s α-collapse.
+`∉ bad…` hypotheses are never vacuous. Mirrors `Kimchi/SchwartzZippel.lean`'s α-collapse.
 -/
 
 /-- The difference of the two grand products in `F[β][γ]` (outer variable `γ`, inner `β`).
