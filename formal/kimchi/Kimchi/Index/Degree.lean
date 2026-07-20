@@ -582,7 +582,6 @@ private theorem permConstraints_natDegree_le [NeZero n] (idx : Index F n)
 
 The three bounds the caller passes to `Index.satisfies_of_evalCheck`. -/
 
-namespace Index
 
 variable [NeZero n]
 
@@ -628,6 +627,5 @@ theorem t_zH_natDegree_le (t : Polynomial F) (ht : t.natDegree < 7 * n) :
     _ = t.natDegree + n := by rw [hzH]
     _ ≤ 9 * n := by omega
 
-end Index
 
 end Kimchi.Index

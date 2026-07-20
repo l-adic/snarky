@@ -23,7 +23,7 @@ checker and the full production prove+verify asserted at dump time):
   input must each be rejected.
 -/
 
-open Lean FixtureKit Kimchi.Index CompElliptic.Fields.Pasta
+open Lean FixtureKit Kimchi Kimchi.Index CompElliptic.Fields.Pasta
 
 def parseGateType : String → Except String GateType
   | "zero" => .ok .zero

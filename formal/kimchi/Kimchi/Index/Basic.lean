@@ -81,7 +81,7 @@ private def wiringMapOf {F : Type*} {n : ℕ} (gates : Fin n → GateRow F n)
 construction. On concrete data every law is decidable (the generator and shift
 conditions through the `Wiring.lean` certificates), so parsers decide them rather than
 assume them. -/
-structure Index (F : Type*) [Field F] (n : ℕ) where
+structure _root_.Kimchi.Index (F : Type*) [Field F] (n : ℕ) where
   gates : Fin n → GateRow F n
   publicCount : ℕ
   zkRows : ℕ
@@ -125,7 +125,6 @@ structure Index (F : Type*) [Field F] (n : ℕ) where
   masked_boundary : ∀ i : Fin n, (i : ℕ) + 1 = n - zkRows →
     (gates i).typ.twoRow = false
 
-namespace Index
 
 variable {F : Type*} [Field F] {n : ℕ}
 
@@ -233,6 +232,5 @@ def build? [DecidableEq F] (gates : Fin n → GateRow F n) (publicCount zkRows :
            masked_boundary := h.2.2.2.2.2.2.2.2.2.2.2.2 }
   else none
 
-end Index
 
 end Kimchi.Index

@@ -41,7 +41,6 @@ namespace Kimchi.Index
 
 open Polynomial Kimchi.Quotient
 
-namespace Index
 
 variable {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n]
 
@@ -326,6 +325,5 @@ theorem copy_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
   idx.copy_soundness_of_dvd wTab β γ hβ hγ zg
     (dvd_of_evalCheck idx.omega_prim _ α hα t ζ hζ hcheck)
 
-end Index
 
 end Kimchi.Index

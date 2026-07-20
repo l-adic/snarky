@@ -135,25 +135,25 @@ Kimchi.Verifier.kimchiVerify_reflects
 Kimchi.Verifier.barycentricPubEval_eq
 
 -- Phase A3: quotient soundness at the index (per-family bridges consuming Index data).
-Kimchi.Index.Index.addComplete_soundness
-Kimchi.Index.Index.varBaseMul_soundness
-Kimchi.Index.Index.endoMul_soundness
-Kimchi.Index.Index.endoScalar_soundness
-Kimchi.Index.Index.poseidon_soundness
-Kimchi.Index.Index.generic_soundness
-Kimchi.Index.Index.copy_soundness
+Kimchi.Index.addComplete_soundness
+Kimchi.Index.varBaseMul_soundness
+Kimchi.Index.endoMul_soundness
+Kimchi.Index.endoScalar_soundness
+Kimchi.Index.poseidon_soundness
+Kimchi.Index.generic_soundness
+Kimchi.Index.copy_soundness
 
 -- The arithmetization interface those bridges compose into: satisfiability of a row or of
 -- the whole table against divisibility of the aggregate family, in both directions, plus
 -- the unmasked-cell congruence. These are gated by `scripts/check_axioms.lean` and so are
 -- part of the declared surface; listing them here keeps the two manifests in agreement.
-Kimchi.Index.Index.satisfies_iff_fullFamily_dvd
-Kimchi.Index.Index.satisfies_of_fullFamily_dvd
-Kimchi.Index.Index.fullFamily_dvd_of_satisfies
-Kimchi.Index.Index.gateMember_dvd_of_rowSatisfies
-Kimchi.Index.Index.rowSatisfies_of_evalCheck
-Kimchi.Index.Index.satisfies_of_evalCheck
-Kimchi.Index.Index.exists_quotient_of_satisfies
+Kimchi.Index.satisfies_iff_fullFamily_dvd
+Kimchi.Index.satisfies_of_fullFamily_dvd
+Kimchi.Index.fullFamily_dvd_of_satisfies
+Kimchi.Index.gateMember_dvd_of_rowSatisfies
+Kimchi.Index.rowSatisfies_of_evalCheck
+Kimchi.Index.satisfies_of_evalCheck
+Kimchi.Index.exists_quotient_of_satisfies
 Kimchi.Index.satisfies_congr_unmasked
 
 -- The capstone: executable-verifier acceptance ⟹ the index is satisfiable, at every challenge

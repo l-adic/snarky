@@ -36,7 +36,6 @@ namespace Kimchi.Index
 
 open Polynomial Kimchi.Quotient
 
-namespace Index
 
 variable {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n]
 
@@ -838,6 +837,5 @@ theorem satisfies_iff_fullFamily_dvd [Fintype F] (idx : Index F n)
     obtain ⟨z, hz⟩ := h (b a) (g c) (hnd a c)
     exact idx.satisfies_of_fullFamily_dvd pub wTab (b a) (g c) ha hc z hz
 
-end Index
 
 end Kimchi.Index
