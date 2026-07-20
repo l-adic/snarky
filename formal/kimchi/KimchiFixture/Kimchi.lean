@@ -7,8 +7,8 @@ import BulletproofFixture
 Decoders for the complete kimchi proof + verifier-key fixture (`tools/fixture-dump`'s
 `kimchi_proof_dump`), shared by the fixture scripts: the proof record, the verifier
 key (SRS separate — it is universal, not part of the key), and the public input. Built
-on the shared element decoders (`Kimchi/Fixture/Parse.lean`) and the IPA plumbing
-(`parsePt`/`parseSRSAt`/`parseProof`, `Kimchi/Fixture/Ipa.lean`). The fr-sponge
+on the shared element decoders (`FixtureKit.Parse`) and the IPA plumbing
+(`parsePt`/`parseSRSAt`/`parseProof`, `BulletproofFixture`). The fr-sponge
 Poseidon parameters are not wire data — the caller pins them (the per-curve
 `KimchiVesta.frParams`/`KimchiPallas.frParams`).
 -/

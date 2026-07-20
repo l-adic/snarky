@@ -1,4 +1,4 @@
-import Kimchi.Fixture.Kimchi
+import KimchiFixture.Kimchi
 import Lean.Data.Json
 
 /-! The executable kimchi verifier against a production proof

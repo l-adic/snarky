@@ -46,7 +46,7 @@ name = "Kimchi"
 # built as its own target, mirroring `FixtureKit` and `BulletproofFixture`.
 [[lean_lib]]
 name = "KimchiFixture"
-globs = ["Kimchi.Fixture.+"]
+globs = ["KimchiFixture.+"]
 
 
 [[lean_exe]]

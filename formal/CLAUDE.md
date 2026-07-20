@@ -73,8 +73,9 @@ Above the gate stack, the library has grown four further trees:
 - **`Kimchi/Quotient/`** — the vanishing-argument layer (domain, divisibility engine, the
   `Argument`/`ArgumentEnv` per-gate lifts, grand-product core).
 - **`Kimchi/Verifier/`** — the executable kimchi verifier, its reflection, and the
-  soundness capstones. The kimchi-proof JSON decoders live in `Kimchi/Fixture/`, which is
-  its OWN library (`KimchiFixture`) and deliberately NOT part of `Kimchi`: checking
+  soundness capstones. The kimchi-proof JSON decoders live in `kimchi/KimchiFixture/`,
+  its OWN library (`KimchiFixture`) sitting beside the `Kimchi/` tree, deliberately NOT
+  part of `Kimchi`: checking
   against recorded data is not part of the development. Same split as `FixtureKit`
   (poseidon) and `BulletproofFixture` (bulletproof-pcs). Scripts import it directly.
 - The IPA commitment lives in the `bulletproof-pcs` package (`Bulletproof.*`), the sponge

@@ -1,4 +1,4 @@
-import Kimchi.Fixture.PS
+import KimchiFixture.PS
 
 /-! Check every witness-carrying PureScript harness result against the index model:
 scan `circuits/results/*.json`, ingest each comparison's `purescript` side through

@@ -13,8 +13,8 @@ Run from `formal/` (the aggregator workspace):  scripts/deadcode.sh
 import Kimchi
 -- The fixture-decoding libraries are not part of any package's main library, so import them
 -- explicitly: their declarations are authored code, and some are declared roots.
-import Kimchi.Fixture.Kimchi
-import Kimchi.Fixture.PS
+import KimchiFixture.Kimchi
+import KimchiFixture.PS
 import BulletproofFixture
 import FixtureKit.Parse
 import FixtureKit.Trace
