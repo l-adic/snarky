@@ -27,7 +27,7 @@ what the permutation accumulator forces to agree on both sides.
   outside the bad sets force multiset equality.
 -/
 
-namespace Kimchi.Quotient
+namespace Kimchi.GrandProduct
 
 open Polynomial
 
@@ -283,4 +283,117 @@ theorem multiset_eq_of_prod_eval (m₁ m₂ : Multiset (F × F)) (β γ : F)
 
 end
 
-end Kimchi.Quotient
+end Kimchi.GrandProduct
+
+namespace Kimchi.GrandProduct
+
+open Polynomial
+
+variable {F : Type*} [Field F]
+
+/-! ## The abstract core -/
+
+omit [Field F] in
+/-- **Values from multisets.** If the multiset of `(value, own address)` pairs equals the
+multiset of `(value, wired-to address)` pairs and addresses are injective, values are
+invariant under the wiring: the pair `(v c, addr (σp c))` occurs among the own-address
+pairs, and its address pins its cell to `σp c`. -/
+private theorem values_eq_of_multiset_eq {cells : Type*} [Fintype cells]
+    (v addr : cells → F) (haddr : Function.Injective addr) (σp : Equiv.Perm cells)
+    (h : (Finset.univ.val.map fun c => (v c, addr c))
+      = (Finset.univ.val.map fun c => (v c, addr (σp c)))) :
+    ∀ c, v (σp c) = v c := by
+  intro c₀
+  have hmem : (v c₀, addr (σp c₀)) ∈ (Finset.univ.val.map fun c => (v c, addr c)) := by
+    rw [h]
+    exact Multiset.mem_map.mpr ⟨c₀, by simp, rfl⟩
+  obtain ⟨c₁, -, hc₁⟩ := Multiset.mem_map.mp hmem
+  have h₂ : c₁ = σp c₀ := haddr (congrArg Prod.snd hc₁)
+  have h₁ := congrArg Prod.fst hc₁
+  rwa [h₂] at h₁
+
+/-- **Copy soundness, field level.** Products of `(γ + value + address·β)` over the cells
+agreeing at a **single good challenge pair** `(β, γ)` — own addresses on the left,
+wired-to addresses on the right — force the values to be invariant under the wiring.
+The single-challenge Schwartz–Zippel core (`multiset_eq_of_prod_eval`) turns the product
+equality into multiset equality once `β` and `γ` avoid the proved-small bad sets
+`badBetas`/`badGammas` of the `(value, address)` pair multisets; injective addressing then
+descends to the values. -/
+theorem copy_soundness [DecidableEq F] {cells : Type*} [Fintype cells]
+    (β γ : F)
+    (v addr : cells → F) (haddr : Function.Injective addr) (σp : Equiv.Perm cells)
+    (hβ : β ∉ badBetas (Finset.univ.val.map fun c => (v c, addr c))
+      (Finset.univ.val.map fun c => (v c, addr (σp c))))
+    (hγ : γ ∉ badGammas (Finset.univ.val.map fun c => (v c, addr c))
+      (Finset.univ.val.map fun c => (v c, addr (σp c))) β)
+    (h : ∏ c, (γ + v c + addr c * β) = ∏ c, (γ + v c + addr (σp c) * β)) :
+    ∀ c, v (σp c) = v c := by
+  refine values_eq_of_multiset_eq v addr haddr σp
+    (multiset_eq_of_prod_eval _ _ β γ hβ hγ ?_)
+  rw [Multiset.map_map, Multiset.map_map]
+  simpa only [Function.comp_def, ← Finset.prod_eq_multiset_prod] using h
+
+end Kimchi.GrandProduct
+
+namespace Kimchi.GrandProduct
+
+variable {F : Type*} [Field F]
+
+/-! ## The permutation accumulator telescopes into a grand-product equality
+
+Pure finite induction over indexed families — no domain, root of unity, or polynomials. An
+accumulator column pinned to `1` at both ends with the division-free recurrence
+`z(k+1)·denₖ = z(k)·numₖ` forces `∏ num = ∏ den`; the converse builds the running-ratio column
+under nonzero denominators. The kimchi-facing wire constraints instantiate these downstream. -/
+
+/-- **Accumulator telescoping.** An accumulator pinned to `1` at both ends of a row range
+and satisfying the division-free recurrence `z(k+1) · denₖ = z(k) · numₖ` on it forces the
+grand products to agree: `∏ num = ∏ den`. -/
+theorem prod_eq_of_accumulator {m : ℕ} (num den z : ℕ → F)
+    (h0 : z 0 = 1) (hm : z m = 1)
+    (hstep : ∀ k < m, z (k + 1) * den k = z k * num k) :
+    ∏ k ∈ Finset.range m, num k = ∏ k ∈ Finset.range m, den k := by
+  have aux : ∀ k, k ≤ m →
+      z k * ∏ j ∈ Finset.range k, den j = ∏ j ∈ Finset.range k, num j := by
+    intro k
+    induction k with
+    | zero => simpa using h0
+    | succ k ih =>
+      intro hk
+      have hk' : k < m := Nat.lt_of_lt_of_le (Nat.lt_succ_self k) hk
+      rw [Finset.prod_range_succ, Finset.prod_range_succ]
+      calc z (k + 1) * ((∏ j ∈ Finset.range k, den j) * den k)
+          = (z (k + 1) * den k) * ∏ j ∈ Finset.range k, den j := by ring
+        _ = (z k * num k) * ∏ j ∈ Finset.range k, den j := by rw [hstep k hk']
+        _ = (z k * ∏ j ∈ Finset.range k, den j) * num k := by ring
+        _ = (∏ j ∈ Finset.range k, num j) * num k := by rw [ih hk'.le]
+  have h := aux m le_rfl
+  rw [hm, one_mul] at h
+  exact h.symm
+
+/-- **Accumulator construction** — the converse of `prod_eq_of_accumulator`, and the
+completeness direction's witness. With nonzero denominators and agreeing grand
+products, the running-ratio column `z k = (∏_{j<k} num) / (∏_{j<k} den)` is an
+accumulator: pinned to `1` at both ends and satisfying the division-free recurrence.
+This is the one place the nonzero-denominator hypothesis is genuinely needed — the
+soundness direction (`prod_eq_of_accumulator`) is division-free. -/
+theorem accumulator_of_prod_eq {m : ℕ} (num den : ℕ → F)
+    (hden : ∀ k < m, den k ≠ 0)
+    (hprod : ∏ k ∈ Finset.range m, num k = ∏ k ∈ Finset.range m, den k) :
+    ∃ z : ℕ → F, z 0 = 1 ∧ z m = 1
+      ∧ ∀ k < m, z (k + 1) * den k = z k * num k := by
+  have hdprod : ∀ k, k ≤ m → (∏ j ∈ Finset.range k, den j) ≠ 0 := fun k hk =>
+    Finset.prod_ne_zero_iff.mpr fun j hj =>
+      hden j (lt_of_lt_of_le (Finset.mem_range.mp hj) hk)
+  refine ⟨fun k => (∏ j ∈ Finset.range k, num j) / (∏ j ∈ Finset.range k, den j),
+    by simp, ?_, ?_⟩
+  · dsimp only
+    rw [hprod, div_self (hdprod m le_rfl)]
+  · intro k hk
+    dsimp only
+    have hd := hdprod k hk.le
+    have hdk := hden k hk
+    rw [Finset.prod_range_succ, Finset.prod_range_succ]
+    field_simp
+
+end Kimchi.GrandProduct

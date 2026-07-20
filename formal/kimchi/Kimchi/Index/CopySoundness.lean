@@ -17,10 +17,11 @@ holds there for honest witnesses because masked rows are identity-wired.
 namespace Kimchi.Index
 
 open Polynomial Kimchi.Quotient
+open Kimchi.GrandProduct
 
 variable {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n]
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 /-- The witness table's permuted columns as interpolants — what the permutation
 argument's committed columns are for a table witness. -/
 noncomputable def permWitnessPoly (idx : Index F n) (wTab : Fin n → Fin 15 → F) :
@@ -33,7 +34,7 @@ theorem eval_permWitnessPoly (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     (idx.permWitnessPoly wTab col).eval (idx.omega ^ (j : ℕ)) = cellValue wTab (col, j) :=
   eval_columnPoly idx.omega_prim _ j
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 /-- **Copy soundness at the index, divisibility form.** For the index's wiring, shifts,
 and sigma columns (all bundled laws): if at every node of an injective `(β, γ)` grid the
 prover supplies an accumulator whose three permutation constraints are divisible by

@@ -1,4 +1,4 @@
-import Kimchi.Quotient.Wiring
+import Kimchi.Permutation.Wiring
 
 /-!
 # The kimchi index: the circuit as data
@@ -11,7 +11,7 @@ zero-knowledge and public-input row counts. The index carries its laws: a value 
 `Index F n` is wellformed by construction (primitive generator, coset shifts, bounded
 row regions, a region-preserving bijective wiring), in the manner of `SWPoint`. On
 concrete data every law is decidable — the generator and shift conditions through the
-certificates of `Kimchi/Quotient/Wiring.lean`, the rest by `Fintype` instances — so
+certificates of `Kimchi/Permutation/Wiring.lean`, the rest by `Fintype` instances — so
 parsers construct indices by deciding, never by trusting.
 
 **One stored representation.** The table is `Fin`-indexed data; the satisfiability
@@ -41,7 +41,7 @@ rows). Flagged optional gates (range check, foreign field, lookups) are out of s
 
 namespace Kimchi.Index
 
-open Polynomial Kimchi.Quotient Kimchi.Quotient.Permutation
+open Polynomial Kimchi.Permutation
 
 /-- The modeled gate types: the six formalized gates and the constraint-free `zero`. -/
 inductive GateType where

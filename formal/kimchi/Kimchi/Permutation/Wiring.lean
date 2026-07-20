@@ -1,4 +1,4 @@
-import Kimchi.Quotient.Copy
+import Kimchi.Permutation.Copy
 
 /-!
 # The wiring instantiation: discharging the copy-soundness hypotheses
@@ -28,9 +28,11 @@ grid of accepted quotient checks, the witness takes equal values across every wi
 the unmasked region.
 -/
 
-namespace Kimchi.Quotient.Permutation
+namespace Kimchi.Permutation
 
-open Polynomial Kimchi.Quotient
+open Kimchi.GrandProduct
+
+open Polynomial
 
 variable {F : Type*} [Field F]
 
@@ -452,4 +454,4 @@ theorem copy_soundness_wired [DecidableEq F] {ω : F} (hω : IsPrimitiveRoot ω 
   copy_soundness_wired_of_dvd hω hn hzk0 hzkn w shifts hs σpFull hp β γ hβ hγ zg
     (dvd_of_evalCheck hω _ α hα t ζ hζ hcheck)
 
-end Kimchi.Quotient.Permutation
+end Kimchi.Permutation

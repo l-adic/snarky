@@ -19,15 +19,15 @@ import Bulletproof.Soundness
 import Kimchi.Quotient.Gate.Generic
 import Kimchi.Quotient.Gate.EndoScalar
 import Kimchi.Quotient.Gate.Poseidon
-import Kimchi.Quotient.Copy
+import Kimchi.Permutation.Copy
 import Kimchi.Index.Basic
 import Kimchi.Index.Satisfies
 import Kimchi.Index.Aggregate
 import Kimchi.Index.Degree
 import Kimchi.Index.CopySoundness
-import Kimchi.Quotient.Wiring
-import Kimchi.Quotient.Permutation
-import Kimchi.Quotient.GrandProduct
+import Kimchi.Permutation.Wiring
+import Kimchi.Permutation.Permutation
+import Kimchi.GrandProduct
 import Bulletproof.Wire
 -- Side A — the idealized polynomial protocol and its soundness
 import Kimchi.Protocol.Linearization

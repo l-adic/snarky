@@ -1,5 +1,5 @@
-import Kimchi.Quotient.GrandProduct
-import Kimchi.Quotient.Permutation
+import Kimchi.GrandProduct
+import Kimchi.Permutation.Permutation
 import Kimchi.SchwartzZippel
 
 /-!
@@ -29,61 +29,13 @@ Two strata:
   every wiring orbit.
 -/
 
-namespace Kimchi.Quotient
-
-open Polynomial
-
-variable {F : Type*} [Field F]
-
-/-! ## The abstract core -/
-
-omit [Field F] in
-/-- **Values from multisets.** If the multiset of `(value, own address)` pairs equals the
-multiset of `(value, wired-to address)` pairs and addresses are injective, values are
-invariant under the wiring: the pair `(v c, addr (σp c))` occurs among the own-address
-pairs, and its address pins its cell to `σp c`. -/
-private theorem values_eq_of_multiset_eq {cells : Type*} [Fintype cells]
-    (v addr : cells → F) (haddr : Function.Injective addr) (σp : Equiv.Perm cells)
-    (h : (Finset.univ.val.map fun c => (v c, addr c))
-      = (Finset.univ.val.map fun c => (v c, addr (σp c)))) :
-    ∀ c, v (σp c) = v c := by
-  intro c₀
-  have hmem : (v c₀, addr (σp c₀)) ∈ (Finset.univ.val.map fun c => (v c, addr c)) := by
-    rw [h]
-    exact Multiset.mem_map.mpr ⟨c₀, by simp, rfl⟩
-  obtain ⟨c₁, -, hc₁⟩ := Multiset.mem_map.mp hmem
-  have h₂ : c₁ = σp c₀ := haddr (congrArg Prod.snd hc₁)
-  have h₁ := congrArg Prod.fst hc₁
-  rwa [h₂] at h₁
-
-/-- **Copy soundness, field level.** Products of `(γ + value + address·β)` over the cells
-agreeing at a **single good challenge pair** `(β, γ)` — own addresses on the left,
-wired-to addresses on the right — force the values to be invariant under the wiring.
-The single-challenge Schwartz–Zippel core (`multiset_eq_of_prod_eval`) turns the product
-equality into multiset equality once `β` and `γ` avoid the proved-small bad sets
-`badBetas`/`badGammas` of the `(value, address)` pair multisets; injective addressing then
-descends to the values. -/
-theorem copy_soundness [DecidableEq F] {cells : Type*} [Fintype cells]
-    (β γ : F)
-    (v addr : cells → F) (haddr : Function.Injective addr) (σp : Equiv.Perm cells)
-    (hβ : β ∉ badBetas (Finset.univ.val.map fun c => (v c, addr c))
-      (Finset.univ.val.map fun c => (v c, addr (σp c))))
-    (hγ : γ ∉ badGammas (Finset.univ.val.map fun c => (v c, addr c))
-      (Finset.univ.val.map fun c => (v c, addr (σp c))) β)
-    (h : ∏ c, (γ + v c + addr c * β) = ∏ c, (γ + v c + addr (σp c) * β)) :
-    ∀ c, v (σp c) = v c := by
-  refine values_eq_of_multiset_eq v addr haddr σp
-    (multiset_eq_of_prod_eval _ _ β γ hβ hγ ?_)
-  rw [Multiset.map_map, Multiset.map_map]
-  simpa only [Function.comp_def, ← Finset.prod_eq_multiset_prod] using h
-
-end Kimchi.Quotient
-
 /-! ## The kimchi headline -/
 
-namespace Kimchi.Quotient.Permutation
+namespace Kimchi.Permutation
 
-open Polynomial Kimchi.Quotient
+open Kimchi.GrandProduct
+
+open Polynomial
 
 variable {F : Type*} [Field F]
 
@@ -131,7 +83,7 @@ theorem copy_soundness_of_dvd [DecidableEq F] {ω : F} {n : ℕ}
     ∀ c : Fin 7 × Fin (n - zkRows),
       (w (σp c).1).eval (ω ^ ((σp c).2 : ℕ)) = (w c.1).eval (ω ^ (c.2 : ℕ)) := by
   -- The field-level core at the cell data.
-  refine Kimchi.Quotient.copy_soundness β γ _ _ haddr σp hβ hγ ?_
+  refine Kimchi.GrandProduct.copy_soundness β γ _ _ haddr σp hβ hγ ?_
   -- The grand-product argument gives the row-product equality; reindex rows × columns to cells and
   -- rewrite the sigma side through the wiring semantics.
   have hrows := Permutation.soundness_of_dvd hω hn hzk0 hzkn zg w σpoly shifts β γ hdvd
@@ -199,4 +151,4 @@ theorem copy_soundness [DecidableEq F] {ω : F} {n : ℕ}
   copy_soundness_of_dvd hω hn hzk0 hzkn w σpoly shifts σp haddr hσ β γ hβ hγ zg
     (dvd_of_evalCheck hω _ α hα t ζ hζ hcheck)
 
-end Kimchi.Quotient.Permutation
+end Kimchi.Permutation

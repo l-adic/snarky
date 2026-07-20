@@ -87,8 +87,8 @@ omit [DecidableEq F] in
 /-- **The permutation next-row shift does not raise degree.** Same `.comp (C ω * X)` shape
 as `shift`, so degree is preserved (`natDegree_comp_le`). -/
 private theorem shiftRow_natDegree_le {ω : F} (z : Polynomial F) :
-    (Kimchi.Quotient.Permutation.shiftRow ω z).natDegree ≤ z.natDegree := by
-  unfold Kimchi.Quotient.Permutation.shiftRow
+    (Kimchi.Permutation.shiftRow ω z).natDegree ≤ z.natDegree := by
+  unfold Kimchi.Permutation.shiftRow
   have h1 : (C ω * X).natDegree ≤ 1 :=
     le_trans (natDegree_C_mul_le ω X) (le_of_eq natDegree_X)
   calc (z.comp (C ω * X)).natDegree
@@ -492,7 +492,7 @@ private theorem gateMember_natDegree_le [NeZero n] (idx : Index F n)
       unfold degreeBound
       omega
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 /-- **Permutation-member bound.** Each of the three permutation constraints at the index's
 wiring data has `natDegree ≤ 9n` when the accumulator `z` has degree `< n`. Member `0` is
 `zkpm` (degree `≤ n` via `natDegree_prod_le` over `Ico (n−zkRows) n`, card `≤ n`) times a

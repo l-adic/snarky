@@ -35,6 +35,7 @@ per-gate divisibility from the summed members via selector row-disjointness
 namespace Kimchi.Index
 
 open Polynomial Kimchi.Quotient
+open Kimchi.GrandProduct
 open Kimchi.Quotient.Gate
 
 
@@ -102,7 +103,7 @@ noncomputable def gateMember (idx : Index F n) (pub : Fin idx.publicCount → F)
       columnPoly idx.omega (idx.selectorRow g) * (idx.gateConstraints wTab g).getD k 0)
     - if k = 0 then idx.pubPoly pub else 0
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 /-- **The full kimchi aggregate family** — the `21 + 3` members of the one quotient
 check, at a given accumulator `z` and permutation challenge pair `(β, γ)`: the shared
 gate pool first, then the three permutation constraints at the index's wiring data. -/
@@ -314,7 +315,7 @@ private theorem fullFamily_dvd_of_evalCheck (idx : Index F n) (pub : Fin idx.pub
     ∀ s, zH F n ∣ idx.fullFamily pub wTab z β γ s :=
   dvd_of_evalCheck idx.omega_prim (idx.fullFamily pub wTab z β γ) α hα t ζ hζ hcheck
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 omit [DecidableEq F] in
 /-- The permutation members of the full family: entries `21 + s` are the three
 permutation constraints at the index's wiring data. -/
@@ -328,7 +329,7 @@ private theorem fullFamily_perm (idx : Index F n) (pub : Fin idx.publicCount →
   congr 1
   exact Fin.ext (by simp [Fin.natAdd])
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 /-- **Phase-B assembly, copy side.** If at every node of an injective `(β, γ)` grid the
 prover supplies an accumulator whose **full family** is `Z_H`-divisible, the witness
 takes equal values across every wire of the unmasked region — the copy fragment of
@@ -373,7 +374,7 @@ the 3 permutation members give the copy constraints on the unmasked region, the
 the public pinning. The conclusion is `Satisfies` — the A2 predicate the derived checker
 decides — from nothing but the index and the shape of kimchi's one quotient check. -/
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 /-- The whole-grid copy conjunct: the unmasked region from the permutation members,
 the masked rows trivially from the `masked_identity` law. -/
 private theorem copyAll_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
@@ -447,7 +448,7 @@ private theorem publicPinned_of_rowSatisfies (idx : Index F n) (pub : Fin idx.pu
   rw [← hpub]
   linear_combination (h1.symm.trans (by simp only [hq0, hq1, hq2, hq3, hq4]; ring)).symm
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 /-- **The Phase-B headline, divisibility form.** An injective `(β, γ)` grid of
 accumulators whose full `21 + 3` families are `Z_H`-divisible gives satisfiability at
 the index: `Satisfies idx pub wTab` — every row's gate holds with the public input
@@ -483,7 +484,7 @@ theorem satisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount
     idx.copyAll_of_fullFamily_dvd pub wTab β γ hβ hγ zg hdvd,
     idx.publicPinned_of_rowSatisfies pub wTab hrow⟩
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 /-- **The Phase-B headline.** The shape of kimchi's one quotient check — at every node
 of an injective `(β, γ)` grid, an accumulator whose aggregated `21 + 3`-member family
 passes the derandomized eval-check against `t · Z_H` — gives satisfiability at the
@@ -642,7 +643,7 @@ reindexing, the honest accumulator telescopes it through the three permutation
 constraints, and the gate members vanish row by row. Pointwise in `(β, γ)` — the
 completeness direction needs no challenge grid. -/
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 omit [DecidableEq F] in
 /-- **Permutation completeness at the index** (C2): under nondegenerate `(β, γ)`, a
 copy-invariant witness admits an accumulator whose three permutation constraints are
@@ -681,7 +682,7 @@ private theorem fullFamily_gate (idx : Index F n) (pub : Fin idx.publicCount →
     idx.fullFamily pub wTab z β γ k = idx.gateMember pub wTab k := by
   rw [fullFamily, dif_pos hk]
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 omit [DecidableEq F] in
 /-- **The completeness headline** (C3). A satisfied table admits honest quotient data
 at every nondegenerate challenge pair: an accumulator `z` making the whole `21 + 3`
@@ -736,7 +737,7 @@ private theorem exists_notMem_of_card_lt {m : ℕ} {f : Fin m → F}
 
 /-! ## The characterization: satisfiability as one divisibility -/
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 /-- **The characterization.** In a large enough field, a wellformed index is satisfied
 iff honest quotient data exists at every nondegenerate challenge pair — Phase B and
 Phase C fused into one statement. Forward is completeness, pointwise; backward

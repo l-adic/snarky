@@ -1,5 +1,5 @@
 import CompElliptic.Fields.Pasta
-import Kimchi.Quotient.Wiring
+import Kimchi.Permutation.Wiring
 import FixtureKit.Parse
 import Lean.Data.Json
 
@@ -11,7 +11,7 @@ Replays the permutation argument's row-level semantics on production data
 whose accumulator comes from kimchi's `perm_aggreg`, with the full production
 prove+verify asserted at dump time). Checked here by evaluating the
 formalization's own definitions: the row forms `shiftSideRow`/`sigmaSideRow`
-(`Kimchi/Quotient/Wiring.lean`, proved equal to the polynomial-level definitions by
+(`Kimchi/Permutation/Wiring.lean`, proved equal to the polynomial-level definitions by
 `shiftSide_eval_row`/`sigmaSide_eval_row`) and the decidable certificates
 `primitiveRootCertificate`/`cosetShiftsCertificate` (proved to imply the specification
 `Prop`s by `isPrimitiveRoot_of_certificate`/`cosetShifts_of_certificate`):
@@ -29,7 +29,7 @@ formalization's own definitions: the row forms `shiftSideRow`/`sigmaSideRow`
 Run (after `lake build Kimchi`): `scripts/check_perm_fixture.sh`.
 -/
 
-open Lean FixtureKit Kimchi.Quotient.Permutation CompElliptic.Fields.Pasta
+open Lean FixtureKit Kimchi.Permutation CompElliptic.Fields.Pasta
 
 structure PermFixture where
   n : ℕ

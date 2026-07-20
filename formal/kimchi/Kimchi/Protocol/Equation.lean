@@ -14,6 +14,7 @@ objects the aggregate family is built on.
 namespace Kimchi.Protocol.Equation
 
 open Polynomial Kimchi.Quotient Kimchi.Index Kimchi.Protocol.Linearization
+open Kimchi.GrandProduct
 open Kimchi.Quotient.Gate
 
 variable {F : Type*} [Field F] {n : ℕ}
@@ -407,7 +408,7 @@ those of the aggregate family, and the evaluation point `ζ` avoids the roots of
 quotient discrepancy. No injective family of points and no degree side-conditions are
 needed — one avoiding point pins the identity by the counting bound. -/
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 /-- One verifier-equation instance at a good challenge tuple — `β`, `γ`, `α`, and the
 evaluation point `ζ` each outside their bad set — implies satisfaction of the circuit. -/
 theorem satisfies_of_verifierEquation [DecidableEq F] [NeZero n]
@@ -453,7 +454,7 @@ theorem satisfies_of_verifierEquation [DecidableEq F] [NeZero n]
   refine idx.satisfies_of_evalCheck pub wTab β γ hβ hγ zg α hα t ζ hζ ?_
   exact (verifierEquation_iff idx pub wTab zg t ζ β γ α hζ₁ hζb).mp heq
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 set_option linter.unusedVariables false in
 /-- The same statement at the table read off the polynomials binding delivers behind the
 witness commitments. The degree hypothesis `hW` is carried for the interface — the

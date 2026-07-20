@@ -1,5 +1,6 @@
 import Kimchi.Aggregate
 import Kimchi.SchwartzZippel
+import Kimchi.GrandProduct
 
 /-!
 # The permutation argument: constraints and quotient soundness
@@ -29,76 +30,15 @@ selector column. Its soundness therefore composes the shared quotient machinery 
 gate's nonvanishing off the masked rows, and the Lagrange pins.
 
 The conclusion feeds milestone 4: at the challenges `(β, γ)` the two sides are the pair
-factors of `Kimchi.Quotient.GrandProduct`, so the product equality at an injective grid
+factors of `Kimchi.GrandProduct`, so the product equality at an injective grid
 forces the multiset equality behind the copy constraints.
 -/
 
-namespace Kimchi.Quotient
+namespace Kimchi.Permutation
 
-variable {F : Type*} [Field F]
+open Kimchi.GrandProduct
 
-/-! ## The permutation accumulator telescopes into a grand-product equality
-
-Pure finite induction over indexed families — no domain, root of unity, or polynomials. An
-accumulator column pinned to `1` at both ends with the division-free recurrence
-`z(k+1)·denₖ = z(k)·numₖ` forces `∏ num = ∏ den`; the converse builds the running-ratio column
-under nonzero denominators. The kimchi-facing wire constraints instantiate these downstream. -/
-
-/-- **Accumulator telescoping.** An accumulator pinned to `1` at both ends of a row range
-and satisfying the division-free recurrence `z(k+1) · denₖ = z(k) · numₖ` on it forces the
-grand products to agree: `∏ num = ∏ den`. -/
-theorem prod_eq_of_accumulator {m : ℕ} (num den z : ℕ → F)
-    (h0 : z 0 = 1) (hm : z m = 1)
-    (hstep : ∀ k < m, z (k + 1) * den k = z k * num k) :
-    ∏ k ∈ Finset.range m, num k = ∏ k ∈ Finset.range m, den k := by
-  have aux : ∀ k, k ≤ m →
-      z k * ∏ j ∈ Finset.range k, den j = ∏ j ∈ Finset.range k, num j := by
-    intro k
-    induction k with
-    | zero => simpa using h0
-    | succ k ih =>
-      intro hk
-      have hk' : k < m := Nat.lt_of_lt_of_le (Nat.lt_succ_self k) hk
-      rw [Finset.prod_range_succ, Finset.prod_range_succ]
-      calc z (k + 1) * ((∏ j ∈ Finset.range k, den j) * den k)
-          = (z (k + 1) * den k) * ∏ j ∈ Finset.range k, den j := by ring
-        _ = (z k * num k) * ∏ j ∈ Finset.range k, den j := by rw [hstep k hk']
-        _ = (z k * ∏ j ∈ Finset.range k, den j) * num k := by ring
-        _ = (∏ j ∈ Finset.range k, num j) * num k := by rw [ih hk'.le]
-  have h := aux m le_rfl
-  rw [hm, one_mul] at h
-  exact h.symm
-
-/-- **Accumulator construction** — the converse of `prod_eq_of_accumulator`, and the
-completeness direction's witness. With nonzero denominators and agreeing grand
-products, the running-ratio column `z k = (∏_{j<k} num) / (∏_{j<k} den)` is an
-accumulator: pinned to `1` at both ends and satisfying the division-free recurrence.
-This is the one place the nonzero-denominator hypothesis is genuinely needed — the
-soundness direction (`prod_eq_of_accumulator`) is division-free. -/
-private theorem accumulator_of_prod_eq {m : ℕ} (num den : ℕ → F)
-    (hden : ∀ k < m, den k ≠ 0)
-    (hprod : ∏ k ∈ Finset.range m, num k = ∏ k ∈ Finset.range m, den k) :
-    ∃ z : ℕ → F, z 0 = 1 ∧ z m = 1
-      ∧ ∀ k < m, z (k + 1) * den k = z k * num k := by
-  have hdprod : ∀ k, k ≤ m → (∏ j ∈ Finset.range k, den j) ≠ 0 := fun k hk =>
-    Finset.prod_ne_zero_iff.mpr fun j hj =>
-      hden j (lt_of_lt_of_le (Finset.mem_range.mp hj) hk)
-  refine ⟨fun k => (∏ j ∈ Finset.range k, num j) / (∏ j ∈ Finset.range k, den j),
-    by simp, ?_, ?_⟩
-  · dsimp only
-    rw [hprod, div_self (hdprod m le_rfl)]
-  · intro k hk
-    dsimp only
-    have hd := hdprod k hk.le
-    have hdk := hden k hk
-    rw [Finset.prod_range_succ, Finset.prod_range_succ]
-    field_simp
-
-end Kimchi.Quotient
-
-namespace Kimchi.Quotient.Permutation
-
-open Polynomial Kimchi.Quotient
+open Polynomial
 
 variable {F : Type*} [Field F]
 
@@ -406,4 +346,4 @@ theorem constraints_dvd_of_prods {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n)
         eval_columnPoly hω, rowIndicator, if_neg (by simp [Fin.ext_iff, hb]), mul_zero,
         mul_zero]
 
-end Kimchi.Quotient.Permutation
+end Kimchi.Permutation

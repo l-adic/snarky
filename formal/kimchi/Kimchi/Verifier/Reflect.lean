@@ -3,7 +3,7 @@ import Kimchi.Verifier.Kimchi
 import Bulletproof.Reflection
 import Kimchi.Protocol.Correspond
 import Kimchi.Protocol.Equation
-import Kimchi.Quotient.Permutation
+import Kimchi.Permutation.Permutation
 
 /-!
 # Kimchi verifier reflection: `kimchiVerify = true` ⟹ a well-formed `ReflectedRun`
