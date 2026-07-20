@@ -33,8 +33,6 @@ sits on the next row; the round constants `rc` come from the coefficient row (`r
 * `cellMap` / `rcMap` — the permuted layout transcription (state cells / round constants).
 * `rowWitness` / `rcRow` / `polyWitness` / `rcPoly` — their two carrier instantiations.
 * `argument` — the Poseidon `Argument F` instance.
-* `rows_iff_dvd` — the divisibility corollary, specialization of `Argument.rows_iff_dvd`.
-* `soundness` — the quotient-argument soundness, specialization of `Argument.soundness`.
 -/
 
 namespace Kimchi.Quotient.Gate.Poseidon
@@ -68,11 +66,6 @@ table. -/
 def rowWitness [NeZero n] (wTab : Fin n → Fin 15 → F) (i : Fin n) : Gate.Poseidon.Witness F :=
   cellMap (wTab i) (wTab (i + 1))
 
-/-- **Poseidon row round constants.** The round-constant triples at row `i` of a coefficient
-table. -/
-private def rcRow (qTab : Fin n → Fin 15 → F) (i : Fin n) : Fin 5 → F × F × F :=
-  rcMap (qTab i)
-
 /-- **Poseidon poly witness.** The state cells as column interpolants: `columnPoly` on the
 current side, its `shift` on the next side. -/
 noncomputable def polyWitness (ω : F) (wTab : Fin n → Fin 15 → F) :
@@ -98,36 +91,5 @@ def argument : Argument F where
   constraints_map f env :=
     Gate.Poseidon.constraints_map f.toRingHom (rcMap env.coeff)
       (cellMap env.witnessCurr env.witnessNext)
-
-/-! ## Divisibility corollary -/
-
-/-- **Poseidon rows hold iff divisible.** The Poseidon constraint polynomials of a
-witness/coefficient table are all divisible by `Z_H` iff the gate holds on every row.
-Specialization of `Argument.rows_iff_dvd` at `argument`. -/
-theorem rows_iff_dvd [NeZero n] (hω : IsPrimitiveRoot ω n)
-    (wTab qTab : Fin n → Fin 15 → F) :
-    (∀ E ∈ Gate.Poseidon.constraints (rcPoly ω qTab) (polyWitness ω wTab), zH F n ∣ E)
-      ↔ ∀ i, Gate.Poseidon.Holds (rcRow qTab i) (rowWitness wTab i) :=
-  argument.rows_iff_dvd hω wTab qTab
-
-/-! ## Quotient-argument soundness -/
-
-/-- **Poseidon quotient soundness.** With the single-challenge counting-form quotient-argument
-hypotheses over the selector-gated Poseidon family, every selector-active row satisfies
-`Gate.Poseidon.Holds`. Specialization of `Argument.soundness` at `argument`. -/
-theorem soundness [NeZero n] [DecidableEq F] (hω : IsPrimitiveRoot ω n)
-    (wTab qTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1)
-    (α : F)
-    (hα : α ∉ badAlphas (fun c => columnPoly ω sel *
-        (Gate.Poseidon.constraints (rcPoly ω qTab) (polyWitness ω wTab)).get c) ω n)
-    (t : Polynomial F)
-    (ζ : F)
-    (hζ : ζ ∉ badZetas (aggregate α (fun c => columnPoly ω sel *
-        (Gate.Poseidon.constraints (rcPoly ω qTab) (polyWitness ω wTab)).get c)) t n)
-    (hcheck : (aggregate α (fun c => columnPoly ω sel *
-        (Gate.Poseidon.constraints (rcPoly ω qTab) (polyWitness ω wTab)).get c)).eval ζ
-        = (t * zH F n).eval ζ) :
-    ∀ i, sel i = 1 → Gate.Poseidon.Holds (rcRow qTab i) (rowWitness wTab i) :=
-  argument.soundness hω wTab qTab sel hsel α hα t ζ hζ hcheck
 
 end Kimchi.Quotient.Gate.Poseidon

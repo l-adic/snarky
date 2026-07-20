@@ -23,10 +23,6 @@ on the last domain row, so this agrees with the intended semantics on every occu
 * `cellMap` — assemble a `Gate.VarBaseMul.Witness R` from a current and next row.
 * `rowWitness` / `polyWitness` — the field-valued row witness and its polynomial lift.
 * `argument` — the VarBaseMul `Argument F` instance (two-row layout).
-* `rows_iff_dvd` — the divisibility corollary, an immediate instance of the `Argument`
-  engine theorems.
-* `soundness` — the counting-form soundness corollary at a single good `(α, ζ)`, likewise an
-  instance of the `Argument` engine.
 -/
 
 namespace Kimchi.Quotient.Gate.VarBaseMul
@@ -96,38 +92,5 @@ def argument : Argument F where
   constraints env := Gate.VarBaseMul.constraints (cellMap env.witnessCurr env.witnessNext)
   constraints_map f env :=
     Gate.VarBaseMul.constraints_map f.toRingHom (cellMap env.witnessCurr env.witnessNext)
-
-/-! ## Divisibility corollary -/
-
-/-- **VarBaseMul rows hold iff divisible.** The gate's constraint polynomials are all divisible
-by the vanishing polynomial `Z_H` iff the gate holds on every row. Immediate specialization of
-`Argument.rows_iff_dvd` at the instance `argument`. -/
-theorem rows_iff_dvd [NeZero n] (hω : IsPrimitiveRoot ω n)
-    (wTab : Fin n → Fin 15 → F) :
-    (∀ E ∈ Gate.VarBaseMul.constraints (polyWitness ω wTab), zH F n ∣ E)
-      ↔ ∀ i, Gate.VarBaseMul.Holds (rowWitness wTab i) :=
-  argument.rows_iff_dvd hω wTab wTab
-
-
-/-- **VarBaseMul quotient soundness.** Same shape as `AddComplete.soundness` for the two-row
-VarBaseMul gate (`[NeZero n]` for the cyclic successor; the poly-witness next-row cells go
-through `shift`). Every selector-active row satisfies the VarBaseMul gate predicate.
-
-Proof: specialization of `Argument.soundness` at the instance `argument`. -/
-theorem soundness {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n] {ω : F}
-    (hω : IsPrimitiveRoot ω n)
-    (wTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1)
-    (α : F)
-    (hα : α ∉ badAlphas (fun c => columnPoly ω sel *
-        (Gate.VarBaseMul.constraints (polyWitness ω wTab)).get c) ω n)
-    (t : Polynomial F)
-    (ζ : F)
-    (hζ : ζ ∉ badZetas (aggregate α (fun c => columnPoly ω sel *
-        (Gate.VarBaseMul.constraints (polyWitness ω wTab)).get c)) t n)
-    (hcheck : (aggregate α (fun c => columnPoly ω sel *
-        (Gate.VarBaseMul.constraints (polyWitness ω wTab)).get c)).eval ζ
-        = (t * zH F n).eval ζ) :
-    ∀ i, sel i = 1 → Gate.VarBaseMul.Holds (rowWitness wTab i) :=
-  argument.soundness hω wTab wTab sel hsel α hα t ζ hζ hcheck
 
 end Kimchi.Quotient.Gate.VarBaseMul

@@ -18,10 +18,6 @@ naturality of `constraints` under evaluation at the domain nodes.
 * `rowWitness` / `polyWitness` — the row-values and column-interpolant witnesses, both via
   the same `cellMap`.
 * `argument` — the CompleteAdd `Argument F` instance (single-row layout).
-* `rows_iff_dvd` — the divisibility corollary, an immediate instance of the `Argument`
-  engine theorems.
-* `soundness` — the counting-form soundness corollary at a single good `(α, ζ)`, likewise an
-  instance of the `Argument` engine.
 -/
 
 namespace Kimchi.Quotient.Gate.AddComplete
@@ -75,41 +71,5 @@ naturality is the gate's `Gate.AddComplete.constraints_map` at the underlying ri
 def argument : Argument F where
   constraints env := Gate.AddComplete.constraints (cellMap env.witnessCurr)
   constraints_map f env := Gate.AddComplete.constraints_map f.toRingHom (cellMap env.witnessCurr)
-
-/-! ## Divisibility corollary -/
-
-/-- **CompleteAdd rows hold iff divisible.** Immediate specialization of
-`Argument.rows_iff_dvd` at the instance `argument`; single-row, so `qTab := wTab` and the
-next-row / coefficient families are unused. -/
-theorem rows_iff_dvd (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
-    (wTab : Fin n → Fin 15 → F) :
-    (∀ E ∈ Gate.AddComplete.constraints (polyWitness ω wTab), zH F n ∣ E)
-      ↔ ∀ i, Gate.AddComplete.Holds (rowWitness wTab i) := by
-  haveI : NeZero n := ⟨Nat.pos_iff_ne_zero.mp hn⟩
-  exact argument.rows_iff_dvd hω wTab wTab
-
-
-/-- **CompleteAdd quotient soundness.** With the abstract quotient-argument hypotheses over the
-selector-gated family `c ↦ (columnPoly ω sel) * (constraints (polyWitness ω wTab)).get c`, every
-selector-active row satisfies the CompleteAdd gate predicate.
-
-Proof: specialization of `Argument.soundness` at the instance `argument`; single-row, so
-`qTab := wTab` and the next-row / coefficient families are unused. -/
-theorem soundness {F : Type*} [Field F] [DecidableEq F] {n : ℕ} {ω : F}
-    (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
-    (wTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1)
-    (α : F)
-    (hα : α ∉ badAlphas (fun c => columnPoly ω sel *
-        (Gate.AddComplete.constraints (polyWitness ω wTab)).get c) ω n)
-    (t : Polynomial F)
-    (ζ : F)
-    (hζ : ζ ∉ badZetas (aggregate α (fun c => columnPoly ω sel *
-        (Gate.AddComplete.constraints (polyWitness ω wTab)).get c)) t n)
-    (hcheck : (aggregate α (fun c => columnPoly ω sel *
-        (Gate.AddComplete.constraints (polyWitness ω wTab)).get c)).eval ζ
-        = (t * zH F n).eval ζ) :
-    ∀ i, sel i = 1 → Gate.AddComplete.Holds (rowWitness wTab i) := by
-  haveI : NeZero n := ⟨Nat.pos_iff_ne_zero.mp hn⟩
-  exact argument.soundness hω wTab wTab sel hsel α hα t ζ hζ hcheck
 
 end Kimchi.Quotient.Gate.AddComplete

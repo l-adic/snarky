@@ -61,28 +61,17 @@ Kimchi.Gate.EndoMul.vesta_endoMul
 
 -- Kimchi quotient/vanishing argument (implementation checkpoint). Over the size-n evaluation
 -- domain, a constraint polynomial is divisible by Z_H = X^n - 1 iff it vanishes on every row
--- (`zH_dvd_iff`); instantiated at the double generic gate: both constraint polynomials divisible
--- iff the gate's two constraints hold at every row of the table (`genericRows_iff_dvd`).
+-- (`zH_dvd_iff`).
 Kimchi.Quotient.zH_dvd_iff
-Kimchi.Quotient.Gate.Generic.rows_iff_dvd
 
 -- Kimchi quotient argument (soundness engine + gate lifts). Counting Schwartz–Zippel soundness:
 -- one aggregation challenge outside `badAlphas` separates the aggregate into per-constraint
 -- divisibility (`dvd_separation`), and one evaluation point outside `badZetas` pins each quotient
 -- identity. The generic lift engine (`rows_iff_dvd_of`,
--- selector-gated `rowsSel_iff_dvd`) turns any eval bridge into a divisibility-iff-rows theorem;
--- instantiated per gate via cell maps and `constraints_map` naturality (`<G>.rows_iff_dvd`).
--- Headline per gate: for every selector-active row the gate's Holds follows
--- (`<G>.soundness`); the EC meaning is obtained by citing Gate.<G>.sound where consumed.
+-- selector-gated `rowsSel_iff_dvd`) turns any eval bridge into a divisibility-iff-rows theorem.
 Kimchi.Quotient.dvd_separation
 Kimchi.Quotient.rows_iff_dvd_of
 Kimchi.Quotient.rowsSel_iff_dvd
-Kimchi.Quotient.Gate.AddComplete.rows_iff_dvd
-Kimchi.Quotient.Gate.VarBaseMul.rows_iff_dvd
-Kimchi.Quotient.Gate.EndoMul.rows_iff_dvd
-Kimchi.Quotient.Gate.AddComplete.soundness
-Kimchi.Quotient.Gate.VarBaseMul.soundness
-Kimchi.Quotient.Gate.EndoMul.soundness
 
 -- Argument: the single primitive every gate's quotient lift instantiates (kimchi argument.rs:
 -- an F-algebra-natural constraint family over the ArgumentEnv cell environment);
@@ -90,17 +79,10 @@ Kimchi.Quotient.Gate.EndoMul.soundness
 Kimchi.Quotient.Argument.rows_iff_dvd
 Kimchi.Quotient.Argument.soundness
 
--- EndoScalar quotient lift (the gate's constraints read over any commutative F-algebra —
--- the cPoly/dPoly coefficients enter through algebraMap F R).
-Kimchi.Quotient.Gate.EndoScalar.rows_iff_dvd
-Kimchi.Quotient.Gate.EndoScalar.soundness
 
--- Poseidon gate (sound = a satisfying row computes the 5-round permutation) and its quotient
--- lift, completing the six-gate unification over the Argument primitive.
+-- Poseidon gate: a satisfying row computes the 5-round permutation.
 Kimchi.Gate.Poseidon.sound
 Kimchi.Gate.Poseidon.complete
-Kimchi.Quotient.Gate.Poseidon.rows_iff_dvd
-Kimchi.Quotient.Gate.Poseidon.soundness
 
 -- Grand-product core (permutation argument, milestone 1): equal products of linear pair
 -- factors force equal pair multisets (UFD over F[β]); two-variable grid pinning; the

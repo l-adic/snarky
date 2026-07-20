@@ -35,10 +35,6 @@ where each `xi` is a two-bit "crumb".
 * `cellMap` / `rowWitness` / `polyWitness` — the layout transcription and its two carrier
   instantiations.
 * `argument` — the `Argument F` instance (`def:quotient_endoscalar_lift`).
-* `rows_iff_dvd` — rows hold iff the constraint polynomials are divisible by `zH`
-  (`thm:quotient_endoscalar_rows_iff_dvd`).
-* `soundness` — the abstract quotient-argument soundness statement
-  (`thm:quotient_endoscalar_soundness`).
 -/
 
 namespace Kimchi.Quotient.Gate.EndoScalar
@@ -80,42 +76,5 @@ unused); naturality is the gate's `Gate.EndoScalar.constraints_map`. -/
 def argument : Argument F where
   constraints env := Gate.EndoScalar.constraints (cellMap env.witnessCurr) (F := F)
   constraints_map f env := Gate.EndoScalar.constraints_map (F := F) f (cellMap env.witnessCurr)
-
-/-! ## Divisibility corollary -/
-
-/-- **EndoScalar rows hold iff divisible.** The EndoScalar constraint polynomials of a witness
-table are all divisible by `zH` iff the gate holds on every row. Immediate specialization of
-`Argument.rows_iff_dvd` to the instance `argument`; single-row, so `qTab := wTab` and the
-next-row / coefficient families are unused. -/
-theorem rows_iff_dvd (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
-    (wTab : Fin n → Fin 15 → F) :
-    (∀ E ∈ Gate.EndoScalar.constraints (polyWitness ω wTab) (F := F), zH F n ∣ E)
-      ↔ ∀ i, Gate.EndoScalar.Holds (rowWitness wTab i) := by
-  haveI : NeZero n := ⟨Nat.pos_iff_ne_zero.mp hn⟩
-  exact argument.rows_iff_dvd hω wTab wTab
-
-/-! ## Quotient-argument soundness -/
-
-/-- **EndoScalar quotient soundness.** With the abstract quotient-argument hypotheses over the
-selector-gated EndoScalar family
-`c ↦ (columnPoly ω sel) * (constraints (polyWitness ω wTab)).get c`, every selector-active row
-satisfies the EndoScalar gate predicate `Gate.EndoScalar.Holds`. Specialization of
-`Argument.soundness` at the instance `argument`. -/
-theorem soundness [DecidableEq F]
-    (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
-    (wTab : Fin n → Fin 15 → F) (sel : Fin n → F) (hsel : ∀ i, sel i = 0 ∨ sel i = 1)
-    (α : F)
-    (hα : α ∉ badAlphas (fun c => columnPoly ω sel *
-        (Gate.EndoScalar.constraints (polyWitness ω wTab) (F := F)).get c) ω n)
-    (t : Polynomial F)
-    (ζ : F)
-    (hζ : ζ ∉ badZetas (aggregate α (fun c => columnPoly ω sel *
-        (Gate.EndoScalar.constraints (polyWitness ω wTab) (F := F)).get c)) t n)
-    (hcheck : (aggregate α (fun c => columnPoly ω sel *
-        (Gate.EndoScalar.constraints (polyWitness ω wTab) (F := F)).get c)).eval ζ
-        = (t * zH F n).eval ζ) :
-    ∀ i, sel i = 1 → Gate.EndoScalar.Holds (rowWitness wTab i) := by
-  haveI : NeZero n := ⟨Nat.pos_iff_ne_zero.mp hn⟩
-  exact argument.soundness hω wTab wTab sel hsel α hα t ζ hζ hcheck
 
 end Kimchi.Quotient.Gate.EndoScalar
