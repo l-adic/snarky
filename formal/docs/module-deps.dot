@@ -41,40 +41,60 @@ digraph "formal-modules" {
     "Kimchi.Domain";
     "KimchiFixture.Kimchi";
     "KimchiFixture.PS";
-    "Kimchi.Gate.AddComplete";
-    "Kimchi.Gate.EndoMul";
-    "Kimchi.Gate.EndoScalar";
-    "Kimchi.Gate.Generic";
-    "Kimchi.Gate.Poseidon";
-    "Kimchi.Gate.Semantics.AddComplete";
-    "Kimchi.Gate.Semantics.EndoMul";
-    "Kimchi.Gate.Semantics.EndoScalar";
-    "Kimchi.Gate.Semantics.Generic";
-    "Kimchi.Gate.Semantics.Poseidon";
-    "Kimchi.Gate.Semantics.VarBaseMul";
-    "Kimchi.Gate.VarBaseMul";
     "Kimchi.GrandProduct";
-    "Kimchi.Index.Aggregate";
-    "Kimchi.Index.Basic";
-    "Kimchi.Index.CopySoundness";
-    "Kimchi.Index.Degree";
-    "Kimchi.Index.Satisfies";
     "Kimchi";
     "Kimchi.Lift";
-    "Kimchi.Permutation.Copy";
-    "Kimchi.Permutation.Permutation";
-    "Kimchi.Permutation.Wiring";
-    "Kimchi.Protocol.Binding";
-    "Kimchi.Protocol.Correspond";
-    "Kimchi.Protocol.Equation";
-    "Kimchi.Protocol.Linearization";
-    "Kimchi.Protocol.Soundness";
     "Kimchi.SchwartzZippel";
     "Kimchi.Shifted";
-    "Kimchi.Verifier.Capstone";
-    "Kimchi.Verifier.Kimchi";
-    "Kimchi.Verifier.Reflect";
     "Main";
+    subgraph "cluster_kimchi_Kimchi_Gate" {
+      label="Kimchi.Gate"; style="filled,dashed"; fillcolor=white;
+      color=gray55; fontsize=11; fontname="Helvetica-Oblique";
+      "Kimchi.Gate.AddComplete";
+      "Kimchi.Gate.EndoMul";
+      "Kimchi.Gate.EndoScalar";
+      "Kimchi.Gate.Generic";
+      "Kimchi.Gate.Poseidon";
+      "Kimchi.Gate.Semantics.AddComplete";
+      "Kimchi.Gate.Semantics.EndoMul";
+      "Kimchi.Gate.Semantics.EndoScalar";
+      "Kimchi.Gate.Semantics.Generic";
+      "Kimchi.Gate.Semantics.Poseidon";
+      "Kimchi.Gate.Semantics.VarBaseMul";
+      "Kimchi.Gate.VarBaseMul";
+    }
+    subgraph "cluster_kimchi_Kimchi_Index" {
+      label="Kimchi.Index"; style="filled,dashed"; fillcolor=white;
+      color=gray55; fontsize=11; fontname="Helvetica-Oblique";
+      "Kimchi.Index.Aggregate";
+      "Kimchi.Index.Basic";
+      "Kimchi.Index.CopySoundness";
+      "Kimchi.Index.Degree";
+      "Kimchi.Index.Satisfies";
+    }
+    subgraph "cluster_kimchi_Kimchi_Permutation" {
+      label="Kimchi.Permutation"; style="filled,dashed"; fillcolor=white;
+      color=gray55; fontsize=11; fontname="Helvetica-Oblique";
+      "Kimchi.Permutation.Copy";
+      "Kimchi.Permutation.Permutation";
+      "Kimchi.Permutation.Wiring";
+    }
+    subgraph "cluster_kimchi_Kimchi_Protocol" {
+      label="Kimchi.Protocol"; style="filled,dashed"; fillcolor=white;
+      color=gray55; fontsize=11; fontname="Helvetica-Oblique";
+      "Kimchi.Protocol.Binding";
+      "Kimchi.Protocol.Correspond";
+      "Kimchi.Protocol.Equation";
+      "Kimchi.Protocol.Linearization";
+      "Kimchi.Protocol.Soundness";
+    }
+    subgraph "cluster_kimchi_Kimchi_Verifier" {
+      label="Kimchi.Verifier"; style="filled,dashed"; fillcolor=white;
+      color=gray55; fontsize=11; fontname="Helvetica-Oblique";
+      "Kimchi.Verifier.Capstone";
+      "Kimchi.Verifier.Kimchi";
+      "Kimchi.Verifier.Reflect";
+    }
   }
   subgraph "cluster_snarky" {
     label="snarky"; style=filled; fillcolor="#ffd6d6";
