@@ -2,7 +2,7 @@ name = "kimchi"
 # Share the aggregator workspace's dependency checkouts (one Mathlib for every
 # package workspace — the editor opens files with the package as the root).
 packagesDir = "../.lake/packages"
-defaultTargets = ["Kimchi", "kimchi-demo"]
+defaultTargets = ["Kimchi", "KimchiFixture", "kimchi-demo"]
 
 # CompElliptic: concrete short-Weierstrass `SWCurve` / `SWPoint` with a proven group law,
 # and the Pasta curve instances. Vendored as a git submodule at vendor/CompElliptic so the
@@ -40,6 +40,13 @@ rev = "v4.30.0"
 
 [[lean_lib]]
 name = "Kimchi"
+
+# The JSON decoders the fixture-check scripts read production dumps with. Kept OUT of the
+# `Kimchi` library — checking against recorded data is not part of the development — and
+# built as its own target, mirroring `FixtureKit` and `BulletproofFixture`.
+[[lean_lib]]
+name = "KimchiFixture"
+globs = ["Kimchi.Fixture.+"]
 
 
 [[lean_exe]]

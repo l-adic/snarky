@@ -30,11 +30,6 @@ import Kimchi.Quotient.Wiring
 import Kimchi.Quotient.Permutation
 import Kimchi.Quotient.GrandProduct
 import Kimchi.Quotient.Soundness
-import BulletproofFixture
-import Kimchi.Fixture.Kimchi
-import Kimchi.Fixture.PS
-import FixtureKit.Parse
-import FixtureKit.Trace
 import Bulletproof.Wire
 -- Side A — the idealized polynomial protocol and its soundness
 import Kimchi.Protocol.Linearization
