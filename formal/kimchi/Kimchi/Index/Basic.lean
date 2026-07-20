@@ -157,11 +157,6 @@ def unmaskedEnd (idx : Index F n) : Fin n :=
 def selectorRow (idx : Index F n) (g : GateType) : Fin n → F :=
   fun i => if (idx.gates i).typ = g then 1 else 0
 
-theorem selectorRow_boolean (idx : Index F n) (g : GateType) (i : Fin n) :
-    idx.selectorRow g i = 0 ∨ idx.selectorRow g i = 1 := by
-  unfold selectorRow
-  split <;> simp
-
 /-- The `c`-th coefficient column over the rows. -/
 def coeffRow (idx : Index F n) (c : Fin 15) : Fin n → F :=
   fun i => idx.coeffTable i c

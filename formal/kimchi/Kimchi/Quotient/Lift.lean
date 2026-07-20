@@ -66,28 +66,6 @@ variable {F : Type*} [Field F] {n : ℕ} {ω : F}
 
 /-! ## The ungated engine -/
 
-/-- **Rows hold iff the constraint polynomials are divisible by `Z_H`.** Given a primitive
-`n`-th root of unity `ω` (with `0 < n`), a list `P` of constraint polynomials, per-row
-constraint lists `rowCons`, and the bridge hypothesis stating that evaluating `P` at the node
-`ω^i` reproduces `rowCons i`, the whole list is divisible by the vanishing polynomial iff every
-per-row constraint expression is zero. -/
-theorem rows_iff_dvd_of (hω : IsPrimitiveRoot ω n) (hn : 0 < n) (P : List (Polynomial F))
-    (rowCons : Fin n → List F)
-    (hbridge : ∀ i : Fin n, P.map (·.eval (ω ^ (i : ℕ))) = rowCons i) :
-    (∀ E ∈ P, zH F n ∣ E) ↔ ∀ i, ∀ e ∈ rowCons i, e = 0 := by
-  constructor
-  · intro h i e he
-    rw [← hbridge i, List.mem_map] at he
-    obtain ⟨E, hE, rfl⟩ := he
-    exact (zH_dvd_iff hω hn E).mp (h E hE) i i.isLt
-  · intro h E hE
-    rw [zH_dvd_iff hω hn]
-    intro i hi
-    have hmem : E.eval (ω ^ i) ∈ rowCons ⟨i, hi⟩ := by
-      rw [← hbridge ⟨i, hi⟩]
-      exact List.mem_map.mpr ⟨E, hE, rfl⟩
-    exact h ⟨i, hi⟩ (E.eval (ω ^ i)) hmem
-
 /-! ## The selector-gated engine -/
 
 /-- **Selector-gated rows iff divisible.** kimchi multiplies a gate's constraints by a boolean
@@ -200,16 +178,6 @@ theorem Argument.bridge [NeZero n] (G : Argument F) (hω : IsPrimitiveRoot ω n)
       = ⇑(aeval (ω ^ (i : ℕ)) : Polynomial F →ₐ[F] F) := by
     funext E; rw [Polynomial.coe_aeval_eq_eval]
   rw [hfun, G.constraints_map, polyEnv_map_aeval hω]
-
-/-- **`Argument` rows iff divisible.** The gate's constraint polynomials (its constraints at
-the polynomial environment) are all divisible by `Z_H` iff its field-level constraints vanish
-at every row. Immediate instance of `rows_iff_dvd_of` at the `Argument` bridge. -/
-theorem Argument.rows_iff_dvd [NeZero n] (G : Argument F) (hω : IsPrimitiveRoot ω n)
-    (wTab qTab : Fin n → Fin 15 → F) :
-    (∀ E ∈ G.constraints (polyEnv ω wTab qTab), zH F n ∣ E)
-      ↔ ∀ i, ∀ e ∈ G.constraints (rowEnv wTab qTab i), e = 0 :=
-  rows_iff_dvd_of hω (Nat.pos_of_neZero n) _
-    (fun i => G.constraints (rowEnv wTab qTab i)) (G.bridge hω wTab qTab)
 
 /-- **`Argument` selector-gated rows iff divisible.** For a boolean selector column
 `S = columnPoly ω sel`, divisibility of every `S · E` by `Z_H` is equivalent to the gate's

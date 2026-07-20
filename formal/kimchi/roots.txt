@@ -64,19 +64,18 @@ Kimchi.Gate.EndoMul.vesta_endoMul
 -- (`zH_dvd_iff`).
 Kimchi.Quotient.zH_dvd_iff
 
--- Kimchi quotient argument (soundness engine + gate lifts). Counting Schwartz–Zippel soundness:
+-- Kimchi quotient argument (soundness engine). Counting Schwartz–Zippel soundness:
 -- one aggregation challenge outside `badAlphas` separates the aggregate into per-constraint
 -- divisibility (`dvd_separation`), and one evaluation point outside `badZetas` pins each quotient
--- identity. The generic lift engine (`rows_iff_dvd_of`,
--- selector-gated `rowsSel_iff_dvd`) turns any eval bridge into a divisibility-iff-rows theorem.
+-- identity. The selector-gated engine (`rowsSel_iff_dvd`) turns an eval bridge into a
+-- divisibility-iff-rows theorem.
 Kimchi.Quotient.dvd_separation
-Kimchi.Quotient.rows_iff_dvd_of
 Kimchi.Quotient.rowsSel_iff_dvd
 
 -- Argument: the single primitive every gate's quotient lift instantiates (kimchi argument.rs:
--- an F-algebra-natural constraint family over the ArgumentEnv cell environment);
--- rows/selector-gated/soundness stated once over it.
-Kimchi.Quotient.Argument.rows_iff_dvd
+-- an F-algebra-natural constraint family over the ArgumentEnv cell environment); its
+-- single-challenge soundness stated once over it. Kept as the engine headline; the per-gate
+-- and per-index restatements it subsumed are derived through the aggregate route instead.
 Kimchi.Quotient.Argument.soundness
 
 
@@ -115,15 +114,6 @@ Kimchi.Quotient.multiset_eq_of_prod_eval
 -- computes shown equal to the interpolant form. Foundations for the executable soundness capstone.
 Kimchi.Verifier.kimchiVerify_reflects
 Kimchi.Verifier.barycentricPubEval_eq
-
--- Phase A3: quotient soundness at the index (per-family bridges consuming Index data).
-Kimchi.Index.addComplete_soundness
-Kimchi.Index.varBaseMul_soundness
-Kimchi.Index.endoMul_soundness
-Kimchi.Index.endoScalar_soundness
-Kimchi.Index.poseidon_soundness
-Kimchi.Index.generic_soundness
-Kimchi.Index.copy_soundness
 
 -- The arithmetization interface those bridges compose into: satisfiability of a row or of
 -- the whole table against divisibility of the aggregate family, in both directions, plus

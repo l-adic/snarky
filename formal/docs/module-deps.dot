@@ -55,7 +55,6 @@ digraph "formal-modules" {
     "Kimchi.Index.Basic";
     "Kimchi.Index.CopySoundness";
     "Kimchi.Index.Degree";
-    "Kimchi.Index.GateSoundness";
     "Kimchi.Index.Satisfies";
     "Kimchi";
     "Kimchi.Protocol.Binding";
@@ -155,14 +154,11 @@ digraph "formal-modules" {
   "Kimchi.Gate.VarBaseMul" -> "Pasta.Basic";
   "Kimchi.Gate.VarBaseMul" -> "Kimchi.Gate.AddComplete";
   "Kimchi.Index.Aggregate" -> "Kimchi.Index.CopySoundness";
-  "Kimchi.Index.Aggregate" -> "Kimchi.Index.GateSoundness";
   "Kimchi.Index.Aggregate" -> "Kimchi.Quotient.SchwartzZippel";
   "Kimchi.Index.Basic" -> "Kimchi.Quotient.Wiring";
   "Kimchi.Index.CopySoundness" -> "Kimchi.Index.Satisfies";
   "Kimchi.Index.CopySoundness" -> "Kimchi.Quotient.SchwartzZippel";
   "Kimchi.Index.Degree" -> "Kimchi.Index.Aggregate";
-  "Kimchi.Index.GateSoundness" -> "Kimchi.Index.Satisfies";
-  "Kimchi.Index.GateSoundness" -> "Kimchi.Quotient.SchwartzZippel";
   "Kimchi.Index.Satisfies" -> "Kimchi.Index.Basic";
   "Kimchi.Index.Satisfies" -> "Kimchi.Quotient.Gate.Generic";
   "Kimchi.Index.Satisfies" -> "Kimchi.Quotient.Gate.Poseidon";
@@ -194,7 +190,6 @@ digraph "formal-modules" {
   "Kimchi" -> "Kimchi.Index.Satisfies";
   "Kimchi" -> "Kimchi.Index.Aggregate";
   "Kimchi" -> "Kimchi.Index.Degree";
-  "Kimchi" -> "Kimchi.Index.GateSoundness";
   "Kimchi" -> "Kimchi.Index.CopySoundness";
   "Kimchi" -> "Kimchi.Quotient.Wiring";
   "Kimchi" -> "Kimchi.Quotient.Permutation";

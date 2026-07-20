@@ -1,5 +1,4 @@
 import Kimchi.Index.CopySoundness
-import Kimchi.Index.GateSoundness
 import Kimchi.Quotient.SchwartzZippel
 
 /-!
@@ -40,6 +39,12 @@ open Kimchi.Quotient.Gate
 
 
 variable {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n]
+
+omit [DecidableEq F] [NeZero n] in
+/-- A selector value of `1` names the row's gate type. -/
+private theorem selectorRow_eq_one (idx : Index F n) {g : GateType} {i : Fin n}
+    (htyp : (idx.gates i).typ = g) : idx.selectorRow g i = 1 := by
+  simp [selectorRow, htyp]
 
 /-- The (positive) public-input interpolant: `pub i` at the public rows, `0` beyond.
 Kimchi commits to its negation and adds it into the generic `α⁰` slot. -/

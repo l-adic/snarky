@@ -80,55 +80,5 @@ theorem copy_soundness_of_dvd (idx : Index F n) (wTab : Fin n → Fin 15 → F)
       from rfl, eval_permWitnessPoly] at h
   exact h
 
-open Kimchi.Quotient.Permutation in
-/-- **Copy soundness at the index.** As `copy_soundness_of_dvd`, with each grid node's
-divisibility obtained from the derandomized single-challenge quotient check: one challenge
-`α a c` per `(β, γ)` node, outside the node's `badAlphas` set, and one quotient `t a c`. -/
-theorem copy_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
-    (β γ : F)
-    (hβ : β ∉ badBetas
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
-        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
-        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
-            * idx.omega
-              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))))
-    (hγ : γ ∉ badGammas
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
-        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
-        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
-            * idx.omega
-              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))) β)
-    (zg : Polynomial F)
-    (α : F)
-    (hα : α ∉ badAlphas
-      (Permutation.constraints idx.omega idx.zkRows zg
-        (idx.permWitnessPoly wTab)
-        (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts
-        β γ (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd) idx.omega n)
-    (t : Polynomial F)
-    (ζ : F)
-    (hζ : ζ ∉ badZetas (aggregate α
-      (Permutation.constraints idx.omega idx.zkRows zg
-        (idx.permWitnessPoly wTab)
-        (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts
-        β γ (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd)) t n)
-    (hcheck : (aggregate α
-      (Permutation.constraints idx.omega idx.zkRows zg
-        (idx.permWitnessPoly wTab)
-        (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts
-        β γ (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd)).eval ζ
-      = (t * zH F n).eval ζ) :
-    ∀ c : Fin 7 × Fin (n - idx.zkRows),
-      cellValue wTab (idx.wiringMap (embCell idx.zkRows c))
-        = cellValue wTab (embCell idx.zkRows c) :=
-  idx.copy_soundness_of_dvd wTab β γ hβ hγ zg
-    (dvd_of_evalCheck idx.omega_prim _ α hα t ζ hζ hcheck)
-
 
 end Kimchi.Index
