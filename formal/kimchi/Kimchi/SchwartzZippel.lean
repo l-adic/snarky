@@ -1,10 +1,10 @@
-import Kimchi.Quotient.Aggregate
+import Kimchi.Aggregate
 
 /-!
 # Counting Schwartz–Zippel: single-challenge α-separation
 
 This file replaces the injective-α-family surrogate of `dvd_separation`
-(`Kimchi/Quotient/Aggregate.lean`) with the standard **counting** form of the
+(`Kimchi/Aggregate.lean`) with the standard **counting** form of the
 Schwartz–Zippel argument for kimchi's α-aggregation: a *single* challenge `α` suffices to
 separate divisibility across a family of constraint polynomials, provided `α` avoids an
 explicit **bad set** whose cardinality is proved small. Statements stay fully deterministic —
@@ -41,11 +41,11 @@ The main section assembles the rows of the evaluation domain:
   `≤ D`.
 * `zH_dvd_of_eval` — a single good ζ pins `C = t · Z_H`, hence `Z_H ∣ C`.
 * `dvd_of_evalCheck` — the composed pinning–separation engine of
-  `dvd_of_evalCheck` (`Kimchi/Quotient/Lift.lean`), with the α-, ζ- and quotient-families all
+  `dvd_of_evalCheck` (`Kimchi/Lift.lean`), with the α-, ζ- and quotient-families all
   collapsed to a single `α`, a single ζ, and a single quotient `t`.
 -/
 
-namespace Kimchi.Quotient
+namespace Kimchi
 
 open Polynomial
 
@@ -56,7 +56,7 @@ namespace SZ
 variable {F : Type*} [Field F] [DecidableEq F]
 
 /-- The combining polynomial of a coefficient vector: `∑ k, c k · X^k`. -/
-noncomputable def combPoly {K : ℕ} (c : Fin K → F) : Polynomial F :=
+private noncomputable def combPoly {K : ℕ} (c : Fin K → F) : Polynomial F :=
   ∑ k : Fin K, Polynomial.C (c k) * Polynomial.X ^ (k : ℕ)
 
 omit [DecidableEq F] in
@@ -73,7 +73,7 @@ private theorem combPoly_coeff {K : ℕ} (c : Fin K → F) (k : Fin K) :
 
 omit [DecidableEq F] in
 /-- The combining polynomial vanishes identically iff the vector is zero. -/
-theorem combPoly_eq_zero_iff {K : ℕ} (c : Fin K → F) : combPoly c = 0 ↔ ∀ k, c k = 0 := by
+private theorem combPoly_eq_zero_iff {K : ℕ} (c : Fin K → F) : combPoly c = 0 ↔ ∀ k, c k = 0 := by
   constructor
   · intro h k
     have hc := combPoly_coeff c k
@@ -85,7 +85,7 @@ theorem combPoly_eq_zero_iff {K : ℕ} (c : Fin K → F) : combPoly c = 0 ↔ �
 
 omit [DecidableEq F] in
 /-- Evaluating the combining polynomial computes the α-combination of the vector. -/
-theorem combPoly_eval {K : ℕ} (c : Fin K → F) (α : F) :
+private theorem combPoly_eval {K : ℕ} (c : Fin K → F) (α : F) :
     (combPoly c).eval α = ∑ k : Fin K, α ^ (k : ℕ) * c k := by
   unfold combPoly
   rw [Polynomial.eval_finsetSum]
@@ -226,4 +226,4 @@ theorem dvd_of_evalCheck {K n : ℕ} [NeZero n] {ω : F} (hω : IsPrimitiveRoot 
   dvd_separation hω (Nat.pos_of_ne_zero (NeZero.ne n)) C α hα
     (zH_dvd_of_eval (aggregate α C) t ζ hζ hcheck)
 
-end Kimchi.Quotient
+end Kimchi

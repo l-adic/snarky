@@ -1,9 +1,9 @@
-import Kimchi.Quotient.Copy
+import Kimchi.Permutation.Copy
 
 /-!
 # The wiring instantiation: discharging the copy-soundness hypotheses
 
-Milestone 4's `Permutation.copy_soundness` consumes three per-index facts: injectivity of
+`Permutation.copy_soundness` consumes three per-index facts: injectivity of
 the cell addressing, the row semantics of the sigma polynomials, and a wiring permutation
 of the unmasked region. This file produces all three from the data a kimchi index
 actually carries:
@@ -28,9 +28,11 @@ grid of accepted quotient checks, the witness takes equal values across every wi
 the unmasked region.
 -/
 
-namespace Kimchi.Quotient.Permutation
+namespace Kimchi.Permutation
 
-open Polynomial Kimchi.Quotient
+open Kimchi.GrandProduct
+
+open Polynomial
 
 variable {F : Type*} [Field F]
 
@@ -49,7 +51,7 @@ structure CosetShifts (ω : F) (shifts : Fin 7 → F) : Prop where
 
 /-- **Cell addresses are injective.** Distinct cosets separate the columns; primitive-root
 power injectivity separates the rows within a coset. -/
-theorem addr_injective {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) {shifts : Fin 7 → F}
+private theorem addr_injective {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) {shifts : Fin 7 → F}
     (hs : CosetShifts ω shifts) :
     Function.Injective (addr (n := n) ω shifts) := by
   rintro ⟨i, a⟩ ⟨j, b⟩ h
@@ -77,7 +79,7 @@ variable {n zkRows : ℕ}
 def embCell (zkRows : ℕ) (c : Fin 7 × Fin (n - zkRows)) : Fin 7 × Fin n :=
   (c.1, ⟨(c.2 : ℕ), lt_of_lt_of_le c.2.isLt (Nat.sub_le n zkRows)⟩)
 
-theorem embCell_injective : Function.Injective (embCell (n := n) zkRows) := by
+private theorem embCell_injective : Function.Injective (embCell (n := n) zkRows) := by
   rintro ⟨i, a⟩ ⟨j, b⟩ h
   simp only [embCell, Prod.mk.injEq, Fin.mk.injEq] at h
   exact Prod.ext h.1 (Fin.ext h.2)
@@ -112,7 +114,7 @@ def restrictCells (σpFull : Equiv.Perm (Fin 7 × Fin n))
 
 /-- The restriction intertwines the embedding: restricting and then embedding is the full
 wiring on embedded cells. -/
-theorem embCell_restrictCells (σpFull : Equiv.Perm (Fin 7 × Fin n))
+private theorem embCell_restrictCells (σpFull : Equiv.Perm (Fin 7 × Fin n))
     (hp : RegionPreserving zkRows σpFull) (c : Fin 7 × Fin (n - zkRows)) :
     embCell zkRows (restrictCells σpFull hp c) = σpFull (embCell zkRows c) :=
   Prod.ext rfl (Fin.ext rfl)
@@ -225,7 +227,7 @@ theorem prod_shiftSide_eq_prod_sigmaSide {ω : F} (hω : IsPrimitiveRoot ω n)
 
 /-- An injection avoiding a finite bad set: `Fin m` maps injectively into `F` outside
 `B` when `m + B.card ≤ |F|`. -/
-theorem exists_injective_avoiding {F : Type*} [Fintype F] [DecidableEq F]
+private theorem exists_injective_avoiding {F : Type*} [Fintype F] [DecidableEq F]
     (B : Finset F) (m : ℕ) (hcard : m + B.card ≤ Fintype.card F) :
     ∃ f : Fin m → F, Function.Injective f ∧ ∀ i, f i ∉ B := by
   have hle : m ≤ (Finset.univ \ B).card := by
@@ -294,12 +296,12 @@ def shiftSideRow (wRow : Fin 7 → F) (shifts : Fin 7 → F) (β γ x : F) : F :
 def sigmaSideRow (wRow σRow : Fin 7 → F) (β γ : F) : F :=
   ∏ i, (wRow i + γ + β * σRow i)
 
-theorem shiftSide_eval_row (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (β γ x : F) :
+private theorem shiftSide_eval_row (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (β γ x : F) :
     (shiftSide w shifts β γ).eval x
       = shiftSideRow (fun i => (w i).eval x) shifts β γ x :=
   shiftSide_eval w shifts β γ x
 
-theorem sigmaSide_eval_row (w σ : Fin 7 → Polynomial F) (β γ x : F) :
+private theorem sigmaSide_eval_row (w σ : Fin 7 → Polynomial F) (β γ x : F) :
     (sigmaSide w σ β γ).eval x
       = sigmaSideRow (fun i => (w i).eval x) (fun i => (σ i).eval x) β γ :=
   sigmaSide_eval w σ β γ x
@@ -405,51 +407,4 @@ theorem copy_soundness_wired_of_dvd [DecidableEq F] {ω : F} (hω : IsPrimitiveR
     β γ hβ hγ zg hdvd c
   rw [← embCell_restrictCells σpFull hp c]
   exact hmain
-
-/-- **Copy soundness from the index data.** As `copy_soundness_wired_of_dvd`, with the
-divisibilities obtained from the derandomized quotient checks in single-challenge counting
-Schwartz–Zippel form (`dvd_of_evalCheck`): ONE aggregation challenge `α` (avoiding
-`badAlphas`) and ONE quotient `t`, at a single good permutation-challenge pair `(β, γ)`, and
-the quotient check evaluated at a single good challenge `ζ` outside the counting bad set
-`badZetas (aggregate α C) t n`. Conclusion unchanged. -/
-theorem copy_soundness_wired [DecidableEq F] {ω : F} (hω : IsPrimitiveRoot ω n)
-    (hn : 0 < n) (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
-    (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (hs : CosetShifts ω shifts)
-    (σpFull : Equiv.Perm (Fin 7 × Fin n)) (hp : RegionPreserving zkRows σpFull)
-    (β γ : F)
-    (hβ : β ∉ badBetas
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
-        ((w c.1).eval (ω ^ (c.2 : ℕ)), shifts c.1 * ω ^ (c.2 : ℕ)))
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
-        ((w c.1).eval (ω ^ (c.2 : ℕ)),
-          shifts (restrictCells σpFull hp c).1
-            * ω ^ ((restrictCells σpFull hp c).2 : ℕ))))
-    (hγ : γ ∉ badGammas
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
-        ((w c.1).eval (ω ^ (c.2 : ℕ)), shifts c.1 * ω ^ (c.2 : ℕ)))
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
-        ((w c.1).eval (ω ^ (c.2 : ℕ)),
-          shifts (restrictCells σpFull hp c).1
-            * ω ^ ((restrictCells σpFull hp c).2 : ℕ))) β)
-    (zg : Polynomial F)
-    (α : F)
-    (hα : α ∉ badAlphas (constraints ω zkRows zg w
-      (sigmaPoly ω shifts σpFull) shifts β γ
-      (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩) ω n)
-    (t : Polynomial F)
-    (ζ : F)
-    (hζ : ζ ∉ badZetas (aggregate α (constraints ω zkRows zg w
-      (sigmaPoly ω shifts σpFull) shifts β γ
-      (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)) t n)
-    (hcheck : (aggregate α (constraints ω zkRows zg w
-        (sigmaPoly ω shifts σpFull) shifts β γ
-        (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)).eval ζ
-      = (t * zH F n).eval ζ) :
-    ∀ c : Fin 7 × Fin (n - zkRows),
-      (w (σpFull (embCell zkRows c)).1).eval (ω ^ ((σpFull (embCell zkRows c)).2 : ℕ))
-        = (w c.1).eval (ω ^ (c.2 : ℕ)) :=
-  have : NeZero n := ⟨hn.ne'⟩
-  copy_soundness_wired_of_dvd hω hn hzk0 hzkn w shifts hs σpFull hp β γ hβ hγ zg
-    (dvd_of_evalCheck hω _ α hα t ζ hζ hcheck)
-
-end Kimchi.Quotient.Permutation
+end Kimchi.Permutation

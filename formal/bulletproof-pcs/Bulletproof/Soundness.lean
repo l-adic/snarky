@@ -81,7 +81,7 @@ The extraction is the standard multi-poly/multi-point PCS reduction, specialized
 the kimchi IPA relation:
 
 1. generalize the single-opening extractor to an arbitrary eval vector
-   (`ipa_soundnessB`);
+   (`ipa_soundnessA`);
 2. separate commitments by a Vandermonde combination in the polyscale
    (`perCommitment_separation`), using commitment linearity (`commit_sum_smul`);
 3. use binding to force one witness per commitment, then a second Vandermonde in the
@@ -99,7 +99,7 @@ hypotheses carry the cryptographic weight:
   rewinding / Fiat–Shamir extraction, assumed rather than proved. It also carries the
   correspondence between the verifier's scalar acceptance equation (through
   `combinedB`, `bPoly`, `sg`) and the tree over `combinedEvalVector` — the equation is
-  never exercised here, since `ipa_soundnessB` holds for any `b0`.
+  never exercised here, since `ipa_soundnessA` holds for any `b0`.
 
 * **Binding** (`hbind`, no nontrivial discrete-log relation) — the idealization of
   computational DL-relation hardness. It is information-theoretically false for a real
@@ -126,26 +126,12 @@ def FiatShamirTreeB (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F) (v : F)
   accepts → ∃ (ρ : F) (t : IpaTreeV F G σ.k),
     IpaAcceptV σ.g b (P - ρ • σ.h) v t
 
-/-- **Generalized single-opening soundness.** `ipa_soundness` at an arbitrary eval
-vector `b`: under
-`FiatShamirTreeB σ P b v (VerifierAcceptsAt σ proof P b0 v c u)`, an accepting run
-yields an opening witness for `openingRelationB`. -/
-private theorem ipa_soundnessB (σ : SRS G) (proof : OpeningProof F G σ.k) (P : G)
-    (b : Fin (2 ^ σ.k) → F) (b0 v c : F) (u : Fin σ.k → F)
-    (hFS : FiatShamirTreeB σ P b v (VerifierAcceptsAt σ proof P b0 v c u))
-    (hacc : VerifierAcceptsAt σ proof P b0 v c u) :
-    ∃ (a : Fin (2 ^ σ.k) → F) (ρ : F), openingRelationB σ P b v a ρ := by
-  obtain ⟨ρ, t, ht⟩ := hFS hacc
-  obtain ⟨a, hP, hv⟩ := ipaRelation_of_acceptV σ b (P - ρ • σ.h) v t ht
-  refine ⟨a, ρ, ?_, hv⟩
-  show commitGen σ.g a + ρ • σ.h = P
-  rw [hP]
-  abel
-
-/-- **Acceptance-generalized single-opening soundness.** `ipa_soundnessB` with the
-acceptance proposition fully abstract: the extraction consumes only the modus ponens of
-the Fiat-Shamir hypothesis against acceptance, never the shape of acceptance itself. This
-is the form the deployed verifier's acceptance (`Ipa.verify … = true`) plugs into. -/
+/-- **Single-opening soundness at an arbitrary eval vector, with abstract acceptance.**
+Under the Fiat-Shamir tree hypothesis an accepting run yields an opening witness for
+`openingRelationB`, with the acceptance proposition `A` fully abstract: the extraction
+consumes only the modus ponens of the Fiat-Shamir hypothesis against acceptance, never the
+shape of acceptance itself. This is the form the deployed verifier's acceptance
+(`Ipa.verify … = true`) plugs into. -/
 theorem ipa_soundnessA (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F) (v : F) {A : Prop}
     (hFS : FiatShamirTreeB σ P b v A) (hacc : A) :
     ∃ (a : Fin (2 ^ σ.k) → F) (ρ : F), openingRelationB σ P b v a ρ := by

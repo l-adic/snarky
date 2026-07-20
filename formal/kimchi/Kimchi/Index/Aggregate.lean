@@ -1,6 +1,5 @@
 import Kimchi.Index.CopySoundness
-import Kimchi.Index.GateSoundness
-import Kimchi.Quotient.SchwartzZippel
+import Kimchi.SchwartzZippel
 
 /-!
 # The full kimchi aggregate family
@@ -35,10 +34,18 @@ per-gate divisibility from the summed members via selector row-disjointness
 
 namespace Kimchi.Index
 
-open Polynomial Kimchi.Quotient
+open Polynomial Kimchi.Lift
+open Kimchi.GrandProduct
+open Kimchi.Lift.Gate
 
 
 variable {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n]
+
+omit [DecidableEq F] [NeZero n] in
+/-- A selector value of `1` names the row's gate type. -/
+private theorem selectorRow_eq_one (idx : Index F n) {g : GateType} {i : Fin n}
+    (htyp : (idx.gates i).typ = g) : idx.selectorRow g i = 1 := by
+  simp [selectorRow, htyp]
 
 /-- The (positive) public-input interpolant: `pub i` at the public rows, `0` beyond.
 Kimchi commits to its negation and adds it into the generic `α⁰` slot. -/
@@ -57,7 +64,7 @@ nothing. -/
 noncomputable def gateConstraints (idx : Index F n) (wTab : Fin n → Fin 15 → F) :
     GateType → List (Polynomial F)
   | .zero => []
-  | .generic => (genericArgument (F := F)).constraints
+  | .generic => (Generic.argument (F := F)).constraints
       (polyEnv idx.omega wTab idx.coeffTable)
   | .poseidon => Gate.Poseidon.constraints (Poseidon.rcPoly idx.omega idx.coeffTable)
       (Poseidon.polyWitness idx.omega wTab)
@@ -96,7 +103,7 @@ noncomputable def gateMember (idx : Index F n) (pub : Fin idx.publicCount → F)
       columnPoly idx.omega (idx.selectorRow g) * (idx.gateConstraints wTab g).getD k 0)
     - if k = 0 then idx.pubPoly pub else 0
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 /-- **The full kimchi aggregate family** — the `21 + 3` members of the one quotient
 check, at a given accumulator `z` and permutation challenge pair `(β, γ)`: the shared
 gate pool first, then the three permutation constraints at the index's wiring data. -/
@@ -207,13 +214,13 @@ private theorem generic_holds_of_dvd (idx : Index F n) (pub : Fin idx.publicCoun
     rw [idx.eval_gateMember, htyp] at h
     exact sub_eq_zero.mp h
   rw [Gate.Generic.withPublic_holds_iff]
-  have hb := (genericArgument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i
-  simp only [genericArgument, genericCellMap, Gate.Generic.constraints, List.map_cons,
+  have hb := (Generic.argument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i
+  simp only [Generic.argument, Generic.cellMap, Gate.Generic.constraints, List.map_cons,
     List.map_nil, List.cons.injEq, and_true] at hb
   obtain ⟨hb1, hb2⟩ := hb
   have h0 := hslot 0 (by norm_num [gateAlphaCount])
   have h1 := hslot 1 (by norm_num [gateAlphaCount])
-  simp only [gateConstraints, genericArgument, genericCellMap, Gate.Generic.constraints,
+  simp only [gateConstraints, Generic.argument, Generic.cellMap, Gate.Generic.constraints,
     List.getD_cons_zero, List.getD_cons_succ, if_pos, one_ne_zero, if_neg,
     Nat.one_ne_zero, ite_false, ite_true] at h0 h1
   exact ⟨hb1 ▸ h0, hb2 ▸ h1⟩
@@ -308,7 +315,7 @@ private theorem fullFamily_dvd_of_evalCheck (idx : Index F n) (pub : Fin idx.pub
     ∀ s, zH F n ∣ idx.fullFamily pub wTab z β γ s :=
   dvd_of_evalCheck idx.omega_prim (idx.fullFamily pub wTab z β γ) α hα t ζ hζ hcheck
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 omit [DecidableEq F] in
 /-- The permutation members of the full family: entries `21 + s` are the three
 permutation constraints at the index's wiring data. -/
@@ -322,7 +329,7 @@ private theorem fullFamily_perm (idx : Index F n) (pub : Fin idx.publicCount →
   congr 1
   exact Fin.ext (by simp [Fin.natAdd])
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 /-- **Phase-B assembly, copy side.** If at every node of an injective `(β, γ)` grid the
 prover supplies an accumulator whose **full family** is `Z_H`-divisible, the witness
 takes equal values across every wire of the unmasked region — the copy fragment of
@@ -358,22 +365,6 @@ private theorem copy_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCo
     have h := hdvd (Fin.natAdd gateAlphaCount s)
     rwa [idx.fullFamily_perm] at h
 
-/-- **Phase-B assembly, gate side.** The aggregated eval-check over the full family —
-the shape of kimchi's one quotient check — gives every row's gate branch of
-`rowSatisfies`: `dvd_of_evalCheck` pins each of the `21 + 3` members, and the
-separation argument collapses the shared pool back to the rows. -/
-theorem rowSatisfies_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → F)
-    (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (β γ : F)
-    (α : F) (hα : α ∉ badAlphas (idx.fullFamily pub wTab z β γ) idx.omega n)
-    (t : Polynomial F)
-    (ζ : F)
-    (hζ : ζ ∉ badZetas (aggregate α (idx.fullFamily pub wTab z β γ)) t n)
-    (hcheck : (aggregate α (idx.fullFamily pub wTab z β γ)).eval ζ
-        = (t * zH F n).eval ζ) :
-    ∀ i, rowSatisfies idx pub wTab i :=
-  idx.rowSatisfies_of_fullFamily_dvd pub wTab z β γ
-    (idx.fullFamily_dvd_of_evalCheck pub wTab z β γ α hα t ζ hζ hcheck)
-
 /-! ## The Phase-B headline: the one quotient check gives satisfiability
 
 Everything assembles: the 21 gate members give every row's gate branch (`rowSatisfies`),
@@ -383,7 +374,7 @@ the 3 permutation members give the copy constraints on the unmasked region, the
 the public pinning. The conclusion is `Satisfies` — the A2 predicate the derived checker
 decides — from nothing but the index and the shape of kimchi's one quotient check. -/
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 /-- The whole-grid copy conjunct: the unmasked region from the permutation members,
 the masked rows trivially from the `masked_identity` law. -/
 private theorem copyAll_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
@@ -457,7 +448,7 @@ private theorem publicPinned_of_rowSatisfies (idx : Index F n) (pub : Fin idx.pu
   rw [← hpub]
   linear_combination (h1.symm.trans (by simp only [hq0, hq1, hq2, hq3, hq4]; ring)).symm
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 /-- **The Phase-B headline, divisibility form.** An injective `(β, γ)` grid of
 accumulators whose full `21 + 3` families are `Z_H`-divisible gives satisfiability at
 the index: `Satisfies idx pub wTab` — every row's gate holds with the public input
@@ -493,7 +484,7 @@ theorem satisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount
     idx.copyAll_of_fullFamily_dvd pub wTab β γ hβ hγ zg hdvd,
     idx.publicPinned_of_rowSatisfies pub wTab hrow⟩
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 /-- **The Phase-B headline.** The shape of kimchi's one quotient check — at every node
 of an injective `(β, γ)` grid, an accumulator whose aggregated `21 + 3`-member family
 passes the derandomized eval-check against `t · Z_H` — gives satisfiability at the
@@ -604,23 +595,23 @@ private theorem eval_gateMember_of_rowSatisfies (idx : Index F n) (pub : Fin idx
     unfold rowSatisfies at hrow
     rw [hgen] at hrow
     obtain ⟨h1, h2⟩ := (Gate.Generic.withPublic_holds_iff _ _).mp hrow
-    have hb := (genericArgument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i
-    simp only [genericArgument, genericCellMap, Gate.Generic.constraints, List.map_cons,
+    have hb := (Generic.argument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i
+    simp only [Generic.argument, Generic.cellMap, Gate.Generic.constraints, List.map_cons,
       List.map_nil, List.cons.injEq, and_true] at hb
     obtain ⟨hb1, hb2⟩ := hb
     rw [hgen]
     match k with
     | 0 =>
-      simp only [gateConstraints, genericArgument, genericCellMap,
+      simp only [gateConstraints, Generic.argument, Generic.cellMap,
         Gate.Generic.constraints, List.getD_cons_zero, ite_true]
       exact sub_eq_zero.mpr (hb1.trans h1)
     | 1 =>
-      simp only [gateConstraints, genericArgument, genericCellMap,
+      simp only [gateConstraints, Generic.argument, Generic.cellMap,
         Gate.Generic.constraints, List.getD_cons_succ, List.getD_cons_zero,
         Nat.one_ne_zero, ite_false, sub_zero]
       exact hb2.trans h2
     | (m + 2) =>
-      simp only [gateConstraints, genericArgument, genericCellMap,
+      simp only [gateConstraints, Generic.argument, Generic.cellMap,
         Gate.Generic.constraints, List.getD_cons_succ, List.getD_nil, eval_zero,
         Nat.succ_ne_zero, ite_false, sub_zero]
   · -- non-generic rows: all slots vanish and the public term is 0
@@ -652,7 +643,7 @@ reindexing, the honest accumulator telescopes it through the three permutation
 constraints, and the gate members vanish row by row. Pointwise in `(β, γ)` — the
 completeness direction needs no challenge grid. -/
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 omit [DecidableEq F] in
 /-- **Permutation completeness at the index** (C2): under nondegenerate `(β, γ)`, a
 copy-invariant witness admits an accumulator whose three permutation constraints are
@@ -691,7 +682,7 @@ private theorem fullFamily_gate (idx : Index F n) (pub : Fin idx.publicCount →
     idx.fullFamily pub wTab z β γ k = idx.gateMember pub wTab k := by
   rw [fullFamily, dif_pos hk]
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 omit [DecidableEq F] in
 /-- **The completeness headline** (C3). A satisfied table admits honest quotient data
 at every nondegenerate challenge pair: an accumulator `z` making the whole `21 + 3`
@@ -722,28 +713,6 @@ theorem fullFamily_dvd_of_satisfies (idx : Index F n) (pub : Fin idx.publicCount
     rw [idx.fullFamily_perm]
     exact hz j
 
-open Kimchi.Quotient.Permutation in
-omit [DecidableEq F] in
-/-- **Exact-quotient completeness.** In the shape of the one production check: the
-honest accumulator and, for every fold challenge, a quotient `t` with
-`aggregate α (family) = t · Z_H` — a *polynomial identity*, so the eval-check passes at
-every node, not merely at sampled ones. -/
-theorem exists_quotient_of_satisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
-    (wTab : Fin n → Fin 15 → F)
-    (hsat : Satisfies idx pub wTab) (β γ : F)
-    (hnd : Nondegenerate idx.omega idx.zkRows (idx.permWitnessPoly wTab) idx.shifts
-      idx.wiringPerm β γ) :
-    ∃ z : Polynomial F, ∀ a : F, ∃ t : Polynomial F,
-      aggregate a (idx.fullFamily pub wTab z β γ) = t * zH F n := by
-  obtain ⟨z, hz⟩ := idx.fullFamily_dvd_of_satisfies pub wTab hsat β γ hnd
-  refine ⟨z, fun a => ?_⟩
-  have hdvd : zH F n ∣ aggregate a (idx.fullFamily pub wTab z β γ) :=
-    Finset.dvd_sum fun c _ => by
-      rw [Polynomial.smul_eq_C_mul]
-      exact (hz c).mul_left _
-  obtain ⟨t, ht⟩ := hdvd
-  exact ⟨t, by rw [ht, mul_comm]⟩
-
 
 /-! ## Project-local Mathlib supplement — pigeonhole on an injective family -/
 
@@ -768,7 +737,7 @@ private theorem exists_notMem_of_card_lt {m : ℕ} {f : Fin m → F}
 
 /-! ## The characterization: satisfiability as one divisibility -/
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 /-- **The characterization.** In a large enough field, a wellformed index is satisfied
 iff honest quotient data exists at every nondegenerate challenge pair — Phase B and
 Phase C fused into one statement. Forward is completeness, pointwise; backward

@@ -13,7 +13,9 @@ objects the aggregate family is built on.
 -/
 namespace Kimchi.Protocol.Equation
 
-open Polynomial Kimchi.Quotient Kimchi.Index Kimchi.Protocol.Linearization
+open Polynomial Kimchi.Lift Kimchi.Index Kimchi.Protocol.Linearization
+open Kimchi.GrandProduct
+open Kimchi.Lift.Gate
 
 variable {F : Type*} [Field F] {n : ℕ}
 
@@ -47,7 +49,7 @@ private theorem evalEnv_evalsOf (idx : Index F n) (wTab : Fin n → Fin 15 → F
   simp only [evalEnv, evalsOf, polyEnv, ArgumentEnv.map]
   refine congrArg₂ (ArgumentEnv.mk _) ?_ rfl
   funext c
-  simp only [Function.comp_apply, Polynomial.coe_aeval_eq_eval, Kimchi.Quotient.shift,
+  simp only [Function.comp_apply, Polynomial.coe_aeval_eq_eval, Kimchi.shift,
     eval_comp, eval_mul, eval_C, eval_X]
 
 /-! ## Column extraction
@@ -169,26 +171,26 @@ private theorem gateMember_sum_eval [DecidableEq F] [NeZero n] (idx : Index F n)
   simp only [Index.gateConstraints]
   rw [show Gate.Poseidon.constraints (Poseidon.rcPoly idx.omega idx.coeffTable)
         (Poseidon.polyWitness idx.omega wTab)
-      = (Kimchi.Quotient.Poseidon.argument (F := F)).constraints
+      = (Poseidon.argument (F := F)).constraints
           (polyEnv idx.omega wTab idx.coeffTable) from rfl,
     show Gate.AddComplete.constraints (AddComplete.polyWitness idx.omega wTab)
-      = (Kimchi.Quotient.AddComplete.argument (F := F)).constraints
+      = (AddComplete.argument (F := F)).constraints
           (polyEnv idx.omega wTab idx.coeffTable) from rfl,
     show Gate.VarBaseMul.constraints (VarBaseMul.polyWitness idx.omega wTab)
-      = (Kimchi.Quotient.VarBaseMul.argument (F := F)).constraints
+      = (VarBaseMul.argument (F := F)).constraints
           (polyEnv idx.omega wTab idx.coeffTable) from rfl,
     show Gate.EndoMul.constraints (C idx.endoBase) (EndoMul.polyWitness idx.omega wTab)
-      = (Kimchi.Quotient.EndoMul.argument idx.endoBase).constraints
+      = (EndoMul.argument idx.endoBase).constraints
           (polyEnv idx.omega wTab idx.coeffTable) from rfl,
     show Gate.EndoScalar.constraints (EndoScalar.polyWitness idx.omega wTab) (F := F)
-      = (Kimchi.Quotient.EndoScalar.argument (F := F)).constraints
+      = (EndoScalar.argument (F := F)).constraints
           (polyEnv idx.omega wTab idx.coeffTable) from rfl]
-  rw [constraints_map_evalsOf (genericArgument (F := F)) idx wTab z ζ,
-    constraints_map_evalsOf (Kimchi.Quotient.Poseidon.argument (F := F)) idx wTab z ζ,
-    constraints_map_evalsOf (Kimchi.Quotient.AddComplete.argument (F := F)) idx wTab z ζ,
-    constraints_map_evalsOf (Kimchi.Quotient.VarBaseMul.argument (F := F)) idx wTab z ζ,
-    constraints_map_evalsOf (Kimchi.Quotient.EndoMul.argument idx.endoBase) idx wTab z ζ,
-    constraints_map_evalsOf (Kimchi.Quotient.EndoScalar.argument (F := F)) idx wTab z ζ]
+  rw [constraints_map_evalsOf (Generic.argument (F := F)) idx wTab z ζ,
+    constraints_map_evalsOf (Poseidon.argument (F := F)) idx wTab z ζ,
+    constraints_map_evalsOf (AddComplete.argument (F := F)) idx wTab z ζ,
+    constraints_map_evalsOf (VarBaseMul.argument (F := F)) idx wTab z ζ,
+    constraints_map_evalsOf (EndoMul.argument idx.endoBase) idx wTab z ζ,
+    constraints_map_evalsOf (EndoScalar.argument (F := F)) idx wTab z ζ]
   rw [show alphaCombo α (List.map (Polynomial.eval ζ) ([] : List (Polynomial F))) = 0
     from rfl, mul_zero, zero_add]
   rfl
@@ -406,7 +408,7 @@ those of the aggregate family, and the evaluation point `ζ` avoids the roots of
 quotient discrepancy. No injective family of points and no degree side-conditions are
 needed — one avoiding point pins the identity by the counting bound. -/
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 /-- One verifier-equation instance at a good challenge tuple — `β`, `γ`, `α`, and the
 evaluation point `ζ` each outside their bad set — implies satisfaction of the circuit. -/
 theorem satisfies_of_verifierEquation [DecidableEq F] [NeZero n]
@@ -452,7 +454,7 @@ theorem satisfies_of_verifierEquation [DecidableEq F] [NeZero n]
   refine idx.satisfies_of_evalCheck pub wTab β γ hβ hγ zg α hα t ζ hζ ?_
   exact (verifierEquation_iff idx pub wTab zg t ζ β γ α hζ₁ hζb).mp heq
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 set_option linter.unusedVariables false in
 /-- The same statement at the table read off the polynomials binding delivers behind the
 witness commitments. The degree hypothesis `hW` is carried for the interface — the

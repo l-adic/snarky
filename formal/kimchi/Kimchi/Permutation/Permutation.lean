@@ -1,6 +1,6 @@
-import Kimchi.Quotient.Accumulator
-import Kimchi.Quotient.Aggregate
-import Kimchi.Quotient.SchwartzZippel
+import Kimchi.Aggregate
+import Kimchi.SchwartzZippel
+import Kimchi.GrandProduct
 
 /-!
 # The permutation argument: constraints and quotient soundness
@@ -30,13 +30,15 @@ selector column. Its soundness therefore composes the shared quotient machinery 
 gate's nonvanishing off the masked rows, and the Lagrange pins.
 
 The conclusion feeds milestone 4: at the challenges `(β, γ)` the two sides are the pair
-factors of `Kimchi.Quotient.GrandProduct`, so the product equality at an injective grid
+factors of `Kimchi.GrandProduct`, so the product equality at an injective grid
 forces the multiset equality behind the copy constraints.
 -/
 
-namespace Kimchi.Quotient.Permutation
+namespace Kimchi.Permutation
 
-open Polynomial Kimchi.Quotient
+open Kimchi.GrandProduct
+
+open Polynomial
 
 variable {F : Type*} [Field F]
 
@@ -76,7 +78,7 @@ noncomputable def lagNumer (ω : F) {n : ℕ} (r : Fin n) : Polynomial F :=
 
 /-- `lagNumer` is the Horner quotient `∑ᵢ ω^{r(n−1−i)} Xⁱ`: degree-`< n` agreement on
 the domain — both vanish at every node but `ω^r`, where both take `n·ω^{−r}`. -/
-theorem lagNumer_eq_geom {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+private theorem lagNumer_eq_geom {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     (r : Fin n) :
     lagNumer ω r = ∑ i ∈ Finset.range n, C ((ω ^ (r : ℕ)) ^ (n - 1 - i)) * X ^ i := by
   haveI : NeZero n := ⟨hn.ne'⟩
@@ -174,7 +176,7 @@ noncomputable def constraints {n : ℕ} (ω : F) (zkRows : ℕ) (z : Polynomial 
 /-! ## Row lemmas -/
 
 /-- The mask does not vanish on the unmasked rows: `zkpm(ωⁱ) ≠ 0` for `i < n - zkRows`. -/
-theorem zkpm_eval_ne_zero {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (zkRows : ℕ) {i : ℕ}
+private theorem zkpm_eval_ne_zero {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (zkRows : ℕ) {i : ℕ}
     (hi : i < n - zkRows) : (zkpm ω n zkRows).eval (ω ^ i) ≠ 0 := by
   unfold zkpm
   rw [eval_prod]
@@ -187,7 +189,7 @@ theorem zkpm_eval_ne_zero {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (zkRow
 
 /-- The mask vanishes on the masked rows: `zkpm(ωⁱ) = 0` for `n - zkRows ≤ i < n` —
 the completeness twin of `zkpm_eval_ne_zero`. -/
-theorem zkpm_eval_zero {ω : F} {n : ℕ} (zkRows : ℕ) {i : ℕ}
+private theorem zkpm_eval_zero {ω : F} {n : ℕ} (zkRows : ℕ) {i : ℕ}
     (hlo : n - zkRows ≤ i) (hhi : i < n) : (zkpm ω n zkRows).eval (ω ^ i) = 0 := by
   unfold zkpm
   rw [eval_prod]
@@ -197,7 +199,7 @@ theorem zkpm_eval_zero {ω : F} {n : ℕ} (zkRows : ℕ) {i : ℕ}
 /-- A Lagrange-gated pin: if `Z_H ∣ (z - 1) · lagNumer r` then the accumulator is `1`
 at row `r` — the numerator's value at its own node is `n·ω^{−r} ≠ 0` (a primitive root
 forces `(n : F) ≠ 0`), so the pin factor must vanish. -/
-theorem eval_eq_one_of_boundary {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+private theorem eval_eq_one_of_boundary {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     (z : Polynomial F) (r : Fin n)
     (h : zH F n ∣ (z - 1) * lagNumer ω r) :
     z.eval (ω ^ (r : ℕ)) = 1 := by
@@ -213,7 +215,7 @@ theorem eval_eq_one_of_boundary {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) 
 
 /-- The gated aggregation forces the division-free recurrence on the unmasked rows:
 `z(ωⁱ⁺¹) · sigmaSide(ωⁱ) = z(ωⁱ) · shiftSide(ωⁱ)` for `i < n - zkRows`. -/
-theorem step_of_aggregation {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+private theorem step_of_aggregation {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     (zkRows : ℕ) (z : Polynomial F) (w σ : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (β γ : F)
     (h : zH F n ∣ zkpm ω n zkRows
       * (z * shiftSide w shifts β γ - shiftRow ω z * sigmaSide w σ β γ))
@@ -248,38 +250,6 @@ theorem soundness_of_dvd {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0
   · simpa using eval_eq_one_of_boundary hω hn z _ (hdvd 1)
   · simpa using eval_eq_one_of_boundary hω hn z _ (hdvd 2)
   · exact fun j hj => step_of_aggregation hω hn zkRows z w σ shifts β γ (hdvd 0) hj
-
-/-- **Permutation quotient soundness.** Under the derandomized quotient-argument
-hypotheses for the three permutation constraints — a single aggregation challenge `α`
-outside `badAlphas` separating the aggregate, and a single good evaluation point `ζ` outside
-`badZetas` pinning the aggregate to a multiple of `Z_H` (the counting Schwartz–Zippel form) —
-the accumulator telescopes over the unmasked region. Routes through `soundness_of_dvd` at the
-separated divisibilities. -/
-theorem soundness [DecidableEq F] {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
-    {zkRows : ℕ} (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
-    (z : Polynomial F) (w σ : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (β γ : F)
-    (α : F)
-    (hα : α ∉ badAlphas (constraints ω zkRows z w σ shifts β γ
-      (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩) ω n)
-    (ζ : F)
-    (t : Polynomial F)
-    (hζ : ζ ∉ badZetas (aggregate α (constraints ω zkRows z w σ shifts β γ
-      (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)) t n)
-    (hcheck : (aggregate α (constraints ω zkRows z w σ shifts β γ
-        (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)).eval ζ
-      = (t * zH F n).eval ζ) :
-    ∏ j ∈ Finset.range (n - zkRows), (shiftSide w shifts β γ).eval (ω ^ j)
-      = ∏ j ∈ Finset.range (n - zkRows), (sigmaSide w σ β γ).eval (ω ^ j) := by
-  haveI : NeZero n := ⟨Nat.pos_iff_ne_zero.mp hn⟩
-  exact soundness_of_dvd hω hn hzk0 hzkn z w σ shifts β γ
-    (dvd_separation hω hn (constraints ω zkRows z w σ shifts β γ
-        (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩) α hα
-      (zH_dvd_of_eval (aggregate α (constraints ω zkRows z w σ shifts β γ
-        (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)) t ζ hζ hcheck))
-
-
-/-! ## Completeness: the honest accumulator -/
-
 /-- **Permutation completeness.** With nonvanishing σ-side row products (the
 nondegeneracy of `(β, γ)`) and agreeing grand products over the unmasked region, an
 accumulator exists whose three permutation constraints are all divisible by `Z_H`: the
@@ -344,4 +314,4 @@ theorem constraints_dvd_of_prods {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n)
         eval_columnPoly hω, rowIndicator, if_neg (by simp [Fin.ext_iff, hb]), mul_zero,
         mul_zero]
 
-end Kimchi.Quotient.Permutation
+end Kimchi.Permutation

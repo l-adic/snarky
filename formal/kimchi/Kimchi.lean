@@ -16,21 +16,16 @@ import Kimchi.Gate.Semantics.EndoMul
 import Kimchi.Gate.Semantics.Poseidon
 import Bulletproof.Protocol
 import Bulletproof.Soundness
-import Kimchi.Quotient.Generic
-import Kimchi.Quotient.EndoScalar
-import Kimchi.Quotient.Poseidon
-import Kimchi.Quotient.Accumulator
-import Kimchi.Quotient.Copy
+import Kimchi.Lift
+import Kimchi.Permutation.Copy
 import Kimchi.Index.Basic
 import Kimchi.Index.Satisfies
 import Kimchi.Index.Aggregate
 import Kimchi.Index.Degree
-import Kimchi.Index.GateSoundness
 import Kimchi.Index.CopySoundness
-import Kimchi.Quotient.Wiring
-import Kimchi.Quotient.Permutation
-import Kimchi.Quotient.GrandProduct
-import Kimchi.Quotient.Soundness
+import Kimchi.Permutation.Wiring
+import Kimchi.Permutation.Permutation
+import Kimchi.GrandProduct
 import Bulletproof.Wire
 -- Side A — the idealized polynomial protocol and its soundness
 import Kimchi.Protocol.Linearization

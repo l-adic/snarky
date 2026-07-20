@@ -86,22 +86,22 @@ def main : IO Unit := do
     let gEnv := evalEnv e
     let gates : List (String × F × F) :=
       [ ("generic", e.genericSelector
-          * alphaCombo α ((Kimchi.Quotient.genericArgument (F := F)).constraints gEnv),
+          * alphaCombo α ((Kimchi.Lift.Gate.Generic.argument (F := F)).constraints gEnv),
           ← gateTarget "generic"),
         ("poseidon", e.poseidonSelector
-          * alphaCombo α ((Kimchi.Quotient.Poseidon.argument (F := F)).constraints gEnv),
+          * alphaCombo α ((Kimchi.Lift.Gate.Poseidon.argument (F := F)).constraints gEnv),
           ← gateTarget "poseidon"),
         ("completeAdd", e.completeAddSelector
-          * alphaCombo α ((Kimchi.Quotient.AddComplete.argument (F := F)).constraints gEnv),
+          * alphaCombo α ((Kimchi.Lift.Gate.AddComplete.argument (F := F)).constraints gEnv),
           ← gateTarget "completeAdd"),
         ("varBaseMul", e.mulSelector
-          * alphaCombo α ((Kimchi.Quotient.VarBaseMul.argument (F := F)).constraints gEnv),
+          * alphaCombo α ((Kimchi.Lift.Gate.VarBaseMul.argument (F := F)).constraints gEnv),
           ← gateTarget "varBaseMul"),
         ("endoMul", e.emulSelector
-          * alphaCombo α ((Kimchi.Quotient.EndoMul.argument endo).constraints gEnv),
+          * alphaCombo α ((Kimchi.Lift.Gate.EndoMul.argument endo).constraints gEnv),
           ← gateTarget "endoMul"),
         ("endoScalar", e.endoScalarSelector
-          * alphaCombo α ((Kimchi.Quotient.EndoScalar.argument (F := F)).constraints gEnv),
+          * alphaCombo α ((Kimchi.Lift.Gate.EndoScalar.argument (F := F)).constraints gEnv),
           ← gateTarget "endoScalar") ]
     let gateReport := String.intercalate ", " (gates.map fun (name, mine, target) =>
       s!"{name}: {if mine = target then "✓" else "✗"}")

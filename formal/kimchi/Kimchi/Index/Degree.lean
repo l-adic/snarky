@@ -42,7 +42,8 @@ within the heartbeat budget. The headline family/aggregate/`t·Z_H` bounds reduc
 
 namespace Kimchi.Index
 
-open Polynomial Kimchi.Quotient
+open Polynomial Kimchi.Lift
+open Kimchi.Lift.Gate
 
 variable {F : Type*} [Field F] [DecidableEq F] {n : ℕ}
 
@@ -86,8 +87,8 @@ omit [DecidableEq F] in
 /-- **The permutation next-row shift does not raise degree.** Same `.comp (C ω * X)` shape
 as `shift`, so degree is preserved (`natDegree_comp_le`). -/
 private theorem shiftRow_natDegree_le {ω : F} (z : Polynomial F) :
-    (Kimchi.Quotient.Permutation.shiftRow ω z).natDegree ≤ z.natDegree := by
-  unfold Kimchi.Quotient.Permutation.shiftRow
+    (Kimchi.Permutation.shiftRow ω z).natDegree ≤ z.natDegree := by
+  unfold Kimchi.Permutation.shiftRow
   have h1 : (C ω * X).natDegree ≤ 1 :=
     le_trans (natDegree_C_mul_le ω X) (le_of_eq natDegree_X)
   calc (z.comp (C ω * X)).natDegree
@@ -290,7 +291,7 @@ private theorem generic_entry_le [NeZero n] (idx : Index F n)
     cell_le idx _
   have hq9 : (columnPoly idx.omega (fun j => idx.coeffTable j 9)).natDegree ≤ n - 1 :=
     cell_le idx _
-  simp only [Index.gateConstraints, genericArgument, genericCellMap, polyEnv,
+  simp only [Index.gateConstraints, Generic.argument, Generic.cellMap, polyEnv,
     Gate.Generic.constraints, List.mem_cons, List.not_mem_nil, or_false] at hE
   rcases hE with rfl | rfl <;> (compute_degree <;> omega)
 
@@ -491,7 +492,7 @@ private theorem gateMember_natDegree_le [NeZero n] (idx : Index F n)
       unfold degreeBound
       omega
 
-open Kimchi.Quotient.Permutation in
+open Kimchi.Permutation in
 /-- **Permutation-member bound.** Each of the three permutation constraints at the index's
 wiring data has `natDegree ≤ 9n` when the accumulator `z` has degree `< n`. Member `0` is
 `zkpm` (degree `≤ n` via `natDegree_prod_le` over `Ico (n−zkRows) n`, card `≤ n`) times a

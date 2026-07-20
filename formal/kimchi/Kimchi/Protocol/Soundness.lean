@@ -372,9 +372,9 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
   set m₂ : Multiset (F × F) :=
     Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
       ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
-        idx.shifts (Kimchi.Quotient.Permutation.restrictCells idx.wiringPerm
+        idx.shifts (Kimchi.Permutation.restrictCells idx.wiringPerm
               idx.wiringPerm_regionPreserving c).1
-          * idx.omega ^ ((Kimchi.Quotient.Permutation.restrictCells idx.wiringPerm
+          * idx.omega ^ ((Kimchi.Permutation.restrictCells idx.wiringPerm
               idx.wiringPerm_regionPreserving c).2 : ℕ)) with hm₂def
   -- both multisets range over `Fin 7 × Fin (n − zkRows)`, so each has `7 · (n − zkRows)`
   -- members
@@ -385,30 +385,30 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
     simp [Finset.card_univ, Fintype.card_prod, Fintype.card_fin]
   -- the extracted bad sets — quantified BEFORE the challenges, built from challenge-free
   -- REFERENCE-extracted data, each provably small; only THEN quantify over β/γ/α/t/ζ
-  refine ⟨Kimchi.Quotient.badBetas m₁ m₂, fun β => Kimchi.Quotient.badGammas m₁ m₂ β,
-    fun β γ => Kimchi.Quotient.badAlphas
+  refine ⟨Kimchi.GrandProduct.badBetas m₁ m₂, fun β => Kimchi.GrandProduct.badGammas m₁ m₂ β,
+    fun β γ => Kimchi.badAlphas
       (idx.fullFamily pub (extractTable idx.omega W) zg β γ) idx.omega n,
-    fun β γ α t => Kimchi.Quotient.badZetas
-      (Kimchi.Quotient.aggregate α
+    fun β γ α t => Kimchi.badZetas
+      (Kimchi.aggregate α
         (idx.fullFamily pub (extractTable idx.omega W) zg β γ)) t n,
     ⟨?_, ?_, ?_, ?_⟩, ?_⟩
   · -- anti-vacuity (β axis): `card_badBetas_le` bounds by `max |m₁| |m₂| = 7·(n − zkRows)`
-    refine le_trans (Kimchi.Quotient.card_badBetas_le m₁ m₂) ?_
+    refine le_trans (Kimchi.GrandProduct.card_badBetas_le m₁ m₂) ?_
     rw [hm₁def, hm₂def, hcard, hcard]
     exact le_of_eq (max_self _)
   · -- anti-vacuity (γ axis): `card_badGammas_le` bounds by `max |m₁| |m₂| = 7·(n − zkRows)`
     intro β
-    refine le_trans (Kimchi.Quotient.card_badGammas_le m₁ m₂ β) ?_
+    refine le_trans (Kimchi.GrandProduct.card_badGammas_le m₁ m₂ β) ?_
     rw [hm₁def, hm₂def, hcard, hcard]
     exact le_of_eq (max_self _)
   · -- anti-vacuity (α axis): `card_badAlphas_le` bounds the extracted bad set by `n · (K − 1)`
     intro β γ
-    exact Kimchi.Quotient.card_badAlphas_le
+    exact Kimchi.card_badAlphas_le
       (idx.fullFamily pub (extractTable idx.omega W) zg β γ) idx.omega n
   · -- anti-vacuity (ζ axis): `card_badZetas_le` bounds the extracted bad set by `degreeBound n`
     intro β γ α t ht
-    exact Kimchi.Quotient.card_badZetas_le
-      (Kimchi.Quotient.aggregate α
+    exact Kimchi.card_badZetas_le
+      (Kimchi.aggregate α
         (idx.fullFamily pub (extractTable idx.omega W) zg β γ)) t
       (Index.aggregate_natDegree_le idx pub (extractTable idx.omega W) zg hzdeg β γ α)
       (Index.t_zH_natDegree_le t ht)

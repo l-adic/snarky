@@ -1,9 +1,4 @@
-import Kimchi.Quotient.Generic
-import Kimchi.Quotient.Poseidon
-import Kimchi.Quotient.AddComplete
-import Kimchi.Quotient.VarBaseMul
-import Kimchi.Quotient.EndoMul
-import Kimchi.Quotient.EndoScalar
+import Kimchi.Lift
 
 /-!
 # The verifier's scalar side, in closed form
@@ -23,7 +18,8 @@ permutation argument holds the next three powers `α²¹, α²², α²³`.
 -/
 namespace Kimchi.Protocol.Linearization
 
-open Kimchi.Quotient
+open Kimchi.Lift
+open Kimchi.Lift.Gate
 
 variable {F : Type*} [Field F]
 
@@ -70,7 +66,7 @@ theorem alphaCombo_eq_sum_getD (α : F) :
 cell environment and weighted by its evaluated selector. Gates share the alpha pool, so
 every list starts at `α⁰`. -/
 def gateLinearization (endo α : F) (e : Evals F) : F :=
-  e.genericSelector * alphaCombo α ((genericArgument (F := F)).constraints (evalEnv e))
+  e.genericSelector * alphaCombo α ((Generic.argument (F := F)).constraints (evalEnv e))
     + e.poseidonSelector
       * alphaCombo α ((Poseidon.argument (F := F)).constraints (evalEnv e))
     + e.completeAddSelector

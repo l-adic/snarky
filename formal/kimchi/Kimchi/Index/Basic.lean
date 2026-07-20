@@ -1,4 +1,4 @@
-import Kimchi.Quotient.Wiring
+import Kimchi.Permutation.Wiring
 
 /-!
 # The kimchi index: the circuit as data
@@ -11,7 +11,7 @@ zero-knowledge and public-input row counts. The index carries its laws: a value 
 `Index F n` is wellformed by construction (primitive generator, coset shifts, bounded
 row regions, a region-preserving bijective wiring), in the manner of `SWPoint`. On
 concrete data every law is decidable — the generator and shift conditions through the
-certificates of `Kimchi/Quotient/Wiring.lean`, the rest by `Fintype` instances — so
+certificates of `Kimchi/Permutation/Wiring.lean`, the rest by `Fintype` instances — so
 parsers construct indices by deciding, never by trusting.
 
 **One stored representation.** The table is `Fin`-indexed data; the satisfiability
@@ -41,7 +41,7 @@ rows). Flagged optional gates (range check, foreign field, lookups) are out of s
 
 namespace Kimchi.Index
 
-open Polynomial Kimchi.Quotient Kimchi.Quotient.Permutation
+open Polynomial Kimchi.Permutation
 
 /-- The modeled gate types: the six formalized gates and the constraint-free `zero`. -/
 inductive GateType where
@@ -120,8 +120,7 @@ structure _root_.Kimchi.Index (F : Type*) [Field F] (n : ℕ) where
   last unmasked row would have the first masked row in its footprint. With
   `masked_identity`, `public_le`, and `masked_zero`, this closes the last read edge
   into the mask — the constraint system's whole footprint is the unmasked region,
-  which is what makes `Satisfies` depend only on the unmasked rows
-  (`satisfies_congr_unmasked`). -/
+  so `Satisfies` depends only on the unmasked rows. -/
   masked_boundary : ∀ i : Fin n, (i : ℕ) + 1 = n - zkRows →
     (gates i).typ.twoRow = false
 
@@ -156,11 +155,6 @@ def unmaskedEnd (idx : Index F n) : Fin n :=
 /-- The selector column of a gate type: the 0/1 indicator over the rows. -/
 def selectorRow (idx : Index F n) (g : GateType) : Fin n → F :=
   fun i => if (idx.gates i).typ = g then 1 else 0
-
-theorem selectorRow_boolean (idx : Index F n) (g : GateType) (i : Fin n) :
-    idx.selectorRow g i = 0 ∨ idx.selectorRow g i = 1 := by
-  unfold selectorRow
-  split <;> simp
 
 /-- The `c`-th coefficient column over the rows. -/
 def coeffRow (idx : Index F n) (c : Fin 15) : Fin n → F :=

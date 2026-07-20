@@ -3,7 +3,7 @@ import Kimchi.Verifier.Kimchi
 import Bulletproof.Reflection
 import Kimchi.Protocol.Correspond
 import Kimchi.Protocol.Equation
-import Kimchi.Quotient.Permutation
+import Kimchi.Permutation.Permutation
 
 /-!
 # Kimchi verifier reflection: `kimchiVerify = true` ⟹ a well-formed `ReflectedRun`
@@ -304,7 +304,7 @@ theorem kimchiVerify_reflects (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiPr
 
 section Barycentric
 
-open Kimchi.Quotient
+open Kimchi.Lift
 
 /-- **The Lagrange basis off the domain**: for `ζ` with `ζⁿ ≠ 1`,
 `Lⱼ(ζ) = ωʲ·(ζⁿ − 1) / (n·(ζ − ωʲ))` — the barycentric summand. Project-local: evaluates

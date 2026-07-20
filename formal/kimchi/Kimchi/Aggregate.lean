@@ -1,4 +1,4 @@
-import Kimchi.Quotient.Domain
+import Kimchi.Domain
 
 /-!
 # α-aggregation and constraint separation
@@ -26,7 +26,7 @@ separation and is standard.
   across the individual constraint polynomials.
 -/
 
-namespace Kimchi.Quotient
+namespace Kimchi
 
 open Polynomial
 
@@ -41,4 +41,4 @@ noncomputable def aggregate (α : F) (E : Fin k → Polynomial F) : Polynomial F
   ∑ c : Fin k, α ^ (c : ℕ) • E c
 
 
-end Kimchi.Quotient
+end Kimchi
