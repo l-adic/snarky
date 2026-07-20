@@ -56,4 +56,5 @@ runs:
         fi
         # Build every library across the workspace packages: typechecks every proof
         # and runs the `#eval`s (Kimchi, Snarky, pasta, poseidon, bulletproof-pcs).
-        lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture
+        lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture \
+          KimchiFixture

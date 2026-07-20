@@ -36,7 +36,7 @@ is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakef
 | `pasta/` | `Pasta` | the Pasta curve trust base: the generic EC order/shape sugar, the GLV constants, the **Hasse/CM axioms** and derived orders, point-group module instances, the wire scalar-shift algebra (`Pasta.Shifted`) |
 | `poseidon/` | `Poseidon`, `FixtureKit` | the Poseidon permutation + duplex sponge over both Pasta base fields, the `FqSponge` consumer layer, SvdW map-to-curve; plus the shared JSON-fixture/trace kit. Own fixtures + check scripts (`poseidon/scripts/`) |
 | `bulletproof-pcs/` | `Bulletproof` | the IPA polynomial commitment: abstract scheme + soundness, the executable Pasta wire verifier (Poseidon-driven), the **`poseidon_fiat_shamir_*` axioms** + `ipa{Vesta,Pallas}_sound`, IPA fixtures + check script |
-| `kimchi/` | `Kimchi` | the kimchi protocol: gates/circuits (arithmetization), `Quotient/` (PIOP), `Index/`, the kimchi verifier + linearization + soundness capstones |
+| `kimchi/` | `Kimchi`, `KimchiFixture` | the kimchi protocol: gates (arithmetization), `Quotient/` (PIOP), `Index/`, `Protocol/` (the ideal protocol + soundness), `Verifier/` (the executable verifier + capstones); plus the fixture-decoding lib, kept out of `Kimchi` |
 | `snarky/` | `Snarky` | the deep-embedded circuit-DSL port + its `Snarky.Kimchi.*` bridge; sits ON TOP (requires kimchi); own axiom gate (`snarky/scripts/check_axioms.sh`) |
 
 No package is privileged: `formal/` itself is a pure aggregator workspace (its lakefile
@@ -72,8 +72,12 @@ Above the gate stack, the library has grown four further trees:
 
 - **`Kimchi/Quotient/`** — the vanishing-argument layer (domain, divisibility engine, the
   `Argument`/`ArgumentEnv` per-gate lifts, grand-product core).
-- **`Kimchi/Fixture/` + `Kimchi/Verifier/`** — the kimchi-proof JSON decoders and the
-  executable kimchi verifier, its reflection, and the soundness capstones.
+- **`Kimchi/Verifier/`** — the executable kimchi verifier, its reflection, and the
+  soundness capstones. The kimchi-proof JSON decoders live in `kimchi/KimchiFixture/`,
+  its OWN library (`KimchiFixture`) sitting beside the `Kimchi/` tree, deliberately NOT
+  part of `Kimchi`: checking
+  against recorded data is not part of the development. Same split as `FixtureKit`
+  (poseidon) and `BulletproofFixture` (bulletproof-pcs). Scripts import it directly.
 - The IPA commitment lives in the `bulletproof-pcs` package (`Bulletproof.*`), the sponge
   in the `poseidon` package (`Poseidon.*`); see the package table above.
 
@@ -246,9 +250,12 @@ kimchi/scripts/check_perm_fixture.sh         # permutation argument row semantic
 kimchi/scripts/check_index_fixture.sh        # index model: build-by-decision, derived columns, satisfiability
 ```
 
-(Every package-local check runs standalone from its package dir, or from `formal/` with
-its `*_FIXTURES_DIR` env var pointing at the package's fixtures — that is how CI invokes
-them all, sharing the aggregator workspace.)
+(Every package-local check reads its data through an env var whose **default is relative
+to the package directory** — `KIMCHI_FIXTURES_DIR`, `POSEIDON_FIXTURES_DIR`,
+`BULLETPROOF_FIXTURES_DIR`, and `KIMCHI_PS_RESULTS_DIR` — so each runs standalone from
+its package dir with no setup, or from `formal/` by setting that variable, which is how
+CI invokes them all, sharing the aggregator workspace. Keep new checks on this
+convention: a package-relative default, overridable by env var.)
 
 New trace checks build on `FixtureKit.Parse` (element decoders) and
 `FixtureKit.Trace` (the cases-x-ops driver, both in the `poseidon` package): supply an

@@ -1,4 +1,4 @@
-import Kimchi.Fixture.PS
+import KimchiFixture.PS
 
 /-! Check every witness-carrying PureScript harness result against the index model:
 scan `circuits/results/*.json`, ingest each comparison's `purescript` side through
@@ -11,10 +11,14 @@ no witnesses. -/
 
 open Lean Kimchi.Index Kimchi.Fixture.PS CompElliptic.Fields.Pasta
 
+/-- Where the harness results live. As with every other check in the workspace, the
+default is relative to the *package* directory, and the env var overrides it (which is
+how it is invoked from `formal/`). -/
 def resultsDir : IO System.FilePath := do
   match (← IO.getEnv "KIMCHI_PS_RESULTS_DIR") with
   | some d => return d
-  | none   => return ".." / "packages" / "pickles-circuit-diffs" / "circuits" / "results"
+  | none   =>
+    return ".." / ".." / "packages" / "pickles-circuit-diffs" / "circuits" / "results"
 
 /-- The checks for one ingested instance, named for the report. `none` = no target. -/
 def checks (inst : Instance) : List (String × Option Bool) :=

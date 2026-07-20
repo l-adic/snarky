@@ -12,7 +12,7 @@ Decoders for the JSON the PureScript circuit-diff harness writes to
 carries the compiled gate list and, when the harness ran witness generation, a solved
 witness (`witness`/`publicInputs`, 32-byte little-endian hex; gate coefficients are the
 comparison format's signed decimals). This is the PureScript sibling of the proof-systems
-decoders in `Kimchi.Fixture` (`Fixture/Parse.lean`) — the target model is shared, only
+decoders alongside it — the target model is shared, only
 the element encodings differ, so the decoders here compose over the same combinators.
 
 The dump carries no domain data, so ingestion synthesizes it and lets `Index.build?`
