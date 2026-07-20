@@ -160,7 +160,7 @@ def KimchiVK.frSpec {C : Ipa.CommitmentCurve} (vk : KimchiVK C) :
 
 /-- The fr-sponge digest (`DefaultFrSponge::digest`, kimchi/src/plonk_sponge.rs): the
 plain first squeeze — same field, no cast. -/
-def frDigest (sp : FqSponge.Spec C.scalar C.scalar) (s : FqSponge.S C.scalar) :
+private def frDigest (sp : FqSponge.Spec C.scalar C.scalar) (s : FqSponge.S C.scalar) :
     C.ScalarField :=
   (challengeFq sp s).1
 
@@ -168,7 +168,7 @@ def frDigest (sp : FqSponge.Spec C.scalar C.scalar) (s : FqSponge.S C.scalar) :
 element and cast it to the scalar field by `from_bigint`, which returns **zero when the
 value does not fit** — not a modular reduction. The state is consumed (production takes
 `mut self`); the caller keeps its pre-digest copy. -/
-def fqDigest (s : FqSponge.S C.base) : C.ScalarField :=
+private def fqDigest (s : FqSponge.S C.base) : C.ScalarField :=
   let (x, _) := challengeFq C.sponge s
   if x.val < C.scalar then ((x.val : ℕ) : C.ScalarField) else 0
 
@@ -417,13 +417,14 @@ namespace Kimchi.Verifier.KimchiVesta
 
 open CompElliptic.Fields.Pasta Poseidon Kimchi.Verifier
 
+abbrev Proof := KimchiProof IpaVesta.curve
+abbrev VK := KimchiVK IpaVesta.curve
+
 /-- The Vesta-side fr-sponge Poseidon parameters: the scalar field is `Fp`, so the
 production `G::sponge_params()` is the `fp_kimchi` table. The fixture decoder pins
 `KimchiVK.frParams` to this value. -/
 def frParams : Params Fp := fpParams
 
-abbrev Proof := KimchiProof IpaVesta.curve
-abbrev VK := KimchiVK IpaVesta.curve
 
 def verify : Bulletproof.SRS IpaVesta.Point → VK → Proof → Array Fp → Bool :=
   kimchiVerify IpaVesta.curve
@@ -434,13 +435,14 @@ namespace Kimchi.Verifier.KimchiPallas
 
 open CompElliptic.Fields.Pasta Poseidon Kimchi.Verifier
 
+abbrev Proof := KimchiProof IpaPallas.curve
+abbrev VK := KimchiVK IpaPallas.curve
+
 /-- The Pallas-side fr-sponge Poseidon parameters: the scalar field is `Fq`, so the
 production `G::sponge_params()` is the `fq_kimchi` table. The fixture decoder pins
 `KimchiVK.frParams` to this value. -/
 def frParams : Params Fq := fqParams
 
-abbrev Proof := KimchiProof IpaPallas.curve
-abbrev VK := KimchiVK IpaPallas.curve
 
 def verify : Bulletproof.SRS IpaPallas.Point → VK → Proof → Array Fq → Bool :=
   kimchiVerify IpaPallas.curve

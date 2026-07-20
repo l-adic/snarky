@@ -74,12 +74,6 @@ Kimchi.dvd_separation
 Kimchi.Gate.Poseidon.sound
 Kimchi.Gate.Poseidon.complete
 
--- Kimchi verifier reflection (trust-free): the deployed `kimchiVerify` code path read into a
--- well-formed `ReflectedRun`, and the barycentric public-evaluation identity the verifier
--- computes shown equal to the interpolant form. Foundations for the executable soundness capstone.
-Kimchi.Verifier.kimchiVerify_reflects
-Kimchi.Verifier.barycentricPubEval_eq
-
 -- The arithmetization interface: satisfiability characterized by divisibility of the aggregate
 -- family. Gated by `scripts/check_axioms.lean`.
 Kimchi.Index.satisfies_iff_fullFamily_dvd
@@ -123,18 +117,6 @@ Kimchi.Verifier.kimchiProof_sound_algebraic
 -- gone from the statement. Axiom set unchanged from the algebraic roots above (the ft opening,
 -- FiatShamirTreeB, and DL-binding remain hypotheses; still MINUS poseidon_fiat_shamir).
 Kimchi.Verifier.kimchiProof_sound_algebraic_ft
-
--- The FS-reflection ft opening (PART 1 of the deployed-run discharge): the ft commitment is slot 1
--- of the run's own accepted 45-row batch, so its opening at ζ to `runFtEval0` is DERIVED from a
--- genuine `verify = true` — `ipa_soundnessA` + the general-arity `eval_pins_of_opening` at that
--- slot. `ft_opening_of_reflected` is axiom-free (the transcript tree is a hypothesis); the curve
--- wrappers discharge it via the new `kimchi_fiat_shamir_{vesta,pallas}` axiom (warm reflected run)
--- + `kimchiVerify_reflects`, so their closure is base + that axiom + CompElliptic (no
--- poseidon FS, no eigen). Deferred follow-on: reconcile the 45-row batch with `batchC` to feed
--- `kimchiProof_sound_algebraic_ft` and reach a full run-level residue-free `Satisfies` root.
-Kimchi.Verifier.ft_opening_of_reflected
-Kimchi.Verifier.ft_opening_of_reflected_vesta
-Kimchi.Verifier.ft_opening_of_reflected_pallas
 
 -- THE TERMINAL THEOREM — AGM soundness of the deployed kimchi verifier. From a genuine
 -- `verify = true`, for an algebraic prover (SRS-basis representations of the run's 45 batch rows

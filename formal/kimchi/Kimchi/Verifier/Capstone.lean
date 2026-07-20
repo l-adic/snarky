@@ -5,7 +5,7 @@ import Bulletproof.Reflection
 import Kimchi.Verifier.Reflect
 
 /-!
-# The concrete Fiat–Shamir capstones (1.3b) and the run-level finale (1.3c)
+# The concrete Fiat–Shamir capstones and the run-level finale
 
 `Kimchi/Protocol/Soundness.lean` proves the idealized soundness core `kimchiProof_sound`:
 from DL-binding, the verifier-key correspondence, and an accepting REFERENCE transcript
@@ -18,7 +18,7 @@ assumptions about the key and the group, not transcript data. See the preamble o
 why binding is a hypothesis, and how `VKCorresponds` is discharged).
 
 This module instantiates that core at the deployed Pasta verifier: the **concrete,
-Fiat–Shamir-instantiated capstones** (capstone 1.3b) `kimchiVesta_sound` /
+Fiat–Shamir-instantiated capstones** `kimchiVesta_sound` /
 `kimchiPallas_sound`, stated over the wire verifier key (through `KimchiVK.comms`) and
 the wire public-input array (through `pubView`). The trust story, in three strata:
 
@@ -45,7 +45,7 @@ the wire public-input array (through `pubView`). The trust story, in three strat
   — their conclusions byte-identical to its (mod the stated wire-view instantiation).
 
 Below the concrete capstones this module ends at the **run-level corollaries**
-(capstone 1.3c, the finale): `kimchiVesta_run_sound` / `kimchiPallas_run_sound`, the
+(the finale): `kimchiVesta_run_sound` / `kimchiPallas_run_sound`, the
 capstones' consumer implication INSTANTIATED at a real accepted run's own sponge
 challenges — the literal `runOracles` fields of `Kimchi/Verifier/Reflect.lean` — over
 the run's own commitments (the witness view `fun i => p.wComm.getD i 0`, the
@@ -130,7 +130,7 @@ open Polynomial Bulletproof Kimchi.Index Kimchi.Protocol.Linearization
 abstract soundness layer speaks about, read off the key's arrays (`getD` at the checked
 sizes — the shape guards of `kimchiVerify` pin `sigmaComm` to 7 and `coefficientsComm`
 to 15 entries). This is the view through which `VKCorresponds` is stated for a wire
-key. Project-local: the glue between the wire `KimchiVK` and the abstract capstone. -/
+key. The glue between the wire `KimchiVK` and the abstract capstone. -/
 def KimchiVK.comms {C : Ipa.CommitmentCurve} (vk : KimchiVK C) : IndexComms C.Point where
   sigma i := vk.sigmaComm.getD (i : ℕ) 0
   coefficients c := vk.coefficientsComm.getD (c : ℕ) 0
@@ -143,8 +143,8 @@ def KimchiVK.comms {C : Ipa.CommitmentCurve} (vk : KimchiVK C) : IndexComms C.Po
 
 /-- The public-input array as the `Fin idx.publicCount`-indexed function the circuit
 model consumes (`getD`, total; the capstones pin `pub.size = idx.publicCount`, so the
-view reads only genuine entries). Project-local: the wire-to-abstract public view. -/
-def pubView {F : Type*} [Field F] {n : ℕ} (idx : Index F n) (pub : Array F) :
+view reads only genuine entries). The wire-to-abstract public view. -/
+private def pubView {F : Type*} [Field F] {n : ℕ} (idx : Index F n) (pub : Array F) :
     Fin idx.publicCount → F :=
   fun i => pub.getD (i : ℕ) 0
 
@@ -162,9 +162,9 @@ evaluation matrix carrying the abstract claims (`es`/`hes`), the two eval points
 below derive each node's `FiatShamirTreeB` family from the per-node IPA axiom
 (`poseidon_fiat_shamir_*`), so the grid carries no Fiat–Shamir-tree content of its own.
 Generic over the curve bundle `C` (`Ipa.verify C` is curve-generic); only the capstones
-are Pasta-specific. Project-local: the transcript data the capstones feed to
+are Pasta-specific. The transcript data the capstones feed to
 `kimchiProof_sound`. -/
-structure KimchiBatchAcc (C : Ipa.CommitmentCurve) [Module C.ScalarField C.Point]
+private structure KimchiBatchAcc (C : Ipa.CommitmentCurve) [Module C.ScalarField C.Point]
     {n : ℕ} [NeZero n] (σ : SRS C.Point) (idx : Index C.ScalarField n)
     (comms : IndexComms C.Point) (wC : Fin 15 → C.Point) where
   /-- The accumulator (`z`) commitment of the reference transcript. -/
@@ -301,8 +301,8 @@ implication of `kimchiProof_sound` — byte-identical, at the wire views
 data to `kimchiProof_sound`, deriving each node's `FiatShamirTreeB` from the per-node
 axiom `poseidon_fiat_shamir_vesta`; that axiom is the only one consumed, once
 per grid node (plus the point-count-backed `Module` instance — see the module preamble).
-Project-local: the Vesta root of the concrete composition. -/
-theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
+The Vesta root of the concrete composition. -/
+private theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
     (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
     (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
@@ -343,8 +343,8 @@ theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
 /-- **Soundness of the deployed Pallas kimchi verifier.** The Pallas-side twin of
 `kimchiVesta_sound`: the grid's transcript data fed to `kimchiProof_sound`; the only axiom
 consumed is `poseidon_fiat_shamir_pallas`, once per grid node (plus the point-count-backed
-`Module` instance). Project-local: the Pallas root of the concrete composition. -/
-theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
+`Module` instance). The Pallas root of the concrete composition. -/
+private theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
     (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
     (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
@@ -382,7 +382,7 @@ theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
     (fun i j => T.nodeFS i j (poseidon_fiat_shamir_pallas σ (T.nodeInput i j)))
     (fun i j => T.hacc i j)
 
-/-! ## The run-level corollaries (capstone 1.3c — the finale) -/
+/-! ## The run-level corollaries — the finale -/
 
 /-- **Run-level soundness of the deployed Vesta kimchi verifier** (the finale):
 `kimchiVesta_sound`'s consumer implication instantiated at a real accepted run's own
@@ -403,7 +403,7 @@ posit. It stays an explicit hypothesis; no axiom manufactures it.
 
 The derivation quantifies over arbitrary `wC`, so the run's own `verify = true` is not a
 hypothesis: the grids `T`/`T'` carry the deployed acceptance node by node, and the
-conclusion is stated at the run's own `runOracles` challenges. Project-local: the Vesta
+conclusion is stated at the run's own `runOracles` challenges. The Vesta
 run root. -/
 theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
     (p : KimchiVesta.Proof) (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
@@ -475,7 +475,7 @@ theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
 twin of `kimchiVesta_run_sound`, over `Fq`/`IpaPallas`, its Fiat–Shamir trees from
 `poseidon_fiat_shamir_pallas`. See the Vesta docstring for the trust story — in
 particular the quotient residue `(t, hdeg, heq)`, the one antecedent not discharged
-from deployed acceptances. Project-local: the Pallas run root. -/
+from deployed acceptances. The Pallas run root. -/
 theorem kimchiPallas_run_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
     (p : KimchiPallas.Proof) (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
     (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
@@ -725,7 +725,7 @@ combination-challenge pair `(ξ, r)`, guarded by the counted sets `badXi` (≤ 8
 quotient identity `hteq` (with `t` and its degree bound) REMAINS a hypothesis — the same
 residue as the run-level capstones; dissolving it from the `tComm` representation via
 the Maller relation is the follow-on "algebraic quotient" step. Model note: this theorem
-quantifies over provers that SUPPLY representations (the AGM idiom). Project-local: the
+quantifies over provers that SUPPLY representations (the AGM idiom). the
 general AGM root. -/
 theorem kimchiProof_sound_algebraic {F G : Type*} [Field F] [AddCommGroup G]
     [Module F G] {n : ℕ} [NeZero n] [DecidableEq F] (σ : SRS G)
@@ -784,10 +784,10 @@ theorem kimchiProof_sound_algebraic {F G : Type*} [Field F] [AddCommGroup G]
 `tComm` chunk rows represent: chunk `j` contributes its row polynomial shifted by
 `X^(j·2^k)`, exactly kimchi's `t = ∑ⱼ X^(j·n) · tⱼ` chunking (`Chunk.lean`'s
 `assemblePoly` at width `2^k`, phrased over `rowPoly` so the capstone statements read at
-the committed vectors directly). Project-local: the named `t` of the residue-free
+the committed vectors directly). The named `t` of the residue-free
 capstones — the `badZ` antecedent and the derived Maller identity are stated against THIS
 polynomial, never an opaque existential witness. -/
-noncomputable def ftChunkAssembly {F : Type*} [Field F] (k : ℕ)
+private noncomputable def ftChunkAssembly {F : Type*} [Field F] (k : ℕ)
     (aT : Fin 7 → Fin (2 ^ k) → F) : Polynomial F :=
   ∑ j : Fin 7, rowPoly (aT j) * Polynomial.X ^ ((j : ℕ) * 2 ^ k)
 
@@ -923,7 +923,7 @@ satisfies every antecedent — `hCσ6` is discharged by `hvk` (`VKCorresponds` i
 and the honest chunk vectors make `ftChunkAssembly` the real quotient. The six bad-set
 bounds and the FS/acceptance/`Satisfies` consumer tail are verbatim
 `kimchiProof_sound_algebraic`'s; `ζ ^ n ≠ 1` is the ft non-degeneracy pin.
-Project-local: the residue-free AGM root. -/
+The residue-free AGM root. -/
 theorem kimchiProof_sound_algebraic_ft {F G : Type*} [Field F] [AddCommGroup G]
     [Module F G] {n : ℕ} [NeZero n] [DecidableEq F] (σ : SRS G)
     (idx : Index F n) (hk : 2 ^ σ.k = n)
@@ -1003,7 +1003,7 @@ boundary: ONLY the ft opening — reconciling the reflected 45-row layout with t
 /-- `getElem!` distributes over an append when the index lands in the left part —
 the `getElem!` companion of `Array.getElem_append_left`, threading the three
 `getElem!`-spelled batch-array reads below through `ReflectedRun`'s append-shaped
-`comm_eq`/`evals_eq`. Project-local glue. -/
+`comm_eq`/`evals_eq`. -/
 private theorem getBang_append_left {α : Type*} [Inhabited α] (as bs : Array α)
     (i : ℕ) (h : i < as.size) : (as ++ bs)[i]! = as[i]! := by
   rw [getElem!_pos (as ++ bs) i (by rw [Array.size_append]; omega),
@@ -1051,7 +1051,7 @@ run's own `ζ` is the computed claim `runFtEval0`. Route: `ipa_soundnessA` extra
 batch-opening witness from the run's acceptance (`ReflectedRun.accepts`);
 `eval_pins_of_opening` (at the run's 45-row arity) pins every claimed evaluation to its
 represented row; slot `(1, 0)` — the ft row (`comm_eq`/`evals_eq`) at the first batch
-point `ζ` — reads off both facts. Project-local: the FS-reflection bridge the curve
+point `ζ` — reads off both facts. The FS-reflection bridge the curve
 wrappers instantiate. -/
 theorem ft_opening_of_reflected {C : Ipa.CommitmentCurve} [Module C.ScalarField C.Point]
     (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C) (pub : Array C.ScalarField)
@@ -1118,7 +1118,7 @@ representations of the run's own batch rows, and good combination challenges yie
 ft opening — `runFtComm` opens to a vector whose evaluation at the run's own `ζ` is
 `runFtEval0`. The run is reflected trust-free (`kimchiVerify_reflects`); the transcript
 tree is `kimchi_fiat_shamir_vesta` at the run's own warm data — the sole axiom
-consumed. Project-local: the Vesta FS-reflection root. -/
+consumed. The Vesta FS-reflection root. -/
 theorem ft_opening_of_reflected_vesta (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
     (p : KimchiVesta.Proof) (pub : Array Fp)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
@@ -1146,7 +1146,7 @@ theorem ft_opening_of_reflected_vesta (σ : SRS IpaVesta.Point) (vk : KimchiVest
 
 /-- **The ft opening of the deployed Pallas kimchi verifier.** The Pallas-side twin of
 `ft_opening_of_reflected_vesta`, over `Fq`/`IpaPallas` — see the Vesta docstring for
-the trust story. Project-local: the Pallas FS-reflection root. -/
+the trust story. The Pallas FS-reflection root. -/
 theorem ft_opening_of_reflected_pallas (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
     (p : KimchiPallas.Proof) (pub : Array Fq)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
@@ -1192,7 +1192,7 @@ assembly `ftChunkAssembly σ.k aT` of the prover-supplied `tComm`-chunk
 representations, and the ft/Maller identity is derived from the part-1 ft opening. -/
 
 /-- The verifier's squaring ladder computes the power: `powPow2 x k = x ^ 2 ^ k`.
-Project-local: the bridge between the executable `runZetaN` and the abstract `ζ ^ n`
+The bridge between the executable `runZetaN` and the abstract `ζ ^ n`
 the soundness layer speaks. -/
 private theorem powPow2_eq {F : Type*} [Field F] (x : F) (k : ℕ) :
     powPow2 x k = x ^ 2 ^ k := by
@@ -1389,7 +1389,7 @@ private theorem pubDotFoldl_aux {F : Type*} [Field F] (ω pt : F) (l : List F)
     rw [show pw * ω * ω ^ (i : ℕ) = pw * ω ^ ((i : ℕ) + 1) from by rw [pow_succ]; ring]
 
 /-- The verifier's `pubDot` fold is the barycentric sum
-`∑ᵢ −(pt − ωⁱ)⁻¹ · pubᵢ · ωⁱ`. Project-local: the fold→sum bridge for
+`∑ᵢ −(pt − ωⁱ)⁻¹ · pubᵢ · ωⁱ`. The fold→sum bridge for
 `runPubEvals_fst_eq`. -/
 private theorem pubDot_eq_sum {F : Type*} [Field F] (ω pt : F) (pub : Array F) :
     pubDot ω pt pub
@@ -1438,7 +1438,7 @@ private theorem runPubEvals_fst_eq {C : Ipa.CommitmentCurve} (σ : SRS C.Point)
     simp [Array.getD, i.isLt]
 
 /-- `getElem!` distributes over an append when the index lands in the right part — the
-right-hand companion of `getBang_append_left`. Project-local glue. -/
+right-hand companion of `getBang_append_left`. -/
 private theorem getBang_append_right {α : Type*} [Inhabited α] (as bs : Array α)
     (i : ℕ) (h1 : as.size ≤ i) (h2 : i - as.size < bs.size) :
     (as ++ bs)[i]! = bs[i - as.size]! := by
@@ -1700,7 +1700,7 @@ commitments). Axioms consumed: `kimchi_fiat_shamir_vesta` (the Fiat–Shamir ass
 at the run's own transcript) plus the point-count-backed `Module` instance — no
 `poseidon_fiat_shamir`, no grid. Bad-set bounds verbatim `of_openings`'; the
 conclusion is guarded by the run challenges avoiding them, the two `ζ` degeneracies,
-and the ft non-degeneracy `ζ ^ n ≠ 1`. Project-local: the Vesta run-level
+and the ft non-degeneracy `ζ ^ n ≠ 1`. The Vesta run-level
 residue-free root. -/
 theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point)
     (vk : KimchiVesta.VK) (p : KimchiVesta.Proof) (pub : Array Fp)
@@ -1836,7 +1836,7 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point)
 /-- **The run-level residue-free root (Pallas).** The Pallas-side twin of
 `kimchiVesta_run_sound_algebraic_ft`, over `Fq`/`IpaPallas`, its Fiat–Shamir
 assumption `kimchi_fiat_shamir_pallas` at the run's own transcript — see the Vesta
-docstring for the full trust accounting. Project-local: the Pallas run-level
+docstring for the full trust accounting. The Pallas run-level
 residue-free root. -/
 theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point)
     (vk : KimchiPallas.VK) (p : KimchiPallas.Proof) (pub : Array Fq)
