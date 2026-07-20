@@ -120,8 +120,7 @@ structure _root_.Kimchi.Index (F : Type*) [Field F] (n : ℕ) where
   last unmasked row would have the first masked row in its footprint. With
   `masked_identity`, `public_le`, and `masked_zero`, this closes the last read edge
   into the mask — the constraint system's whole footprint is the unmasked region,
-  which is what makes `Satisfies` depend only on the unmasked rows
-  (`satisfies_congr_unmasked`). -/
+  so `Satisfies` depends only on the unmasked rows. -/
   masked_boundary : ∀ i : Fin n, (i : ℕ) + 1 = n - zkRows →
     (gates i).typ.twoRow = false
 

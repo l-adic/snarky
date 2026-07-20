@@ -728,28 +728,6 @@ theorem fullFamily_dvd_of_satisfies (idx : Index F n) (pub : Fin idx.publicCount
     rw [idx.fullFamily_perm]
     exact hz j
 
-open Kimchi.Quotient.Permutation in
-omit [DecidableEq F] in
-/-- **Exact-quotient completeness.** In the shape of the one production check: the
-honest accumulator and, for every fold challenge, a quotient `t` with
-`aggregate α (family) = t · Z_H` — a *polynomial identity*, so the eval-check passes at
-every node, not merely at sampled ones. -/
-theorem exists_quotient_of_satisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
-    (wTab : Fin n → Fin 15 → F)
-    (hsat : Satisfies idx pub wTab) (β γ : F)
-    (hnd : Nondegenerate idx.omega idx.zkRows (idx.permWitnessPoly wTab) idx.shifts
-      idx.wiringPerm β γ) :
-    ∃ z : Polynomial F, ∀ a : F, ∃ t : Polynomial F,
-      aggregate a (idx.fullFamily pub wTab z β γ) = t * zH F n := by
-  obtain ⟨z, hz⟩ := idx.fullFamily_dvd_of_satisfies pub wTab hsat β γ hnd
-  refine ⟨z, fun a => ?_⟩
-  have hdvd : zH F n ∣ aggregate a (idx.fullFamily pub wTab z β γ) :=
-    Finset.dvd_sum fun c _ => by
-      rw [Polynomial.smul_eq_C_mul]
-      exact (hz c).mul_left _
-  obtain ⟨t, ht⟩ := hdvd
-  exact ⟨t, by rw [ht, mul_comm]⟩
-
 
 /-! ## Project-local Mathlib supplement — pigeonhole on an injective family -/
 
