@@ -250,38 +250,6 @@ theorem soundness_of_dvd {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0
   · simpa using eval_eq_one_of_boundary hω hn z _ (hdvd 1)
   · simpa using eval_eq_one_of_boundary hω hn z _ (hdvd 2)
   · exact fun j hj => step_of_aggregation hω hn zkRows z w σ shifts β γ (hdvd 0) hj
-
-/-- **Permutation quotient soundness.** Under the derandomized quotient-argument
-hypotheses for the three permutation constraints — a single aggregation challenge `α`
-outside `badAlphas` separating the aggregate, and a single good evaluation point `ζ` outside
-`badZetas` pinning the aggregate to a multiple of `Z_H` (the counting Schwartz–Zippel form) —
-the accumulator telescopes over the unmasked region. Routes through `soundness_of_dvd` at the
-separated divisibilities. -/
-theorem soundness [DecidableEq F] {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
-    {zkRows : ℕ} (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
-    (z : Polynomial F) (w σ : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (β γ : F)
-    (α : F)
-    (hα : α ∉ badAlphas (constraints ω zkRows z w σ shifts β γ
-      (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩) ω n)
-    (ζ : F)
-    (t : Polynomial F)
-    (hζ : ζ ∉ badZetas (aggregate α (constraints ω zkRows z w σ shifts β γ
-      (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)) t n)
-    (hcheck : (aggregate α (constraints ω zkRows z w σ shifts β γ
-        (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)).eval ζ
-      = (t * zH F n).eval ζ) :
-    ∏ j ∈ Finset.range (n - zkRows), (shiftSide w shifts β γ).eval (ω ^ j)
-      = ∏ j ∈ Finset.range (n - zkRows), (sigmaSide w σ β γ).eval (ω ^ j) := by
-  haveI : NeZero n := ⟨Nat.pos_iff_ne_zero.mp hn⟩
-  exact soundness_of_dvd hω hn hzk0 hzkn z w σ shifts β γ
-    (dvd_separation hω hn (constraints ω zkRows z w σ shifts β γ
-        (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩) α hα
-      (zH_dvd_of_eval (aggregate α (constraints ω zkRows z w σ shifts β γ
-        (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)) t ζ hζ hcheck))
-
-
-/-! ## Completeness: the honest accumulator -/
-
 /-- **Permutation completeness.** With nonvanishing σ-side row products (the
 nondegeneracy of `(β, γ)`) and agreeing grand products over the unmasked region, an
 accumulator exists whose three permutation constraints are all divisible by `Z_H`: the

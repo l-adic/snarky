@@ -106,49 +106,4 @@ theorem copy_soundness_of_dvd [DecidableEq F] {ω : F} {n : ℕ}
         refine Finset.prod_congr rfl fun i _ => ?_
         rw [hσ (i, j)]
         ring
-
-/-- **Copy soundness of the kimchi permutation argument.** As `copy_soundness_of_dvd`,
-with the divisibilities obtained from the derandomized quotient checks in
-**single-challenge counting Schwartz–Zippel form** (`dvd_of_evalCheck`): the prover
-supplies ONE aggregation challenge `α` (avoiding the proved-small bad set `badAlphas`) and
-ONE quotient `t`, at a single good permutation-challenge pair `(β, γ)`, and evaluates the
-quotient check at a single good challenge `ζ` outside the counting bad set
-`badZetas (aggregate α C) t n`. Conclusion unchanged. -/
-theorem copy_soundness [DecidableEq F] {ω : F} {n : ℕ}
-    (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
-    {zkRows : ℕ} (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
-    (w σpoly : Fin 7 → Polynomial F) (shifts : Fin 7 → F)
-    (σp : Equiv.Perm (Fin 7 × Fin (n - zkRows)))
-    (haddr : Function.Injective
-      (fun c : Fin 7 × Fin (n - zkRows) => shifts c.1 * ω ^ (c.2 : ℕ)))
-    (hσ : ∀ c : Fin 7 × Fin (n - zkRows),
-      (σpoly c.1).eval (ω ^ (c.2 : ℕ)) = shifts (σp c).1 * ω ^ ((σp c).2 : ℕ))
-    (β γ : F)
-    (hβ : β ∉ badBetas
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
-        ((w c.1).eval (ω ^ (c.2 : ℕ)), shifts c.1 * ω ^ (c.2 : ℕ)))
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
-        ((w c.1).eval (ω ^ (c.2 : ℕ)), shifts (σp c).1 * ω ^ ((σp c).2 : ℕ))))
-    (hγ : γ ∉ badGammas
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
-        ((w c.1).eval (ω ^ (c.2 : ℕ)), shifts c.1 * ω ^ (c.2 : ℕ)))
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - zkRows) =>
-        ((w c.1).eval (ω ^ (c.2 : ℕ)), shifts (σp c).1 * ω ^ ((σp c).2 : ℕ))) β)
-    (zg : Polynomial F)
-    (α : F)
-    (hα : α ∉ badAlphas (constraints ω zkRows zg w σpoly shifts
-      β γ (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩) ω n)
-    (t : Polynomial F)
-    (ζ : F)
-    (hζ : ζ ∉ badZetas (aggregate α (constraints ω zkRows zg w σpoly shifts
-      β γ (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)) t n)
-    (hcheck : (aggregate α (constraints ω zkRows zg w σpoly shifts
-        β γ (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩)).eval ζ
-      = (t * zH F n).eval ζ) :
-    ∀ c : Fin 7 × Fin (n - zkRows),
-      (w (σp c).1).eval (ω ^ ((σp c).2 : ℕ)) = (w c.1).eval (ω ^ (c.2 : ℕ)) :=
-  have : NeZero n := ⟨hn.ne'⟩
-  copy_soundness_of_dvd hω hn hzk0 hzkn w σpoly shifts σp haddr hσ β γ hβ hγ zg
-    (dvd_of_evalCheck hω _ α hα t ζ hζ hcheck)
-
 end Kimchi.Permutation
