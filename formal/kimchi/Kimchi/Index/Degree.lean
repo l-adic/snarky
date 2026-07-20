@@ -69,6 +69,7 @@ theorem columnPoly_natDegree_lt [NeZero n] {ω : F} (hω : IsPrimitiveRoot ω n)
   · rw [hp, natDegree_zero]; exact Nat.pos_of_neZero n
   · exact (natDegree_lt_iff_degree_lt hp).mpr hd
 
+omit [DecidableEq F] in
 /-- **The shift does not raise degree.** `shift ω p = p.comp (C ω * X)`, and post-composing
 with the degree-`≤ 1` linear rotation only lowers degree (`natDegree_comp_le`). -/
 private theorem shift_natDegree_le {ω : F} (p : Polynomial F) :
@@ -81,6 +82,7 @@ private theorem shift_natDegree_le {ω : F} (p : Polynomial F) :
     _ ≤ p.natDegree * 1 := by gcongr
     _ = p.natDegree := mul_one _
 
+omit [DecidableEq F] in
 /-- **The permutation next-row shift does not raise degree.** Same `.comp (C ω * X)` shape
 as `shift`, so degree is preserved (`natDegree_comp_le`). -/
 private theorem shiftRow_natDegree_le {ω : F} (z : Polynomial F) :
@@ -101,6 +103,7 @@ numerals `4`/`2` of the recoding). Rather than hand-unfold the eight levels, bou
 fold by induction on the list: a uniform per-entry bound `d` on both the seed and every
 `f x` survives the fold. -/
 
+omit [DecidableEq F] in
 /-- **A `mul · acc + f x` fold stays under a uniform degree bound** when `mul` is constant.
 If the seed and every `f x` have `natDegree ≤ d`, so does the fold — `mul · acc` preserves the
 bound (`natDegree_mul_le`, `mul.natDegree = 0`) and `+ f x` preserves it (`natDegree_add_le`).
@@ -121,6 +124,7 @@ private theorem foldl_linComb_natDegree_le {α : Type*} (mul : Polynomial F)
         _ ≤ d := max_le (le_trans natDegree_mul_le (by rw [hmul]; simpa using hinit)) hfx
     · intro y hy; exact hf y (by simp [hy])
 
+omit [DecidableEq F] in
 /-- **A `getD` slot of a degree-bounded list stays bounded.** In range it is a list member
 (discharged by the hypothesis); past the end it is the zero default (`natDegree 0 = 0`). -/
 private theorem getD_natDegree_le {L : List (Polynomial F)} {d : ℕ}
@@ -129,6 +133,7 @@ private theorem getD_natDegree_le {L : List (Polynomial F)} {d : ℕ}
   · rw [List.getD_eq_getElem _ _ hk]; exact h _ (List.getElem_mem hk)
   · rw [List.getD_eq_default _ _ hk, natDegree_zero]; exact Nat.zero_le d
 
+omit [DecidableEq F] in
 /-- **One VarBaseMul bit-block's four entries stay under `8·n`.** Every cell fed to
 `singleBitCons` has degree `≤ d`; the deepest entry (`xo`, cleared with `t`, `u`) reaches
 degree `6·d`, so `6·d ≤ 8·n` covers the block. Reused for all five chained blocks. -/
@@ -350,6 +355,7 @@ private theorem endoScalar_entry_le [NeZero n] (idx : Index F n)
     unfold Gate.EndoScalar.crumbPoly
     compute_degree <;> omega
 
+omit [DecidableEq F] in
 /-- **One Poseidon round-output component stays under `8·n`.** An MDS row `r + m₀·a⁷ +
 m₁·b⁷ + m₂·c⁷` over cells `≤ d` (constant MDS coefficients) reaches degree `7·d`, so the
 `state − round` entry is `≤ 8·n` once `7·d ≤ 8·n`. Reused for all 15 Poseidon entries. -/
@@ -609,6 +615,7 @@ theorem aggregate_natDegree_le (idx : Index F n) (pub : Fin idx.publicCount → 
   exact le_trans (natDegree_C_mul_le _ _)
     (fullFamily_natDegree_le idx pub wTab z hz β γ c)
 
+omit [DecidableEq F] [NeZero n] in
 /-- **The `htdeg` discharge.** With `t.natDegree < 7·n`, the exact quotient product
 `t · Z_H` fits under `degreeBound n`: `natDegree_mul_le` and `natDegree (zH F n) = n`
 (`zH = Xⁿ − 1`) give `(7n − 1) + n < 9n`. Independent of the index. -/

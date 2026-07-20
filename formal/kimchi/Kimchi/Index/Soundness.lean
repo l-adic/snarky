@@ -47,6 +47,7 @@ variable {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n]
 
 /-! ## Project-local Mathlib supplement — single-α Argument soundness -/
 
+omit [DecidableEq F] [NeZero n] in
 /-- A selector value of `1` names the row's gate type. -/
 theorem selectorRow_eq_one (idx : Index F n) {g : GateType} {i : Fin n}
     (htyp : (idx.gates i).typ = g) : idx.selectorRow g i = 1 := by
@@ -222,6 +223,7 @@ noncomputable def permWitnessPoly (idx : Index F n) (wTab : Fin n → Fin 15 →
     Fin 7 → Polynomial F :=
   fun col => columnPoly idx.omega (fun j => cellValue wTab (col, j))
 
+omit [DecidableEq F] [NeZero n] in
 theorem eval_permWitnessPoly (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     (col : Fin 7) (j : Fin n) :
     (idx.permWitnessPoly wTab col).eval (idx.omega ^ (j : ℕ)) = cellValue wTab (col, j) :=
