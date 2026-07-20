@@ -29,7 +29,7 @@ Source: kimchi `generic.rs` (module doc + `constraint_checks`, l.245–250):
 where the `cᵢ` are the coefficients (`q` here).
 -/
 
-namespace Kimchi.Quotient
+namespace Kimchi.Quotient.Gate.Generic
 
 open Polynomial
 
@@ -59,16 +59,16 @@ the other five gates: the gate row `Gate.Generic R` is assembled from the curren
 
 /-- **Generic cell map.** Assemble a `Gate.Generic R` from current-row cells `cur` (→ `w`) and
 coefficient cells `coeff` (→ `q`). -/
-def genericCellMap {R : Type*} (cur coeff : Fin 15 → R) : Gate.Generic R :=
+def cellMap {R : Type*} (cur coeff : Fin 15 → R) : Gate.Generic R :=
   ⟨coeff, cur⟩
 
 /-- **Generic `Argument` instance.** The gate's constraint list `Gate.Generic.constraints`
-read through `genericCellMap`; naturality is the gate module's `Generic.constraints_map` at
+read through `cellMap`; naturality is the gate module's `Generic.constraints_map` at
 the underlying ring hom. -/
-def genericArgument : Argument F where
-  constraints env := (genericCellMap env.witnessCurr env.coeff).constraints
+def argument : Argument F where
+  constraints env := (cellMap env.witnessCurr env.coeff).constraints
   constraints_map f env :=
-    Gate.Generic.constraints_map f.toRingHom (genericCellMap env.witnessCurr env.coeff)
+    Gate.Generic.constraints_map f.toRingHom (cellMap env.witnessCurr env.coeff)
 
 /-! ## The divisibility checkpoint
 
@@ -84,12 +84,12 @@ polynomials `W c = columnPoly (fun i => wTab i c)`,
 `Q c = columnPoly (fun i => qTab i c)`. Then both constraint polynomials are
 divisible by `Z_H` iff the double generic gate holds at every row.
 
-Specialization of `Argument.rows_iff_dvd` at the instance `genericArgument`:
+Specialization of `Argument.rows_iff_dvd` at the instance `argument`:
 unfolding the instance identifies the polynomial-environment constraint list
 with `[E₁, E₂]` and the row-environment one with the two cell equations of
 `Gate.Generic.Holds` (via `holds_iff`). Pure polynomial algebra — no
 probabilistic content here. -/
-theorem genericRows_iff_dvd (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
+theorem rows_iff_dvd (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     (wTab qTab : Fin n → Fin 15 → F) :
     (zH F n ∣
         genericE1 (fun c => columnPoly ω (fun i => qTab i c))
@@ -99,15 +99,15 @@ theorem genericRows_iff_dvd (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
           (fun c => columnPoly ω (fun i => wTab i c))) ↔
       ∀ i, (Gate.Generic.mk (qTab i) (wTab i)).Holds := by
   haveI : NeZero n := ⟨Nat.pos_iff_ne_zero.mp hn⟩
-  -- Route through the abstract `Argument` engine at the instance `genericArgument`.
-  have key := genericArgument.rows_iff_dvd hω wTab qTab
+  -- Route through the abstract `Argument` engine at the instance `argument`.
+  have key := argument.rows_iff_dvd hω wTab qTab
   -- Unfold the instance: the polynomial-environment constraint list is
   -- `[genericE1 Q W, genericE2 Q W]` and the row-environment one is `[c₁ i, c₂ i]`, the two
   -- entries of `Gate.Generic.Holds`.
-  simp only [genericArgument, polyEnv, rowEnv, genericCellMap,
+  simp only [argument, polyEnv, rowEnv, cellMap,
     Gate.Generic.constraints, List.forall_mem_cons, List.not_mem_nil, false_implies,
     forall_const, and_true] at key
   simp only [Gate.Generic.holds_iff]
   exact key
 
-end Kimchi.Quotient
+end Kimchi.Quotient.Gate.Generic

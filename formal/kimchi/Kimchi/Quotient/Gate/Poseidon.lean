@@ -37,7 +37,7 @@ sits on the next row; the round constants `rc` come from the coefficient row (`r
 * `soundness` — the quotient-argument soundness, specialization of `Argument.soundness`.
 -/
 
-namespace Kimchi.Quotient.Poseidon
+namespace Kimchi.Quotient.Gate.Poseidon
 
 open Polynomial Kimchi.Quotient
 
@@ -130,4 +130,4 @@ theorem soundness [NeZero n] [DecidableEq F] (hω : IsPrimitiveRoot ω n)
     ∀ i, sel i = 1 → Gate.Poseidon.Holds (rcRow qTab i) (rowWitness wTab i) :=
   argument.soundness hω wTab qTab sel hsel α hα t ζ hζ hcheck
 
-end Kimchi.Quotient.Poseidon
+end Kimchi.Quotient.Gate.Poseidon

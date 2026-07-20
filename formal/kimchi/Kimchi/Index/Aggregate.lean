@@ -36,6 +36,7 @@ per-gate divisibility from the summed members via selector row-disjointness
 namespace Kimchi.Index
 
 open Polynomial Kimchi.Quotient
+open Kimchi.Quotient.Gate
 
 
 variable {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n]
@@ -57,7 +58,7 @@ nothing. -/
 noncomputable def gateConstraints (idx : Index F n) (wTab : Fin n → Fin 15 → F) :
     GateType → List (Polynomial F)
   | .zero => []
-  | .generic => (genericArgument (F := F)).constraints
+  | .generic => (Generic.argument (F := F)).constraints
       (polyEnv idx.omega wTab idx.coeffTable)
   | .poseidon => Gate.Poseidon.constraints (Poseidon.rcPoly idx.omega idx.coeffTable)
       (Poseidon.polyWitness idx.omega wTab)
@@ -207,13 +208,13 @@ private theorem generic_holds_of_dvd (idx : Index F n) (pub : Fin idx.publicCoun
     rw [idx.eval_gateMember, htyp] at h
     exact sub_eq_zero.mp h
   rw [Gate.Generic.withPublic_holds_iff]
-  have hb := (genericArgument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i
-  simp only [genericArgument, genericCellMap, Gate.Generic.constraints, List.map_cons,
+  have hb := (Generic.argument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i
+  simp only [Generic.argument, Generic.cellMap, Gate.Generic.constraints, List.map_cons,
     List.map_nil, List.cons.injEq, and_true] at hb
   obtain ⟨hb1, hb2⟩ := hb
   have h0 := hslot 0 (by norm_num [gateAlphaCount])
   have h1 := hslot 1 (by norm_num [gateAlphaCount])
-  simp only [gateConstraints, genericArgument, genericCellMap, Gate.Generic.constraints,
+  simp only [gateConstraints, Generic.argument, Generic.cellMap, Gate.Generic.constraints,
     List.getD_cons_zero, List.getD_cons_succ, if_pos, one_ne_zero, if_neg,
     Nat.one_ne_zero, ite_false, ite_true] at h0 h1
   exact ⟨hb1 ▸ h0, hb2 ▸ h1⟩
@@ -604,23 +605,23 @@ private theorem eval_gateMember_of_rowSatisfies (idx : Index F n) (pub : Fin idx
     unfold rowSatisfies at hrow
     rw [hgen] at hrow
     obtain ⟨h1, h2⟩ := (Gate.Generic.withPublic_holds_iff _ _).mp hrow
-    have hb := (genericArgument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i
-    simp only [genericArgument, genericCellMap, Gate.Generic.constraints, List.map_cons,
+    have hb := (Generic.argument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i
+    simp only [Generic.argument, Generic.cellMap, Gate.Generic.constraints, List.map_cons,
       List.map_nil, List.cons.injEq, and_true] at hb
     obtain ⟨hb1, hb2⟩ := hb
     rw [hgen]
     match k with
     | 0 =>
-      simp only [gateConstraints, genericArgument, genericCellMap,
+      simp only [gateConstraints, Generic.argument, Generic.cellMap,
         Gate.Generic.constraints, List.getD_cons_zero, ite_true]
       exact sub_eq_zero.mpr (hb1.trans h1)
     | 1 =>
-      simp only [gateConstraints, genericArgument, genericCellMap,
+      simp only [gateConstraints, Generic.argument, Generic.cellMap,
         Gate.Generic.constraints, List.getD_cons_succ, List.getD_cons_zero,
         Nat.one_ne_zero, ite_false, sub_zero]
       exact hb2.trans h2
     | (m + 2) =>
-      simp only [gateConstraints, genericArgument, genericCellMap,
+      simp only [gateConstraints, Generic.argument, Generic.cellMap,
         Gate.Generic.constraints, List.getD_cons_succ, List.getD_nil, eval_zero,
         Nat.succ_ne_zero, ite_false, sub_zero]
   · -- non-generic rows: all slots vanish and the public term is 0

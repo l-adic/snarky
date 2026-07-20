@@ -14,6 +14,7 @@ objects the aggregate family is built on.
 namespace Kimchi.Protocol.Equation
 
 open Polynomial Kimchi.Quotient Kimchi.Index Kimchi.Protocol.Linearization
+open Kimchi.Quotient.Gate
 
 variable {F : Type*} [Field F] {n : ℕ}
 
@@ -169,26 +170,26 @@ private theorem gateMember_sum_eval [DecidableEq F] [NeZero n] (idx : Index F n)
   simp only [Index.gateConstraints]
   rw [show Gate.Poseidon.constraints (Poseidon.rcPoly idx.omega idx.coeffTable)
         (Poseidon.polyWitness idx.omega wTab)
-      = (Kimchi.Quotient.Poseidon.argument (F := F)).constraints
+      = (Poseidon.argument (F := F)).constraints
           (polyEnv idx.omega wTab idx.coeffTable) from rfl,
     show Gate.AddComplete.constraints (AddComplete.polyWitness idx.omega wTab)
-      = (Kimchi.Quotient.AddComplete.argument (F := F)).constraints
+      = (AddComplete.argument (F := F)).constraints
           (polyEnv idx.omega wTab idx.coeffTable) from rfl,
     show Gate.VarBaseMul.constraints (VarBaseMul.polyWitness idx.omega wTab)
-      = (Kimchi.Quotient.VarBaseMul.argument (F := F)).constraints
+      = (VarBaseMul.argument (F := F)).constraints
           (polyEnv idx.omega wTab idx.coeffTable) from rfl,
     show Gate.EndoMul.constraints (C idx.endoBase) (EndoMul.polyWitness idx.omega wTab)
-      = (Kimchi.Quotient.EndoMul.argument idx.endoBase).constraints
+      = (EndoMul.argument idx.endoBase).constraints
           (polyEnv idx.omega wTab idx.coeffTable) from rfl,
     show Gate.EndoScalar.constraints (EndoScalar.polyWitness idx.omega wTab) (F := F)
-      = (Kimchi.Quotient.EndoScalar.argument (F := F)).constraints
+      = (EndoScalar.argument (F := F)).constraints
           (polyEnv idx.omega wTab idx.coeffTable) from rfl]
-  rw [constraints_map_evalsOf (genericArgument (F := F)) idx wTab z ζ,
-    constraints_map_evalsOf (Kimchi.Quotient.Poseidon.argument (F := F)) idx wTab z ζ,
-    constraints_map_evalsOf (Kimchi.Quotient.AddComplete.argument (F := F)) idx wTab z ζ,
-    constraints_map_evalsOf (Kimchi.Quotient.VarBaseMul.argument (F := F)) idx wTab z ζ,
-    constraints_map_evalsOf (Kimchi.Quotient.EndoMul.argument idx.endoBase) idx wTab z ζ,
-    constraints_map_evalsOf (Kimchi.Quotient.EndoScalar.argument (F := F)) idx wTab z ζ]
+  rw [constraints_map_evalsOf (Generic.argument (F := F)) idx wTab z ζ,
+    constraints_map_evalsOf (Poseidon.argument (F := F)) idx wTab z ζ,
+    constraints_map_evalsOf (AddComplete.argument (F := F)) idx wTab z ζ,
+    constraints_map_evalsOf (VarBaseMul.argument (F := F)) idx wTab z ζ,
+    constraints_map_evalsOf (EndoMul.argument idx.endoBase) idx wTab z ζ,
+    constraints_map_evalsOf (EndoScalar.argument (F := F)) idx wTab z ζ]
   rw [show alphaCombo α (List.map (Polynomial.eval ζ) ([] : List (Polynomial F))) = 0
     from rfl, mul_zero, zero_add]
   rfl

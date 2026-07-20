@@ -7,9 +7,9 @@ import Kimchi.Gate.EndoMul
 
 The polynomial-algebra lift of kimchi's `EndoMul` (endomorphism-optimized
 `VarBaseMul`) gate, following the cell-map / bridge / corollaries pattern of
-`Kimchi/Quotient/AddComplete.lean` and `Kimchi/Quotient/VarBaseMul.lean`. Like `VarBaseMul`
-it is a **two-row** gate (a pair of `EVBSM` rows `i`, `i+1`), so the poly witness reads the
-next-row outputs `xS, yS, n'` through the shift operator (`Kimchi/Quotient/Shifted.lean`).
+`Kimchi/Quotient/Gate/AddComplete.lean` and `Kimchi/Quotient/Gate/VarBaseMul.lean`. Like
+`VarBaseMul` it is a **two-row** gate (a pair of `EVBSM` rows `i`, `i+1`), so the poly witness
+reads the next-row outputs `xS, yS, n'` through the shift operator (`Kimchi/Quotient/Shifted.lean`).
 
 Two wrinkles over `VarBaseMul`:
 
@@ -51,7 +51,7 @@ Source: kimchi `endosclmul.rs`, module-doc layout table and `constraint_checks`.
   specialization of the `Argument` engine.
 -/
 
-namespace Kimchi.Quotient.EndoMul
+namespace Kimchi.Quotient.Gate.EndoMul
 
 open Polynomial
 
@@ -149,4 +149,4 @@ theorem soundness {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n] {ω
     ∀ i, sel i = 1 → Gate.EndoMul.Holds endo (rowWitness wTab i) :=
   (argument endo).soundness hω wTab wTab sel hsel α hα t ζ hζ hcheck
 
-end Kimchi.Quotient.EndoMul
+end Kimchi.Quotient.Gate.EndoMul

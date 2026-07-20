@@ -24,7 +24,7 @@ naturality of `constraints` under evaluation at the domain nodes.
   instance of the `Argument` engine.
 -/
 
-namespace Kimchi.Quotient.AddComplete
+namespace Kimchi.Quotient.Gate.AddComplete
 
 open Polynomial
 
@@ -112,4 +112,4 @@ theorem soundness {F : Type*} [Field F] [DecidableEq F] {n : ℕ} {ω : F}
   haveI : NeZero n := ⟨Nat.pos_iff_ne_zero.mp hn⟩
   exact argument.soundness hω wTab wTab sel hsel α hα t ζ hζ hcheck
 
-end Kimchi.Quotient.AddComplete
+end Kimchi.Quotient.Gate.AddComplete

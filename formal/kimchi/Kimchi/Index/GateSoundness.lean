@@ -29,6 +29,7 @@ so the public-aware family is settled with the aggregate rather than here.
 namespace Kimchi.Index
 
 open Polynomial Kimchi.Quotient
+open Kimchi.Quotient.Gate
 
 variable {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n]
 
@@ -178,25 +179,25 @@ theorem generic_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     (α : F)
     (hα : α ∉ badAlphas (fun c =>
         columnPoly idx.omega (idx.selectorRow .generic) *
-        ((genericArgument (F := F)).constraints
+        ((Generic.argument (F := F)).constraints
           (polyEnv idx.omega wTab idx.coeffTable)).get c) idx.omega n)
     (t : Polynomial F)
     (ζ : F)
     (hζ : ζ ∉ badZetas (aggregate α (fun c =>
         columnPoly idx.omega (idx.selectorRow .generic) *
-        ((genericArgument (F := F)).constraints
+        ((Generic.argument (F := F)).constraints
           (polyEnv idx.omega wTab idx.coeffTable)).get c)) t n)
     (hcheck : (aggregate α (fun c =>
         columnPoly idx.omega (idx.selectorRow .generic) *
-        ((genericArgument (F := F)).constraints
+        ((Generic.argument (F := F)).constraints
           (polyEnv idx.omega wTab idx.coeffTable)).get c)).eval ζ
         = (t * zH F n).eval ζ) :
     ∀ i, (idx.gates i).typ = .generic →
       Gate.Generic.Holds ⟨idx.coeffTable i, wTab i⟩ := by
   intro i htyp
-  have h := Argument.soundness (genericArgument (F := F)) idx.omega_prim wTab idx.coeffTable
+  have h := Argument.soundness (Generic.argument (F := F)) idx.omega_prim wTab idx.coeffTable
     (idx.selectorRow .generic) (idx.selectorRow_boolean _) α hα t ζ hζ
     hcheck i (idx.selectorRow_eq_one htyp)
-  simpa [genericArgument, genericCellMap, rowEnv, Gate.Generic.Holds] using h
+  simpa [Generic.argument, Generic.cellMap, rowEnv, Gate.Generic.Holds] using h
 
 end Kimchi.Index

@@ -41,7 +41,7 @@ where each `xi` is a two-bit "crumb".
   (`thm:quotient_endoscalar_soundness`).
 -/
 
-namespace Kimchi.Quotient.EndoScalar
+namespace Kimchi.Quotient.Gate.EndoScalar
 
 open Polynomial Kimchi.Quotient
 
@@ -118,4 +118,4 @@ theorem soundness [DecidableEq F]
   haveI : NeZero n := ⟨Nat.pos_iff_ne_zero.mp hn⟩
   exact argument.soundness hω wTab wTab sel hsel α hα t ζ hζ hcheck
 
-end Kimchi.Quotient.EndoScalar
+end Kimchi.Quotient.Gate.EndoScalar

@@ -29,7 +29,7 @@ on the last domain row, so this agrees with the intended semantics on every occu
   instance of the `Argument` engine.
 -/
 
-namespace Kimchi.Quotient.VarBaseMul
+namespace Kimchi.Quotient.Gate.VarBaseMul
 
 open Polynomial
 
@@ -130,4 +130,4 @@ theorem soundness {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n] {ω
     ∀ i, sel i = 1 → Gate.VarBaseMul.Holds (rowWitness wTab i) :=
   argument.soundness hω wTab wTab sel hsel α hα t ζ hζ hcheck
 
-end Kimchi.Quotient.VarBaseMul
+end Kimchi.Quotient.Gate.VarBaseMul

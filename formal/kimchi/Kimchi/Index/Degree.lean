@@ -43,6 +43,7 @@ within the heartbeat budget. The headline family/aggregate/`t·Z_H` bounds reduc
 namespace Kimchi.Index
 
 open Polynomial Kimchi.Quotient
+open Kimchi.Quotient.Gate
 
 variable {F : Type*} [Field F] [DecidableEq F] {n : ℕ}
 
@@ -290,7 +291,7 @@ private theorem generic_entry_le [NeZero n] (idx : Index F n)
     cell_le idx _
   have hq9 : (columnPoly idx.omega (fun j => idx.coeffTable j 9)).natDegree ≤ n - 1 :=
     cell_le idx _
-  simp only [Index.gateConstraints, genericArgument, genericCellMap, polyEnv,
+  simp only [Index.gateConstraints, Generic.argument, Generic.cellMap, polyEnv,
     Gate.Generic.constraints, List.mem_cons, List.not_mem_nil, or_false] at hE
   rcases hE with rfl | rfl <;> (compute_degree <;> omega)
 

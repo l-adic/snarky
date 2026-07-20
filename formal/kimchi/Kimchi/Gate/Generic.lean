@@ -14,7 +14,7 @@ import Mathlib.Tactic
       q₅·w₃ + q₆·w₄ + q₇·w₅ + q₈·(w₃·w₄) + q₉ = 0     -- registers w₃ w₄ w₅, coeffs q₅…q₉
 
     (`q₁₀…q₁₄` are unused.) There is no standalone single-constraint gate; the
-    polynomial lift (`Kimchi/Quotient/Generic.lean`) consumes `Generic.Holds`. -/
+    polynomial lift (`Kimchi/Quotient/Gate/Generic.lean`) consumes `Generic.Holds`. -/
 
 namespace Kimchi.Gate
 

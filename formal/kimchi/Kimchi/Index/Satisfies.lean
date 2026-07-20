@@ -1,10 +1,10 @@
 import Kimchi.Index.Basic
-import Kimchi.Quotient.Generic
-import Kimchi.Quotient.Poseidon
-import Kimchi.Quotient.AddComplete
-import Kimchi.Quotient.VarBaseMul
-import Kimchi.Quotient.EndoMul
-import Kimchi.Quotient.EndoScalar
+import Kimchi.Quotient.Gate.Generic
+import Kimchi.Quotient.Gate.Poseidon
+import Kimchi.Quotient.Gate.AddComplete
+import Kimchi.Quotient.Gate.VarBaseMul
+import Kimchi.Quotient.Gate.EndoMul
+import Kimchi.Quotient.Gate.EndoScalar
 
 /-!
 # Satisfiability: a witness table against an index
@@ -27,6 +27,7 @@ itself; fixture scripts evaluate it and nothing else.
 namespace Kimchi.Index
 
 open Kimchi.Quotient
+open Kimchi.Quotient.Gate
 
 variable {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n]
 
