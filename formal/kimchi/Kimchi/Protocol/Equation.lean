@@ -3,28 +3,24 @@ import Kimchi.Index.Aggregate
 import Kimchi.Index.Degree
 
 /-!
-# The verifier equation — the honest evaluation record
+# The verifier equation and the honest evaluation record
 
-The bridge between the verifier's scalar side (`Kimchi/Verifier/Linearization.lean`,
-adjudicated by value against production in 3a) and Phase B's quotient interface
-(`satisfies_of_evalCheck`). This file opens with `evalsOf`: the evaluation record the
-honest protocol hands the scalar side — every column read through its interpolant at
-`ζ`, the next-row family at `ω·ζ` — stated over the index's own interpolants
-(`selectorPoly`/`coeffPoly`/`sigmaPoly`, `columnPoly` of the witness table) so the
-bridge identities are naturality squares of the same objects `fullFamily` is built on.
+The bridge between the verifier's scalar side and the quotient interface. `evalsOf` is
+the evaluation record the honest protocol hands the scalar side: every column read
+through its interpolant at `ζ`, the next-row family at `ω·ζ`. Stating it over the
+circuit's own interpolants makes the bridge identities naturality squares of the very
+objects the aggregate family is built on.
 -/
-
 namespace Kimchi.Protocol.Equation
 
 open Polynomial Kimchi.Quotient Kimchi.Index Kimchi.Protocol.Linearization
 
 variable {F : Type*} [Field F] {n : ℕ}
 
-/-- The honest evaluation record at `ζ`: each witness column's interpolant evaluated at
-`ζ` (current) and `ω·ζ` (next), the accumulator `z` at both points, the first six
-permutation columns, the coefficient columns, and every gate selector — exactly the
-`Evals` the deployed verifier combines from the proof, produced here by the index and
-tables themselves. -/
+/-- The honest evaluation record at `ζ`: each witness column's interpolant at `ζ` and
+`ω·ζ`, the accumulator at both points, the first six permutation columns, the coefficient
+columns, and every gate selector — the record a verifier reads off a proof, here produced
+by the circuit and its tables. -/
 noncomputable def evalsOf (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     (z : Polynomial F) (ζ : F) : Evals F :=
   { w := fun c => (columnPoly idx.omega (fun j => wTab j c)).eval ζ
@@ -56,15 +52,13 @@ private theorem evalEnv_evalsOf (idx : Index F n) (wTab : Fin n → Fin 15 → F
 
 /-! ## Column extraction
 
-The soundness-direction junction: PCS binding (`chunked_batch_soundness`) delivers
-*polynomials* behind the witness commitments — each of degree `< n` from its chunk
-count — while `Satisfies` and the point-bridge's record speak *tables*. `extractTable`
-reads the table off the bound polynomials; by `columnPoly_eval_self` the honest record
-at that table evaluates the bound polynomials themselves, so the claimed evaluations
-that binding certifies are exactly the record's fields. -/
+Binding delivers *polynomials* behind the witness commitments, while satisfaction and
+the evaluation record speak *tables*. `extractTable` reads the table off the bound
+polynomials; the honest record at that table evaluates those polynomials themselves, so
+the claimed evaluations binding certifies are exactly the record's fields. -/
 
-/-- The witness table read off bound column polynomials: `wTab j c := W_c(ω^j)`. This
-is the table the headline exports in its `∃ wTab, Satisfies` conclusion. -/
+/-- The witness table read off bound column polynomials: `wTab j c := W_c(ω^j)` — the
+table the soundness conclusion exports. -/
 def extractTable (ω : F) (W : Fin 15 → Polynomial F) : Fin n → Fin 15 → F :=
   fun j c => (W c).eval (ω ^ (j : ℕ))
 
@@ -226,13 +220,11 @@ private theorem eval_permWitnessPoly_eq_w [NeZero n] (idx : Index F n)
     (idx.permWitnessPoly wTab col).eval ζ = (evalsOf idx wTab z ζ).w ⟨(col : ℕ), h⟩ := by
   rfl
 
-/-! ## The σ-side recurrence recombination (Theorem 1)
+/-! ## The σ-side recurrence recombination
 
-At the first permutation alpha `α²¹`, the deployed `permScalar · σ₆(ζ)` term and
-`ftEval0`'s `sigmaSide`/`shiftSide` products recombine into `α²¹` times the quotient's
-first permutation constraint (`Permutation.constraints … 0`) at the honest record. The
-two products here are kept syntactically identical to `ftEval0`'s lets so the headline
-`verifierEquation_iff` can rewrite them by this lemma. -/
+At the first permutation alpha, the `permScalar · σ₆(ζ)` term and `ftEval0`'s σ-side and
+shift-side products recombine into that alpha times the quotient's first permutation
+constraint at the honest record. -/
 
 /-- **σ-side of the verifier equation.** The permutation scalar against `σ₆(ζ)`, minus
 `ftEval0`'s σ-side product against `z(ζω)`, plus its shift-side product against `z(ζ)`,
@@ -285,7 +277,7 @@ private theorem permMember_eval [NeZero n] (idx : Index F n) (wTab : Fin n → F
   simp only [evalsOf, mul_comm idx.omega ζ]
   ring
 
-/-! ## The accumulator boundary pins (Theorem 2)
+/-! ## The accumulator boundary pins
 
 `ftEval0`'s `boundary` let is a quotient of the two Lagrange pins, at `α²²` (row `0`,
 node `ω⁰ = 1`) and `α²³` (row `n − zkRows`, node `ω^(n−zkRows)`). Away from those two
@@ -327,17 +319,15 @@ private theorem boundary_eval [NeZero n] (idx : Index F n) (wTab : Fin n → Fin
   linear_combination (α ^ 22 * (z.eval ζ - 1) * (ζ - idx.omega ^ (n - idx.zkRows))) * E0
     + (α ^ 23 * (z.eval ζ - 1) * (ζ - 1)) * E1
 
-/-! ## The point-bridge (Theorem 3, headline)
+/-! ## The point bridge
 
-The deployed scalar-side verifier check — `permScalar · σ₆(ζ) − (ζⁿ − 1)·t(ζ)` equals
-`ftEval0` at the honest record with public slot `−pub(ζ)` — is equivalent, at honest
-evaluations, to Phase B's quotient identity `(aggregate α (fullFamily …)).eval ζ =
-(t · Z_H).eval ζ`. The gate block is `gateMember_sum_eval`, the σ-side is
-`permMember_eval`, the boundary is `boundary_eval`; the aggregate splits into its
-gate/permutation halves by `Fin.sum_univ_add`. -/
+The scalar-side verifier check — `permScalar · σ₆(ζ) − (ζⁿ − 1)·t(ζ)` equals `ftEval0` at
+the honest record with public slot `−pub(ζ)` — is equivalent, at honest evaluations, to
+the quotient identity `(aggregate α (fullFamily …)).eval ζ = (t · Z_H).eval ζ`, the
+aggregate splitting into its gate and permutation halves. -/
 
-/-- **The verifier-equation point-bridge.** At the honest evaluation record, the deployed
-scalar-side verifier check is equivalent to Phase B's quotient identity at `ζ`. -/
+/-- At the honest evaluation record, the scalar-side verifier check is equivalent to the
+quotient identity at `ζ`. -/
 theorem verifierEquation_iff [DecidableEq F] [NeZero n] (idx : Index F n)
     (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin 15 → F)
     (z t : Polynomial F) (ζ β γ α : F)
@@ -384,7 +374,7 @@ theorem verifierEquation_iff [DecidableEq F] [NeZero n] (idx : Index F n)
     · rw [Fin.sum_univ_three, eval_smul, eval_smul, eval_smul, smul_eq_mul, smul_eq_mul,
         smul_eq_mul, hp 0, hp 1, hp 2, Fin.val_natAdd, Fin.val_natAdd, Fin.val_natAdd]
       norm_num
-  -- σ-side recurrence at α²¹ (Theorem 1), with σ = the wiring σ, folded to `Cf 0`
+  -- σ-side recurrence at α²¹, with σ = the wiring σ, folded to `Cf 0`
   have hperm := permMember_eval idx wTab z ζ β γ α
     (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) (fun _ => rfl)
     (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd
@@ -407,29 +397,18 @@ theorem verifierEquation_iff [DecidableEq F] [NeZero n] (idx : Index F n)
   · intro h; linear_combination h - hperm
   · intro h; linear_combination h + hperm
 
-/-! ## The grid headline
+/-! ## From one good challenge to satisfaction
 
-The Fiat–Shamir idealization surrogate: the deployed scalar-side acceptance equation,
-holding at a *single* good challenge, implies `Satisfies` at the index. Every challenge
-has now collapsed to one value outside an explicit bad set (the counting Schwartz–Zippel
-account of `Quotient/SchwartzZippel.lean`): `β`/`γ` avoid `badBetas`/`badGammas`, `α`
-avoids `badAlphas (idx.fullFamily …) idx.omega n`, and the evaluation point `ζ` avoids
-`badZetas (aggregate α (idx.fullFamily …)) t n`. The ζ-family axis and the deterministic
-interpolation it fed are gone: a single `ζ ∉ badZetas` pins the identity by the counting
-bound `card_badZetas_le`, so no injective grid, no `D := degreeBound n` cardinality gap,
-and no degree side-conditions (`hz`/`ht`) survive. The single-point equation `heq` is the
-deployed verifier's acceptance check, adjudicated numerically against production in
-`scripts/check_linearization.lean`. The route is `verifierEquation_iff.mp` at that one
-point into `Index.satisfies_of_evalCheck`. -/
+The scalar-side acceptance equation, holding at a *single* challenge outside an explicit
+bad set, implies satisfaction of the circuit. Each challenge is constrained only by a
+counted exclusion: `β` and `γ` avoid the bad sets of the permutation argument, `α` avoids
+those of the aggregate family, and the evaluation point `ζ` avoids the roots of the
+quotient discrepancy. No injective family of points and no degree side-conditions are
+needed — one avoiding point pins the identity by the counting bound. -/
 
 open Kimchi.Quotient.Permutation in
-/-- **The grid headline.** A single deployed verifier-equation instance — the scalar-side
-acceptance check `heq` at one good challenge tuple: `β ∉ badBetas`, `γ ∉ badGammas`,
-`α ∉ badAlphas`, and evaluation point `ζ ∉ badZetas (aggregate α (idx.fullFamily …)) t n`
-— implies `Satisfies idx pub wTab`. `heq` is syntactically the LHS of `verifierEquation_iff`
-at `z := zg`, `t`, `ζ`, `β`, `γ`, `α`; its `.mp` turns that per-point acceptance equation
-into the quotient `evalCheck`, which `Index.satisfies_of_evalCheck` promotes to
-`Satisfies` via the single-challenge counting bound. -/
+/-- One verifier-equation instance at a good challenge tuple — `β`, `γ`, `α`, and the
+evaluation point `ζ` each outside their bad set — implies satisfaction of the circuit. -/
 theorem satisfies_of_verifierEquation [DecidableEq F] [NeZero n]
     (idx : Index F n) (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin 15 → F)
     (β γ : F)
@@ -475,14 +454,9 @@ theorem satisfies_of_verifierEquation [DecidableEq F] [NeZero n]
 
 open Kimchi.Quotient.Permutation in
 set_option linter.unusedVariables false in
-/-- **The grid headline at the extracted table.** The corollary at
-`wTab := extractTable idx.omega W` — the table read off the polynomials PCS binding
-delivers behind the witness commitments. The chunk-count degree fact `hW` is carried even
-though this instantiation does not consume it: it is what `chunked_batch_soundness`
-supplies, and milestone 4's claimed-evals conversion (`evalsOf_extractTable_w` /
-`evalsOf_extractTable_wOmega`) consumes it — the corollary fixes that interface. The
-unused-variable linter is silenced for this one theorem precisely because `hW` is
-interface-mandated dead weight here. -/
+/-- The same statement at the table read off the polynomials binding delivers behind the
+witness commitments. The degree hypothesis `hW` is carried for the interface — the
+claimed-evaluation conversion consumes it — though this instantiation does not. -/
 theorem satisfies_extractTable_of_verifierEquation [DecidableEq F] [NeZero n]
     (idx : Index F n) (pub : Fin idx.publicCount → F)
     (W : Fin 15 → Polynomial F) (hW : ∀ c, (W c).natDegree < n)

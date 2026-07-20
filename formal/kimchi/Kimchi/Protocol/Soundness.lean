@@ -4,53 +4,27 @@ import Kimchi.Protocol.Binding
 import Kimchi.Protocol.Equation
 
 /-!
-# The composed soundness headline (milestone 4.5): `kimchiProof_sound`
+# Composed soundness
 
-The milestone-4 capstone: batched IPA acceptance (`batch_openings_nc1`), DL-binding, and
-the verifier-key correspondence (`VKCorresponds`) compose into
-`∃ wTab, Satisfies idx pub wTab` — acceptance of the whole challenge grid forces a
-satisfying witness table for the modeled circuit. Everything underneath is on the shelf:
-the batch extraction is `Soundness/Batch.lean`, the `rowPoly` and pinned-row kits are
-`Binding.lean`, the evaluation record and the grid consumer are `Equation.lean`. This file
-contributes the composition: cross-point binding uniqueness (`bound_unique`), the 43-row
-batch assembly and its claimed-evaluations record (`batchC`/`claimedEvals`), the record
-congruence (`claimedEvals_eq_evalsOf`), and the headline itself.
+Batched opening acceptance, binding, and the key–index correspondence compose into
+`∃ wTab, Satisfies idx pub wTab`: acceptance across the challenge grid forces a
+satisfying witness table for the circuit the key commits.
 
-**The trust story.** The challenge grids over `(β, γ, α, ζ)` and, per grid point, over
-the batch's `(ξ, r)` are the Fiat–Shamir idealization surrogate — exactly the role they
-play in `batch_openings_nc1` and `satisfies_of_verifierEquation`; milestone 5 discharges
-them from rewinding the transcript tree. Binding is carried as the no-DL-relation
-hypothesis, the computational discrete-log idealization (information-theoretically false
-at real parameters — see the scope note of `Soundness/Batch.lean`); the per-point
-`FiatShamirTreeB` family is the declared Fiat–Shamir assumption. `VKCorresponds` is a
-standing hypothesis: honest keys satisfy it by construction, and the production key is
-checked against the honest indexer by the fixture MSM check
-(`scripts/check_vk_correspond.lean`).
+Three things are assumed rather than derived. The challenge grids — over `(β, γ, α, ζ)`
+and, per point, over the batch's `(ξ, r)` — stand in for Fiat–Shamir. Binding is carried
+in the no-relation form, the computational discrete-log idealization. The key–index
+correspondence is a hypothesis.
 
-**The batch.** 43 rows: the 15 witness columns (commitments FIXED across the whole
-grid), the accumulator `z` (commitment per `(β, γ)`), the FIRST SIX σ columns, the 15
-coefficient columns, and the six gate selectors (production's fixed-blinder masking,
-`commitPolyMasked`). Only six σ rows are batched: the evaluation record consumes the six
-σ *evaluations*, while σ₆ enters the scalar equation as the Index-side value
-`(idx.sigmaPoly 6).eval ζ` — never as a proof claim — so a seventh row would add a claim
-nothing consumes. The **public and ft rows are omitted** from the abstract batch
-entirely (design decision): nothing downstream consumes their binding — the public
-value is recomputed by the verifier from `pub`, and the ft row's role is carried by the
-`t`-hypothesis below — and the milestone-5 wire reflection adds them back when it
-connects to the deployed batch layout.
+The batch has 43 rows: fifteen witness columns, the permutation accumulator, the first
+six σ columns, fifteen coefficient columns, and six selectors. Only six σ rows appear,
+since the evaluation record consumes six σ evaluations while the seventh enters the
+scalar equation as a circuit-side value; the public and quotient rows are omitted, as
+nothing downstream consumes their binding.
 
-## The t deferral
-
-Production commits the quotient chunks before `ζ` is sampled, but the verifier's
-`ftComm` combination uses `ζ`, so a per-`(β, γ, α)` quotient `t` serving ALL `ζ`-points
-of the grid is a transcript-prefix fact that only the Fiat–Shamir layer (milestone 5)
-can supply. At this layer the quotient family `t`, its degree bound `ht`, and its scalar
-equation `hteq` are hypothesis data, in exactly the consumer's shape — stated at the
-claimed record and transported to the honest record by the congruence; milestone 5 lifts
-it to the `p`-uniform family. Accordingly no
-`ftComm`/`Tcomm`/ft-row data is modeled here.
+The quotient `t` enters as hypothesis data in the consumer's shape: a quotient serving
+every evaluation point of the grid is a transcript-prefix fact, not something this layer
+can produce.
 -/
-
 open Bulletproof
 
 namespace Kimchi.Protocol
@@ -60,17 +34,13 @@ open Polynomial Bulletproof Kimchi.Index Kimchi.Protocol.Linearization
 
 variable {F G : Type*}
 
-/-! ## The batch extraction, at its declared chunk structure
+/-! ## Batch extraction
 
-The deployed batch presents every commitment as a single-chunk `PolyComm`: the quotient's
-chunks are folded into `ft` upstream (proof-systems `verifier.rs`, `ft_comm` — the
-`chunk_commitment` at `ζ^(2^k)`), so no multi-chunk commitment reaches the opening. The
-extraction runs `chunked_batch_soundness` at the declared `nc = 1` per row and reads the
-flat witness vectors off the window-0 chunks. -/
+Every commitment in the batch is single-chunk — the quotient's chunks are folded into the
+Maller row upstream — so the extraction specializes the chunked argument to one chunk per
+row and reads the witness vectors off it. -/
 
-/-- Batched-opening extraction with the batch's chunk structure declared: `nc = 1` per
-row. The interface is flat (what the 43-row batch and the FS axioms carry); the proof is
-`chunked_batch_soundness` at the constant-one chunk family. -/
+/-- Batched-opening extraction at one chunk per row, presented flatly. -/
 private theorem batch_openings_nc1 [Field F] [AddCommGroup G] [Module F G]
     (σ : SRS G) {n m : ℕ}
     (ξ : Fin n → F) (hξ : Function.Injective ξ)
@@ -154,14 +124,11 @@ private theorem bound_unique [Field F] [AddCommGroup G] [Module F G] (σ : SRS G
 
 /-! ## The batch assembly
 
-The 43-row commitment list the headline's acceptance grids range over, and the named row
-indices the claimed-evaluations record reads. Layout (documented above): rows `0–14` the
-witness columns, `15` the accumulator, `16–21` the first six σ columns, `22–36` the
-coefficient columns, `37–42` the six selectors in `GateType` enumeration order. -/
+The 43-row commitment list the acceptance grids range over, with the named row indices the
+claimed-evaluation record reads: rows `0–14` the witness columns, `15` the accumulator,
+`16–21` the first six σ columns, `22–36` the coefficient columns, `37–42` the selectors. -/
 
-/-- The six selector commitments of a verifier key, as a vector in `GateType`
-enumeration order (the zero gate has no selector). Project-local packaging for the batch
-assembly. -/
+/-- The six selector commitments of a verifier key, in gate enumeration order. -/
 private def selComm (comms : IndexComms G) : Fin 6 → G :=
   ![comms.generic, comms.poseidon, comms.completeAdd, comms.varBaseMul,
     comms.endoMul, comms.endoScalar]
@@ -325,20 +292,14 @@ private theorem claimedEvals_eq_evalsOf [Field F] {n : ℕ} [NeZero n] (idx : In
   · exact hsel 4
   · exact hsel 5
 
-/-! ## The headline -/
+/-! ## Soundness -/
 
-/-- **The openings-interface soundness seam** (the factored core of `kimchiProof_sound`).
-The headline split at its two `batch_openings_nc1` call sites, making the openings
-interface a junction discharged by the algebraic-prover extraction model (SRS-basis
-representations carried with the prover's messages supply the per-row openings). The
-REFERENCE side is pure commitment knowledge — `hbound₀` binds every batch row to a known witness
-pair, the reference transcript's only surviving content (its eval data was never
-load-bearing). The CONSUMER side replaces the per-point Fiat–Shamir trees with per-row
-openings: each avoiding challenge tuple supplies bound openings `aw`/`ρw` whose per-row
-conjunction mirrors `batch_openings_nc1`'s conclusion verbatim, so a grid extraction
-passes its `hrow` straight through. Everything else — the extracted bad sets, their
-cardinality bounds, and the verifier-equation consumer — is the headline's own
-composition, transplanted. -/
+/-- The openings-interface core: the same conclusion with the per-point transcript
+families replaced by per-row openings. The reference side is pure commitment knowledge —
+every batch row bound to a known witness pair — and the consumer side supplies, at each
+avoiding challenge tuple, openings that bind to the same commitments and reproduce the
+claimed evaluations. Extraction models that already possess opened values discharge it
+directly. -/
 theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
     {n : ℕ} [NeZero n] [DecidableEq F] (σ : SRS G)
     (idx : Index F n) (hk : 2 ^ σ.k = n)
@@ -514,47 +475,18 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
     exact h
 
 set_option linter.unusedVariables false in
-/-- **The composed kimchi soundness headline (milestone 4.5), counting form.**
-Batched IPA acceptance on the 43-row assembly, DL-binding, and `VKCorresponds` force a
-satisfying witness table: `∃ wTab, Satisfies idx pub wTab`, with witness
-`extractTable idx.omega W` for the bound witness-column polynomials `W`.
+/-- Batched opening acceptance on the 43-row assembly, binding, and the key–index
+correspondence force a satisfying witness table, the witness read off the bound
+witness-column polynomials.
 
-**Reference / consumer split (the ζ collapse).** The former per-node ζ *grid axis*
-(`Fin NNN`, driven by an injective family + a degree gap) is GONE: this layer now uses the
-counting Schwartz–Zippel argument (`badZetas`, `card_badZetas_le`) on all four challenge
-axes β, γ, α, ζ. Unlike the α/β/γ axes, whose batch extraction is ζ-free, **the claimed
-evals `E` are the openings AT ζ** — a naive single-point collapse with `ζ` top-level would
-extract `W` from the transcript at ζ, making the bad-ζ set depend on ζ and letting the
-prover pick `badZ := {ζ}` for a VACUOUS statement. To avoid that, the transcript is split:
-one **reference** transcript at a reference point `ζ₀` (top-level) extracts the ζ-FREE
-`W`/`zg`; the bad sets — including `badZ = badZetas (aggregate α (fullFamily … W zg …)) t n`
-— are built from that ζ-FREE data and quantified BEFORE the challenges. The per-challenge
-**consumer** transcript at `ζ` then binds its openings back to the reference `W`/`zg` via
-`bound_unique`, and every avoiding `(β, γ, α, t, ζ)` delivers `Satisfies`.
-
-**Quantifier order is the point.** Each bad set is *extracted* from the ζ-free reference
-data, hence β/γ/α/ζ-DEPENDENT-LOOKING; to keep the statement non-vacuous every goodness
-condition lives INSIDE the conclusion as a proved-small existential — `∃ badB badG badA
-badZ`, of the stated cardinalities (`card_badBetas_le`/`card_badGammas_le`/
-`card_badAlphas_le`/`card_badZetas_le`), chosen from the challenge-FREE extracted data (the
-witness/accumulator polynomials produced by `batch_openings_nc1` from the REFERENCE
-`E₀`/`ξ₀`/`r₀`/`A₀`, none of which mention any live challenge), and only THEN quantifying
-over every `β`/`γ`/`α`/`t`/`ζ` that avoids them. Because `badZ` is fixed before `ζ` is
-introduced, the vacuous `badZ := {ζ}` witness is unavailable: the implication genuinely
-delivers `Satisfies` for each avoiding challenge tuple whose consumer transcript accepts.
-
-Hypothesis shape (see the module preamble for the trust story):
-* `hk` pins the SRS width to the domain size (`max_poly_size = n`), so every bound row
-  polynomial has degree `< n` and column extraction applies;
-* the single reference transcript (`ζ₀ … hFS₀ hacc₀`) and, per challenge tuple, the
-  consumer transcript with its per-point `(ξ, r)` batch grid and `FiatShamirTreeB` family
-  are the Fiat–Shamir idealization surrogate; `hbind` is the DL idealization;
-* the claims `E` may vary between reference and consumer — every needed point-independence
-  is *derived* from binding (`bound_unique`), never assumed.
-
-Now the grid-instantiated corollary of `kimchiProof_sound_of_openings`: the two
-`batch_openings_nc1` extractions (reference and consumer) discharge its openings
-hypotheses. -/
+The transcript is split, and that split is the point. The claimed evaluations are
+openings *at* `ζ`, so extracting the witness polynomials from the transcript at `ζ` would
+let the excluded set of evaluation points depend on `ζ`, and the statement would be
+vacuous. Instead a reference transcript at a separate point extracts the challenge-free
+witness and accumulator polynomials; the bad sets are built from that data, with their
+cardinalities bounded, and quantified *before* the challenges; only then is every
+avoiding tuple quantified. A consumer transcript at `ζ` binds its own openings back to
+the reference ones, so point-independence is derived from binding rather than assumed. -/
 theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
     {n : ℕ} [NeZero n] [DecidableEq F] (σ : SRS G)
     (idx : Index F n) (hk : 2 ^ σ.k = n)
