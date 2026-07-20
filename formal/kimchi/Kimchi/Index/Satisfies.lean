@@ -89,7 +89,7 @@ pins are unmasked) — so satisfiability is a property of the unmasked restricti
 mask's contents are simply outside the constraint system's footprint. -/
 
 /-- `rowSatisfies` reads only unmasked cells. -/
-theorem rowSatisfies_congr_unmasked (idx : Index F n) (pub : Fin idx.publicCount → F)
+private theorem rowSatisfies_congr_unmasked (idx : Index F n) (pub : Fin idx.publicCount → F)
     {w w' : Fin n → Fin 15 → F}
     (hagree : ∀ i : Fin n, (i : ℕ) < n - idx.zkRows → w i = w' i)
     {i : Fin n} (h : rowSatisfies idx pub w i) : rowSatisfies idx pub w' i := by

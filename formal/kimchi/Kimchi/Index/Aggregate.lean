@@ -46,7 +46,7 @@ noncomputable def pubPoly (idx : Index F n) (pub : Fin idx.publicCount → F) :
     Polynomial F :=
   columnPoly idx.omega (pubAt idx pub)
 
-theorem eval_pubPoly (idx : Index F n) (pub : Fin idx.publicCount → F) (i : Fin n) :
+private theorem eval_pubPoly (idx : Index F n) (pub : Fin idx.publicCount → F) (i : Fin n) :
     (idx.pubPoly pub).eval (idx.omega ^ (i : ℕ)) = pubAt idx pub i :=
   eval_columnPoly idx.omega_prim _ i
 
@@ -76,7 +76,7 @@ matters"). -/
 @[reducible] def permAlphaCount : ℕ := 3
 
 /-- The lengths of the gate transcriptions match kimchi's `CONSTRAINTS` constants. -/
-theorem gateConstraints_length (idx : Index F n) (wTab : Fin n → Fin 15 → F) :
+private theorem gateConstraints_length (idx : Index F n) (wTab : Fin n → Fin 15 → F) :
     (idx.gateConstraints wTab .zero).length = 0
       ∧ (idx.gateConstraints wTab .generic).length = 2
       ∧ (idx.gateConstraints wTab .poseidon).length = 15
@@ -85,15 +85,6 @@ theorem gateConstraints_length (idx : Index F n) (wTab : Fin n → Fin 15 → F)
       ∧ (idx.gateConstraints wTab .endoMul).length = 12
       ∧ (idx.gateConstraints wTab .endoScalar).length = 11 := by
   refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-
-/-- Selector row-disjointness: at any row, at most one gate type's selector is live —
-the fact that makes kimchi's shared alpha pool sound. -/
-theorem selectorRow_disjoint (idx : Index F n) {g g' : GateType} (hgg : g ≠ g')
-    (i : Fin n) : idx.selectorRow g i = 0 ∨ idx.selectorRow g' i = 0 := by
-  unfold selectorRow
-  by_cases h : (idx.gates i).typ = g
-  · exact Or.inr (if_neg fun h' => hgg (h.symm.trans h'))
-  · exact Or.inl (if_neg h)
 
 /-- The gate part of the aggregate member at power `k`: the cross-gate sum, minus the
 public interpolant in the generic `α⁰` slot. -/
@@ -135,7 +126,7 @@ equations; the generic slot-`0` public subtraction lands on `withPublic` by
 
 /-- The selector is `0` away from the row's own gate type (one-hotness, with
 `selectorRow_eq_one`). -/
-theorem selectorRow_eq_zero (idx : Index F n) {g : GateType} {i : Fin n}
+private theorem selectorRow_eq_zero (idx : Index F n) {g : GateType} {i : Fin n}
     (htyp : (idx.gates i).typ ≠ g) : idx.selectorRow g i = 0 := by
   simp [selectorRow, htyp]
 
@@ -148,7 +139,7 @@ theorem gateConstraints_length_le (idx : Index F n) (wTab : Fin n → Fin 15 →
 /-- **Row collapse.** At a domain node, the `k`-th gate member evaluates to the live
 gate's `k`-th constraint value, minus the public value in slot `0`: every other gate's
 term dies with its selector. -/
-theorem eval_gateMember (idx : Index F n) (pub : Fin idx.publicCount → F)
+private theorem eval_gateMember (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F) (k : ℕ) (i : Fin n) :
     (idx.gateMember pub wTab k).eval (idx.omega ^ (i : ℕ))
       = ((idx.gateConstraints wTab (idx.gates i).typ).getD k 0).eval
@@ -172,7 +163,7 @@ theorem eval_gateMember (idx : Index F n) (pub : Fin idx.publicCount → F)
 members: the row's `k`-th member evaluation collapses to its `k`-th constraint
 (`eval_gateMember`), and the slot-`0` public term is `0` outside the public region
 (`public_generic`). -/
-theorem gateConstraints_vanish_of_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
+private theorem gateConstraints_vanish_of_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F)
     (hdvd : ∀ k, k < gateAlphaCount → zH F n ∣ idx.gateMember pub wTab k)
     {i : Fin n} (hne : (idx.gates i).typ ≠ .generic) :
@@ -194,7 +185,7 @@ theorem gateConstraints_vanish_of_dvd (idx : Index F n) (pub : Fin idx.publicCou
 /-- **A generic row's public-folded gate holds** under divisibility of the gate members:
 slots `0` and `1` pin the two generic constraints — the first to the public value — and
 `withPublic_holds_iff` reads the pair as the `rowSatisfies` branch. -/
-theorem generic_holds_of_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
+private theorem generic_holds_of_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F)
     (hdvd : ∀ k, k < gateAlphaCount → zH F n ∣ idx.gateMember pub wTab k)
     {i : Fin n} (htyp : (idx.gates i).typ = .generic) :
@@ -221,7 +212,7 @@ theorem generic_holds_of_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
   exact ⟨hb1 ▸ h0, hb2 ▸ h1⟩
 
 /-- Transport row-constraint vanishing along a gate's eval bridge. -/
-theorem forall_mem_zero_of_bridge {P : List (Polynomial F)} {L : List F} {x : F}
+private theorem forall_mem_zero_of_bridge {P : List (Polynomial F)} {L : List F} {x : F}
     (hb : P.map (·.eval x) = L) (hvan : ∀ E ∈ P, E.eval x = 0) :
     ∀ e ∈ L, e = 0 :=
   hb ▸ List.forall_mem_map.mpr hvan
@@ -232,7 +223,7 @@ non-generic gates out of the public region. Selector one-hotness undoes the shar
 at a row of gate `g`, slot `k` pins `g`'s `k`-th constraint, with the public value
 folded into the generic slot `0` and vanishing outside the public region on every
 other gate. -/
-theorem rowSatisfies_of_gateMember_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
+private theorem rowSatisfies_of_gateMember_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F)
     (hdvd : ∀ k, k < gateAlphaCount → zH F n ∣ idx.gateMember pub wTab k) :
     ∀ i, rowSatisfies idx pub wTab i := by
@@ -269,7 +260,7 @@ theorem rowSatisfies_of_gateMember_dvd (idx : Index F n) (pub : Fin idx.publicCo
 
 /-- The gate branches of `rowSatisfies`, from divisibility of the **full family**: the
 gate members are the first `gateAlphaCount` entries of `fullFamily`. -/
-theorem rowSatisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
+private theorem rowSatisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (β γ : F)
     (hdvd : ∀ s, zH F n ∣ idx.fullFamily pub wTab z β γ s) :
     ∀ i, rowSatisfies idx pub wTab i :=
@@ -296,7 +287,7 @@ rows. -/
 /-- **Divisibility of every family member from the aggregated eval-check** — the
 single-challenge `dvd_of_evalCheck` engine at the full `21 + 3` family. One `α` outside
 `badAlphas`, one quotient `t`, one good `ζ` outside `badZetas`. -/
-theorem fullFamily_dvd_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → F)
+private theorem fullFamily_dvd_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (β γ : F)
     (α : F) (hα : α ∉ badAlphas (idx.fullFamily pub wTab z β γ) idx.omega n)
     (t : Polynomial F)
@@ -310,7 +301,7 @@ theorem fullFamily_dvd_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount
 open Kimchi.Quotient.Permutation in
 /-- The permutation members of the full family: entries `21 + s` are the three
 permutation constraints at the index's wiring data. -/
-theorem fullFamily_perm (idx : Index F n) (pub : Fin idx.publicCount → F)
+private theorem fullFamily_perm (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (β γ : F) (s : Fin 3) :
     idx.fullFamily pub wTab z β γ (Fin.natAdd gateAlphaCount s)
       = Permutation.constraints idx.omega idx.zkRows z (idx.permWitnessPoly wTab)
@@ -326,7 +317,7 @@ prover supplies an accumulator whose **full family** is `Z_H`-divisible, the wit
 takes equal values across every wire of the unmasked region — the copy fragment of
 `Satisfies` there. The permutation members are the family's last three entries
 (`fullFamily_perm`); `Index.copy_soundness_of_dvd` does the rest. -/
-theorem copy_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
+private theorem copy_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F)
     (β γ : F)
     (hβ : β ∉ badBetas
@@ -384,7 +375,7 @@ decides — from nothing but the index and the shape of kimchi's one quotient ch
 open Kimchi.Quotient.Permutation in
 /-- The whole-grid copy conjunct: the unmasked region from the permutation members,
 the masked rows trivially from the `masked_identity` law. -/
-theorem copyAll_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
+private theorem copyAll_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F)
     (β γ : F)
     (hβ : β ∉ badBetas
@@ -419,7 +410,7 @@ theorem copyAll_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount �
 
 /-- The public-pinning conjunct: at a public row, the `public_coeffs` law collapses the
 generic slot-`0` equation to `wTab i 0 = pub i`. -/
-theorem publicPinned_of_rowSatisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
+private theorem publicPinned_of_rowSatisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F) (hrow : ∀ i, rowSatisfies idx pub wTab i) :
     ∀ i : Fin idx.publicCount,
       wTab ⟨(i : ℕ), by have h1 := idx.public_le; have h2 := idx.zk_le; omega⟩ 0
@@ -539,14 +530,14 @@ hold randomness, and it is the selectors, not the values, that kill them). So ev
 member vanishes on the whole domain and is divisible by `Z_H`. -/
 
 /-- Transport row-constraint vanishing back across a gate's eval bridge. -/
-theorem forall_mem_eval_of_bridge {P : List (Polynomial F)} {L : List F} {x : F}
+private theorem forall_mem_eval_of_bridge {P : List (Polynomial F)} {L : List F} {x : F}
     (hb : P.map (·.eval x) = L) (hall : ∀ e ∈ L, e = 0) :
     ∀ E ∈ P, E.eval x = 0 :=
   List.forall_mem_map.mp (hb.symm ▸ hall)
 
 /-- A `getD` slot of a list of vanishing evaluations vanishes (in range by membership,
 out of range by the zero default). -/
-theorem eval_getD_zero_of_vanish {P : List (Polynomial F)} {x : F}
+private theorem eval_getD_zero_of_vanish {P : List (Polynomial F)} {x : F}
     (h : ∀ E ∈ P, E.eval x = 0) (k : ℕ) : (P.getD k 0).eval x = 0 := by
   rcases Nat.lt_or_ge k P.length with hk | hk
   · rw [List.getD_eq_getElem _ _ hk]
@@ -556,7 +547,7 @@ theorem eval_getD_zero_of_vanish {P : List (Polynomial F)} {x : F}
 /-- **A satisfied non-generic row's constraints all vanish** — the converse of
 `gateConstraints_vanish_of_dvd`, from the `rowSatisfies` branch through each gate's
 eval bridge. -/
-theorem gateConstraints_vanish_of_rowSatisfies (idx : Index F n)
+private theorem gateConstraints_vanish_of_rowSatisfies (idx : Index F n)
     (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin 15 → F) {i : Fin n}
     (hrow : rowSatisfies idx pub wTab i) (hne : (idx.gates i).typ ≠ .generic) :
     ∀ E ∈ idx.gateConstraints wTab (idx.gates i).typ,
@@ -587,7 +578,7 @@ theorem gateConstraints_vanish_of_rowSatisfies (idx : Index F n)
       ((EndoScalar.argument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i) hrow
 
 /-- **Row completeness.** Every gate member evaluates to `0` at a satisfied row. -/
-theorem eval_gateMember_of_rowSatisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
+private theorem eval_gateMember_of_rowSatisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F) {i : Fin n}
     (hrow : rowSatisfies idx pub wTab i) (k : ℕ) :
     (idx.gateMember pub wTab k).eval (idx.omega ^ (i : ℕ)) = 0 := by
@@ -648,7 +639,7 @@ open Kimchi.Quotient.Permutation in
 /-- **Permutation completeness at the index** (C2): under nondegenerate `(β, γ)`, a
 copy-invariant witness admits an accumulator whose three permutation constraints are
 `Z_H`-divisible. -/
-theorem permConstraints_dvd_of_copy (idx : Index F n) (wTab : Fin n → Fin 15 → F)
+private theorem permConstraints_dvd_of_copy (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     (β γ : F)
     (hnd : Nondegenerate idx.omega idx.zkRows (idx.permWitnessPoly wTab) idx.shifts
       idx.wiringPerm β γ)
@@ -675,7 +666,7 @@ theorem permConstraints_dvd_of_copy (idx : Index F n) (wTab : Fin n → Fin 15 �
       idx.wiringPerm_regionPreserving β γ hcopy')
 
 /-- The gate members of the full family: the entries below `gateAlphaCount`. -/
-theorem fullFamily_gate (idx : Index F n) (pub : Fin idx.publicCount → F)
+private theorem fullFamily_gate (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (β γ : F)
     (k : Fin (gateAlphaCount + permAlphaCount)) (hk : (k : ℕ) < gateAlphaCount) :
     idx.fullFamily pub wTab z β γ k = idx.gateMember pub wTab k := by

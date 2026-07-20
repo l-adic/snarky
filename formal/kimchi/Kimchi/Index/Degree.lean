@@ -71,7 +71,7 @@ theorem columnPoly_natDegree_lt [NeZero n] {ω : F} (hω : IsPrimitiveRoot ω n)
 
 /-- **The shift does not raise degree.** `shift ω p = p.comp (C ω * X)`, and post-composing
 with the degree-`≤ 1` linear rotation only lowers degree (`natDegree_comp_le`). -/
-theorem shift_natDegree_le {ω : F} (p : Polynomial F) :
+private theorem shift_natDegree_le {ω : F} (p : Polynomial F) :
     (shift ω p).natDegree ≤ p.natDegree := by
   unfold shift
   have h1 : (C ω * X).natDegree ≤ 1 :=
@@ -83,7 +83,7 @@ theorem shift_natDegree_le {ω : F} (p : Polynomial F) :
 
 /-- **The permutation next-row shift does not raise degree.** Same `.comp (C ω * X)` shape
 as `shift`, so degree is preserved (`natDegree_comp_le`). -/
-theorem shiftRow_natDegree_le {ω : F} (z : Polynomial F) :
+private theorem shiftRow_natDegree_le {ω : F} (z : Polynomial F) :
     (Kimchi.Quotient.Permutation.shiftRow ω z).natDegree ≤ z.natDegree := by
   unfold Kimchi.Quotient.Permutation.shiftRow
   have h1 : (C ω * X).natDegree ≤ 1 :=
@@ -105,7 +105,8 @@ fold by induction on the list: a uniform per-entry bound `d` on both the seed an
 If the seed and every `f x` have `natDegree ≤ d`, so does the fold — `mul · acc` preserves the
 bound (`natDegree_mul_le`, `mul.natDegree = 0`) and `+ f x` preserves it (`natDegree_add_le`).
 Proof by induction on `l`. -/
-theorem foldl_linComb_natDegree_le {α : Type*} (mul : Polynomial F) (hmul : mul.natDegree = 0)
+private theorem foldl_linComb_natDegree_le {α : Type*} (mul : Polynomial F)
+    (hmul : mul.natDegree = 0)
     (f : α → Polynomial F) (l : List α) (init : Polynomial F) (d : ℕ)
     (hinit : init.natDegree ≤ d) (hf : ∀ x ∈ l, (f x).natDegree ≤ d) :
     (l.foldl (fun acc x => mul * acc + f x) init).natDegree ≤ d := by
@@ -122,7 +123,7 @@ theorem foldl_linComb_natDegree_le {α : Type*} (mul : Polynomial F) (hmul : mul
 
 /-- **A `getD` slot of a degree-bounded list stays bounded.** In range it is a list member
 (discharged by the hypothesis); past the end it is the zero default (`natDegree 0 = 0`). -/
-theorem getD_natDegree_le {L : List (Polynomial F)} {d : ℕ}
+private theorem getD_natDegree_le {L : List (Polynomial F)} {d : ℕ}
     (h : ∀ E ∈ L, E.natDegree ≤ d) (k : ℕ) : (L.getD k 0).natDegree ≤ d := by
   rcases Nat.lt_or_ge k L.length with hk | hk
   · rw [List.getD_eq_getElem _ _ hk]; exact h _ (List.getElem_mem hk)
@@ -131,7 +132,7 @@ theorem getD_natDegree_le {L : List (Polynomial F)} {d : ℕ}
 /-- **One VarBaseMul bit-block's four entries stay under `8·n`.** Every cell fed to
 `singleBitCons` has degree `≤ d`; the deepest entry (`xo`, cleared with `t`, `u`) reaches
 degree `6·d`, so `6·d ≤ 8·n` covers the block. Reused for all five chained blocks. -/
-theorem singleBit_entry_le {d : ℕ} {b xb yb s1 xi yi xo yo : Polynomial F}
+private theorem singleBit_entry_le {d : ℕ} {b xb yb s1 xi yi xo yo : Polynomial F}
     (hb : b.natDegree ≤ d) (hxb : xb.natDegree ≤ d) (hyb : yb.natDegree ≤ d)
     (hs1 : s1.natDegree ≤ d) (hxi : xi.natDegree ≤ d) (hyi : yi.natDegree ≤ d)
     (hxo : xo.natDegree ≤ d) (hyo : yo.natDegree ≤ d) (hd : 6 * d ≤ 8 * n) :
@@ -435,7 +436,7 @@ private theorem poseidon_entry_le [NeZero n] (idx : Index F n)
 its length) has `natDegree ≤ 8·n`, dispatched to the six per-gate entry bounds through
 `getD_natDegree_le` (slots past a gate's length are the zero polynomial). `8·n` covers the
 deepest gate (Poseidon's s-box). -/
-theorem gateConstraints_getD_natDegree_le [NeZero n] (idx : Index F n)
+private theorem gateConstraints_getD_natDegree_le [NeZero n] (idx : Index F n)
     (wTab : Fin n → Fin 15 → F) (g : GateType) (k : ℕ) :
     ((idx.gateConstraints wTab g).getD k 0).natDegree ≤ 8 * n := by
   cases g with
@@ -458,7 +459,7 @@ difference) and `(z−1)·lagNumer`, each `≤ 9n`. -/
 `∑_g selectorPoly g · Eₖ` minus the public interpolant in slot `0` — has `natDegree ≤ 9n`.
 Each summand is `< n` (selector) times `≤ 8n` (entry, `gateConstraints_getD_natDegree_le`),
 so `≤ (n−1) + 8n < 9n`; the subtracted public interpolant is `< n`. -/
-theorem gateMember_natDegree_le [NeZero n] (idx : Index F n)
+private theorem gateMember_natDegree_le [NeZero n] (idx : Index F n)
     (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin 15 → F) (k : ℕ) :
     (idx.gateMember pub wTab k).natDegree ≤ degreeBound n := by
   unfold Index.gateMember
@@ -490,7 +491,7 @@ wiring data has `natDegree ≤ 9n` when the accumulator `z` has degree `< n`. Me
 `zkpm` (degree `≤ n` via `natDegree_prod_le` over `Ico (n−zkRows) n`, card `≤ n`) times a
 `z·shiftSide − shiftRow z·sigmaSide` product difference (degree `≤ 8n`), so `≤ 9n`; members
 `1,2` are `(z − 1)·lagNumer` of degree `< 2n ≤ 9n`. -/
-theorem permConstraints_natDegree_le [NeZero n] (idx : Index F n)
+private theorem permConstraints_natDegree_le [NeZero n] (idx : Index F n)
     (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (hz : z.natDegree < n) (β γ : F)
     (s : Fin 3) :
     (Permutation.constraints idx.omega idx.zkRows z (idx.permWitnessPoly wTab)
@@ -583,7 +584,7 @@ variable [NeZero n]
 `fullFamily`: below `gateAlphaCount` it is a gate member (`gateMember_natDegree_le`);
 above, a permutation member (`permConstraints_natDegree_le`). This is the per-member input
 to the aggregate bound. -/
-theorem fullFamily_natDegree_le (idx : Index F n) (pub : Fin idx.publicCount → F)
+private theorem fullFamily_natDegree_le (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (hz : z.natDegree < n) (β γ : F)
     (k : Fin (gateAlphaCount + permAlphaCount)) :
     (idx.fullFamily pub wTab z β γ k).natDegree ≤ degreeBound n := by

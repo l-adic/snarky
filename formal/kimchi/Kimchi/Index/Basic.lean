@@ -72,7 +72,7 @@ structure GateRow (F : Type*) (n : ℕ) where
 
 /-- The wiring as a map on cells, read off a gate table: the stored successor
 pointers. -/
-def wiringMapOf {F : Type*} {n : ℕ} (gates : Fin n → GateRow F n)
+private def wiringMapOf {F : Type*} {n : ℕ} (gates : Fin n → GateRow F n)
     (c : Fin 7 × Fin n) : Fin 7 × Fin n :=
   (gates c.2).wires c.1
 
@@ -139,11 +139,6 @@ def wiringMap (idx : Index F n) : Fin 7 × Fin n → Fin 7 × Fin n :=
 noncomputable def wiringPerm (idx : Index F n) : Equiv.Perm (Fin 7 × Fin n) :=
   Equiv.ofBijective _ idx.wiring_bijective
 
-@[simp]
-theorem wiringPerm_apply (idx : Index F n) (c : Fin 7 × Fin n) :
-    idx.wiringPerm c = idx.wiringMap c :=
-  rfl
-
 theorem wiringPerm_regionPreserving (idx : Index F n) :
     RegionPreserving idx.zkRows idx.wiringPerm :=
   idx.wiring_region
@@ -189,14 +184,6 @@ noncomputable def coeffPoly (idx : Index F n) (c : Fin 15) : Polynomial F :=
 /-- The sigma polynomial of column `col`. -/
 noncomputable def sigmaPoly (idx : Index F n) (col : Fin 7) : Polynomial F :=
   columnPoly idx.omega (idx.sigmaAddrRow col)
-
-theorem eval_selectorPoly (idx : Index F n) (g : GateType) (i : Fin n) :
-    (idx.selectorPoly g).eval (idx.omega ^ (i : ℕ)) = idx.selectorRow g i :=
-  eval_columnPoly idx.omega_prim _ i
-
-theorem eval_coeffPoly (idx : Index F n) (c : Fin 15) (i : Fin n) :
-    (idx.coeffPoly c).eval (idx.omega ^ (i : ℕ)) = idx.coeffRow c i :=
-  eval_columnPoly idx.omega_prim _ i
 
 theorem eval_sigmaPoly (idx : Index F n) (col : Fin 7) (i : Fin n) :
     (idx.sigmaPoly col).eval (idx.omega ^ (i : ℕ)) = idx.sigmaAddrRow col i :=
