@@ -3,48 +3,35 @@ import Kimchi.Quotient.Soundness
 import Kimchi.Quotient.SchwartzZippel
 
 /-!
-# Quotient soundness at the index
+# Per-gate quotient soundness at the index
 
-The per-family quotient soundness theorems, restated to consume `Index` data. Each gate's
-quotient soundness (`Kimchi/Quotient/*`) takes an abstract selector with a booleanness
-hypothesis and abstract coefficient/constant inputs; here the selector is the index's own
-`selectorRow` (whose booleanness is `selectorRow_boolean` — nothing to assume), the
-coefficient table is `coeffTable`, the `EndoMul` constant is `endoBase`, and the
-permutation side consumes the index's wiring permutation, shifts, and their bundled laws.
-Each conclusion is phrased on gate-typed rows — `(idx.gates i).typ = g → Holds …` —
-matching the corresponding `rowSatisfies` branch, and the permutation conclusion is the
-copy fragment of `Satisfies` on the unmasked region.
+The per-gate quotient soundness theorems restated to consume `Index` data. Each gate's
+quotient soundness takes an abstract selector with a booleanness hypothesis and abstract
+coefficient/constant inputs; here the selector is the index's own `selectorRow` (whose
+booleanness is `selectorRow_boolean` — nothing to assume), the coefficient table is
+`coeffTable`, and the `EndoMul` constant is `endoBase`. Each conclusion is phrased on
+gate-typed rows — `(idx.gates i).typ = g → Holds …` — matching the corresponding
+`rowSatisfies` branch.
 
 ## Single-challenge (counting Schwartz–Zippel) form
 
-The random-challenge surrogate is now the **counting** argument, not the injective-α family:
+The random-challenge surrogate is the **counting** argument, not the injective-α family:
 each theorem consumes ONE challenge `α : F` known to lie outside the proved-small bad set
 `badAlphas <constraint family> ω n` (`|badAlphas| ≤ n · (K − 1)` by `card_badAlphas_le`), and
-ONE quotient `t : Polynomial F`. The per-challenge `∀ s` quantifier is gone. The evaluation
-challenge is likewise a single `ζ : F` known to lie outside `badZetas <aggregate> t n` — the
-ζ-node family has been collapsed to one counting challenge, so the injective ζ vector, its
-degree bounds `D`, and the per-node `∀ p` are all gone. Every delegation goes through
-`Argument.soundness`, the single-(α, ζ) analogue of `Kimchi.Quotient.Argument.soundness`
-composing `dvd_of_evalCheck`.
+ONE quotient `t : Polynomial F`. The evaluation challenge is likewise a single `ζ : F` known
+to lie outside `badZetas <aggregate> t n`. Every delegation goes through `Argument.soundness`,
+the single-(α, ζ) analogue of `Kimchi.Quotient.Argument.soundness` composing `dvd_of_evalCheck`.
 
-Two deliberate gaps, both Phase-B assembly work, documented where they bite:
-
-* the `generic` bridge concludes the *plain* `Generic.Holds` — the deployed aggregate
-  adds the public polynomial to the first generic constraint (`Generic.withPublic` in
-  `rowSatisfies`), and the public-aware family is part of the full-aggregate modeling;
-* the copy conclusion covers the unmasked region only — the zkpm gating erases the
-  argument's grip on the masked rows by design, and `Satisfies`' whole-grid copy
-  conjunct holds there for honest witnesses because masked rows are identity-wired.
+The `generic` bridge concludes the *plain* `Generic.Holds`: the deployed aggregate adds the
+public polynomial to the first generic constraint (`Generic.withPublic` in `rowSatisfies`),
+so the public-aware family is settled with the aggregate rather than here.
 -/
 
 namespace Kimchi.Index
 
 open Polynomial Kimchi.Quotient
 
-
 variable {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n]
-
-/-! ## Project-local Mathlib supplement — single-α Argument soundness -/
 
 omit [DecidableEq F] [NeZero n] in
 /-- A selector value of `1` names the row's gate type. -/
@@ -212,118 +199,5 @@ theorem generic_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     (idx.selectorRow .generic) (idx.selectorRow_boolean _) α hα t ζ hζ
     hcheck i (idx.selectorRow_eq_one htyp)
   simpa [genericArgument, genericCellMap, rowEnv, Gate.Generic.Holds] using h
-
-/-! ## Copy soundness at the index -/
-
-open Kimchi.Quotient.Permutation in
-/-- The witness table's permuted columns as interpolants — what the permutation
-argument's committed columns are for a table witness. -/
-noncomputable def permWitnessPoly (idx : Index F n) (wTab : Fin n → Fin 15 → F) :
-    Fin 7 → Polynomial F :=
-  fun col => columnPoly idx.omega (fun j => cellValue wTab (col, j))
-
-omit [DecidableEq F] [NeZero n] in
-theorem eval_permWitnessPoly (idx : Index F n) (wTab : Fin n → Fin 15 → F)
-    (col : Fin 7) (j : Fin n) :
-    (idx.permWitnessPoly wTab col).eval (idx.omega ^ (j : ℕ)) = cellValue wTab (col, j) :=
-  eval_columnPoly idx.omega_prim _ j
-
-open Kimchi.Quotient.Permutation in
-/-- **Copy soundness at the index, divisibility form.** For the index's wiring, shifts,
-and sigma columns (all bundled laws): if at every node of an injective `(β, γ)` grid the
-prover supplies an accumulator whose three permutation constraints are divisible by
-`Z_H`, the witness takes equal values across every wire of the unmasked region. This is
-the copy fragment of `Satisfies` there; the masked rows are outside the argument's grip
-by design (zkpm gating), and honest witnesses satisfy them because masked rows are
-identity-wired. -/
-theorem copy_soundness_of_dvd (idx : Index F n) (wTab : Fin n → Fin 15 → F)
-    (β γ : F)
-    (hβ : β ∉ badBetas
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
-        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
-        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
-            * idx.omega
-              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))))
-    (hγ : γ ∉ badGammas
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
-        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
-        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
-            * idx.omega
-              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))) β)
-    (zg : Polynomial F)
-    (hdvd : ∀ s, zH F n ∣ Permutation.constraints idx.omega idx.zkRows zg
-      (idx.permWitnessPoly wTab)
-      (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts
-      β γ (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd s) :
-    ∀ c : Fin 7 × Fin (n - idx.zkRows),
-      cellValue wTab (idx.wiringMap (embCell idx.zkRows c))
-        = cellValue wTab (embCell idx.zkRows c) := by
-  intro c
-  have h := copy_soundness_wired_of_dvd idx.omega_prim (Nat.pos_of_neZero n) idx.zk_pos
-    idx.zk_le (idx.permWitnessPoly wTab) idx.shifts idx.shifts_coset idx.wiringPerm
-    idx.wiringPerm_regionPreserving β γ hβ hγ zg hdvd c
-  rw [show idx.wiringPerm (embCell idx.zkRows c) = idx.wiringMap (embCell idx.zkRows c)
-      from rfl] at h
-  rw [eval_permWitnessPoly] at h
-  rw [show idx.omega ^ ((c.2 : ℕ)) = idx.omega ^ (((embCell idx.zkRows c).2 : Fin n) : ℕ)
-      from rfl, eval_permWitnessPoly] at h
-  exact h
-
-open Kimchi.Quotient.Permutation in
-/-- **Copy soundness at the index.** As `copy_soundness_of_dvd`, with each grid node's
-divisibility obtained from the derandomized single-challenge quotient check: one challenge
-`α a c` per `(β, γ)` node, outside the node's `badAlphas` set, and one quotient `t a c`. -/
-theorem copy_soundness (idx : Index F n) (wTab : Fin n → Fin 15 → F)
-    (β γ : F)
-    (hβ : β ∉ badBetas
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
-        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
-        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
-            * idx.omega
-              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))))
-    (hγ : γ ∉ badGammas
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
-        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
-        ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
-            * idx.omega
-              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))) β)
-    (zg : Polynomial F)
-    (α : F)
-    (hα : α ∉ badAlphas
-      (Permutation.constraints idx.omega idx.zkRows zg
-        (idx.permWitnessPoly wTab)
-        (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts
-        β γ (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd) idx.omega n)
-    (t : Polynomial F)
-    (ζ : F)
-    (hζ : ζ ∉ badZetas (aggregate α
-      (Permutation.constraints idx.omega idx.zkRows zg
-        (idx.permWitnessPoly wTab)
-        (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts
-        β γ (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd)) t n)
-    (hcheck : (aggregate α
-      (Permutation.constraints idx.omega idx.zkRows zg
-        (idx.permWitnessPoly wTab)
-        (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts
-        β γ (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd)).eval ζ
-      = (t * zH F n).eval ζ) :
-    ∀ c : Fin 7 × Fin (n - idx.zkRows),
-      cellValue wTab (idx.wiringMap (embCell idx.zkRows c))
-        = cellValue wTab (embCell idx.zkRows c) :=
-  idx.copy_soundness_of_dvd wTab β γ hβ hγ zg
-    (dvd_of_evalCheck idx.omega_prim _ α hα t ζ hζ hcheck)
-
 
 end Kimchi.Index

@@ -1,4 +1,5 @@
-import Kimchi.Index.Soundness
+import Kimchi.Index.CopySoundness
+import Kimchi.Index.GateSoundness
 import Kimchi.Quotient.SchwartzZippel
 
 /-!
@@ -764,6 +765,8 @@ private theorem exists_notMem_of_card_lt {m : ℕ} {f : Fin m → F}
     rw [Finset.card_image_of_injective _ hf, Finset.card_univ, Fintype.card_fin]
   have := Finset.card_le_card hsub
   omega
+
+/-! ## The characterization: satisfiability as one divisibility -/
 
 open Kimchi.Quotient.Permutation in
 /-- **The characterization.** In a large enough field, a wellformed index is satisfied
