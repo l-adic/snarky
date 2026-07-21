@@ -104,3 +104,7 @@ Kimchi.Verifier.kimchiPallas_run_sound_algebraic_ft
 -- at the chunked wire (plan Phases 2-4), at which point the nc=1 verifier dissolves and
 -- the chunked terminals take over reachability.
 Kimchi.Verifier.Chunked.kimchiVerify
+-- The chunked reduction (Phase 2): the 44-row grid soundness at nc * 2^k = n (the
+-- public row joins the batch — its claims are proof-carried at nc > 1 and believed
+-- only through binding), extraction via chunked_batch_soundness directly.
+Kimchi.Verifier.Chunked.kimchiProof_sound

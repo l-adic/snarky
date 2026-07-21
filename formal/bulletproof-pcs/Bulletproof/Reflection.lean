@@ -289,8 +289,9 @@ commitments `C i c`, and claimed chunk evaluations `e i c j`; the wire verifier 
 the flattened segment stream. A grid of Poseidon-accepted runs at pairwise-distinct
 polyscales `ξ` and evalscales `r`, under the no-DL-relation binding hypothesis, binds
 every commitment family to one genuine polynomial: `q i` of degree `< nc i · 2^k`, whose
-chunk windows are the committed chunks and whose evaluations recombine the claimed chunk
-values. Composes `poseidon_fiat_shamir_vesta`, the flattening lemmas, and
+chunk windows are the committed chunks, whose evaluations recombine the claimed chunk
+values, and whose chunk windows reproduce each per-chunk claim individually. Composes
+`poseidon_fiat_shamir_vesta`, the flattening lemmas, and
 `chunked_batch_soundness`; binding remains a hypothesis (see the module docstring). -/
 theorem ipaVesta_sound (σ : SRS IpaVesta.Point) {n : ℕ} {nc : Fin n → ℕ}
     (hnc : ∀ i, 0 < nc i)
@@ -310,8 +311,11 @@ theorem ipaVesta_sound (σ : SRS IpaVesta.Point) {n : ℕ} {nc : Fin n → ℕ}
       (q i).natDegree < nc i * 2 ^ σ.k
         ∧ (∀ c : Fin (nc i), ∃ ρ,
             commit σ (chunkCoeffs (2 ^ σ.k) (q i) (c : ℕ)) ρ = C i c)
-        ∧ ∀ j : Fin xs.size, (q i).eval xs[j]
-            = ∑ c : Fin (nc i), (xs[j] ^ 2 ^ σ.k) ^ (c : ℕ) * e i c j :=
+        ∧ (∀ j : Fin xs.size, (q i).eval xs[j]
+            = ∑ c : Fin (nc i), (xs[j] ^ 2 ^ σ.k) ^ (c : ℕ) * e i c j)
+        ∧ ∀ (c : Fin (nc i)) (j : Fin xs.size),
+            e i c j = innerProduct (chunkCoeffs (2 ^ σ.k) (q i) (c : ℕ))
+              (evalVector (2 ^ σ.k) xs[j]) :=
   chunked_batch_soundness σ hnc ξ hξ r hr hm C (fun j : Fin xs.size => xs[j]) e
     (fun s t => Ipa.verify IpaVesta.curve σ
       (mkInput IpaVesta.curve (segmentStream C) xs
@@ -340,8 +344,11 @@ theorem ipaPallas_sound (σ : SRS IpaPallas.Point) {n : ℕ} {nc : Fin n → ℕ
       (q i).natDegree < nc i * 2 ^ σ.k
         ∧ (∀ c : Fin (nc i), ∃ ρ,
             commit σ (chunkCoeffs (2 ^ σ.k) (q i) (c : ℕ)) ρ = C i c)
-        ∧ ∀ j : Fin xs.size, (q i).eval xs[j]
-            = ∑ c : Fin (nc i), (xs[j] ^ 2 ^ σ.k) ^ (c : ℕ) * e i c j :=
+        ∧ (∀ j : Fin xs.size, (q i).eval xs[j]
+            = ∑ c : Fin (nc i), (xs[j] ^ 2 ^ σ.k) ^ (c : ℕ) * e i c j)
+        ∧ ∀ (c : Fin (nc i)) (j : Fin xs.size),
+            e i c j = innerProduct (chunkCoeffs (2 ^ σ.k) (q i) (c : ℕ))
+              (evalVector (2 ^ σ.k) xs[j]) :=
   chunked_batch_soundness σ hnc ξ hξ r hr hm C (fun j : Fin xs.size => xs[j]) e
     (fun s t => Ipa.verify IpaPallas.curve σ
       (mkInput IpaPallas.curve (segmentStream C) xs

@@ -44,6 +44,8 @@ def roots : List Name :=
     `Kimchi.Index.satisfies_iff_fullFamily_dvd,
     `Kimchi.Protocol.sound,
     `Kimchi.Verifier.kimchiProof_sound_of_openings,
+    `Kimchi.Verifier.Chunked.kimchiProof_sound_of_openings,
+    `Kimchi.Verifier.Chunked.kimchiProof_sound,
     `Kimchi.Verifier.kimchiVesta_run_sound, `Kimchi.Verifier.kimchiPallas_run_sound,
     `Kimchi.Verifier.kimchiProof_sound_algebraic,
     `Kimchi.Verifier.kimchiProof_sound_algebraic_ft,

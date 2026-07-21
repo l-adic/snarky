@@ -37,7 +37,35 @@ and added the first-ever Pallas wire adjudication):
    pins it. Without this fix the Pallas capstone terminals described a verifier that
    diverges from deployed Pallas kimchi.
 
-Phases 2–5 not started.
+**Phase 2 DONE (chunked reduction)** — `Kimchi/Verifier/Reduction/Chunked.lean`
+(transitional parallel module, namespace `Kimchi.Verifier.Chunked`, roots
+`kimchiProof_sound{,_of_openings}` in check_axioms/roots.txt): the composed soundness
+at `nc · 2^σ.k = n`, extraction via `chunked_batch_soundness` DIRECTLY (the
+`batch_openings_nc1` wrapper has no chunked analogue — dissolved as planned). Two
+deviations/discoveries recorded:
+
+* **44 rows, not 43** — the public row JOINS the batch. At `nc = 1` the public
+  evaluations are verifier-computed (a barycentric identity, no binding needed; the row
+  was rightly omitted). At `nc > 1` they are PROOF-CARRIED adversarial data whose only
+  tie to the public input is the batched opening against the verifier-computed public
+  commitment: the reduction takes the public commitment chunks with their
+  correspondence to `-(idx.pubPoly pub)` (per-chunk unit blinder, the all-ones
+  `mask_custom`) and pins the carried claims through binding. `ft_eval0`'s public slot
+  reads the chunk-COMBINED carried claim (`claimedPub`), not the interpolant value —
+  equality is DERIVED, not assumed.
+* `chunked_batch_soundness` (and `ipa{Vesta,Pallas}_sound`) STRENGTHENED: the
+  conclusion now also exposes the per-chunk claim reproduction
+  (`e i c j = ⟨chunkCoeffs (q i) c, evalVector x⟩`), which the proof always had
+  (`hEseg`) but did not state — the chunked reduction pins per-chunk VK-row claims
+  against fixed chunk commitments and cannot re-derive them from the combined
+  identity. The one bulletproof-pcs change of the arc (a pure statement
+  strengthening).
+
+The explicit witness is the ASSEMBLED reference data:
+`extractTable idx.omega (fun col => assembledRow σ.k nc (aw₀ (wRow col)))`, degree
+`< n` feeding `Kimchi.Protocol.sound` unchanged.
+
+Phases 3–5 not started.
 **Branch discipline:** new branch off `main`; ALWAYS `git branch --show-current` before
 committing.
 

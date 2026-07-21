@@ -99,7 +99,7 @@ private theorem batch_openings_nc1 [Field F] [AddCommGroup G] [Module F G]
   refine ⟨fun i => chunkCoeffs (2 ^ σ.k) (q i) 0, ρ, fun i => ⟨hρ i, fun j => ?_⟩⟩
   have hdeg : (q i).natDegree < 1 * 2 ^ σ.k := (hq i).1
   have heval : (q i).eval (x j)
-      = ∑ c : Fin 1, ((x j) ^ 2 ^ σ.k) ^ (c : ℕ) * e i j := (hq i).2.2 j
+      = ∑ c : Fin 1, ((x j) ^ 2 ^ σ.k) ^ (c : ℕ) * e i j := (hq i).2.2.1 j
   rw [eval_eq_sum_chunkPoly (q i) hdeg, Finset.sum_range_one, pow_zero, one_mul,
     chunkPoly_eval] at heval
   simp only [Fin.sum_univ_one, Fin.val_zero, pow_zero, one_mul] at heval
@@ -112,8 +112,9 @@ same point carry the same row polynomial. From the no-DL-relation binding hypoth
 `commitmentBinding_iff_no_relation` (the pair equality is consumed through
 `congrArg Prod.fst`, mirroring `bound_eq_of_commitPoly`). Consumed wherever a commitment
 is FIXED across the challenge grid: the witness rows and, per `(β, γ)`, the accumulator
-row. -/
-private theorem bound_unique [Field F] [AddCommGroup G] [Module F G] (σ : SRS G)
+row. Shared with the chunked reduction (`Reduction/Chunked.lean`), which applies it per
+chunk. -/
+theorem bound_unique [Field F] [AddCommGroup G] [Module F G] (σ : SRS G)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
     {a a' : Fin (2 ^ σ.k) → F} {ρ ρ' : F}
     (h : commit σ a ρ = commit σ a' ρ') : rowPoly a = rowPoly a' := by
@@ -129,14 +130,16 @@ The 43-row commitment list the acceptance grids range over, with the named row i
 claimed-evaluation record reads: rows `0–14` the witness columns, `15` the accumulator,
 `16–21` the first six σ columns, `22–36` the coefficient columns, `37–42` the selectors. -/
 
-/-- The six selector commitments of a verifier key, in gate enumeration order. -/
-private def selComm (comms : IndexComms G) : Fin 6 → G :=
+/-- The six selector commitments of a verifier key, in gate enumeration order.
+Generic over the commitment carrier, so the chunked reduction reuses it at
+`Fin nc → G`. -/
+def selComm (comms : IndexComms G) : Fin 6 → G :=
   ![comms.generic, comms.poseidon, comms.completeAdd, comms.varBaseMul,
     comms.endoMul, comms.endoScalar]
 
 /-- The gate type of the `j`-th selector row, in the same enumeration order as
 `selComm`. -/
-private def selGate : Fin 6 → GateType :=
+def selGate : Fin 6 → GateType :=
   ![.generic, .poseidon, .completeAdd, .varBaseMul, .endoMul, .endoScalar]
 
 /-- Batch row of witness column `c`. -/
@@ -245,7 +248,7 @@ def claimedEvals (E : Fin 43 → Fin 2 → F) : Evals F where
   emulSelector := E (selRow 4) 0
   endoScalarSelector := E (selRow 5) 0
 
-private theorem evalsExt {e e' : Evals F} (h1 : e.w = e'.w) (h2 : e.wOmega = e'.wOmega)
+theorem evalsExt {e e' : Evals F} (h1 : e.w = e'.w) (h2 : e.wOmega = e'.wOmega)
     (h3 : e.z = e'.z) (h4 : e.zOmega = e'.zOmega) (h5 : e.s = e'.s)
     (h6 : e.coeffs = e'.coeffs) (h7 : e.genericSelector = e'.genericSelector)
     (h8 : e.poseidonSelector = e'.poseidonSelector)

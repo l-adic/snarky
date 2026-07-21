@@ -36,6 +36,7 @@ import Bulletproof.Reflection
 import Kimchi.Verifier.Reduction.Correspond
 import Kimchi.Verifier.Reduction.Binding
 import Kimchi.Verifier.Reduction.Soundness
+import Kimchi.Verifier.Reduction.Chunked
 import Kimchi.Verifier.Kimchi
 import Kimchi.Verifier.Chunked
 import Kimchi.Verifier.Reflect

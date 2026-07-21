@@ -395,8 +395,11 @@ variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 the `m ≥ 1` evaluation points. Under the per-grid-point Fiat–Shamir hypothesis on the
 chunked combiners, the no-DL-relation binding hypothesis, and acceptance at every grid
 point, every polynomial of the batch is bound: there is a genuine `q i` of degree
-`< nc i · 2^k` whose chunk windows are what the wire chunks commit to and whose
-evaluations are the `x^(2^k)`-power recombinations of the claimed chunk evaluations. -/
+`< nc i · 2^k` whose chunk windows are what the wire chunks commit to, whose
+evaluations are the `x^(2^k)`-power recombinations of the claimed chunk evaluations,
+and whose chunk windows REPRODUCE each per-chunk claim individually (the last clause —
+consumers that pin per-chunk claims against fixed chunk commitments, like the chunked
+kimchi reduction's verifier-key rows, read the claims off it directly). -/
 theorem chunked_batch_soundness (σ : SRS G) {n m : ℕ} {nc : Fin n → ℕ}
     (hnc : ∀ i, 0 < nc i)
     (ξ : Fin (∑ i, nc i) → F) (hξ : Function.Injective ξ)
@@ -414,8 +417,11 @@ theorem chunked_batch_soundness (σ : SRS G) {n m : ℕ} {nc : Fin n → ℕ}
       (q i).natDegree < nc i * 2 ^ σ.k
         ∧ (∀ c : Fin (nc i), ∃ ρ,
             commit σ (chunkCoeffs (2 ^ σ.k) (q i) (c : ℕ)) ρ = C i c)
-        ∧ ∀ j, (q i).eval (x j)
-            = ∑ c : Fin (nc i), ((x j) ^ 2 ^ σ.k) ^ (c : ℕ) * e i c j := by
+        ∧ (∀ j, (q i).eval (x j)
+            = ∑ c : Fin (nc i), ((x j) ^ 2 ^ σ.k) ^ (c : ℕ) * e i c j)
+        ∧ ∀ (c : Fin (nc i)) (j : Fin m),
+            e i c j = innerProduct (chunkCoeffs (2 ^ σ.k) (q i) (c : ℕ))
+              (evalVector (2 ^ σ.k) (x j)) := by
   classical
   -- **Step 1 (flatten).** The chunked hypotheses are the flat-segment hypotheses.
   set C' : Fin (∑ i, nc i) → G :=
@@ -459,13 +465,16 @@ theorem chunked_batch_soundness (σ : SRS G) {n m : ℕ} {nc : Fin n → ℕ}
     rw [chunkCoeffs_assemblePoly _ c.isLt, dif_pos c.isLt]
   have hdeg := assemblePoly_natDegree_lt (Nat.two_pow_pos σ.k) (hnc i)
     (fun ci => if h : ci < nc i then a (finSigmaFinEquiv ⟨i, ⟨ci, h⟩⟩) else 0)
-  refine ⟨hdeg, fun c => ⟨ρ (finSigmaFinEquiv ⟨i, c⟩), ?_⟩, fun j => ?_⟩
+  refine ⟨hdeg, fun c => ⟨ρ (finSigmaFinEquiv ⟨i, c⟩), ?_⟩, fun j => ?_, fun c j => ?_⟩
   · rw [hwin c]
     exact hCseg i c
   -- **Step 4 (recombine).** The assembled polynomial evaluates as the chunk
   -- recombination of the claimed values.
-  rw [eval_eq_sum_chunkPoly _ hdeg (x j), ← Fin.sum_univ_eq_sum_range]
-  refine Finset.sum_congr rfl fun c _ => ?_
-  rw [chunkPoly_eval, hwin c, ← hEseg i c j]
+  · rw [eval_eq_sum_chunkPoly _ hdeg (x j), ← Fin.sum_univ_eq_sum_range]
+    refine Finset.sum_congr rfl fun c _ => ?_
+    rw [chunkPoly_eval, hwin c, ← hEseg i c j]
+  -- The per-chunk claims, read off the assembled windows.
+  · rw [hwin c]
+    exact hEseg i c j
 
 end Bulletproof
