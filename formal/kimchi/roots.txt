@@ -114,4 +114,9 @@ Kimchi.Verifier.Chunked.kimchiProof_sound
 -- zeta^{2^k}: the nc-chunk sigma6 side is real algebra at nc > 1).
 Kimchi.Verifier.Chunked.kimchiVesta_run_sound
 Kimchi.Verifier.Chunked.kimchiPallas_run_sound
+-- The chunked FS-reflection ft openings (Phase 4d part 1): from ONE genuine chunked
+-- acceptance, the ft row of the run's own flat stream opens to the computed runFtEval0
+-- (axioms consumed: the chunked kimchi_fiat_shamir_* pair, once each).
+Kimchi.Verifier.Chunked.ft_opening_of_reflected_vesta
+Kimchi.Verifier.Chunked.ft_opening_of_reflected_pallas
 Kimchi.Verifier.Chunked.kimchiProof_sound_algebraic_ft

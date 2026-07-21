@@ -52,6 +52,8 @@ def roots : List Name :=
     `Kimchi.Verifier.Chunked.kimchiPallas_sound,
     `Kimchi.Verifier.Chunked.kimchiVesta_run_sound,
     `Kimchi.Verifier.Chunked.kimchiPallas_run_sound,
+    `Kimchi.Verifier.Chunked.ft_opening_of_reflected_vesta,
+    `Kimchi.Verifier.Chunked.ft_opening_of_reflected_pallas,
     `Kimchi.Verifier.kimchiVesta_run_sound, `Kimchi.Verifier.kimchiPallas_run_sound,
     `Kimchi.Verifier.kimchiProof_sound_algebraic,
     `Kimchi.Verifier.kimchiProof_sound_algebraic_ft,
@@ -73,6 +75,13 @@ def allowed : List Name :=
     -- (`Ipa.verifyFrom (runWarm) (runInput)`) rather than the cold `Ipa.verify`. One per curve;
     -- the residue-free ft opening (`ft_opening_of_reflected_*`) is stated over this.
     `Kimchi.Verifier.kimchi_fiat_shamir_vesta, `Kimchi.Verifier.kimchi_fiat_shamir_pallas,
+    -- The CHUNKED deployed-run Fiat-Shamir assumptions (the chunking arc): the same
+    -- declared assumption restated at the chunked verifier's own transcript
+    -- (`Chunked.runWarm`/`Chunked.runInput`, the flat segment stream). TRANSITIONAL:
+    -- both pairs coexist until the nc = 1 layer is deleted and the chunked pair
+    -- becomes THE pair.
+    `Kimchi.Verifier.Chunked.kimchi_fiat_shamir_vesta,
+    `Kimchi.Verifier.Chunked.kimchi_fiat_shamir_pallas,
  ]
 
 /-- A trusted `native_decide` witness: CompElliptic's point counts, or pasta's two GLV

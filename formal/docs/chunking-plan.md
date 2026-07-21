@@ -114,7 +114,18 @@ stays definitional; copy soundness reads the unmasked region through
 the range is empty there — and `check_vk_correspond_chunked` adjudicates the `zk = 5`
 semantics).
 
-**Phase 4d REMAINING** — the `_ft` terminals: RESTATED
+**Phase 4d part 1 DONE (chunked FS axioms + ft opening)** —
+`Capstone/ReflectionChunked.lean`: `Chunked.kimchi_fiat_shamir_{vesta,pallas}` restate
+the deployed-run FS assumption at the chunked transcript (the flat segment stream via
+`Chunked.runWarm`/`Chunked.runInput`; statement shape mirrors the audited `nc = 1` pair
+verbatim at the chunked types — wire data only, sponge-validity claim only), and
+`ft_opening_of_reflected{,_vesta,_pallas}` derive the ft opening from ONE genuine
+chunked acceptance: the ft row sits at flat position `nc` (after the public row's
+chunks), read off `flatRows (runLogical …)` by `flatRows_ft_read`. TRANSITIONAL: the
+check_axioms ALLOWED set carries both FS pairs (6 names) until the sweep deletes the
+`nc = 1` layer and restores 4.
+
+**Phase 4d part 2 REMAINING** — the run-level `_ft` terminals: RESTATED
 `kimchi_fiat_shamir_{vesta,pallas}` at the chunked transcript (trust-surface re-audit,
 host-audit discipline; anchored on `Ipa.verifyFrom (runWarm) (runInput)` with the
 chunked runInput), the chunked `runReindex` (44-row×nc batch + ft row + t chunks →
