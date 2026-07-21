@@ -96,3 +96,11 @@ Kimchi.Verifier.kimchiProof_sound_algebraic_ft
 -- scalar parameters). This is the endpoint (AGM, as in PLONK).
 Kimchi.Verifier.kimchiVesta_run_sound_algebraic_ft
 Kimchi.Verifier.kimchiPallas_run_sound_algebraic_ft
+
+-- TRANSITIONAL (chunking arc, formal/docs/chunking-plan.md): the CHUNKED executable
+-- verifier (`nc = 2^(domainLog2 - σ.k)` chunks per column, production's chunked regime),
+-- adjudicated against the nc=2 production fixtures on BOTH curves plus the one-chunk
+-- fixture (no-regression). A declared root until the reduction and terminals are restated
+-- at the chunked wire (plan Phases 2-4), at which point the nc=1 verifier dissolves and
+-- the chunked terminals take over reachability.
+Kimchi.Verifier.Chunked.kimchiVerify

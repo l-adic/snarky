@@ -193,6 +193,110 @@ macro_rules! dump_nc2 {
                 let path = format!("{out_dir}/kimchi_proof_{}_nc2.json", $curve_str);
                 std::fs::write(&path, serde_json::to_string_pretty(&fixture).unwrap())
                     .unwrap();
+
+                // Debug sidecar (NOT a checked-in fixture): the verifier's intermediate
+                // oracle values, for localizing a Lean-side divergence layer by layer.
+                {
+                    use poly_commitment::commitment::PolyComm;
+                    let lgr2 = verifier_index
+                        .srs()
+                        .get_lagrange_basis(verifier_index.domain);
+                    let com: Vec<_> = lgr2.iter().take(verifier_index.public).collect();
+                    let elm: Vec<_> = [pub0].iter().map(|s| -*s).collect();
+                    let pc = PolyComm::multi_scalar_mul(&com, &elm);
+                    let pc = verifier_index
+                        .srs()
+                        .mask_custom(pc.clone(), &pc.map(|_| <$F as ark_ff::One>::one()))
+                        .unwrap()
+                        .commitment;
+                    let orr = proof
+                        .oracles::<BaseSponge, ScalarSponge, _>(
+                            &verifier_index,
+                            &pc,
+                            Some(&[pub0]),
+                        )
+                        .expect("oracles failed");
+                    let o = &orr.oracles;
+                    use ark_ff::Field as _;
+                    let powers = kimchi::proof::PointEvaluations {
+                        zeta: o.zeta.pow([verifier_index.max_poly_size as u64]),
+                        zeta_omega: (o.zeta * verifier_index.domain.group_gen)
+                            .pow([verifier_index.max_poly_size as u64]),
+                    };
+                    let cev = proof.evals.combine(&powers);
+                    let constants = kimchi::circuits::expr::Constants {
+                        endo_coefficient: verifier_index.endo,
+                        mds: &<$G as KimchiCurve<FULL_ROUNDS>>::sponge_params().mds,
+                        zk_rows: verifier_index.zk_rows,
+                    };
+                    let challenges = kimchi::circuits::berkeley_columns::BerkeleyChallenges {
+                        alpha: o.alpha,
+                        beta: o.beta,
+                        gamma: o.gamma,
+                        joint_combiner: <$F as ark_ff::Zero>::zero(),
+                    };
+                    let const_term = kimchi::circuits::expr::PolishToken::evaluate(
+                        &verifier_index.linearization.constant_term,
+                        verifier_index.domain,
+                        o.zeta,
+                        &cev,
+                        &constants,
+                        &challenges,
+                    )
+                    .expect("constant term evaluation failed");
+                    let cpe = |e: &kimchi::proof::PointEvaluations<$F>| {
+                        json!([fe(&e.zeta), fe(&e.zeta_omega)])
+                    };
+                    let zkpm_zeta = {
+                        use ark_poly::Polynomial as _;
+                        verifier_index
+                            .permutation_vanishing_polynomial_m()
+                            .evaluate(&o.zeta)
+                    };
+                    let index_w = verifier_index.w();
+                    let mut aps = orr.all_alphas.clone();
+                    let mut perm_alphas = aps.get_alphas(
+                        kimchi::circuits::argument::ArgumentType::Permutation,
+                        kimchi::circuits::polynomials::permutation::CONSTRAINTS,
+                    );
+                    let pa: Vec<$F> = (0..3).map(|_| perm_alphas.next().unwrap()).collect();
+                    let dbg = json!({
+                        "constant_term": fe(&const_term),
+                        "zkpm_zeta": fe(&zkpm_zeta),
+                        "index_w": fe(&index_w),
+                        "perm_alphas": pa.iter().map(fe).collect::<Vec<_>>(),
+                        "combined_w": cev.w.iter().map(cpe).collect::<Vec<_>>(),
+                        "combined_z": cpe(&cev.z),
+                        "combined_s": cev.s.iter().map(cpe).collect::<Vec<_>>(),
+                        "combined_coefficients": cev.coefficients.iter().map(cpe)
+                            .collect::<Vec<_>>(),
+                        "combined_generic_selector": cpe(&cev.generic_selector),
+                        "combined_poseidon_selector": cpe(&cev.poseidon_selector),
+                        "combined_complete_add_selector": cpe(&cev.complete_add_selector),
+                        "combined_mul_selector": cpe(&cev.mul_selector),
+                        "combined_emul_selector": cpe(&cev.emul_selector),
+                        "combined_endomul_scalar_selector": cpe(&cev.endomul_scalar_selector),
+                        "public_comm": pc.chunks.iter().map(pt).collect::<Vec<_>>(),
+                        "beta": fe(&o.beta),
+                        "gamma": fe(&o.gamma),
+                        "alpha": fe(&o.alpha),
+                        "zeta": fe(&o.zeta),
+                        "fq_digest": fe(&orr.digest),
+                        "v": fe(&o.v),
+                        "u": fe(&o.u),
+                        "public_evals": [
+                            orr.public_evals[0].iter().map(fe).collect::<Vec<_>>(),
+                            orr.public_evals[1].iter().map(fe).collect::<Vec<_>>(),
+                        ],
+                        "zeta1": fe(&orr.zeta1),
+                        "ft_eval0": fe(&orr.ft_eval0),
+                        "combined_inner_product": fe(&orr.combined_inner_product),
+                    });
+                    let dpath =
+                        format!("{out_dir}/kimchi_proof_{}_nc2_debug.json", $curve_str);
+                    std::fs::write(&dpath, serde_json::to_string_pretty(&dbg).unwrap())
+                        .unwrap();
+                }
                 println!(
                     "kimchi proof ({}, nc=2): n={} max_poly_size={} zk_rows={} t chunks={}, \
                      production verify accepts; wrote {path}",

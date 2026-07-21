@@ -4,7 +4,40 @@
 (`kimchi_proof_dump_nc2`, both accepted by the production verifier; `n = 32`,
 `max_poly_size = 16`, `zk_rows = 5`, `t` = 14 chunks; the regenerated one-chunk fixture
 stayed byte-identical, so the genericized circuit preserves the rng draw order).
-Phases 1–5 not started.
+
+**Phase 1 DONE (executable verifier)** — as a TRANSITIONAL parallel module
+(`Kimchi/Verifier/Chunked.lean` + `KimchiFixture/Chunked.lean`), NOT the in-place
+record generalization the plan sketched: the wire records are bound by `Reflect.lean`
+and the capstones, so changing them in place cannot land green before Phases 2–4. The
+`nc = 1` verifier and its whole soundness chain stay untouched; the chunked verifier is
+adjudicated NOW (accepts both `nc = 2` fixtures AND the one-chunk fixture through
+singleton-chunk decoding), and Phases 2–4 migrate the reduction/terminals onto it, after
+which the `nc = 1` verifier dissolves and `Chunked` is renamed into place. Declared as a
+temporary root in `roots.txt`.
+
+The fixtures exposed TWO LATENT `zkRows = 3`/Vesta-only transcription bugs, both fixed
+(they were invisible to every prior fixture; the chunked fixtures changed `zk_rows` to 5
+and added the first-ever Pallas wire adjudication):
+
+1. **zkpm window** — `Permutation.zkpm`/`Linearization.zkpmEval` transcribed
+   `vanishes_on_last_n_rows` (the full `∏_{[n−zk, n)}` window), but production's
+   permutation argument uses the THREE-factor
+   `permutation_vanishing_polynomial = (X−ω^{n−zk})(X−ω^{n−zk+1})(X−ω^{n−1})`
+   (permutation.rs:105–121); they coincide exactly at `zkRows = 3`. Ripple: recurrence
+   rows are now the complement of the three roots (production's `perm_aggreg` randomizes
+   exactly `z[n−zk+1]`, `z[n−zk+2]` and folds through the mask interior), so
+   completeness rebuilds the accumulator with a restarted tail, `Nondegenerate`
+   quantifies ALL rows, and `Index.zk_pos` strengthens to `zk_three : 3 ≤ zkRows`
+   (production's `(16·nc+5)/7 ≥ 3`).
+2. **Poseidon MDS** — `Gate.Poseidon` hard-coded the `fp_kimchi` MDS as generic
+   integer literals; production evaluates the gate with `G::sponge_params().mds`, a
+   different table per curve. The gate is now parameterized by `Mds F` (the `EndoMul`
+   `endo` pattern), `Index` carries `mds` as data, the verifiers pass
+   `mdsOfParams vk.frParams` (production's `Constants.mds`), and `KimchiVK.Corresponds`
+   pins it. Without this fix the Pallas capstone terminals described a verifier that
+   diverges from deployed Pallas kimchi.
+
+Phases 2–5 not started.
 **Branch discipline:** new branch off `main`; ALWAYS `git branch --show-current` before
 committing.
 

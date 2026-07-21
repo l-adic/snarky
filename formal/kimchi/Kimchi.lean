@@ -37,6 +37,7 @@ import Kimchi.Verifier.Reduction.Correspond
 import Kimchi.Verifier.Reduction.Binding
 import Kimchi.Verifier.Reduction.Soundness
 import Kimchi.Verifier.Kimchi
+import Kimchi.Verifier.Chunked
 import Kimchi.Verifier.Reflect
 import Kimchi.Verifier.Capstone.Standard
 import Kimchi.Verifier.Capstone.Algebraic
