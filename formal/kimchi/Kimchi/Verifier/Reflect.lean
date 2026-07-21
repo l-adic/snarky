@@ -343,7 +343,7 @@ noncomputable def barycentricPubEval {F : Type*} [Field F] {n : ℕ}
 `Lⱼ = columnPoly (rowIndicator j)` the Lagrange basis. Degree-`< n` agreement on the
 domain: at node `i` the left side reads `vᵢ` and the right collapses to the `j = i`
 term. -/
-private theorem columnPoly_eq_sum_indicator {F : Type*} [Field F] {n : ℕ} {ω : F}
+theorem columnPoly_eq_sum_indicator {F : Type*} [Field F] {n : ℕ} {ω : F}
     (hω : IsPrimitiveRoot ω n) (hn : 0 < n) (v : Fin n → F) :
     columnPoly ω v
       = ∑ j : Fin n, v j • columnPoly ω (Permutation.rowIndicator j) := by

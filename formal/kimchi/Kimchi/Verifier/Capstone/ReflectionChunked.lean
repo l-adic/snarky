@@ -1450,4 +1450,239 @@ private theorem stream_size (hsh : RunShapes C σ vk p pub)
 
 end RegionReads
 
+/-! ## The chunked wire correspondence and the public-commitment link -/
+
+/-- Chunk windows are additive in the polynomial. -/
+private theorem chunkPoly_add {F : Type*} [Field F] (m : ℕ) (p q : Polynomial F)
+    (i : ℕ) : chunkPoly m (p + q) i = chunkPoly m p i + chunkPoly m q i := by
+  unfold chunkPoly
+  rw [← Finset.sum_add_distrib]
+  refine Finset.sum_congr rfl fun j _ => ?_
+  rw [Polynomial.coeff_add, map_add]
+
+/-- Chunk windows commute with scalar multiplication. -/
+private theorem chunkPoly_smul {F : Type*} [Field F] (m : ℕ) (a : F) (p : Polynomial F)
+    (i : ℕ) : chunkPoly m (a • p) i = a • chunkPoly m p i := by
+  unfold chunkPoly
+  rw [Finset.smul_sum]
+  refine Finset.sum_congr rfl fun j _ => ?_
+  rw [Polynomial.coeff_smul, Polynomial.smul_monomial]
+
+/-- The unblinded commitment is additive in the polynomial. -/
+private theorem commitPoly_add {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
+    (σ : SRS G) (p q : Polynomial F) :
+    commitPoly σ (p + q) = commitPoly σ p + commitPoly σ q := by
+  unfold commitPoly commitGen
+  rw [← Finset.sum_add_distrib]
+  refine Finset.sum_congr rfl fun i _ => ?_
+  simp only [Polynomial.coeff_add, add_smul]
+
+/-- The unblinded commitment commutes with scalar multiplication. -/
+private theorem commitPoly_smul {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
+    (σ : SRS G) (a : F) (p : Polynomial F) :
+    commitPoly σ (a • p) = a • commitPoly σ p := by
+  unfold commitPoly commitGen
+  rw [Finset.smul_sum]
+  refine Finset.sum_congr rfl fun i _ => ?_
+  simp only [Polynomial.coeff_smul, smul_eq_mul, mul_smul]
+
+/-- Chunk commitments distribute over scalar-weighted polynomial sums. -/
+private theorem commitPolyChunk_sum {F G : Type*} [Field F] [AddCommGroup G]
+    [Module F G] (σ : SRS G) {ι : Type*} (s : Finset ι) (a : ι → F)
+    (q : ι → Polynomial F) (c : ℕ) :
+    commitPolyChunk σ (∑ j ∈ s, a j • q j) c
+      = ∑ j ∈ s, a j • commitPolyChunk σ (q j) c := by
+  classical
+  induction s using Finset.induction_on with
+  | empty =>
+    simp only [Finset.sum_empty]
+    unfold commitPolyChunk chunkPoly
+    simp [commitPoly, commitGen]
+  | insert x s hx ih =>
+    rw [Finset.sum_insert hx, Finset.sum_insert hx, ← ih]
+    unfold commitPolyChunk
+    rw [chunkPoly_add, commitPoly_add, chunkPoly_smul, commitPoly_smul]
+
+/-- Group-valued left folds accumulate to sums. -/
+private theorem addFoldl_aux {α G : Type*} [AddCommMonoid G] (f : α → G) (l : List α)
+    (acc : G) :
+    (l.foldl (fun a x => a + f x) acc) = acc + ∑ i : Fin l.length, f l[i] := by
+  induction l generalizing acc with
+  | nil => simp
+  | cons x t ih =>
+    rw [List.foldl_cons, ih]
+    simp only [List.length_cons, Fin.sum_univ_succ, Fin.val_zero, Fin.val_succ,
+      Fin.getElem_fin, List.getElem_cons_zero, List.getElem_cons_succ]
+    rw [add_assoc]
+
+/-- **The chunked wire key–index correspondence**: the committed chunk columns are the
+circuit's own (`Chunked.VKCorresponds`, through the `comms` view at the run's chunk
+count), the scalar-side parameters match (the domain generator, the zero-knowledge row
+count, the shifts, the `ft_eval0` endo coefficient, and the Poseidon MDS — read off
+the fr-sponge table), AND the Lagrange-basis chunk commitments over the public region
+are the basis polynomials' own chunk commitments. The Lagrange pin is NEW against the
+`nc = 1` correspondence: with the public row IN the batch, the verifier COMPUTES the
+public commitment from these key entries, and their correspondence is what binds the
+proof-carried public evaluations to the circuit's public input. Adjudicated
+numerically, per chunk, by `check_vk_correspond_chunked`. -/
+def KimchiVK.Corresponds [Module C.ScalarField C.Point] {n : ℕ}
+    (σ : SRS C.Point) (vk : KimchiVK C) (idx : Index C.ScalarField n) : Prop :=
+  VKCorresponds σ (runNc C σ vk) (vk.comms (runNc C σ vk)) idx
+    ∧ vk.omega = idx.omega
+    ∧ vk.zkRows = idx.zkRows
+    ∧ (fun i : Fin 7 => vk.shifts[(i : ℕ)]!) = idx.shifts
+    ∧ vk.endo = idx.endoBase
+    ∧ mdsOfParams vk.frParams = idx.mds
+    ∧ ∀ (j : Fin n), (j : ℕ) < idx.publicCount → ∀ c : ℕ, c < runNc C σ vk →
+        (vk.lagrangeBasis.getD (j : ℕ) #[]).getD c 0
+          = commitPolyChunk σ
+              (columnPoly idx.omega (Kimchi.Permutation.rowIndicator j)) c
+
+/-- **The public commitment corresponds**: under the Lagrange chunk pin, the deployed
+verifier's per-chunk public commitment is the per-chunk masked commitment of the
+NEGATED public interpolant — the `pubC` feed of the chunked reduction. The
+`.val`-scalar collapse is supplied per curve (`hsmul`). -/
+theorem publicCommitment_corresponds [Module C.ScalarField C.Point]
+    (σ : SRS C.Point) (vk : KimchiVK C) (pub : Array C.ScalarField) {n : ℕ}
+    [NeZero n] (idx : Index C.ScalarField n)
+    (hsmul : ∀ (a : C.ScalarField) (P : C.Point), a.val • P = a • P)
+    (hlag : ∀ (j : Fin n), (j : ℕ) < idx.publicCount → ∀ c : ℕ, c < runNc C σ vk →
+      (vk.lagrangeBasis.getD (j : ℕ) #[]).getD c 0
+        = commitPolyChunk σ
+            (columnPoly idx.omega (Kimchi.Permutation.rowIndicator j)) c)
+    (hlagsz : pub.size ≤ vk.lagrangeBasis.size)
+    (hpub : pub.size = idx.publicCount)
+    (c : ℕ) (hc : c < runNc C σ vk) :
+    (publicCommitment C σ vk (runNc C σ vk) pub).getD c 0
+      = commitPolyMaskedChunk σ (-(idx.pubPoly (pubView idx pub))) c := by
+  have hn : 0 < n := Nat.pos_of_ne_zero (NeZero.ne n)
+  have hω := idx.omega_prim
+  have hpc : idx.publicCount ≤ n := idx.public_le.trans (Nat.sub_le _ _)
+  -- the negated interpolant as a Lagrange-basis combination
+  have hpoly : -(idx.pubPoly (pubView idx pub))
+      = ∑ j : Fin n, (-(pubAt idx (pubView idx pub) j))
+          • columnPoly idx.omega (Kimchi.Permutation.rowIndicator j) := by
+    rw [show idx.pubPoly (pubView idx pub)
+        = columnPoly idx.omega (pubAt idx (pubView idx pub)) from rfl,
+      columnPoly_eq_sum_indicator hω hn, ← Finset.sum_neg_distrib]
+    exact Finset.sum_congr rfl fun j _ => (neg_smul _ _).symm
+  unfold commitPolyMaskedChunk
+  rw [hpoly, commitPolyChunk_sum]
+  unfold publicCommitment
+  by_cases h0 : pub.size = 0
+  · rw [if_pos h0]
+    have hzero : ∀ j : Fin n, (-(pubAt idx (pubView idx pub) j))
+        • commitPolyChunk σ
+            (columnPoly idx.omega (Kimchi.Permutation.rowIndicator j)) c = 0 := by
+      intro j
+      have hz : pubAt idx (pubView idx pub) j = 0 := by
+        unfold pubAt
+        rw [dif_neg (by omega)]
+      rw [hz, neg_zero, zero_smul]
+    rw [Finset.sum_congr rfl fun j _ => hzero j, Finset.sum_const_zero, zero_add]
+    simp [Array.getD, hc]
+  · rw [if_neg h0]
+    rw [show ((Array.range (runNc C σ vk)).map (fun c =>
+        ((vk.lagrangeBasis.extract 0 pub.size).zip pub).foldl
+          (fun acc Pp => acc + (-Pp.2).val • Pp.1.getD c 0) 0 + σ.h)).getD c 0
+      = ((vk.lagrangeBasis.extract 0 pub.size).zip pub).foldl
+          (fun acc Pp => acc + (-Pp.2).val • Pp.1.getD c 0) 0 + σ.h from by
+        simp [Array.getD, hc]]
+    congr 1
+    rw [← Array.foldl_toList, addFoldl_aux, zero_add]
+    have hzipsz : ((vk.lagrangeBasis.extract 0 pub.size).zip pub).size = pub.size := by
+      simp only [Array.size_zip, Array.size_extract]
+      omega
+    have hlen : ((vk.lagrangeBasis.extract 0 pub.size).zip pub).toList.length
+        = pub.size := by
+      rw [Array.length_toList, hzipsz]
+    -- both sides as `range`-indexed sums of total functions of the row number
+    calc (∑ i : Fin ((vk.lagrangeBasis.extract 0 pub.size).zip pub).toList.length,
+          (-(((vk.lagrangeBasis.extract 0 pub.size).zip pub).toList[i]).2).val
+            • (((vk.lagrangeBasis.extract 0 pub.size).zip pub).toList[i]).1.getD c 0)
+        = ∑ i : Fin ((vk.lagrangeBasis.extract 0 pub.size).zip pub).toList.length,
+            (fun m => (-(pub.getD m 0)).val
+              • ((vk.lagrangeBasis.getD m #[]).getD c 0)) (i : ℕ) := by
+          refine Finset.sum_congr rfl fun i _ => ?_
+          have hilt : (i : ℕ) < pub.size := by
+            have := i.isLt
+            omega
+          have hie : (i : ℕ)
+              < ((vk.lagrangeBasis.extract 0 pub.size).zip pub).size := by omega
+          have hix : (i : ℕ) < min pub.size vk.lagrangeBasis.size := by omega
+          have hextr : (i : ℕ) < (vk.lagrangeBasis.extract 0 pub.size).size := by
+            rw [Array.size_extract]
+            omega
+          have hentry : ((vk.lagrangeBasis.extract 0 pub.size).zip pub).toList[i]
+              = ((vk.lagrangeBasis.extract 0 pub.size)[(i : ℕ)]'hextr,
+                pub[(i : ℕ)]'hilt) := by
+            rw [show ((vk.lagrangeBasis.extract 0 pub.size).zip pub).toList[i]
+                = ((vk.lagrangeBasis.extract 0 pub.size).zip pub)[(i : ℕ)]'hie from
+              Array.getElem_toList _]
+            exact Array.getElem_zip
+          rw [hentry]
+          have hib : (i : ℕ) < vk.lagrangeBasis.size := by omega
+          have hlagread : (vk.lagrangeBasis.extract 0 pub.size)[(i : ℕ)]'hextr
+              = vk.lagrangeBasis.getD (i : ℕ) #[] := by
+            rw [Array.getElem_extract,
+              show vk.lagrangeBasis.getD (i : ℕ) #[]
+                = vk.lagrangeBasis[(i : ℕ)]'hib from by simp [Array.getD, hib]]
+            congr 1
+            omega
+          rw [hlagread, show pub[(i : ℕ)]'hilt = pub.getD (i : ℕ) 0 from by
+            simp [Array.getD, hilt]]
+      _ = ∑ m ∈ Finset.range pub.size,
+            (-(pub.getD m 0)).val • ((vk.lagrangeBasis.getD m #[]).getD c 0) := by
+          rw [Fin.sum_univ_eq_sum_range
+            (fun m => (-(pub.getD m 0)).val
+              • ((vk.lagrangeBasis.getD m #[]).getD c 0))
+            (((vk.lagrangeBasis.extract 0 pub.size).zip pub).toList.length), hlen]
+      _ = ∑ m ∈ Finset.range pub.size,
+            (if h : m < n then (-(pubAt idx (pubView idx pub) ⟨m, h⟩))
+              • commitPolyChunk σ (columnPoly idx.omega
+                  (Kimchi.Permutation.rowIndicator ⟨m, h⟩)) c else 0) := by
+          refine Finset.sum_congr rfl fun m hm => ?_
+          have hmlt : m < pub.size := Finset.mem_range.mp hm
+          have hmn : m < n := by omega
+          rw [dif_pos hmn]
+          have hjp : ((⟨m, hmn⟩ : Fin n) : ℕ) < idx.publicCount := by
+            show m < idx.publicCount
+            omega
+          have hpubAt : pubAt idx (pubView idx pub) ⟨m, hmn⟩ = pub.getD m 0 := by
+            unfold pubAt
+            rw [dif_pos hjp]
+            rfl
+          rw [hpubAt, ← hlag ⟨m, hmn⟩ hjp c hc, hsmul]
+      _ = ∑ m ∈ Finset.range n,
+            (if h : m < n then (-(pubAt idx (pubView idx pub) ⟨m, h⟩))
+              • commitPolyChunk σ (columnPoly idx.omega
+                  (Kimchi.Permutation.rowIndicator ⟨m, h⟩)) c else 0) := by
+          have hsub : Finset.range pub.size ⊆ Finset.range n := by
+            intro x hx
+            have := Finset.mem_range.mp hx
+            exact Finset.mem_range.mpr (by omega)
+          refine Finset.sum_subset hsub ?_
+          intro m hmn hmp
+          have hmn' : m < n := Finset.mem_range.mp hmn
+          have hmp' : ¬ m < pub.size := fun h => hmp (Finset.mem_range.mpr h)
+          rw [dif_pos hmn']
+          have hz : pubAt idx (pubView idx pub) ⟨m, hmn'⟩ = 0 := by
+            unfold pubAt
+            rw [dif_neg (by show ¬ m < idx.publicCount; omega)]
+          rw [hz, neg_zero, zero_smul]
+      _ = ∑ j : Fin n, (fun m => if h : m < n then
+            (-(pubAt idx (pubView idx pub) ⟨m, h⟩))
+              • commitPolyChunk σ (columnPoly idx.omega
+                  (Kimchi.Permutation.rowIndicator ⟨m, h⟩)) c else 0) (j : ℕ) :=
+          (Fin.sum_univ_eq_sum_range
+            (fun m => if h : m < n then (-(pubAt idx (pubView idx pub) ⟨m, h⟩))
+              • commitPolyChunk σ (columnPoly idx.omega
+                  (Kimchi.Permutation.rowIndicator ⟨m, h⟩)) c else 0) n).symm
+      _ = ∑ j : Fin n, (-(pubAt idx (pubView idx pub) j))
+            • commitPolyChunk σ (columnPoly idx.omega
+                (Kimchi.Permutation.rowIndicator j)) c := by
+          refine Finset.sum_congr rfl fun j _ => ?_
+          beta_reduce
+          rw [dif_pos j.isLt]
+
 end Kimchi.Verifier.Chunked
