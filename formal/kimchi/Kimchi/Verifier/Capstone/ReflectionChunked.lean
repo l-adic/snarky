@@ -407,4 +407,490 @@ theorem ft_opening_of_reflected_pallas (σ : SRS IpaPallas.Point)
     (kimchiVerify_reflects IpaPallas.curve σ vk p pub hacc) aRef ρRef hrep
     (kimchi_fiat_shamir_pallas σ vk p pub) hξ hr
 
+/-! ## The uniform-block read toolkit
+
+The flat segment stream is a `flatMap` of per-row chunk blocks; every block except the
+ft singleton has exactly `nc` entries. Reads at `q·nc + r` land in block `q` at offset
+`r`. -/
+
+private theorem list_uniform_length {α β : Type*} (L : List α) (g : α → List β)
+    (nc : ℕ) (h : ∀ a ∈ L, (g a).length = nc) :
+    (L.flatMap g).length = L.length * nc := by
+  induction L with
+  | nil => simp
+  | cons hd tl ih =>
+    rw [List.flatMap_cons, List.length_append, h hd (by simp),
+      ih (fun a ha => h a (by simp [ha])), List.length_cons]
+    ring
+
+private theorem list_uniform_read {α β : Type*} [Inhabited α] [Inhabited β]
+    (L : List α) (g : α → List β) (nc : ℕ)
+    (h : ∀ a ∈ L, (g a).length = nc)
+    (q r : ℕ) (hq : q < L.length) (hr : r < nc) :
+    (L.flatMap g)[q * nc + r]! = (g L[q]!)[r]! := by
+  induction L generalizing q with
+  | nil => simp at hq
+  | cons hd tl ih =>
+    have hhd : (g hd).length = nc := h hd (by simp)
+    have htl : (tl.flatMap g).length = tl.length * nc :=
+      list_uniform_length tl g nc (fun a ha => h a (by simp [ha]))
+    rw [List.flatMap_cons]
+    cases q with
+    | zero =>
+      have h0 : (hd :: tl)[(0 : ℕ)]! = hd := by
+        rw [getElem!_pos (hd :: tl) 0 (by simp)]
+        simp
+      simp only [Nat.zero_mul, Nat.zero_add]
+      rw [h0, getElem!_pos (g hd ++ tl.flatMap g) r
+          (by rw [List.length_append]; omega),
+        List.getElem_append_left (by omega),
+        ← getElem!_pos (g hd) r (by omega)]
+    | succ q' =>
+      have hq' : q' < tl.length := by simpa using hq
+      have hbound : q' * nc + r < (tl.flatMap g).length := by
+        rw [htl]
+        have : (q' + 1) * nc ≤ tl.length * nc := Nat.mul_le_mul_right _ (by omega)
+        have h2 : q' * nc + r < (q' + 1) * nc := by
+          rw [Nat.succ_mul]
+          omega
+        omega
+      have hpos : (q' + 1) * nc + r = (g hd).length + (q' * nc + r) := by
+        rw [hhd, Nat.succ_mul]
+        ring
+      have hsucc : (hd :: tl)[(q' + 1 : ℕ)]! = tl[q']! := by
+        rw [getElem!_pos (hd :: tl) (q' + 1) (by simpa using hq),
+          getElem!_pos tl q' hq']
+        simp
+      rw [hpos, hsucc,
+        getElem!_pos (g hd ++ tl.flatMap g) _
+          (by rw [List.length_append]; omega),
+        List.getElem_append_right (by omega),
+        ← getElem!_pos (tl.flatMap g) _
+          (by
+            have : (g hd).length + (q' * nc + r) - (g hd).length = q' * nc + r := by
+              omega
+            omega),
+        show (g hd).length + (q' * nc + r) - (g hd).length = q' * nc + r from by omega,
+        ih (fun a ha => h a (by simp [ha])) q' hq']
+
+/-- Uniform-block read through an array `flatMap`: with every block of size `nc`,
+position `q·nc + r` is block `q` at offset `r`. -/
+private theorem flatMap_uniform_read {α β : Type*} [Inhabited α] [Inhabited β]
+    (A : Array α) (f : α → Array β) (nc : ℕ)
+    (h : ∀ a ∈ A, (f a).size = nc)
+    (q r : ℕ) (hq : q < A.size) (hr : r < nc) :
+    (A.flatMap f)[q * nc + r]! = (f A[q]!)[r]! := by
+  rw [← Array.getElem!_toList, Array.toList_flatMap,
+    list_uniform_read A.toList (fun a => (f a).toList) nc
+      (fun a ha => by
+        rw [Array.length_toList]
+        exact h a (by simpa using ha))
+      q r (by rwa [Array.length_toList]) hr,
+    Array.getElem!_toList, Array.getElem!_toList]
+
+/-- The size of a uniform-block array `flatMap`. -/
+private theorem flatMap_uniform_size {α β : Type*} (A : Array α) (f : α → Array β)
+    (nc : ℕ) (h : ∀ a ∈ A, (f a).size = nc) :
+    (A.flatMap f).size = A.size * nc := by
+  rw [show (A.flatMap f).size = (A.flatMap f).toList.length from
+      Array.length_toList.symm,
+    Array.toList_flatMap,
+    list_uniform_length A.toList (fun a => (f a).toList) nc
+      (fun a ha => by
+        rw [Array.length_toList]
+        exact h a (by simpa using ha)),
+    Array.length_toList]
+
+/-! ## The run shapes, extracted from the guard -/
+
+/-- The shape facts of an accepted chunked run, as membership-form size statements —
+extracted once from `shapeBad = false` (the 30-clause guard conjunction). -/
+structure RunShapes (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) : Prop where
+  wCommSize : p.wComm.size = 15
+  wCommChunks : ∀ a ∈ p.wComm, a.size = runNc C σ vk
+  zCommSize : p.zComm.size = runNc C σ vk
+  tCommSize : p.tComm.size ≤ 7 * runNc C σ vk
+  wSize : p.evals.w.size = 15
+  sSize : p.evals.s.size = 6
+  coeffSize : p.evals.coefficients.size = 15
+  wChunks : ∀ e ∈ p.evals.w,
+    e.zeta.size = runNc C σ vk ∧ e.zetaOmega.size = runNc C σ vk
+  sChunks : ∀ e ∈ p.evals.s,
+    e.zeta.size = runNc C σ vk ∧ e.zetaOmega.size = runNc C σ vk
+  coeffChunks : ∀ e ∈ p.evals.coefficients,
+    e.zeta.size = runNc C σ vk ∧ e.zetaOmega.size = runNc C σ vk
+  zChunks : p.evals.z.zeta.size = runNc C σ vk
+    ∧ p.evals.z.zetaOmega.size = runNc C σ vk
+  genChunks : p.evals.genericSelector.zeta.size = runNc C σ vk
+    ∧ p.evals.genericSelector.zetaOmega.size = runNc C σ vk
+  posChunks : p.evals.poseidonSelector.zeta.size = runNc C σ vk
+    ∧ p.evals.poseidonSelector.zetaOmega.size = runNc C σ vk
+  addChunks : p.evals.completeAddSelector.zeta.size = runNc C σ vk
+    ∧ p.evals.completeAddSelector.zetaOmega.size = runNc C σ vk
+  mulChunks : p.evals.mulSelector.zeta.size = runNc C σ vk
+    ∧ p.evals.mulSelector.zetaOmega.size = runNc C σ vk
+  emulChunks : p.evals.emulSelector.zeta.size = runNc C σ vk
+    ∧ p.evals.emulSelector.zetaOmega.size = runNc C σ vk
+  endoChunks : p.evals.endomulScalarSelector.zeta.size = runNc C σ vk
+    ∧ p.evals.endomulScalarSelector.zetaOmega.size = runNc C σ vk
+  sigmaCommSize : vk.sigmaComm.size = 7
+  sigmaCommChunks : ∀ a ∈ vk.sigmaComm, a.size = runNc C σ vk
+  coeffCommSize : vk.coefficientsComm.size = 15
+  coeffCommChunks : ∀ a ∈ vk.coefficientsComm, a.size = runNc C σ vk
+  genCommSize : vk.genericComm.size = runNc C σ vk
+  posCommSize : vk.poseidonComm.size = runNc C σ vk
+  addCommSize : vk.completeAddComm.size = runNc C σ vk
+  mulCommSize : vk.mulComm.size = runNc C σ vk
+  emulCommSize : vk.emulComm.size = runNc C σ vk
+  endoCommSize : vk.endomulScalarComm.size = runNc C σ vk
+  shiftsSize : vk.shifts.size = 7
+  lagSize : pub.size ≤ vk.lagrangeBasis.size
+  lagChunks : ∀ a ∈ vk.lagrangeBasis.extract 0 pub.size, a.size = runNc C σ vk
+  pubSize : pub.size ≤ vk.n
+  srsLe : σ.k ≤ vk.domainLog2
+
+private theorem shape_wCommSize (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    p.wComm.size = 15 := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', Bool.and_eq_true, beq_iff_eq,
+      Array.all_eq_true_iff_forall_mem] at hx
+  exact hx.1
+
+private theorem shape_wCommChunks (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    ∀ a ∈ p.wComm, a.size = runNc C σ vk := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', Bool.and_eq_true, beq_iff_eq,
+      Array.all_eq_true_iff_forall_mem] at hx
+  exact hx.2
+
+private theorem shape_zCommSize (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    p.zComm.size = runNc C σ vk := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', beq_iff_eq] at hx
+  exact hx
+
+private theorem shape_tCommSize (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    p.tComm.size ≤ 7 * (runNc C σ vk) := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.2
+  simp only [decide_eq_false_iff_not, Nat.not_lt] at hx
+  show p.tComm.size ≤ 7 * 2 ^ (vk.domainLog2 - σ.k)
+  omega
+
+private theorem shape_wSize (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    p.evals.w.size = 15 := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.2
+  simp only [bne_eq_false_iff_eq] at hx
+  exact hx
+
+private theorem shape_sSize (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    p.evals.s.size = 6 := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.2
+  simp only [bne_eq_false_iff_eq] at hx
+  exact hx
+
+private theorem shape_coeffSize (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    p.evals.coefficients.size = 15 := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.2
+  simp only [bne_eq_false_iff_eq] at hx
+  exact hx
+
+private theorem shape_wChunks (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    ∀ e ∈ p.evals.w, e.zeta.size = runNc C σ vk ∧ e.zetaOmega.size = runNc C σ vk := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', Bool.and_eq_true, beq_iff_eq,
+      Array.all_eq_true_iff_forall_mem] at hx
+  exact hx
+
+private theorem shape_sChunks (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    ∀ e ∈ p.evals.s, e.zeta.size = runNc C σ vk ∧ e.zetaOmega.size = runNc C σ vk := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', Bool.and_eq_true, beq_iff_eq,
+      Array.all_eq_true_iff_forall_mem] at hx
+  exact hx
+
+private theorem shape_coeffChunks (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    ∀ e ∈ p.evals.coefficients, e.zeta.size = runNc C σ vk ∧ e.zetaOmega.size = runNc C σ vk := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', Bool.and_eq_true, beq_iff_eq,
+      Array.all_eq_true_iff_forall_mem] at hx
+  exact hx
+
+private theorem shape_zChunks (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    p.evals.z.zeta.size = runNc C σ vk
+      ∧ p.evals.z.zetaOmega.size = runNc C σ vk := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', Bool.and_eq_true, beq_iff_eq] at hx
+  exact hx
+
+private theorem shape_genChunks (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    p.evals.genericSelector.zeta.size = runNc C σ vk
+      ∧ p.evals.genericSelector.zetaOmega.size = runNc C σ vk := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', Bool.and_eq_true, beq_iff_eq] at hx
+  exact hx
+
+private theorem shape_posChunks (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    p.evals.poseidonSelector.zeta.size = runNc C σ vk
+      ∧ p.evals.poseidonSelector.zetaOmega.size = runNc C σ vk := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', Bool.and_eq_true, beq_iff_eq] at hx
+  exact hx
+
+private theorem shape_addChunks (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    p.evals.completeAddSelector.zeta.size = runNc C σ vk
+      ∧ p.evals.completeAddSelector.zetaOmega.size = runNc C σ vk := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', Bool.and_eq_true, beq_iff_eq] at hx
+  exact hx
+
+private theorem shape_mulChunks (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    p.evals.mulSelector.zeta.size = runNc C σ vk
+      ∧ p.evals.mulSelector.zetaOmega.size = runNc C σ vk := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', Bool.and_eq_true, beq_iff_eq] at hx
+  exact hx
+
+private theorem shape_emulChunks (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    p.evals.emulSelector.zeta.size = runNc C σ vk
+      ∧ p.evals.emulSelector.zetaOmega.size = runNc C σ vk := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', Bool.and_eq_true, beq_iff_eq] at hx
+  exact hx
+
+private theorem shape_endoChunks (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    p.evals.endomulScalarSelector.zeta.size = runNc C σ vk
+      ∧ p.evals.endomulScalarSelector.zetaOmega.size = runNc C σ vk := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', Bool.and_eq_true, beq_iff_eq] at hx
+  exact hx
+
+private theorem shape_sigmaCommSize (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    vk.sigmaComm.size = 7 := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', Bool.and_eq_true, beq_iff_eq,
+      Array.all_eq_true_iff_forall_mem] at hx
+  exact hx.1
+
+private theorem shape_sigmaCommChunks (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    ∀ a ∈ vk.sigmaComm, a.size = runNc C σ vk := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', Bool.and_eq_true, beq_iff_eq,
+      Array.all_eq_true_iff_forall_mem] at hx
+  exact hx.2
+
+private theorem shape_coeffCommSize (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    vk.coefficientsComm.size = 15 := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', Bool.and_eq_true, beq_iff_eq,
+      Array.all_eq_true_iff_forall_mem] at hx
+  exact hx.1
+
+private theorem shape_coeffCommChunks (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    ∀ a ∈ vk.coefficientsComm, a.size = runNc C σ vk := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', Bool.and_eq_true, beq_iff_eq,
+      Array.all_eq_true_iff_forall_mem] at hx
+  exact hx.2
+
+private theorem shape_genCommSize (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    vk.genericComm.size = runNc C σ vk := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', beq_iff_eq] at hx
+  exact hx
+
+private theorem shape_posCommSize (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    vk.poseidonComm.size = runNc C σ vk := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', beq_iff_eq] at hx
+  exact hx
+
+private theorem shape_addCommSize (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    vk.completeAddComm.size = runNc C σ vk := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', beq_iff_eq] at hx
+  exact hx
+
+private theorem shape_mulCommSize (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    vk.mulComm.size = runNc C σ vk := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', beq_iff_eq] at hx
+  exact hx
+
+private theorem shape_emulCommSize (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    vk.emulComm.size = runNc C σ vk := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.2
+  simp only [Bool.not_eq_false', beq_iff_eq] at hx
+  exact hx
+
+private theorem shape_endoCommSize (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    vk.endomulScalarComm.size = runNc C σ vk := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.2
+  simp only [Bool.not_eq_false', beq_iff_eq] at hx
+  exact hx
+
+private theorem shape_shiftsSize (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    vk.shifts.size = 7 := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.2
+  simp only [bne_eq_false_iff_eq] at hx
+  exact hx
+
+private theorem shape_lagSize (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    pub.size ≤ vk.lagrangeBasis.size := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.2
+  simp only [decide_eq_false_iff_not, Nat.not_lt] at hx
+  omega
+
+private theorem shape_lagChunks (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    ∀ a ∈ vk.lagrangeBasis.extract 0 pub.size, a.size = runNc C σ vk := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.2
+  simp only [Bool.not_eq_false', Bool.and_eq_true, beq_iff_eq,
+      Array.all_eq_true_iff_forall_mem] at hx
+  exact hx
+
+private theorem shape_pubSize (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    pub.size ≤ vk.n := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.2
+  simp only [decide_eq_false_iff_not, Nat.not_lt] at hx
+  omega
+
+private theorem shape_srsLe (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    σ.k ≤ vk.domainLog2 := by
+  have h := hshape
+  simp only [shapeBad, Bool.or_eq_false_iff] at h
+  have hx := h.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1
+  simp only [decide_eq_false_iff_not, Nat.not_lt] at hx
+  exact hx
+
+/-- The extraction: `shapeBad = false` gives every run shape. -/
+theorem runShapes_of_shape (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) (hshape : shapeBad C σ vk p pub = false) :
+    RunShapes C σ vk p pub :=
+  { wCommSize := shape_wCommSize C σ vk p pub hshape
+    wCommChunks := shape_wCommChunks C σ vk p pub hshape
+    zCommSize := shape_zCommSize C σ vk p pub hshape
+    tCommSize := shape_tCommSize C σ vk p pub hshape
+    wSize := shape_wSize C σ vk p pub hshape
+    sSize := shape_sSize C σ vk p pub hshape
+    coeffSize := shape_coeffSize C σ vk p pub hshape
+    wChunks := shape_wChunks C σ vk p pub hshape
+    sChunks := shape_sChunks C σ vk p pub hshape
+    coeffChunks := shape_coeffChunks C σ vk p pub hshape
+    zChunks := shape_zChunks C σ vk p pub hshape
+    genChunks := shape_genChunks C σ vk p pub hshape
+    posChunks := shape_posChunks C σ vk p pub hshape
+    addChunks := shape_addChunks C σ vk p pub hshape
+    mulChunks := shape_mulChunks C σ vk p pub hshape
+    emulChunks := shape_emulChunks C σ vk p pub hshape
+    endoChunks := shape_endoChunks C σ vk p pub hshape
+    sigmaCommSize := shape_sigmaCommSize C σ vk p pub hshape
+    sigmaCommChunks := shape_sigmaCommChunks C σ vk p pub hshape
+    coeffCommSize := shape_coeffCommSize C σ vk p pub hshape
+    coeffCommChunks := shape_coeffCommChunks C σ vk p pub hshape
+    genCommSize := shape_genCommSize C σ vk p pub hshape
+    posCommSize := shape_posCommSize C σ vk p pub hshape
+    addCommSize := shape_addCommSize C σ vk p pub hshape
+    mulCommSize := shape_mulCommSize C σ vk p pub hshape
+    emulCommSize := shape_emulCommSize C σ vk p pub hshape
+    endoCommSize := shape_endoCommSize C σ vk p pub hshape
+    shiftsSize := shape_shiftsSize C σ vk p pub hshape
+    lagSize := shape_lagSize C σ vk p pub hshape
+    lagChunks := shape_lagChunks C σ vk p pub hshape
+    pubSize := shape_pubSize C σ vk p pub hshape
+    srsLe := shape_srsLe C σ vk p pub hshape }
+
 end Kimchi.Verifier.Chunked
