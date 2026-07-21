@@ -22,8 +22,9 @@ run by reflection (`kimchiVerify_reflects`) and the tree by the new axioms, so a
 **Part 2 — the run-level terminal roots.** `kimchi{Vesta,Pallas}_run_sound_algebraic_ft`
 derive, from ONE genuine `KimchiVesta/Pallas.verify … = true` and the algebraic prover's
 representations of the run's own 45 batch rows and 7 quotient chunks, the guarded
-`∃ wTab, Satisfies idx (pubView idx pub) wTab` at the run's own sponge challenges — the
-quotient residue dissolved. The deployed 45-row batch is reindexed onto the abstract 43-row
+`Satisfies idx (pubView idx pub) wTab` — the table quantified with the bad sets, before
+the run challenges — at the run's own sponge challenges, the quotient residue
+dissolved. The deployed 45-row batch is reindexed onto the abstract 43-row
 `batchC` (`runReindex` and its commitment/claim faithfulness lemmas), the openings seam
 `kimchiProof_sound_of_openings` is fed directly, and the ft/Maller identity is derived from
 the part-1 ft opening via `ft_identity_of_chunks` — no grid, no `poseidon_fiat_shamir`: the
@@ -233,8 +234,10 @@ theorem ft_opening_of_reflected_pallas (σ : SRS IpaPallas.Point) (vk : KimchiPa
 /-! ## The FS-reflection run-level roots (the Fiat–Shamir discharge, part 2)
 
 The residue-free run-level roots: from a genuine `KimchiVesta/Pallas.verify … = true`,
-the AGM path delivers `∃ wTab, Satisfies idx (pubView idx pub) wTab` with the
-ft/quotient residue DISSOLVED — no `t`/`hteq` hypothesis, no extraction grid. The new
+the AGM path delivers a witness table fixed before the run challenges — the reindexed
+reference representations' own data — with the guarded `Satisfies idx (pubView idx pub)
+wTab` and the ft/quotient residue DISSOLVED — no `t`/`hteq` hypothesis, no extraction
+grid. The new
 content over part 1 is pure reindexing and form matching: the deployed 45-row batch of
 the reflected run carries the abstract 43-row `batchC` as a sub-batch (`runReindex` /
 `batchC_eq_commitmentFn` / `claimedEvals_runReindex_eq`), the verifier's barycentric
@@ -743,8 +746,10 @@ private theorem claimedEvals_runReindex_eq {C : Ipa.CommitmentCurve} (σ : SRS C
     rfl
 
 /-- **The run-level residue-free root (Vesta)**: from a genuine deployed acceptance
-`KimchiVesta.verify σ vk p pub = true`, the AGM path delivers
-`∃ wTab, Satisfies idx (pubView idx pub) wTab` — with the ft/quotient residue
+`KimchiVesta.verify σ vk p pub = true`, the AGM path delivers the guarded
+`Satisfies idx (pubView idx pub) wTab` — the table quantified with the bad sets (it is
+the reindexed representations' own data; `runReindex`'s width pin is derived from the
+acceptance, so it cannot be named in the statement) — with the ft/quotient residue
 DISSOLVED (no `t`/`hteq` hypothesis) and NO extraction grid. The algebraic prover
 supplies SRS-basis representations of the run's own 45 batch rows (`aRef`/`ρRef`) and
 of the 7 `tComm` chunks (`aT`/`ρT`); everything else is derived from the single
@@ -785,7 +790,8 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point)
           (runInput IpaVesta.curve σ vk p pub).evalFn
           (runInput IpaVesta.curve σ vk p pub).polyscale) :
     ∃ (badB : Finset Fp) (badG : Fp → Finset Fp) (badA : Fp → Fp → Finset Fp)
-        (badZ : Fp → Fp → Fp → Polynomial Fp → Finset Fp),
+        (badZ : Fp → Fp → Fp → Polynomial Fp → Finset Fp)
+        (wTab : Fin n → Fin 15 → Fp),
       (badB.card ≤ 7 * (n - idx.zkRows)
         ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
         ∧ (∀ β γ,
@@ -807,7 +813,7 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point)
           (runOracles IpaVesta.curve σ vk p pub).zeta
             ≠ idx.omega ^ (n - idx.zkRows) →
           (runOracles IpaVesta.curve σ vk p pub).zeta ^ n ≠ 1 →
-          ∃ wTab : Fin n → Fin 15 → Fp, Satisfies idx (pubView idx pub) wTab) := by
+          Satisfies idx (pubView idx pub) wTab) := by
   -- (1) reflect the run; pin the batch width and the domain size
   have hrun := kimchiVerify_reflects IpaVesta.curve σ vk p pub hacc
   have hsize : (runInput IpaVesta.curve σ vk p pub).commitments.size = 45 := by
@@ -828,7 +834,10 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point)
       (fun c => p.wComm.getD (c : ℕ) 0) p.zComm
       (fun i => aRef (runReindex IpaVesta.curve σ vk p pub hsize i))
       (fun i => ρRef (runReindex IpaVesta.curve σ vk p pub hsize i)) hbound₀
-  refine ⟨badB, badG, badA, badZ, hbounds, ?_⟩
+  refine ⟨badB, badG, badA, badZ,
+    extractTable idx.omega
+      (fun col => rowPoly (aRef (runReindex IpaVesta.curve σ vk p pub hsize (wRow col)))),
+    hbounds, ?_⟩
   intro hβ hγ hα hζ hζ1 hζb hζn
   -- (4) the eval pins from the run's single accepted opening (45-row arity)
   obtain ⟨a, ρ, hopen⟩ := ipa_soundnessA σ _ _ _
@@ -877,7 +886,7 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point)
       exact mul_comm _ _
   rw [hpt] at hpins
   -- (9) feed the consumer
-  exact ⟨_, himp (runOracles IpaVesta.curve σ vk p pub).beta
+  exact himp (runOracles IpaVesta.curve σ vk p pub).beta
     (runOracles IpaVesta.curve σ vk p pub).gamma
     (runOracles IpaVesta.curve σ vk p pub).alpha
     (ftChunkAssembly σ.k aT)
@@ -889,7 +898,7 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point)
     hβ hγ hα hζ hζ1 hζb htdeg
     (fun i => ⟨hbound₀ i,
       fun j => hpins (runReindex IpaVesta.curve σ vk p pub hsize i) j⟩)
-    hteq0⟩
+    hteq0
 
 /-- **The run-level residue-free root (Pallas).** The Pallas-side twin of
 `kimchiVesta_run_sound_algebraic_ft`, over `Fq`/`IpaPallas`, its Fiat–Shamir
@@ -921,7 +930,8 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point)
           (runInput IpaPallas.curve σ vk p pub).evalFn
           (runInput IpaPallas.curve σ vk p pub).polyscale) :
     ∃ (badB : Finset Fq) (badG : Fq → Finset Fq) (badA : Fq → Fq → Finset Fq)
-        (badZ : Fq → Fq → Fq → Polynomial Fq → Finset Fq),
+        (badZ : Fq → Fq → Fq → Polynomial Fq → Finset Fq)
+        (wTab : Fin n → Fin 15 → Fq),
       (badB.card ≤ 7 * (n - idx.zkRows)
         ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
         ∧ (∀ β γ,
@@ -943,7 +953,7 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point)
           (runOracles IpaPallas.curve σ vk p pub).zeta
             ≠ idx.omega ^ (n - idx.zkRows) →
           (runOracles IpaPallas.curve σ vk p pub).zeta ^ n ≠ 1 →
-          ∃ wTab : Fin n → Fin 15 → Fq, Satisfies idx (pubView idx pub) wTab) := by
+          Satisfies idx (pubView idx pub) wTab) := by
   -- (1) reflect the run; pin the batch width and the domain size
   have hrun := kimchiVerify_reflects IpaPallas.curve σ vk p pub hacc
   have hsize : (runInput IpaPallas.curve σ vk p pub).commitments.size = 45 := by
@@ -964,7 +974,10 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point)
       (fun c => p.wComm.getD (c : ℕ) 0) p.zComm
       (fun i => aRef (runReindex IpaPallas.curve σ vk p pub hsize i))
       (fun i => ρRef (runReindex IpaPallas.curve σ vk p pub hsize i)) hbound₀
-  refine ⟨badB, badG, badA, badZ, hbounds, ?_⟩
+  refine ⟨badB, badG, badA, badZ,
+    extractTable idx.omega
+      (fun col => rowPoly (aRef (runReindex IpaPallas.curve σ vk p pub hsize (wRow col)))),
+    hbounds, ?_⟩
   intro hβ hγ hα hζ hζ1 hζb hζn
   -- (4) the eval pins from the run's single accepted opening (45-row arity)
   obtain ⟨a, ρ, hopen⟩ := ipa_soundnessA σ _ _ _
@@ -1013,7 +1026,7 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point)
       exact mul_comm _ _
   rw [hpt] at hpins
   -- (9) feed the consumer
-  exact ⟨_, himp (runOracles IpaPallas.curve σ vk p pub).beta
+  exact himp (runOracles IpaPallas.curve σ vk p pub).beta
     (runOracles IpaPallas.curve σ vk p pub).gamma
     (runOracles IpaPallas.curve σ vk p pub).alpha
     (ftChunkAssembly σ.k aT)
@@ -1025,6 +1038,6 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point)
     hβ hγ hα hζ hζ1 hζb htdeg
     (fun i => ⟨hbound₀ i,
       fun j => hpins (runReindex IpaPallas.curve σ vk p pub hsize i) j⟩)
-    hteq0⟩
+    hteq0
 
 end Kimchi.Verifier

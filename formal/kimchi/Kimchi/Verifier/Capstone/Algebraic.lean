@@ -265,7 +265,8 @@ theorem kimchiProof_sound_algebraic {F G : Type*} [Field F] [AddCommGroup G]
             - (ζ ^ n - 1) * t.eval ζ
             = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
                 ζ (-((idx.pubPoly pub).eval ζ)) (claimedEvals E)) →
-          ∃ wTab : Fin n → Fin 15 → F, Satisfies idx pub wTab := by
+          Satisfies idx pub
+            (extractTable idx.omega fun col => rowPoly (aw₀ (wRow col))) := by
   obtain ⟨badB, badG, badA, badZ, ⟨hB, hG, hA, hZ⟩, himp⟩ :=
     kimchiProof_sound_of_openings σ idx hk hbind comms hvk pub wC zC aw₀ ρw₀ hrep
   refine ⟨badB, badG, badA, badZ,
@@ -277,8 +278,8 @@ theorem kimchiProof_sound_algebraic {F G : Type*} [Field F] [AddCommGroup G]
   obtain ⟨a, ρ, hopen⟩ := ipa_soundnessA σ _ _ _ hFS hAcc
   have hpins := eval_pins_of_opening σ hbind (batchC wC zC comms)
     ![ζ, idx.omega * ζ] aw₀ ρw₀ hrep E ξ r hξ hr a ρ hopen
-  exact ⟨_, himp β γ α t ζ E aw₀ ρw₀ hβ hγ hα hζ hζ1 hζb ht
-    (fun i => ⟨hrep i, fun j => hpins i j⟩) hteq⟩
+  exact himp β γ α t ζ E aw₀ ρw₀ hβ hγ hα hζ hζ1 hζb ht
+    (fun i => ⟨hrep i, fun j => hpins i j⟩) hteq
 
 /-! ## The algebraic quotient — the ft residue dissolved from the chunk representations -/
 
@@ -467,7 +468,8 @@ theorem kimchiProof_sound_algebraic_ft {F G : Type*} [Field F] [AddCommGroup G]
           (innerProduct aft (evalVector (2 ^ σ.k) ζ)
             = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
                 ζ (-((idx.pubPoly pub).eval ζ)) (claimedEvals E)) →
-          ∃ wTab : Fin n → Fin 15 → F, Satisfies idx pub wTab := by
+          Satisfies idx pub
+            (extractTable idx.omega fun col => rowPoly (aw₀ (wRow col))) := by
   obtain ⟨badB, badG, badA, badZ, badXi, badR, hbounds, himp⟩ :=
     kimchiProof_sound_algebraic σ idx hk hbind comms hvk pub wC zC aw₀ ρw₀ hrep
   refine ⟨badB, badG, badA, badZ, badXi, badR, hbounds, ?_⟩
