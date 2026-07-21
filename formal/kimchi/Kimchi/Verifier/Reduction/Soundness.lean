@@ -433,7 +433,6 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
     rw [hrec, Index.sigmaPoly_eq_wiring idx 6] at h
     exact h
 
-set_option linter.unusedVariables false in
 /-- Batched opening acceptance on the 43-row assembly, binding, and the key–index
 correspondence force a satisfying witness table, the witness read off the bound
 witness-column polynomials. The table is quantified WITH the bad sets, before the
