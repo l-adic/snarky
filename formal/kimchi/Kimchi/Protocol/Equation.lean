@@ -131,7 +131,7 @@ private theorem gateMember_sum_eval [DecidableEq F] [NeZero n] (idx : Index F n)
     (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (ζ α : F) :
     ∑ k ∈ Finset.range Index.gateAlphaCount, α ^ k * (idx.gateMember pub wTab k).eval ζ
-      = gateLinearization idx.endoBase α (evalsOf idx wTab z ζ)
+      = gateLinearization idx.endoBase idx.mds α (evalsOf idx wTab z ζ)
           - (idx.pubPoly pub).eval ζ := by
   -- split each member into its selector-weighted pool term and the public correction
   have hmem : ∀ k, α ^ k * (idx.gateMember pub wTab k).eval ζ
@@ -168,9 +168,9 @@ private theorem gateMember_sum_eval [DecidableEq F] [NeZero n] (idx : Index F n)
   -- closed-form summands via the naturality square
   rw [gateLinearization]
   simp only [Index.gateConstraints]
-  rw [show Gate.Poseidon.constraints (Poseidon.rcPoly idx.omega idx.coeffTable)
-        (Poseidon.polyWitness idx.omega wTab)
-      = (Poseidon.argument (F := F)).constraints
+  rw [show Gate.Poseidon.constraints (idx.mds.map C)
+        (Poseidon.rcPoly idx.omega idx.coeffTable) (Poseidon.polyWitness idx.omega wTab)
+      = (Poseidon.argument idx.mds).constraints
           (polyEnv idx.omega wTab idx.coeffTable) from rfl,
     show Gate.AddComplete.constraints (AddComplete.polyWitness idx.omega wTab)
       = (AddComplete.argument (F := F)).constraints
@@ -185,7 +185,7 @@ private theorem gateMember_sum_eval [DecidableEq F] [NeZero n] (idx : Index F n)
       = (EndoScalar.argument (F := F)).constraints
           (polyEnv idx.omega wTab idx.coeffTable) from rfl]
   rw [constraints_map_evalsOf (Generic.argument (F := F)) idx wTab z ζ,
-    constraints_map_evalsOf (Poseidon.argument (F := F)) idx wTab z ζ,
+    constraints_map_evalsOf (Poseidon.argument idx.mds) idx wTab z ζ,
     constraints_map_evalsOf (AddComplete.argument (F := F)) idx wTab z ζ,
     constraints_map_evalsOf (VarBaseMul.argument (F := F)) idx wTab z ζ,
     constraints_map_evalsOf (EndoMul.argument idx.endoBase) idx wTab z ζ,
@@ -204,7 +204,7 @@ the same masked window `[n − zkRows, n)`, so the identity is `eval_prod` on th
 `Permutation.zkpm` polynomial at `ζ`. -/
 private theorem zkpmEval_eq (nn zkRows : ℕ) (ω ζ : F) :
     zkpmEval nn zkRows ω ζ = (Permutation.zkpm ω nn zkRows).eval ζ := by
-  simp only [zkpmEval, Permutation.zkpm, Polynomial.eval_prod, eval_sub, eval_X, eval_C]
+  simp only [zkpmEval, Permutation.zkpm, eval_mul, eval_sub, eval_X, eval_C]
 
 /-! ## The witness-column bridge
 
@@ -337,7 +337,7 @@ private theorem verifierEquation_iff [DecidableEq F] [NeZero n] (idx : Index F n
     permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (evalsOf idx wTab z ζ)
           * ((Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) 6).eval ζ
         - (ζ ^ n - 1) * t.eval ζ
-      = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ ζ
+      = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase idx.mds α β γ ζ
           (-((idx.pubPoly pub).eval ζ)) (evalsOf idx wTab z ζ)
       ↔ (aggregate α (idx.fullFamily pub wTab z β γ)).eval ζ = (t * zH F n).eval ζ := by
   -- the three permutation constraints at the index's wiring data
@@ -449,7 +449,7 @@ private theorem satisfies_of_verifierEquation [DecidableEq F] [NeZero n]
         * ((Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) 6).eval
             ζ
         - (ζ ^ n - 1) * t.eval ζ
-      = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
+      = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase idx.mds α β γ
           ζ (-((idx.pubPoly pub).eval ζ))
           (evalsOf idx wTab zg ζ)) :
     Satisfies idx pub wTab := by

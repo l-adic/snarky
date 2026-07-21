@@ -143,6 +143,15 @@ structure KimchiVK (C : Ipa.CommitmentCurve) where
 /-- The domain size `n = 2 ^ domainLog2` (`domain.size`). -/
 def KimchiVK.n {C : Ipa.CommitmentCurve} (vk : KimchiVK C) : ℕ := 2 ^ vk.domainLog2
 
+/-- A Poseidon parameter table's MDS matrix as the gate's `Mds` record — the wire form
+of production's `Constants { mds: G::sponge_params().mds, .. }` (the scalar-side table,
+per curve). Consumed by the verifiers' `ftEval0` and pinned to `idx.mds` by the wire
+correspondence. -/
+def mdsOfParams {F : Type*} (p : Poseidon.Params F) : Gate.Poseidon.Mds F :=
+  ⟨p.mds.1.1, p.mds.1.2.1, p.mds.1.2.2,
+   p.mds.2.1.1, p.mds.2.1.2.1, p.mds.2.1.2.2,
+   p.mds.2.2.1, p.mds.2.2.2.1, p.mds.2.2.2.2⟩
+
 /-! ## The fr-sponge and the sponge digests -/
 
 /-- The fr-sponge (`DefaultFrSponge`, kimchi/src/plonk_sponge.rs): the generic `FqSponge`
@@ -158,16 +167,18 @@ def KimchiVK.frSpec {C : Ipa.CommitmentCurve} (vk : KimchiVK C) :
   ⟨vk.frParams, 0⟩
 
 /-- The fr-sponge digest (`DefaultFrSponge::digest`, kimchi/src/plonk_sponge.rs): the
-plain first squeeze — same field, no cast. -/
-private def frDigest (sp : FqSponge.Spec C.scalar C.scalar) (s : FqSponge.S C.scalar) :
+plain first squeeze — same field, no cast. Shared with the chunked verifier
+(`Kimchi/Verifier/Chunked.lean`). -/
+def frDigest (sp : FqSponge.Spec C.scalar C.scalar) (s : FqSponge.S C.scalar) :
     C.ScalarField :=
   (challengeFq sp s).1
 
 /-- The fq-sponge digest (`DefaultFqSponge::digest`, sponge.rs:388–397): squeeze one base
 element and cast it to the scalar field by `from_bigint`, which returns **zero when the
 value does not fit** — not a modular reduction. The state is consumed (production takes
-`mut self`); the caller keeps its pre-digest copy. -/
-private def fqDigest (s : FqSponge.S C.base) : C.ScalarField :=
+`mut self`); the caller keeps its pre-digest copy. Shared with the chunked verifier
+(`Kimchi/Verifier/Chunked.lean`). -/
+def fqDigest (s : FqSponge.S C.base) : C.ScalarField :=
   let (x, _) := challengeFq C.sponge s
   if x.val < C.scalar then ((x.val : ℕ) : C.ScalarField) else 0
 
@@ -376,7 +387,7 @@ def kimchiVerify (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     let e := p.linEvals
     let shifts : Fin 7 → C.ScalarField := fun i => vk.shifts[i.val]!
     let ftEval0 := Kimchi.Protocol.Linearization.ftEval0 n vk.zkRows vk.omega shifts vk.endo
-      o.alpha o.beta o.gamma o.zeta pubEval0 e
+      (mdsOfParams vk.frParams) o.alpha o.beta o.gamma o.zeta pubEval0 e
     let (v, u) := frOracles C vk p o.digest pubEval0 pubEval1
     let zkpmZ := Kimchi.Protocol.Linearization.zkpmEval n vk.zkRows vk.omega o.zeta
     let pScalar := Kimchi.Protocol.Linearization.permScalar o.beta o.gamma o.alpha zkpmZ e
@@ -427,10 +438,11 @@ def KimchiVK.comms {C : Ipa.CommitmentCurve} (vk : KimchiVK C) : IndexComms C.Po
 
 /-- The deployed key corresponds to the index: the committed columns are the circuit's
 own (`VKCorresponds`, through the `comms` view) AND the scalar-side parameters match —
-the domain generator, the zero-knowledge row count, the permutation shifts, and the
-`ft_eval0` endo coefficient. The scalar pins are separate conjuncts because they are
-not committed: no binding argument derives them from the column commitments, and the
-wire verifier computes its scalar side with the KEY's values. The wire-level
+the domain generator, the zero-knowledge row count, the permutation shifts, the
+`ft_eval0` endo coefficient, and the Poseidon MDS matrix (read off the fr-sponge
+table, `G::sponge_params().mds`). The scalar pins are separate conjuncts because they
+are not committed: no binding argument derives them from the column commitments, and
+the wire verifier computes its scalar side with the KEY's values. The wire-level
 correspondence the run-level roots consume. -/
 def KimchiVK.Corresponds {C : Ipa.CommitmentCurve} [Module C.ScalarField C.Point]
     {n : ℕ} (σ : SRS C.Point) (vk : KimchiVK C) (idx : Index C.ScalarField n) : Prop :=
@@ -439,6 +451,7 @@ def KimchiVK.Corresponds {C : Ipa.CommitmentCurve} [Module C.ScalarField C.Point
     ∧ vk.zkRows = idx.zkRows
     ∧ (fun i : Fin 7 => vk.shifts[(i : ℕ)]!) = idx.shifts
     ∧ vk.endo = idx.endoBase
+    ∧ mdsOfParams vk.frParams = idx.mds
 
 /-- The public-input array as the `Fin idx.publicCount`-indexed function the circuit
 model consumes (`getD`, total; the capstones pin `pub.size = idx.publicCount`, so the

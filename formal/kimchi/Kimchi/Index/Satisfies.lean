@@ -45,7 +45,8 @@ def rowSatisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
       Gate.Generic.Holds (Gate.Generic.withPublic ⟨idx.coeffTable i, wTab i⟩
         (pubAt idx pub i))
   | .poseidon =>
-      Gate.Poseidon.Holds (Poseidon.rcMap (idx.coeffTable i)) (Poseidon.rowWitness wTab i)
+      Gate.Poseidon.Holds idx.mds (Poseidon.rcMap (idx.coeffTable i))
+        (Poseidon.rowWitness wTab i)
   | .completeAdd => Gate.AddComplete.Holds (AddComplete.rowWitness wTab i)
   | .varBaseMul => Gate.VarBaseMul.Holds (VarBaseMul.rowWitness wTab i)
   | .endoMul => Gate.EndoMul.Holds idx.endoBase (EndoMul.rowWitness wTab i)

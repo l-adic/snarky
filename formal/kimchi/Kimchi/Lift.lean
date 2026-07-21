@@ -572,16 +572,22 @@ noncomputable def rcPoly (ω : F) (qTab : Fin n → Fin 15 → F) :
 
 /-! ## The `Argument` instance -/
 
-/-- **Poseidon `Argument` instance.** The gate's constraints
-`Gate.Poseidon.constraints (rcMap env.coeff) (cellMap env.witnessCurr env.witnessNext)`;
-naturality is the gate's ring-hom `Gate.Poseidon.constraints_map` (the MDS entries are integer
-literals, so no `algebraMap`-transported parameter is involved). -/
-def argument : Argument F where
-  constraints env :=
-    Gate.Poseidon.constraints (rcMap env.coeff) (cellMap env.witnessCurr env.witnessNext)
-  constraints_map f env :=
-    Gate.Poseidon.constraints_map f.toRingHom (rcMap env.coeff)
+/-- **Poseidon `Argument` instance**, at an MDS matrix `M` (per-curve data —
+`G::sponge_params().mds`). The matrix enters every carrier through `algebraMap F R`,
+which each `f : R →ₐ[F] S` fixes (`AlgHom.commutes`) — the same transport as `EndoMul`'s
+endomorphism coefficient; naturality is the gate's ring-hom
+`Gate.Poseidon.constraints_map` with the transported matrix rewritten back. -/
+def argument (M : Gate.Poseidon.Mds F) : Argument F where
+  constraints {R} _ _ env :=
+    Gate.Poseidon.constraints (M.map (algebraMap F R)) (rcMap env.coeff)
       (cellMap env.witnessCurr env.witnessNext)
+  constraints_map {R S} _ _ _ _ f env := by
+    have hM : (M.map (algebraMap F R)).map f.toRingHom = M.map (algebraMap F S) := by
+      simp [Gate.Poseidon.Mds.map]
+    have h := Gate.Poseidon.constraints_map f.toRingHom (M.map (algebraMap F R))
+      (rcMap env.coeff) (cellMap env.witnessCurr env.witnessNext)
+    rw [hM] at h
+    exact h
 
 end Kimchi.Lift.Gate.Poseidon
 

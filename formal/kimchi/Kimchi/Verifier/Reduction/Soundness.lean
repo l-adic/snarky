@@ -334,7 +334,7 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
           (permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
               * (idx.sigmaPoly 6).eval ζ
             - (ζ ^ n - 1) * t.eval ζ
-            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
+            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase idx.mds α β γ
                 ζ (-((idx.pubPoly pub).eval ζ)) (claimedEvals E)) →
           Satisfies idx pub
             (extractTable idx.omega fun col => rowPoly (aw₀ (wRow col))) := by
@@ -489,7 +489,7 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
           (permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
               * (idx.sigmaPoly 6).eval ζ
             - (ζ ^ n - 1) * t.eval ζ
-            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
+            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase idx.mds α β γ
                 ζ (-((idx.pubPoly pub).eval ζ)) (claimedEvals E)) →
           Satisfies idx pub wTab := by
   obtain ⟨aw₀, ρw₀, hrow₀⟩ :=

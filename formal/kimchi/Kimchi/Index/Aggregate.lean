@@ -66,8 +66,8 @@ noncomputable def gateConstraints (idx : Index F n) (wTab : Fin n → Fin 15 →
   | .zero => []
   | .generic => (Generic.argument (F := F)).constraints
       (polyEnv idx.omega wTab idx.coeffTable)
-  | .poseidon => Gate.Poseidon.constraints (Poseidon.rcPoly idx.omega idx.coeffTable)
-      (Poseidon.polyWitness idx.omega wTab)
+  | .poseidon => Gate.Poseidon.constraints (idx.mds.map C)
+      (Poseidon.rcPoly idx.omega idx.coeffTable) (Poseidon.polyWitness idx.omega wTab)
   | .completeAdd => Gate.AddComplete.constraints (AddComplete.polyWitness idx.omega wTab)
   | .varBaseMul => Gate.VarBaseMul.constraints (VarBaseMul.polyWitness idx.omega wTab)
   | .endoMul => Gate.EndoMul.constraints (C idx.endoBase)
@@ -252,7 +252,7 @@ private theorem rowSatisfies_of_gateMember_dvd (idx : Index F n) (pub : Fin idx.
     have hvan := idx.gateConstraints_vanish_of_dvd pub wTab hdvd (i := i) (by simp [htyp])
     rw [htyp] at hvan
     exact forall_mem_zero_of_bridge
-      ((Poseidon.argument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i) hvan
+      ((Poseidon.argument idx.mds).bridge idx.omega_prim wTab idx.coeffTable i) hvan
   | completeAdd =>
     have hvan := idx.gateConstraints_vanish_of_dvd pub wTab hdvd (i := i) (by simp [htyp])
     rw [htyp] at hvan
@@ -565,7 +565,7 @@ private theorem gateConstraints_vanish_of_rowSatisfies (idx : Index F n)
   | poseidon =>
     rw [htyp] at hrow
     exact forall_mem_eval_of_bridge
-      ((Poseidon.argument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i) hrow
+      ((Poseidon.argument idx.mds).bridge idx.omega_prim wTab idx.coeffTable i) hrow
   | completeAdd =>
     rw [htyp] at hrow
     exact forall_mem_eval_of_bridge
@@ -650,7 +650,7 @@ copy-invariant witness admits an accumulator whose three permutation constraints
 `Z_H`-divisible. -/
 private theorem permConstraints_dvd_of_copy (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     (β γ : F)
-    (hnd : Nondegenerate idx.omega idx.zkRows (idx.permWitnessPoly wTab) idx.shifts
+    (hnd : Nondegenerate idx.omega (idx.permWitnessPoly wTab) idx.shifts
       idx.wiringPerm β γ)
     (hcopy : ∀ c : Fin 7 × Fin n,
       cellValue wTab (idx.wiringMap c) = cellValue wTab c) :
@@ -668,7 +668,8 @@ private theorem permConstraints_dvd_of_copy (idx : Index F n) (wTab : Fin n → 
         = idx.omega ^ (((embCell idx.zkRows c).2 : Fin n) : ℕ) from rfl,
       idx.eval_permWitnessPoly]
     simpa using hcopy (embCell idx.zkRows c)
-  exact constraints_dvd_of_prods idx.omega_prim (Nat.pos_of_neZero n) idx.zk_pos
+  exact constraints_dvd_of_prods idx.omega_prim (Nat.pos_of_neZero n)
+    (by have := idx.zk_three; omega : 2 ≤ idx.zkRows)
     idx.zk_le _ _ idx.shifts β γ
     (fun j hj => sigmaSide_eval_ne_zero idx.omega_prim hnd hj)
     (prod_shiftSide_eq_prod_sigmaSide idx.omega_prim _ idx.shifts idx.wiringPerm
@@ -694,7 +695,7 @@ the honest accumulator (`permConstraints_dvd_of_copy`). The converse of
 theorem fullFamily_dvd_of_satisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F)
     (hsat : Satisfies idx pub wTab) (β γ : F)
-    (hnd : Nondegenerate idx.omega idx.zkRows (idx.permWitnessPoly wTab) idx.shifts
+    (hnd : Nondegenerate idx.omega (idx.permWitnessPoly wTab) idx.shifts
       idx.wiringPerm β γ) :
     ∃ z : Polynomial F, ∀ s, zH F n ∣ idx.fullFamily pub wTab z β γ s := by
   obtain ⟨hrow, hcopy, -⟩ := hsat
@@ -746,9 +747,9 @@ degenerate pairs are confined to `7·(n − zkRows)` affine lines) and runs the 
 headline over it. The field bound is vacuous at Pasta (`(K+1)² ≪ 2²⁵⁵`). -/
 theorem satisfies_iff_fullFamily_dvd [Fintype F] (idx : Index F n)
     (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin 15 → F)
-    (hF : (7 * (n - idx.zkRows) + 1) * (7 * (n - idx.zkRows) + 1) ≤ Fintype.card F) :
+    (hF : (7 * n + 1) * (7 * n + 1) ≤ Fintype.card F) :
     Satisfies idx pub wTab
-      ↔ ∀ β γ, Nondegenerate idx.omega idx.zkRows (idx.permWitnessPoly wTab)
+      ↔ ∀ β γ, Nondegenerate idx.omega (idx.permWitnessPoly wTab)
           idx.shifts idx.wiringPerm β γ →
           ∃ z : Polynomial F, ∀ s, zH F n ∣ idx.fullFamily pub wTab z β γ s := by
   constructor

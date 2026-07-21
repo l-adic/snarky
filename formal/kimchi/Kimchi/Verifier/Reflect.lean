@@ -83,6 +83,7 @@ private def runVU (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
 def runFtEval0P (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     (pub : Array C.ScalarField) (pubEval0 : C.ScalarField) : C.ScalarField :=
   ftEval0 vk.n vk.zkRows vk.omega (fun i => vk.shifts[i.val]!) vk.endo
+    (mdsOfParams vk.frParams)
     (runOracles C σ vk p pub).alpha (runOracles C σ vk p pub).beta
     (runOracles C σ vk p pub).gamma (runOracles C σ vk p pub).zeta pubEval0 p.linEvals
 

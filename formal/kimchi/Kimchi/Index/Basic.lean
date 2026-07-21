@@ -1,4 +1,5 @@
 import Kimchi.Permutation.Wiring
+import Kimchi.Gate.Poseidon
 
 /-!
 # The kimchi index: the circuit as data
@@ -91,9 +92,18 @@ structure _root_.Kimchi.Index (F : Type*) [Field F] (n : ℕ) where
   gate. The scalar-field eigenvalue `λ` is challenge-expansion data (the sponge's
   `Spec.lam`), not index data. -/
   endoBase : F
+  /-- The Poseidon-round MDS matrix — per-curve data like `endoBase`: production
+  evaluates the gate expression with `G::sponge_params().mds`, the PROOF curve's
+  scalar-side table (`fp_kimchi` for Vesta proofs, `fq_kimchi` for Pallas proofs).
+  Data only, no law — the wire correspondence pins it to the deployed table. -/
+  mds : Gate.Poseidon.Mds F
   shifts : Fin 7 → F
   omega_prim : IsPrimitiveRoot omega n
-  zk_pos : 0 < zkRows
+  /-- Production's zero-knowledge row count is `(16·nc + 5)/7` (constraints.rs:983),
+  which is at least `3` at every chunk count `nc ≥ 1`. The permutation argument's
+  three-factor mask needs at least `2` (`zkpm_eval_ne_zero`), and the aggregate degree
+  accounting needs `3 ≤ n` — both covered by the production bound. -/
+  zk_three : 3 ≤ zkRows
   zk_le : zkRows ≤ n
   public_le : publicCount ≤ n - zkRows
   shifts_coset : CosetShifts omega shifts
@@ -150,7 +160,7 @@ def coeffTable (idx : Index F n) : Fin n → Fin 15 → F :=
 /-- The boundary row of the unmasked region, `n − zkRows` — the `rowLast` argument of
 the permutation constraints. -/
 def unmaskedEnd (idx : Index F n) : Fin n :=
-  ⟨n - idx.zkRows, by have := idx.zk_pos; have := idx.zk_le; omega⟩
+  ⟨n - idx.zkRows, by have := idx.zk_three; have := idx.zk_le; omega⟩
 
 /-- The selector column of a gate type: the 0/1 indicator over the rows. -/
 def selectorRow (idx : Index F n) (g : GateType) : Fin n → F :=
@@ -193,11 +203,12 @@ theorem sigmaPoly_eq_wiring (idx : Index F n) (col : Fin 7) :
 boundary: the generator and shift laws through the `Wiring.lean` certificates, the rest
 by their `Fintype`/`Decidable` instances. `none` exactly when some law fails. -/
 def build? [DecidableEq F] (gates : Fin n → GateRow F n) (publicCount zkRows : ℕ)
-    (omega endoBase : F) (shifts : Fin 7 → F) : Option (Index F n) :=
+    (omega endoBase : F) (mds : Gate.Poseidon.Mds F) (shifts : Fin 7 → F) :
+    Option (Index F n) :=
   if h : (∃ k < n + 1, n = 2 ^ k)
       ∧ primitiveRootCertificate omega n = true
       ∧ cosetShiftsCertificate shifts n = true
-      ∧ 0 < zkRows ∧ zkRows ≤ n ∧ publicCount ≤ n - zkRows
+      ∧ 3 ≤ zkRows ∧ zkRows ≤ n ∧ publicCount ≤ n - zkRows
       ∧ Function.Bijective (wiringMapOf gates)
       ∧ (∀ c : Fin 7 × Fin n,
           ((c.2 : ℕ) < n - zkRows) ↔ (((wiringMapOf gates c).2 : ℕ) < n - zkRows))
@@ -211,9 +222,9 @@ def build? [DecidableEq F] (gates : Fin n → GateRow F n) (publicCount zkRows :
       isPrimitiveRoot_of_certificate'
         (let ⟨k, _, hk⟩ := h.1; ⟨k, hk⟩) h.2.1
     some { gates := gates, publicCount := publicCount, zkRows := zkRows
-           omega := omega, endoBase := endoBase, shifts := shifts
+           omega := omega, endoBase := endoBase, mds := mds, shifts := shifts
            omega_prim := homega
-           zk_pos := h.2.2.2.1
+           zk_three := h.2.2.2.1
            zk_le := h.2.2.2.2.1
            public_le := h.2.2.2.2.2.1
            shifts_coset := cosetShifts_of_certificate homega h.2.2.1

@@ -409,15 +409,15 @@ private theorem poseidon_entry_le [NeZero n] (idx : Index F n)
   have r41 : (Poseidon.rcPoly idx.omega idx.coeffTable 4).1.natDegree ≤ n - 1 := cell_le idx _
   have r42 : (Poseidon.rcPoly idx.omega idx.coeffTable 4).2.1.natDegree ≤ n - 1 := cell_le idx _
   have r43 : (Poseidon.rcPoly idx.omega idx.coeffTable 4).2.2.natDegree ≤ n - 1 := cell_le idx _
-  have hm00 : (Gate.Poseidon.m00 : Polynomial F).natDegree = 0 := by simp [Gate.Poseidon.m00]
-  have hm01 : (Gate.Poseidon.m01 : Polynomial F).natDegree = 0 := by simp [Gate.Poseidon.m01]
-  have hm02 : (Gate.Poseidon.m02 : Polynomial F).natDegree = 0 := by simp [Gate.Poseidon.m02]
-  have hm10 : (Gate.Poseidon.m10 : Polynomial F).natDegree = 0 := by simp [Gate.Poseidon.m10]
-  have hm11 : (Gate.Poseidon.m11 : Polynomial F).natDegree = 0 := by simp [Gate.Poseidon.m11]
-  have hm12 : (Gate.Poseidon.m12 : Polynomial F).natDegree = 0 := by simp [Gate.Poseidon.m12]
-  have hm20 : (Gate.Poseidon.m20 : Polynomial F).natDegree = 0 := by simp [Gate.Poseidon.m20]
-  have hm21 : (Gate.Poseidon.m21 : Polynomial F).natDegree = 0 := by simp [Gate.Poseidon.m21]
-  have hm22 : (Gate.Poseidon.m22 : Polynomial F).natDegree = 0 := by simp [Gate.Poseidon.m22]
+  have hm00 : ((idx.mds.map C).m00 : Polynomial F).natDegree = 0 := natDegree_C _
+  have hm01 : ((idx.mds.map C).m01 : Polynomial F).natDegree = 0 := natDegree_C _
+  have hm02 : ((idx.mds.map C).m02 : Polynomial F).natDegree = 0 := natDegree_C _
+  have hm10 : ((idx.mds.map C).m10 : Polynomial F).natDegree = 0 := natDegree_C _
+  have hm11 : ((idx.mds.map C).m11 : Polynomial F).natDegree = 0 := natDegree_C _
+  have hm12 : ((idx.mds.map C).m12 : Polynomial F).natDegree = 0 := natDegree_C _
+  have hm20 : ((idx.mds.map C).m20 : Polynomial F).natDegree = 0 := natDegree_C _
+  have hm21 : ((idx.mds.map C).m21 : Polynomial F).natDegree = 0 := natDegree_C _
+  have hm22 : ((idx.mds.map C).m22 : Polynomial F).natDegree = 0 := natDegree_C _
   have hd : 7 * (n - 1) ≤ 8 * n := by omega
   simp only [Index.gateConstraints, Gate.Poseidon.constraints, Gate.Poseidon.round,
     Gate.Poseidon.sbox, List.mem_cons, List.not_mem_nil, or_false] at hE
@@ -495,7 +495,7 @@ private theorem gateMember_natDegree_le [NeZero n] (idx : Index F n)
 open Kimchi.Permutation in
 /-- **Permutation-member bound.** Each of the three permutation constraints at the index's
 wiring data has `natDegree ≤ 9n` when the accumulator `z` has degree `< n`. Member `0` is
-`zkpm` (degree `≤ n` via `natDegree_prod_le` over `Ico (n−zkRows) n`, card `≤ n`) times a
+`zkpm` (the three-factor mask, degree `≤ 3 ≤ n` via `idx.zk_three`) times a
 `z·shiftSide − shiftRow z·sigmaSide` product difference (degree `≤ 8n`), so `≤ 9n`; members
 `1,2` are `(z − 1)·lagNumer` of degree `< 2n ≤ 9n`. -/
 private theorem permConstraints_natDegree_le [NeZero n] (idx : Index F n)
@@ -512,16 +512,19 @@ private theorem permConstraints_natDegree_le [NeZero n] (idx : Index F n)
     rw [hw]; exact columnPoly_natDegree_lt idx.omega_prim _
   have hσdeg : ∀ i : Fin 7, (σ i).natDegree < n := fun i => by
     rw [hσ]; exact columnPoly_natDegree_lt idx.omega_prim _
-  -- The zk mask `∏_{Ico(n-zkRows,n)} (X − ωʲ)` has degree ≤ card ≤ n.
+  -- The three-factor zk mask has degree ≤ 3, and `3 ≤ n` via `zk_three` + `zk_le`.
   have hzkbound : (zkpm idx.omega n idx.zkRows).natDegree ≤ n := by
+    have h3n : 3 ≤ n := le_trans idx.zk_three idx.zk_le
+    have h1 : ∀ e : ℕ, ((X : Polynomial F) - C (idx.omega ^ e)).natDegree ≤ 1 := fun e =>
+      le_trans (natDegree_sub_le _ _) (by simp [natDegree_X, natDegree_C])
     unfold zkpm
-    refine le_trans (natDegree_prod_le _ _) ?_
-    have hfac : ∀ j ∈ Finset.Ico (n - idx.zkRows) n,
-        (X - C (idx.omega ^ j)).natDegree ≤ 1 := by
-      intro j _
-      exact le_trans (natDegree_sub_le _ _) (by simp [natDegree_X, natDegree_C])
-    refine le_trans (Finset.sum_le_sum hfac) ?_
-    simp only [Finset.sum_const, Nat.card_Ico, smul_eq_mul, mul_one]
+    refine le_trans natDegree_mul_le ?_
+    have h2 : ((X - C (idx.omega ^ (n - idx.zkRows)))
+        * (X - C (idx.omega ^ (n - idx.zkRows + 1)))).natDegree ≤ 2 := by
+      have := h1 (n - idx.zkRows)
+      have := h1 (n - idx.zkRows + 1)
+      exact le_trans natDegree_mul_le (by omega)
+    have := h1 (n - 1)
     omega
   -- Each row-product factor has degree ≤ n (a cell `< n`, plus a constant, plus a
   -- degree-≤1 shift term), so the 7-fold product is ≤ 7n.

@@ -12,12 +12,17 @@ force, on the unmasked rows, exactly the hypotheses of the accumulator telescopi
 (`prod_eq_of_accumulator`), hence the grand-product equality
 `∏ⱼ shiftSide(ωʲ) = ∏ⱼ sigmaSide(ωʲ)` over the constrained region.
 
-The constraints, with `zkpm(X) = ∏_{j=n-zkRows}^{n-1} (X - ωʲ)` masking the final `zkRows`
-zero-knowledge rows and `L_r` the Lagrange basis at row `r` (`columnPoly` at an
-indicator):
+The constraints, with `zkpm(X) = (X − ω^{n−zkRows})(X − ω^{n−zkRows+1})(X − ω^{n−1})`
+(production's `permutation_vanishing_polynomial` — THREE factors at any `zkRows`, NOT
+the full `vanishes_on_last_n_rows` window; the two coincide exactly at `zkRows = 3`)
+and `L_r` the Lagrange basis at row `r` (`columnPoly` at an indicator):
 
 * `zkpm · (z · ∏ᵢ (wᵢ + γ + β·shiftᵢ·X) - z(ωX) · ∏ᵢ (wᵢ + γ + β·σᵢ))` — the division-free
-  accumulator recurrence, gated off the masked rows;
+  accumulator recurrence, gated off exactly the three rows where the prover breaks it:
+  the two whose successor accumulator value is randomized (`perm_aggreg` randomizes
+  `z[n−zkRows+1]` and `z[n−zkRows+2]`) and the wrap-around row `n−1`; on the remaining
+  masked rows `n−zkRows+2 … n−2` the recurrence HOLDS (the prover's fold continues
+  through them);
 * `(z - 1) · lagNumer 0` — the accumulator initialises to `1` (the pin carried by the
   un-normalized numerator `(Xⁿ−1)/(X−1)`, the deployed verifier's form);
 * `(z - 1) · lagNumer (n-zkRows)` — the accumulator returns to `1` at the end of the
@@ -44,11 +49,15 @@ variable {F : Type*} [Field F]
 
 /-! ## The constraint data -/
 
-/-- The zero-knowledge mask `∏_{j=n-zkRows}^{n-1} (X - ωʲ)` (`vanishes_on_last_n_rows`):
-vanishes exactly on the final `zkRows` rows of the domain, gating the accumulator recurrence
-off them. -/
+/-- The permutation zero-knowledge mask
+`(X − ω^{n−zkRows})(X − ω^{n−zkRows+1})(X − ω^{n−1})` — production's
+`permutation_vanishing_polynomial` (permutation.rs:112–121), a THREE-factor product at
+any `zkRows` (at `zkRows = 3` it coincides with the full `vanishes_on_last_n_rows`
+window, which is what made the windowed transcription pass every `zkRows = 3` fixture).
+It gates the accumulator recurrence off exactly the three rows the prover breaks it
+on. -/
 noncomputable def zkpm (ω : F) (n zkRows : ℕ) : Polynomial F :=
-  ∏ j ∈ Finset.Ico (n - zkRows) n, (X - C (ω ^ j))
+  (X - C (ω ^ (n - zkRows))) * (X - C (ω ^ (n - zkRows + 1))) * (X - C (ω ^ (n - 1)))
 
 /-- The shift-side row product `∏ᵢ (wᵢ + γ + β·shiftᵢ·X)` — the identity-permutation side
 of the accumulator recurrence. -/
@@ -175,26 +184,33 @@ noncomputable def constraints {n : ℕ} (ω : F) (zkRows : ℕ) (z : Polynomial 
 
 /-! ## Row lemmas -/
 
-/-- The mask does not vanish on the unmasked rows: `zkpm(ωⁱ) ≠ 0` for `i < n - zkRows`. -/
-private theorem zkpm_eval_ne_zero {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (zkRows : ℕ) {i : ℕ}
+/-- The mask does not vanish on the unmasked rows: `zkpm(ωⁱ) ≠ 0` for `i < n - zkRows`.
+Needs `2 ≤ zkRows` so that all three root exponents lie in `[n − zkRows, n)` (at
+`zkRows = 1` the middle factor's exponent is `n`, i.e. row `0` — production never runs
+below `zkRows = 3`). -/
+private theorem zkpm_eval_ne_zero {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n)
+    {zkRows : ℕ} (hzk2 : 2 ≤ zkRows) (hzkn : zkRows ≤ n) {i : ℕ}
     (hi : i < n - zkRows) : (zkpm ω n zkRows).eval (ω ^ i) ≠ 0 := by
   unfold zkpm
-  rw [eval_prod]
-  refine Finset.prod_ne_zero_iff.mpr fun j hj => ?_
-  obtain ⟨hj₁, hj₂⟩ := Finset.mem_Ico.mp hj
-  simp only [eval_sub, eval_X, eval_C, sub_ne_zero]
-  intro hEq
-  have : i = j := hω.pow_inj (by omega) hj₂ hEq
-  omega
+  simp only [eval_mul, eval_sub, eval_X, eval_C]
+  have hne : ∀ e : ℕ, n - zkRows ≤ e → e < n → (ω : F) ^ i - ω ^ e ≠ 0 := by
+    intro e hlo hhi
+    rw [sub_ne_zero]
+    intro hEq
+    have : i = e := hω.pow_inj (by omega) hhi hEq
+    omega
+  exact mul_ne_zero
+    (mul_ne_zero (hne _ le_rfl (by omega)) (hne _ (by omega) (by omega)))
+    (hne _ (by omega) (by omega))
 
-/-- The mask vanishes on the masked rows: `zkpm(ωⁱ) = 0` for `n - zkRows ≤ i < n` —
-the completeness twin of `zkpm_eval_ne_zero`. -/
+/-- The mask vanishes on its three gated rows — the completeness twin of
+`zkpm_eval_ne_zero`. -/
 private theorem zkpm_eval_zero {ω : F} {n : ℕ} (zkRows : ℕ) {i : ℕ}
-    (hlo : n - zkRows ≤ i) (hhi : i < n) : (zkpm ω n zkRows).eval (ω ^ i) = 0 := by
+    (hi : i = n - zkRows ∨ i = n - zkRows + 1 ∨ i = n - 1) :
+    (zkpm ω n zkRows).eval (ω ^ i) = 0 := by
   unfold zkpm
-  rw [eval_prod]
-  refine Finset.prod_eq_zero (Finset.mem_Ico.mpr ⟨hlo, hhi⟩) ?_
-  simp
+  simp only [eval_mul, eval_sub, eval_X, eval_C]
+  rcases hi with h | h | h <;> subst h <;> simp
 
 /-- A Lagrange-gated pin: if `Z_H ∣ (z - 1) · lagNumer r` then the accumulator is `1`
 at row `r` — the numerator's value at its own node is `n·ω^{−r} ≠ 0` (a primitive root
@@ -216,7 +232,8 @@ private theorem eval_eq_one_of_boundary {ω : F} {n : ℕ} (hω : IsPrimitiveRoo
 /-- The gated aggregation forces the division-free recurrence on the unmasked rows:
 `z(ωⁱ⁺¹) · sigmaSide(ωⁱ) = z(ωⁱ) · shiftSide(ωⁱ)` for `i < n - zkRows`. -/
 private theorem step_of_aggregation {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
-    (zkRows : ℕ) (z : Polynomial F) (w σ : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (β γ : F)
+    {zkRows : ℕ} (hzk2 : 2 ≤ zkRows) (hzkn : zkRows ≤ n)
+    (z : Polynomial F) (w σ : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (β γ : F)
     (h : zH F n ∣ zkpm ω n zkRows
       * (z * shiftSide w shifts β γ - shiftRow ω z * sigmaSide w σ β γ))
     {i : ℕ} (hi : i < n - zkRows) :
@@ -224,7 +241,7 @@ private theorem step_of_aggregation {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω
       = z.eval (ω ^ i) * (shiftSide w shifts β γ).eval (ω ^ i) := by
   have hrow := (zH_dvd_iff hω hn _).mp h i (by omega)
   rw [eval_mul] at hrow
-  have h2 := (mul_eq_zero.mp hrow).resolve_left (zkpm_eval_ne_zero hω zkRows hi)
+  have h2 := (mul_eq_zero.mp hrow).resolve_left (zkpm_eval_ne_zero hω hzk2 hzkn hi)
   rw [eval_sub, eval_mul, eval_mul, sub_eq_zero] at h2
   have hcomp : (shiftRow ω z).eval (ω ^ i) = z.eval (ω ^ (i + 1)) := by
     rw [shiftRow, eval_comp, eval_mul, eval_C, eval_X, ← pow_succ']
@@ -240,7 +257,7 @@ the grand products of the shift side and the σ side agree,
 derandomized eval-check form (`soundness`) and the full-aggregate assembly
 (`Kimchi/Index/Aggregate.lean`) both enter through. -/
 theorem soundness_of_dvd {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
-    {zkRows : ℕ} (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
+    {zkRows : ℕ} (hzk2 : 2 ≤ zkRows) (hzkn : zkRows ≤ n)
     (z : Polynomial F) (w σ : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (β γ : F)
     (hdvd : ∀ s, zH F n ∣ constraints ω zkRows z w σ shifts β γ
       (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩ s) :
@@ -249,29 +266,50 @@ theorem soundness_of_dvd {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0
   refine prod_eq_of_accumulator _ _ (fun j => z.eval (ω ^ j)) ?_ ?_ ?_
   · simpa using eval_eq_one_of_boundary hω hn z _ (hdvd 1)
   · simpa using eval_eq_one_of_boundary hω hn z _ (hdvd 2)
-  · exact fun j hj => step_of_aggregation hω hn zkRows z w σ shifts β γ (hdvd 0) hj
+  · exact fun j hj => step_of_aggregation hω hn hzk2 hzkn z w σ shifts β γ (hdvd 0) hj
 /-- **Permutation completeness.** With nonvanishing σ-side row products (the
-nondegeneracy of `(β, γ)`) and agreeing grand products over the unmasked region, an
-accumulator exists whose three permutation constraints are all divisible by `Z_H`: the
-running-ratio column of `accumulator_of_prod_eq`, interpolated through the domain and
-held constant on the mask (where the zkpm gate erases the recurrence anyway). The
-converse of `soundness_of_dvd`, pointwise in `(β, γ)`. -/
+nondegeneracy of `(β, γ)`, on EVERY row — the mask no longer erases the recurrence on
+the interior zero-knowledge rows) and agreeing grand products over the unmasked region,
+an accumulator exists whose three permutation constraints are all divisible by `Z_H`.
+The construction mirrors production's `perm_aggreg`: the running ratio of
+`accumulator_of_prod_eq` up to the boundary row `n − zkRows` (where it returns to `1`),
+an arbitrary value on the two rows production randomizes (`z[n−zkRows+1]`,
+`z[n−zkRows+2]` — here `1`), and the running ratio RESTARTED from there: the recurrence
+rows are exactly the complement of `zkpm`'s three roots, so the fold must continue
+through the interior of the mask. The converse of `soundness_of_dvd`, pointwise in
+`(β, γ)`. -/
 theorem constraints_dvd_of_prods {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
-    {zkRows : ℕ} (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
+    {zkRows : ℕ} (hzk2 : 2 ≤ zkRows) (hzkn : zkRows ≤ n)
     (w σ : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (β γ : F)
-    (hden : ∀ j < n - zkRows, (sigmaSide w σ β γ).eval (ω ^ j) ≠ 0)
+    (hden : ∀ j < n, (sigmaSide w σ β γ).eval (ω ^ j) ≠ 0)
     (hprod : ∏ j ∈ Finset.range (n - zkRows), (shiftSide w shifts β γ).eval (ω ^ j)
       = ∏ j ∈ Finset.range (n - zkRows), (sigmaSide w σ β γ).eval (ω ^ j)) :
     ∃ z : Polynomial F, ∀ s, zH F n ∣ constraints ω zkRows z w σ shifts β γ
       (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩ s := by
-  obtain ⟨zc, hz0, hzm, hstep⟩ := accumulator_of_prod_eq
-    (fun j => (shiftSide w shifts β γ).eval (ω ^ j))
-    (fun j => (sigmaSide w σ β γ).eval (ω ^ j)) hden hprod
-  -- the accumulator column, held constant on the mask
-  set zrow : Fin n → F := fun i => zc (min (i : ℕ) (n - zkRows)) with hzrow
-  refine ⟨columnPoly ω zrow, ?_⟩
-  have hzeval : ∀ i : ℕ, ∀ hi : i < n,
-      (columnPoly ω zrow).eval (ω ^ i) = zc (min i (n - zkRows)) := fun i hi => by
+  set num : ℕ → F := fun j => (shiftSide w shifts β γ).eval (ω ^ j) with hnumDef
+  set den : ℕ → F := fun j => (sigmaSide w σ β γ).eval (ω ^ j) with hdenDef
+  obtain ⟨zc, hz0, hzm, hstep⟩ := accumulator_of_prod_eq num den
+    (fun k hk => hden k (by omega)) hprod
+  -- the tail accumulator: restarted at `1` on row `n − zkRows + 2`, running ratio on
+  set tail : ℕ → F := fun k => Nat.rec (motive := fun _ => F) 1
+    (fun k acc => acc * num (n - zkRows + 2 + k) / den (n - zkRows + 2 + k)) k
+    with htailDef
+  have htailStep : ∀ k, n - zkRows + 2 + k < n →
+      tail (k + 1) * den (n - zkRows + 2 + k) = tail k * num (n - zkRows + 2 + k) := by
+    intro k hk
+    show tail k * num (n - zkRows + 2 + k) / den (n - zkRows + 2 + k)
+        * den (n - zkRows + 2 + k) = _
+    rw [div_mul_cancel₀]
+    exact hden _ hk
+  -- the accumulator column: head ratio to the boundary, `1` on the two randomized
+  -- rows, tail ratio beyond (indexed by ℕ so the branch arithmetic stays coercion-free)
+  set zrow : ℕ → F := fun i =>
+    if i ≤ n - zkRows then zc i
+    else if i = n - zkRows + 1 then 1
+    else tail (i - (n - zkRows + 2)) with hzrow
+  refine ⟨columnPoly ω (fun i : Fin n => zrow (i : ℕ)), ?_⟩
+  have hzeval : ∀ i : ℕ, i < n →
+      (columnPoly ω (fun i : Fin n => zrow (i : ℕ))).eval (ω ^ i) = zrow i := fun i hi => by
     rw [show (ω ^ i : F) = ω ^ (((⟨i, hi⟩ : Fin n)) : ℕ) from rfl,
       eval_columnPoly hω]
   intro s
@@ -281,24 +319,53 @@ theorem constraints_dvd_of_prods {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n)
   | 0 =>
     show ((zkpm ω n zkRows) * _).eval _ = 0
     rw [eval_mul]
-    by_cases hmask : i < n - zkRows
-    · -- the recurrence, from the accumulator step
+    by_cases hmask : i = n - zkRows ∨ i = n - zkRows + 1 ∨ i = n - 1
+    · -- one of the three gated rows
+      rw [zkpm_eval_zero zkRows hmask, zero_mul]
+    · -- a live recurrence row: head or restarted tail
+      simp only [not_or] at hmask
+      obtain ⟨hm0, hm1, hm2⟩ := hmask
       have hi1 : i + 1 < n := by omega
-      have hcomp : (shiftRow ω (columnPoly ω zrow)).eval (ω ^ i)
-          = (columnPoly ω zrow).eval (ω ^ (i + 1)) := by
+      have hcomp : (shiftRow ω (columnPoly ω (fun i : Fin n => zrow (i : ℕ)))).eval (ω ^ i)
+          = (columnPoly ω (fun i : Fin n => zrow (i : ℕ))).eval (ω ^ (i + 1)) := by
         rw [shiftRow, eval_comp, eval_mul, eval_C, eval_X, ← pow_succ']
-      rw [eval_sub, eval_mul, eval_mul, hcomp, hzeval i hi, hzeval (i + 1) hi1,
-        Nat.min_eq_left hmask.le, Nat.min_eq_left (by omega)]
-      rw [sub_eq_zero.mpr (hstep i hmask).symm, mul_zero]
-    · -- the mask kills the row
-      rw [zkpm_eval_zero zkRows (Nat.le_of_not_lt hmask) hi, zero_mul]
+      rw [eval_sub, eval_mul, eval_mul, hcomp, hzeval i hi, hzeval (i + 1) hi1]
+      refine mul_eq_zero_of_right _ (sub_eq_zero.mpr ?_)
+      rcases Nat.lt_or_ge i (n - zkRows) with hlt | hge
+      · -- head: the accumulator step
+        have e1 : zrow i = zc i := by
+          simp only [hzrow]
+          rw [if_pos (by omega : i ≤ n - zkRows)]
+        have e2 : zrow (i + 1) = zc (i + 1) := by
+          simp only [hzrow]
+          rw [if_pos (by omega : i + 1 ≤ n - zkRows)]
+        rw [e1, e2]
+        exact (hstep i hlt).symm
+      · -- tail: the restarted ratio (`n − zkRows + 2 ≤ i ≤ n − 2`)
+        have hge2 : n - zkRows + 2 ≤ i := by omega
+        have e1 : zrow i = tail (i - (n - zkRows + 2)) := by
+          simp only [hzrow]
+          rw [if_neg (by omega), if_neg (by omega)]
+        have e2 : zrow (i + 1) = tail (i - (n - zkRows + 2) + 1) := by
+          simp only [hzrow]
+          rw [if_neg (by omega), if_neg (by omega),
+            show i + 1 - (n - zkRows + 2) = i - (n - zkRows + 2) + 1 from by omega]
+        have := htailStep (i - (n - zkRows + 2)) (by omega)
+        rw [show n - zkRows + 2 + (i - (n - zkRows + 2)) = i from by omega] at this
+        rw [e1, e2]
+        exact this.symm
   | 1 =>
     show ((_ - 1) * lagNumer ω (⟨0, hn⟩ : Fin n)).eval _ = 0
     rw [lagNumer, eval_mul]
     by_cases h0 : i = 0
     · subst h0
       rw [eval_sub, eval_one, hzeval 0 hn]
-      simp [hz0]
+      have : zrow 0 = 1 := by
+        simp only [hzrow]
+        rw [if_pos (Nat.zero_le _)]
+        exact hz0
+      rw [this]
+      simp
     · rw [eval_mul, show (ω ^ i : F) = ω ^ (((⟨i, hi⟩ : Fin n)) : ℕ) from rfl,
         eval_columnPoly hω, rowIndicator, if_neg (by simp [Fin.ext_iff, h0]), mul_zero,
         mul_zero]
@@ -309,7 +376,12 @@ theorem constraints_dvd_of_prods {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n)
     by_cases hb : i = n - zkRows
     · subst hb
       rw [eval_sub, eval_one, hzeval (n - zkRows) (by omega)]
-      simp [hzm]
+      have : zrow (n - zkRows) = 1 := by
+        simp only [hzrow]
+        rw [if_pos le_rfl]
+        exact hzm
+      rw [this]
+      simp
     · rw [eval_mul, show (ω ^ i : F) = ω ^ (((⟨i, hi⟩ : Fin n)) : ℕ) from rfl,
         eval_columnPoly hω, rowIndicator, if_neg (by simp [Fin.ext_iff, hb]), mul_zero,
         mul_zero]

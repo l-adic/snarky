@@ -59,7 +59,7 @@ permutation constraints are divisible by `Z_H`, then the witness values are inva
 the wiring on the unmasked region: for every cell `c`, `w(σp c) = w(c)`. -/
 theorem copy_soundness_of_dvd [DecidableEq F] {ω : F} {n : ℕ}
     (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
-    {zkRows : ℕ} (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
+    {zkRows : ℕ} (hzk2 : 2 ≤ zkRows) (hzkn : zkRows ≤ n)
     (w σpoly : Fin 7 → Polynomial F) (shifts : Fin 7 → F)
     (σp : Equiv.Perm (Fin 7 × Fin (n - zkRows)))
     (haddr : Function.Injective
@@ -86,7 +86,7 @@ theorem copy_soundness_of_dvd [DecidableEq F] {ω : F} {n : ℕ}
   refine Kimchi.GrandProduct.copy_soundness β γ _ _ haddr σp hβ hγ ?_
   -- The grand-product argument gives the row-product equality; reindex rows × columns to cells and
   -- rewrite the sigma side through the wiring semantics.
-  have hrows := Permutation.soundness_of_dvd hω hn hzk0 hzkn zg w σpoly shifts β γ hdvd
+  have hrows := Permutation.soundness_of_dvd hω hn hzk2 hzkn zg w σpoly shifts β γ hdvd
   calc ∏ x : Fin 7 × Fin (n - zkRows),
         (γ + (w x.1).eval (ω ^ (x.2 : ℕ)) + shifts x.1 * ω ^ (x.2 : ℕ) * β)
       = ∏ j ∈ Finset.range (n - zkRows), (shiftSide w shifts β γ).eval (ω ^ j) := by

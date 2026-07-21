@@ -135,34 +135,31 @@ theorem eval_sigmaPoly {ω : F} (hω : IsPrimitiveRoot ω n) (shifts : Fin 7 →
 
 /-! ## Completeness: nondegenerate challenges and the grand-product identity -/
 
-/-- **Challenge nondegeneracy.** No σ-side factor vanishes on the unmasked region: at
-`(β, γ)`, every unmasked cell has `w(c) + γ + β·addr(σ c) ≠ 0`. The honest accumulator
-divides by exactly these factors, so this is the formal rendering of the protocol's
-division-by-zero edge case; each factor is affine-linear in `(β, γ)`, so the degenerate
-pairs lie on at most `7·(n − zkRows)` lines — the small bad locus a Fiat–Shamir sample
-misses. The shift side needs no such hypothesis: once the grand products agree, its
-nonvanishing follows from the σ side's. -/
-def Nondegenerate (ω : F) (zkRows : ℕ) (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F)
+/-- **Challenge nondegeneracy.** No σ-side factor vanishes on ANY row: at `(β, γ)`,
+every cell has `w(c) + γ + β·addr(σ c) ≠ 0`. The honest accumulator divides by these
+factors — and with the three-factor `zkpm` the recurrence (hence the division) runs
+through the interior zero-knowledge rows too, so the whole grid is quantified, not just
+the unmasked region. Each factor is affine-linear in `(β, γ)`, so the degenerate pairs
+lie on at most `7·n` lines — the small bad locus a Fiat–Shamir sample misses. The shift
+side needs no such hypothesis: once the grand products agree, its nonvanishing follows
+from the σ side's. -/
+def Nondegenerate (ω : F) (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F)
     (σpFull : Equiv.Perm (Fin 7 × Fin n)) (β γ : F) : Prop :=
-  ∀ c : Fin 7 × Fin (n - zkRows),
-    (w c.1).eval (ω ^ ((c.2 : ℕ))) + γ
-      + β * addr ω shifts (σpFull (embCell zkRows c)) ≠ 0
+  ∀ c : Fin 7 × Fin n,
+    (w c.1).eval (ω ^ ((c.2 : ℕ))) + γ + β * addr ω shifts (σpFull c) ≠ 0
 
-/-- On the unmasked rows, nondegeneracy makes the σ-side row product nonzero. -/
+/-- On every row, nondegeneracy makes the σ-side row product nonzero. -/
 theorem sigmaSide_eval_ne_zero {ω : F} (hω : IsPrimitiveRoot ω n)
     {w : Fin 7 → Polynomial F} {shifts : Fin 7 → F}
     {σpFull : Equiv.Perm (Fin 7 × Fin n)} {β γ : F}
-    (hnd : Nondegenerate ω zkRows w shifts σpFull β γ)
-    {j : ℕ} (hj : j < n - zkRows) :
+    (hnd : Nondegenerate ω w shifts σpFull β γ)
+    {j : ℕ} (hj : j < n) :
     (sigmaSide w (sigmaPoly ω shifts σpFull) β γ).eval (ω ^ j) ≠ 0 := by
-  have hjn : j < n := lt_of_lt_of_le hj (Nat.sub_le n zkRows)
   rw [sigmaSide_eval]
   refine Finset.prod_ne_zero_iff.mpr fun i _ => ?_
   have hs : (sigmaPoly ω shifts σpFull i).eval (ω ^ j)
-      = addr ω shifts (σpFull (embCell zkRows ((i, ⟨j, hj⟩) :
-          Fin 7 × Fin (n - zkRows)))) := by
-    rw [show (ω ^ j : F) = ω ^ (((⟨j, hjn⟩ : Fin n)) : ℕ) from rfl, eval_sigmaPoly hω]
-    rfl
+      = addr ω shifts (σpFull ((i, ⟨j, hj⟩) : Fin 7 × Fin n)) := by
+    rw [show (ω ^ j : F) = ω ^ (((⟨j, hj⟩ : Fin n)) : ℕ) from rfl, eval_sigmaPoly hω]
   rw [hs]
   exact hnd (i, ⟨j, hj⟩)
 
@@ -240,26 +237,26 @@ private theorem exists_injective_avoiding {F : Type*} [Fintype F] [DecidableEq F
   · have hmem : ((e.symm i : t) : F) ∈ t := (e.symm i).2
     exact (Finset.mem_sdiff.mp (ht hmem)).2
 
-/-- **A nondegenerate challenge grid exists** in a large enough field. Each unmasked
-cell forbids exactly one `γ` per `β` (the factor is affine-linear in `γ`), so with
-`K = 7·(n − zkRows)`: any `K + 1` distinct `β`'s, and `K + 1` distinct `γ`'s dodging
-the at most `(K+1)·K` bad values, give a fully nondegenerate grid — possible once
+/-- **A nondegenerate challenge grid exists** in a large enough field. Each cell
+forbids exactly one `γ` per `β` (the factor is affine-linear in `γ`), so with
+`K = 7·n`: any `K + 1` distinct `β`'s, and `K + 1` distinct `γ`'s dodging the at most
+`(K+1)·K` bad values, give a fully nondegenerate grid — possible once
 `(K+1)² ≤ |F|`. -/
 theorem exists_nondegenerate_grid {F : Type*} [Field F] [Fintype F] [DecidableEq F]
-    {n zkRows : ℕ} {ω : F}
+    {n : ℕ} {ω : F}
     (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F)
     (σpFull : Equiv.Perm (Fin 7 × Fin n))
-    (hF : (7 * (n - zkRows) + 1) * (7 * (n - zkRows) + 1) ≤ Fintype.card F) :
-    ∃ b g : Fin (7 * (n - zkRows) + 1) → F,
+    (hF : (7 * n + 1) * (7 * n + 1) ≤ Fintype.card F) :
+    ∃ b g : Fin (7 * n + 1) → F,
       Function.Injective b ∧ Function.Injective g
-        ∧ ∀ a c, Nondegenerate ω zkRows w shifts σpFull (b a) (g c) := by
-  set K := 7 * (n - zkRows) with hK
+        ∧ ∀ a c, Nondegenerate ω w shifts σpFull (b a) (g c) := by
+  set K := 7 * n with hK
   obtain ⟨b, hb, -⟩ := exists_injective_avoiding (∅ : Finset F) (K + 1)
     (by simpa using le_trans (Nat.le_mul_of_pos_right _ (by omega)) hF)
   set Bad : Finset F := (Finset.univ : Finset (Fin (K + 1))).biUnion fun a =>
-    (Finset.univ : Finset (Fin 7 × Fin (n - zkRows))).image fun c =>
+    (Finset.univ : Finset (Fin 7 × Fin n)).image fun c =>
       -((w c.1).eval (ω ^ ((c.2 : ℕ)))
-        + b a * addr ω shifts (σpFull (embCell zkRows c))) with hBadDef
+        + b a * addr ω shifts (σpFull c)) with hBadDef
   have hBad : Bad.card ≤ (K + 1) * K := by
     refine le_trans Finset.card_biUnion_le ?_
     refine le_trans (Finset.sum_le_card_nsmul _ _ K fun a _ => ?_) ?_
@@ -368,7 +365,7 @@ addresses: if at every node of an injective `(β, γ)` grid the prover supplies 
 accumulator whose three permutation constraints are divisible by `Z_H`, then the witness
 takes equal values across every wire of the unmasked region. -/
 theorem copy_soundness_wired_of_dvd [DecidableEq F] {ω : F} (hω : IsPrimitiveRoot ω n)
-    (hn : 0 < n) (hzk0 : 0 < zkRows) (hzkn : zkRows ≤ n)
+    (hn : 0 < n) (hzk2 : 2 ≤ zkRows) (hzkn : zkRows ≤ n)
     (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (hs : CosetShifts ω shifts)
     (σpFull : Equiv.Perm (Fin 7 × Fin n)) (hp : RegionPreserving zkRows σpFull)
     (β γ : F)
@@ -394,7 +391,7 @@ theorem copy_soundness_wired_of_dvd [DecidableEq F] {ω : F} (hω : IsPrimitiveR
       (w (σpFull (embCell zkRows c)).1).eval (ω ^ ((σpFull (embCell zkRows c)).2 : ℕ))
         = (w c.1).eval (ω ^ (c.2 : ℕ)) := by
   intro c
-  have hmain := Permutation.copy_soundness_of_dvd hω hn hzk0 hzkn w
+  have hmain := Permutation.copy_soundness_of_dvd hω hn hzk2 hzkn w
     (sigmaPoly ω shifts σpFull) shifts (restrictCells σpFull hp)
     (fun x y hxy => embCell_injective (addr_injective hω hs (by
       simpa [addr, embCell] using hxy)))
