@@ -37,4 +37,6 @@ import Kimchi.Protocol.Soundness
 import Bulletproof.Reflection
 import Kimchi.Verifier.Kimchi
 import Kimchi.Verifier.Reflect
-import Kimchi.Verifier.Capstone
+import Kimchi.Verifier.Capstone.Standard
+import Kimchi.Verifier.Capstone.Algebraic
+import Kimchi.Verifier.Capstone.Reflection

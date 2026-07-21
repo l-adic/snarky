@@ -1,5 +1,6 @@
 import Bulletproof.Wire
 import Kimchi.Protocol.Linearization
+import Kimchi.Protocol.Correspond
 import Poseidon.FqSponge
 
 /-!
@@ -408,6 +409,30 @@ def kimchiVerify (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
         evalscale := u
         proof := p.opening }
     Ipa.verifyFrom C σ o.warm inp
+
+/-! ## The wire views -/
+
+/-- The committed-column view of a wire verifier key: the `IndexComms` record the
+abstract soundness layer speaks about, read off the key's arrays (`getD` at the checked
+sizes — the shape guards of `kimchiVerify` pin `sigmaComm` to 7 and `coefficientsComm`
+to 15 entries). This is the view through which `VKCorresponds` is stated for a wire
+key. The glue between the wire `KimchiVK` and the abstract capstone. -/
+def KimchiVK.comms {C : Ipa.CommitmentCurve} (vk : KimchiVK C) : IndexComms C.Point where
+  sigma i := vk.sigmaComm.getD (i : ℕ) 0
+  coefficients c := vk.coefficientsComm.getD (c : ℕ) 0
+  generic := vk.genericComm
+  poseidon := vk.poseidonComm
+  completeAdd := vk.completeAddComm
+  varBaseMul := vk.mulComm
+  endoMul := vk.emulComm
+  endoScalar := vk.endomulScalarComm
+
+/-- The public-input array as the `Fin idx.publicCount`-indexed function the circuit
+model consumes (`getD`, total; the capstones pin `pub.size = idx.publicCount`, so the
+view reads only genuine entries). The wire-to-abstract public view. -/
+def pubView {F : Type*} [Field F] {n : ℕ} (idx : Index F n) (pub : Array F) :
+    Fin idx.publicCount → F :=
+  fun i => pub.getD (i : ℕ) 0
 
 end Kimchi.Verifier
 
