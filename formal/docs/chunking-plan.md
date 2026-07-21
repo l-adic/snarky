@@ -80,15 +80,30 @@ fast; `segTotal_eq_sum`/`flatSeg` bridge to the sigma-summed world of
 `chunked_batch_soundness`, and every transport must be PROPOSITIONAL (never let
 unification compare the two forms).
 
-**Phase 4 REMAINING** — chunked reflection (`runInput`/`runOracles`/`kimchiVerify_reflects`
-at `Chunked.kimchiVerify`; the 45-logical-row deployed stream reindexed onto the 44-row
-batch + ft row + t chunks), RESTATED `kimchi_fiat_shamir_{vesta,pallas}` at the chunked
-transcript (trust-surface re-audit), the standard-model run corollaries, both `_ft` run
-terminals, `check_vk_correspond` generalization (chunked indexer vs the nc=2 VK
-fixture, incl. the lagrangeBasis→public-commitment correspondence), and THE DELETION
-SWEEP: the nc=1 verifier + reduction + capstones + Reflect are deleted, `Chunked` is
-renamed into place, and `nc = 1` survives nowhere as a pin — only as the case `nc = 1`
-of the general statements (user directive).
+**Phase 4a DONE (chunked reflection)** — `Verifier/ReflectChunked.lean`: the run
+functions (`runOracles`…`runLogical`/`flatRows`/`runInput`) and
+`Chunked.kimchiVerify_reflects`. DESIGN: the verifier's 30-clause guard is now the
+named `shapeBad` (behavior-neutral, fixture-re-adjudicated) and `ReflectedRun` carries
+`shapeBad = false` as ONE fact + the warm acceptance — `runInput`'s columns are
+`flatRows (runLogical …)` projections BY DEFINITION, so no content equalities needed;
+downstream reads rows off `runLogical`'s literal structure, extracting shapes from
+`shapeBad = false` on demand.
+
+**Phase 4b DONE (standard-model run corollaries)** —
+`Chunked.kimchi{Vesta,Pallas}_run_sound` in `StandardChunked.lean`: the grid capstones
+instantiated at the chunked run's own `Chunked.runOracles` challenges over the run's
+wire commitment chunks; quotient residue stays the one undischarged antecedent
+(48 axiom roots, same allowed set).
+
+**Phase 4c REMAINING** — the `_ft` terminals: RESTATED
+`kimchi_fiat_shamir_{vesta,pallas}` at the chunked transcript (trust-surface re-audit,
+host-audit discipline; anchored on `Ipa.verifyFrom (runWarm) (runInput)` with the
+chunked runInput), the chunked `runReindex` (44-row×nc batch + ft row + t chunks →
+`runLogical` flat positions) + read lemmas, `ft_opening_of_reflected*`, both
+`kimchi{V,P}_run_sound_algebraic_ft` terminals, `check_vk_correspond` generalization
+(chunked indexer vs the nc=2 VK fixture incl. lagrangeBasis→public-commitment), and
+THE DELETION SWEEP: the nc=1 verifier + reduction + capstones + Reflect deleted,
+`Chunked` renamed into place — `nc = 1` survives nowhere as a pin (user directive).
 
 **Phase 5 REMAINING** — roots.txt/check_axioms consolidation after the sweep, module
 docstrings, docs/module-deps regeneration, memory/ledger updates.

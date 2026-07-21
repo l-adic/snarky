@@ -112,6 +112,6 @@ Kimchi.Verifier.Chunked.kimchiProof_sound
 -- (per-node poseidon_fiat_shamir over the flat segment stream) and the AGM corollary
 -- with the residue-free algebraic quotient (the ft row's DOUBLE collapse at
 -- zeta^{2^k}: the nc-chunk sigma6 side is real algebra at nc > 1).
-Kimchi.Verifier.Chunked.kimchiVesta_sound
-Kimchi.Verifier.Chunked.kimchiPallas_sound
+Kimchi.Verifier.Chunked.kimchiVesta_run_sound
+Kimchi.Verifier.Chunked.kimchiPallas_run_sound
 Kimchi.Verifier.Chunked.kimchiProof_sound_algebraic_ft
