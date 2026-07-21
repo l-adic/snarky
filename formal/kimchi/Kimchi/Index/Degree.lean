@@ -502,11 +502,11 @@ private theorem permConstraints_natDegree_le [NeZero n] (idx : Index F n)
     (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (hz : z.natDegree < n) (β γ : F)
     (s : Fin 3) :
     (Permutation.constraints idx.omega idx.zkRows z (idx.permWitnessPoly wTab)
-        (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts β γ
+        (Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm) idx.shifts β γ
         (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd s).natDegree
       ≤ degreeBound n := by
   set w := idx.permWitnessPoly wTab with hw
-  set σ := Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm with hσ
+  set σ := Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm with hσ
   -- The cell interpolants underneath both row products have `natDegree < n`.
   have hwdeg : ∀ i : Fin 7, (w i).natDegree < n := fun i => by
     rw [hw]; exact columnPoly_natDegree_lt idx.omega_prim _

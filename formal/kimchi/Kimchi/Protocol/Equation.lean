@@ -335,14 +335,14 @@ private theorem verifierEquation_iff [DecidableEq F] [NeZero n] (idx : Index F n
     (z t : Polynomial F) (ζ β γ α : F)
     (hζ₁ : ζ ≠ 1) (hζb : ζ ≠ idx.omega ^ (n - idx.zkRows)) :
     permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (evalsOf idx wTab z ζ)
-          * ((Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) 6).eval ζ
+          * ((Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm) 6).eval ζ
         - (ζ ^ n - 1) * t.eval ζ
       = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase idx.mds α β γ ζ
           (-((idx.pubPoly pub).eval ζ)) (evalsOf idx wTab z ζ)
       ↔ (aggregate α (idx.fullFamily pub wTab z β γ)).eval ζ = (t * zH F n).eval ζ := by
   -- the three permutation constraints at the index's wiring data
   set Cf := Permutation.constraints idx.omega idx.zkRows z (idx.permWitnessPoly wTab)
-      (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts β γ
+      (Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm) idx.shifts β γ
       (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd with hCf
   -- expand the aggregate at ζ into the gate block plus the three permutation members
   have hagg : (aggregate α (idx.fullFamily pub wTab z β γ)).eval ζ
@@ -378,7 +378,7 @@ private theorem verifierEquation_iff [DecidableEq F] [NeZero n] (idx : Index F n
       norm_num
   -- σ-side recurrence at α²¹, with σ = the wiring σ, folded to `Cf 0`
   have hperm := permMember_eval idx wTab z ζ β γ α
-    (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) (fun _ => rfl)
+    (Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm) (fun _ => rfl)
     (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd
   rw [← hCf] at hperm
   -- the boundary members are `Cf 1`, `Cf 2`
@@ -446,7 +446,7 @@ private theorem satisfies_of_verifierEquation [DecidableEq F] [NeZero n]
       permScalar β γ α
           (zkpmEval n idx.zkRows idx.omega ζ)
           (evalsOf idx wTab zg ζ)
-        * ((Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) 6).eval
+        * ((Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm) 6).eval
             ζ
         - (ζ ^ n - 1) * t.eval ζ
       = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase idx.mds α β γ

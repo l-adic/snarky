@@ -121,17 +121,38 @@ private theorem embCell_restrictCells (σpFull : Equiv.Perm (Fin 7 × Fin n))
 
 /-! ## The sigma columns -/
 
-/-- The index's sigma polynomials: the interpolants, through the domain, of the wired-to
-addresses. -/
-noncomputable def sigmaPoly (ω : F) (shifts : Fin 7 → F)
-    (σpFull : Equiv.Perm (Fin 7 × Fin n)) : Fin 7 → Polynomial F :=
-  fun i => columnPoly ω (fun j : Fin n => addr ω shifts (σpFull (i, j)))
+/-- The committed σ-cell value at row `j`: the wired-to address, ZEROED on the interior
+mask rows `[n − zkRows + 2, n − 1)` — production "Zero out the sigmas in the zk rows,
+to ensure that the permutation aggregation is quasi-random for those rows"
+(constraints.rs:538–544). These are exactly the rows where the three-factor
+`permutation_vanishing_polynomial` lets the recurrence run through the mask; the range
+is EMPTY at `zkRows = 3`, which is what kept every `zkRows = 3` fixture blind to it. -/
+def sigmaCell (ω : F) (zkRows : ℕ) (shifts : Fin 7 → F)
+    (σpFull : Equiv.Perm (Fin 7 × Fin n)) (i : Fin 7) (j : Fin n) : F :=
+  if n - zkRows + 2 ≤ (j : ℕ) ∧ (j : ℕ) < n - 1 then 0
+  else addr ω shifts (σpFull (i, j))
 
-/-- The sigma columns' row semantics, on the whole domain. -/
-theorem eval_sigmaPoly {ω : F} (hω : IsPrimitiveRoot ω n) (shifts : Fin 7 → F)
+/-- The index's sigma polynomials: the interpolants, through the domain, of the
+committed σ cells — the wired-to addresses with the interior mask rows zeroed. -/
+noncomputable def sigmaPoly (ω : F) (zkRows : ℕ) (shifts : Fin 7 → F)
+    (σpFull : Equiv.Perm (Fin 7 × Fin n)) : Fin 7 → Polynomial F :=
+  fun i => columnPoly ω (fun j : Fin n => sigmaCell ω zkRows shifts σpFull i j)
+
+/-- The sigma columns' row semantics, on the whole domain: the committed cell value. -/
+theorem eval_sigmaPoly {ω : F} (hω : IsPrimitiveRoot ω n) (zkRows : ℕ)
+    (shifts : Fin 7 → F)
     (σpFull : Equiv.Perm (Fin 7 × Fin n)) (i : Fin 7) (j : Fin n) :
-    (sigmaPoly ω shifts σpFull i).eval (ω ^ (j : ℕ)) = addr ω shifts (σpFull (i, j)) :=
+    (sigmaPoly ω zkRows shifts σpFull i).eval (ω ^ (j : ℕ))
+      = sigmaCell ω zkRows shifts σpFull i j :=
   eval_columnPoly hω _ j
+
+/-- On the unmasked region the committed cell IS the wired-to address (the zeroing
+range starts at `n − zkRows + 2`). -/
+theorem sigmaCell_unmasked {ω : F} {zkRows : ℕ} {shifts : Fin 7 → F}
+    {σpFull : Equiv.Perm (Fin 7 × Fin n)} {i : Fin 7} {j : Fin n}
+    (hj : (j : ℕ) < n - zkRows) :
+    sigmaCell ω zkRows shifts σpFull i j = addr ω shifts (σpFull (i, j)) := by
+  rw [sigmaCell, if_neg (by omega)]
 
 /-! ## Completeness: nondegenerate challenges and the grand-product identity -/
 
@@ -143,22 +164,23 @@ the unmasked region. Each factor is affine-linear in `(β, γ)`, so the degenera
 lie on at most `7·n` lines — the small bad locus a Fiat–Shamir sample misses. The shift
 side needs no such hypothesis: once the grand products agree, its nonvanishing follows
 from the σ side's. -/
-def Nondegenerate (ω : F) (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F)
+def Nondegenerate (ω : F) (zkRows : ℕ) (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F)
     (σpFull : Equiv.Perm (Fin 7 × Fin n)) (β γ : F) : Prop :=
   ∀ c : Fin 7 × Fin n,
-    (w c.1).eval (ω ^ ((c.2 : ℕ))) + γ + β * addr ω shifts (σpFull c) ≠ 0
+    (w c.1).eval (ω ^ ((c.2 : ℕ))) + γ
+      + β * sigmaCell ω zkRows shifts σpFull c.1 c.2 ≠ 0
 
 /-- On every row, nondegeneracy makes the σ-side row product nonzero. -/
-theorem sigmaSide_eval_ne_zero {ω : F} (hω : IsPrimitiveRoot ω n)
+theorem sigmaSide_eval_ne_zero {ω : F} (hω : IsPrimitiveRoot ω n) {zkRows : ℕ}
     {w : Fin 7 → Polynomial F} {shifts : Fin 7 → F}
     {σpFull : Equiv.Perm (Fin 7 × Fin n)} {β γ : F}
-    (hnd : Nondegenerate ω w shifts σpFull β γ)
+    (hnd : Nondegenerate ω zkRows w shifts σpFull β γ)
     {j : ℕ} (hj : j < n) :
-    (sigmaSide w (sigmaPoly ω shifts σpFull) β γ).eval (ω ^ j) ≠ 0 := by
+    (sigmaSide w (sigmaPoly ω zkRows shifts σpFull) β γ).eval (ω ^ j) ≠ 0 := by
   rw [sigmaSide_eval]
   refine Finset.prod_ne_zero_iff.mpr fun i _ => ?_
-  have hs : (sigmaPoly ω shifts σpFull i).eval (ω ^ j)
-      = addr ω shifts (σpFull ((i, ⟨j, hj⟩) : Fin 7 × Fin n)) := by
+  have hs : (sigmaPoly ω zkRows shifts σpFull i).eval (ω ^ j)
+      = sigmaCell ω zkRows shifts σpFull i (⟨j, hj⟩ : Fin n) := by
     rw [show (ω ^ j : F) = ω ^ (((⟨j, hj⟩ : Fin n)) : ℕ) from rfl, eval_sigmaPoly hω]
   rw [hs]
   exact hnd (i, ⟨j, hj⟩)
@@ -178,7 +200,7 @@ theorem prod_shiftSide_eq_prod_sigmaSide {ω : F} (hω : IsPrimitiveRoot ω n)
         = (w c.1).eval (ω ^ ((c.2 : ℕ)))) :
     ∏ j ∈ Finset.range (n - zkRows), (shiftSide w shifts β γ).eval (ω ^ j)
       = ∏ j ∈ Finset.range (n - zkRows),
-          (sigmaSide w (sigmaPoly ω shifts σpFull) β γ).eval (ω ^ j) := by
+          (sigmaSide w (sigmaPoly ω zkRows shifts σpFull) β γ).eval (ω ^ j) := by
   set σp := restrictCells σpFull hp with hσp
   calc ∏ j ∈ Finset.range (n - zkRows), (shiftSide w shifts β γ).eval (ω ^ j)
       = ∏ x : Fin 7 × Fin (n - zkRows),
@@ -197,7 +219,7 @@ theorem prod_shiftSide_eq_prod_sigmaSide {ω : F} (hω : IsPrimitiveRoot ω n)
             + β * (shifts y.1 * ω ^ ((y.2 : ℕ)))).symm
     _ = ∏ x : Fin 7 × Fin (n - zkRows),
           ((w x.1).eval (ω ^ ((x.2 : ℕ))) + γ
-            + β * (sigmaPoly ω shifts σpFull x.1).eval (ω ^ ((x.2 : ℕ)))) := by
+            + β * (sigmaPoly ω zkRows shifts σpFull x.1).eval (ω ^ ((x.2 : ℕ)))) := by
         refine Finset.prod_congr rfl fun x _ => ?_
         have hemb := embCell_restrictCells σpFull hp x
         have hval : (w (σp x).1).eval (ω ^ (((σp x).2 : ℕ)))
@@ -205,19 +227,19 @@ theorem prod_shiftSide_eq_prod_sigmaSide {ω : F} (hω : IsPrimitiveRoot ω n)
           have hc := hcopy x
           rw [← hemb] at hc
           exact hc
-        have haddr : (sigmaPoly ω shifts σpFull x.1).eval (ω ^ ((x.2 : ℕ)))
+        have haddr : (sigmaPoly ω zkRows shifts σpFull x.1).eval (ω ^ ((x.2 : ℕ)))
             = shifts (σp x).1 * ω ^ (((σp x).2 : ℕ)) := by
-          calc (sigmaPoly ω shifts σpFull x.1).eval (ω ^ ((x.2 : ℕ)))
+          calc (sigmaPoly ω zkRows shifts σpFull x.1).eval (ω ^ ((x.2 : ℕ)))
               = addr ω shifts (σpFull (embCell zkRows x)) := by
                 rw [show (ω ^ ((x.2 : ℕ)) : F)
                     = ω ^ (((embCell zkRows x).2 : Fin n) : ℕ) from rfl,
-                  eval_sigmaPoly hω]
+                  eval_sigmaPoly hω, sigmaCell_unmasked (by exact (x.2).isLt)]
                 rfl
             _ = addr ω shifts (embCell zkRows (σp x)) := by rw [hemb]
             _ = shifts (σp x).1 * ω ^ (((σp x).2 : ℕ)) := rfl
         rw [hval, haddr]
     _ = ∏ j ∈ Finset.range (n - zkRows),
-          (sigmaSide w (sigmaPoly ω shifts σpFull) β γ).eval (ω ^ j) := by
+          (sigmaSide w (sigmaPoly ω zkRows shifts σpFull) β γ).eval (ω ^ j) := by
         rw [← Finset.univ_product_univ, Finset.prod_product_right,
           ← Fin.prod_univ_eq_prod_range]
         exact Finset.prod_congr rfl fun j _ => (sigmaSide_eval _ _ _ _ _).symm
@@ -243,20 +265,20 @@ forbids exactly one `γ` per `β` (the factor is affine-linear in `γ`), so with
 `(K+1)·K` bad values, give a fully nondegenerate grid — possible once
 `(K+1)² ≤ |F|`. -/
 theorem exists_nondegenerate_grid {F : Type*} [Field F] [Fintype F] [DecidableEq F]
-    {n : ℕ} {ω : F}
+    {n : ℕ} {ω : F} (zkRows : ℕ)
     (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F)
     (σpFull : Equiv.Perm (Fin 7 × Fin n))
     (hF : (7 * n + 1) * (7 * n + 1) ≤ Fintype.card F) :
     ∃ b g : Fin (7 * n + 1) → F,
       Function.Injective b ∧ Function.Injective g
-        ∧ ∀ a c, Nondegenerate ω w shifts σpFull (b a) (g c) := by
+        ∧ ∀ a c, Nondegenerate ω zkRows w shifts σpFull (b a) (g c) := by
   set K := 7 * n with hK
   obtain ⟨b, hb, -⟩ := exists_injective_avoiding (∅ : Finset F) (K + 1)
     (by simpa using le_trans (Nat.le_mul_of_pos_right _ (by omega)) hF)
   set Bad : Finset F := (Finset.univ : Finset (Fin (K + 1))).biUnion fun a =>
     (Finset.univ : Finset (Fin 7 × Fin n)).image fun c =>
       -((w c.1).eval (ω ^ ((c.2 : ℕ)))
-        + b a * addr ω shifts (σpFull c)) with hBadDef
+        + b a * sigmaCell ω zkRows shifts σpFull c.1 c.2) with hBadDef
   have hBad : Bad.card ≤ (K + 1) * K := by
     refine le_trans Finset.card_biUnion_le ?_
     refine le_trans (Finset.sum_le_card_nsmul _ _ K fun a _ => ?_) ?_
@@ -385,20 +407,21 @@ theorem copy_soundness_wired_of_dvd [DecidableEq F] {ω : F} (hω : IsPrimitiveR
             * ω ^ ((restrictCells σpFull hp c).2 : ℕ))) β)
     (zg : Polynomial F)
     (hdvd : ∀ s, zH F n ∣ constraints ω zkRows zg w
-      (sigmaPoly ω shifts σpFull) shifts β γ
+      (sigmaPoly ω zkRows shifts σpFull) shifts β γ
       (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩ s) :
     ∀ c : Fin 7 × Fin (n - zkRows),
       (w (σpFull (embCell zkRows c)).1).eval (ω ^ ((σpFull (embCell zkRows c)).2 : ℕ))
         = (w c.1).eval (ω ^ (c.2 : ℕ)) := by
   intro c
   have hmain := Permutation.copy_soundness_of_dvd hω hn hzk2 hzkn w
-    (sigmaPoly ω shifts σpFull) shifts (restrictCells σpFull hp)
+    (sigmaPoly ω zkRows shifts σpFull) shifts (restrictCells σpFull hp)
     (fun x y hxy => embCell_injective (addr_injective hω hs (by
       simpa [addr, embCell] using hxy)))
     (fun x => by
       rw [show ω ^ ((x.2 : ℕ)) = ω ^ (((embCell zkRows x).2 : Fin n) : ℕ) from rfl,
-        eval_sigmaPoly hω shifts σpFull, show ((x.1 : Fin 7), (embCell zkRows x).2)
-          = embCell zkRows x from rfl,
+        eval_sigmaPoly hω zkRows shifts σpFull,
+        sigmaCell_unmasked (by exact (x.2).isLt),
+        show ((x.1 : Fin 7), (embCell zkRows x).2) = embCell zkRows x from rfl,
         ← embCell_restrictCells σpFull hp x]
       rfl)
     β γ hβ hγ zg hdvd c

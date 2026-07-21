@@ -170,9 +170,13 @@ def selectorRow (idx : Index F n) (g : GateType) : Fin n → F :=
 def coeffRow (idx : Index F n) (c : Fin 15) : Fin n → F :=
   fun i => idx.coeffTable i c
 
-/-- The `col`-th sigma column over the rows: the address of the wired-to cell. -/
+/-- The `col`-th sigma column over the rows: the COMMITTED σ cell — the address of the
+wired-to cell, ZEROED on the interior mask rows `[n − zkRows + 2, n − 1)` (production
+"Zero out the sigmas in the zk rows", constraints.rs:538–544; the rows where the
+three-factor permutation mask lets the recurrence run; empty range at `zkRows = 3`). -/
 def sigmaAddrRow (idx : Index F n) (col : Fin 7) : Fin n → F :=
-  fun i => addr idx.omega idx.shifts (idx.wiringMap (col, i))
+  fun i => if n - idx.zkRows + 2 ≤ (i : ℕ) ∧ (i : ℕ) < n - 1 then 0
+    else addr idx.omega idx.shifts (idx.wiringMap (col, i))
 
 /-! ## Derived columns: interpolants and their bridges -/
 
@@ -196,7 +200,7 @@ theorem eval_sigmaPoly (idx : Index F n) (col : Fin 7) (i : Fin n) :
 permutation — definitionally: the stored successor map underlies both. -/
 theorem sigmaPoly_eq_wiring (idx : Index F n) (col : Fin 7) :
     idx.sigmaPoly col
-      = Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm col :=
+      = Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm col :=
   rfl
 
 /-- Construct an index from raw data by *deciding* every law — the deserialization

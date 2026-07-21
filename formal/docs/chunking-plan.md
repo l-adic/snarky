@@ -106,8 +106,15 @@ The Lean `Index.sigmaPoly` still interpolates identity addresses there; the mode
 correspondence) belongs to Phase 4c. The script applies the zeroing itself and
 documents the divergence.
 
-**Phase 4c REMAINING** — the σ-zeroing model fix (above), then the `_ft` terminals:
-RESTATED
+**Phase 4c (σ-zeroing) DONE** — `Index.sigmaAddrRow` / `Permutation.sigmaCell` now
+zero the committed σ cells on `[n − zkRows + 2, n − 1)`; `Nondegenerate` and the
+completeness identities quantify the COMMITTED cell values; `sigmaPoly_eq_wiring`
+stays definitional; copy soundness reads the unmasked region through
+`sigmaCell_unmasked`. All fixture drivers green (the `zk = 3` fixtures are unaffected —
+the range is empty there — and `check_vk_correspond_chunked` adjudicates the `zk = 5`
+semantics).
+
+**Phase 4d REMAINING** — the `_ft` terminals: RESTATED
 `kimchi_fiat_shamir_{vesta,pallas}` at the chunked transcript (trust-surface re-audit,
 host-audit discipline; anchored on `Ipa.verifyFrom (runWarm) (runInput)` with the
 chunked runInput), the chunked `runReindex` (44-row×nc batch + ft row + t chunks →

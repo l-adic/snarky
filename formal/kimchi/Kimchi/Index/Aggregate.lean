@@ -115,7 +115,7 @@ noncomputable def fullFamily (idx : Index F n) (pub : Fin idx.publicCount → F)
       idx.gateMember pub wTab k
     else
       Permutation.constraints idx.omega idx.zkRows z (idx.permWitnessPoly wTab)
-        (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts β γ
+        (Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm) idx.shifts β γ
         (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd
         ⟨(k : ℕ) - gateAlphaCount, by
           have := k.isLt
@@ -323,7 +323,7 @@ private theorem fullFamily_perm (idx : Index F n) (pub : Fin idx.publicCount →
     (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (β γ : F) (s : Fin 3) :
     idx.fullFamily pub wTab z β γ (Fin.natAdd gateAlphaCount s)
       = Permutation.constraints idx.omega idx.zkRows z (idx.permWitnessPoly wTab)
-          (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts β γ
+          (Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm) idx.shifts β γ
           (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd s := by
   rw [fullFamily, dif_neg (by show ¬gateAlphaCount + (s : ℕ) < gateAlphaCount; omega)]
   congr 1
@@ -650,13 +650,13 @@ copy-invariant witness admits an accumulator whose three permutation constraints
 `Z_H`-divisible. -/
 private theorem permConstraints_dvd_of_copy (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     (β γ : F)
-    (hnd : Nondegenerate idx.omega (idx.permWitnessPoly wTab) idx.shifts
+    (hnd : Nondegenerate idx.omega idx.zkRows (idx.permWitnessPoly wTab) idx.shifts
       idx.wiringPerm β γ)
     (hcopy : ∀ c : Fin 7 × Fin n,
       cellValue wTab (idx.wiringMap c) = cellValue wTab c) :
     ∃ z : Polynomial F, ∀ s, zH F n ∣ Permutation.constraints idx.omega idx.zkRows z
       (idx.permWitnessPoly wTab)
-      (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts β γ
+      (Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm) idx.shifts β γ
       (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd s := by
   have hcopy' : ∀ c : Fin 7 × Fin (n - idx.zkRows),
       ((idx.permWitnessPoly wTab) (idx.wiringPerm (embCell idx.zkRows c)).1).eval
@@ -695,7 +695,7 @@ the honest accumulator (`permConstraints_dvd_of_copy`). The converse of
 theorem fullFamily_dvd_of_satisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin 15 → F)
     (hsat : Satisfies idx pub wTab) (β γ : F)
-    (hnd : Nondegenerate idx.omega (idx.permWitnessPoly wTab) idx.shifts
+    (hnd : Nondegenerate idx.omega idx.zkRows (idx.permWitnessPoly wTab) idx.shifts
       idx.wiringPerm β γ) :
     ∃ z : Polynomial F, ∀ s, zH F n ∣ idx.fullFamily pub wTab z β γ s := by
   obtain ⟨hrow, hcopy, -⟩ := hsat
@@ -749,13 +749,13 @@ theorem satisfies_iff_fullFamily_dvd [Fintype F] (idx : Index F n)
     (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin 15 → F)
     (hF : (7 * n + 1) * (7 * n + 1) ≤ Fintype.card F) :
     Satisfies idx pub wTab
-      ↔ ∀ β γ, Nondegenerate idx.omega (idx.permWitnessPoly wTab)
+      ↔ ∀ β γ, Nondegenerate idx.omega idx.zkRows (idx.permWitnessPoly wTab)
           idx.shifts idx.wiringPerm β γ →
           ∃ z : Polynomial F, ∀ s, zH F n ∣ idx.fullFamily pub wTab z β γ s := by
   constructor
   · exact fun hsat β γ hnd => idx.fullFamily_dvd_of_satisfies pub wTab hsat β γ hnd
   · intro h
-    obtain ⟨b, g, hb, hg, hnd⟩ := exists_nondegenerate_grid
+    obtain ⟨b, g, hb, hg, hnd⟩ := exists_nondegenerate_grid idx.zkRows
       (idx.permWitnessPoly wTab) idx.shifts idx.wiringPerm hF (ω := idx.omega)
     -- the (value, address) pair multisets of the index wiring (as in `copy_soundness_of_dvd`)
     have hcard₁ : Multiset.card

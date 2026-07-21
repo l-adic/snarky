@@ -20,11 +20,10 @@ constraints.rs:538–544) — the interior mask rows, exactly where the THREE-fa
 `permutation_vanishing_polynomial` lets the recurrence run. The range is EMPTY at
 `zk_rows = 3`, so the `nc = 1` fixtures never exercised it; at `zk_rows = 5` rows
 `29, 30` are zeroed. The index fixture carries the `zk_rows = 3` σ values, so this
-script applies the zeroing itself before the MSM. THE FORMAL INDEX MODEL
-(`Index.sigmaPoly` / the wiring semantics) DOES NOT YET MIRROR THIS — that is the
-recorded model fix of the chunking plan's Phase 4c; until it lands, the model's σ
-interpolants diverge from production on the interior mask rows whenever
-`zk_rows > 3`. -/
+script applies the zeroing itself before the MSM (the raw index-fixture columns are
+the un-zeroed wiring addresses). The formal Index model mirrors the zeroing in
+`Index.sigmaAddrRow` / `Permutation.sigmaCell` — this check documents and adjudicates
+that semantic. -/
 
 open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi.Verifier
 

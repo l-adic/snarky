@@ -65,7 +65,7 @@ theorem copy_soundness_of_dvd (idx : Index F n) (wTab : Fin n → Fin 15 → F)
     (zg : Polynomial F)
     (hdvd : ∀ s, zH F n ∣ Permutation.constraints idx.omega idx.zkRows zg
       (idx.permWitnessPoly wTab)
-      (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts
+      (Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm) idx.shifts
       β γ (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd s) :
     ∀ c : Fin 7 × Fin (n - idx.zkRows),
       cellValue wTab (idx.wiringMap (embCell idx.zkRows c))
