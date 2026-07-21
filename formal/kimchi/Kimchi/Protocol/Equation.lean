@@ -328,8 +328,9 @@ the quotient identity `(aggregate α (fullFamily …)).eval ζ = (t · Z_H).eval
 aggregate splitting into its gate and permutation halves. -/
 
 /-- At the honest evaluation record, the scalar-side verifier check is equivalent to the
-quotient identity at `ζ`. -/
-theorem verifierEquation_iff [DecidableEq F] [NeZero n] (idx : Index F n)
+quotient identity at `ζ`. Consumed only by the Schwartz–Zippel core below, on the way to
+`Kimchi.Protocol.sound`. -/
+private theorem verifierEquation_iff [DecidableEq F] [NeZero n] (idx : Index F n)
     (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin 15 → F)
     (z t : Polynomial F) (ζ β γ α : F)
     (hζ₁ : ζ ≠ 1) (hζb : ζ ≠ idx.omega ^ (n - idx.zkRows)) :

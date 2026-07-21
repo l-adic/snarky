@@ -42,7 +42,6 @@ def roots : List Name :=
     `Kimchi.dvd_separation,
     `Kimchi.Gate.Poseidon.sound, `Kimchi.Gate.Poseidon.complete,
     `Kimchi.Index.satisfies_iff_fullFamily_dvd,
-    `Kimchi.Protocol.Equation.verifierEquation_iff,
     `Kimchi.Protocol.sound,
     `Kimchi.Verifier.kimchiProof_sound_of_openings,
     `Kimchi.Verifier.kimchiVesta_run_sound, `Kimchi.Verifier.kimchiPallas_run_sound,
