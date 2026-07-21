@@ -95,7 +95,19 @@ instantiated at the chunked run's own `Chunked.runOracles` challenges over the r
 wire commitment chunks; quotient residue stays the one undischarged antecedent
 (48 axiom roots, same allowed set).
 
-**Phase 4c REMAINING** — the `_ft` terminals: RESTATED
+**Phase 4b'** — `check_vk_correspond_chunked` GREEN (the chunked indexer adjudicated:
+per-chunk value-MSM against the Lagrange chunk commitments, selectors per-chunk
+masked), and it exposed **LATENT BUG #3** (same zk=3-blind class): production ZEROES
+the σ columns on the interior mask rows `[n − zk_rows + 2, n − 1)`
+(constraints.rs:538–544, "quasi-random aggregation") — an EMPTY range at `zk_rows = 3`.
+The Lean `Index.sigmaPoly` still interpolates identity addresses there; the model fix
+(σ zeroing in the Index wiring semantics, rippling through the permutation argument's
+σ-side factors on the live interior-mask recurrence rows, `Nondegenerate`, and the
+correspondence) belongs to Phase 4c. The script applies the zeroing itself and
+documents the divergence.
+
+**Phase 4c REMAINING** — the σ-zeroing model fix (above), then the `_ft` terminals:
+RESTATED
 `kimchi_fiat_shamir_{vesta,pallas}` at the chunked transcript (trust-surface re-audit,
 host-audit discipline; anchored on `Ipa.verifyFrom (runWarm) (runInput)` with the
 chunked runInput), the chunked `runReindex` (44-row×nc batch + ft row + t chunks →
