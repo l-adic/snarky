@@ -7,14 +7,15 @@ import Kimchi.Verifier.Reflect
 /-!
 # The concrete Fiat–Shamir capstones and the run-level finale (standard model)
 
-`Kimchi/Protocol/Soundness.lean` proves the idealized soundness core `kimchiProof_sound`:
-from DL-binding, the verifier-key correspondence, and an accepting REFERENCE transcript
-(the batch data at a reference point `ζ₀`, as a per-point Fiat–Shamir transcript-tree
-family), it produces the four bad sets and the guarded consumer implication ending in
-`∃ wTab, Satisfies idx pub wTab`. The computational hypotheses `hk` (the SRS-width pin),
+`Kimchi/Verifier/Reduction/Soundness.lean` proves the idealized soundness core
+`kimchiProof_sound`: from DL-binding, the verifier-key correspondence, and an accepting
+REFERENCE transcript (the batch data at a reference point `ζ₀`, as a per-point
+Fiat–Shamir transcript-tree family), it produces the four bad sets, a witness table
+`wTab` fixed before the challenges, and the guarded consumer implication ending in
+`Satisfies idx pub wTab`. The computational hypotheses `hk` (the SRS-width pin),
 `hbind` (the discrete-log idealization), and `hvk` (the verifier-key correspondence) are
 assumptions about the key and the group, not transcript data. See the preamble of
-`Protocol/Soundness.lean` for the full trust story (what the challenge data surrogates,
+`Verifier/Reduction/Soundness.lean` for the full trust story (what the challenge data surrogates,
 why binding is a hypothesis, and how `VKCorresponds` is discharged).
 
 This module instantiates that core at the deployed Pasta verifier: the **concrete,
@@ -41,7 +42,8 @@ three strata:
   `ipaVesta_sound` — pre-justified in TO_USER.md.)
 
 * **PROVED — everything else.** The capstones feed the grid's transcript data directly to
-  `kimchiProof_sound` (`Protocol/Soundness.lean`) — the reference point `ζ₀`, the batch
+  `kimchiProof_sound` (`Verifier/Reduction/Soundness.lean`) — the reference point `ζ₀`,
+  the batch
   challenges/evals, the per-node acceptances as `A₀`, and their `FiatShamirTreeB` families
   — their conclusions byte-identical to its (mod the stated wire-view instantiation).
 
@@ -223,8 +225,9 @@ special-soundness grid `KimchiBatchAcc` at the wire key's committed columns
 (`vk.comms`), under DL-binding (`hbind`), the SRS-width pin (`hk`), and the
 verifier-key correspondence (`hvk`), yields the four bad sets and the guarded consumer
 implication of `kimchiProof_sound` — byte-identical, at the wire views
-(`pubView idx pub` for the public input), ending in
-`∃ wTab, Satisfies idx (pubView idx pub) wTab`. The proof feeds the grid's transcript
+(`pubView idx pub` for the public input): a witness table fixed before the challenges,
+the guarded implication ending in `Satisfies idx (pubView idx pub) wTab`. The proof
+feeds the grid's transcript
 data to `kimchiProof_sound`, deriving each node's `FiatShamirTreeB` from the per-node
 axiom `poseidon_fiat_shamir_vesta`; that axiom is the only one consumed, once
 per grid node (plus the point-count-backed `Module` instance — see the module preamble).
@@ -236,7 +239,8 @@ private theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK
     (wC : Fin 15 → IpaVesta.Point)
     (T : KimchiBatchAcc IpaVesta.curve σ idx vk.comms wC) :
     ∃ (badB : Finset Fp) (badG : Fp → Finset Fp) (badA : Fp → Fp → Finset Fp)
-        (badZ : Fp → Fp → Fp → Polynomial Fp → Finset Fp),
+        (badZ : Fp → Fp → Fp → Polynomial Fp → Finset Fp)
+        (wTab : Fin n → Fin 15 → Fp),
       (badB.card ≤ 7 * (n - idx.zkRows)
         ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
         ∧ (∀ β γ,
@@ -260,7 +264,7 @@ private theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK
             - (ζ ^ n - 1) * t.eval ζ
             = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
                 ζ (-((idx.pubPoly (pubView idx pub)).eval ζ)) (claimedEvals E)) →
-          ∃ wTab : Fin n → Fin 15 → Fp, Satisfies idx (pubView idx pub) wTab :=
+          Satisfies idx (pubView idx pub) wTab :=
   kimchiProof_sound σ idx hk hbind vk.comms hvk (pubView idx pub) wC
     T.zC T.ζ₀ T.E₀ T.ξ₀ T.hξ₀ T.r₀ T.hr₀
     (fun i j => Ipa.verify IpaVesta.curve σ (T.nodeInput i j) = true)
@@ -278,7 +282,8 @@ private theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas
     (wC : Fin 15 → IpaPallas.Point)
     (T : KimchiBatchAcc IpaPallas.curve σ idx vk.comms wC) :
     ∃ (badB : Finset Fq) (badG : Fq → Finset Fq) (badA : Fq → Fq → Finset Fq)
-        (badZ : Fq → Fq → Fq → Polynomial Fq → Finset Fq),
+        (badZ : Fq → Fq → Fq → Polynomial Fq → Finset Fq)
+        (wTab : Fin n → Fin 15 → Fq),
       (badB.card ≤ 7 * (n - idx.zkRows)
         ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
         ∧ (∀ β γ,
@@ -302,7 +307,7 @@ private theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas
             - (ζ ^ n - 1) * t.eval ζ
             = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
                 ζ (-((idx.pubPoly (pubView idx pub)).eval ζ)) (claimedEvals E)) →
-          ∃ wTab : Fin n → Fin 15 → Fq, Satisfies idx (pubView idx pub) wTab :=
+          Satisfies idx (pubView idx pub) wTab :=
   kimchiProof_sound σ idx hk hbind vk.comms hvk (pubView idx pub) wC
     T.zC T.ζ₀ T.E₀ T.ξ₀ T.hξ₀ T.r₀ T.hr₀
     (fun i j => Ipa.verify IpaPallas.curve σ (T.nodeInput i j) = true)
@@ -318,7 +323,8 @@ sponge challenges — the literal `runOracles` fields — over the run's own com
 `hzrun : T.zC = p.zComm`). The consumer grid `T'` shares the accumulator (`hzC`) and
 sits at the run's own `ζ` (`hζ'`); its Fiat–Shamir trees, acceptances, and challenge
 injectivity discharge the capstone's transcript antecedents, so the four bad sets
-guard `∃ wTab, Satisfies idx (pubView idx pub) wTab` at the run's `(β, γ, α, ζ)`.
+guard `Satisfies idx (pubView idx pub) wTab` at the run's `(β, γ, α, ζ)`, for a
+witness table `wTab` fixed with the bad sets — before the challenges.
 
 The quotient residue `(t, hdeg, heq)` is the ONE antecedent not discharged from
 deployed acceptances: kimchi never opens the `t_comm` chunks directly — the verifier
@@ -364,7 +370,8 @@ theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
               (runOracles IpaVesta.curve σ vk p pub).zeta))
             (claimedEvals T'.E₀)) :
     ∃ (badB : Finset Fp) (badG : Fp → Finset Fp) (badA : Fp → Fp → Finset Fp)
-        (badZ : Fp → Fp → Fp → Polynomial Fp → Finset Fp),
+        (badZ : Fp → Fp → Fp → Polynomial Fp → Finset Fp)
+        (wTab : Fin n → Fin 15 → Fp),
       (badB.card ≤ 7 * (n - idx.zkRows)
         ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
         ∧ (∀ β γ,
@@ -381,11 +388,11 @@ theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
             ∉ badZ (runOracles IpaVesta.curve σ vk p pub).beta
                 (runOracles IpaVesta.curve σ vk p pub).gamma
                 (runOracles IpaVesta.curve σ vk p pub).alpha t →
-          ∃ wTab : Fin n → Fin 15 → Fp, Satisfies idx (pubView idx pub) wTab) := by
-  obtain ⟨badB, badG, badA, badZ, hbounds, himp⟩ :=
+          Satisfies idx (pubView idx pub) wTab) := by
+  obtain ⟨badB, badG, badA, badZ, wTab, hbounds, himp⟩ :=
     kimchiVesta_sound σ vk pub idx hk hvk hbind
       (fun i => p.wComm.getD (i : ℕ) 0) T
-  refine ⟨badB, badG, badA, badZ, hbounds, fun hβ hγ hα hζ => ?_⟩
+  refine ⟨badB, badG, badA, badZ, wTab, hbounds, fun hβ hγ hα hζ => ?_⟩
   refine himp (runOracles IpaVesta.curve σ vk p pub).beta
     (runOracles IpaVesta.curve σ vk p pub).gamma
     (runOracles IpaVesta.curve σ vk p pub).alpha t
@@ -436,7 +443,8 @@ theorem kimchiPallas_run_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
               (runOracles IpaPallas.curve σ vk p pub).zeta))
             (claimedEvals T'.E₀)) :
     ∃ (badB : Finset Fq) (badG : Fq → Finset Fq) (badA : Fq → Fq → Finset Fq)
-        (badZ : Fq → Fq → Fq → Polynomial Fq → Finset Fq),
+        (badZ : Fq → Fq → Fq → Polynomial Fq → Finset Fq)
+        (wTab : Fin n → Fin 15 → Fq),
       (badB.card ≤ 7 * (n - idx.zkRows)
         ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
         ∧ (∀ β γ,
@@ -453,11 +461,11 @@ theorem kimchiPallas_run_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
             ∉ badZ (runOracles IpaPallas.curve σ vk p pub).beta
                 (runOracles IpaPallas.curve σ vk p pub).gamma
                 (runOracles IpaPallas.curve σ vk p pub).alpha t →
-          ∃ wTab : Fin n → Fin 15 → Fq, Satisfies idx (pubView idx pub) wTab) := by
-  obtain ⟨badB, badG, badA, badZ, hbounds, himp⟩ :=
+          Satisfies idx (pubView idx pub) wTab) := by
+  obtain ⟨badB, badG, badA, badZ, wTab, hbounds, himp⟩ :=
     kimchiPallas_sound σ vk pub idx hk hvk hbind
       (fun i => p.wComm.getD (i : ℕ) 0) T
-  refine ⟨badB, badG, badA, badZ, hbounds, fun hβ hγ hα hζ => ?_⟩
+  refine ⟨badB, badG, badA, badZ, wTab, hbounds, fun hβ hγ hα hζ => ?_⟩
   refine himp (runOracles IpaPallas.curve σ vk p pub).beta
     (runOracles IpaPallas.curve σ vk p pub).gamma
     (runOracles IpaPallas.curve σ vk p pub).alpha t

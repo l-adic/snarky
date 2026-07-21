@@ -7,8 +7,9 @@ import Kimchi.Protocol.Equation
 # Composed soundness
 
 Batched opening acceptance, binding, and the key–index correspondence compose into
-`∃ wTab, Satisfies idx pub wTab`: acceptance across the challenge grid forces a
-satisfying witness table for the circuit the key commits.
+`Satisfies idx pub wTab`: acceptance across the challenge grid forces a satisfying
+witness table — the committed data itself, fixed before the challenges — for the
+circuit the key commits.
 
 Three things are assumed rather than derived. The challenge grids — over `(β, γ, α, ζ)`
 and, per point, over the batch's `(ξ, r)` — stand in for Fiat–Shamir. Binding is carried
@@ -294,12 +295,14 @@ private theorem claimedEvals_eq_evalsOf [Field F] {n : ℕ} [NeZero n] (idx : In
 
 /-! ## Soundness -/
 
-/-- The openings-interface core: the same conclusion with the per-point transcript
-families replaced by per-row openings. The reference side is pure commitment knowledge —
-every batch row bound to a known witness pair — and the consumer side supplies, at each
-avoiding challenge tuple, openings that bind to the same commitments and reproduce the
-claimed evaluations. Extraction models that already possess opened values discharge it
-directly. -/
+/-- The openings-interface core: the per-point transcript families replaced by per-row
+openings. The reference side is pure commitment knowledge — every batch row bound to a
+known witness pair — and the consumer side supplies, at each avoiding challenge tuple,
+openings that bind to the same commitments and reproduce the claimed evaluations.
+Extraction models that already possess opened values discharge it directly. The satisfying
+table is named EXPLICITLY in the conclusion: it is the reference openings' own witness
+rows, read as polynomials and evaluated over the domain — the committed data itself
+satisfies the circuit, not merely some table. -/
 theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
     {n : ℕ} [NeZero n] [DecidableEq F] (σ : SRS G)
     (idx : Index F n) (hk : 2 ^ σ.k = n)
@@ -333,7 +336,8 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
             - (ζ ^ n - 1) * t.eval ζ
             = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
                 ζ (-((idx.pubPoly pub).eval ζ)) (claimedEvals E)) →
-          ∃ wTab : Fin n → Fin 15 → F, Satisfies idx pub wTab := by
+          Satisfies idx pub
+            (extractTable idx.omega fun col => rowPoly (aw₀ (wRow col))) := by
   classical
   -- the verifier key is the honest indexer's
   have hvk' : comms = indexerOf σ idx := hvk
@@ -432,7 +436,10 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
 set_option linter.unusedVariables false in
 /-- Batched opening acceptance on the 43-row assembly, binding, and the key–index
 correspondence force a satisfying witness table, the witness read off the bound
-witness-column polynomials.
+witness-column polynomials. The table is quantified WITH the bad sets, before the
+challenges: one fixed assignment — the reference openings' own data — satisfies at every
+avoiding accepting tuple. (It cannot be named in the statement, since the reference
+openings are themselves extracted inside the proof.)
 
 The transcript is split, and that split is the point. The claimed evaluations are
 openings *at* `ζ`, so extracting the witness polynomials from the transcript at `ζ` would
@@ -461,7 +468,7 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
         (combinedInnerProduct (ξ₀ i) (r₀ j) E₀) (A₀ i j))
     (hacc₀ : ∀ i j, A₀ i j) :
     ∃ (badB : Finset F) (badG : F → Finset F) (badA : F → F → Finset F)
-        (badZ : F → F → F → Polynomial F → Finset F),
+        (badZ : F → F → F → Polynomial F → Finset F) (wTab : Fin n → Fin 15 → F),
       (badB.card ≤ 7 * (n - idx.zkRows)
         ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
         ∧ (∀ β γ,
@@ -485,14 +492,15 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
             - (ζ ^ n - 1) * t.eval ζ
             = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
                 ζ (-((idx.pubPoly pub).eval ζ)) (claimedEvals E)) →
-          ∃ wTab : Fin n → Fin 15 → F, Satisfies idx pub wTab := by
+          Satisfies idx pub wTab := by
   obtain ⟨aw₀, ρw₀, hrow₀⟩ :=
     batch_openings_nc1 σ ξ₀ hξ₀ r₀ hr₀ (by omega)
       (batchC wC zC comms) ![ζ₀, idx.omega * ζ₀] E₀ A₀ hFS₀ hbind hacc₀
   obtain ⟨badB, badG, badA, badZ, hbounds, himp⟩ :=
     kimchiProof_sound_of_openings σ idx hk hbind comms hvk pub wC zC
       aw₀ ρw₀ (fun i => (hrow₀ i).1)
-  refine ⟨badB, badG, badA, badZ, hbounds, ?_⟩
+  refine ⟨badB, badG, badA, badZ,
+    extractTable idx.omega (fun col => rowPoly (aw₀ (wRow col))), hbounds, ?_⟩
   intro β γ α t ζ E ξ r A hβ hγ hα hζ hζ₁ hζb ht hξ hr hFS hacc hteq
   obtain ⟨aw, ρw, hrow⟩ :=
     batch_openings_nc1 σ ξ hξ r hr (by omega)

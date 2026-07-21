@@ -877,7 +877,7 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point)
       exact mul_comm _ _
   rw [hpt] at hpins
   -- (9) feed the consumer
-  exact himp (runOracles IpaVesta.curve σ vk p pub).beta
+  exact ⟨_, himp (runOracles IpaVesta.curve σ vk p pub).beta
     (runOracles IpaVesta.curve σ vk p pub).gamma
     (runOracles IpaVesta.curve σ vk p pub).alpha
     (ftChunkAssembly σ.k aT)
@@ -889,7 +889,7 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point)
     hβ hγ hα hζ hζ1 hζb htdeg
     (fun i => ⟨hbound₀ i,
       fun j => hpins (runReindex IpaVesta.curve σ vk p pub hsize i) j⟩)
-    hteq0
+    hteq0⟩
 
 /-- **The run-level residue-free root (Pallas).** The Pallas-side twin of
 `kimchiVesta_run_sound_algebraic_ft`, over `Fq`/`IpaPallas`, its Fiat–Shamir
@@ -1013,7 +1013,7 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point)
       exact mul_comm _ _
   rw [hpt] at hpins
   -- (9) feed the consumer
-  exact himp (runOracles IpaPallas.curve σ vk p pub).beta
+  exact ⟨_, himp (runOracles IpaPallas.curve σ vk p pub).beta
     (runOracles IpaPallas.curve σ vk p pub).gamma
     (runOracles IpaPallas.curve σ vk p pub).alpha
     (ftChunkAssembly σ.k aT)
@@ -1025,6 +1025,6 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point)
     hβ hγ hα hζ hζ1 hζb htdeg
     (fun i => ⟨hbound₀ i,
       fun j => hpins (runReindex IpaPallas.curve σ vk p pub hsize i) j⟩)
-    hteq0
+    hteq0⟩
 
 end Kimchi.Verifier

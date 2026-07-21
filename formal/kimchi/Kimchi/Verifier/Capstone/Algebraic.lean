@@ -7,7 +7,8 @@ import Kimchi.Verifier.Reflect
 /-!
 # The algebraic-prover corollary and the algebraic quotient (the AGM reading)
 
-The algebraic-group-model reading of `kimchiProof_sound` (`Kimchi/Protocol/Soundness.lean`),
+The algebraic-group-model reading of `kimchiProof_sound`
+(`Kimchi/Verifier/Reduction/Soundness.lean`),
 the sibling of the standard-model capstones in `Capstone/Standard.lean`.
 
 The **algebraic-prover corollary** `kimchiProof_sound_algebraic` quantifies over provers
@@ -276,8 +277,8 @@ theorem kimchiProof_sound_algebraic {F G : Type*} [Field F] [AddCommGroup G]
   obtain ⟨a, ρ, hopen⟩ := ipa_soundnessA σ _ _ _ hFS hAcc
   have hpins := eval_pins_of_opening σ hbind (batchC wC zC comms)
     ![ζ, idx.omega * ζ] aw₀ ρw₀ hrep E ξ r hξ hr a ρ hopen
-  exact himp β γ α t ζ E aw₀ ρw₀ hβ hγ hα hζ hζ1 hζb ht
-    (fun i => ⟨hrep i, fun j => hpins i j⟩) hteq
+  exact ⟨_, himp β γ α t ζ E aw₀ ρw₀ hβ hγ hα hζ hζ1 hζb ht
+    (fun i => ⟨hrep i, fun j => hpins i j⟩) hteq⟩
 
 /-! ## The algebraic quotient — the ft residue dissolved from the chunk representations -/
 

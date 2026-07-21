@@ -477,8 +477,9 @@ oracle access, reading them at the challenge point. The four Schwartz–Zippel b
 sets are small (β/γ bounded by `7·(n − zkRows)`, α by `n·(K − 1)`, ζ by
 `Index.degreeBound n`) and quantified BEFORE the challenges; and for every tuple avoiding
 them at which `Accepts` holds on the oracle evaluations, the assignment read off the
-witness oracles satisfies the circuit — the witness is EXTRACTED
-(`extractTable idx.omega W`), never supplied. Nothing here mentions commitments, an SRS,
+witness oracles satisfies the circuit — the satisfying table is named EXPLICITLY in the
+conclusion (`extractTable idx.omega W`): the witness IS the oracles' own data, extracted,
+never supplied. Nothing here mentions commitments, an SRS,
 or a group: this is the idealized protocol. The commitment layer instantiates it by
 binding the oracles to commitments and certifying the claimed evaluations are the true
 oracle evaluations (`kimchiProof_sound_of_openings`). Packaged in the same `∃ bad sets,
@@ -499,7 +500,7 @@ theorem sound [DecidableEq F] [NeZero n] (idx : Index F n)
           β ∉ badB → γ ∉ badG β → α ∉ badA β γ → ζ ∉ badZ β γ α t →
           ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) →
           Accepts idx pub (evalsOf idx (extractTable idx.omega W) z ζ) t β γ α ζ →
-          ∃ wTab : Fin n → Fin 15 → F, Satisfies idx pub wTab := by
+          Satisfies idx pub (extractTable idx.omega W) := by
   classical
   set m₁ : Multiset (F × F) :=
     Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
@@ -541,8 +542,7 @@ theorem sound [DecidableEq F] [NeZero n] (idx : Index F n)
       (Index.aggregate_natDegree_le idx pub (extractTable idx.omega W) z hz β γ α)
       (Index.t_zH_natDegree_le t ht)
   · intro β γ α t ζ hβ hγ hα hζ hζ₁ hζb heq
-    exact ⟨extractTable idx.omega W,
-      satisfies_of_verifierEquation idx pub (extractTable idx.omega W) β γ hβ hγ z α hα t ζ
-        hζ hζ₁ hζb heq⟩
+    exact satisfies_of_verifierEquation idx pub (extractTable idx.omega W) β γ hβ hγ z α hα
+      t ζ hζ hζ₁ hζb heq
 
 end Kimchi.Protocol
