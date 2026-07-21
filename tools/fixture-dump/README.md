@@ -73,6 +73,12 @@ Two binaries, both deterministic (seeded ChaCha20), both writing into `formal/`:
 |---|---|---|
 | `fixtures/kimchi_proof_vesta.json` | a complete kimchi wire proof + verifier key over the mixed-gate circuit (same seed and domain-sized SRS as `linearization_vesta.json` — the same proof): all commitments, uncombined evaluations, opening proof, public input, and the VK data incl. Lagrange-basis commitments, both endo coefficients, and the verifier-index digest | `scripts/check_kimchi_verifier.sh` (milestone 4.1) |
 
+`kimchi_proof_dump_nc2`:
+
+| artifact | contents | checked by |
+|---|---|---|
+| `fixtures/kimchi_proof_{vesta,pallas}_nc2.json` | the CHUNKED twins: the same mixed circuit and seed re-proved over a half-domain SRS (`override_srs_size = n/2` → `max_poly_size = n/2`, `nc = 2`, chunked `zk_rows`); every commitment dumped as its chunk vector, every evaluation as `[[ζ-chunks],[ζω-chunks]]`, plus the proof-carried public evaluations that production requires at `nc > 1` | `scripts/check_kimchi_verifier.sh` |
+
 `ipa_dump` is a thin wrapper over the production prover/verifier: proofs come from
 `SRS::commit`/`SRS::open`, the batched `SRS::verify` is asserted at dump time, and the
 harness is proof-systems' own `tests/ipa_commitment.rs::test_opening_proof`. Nothing

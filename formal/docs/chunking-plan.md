@@ -1,6 +1,10 @@
 # Plan: full chunking (`nc > 1`) for the kimchi formalization
 
-**Status:** survey + plan, NOT started. Execute in fresh context from this doc.
+**Status:** EXECUTING. Phase 0 DONE — `kimchi_proof_{vesta,pallas}_nc2.json` recorded
+(`kimchi_proof_dump_nc2`, both accepted by the production verifier; `n = 32`,
+`max_poly_size = 16`, `zk_rows = 5`, `t` = 14 chunks; the regenerated one-chunk fixture
+stayed byte-identical, so the genericized circuit preserves the rng draw order).
+Phases 1–5 not started.
 **Branch discipline:** new branch off `main`; ALWAYS `git branch --show-current` before
 committing.
 
