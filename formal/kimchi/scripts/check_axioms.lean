@@ -55,12 +55,7 @@ def roots : List Name :=
     `Kimchi.Verifier.Chunked.ft_opening_of_reflected_vesta,
     `Kimchi.Verifier.Chunked.ft_opening_of_reflected_pallas,
     `Kimchi.Verifier.Chunked.kimchiVesta_run_sound_algebraic_ft,
-    `Kimchi.Verifier.Chunked.kimchiPallas_run_sound_algebraic_ft,
-    `Kimchi.Verifier.kimchiVesta_run_sound, `Kimchi.Verifier.kimchiPallas_run_sound,
-    `Kimchi.Verifier.kimchiProof_sound_algebraic,
-    `Kimchi.Verifier.kimchiProof_sound_algebraic_ft,
-    `Kimchi.Verifier.kimchiVesta_run_sound_algebraic_ft,
-    `Kimchi.Verifier.kimchiPallas_run_sound_algebraic_ft ]
+    `Kimchi.Verifier.Chunked.kimchiPallas_run_sound_algebraic_ft ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms and
     `Lean.ofReduceBool`. The pasta package declares NO axioms — the group orders are
@@ -73,10 +68,6 @@ def allowed : List Name :=
     -- The declared Fiat-Shamir assumption: Poseidon-accepted runs admit de-blinded
     -- accepting transcript trees (`Kimchi/Verifier/Reflection.lean`). One per Pasta curve.
     `Bulletproof.poseidon_fiat_shamir_vesta, `Bulletproof.poseidon_fiat_shamir_pallas,
-    -- The deployed-run Fiat–Shamir assumption, anchored on the warm reflected run
-    -- (`Ipa.verifyFrom (runWarm) (runInput)`) rather than the cold `Ipa.verify`. One per curve;
-    -- the residue-free ft opening (`ft_opening_of_reflected_*`) is stated over this.
-    `Kimchi.Verifier.kimchi_fiat_shamir_vesta, `Kimchi.Verifier.kimchi_fiat_shamir_pallas,
     -- The CHUNKED deployed-run Fiat-Shamir assumptions (the chunking arc): the same
     -- declared assumption restated at the chunked verifier's own transcript
     -- (`Chunked.runWarm`/`Chunked.runInput`, the flat segment stream). TRANSITIONAL:

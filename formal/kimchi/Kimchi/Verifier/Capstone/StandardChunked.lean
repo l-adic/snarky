@@ -1,6 +1,5 @@
 import Mathlib
 import Kimchi.Verifier.Reduction.Chunked
-import Kimchi.Verifier.Capstone.Standard
 import Kimchi.Verifier.Capstone.AlgebraicChunked
 import Kimchi.Verifier.Chunked
 import Kimchi.Verifier.ReflectChunked
@@ -29,6 +28,29 @@ namespace Kimchi.Verifier.Chunked
 
 open Polynomial Bulletproof Kimchi.Index Kimchi.Protocol.Linearization
   Kimchi.Protocol.Equation CompElliptic.Fields.Pasta Kimchi.Verifier
+
+/-! ## Reindexing congruences for the batched combiners -/
+
+/-- `combinedCommitment` congruence across an index-count equality. -/
+theorem combinedCommitment_reindex {F G : Type*} [Field F] [AddCommGroup G]
+    [Module F G] (ξ : F) {n m : ℕ} (h : n = m) (Cn : Fin n → G) (Cm : Fin m → G)
+    (hC : ∀ i : Fin n, Cn i = Cm (Fin.cast h i)) :
+    combinedCommitment ξ Cn = combinedCommitment ξ Cm := by
+  unfold combinedCommitment
+  refine Fintype.sum_equiv (finCongr h) _ _ fun i => ?_
+  simp only [finCongr_apply, Fin.val_cast]
+  rw [hC i]
+
+/-- `combinedInnerProduct` congruence across a first-index-count equality. -/
+theorem combinedInnerProduct_reindex {F : Type*} [Field F] (ξ r : F)
+    {n n' m : ℕ} (h : n = n') (e : Fin n → Fin m → F) (e' : Fin n' → Fin m → F)
+    (he : ∀ (i : Fin n) (j : Fin m), e i j = e' (Fin.cast h i) j) :
+    combinedInnerProduct ξ r e = combinedInnerProduct ξ r e' := by
+  unfold combinedInnerProduct
+  refine Fintype.sum_equiv (finCongr h) _ _ fun i => ?_
+  simp only [finCongr_apply, Fin.val_cast]
+  refine congrArg (ξ ^ (i : ℕ) * ·) ?_
+  exact Finset.sum_congr rfl fun j _ => by rw [he i j]
 
 /-! ## The accumulated grid — the special-soundness hypothesis -/
 
