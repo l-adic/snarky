@@ -29,8 +29,10 @@ dissolved. The deployed 45-row batch is reindexed onto the abstract 43-row
 `kimchiProof_sound_of_openings` is fed directly, and the ft/Maller identity is derived from
 the part-1 ft opening via `ft_identity_of_chunks` — no grid, no `poseidon_fiat_shamir`: the
 Fiat–Shamir content is exactly `kimchi_fiat_shamir_{vesta,pallas}` at the observed
-transcript. The four VK-parameter bridges (`homega`/`hzk`/`hshift`/`hendo`) remain genuine
-hypotheses, since `VKCorresponds` pins only commitments.
+transcript. The key–index hypothesis is the wire-level `KimchiVK.Corresponds`: the
+commitment correspondence (`VKCorresponds`) plus the four scalar-parameter pins
+(`omega`/`zkRows`/`shifts`/`endo`), which are genuine conjuncts since the scalars are
+not committed.
 -/
 
 open Bulletproof
@@ -757,9 +759,10 @@ reflected run: the openings seam `kimchiProof_sound_of_openings` is fed directly
 (reference side: the representations reindexed along `runReindex`; consumer side: the
 eval pins of the run's one accepted opening), and the quotient
 `t := ftChunkAssembly σ.k aT` with its Maller identity comes from the part-1 ft
-opening through `ft_identity_of_chunks`. The four VK-parameter bridges
-`homega`/`hzk`/`hshift`/`hendo` are genuine hypotheses (`VKCorresponds` pins only
-commitments). Axioms consumed: `kimchi_fiat_shamir_vesta` (the Fiat–Shamir assumption
+opening through `ft_identity_of_chunks`. The key–index hypothesis is the bundled
+`KimchiVK.Corresponds` — commitments via `VKCorresponds` plus the four scalar-parameter
+pins, genuine conjuncts since the scalars are not committed (`Verifier/Kimchi.lean`).
+Axioms consumed: `kimchi_fiat_shamir_vesta` (the Fiat–Shamir assumption
 at the run's own transcript) plus the point-count-backed `Module` instance — no
 `poseidon_fiat_shamir`, no grid. Bad-set bounds verbatim `of_openings`'; the
 conclusion is guarded by the run challenges avoiding them, the two `ζ` degeneracies,
@@ -768,13 +771,10 @@ residue-free root. -/
 theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point)
     (vk : KimchiVesta.VK) (p : KimchiVesta.Proof) (pub : Array Fp)
     {n : ℕ} [NeZero n] (idx : Index Fp n)
-    (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
+    (hk : 2 ^ σ.k = n) (hvk : KimchiVK.Corresponds σ vk idx)
     (hpub : pub.size = idx.publicCount)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
     (hacc : KimchiVesta.verify σ vk p pub = true)
-    (homega : vk.omega = idx.omega) (hzk : vk.zkRows = idx.zkRows)
-    (hshift : (fun i : Fin 7 => vk.shifts[(i : ℕ)]!) = idx.shifts)
-    (hendo : vk.endo = idx.endoBase)
     (aRef : Fin (runInput IpaVesta.curve σ vk p pub).commitments.size
       → Fin (2 ^ σ.k) → Fp)
     (ρRef : Fin (runInput IpaVesta.curve σ vk p pub).commitments.size → Fp)
@@ -814,6 +814,7 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point)
             ≠ idx.omega ^ (n - idx.zkRows) →
           (runOracles IpaVesta.curve σ vk p pub).zeta ^ n ≠ 1 →
           Satisfies idx (pubView idx pub) wTab) := by
+  obtain ⟨hvk, homega, hzk, hshift, hendo⟩ := hvk
   -- (1) reflect the run; pin the batch width and the domain size
   have hrun := kimchiVerify_reflects IpaVesta.curve σ vk p pub hacc
   have hsize : (runInput IpaVesta.curve σ vk p pub).commitments.size = 45 := by
@@ -908,13 +909,10 @@ residue-free root. -/
 theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point)
     (vk : KimchiPallas.VK) (p : KimchiPallas.Proof) (pub : Array Fq)
     {n : ℕ} [NeZero n] (idx : Index Fq n)
-    (hk : 2 ^ σ.k = n) (hvk : VKCorresponds σ vk.comms idx)
+    (hk : 2 ^ σ.k = n) (hvk : KimchiVK.Corresponds σ vk idx)
     (hpub : pub.size = idx.publicCount)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
     (hacc : KimchiPallas.verify σ vk p pub = true)
-    (homega : vk.omega = idx.omega) (hzk : vk.zkRows = idx.zkRows)
-    (hshift : (fun i : Fin 7 => vk.shifts[(i : ℕ)]!) = idx.shifts)
-    (hendo : vk.endo = idx.endoBase)
     (aRef : Fin (runInput IpaPallas.curve σ vk p pub).commitments.size
       → Fin (2 ^ σ.k) → Fq)
     (ρRef : Fin (runInput IpaPallas.curve σ vk p pub).commitments.size → Fq)
@@ -954,6 +952,7 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point)
             ≠ idx.omega ^ (n - idx.zkRows) →
           (runOracles IpaPallas.curve σ vk p pub).zeta ^ n ≠ 1 →
           Satisfies idx (pubView idx pub) wTab) := by
+  obtain ⟨hvk, homega, hzk, hshift, hendo⟩ := hvk
   -- (1) reflect the run; pin the batch width and the domain size
   have hrun := kimchiVerify_reflects IpaPallas.curve σ vk p pub hacc
   have hsize : (runInput IpaPallas.curve σ vk p pub).commitments.size = 45 := by

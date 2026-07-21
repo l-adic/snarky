@@ -425,6 +425,21 @@ def KimchiVK.comms {C : Ipa.CommitmentCurve} (vk : KimchiVK C) : IndexComms C.Po
   endoMul := vk.emulComm
   endoScalar := vk.endomulScalarComm
 
+/-- The deployed key corresponds to the index: the committed columns are the circuit's
+own (`VKCorresponds`, through the `comms` view) AND the scalar-side parameters match —
+the domain generator, the zero-knowledge row count, the permutation shifts, and the
+`ft_eval0` endo coefficient. The scalar pins are separate conjuncts because they are
+not committed: no binding argument derives them from the column commitments, and the
+wire verifier computes its scalar side with the KEY's values. The wire-level
+correspondence the run-level roots consume. -/
+def KimchiVK.Corresponds {C : Ipa.CommitmentCurve} [Module C.ScalarField C.Point]
+    {n : ℕ} (σ : SRS C.Point) (vk : KimchiVK C) (idx : Index C.ScalarField n) : Prop :=
+  VKCorresponds σ vk.comms idx
+    ∧ vk.omega = idx.omega
+    ∧ vk.zkRows = idx.zkRows
+    ∧ (fun i : Fin 7 => vk.shifts[(i : ℕ)]!) = idx.shifts
+    ∧ vk.endo = idx.endoBase
+
 /-- The public-input array as the `Fin idx.publicCount`-indexed function the circuit
 model consumes (`getD`, total; the capstones pin `pub.size = idx.publicCount`, so the
 view reads only genuine entries). The wire-to-abstract public view. -/
