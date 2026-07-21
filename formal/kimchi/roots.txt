@@ -120,3 +120,10 @@ Kimchi.Verifier.Chunked.kimchiPallas_run_sound
 Kimchi.Verifier.Chunked.ft_opening_of_reflected_vesta
 Kimchi.Verifier.Chunked.ft_opening_of_reflected_pallas
 Kimchi.Verifier.Chunked.kimchiProof_sound_algebraic_ft
+-- The chunked run-level terminal roots (Phase 4d part 2): from ONE genuine deployed
+-- CHUNKED acceptance at production chunking nc * 2^k = n, AGM representations of the
+-- flat segment stream and the t chunks deliver the guarded Satisfies — openings seam
+-- fed directly, public row bound through the key's Lagrange chunk pin, Maller identity
+-- from the ft opening at the DOUBLE zeta^{2^k} collapse. The chunked endpoints.
+Kimchi.Verifier.Chunked.kimchiVesta_run_sound_algebraic_ft
+Kimchi.Verifier.Chunked.kimchiPallas_run_sound_algebraic_ft

@@ -54,6 +54,8 @@ def roots : List Name :=
     `Kimchi.Verifier.Chunked.kimchiPallas_run_sound,
     `Kimchi.Verifier.Chunked.ft_opening_of_reflected_vesta,
     `Kimchi.Verifier.Chunked.ft_opening_of_reflected_pallas,
+    `Kimchi.Verifier.Chunked.kimchiVesta_run_sound_algebraic_ft,
+    `Kimchi.Verifier.Chunked.kimchiPallas_run_sound_algebraic_ft,
     `Kimchi.Verifier.kimchiVesta_run_sound, `Kimchi.Verifier.kimchiPallas_run_sound,
     `Kimchi.Verifier.kimchiProof_sound_algebraic,
     `Kimchi.Verifier.kimchiProof_sound_algebraic_ft,
