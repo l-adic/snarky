@@ -454,55 +454,84 @@ theorem satisfies_of_verifierEquation [DecidableEq F] [NeZero n]
   refine idx.satisfies_of_evalCheck pub wTab β γ hβ hγ zg α hα t ζ hζ ?_
   exact (verifierEquation_iff idx pub wTab zg t ζ β γ α hζ₁ hζb).mp heq
 
-open Kimchi.Permutation in
-set_option linter.unusedVariables false in
-/-- The same statement at the table read off the polynomials binding delivers behind the
-witness commitments. The degree hypothesis `hW` is carried for the interface — the
-claimed-evaluation conversion consumes it — though this instantiation does not. -/
-theorem satisfies_extractTable_of_verifierEquation [DecidableEq F] [NeZero n]
-    (idx : Index F n) (pub : Fin idx.publicCount → F)
-    (W : Fin 15 → Polynomial F) (hW : ∀ c, (W c).natDegree < n)
-    (β γ : F)
-    (hβ : β ∉ badBetas
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
-        ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
-        ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
-            * idx.omega
-              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))))
-    (hγ : γ ∉ badGammas
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
-        ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
-        ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
-          idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
-            * idx.omega
-              ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))) β)
-    (zg : Polynomial F)
-    (α : F)
-    (hα : α ∉ badAlphas
-      (idx.fullFamily pub (extractTable idx.omega W) zg β γ) idx.omega n)
-    (t : Polynomial F)
-    (ζ : F)
-    (hζ : ζ ∉ badZetas
-      (aggregate α (idx.fullFamily pub (extractTable idx.omega W) zg β γ)) t n)
-    (hζ₁ : ζ ≠ 1)
-    (hζb : ζ ≠ idx.omega ^ (n - idx.zkRows))
-    (heq :
-      permScalar β γ α
-          (zkpmEval n idx.zkRows idx.omega ζ)
-          (evalsOf idx (extractTable idx.omega W) zg ζ)
-        * ((Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) 6).eval
-            ζ
-        - (ζ ^ n - 1) * t.eval ζ
-      = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
-          ζ (-((idx.pubPoly pub).eval ζ))
-          (evalsOf idx (extractTable idx.omega W) zg ζ)) :
-    Satisfies idx pub (extractTable idx.omega W) :=
-  satisfies_of_verifierEquation idx pub (extractTable idx.omega W) β γ hβ hγ
-    zg α hα t ζ hζ hζ₁ hζb heq
+/-- **PIOP soundness — the polynomial-IOP's headline, over the prover's oracles.** The
+prover's oracles are the witness-column polynomials `W` and the permutation-accumulator
+polynomial `z` (degree `< n`), with a quotient oracle `t` presented per challenge; the
+verifier has oracle access, reading them at the challenge point. The four Schwartz–Zippel
+bad challenge sets are small (β/γ bounded by `7·(n − zkRows)`, α by `n·(K − 1)`, ζ by
+`Index.degreeBound n`) and quantified BEFORE the challenges; and for every tuple avoiding
+them at which the verifier equation holds on the oracle evaluations, the assignment read
+off the witness oracles satisfies the circuit — the witness is EXTRACTED
+(`extractTable idx.omega W`), never supplied. Nothing here mentions commitments, an SRS,
+or a group: this is the idealized protocol. The commitment layer instantiates it by
+binding the oracles to commitments and certifying the claimed evaluations are the true
+oracle evaluations (`kimchiProof_sound_of_openings`). Packaged in the same `∃ bad sets,
+card bounds ∧ guarded implication` shape as the compiled roots, so the interface is a
+direct hand-off. -/
+theorem piop_sound [DecidableEq F] [NeZero n] (idx : Index F n)
+    (pub : Fin idx.publicCount → F) (W : Fin 15 → Polynomial F)
+    (z : Polynomial F) (hz : z.natDegree < n) :
+    ∃ (badB : Finset F) (badG : F → Finset F) (badA : F → F → Finset F)
+        (badZ : F → F → F → Polynomial F → Finset F),
+      (badB.card ≤ 7 * (n - idx.zkRows)
+        ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
+        ∧ (∀ β γ,
+            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
+        ∧ (∀ β γ α (t : Polynomial F), t.natDegree < 7 * n →
+            (badZ β γ α t).card ≤ Index.degreeBound n))
+      ∧ ∀ (β γ α : F) (t : Polynomial F) (ζ : F),
+          β ∉ badB → γ ∉ badG β → α ∉ badA β γ → ζ ∉ badZ β γ α t →
+          ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) →
+          permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ)
+                (evalsOf idx (extractTable idx.omega W) z ζ)
+              * ((Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) 6).eval ζ
+              - (ζ ^ n - 1) * t.eval ζ
+            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ ζ
+                (-((idx.pubPoly pub).eval ζ)) (evalsOf idx (extractTable idx.omega W) z ζ) →
+          ∃ wTab : Fin n → Fin 15 → F, Satisfies idx pub wTab := by
+  classical
+  set m₁ : Multiset (F × F) :=
+    Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+      ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
+        idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)) with hm₁def
+  set m₂ : Multiset (F × F) :=
+    Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+      ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
+        idx.shifts (Kimchi.Permutation.restrictCells idx.wiringPerm
+              idx.wiringPerm_regionPreserving c).1
+          * idx.omega ^ ((Kimchi.Permutation.restrictCells idx.wiringPerm
+              idx.wiringPerm_regionPreserving c).2 : ℕ)) with hm₂def
+  have hcard : ∀ (f : Fin 7 × Fin (n - idx.zkRows) → F × F),
+      Multiset.card (Finset.univ.val.map f) = 7 * (n - idx.zkRows) := by
+    intro f
+    rw [Multiset.card_map]
+    simp [Finset.card_univ, Fintype.card_prod, Fintype.card_fin]
+  refine ⟨Kimchi.GrandProduct.badBetas m₁ m₂, fun β => Kimchi.GrandProduct.badGammas m₁ m₂ β,
+    fun β γ => Kimchi.badAlphas
+      (idx.fullFamily pub (extractTable idx.omega W) z β γ) idx.omega n,
+    fun β γ α t => Kimchi.badZetas
+      (Kimchi.aggregate α
+        (idx.fullFamily pub (extractTable idx.omega W) z β γ)) t n,
+    ⟨?_, ?_, ?_, ?_⟩, ?_⟩
+  · refine le_trans (Kimchi.GrandProduct.card_badBetas_le m₁ m₂) ?_
+    rw [hm₁def, hm₂def, hcard, hcard]
+    exact le_of_eq (max_self _)
+  · intro β
+    refine le_trans (Kimchi.GrandProduct.card_badGammas_le m₁ m₂ β) ?_
+    rw [hm₁def, hm₂def, hcard, hcard]
+    exact le_of_eq (max_self _)
+  · intro β γ
+    exact Kimchi.card_badAlphas_le
+      (idx.fullFamily pub (extractTable idx.omega W) z β γ) idx.omega n
+  · intro β γ α t ht
+    exact Kimchi.card_badZetas_le
+      (Kimchi.aggregate α
+        (idx.fullFamily pub (extractTable idx.omega W) z β γ)) t
+      (Index.aggregate_natDegree_le idx pub (extractTable idx.omega W) z hz β γ α)
+      (Index.t_zH_natDegree_le t ht)
+  · intro β γ α t ζ hβ hγ hα hζ hζ₁ hζb heq
+    exact ⟨extractTable idx.omega W,
+      satisfies_of_verifierEquation idx pub (extractTable idx.omega W) β γ hβ hγ z α hα t ζ
+        hζ hζ₁ hζb heq⟩
 
 end Kimchi.Protocol.Equation

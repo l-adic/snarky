@@ -136,7 +136,9 @@ digraph "formal-modules" {
 				label="Kimchi.Verifier",
 				style="filled,dashed"
 			];
-			"Kimchi.Verifier.Capstone";
+			"Kimchi.Verifier.Capstone.Algebraic";
+			"Kimchi.Verifier.Capstone.Reflection";
+			"Kimchi.Verifier.Capstone.Standard";
 			"Kimchi.Verifier.Kimchi";
 			"Kimchi.Verifier.Reflect";
 		}
@@ -199,7 +201,8 @@ digraph "formal-modules" {
 	Kimchi -> "Kimchi.Gate.Semantics.EndoMul";
 	Kimchi -> "Kimchi.Gate.Semantics.Generic";
 	Kimchi -> "Kimchi.Gate.Semantics.Poseidon";
-	Kimchi -> "Kimchi.Verifier.Capstone";
+	Kimchi -> "Kimchi.Verifier.Capstone.Reflection";
+	Kimchi -> "Kimchi.Verifier.Capstone.Standard";
 	"Kimchi.Lift" -> "Kimchi.SchwartzZippel";
 	"Kimchi.Lift" -> "Kimchi.Shifted";
 	"Kimchi.Lift" -> "Kimchi.Gate.EndoMul";
@@ -240,12 +243,15 @@ digraph "formal-modules" {
 	"Kimchi.Protocol.Linearization" -> "Kimchi.Lift";
 	"Kimchi.Protocol.Soundness" -> "Kimchi.Protocol.Binding";
 	"Kimchi.Protocol.Soundness" -> "Kimchi.Protocol.Equation";
-	"Kimchi.Verifier.Capstone" -> "Kimchi.Protocol.Soundness";
-	"Kimchi.Verifier.Capstone" -> "Kimchi.Verifier.Reflect";
+	"Kimchi.Verifier.Capstone.Algebraic" -> "Kimchi.Protocol.Soundness";
+	"Kimchi.Verifier.Capstone.Algebraic" -> "Kimchi.Verifier.Reflect";
+	"Kimchi.Verifier.Capstone.Reflection" -> "Kimchi.Verifier.Capstone.Algebraic";
+	"Kimchi.Verifier.Capstone.Standard" -> "Kimchi.Protocol.Soundness";
+	"Kimchi.Verifier.Capstone.Standard" -> "Kimchi.Verifier.Reflect";
 	"Kimchi.Verifier.Kimchi" -> "Bulletproof.Wire";
+	"Kimchi.Verifier.Kimchi" -> "Kimchi.Protocol.Correspond";
 	"Kimchi.Verifier.Kimchi" -> "Kimchi.Protocol.Linearization";
 	"Kimchi.Verifier.Reflect" -> "Bulletproof.Reflection";
-	"Kimchi.Verifier.Reflect" -> "Kimchi.Protocol.Correspond";
 	"Kimchi.Verifier.Reflect" -> "Kimchi.Protocol.Equation";
 	"Kimchi.Verifier.Reflect" -> "Kimchi.Verifier.Kimchi";
 	"Snarky.AsProver" -> "Snarky.CVar";

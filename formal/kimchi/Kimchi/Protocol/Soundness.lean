@@ -363,55 +363,12 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
     intro gg
     rw [hk]
     exact columnPoly_natDegree_lt idx.omega_prim _
-  -- the challenge-free (value, address) pair multisets (m₁ current-row, m₂ wired-row);
-  -- both have `7 · (n − zkRows)` members, bounding the bad β/γ sets.
-  set m₁ : Multiset (F × F) :=
-    Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
-      ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
-        idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)) with hm₁def
-  set m₂ : Multiset (F × F) :=
-    Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
-      ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
-        idx.shifts (Kimchi.Permutation.restrictCells idx.wiringPerm
-              idx.wiringPerm_regionPreserving c).1
-          * idx.omega ^ ((Kimchi.Permutation.restrictCells idx.wiringPerm
-              idx.wiringPerm_regionPreserving c).2 : ℕ)) with hm₂def
-  -- both multisets range over `Fin 7 × Fin (n − zkRows)`, so each has `7 · (n − zkRows)`
-  -- members
-  have hcard : ∀ (f : Fin 7 × Fin (n - idx.zkRows) → F × F),
-      Multiset.card (Finset.univ.val.map f) = 7 * (n - idx.zkRows) := by
-    intro f
-    rw [Multiset.card_map]
-    simp [Finset.card_univ, Fintype.card_prod, Fintype.card_fin]
-  -- the extracted bad sets — quantified BEFORE the challenges, built from challenge-free
-  -- REFERENCE-extracted data, each provably small; only THEN quantify over β/γ/α/t/ζ
-  refine ⟨Kimchi.GrandProduct.badBetas m₁ m₂, fun β => Kimchi.GrandProduct.badGammas m₁ m₂ β,
-    fun β γ => Kimchi.badAlphas
-      (idx.fullFamily pub (extractTable idx.omega W) zg β γ) idx.omega n,
-    fun β γ α t => Kimchi.badZetas
-      (Kimchi.aggregate α
-        (idx.fullFamily pub (extractTable idx.omega W) zg β γ)) t n,
-    ⟨?_, ?_, ?_, ?_⟩, ?_⟩
-  · -- anti-vacuity (β axis): `card_badBetas_le` bounds by `max |m₁| |m₂| = 7·(n − zkRows)`
-    refine le_trans (Kimchi.GrandProduct.card_badBetas_le m₁ m₂) ?_
-    rw [hm₁def, hm₂def, hcard, hcard]
-    exact le_of_eq (max_self _)
-  · -- anti-vacuity (γ axis): `card_badGammas_le` bounds by `max |m₁| |m₂| = 7·(n − zkRows)`
-    intro β
-    refine le_trans (Kimchi.GrandProduct.card_badGammas_le m₁ m₂ β) ?_
-    rw [hm₁def, hm₂def, hcard, hcard]
-    exact le_of_eq (max_self _)
-  · -- anti-vacuity (α axis): `card_badAlphas_le` bounds the extracted bad set by `n · (K − 1)`
-    intro β γ
-    exact Kimchi.card_badAlphas_le
-      (idx.fullFamily pub (extractTable idx.omega W) zg β γ) idx.omega n
-  · -- anti-vacuity (ζ axis): `card_badZetas_le` bounds the extracted bad set by `degreeBound n`
-    intro β γ α t ht
-    exact Kimchi.card_badZetas_le
-      (Kimchi.aggregate α
-        (idx.fullFamily pub (extractTable idx.omega W) zg β γ)) t
-      (Index.aggregate_natDegree_le idx pub (extractTable idx.omega W) zg hzdeg β γ α)
-      (Index.t_zH_natDegree_le t ht)
+  -- PIOP soundness (`Protocol/Equation.lean`) packages the four small bad sets over the
+  -- REFERENCE-extracted witness table and quantifies them BEFORE the challenges; the
+  -- commitment layer's only job is to feed its guarded implication `himp`.
+  obtain ⟨badB, badG, badA, badZ, hbounds, himp⟩ :=
+    piop_sound idx pub W zg hzdeg
+  refine ⟨badB, badG, badA, badZ, hbounds, ?_⟩
   · -- every avoiding challenge tuple with an accepting consumer transcript yields Satisfies
     intro β γ α t ζ E aw ρw hβ hγ hα hζ hζ₁ hζb ht hrow hteq
     -- cross-point uniqueness: FIXED commitments bind the reference W, zg
@@ -466,9 +423,7 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
       have h := bound_eval_of_commitPolyMasked σ hbind hcommit (hdsel _)
         ((hrow (selRow jj)).2 0)
       simpa using h
-    refine ⟨extractTable idx.omega W,
-      satisfies_extractTable_of_verifierEquation idx pub W hW β γ hβ hγ zg α hα t ζ hζ
-        hζ₁ hζb ?_⟩
+    refine himp β γ α t ζ hβ hγ hα hζ hζ₁ hζb ?_
     have hrec := claimedEvals_eq_evalsOf idx W hW zg ζ E hwE hzE hsE hcE hselE
     have h := hteq
     rw [hrec, Index.sigmaPoly_eq_wiring idx 6] at h
