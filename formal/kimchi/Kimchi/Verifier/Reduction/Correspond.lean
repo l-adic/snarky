@@ -20,7 +20,7 @@ it composes with.
 
 open Bulletproof
 
-namespace Kimchi.Protocol
+namespace Kimchi.Verifier
 
 open Polynomial Kimchi.Lift Kimchi.Index Bulletproof
 
@@ -68,4 +68,4 @@ key lies in the image of the indexer. Soundness carries it as a hypothesis. -/
 def VKCorresponds (σ : SRS G) (comms : IndexComms G) (idx : Index F n) : Prop :=
   comms = indexerOf σ idx
 
-end Kimchi.Protocol
+end Kimchi.Verifier

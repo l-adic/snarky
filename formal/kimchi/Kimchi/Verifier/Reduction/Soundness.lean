@@ -1,14 +1,15 @@
 import Mathlib
 import Bulletproof.Soundness
-import Kimchi.Protocol.Binding
+import Kimchi.Verifier.Reduction.Binding
 import Kimchi.Protocol.Equation
 
 /-!
 # Composed soundness
 
 Batched opening acceptance, binding, and the key–index correspondence compose into
-`∃ wTab, Satisfies idx pub wTab`: acceptance across the challenge grid forces a
-satisfying witness table for the circuit the key commits.
+`Satisfies idx pub wTab`: acceptance across the challenge grid forces a satisfying
+witness table — the committed data itself, fixed before the challenges — for the
+circuit the key commits.
 
 Three things are assumed rather than derived. The challenge grids — over `(β, γ, α, ζ)`
 and, per point, over the batch's `(ξ, r)` — stand in for Fiat–Shamir. Binding is carried
@@ -27,7 +28,7 @@ can produce.
 -/
 open Bulletproof
 
-namespace Kimchi.Protocol
+namespace Kimchi.Verifier
 
 open Polynomial Bulletproof Kimchi.Index Kimchi.Protocol.Linearization
   Kimchi.Protocol.Equation
@@ -294,12 +295,14 @@ private theorem claimedEvals_eq_evalsOf [Field F] {n : ℕ} [NeZero n] (idx : In
 
 /-! ## Soundness -/
 
-/-- The openings-interface core: the same conclusion with the per-point transcript
-families replaced by per-row openings. The reference side is pure commitment knowledge —
-every batch row bound to a known witness pair — and the consumer side supplies, at each
-avoiding challenge tuple, openings that bind to the same commitments and reproduce the
-claimed evaluations. Extraction models that already possess opened values discharge it
-directly. -/
+/-- The openings-interface core: the per-point transcript families replaced by per-row
+openings. The reference side is pure commitment knowledge — every batch row bound to a
+known witness pair — and the consumer side supplies, at each avoiding challenge tuple,
+openings that bind to the same commitments and reproduce the claimed evaluations.
+Extraction models that already possess opened values discharge it directly. The satisfying
+table is named EXPLICITLY in the conclusion: it is the reference openings' own witness
+rows, read as polynomials and evaluated over the domain — the committed data itself
+satisfies the circuit, not merely some table. -/
 theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
     {n : ℕ} [NeZero n] [DecidableEq F] (σ : SRS G)
     (idx : Index F n) (hk : 2 ^ σ.k = n)
@@ -333,7 +336,8 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
             - (ζ ^ n - 1) * t.eval ζ
             = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
                 ζ (-((idx.pubPoly pub).eval ζ)) (claimedEvals E)) →
-          ∃ wTab : Fin n → Fin 15 → F, Satisfies idx pub wTab := by
+          Satisfies idx pub
+            (extractTable idx.omega fun col => rowPoly (aw₀ (wRow col))) := by
   classical
   -- the verifier key is the honest indexer's
   have hvk' : comms = indexerOf σ idx := hvk
@@ -363,55 +367,12 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
     intro gg
     rw [hk]
     exact columnPoly_natDegree_lt idx.omega_prim _
-  -- the challenge-free (value, address) pair multisets (m₁ current-row, m₂ wired-row);
-  -- both have `7 · (n − zkRows)` members, bounding the bad β/γ sets.
-  set m₁ : Multiset (F × F) :=
-    Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
-      ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
-        idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)) with hm₁def
-  set m₂ : Multiset (F × F) :=
-    Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
-      ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
-        idx.shifts (Kimchi.Permutation.restrictCells idx.wiringPerm
-              idx.wiringPerm_regionPreserving c).1
-          * idx.omega ^ ((Kimchi.Permutation.restrictCells idx.wiringPerm
-              idx.wiringPerm_regionPreserving c).2 : ℕ)) with hm₂def
-  -- both multisets range over `Fin 7 × Fin (n − zkRows)`, so each has `7 · (n − zkRows)`
-  -- members
-  have hcard : ∀ (f : Fin 7 × Fin (n - idx.zkRows) → F × F),
-      Multiset.card (Finset.univ.val.map f) = 7 * (n - idx.zkRows) := by
-    intro f
-    rw [Multiset.card_map]
-    simp [Finset.card_univ, Fintype.card_prod, Fintype.card_fin]
-  -- the extracted bad sets — quantified BEFORE the challenges, built from challenge-free
-  -- REFERENCE-extracted data, each provably small; only THEN quantify over β/γ/α/t/ζ
-  refine ⟨Kimchi.GrandProduct.badBetas m₁ m₂, fun β => Kimchi.GrandProduct.badGammas m₁ m₂ β,
-    fun β γ => Kimchi.badAlphas
-      (idx.fullFamily pub (extractTable idx.omega W) zg β γ) idx.omega n,
-    fun β γ α t => Kimchi.badZetas
-      (Kimchi.aggregate α
-        (idx.fullFamily pub (extractTable idx.omega W) zg β γ)) t n,
-    ⟨?_, ?_, ?_, ?_⟩, ?_⟩
-  · -- anti-vacuity (β axis): `card_badBetas_le` bounds by `max |m₁| |m₂| = 7·(n − zkRows)`
-    refine le_trans (Kimchi.GrandProduct.card_badBetas_le m₁ m₂) ?_
-    rw [hm₁def, hm₂def, hcard, hcard]
-    exact le_of_eq (max_self _)
-  · -- anti-vacuity (γ axis): `card_badGammas_le` bounds by `max |m₁| |m₂| = 7·(n − zkRows)`
-    intro β
-    refine le_trans (Kimchi.GrandProduct.card_badGammas_le m₁ m₂ β) ?_
-    rw [hm₁def, hm₂def, hcard, hcard]
-    exact le_of_eq (max_self _)
-  · -- anti-vacuity (α axis): `card_badAlphas_le` bounds the extracted bad set by `n · (K − 1)`
-    intro β γ
-    exact Kimchi.card_badAlphas_le
-      (idx.fullFamily pub (extractTable idx.omega W) zg β γ) idx.omega n
-  · -- anti-vacuity (ζ axis): `card_badZetas_le` bounds the extracted bad set by `degreeBound n`
-    intro β γ α t ht
-    exact Kimchi.card_badZetas_le
-      (Kimchi.aggregate α
-        (idx.fullFamily pub (extractTable idx.omega W) zg β γ)) t
-      (Index.aggregate_natDegree_le idx pub (extractTable idx.omega W) zg hzdeg β γ α)
-      (Index.t_zH_natDegree_le t ht)
+  -- protocol soundness (`Protocol/Equation.lean`) packages the four small bad sets over
+  -- the REFERENCE-extracted witness table and quantifies them BEFORE the challenges; the
+  -- commitment layer's only job is to feed its guarded `Accepts` implication `himp`.
+  obtain ⟨badB, badG, badA, badZ, hbounds, himp⟩ :=
+    Kimchi.Protocol.sound idx pub W zg hzdeg
+  refine ⟨badB, badG, badA, badZ, hbounds, ?_⟩
   · -- every avoiding challenge tuple with an accepting consumer transcript yields Satisfies
     intro β γ α t ζ E aw ρw hβ hγ hα hζ hζ₁ hζb ht hrow hteq
     -- cross-point uniqueness: FIXED commitments bind the reference W, zg
@@ -466,18 +427,18 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
       have h := bound_eval_of_commitPolyMasked σ hbind hcommit (hdsel _)
         ((hrow (selRow jj)).2 0)
       simpa using h
-    refine ⟨extractTable idx.omega W,
-      satisfies_extractTable_of_verifierEquation idx pub W hW β γ hβ hγ zg α hα t ζ hζ
-        hζ₁ hζb ?_⟩
+    refine himp β γ α t ζ hβ hγ hα hζ hζ₁ hζb ?_
     have hrec := claimedEvals_eq_evalsOf idx W hW zg ζ E hwE hzE hsE hcE hselE
     have h := hteq
     rw [hrec, Index.sigmaPoly_eq_wiring idx 6] at h
     exact h
 
-set_option linter.unusedVariables false in
 /-- Batched opening acceptance on the 43-row assembly, binding, and the key–index
 correspondence force a satisfying witness table, the witness read off the bound
-witness-column polynomials.
+witness-column polynomials. The table is quantified WITH the bad sets, before the
+challenges: one fixed assignment — the reference openings' own data — satisfies at every
+avoiding accepting tuple. (It cannot be named in the statement, since the reference
+openings are themselves extracted inside the proof.)
 
 The transcript is split, and that split is the point. The claimed evaluations are
 openings *at* `ζ`, so extracting the witness polynomials from the transcript at `ζ` would
@@ -506,7 +467,7 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
         (combinedInnerProduct (ξ₀ i) (r₀ j) E₀) (A₀ i j))
     (hacc₀ : ∀ i j, A₀ i j) :
     ∃ (badB : Finset F) (badG : F → Finset F) (badA : F → F → Finset F)
-        (badZ : F → F → F → Polynomial F → Finset F),
+        (badZ : F → F → F → Polynomial F → Finset F) (wTab : Fin n → Fin 15 → F),
       (badB.card ≤ 7 * (n - idx.zkRows)
         ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
         ∧ (∀ β γ,
@@ -530,18 +491,19 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
             - (ζ ^ n - 1) * t.eval ζ
             = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
                 ζ (-((idx.pubPoly pub).eval ζ)) (claimedEvals E)) →
-          ∃ wTab : Fin n → Fin 15 → F, Satisfies idx pub wTab := by
+          Satisfies idx pub wTab := by
   obtain ⟨aw₀, ρw₀, hrow₀⟩ :=
     batch_openings_nc1 σ ξ₀ hξ₀ r₀ hr₀ (by omega)
       (batchC wC zC comms) ![ζ₀, idx.omega * ζ₀] E₀ A₀ hFS₀ hbind hacc₀
   obtain ⟨badB, badG, badA, badZ, hbounds, himp⟩ :=
     kimchiProof_sound_of_openings σ idx hk hbind comms hvk pub wC zC
       aw₀ ρw₀ (fun i => (hrow₀ i).1)
-  refine ⟨badB, badG, badA, badZ, hbounds, ?_⟩
+  refine ⟨badB, badG, badA, badZ,
+    extractTable idx.omega (fun col => rowPoly (aw₀ (wRow col))), hbounds, ?_⟩
   intro β γ α t ζ E ξ r A hβ hγ hα hζ hζ₁ hζb ht hξ hr hFS hacc hteq
   obtain ⟨aw, ρw, hrow⟩ :=
     batch_openings_nc1 σ ξ hξ r hr (by omega)
       (batchC wC zC comms) ![ζ, idx.omega * ζ] E A hFS hbind hacc
   exact himp β γ α t ζ E aw ρw hβ hγ hα hζ hζ₁ hζb ht hrow hteq
 
-end Kimchi.Protocol
+end Kimchi.Verifier

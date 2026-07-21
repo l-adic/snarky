@@ -42,16 +42,11 @@ def roots : List Name :=
     `Kimchi.dvd_separation,
     `Kimchi.Gate.Poseidon.sound, `Kimchi.Gate.Poseidon.complete,
     `Kimchi.Index.satisfies_iff_fullFamily_dvd,
-    `Kimchi.Verifier.kimchiVerify_reflects, `Kimchi.Verifier.barycentricPubEval_eq,
-    `Kimchi.Protocol.Equation.verifierEquation_iff,
-    `Kimchi.Protocol.Equation.satisfies_of_verifierEquation,
-    `Kimchi.Protocol.kimchiProof_sound_of_openings,
+    `Kimchi.Protocol.sound,
+    `Kimchi.Verifier.kimchiProof_sound_of_openings,
     `Kimchi.Verifier.kimchiVesta_run_sound, `Kimchi.Verifier.kimchiPallas_run_sound,
     `Kimchi.Verifier.kimchiProof_sound_algebraic,
     `Kimchi.Verifier.kimchiProof_sound_algebraic_ft,
-    `Kimchi.Verifier.ft_opening_of_reflected,
-    `Kimchi.Verifier.ft_opening_of_reflected_vesta,
-    `Kimchi.Verifier.ft_opening_of_reflected_pallas,
     `Kimchi.Verifier.kimchiVesta_run_sound_algebraic_ft,
     `Kimchi.Verifier.kimchiPallas_run_sound_algebraic_ft ]
 

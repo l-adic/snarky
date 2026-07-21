@@ -27,14 +27,17 @@ import Kimchi.Permutation.Wiring
 import Kimchi.Permutation.Permutation
 import Kimchi.GrandProduct
 import Bulletproof.Wire
--- Side A — the idealized polynomial protocol and its soundness
+-- Side A — the polynomial protocol (PCS-free) and its soundness
+import Kimchi.Protocol.Accepts
 import Kimchi.Protocol.Linearization
 import Kimchi.Protocol.Equation
-import Kimchi.Protocol.Correspond
-import Kimchi.Protocol.Binding
-import Kimchi.Protocol.Soundness
--- Side B — the concrete PCS instantiation
+-- Side B — the PCS reduction and the concrete wire verifier
 import Bulletproof.Reflection
+import Kimchi.Verifier.Reduction.Correspond
+import Kimchi.Verifier.Reduction.Binding
+import Kimchi.Verifier.Reduction.Soundness
 import Kimchi.Verifier.Kimchi
 import Kimchi.Verifier.Reflect
-import Kimchi.Verifier.Capstone
+import Kimchi.Verifier.Capstone.Standard
+import Kimchi.Verifier.Capstone.Algebraic
+import Kimchi.Verifier.Capstone.Reflection

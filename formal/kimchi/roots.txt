@@ -7,6 +7,12 @@
 --   a declaration in `Kimchi.*` is LIVE iff it is in the transitive constant-dependency
 --   closure of these roots; anything compiled but outside that closure is dead.
 --
+-- The list is a MINIMAL GENERATING SET: a result reachable from a listed root is deliberately
+-- not listed (e.g. `Kimchi.Protocol.sound` and the openings seam
+-- `kimchiProof_sound_of_openings` are live through every run-level root; `zH_dvd_iff` and
+-- `dvd_separation` through the whole soundness line). `scripts/check_axioms.lean` separately
+-- pins the existence and axiom closure of the headline theorems, including ones unlisted here.
+--
 -- Format: one fully-qualified declaration name per line; `--` lines and blanks are ignored.
 --
 -- Note: the `kimchi-demo` executable (Main.lean) is a SEPARATE build root, reaching the demo
@@ -22,21 +28,16 @@ Kimchi.Gate.satisfies_iff
 Kimchi.Gate.AddComplete.complete
 Kimchi.Gate.AddComplete.sound
 
--- Variable-base scalar multiplication (gate)
-Kimchi.Gate.VarBaseMul.sound
+-- Variable-base scalar multiplication: the gate completeness and the two deployed circuit
+-- entry points (the gate soundness is live through `varBaseMul_scaleFast2`)
 Kimchi.Gate.VarBaseMul.complete
-
--- Variable-base scalar multiplication (circuit): the two deployed entry points
 Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast1
 Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast2
 
--- Endo-scalar decomposition (gate)
-Kimchi.Gate.EndoScalar.sound
-Kimchi.Gate.EndoScalar.complete
-
 -- Endo-scalar decomposition (circuit): over a multi-row run of sequential gates, the effective
 -- scalar a·λ + b (sound), the honest prover fills the run (complete), and the decomposition is
--- unique under the bit-size/field-size bound (so challenge ↦ a·λ + b is well defined)
+-- unique under the bit-size/field-size bound (so challenge ↦ a·λ + b is well defined). The
+-- per-gate `sound`/`complete` are live through `endoScalar_unique`/`chain_complete`.
 Kimchi.Gate.EndoScalar.chain_toField
 Kimchi.Gate.EndoScalar.chain_complete
 Kimchi.Gate.EndoScalar.endoScalar_unique
@@ -45,104 +46,53 @@ Kimchi.Gate.EndoScalar.endoScalar_unique
 Kimchi.Gate.EndoMul.sound
 Kimchi.Gate.EndoMul.complete
 
--- GLV endomorphism scalar multiplication (circuit): the generic capstone over `Holds` — a run of
--- valid EndoMul rows + base + threading + initial conditions computes [s]·T, with intermediate
--- nonsingularity derived (no per-row bundle). Ties EndoScalar ↔ EndoMul ↔ [s]·T.
-Kimchi.Gate.EndoMul.endoMul
 -- EndoMul at the real Pasta curves: the deployed entry points. The prover supplies only the gate
 -- constraint Holds per row + base + threading + initial conditions; the eigenvalue is discharged
--- via the CM axiom and the per-row hxne is *derived* from the GLV bound (not assumed)
+-- via the CM axiom and the per-row hxne is *derived* from the GLV bound (not assumed). The
+-- field-generic circuit capstone `endoMul` is live through both.
 Kimchi.Gate.EndoMul.pallas_endoMul
 Kimchi.Gate.EndoMul.vesta_endoMul
-
--- Kimchi quotient/vanishing argument (implementation checkpoint). Over the size-n evaluation
--- domain, a constraint polynomial is divisible by Z_H = X^n - 1 iff it vanishes on every row
--- (`zH_dvd_iff`).
-Kimchi.zH_dvd_iff
-
--- Counting Schwartz–Zippel separation: one aggregation challenge outside `badAlphas` splits
--- the aggregate family into per-constraint divisibility.
-Kimchi.dvd_separation
-
--- Argument: the single primitive every gate's quotient lift instantiates (kimchi argument.rs:
--- an F-algebra-natural constraint family over the ArgumentEnv cell environment); its
--- single-challenge soundness stated once over it. Kept as the engine headline; the per-gate
--- and per-index restatements it subsumed are derived through the aggregate route instead.
-
 
 -- Poseidon gate: a satisfying row computes the 5-round permutation.
 Kimchi.Gate.Poseidon.sound
 Kimchi.Gate.Poseidon.complete
 
--- Kimchi verifier reflection (trust-free): the deployed `kimchiVerify` code path read into a
--- well-formed `ReflectedRun`, and the barycentric public-evaluation identity the verifier
--- computes shown equal to the interpolant form. Foundations for the executable soundness capstone.
-Kimchi.Verifier.kimchiVerify_reflects
-Kimchi.Verifier.barycentricPubEval_eq
-
 -- The arithmetization interface: satisfiability characterized by divisibility of the aggregate
--- family. Gated by `scripts/check_axioms.lean`.
+-- family. (Its engine — `zH_dvd_iff`, `dvd_separation`, the `Argument` lifts — is live through
+-- it and the soundness line.) Gated by `scripts/check_axioms.lean`.
 Kimchi.Index.satisfies_iff_fullFamily_dvd
-
--- The capstone: executable-verifier acceptance ⟹ the index is satisfiable, at every challenge
--- tuple outside the bounded (counting Schwartz–Zippel) bad sets. Combines the Fiat-Shamir
--- junction, the counting quotient soundness, and the IPA special-soundness extraction.
--- `kimchiBundle_sound` is the idealized composition: the transcript bundle is the
--- special-soundness HYPOTHESIS (the tree-of-accepting-transcripts idiom), consumed by one
--- application of the core; the concrete Fiat-Shamir capstone discharges it.
--- `kimchiProof_sound_of_openings` is the openings-interface seam (forking b1): the shared
--- junction of the extraction models — the standard-model path (density → rectangle →
--- batch_soundnessA) and the algebraic-prover path (representations carried with messages) both
--- discharge it. Reference side = pure commitment-knowledge; consumer side = per-row openings.
-Kimchi.Protocol.kimchiProof_sound_of_openings
 
 -- The standard-model run-level capstones (grid path): a real accepted run's own sponge
 -- challenges over the run's own commitments — unless the run's (β, γ, α, ζ) land in the four
--- bounded bad sets, the index is satisfiable. The special-soundness grid (accepting deployed
--- Ipa.verify batch openings at injectively-varied ξ/r) is a HYPOTHESIS; each node's transcript
--- tree is derived from poseidon_fiat_shamir_{vesta,pallas}. The quotient residue (t, hdeg, heq)
--- is the one explicit hypothesis beyond the grids. The intermediate capstones these compose
--- (kimchiProof_sound → kimchiBundle_sound → kimchi{Vesta,Pallas}_sound) are live via
--- reachability, no longer listed.
+-- bounded bad sets, the index is satisfiable by a witness table fixed before the challenges.
+-- The special-soundness grid (accepting deployed Ipa.verify batch openings at
+-- injectively-varied ξ/r) is a HYPOTHESIS; each node's transcript tree is derived from
+-- poseidon_fiat_shamir_{vesta,pallas}. The quotient residue (t, hdeg, heq) is the one explicit
+-- hypothesis beyond the grids. The whole reduction stack these compose — kimchiProof_sound,
+-- the openings seam `kimchiProof_sound_of_openings`, and the PCS-free protocol soundness
+-- `Kimchi.Protocol.sound` it bottoms out in — is live via reachability, not listed.
 Kimchi.Verifier.kimchiVesta_run_sound
 Kimchi.Verifier.kimchiPallas_run_sound
 
--- The algebraic-group-model reading: an algebraic prover supplies SRS-basis representations of
--- its committed rows, so a SINGLE accepted opening suffices (no grid, no density) — the eval
--- pins follow off a small discrepancy (ξ, r) bad set (a bivariate Schwartz–Zippel event, ≤ 84
--- and ≤ 1). Consumes the openings seam. NOTE these roots keep the FiatShamirTreeB tree as a
--- caller-supplied hypothesis (not derived from an Ipa.verify acceptance), so their axiom set is
--- the density capstones' MINUS poseidon_fiat_shamir; the ft/quotient identity is kept as the
--- residue hypothesis (dissolved by the `_ft` roots below).
-Kimchi.Verifier.kimchiProof_sound_algebraic
-
--- The algebraic quotient: the ft/quotient residue DISSOLVED. The algebraic prover additionally
--- supplies the 7 `tComm`-chunk representations, so the quotient `t` — now the genuine
--- degree-`< 7n` assembly `ftChunkAssembly` of the committed chunks — and the Maller/ft identity
--- are DERIVED from a checked ft opening via `ft_identity_of_chunks`; the residue hypothesis is
--- gone from the statement. Axiom set unchanged from the algebraic roots above (the ft opening,
--- FiatShamirTreeB, and DL-binding remain hypotheses; still MINUS poseidon_fiat_shamir).
+-- The algebraic quotient (AGM reading): an algebraic prover supplies SRS-basis representations
+-- of its committed rows AND the 7 `tComm`-chunk representations, so a SINGLE accepted opening
+-- suffices (no grid, no density) and the quotient `t` — the genuine degree-`< 7n` assembly
+-- `ftChunkAssembly` of the committed chunks — and the Maller/ft identity are DERIVED from a
+-- checked ft opening via `ft_identity_of_chunks`: no residue hypothesis. The satisfying table
+-- is named explicitly (the representations' own data). The FiatShamirTreeB tree stays a
+-- caller-supplied hypothesis (not derived from an Ipa.verify acceptance), so the axiom set has
+-- NO poseidon_fiat_shamir. The residue-carrying `kimchiProof_sound_algebraic` it consumes is
+-- live via reachability, not listed.
 Kimchi.Verifier.kimchiProof_sound_algebraic_ft
-
--- The FS-reflection ft opening (PART 1 of the deployed-run discharge): the ft commitment is slot 1
--- of the run's own accepted 45-row batch, so its opening at ζ to `runFtEval0` is DERIVED from a
--- genuine `verify = true` — `ipa_soundnessA` + the general-arity `eval_pins_of_opening` at that
--- slot. `ft_opening_of_reflected` is axiom-free (the transcript tree is a hypothesis); the curve
--- wrappers discharge it via the new `kimchi_fiat_shamir_{vesta,pallas}` axiom (warm reflected run)
--- + `kimchiVerify_reflects`, so their closure is base + that axiom + CompElliptic (no
--- poseidon FS, no eigen). Deferred follow-on: reconcile the 45-row batch with `batchC` to feed
--- `kimchiProof_sound_algebraic_ft` and reach a full run-level residue-free `Satisfies` root.
-Kimchi.Verifier.ft_opening_of_reflected
-Kimchi.Verifier.ft_opening_of_reflected_vesta
-Kimchi.Verifier.ft_opening_of_reflected_pallas
 
 -- THE TERMINAL THEOREM — AGM soundness of the deployed kimchi verifier. From a genuine
 -- `verify = true`, for an algebraic prover (SRS-basis representations of the run's 45 batch rows
--- and 7 tComm chunks), derive `∃ wTab, Satisfies` at the run's own sponge challenges — the
--- ft/quotient residue DISSOLVED (no `t`/`hteq`), the grid BYPASSED (fed the openings seam directly,
--- so no poseidon_fiat_shamir). Trust surface = kimchi_fiat_shamir (Poseidon-RO) + DL-binding (hbind)
--- + CompElliptic — and nothing else. The guarded conclusion (challenges avoid the negligible
--- bad sets) is the FS heuristic in the type; the honest-key hypotheses (hvk + omega/zkRows/shifts/endo
--- bridges) say the wire VK corresponds to the circuit. This is the endpoint (AGM, as in PLONK).
+-- and 7 tComm chunks), a witness table fixed before the run's own sponge challenges satisfies
+-- the index — the ft/quotient residue DISSOLVED (no `t`/`hteq`), the grid BYPASSED (fed the
+-- openings seam directly, so no poseidon_fiat_shamir). Trust surface = kimchi_fiat_shamir
+-- (Poseidon-RO) + DL-binding (hbind) + CompElliptic — and nothing else. The guarded conclusion
+-- (challenges avoid the negligible bad sets) is the FS heuristic in the type; the honest-key
+-- hypothesis `KimchiVK.Corresponds` says the wire VK corresponds to the circuit (commitments +
+-- scalar parameters). This is the endpoint (AGM, as in PLONK).
 Kimchi.Verifier.kimchiVesta_run_sound_algebraic_ft
 Kimchi.Verifier.kimchiPallas_run_sound_algebraic_ft

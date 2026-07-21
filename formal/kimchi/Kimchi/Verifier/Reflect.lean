@@ -1,7 +1,7 @@
 import Mathlib
 import Kimchi.Verifier.Kimchi
 import Bulletproof.Reflection
-import Kimchi.Protocol.Correspond
+import Kimchi.Verifier.Reduction.Correspond
 import Kimchi.Protocol.Equation
 import Kimchi.Permutation.Permutation
 
@@ -23,8 +23,6 @@ and the composition to `Satisfies` live above this file (the Fiat-Shamir bridge 
 open Bulletproof
 
 namespace Kimchi.Verifier
-
-open Kimchi.Protocol
 
 open CompElliptic.CurveForms.ShortWeierstrass
 open Poseidon Poseidon.FqSponge Bulletproof Kimchi.Index
@@ -53,7 +51,7 @@ def runOracles (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
   fqOracles C vk p (publicCommitment C σ vk pub)
 
 /-- The second batch point `ζω`. -/
-def runZetaOmega (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+private def runZetaOmega (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     (pub : Array C.ScalarField) : C.ScalarField :=
   (runOracles C σ vk p pub).zeta * vk.omega
 
@@ -63,7 +61,7 @@ def runZetaN (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
   powPow2 (runOracles C σ vk p pub).zeta vk.domainLog2
 
 /-- The power `(ζω)ⁿ`, by the squaring ladder. -/
-def runZetaOmegaN (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+private def runZetaOmegaN (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     (pub : Array C.ScalarField) : C.ScalarField :=
   powPow2 (runZetaOmega C σ vk p pub) vk.domainLog2
 
@@ -74,7 +72,7 @@ def runPubEvals (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     (runZetaN C σ vk p pub) (runZetaOmegaN C σ vk p pub) pub
 
 /-- The run's fr-sponge challenges `(v, u)` — polyscale and evalscale of the batch. -/
-def runVU (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+private def runVU (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     (pub : Array C.ScalarField) : C.ScalarField × C.ScalarField :=
   frOracles C vk p (runOracles C σ vk p pub).digest (runPubEvals C σ vk p pub).1
     (runPubEvals C σ vk p pub).2
@@ -84,7 +82,7 @@ def runVU (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
 (verifier.rs:414–478). -/
 def runFtEval0P (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     (pub : Array C.ScalarField) (pubEval0 : C.ScalarField) : C.ScalarField :=
-  Linearization.ftEval0 vk.n vk.zkRows vk.omega (fun i => vk.shifts[i.val]!) vk.endo
+  ftEval0 vk.n vk.zkRows vk.omega (fun i => vk.shifts[i.val]!) vk.endo
     (runOracles C σ vk p pub).alpha (runOracles C σ vk p pub).beta
     (runOracles C σ vk p pub).gamma (runOracles C σ vk p pub).zeta pubEval0 p.linEvals
 
@@ -96,9 +94,9 @@ def runFtEval0 (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
 /-- The run's permutation scalar (the `f_comm` coefficient, verifier.rs:897–956). -/
 def runPScalar (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     (pub : Array C.ScalarField) : C.ScalarField :=
-  Linearization.permScalar (runOracles C σ vk p pub).beta (runOracles C σ vk p pub).gamma
+  permScalar (runOracles C σ vk p pub).beta (runOracles C σ vk p pub).gamma
     (runOracles C σ vk p pub).alpha
-    (Linearization.zkpmEval vk.n vk.zkRows vk.omega (runOracles C σ vk p pub).zeta)
+    (zkpmEval vk.n vk.zkRows vk.omega (runOracles C σ vk p pub).zeta)
     p.linEvals
 
 /-- The run's `f_comm` — the single σ-commitment term at this gate set. -/
@@ -118,7 +116,7 @@ def runFtComm (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
 /-- The run's 45 evaluation rows in the `to_batch` order (verifier.rs:967–1071): public,
 ft, `z`, the six selectors, `w[0..15]`, `coefficients[0..15]`, `sigma[0..6]` — at given
 public evaluations. -/
-def runRowsP (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+private def runRowsP (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     (pub : Array C.ScalarField) (pubEval0 pubEval1 : C.ScalarField) :
     Array (C.Point × C.ScalarField × C.ScalarField) :=
   #[(publicCommitment C σ vk pub, pubEval0, pubEval1),
@@ -136,7 +134,7 @@ def runRowsP (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
   ++ ((vk.sigmaComm.extract 0 6).zip p.evals.s).map (fun x => (x.1, x.2.zeta, x.2.zetaOmega))
 
 /-- The batched IPA input at given public evaluations and combination scalars. -/
-def runInputP (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+private def runInputP (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     (pub : Array C.ScalarField) (pubEval0 pubEval1 v u : C.ScalarField) :
     Ipa.Input C where
   commitments := (runRowsP C σ vk p pub pubEval0 pubEval1).map (fun x => x.1)
@@ -148,7 +146,7 @@ def runInputP (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
 
 /-- The acceptance decision at given public evaluations and combination scalars — the
 warm-sponge IPA finish on the parameterized input. -/
-def runBody (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+private def runBody (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     (pub : Array C.ScalarField) (pubEval0 pubEval1 v u : C.ScalarField) : Bool :=
   Ipa.verifyFrom C σ (runOracles C σ vk p pub).warm
     (runInputP C σ vk p pub pubEval0 pubEval1 v u)
@@ -307,10 +305,10 @@ section Barycentric
 open Kimchi.Lift
 
 /-- **The Lagrange basis off the domain**: for `ζ` with `ζⁿ ≠ 1`,
-`Lⱼ(ζ) = ωʲ·(ζⁿ − 1) / (n·(ζ − ωʲ))` — the barycentric summand. Project-local: evaluates
+`Lⱼ(ζ) = ωʲ·(ζⁿ − 1) / (n·(ζ − ωʲ))` — the barycentric summand. Evaluates
 the numerator identity `lagNumer_mul_sub` (`Quotient/Permutation.lean`) at `ζ` and clears
 denominators (`ζ ≠ ωʲ` because `ζⁿ ≠ 1`; `(n : F) ≠ 0` from the primitive root). -/
-theorem lagBasis_eval {F : Type*} [Field F] {n : ℕ} {ω ζ : F}
+private theorem lagBasis_eval {F : Type*} [Field F] {n : ℕ} {ω ζ : F}
     (hω : IsPrimitiveRoot ω n) (hn : 0 < n) (hζn : ζ ^ n ≠ 1) (j : Fin n) :
     (columnPoly ω (Permutation.rowIndicator j)).eval ζ
       = ω ^ (j : ℕ) * (ζ ^ n - 1) / ((n : F) * (ζ - ω ^ (j : ℕ))) := by

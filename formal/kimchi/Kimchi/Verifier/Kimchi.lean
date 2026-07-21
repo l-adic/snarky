@@ -1,5 +1,6 @@
 import Bulletproof.Wire
 import Kimchi.Protocol.Linearization
+import Kimchi.Verifier.Reduction.Correspond
 import Poseidon.FqSponge
 
 /-!
@@ -47,8 +48,6 @@ production fold shapes) so any divergence localizes.
 open Bulletproof
 
 namespace Kimchi.Verifier
-
-open Kimchi.Protocol
 
 open CompElliptic.CurveForms.ShortWeierstrass
 open Poseidon Poseidon.FqSponge Bulletproof
@@ -160,7 +159,7 @@ def KimchiVK.frSpec {C : Ipa.CommitmentCurve} (vk : KimchiVK C) :
 
 /-- The fr-sponge digest (`DefaultFrSponge::digest`, kimchi/src/plonk_sponge.rs): the
 plain first squeeze — same field, no cast. -/
-def frDigest (sp : FqSponge.Spec C.scalar C.scalar) (s : FqSponge.S C.scalar) :
+private def frDigest (sp : FqSponge.Spec C.scalar C.scalar) (s : FqSponge.S C.scalar) :
     C.ScalarField :=
   (challengeFq sp s).1
 
@@ -168,7 +167,7 @@ def frDigest (sp : FqSponge.Spec C.scalar C.scalar) (s : FqSponge.S C.scalar) :
 element and cast it to the scalar field by `from_bigint`, which returns **zero when the
 value does not fit** — not a modular reduction. The state is consumed (production takes
 `mut self`); the caller keeps its pre-digest copy. -/
-def fqDigest (s : FqSponge.S C.base) : C.ScalarField :=
+private def fqDigest (s : FqSponge.S C.base) : C.ScalarField :=
   let (x, _) := challengeFq C.sponge s
   if x.val < C.scalar then ((x.val : ℕ) : C.ScalarField) else 0
 
@@ -272,7 +271,7 @@ def publicEvals {F : Type*} [Field F] (n : ℕ)
 `ζω`-components for the witness and `z`. Indexing is `getElem!` — the shape guards of
 `kimchiVerify` run first. -/
 def KimchiProof.linEvals {C : Ipa.CommitmentCurve} (p : KimchiProof C) :
-    Linearization.Evals C.ScalarField where
+    Kimchi.Protocol.Linearization.Evals C.ScalarField where
   w i := (p.evals.w[i.val]!).zeta
   wOmega i := (p.evals.w[i.val]!).zetaOmega
   z := p.evals.z.zeta
@@ -376,11 +375,11 @@ def kimchiVerify (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
       publicEvals n vk.omega o.zeta zetaOmega zetaN zetaOmegaN pub
     let e := p.linEvals
     let shifts : Fin 7 → C.ScalarField := fun i => vk.shifts[i.val]!
-    let ftEval0 := Linearization.ftEval0 n vk.zkRows vk.omega shifts vk.endo
+    let ftEval0 := Kimchi.Protocol.Linearization.ftEval0 n vk.zkRows vk.omega shifts vk.endo
       o.alpha o.beta o.gamma o.zeta pubEval0 e
     let (v, u) := frOracles C vk p o.digest pubEval0 pubEval1
-    let zkpmZ := Linearization.zkpmEval n vk.zkRows vk.omega o.zeta
-    let pScalar := Linearization.permScalar o.beta o.gamma o.alpha zkpmZ e
+    let zkpmZ := Kimchi.Protocol.Linearization.zkpmEval n vk.zkRows vk.omega o.zeta
+    let pScalar := Kimchi.Protocol.Linearization.permScalar o.beta o.gamma o.alpha zkpmZ e
     let fComm := pScalar.val • vk.sigmaComm.getD 6 0
     let ftComm := fComm - (zetaN - 1).val • Ipa.combineCommitments C zetaN p.tComm
     let rows : Array (C.Point × C.ScalarField × C.ScalarField) :=
@@ -409,6 +408,45 @@ def kimchiVerify (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
         proof := p.opening }
     Ipa.verifyFrom C σ o.warm inp
 
+/-! ## The wire views -/
+
+/-- The committed-column view of a wire verifier key: the `IndexComms` record the
+abstract soundness layer speaks about, read off the key's arrays (`getD` at the checked
+sizes — the shape guards of `kimchiVerify` pin `sigmaComm` to 7 and `coefficientsComm`
+to 15 entries). This is the view through which `VKCorresponds` is stated for a wire
+key. The glue between the wire `KimchiVK` and the abstract capstone. -/
+def KimchiVK.comms {C : Ipa.CommitmentCurve} (vk : KimchiVK C) : IndexComms C.Point where
+  sigma i := vk.sigmaComm.getD (i : ℕ) 0
+  coefficients c := vk.coefficientsComm.getD (c : ℕ) 0
+  generic := vk.genericComm
+  poseidon := vk.poseidonComm
+  completeAdd := vk.completeAddComm
+  varBaseMul := vk.mulComm
+  endoMul := vk.emulComm
+  endoScalar := vk.endomulScalarComm
+
+/-- The deployed key corresponds to the index: the committed columns are the circuit's
+own (`VKCorresponds`, through the `comms` view) AND the scalar-side parameters match —
+the domain generator, the zero-knowledge row count, the permutation shifts, and the
+`ft_eval0` endo coefficient. The scalar pins are separate conjuncts because they are
+not committed: no binding argument derives them from the column commitments, and the
+wire verifier computes its scalar side with the KEY's values. The wire-level
+correspondence the run-level roots consume. -/
+def KimchiVK.Corresponds {C : Ipa.CommitmentCurve} [Module C.ScalarField C.Point]
+    {n : ℕ} (σ : SRS C.Point) (vk : KimchiVK C) (idx : Index C.ScalarField n) : Prop :=
+  VKCorresponds σ vk.comms idx
+    ∧ vk.omega = idx.omega
+    ∧ vk.zkRows = idx.zkRows
+    ∧ (fun i : Fin 7 => vk.shifts[(i : ℕ)]!) = idx.shifts
+    ∧ vk.endo = idx.endoBase
+
+/-- The public-input array as the `Fin idx.publicCount`-indexed function the circuit
+model consumes (`getD`, total; the capstones pin `pub.size = idx.publicCount`, so the
+view reads only genuine entries). The wire-to-abstract public view. -/
+def pubView {F : Type*} [Field F] {n : ℕ} (idx : Index F n) (pub : Array F) :
+    Fin idx.publicCount → F :=
+  fun i => pub.getD (i : ℕ) 0
+
 end Kimchi.Verifier
 
 /-! ## The Pasta instantiations -/
@@ -417,13 +455,14 @@ namespace Kimchi.Verifier.KimchiVesta
 
 open CompElliptic.Fields.Pasta Poseidon Kimchi.Verifier
 
+abbrev Proof := KimchiProof IpaVesta.curve
+abbrev VK := KimchiVK IpaVesta.curve
+
 /-- The Vesta-side fr-sponge Poseidon parameters: the scalar field is `Fp`, so the
 production `G::sponge_params()` is the `fp_kimchi` table. The fixture decoder pins
 `KimchiVK.frParams` to this value. -/
 def frParams : Params Fp := fpParams
 
-abbrev Proof := KimchiProof IpaVesta.curve
-abbrev VK := KimchiVK IpaVesta.curve
 
 def verify : Bulletproof.SRS IpaVesta.Point → VK → Proof → Array Fp → Bool :=
   kimchiVerify IpaVesta.curve
@@ -434,13 +473,14 @@ namespace Kimchi.Verifier.KimchiPallas
 
 open CompElliptic.Fields.Pasta Poseidon Kimchi.Verifier
 
+abbrev Proof := KimchiProof IpaPallas.curve
+abbrev VK := KimchiVK IpaPallas.curve
+
 /-- The Pallas-side fr-sponge Poseidon parameters: the scalar field is `Fq`, so the
 production `G::sponge_params()` is the `fq_kimchi` table. The fixture decoder pins
 `KimchiVK.frParams` to this value. -/
 def frParams : Params Fq := fqParams
 
-abbrev Proof := KimchiProof IpaPallas.curve
-abbrev VK := KimchiVK IpaPallas.curve
 
 def verify : Bulletproof.SRS IpaPallas.Point → VK → Proof → Array Fq → Bool :=
   kimchiVerify IpaPallas.curve
