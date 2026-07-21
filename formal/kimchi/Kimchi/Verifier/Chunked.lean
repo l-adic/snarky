@@ -231,6 +231,37 @@ def publicCommitment (σ : SRS C.Point) (vk : KimchiVK C) (nc : ℕ)
 
 /-! ## The verifier -/
 
+/-- The shape guard of the chunked verifier, as named wire data: `true` exactly when a
+shape or chunk-count check fails (production's family of length checks —
+`check_proof_evals_len` at `chunk_size`, the `t` bound, the `nc > 1` public-evaluation
+requirement, the SRS pin). Named so the reflection layer can carry `shapeBad = false`
+as ONE fact and read individual shapes off it on demand. -/
+def shapeBad (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) : Bool :=
+  let n := vk.n
+  let nc := 2 ^ (vk.domainLog2 - σ.k)
+  let comm1 := fun (a : Array C.Point) => a.size == nc
+  let commN := fun (a : Array (Array C.Point)) (m : ℕ) => a.size == m && a.all comm1
+  let evalN := fun (e : PointEvaluations (Array C.ScalarField)) =>
+    e.zeta.size == nc && e.zetaOmega.size == nc
+  decide (vk.domainLog2 < σ.k) || !commN p.wComm 15 || !comm1 p.zComm
+      || decide (7 * nc < p.tComm.size)
+      || p.evals.w.size != 15 || p.evals.s.size != 6 || p.evals.coefficients.size != 15
+      || !(p.evals.w.all evalN) || !(p.evals.s.all evalN)
+      || !(p.evals.coefficients.all evalN)
+      || !evalN p.evals.z || !evalN p.evals.genericSelector
+      || !evalN p.evals.poseidonSelector || !evalN p.evals.completeAddSelector
+      || !evalN p.evals.mulSelector || !evalN p.evals.emulSelector
+      || !evalN p.evals.endomulScalarSelector
+      || !(match p.pubEvals with | some pe => evalN pe | none => nc == 1)
+      || !commN vk.sigmaComm 7 || !commN vk.coefficientsComm 15
+      || !comm1 vk.genericComm || !comm1 vk.poseidonComm || !comm1 vk.completeAddComm
+      || !comm1 vk.mulComm || !comm1 vk.emulComm || !comm1 vk.endomulScalarComm
+      || vk.shifts.size != 7
+      || decide (vk.lagrangeBasis.size < pub.size)
+      || !((vk.lagrangeBasis.extract 0 pub.size).all comm1)
+      || decide (n < pub.size)
+
 /-- **The chunked kimchi verifier** (`to_batch` + the opening check,
 verifier.rs:781–1194, one proof, basic gate set, any power-of-two `nc`): shape guards
 (the per-column chunk counts — `check_proof_evals_len` at `chunk_size`, :823–831 — the
@@ -249,27 +280,7 @@ def kimchiVerify (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     (pub : Array C.ScalarField) : Bool :=
   let n := vk.n
   let nc := 2 ^ (vk.domainLog2 - σ.k)
-  let comm1 := fun (a : Array C.Point) => a.size == nc
-  let commN := fun (a : Array (Array C.Point)) (m : ℕ) => a.size == m && a.all comm1
-  let evalN := fun (e : PointEvaluations (Array C.ScalarField)) =>
-    e.zeta.size == nc && e.zetaOmega.size == nc
-  if decide (vk.domainLog2 < σ.k) || !commN p.wComm 15 || !comm1 p.zComm
-      || decide (7 * nc < p.tComm.size)
-      || p.evals.w.size != 15 || p.evals.s.size != 6 || p.evals.coefficients.size != 15
-      || !(p.evals.w.all evalN) || !(p.evals.s.all evalN)
-      || !(p.evals.coefficients.all evalN)
-      || !evalN p.evals.z || !evalN p.evals.genericSelector
-      || !evalN p.evals.poseidonSelector || !evalN p.evals.completeAddSelector
-      || !evalN p.evals.mulSelector || !evalN p.evals.emulSelector
-      || !evalN p.evals.endomulScalarSelector
-      || !(match p.pubEvals with | some pe => evalN pe | none => nc == 1)
-      || !commN vk.sigmaComm 7 || !commN vk.coefficientsComm 15
-      || !comm1 vk.genericComm || !comm1 vk.poseidonComm || !comm1 vk.completeAddComm
-      || !comm1 vk.mulComm || !comm1 vk.emulComm || !comm1 vk.endomulScalarComm
-      || vk.shifts.size != 7
-      || decide (vk.lagrangeBasis.size < pub.size)
-      || !((vk.lagrangeBasis.extract 0 pub.size).all comm1)
-      || decide (n < pub.size) then
+  if shapeBad C σ vk p pub then
     false
   else
     let publicComm := publicCommitment C σ vk nc pub
