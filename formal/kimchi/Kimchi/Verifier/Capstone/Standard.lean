@@ -1,5 +1,5 @@
 import Mathlib
-import Kimchi.Protocol.Soundness
+import Kimchi.Verifier.Reduction.Soundness
 import Kimchi.Verifier.Kimchi
 import Bulletproof.Reflection
 import Kimchi.Verifier.Reflect
@@ -71,8 +71,6 @@ discharge that removes the grid at a genuine run is
 open Bulletproof
 
 namespace Kimchi.Verifier
-
-open Kimchi.Protocol
 
 open Polynomial Bulletproof Kimchi.Index Kimchi.Protocol.Linearization
   Kimchi.Protocol.Equation CompElliptic.Fields.Pasta

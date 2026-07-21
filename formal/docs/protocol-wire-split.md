@@ -1,15 +1,12 @@
 # Reorg plan: cut `Protocol` at the PCS-free boundary, root the wire on it
 
-**Status:** approved, NOT executed. Execute in fresh context from this doc.
-**Branch:** continue on `kimchi-verifier-audit` (or a fresh branch off it). ALWAYS
-`git branch --show-current` before committing — the checkout switches between sessions.
-
-**PRECONDITION.** This plan builds on uncommitted work in
-`Protocol/{Equation,Soundness}.lean` (session of 2026-07-20): the oracle-based
-`piop_sound` (takes `W : Fin 15 → Polynomial F`, concludes `∃ wTab, Satisfies`),
-`of_openings` rewired through it, and the `satisfies_extractTable_of_verifierEquation`
-adapter deleted. **Commit that state first** (verified green: build + style + 41-root
-axiom gate) so Part A has a clean anchor. If it is already committed, proceed.
+**Status:** EXECUTED 2026-07-20 on `kimchi-verifier-audit` (Parts A–C, all gates green:
+build, style, 41-root axiom gate with the same allowed axiom set, deadcode, fixture
+drivers, gate-layer refactor baseline byte-identical). Two deviations from the letter of
+the plan, both forced by the dropped `open Kimchi.Protocol`: `Verifier/Kimchi.lean`'s
+semi-qualified `Linearization.*` references became fully qualified (local `let` bindings
+shadow the bare names), and `Verifier/Reflect.lean`'s dropped to bare names (that file
+already opens `Kimchi.Protocol.Linearization`). Kept below as the record of the design.
 
 ## Why
 

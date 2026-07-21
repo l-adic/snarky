@@ -1,6 +1,6 @@
 import Bulletproof.Wire
 import Kimchi.Protocol.Linearization
-import Kimchi.Protocol.Correspond
+import Kimchi.Verifier.Reduction.Correspond
 import Poseidon.FqSponge
 
 /-!
@@ -48,8 +48,6 @@ production fold shapes) so any divergence localizes.
 open Bulletproof
 
 namespace Kimchi.Verifier
-
-open Kimchi.Protocol
 
 open CompElliptic.CurveForms.ShortWeierstrass
 open Poseidon Poseidon.FqSponge Bulletproof
@@ -273,7 +271,7 @@ def publicEvals {F : Type*} [Field F] (n : ℕ)
 `ζω`-components for the witness and `z`. Indexing is `getElem!` — the shape guards of
 `kimchiVerify` run first. -/
 def KimchiProof.linEvals {C : Ipa.CommitmentCurve} (p : KimchiProof C) :
-    Linearization.Evals C.ScalarField where
+    Kimchi.Protocol.Linearization.Evals C.ScalarField where
   w i := (p.evals.w[i.val]!).zeta
   wOmega i := (p.evals.w[i.val]!).zetaOmega
   z := p.evals.z.zeta
@@ -377,11 +375,11 @@ def kimchiVerify (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
       publicEvals n vk.omega o.zeta zetaOmega zetaN zetaOmegaN pub
     let e := p.linEvals
     let shifts : Fin 7 → C.ScalarField := fun i => vk.shifts[i.val]!
-    let ftEval0 := Linearization.ftEval0 n vk.zkRows vk.omega shifts vk.endo
+    let ftEval0 := Kimchi.Protocol.Linearization.ftEval0 n vk.zkRows vk.omega shifts vk.endo
       o.alpha o.beta o.gamma o.zeta pubEval0 e
     let (v, u) := frOracles C vk p o.digest pubEval0 pubEval1
-    let zkpmZ := Linearization.zkpmEval n vk.zkRows vk.omega o.zeta
-    let pScalar := Linearization.permScalar o.beta o.gamma o.alpha zkpmZ e
+    let zkpmZ := Kimchi.Protocol.Linearization.zkpmEval n vk.zkRows vk.omega o.zeta
+    let pScalar := Kimchi.Protocol.Linearization.permScalar o.beta o.gamma o.alpha zkpmZ e
     let fComm := pScalar.val • vk.sigmaComm.getD 6 0
     let ftComm := fComm - (zetaN - 1).val • Ipa.combineCommitments C zetaN p.tComm
     let rows : Array (C.Point × C.ScalarField × C.ScalarField) :=

@@ -36,8 +36,6 @@ open Bulletproof
 
 namespace Kimchi.Verifier
 
-open Kimchi.Protocol
-
 open Polynomial Bulletproof Kimchi.Index Kimchi.Protocol.Linearization
   Kimchi.Protocol.Equation CompElliptic.Fields.Pasta
 

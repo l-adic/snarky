@@ -88,7 +88,13 @@ Kimchi.Index.satisfies_iff_fullFamily_dvd
 -- junction of the extraction models — the standard-model path (density → rectangle →
 -- batch_soundnessA) and the algebraic-prover path (representations carried with messages) both
 -- discharge it. Reference side = pure commitment-knowledge; consumer side = per-row openings.
-Kimchi.Protocol.kimchiProof_sound_of_openings
+Kimchi.Verifier.kimchiProof_sound_of_openings
+
+-- The polynomial protocol's soundness (PCS-free): for the prover's witness/accumulator
+-- polynomial oracles, one `Accepts`-passing challenge tuple outside the four counted bad sets
+-- forces satisfaction by the table EXTRACTED from the oracles. The common core both reduction
+-- paths (standard grid and algebraic-prover) bottom out in.
+Kimchi.Protocol.sound
 
 -- The standard-model run-level capstones (grid path): a real accepted run's own sponge
 -- challenges over the run's own commitments — unless the run's (β, γ, α, ζ) land in the four

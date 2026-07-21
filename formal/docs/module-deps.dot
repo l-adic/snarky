@@ -122,11 +122,9 @@ digraph "formal-modules" {
 				label="Kimchi.Protocol",
 				style="filled,dashed"
 			];
-			"Kimchi.Protocol.Binding";
-			"Kimchi.Protocol.Correspond";
+			"Kimchi.Protocol.Accepts";
 			"Kimchi.Protocol.Equation";
 			"Kimchi.Protocol.Linearization";
-			"Kimchi.Protocol.Soundness";
 		}
 		subgraph cluster_kimchi_Kimchi_Verifier {
 			graph [color=gray55,
@@ -140,6 +138,9 @@ digraph "formal-modules" {
 			"Kimchi.Verifier.Capstone.Reflection";
 			"Kimchi.Verifier.Capstone.Standard";
 			"Kimchi.Verifier.Kimchi";
+			"Kimchi.Verifier.Reduction.Binding";
+			"Kimchi.Verifier.Reduction.Correspond";
+			"Kimchi.Verifier.Reduction.Soundness";
 			"Kimchi.Verifier.Reflect";
 		}
 		"Kimchi.Aggregate";
@@ -234,23 +235,25 @@ digraph "formal-modules" {
 	"Kimchi.Permutation.Permutation" -> "Kimchi.GrandProduct";
 	"Kimchi.Permutation.Permutation" -> "Kimchi.SchwartzZippel";
 	"Kimchi.Permutation.Wiring" -> "Kimchi.Permutation.Copy";
-	"Kimchi.Protocol.Binding" -> "Bulletproof.Soundness";
-	"Kimchi.Protocol.Binding" -> "Kimchi.Protocol.Correspond";
-	"Kimchi.Protocol.Correspond" -> "Bulletproof.Protocol";
-	"Kimchi.Protocol.Correspond" -> "Kimchi.Index.Aggregate";
+	"Kimchi.Protocol.Accepts" -> "Kimchi.Index.Aggregate";
+	"Kimchi.Protocol.Accepts" -> "Kimchi.Protocol.Linearization";
 	"Kimchi.Protocol.Equation" -> "Kimchi.Index.Degree";
-	"Kimchi.Protocol.Equation" -> "Kimchi.Protocol.Linearization";
+	"Kimchi.Protocol.Equation" -> "Kimchi.Protocol.Accepts";
 	"Kimchi.Protocol.Linearization" -> "Kimchi.Lift";
-	"Kimchi.Protocol.Soundness" -> "Kimchi.Protocol.Binding";
-	"Kimchi.Protocol.Soundness" -> "Kimchi.Protocol.Equation";
-	"Kimchi.Verifier.Capstone.Algebraic" -> "Kimchi.Protocol.Soundness";
+	"Kimchi.Verifier.Capstone.Algebraic" -> "Kimchi.Verifier.Reduction.Soundness";
 	"Kimchi.Verifier.Capstone.Algebraic" -> "Kimchi.Verifier.Reflect";
 	"Kimchi.Verifier.Capstone.Reflection" -> "Kimchi.Verifier.Capstone.Algebraic";
-	"Kimchi.Verifier.Capstone.Standard" -> "Kimchi.Protocol.Soundness";
+	"Kimchi.Verifier.Capstone.Standard" -> "Kimchi.Verifier.Reduction.Soundness";
 	"Kimchi.Verifier.Capstone.Standard" -> "Kimchi.Verifier.Reflect";
 	"Kimchi.Verifier.Kimchi" -> "Bulletproof.Wire";
-	"Kimchi.Verifier.Kimchi" -> "Kimchi.Protocol.Correspond";
 	"Kimchi.Verifier.Kimchi" -> "Kimchi.Protocol.Linearization";
+	"Kimchi.Verifier.Kimchi" -> "Kimchi.Verifier.Reduction.Correspond";
+	"Kimchi.Verifier.Reduction.Binding" -> "Bulletproof.Soundness";
+	"Kimchi.Verifier.Reduction.Binding" -> "Kimchi.Verifier.Reduction.Correspond";
+	"Kimchi.Verifier.Reduction.Correspond" -> "Bulletproof.Protocol";
+	"Kimchi.Verifier.Reduction.Correspond" -> "Kimchi.Index.Aggregate";
+	"Kimchi.Verifier.Reduction.Soundness" -> "Kimchi.Protocol.Equation";
+	"Kimchi.Verifier.Reduction.Soundness" -> "Kimchi.Verifier.Reduction.Binding";
 	"Kimchi.Verifier.Reflect" -> "Bulletproof.Reflection";
 	"Kimchi.Verifier.Reflect" -> "Kimchi.Protocol.Equation";
 	"Kimchi.Verifier.Reflect" -> "Kimchi.Verifier.Kimchi";

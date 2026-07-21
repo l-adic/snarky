@@ -1,6 +1,6 @@
 import Mathlib
 import Bulletproof.Soundness
-import Kimchi.Protocol.Binding
+import Kimchi.Verifier.Reduction.Binding
 import Kimchi.Protocol.Equation
 
 /-!
@@ -27,7 +27,7 @@ can produce.
 -/
 open Bulletproof
 
-namespace Kimchi.Protocol
+namespace Kimchi.Verifier
 
 open Polynomial Bulletproof Kimchi.Index Kimchi.Protocol.Linearization
   Kimchi.Protocol.Equation
@@ -363,11 +363,11 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
     intro gg
     rw [hk]
     exact columnPoly_natDegree_lt idx.omega_prim _
-  -- PIOP soundness (`Protocol/Equation.lean`) packages the four small bad sets over the
-  -- REFERENCE-extracted witness table and quantifies them BEFORE the challenges; the
-  -- commitment layer's only job is to feed its guarded implication `himp`.
+  -- protocol soundness (`Protocol/Equation.lean`) packages the four small bad sets over
+  -- the REFERENCE-extracted witness table and quantifies them BEFORE the challenges; the
+  -- commitment layer's only job is to feed its guarded `Accepts` implication `himp`.
   obtain ⟨badB, badG, badA, badZ, hbounds, himp⟩ :=
-    piop_sound idx pub W zg hzdeg
+    Kimchi.Protocol.sound idx pub W zg hzdeg
   refine ⟨badB, badG, badA, badZ, hbounds, ?_⟩
   · -- every avoiding challenge tuple with an accepting consumer transcript yields Satisfies
     intro β γ α t ζ E aw ρw hβ hγ hα hζ hζ₁ hζb ht hrow hteq
@@ -499,4 +499,4 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
       (batchC wC zC comms) ![ζ, idx.omega * ζ] E A hFS hbind hacc
   exact himp β γ α t ζ E aw ρw hβ hγ hα hζ hζ₁ hζb ht hrow hteq
 
-end Kimchi.Protocol
+end Kimchi.Verifier

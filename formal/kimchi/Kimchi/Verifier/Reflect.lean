@@ -1,7 +1,7 @@
 import Mathlib
 import Kimchi.Verifier.Kimchi
 import Bulletproof.Reflection
-import Kimchi.Protocol.Correspond
+import Kimchi.Verifier.Reduction.Correspond
 import Kimchi.Protocol.Equation
 import Kimchi.Permutation.Permutation
 
@@ -23,8 +23,6 @@ and the composition to `Satisfies` live above this file (the Fiat-Shamir bridge 
 open Bulletproof
 
 namespace Kimchi.Verifier
-
-open Kimchi.Protocol
 
 open CompElliptic.CurveForms.ShortWeierstrass
 open Poseidon Poseidon.FqSponge Bulletproof Kimchi.Index
@@ -84,7 +82,7 @@ private def runVU (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
 (verifier.rs:414–478). -/
 def runFtEval0P (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     (pub : Array C.ScalarField) (pubEval0 : C.ScalarField) : C.ScalarField :=
-  Linearization.ftEval0 vk.n vk.zkRows vk.omega (fun i => vk.shifts[i.val]!) vk.endo
+  ftEval0 vk.n vk.zkRows vk.omega (fun i => vk.shifts[i.val]!) vk.endo
     (runOracles C σ vk p pub).alpha (runOracles C σ vk p pub).beta
     (runOracles C σ vk p pub).gamma (runOracles C σ vk p pub).zeta pubEval0 p.linEvals
 
@@ -96,9 +94,9 @@ def runFtEval0 (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
 /-- The run's permutation scalar (the `f_comm` coefficient, verifier.rs:897–956). -/
 def runPScalar (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
     (pub : Array C.ScalarField) : C.ScalarField :=
-  Linearization.permScalar (runOracles C σ vk p pub).beta (runOracles C σ vk p pub).gamma
+  permScalar (runOracles C σ vk p pub).beta (runOracles C σ vk p pub).gamma
     (runOracles C σ vk p pub).alpha
-    (Linearization.zkpmEval vk.n vk.zkRows vk.omega (runOracles C σ vk p pub).zeta)
+    (zkpmEval vk.n vk.zkRows vk.omega (runOracles C σ vk p pub).zeta)
     p.linEvals
 
 /-- The run's `f_comm` — the single σ-commitment term at this gate set. -/

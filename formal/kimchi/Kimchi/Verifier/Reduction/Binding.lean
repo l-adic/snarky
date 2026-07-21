@@ -1,7 +1,7 @@
 import Mathlib
 import Bulletproof.Protocol
 import Bulletproof.Soundness
-import Kimchi.Protocol.Correspond
+import Kimchi.Verifier.Reduction.Correspond
 
 /-!
 # Batch binding
@@ -23,7 +23,7 @@ Stated over an abstract module with an SRS; binding is carried in the no-relatio
 -/
 open Bulletproof
 
-namespace Kimchi.Protocol
+namespace Kimchi.Verifier
 
 open Polynomial Bulletproof
 
@@ -141,4 +141,4 @@ theorem bound_eval_of_commitPolyMasked (σ : SRS G)
     e = p.eval x := by
   rw [he, ← rowPoly_eval, (bound_eq_of_commitPolyMasked σ hbind hcommit hdeg).1]
 
-end Kimchi.Protocol
+end Kimchi.Verifier
