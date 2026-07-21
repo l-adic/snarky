@@ -188,6 +188,27 @@ private theorem selComm_indexerOf [Field F] [AddCommGroup G] [Module F G] {n : �
       = fun c : Fin nc => commitPolyMaskedChunk σ (idx.selectorPoly (selGate j)) (c : ℕ) := by
   fin_cases j <;> rfl
 
+/-! ## The flat segment index -/
+
+/-- The flat segment count of the 44-row chunked batch, in the whnf-friendly
+multiplied form (structures indexed by the literal `∑ _ : Fin 44, nc` send the
+elaborator into a `whnf` spiral; the product is definitionally stuck). -/
+def segTotal (nc : ℕ) : ℕ := 44 * nc
+
+/-- The segment count is the sigma-sum `chunked_batch_soundness` ranges over. -/
+theorem segTotal_eq_sum (nc : ℕ) : segTotal nc = ∑ _ : Fin 44, nc := by
+  simp [segTotal, Finset.sum_const, Finset.card_univ, mul_comm]
+
+/-- The flat (segment) view of a per-row-per-chunk family, along `finSigmaFinEquiv` —
+the order `chunkedCombinedCommitment`/`chunkedCombinedInnerProduct` combine in. -/
+def flatten {α : Type*} {m nc : ℕ} (f : Fin m → Fin nc → α) :
+    Fin (∑ _ : Fin m, nc) → α :=
+  fun s => f (finSigmaFinEquiv.symm s).1 (finSigmaFinEquiv.symm s).2
+
+/-- `flatten` at the multiplied index form. -/
+def flatSeg {α : Type*} {nc : ℕ} (f : Fin 44 → Fin nc → α) : Fin (segTotal nc) → α :=
+  fun s => flatten f (finCongr (segTotal_eq_sum nc) s)
+
 /-! ## Assembly and combination -/
 
 /-- The chunk polynomial's degree bound (the private upstream lemma, restated). -/
@@ -480,9 +501,9 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
       pubC c = commitPolyMaskedChunk σ (-(idx.pubPoly pub)) (c : ℕ))
     (ζ₀ : F)
     (E₀ : Fin 44 → Fin nc → Fin 2 → F)
-    (ξ₀ : Fin (∑ _ : Fin 44, nc) → F) (hξ₀ : Function.Injective ξ₀)
+    (ξ₀ : Fin (segTotal nc) → F) (hξ₀ : Function.Injective ξ₀)
     (r₀ : Fin 2 → F) (hr₀ : Function.Injective r₀)
-    (A₀ : Fin (∑ _ : Fin 44, nc) → Fin 2 → Prop)
+    (A₀ : Fin (segTotal nc) → Fin 2 → Prop)
     (hFS₀ : ∀ s j,
       FiatShamirTreeB σ
         (chunkedCombinedCommitment (ξ₀ s) (batchC wC zC pubC comms))
@@ -499,8 +520,8 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
             (badZ β γ α t).card ≤ Index.degreeBound n))
       ∧ ∀ (β γ α : F) (t : Polynomial F) (ζ : F)
           (E : Fin 44 → Fin nc → Fin 2 → F)
-          (ξ : Fin (∑ _ : Fin 44, nc) → F) (r : Fin 2 → F)
-          (A : Fin (∑ _ : Fin 44, nc) → Fin 2 → Prop),
+          (ξ : Fin (segTotal nc) → F) (r : Fin 2 → F)
+          (A : Fin (segTotal nc) → Fin 2 → Prop),
           β ∉ badB → γ ∉ badG β → α ∉ badA β γ → ζ ∉ badZ β γ α t →
           ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) →
           t.natDegree < 7 * n →
@@ -520,10 +541,13 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
                 (claimedEvals (ζ ^ 2 ^ σ.k) ((idx.omega * ζ) ^ 2 ^ σ.k) E)) →
           Satisfies idx pub wTab := by
   classical
+  -- the index transport between the multiplied and sigma-summed segment counts
+  set ι := finCongr (segTotal_eq_sum nc).symm with hι
   -- reference extraction: the assembled row polynomials, via the chunked seam
   obtain ⟨q₀, hq₀⟩ := chunked_batch_soundness σ (nc := fun _ : Fin 44 => nc)
-    (fun _ => hnc) ξ₀ hξ₀ r₀ hr₀ (by omega)
-    (batchC wC zC pubC comms) ![ζ₀, idx.omega * ζ₀] E₀ A₀ hFS₀ hbind hacc₀
+    (fun _ => hnc) (fun v => ξ₀ (ι v)) (hξ₀.comp ι.injective) r₀ hr₀ (by omega)
+    (batchC wC zC pubC comms) ![ζ₀, idx.omega * ζ₀] E₀ (fun v j => A₀ (ι v) j)
+    (fun v j => hFS₀ (ι v) j) hbind (fun v j => hacc₀ (ι v) j)
   choose ρ₀ hρ₀ using fun i => (hq₀ i).2.1
   obtain ⟨badB, badG, badA, badZ, hbounds, himp⟩ :=
     kimchiProof_sound_of_openings σ idx hnc hk hbind comms hvk pub wC zC pubC hpubC
@@ -536,8 +560,9 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
   intro β γ α t ζ E ξ r A hβ hγ hα hζ hζ₁ hζb ht hξ hr hFS hacc hteq
   -- consumer extraction at ζ
   obtain ⟨q, hq⟩ := chunked_batch_soundness σ (nc := fun _ : Fin 44 => nc)
-    (fun _ => hnc) ξ hξ r hr (by omega)
-    (batchC wC zC pubC comms) ![ζ, idx.omega * ζ] E A hFS hbind hacc
+    (fun _ => hnc) (fun v => ξ (ι v)) (hξ.comp ι.injective) r hr (by omega)
+    (batchC wC zC pubC comms) ![ζ, idx.omega * ζ] E (fun v j => A (ι v) j)
+    (fun v j => hFS (ι v) j) hbind (fun v j => hacc (ι v) j)
   choose ρ hρ using fun i => (hq i).2.1
   exact himp β γ α t ζ E
     (fun i c => chunkCoeffs (2 ^ σ.k) (q i) (c : ℕ)) ρ

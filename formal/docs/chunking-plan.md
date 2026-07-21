@@ -65,7 +65,33 @@ The explicit witness is the ASSEMBLED reference data:
 `extractTable idx.omega (fun col => assembledRow σ.k nc (aw₀ (wRow col)))`, degree
 `< n` feeding `Kimchi.Protocol.sound` unchanged.
 
-Phases 3–5 not started.
+**Phase 3 DONE (chunked capstones)** — `Capstone/{StandardChunked,AlgebraicChunked}.lean`
+(transitional parallel modules): the grid capstones `Chunked.kimchi{Vesta,Pallas}_sound`
+at the deployed Pasta verifiers (grid nodes over the FLAT segment stream, per-node
+`poseidon_fiat_shamir_*` transported through the `_eq_flat` combiners), and the AGM
+corollary + residue-free algebraic quotient `Chunked.kimchiProof_sound_algebraic{,_ft}`
+(eval pins at the flat segment family; `ftChunkAssembly` at `nt ≤ 7·nc` chunks;
+`ft_identity_of_chunks` with the σ₆-side collapse — the `nc`-chunk σ₆ commitment
+combined at `ζ^{2^σ.k}`, real algebra at `nc > 1`). Run-level corollaries move to
+Phase 4 (they bind the chunked verifier's `runOracles`). GOTCHA recorded: structures
+(NOT theorem binders) indexed by `Fin (∑ _ : Fin 44, nc)` send the elaborator into a
+`whnf` spiral — the multiplied form `segTotal nc = 44 * nc` is definitionally stuck and
+fast; `segTotal_eq_sum`/`flatSeg` bridge to the sigma-summed world of
+`chunked_batch_soundness`, and every transport must be PROPOSITIONAL (never let
+unification compare the two forms).
+
+**Phase 4 REMAINING** — chunked reflection (`runInput`/`runOracles`/`kimchiVerify_reflects`
+at `Chunked.kimchiVerify`; the 45-logical-row deployed stream reindexed onto the 44-row
+batch + ft row + t chunks), RESTATED `kimchi_fiat_shamir_{vesta,pallas}` at the chunked
+transcript (trust-surface re-audit), the standard-model run corollaries, both `_ft` run
+terminals, `check_vk_correspond` generalization (chunked indexer vs the nc=2 VK
+fixture, incl. the lagrangeBasis→public-commitment correspondence), and THE DELETION
+SWEEP: the nc=1 verifier + reduction + capstones + Reflect are deleted, `Chunked` is
+renamed into place, and `nc = 1` survives nowhere as a pin — only as the case `nc = 1`
+of the general statements (user directive).
+
+**Phase 5 REMAINING** — roots.txt/check_axioms consolidation after the sweep, module
+docstrings, docs/module-deps regeneration, memory/ledger updates.
 **Branch discipline:** new branch off `main`; ALWAYS `git branch --show-current` before
 committing.
 

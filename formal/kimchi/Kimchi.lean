@@ -41,5 +41,7 @@ import Kimchi.Verifier.Kimchi
 import Kimchi.Verifier.Chunked
 import Kimchi.Verifier.Reflect
 import Kimchi.Verifier.Capstone.Standard
+import Kimchi.Verifier.Capstone.StandardChunked
 import Kimchi.Verifier.Capstone.Algebraic
+import Kimchi.Verifier.Capstone.AlgebraicChunked
 import Kimchi.Verifier.Capstone.Reflection

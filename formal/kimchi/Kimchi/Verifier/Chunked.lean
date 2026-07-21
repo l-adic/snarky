@@ -319,6 +319,23 @@ def kimchiVerify (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
         proof := p.opening }
     Ipa.verifyFrom C σ o.warm inp
 
+/-! ## The wire views -/
+
+/-- The committed-column view of a chunked wire verifier key at chunk count `nc`: the
+`IndexComms` over per-chunk carriers (`Fin nc → C.Point`) the chunked reduction speaks
+about, read off the key's chunk arrays (`getD` at the checked sizes). The glue between
+the chunked wire `KimchiVK` and the abstract capstones. -/
+def KimchiVK.comms {C : Ipa.CommitmentCurve} (vk : KimchiVK C) (nc : ℕ) :
+    Kimchi.Verifier.IndexComms (Fin nc → C.Point) where
+  sigma i c := (vk.sigmaComm.getD (i : ℕ) #[]).getD (c : ℕ) 0
+  coefficients cc c := (vk.coefficientsComm.getD (cc : ℕ) #[]).getD (c : ℕ) 0
+  generic c := vk.genericComm.getD (c : ℕ) 0
+  poseidon c := vk.poseidonComm.getD (c : ℕ) 0
+  completeAdd c := vk.completeAddComm.getD (c : ℕ) 0
+  varBaseMul c := vk.mulComm.getD (c : ℕ) 0
+  endoMul c := vk.emulComm.getD (c : ℕ) 0
+  endoScalar c := vk.endomulScalarComm.getD (c : ℕ) 0
+
 end Kimchi.Verifier.Chunked
 
 /-! ## The Pasta instantiations -/
