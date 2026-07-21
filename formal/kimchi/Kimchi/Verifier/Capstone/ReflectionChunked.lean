@@ -1685,4 +1685,290 @@ theorem publicCommitment_corresponds [Module C.ScalarField C.Point]
           beta_reduce
           rw [dif_pos j.isLt]
 
+/-! ## The scalar-side reconciliations: the run's claims are the abstract batch's -/
+
+section ScalarReconcile
+
+variable {σ : SRS C.Point} {vk : KimchiVK C} {p : KimchiProof C}
+  {pub : Array C.ScalarField}
+  {pe : Kimchi.Verifier.PointEvaluations (Array C.ScalarField)}
+  {v u : C.ScalarField}
+
+/-- The verifier's squaring ladder computes the power: `powPow2 x k = x ^ 2 ^ k`. -/
+private theorem powPow2_eq {F : Type*} [Field F] (x : F) (k : ℕ) :
+    powPow2 x k = x ^ 2 ^ k := by
+  induction k with
+  | zero => simp [powPow2]
+  | succ m ih =>
+    have hstep : powPow2 x (m + 1) = powPow2 x m * powPow2 x m := by
+      simp [powPow2, List.range_succ]
+    rw [hstep, ih, ← pow_add]
+    congr 1
+    rw [pow_succ]
+    omega
+
+/-- Extensionality for the linearization's evaluation record. -/
+private theorem evals_ext {F : Type*} {e e' : Evals F} (h1 : e.w = e'.w)
+    (h2 : e.wOmega = e'.wOmega) (h3 : e.z = e'.z) (h4 : e.zOmega = e'.zOmega)
+    (h5 : e.s = e'.s) (h6 : e.coeffs = e'.coeffs)
+    (h7 : e.genericSelector = e'.genericSelector)
+    (h8 : e.poseidonSelector = e'.poseidonSelector)
+    (h9 : e.completeAddSelector = e'.completeAddSelector)
+    (h10 : e.mulSelector = e'.mulSelector) (h11 : e.emulSelector = e'.emulSelector)
+    (h12 : e.endoScalarSelector = e'.endoScalarSelector) : e = e' := by
+  cases e
+  cases e'
+  simp only [Evals.mk.injEq]
+  exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12⟩
+
+/-- Every stream position lies inside the `44·nc + 1` flat rows. -/
+private theorem streamPos_lt (nc : ℕ) (i : Fin 44) (c : ℕ) (hc : c < nc) :
+    streamPos nc i c < 44 * nc + 1 := by
+  have hi := i.isLt
+  unfold streamPos
+  split_ifs with h1 h2 h3 h4 h5
+  · have := block_lt (show 7 + (i : ℕ) < 43 by omega) hc
+    omega
+  · omega
+  · have := block_lt (show 37 + ((i : ℕ) - 16) < 43 by omega) hc
+    omega
+  · have := block_lt (show 22 + ((i : ℕ) - 22) < 43 by omega) hc
+    omega
+  · have := block_lt (show 1 + ((i : ℕ) - 37) < 43 by omega) hc
+    omega
+  · omega
+
+/-- `streamPos` at a witness row. -/
+private theorem streamPos_wRow (nc : ℕ) (q : Fin 15) (ch : ℕ) :
+    streamPos nc (wRow q) ch = nc + 1 + (7 + (q : ℕ)) * nc + ch := by
+  simp only [streamPos, wRow]
+  rw [if_pos q.isLt]
+
+/-- `streamPos` at the accumulator row (`0·nc` kept for the region-read shape). -/
+private theorem streamPos_zRow (nc : ℕ) (ch : ℕ) :
+    streamPos nc zRow ch = nc + 1 + 0 * nc + ch := by
+  simp only [streamPos, zRow]
+  rw [if_neg (by omega), if_pos (by omega)]
+  omega
+
+/-- `streamPos` at a σ row. -/
+private theorem streamPos_sRow (nc : ℕ) (i : Fin 6) (ch : ℕ) :
+    streamPos nc (sRow i) ch = nc + 1 + (37 + (i : ℕ)) * nc + ch := by
+  simp only [streamPos, sRow]
+  rw [if_neg (by omega), if_neg (by omega), if_pos (by omega),
+    Nat.add_sub_cancel_left]
+
+/-- `streamPos` at a coefficient row. -/
+private theorem streamPos_cRow (nc : ℕ) (q : Fin 15) (ch : ℕ) :
+    streamPos nc (cRow q) ch = nc + 1 + (22 + (q : ℕ)) * nc + ch := by
+  simp only [streamPos, cRow]
+  rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_pos (by omega),
+    Nat.add_sub_cancel_left]
+
+/-- `streamPos` at a selector row. -/
+private theorem streamPos_selRow (nc : ℕ) (j : Fin 6) (ch : ℕ) :
+    streamPos nc (selRow j) ch = nc + 1 + (1 + (j : ℕ)) * nc + ch := by
+  simp only [streamPos, selRow]
+  rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega),
+    if_pos (by omega), Nat.add_sub_cancel_left]
+
+/-- `streamPos` at the public row. -/
+private theorem streamPos_pubRow (nc : ℕ) (ch : ℕ) :
+    streamPos nc pubRow ch = ch := by
+  simp only [streamPos, pubRow]
+  rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega),
+    if_neg (by omega)]
+
+/-- Reading the run input's evaluation matrix at a stream position: the flat row's
+claim pair. -/
+private theorem runEvals_read (hsh : RunShapes C σ vk p pub)
+    (hpe0 : pe.zeta.size = runNc C σ vk) (hpe1 : pe.zetaOmega.size = runNc C σ vk)
+    (i : Fin 44) (c : ℕ) (hc : c < runNc C σ vk) :
+    (runInputP C σ vk p pub pe v u).evals[streamPos (runNc C σ vk) i c]!
+      = #[((flatRows C (runLogicalP C σ vk p pub pe))[streamPos (runNc C σ vk)
+            i c]!).2.1,
+          ((flatRows C (runLogicalP C σ vk p pub pe))[streamPos (runNc C σ vk)
+            i c]!).2.2] := by
+  show ((flatRows C (runLogicalP C σ vk p pub pe)).map
+      (fun r => #[r.2.1, r.2.2]))[streamPos (runNc C σ vk) i c]! = _
+  rw [getBang_map _ _ _ (by
+    rw [stream_size C hsh hpe0 hpe1]
+    exact streamPos_lt _ i c hc)]
+
+/-- A `Fin nc`-indexed power sum whose entries read an `nc`-sized array is that
+array's chunk combination. -/
+private theorem sum_readsTo (xM : C.ScalarField) (w : Array C.ScalarField)
+    (hw : w.size = runNc C σ vk) (f : Fin (runNc C σ vk) → C.ScalarField)
+    (hf : ∀ ch : Fin (runNc C σ vk), f ch = w[(ch : ℕ)]!) :
+    (∑ ch : Fin (runNc C σ vk), xM ^ (ch : ℕ) * f ch) = combineAt xM w := by
+  rw [combineAt_eq_sum]
+  refine (Fintype.sum_equiv (finCongr hw) _ _ fun i => ?_).symm
+  rw [hf (finCongr hw i)]
+  simp only [finCongr_apply, Fin.val_cast, Fin.getElem_fin]
+  rw [getElem!_pos w (i : ℕ) i.isLt]
+
+/-- **The chunk-combined claimed record is the run's own** (`evals.combine`): the
+abstract `claimedEvals`, fed the run's flat claims at the stream positions, IS the
+verifier's combined record `p.linEvals` at the run's combination powers. Pure layout
+reading through the region reads. -/
+private theorem claimedEvals_run_eq (hsh : RunShapes C σ vk p pub)
+    (hpe0 : pe.zeta.size = runNc C σ vk) (hpe1 : pe.zetaOmega.size = runNc C σ vk) :
+    claimedEvals (runZetaM C σ vk p pub) (runZetaOmegaM C σ vk p pub)
+        (fun (i : Fin 44) (ch : Fin (runNc C σ vk)) (j : Fin 2) =>
+          ((runInputP C σ vk p pub pe v u).evals[streamPos (runNc C σ vk) i
+              (ch : ℕ)]!)[(j : ℕ)]!)
+      = p.linEvals (runZetaM C σ vk p pub) (runZetaOmegaM C σ vk p pub) := by
+  refine evals_ext ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+  · funext col
+    refine sum_readsTo C _ _ ?_ _ fun ch => ?_
+    · rw [getElem!_pos p.evals.w (col : ℕ) (by rw [hsh.wSize]; exact col.isLt)]
+      exact (hsh.wChunks _ (Array.getElem_mem _)).1
+    · beta_reduce
+      rw [runEvals_read C hsh hpe0 hpe1 (wRow col) (ch : ℕ) ch.isLt, streamPos_wRow,
+        stream_read_w C hsh hpe0 hpe1 (col : ℕ) (ch : ℕ) col.isLt ch.isLt]
+      rfl
+  · funext col
+    refine sum_readsTo C _ _ ?_ _ fun ch => ?_
+    · rw [getElem!_pos p.evals.w (col : ℕ) (by rw [hsh.wSize]; exact col.isLt)]
+      exact (hsh.wChunks _ (Array.getElem_mem _)).2
+    · beta_reduce
+      rw [runEvals_read C hsh hpe0 hpe1 (wRow col) (ch : ℕ) ch.isLt, streamPos_wRow,
+        stream_read_w C hsh hpe0 hpe1 (col : ℕ) (ch : ℕ) col.isLt ch.isLt]
+      rfl
+  · refine sum_readsTo C _ _ hsh.zChunks.1 _ fun ch => ?_
+    beta_reduce
+    rw [runEvals_read C hsh hpe0 hpe1 zRow (ch : ℕ) ch.isLt, streamPos_zRow,
+      stream_read_lit C hsh hpe0 hpe1 0 (ch : ℕ) (by omega) ch.isLt]
+    rfl
+  · refine sum_readsTo C _ _ hsh.zChunks.2 _ fun ch => ?_
+    beta_reduce
+    rw [runEvals_read C hsh hpe0 hpe1 zRow (ch : ℕ) ch.isLt, streamPos_zRow,
+      stream_read_lit C hsh hpe0 hpe1 0 (ch : ℕ) (by omega) ch.isLt]
+    rfl
+  · funext i
+    refine sum_readsTo C _ _ ?_ _ fun ch => ?_
+    · rw [getElem!_pos p.evals.s (i : ℕ) (by rw [hsh.sSize]; exact i.isLt)]
+      exact (hsh.sChunks _ (Array.getElem_mem _)).1
+    · beta_reduce
+      rw [runEvals_read C hsh hpe0 hpe1 (sRow i) (ch : ℕ) ch.isLt, streamPos_sRow,
+        stream_read_s C hsh hpe0 hpe1 (i : ℕ) (ch : ℕ) i.isLt ch.isLt]
+      rfl
+  · funext col
+    refine sum_readsTo C _ _ ?_ _ fun ch => ?_
+    · rw [getElem!_pos p.evals.coefficients (col : ℕ) (by
+        rw [hsh.coeffSize]
+        exact col.isLt)]
+      exact (hsh.coeffChunks _ (Array.getElem_mem _)).1
+    · beta_reduce
+      rw [runEvals_read C hsh hpe0 hpe1 (cRow col) (ch : ℕ) ch.isLt, streamPos_cRow,
+        stream_read_c C hsh hpe0 hpe1 (col : ℕ) (ch : ℕ) col.isLt ch.isLt]
+      rfl
+  · refine sum_readsTo C _ _ hsh.genChunks.1 _ fun ch => ?_
+    beta_reduce
+    rw [runEvals_read C hsh hpe0 hpe1 (selRow 0) (ch : ℕ) ch.isLt, streamPos_selRow,
+      stream_read_lit C hsh hpe0 hpe1 (1 + ((0 : Fin 6) : ℕ)) (ch : ℕ) (by decide)
+        ch.isLt]
+    rfl
+  · refine sum_readsTo C _ _ hsh.posChunks.1 _ fun ch => ?_
+    beta_reduce
+    rw [runEvals_read C hsh hpe0 hpe1 (selRow 1) (ch : ℕ) ch.isLt, streamPos_selRow,
+      stream_read_lit C hsh hpe0 hpe1 (1 + ((1 : Fin 6) : ℕ)) (ch : ℕ) (by decide)
+        ch.isLt]
+    rfl
+  · refine sum_readsTo C _ _ hsh.addChunks.1 _ fun ch => ?_
+    beta_reduce
+    rw [runEvals_read C hsh hpe0 hpe1 (selRow 2) (ch : ℕ) ch.isLt, streamPos_selRow,
+      stream_read_lit C hsh hpe0 hpe1 (1 + ((2 : Fin 6) : ℕ)) (ch : ℕ) (by decide)
+        ch.isLt]
+    rfl
+  · refine sum_readsTo C _ _ hsh.mulChunks.1 _ fun ch => ?_
+    beta_reduce
+    rw [runEvals_read C hsh hpe0 hpe1 (selRow 3) (ch : ℕ) ch.isLt, streamPos_selRow,
+      stream_read_lit C hsh hpe0 hpe1 (1 + ((3 : Fin 6) : ℕ)) (ch : ℕ) (by decide)
+        ch.isLt]
+    rfl
+  · refine sum_readsTo C _ _ hsh.emulChunks.1 _ fun ch => ?_
+    beta_reduce
+    rw [runEvals_read C hsh hpe0 hpe1 (selRow 4) (ch : ℕ) ch.isLt, streamPos_selRow,
+      stream_read_lit C hsh hpe0 hpe1 (1 + ((4 : Fin 6) : ℕ)) (ch : ℕ) (by decide)
+        ch.isLt]
+    rfl
+  · refine sum_readsTo C _ _ hsh.endoChunks.1 _ fun ch => ?_
+    beta_reduce
+    rw [runEvals_read C hsh hpe0 hpe1 (selRow 5) (ch : ℕ) ch.isLt, streamPos_selRow,
+      stream_read_lit C hsh hpe0 hpe1 (1 + ((5 : Fin 6) : ℕ)) (ch : ℕ) (by decide)
+        ch.isLt]
+    rfl
+
+/-- **The combined public claim is the run's own**: `claimedPub` at the stream's
+public-row claims is the verifier's chunk-combined public evaluation. -/
+private theorem claimedPub_run_eq (hsh : RunShapes C σ vk p pub)
+    (hpe0 : pe.zeta.size = runNc C σ vk) (hpe1 : pe.zetaOmega.size = runNc C σ vk) :
+    claimedPub (runZetaM C σ vk p pub)
+        (fun (i : Fin 44) (ch : Fin (runNc C σ vk)) (j : Fin 2) =>
+          ((runInputP C σ vk p pub pe v u).evals[streamPos (runNc C σ vk) i
+              (ch : ℕ)]!)[(j : ℕ)]!)
+      = combineAt (runZetaM C σ vk p pub) pe.zeta := by
+  refine sum_readsTo C _ _ hpe0 _ fun ch => ?_
+  beta_reduce
+  rw [runEvals_read C hsh hpe0 hpe1 pubRow (ch : ℕ) ch.isLt, streamPos_pubRow,
+    stream_read_pub C hsh hpe0 hpe1 (ch : ℕ) ch.isLt]
+  rfl
+
+/-- **The constructed ft commitment is the double Maller collapse** (generic in the
+`.val`-scalar bridge): the executable `runFtComm` — `combine(ζ^max, f_comm) −
+(ζⁿ − 1).val • combine(ζ^max, t_comm)` — is the abstract `•`-combination
+`ft_identity_of_chunks` consumes: `pScalar • ∑_c (ζ^max)^c • σ₆C_c
+− (ζⁿ − 1) • ∑_j (ζ^max)^j • tCommⱼ`. -/
+private theorem runFtComm_eq [Module C.ScalarField C.Point]
+    (hsmul : ∀ (a : C.ScalarField) (P : C.Point), a • P = a.val • P)
+    (hsh : RunShapes C σ vk p pub) {n : ℕ} (hn : vk.n = n) :
+    runFtComm C σ vk p pub
+      = runPScalar C σ vk p pub
+          • ∑ c : Fin (runNc C σ vk),
+              ((runOracles C σ vk p pub).zeta ^ 2 ^ σ.k) ^ (c : ℕ)
+                • (vk.sigmaComm.getD 6 #[]).getD (c : ℕ) 0
+        - ((runOracles C σ vk p pub).zeta ^ n - 1)
+            • ∑ j : Fin p.tComm.size,
+                ((runOracles C σ vk p pub).zeta ^ 2 ^ σ.k) ^ (j : ℕ)
+                  • p.tComm.getD (j : ℕ) 0 := by
+  have hζM : runZetaM C σ vk p pub = (runOracles C σ vk p pub).zeta ^ 2 ^ σ.k := by
+    unfold runZetaM
+    rw [powPow2_eq]
+  have hζN : runZetaN C σ vk p pub = (runOracles C σ vk p pub).zeta ^ n := by
+    unfold runZetaN
+    rw [powPow2_eq, ← hn]
+    rfl
+  have h6lt : 6 < vk.sigmaComm.size := by
+    rw [hsh.sigmaCommSize]
+    omega
+  have hσ6 : vk.sigmaComm.getD 6 #[] = vk.sigmaComm[6] := by
+    simp [Array.getD, h6lt]
+  have hσ6sz : (vk.sigmaComm.getD 6 #[]).size = runNc C σ vk := by
+    rw [hσ6]
+    exact hsh.sigmaCommChunks _ (Array.getElem_mem _)
+  unfold runFtComm runFComm
+  rw [combineCommitments_eq hsmul, combineCommitments_eq hsmul, ← hsmul, hζM, hζN]
+  congr 1
+  · rw [combinedCommitment, Finset.smul_sum, hσ6]
+    have hmapsz : ((vk.sigmaComm[6]'h6lt).map
+        (fun P => (runPScalar C σ vk p pub).val • P)).size = runNc C σ vk := by
+      rw [Array.size_map, ← hσ6, hσ6sz]
+    refine Fintype.sum_equiv (finCongr hmapsz) _ _ fun i => ?_
+    simp only [finCongr_apply, Fin.val_cast, Fin.getElem_fin, Array.getElem_map]
+    rw [← hsmul, ← mul_smul, ← mul_smul, mul_comm]
+    congr 1
+    have hib : (i : ℕ) < (vk.sigmaComm[6]'h6lt).size := by
+      have := i.isLt
+      simp only [Array.size_map] at this
+      omega
+    simp [Array.getD, hib]
+  · congr 1
+    rw [combinedCommitment]
+    refine Finset.sum_congr rfl fun j _ => ?_
+    congr 1
+    simp [Array.getD, j.isLt]
+
+end ScalarReconcile
+
 end Kimchi.Verifier.Chunked
