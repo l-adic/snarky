@@ -4,48 +4,61 @@ import Poseidon.GroupMap
 import Bulletproof.Protocol
 
 /-!
-# The executable kimchi IPA verifier
+# The executable kimchi IPA verifier, over checked records
 
 The batched IPA opening verifier of kimchi (`SRS::verify`, proof-systems
-`poly-commitment/src/ipa.rs`), composed as one executable function over exactly the wire
-data: the per-polynomial commitments, evaluation points and claimed evaluations, the
+`poly-commitment/src/ipa.rs`), composed as one executable function over the CHECKED
+claim: the per-polynomial commitments, evaluation points and claimed evaluations, the
 combination scalars, and the opening proof, against a separately supplied SRS
 (`Bulletproof.SRS`). Everything
 transcript-derived — the `U` base, the round challenges, the Schnorr challenge — is
-recomputed here through the sponge layer (the `poseidon` package); nothing is taken as input that
-the wire protocol does not carry. In particular the abstract SRS's randomisation base
-`σ.U` is never read: the deployed protocol derives `U` from the transcript, and relating
-the derived base to the abstract one is exactly the Fiat-Shamir assumption's junction.
+recomputed here through the sponge layer (the `poseidon` package); nothing is taken as
+input that the wire protocol does not carry. In particular the abstract SRS's
+randomisation base `σ.U` is never read: the deployed protocol derives `U` from the
+transcript, and relating the derived base to the abstract one is exactly the
+Fiat-Shamir assumption's junction.
+
+**The checked records carry their shape in their types.** `Proof C k` pins the round
+count (`lr` is a `Vector` of length `k` — the SRS's `σ.k`); `Input C k m p` pins the
+batch shape (`m` rows, `p` evaluation points, the claimed-evaluation matrix a
+`Vector` of `Vector`s). Every read of the verifier and of every statement over it is
+total; a checked input cannot hold a ragged claim. The raw serde records
+(`Wire.Proof`, `Wire.Input` — every payload a `Vec`) live in the `Wire` namespace
+below with their `check` parses, which are the verifier's own dimension guards
+(round count, `evals` square against the commitments and points) factored as a total
+parse — the parse IS the proof. Clients compose check-then-verify; rejecting ragged
+input is the same observable behavior as the guards' `false` returns.
 
 Generic over a single `CommitmentCurve` bundle — the Lean analogue of the Rust
 `G: CommitmentCurve` associated types: the base and scalar cardinalities with their
-primality facts, the sponge spec, the curve `E`, and the map-to-curve. The bundle carries
-*facts*, not structures: the field structures are the canonical `ZMod` instances
-synthesized from primality, so the executable and abstract layers cannot disagree on any
-field operation. Points are the library's `SWPoint E` (`Point`), so the group
-structure is inherited: `+`/`0` and the binary-nsmul scalar action from CompElliptic's
-`AddCommGroup` instance, point equality from its `DecidableEq`. `Proof`, `Input`, and
-`verify` are indexed by the bundle, so a proof's type names its curve.
+primality facts, the sponge spec, the curve `E`, and the map-to-curve. The bundle
+carries *facts*, not structures: the field structures are the canonical `ZMod`
+instances synthesized from primality, so the executable and abstract layers cannot
+disagree on any field operation. Points are the library's `SWPoint E` (`Point`), so
+the group structure is inherited: `+`/`0` and the binary-nsmul scalar action from
+CompElliptic's `AddCommGroup` instance, point equality from its `DecidableEq`.
 
 The scalar side reuses the `Bulletproof` definitions (`bPoly`,
-`bPolyCoefficients`, `combinedB`, `combinedInnerProduct`) at the concrete scalar field.
-Scalars act on points as `z.val • _` (the ℕ-action of the group); `Reflection.lean`
-relates this verifier to the `Prop`-level `BatchAccepts`.
+`bPolyCoefficients`, `combinedB`, `combinedInnerProduct`) at the concrete scalar
+field. Scalars act on points as `z.val • _` (the ℕ-action of the group);
+`Reflection.lean` relates this verifier to the `Prop`-level `BatchAccepts`.
 
-The absorbed-scalar encoding (`shift_scalar`) is selected by the modulus comparison from
-the cardinalities — the `Shifted_value` Type1 register when the scalar modulus is below
-the base modulus, the Type2 shift otherwise — at the scalar-modulus bit size
+The absorbed-scalar encoding (`shift_scalar`) is selected by the modulus comparison
+from the cardinalities — the `Shifted_value` Type1 register when the scalar modulus is
+below the base modulus, the Type2 shift otherwise — at the scalar-modulus bit size
 `Nat.size scalar` (the Rust `MODULUS_BIT_SIZE`).
 
 `verify` checks the two acceptance equations at the derived challenges:
 
 * Schnorr: `c • Q + δ = z1 • sg + (z1 · b0) • U + z2 • H`,
   with `Q = P + v • U + ∑ (uⱼ⁻¹ • Lⱼ + uⱼ • Rⱼ)`, `P` the polyscale combination of the
-  commitments, `v` the combined inner product, `b0` the evalscale combination of `bPoly`;
+  commitments, `v` the combined inner product, `b0` the evalscale combination of
+  `bPoly`;
 * `sg`-correctness: `sg = ⟨bPolyCoefficients chal, g⟩`.
 
-`IpaVesta` and `IpaPallas` instantiate the two Pasta curves; both are validated against
-production prover/verifier fixtures by `scripts/check_ipa_fixture.lean`.
+`IpaVesta` and `IpaPallas` instantiate the two Pasta curves; both are validated
+against production prover/verifier fixtures by `scripts/check_ipa_fixture.lean`
+(which parses the wire records and composes check-then-verify).
 
 -/
 
@@ -85,45 +98,54 @@ variable (C : CommitmentCurve)
 def msm {n : ℕ} (g : Fin n → C.Point) (a : Fin n → C.ScalarField) : C.Point :=
   ∑ i, (a i).val • g i
 
-/-- An IPA opening proof — the wire fields of `OpeningProof` (`ipa.rs`). -/
-structure Proof (C : CommitmentCurve) where
-  lr : Array (C.Point × C.Point)
+/-- An IPA opening proof at round count `k` — the checked form of the wire
+`OpeningProof` (`ipa.rs`): the round count is the SRS's `σ.k`, pinned by the parse. -/
+structure Proof (C : CommitmentCurve) (k : ℕ) where
+  lr : Vector (C.Point × C.Point) k
   delta : C.Point
   z1 : C.ScalarField
   z2 : C.ScalarField
   sg : C.Point
 
-/-- A batched opening claim, uncombined — the verifier's wire input: the per-polynomial
-commitments (one segment each), the evaluation points, the claimed evaluation matrix
-(`evals[i][j]` = polynomial `i` at point `j`), the combination scalars, and the proof. -/
-structure Input (C : CommitmentCurve) where
-  commitments : Array C.Point
-  xs : Array C.ScalarField
-  evals : Array (Array C.ScalarField)
+/-- A batched opening claim at its shape — round count `k`, `m` rows, `p` evaluation
+points: the per-polynomial commitments (one segment each), the evaluation points, the
+claimed evaluation matrix (`evals[i][j]` = polynomial `i` at point `j`), the
+combination scalars, and the proof. Every read is total. -/
+structure Input (C : CommitmentCurve) (k m p : ℕ) where
+  commitments : Vector C.Point m
+  xs : Vector C.ScalarField p
+  evals : Vector (Vector C.ScalarField p) m
   polyscale : C.ScalarField
   evalscale : C.ScalarField
-  proof : Proof C
+  proof : Proof C k
+
+variable {k m p : ℕ}
 
 /-- The commitments as the `Fin`-indexed function of the abstract claim. -/
-def Input.commitmentFn {C : CommitmentCurve} (inp : Input C) :
-    Fin inp.commitments.size → C.Point :=
+def Input.commitmentFn {C : CommitmentCurve} (inp : Input C k m p) :
+    Fin m → C.Point :=
   fun i => inp.commitments[i]
 
 /-- The evaluation points as the `Fin`-indexed function of the abstract claim. -/
-def Input.pointFn {C : CommitmentCurve} (inp : Input C) :
-    Fin inp.xs.size → C.ScalarField :=
+def Input.pointFn {C : CommitmentCurve} (inp : Input C k m p) :
+    Fin p → C.ScalarField :=
   fun j => inp.xs[j]
 
-/-- The claimed evaluation matrix as the indexed function of the abstract claim. The
-`evals` array is ragged, so this is where the unchecked indexing of the wire form lives —
-once, behind a name used identically on both sides of every statement. -/
-def Input.evalFn {C : CommitmentCurve} (inp : Input C) :
-    Fin inp.commitments.size → Fin inp.xs.size → C.ScalarField :=
-  fun i j => (inp.evals[i.val]!)[j.val]!
+/-- The claimed evaluation matrix as the indexed function of the abstract claim. -/
+def Input.evalFn {C : CommitmentCurve} (inp : Input C k m p) :
+    Fin m → Fin p → C.ScalarField :=
+  fun i j => (inp.evals[i])[j]
+
+/-- The total matrix view in the `getElem!` spelling of executable reads. -/
+theorem Input.evalFn_bang {C : CommitmentCurve} (inp : Input C k m p) (i : Fin m)
+    (j : Fin p) :
+    inp.evalFn i j = (inp.evals[(i : ℕ)]!)[(j : ℕ)]! := by
+  rw [getElem!_pos inp.evals (i : ℕ) i.isLt, getElem!_pos _ (j : ℕ) j.isLt]
+  rfl
 
 /-- The combined inner product of the claimed evaluations
-(`Bulletproof.combinedInnerProduct` at the wire arrays). -/
-def cipOf {C : CommitmentCurve} (inp : Input C) : C.ScalarField :=
+(`Bulletproof.combinedInnerProduct` at the checked matrix). -/
+def cipOf {C : CommitmentCurve} (inp : Input C k m p) : C.ScalarField :=
   combinedInnerProduct inp.polyscale inp.evalscale inp.evalFn
 
 /-- The polyscale combination `∑ i, ξ^i • Cᵢ` of the commitments — the group-side mirror
@@ -144,11 +166,11 @@ def shiftScalar (x : C.ScalarField) : C.ScalarField :=
 /-- The verifier's Fiat-Shamir schedule (`SRS::verify`): absorb the shifted combined inner
 product; squeeze and map the `U` base; per round absorb `L`, `R` and squeeze a challenge;
 absorb `δ` and squeeze the Schnorr challenge. -/
-def transcript (inp : Input C) : C.Point × Array C.ScalarField × C.ScalarField :=
+def transcript (inp : Input C k m p) : C.Point × Array C.ScalarField × C.ScalarField :=
   let s := absorbFr C.sponge FqSponge.init (shiftScalar C (cipOf inp))
   let (t, s) := challengeFq C.sponge s
   let uBase := C.toGroup t
-  let (chals, s) := inp.proof.lr.foldl
+  let (chals, s) := inp.proof.lr.toArray.foldl
     (fun (acc : Array C.ScalarField × FqSponge.S C.base) LR =>
       let s := absorbG C.sponge (absorbG C.sponge acc.2 LR.1) LR.2
       let (u, s) := squeezeChallenge C.sponge s
@@ -170,9 +192,10 @@ private theorem foldl_fst_size {S γ α : Type*} (step : (Array γ × S) → α 
     rw [List.foldl_cons, ih, hstep, List.length_cons]
     omega
 
-/-- The transcript squeezes exactly one round challenge per `(L, R)` pair. -/
-private theorem transcript_chals_size (inp : Input C) :
-    (transcript C inp).2.1.size = inp.proof.lr.size := by
+/-- The transcript squeezes exactly one round challenge per `(L, R)` pair — the round
+count of the checked proof. -/
+theorem transcript_chals_size (inp : Input C k m p) :
+    (transcript C inp).2.1.size = k := by
   simp only [transcript]
   rw [← Array.foldl_toList, foldl_fst_size]
   · simp
@@ -180,60 +203,91 @@ private theorem transcript_chals_size (inp : Input C) :
     simp [Array.size_push]
 
 /-- The derived round challenges as the `Fin`-indexed function the abstract layer
-consumes, under the shape fact. -/
-def transcriptChallenges (inp : Input C) {k : ℕ}
-    (hk : (transcript C inp).2.1.size = k) : Fin k → C.ScalarField :=
-  fun i => (transcript C inp).2.1[i.val]'(by omega)
+consumes — total, from the checked round count. -/
+def transcriptChallenges (inp : Input C k m p) : Fin k → C.ScalarField :=
+  fun i => (transcript C inp).2.1[i.val]'(by
+    rw [transcript_chals_size]
+    exact i.isLt)
 
-/-- A batched claim at given combination scalars — the wire input the grid rows of the
-soundness statements range over. -/
-def mkInput (commitments : Array C.Point) (xs : Array C.ScalarField)
-    (evals : Array (Array C.ScalarField)) (ξ r : C.ScalarField) (proof : Proof C) :
-    Input C :=
+/-- A batched claim at given combination scalars — the checked input the grid rows of
+the soundness statements range over. The curve is implicit (inferred from the
+commitment vector). -/
+def mkInput {C : CommitmentCurve} {k m p : ℕ} (commitments : Vector C.Point m)
+    (xs : Vector C.ScalarField p) (evals : Vector (Vector C.ScalarField p) m)
+    (ξ r : C.ScalarField) (proof : Proof C k) : Input C k m p :=
   { commitments := commitments, xs := xs, evals := evals
     polyscale := ξ, evalscale := r, proof := proof }
 
 /-- The acceptance decision, against a library SRS: derive the transcript, combine the
-claim, and check the Schnorr and `sg`-correctness equations. Shape guards (round count
-`σ.k`, evaluation matrix dimensions) reject malformed inputs. `σ.U` is never read — the
-deployed `U` is transcript-derived. -/
-def verify (σ : SRS C.Point) (inp : Input C) : Bool :=
-  if inp.proof.lr.size != σ.k || inp.evals.size != inp.commitments.size
-      || inp.evals.any (·.size != inp.xs.size) then
-    false
-  else
-    let (uBase, chals, c) := transcript C inp
-    let chal : Fin σ.k → C.ScalarField := fun i => chals[i.val]!
-    let b0 := combinedB chal inp.evalscale (fun j : Fin inp.xs.size => inp.xs[j.val]!)
-    let v := cipOf inp
-    let P := combineCommitments C inp.polyscale inp.commitments
-    let Q := (inp.proof.lr.zip chals).foldl
-      (fun acc (LRu : (C.Point × C.Point) × C.ScalarField) =>
-        acc + (LRu.2⁻¹.val • LRu.1.1 + LRu.2.val • LRu.1.2))
-      (P + v.val • uBase)
-    let schnorr := decide (c.val • Q + inp.proof.delta
-      = inp.proof.z1.val • inp.proof.sg + (inp.proof.z1 * b0).val • uBase
-          + inp.proof.z2.val • σ.h)
-    let sgOk := decide (inp.proof.sg = msm C σ.g (bPolyCoefficients chal))
-    schnorr && sgOk
-
-/-- An accepting run has the announced round count. -/
-theorem verify_shape (σ : SRS C.Point) (inp : Input C)
-    (hv : verify C σ inp = true) : inp.proof.lr.size = σ.k := by
-  unfold verify at hv
-  split at hv
-  · simp at hv
-  · rename_i hguard
-    simp only [Bool.not_eq_true, Bool.or_eq_false_iff, bne_eq_false_iff_eq] at hguard
-    exact hguard.1.1
-
-/-- The round-challenge count of an accepting run, in the form `transcriptChallenges`
-consumes. -/
-theorem transcript_size_of_verify (σ : SRS C.Point) (inp : Input C)
-    (hv : verify C σ inp = true) : (transcript C inp).2.1.size = σ.k :=
-  (transcript_chals_size C inp).trans (verify_shape C σ inp hv)
+claim, and check the Schnorr and `sg`-correctness equations. The claim's shape is
+carried by its type (round count `σ.k`), so there are no runtime guards — rejecting
+ragged input is the wire parse's job. `σ.U` is never read — the deployed `U` is
+transcript-derived. -/
+def verify (σ : SRS C.Point) (inp : Input C σ.k m p) : Bool :=
+  let (uBase, chals, c) := transcript C inp
+  let chal : Fin σ.k → C.ScalarField := fun i => chals[i.val]!
+  let b0 := combinedB chal inp.evalscale inp.pointFn
+  let v := cipOf inp
+  let P := combineCommitments C inp.polyscale inp.commitments.toArray
+  let Q := (inp.proof.lr.toArray.zip chals).foldl
+    (fun acc (LRu : (C.Point × C.Point) × C.ScalarField) =>
+      acc + (LRu.2⁻¹.val • LRu.1.1 + LRu.2.val • LRu.1.2))
+    (P + v.val • uBase)
+  let schnorr := decide (c.val • Q + inp.proof.delta
+    = inp.proof.z1.val • inp.proof.sg + (inp.proof.z1 * b0).val • uBase
+        + inp.proof.z2.val • σ.h)
+  let sgOk := decide (inp.proof.sg = msm C σ.g (bPolyCoefficients chal))
+  schnorr && sgOk
 
 end Bulletproof.Ipa
+
+/-! ## The wire boundary: serde records and the check parse -/
+
+namespace Bulletproof.Ipa.Wire
+
+variable {C : CommitmentCurve}
+
+/-- The wire opening proof (`OpeningProof`, ipa.rs): `lr` is a `Vec` — its length is
+the SRS's round count, pinned by `check`. -/
+structure Proof (C : CommitmentCurve) where
+  lr : Array (C.Point × C.Point)
+  delta : C.Point
+  z1 : C.ScalarField
+  z2 : C.ScalarField
+  sg : C.Point
+
+/-- The wire batched claim (`BatchEvaluationProof`): every payload a `Vec`. -/
+structure Input (C : CommitmentCurve) where
+  commitments : Array C.Point
+  xs : Array C.ScalarField
+  evals : Array (Array C.ScalarField)
+  polyscale : C.ScalarField
+  evalscale : C.ScalarField
+  proof : Proof C
+
+/-- Parse a wire proof at round count `k` — the verifier's `lr`-length guard as a
+total parse. -/
+def Proof.check (k : ℕ) (w : Proof C) : Option (Ipa.Proof C k) :=
+  if h : w.lr.size = k then
+    some { lr := ⟨w.lr, h⟩, delta := w.delta, z1 := w.z1, z2 := w.z2, sg := w.sg }
+  else none
+
+/-- Parse a wire claim at its announced shape — the verifier's dimension guards
+(`evals` square against the commitments and points, the proof at round count `k`) as
+a total parse into the checked input. -/
+def Input.check (k : ℕ) (w : Input C) :
+    Option (Ipa.Input C k w.commitments.size w.xs.size) := do
+  let proof ← w.proof.check k
+  let evals ← w.evals.mapM fun e =>
+    if h : e.size = w.xs.size then some (⟨e, h⟩ : Vector C.ScalarField w.xs.size)
+    else none
+  if hm : evals.size = w.commitments.size then
+    some { commitments := ⟨w.commitments, rfl⟩, xs := ⟨w.xs, rfl⟩
+           evals := ⟨evals, hm⟩
+           polyscale := w.polyscale, evalscale := w.evalscale, proof := proof }
+  else none
+
+end Bulletproof.Ipa.Wire
 
 /-! ## The Pasta instantiations -/
 
@@ -251,10 +305,13 @@ abbrev curve : Ipa.CommitmentCurve where
   toGroup := GroupMapVesta.toGroup
 
 abbrev Point := Ipa.CommitmentCurve.Point curve
-abbrev Proof := Ipa.Proof curve
-abbrev Input := Ipa.Input curve
+abbrev Proof (k : ℕ) := Ipa.Proof curve k
+abbrev Input (k m p : ℕ) := Ipa.Input curve k m p
+abbrev WireProof := Ipa.Wire.Proof curve
+abbrev WireInput := Ipa.Wire.Input curve
 
-def verify : Bulletproof.SRS Point → Input → Bool := Ipa.verify curve
+def verify (σ : Bulletproof.SRS Point) {m p : ℕ} : Input σ.k m p → Bool :=
+  Ipa.verify curve σ
 
 end Bulletproof.IpaVesta
 
@@ -272,9 +329,12 @@ abbrev curve : Ipa.CommitmentCurve where
   toGroup := GroupMapPallas.toGroup
 
 abbrev Point := Ipa.CommitmentCurve.Point curve
-abbrev Proof := Ipa.Proof curve
-abbrev Input := Ipa.Input curve
+abbrev Proof (k : ℕ) := Ipa.Proof curve k
+abbrev Input (k m p : ℕ) := Ipa.Input curve k m p
+abbrev WireProof := Ipa.Wire.Proof curve
+abbrev WireInput := Ipa.Wire.Input curve
 
-def verify : Bulletproof.SRS Point → Input → Bool := Ipa.verify curve
+def verify (σ : Bulletproof.SRS Point) {m p : ℕ} : Input σ.k m p → Bool :=
+  Ipa.verify curve σ
 
 end Bulletproof.IpaPallas

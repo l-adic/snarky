@@ -5,10 +5,10 @@ import Pasta
 /-!
 # Reflection: the executable verifier meets the soundness layer
 
-The bridge between `Bulletproof.Ipa.verify` (executable, over wire data, challenges
-derived by the Poseidon sponge) and the `Prop`-level acceptance `BatchAccepts` of the IPA
-soundness development — and, through the Fiat-Shamir axiom, the batch knowledge-soundness
-theorem itself.
+The bridge between `Bulletproof.Ipa.verify` (executable, over checked wire data,
+challenges derived by the Poseidon sponge) and the `Prop`-level acceptance
+`BatchAccepts` of the IPA soundness development — and, through the Fiat-Shamir axiom,
+the batch knowledge-soundness theorem itself.
 
 Three strata:
 
@@ -20,11 +20,12 @@ Three strata:
 * **Reflection.** `verify` and `BatchAccepts` are the same equations in two spellings:
   the executable combiners equal the library combiners (`msm_eq_commitGen`,
   `combineCommitments_eq`), and an accepting run satisfies `BatchAccepts` at the
-  sponge-derived challenges, against the SRS whose randomisation base is the derived `U`
-  (`verify_reflects` — the `{σ with U := …}` substitution is the deployed protocol's
-  transcript-derived base standing in for the abstract one). The wire data enters through
-  the named views (`Input.commitmentFn`/`pointFn`/`evalFn`, `transcriptChallenges`), used
-  identically on both sides.
+  sponge-derived challenges, against the SRS whose randomisation base is the derived
+  `U` (`verify_reflects` — the `{σ with U := …}` substitution is the deployed
+  protocol's transcript-derived base standing in for the abstract one). The checked
+  input's shape lives in its type, so the wire data enters through TOTAL named views
+  (`Input.commitmentFn`/`pointFn`/`evalFn`, `transcriptChallenges`), used identically
+  on both sides.
 
 * **The Fiat-Shamir axiom and the headline.** `poseidon_fiat_shamir_vesta` is the
   project's declared assumption, stated at the junction: a run accepted by the
@@ -34,7 +35,7 @@ Three strata:
   the random-oracle behaviour of the sponge; everything downstream of it is proved.
   `ipaVesta_sound` composes the axiom, the flattening lemmas, and
   `chunked_batch_soundness`: the claim declares its segment structure (`nc` chunks per
-  polynomial), the wire verifier consumes the flattened segment stream
+  polynomial), the verifier consumes the flattened segment stream
   (`segmentStream`), and a grid of accepting runs at pairwise-distinct combination
   scalars, under the no-DL-relation binding *hypothesis*, binds every commitment family
   to one genuine polynomial with its chunk windows and evaluations. Binding stays a
@@ -49,12 +50,12 @@ open CompElliptic.Curves.Pasta.Vesta renaming curve → vestaCurve
 open CompElliptic.Curves.Pasta.Pallas renaming curve → pallasCurve
 open CompElliptic.Fields.Pasta Bulletproof Bulletproof.Ipa
 
-/-! ## The wire proof as an abstract opening proof -/
+/-! ## The checked proof as an abstract opening proof -/
 
-/-- The wire proof, reindexed to the abstract `OpeningProof` at its round count. -/
-private def Ipa.Proof.toOpening {C : CommitmentCurve} (p : Ipa.Proof C) {k : ℕ}
-    (hk : p.lr.size = k) : OpeningProof C.ScalarField C.Point k where
-  lr := fun j => p.lr[j.val]'(by omega)
+/-- The checked proof as the abstract `OpeningProof` at its round count — total. -/
+private def Ipa.Proof.toOpening {C : CommitmentCurve} {k : ℕ} (p : Ipa.Proof C k) :
+    OpeningProof C.ScalarField C.Point k where
+  lr := fun j => p.lr[j]
   delta := p.delta
   z1 := p.z1
   z2 := p.z2
@@ -106,6 +107,16 @@ theorem combineCommitments_eq (ξ : C.ScalarField) (cs : Array C.Point) :
   refine Finset.sum_congr rfl fun i _ => ?_
   rw [hsmul]; congr 1
 
+include hsmul in
+/-- The executable combination of a checked commitment vector is `combinedCommitment`
+of its indexed function. -/
+private theorem combineCommitments_toArray_eq (ξ : C.ScalarField) {m : ℕ}
+    (cs : Vector C.Point m) :
+    combineCommitments C ξ cs.toArray
+      = combinedCommitment ξ (fun i : Fin m => cs[i]) := by
+  rw [combineCommitments_eq hsmul, combinedCommitment, combinedCommitment]
+  exact Fintype.sum_equiv (finCongr (by simp)) _ _ fun i => rfl
+
 omit [Module C.ScalarField C.Point] in
 /-- A left fold that adds `g x` for each list element equals the start plus the sum of
 `g` over the list. The engine behind the recombination bridge. -/
@@ -142,43 +153,36 @@ include hsmul in
 /-- **Reflection.** An accepting executable run satisfies the `Prop`-level batched
 acceptance at the sponge-derived challenges, against the SRS whose randomisation base is
 the transcript-derived `U`. With `(U, chal, c) := transcript C inp`:
-`BatchAccepts {σ with U := U} proof ξ r c chal commitments xs evals`, the wire data
-entering through its named views. -/
-theorem verify_reflects (σ : SRS C.Point) (inp : Ipa.Input C)
+`BatchAccepts {σ with U := U} proof ξ r c chal commitments xs evals`, the checked data
+entering through its total named views. -/
+theorem verify_reflects (σ : SRS C.Point) {m p : ℕ} (inp : Ipa.Input C σ.k m p)
     (hv : Ipa.verify C σ inp = true) :
     BatchAccepts { σ with U := (transcript C inp).1 }
-      (inp.proof.toOpening (verify_shape C σ inp hv))
+      inp.proof.toOpening
       inp.polyscale inp.evalscale
       (transcript C inp).2.2
-      (transcriptChallenges C inp (transcript_size_of_verify C σ inp hv))
+      (transcriptChallenges C inp)
       inp.commitmentFn inp.pointFn inp.evalFn := by
-  have hsize := verify_shape C σ inp hv
-  have hchsz := transcript_size_of_verify C σ inp hv
-  -- The two spelling bridges: the executable `getElem!` challenge and eval-point
-  -- functions are the named views.
+  -- The spelling bridge: the executable `getElem!` challenge function is the total
+  -- named view.
   have hchal : (fun i : Fin σ.k => (transcript C inp).2.1[i.val]!)
-      = transcriptChallenges C inp hchsz := by
+      = transcriptChallenges C inp := by
     funext i
-    exact getElem!_pos (transcript C inp).2.1 i.val (by rw [hchsz]; exact i.isLt)
-  have hpt : (fun j : Fin inp.xs.size => inp.xs[j.val]!) = inp.pointFn := by
-    funext j
-    exact getElem!_pos inp.xs j.val j.isLt
+    exact getElem!_pos (transcript C inp).2.1 i.val
+      (by rw [transcript_chals_size]; exact i.isLt)
   simp only [Ipa.verify] at hv
-  split at hv
-  · exact absurd hv (by simp)
-  · rw [Bool.and_eq_true] at hv
-    obtain ⟨hsch, hsg⟩ := hv
-    rw [decide_eq_true_eq] at hsch hsg
-    rw [hchal] at hsch hsg
-    rw [hpt] at hsch
-    refine ⟨?_, ?_⟩
-    · rw [zipFold_eq_recombine _ inp.proof.lr (transcript C inp).2.1 σ.k hsize hchsz]
-        at hsch
-      rw [combineCommitments_eq hsmul] at hsch
-      unfold Bulletproof.recombine Ipa.Proof.toOpening
-      simp only [hsmul, Ipa.transcriptChallenges]
-      exact hsch
-    · exact hsg.trans (msm_eq_commitGen hsmul _ _)
+  rw [Bool.and_eq_true] at hv
+  obtain ⟨hsch, hsg⟩ := hv
+  rw [decide_eq_true_eq] at hsch hsg
+  rw [hchal] at hsch hsg
+  refine ⟨?_, ?_⟩
+  · rw [zipFold_eq_recombine _ inp.proof.lr.toArray (transcript C inp).2.1 σ.k
+        (by simp) (transcript_chals_size C inp)] at hsch
+    rw [combineCommitments_toArray_eq hsmul] at hsch
+    unfold Bulletproof.recombine Ipa.Proof.toOpening
+    simp only [hsmul, Ipa.transcriptChallenges]
+    exact hsch
+  · exact hsg.trans (msm_eq_commitGen hsmul _ _)
 
 end Reflection
 
@@ -191,7 +195,8 @@ combined eval vector: `FiatShamirTreeB` with the deployed acceptance
 the Poseidon sponge provides a valid Fiat-Shamir transform — it packages the
 rewinding/forking extraction and the random-oracle behaviour of the sponge. It is the
 sole non-standard axiom of the headline `ipaVesta_sound`. -/
-axiom poseidon_fiat_shamir_vesta (σ : SRS IpaVesta.Point) (inp : IpaVesta.Input) :
+axiom poseidon_fiat_shamir_vesta (σ : SRS IpaVesta.Point) {m p : ℕ}
+    (inp : IpaVesta.Input σ.k m p) :
   FiatShamirTreeB σ
     (combinedCommitment inp.polyscale inp.commitmentFn)
     (combinedEvalVector (2 ^ σ.k) inp.evalscale inp.pointFn)
@@ -200,7 +205,8 @@ axiom poseidon_fiat_shamir_vesta (σ : SRS IpaVesta.Point) (inp : IpaVesta.Input
 
 /-- **AXIOM (Fiat-Shamir, Poseidon instantiation, Pallas).** The Pallas-side twin of
 `poseidon_fiat_shamir_vesta`. -/
-axiom poseidon_fiat_shamir_pallas (σ : SRS IpaPallas.Point) (inp : IpaPallas.Input) :
+axiom poseidon_fiat_shamir_pallas (σ : SRS IpaPallas.Point) {m p : ℕ}
+    (inp : IpaPallas.Input σ.k m p) :
   FiatShamirTreeB σ
     (combinedCommitment inp.polyscale inp.commitmentFn)
     (combinedEvalVector (2 ^ σ.k) inp.evalscale inp.pointFn)
@@ -209,13 +215,12 @@ axiom poseidon_fiat_shamir_pallas (σ : SRS IpaPallas.Point) (inp : IpaPallas.In
 
 /-! ## The headline -/
 
-/-- The flattened segment stream of a chunked family, as the wire array:
+/-- The flattened segment stream of a chunked family, as the checked vector:
 polynomial-outer, chunk-inner (`finSigmaFinEquiv`), the deployed `combine_commitments`
 order. -/
-private def segmentStream {α : Type*} {n : ℕ} {nc : Fin n → ℕ}
-    (f : (i : Fin n) → Fin (nc i) → α) : Array α :=
-  Array.ofFn fun s : Fin (∑ i, nc i) =>
-    f (finSigmaFinEquiv.symm s).1 (finSigmaFinEquiv.symm s).2
+def segmentStream {α : Type*} {n : ℕ} {nc : Fin n → ℕ}
+    (f : (i : Fin n) → Fin (nc i) → α) : Vector α (∑ i, nc i) :=
+  Vector.ofFn fun s => f (finSigmaFinEquiv.symm s).1 (finSigmaFinEquiv.symm s).2
 
 section ChunkedHeadline
 
@@ -225,7 +230,7 @@ variable {Cc : CommitmentCurve} [Module Cc.ScalarField Cc.Point]
 stream through the flattening lemmas. Generic over the curve bundle; the per-curve
 headlines instantiate it at their axiom. -/
 private theorem fs_tree_chunked
-    (ax : ∀ (σ : SRS Cc.Point) (inp : Ipa.Input Cc),
+    (ax : ∀ (σ : SRS Cc.Point) {m p : ℕ} (inp : Ipa.Input Cc σ.k m p),
       FiatShamirTreeB σ
         (combinedCommitment inp.polyscale inp.commitmentFn)
         (combinedEvalVector (2 ^ σ.k) inp.evalscale inp.pointFn)
@@ -233,51 +238,33 @@ private theorem fs_tree_chunked
         (Ipa.verify Cc σ inp = true))
     (σ : SRS Cc.Point) {n : ℕ} {nc : Fin n → ℕ}
     (C : (i : Fin n) → Fin (nc i) → Cc.Point)
-    (xs : Array Cc.ScalarField)
-    (e : (i : Fin n) → Fin (nc i) → Fin xs.size → Cc.ScalarField)
-    (ξ rr : Cc.ScalarField) (proof : Ipa.Proof Cc) :
+    {p : ℕ} (xs : Vector Cc.ScalarField p)
+    (e : (i : Fin n) → Fin (nc i) → Fin p → Cc.ScalarField)
+    (ξ rr : Cc.ScalarField) (proof : Ipa.Proof Cc σ.k) :
     FiatShamirTreeB σ (chunkedCombinedCommitment ξ C)
-      (combinedEvalVector (2 ^ σ.k) rr fun j : Fin xs.size => xs[j])
+      (combinedEvalVector (2 ^ σ.k) rr fun j : Fin p => xs[j])
       (chunkedCombinedInnerProduct ξ rr e)
       (Ipa.verify Cc σ
-        (mkInput Cc (segmentStream C) xs
-          (segmentStream fun i c => Array.ofFn (e i c)) ξ rr proof) = true) := by
-  set inp : Ipa.Input Cc :=
-    mkInput Cc (segmentStream C) xs
-      (segmentStream fun i c => Array.ofFn (e i c)) ξ rr proof with hinp
-  have hsz : inp.commitments.size = ∑ i, nc i := Array.size_ofFn ..
+        (mkInput (segmentStream C) xs
+          (segmentStream fun i c => Vector.ofFn (e i c)) ξ rr proof) = true) := by
+  set inp : Ipa.Input Cc σ.k (∑ i, nc i) p :=
+    mkInput (segmentStream C) xs
+      (segmentStream fun i c => Vector.ofFn (e i c)) ξ rr proof with hinp
   have h := ax σ inp
   have hC : combinedCommitment inp.polyscale inp.commitmentFn
       = chunkedCombinedCommitment ξ C := by
     rw [chunkedCombinedCommitment_eq_flat, combinedCommitment, combinedCommitment]
-    refine Finset.sum_equiv (finCongr hsz) (by simp) fun v _ => ?_
-    simp only [hinp, Ipa.Input.commitmentFn, Ipa.mkInput, segmentStream,
-      finCongr_apply, Fin.val_cast]
+    refine Finset.sum_congr rfl fun v _ => ?_
     congr 1
-    rw [Fin.getElem_fin, Array.getElem_ofFn]
-    exact congrArg (fun p : (i : Fin n) × Fin (nc i) => C p.1 p.2)
-      (congrArg finSigmaFinEquiv.symm (Fin.ext rfl))
+    simp [hinp, Ipa.Input.commitmentFn, Ipa.mkInput, segmentStream]
   have hcip : cipOf inp = chunkedCombinedInnerProduct ξ rr e := by
     rw [chunkedCombinedInnerProduct_eq_flat, cipOf, combinedInnerProduct,
       combinedInnerProduct]
-    refine Finset.sum_equiv (finCongr hsz) (by simp) fun v _ => ?_
-    simp only [hinp, Ipa.Input.evalFn, Ipa.mkInput, segmentStream, finCongr_apply,
-      Fin.val_cast]
+    refine Finset.sum_congr rfl fun v _ => ?_
     congr 1
     refine Finset.sum_congr rfl fun j _ => ?_
     congr 1
-    have hv : (v : ℕ) < ∑ i, nc i := hsz ▸ v.isLt
-    have h1 : (Array.ofFn fun s : Fin (∑ i, nc i) =>
-          Array.ofFn (e (finSigmaFinEquiv.symm s).1 (finSigmaFinEquiv.symm s).2))[(v : ℕ)]!
-        = Array.ofFn (e (finSigmaFinEquiv.symm (Fin.cast hsz v)).1
-            (finSigmaFinEquiv.symm (Fin.cast hsz v)).2) := by
-      rw [getElem!_pos (Array.ofFn _) _ (by simp only [Array.size_ofFn]; exact hv),
-        Array.getElem_ofFn]
-      exact congrArg (fun p : (i : Fin n) × Fin (nc i) => Array.ofFn (e p.1 p.2))
-        (congrArg finSigmaFinEquiv.symm (Fin.ext rfl))
-    rw [h1, getElem!_pos (Array.ofFn _) _ (by simp only [Array.size_ofFn]; exact j.isLt),
-      Array.getElem_ofFn]
-    exact congrArg _ (Fin.ext rfl)
+    simp [hinp, Ipa.Input.evalFn, Ipa.mkInput, segmentStream]
   rw [hC, hcip] at h
   exact h
 
@@ -285,7 +272,7 @@ end ChunkedHeadline
 
 /-- **Soundness of the deployed Vesta verifier, at the declared chunk structure.** The
 claim carries its segment structure: `n` polynomials with chunk counts `nc`, chunk
-commitments `C i c`, and claimed chunk evaluations `e i c j`; the wire verifier consumes
+commitments `C i c`, and claimed chunk evaluations `e i c j`; the verifier consumes
 the flattened segment stream. A grid of Poseidon-accepted runs at pairwise-distinct
 polyscales `ξ` and evalscales `r`, under the no-DL-relation binding hypothesis, binds
 every commitment family to one genuine polynomial: `q i` of degree `< nc i · 2^k`, whose
@@ -296,14 +283,14 @@ values, and whose chunk windows reproduce each per-chunk claim individually. Com
 theorem ipaVesta_sound (σ : SRS IpaVesta.Point) {n : ℕ} {nc : Fin n → ℕ}
     (hnc : ∀ i, 0 < nc i)
     (C : (i : Fin n) → Fin (nc i) → IpaVesta.Point)
-    (xs : Array Fp) (hm : 0 < xs.size)
-    (e : (i : Fin n) → Fin (nc i) → Fin xs.size → Fp)
+    {p : ℕ} (xs : Vector Fp p) (hm : 0 < p)
+    (e : (i : Fin n) → Fin (nc i) → Fin p → Fp)
     (ξ : Fin (∑ i, nc i) → Fp) (hξ : Function.Injective ξ)
-    (r : Fin xs.size → Fp) (hr : Function.Injective r)
-    (proofs : Fin (∑ i, nc i) → Fin xs.size → IpaVesta.Proof)
+    (r : Fin p → Fp) (hr : Function.Injective r)
+    (proofs : Fin (∑ i, nc i) → Fin p → IpaVesta.Proof σ.k)
     (hacc : ∀ s t, Ipa.verify IpaVesta.curve σ
-      (mkInput IpaVesta.curve (segmentStream C) xs
-        (segmentStream fun i c => Array.ofFn (e i c))
+      (mkInput (segmentStream C) xs
+        (segmentStream fun i c => Vector.ofFn (e i c))
         (ξ s) (r t) (proofs s t)) = true)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp),
       DLRelation σ w wh → w = 0 ∧ wh = 0) :
@@ -311,17 +298,17 @@ theorem ipaVesta_sound (σ : SRS IpaVesta.Point) {n : ℕ} {nc : Fin n → ℕ}
       (q i).natDegree < nc i * 2 ^ σ.k
         ∧ (∀ c : Fin (nc i), ∃ ρ,
             commit σ (chunkCoeffs (2 ^ σ.k) (q i) (c : ℕ)) ρ = C i c)
-        ∧ (∀ j : Fin xs.size, (q i).eval xs[j]
+        ∧ (∀ j : Fin p, (q i).eval xs[j]
             = ∑ c : Fin (nc i), (xs[j] ^ 2 ^ σ.k) ^ (c : ℕ) * e i c j)
-        ∧ ∀ (c : Fin (nc i)) (j : Fin xs.size),
+        ∧ ∀ (c : Fin (nc i)) (j : Fin p),
             e i c j = innerProduct (chunkCoeffs (2 ^ σ.k) (q i) (c : ℕ))
               (evalVector (2 ^ σ.k) xs[j]) :=
-  chunked_batch_soundness σ hnc ξ hξ r hr hm C (fun j : Fin xs.size => xs[j]) e
+  chunked_batch_soundness σ hnc ξ hξ r hr hm C (fun j : Fin p => xs[j]) e
     (fun s t => Ipa.verify IpaVesta.curve σ
-      (mkInput IpaVesta.curve (segmentStream C) xs
-        (segmentStream fun i c => Array.ofFn (e i c)) (ξ s) (r t) (proofs s t)) = true)
-    (fun s t => fs_tree_chunked poseidon_fiat_shamir_vesta σ C xs e (ξ s) (r t)
-      (proofs s t))
+      (mkInput (segmentStream C) xs
+        (segmentStream fun i c => Vector.ofFn (e i c)) (ξ s) (r t) (proofs s t)) = true)
+    (fun s t => fs_tree_chunked (fun σ' {_ _} inp => poseidon_fiat_shamir_vesta σ' inp)
+      σ C xs e (ξ s) (r t) (proofs s t))
     hbind hacc
 
 /-- **Soundness of the deployed Pallas verifier, at the declared chunk structure.** The
@@ -329,14 +316,14 @@ Pallas-side twin of `ipaVesta_sound`. -/
 theorem ipaPallas_sound (σ : SRS IpaPallas.Point) {n : ℕ} {nc : Fin n → ℕ}
     (hnc : ∀ i, 0 < nc i)
     (C : (i : Fin n) → Fin (nc i) → IpaPallas.Point)
-    (xs : Array Fq) (hm : 0 < xs.size)
-    (e : (i : Fin n) → Fin (nc i) → Fin xs.size → Fq)
+    {p : ℕ} (xs : Vector Fq p) (hm : 0 < p)
+    (e : (i : Fin n) → Fin (nc i) → Fin p → Fq)
     (ξ : Fin (∑ i, nc i) → Fq) (hξ : Function.Injective ξ)
-    (r : Fin xs.size → Fq) (hr : Function.Injective r)
-    (proofs : Fin (∑ i, nc i) → Fin xs.size → IpaPallas.Proof)
+    (r : Fin p → Fq) (hr : Function.Injective r)
+    (proofs : Fin (∑ i, nc i) → Fin p → IpaPallas.Proof σ.k)
     (hacc : ∀ s t, Ipa.verify IpaPallas.curve σ
-      (mkInput IpaPallas.curve (segmentStream C) xs
-        (segmentStream fun i c => Array.ofFn (e i c))
+      (mkInput (segmentStream C) xs
+        (segmentStream fun i c => Vector.ofFn (e i c))
         (ξ s) (r t) (proofs s t)) = true)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq),
       DLRelation σ w wh → w = 0 ∧ wh = 0) :
@@ -344,17 +331,17 @@ theorem ipaPallas_sound (σ : SRS IpaPallas.Point) {n : ℕ} {nc : Fin n → ℕ
       (q i).natDegree < nc i * 2 ^ σ.k
         ∧ (∀ c : Fin (nc i), ∃ ρ,
             commit σ (chunkCoeffs (2 ^ σ.k) (q i) (c : ℕ)) ρ = C i c)
-        ∧ (∀ j : Fin xs.size, (q i).eval xs[j]
+        ∧ (∀ j : Fin p, (q i).eval xs[j]
             = ∑ c : Fin (nc i), (xs[j] ^ 2 ^ σ.k) ^ (c : ℕ) * e i c j)
-        ∧ ∀ (c : Fin (nc i)) (j : Fin xs.size),
+        ∧ ∀ (c : Fin (nc i)) (j : Fin p),
             e i c j = innerProduct (chunkCoeffs (2 ^ σ.k) (q i) (c : ℕ))
               (evalVector (2 ^ σ.k) xs[j]) :=
-  chunked_batch_soundness σ hnc ξ hξ r hr hm C (fun j : Fin xs.size => xs[j]) e
+  chunked_batch_soundness σ hnc ξ hξ r hr hm C (fun j : Fin p => xs[j]) e
     (fun s t => Ipa.verify IpaPallas.curve σ
-      (mkInput IpaPallas.curve (segmentStream C) xs
-        (segmentStream fun i c => Array.ofFn (e i c)) (ξ s) (r t) (proofs s t)) = true)
-    (fun s t => fs_tree_chunked poseidon_fiat_shamir_pallas σ C xs e (ξ s) (r t)
-      (proofs s t))
+      (mkInput (segmentStream C) xs
+        (segmentStream fun i c => Vector.ofFn (e i c)) (ξ s) (r t) (proofs s t)) = true)
+    (fun s t => fs_tree_chunked (fun σ' {_ _} inp => poseidon_fiat_shamir_pallas σ' inp)
+      σ C xs e (ξ s) (r t) (proofs s t))
     hbind hacc
 
 end Bulletproof

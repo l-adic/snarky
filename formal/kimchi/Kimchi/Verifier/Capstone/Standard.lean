@@ -77,24 +77,21 @@ structure KimchiBatchAcc (C : Ipa.CommitmentCurve) [Module C.ScalarField C.Point
   r₀ : Fin 2 → C.ScalarField
   /-- Distinctness of the point-combination challenges. -/
   hr₀ : Function.Injective r₀
-  /-- The wire commitment array of the batch — opaque. -/
-  cs : Array C.Point
-  /-- The wire commitment array has the flat segment count. -/
-  hcsSize : cs.size = segTotal nc
-  /-- Segment-by-segment, the wire array is the flat stream of the chunked assembly. -/
-  hcs : ∀ s : Fin (segTotal nc),
-    cs.getD (s : ℕ) 0 = flatSeg (batchC wC zC pubC comms) s
-  /-- The wire evaluation matrix of the batch — opaque. -/
-  es : Array (Array C.ScalarField)
-  /-- Entry-by-entry, the wire matrix carries the flat claims. -/
-  hes : ∀ (s : Fin (segTotal nc)) (j : Fin 2),
-    (es[(s : ℕ)]!)[(j : ℕ)]! = flatSeg E₀ s j
-  /-- Per grid node, the node's IPA opening proof. -/
-  prf : Fin (segTotal nc) → Fin 2 → Ipa.Proof C
+  /-- The checked commitment vector of the batch — opaque. -/
+  cs : Vector C.Point (segTotal nc)
+  /-- Segment-by-segment, the checked vector is the flat stream of the chunked
+  assembly. -/
+  hcs : ∀ s : Fin (segTotal nc), cs[s] = flatSeg (batchC wC zC pubC comms) s
+  /-- The checked evaluation matrix of the batch — opaque. -/
+  es : Vector (Vector C.ScalarField 2) (segTotal nc)
+  /-- Entry-by-entry, the checked matrix carries the flat claims. -/
+  hes : ∀ (s : Fin (segTotal nc)) (j : Fin 2), (es[s])[j] = flatSeg E₀ s j
+  /-- Per grid node, the node's IPA opening proof at the SRS's round count. -/
+  prf : Fin (segTotal nc) → Fin 2 → Ipa.Proof C σ.k
   /-- The deployed verifier accepts every node's batched input. -/
   hacc : ∀ (s : Fin (segTotal nc)) (j : Fin 2),
-    Ipa.verify C σ (Ipa.mkInput C cs #[ζ₀, idx.omega * ζ₀] es (ξ₀ s) (r₀ j) (prf s j))
-      = true
+    Ipa.verify C σ (Ipa.mkInput cs ⟨#[ζ₀, idx.omega * ζ₀], rfl⟩ es (ξ₀ s) (r₀ j)
+      (prf s j)) = true
 
 section BatchOfAcc
 
@@ -102,10 +99,11 @@ variable {C : Ipa.CommitmentCurve} [Module C.ScalarField C.Point] {n : ℕ} [NeZ
   {σ : SRS C.Point} {idx : Index C.ScalarField n} {nc : ℕ}
   {comms : IndexComms (Fin nc → C.Point)} {wC : Fin 15 → Fin nc → C.Point}
 
-/-- The wire input of one grid node. -/
+/-- The checked input of one grid node. -/
 def KimchiBatchAcc.nodeInput (T : KimchiBatchAcc C σ idx nc comms wC)
-    (s : Fin (segTotal nc)) (j : Fin 2) : Ipa.Input C :=
-  Ipa.mkInput C T.cs #[T.ζ₀, idx.omega * T.ζ₀] T.es (T.ξ₀ s) (T.r₀ j) (T.prf s j)
+    (s : Fin (segTotal nc)) (j : Fin 2) : Ipa.Input C σ.k (segTotal nc) 2 :=
+  Ipa.mkInput T.cs ⟨#[T.ζ₀, idx.omega * T.ζ₀], rfl⟩ T.es (T.ξ₀ s) (T.r₀ j)
+    (T.prf s j)
 
 /-- **Per-node Fiat–Shamir transport, chunked**: the IPA-axiom-shaped transcript-tree
 family at a node's wire input, re-expressed over the CHUNKED combiners of the abstract
@@ -115,7 +113,7 @@ combination to the chunked combiner (`_eq_flat`), the wire cip to the chunked on
 private theorem KimchiBatchAcc.nodeFS (T : KimchiBatchAcc C σ idx nc comms wC)
     (s : Fin (segTotal nc)) (j : Fin 2)
     (hax : FiatShamirTreeB σ
-      (combinedCommitment (T.ξ₀ s) (fun t : Fin T.cs.size => T.cs[t]))
+      (combinedCommitment (T.ξ₀ s) (T.nodeInput s j).commitmentFn)
       (combinedEvalVector (2 ^ σ.k) (T.r₀ j) (T.nodeInput s j).pointFn)
       (Ipa.cipOf (T.nodeInput s j))
       (Ipa.verify C σ (T.nodeInput s j) = true)) :
@@ -124,21 +122,14 @@ private theorem KimchiBatchAcc.nodeFS (T : KimchiBatchAcc C σ idx nc comms wC)
       (combinedEvalVector (2 ^ σ.k) (T.r₀ j) ![T.ζ₀, idx.omega * T.ζ₀])
       (chunkedCombinedInnerProduct (T.ξ₀ s) (T.r₀ j) T.E₀)
       (Ipa.verify C σ (T.nodeInput s j) = true) := by
-  have hgetD : ∀ (m : ℕ) (hm : m < T.cs.size), T.cs.getD m 0 = T.cs[m] := by
-    intro m hm
-    simp [Array.getD, hm]
-  have hsz : T.cs.size = ∑ _ : Fin 44, nc := T.hcsSize.trans (segTotal_eq_sum nc)
-  have hP : combinedCommitment (T.ξ₀ s) (fun t : Fin T.cs.size => T.cs[t])
+  have hsz : segTotal nc = ∑ _ : Fin 44, nc := segTotal_eq_sum nc
+  have hP : combinedCommitment (T.ξ₀ s) (T.nodeInput s j).commitmentFn
       = chunkedCombinedCommitment (T.ξ₀ s) (batchC wC T.zC T.pubC comms) := by
     rw [chunkedCombinedCommitment_eq_flat]
     refine combinedCommitment_reindex _ hsz _ _ fun t => ?_
-    show T.cs[(t : ℕ)] = flatten (batchC wC T.zC T.pubC comms) (Fin.cast hsz t)
-    rw [← hgetD (t : ℕ) t.isLt]
-    have h1 := T.hcs (Fin.cast T.hcsSize t)
-    simp only [Fin.val_cast] at h1
-    rw [h1, flatSeg]
-    have hidx : finCongr (segTotal_eq_sum nc) (Fin.cast T.hcsSize t)
-        = Fin.cast hsz t := Fin.ext rfl
+    show T.cs[t] = flatten (batchC wC T.zC T.pubC comms) (Fin.cast hsz t)
+    rw [T.hcs t, flatSeg]
+    have hidx : finCongr (segTotal_eq_sum nc) t = Fin.cast hsz t := Fin.ext rfl
     rw [hidx]
   have hx : ∀ t : Fin 2, (T.nodeInput s j).pointFn t
       = ![T.ζ₀, idx.omega * T.ζ₀] t := by
@@ -151,15 +142,12 @@ private theorem KimchiBatchAcc.nodeFS (T : KimchiBatchAcc C σ idx nc comms wC)
   have hv : Ipa.cipOf (T.nodeInput s j)
       = chunkedCombinedInnerProduct (T.ξ₀ s) (T.r₀ j) T.E₀ := by
     rw [chunkedCombinedInnerProduct_eq_flat]
-    show combinedInnerProduct (T.ξ₀ s) (T.r₀ j)
-        (fun (t : Fin T.cs.size) (u : Fin 2) => (T.es[(t : ℕ)]!)[(u : ℕ)]!)
+    show combinedInnerProduct (T.ξ₀ s) (T.r₀ j) (T.nodeInput s j).evalFn
       = combinedInnerProduct (T.ξ₀ s) (T.r₀ j) (flatten T.E₀)
     refine combinedInnerProduct_reindex _ _ hsz _ _ fun t u => ?_
-    have h1 := T.hes (Fin.cast T.hcsSize t) u
-    simp only [Fin.val_cast] at h1
-    rw [h1, flatSeg]
-    have hidx : finCongr (segTotal_eq_sum nc) (Fin.cast T.hcsSize t)
-        = Fin.cast hsz t := Fin.ext rfl
+    show (T.es[t])[u] = flatten T.E₀ (Fin.cast hsz t) u
+    rw [T.hes t u, flatSeg]
+    have hidx : finCongr (segTotal_eq_sum nc) t = Fin.cast hsz t := Fin.ext rfl
     rw [hidx]
   rw [hP, hb, hv] at hax
   exact hax
@@ -283,7 +271,7 @@ theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) {nc : ℕ} (hnc : 0 < nc
     (idx : Index Fp n)
     (hk : nc * 2 ^ σ.k = n)
     (cvk : KimchiVK IpaVesta.curve (nc))
-    (cp : KimchiProof IpaVesta.curve (nc))
+    (cp : KimchiProof IpaVesta.curve nc σ.k)
     (hvk : VKCorresponds σ (nc) cvk.comms idx)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
     (T : KimchiBatchAcc IpaVesta.curve σ idx (nc)
@@ -363,7 +351,7 @@ theorem kimchiPallas_run_sound (σ : SRS IpaPallas.Point) {nc : ℕ} (hnc : 0 < 
     (idx : Index Fq n)
     (hk : nc * 2 ^ σ.k = n)
     (cvk : KimchiVK IpaPallas.curve (nc))
-    (cp : KimchiProof IpaPallas.curve (nc))
+    (cp : KimchiProof IpaPallas.curve nc σ.k)
     (hvk : VKCorresponds σ (nc) cvk.comms idx)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
     (T : KimchiBatchAcc IpaPallas.curve σ idx (nc)

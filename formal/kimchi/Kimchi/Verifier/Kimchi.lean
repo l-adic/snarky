@@ -85,9 +85,10 @@ inductive PubEvalSrc (C : Ipa.CommitmentCurve) (nc : ℕ) where
   | carried (pe : PointEvaluations (Vector C.ScalarField nc))
   | barycentric (h : nc = 1)
 
-/-- A chunk-validated proof: what `KimchiProof.check nc` returns, and the only thing
-the verifier body and the soundness layer ever read. -/
-structure KimchiProof (C : Ipa.CommitmentCurve) (nc : ℕ) where
+/-- A chunk-validated proof at round count `k` (the SRS's `σ.k`): what
+`KimchiProof.check nc k` returns, and the only thing the verifier body and the
+soundness layer ever read. -/
+structure KimchiProof (C : Ipa.CommitmentCurve) (nc k : ℕ) where
   wComm : Vector (Vector C.Point nc) 15
   zComm : Vector C.Point nc
   /-- The quotient chunks: genuinely variable-length, so the bound is carried. -/
@@ -96,7 +97,7 @@ structure KimchiProof (C : Ipa.CommitmentCurve) (nc : ℕ) where
   evals : ProofEvaluations (Vector C.ScalarField nc)
   pubEvals : PubEvalSrc C nc
   ftEval1 : C.ScalarField
-  opening : Ipa.Proof C
+  opening : Ipa.Proof C k
 
 /-- A chunk-validated verifier key. -/
 structure KimchiVK (C : Ipa.CommitmentCurve) (nc : ℕ) where
@@ -193,47 +194,44 @@ def publicEvals {F : Type*} [Field F] (n : ℕ)
 /-- The IPA acceptance from a **warm** sponge state: production hands the post-`ζ`
 fq-sponge to the opening verifier (`BatchEvaluationProof { sponge: fq_sponge, .. }`,
 verifier.rs:1184–1193). This is the verbatim body of `Ipa.transcript` + `Ipa.verify`
-(Ipa.lean:158–229) with `FqSponge.init` replaced by `s₀` — duplicated because
-`Kimchi/Verifier/Ipa.lean` is frozen and its `verify` (validated standalone against the
-opening fixture) hard-codes the fresh start; unify later. The duplication, like the rest
-of this module, is adjudicated by the production fixture. -/
-def Ipa.verifyFrom (σ : SRS C.Point) (s₀ : FqSponge.S C.base) (inp : Ipa.Input C) :
-    Bool :=
-  if inp.proof.lr.size != σ.k || inp.evals.size != inp.commitments.size
-      || inp.evals.any (·.size != inp.xs.size) then
-    false
-  else
-    let s := absorbFr C.sponge s₀ (Ipa.shiftScalar C (Ipa.cipOf inp))
-    let (t, s) := challengeFq C.sponge s
-    let uBase := C.toGroup t
-    let (chals, s) := inp.proof.lr.foldl
-      (fun (acc : Array C.ScalarField × FqSponge.S C.base) LR =>
-        let s := absorbG C.sponge (absorbG C.sponge acc.2 LR.1) LR.2
-        let (u, s) := squeezeChallenge C.sponge s
-        (acc.1.push u, s))
-      (#[], s)
-    let s := absorbG C.sponge s inp.proof.delta
-    let (c, _) := squeezeChallenge C.sponge s
-    let chal : Fin σ.k → C.ScalarField := fun i => chals[i.val]!
-    let b0 := combinedB chal inp.evalscale (fun j : Fin inp.xs.size => inp.xs[j.val]!)
-    let v := Ipa.cipOf inp
-    let P := Ipa.combineCommitments C inp.polyscale inp.commitments
-    let Q := (inp.proof.lr.zip chals).foldl
-      (fun acc (LRu : (C.Point × C.Point) × C.ScalarField) =>
-        acc + (LRu.2⁻¹.val • LRu.1.1 + LRu.2.val • LRu.1.2))
-      (P + v.val • uBase)
-    let schnorr := decide (c.val • Q + inp.proof.delta
-      = inp.proof.z1.val • inp.proof.sg + (inp.proof.z1 * b0).val • uBase
-          + inp.proof.z2.val • σ.h)
-    let sgOk := decide (inp.proof.sg = Ipa.msm C σ.g (bPolyCoefficients chal))
-    schnorr && sgOk
+with `FqSponge.init` replaced by `s₀` — duplicated because the standalone
+`Bulletproof.Ipa.verify` (validated against the opening fixtures) hard-codes the fresh
+start; unify later. The duplication, like the rest of this module, is adjudicated by
+the production fixture. The claim's shape is carried by its type, so there are no
+runtime guards. -/
+def Ipa.verifyFrom {m p : ℕ} (σ : SRS C.Point) (s₀ : FqSponge.S C.base)
+    (inp : Ipa.Input C σ.k m p) : Bool :=
+  let s := absorbFr C.sponge s₀ (Ipa.shiftScalar C (Ipa.cipOf inp))
+  let (t, s) := challengeFq C.sponge s
+  let uBase := C.toGroup t
+  let (chals, s) := inp.proof.lr.toArray.foldl
+    (fun (acc : Array C.ScalarField × FqSponge.S C.base) LR =>
+      let s := absorbG C.sponge (absorbG C.sponge acc.2 LR.1) LR.2
+      let (u, s) := squeezeChallenge C.sponge s
+      (acc.1.push u, s))
+    (#[], s)
+  let s := absorbG C.sponge s inp.proof.delta
+  let (c, _) := squeezeChallenge C.sponge s
+  let chal : Fin σ.k → C.ScalarField := fun i => chals[i.val]!
+  let b0 := combinedB chal inp.evalscale inp.pointFn
+  let v := Ipa.cipOf inp
+  let P := Ipa.combineCommitments C inp.polyscale inp.commitments.toArray
+  let Q := (inp.proof.lr.toArray.zip chals).foldl
+    (fun acc (LRu : (C.Point × C.Point) × C.ScalarField) =>
+      acc + (LRu.2⁻¹.val • LRu.1.1 + LRu.2.val • LRu.1.2))
+    (P + v.val • uBase)
+  let schnorr := decide (c.val • Q + inp.proof.delta
+    = inp.proof.z1.val • inp.proof.sg + (inp.proof.z1 * b0).val • uBase
+        + inp.proof.z2.val • σ.h)
+  let sgOk := decide (inp.proof.sg = Ipa.msm C σ.g (bPolyCoefficients chal))
+  schnorr && sgOk
 
 /-! ## The Fiat-Shamir schedules -/
 
 /-- The fq-sponge schedule of `oracles` (verifier.rs:156–283): `absorb_commitment` is
 chunk-wise `absorbG`, so the public-commitment and per-column absorbs are chunk
 folds; the squeeze schedule is chunk-count-independent. -/
-def fqOracles {nc : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc)
+def fqOracles {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     (publicComm : Vector C.Point nc) : FqOracles C :=
   let s := absorbFq C.sponge FqSponge.init [cvk.digest]
   let s := publicComm.foldl (absorbG C.sponge) s
@@ -251,7 +249,7 @@ chunk vector — the two public chunk vectors via `absorb_multiple` (:391–392)
 column the `ζ`-chunk vector and the `ζω`-chunk vector (`absorb_evaluations`,
 plonk_sponge.rs: one `sponge.absorb` per point vector), in the `absorb_evaluations`
 order. -/
-def frOracles {nc : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc)
+def frOracles {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     (fqDig : C.ScalarField) (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
     C.ScalarField × C.ScalarField :=
   let sp := cvk.frSpec
@@ -289,7 +287,7 @@ def combineAt {F : Type*} [Field F] (xM : F) (chunks : Array F) : F :=
 `evals.public` when present (production prefers it at ANY `nc`); else the one-chunk
 barycentric computation — the `nc = 1`-only branch, its `nc = 1` proof carried by the
 `PubEvalSrc.barycentric` constructor. -/
-def publicEvalChunks {C : Ipa.CommitmentCurve} {nc : ℕ} (cp : KimchiProof C nc)
+def publicEvalChunks {C : Ipa.CommitmentCurve} {nc k : ℕ} (cp : KimchiProof C nc k)
     (n : ℕ) (omega zeta zetaOmega zetaN zetaOmegaN : C.ScalarField)
     (pub : Array C.ScalarField) : PointEvaluations (Vector C.ScalarField nc) :=
   match cp.pubEvals with
@@ -302,8 +300,8 @@ def publicEvalChunks {C : Ipa.CommitmentCurve} {nc : ℕ} (cp : KimchiProof C nc
 the verifier's `evals.combine(&powers_of_eval_points_for_chunks)` (verifier.rs:409):
 every column combined at `ζ^max_poly_size` (`ζω`-side values at `(ζω)^max_poly_size`).
 Every read is total off the checked record. -/
-def KimchiProof.linEvals {C : Ipa.CommitmentCurve} {nc : ℕ}
-    (cp : KimchiProof C nc) (zetaM zetaOmegaM : C.ScalarField) :
+def KimchiProof.linEvals {C : Ipa.CommitmentCurve} {nc k : ℕ}
+    (cp : KimchiProof C nc k) (zetaM zetaOmegaM : C.ScalarField) :
     Kimchi.Protocol.Linearization.Evals C.ScalarField where
   w i := combineAt zetaM (cp.evals.w[i]).zeta.toArray
   wOmega i := combineAt zetaOmegaM (cp.evals.w[i]).zetaOmega.toArray
@@ -335,6 +333,47 @@ def publicCommitment {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
         (fun acc Pp => acc + (-Pp.2).val • Pp.1[c]) 0
       + σ.h)
 
+/-! ## The stream combinators -/
+
+/-- Reading a flattened uniform block vector: block `q`, offset `r` sits at
+`q·n + r`. The general read behind every tail-region access of the batch stream. -/
+theorem flatten_read {α : Type*} {m n : ℕ} (v : Vector (Vector α n) m) (q r : ℕ)
+    (hq : q < m) (hr : r < n) :
+    v.flatten[q * n + r]'(by
+      calc q * n + r < (q + 1) * n := by rw [Nat.succ_mul]; omega
+        _ ≤ m * n := Nat.mul_le_mul_right n hq)
+      = (v[q]'hq)[r]'hr := by
+  have hdiv : (q * n + r) / n = q := by
+    rw [Nat.mul_comm q n, Nat.mul_add_div (by omega : 0 < n), Nat.div_eq_of_lt hr]
+    omega
+  have hmod : (q * n + r) % n = r := by
+    rw [Nat.add_comm, Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt hr]
+  rw [Vector.getElem_flatten]
+  simp only [hdiv, hmod]
+
+/-- One logical batch row's per-chunk segment triples: the chunk commitments zipped
+with the per-chunk claims at `(ζ, ζω)`. -/
+def zipSeg {nc : ℕ} (comm : Vector C.Point nc)
+    (ev : PointEvaluations (Vector C.ScalarField nc)) :
+    Vector (C.Point × C.ScalarField × C.ScalarField) nc :=
+  Vector.ofFn fun c => (comm[c], ev.zeta[c], ev.zetaOmega[c])
+
+/-- The 43 tail rows of the batch stream in `to_batch` order (`z`, the six selectors,
+witness `0–14`, coefficients `0–14`, σ `0–5`), each row its per-chunk segments. -/
+def tailRowsOf {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k) :
+    Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) 43 :=
+  (⟨#[zipSeg C cp.zComm cp.evals.z,
+      zipSeg C cvk.genericComm cp.evals.genericSelector,
+      zipSeg C cvk.poseidonComm cp.evals.poseidonSelector,
+      zipSeg C cvk.completeAddComm cp.evals.completeAddSelector,
+      zipSeg C cvk.mulComm cp.evals.mulSelector,
+      zipSeg C cvk.emulComm cp.evals.emulSelector,
+      zipSeg C cvk.endomulScalarComm cp.evals.endomulScalarSelector], rfl⟩
+    : Vector _ 7)
+  ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
+  ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
+  ++ ((cvk.sigmaComm.take 6).zip cp.evals.s).map (fun x => zipSeg C x.1 x.2)
+
 /-! ## The verifier -/
 
 /-- **The verifier body over checked records** (`to_batch` + the opening check,
@@ -346,7 +385,7 @@ chunk-COMBINED evaluations; the `ft_comm` double collapse at `ζ^max_poly_size`
 (one flat row per chunk, ft single — the per-chunk polyscale walk of
 `combined_inner_product`/`combine_commitments`); the warm-sponge IPA finish. -/
 def kimchiVerify {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc) (pub : Array C.ScalarField) : Bool :=
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : Bool :=
   let n := cvk.n
   if cvk.lagrangeBasis.size < pub.size || n < pub.size then
     false
@@ -370,34 +409,16 @@ def kimchiVerify {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     let fComm := cvk.sigmaComm[6].map (fun P => pScalar.val • P)
     let ftComm := Ipa.combineCommitments C zetaM fComm.toArray
       - (zetaN - 1).val • Ipa.combineCommitments C zetaM cp.tComm
-    let logical : Array (Array C.Point × Array C.ScalarField × Array C.ScalarField) :=
-      #[(publicComm.toArray, pubEvals.zeta.toArray, pubEvals.zetaOmega.toArray),
-        (#[ftComm], #[ftEval0], #[cp.ftEval1]),
-        (cp.zComm.toArray, cp.evals.z.zeta.toArray, cp.evals.z.zetaOmega.toArray),
-        (cvk.genericComm.toArray, cp.evals.genericSelector.zeta.toArray,
-          cp.evals.genericSelector.zetaOmega.toArray),
-        (cvk.poseidonComm.toArray, cp.evals.poseidonSelector.zeta.toArray,
-          cp.evals.poseidonSelector.zetaOmega.toArray),
-        (cvk.completeAddComm.toArray, cp.evals.completeAddSelector.zeta.toArray,
-          cp.evals.completeAddSelector.zetaOmega.toArray),
-        (cvk.mulComm.toArray, cp.evals.mulSelector.zeta.toArray,
-          cp.evals.mulSelector.zetaOmega.toArray),
-        (cvk.emulComm.toArray, cp.evals.emulSelector.zeta.toArray,
-          cp.evals.emulSelector.zetaOmega.toArray),
-        (cvk.endomulScalarComm.toArray, cp.evals.endomulScalarSelector.zeta.toArray,
-          cp.evals.endomulScalarSelector.zetaOmega.toArray)]
-      ++ (cp.wComm.zip cp.evals.w).toArray.map
-          (fun x => (x.1.toArray, x.2.zeta.toArray, x.2.zetaOmega.toArray))
-      ++ (cvk.coefficientsComm.zip cp.evals.coefficients).toArray.map
-          (fun x => (x.1.toArray, x.2.zeta.toArray, x.2.zetaOmega.toArray))
-      ++ ((cvk.sigmaComm.take 6).zip cp.evals.s).toArray.map
-          (fun x => (x.1.toArray, x.2.zeta.toArray, x.2.zetaOmega.toArray))
-    let rows := logical.flatMap (fun r =>
-      (r.1.zip (r.2.1.zip r.2.2)).map (fun ce => (ce.1, ce.2.1, ce.2.2)))
-    let inp : Ipa.Input C :=
-      { commitments := rows.map (·.1)
-        xs := #[o.zeta, zetaOmega]
-        evals := rows.map (fun r => #[r.2.1, r.2.2])
+    let stream : Vector (C.Point × C.ScalarField × C.ScalarField) (nc + 1 + 43 * nc) :=
+      (Vector.ofFn fun c : Fin nc =>
+          (publicComm[c], pubEvals.zeta[c], pubEvals.zetaOmega[c]))
+        ++ (⟨#[(ftComm, ftEval0, cp.ftEval1)], rfl⟩
+            : Vector (C.Point × C.ScalarField × C.ScalarField) 1)
+        ++ (tailRowsOf C cvk cp).flatten
+    let inp : Ipa.Input C σ.k (nc + 1 + 43 * nc) 2 :=
+      { commitments := stream.map (·.1)
+        xs := ⟨#[o.zeta, zetaOmega], rfl⟩
+        evals := stream.map (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector _ 2))
         polyscale := v
         evalscale := u
         proof := cp.opening }

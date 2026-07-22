@@ -32,7 +32,7 @@ def verifyWire (C : Ipa.CommitmentCurve) (σ : Bulletproof.SRS C.Point)
     (vk : Wire.KimchiVK C) (p : Wire.KimchiProof C)
     (pub : Array C.ScalarField) : Bool :=
   if σ.k ≤ vk.domainLog2 then
-    match vk.check (Wire.runNc C σ vk), p.check (Wire.runNc C σ vk) with
+    match vk.check (Wire.runNc C σ vk), p.check (Wire.runNc C σ vk) σ.k with
     | some cvk, some cp => kimchiVerify C σ cvk cp pub
     | _, _ => false
   else false

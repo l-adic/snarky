@@ -60,8 +60,9 @@ structure KimchiProof (C : Ipa.CommitmentCurve) where
   pubEvals : Option (PointEvaluations (Array C.ScalarField))
   /-- `ft(ζω)` (Maller's optimization; proof.rs:170) — the ft row is single-chunk. -/
   ftEval1 : C.ScalarField
-  /-- The batched IPA opening proof. -/
-  opening : Ipa.Proof C
+  /-- The batched IPA opening proof — the serde wire form; its round count is checked
+  against the SRS's `σ.k` by the parse. -/
+  opening : Ipa.Wire.Proof C
 
 /-- The kimchi verifier index wire record (`VerifierIndex`, verifier_index.rs): fixed
 dimensions serde-typed (`sigma_comm: [PolyComm; PERMUTS]`,
@@ -123,18 +124,20 @@ private def checkEvals {F : Type*} (nc : ℕ) (e : ProofEvaluations (Array F)) :
            endomulScalarSelector := ← checkPointEvals nc e.endomulScalarSelector }
 
 /-- **The proof check** (`check_proof_evals_len` + the commitment-length checks, which
-in production take `expected_size` as an argument — exactly this `nc`). -/
-def KimchiProof.check {C : Ipa.CommitmentCurve} (nc : ℕ) (p : KimchiProof C) :
-    Option (Kimchi.Verifier.KimchiProof C nc) := do
+in production take `expected_size` as an argument — exactly this `nc`), at the SRS's
+round count `k` (the opening's `lr` length). -/
+def KimchiProof.check {C : Ipa.CommitmentCurve} (nc k : ℕ) (p : KimchiProof C) :
+    Option (Kimchi.Verifier.KimchiProof C nc k) := do
   let wComm ← p.wComm.mapM (checkChunks nc)
   let zComm ← checkChunks nc p.zComm
+  let opening ← p.opening.check k
   if htc : p.tComm.size ≤ 7 * nc then
     let evals ← checkEvals nc p.evals
     let pubEvals ← match p.pubEvals with
       | some pe => (checkPointEvals nc pe).map .carried
       | none => if h : nc = 1 then some (.barycentric h) else none
     return { wComm, zComm, tComm := p.tComm, tComm_le := htc, evals, pubEvals,
-             ftEval1 := p.ftEval1, opening := p.opening }
+             ftEval1 := p.ftEval1, opening := opening }
   else none
 
 /-- **The key check**: every committed column validated to `nc` chunks. The Lagrange

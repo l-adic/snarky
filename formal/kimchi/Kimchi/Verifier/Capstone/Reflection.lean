@@ -46,7 +46,7 @@ actually runs; the statement mentions only the run's own wire data — no arithm
 content, no reference to the abstract batch. -/
 axiom kimchi_fiat_shamir_vesta (σ : SRS IpaVesta.Point) {nc : ℕ}
     (cvk : KimchiVK IpaVesta.curve nc)
-    (cp : KimchiProof IpaVesta.curve nc) (pub : Array Fp) :
+    (cp : KimchiProof IpaVesta.curve nc σ.k) (pub : Array Fp) :
   FiatShamirTreeB σ
     (combinedCommitment (runInput IpaVesta.curve σ cvk cp pub).polyscale
       (runInput IpaVesta.curve σ cvk cp pub).commitmentFn)
@@ -60,7 +60,7 @@ axiom kimchi_fiat_shamir_vesta (σ : SRS IpaVesta.Point) {nc : ℕ}
 The Pallas-side twin of `kimchi_fiat_shamir_vesta`. -/
 axiom kimchi_fiat_shamir_pallas (σ : SRS IpaPallas.Point) {nc : ℕ}
     (cvk : KimchiVK IpaPallas.curve nc)
-    (cp : KimchiProof IpaPallas.curve nc) (pub : Array Fq) :
+    (cp : KimchiProof IpaPallas.curve nc σ.k) (pub : Array Fq) :
   FiatShamirTreeB σ
     (combinedCommitment (runInput IpaPallas.curve σ cvk cp pub).polyscale
       (runInput IpaPallas.curve σ cvk cp pub).commitmentFn)
@@ -70,195 +70,247 @@ axiom kimchi_fiat_shamir_pallas (σ : SRS IpaPallas.Point) {nc : ℕ}
     (Ipa.verifyFrom IpaPallas.curve σ (runWarm IpaPallas.curve σ cvk cp pub)
       (runInput IpaPallas.curve σ cvk cp pub) = true)
 
-/-! ## Reading the ft slot of the flat stream -/
-
 variable (C : Ipa.CommitmentCurve)
 
-/-- The wire point carrier is inhabited by the group zero — for the `getElem!` reads
-of the flat stream. -/
 private instance : Inhabited C.Point := ⟨0⟩
 
-/-- `getElem!` through an append, left part (the `Reflect.lean` helper, local copy). -/
-private theorem getBang_append_left {α : Type*} [Inhabited α] (as bs : Array α)
-    (i : ℕ) (h : i < as.size) : (as ++ bs)[i]! = as[i]! := by
-  rw [getElem!_pos (as ++ bs) i (by rw [Array.size_append]; omega),
-    getElem!_pos as i h, Array.getElem_append_left h]
+/-! ## The stream reads
 
-/-- `getElem!` through an append, right part, at an offset index. -/
-private theorem getBang_append_right {α : Type*} [Inhabited α] (as bs : Array α)
-    (i : ℕ) (h : i < bs.size) : (as ++ bs)[as.size + i]! = bs[i]! := by
-  have hgr := Array.getElem_append_right' (i := i) as h
-  rw [getElem!_pos (as ++ bs) _ (by rw [Array.size_append]; omega),
-    getElem!_pos bs i h, hgr]
-  congr 1
-  omega
+`runStreamP` is three `Vector` appends — the public block, the ft singleton, and the
+flattened 43-row tail — so every segment read is `Vector.getElem_append` dispatch plus
+one `flatten_read`. Every read is total: the shapes are type-level. -/
 
-/-- `getBang_append_right` with the index supplied as an equation (avoids rewriting
-occurrences of the index elsewhere in the goal). -/
-private theorem getBang_append_at {α : Type*} [Inhabited α] (as bs : Array α)
-    (i j : ℕ) (hij : i = as.size + j) (h : j < bs.size) :
-    (as ++ bs)[i]! = bs[j]! := by
-  subst hij
-  exact getBang_append_right as bs j h
+section StreamReads
 
-/-- `getElem!` through a map, in range. -/
-private theorem getBang_map {α β : Type*} [Inhabited α] [Inhabited β] (g : α → β)
-    (as : Array α) (i : ℕ) (h : i < as.size) : (as.map g)[i]! = g as[i]! := by
-  rw [getElem!_pos (as.map g) i (by rw [Array.size_map]; omega), getElem!_pos as i h,
-    Array.getElem_map]
+variable {σ : SRS C.Point} {nc : ℕ} {cvk : KimchiVK C nc}
+  {cp : KimchiProof C nc σ.k} {pub : Array C.ScalarField}
+  {pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)}
 
-/-- The flat position of the single-chunk ft row: `nc` (right after the public row's
-`nc` chunks). Reads the triple off `flatRows (runLogicalP …)`. -/
-private theorem flatRows_ft_read (σ : SRS C.Point) {nc : ℕ}
-    (cvk : KimchiVK C nc) (cp : KimchiProof C nc)
-    (pub : Array C.ScalarField)
-    (pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)) :
-    (flatRows C (runLogicalP C σ cvk cp pub pe))[(nc : ℕ)]!
-      = (runFtComm C σ cvk cp pub,
-          runFtEval0P C σ cvk cp pub
-            (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray),
-          cp.ftEval1) := by
-  have hApub : (Array.map
-        (fun ce : C.Point × C.ScalarField × C.ScalarField => (ce.1, ce.2.1, ce.2.2))
-        ((publicCommitment C σ cvk pub).toArray.zip
-          (pe.zeta.toArray.zip pe.zetaOmega.toArray))).size
-      = nc := by
-    simp [Array.size_zip]
-  have hAft : Array.map
-        (fun ce : C.Point × C.ScalarField × C.ScalarField => (ce.1, ce.2.1, ce.2.2))
-        (#[runFtComm C σ cvk cp pub].zip
-          (#[runFtEval0P C σ cvk cp pub
-              (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray)].zip
-            #[cp.ftEval1]))
-      = #[(runFtComm C σ cvk cp pub,
-          runFtEval0P C σ cvk cp pub
-            (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray),
-          cp.ftEval1)] := by
-    simp [Array.zip]
-  unfold flatRows runLogicalP
-  rw [Array.flatMap_append, Array.flatMap_append, Array.flatMap_append]
-  rw [show (#[((publicCommitment C σ cvk pub).toArray, pe.zeta.toArray, pe.zetaOmega.toArray),
-      (#[runFtComm C σ cvk cp pub],
-        #[runFtEval0P C σ cvk cp pub
-            (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray)],
-        #[cp.ftEval1]),
-      (cp.zComm.toArray, cp.evals.z.zeta.toArray, cp.evals.z.zetaOmega.toArray),
-      (cvk.genericComm.toArray, cp.evals.genericSelector.zeta.toArray,
-        cp.evals.genericSelector.zetaOmega.toArray),
-      (cvk.poseidonComm.toArray, cp.evals.poseidonSelector.zeta.toArray,
-        cp.evals.poseidonSelector.zetaOmega.toArray),
-      (cvk.completeAddComm.toArray, cp.evals.completeAddSelector.zeta.toArray,
-        cp.evals.completeAddSelector.zetaOmega.toArray),
-      (cvk.mulComm.toArray, cp.evals.mulSelector.zeta.toArray,
-        cp.evals.mulSelector.zetaOmega.toArray),
-      (cvk.emulComm.toArray, cp.evals.emulSelector.zeta.toArray,
-        cp.evals.emulSelector.zetaOmega.toArray),
-      (cvk.endomulScalarComm.toArray, cp.evals.endomulScalarSelector.zeta.toArray,
-        cp.evals.endomulScalarSelector.zetaOmega.toArray)]
-    : Array (Array C.Point × Array C.ScalarField × Array C.ScalarField))
-      = #[((publicCommitment C σ cvk pub).toArray, pe.zeta.toArray, pe.zetaOmega.toArray)]
-        ++ #[(#[runFtComm C σ cvk cp pub],
-        #[runFtEval0P C σ cvk cp pub
-            (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray)],
-        #[cp.ftEval1])]
-        ++ #[      (cp.zComm.toArray, cp.evals.z.zeta.toArray, cp.evals.z.zetaOmega.toArray),
-      (cvk.genericComm.toArray, cp.evals.genericSelector.zeta.toArray,
-        cp.evals.genericSelector.zetaOmega.toArray),
-      (cvk.poseidonComm.toArray, cp.evals.poseidonSelector.zeta.toArray,
-        cp.evals.poseidonSelector.zetaOmega.toArray),
-      (cvk.completeAddComm.toArray, cp.evals.completeAddSelector.zeta.toArray,
-        cp.evals.completeAddSelector.zetaOmega.toArray),
-      (cvk.mulComm.toArray, cp.evals.mulSelector.zeta.toArray,
-        cp.evals.mulSelector.zetaOmega.toArray),
-      (cvk.emulComm.toArray, cp.evals.emulSelector.zeta.toArray,
-        cp.evals.emulSelector.zetaOmega.toArray),
-      (cvk.endomulScalarComm.toArray, cp.evals.endomulScalarSelector.zeta.toArray,
-        cp.evals.endomulScalarSelector.zetaOmega.toArray)] from rfl]
-  rw [Array.flatMap_append, Array.flatMap_append]
-  simp only [Array.flatMap_singleton]
-  rw [getBang_append_left _ _ _ (by
-    simp only [Array.size_append, hApub, hAft, List.size_toArray, List.length_cons,
-      List.length_nil]
-    omega)]
-  rw [getBang_append_left _ _ _ (by
-    simp only [Array.size_append, hApub, hAft, List.size_toArray, List.length_cons,
-      List.length_nil]
-    omega)]
-  rw [getBang_append_left _ _ _ (by
-    simp only [Array.size_append, hApub, hAft, List.size_toArray, List.length_cons,
-      List.length_nil]
-    omega)]
-  rw [getBang_append_left _ _ _ (by
-    simp only [Array.size_append, hApub, hAft, List.size_toArray, List.length_cons,
-      List.length_nil]
-    omega)]
-  rw [getBang_append_at _ _ _ 0 (by rw [hApub, Nat.add_zero]) (by rw [hAft]; simp)]
-  rw [hAft]
-  rw [getElem!_pos _ 0 (by simp)]
+/-- Blocks stay inside their region: `q·nc + c < Q·nc`. -/
+private theorem block_lt {q Q c nc : ℕ} (hq : q < Q) (hc : c < nc) :
+    q * nc + c < Q * nc := by
+  calc q * nc + c < (q + 1) * nc := by rw [Nat.succ_mul]; omega
+    _ ≤ Q * nc := Nat.mul_le_mul_right nc hq
+
+/-- **Public-region read**: position `c` is public chunk `c`. -/
+private theorem stream_pub_read (c : ℕ) (hc : c < nc) :
+    (runStreamP C σ cvk cp pub pe)[c]'(by omega)
+      = ((publicCommitment C σ cvk pub)[c]'hc, pe.zeta[c]'hc, pe.zetaOmega[c]'hc) := by
+  unfold runStreamP
+  rw [Vector.getElem_append, dif_pos (by omega : c < nc + 1),
+    Vector.getElem_append, dif_pos hc, Vector.getElem_ofFn]
   rfl
 
-/-- The flat stream has more than `nc` rows (the public block plus the ft singleton). -/
-private theorem flatRows_size_lt (σ : SRS C.Point) {nc : ℕ}
-    (cvk : KimchiVK C nc) (cp : KimchiProof C nc)
-    (pub : Array C.ScalarField)
-    (pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)) :
-    (nc : ℕ) < (flatRows C (runLogicalP C σ cvk cp pub pe)).size := by
-  have hApub : (Array.map
-        (fun ce : C.Point × C.ScalarField × C.ScalarField => (ce.1, ce.2.1, ce.2.2))
-        ((publicCommitment C σ cvk pub).toArray.zip
-          (pe.zeta.toArray.zip pe.zetaOmega.toArray))).size
-      = nc := by
-    simp [Array.size_zip]
-  unfold flatRows runLogicalP
-  rw [Array.flatMap_append, Array.flatMap_append, Array.flatMap_append]
-  rw [show (#[((publicCommitment C σ cvk pub).toArray, pe.zeta.toArray, pe.zetaOmega.toArray),
-      (#[runFtComm C σ cvk cp pub],
-        #[runFtEval0P C σ cvk cp pub
-            (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray)],
-        #[cp.ftEval1]),
-      (cp.zComm.toArray, cp.evals.z.zeta.toArray, cp.evals.z.zetaOmega.toArray),
-      (cvk.genericComm.toArray, cp.evals.genericSelector.zeta.toArray,
-        cp.evals.genericSelector.zetaOmega.toArray),
-      (cvk.poseidonComm.toArray, cp.evals.poseidonSelector.zeta.toArray,
-        cp.evals.poseidonSelector.zetaOmega.toArray),
-      (cvk.completeAddComm.toArray, cp.evals.completeAddSelector.zeta.toArray,
-        cp.evals.completeAddSelector.zetaOmega.toArray),
-      (cvk.mulComm.toArray, cp.evals.mulSelector.zeta.toArray,
-        cp.evals.mulSelector.zetaOmega.toArray),
-      (cvk.emulComm.toArray, cp.evals.emulSelector.zeta.toArray,
-        cp.evals.emulSelector.zetaOmega.toArray),
-      (cvk.endomulScalarComm.toArray, cp.evals.endomulScalarSelector.zeta.toArray,
-        cp.evals.endomulScalarSelector.zetaOmega.toArray)]
-    : Array (Array C.Point × Array C.ScalarField × Array C.ScalarField))
-      = #[((publicCommitment C σ cvk pub).toArray, pe.zeta.toArray, pe.zetaOmega.toArray)]
-        ++ #[(#[runFtComm C σ cvk cp pub],
-        #[runFtEval0P C σ cvk cp pub
-            (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray)],
-        #[cp.ftEval1])]
-        ++ #[      (cp.zComm.toArray, cp.evals.z.zeta.toArray, cp.evals.z.zetaOmega.toArray),
-      (cvk.genericComm.toArray, cp.evals.genericSelector.zeta.toArray,
-        cp.evals.genericSelector.zetaOmega.toArray),
-      (cvk.poseidonComm.toArray, cp.evals.poseidonSelector.zeta.toArray,
-        cp.evals.poseidonSelector.zetaOmega.toArray),
-      (cvk.completeAddComm.toArray, cp.evals.completeAddSelector.zeta.toArray,
-        cp.evals.completeAddSelector.zetaOmega.toArray),
-      (cvk.mulComm.toArray, cp.evals.mulSelector.zeta.toArray,
-        cp.evals.mulSelector.zetaOmega.toArray),
-      (cvk.emulComm.toArray, cp.evals.emulSelector.zeta.toArray,
-        cp.evals.emulSelector.zetaOmega.toArray),
-      (cvk.endomulScalarComm.toArray, cp.evals.endomulScalarSelector.zeta.toArray,
-        cp.evals.endomulScalarSelector.zetaOmega.toArray)] from rfl]
-  rw [Array.flatMap_append, Array.flatMap_append]
-  simp only [Array.flatMap_singleton]
-  simp only [Array.size_append, hApub]
-  have h1 : 0 < (Array.map
-      (fun ce : C.Point × C.ScalarField × C.ScalarField => (ce.1, ce.2.1, ce.2.2))
-      (#[runFtComm C σ cvk cp pub].zip
-        (#[runFtEval0P C σ cvk cp pub
-            (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray)].zip
-          #[cp.ftEval1]))).size := by
-    simp [Array.zip]
-  omega
+/-- **The ft read**: position `nc` is the constructed single-chunk ft row. -/
+private theorem stream_ft_read :
+    (runStreamP C σ cvk cp pub pe)[(nc : ℕ)]'(by omega)
+      = (runFtComm C σ cvk cp pub,
+         runFtEval0P C σ cvk cp pub
+           (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray),
+         cp.ftEval1) := by
+  unfold runStreamP
+  rw [Vector.getElem_append, dif_pos (by omega : (nc : ℕ) < nc + 1),
+    Vector.getElem_append, dif_neg (by omega : ¬ (nc : ℕ) < nc)]
+  simp only [Nat.sub_self]
+  rfl
+
+/-- **The tail read**: position `nc + 1 + q·nc + c` is tail row `q`'s chunk `c` — one
+`flatten_read`. -/
+private theorem stream_tail_read (q c : ℕ) (hq : q < 43) (hc : c < nc) :
+    (runStreamP C σ cvk cp pub pe)[nc + 1 + q * nc + c]'(by
+        have := block_lt hq hc
+        omega)
+      = ((tailRowsOf C cvk cp)[q]'hq)[c]'hc := by
+  unfold runStreamP
+  rw [Vector.getElem_append, dif_neg (by omega : ¬ nc + 1 + q * nc + c < nc + 1)]
+  simp only [show nc + 1 + q * nc + c - (nc + 1) = q * nc + c from by omega]
+  exact flatten_read _ q c hq hc
+
+/-- Tail row `j < 7` is the `j`-th literal row (`z` + the six selectors). -/
+private theorem tailRows_read_lit (j : ℕ) (hj : j < 7) :
+    (tailRowsOf C cvk cp)[j]'(by omega)
+      = ((⟨#[zipSeg C cp.zComm cp.evals.z,
+            zipSeg C cvk.genericComm cp.evals.genericSelector,
+            zipSeg C cvk.poseidonComm cp.evals.poseidonSelector,
+            zipSeg C cvk.completeAddComm cp.evals.completeAddSelector,
+            zipSeg C cvk.mulComm cp.evals.mulSelector,
+            zipSeg C cvk.emulComm cp.evals.emulSelector,
+            zipSeg C cvk.endomulScalarComm cp.evals.endomulScalarSelector], rfl⟩
+          : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) 7)[j]'hj) := by
+  show ((⟨#[zipSeg C cp.zComm cp.evals.z,
+        zipSeg C cvk.genericComm cp.evals.genericSelector,
+        zipSeg C cvk.poseidonComm cp.evals.poseidonSelector,
+        zipSeg C cvk.completeAddComm cp.evals.completeAddSelector,
+        zipSeg C cvk.mulComm cp.evals.mulSelector,
+        zipSeg C cvk.emulComm cp.evals.emulSelector,
+        zipSeg C cvk.endomulScalarComm cp.evals.endomulScalarSelector], rfl⟩
+          : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) 7)
+      ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
+      ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
+      ++ ((cvk.sigmaComm.take 6).zip cp.evals.s).map (fun x => zipSeg C x.1 x.2))[j]'(by omega) = _
+  rw [Vector.getElem_append, dif_pos (by omega), Vector.getElem_append,
+    dif_pos (by omega), Vector.getElem_append, dif_pos hj]
+
+/-- Tail row `7 + q` is witness column `q`'s row. -/
+private theorem tailRows_read_w (q : ℕ) (hq : q < 15) :
+    (tailRowsOf C cvk cp)[7 + q]'(by omega)
+      = zipSeg C (cp.wComm[q]'hq) (cp.evals.w[q]'hq) := by
+  show ((⟨#[zipSeg C cp.zComm cp.evals.z,
+        zipSeg C cvk.genericComm cp.evals.genericSelector,
+        zipSeg C cvk.poseidonComm cp.evals.poseidonSelector,
+        zipSeg C cvk.completeAddComm cp.evals.completeAddSelector,
+        zipSeg C cvk.mulComm cp.evals.mulSelector,
+        zipSeg C cvk.emulComm cp.evals.emulSelector,
+        zipSeg C cvk.endomulScalarComm cp.evals.endomulScalarSelector], rfl⟩
+          : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) 7)
+      ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
+      ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
+      ++ ((cvk.sigmaComm.take 6).zip cp.evals.s).map
+        (fun x => zipSeg C x.1 x.2))[7 + q]'(by omega) = _
+  rw [Vector.getElem_append, dif_pos (by omega), Vector.getElem_append,
+    dif_pos (by omega), Vector.getElem_append, dif_neg (by omega)]
+  simp only [show 7 + q - 7 = q from by omega, Vector.getElem_map, Vector.getElem_zip]
+
+/-- Tail row `22 + q` is coefficient column `q`'s row. -/
+private theorem tailRows_read_c (q : ℕ) (hq : q < 15) :
+    (tailRowsOf C cvk cp)[22 + q]'(by omega)
+      = zipSeg C (cvk.coefficientsComm[q]'hq) (cp.evals.coefficients[q]'hq) := by
+  show ((⟨#[zipSeg C cp.zComm cp.evals.z,
+        zipSeg C cvk.genericComm cp.evals.genericSelector,
+        zipSeg C cvk.poseidonComm cp.evals.poseidonSelector,
+        zipSeg C cvk.completeAddComm cp.evals.completeAddSelector,
+        zipSeg C cvk.mulComm cp.evals.mulSelector,
+        zipSeg C cvk.emulComm cp.evals.emulSelector,
+        zipSeg C cvk.endomulScalarComm cp.evals.endomulScalarSelector], rfl⟩
+          : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) 7)
+      ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
+      ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
+      ++ ((cvk.sigmaComm.take 6).zip cp.evals.s).map
+        (fun x => zipSeg C x.1 x.2))[22 + q]'(by omega) = _
+  rw [Vector.getElem_append, dif_pos (by omega), Vector.getElem_append,
+    dif_neg (by omega)]
+  simp only [show 22 + q - (7 + 15) = q from by omega, Vector.getElem_map,
+    Vector.getElem_zip]
+
+/-- Tail row `37 + q` is the `q`-th σ row. -/
+private theorem tailRows_read_s (q : ℕ) (hq : q < 6) :
+    (tailRowsOf C cvk cp)[37 + q]'(by omega)
+      = zipSeg C (cvk.sigmaComm[q]'(by omega)) (cp.evals.s[q]'hq) := by
+  show ((⟨#[zipSeg C cp.zComm cp.evals.z,
+        zipSeg C cvk.genericComm cp.evals.genericSelector,
+        zipSeg C cvk.poseidonComm cp.evals.poseidonSelector,
+        zipSeg C cvk.completeAddComm cp.evals.completeAddSelector,
+        zipSeg C cvk.mulComm cp.evals.mulSelector,
+        zipSeg C cvk.emulComm cp.evals.emulSelector,
+        zipSeg C cvk.endomulScalarComm cp.evals.endomulScalarSelector], rfl⟩
+          : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) 7)
+      ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
+      ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
+      ++ ((cvk.sigmaComm.take 6).zip cp.evals.s).map
+        (fun x => zipSeg C x.1 x.2))[37 + q]'(by omega) = _
+  rw [Vector.getElem_append, dif_neg (by omega)]
+  simp only [show 37 + q - (7 + 15 + 15) = q from by omega, Vector.getElem_map,
+    Vector.getElem_zip, Vector.getElem_take]
+  rfl
+
+/-- The literal seven-row block (`z` + the six selectors) as array triples — a naming
+device: at a concrete index it reduces definitionally, so the consumer branches close
+by `rfl`. -/
+private def litRowsA {nc k' : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k') :
+    Array (Array C.Point × Array C.ScalarField × Array C.ScalarField) :=
+  #[(cp.zComm.toArray, cp.evals.z.zeta.toArray, cp.evals.z.zetaOmega.toArray),
+    (cvk.genericComm.toArray, cp.evals.genericSelector.zeta.toArray,
+      cp.evals.genericSelector.zetaOmega.toArray),
+    (cvk.poseidonComm.toArray, cp.evals.poseidonSelector.zeta.toArray,
+      cp.evals.poseidonSelector.zetaOmega.toArray),
+    (cvk.completeAddComm.toArray, cp.evals.completeAddSelector.zeta.toArray,
+      cp.evals.completeAddSelector.zetaOmega.toArray),
+    (cvk.mulComm.toArray, cp.evals.mulSelector.zeta.toArray,
+      cp.evals.mulSelector.zetaOmega.toArray),
+    (cvk.emulComm.toArray, cp.evals.emulSelector.zeta.toArray,
+      cp.evals.emulSelector.zetaOmega.toArray),
+    (cvk.endomulScalarComm.toArray, cp.evals.endomulScalarSelector.zeta.toArray,
+      cp.evals.endomulScalarSelector.zetaOmega.toArray)]
+
+/-- **Public-region read**, `getElem!` spelling. -/
+private theorem stream_read_pub (c : ℕ) (hc : c < nc) :
+    (runStreamP C σ cvk cp pub pe)[c]!
+      = ((publicCommitment C σ cvk pub).toArray[c]!, pe.zeta.toArray[c]!,
+          pe.zetaOmega.toArray[c]!) := by
+  rw [getElem!_pos (runStreamP C σ cvk cp pub pe) c (by omega),
+    stream_pub_read C c hc,
+    getElem!_pos ((publicCommitment C σ cvk pub).toArray) c (by simpa using hc),
+    getElem!_pos (pe.zeta.toArray) c (by simpa using hc),
+    getElem!_pos (pe.zetaOmega.toArray) c (by simpa using hc)]
+  rfl
+
+/-- **Literal-region read** (`z` + the six selectors), `getElem!` spelling. -/
+private theorem stream_read_lit (k c : ℕ) (hk : k < 7) (hc : c < nc) :
+    (runStreamP C σ cvk cp pub pe)[nc + 1 + k * nc + c]!
+      = (((litRowsA C cvk cp)[k]!).1[c]!, ((litRowsA C cvk cp)[k]!).2.1[c]!,
+          ((litRowsA C cvk cp)[k]!).2.2[c]!) := by
+  rw [getElem!_pos (runStreamP C σ cvk cp pub pe) _ (by
+      have := block_lt hk hc
+      omega),
+    stream_tail_read C k c (by omega) hc, tailRows_read_lit C k hk]
+  interval_cases k <;>
+    (show (Vector.ofFn _)[c]'hc = _
+     rw [Vector.getElem_ofFn]
+     simp only [litRowsA]
+     rw [getElem!_pos _ c (by simpa using hc), getElem!_pos _ c (by simpa using hc),
+       getElem!_pos _ c (by simpa using hc)]
+     rfl)
+
+/-- **Witness-region read**, `getElem!` spelling. -/
+private theorem stream_read_w (q c : ℕ) (hq : q < 15) (hc : c < nc) :
+    (runStreamP C σ cvk cp pub pe)[nc + 1 + (7 + q) * nc + c]!
+      = ((cp.wComm[q]).toArray[c]!, (cp.evals.w[q]).zeta.toArray[c]!,
+          (cp.evals.w[q]).zetaOmega.toArray[c]!) := by
+  rw [getElem!_pos (runStreamP C σ cvk cp pub pe) _ (by
+      have := block_lt (show 7 + q < 43 by omega) hc
+      omega),
+    stream_tail_read C (7 + q) c (by omega) hc, tailRows_read_w C q hq]
+  show (Vector.ofFn _)[c]'hc = _
+  rw [Vector.getElem_ofFn,
+    getElem!_pos ((cp.wComm[q]).toArray) c (by simpa using hc),
+    getElem!_pos ((cp.evals.w[q]).zeta.toArray) c (by simpa using hc),
+    getElem!_pos ((cp.evals.w[q]).zetaOmega.toArray) c (by simpa using hc)]
+  rfl
+
+/-- **Coefficient-region read**, `getElem!` spelling. -/
+private theorem stream_read_c (q c : ℕ) (hq : q < 15) (hc : c < nc) :
+    (runStreamP C σ cvk cp pub pe)[nc + 1 + (22 + q) * nc + c]!
+      = ((cvk.coefficientsComm[q]).toArray[c]!,
+          (cp.evals.coefficients[q]).zeta.toArray[c]!,
+          (cp.evals.coefficients[q]).zetaOmega.toArray[c]!) := by
+  rw [getElem!_pos (runStreamP C σ cvk cp pub pe) _ (by
+      have := block_lt (show 22 + q < 43 by omega) hc
+      omega),
+    stream_tail_read C (22 + q) c (by omega) hc, tailRows_read_c C q hq]
+  show (Vector.ofFn _)[c]'hc = _
+  rw [Vector.getElem_ofFn,
+    getElem!_pos ((cvk.coefficientsComm[q]).toArray) c (by simpa using hc),
+    getElem!_pos ((cp.evals.coefficients[q]).zeta.toArray) c (by simpa using hc),
+    getElem!_pos ((cp.evals.coefficients[q]).zetaOmega.toArray) c (by simpa using hc)]
+  rfl
+
+/-- **σ-region read**, `getElem!` spelling. -/
+private theorem stream_read_s (q c : ℕ) (hq : q < 6) (hc : c < nc) :
+    (runStreamP C σ cvk cp pub pe)[nc + 1 + (37 + q) * nc + c]!
+      = ((cvk.sigmaComm[q]).toArray[c]!, (cp.evals.s[q]).zeta.toArray[c]!,
+          (cp.evals.s[q]).zetaOmega.toArray[c]!) := by
+  rw [getElem!_pos (runStreamP C σ cvk cp pub pe) _ (by
+      have := block_lt (show 37 + q < 43 by omega) hc
+      omega),
+    stream_tail_read C (37 + q) c (by omega) hc, tailRows_read_s C q hq]
+  show (Vector.ofFn _)[c]'hc = _
+  rw [Vector.getElem_ofFn,
+    getElem!_pos ((cvk.sigmaComm[q]).toArray) c (by simpa using hc),
+    getElem!_pos ((cp.evals.s[q]).zeta.toArray) c (by simpa using hc),
+    getElem!_pos ((cp.evals.s[q]).zetaOmega.toArray) c (by simpa using hc)]
+  rfl
+
+end StreamReads
 
 /-- **The ft opening from a chunked reflected run** (tree-as-hypothesis, PROVED):
 DL-binding, a reflected accepted chunked run, SRS-basis representations of the run's
@@ -267,10 +319,10 @@ shape, here a hypothesis), and good combination challenges yield the ft opening 
 representation of the constructed ft commitment `runFtComm` (the DOUBLE collapse at
 `ζ^{2^σ.k}`) whose evaluation at the run's own `ζ` is the computed claim `runFtEval0`.
 The ft row sits at flat position `nc`, right after the public row's chunks
-(`flatRows_ft_read`). -/
+(`stream_ft_read`). -/
 private theorem ft_opening_of_reflected {C : Ipa.CommitmentCurve} [Module C.ScalarField C.Point]
     (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc) (pub : Array C.ScalarField)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → C.ScalarField) (wh : C.ScalarField),
       DLRelation σ w wh → w = 0 ∧ wh = 0)
     (hacc : Ipa.verifyFrom C σ (runWarm C σ cvk cp pub)
@@ -299,33 +351,29 @@ private theorem ft_opening_of_reflected {C : Ipa.CommitmentCurve} [Module C.Scal
   have hpins := eval_pins_of_opening σ hbind (runInput C σ cvk cp pub).commitmentFn
     (runInput C σ cvk cp pub).pointFn aRef ρRef hrep (runInput C σ cvk cp pub).evalFn
     (runInput C σ cvk cp pub).polyscale (runInput C σ cvk cp pub).evalscale hξ hr a ρ hopen
-  have hread := flatRows_ft_read C σ cvk cp pub (runPubEvals C σ cvk cp pub)
-  have hflt := flatRows_size_lt C σ cvk cp pub (runPubEvals C σ cvk cp pub)
   have hsz : (nc : ℕ) < (runInput C σ cvk cp pub).commitments.size := by
-    show (nc : ℕ)
-      < ((flatRows C (runLogicalP C σ cvk cp pub (runPubEvals C σ cvk cp pub))).map
-          (·.1)).size
-    rw [Array.size_map]
-    exact hflt
+    show (nc : ℕ) < nc + 1 + 43 * nc
+    omega
   refine ⟨aRef ⟨nc, hsz⟩, ρRef ⟨nc, hsz⟩, ?_, ?_⟩
   · rw [hrep ⟨nc, hsz⟩]
-    show (runInput C σ cvk cp pub).commitments[(nc : ℕ)]'hsz
+    show ((runStreamP C σ cvk cp pub (runPubEvals C σ cvk cp pub)).map
+        (·.1))[(nc : ℕ)]'(by
+          show (nc : ℕ) < nc + 1 + 43 * nc
+          omega)
       = runFtComm C σ cvk cp pub
-    rw [← getElem!_pos (runInput C σ cvk cp pub).commitments (nc : ℕ) hsz]
-    show ((flatRows C (runLogicalP C σ cvk cp pub (runPubEvals C σ cvk cp pub))).map
-        (·.1))[(nc : ℕ)]! = runFtComm C σ cvk cp pub
-    rw [getBang_map _ _ _ hflt, hread]
+    rw [Vector.getElem_map, stream_ft_read C]
   · have hpin := hpins ⟨nc, hsz⟩ (0 : Fin 2)
     have hpt : (runInput C σ cvk cp pub).pointFn (0 : Fin 2)
         = (runOracles C σ cvk cp pub).zeta := rfl
     rw [hpt] at hpin
     rw [← hpin]
-    show ((runInput C σ cvk cp pub).evals[(nc : ℕ)]!)[(0 : ℕ)]!
+    show (((runStreamP C σ cvk cp pub (runPubEvals C σ cvk cp pub)).map
+        (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector C.ScalarField 2)))[(nc : ℕ)]'(by
+          show (nc : ℕ) < nc + 1 + 43 * nc
+          omega)
+        : Vector C.ScalarField 2)[(0 : ℕ)]
       = runFtEval0 C σ cvk cp pub
-    show (((flatRows C (runLogicalP C σ cvk cp pub (runPubEvals C σ cvk cp pub))).map
-        (fun r => #[r.2.1, r.2.2]))[(nc : ℕ)]!)[(0 : ℕ)]!
-      = runFtEval0 C σ cvk cp pub
-    rw [getBang_map _ _ _ hflt, hread]
+    rw [Vector.getElem_map, stream_ft_read C]
     rfl
 
 /-- **The ft opening of the deployed chunked Vesta verifier**: a genuine
@@ -335,7 +383,7 @@ reflected trust-free (`kimchiVerify_reflects`); the transcript tree is
 `kimchi_fiat_shamir_vesta` at the run's own warm data — the sole axiom
 consumed. The chunked Vesta FS-reflection root. -/
 theorem ft_opening_of_reflected_vesta (σ : SRS IpaVesta.Point) {nc : ℕ}
-    (cvk : KimchiVK IpaVesta.curve nc) (cp : KimchiProof IpaVesta.curve nc)
+    (cvk : KimchiVK IpaVesta.curve nc) (cp : KimchiProof IpaVesta.curve nc σ.k)
     (pub : Array Fp)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
     (hacc : Ipa.verifyFrom IpaVesta.curve σ (runWarm IpaVesta.curve σ cvk cp pub)
@@ -362,7 +410,7 @@ theorem ft_opening_of_reflected_vesta (σ : SRS IpaVesta.Point) {nc : ℕ}
 
 /-- **The ft opening of the deployed chunked Pallas verifier.** The Pallas twin. -/
 theorem ft_opening_of_reflected_pallas (σ : SRS IpaPallas.Point) {nc : ℕ}
-    (cvk : KimchiVK IpaPallas.curve nc) (cp : KimchiProof IpaPallas.curve nc)
+    (cvk : KimchiVK IpaPallas.curve nc) (cp : KimchiProof IpaPallas.curve nc σ.k)
     (pub : Array Fq)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
     (hacc : Ipa.verifyFrom IpaPallas.curve σ (runWarm IpaPallas.curve σ cvk cp pub)
@@ -386,100 +434,6 @@ theorem ft_opening_of_reflected_pallas (σ : SRS IpaPallas.Point) {nc : ℕ}
             = runFtEval0 IpaPallas.curve σ cvk cp pub :=
   ft_opening_of_reflected σ cvk cp pub hbind hacc aRef ρRef hrep
     (kimchi_fiat_shamir_pallas σ cvk cp pub) hξ hr
-
-/-! ## The uniform-block read toolkit
-
-The flat segment stream is a `flatMap` of per-row chunk blocks; every block except the
-ft singleton has exactly `nc` entries. Reads at `q·nc + r` land in block `q` at offset
-`r`. -/
-
-private theorem list_uniform_length {α β : Type*} (L : List α) (g : α → List β)
-    (nc : ℕ) (h : ∀ a ∈ L, (g a).length = nc) :
-    (L.flatMap g).length = L.length * nc := by
-  induction L with
-  | nil => simp
-  | cons hd tl ih =>
-    rw [List.flatMap_cons, List.length_append, h hd (by simp),
-      ih (fun a ha => h a (by simp [ha])), List.length_cons]
-    ring
-
-private theorem list_uniform_read {α β : Type*} [Inhabited α] [Inhabited β]
-    (L : List α) (g : α → List β) (nc : ℕ)
-    (h : ∀ a ∈ L, (g a).length = nc)
-    (q r : ℕ) (hq : q < L.length) (hr : r < nc) :
-    (L.flatMap g)[q * nc + r]! = (g L[q]!)[r]! := by
-  induction L generalizing q with
-  | nil => simp at hq
-  | cons hd tl ih =>
-    have hhd : (g hd).length = nc := h hd (by simp)
-    have htl : (tl.flatMap g).length = tl.length * nc :=
-      list_uniform_length tl g nc (fun a ha => h a (by simp [ha]))
-    rw [List.flatMap_cons]
-    cases q with
-    | zero =>
-      have h0 : (hd :: tl)[(0 : ℕ)]! = hd := by
-        rw [getElem!_pos (hd :: tl) 0 (by simp)]
-        simp
-      simp only [Nat.zero_mul, Nat.zero_add]
-      rw [h0, getElem!_pos (g hd ++ tl.flatMap g) r
-          (by rw [List.length_append]; omega),
-        List.getElem_append_left (by omega),
-        ← getElem!_pos (g hd) r (by omega)]
-    | succ q' =>
-      have hq' : q' < tl.length := by simpa using hq
-      have hbound : q' * nc + r < (tl.flatMap g).length := by
-        rw [htl]
-        have : (q' + 1) * nc ≤ tl.length * nc := Nat.mul_le_mul_right _ (by omega)
-        have h2 : q' * nc + r < (q' + 1) * nc := by
-          rw [Nat.succ_mul]
-          omega
-        omega
-      have hpos : (q' + 1) * nc + r = (g hd).length + (q' * nc + r) := by
-        rw [hhd, Nat.succ_mul]
-        ring
-      have hsucc : (hd :: tl)[(q' + 1 : ℕ)]! = tl[q']! := by
-        rw [getElem!_pos (hd :: tl) (q' + 1) (by simpa using hq),
-          getElem!_pos tl q' hq']
-        simp
-      rw [hpos, hsucc,
-        getElem!_pos (g hd ++ tl.flatMap g) _
-          (by rw [List.length_append]; omega),
-        List.getElem_append_right (by omega),
-        ← getElem!_pos (tl.flatMap g) _
-          (by
-            have : (g hd).length + (q' * nc + r) - (g hd).length = q' * nc + r := by
-              omega
-            omega),
-        show (g hd).length + (q' * nc + r) - (g hd).length = q' * nc + r from by omega,
-        ih (fun a ha => h a (by simp [ha])) q' hq']
-
-/-- Uniform-block read through an array `flatMap`: with every block of size `nc`,
-position `q·nc + r` is block `q` at offset `r`. -/
-private theorem flatMap_uniform_read {α β : Type*} [Inhabited α] [Inhabited β]
-    (A : Array α) (f : α → Array β) (nc : ℕ)
-    (h : ∀ a ∈ A, (f a).size = nc)
-    (q r : ℕ) (hq : q < A.size) (hr : r < nc) :
-    (A.flatMap f)[q * nc + r]! = (f A[q]!)[r]! := by
-  rw [← Array.getElem!_toList, Array.toList_flatMap,
-    list_uniform_read A.toList (fun a => (f a).toList) nc
-      (fun a ha => by
-        rw [Array.length_toList]
-        exact h a (by simpa using ha))
-      q r (by rwa [Array.length_toList]) hr,
-    Array.getElem!_toList, Array.getElem!_toList]
-
-/-- The size of a uniform-block array `flatMap`. -/
-private theorem flatMap_uniform_size {α β : Type*} (A : Array α) (f : α → Array β)
-    (nc : ℕ) (h : ∀ a ∈ A, (f a).size = nc) :
-    (A.flatMap f).size = A.size * nc := by
-  rw [show (A.flatMap f).size = (A.flatMap f).toList.length from
-      Array.length_toList.symm,
-    Array.toList_flatMap,
-    list_uniform_length A.toList (fun a => (f a).toList) nc
-      (fun a ha => by
-        rw [Array.length_toList]
-        exact h a (by simpa using ha)),
-    Array.length_toList]
 
 /-- `combineAt`'s fold, from a running accumulator and power. -/
 private theorem combineAt_aux {F : Type*} [Field F] (xM : F) (l : List F) (acc pw : F) :
@@ -511,328 +465,6 @@ position `nc`, so the public row's chunks come first and every later row `i` sta
 private def streamPos (nc : ℕ) (i : Fin 44) (c : ℕ) : ℕ :=
   if (i : ℕ) < 1 then c else nc + 1 + ((i : ℕ) - 1) * nc + c
 
-section StreamRead
-
-variable {σ : SRS C.Point} {nc : ℕ} {cvk : KimchiVK C nc}
-  {cp : KimchiProof C nc} {pub : Array C.ScalarField}
-  {pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)}
-
-/-- The row-triple flattener of the stream. -/
-private def rowF : Array C.Point × Array C.ScalarField × Array C.ScalarField
-    → Array (C.Point × C.ScalarField × C.ScalarField) :=
-  fun r => (r.1.zip (r.2.1.zip r.2.2)).map (fun ce => (ce.1, ce.2.1, ce.2.2))
-
-/-- The zip-map row triple of a checked commitment/evaluation pair. -/
-private def zipRow {nc : ℕ} :
-    Vector C.Point nc × Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)
-    → Array C.Point × Array C.ScalarField × Array C.ScalarField :=
-  fun x => (x.1.toArray, x.2.zeta.toArray, x.2.zetaOmega.toArray)
-
-/-- The literal seven-row block of the decomposition, named for the region reads. -/
-private def litRows {nc : ℕ} (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc) :
-    Array (Array C.Point × Array C.ScalarField × Array C.ScalarField) :=
-  #[(cp.zComm.toArray, cp.evals.z.zeta.toArray, cp.evals.z.zetaOmega.toArray),
-    (cvk.genericComm.toArray, cp.evals.genericSelector.zeta.toArray,
-      cp.evals.genericSelector.zetaOmega.toArray),
-    (cvk.poseidonComm.toArray, cp.evals.poseidonSelector.zeta.toArray,
-      cp.evals.poseidonSelector.zetaOmega.toArray),
-    (cvk.completeAddComm.toArray, cp.evals.completeAddSelector.zeta.toArray,
-      cp.evals.completeAddSelector.zetaOmega.toArray),
-    (cvk.mulComm.toArray, cp.evals.mulSelector.zeta.toArray,
-      cp.evals.mulSelector.zetaOmega.toArray),
-    (cvk.emulComm.toArray, cp.evals.emulSelector.zeta.toArray,
-      cp.evals.emulSelector.zetaOmega.toArray),
-    (cvk.endomulScalarComm.toArray, cp.evals.endomulScalarSelector.zeta.toArray,
-      cp.evals.endomulScalarSelector.zetaOmega.toArray)]
-
-/-- **The stream decomposition**: the flat rows of the run's 45 logical rows are the
-six-region append tree — the public block, the ft singleton, the seven literal rows
-(`z` + six selectors), then the witness / coefficient / σ zip blocks. -/
-private theorem stream_decomp (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc) (pub : Array C.ScalarField)
-    (pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)) :
-    flatRows C (runLogicalP C σ cvk cp pub pe)
-      = ((((rowF C ((publicCommitment C σ cvk pub).toArray, pe.zeta.toArray,
-              pe.zetaOmega.toArray)
-            ++ rowF C (#[runFtComm C σ cvk cp pub],
-              #[runFtEval0P C σ cvk cp pub
-                  (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray)],
-              #[cp.ftEval1]))
-          ++ Array.flatMap (rowF C) (litRows C cvk cp))
-        ++ Array.flatMap (rowF C) ((cp.wComm.zip cp.evals.w).toArray.map (zipRow C)))
-      ++ Array.flatMap (rowF C)
-          ((cvk.coefficientsComm.zip cp.evals.coefficients).toArray.map (zipRow C)))
-      ++ Array.flatMap (rowF C)
-          (((cvk.sigmaComm.take 6).zip cp.evals.s).toArray.map (zipRow C)) := by
-  unfold flatRows runLogicalP
-  rw [Array.flatMap_append, Array.flatMap_append, Array.flatMap_append]
-  rw [show (#[((publicCommitment C σ cvk pub).toArray, pe.zeta.toArray,
-        pe.zetaOmega.toArray),
-      (#[runFtComm C σ cvk cp pub],
-        #[runFtEval0P C σ cvk cp pub
-            (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray)],
-        #[cp.ftEval1]),
-      (cp.zComm.toArray, cp.evals.z.zeta.toArray, cp.evals.z.zetaOmega.toArray),
-      (cvk.genericComm.toArray, cp.evals.genericSelector.zeta.toArray,
-        cp.evals.genericSelector.zetaOmega.toArray),
-      (cvk.poseidonComm.toArray, cp.evals.poseidonSelector.zeta.toArray,
-        cp.evals.poseidonSelector.zetaOmega.toArray),
-      (cvk.completeAddComm.toArray, cp.evals.completeAddSelector.zeta.toArray,
-        cp.evals.completeAddSelector.zetaOmega.toArray),
-      (cvk.mulComm.toArray, cp.evals.mulSelector.zeta.toArray,
-        cp.evals.mulSelector.zetaOmega.toArray),
-      (cvk.emulComm.toArray, cp.evals.emulSelector.zeta.toArray,
-        cp.evals.emulSelector.zetaOmega.toArray),
-      (cvk.endomulScalarComm.toArray, cp.evals.endomulScalarSelector.zeta.toArray,
-        cp.evals.endomulScalarSelector.zetaOmega.toArray)]
-    : Array (Array C.Point × Array C.ScalarField × Array C.ScalarField))
-      = #[((publicCommitment C σ cvk pub).toArray, pe.zeta.toArray,
-          pe.zetaOmega.toArray)]
-        ++ #[(#[runFtComm C σ cvk cp pub],
-          #[runFtEval0P C σ cvk cp pub
-              (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray)],
-          #[cp.ftEval1])]
-        ++ #[(cp.zComm.toArray, cp.evals.z.zeta.toArray, cp.evals.z.zetaOmega.toArray),
-      (cvk.genericComm.toArray, cp.evals.genericSelector.zeta.toArray,
-        cp.evals.genericSelector.zetaOmega.toArray),
-      (cvk.poseidonComm.toArray, cp.evals.poseidonSelector.zeta.toArray,
-        cp.evals.poseidonSelector.zetaOmega.toArray),
-      (cvk.completeAddComm.toArray, cp.evals.completeAddSelector.zeta.toArray,
-        cp.evals.completeAddSelector.zetaOmega.toArray),
-      (cvk.mulComm.toArray, cp.evals.mulSelector.zeta.toArray,
-        cp.evals.mulSelector.zetaOmega.toArray),
-      (cvk.emulComm.toArray, cp.evals.emulSelector.zeta.toArray,
-        cp.evals.emulSelector.zetaOmega.toArray),
-      (cvk.endomulScalarComm.toArray, cp.evals.endomulScalarSelector.zeta.toArray,
-        cp.evals.endomulScalarSelector.zetaOmega.toArray)] from rfl]
-  rw [Array.flatMap_append, Array.flatMap_append]
-  simp only [Array.flatMap_singleton]
-  rfl
-
-/-- A zip-map row of an `m`-chunk triple flattens to `m` entries. -/
-private theorem rowF_size {A : Array C.Point} {B D : Array C.ScalarField} {m : ℕ}
-    (hA : A.size = m) (hB : B.size = m) (hD : D.size = m) :
-    (rowF C (A, B, D)).size = m := by
-  simp [rowF, Array.size_zip, hA, hB, hD]
-
-/-- Reading a zip-map row's flattened chunk `c`: the component chunks. -/
-private theorem rowF_read {A : Array C.Point} {B D : Array C.ScalarField} {m c : ℕ}
-    (hA : A.size = m) (hB : B.size = m) (hD : D.size = m) (hc : c < m) :
-    (rowF C (A, B, D))[c]! = (A[c]!, B[c]!, D[c]!) := by
-  have hzz : c < (B.zip D).size := by
-    simp only [Array.size_zip, hB, hD]
-    omega
-  have hz : c < (A.zip (B.zip D)).size := by
-    simp only [Array.size_zip, hA, hB, hD]
-    omega
-  show ((A.zip (B.zip D)).map (fun ce => (ce.1, ce.2.1, ce.2.2)))[c]! = _
-  rw [getBang_map _ _ _ hz, getElem!_pos _ c hz,
-    getElem!_pos A c (by omega), getElem!_pos B c (by omega),
-    getElem!_pos D c (by omega)]
-  simp [Array.getElem_zip]
-
-/-- The 43 tail rows of the stream (everything after the public block and the ft
-singleton), in `to_batch` order: the seven literal rows (`z` + the six selectors),
-then the witness / coefficient / σ zip blocks. -/
-private def tailRows {nc : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc) :
-    Array (Array C.Point × Array C.ScalarField × Array C.ScalarField) :=
-  litRows C cvk cp
-    ++ (cp.wComm.zip cp.evals.w).toArray.map (zipRow C)
-    ++ (cvk.coefficientsComm.zip cp.evals.coefficients).toArray.map (zipRow C)
-    ++ ((cvk.sigmaComm.take 6).zip cp.evals.s).toArray.map (zipRow C)
-
-/-- Every tail row's three components are `nc`-sized — type facts of the checked
-records, by cases on the four blocks. -/
-private theorem tail_components :
-    ∀ a ∈ tailRows C cvk cp,
-      a.1.size = nc ∧ a.2.1.size = nc ∧ a.2.2.size = nc := by
-  intro a ha
-  simp only [tailRows, Array.mem_append] at ha
-  rcases ha with ((ha | ha) | ha) | ha
-  · simp only [litRows, List.mem_toArray, List.mem_cons, List.not_mem_nil,
-      or_false] at ha
-    rcases ha with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-      exact ⟨by simp, by simp, by simp⟩
-  all_goals
-    obtain ⟨x, hx, rfl⟩ := Array.exists_of_mem_map ha
-    exact ⟨by simp [zipRow], by simp [zipRow], by simp [zipRow]⟩
-
-/-- Every tail row flattens to `nc` entries. -/
-private theorem tailBlock_uniform :
-    ∀ a ∈ tailRows C cvk cp, (rowF C a).size = nc := by
-  intro a ha
-  obtain ⟨h1, h2, h3⟩ := tail_components C a ha
-  exact rowF_size C h1 h2 h3
-
-/-- The tail has 43 rows. -/
-private theorem tailRows_size : (tailRows C cvk cp).size = 43 := by
-  simp [tailRows, litRows]
-
-/-- The stream regrouped at the tail: the public block, the ft singleton, then the
-uniform 43-row tail — the one flatten boundary every region read goes through. -/
-private theorem stream_tail_decomp (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc) (pub : Array C.ScalarField)
-    (pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)) :
-    flatRows C (runLogicalP C σ cvk cp pub pe)
-      = (rowF C ((publicCommitment C σ cvk pub).toArray, pe.zeta.toArray,
-            pe.zetaOmega.toArray)
-          ++ rowF C (#[runFtComm C σ cvk cp pub],
-            #[runFtEval0P C σ cvk cp pub
-                (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray)],
-            #[cp.ftEval1]))
-        ++ Array.flatMap (rowF C) (tailRows C cvk cp) := by
-  rw [stream_decomp C σ cvk cp pub pe]
-  simp only [tailRows, Array.flatMap_append, Array.append_assoc]
-
-end StreamRead
-
-section RegionReads
-
-variable {σ : SRS C.Point} {nc : ℕ} {cvk : KimchiVK C nc}
-  {cp : KimchiProof C nc} {pub : Array C.ScalarField}
-  {pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)}
-
-/-- Blocks stay inside their region: `q·nc + c < Q·nc`. -/
-private theorem block_lt {q Q c nc : ℕ} (hq : q < Q) (hc : c < nc) :
-    q * nc + c < Q * nc := by
-  calc q * nc + c < (q + 1) * nc := by rw [Nat.succ_mul]; omega
-    _ ≤ Q * nc := Nat.mul_le_mul_right nc hq
-
-/-- **The tail read** — the ONE append peel shared by all four tail regions: the flat
-stream at `nc + 1 + q·nc + c` is tail row `q`'s chunk `c`. -/
-private theorem stream_read_tail (q c : ℕ) (hq : q < 43) (hc : c < nc) :
-    (flatRows C (runLogicalP C σ cvk cp pub pe))[nc + 1 + q * nc + c]!
-      = (((tailRows C cvk cp)[q]!).1[c]!, ((tailRows C cvk cp)[q]!).2.1[c]!,
-          ((tailRows C cvk cp)[q]!).2.2[c]!) := by
-  rw [stream_tail_decomp C σ cvk cp pub pe]
-  have hsPub : (rowF C ((publicCommitment C σ cvk pub).toArray, pe.zeta.toArray,
-      pe.zetaOmega.toArray)).size = nc :=
-    rowF_size C (by simp) (by simp) (by simp)
-  have hsFt : (rowF C (#[runFtComm C σ cvk cp pub],
-      #[runFtEval0P C σ cvk cp pub
-          (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray)],
-      #[cp.ftEval1])).size = 1 := rowF_size C rfl rfl rfl
-  rw [getBang_append_at _ _ _ (q * nc + c) (by
-      simp only [Array.size_append, hsPub, hsFt]
-      omega)
-      (by
-        rw [flatMap_uniform_size _ _ nc (tailBlock_uniform C), tailRows_size C]
-        exact block_lt hq hc),
-    flatMap_uniform_read _ _ nc (tailBlock_uniform C) q c
-      (by rw [tailRows_size C]; omega) hc]
-  have hqlt : q < (tailRows C cvk cp).size := by rw [tailRows_size C]; omega
-  obtain ⟨h1, h2, h3⟩ := tail_components C ((tailRows C cvk cp)[q]!) (by
-    rw [getElem!_pos _ q hqlt]
-    exact Array.getElem_mem _)
-  have := rowF_read C h1 h2 h3 hc
-    (A := ((tailRows C cvk cp)[q]!).1) (B := ((tailRows C cvk cp)[q]!).2.1)
-    (D := ((tailRows C cvk cp)[q]!).2.2)
-  rw [show ((tailRows C cvk cp)[q]!
-      : Array C.Point × Array C.ScalarField × Array C.ScalarField)
-      = (((tailRows C cvk cp)[q]!).1, ((tailRows C cvk cp)[q]!).2.1,
-          ((tailRows C cvk cp)[q]!).2.2) from rfl]
-  exact this
-
-/-- **Witness-region read**: the flat stream at `nc + 1 + (7+q)·nc + c` is witness
-column `q`'s chunk `c` with its claims. -/
-private theorem stream_read_w (q c : ℕ) (hq : q < 15) (hc : c < nc) :
-    (flatRows C (runLogicalP C σ cvk cp pub pe))[nc + 1 + (7 + q) * nc + c]!
-      = ((cp.wComm[q]).toArray[c]!, (cp.evals.w[q]).zeta.toArray[c]!,
-          (cp.evals.w[q]).zetaOmega.toArray[c]!) := by
-  rw [stream_read_tail C (7 + q) c (by omega) hc]
-  have hread : (tailRows C cvk cp)[7 + q]!
-      = zipRow C (cp.wComm[q], cp.evals.w[q]) := by
-    simp only [tailRows]
-    rw [getBang_append_left _ _ _ (by simp [litRows]; omega),
-      getBang_append_left _ _ _ (by simp [litRows]; omega),
-      getBang_append_at _ _ _ q (by simp [litRows]) (by simp; omega),
-      getBang_map _ _ _ (by simp; omega), getElem!_pos _ q (by simp; omega)]
-    congr 1
-    simp
-  rw [hread]
-  rfl
-
-/-- **Literal-region read** (`z` + the six selectors): the flat stream at
-`nc + 1 + k·nc + c` is literal row `k`'s chunk `c`. -/
-private theorem stream_read_lit (k c : ℕ) (hk : k < 7) (hc : c < nc) :
-    (flatRows C (runLogicalP C σ cvk cp pub pe))[nc + 1 + k * nc + c]!
-      = (((litRows C cvk cp)[k]!).1[c]!, ((litRows C cvk cp)[k]!).2.1[c]!,
-          ((litRows C cvk cp)[k]!).2.2[c]!) := by
-  rw [stream_read_tail C k c (by omega) hc]
-  have hread : (tailRows C cvk cp)[k]! = (litRows C cvk cp)[k]! := by
-    simp only [tailRows]
-    rw [getBang_append_left _ _ _ (by simp [litRows]; omega),
-      getBang_append_left _ _ _ (by simp [litRows]; omega),
-      getBang_append_left _ _ _ (by simp [litRows]; omega)]
-  rw [hread]
-
-/-- **Coefficient-region read**: the flat stream at `nc + 1 + (22+q)·nc + c`. -/
-private theorem stream_read_c (q c : ℕ) (hq : q < 15) (hc : c < nc) :
-    (flatRows C (runLogicalP C σ cvk cp pub pe))[nc + 1 + (22 + q) * nc + c]!
-      = ((cvk.coefficientsComm[q]).toArray[c]!,
-          (cp.evals.coefficients[q]).zeta.toArray[c]!,
-          (cp.evals.coefficients[q]).zetaOmega.toArray[c]!) := by
-  rw [stream_read_tail C (22 + q) c (by omega) hc]
-  have hread : (tailRows C cvk cp)[22 + q]!
-      = zipRow C (cvk.coefficientsComm[q], cp.evals.coefficients[q]) := by
-    simp only [tailRows]
-    rw [getBang_append_left _ _ _ (by simp [litRows]; omega),
-      getBang_append_at _ _ _ q (by simp [litRows]) (by simp; omega),
-      getBang_map _ _ _ (by simp; omega), getElem!_pos _ q (by simp; omega)]
-    congr 1
-    simp
-  rw [hread]
-  rfl
-
-/-- **σ-region read**: the flat stream at `nc + 1 + (37+q)·nc + c`. -/
-private theorem stream_read_s (q c : ℕ) (hq : q < 6) (hc : c < nc) :
-    (flatRows C (runLogicalP C σ cvk cp pub pe))[nc + 1 + (37 + q) * nc + c]!
-      = ((cvk.sigmaComm[q]).toArray[c]!, (cp.evals.s[q]).zeta.toArray[c]!,
-          (cp.evals.s[q]).zetaOmega.toArray[c]!) := by
-  rw [stream_read_tail C (37 + q) c (by omega) hc]
-  have hread : (tailRows C cvk cp)[37 + q]!
-      = zipRow C (cvk.sigmaComm[q], cp.evals.s[q]) := by
-    simp only [tailRows]
-    rw [getBang_append_at _ _ _ q (by simp [litRows]) (by simp; omega),
-      getBang_map _ _ _ (by simp; omega), getElem!_pos _ q (by simp; omega)]
-    congr 1
-    simp
-    rfl
-  rw [hread]
-  rfl
-
-/-- **Public-region read**: the flat stream at `c` is public chunk `c`. -/
-private theorem stream_read_pub (c : ℕ) (hc : c < nc) :
-    (flatRows C (runLogicalP C σ cvk cp pub pe))[c]!
-      = ((publicCommitment C σ cvk pub).toArray[c]!, pe.zeta.toArray[c]!,
-          pe.zetaOmega.toArray[c]!) := by
-  rw [stream_tail_decomp C σ cvk cp pub pe]
-  have hsPub : (rowF C ((publicCommitment C σ cvk pub).toArray, pe.zeta.toArray,
-      pe.zetaOmega.toArray)).size = nc :=
-    rowF_size C (by simp) (by simp) (by simp)
-  rw [getBang_append_left _ _ _ (by
-      simp only [Array.size_append, hsPub]
-      omega),
-    getBang_append_left _ _ _ (by rw [hsPub]; omega)]
-  exact rowF_read C (by simp) (by simp) (by simp) hc
-
-/-- **The stream size**: the flat stream has `44·nc + 1` rows. -/
-private theorem stream_size :
-    (flatRows C (runLogicalP C σ cvk cp pub pe)).size = 44 * nc + 1 := by
-  rw [stream_tail_decomp C σ cvk cp pub pe]
-  have hsPub : (rowF C ((publicCommitment C σ cvk pub).toArray, pe.zeta.toArray,
-      pe.zetaOmega.toArray)).size = nc :=
-    rowF_size C (by simp) (by simp) (by simp)
-  have hsFt : (rowF C (#[runFtComm C σ cvk cp pub],
-      #[runFtEval0P C σ cvk cp pub
-          (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray)],
-      #[cp.ftEval1])).size = 1 := rowF_size C rfl rfl rfl
-  rw [Array.size_append, Array.size_append,
-    flatMap_uniform_size _ _ nc (tailBlock_uniform C), tailRows_size C, hsPub, hsFt]
-  ring
-
-end RegionReads
 
 /-! ## The chunked wire correspondence and the public-commitment link -/
 
@@ -1086,7 +718,7 @@ private theorem publicCommitment_corresponds [Module C.ScalarField C.Point]
 section ScalarReconcile
 
 variable {σ : SRS C.Point} {nc : ℕ} {cvk : KimchiVK C nc}
-  {cp : KimchiProof C nc} {pub : Array C.ScalarField}
+  {cp : KimchiProof C nc σ.k} {pub : Array C.ScalarField}
   {pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)}
   {v u : C.ScalarField}
 
@@ -1119,7 +751,7 @@ private theorem evals_ext {F : Type*} {e e' : Evals F} (h1 : e.w = e'.w)
 
 /-- Every stream position lies inside the `44·nc + 1` flat rows. -/
 private theorem streamPos_lt (nc : ℕ) (i : Fin 44) (c : ℕ) (hc : c < nc) :
-    streamPos nc i c < 44 * nc + 1 := by
+    streamPos nc i c < nc + 1 + 43 * nc := by
   have hi := i.isLt
   unfold streamPos
   split_ifs with h1
@@ -1167,13 +799,16 @@ private theorem streamPos_sRow (nc : ℕ) (i : Fin 6) (ch : ℕ) :
 claim pair. -/
 private theorem runEvals_read (i : Fin 44) (c : ℕ) (hc : c < nc) :
     (runInputP C σ cvk cp pub pe v u).evals[streamPos nc i c]!
-      = #[((flatRows C (runLogicalP C σ cvk cp pub pe))[streamPos nc i c]!).2.1,
-          ((flatRows C (runLogicalP C σ cvk cp pub pe))[streamPos nc i c]!).2.2] := by
-  show ((flatRows C (runLogicalP C σ cvk cp pub pe)).map
-      (fun r => #[r.2.1, r.2.2]))[streamPos nc i c]! = _
-  rw [getBang_map _ _ _ (by
-    rw [stream_size C]
-    exact streamPos_lt _ i c hc)]
+      = ⟨#[((runStreamP C σ cvk cp pub pe)[streamPos nc i c]!).2.1,
+          ((runStreamP C σ cvk cp pub pe)[streamPos nc i c]!).2.2],
+         rfl⟩ := by
+  have hlt : streamPos nc i c < nc + 1 + 43 * nc := streamPos_lt nc i c hc
+  rw [getElem!_pos ((runInputP C σ cvk cp pub pe v u).evals) (streamPos nc i c) hlt,
+    getElem!_pos (runStreamP C σ cvk cp pub pe) (streamPos nc i c) hlt]
+  show ((runStreamP C σ cvk cp pub pe).map
+      (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector C.ScalarField 2)))[streamPos
+        nc i c]'hlt = _
+  rw [Vector.getElem_map]
 
 /-- A `Fin nc`-indexed power sum whose entries read an `nc`-sized array is that
 array's chunk combination. -/
@@ -1325,7 +960,7 @@ end ScalarReconcile
 section GroupReconcile
 
 variable {σ : SRS C.Point} {nc : ℕ} {cvk : KimchiVK C nc}
-  {cp : KimchiProof C nc} {pub : Array C.ScalarField}
+  {cp : KimchiProof C nc σ.k} {pub : Array C.ScalarField}
   {pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)}
 
 /-- **The abstract 44-row chunked batch is the flat stream's commitment column**: at
@@ -1337,8 +972,7 @@ private theorem batchC_eq_flat (i : Fin 44) (c : Fin nc) :
         (fun c => cp.zComm[c])
         (fun c => (publicCommitment C σ cvk pub)[c])
         cvk.comms i c
-      = ((flatRows C (runLogicalP C σ cvk cp pub pe))[streamPos nc i
-          (c : ℕ)]!).1 := by
+      = ((runStreamP C σ cvk cp pub pe)[streamPos nc i (c : ℕ)]!).1 := by
   have hbr : ∀ (w : Vector C.Point nc), w.toArray[(c : ℕ)]! = w[c] := fun w => by
     rw [getElem!_pos w.toArray (c : ℕ) (by simp)]
     simp
@@ -1432,7 +1066,7 @@ per-chunk `VKCorresponds`, the scalar pins, and the Lagrange pin. Axioms consume
 `ζⁿ ≠ 1` guard: the public claims are proof-carried batch data, believed only
 through binding — no barycentric reconciliation. The Vesta run-level root. -/
 theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point) {nc : ℕ}
-    (cvk : KimchiVK IpaVesta.curve nc) (cp : KimchiProof IpaVesta.curve nc)
+    (cvk : KimchiVK IpaVesta.curve nc) (cp : KimchiProof IpaVesta.curve nc σ.k)
     (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
     (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n) (hn : cvk.n = n)
     (hvk : cvk.Corresponds σ idx)
@@ -1486,10 +1120,7 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point) {nc : ℕ}
       streamPos (nc) i (c : ℕ)
         < (runInput IpaVesta.curve σ cvk cp pub).commitments.size := by
     intro i c
-    show streamPos (nc) i (c : ℕ)
-      < ((flatRows IpaVesta.curve (runLogicalP IpaVesta.curve σ cvk cp pub
-          (runPubEvals IpaVesta.curve σ cvk cp pub))).map (·.1)).size
-    rw [Array.size_map, stream_size IpaVesta.curve]
+    show streamPos (nc) i (c : ℕ) < nc + 1 + 43 * nc
     exact streamPos_lt _ i _ c.isLt
   -- (2) the reference openings at the stream positions bind the abstract batch
   have hbound₀ : ∀ (i : Fin 44) (c : Fin (nc)),
@@ -1500,16 +1131,12 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point) {nc : ℕ}
             cvk.comms i c := by
     intro i c
     rw [hrep ⟨streamPos (nc) i (c : ℕ), hlt i c⟩]
-    show (runInput IpaVesta.curve σ cvk cp pub).commitments[streamPos
-        (nc) i (c : ℕ)]'(hlt i c) = _
-    rw [← getElem!_pos (runInput IpaVesta.curve σ cvk cp pub).commitments
-      (streamPos (nc) i (c : ℕ)) (hlt i c)]
-    show ((flatRows IpaVesta.curve (runLogicalP IpaVesta.curve σ cvk cp pub
-        (runPubEvals IpaVesta.curve σ cvk cp pub))).map
-          (·.1))[streamPos (nc) i (c : ℕ)]! = _
-    rw [getBang_map _ _ _ (by
-      rw [stream_size IpaVesta.curve]
-      exact streamPos_lt _ i _ c.isLt)]
+    show (((runStreamP IpaVesta.curve σ cvk cp pub
+        (runPubEvals IpaVesta.curve σ cvk cp pub)).map
+          (·.1))[streamPos (nc) i (c : ℕ)]'(hlt i c)) = _
+    rw [Vector.getElem_map,
+      ← getElem!_pos (runStreamP IpaVesta.curve σ cvk cp pub
+          (runPubEvals IpaVesta.curve σ cvk cp pub)) _ (hlt i c)]
     exact (batchC_eq_flat IpaVesta.curve i c).symm
   -- (3) the public row pinned through the Lagrange chunk pin
   have hpubC : ∀ c : Fin (nc),
@@ -1597,6 +1224,7 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point) {nc : ℕ}
       rw [homega]
       exact mul_comm _ _
   rw [hpt] at hpins
+  simp only [Ipa.Input.evalFn_bang] at hpins
   -- (9) feed the consumer
   exact himp (runOracles IpaVesta.curve σ cvk cp pub).beta
     (runOracles IpaVesta.curve σ cvk cp pub).gamma
@@ -1620,7 +1248,7 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point) {nc : ℕ}
 `kimchiVesta_run_sound_algebraic_ft`, over `Fq`/`IpaPallas`, its Fiat–Shamir
 assumption `kimchi_fiat_shamir_pallas`. -/
 theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point) {nc : ℕ}
-    (cvk : KimchiVK IpaPallas.curve nc) (cp : KimchiProof IpaPallas.curve nc)
+    (cvk : KimchiVK IpaPallas.curve nc) (cp : KimchiProof IpaPallas.curve nc σ.k)
     (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
     (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n) (hn : cvk.n = n)
     (hvk : cvk.Corresponds σ idx)
@@ -1674,10 +1302,7 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point) {nc : ℕ
       streamPos (nc) i (c : ℕ)
         < (runInput IpaPallas.curve σ cvk cp pub).commitments.size := by
     intro i c
-    show streamPos (nc) i (c : ℕ)
-      < ((flatRows IpaPallas.curve (runLogicalP IpaPallas.curve σ cvk cp pub
-          (runPubEvals IpaPallas.curve σ cvk cp pub))).map (·.1)).size
-    rw [Array.size_map, stream_size IpaPallas.curve]
+    show streamPos (nc) i (c : ℕ) < nc + 1 + 43 * nc
     exact streamPos_lt _ i _ c.isLt
   -- (2) the reference openings at the stream positions bind the abstract batch
   have hbound₀ : ∀ (i : Fin 44) (c : Fin (nc)),
@@ -1688,16 +1313,12 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point) {nc : ℕ
             cvk.comms i c := by
     intro i c
     rw [hrep ⟨streamPos (nc) i (c : ℕ), hlt i c⟩]
-    show (runInput IpaPallas.curve σ cvk cp pub).commitments[streamPos
-        (nc) i (c : ℕ)]'(hlt i c) = _
-    rw [← getElem!_pos (runInput IpaPallas.curve σ cvk cp pub).commitments
-      (streamPos (nc) i (c : ℕ)) (hlt i c)]
-    show ((flatRows IpaPallas.curve (runLogicalP IpaPallas.curve σ cvk cp pub
-        (runPubEvals IpaPallas.curve σ cvk cp pub))).map
-          (·.1))[streamPos (nc) i (c : ℕ)]! = _
-    rw [getBang_map _ _ _ (by
-      rw [stream_size IpaPallas.curve]
-      exact streamPos_lt _ i _ c.isLt)]
+    show (((runStreamP IpaPallas.curve σ cvk cp pub
+        (runPubEvals IpaPallas.curve σ cvk cp pub)).map
+          (·.1))[streamPos (nc) i (c : ℕ)]'(hlt i c)) = _
+    rw [Vector.getElem_map,
+      ← getElem!_pos (runStreamP IpaPallas.curve σ cvk cp pub
+          (runPubEvals IpaPallas.curve σ cvk cp pub)) _ (hlt i c)]
     exact (batchC_eq_flat IpaPallas.curve i c).symm
   -- (3) the public row pinned through the Lagrange chunk pin
   have hpubC : ∀ c : Fin (nc),
@@ -1785,6 +1406,7 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point) {nc : ℕ
       rw [homega]
       exact mul_comm _ _
   rw [hpt] at hpins
+  simp only [Ipa.Input.evalFn_bang] at hpins
   -- (9) feed the consumer
   exact himp (runOracles IpaPallas.curve σ cvk cp pub).beta
     (runOracles IpaPallas.curve σ cvk cp pub).gamma
