@@ -1,5 +1,7 @@
 import Kimchi.Verifier.Chunked
-import KimchiFixture.Kimchi
+import BulletproofFixture
+import FixtureKit.Parse
+import Lean.Data.Json
 
 /-!
 # Chunked kimchi wire-proof fixture ingestion
@@ -25,7 +27,7 @@ namespace Kimchi.Fixture.Chunked
 
 open FixtureKit
 
-open Lean Kimchi.Fixture Bulletproof.Fixture Kimchi.Verifier Kimchi.Verifier.Chunked
+open Lean Bulletproof.Fixture Kimchi.Verifier Kimchi.Verifier.Chunked
 
 /-- A chunked commitment: a bare `[x, y]` point (one-chunk format — first element a
 coordinate string) as a singleton, else an array of points. -/

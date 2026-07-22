@@ -1,4 +1,3 @@
-import KimchiFixture.Kimchi
 import KimchiFixture.Chunked
 import Lean.Data.Json
 
@@ -70,39 +69,11 @@ abbrev CP := IpaPallas.curve
 
 def main : IO Unit := do
   let dir := (← IO.getEnv "KIMCHI_FIXTURES_DIR").getD "fixtures"
-  -- The nc = 1 verifier on the one-chunk fixture (the original adjudication).
-  let path := s!"{dir}/kimchi_proof_vesta.json"
-  let raw ← IO.FS.readFile path
-  let r : Except String (_ × KimchiVK CV × KimchiProof CV × Array CV.ScalarField) := do
-    let j ← Json.parse raw
-    let vk ← Kimchi.Fixture.Kimchi.parseVK CV KimchiVesta.frParams j
-    let σ ← parseSRSAt CV vk.domainLog2 j
-    let proof ← Kimchi.Fixture.Kimchi.parseKimchiProof CV j
-    let pub ← parseArrOf (parseZMod (n := CV.scalar)) (← j.getObjVal? "public")
-    return (σ, vk, proof, pub)
-  match r with
-  | .error e => throw (IO.userError s!"{path}: fixture parse error: {e}")
-  | .ok (σ, vk, proof, pub) =>
-    let ok := kimchiVerify CV σ vk proof pub
-    let badEval := { proof with
-      evals := { proof.evals with
-        z := { proof.evals.z with zeta := proof.evals.z.zeta + 1 } } }
-    let badComm := { proof with tComm := proof.tComm.modify 0 (· + σ.h) }
-    let badFt := { proof with ftEval1 := proof.ftEval1 + 1 }
-    let r1 := !kimchiVerify CV σ vk badEval pub
-    let r2 := !kimchiVerify CV σ vk badComm pub
-    let r3 := !kimchiVerify CV σ vk badFt pub
-    IO.println s!"{path}: verify: {if ok then "ACCEPT" else "REJECT"}, \
-      corrupted z eval: {if r1 then "REJECT (expected)" else "ACCEPT (BUG)"}, \
-      corrupted t comm: {if r2 then "REJECT (expected)" else "ACCEPT (BUG)"}, \
-      corrupted ft_eval1: {if r3 then "REJECT (expected)" else "ACCEPT (BUG)"}"
-    unless ok && r1 && r2 && r3 do
-      throw (IO.userError "kimchi verifier check FAILED")
   -- The chunked verifier: the one-chunk fixture (no regression), then nc = 2 on both
   -- curves.
-  runChunked CV KimchiVesta.frParams s!"{dir}/kimchi_proof_vesta.json" false
-  runChunked CV KimchiVesta.frParams s!"{dir}/kimchi_proof_vesta_nc2.json" true
-  runChunked CP KimchiPallas.frParams s!"{dir}/kimchi_proof_pallas_nc2.json" true
+  runChunked CV Chunked.KimchiVesta.frParams s!"{dir}/kimchi_proof_vesta.json" false
+  runChunked CV Chunked.KimchiVesta.frParams s!"{dir}/kimchi_proof_vesta_nc2.json" true
+  runChunked CP Chunked.KimchiPallas.frParams s!"{dir}/kimchi_proof_pallas_nc2.json" true
   IO.println "✓ the executable kimchi verifiers accept the production proofs (nc = 1 \
     and nc = 2, both curves) and reject corruptions"
 

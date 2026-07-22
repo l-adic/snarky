@@ -358,6 +358,11 @@ open CompElliptic.Fields.Pasta Poseidon Kimchi.Verifier
 abbrev Proof := Chunked.KimchiProof IpaVesta.curve
 abbrev VK := Chunked.KimchiVK IpaVesta.curve
 
+/-- The Vesta-side fr-sponge Poseidon parameters: the scalar field is `Fp`, so the
+production `G::sponge_params()` is the `fp_kimchi` table. The fixture decoder pins
+`KimchiVK.frParams` to this value. -/
+def frParams : Params Fp := fpParams
+
 def verify : Bulletproof.SRS IpaVesta.Point → VK → Proof → Array Fp → Bool :=
   Chunked.kimchiVerify IpaVesta.curve
 
@@ -369,6 +374,11 @@ open CompElliptic.Fields.Pasta Poseidon Kimchi.Verifier
 
 abbrev Proof := Chunked.KimchiProof IpaPallas.curve
 abbrev VK := Chunked.KimchiVK IpaPallas.curve
+
+/-- The Pallas-side fr-sponge Poseidon parameters: the scalar field is `Fq`, so the
+production `G::sponge_params()` is the `fq_kimchi` table. The fixture decoder pins
+`KimchiVK.frParams` to this value. -/
+def frParams : Params Fq := fqParams
 
 def verify : Bulletproof.SRS IpaPallas.Point → VK → Proof → Array Fq → Bool :=
   Chunked.kimchiVerify IpaPallas.curve
