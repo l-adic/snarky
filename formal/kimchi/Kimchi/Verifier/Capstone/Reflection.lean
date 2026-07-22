@@ -34,16 +34,16 @@ namespace Kimchi.Verifier
 open Polynomial Bulletproof Kimchi.Index Kimchi.Protocol.Linearization
   Kimchi.Protocol.Equation CompElliptic.Fields.Pasta Kimchi.Verifier
 
-/-! ## The chunked Fiat–Shamir axioms -/
+/-! ## The Fiat–Shamir axioms -/
 
-/-- **AXIOM (Fiat–Shamir, Poseidon instantiation over the deployed chunked run,
-Vesta).** A run accepted by the deployed chunked warm-sponge finish
+/-- **AXIOM (Fiat–Shamir, Poseidon instantiation over the deployed run, Vesta).**
+A run accepted by the deployed warm-sponge finish
 (`Ipa.verifyFrom … (runWarm …) (runInput …) = true`, the `ReflectedRun.accepts` field
-of the CHUNKED reflection) admits a de-blinded accepting transcript tree over the run's
-own flat segment batch. This restates `kimchi_fiat_shamir_vesta` at the chunked
-transcript shape — same declared assumption (the Poseidon sponge provides a valid
-Fiat–Shamir transform), stated at the transcript the deployed chunked verifier actually
-runs; the statement mentions only the run's own wire data. -/
+of the reflection) admits a de-blinded accepting transcript tree over the run's own
+flat segment batch. The declared assumption is exactly that the Poseidon sponge
+provides a valid Fiat–Shamir transform at the transcript the deployed verifier
+actually runs; the statement mentions only the run's own wire data — no arithmetic
+content, no reference to the abstract batch. -/
 axiom kimchi_fiat_shamir_vesta (σ : SRS IpaVesta.Point) {nc : ℕ}
     (cvk : KimchiVK IpaVesta.curve nc)
     (cp : KimchiProof IpaVesta.curve nc) (pub : Array Fp) :
@@ -56,8 +56,8 @@ axiom kimchi_fiat_shamir_vesta (σ : SRS IpaVesta.Point) {nc : ℕ}
     (Ipa.verifyFrom IpaVesta.curve σ (runWarm IpaVesta.curve σ cvk cp pub)
       (runInput IpaVesta.curve σ cvk cp pub) = true)
 
-/-- **AXIOM (Fiat–Shamir, Poseidon instantiation over the deployed chunked run,
-Pallas).** The Pallas-side twin of `kimchi_fiat_shamir_vesta`. -/
+/-- **AXIOM (Fiat–Shamir, Poseidon instantiation over the deployed run, Pallas).**
+The Pallas-side twin of `kimchi_fiat_shamir_vesta`. -/
 axiom kimchi_fiat_shamir_pallas (σ : SRS IpaPallas.Point) {nc : ℕ}
     (cvk : KimchiVK IpaPallas.curve nc)
     (cp : KimchiProof IpaPallas.curve nc) (pub : Array Fq) :

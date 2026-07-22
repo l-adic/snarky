@@ -26,7 +26,7 @@ the run-level capstones.
 
 The **algebraic quotient** dissolves that residue: `kimchiProof_sound_algebraic_ft`. The
 algebraic prover additionally supplies the 7 `tComm`-chunk representations, and the quotient
-`t` — now the genuine degree-`< 7n` assembly `ftChunkAssembly` of the committed chunks — and
+`t` — the genuine degree-`< 7n` assembly `ftChunkAssembly` of the committed chunks — and
 the Maller/ft identity `hteq` are DERIVED from a checked ft opening via
 `ft_identity_of_chunks`; the residue hypotheses disappear from the statement. What stays
 hypothetical is unchanged from the AGM corollary: the ft opening itself (which a fully
@@ -398,7 +398,7 @@ private theorem commitPolyChunk_eq_commit [Field F] [AddCommGroup G] [Module F G
 /-- **The Maller/ft identity from the chunk representations, chunked**
 (verifier.rs:960–965): the deployed ft row's commitment collapses BOTH sides at
 `ζ^{2^σ.k}` — `pScalar` times the chunk-combined `nc`-chunk `σ₆` commitment (real
-algebra at `nc > 1`; the `nc = 1` collapse was the identity), minus `(ζ^n − 1)` times
+algebra at `nc > 1`; at `nc = 1` the collapse is the identity), minus `(ζ^n − 1)` times
 the chunk-combined `nt`-chunk quotient commitment. Representations of the `nt` chunks
 plus the opened ft row pin, via binding, the opened witness to the pointwise
 combination; reading it through `rowPoly` yields the assembled quotient's degree bound

@@ -27,7 +27,7 @@ So the family has `21 + 3` members:
 
 The per-gate constraint lists are the single-source gate transcriptions
 (`gateConstraints`), whose lengths match kimchi's `CONSTRAINTS` constants
-(`gateConstraints_length_*`, definitional). Phase B's separation argument recovers
+(`gateConstraints_length_*`, definitional). The separation argument recovers
 per-gate divisibility from the summed members via selector row-disjointness
 (`selectorRow_disjoint`).
 -/
@@ -525,7 +525,8 @@ theorem satisfies_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → 
 
 /-! ## Completeness: the gate members of a satisfied table
 
-The converse of the separation argument, and the first piece of Phase C: at a satisfied
+The converse of the separation argument, feeding the completeness direction of the
+characterization: at a satisfied
 row the live gate's constraints vanish (the generic slot `0` carrying exactly the public
 value the member subtracts), every other gate's term dies with its selector, and the
 masked rows contribute nothing because they carry no gates (`masked_zero` — the zk rows
@@ -740,11 +741,14 @@ private theorem exists_notMem_of_card_lt {m : ℕ} {f : Fin m → F}
 
 open Kimchi.Permutation in
 /-- **The characterization.** In a large enough field, a wellformed index is satisfied
-iff honest quotient data exists at every nondegenerate challenge pair — Phase B and
-Phase C fused into one statement. Forward is completeness, pointwise; backward
-manufactures a nondegenerate challenge grid (`exists_nondegenerate_grid` — the
-degenerate pairs are confined to `7·(n − zkRows)` affine lines) and runs the soundness
-headline over it. The field bound is vacuous at Pasta (`(K+1)² ≪ 2²⁵⁵`). -/
+iff honest quotient data exists at every nondegenerate challenge pair — soundness and
+completeness fused into one statement. Forward is completeness, pointwise; backward
+manufactures a nondegenerate challenge grid (`exists_nondegenerate_grid`) and runs the
+soundness headline over it. The field bound `hF` counts `(7n + 1)²` grid cells: with
+production's three-factor permutation mask the recurrence is live on the interior mask
+rows `[n − zkRows + 2, n − 1)`, so `Nondegenerate` (and the degenerate-pair counting
+underneath the grid) ranges over ALL `n` rows — `7n + 1` affine lines per challenge
+coordinate. Vacuous at Pasta (`(7n + 1)² ≪ 2²⁵⁵`). -/
 theorem satisfies_iff_fullFamily_dvd [Fintype F] (idx : Index F n)
     (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin 15 → F)
     (hF : (7 * n + 1) * (7 * n + 1) ≤ Fintype.card F) :

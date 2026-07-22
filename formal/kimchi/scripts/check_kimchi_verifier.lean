@@ -2,20 +2,23 @@ import KimchiFixture.Kimchi
 import Kimchi.Verifier.Wire
 import Lean.Data.Json
 
-/-! The executable kimchi verifiers against production proofs (`tools/fixture-dump`'s
-`kimchi_proof_dump` / `kimchi_proof_dump_nc2`):
+/-! The executable kimchi verifier against production proofs (`tools/fixture-dump`'s
+`kimchi_proof_dump` / `kimchi_proof_dump_nc2`).
 
-* the `nc = 1` verifier (`kimchiVerify`) must ACCEPT the one-chunk wire proof
-  (`fixtures/kimchi_proof_vesta.json`) and reject corruptions — the original composed
-  adjudication of `Kimchi/Verifier/Kimchi.lean`;
-* the CHUNKED verifier (`kimchiVerify`) must accept the SAME one-chunk fixture
-  through the singleton-chunk decoding — the no-regression adjudication of
-  `Kimchi/Verifier/Kimchi.lean` — and the production `nc = 2` fixtures on BOTH curves
-  (`fixtures/kimchi_proof_{vesta,pallas}_nc2.json`: half-domain SRS, two chunks per
-  column, proof-carried public evaluations), rejecting corruptions of an evaluation
-  chunk, the quotient commitment, `ft_eval1`, and a carried public-evaluation chunk.
+ONE verifier (`kimchiVerify`, over checked records at chunk count `nc`), exercised
+through the client-side `verifyWire` composition below — parse the wire records with
+`Wire.{KimchiVK,KimchiProof}.check`, then verify. Three fixtures:
 
-Every transcription judgment in the chunked verifier (chunk absorb orders, the segment
+* `fixtures/kimchi_proof_vesta.json` — the one-chunk proof (`nc = 1`, the singleton
+  case of the general verifier);
+* `fixtures/kimchi_proof_{vesta,pallas}_nc2.json` — production `nc = 2` proofs on both
+  curves (half-domain SRS, two chunks per column, proof-carried public evaluations).
+
+Each run checks the accept bit and a corruption matrix: an evaluation chunk, the
+quotient commitment, `ft_eval1`, and (where carried) a public-evaluation chunk must
+each flip the verdict to REJECT.
+
+Every transcription judgment in the verifier (chunk absorb orders, the segment
 flattening of the batch, the `ft_comm` double collapse, the carried-public precedence)
 either reproduces production's accept bit here or fails. -/
 

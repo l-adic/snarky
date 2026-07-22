@@ -294,8 +294,9 @@ theorem soundness_of_dvd {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0
   · simpa using eval_eq_one_of_boundary hω hn z _ (hdvd 2)
   · exact fun j hj => step_of_aggregation hω hn hzk2 hzkn z w σ shifts β γ (hdvd 0) hj
 /-- **Permutation completeness.** With nonvanishing σ-side row products (the
-nondegeneracy of `(β, γ)`, on EVERY row — the mask no longer erases the recurrence on
-the interior zero-knowledge rows) and agreeing grand products over the unmasked region,
+nondegeneracy of `(β, γ)`, on EVERY row — the three-factor mask leaves the recurrence
+live on the interior zero-knowledge rows) and agreeing grand products over the
+unmasked region,
 an accumulator exists whose three permutation constraints are all divisible by `Z_H`.
 The construction mirrors production's `perm_aggreg`: the running ratio of
 `accumulator_of_prod_eq` up to the boundary row `n − zkRows` (where it returns to `1`),
