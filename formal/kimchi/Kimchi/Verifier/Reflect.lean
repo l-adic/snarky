@@ -1,11 +1,11 @@
 import Mathlib
-import Kimchi.Verifier.Chunked
+import Kimchi.Verifier.Kimchi
 
 /-!
-# Chunked kimchi verifier reflection: `Chunked.kimchiVerify = true` ⟹ a `ReflectedRun`
+# Kimchi verifier reflection: `kimchiVerify = true` ⟹ a `ReflectedRun`
 
-The trust-free reflection layer of the CHUNKED deployed verifier
-(`Kimchi/Verifier/Chunked.lean`): every intermediate of `Chunked.kimchiVerify`'s body as
+The trust-free reflection layer of the deployed verifier
+(`Kimchi/Verifier/Kimchi.lean`): every intermediate of `kimchiVerify`'s body as
 a named function of the wire data, and `kimchiVerify_reflects` reading `verify = true`
 into the structured transcript — the guard shapes, the single warm-sponge IPA
 acceptance of the run's own flat segment stream, and the stream's content as the
@@ -18,7 +18,7 @@ chunk vectors are adversarial batch data, believed only through binding.
 
 open Bulletproof
 
-namespace Kimchi.Verifier.Chunked
+namespace Kimchi.Verifier
 
 open CompElliptic.CurveForms.ShortWeierstrass
 open Poseidon Poseidon.FqSponge Bulletproof Kimchi.Index
@@ -189,7 +189,7 @@ def runWarm (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
 
 /-! ## Reflection: the accepted run's own batch, read off the code path -/
 
-/-- **The chunked reflected run** — what a `Chunked.kimchiVerify`-accepted run *is*,
+/-- **The chunked reflected run** — what a `kimchiVerify`-accepted run *is*,
 read off the code path: the shape guard passes (`shapeBad = false` — ONE boolean fact;
 individual shapes and chunk counts are read off it on demand by small extraction
 lemmas), and the warm-sponge IPA finish accepts the run's own flat segment stream —
@@ -204,7 +204,7 @@ structure ReflectedRun (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
   accepts : Ipa.verifyFrom C σ (runWarm C σ vk p pub) (runInput C σ vk p pub) = true
 
 /-- **Reflection**: an accepted chunked run yields its `ReflectedRun` — no trust, pure
-code-path reading. The `replace` re-expresses `Chunked.kimchiVerify`'s body through the
+code-path reading. The `replace` re-expresses `kimchiVerify`'s body through the
 named run functions (definitional: they mirror the body's `let`s; the one pair
 destructuring, `(v, u) := frOracles …`, stays a match), so no sponge computation is
 ever reduced. -/
@@ -228,4 +228,4 @@ theorem kimchiVerify_reflects (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiPr
     subst hv1
     exact ⟨Bool.of_not_eq_true hguard, hv⟩
 
-end Kimchi.Verifier.Chunked
+end Kimchi.Verifier

@@ -1,5 +1,5 @@
-import Kimchi.Verifier.Chunked
-import KimchiFixture.Chunked
+import Kimchi.Verifier.Kimchi
+import KimchiFixture.Kimchi
 import Lean.Data.Json
 
 /-! The CHUNKED verifier-key ↔ index correspondence, by value: every committed column
@@ -7,7 +7,7 @@ of the production `nc = 2` verifier key (`fixtures/kimchi_proof_vesta_nc2.json`)
 CHUNK BY CHUNK, equal the value-MSM of the production Lagrange-basis chunk commitments
 against the corresponding derived column (`fixtures/index_vesta.json` — the same
 circuit and seed). This adjudicates the chunked indexer model of
-`Reduction/Chunked.lean` numerically: `commitPolyChunk (columnPoly v) c = ∑ⱼ vⱼ • Lⱼ[c]`
+`Reduction/Soundness.lean` numerically: `commitPolyChunk (columnPoly v) c = ∑ⱼ vⱼ • Lⱼ[c]`
 (chunking is linear, so the value-MSM formula holds per chunk window), and the six
 selector columns carry production's fixed blinder PER CHUNK (`mask_custom` with the
 all-ones blinder over the chunk vector — the model choice `commitPolyMaskedChunk`
@@ -47,7 +47,7 @@ def main : IO Unit := do
       (Array (String × Array F × Array C.Point) × Array (Array C.Point) × ℕ) := do
     let ji ← Json.parse idxJ
     let jv ← Json.parse vkJ
-    let basis ← parseArrOf (Kimchi.Fixture.Chunked.parseComm C)
+    let basis ← parseArrOf (Kimchi.Fixture.parseComm C)
       (← jv.getObjVal? "lagrange_basis")
     let h ← parsePt C (← jv.getObjVal? "srs_h")
     let nc ← match (← (← jv.getObjVal? "n").getStr?).toNat?,
@@ -61,9 +61,9 @@ def main : IO Unit := do
     let cols15 (k : String) : Except String (Array (Array F)) := do
       parseArrOf (parseArrOf parseF) (← ji.getObjVal? k)
     let cpt (k : String) : Except String (Array C.Point) := do
-      Kimchi.Fixture.Chunked.parseComm C (← jv.getObjVal? k)
+      Kimchi.Fixture.parseComm C (← jv.getObjVal? k)
     let cpts (k : String) : Except String (Array (Array C.Point)) := do
-      parseArrOf (Kimchi.Fixture.Chunked.parseComm C) (← jv.getObjVal? k)
+      parseArrOf (Kimchi.Fixture.parseComm C) (← jv.getObjVal? k)
     let zkRows ← match (← (← jv.getObjVal? "zk_rows").getStr?).toNat? with
       | some z => pure z
       | none => throw "bad zk_rows"

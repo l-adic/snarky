@@ -1,7 +1,7 @@
 import CompElliptic.Fields.Pasta
 import Kimchi.Index.Satisfies
 import Kimchi.Verifier.Kimchi
-import Kimchi.Verifier.Chunked
+import Kimchi.Verifier.Kimchi
 import FixtureKit.Parse
 import Lean.Data.Json
 
@@ -144,7 +144,7 @@ def checks (fx : RawFixture) {n : ℕ} [NeZero n]
 def run {n : ℕ} [NeZero n] (fx : RawFixture) (hn : fx.n = n) : IO Unit := do
   let gates ← IO.ofExcept (buildGates fx hn)
   let some idx := Index.build? gates fx.publicCount fx.zkRows fx.omega fx.endoBase
-      (Kimchi.Verifier.mdsOfParams Kimchi.Verifier.Chunked.KimchiVesta.frParams)
+      (Kimchi.Verifier.mdsOfParams Kimchi.Verifier.KimchiVesta.frParams)
       (fun i => fx.shifts[(i : ℕ)]!)
     | throw (IO.userError "Index.build? rejected the production data")
   IO.println "  ✓ Index.build? accepts (all laws decided on production data)"

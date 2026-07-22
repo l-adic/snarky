@@ -62,33 +62,32 @@ Kimchi.Gate.Poseidon.complete
 -- it and the soundness line.) Gated by `scripts/check_axioms.lean`.
 Kimchi.Index.satisfies_iff_fullFamily_dvd
 
--- TRANSITIONAL (chunking arc, formal/docs/chunking-plan.md): the CHUNKED executable
--- verifier (`nc = 2^(domainLog2 - σ.k)` chunks per column, production's chunked regime),
--- adjudicated against the nc=2 production fixtures on BOTH curves plus the one-chunk
--- fixture (no-regression). A declared root until the reduction and terminals are restated
--- at the chunked wire (plan Phases 2-4), at which point the nc=1 verifier dissolves and
--- the chunked terminals take over reachability.
-Kimchi.Verifier.Chunked.kimchiVerify
--- The chunked reduction (Phase 2): the 44-row grid soundness at nc * 2^k = n (the
--- public row joins the batch — its claims are proof-carried at nc > 1 and believed
--- only through binding), extraction via chunked_batch_soundness directly.
-Kimchi.Verifier.Chunked.kimchiProof_sound
--- The chunked capstones (Phase 3): the grid capstones at the deployed Pasta verifiers
--- (per-node poseidon_fiat_shamir over the flat segment stream) and the AGM corollary
--- with the residue-free algebraic quotient (the ft row's DOUBLE collapse at
--- zeta^{2^k}: the nc-chunk sigma6 side is real algebra at nc > 1).
-Kimchi.Verifier.Chunked.kimchiVesta_run_sound
-Kimchi.Verifier.Chunked.kimchiPallas_run_sound
--- The chunked FS-reflection ft openings (Phase 4d part 1): from ONE genuine chunked
--- acceptance, the ft row of the run's own flat stream opens to the computed runFtEval0
--- (axioms consumed: the chunked kimchi_fiat_shamir_* pair, once each).
-Kimchi.Verifier.Chunked.ft_opening_of_reflected_vesta
-Kimchi.Verifier.Chunked.ft_opening_of_reflected_pallas
-Kimchi.Verifier.Chunked.kimchiProof_sound_algebraic_ft
--- The chunked run-level terminal roots (Phase 4d part 2): from ONE genuine deployed
--- CHUNKED acceptance at production chunking nc * 2^k = n, AGM representations of the
--- flat segment stream and the t chunks deliver the guarded Satisfies — openings seam
--- fed directly, public row bound through the key's Lagrange chunk pin, Maller identity
--- from the ft opening at the DOUBLE zeta^{2^k} collapse. The chunked endpoints.
-Kimchi.Verifier.Chunked.kimchiVesta_run_sound_algebraic_ft
-Kimchi.Verifier.Chunked.kimchiPallas_run_sound_algebraic_ft
+-- THE EXECUTABLE VERIFIER: production chunking (`nc = 2^(domainLog2 - σ.k)` chunks per
+-- column; `nc = 1` is just the one-chunk case). Adjudicated against the production
+-- fixtures — nc=2 on BOTH curves plus the one-chunk fixture — by
+-- `scripts/check_kimchi_verifier.lean` (accept + corruption rejections).
+Kimchi.Verifier.kimchiVerify
+-- The reduction: the 44-row grid soundness at nc * 2^k = n (the public row is IN the
+-- batch — its claims are proof-carried and believed only through binding), extraction
+-- via chunked_batch_soundness directly.
+Kimchi.Verifier.kimchiProof_sound
+-- The standard-model run-level capstones (grid path): the grid capstones at the
+-- deployed Pasta verifiers (per-node poseidon_fiat_shamir over the flat segment
+-- stream) and the AGM corollary with the residue-free algebraic quotient (the ft
+-- row's DOUBLE collapse at zeta^{2^k}).
+Kimchi.Verifier.kimchiVesta_run_sound
+Kimchi.Verifier.kimchiPallas_run_sound
+-- The FS-reflection ft openings: from ONE genuine acceptance, the ft row of the run's
+-- own flat stream opens to the computed runFtEval0 (axioms consumed: the
+-- kimchi_fiat_shamir_* pair, once each).
+Kimchi.Verifier.ft_opening_of_reflected_vesta
+Kimchi.Verifier.ft_opening_of_reflected_pallas
+Kimchi.Verifier.kimchiProof_sound_algebraic_ft
+-- THE TERMINAL THEOREMS — AGM soundness of the deployed verifier at production
+-- chunking. From a genuine `verify = true`, AGM representations of the 44*nc+1 flat
+-- segment rows and the t chunks deliver the guarded `Satisfies idx (pubView idx pub)`:
+-- openings seam fed directly, public row bound through the key's Lagrange chunk pin,
+-- Maller identity from the ft opening at the DOUBLE zeta^{2^k} collapse. Trust
+-- surface = kimchi_fiat_shamir (Poseidon-RO) + DL-binding (hbind) + CompElliptic.
+Kimchi.Verifier.kimchiVesta_run_sound_algebraic_ft
+Kimchi.Verifier.kimchiPallas_run_sound_algebraic_ft

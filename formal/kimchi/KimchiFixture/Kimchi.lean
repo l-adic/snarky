@@ -1,4 +1,4 @@
-import Kimchi.Verifier.Chunked
+import Kimchi.Verifier.Kimchi
 import BulletproofFixture
 import FixtureKit.Parse
 import Lean.Data.Json
@@ -7,7 +7,7 @@ import Lean.Data.Json
 # Chunked kimchi wire-proof fixture ingestion
 
 Decoders for the CHUNKED kimchi proof + verifier-key records
-(`Kimchi/Verifier/Chunked.lean`), reading both fixture formats:
+(`Kimchi/Verifier/Kimchi.lean`), reading both fixture formats:
 
 * the chunked format (`kimchi_proof_{vesta,pallas}_nc2.json`, from `tools/fixture-dump`'s
   `kimchi_proof_dump_nc2`): every commitment a chunk ARRAY of points, every evaluation
@@ -23,11 +23,11 @@ to `none`.
 
 open Bulletproof
 
-namespace Kimchi.Fixture.Chunked
+namespace Kimchi.Fixture
 
 open FixtureKit
 
-open Lean Bulletproof.Fixture Kimchi.Verifier Kimchi.Verifier.Chunked
+open Lean Bulletproof.Fixture Kimchi.Verifier Kimchi.Verifier
 
 /-- A chunked commitment: a bare `[x, y]` point (one-chunk format — first element a
 coordinate string) as a singleton, else an array of points. -/
@@ -54,7 +54,7 @@ def parseEval (C : Ipa.CommitmentCurve) (j : Json) :
 /-- The chunked kimchi proof wire record. `evals_public` is optional wire data: absent
 (the one-chunk format) decodes to `none`. -/
 def parseKimchiProof (C : Ipa.CommitmentCurve) (j : Json) :
-    Except String (Chunked.KimchiProof C) := do
+    Except String (KimchiProof C) := do
   let fld (k : String) : Except String Json := j.getObjVal? k
   let pe := parseEval C
   let evals : ProofEvaluations (Array C.ScalarField) :=
@@ -83,7 +83,7 @@ def parseKimchiProof (C : Ipa.CommitmentCurve) (j : Json) :
 `Nat.log2 max_poly_size`), with the fr-sponge parameters pinned by the caller. -/
 def parseVK (C : Ipa.CommitmentCurve)
     (frParams : Poseidon.Params C.ScalarField) (j : Json) :
-    Except String (Chunked.KimchiVK C) := do
+    Except String (KimchiVK C) := do
   let fld (k : String) : Except String Json := j.getObjVal? k
   let nat (k : String) : Except String ℕ := do
     match (← (← fld k).getStr?).toNat? with
@@ -107,4 +107,4 @@ def parseVK (C : Ipa.CommitmentCurve)
            lagrangeBasis := ← parseArrOf (parseComm C) (← fld "lagrange_basis")
            frParams := frParams }
 
-end Kimchi.Fixture.Chunked
+end Kimchi.Fixture

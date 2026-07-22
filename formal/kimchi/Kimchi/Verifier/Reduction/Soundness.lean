@@ -4,24 +4,24 @@ import Kimchi.Verifier.Reduction.Binding
 import Kimchi.Protocol.Equation
 
 /-!
-# Composed soundness, chunked (`nc ≥ 1`)
+# Composed soundness
 
-The chunked generalization of `Reduction/Soundness.lean`: the SRS pin `2^σ.k = n`
-becomes `nc · 2^σ.k = n` (production's `chunk_size`, uniform across the batch), every
-committed batch row is its `nc`-chunk vector, the claims are per chunk, and extraction
-consumes `Bulletproof.chunked_batch_soundness` DIRECTLY — the `nc = 1` specialization
-wrapper (`batch_openings_nc1`) has no analogue here; the bulletproof conclusion (an
+Batched opening acceptance, binding, and the key–index correspondence compose into
+`Satisfies idx pub wTab`, at production chunking `nc · 2^σ.k = n` (production's
+`chunk_size`, uniform across the batch): every committed batch row is its `nc`-chunk
+vector, the claims are per chunk, and extraction consumes
+`Bulletproof.chunked_batch_soundness` DIRECTLY — the bulletproof conclusion (an
 assembled `q i` of degree `< nc · 2^σ.k = n`, chunk-window commit pins, per-chunk claim
-reproduction) is exactly what the reduction needs.
+reproduction) is exactly what the reduction needs. `nc = 1` is the one-chunk case.
 
-Two genuine additions over the `nc = 1` layer:
+Two structural consequences of chunking:
 
 * **The public row is IN the batch** (44 rows, the public row appended last). At
   `nc = 1` the public evaluations are computed by the verifier — a barycentric identity
-  with the committed public polynomial, no binding needed — so the row was omitted. At
-  `nc > 1` they are PROOF-CARRIED, adversarial data (`MissingPublicInputEvaluation`,
-  verifier.rs:332): their only tie to the public input is the batched opening against
-  the verifier-computed public commitment. The reduction therefore takes the public
+  with the committed public polynomial, no binding needed. At `nc > 1` they are
+  PROOF-CARRIED, adversarial data (`MissingPublicInputEvaluation`, verifier.rs:332):
+  their only tie to the public input is the batched opening against the
+  verifier-computed public commitment. The reduction therefore takes the public
   commitment chunks `pubC` with their correspondence to the negated public interpolant
   (`hpubC` — per-chunk commitments of `-(idx.pubPoly pub)`, each carrying the unit
   blinder of the all-ones `mask_custom`) and pins the carried claims through binding.
@@ -29,14 +29,13 @@ Two genuine additions over the `nc = 1` layer:
   `ζ^{2^σ.k}` / `(ωζ)^{2^σ.k}` — the verifier's `evals.combine`), including the
   combined public claim (`claimedPub`) in `ft_eval0`'s public slot.
 
-Trust boundary unchanged: challenge grids for Fiat–Shamir, no-DL-relation binding, the
-key–index correspondence as hypothesis. `Kimchi.Protocol.sound` consumption is
-UNCHANGED — the assembled witness polynomials have degree `< n` and the protocol layer
-never sees the SRS.
+Trust boundary: challenge grids for Fiat–Shamir, no-DL-relation binding, the key–index
+correspondence as hypothesis. The assembled witness polynomials have degree `< n`, so
+`Kimchi.Protocol.sound` consumption never sees the SRS.
 -/
 open Bulletproof
 
-namespace Kimchi.Verifier.Chunked
+namespace Kimchi.Verifier
 
 open Polynomial Bulletproof Kimchi.Index Kimchi.Protocol.Linearization
   Kimchi.Protocol.Equation Kimchi.Verifier
@@ -50,8 +49,7 @@ same point carry the same row polynomial. From the no-DL-relation binding hypoth
 `commitmentBinding_iff_no_relation` (the pair equality is consumed through
 `congrArg Prod.fst`, mirroring `bound_eq_of_commitPoly`). Consumed wherever a commitment
 is FIXED across the challenge grid: the witness rows and, per `(β, γ)`, the accumulator
-row. Shared with the chunked reduction (`Reduction/Chunked.lean`), which applies it per
-chunk. -/
+row — applied per chunk. -/
 theorem bound_unique [Field F] [AddCommGroup G] [Module F G] (σ : SRS G)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
     {a a' : Fin (2 ^ σ.k) → F} {ρ ρ' : F}
@@ -118,7 +116,7 @@ noncomputable def indexerOf [Field F] [AddCommGroup G] [Module F G]
 own. -/
 def VKCorresponds [Field F] [AddCommGroup G] [Module F G] (σ : SRS G) (nc : ℕ)
     {n : ℕ} (comms : IndexComms (Fin nc → G)) (idx : Index F n) : Prop :=
-  comms = Chunked.indexerOf σ nc idx
+  comms = indexerOf σ nc idx
 
 /-! ## The batch assembly (44 logical rows)
 
@@ -228,7 +226,7 @@ private theorem batchC_pubRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC
 commitment of the `selGate j` selector interpolant. -/
 private theorem selComm_indexerOf [Field F] [AddCommGroup G] [Module F G] {n : ℕ}
     (σ : SRS G) (nc : ℕ) (idx : Index F n) (j : Fin 6) :
-    selComm (Chunked.indexerOf σ nc idx) j
+    selComm (indexerOf σ nc idx) j
       = fun c : Fin nc => commitPolyMaskedChunk σ (idx.selectorPoly (selGate j)) (c : ℕ) := by
   fin_cases j <;> rfl
 
@@ -295,7 +293,7 @@ private theorem assembledRow_eval [Field F] {k nc : ℕ} (hnc : 0 < nc)
 /-- **Per-chunk claims against a fixed column combine to its evaluation** (unblinded
 form): if each chunk claim is bound to the corresponding chunk commitment of a fixed
 polynomial `p` of degree `< nc · 2^σ.k`, the `x^{2^σ.k}`-power combination of the
-claims is `p.eval x`. The chunked generalization of `bound_eval_of_commitPoly`. -/
+claims is `p.eval x` — `bound_eval_of_commitPoly`, chunk by chunk. -/
 private theorem combined_eval_of_chunks [Field F] [AddCommGroup G] [Module F G]
     (σ : SRS G)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
@@ -403,7 +401,7 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
           Satisfies idx pub
             (extractTable idx.omega fun col => assembledRow σ.k nc (aw₀ (wRow col))) := by
   classical
-  have hvk' : comms = Chunked.indexerOf σ nc idx := hvk
+  have hvk' : comms = indexerOf σ nc idx := hvk
   subst hvk'
   -- the bound witness-column and accumulator polynomials (assembled, challenge-free)
   set W : Fin 15 → Polynomial F := fun col => assembledRow σ.k nc (aw₀ (wRow col))
@@ -440,9 +438,9 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
       rowPoly (aw (wRow col) c) = rowPoly (aw₀ (wRow col) c) := fun col c =>
     bound_unique σ hbind
       (((hrow (wRow col) c).1.trans
-          (congrFun (batchC_wRow wC zC pubC (Chunked.indexerOf σ nc idx) col) c)).trans
+          (congrFun (batchC_wRow wC zC pubC (indexerOf σ nc idx) col) c)).trans
         (((hbound₀ (wRow col) c).trans
-          (congrFun (batchC_wRow wC zC pubC (Chunked.indexerOf σ nc idx) col) c)).symm))
+          (congrFun (batchC_wRow wC zC pubC (indexerOf σ nc idx) col) c)).symm))
   have hzchunk : ∀ c : Fin nc, rowPoly (aw zRow c) = rowPoly (aw₀ zRow c) := fun c =>
     bound_unique σ hbind
       ((hrow zRow c).1.trans ((hbound₀ zRow c).symm))
@@ -470,21 +468,21 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
         = (idx.sigmaPoly ⟨(i : ℕ), by omega⟩).eval ζ :=
     fun i => combined_eval_of_chunks σ hbind (hdσ _)
       (fun c => (hrow (sRow i) c).1.trans
-        (congrFun (batchC_sRow wC zC pubC (Chunked.indexerOf σ nc idx) i) c))
+        (congrFun (batchC_sRow wC zC pubC (indexerOf σ nc idx) i) c))
       (fun c => by simpa using (hrow (sRow i) c).2 0)
   have hcombC : ∀ cc : Fin 15,
       (∑ ch : Fin nc, (ζ ^ 2 ^ σ.k) ^ (ch : ℕ) * E (cRow cc) ch 0)
         = (idx.coeffPoly cc).eval ζ :=
     fun cc => combined_eval_of_chunks σ hbind (hdc _)
       (fun c => (hrow (cRow cc) c).1.trans
-        (congrFun (batchC_cRow wC zC pubC (Chunked.indexerOf σ nc idx) cc) c))
+        (congrFun (batchC_cRow wC zC pubC (indexerOf σ nc idx) cc) c))
       (fun c => by simpa using (hrow (cRow cc) c).2 0)
   have hcombSel : ∀ jj : Fin 6,
       (∑ ch : Fin nc, (ζ ^ 2 ^ σ.k) ^ (ch : ℕ) * E (selRow jj) ch 0)
         = (idx.selectorPoly (selGate jj)).eval ζ :=
     fun jj => combined_eval_of_chunks_masked σ hbind (hdsel _)
       (fun c => (hrow (selRow jj) c).1.trans
-        ((congrFun (batchC_selRow wC zC pubC (Chunked.indexerOf σ nc idx) jj) c).trans
+        ((congrFun (batchC_selRow wC zC pubC (indexerOf σ nc idx) jj) c).trans
           (congrFun (selComm_indexerOf σ nc idx jj) c)))
       (fun c => by simpa using (hrow (selRow jj) c).2 0)
   -- the public row: the combined carried claim is the negated public evaluation
@@ -493,7 +491,7 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
       (eval_neg _ _).symm]
     exact combined_eval_of_chunks_masked σ hbind hdpub
       (fun c => (hrow pubRow c).1.trans
-        ((congrFun (batchC_pubRow wC zC pubC (Chunked.indexerOf σ nc idx)) c).trans
+        ((congrFun (batchC_pubRow wC zC pubC (indexerOf σ nc idx)) c).trans
           (hpubC c)))
       (fun c => by simpa using (hrow pubRow c).2 0)
   -- the combined record IS the honest record at the assembled table
@@ -613,4 +611,4 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
     hβ hγ hα hζ hζ₁ hζb ht
     (fun i c => ⟨hρ i c, fun j => (hq i).2.2.2 c j⟩) hteq
 
-end Kimchi.Verifier.Chunked
+end Kimchi.Verifier

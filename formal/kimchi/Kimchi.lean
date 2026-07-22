@@ -35,11 +35,9 @@ import Kimchi.Protocol.Equation
 import Bulletproof.Reflection
 import Kimchi.Verifier.Reduction.Correspond
 import Kimchi.Verifier.Reduction.Binding
-import Kimchi.Verifier.Reduction.Chunked
+import Kimchi.Verifier.Reduction.Soundness
 import Kimchi.Verifier.Kimchi
-import Kimchi.Verifier.Chunked
-import Kimchi.Verifier.ReflectChunked
-import Kimchi.Verifier.Capstone.StandardChunked
+import Kimchi.Verifier.Reflect
+import Kimchi.Verifier.Capstone.Standard
 import Kimchi.Verifier.Capstone.Algebraic
-import Kimchi.Verifier.Capstone.AlgebraicChunked
-import Kimchi.Verifier.Capstone.ReflectionChunked
+import Kimchi.Verifier.Capstone.Reflection

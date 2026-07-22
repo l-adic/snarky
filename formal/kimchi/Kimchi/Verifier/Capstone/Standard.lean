@@ -1,30 +1,29 @@
 import Mathlib
-import Kimchi.Verifier.Reduction.Chunked
-import Kimchi.Verifier.Capstone.AlgebraicChunked
-import Kimchi.Verifier.Chunked
-import Kimchi.Verifier.ReflectChunked
+import Kimchi.Verifier.Reduction.Soundness
+import Kimchi.Verifier.Capstone.Algebraic
+import Kimchi.Verifier.Kimchi
+import Kimchi.Verifier.Reflect
 
 /-!
-# The concrete Fiat–Shamir capstones, chunked (standard model)
+# The concrete Fiat–Shamir capstones (standard model)
 
-The chunked generalization of `Capstone/Standard.lean`'s grid capstones: the
-special-soundness grid `KimchiBatchAcc` now accumulates deployed acceptances of the
-chunked batch — the wire commitment array pinned SEGMENT-wise to the flat stream of the
+The special-soundness grid `KimchiBatchAcc` accumulates deployed acceptances of the
+batch — the wire commitment array pinned SEGMENT-wise to the flat stream of the
 44-row chunked assembly (`flatten (batchC …)`, the order the deployed verifier's
 `combined_inner_product` walks), one grid node per flat segment × eval point. Each
 node's `FiatShamirTreeB` family is derived from the node's own deployed acceptance via
-the per-node `poseidon_fiat_shamir_*` axiom, transported to the CHUNKED combiners
+the per-node `poseidon_fiat_shamir_*` axiom, transported to the chunk combiners
 through the `_eq_flat` flattening lemmas — the same `hcip` move as `ipaVesta_sound`.
 
-The trust story is verbatim the `nc = 1` module's (grid = hypothesis, FS axiom per
-node, everything else proved); see its preamble. The run-level corollaries move to the
-chunked reflection layer (they instantiate the consumer at the CHUNKED verifier's own
-sponge challenges).
+Trust story: the grid is a HYPOTHESIS (the forking/rewinding idiom, posited outright),
+one FS axiom per node, everything else proved. The run-level corollaries live in the
+reflection layer (they instantiate the consumer at the deployed verifier's own sponge
+challenges).
 -/
 
 open Bulletproof
 
-namespace Kimchi.Verifier.Chunked
+namespace Kimchi.Verifier
 
 open Polynomial Bulletproof Kimchi.Index Kimchi.Protocol.Linearization
   Kimchi.Protocol.Equation CompElliptic.Fields.Pasta Kimchi.Verifier
@@ -174,7 +173,7 @@ special-soundness grid at the wire key's committed chunk columns (`vk.comms nc`)
 the bad sets and the guarded consumer implication of the chunked
 `kimchiProof_sound` — each node's `FiatShamirTreeB` derived from
 `poseidon_fiat_shamir_vesta` at the node's own deployed input. -/
-theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : Chunked.KimchiVesta.VK)
+theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
     (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
     {nc : ℕ} (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n)
     (hvk : VKCorresponds σ nc (vk.comms nc) idx)
@@ -221,7 +220,7 @@ theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : Chunked.KimchiVesta.VK
     (fun s j => T.hacc s j)
 
 /-- **Chunked soundness of the deployed Pallas kimchi verifier.** The Pallas twin. -/
-theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : Chunked.KimchiPallas.VK)
+theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
     (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
     {nc : ℕ} (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n)
     (hvk : VKCorresponds σ nc (vk.comms nc) idx)
@@ -271,14 +270,14 @@ theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : Chunked.KimchiPallas
 
 /-- **Chunked run-level soundness of the deployed Vesta kimchi verifier**: the grid
 capstone's consumer implication instantiated at a real chunked run's own sponge
-challenges — the literal `Chunked.runOracles` fields — over the run's own commitment
+challenges — the literal `runOracles` fields — over the run's own commitment
 chunks. The consumer grid `T'` shares the accumulator and public commitments and sits
 at the run's own `ζ`; its Fiat–Shamir trees, acceptances, and challenge injectivity
 discharge the capstone's transcript antecedents. The quotient residue
 `(t, hdeg, heq)` stays the one undischarged antecedent, exactly as at `nc = 1` (its
 dissolution is the `_ft` terminal's job). -/
-theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) (vk : Chunked.KimchiVesta.VK)
-    (p : Chunked.KimchiVesta.Proof) (pub : Array Fp) {n : ℕ} [NeZero n]
+theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
+    (p : KimchiVesta.Proof) (pub : Array Fp) {n : ℕ} [NeZero n]
     (idx : Index Fp n)
     (hk : runNc IpaVesta.curve σ vk * 2 ^ σ.k = n)
     (hvk : VKCorresponds σ (runNc IpaVesta.curve σ vk)
@@ -355,9 +354,9 @@ theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) (vk : Chunked.KimchiVest
   exact h
 
 /-- **Chunked run-level soundness of the deployed Pallas kimchi verifier.** The Pallas
-twin of `Chunked.kimchiVesta_run_sound`. -/
-theorem kimchiPallas_run_sound (σ : SRS IpaPallas.Point) (vk : Chunked.KimchiPallas.VK)
-    (p : Chunked.KimchiPallas.Proof) (pub : Array Fq) {n : ℕ} [NeZero n]
+twin of `kimchiVesta_run_sound`. -/
+theorem kimchiPallas_run_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
+    (p : KimchiPallas.Proof) (pub : Array Fq) {n : ℕ} [NeZero n]
     (idx : Index Fq n)
     (hk : runNc IpaPallas.curve σ vk * 2 ^ σ.k = n)
     (hvk : VKCorresponds σ (runNc IpaPallas.curve σ vk)
@@ -435,4 +434,4 @@ theorem kimchiPallas_run_sound (σ : SRS IpaPallas.Point) (vk : Chunked.KimchiPa
   simp only [hzC, hpC, hζ'] at h
   exact h
 
-end Kimchi.Verifier.Chunked
+end Kimchi.Verifier

@@ -43,18 +43,18 @@ def roots : List Name :=
     `Kimchi.Gate.Poseidon.sound, `Kimchi.Gate.Poseidon.complete,
     `Kimchi.Index.satisfies_iff_fullFamily_dvd,
     `Kimchi.Protocol.sound,
-    `Kimchi.Verifier.Chunked.kimchiProof_sound_of_openings,
-    `Kimchi.Verifier.Chunked.kimchiProof_sound,
-    `Kimchi.Verifier.Chunked.kimchiProof_sound_algebraic,
-    `Kimchi.Verifier.Chunked.kimchiProof_sound_algebraic_ft,
-    `Kimchi.Verifier.Chunked.kimchiVesta_sound,
-    `Kimchi.Verifier.Chunked.kimchiPallas_sound,
-    `Kimchi.Verifier.Chunked.kimchiVesta_run_sound,
-    `Kimchi.Verifier.Chunked.kimchiPallas_run_sound,
-    `Kimchi.Verifier.Chunked.ft_opening_of_reflected_vesta,
-    `Kimchi.Verifier.Chunked.ft_opening_of_reflected_pallas,
-    `Kimchi.Verifier.Chunked.kimchiVesta_run_sound_algebraic_ft,
-    `Kimchi.Verifier.Chunked.kimchiPallas_run_sound_algebraic_ft ]
+    `Kimchi.Verifier.kimchiProof_sound_of_openings,
+    `Kimchi.Verifier.kimchiProof_sound,
+    `Kimchi.Verifier.kimchiProof_sound_algebraic,
+    `Kimchi.Verifier.kimchiProof_sound_algebraic_ft,
+    `Kimchi.Verifier.kimchiVesta_sound,
+    `Kimchi.Verifier.kimchiPallas_sound,
+    `Kimchi.Verifier.kimchiVesta_run_sound,
+    `Kimchi.Verifier.kimchiPallas_run_sound,
+    `Kimchi.Verifier.ft_opening_of_reflected_vesta,
+    `Kimchi.Verifier.ft_opening_of_reflected_pallas,
+    `Kimchi.Verifier.kimchiVesta_run_sound_algebraic_ft,
+    `Kimchi.Verifier.kimchiPallas_run_sound_algebraic_ft ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms and
     `Lean.ofReduceBool`. The pasta package declares NO axioms — the group orders are
@@ -67,13 +67,12 @@ def allowed : List Name :=
     -- The declared Fiat-Shamir assumption: Poseidon-accepted runs admit de-blinded
     -- accepting transcript trees (`Kimchi/Verifier/Reflection.lean`). One per Pasta curve.
     `Bulletproof.poseidon_fiat_shamir_vesta, `Bulletproof.poseidon_fiat_shamir_pallas,
-    -- The CHUNKED deployed-run Fiat-Shamir assumptions (the chunking arc): the same
-    -- declared assumption restated at the chunked verifier's own transcript
-    -- (`Chunked.runWarm`/`Chunked.runInput`, the flat segment stream). TRANSITIONAL:
-    -- both pairs coexist until the nc = 1 layer is deleted and the chunked pair
-    -- becomes THE pair.
-    `Kimchi.Verifier.Chunked.kimchi_fiat_shamir_vesta,
-    `Kimchi.Verifier.Chunked.kimchi_fiat_shamir_pallas,
+    -- The deployed-run Fiat-Shamir assumptions, anchored on the warm reflected run
+    -- (`Ipa.verifyFrom (runWarm) (runInput)`, the flat segment stream) rather than the
+    -- cold `Ipa.verify`. One per curve; the residue-free ft openings
+    -- (`ft_opening_of_reflected_*`) and the terminal roots are stated over these.
+    `Kimchi.Verifier.kimchi_fiat_shamir_vesta,
+    `Kimchi.Verifier.kimchi_fiat_shamir_pallas,
  ]
 
 /-- A trusted `native_decide` witness: CompElliptic's point counts, or pasta's two GLV

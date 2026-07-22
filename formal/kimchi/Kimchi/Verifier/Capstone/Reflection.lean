@@ -1,35 +1,35 @@
-import Kimchi.Verifier.Capstone.AlgebraicChunked
-import Kimchi.Verifier.ReflectChunked
+import Kimchi.Verifier.Capstone.Algebraic
+import Kimchi.Verifier.Reflect
 
 /-!
-# The chunked Fiat–Shamir-reflection discharge (part 1: the ft opening)
+# The Fiat–Shamir-reflection discharge: ft opening and the terminal roots
 
-The chunked re-anchoring of the Fiat–Shamir axiom on the deployed CHUNKED verifier's
-own transcript: `Chunked.kimchi_fiat_shamir_{vesta,pallas}` state the transcript-tree
-extraction over the warm data of a chunked reflected run — the warm-sponge finish
-`Ipa.verifyFrom … (Chunked.runWarm …) (Chunked.runInput …)` that `Chunked.kimchiVerify`
-itself executes (`ReflectedRun.accepts`, `Verifier/ReflectChunked.lean`). These
-RESTATE the `nc = 1` `kimchi_fiat_shamir_*` axioms at the chunked transcript shape —
-the flat segment stream of `44·nc + 1` batch rows — and carry the same independence
-criterion: each says only that the Poseidon sponge provides a valid Fiat–Shamir
-transform at the transcript the deployed verifier actually runs; no arithmetic content,
-no reference to the abstract batch.
+The Fiat–Shamir axiom anchored on the deployed verifier's own transcript:
+`kimchi_fiat_shamir_{vesta,pallas}` state the transcript-tree extraction over the warm
+data of a reflected run — the warm-sponge finish `Ipa.verifyFrom … (runWarm …)
+(runInput …)` that `kimchiVerify` itself executes (`ReflectedRun.accepts`,
+`Verifier/Reflect.lean`), at the flat segment stream of `44·nc + 1` batch rows. The
+independence criterion: each says only that the Poseidon sponge provides a valid
+Fiat–Shamir transform at the transcript the deployed verifier actually runs; no
+arithmetic content, no reference to the abstract batch.
 
 `ft_opening_of_reflected` (PROVED, tree-as-hypothesis) derives the ft opening from a
-genuine chunked acceptance: the constructed ft commitment is the single-chunk ft row of
+genuine acceptance: the constructed ft commitment is the single-chunk ft row of
 the run's own accepted flat stream — flat position `nc` (after the public row's `nc`
 chunks) — so `ipa_soundnessA` plus the arity-generic `eval_pins_of_opening` pin
 `runFtComm` to a representation whose evaluation at the run's own `ζ` is `runFtEval0`.
-The curve wrappers discharge the run by reflection and the tree by the new axioms.
 
-Part 2 — the run-level terminal roots (the deployed flat stream reindexed onto the
-44-row chunked `batchC`, the openings seam fed directly, the Maller identity from this
-ft opening via `ft_identity_of_chunks`) — is the follow-on.
+The terminal roots `kimchi{Vesta,Pallas}_run_sound_algebraic_ft` then feed the
+openings seam (`kimchiProof_sound_of_openings`) directly: the deployed flat stream is
+read onto the 44-row `batchC` at the stream positions, the public row is bound through
+`publicCommitment_corresponds` and the key's Lagrange chunk pin, and the Maller
+identity comes from the ft opening via `ft_identity_of_chunks` at the double
+`ζ^{2^σ.k}` collapse.
 -/
 
 open Bulletproof
 
-namespace Kimchi.Verifier.Chunked
+namespace Kimchi.Verifier
 
 open Polynomial Bulletproof Kimchi.Index Kimchi.Protocol.Linearization
   Kimchi.Protocol.Equation CompElliptic.Fields.Pasta Kimchi.Verifier
@@ -44,8 +44,8 @@ own flat segment batch. This restates `kimchi_fiat_shamir_vesta` at the chunked
 transcript shape — same declared assumption (the Poseidon sponge provides a valid
 Fiat–Shamir transform), stated at the transcript the deployed chunked verifier actually
 runs; the statement mentions only the run's own wire data. -/
-axiom kimchi_fiat_shamir_vesta (σ : SRS IpaVesta.Point) (vk : Chunked.KimchiVesta.VK)
-    (p : Chunked.KimchiVesta.Proof) (pub : Array Fp) :
+axiom kimchi_fiat_shamir_vesta (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
+    (p : KimchiVesta.Proof) (pub : Array Fp) :
   FiatShamirTreeB σ
     (combinedCommitment (runInput IpaVesta.curve σ vk p pub).polyscale
       (runInput IpaVesta.curve σ vk p pub).commitmentFn)
@@ -56,9 +56,9 @@ axiom kimchi_fiat_shamir_vesta (σ : SRS IpaVesta.Point) (vk : Chunked.KimchiVes
       (runInput IpaVesta.curve σ vk p pub) = true)
 
 /-- **AXIOM (Fiat–Shamir, Poseidon instantiation over the deployed chunked run,
-Pallas).** The Pallas-side twin of `Chunked.kimchi_fiat_shamir_vesta`. -/
-axiom kimchi_fiat_shamir_pallas (σ : SRS IpaPallas.Point) (vk : Chunked.KimchiPallas.VK)
-    (p : Chunked.KimchiPallas.Proof) (pub : Array Fq) :
+Pallas).** The Pallas-side twin of `kimchi_fiat_shamir_vesta`. -/
+axiom kimchi_fiat_shamir_pallas (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
+    (p : KimchiPallas.Proof) (pub : Array Fq) :
   FiatShamirTreeB σ
     (combinedCommitment (runInput IpaPallas.curve σ vk p pub).polyscale
       (runInput IpaPallas.curve σ vk p pub).commitmentFn)
@@ -351,15 +351,15 @@ theorem ft_opening_of_reflected {C : Ipa.CommitmentCurve} [Module C.ScalarField 
     rfl
 
 /-- **The ft opening of the deployed chunked Vesta verifier**: a genuine
-`Chunked.KimchiVesta.verify … = true`, DL-binding, representations of the run's own
+`KimchiVesta.verify … = true`, DL-binding, representations of the run's own
 flat batch rows, and good combination challenges yield the ft opening. The run is
-reflected trust-free (`Chunked.kimchiVerify_reflects`); the transcript tree is
-`Chunked.kimchi_fiat_shamir_vesta` at the run's own warm data — the sole axiom
+reflected trust-free (`kimchiVerify_reflects`); the transcript tree is
+`kimchi_fiat_shamir_vesta` at the run's own warm data — the sole axiom
 consumed. The chunked Vesta FS-reflection root. -/
 theorem ft_opening_of_reflected_vesta (σ : SRS IpaVesta.Point)
-    (vk : Chunked.KimchiVesta.VK) (p : Chunked.KimchiVesta.Proof) (pub : Array Fp)
+    (vk : KimchiVesta.VK) (p : KimchiVesta.Proof) (pub : Array Fp)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (hacc : Chunked.KimchiVesta.verify σ vk p pub = true)
+    (hacc : KimchiVesta.verify σ vk p pub = true)
     (aRef : Fin (runInput IpaVesta.curve σ vk p pub).commitments.size
       → Fin (2 ^ σ.k) → Fp)
     (ρRef : Fin (runInput IpaVesta.curve σ vk p pub).commitments.size → Fp)
@@ -383,9 +383,9 @@ theorem ft_opening_of_reflected_vesta (σ : SRS IpaVesta.Point)
 
 /-- **The ft opening of the deployed chunked Pallas verifier.** The Pallas twin. -/
 theorem ft_opening_of_reflected_pallas (σ : SRS IpaPallas.Point)
-    (vk : Chunked.KimchiPallas.VK) (p : Chunked.KimchiPallas.Proof) (pub : Array Fq)
+    (vk : KimchiPallas.VK) (p : KimchiPallas.Proof) (pub : Array Fq)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (hacc : Chunked.KimchiPallas.verify σ vk p pub = true)
+    (hacc : KimchiPallas.verify σ vk p pub = true)
     (aRef : Fin (runInput IpaPallas.curve σ vk p pub).commitments.size
       → Fin (2 ^ σ.k) → Fq)
     (ρRef : Fin (runInput IpaPallas.curve σ vk p pub).commitments.size → Fq)
@@ -1516,7 +1516,7 @@ private theorem addFoldl_aux {α G : Type*} [AddCommMonoid G] (f : α → G) (l 
     rw [add_assoc]
 
 /-- **The chunked wire key–index correspondence**: the committed chunk columns are the
-circuit's own (`Chunked.VKCorresponds`, through the `comms` view at the run's chunk
+circuit's own (`VKCorresponds`, through the `comms` view at the run's chunk
 count), the scalar-side parameters match (the domain generator, the zero-knowledge row
 count, the shifts, the `ft_eval0` endo coefficient, and the Poseidon MDS — read off
 the fr-sponge table), AND the Lagrange-basis chunk commitments over the public region
@@ -2117,31 +2117,31 @@ private instance : Inhabited IpaVesta.Point := ⟨0⟩
 private instance : Inhabited IpaPallas.Point := ⟨0⟩
 
 /-- **The chunked run-level residue-free root (Vesta)**: from a genuine deployed
-CHUNKED acceptance `Chunked.KimchiVesta.verify σ vk p pub = true` at production
+CHUNKED acceptance `KimchiVesta.verify σ vk p pub = true` at production
 chunking `nc · 2^σ.k = n`, the AGM path delivers the guarded
 `Satisfies idx (pubView idx pub) wTab` — the assembled witness table of the algebraic
 prover's own per-chunk representations. The prover supplies SRS-basis representations
 of the run's `44·nc + 1` flat segment rows (`aRef`/`ρRef`) and of the `tComm` chunks
 (`aT`/`ρT`); everything else is derived from the single reflected run: the openings
-seam `Chunked.kimchiProof_sound_of_openings` is fed directly (reference side: the
+seam `kimchiProof_sound_of_openings` is fed directly (reference side: the
 representations at the stream positions; consumer side: the eval pins of the run's one
 accepted opening), the public row is pinned through `publicCommitment_corresponds` and
 the key's Lagrange chunk pin, and the quotient `t := ftChunkAssembly σ.k p.tComm.size
 aT` with its Maller identity comes from the part-1 ft opening through
 `ft_identity_of_chunks` at the DOUBLE `ζ^{2^σ.k}` collapse. The key–index hypothesis
 is the chunked `KimchiVK.Corresponds` — per-chunk `VKCorresponds`, the scalar pins,
-and the Lagrange pin. Axioms consumed: `Chunked.kimchi_fiat_shamir_vesta` plus the
+and the Lagrange pin. Axioms consumed: `kimchi_fiat_shamir_vesta` plus the
 point-count-backed `Module` instance. No `ζⁿ ≠ 1` guard: at the chunked wire the
 public claims are proof-carried batch data, believed only through binding — no
 barycentric reconciliation. The Vesta chunked run-level root. -/
 theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point)
-    (vk : Chunked.KimchiVesta.VK) (p : Chunked.KimchiVesta.Proof) (pub : Array Fp)
+    (vk : KimchiVesta.VK) (p : KimchiVesta.Proof) (pub : Array Fp)
     {n : ℕ} [NeZero n] (idx : Index Fp n)
     (hn : vk.n = n) (hvk : KimchiVK.Corresponds IpaVesta.curve σ vk idx)
     (hpub : pub.size = idx.publicCount)
     (htpos : 0 < p.tComm.size)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (hacc : Chunked.KimchiVesta.verify σ vk p pub = true)
+    (hacc : KimchiVesta.verify σ vk p pub = true)
     (aRef : Fin (runInput IpaVesta.curve σ vk p pub).commitments.size
       → Fin (2 ^ σ.k) → Fp)
     (ρRef : Fin (runInput IpaVesta.curve σ vk p pub).commitments.size → Fp)
@@ -2343,16 +2343,16 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point)
     hteq0
 
 /-- **The chunked run-level residue-free root (Pallas).** The Pallas-side twin of
-`Chunked.kimchiVesta_run_sound_algebraic_ft`, over `Fq`/`IpaPallas`, its
-Fiat–Shamir assumption `Chunked.kimchi_fiat_shamir_pallas`. -/
+`kimchiVesta_run_sound_algebraic_ft`, over `Fq`/`IpaPallas`, its
+Fiat–Shamir assumption `kimchi_fiat_shamir_pallas`. -/
 theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point)
-    (vk : Chunked.KimchiPallas.VK) (p : Chunked.KimchiPallas.Proof) (pub : Array Fq)
+    (vk : KimchiPallas.VK) (p : KimchiPallas.Proof) (pub : Array Fq)
     {n : ℕ} [NeZero n] (idx : Index Fq n)
     (hn : vk.n = n) (hvk : KimchiVK.Corresponds IpaPallas.curve σ vk idx)
     (hpub : pub.size = idx.publicCount)
     (htpos : 0 < p.tComm.size)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (hacc : Chunked.KimchiPallas.verify σ vk p pub = true)
+    (hacc : KimchiPallas.verify σ vk p pub = true)
     (aRef : Fin (runInput IpaPallas.curve σ vk p pub).commitments.size
       → Fin (2 ^ σ.k) → Fq)
     (ρRef : Fin (runInput IpaPallas.curve σ vk p pub).commitments.size → Fq)
@@ -2553,4 +2553,4 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point)
       fun j => hpins ⟨streamPos (runNc IpaPallas.curve σ vk) i (c : ℕ), hlt i c⟩ j⟩)
     hteq0
 
-end Kimchi.Verifier.Chunked
+end Kimchi.Verifier

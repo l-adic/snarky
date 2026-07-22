@@ -5,4 +5,4 @@
 # (fixtures/index_vesta.json) -- selectors carrying the per-chunk fixed blinder.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-lake env lean scripts/check_vk_correspond_chunked.lean
+lake env lean scripts/check_vk_correspond.lean
