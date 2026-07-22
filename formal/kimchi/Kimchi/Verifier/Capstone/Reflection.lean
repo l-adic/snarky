@@ -504,17 +504,12 @@ private theorem combineAt_eq_sum {F : Type*} [Field F] (xM : F) (v : Array F) :
   refine Fintype.sum_equiv (finCongr v.length_toList) _ _ fun i => ?_
   simp only [finCongr_apply, Fin.getElem_fin, Fin.val_cast, Array.getElem_toList]
 
-/-- The flat stream position of abstract batch row `i`, chunk `c` — the `to_batch`
-layout of the deployed stream: the public row's chunks first, the ft singleton at `nc`,
-then per logical row `nc` consecutive chunks (`z`, the six selectors, `w`,
-coefficients, `σ[0..6)`). -/
+/-- The flat stream position of abstract batch row `i`, chunk `c`. The abstract rows
+are the deployed `to_batch` order with the single-chunk ft row interposed at flat
+position `nc`, so the public row's chunks come first and every later row `i` starts at
+`nc + 1 + (i − 1)·nc`. -/
 def streamPos (nc : ℕ) (i : Fin 44) (c : ℕ) : ℕ :=
-  if (i : ℕ) < 15 then nc + 1 + (7 + (i : ℕ)) * nc + c
-  else if (i : ℕ) < 16 then nc + 1 + c
-  else if (i : ℕ) < 22 then nc + 1 + (37 + ((i : ℕ) - 16)) * nc + c
-  else if (i : ℕ) < 37 then nc + 1 + (22 + ((i : ℕ) - 22)) * nc + c
-  else if (i : ℕ) < 43 then nc + 1 + (1 + ((i : ℕ) - 37)) * nc + c
-  else c
+  if (i : ℕ) < 1 then c else nc + 1 + ((i : ℕ) - 1) * nc + c
 
 section StreamRead
 
@@ -1213,58 +1208,46 @@ private theorem streamPos_lt (nc : ℕ) (i : Fin 44) (c : ℕ) (hc : c < nc) :
     streamPos nc i c < 44 * nc + 1 := by
   have hi := i.isLt
   unfold streamPos
-  split_ifs with h1 h2 h3 h4 h5
-  · have := block_lt (show 7 + (i : ℕ) < 43 by omega) hc
-    omega
+  split_ifs with h1
   · omega
-  · have := block_lt (show 37 + ((i : ℕ) - 16) < 43 by omega) hc
+  · have := block_lt (show (i : ℕ) - 1 < 43 by omega) hc
     omega
-  · have := block_lt (show 22 + ((i : ℕ) - 22) < 43 by omega) hc
-    omega
-  · have := block_lt (show 1 + ((i : ℕ) - 37) < 43 by omega) hc
-    omega
-  · omega
-
-/-- `streamPos` at a witness row. -/
-private theorem streamPos_wRow (nc : ℕ) (q : Fin 15) (ch : ℕ) :
-    streamPos nc (wRow q) ch = nc + 1 + (7 + (q : ℕ)) * nc + ch := by
-  simp only [streamPos, wRow]
-  rw [if_pos q.isLt]
-
-/-- `streamPos` at the accumulator row (`0·nc` kept for the region-read shape). -/
-private theorem streamPos_zRow (nc : ℕ) (ch : ℕ) :
-    streamPos nc zRow ch = nc + 1 + 0 * nc + ch := by
-  simp only [streamPos, zRow]
-  rw [if_neg (by omega), if_pos (by omega)]
-  omega
-
-/-- `streamPos` at a σ row. -/
-private theorem streamPos_sRow (nc : ℕ) (i : Fin 6) (ch : ℕ) :
-    streamPos nc (sRow i) ch = nc + 1 + (37 + (i : ℕ)) * nc + ch := by
-  simp only [streamPos, sRow]
-  rw [if_neg (by omega), if_neg (by omega), if_pos (by omega),
-    Nat.add_sub_cancel_left]
-
-/-- `streamPos` at a coefficient row. -/
-private theorem streamPos_cRow (nc : ℕ) (q : Fin 15) (ch : ℕ) :
-    streamPos nc (cRow q) ch = nc + 1 + (22 + (q : ℕ)) * nc + ch := by
-  simp only [streamPos, cRow]
-  rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_pos (by omega),
-    Nat.add_sub_cancel_left]
-
-/-- `streamPos` at a selector row. -/
-private theorem streamPos_selRow (nc : ℕ) (j : Fin 6) (ch : ℕ) :
-    streamPos nc (selRow j) ch = nc + 1 + (1 + (j : ℕ)) * nc + ch := by
-  simp only [streamPos, selRow]
-  rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega),
-    if_pos (by omega), Nat.add_sub_cancel_left]
 
 /-- `streamPos` at the public row. -/
 private theorem streamPos_pubRow (nc : ℕ) (ch : ℕ) :
     streamPos nc pubRow ch = ch := by
   simp only [streamPos, pubRow]
-  rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega),
-    if_neg (by omega)]
+  rw [if_pos (by omega)]
+
+/-- `streamPos` at the accumulator row (`0·nc` kept for the region-read shape). -/
+private theorem streamPos_zRow (nc : ℕ) (ch : ℕ) :
+    streamPos nc zRow ch = nc + 1 + 0 * nc + ch := by
+  simp only [streamPos, zRow]
+  rw [if_neg (by omega), show (1 : ℕ) - 1 = 0 from rfl]
+
+/-- `streamPos` at a selector row. -/
+private theorem streamPos_selRow (nc : ℕ) (j : Fin 6) (ch : ℕ) :
+    streamPos nc (selRow j) ch = nc + 1 + (1 + (j : ℕ)) * nc + ch := by
+  simp only [streamPos, selRow]
+  rw [if_neg (by omega), show 2 + (j : ℕ) - 1 = 1 + (j : ℕ) from by omega]
+
+/-- `streamPos` at a witness row. -/
+private theorem streamPos_wRow (nc : ℕ) (q : Fin 15) (ch : ℕ) :
+    streamPos nc (wRow q) ch = nc + 1 + (7 + (q : ℕ)) * nc + ch := by
+  simp only [streamPos, wRow]
+  rw [if_neg (by omega), show 8 + (q : ℕ) - 1 = 7 + (q : ℕ) from by omega]
+
+/-- `streamPos` at a coefficient row. -/
+private theorem streamPos_cRow (nc : ℕ) (q : Fin 15) (ch : ℕ) :
+    streamPos nc (cRow q) ch = nc + 1 + (22 + (q : ℕ)) * nc + ch := by
+  simp only [streamPos, cRow]
+  rw [if_neg (by omega), show 23 + (q : ℕ) - 1 = 22 + (q : ℕ) from by omega]
+
+/-- `streamPos` at a σ row. -/
+private theorem streamPos_sRow (nc : ℕ) (i : Fin 6) (ch : ℕ) :
+    streamPos nc (sRow i) ch = nc + 1 + (37 + (i : ℕ)) * nc + ch := by
+  simp only [streamPos, sRow]
+  rw [if_neg (by omega), show 38 + (i : ℕ) - 1 = 37 + (i : ℕ) from by omega]
 
 /-- Reading the run input's evaluation matrix at a stream position: the flat row's
 claim pair. -/
@@ -1445,61 +1428,66 @@ private theorem batchC_eq_flat (i : Fin 44) (c : Fin nc) :
   have hbr : ∀ (w : Vector C.Point nc), w.toArray[(c : ℕ)]! = w[c] := fun w => by
     rw [getElem!_pos w.toArray (c : ℕ) (by simp)]
     simp
-  by_cases h1 : (i : ℕ) < 15
-  · rw [show streamPos nc i (c : ℕ)
-        = nc + 1 + (7 + (i : ℕ)) * nc + (c : ℕ) from by
-          unfold streamPos
-          rw [if_pos h1],
-      stream_read_w C (i : ℕ) (c : ℕ) h1 c.isLt]
+  by_cases h1 : (i : ℕ) < 1
+  · rw [show streamPos nc i (c : ℕ) = (c : ℕ) from by
+        unfold streamPos
+        rw [if_pos h1],
+      stream_read_pub C (c : ℕ) c.isLt]
     simp only [batchC]
-    rw [dif_pos h1]
+    rw [if_pos h1]
     exact (hbr _).symm
-  · by_cases h2 : (i : ℕ) < 16
+  · by_cases h2 : (i : ℕ) < 2
     · rw [show streamPos nc i (c : ℕ)
           = nc + 1 + 0 * nc + (c : ℕ) from by
             unfold streamPos
-            rw [if_neg h1, if_pos h2]
-            omega,
+            rw [if_neg h1, show (i : ℕ) - 1 = 0 from by omega],
         stream_read_lit C 0 (c : ℕ) (by omega) c.isLt]
       simp only [batchC]
-      rw [dif_neg h1, if_pos h2]
+      rw [if_neg h1, if_pos h2]
       exact (hbr _).symm
-    · by_cases h3 : (i : ℕ) < 22
+    · by_cases h3 : (i : ℕ) < 8
       · rw [show streamPos nc i (c : ℕ)
-            = nc + 1 + (37 + ((i : ℕ) - 16)) * nc + (c : ℕ) from by
+            = nc + 1 + (1 + ((i : ℕ) - 2)) * nc + (c : ℕ) from by
               unfold streamPos
-              rw [if_neg h1, if_neg h2, if_pos h3],
-          stream_read_s C ((i : ℕ) - 16) (c : ℕ) (by omega) c.isLt]
+              rw [if_neg h1, show (i : ℕ) - 1 = 1 + ((i : ℕ) - 2) from by omega],
+          stream_read_lit C (1 + ((i : ℕ) - 2)) (c : ℕ) (by omega) c.isLt]
         simp only [batchC]
-        rw [dif_neg h1, if_neg h2, dif_pos h3]
-        exact (hbr _).symm
-      · by_cases h4 : (i : ℕ) < 37
+        rw [if_neg h1, if_neg h2, dif_pos h3]
+        obtain ⟨iv, hivlt⟩ := i
+        have hlo : 2 ≤ iv := Nat.not_lt.mp h2
+        have hhi : iv < 8 := h3
+        interval_cases iv <;> exact (hbr _).symm
+      · by_cases h4 : (i : ℕ) < 23
         · rw [show streamPos nc i (c : ℕ)
-              = nc + 1 + (22 + ((i : ℕ) - 22)) * nc + (c : ℕ) from by
+              = nc + 1 + (7 + ((i : ℕ) - 8)) * nc + (c : ℕ) from by
                 unfold streamPos
-                rw [if_neg h1, if_neg h2, if_neg h3, if_pos h4],
-            stream_read_c C ((i : ℕ) - 22) (c : ℕ) (by omega) c.isLt]
+                rw [if_neg h1, show (i : ℕ) - 1 = 7 + ((i : ℕ) - 8) from by omega],
+            stream_read_w C ((i : ℕ) - 8) (c : ℕ) (by omega) c.isLt]
           simp only [batchC]
-          rw [dif_neg h1, if_neg h2, dif_neg h3, dif_pos h4]
+          rw [if_neg h1, if_neg h2, dif_neg h3, dif_pos h4]
           exact (hbr _).symm
-        · by_cases h5 : (i : ℕ) < 43
+        · by_cases h5 : (i : ℕ) < 38
           · rw [show streamPos nc i (c : ℕ)
-                = nc + 1 + (1 + ((i : ℕ) - 37)) * nc + (c : ℕ) from by
+                = nc + 1 + (22 + ((i : ℕ) - 23)) * nc + (c : ℕ) from by
                   unfold streamPos
-                  rw [if_neg h1, if_neg h2, if_neg h3, if_neg h4, if_pos h5],
-              stream_read_lit C (1 + ((i : ℕ) - 37)) (c : ℕ) (by omega) c.isLt]
+                  rw [if_neg h1,
+                    show (i : ℕ) - 1 = 22 + ((i : ℕ) - 23) from by omega],
+              stream_read_c C ((i : ℕ) - 23) (c : ℕ) (by omega) c.isLt]
             simp only [batchC]
-            rw [dif_neg h1, if_neg h2, dif_neg h3, dif_neg h4, dif_pos h5]
-            obtain ⟨iv, hivlt⟩ := i
-            have h37 : 37 ≤ iv := Nat.not_lt.mp h4
-            have h43 : iv < 43 := h5
-            interval_cases iv <;> exact (hbr _).symm
-          · rw [show streamPos nc i (c : ℕ) = (c : ℕ) from by
-                unfold streamPos
-                rw [if_neg h1, if_neg h2, if_neg h3, if_neg h4, if_neg h5],
-              stream_read_pub C (c : ℕ) c.isLt]
+            rw [if_neg h1, if_neg h2, dif_neg h3, dif_neg h4, dif_pos h5]
+            exact (hbr _).symm
+          · rw [show streamPos nc i (c : ℕ)
+                = nc + 1 + (37 + ((i : ℕ) - 38)) * nc + (c : ℕ) from by
+                  unfold streamPos
+                  rw [if_neg h1,
+                    show (i : ℕ) - 1 = 37 + ((i : ℕ) - 38) from by
+                      have := i.isLt
+                      omega],
+              stream_read_s C ((i : ℕ) - 38) (c : ℕ) (by
+                have := i.isLt
+                omega) c.isLt]
             simp only [batchC]
-            rw [dif_neg h1, if_neg h2, dif_neg h3, dif_neg h4, dif_neg h5]
+            rw [if_neg h1, if_neg h2, dif_neg h3, dif_neg h4, dif_neg h5]
             exact (hbr _).symm
 
 end GroupReconcile

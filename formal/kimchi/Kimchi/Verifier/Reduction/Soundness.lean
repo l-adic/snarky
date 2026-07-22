@@ -16,7 +16,8 @@ reproduction) is exactly what the reduction needs. `nc = 1` is the one-chunk cas
 
 Two structural consequences of chunking:
 
-* **The public row is IN the batch** (44 rows, the public row appended last). At
+* **The public row is IN the batch** (44 rows, the public row first — `to_batch`
+  order). At
   `nc = 1` the public evaluations are computed by the verifier — a barycentric identity
   with the committed public polynomial, no binding needed. At `nc > 1` they are
   PROOF-CARRIED, adversarial data (`MissingPublicInputEvaluation`, verifier.rs:332):
@@ -120,107 +121,125 @@ def VKCorresponds [Field F] [AddCommGroup G] [Module F G] (σ : SRS G) (nc : ℕ
 
 /-! ## The batch assembly (44 logical rows)
 
-Row indices `0–42` keep the `nc = 1` layout (witness `0–14`, accumulator `15`, σ
-`16–21`, coefficients `22–36`, selectors `37–42`); the public row is appended at `43`.
-The abstract grid quantifies each row's polyscale independently, so row ORDER carries
-no content here — the run reindexing (the reflection layer) maps the deployed stream's
-`to_batch` order onto these indices. -/
+The abstract rows are the deployed `to_batch` order (verifier.rs) with the ft row
+omitted — the ft opening is consumed separately (the `_ft` terminals read it off the
+run):
 
-/-- Batch row of witness column `c`. -/
-def wRow (c : Fin 15) : Fin 44 := ⟨(c : ℕ), by omega⟩
+| row     | column                | `to_batch` push (verifier.rs)       |
+| ------- | --------------------- | ----------------------------------- |
+| `0`     | public                | :978 (commitment built at :834–858) |
+| `1`     | accumulator `z`       | :991                                |
+| `2–7`   | selectors (`selGate`) | :993–998                            |
+| `8–22`  | witness `0–14`        | :1002                               |
+| `23–37` | coefficients `0–14`   | :1004                               |
+| `38–43` | σ `0–5`               | :1006                               |
 
-/-- Batch row of the accumulator `z`. -/
-def zRow : Fin 44 := ⟨15, by omega⟩
-
-/-- Batch row of the `i`-th σ column (first six only). -/
-def sRow (i : Fin 6) : Fin 44 := ⟨16 + (i : ℕ), by omega⟩
-
-/-- Batch row of coefficient column `c`. -/
-def cRow (c : Fin 15) : Fin 44 := ⟨22 + (c : ℕ), by omega⟩
-
-/-- Batch row of the `j`-th selector (order of `selGate`). -/
-def selRow (j : Fin 6) : Fin 44 := ⟨37 + (j : ℕ), by omega⟩
+In the physical stream the single-chunk ft row sits between the public chunks and the
+`z` chunks (pushed at :984–987), so the flat position of row `i` chunk `c` is `c` at
+`i = 0` and `nc + 1 + (i − 1)·nc + c` beyond (the reflection layer's `streamPos`).
+The stream order is behaviorally pinned: a wrong order mis-combines the polyscale
+walk, and the production fixtures reject. -/
 
 /-- Batch row of the public commitment (proof-carried claims at `nc > 1`). -/
-def pubRow : Fin 44 := ⟨43, by omega⟩
+def pubRow : Fin 44 := ⟨0, by omega⟩
 
-/-- **The 44-row chunked batch commitment assembly**: 15 witness columns, the
-accumulator, the first six σ columns, the 15 coefficient columns, the six masked
-selectors, and the public commitment — each row its `nc`-chunk vector. -/
+/-- Batch row of the accumulator `z`. -/
+def zRow : Fin 44 := ⟨1, by omega⟩
+
+/-- Batch row of the `j`-th selector (order of `selGate`). -/
+def selRow (j : Fin 6) : Fin 44 := ⟨2 + (j : ℕ), by omega⟩
+
+/-- Batch row of witness column `c`. -/
+def wRow (c : Fin 15) : Fin 44 := ⟨8 + (c : ℕ), by omega⟩
+
+/-- Batch row of coefficient column `c`. -/
+def cRow (c : Fin 15) : Fin 44 := ⟨23 + (c : ℕ), by omega⟩
+
+/-- Batch row of the `i`-th σ column (first six only). -/
+def sRow (i : Fin 6) : Fin 44 := ⟨38 + (i : ℕ), by omega⟩
+
+/-- **The 44-row chunked batch commitment assembly**, in `to_batch` order: the public
+commitment, the accumulator, the six masked selectors, the 15 witness columns, the 15
+coefficient columns, and the first six σ columns — each row its `nc`-chunk vector. -/
 def batchC {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
     (comms : IndexComms (Fin nc → G)) : Fin 44 → Fin nc → G := fun i =>
-  if h : (i : ℕ) < 15 then wC ⟨(i : ℕ), h⟩
-  else if (i : ℕ) < 16 then zC
-  else if h2 : (i : ℕ) < 22 then comms.sigma ⟨(i : ℕ) - 16, by omega⟩
-  else if h3 : (i : ℕ) < 37 then comms.coefficients ⟨(i : ℕ) - 22, by omega⟩
-  else if h4 : (i : ℕ) < 43 then selComm comms ⟨(i : ℕ) - 37, by omega⟩
-  else pubC
+  if (i : ℕ) < 1 then pubC
+  else if (i : ℕ) < 2 then zC
+  else if h2 : (i : ℕ) < 8 then selComm comms ⟨(i : ℕ) - 2, by omega⟩
+  else if h3 : (i : ℕ) < 23 then wC ⟨(i : ℕ) - 8, by omega⟩
+  else if h4 : (i : ℕ) < 38 then comms.coefficients ⟨(i : ℕ) - 23, by omega⟩
+  else comms.sigma ⟨(i : ℕ) - 38, by have := i.isLt; omega⟩
 
-private theorem batchC_wRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
-    (comms : IndexComms (Fin nc → G)) (c : Fin 15) :
-    batchC wC zC pubC comms (wRow c) = wC c := by
-  simp only [batchC, wRow]
-  rw [dif_pos c.isLt]
+private theorem batchC_pubRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
+    (comms : IndexComms (Fin nc → G)) :
+    batchC wC zC pubC comms pubRow = pubC := by
+  have h1 : (0 : ℕ) < 1 := by omega
+  simp only [batchC, pubRow]
+  rw [if_pos h1]
 
 private theorem batchC_zRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
     (comms : IndexComms (Fin nc → G)) :
     batchC wC zC pubC comms zRow = zC := by
-  have h1 : ¬ (15 : ℕ) < 15 := by omega
-  have h2 : (15 : ℕ) < 16 := by omega
+  have h1 : ¬ (1 : ℕ) < 1 := by omega
+  have h2 : (1 : ℕ) < 2 := by omega
   simp only [batchC, zRow]
-  rw [dif_neg h1, if_pos h2]
+  rw [if_neg h1, if_pos h2]
 
-private theorem batchC_sRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
-    (comms : IndexComms (Fin nc → G)) (i : Fin 6) :
-    batchC wC zC pubC comms (sRow i) = comms.sigma ⟨(i : ℕ), by omega⟩ := by
-  have h1 : ¬ 16 + (i : ℕ) < 15 := by omega
-  have h2 : ¬ 16 + (i : ℕ) < 16 := by omega
-  have h3 : 16 + (i : ℕ) < 22 := by omega
-  simp only [batchC, sRow]
-  rw [dif_neg h1, if_neg h2, dif_pos h3]
+private theorem batchC_selRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
+    (comms : IndexComms (Fin nc → G)) (j : Fin 6) :
+    batchC wC zC pubC comms (selRow j) = selComm comms j := by
+  have h1 : ¬ 2 + (j : ℕ) < 1 := by omega
+  have h2 : ¬ 2 + (j : ℕ) < 2 := by omega
+  have h3 : 2 + (j : ℕ) < 8 := by omega
+  simp only [batchC, selRow]
+  rw [if_neg h1, if_neg h2, dif_pos h3]
   congr 1
-  simp only [Fin.mk.injEq]
+  apply Fin.ext
+  show 2 + (j : ℕ) - 2 = (j : ℕ)
+  omega
+
+private theorem batchC_wRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
+    (comms : IndexComms (Fin nc → G)) (c : Fin 15) :
+    batchC wC zC pubC comms (wRow c) = wC c := by
+  have h1 : ¬ 8 + (c : ℕ) < 1 := by omega
+  have h2 : ¬ 8 + (c : ℕ) < 2 := by omega
+  have h3 : ¬ 8 + (c : ℕ) < 8 := by omega
+  have h4 : 8 + (c : ℕ) < 23 := by omega
+  simp only [batchC, wRow]
+  rw [if_neg h1, if_neg h2, dif_neg h3, dif_pos h4]
+  congr 1
+  apply Fin.ext
+  show 8 + (c : ℕ) - 8 = (c : ℕ)
   omega
 
 private theorem batchC_cRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
     (comms : IndexComms (Fin nc → G)) (c : Fin 15) :
     batchC wC zC pubC comms (cRow c) = comms.coefficients c := by
-  have h1 : ¬ 22 + (c : ℕ) < 15 := by omega
-  have h2 : ¬ 22 + (c : ℕ) < 16 := by omega
-  have h3 : ¬ 22 + (c : ℕ) < 22 := by omega
-  have h4 : 22 + (c : ℕ) < 37 := by omega
+  have h1 : ¬ 23 + (c : ℕ) < 1 := by omega
+  have h2 : ¬ 23 + (c : ℕ) < 2 := by omega
+  have h3 : ¬ 23 + (c : ℕ) < 8 := by omega
+  have h4 : ¬ 23 + (c : ℕ) < 23 := by omega
+  have h5 : 23 + (c : ℕ) < 38 := by omega
   simp only [batchC, cRow]
-  rw [dif_neg h1, if_neg h2, dif_neg h3, dif_pos h4]
+  rw [if_neg h1, if_neg h2, dif_neg h3, dif_neg h4, dif_pos h5]
   congr 1
   apply Fin.ext
-  show 22 + (c : ℕ) - 22 = (c : ℕ)
+  show 23 + (c : ℕ) - 23 = (c : ℕ)
   omega
 
-private theorem batchC_selRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
-    (comms : IndexComms (Fin nc → G)) (j : Fin 6) :
-    batchC wC zC pubC comms (selRow j) = selComm comms j := by
-  have h1 : ¬ 37 + (j : ℕ) < 15 := by omega
-  have h2 : ¬ 37 + (j : ℕ) < 16 := by omega
-  have h3 : ¬ 37 + (j : ℕ) < 22 := by omega
-  have h4 : ¬ 37 + (j : ℕ) < 37 := by omega
-  have h5 : 37 + (j : ℕ) < 43 := by omega
-  simp only [batchC, selRow]
-  rw [dif_neg h1, if_neg h2, dif_neg h3, dif_neg h4, dif_pos h5]
+private theorem batchC_sRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
+    (comms : IndexComms (Fin nc → G)) (i : Fin 6) :
+    batchC wC zC pubC comms (sRow i) = comms.sigma ⟨(i : ℕ), by omega⟩ := by
+  have h1 : ¬ 38 + (i : ℕ) < 1 := by omega
+  have h2 : ¬ 38 + (i : ℕ) < 2 := by omega
+  have h3 : ¬ 38 + (i : ℕ) < 8 := by omega
+  have h4 : ¬ 38 + (i : ℕ) < 23 := by omega
+  have h5 : ¬ 38 + (i : ℕ) < 38 := by omega
+  simp only [batchC, sRow]
+  rw [if_neg h1, if_neg h2, dif_neg h3, dif_neg h4, dif_neg h5]
   congr 1
-  apply Fin.ext
-  show 37 + (j : ℕ) - 37 = (j : ℕ)
+  simp only [Fin.mk.injEq]
   omega
-
-private theorem batchC_pubRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
-    (comms : IndexComms (Fin nc → G)) :
-    batchC wC zC pubC comms pubRow = pubC := by
-  have h1 : ¬ (43 : ℕ) < 15 := by omega
-  have h2 : ¬ (43 : ℕ) < 16 := by omega
-  have h3 : ¬ (43 : ℕ) < 22 := by omega
-  have h4 : ¬ (43 : ℕ) < 37 := by omega
-  have h5 : ¬ (43 : ℕ) < 43 := by omega
-  simp only [batchC, pubRow]
-  rw [dif_neg h1, if_neg h2, dif_neg h3, dif_neg h4, dif_neg h5]
 
 /-- On the honest chunked indexer, the `j`-th selector chunk is the per-chunk masked
 commitment of the `selGate j` selector interpolant. -/
