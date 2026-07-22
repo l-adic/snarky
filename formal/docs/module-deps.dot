@@ -226,7 +226,6 @@ digraph "formal-modules" {
 	"Kimchi.Gate.Semantics.VarBaseMul" -> "Kimchi.Gate.VarBaseMul";
 	"Kimchi.Gate.VarBaseMul" -> "Kimchi.Gate.AddComplete";
 	"Kimchi.Index.Aggregate" -> "Kimchi.Index.CopySoundness";
-	"Kimchi.Index.Basic" -> "Kimchi.Gate.Poseidon";
 	"Kimchi.Index.Basic" -> "Kimchi.Permutation.Wiring";
 	"Kimchi.Index.CopySoundness" -> "Kimchi.Index.Satisfies";
 	"Kimchi.Index.Degree" -> "Kimchi.Index.Aggregate";
@@ -241,12 +240,10 @@ digraph "formal-modules" {
 	"Kimchi.Protocol.Equation" -> "Kimchi.Index.Degree";
 	"Kimchi.Protocol.Equation" -> "Kimchi.Protocol.Accepts";
 	"Kimchi.Protocol.Linearization" -> "Kimchi.Lift";
-	"Kimchi.Verifier.Capstone.Algebraic" -> "Bulletproof.Reflection";
-	"Kimchi.Verifier.Capstone.Algebraic" -> "Kimchi.Verifier.Kimchi";
 	"Kimchi.Verifier.Capstone.Algebraic" -> "Kimchi.Verifier.Reduction.Soundness";
+	"Kimchi.Verifier.Capstone.Algebraic" -> "Kimchi.Verifier.Reflect";
 	"Kimchi.Verifier.Capstone.Reflection" -> "Kimchi.Verifier.Capstone.Algebraic";
-	"Kimchi.Verifier.Capstone.Reflection" -> "Kimchi.Verifier.Reflect";
-	"Kimchi.Verifier.Capstone.Standard" -> "Kimchi.Verifier.Capstone.Algebraic";
+	"Kimchi.Verifier.Capstone.Standard" -> "Kimchi.Verifier.Reduction.Soundness";
 	"Kimchi.Verifier.Capstone.Standard" -> "Kimchi.Verifier.Reflect";
 	"Kimchi.Verifier.Kimchi" -> "Bulletproof.Wire";
 	"Kimchi.Verifier.Kimchi" -> "Kimchi.Protocol.Linearization";
@@ -257,6 +254,8 @@ digraph "formal-modules" {
 	"Kimchi.Verifier.Reduction.Correspond" -> "Kimchi.Index.Aggregate";
 	"Kimchi.Verifier.Reduction.Soundness" -> "Kimchi.Protocol.Equation";
 	"Kimchi.Verifier.Reduction.Soundness" -> "Kimchi.Verifier.Reduction.Binding";
+	"Kimchi.Verifier.Reflect" -> "Bulletproof.Reflection";
+	"Kimchi.Verifier.Reflect" -> "Kimchi.Protocol.Equation";
 	"Kimchi.Verifier.Reflect" -> "Kimchi.Verifier.Kimchi";
 	"Snarky.AsProver" -> "Snarky.CVar";
 	"Snarky.Builder" -> "Snarky.Monad";
