@@ -136,20 +136,23 @@ jobs:
         KIMCHI_FIXTURES_DIR=kimchi/fixtures \
           lake env lean kimchi/scripts/check_linearization.lean
 
-    # The composed executable kimchi verifier (both sponge schedules, the scalar side,
-    # the to_batch assembly, the warm-started IPA check) must accept a complete
-    # production wire proof and reject corruptions (fixtures/kimchi_proof_vesta.json,
-    # from tools/fixture-dump's kimchi_proof_dump).
+    # The composed executable kimchi verifier (check-then-verify, both sponge
+    # schedules, the scalar side, the to_batch segment stream, the warm-started IPA
+    # check) must accept complete production wire proofs — the one-chunk fixture and
+    # the nc = 2 fixtures on BOTH curves — and reject corruptions
+    # (fixtures/kimchi_proof_{vesta,vesta_nc2,pallas_nc2}.json, from
+    # tools/fixture-dump's kimchi_proof_dump binaries).
     - name: Check the executable kimchi verifier against a production proof
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         KIMCHI_FIXTURES_DIR=kimchi/fixtures \
           lake env lean kimchi/scripts/check_kimchi_verifier.lean
 
-    # The verifier-key <-> index correspondence (VKCorresponds), by value: every
-    # committed column of the production VK equals the value-MSM of the Lagrange-basis
-    # commitments against its production-derived column (which check_index_fixture
-    # separately pins to the Index model's own derivations).
+    # The verifier-key <-> index correspondence (VKCorresponds at production
+    # chunking), by value: every committed column chunk of the production nc = 2 VK
+    # equals the value-MSM of the Lagrange-basis chunk commitments against its
+    # production-derived column (which check_index_fixture separately pins to the
+    # Index model's own derivations), selectors carrying the per-chunk fixed blinder.
     - name: Check the verifier key corresponds to the index
       run: |
         export PATH="$HOME/.elan/bin:$PATH"

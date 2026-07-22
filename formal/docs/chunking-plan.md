@@ -1,6 +1,19 @@
 # Plan: full chunking (`nc > 1`) for the kimchi formalization
 
-**Status:** EXECUTING. Phase 0 DONE — `kimchi_proof_{vesta,pallas}_nc2.json` recorded
+**Status: COMPLETE (2026-07-21).** All phases executed, plus two follow-ons the plan
+did not anticipate: the full DELETION SWEEP (the nc = 1 verifier, reflection,
+reduction, and capstone layers are deleted; the chunked layer holds the plain names;
+`nc = 1` survives only as the one-chunk case of the general statements) and the
+TYPED-WIRE RESTRUCTURE (wire records carry the serde-typed fixed dimensions as
+`Vector`s; `KimchiProof.check`/`KimchiVK.check` factor the verifier's length checks
+into a `Checked nc` core, so chunk uniformity is definitional and the shape-extraction
+machinery this plan's Phase 4d built is gone). Terminal roots:
+`Kimchi.Verifier.kimchi{Vesta,Pallas}_run_sound_algebraic_ft` — 45 roots, allowed
+axiom set = the standard four + `Bulletproof.poseidon_fiat_shamir_{vesta,pallas}` +
+`Kimchi.Verifier.kimchi_fiat_shamir_{vesta,pallas}`. The remainder of this document is
+the execution history.
+
+**Original status line:** EXECUTING. Phase 0 DONE — `kimchi_proof_{vesta,pallas}_nc2.json` recorded
 (`kimchi_proof_dump_nc2`, both accepted by the production verifier; `n = 32`,
 `max_poly_size = 16`, `zk_rows = 5`, `t` = 14 chunks; the regenerated one-chunk fixture
 stayed byte-identical, so the genericized circuit preserves the rng draw order).
