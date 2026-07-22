@@ -48,7 +48,7 @@ def runZetaN (σ : SRS C.Point) (cvk : KimchiVK C nc)
   powPow2 (runOracles C σ cvk cp pub).zeta cvk.domainLog2
 
 /-- The power `(ζω)ⁿ`, by the squaring ladder. -/
-def runZetaOmegaN (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private def runZetaOmegaN (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc) (pub : Array C.ScalarField) : C.ScalarField :=
   powPow2 (runZetaOmega C σ cvk cp pub) cvk.domainLog2
 
@@ -177,7 +177,7 @@ def runInputP (σ : SRS C.Point) (cvk : KimchiVK C nc)
   proof := cp.opening
 
 /-- The acceptance decision at given public evaluations and combination scalars. -/
-def runBody (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private def runBody (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc) (pub : Array C.ScalarField)
     (pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc))
     (v u : C.ScalarField) : Bool :=

@@ -87,7 +87,7 @@ noncomputable def badROf {F G : Type*} [Field F] [DecidableEq F]
 
 /-- `badXiOf` counts at most `2 · (m − 1)` challenges (at the 43-row batch: `84`): a
 union of two counting-SZ bad sets over `Fin m`. -/
-theorem card_badXiOf_le {F G : Type*} [Field F] [DecidableEq F]
+private theorem card_badXiOf_le {F G : Type*} [Field F] [DecidableEq F]
     [AddCommGroup G] [Module F G] (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
     (x : Fin 2 → F) (E : Fin m → Fin 2 → F) : (badXiOf σ aw₀ x E).card ≤ 2 * (m - 1) := by
   unfold badXiOf
@@ -100,7 +100,7 @@ theorem card_badXiOf_le {F G : Type*} [Field F] [DecidableEq F]
 
 /-- `badROf` counts at most `1 = 2 − 1` challenge: one counting-SZ bad set over
 `Fin 2`. -/
-theorem card_badROf_le {F G : Type*} [Field F] [DecidableEq F]
+private theorem card_badROf_le {F G : Type*} [Field F] [DecidableEq F]
     [AddCommGroup G] [Module F G] (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
     (x : Fin 2 → F) (E : Fin m → Fin 2 → F) (ξ : F) :
     (badROf σ aw₀ x E ξ).card ≤ 1 := by

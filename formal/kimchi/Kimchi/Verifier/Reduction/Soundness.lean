@@ -64,16 +64,16 @@ theorem bound_unique [Field F] [AddCommGroup G] [Module F G] (σ : SRS G)
 /-- The six selector commitments of a verifier key, in gate enumeration order.
 Generic over the commitment carrier, so the chunked reduction reuses it at
 `Fin nc → G`. -/
-def selComm (comms : IndexComms G) : Fin 6 → G :=
+private def selComm (comms : IndexComms G) : Fin 6 → G :=
   ![comms.generic, comms.poseidon, comms.completeAdd, comms.varBaseMul,
     comms.endoMul, comms.endoScalar]
 
 /-- The gate type of the `j`-th selector row, in the same enumeration order as
 `selComm`. -/
-def selGate : Fin 6 → GateType :=
+private def selGate : Fin 6 → GateType :=
   ![.generic, .poseidon, .completeAdd, .varBaseMul, .endoMul, .endoScalar]
 
-theorem evalsExt {e e' : Evals F} (h1 : e.w = e'.w) (h2 : e.wOmega = e'.wOmega)
+private theorem evalsExt {e e' : Evals F} (h1 : e.w = e'.w) (h2 : e.wOmega = e'.wOmega)
     (h3 : e.z = e'.z) (h4 : e.zOmega = e'.zOmega) (h5 : e.s = e'.s)
     (h6 : e.coeffs = e'.coeffs) (h7 : e.genericSelector = e'.genericSelector)
     (h8 : e.poseidonSelector = e'.poseidonSelector)

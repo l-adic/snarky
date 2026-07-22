@@ -268,7 +268,7 @@ representation of the constructed ft commitment `runFtComm` (the DOUBLE collapse
 `ζ^{2^σ.k}`) whose evaluation at the run's own `ζ` is the computed claim `runFtEval0`.
 The ft row sits at flat position `nc`, right after the public row's chunks
 (`flatRows_ft_read`). -/
-theorem ft_opening_of_reflected {C : Ipa.CommitmentCurve} [Module C.ScalarField C.Point]
+private theorem ft_opening_of_reflected {C : Ipa.CommitmentCurve} [Module C.ScalarField C.Point]
     (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc) (pub : Array C.ScalarField)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → C.ScalarField) (wh : C.ScalarField),
@@ -508,7 +508,7 @@ private theorem combineAt_eq_sum {F : Type*} [Field F] (xM : F) (v : Array F) :
 are the deployed `to_batch` order with the single-chunk ft row interposed at flat
 position `nc`, so the public row's chunks come first and every later row `i` starts at
 `nc + 1 + (i − 1)·nc`. -/
-def streamPos (nc : ℕ) (i : Fin 44) (c : ℕ) : ℕ :=
+private def streamPos (nc : ℕ) (i : Fin 44) (c : ℕ) : ℕ :=
   if (i : ℕ) < 1 then c else nc + 1 + ((i : ℕ) - 1) * nc + c
 
 section StreamRead
@@ -1014,7 +1014,7 @@ def KimchiVK.Corresponds {C : Ipa.CommitmentCurve}
 verifier's per-chunk public commitment is the per-chunk masked commitment of the
 NEGATED public interpolant — the `pubC` feed of the reduction. The `.val`-scalar
 collapse is supplied per curve (`hsmul`). -/
-theorem publicCommitment_corresponds [Module C.ScalarField C.Point]
+private theorem publicCommitment_corresponds [Module C.ScalarField C.Point]
     (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
     (pub : Array C.ScalarField) {n : ℕ}
     [NeZero n] (idx : Index C.ScalarField n)

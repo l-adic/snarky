@@ -31,7 +31,7 @@ open Polynomial Bulletproof Kimchi.Index Kimchi.Protocol.Linearization
 /-! ## Reindexing congruences for the batched combiners -/
 
 /-- `combinedCommitment` congruence across an index-count equality. -/
-theorem combinedCommitment_reindex {F G : Type*} [Field F] [AddCommGroup G]
+private theorem combinedCommitment_reindex {F G : Type*} [Field F] [AddCommGroup G]
     [Module F G] (ξ : F) {n m : ℕ} (h : n = m) (Cn : Fin n → G) (Cm : Fin m → G)
     (hC : ∀ i : Fin n, Cn i = Cm (Fin.cast h i)) :
     combinedCommitment ξ Cn = combinedCommitment ξ Cm := by
@@ -41,7 +41,7 @@ theorem combinedCommitment_reindex {F G : Type*} [Field F] [AddCommGroup G]
   rw [hC i]
 
 /-- `combinedInnerProduct` congruence across a first-index-count equality. -/
-theorem combinedInnerProduct_reindex {F : Type*} [Field F] (ξ r : F)
+private theorem combinedInnerProduct_reindex {F : Type*} [Field F] (ξ r : F)
     {n n' m : ℕ} (h : n = n') (e : Fin n → Fin m → F) (e' : Fin n' → Fin m → F)
     (he : ∀ (i : Fin n) (j : Fin m), e i j = e' (Fin.cast h i) j) :
     combinedInnerProduct ξ r e = combinedInnerProduct ξ r e' := by

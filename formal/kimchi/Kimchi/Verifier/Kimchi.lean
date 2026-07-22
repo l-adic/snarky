@@ -122,7 +122,7 @@ def KimchiVK.n {C : Ipa.CommitmentCurve} {nc : ℕ}
     (cvk : KimchiVK C nc) : ℕ := 2 ^ cvk.domainLog2
 
 /-- The fr-sponge spec of a checked key. -/
-def KimchiVK.frSpec {C : Ipa.CommitmentCurve} {nc : ℕ}
+private def KimchiVK.frSpec {C : Ipa.CommitmentCurve} {nc : ℕ}
     (cvk : KimchiVK C nc) : FqSponge.Spec C.scalar C.scalar :=
   ⟨cvk.frParams, 0⟩
 
@@ -139,7 +139,7 @@ def mdsOfParams {F : Type*} (p : Poseidon.Params F) : Gate.Poseidon.Mds F :=
 
 /-- The fr-sponge digest (`DefaultFrSponge::digest`, kimchi/src/plonk_sponge.rs): the
 plain first squeeze — same field, no cast. -/
-def frDigest (sp : FqSponge.Spec C.scalar C.scalar) (s : FqSponge.S C.scalar) :
+private def frDigest (sp : FqSponge.Spec C.scalar C.scalar) (s : FqSponge.S C.scalar) :
     C.ScalarField :=
   (challengeFq sp s).1
 
@@ -147,7 +147,7 @@ def frDigest (sp : FqSponge.Spec C.scalar C.scalar) (s : FqSponge.S C.scalar) :
 element and cast it to the scalar field by `from_bigint`, which returns **zero when the
 value does not fit** — not a modular reduction. The state is consumed (production takes
 `mut self`); the caller keeps its pre-digest copy. -/
-def fqDigest (s : FqSponge.S C.base) : C.ScalarField :=
+private def fqDigest (s : FqSponge.S C.base) : C.ScalarField :=
   let (x, _) := challengeFq C.sponge s
   if x.val < C.scalar then ((x.val : ℕ) : C.ScalarField) else 0
 
@@ -175,7 +175,7 @@ def powPow2 {F : Type*} [Field F] (x : F) (k : ℕ) : F :=
 /-- The shared summand of the two public evaluations (verifier.rs:338–375): over the
 public inputs, `∑ᵢ −(pt − ωⁱ)⁻¹ · pubᵢ · ωⁱ`, by a running-`ω`-power fold.
 `batch_inversion` (:346) is an optimization — per-element inversion is the same value. -/
-def pubDot {F : Type*} [Field F] (omega pt : F) (pub : Array F) : F :=
+private def pubDot {F : Type*} [Field F] (omega pt : F) (pub : Array F) : F :=
   (pub.foldl (fun (acc : F × F) pi =>
     (acc.1 + -(pt - acc.2)⁻¹ * pi * acc.2, acc.2 * omega)) (0, 1)).1
 
