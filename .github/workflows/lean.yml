@@ -50,6 +50,13 @@ jobs:
       working-directory: .
       run: bash formal/scripts/check-style.sh
 
+    # No bare structural dimension (6/7/15/43/44) in a type position — the
+    # Kimchi/Columns.lean shape constants are mandatory. Pure source scan; the
+    # out-of-scope policy (gate-internal constants, proof-side arithmetic) is
+    # documented in the script header.
+    - name: Shape-literal gate
+      run: bash kimchi/scripts/check_shape_literals.sh
+
     # elan + Mathlib olean cache + the Kimchi build-directory cache + `lake build
     # Kimchi` — shared with the `check-ps-witness` job in the CI workflow.
     - name: Setup Lean + build the library (= check every proof)
