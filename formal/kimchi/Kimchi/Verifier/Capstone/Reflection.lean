@@ -632,6 +632,59 @@ private theorem rowF_read {A : Array C.Point} {B D : Array C.ScalarField} {m c :
     getElem!_pos D c (by omega)]
   simp [Array.getElem_zip]
 
+/-- The 43 tail rows of the stream (everything after the public block and the ft
+singleton), in `to_batch` order: the seven literal rows (`z` + the six selectors),
+then the witness / coefficient / σ zip blocks. -/
+private def tailRows {nc : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc) :
+    Array (Array C.Point × Array C.ScalarField × Array C.ScalarField) :=
+  litRows C cvk cp
+    ++ (cp.wComm.zip cp.evals.w).toArray.map (zipRow C)
+    ++ (cvk.coefficientsComm.zip cp.evals.coefficients).toArray.map (zipRow C)
+    ++ ((cvk.sigmaComm.take 6).zip cp.evals.s).toArray.map (zipRow C)
+
+/-- Every tail row's three components are `nc`-sized — type facts of the checked
+records, by cases on the four blocks. -/
+private theorem tail_components :
+    ∀ a ∈ tailRows C cvk cp,
+      a.1.size = nc ∧ a.2.1.size = nc ∧ a.2.2.size = nc := by
+  intro a ha
+  simp only [tailRows, Array.mem_append] at ha
+  rcases ha with ((ha | ha) | ha) | ha
+  · simp only [litRows, List.mem_toArray, List.mem_cons, List.not_mem_nil,
+      or_false] at ha
+    rcases ha with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      exact ⟨by simp, by simp, by simp⟩
+  all_goals
+    obtain ⟨x, hx, rfl⟩ := Array.exists_of_mem_map ha
+    exact ⟨by simp [zipRow], by simp [zipRow], by simp [zipRow]⟩
+
+/-- Every tail row flattens to `nc` entries. -/
+private theorem tailBlock_uniform :
+    ∀ a ∈ tailRows C cvk cp, (rowF C a).size = nc := by
+  intro a ha
+  obtain ⟨h1, h2, h3⟩ := tail_components C a ha
+  exact rowF_size C h1 h2 h3
+
+/-- The tail has 43 rows. -/
+private theorem tailRows_size : (tailRows C cvk cp).size = 43 := by
+  simp [tailRows, litRows]
+
+/-- The stream regrouped at the tail: the public block, the ft singleton, then the
+uniform 43-row tail — the one flatten boundary every region read goes through. -/
+private theorem stream_tail_decomp (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc) (pub : Array C.ScalarField)
+    (pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)) :
+    flatRows C (runLogicalP C σ cvk cp pub pe)
+      = (rowF C ((publicCommitment C σ cvk pub).toArray, pe.zeta.toArray,
+            pe.zetaOmega.toArray)
+          ++ rowF C (#[runFtComm C σ cvk cp pub],
+            #[runFtEval0P C σ cvk cp pub
+                (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray)],
+            #[cp.ftEval1]))
+        ++ Array.flatMap (rowF C) (tailRows C cvk cp) := by
+  rw [stream_decomp C σ cvk cp pub pe]
+  simp only [tailRows, Array.flatMap_append, Array.append_assoc]
+
 end StreamRead
 
 section RegionReads
@@ -646,23 +699,40 @@ private theorem block_lt {q Q c nc : ℕ} (hq : q < Q) (hc : c < nc) :
   calc q * nc + c < (q + 1) * nc := by rw [Nat.succ_mul]; omega
     _ ≤ Q * nc := Nat.mul_le_mul_right nc hq
 
-/-- A zip-map block array is uniformly `nc`-chunked: every flattened row has `nc`
-entries — a type fact of the checked records. -/
-private theorem zipBlock_uniform {m : ℕ} {A : Vector (Vector C.Point nc) m}
-    {B : Vector (Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)) m} :
-    ∀ a ∈ (A.zip B).toArray.map (zipRow C), (rowF C a).size = nc := by
-  intro a ha
-  obtain ⟨x, hx, rfl⟩ := Array.exists_of_mem_map ha
-  exact rowF_size C (by simp) (by simp) (by simp)
-
-/-- The seven literal rows (`z` + six selectors) are uniformly `nc`-chunked. -/
-private theorem litBlock_uniform :
-    ∀ a ∈ litRows C cvk cp, (rowF C a).size = nc := by
-  intro a ha
-  simp only [litRows, List.mem_toArray, List.mem_cons, List.not_mem_nil,
-    or_false] at ha
-  rcases ha with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-    exact rowF_size C (by simp) (by simp) (by simp)
+/-- **The tail read** — the ONE append peel shared by all four tail regions: the flat
+stream at `nc + 1 + q·nc + c` is tail row `q`'s chunk `c`. -/
+private theorem stream_read_tail (q c : ℕ) (hq : q < 43) (hc : c < nc) :
+    (flatRows C (runLogicalP C σ cvk cp pub pe))[nc + 1 + q * nc + c]!
+      = (((tailRows C cvk cp)[q]!).1[c]!, ((tailRows C cvk cp)[q]!).2.1[c]!,
+          ((tailRows C cvk cp)[q]!).2.2[c]!) := by
+  rw [stream_tail_decomp C σ cvk cp pub pe]
+  have hsPub : (rowF C ((publicCommitment C σ cvk pub).toArray, pe.zeta.toArray,
+      pe.zetaOmega.toArray)).size = nc :=
+    rowF_size C (by simp) (by simp) (by simp)
+  have hsFt : (rowF C (#[runFtComm C σ cvk cp pub],
+      #[runFtEval0P C σ cvk cp pub
+          (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray)],
+      #[cp.ftEval1])).size = 1 := rowF_size C rfl rfl rfl
+  rw [getBang_append_at _ _ _ (q * nc + c) (by
+      simp only [Array.size_append, hsPub, hsFt]
+      omega)
+      (by
+        rw [flatMap_uniform_size _ _ nc (tailBlock_uniform C), tailRows_size C]
+        exact block_lt hq hc),
+    flatMap_uniform_read _ _ nc (tailBlock_uniform C) q c
+      (by rw [tailRows_size C]; omega) hc]
+  have hqlt : q < (tailRows C cvk cp).size := by rw [tailRows_size C]; omega
+  obtain ⟨h1, h2, h3⟩ := tail_components C ((tailRows C cvk cp)[q]!) (by
+    rw [getElem!_pos _ q hqlt]
+    exact Array.getElem_mem _)
+  have := rowF_read C h1 h2 h3 hc
+    (A := ((tailRows C cvk cp)[q]!).1) (B := ((tailRows C cvk cp)[q]!).2.1)
+    (D := ((tailRows C cvk cp)[q]!).2.2)
+  rw [show ((tailRows C cvk cp)[q]!
+      : Array C.Point × Array C.ScalarField × Array C.ScalarField)
+      = (((tailRows C cvk cp)[q]!).1, ((tailRows C cvk cp)[q]!).2.1,
+          ((tailRows C cvk cp)[q]!).2.2) from rfl]
+  exact this
 
 /-- **Witness-region read**: the flat stream at `nc + 1 + (7+q)·nc + c` is witness
 column `q`'s chunk `c` with its claims. -/
@@ -670,48 +740,18 @@ private theorem stream_read_w (q c : ℕ) (hq : q < 15) (hc : c < nc) :
     (flatRows C (runLogicalP C σ cvk cp pub pe))[nc + 1 + (7 + q) * nc + c]!
       = ((cp.wComm[q]).toArray[c]!, (cp.evals.w[q]).zeta.toArray[c]!,
           (cp.evals.w[q]).zetaOmega.toArray[c]!) := by
-  rw [stream_decomp]
-  have hsPub : (rowF C ((publicCommitment C σ cvk pub).toArray, pe.zeta.toArray,
-      pe.zetaOmega.toArray)).size = nc :=
-    rowF_size C (by simp) (by simp) (by simp)
-  have hsFt : (rowF C (#[runFtComm C σ cvk cp pub],
-      #[runFtEval0P C σ cvk cp pub
-          (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray)],
-      #[cp.ftEval1])).size = 1 := rowF_size C rfl rfl rfl
-  have hs7 : (Array.flatMap (rowF C) (litRows C cvk cp)).size = 7 * nc := by
-    rw [flatMap_uniform_size _ _ nc (litBlock_uniform C)]
-    simp [litRows]
-  have hzipW : ((cp.wComm.zip cp.evals.w).toArray.map (zipRow C)).size = 15 := by
-    simp
-  have hsW : (Array.flatMap (rowF C)
-      ((cp.wComm.zip cp.evals.w).toArray.map (zipRow C))).size = 15 * nc := by
-    rw [flatMap_uniform_size _ _ nc (zipBlock_uniform C), hzipW]
-  rw [getBang_append_left _ _ _ (by
-      simp only [Array.size_append, hsPub, hsFt, hs7, hsW]
-      have h2 : (7 + q) * nc = 7 * nc + q * nc := by ring
-      have := block_lt hq hc
-      omega),
-    getBang_append_left _ _ _ (by
-      simp only [Array.size_append, hsPub, hsFt, hs7, hsW]
-      have h2 : (7 + q) * nc = 7 * nc + q * nc := by ring
-      have := block_lt hq hc
-      omega),
-    getBang_append_at _ _ _ (q * nc + c) (by
-      simp only [Array.size_append, hsPub, hsFt, hs7]
-      have h2 : (7 + q) * nc = 7 * nc + q * nc := by ring
-      omega)
-      (by
-        rw [hsW]
-        exact block_lt hq hc),
-    flatMap_uniform_read _ _ nc (zipBlock_uniform C) q c
-      (by rw [hzipW]; omega) hc]
-  have hread : ((cp.wComm.zip cp.evals.w).toArray.map (zipRow C))[q]!
+  rw [stream_read_tail C (7 + q) c (by omega) hc]
+  have hread : (tailRows C cvk cp)[7 + q]!
       = zipRow C (cp.wComm[q], cp.evals.w[q]) := by
-    rw [getBang_map _ _ _ (by simp; omega), getElem!_pos _ q (by simp; omega)]
+    simp only [tailRows]
+    rw [getBang_append_left _ _ _ (by simp [litRows]; omega),
+      getBang_append_left _ _ _ (by simp [litRows]; omega),
+      getBang_append_at _ _ _ q (by simp [litRows]) (by simp; omega),
+      getBang_map _ _ _ (by simp; omega), getElem!_pos _ q (by simp; omega)]
     congr 1
     simp
   rw [hread]
-  exact rowF_read C (by simp) (by simp) (by simp) hc
+  rfl
 
 /-- **Literal-region read** (`z` + the six selectors): the flat stream at
 `nc + 1 + k·nc + c` is literal row `k`'s chunk `c`. -/
@@ -719,51 +759,13 @@ private theorem stream_read_lit (k c : ℕ) (hk : k < 7) (hc : c < nc) :
     (flatRows C (runLogicalP C σ cvk cp pub pe))[nc + 1 + k * nc + c]!
       = (((litRows C cvk cp)[k]!).1[c]!, ((litRows C cvk cp)[k]!).2.1[c]!,
           ((litRows C cvk cp)[k]!).2.2[c]!) := by
-  rw [stream_decomp]
-  have hsPub : (rowF C ((publicCommitment C σ cvk pub).toArray, pe.zeta.toArray,
-      pe.zetaOmega.toArray)).size = nc :=
-    rowF_size C (by simp) (by simp) (by simp)
-  have hsFt : (rowF C (#[runFtComm C σ cvk cp pub],
-      #[runFtEval0P C σ cvk cp pub
-          (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray)],
-      #[cp.ftEval1])).size = 1 := rowF_size C rfl rfl rfl
-  have hs7 : (Array.flatMap (rowF C) (litRows C cvk cp)).size = 7 * nc := by
-    rw [flatMap_uniform_size _ _ nc (litBlock_uniform C)]
-    simp [litRows]
-  rw [getBang_append_left _ _ _ (by
-      simp only [Array.size_append, hsPub, hsFt, hs7]
-      have := block_lt hk hc
-      omega),
-    getBang_append_left _ _ _ (by
-      simp only [Array.size_append, hsPub, hsFt, hs7]
-      have := block_lt hk hc
-      omega),
-    getBang_append_left _ _ _ (by
-      simp only [Array.size_append, hsPub, hsFt, hs7]
-      have := block_lt hk hc
-      omega),
-    getBang_append_at _ _ _ (k * nc + c) (by
-      simp only [Array.size_append, hsPub, hsFt]
-      omega)
-      (by
-        rw [hs7]
-        exact block_lt hk hc),
-    flatMap_uniform_read _ _ nc (litBlock_uniform C) k c
-      (by simp [litRows]; omega) hc]
-  have hkm : k < (litRows C cvk cp).size := by simp [litRows]; omega
-  have hcomp : ((((litRows C cvk cp)[k]!).1.size = nc
-      ∧ ((litRows C cvk cp)[k]!).2.1.size = nc)
-      ∧ ((litRows C cvk cp)[k]!).2.2.size = nc) := by
-    rw [getElem!_pos _ k hkm]
-    interval_cases k <;> refine ⟨⟨?_, ?_⟩, ?_⟩ <;> simp [litRows]
-  have := rowF_read C hcomp.1.1 hcomp.1.2 hcomp.2 hc
-    (A := ((litRows C cvk cp)[k]!).1) (B := ((litRows C cvk cp)[k]!).2.1)
-    (D := ((litRows C cvk cp)[k]!).2.2)
-  rw [show ((litRows C cvk cp)[k]!
-      : Array C.Point × Array C.ScalarField × Array C.ScalarField)
-      = (((litRows C cvk cp)[k]!).1, ((litRows C cvk cp)[k]!).2.1,
-          ((litRows C cvk cp)[k]!).2.2) from rfl]
-  exact this
+  rw [stream_read_tail C k c (by omega) hc]
+  have hread : (tailRows C cvk cp)[k]! = (litRows C cvk cp)[k]! := by
+    simp only [tailRows]
+    rw [getBang_append_left _ _ _ (by simp [litRows]; omega),
+      getBang_append_left _ _ _ (by simp [litRows]; omega),
+      getBang_append_left _ _ _ (by simp [litRows]; omega)]
+  rw [hread]
 
 /-- **Coefficient-region read**: the flat stream at `nc + 1 + (22+q)·nc + c`. -/
 private theorem stream_read_c (q c : ℕ) (hq : q < 15) (hc : c < nc) :
@@ -771,117 +773,45 @@ private theorem stream_read_c (q c : ℕ) (hq : q < 15) (hc : c < nc) :
       = ((cvk.coefficientsComm[q]).toArray[c]!,
           (cp.evals.coefficients[q]).zeta.toArray[c]!,
           (cp.evals.coefficients[q]).zetaOmega.toArray[c]!) := by
-  rw [stream_decomp]
-  have hsPub : (rowF C ((publicCommitment C σ cvk pub).toArray, pe.zeta.toArray,
-      pe.zetaOmega.toArray)).size = nc :=
-    rowF_size C (by simp) (by simp) (by simp)
-  have hsFt : (rowF C (#[runFtComm C σ cvk cp pub],
-      #[runFtEval0P C σ cvk cp pub
-          (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray)],
-      #[cp.ftEval1])).size = 1 := rowF_size C rfl rfl rfl
-  have hs7 : (Array.flatMap (rowF C) (litRows C cvk cp)).size = 7 * nc := by
-    rw [flatMap_uniform_size _ _ nc (litBlock_uniform C)]
-    simp [litRows]
-  have hsW : (Array.flatMap (rowF C)
-      ((cp.wComm.zip cp.evals.w).toArray.map (zipRow C))).size = 15 * nc := by
-    rw [flatMap_uniform_size _ _ nc (zipBlock_uniform C)]
-    simp
-  have hzipC : ((cvk.coefficientsComm.zip cp.evals.coefficients).toArray.map
-      (zipRow C)).size = 15 := by
-    simp
-  have hsC : (Array.flatMap (rowF C)
-      ((cvk.coefficientsComm.zip cp.evals.coefficients).toArray.map
-        (zipRow C))).size = 15 * nc := by
-    rw [flatMap_uniform_size _ _ nc (zipBlock_uniform C), hzipC]
-  rw [getBang_append_left _ _ _ (by
-      simp only [Array.size_append, hsPub, hsFt, hs7, hsW, hsC]
-      have h2 : (22 + q) * nc = 22 * nc + q * nc := by ring
-      have := block_lt hq hc
-      omega),
-    getBang_append_at _ _ _ (q * nc + c) (by
-      simp only [Array.size_append, hsPub, hsFt, hs7, hsW]
-      have h2 : (22 + q) * nc = 7 * nc + 15 * nc + q * nc := by ring
-      omega)
-      (by
-        rw [hsC]
-        exact block_lt hq hc),
-    flatMap_uniform_read _ _ nc (zipBlock_uniform C) q c
-      (by rw [hzipC]; omega) hc]
-  have hread : ((cvk.coefficientsComm.zip cp.evals.coefficients).toArray.map
-      (zipRow C))[q]!
+  rw [stream_read_tail C (22 + q) c (by omega) hc]
+  have hread : (tailRows C cvk cp)[22 + q]!
       = zipRow C (cvk.coefficientsComm[q], cp.evals.coefficients[q]) := by
-    rw [getBang_map _ _ _ (by simp; omega), getElem!_pos _ q (by simp; omega)]
+    simp only [tailRows]
+    rw [getBang_append_left _ _ _ (by simp [litRows]; omega),
+      getBang_append_at _ _ _ q (by simp [litRows]) (by simp; omega),
+      getBang_map _ _ _ (by simp; omega), getElem!_pos _ q (by simp; omega)]
     congr 1
     simp
   rw [hread]
-  exact rowF_read C (by simp) (by simp) (by simp) hc
+  rfl
 
 /-- **σ-region read**: the flat stream at `nc + 1 + (37+q)·nc + c`. -/
 private theorem stream_read_s (q c : ℕ) (hq : q < 6) (hc : c < nc) :
     (flatRows C (runLogicalP C σ cvk cp pub pe))[nc + 1 + (37 + q) * nc + c]!
       = ((cvk.sigmaComm[q]).toArray[c]!, (cp.evals.s[q]).zeta.toArray[c]!,
           (cp.evals.s[q]).zetaOmega.toArray[c]!) := by
-  rw [stream_decomp]
-  have hsPub : (rowF C ((publicCommitment C σ cvk pub).toArray, pe.zeta.toArray,
-      pe.zetaOmega.toArray)).size = nc :=
-    rowF_size C (by simp) (by simp) (by simp)
-  have hsFt : (rowF C (#[runFtComm C σ cvk cp pub],
-      #[runFtEval0P C σ cvk cp pub
-          (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray)],
-      #[cp.ftEval1])).size = 1 := rowF_size C rfl rfl rfl
-  have hs7 : (Array.flatMap (rowF C) (litRows C cvk cp)).size = 7 * nc := by
-    rw [flatMap_uniform_size _ _ nc (litBlock_uniform C)]
-    simp [litRows]
-  have hsW : (Array.flatMap (rowF C)
-      ((cp.wComm.zip cp.evals.w).toArray.map (zipRow C))).size = 15 * nc := by
-    rw [flatMap_uniform_size _ _ nc (zipBlock_uniform C)]
-    simp
-  have hsC : (Array.flatMap (rowF C)
-      ((cvk.coefficientsComm.zip cp.evals.coefficients).toArray.map
-        (zipRow C))).size = 15 * nc := by
-    rw [flatMap_uniform_size _ _ nc (zipBlock_uniform C)]
-    simp
-  have hzipS : (((cvk.sigmaComm.take 6).zip cp.evals.s).toArray.map
-      (zipRow C)).size = 6 := by
-    simp
-  rw [getBang_append_at _ _ _ (q * nc + c) (by
-      simp only [Array.size_append, hsPub, hsFt, hs7, hsW, hsC]
-      have h2 : (37 + q) * nc = 7 * nc + 15 * nc + 15 * nc + q * nc := by ring
-      omega)
-      (by
-        rw [flatMap_uniform_size _ _ nc (zipBlock_uniform C), hzipS]
-        exact block_lt hq hc),
-    flatMap_uniform_read _ _ nc (zipBlock_uniform C) q c
-      (by rw [hzipS]; omega) hc]
-  have hread : ((((cvk.sigmaComm.take 6).zip cp.evals.s).toArray.map
-      (zipRow C)))[q]!
+  rw [stream_read_tail C (37 + q) c (by omega) hc]
+  have hread : (tailRows C cvk cp)[37 + q]!
       = zipRow C (cvk.sigmaComm[q], cp.evals.s[q]) := by
-    rw [getBang_map _ _ _ (by simp; omega), getElem!_pos _ q (by simp; omega)]
+    simp only [tailRows]
+    rw [getBang_append_at _ _ _ q (by simp [litRows]) (by simp; omega),
+      getBang_map _ _ _ (by simp; omega), getElem!_pos _ q (by simp; omega)]
     congr 1
     simp
     rfl
   rw [hread]
-  exact rowF_read C (by simp) (by simp) (by simp) hc
+  rfl
 
 /-- **Public-region read**: the flat stream at `c` is public chunk `c`. -/
 private theorem stream_read_pub (c : ℕ) (hc : c < nc) :
     (flatRows C (runLogicalP C σ cvk cp pub pe))[c]!
       = ((publicCommitment C σ cvk pub).toArray[c]!, pe.zeta.toArray[c]!,
           pe.zetaOmega.toArray[c]!) := by
-  rw [stream_decomp]
+  rw [stream_tail_decomp C σ cvk cp pub pe]
   have hsPub : (rowF C ((publicCommitment C σ cvk pub).toArray, pe.zeta.toArray,
       pe.zetaOmega.toArray)).size = nc :=
     rowF_size C (by simp) (by simp) (by simp)
   rw [getBang_append_left _ _ _ (by
-      simp only [Array.size_append, hsPub]
-      omega),
-    getBang_append_left _ _ _ (by
-      simp only [Array.size_append, hsPub]
-      omega),
-    getBang_append_left _ _ _ (by
-      simp only [Array.size_append, hsPub]
-      omega),
-    getBang_append_left _ _ _ (by
       simp only [Array.size_append, hsPub]
       omega),
     getBang_append_left _ _ _ (by rw [hsPub]; omega)]
@@ -890,7 +820,7 @@ private theorem stream_read_pub (c : ℕ) (hc : c < nc) :
 /-- **The stream size**: the flat stream has `44·nc + 1` rows. -/
 private theorem stream_size :
     (flatRows C (runLogicalP C σ cvk cp pub pe)).size = 44 * nc + 1 := by
-  rw [stream_decomp]
+  rw [stream_tail_decomp C σ cvk cp pub pe]
   have hsPub : (rowF C ((publicCommitment C σ cvk pub).toArray, pe.zeta.toArray,
       pe.zetaOmega.toArray)).size = nc :=
     rowF_size C (by simp) (by simp) (by simp)
@@ -898,24 +828,8 @@ private theorem stream_size :
       #[runFtEval0P C σ cvk cp pub
           (combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray)],
       #[cp.ftEval1])).size = 1 := rowF_size C rfl rfl rfl
-  have hs7 : (Array.flatMap (rowF C) (litRows C cvk cp)).size = 7 * nc := by
-    rw [flatMap_uniform_size _ _ nc (litBlock_uniform C)]
-    simp [litRows]
-  have hsW : (Array.flatMap (rowF C)
-      ((cp.wComm.zip cp.evals.w).toArray.map (zipRow C))).size = 15 * nc := by
-    rw [flatMap_uniform_size _ _ nc (zipBlock_uniform C)]
-    simp
-  have hsC : (Array.flatMap (rowF C)
-      ((cvk.coefficientsComm.zip cp.evals.coefficients).toArray.map
-        (zipRow C))).size = 15 * nc := by
-    rw [flatMap_uniform_size _ _ nc (zipBlock_uniform C)]
-    simp
-  have hsS : (Array.flatMap (rowF C)
-      (((cvk.sigmaComm.take 6).zip cp.evals.s).toArray.map (zipRow C))).size
-      = 6 * nc := by
-    rw [flatMap_uniform_size _ _ nc (zipBlock_uniform C)]
-    simp
-  simp only [Array.size_append, hsPub, hsFt, hs7, hsW, hsC, hsS]
+  rw [Array.size_append, Array.size_append,
+    flatMap_uniform_size _ _ nc (tailBlock_uniform C), tailRows_size C, hsPub, hsFt]
   ring
 
 end RegionReads
