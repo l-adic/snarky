@@ -67,10 +67,10 @@ def parseKimchiProof (C : Ipa.CommitmentCurve) (j : Json) :
   let fld (k : String) : Except String Json := j.getObjVal? k
   let pe := parseEval C
   let evals : ProofEvaluations (Array C.ScalarField) :=
-    { w := ← parseSized "evals_w" 15 (← parseArrOf pe (← fld "evals_w"))
+    { w := ← parseSized "evals_w" wCols (← parseArrOf pe (← fld "evals_w"))
       z := ← pe (← fld "evals_z")
-      s := ← parseSized "evals_s" 6 (← parseArrOf pe (← fld "evals_s"))
-      coefficients := ← parseSized "evals_coefficients" 15
+      s := ← parseSized "evals_s" sigmaRows (← parseArrOf pe (← fld "evals_s"))
+      coefficients := ← parseSized "evals_coefficients" coeffCols
         (← parseArrOf pe (← fld "evals_coefficients"))
       genericSelector := ← pe (← fld "evals_generic_selector")
       poseidonSelector := ← pe (← fld "evals_poseidon_selector")
@@ -113,7 +113,7 @@ def parseVK (C : Ipa.CommitmentCurve)
            mulComm := ← parseComm C (← fld "mul_comm")
            emulComm := ← parseComm C (← fld "emul_comm")
            endomulScalarComm := ← parseComm C (← fld "endomul_scalar_comm")
-           shifts := ← parseSized "shifts" 7
+           shifts := ← parseSized "shifts" permCols
              (← parseArrOf (parseZMod (n := C.scalar)) (← fld "shifts"))
            zkRows := ← nat "zk_rows"
            endo := ← parseZMod (← fld "endo")

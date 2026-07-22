@@ -871,32 +871,32 @@ private theorem claimedEvals_run_eq :
   · refine sum_readsTo C _ _ (by simp) _ fun ch => ?_
     beta_reduce
     rw [runEvals_read C (selRow 0) (ch : ℕ) ch.isLt, streamPos_selRow,
-      stream_read_lit C (1 + ((0 : Fin 6) : ℕ)) (ch : ℕ) (by decide) ch.isLt]
+      stream_read_lit C (1 + ((0 : Fin selCount) : ℕ)) (ch : ℕ) (by decide) ch.isLt]
     rfl
   · refine sum_readsTo C _ _ (by simp) _ fun ch => ?_
     beta_reduce
     rw [runEvals_read C (selRow 1) (ch : ℕ) ch.isLt, streamPos_selRow,
-      stream_read_lit C (1 + ((1 : Fin 6) : ℕ)) (ch : ℕ) (by decide) ch.isLt]
+      stream_read_lit C (1 + ((1 : Fin selCount) : ℕ)) (ch : ℕ) (by decide) ch.isLt]
     rfl
   · refine sum_readsTo C _ _ (by simp) _ fun ch => ?_
     beta_reduce
     rw [runEvals_read C (selRow 2) (ch : ℕ) ch.isLt, streamPos_selRow,
-      stream_read_lit C (1 + ((2 : Fin 6) : ℕ)) (ch : ℕ) (by decide) ch.isLt]
+      stream_read_lit C (1 + ((2 : Fin selCount) : ℕ)) (ch : ℕ) (by decide) ch.isLt]
     rfl
   · refine sum_readsTo C _ _ (by simp) _ fun ch => ?_
     beta_reduce
     rw [runEvals_read C (selRow 3) (ch : ℕ) ch.isLt, streamPos_selRow,
-      stream_read_lit C (1 + ((3 : Fin 6) : ℕ)) (ch : ℕ) (by decide) ch.isLt]
+      stream_read_lit C (1 + ((3 : Fin selCount) : ℕ)) (ch : ℕ) (by decide) ch.isLt]
     rfl
   · refine sum_readsTo C _ _ (by simp) _ fun ch => ?_
     beta_reduce
     rw [runEvals_read C (selRow 4) (ch : ℕ) ch.isLt, streamPos_selRow,
-      stream_read_lit C (1 + ((4 : Fin 6) : ℕ)) (ch : ℕ) (by decide) ch.isLt]
+      stream_read_lit C (1 + ((4 : Fin selCount) : ℕ)) (ch : ℕ) (by decide) ch.isLt]
     rfl
   · refine sum_readsTo C _ _ (by simp) _ fun ch => ?_
     beta_reduce
     rw [runEvals_read C (selRow 5) (ch : ℕ) ch.isLt, streamPos_selRow,
-      stream_read_lit C (1 + ((5 : Fin 6) : ℕ)) (ch : ℕ) (by decide) ch.isLt]
+      stream_read_lit C (1 + ((5 : Fin selCount) : ℕ)) (ch : ℕ) (by decide) ch.isLt]
     rfl
 
 /-- **The combined public claim is the run's own**: `claimedPub` at the stream's

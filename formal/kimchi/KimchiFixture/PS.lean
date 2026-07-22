@@ -164,7 +164,7 @@ private def gateTable (raw : Raw) (n : ℕ) :
     if hreal : i < rows then do
       let ws ← raw.wires[i]!.mapM fun (col, row) => do
         if h : col < 7 ∧ row < n then
-          return ((⟨col, h.1⟩ : Fin 7), (⟨row, h.2⟩ : Fin n))
+          return ((⟨col, h.1⟩ : Fin permCols), (⟨row, h.2⟩ : Fin n))
         else throw s!"wire out of range at row {i}"
       if h7 : ws.size = 7 then
         return { typ := raw.typs[i]!
@@ -193,7 +193,7 @@ def build (raw : Raw) : Except String Instance := do
   unless raw.publicInputSize ≤ rows do throw "more public inputs than rows"
   let n := 2 ^ Nat.clog 2 (rows + zkRows)
   let omega : Fp := (powMod fpGenerator ((PALLAS_BASE_CARD - 1) / n) PALLAS_BASE_CARD : ℕ)
-  let shifts : Fin 7 → Fp := fun i => (powMod fpGenerator (i : ℕ) PALLAS_BASE_CARD : ℕ)
+  let shifts : Fin permCols → Fp := fun i => (powMod fpGenerator (i : ℕ) PALLAS_BASE_CARD : ℕ)
   let gates ← gateTable raw n
   match Index.build? gates raw.publicInputSize zkRows omega
       Pasta.pallas_endo (Kimchi.Verifier.mdsOfParams Kimchi.Verifier.Wire.KimchiVesta.frParams)
