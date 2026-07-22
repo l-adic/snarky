@@ -64,13 +64,13 @@ theorem bound_unique [Field F] [AddCommGroup G] [Module F G] (σ : SRS G)
 /-- The six selector commitments of a verifier key, in gate enumeration order.
 Generic over the commitment carrier, so the chunked reduction reuses it at
 `Fin nc → G`. -/
-private def selComm (comms : IndexComms G) : Fin 6 → G :=
+private def selComm (comms : IndexComms G) : Fin selCount → G :=
   ![comms.generic, comms.poseidon, comms.completeAdd, comms.varBaseMul,
     comms.endoMul, comms.endoScalar]
 
 /-- The gate type of the `j`-th selector row, in the same enumeration order as
 `selComm`. -/
-private def selGate : Fin 6 → GateType :=
+private def selGate : Fin selCount → GateType :=
   ![.generic, .poseidon, .completeAdd, .varBaseMul, .endoMul, .endoScalar]
 
 private theorem evalsExt {e e' : Evals F} (h1 : e.w = e'.w) (h2 : e.wOmega = e'.wOmega)
@@ -141,28 +141,28 @@ The stream order is behaviorally pinned: a wrong order mis-combines the polyscal
 walk, and the production fixtures reject. -/
 
 /-- Batch row of the public commitment (proof-carried claims at `nc > 1`). -/
-def pubRow : Fin 44 := ⟨0, by omega⟩
+def pubRow : Fin batchRows := ⟨0, by omega⟩
 
 /-- Batch row of the accumulator `z`. -/
-def zRow : Fin 44 := ⟨1, by omega⟩
+def zRow : Fin batchRows := ⟨1, by omega⟩
 
 /-- Batch row of the `j`-th selector (order of `selGate`). -/
-def selRow (j : Fin 6) : Fin 44 := ⟨2 + (j : ℕ), by omega⟩
+def selRow (j : Fin selCount) : Fin batchRows := ⟨2 + (j : ℕ), by omega⟩
 
 /-- Batch row of witness column `c`. -/
-def wRow (c : Fin 15) : Fin 44 := ⟨8 + (c : ℕ), by omega⟩
+def wRow (c : Fin wCols) : Fin batchRows := ⟨8 + (c : ℕ), by omega⟩
 
 /-- Batch row of coefficient column `c`. -/
-def cRow (c : Fin 15) : Fin 44 := ⟨23 + (c : ℕ), by omega⟩
+def cRow (c : Fin coeffCols) : Fin batchRows := ⟨23 + (c : ℕ), by omega⟩
 
 /-- Batch row of the `i`-th σ column (first six only). -/
-def sRow (i : Fin 6) : Fin 44 := ⟨38 + (i : ℕ), by omega⟩
+def sRow (i : Fin sigmaRows) : Fin batchRows := ⟨38 + (i : ℕ), by omega⟩
 
 /-- **The 44-row chunked batch commitment assembly**, in `to_batch` order: the public
 commitment, the accumulator, the six masked selectors, the 15 witness columns, the 15
 coefficient columns, and the first six σ columns — each row its `nc`-chunk vector. -/
-def batchC {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
-    (comms : IndexComms (Fin nc → G)) : Fin 44 → Fin nc → G := fun i =>
+def batchC {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
+    (comms : IndexComms (Fin nc → G)) : Fin batchRows → Fin nc → G := fun i =>
   if (i : ℕ) < 1 then pubC
   else if (i : ℕ) < 2 then zC
   else if h2 : (i : ℕ) < 8 then selComm comms ⟨(i : ℕ) - 2, by omega⟩
@@ -170,14 +170,14 @@ def batchC {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
   else if h4 : (i : ℕ) < 38 then comms.coefficients ⟨(i : ℕ) - 23, by omega⟩
   else comms.sigma ⟨(i : ℕ) - 38, by have := i.isLt; omega⟩
 
-private theorem batchC_pubRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
+private theorem batchC_pubRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
     (comms : IndexComms (Fin nc → G)) :
     batchC wC zC pubC comms pubRow = pubC := by
   have h1 : (0 : ℕ) < 1 := by omega
   simp only [batchC, pubRow]
   rw [if_pos h1]
 
-private theorem batchC_zRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
+private theorem batchC_zRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
     (comms : IndexComms (Fin nc → G)) :
     batchC wC zC pubC comms zRow = zC := by
   have h1 : ¬ (1 : ℕ) < 1 := by omega
@@ -185,8 +185,8 @@ private theorem batchC_zRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC :
   simp only [batchC, zRow]
   rw [if_neg h1, if_pos h2]
 
-private theorem batchC_selRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
-    (comms : IndexComms (Fin nc → G)) (j : Fin 6) :
+private theorem batchC_selRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
+    (comms : IndexComms (Fin nc → G)) (j : Fin selCount) :
     batchC wC zC pubC comms (selRow j) = selComm comms j := by
   have h1 : ¬ 2 + (j : ℕ) < 1 := by omega
   have h2 : ¬ 2 + (j : ℕ) < 2 := by omega
@@ -198,8 +198,8 @@ private theorem batchC_selRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC
   show 2 + (j : ℕ) - 2 = (j : ℕ)
   omega
 
-private theorem batchC_wRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
-    (comms : IndexComms (Fin nc → G)) (c : Fin 15) :
+private theorem batchC_wRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
+    (comms : IndexComms (Fin nc → G)) (c : Fin wCols) :
     batchC wC zC pubC comms (wRow c) = wC c := by
   have h1 : ¬ 8 + (c : ℕ) < 1 := by omega
   have h2 : ¬ 8 + (c : ℕ) < 2 := by omega
@@ -212,8 +212,8 @@ private theorem batchC_wRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC :
   show 8 + (c : ℕ) - 8 = (c : ℕ)
   omega
 
-private theorem batchC_cRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
-    (comms : IndexComms (Fin nc → G)) (c : Fin 15) :
+private theorem batchC_cRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
+    (comms : IndexComms (Fin nc → G)) (c : Fin wCols) :
     batchC wC zC pubC comms (cRow c) = comms.coefficients c := by
   have h1 : ¬ 23 + (c : ℕ) < 1 := by omega
   have h2 : ¬ 23 + (c : ℕ) < 2 := by omega
@@ -227,8 +227,8 @@ private theorem batchC_cRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC :
   show 23 + (c : ℕ) - 23 = (c : ℕ)
   omega
 
-private theorem batchC_sRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
-    (comms : IndexComms (Fin nc → G)) (i : Fin 6) :
+private theorem batchC_sRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
+    (comms : IndexComms (Fin nc → G)) (i : Fin sigmaRows) :
     batchC wC zC pubC comms (sRow i) = comms.sigma ⟨(i : ℕ), by omega⟩ := by
   have h1 : ¬ 38 + (i : ℕ) < 1 := by omega
   have h2 : ¬ 38 + (i : ℕ) < 2 := by omega
@@ -244,7 +244,7 @@ private theorem batchC_sRow {nc : ℕ} (wC : Fin 15 → Fin nc → G) (zC pubC :
 /-- On the honest chunked indexer, the `j`-th selector chunk is the per-chunk masked
 commitment of the `selGate j` selector interpolant. -/
 private theorem selComm_indexerOf [Field F] [AddCommGroup G] [Module F G] {n : ℕ}
-    (σ : SRS G) (nc : ℕ) (idx : Index F n) (j : Fin 6) :
+    (σ : SRS G) (nc : ℕ) (idx : Index F n) (j : Fin selCount) :
     selComm (indexerOf σ nc idx) j
       = fun c : Fin nc => commitPolyMaskedChunk σ (idx.selectorPoly (selGate j)) (c : ℕ) := by
   fin_cases j <;> rfl
@@ -252,12 +252,12 @@ private theorem selComm_indexerOf [Field F] [AddCommGroup G] [Module F G] {n : �
 /-! ## The flat segment index -/
 
 /-- The flat segment count of the 44-row chunked batch, in the whnf-friendly
-multiplied form (structures indexed by the literal `∑ _ : Fin 44, nc` send the
+multiplied form (structures indexed by the literal `∑ _ : Fin batchRows, nc` send the
 elaborator into a `whnf` spiral; the product is definitionally stuck). -/
-def segTotal (nc : ℕ) : ℕ := 44 * nc
+def segTotal (nc : ℕ) : ℕ := batchRows * nc
 
 /-- The segment count is the sigma-sum `chunked_batch_soundness` ranges over. -/
-theorem segTotal_eq_sum (nc : ℕ) : segTotal nc = ∑ _ : Fin 44, nc := by
+theorem segTotal_eq_sum (nc : ℕ) : segTotal nc = ∑ _ : Fin batchRows, nc := by
   simp [segTotal, Finset.sum_const, Finset.card_univ, mul_comm]
 
 /-- The flat (segment) view of a per-row-per-chunk family, along `finSigmaFinEquiv` —
@@ -267,7 +267,7 @@ def flatten {α : Type*} {m nc : ℕ} (f : Fin m → Fin nc → α) :
   fun s => f (finSigmaFinEquiv.symm s).1 (finSigmaFinEquiv.symm s).2
 
 /-- `flatten` at the multiplied index form. -/
-def flatSeg {α : Type*} {nc : ℕ} (f : Fin 44 → Fin nc → α) : Fin (segTotal nc) → α :=
+def flatSeg {α : Type*} {nc : ℕ} (f : Fin batchRows → Fin nc → α) : Fin (segTotal nc) → α :=
   fun s => flatten f (finCongr (segTotal_eq_sum nc) s)
 
 /-! ## Assembly and combination -/
@@ -348,9 +348,9 @@ private theorem combined_eval_of_chunks_masked [Field F] [AddCommGroup G] [Modul
 
 /-- **The chunk-combined claimed record**: the `Evals` the verifier's scalar side reads
 (`evals.combine(&powers_of_eval_points_for_chunks)`, verifier.rs:409), assembled from
-per-chunk batch claims `E : Fin 44 → Fin nc → Fin 2 → F` — the `ζ`-side fields combined
+per-chunk batch claims `E : Fin batchRows → Fin nc → Fin evalPts → F` — the `ζ`-side fields combined
 at `zM = ζ^{2^σ.k}`, the `ωζ`-side at `zwM = (ωζ)^{2^σ.k}`. -/
-def claimedEvals [Field F] {nc : ℕ} (zM zwM : F) (E : Fin 44 → Fin nc → Fin 2 → F) :
+def claimedEvals [Field F] {nc : ℕ} (zM zwM : F) (E : Fin batchRows → Fin nc → Fin evalPts → F) :
     Evals F where
   w c := ∑ ch : Fin nc, zM ^ (ch : ℕ) * E (wRow c) ch 0
   wOmega c := ∑ ch : Fin nc, zwM ^ (ch : ℕ) * E (wRow c) ch 1
@@ -367,7 +367,7 @@ def claimedEvals [Field F] {nc : ℕ} (zM zwM : F) (E : Fin 44 → Fin nc → Fi
 
 /-- The chunk-combined public claim at `ζ` — the value `ft_eval0`'s public slot reads
 (`eval_polynomial(&public_evals[0], ζ^max_poly_size)`, verifier.rs:441–443). -/
-def claimedPub [Field F] {nc : ℕ} (zM : F) (E : Fin 44 → Fin nc → Fin 2 → F) : F :=
+def claimedPub [Field F] {nc : ℕ} (zM : F) (E : Fin batchRows → Fin nc → Fin evalPts → F) : F :=
   ∑ ch : Fin nc, zM ^ (ch : ℕ) * E pubRow ch 0
 
 /-! ## Soundness -/
@@ -387,10 +387,10 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
     (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
     (comms : IndexComms (Fin nc → G)) (hvk : VKCorresponds σ nc comms idx)
     (pub : Fin idx.publicCount → F)
-    (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
+    (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
     (hpubC : ∀ c : Fin nc,
       pubC c = commitPolyMaskedChunk σ (-(idx.pubPoly pub)) (c : ℕ))
-    (aw₀ : Fin 44 → Fin nc → Fin (2 ^ σ.k) → F) (ρw₀ : Fin 44 → Fin nc → F)
+    (aw₀ : Fin batchRows → Fin nc → Fin (2 ^ σ.k) → F) (ρw₀ : Fin batchRows → Fin nc → F)
     (hbound₀ : ∀ i c, commit σ (aw₀ i c) (ρw₀ i c) = batchC wC zC pubC comms i c) :
     ∃ (badB : Finset F) (badG : F → Finset F) (badA : F → F → Finset F)
         (badZ : F → F → F → Polynomial F → Finset F),
@@ -401,13 +401,13 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
         ∧ (∀ β γ α (t : Polynomial F), t.natDegree < 7 * n →
             (badZ β γ α t).card ≤ Index.degreeBound n))
       ∧ ∀ (β γ α : F) (t : Polynomial F) (ζ : F)
-          (E : Fin 44 → Fin nc → Fin 2 → F)
-          (aw : Fin 44 → Fin nc → Fin (2 ^ σ.k) → F) (ρw : Fin 44 → Fin nc → F),
+          (E : Fin batchRows → Fin nc → Fin evalPts → F)
+          (aw : Fin batchRows → Fin nc → Fin (2 ^ σ.k) → F) (ρw : Fin batchRows → Fin nc → F),
           β ∉ badB → γ ∉ badG β → α ∉ badA β γ → ζ ∉ badZ β γ α t →
           ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) →
           t.natDegree < 7 * n →
           (∀ i c, commit σ (aw i c) (ρw i c) = batchC wC zC pubC comms i c
-              ∧ ∀ j : Fin 2,
+              ∧ ∀ j : Fin evalPts,
                 E i c j = innerProduct (aw i c)
                   (evalVector (2 ^ σ.k) (![ζ, idx.omega * ζ] j))) →
           (permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ)
@@ -423,7 +423,7 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
   have hvk' : comms = indexerOf σ nc idx := hvk
   subst hvk'
   -- the bound witness-column and accumulator polynomials (assembled, challenge-free)
-  set W : Fin 15 → Polynomial F := fun col => assembledRow σ.k nc (aw₀ (wRow col))
+  set W : Fin wCols → Polynomial F := fun col => assembledRow σ.k nc (aw₀ (wRow col))
     with hWdef
   set zg : Polynomial F := assembledRow σ.k nc (aw₀ zRow) with hzgdef
   have hW : ∀ col, (W col).natDegree < n := fun col => by
@@ -435,10 +435,10 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
     rw [← hk]
     exact assembledRow_natDegree_lt hnc _
   -- degree feeders at the CHUNKED bound `nc · 2^σ.k = n`
-  have hdσ : ∀ jj : Fin 7, (idx.sigmaPoly jj).natDegree < nc * 2 ^ σ.k := fun jj => by
+  have hdσ : ∀ jj : Fin permCols, (idx.sigmaPoly jj).natDegree < nc * 2 ^ σ.k := fun jj => by
     rw [hk]
     exact columnPoly_natDegree_lt idx.omega_prim _
-  have hdc : ∀ cc : Fin 15, (idx.coeffPoly cc).natDegree < nc * 2 ^ σ.k := fun cc => by
+  have hdc : ∀ cc : Fin wCols, (idx.coeffPoly cc).natDegree < nc * 2 ^ σ.k := fun cc => by
     rw [hk]
     exact columnPoly_natDegree_lt idx.omega_prim _
   have hdsel : ∀ gg : GateType,
@@ -453,7 +453,7 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
   refine ⟨badB, badG, badA, badZ, hbounds, ?_⟩
   intro β γ α t ζ E aw ρw hβ hγ hα hζ hζ₁ hζb ht hrow hteq
   -- cross-point uniqueness per chunk: fixed commitments bind the reference chunks
-  have hwchunk : ∀ (col : Fin 15) (c : Fin nc),
+  have hwchunk : ∀ (col : Fin wCols) (c : Fin nc),
       rowPoly (aw (wRow col) c) = rowPoly (aw₀ (wRow col) c) := fun col c =>
     bound_unique σ hbind
       (((hrow (wRow col) c).1.trans
@@ -464,7 +464,7 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
     bound_unique σ hbind
       ((hrow zRow c).1.trans ((hbound₀ zRow c).symm))
   -- the combined witness and accumulator claims are the assembled polynomials' values
-  have hcombW : ∀ (col : Fin 15) (j : Fin 2),
+  have hcombW : ∀ (col : Fin wCols) (j : Fin evalPts),
       (∑ ch : Fin nc, ((![ζ, idx.omega * ζ] j) ^ 2 ^ σ.k) ^ (ch : ℕ)
           * E (wRow col) ch j)
         = (W col).eval (![ζ, idx.omega * ζ] j) := by
@@ -473,7 +473,7 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
     refine Finset.sum_congr rfl fun c _ => ?_
     congr 1
     rw [(hrow (wRow col) c).2 j, ← rowPoly_eval, ← rowPoly_eval, hwchunk col c]
-  have hcombZ : ∀ j : Fin 2,
+  have hcombZ : ∀ j : Fin evalPts,
       (∑ ch : Fin nc, ((![ζ, idx.omega * ζ] j) ^ 2 ^ σ.k) ^ (ch : ℕ) * E zRow ch j)
         = zg.eval (![ζ, idx.omega * ζ] j) := by
     intro j
@@ -482,21 +482,21 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
     congr 1
     rw [(hrow zRow c).2 j, ← rowPoly_eval, ← rowPoly_eval, hzchunk c]
   -- VK-row pinning: the combined σ / coefficient / selector claims are the Index's own
-  have hcombS : ∀ i : Fin 6,
+  have hcombS : ∀ i : Fin sigmaRows,
       (∑ ch : Fin nc, (ζ ^ 2 ^ σ.k) ^ (ch : ℕ) * E (sRow i) ch 0)
         = (idx.sigmaPoly ⟨(i : ℕ), by omega⟩).eval ζ :=
     fun i => combined_eval_of_chunks σ hbind (hdσ _)
       (fun c => (hrow (sRow i) c).1.trans
         (congrFun (batchC_sRow wC zC pubC (indexerOf σ nc idx) i) c))
       (fun c => by simpa using (hrow (sRow i) c).2 0)
-  have hcombC : ∀ cc : Fin 15,
+  have hcombC : ∀ cc : Fin wCols,
       (∑ ch : Fin nc, (ζ ^ 2 ^ σ.k) ^ (ch : ℕ) * E (cRow cc) ch 0)
         = (idx.coeffPoly cc).eval ζ :=
     fun cc => combined_eval_of_chunks σ hbind (hdc _)
       (fun c => (hrow (cRow cc) c).1.trans
         (congrFun (batchC_cRow wC zC pubC (indexerOf σ nc idx) cc) c))
       (fun c => by simpa using (hrow (cRow cc) c).2 0)
-  have hcombSel : ∀ jj : Fin 6,
+  have hcombSel : ∀ jj : Fin selCount,
       (∑ ch : Fin nc, (ζ ^ 2 ^ σ.k) ^ (ch : ℕ) * E (selRow jj) ch 0)
         = (idx.selectorPoly (selGate jj)).eval ζ :=
     fun jj => combined_eval_of_chunks_masked σ hbind (hdsel _)
@@ -557,14 +557,14 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
     (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
     (comms : IndexComms (Fin nc → G)) (hvk : VKCorresponds σ nc comms idx)
     (pub : Fin idx.publicCount → F)
-    (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
+    (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
     (hpubC : ∀ c : Fin nc,
       pubC c = commitPolyMaskedChunk σ (-(idx.pubPoly pub)) (c : ℕ))
     (ζ₀ : F)
-    (E₀ : Fin 44 → Fin nc → Fin 2 → F)
+    (E₀ : Fin batchRows → Fin nc → Fin evalPts → F)
     (ξ₀ : Fin (segTotal nc) → F) (hξ₀ : Function.Injective ξ₀)
-    (r₀ : Fin 2 → F) (hr₀ : Function.Injective r₀)
-    (A₀ : Fin (segTotal nc) → Fin 2 → Prop)
+    (r₀ : Fin evalPts → F) (hr₀ : Function.Injective r₀)
+    (A₀ : Fin (segTotal nc) → Fin evalPts → Prop)
     (hFS₀ : ∀ s j,
       FiatShamirTreeB σ
         (chunkedCombinedCommitment (ξ₀ s) (batchC wC zC pubC comms))
@@ -572,7 +572,7 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
         (chunkedCombinedInnerProduct (ξ₀ s) (r₀ j) E₀) (A₀ s j))
     (hacc₀ : ∀ s j, A₀ s j) :
     ∃ (badB : Finset F) (badG : F → Finset F) (badA : F → F → Finset F)
-        (badZ : F → F → F → Polynomial F → Finset F) (wTab : Fin n → Fin 15 → F),
+        (badZ : F → F → F → Polynomial F → Finset F) (wTab : Fin n → Fin wCols → F),
       (badB.card ≤ 7 * (n - idx.zkRows)
         ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
         ∧ (∀ β γ,
@@ -580,9 +580,9 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
         ∧ (∀ β γ α (t : Polynomial F), t.natDegree < 7 * n →
             (badZ β γ α t).card ≤ Index.degreeBound n))
       ∧ ∀ (β γ α : F) (t : Polynomial F) (ζ : F)
-          (E : Fin 44 → Fin nc → Fin 2 → F)
-          (ξ : Fin (segTotal nc) → F) (r : Fin 2 → F)
-          (A : Fin (segTotal nc) → Fin 2 → Prop),
+          (E : Fin batchRows → Fin nc → Fin evalPts → F)
+          (ξ : Fin (segTotal nc) → F) (r : Fin evalPts → F)
+          (A : Fin (segTotal nc) → Fin evalPts → Prop),
           β ∉ badB → γ ∉ badG β → α ∉ badA β γ → ζ ∉ badZ β γ α t →
           ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) →
           t.natDegree < 7 * n →
@@ -605,7 +605,7 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
   -- the index transport between the multiplied and sigma-summed segment counts
   set ι := finCongr (segTotal_eq_sum nc).symm with hι
   -- reference extraction: the assembled row polynomials, via the chunked seam
-  obtain ⟨q₀, hq₀⟩ := chunked_batch_soundness σ (nc := fun _ : Fin 44 => nc)
+  obtain ⟨q₀, hq₀⟩ := chunked_batch_soundness σ (nc := fun _ : Fin batchRows => nc)
     (fun _ => hnc) (fun v => ξ₀ (ι v)) (hξ₀.comp ι.injective) r₀ hr₀ (by omega)
     (batchC wC zC pubC comms) ![ζ₀, idx.omega * ζ₀] E₀ (fun v j => A₀ (ι v) j)
     (fun v j => hFS₀ (ι v) j) hbind (fun v j => hacc₀ (ι v) j)
@@ -620,7 +620,7 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
     hbounds, ?_⟩
   intro β γ α t ζ E ξ r A hβ hγ hα hζ hζ₁ hζb ht hξ hr hFS hacc hteq
   -- consumer extraction at ζ
-  obtain ⟨q, hq⟩ := chunked_batch_soundness σ (nc := fun _ : Fin 44 => nc)
+  obtain ⟨q, hq⟩ := chunked_batch_soundness σ (nc := fun _ : Fin batchRows => nc)
     (fun _ => hnc) (fun v => ξ (ι v)) (hξ.comp ι.injective) r hr (by omega)
     (batchC wC zC pubC comms) ![ζ, idx.omega * ζ] E (fun v j => A (ι v) j)
     (fun v j => hFS (ι v) j) hbind (fun v j => hacc (ι v) j)

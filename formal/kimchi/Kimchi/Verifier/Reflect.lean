@@ -132,7 +132,7 @@ segment a `(commitment, ζ-claim, ζω-claim)` triple, every read total. -/
 def runStreamP (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)) :
-    Vector (C.Point × C.ScalarField × C.ScalarField) (nc + 1 + 43 * nc) :=
+    Vector (C.Point × C.ScalarField × C.ScalarField) (nc + 1 + tailRowCount * nc) :=
   (Vector.ofFn fun c : Fin nc =>
       ((publicCommitment C σ cvk pub)[c], pe.zeta[c], pe.zetaOmega[c]))
     ++ (⟨#[(runFtComm C σ cvk cp pub,
@@ -146,11 +146,11 @@ def runStreamP (σ : SRS C.Point) (cvk : KimchiVK C nc)
 def runInputP (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc))
-    (v u : C.ScalarField) : Ipa.Input C σ.k (nc + 1 + 43 * nc) 2 where
+    (v u : C.ScalarField) : Ipa.Input C σ.k (nc + 1 + tailRowCount * nc) evalPts where
   commitments := (runStreamP C σ cvk cp pub pe).map (·.1)
   xs := ⟨#[(runOracles C σ cvk cp pub).zeta, runZetaOmega C σ cvk cp pub], rfl⟩
   evals := (runStreamP C σ cvk cp pub pe).map
-    (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector C.ScalarField 2))
+    (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector C.ScalarField evalPts))
   polyscale := v
   evalscale := u
   proof := cp.opening
@@ -167,7 +167,7 @@ private def runBody (σ : SRS C.Point) (cvk : KimchiVK C nc)
 form). -/
 def runInput (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
-    Ipa.Input C σ.k (nc + 1 + 43 * nc) 2 :=
+    Ipa.Input C σ.k (nc + 1 + tailRowCount * nc) evalPts :=
   runInputP C σ cvk cp pub (runPubEvals C σ cvk cp pub)
     (runVU C σ cvk cp pub).1 (runVU C σ cvk cp pub).2
 

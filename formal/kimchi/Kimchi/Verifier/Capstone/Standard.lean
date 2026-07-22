@@ -60,7 +60,7 @@ matrix carrying the flat per-chunk claims, the two eval points `(ζ₀, ω·ζ�
 outright, never derived from one run (the forking/rewinding idiom). -/
 structure KimchiBatchAcc (C : Ipa.CommitmentCurve) [Module C.ScalarField C.Point]
     {n : ℕ} [NeZero n] (σ : SRS C.Point) (idx : Index C.ScalarField n) (nc : ℕ)
-    (comms : IndexComms (Fin nc → C.Point)) (wC : Fin 15 → Fin nc → C.Point) where
+    (comms : IndexComms (Fin nc → C.Point)) (wC : Fin wCols → Fin nc → C.Point) where
   /-- The accumulator (`z`) commitment chunks of the reference transcript. -/
   zC : Fin nc → C.Point
   /-- The public commitment chunks of the reference transcript. -/
@@ -68,13 +68,13 @@ structure KimchiBatchAcc (C : Ipa.CommitmentCurve) [Module C.ScalarField C.Point
   /-- The reference evaluation point. -/
   ζ₀ : C.ScalarField
   /-- The per-chunk claimed evaluations of the 44-row batch at `ζ₀` and `ω·ζ₀`. -/
-  E₀ : Fin 44 → Fin nc → Fin 2 → C.ScalarField
+  E₀ : Fin batchRows → Fin nc → Fin evalPts → C.ScalarField
   /-- The segment-combination challenges of the grid. -/
   ξ₀ : Fin (segTotal nc) → C.ScalarField
   /-- Distinctness of the segment-combination challenges. -/
   hξ₀ : Function.Injective ξ₀
   /-- The point-combination challenges of the grid. -/
-  r₀ : Fin 2 → C.ScalarField
+  r₀ : Fin evalPts → C.ScalarField
   /-- Distinctness of the point-combination challenges. -/
   hr₀ : Function.Injective r₀
   /-- The checked commitment vector of the batch — opaque. -/
@@ -83,13 +83,13 @@ structure KimchiBatchAcc (C : Ipa.CommitmentCurve) [Module C.ScalarField C.Point
   assembly. -/
   hcs : ∀ s : Fin (segTotal nc), cs[s] = flatSeg (batchC wC zC pubC comms) s
   /-- The checked evaluation matrix of the batch — opaque. -/
-  es : Vector (Vector C.ScalarField 2) (segTotal nc)
+  es : Vector (Vector C.ScalarField evalPts) (segTotal nc)
   /-- Entry-by-entry, the checked matrix carries the flat claims. -/
-  hes : ∀ (s : Fin (segTotal nc)) (j : Fin 2), (es[s])[j] = flatSeg E₀ s j
+  hes : ∀ (s : Fin (segTotal nc)) (j : Fin evalPts), (es[s])[j] = flatSeg E₀ s j
   /-- Per grid node, the node's IPA opening proof at the SRS's round count. -/
-  prf : Fin (segTotal nc) → Fin 2 → Ipa.Proof C σ.k
+  prf : Fin (segTotal nc) → Fin evalPts → Ipa.Proof C σ.k
   /-- The deployed verifier accepts every node's batched input. -/
-  hacc : ∀ (s : Fin (segTotal nc)) (j : Fin 2),
+  hacc : ∀ (s : Fin (segTotal nc)) (j : Fin evalPts),
     Ipa.verify C σ (Ipa.mkInput cs ⟨#[ζ₀, idx.omega * ζ₀], rfl⟩ es (ξ₀ s) (r₀ j)
       (prf s j)) = true
 
@@ -97,11 +97,11 @@ section BatchOfAcc
 
 variable {C : Ipa.CommitmentCurve} [Module C.ScalarField C.Point] {n : ℕ} [NeZero n]
   {σ : SRS C.Point} {idx : Index C.ScalarField n} {nc : ℕ}
-  {comms : IndexComms (Fin nc → C.Point)} {wC : Fin 15 → Fin nc → C.Point}
+  {comms : IndexComms (Fin nc → C.Point)} {wC : Fin wCols → Fin nc → C.Point}
 
 /-- The checked input of one grid node. -/
 def KimchiBatchAcc.nodeInput (T : KimchiBatchAcc C σ idx nc comms wC)
-    (s : Fin (segTotal nc)) (j : Fin 2) : Ipa.Input C σ.k (segTotal nc) 2 :=
+    (s : Fin (segTotal nc)) (j : Fin evalPts) : Ipa.Input C σ.k (segTotal nc) evalPts :=
   Ipa.mkInput T.cs ⟨#[T.ζ₀, idx.omega * T.ζ₀], rfl⟩ T.es (T.ξ₀ s) (T.r₀ j)
     (T.prf s j)
 
@@ -111,7 +111,7 @@ batch data — the wire array collapses to the flat segment stream (`hcs`), the 
 combination to the chunked combiner (`_eq_flat`), the wire cip to the chunked one
 (`hes`). -/
 private theorem KimchiBatchAcc.nodeFS (T : KimchiBatchAcc C σ idx nc comms wC)
-    (s : Fin (segTotal nc)) (j : Fin 2)
+    (s : Fin (segTotal nc)) (j : Fin evalPts)
     (hax : FiatShamirTreeB σ
       (combinedCommitment (T.ξ₀ s) (T.nodeInput s j).commitmentFn)
       (combinedEvalVector (2 ^ σ.k) (T.r₀ j) (T.nodeInput s j).pointFn)
@@ -122,7 +122,7 @@ private theorem KimchiBatchAcc.nodeFS (T : KimchiBatchAcc C σ idx nc comms wC)
       (combinedEvalVector (2 ^ σ.k) (T.r₀ j) ![T.ζ₀, idx.omega * T.ζ₀])
       (chunkedCombinedInnerProduct (T.ξ₀ s) (T.r₀ j) T.E₀)
       (Ipa.verify C σ (T.nodeInput s j) = true) := by
-  have hsz : segTotal nc = ∑ _ : Fin 44, nc := segTotal_eq_sum nc
+  have hsz : segTotal nc = ∑ _ : Fin batchRows, nc := segTotal_eq_sum nc
   have hP : combinedCommitment (T.ξ₀ s) (T.nodeInput s j).commitmentFn
       = chunkedCombinedCommitment (T.ξ₀ s) (batchC wC T.zC T.pubC comms) := by
     rw [chunkedCombinedCommitment_eq_flat]
@@ -131,13 +131,13 @@ private theorem KimchiBatchAcc.nodeFS (T : KimchiBatchAcc C σ idx nc comms wC)
     rw [T.hcs t, flatSeg]
     have hidx : finCongr (segTotal_eq_sum nc) t = Fin.cast hsz t := Fin.ext rfl
     rw [hidx]
-  have hx : ∀ t : Fin 2, (T.nodeInput s j).pointFn t
+  have hx : ∀ t : Fin evalPts, (T.nodeInput s j).pointFn t
       = ![T.ζ₀, idx.omega * T.ζ₀] t := by
     intro t
     fin_cases t <;> rfl
   have hb : combinedEvalVector (2 ^ σ.k) (T.r₀ j) (T.nodeInput s j).pointFn
       = combinedEvalVector (2 ^ σ.k) (T.r₀ j) ![T.ζ₀, idx.omega * T.ζ₀] :=
-    congrArg (fun x : Fin 2 → C.ScalarField =>
+    congrArg (fun x : Fin evalPts → C.ScalarField =>
       combinedEvalVector (2 ^ σ.k) (T.r₀ j) x) (funext hx)
   have hv : Ipa.cipOf (T.nodeInput s j)
       = chunkedCombinedInnerProduct (T.ξ₀ s) (T.r₀ j) T.E₀ := by
@@ -167,13 +167,13 @@ theorem kimchiVesta_sound (σ : SRS IpaVesta.Point)
     (cvk : KimchiVK IpaVesta.curve nc)
     (hvk : VKCorresponds σ nc cvk.comms idx)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (wC : Fin 15 → Fin nc → IpaVesta.Point)
+    (wC : Fin wCols → Fin nc → IpaVesta.Point)
     (T : KimchiBatchAcc IpaVesta.curve σ idx nc cvk.comms wC)
     (hpubC : ∀ c : Fin nc,
       T.pubC c = commitPolyMaskedChunk σ (-(idx.pubPoly (pubView idx pub))) (c : ℕ)) :
     ∃ (badB : Finset Fp) (badG : Fp → Finset Fp) (badA : Fp → Fp → Finset Fp)
         (badZ : Fp → Fp → Fp → Polynomial Fp → Finset Fp)
-        (wTab : Fin n → Fin 15 → Fp),
+        (wTab : Fin n → Fin wCols → Fp),
       (badB.card ≤ 7 * (n - idx.zkRows)
         ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
         ∧ (∀ β γ,
@@ -181,9 +181,9 @@ theorem kimchiVesta_sound (σ : SRS IpaVesta.Point)
         ∧ (∀ β γ α (t : Polynomial Fp), t.natDegree < 7 * n →
             (badZ β γ α t).card ≤ Index.degreeBound n))
       ∧ ∀ (β γ α : Fp) (t : Polynomial Fp) (ζ : Fp)
-          (E : Fin 44 → Fin nc → Fin 2 → Fp)
-          (ξ : Fin (segTotal nc) → Fp) (r : Fin 2 → Fp)
-          (A : Fin (segTotal nc) → Fin 2 → Prop),
+          (E : Fin batchRows → Fin nc → Fin evalPts → Fp)
+          (ξ : Fin (segTotal nc) → Fp) (r : Fin evalPts → Fp)
+          (A : Fin (segTotal nc) → Fin evalPts → Prop),
           β ∉ badB → γ ∉ badG β → α ∉ badA β γ → ζ ∉ badZ β γ α t →
           ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) →
           t.natDegree < 7 * n →
@@ -215,13 +215,13 @@ theorem kimchiPallas_sound (σ : SRS IpaPallas.Point)
     (cvk : KimchiVK IpaPallas.curve nc)
     (hvk : VKCorresponds σ nc cvk.comms idx)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (wC : Fin 15 → Fin nc → IpaPallas.Point)
+    (wC : Fin wCols → Fin nc → IpaPallas.Point)
     (T : KimchiBatchAcc IpaPallas.curve σ idx nc cvk.comms wC)
     (hpubC : ∀ c : Fin nc,
       T.pubC c = commitPolyMaskedChunk σ (-(idx.pubPoly (pubView idx pub))) (c : ℕ)) :
     ∃ (badB : Finset Fq) (badG : Fq → Finset Fq) (badA : Fq → Fq → Finset Fq)
         (badZ : Fq → Fq → Fq → Polynomial Fq → Finset Fq)
-        (wTab : Fin n → Fin 15 → Fq),
+        (wTab : Fin n → Fin wCols → Fq),
       (badB.card ≤ 7 * (n - idx.zkRows)
         ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
         ∧ (∀ β γ,
@@ -229,9 +229,9 @@ theorem kimchiPallas_sound (σ : SRS IpaPallas.Point)
         ∧ (∀ β γ α (t : Polynomial Fq), t.natDegree < 7 * n →
             (badZ β γ α t).card ≤ Index.degreeBound n))
       ∧ ∀ (β γ α : Fq) (t : Polynomial Fq) (ζ : Fq)
-          (E : Fin 44 → Fin nc → Fin 2 → Fq)
-          (ξ : Fin (segTotal nc) → Fq) (r : Fin 2 → Fq)
-          (A : Fin (segTotal nc) → Fin 2 → Prop),
+          (E : Fin batchRows → Fin nc → Fin evalPts → Fq)
+          (ξ : Fin (segTotal nc) → Fq) (r : Fin evalPts → Fq)
+          (A : Fin (segTotal nc) → Fin evalPts → Prop),
           β ∉ badB → γ ∉ badG β → α ∉ badA β γ → ζ ∉ badZ β γ α t →
           ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) →
           t.natDegree < 7 * n →
@@ -310,7 +310,7 @@ theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) {nc : ℕ} (hnc : 0 < nc
               T'.E₀)) :
     ∃ (badB : Finset Fp) (badG : Fp → Finset Fp) (badA : Fp → Fp → Finset Fp)
         (badZ : Fp → Fp → Fp → Polynomial Fp → Finset Fp)
-        (wTab : Fin n → Fin 15 → Fp),
+        (wTab : Fin n → Fin wCols → Fp),
       (badB.card ≤ 7 * (n - idx.zkRows)
         ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
         ∧ (∀ β γ,
@@ -392,7 +392,7 @@ theorem kimchiPallas_run_sound (σ : SRS IpaPallas.Point) {nc : ℕ} (hnc : 0 < 
               T'.E₀)) :
     ∃ (badB : Finset Fq) (badG : Fq → Finset Fq) (badA : Fq → Fq → Finset Fq)
         (badZ : Fq → Fq → Fq → Polynomial Fq → Finset Fq)
-        (wTab : Fin n → Fin 15 → Fq),
+        (wTab : Fin n → Fin wCols → Fq),
       (badB.card ≤ 7 * (n - idx.zkRows)
         ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
         ∧ (∀ β γ,

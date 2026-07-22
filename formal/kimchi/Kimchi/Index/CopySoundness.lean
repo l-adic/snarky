@@ -24,13 +24,13 @@ variable {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n]
 open Kimchi.Permutation in
 /-- The witness table's permuted columns as interpolants — what the permutation
 argument's committed columns are for a table witness. -/
-noncomputable def permWitnessPoly (idx : Index F n) (wTab : Fin n → Fin 15 → F) :
-    Fin 7 → Polynomial F :=
+noncomputable def permWitnessPoly (idx : Index F n) (wTab : Fin n → Fin wCols → F) :
+    Fin permCols → Polynomial F :=
   fun col => columnPoly idx.omega (fun j => cellValue wTab (col, j))
 
 omit [DecidableEq F] [NeZero n] in
-theorem eval_permWitnessPoly (idx : Index F n) (wTab : Fin n → Fin 15 → F)
-    (col : Fin 7) (j : Fin n) :
+theorem eval_permWitnessPoly (idx : Index F n) (wTab : Fin n → Fin wCols → F)
+    (col : Fin permCols) (j : Fin n) :
     (idx.permWitnessPoly wTab col).eval (idx.omega ^ (j : ℕ)) = cellValue wTab (col, j) :=
   eval_columnPoly idx.omega_prim _ j
 
@@ -42,22 +42,22 @@ prover supplies an accumulator whose three permutation constraints are divisible
 the copy fragment of `Satisfies` there; the masked rows are outside the argument's grip
 by design (zkpm gating), and honest witnesses satisfy them because masked rows are
 identity-wired. -/
-theorem copy_soundness_of_dvd (idx : Index F n) (wTab : Fin n → Fin 15 → F)
+theorem copy_soundness_of_dvd (idx : Index F n) (wTab : Fin n → Fin wCols → F)
     (β γ : F)
     (hβ : β ∉ badBetas
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+      (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
           idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+      (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
           idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
             * idx.omega
               ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))))
     (hγ : γ ∉ badGammas
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+      (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
           idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+      (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
           idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
             * idx.omega
@@ -67,7 +67,7 @@ theorem copy_soundness_of_dvd (idx : Index F n) (wTab : Fin n → Fin 15 → F)
       (idx.permWitnessPoly wTab)
       (Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm) idx.shifts
       β γ (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd s) :
-    ∀ c : Fin 7 × Fin (n - idx.zkRows),
+    ∀ c : Fin permCols × Fin (n - idx.zkRows),
       cellValue wTab (idx.wiringMap (embCell idx.zkRows c))
         = cellValue wTab (embCell idx.zkRows c) := by
   intro c

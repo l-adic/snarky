@@ -116,7 +116,7 @@ private theorem stream_ft_read :
 
 /-- **The tail read**: position `nc + 1 + q·nc + c` is tail row `q`'s chunk `c` — one
 `flatten_read`. -/
-private theorem stream_tail_read (q c : ℕ) (hq : q < 43) (hc : c < nc) :
+private theorem stream_tail_read (q c : ℕ) (hq : q < tailRowCount) (hc : c < nc) :
     (runStreamP C σ cvk cp pub pe)[nc + 1 + q * nc + c]'(by
         have := block_lt hq hc
         omega)
@@ -127,7 +127,7 @@ private theorem stream_tail_read (q c : ℕ) (hq : q < 43) (hc : c < nc) :
   exact flatten_read _ q c hq hc
 
 /-- Tail row `j < 7` is the `j`-th literal row (`z` + the six selectors). -/
-private theorem tailRows_read_lit (j : ℕ) (hj : j < 7) :
+private theorem tailRows_read_lit (j : ℕ) (hj : j < litRowCount) :
     (tailRowsOf C cvk cp)[j]'(by omega)
       = ((⟨#[zipSeg C cp.zComm cp.evals.z,
             zipSeg C cvk.genericComm cp.evals.genericSelector,
@@ -136,7 +136,7 @@ private theorem tailRows_read_lit (j : ℕ) (hj : j < 7) :
             zipSeg C cvk.mulComm cp.evals.mulSelector,
             zipSeg C cvk.emulComm cp.evals.emulSelector,
             zipSeg C cvk.endomulScalarComm cp.evals.endomulScalarSelector], rfl⟩
-          : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) 7)[j]'hj) := by
+          : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) litRowCount)[j]'hj) := by
   show ((⟨#[zipSeg C cp.zComm cp.evals.z,
         zipSeg C cvk.genericComm cp.evals.genericSelector,
         zipSeg C cvk.poseidonComm cp.evals.poseidonSelector,
@@ -144,15 +144,16 @@ private theorem tailRows_read_lit (j : ℕ) (hj : j < 7) :
         zipSeg C cvk.mulComm cp.evals.mulSelector,
         zipSeg C cvk.emulComm cp.evals.emulSelector,
         zipSeg C cvk.endomulScalarComm cp.evals.endomulScalarSelector], rfl⟩
-          : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) 7)
+          : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) litRowCount)
       ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
       ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
-      ++ ((cvk.sigmaComm.take 6).zip cp.evals.s).map (fun x => zipSeg C x.1 x.2))[j]'(by omega) = _
+      ++ ((cvk.sigmaComm.take sigmaRows).zip cp.evals.s).map
+        (fun x => zipSeg C x.1 x.2))[j]'(by omega) = _
   rw [Vector.getElem_append, dif_pos (by omega), Vector.getElem_append,
     dif_pos (by omega), Vector.getElem_append, dif_pos hj]
 
 /-- Tail row `7 + q` is witness column `q`'s row. -/
-private theorem tailRows_read_w (q : ℕ) (hq : q < 15) :
+private theorem tailRows_read_w (q : ℕ) (hq : q < wCols) :
     (tailRowsOf C cvk cp)[7 + q]'(by omega)
       = zipSeg C (cp.wComm[q]'hq) (cp.evals.w[q]'hq) := by
   show ((⟨#[zipSeg C cp.zComm cp.evals.z,
@@ -162,17 +163,17 @@ private theorem tailRows_read_w (q : ℕ) (hq : q < 15) :
         zipSeg C cvk.mulComm cp.evals.mulSelector,
         zipSeg C cvk.emulComm cp.evals.emulSelector,
         zipSeg C cvk.endomulScalarComm cp.evals.endomulScalarSelector], rfl⟩
-          : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) 7)
+          : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) litRowCount)
       ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
       ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
-      ++ ((cvk.sigmaComm.take 6).zip cp.evals.s).map
+      ++ ((cvk.sigmaComm.take sigmaRows).zip cp.evals.s).map
         (fun x => zipSeg C x.1 x.2))[7 + q]'(by omega) = _
   rw [Vector.getElem_append, dif_pos (by omega), Vector.getElem_append,
     dif_pos (by omega), Vector.getElem_append, dif_neg (by omega)]
   simp only [show 7 + q - 7 = q from by omega, Vector.getElem_map, Vector.getElem_zip]
 
 /-- Tail row `22 + q` is coefficient column `q`'s row. -/
-private theorem tailRows_read_c (q : ℕ) (hq : q < 15) :
+private theorem tailRows_read_c (q : ℕ) (hq : q < coeffCols) :
     (tailRowsOf C cvk cp)[22 + q]'(by omega)
       = zipSeg C (cvk.coefficientsComm[q]'hq) (cp.evals.coefficients[q]'hq) := by
   show ((⟨#[zipSeg C cp.zComm cp.evals.z,
@@ -182,10 +183,10 @@ private theorem tailRows_read_c (q : ℕ) (hq : q < 15) :
         zipSeg C cvk.mulComm cp.evals.mulSelector,
         zipSeg C cvk.emulComm cp.evals.emulSelector,
         zipSeg C cvk.endomulScalarComm cp.evals.endomulScalarSelector], rfl⟩
-          : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) 7)
+          : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) litRowCount)
       ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
       ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
-      ++ ((cvk.sigmaComm.take 6).zip cp.evals.s).map
+      ++ ((cvk.sigmaComm.take sigmaRows).zip cp.evals.s).map
         (fun x => zipSeg C x.1 x.2))[22 + q]'(by omega) = _
   rw [Vector.getElem_append, dif_pos (by omega), Vector.getElem_append,
     dif_neg (by omega)]
@@ -193,7 +194,7 @@ private theorem tailRows_read_c (q : ℕ) (hq : q < 15) :
     Vector.getElem_zip]
 
 /-- Tail row `37 + q` is the `q`-th σ row. -/
-private theorem tailRows_read_s (q : ℕ) (hq : q < 6) :
+private theorem tailRows_read_s (q : ℕ) (hq : q < sigmaRows) :
     (tailRowsOf C cvk cp)[37 + q]'(by omega)
       = zipSeg C (cvk.sigmaComm[q]'(by omega)) (cp.evals.s[q]'hq) := by
   show ((⟨#[zipSeg C cp.zComm cp.evals.z,
@@ -203,10 +204,10 @@ private theorem tailRows_read_s (q : ℕ) (hq : q < 6) :
         zipSeg C cvk.mulComm cp.evals.mulSelector,
         zipSeg C cvk.emulComm cp.evals.emulSelector,
         zipSeg C cvk.endomulScalarComm cp.evals.endomulScalarSelector], rfl⟩
-          : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) 7)
+          : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) litRowCount)
       ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
       ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
-      ++ ((cvk.sigmaComm.take 6).zip cp.evals.s).map
+      ++ ((cvk.sigmaComm.take sigmaRows).zip cp.evals.s).map
         (fun x => zipSeg C x.1 x.2))[37 + q]'(by omega) = _
   rw [Vector.getElem_append, dif_neg (by omega)]
   simp only [show 37 + q - (7 + 15 + 15) = q from by omega, Vector.getElem_map,
@@ -245,7 +246,7 @@ private theorem stream_read_pub (c : ℕ) (hc : c < nc) :
   rfl
 
 /-- **Literal-region read** (`z` + the six selectors), `getElem!` spelling. -/
-private theorem stream_read_lit (k c : ℕ) (hk : k < 7) (hc : c < nc) :
+private theorem stream_read_lit (k c : ℕ) (hk : k < litRowCount) (hc : c < nc) :
     (runStreamP C σ cvk cp pub pe)[nc + 1 + k * nc + c]!
       = (((litRowsA C cvk cp)[k]!).1[c]!, ((litRowsA C cvk cp)[k]!).2.1[c]!,
           ((litRowsA C cvk cp)[k]!).2.2[c]!) := by
@@ -262,7 +263,7 @@ private theorem stream_read_lit (k c : ℕ) (hk : k < 7) (hc : c < nc) :
      rfl)
 
 /-- **Witness-region read**, `getElem!` spelling. -/
-private theorem stream_read_w (q c : ℕ) (hq : q < 15) (hc : c < nc) :
+private theorem stream_read_w (q c : ℕ) (hq : q < wCols) (hc : c < nc) :
     (runStreamP C σ cvk cp pub pe)[nc + 1 + (7 + q) * nc + c]!
       = ((cp.wComm[q]).toArray[c]!, (cp.evals.w[q]).zeta.toArray[c]!,
           (cp.evals.w[q]).zetaOmega.toArray[c]!) := by
@@ -278,7 +279,7 @@ private theorem stream_read_w (q c : ℕ) (hq : q < 15) (hc : c < nc) :
   rfl
 
 /-- **Coefficient-region read**, `getElem!` spelling. -/
-private theorem stream_read_c (q c : ℕ) (hq : q < 15) (hc : c < nc) :
+private theorem stream_read_c (q c : ℕ) (hq : q < coeffCols) (hc : c < nc) :
     (runStreamP C σ cvk cp pub pe)[nc + 1 + (22 + q) * nc + c]!
       = ((cvk.coefficientsComm[q]).toArray[c]!,
           (cp.evals.coefficients[q]).zeta.toArray[c]!,
@@ -295,7 +296,7 @@ private theorem stream_read_c (q c : ℕ) (hq : q < 15) (hc : c < nc) :
   rfl
 
 /-- **σ-region read**, `getElem!` spelling. -/
-private theorem stream_read_s (q c : ℕ) (hq : q < 6) (hc : c < nc) :
+private theorem stream_read_s (q c : ℕ) (hq : q < sigmaRows) (hc : c < nc) :
     (runStreamP C σ cvk cp pub pe)[nc + 1 + (37 + q) * nc + c]!
       = ((cvk.sigmaComm[q]).toArray[c]!, (cp.evals.s[q]).zeta.toArray[c]!,
           (cp.evals.s[q]).zetaOmega.toArray[c]!) := by
@@ -352,26 +353,26 @@ private theorem ft_opening_of_reflected {C : Ipa.CommitmentCurve} [Module C.Scal
     (runInput C σ cvk cp pub).pointFn aRef ρRef hrep (runInput C σ cvk cp pub).evalFn
     (runInput C σ cvk cp pub).polyscale (runInput C σ cvk cp pub).evalscale hξ hr a ρ hopen
   have hsz : (nc : ℕ) < (runInput C σ cvk cp pub).commitments.size := by
-    show (nc : ℕ) < nc + 1 + 43 * nc
+    show (nc : ℕ) < nc + 1 + tailRowCount * nc
     omega
   refine ⟨aRef ⟨nc, hsz⟩, ρRef ⟨nc, hsz⟩, ?_, ?_⟩
   · rw [hrep ⟨nc, hsz⟩]
     show ((runStreamP C σ cvk cp pub (runPubEvals C σ cvk cp pub)).map
         (·.1))[(nc : ℕ)]'(by
-          show (nc : ℕ) < nc + 1 + 43 * nc
+          show (nc : ℕ) < nc + 1 + tailRowCount * nc
           omega)
       = runFtComm C σ cvk cp pub
     rw [Vector.getElem_map, stream_ft_read C]
-  · have hpin := hpins ⟨nc, hsz⟩ (0 : Fin 2)
-    have hpt : (runInput C σ cvk cp pub).pointFn (0 : Fin 2)
+  · have hpin := hpins ⟨nc, hsz⟩ (0 : Fin evalPts)
+    have hpt : (runInput C σ cvk cp pub).pointFn (0 : Fin evalPts)
         = (runOracles C σ cvk cp pub).zeta := rfl
     rw [hpt] at hpin
     rw [← hpin]
     show (((runStreamP C σ cvk cp pub (runPubEvals C σ cvk cp pub)).map
-        (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector C.ScalarField 2)))[(nc : ℕ)]'(by
-          show (nc : ℕ) < nc + 1 + 43 * nc
+        (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector C.ScalarField evalPts)))[(nc : ℕ)]'(by
+          show (nc : ℕ) < nc + 1 + tailRowCount * nc
           omega)
-        : Vector C.ScalarField 2)[(0 : ℕ)]
+        : Vector C.ScalarField evalPts)[(0 : ℕ)]
       = runFtEval0 C σ cvk cp pub
     rw [Vector.getElem_map, stream_ft_read C]
     rfl
@@ -462,7 +463,7 @@ private theorem combineAt_eq_sum {F : Type*} [Field F] (xM : F) (v : Array F) :
 are the deployed `to_batch` order with the single-chunk ft row interposed at flat
 position `nc`, so the public row's chunks come first and every later row `i` starts at
 `nc + 1 + (i − 1)·nc`. -/
-private def streamPos (nc : ℕ) (i : Fin 44) (c : ℕ) : ℕ :=
+private def streamPos (nc : ℕ) (i : Fin batchRows) (c : ℕ) : ℕ :=
   if (i : ℕ) < 1 then c else nc + 1 + ((i : ℕ) - 1) * nc + c
 
 
@@ -547,7 +548,7 @@ def KimchiVK.Corresponds {C : Ipa.CommitmentCurve}
   VKCorresponds σ nc cvk.comms idx
     ∧ cvk.omega = idx.omega
     ∧ cvk.zkRows = idx.zkRows
-    ∧ (fun i : Fin 7 => cvk.shifts[i]) = idx.shifts
+    ∧ (fun i : Fin permCols => cvk.shifts[i]) = idx.shifts
     ∧ cvk.endo = idx.endoBase
     ∧ mdsOfParams cvk.frParams = idx.mds
     ∧ ∀ (j : Fin n), (j : ℕ) < idx.publicCount →
@@ -750,8 +751,8 @@ private theorem evals_ext {F : Type*} {e e' : Evals F} (h1 : e.w = e'.w)
   exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12⟩
 
 /-- Every stream position lies inside the `44·nc + 1` flat rows. -/
-private theorem streamPos_lt (nc : ℕ) (i : Fin 44) (c : ℕ) (hc : c < nc) :
-    streamPos nc i c < nc + 1 + 43 * nc := by
+private theorem streamPos_lt (nc : ℕ) (i : Fin batchRows) (c : ℕ) (hc : c < nc) :
+    streamPos nc i c < nc + 1 + tailRowCount * nc := by
   have hi := i.isLt
   unfold streamPos
   split_ifs with h1
@@ -772,41 +773,41 @@ private theorem streamPos_zRow (nc : ℕ) (ch : ℕ) :
   rw [if_neg (by omega), show (1 : ℕ) - 1 = 0 from rfl]
 
 /-- `streamPos` at a selector row. -/
-private theorem streamPos_selRow (nc : ℕ) (j : Fin 6) (ch : ℕ) :
+private theorem streamPos_selRow (nc : ℕ) (j : Fin selCount) (ch : ℕ) :
     streamPos nc (selRow j) ch = nc + 1 + (1 + (j : ℕ)) * nc + ch := by
   simp only [streamPos, selRow]
   rw [if_neg (by omega), show 2 + (j : ℕ) - 1 = 1 + (j : ℕ) from by omega]
 
 /-- `streamPos` at a witness row. -/
-private theorem streamPos_wRow (nc : ℕ) (q : Fin 15) (ch : ℕ) :
+private theorem streamPos_wRow (nc : ℕ) (q : Fin wCols) (ch : ℕ) :
     streamPos nc (wRow q) ch = nc + 1 + (7 + (q : ℕ)) * nc + ch := by
   simp only [streamPos, wRow]
   rw [if_neg (by omega), show 8 + (q : ℕ) - 1 = 7 + (q : ℕ) from by omega]
 
 /-- `streamPos` at a coefficient row. -/
-private theorem streamPos_cRow (nc : ℕ) (q : Fin 15) (ch : ℕ) :
+private theorem streamPos_cRow (nc : ℕ) (q : Fin coeffCols) (ch : ℕ) :
     streamPos nc (cRow q) ch = nc + 1 + (22 + (q : ℕ)) * nc + ch := by
   simp only [streamPos, cRow]
   rw [if_neg (by omega), show 23 + (q : ℕ) - 1 = 22 + (q : ℕ) from by omega]
 
 /-- `streamPos` at a σ row. -/
-private theorem streamPos_sRow (nc : ℕ) (i : Fin 6) (ch : ℕ) :
+private theorem streamPos_sRow (nc : ℕ) (i : Fin sigmaRows) (ch : ℕ) :
     streamPos nc (sRow i) ch = nc + 1 + (37 + (i : ℕ)) * nc + ch := by
   simp only [streamPos, sRow]
   rw [if_neg (by omega), show 38 + (i : ℕ) - 1 = 37 + (i : ℕ) from by omega]
 
 /-- Reading the run input's evaluation matrix at a stream position: the flat row's
 claim pair. -/
-private theorem runEvals_read (i : Fin 44) (c : ℕ) (hc : c < nc) :
+private theorem runEvals_read (i : Fin batchRows) (c : ℕ) (hc : c < nc) :
     (runInputP C σ cvk cp pub pe v u).evals[streamPos nc i c]!
       = ⟨#[((runStreamP C σ cvk cp pub pe)[streamPos nc i c]!).2.1,
           ((runStreamP C σ cvk cp pub pe)[streamPos nc i c]!).2.2],
          rfl⟩ := by
-  have hlt : streamPos nc i c < nc + 1 + 43 * nc := streamPos_lt nc i c hc
+  have hlt : streamPos nc i c < nc + 1 + tailRowCount * nc := streamPos_lt nc i c hc
   rw [getElem!_pos ((runInputP C σ cvk cp pub pe v u).evals) (streamPos nc i c) hlt,
     getElem!_pos (runStreamP C σ cvk cp pub pe) (streamPos nc i c) hlt]
   show ((runStreamP C σ cvk cp pub pe).map
-      (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector C.ScalarField 2)))[streamPos
+      (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector C.ScalarField evalPts)))[streamPos
         nc i c]'hlt = _
   rw [Vector.getElem_map]
 
@@ -828,7 +829,7 @@ verifier's combined record `cp.linEvals` at the run's combination powers. Pure l
 reading through the region reads. -/
 private theorem claimedEvals_run_eq :
     claimedEvals (runZetaM C σ cvk cp pub) (runZetaOmegaM C σ cvk cp pub)
-        (fun (i : Fin 44) (ch : Fin nc) (j : Fin 2) =>
+        (fun (i : Fin batchRows) (ch : Fin nc) (j : Fin evalPts) =>
           ((runInputP C σ cvk cp pub pe v u).evals[streamPos nc i
               (ch : ℕ)]!)[(j : ℕ)]!)
       = cp.linEvals (runZetaM C σ cvk cp pub) (runZetaOmegaM C σ cvk cp pub) := by
@@ -902,7 +903,7 @@ private theorem claimedEvals_run_eq :
 public-row claims is the verifier's chunk-combined public evaluation. -/
 private theorem claimedPub_run_eq :
     claimedPub (runZetaM C σ cvk cp pub)
-        (fun (i : Fin 44) (ch : Fin nc) (j : Fin 2) =>
+        (fun (i : Fin batchRows) (ch : Fin nc) (j : Fin evalPts) =>
           ((runInputP C σ cvk cp pub pe v u).evals[streamPos nc i
               (ch : ℕ)]!)[(j : ℕ)]!)
       = combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray := by
@@ -967,8 +968,8 @@ variable {σ : SRS C.Point} {nc : ℕ} {cvk : KimchiVK C nc}
 every batch row and chunk, `batchC` — fed the checked witness/accumulator/public chunk
 reads and the key's `comms` view — is the flat stream's commitment at the row's stream
 position. The layout bridge `hbound₀` consumes. -/
-private theorem batchC_eq_flat (i : Fin 44) (c : Fin nc) :
-    batchC (fun (col : Fin 15) (c : Fin nc) => (cp.wComm[col])[c])
+private theorem batchC_eq_flat (i : Fin batchRows) (c : Fin nc) :
+    batchC (fun (col : Fin wCols) (c : Fin nc) => (cp.wComm[col])[c])
         (fun c => cp.zComm[c])
         (fun c => (publicCommitment C σ cvk pub)[c])
         cvk.comms i c
@@ -1090,7 +1091,7 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point) {nc : ℕ}
           (runInput IpaVesta.curve σ cvk cp pub).polyscale) :
     ∃ (badB : Finset Fp) (badG : Fp → Finset Fp) (badA : Fp → Fp → Finset Fp)
         (badZ : Fp → Fp → Fp → Polynomial Fp → Finset Fp)
-        (wTab : Fin n → Fin 15 → Fp),
+        (wTab : Fin n → Fin wCols → Fp),
       (badB.card ≤ 7 * (n - idx.zkRows)
         ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
         ∧ (∀ β γ,
@@ -1116,14 +1117,14 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point) {nc : ℕ}
   -- (1) the body reflection: the guards and the warm acceptance
   obtain ⟨hlagsz, hpubn, haccept⟩ :=
     kimchiVerify_reflects IpaVesta.curve σ cvk cp pub hacc
-  have hlt : ∀ (i : Fin 44) (c : Fin (nc)),
+  have hlt : ∀ (i : Fin batchRows) (c : Fin (nc)),
       streamPos (nc) i (c : ℕ)
         < (runInput IpaVesta.curve σ cvk cp pub).commitments.size := by
     intro i c
-    show streamPos (nc) i (c : ℕ) < nc + 1 + 43 * nc
+    show streamPos (nc) i (c : ℕ) < nc + 1 + tailRowCount * nc
     exact streamPos_lt _ i _ c.isLt
   -- (2) the reference openings at the stream positions bind the abstract batch
-  have hbound₀ : ∀ (i : Fin 44) (c : Fin (nc)),
+  have hbound₀ : ∀ (i : Fin batchRows) (c : Fin (nc)),
       commit σ (aRef ⟨streamPos (nc) i (c : ℕ), hlt i c⟩)
           (ρRef ⟨streamPos (nc) i (c : ℕ), hlt i c⟩)
         = batchC (fun col c => (cp.wComm[col])[c]) (fun c => cp.zComm[c])
@@ -1231,7 +1232,7 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point) {nc : ℕ}
     (runOracles IpaVesta.curve σ cvk cp pub).alpha
     (ftChunkAssembly σ.k cp.tComm.size aT)
     (runOracles IpaVesta.curve σ cvk cp pub).zeta
-    (fun (i : Fin 44) (ch : Fin (nc)) (j : Fin 2) =>
+    (fun (i : Fin batchRows) (ch : Fin (nc)) (j : Fin evalPts) =>
       ((runInputP IpaVesta.curve σ cvk cp pub
           (runPubEvals IpaVesta.curve σ cvk cp pub)
           (runVU IpaVesta.curve σ cvk cp pub).1
@@ -1272,7 +1273,7 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point) {nc : ℕ
           (runInput IpaPallas.curve σ cvk cp pub).polyscale) :
     ∃ (badB : Finset Fq) (badG : Fq → Finset Fq) (badA : Fq → Fq → Finset Fq)
         (badZ : Fq → Fq → Fq → Polynomial Fq → Finset Fq)
-        (wTab : Fin n → Fin 15 → Fq),
+        (wTab : Fin n → Fin wCols → Fq),
       (badB.card ≤ 7 * (n - idx.zkRows)
         ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
         ∧ (∀ β γ,
@@ -1298,14 +1299,14 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point) {nc : ℕ
   -- (1) the body reflection: the guards and the warm acceptance
   obtain ⟨hlagsz, hpubn, haccept⟩ :=
     kimchiVerify_reflects IpaPallas.curve σ cvk cp pub hacc
-  have hlt : ∀ (i : Fin 44) (c : Fin (nc)),
+  have hlt : ∀ (i : Fin batchRows) (c : Fin (nc)),
       streamPos (nc) i (c : ℕ)
         < (runInput IpaPallas.curve σ cvk cp pub).commitments.size := by
     intro i c
-    show streamPos (nc) i (c : ℕ) < nc + 1 + 43 * nc
+    show streamPos (nc) i (c : ℕ) < nc + 1 + tailRowCount * nc
     exact streamPos_lt _ i _ c.isLt
   -- (2) the reference openings at the stream positions bind the abstract batch
-  have hbound₀ : ∀ (i : Fin 44) (c : Fin (nc)),
+  have hbound₀ : ∀ (i : Fin batchRows) (c : Fin (nc)),
       commit σ (aRef ⟨streamPos (nc) i (c : ℕ), hlt i c⟩)
           (ρRef ⟨streamPos (nc) i (c : ℕ), hlt i c⟩)
         = batchC (fun col c => (cp.wComm[col])[c]) (fun c => cp.zComm[c])
@@ -1413,7 +1414,7 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point) {nc : ℕ
     (runOracles IpaPallas.curve σ cvk cp pub).alpha
     (ftChunkAssembly σ.k cp.tComm.size aT)
     (runOracles IpaPallas.curve σ cvk cp pub).zeta
-    (fun (i : Fin 44) (ch : Fin (nc)) (j : Fin 2) =>
+    (fun (i : Fin batchRows) (ch : Fin (nc)) (j : Fin evalPts) =>
       ((runInputP IpaPallas.curve σ cvk cp pub
           (runPubEvals IpaPallas.curve σ cvk cp pub)
           (runVU IpaPallas.curve σ cvk cp pub).1

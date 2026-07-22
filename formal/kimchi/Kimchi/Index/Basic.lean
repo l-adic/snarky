@@ -68,13 +68,13 @@ kimchi's cyclic-successor encoding of the wiring). The coefficients feed
 `ArgumentEnv.coeff` through `rowEnv` when the row is evaluated. -/
 structure GateRow (F : Type*) (n : ℕ) where
   typ : GateType
-  coeffs : Fin 15 → F
-  wires : Fin 7 → Fin 7 × Fin n
+  coeffs : Fin coeffCols → F
+  wires : Fin permCols → Fin permCols × Fin n
 
 /-- The wiring as a map on cells, read off a gate table: the stored successor
 pointers. -/
 private def wiringMapOf {F : Type*} {n : ℕ} (gates : Fin n → GateRow F n)
-    (c : Fin 7 × Fin n) : Fin 7 × Fin n :=
+    (c : Fin permCols × Fin n) : Fin permCols × Fin n :=
   (gates c.2).wires c.1
 
 /-- The index: the gate table and the domain/permutation constants
@@ -97,7 +97,7 @@ structure _root_.Kimchi.Index (F : Type*) [Field F] (n : ℕ) where
   scalar-side table (`fp_kimchi` for Vesta proofs, `fq_kimchi` for Pallas proofs).
   Data only, no law — the wire correspondence pins it to the deployed table. -/
   mds : Gate.Poseidon.Mds F
-  shifts : Fin 7 → F
+  shifts : Fin permCols → F
   omega_prim : IsPrimitiveRoot omega n
   /-- Production's zero-knowledge row count is `(16·nc + 5)/7` (constraints.rs:983),
   which is at least `3` at every chunk count `nc ≥ 1`. The permutation argument's
@@ -108,7 +108,7 @@ structure _root_.Kimchi.Index (F : Type*) [Field F] (n : ℕ) where
   public_le : publicCount ≤ n - zkRows
   shifts_coset : CosetShifts omega shifts
   wiring_bijective : Function.Bijective (wiringMapOf gates)
-  wiring_region : ∀ c : Fin 7 × Fin n,
+  wiring_region : ∀ c : Fin permCols × Fin n,
     ((c.2 : ℕ) < n - zkRows) ↔ (((wiringMapOf gates c).2 : ℕ) < n - zkRows)
   /-- The public region is kimchi's public-input gadget: the first `publicCount` rows
   are generic gates (`gate.rs` places `GenericGateSpec::Pub` rows first)… -/
@@ -117,10 +117,10 @@ structure _root_.Kimchi.Index (F : Type*) [Field F] (n : ℕ) where
   (`generic.rs`: `coeffs[0] = F::one()` over zeros) — so the slot-`0` aggregate member
   pins the first witness column to the public input there… -/
   public_coeffs : ∀ i : Fin n, (i : ℕ) < publicCount →
-    ∀ c : Fin 15, (gates i).coeffs c = if c = 0 then 1 else 0
+    ∀ c : Fin coeffCols, (gates i).coeffs c = if c = 0 then 1 else 0
   /-- …and the masked rows are identity-wired: the zero-knowledge rows carry no copy
   constraints, so `Satisfies`' whole-grid copy conjunct closes over them trivially… -/
-  masked_identity : ∀ c : Fin 7 × Fin n, n - zkRows ≤ ((c.2 : ℕ)) →
+  masked_identity : ∀ c : Fin permCols × Fin n, n - zkRows ≤ ((c.2 : ℕ)) →
     wiringMapOf gates c = c
   /-- …and carry no gates either: kimchi's gate table stops at the circuit, so no
   constraint *sits on* a masked row — the gate members vanish there because the
@@ -138,13 +138,13 @@ structure _root_.Kimchi.Index (F : Type*) [Field F] (n : ℕ) where
 variable {F : Type*} [Field F] {n : ℕ}
 
 /-- The wiring map of the index. -/
-def wiringMap (idx : Index F n) : Fin 7 × Fin n → Fin 7 × Fin n :=
+def wiringMap (idx : Index F n) : Fin permCols × Fin n → Fin permCols × Fin n :=
   wiringMapOf idx.gates
 
 /-! ## The wiring permutation -/
 
 /-- The wiring as a permutation — the proofs' view of the stored successor map. -/
-noncomputable def wiringPerm (idx : Index F n) : Equiv.Perm (Fin 7 × Fin n) :=
+noncomputable def wiringPerm (idx : Index F n) : Equiv.Perm (Fin permCols × Fin n) :=
   Equiv.ofBijective _ idx.wiring_bijective
 
 theorem wiringPerm_regionPreserving (idx : Index F n) :
@@ -154,7 +154,7 @@ theorem wiringPerm_regionPreserving (idx : Index F n) :
 /-! ## Derived columns: row forms -/
 
 /-- The coefficient table — the `qTab` the quotient layer's `rowEnv` consumes. -/
-def coeffTable (idx : Index F n) : Fin n → Fin 15 → F :=
+def coeffTable (idx : Index F n) : Fin n → Fin coeffCols → F :=
   fun i => (idx.gates i).coeffs
 
 /-- The boundary row of the unmasked region, `n − zkRows` — the `rowLast` argument of
@@ -167,14 +167,14 @@ def selectorRow (idx : Index F n) (g : GateType) : Fin n → F :=
   fun i => if (idx.gates i).typ = g then 1 else 0
 
 /-- The `c`-th coefficient column over the rows. -/
-def coeffRow (idx : Index F n) (c : Fin 15) : Fin n → F :=
+def coeffRow (idx : Index F n) (c : Fin coeffCols) : Fin n → F :=
   fun i => idx.coeffTable i c
 
 /-- The `col`-th sigma column over the rows: the COMMITTED σ cell — the address of the
 wired-to cell, ZEROED on the interior mask rows `[n − zkRows + 2, n − 1)` (production
 "Zero out the sigmas in the zk rows", constraints.rs:538–544; the rows where the
 three-factor permutation mask lets the recurrence run; empty range at `zkRows = 3`). -/
-def sigmaAddrRow (idx : Index F n) (col : Fin 7) : Fin n → F :=
+def sigmaAddrRow (idx : Index F n) (col : Fin permCols) : Fin n → F :=
   fun i => if n - idx.zkRows + 2 ≤ (i : ℕ) ∧ (i : ℕ) < n - 1 then 0
     else addr idx.omega idx.shifts (idx.wiringMap (col, i))
 
@@ -185,20 +185,20 @@ noncomputable def selectorPoly (idx : Index F n) (g : GateType) : Polynomial F :
   columnPoly idx.omega (idx.selectorRow g)
 
 /-- The coefficient polynomial of column `c`. -/
-noncomputable def coeffPoly (idx : Index F n) (c : Fin 15) : Polynomial F :=
+noncomputable def coeffPoly (idx : Index F n) (c : Fin wCols) : Polynomial F :=
   columnPoly idx.omega (idx.coeffRow c)
 
 /-- The sigma polynomial of column `col`. -/
-noncomputable def sigmaPoly (idx : Index F n) (col : Fin 7) : Polynomial F :=
+noncomputable def sigmaPoly (idx : Index F n) (col : Fin permCols) : Polynomial F :=
   columnPoly idx.omega (idx.sigmaAddrRow col)
 
-theorem eval_sigmaPoly (idx : Index F n) (col : Fin 7) (i : Fin n) :
+theorem eval_sigmaPoly (idx : Index F n) (col : Fin permCols) (i : Fin n) :
     (idx.sigmaPoly col).eval (idx.omega ^ (i : ℕ)) = idx.sigmaAddrRow col i :=
   eval_columnPoly idx.omega_prim _ i
 
 /-- The index's sigma interpolants are the wiring instantiation's, at the derived
 permutation — definitionally: the stored successor map underlies both. -/
-theorem sigmaPoly_eq_wiring (idx : Index F n) (col : Fin 7) :
+theorem sigmaPoly_eq_wiring (idx : Index F n) (col : Fin permCols) :
     idx.sigmaPoly col
       = Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm col :=
   rfl
@@ -207,19 +207,19 @@ theorem sigmaPoly_eq_wiring (idx : Index F n) (col : Fin 7) :
 boundary: the generator and shift laws through the `Wiring.lean` certificates, the rest
 by their `Fintype`/`Decidable` instances. `none` exactly when some law fails. -/
 def build? [DecidableEq F] (gates : Fin n → GateRow F n) (publicCount zkRows : ℕ)
-    (omega endoBase : F) (mds : Gate.Poseidon.Mds F) (shifts : Fin 7 → F) :
+    (omega endoBase : F) (mds : Gate.Poseidon.Mds F) (shifts : Fin permCols → F) :
     Option (Index F n) :=
   if h : (∃ k < n + 1, n = 2 ^ k)
       ∧ primitiveRootCertificate omega n = true
       ∧ cosetShiftsCertificate shifts n = true
       ∧ 3 ≤ zkRows ∧ zkRows ≤ n ∧ publicCount ≤ n - zkRows
       ∧ Function.Bijective (wiringMapOf gates)
-      ∧ (∀ c : Fin 7 × Fin n,
+      ∧ (∀ c : Fin permCols × Fin n,
           ((c.2 : ℕ) < n - zkRows) ↔ (((wiringMapOf gates c).2 : ℕ) < n - zkRows))
       ∧ (∀ i : Fin n, (i : ℕ) < publicCount → (gates i).typ = .generic)
       ∧ (∀ i : Fin n, (i : ℕ) < publicCount →
-          ∀ c : Fin 15, (gates i).coeffs c = if c = 0 then 1 else 0)
-      ∧ (∀ c : Fin 7 × Fin n, n - zkRows ≤ ((c.2 : ℕ)) → wiringMapOf gates c = c)
+          ∀ c : Fin coeffCols, (gates i).coeffs c = if c = 0 then 1 else 0)
+      ∧ (∀ c : Fin permCols × Fin n, n - zkRows ≤ ((c.2 : ℕ)) → wiringMapOf gates c = c)
       ∧ (∀ i : Fin n, n - zkRows ≤ (i : ℕ) → (gates i).typ = .zero)
       ∧ (∀ i : Fin n, (i : ℕ) + 1 = n - zkRows → (gates i).typ.twoRow = false) then
     have homega : IsPrimitiveRoot omega n :=

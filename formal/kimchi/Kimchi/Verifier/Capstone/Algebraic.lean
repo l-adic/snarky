@@ -71,7 +71,7 @@ never on `ξ` or `r` (anti-vacuity: the capstone quantifies it before both). Ari
 at the reflected run's own 45-row batch. -/
 noncomputable def badXiOf {F G : Type*} [Field F] [DecidableEq F]
     [AddCommGroup G] [Module F G] (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
-    (x : Fin 2 → F) (E : Fin m → Fin 2 → F) : Finset F :=
+    (x : Fin evalPts → F) (E : Fin m → Fin evalPts → F) : Finset F :=
   Kimchi.SZ.badComb
       (fun i : Fin m => E i 0 - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x 0)))
     ∪ Kimchi.SZ.badComb
@@ -81,15 +81,16 @@ noncomputable def badXiOf {F G : Type*} [Field F] [DecidableEq F]
 two ξ-combined discrepancy columns. Depends on `(σ, aw₀, x, E, ξ)` — never on `r`. -/
 noncomputable def badROf {F G : Type*} [Field F] [DecidableEq F]
     [AddCommGroup G] [Module F G] (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
-    (x : Fin 2 → F) (E : Fin m → Fin 2 → F) (ξ : F) : Finset F :=
-  Kimchi.SZ.badComb (fun j : Fin 2 => ∑ i : Fin m,
+    (x : Fin evalPts → F) (E : Fin m → Fin evalPts → F) (ξ : F) : Finset F :=
+  Kimchi.SZ.badComb (fun j : Fin evalPts => ∑ i : Fin m,
     ξ ^ (i : ℕ) * (E i j - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j))))
 
 /-- `badXiOf` counts at most `2 · (m − 1)` challenges (at the 43-row batch: `84`): a
 union of two counting-SZ bad sets over `Fin m`. -/
 private theorem card_badXiOf_le {F G : Type*} [Field F] [DecidableEq F]
     [AddCommGroup G] [Module F G] (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
-    (x : Fin 2 → F) (E : Fin m → Fin 2 → F) : (badXiOf σ aw₀ x E).card ≤ 2 * (m - 1) := by
+    (x : Fin evalPts → F) (E : Fin m → Fin evalPts → F) :
+    (badXiOf σ aw₀ x E).card ≤ 2 * (m - 1) := by
   unfold badXiOf
   refine le_trans (Finset.card_union_le _ _) ?_
   have h0 := Kimchi.SZ.card_badComb_le
@@ -99,10 +100,10 @@ private theorem card_badXiOf_le {F G : Type*} [Field F] [DecidableEq F]
   omega
 
 /-- `badROf` counts at most `1 = 2 − 1` challenge: one counting-SZ bad set over
-`Fin 2`. -/
+`Fin evalPts`. -/
 private theorem card_badROf_le {F G : Type*} [Field F] [DecidableEq F]
     [AddCommGroup G] [Module F G] (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
-    (x : Fin 2 → F) (E : Fin m → Fin 2 → F) (ξ : F) :
+    (x : Fin evalPts → F) (E : Fin m → Fin evalPts → F) (ξ : F) :
     (badROf σ aw₀ x E ξ).card ≤ 1 := by
   unfold badROf
   exact Kimchi.SZ.card_badComb_le _
@@ -120,15 +121,15 @@ FS-reflection layer at the reflected run's own 45-row batch. -/
 theorem eval_pins_of_opening {F G : Type*} [Field F] [DecidableEq F]
     [AddCommGroup G] [Module F G] (σ : SRS G)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (wh : F), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    {m : ℕ} (C : Fin m → G) (x : Fin 2 → F)
+    {m : ℕ} (C : Fin m → G) (x : Fin evalPts → F)
     (aw₀ : Fin m → Fin (2 ^ σ.k) → F) (ρw₀ : Fin m → F)
     (hrep : ∀ i, commit σ (aw₀ i) (ρw₀ i) = C i)
-    (E : Fin m → Fin 2 → F) (ξ r : F)
+    (E : Fin m → Fin evalPts → F) (ξ r : F)
     (hξ : ξ ∉ badXiOf σ aw₀ x E) (hr : r ∉ badROf σ aw₀ x E ξ)
     (a : Fin (2 ^ σ.k) → F) (ρ : F)
     (hopen : openingRelationB σ (combinedCommitment ξ C)
       (combinedEvalVector (2 ^ σ.k) r x) (combinedInnerProduct ξ r E) a ρ) :
-    ∀ (i : Fin m) (j : Fin 2),
+    ∀ (i : Fin m) (j : Fin evalPts),
       E i j = innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j)) := by
   -- Step A (linearity): the combined commitment is ONE commitment of the ξ-combined
   -- representation — `map_sum` of `commitₗ` at `Fin m`, mirroring `commit_combine`.
@@ -176,23 +177,23 @@ theorem eval_pins_of_opening {F G : Type*} [Field F] [DecidableEq F]
     rw [Finset.sum_comm]
     exact Finset.sum_congr rfl fun i _ => Finset.sum_congr rfl fun l _ => by ring
   have h1 : combinedInnerProduct ξ r E
-      = ∑ j : Fin 2, r ^ (j : ℕ)
+      = ∑ j : Fin evalPts, r ^ (j : ℕ)
           * ∑ i : Fin m, ξ ^ (i : ℕ)
               * innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j)) := by
     rw [hopen.2, ha, innerProduct_combinedEvalVector]
     exact Finset.sum_congr rfl fun j _ => by rw [hip]
   have h2 : combinedInnerProduct ξ r E
-      = ∑ j : Fin 2, r ^ (j : ℕ) * ∑ i : Fin m, ξ ^ (i : ℕ) * E i j := by
+      = ∑ j : Fin evalPts, r ^ (j : ℕ) * ∑ i : Fin m, ξ ^ (i : ℕ) * E i j := by
     unfold combinedInnerProduct
     simp only [Finset.mul_sum]
     rw [Finset.sum_comm]
     exact Finset.sum_congr rfl fun j _ => Finset.sum_congr rfl fun i _ => by ring
-  have hsum : ∑ j : Fin 2, r ^ (j : ℕ) * (∑ i : Fin m, ξ ^ (i : ℕ)
+  have hsum : ∑ j : Fin evalPts, r ^ (j : ℕ) * (∑ i : Fin m, ξ ^ (i : ℕ)
       * (E i j - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j)))) = 0 := by
-    calc ∑ j : Fin 2, r ^ (j : ℕ) * (∑ i : Fin m, ξ ^ (i : ℕ)
+    calc ∑ j : Fin evalPts, r ^ (j : ℕ) * (∑ i : Fin m, ξ ^ (i : ℕ)
           * (E i j - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j))))
-        = (∑ j : Fin 2, r ^ (j : ℕ) * ∑ i : Fin m, ξ ^ (i : ℕ) * E i j)
-          - ∑ j : Fin 2, r ^ (j : ℕ) * ∑ i : Fin m, ξ ^ (i : ℕ)
+        = (∑ j : Fin evalPts, r ^ (j : ℕ) * ∑ i : Fin m, ξ ^ (i : ℕ) * E i j)
+          - ∑ j : Fin evalPts, r ^ (j : ℕ) * ∑ i : Fin m, ξ ^ (i : ℕ)
               * innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j)) := by
           rw [← Finset.sum_sub_distrib]
           refine Finset.sum_congr rfl fun j _ => ?_
@@ -204,7 +205,7 @@ theorem eval_pins_of_opening {F G : Type*} [Field F] [DecidableEq F]
   -- Step D (iterated counting SZ): first at `r` (the two point-columns), then per
   -- point at `ξ` (the `m` row-discrepancies).
   simp only [badROf] at hr
-  have hcol : ∀ j : Fin 2, ∑ i : Fin m, ξ ^ (i : ℕ)
+  have hcol : ∀ j : Fin evalPts, ∑ i : Fin m, ξ ^ (i : ℕ)
       * (E i j - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j))) = 0 :=
     Kimchi.SZ.eq_zero_of_comb_eq_zero _ r hr hsum
   simp only [badXiOf, Finset.notMem_union] at hξ
@@ -224,7 +225,7 @@ end Kimchi.Verifier
 The AGM corollaries over the 44-row reduction (`Reduction/Soundness.lean`): the
 algebraic prover supplies SRS-basis representations of every batch row's CHUNKS, one
 accepted opening of the combined claim discharges the consumer side, and the
-counting-SZ bad sets live at the FLAT segment arity `∑ _ : Fin 44, nc`
+counting-SZ bad sets live at the FLAT segment arity `∑ _ : Fin batchRows, nc`
 (`badXiOf`/`badROf` are arity-generic — the flattening equiv `finSigmaFinEquiv`
 carries the chunk families to the flat batch the opening actually combines, exactly
 as inside `chunked_batch_soundness`).
@@ -277,26 +278,26 @@ theorem kimchiProof_sound_algebraic [Field F] [AddCommGroup G]
     (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
     (comms : IndexComms (Fin nc → G)) (hvk : VKCorresponds σ nc comms idx)
     (pub : Fin idx.publicCount → F)
-    (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
+    (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
     (hpubC : ∀ c : Fin nc,
       pubC c = commitPolyMaskedChunk σ (-(idx.pubPoly pub)) (c : ℕ))
-    (aw₀ : Fin 44 → Fin nc → Fin (2 ^ σ.k) → F) (ρw₀ : Fin 44 → Fin nc → F)
+    (aw₀ : Fin batchRows → Fin nc → Fin (2 ^ σ.k) → F) (ρw₀ : Fin batchRows → Fin nc → F)
     (hrep : ∀ i c, commit σ (aw₀ i c) (ρw₀ i c) = batchC wC zC pubC comms i c) :
     ∃ (badB : Finset F) (badG : F → Finset F) (badA : F → F → Finset F)
         (badZ : F → F → F → Polynomial F → Finset F)
-        (badXi : (Fin 44 → Fin nc → Fin 2 → F) → F → Finset F)
-        (badR : (Fin 44 → Fin nc → Fin 2 → F) → F → F → Finset F),
+        (badXi : (Fin batchRows → Fin nc → Fin evalPts → F) → F → Finset F)
+        (badR : (Fin batchRows → Fin nc → Fin evalPts → F) → F → F → Finset F),
       (badB.card ≤ 7 * (n - idx.zkRows)
         ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
         ∧ (∀ β γ,
             (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
         ∧ (∀ β γ α (t : Polynomial F), t.natDegree < 7 * n →
             (badZ β γ α t).card ≤ Index.degreeBound n)
-        ∧ (∀ (E : Fin 44 → Fin nc → Fin 2 → F) (ζ : F),
-            (badXi E ζ).card ≤ 2 * ((∑ _ : Fin 44, nc) - 1))
-        ∧ (∀ (E : Fin 44 → Fin nc → Fin 2 → F) (ζ ξ : F), (badR E ζ ξ).card ≤ 1))
+        ∧ (∀ (E : Fin batchRows → Fin nc → Fin evalPts → F) (ζ : F),
+            (badXi E ζ).card ≤ 2 * ((∑ _ : Fin batchRows, nc) - 1))
+        ∧ (∀ (E : Fin batchRows → Fin nc → Fin evalPts → F) (ζ ξ : F), (badR E ζ ξ).card ≤ 1))
       ∧ ∀ (β γ α : F) (t : Polynomial F) (ζ : F)
-          (E : Fin 44 → Fin nc → Fin 2 → F) (ξ r : F) (A : Prop),
+          (E : Fin batchRows → Fin nc → Fin evalPts → F) (ξ r : F) (A : Prop),
           β ∉ badB → γ ∉ badG β → α ∉ badA β γ → ζ ∉ badZ β γ α t →
           ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) →
           t.natDegree < 7 * n →
@@ -514,29 +515,29 @@ theorem kimchiProof_sound_algebraic_ft [Field F] [AddCommGroup G]
     (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
     (comms : IndexComms (Fin nc → G)) (hvk : VKCorresponds σ nc comms idx)
     (pub : Fin idx.publicCount → F)
-    (wC : Fin 15 → Fin nc → G) (zC pubC : Fin nc → G)
+    (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
     (hpubC : ∀ c : Fin nc,
       pubC c = commitPolyMaskedChunk σ (-(idx.pubPoly pub)) (c : ℕ))
-    (aw₀ : Fin 44 → Fin nc → Fin (2 ^ σ.k) → F) (ρw₀ : Fin 44 → Fin nc → F)
+    (aw₀ : Fin batchRows → Fin nc → Fin (2 ^ σ.k) → F) (ρw₀ : Fin batchRows → Fin nc → F)
     (hrep : ∀ i c, commit σ (aw₀ i c) (ρw₀ i c) = batchC wC zC pubC comms i c)
     {nt : ℕ} (hnt0 : 0 < nt) (hnt : nt ≤ 7 * nc)
     (TC : Fin nt → G) (aT : Fin nt → Fin (2 ^ σ.k) → F) (ρT : Fin nt → F)
     (hTC : ∀ j, commit σ (aT j) (ρT j) = TC j) :
     ∃ (badB : Finset F) (badG : F → Finset F) (badA : F → F → Finset F)
         (badZ : F → F → F → Polynomial F → Finset F)
-        (badXi : (Fin 44 → Fin nc → Fin 2 → F) → F → Finset F)
-        (badR : (Fin 44 → Fin nc → Fin 2 → F) → F → F → Finset F),
+        (badXi : (Fin batchRows → Fin nc → Fin evalPts → F) → F → Finset F)
+        (badR : (Fin batchRows → Fin nc → Fin evalPts → F) → F → F → Finset F),
       (badB.card ≤ 7 * (n - idx.zkRows)
         ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
         ∧ (∀ β γ,
             (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
         ∧ (∀ β γ α (t : Polynomial F), t.natDegree < 7 * n →
             (badZ β γ α t).card ≤ Index.degreeBound n)
-        ∧ (∀ (E : Fin 44 → Fin nc → Fin 2 → F) (ζ : F),
-            (badXi E ζ).card ≤ 2 * ((∑ _ : Fin 44, nc) - 1))
-        ∧ (∀ (E : Fin 44 → Fin nc → Fin 2 → F) (ζ ξ : F), (badR E ζ ξ).card ≤ 1))
+        ∧ (∀ (E : Fin batchRows → Fin nc → Fin evalPts → F) (ζ : F),
+            (badXi E ζ).card ≤ 2 * ((∑ _ : Fin batchRows, nc) - 1))
+        ∧ (∀ (E : Fin batchRows → Fin nc → Fin evalPts → F) (ζ ξ : F), (badR E ζ ξ).card ≤ 1))
       ∧ ∀ (β γ α ζ : F)
-          (E : Fin 44 → Fin nc → Fin 2 → F) (ξ r : F) (A : Prop)
+          (E : Fin batchRows → Fin nc → Fin evalPts → F) (ξ r : F) (A : Prop)
           (aft : Fin (2 ^ σ.k) → F) (ρft : F),
           β ∉ badB → γ ∉ badG β → α ∉ badA β γ →
           ζ ∉ badZ β γ α (ftChunkAssembly σ.k nt aT) →

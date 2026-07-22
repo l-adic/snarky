@@ -142,7 +142,7 @@ table — the decoded `WitnessExport`, and exactly the assignment arguments of
 `Satisfies`. -/
 structure Witness (n publicCount : ℕ) where
   pub : Fin publicCount → Fp
-  tab : Fin n → Fin 15 → Fp
+  tab : Fin n → Fin wCols → Fp
 
 /-- A dumped circuit ingested into the index model: the index (constructed by decision)
 and the dumped witness, at the padded two-power domain bundled as `n` (the domain size

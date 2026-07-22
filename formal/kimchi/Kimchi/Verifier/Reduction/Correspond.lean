@@ -36,8 +36,8 @@ noncomputable def commitPoly (σ : SRS G) (p : Polynomial F) : G :=
 seven permutation columns, the fifteen coefficient columns, and the six gate
 selectors. -/
 structure IndexComms (G : Type*) where
-  sigma : Fin 7 → G
-  coefficients : Fin 15 → G
+  sigma : Fin permCols → G
+  coefficients : Fin wCols → G
   generic : G
   poseidon : G
   completeAdd : G

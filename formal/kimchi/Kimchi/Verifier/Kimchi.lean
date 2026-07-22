@@ -61,13 +61,13 @@ production — serde-enforced, so type-level here. Optional gates and lookup dat
 declared deferrals. -/
 structure ProofEvaluations (E : Type*) where
   /-- The 15 witness-column evaluation pairs, `w[i] = (wᵢ(ζ), wᵢ(ζω))`. -/
-  w : Vector (PointEvaluations E) 15
+  w : Vector (PointEvaluations E) wCols
   /-- The permutation-aggregation evaluation pair. -/
   z : PointEvaluations E
   /-- The first 6 σ-polynomial evaluation pairs (the 7th is commitment-only). -/
-  s : Vector (PointEvaluations E) 6
+  s : Vector (PointEvaluations E) sigmaRows
   /-- The 15 coefficient-column evaluation pairs. -/
-  coefficients : Vector (PointEvaluations E) 15
+  coefficients : Vector (PointEvaluations E) coeffCols
   genericSelector : PointEvaluations E
   poseidonSelector : PointEvaluations E
   completeAddSelector : PointEvaluations E
@@ -89,7 +89,7 @@ inductive PubEvalSrc (C : Ipa.CommitmentCurve) (nc : ℕ) where
 `KimchiProof.check nc k` returns, and the only thing the verifier body and the
 soundness layer ever read. -/
 structure KimchiProof (C : Ipa.CommitmentCurve) (nc k : ℕ) where
-  wComm : Vector (Vector C.Point nc) 15
+  wComm : Vector (Vector C.Point nc) wCols
   zComm : Vector C.Point nc
   /-- The quotient chunks: genuinely variable-length, so the bound is carried. -/
   tComm : Array C.Point
@@ -103,15 +103,15 @@ structure KimchiProof (C : Ipa.CommitmentCurve) (nc k : ℕ) where
 structure KimchiVK (C : Ipa.CommitmentCurve) (nc : ℕ) where
   domainLog2 : ℕ
   omega : C.ScalarField
-  sigmaComm : Vector (Vector C.Point nc) 7
-  coefficientsComm : Vector (Vector C.Point nc) 15
+  sigmaComm : Vector (Vector C.Point nc) permCols
+  coefficientsComm : Vector (Vector C.Point nc) coeffCols
   genericComm : Vector C.Point nc
   poseidonComm : Vector C.Point nc
   completeAddComm : Vector C.Point nc
   mulComm : Vector C.Point nc
   emulComm : Vector C.Point nc
   endomulScalarComm : Vector C.Point nc
-  shifts : Vector C.ScalarField 7
+  shifts : Vector C.ScalarField permCols
   zkRows : ℕ
   endo : C.ScalarField
   digest : C.BaseField
@@ -361,7 +361,7 @@ def zipSeg {nc : ℕ} (comm : Vector C.Point nc)
 /-- The 43 tail rows of the batch stream in `to_batch` order (`z`, the six selectors,
 witness `0–14`, coefficients `0–14`, σ `0–5`), each row its per-chunk segments. -/
 def tailRowsOf {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k) :
-    Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) 43 :=
+    Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) tailRowCount :=
   (⟨#[zipSeg C cp.zComm cp.evals.z,
       zipSeg C cvk.genericComm cp.evals.genericSelector,
       zipSeg C cvk.poseidonComm cp.evals.poseidonSelector,
@@ -369,10 +369,10 @@ def tailRowsOf {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k) :
       zipSeg C cvk.mulComm cp.evals.mulSelector,
       zipSeg C cvk.emulComm cp.evals.emulSelector,
       zipSeg C cvk.endomulScalarComm cp.evals.endomulScalarSelector], rfl⟩
-    : Vector _ 7)
+    : Vector _ litRowCount)
   ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
   ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
-  ++ ((cvk.sigmaComm.take 6).zip cp.evals.s).map (fun x => zipSeg C x.1 x.2)
+  ++ ((cvk.sigmaComm.take sigmaRows).zip cp.evals.s).map (fun x => zipSeg C x.1 x.2)
 
 /-! ## The verifier -/
 
@@ -400,7 +400,7 @@ def kimchiVerify {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     let pubEvals := publicEvalChunks cp n cvk.omega o.zeta zetaOmega zetaN zetaOmegaN pub
     let pubEval0 := combineAt zetaM pubEvals.zeta.toArray
     let e := cp.linEvals zetaM zetaOmegaM
-    let shifts : Fin 7 → C.ScalarField := fun i => cvk.shifts[i]
+    let shifts : Fin permCols → C.ScalarField := fun i => cvk.shifts[i]
     let ftEval0 := Kimchi.Protocol.Linearization.ftEval0 n cvk.zkRows cvk.omega shifts
       cvk.endo (mdsOfParams cvk.frParams) o.alpha o.beta o.gamma o.zeta pubEval0 e
     let (v, u) := frOracles C cvk cp o.digest pubEvals
@@ -409,16 +409,16 @@ def kimchiVerify {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     let fComm := cvk.sigmaComm[6].map (fun P => pScalar.val • P)
     let ftComm := Ipa.combineCommitments C zetaM fComm.toArray
       - (zetaN - 1).val • Ipa.combineCommitments C zetaM cp.tComm
-    let stream : Vector (C.Point × C.ScalarField × C.ScalarField) (nc + 1 + 43 * nc) :=
+    let stream : Vector (C.Point × C.ScalarField × C.ScalarField) (nc + 1 + tailRowCount * nc) :=
       (Vector.ofFn fun c : Fin nc =>
           (publicComm[c], pubEvals.zeta[c], pubEvals.zetaOmega[c]))
         ++ (⟨#[(ftComm, ftEval0, cp.ftEval1)], rfl⟩
             : Vector (C.Point × C.ScalarField × C.ScalarField) 1)
         ++ (tailRowsOf C cvk cp).flatten
-    let inp : Ipa.Input C σ.k (nc + 1 + 43 * nc) 2 :=
+    let inp : Ipa.Input C σ.k (nc + 1 + tailRowCount * nc) evalPts :=
       { commitments := stream.map (·.1)
         xs := ⟨#[o.zeta, zetaOmega], rfl⟩
-        evals := stream.map (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector _ 2))
+        evals := stream.map (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector _ evalPts))
         polyscale := v
         evalscale := u
         proof := cp.opening }

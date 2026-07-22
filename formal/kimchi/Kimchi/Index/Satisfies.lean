@@ -38,7 +38,7 @@ quotient-layer `rowWitness` layout transcriptions (two-row where the gate spans 
 rows); Poseidon's round constants are its coefficient row (`rcMap`); `endoMul` consumes
 the index's `endoBase`. -/
 def rowSatisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
-    (wTab : Fin n → Fin 15 → F) (i : Fin n) : Prop :=
+    (wTab : Fin n → Fin wCols → F) (i : Fin n) : Prop :=
   match (idx.gates i).typ with
   | .zero => True
   | .generic =>
@@ -53,25 +53,25 @@ def rowSatisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
   | .endoScalar => Gate.EndoScalar.Holds (EndoScalar.rowWitness wTab i)
 
 /-- The value of a permuted cell: column `c.1` (of the seven) at row `c.2`. -/
-def cellValue (wTab : Fin n → Fin 15 → F) (c : Fin 7 × Fin n) : F :=
+def cellValue (wTab : Fin n → Fin wCols → F) (c : Fin permCols × Fin n) : F :=
   wTab c.2 (Fin.castLE (by omega) c.1)
 
 /-- A witness table satisfies an index at a public input: every row's gate holds, every
 permuted cell equals its wired-to cell, and the public rows pin the first column. -/
 def Satisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
-    (wTab : Fin n → Fin 15 → F) : Prop :=
+    (wTab : Fin n → Fin wCols → F) : Prop :=
   (∀ i, rowSatisfies idx pub wTab i)
-    ∧ (∀ c : Fin 7 × Fin n, cellValue wTab (idx.wiringMap c) = cellValue wTab c)
+    ∧ (∀ c : Fin permCols × Fin n, cellValue wTab (idx.wiringMap c) = cellValue wTab c)
     ∧ (∀ i : Fin idx.publicCount,
         wTab ⟨(i : ℕ), by have h1 := idx.public_le; have h2 := idx.zk_le; omega⟩ 0 = pub i)
 
 instance (idx : Index F n) (pub : Fin idx.publicCount → F)
-    (wTab : Fin n → Fin 15 → F) (i : Fin n) :
+    (wTab : Fin n → Fin wCols → F) (i : Fin n) :
     Decidable (rowSatisfies idx pub wTab i) := by
   unfold rowSatisfies
   split <;> infer_instance
 
-instance (idx : Index F n) (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin 15 → F) :
+instance (idx : Index F n) (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin wCols → F) :
     Decidable (Satisfies idx pub wTab) := by
   unfold Satisfies
   infer_instance

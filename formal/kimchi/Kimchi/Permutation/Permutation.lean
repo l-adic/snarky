@@ -1,3 +1,4 @@
+import Kimchi.Columns
 import Kimchi.Aggregate
 import Kimchi.SchwartzZippel
 import Kimchi.GrandProduct
@@ -61,12 +62,13 @@ noncomputable def zkpm (ω : F) (n zkRows : ℕ) : Polynomial F :=
 
 /-- The shift-side row product `∏ᵢ (wᵢ + γ + β·shiftᵢ·X)` — the identity-permutation side
 of the accumulator recurrence. -/
-noncomputable def shiftSide (w : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (β γ : F) :
+noncomputable def shiftSide (w : Fin permCols → Polynomial F)
+    (shifts : Fin permCols → F) (β γ : F) :
     Polynomial F :=
   ∏ i, (w i + C γ + C β * C (shifts i) * X)
 
 /-- The σ-side row product `∏ᵢ (wᵢ + γ + β·σᵢ)`. -/
-noncomputable def sigmaSide (w σ : Fin 7 → Polynomial F) (β γ : F) : Polynomial F :=
+noncomputable def sigmaSide (w σ : Fin permCols → Polynomial F) (β γ : F) : Polynomial F :=
   ∏ i, (w i + C γ + C β * σ i)
 
 /-- The next-row view `z(ωX)` of the accumulator. -/
@@ -202,7 +204,7 @@ theorem lagNumer_mul_sub {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0
 `ft_eval0`, deployed orientation and scale), with the boundary rows `r₀`
 (initialisation) and `r₁` (final value) explicit. -/
 noncomputable def constraints {n : ℕ} (ω : F) (zkRows : ℕ) (z : Polynomial F)
-    (w σ : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (β γ : F) (r₀ r₁ : Fin n) :
+    (w σ : Fin permCols → Polynomial F) (shifts : Fin permCols → F) (β γ : F) (r₀ r₁ : Fin n) :
     Fin 3 → Polynomial F :=
   ![zkpm ω n zkRows * (z * shiftSide w shifts β γ - shiftRow ω z * sigmaSide w σ β γ),
     (z - 1) * lagNumer ω r₀,
@@ -259,7 +261,7 @@ private theorem eval_eq_one_of_boundary {ω : F} {n : ℕ} (hω : IsPrimitiveRoo
 `z(ωⁱ⁺¹) · sigmaSide(ωⁱ) = z(ωⁱ) · shiftSide(ωⁱ)` for `i < n - zkRows`. -/
 private theorem step_of_aggregation {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     {zkRows : ℕ} (hzk2 : 2 ≤ zkRows) (hzkn : zkRows ≤ n)
-    (z : Polynomial F) (w σ : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (β γ : F)
+    (z : Polynomial F) (w σ : Fin permCols → Polynomial F) (shifts : Fin permCols → F) (β γ : F)
     (h : zH F n ∣ zkpm ω n zkRows
       * (z * shiftSide w shifts β γ - shiftRow ω z * sigmaSide w σ β γ))
     {i : ℕ} (hi : i < n - zkRows) :
@@ -284,7 +286,7 @@ derandomized eval-check form (`soundness`) and the full-aggregate assembly
 (`Kimchi/Index/Aggregate.lean`) both enter through. -/
 theorem soundness_of_dvd {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     {zkRows : ℕ} (hzk2 : 2 ≤ zkRows) (hzkn : zkRows ≤ n)
-    (z : Polynomial F) (w σ : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (β γ : F)
+    (z : Polynomial F) (w σ : Fin permCols → Polynomial F) (shifts : Fin permCols → F) (β γ : F)
     (hdvd : ∀ s, zH F n ∣ constraints ω zkRows z w σ shifts β γ
       (⟨0, hn⟩ : Fin n) ⟨n - zkRows, by omega⟩ s) :
     ∏ j ∈ Finset.range (n - zkRows), (shiftSide w shifts β γ).eval (ω ^ j)
@@ -307,7 +309,7 @@ through the interior of the mask. The converse of `soundness_of_dvd`, pointwise 
 `(β, γ)`. -/
 theorem constraints_dvd_of_prods {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     {zkRows : ℕ} (hzk2 : 2 ≤ zkRows) (hzkn : zkRows ≤ n)
-    (w σ : Fin 7 → Polynomial F) (shifts : Fin 7 → F) (β γ : F)
+    (w σ : Fin permCols → Polynomial F) (shifts : Fin permCols → F) (β γ : F)
     (hden : ∀ j < n, (sigmaSide w σ β γ).eval (ω ^ j) ≠ 0)
     (hprod : ∏ j ∈ Finset.range (n - zkRows), (shiftSide w shifts β γ).eval (ω ^ j)
       = ∏ j ∈ Finset.range (n - zkRows), (sigmaSide w σ β γ).eval (ω ^ j)) :

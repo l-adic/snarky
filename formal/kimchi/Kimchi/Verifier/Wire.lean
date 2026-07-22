@@ -45,7 +45,7 @@ basic gate set: fixed dimensions serde-typed, chunk payloads unchecked arrays. L
 data and `prev_challenges` are absent — declared deferrals of this transcription. -/
 structure KimchiProof (C : Ipa.CommitmentCurve) where
   /-- The 15 witness-column commitments (`w_comm: [PolyComm; COLUMNS]`). -/
-  wComm : Vector (PolyComm C) 15
+  wComm : Vector (PolyComm C) wCols
   /-- The permutation-aggregation commitment (`z_comm`). -/
   zComm : PolyComm C
   /-- The quotient commitment (`t_comm`); its chunk count is checked `≤ 7 · nc`
@@ -76,9 +76,9 @@ structure KimchiVK (C : Ipa.CommitmentCurve) where
   /-- The domain generator `ω` (`domain.group_gen`). -/
   omega : C.ScalarField
   /-- The 7 permutation commitments (`sigma_comm`). -/
-  sigmaComm : Vector (PolyComm C) 7
+  sigmaComm : Vector (PolyComm C) permCols
   /-- The 15 coefficient commitments (`coefficients_comm`). -/
-  coefficientsComm : Vector (PolyComm C) 15
+  coefficientsComm : Vector (PolyComm C) coeffCols
   genericComm : PolyComm C
   poseidonComm : PolyComm C
   completeAddComm : PolyComm C
@@ -86,7 +86,7 @@ structure KimchiVK (C : Ipa.CommitmentCurve) where
   emulComm : PolyComm C
   endomulScalarComm : PolyComm C
   /-- The 7 permutation shifts (`shift`). -/
-  shifts : Vector C.ScalarField 7
+  shifts : Vector C.ScalarField permCols
   /-- The number of zero-knowledge rows (`zk_rows`) — nc-dependent in production
   (constraints.rs:774–784), carried as data here. -/
   zkRows : ℕ

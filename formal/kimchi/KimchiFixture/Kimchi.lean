@@ -81,7 +81,7 @@ def parseKimchiProof (C : Ipa.CommitmentCurve) (j : Json) :
   let pubEvals ← match (fld "evals_public").toOption with
     | some pj => some <$> pe pj
     | none => pure none
-  return { wComm := ← parseSized "w_comm" 15
+  return { wComm := ← parseSized "w_comm" wCols
              (← parseArrOf (parseComm C) (← fld "w_comm"))
            zComm := ← parseComm C (← fld "z_comm")
            tComm := ← parseArrOf (parsePt C) (← fld "t_comm")
@@ -103,9 +103,9 @@ def parseVK (C : Ipa.CommitmentCurve)
   let n ← nat "n"
   return { domainLog2 := Nat.log2 n
            omega := ← parseZMod (← fld "omega")
-           sigmaComm := ← parseSized "sigma_comm" 7
+           sigmaComm := ← parseSized "sigma_comm" permCols
              (← parseArrOf (parseComm C) (← fld "sigma_comm"))
-           coefficientsComm := ← parseSized "coefficients_comm" 15
+           coefficientsComm := ← parseSized "coefficients_comm" coeffCols
              (← parseArrOf (parseComm C) (← fld "coefficients_comm"))
            genericComm := ← parseComm C (← fld "generic_comm")
            poseidonComm := ← parseComm C (← fld "psm_comm")

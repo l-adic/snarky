@@ -167,7 +167,7 @@ private theorem shift_cell_le [NeZero n] (idx : Index F n) (v : Fin n → F) :
 
 /-- **CompleteAdd entries ≤ 8n.** Every entry is degree `≤ 3(n−1)` over cells `< n`. -/
 private theorem addComplete_entry_le [NeZero n] (idx : Index F n)
-    (wTab : Fin n → Fin 15 → F) :
+    (wTab : Fin n → Fin wCols → F) :
     ∀ E ∈ idx.gateConstraints wTab .completeAdd, E.natDegree ≤ 8 * n := by
   intro E hE
   have b0 : (AddComplete.polyWitness idx.omega wTab).x1.natDegree ≤ n - 1 := cell_le idx _
@@ -188,7 +188,7 @@ private theorem addComplete_entry_le [NeZero n] (idx : Index F n)
 /-- **VarBaseMul entries ≤ 8n.** The decomposition is linear; each of the five bit-blocks is
 bounded by `singleBit_entry_le` (its deepest entry reaches degree `6(n−1)`). -/
 private theorem varBaseMul_entry_le [NeZero n] (idx : Index F n)
-    (wTab : Fin n → Fin 15 → F) :
+    (wTab : Fin n → Fin wCols → F) :
     ∀ E ∈ idx.gateConstraints wTab .varBaseMul, E.natDegree ≤ 8 * n := by
   intro E hE
   have hd : 6 * (n - 1) ≤ 8 * n := by omega
@@ -234,7 +234,7 @@ private theorem varBaseMul_entry_le [NeZero n] (idx : Index F n)
 /-- **EndoMul entries ≤ 8n.** Every entry is degree `≤ 4(n−1)` over cells `< n` and the
 constant `endo = C endoBase`. -/
 private theorem endoMul_entry_le [NeZero n] (idx : Index F n)
-    (wTab : Fin n → Fin 15 → F) :
+    (wTab : Fin n → Fin wCols → F) :
     ∀ E ∈ idx.gateConstraints wTab .endoMul, E.natDegree ≤ 8 * n := by
   intro E hE
   have hxT : (EndoMul.polyWitness idx.omega wTab).xT.natDegree ≤ n - 1 := cell_le idx _
@@ -262,7 +262,7 @@ private theorem endoMul_entry_le [NeZero n] (idx : Index F n)
 /-- **Generic entries ≤ 8n.** Two entries, each degree `≤ 3(n−1)` (a bilinear `q₃·(w₀·w₁)`
 term) over cell interpolants `< n`. -/
 private theorem generic_entry_le [NeZero n] (idx : Index F n)
-    (wTab : Fin n → Fin 15 → F) :
+    (wTab : Fin n → Fin wCols → F) :
     ∀ E ∈ idx.gateConstraints wTab .generic, E.natDegree ≤ 8 * n := by
   intro E hE
   have hw0 : (columnPoly idx.omega (fun j => wTab j 0)).natDegree ≤ n - 1 := cell_le idx _
@@ -300,7 +300,7 @@ private theorem generic_entry_le [NeZero n] (idx : Index F n)
 `a`/`b`-folds through the cubic `cPoly`/`dPoly`); the eight `crumbPoly` entries are degree
 `4(n−1)`. -/
 private theorem endoScalar_entry_le [NeZero n] (idx : Index F n)
-    (wTab : Fin n → Fin 15 → F) :
+    (wTab : Fin n → Fin wCols → F) :
     ∀ E ∈ idx.gateConstraints wTab .endoScalar, E.natDegree ≤ 8 * n := by
   intro E hE
   set w := EndoScalar.polyWitness idx.omega wTab with hwdef
@@ -371,7 +371,7 @@ private theorem poseidon_round_comp_le {d : ℕ} {lhs r a b c m0 m1 m2 : Polynom
 a round output, whose degree-7 s-box over cells `< n` reaches `7(n−1) < 8n`. Each entry is
 discharged by `poseidon_round_comp_le`. -/
 private theorem poseidon_entry_le [NeZero n] (idx : Index F n)
-    (wTab : Fin n → Fin 15 → F) :
+    (wTab : Fin n → Fin wCols → F) :
     ∀ E ∈ idx.gateConstraints wTab .poseidon, E.natDegree ≤ 8 * n := by
   intro E hE
   have s01 : (Poseidon.polyWitness idx.omega wTab).s0.1.natDegree ≤ n - 1 := cell_le idx _
@@ -444,7 +444,7 @@ its length) has `natDegree ≤ 8·n`, dispatched to the six per-gate entry bound
 `getD_natDegree_le` (slots past a gate's length are the zero polynomial). `8·n` covers the
 deepest gate (Poseidon's s-box). -/
 private theorem gateConstraints_getD_natDegree_le [NeZero n] (idx : Index F n)
-    (wTab : Fin n → Fin 15 → F) (g : GateType) (k : ℕ) :
+    (wTab : Fin n → Fin wCols → F) (g : GateType) (k : ℕ) :
     ((idx.gateConstraints wTab g).getD k 0).natDegree ≤ 8 * n := by
   cases g with
   | zero => simp [Index.gateConstraints]
@@ -467,7 +467,7 @@ difference) and `(z−1)·lagNumer`, each `≤ 9n`. -/
 Each summand is `< n` (selector) times `≤ 8n` (entry, `gateConstraints_getD_natDegree_le`),
 so `≤ (n−1) + 8n < 9n`; the subtracted public interpolant is `< n`. -/
 private theorem gateMember_natDegree_le [NeZero n] (idx : Index F n)
-    (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin 15 → F) (k : ℕ) :
+    (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin wCols → F) (k : ℕ) :
     (idx.gateMember pub wTab k).natDegree ≤ degreeBound n := by
   unfold Index.gateMember
   refine le_trans (natDegree_sub_le _ _) (max_le ?_ ?_)
@@ -499,7 +499,7 @@ wiring data has `natDegree ≤ 9n` when the accumulator `z` has degree `< n`. Me
 `z·shiftSide − shiftRow z·sigmaSide` product difference (degree `≤ 8n`), so `≤ 9n`; members
 `1,2` are `(z − 1)·lagNumer` of degree `< 2n ≤ 9n`. -/
 private theorem permConstraints_natDegree_le [NeZero n] (idx : Index F n)
-    (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (hz : z.natDegree < n) (β γ : F)
+    (wTab : Fin n → Fin wCols → F) (z : Polynomial F) (hz : z.natDegree < n) (β γ : F)
     (s : Fin 3) :
     (Permutation.constraints idx.omega idx.zkRows z (idx.permWitnessPoly wTab)
         (Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm) idx.shifts β γ
@@ -508,9 +508,9 @@ private theorem permConstraints_natDegree_le [NeZero n] (idx : Index F n)
   set w := idx.permWitnessPoly wTab with hw
   set σ := Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm with hσ
   -- The cell interpolants underneath both row products have `natDegree < n`.
-  have hwdeg : ∀ i : Fin 7, (w i).natDegree < n := fun i => by
+  have hwdeg : ∀ i : Fin permCols, (w i).natDegree < n := fun i => by
     rw [hw]; exact columnPoly_natDegree_lt idx.omega_prim _
-  have hσdeg : ∀ i : Fin 7, (σ i).natDegree < n := fun i => by
+  have hσdeg : ∀ i : Fin permCols, (σ i).natDegree < n := fun i => by
     rw [hσ]; exact columnPoly_natDegree_lt idx.omega_prim _
   -- The three-factor zk mask has degree ≤ 3, and `3 ≤ n` via `zk_three` + `zk_le`.
   have hzkbound : (zkpm idx.omega n idx.zkRows).natDegree ≤ n := by
@@ -531,7 +531,7 @@ private theorem permConstraints_natDegree_le [NeZero n] (idx : Index F n)
   have hshift : (shiftSide w idx.shifts β γ).natDegree ≤ 7 * n := by
     unfold shiftSide
     refine le_trans (natDegree_prod_le _ _) ?_
-    have hfac : ∀ i ∈ (Finset.univ : Finset (Fin 7)),
+    have hfac : ∀ i ∈ (Finset.univ : Finset (Fin permCols)),
         (w i + C γ + C β * C (idx.shifts i) * X).natDegree ≤ n := by
       intro i _
       refine le_trans (natDegree_add_le _ _) (max_le ?_ ?_)
@@ -544,7 +544,7 @@ private theorem permConstraints_natDegree_le [NeZero n] (idx : Index F n)
   have hsigma : (sigmaSide w σ β γ).natDegree ≤ 7 * n := by
     unfold sigmaSide
     refine le_trans (natDegree_prod_le _ _) ?_
-    have hfac : ∀ i ∈ (Finset.univ : Finset (Fin 7)),
+    have hfac : ∀ i ∈ (Finset.univ : Finset (Fin permCols)),
         (w i + C γ + C β * σ i).natDegree ≤ n := by
       intro i _
       refine le_trans (natDegree_add_le _ _) (max_le ?_ ?_)
@@ -594,7 +594,7 @@ variable [NeZero n]
 above, a permutation member (`permConstraints_natDegree_le`). This is the per-member input
 to the aggregate bound. -/
 private theorem fullFamily_natDegree_le (idx : Index F n) (pub : Fin idx.publicCount → F)
-    (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (hz : z.natDegree < n) (β γ : F)
+    (wTab : Fin n → Fin wCols → F) (z : Polynomial F) (hz : z.natDegree < n) (β γ : F)
     (k : Fin (gateAlphaCount + permAlphaCount)) :
     (idx.fullFamily pub wTab z β γ k).natDegree ≤ degreeBound n := by
   unfold Index.fullFamily
@@ -608,7 +608,7 @@ private theorem fullFamily_natDegree_le (idx : Index F n) (pub : Fin idx.publicC
 `degreeBound n`: `natDegree_sum_le` reduces to a per-summand bound, `natDegree_smul_le`
 drops the scalar `α^c`, and each member is bounded by `fullFamily_natDegree_le`. -/
 theorem aggregate_natDegree_le (idx : Index F n) (pub : Fin idx.publicCount → F)
-    (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (hz : z.natDegree < n) (β γ : F)
+    (wTab : Fin n → Fin wCols → F) (z : Polynomial F) (hz : z.natDegree < n) (β γ : F)
     (α : F) :
     (aggregate α (idx.fullFamily pub wTab z β γ)).natDegree ≤ degreeBound n := by
   unfold aggregate

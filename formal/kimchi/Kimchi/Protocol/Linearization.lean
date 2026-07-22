@@ -26,12 +26,12 @@ variable {F : Type*} [Field F]
 /-- The combined evaluations the scalar side reads: each column at `ζ`, with the witness
 and the accumulator also at `ζω`. -/
 structure Evals (F : Type*) where
-  w : Fin 15 → F
-  wOmega : Fin 15 → F
+  w : Fin wCols → F
+  wOmega : Fin wCols → F
   z : F
   zOmega : F
-  s : Fin 6 → F
-  coeffs : Fin 15 → F
+  s : Fin sigmaRows → F
+  coeffs : Fin coeffCols → F
   genericSelector : F
   poseidonSelector : F
   completeAddSelector : F
@@ -82,7 +82,7 @@ def gateLinearization (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F) (α : F)
 row of the permutation recurrence, at the first permutation alpha. -/
 def permScalar (β γ α zkpmZ : F) (e : Evals F) : F :=
   -(e.zOmega * β * α ^ 21 * zkpmZ
-    * ∏ i : Fin 6, (γ + β * e.s i + e.w ⟨i, by omega⟩))
+    * ∏ i : Fin sigmaRows, (γ + β * e.s i + e.w ⟨i, by omega⟩))
 
 /-- The permutation vanishing polynomial at a point:
 `zkpm(ζ) = (ζ − ω^{n−zkRows})(ζ − ω^{n−zkRows+1})(ζ − ω^{n−1})` — production's
@@ -94,15 +94,15 @@ def zkpmEval (n zkRows : ℕ) (ω ζ : F) : F :=
 /-- The verifier's `ft(ζ)`: the permutation recurrence read at `ζ`, minus the public-input
 evaluation, plus the accumulator boundary quotient pinning the two masked rows, minus the
 gate linearization. -/
-def ftEval0 (n zkRows : ℕ) (ω : F) (shifts : Fin 7 → F) (endo : F)
+def ftEval0 (n zkRows : ℕ) (ω : F) (shifts : Fin permCols → F) (endo : F)
     (mds : Kimchi.Gate.Poseidon.Mds F) (α β γ ζ pubEval : F) (e : Evals F) : F :=
   let zkpmZ := zkpmEval n zkRows ω ζ
   let zeta1m1 := ζ ^ n - 1
   let wBoundary := ω ^ (n - zkRows)
   let sigmaSide := ((e.w 6 + γ) * e.zOmega * α ^ 21 * zkpmZ)
-    * ∏ i : Fin 6, (β * e.s i + e.w ⟨i, by omega⟩ + γ)
+    * ∏ i : Fin sigmaRows, (β * e.s i + e.w ⟨i, by omega⟩ + γ)
   let shiftSide := (α ^ 21 * zkpmZ * e.z)
-    * ∏ i : Fin 7, (γ + β * ζ * shifts i + e.w ⟨i, by omega⟩)
+    * ∏ i : Fin permCols, (γ + β * ζ * shifts i + e.w ⟨i, by omega⟩)
   let boundary := ((zeta1m1 * α ^ 22 * (ζ - wBoundary) + zeta1m1 * α ^ 23 * (ζ - 1))
     * (1 - e.z)) / ((ζ - wBoundary) * (ζ - 1))
   sigmaSide - pubEval - shiftSide + boundary - gateLinearization endo mds α e
