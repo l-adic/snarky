@@ -65,10 +65,11 @@ theorem alphaCombo_eq_sum_getD (α : F) :
 /-- The gate linearization: each gate's α-weighted constraint list, evaluated at the
 cell environment and weighted by its evaluated selector. Gates share the alpha pool, so
 every list starts at `α⁰`. -/
-def gateLinearization (endo α : F) (e : Evals F) : F :=
+def gateLinearization (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F) (α : F)
+    (e : Evals F) : F :=
   e.genericSelector * alphaCombo α ((Generic.argument (F := F)).constraints (evalEnv e))
     + e.poseidonSelector
-      * alphaCombo α ((Poseidon.argument (F := F)).constraints (evalEnv e))
+      * alphaCombo α ((Poseidon.argument mds).constraints (evalEnv e))
     + e.completeAddSelector
       * alphaCombo α ((AddComplete.argument (F := F)).constraints (evalEnv e))
     + e.mulSelector
@@ -92,7 +93,7 @@ def zkpmEval (n zkRows : ℕ) (ω ζ : F) : F :=
 evaluation, plus the accumulator boundary quotient pinning the two masked rows, minus the
 gate linearization. -/
 def ftEval0 (n zkRows : ℕ) (ω : F) (shifts : Fin 7 → F) (endo : F)
-    (α β γ ζ pubEval : F) (e : Evals F) : F :=
+    (mds : Kimchi.Gate.Poseidon.Mds F) (α β γ ζ pubEval : F) (e : Evals F) : F :=
   let zkpmZ := zkpmEval n zkRows ω ζ
   let zeta1m1 := ζ ^ n - 1
   let wBoundary := ω ^ (n - zkRows)
@@ -102,6 +103,6 @@ def ftEval0 (n zkRows : ℕ) (ω : F) (shifts : Fin 7 → F) (endo : F)
     * ∏ i : Fin 7, (γ + β * ζ * shifts i + e.w ⟨i, by omega⟩)
   let boundary := ((zeta1m1 * α ^ 22 * (ζ - wBoundary) + zeta1m1 * α ^ 23 * (ζ - 1))
     * (1 - e.z)) / ((ζ - wBoundary) * (ζ - 1))
-  sigmaSide - pubEval - shiftSide + boundary - gateLinearization endo α e
+  sigmaSide - pubEval - shiftSide + boundary - gateLinearization endo mds α e
 
 end Kimchi.Protocol.Linearization

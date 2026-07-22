@@ -66,8 +66,8 @@ noncomputable def gateConstraints (idx : Index F n) (wTab : Fin n → Fin 15 →
   | .zero => []
   | .generic => (Generic.argument (F := F)).constraints
       (polyEnv idx.omega wTab idx.coeffTable)
-  | .poseidon => Gate.Poseidon.constraints (Poseidon.rcPoly idx.omega idx.coeffTable)
-      (Poseidon.polyWitness idx.omega wTab)
+  | .poseidon => Gate.Poseidon.constraints (idx.mds.map C)
+      (Poseidon.rcPoly idx.omega idx.coeffTable) (Poseidon.polyWitness idx.omega wTab)
   | .completeAdd => Gate.AddComplete.constraints (AddComplete.polyWitness idx.omega wTab)
   | .varBaseMul => Gate.VarBaseMul.constraints (VarBaseMul.polyWitness idx.omega wTab)
   | .endoMul => Gate.EndoMul.constraints (C idx.endoBase)
@@ -252,7 +252,7 @@ private theorem rowSatisfies_of_gateMember_dvd (idx : Index F n) (pub : Fin idx.
     have hvan := idx.gateConstraints_vanish_of_dvd pub wTab hdvd (i := i) (by simp [htyp])
     rw [htyp] at hvan
     exact forall_mem_zero_of_bridge
-      ((Poseidon.argument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i) hvan
+      ((Poseidon.argument idx.mds).bridge idx.omega_prim wTab idx.coeffTable i) hvan
   | completeAdd =>
     have hvan := idx.gateConstraints_vanish_of_dvd pub wTab hdvd (i := i) (by simp [htyp])
     rw [htyp] at hvan
@@ -565,7 +565,7 @@ private theorem gateConstraints_vanish_of_rowSatisfies (idx : Index F n)
   | poseidon =>
     rw [htyp] at hrow
     exact forall_mem_eval_of_bridge
-      ((Poseidon.argument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i) hrow
+      ((Poseidon.argument idx.mds).bridge idx.omega_prim wTab idx.coeffTable i) hrow
   | completeAdd =>
     rw [htyp] at hrow
     exact forall_mem_eval_of_bridge

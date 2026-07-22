@@ -1,5 +1,6 @@
 import Kimchi.Protocol.Linearization
 import Bulletproof.Wire
+import Kimchi.Verifier.Kimchi
 import FixtureKit.Parse
 import Lean.Data.Json
 
@@ -89,7 +90,9 @@ def main : IO Unit := do
           * alphaCombo α ((Kimchi.Lift.Gate.Generic.argument (F := F)).constraints gEnv),
           ← gateTarget "generic"),
         ("poseidon", e.poseidonSelector
-          * alphaCombo α ((Kimchi.Lift.Gate.Poseidon.argument (F := F)).constraints gEnv),
+          * alphaCombo α ((Kimchi.Lift.Gate.Poseidon.argument
+              (Kimchi.Verifier.mdsOfParams Kimchi.Verifier.KimchiVesta.frParams)).constraints
+            gEnv),
           ← gateTarget "poseidon"),
         ("completeAdd", e.completeAddSelector
           * alphaCombo α ((Kimchi.Lift.Gate.AddComplete.argument (F := F)).constraints gEnv),
@@ -108,8 +111,9 @@ def main : IO Unit := do
     let hGates := gates.all fun (_, mine, target) => mine = target
     let hZkpm := decide (zkpmEval n zkRows ω ζ = zkpmZ)
     let hPerm := decide (permScalar β γ α zkpmZ e = permTarget)
-    let hConst := decide (gateLinearization endo α e = constTarget)
-    let hFt := decide (ftEval0 n zkRows ω shifts endo α β γ ζ pubEval e = ftEval0Target)
+    let mds := Kimchi.Verifier.mdsOfParams Kimchi.Verifier.KimchiVesta.frParams
+    let hConst := decide (gateLinearization endo mds α e = constTarget)
+    let hFt := decide (ftEval0 n zkRows ω shifts endo mds α β γ ζ pubEval e = ftEval0Target)
     -- The assembled acceptance identity — the point-bridge (`verifierEquation_iff`)
     -- instantiated numerically on the real proof. The quotient evaluation t(ζ) cancels:
     -- permScalar·σ₆(ζ) − ft_eval0 must equal the aggregate Σ αᵏ·memberₖ(ζ), the left
@@ -123,7 +127,7 @@ def main : IO Unit := do
         - e.zOmega * (∏ i : Fin 7, (wF i + γ + β * sigmas i)))
       let m1 := (e.z - 1) * ((ζ ^ n - 1) / (ζ - 1))
       let m2 := (e.z - 1) * ((ζ ^ n - 1) / (ζ - ω ^ (n - zkRows)))
-      let rhs := gateLinearization endo α e + pubEval
+      let rhs := gateLinearization endo mds α e + pubEval
         + α ^ 21 * m0 + α ^ 22 * m1 + α ^ 23 * m2
       decide (permScalar β γ α zkpmZ e * sigma6Z - ftEval0Target = rhs)
     dbgTrace s!"{path}: zkpm: {if hZkpm then "✓" else "✗"}, \

@@ -1,4 +1,5 @@
 import Kimchi.Permutation.Wiring
+import Kimchi.Gate.Poseidon
 
 /-!
 # The kimchi index: the circuit as data
@@ -91,6 +92,11 @@ structure _root_.Kimchi.Index (F : Type*) [Field F] (n : ℕ) where
   gate. The scalar-field eigenvalue `λ` is challenge-expansion data (the sponge's
   `Spec.lam`), not index data. -/
   endoBase : F
+  /-- The Poseidon-round MDS matrix — per-curve data like `endoBase`: production
+  evaluates the gate expression with `G::sponge_params().mds`, the PROOF curve's
+  scalar-side table (`fp_kimchi` for Vesta proofs, `fq_kimchi` for Pallas proofs).
+  Data only, no law — the wire correspondence pins it to the deployed table. -/
+  mds : Gate.Poseidon.Mds F
   shifts : Fin 7 → F
   omega_prim : IsPrimitiveRoot omega n
   zk_pos : 0 < zkRows
@@ -193,7 +199,8 @@ theorem sigmaPoly_eq_wiring (idx : Index F n) (col : Fin 7) :
 boundary: the generator and shift laws through the `Wiring.lean` certificates, the rest
 by their `Fintype`/`Decidable` instances. `none` exactly when some law fails. -/
 def build? [DecidableEq F] (gates : Fin n → GateRow F n) (publicCount zkRows : ℕ)
-    (omega endoBase : F) (shifts : Fin 7 → F) : Option (Index F n) :=
+    (omega endoBase : F) (mds : Gate.Poseidon.Mds F) (shifts : Fin 7 → F) :
+    Option (Index F n) :=
   if h : (∃ k < n + 1, n = 2 ^ k)
       ∧ primitiveRootCertificate omega n = true
       ∧ cosetShiftsCertificate shifts n = true
@@ -211,7 +218,7 @@ def build? [DecidableEq F] (gates : Fin n → GateRow F n) (publicCount zkRows :
       isPrimitiveRoot_of_certificate'
         (let ⟨k, _, hk⟩ := h.1; ⟨k, hk⟩) h.2.1
     some { gates := gates, publicCount := publicCount, zkRows := zkRows
-           omega := omega, endoBase := endoBase, shifts := shifts
+           omega := omega, endoBase := endoBase, mds := mds, shifts := shifts
            omega_prim := homega
            zk_pos := h.2.2.2.1
            zk_le := h.2.2.2.2.1

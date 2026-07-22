@@ -263,7 +263,7 @@ theorem kimchiProof_sound_algebraic {F G : Type*} [Field F] [AddCommGroup G]
           (permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
               * (idx.sigmaPoly 6).eval ζ
             - (ζ ^ n - 1) * t.eval ζ
-            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
+            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase idx.mds α β γ
                 ζ (-((idx.pubPoly pub).eval ζ)) (claimedEvals E)) →
           Satisfies idx pub
             (extractTable idx.omega fun col => rowPoly (aw₀ (wRow col))) := by
@@ -466,7 +466,7 @@ theorem kimchiProof_sound_algebraic_ft {F G : Type*} [Field F] [AddCommGroup G]
             = permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
                 • Cσ6 - (ζ ^ n - 1) • ∑ j : Fin 7, (ζ ^ n) ^ (j : ℕ) • TC j) →
           (innerProduct aft (evalVector (2 ^ σ.k) ζ)
-            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
+            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase idx.mds α β γ
                 ζ (-((idx.pubPoly pub).eval ζ)) (claimedEvals E)) →
           Satisfies idx pub
             (extractTable idx.omega fun col => rowPoly (aw₀ (wRow col))) := by
@@ -480,7 +480,7 @@ theorem kimchiProof_sound_algebraic_ft {F G : Type*} [Field F] [AddCommGroup G]
   obtain ⟨htdeg, hteq⟩ := ft_identity_of_chunks σ hbind (idx.sigmaPoly 6) hσ₆ Cσ6 hCσ6
     TC aT ρT hTC
     (permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)) ζ
-    (ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ ζ
+    (ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase idx.mds α β γ ζ
       (-((idx.pubPoly pub).eval ζ)) (claimedEvals E)) n hk aft ρft hftc hftv
   exact himp β γ α (ftChunkAssembly σ.k aT) ζ E ξ r A hβ hγ hα hζ hζ1 hζb htdeg
     hξ hr hFS hAcc hteq

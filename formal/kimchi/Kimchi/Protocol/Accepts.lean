@@ -36,7 +36,7 @@ def Accepts (idx : Index F n) (pub : Fin idx.publicCount → F)
   permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) E
       * ((Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) 6).eval ζ
     - (ζ ^ n - 1) * t.eval ζ
-  = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ ζ
+  = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase idx.mds α β γ ζ
       (-((idx.pubPoly pub).eval ζ)) E
 
 end Kimchi.Protocol
