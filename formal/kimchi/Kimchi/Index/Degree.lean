@@ -409,15 +409,15 @@ private theorem poseidon_entry_le [NeZero n] (idx : Index F n)
   have r41 : (Poseidon.rcPoly idx.omega idx.coeffTable 4).1.natDegree ≤ n - 1 := cell_le idx _
   have r42 : (Poseidon.rcPoly idx.omega idx.coeffTable 4).2.1.natDegree ≤ n - 1 := cell_le idx _
   have r43 : (Poseidon.rcPoly idx.omega idx.coeffTable 4).2.2.natDegree ≤ n - 1 := cell_le idx _
-  have hm00 : (Gate.Poseidon.m00 : Polynomial F).natDegree = 0 := by simp [Gate.Poseidon.m00]
-  have hm01 : (Gate.Poseidon.m01 : Polynomial F).natDegree = 0 := by simp [Gate.Poseidon.m01]
-  have hm02 : (Gate.Poseidon.m02 : Polynomial F).natDegree = 0 := by simp [Gate.Poseidon.m02]
-  have hm10 : (Gate.Poseidon.m10 : Polynomial F).natDegree = 0 := by simp [Gate.Poseidon.m10]
-  have hm11 : (Gate.Poseidon.m11 : Polynomial F).natDegree = 0 := by simp [Gate.Poseidon.m11]
-  have hm12 : (Gate.Poseidon.m12 : Polynomial F).natDegree = 0 := by simp [Gate.Poseidon.m12]
-  have hm20 : (Gate.Poseidon.m20 : Polynomial F).natDegree = 0 := by simp [Gate.Poseidon.m20]
-  have hm21 : (Gate.Poseidon.m21 : Polynomial F).natDegree = 0 := by simp [Gate.Poseidon.m21]
-  have hm22 : (Gate.Poseidon.m22 : Polynomial F).natDegree = 0 := by simp [Gate.Poseidon.m22]
+  have hm00 : ((idx.mds.map C).m00 : Polynomial F).natDegree = 0 := natDegree_C _
+  have hm01 : ((idx.mds.map C).m01 : Polynomial F).natDegree = 0 := natDegree_C _
+  have hm02 : ((idx.mds.map C).m02 : Polynomial F).natDegree = 0 := natDegree_C _
+  have hm10 : ((idx.mds.map C).m10 : Polynomial F).natDegree = 0 := natDegree_C _
+  have hm11 : ((idx.mds.map C).m11 : Polynomial F).natDegree = 0 := natDegree_C _
+  have hm12 : ((idx.mds.map C).m12 : Polynomial F).natDegree = 0 := natDegree_C _
+  have hm20 : ((idx.mds.map C).m20 : Polynomial F).natDegree = 0 := natDegree_C _
+  have hm21 : ((idx.mds.map C).m21 : Polynomial F).natDegree = 0 := natDegree_C _
+  have hm22 : ((idx.mds.map C).m22 : Polynomial F).natDegree = 0 := natDegree_C _
   have hd : 7 * (n - 1) ≤ 8 * n := by omega
   simp only [Index.gateConstraints, Gate.Poseidon.constraints, Gate.Poseidon.round,
     Gate.Poseidon.sbox, List.mem_cons, List.not_mem_nil, or_false] at hE

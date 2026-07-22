@@ -814,7 +814,7 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point)
             ≠ idx.omega ^ (n - idx.zkRows) →
           (runOracles IpaVesta.curve σ vk p pub).zeta ^ n ≠ 1 →
           Satisfies idx (pubView idx pub) wTab) := by
-  obtain ⟨hvk, homega, hzk, hshift, hendo⟩ := hvk
+  obtain ⟨hvk, homega, hzk, hshift, hendo, hmds⟩ := hvk
   -- (1) reflect the run; pin the batch width and the domain size
   have hrun := kimchiVerify_reflects IpaVesta.curve σ vk p pub hacc
   have hsize : (runInput IpaVesta.curve σ vk p pub).commitments.size = 45 := by
@@ -874,7 +874,7 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point)
   have hce := claimedEvals_runReindex_eq σ vk p pub hrun hsize
   unfold runPScalar runFtEval0 runFtEval0P at hteq0
   rw [runPubEvals_fst_eq σ vk p pub idx homega hn hpub hζn, hn, hzk, homega, hendo,
-    hshift, ← hce] at hteq0
+    hmds, hshift, ← hce] at hteq0
   -- (8) the per-row pins, at the consumer's two eval points
   have hpt : (runInput IpaVesta.curve σ vk p pub).pointFn
       = ![(runOracles IpaVesta.curve σ vk p pub).zeta,
@@ -952,7 +952,7 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point)
             ≠ idx.omega ^ (n - idx.zkRows) →
           (runOracles IpaPallas.curve σ vk p pub).zeta ^ n ≠ 1 →
           Satisfies idx (pubView idx pub) wTab) := by
-  obtain ⟨hvk, homega, hzk, hshift, hendo⟩ := hvk
+  obtain ⟨hvk, homega, hzk, hshift, hendo, hmds⟩ := hvk
   -- (1) reflect the run; pin the batch width and the domain size
   have hrun := kimchiVerify_reflects IpaPallas.curve σ vk p pub hacc
   have hsize : (runInput IpaPallas.curve σ vk p pub).commitments.size = 45 := by
@@ -1012,7 +1012,7 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point)
   have hce := claimedEvals_runReindex_eq σ vk p pub hrun hsize
   unfold runPScalar runFtEval0 runFtEval0P at hteq0
   rw [runPubEvals_fst_eq σ vk p pub idx homega hn hpub hζn, hn, hzk, homega, hendo,
-    hshift, ← hce] at hteq0
+    hmds, hshift, ← hce] at hteq0
   -- (8) the per-row pins, at the consumer's two eval points
   have hpt : (runInput IpaPallas.curve σ vk p pub).pointFn
       = ![(runOracles IpaPallas.curve σ vk p pub).zeta,

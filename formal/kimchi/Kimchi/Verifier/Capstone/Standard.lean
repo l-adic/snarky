@@ -262,7 +262,7 @@ private theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK
           (permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
               * (idx.sigmaPoly 6).eval ζ
             - (ζ ^ n - 1) * t.eval ζ
-            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
+            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase idx.mds α β γ
                 ζ (-((idx.pubPoly (pubView idx pub)).eval ζ)) (claimedEvals E)) →
           Satisfies idx (pubView idx pub) wTab :=
   kimchiProof_sound σ idx hk hbind vk.comms hvk (pubView idx pub) wC
@@ -305,7 +305,7 @@ private theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas
           (permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (claimedEvals E)
               * (idx.sigmaPoly 6).eval ζ
             - (ζ ^ n - 1) * t.eval ζ
-            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase α β γ
+            = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase idx.mds α β γ
                 ζ (-((idx.pubPoly (pubView idx pub)).eval ζ)) (claimedEvals E)) →
           Satisfies idx (pubView idx pub) wTab :=
   kimchiProof_sound σ idx hk hbind vk.comms hvk (pubView idx pub) wC
@@ -361,7 +361,7 @@ theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
           * (idx.sigmaPoly 6).eval (runOracles IpaVesta.curve σ vk p pub).zeta
         - ((runOracles IpaVesta.curve σ vk p pub).zeta ^ n - 1)
             * t.eval (runOracles IpaVesta.curve σ vk p pub).zeta
-        = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase
+        = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase idx.mds
             (runOracles IpaVesta.curve σ vk p pub).alpha
             (runOracles IpaVesta.curve σ vk p pub).beta
             (runOracles IpaVesta.curve σ vk p pub).gamma
@@ -434,7 +434,7 @@ theorem kimchiPallas_run_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
           * (idx.sigmaPoly 6).eval (runOracles IpaPallas.curve σ vk p pub).zeta
         - ((runOracles IpaPallas.curve σ vk p pub).zeta ^ n - 1)
             * t.eval (runOracles IpaPallas.curve σ vk p pub).zeta
-        = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase
+        = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase idx.mds
             (runOracles IpaPallas.curve σ vk p pub).alpha
             (runOracles IpaPallas.curve σ vk p pub).beta
             (runOracles IpaPallas.curve σ vk p pub).gamma
