@@ -1,6 +1,7 @@
 import Mathlib
 import Bulletproof.Soundness
-import Kimchi.Verifier.Reduction.Soundness
+import Kimchi.Verifier.Reduction.Binding
+import Kimchi.Protocol.Equation
 
 /-!
 # Composed soundness, chunked (`nc ≥ 1`)
@@ -41,6 +42,49 @@ open Polynomial Bulletproof Kimchi.Index Kimchi.Protocol.Linearization
   Kimchi.Protocol.Equation Kimchi.Verifier
 
 variable {F G : Type*}
+
+/-! ## Cross-point uniqueness -/
+
+/-- **Cross-point binding uniqueness**: two extracted witness pairs committing to the
+same point carry the same row polynomial. From the no-DL-relation binding hypothesis via
+`commitmentBinding_iff_no_relation` (the pair equality is consumed through
+`congrArg Prod.fst`, mirroring `bound_eq_of_commitPoly`). Consumed wherever a commitment
+is FIXED across the challenge grid: the witness rows and, per `(β, γ)`, the accumulator
+row. Shared with the chunked reduction (`Reduction/Chunked.lean`), which applies it per
+chunk. -/
+theorem bound_unique [Field F] [AddCommGroup G] [Module F G] (σ : SRS G)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
+    {a a' : Fin (2 ^ σ.k) → F} {ρ ρ' : F}
+    (h : commit σ a ρ = commit σ a' ρ') : rowPoly a = rowPoly a' := by
+  have hbd : CommitmentBinding (F := F) σ :=
+    (commitmentBinding_iff_no_relation σ).mpr hbind
+  have hpair := @hbd (a, ρ) (a', ρ') h
+  have ha : a = a' := congrArg Prod.fst hpair
+  rw [ha]
+
+/-- The six selector commitments of a verifier key, in gate enumeration order.
+Generic over the commitment carrier, so the chunked reduction reuses it at
+`Fin nc → G`. -/
+def selComm (comms : IndexComms G) : Fin 6 → G :=
+  ![comms.generic, comms.poseidon, comms.completeAdd, comms.varBaseMul,
+    comms.endoMul, comms.endoScalar]
+
+/-- The gate type of the `j`-th selector row, in the same enumeration order as
+`selComm`. -/
+def selGate : Fin 6 → GateType :=
+  ![.generic, .poseidon, .completeAdd, .varBaseMul, .endoMul, .endoScalar]
+
+theorem evalsExt {e e' : Evals F} (h1 : e.w = e'.w) (h2 : e.wOmega = e'.wOmega)
+    (h3 : e.z = e'.z) (h4 : e.zOmega = e'.zOmega) (h5 : e.s = e'.s)
+    (h6 : e.coeffs = e'.coeffs) (h7 : e.genericSelector = e'.genericSelector)
+    (h8 : e.poseidonSelector = e'.poseidonSelector)
+    (h9 : e.completeAddSelector = e'.completeAddSelector)
+    (h10 : e.mulSelector = e'.mulSelector) (h11 : e.emulSelector = e'.emulSelector)
+    (h12 : e.endoScalarSelector = e'.endoScalarSelector) : e = e' := by
+  cases e
+  cases e'
+  simp only [Evals.mk.injEq]
+  exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12⟩
 
 /-! ## The chunked indexer -/
 

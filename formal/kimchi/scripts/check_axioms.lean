@@ -43,7 +43,6 @@ def roots : List Name :=
     `Kimchi.Gate.Poseidon.sound, `Kimchi.Gate.Poseidon.complete,
     `Kimchi.Index.satisfies_iff_fullFamily_dvd,
     `Kimchi.Protocol.sound,
-    `Kimchi.Verifier.kimchiProof_sound_of_openings,
     `Kimchi.Verifier.Chunked.kimchiProof_sound_of_openings,
     `Kimchi.Verifier.Chunked.kimchiProof_sound,
     `Kimchi.Verifier.Chunked.kimchiProof_sound_algebraic,

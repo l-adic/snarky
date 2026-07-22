@@ -1,5 +1,6 @@
 import Mathlib
-import Kimchi.Verifier.Reduction.Soundness
+import Kimchi.Verifier.Reduction.Binding
+import Kimchi.Protocol.Equation
 import Kimchi.Verifier.Kimchi
 import Bulletproof.Reflection
 
