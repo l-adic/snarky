@@ -45,8 +45,8 @@ transcript shape — same declared assumption (the Poseidon sponge provides a va
 Fiat–Shamir transform), stated at the transcript the deployed chunked verifier actually
 runs; the statement mentions only the run's own wire data. -/
 axiom kimchi_fiat_shamir_vesta (σ : SRS IpaVesta.Point) {nc : ℕ}
-    (cvk : KimchiVK.Checked IpaVesta.curve nc)
-    (cp : KimchiProof.Checked IpaVesta.curve nc) (pub : Array Fp) :
+    (cvk : KimchiVK IpaVesta.curve nc)
+    (cp : KimchiProof IpaVesta.curve nc) (pub : Array Fp) :
   FiatShamirTreeB σ
     (combinedCommitment (runInput IpaVesta.curve σ cvk cp pub).polyscale
       (runInput IpaVesta.curve σ cvk cp pub).commitmentFn)
@@ -59,8 +59,8 @@ axiom kimchi_fiat_shamir_vesta (σ : SRS IpaVesta.Point) {nc : ℕ}
 /-- **AXIOM (Fiat–Shamir, Poseidon instantiation over the deployed chunked run,
 Pallas).** The Pallas-side twin of `kimchi_fiat_shamir_vesta`. -/
 axiom kimchi_fiat_shamir_pallas (σ : SRS IpaPallas.Point) {nc : ℕ}
-    (cvk : KimchiVK.Checked IpaPallas.curve nc)
-    (cp : KimchiProof.Checked IpaPallas.curve nc) (pub : Array Fq) :
+    (cvk : KimchiVK IpaPallas.curve nc)
+    (cp : KimchiProof IpaPallas.curve nc) (pub : Array Fq) :
   FiatShamirTreeB σ
     (combinedCommitment (runInput IpaPallas.curve σ cvk cp pub).polyscale
       (runInput IpaPallas.curve σ cvk cp pub).commitmentFn)
@@ -110,7 +110,7 @@ private theorem getBang_map {α β : Type*} [Inhabited α] [Inhabited β] (g : �
 /-- The flat position of the single-chunk ft row: `nc` (right after the public row's
 `nc` chunks). Reads the triple off `flatRows (runLogicalP …)`. -/
 private theorem flatRows_ft_read (σ : SRS C.Point) {nc : ℕ}
-    (cvk : KimchiVK.Checked C nc) (cp : KimchiProof.Checked C nc)
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc)
     (pub : Array C.ScalarField)
     (pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)) :
     (flatRows C (runLogicalP C σ cvk cp pub pe))[(nc : ℕ)]!
@@ -199,7 +199,7 @@ private theorem flatRows_ft_read (σ : SRS C.Point) {nc : ℕ}
 
 /-- The flat stream has more than `nc` rows (the public block plus the ft singleton). -/
 private theorem flatRows_size_lt (σ : SRS C.Point) {nc : ℕ}
-    (cvk : KimchiVK.Checked C nc) (cp : KimchiProof.Checked C nc)
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc)
     (pub : Array C.ScalarField)
     (pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)) :
     (nc : ℕ) < (flatRows C (runLogicalP C σ cvk cp pub pe)).size := by
@@ -269,8 +269,8 @@ representation of the constructed ft commitment `runFtComm` (the DOUBLE collapse
 The ft row sits at flat position `nc`, right after the public row's chunks
 (`flatRows_ft_read`). -/
 theorem ft_opening_of_reflected {C : Ipa.CommitmentCurve} [Module C.ScalarField C.Point]
-    (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK.Checked C nc)
-    (cp : KimchiProof.Checked C nc) (pub : Array C.ScalarField)
+    (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc) (pub : Array C.ScalarField)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → C.ScalarField) (wh : C.ScalarField),
       DLRelation σ w wh → w = 0 ∧ wh = 0)
     (hacc : Ipa.verifyFrom C σ (runWarm C σ cvk cp pub)
@@ -334,14 +334,12 @@ flat batch rows, and good combination challenges yield the ft opening. The run i
 reflected trust-free (`kimchiVerify_reflects`); the transcript tree is
 `kimchi_fiat_shamir_vesta` at the run's own warm data — the sole axiom
 consumed. The chunked Vesta FS-reflection root. -/
-theorem ft_opening_of_reflected_vesta (σ : SRS IpaVesta.Point)
-    (vk : KimchiVesta.VK) (p : KimchiVesta.Proof) (pub : Array Fp)
-    {cvk : KimchiVK.Checked IpaVesta.curve (runNc IpaVesta.curve σ vk)}
-    {cp : KimchiProof.Checked IpaVesta.curve (runNc IpaVesta.curve σ vk)}
-    (hcvk : vk.check (runNc IpaVesta.curve σ vk) = some cvk)
-    (hcp : p.check (runNc IpaVesta.curve σ vk) = some cp)
+theorem ft_opening_of_reflected_vesta (σ : SRS IpaVesta.Point) {nc : ℕ}
+    (cvk : KimchiVK IpaVesta.curve nc) (cp : KimchiProof IpaVesta.curve nc)
+    (pub : Array Fp)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (hacc : KimchiVesta.verify σ vk p pub = true)
+    (hacc : Ipa.verifyFrom IpaVesta.curve σ (runWarm IpaVesta.curve σ cvk cp pub)
+      (runInput IpaVesta.curve σ cvk cp pub) = true)
     (aRef : Fin (runInput IpaVesta.curve σ cvk cp pub).commitments.size
       → Fin (2 ^ σ.k) → Fp)
     (ρRef : Fin (runInput IpaVesta.curve σ cvk cp pub).commitments.size → Fp)
@@ -358,23 +356,17 @@ theorem ft_opening_of_reflected_vesta (σ : SRS IpaVesta.Point)
       commit σ aft ρft = runFtComm IpaVesta.curve σ cvk cp pub
         ∧ innerProduct aft
             (evalVector (2 ^ σ.k) (runOracles IpaVesta.curve σ cvk cp pub).zeta)
-            = runFtEval0 IpaVesta.curve σ cvk cp pub := by
-  obtain ⟨cvk₀, cp₀, hσk, hcvk₀, hcp₀, hlag, hpubn, haccept⟩ :=
-    kimchiVerify_reflects IpaVesta.curve σ vk p pub hacc
-  obtain rfl : cvk = cvk₀ := Option.some.inj (hcvk.symm.trans hcvk₀)
-  obtain rfl : cp = cp₀ := Option.some.inj (hcp.symm.trans hcp₀)
-  exact ft_opening_of_reflected σ cvk cp pub hbind haccept aRef ρRef hrep
+            = runFtEval0 IpaVesta.curve σ cvk cp pub :=
+  ft_opening_of_reflected σ cvk cp pub hbind hacc aRef ρRef hrep
     (kimchi_fiat_shamir_vesta σ cvk cp pub) hξ hr
 
 /-- **The ft opening of the deployed chunked Pallas verifier.** The Pallas twin. -/
-theorem ft_opening_of_reflected_pallas (σ : SRS IpaPallas.Point)
-    (vk : KimchiPallas.VK) (p : KimchiPallas.Proof) (pub : Array Fq)
-    {cvk : KimchiVK.Checked IpaPallas.curve (runNc IpaPallas.curve σ vk)}
-    {cp : KimchiProof.Checked IpaPallas.curve (runNc IpaPallas.curve σ vk)}
-    (hcvk : vk.check (runNc IpaPallas.curve σ vk) = some cvk)
-    (hcp : p.check (runNc IpaPallas.curve σ vk) = some cp)
+theorem ft_opening_of_reflected_pallas (σ : SRS IpaPallas.Point) {nc : ℕ}
+    (cvk : KimchiVK IpaPallas.curve nc) (cp : KimchiProof IpaPallas.curve nc)
+    (pub : Array Fq)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (hacc : KimchiPallas.verify σ vk p pub = true)
+    (hacc : Ipa.verifyFrom IpaPallas.curve σ (runWarm IpaPallas.curve σ cvk cp pub)
+      (runInput IpaPallas.curve σ cvk cp pub) = true)
     (aRef : Fin (runInput IpaPallas.curve σ cvk cp pub).commitments.size
       → Fin (2 ^ σ.k) → Fq)
     (ρRef : Fin (runInput IpaPallas.curve σ cvk cp pub).commitments.size → Fq)
@@ -391,12 +383,8 @@ theorem ft_opening_of_reflected_pallas (σ : SRS IpaPallas.Point)
       commit σ aft ρft = runFtComm IpaPallas.curve σ cvk cp pub
         ∧ innerProduct aft
             (evalVector (2 ^ σ.k) (runOracles IpaPallas.curve σ cvk cp pub).zeta)
-            = runFtEval0 IpaPallas.curve σ cvk cp pub := by
-  obtain ⟨cvk₀, cp₀, hσk, hcvk₀, hcp₀, hlag, hpubn, haccept⟩ :=
-    kimchiVerify_reflects IpaPallas.curve σ vk p pub hacc
-  obtain rfl : cvk = cvk₀ := Option.some.inj (hcvk.symm.trans hcvk₀)
-  obtain rfl : cp = cp₀ := Option.some.inj (hcp.symm.trans hcp₀)
-  exact ft_opening_of_reflected σ cvk cp pub hbind haccept aRef ρRef hrep
+            = runFtEval0 IpaPallas.curve σ cvk cp pub :=
+  ft_opening_of_reflected σ cvk cp pub hbind hacc aRef ρRef hrep
     (kimchi_fiat_shamir_pallas σ cvk cp pub) hξ hr
 
 /-! ## The uniform-block read toolkit
@@ -530,8 +518,8 @@ def streamPos (nc : ℕ) (i : Fin 44) (c : ℕ) : ℕ :=
 
 section StreamRead
 
-variable {σ : SRS C.Point} {nc : ℕ} {cvk : KimchiVK.Checked C nc}
-  {cp : KimchiProof.Checked C nc} {pub : Array C.ScalarField}
+variable {σ : SRS C.Point} {nc : ℕ} {cvk : KimchiVK C nc}
+  {cp : KimchiProof C nc} {pub : Array C.ScalarField}
   {pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)}
 
 /-- The row-triple flattener of the stream. -/
@@ -546,8 +534,8 @@ private def zipRow {nc : ℕ} :
   fun x => (x.1.toArray, x.2.zeta.toArray, x.2.zetaOmega.toArray)
 
 /-- The literal seven-row block of the decomposition, named for the region reads. -/
-private def litRows {nc : ℕ} (cvk : KimchiVK.Checked C nc)
-    (cp : KimchiProof.Checked C nc) :
+private def litRows {nc : ℕ} (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc) :
     Array (Array C.Point × Array C.ScalarField × Array C.ScalarField) :=
   #[(cp.zComm.toArray, cp.evals.z.zeta.toArray, cp.evals.z.zetaOmega.toArray),
     (cvk.genericComm.toArray, cp.evals.genericSelector.zeta.toArray,
@@ -566,8 +554,8 @@ private def litRows {nc : ℕ} (cvk : KimchiVK.Checked C nc)
 /-- **The stream decomposition**: the flat rows of the run's 45 logical rows are the
 six-region append tree — the public block, the ft singleton, the seven literal rows
 (`z` + six selectors), then the witness / coefficient / σ zip blocks. -/
-private theorem stream_decomp (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK.Checked C nc)
-    (cp : KimchiProof.Checked C nc) (pub : Array C.ScalarField)
+private theorem stream_decomp (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc) (pub : Array C.ScalarField)
     (pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)) :
     flatRows C (runLogicalP C σ cvk cp pub pe)
       = ((((rowF C ((publicCommitment C σ cvk pub).toArray, pe.zeta.toArray,
@@ -653,8 +641,8 @@ end StreamRead
 
 section RegionReads
 
-variable {σ : SRS C.Point} {nc : ℕ} {cvk : KimchiVK.Checked C nc}
-  {cp : KimchiProof.Checked C nc} {pub : Array C.ScalarField}
+variable {σ : SRS C.Point} {nc : ℕ} {cvk : KimchiVK C nc}
+  {cp : KimchiProof C nc} {pub : Array C.ScalarField}
   {pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)}
 
 /-- Blocks stay inside their region: `q·nc + c < Q·nc`. -/
@@ -1011,9 +999,9 @@ own chunk commitments. The Lagrange pin is what binds the proof-carried public
 evaluations (the public batch row) to the circuit's public input: the verifier
 COMPUTES the public commitment from these key entries. Adjudicated numerically, per
 chunk, by `check_vk_correspond`. -/
-def KimchiVK.Checked.Corresponds {C : Ipa.CommitmentCurve}
+def KimchiVK.Corresponds {C : Ipa.CommitmentCurve}
     [Module C.ScalarField C.Point] {nc : ℕ} {n : ℕ}
-    (σ : SRS C.Point) (cvk : KimchiVK.Checked C nc)
+    (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (idx : Index C.ScalarField n) : Prop :=
   VKCorresponds σ nc cvk.comms idx
     ∧ cvk.omega = idx.omega
@@ -1032,7 +1020,7 @@ verifier's per-chunk public commitment is the per-chunk masked commitment of the
 NEGATED public interpolant — the `pubC` feed of the reduction. The `.val`-scalar
 collapse is supplied per curve (`hsmul`). -/
 theorem publicCommitment_corresponds [Module C.ScalarField C.Point]
-    (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK.Checked C nc)
+    (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
     (pub : Array C.ScalarField) {n : ℕ}
     [NeZero n] (idx : Index C.ScalarField n)
     (hsmul : ∀ (a : C.ScalarField) (P : C.Point), a.val • P = a • P)
@@ -1188,8 +1176,8 @@ theorem publicCommitment_corresponds [Module C.ScalarField C.Point]
 
 section ScalarReconcile
 
-variable {σ : SRS C.Point} {nc : ℕ} {cvk : KimchiVK.Checked C nc}
-  {cp : KimchiProof.Checked C nc} {pub : Array C.ScalarField}
+variable {σ : SRS C.Point} {nc : ℕ} {cvk : KimchiVK C nc}
+  {cp : KimchiProof C nc} {pub : Array C.ScalarField}
   {pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)}
   {v u : C.ScalarField}
 
@@ -1439,8 +1427,8 @@ end ScalarReconcile
 
 section GroupReconcile
 
-variable {σ : SRS C.Point} {nc : ℕ} {cvk : KimchiVK.Checked C nc}
-  {cp : KimchiProof.Checked C nc} {pub : Array C.ScalarField}
+variable {σ : SRS C.Point} {nc : ℕ} {cvk : KimchiVK C nc}
+  {cp : KimchiProof C nc} {pub : Array C.ScalarField}
   {pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)}
 
 /-- **The abstract 44-row chunked batch is the flat stream's commitment column**: at
@@ -1521,12 +1509,13 @@ end GroupReconcile
 private instance : Inhabited IpaVesta.Point := ⟨0⟩
 private instance : Inhabited IpaPallas.Point := ⟨0⟩
 
-/-- **The run-level residue-free root (Vesta)**: from a genuine deployed acceptance
-`KimchiVesta.verify σ vk p pub = true` at production chunking `nc · 2^σ.k = n`, the
-AGM path delivers the guarded `Satisfies idx (pubView idx pub) wTab` — the assembled
-witness table of the algebraic prover's own per-chunk representations. The checked
-records `cvk`/`cp` are named witnesses pinned by the (computable, host-auditable)
-`check` equations — they are what the verifier validated and ran on. The prover
+/-- **The run-level residue-free root (Vesta)**: from a genuine acceptance
+`kimchiVerify σ cvk cp pub = true` of the checked records at production chunking
+`nc · 2^σ.k = n`, the AGM path delivers the guarded
+`Satisfies idx (pubView idx pub) wTab` — the assembled witness table of the algebraic
+prover's own per-chunk representations. A deployed run reaches this root through the
+wire boundary: the client parses with `Wire.{KimchiVK,KimchiProof}.check` (a checked
+record cannot hold a ragged proof) and calls `kimchiVerify` on the result. The prover
 supplies SRS-basis representations of the run's `44·nc + 1` flat segment rows
 (`aRef`/`ρRef`) and of the `tComm` chunks (`aT`/`ρT`); everything else is derived
 from the single reflected run: the openings seam `kimchiProof_sound_of_openings` is
@@ -1535,24 +1524,20 @@ side: the eval pins of the run's one accepted opening), the public row is pinned
 through `publicCommitment_corresponds` and the key's Lagrange chunk pin, and the
 quotient `t := ftChunkAssembly σ.k cp.tComm.size aT` with its Maller identity comes
 from the ft opening through `ft_identity_of_chunks` at the DOUBLE `ζ^{2^σ.k}`
-collapse. The key–index hypothesis is the checked `KimchiVK.Checked.Corresponds` —
+collapse. The key–index hypothesis is the checked `KimchiVK.Corresponds` —
 per-chunk `VKCorresponds`, the scalar pins, and the Lagrange pin. Axioms consumed:
 `kimchi_fiat_shamir_vesta` plus the point-count-backed `Module` instance. No
 `ζⁿ ≠ 1` guard: the public claims are proof-carried batch data, believed only
 through binding — no barycentric reconciliation. The Vesta run-level root. -/
-theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point)
-    (vk : KimchiVesta.VK) (p : KimchiVesta.Proof) (pub : Array Fp)
-    {n : ℕ} [NeZero n] (idx : Index Fp n)
-    {cvk : KimchiVK.Checked IpaVesta.curve (runNc IpaVesta.curve σ vk)}
-    {cp : KimchiProof.Checked IpaVesta.curve (runNc IpaVesta.curve σ vk)}
-    (hcvk : vk.check (runNc IpaVesta.curve σ vk) = some cvk)
-    (hcp : p.check (runNc IpaVesta.curve σ vk) = some cp)
-    (hn : vk.n = n)
+theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point) {nc : ℕ}
+    (cvk : KimchiVK IpaVesta.curve nc) (cp : KimchiProof IpaVesta.curve nc)
+    (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
+    (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n) (hn : cvk.n = n)
     (hvk : cvk.Corresponds σ idx)
     (hpub : pub.size = idx.publicCount)
     (htpos : 0 < cp.tComm.size)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (hacc : KimchiVesta.verify σ vk p pub = true)
+    (hacc : kimchiVerify IpaVesta.curve σ cvk cp pub = true)
     (aRef : Fin (runInput IpaVesta.curve σ cvk cp pub).commitments.size
       → Fin (2 ^ σ.k) → Fp)
     (ρRef : Fin (runInput IpaVesta.curve σ cvk cp pub).commitments.size → Fp)
@@ -1592,52 +1577,40 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point)
             ≠ idx.omega ^ (n - idx.zkRows) →
           Satisfies idx (pubView idx pub) wTab) := by
   obtain ⟨hvkc, homega, hzk, hshift, hendo, hmds, hlag⟩ := hvk
-  -- (1) reflect the run; identify the checked records; chunk arithmetic
-  obtain ⟨cvk₀, cp₀, hσk, hcvk₀, hcp₀, hlagsz, hpubn, haccept⟩ :=
-    kimchiVerify_reflects IpaVesta.curve σ vk p pub hacc
-  obtain rfl : cvk = cvk₀ := Option.some.inj (hcvk.symm.trans hcvk₀)
-  obtain rfl : cp = cp₀ := Option.some.inj (hcp.symm.trans hcp₀)
-  have hnc : 0 < runNc IpaVesta.curve σ vk := Nat.two_pow_pos _
-  have hk : runNc IpaVesta.curve σ vk * 2 ^ σ.k = n := by
-    unfold runNc
-    rw [← pow_add]
-    rw [show vk.domainLog2 - σ.k + σ.k = vk.domainLog2 from by omega]
-    exact hn
-  have hn' : cvk.n = n := by
-    show 2 ^ cvk.domainLog2 = n
-    rw [KimchiVK.check_domainLog2 hcvk]
-    exact hn
-  have hlt : ∀ (i : Fin 44) (c : Fin (runNc IpaVesta.curve σ vk)),
-      streamPos (runNc IpaVesta.curve σ vk) i (c : ℕ)
+  -- (1) the body reflection: the guards and the warm acceptance
+  obtain ⟨hlagsz, hpubn, haccept⟩ :=
+    kimchiVerify_reflects IpaVesta.curve σ cvk cp pub hacc
+  have hlt : ∀ (i : Fin 44) (c : Fin (nc)),
+      streamPos (nc) i (c : ℕ)
         < (runInput IpaVesta.curve σ cvk cp pub).commitments.size := by
     intro i c
-    show streamPos (runNc IpaVesta.curve σ vk) i (c : ℕ)
+    show streamPos (nc) i (c : ℕ)
       < ((flatRows IpaVesta.curve (runLogicalP IpaVesta.curve σ cvk cp pub
           (runPubEvals IpaVesta.curve σ cvk cp pub))).map (·.1)).size
     rw [Array.size_map, stream_size IpaVesta.curve]
     exact streamPos_lt _ i _ c.isLt
   -- (2) the reference openings at the stream positions bind the abstract batch
-  have hbound₀ : ∀ (i : Fin 44) (c : Fin (runNc IpaVesta.curve σ vk)),
-      commit σ (aRef ⟨streamPos (runNc IpaVesta.curve σ vk) i (c : ℕ), hlt i c⟩)
-          (ρRef ⟨streamPos (runNc IpaVesta.curve σ vk) i (c : ℕ), hlt i c⟩)
+  have hbound₀ : ∀ (i : Fin 44) (c : Fin (nc)),
+      commit σ (aRef ⟨streamPos (nc) i (c : ℕ), hlt i c⟩)
+          (ρRef ⟨streamPos (nc) i (c : ℕ), hlt i c⟩)
         = batchC (fun col c => (cp.wComm[col])[c]) (fun c => cp.zComm[c])
             (fun c => (publicCommitment IpaVesta.curve σ cvk pub)[c])
             cvk.comms i c := by
     intro i c
-    rw [hrep ⟨streamPos (runNc IpaVesta.curve σ vk) i (c : ℕ), hlt i c⟩]
+    rw [hrep ⟨streamPos (nc) i (c : ℕ), hlt i c⟩]
     show (runInput IpaVesta.curve σ cvk cp pub).commitments[streamPos
-        (runNc IpaVesta.curve σ vk) i (c : ℕ)]'(hlt i c) = _
+        (nc) i (c : ℕ)]'(hlt i c) = _
     rw [← getElem!_pos (runInput IpaVesta.curve σ cvk cp pub).commitments
-      (streamPos (runNc IpaVesta.curve σ vk) i (c : ℕ)) (hlt i c)]
+      (streamPos (nc) i (c : ℕ)) (hlt i c)]
     show ((flatRows IpaVesta.curve (runLogicalP IpaVesta.curve σ cvk cp pub
         (runPubEvals IpaVesta.curve σ cvk cp pub))).map
-          (·.1))[streamPos (runNc IpaVesta.curve σ vk) i (c : ℕ)]! = _
+          (·.1))[streamPos (nc) i (c : ℕ)]! = _
     rw [getBang_map _ _ _ (by
       rw [stream_size IpaVesta.curve]
       exact streamPos_lt _ i _ c.isLt)]
     exact (batchC_eq_flat IpaVesta.curve i c).symm
   -- (3) the public row pinned through the Lagrange chunk pin
-  have hpubC : ∀ c : Fin (runNc IpaVesta.curve σ vk),
+  have hpubC : ∀ c : Fin (nc),
       (publicCommitment IpaVesta.curve σ cvk pub)[c]
         = commitPolyMaskedChunk σ (-(idx.pubPoly (pubView idx pub))) (c : ℕ) :=
     fun c => publicCommitment_corresponds IpaVesta.curve σ cvk pub idx
@@ -1648,12 +1621,12 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point)
       (fun col c => (cp.wComm[col])[c]) (fun c => cp.zComm[c])
       (fun c => (publicCommitment IpaVesta.curve σ cvk pub)[c])
       hpubC
-      (fun i c => aRef ⟨streamPos (runNc IpaVesta.curve σ vk) i (c : ℕ), hlt i c⟩)
-      (fun i c => ρRef ⟨streamPos (runNc IpaVesta.curve σ vk) i (c : ℕ), hlt i c⟩)
+      (fun i c => aRef ⟨streamPos (nc) i (c : ℕ), hlt i c⟩)
+      (fun i c => ρRef ⟨streamPos (nc) i (c : ℕ), hlt i c⟩)
       hbound₀
   refine ⟨badB, badG, badA, badZ,
-    extractTable idx.omega (fun col => assembledRow σ.k (runNc IpaVesta.curve σ vk)
-      (fun c => aRef ⟨streamPos (runNc IpaVesta.curve σ vk) (wRow col) (c : ℕ),
+    extractTable idx.omega (fun col => assembledRow σ.k (nc)
+      (fun c => aRef ⟨streamPos (nc) (wRow col) (c : ℕ),
         hlt (wRow col) c⟩)),
     hbounds, ?_⟩
   intro hβ hγ hα hζ hζ1 hζb
@@ -1668,24 +1641,24 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point)
     (runInput IpaVesta.curve σ cvk cp pub).evalscale hξ hr a ρ hopen
   -- (6) the ft opening and the Maller identity at the double collapse
   obtain ⟨aft, ρft, hcomm_ft, heval_ft⟩ :=
-    ft_opening_of_reflected_vesta σ vk p pub hcvk hcp hbind hacc aRef ρRef hrep hξ hr
-  have hCσ6 : ∀ c : Fin (runNc IpaVesta.curve σ vk),
+    ft_opening_of_reflected_vesta σ cvk cp pub hbind haccept aRef ρRef hrep hξ hr
+  have hCσ6 : ∀ c : Fin (nc),
       (cvk.sigmaComm[6])[c] = commitPolyChunk σ (idx.sigmaPoly 6) (c : ℕ) :=
     fun c => congrFun (congrArg (fun cm => cm.sigma 6) hvkc) c
   have hσ₆ : (idx.sigmaPoly 6).natDegree
-      < runNc IpaVesta.curve σ vk * 2 ^ σ.k := by
+      < nc * 2 ^ σ.k := by
     rw [hk]
     exact columnPoly_natDegree_lt idx.omega_prim _
   have hcommit : commit σ aft ρft
       = runPScalar IpaVesta.curve σ cvk cp pub
-          • ∑ c : Fin (runNc IpaVesta.curve σ vk),
+          • ∑ c : Fin (nc),
               ((runOracles IpaVesta.curve σ cvk cp pub).zeta ^ 2 ^ σ.k) ^ (c : ℕ)
                 • (cvk.sigmaComm[6])[c]
         - ((runOracles IpaVesta.curve σ cvk cp pub).zeta ^ n - 1)
             • ∑ j : Fin cp.tComm.size,
                 ((runOracles IpaVesta.curve σ cvk cp pub).zeta ^ 2 ^ σ.k) ^ (j : ℕ)
                   • cp.tComm.getD (j : ℕ) 0 :=
-    hcomm_ft.trans (runFtComm_eq IpaVesta.curve Pasta.vesta_smul_val hn')
+    hcomm_ft.trans (runFtComm_eq IpaVesta.curve Pasta.vesta_smul_val hn)
   obtain ⟨htdeg, hteq0⟩ := ft_identity_of_chunks σ hbind (idx.sigmaPoly 6) hσ₆
     (fun c => (cvk.sigmaComm[6])[c]) hCσ6 htpos cp.tComm_le
     (fun j => cp.tComm.getD (j : ℕ) 0) aT ρT hTC
@@ -1710,7 +1683,7 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point)
     unfold runZetaOmegaM runZetaOmega
     rw [powPow2_eq, homega, mul_comm]
   unfold runPScalar runFtEval0 runFtEval0P runPubEval0 runLinEvals at hteq0
-  rw [← hce, ← hcpe, hζM, hζwM, hn', hzk, homega, hendo, hmds, hshift] at hteq0
+  rw [← hce, ← hcpe, hζM, hζwM, hn, hzk, homega, hendo, hmds, hshift] at hteq0
   -- (8) the per-row pins, at the consumer's two eval points
   have hpt : (runInput IpaVesta.curve σ cvk cp pub).pointFn
       = ![(runOracles IpaVesta.curve σ cvk cp pub).zeta,
@@ -1728,35 +1701,31 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point)
     (runOracles IpaVesta.curve σ cvk cp pub).alpha
     (ftChunkAssembly σ.k cp.tComm.size aT)
     (runOracles IpaVesta.curve σ cvk cp pub).zeta
-    (fun (i : Fin 44) (ch : Fin (runNc IpaVesta.curve σ vk)) (j : Fin 2) =>
+    (fun (i : Fin 44) (ch : Fin (nc)) (j : Fin 2) =>
       ((runInputP IpaVesta.curve σ cvk cp pub
           (runPubEvals IpaVesta.curve σ cvk cp pub)
           (runVU IpaVesta.curve σ cvk cp pub).1
           (runVU IpaVesta.curve σ cvk cp pub).2).evals[streamPos
-            (runNc IpaVesta.curve σ vk) i (ch : ℕ)]!)[(j : ℕ)]!)
-    (fun i c => aRef ⟨streamPos (runNc IpaVesta.curve σ vk) i (c : ℕ), hlt i c⟩)
-    (fun i c => ρRef ⟨streamPos (runNc IpaVesta.curve σ vk) i (c : ℕ), hlt i c⟩)
+            (nc) i (ch : ℕ)]!)[(j : ℕ)]!)
+    (fun i c => aRef ⟨streamPos (nc) i (c : ℕ), hlt i c⟩)
+    (fun i c => ρRef ⟨streamPos (nc) i (c : ℕ), hlt i c⟩)
     hβ hγ hα hζ hζ1 hζb htdeg
     (fun i c => ⟨hbound₀ i c,
-      fun j => hpins ⟨streamPos (runNc IpaVesta.curve σ vk) i (c : ℕ), hlt i c⟩ j⟩)
+      fun j => hpins ⟨streamPos (nc) i (c : ℕ), hlt i c⟩ j⟩)
     hteq0
 
 /-- **The run-level residue-free root (Pallas).** The Pallas-side twin of
 `kimchiVesta_run_sound_algebraic_ft`, over `Fq`/`IpaPallas`, its Fiat–Shamir
 assumption `kimchi_fiat_shamir_pallas`. -/
-theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point)
-    (vk : KimchiPallas.VK) (p : KimchiPallas.Proof) (pub : Array Fq)
-    {n : ℕ} [NeZero n] (idx : Index Fq n)
-    {cvk : KimchiVK.Checked IpaPallas.curve (runNc IpaPallas.curve σ vk)}
-    {cp : KimchiProof.Checked IpaPallas.curve (runNc IpaPallas.curve σ vk)}
-    (hcvk : vk.check (runNc IpaPallas.curve σ vk) = some cvk)
-    (hcp : p.check (runNc IpaPallas.curve σ vk) = some cp)
-    (hn : vk.n = n)
+theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point) {nc : ℕ}
+    (cvk : KimchiVK IpaPallas.curve nc) (cp : KimchiProof IpaPallas.curve nc)
+    (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
+    (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n) (hn : cvk.n = n)
     (hvk : cvk.Corresponds σ idx)
     (hpub : pub.size = idx.publicCount)
     (htpos : 0 < cp.tComm.size)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (hacc : KimchiPallas.verify σ vk p pub = true)
+    (hacc : kimchiVerify IpaPallas.curve σ cvk cp pub = true)
     (aRef : Fin (runInput IpaPallas.curve σ cvk cp pub).commitments.size
       → Fin (2 ^ σ.k) → Fq)
     (ρRef : Fin (runInput IpaPallas.curve σ cvk cp pub).commitments.size → Fq)
@@ -1796,52 +1765,40 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point)
             ≠ idx.omega ^ (n - idx.zkRows) →
           Satisfies idx (pubView idx pub) wTab) := by
   obtain ⟨hvkc, homega, hzk, hshift, hendo, hmds, hlag⟩ := hvk
-  -- (1) reflect the run; identify the checked records; chunk arithmetic
-  obtain ⟨cvk₀, cp₀, hσk, hcvk₀, hcp₀, hlagsz, hpubn, haccept⟩ :=
-    kimchiVerify_reflects IpaPallas.curve σ vk p pub hacc
-  obtain rfl : cvk = cvk₀ := Option.some.inj (hcvk.symm.trans hcvk₀)
-  obtain rfl : cp = cp₀ := Option.some.inj (hcp.symm.trans hcp₀)
-  have hnc : 0 < runNc IpaPallas.curve σ vk := Nat.two_pow_pos _
-  have hk : runNc IpaPallas.curve σ vk * 2 ^ σ.k = n := by
-    unfold runNc
-    rw [← pow_add]
-    rw [show vk.domainLog2 - σ.k + σ.k = vk.domainLog2 from by omega]
-    exact hn
-  have hn' : cvk.n = n := by
-    show 2 ^ cvk.domainLog2 = n
-    rw [KimchiVK.check_domainLog2 hcvk]
-    exact hn
-  have hlt : ∀ (i : Fin 44) (c : Fin (runNc IpaPallas.curve σ vk)),
-      streamPos (runNc IpaPallas.curve σ vk) i (c : ℕ)
+  -- (1) the body reflection: the guards and the warm acceptance
+  obtain ⟨hlagsz, hpubn, haccept⟩ :=
+    kimchiVerify_reflects IpaPallas.curve σ cvk cp pub hacc
+  have hlt : ∀ (i : Fin 44) (c : Fin (nc)),
+      streamPos (nc) i (c : ℕ)
         < (runInput IpaPallas.curve σ cvk cp pub).commitments.size := by
     intro i c
-    show streamPos (runNc IpaPallas.curve σ vk) i (c : ℕ)
+    show streamPos (nc) i (c : ℕ)
       < ((flatRows IpaPallas.curve (runLogicalP IpaPallas.curve σ cvk cp pub
           (runPubEvals IpaPallas.curve σ cvk cp pub))).map (·.1)).size
     rw [Array.size_map, stream_size IpaPallas.curve]
     exact streamPos_lt _ i _ c.isLt
   -- (2) the reference openings at the stream positions bind the abstract batch
-  have hbound₀ : ∀ (i : Fin 44) (c : Fin (runNc IpaPallas.curve σ vk)),
-      commit σ (aRef ⟨streamPos (runNc IpaPallas.curve σ vk) i (c : ℕ), hlt i c⟩)
-          (ρRef ⟨streamPos (runNc IpaPallas.curve σ vk) i (c : ℕ), hlt i c⟩)
+  have hbound₀ : ∀ (i : Fin 44) (c : Fin (nc)),
+      commit σ (aRef ⟨streamPos (nc) i (c : ℕ), hlt i c⟩)
+          (ρRef ⟨streamPos (nc) i (c : ℕ), hlt i c⟩)
         = batchC (fun col c => (cp.wComm[col])[c]) (fun c => cp.zComm[c])
             (fun c => (publicCommitment IpaPallas.curve σ cvk pub)[c])
             cvk.comms i c := by
     intro i c
-    rw [hrep ⟨streamPos (runNc IpaPallas.curve σ vk) i (c : ℕ), hlt i c⟩]
+    rw [hrep ⟨streamPos (nc) i (c : ℕ), hlt i c⟩]
     show (runInput IpaPallas.curve σ cvk cp pub).commitments[streamPos
-        (runNc IpaPallas.curve σ vk) i (c : ℕ)]'(hlt i c) = _
+        (nc) i (c : ℕ)]'(hlt i c) = _
     rw [← getElem!_pos (runInput IpaPallas.curve σ cvk cp pub).commitments
-      (streamPos (runNc IpaPallas.curve σ vk) i (c : ℕ)) (hlt i c)]
+      (streamPos (nc) i (c : ℕ)) (hlt i c)]
     show ((flatRows IpaPallas.curve (runLogicalP IpaPallas.curve σ cvk cp pub
         (runPubEvals IpaPallas.curve σ cvk cp pub))).map
-          (·.1))[streamPos (runNc IpaPallas.curve σ vk) i (c : ℕ)]! = _
+          (·.1))[streamPos (nc) i (c : ℕ)]! = _
     rw [getBang_map _ _ _ (by
       rw [stream_size IpaPallas.curve]
       exact streamPos_lt _ i _ c.isLt)]
     exact (batchC_eq_flat IpaPallas.curve i c).symm
   -- (3) the public row pinned through the Lagrange chunk pin
-  have hpubC : ∀ c : Fin (runNc IpaPallas.curve σ vk),
+  have hpubC : ∀ c : Fin (nc),
       (publicCommitment IpaPallas.curve σ cvk pub)[c]
         = commitPolyMaskedChunk σ (-(idx.pubPoly (pubView idx pub))) (c : ℕ) :=
     fun c => publicCommitment_corresponds IpaPallas.curve σ cvk pub idx
@@ -1852,12 +1809,12 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point)
       (fun col c => (cp.wComm[col])[c]) (fun c => cp.zComm[c])
       (fun c => (publicCommitment IpaPallas.curve σ cvk pub)[c])
       hpubC
-      (fun i c => aRef ⟨streamPos (runNc IpaPallas.curve σ vk) i (c : ℕ), hlt i c⟩)
-      (fun i c => ρRef ⟨streamPos (runNc IpaPallas.curve σ vk) i (c : ℕ), hlt i c⟩)
+      (fun i c => aRef ⟨streamPos (nc) i (c : ℕ), hlt i c⟩)
+      (fun i c => ρRef ⟨streamPos (nc) i (c : ℕ), hlt i c⟩)
       hbound₀
   refine ⟨badB, badG, badA, badZ,
-    extractTable idx.omega (fun col => assembledRow σ.k (runNc IpaPallas.curve σ vk)
-      (fun c => aRef ⟨streamPos (runNc IpaPallas.curve σ vk) (wRow col) (c : ℕ),
+    extractTable idx.omega (fun col => assembledRow σ.k (nc)
+      (fun c => aRef ⟨streamPos (nc) (wRow col) (c : ℕ),
         hlt (wRow col) c⟩)),
     hbounds, ?_⟩
   intro hβ hγ hα hζ hζ1 hζb
@@ -1872,24 +1829,24 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point)
     (runInput IpaPallas.curve σ cvk cp pub).evalscale hξ hr a ρ hopen
   -- (6) the ft opening and the Maller identity at the double collapse
   obtain ⟨aft, ρft, hcomm_ft, heval_ft⟩ :=
-    ft_opening_of_reflected_pallas σ vk p pub hcvk hcp hbind hacc aRef ρRef hrep hξ hr
-  have hCσ6 : ∀ c : Fin (runNc IpaPallas.curve σ vk),
+    ft_opening_of_reflected_pallas σ cvk cp pub hbind haccept aRef ρRef hrep hξ hr
+  have hCσ6 : ∀ c : Fin (nc),
       (cvk.sigmaComm[6])[c] = commitPolyChunk σ (idx.sigmaPoly 6) (c : ℕ) :=
     fun c => congrFun (congrArg (fun cm => cm.sigma 6) hvkc) c
   have hσ₆ : (idx.sigmaPoly 6).natDegree
-      < runNc IpaPallas.curve σ vk * 2 ^ σ.k := by
+      < nc * 2 ^ σ.k := by
     rw [hk]
     exact columnPoly_natDegree_lt idx.omega_prim _
   have hcommit : commit σ aft ρft
       = runPScalar IpaPallas.curve σ cvk cp pub
-          • ∑ c : Fin (runNc IpaPallas.curve σ vk),
+          • ∑ c : Fin (nc),
               ((runOracles IpaPallas.curve σ cvk cp pub).zeta ^ 2 ^ σ.k) ^ (c : ℕ)
                 • (cvk.sigmaComm[6])[c]
         - ((runOracles IpaPallas.curve σ cvk cp pub).zeta ^ n - 1)
             • ∑ j : Fin cp.tComm.size,
                 ((runOracles IpaPallas.curve σ cvk cp pub).zeta ^ 2 ^ σ.k) ^ (j : ℕ)
                   • cp.tComm.getD (j : ℕ) 0 :=
-    hcomm_ft.trans (runFtComm_eq IpaPallas.curve Pasta.pallas_smul_val hn')
+    hcomm_ft.trans (runFtComm_eq IpaPallas.curve Pasta.pallas_smul_val hn)
   obtain ⟨htdeg, hteq0⟩ := ft_identity_of_chunks σ hbind (idx.sigmaPoly 6) hσ₆
     (fun c => (cvk.sigmaComm[6])[c]) hCσ6 htpos cp.tComm_le
     (fun j => cp.tComm.getD (j : ℕ) 0) aT ρT hTC
@@ -1914,7 +1871,7 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point)
     unfold runZetaOmegaM runZetaOmega
     rw [powPow2_eq, homega, mul_comm]
   unfold runPScalar runFtEval0 runFtEval0P runPubEval0 runLinEvals at hteq0
-  rw [← hce, ← hcpe, hζM, hζwM, hn', hzk, homega, hendo, hmds, hshift] at hteq0
+  rw [← hce, ← hcpe, hζM, hζwM, hn, hzk, homega, hendo, hmds, hshift] at hteq0
   -- (8) the per-row pins, at the consumer's two eval points
   have hpt : (runInput IpaPallas.curve σ cvk cp pub).pointFn
       = ![(runOracles IpaPallas.curve σ cvk cp pub).zeta,
@@ -1932,17 +1889,17 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point)
     (runOracles IpaPallas.curve σ cvk cp pub).alpha
     (ftChunkAssembly σ.k cp.tComm.size aT)
     (runOracles IpaPallas.curve σ cvk cp pub).zeta
-    (fun (i : Fin 44) (ch : Fin (runNc IpaPallas.curve σ vk)) (j : Fin 2) =>
+    (fun (i : Fin 44) (ch : Fin (nc)) (j : Fin 2) =>
       ((runInputP IpaPallas.curve σ cvk cp pub
           (runPubEvals IpaPallas.curve σ cvk cp pub)
           (runVU IpaPallas.curve σ cvk cp pub).1
           (runVU IpaPallas.curve σ cvk cp pub).2).evals[streamPos
-            (runNc IpaPallas.curve σ vk) i (ch : ℕ)]!)[(j : ℕ)]!)
-    (fun i c => aRef ⟨streamPos (runNc IpaPallas.curve σ vk) i (c : ℕ), hlt i c⟩)
-    (fun i c => ρRef ⟨streamPos (runNc IpaPallas.curve σ vk) i (c : ℕ), hlt i c⟩)
+            (nc) i (ch : ℕ)]!)[(j : ℕ)]!)
+    (fun i c => aRef ⟨streamPos (nc) i (c : ℕ), hlt i c⟩)
+    (fun i c => ρRef ⟨streamPos (nc) i (c : ℕ), hlt i c⟩)
     hβ hγ hα hζ hζ1 hζb htdeg
     (fun i c => ⟨hbound₀ i c,
-      fun j => hpins ⟨streamPos (runNc IpaPallas.curve σ vk) i (c : ℕ), hlt i c⟩ j⟩)
+      fun j => hpins ⟨streamPos (nc) i (c : ℕ), hlt i c⟩ j⟩)
     hteq0
 
 end Kimchi.Verifier

@@ -62,11 +62,17 @@ Kimchi.Gate.Poseidon.complete
 -- it and the soundness line.) Gated by `scripts/check_axioms.lean`.
 Kimchi.Index.satisfies_iff_fullFamily_dvd
 
--- THE EXECUTABLE VERIFIER: production chunking (`nc = 2^(domainLog2 - σ.k)` chunks per
--- column; `nc = 1` is just the one-chunk case). Adjudicated against the production
--- fixtures — nc=2 on BOTH curves plus the one-chunk fixture — by
+-- THE EXECUTABLE VERIFIER, over the checked records (production chunking; `nc = 1`
+-- is just the one-chunk case), and the wire-boundary parser that feeds it: clients
+-- parse the serde-typed wire records at the run's chunk count
+-- (`Wire.{KimchiProof,KimchiVK}.check` — the verifier's own length checks factored
+-- as a total parse; a checked record cannot hold a ragged proof) and call
+-- `kimchiVerify` on the result. The composition is adjudicated against the
+-- production fixtures — nc=2 on BOTH curves plus the one-chunk fixture — by
 -- `scripts/check_kimchi_verifier.lean` (accept + corruption rejections).
 Kimchi.Verifier.kimchiVerify
+Kimchi.Verifier.Wire.KimchiProof.check
+Kimchi.Verifier.Wire.KimchiVK.check
 -- The reduction: the 44-row grid soundness at nc * 2^k = n (the public row is IN the
 -- batch — its claims are proof-carried and believed only through binding), extraction
 -- via chunked_batch_soundness directly.

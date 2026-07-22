@@ -176,7 +176,7 @@ the bad sets and the guarded consumer implication of the chunked
 theorem kimchiVesta_sound (σ : SRS IpaVesta.Point)
     (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
     {nc : ℕ} (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n)
-    (cvk : KimchiVK.Checked IpaVesta.curve nc)
+    (cvk : KimchiVK IpaVesta.curve nc)
     (hvk : VKCorresponds σ nc cvk.comms idx)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
     (wC : Fin 15 → Fin nc → IpaVesta.Point)
@@ -224,7 +224,7 @@ theorem kimchiVesta_sound (σ : SRS IpaVesta.Point)
 theorem kimchiPallas_sound (σ : SRS IpaPallas.Point)
     (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
     {nc : ℕ} (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n)
-    (cvk : KimchiVK.Checked IpaPallas.curve nc)
+    (cvk : KimchiVK IpaPallas.curve nc)
     (hvk : VKCorresponds σ nc cvk.comms idx)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
     (wC : Fin 15 → Fin nc → IpaPallas.Point)
@@ -278,18 +278,18 @@ at the run's own `ζ`; its Fiat–Shamir trees, acceptances, and challenge injec
 discharge the capstone's transcript antecedents. The quotient residue
 `(t, hdeg, heq)` stays the one undischarged antecedent, exactly as at `nc = 1` (its
 dissolution is the `_ft` terminal's job). -/
-theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
+theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) {nc : ℕ} (hnc : 0 < nc)
     (pub : Array Fp) {n : ℕ} [NeZero n]
     (idx : Index Fp n)
-    (hk : runNc IpaVesta.curve σ vk * 2 ^ σ.k = n)
-    (cvk : KimchiVK.Checked IpaVesta.curve (runNc IpaVesta.curve σ vk))
-    (cp : KimchiProof.Checked IpaVesta.curve (runNc IpaVesta.curve σ vk))
-    (hvk : VKCorresponds σ (runNc IpaVesta.curve σ vk) cvk.comms idx)
+    (hk : nc * 2 ^ σ.k = n)
+    (cvk : KimchiVK IpaVesta.curve (nc))
+    (cp : KimchiProof IpaVesta.curve (nc))
+    (hvk : VKCorresponds σ (nc) cvk.comms idx)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (T : KimchiBatchAcc IpaVesta.curve σ idx (runNc IpaVesta.curve σ vk)
+    (T : KimchiBatchAcc IpaVesta.curve σ idx (nc)
       cvk.comms
       (fun i c => (cp.wComm[i])[c]))
-    (T' : KimchiBatchAcc IpaVesta.curve σ idx (runNc IpaVesta.curve σ vk)
+    (T' : KimchiBatchAcc IpaVesta.curve σ idx (nc)
       cvk.comms
       (fun i c => (cp.wComm[i])[c]))
     (hzC : T'.zC = T.zC) (hpC : T'.pubC = T.pubC)
@@ -341,7 +341,7 @@ theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
                 (runOracles IpaVesta.curve σ cvk cp pub).alpha t →
           Satisfies idx (pubView idx pub) wTab) := by
   obtain ⟨badB, badG, badA, badZ, wTab, hbounds, himp⟩ :=
-    kimchiVesta_sound σ pub idx (Nat.two_pow_pos _) hk cvk hvk hbind
+    kimchiVesta_sound σ pub idx hnc hk cvk hvk hbind
       (fun i c => (cp.wComm[i])[c]) T hpubC
   refine ⟨badB, badG, badA, badZ, wTab, hbounds, fun hβ hγ hα hζ => ?_⟩
   refine himp (runOracles IpaVesta.curve σ cvk cp pub).beta
@@ -358,18 +358,18 @@ theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
 
 /-- **Chunked run-level soundness of the deployed Pallas kimchi verifier.** The Pallas
 twin of `kimchiVesta_run_sound`. -/
-theorem kimchiPallas_run_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
+theorem kimchiPallas_run_sound (σ : SRS IpaPallas.Point) {nc : ℕ} (hnc : 0 < nc)
     (pub : Array Fq) {n : ℕ} [NeZero n]
     (idx : Index Fq n)
-    (hk : runNc IpaPallas.curve σ vk * 2 ^ σ.k = n)
-    (cvk : KimchiVK.Checked IpaPallas.curve (runNc IpaPallas.curve σ vk))
-    (cp : KimchiProof.Checked IpaPallas.curve (runNc IpaPallas.curve σ vk))
-    (hvk : VKCorresponds σ (runNc IpaPallas.curve σ vk) cvk.comms idx)
+    (hk : nc * 2 ^ σ.k = n)
+    (cvk : KimchiVK IpaPallas.curve (nc))
+    (cp : KimchiProof IpaPallas.curve (nc))
+    (hvk : VKCorresponds σ (nc) cvk.comms idx)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (T : KimchiBatchAcc IpaPallas.curve σ idx (runNc IpaPallas.curve σ vk)
+    (T : KimchiBatchAcc IpaPallas.curve σ idx (nc)
       cvk.comms
       (fun i c => (cp.wComm[i])[c]))
-    (T' : KimchiBatchAcc IpaPallas.curve σ idx (runNc IpaPallas.curve σ vk)
+    (T' : KimchiBatchAcc IpaPallas.curve σ idx (nc)
       cvk.comms
       (fun i c => (cp.wComm[i])[c]))
     (hzC : T'.zC = T.zC) (hpC : T'.pubC = T.pubC)
@@ -423,7 +423,7 @@ theorem kimchiPallas_run_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
                 (runOracles IpaPallas.curve σ cvk cp pub).alpha t →
           Satisfies idx (pubView idx pub) wTab) := by
   obtain ⟨badB, badG, badA, badZ, wTab, hbounds, himp⟩ :=
-    kimchiPallas_sound σ pub idx (Nat.two_pow_pos _) hk cvk hvk hbind
+    kimchiPallas_sound σ pub idx hnc hk cvk hvk hbind
       (fun i c => (cp.wComm[i])[c]) T hpubC
   refine ⟨badB, badG, badA, badZ, wTab, hbounds, fun hβ hγ hα hζ => ?_⟩
   refine himp (runOracles IpaPallas.curve σ cvk cp pub).beta

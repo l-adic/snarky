@@ -1,4 +1,5 @@
 import Kimchi.Verifier.Kimchi
+import Kimchi.Verifier.Wire
 import KimchiFixture.Kimchi
 import Lean.Data.Json
 

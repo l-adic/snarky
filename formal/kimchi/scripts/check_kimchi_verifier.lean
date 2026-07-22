@@ -1,4 +1,5 @@
 import KimchiFixture.Kimchi
+import Kimchi.Verifier.Wire
 import Lean.Data.Json
 
 /-! The executable kimchi verifiers against production proofs (`tools/fixture-dump`'s
@@ -20,13 +21,26 @@ either reproduces production's accept bit here or fails. -/
 
 open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi.Verifier
 
+/-- The client-side composition: parse the wire records at the run's chunk count
+(under the SRS pin) and hand the checked records to the protocol verifier —
+check-then-verify, the wire module's intended use. Ragged or mis-pinned input is
+rejected, matching production's `Err` returns. -/
+def verifyWire (C : Ipa.CommitmentCurve) (σ : Bulletproof.SRS C.Point)
+    (vk : Wire.KimchiVK C) (p : Wire.KimchiProof C)
+    (pub : Array C.ScalarField) : Bool :=
+  if σ.k ≤ vk.domainLog2 then
+    match vk.check (Wire.runNc C σ vk), p.check (Wire.runNc C σ vk) with
+    | some cvk, some cp => kimchiVerify C σ cvk cp pub
+    | _, _ => false
+  else false
+
 /-- One chunked-verifier fixture run: decode (both formats), verify, and check the
 corruption rejections. Returns an error description or `none`. -/
 def runChunked (C : Ipa.CommitmentCurve) (frParams : Poseidon.Params C.ScalarField)
     (path : String) (expectPublic : Bool) : IO Unit := do
   let raw ← IO.FS.readFile path
   let r : Except String
-      (_ × KimchiVK C × KimchiProof C × Array C.ScalarField) := do
+      (_ × Wire.KimchiVK C × Wire.KimchiProof C × Array C.ScalarField) := do
     let j ← Json.parse raw
     let vk ← Kimchi.Fixture.parseVK C frParams j
     let mps ← match (← (← j.getObjVal? "max_poly_size").getStr?).toNat? with
@@ -41,20 +55,20 @@ def runChunked (C : Ipa.CommitmentCurve) (frParams : Poseidon.Params C.ScalarFie
   | .ok (σ, vk, proof, pub) =>
     unless proof.pubEvals.isSome == expectPublic do
       throw (IO.userError s!"{path}: unexpected evals_public presence")
-    let ok := kimchiVerify C σ vk proof pub
+    let ok := verifyWire C σ vk proof pub
     let badEval := { proof with
       evals := { proof.evals with
         z := { proof.evals.z with zeta := proof.evals.z.zeta.modify 0 (· + 1) } } }
     let badComm := { proof with tComm := proof.tComm.modify 0 (· + σ.h) }
     let badFt := { proof with ftEval1 := proof.ftEval1 + 1 }
-    let r1 := !kimchiVerify C σ vk badEval pub
-    let r2 := !kimchiVerify C σ vk badComm pub
-    let r3 := !kimchiVerify C σ vk badFt pub
+    let r1 := !verifyWire C σ vk badEval pub
+    let r2 := !verifyWire C σ vk badComm pub
+    let r3 := !verifyWire C σ vk badFt pub
     let r4 ← match proof.pubEvals with
       | some pe =>
         let badPub := { proof with
           pubEvals := some { pe with zeta := pe.zeta.modify 0 (· + 1) } }
-        pure (!kimchiVerify C σ vk badPub pub)
+        pure (!verifyWire C σ vk badPub pub)
       | none => pure true
     IO.println s!"{path}: chunked verify: {if ok then "ACCEPT" else "REJECT"}, \
       corrupted z eval chunk: {if r1 then "REJECT (expected)" else "ACCEPT (BUG)"}, \
@@ -71,9 +85,9 @@ def main : IO Unit := do
   let dir := (← IO.getEnv "KIMCHI_FIXTURES_DIR").getD "fixtures"
   -- The chunked verifier: the one-chunk fixture (no regression), then nc = 2 on both
   -- curves.
-  runChunked CV KimchiVesta.frParams s!"{dir}/kimchi_proof_vesta.json" false
-  runChunked CV KimchiVesta.frParams s!"{dir}/kimchi_proof_vesta_nc2.json" true
-  runChunked CP KimchiPallas.frParams s!"{dir}/kimchi_proof_pallas_nc2.json" true
+  runChunked CV Wire.KimchiVesta.frParams s!"{dir}/kimchi_proof_vesta.json" false
+  runChunked CV Wire.KimchiVesta.frParams s!"{dir}/kimchi_proof_vesta_nc2.json" true
+  runChunked CP Wire.KimchiPallas.frParams s!"{dir}/kimchi_proof_pallas_nc2.json" true
   IO.println "✓ the executable kimchi verifiers accept the production proofs (nc = 1 \
     and nc = 2, both curves) and reject corruptions"
 

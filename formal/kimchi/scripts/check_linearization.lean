@@ -1,6 +1,7 @@
 import Kimchi.Protocol.Linearization
 import Bulletproof.Wire
 import Kimchi.Verifier.Kimchi
+import Kimchi.Verifier.Wire
 import Kimchi.Verifier.Kimchi
 import FixtureKit.Parse
 import Lean.Data.Json
@@ -93,7 +94,7 @@ def main : IO Unit := do
         ("poseidon", e.poseidonSelector
           * alphaCombo α ((Kimchi.Lift.Gate.Poseidon.argument
               (Kimchi.Verifier.mdsOfParams
-                Kimchi.Verifier.KimchiVesta.frParams)).constraints
+                Kimchi.Verifier.Wire.KimchiVesta.frParams)).constraints
             gEnv),
           ← gateTarget "poseidon"),
         ("completeAdd", e.completeAddSelector
@@ -113,7 +114,7 @@ def main : IO Unit := do
     let hGates := gates.all fun (_, mine, target) => mine = target
     let hZkpm := decide (zkpmEval n zkRows ω ζ = zkpmZ)
     let hPerm := decide (permScalar β γ α zkpmZ e = permTarget)
-    let mds := Kimchi.Verifier.mdsOfParams Kimchi.Verifier.KimchiVesta.frParams
+    let mds := Kimchi.Verifier.mdsOfParams Kimchi.Verifier.Wire.KimchiVesta.frParams
     let hConst := decide (gateLinearization endo mds α e = constTarget)
     let hFt := decide (ftEval0 n zkRows ω shifts endo mds α β γ ζ pubEval e = ftEval0Target)
     -- The assembled acceptance identity — the point-bridge (`verifierEquation_iff`)

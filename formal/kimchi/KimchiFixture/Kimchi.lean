@@ -1,4 +1,5 @@
 import Kimchi.Verifier.Kimchi
+import Kimchi.Verifier.Wire
 import BulletproofFixture
 import FixtureKit.Parse
 import Lean.Data.Json
@@ -27,7 +28,7 @@ namespace Kimchi.Fixture
 
 open FixtureKit
 
-open Lean Bulletproof.Fixture Kimchi.Verifier Kimchi.Verifier
+open Lean Bulletproof.Fixture Kimchi.Verifier Kimchi.Verifier.Wire
 
 /-- A chunked commitment: a bare `[x, y]` point (one-chunk format — first element a
 coordinate string) as a singleton, else an array of points. -/
