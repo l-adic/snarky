@@ -1564,7 +1564,8 @@ theorem publicCommitment_corresponds [Module C.ScalarField C.Point]
           • columnPoly idx.omega (Kimchi.Permutation.rowIndicator j) := by
     rw [show idx.pubPoly (pubView idx pub)
         = columnPoly idx.omega (pubAt idx (pubView idx pub)) from rfl,
-      columnPoly_eq_sum_indicator hω hn, ← Finset.sum_neg_distrib]
+      Kimchi.Permutation.columnPoly_eq_sum_indicator hω hn,
+      ← Finset.sum_neg_distrib]
     exact Finset.sum_congr rfl fun j _ => (neg_smul _ _).symm
   unfold commitPolyMaskedChunk
   rw [hpoly, commitPolyChunk_sum]

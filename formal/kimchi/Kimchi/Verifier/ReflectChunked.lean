@@ -1,6 +1,5 @@
 import Mathlib
 import Kimchi.Verifier.Chunked
-import Kimchi.Verifier.Reflect
 
 /-!
 # Chunked kimchi verifier reflection: `Chunked.kimchiVerify = true` ⟹ a `ReflectedRun`
@@ -12,9 +11,9 @@ into the structured transcript — the guard shapes, the single warm-sponge IPA
 acceptance of the run's own flat segment stream, and the stream's content as the
 flat-map of the 45 LOGICAL rows (public, ft, `z`, six selectors, `w`, coefficients,
 `σ[0..6)`), each row its chunk vector zipped with its per-chunk claims. Pure code-path
-reading, no assumption. The barycentric identity (`barycentricPubEval_eq`) is shared
-with the `nc = 1` layer (`Reflect.lean`) — the chunked verifier computes the same
-barycentric value when the proof carries no public evaluations.
+reading, no assumption. At `nc = 1` with no carried public evaluations, the verifier
+computes the barycentric fallback inline (`publicEvals`); at `nc > 1` the carried
+chunk vectors are adversarial batch data, believed only through binding.
 -/
 
 open Bulletproof

@@ -2,7 +2,6 @@ import Mathlib
 import Kimchi.Verifier.Reduction.Soundness
 import Kimchi.Verifier.Kimchi
 import Bulletproof.Reflection
-import Kimchi.Verifier.Reflect
 
 /-!
 # The algebraic-prover corollary and the algebraic quotient (the AGM reading)

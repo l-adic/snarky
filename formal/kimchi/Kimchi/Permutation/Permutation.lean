@@ -77,6 +77,32 @@ noncomputable def shiftRow (ω : F) (z : Polynomial F) : Polynomial F :=
 def rowIndicator {n : ℕ} (r : Fin n) : Fin n → F :=
   fun j => if j = r then 1 else 0
 
+/-- Interpolation is linear in the column: `columnPoly v = ∑ⱼ vⱼ • Lⱼ` with
+`Lⱼ = columnPoly (rowIndicator j)` the Lagrange basis. Degree-`< n` agreement on the
+domain: at node `i` the left side reads `vᵢ` and the right collapses to the `j = i`
+term. -/
+theorem columnPoly_eq_sum_indicator {F : Type*} [Field F] {n : ℕ} {ω : F}
+    (hω : IsPrimitiveRoot ω n) (hn : 0 < n) (v : Fin n → F) :
+    columnPoly ω v
+      = ∑ j : Fin n, v j • columnPoly ω (rowIndicator j) := by
+  have hd2 : (∑ j : Fin n, v j • columnPoly ω (rowIndicator j)).degree
+      < n := by
+    apply lt_of_le_of_lt (degree_sum_le _ _)
+    rw [Finset.sup_lt_iff (by exact_mod_cast WithBot.bot_lt_coe (n : ℕ))]
+    exact fun j _ => lt_of_le_of_lt (degree_smul_le _ _) (degree_columnPoly_lt hω _)
+  refine eq_of_eval_eq_on_domain hω hn (degree_columnPoly_lt hω _) hd2 ?_
+  intro i hi
+  rw [show ((ω : F) ^ i) = ω ^ ((⟨i, hi⟩ : Fin n) : ℕ) from rfl, eval_columnPoly hω,
+    eval_finsetSum]
+  rw [Finset.sum_eq_single (⟨i, hi⟩ : Fin n)]
+  · rw [eval_smul, eval_columnPoly hω, rowIndicator, if_pos rfl,
+      smul_eq_mul, mul_one]
+  · intro j _ hj
+    rw [eval_smul, eval_columnPoly hω, rowIndicator,
+      if_neg (fun hEq => hj hEq.symm), smul_eq_mul, mul_zero]
+  · intro h
+    exact absurd (Finset.mem_univ _) h
+
 /-- The un-normalized Lagrange numerator `(Xⁿ − 1)/(X − ω^r)`, as the scaled basis
 `n·ω^{−r}·L_r` — the boundary-pin polynomial exactly as the deployed verifier reads it
 (`ft_eval0`'s boundary quotient, `verifier.rs`). The scale matters by value, not by
