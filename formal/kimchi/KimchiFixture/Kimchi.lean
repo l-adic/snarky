@@ -51,6 +51,14 @@ def parseEval (C : Ipa.CommitmentCurve) (j : Json) :
     return { zeta := ← parseArrOf (parseZMod (n := C.scalar)) a[0]!
              zetaOmega := ← parseArrOf (parseZMod (n := C.scalar)) a[1]! }
 
+
+/-- Parse an array and check the serde-fixed dimension (`[T; N]` rejects wrong lengths
+at deserialization). -/
+def parseSized {α : Type} (nm : String) (m : ℕ) (a : Array α) :
+    Except String (Vector α m) :=
+  if h : a.size = m then pure ⟨a, h⟩
+  else throw s!"{nm}: expected {m} entries, got {a.size}"
+
 /-- The chunked kimchi proof wire record. `evals_public` is optional wire data: absent
 (the one-chunk format) decodes to `none`. -/
 def parseKimchiProof (C : Ipa.CommitmentCurve) (j : Json) :
@@ -58,10 +66,11 @@ def parseKimchiProof (C : Ipa.CommitmentCurve) (j : Json) :
   let fld (k : String) : Except String Json := j.getObjVal? k
   let pe := parseEval C
   let evals : ProofEvaluations (Array C.ScalarField) :=
-    { w := ← parseArrOf pe (← fld "evals_w")
+    { w := ← parseSized "evals_w" 15 (← parseArrOf pe (← fld "evals_w"))
       z := ← pe (← fld "evals_z")
-      s := ← parseArrOf pe (← fld "evals_s")
-      coefficients := ← parseArrOf pe (← fld "evals_coefficients")
+      s := ← parseSized "evals_s" 6 (← parseArrOf pe (← fld "evals_s"))
+      coefficients := ← parseSized "evals_coefficients" 15
+        (← parseArrOf pe (← fld "evals_coefficients"))
       genericSelector := ← pe (← fld "evals_generic_selector")
       poseidonSelector := ← pe (← fld "evals_poseidon_selector")
       completeAddSelector := ← pe (← fld "evals_complete_add_selector")
@@ -71,7 +80,8 @@ def parseKimchiProof (C : Ipa.CommitmentCurve) (j : Json) :
   let pubEvals ← match (fld "evals_public").toOption with
     | some pj => some <$> pe pj
     | none => pure none
-  return { wComm := ← parseArrOf (parseComm C) (← fld "w_comm")
+  return { wComm := ← parseSized "w_comm" 15
+             (← parseArrOf (parseComm C) (← fld "w_comm"))
            zComm := ← parseComm C (← fld "z_comm")
            tComm := ← parseArrOf (parsePt C) (← fld "t_comm")
            evals
@@ -92,15 +102,18 @@ def parseVK (C : Ipa.CommitmentCurve)
   let n ← nat "n"
   return { domainLog2 := Nat.log2 n
            omega := ← parseZMod (← fld "omega")
-           sigmaComm := ← parseArrOf (parseComm C) (← fld "sigma_comm")
-           coefficientsComm := ← parseArrOf (parseComm C) (← fld "coefficients_comm")
+           sigmaComm := ← parseSized "sigma_comm" 7
+             (← parseArrOf (parseComm C) (← fld "sigma_comm"))
+           coefficientsComm := ← parseSized "coefficients_comm" 15
+             (← parseArrOf (parseComm C) (← fld "coefficients_comm"))
            genericComm := ← parseComm C (← fld "generic_comm")
            poseidonComm := ← parseComm C (← fld "psm_comm")
            completeAddComm := ← parseComm C (← fld "complete_add_comm")
            mulComm := ← parseComm C (← fld "mul_comm")
            emulComm := ← parseComm C (← fld "emul_comm")
            endomulScalarComm := ← parseComm C (← fld "endomul_scalar_comm")
-           shifts := ← parseArrOf (parseZMod (n := C.scalar)) (← fld "shifts")
+           shifts := ← parseSized "shifts" 7
+             (← parseArrOf (parseZMod (n := C.scalar)) (← fld "shifts"))
            zkRows := ← nat "zk_rows"
            endo := ← parseZMod (← fld "endo")
            digest := ← parseZMod (← fld "digest")

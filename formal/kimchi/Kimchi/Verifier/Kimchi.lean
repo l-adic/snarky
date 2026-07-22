@@ -8,44 +8,42 @@ import Poseidon.FqSponge
 
 The full kimchi verifier over wire data, transcribed from proof-systems
 `kimchi/src/verifier.rs`: the Fiat-Shamir argument (`oracles`, :126–634) and the partial
-verification (`to_batch`, :781–1194), finished by the batched IPA opening check. The
-scalar-side closed forms are the landed `Kimchi.Protocol.Linearization`
-(`ftEval0`/`permScalar`/`zkpmEval`); the sponge layer is the landed
-`Poseidon.FqSponge` machinery, reused at both fields; the opening finish is the
-landed `Bulletproof.Ipa` acceptance, restarted from the **warm** fq-sponge state
+verification (`to_batch`, :781–1194), finished by the batched IPA opening check at
+production chunking (`chunk_size = d1 / max_poly_size`, any power-of-two `nc`;
+`nc = 1` is the one-chunk case). The scalar-side closed forms are
+`Kimchi.Protocol.Linearization` (`ftEval0`/`permScalar`/`zkpmEval`); the sponge layer is
+`Poseidon.FqSponge`, reused at both fields; the opening finish is the `Bulletproof.Ipa`
+acceptance, restarted from the **warm** fq-sponge state
 (`BatchEvaluationProof { sponge: fq_sponge, .. }`, verifier.rs:1184–1193).
 
-Scope (shape violations return `false`; every deferral is declared here):
+**The two-layer wire discipline.** Type-level facts are exactly the facts serde
+enforces; runtime guards are exactly the checks the verifier executes:
 
-* one evaluation chunk per column (`nc = 1`): the domain size is pinned to the SRS size
-  by the guard `2 ^ σ.k = n` (the production `max_poly_size = n` regime), so `combine`
-  is the identity and `ζ^max_poly_size = ζ^n`;
-* no lookups (the wire records carry none) and no recursion (`prev_challenges` absent) —
-  but the *constant* fr-sponge absorb of the empty recursion list's digest is
-  transcribed (verifier.rs:290–299);
-* the VK digest is an *input* (`KimchiVK.digest`); transcribing `VerifierIndex::digest()`
-  (verifier_index.rs:399) is a declared deferral;
-* `linearization.index_terms` is empty at the basic gate set, so `f_comm` is the single
-  σ-commitment term (verifier.rs:897–956).
+* The WIRE records (`KimchiProof`, `KimchiVK`) mirror the serde types. The fixed
+  dimensions — 15 witness/coefficient columns, 7 σ columns, 6 evaluated σ columns, 7
+  shifts — are `Vector`s, because production's `[T; N]` arrays reject wrong lengths at
+  deserialization. Chunk payloads stay `Array`s (`PolyComm.elems` is `Vec<G>` — serde
+  imposes no length).
+* The CHECKED records (`KimchiProof.Checked nc`, `KimchiVK.Checked nc`) carry the
+  chunk counts in their types. `KimchiProof.check nc` / `KimchiVK.check nc` are the
+  verifier's own length checks (`check_proof_evals_len` at `chunk_size`, the `t`
+  bound, the `nc > 1` public-evaluation requirement) factored as a total parse into
+  the typed core: a checked record CANNOT hold a ragged proof. `kimchiVerify` is
+  literally check-then-verify; ragged input fails the check and is rejected — the
+  same observable behavior as production's `Err` returns.
 
-Fidelity is adjudicated against a production fixture outside this development; the
-structure is kept verbatim (straight-line `let` schedules, per-column absorbs, the
-production fold shapes) so any divergence localizes.
+Scope (every deferral is declared here):
 
-## Contents
-
-* `KimchiProof`, `KimchiVK` — the wire records.
-* `KimchiVK.frSpec`, `frDigest`, `fqDigest` — the fr-sponge instantiation and the two
-  sponge digests.
-* `FqOracles`, `fqOracles`, `frOracles` — the two Fiat-Shamir schedules.
-* `powPow2`, `pubDot`, `publicEvals`, `KimchiProof.linEvals` — the scalar side.
-* `publicCommitment` — the public-input commitment.
-* `Ipa.verifyFrom` — the opening acceptance from a warm sponge state.
-* `kimchiVerify` — the verifier.
-* `KimchiVesta`, `KimchiPallas` — the Pasta instantiations.
+* no lookups (the wire records carry none) and no recursion (`prev_challenges`
+  absent) — but the *constant* fr-sponge absorb of the empty recursion list's digest
+  is transcribed (verifier.rs:290–299);
+* the VK digest is an *input* (`KimchiVK.digest`); transcribing
+  `VerifierIndex::digest()` (verifier_index.rs:399) is a declared deferral;
+* `linearization.index_terms` is empty at the basic gate set, so `f_comm` is the
+  single σ-commitment term (verifier.rs:897–956);
+* `σ.k > domainLog2` — production's sub-SRS `chunk_size = 1` regime — is out of
+  scope (the verifier rejects it).
 -/
-
-open Bulletproof
 
 namespace Kimchi.Verifier
 
@@ -63,25 +61,222 @@ structure PointEvaluations (F : Type*) where
   zetaOmega : F
 deriving Inhabited
 
+/-- A wire polynomial commitment: the per-chunk commitment vector (`PolyComm.elems`,
+`Vec<G>`). serde imposes NO length here — the chunk count is a verify-time check
+(`checkChunks` against the run's `chunk_size`). -/
+abbrev PolyComm (C : Ipa.CommitmentCurve) := Array C.Point
+
 /-- The proof's claimed evaluations, one `PointEvaluations` per column family
-(`ProofEvaluations`, proof.rs): the witness/permutation/coefficient columns and the six
-gate selectors, each evaluated at `ζ` and `ζω`. At one chunk per column and the basic
-gate set — optional gates and lookup data are declared deferrals. -/
-structure ProofEvaluations (F : Type*) where
+(`ProofEvaluations`, proof.rs), generic in the per-point payload `E`: `Array F` on the
+wire (chunk vectors of unchecked length), `Vector F nc` after `check`. The fixed
+column counts (15 witness, 6 evaluated σ, 15 coefficient) are `[Evals; N]` in
+production — serde-enforced, so type-level here. Optional gates and lookup data are
+declared deferrals. -/
+structure ProofEvaluations (E : Type*) where
   /-- The 15 witness-column evaluation pairs, `w[i] = (wᵢ(ζ), wᵢ(ζω))`. -/
-  w : Array (PointEvaluations F)
+  w : Vector (PointEvaluations E) 15
   /-- The permutation-aggregation evaluation pair. -/
-  z : PointEvaluations F
+  z : PointEvaluations E
   /-- The first 6 σ-polynomial evaluation pairs (the 7th is commitment-only). -/
-  s : Array (PointEvaluations F)
+  s : Vector (PointEvaluations E) 6
   /-- The 15 coefficient-column evaluation pairs. -/
-  coefficients : Array (PointEvaluations F)
-  genericSelector : PointEvaluations F
-  poseidonSelector : PointEvaluations F
-  completeAddSelector : PointEvaluations F
-  mulSelector : PointEvaluations F
-  emulSelector : PointEvaluations F
-  endomulScalarSelector : PointEvaluations F
+  coefficients : Vector (PointEvaluations E) 15
+  genericSelector : PointEvaluations E
+  poseidonSelector : PointEvaluations E
+  completeAddSelector : PointEvaluations E
+  mulSelector : PointEvaluations E
+  emulSelector : PointEvaluations E
+  endomulScalarSelector : PointEvaluations E
+
+/-- The kimchi proof wire record (`ProverProof` + `ProofEvaluations`, proof.rs:50–170),
+basic gate set: fixed dimensions serde-typed, chunk payloads unchecked arrays. Lookup
+data and `prev_challenges` are absent — declared deferrals of this transcription. -/
+structure KimchiProof (C : Ipa.CommitmentCurve) where
+  /-- The 15 witness-column commitments (`w_comm: [PolyComm; COLUMNS]`). -/
+  wComm : Vector (PolyComm C) 15
+  /-- The permutation-aggregation commitment (`z_comm`). -/
+  zComm : PolyComm C
+  /-- The quotient commitment (`t_comm`); its chunk count is checked `≤ 7 · nc`
+  (verifier.rs:260–264). -/
+  tComm : PolyComm C
+  /-- The claimed evaluations, per column family and per chunk. -/
+  evals : ProofEvaluations (Array C.ScalarField)
+  /-- The carried public evaluations (production's `evals.public`, proof.rs:52 —
+  `public` is a Lean keyword; carried at proof level rather than inside `evals`, a
+  flattening choice only): REQUIRED when `nc > 1`; when present they take precedence
+  over the barycentric computation at any `nc` (verifier.rs:332). -/
+  pubEvals : Option (PointEvaluations (Array C.ScalarField))
+  /-- `ft(ζω)` (Maller's optimization; proof.rs:170) — the ft row is single-chunk. -/
+  ftEval1 : C.ScalarField
+  /-- The batched IPA opening proof. -/
+  opening : Ipa.Proof C
+
+/-- The kimchi verifier index wire record (`VerifierIndex`, verifier_index.rs): fixed
+dimensions serde-typed (`sigma_comm: [PolyComm; PERMUTS]`,
+`coefficients_comm: [PolyComm; COLUMNS]`, `shift: [F; PERMUTS]`), chunk payloads
+unchecked arrays. The SRS stays separate and universal; `nc` is derived in
+`kimchiVerify` from the domain and the SRS width (`chunk_size = d1 / max_poly_size`,
+verifier.rs:145–152). -/
+structure KimchiVK (C : Ipa.CommitmentCurve) where
+  /-- The domain size exponent: `n = 2 ^ domainLog2`. -/
+  domainLog2 : ℕ
+  /-- The domain generator `ω` (`domain.group_gen`). -/
+  omega : C.ScalarField
+  /-- The 7 permutation commitments (`sigma_comm`). -/
+  sigmaComm : Vector (PolyComm C) 7
+  /-- The 15 coefficient commitments (`coefficients_comm`). -/
+  coefficientsComm : Vector (PolyComm C) 15
+  genericComm : PolyComm C
+  poseidonComm : PolyComm C
+  completeAddComm : PolyComm C
+  mulComm : PolyComm C
+  emulComm : PolyComm C
+  endomulScalarComm : PolyComm C
+  /-- The 7 permutation shifts (`shift`). -/
+  shifts : Vector C.ScalarField 7
+  /-- The number of zero-knowledge rows (`zk_rows`) — nc-dependent in production
+  (constraints.rs:774–784), carried as data here. -/
+  zkRows : ℕ
+  /-- `verifier_index.endo`, the `ft_eval0` endo coefficient. -/
+  endo : C.ScalarField
+  /-- The precomputed `VerifierIndex::digest()` — an input here. -/
+  digest : C.BaseField
+  /-- The Lagrange-basis commitments (`get_lagrange_basis` over a sub-domain SRS
+  chunks every basis polynomial). -/
+  lagrangeBasis : Array (PolyComm C)
+  /-- The scalar-side Poseidon parameters (`G::sponge_params()`), for the fr-sponge. -/
+  frParams : Params C.ScalarField
+
+/-- The domain size `n = 2 ^ domainLog2` (`domain.size`). -/
+def KimchiVK.n {C : Ipa.CommitmentCurve} (vk : KimchiVK C) : ℕ := 2 ^ vk.domainLog2
+
+/-! ## The checked records
+
+`check nc` is the verifier's own family of length checks — `check_proof_evals_len` at
+`chunk_size` (verifier.rs:823–831), the `t` bound (:260–264), the `nc > 1`
+public-evaluation requirement (:332–335) — factored as a total parse into a typed
+core: a `Checked nc` record cannot hold a ragged proof, so every downstream read is
+total and uniformity is definitional, not a proposition to re-derive. -/
+
+/-- A chunk vector validated to the run's chunk count. -/
+def checkChunks {α : Type*} (nc : ℕ) (a : Array α) : Option (Vector α nc) :=
+  if h : a.size = nc then some ⟨a, h⟩ else none
+
+/-- Validate an evaluation pair's chunk vectors. -/
+def PointEvaluations.check {F : Type*} (nc : ℕ) (e : PointEvaluations (Array F)) :
+    Option (PointEvaluations (Vector F nc)) := do
+  return { zeta := ← checkChunks nc e.zeta, zetaOmega := ← checkChunks nc e.zetaOmega }
+
+/-- Validate every evaluation pair of the record (`check_proof_evals_len`'s sweep). -/
+def ProofEvaluations.check {F : Type*} (nc : ℕ) (e : ProofEvaluations (Array F)) :
+    Option (ProofEvaluations (Vector F nc)) := do
+  return { w := ← e.w.mapM (PointEvaluations.check nc)
+           z := ← e.z.check nc
+           s := ← e.s.mapM (PointEvaluations.check nc)
+           coefficients := ← e.coefficients.mapM (PointEvaluations.check nc)
+           genericSelector := ← e.genericSelector.check nc
+           poseidonSelector := ← e.poseidonSelector.check nc
+           completeAddSelector := ← e.completeAddSelector.check nc
+           mulSelector := ← e.mulSelector.check nc
+           emulSelector := ← e.emulSelector.check nc
+           endomulScalarSelector := ← e.endomulScalarSelector.check nc }
+
+/-- The public-evaluation source, resolving production's control flow
+(verifier.rs:332–379): carried evaluations are accepted at any `nc` and REQUIRED at
+`nc > 1`; the barycentric fallback exists only at `nc = 1` (it needs `ζ`, so it is
+computed in the verifier body). -/
+inductive PubEvalSrc (C : Ipa.CommitmentCurve) (nc : ℕ) where
+  | carried (pe : PointEvaluations (Vector C.ScalarField nc))
+  | barycentric (h : nc = 1)
+
+/-- A chunk-validated proof: what `KimchiProof.check nc` returns, and the only thing
+the verifier body and the soundness layer ever read. -/
+structure KimchiProof.Checked (C : Ipa.CommitmentCurve) (nc : ℕ) where
+  wComm : Vector (Vector C.Point nc) 15
+  zComm : Vector C.Point nc
+  /-- The quotient chunks: genuinely variable-length, so the bound is carried. -/
+  tComm : Array C.Point
+  tComm_le : tComm.size ≤ 7 * nc
+  evals : ProofEvaluations (Vector C.ScalarField nc)
+  pubEvals : PubEvalSrc C nc
+  ftEval1 : C.ScalarField
+  opening : Ipa.Proof C
+
+/-- **The proof check** (`check_proof_evals_len` + the commitment-length checks, which
+in production take `expected_size` as an argument — exactly this `nc`). -/
+def KimchiProof.check {C : Ipa.CommitmentCurve} (nc : ℕ) (p : KimchiProof C) :
+    Option (KimchiProof.Checked C nc) := do
+  let wComm ← p.wComm.mapM (checkChunks nc)
+  let zComm ← checkChunks nc p.zComm
+  if htc : p.tComm.size ≤ 7 * nc then
+    let evals ← p.evals.check nc
+    let pubEvals ← match p.pubEvals with
+      | some pe => (pe.check nc).map .carried
+      | none => if h : nc = 1 then some (.barycentric h) else none
+    return { wComm, zComm, tComm := p.tComm, tComm_le := htc, evals, pubEvals,
+             ftEval1 := p.ftEval1, opening := p.opening }
+  else none
+
+/-- A chunk-validated verifier key. -/
+structure KimchiVK.Checked (C : Ipa.CommitmentCurve) (nc : ℕ) where
+  domainLog2 : ℕ
+  omega : C.ScalarField
+  sigmaComm : Vector (Vector C.Point nc) 7
+  coefficientsComm : Vector (Vector C.Point nc) 15
+  genericComm : Vector C.Point nc
+  poseidonComm : Vector C.Point nc
+  completeAddComm : Vector C.Point nc
+  mulComm : Vector C.Point nc
+  emulComm : Vector C.Point nc
+  endomulScalarComm : Vector C.Point nc
+  shifts : Vector C.ScalarField 7
+  zkRows : ℕ
+  endo : C.ScalarField
+  digest : C.BaseField
+  lagrangeBasis : Array (Vector C.Point nc)
+  frParams : Params C.ScalarField
+
+/-- **The key check**: every committed column validated to `nc` chunks. The Lagrange
+basis is validated in FULL (production computes it from the SRS, where the chunking is
+structural — `get_lagrange_basis` chunks every basis polynomial identically; a wire
+key with ragged Lagrange data corresponds to no SRS and is rejected). -/
+def KimchiVK.check {C : Ipa.CommitmentCurve} (nc : ℕ) (vk : KimchiVK C) :
+    Option (KimchiVK.Checked C nc) := do
+  return { domainLog2 := vk.domainLog2, omega := vk.omega
+           sigmaComm := ← vk.sigmaComm.mapM (checkChunks nc)
+           coefficientsComm := ← vk.coefficientsComm.mapM (checkChunks nc)
+           genericComm := ← checkChunks nc vk.genericComm
+           poseidonComm := ← checkChunks nc vk.poseidonComm
+           completeAddComm := ← checkChunks nc vk.completeAddComm
+           mulComm := ← checkChunks nc vk.mulComm
+           emulComm := ← checkChunks nc vk.emulComm
+           endomulScalarComm := ← checkChunks nc vk.endomulScalarComm
+           shifts := vk.shifts, zkRows := vk.zkRows, endo := vk.endo
+           digest := vk.digest
+           lagrangeBasis := ← vk.lagrangeBasis.mapM (checkChunks nc)
+           frParams := vk.frParams }
+
+/-- `check` copies the scalar data: the checked key's domain exponent is the wire
+key's. The one projection the run-level roots need across the check boundary (the
+chunk count `runNc` is computed from the WIRE key). -/
+theorem KimchiVK.check_domainLog2 {C : Ipa.CommitmentCurve} {nc : ℕ}
+    {vk : KimchiVK C} {cvk : KimchiVK.Checked C nc}
+    (h : vk.check nc = some cvk) : cvk.domainLog2 = vk.domainLog2 := by
+  unfold KimchiVK.check at h
+  simp only [Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+    Option.some.injEq] at h
+  obtain ⟨a1, -, a2, -, a3, -, a4, -, a5, -, a6, -, a7, -, a8, -, a9, -, heq⟩ := h
+  subst heq
+  rfl
+
+/-- The domain size of a checked key. -/
+def KimchiVK.Checked.n {C : Ipa.CommitmentCurve} {nc : ℕ}
+    (cvk : KimchiVK.Checked C nc) : ℕ := 2 ^ cvk.domainLog2
+
+/-- The fr-sponge spec of a checked key. -/
+def KimchiVK.Checked.frSpec {C : Ipa.CommitmentCurve} {nc : ℕ}
+    (cvk : KimchiVK.Checked C nc) : FqSponge.Spec C.scalar C.scalar :=
+  ⟨cvk.frParams, 0⟩
 
 /-- A Poseidon parameter table's MDS matrix as the gate's `Mds` record — the wire form
 of production's `Constants { mds: G::sponge_params().mds, .. }` (the scalar-side table,
@@ -185,185 +380,51 @@ def Ipa.verifyFrom (σ : SRS C.Point) (s₀ : FqSponge.S C.base) (inp : Ipa.Inpu
     let sgOk := decide (inp.proof.sg = Ipa.msm C σ.g (bPolyCoefficients chal))
     schnorr && sgOk
 
-/-! ## The verifier -/
-
-/-- The public-input array as the `Fin idx.publicCount`-indexed function the circuit
-model consumes (`getD`, total; the capstones pin `pub.size = idx.publicCount`, so the
-view reads only genuine entries). The wire-to-abstract public view. -/
-def pubView {F : Type*} [Field F] {n : ℕ} (idx : Index F n) (pub : Array F) :
-    Fin idx.publicCount → F :=
-  fun i => pub.getD (i : ℕ) 0
-
-end Kimchi.Verifier
-
-/-!
-# The chunked executable kimchi verifier (`nc ≥ 1`)
-
-The kimchi verifier over wire data in the production CHUNKED regime: domain size
-`n = nc · max_poly_size` with `max_poly_size = 2 ^ σ.k` the SRS width, every
-degree-`< n` column committed and evaluated in `nc` chunks (`chunk_size`,
-verifier.rs:145–152). This module generalizes `Kimchi/Verifier/Kimchi.lean` — the
-`nc = 1` transcription pinned by the guard `2 ^ σ.k = n` — to any power-of-two `nc`,
-transcribing the chunked paths of proof-systems `kimchi/src/verifier.rs`:
-
-* wire records mirror `PolyComm`: a committed column is its chunk vector
-  (`Array C.Point`), an evaluation is per-chunk (`PointEvaluations (Array F)`), and the
-  proof carries the production-optional `public` evaluations — REQUIRED when `nc > 1`
-  (`MissingPublicInputEvaluation`, verifier.rs:332–335; the barycentric fallback exists
-  only at one chunk);
-* the scalar side runs on chunk-COMBINED evaluations
-  (`evals.combine(&powers_of_eval_points_for_chunks)`, :409): every column combined at
-  `ζ^max_poly_size` / `(ζω)^max_poly_size` (`combineAt`), including the public term of
-  `ft_eval0` (:441–443);
-* `ft_comm` collapses BOTH sides at `ζ^max_poly_size` (:960–965): `f_comm` — the
-  `pScalar`-scaled `sigma_comm[6]`, itself `nc` chunks — and `t_comm` (up to `7·nc`
-  chunks, :260–264) each `chunk_commitment`-folded to one point;
-* the IPA input is the flat SEGMENT stream: `combined_inner_product` and
-  `combine_commitments` (poly-commitment/src/commitment.rs:612–734) walk the batch rows
-  in order and advance one polyscale power PER CHUNK, so each logical row contributes
-  its `nc` chunks as consecutive flat rows (the ft row: one).
-
-This is a TRANSITIONAL parallel module: the `nc = 1` verifier and its reflection
-(`Reflect.lean`, the capstones) stay in place until the reduction and terminals are
-restated at the chunked wire; this verifier is adjudicated now, against the `nc = 2`
-production fixtures AND the one-chunk fixture (the no-regression check). Lookups,
-optional gates, and recursion stay declared deferrals, as does the `max_poly_size > n`
-regime (production's `chunk_size = 1` short-circuit for sub-SRS domains).
-
-## Contents
-
-* `KimchiProof`, `KimchiVK` — the chunked wire records.
-* `fqOracles`, `frOracles` — the Fiat-Shamir schedules at chunk absorbs.
-* `combineAt`, `publicEvalChunks`, `KimchiProof.linEvals` — the combined scalar side.
-* `publicCommitment` — the per-chunk public-input commitment.
-* `kimchiVerify` — the chunked verifier.
-* `KimchiVesta`, `KimchiPallas` — the Pasta instantiations.
--/
-
-open Bulletproof
-
-namespace Kimchi.Verifier
-
-open CompElliptic.CurveForms.ShortWeierstrass
-open Poseidon Poseidon.FqSponge Bulletproof
-
-variable (C : Ipa.CommitmentCurve)
-
-/-! ## The wire records -/
-
-/-- The kimchi proof wire record (`ProverProof` + `ProofEvaluations`, proof.rs:50–170)
-in chunk shape, basic gate set: each committed column is its chunk vector, each
-evaluation a per-chunk `PointEvaluations (Array F)` (the parent record at the array
-payload), plus the production-optional carried `public` evaluations. Lookup data and
-`prev_challenges` are absent — declared deferrals of this transcription. -/
-structure KimchiProof (C : Ipa.CommitmentCurve) where
-  /-- The 15 witness-column commitments (`w_comm`), each `nc` chunks. -/
-  wComm : Array (Array C.Point)
-  /-- The permutation-aggregation commitment (`z_comm`), `nc` chunks. -/
-  zComm : Array C.Point
-  /-- The quotient chunks (`t_comm`), at most `7 · nc` (verifier.rs:260–264). -/
-  tComm : Array C.Point
-  /-- The claimed evaluations, per column family and per chunk. -/
-  evals : ProofEvaluations (Array C.ScalarField)
-  /-- The carried public evaluations (production's `evals.public`, proof.rs:52 —
-  `public` is a Lean keyword): REQUIRED when `nc > 1`; when present they take
-  precedence over the barycentric computation at any `nc` (verifier.rs:332). -/
-  pubEvals : Option (PointEvaluations (Array C.ScalarField))
-  /-- `ft(ζω)` (Maller's optimization; proof.rs:170) — the ft row is single-chunk. -/
-  ftEval1 : C.ScalarField
-  /-- The batched IPA opening proof. -/
-  opening : Ipa.Proof C
-
-/-- The kimchi verifier index wire record (`VerifierIndex`, verifier_index.rs) in chunk
-shape: as the `nc = 1` `KimchiVK`, with every committed column an `Array C.Point` of
-chunks and each Lagrange-basis commitment a chunk vector. The SRS stays separate and
-universal; `nc` is derived in `kimchiVerify` from the domain and the SRS width
-(`chunk_size = d1 / max_poly_size`, verifier.rs:145–152). See the `nc = 1` record for
-the `endo`/`digest`/`frParams` notes — unchanged here. -/
-structure KimchiVK (C : Ipa.CommitmentCurve) where
-  /-- The domain size exponent: `n = 2 ^ domainLog2`. -/
-  domainLog2 : ℕ
-  /-- The domain generator `ω` (`domain.group_gen`). -/
-  omega : C.ScalarField
-  /-- The 7 permutation commitments (`sigma_comm`), each `nc` chunks. -/
-  sigmaComm : Array (Array C.Point)
-  /-- The 15 coefficient commitments (`coefficients_comm`), each `nc` chunks. -/
-  coefficientsComm : Array (Array C.Point)
-  genericComm : Array C.Point
-  poseidonComm : Array C.Point
-  completeAddComm : Array C.Point
-  mulComm : Array C.Point
-  emulComm : Array C.Point
-  endomulScalarComm : Array C.Point
-  /-- The 7 permutation shifts (`shift`). -/
-  shifts : Array C.ScalarField
-  /-- The number of zero-knowledge rows (`zk_rows`) — nc-dependent in production
-  (constraints.rs:774–784), carried as data here. -/
-  zkRows : ℕ
-  /-- `verifier_index.endo`, the `ft_eval0` endo coefficient. -/
-  endo : C.ScalarField
-  /-- The precomputed `VerifierIndex::digest()` — an input here. -/
-  digest : C.BaseField
-  /-- The Lagrange-basis commitments, each `nc` chunks (`get_lagrange_basis` over a
-  sub-domain SRS chunks every basis polynomial). -/
-  lagrangeBasis : Array (Array C.Point)
-  /-- The scalar-side Poseidon parameters (`G::sponge_params()`), for the fr-sponge. -/
-  frParams : Params C.ScalarField
-
-/-- The domain size `n = 2 ^ domainLog2` (`domain.size`). -/
-def KimchiVK.n {C : Ipa.CommitmentCurve} (vk : KimchiVK C) : ℕ := 2 ^ vk.domainLog2
-
-/-- The fr-sponge spec, as in the `nc = 1` key: the scalar-side parameters, `lam`
-unread. -/
-def KimchiVK.frSpec {C : Ipa.CommitmentCurve} (vk : KimchiVK C) :
-    FqSponge.Spec C.scalar C.scalar :=
-  ⟨vk.frParams, 0⟩
-
 /-! ## The Fiat-Shamir schedules -/
 
-/-- The fq-sponge schedule of `oracles` (verifier.rs:156–283) at chunked commitments:
-identical structure to the `nc = 1` schedule — `absorb_commitment` is chunk-wise
-`absorbG`, so the public-commitment and per-column absorbs become chunk folds and the
-absorb streams lengthen; the squeeze schedule is unchanged. -/
-def fqOracles (vk : KimchiVK C) (p : KimchiProof C) (publicComm : Array C.Point) :
-    FqOracles C :=
-  let s := absorbFq C.sponge FqSponge.init [vk.digest]
+/-- The fq-sponge schedule of `oracles` (verifier.rs:156–283): `absorb_commitment` is
+chunk-wise `absorbG`, so the public-commitment and per-column absorbs are chunk
+folds; the squeeze schedule is chunk-count-independent. -/
+def fqOracles {nc : ℕ} (cvk : KimchiVK.Checked C nc) (cp : KimchiProof.Checked C nc)
+    (publicComm : Vector C.Point nc) : FqOracles C :=
+  let s := absorbFq C.sponge FqSponge.init [cvk.digest]
   let s := publicComm.foldl (absorbG C.sponge) s
-  let s := p.wComm.foldl (fun s col => col.foldl (absorbG C.sponge) s) s
+  let s := cp.wComm.foldl (fun s col => col.foldl (absorbG C.sponge) s) s
   let (beta, s) := challenge C.sponge s
   let (gamma, s) := challenge C.sponge s
-  let s := p.zComm.foldl (absorbG C.sponge) s
+  let s := cp.zComm.foldl (absorbG C.sponge) s
   let (alpha, s) := squeezeChallenge C.sponge s
-  let s := p.tComm.foldl (absorbG C.sponge) s
+  let s := cp.tComm.foldl (absorbG C.sponge) s
   let (zeta, s) := squeezeChallenge C.sponge s
   ⟨beta, gamma, alpha, zeta, fqDigest C s, s⟩
 
-/-- The fr-sponge schedule (verifier.rs:284–405) at chunked evaluations: as the `nc = 1`
-schedule, with every absorb widened to the column's chunk vector — the two public
-chunk vectors via `absorb_multiple` (:391–392), then per column the `ζ`-chunk vector
-and the `ζω`-chunk vector (`absorb_evaluations`, plonk_sponge.rs: one `sponge.absorb`
-per point vector), in the `absorb_evaluations` order. -/
-def frOracles (vk : KimchiVK C) (p : KimchiProof C) (fqDig : C.ScalarField)
-    (pubEvals : PointEvaluations (Array C.ScalarField)) :
+/-- The fr-sponge schedule (verifier.rs:284–405): every absorb widened to the column's
+chunk vector — the two public chunk vectors via `absorb_multiple` (:391–392), then per
+column the `ζ`-chunk vector and the `ζω`-chunk vector (`absorb_evaluations`,
+plonk_sponge.rs: one `sponge.absorb` per point vector), in the `absorb_evaluations`
+order. -/
+def frOracles {nc : ℕ} (cvk : KimchiVK.Checked C nc) (cp : KimchiProof.Checked C nc)
+    (fqDig : C.ScalarField) (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
     C.ScalarField × C.ScalarField :=
-  let sp := vk.frSpec
-  let ab := fun (s : FqSponge.S C.scalar) (e : PointEvaluations (Array C.ScalarField)) =>
+  let sp := cvk.frSpec
+  let ab := fun (s : FqSponge.S C.scalar)
+      (e : PointEvaluations (Vector C.ScalarField nc)) =>
     absorbFq sp (absorbFq sp s e.zeta.toList) e.zetaOmega.toList
   let s := absorbFq sp FqSponge.init [fqDig]
   let s := absorbFq sp s [frDigest C sp FqSponge.init]
-  let s := absorbFq sp s [p.ftEval1]
+  let s := absorbFq sp s [cp.ftEval1]
   let s := absorbFq sp s pubEvals.zeta.toList
   let s := absorbFq sp s pubEvals.zetaOmega.toList
-  let s := ab s p.evals.z
-  let s := ab s p.evals.genericSelector
-  let s := ab s p.evals.poseidonSelector
-  let s := ab s p.evals.completeAddSelector
-  let s := ab s p.evals.mulSelector
-  let s := ab s p.evals.emulSelector
-  let s := ab s p.evals.endomulScalarSelector
-  let s := p.evals.w.foldl ab s
-  let s := p.evals.coefficients.foldl ab s
-  let s := p.evals.s.foldl ab s
+  let s := ab s cp.evals.z
+  let s := ab s cp.evals.genericSelector
+  let s := ab s cp.evals.poseidonSelector
+  let s := ab s cp.evals.completeAddSelector
+  let s := ab s cp.evals.mulSelector
+  let s := ab s cp.evals.emulSelector
+  let s := ab s cp.evals.endomulScalarSelector
+  let s := cp.evals.w.foldl ab s
+  let s := cp.evals.coefficients.foldl ab s
+  let s := cp.evals.s.foldl ab s
   let (v', s) := challengeNat sp s
   let (u', _) := challengeNat sp s
   (endoExpand C.sponge.lam v', endoExpand C.sponge.lam u')
@@ -378,36 +439,36 @@ def combineAt {F : Type*} [Field F] (xM : F) (chunks : Array F) : F :=
 
 /-- The public evaluation chunk vectors (verifier.rs:332–379): the proof-carried
 `evals.public` when present (production prefers it at ANY `nc`); else the one-chunk
-barycentric computation (the `nc = 1`-only branch — `kimchiVerify` guards
-`nc = 1` when `public` is absent). -/
-def publicEvalChunks {C : Ipa.CommitmentCurve} (p : KimchiProof C) (n : ℕ)
-    (omega zeta zetaOmega zetaN zetaOmegaN : C.ScalarField) (pub : Array C.ScalarField) :
-    PointEvaluations (Array C.ScalarField) :=
-  match p.pubEvals with
-  | some pe => pe
-  | none =>
+barycentric computation — the `nc = 1`-only branch, its `nc = 1` proof carried by the
+`PubEvalSrc.barycentric` constructor. -/
+def publicEvalChunks {C : Ipa.CommitmentCurve} {nc : ℕ} (cp : KimchiProof.Checked C nc)
+    (n : ℕ) (omega zeta zetaOmega zetaN zetaOmegaN : C.ScalarField)
+    (pub : Array C.ScalarField) : PointEvaluations (Vector C.ScalarField nc) :=
+  match cp.pubEvals with
+  | .carried pe => pe
+  | .barycentric h =>
     let (e0, e1) := publicEvals n omega zeta zetaOmega zetaN zetaOmegaN pub
-    ⟨#[e0], #[e1]⟩
+    ⟨⟨#[e0], by simp [h]⟩, ⟨#[e1], by simp [h]⟩⟩
 
 /-- The proof's evaluations, chunk-combined, as the linearization's `Evals` record —
 the verifier's `evals.combine(&powers_of_eval_points_for_chunks)` (verifier.rs:409):
 every column combined at `ζ^max_poly_size` (`ζω`-side values at `(ζω)^max_poly_size`).
-Indexing is `getElem!` — the shape guards of `kimchiVerify` run first. -/
-def KimchiProof.linEvals {C : Ipa.CommitmentCurve} (p : KimchiProof C)
-    (zetaM zetaOmegaM : C.ScalarField) :
+Every read is total off the checked record. -/
+def KimchiProof.Checked.linEvals {C : Ipa.CommitmentCurve} {nc : ℕ}
+    (cp : KimchiProof.Checked C nc) (zetaM zetaOmegaM : C.ScalarField) :
     Kimchi.Protocol.Linearization.Evals C.ScalarField where
-  w i := combineAt zetaM (p.evals.w[i.val]!).zeta
-  wOmega i := combineAt zetaOmegaM (p.evals.w[i.val]!).zetaOmega
-  z := combineAt zetaM p.evals.z.zeta
-  zOmega := combineAt zetaOmegaM p.evals.z.zetaOmega
-  s i := combineAt zetaM (p.evals.s[i.val]!).zeta
-  coeffs i := combineAt zetaM (p.evals.coefficients[i.val]!).zeta
-  genericSelector := combineAt zetaM p.evals.genericSelector.zeta
-  poseidonSelector := combineAt zetaM p.evals.poseidonSelector.zeta
-  completeAddSelector := combineAt zetaM p.evals.completeAddSelector.zeta
-  mulSelector := combineAt zetaM p.evals.mulSelector.zeta
-  emulSelector := combineAt zetaM p.evals.emulSelector.zeta
-  endoScalarSelector := combineAt zetaM p.evals.endomulScalarSelector.zeta
+  w i := combineAt zetaM (cp.evals.w[i]).zeta.toArray
+  wOmega i := combineAt zetaOmegaM (cp.evals.w[i]).zetaOmega.toArray
+  z := combineAt zetaM cp.evals.z.zeta.toArray
+  zOmega := combineAt zetaOmegaM cp.evals.z.zetaOmega.toArray
+  s i := combineAt zetaM (cp.evals.s[i]).zeta.toArray
+  coeffs i := combineAt zetaM (cp.evals.coefficients[i]).zeta.toArray
+  genericSelector := combineAt zetaM cp.evals.genericSelector.zeta.toArray
+  poseidonSelector := combineAt zetaM cp.evals.poseidonSelector.zeta.toArray
+  completeAddSelector := combineAt zetaM cp.evals.completeAddSelector.zeta.toArray
+  mulSelector := combineAt zetaM cp.evals.mulSelector.zeta.toArray
+  emulSelector := combineAt zetaM cp.evals.emulSelector.zeta.toArray
+  endoScalarSelector := combineAt zetaM cp.evals.endomulScalarSelector.zeta.toArray
 
 /-! ## The group side -/
 
@@ -415,106 +476,74 @@ def KimchiProof.linEvals {C : Ipa.CommitmentCurve} (p : KimchiProof C)
 `nc` copies of the blinding commitment `srs.h` (:845); else chunk `c` is the MSM of the
 `c`-chunks of the Lagrange-basis commitments against the negated public input
 (`PolyComm::multi_scalar_mul` is chunk-wise, commitment.rs:348–378), plus `srs.h` from
-the all-ones `mask_custom` blinder applied per chunk (:849–856; ipa.rs:497–514). -/
-def publicCommitment (σ : SRS C.Point) (vk : KimchiVK C) (nc : ℕ)
-    (pub : Array C.ScalarField) : Array C.Point :=
-  if pub.size = 0 then Array.replicate nc σ.h
+the all-ones `mask_custom` blinder applied per chunk (:849–856; ipa.rs:497–514). Every
+Lagrange chunk read is total off the checked key. -/
+def publicCommitment {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK.Checked C nc)
+    (pub : Array C.ScalarField) : Vector C.Point nc :=
+  if pub.size = 0 then Vector.replicate nc σ.h
   else
-    (Array.range nc).map (fun c =>
-      ((vk.lagrangeBasis.extract 0 pub.size).zip pub).foldl
-        (fun acc Pp => acc + (-Pp.2).val • Pp.1.getD c 0) 0
+    Vector.ofFn (fun (c : Fin nc) =>
+      ((cvk.lagrangeBasis.extract 0 pub.size).zip pub).foldl
+        (fun acc Pp => acc + (-Pp.2).val • Pp.1[c]) 0
       + σ.h)
 
 /-! ## The verifier -/
 
-/-- The shape guard of the chunked verifier, as named wire data: `true` exactly when a
-shape or chunk-count check fails (production's family of length checks —
-`check_proof_evals_len` at `chunk_size`, the `t` bound, the `nc > 1` public-evaluation
-requirement, the SRS pin). Named so the reflection layer can carry `shapeBad = false`
-as ONE fact and read individual shapes off it on demand. -/
-def shapeBad (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
-    (pub : Array C.ScalarField) : Bool :=
-  let n := vk.n
-  let nc := 2 ^ (vk.domainLog2 - σ.k)
-  let comm1 := fun (a : Array C.Point) => a.size == nc
-  let commN := fun (a : Array (Array C.Point)) (m : ℕ) => a.size == m && a.all comm1
-  let evalN := fun (e : PointEvaluations (Array C.ScalarField)) =>
-    e.zeta.size == nc && e.zetaOmega.size == nc
-  decide (vk.domainLog2 < σ.k) || !commN p.wComm 15 || !comm1 p.zComm
-      || decide (7 * nc < p.tComm.size)
-      || p.evals.w.size != 15 || p.evals.s.size != 6 || p.evals.coefficients.size != 15
-      || !(p.evals.w.all evalN) || !(p.evals.s.all evalN)
-      || !(p.evals.coefficients.all evalN)
-      || !evalN p.evals.z || !evalN p.evals.genericSelector
-      || !evalN p.evals.poseidonSelector || !evalN p.evals.completeAddSelector
-      || !evalN p.evals.mulSelector || !evalN p.evals.emulSelector
-      || !evalN p.evals.endomulScalarSelector
-      || !(match p.pubEvals with | some pe => evalN pe | none => nc == 1)
-      || !commN vk.sigmaComm 7 || !commN vk.coefficientsComm 15
-      || !comm1 vk.genericComm || !comm1 vk.poseidonComm || !comm1 vk.completeAddComm
-      || !comm1 vk.mulComm || !comm1 vk.emulComm || !comm1 vk.endomulScalarComm
-      || vk.shifts.size != 7
-      || decide (vk.lagrangeBasis.size < pub.size)
-      || !((vk.lagrangeBasis.extract 0 pub.size).all comm1)
-      || decide (n < pub.size)
-
-/-- **The chunked kimchi verifier** (`to_batch` + the opening check,
-verifier.rs:781–1194, one proof, basic gate set, any power-of-two `nc`): shape guards
-(the per-column chunk counts — `check_proof_evals_len` at `chunk_size`, :823–831 — the
-`t` bound `≤ 7·nc`, :260–264, and the `nc > 1` public-evaluation requirement,
-:332–335); the per-chunk public commitment; the Fiat-Shamir schedules at chunk absorbs;
-the scalar side on chunk-COMBINED evaluations through the landed closed forms; the
-`ft_comm` double collapse at `ζ^max_poly_size` (:960–965); the 45 logical rows in
-`to_batch` order flattened to the SEGMENT stream (one flat row per chunk, ft single —
-the per-chunk polyscale walk of `combined_inner_product`/`combine_commitments`); the
-warm-sponge IPA finish.
-
-The SRS pin generalizes to `n = nc · 2 ^ σ.k` with `nc = 2 ^ (domainLog2 − σ.k)`
-(production `chunk_size`, uniform across the batch); `σ.k > domainLog2` — production's
-sub-SRS `chunk_size = 1` regime — stays out of scope. -/
-def kimchiVerify (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
-    (pub : Array C.ScalarField) : Bool :=
-  let n := vk.n
-  let nc := 2 ^ (vk.domainLog2 - σ.k)
-  if shapeBad C σ vk p pub then
+/-- **The verifier body over checked records** (`to_batch` + the opening check,
+verifier.rs:781–1194, one proof, basic gate set): the two remaining argument-dependent
+guards (the public input against the domain and the Lagrange table); the per-chunk
+public commitment; the Fiat-Shamir schedules at chunk absorbs; the scalar side on
+chunk-COMBINED evaluations; the `ft_comm` double collapse at `ζ^max_poly_size`
+(:960–965); the 45 logical rows in `to_batch` order flattened to the SEGMENT stream
+(one flat row per chunk, ft single — the per-chunk polyscale walk of
+`combined_inner_product`/`combine_commitments`); the warm-sponge IPA finish. -/
+def verifyChecked {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK.Checked C nc)
+    (cp : KimchiProof.Checked C nc) (pub : Array C.ScalarField) : Bool :=
+  let n := cvk.n
+  if cvk.lagrangeBasis.size < pub.size || n < pub.size then
     false
   else
-    let publicComm := publicCommitment C σ vk nc pub
-    let o := fqOracles C vk p publicComm
-    let zetaOmega := o.zeta * vk.omega
-    let zetaN := powPow2 o.zeta vk.domainLog2
-    let zetaOmegaN := powPow2 zetaOmega vk.domainLog2
+    let publicComm := publicCommitment C σ cvk pub
+    let o := fqOracles C cvk cp publicComm
+    let zetaOmega := o.zeta * cvk.omega
+    let zetaN := powPow2 o.zeta cvk.domainLog2
+    let zetaOmegaN := powPow2 zetaOmega cvk.domainLog2
     let zetaM := powPow2 o.zeta σ.k
     let zetaOmegaM := powPow2 zetaOmega σ.k
-    let pubEvals := publicEvalChunks p n vk.omega o.zeta zetaOmega zetaN zetaOmegaN pub
-    let pubEval0 := combineAt zetaM pubEvals.zeta
-    let e := p.linEvals zetaM zetaOmegaM
-    let shifts : Fin 7 → C.ScalarField := fun i => vk.shifts[i.val]!
-    let ftEval0 := Kimchi.Protocol.Linearization.ftEval0 n vk.zkRows vk.omega shifts vk.endo
-      (mdsOfParams vk.frParams) o.alpha o.beta o.gamma o.zeta pubEval0 e
-    let (v, u) := frOracles C vk p o.digest pubEvals
-    let zkpmZ := Kimchi.Protocol.Linearization.zkpmEval n vk.zkRows vk.omega o.zeta
+    let pubEvals := publicEvalChunks cp n cvk.omega o.zeta zetaOmega zetaN zetaOmegaN pub
+    let pubEval0 := combineAt zetaM pubEvals.zeta.toArray
+    let e := cp.linEvals zetaM zetaOmegaM
+    let shifts : Fin 7 → C.ScalarField := fun i => cvk.shifts[i]
+    let ftEval0 := Kimchi.Protocol.Linearization.ftEval0 n cvk.zkRows cvk.omega shifts
+      cvk.endo (mdsOfParams cvk.frParams) o.alpha o.beta o.gamma o.zeta pubEval0 e
+    let (v, u) := frOracles C cvk cp o.digest pubEvals
+    let zkpmZ := Kimchi.Protocol.Linearization.zkpmEval n cvk.zkRows cvk.omega o.zeta
     let pScalar := Kimchi.Protocol.Linearization.permScalar o.beta o.gamma o.alpha zkpmZ e
-    let fComm := (vk.sigmaComm.getD 6 #[]).map (fun P => pScalar.val • P)
-    let ftComm := Ipa.combineCommitments C zetaM fComm
-      - (zetaN - 1).val • Ipa.combineCommitments C zetaM p.tComm
+    let fComm := cvk.sigmaComm[6].map (fun P => pScalar.val • P)
+    let ftComm := Ipa.combineCommitments C zetaM fComm.toArray
+      - (zetaN - 1).val • Ipa.combineCommitments C zetaM cp.tComm
     let logical : Array (Array C.Point × Array C.ScalarField × Array C.ScalarField) :=
-      #[(publicComm, pubEvals.zeta, pubEvals.zetaOmega),
-        (#[ftComm], #[ftEval0], #[p.ftEval1]),
-        (p.zComm, p.evals.z.zeta, p.evals.z.zetaOmega),
-        (vk.genericComm, p.evals.genericSelector.zeta, p.evals.genericSelector.zetaOmega),
-        (vk.poseidonComm, p.evals.poseidonSelector.zeta, p.evals.poseidonSelector.zetaOmega),
-        (vk.completeAddComm, p.evals.completeAddSelector.zeta,
-          p.evals.completeAddSelector.zetaOmega),
-        (vk.mulComm, p.evals.mulSelector.zeta, p.evals.mulSelector.zetaOmega),
-        (vk.emulComm, p.evals.emulSelector.zeta, p.evals.emulSelector.zetaOmega),
-        (vk.endomulScalarComm, p.evals.endomulScalarSelector.zeta,
-          p.evals.endomulScalarSelector.zetaOmega)]
-      ++ (p.wComm.zip p.evals.w).map (fun x => (x.1, x.2.zeta, x.2.zetaOmega))
-      ++ (vk.coefficientsComm.zip p.evals.coefficients).map
-          (fun x => (x.1, x.2.zeta, x.2.zetaOmega))
-      ++ ((vk.sigmaComm.extract 0 6).zip p.evals.s).map
-          (fun x => (x.1, x.2.zeta, x.2.zetaOmega))
+      #[(publicComm.toArray, pubEvals.zeta.toArray, pubEvals.zetaOmega.toArray),
+        (#[ftComm], #[ftEval0], #[cp.ftEval1]),
+        (cp.zComm.toArray, cp.evals.z.zeta.toArray, cp.evals.z.zetaOmega.toArray),
+        (cvk.genericComm.toArray, cp.evals.genericSelector.zeta.toArray,
+          cp.evals.genericSelector.zetaOmega.toArray),
+        (cvk.poseidonComm.toArray, cp.evals.poseidonSelector.zeta.toArray,
+          cp.evals.poseidonSelector.zetaOmega.toArray),
+        (cvk.completeAddComm.toArray, cp.evals.completeAddSelector.zeta.toArray,
+          cp.evals.completeAddSelector.zetaOmega.toArray),
+        (cvk.mulComm.toArray, cp.evals.mulSelector.zeta.toArray,
+          cp.evals.mulSelector.zetaOmega.toArray),
+        (cvk.emulComm.toArray, cp.evals.emulSelector.zeta.toArray,
+          cp.evals.emulSelector.zetaOmega.toArray),
+        (cvk.endomulScalarComm.toArray, cp.evals.endomulScalarSelector.zeta.toArray,
+          cp.evals.endomulScalarSelector.zetaOmega.toArray)]
+      ++ (cp.wComm.zip cp.evals.w).toArray.map
+          (fun x => (x.1.toArray, x.2.zeta.toArray, x.2.zetaOmega.toArray))
+      ++ (cvk.coefficientsComm.zip cp.evals.coefficients).toArray.map
+          (fun x => (x.1.toArray, x.2.zeta.toArray, x.2.zetaOmega.toArray))
+      ++ ((cvk.sigmaComm.take 6).zip cp.evals.s).toArray.map
+          (fun x => (x.1.toArray, x.2.zeta.toArray, x.2.zetaOmega.toArray))
     let rows := logical.flatMap (fun r =>
       (r.1.zip (r.2.1.zip r.2.2)).map (fun ce => (ce.1, ce.2.1, ce.2.2)))
     let inp : Ipa.Input C :=
@@ -523,25 +552,44 @@ def kimchiVerify (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
         evals := rows.map (fun r => #[r.2.1, r.2.2])
         polyscale := v
         evalscale := u
-        proof := p.opening }
+        proof := cp.opening }
     Ipa.verifyFrom C σ o.warm inp
+
+/-- **The kimchi verifier**: check-then-verify. The SRS pin is
+`n = nc · 2 ^ σ.k` with `nc = 2 ^ (domainLog2 − σ.k)` (production `chunk_size`,
+uniform across the batch); `σ.k > domainLog2` — production's sub-SRS `chunk_size = 1`
+regime — is rejected. Ragged wire data fails `check` and is rejected, the same
+observable behavior as production's `Err` returns. -/
+def kimchiVerify (σ : SRS C.Point) (vk : KimchiVK C) (p : KimchiProof C)
+    (pub : Array C.ScalarField) : Bool :=
+  if σ.k ≤ vk.domainLog2 then
+    match vk.check (2 ^ (vk.domainLog2 - σ.k)), p.check (2 ^ (vk.domainLog2 - σ.k)) with
+    | some cvk, some cp => verifyChecked C σ cvk cp pub
+    | _, _ => false
+  else false
 
 /-! ## The wire views -/
 
-/-- The committed-column view of a chunked wire verifier key at chunk count `nc`: the
-`IndexComms` over per-chunk carriers (`Fin nc → C.Point`) the chunked reduction speaks
-about, read off the key's chunk arrays (`getD` at the checked sizes). The glue between
-the chunked wire `KimchiVK` and the abstract capstones. -/
-def KimchiVK.comms {C : Ipa.CommitmentCurve} (vk : KimchiVK C) (nc : ℕ) :
-    Kimchi.Verifier.IndexComms (Fin nc → C.Point) where
-  sigma i c := (vk.sigmaComm.getD (i : ℕ) #[]).getD (c : ℕ) 0
-  coefficients cc c := (vk.coefficientsComm.getD (cc : ℕ) #[]).getD (c : ℕ) 0
-  generic c := vk.genericComm.getD (c : ℕ) 0
-  poseidon c := vk.poseidonComm.getD (c : ℕ) 0
-  completeAdd c := vk.completeAddComm.getD (c : ℕ) 0
-  varBaseMul c := vk.mulComm.getD (c : ℕ) 0
-  endoMul c := vk.emulComm.getD (c : ℕ) 0
-  endoScalar c := vk.endomulScalarComm.getD (c : ℕ) 0
+/-- The committed-column view of a checked verifier key: the `IndexComms` over
+per-chunk carriers (`Fin nc → C.Point`) the reduction speaks about — every read
+total. The glue between the checked wire and the abstract capstones. -/
+def KimchiVK.Checked.comms {C : Ipa.CommitmentCurve} {nc : ℕ}
+    (cvk : KimchiVK.Checked C nc) : Kimchi.Verifier.IndexComms (Fin nc → C.Point) where
+  sigma i c := (cvk.sigmaComm[i])[c]
+  coefficients cc c := (cvk.coefficientsComm[cc])[c]
+  generic c := cvk.genericComm[c]
+  poseidon c := cvk.poseidonComm[c]
+  completeAdd c := cvk.completeAddComm[c]
+  varBaseMul c := cvk.mulComm[c]
+  endoMul c := cvk.emulComm[c]
+  endoScalar c := cvk.endomulScalarComm[c]
+
+/-- The public-input array as the `Fin idx.publicCount`-indexed function the circuit
+model consumes (`getD`, total; the capstones pin `pub.size = idx.publicCount`, so the
+view reads only genuine entries). The wire-to-abstract public view. -/
+def pubView {F : Type*} [Field F] {n : ℕ} (idx : Index F n) (pub : Array F) :
+    Fin idx.publicCount → F :=
+  fun i => pub.getD (i : ℕ) 0
 
 end Kimchi.Verifier
 
@@ -549,7 +597,7 @@ end Kimchi.Verifier
 
 namespace Kimchi.Verifier.KimchiVesta
 
-open CompElliptic.Fields.Pasta Poseidon Kimchi.Verifier
+open CompElliptic.Fields.Pasta Poseidon Kimchi.Verifier Bulletproof
 
 abbrev Proof := KimchiProof IpaVesta.curve
 abbrev VK := KimchiVK IpaVesta.curve
@@ -566,7 +614,7 @@ end Kimchi.Verifier.KimchiVesta
 
 namespace Kimchi.Verifier.KimchiPallas
 
-open CompElliptic.Fields.Pasta Poseidon Kimchi.Verifier
+open CompElliptic.Fields.Pasta Poseidon Kimchi.Verifier Bulletproof
 
 abbrev Proof := KimchiProof IpaPallas.curve
 abbrev VK := KimchiVK IpaPallas.curve

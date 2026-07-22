@@ -173,13 +173,14 @@ special-soundness grid at the wire key's committed chunk columns (`vk.comms nc`)
 the bad sets and the guarded consumer implication of the chunked
 `kimchiProof_sound` — each node's `FiatShamirTreeB` derived from
 `poseidon_fiat_shamir_vesta` at the node's own deployed input. -/
-theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
+theorem kimchiVesta_sound (σ : SRS IpaVesta.Point)
     (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
     {nc : ℕ} (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n)
-    (hvk : VKCorresponds σ nc (vk.comms nc) idx)
+    (cvk : KimchiVK.Checked IpaVesta.curve nc)
+    (hvk : VKCorresponds σ nc cvk.comms idx)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
     (wC : Fin 15 → Fin nc → IpaVesta.Point)
-    (T : KimchiBatchAcc IpaVesta.curve σ idx nc (vk.comms nc) wC)
+    (T : KimchiBatchAcc IpaVesta.curve σ idx nc cvk.comms wC)
     (hpubC : ∀ c : Fin nc,
       T.pubC c = commitPolyMaskedChunk σ (-(idx.pubPoly (pubView idx pub))) (c : ℕ)) :
     ∃ (badB : Finset Fp) (badG : Fp → Finset Fp) (badA : Fp → Fp → Finset Fp)
@@ -201,7 +202,7 @@ theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
           Function.Injective ξ → Function.Injective r →
           (∀ s j,
             FiatShamirTreeB σ
-              (chunkedCombinedCommitment (ξ s) (batchC wC T.zC T.pubC (vk.comms nc)))
+              (chunkedCombinedCommitment (ξ s) (batchC wC T.zC T.pubC cvk.comms))
               (combinedEvalVector (2 ^ σ.k) (r j) ![ζ, idx.omega * ζ])
               (chunkedCombinedInnerProduct (ξ s) (r j) E) (A s j)) →
           (∀ s j, A s j) →
@@ -213,20 +214,21 @@ theorem kimchiVesta_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
                 ζ (claimedPub (ζ ^ 2 ^ σ.k) E)
                 (claimedEvals (ζ ^ 2 ^ σ.k) ((idx.omega * ζ) ^ 2 ^ σ.k) E)) →
           Satisfies idx (pubView idx pub) wTab :=
-  kimchiProof_sound σ idx hnc hk hbind (vk.comms nc) hvk (pubView idx pub) wC
+  kimchiProof_sound σ idx hnc hk hbind cvk.comms hvk (pubView idx pub) wC
     T.zC T.pubC hpubC T.ζ₀ T.E₀ T.ξ₀ T.hξ₀ T.r₀ T.hr₀
     (fun s j => Ipa.verify IpaVesta.curve σ (T.nodeInput s j) = true)
     (fun s j => T.nodeFS s j (poseidon_fiat_shamir_vesta σ (T.nodeInput s j)))
     (fun s j => T.hacc s j)
 
 /-- **Chunked soundness of the deployed Pallas kimchi verifier.** The Pallas twin. -/
-theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
+theorem kimchiPallas_sound (σ : SRS IpaPallas.Point)
     (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
     {nc : ℕ} (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n)
-    (hvk : VKCorresponds σ nc (vk.comms nc) idx)
+    (cvk : KimchiVK.Checked IpaPallas.curve nc)
+    (hvk : VKCorresponds σ nc cvk.comms idx)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
     (wC : Fin 15 → Fin nc → IpaPallas.Point)
-    (T : KimchiBatchAcc IpaPallas.curve σ idx nc (vk.comms nc) wC)
+    (T : KimchiBatchAcc IpaPallas.curve σ idx nc cvk.comms wC)
     (hpubC : ∀ c : Fin nc,
       T.pubC c = commitPolyMaskedChunk σ (-(idx.pubPoly (pubView idx pub))) (c : ℕ)) :
     ∃ (badB : Finset Fq) (badG : Fq → Finset Fq) (badA : Fq → Fq → Finset Fq)
@@ -248,7 +250,7 @@ theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
           Function.Injective ξ → Function.Injective r →
           (∀ s j,
             FiatShamirTreeB σ
-              (chunkedCombinedCommitment (ξ s) (batchC wC T.zC T.pubC (vk.comms nc)))
+              (chunkedCombinedCommitment (ξ s) (batchC wC T.zC T.pubC cvk.comms))
               (combinedEvalVector (2 ^ σ.k) (r j) ![ζ, idx.omega * ζ])
               (chunkedCombinedInnerProduct (ξ s) (r j) E) (A s j)) →
           (∀ s j, A s j) →
@@ -260,7 +262,7 @@ theorem kimchiPallas_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
                 ζ (claimedPub (ζ ^ 2 ^ σ.k) E)
                 (claimedEvals (ζ ^ 2 ^ σ.k) ((idx.omega * ζ) ^ 2 ^ σ.k) E)) →
           Satisfies idx (pubView idx pub) wTab :=
-  kimchiProof_sound σ idx hnc hk hbind (vk.comms nc) hvk (pubView idx pub) wC
+  kimchiProof_sound σ idx hnc hk hbind cvk.comms hvk (pubView idx pub) wC
     T.zC T.pubC hpubC T.ζ₀ T.E₀ T.ξ₀ T.hξ₀ T.r₀ T.hr₀
     (fun s j => Ipa.verify IpaPallas.curve σ (T.nodeInput s j) = true)
     (fun s j => T.nodeFS s j (poseidon_fiat_shamir_pallas σ (T.nodeInput s j)))
@@ -277,45 +279,46 @@ discharge the capstone's transcript antecedents. The quotient residue
 `(t, hdeg, heq)` stays the one undischarged antecedent, exactly as at `nc = 1` (its
 dissolution is the `_ft` terminal's job). -/
 theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
-    (p : KimchiVesta.Proof) (pub : Array Fp) {n : ℕ} [NeZero n]
+    (pub : Array Fp) {n : ℕ} [NeZero n]
     (idx : Index Fp n)
     (hk : runNc IpaVesta.curve σ vk * 2 ^ σ.k = n)
-    (hvk : VKCorresponds σ (runNc IpaVesta.curve σ vk)
-      (vk.comms (runNc IpaVesta.curve σ vk)) idx)
+    (cvk : KimchiVK.Checked IpaVesta.curve (runNc IpaVesta.curve σ vk))
+    (cp : KimchiProof.Checked IpaVesta.curve (runNc IpaVesta.curve σ vk))
+    (hvk : VKCorresponds σ (runNc IpaVesta.curve σ vk) cvk.comms idx)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
     (T : KimchiBatchAcc IpaVesta.curve σ idx (runNc IpaVesta.curve σ vk)
-      (vk.comms (runNc IpaVesta.curve σ vk))
-      (fun i c => (p.wComm.getD (i : ℕ) #[]).getD (c : ℕ) 0))
+      cvk.comms
+      (fun i c => (cp.wComm[i])[c]))
     (T' : KimchiBatchAcc IpaVesta.curve σ idx (runNc IpaVesta.curve σ vk)
-      (vk.comms (runNc IpaVesta.curve σ vk))
-      (fun i c => (p.wComm.getD (i : ℕ) #[]).getD (c : ℕ) 0))
+      cvk.comms
+      (fun i c => (cp.wComm[i])[c]))
     (hzC : T'.zC = T.zC) (hpC : T'.pubC = T.pubC)
     (hpubC : ∀ c, T.pubC c
       = commitPolyMaskedChunk σ (-(idx.pubPoly (pubView idx pub))) (c : ℕ))
-    (hζ' : T'.ζ₀ = (runOracles IpaVesta.curve σ vk p pub).zeta)
-    (hζ1 : (runOracles IpaVesta.curve σ vk p pub).zeta ≠ 1)
-    (hζb : (runOracles IpaVesta.curve σ vk p pub).zeta
+    (hζ' : T'.ζ₀ = (runOracles IpaVesta.curve σ cvk cp pub).zeta)
+    (hζ1 : (runOracles IpaVesta.curve σ cvk cp pub).zeta ≠ 1)
+    (hζb : (runOracles IpaVesta.curve σ cvk cp pub).zeta
       ≠ idx.omega ^ (n - idx.zkRows))
     (t : Polynomial Fp) (hdeg : t.natDegree < 7 * n)
     (heq :
-      permScalar (runOracles IpaVesta.curve σ vk p pub).beta
-          (runOracles IpaVesta.curve σ vk p pub).gamma
-          (runOracles IpaVesta.curve σ vk p pub).alpha
-          (zkpmEval n idx.zkRows idx.omega (runOracles IpaVesta.curve σ vk p pub).zeta)
-          (claimedEvals ((runOracles IpaVesta.curve σ vk p pub).zeta ^ 2 ^ σ.k)
-            ((idx.omega * (runOracles IpaVesta.curve σ vk p pub).zeta) ^ 2 ^ σ.k)
+      permScalar (runOracles IpaVesta.curve σ cvk cp pub).beta
+          (runOracles IpaVesta.curve σ cvk cp pub).gamma
+          (runOracles IpaVesta.curve σ cvk cp pub).alpha
+          (zkpmEval n idx.zkRows idx.omega (runOracles IpaVesta.curve σ cvk cp pub).zeta)
+          (claimedEvals ((runOracles IpaVesta.curve σ cvk cp pub).zeta ^ 2 ^ σ.k)
+            ((idx.omega * (runOracles IpaVesta.curve σ cvk cp pub).zeta) ^ 2 ^ σ.k)
             T'.E₀)
-          * (idx.sigmaPoly 6).eval (runOracles IpaVesta.curve σ vk p pub).zeta
-        - ((runOracles IpaVesta.curve σ vk p pub).zeta ^ n - 1)
-            * t.eval (runOracles IpaVesta.curve σ vk p pub).zeta
+          * (idx.sigmaPoly 6).eval (runOracles IpaVesta.curve σ cvk cp pub).zeta
+        - ((runOracles IpaVesta.curve σ cvk cp pub).zeta ^ n - 1)
+            * t.eval (runOracles IpaVesta.curve σ cvk cp pub).zeta
         = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase idx.mds
-            (runOracles IpaVesta.curve σ vk p pub).alpha
-            (runOracles IpaVesta.curve σ vk p pub).beta
-            (runOracles IpaVesta.curve σ vk p pub).gamma
-            (runOracles IpaVesta.curve σ vk p pub).zeta
-            (claimedPub ((runOracles IpaVesta.curve σ vk p pub).zeta ^ 2 ^ σ.k) T'.E₀)
-            (claimedEvals ((runOracles IpaVesta.curve σ vk p pub).zeta ^ 2 ^ σ.k)
-              ((idx.omega * (runOracles IpaVesta.curve σ vk p pub).zeta) ^ 2 ^ σ.k)
+            (runOracles IpaVesta.curve σ cvk cp pub).alpha
+            (runOracles IpaVesta.curve σ cvk cp pub).beta
+            (runOracles IpaVesta.curve σ cvk cp pub).gamma
+            (runOracles IpaVesta.curve σ cvk cp pub).zeta
+            (claimedPub ((runOracles IpaVesta.curve σ cvk cp pub).zeta ^ 2 ^ σ.k) T'.E₀)
+            (claimedEvals ((runOracles IpaVesta.curve σ cvk cp pub).zeta ^ 2 ^ σ.k)
+              ((idx.omega * (runOracles IpaVesta.curve σ cvk cp pub).zeta) ^ 2 ^ σ.k)
               T'.E₀)) :
     ∃ (badB : Finset Fp) (badG : Fp → Finset Fp) (badA : Fp → Fp → Finset Fp)
         (badZ : Fp → Fp → Fp → Polynomial Fp → Finset Fp)
@@ -326,25 +329,25 @@ theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
             (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
         ∧ (∀ β γ α (t : Polynomial Fp), t.natDegree < 7 * n →
             (badZ β γ α t).card ≤ Index.degreeBound n))
-      ∧ ((runOracles IpaVesta.curve σ vk p pub).beta ∉ badB →
-          (runOracles IpaVesta.curve σ vk p pub).gamma
-            ∉ badG (runOracles IpaVesta.curve σ vk p pub).beta →
-          (runOracles IpaVesta.curve σ vk p pub).alpha
-            ∉ badA (runOracles IpaVesta.curve σ vk p pub).beta
-                (runOracles IpaVesta.curve σ vk p pub).gamma →
-          (runOracles IpaVesta.curve σ vk p pub).zeta
-            ∉ badZ (runOracles IpaVesta.curve σ vk p pub).beta
-                (runOracles IpaVesta.curve σ vk p pub).gamma
-                (runOracles IpaVesta.curve σ vk p pub).alpha t →
+      ∧ ((runOracles IpaVesta.curve σ cvk cp pub).beta ∉ badB →
+          (runOracles IpaVesta.curve σ cvk cp pub).gamma
+            ∉ badG (runOracles IpaVesta.curve σ cvk cp pub).beta →
+          (runOracles IpaVesta.curve σ cvk cp pub).alpha
+            ∉ badA (runOracles IpaVesta.curve σ cvk cp pub).beta
+                (runOracles IpaVesta.curve σ cvk cp pub).gamma →
+          (runOracles IpaVesta.curve σ cvk cp pub).zeta
+            ∉ badZ (runOracles IpaVesta.curve σ cvk cp pub).beta
+                (runOracles IpaVesta.curve σ cvk cp pub).gamma
+                (runOracles IpaVesta.curve σ cvk cp pub).alpha t →
           Satisfies idx (pubView idx pub) wTab) := by
   obtain ⟨badB, badG, badA, badZ, wTab, hbounds, himp⟩ :=
-    kimchiVesta_sound σ vk pub idx (Nat.two_pow_pos _) hk hvk hbind
-      (fun i c => (p.wComm.getD (i : ℕ) #[]).getD (c : ℕ) 0) T hpubC
+    kimchiVesta_sound σ pub idx (Nat.two_pow_pos _) hk cvk hvk hbind
+      (fun i c => (cp.wComm[i])[c]) T hpubC
   refine ⟨badB, badG, badA, badZ, wTab, hbounds, fun hβ hγ hα hζ => ?_⟩
-  refine himp (runOracles IpaVesta.curve σ vk p pub).beta
-    (runOracles IpaVesta.curve σ vk p pub).gamma
-    (runOracles IpaVesta.curve σ vk p pub).alpha t
-    (runOracles IpaVesta.curve σ vk p pub).zeta
+  refine himp (runOracles IpaVesta.curve σ cvk cp pub).beta
+    (runOracles IpaVesta.curve σ cvk cp pub).gamma
+    (runOracles IpaVesta.curve σ cvk cp pub).alpha t
+    (runOracles IpaVesta.curve σ cvk cp pub).zeta
     T'.E₀ T'.ξ₀ T'.r₀
     (fun s j => Ipa.verify IpaVesta.curve σ (T'.nodeInput s j) = true)
     hβ hγ hα hζ hζ1 hζb hdeg T'.hξ₀ T'.hr₀ ?_ T'.hacc heq
@@ -356,47 +359,48 @@ theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) (vk : KimchiVesta.VK)
 /-- **Chunked run-level soundness of the deployed Pallas kimchi verifier.** The Pallas
 twin of `kimchiVesta_run_sound`. -/
 theorem kimchiPallas_run_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
-    (p : KimchiPallas.Proof) (pub : Array Fq) {n : ℕ} [NeZero n]
+    (pub : Array Fq) {n : ℕ} [NeZero n]
     (idx : Index Fq n)
     (hk : runNc IpaPallas.curve σ vk * 2 ^ σ.k = n)
-    (hvk : VKCorresponds σ (runNc IpaPallas.curve σ vk)
-      (vk.comms (runNc IpaPallas.curve σ vk)) idx)
+    (cvk : KimchiVK.Checked IpaPallas.curve (runNc IpaPallas.curve σ vk))
+    (cp : KimchiProof.Checked IpaPallas.curve (runNc IpaPallas.curve σ vk))
+    (hvk : VKCorresponds σ (runNc IpaPallas.curve σ vk) cvk.comms idx)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
     (T : KimchiBatchAcc IpaPallas.curve σ idx (runNc IpaPallas.curve σ vk)
-      (vk.comms (runNc IpaPallas.curve σ vk))
-      (fun i c => (p.wComm.getD (i : ℕ) #[]).getD (c : ℕ) 0))
+      cvk.comms
+      (fun i c => (cp.wComm[i])[c]))
     (T' : KimchiBatchAcc IpaPallas.curve σ idx (runNc IpaPallas.curve σ vk)
-      (vk.comms (runNc IpaPallas.curve σ vk))
-      (fun i c => (p.wComm.getD (i : ℕ) #[]).getD (c : ℕ) 0))
+      cvk.comms
+      (fun i c => (cp.wComm[i])[c]))
     (hzC : T'.zC = T.zC) (hpC : T'.pubC = T.pubC)
     (hpubC : ∀ c, T.pubC c
       = commitPolyMaskedChunk σ (-(idx.pubPoly (pubView idx pub))) (c : ℕ))
-    (hζ' : T'.ζ₀ = (runOracles IpaPallas.curve σ vk p pub).zeta)
-    (hζ1 : (runOracles IpaPallas.curve σ vk p pub).zeta ≠ 1)
-    (hζb : (runOracles IpaPallas.curve σ vk p pub).zeta
+    (hζ' : T'.ζ₀ = (runOracles IpaPallas.curve σ cvk cp pub).zeta)
+    (hζ1 : (runOracles IpaPallas.curve σ cvk cp pub).zeta ≠ 1)
+    (hζb : (runOracles IpaPallas.curve σ cvk cp pub).zeta
       ≠ idx.omega ^ (n - idx.zkRows))
     (t : Polynomial Fq) (hdeg : t.natDegree < 7 * n)
     (heq :
-      permScalar (runOracles IpaPallas.curve σ vk p pub).beta
-          (runOracles IpaPallas.curve σ vk p pub).gamma
-          (runOracles IpaPallas.curve σ vk p pub).alpha
+      permScalar (runOracles IpaPallas.curve σ cvk cp pub).beta
+          (runOracles IpaPallas.curve σ cvk cp pub).gamma
+          (runOracles IpaPallas.curve σ cvk cp pub).alpha
           (zkpmEval n idx.zkRows idx.omega
-            (runOracles IpaPallas.curve σ vk p pub).zeta)
-          (claimedEvals ((runOracles IpaPallas.curve σ vk p pub).zeta ^ 2 ^ σ.k)
-            ((idx.omega * (runOracles IpaPallas.curve σ vk p pub).zeta) ^ 2 ^ σ.k)
+            (runOracles IpaPallas.curve σ cvk cp pub).zeta)
+          (claimedEvals ((runOracles IpaPallas.curve σ cvk cp pub).zeta ^ 2 ^ σ.k)
+            ((idx.omega * (runOracles IpaPallas.curve σ cvk cp pub).zeta) ^ 2 ^ σ.k)
             T'.E₀)
-          * (idx.sigmaPoly 6).eval (runOracles IpaPallas.curve σ vk p pub).zeta
-        - ((runOracles IpaPallas.curve σ vk p pub).zeta ^ n - 1)
-            * t.eval (runOracles IpaPallas.curve σ vk p pub).zeta
+          * (idx.sigmaPoly 6).eval (runOracles IpaPallas.curve σ cvk cp pub).zeta
+        - ((runOracles IpaPallas.curve σ cvk cp pub).zeta ^ n - 1)
+            * t.eval (runOracles IpaPallas.curve σ cvk cp pub).zeta
         = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase idx.mds
-            (runOracles IpaPallas.curve σ vk p pub).alpha
-            (runOracles IpaPallas.curve σ vk p pub).beta
-            (runOracles IpaPallas.curve σ vk p pub).gamma
-            (runOracles IpaPallas.curve σ vk p pub).zeta
-            (claimedPub ((runOracles IpaPallas.curve σ vk p pub).zeta ^ 2 ^ σ.k)
+            (runOracles IpaPallas.curve σ cvk cp pub).alpha
+            (runOracles IpaPallas.curve σ cvk cp pub).beta
+            (runOracles IpaPallas.curve σ cvk cp pub).gamma
+            (runOracles IpaPallas.curve σ cvk cp pub).zeta
+            (claimedPub ((runOracles IpaPallas.curve σ cvk cp pub).zeta ^ 2 ^ σ.k)
               T'.E₀)
-            (claimedEvals ((runOracles IpaPallas.curve σ vk p pub).zeta ^ 2 ^ σ.k)
-              ((idx.omega * (runOracles IpaPallas.curve σ vk p pub).zeta) ^ 2 ^ σ.k)
+            (claimedEvals ((runOracles IpaPallas.curve σ cvk cp pub).zeta ^ 2 ^ σ.k)
+              ((idx.omega * (runOracles IpaPallas.curve σ cvk cp pub).zeta) ^ 2 ^ σ.k)
               T'.E₀)) :
     ∃ (badB : Finset Fq) (badG : Fq → Finset Fq) (badA : Fq → Fq → Finset Fq)
         (badZ : Fq → Fq → Fq → Polynomial Fq → Finset Fq)
@@ -407,25 +411,25 @@ theorem kimchiPallas_run_sound (σ : SRS IpaPallas.Point) (vk : KimchiPallas.VK)
             (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
         ∧ (∀ β γ α (t : Polynomial Fq), t.natDegree < 7 * n →
             (badZ β γ α t).card ≤ Index.degreeBound n))
-      ∧ ((runOracles IpaPallas.curve σ vk p pub).beta ∉ badB →
-          (runOracles IpaPallas.curve σ vk p pub).gamma
-            ∉ badG (runOracles IpaPallas.curve σ vk p pub).beta →
-          (runOracles IpaPallas.curve σ vk p pub).alpha
-            ∉ badA (runOracles IpaPallas.curve σ vk p pub).beta
-                (runOracles IpaPallas.curve σ vk p pub).gamma →
-          (runOracles IpaPallas.curve σ vk p pub).zeta
-            ∉ badZ (runOracles IpaPallas.curve σ vk p pub).beta
-                (runOracles IpaPallas.curve σ vk p pub).gamma
-                (runOracles IpaPallas.curve σ vk p pub).alpha t →
+      ∧ ((runOracles IpaPallas.curve σ cvk cp pub).beta ∉ badB →
+          (runOracles IpaPallas.curve σ cvk cp pub).gamma
+            ∉ badG (runOracles IpaPallas.curve σ cvk cp pub).beta →
+          (runOracles IpaPallas.curve σ cvk cp pub).alpha
+            ∉ badA (runOracles IpaPallas.curve σ cvk cp pub).beta
+                (runOracles IpaPallas.curve σ cvk cp pub).gamma →
+          (runOracles IpaPallas.curve σ cvk cp pub).zeta
+            ∉ badZ (runOracles IpaPallas.curve σ cvk cp pub).beta
+                (runOracles IpaPallas.curve σ cvk cp pub).gamma
+                (runOracles IpaPallas.curve σ cvk cp pub).alpha t →
           Satisfies idx (pubView idx pub) wTab) := by
   obtain ⟨badB, badG, badA, badZ, wTab, hbounds, himp⟩ :=
-    kimchiPallas_sound σ vk pub idx (Nat.two_pow_pos _) hk hvk hbind
-      (fun i c => (p.wComm.getD (i : ℕ) #[]).getD (c : ℕ) 0) T hpubC
+    kimchiPallas_sound σ pub idx (Nat.two_pow_pos _) hk cvk hvk hbind
+      (fun i c => (cp.wComm[i])[c]) T hpubC
   refine ⟨badB, badG, badA, badZ, wTab, hbounds, fun hβ hγ hα hζ => ?_⟩
-  refine himp (runOracles IpaPallas.curve σ vk p pub).beta
-    (runOracles IpaPallas.curve σ vk p pub).gamma
-    (runOracles IpaPallas.curve σ vk p pub).alpha t
-    (runOracles IpaPallas.curve σ vk p pub).zeta
+  refine himp (runOracles IpaPallas.curve σ cvk cp pub).beta
+    (runOracles IpaPallas.curve σ cvk cp pub).gamma
+    (runOracles IpaPallas.curve σ cvk cp pub).alpha t
+    (runOracles IpaPallas.curve σ cvk cp pub).zeta
     T'.E₀ T'.ξ₀ T'.r₀
     (fun s j => Ipa.verify IpaPallas.curve σ (T'.nodeInput s j) = true)
     hβ hγ hα hζ hζ1 hζb hdeg T'.hξ₀ T'.hr₀ ?_ T'.hacc heq
