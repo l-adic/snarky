@@ -16,7 +16,7 @@ certificates of `Kimchi/Permutation/Wiring.lean`, the rest by `Fintype` instance
 parsers construct indices by deciding, never by trusting.
 
 **One stored representation.** The table is `Fin`-indexed data; the satisfiability
-predicate (milestone A2) and every proof consume it directly. Everything else is a
+predicate (`Satisfies`) and every proof consume it directly. Everything else is a
 *derived view* with its bridge proved at the definition site:
 
 * the **coefficient table** (`coeffTable`) — the `qTab` that the quotient layer's
@@ -99,7 +99,7 @@ structure _root_.Kimchi.Index (F : Type*) [Field F] (n : ℕ) where
   mds : Gate.Poseidon.Mds F
   shifts : Fin permCols → F
   omega_prim : IsPrimitiveRoot omega n
-  /-- Production's zero-knowledge row count is `(16·nc + 5)/7` (constraints.rs:983),
+  /-- Production's zero-knowledge row count is `(16·nc + 5)/7` (constraints.rs:979),
   which is at least `3` at every chunk count `nc ≥ 1`. The permutation argument's
   three-factor mask needs at least `2` (`zkpm_eval_ne_zero`), and the aggregate degree
   accounting needs `3 ≤ n` — both covered by the production bound. -/
@@ -185,7 +185,7 @@ noncomputable def selectorPoly (idx : Index F n) (g : GateType) : Polynomial F :
   columnPoly idx.omega (idx.selectorRow g)
 
 /-- The coefficient polynomial of column `c`. -/
-noncomputable def coeffPoly (idx : Index F n) (c : Fin wCols) : Polynomial F :=
+noncomputable def coeffPoly (idx : Index F n) (c : Fin coeffCols) : Polynomial F :=
   columnPoly idx.omega (idx.coeffRow c)
 
 /-- The sigma polynomial of column `col`. -/

@@ -7,7 +7,8 @@ import Kimchi.SchwartzZippel
 The permutation argument's quotient soundness restated to consume `Index` data: the argument
 consumes the index's wiring permutation, shifts, and their bundled laws, and the conclusion is
 the copy fragment of `Satisfies`. As with the per-gate bridges the challenges are single
-counting challenges, and the delegation goes through `Argument.soundness`.
+counting challenges, and the delegation goes through
+`Permutation.copy_soundness_wired_of_dvd`.
 
 The conclusion covers the unmasked region only — the zero-knowledge gating erases the
 argument's grip on the masked rows by design, and the whole-grid copy conjunct of `Satisfies`
@@ -36,8 +37,9 @@ theorem eval_permWitnessPoly (idx : Index F n) (wTab : Fin n → Fin wCols → F
 
 open Kimchi.Permutation in
 /-- **Copy soundness at the index, divisibility form.** For the index's wiring, shifts,
-and sigma columns (all bundled laws): if at every node of an injective `(β, γ)` grid the
-prover supplies an accumulator whose three permutation constraints are divisible by
+and sigma columns (all bundled laws): if at a single challenge pair `(β, γ)` — avoiding
+the counted `badBetas` / `badGammas` sets — the prover supplies an accumulator whose
+three permutation constraints are divisible by
 `Z_H`, the witness takes equal values across every wire of the unmasked region. This is
 the copy fragment of `Satisfies` there; the masked rows are outside the argument's grip
 by design (zkpm gating), and honest witnesses satisfy them because masked rows are

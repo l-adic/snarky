@@ -5,9 +5,9 @@ import Kimchi.SchwartzZippel
 /-!
 # Copy soundness: from grand products to values constant on the wiring
 
-The last algebraic step of the permutation argument: grand-product equalities at an
-injective challenge grid force the witness values to be invariant under the wiring
-permutation — the copy constraints.
+The last algebraic step of the permutation argument: the grand-product equality at a
+single challenge pair avoiding the counted bad sets forces the witness values to be
+invariant under the wiring permutation — the copy constraints.
 
 Two strata:
 
@@ -19,10 +19,10 @@ Two strata:
   `σp c`. The single-challenge form feeds `multiset_eq_of_prod_eval` (the grand-product
   Schwartz–Zippel core) with the product equality at one good pair `(β, γ)` and descends.
 
-* **The kimchi headline** (`Permutation.copy_soundness`): the per-challenge
+* **The kimchi headline** (`Permutation.copy_soundness_of_dvd`): the per-challenge
   quotient-argument hypotheses — at a single good challenge pair `(β, γ)` the prover supplies an
   accumulator `zg` and the three permutation constraints pass the derandomized
-  quotient checks (`Permutation.soundness`, milestones 2–3) — composed with the
+  quotient checks (`Permutation.soundness_of_dvd`) — composed with the
   semantics of the sigma polynomials (`σᵢ(ωʲ)` is the address of the wired-to cell) and
   the injectivity of the cell addressing `(i, j) ↦ shiftᵢ·ωʲ` (the coset-disjointness of
   the shifts). Conclusion: on the unmasked region, the witness takes equal values on

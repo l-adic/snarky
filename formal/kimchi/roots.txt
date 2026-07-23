@@ -88,6 +88,9 @@ Kimchi.Verifier.kimchiPallas_run_sound
 -- kimchi_fiat_shamir_* pair, once each).
 Kimchi.Verifier.ft_opening_of_reflected_vesta
 Kimchi.Verifier.ft_opening_of_reflected_pallas
+-- The abstract chunked AGM root (Capstone/Algebraic.lean): residue-free algebraic
+-- soundness with the Fiat-Shamir tree and the ft opening as caller hypotheses —
+-- consumes NO Fiat-Shamir axiom.
 Kimchi.Verifier.kimchiProof_sound_algebraic_ft
 -- THE TERMINAL THEOREMS — AGM soundness of the deployed verifier at production
 -- chunking. From a genuine `verify = true`, AGM representations of the 44*nc+1 flat

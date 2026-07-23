@@ -20,7 +20,7 @@ Two structural consequences of chunking:
   order). At
   `nc = 1` the public evaluations are computed by the verifier — a barycentric identity
   with the committed public polynomial, no binding needed. At `nc > 1` they are
-  PROOF-CARRIED, adversarial data (`MissingPublicInputEvaluation`, verifier.rs:332):
+  PROOF-CARRIED, adversarial data (`MissingPublicInputEvaluation`, verifier.rs:335):
   their only tie to the public input is the batched opening against the
   verifier-computed public commitment. The reduction therefore takes the public
   commitment chunks `pubC` with their correspondence to the negated public interpolant
@@ -213,7 +213,7 @@ private theorem batchC_wRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pub
   omega
 
 private theorem batchC_cRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
-    (comms : IndexComms (Fin nc → G)) (c : Fin wCols) :
+    (comms : IndexComms (Fin nc → G)) (c : Fin coeffCols) :
     batchC wC zC pubC comms (cRow c) = comms.coefficients c := by
   have h1 : ¬ 23 + (c : ℕ) < 1 := by omega
   have h2 : ¬ 23 + (c : ℕ) < 2 := by omega
@@ -438,7 +438,7 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
   have hdσ : ∀ jj : Fin permCols, (idx.sigmaPoly jj).natDegree < nc * 2 ^ σ.k := fun jj => by
     rw [hk]
     exact columnPoly_natDegree_lt idx.omega_prim _
-  have hdc : ∀ cc : Fin wCols, (idx.coeffPoly cc).natDegree < nc * 2 ^ σ.k := fun cc => by
+  have hdc : ∀ cc : Fin coeffCols, (idx.coeffPoly cc).natDegree < nc * 2 ^ σ.k := fun cc => by
     rw [hk]
     exact columnPoly_natDegree_lt idx.omega_prim _
   have hdsel : ∀ gg : GateType,
@@ -489,7 +489,7 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
       (fun c => (hrow (sRow i) c).1.trans
         (congrFun (batchC_sRow wC zC pubC (indexerOf σ nc idx) i) c))
       (fun c => by simpa using (hrow (sRow i) c).2 0)
-  have hcombC : ∀ cc : Fin wCols,
+  have hcombC : ∀ cc : Fin coeffCols,
       (∑ ch : Fin nc, (ζ ^ 2 ^ σ.k) ^ (ch : ℕ) * E (cRow cc) ch 0)
         = (idx.coeffPoly cc).eval ζ :=
     fun cc => combined_eval_of_chunks σ hbind (hdc _)

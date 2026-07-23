@@ -79,13 +79,15 @@ def ArgumentEnv.map {R S : Type u} (f : R → S) (env : ArgumentEnv R) : Argumen
 /-- **Row environment.** The field-level cells at row `i` of a witness table `wTab` and a
 coefficient table `qTab`: current row `wTab i`, next row `wTab (i + 1)` (cyclic), coefficients
 `qTab i`. -/
-def rowEnv [NeZero n] (wTab qTab : Fin n → Fin coeffCols → F) (i : Fin n) : ArgumentEnv F :=
+def rowEnv [NeZero n] (wTab : Fin n → Fin wCols → F) (qTab : Fin n → Fin coeffCols → F)
+    (i : Fin n) : ArgumentEnv F :=
   ⟨wTab i, wTab (i + 1), qTab i⟩
 
 /-- **Polynomial environment.** The column interpolants of the tables: `columnPoly` of each
 witness column on the current side, its `shift` on the next side, and `columnPoly` of each
 coefficient column on the coefficient side. -/
-noncomputable def polyEnv (ω : F) (wTab qTab : Fin n → Fin coeffCols → F) :
+noncomputable def polyEnv (ω : F) (wTab : Fin n → Fin wCols → F)
+    (qTab : Fin n → Fin coeffCols → F) :
     ArgumentEnv (Polynomial F) :=
   ⟨fun c => columnPoly ω (fun j => wTab j c),
    fun c => shift ω (columnPoly ω (fun j => wTab j c)),
@@ -97,7 +99,7 @@ noncomputable def polyEnv (ω : F) (wTab qTab : Fin n → Fin coeffCols → F) :
 next side. This is the one evaluation bridge in the library; every gate reaches its own bridge
 by pasting its naturality square onto this equation. -/
 private theorem polyEnv_map_aeval [NeZero n] (hω : IsPrimitiveRoot ω n)
-    (wTab qTab : Fin n → Fin coeffCols → F) (i : Fin n) :
+    (wTab : Fin n → Fin wCols → F) (qTab : Fin n → Fin coeffCols → F) (i : Fin n) :
     (polyEnv ω wTab qTab).map ⇑(aeval (ω ^ (i : ℕ)) : Polynomial F →ₐ[F] F)
       = rowEnv wTab qTab i := by
   simp only [polyEnv, ArgumentEnv.map, rowEnv]
@@ -131,7 +133,7 @@ structure Argument (F : Type u) [Field F] where
 environment at the node `ω^i` reproduces the field-level constraints of the row environment:
 the naturality square `constraints_map` at `aeval (ω^i)`, pasted onto `polyEnv_map_aeval`. -/
 theorem Argument.bridge [NeZero n] (G : Argument F) (hω : IsPrimitiveRoot ω n)
-    (wTab qTab : Fin n → Fin coeffCols → F) (i : Fin n) :
+    (wTab : Fin n → Fin wCols → F) (qTab : Fin n → Fin coeffCols → F) (i : Fin n) :
     (G.constraints (polyEnv ω wTab qTab)).map (·.eval (ω ^ (i : ℕ)))
       = G.constraints (rowEnv wTab qTab i) := by
   have hfun : (fun E : Polynomial F => E.eval (ω ^ (i : ℕ)))
@@ -606,7 +608,7 @@ gate's `Argument` instance over column interpolants.
 ## Column layout (from `generic.rs`)
 
 A generic row carries 15 witness cells `w : Fin wCols → F` and 15 coefficient cells
-`q : Fin wCols → F`. The row packs **two** generic gates: the first uses registers
+`q : Fin coeffCols → F`. The row packs **two** generic gates: the first uses registers
 `w 0, w 1, w 2` with coefficients `q 0 … q 4`; the second uses `w 3, w 4, w 5`
 with coefficients `q 5 … q 9` (`q 10 … q 14` are unused here).
 

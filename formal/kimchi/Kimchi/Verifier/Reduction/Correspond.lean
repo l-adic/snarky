@@ -37,7 +37,7 @@ seven permutation columns, the fifteen coefficient columns, and the six gate
 selectors. -/
 structure IndexComms (G : Type*) where
   sigma : Fin permCols → G
-  coefficients : Fin wCols → G
+  coefficients : Fin coeffCols → G
   generic : G
   poseidon : G
   completeAdd : G

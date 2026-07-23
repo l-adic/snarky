@@ -29,9 +29,10 @@ algebraic prover additionally supplies the 7 `tComm`-chunk representations, and 
 `t` — the genuine degree-`< 7n` assembly `ftChunkAssembly` of the committed chunks — and
 the Maller/ft identity `hteq` are DERIVED from a checked ft opening via
 `ft_identity_of_chunks`; the residue hypotheses disappear from the statement. What stays
-hypothetical is unchanged from the AGM corollary: the ft opening itself (which a fully
-deployed variant would derive from `poseidon_fiat_shamir` on the ft row), DL-binding, the
-key correspondence, and the per-transcript Fiat–Shamir families.
+hypothetical is unchanged from the AGM corollary: the ft opening itself (discharged for
+the deployed verifier by `ft_opening_of_reflected_{vesta,pallas}` in
+`Capstone/Reflection.lean`, from the `kimchi_fiat_shamir_{vesta,pallas}` axioms),
+DL-binding, the key correspondence, and the per-transcript Fiat–Shamir families.
 
 The five workhorses the Fiat–Shamir-reflection roots reuse across the module boundary —
 `badXiOf`, `badROf`, `eval_pins_of_opening`, `ftChunkAssembly`, `ft_identity_of_chunks` —

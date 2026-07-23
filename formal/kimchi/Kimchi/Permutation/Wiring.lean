@@ -3,7 +3,7 @@ import Kimchi.Permutation.Copy
 /-!
 # The wiring instantiation: discharging the copy-soundness hypotheses
 
-`Permutation.copy_soundness` consumes three per-index facts: injectivity of
+`Permutation.copy_soundness_of_dvd` consumes three per-index facts: injectivity of
 the cell addressing, the row semantics of the sigma polynomials, and a wiring permutation
 of the unmasked region. This file produces all three from the data a kimchi index
 actually carries:
@@ -22,10 +22,11 @@ actually carries:
   are the interpolants of the wired-to addresses (`columnPoly` through the domain), so
   their row semantics is definitional on the whole domain.
 
-The headline `Permutation.copy_soundness_wired` composes these through milestone 4: for
-an index — coset shifts, a region-preserving wiring, interpolated sigma columns — and a
-grid of accepted quotient checks, the witness takes equal values across every wire of
-the unmasked region.
+The headline `Permutation.copy_soundness_wired_of_dvd` composes these through the copy
+core: for an index — coset shifts, a region-preserving wiring, interpolated sigma
+columns — and an accepted quotient check at a single challenge pair `(β, γ)` avoiding
+the counted bad sets, the witness takes equal values across every wire of the unmasked
+region.
 -/
 
 namespace Kimchi.Permutation
@@ -158,13 +159,16 @@ theorem sigmaCell_unmasked {ω : F} {zkRows : ℕ} {shifts : Fin permCols → F}
 /-! ## Completeness: nondegenerate challenges and the grand-product identity -/
 
 /-- **Challenge nondegeneracy.** No σ-side factor vanishes on ANY row: at `(β, γ)`,
-every cell has `w(c) + γ + β·addr(σ c) ≠ 0`. The honest accumulator divides by these
-factors — and with the three-factor `zkpm` the recurrence (hence the division) runs
-through the interior zero-knowledge rows too, so the whole grid is quantified, not just
-the unmasked region. Each factor is affine-linear in `(β, γ)`, so the degenerate pairs
-lie on at most `7·n` lines — the small bad locus a Fiat–Shamir sample misses. The shift
-side needs no such hypothesis: once the grand products agree, its nonvanishing follows
-from the σ side's. -/
+every cell has `w(c) + γ + β·σcell(c) ≠ 0`, where `σcell` is the COMMITTED cell
+(`sigmaCell`) — the wired-to address on most rows, but ZERO on the interior mask rows
+`[n − zkRows + 2, n − 1)`, where the factor degenerates to `w(c) + γ`. The honest
+accumulator divides by these factors — and with the three-factor `zkpm` the recurrence
+(hence the division) runs through the interior zero-knowledge rows too, so the whole
+grid is quantified, not just the unmasked region: the degenerate rows are exactly the
+newly-included masked ones. Each factor is affine-linear in `(β, γ)`, so the degenerate
+pairs lie on at most `7·n` lines — the small bad locus a Fiat–Shamir sample misses. The
+shift side needs no such hypothesis: once the grand products agree, its nonvanishing
+follows from the σ side's. -/
 def Nondegenerate (ω : F) (zkRows : ℕ) (w : Fin permCols → Polynomial F) (shifts : Fin permCols → F)
     (σpFull : Equiv.Perm (Fin permCols × Fin n)) (β γ : F) : Prop :=
   ∀ c : Fin permCols × Fin n,
@@ -385,9 +389,10 @@ theorem isPrimitiveRoot_of_certificate' [DecidableEq F] {ω : F} {n : ℕ}
 
 /-- **Copy soundness from the index data, divisibility form.** For coset shifts, a
 region-preserving full-grid wiring, and sigma columns interpolating the wired-to
-addresses: if at every node of an injective `(β, γ)` grid the prover supplies an
-accumulator whose three permutation constraints are divisible by `Z_H`, then the witness
-takes equal values across every wire of the unmasked region. -/
+addresses: if at a single challenge pair `(β, γ)` — avoiding the counted `badBetas` /
+`badGammas` sets of the cells' `(value, address)` pair multisets — the prover supplies
+an accumulator whose three permutation constraints are divisible by `Z_H`, then the
+witness takes equal values across every wire of the unmasked region. -/
 theorem copy_soundness_wired_of_dvd [DecidableEq F] {ω : F} (hω : IsPrimitiveRoot ω n)
     (hn : 0 < n) (hzk2 : 2 ≤ zkRows) (hzkn : zkRows ≤ n)
     (w : Fin permCols → Polynomial F) (shifts : Fin permCols → F) (hs : CosetShifts ω shifts)

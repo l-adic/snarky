@@ -5,7 +5,11 @@ Every structural dimension of the kimchi wire and batch, named at its production
 origin. The names are **scoped notations expanding to the literals** — deliberately
 not `def`s or `abbrev`s: the elaborated terms are the bare numerals, so bound
 arithmetic (`omega`, `interval_cases`, `decide`) and every existing proof see exactly
-the literals they need, while the source and the goals name the dimension. Each
+the literals they need. Only the source names the dimension: the notations carry no
+unexpander, so goals print the bare `7`s and `15`s. That is deliberate — the same
+numeral serves several roles (`7` is `permCols` and `litRowCount`, `15` is `wCols`
+and `coeffCols`), so any name a delaborator picked for a goal's `7` would be a guess,
+and often the wrong one. Each
 derived constant carries an `rfl` theorem machine-checking its derivation, so the
 connection to the primitive constants is kernel-checked, not prose.
 

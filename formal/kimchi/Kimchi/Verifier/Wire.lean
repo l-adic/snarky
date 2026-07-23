@@ -1,4 +1,3 @@
-import Mathlib
 import Kimchi.Verifier.Kimchi
 
 /-!
@@ -17,10 +16,12 @@ types). A checked record cannot hold a ragged proof — the parse IS the proof.
 There is deliberately no verifier here: clients (the fixture drivers, any host) parse
 at the run's chunk count (`runNc`, under the SRS pin `σ.k ≤ domainLog2`) and call the
 protocol verifier `Kimchi.Verifier.kimchiVerify` on the parsed records themselves —
-check-then-verify is the client's one-line composition, and rejecting ragged input is
-the same observable behavior as production's `Err` returns. The protocol and
-soundness layers never import this module: no statement above the boundary can
-depend on unchecked data.
+check-then-verify is the client's one-line composition. On the fields production
+checks — the evaluation lengths and the `t` bound — rejecting ragged input is the
+same observable behavior as production's `Err` returns; on `w_comm`/`z_comm`, which
+production never length-checks, the parse is a declared strengthening (see
+`KimchiProof.check`). The protocol and soundness layers never import this module: no
+statement above the boundary can depend on unchecked data.
 -/
 
 open Bulletproof
@@ -123,9 +124,17 @@ private def checkEvals {F : Type*} (nc : ℕ) (e : ProofEvaluations (Array F)) :
            emulSelector := ← checkPointEvals nc e.emulSelector
            endomulScalarSelector := ← checkPointEvals nc e.endomulScalarSelector }
 
-/-- **The proof check** (`check_proof_evals_len` + the commitment-length checks, which
-in production take `expected_size` as an argument — exactly this `nc`), at the SRS's
-round count `k` (the opening's `lr` length). -/
+/-- **The proof check**, at the run's chunk count `nc` and the SRS's round count `k`
+(the opening's `lr` length). Production's two length checks are transcribed: the
+evaluation sweep (`check_proof_evals_len` at `expected_size` — exactly this `nc` —
+verifier.rs:640–642, called at `chunk_size`, :831) and the quotient bound
+`t_comm.len() ≤ 7 · chunk_size` (`IncorrectCommitmentLength`, verifier.rs:260–266).
+Pinning `w_comm`/`z_comm` to `nc` chunks is a declared modeling STRENGTHENING:
+production never checks those chunk counts (ragged commitment vectors flow into the
+batch equations rather than `Err`-ing), but the checked record is uniform by type, so
+the parse fixes them. Fidelity direction: a production-accepted run with a ragged
+`w_comm` would have no Lean counterpart — such a run would fail the batched opening
+anyway, but that is an argument, not a check. -/
 def KimchiProof.check {C : Ipa.CommitmentCurve} (nc k : ℕ) (p : KimchiProof C) :
     Option (Kimchi.Verifier.KimchiProof C nc k) := do
   let wComm ← p.wComm.mapM (checkChunks nc)

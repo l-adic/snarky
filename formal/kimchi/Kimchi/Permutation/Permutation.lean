@@ -35,9 +35,10 @@ selector column. Its soundness therefore composes the shared quotient machinery 
 (`zH_dvd_of_eval`, `dvd_separation`, `zH_dvd_iff`) with two bespoke row lemmas: the
 gate's nonvanishing off the masked rows, and the Lagrange pins.
 
-The conclusion feeds milestone 4: at the challenges `(β, γ)` the two sides are the pair
-factors of `Kimchi.GrandProduct`, so the product equality at an injective grid
-forces the multiset equality behind the copy constraints.
+The conclusion feeds the copy-soundness layer (`Permutation/Copy.lean`): at the
+challenges `(β, γ)` the two sides are the pair factors of `Kimchi.GrandProduct`, so
+the product equality at a single pair avoiding the counted bad sets forces the
+multiset equality behind the copy constraints.
 -/
 
 namespace Kimchi.Permutation

@@ -28,8 +28,9 @@ So the family has `21 + 3` members:
 The per-gate constraint lists are the single-source gate transcriptions
 (`gateConstraints`), whose lengths match kimchi's `CONSTRAINTS` constants
 (`gateConstraints_length_*`, definitional). The separation argument recovers
-per-gate divisibility from the summed members via selector row-disjointness
-(`selectorRow_disjoint`).
+per-gate divisibility from the summed members via selector one-hotness
+(`selectorRow_eq_one`/`selectorRow_eq_zero`, collapsed row by row in
+`eval_gateMember`).
 -/
 
 namespace Kimchi.Index
@@ -233,7 +234,7 @@ private theorem forall_mem_zero_of_bridge {P : List (Polynomial F)} {L : List F}
   hb ▸ List.forall_mem_map.mpr hvan
 
 omit [DecidableEq F] in
-/-- **Phase-B gate separation.** If `Z_H` divides all 21 summed gate members, every row
+/-- **Gate separation.** If `Z_H` divides all 21 summed gate members, every row
 satisfies its gate branch of `rowSatisfies` — the index's `public_generic` law keeps
 non-generic gates out of the public region. Selector one-hotness undoes the sharing:
 at a row of gate `g`, slot `k` pins `g`'s `k`-th constraint, with the public value
@@ -330,11 +331,12 @@ private theorem fullFamily_perm (idx : Index F n) (pub : Fin idx.publicCount →
   exact Fin.ext (by simp [Fin.natAdd])
 
 open Kimchi.Permutation in
-/-- **Phase-B assembly, copy side.** If at every node of an injective `(β, γ)` grid the
-prover supplies an accumulator whose **full family** is `Z_H`-divisible, the witness
-takes equal values across every wire of the unmasked region — the copy fragment of
-`Satisfies` there. The permutation members are the family's last three entries
-(`fullFamily_perm`); `Index.copy_soundness_of_dvd` does the rest. -/
+/-- **Copy-side assembly.** If at a single challenge pair `(β, γ)` — avoiding the
+counted `badBetas` / `badGammas` sets — the prover supplies an accumulator whose
+**full family** is `Z_H`-divisible, the witness takes equal values across every wire
+of the unmasked region — the copy fragment of `Satisfies` there. The permutation
+members are the family's last three entries (`fullFamily_perm`);
+`Index.copy_soundness_of_dvd` does the rest. -/
 private theorem copy_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin wCols → F)
     (β γ : F)
@@ -365,14 +367,15 @@ private theorem copy_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCo
     have h := hdvd (Fin.natAdd gateAlphaCount s)
     rwa [idx.fullFamily_perm] at h
 
-/-! ## The Phase-B headline: the one quotient check gives satisfiability
+/-! ## The satisfiability headline: the one quotient check gives satisfiability
 
 Everything assembles: the 21 gate members give every row's gate branch (`rowSatisfies`),
 the 3 permutation members give the copy constraints on the unmasked region, the
 `masked_identity` law closes the copy conjunct over the zero-knowledge rows, and the
 `public_generic`/`public_coeffs` laws collapse the slot-`0` member at the public rows to
-the public pinning. The conclusion is `Satisfies` — the A2 predicate the derived checker
-decides — from nothing but the index and the shape of kimchi's one quotient check. -/
+the public pinning. The conclusion is `Satisfies` — the satisfiability predicate the
+derived checker decides — from nothing but the index and the shape of kimchi's one
+quotient check. -/
 
 open Kimchi.Permutation in
 /-- The whole-grid copy conjunct: the unmasked region from the permutation members,
@@ -449,9 +452,10 @@ private theorem publicPinned_of_rowSatisfies (idx : Index F n) (pub : Fin idx.pu
   linear_combination (h1.symm.trans (by simp only [hq0, hq1, hq2, hq3, hq4]; ring)).symm
 
 open Kimchi.Permutation in
-/-- **The Phase-B headline, divisibility form.** An injective `(β, γ)` grid of
-accumulators whose full `21 + 3` families are `Z_H`-divisible gives satisfiability at
-the index: `Satisfies idx pub wTab` — every row's gate holds with the public input
+/-- **The satisfiability headline, divisibility form.** At a single challenge pair
+`(β, γ)` avoiding the counted `badBetas` / `badGammas` sets, an accumulator whose full
+`21 + 3` family is `Z_H`-divisible gives satisfiability at the index:
+`Satisfies idx pub wTab` — every row's gate holds with the public input
 folded in, the copy constraints hold on the whole grid, and the public rows pin the
 first witness column. -/
 theorem satisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
@@ -485,11 +489,11 @@ theorem satisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount
     idx.publicPinned_of_rowSatisfies pub wTab hrow⟩
 
 open Kimchi.Permutation in
-/-- **The Phase-B headline.** The shape of kimchi's one quotient check — at every node
-of an injective `(β, γ)` grid, an accumulator whose aggregated `21 + 3`-member family
-passes the derandomized eval-check against `t · Z_H` — gives satisfiability at the
-index. Composes `fullFamily_dvd_of_evalCheck` per grid node with
-`satisfies_of_fullFamily_dvd`. -/
+/-- **The satisfiability headline.** The shape of kimchi's one quotient check — at a
+single challenge pair `(β, γ)` avoiding the counted bad sets, an accumulator whose
+aggregated `21 + 3`-member family passes the derandomized eval-check against `t · Z_H`
+at one good `(α, ζ)` — gives satisfiability at the index. Composes
+`fullFamily_dvd_of_evalCheck` with `satisfies_of_fullFamily_dvd`. -/
 theorem satisfies_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin wCols → F)
     (β γ : F)
@@ -743,8 +747,9 @@ open Kimchi.Permutation in
 /-- **The characterization.** In a large enough field, a wellformed index is satisfied
 iff honest quotient data exists at every nondegenerate challenge pair — soundness and
 completeness fused into one statement. Forward is completeness, pointwise; backward
-manufactures a nondegenerate challenge grid (`exists_nondegenerate_grid`) and runs the
-soundness headline over it. The field bound `hF` counts `(7n + 1)²` grid cells: with
+manufactures a nondegenerate challenge grid (`exists_nondegenerate_grid`), picks one
+good pair off the counted bad sets by pigeonhole, and runs the soundness headline
+there. The field bound `hF` counts `(7n + 1)²` grid cells: with
 production's three-factor permutation mask the recurrence is live on the interior mask
 rows `[n − zkRows + 2, n − 1)`, so `Nondegenerate` (and the degenerate-pair counting
 underneath the grid) ranges over ALL `n` rows — `7n + 1` affine lines per challenge

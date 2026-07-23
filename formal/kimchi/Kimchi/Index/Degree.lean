@@ -1,20 +1,21 @@
 import Kimchi.Index.Aggregate
 
 /-!
-# Degree bounds for the kimchi aggregate family (3c deliverable 1)
+# Degree bounds for the kimchi aggregate family
 
-This file discharges the two degree side-conditions of the Phase-B headline
-`Index.satisfies_of_evalCheck` (`Kimchi/Index/Aggregate.lean`): its `hCdeg` hypothesis
-`(aggregate (α s) (idx.fullFamily …)).natDegree ≤ D` and its `htdeg` hypothesis
-`(t s * zH F n).natDegree ≤ D`. Both are satisfied by taking the single crude, uniform
-degree bound
+This file proves the two degree bounds behind the ζ-axis counting of the one quotient
+check: `card_badZetas_le` (`Kimchi/SchwartzZippel.lean`) bounds the bad-ζ set of an
+eval-check by a degree bound `D` covering both sides,
+`(aggregate α (idx.fullFamily …)).natDegree ≤ D` and `(t * zH F n).natDegree ≤ D`.
+Both are satisfied by taking the single crude, uniform degree bound
 
   `degreeBound n = 9 * n`,
 
 which every member of the `21 + 3` aggregate family — and every `t · Z_H` with
-`t.natDegree < 7·n` — provably fits under. The bound is deliberately loose: the design
-goal is *one* `D` that works for all `24` members at once (so the caller can instantiate
-`D := degreeBound n` and pass the same witness to `hCdeg`/`htdeg`), not a tight per-member
+`t.natDegree < 7·n` — provably fits under; `Kimchi.Protocol.Equation.sound` consumes
+the two headline bounds to cap its bad-ζ set at `degreeBound n`. The bound is
+deliberately loose: the design goal is *one* `D` that works for all `24` members at once
+(so a single `degreeBound n` covers both sides of the check), not a tight per-member
 count. Arithmetic confirms `9n` suffices with only `≤`-crude reasoning, so we do not chase
 a smaller constant.
 
@@ -49,8 +50,9 @@ variable {F : Type*} [Field F] [DecidableEq F] {n : ℕ}
 
 /-! ## The uniform degree bound -/
 
-/-- **The uniform degree bound** `D = 9·n` that discharges both `hCdeg` and `htdeg` of
-`Index.satisfies_of_evalCheck`. Crude by design: one `D` for all `21 + 3` members and for
+/-- **The uniform degree bound** `D = 9·n` covering both sides of the aggregated
+eval-check — the cardinality cap of its bad-ζ set (`card_badZetas_le`). Crude by
+design: one `D` for all `21 + 3` members and for
 every honest quotient `t · Z_H`, not a tight per-member count. -/
 def degreeBound (n : ℕ) : ℕ := 9 * n
 
@@ -604,7 +606,7 @@ private theorem fullFamily_natDegree_le (idx : Index F n) (pub : Fin idx.publicC
   · rw [dif_neg h]
     exact permConstraints_natDegree_le idx wTab z hz β γ _
 
-/-- **The `hCdeg` discharge.** The α-aggregate `∑_c α^c • (member c)` fits under
+/-- **The aggregate-side bound.** The α-aggregate `∑_c α^c • (member c)` fits under
 `degreeBound n`: `natDegree_sum_le` reduces to a per-summand bound, `natDegree_smul_le`
 drops the scalar `α^c`, and each member is bounded by `fullFamily_natDegree_le`. -/
 theorem aggregate_natDegree_le (idx : Index F n) (pub : Fin idx.publicCount → F)
@@ -619,7 +621,7 @@ theorem aggregate_natDegree_le (idx : Index F n) (pub : Fin idx.publicCount → 
     (fullFamily_natDegree_le idx pub wTab z hz β γ c)
 
 omit [DecidableEq F] [NeZero n] in
-/-- **The `htdeg` discharge.** With `t.natDegree < 7·n`, the exact quotient product
+/-- **The quotient-side bound.** With `t.natDegree < 7·n`, the exact quotient product
 `t · Z_H` fits under `degreeBound n`: `natDegree_mul_le` and `natDegree (zH F n) = n`
 (`zH = Xⁿ − 1`) give `(7n − 1) + n < 9n`. Independent of the index. -/
 theorem t_zH_natDegree_le (t : Polynomial F) (ht : t.natDegree < 7 * n) :
