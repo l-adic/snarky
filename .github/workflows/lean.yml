@@ -211,8 +211,21 @@ jobs:
     # declaration through the kernel alone, detecting environment tampering that
     # elaboration-time checks — the build and the axiom gates — inherently trust.
     # The script prunes stale oleans first (deleted/renamed modules linger in the
-    # cached build dirs and would otherwise be replayed too). Slowest gate, so last.
+    # cached build dirs and would otherwise be replayed too).
+    #
+    # Runs on pushes to main (and manual dispatch) only, NOT on PRs: every module
+    # replay reloads its Mathlib-sized import environment, so the sweep costs
+    # ~15 runner-minutes — and every commit that lands still gets the full replay.
+    # A failure surfaces as a red X on main (fix-forward or revert).
+    - name: Cache the lean4checker build
+      if: github.event_name != 'pull_request'
+      uses: actions/cache@v3
+      with:
+        path: formal/.lake/lean4checker
+        key: lean4checker-${{ runner.os }}-${{ hashFiles('formal/scripts/kernel-replay.sh', 'formal/lean-toolchain') }}
+
     - name: Kernel-replay all modules (lean4checker)
+      if: github.event_name != 'pull_request'
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         bash scripts/kernel-replay.sh
