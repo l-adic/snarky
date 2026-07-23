@@ -224,3 +224,53 @@ pub fn mixed_index(
 > {
     mixed_index_over::<Vesta>(gates, None)
 }
+
+/// A generic-only circuit over `Fp`: a public row and two wired generic rows (add, mul).
+/// Generic gates use only the first four coefficient columns, so the other eleven are
+/// zero polynomials and their verifier-key commitments are the group identity (the point
+/// at infinity) — the case `kimchi_proof_dump_identity` records to exercise the verifier's
+/// identity-commitment handling in the opening batch.
+pub fn sparse_circuit(rng: &mut ChaCha20Rng) -> (Vec<CircuitGate<Fp>>, [Vec<Fp>; COLUMNS], Fp) {
+    let mut gates: Vec<CircuitGate<Fp>> = vec![];
+    gates.push(CircuitGate::create_generic_gadget(
+        Wire::for_row(0),
+        GenericGateSpec::Pub,
+        None,
+    ));
+    gates.push(CircuitGate::create_generic_gadget(
+        Wire::for_row(1),
+        GenericGateSpec::Add {
+            left_coeff: None,
+            right_coeff: None,
+            output_coeff: None,
+        },
+        None,
+    ));
+    gates.push(CircuitGate::create_generic_gadget(
+        Wire::for_row(2),
+        GenericGateSpec::Mul {
+            output_coeff: None,
+            mul_coeff: None,
+        },
+        None,
+    ));
+    // Wiring: public <-> row 1 left; row 1 output <-> row 2 left.
+    gates[0].wires[0] = Wire { row: 1, col: 0 };
+    gates[1].wires[0] = Wire { row: 0, col: 0 };
+    gates[1].wires[2] = Wire { row: 2, col: 0 };
+    gates[2].wires[0] = Wire { row: 1, col: 2 };
+    let n_gates = gates.len();
+
+    let mut witness: [Vec<Fp>; COLUMNS] = std::array::from_fn(|_| vec![Fp::from(0u64); n_gates]);
+    let pub0 = Fp::rand(rng);
+    witness[0][0] = pub0;
+    let b = Fp::rand(rng);
+    witness[0][1] = pub0;
+    witness[1][1] = b;
+    witness[2][1] = pub0 + b;
+    let d = Fp::rand(rng);
+    witness[0][2] = pub0 + b;
+    witness[1][2] = d;
+    witness[2][2] = (pub0 + b) * d;
+    (gates, witness, pub0)
+}

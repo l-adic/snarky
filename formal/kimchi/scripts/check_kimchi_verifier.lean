@@ -7,8 +7,9 @@ import Lean.Data.Json
 
 One verifier (`kimchiVerify`, over checked records at chunk count `nc`), exercised
 through the client-side `verifyWire` composition below — parse the wire records with
-`Wire.{KimchiVK,KimchiProof}.check`, then verify. Five fixtures spanning both curves,
-`nc ∈ {1, 2, 8}`, both public-evaluation sources, and `max_poly_size` at and off `n/2`:
+`Wire.{KimchiVK,KimchiProof}.check`, then verify. Six fixtures spanning both curves,
+`nc ∈ {1, 2, 8}`, both public-evaluation sources, `max_poly_size` at and off `n/2`, and
+identity (point-at-infinity) commitments:
 
 * `fixtures/kimchi_proof_vesta.json` — the one-chunk proof (`nc = 1`) without carried
   public evaluations (o1js / OCaml `to_repr` drop them at `nc = 1`), so the verifier
@@ -22,7 +23,11 @@ through the client-side `verifyWire` composition below — parse the wire record
 * `fixtures/kimchi_proof_vesta_nc8.json` — an `nc = 8` proof (`max_poly_size = n/8`,
   `n = 64`, a full `56`-chunk quotient), for nc > 2 and `max_poly_size ≠ n/2`. (`nc = 3`
   is unproducible — a non-power-of-two `max_poly_size` misaligns the segment chunking
-  and the prover rejects it.)
+  and the prover rejects it.);
+* `fixtures/kimchi_proof_vesta_identity.json` — a generic-only proof whose unused
+  coefficient columns commit to the group identity (the `[0, 0]` `𝒪` sentinel), consumed
+  in the opening batch — so the verifier's identity-point handling on the MSM path is
+  exercised (not the sponge-absorption path; see audit M1).
 
 Each run checks the accept bit, then two negative matrices:
 
@@ -165,6 +170,10 @@ def main : IO Unit := do
   -- twin (the PubEvalSrc.carried branch at one chunk).
   runChunked CV s!"{dir}/kimchi_proof_vesta.json" false
   runChunked CV s!"{dir}/kimchi_proof_vesta_pub.json" true
+  -- a generic-only proof: its unused coefficient columns commit to the identity (point
+  -- at infinity, the [0,0] sentinel), so this exercises the verifier's identity handling
+  -- on the opening-batch MSM path (not the sponge-absorption path; see audit M1).
+  runChunked CV s!"{dir}/kimchi_proof_vesta_identity.json" false
   -- nc = 2 on both curves, then nc = 8 (max_poly_size ≠ n/2) on Vesta. The nc = 8 run
   -- uses the bounded corruption matrix (heavy := true): each verify there is a
   -- 56-chunk batch MSM.
