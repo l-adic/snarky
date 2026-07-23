@@ -959,7 +959,6 @@ per-chunk representations `aRef` at the witness-row stream positions, assembled 
 degree-`< n` column polynomials. These are the `W` the openings seam pins for the run. -/
 noncomputable def runW {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
-    {n : ℕ} (_idx : Index C.ScalarField n)
     (aRef : Fin (runInput C σ cvk cp pub).commitments.size
       → Fin (2 ^ σ.k) → C.ScalarField) :
     Fin wCols → Polynomial C.ScalarField :=
@@ -970,7 +969,6 @@ noncomputable def runW {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
 openings seam pins, from `aRef` at the accumulator-row stream position. -/
 noncomputable def runZ {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
-    {n : ℕ} (_idx : Index C.ScalarField n)
     (aRef : Fin (runInput C σ cvk cp pub).commitments.size
       → Fin (2 ^ σ.k) → C.ScalarField) :
     Polynomial C.ScalarField :=
@@ -985,47 +983,47 @@ noncomputable def runWTab {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ
     (aRef : Fin (runInput C σ cvk cp pub).commitments.size
       → Fin (2 ^ σ.k) → C.ScalarField) :
     Fin n → Fin wCols → C.ScalarField :=
-  extractTable idx.omega (runW σ cvk cp pub idx aRef)
+  extractTable idx.omega (runW σ cvk cp pub aRef)
 
 /-- The Schwartz–Zippel cardinality bounds on a reflected run's exclusion sets: the `β`/`γ`
 sets have card `≤ 7·(n − zkRows)`, the `α` set `≤ n·(gateAlphaCount + permAlphaCount − 1)`,
 and each `ζ` set (for a degree-`< 7n` quotient) `≤ degreeBound n`. -/
-def RunBounds {C : Ipa.CommitmentCurve} [Module C.ScalarField C.Point]
+def RunBounds {C : Ipa.CommitmentCurve}
     (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
     (pub : Array C.ScalarField) {n : ℕ} [NeZero n] (idx : Index C.ScalarField n)
     (aRef : Fin (runInput C σ cvk cp pub).commitments.size
       → Fin (2 ^ σ.k) → C.ScalarField) : Prop :=
-  (Protocol.soundBadB idx (runW σ cvk cp pub idx aRef)).card ≤ 7 * (n - idx.zkRows)
-    ∧ (∀ β, (Protocol.soundBadG idx (runW σ cvk cp pub idx aRef) β).card
+  (Protocol.soundBadB idx (runW σ cvk cp pub aRef)).card ≤ 7 * (n - idx.zkRows)
+    ∧ (∀ β, (Protocol.soundBadG idx (runW σ cvk cp pub aRef) β).card
         ≤ 7 * (n - idx.zkRows))
-    ∧ (∀ β γ, (Protocol.soundBadA idx (pubView idx pub) (runW σ cvk cp pub idx aRef)
-          (runZ σ cvk cp pub idx aRef) β γ).card
+    ∧ (∀ β γ, (Protocol.soundBadA idx (pubView idx pub) (runW σ cvk cp pub aRef)
+          (runZ σ cvk cp pub aRef) β γ).card
         ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
     ∧ (∀ β γ α (t : Polynomial C.ScalarField), t.natDegree < 7 * n →
-        (Protocol.soundBadZ idx (pubView idx pub) (runW σ cvk cp pub idx aRef)
-          (runZ σ cvk cp pub idx aRef) β γ α t).card ≤ Index.degreeBound n)
+        (Protocol.soundBadZ idx (pubView idx pub) (runW σ cvk cp pub aRef)
+          (runZ σ cvk cp pub aRef) β γ α t).card ≤ Index.degreeBound n)
 
 /-- The guarded satisfaction of a reflected run: when the run's own Fiat–Shamir challenges
 lie outside the canonical exclusion sets `Protocol.soundBad*` at `runW`/`runZ` and off the
 boundary points (`ζ ≠ 1`, `ζ ≠ ω^(n−zkRows)`), the assembled table `runWTab` satisfies the
 circuit. -/
-def RunGuardImp {C : Ipa.CommitmentCurve} [Module C.ScalarField C.Point]
+def RunGuardImp {C : Ipa.CommitmentCurve}
     (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
     (pub : Array C.ScalarField) {n : ℕ} [NeZero n] (idx : Index C.ScalarField n)
     (aRef : Fin (runInput C σ cvk cp pub).commitments.size
       → Fin (2 ^ σ.k) → C.ScalarField)
     (aT : Fin cp.tComm.size → Fin (2 ^ σ.k) → C.ScalarField) : Prop :=
-  (runOracles C σ cvk cp pub).beta ∉ Protocol.soundBadB idx (runW σ cvk cp pub idx aRef) →
+  (runOracles C σ cvk cp pub).beta ∉ Protocol.soundBadB idx (runW σ cvk cp pub aRef) →
   (runOracles C σ cvk cp pub).gamma
-      ∉ Protocol.soundBadG idx (runW σ cvk cp pub idx aRef)
+      ∉ Protocol.soundBadG idx (runW σ cvk cp pub aRef)
           (runOracles C σ cvk cp pub).beta →
   (runOracles C σ cvk cp pub).alpha
-      ∉ Protocol.soundBadA idx (pubView idx pub) (runW σ cvk cp pub idx aRef)
-          (runZ σ cvk cp pub idx aRef) (runOracles C σ cvk cp pub).beta
+      ∉ Protocol.soundBadA idx (pubView idx pub) (runW σ cvk cp pub aRef)
+          (runZ σ cvk cp pub aRef) (runOracles C σ cvk cp pub).beta
           (runOracles C σ cvk cp pub).gamma →
   (runOracles C σ cvk cp pub).zeta
-      ∉ Protocol.soundBadZ idx (pubView idx pub) (runW σ cvk cp pub idx aRef)
-          (runZ σ cvk cp pub idx aRef) (runOracles C σ cvk cp pub).beta
+      ∉ Protocol.soundBadZ idx (pubView idx pub) (runW σ cvk cp pub aRef)
+          (runZ σ cvk cp pub aRef) (runOracles C σ cvk cp pub).beta
           (runOracles C σ cvk cp pub).gamma (runOracles C σ cvk cp pub).alpha
           (ftChunkAssembly σ.k cp.tComm.size aT) →
   (runOracles C σ cvk cp pub).zeta ≠ 1 →
