@@ -4,10 +4,10 @@ import Kimchi.Verifier.Wire
 import KimchiFixture.Kimchi
 import Lean.Data.Json
 
-/-! The verifier-key ↔ index correspondence, by value, across BOTH Pasta curves and BOTH
+/-! The verifier-key ↔ index correspondence, by value, across both Pasta curves and both
 production chunking regimes: every committed column of a production verifier key must,
-CHUNK BY CHUNK, equal the value-MSM of that key's Lagrange-basis chunk commitments
-against the corresponding derived column of the SAME circuit's index. The runs:
+chunk by chunk, equal the value-MSM of that key's Lagrange-basis chunk commitments
+against the corresponding derived column of the same circuit's index. The runs:
 
 * Vesta `nc = 1` (`fixtures/kimchi_proof_vesta.json`, `zk_rows = 3`) and Vesta `nc = 2`
   (`fixtures/kimchi_proof_vesta_nc2.json`, `zk_rows = 5`) against the Vesta index
@@ -18,23 +18,23 @@ against the corresponding derived column of the SAME circuit's index. The runs:
 This adjudicates the chunked indexer model of `Reduction/Soundness.lean` numerically:
 `commitPolyChunk (columnPoly v) c = ∑ⱼ vⱼ • Lⱼ[c]` (chunking is linear, so the
 value-MSM formula holds per chunk window), and the six selector columns carry
-production's fixed blinder PER CHUNK (`mask_custom` with the all-ones blinder over the
+production's fixed blinder per chunk (`mask_custom` with the all-ones blinder over the
 chunk vector — the model choice `commitPolyMaskedChunk` makes; a wrong per-chunk mask
 fails here).
 
-CAUTION — the σ-column ZEROING (latent-bug reproducer): production ZEROES the σ
+CAUTION — the σ-column zeroing (latent-bug reproducer): production zeroes the σ
 columns on rows `[n − zk_rows + 2, n − 1)` ("Zero out the sigmas in the zk rows, to
 ensure that the permutation aggregation is quasi-random for those rows",
-constraints.rs:538–544) — the interior mask rows, exactly where the THREE-factor
+constraints.rs:538–544) — the interior mask rows, exactly where the three-factor
 `permutation_vanishing_polynomial` lets the recurrence run. The σ columns checked here
-are NOT read from a fixture: they are the model's own derivation — `Index.build?` on
+are not read from a fixture: they are the model's own derivation — `Index.build?` on
 the dumped gate table at each regime's `zk_rows`, then `Index.sigmaAddrRow`
 (`Kimchi/Index/Basic.lean`), whose zeroing branch is that same range. So this check
-adjudicates the production σ commitments AGAINST the model's own `sigmaAddrRow`: a
+adjudicates the production σ commitments against the model's own `sigmaAddrRow`: a
 sign or off-by-one drift in the model's zeroing branch at `zk_rows = 5` (rows `29, 30`
 at `n = 32`) makes the σ value-MSMs miss the production commitments and fails the
-`nc = 2` runs on BOTH curves. At `zk_rows = 3` the range is EMPTY — the Vesta `nc = 1`
-run therefore pins the UN-zeroed correspondence, the raw wiring addresses.
+`nc = 2` runs on both curves. At `zk_rows = 3` the range is empty — the Vesta `nc = 1`
+run therefore pins the un-zeroed correspondence, the raw wiring addresses.
 
 The whole body is generic over the commitment curve `C`; the per-curve Poseidon MDS is
 derived from the curve bundle and passed to `Index.build?` as `mdsOfParams C.frParams`. -/
@@ -43,7 +43,7 @@ open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi Kimchi.Index Kimchi.
 
 /-- The index-fixture data a regime run consumes: the gate table (types, coefficients,
 wire pointers), the domain/permutation constants, and the production-derived selector
-and coefficient columns. σ columns are deliberately NOT read — the model derives them
+and coefficient columns. σ columns are deliberately not read — the model derives them
 (see the module docstring). -/
 structure IdxData (C : Ipa.CommitmentCurve) where
   /-- The domain size `n`. -/
@@ -176,7 +176,7 @@ def runRegime (C : Ipa.CommitmentCurve)
     for i in [0:coeffCols] do
       checks := checks.push
         (s!"coeff[{i}]", d.coefficients.getD i #[], coeffComm.getD i #[])
-    -- selectors: production's fixed blinder, PER CHUNK
+    -- selectors: production's fixed blinder, per chunk
     let col (j : Json) (k : String) : Except String (Array C.ScalarField) := do
       parseArrOf parseZMod (← j.getObjVal? k)
     let sel (name comm : String) :

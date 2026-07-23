@@ -11,13 +11,13 @@ import Lean.Data.Json
 Replays the index model on production data from `tools/fixture-dump`'s `index_dump`
 (a circuit with a public row, wired generic rows, a full Poseidon gadget, a CompleteAdd
 row, and an EndoMulScalar block — kimchi's own row checker and the full production
-prove+verify asserted at dump time). Three fixtures across BOTH Pasta curves and BOTH
+prove+verify asserted at dump time). Three fixtures across both Pasta curves and both
 production chunking regimes:
 
-* `fixtures/index_vesta.json` — the UNCHUNKED regression (Vesta, `zk_rows = 3`, so the
-  σ interior-mask range `[n − zk + 2, n − 1)` is EMPTY);
-* `fixtures/index_vesta_nc2.json` / `fixtures/index_pallas_nc2.json` — the CHUNKED twins
-  on both curves (`zk_rows = 5`, so the σ interior-mask range is NONEMPTY — rows 29, 30
+* `fixtures/index_vesta.json` — the unchunked regression (Vesta, `zk_rows = 3`, so the
+  σ interior-mask range `[n − zk + 2, n − 1)` is empty);
+* `fixtures/index_vesta_nc2.json` / `fixtures/index_pallas_nc2.json` — the chunked twins
+  on both curves (`zk_rows = 5`, so the σ interior-mask range is nonempty — rows 29, 30
   at `n = 32`).
 
 For each fixture the driver checks:
@@ -27,7 +27,7 @@ For each fixture the driver checks:
   production data;
 * **the derived columns**: the model's `selectorRow`/`coeffRow`/`sigmaAddrRow` must
   reproduce the production selector, coefficient, and sigma column evaluations row by
-  row — pinning the table→columns derivation. At `zk_rows = 5` this is a DIRECT
+  row — pinning the table→columns derivation. At `zk_rows = 5` this is a direct
   row-level pin of the σ-zeroing branch on rows 29, 30 (a sign or off-by-one there now
   fails here, not only indirectly through the VK-correspondence commitment check);
 * **satisfiability**: `decide (Satisfies idx pub wTab)` on the production witness — the

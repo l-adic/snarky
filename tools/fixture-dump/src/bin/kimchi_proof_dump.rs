@@ -15,21 +15,19 @@
 //! verifier; transcribing `VerifierIndex::digest()`'s absorb schedule is a declared
 //! deferral there).
 //!
-//! Two fixtures from the ONE proof, differing only in whether the proof-carried public
+//! Two fixtures from the one proof, differing only in whether the proof-carried public
 //! evaluations `evals.public` are recorded:
 //!
-//! * `kimchi_proof_vesta.json` — WITHOUT `evals_public`. This mirrors the DEPLOYED wire
-//!   representation: o1js / the OCaml `to_repr` drop the public-eval chunks at `nc = 1`,
-//!   and the verifier then recomputes them barycentrically from the public input
-//!   (verifier.rs:336–379). The Lean verifier's `PubEvalSrc.barycentric` branch.
-//! * `kimchi_proof_vesta_pub.json` — WITH `evals_public`. The Rust `ProverProof::create`
-//!   ALWAYS populates `evals.public = Some(..)` (prover.rs:1048), even at `nc = 1`, and
-//!   the verifier's FIRST branch uses carried evaluations at ANY chunk count
-//!   (verifier.rs:332). So the carried-at-`nc = 1` case IS production-reachable — this
-//!   fixture records it straight off the real proof (same production verify asserted),
-//!   exercising the Lean verifier's `PubEvalSrc.carried` branch at one chunk. For a
-//!   genuine proof the carried values equal the barycentric ones, so both fixtures
-//!   verify against the same transcript.
+//! * `kimchi_proof_vesta.json` — without `evals_public`, the deployed wire
+//!   representation: o1js / OCaml `to_repr` drop the public-eval chunks at `nc = 1` and
+//!   the verifier recomputes them barycentrically (verifier.rs:336–379). The
+//!   `PubEvalSrc.barycentric` branch.
+//! * `kimchi_proof_vesta_pub.json` — with `evals_public`, which `ProverProof::create`
+//!   populates even at `nc = 1` (prover.rs:1048) and the verifier's first branch
+//!   consumes at any chunk count (verifier.rs:332). The `PubEvalSrc.carried` branch.
+//!
+//! For a genuine proof the carried values equal the barycentric ones, so both verify
+//! against the same transcript.
 
 use ark_poly::EvaluationDomain;
 use fixture_dump::{mixed_circuit, mixed_index};

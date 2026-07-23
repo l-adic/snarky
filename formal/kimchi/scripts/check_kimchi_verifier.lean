@@ -5,35 +5,30 @@ import Lean.Data.Json
 /-! The executable kimchi verifier against production proofs (`tools/fixture-dump`'s
 `kimchi_proof_dump` / `kimchi_proof_dump_nc2`).
 
-ONE verifier (`kimchiVerify`, over checked records at chunk count `nc`), exercised
+One verifier (`kimchiVerify`, over checked records at chunk count `nc`), exercised
 through the client-side `verifyWire` composition below — parse the wire records with
-`Wire.{KimchiVK,KimchiProof}.check`, then verify. Five fixtures spanning both curves and
-`nc ∈ {1, 2, 8}`, both public-evaluation sources, and both `max_poly_size = n/2` and
-`≠ n/2`:
+`Wire.{KimchiVK,KimchiProof}.check`, then verify. Five fixtures spanning both curves,
+`nc ∈ {1, 2, 8}`, both public-evaluation sources, and `max_poly_size` at and off `n/2`:
 
-* `fixtures/kimchi_proof_vesta.json` — the one-chunk proof (`nc = 1`), WITHOUT carried
-  public evaluations: the deployed wire representation (o1js / OCaml `to_repr` drop the
-  public-eval chunks at `nc = 1`), so the verifier recomputes them barycentrically —
-  the `PubEvalSrc.barycentric` branch;
-* `fixtures/kimchi_proof_vesta_pub.json` — the SAME one-chunk proof, but WITH the
-  proof-carried public evaluations `evals.public`. The Rust `ProverProof::create` always
-  populates them (prover.rs:1048) and the verifier's first branch consumes carried
-  evaluations at ANY chunk count (verifier.rs:332), so the carried-at-`nc = 1` case is
-  production-reachable — this fixture exercises the `PubEvalSrc.carried` branch at one
-  chunk (a corrupted carried public eval must flip the verdict, confirming the branch
-  feeds verification);
+* `fixtures/kimchi_proof_vesta.json` — the one-chunk proof (`nc = 1`) without carried
+  public evaluations (o1js / OCaml `to_repr` drop them at `nc = 1`), so the verifier
+  recomputes them barycentrically — the `PubEvalSrc.barycentric` branch;
+* `fixtures/kimchi_proof_vesta_pub.json` — the same proof with the carried
+  `evals.public` (which `ProverProof::create` populates even at `nc = 1`, prover.rs:1048,
+  and the verifier's first branch consumes at any chunk count, verifier.rs:332) — the
+  `PubEvalSrc.carried` branch, its corruption case below flipping the verdict;
 * `fixtures/kimchi_proof_{vesta,pallas}_nc2.json` — production `nc = 2` proofs on both
-  curves (half-domain SRS, two chunks per column, proof-carried public evaluations);
+  curves (half-domain SRS, two chunks per column, carried public evaluations);
 * `fixtures/kimchi_proof_vesta_nc8.json` — an `nc = 8` proof (`max_poly_size = n/8`,
-  `n = 64`, a full `56`-chunk quotient): nc > 2 parameter coverage with `max_poly_size ≠
-  n/2`. (`nc = 3` is unproducible — a non-power-of-two `max_poly_size` misaligns the
-  segment chunking and the prover rejects it; see `kimchi_proof_dump_nc8.rs`.)
+  `n = 64`, a full `56`-chunk quotient), for nc > 2 and `max_poly_size ≠ n/2`. (`nc = 3`
+  is unproducible — a non-power-of-two `max_poly_size` misaligns the segment chunking
+  and the prover rejects it.)
 
 Each run checks the accept bit, then two negative matrices:
 
 * **verify-level corruptions** (the mutant still parses; the verdict must flip to
-  REJECT): evaluation chunks on the ζ AND ζω sides and beyond chunk 0 (`z` chunk 1, a
-  witness-column chunk 1), the quotient commitment at chunk 0 AND at the HIGH chunk
+  REJECT): evaluation chunks on the ζ and ζω sides and beyond chunk 0 (`z` chunk 1, a
+  witness-column chunk 1), the quotient commitment at chunk 0 and at the high chunk
   (`7·nc − 1`, the second `ft_comm` collapse group — exists only at `nc = 2`),
   `ft_eval1`, and (where carried) a public-evaluation chunk;
 * **parse rejections** (`Wire.check` must return `none` — ragged or mis-pinned wire
