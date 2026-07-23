@@ -936,13 +936,113 @@ private theorem batchC_eq_flat (i : Fin batchRows) (c : Fin nc) :
 
 end GroupReconcile
 
-/-! ## The chunked run-level terminal roots -/
+/-! ## The chunked run-level terminal roots
+
+Residue-free AGM soundness of the deployed Pasta verifiers, stated over the run's own data.
+Each root pairs the Schwartz–Zippel cardinality bounds (`RunBounds`) with a guarded
+implication (`RunGuardImp`): at the run's own Fiat–Shamir challenges — provided they lie
+outside the exclusion sets and off the two boundary points `1`, `ω^(n − zkRows)` — the
+assembled witness table `runWTab` satisfies the circuit. The exclusion sets are the canonical
+Schwartz–Zippel sets `Protocol.soundBad{B,G,A,Z}` at the run's assembled witness columns
+`runW` and accumulator `runZ` — the same sets the openings seam
+`kimchiProof_sound_of_openings` pins for the run's per-chunk representations, so the proofs
+feed the seam directly. Both the exclusion sets and the satisfying table are explicit
+functions of the run, so the conclusion constrains *these* challenges and *this* table.
+
+That a genuine run's challenges avoid the exclusion sets is a hypothesis of `RunGuardImp`, as
+is the good-combination-challenge condition `hξ`/`hr`. Bounding the probability that the
+Fiat–Shamir challenges land in the (`card`-bounded) exclusion sets is the forking/density
+argument, which this development does not carry. -/
+
+/-- The assembled witness-column polynomials of a reflected run: the algebraic prover's own
+per-chunk representations `aRef` at the witness-row stream positions, assembled into
+degree-`< n` column polynomials. These are the `W` the openings seam pins for the run. -/
+noncomputable def runW {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    {n : ℕ} (_idx : Index C.ScalarField n)
+    (aRef : Fin (runInput C σ cvk cp pub).commitments.size
+      → Fin (2 ^ σ.k) → C.ScalarField) :
+    Fin wCols → Polynomial C.ScalarField :=
+  fun col => assembledRow σ.k nc
+    fun c => aRef ⟨(streamPos nc (wRow col) c : ℕ), (streamPos nc (wRow col) c).isLt⟩
+
+/-- The assembled permutation-accumulator polynomial of a reflected run — the `z` the
+openings seam pins, from `aRef` at the accumulator-row stream position. -/
+noncomputable def runZ {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    {n : ℕ} (_idx : Index C.ScalarField n)
+    (aRef : Fin (runInput C σ cvk cp pub).commitments.size
+      → Fin (2 ^ σ.k) → C.ScalarField) :
+    Polynomial C.ScalarField :=
+  assembledRow σ.k nc
+    fun c => aRef ⟨(streamPos nc zRow c : ℕ), (streamPos nc zRow c).isLt⟩
+
+/-- The assembled witness table of a reflected run: `runW` read as a table over the domain.
+This is the satisfying assignment the run-level roots deliver. -/
+noncomputable def runWTab {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    {n : ℕ} (idx : Index C.ScalarField n)
+    (aRef : Fin (runInput C σ cvk cp pub).commitments.size
+      → Fin (2 ^ σ.k) → C.ScalarField) :
+    Fin n → Fin wCols → C.ScalarField :=
+  extractTable idx.omega (runW σ cvk cp pub idx aRef)
+
+/-- The Schwartz–Zippel cardinality bounds on a reflected run's exclusion sets: the `β`/`γ`
+sets have card `≤ 7·(n − zkRows)`, the `α` set `≤ n·(gateAlphaCount + permAlphaCount − 1)`,
+and each `ζ` set (for a degree-`< 7n` quotient) `≤ degreeBound n`. -/
+def RunBounds {C : Ipa.CommitmentCurve} [Module C.ScalarField C.Point]
+    (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
+    (pub : Array C.ScalarField) {n : ℕ} [NeZero n] (idx : Index C.ScalarField n)
+    (aRef : Fin (runInput C σ cvk cp pub).commitments.size
+      → Fin (2 ^ σ.k) → C.ScalarField) : Prop :=
+  (Protocol.soundBadB idx (runW σ cvk cp pub idx aRef)).card ≤ 7 * (n - idx.zkRows)
+    ∧ (∀ β, (Protocol.soundBadG idx (runW σ cvk cp pub idx aRef) β).card
+        ≤ 7 * (n - idx.zkRows))
+    ∧ (∀ β γ, (Protocol.soundBadA idx (pubView idx pub) (runW σ cvk cp pub idx aRef)
+          (runZ σ cvk cp pub idx aRef) β γ).card
+        ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
+    ∧ (∀ β γ α (t : Polynomial C.ScalarField), t.natDegree < 7 * n →
+        (Protocol.soundBadZ idx (pubView idx pub) (runW σ cvk cp pub idx aRef)
+          (runZ σ cvk cp pub idx aRef) β γ α t).card ≤ Index.degreeBound n)
+
+/-- The guarded satisfaction of a reflected run: when the run's own Fiat–Shamir challenges
+lie outside the canonical exclusion sets `Protocol.soundBad*` at `runW`/`runZ` and off the
+boundary points (`ζ ≠ 1`, `ζ ≠ ω^(n−zkRows)`), the assembled table `runWTab` satisfies the
+circuit. -/
+def RunGuardImp {C : Ipa.CommitmentCurve} [Module C.ScalarField C.Point]
+    (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
+    (pub : Array C.ScalarField) {n : ℕ} [NeZero n] (idx : Index C.ScalarField n)
+    (aRef : Fin (runInput C σ cvk cp pub).commitments.size
+      → Fin (2 ^ σ.k) → C.ScalarField)
+    (aT : Fin cp.tComm.size → Fin (2 ^ σ.k) → C.ScalarField) : Prop :=
+  (runOracles C σ cvk cp pub).beta ∉ Protocol.soundBadB idx (runW σ cvk cp pub idx aRef) →
+  (runOracles C σ cvk cp pub).gamma
+      ∉ Protocol.soundBadG idx (runW σ cvk cp pub idx aRef)
+          (runOracles C σ cvk cp pub).beta →
+  (runOracles C σ cvk cp pub).alpha
+      ∉ Protocol.soundBadA idx (pubView idx pub) (runW σ cvk cp pub idx aRef)
+          (runZ σ cvk cp pub idx aRef) (runOracles C σ cvk cp pub).beta
+          (runOracles C σ cvk cp pub).gamma →
+  (runOracles C σ cvk cp pub).zeta
+      ∉ Protocol.soundBadZ idx (pubView idx pub) (runW σ cvk cp pub idx aRef)
+          (runZ σ cvk cp pub idx aRef) (runOracles C σ cvk cp pub).beta
+          (runOracles C σ cvk cp pub).gamma (runOracles C σ cvk cp pub).alpha
+          (ftChunkAssembly σ.k cp.tComm.size aT) →
+  (runOracles C σ cvk cp pub).zeta ≠ 1 →
+  (runOracles C σ cvk cp pub).zeta ≠ idx.omega ^ (n - idx.zkRows) →
+  Satisfies idx (pubView idx pub) (runWTab σ cvk cp pub idx aRef)
 
 /-- **The run-level residue-free root, curve-generically**: from a genuine acceptance
 `kimchiVerify σ cvk cp pub = true` of the checked records at production chunking
-`nc · 2^σ.k = n`, the AGM path delivers the guarded
-`Satisfies idx (pubView idx pub) wTab` — the assembled witness table of the algebraic
-prover's own per-chunk representations. The two curve-specific facts enter as
+`nc · 2^σ.k = n`, the AGM path yields `RunBounds ∧ RunGuardImp` — the Schwartz–Zippel
+cardinality bounds together with the guarded satisfaction of the assembled table
+`runWTab σ cvk cp pub idx aRef`, the algebraic prover's own per-chunk representations read as
+a witness table. The exclusion sets and the table are the canonical named terms
+`Protocol.soundBad*` at `runW`/`runZ` (`RunBounds`/`RunGuardImp`), so the conclusion
+constrains the run's own Fiat–Shamir challenges; that those challenges avoid the exclusion
+sets, and the good-combination conditions `hξ`/`hr`, are hypotheses — the forking/density
+argument, not carried here. The two
+curve-specific facts enter as
 hypotheses: `hsmul`, the `.val`-scalar collapse of the point-count-backed `Module`
 instance, and `hFS`, the Fiat–Shamir transcript tree at the run's own warm data —
 taken ONCE and threaded to both consumers (the flat eval pins at step (5) and
@@ -993,32 +1093,7 @@ private theorem run_sound_algebraic_ft {C : Ipa.CommitmentCurve}
       ∉ badROf σ aRef (runInput C σ cvk cp pub).pointFn
           (runInput C σ cvk cp pub).evalFn
           (runInput C σ cvk cp pub).polyscale) :
-    ∃ (badB : Finset C.ScalarField) (badG : C.ScalarField → Finset C.ScalarField)
-        (badA : C.ScalarField → C.ScalarField → Finset C.ScalarField)
-        (badZ : C.ScalarField → C.ScalarField → C.ScalarField
-          → Polynomial C.ScalarField → Finset C.ScalarField)
-        (wTab : Fin n → Fin wCols → C.ScalarField),
-      (badB.card ≤ 7 * (n - idx.zkRows)
-        ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
-        ∧ (∀ β γ,
-            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
-        ∧ (∀ β γ α (t : Polynomial C.ScalarField), t.natDegree < 7 * n →
-            (badZ β γ α t).card ≤ Index.degreeBound n))
-      ∧ ((runOracles C σ cvk cp pub).beta ∉ badB →
-          (runOracles C σ cvk cp pub).gamma
-            ∉ badG (runOracles C σ cvk cp pub).beta →
-          (runOracles C σ cvk cp pub).alpha
-            ∉ badA (runOracles C σ cvk cp pub).beta
-                (runOracles C σ cvk cp pub).gamma →
-          (runOracles C σ cvk cp pub).zeta
-            ∉ badZ (runOracles C σ cvk cp pub).beta
-                (runOracles C σ cvk cp pub).gamma
-                (runOracles C σ cvk cp pub).alpha
-                (ftChunkAssembly σ.k cp.tComm.size aT) →
-          (runOracles C σ cvk cp pub).zeta ≠ 1 →
-          (runOracles C σ cvk cp pub).zeta
-            ≠ idx.omega ^ (n - idx.zkRows) →
-          Satisfies idx (pubView idx pub) wTab) := by
+    RunBounds σ cvk cp pub idx aRef ∧ RunGuardImp σ cvk cp pub idx aRef aT := by
   obtain ⟨hvkc, homega, hzk, hshift, hendo, hmds, hlag⟩ := hvk
   -- (1) the body reflection: the guards and the warm acceptance
   obtain ⟨hlagsz, _hpubn, haccept⟩ :=
@@ -1046,8 +1121,8 @@ private theorem run_sound_algebraic_ft {C : Ipa.CommitmentCurve}
         = commitPolyMaskedChunk σ (-(idx.pubPoly (pubView idx pub))) (c : ℕ) :=
     fun c => publicCommitment_corresponds C σ cvk pub idx
       (fun a P => (hsmul a P).symm) hlag hlagsz hpub c
-  -- (4) the openings seam, fed directly
-  obtain ⟨badB, badG, badA, badZ, hbounds, himp⟩ :=
+  -- (4) the residue-free openings seam, fed directly — its exclusion sets are `runW`/`runZ`'s
+  obtain ⟨hbounds, himp⟩ :=
     kimchiProof_sound_of_openings σ idx hnc hk hbind cvk.comms hvkc (pubView idx pub)
       (fun col c => (cp.wComm[col])[c]) (fun c => cp.zComm[c])
       (fun c => (publicCommitment C σ cvk pub)[c])
@@ -1055,10 +1130,7 @@ private theorem run_sound_algebraic_ft {C : Ipa.CommitmentCurve}
       (fun i c => aRef ⟨(streamPos nc i c : ℕ), hlt i c⟩)
       (fun i c => ρRef ⟨(streamPos nc i c : ℕ), hlt i c⟩)
       hbound₀
-  refine ⟨badB, badG, badA, badZ,
-    extractTable idx.omega (fun col => assembledRow σ.k nc
-      (fun c => aRef ⟨(streamPos nc (wRow col) c : ℕ), hlt (wRow col) c⟩)),
-    hbounds, ?_⟩
+  refine ⟨hbounds, ?_⟩
   intro hβ hγ hα hζ hζ1 hζb
   -- (5) the eval pins from the run's single accepted opening (flat arity)
   obtain ⟨a, ρ, hopen⟩ := ipa_soundnessA σ _ _ _ hFS haccept
@@ -1146,8 +1218,13 @@ private theorem run_sound_algebraic_ft {C : Ipa.CommitmentCurve}
 /-- **The run-level residue-free root (Vesta)**: from a genuine acceptance
 `kimchiVerify σ cvk cp pub = true` of the checked records at production chunking
 `nc · 2^σ.k = n`, the AGM path delivers the guarded
-`Satisfies idx (pubView idx pub) wTab` — the assembled witness table of the algebraic
-prover's own per-chunk representations. A deployed run reaches this root through the
+`RunBounds ∧ RunGuardImp` — the Schwartz–Zippel cardinality bounds together with the guarded
+satisfaction of the assembled witness table `runWTab σ cvk cp pub idx aRef`, the algebraic
+prover's own per-chunk representations. The exclusion sets and the table are the canonical
+named terms `Protocol.soundBad*` at `runW`/`runZ` (`RunBounds`/`RunGuardImp`), so the
+conclusion constrains the run's own Fiat–Shamir challenges; that those challenges avoid the
+exclusion sets, and the conditions `hξ`/`hr`, are hypotheses (the forking/density argument).
+A deployed run reaches this root through the
 wire boundary: the client parses with `Wire.{KimchiVK,KimchiProof}.check` (a checked
 record cannot hold a ragged proof) and calls `kimchiVerify` on the result. The prover
 supplies SRS-basis representations of the run's `44·nc + 1` flat segment rows
@@ -1196,41 +1273,21 @@ theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point) {nc : ℕ}
       ∉ badROf σ aRef (runInput IpaVesta.curve σ cvk cp pub).pointFn
           (runInput IpaVesta.curve σ cvk cp pub).evalFn
           (runInput IpaVesta.curve σ cvk cp pub).polyscale) :
-    ∃ (badB : Finset Fp) (badG : Fp → Finset Fp) (badA : Fp → Fp → Finset Fp)
-        (badZ : Fp → Fp → Fp → Polynomial Fp → Finset Fp)
-        (wTab : Fin n → Fin wCols → Fp),
-      (badB.card ≤ 7 * (n - idx.zkRows)
-        ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
-        ∧ (∀ β γ,
-            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
-        ∧ (∀ β γ α (t : Polynomial Fp), t.natDegree < 7 * n →
-            (badZ β γ α t).card ≤ Index.degreeBound n))
-      ∧ ((runOracles IpaVesta.curve σ cvk cp pub).beta ∉ badB →
-          (runOracles IpaVesta.curve σ cvk cp pub).gamma
-            ∉ badG (runOracles IpaVesta.curve σ cvk cp pub).beta →
-          (runOracles IpaVesta.curve σ cvk cp pub).alpha
-            ∉ badA (runOracles IpaVesta.curve σ cvk cp pub).beta
-                (runOracles IpaVesta.curve σ cvk cp pub).gamma →
-          (runOracles IpaVesta.curve σ cvk cp pub).zeta
-            ∉ badZ (runOracles IpaVesta.curve σ cvk cp pub).beta
-                (runOracles IpaVesta.curve σ cvk cp pub).gamma
-                (runOracles IpaVesta.curve σ cvk cp pub).alpha
-                (ftChunkAssembly σ.k cp.tComm.size aT) →
-          (runOracles IpaVesta.curve σ cvk cp pub).zeta ≠ 1 →
-          (runOracles IpaVesta.curve σ cvk cp pub).zeta
-            ≠ idx.omega ^ (n - idx.zkRows) →
-          Satisfies idx (pubView idx pub) wTab) :=
+    RunBounds σ cvk cp pub idx aRef ∧ RunGuardImp σ cvk cp pub idx aRef aT :=
   run_sound_algebraic_ft σ cvk cp pub idx Pasta.vesta_smul_val hnc hk hn hvk hpub
     htpos hbind hacc (kimchi_fiat_shamir_vesta σ cvk cp pub) aRef ρRef hrep aT ρT
     hTC hξ hr
 
 /-- **The run-level residue-free root (Pallas).** The Pallas-side twin of
-`kimchiVesta_run_sound_algebraic_ft`, over `Fq`/`IpaPallas`. The same trust surface:
-the sole axiom consumed is its Fiat–Shamir assumption `kimchi_fiat_shamir_pallas`
-(once, through `run_sound_algebraic_ft`), and the computational hypotheses — the AGM
-representations `aRef`/`ρRef`/`aT`/`ρT`, the good-challenge guards `hξ`/`hr`, and
-DL-binding `hbind` (see the `hbind` scope note in the `Bulletproof/Soundness.lean`
-module docstring) — stay in the statement. -/
+`kimchiVesta_run_sound_algebraic_ft`, over `Fq`/`IpaPallas`. Same shape: the conclusion is
+`RunBounds ∧ RunGuardImp` over the canonical exclusion sets `Protocol.soundBad*` at
+`runW`/`runZ` and the assembled table `runWTab …`, with the run's avoidance of the exclusion
+sets and the conditions `hξ`/`hr` left as hypotheses (the forking/density argument). The same
+trust surface: the sole axiom consumed is its Fiat–Shamir assumption
+`kimchi_fiat_shamir_pallas` (once, through `run_sound_algebraic_ft`), and the
+computational hypotheses — the AGM representations `aRef`/`ρRef`/`aT`/`ρT`, the
+good-challenge guards `hξ`/`hr`, and DL-binding `hbind` (see the `hbind` scope note in the
+`Bulletproof/Soundness.lean` module docstring) — stay in the statement. -/
 theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point) {nc : ℕ}
     (cvk : KimchiVK IpaPallas.curve nc) (cp : KimchiProof IpaPallas.curve nc σ.k)
     (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
@@ -1254,30 +1311,7 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point) {nc : ℕ
       ∉ badROf σ aRef (runInput IpaPallas.curve σ cvk cp pub).pointFn
           (runInput IpaPallas.curve σ cvk cp pub).evalFn
           (runInput IpaPallas.curve σ cvk cp pub).polyscale) :
-    ∃ (badB : Finset Fq) (badG : Fq → Finset Fq) (badA : Fq → Fq → Finset Fq)
-        (badZ : Fq → Fq → Fq → Polynomial Fq → Finset Fq)
-        (wTab : Fin n → Fin wCols → Fq),
-      (badB.card ≤ 7 * (n - idx.zkRows)
-        ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
-        ∧ (∀ β γ,
-            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
-        ∧ (∀ β γ α (t : Polynomial Fq), t.natDegree < 7 * n →
-            (badZ β γ α t).card ≤ Index.degreeBound n))
-      ∧ ((runOracles IpaPallas.curve σ cvk cp pub).beta ∉ badB →
-          (runOracles IpaPallas.curve σ cvk cp pub).gamma
-            ∉ badG (runOracles IpaPallas.curve σ cvk cp pub).beta →
-          (runOracles IpaPallas.curve σ cvk cp pub).alpha
-            ∉ badA (runOracles IpaPallas.curve σ cvk cp pub).beta
-                (runOracles IpaPallas.curve σ cvk cp pub).gamma →
-          (runOracles IpaPallas.curve σ cvk cp pub).zeta
-            ∉ badZ (runOracles IpaPallas.curve σ cvk cp pub).beta
-                (runOracles IpaPallas.curve σ cvk cp pub).gamma
-                (runOracles IpaPallas.curve σ cvk cp pub).alpha
-                (ftChunkAssembly σ.k cp.tComm.size aT) →
-          (runOracles IpaPallas.curve σ cvk cp pub).zeta ≠ 1 →
-          (runOracles IpaPallas.curve σ cvk cp pub).zeta
-            ≠ idx.omega ^ (n - idx.zkRows) →
-          Satisfies idx (pubView idx pub) wTab) :=
+    RunBounds σ cvk cp pub idx aRef ∧ RunGuardImp σ cvk cp pub idx aRef aT :=
   run_sound_algebraic_ft σ cvk cp pub idx Pasta.pallas_smul_val hnc hk hn hvk hpub
     htpos hbind hacc (kimchi_fiat_shamir_pallas σ cvk cp pub) aRef ρRef hrep aT ρT
     hTC hξ hr

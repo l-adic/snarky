@@ -317,10 +317,10 @@ theorem kimchiProof_sound_algebraic [Field F] [AddCommGroup G]
                 (claimedEvals (ζ ^ 2 ^ σ.k) ((idx.omega * ζ) ^ 2 ^ σ.k) E)) →
           Satisfies idx pub
             (extractTable idx.omega fun col => assembledRow σ.k nc (aw₀ (wRow col))) := by
-  obtain ⟨badB, badG, badA, badZ, ⟨hB, hG, hA, hZ⟩, himp⟩ :=
+  obtain ⟨⟨hB, hG, hA, hZ⟩, himp⟩ :=
     kimchiProof_sound_of_openings σ idx hnc hk hbind comms hvk pub wC zC pubC hpubC
       aw₀ ρw₀ hrep
-  refine ⟨badB, badG, badA, badZ,
+  refine ⟨_, _, _, _,
     fun E ζ => badXiOf σ (flatten aw₀) ![ζ, idx.omega * ζ] (flatten E),
     fun E ζ ξ => badROf σ (flatten aw₀) ![ζ, idx.omega * ζ] (flatten E) ξ,
     ⟨hB, hG, hA, hZ,

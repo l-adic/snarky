@@ -98,5 +98,11 @@ Kimchi.Verifier.kimchiProof_sound_algebraic_ft
 -- openings seam fed directly, public row bound through the key's Lagrange chunk pin,
 -- Maller identity from the ft opening at the DOUBLE zeta^{2^k} collapse. Trust
 -- surface = kimchi_fiat_shamir (Poseidon-RO) + DL-binding (hbind) + CompElliptic.
+-- The conclusion is `RunBounds ∧ RunGuardImp` over the canonical Schwartz-Zippel exclusion
+-- sets `Protocol.soundBad*` (at the run's assembled `runW`/`runZ`) and the assembled table
+-- `runWTab` — explicit named terms, so the conclusion constrains the run's own Fiat-Shamir
+-- challenges. Scope: that a genuine run's challenges avoid the (card-bounded) exclusion sets,
+-- and the good-combination conditions `hξ`/`hr`, are hypotheses of `RunGuardImp` — the
+-- forking/density argument, not carried here.
 Kimchi.Verifier.kimchiVesta_run_sound_algebraic_ft
 Kimchi.Verifier.kimchiPallas_run_sound_algebraic_ft
