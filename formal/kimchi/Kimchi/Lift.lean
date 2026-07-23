@@ -53,6 +53,31 @@ in the library; every per-gate bridge is that gate's `constraints_map` pasted on
   carrying its polynomial-side constraints to the row-side ones.
 -/
 
+namespace Kimchi
+
+/-! ## The column embeddings
+
+The permuted (wired) columns are the FIRST SEVEN witness columns
+(`PERMUTS ≤ COLUMNS`, proof-systems `circuits/wires.rs`), and the batch carries the
+first six of the seven committed σ columns (`sigma_comm[PERMUTS − 1]` is linearized
+away). These three embeddings name every inclusion between the column index types;
+they are `abbrev`s (fully reducible), so each is definitionally the anonymous
+`⟨i, _⟩` it replaces. -/
+
+/-- Wired column `i` as a witness column: the wired columns are the first seven
+witness columns (`PERMUTS ≤ COLUMNS`, proof-systems `circuits/wires.rs`). -/
+abbrev permCol (i : Fin permCols) : Fin wCols := ⟨i, by omega⟩
+
+/-- Batched σ column `i` as a witness column: the first six of the seven wired
+columns, which are the first seven witness columns. -/
+abbrev sigmaCol (i : Fin sigmaRows) : Fin wCols := ⟨i, by omega⟩
+
+/-- Batched σ column `i` among the seven committed σ columns: the batch carries
+`sigma_comm[0..5]` (the seventh is consumed by the linearization instead). -/
+abbrev sigmaPermCol (i : Fin sigmaRows) : Fin permCols := ⟨i, by omega⟩
+
+end Kimchi
+
 namespace Kimchi.Lift
 
 open Polynomial

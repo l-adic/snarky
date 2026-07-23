@@ -36,8 +36,8 @@ For each fixture the driver checks:
   input must each be rejected.
 
 The whole body is generic over the commitment curve `C` (so both Pasta scalar fields run
-through one code path); the per-curve Poseidon MDS is passed in as the `Index.build?`
-parameter `mdsOfParams frParams`.
+through one code path); the per-curve Poseidon MDS is derived from the curve bundle as the
+`Index.build?` parameter `mdsOfParams C.frParams`.
 -/
 
 open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi Kimchi.Index Kimchi.Verifier
@@ -173,11 +173,11 @@ def checks {C : Ipa.CommitmentCurve} (fx : RawFixture C) {n : ℕ} [NeZero n]
       | none => false),
     ("corrupted public input rejected", !sat wTab (fun i => pub i + 1)) ]
 
-def run {C : Ipa.CommitmentCurve} (frParams : Poseidon.Params C.ScalarField)
+def run {C : Ipa.CommitmentCurve}
     {n : ℕ} [NeZero n] (fx : RawFixture C) (hn : fx.n = n) : IO Unit := do
   let gates ← IO.ofExcept (buildGates fx hn)
   let some idx := Index.build? gates fx.publicCount fx.zkRows fx.omega fx.endoBase
-      (mdsOfParams frParams) (fun i => fx.shifts[(i : ℕ)]!)
+      (mdsOfParams C.frParams) (fun i => fx.shifts[(i : ℕ)]!)
     | throw (IO.userError "Index.build? rejected the production data")
   IO.println "  ✓ Index.build? accepts (all laws decided on production data)"
   let results := checks fx (n := n) idx
@@ -189,8 +189,7 @@ def run {C : Ipa.CommitmentCurve} (frParams : Poseidon.Params C.ScalarField)
     (n={n}, zk_rows={fx.zkRows}, gates incl. generic/poseidon/completeAdd/endoScalar)"
 
 /-- Read, parse, and run one index fixture over its commitment curve. -/
-def runFile (C : Ipa.CommitmentCurve) (frParams : Poseidon.Params C.ScalarField)
-    (path : String) : IO Unit := do
+def runFile (C : Ipa.CommitmentCurve) (path : String) : IO Unit := do
   IO.println s!"— {path} —"
   let raw ← IO.FS.readFile path
   let fx ← match Json.parse raw >>= parseRaw C with
@@ -198,17 +197,17 @@ def runFile (C : Ipa.CommitmentCurve) (frParams : Poseidon.Params C.ScalarField)
     | .error e => throw (IO.userError s!"index fixture parse error: {e}")
   if hpos : 0 < fx.n then
     haveI : NeZero fx.n := ⟨Nat.pos_iff_ne_zero.mp hpos⟩
-    run frParams fx rfl
+    run fx rfl
   else
     throw (IO.userError "empty domain")
 
 def main : IO Unit := do
   let dir := (← IO.getEnv "KIMCHI_FIXTURES_DIR").getD "fixtures"
   -- Vesta, unchunked (zk_rows = 3): σ interior-mask range empty.
-  runFile IpaVesta.curve Wire.KimchiVesta.frParams s!"{dir}/index_vesta.json"
+  runFile IpaVesta.curve s!"{dir}/index_vesta.json"
   -- Vesta and Pallas, nc = 2 (zk_rows = 5): σ interior-mask range = rows 29, 30.
-  runFile IpaVesta.curve Wire.KimchiVesta.frParams s!"{dir}/index_vesta_nc2.json"
-  runFile IpaPallas.curve Wire.KimchiPallas.frParams s!"{dir}/index_pallas_nc2.json"
+  runFile IpaVesta.curve s!"{dir}/index_vesta_nc2.json"
+  runFile IpaPallas.curve s!"{dir}/index_pallas_nc2.json"
   IO.println "✓ the index model matches kimchi on the mixed-gate fixtures across both \
     Pasta curves and both chunking regimes (nc = 1 and nc = 2)"
 

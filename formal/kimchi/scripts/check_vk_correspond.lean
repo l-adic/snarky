@@ -37,7 +37,7 @@ at `n = 32`) makes the σ value-MSMs miss the production commitments and fails t
 run therefore pins the UN-zeroed correspondence, the raw wiring addresses.
 
 The whole body is generic over the commitment curve `C`; the per-curve Poseidon MDS is
-passed to `Index.build?` as `mdsOfParams frParams`. -/
+derived from the curve bundle and passed to `Index.build?` as `mdsOfParams C.frParams`. -/
 
 open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi Kimchi.Index Kimchi.Verifier
 
@@ -125,14 +125,14 @@ def basisChunkMSM (C : Ipa.CommitmentCurve) (basis : Array (Array C.Point)) (c :
 /-- The MODEL's σ columns at the given `zk_rows`: `Index.build?` on the dumped gate
 table (every index law decided), then `Index.sigmaAddrRow` — the wiring addresses
 through the model's own zeroing branch. -/
-def sigmaColsOf {C : Ipa.CommitmentCurve} (frParams : Poseidon.Params C.ScalarField)
+def sigmaColsOf {C : Ipa.CommitmentCurve}
     (d : IdxData C) (zkRows : ℕ) : Except String (Array (Array C.ScalarField)) :=
   if hpos : 0 < d.n then
     haveI : NeZero d.n := ⟨Nat.pos_iff_ne_zero.mp hpos⟩
     do
       let gates ← buildGates d rfl
       let some idx := Index.build? gates d.publicCount zkRows d.omega d.endoBase
-          (mdsOfParams frParams) (fun i => d.shifts[(i : ℕ)]!)
+          (mdsOfParams C.frParams) (fun i => d.shifts[(i : ℕ)]!)
         | throw s!"Index.build? rejected the index data at zk_rows = {zkRows}"
       return (List.finRange permCols).toArray.map fun c =>
         ((List.finRange d.n).map (idx.sigmaAddrRow c)).toArray
@@ -140,7 +140,7 @@ def sigmaColsOf {C : Ipa.CommitmentCurve} (frParams : Poseidon.Params C.ScalarFi
 
 /-- One chunking regime: the VK fixture at `vkPath` against the index data, with the
 σ columns derived by the model itself at this regime's `zk_rows`. -/
-def runRegime (C : Ipa.CommitmentCurve) (frParams : Poseidon.Params C.ScalarField)
+def runRegime (C : Ipa.CommitmentCurve)
     (d : IdxData C) (vkPath : String) : IO Unit := do
   let vkJ ← IO.FS.readFile vkPath
   let r : Except String
@@ -167,7 +167,7 @@ def runRegime (C : Ipa.CommitmentCurve) (frParams : Poseidon.Params C.ScalarFiel
     let sigmaComm ← cpts "sigma_comm"
     let coeffComm ← cpts "coefficients_comm"
     -- the model's own σ columns at THIS regime's zk_rows (see the module docstring)
-    let sigmaCols ← sigmaColsOf frParams d zkRows
+    let sigmaCols ← sigmaColsOf d zkRows
     unless sigmaComm.size = permCols ∧ d.coefficients.size = coeffCols
         ∧ coeffComm.size = coeffCols do throw "column family size mismatch"
     let mut checks : Array (String × Array C.ScalarField × Array C.Point) := #[]
@@ -205,23 +205,23 @@ def runRegime (C : Ipa.CommitmentCurve) (frParams : Poseidon.Params C.ScalarFiel
       throw (IO.userError s!"{vkPath}: chunked VK correspondence check FAILED")
 
 /-- Read an index fixture and run every VK against it. -/
-def runCurve (C : Ipa.CommitmentCurve) (frParams : Poseidon.Params C.ScalarField)
+def runCurve (C : Ipa.CommitmentCurve)
     (idxPath : String) (vkPaths : List String) : IO Unit := do
   let idxJ ← IO.FS.readFile idxPath
   let d ← match Json.parse idxJ >>= parseIdx C with
     | .ok d => pure d
     | .error e => throw (IO.userError s!"{idxPath}: index fixture parse error: {e}")
   for vkPath in vkPaths do
-    runRegime C frParams d vkPath
+    runRegime C d vkPath
 
 def main : IO Unit := do
   let dir := (← IO.getEnv "KIMCHI_FIXTURES_DIR").getD "fixtures"
   -- Vesta: nc = 1 (zk_rows = 3, σ-zeroing range empty) then nc = 2 (zk_rows = 5, rows
   -- 29, 30 zeroed by the model's sigmaAddrRow branch).
-  runCurve IpaVesta.curve Wire.KimchiVesta.frParams s!"{dir}/index_vesta.json"
+  runCurve IpaVesta.curve s!"{dir}/index_vesta.json"
     [s!"{dir}/kimchi_proof_vesta.json", s!"{dir}/kimchi_proof_vesta_nc2.json"]
   -- Pallas: nc = 2 (zk_rows = 5) against the Pallas index.
-  runCurve IpaPallas.curve Wire.KimchiPallas.frParams s!"{dir}/index_pallas_nc2.json"
+  runCurve IpaPallas.curve s!"{dir}/index_pallas_nc2.json"
     [s!"{dir}/kimchi_proof_pallas_nc2.json"]
   IO.println "✓ the production verifier keys (Vesta nc = 1 and nc = 2, Pallas nc = 2) \
     correspond to their indices: every committed column chunk is the value-MSM of its \

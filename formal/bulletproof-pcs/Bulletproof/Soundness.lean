@@ -399,7 +399,9 @@ point, every polynomial of the batch is bound: there is a genuine `q i` of degre
 evaluations are the `x^(2^k)`-power recombinations of the claimed chunk evaluations,
 and whose chunk windows REPRODUCE each per-chunk claim individually (the last clause —
 consumers that pin per-chunk claims against fixed chunk commitments, like the chunked
-kimchi reduction's verifier-key rows, read the claims off it directly). -/
+kimchi reduction's verifier-key rows, read the claims off it directly). The evaluation
+clause is the recombination corollary of the degree bound and the per-chunk clause
+(through `eval_eq_sum_chunkPoly` and `chunkPoly_eval`), kept for direct consumers. -/
 theorem chunked_batch_soundness (σ : SRS G) {n m : ℕ} {nc : Fin n → ℕ}
     (hnc : ∀ i, 0 < nc i)
     (ξ : Fin (∑ i, nc i) → F) (hξ : Function.Injective ξ)

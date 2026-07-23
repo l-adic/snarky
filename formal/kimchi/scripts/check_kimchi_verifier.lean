@@ -72,13 +72,13 @@ The skipped corruption KINDS (chunk-0 evals, `ft_eval1`, the base `t_comm` chunk
 already exercised at `nc ≤ 2`; the kept high-chunk `t_comm` corruption keeps the nc > 2
 run non-vacuous. The parse-rejection matrix is cheap (`Wire.check` short-circuits before
 `kimchiVerify`), so it runs in full regardless. -/
-def runChunked (C : Ipa.CommitmentCurve) (frParams : Poseidon.Params C.ScalarField)
+def runChunked (C : Ipa.CommitmentCurve)
     (path : String) (expectPublic : Bool) (heavy : Bool := false) : IO Unit := do
   let raw ← IO.FS.readFile path
   let r : Except String
       (_ × Wire.KimchiVK C × Wire.KimchiProof C × Array C.ScalarField) := do
     let j ← Json.parse raw
-    let vk ← Kimchi.Fixture.parseVK C frParams j
+    let vk ← Kimchi.Fixture.parseVK C j
     let mps ← match (← (← j.getObjVal? "max_poly_size").getStr?).toNat? with
       | some v => pure v
       | none => throw "field max_poly_size is not a numeral"
@@ -168,14 +168,14 @@ def main : IO Unit := do
   let dir := (← IO.getEnv "KIMCHI_FIXTURES_DIR").getD "fixtures"
   -- nc = 1: the deployed wire form (barycentric public evals), then the carried-public
   -- twin (the PubEvalSrc.carried branch at one chunk).
-  runChunked CV Wire.KimchiVesta.frParams s!"{dir}/kimchi_proof_vesta.json" false
-  runChunked CV Wire.KimchiVesta.frParams s!"{dir}/kimchi_proof_vesta_pub.json" true
+  runChunked CV s!"{dir}/kimchi_proof_vesta.json" false
+  runChunked CV s!"{dir}/kimchi_proof_vesta_pub.json" true
   -- nc = 2 on both curves, then nc = 8 (max_poly_size ≠ n/2) on Vesta. The nc = 8 run
   -- uses the bounded corruption matrix (heavy := true): each verify there is a
   -- 56-chunk batch MSM.
-  runChunked CV Wire.KimchiVesta.frParams s!"{dir}/kimchi_proof_vesta_nc2.json" true
-  runChunked CP Wire.KimchiPallas.frParams s!"{dir}/kimchi_proof_pallas_nc2.json" true
-  runChunked CV Wire.KimchiVesta.frParams s!"{dir}/kimchi_proof_vesta_nc8.json" true
+  runChunked CV s!"{dir}/kimchi_proof_vesta_nc2.json" true
+  runChunked CP s!"{dir}/kimchi_proof_pallas_nc2.json" true
+  runChunked CV s!"{dir}/kimchi_proof_vesta_nc8.json" true
     (heavy := true)
   IO.println "✓ the executable kimchi verifiers accept the production proofs (nc = 1 \
     barycentric and carried, nc = 2 on both curves, nc = 8), reject corruptions, and \

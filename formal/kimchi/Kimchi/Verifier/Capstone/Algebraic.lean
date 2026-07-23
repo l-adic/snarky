@@ -14,9 +14,10 @@ algebraic-group-model idiom), so a SINGLE accepted IPA opening suffices — no g
 density. The content delivered here: representations + ONE accepted opening ⟹ the per-row
 eval pins (`eval_pins_of_opening`), replacing the special-soundness grid; the pins land in
 `kimchiProof_sound_of_openings`' consumer verbatim. Two new bad axes appear — the
-combination challenges `(ξ, r)` — with proved-small bad sets (`badXiOf`/`badROf`, ≤ 84 and
-≤ 1, counting SZ via `SZ.badComb`), curried by the consumer data `(E, ζ)`/`(E, ζ, ξ)` so
-they are quantified BEFORE `(ξ, r)`. Honest scope note: this corollary KEEPS the
+combination challenges `(ξ, r)` — with proved-small bad sets (`badXiOf`/`badROf`,
+≤ `2·(44·nc − 1)` and ≤ 1, counting SZ via `SZ.badComb`), curried by the consumer data
+`(E, ζ)`/`(E, ζ, ξ)` so they are quantified BEFORE `(ξ, r)`. Honest scope note: this
+corollary KEEPS the
 ft/quotient identity `hteq` (and `t`, `t.natDegree`) as a hypothesis — the same residue as
 the run-level capstones.
 
@@ -56,16 +57,18 @@ opening's value equation leaves the single field identity
 `∑ i, ξ^i · (∑ j, D i j · r^j) = 0` in the discrepancies
 `D i j = E i j − ⟨aw₀ i, evalVector (x j)⟩`, and two counting-Schwartz–Zippel steps
 (`SZ.badComb`, first at `r`, then at `ξ`) kill every `D i j` — the eval pins. The bad
-`(ξ, r)` sets are COUNTED, never assumed: `badXiOf` (≤ 84 = 2·(43−1)) depends only on
-`(σ, aw₀, x, E)`, `badROf` (≤ 1 = 2−1) additionally on `ξ` — neither mentions the
-challenge it guards, which is what lets the capstones quantify them BEFORE `(ξ, r)`. -/
+`(ξ, r)` sets are COUNTED, never assumed: `badXiOf` (≤ `2·(m − 1)` at `m` flat segments)
+depends only on `(σ, aw₀, x, E)`, `badROf` (≤ 1 = 2−1) additionally on `ξ` — neither
+mentions the challenge it guards, which is what lets the capstones quantify them
+BEFORE `(ξ, r)`. -/
 
 /-- The bad row-combination challenges of one claimed-vs-represented evaluation matrix:
 the union over the two eval points of the counting-SZ bad sets of the discrepancy
 columns `i ↦ E i j − ⟨aw₀ i, evalVector (x j)⟩`. Depends only on `(σ, aw₀, x, E)` —
 never on `ξ` or `r` (anti-vacuity: the capstone quantifies it before both). Arity-generic
-(`Fin m` rows): the AGM capstones use it at the 43-row `batchC`, the FS-reflection layer
-at the reflected run's own 45-row batch. -/
+(`Fin m` rows): the AGM capstones use it at the flattened 44-row `batchC` (`44·nc`
+segments), the FS-reflection layer at the reflected run's own `44·nc + 1`-segment flat
+batch (45 at `nc = 1`). -/
 noncomputable def badXiOf {F G : Type*} [Field F] [DecidableEq F]
     (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
     (x : Fin evalPts → F) (E : Fin m → Fin evalPts → F) : Finset F :=
@@ -82,8 +85,8 @@ noncomputable def badROf {F G : Type*} [Field F] [DecidableEq F]
   Kimchi.SZ.badComb (fun j : Fin evalPts => ∑ i : Fin m,
     ξ ^ (i : ℕ) * (E i j - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j))))
 
-/-- `badXiOf` counts at most `2 · (m − 1)` challenges (at the 43-row batch: `84`): a
-union of two counting-SZ bad sets over `Fin m`. -/
+/-- `badXiOf` counts at most `2 · (m − 1)` challenges (at the flattened batch's `44·nc`
+segments: `2·(44·nc − 1)`): a union of two counting-SZ bad sets over `Fin m`. -/
 private theorem card_badXiOf_le {F G : Type*} [Field F] [DecidableEq F]
     (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
     (x : Fin evalPts → F) (E : Fin m → Fin evalPts → F) :
@@ -113,8 +116,9 @@ binding (`hbind`, through `commitmentBinding_iff_no_relation`) forces the opened
 to BE that combination; the opening's value equation then reduces to
 `∑ j, r^j · (∑ i, ξ^i · D i j) = 0` in the discrepancies `D`, and
 `SZ.eq_zero_of_comb_eq_zero` — first at `r`, then per point at `ξ` — kills every
-`D i j`. Arity-generic: the AGM capstones consume it at the 43-row `batchC`, the
-FS-reflection layer at the reflected run's own 45-row batch. -/
+`D i j`. Arity-generic: the AGM capstones consume it at the flattened 44-row `batchC`
+(`44·nc` segments), the FS-reflection layer at the reflected run's own
+`44·nc + 1`-segment flat batch (45 at `nc = 1`). -/
 theorem eval_pins_of_opening {F G : Type*} [Field F] [DecidableEq F]
     [AddCommGroup G] [Module F G] (σ : SRS G)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (wh : F), DLRelation σ w wh → w = 0 ∧ wh = 0)

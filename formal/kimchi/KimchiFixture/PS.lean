@@ -208,7 +208,7 @@ def build (raw : Raw) : Except String Instance := do
   let shifts : Fin permCols → Fp := fun i => (powMod fpGenerator (i : ℕ) PALLAS_BASE_CARD : ℕ)
   let gates ← gateTable raw n
   match Index.build? gates raw.publicInputSize zkRows omega
-      Pasta.pallasEndo (Kimchi.Verifier.mdsOfParams Kimchi.Verifier.Wire.KimchiVesta.frParams)
+      Pasta.pallasEndo (Kimchi.Verifier.mdsOfParams Bulletproof.IpaVesta.curve.frParams)
       shifts with
   | none => throw "Index.build? rejected the padded dump (a synthesized law failed)"
   | some idx =>

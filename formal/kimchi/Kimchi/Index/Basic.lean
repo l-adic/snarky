@@ -232,23 +232,24 @@ def build? [DecidableEq F] (gates : Fin n → GateRow F n) (publicCount zkRows :
       ∧ (∀ c : Fin permCols × Fin n, n - zkRows ≤ ((c.2 : ℕ)) → wiringMapOf gates c = c)
       ∧ (∀ i : Fin n, n - zkRows ≤ (i : ℕ) → (gates i).typ = .zero)
       ∧ (∀ i : Fin n, (i : ℕ) + 1 = n - zkRows → (gates i).typ.twoRow = false) then
+    have ⟨hpow, hprim, hcoset, hzk_three, hzk_le, hpublic_le, hbij, hregion,
+      hgeneric, hcoeffs, hmask_id, hmask_zero, hmask_boundary⟩ := h
     have homega : IsPrimitiveRoot omega n :=
-      isPrimitiveRoot_of_certificate'
-        (let ⟨k, _, hk⟩ := h.1; ⟨k, hk⟩) h.2.1
+      isPrimitiveRoot_of_certificate' (let ⟨k, _, hk⟩ := hpow; ⟨k, hk⟩) hprim
     some { gates := gates, publicCount := publicCount, zkRows := zkRows
            omega := omega, endoBase := endoBase, mds := mds, shifts := shifts
            omega_prim := homega
-           zk_three := h.2.2.2.1
-           zk_le := h.2.2.2.2.1
-           public_le := h.2.2.2.2.2.1
-           shifts_coset := cosetShifts_of_certificate homega h.2.2.1
-           wiring_bijective := h.2.2.2.2.2.2.1
-           wiring_region := h.2.2.2.2.2.2.2.1
-           public_generic := h.2.2.2.2.2.2.2.2.1
-           public_coeffs := h.2.2.2.2.2.2.2.2.2.1
-           masked_identity := h.2.2.2.2.2.2.2.2.2.2.1
-           masked_zero := h.2.2.2.2.2.2.2.2.2.2.2.1
-           masked_boundary := h.2.2.2.2.2.2.2.2.2.2.2.2 }
+           zk_three := hzk_three
+           zk_le := hzk_le
+           public_le := hpublic_le
+           shifts_coset := cosetShifts_of_certificate homega hcoset
+           wiring_bijective := hbij
+           wiring_region := hregion
+           public_generic := hgeneric
+           public_coeffs := hcoeffs
+           masked_identity := hmask_id
+           masked_zero := hmask_zero
+           masked_boundary := hmask_boundary }
   else none
 
 

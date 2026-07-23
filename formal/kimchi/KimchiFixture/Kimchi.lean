@@ -91,9 +91,9 @@ def parseKimchiProof (C : Ipa.CommitmentCurve) (j : Json) :
            opening := ← parseProof C j }
 
 /-- The chunked verifier key (SRS excluded — parse it with `parseSRSAt` at
-`Nat.log2 max_poly_size`), with the fr-sponge parameters pinned by the caller. -/
-def parseVK (C : Ipa.CommitmentCurve)
-    (frParams : Poseidon.Params C.ScalarField) (j : Json) :
+`Nat.log2 max_poly_size`). The fr-sponge parameters are not wire data: they live on
+the commitment curve (`C.frParams`). -/
+def parseVK (C : Ipa.CommitmentCurve) (j : Json) :
     Except String (KimchiVK C) := do
   let fld (k : String) : Except String Json := j.getObjVal? k
   let nat (k : String) : Except String ℕ := do
@@ -118,7 +118,6 @@ def parseVK (C : Ipa.CommitmentCurve)
            zkRows := ← nat "zk_rows"
            endo := ← parseZMod (← fld "endo")
            digest := ← parseZMod (← fld "digest")
-           lagrangeBasis := ← parseArrOf (parseComm C) (← fld "lagrange_basis")
-           frParams := frParams }
+           lagrangeBasis := ← parseArrOf (parseComm C) (← fld "lagrange_basis") }
 
 end Kimchi.Fixture

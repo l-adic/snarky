@@ -24,10 +24,12 @@ batch shape (`m` rows, `p` evaluation points, the claimed-evaluation matrix a
 `Vector` of `Vector`s). Every read of the verifier and of every statement over it is
 total; a checked input cannot hold a ragged claim. The raw serde records
 (`Wire.Proof`, `Wire.Input` — every payload a `Vec`) live in the `Wire` namespace
-below with their `check` parses, which are the verifier's own dimension guards
-(round count, `evals` square against the commitments and points) factored as a total
-parse — the parse IS the proof. Clients compose check-then-verify; rejecting ragged
-input is the same observable behavior as the guards' `false` returns.
+below with their `check` parses: THIS verifier's totality requirements (round count,
+`evals` square against the commitments and points), stated as a total parse — the
+parse IS the proof. Production's `SRS::verify` carries no such explicit guards — its
+`Vec` payloads feed the transcript and the batched MSM equations as-is, so a
+mis-shaped claim reaches the same rejection through the equations it then fails.
+Clients compose check-then-verify.
 
 Generic over a single `CommitmentCurve` bundle — the Lean analogue of the Rust
 `G: CommitmentCurve` associated types: the base and scalar cardinalities with their
@@ -80,6 +82,12 @@ structure CommitmentCurve where
   [primeScalar : Fact (Nat.Prime scalar)]
   /-- The Fq-sponge spec driving the verifier's Fiat-Shamir transcript. -/
   sponge : FqSponge.Spec base scalar
+  /-- The scalar-side Poseidon parameters — production's `G::sponge_params()`,
+  curve-determined like the fq-sponge spec. Not read by the IPA opening verifier
+  itself; carried on the bundle for the consumers that run a scalar-side (fr-)sponge
+  over the same curve (kimchi's `frOracles`), the way production types the table on
+  the curve rather than on any wire record. -/
+  frParams : Params (ZMod scalar)
   /-- The curve, in short-Weierstrass form over the base field. -/
   E : SWCurve (ZMod base)
   /-- The map-to-curve deriving the transcript `U` base from a squeezed field element. -/
@@ -213,19 +221,28 @@ def roundChallenges (s : FqSponge.S C.base) {k : ℕ} (lr : Vector (C.Point × C
   let r := roundChallengesAux C s lr.toArray
   (⟨r.1, (roundChallengesAux_size C s lr.toArray).trans lr.size_toArray⟩, r.2)
 
-/-- The verifier's Fiat-Shamir schedule (`SRS::verify`): absorb the shifted combined inner
-product; squeeze and map the `U` base; per round absorb `L`, `R` and squeeze a challenge;
-absorb `δ` and squeeze the Schnorr challenge. The round challenges come back as a
-`Vector` at the checked round count, so every downstream read is total. -/
-def transcript (inp : Input C k m p) :
+/-- The verifier's Fiat-Shamir schedule from a given initial sponge state `s₀`
+(`SRS::verify`, with the sponge supplied by the caller — kimchi hands the warm post-`ζ`
+fq-sponge state here, `BatchEvaluationProof { sponge: fq_sponge, .. }`): absorb the
+shifted combined inner product; squeeze and map the `U` base; per round absorb `L`, `R`
+and squeeze a challenge; absorb `δ` and squeeze the Schnorr challenge. The round
+challenges come back as a `Vector` at the checked round count, so every downstream read
+is total. -/
+def transcriptFrom (s₀ : FqSponge.S C.base) (inp : Input C k m p) :
     C.Point × Vector C.ScalarField k × C.ScalarField :=
-  let s := absorbFr C.sponge FqSponge.init (shiftScalar C (cipOf inp))
+  let s := absorbFr C.sponge s₀ (shiftScalar C (cipOf inp))
   let (t, s) := challengeFq C.sponge s
   let uBase := C.toGroup t
   let (chals, s) := roundChallenges C s inp.proof.lr
   let s := absorbG C.sponge s inp.proof.delta
   let (c, _) := squeezeChallenge C.sponge s
   (uBase, chals, c)
+
+/-- The standalone verifier's Fiat-Shamir schedule: `transcriptFrom` at the fresh
+sponge `FqSponge.init` — the cold start. -/
+def transcript (inp : Input C k m p) :
+    C.Point × Vector C.ScalarField k × C.ScalarField :=
+  transcriptFrom C FqSponge.init inp
 
 /-- A batched claim at given combination scalars — the checked input the grid rows of
 the soundness statements range over. The curve is implicit (inferred from the
@@ -236,13 +253,15 @@ def mkInput {C : CommitmentCurve} {k m p : ℕ} (commitments : Vector C.Point m)
   { commitments := commitments, xs := xs, evals := evals
     polyscale := ξ, evalscale := r, proof := proof }
 
-/-- The acceptance decision, against a library SRS: derive the transcript, combine the
-claim, and check the Schnorr and `sg`-correctness equations. The claim's shape is
-carried by its type (round count `σ.k`), so there are no runtime guards — rejecting
-ragged input is the wire parse's job. `σ.U` is never read — the deployed `U` is
-transcript-derived. -/
-def verify (σ : SRS C.Point) (inp : Input C σ.k m p) : Bool :=
-  let (uBase, chals, c) := transcript C inp
+/-- The acceptance decision from a given initial sponge state `s₀`, against a library
+SRS: derive the transcript (from `s₀` — kimchi's warm start hands the post-`ζ`
+fq-sponge state, verifier.rs:1184–1193), combine the claim, and check the Schnorr and
+`sg`-correctness equations. The claim's shape is carried by its type (round count
+`σ.k`), so there are no runtime guards — rejecting ragged input is the wire parse's
+job. `σ.U` is never read — the deployed `U` is transcript-derived. -/
+def verifyFrom (σ : SRS C.Point) (s₀ : FqSponge.S C.base) (inp : Input C σ.k m p) :
+    Bool :=
+  let (uBase, chals, c) := transcriptFrom C s₀ inp
   let chal : Fin σ.k → C.ScalarField := fun i => chals[i]
   let b0 := combinedB chal inp.evalscale inp.pointFn
   let v := cipOf inp
@@ -256,6 +275,11 @@ def verify (σ : SRS C.Point) (inp : Input C σ.k m p) : Bool :=
         + inp.proof.z2.val • σ.h)
   let sgOk := decide (inp.proof.sg = msm C σ.g (bPolyCoefficients chal))
   schnorr && sgOk
+
+/-- The standalone acceptance decision: `verifyFrom` at the fresh sponge
+`FqSponge.init` — the cold start, validated against the production opening fixtures. -/
+def verify (σ : SRS C.Point) (inp : Input C σ.k m p) : Bool :=
+  verifyFrom C σ FqSponge.init inp
 
 end Bulletproof.Ipa
 
@@ -296,16 +320,16 @@ structure Input (C : CommitmentCurve) where
   /-- The wire opening proof. -/
   proof : Proof C
 
-/-- Parse a wire proof at round count `k` — the verifier's `lr`-length guard as a
-total parse. -/
+/-- Parse a wire proof at round count `k` — the checked verifier's `lr`-length
+requirement as a total parse. -/
 def Proof.check (k : ℕ) (w : Proof C) : Option (Ipa.Proof C k) :=
   if h : w.lr.size = k then
     some { lr := ⟨w.lr, h⟩, delta := w.delta, z1 := w.z1, z2 := w.z2, sg := w.sg }
   else none
 
-/-- Parse a wire claim at its announced shape — the verifier's dimension guards
-(`evals` square against the commitments and points, the proof at round count `k`) as
-a total parse into the checked input. -/
+/-- Parse a wire claim at its announced shape — the checked verifier's dimension
+requirements (`evals` square against the commitments and points, the proof at round
+count `k`) as a total parse into the checked input. -/
 def Input.check (k : ℕ) (w : Input C) :
     Option (Ipa.Input C k w.commitments.size w.xs.size) := do
   let proof ← w.proof.check k
@@ -327,11 +351,13 @@ namespace Bulletproof.IpaVesta
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Poseidon Bulletproof
 
 /-- The Vesta bundle. The scalar modulus is below the base modulus, so scalars absorb in
-Type1 form. -/
+Type1 form. The scalar field is `Fp`, so `G::sponge_params()` is the `fp_kimchi`
+table. -/
 abbrev curve : Ipa.CommitmentCurve where
   base := PALLAS_SCALAR_CARD
   scalar := PALLAS_BASE_CARD
   sponge := FqVesta.spec
+  frParams := fpParams
   E := Vesta.curve
   toGroup := GroupMapVesta.toGroup
 
@@ -361,11 +387,13 @@ namespace Bulletproof.IpaPallas
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Poseidon Bulletproof
 
 /-- The Pallas bundle. The scalar modulus is above the base modulus, so scalars absorb in
-Type2 form (selected by the cardinalities). -/
+Type2 form (selected by the cardinalities). The scalar field is `Fq`, so
+`G::sponge_params()` is the `fq_kimchi` table. -/
 abbrev curve : Ipa.CommitmentCurve where
   base := PALLAS_BASE_CARD
   scalar := PALLAS_SCALAR_CARD
   sponge := FqPallas.spec
+  frParams := fqParams
   E := Pallas.curve
   toGroup := GroupMapPallas.toGroup
 
