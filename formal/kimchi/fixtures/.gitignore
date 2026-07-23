@@ -1,0 +1,4 @@
+# Debug sidecars from tools/fixture-dump's kimchi_proof_dump_nc2 (the verifier's
+# intermediate oracle values, for localizing a Lean-side divergence) — regenerable,
+# never checked in.
+*_debug.json

@@ -2,8 +2,8 @@
 
 Fixtures and test vectors for the Lean formalization (`formal/`), recorded from
 proof-systems itself: every value comes from the production Rust code the Lean modules
-transcribe, so the `formal/scripts/check_*` drivers validate the transcriptions against
-exactly what downstream consumers run.
+transcribe, so the per-package `formal/*/scripts/check_*` drivers validate the
+transcriptions against exactly what downstream consumers run.
 
 ## Building and running
 
@@ -16,68 +16,89 @@ cd tools/fixture-dump
 rustup run 1.92 cargo build --release
 ```
 
-Two binaries, both deterministic (seeded ChaCha20), both writing into `formal/`:
+Seven binaries, all deterministic (seeded ChaCha20). `formal/` is a workspace of
+packages, each owning its fixtures — every binary takes its output directory as an
+argument, and the right target depends on which package checks the artifact:
 
 ```sh
-# Sponge-layer artifacts: constants + vectors
-./target/release/sponge_dump ../../formal/Kimchi/Sponge ../../formal/fixtures
+# Sponge-layer artifacts: constants + vectors  →  the poseidon package
+./target/release/sponge_dump ../../formal/poseidon/Poseidon ../../formal/poseidon/fixtures
 
-# IPA opening-proof fixtures (wire format only)
-./target/release/ipa_dump ../../formal/fixtures
+# IPA opening-proof fixtures (wire format only)  →  the bulletproof-pcs package
+./target/release/ipa_dump ../../formal/bulletproof-pcs/fixtures
 
-# Permutation-argument fixture (wired circuit, production accumulator)
-./target/release/perm_dump ../../formal/fixtures
+# kimchi-protocol fixtures  →  the kimchi package
+./target/release/perm_dump ../../formal/kimchi/fixtures
+./target/release/index_dump ../../formal/kimchi/fixtures
+./target/release/linearization_dump ../../formal/kimchi/fixtures
+./target/release/kimchi_proof_dump ../../formal/kimchi/fixtures
+./target/release/kimchi_proof_dump_nc2 ../../formal/kimchi/fixtures
 ```
 
+> **Caveat (`sponge_dump`'s Lean output):** the generated-constants half of
+> `sponge_dump` predates the `formal/` package split — it still writes
+> `PoseidonConstantsF{q,p}.lean` under a `Kimchi.Sponge.*` namespace, while the
+> committed files are `formal/poseidon/Poseidon/Constants{Fq,Fp}.lean` under
+> `Poseidon.*`. On regeneration, rename the files and namespaces to match the
+> committed layout (the constant values are what the regeneration refreshes). The
+> JSON vector output is current.
+
 ## What each binary emits
+
+Paths below are relative to `formal/`.
 
 `sponge_dump`:
 
 | artifact | contents | checked by |
 |---|---|---|
-| `Kimchi/Sponge/PoseidonConstantsFq.lean` / `…Fp.lean` | the `fq_kimchi` / `fp_kimchi` Poseidon tables, as generated committed Lean constants | (consumed by the library) |
-| `fixtures/poseidon_{fq,fp}_vectors.json` | `ArithmeticSponge` absorb/squeeze traces, both Pasta fields | `scripts/check_sponge_vectors.sh` |
-| `fixtures/fq_sponge_vectors.json` / `…_pallas_….json` | `DefaultFqSponge` op traces — every ordered pair of the six op kinds plus mixed sequences | `scripts/check_fq_sponge.sh` |
-| `fixtures/group_map_vectors.json` / `…_pallas_….json` | SvdW `to_group` vectors, both curves | `scripts/check_fq_sponge.sh` |
+| `poseidon/Poseidon/Constants{Fq,Fp}.lean` | the `fq_kimchi` / `fp_kimchi` Poseidon tables, as generated committed Lean constants (see the caveat above on the emitted names) | (consumed by the library) |
+| `poseidon/fixtures/poseidon_{fq,fp}_vectors.json` | `ArithmeticSponge` absorb/squeeze traces, both Pasta fields | `poseidon/scripts/check_sponge_vectors.sh` |
+| `poseidon/fixtures/fq_sponge_vectors.json` / `…_pallas_….json` | `DefaultFqSponge` op traces — every ordered pair of the six op kinds plus mixed sequences | `poseidon/scripts/check_fq_sponge.sh` |
+| `poseidon/fixtures/group_map_vectors.json` / `…_pallas_….json` | SvdW `to_group` vectors, both curves | `poseidon/scripts/check_fq_sponge.sh` |
 
 `ipa_dump`:
 
 | artifact | contents | checked by |
 |---|---|---|
-| `fixtures/ipa_opening_{vesta,pallas}.json` | a single opening (1 poly × 1 point) | `scripts/check_ipa_fixture.sh` |
-| `fixtures/ipa_batch_{vesta,pallas}.json` | a batched opening (2 polys × 2 points) | same |
-| `fixtures/ipa_chunked{2,3}_{vesta,pallas}.json` | combine-then-open chunked openings (1 poly × 1 point × 2/3 chunks; the production `chunk_commitment(x^n)` combination recorded per poly) | same |
-| `fixtures/ipa_chunked_{batch,ragged}_{vesta,pallas}.json` | chunked batches (2 polys × 2 points, uniform 2/2 and ragged 1/3 chunk counts; multi-chunk `PolyComm`s through the batch path, with the production `combine_commitments`/`combined_inner_product` targets recorded) | same |
+| `bulletproof-pcs/fixtures/ipa_opening_{vesta,pallas}.json` | a single opening (1 poly × 1 point) | `bulletproof-pcs/scripts/check_ipa_fixture.sh` |
+| `bulletproof-pcs/fixtures/ipa_batch_{vesta,pallas}.json` | a batched opening (2 polys × 2 points) | same |
+| `bulletproof-pcs/fixtures/ipa_chunked{2,3}_{vesta,pallas}.json` | combine-then-open chunked openings (1 poly × 1 point × 2/3 chunks; the production `chunk_commitment(x^n)` combination recorded per poly) | same |
+| `bulletproof-pcs/fixtures/ipa_chunked_{batch,ragged}_{vesta,pallas}.json` | chunked batches (2 polys × 2 points, uniform 2/2 and ragged 1/3 chunk counts; multi-chunk `PolyComm`s through the batch path, with the production `combine_commitments`/`combined_inner_product` targets recorded) | same |
 
 `perm_dump`:
 
 | artifact | contents | checked by |
 |---|---|---|
-| `fixtures/perm_vesta.json` | a wired circuit's permutation data — shifts, sigma columns, witness, and the `perm_aggreg` accumulator over the domain (production prove+verify asserted) | `scripts/check_perm_fixture.sh` |
+| `kimchi/fixtures/perm_vesta.json` | a wired circuit's permutation data — shifts, sigma columns, witness, and the `perm_aggreg` accumulator over the domain (production prove+verify asserted) | `kimchi/scripts/check_perm_fixture.sh` |
 
 `index_dump`:
 
 | artifact | contents | checked by |
 |---|---|---|
-| `fixtures/index_vesta.json` | a mixed-gate circuit (public, generic, Poseidon, CompleteAdd, EndoMulScalar; wired) — the padded gate table, domain/permutation constants, witness, and the production derived columns (kimchi's row checker and prove+verify asserted) | `scripts/check_index_fixture.sh` |
+| `kimchi/fixtures/index_vesta.json` | a mixed-gate circuit (public, generic, Poseidon, CompleteAdd, EndoMulScalar; wired) — the padded gate table, domain/permutation constants, witness, and the production derived columns (kimchi's row checker and prove+verify asserted) | `kimchi/scripts/check_index_fixture.sh`, `kimchi/scripts/check_vk_correspond.sh` |
 
 `linearization_dump`:
 
 | artifact | contents | checked by |
 |---|---|---|
-| `fixtures/linearization_vesta.json` | the verifier's scalar side of a real proof over the same mixed-gate circuit — challenges, combined evaluations at ζ/ζω, and the production outputs (`ft_eval0`, `perm_scalars`, the token-evaluated constant term, per-gate combined constraints) | `scripts/check_linearization.sh` |
+| `kimchi/fixtures/linearization_vesta.json` | the verifier's scalar side of a real proof over the same mixed-gate circuit — challenges, combined evaluations at ζ/ζω, and the production outputs (`ft_eval0`, `perm_scalars`, the token-evaluated constant term, per-gate combined constraints) | `kimchi/scripts/check_linearization.sh` |
 
 `kimchi_proof_dump`:
 
 | artifact | contents | checked by |
 |---|---|---|
-| `fixtures/kimchi_proof_vesta.json` | a complete kimchi wire proof + verifier key over the mixed-gate circuit (same seed and domain-sized SRS as `linearization_vesta.json` — the same proof): all commitments, uncombined evaluations, opening proof, public input, and the VK data incl. Lagrange-basis commitments, both endo coefficients, and the verifier-index digest | `scripts/check_kimchi_verifier.sh` (milestone 4.1) |
+| `kimchi/fixtures/kimchi_proof_vesta.json` | a complete kimchi wire proof + verifier key over the mixed-gate circuit (same seed and domain-sized SRS as `linearization_vesta.json` — the same proof): all commitments, uncombined evaluations, opening proof, public input, and the VK data incl. Lagrange-basis commitments, both endo coefficients, and the verifier-index digest | `kimchi/scripts/check_kimchi_verifier.sh`, `kimchi/scripts/check_vk_correspond.sh` |
 
 `kimchi_proof_dump_nc2`:
 
 | artifact | contents | checked by |
 |---|---|---|
-| `fixtures/kimchi_proof_{vesta,pallas}_nc2.json` | the CHUNKED twins: the same mixed circuit and seed re-proved over a half-domain SRS (`override_srs_size = n/2` → `max_poly_size = n/2`, `nc = 2`, chunked `zk_rows`); every commitment dumped as its chunk vector, every evaluation as `[[ζ-chunks],[ζω-chunks]]`, plus the proof-carried public evaluations that production requires at `nc > 1` | `scripts/check_kimchi_verifier.sh` |
+| `kimchi/fixtures/kimchi_proof_{vesta,pallas}_nc2.json` | the CHUNKED twins: the same mixed circuit and seed re-proved over a half-domain SRS (`override_srs_size = n/2` → `max_poly_size = n/2`, `nc = 2`, chunked `zk_rows`); every commitment dumped as its chunk vector, every evaluation as `[[ζ-chunks],[ζω-chunks]]`, plus the proof-carried public evaluations that production requires at `nc > 1` | `kimchi/scripts/check_kimchi_verifier.sh`; the Vesta one also `kimchi/scripts/check_vk_correspond.sh` |
+
+`kimchi_proof_dump_nc2` additionally writes `kimchi_proof_{vesta,pallas}_nc2_debug.json`
+sidecars next to the fixtures (the verifier's intermediate oracle values, for localizing
+a Lean-side divergence layer by layer). They are debugging aids, gitignored
+(`formal/kimchi/fixtures/.gitignore`), never checked in.
 
 `ipa_dump` is a thin wrapper over the production prover/verifier: proofs come from
 `SRS::commit`/`SRS::open`, the batched `SRS::verify` is asserted at dump time, and the

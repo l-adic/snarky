@@ -2,7 +2,6 @@ import Kimchi.Protocol.Linearization
 import Bulletproof.Wire
 import Kimchi.Verifier.Kimchi
 import Kimchi.Verifier.Wire
-import Kimchi.Verifier.Kimchi
 import FixtureKit.Parse
 import Lean.Data.Json
 
@@ -21,6 +20,7 @@ never evaluates, interpolated by the dumper) must equal the closed-form aggregat
 the identity is checkable without prover internals. -/
 
 open Lean FixtureKit Bulletproof Kimchi.Protocol Kimchi.Protocol.Linearization
+open scoped Kimchi
 
 abbrev C := IpaVesta.curve
 abbrev F := C.ScalarField
@@ -70,7 +70,8 @@ def main : IO Unit := do
     let constTarget ← parseF (← fld "constant_term")
     unless (← fld "index_terms") == Json.mkObj [] do
       throw "expected an empty index_terms object (all selectors are evaluated)"
-    unless wArr.size = 15 ∧ sArr.size = 6 ∧ cArr.size = 15 ∧ shiftsArr.size = 7 do
+    unless wArr.size = wCols ∧ sArr.size = sigmaRows ∧ cArr.size = coeffCols
+        ∧ shiftsArr.size = permCols do
       throw "unexpected column counts"
     let e : Evals F :=
       { w := fun i => (wArr.getD i (0, 0)).1
@@ -81,7 +82,7 @@ def main : IO Unit := do
         genericSelector := genPE.1, poseidonSelector := posPE.1
         completeAddSelector := addPE.1, mulSelector := mulPE.1
         emulSelector := emulPE.1, endoScalarSelector := endoselPE.1 }
-    let shifts : Fin 7 → F := fun i => shiftsArr.getD i 0
+    let shifts : Fin permCols → F := fun i => shiftsArr.getD i 0
     let pubEval := (pubArr.getD 0 #[]).getD 0 0
     let sigma6Z ← parseF (← fld "sigma6_zeta")
     let gc ← fld "gate_combined"
@@ -123,11 +124,11 @@ def main : IO Unit := do
     -- side from production values (σ₆(ζ) interpolated by the dumper — the one column
     -- the proof never evaluates), the right from the closed-form members.
     let hAgg :=
-      let wF : Fin 7 → F := fun i => e.w ⟨(i : ℕ), by omega⟩
-      let sigmas : Fin 7 → F := fun i =>
+      let wF : Fin permCols → F := fun i => e.w ⟨(i : ℕ), by omega⟩
+      let sigmas : Fin permCols → F := fun i =>
         if h : (i : ℕ) < 6 then e.s ⟨(i : ℕ), h⟩ else sigma6Z
-      let m0 := zkpmZ * (e.z * (∏ i : Fin 7, (wF i + γ + β * shifts i * ζ))
-        - e.zOmega * (∏ i : Fin 7, (wF i + γ + β * sigmas i)))
+      let m0 := zkpmZ * (e.z * (∏ i : Fin permCols, (wF i + γ + β * shifts i * ζ))
+        - e.zOmega * (∏ i : Fin permCols, (wF i + γ + β * sigmas i)))
       let m1 := (e.z - 1) * ((ζ ^ n - 1) / (ζ - 1))
       let m2 := (e.z - 1) * ((ζ ^ n - 1) / (ζ - ω ^ (n - zkRows)))
       let rhs := gateLinearization endo mds α e + pubEval

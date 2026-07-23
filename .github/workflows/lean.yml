@@ -51,9 +51,11 @@ jobs:
       run: bash formal/scripts/check-style.sh
 
     # No bare structural dimension (6/7/15/43/44) in a type position — the
-    # Kimchi/Columns.lean shape constants are mandatory. Pure source scan; the
-    # out-of-scope policy (gate-internal constants, proof-side arithmetic) is
-    # documented in the script header.
+    # Kimchi/Columns.lean shape constants are mandatory across Kimchi/ (minus
+    # Gate/), the KimchiFixture decoders, and the kimchi/scripts/*.lean drivers.
+    # Pure source scan with a scanned-file-count floor; the out-of-scope policy
+    # (gate-internal constants, proof-side arithmetic) is documented in the
+    # script header.
     - name: Shape-literal gate
       run: bash kimchi/scripts/check_shape_literals.sh
 
@@ -146,7 +148,9 @@ jobs:
     # The composed executable kimchi verifier (check-then-verify, both sponge
     # schedules, the scalar side, the to_batch segment stream, the warm-started IPA
     # check) must accept complete production wire proofs — the one-chunk fixture and
-    # the nc = 2 fixtures on BOTH curves — and reject corruptions
+    # the nc = 2 fixtures on BOTH curves — reject a corruption matrix (both
+    # evaluation points, chunks beyond 0, both t_comm collapse groups), and refuse
+    # to parse ragged or mis-pinned wire records
     # (fixtures/kimchi_proof_{vesta,vesta_nc2,pallas_nc2}.json, from
     # tools/fixture-dump's kimchi_proof_dump binaries).
     - name: Check the executable kimchi verifier against a production proof
@@ -156,10 +160,14 @@ jobs:
           lake env lean kimchi/scripts/check_kimchi_verifier.lean
 
     # The verifier-key <-> index correspondence (VKCorresponds at production
-    # chunking), by value: every committed column chunk of the production nc = 2 VK
-    # equals the value-MSM of the Lagrange-basis chunk commitments against its
-    # production-derived column (which check_index_fixture separately pins to the
-    # Index model's own derivations), selectors carrying the per-chunk fixed blinder.
+    # chunking), by value, at BOTH chunking regimes on Vesta — the nc = 1 VK
+    # (zk_rows = 3) and the nc = 2 VK (zk_rows = 5); Pallas has no index fixture:
+    # every committed column chunk of each production VK equals the value-MSM of
+    # that key's Lagrange-basis chunk commitments against its derived column. The
+    # sigma columns are the MODEL's own derivation (Index.build? at each regime's
+    # zk_rows, then Index.sigmaAddrRow), so the model's sigma-zeroing branch is
+    # adjudicated against production at zk_rows = 5 and the un-zeroed addresses at
+    # zk_rows = 3; selectors carry the per-chunk fixed blinder.
     - name: Check the verifier key corresponds to the index
       run: |
         export PATH="$HOME/.elan/bin:$PATH"

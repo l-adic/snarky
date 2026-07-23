@@ -2,7 +2,6 @@ import CompElliptic.Fields.Pasta
 import Kimchi.Index.Satisfies
 import Kimchi.Verifier.Kimchi
 import Kimchi.Verifier.Wire
-import Kimchi.Verifier.Kimchi
 import FixtureKit.Parse
 import Lean.Data.Json
 
@@ -90,12 +89,12 @@ def buildGates (fx : RawFixture) {n : ℕ} (_hn : fx.n = n) :
     throw "gate table size mismatch"
   let rows ← (Array.range n).mapM fun i => do
     let ws ← (fx.wires[i]!).mapM fun (col, row) => do
-      if h : col < 7 ∧ row < n then
-        return ((⟨col, h.1⟩ : Fin 7), (⟨row, h.2⟩ : Fin n))
+      if h : col < permCols ∧ row < n then
+        return ((⟨col, h.1⟩ : Fin permCols), (⟨row, h.2⟩ : Fin n))
       else throw s!"wire out of range at row {i}"
     let t : GateType := fx.typs[i]!
     let cf : Array Fp := fx.coeffs[i]!
-    if h7 : ws.size = 7 then
+    if h7 : ws.size = permCols then
       return { typ := t
                coeffs := fun c => cf[(c : ℕ)]!
                wires := fun c => ws[(c : ℕ)]'(by omega) : GateRow Fp n }
@@ -106,29 +105,29 @@ def buildGates (fx : RawFixture) {n : ℕ} (_hn : fx.n = n) :
 
 def checks (fx : RawFixture) {n : ℕ} [NeZero n]
     (idx : Index Fp n) : List (String × Bool) :=
-  let wTab : Fin n → Fin 15 → Fp := fun i c => (fx.witness[(c : ℕ)]!)[(i : ℕ)]!
+  let wTab : Fin n → Fin wCols → Fp := fun i c => (fx.witness[(c : ℕ)]!)[(i : ℕ)]!
   let pub : Fin idx.publicCount → Fp := fun i => fx.pub[(i : ℕ)]!
-  let sat (w : Fin n → Fin 15 → Fp) (p : Fin idx.publicCount → Fp) : Bool :=
+  let sat (w : Fin n → Fin wCols → Fp) (p : Fin idx.publicCount → Fp) : Bool :=
     decide (Satisfies idx p w)
   -- Corruption targets derived from the index, not from the dumper's layout: a
   -- constrained non-generic row (all modeled gates read column 0), and a nontrivially
   -- wired cell. Their absence is a fixture-quality failure, reported loudly.
   let gateRow? : Option (Fin n) := (List.finRange n).find? fun i =>
     (idx.gates i).typ != GateType.zero && (idx.gates i).typ != GateType.generic
-  let wired? : Option (Fin 7 × Fin n) := (List.finRange n).findSome? fun r =>
-    ((List.finRange 7).find? fun col => idx.wiringMap (col, r) != (col, r)).map
+  let wired? : Option (Fin permCols × Fin n) := (List.finRange n).findSome? fun r =>
+    ((List.finRange permCols).find? fun col => idx.wiringMap (col, r) != (col, r)).map
       fun col => (col, r)
-  let bump (r : Fin n) (c : ℕ) : Fin n → Fin 15 → Fp :=
+  let bump (r : Fin n) (c : ℕ) : Fin n → Fin wCols → Fp :=
     fun i c' => if i = r ∧ (c' : ℕ) = c then wTab i c' + 1 else wTab i c'
   [ ("selector columns match production",
       fx.selectors.all fun (t, col) =>
         (List.finRange n).all fun i => idx.selectorRow t i == col[(i : ℕ)]!),
     ("coefficient columns match production",
-      (List.finRange 15).all fun c =>
+      (List.finRange coeffCols).all fun c =>
         (List.finRange n).all fun i =>
           idx.coeffRow c i == (fx.coefficients[(c : ℕ)]!)[(i : ℕ)]!),
     ("sigma columns match production",
-      (List.finRange 7).all fun c =>
+      (List.finRange permCols).all fun c =>
         (List.finRange n).all fun i =>
           idx.sigmaAddrRow c i == (fx.sigma[(c : ℕ)]!)[(i : ℕ)]!),
     ("Satisfies (decided from the predicate)", sat wTab pub),
