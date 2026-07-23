@@ -12,8 +12,10 @@ batch — the wire commitment array pinned SEGMENT-wise to the flat stream of th
 44-row chunked assembly (`flatten (batchC …)`, the order the deployed verifier's
 `combined_inner_product` walks), one grid node per flat segment × eval point. Each
 node's `FiatShamirTreeB` family is derived from the node's own deployed acceptance via
-the per-node `poseidon_fiat_shamir_*` axiom, transported to the chunk combiners
-through the `_eq_flat` flattening lemmas — the same `hcip` move as `ipaVesta_sound`.
+the per-node `poseidon_fiat_shamir_*` axiom, transported to the chunk combiners through
+the flattening lemmas `chunkedCombinedCommitment_eq_flat` /
+`chunkedCombinedInnerProduct_eq_flat` (`Bulletproof/Protocol.lean`) — the same reshaping
+`ipaVesta_sound` performs on the bulletproof side.
 
 Trust story: the grid is a HYPOTHESIS (the forking/rewinding idiom, posited outright),
 one FS axiom per node, everything else proved. The run-level corollaries live in the
@@ -263,9 +265,13 @@ capstone's consumer implication instantiated at a real chunked run's own sponge
 challenges — the literal `runOracles` fields — over the run's own commitment
 chunks. The consumer grid `T'` shares the accumulator and public commitments and sits
 at the run's own `ζ`; its Fiat–Shamir trees, acceptances, and challenge injectivity
-discharge the capstone's transcript antecedents. The quotient residue
-`(t, hdeg, heq)` stays the one undischarged antecedent, exactly as at `nc = 1` (its
-dissolution is the `_ft` terminal's job). -/
+discharge the capstone's transcript antecedents. `T` is not simply `T'`: the reference
+grid drives the witness extraction at its own `ζ₀`, which the statement never ties to
+the run's `ζ` (only `T'.ζ₀` is pinned, through `hζ'`) — the two grids share just the
+accumulator and public commitment chunks (`hzC`, `hpC`), so identifying them would
+needlessly pin the reference transcript at the run's evaluation point. The quotient
+residue `(t, hdeg, heq)` stays the one undischarged antecedent, exactly as at `nc = 1`
+(its dissolution is the `_ft` terminal's job). -/
 theorem kimchiVesta_run_sound (σ : SRS IpaVesta.Point) {nc : ℕ} (hnc : 0 < nc)
     (pub : Array Fp) {n : ℕ} [NeZero n]
     (idx : Index Fp n)

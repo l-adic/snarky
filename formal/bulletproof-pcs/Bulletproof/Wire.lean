@@ -24,10 +24,12 @@ batch shape (`m` rows, `p` evaluation points, the claimed-evaluation matrix a
 `Vector` of `Vector`s). Every read of the verifier and of every statement over it is
 total; a checked input cannot hold a ragged claim. The raw serde records
 (`Wire.Proof`, `Wire.Input` — every payload a `Vec`) live in the `Wire` namespace
-below with their `check` parses, which are the verifier's own dimension guards
-(round count, `evals` square against the commitments and points) factored as a total
-parse — the parse IS the proof. Clients compose check-then-verify; rejecting ragged
-input is the same observable behavior as the guards' `false` returns.
+below with their `check` parses: THIS verifier's totality requirements (round count,
+`evals` square against the commitments and points), stated as a total parse — the
+parse IS the proof. Production's `SRS::verify` carries no such explicit guards — its
+`Vec` payloads feed the transcript and the batched MSM equations as-is, so a
+mis-shaped claim reaches the same rejection through the equations it then fails.
+Clients compose check-then-verify.
 
 Generic over a single `CommitmentCurve` bundle — the Lean analogue of the Rust
 `G: CommitmentCurve` associated types: the base and scalar cardinalities with their
@@ -318,16 +320,16 @@ structure Input (C : CommitmentCurve) where
   /-- The wire opening proof. -/
   proof : Proof C
 
-/-- Parse a wire proof at round count `k` — the verifier's `lr`-length guard as a
-total parse. -/
+/-- Parse a wire proof at round count `k` — the checked verifier's `lr`-length
+requirement as a total parse. -/
 def Proof.check (k : ℕ) (w : Proof C) : Option (Ipa.Proof C k) :=
   if h : w.lr.size = k then
     some { lr := ⟨w.lr, h⟩, delta := w.delta, z1 := w.z1, z2 := w.z2, sg := w.sg }
   else none
 
-/-- Parse a wire claim at its announced shape — the verifier's dimension guards
-(`evals` square against the commitments and points, the proof at round count `k`) as
-a total parse into the checked input. -/
+/-- Parse a wire claim at its announced shape — the checked verifier's dimension
+requirements (`evals` square against the commitments and points, the proof at round
+count `k`) as a total parse into the checked input. -/
 def Input.check (k : ℕ) (w : Input C) :
     Option (Ipa.Input C k w.commitments.size w.xs.size) := do
   let proof ← w.proof.check k

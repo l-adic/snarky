@@ -31,8 +31,12 @@ Two structural consequences of chunking:
   combined public claim (`claimedPub`) in `ft_eval0`'s public slot.
 
 Trust boundary: challenge grids for Fiat–Shamir, no-DL-relation binding, the key–index
-correspondence as hypothesis. The assembled witness polynomials have degree `< n`, so
-`Kimchi.Protocol.sound` consumption never sees the SRS.
+correspondence as hypothesis. The quotient `t` also enters as hypothesis data in the
+consumer's shape (the acceptance equation `hteq` at each `ζ`): a quotient serving every
+consumed evaluation point is a transcript-prefix fact, not something this layer can
+produce — its dissolution into the committed `t_comm` chunks is the `_ft` capstone's job
+(`ft_identity_of_chunks`, `Capstone/Algebraic.lean`). The assembled witness polynomials
+have degree `< n`, so `Kimchi.Protocol.sound` consumption never sees the SRS.
 -/
 open Bulletproof
 
@@ -77,7 +81,10 @@ private def selGate : Fin selCount → GateType :=
 
 The abstract rows are the deployed `to_batch` order (verifier.rs) with the ft row
 omitted — the ft opening is consumed separately (the `_ft` terminals read it off the
-run):
+run). Production's `to_batch` also pushes the recursion (`polys`, prev-challenge) rows
+ahead of the public row (verifier.rs:972); those rows are absent here because recursion
+(`prev_challenges`) is a declared deferral (the scope list in `Verifier/Kimchi.lean`).
+The rows:
 
 | row     | column                | `to_batch` push (verifier.rs)       |
 | ------- | --------------------- | ----------------------------------- |
@@ -215,12 +222,14 @@ theorem segTotal_eq_sum (nc : ℕ) : segTotal nc = ∑ _ : Fin batchRows, nc := 
   simp [segTotal, Finset.sum_const, Finset.card_univ, mul_comm]
 
 /-- The flat (segment) view of a per-row-per-chunk family, along `finSigmaFinEquiv` —
-the order `chunkedCombinedCommitment`/`chunkedCombinedInnerProduct` combine in. -/
+the order `chunkedCombinedCommitment`/`chunkedCombinedInnerProduct` combine in. Consumed
+by the capstone layer (`Capstone/Standard.lean`, `Capstone/Algebraic.lean`). -/
 def flatten {α : Type*} {m nc : ℕ} (f : Fin m → Fin nc → α) :
     Fin (∑ _ : Fin m, nc) → α :=
   fun s => f (finSigmaFinEquiv.symm s).1 (finSigmaFinEquiv.symm s).2
 
-/-- `flatten` at the multiplied index form. -/
+/-- `flatten` at the multiplied index form. Consumed by the capstone layer
+(`KimchiBatchAcc`'s stream pins `hcs`/`hes`, `Capstone/Standard.lean`). -/
 def flatSeg {α : Type*} {nc : ℕ} (f : Fin batchRows → Fin nc → α) : Fin (segTotal nc) → α :=
   fun s => flatten f (finCongr (segTotal_eq_sum nc) s)
 
