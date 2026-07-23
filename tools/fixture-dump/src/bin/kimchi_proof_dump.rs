@@ -14,6 +14,22 @@
 //! coefficient), and the verifier-index digest (taken as wire input by the Lean
 //! verifier; transcribing `VerifierIndex::digest()`'s absorb schedule is a declared
 //! deferral there).
+//!
+//! Two fixtures from the ONE proof, differing only in whether the proof-carried public
+//! evaluations `evals.public` are recorded:
+//!
+//! * `kimchi_proof_vesta.json` — WITHOUT `evals_public`. This mirrors the DEPLOYED wire
+//!   representation: o1js / the OCaml `to_repr` drop the public-eval chunks at `nc = 1`,
+//!   and the verifier then recomputes them barycentrically from the public input
+//!   (verifier.rs:336–379). The Lean verifier's `PubEvalSrc.barycentric` branch.
+//! * `kimchi_proof_vesta_pub.json` — WITH `evals_public`. The Rust `ProverProof::create`
+//!   ALWAYS populates `evals.public = Some(..)` (prover.rs:1048), even at `nc = 1`, and
+//!   the verifier's FIRST branch uses carried evaluations at ANY chunk count
+//!   (verifier.rs:332). So the carried-at-`nc = 1` case IS production-reachable — this
+//!   fixture records it straight off the real proof (same production verify asserted),
+//!   exercising the Lean verifier's `PubEvalSrc.carried` branch at one chunk. For a
+//!   genuine proof the carried values equal the barycentric ones, so both fixtures
+//!   verify against the same transcript.
 
 use ark_poly::EvaluationDomain;
 use fixture_dump::{mixed_circuit, mixed_index};
@@ -148,8 +164,29 @@ fn main() {
 
     let path = format!("{out_dir}/kimchi_proof_vesta.json");
     std::fs::write(&path, serde_json::to_string_pretty(&fixture).unwrap()).unwrap();
+
+    // The carried-public twin: the SAME proof, but recording the proof-carried public
+    // evaluations the Rust prover always produces (verifier.rs uses them at any nc). The
+    // Lean verifier's `PubEvalSrc.carried` branch at one chunk.
+    let ev_public = ev
+        .public
+        .as_ref()
+        .expect("ProverProof::create should always populate evals.public");
+    let mut fixture_pub = fixture;
+    fixture_pub
+        .as_object_mut()
+        .unwrap()
+        .insert("evals_public".to_string(), pe(ev_public));
+    let pub_path = format!("{out_dir}/kimchi_proof_vesta_pub.json");
+    std::fs::write(
+        &pub_path,
+        serde_json::to_string_pretty(&fixture_pub).unwrap(),
+    )
+    .unwrap();
+
     println!(
-        "kimchi proof: n={} t chunks={}, production verify accepts; wrote {path}",
+        "kimchi proof: n={} t chunks={}, production verify accepts; wrote {path} and \
+         {pub_path} (carried evals.public twin)",
         verifier_index.domain.size(),
         proof.commitments.t_comm.chunks.len()
     );

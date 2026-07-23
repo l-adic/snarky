@@ -160,8 +160,12 @@ jobs:
         KIMCHI_FIXTURES_DIR=kimchi/fixtures \
           lake env lean kimchi/scripts/check_perm_fixture.lean
 
-    # The index model must accept the mixed-gate production circuit: construction
-    # by decision, derived columns, satisfiability, and corruption rejections.
+    # The index model must accept the mixed-gate production circuit at BOTH chunking
+    # regimes on BOTH Pasta curves (fixtures/index_vesta.json at zk_rows = 3, and
+    # fixtures/index_{vesta,pallas}_nc2.json at zk_rows = 5): construction by decision,
+    # derived columns (incl. the DIRECT row-level pin of the sigma-zeroing branch on
+    # rows 29, 30 where the interior mask is nonempty), satisfiability, and corruption
+    # rejections.
     - name: Check the index model against the mixed-gate fixture
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
@@ -180,12 +184,14 @@ jobs:
 
     # The composed executable kimchi verifier (check-then-verify, both sponge
     # schedules, the scalar side, the to_batch segment stream, the warm-started IPA
-    # check) must accept complete production wire proofs — the one-chunk fixture and
-    # the nc = 2 fixtures on BOTH curves — reject a corruption matrix (both
-    # evaluation points, chunks beyond 0, both t_comm collapse groups), and refuse
-    # to parse ragged or mis-pinned wire records
-    # (fixtures/kimchi_proof_{vesta,vesta_nc2,pallas_nc2}.json, from
-    # tools/fixture-dump's kimchi_proof_dump binaries).
+    # check) must accept complete production wire proofs across nc ∈ {1, 2, 8}, both
+    # public-evaluation sources, and both curves — the one-chunk fixture (barycentric
+    # public evals) and its carried-public twin, the nc = 2 fixtures on BOTH curves,
+    # and an nc = 8 fixture (max_poly_size ≠ n/2) — reject a corruption matrix (both
+    # evaluation points, chunks beyond 0, both t_comm collapse groups, a carried
+    # public eval), and refuse to parse ragged or mis-pinned wire records
+    # (fixtures/kimchi_proof_{vesta,vesta_pub,vesta_nc2,pallas_nc2,vesta_nc8}.json,
+    # from tools/fixture-dump's kimchi_proof_dump binaries).
     - name: Check the executable kimchi verifier against a production proof
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
@@ -193,14 +199,15 @@ jobs:
           lake env lean kimchi/scripts/check_kimchi_verifier.lean
 
     # The verifier-key <-> index correspondence (VKCorresponds at production
-    # chunking), by value, at BOTH chunking regimes on Vesta — the nc = 1 VK
-    # (zk_rows = 3) and the nc = 2 VK (zk_rows = 5); Pallas has no index fixture:
-    # every committed column chunk of each production VK equals the value-MSM of
-    # that key's Lagrange-basis chunk commitments against its derived column. The
-    # sigma columns are the MODEL's own derivation (Index.build? at each regime's
-    # zk_rows, then Index.sigmaAddrRow), so the model's sigma-zeroing branch is
-    # adjudicated against production at zk_rows = 5 and the un-zeroed addresses at
-    # zk_rows = 3; selectors carry the per-chunk fixed blinder.
+    # chunking), by value, across both curves and both regimes — the Vesta nc = 1 VK
+    # (zk_rows = 3) and nc = 2 VK (zk_rows = 5) against the Vesta index, and the
+    # Pallas nc = 2 VK (zk_rows = 5) against the Pallas index: every committed column
+    # chunk of each production VK equals the value-MSM of that key's Lagrange-basis
+    # chunk commitments against its derived column. The sigma columns are the MODEL's
+    # own derivation (Index.build? at each regime's zk_rows, then Index.sigmaAddrRow),
+    # so the model's sigma-zeroing branch is adjudicated against production at
+    # zk_rows = 5 on BOTH curves and the un-zeroed addresses at zk_rows = 3;
+    # selectors carry the per-chunk fixed blinder.
     - name: Check the verifier key corresponds to the index
       run: |
         export PATH="$HOME/.elan/bin:$PATH"

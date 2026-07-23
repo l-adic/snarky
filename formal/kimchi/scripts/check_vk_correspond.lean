@@ -4,15 +4,18 @@ import Kimchi.Verifier.Wire
 import KimchiFixture.Kimchi
 import Lean.Data.Json
 
-/-! The verifier-key ↔ index correspondence, by value, at BOTH production chunking
-regimes: every committed column of the production verifier keys —
-`fixtures/kimchi_proof_vesta.json` (`nc = 1`, `zk_rows = 3`) and
-`fixtures/kimchi_proof_vesta_nc2.json` (`nc = 2`, `zk_rows = 5`; the same circuit and
-seed over a half-domain SRS) — must, CHUNK BY CHUNK, equal the value-MSM of that key's
-Lagrange-basis chunk commitments against the corresponding derived column of the same
-circuit (`fixtures/index_vesta.json` — same circuit and seed; Pallas has no index
-fixture, so the correspondence is adjudicated on Vesta only). This adjudicates the
-chunked indexer model of `Reduction/Soundness.lean` numerically:
+/-! The verifier-key ↔ index correspondence, by value, across BOTH Pasta curves and BOTH
+production chunking regimes: every committed column of a production verifier key must,
+CHUNK BY CHUNK, equal the value-MSM of that key's Lagrange-basis chunk commitments
+against the corresponding derived column of the SAME circuit's index. The runs:
+
+* Vesta `nc = 1` (`fixtures/kimchi_proof_vesta.json`, `zk_rows = 3`) and Vesta `nc = 2`
+  (`fixtures/kimchi_proof_vesta_nc2.json`, `zk_rows = 5`) against the Vesta index
+  (`fixtures/index_vesta.json`);
+* Pallas `nc = 2` (`fixtures/kimchi_proof_pallas_nc2.json`, `zk_rows = 5`) against the
+  Pallas index (`fixtures/index_pallas_nc2.json`).
+
+This adjudicates the chunked indexer model of `Reduction/Soundness.lean` numerically:
 `commitPolyChunk (columnPoly v) c = ∑ⱼ vⱼ • Lⱼ[c]` (chunking is linear, so the
 value-MSM formula holds per chunk window), and the six selector columns carry
 production's fixed blinder PER CHUNK (`mask_custom` with the all-ones blinder over the
@@ -30,31 +33,39 @@ the dumped gate table at each regime's `zk_rows`, then `Index.sigmaAddrRow`
 adjudicates the production σ commitments AGAINST the model's own `sigmaAddrRow`: a
 sign or off-by-one drift in the model's zeroing branch at `zk_rows = 5` (rows `29, 30`
 at `n = 32`) makes the σ value-MSMs miss the production commitments and fails the
-`nc = 2` run. At `zk_rows = 3` the range is EMPTY — the `nc = 1` run therefore pins
-the UN-zeroed correspondence, the raw wiring addresses. -/
+`nc = 2` runs on BOTH curves. At `zk_rows = 3` the range is EMPTY — the Vesta `nc = 1`
+run therefore pins the UN-zeroed correspondence, the raw wiring addresses.
 
-open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi Kimchi.Index
+The whole body is generic over the commitment curve `C`; the per-curve Poseidon MDS is
+passed to `Index.build?` as `mdsOfParams frParams`. -/
 
-abbrev C := IpaVesta.curve
-abbrev F := C.ScalarField
-
-def parseF : Json → Except String F := parseZMod
+open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi Kimchi.Index Kimchi.Verifier
 
 /-- The index-fixture data a regime run consumes: the gate table (types, coefficients,
 wire pointers), the domain/permutation constants, and the production-derived selector
 and coefficient columns. σ columns are deliberately NOT read — the model derives them
 (see the module docstring). -/
-structure IdxData where
+structure IdxData (C : Ipa.CommitmentCurve) where
+  /-- The domain size `n`. -/
   n : ℕ
+  /-- The number of public-input rows. -/
   publicCount : ℕ
-  omega : F
-  endoBase : F
-  shifts : Array F
+  /-- The domain's primitive root of unity. -/
+  omega : C.ScalarField
+  /-- The base-field endo coefficient `cs.endo`. -/
+  endoBase : C.ScalarField
+  /-- The permutation coset shifts. -/
+  shifts : Array C.ScalarField
+  /-- The per-row gate types. -/
   typs : Array GateType
-  coeffs : Array (Array F)
+  /-- The per-row coefficient vectors. -/
+  coeffs : Array (Array C.ScalarField)
+  /-- The per-row wire pointers `(col, row)`. -/
   wires : Array (Array (ℕ × ℕ))
+  /-- The production selector-column JSON block (read per name at check time). -/
   selJ : Json
-  coefficients : Array (Array F)
+  /-- The production coefficient columns. -/
+  coefficients : Array (Array C.ScalarField)
 
 def parseGateType : String → Except String GateType
   | "zero" => .ok .zero
@@ -66,8 +77,9 @@ def parseGateType : String → Except String GateType
   | "endoScalar" => .ok .endoScalar
   | t => .error s!"unknown gate type: {t}"
 
-def parseIdx (ji : Json) : Except String IdxData := do
+def parseIdx (C : Ipa.CommitmentCurve) (ji : Json) : Except String (IdxData C) := do
   let fld (k : String) : Except String Json := ji.getObjVal? k
+  let parseF : Json → Except String C.ScalarField := parseZMod
   let gatesJ ← (← fld "gates").getArr?
   let typs ← gatesJ.mapM fun g => do parseGateType (← (← g.getObjVal? "typ").getStr?)
   let coeffs ← gatesJ.mapM fun g => do parseArrOf parseF (← g.getObjVal? "coeffs")
@@ -84,8 +96,8 @@ def parseIdx (ji : Json) : Except String IdxData := do
            selJ := ← fld "selectors"
            coefficients := ← parseArrOf (parseArrOf parseF) (← fld "coefficients") }
 
-def buildGates (d : IdxData) {n : ℕ} (_hn : d.n = n) :
-    Except String (Fin n → GateRow F n) := do
+def buildGates {C : Ipa.CommitmentCurve} (d : IdxData C) {n : ℕ} (_hn : d.n = n) :
+    Except String (Fin n → GateRow C.ScalarField n) := do
   unless d.typs.size = n && d.wires.size = n && d.coeffs.size = n do
     throw "gate table size mismatch"
   let rows ← (Array.range n).mapM fun i => do
@@ -94,32 +106,33 @@ def buildGates (d : IdxData) {n : ℕ} (_hn : d.n = n) :
         return ((⟨col, h.1⟩ : Fin permCols), (⟨row, h.2⟩ : Fin n))
       else throw s!"wire out of range at row {i}"
     let t : GateType := d.typs[i]!
-    let cf : Array F := d.coeffs[i]!
+    let cf : Array C.ScalarField := d.coeffs[i]!
     if h7 : ws.size = permCols then
       return { typ := t
                coeffs := fun c => cf[(c : ℕ)]!
-               wires := fun c => ws[(c : ℕ)]'(by omega) : GateRow F n }
+               wires := fun c => ws[(c : ℕ)]'(by omega) : GateRow C.ScalarField n }
     else throw "wire count"
   if hsz : rows.size = n then
     return fun i => rows[(i : ℕ)]'(by omega)
   else throw "row count"
 
 /-- The value-MSM of a column against one chunk slice of the basis commitments. -/
-def basisChunkMSM (basis : Array (Array C.Point)) (c : ℕ) (col : Array F) : C.Point :=
+def basisChunkMSM (C : Ipa.CommitmentCurve) (basis : Array (Array C.Point)) (c : ℕ)
+    (col : Array C.ScalarField) : C.Point :=
   Ipa.msm C (fun j : Fin basis.size => (basis.getD j #[]).getD c 0)
     (fun j => col.getD j 0)
 
 /-- The MODEL's σ columns at the given `zk_rows`: `Index.build?` on the dumped gate
 table (every index law decided), then `Index.sigmaAddrRow` — the wiring addresses
 through the model's own zeroing branch. -/
-def sigmaColsOf (d : IdxData) (zkRows : ℕ) : Except String (Array (Array F)) :=
+def sigmaColsOf {C : Ipa.CommitmentCurve} (frParams : Poseidon.Params C.ScalarField)
+    (d : IdxData C) (zkRows : ℕ) : Except String (Array (Array C.ScalarField)) :=
   if hpos : 0 < d.n then
     haveI : NeZero d.n := ⟨Nat.pos_iff_ne_zero.mp hpos⟩
     do
       let gates ← buildGates d rfl
       let some idx := Index.build? gates d.publicCount zkRows d.omega d.endoBase
-          (Kimchi.Verifier.mdsOfParams Kimchi.Verifier.Wire.KimchiVesta.frParams)
-          (fun i => d.shifts[(i : ℕ)]!)
+          (mdsOfParams frParams) (fun i => d.shifts[(i : ℕ)]!)
         | throw s!"Index.build? rejected the index data at zk_rows = {zkRows}"
       return (List.finRange permCols).toArray.map fun c =>
         ((List.finRange d.n).map (idx.sigmaAddrRow c)).toArray
@@ -127,10 +140,12 @@ def sigmaColsOf (d : IdxData) (zkRows : ℕ) : Except String (Array (Array F)) :
 
 /-- One chunking regime: the VK fixture at `vkPath` against the index data, with the
 σ columns derived by the model itself at this regime's `zk_rows`. -/
-def runRegime (d : IdxData) (vkPath : String) : IO Unit := do
+def runRegime (C : Ipa.CommitmentCurve) (frParams : Poseidon.Params C.ScalarField)
+    (d : IdxData C) (vkPath : String) : IO Unit := do
   let vkJ ← IO.FS.readFile vkPath
   let r : Except String
-      (Array (String × Array F × Array C.Point) × Array (Array C.Point) × ℕ × ℕ) := do
+      (Array (String × Array C.ScalarField × Array C.Point) × Array (Array C.Point)
+        × ℕ × ℕ) := do
     let jv ← Json.parse vkJ
     let basis ← parseArrOf (Kimchi.Fixture.parseComm C)
       (← jv.getObjVal? "lagrange_basis")
@@ -152,20 +167,20 @@ def runRegime (d : IdxData) (vkPath : String) : IO Unit := do
     let sigmaComm ← cpts "sigma_comm"
     let coeffComm ← cpts "coefficients_comm"
     -- the model's own σ columns at THIS regime's zk_rows (see the module docstring)
-    let sigmaCols ← sigmaColsOf d zkRows
+    let sigmaCols ← sigmaColsOf frParams d zkRows
     unless sigmaComm.size = permCols ∧ d.coefficients.size = coeffCols
         ∧ coeffComm.size = coeffCols do throw "column family size mismatch"
-    let mut checks : Array (String × Array F × Array C.Point) := #[]
+    let mut checks : Array (String × Array C.ScalarField × Array C.Point) := #[]
     for i in [0:permCols] do
       checks := checks.push (s!"sigma[{i}]", sigmaCols.getD i #[], sigmaComm.getD i #[])
     for i in [0:coeffCols] do
       checks := checks.push
         (s!"coeff[{i}]", d.coefficients.getD i #[], coeffComm.getD i #[])
     -- selectors: production's fixed blinder, PER CHUNK
-    let col (j : Json) (k : String) : Except String (Array F) := do
-      parseArrOf parseF (← j.getObjVal? k)
+    let col (j : Json) (k : String) : Except String (Array C.ScalarField) := do
+      parseArrOf parseZMod (← j.getObjVal? k)
     let sel (name comm : String) :
-        Except String (String × Array F × Array C.Point) := do
+        Except String (String × Array C.ScalarField × Array C.Point) := do
       return (name, ← col d.selJ name, (← cpt comm).map (· - h))
     checks := checks.push (← sel "generic" "generic_comm")
     checks := checks.push (← sel "poseidon" "psm_comm")
@@ -181,7 +196,7 @@ def runRegime (d : IdxData) (vkPath : String) : IO Unit := do
     for (name, v, comms) in checks do
       unless comms.size = nc do bad := bad.push s!"{name} (chunk count)"
       for c in [0:nc] do
-        unless basisChunkMSM basis c v = comms.getD c 0 do
+        unless basisChunkMSM C basis c v = comms.getD c 0 do
           bad := bad.push s!"{name}[chunk {c}]"
     IO.println s!"{vkPath}: {checks.size} committed columns × {nc} chunks \
       (zk_rows = {zkRows}) vs value-MSM of the {basis.size}-basis chunk commitments — \
@@ -189,19 +204,28 @@ def runRegime (d : IdxData) (vkPath : String) : IO Unit := do
     unless bad.isEmpty do
       throw (IO.userError s!"{vkPath}: chunked VK correspondence check FAILED")
 
+/-- Read an index fixture and run every VK against it. -/
+def runCurve (C : Ipa.CommitmentCurve) (frParams : Poseidon.Params C.ScalarField)
+    (idxPath : String) (vkPaths : List String) : IO Unit := do
+  let idxJ ← IO.FS.readFile idxPath
+  let d ← match Json.parse idxJ >>= parseIdx C with
+    | .ok d => pure d
+    | .error e => throw (IO.userError s!"{idxPath}: index fixture parse error: {e}")
+  for vkPath in vkPaths do
+    runRegime C frParams d vkPath
+
 def main : IO Unit := do
   let dir := (← IO.getEnv "KIMCHI_FIXTURES_DIR").getD "fixtures"
-  let idxJ ← IO.FS.readFile s!"{dir}/index_vesta.json"
-  let d ← match Json.parse idxJ >>= parseIdx with
-    | .ok d => pure d
-    | .error e => throw (IO.userError s!"index fixture parse error: {e}")
-  -- nc = 1, zk_rows = 3: the σ-zeroing range is empty — the un-zeroed correspondence
-  runRegime d s!"{dir}/kimchi_proof_vesta.json"
-  -- nc = 2, zk_rows = 5: rows 29, 30 zeroed by the model's sigmaAddrRow branch
-  runRegime d s!"{dir}/kimchi_proof_vesta_nc2.json"
-  IO.println "✓ the production verifier keys (nc = 1 and nc = 2) correspond to the \
-    index: every committed column chunk is the value-MSM of its derived column \
-    against the Lagrange chunk commitments — σ columns from the model's own \
-    Index.sigmaAddrRow, selectors per-chunk masked"
+  -- Vesta: nc = 1 (zk_rows = 3, σ-zeroing range empty) then nc = 2 (zk_rows = 5, rows
+  -- 29, 30 zeroed by the model's sigmaAddrRow branch).
+  runCurve IpaVesta.curve Wire.KimchiVesta.frParams s!"{dir}/index_vesta.json"
+    [s!"{dir}/kimchi_proof_vesta.json", s!"{dir}/kimchi_proof_vesta_nc2.json"]
+  -- Pallas: nc = 2 (zk_rows = 5) against the Pallas index.
+  runCurve IpaPallas.curve Wire.KimchiPallas.frParams s!"{dir}/index_pallas_nc2.json"
+    [s!"{dir}/kimchi_proof_pallas_nc2.json"]
+  IO.println "✓ the production verifier keys (Vesta nc = 1 and nc = 2, Pallas nc = 2) \
+    correspond to their indices: every committed column chunk is the value-MSM of its \
+    derived column against the Lagrange chunk commitments — σ columns from the model's \
+    own Index.sigmaAddrRow, selectors per-chunk masked"
 
 #eval main
