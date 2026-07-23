@@ -7,8 +7,9 @@ import Lean.Data.Json
 
 One verifier (`kimchiVerify`, over checked records at chunk count `nc`), exercised
 through the client-side `verifyWire` composition below — parse the wire records with
-`Wire.{KimchiVK,KimchiProof}.check`, then verify. Five fixtures spanning both curves,
-`nc ∈ {1, 2, 8}`, both public-evaluation sources, and `max_poly_size` at and off `n/2`:
+`Wire.{KimchiVK,KimchiProof}.check`, then verify. Six fixtures spanning both curves,
+`nc ∈ {1, 2, 8}`, both public-evaluation sources, `max_poly_size` at and off `n/2`, and
+one and two public inputs:
 
 * `fixtures/kimchi_proof_vesta.json` — the one-chunk proof (`nc = 1`) without carried
   public evaluations (o1js / OCaml `to_repr` drop them at `nc = 1`), so the verifier
@@ -22,7 +23,10 @@ through the client-side `verifyWire` composition below — parse the wire record
 * `fixtures/kimchi_proof_vesta_nc8.json` — an `nc = 8` proof (`max_poly_size = n/8`,
   `n = 64`, a full `56`-chunk quotient), for nc > 2 and `max_poly_size ≠ n/2`. (`nc = 3`
   is unproducible — a non-power-of-two `max_poly_size` misaligns the segment chunking
-  and the prover rejects it.)
+  and the prover rejects it.);
+* `fixtures/kimchi_proof_vesta_2pub.json` — a `public_count = 2` proof (`nc = 1`), so the
+  public-commitment MSM and the barycentric public-evaluation recomputation run over two
+  elements; a corruption of each public input flips the verdict.
 
 Each run checks the accept bit, then two negative matrices:
 
@@ -68,7 +72,8 @@ already exercised at `nc ≤ 2`; the kept high-chunk `t_comm` corruption keeps t
 run non-vacuous. The parse-rejection matrix is cheap (`Wire.check` short-circuits before
 `kimchiVerify`), so it runs in full regardless. -/
 def runChunked (C : Ipa.CommitmentCurve)
-    (path : String) (expectPublic : Bool) (heavy : Bool := false) : IO Unit := do
+    (path : String) (expectPublic : Bool) (heavy : Bool := false)
+    (pubBumps : List Nat := []) : IO Unit := do
   let raw ← IO.FS.readFile path
   let r : Except String
       (_ × Wire.KimchiVK C × Wire.KimchiProof C × Array C.ScalarField) := do
@@ -130,6 +135,11 @@ def runChunked (C : Ipa.CommitmentCurve)
           !verify { proof with pubEvals := some { pe with zeta := pe.zeta.modify 0 (· + 1) } })
       | none =>
         IO.println "  - corrupted public eval: skipped (no carried evals at nc = 1)"
+    -- public-input corruptions: bumping a public input must flip the verdict, since the
+    -- public commitment and the barycentric public evals both derive from `pub`.
+    for i in pubBumps do
+      corrupts := corrupts.push
+        (s!"corrupted public input {i}", !verifyWire C σ vk proof (pub.modify i (· + 1)))
     for (name, rejected) in corrupts do
       IO.println s!"  {if rejected then "✓ REJECT" else "✗ ACCEPT (SOUNDNESS BUG)"}: {name}"
     -- parse rejections: `Wire.check` must return `none` on ragged/mis-pinned input.
@@ -172,6 +182,9 @@ def main : IO Unit := do
   runChunked CP s!"{dir}/kimchi_proof_pallas_nc2.json" true
   runChunked CV s!"{dir}/kimchi_proof_vesta_nc8.json" true
     (heavy := true)
+  -- two public inputs (nc = 1): the multi-element public-commitment MSM and barycentric
+  -- public evals; corrupting either public input must flip the verdict.
+  runChunked CV s!"{dir}/kimchi_proof_vesta_2pub.json" false (pubBumps := [0, 1])
   IO.println "✓ the executable kimchi verifiers accept the production proofs (nc = 1 \
     barycentric and carried, nc = 2 on both curves, nc = 8), reject corruptions, and \
     refuse to parse ragged wire data"
