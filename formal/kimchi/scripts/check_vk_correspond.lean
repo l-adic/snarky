@@ -118,7 +118,7 @@ def sigmaColsOf (d : IdxData) (zkRows : ℕ) : Except String (Array (Array F)) :
     do
       let gates ← buildGates d rfl
       let some idx := Index.build? gates d.publicCount zkRows d.omega d.endoBase
-          (Kimchi.Verifier.mdsOfParams Kimchi.Verifier.Wire.KimchiVesta.frParams)
+          (Kimchi.Verifier.mdsOfParams Bulletproof.IpaVesta.curve.frParams)
           (fun i => d.shifts[(i : ℕ)]!)
         | throw s!"Index.build? rejected the index data at zk_rows = {zkRows}"
       return (List.finRange permCols).toArray.map fun c =>

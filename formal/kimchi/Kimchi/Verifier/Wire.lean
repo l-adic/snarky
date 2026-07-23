@@ -29,7 +29,7 @@ open Bulletproof
 namespace Kimchi.Verifier.Wire
 
 open CompElliptic.CurveForms.ShortWeierstrass
-open Poseidon Poseidon.FqSponge Bulletproof
+open Bulletproof
 open Kimchi.Verifier (PointEvaluations ProofEvaluations PubEvalSrc)
 
 variable (C : Ipa.CommitmentCurve)
@@ -39,7 +39,7 @@ variable (C : Ipa.CommitmentCurve)
 /-- A wire polynomial commitment: the per-chunk commitment vector (`PolyComm.elems`,
 `Vec<G>`). serde imposes NO length here — the chunk count is a verify-time check
 (`checkChunks` against the run's `chunk_size`). -/
-private abbrev PolyComm (C : Ipa.CommitmentCurve) := Array C.Point
+abbrev PolyComm (C : Ipa.CommitmentCurve) := Array C.Point
 
 /-- The kimchi proof wire record (`ProverProof` + `ProofEvaluations`, proof.rs:50–170),
 basic gate set: fixed dimensions serde-typed, chunk payloads unchecked arrays. Lookup
@@ -80,32 +80,40 @@ structure KimchiVK (C : Ipa.CommitmentCurve) where
   sigmaComm : Vector (PolyComm C) permCols
   /-- The 15 coefficient commitments (`coefficients_comm`). -/
   coefficientsComm : Vector (PolyComm C) coeffCols
-  /-- The generic selector's commitment. -/
+  -- The six selector commitments of the transcribed basic gate set — production's
+  -- `{generic, psm, complete_add, mul, emul, endomul_scalar}_comm`
+  -- (`VerifierIndex`, verifier_index.rs). The field names here follow production's,
+  -- EXCEPT the poseidon selector: production calls it `psm_comm`, and the fixture
+  -- decoder handles that naming mismatch (`parseVK` reads the `psm_comm` key into
+  -- `poseidonComm`).
+  /-- The generic selector's commitment (`generic_comm`). -/
   genericComm : PolyComm C
-  /-- The poseidon selector's commitment. -/
+  /-- The poseidon selector's commitment — production's `psm_comm` (the one selector
+  whose wire name differs; the decoder maps it). -/
   poseidonComm : PolyComm C
-  /-- The completeAdd selector's commitment. -/
+  /-- The completeAdd selector's commitment (`complete_add_comm`). -/
   completeAddComm : PolyComm C
-  /-- The varBaseMul selector's commitment. -/
+  /-- The varBaseMul selector's commitment (`mul_comm`). -/
   mulComm : PolyComm C
-  /-- The endoMul selector's commitment. -/
+  /-- The endoMul selector's commitment (`emul_comm`). -/
   emulComm : PolyComm C
-  /-- The endoScalar selector's commitment. -/
+  /-- The endoScalar selector's commitment (`endomul_scalar_comm`). -/
   endomulScalarComm : PolyComm C
   /-- The 7 permutation shifts (`shift`). -/
   shifts : Vector C.ScalarField permCols
   /-- The number of zero-knowledge rows (`zk_rows`) — nc-dependent in production
   (constraints.rs:774–784), carried as data here. -/
   zkRows : ℕ
-  /-- `verifier_index.endo`, the `ft_eval0` endo coefficient. -/
+  /-- `verifier_index.endo`, the `ft_eval0` endo coefficient — NOT serialized data
+  (production marks it `#[serde(skip)]` and recomputes it as `endos::<G>()`,
+  verifier_index.rs:140); a model input like `digest`. -/
   endo : C.ScalarField
   /-- The precomputed `VerifierIndex::digest()` — an input here. -/
   digest : C.BaseField
-  /-- The Lagrange-basis commitments (`get_lagrange_basis` over a sub-domain SRS
-  chunks every basis polynomial). -/
+  /-- The Lagrange-basis commitments — SRS-derived data (`get_lagrange_basis`
+  computes them from the SRS, chunking every basis polynomial over a sub-domain
+  SRS); a model input like `digest`. -/
   lagrangeBasis : Array (PolyComm C)
-  /-- The scalar-side Poseidon parameters (`G::sponge_params()`), for the fr-sponge. -/
-  frParams : Params C.ScalarField
 
 /-- A chunk vector validated to the run's chunk count. -/
 private def checkChunks {α : Type*} (nc : ℕ) (a : Array α) : Option (Vector α nc) :=
@@ -172,8 +180,7 @@ def KimchiVK.check {C : Ipa.CommitmentCurve} (nc : ℕ) (vk : KimchiVK C) :
            endomulScalarComm := ← checkChunks nc vk.endomulScalarComm
            shifts := vk.shifts, zkRows := vk.zkRows, endo := vk.endo
            digest := vk.digest
-           lagrangeBasis := ← vk.lagrangeBasis.mapM (checkChunks nc)
-           frParams := vk.frParams }
+           lagrangeBasis := ← vk.lagrangeBasis.mapM (checkChunks nc) }
 
 /-- The run's chunk count, from the domain and SRS widths (production
 `chunk_size = d1 / max_poly_size`, verifier.rs:145–152): the count clients `check`
@@ -188,7 +195,7 @@ end Kimchi.Verifier.Wire
 
 namespace Kimchi.Verifier.Wire.KimchiVesta
 
-open CompElliptic.Fields.Pasta Poseidon Kimchi.Verifier Bulletproof
+open Kimchi.Verifier Bulletproof
 
 /-- The kimchi proof wire record over the Vesta commitment curve. -/
 abbrev Proof := KimchiProof IpaVesta.curve
@@ -196,28 +203,16 @@ abbrev Proof := KimchiProof IpaVesta.curve
 /-- The kimchi verifier key wire record over the Vesta commitment curve. -/
 abbrev VK := KimchiVK IpaVesta.curve
 
-/-- The Vesta-side fr-sponge Poseidon parameters: the scalar field is `Fp`, so the
-production `G::sponge_params()` is the `fp_kimchi` table. The fixture decoder pins
-`KimchiVK.frParams` to this value. -/
-def frParams : Params Fp := fpParams
-
-
 end Kimchi.Verifier.Wire.KimchiVesta
 
 namespace Kimchi.Verifier.Wire.KimchiPallas
 
-open CompElliptic.Fields.Pasta Poseidon Kimchi.Verifier Bulletproof
+open Kimchi.Verifier Bulletproof
 
 /-- The kimchi proof wire record over the Pallas commitment curve. -/
 abbrev Proof := KimchiProof IpaPallas.curve
 
 /-- The kimchi verifier key wire record over the Pallas commitment curve. -/
 abbrev VK := KimchiVK IpaPallas.curve
-
-/-- The Pallas-side fr-sponge Poseidon parameters: the scalar field is `Fq`, so the
-production `G::sponge_params()` is the `fq_kimchi` table. The fixture decoder pins
-`KimchiVK.frParams` to this value. -/
-def frParams : Params Fq := fqParams
-
 
 end Kimchi.Verifier.Wire.KimchiPallas

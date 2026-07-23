@@ -54,7 +54,7 @@ def rowSatisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
 
 /-- The value of a permuted cell: column `c.1` (of the seven) at row `c.2`. -/
 def cellValue (wTab : Fin n → Fin wCols → F) (c : Fin permCols × Fin n) : F :=
-  wTab c.2 (Fin.castLE (by omega) c.1)
+  wTab c.2 (permCol c.1)
 
 /-- A witness table satisfies an index at a public input: every row's gate holds, every
 permuted cell equals its wired-to cell, and the public rows pin the first column. -/

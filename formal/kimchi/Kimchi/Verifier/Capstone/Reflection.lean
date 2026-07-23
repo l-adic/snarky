@@ -136,94 +136,6 @@ private theorem stream_tail_read (q c : ℕ) (hq : q < tailRowCount) (hc : c < n
   simp only [show nc + 1 + q * nc + c - (nc + 1) = q * nc + c from by omega]
   exact flatten_read _ q c hq hc
 
-/-- Tail row `j < 7` is the `j`-th literal row (`z` + the six selectors). -/
-private theorem tailRows_read_lit (j : ℕ) (hj : j < litRowCount) :
-    (tailRowsOf C cvk cp)[j]'(by omega)
-      = ((⟨#[zipSeg C cp.zComm cp.evals.z,
-            zipSeg C cvk.genericComm cp.evals.genericSelector,
-            zipSeg C cvk.poseidonComm cp.evals.poseidonSelector,
-            zipSeg C cvk.completeAddComm cp.evals.completeAddSelector,
-            zipSeg C cvk.mulComm cp.evals.mulSelector,
-            zipSeg C cvk.emulComm cp.evals.emulSelector,
-            zipSeg C cvk.endomulScalarComm cp.evals.endomulScalarSelector], rfl⟩
-          : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) litRowCount)[j]'hj) := by
-  show ((⟨#[zipSeg C cp.zComm cp.evals.z,
-        zipSeg C cvk.genericComm cp.evals.genericSelector,
-        zipSeg C cvk.poseidonComm cp.evals.poseidonSelector,
-        zipSeg C cvk.completeAddComm cp.evals.completeAddSelector,
-        zipSeg C cvk.mulComm cp.evals.mulSelector,
-        zipSeg C cvk.emulComm cp.evals.emulSelector,
-        zipSeg C cvk.endomulScalarComm cp.evals.endomulScalarSelector], rfl⟩
-          : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) litRowCount)
-      ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
-      ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
-      ++ ((cvk.sigmaComm.take sigmaRows).zip cp.evals.s).map
-        (fun x => zipSeg C x.1 x.2))[j]'(by omega) = _
-  rw [Vector.getElem_append, dif_pos (by omega), Vector.getElem_append,
-    dif_pos (by omega), Vector.getElem_append, dif_pos hj]
-
-/-- Tail row `7 + q` is witness column `q`'s row. -/
-private theorem tailRows_read_w (q : ℕ) (hq : q < wCols) :
-    (tailRowsOf C cvk cp)[7 + q]'(by omega)
-      = zipSeg C (cp.wComm[q]'hq) (cp.evals.w[q]'hq) := by
-  show ((⟨#[zipSeg C cp.zComm cp.evals.z,
-        zipSeg C cvk.genericComm cp.evals.genericSelector,
-        zipSeg C cvk.poseidonComm cp.evals.poseidonSelector,
-        zipSeg C cvk.completeAddComm cp.evals.completeAddSelector,
-        zipSeg C cvk.mulComm cp.evals.mulSelector,
-        zipSeg C cvk.emulComm cp.evals.emulSelector,
-        zipSeg C cvk.endomulScalarComm cp.evals.endomulScalarSelector], rfl⟩
-          : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) litRowCount)
-      ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
-      ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
-      ++ ((cvk.sigmaComm.take sigmaRows).zip cp.evals.s).map
-        (fun x => zipSeg C x.1 x.2))[7 + q]'(by omega) = _
-  rw [Vector.getElem_append, dif_pos (by omega), Vector.getElem_append,
-    dif_pos (by omega), Vector.getElem_append, dif_neg (by omega)]
-  simp only [show 7 + q - 7 = q from by omega, Vector.getElem_map, Vector.getElem_zip]
-
-/-- Tail row `22 + q` is coefficient column `q`'s row. -/
-private theorem tailRows_read_c (q : ℕ) (hq : q < coeffCols) :
-    (tailRowsOf C cvk cp)[22 + q]'(by omega)
-      = zipSeg C (cvk.coefficientsComm[q]'hq) (cp.evals.coefficients[q]'hq) := by
-  show ((⟨#[zipSeg C cp.zComm cp.evals.z,
-        zipSeg C cvk.genericComm cp.evals.genericSelector,
-        zipSeg C cvk.poseidonComm cp.evals.poseidonSelector,
-        zipSeg C cvk.completeAddComm cp.evals.completeAddSelector,
-        zipSeg C cvk.mulComm cp.evals.mulSelector,
-        zipSeg C cvk.emulComm cp.evals.emulSelector,
-        zipSeg C cvk.endomulScalarComm cp.evals.endomulScalarSelector], rfl⟩
-          : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) litRowCount)
-      ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
-      ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
-      ++ ((cvk.sigmaComm.take sigmaRows).zip cp.evals.s).map
-        (fun x => zipSeg C x.1 x.2))[22 + q]'(by omega) = _
-  rw [Vector.getElem_append, dif_pos (by omega), Vector.getElem_append,
-    dif_neg (by omega)]
-  simp only [show 22 + q - (7 + 15) = q from by omega, Vector.getElem_map,
-    Vector.getElem_zip]
-
-/-- Tail row `37 + q` is the `q`-th σ row. -/
-private theorem tailRows_read_s (q : ℕ) (hq : q < sigmaRows) :
-    (tailRowsOf C cvk cp)[37 + q]'(by omega)
-      = zipSeg C (cvk.sigmaComm[q]'(by omega)) (cp.evals.s[q]'hq) := by
-  show ((⟨#[zipSeg C cp.zComm cp.evals.z,
-        zipSeg C cvk.genericComm cp.evals.genericSelector,
-        zipSeg C cvk.poseidonComm cp.evals.poseidonSelector,
-        zipSeg C cvk.completeAddComm cp.evals.completeAddSelector,
-        zipSeg C cvk.mulComm cp.evals.mulSelector,
-        zipSeg C cvk.emulComm cp.evals.emulSelector,
-        zipSeg C cvk.endomulScalarComm cp.evals.endomulScalarSelector], rfl⟩
-          : Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) litRowCount)
-      ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
-      ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
-      ++ ((cvk.sigmaComm.take sigmaRows).zip cp.evals.s).map
-        (fun x => zipSeg C x.1 x.2))[37 + q]'(by omega) = _
-  rw [Vector.getElem_append, dif_neg (by omega)]
-  simp only [show 37 + q - (7 + 15 + 15) = q from by omega, Vector.getElem_map,
-    Vector.getElem_zip, Vector.getElem_take]
-  rfl
-
 end StreamReads
 
 /-! ## The stream positions
@@ -569,31 +481,6 @@ private theorem addFoldl_aux {α G : Type*} [AddCommMonoid G] (f : α → G) (l 
       Fin.getElem_fin, List.getElem_cons_zero, List.getElem_cons_succ]
     rw [add_assoc]
 
-/-- **The checked key–index correspondence**: the committed chunk columns are the
-circuit's own (`VKCorresponds`, through the total `comms` view), the scalar-side
-parameters match (the domain generator, the zero-knowledge row count, the shifts, the
-`ft_eval0` endo coefficient, and the Poseidon MDS — read off the fr-sponge table), AND
-the Lagrange-basis chunk commitments over the public region are the basis polynomials'
-own chunk commitments. The Lagrange pin is what binds the proof-carried public
-evaluations (the public batch row) to the circuit's public input: the verifier
-COMPUTES the public commitment from these key entries. Adjudicated numerically, per
-chunk, by `check_vk_correspond`. -/
-def KimchiVK.Corresponds {C : Ipa.CommitmentCurve}
-    [Module C.ScalarField C.Point] {nc : ℕ} {n : ℕ}
-    (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (idx : Index C.ScalarField n) : Prop :=
-  VKCorresponds σ nc cvk.comms idx
-    ∧ cvk.omega = idx.omega
-    ∧ cvk.zkRows = idx.zkRows
-    ∧ (fun i : Fin permCols => cvk.shifts[i]) = idx.shifts
-    ∧ cvk.endo = idx.endoBase
-    ∧ mdsOfParams cvk.frParams = idx.mds
-    ∧ ∀ (j : Fin n), (j : ℕ) < idx.publicCount →
-        ∀ (hj : (j : ℕ) < cvk.lagrangeBasis.size) (c : Fin nc),
-          (cvk.lagrangeBasis[(j : ℕ)]'hj)[c]
-            = commitPolyChunk σ
-                (columnPoly idx.omega (Kimchi.Permutation.rowIndicator j)) (c : ℕ)
-
 /-- **The public commitment corresponds**: under the Lagrange chunk pin, the deployed
 verifier's per-chunk public commitment is the per-chunk masked commitment of the
 NEGATED public interpolant — the `pubC` feed of the reduction. The `.val`-scalar
@@ -773,20 +660,6 @@ private theorem powPow2_eq {F : Type*} [Field F] (x : F) (k : ℕ) :
     rw [pow_succ]
     omega
 
-/-- Extensionality for the linearization's evaluation record. -/
-private theorem evals_ext {F : Type*} {e e' : Evals F} (h1 : e.w = e'.w)
-    (h2 : e.wOmega = e'.wOmega) (h3 : e.z = e'.z) (h4 : e.zOmega = e'.zOmega)
-    (h5 : e.s = e'.s) (h6 : e.coeffs = e'.coeffs)
-    (h7 : e.genericSelector = e'.genericSelector)
-    (h8 : e.poseidonSelector = e'.poseidonSelector)
-    (h9 : e.completeAddSelector = e'.completeAddSelector)
-    (h10 : e.mulSelector = e'.mulSelector) (h11 : e.emulSelector = e'.emulSelector)
-    (h12 : e.endoScalarSelector = e'.endoScalarSelector) : e = e' := by
-  cases e
-  cases e'
-  simp only [Evals.mk.injEq]
-  exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12⟩
-
 /-- Reading the run input's evaluation matrix at a stream position: the flat row's
 claim pair. -/
 private theorem runEvals_read (i : Fin batchRows) (c : Fin nc) :
@@ -823,7 +696,7 @@ private theorem claimedEvals_run_eq :
           ((runInputP C σ cvk cp pub pe v u).evals[(streamPos nc i ch : ℕ)]'
               ((streamPos nc i ch).isLt))[(j : ℕ)]'j.isLt)
       = cp.linEvals (runZetaM C σ cvk cp pub) (runZetaOmegaM C σ cvk cp pub) := by
-  refine evals_ext ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+  refine Evals.ext ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
   · funext col
     refine sum_readsTo C _ _ (by simp) _ fun ch => ?_
     beta_reduce
