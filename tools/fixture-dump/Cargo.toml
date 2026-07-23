@@ -44,3 +44,7 @@ path = "src/bin/kimchi_proof_dump_nc2.rs"
 [[bin]]
 name = "kimchi_proof_dump_nc8"
 path = "src/bin/kimchi_proof_dump_nc8.rs"
+
+[[bin]]
+name = "kimchi_proof_dump_2pub"
+path = "src/bin/kimchi_proof_dump_2pub.rs"

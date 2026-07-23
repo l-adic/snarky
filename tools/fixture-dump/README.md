@@ -16,7 +16,7 @@ cd tools/fixture-dump
 rustup run 1.92 cargo build --release
 ```
 
-Eight binaries, all deterministic (seeded ChaCha20). `formal/` is a workspace of
+Nine binaries, all deterministic (seeded ChaCha20). `formal/` is a workspace of
 packages, each owning its fixtures — every binary takes its output directory as an
 argument, and the right target depends on which package checks the artifact. Several
 binaries emit MORE THAN ONE fixture from a single invocation (`index_dump` writes three
@@ -37,6 +37,7 @@ writes both Pasta curves):
 ./target/release/kimchi_proof_dump ../../formal/kimchi/fixtures
 ./target/release/kimchi_proof_dump_nc2 ../../formal/kimchi/fixtures
 ./target/release/kimchi_proof_dump_nc8 ../../formal/kimchi/fixtures
+./target/release/kimchi_proof_dump_2pub ../../formal/kimchi/fixtures
 ```
 
 > **Caveat (`sponge_dump`'s Lean output):** the generated-constants half of
@@ -111,6 +112,12 @@ a Lean-side divergence layer by layer). They are debugging aids, gitignored
 | artifact | contents | checked by |
 |---|---|---|
 | `kimchi/fixtures/kimchi_proof_vesta_nc8.json` | an `nc = 8` proof (nc > 2 parameter coverage): the same mixed circuit and seed re-proved over an `max_poly_size = 8` SRS. There the chunked `zk_rows` (19) grow the domain to `n = 64`, so `nc = n / max_poly_size = 8` with a full `56`-chunk quotient, and `max_poly_size = n/8 ≠ n/2`. Same chunk-array encoding as the `nc = 2` twins. (`nc = 3` is unproducible — a non-power-of-two `max_poly_size` misaligns the segment chunking and the production prover rejects it with `WrongBlinders`; `nc = 4` would need a larger circuit.) No debug sidecar. | `kimchi/scripts/check_kimchi_verifier.sh` |
+
+`kimchi_proof_dump_2pub`:
+
+| artifact | contents | checked by |
+|---|---|---|
+| `kimchi/fixtures/kimchi_proof_vesta_2pub.json` | a `public_count = 2` proof (`nc = 1`), over the two-public-input circuit (`two_public_circuit`): the mixed circuit's gate set with two public rows and a generic add of the two inputs. Same one-chunk encoding as `kimchi_proof_vesta.json`, with `public` carrying both inputs, so the verifier's public-commitment MSM and barycentric public-evaluation recomputation run over two elements. | `kimchi/scripts/check_kimchi_verifier.sh` |
 
 `ipa_dump` is a thin wrapper over the production prover/verifier: proofs come from
 `SRS::commit`/`SRS::open`, the batched `SRS::verify` is asserted at dump time, and the

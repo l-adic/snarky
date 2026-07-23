@@ -224,3 +224,170 @@ pub fn mixed_index(
 > {
     mixed_index_over::<Vesta>(gates, None)
 }
+
+/// A two-public-input variant of `mixed_circuit_over`: identical gate set (so every
+/// committed selector column is non-zero, as the fixture format requires) except the
+/// first two rows are both public — `p0`, `p1` — and row 2 is a generic add computing
+/// `p0 + p1`, wired to both. Returns the gates, the witness, and the two public inputs.
+/// Its purpose is a valid proof with `public_count = 2`, so the verifier's
+/// public-commitment MSM and barycentric public-evaluation recomputation run over two
+/// elements — the multi-public path every `public_count = 1` fixture leaves unexercised.
+pub fn two_public_circuit_over<F: PrimeField, OtherP: SWCurveConfig<BaseField = F>>(
+    rng: &mut ChaCha20Rng,
+    params: &'static ArithmeticSpongeParams<F, FULL_ROUNDS>,
+    endo_scalar_coeff: F,
+) -> (Vec<CircuitGate<F>>, [Vec<F>; COLUMNS], [F; 2]) {
+    let mut gates: Vec<CircuitGate<F>> = vec![];
+    // Rows 0, 1: the two public rows.
+    gates.push(CircuitGate::create_generic_gadget(
+        Wire::for_row(0),
+        GenericGateSpec::Pub,
+        None,
+    ));
+    gates.push(CircuitGate::create_generic_gadget(
+        Wire::for_row(1),
+        GenericGateSpec::Pub,
+        None,
+    ));
+    // Row 2: p0 + p1 = s.
+    gates.push(CircuitGate::create_generic_gadget(
+        Wire::for_row(2),
+        GenericGateSpec::Add {
+            left_coeff: None,
+            right_coeff: None,
+            output_coeff: None,
+        },
+        None,
+    ));
+    // Wiring: public row 0 <-> row 2 left input; public row 1 <-> row 2 right input.
+    gates[0].wires[0] = Wire { row: 2, col: 0 };
+    gates[2].wires[0] = Wire { row: 0, col: 0 };
+    gates[1].wires[0] = Wire { row: 2, col: 1 };
+    gates[2].wires[1] = Wire { row: 1, col: 0 };
+    // Rows 3..=14: the Poseidon gadget (as in `mixed_circuit_over`).
+    let pos_row = gates.len();
+    let (pos_gates, after_pos) = CircuitGate::<F>::create_poseidon_gadget(
+        pos_row,
+        [Wire::for_row(pos_row), Wire::for_row(pos_row + 11)],
+        &params.round_constants,
+    );
+    gates.extend(pos_gates);
+    // CompleteAdd on two random other-curve points.
+    let add_row = after_pos + 1;
+    gates.push(CircuitGate::new(
+        GateType::CompleteAdd,
+        Wire::for_row(add_row),
+        vec![],
+    ));
+    // 8 rows of EndoMulScalar.
+    let endo_row = add_row + 1;
+    for r in 0..8 {
+        gates.push(CircuitGate::new(
+            GateType::EndoMulScalar,
+            Wire::for_row(endo_row + r),
+            vec![],
+        ));
+    }
+    let n_gates = gates.len();
+
+    let mut witness: [Vec<F>; COLUMNS] = std::array::from_fn(|_| vec![F::zero(); n_gates]);
+    let p0 = F::rand(rng);
+    let p1 = F::rand(rng);
+    witness[0][0] = p0;
+    witness[0][1] = p1;
+    // Row 2: p0 + p1 = o (left wired to public row 0, right to public row 1).
+    witness[0][2] = p0;
+    witness[1][2] = p1;
+    witness[2][2] = p0 + p1;
+    // Poseidon block.
+    poseidon_gate::generate_witness::<FULL_ROUNDS, F>(
+        pos_row,
+        params,
+        &mut witness,
+        [F::rand(rng), F::rand(rng), F::rand(rng)],
+    );
+    // CompleteAdd row: two distinct random other-curve points.
+    {
+        let p: SWAffine<OtherP> = Projective::<OtherP>::rand(rng).into();
+        let q: SWAffine<OtherP> = Projective::<OtherP>::rand(rng).into();
+        assert!(p.x != q.x, "unlucky sample: equal abscissae");
+        let s = (q.y - p.y) / (q.x - p.x);
+        let x3 = s.square() - p.x - q.x;
+        let y3 = s * (p.x - x3) - p.y;
+        let row = add_row;
+        witness[0][row] = p.x;
+        witness[1][row] = p.y;
+        witness[2][row] = q.x;
+        witness[3][row] = q.y;
+        witness[4][row] = x3;
+        witness[5][row] = y3;
+        witness[6][row] = F::zero(); // inf
+        witness[7][row] = F::zero(); // same_x
+        witness[8][row] = s;
+        witness[9][row] = F::zero(); // inf_z
+        witness[10][row] = (q.x - p.x).inverse().unwrap(); // x21_inv
+    }
+    // EndoMulScalar block.
+    {
+        let mut scratch: [Vec<F>; COLUMNS] = std::array::from_fn(|_| vec![]);
+        let num_bits = 128;
+        let x = {
+            use ark_ff::BigInteger;
+            let bits: Vec<_> = ark_ff::BitIteratorLE::new(F::rand(rng).into_bigint())
+                .take(num_bits)
+                .collect();
+            F::from_bigint(<F as PrimeField>::BigInt::from_bits_le(&bits)).unwrap()
+        };
+        let _ = endomul_scalar::gen_witness(&mut scratch, x, endo_scalar_coeff, num_bits);
+        for col in 0..COLUMNS {
+            for (r, v) in scratch[col].iter().enumerate() {
+                witness[col][endo_row + r] = *v;
+            }
+        }
+    }
+    (gates, witness, [p0, p1])
+}
+
+/// The two-public-input circuit over `Fp` (CompleteAdd on Pallas points).
+pub fn two_public_circuit(
+    rng: &mut ChaCha20Rng,
+) -> (Vec<CircuitGate<Fp>>, [Vec<Fp>; COLUMNS], [Fp; 2]) {
+    let (_, endo_scalar_coeff) = endos::<Vesta>();
+    two_public_circuit_over::<Fp, PallasParameters>(
+        rng,
+        fp_kimchi::static_params(),
+        endo_scalar_coeff,
+    )
+}
+
+/// The domain-sized (one-chunk) Vesta index for a two-public-input circuit — as
+/// `mixed_index`, but declaring `public = 2`.
+pub fn two_public_index(
+    gates: Vec<CircuitGate<Fp>>,
+) -> kimchi::prover_index::ProverIndex<
+    { mina_poseidon::pasta::FULL_ROUNDS },
+    Vesta,
+    poly_commitment::ipa::SRS<Vesta>,
+> {
+    use poly_commitment::SRS as _;
+    kimchi::prover_index::testing::new_index_for_test_with_lookups_and_custom_srs::<
+        { mina_poseidon::pasta::FULL_ROUNDS },
+        Vesta,
+        _,
+        _,
+    >(
+        gates,
+        2,
+        0,
+        vec![],
+        None,
+        false,
+        None,
+        |d1, size| {
+            let srs = poly_commitment::ipa::SRS::<Vesta>::create(size);
+            srs.get_lagrange_basis(d1);
+            srs
+        },
+        false,
+    )
+}
