@@ -25,8 +25,8 @@ expansion (`sponge.rs` `to_field_with_length`, Halo §6.2): accumulators `a = b 
 for each 2-bit window from the top, `a, b := 2a, 2b`, the low bit selects `s = ±1`, the high
 bit routes `s` into `a` or `b`; the result is `a·λ + b`. This is the same recoding the
 `EndoScalar` gate constrains in-circuit (`Kimchi.Gate.EndoScalar`, accumulator init
-`(2, 2)`). Points absorb as `SWPoint`s: the two affine coordinates, or a single `0` for the
-identity (`sponge.rs` `absorb_g`, both cases).
+`(2, 2)`). Points absorb as `SWPoint`s: the two affine coordinates, or `(0, 0)` for the
+identity (`sponge.rs` `absorb_g`).
 
 `FqVesta` and `FqPallas` instantiate the two sides of the Pasta cycle
 (`DefaultFqSponge<VestaParameters>` / `DefaultFqSponge<PallasParameters>`); each is its
@@ -71,11 +71,12 @@ private def lowLimbs (x : ZMod base) : List ℕ :=
 def absorbFq (spec : Spec base scalar) (s : S base) (xs : List (ZMod base)) : S base :=
   ⟨absorb spec.params s.sponge xs, []⟩
 
-/-- Absorb a point (`absorb_g`): its `x` then its `y` coordinate, or a single `0` for the
-identity. -/
+/-- Absorb a point (`absorb_g`): its `x` then its `y` coordinate, or `(0, 0)` for the
+identity — matching `DefaultFqSponge::absorb_g` (`sponge.rs:337-339`), which absorbs two
+zeros for the identity point. -/
 def absorbG (spec : Spec base scalar) {E : SWCurve (ZMod base)} (s : S base)
     (P : SWPoint E) : S base :=
-  if P = 0 then absorbFq spec s [0] else absorbFq spec s [P.x, P.y]
+  if P = 0 then absorbFq spec s [0, 0] else absorbFq spec s [P.x, P.y]
 
 /-- Absorb a scalar-field element (`absorb_fr`). The branch is determined by the
 cardinalities: a smaller scalar modulus embeds directly; a larger one absorbs as its high
