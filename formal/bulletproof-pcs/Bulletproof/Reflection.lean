@@ -24,8 +24,8 @@ Three strata:
   `U` (`verify_reflects` — the `{σ with U := …}` substitution is the deployed
   protocol's transcript-derived base standing in for the abstract one). The checked
   input's shape lives in its type, so the wire data enters through TOTAL named views
-  (`Input.commitmentFn`/`pointFn`/`evalFn`, `transcriptChallenges`), used identically
-  on both sides.
+  (`Input.commitmentFn`/`pointFn`/`evalFn`, and the sized challenge vector of
+  `transcript`), used identically on both sides.
 
 * **The Fiat-Shamir axiom and the headline.** `poseidon_fiat_shamir_vesta` is the
   project's declared assumption, stated at the junction: a run accepted by the
@@ -161,27 +161,19 @@ theorem verify_reflects (σ : SRS C.Point) {m p : ℕ} (inp : Ipa.Input C σ.k m
       inp.proof.toOpening
       inp.polyscale inp.evalscale
       (transcript C inp).2.2
-      (transcriptChallenges C inp)
+      (fun i => (transcript C inp).2.1[i])
       inp.commitmentFn inp.pointFn inp.evalFn := by
-  -- The spelling bridge: the executable `getElem!` challenge function is the total
-  -- named view.
-  have hchal : (fun i : Fin σ.k => (transcript C inp).2.1[i.val]!)
-      = transcriptChallenges C inp := by
-    funext i
-    exact getElem!_pos (transcript C inp).2.1 i.val
-      (by rw [transcript_chals_size]; exact i.isLt)
   simp only [Ipa.verify] at hv
   rw [Bool.and_eq_true] at hv
   obtain ⟨hsch, hsg⟩ := hv
   rw [decide_eq_true_eq] at hsch hsg
-  rw [hchal] at hsch hsg
   refine ⟨?_, ?_⟩
-  · rw [zipFold_eq_recombine _ inp.proof.lr.toArray (transcript C inp).2.1 σ.k
-        (by simp) (transcript_chals_size C inp)] at hsch
+  · rw [zipFold_eq_recombine _ inp.proof.lr.toArray (transcript C inp).2.1.toArray σ.k
+        (by simp) (by simp)] at hsch
     rw [combineCommitments_toArray_eq hsmul] at hsch
     unfold Bulletproof.recombine Ipa.Proof.toOpening
-    simp only [hsmul, Ipa.transcriptChallenges]
-    exact hsch
+    simp only [hsmul]
+    simpa using hsch
   · exact hsg.trans (msm_eq_commitGen hsmul _ _)
 
 end Reflection

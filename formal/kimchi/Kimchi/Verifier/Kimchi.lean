@@ -20,9 +20,11 @@ This module is the CHECKED side of the wire boundary (`Kimchi/Verifier/Wire.lean
 the records here (`KimchiProof C nc`, `KimchiVK C nc`) carry the chunk count in their
 types — they are exactly what `Wire.KimchiProof.check`/`Wire.KimchiVK.check` produce,
 so uniformity is definitional, every read is total, and nothing above this module can
-depend on unchecked data. The raw serde-typed wire records, the `check` parse, and
-the deployed entry point `Wire.kimchiVerify` (check-then-verify) live in the `Wire`
-module; the protocol and soundness layers never import it.
+depend on unchecked data. The raw serde-typed wire records and the `check` parse live
+in the `Wire` module, which deliberately holds no verifier: clients parse at the
+run's chunk count and call `kimchiVerify` (this module) on the parsed records —
+check-then-verify is the client's one-line composition. The protocol and soundness
+layers never import `Wire`.
 
 Scope (every deferral is declared here):
 
@@ -34,7 +36,15 @@ Scope (every deferral is declared here):
 * `linearization.index_terms` is empty at the basic gate set, so `f_comm` is the
   single σ-commitment term (verifier.rs:897–956);
 * `σ.k > domainLog2` — production's sub-SRS `chunk_size = 1` regime — is out of
-  scope (the verifier rejects it).
+  scope (the verifier rejects it);
+* production's key carries the public-input count (`pub public: usize`,
+  verifier_index.rs:71 — a serialized field) and `to_batch` rejects a mismatched
+  argument outright (`public_input.len() != verifier_index.public`,
+  verifier.rs:816–820, re-checked :835–838). The wire key here carries no count, so
+  `kimchiVerify` substitutes the two bounds the body needs — the public input against
+  the Lagrange table and against the domain — so the Lagrange MSM and the barycentric
+  sums read only genuine entries. The exact-length pin is recovered at the soundness
+  layer: the capstones fix `pub.size = idx.publicCount` through `pubView`.
 -/
 
 namespace Kimchi.Verifier
@@ -152,7 +162,7 @@ private def fqDigest (s : FqSponge.S C.base) : C.ScalarField :=
   let (x, _) := challengeFq C.sponge s
   if x.val < C.scalar then ((x.val : ℕ) : C.ScalarField) else 0
 
-/-! ## The Fiat-Shamir schedules -/
+/-! ## The oracle outputs and the public evaluations -/
 
 /-- The fq-sponge outputs of `oracles` (verifier.rs:156–283): the challenges, the digest
 handed to the fr-sponge, and the **warm** post-`ζ` sponge state that the opening
@@ -191,32 +201,30 @@ def publicEvals {F : Type*} [Field F] (n : ℕ)
     (pubDot omega zeta pub * (zetaN - 1) * (n : F)⁻¹,
      pubDot omega zetaOmega pub * (n : F)⁻¹ * (zetaOmegaN - 1))
 
+/-! ## The warm-sponge opening finish -/
+
 /-- The IPA acceptance from a **warm** sponge state: production hands the post-`ζ`
 fq-sponge to the opening verifier (`BatchEvaluationProof { sponge: fq_sponge, .. }`,
-verifier.rs:1184–1193). This is the verbatim body of `Ipa.transcript` + `Ipa.verify`
-with `FqSponge.init` replaced by `s₀` — duplicated because the standalone
-`Bulletproof.Ipa.verify` (validated against the opening fixtures) hard-codes the fresh
-start; unify later. The duplication, like the rest of this module, is adjudicated by
-the production fixture. The claim's shape is carried by its type, so there are no
-runtime guards. -/
+verifier.rs:1184–1193). The standalone `Bulletproof.Ipa.verify` (validated against the
+opening fixtures) hard-codes the fresh `FqSponge.init` start, so this is a copy: the
+verbatim body of `Ipa.transcript` + `Ipa.verify` with `FqSponge.init` replaced by
+`s₀`. That verbatim correspondence is the invariant that keeps the copy in sync with
+`Bulletproof.Ipa`, and the copy, like the rest of this module, is adjudicated against
+production by the fixture drivers. The claim's shape is carried by its type, so there
+are no runtime guards. -/
 def Ipa.verifyFrom {m p : ℕ} (σ : SRS C.Point) (s₀ : FqSponge.S C.base)
     (inp : Ipa.Input C σ.k m p) : Bool :=
   let s := absorbFr C.sponge s₀ (Ipa.shiftScalar C (Ipa.cipOf inp))
   let (t, s) := challengeFq C.sponge s
   let uBase := C.toGroup t
-  let (chals, s) := inp.proof.lr.toArray.foldl
-    (fun (acc : Array C.ScalarField × FqSponge.S C.base) LR =>
-      let s := absorbG C.sponge (absorbG C.sponge acc.2 LR.1) LR.2
-      let (u, s) := squeezeChallenge C.sponge s
-      (acc.1.push u, s))
-    (#[], s)
+  let (chals, s) := Ipa.roundChallenges C s inp.proof.lr
   let s := absorbG C.sponge s inp.proof.delta
   let (c, _) := squeezeChallenge C.sponge s
-  let chal : Fin σ.k → C.ScalarField := fun i => chals[i.val]!
+  let chal : Fin σ.k → C.ScalarField := fun i => chals[i]
   let b0 := combinedB chal inp.evalscale inp.pointFn
   let v := Ipa.cipOf inp
   let P := Ipa.combineCommitments C inp.polyscale inp.commitments.toArray
-  let Q := (inp.proof.lr.toArray.zip chals).foldl
+  let Q := (inp.proof.lr.toArray.zip chals.toArray).foldl
     (fun acc (LRu : (C.Point × C.Point) × C.ScalarField) =>
       acc + (LRu.2⁻¹.val • LRu.1.1 + LRu.2.val • LRu.1.2))
     (P + v.val • uBase)
@@ -387,6 +395,9 @@ chunk-COMBINED evaluations; the `ft_comm` double collapse at `ζ^max_poly_size`
 def kimchiVerify {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : Bool :=
   let n := cvk.n
+  -- Production's guard here is the exact count `public_input.len() != verifier_index.public`
+  -- (verifier.rs:816–820); the wire key carries no count, so these two bounds
+  -- substitute — a declared deviation (module preamble), closed at the soundness layer.
   if cvk.lagrangeBasis.size < pub.size || n < pub.size then
     false
   else

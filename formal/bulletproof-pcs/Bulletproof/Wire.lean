@@ -136,13 +136,6 @@ def Input.evalFn {C : CommitmentCurve} (inp : Input C k m p) :
     Fin m → Fin p → C.ScalarField :=
   fun i j => (inp.evals[i])[j]
 
-/-- The total matrix view in the `getElem!` spelling of executable reads. -/
-theorem Input.evalFn_bang {C : CommitmentCurve} (inp : Input C k m p) (i : Fin m)
-    (j : Fin p) :
-    inp.evalFn i j = (inp.evals[(i : ℕ)]!)[(j : ℕ)]! := by
-  rw [getElem!_pos inp.evals (i : ℕ) i.isLt, getElem!_pos _ (j : ℕ) j.isLt]
-  rfl
-
 /-- The combined inner product of the claimed evaluations
 (`Bulletproof.combinedInnerProduct` at the checked matrix). -/
 def cipOf {C : CommitmentCurve} (inp : Input C k m p) : C.ScalarField :=
@@ -163,22 +156,17 @@ def shiftScalar (x : C.ScalarField) : C.ScalarField :=
   if C.scalar < C.base then Pasta.Shifted.shiftType1 (Nat.size C.scalar) x
   else Pasta.Shifted.shiftType2 (Nat.size C.scalar) x
 
-/-- The verifier's Fiat-Shamir schedule (`SRS::verify`): absorb the shifted combined inner
-product; squeeze and map the `U` base; per round absorb `L`, `R` and squeeze a challenge;
-absorb `δ` and squeeze the Schnorr challenge. -/
-def transcript (inp : Input C k m p) : C.Point × Array C.ScalarField × C.ScalarField :=
-  let s := absorbFr C.sponge FqSponge.init (shiftScalar C (cipOf inp))
-  let (t, s) := challengeFq C.sponge s
-  let uBase := C.toGroup t
-  let (chals, s) := inp.proof.lr.toArray.foldl
+/-- The per-round challenge fold (the round loop of `SRS::verify`): absorb `L` and `R`,
+squeeze one challenge, threading the sponge state — one push per `(L, R)` pair. The
+array-level engine of `roundChallenges`; the fold state is concrete data. -/
+def roundChallengesAux (s : FqSponge.S C.base) (lr : Array (C.Point × C.Point)) :
+    Array C.ScalarField × FqSponge.S C.base :=
+  lr.foldl
     (fun (acc : Array C.ScalarField × FqSponge.S C.base) LR =>
       let s := absorbG C.sponge (absorbG C.sponge acc.2 LR.1) LR.2
       let (u, s) := squeezeChallenge C.sponge s
       (acc.1.push u, s))
     (#[], s)
-  let s := absorbG C.sponge s inp.proof.delta
-  let (c, _) := squeezeChallenge C.sponge s
-  (uBase, chals, c)
 
 /-- A left fold that pushes exactly one element per step grows the array by the list
 length. -/
@@ -192,22 +180,36 @@ private theorem foldl_fst_size {S γ α : Type*} (step : (Array γ × S) → α 
     rw [List.foldl_cons, ih, hstep, List.length_cons]
     omega
 
-/-- The transcript squeezes exactly one round challenge per `(L, R)` pair — the round
-count of the checked proof. -/
-theorem transcript_chals_size (inp : Input C k m p) :
-    (transcript C inp).2.1.size = k := by
-  simp only [transcript]
+/-- The fold squeezes exactly one round challenge per `(L, R)` pair. -/
+theorem roundChallengesAux_size (s : FqSponge.S C.base) (lr : Array (C.Point × C.Point)) :
+    (roundChallengesAux C s lr).1.size = lr.size := by
+  simp only [roundChallengesAux]
   rw [← Array.foldl_toList, foldl_fst_size]
   · simp
   · intro acc a
     simp [Array.size_push]
 
-/-- The derived round challenges as the `Fin`-indexed function the abstract layer
-consumes — total, from the checked round count. -/
-def transcriptChallenges (inp : Input C k m p) : Fin k → C.ScalarField :=
-  fun i => (transcript C inp).2.1[i.val]'(by
-    rw [transcript_chals_size]
-    exact i.isLt)
+/-- The round challenges of a checked proof, from a given sponge state: the challenge
+vector — sized by construction, one challenge per round — and the post-fold sponge
+state. -/
+def roundChallenges (s : FqSponge.S C.base) {k : ℕ} (lr : Vector (C.Point × C.Point) k) :
+    Vector C.ScalarField k × FqSponge.S C.base :=
+  let r := roundChallengesAux C s lr.toArray
+  (⟨r.1, (roundChallengesAux_size C s lr.toArray).trans lr.size_toArray⟩, r.2)
+
+/-- The verifier's Fiat-Shamir schedule (`SRS::verify`): absorb the shifted combined inner
+product; squeeze and map the `U` base; per round absorb `L`, `R` and squeeze a challenge;
+absorb `δ` and squeeze the Schnorr challenge. The round challenges come back as a
+`Vector` at the checked round count, so every downstream read is total. -/
+def transcript (inp : Input C k m p) :
+    C.Point × Vector C.ScalarField k × C.ScalarField :=
+  let s := absorbFr C.sponge FqSponge.init (shiftScalar C (cipOf inp))
+  let (t, s) := challengeFq C.sponge s
+  let uBase := C.toGroup t
+  let (chals, s) := roundChallenges C s inp.proof.lr
+  let s := absorbG C.sponge s inp.proof.delta
+  let (c, _) := squeezeChallenge C.sponge s
+  (uBase, chals, c)
 
 /-- A batched claim at given combination scalars — the checked input the grid rows of
 the soundness statements range over. The curve is implicit (inferred from the
@@ -225,11 +227,11 @@ ragged input is the wire parse's job. `σ.U` is never read — the deployed `U` 
 transcript-derived. -/
 def verify (σ : SRS C.Point) (inp : Input C σ.k m p) : Bool :=
   let (uBase, chals, c) := transcript C inp
-  let chal : Fin σ.k → C.ScalarField := fun i => chals[i.val]!
+  let chal : Fin σ.k → C.ScalarField := fun i => chals[i]
   let b0 := combinedB chal inp.evalscale inp.pointFn
   let v := cipOf inp
   let P := combineCommitments C inp.polyscale inp.commitments.toArray
-  let Q := (inp.proof.lr.toArray.zip chals).foldl
+  let Q := (inp.proof.lr.toArray.zip chals.toArray).foldl
     (fun acc (LRu : (C.Point × C.Point) × C.ScalarField) =>
       acc + (LRu.2⁻¹.val • LRu.1.1 + LRu.2.val • LRu.1.2))
     (P + v.val • uBase)
