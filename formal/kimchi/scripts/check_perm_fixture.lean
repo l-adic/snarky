@@ -30,6 +30,7 @@ Run (after `lake build Kimchi`): `scripts/check_perm_fixture.sh`.
 -/
 
 open Lean FixtureKit Kimchi.Permutation CompElliptic.Fields.Pasta
+open scoped Kimchi
 
 structure PermFixture where
   n : ℕ
@@ -56,7 +57,7 @@ def parseFixture (j : Json) : Except String PermFixture := do
            z := ← parseArrOf pF (← fld "z") }
 
 /-- Row `j` of a table as a `Fin 7`-function. -/
-def rowFn (tab : Array (Array Fp)) (j : ℕ) : Fin 7 → Fp :=
+def rowFn (tab : Array (Array Fp)) (j : ℕ) : Fin permCols → Fp :=
   fun i => (tab[(i : ℕ)]!)[j]!
 
 /-- The library's shift-side row form at fixture row `j`. -/

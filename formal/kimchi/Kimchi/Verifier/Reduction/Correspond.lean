@@ -36,8 +36,8 @@ noncomputable def commitPoly (σ : SRS G) (p : Polynomial F) : G :=
 seven permutation columns, the fifteen coefficient columns, and the six gate
 selectors. -/
 structure IndexComms (G : Type*) where
-  sigma : Fin 7 → G
-  coefficients : Fin 15 → G
+  sigma : Fin permCols → G
+  coefficients : Fin coeffCols → G
   generic : G
   poseidon : G
   completeAdd : G
@@ -50,22 +50,5 @@ while the permutation and coefficient columns are unblinded — an asymmetry inh
 from the reference implementation. -/
 noncomputable def commitPolyMasked (σ : SRS G) (p : Polynomial F) : G :=
   commitPoly σ p + σ.h
-
-/-- The honest indexer: the verifier key a circuit determines — the commitments of its
-own interpolants, selectors carrying the fixed blinder. -/
-noncomputable def indexerOf (σ : SRS G) (idx : Index F n) : IndexComms G where
-  sigma i := commitPoly σ (idx.sigmaPoly i)
-  coefficients c := commitPoly σ (idx.coeffPoly c)
-  generic := commitPolyMasked σ (idx.selectorPoly .generic)
-  poseidon := commitPolyMasked σ (idx.selectorPoly .poseidon)
-  completeAdd := commitPolyMasked σ (idx.selectorPoly .completeAdd)
-  varBaseMul := commitPolyMasked σ (idx.selectorPoly .varBaseMul)
-  endoMul := commitPolyMasked σ (idx.selectorPoly .endoMul)
-  endoScalar := commitPolyMasked σ (idx.selectorPoly .endoScalar)
-
-/-- The key–index correspondence: the committed columns are the circuit's own, i.e. the
-key lies in the image of the indexer. Soundness carries it as a hypothesis. -/
-def VKCorresponds (σ : SRS G) (comms : IndexComms G) (idx : Index F n) : Prop :=
-  comms = indexerOf σ idx
 
 end Kimchi.Verifier

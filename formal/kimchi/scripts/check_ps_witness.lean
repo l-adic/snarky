@@ -24,16 +24,16 @@ def resultsDir : IO System.FilePath := do
 def checks (inst : Instance) : List (String × Option Bool) :=
   haveI : NeZero inst.n := inst.nz
   let wit := inst.wit
-  let sat (w : Fin inst.n → Fin 15 → Fp) (p : Fin inst.idx.publicCount → Fp) : Bool :=
+  let sat (w : Fin inst.n → Fin wCols → Fp) (p : Fin inst.idx.publicCount → Fp) : Bool :=
     decide (Satisfies inst.idx p w)
   -- Corruption targets derived from the index: a constrained non-generic row (all
   -- modeled gates read column 0) and a nontrivially wired cell.
   let gateRow? : Option (Fin inst.n) := (List.finRange inst.n).find? fun i =>
     (inst.idx.gates i).typ != GateType.zero && (inst.idx.gates i).typ != GateType.generic
-  let wired? : Option (Fin 7 × Fin inst.n) := (List.finRange inst.n).findSome? fun r =>
-    ((List.finRange 7).find? fun col => inst.idx.wiringMap (col, r) != (col, r)).map
+  let wired? : Option (Fin permCols × Fin inst.n) := (List.finRange inst.n).findSome? fun r =>
+    ((List.finRange permCols).find? fun col => inst.idx.wiringMap (col, r) != (col, r)).map
       fun col => (col, r)
-  let bump (r : Fin inst.n) (c : ℕ) : Fin inst.n → Fin 15 → Fp :=
+  let bump (r : Fin inst.n) (c : ℕ) : Fin inst.n → Fin wCols → Fp :=
     fun i c' => if i = r ∧ (c' : ℕ) = c then wit.tab i c' + 1 else wit.tab i c'
   [ ("Satisfies (decided from the predicate)", some (sat wit.tab wit.pub)),
     ("corrupted gate cell rejected", gateRow?.map fun r => !sat (bump r 0) wit.pub),

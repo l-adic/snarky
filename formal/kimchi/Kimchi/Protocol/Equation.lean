@@ -12,6 +12,16 @@ objects the aggregate family is built on.
 -/
 namespace Kimchi.Protocol.Equation
 
+/-- The permutation members' alpha indices, kernel-checked against the shared pool:
+the recurrence member sits at `α ^ gateAlphaCount` (the literal `21` of `permScalar`)
+and the two boundary members at the next slots (the literals `22`/`23` of `ftEval0`).
+The scalar-side closed forms keep the literals — this lemma pins their origin. -/
+theorem perm_member_alpha_indices :
+    (21 : ℕ) = Index.gateAlphaCount
+      ∧ (22 : ℕ) = Index.gateAlphaCount + 1
+      ∧ (23 : ℕ) = Index.gateAlphaCount + 2 :=
+  ⟨rfl, rfl, rfl⟩
+
 open Polynomial Kimchi.Lift Kimchi.Index Kimchi.Protocol.Linearization
 open Kimchi.GrandProduct
 open Kimchi.Lift.Gate
@@ -22,7 +32,7 @@ variable {F : Type*} [Field F] {n : ℕ}
 `ω·ζ`, the accumulator at both points, the first six permutation columns, the coefficient
 columns, and every gate selector — the record a verifier reads off a proof, here produced
 by the circuit and its tables. -/
-noncomputable def evalsOf (idx : Index F n) (wTab : Fin n → Fin 15 → F)
+noncomputable def evalsOf (idx : Index F n) (wTab : Fin n → Fin wCols → F)
     (z : Polynomial F) (ζ : F) : Evals F :=
   { w := fun c => (columnPoly idx.omega (fun j => wTab j c)).eval ζ
     wOmega := fun c => (columnPoly idx.omega (fun j => wTab j c)).eval (idx.omega * ζ)
@@ -40,7 +50,7 @@ noncomputable def evalsOf (idx : Index F n) (wTab : Fin n → Fin 15 → F)
 /-- The evaluation environment of the honest record is the polynomial environment
 mapped through evaluation at `ζ` — the junction the gate-side naturality squares
 plug into. The next-row side is `eval_comp`: `(p.comp (C ω · X)).eval ζ = p.eval (ω·ζ)`. -/
-private theorem evalEnv_evalsOf (idx : Index F n) (wTab : Fin n → Fin 15 → F)
+private theorem evalEnv_evalsOf (idx : Index F n) (wTab : Fin n → Fin wCols → F)
     (z : Polynomial F) (ζ : F) :
     evalEnv (evalsOf idx wTab z ζ)
       = (polyEnv idx.omega wTab idx.coeffTable).map
@@ -60,14 +70,14 @@ the claimed evaluations binding certifies are exactly the record's fields. -/
 
 /-- The witness table read off bound column polynomials: `wTab j c := W_c(ω^j)` — the
 table the soundness conclusion exports. -/
-def extractTable (ω : F) (W : Fin 15 → Polynomial F) : Fin n → Fin 15 → F :=
+def extractTable (ω : F) (W : Fin wCols → Polynomial F) : Fin n → Fin wCols → F :=
   fun j c => (W c).eval (ω ^ (j : ℕ))
 
 /-- The honest record at the extracted table evaluates the bound polynomials: the
 current-row field at column `c` is `W_c(ζ)` — binding's claimed evaluation. -/
 theorem evalsOf_extractTable_w [NeZero n] (idx : Index F n)
-    (W : Fin 15 → Polynomial F) (hW : ∀ c, (W c).natDegree < n)
-    (z : Polynomial F) (ζ : F) (c : Fin 15) :
+    (W : Fin wCols → Polynomial F) (hW : ∀ c, (W c).natDegree < n)
+    (z : Polynomial F) (ζ : F) (c : Fin wCols) :
     (evalsOf idx (extractTable idx.omega W) z ζ).w c = (W c).eval ζ := by
   show (columnPoly idx.omega fun j => (W c).eval (idx.omega ^ (j : ℕ))).eval ζ = _
   rw [columnPoly_eval_self idx.omega_prim (Nat.pos_of_neZero n) (W c) (hW c)]
@@ -75,8 +85,8 @@ theorem evalsOf_extractTable_w [NeZero n] (idx : Index F n)
 /-- The next-row field at column `c` is `W_c(ωζ)` — binding's claimed evaluation at
 the shifted point. -/
 theorem evalsOf_extractTable_wOmega [NeZero n] (idx : Index F n)
-    (W : Fin 15 → Polynomial F) (hW : ∀ c, (W c).natDegree < n)
-    (z : Polynomial F) (ζ : F) (c : Fin 15) :
+    (W : Fin wCols → Polynomial F) (hW : ∀ c, (W c).natDegree < n)
+    (z : Polynomial F) (ζ : F) (c : Fin wCols) :
     (evalsOf idx (extractTable idx.omega W) z ζ).wOmega c
       = (W c).eval (idx.omega * ζ) := by
   show (columnPoly idx.omega fun j => (W c).eval (idx.omega ^ (j : ℕ))).eval
@@ -104,7 +114,7 @@ private theorem eval_getD (ζ : F) :
 list at the honest record — the naturality square at `aeval ζ`, pasted onto the
 junction `evalEnv_evalsOf`. -/
 private theorem constraints_map_evalsOf (A : Argument F) (idx : Index F n)
-    (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (ζ : F) :
+    (wTab : Fin n → Fin wCols → F) (z : Polynomial F) (ζ : F) :
     (A.constraints (polyEnv idx.omega wTab idx.coeffTable)).map (Polynomial.eval ζ)
       = A.constraints (evalEnv (evalsOf idx wTab z ζ)) := by
   rw [evalEnv_evalsOf]
@@ -129,7 +139,7 @@ members at `ζ` is the closed-form gate linearization at the honest record, minu
 public interpolant. -/
 private theorem gateMember_sum_eval [DecidableEq F] [NeZero n] (idx : Index F n)
     (pub : Fin idx.publicCount → F)
-    (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (ζ α : F) :
+    (wTab : Fin n → Fin wCols → F) (z : Polynomial F) (ζ α : F) :
     ∑ k ∈ Finset.range Index.gateAlphaCount, α ^ k * (idx.gateMember pub wTab k).eval ζ
       = gateLinearization idx.endoBase idx.mds α (evalsOf idx wTab z ζ)
           - (idx.pubPoly pub).eval ζ := by
@@ -204,7 +214,7 @@ the same masked window `[n − zkRows, n)`, so the identity is `eval_prod` on th
 `Permutation.zkpm` polynomial at `ζ`. -/
 private theorem zkpmEval_eq (nn zkRows : ℕ) (ω ζ : F) :
     zkpmEval nn zkRows ω ζ = (Permutation.zkpm ω nn zkRows).eval ζ := by
-  simp only [zkpmEval, Permutation.zkpm, Polynomial.eval_prod, eval_sub, eval_X, eval_C]
+  simp only [zkpmEval, Permutation.zkpm, eval_mul, eval_sub, eval_X, eval_C]
 
 /-! ## The witness-column bridge
 
@@ -216,7 +226,7 @@ this is the tiny naturality square that lets the σ-side recurrence recombine. -
 /-- The `permWitnessPoly` interpolant of column `col`, evaluated at `ζ`, is the honest
 record's witness value in that column. -/
 private theorem eval_permWitnessPoly_eq_w [NeZero n] (idx : Index F n)
-    (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (ζ : F) (col : Fin 7)
+    (wTab : Fin n → Fin wCols → F) (z : Polynomial F) (ζ : F) (col : Fin permCols)
     (h : (col : ℕ) < 15) :
     (idx.permWitnessPoly wTab col).eval ζ = (evalsOf idx wTab z ζ).w ⟨(col : ℕ), h⟩ := by
   rfl
@@ -231,18 +241,18 @@ constraint at the honest record. -/
 `ftEval0`'s σ-side product against `z(ζω)`, plus its shift-side product against `z(ζ)`,
 all at `α²¹·zkpm(ζ)`, equals `α²¹` times the quotient's `0`-th permutation constraint at
 the honest record. -/
-private theorem permMember_eval [NeZero n] (idx : Index F n) (wTab : Fin n → Fin 15 → F)
-    (z : Polynomial F) (ζ β γ α : F) (σ : Fin 7 → Polynomial F)
-    (hσ : ∀ i : Fin 6, (σ ⟨(i : ℕ), by omega⟩).eval ζ = (evalsOf idx wTab z ζ).s i)
+private theorem permMember_eval [NeZero n] (idx : Index F n) (wTab : Fin n → Fin wCols → F)
+    (z : Polynomial F) (ζ β γ α : F) (σ : Fin permCols → Polynomial F)
+    (hσ : ∀ i : Fin sigmaRows, (σ ⟨(i : ℕ), by omega⟩).eval ζ = (evalsOf idx wTab z ζ).s i)
     (r₀ r₁ : Fin n) :
     permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (evalsOf idx wTab z ζ)
         * (σ 6).eval ζ
       - ((evalsOf idx wTab z ζ).w 6 + γ) * (evalsOf idx wTab z ζ).zOmega
           * α ^ 21 * zkpmEval n idx.zkRows idx.omega ζ
-          * ∏ i : Fin 6, (β * (evalsOf idx wTab z ζ).s i
+          * ∏ i : Fin sigmaRows, (β * (evalsOf idx wTab z ζ).s i
               + (evalsOf idx wTab z ζ).w ⟨(i : ℕ), by omega⟩ + γ)
       + (α ^ 21 * zkpmEval n idx.zkRows idx.omega ζ * (evalsOf idx wTab z ζ).z)
-          * ∏ i : Fin 7, (γ + β * ζ * idx.shifts i
+          * ∏ i : Fin permCols, (γ + β * ζ * idx.shifts i
               + (evalsOf idx wTab z ζ).w ⟨(i : ℕ), by omega⟩)
       = α ^ 21 * (Permutation.constraints idx.omega idx.zkRows z
           (idx.permWitnessPoly wTab) σ idx.shifts β γ r₀ r₁ 0).eval ζ := by
@@ -251,28 +261,28 @@ private theorem permMember_eval [NeZero n] (idx : Index F n) (wTab : Fin n → F
     Permutation.sigmaSide, Permutation.shiftRow, permScalar, eval_mul, eval_sub,
     eval_prod, eval_add, eval_comp, eval_C, eval_X]
   -- rewrite the shift-side 7-product into the goal's syntactic form
-  have hshift : (∏ x : Fin 7,
+  have hshift : (∏ x : Fin permCols,
         (eval ζ (idx.permWitnessPoly wTab x) + γ + β * idx.shifts x * ζ))
-      = ∏ i : Fin 7, (γ + β * ζ * idx.shifts i
+      = ∏ i : Fin permCols, (γ + β * ζ * idx.shifts i
           + (evalsOf idx wTab z ζ).w ⟨(i : ℕ), by omega⟩) :=
     Finset.prod_congr rfl fun x _ => by
       rw [eval_permWitnessPoly_eq_w idx wTab z ζ x (by omega)]; ring
   -- split the σ-side 7-product off its last factor
-  have hsigma : (∏ x : Fin 7,
+  have hsigma : (∏ x : Fin permCols,
         (eval ζ (idx.permWitnessPoly wTab x) + γ + β * eval ζ (σ x)))
-      = (∏ i : Fin 6, (β * (evalsOf idx wTab z ζ).s i
+      = (∏ i : Fin sigmaRows, (β * (evalsOf idx wTab z ζ).s i
             + (evalsOf idx wTab z ζ).w ⟨(i : ℕ), by omega⟩ + γ))
           * ((evalsOf idx wTab z ζ).w 6 + γ + β * eval ζ (σ 6)) := by
     rw [Fin.prod_univ_castSucc]
     congr 1
     refine Finset.prod_congr rfl fun i _ => ?_
-    rw [show (i.castSucc : Fin 7) = (⟨(i : ℕ), by omega⟩ : Fin 7) from rfl,
+    rw [show (i.castSucc : Fin permCols) = (⟨(i : ℕ), by omega⟩ : Fin permCols) from rfl,
       eval_permWitnessPoly_eq_w idx wTab z ζ ⟨(i : ℕ), by omega⟩ (by omega), hσ i]
     ring
   rw [hshift, hsigma,
-    show (∏ i : Fin 6, (γ + β * (evalsOf idx wTab z ζ).s i
+    show (∏ i : Fin sigmaRows, (γ + β * (evalsOf idx wTab z ζ).s i
             + (evalsOf idx wTab z ζ).w ⟨(i : ℕ), by omega⟩))
-        = ∏ i : Fin 6, (β * (evalsOf idx wTab z ζ).s i
+        = ∏ i : Fin sigmaRows, (β * (evalsOf idx wTab z ζ).s i
             + (evalsOf idx wTab z ζ).w ⟨(i : ℕ), by omega⟩ + γ) from
       Finset.prod_congr rfl fun i _ => by ring]
   simp only [evalsOf, mul_comm idx.omega ζ]
@@ -289,7 +299,7 @@ signed sum of the two quotient permutation-boundary members `(z − 1)·lagNumer
 /-- **Boundary side of the verifier equation.** `ftEval0`'s boundary quotient equals
 `−α²²·m₁(ζ) − α²³·m₂(ζ)`, the two accumulator-boundary permutation members `(z−1)·lagNumer`
 at rows `0` and `n − zkRows`, under `ζ ≠ 1` and `ζ ≠ ω^(n−zkRows)`. -/
-private theorem boundary_eval [NeZero n] (idx : Index F n) (wTab : Fin n → Fin 15 → F)
+private theorem boundary_eval [NeZero n] (idx : Index F n) (wTab : Fin n → Fin wCols → F)
     (z : Polynomial F) (ζ α : F)
     (hζ₁ : ζ ≠ 1) (hζb : ζ ≠ idx.omega ^ (n - idx.zkRows)) :
     ((ζ ^ n - 1) * α ^ 22 * (ζ - idx.omega ^ (n - idx.zkRows))
@@ -331,18 +341,18 @@ aggregate splitting into its gate and permutation halves. -/
 quotient identity at `ζ`. Consumed only by the Schwartz–Zippel core below, on the way to
 `Kimchi.Protocol.sound`. -/
 private theorem verifierEquation_iff [DecidableEq F] [NeZero n] (idx : Index F n)
-    (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin 15 → F)
+    (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin wCols → F)
     (z t : Polynomial F) (ζ β γ α : F)
     (hζ₁ : ζ ≠ 1) (hζb : ζ ≠ idx.omega ^ (n - idx.zkRows)) :
     permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (evalsOf idx wTab z ζ)
-          * ((Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) 6).eval ζ
+          * ((Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm) 6).eval ζ
         - (ζ ^ n - 1) * t.eval ζ
       = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase idx.mds α β γ ζ
           (-((idx.pubPoly pub).eval ζ)) (evalsOf idx wTab z ζ)
       ↔ (aggregate α (idx.fullFamily pub wTab z β γ)).eval ζ = (t * zH F n).eval ζ := by
   -- the three permutation constraints at the index's wiring data
   set Cf := Permutation.constraints idx.omega idx.zkRows z (idx.permWitnessPoly wTab)
-      (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts β γ
+      (Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm) idx.shifts β γ
       (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd with hCf
   -- expand the aggregate at ζ into the gate block plus the three permutation members
   have hagg : (aggregate α (idx.fullFamily pub wTab z β γ)).eval ζ
@@ -378,7 +388,7 @@ private theorem verifierEquation_iff [DecidableEq F] [NeZero n] (idx : Index F n
       norm_num
   -- σ-side recurrence at α²¹, with σ = the wiring σ, folded to `Cf 0`
   have hperm := permMember_eval idx wTab z ζ β γ α
-    (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) (fun _ => rfl)
+    (Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm) (fun _ => rfl)
     (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd
   rw [← hCf] at hperm
   -- the boundary members are `Cf 1`, `Cf 2`
@@ -414,22 +424,22 @@ evaluation point `ζ` each outside their bad set — implies satisfaction of the
 The Schwartz–Zippel core; consumed only by `Kimchi.Protocol.sound` below (file-private —
 `private` is file-scoped, which is why `sound` lives in this file). -/
 private theorem satisfies_of_verifierEquation [DecidableEq F] [NeZero n]
-    (idx : Index F n) (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin 15 → F)
+    (idx : Index F n) (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin wCols → F)
     (β γ : F)
     (hβ : β ∉ badBetas
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+      (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
           idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+      (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
           idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
             * idx.omega
               ^ ((restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).2 : ℕ))))
     (hγ : γ ∉ badGammas
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+      (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
           idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)))
-      (Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+      (Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
         ((idx.permWitnessPoly wTab c.1).eval (idx.omega ^ (c.2 : ℕ)),
           idx.shifts (restrictCells idx.wiringPerm idx.wiringPerm_regionPreserving c).1
             * idx.omega
@@ -446,7 +456,7 @@ private theorem satisfies_of_verifierEquation [DecidableEq F] [NeZero n]
       permScalar β γ α
           (zkpmEval n idx.zkRows idx.omega ζ)
           (evalsOf idx wTab zg ζ)
-        * ((Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) 6).eval
+        * ((Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm) 6).eval
             ζ
         - (ζ ^ n - 1) * t.eval ζ
       = ftEval0 n idx.zkRows idx.omega idx.shifts idx.endoBase idx.mds α β γ
@@ -486,7 +496,7 @@ oracle evaluations (`kimchiProof_sound_of_openings`). Packaged in the same `∃ 
 card bounds ∧ guarded implication` shape as the compiled roots, so the interface is a
 direct hand-off. -/
 theorem sound [DecidableEq F] [NeZero n] (idx : Index F n)
-    (pub : Fin idx.publicCount → F) (W : Fin 15 → Polynomial F)
+    (pub : Fin idx.publicCount → F) (W : Fin wCols → Polynomial F)
     (z : Polynomial F) (hz : z.natDegree < n) :
     ∃ (badB : Finset F) (badG : F → Finset F) (badA : F → F → Finset F)
         (badZ : F → F → F → Polynomial F → Finset F),
@@ -503,17 +513,17 @@ theorem sound [DecidableEq F] [NeZero n] (idx : Index F n)
           Satisfies idx pub (extractTable idx.omega W) := by
   classical
   set m₁ : Multiset (F × F) :=
-    Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+    Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
       ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
         idx.shifts c.1 * idx.omega ^ (c.2 : ℕ)) with hm₁def
   set m₂ : Multiset (F × F) :=
-    Finset.univ.val.map fun c : Fin 7 × Fin (n - idx.zkRows) =>
+    Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
       ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
         idx.shifts (Kimchi.Permutation.restrictCells idx.wiringPerm
               idx.wiringPerm_regionPreserving c).1
           * idx.omega ^ ((Kimchi.Permutation.restrictCells idx.wiringPerm
               idx.wiringPerm_regionPreserving c).2 : ℕ)) with hm₂def
-  have hcard : ∀ (f : Fin 7 × Fin (n - idx.zkRows) → F × F),
+  have hcard : ∀ (f : Fin permCols × Fin (n - idx.zkRows) → F × F),
       Multiset.card (Finset.univ.val.map f) = 7 * (n - idx.zkRows) := by
     intro f
     rw [Multiset.card_map]

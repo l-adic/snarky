@@ -71,7 +71,7 @@ private theorem rowPoly_coeff {n : ℕ} (a : Fin n → F) (i : Fin n) :
 /-- Reading off the low coefficients of a polynomial of degree `< n` and reassembling
 recovers it; with the previous lemma this makes `rowPoly` a dictionary between
 coefficient vectors and polynomials of degree `< n`. -/
-theorem rowPoly_coeff_self {n : ℕ} {p : Polynomial F} (hp : p.natDegree < n) :
+private theorem rowPoly_coeff_self {n : ℕ} {p : Polynomial F} (hp : p.natDegree < n) :
     rowPoly (fun i : Fin n => p.coeff (i : ℕ)) = p := by
   unfold rowPoly
   rw [Fin.sum_univ_eq_sum_range (fun i => monomial i (p.coeff i)) n]

@@ -18,7 +18,10 @@ open Lean Lean.Elab.Command
 
 namespace Kimchi.CheckAxioms
 
-/-- The headline theorems whose axiom closure must stay clean. -/
+/-- The headline theorems whose axiom closure must stay clean — plus the executable
+    verifier and wire-parse defs from `roots.txt`, audited so no stray axiom
+    (a `native_decide` outside the trusted certificates, say) hides in the
+    executable path. -/
 def roots : List Name :=
   [ `Kimchi.Gate.Generic.sound, `Kimchi.Gate.Generic.complete,
     `Kimchi.Gate.AddComplete.sound_noninf, `Kimchi.Gate.AddComplete.complete_noninf,
@@ -42,11 +45,20 @@ def roots : List Name :=
     `Kimchi.dvd_separation,
     `Kimchi.Gate.Poseidon.sound, `Kimchi.Gate.Poseidon.complete,
     `Kimchi.Index.satisfies_iff_fullFamily_dvd,
+    `Kimchi.Verifier.kimchiVerify,
+    `Kimchi.Verifier.Wire.KimchiProof.check,
+    `Kimchi.Verifier.Wire.KimchiVK.check,
     `Kimchi.Protocol.sound,
     `Kimchi.Verifier.kimchiProof_sound_of_openings,
-    `Kimchi.Verifier.kimchiVesta_run_sound, `Kimchi.Verifier.kimchiPallas_run_sound,
+    `Kimchi.Verifier.kimchiProof_sound,
     `Kimchi.Verifier.kimchiProof_sound_algebraic,
     `Kimchi.Verifier.kimchiProof_sound_algebraic_ft,
+    `Kimchi.Verifier.kimchiVesta_sound,
+    `Kimchi.Verifier.kimchiPallas_sound,
+    `Kimchi.Verifier.kimchiVesta_run_sound,
+    `Kimchi.Verifier.kimchiPallas_run_sound,
+    `Kimchi.Verifier.ft_opening_of_reflected_vesta,
+    `Kimchi.Verifier.ft_opening_of_reflected_pallas,
     `Kimchi.Verifier.kimchiVesta_run_sound_algebraic_ft,
     `Kimchi.Verifier.kimchiPallas_run_sound_algebraic_ft ]
 
@@ -59,12 +71,16 @@ def roots : List Name :=
 def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound, `Lean.ofReduceBool,
     -- The declared Fiat-Shamir assumption: Poseidon-accepted runs admit de-blinded
-    -- accepting transcript trees (`Kimchi/Verifier/Reflection.lean`). One per Pasta curve.
+    -- accepting transcript trees (`Bulletproof/Reflection.lean`, bulletproof-pcs
+    -- package). One per Pasta curve.
     `Bulletproof.poseidon_fiat_shamir_vesta, `Bulletproof.poseidon_fiat_shamir_pallas,
-    -- The deployed-run Fiat–Shamir assumption, anchored on the warm reflected run
-    -- (`Ipa.verifyFrom (runWarm) (runInput)`) rather than the cold `Ipa.verify`. One per curve;
-    -- the residue-free ft opening (`ft_opening_of_reflected_*`) is stated over this.
-    `Kimchi.Verifier.kimchi_fiat_shamir_vesta, `Kimchi.Verifier.kimchi_fiat_shamir_pallas,
+    -- The deployed-run Fiat-Shamir assumptions
+    -- (`Kimchi/Verifier/Capstone/Reflection.lean`), anchored on the warm reflected run
+    -- (`Ipa.verifyFrom (runWarm) (runInput)`, the flat segment stream) rather than the
+    -- cold `Ipa.verify`. One per curve; the residue-free ft openings
+    -- (`ft_opening_of_reflected_*`) and the terminal roots are stated over these.
+    `Kimchi.Verifier.kimchi_fiat_shamir_vesta,
+    `Kimchi.Verifier.kimchi_fiat_shamir_pallas,
  ]
 
 /-- A trusted `native_decide` witness: CompElliptic's point counts, or pasta's two GLV

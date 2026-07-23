@@ -55,7 +55,8 @@ def parseSRSAt (C : Ipa.CommitmentCurve) (k : ℕ) (j : Json) :
 def parseSRS (C : Ipa.CommitmentCurve) (j : Json) : Except String (SRS C.Point) := do
   parseSRSAt C (← (← j.getObjVal? "k").getNat?) j
 
-def parseProof (C : Ipa.CommitmentCurve) (j : Json) : Except String (Ipa.Proof C) := do
+def parseProof (C : Ipa.CommitmentCurve) (j : Json) :
+    Except String (Ipa.Wire.Proof C) := do
   let parseS : Json → Except String C.ScalarField := parseZMod
   let fld (k : String) : Except String Json := j.getObjVal? k
   return { lr := ← parseArrOf (parsePair (parsePt C)) (← fld "lr")
@@ -74,7 +75,7 @@ structure Raw (C : Ipa.CommitmentCurve) where
   evals : Array (Array C.ScalarField)
   polyscale : C.ScalarField
   evalscale : C.ScalarField
-  proof : Ipa.Proof C
+  proof : Ipa.Wire.Proof C
 
 def parseRaw (C : Ipa.CommitmentCurve) (curveName : String) (j : Json) :
     Except String (Raw C) := do
@@ -105,7 +106,7 @@ def recombineScalar (C : Ipa.CommitmentCurve) (y : C.ScalarField)
   (List.range chunks.size).foldr (fun i acc => y ^ i * chunks.getD i 0 + acc) 0
 
 /-- The combined view as the executable verifier's input. -/
-def Raw.toInput {C : Ipa.CommitmentCurve} (raw : Raw C) : Ipa.Input C :=
+def Raw.toInput {C : Ipa.CommitmentCurve} (raw : Raw C) : Ipa.Wire.Input C :=
   { commitments := raw.combinedComms
     xs := raw.xs
     evals := raw.evals
@@ -124,7 +125,7 @@ structure RawBatch (C : Ipa.CommitmentCurve) where
   evalscale : C.ScalarField
   cip : C.ScalarField
   batchCombined : C.Point
-  proof : Ipa.Proof C
+  proof : Ipa.Wire.Proof C
 
 def parseRawBatch (C : Ipa.CommitmentCurve) (curveName : String) (j : Json) :
     Except String (RawBatch C) := do
@@ -168,7 +169,8 @@ def segmentCombineScalar (C : Ipa.CommitmentCurve) (ξ r : C.ScalarField)
 (`chunkedCombined*_eq_flat`) as data. The production opening of a chunked batch IS the
 opening of this flat batch, so the executable verifier adjudicates the whole
 segment layout by accepting it. -/
-def RawBatch.toFlatInput {C : Ipa.CommitmentCurve} (raw : RawBatch C) : Ipa.Input C :=
+def RawBatch.toFlatInput {C : Ipa.CommitmentCurve} (raw : RawBatch C) :
+    Ipa.Wire.Input C :=
   { commitments := raw.chunkComms.flatMap id
     xs := raw.xs
     evals := raw.chunkEvals.flatMap (fun perPoint =>

@@ -1,20 +1,21 @@
 import Kimchi.Index.Aggregate
 
 /-!
-# Degree bounds for the kimchi aggregate family (3c deliverable 1)
+# Degree bounds for the kimchi aggregate family
 
-This file discharges the two degree side-conditions of the Phase-B headline
-`Index.satisfies_of_evalCheck` (`Kimchi/Index/Aggregate.lean`): its `hCdeg` hypothesis
-`(aggregate (α s) (idx.fullFamily …)).natDegree ≤ D` and its `htdeg` hypothesis
-`(t s * zH F n).natDegree ≤ D`. Both are satisfied by taking the single crude, uniform
-degree bound
+This file proves the two degree bounds behind the ζ-axis counting of the one quotient
+check: `card_badZetas_le` (`Kimchi/SchwartzZippel.lean`) bounds the bad-ζ set of an
+eval-check by a degree bound `D` covering both sides,
+`(aggregate α (idx.fullFamily …)).natDegree ≤ D` and `(t * zH F n).natDegree ≤ D`.
+Both are satisfied by taking the single crude, uniform degree bound
 
   `degreeBound n = 9 * n`,
 
 which every member of the `21 + 3` aggregate family — and every `t · Z_H` with
-`t.natDegree < 7·n` — provably fits under. The bound is deliberately loose: the design
-goal is *one* `D` that works for all `24` members at once (so the caller can instantiate
-`D := degreeBound n` and pass the same witness to `hCdeg`/`htdeg`), not a tight per-member
+`t.natDegree < 7·n` — provably fits under; `Kimchi.Protocol.Equation.sound` consumes
+the two headline bounds to cap its bad-ζ set at `degreeBound n`. The bound is
+deliberately loose: the design goal is *one* `D` that works for all `24` members at once
+(so a single `degreeBound n` covers both sides of the check), not a tight per-member
 count. Arithmetic confirms `9n` suffices with only `≤`-crude reasoning, so we do not chase
 a smaller constant.
 
@@ -49,8 +50,9 @@ variable {F : Type*} [Field F] [DecidableEq F] {n : ℕ}
 
 /-! ## The uniform degree bound -/
 
-/-- **The uniform degree bound** `D = 9·n` that discharges both `hCdeg` and `htdeg` of
-`Index.satisfies_of_evalCheck`. Crude by design: one `D` for all `21 + 3` members and for
+/-- **The uniform degree bound** `D = 9·n` covering both sides of the aggregated
+eval-check — the cardinality cap of its bad-ζ set (`card_badZetas_le`). Crude by
+design: one `D` for all `21 + 3` members and for
 every honest quotient `t · Z_H`, not a tight per-member count. -/
 def degreeBound (n : ℕ) : ℕ := 9 * n
 
@@ -167,7 +169,7 @@ private theorem shift_cell_le [NeZero n] (idx : Index F n) (v : Fin n → F) :
 
 /-- **CompleteAdd entries ≤ 8n.** Every entry is degree `≤ 3(n−1)` over cells `< n`. -/
 private theorem addComplete_entry_le [NeZero n] (idx : Index F n)
-    (wTab : Fin n → Fin 15 → F) :
+    (wTab : Fin n → Fin wCols → F) :
     ∀ E ∈ idx.gateConstraints wTab .completeAdd, E.natDegree ≤ 8 * n := by
   intro E hE
   have b0 : (AddComplete.polyWitness idx.omega wTab).x1.natDegree ≤ n - 1 := cell_le idx _
@@ -188,7 +190,7 @@ private theorem addComplete_entry_le [NeZero n] (idx : Index F n)
 /-- **VarBaseMul entries ≤ 8n.** The decomposition is linear; each of the five bit-blocks is
 bounded by `singleBit_entry_le` (its deepest entry reaches degree `6(n−1)`). -/
 private theorem varBaseMul_entry_le [NeZero n] (idx : Index F n)
-    (wTab : Fin n → Fin 15 → F) :
+    (wTab : Fin n → Fin wCols → F) :
     ∀ E ∈ idx.gateConstraints wTab .varBaseMul, E.natDegree ≤ 8 * n := by
   intro E hE
   have hd : 6 * (n - 1) ≤ 8 * n := by omega
@@ -234,7 +236,7 @@ private theorem varBaseMul_entry_le [NeZero n] (idx : Index F n)
 /-- **EndoMul entries ≤ 8n.** Every entry is degree `≤ 4(n−1)` over cells `< n` and the
 constant `endo = C endoBase`. -/
 private theorem endoMul_entry_le [NeZero n] (idx : Index F n)
-    (wTab : Fin n → Fin 15 → F) :
+    (wTab : Fin n → Fin wCols → F) :
     ∀ E ∈ idx.gateConstraints wTab .endoMul, E.natDegree ≤ 8 * n := by
   intro E hE
   have hxT : (EndoMul.polyWitness idx.omega wTab).xT.natDegree ≤ n - 1 := cell_le idx _
@@ -262,7 +264,7 @@ private theorem endoMul_entry_le [NeZero n] (idx : Index F n)
 /-- **Generic entries ≤ 8n.** Two entries, each degree `≤ 3(n−1)` (a bilinear `q₃·(w₀·w₁)`
 term) over cell interpolants `< n`. -/
 private theorem generic_entry_le [NeZero n] (idx : Index F n)
-    (wTab : Fin n → Fin 15 → F) :
+    (wTab : Fin n → Fin wCols → F) :
     ∀ E ∈ idx.gateConstraints wTab .generic, E.natDegree ≤ 8 * n := by
   intro E hE
   have hw0 : (columnPoly idx.omega (fun j => wTab j 0)).natDegree ≤ n - 1 := cell_le idx _
@@ -300,7 +302,7 @@ private theorem generic_entry_le [NeZero n] (idx : Index F n)
 `a`/`b`-folds through the cubic `cPoly`/`dPoly`); the eight `crumbPoly` entries are degree
 `4(n−1)`. -/
 private theorem endoScalar_entry_le [NeZero n] (idx : Index F n)
-    (wTab : Fin n → Fin 15 → F) :
+    (wTab : Fin n → Fin wCols → F) :
     ∀ E ∈ idx.gateConstraints wTab .endoScalar, E.natDegree ≤ 8 * n := by
   intro E hE
   set w := EndoScalar.polyWitness idx.omega wTab with hwdef
@@ -371,7 +373,7 @@ private theorem poseidon_round_comp_le {d : ℕ} {lhs r a b c m0 m1 m2 : Polynom
 a round output, whose degree-7 s-box over cells `< n` reaches `7(n−1) < 8n`. Each entry is
 discharged by `poseidon_round_comp_le`. -/
 private theorem poseidon_entry_le [NeZero n] (idx : Index F n)
-    (wTab : Fin n → Fin 15 → F) :
+    (wTab : Fin n → Fin wCols → F) :
     ∀ E ∈ idx.gateConstraints wTab .poseidon, E.natDegree ≤ 8 * n := by
   intro E hE
   have s01 : (Poseidon.polyWitness idx.omega wTab).s0.1.natDegree ≤ n - 1 := cell_le idx _
@@ -444,7 +446,7 @@ its length) has `natDegree ≤ 8·n`, dispatched to the six per-gate entry bound
 `getD_natDegree_le` (slots past a gate's length are the zero polynomial). `8·n` covers the
 deepest gate (Poseidon's s-box). -/
 private theorem gateConstraints_getD_natDegree_le [NeZero n] (idx : Index F n)
-    (wTab : Fin n → Fin 15 → F) (g : GateType) (k : ℕ) :
+    (wTab : Fin n → Fin wCols → F) (g : GateType) (k : ℕ) :
     ((idx.gateConstraints wTab g).getD k 0).natDegree ≤ 8 * n := by
   cases g with
   | zero => simp [Index.gateConstraints]
@@ -467,7 +469,7 @@ difference) and `(z−1)·lagNumer`, each `≤ 9n`. -/
 Each summand is `< n` (selector) times `≤ 8n` (entry, `gateConstraints_getD_natDegree_le`),
 so `≤ (n−1) + 8n < 9n`; the subtracted public interpolant is `< n`. -/
 private theorem gateMember_natDegree_le [NeZero n] (idx : Index F n)
-    (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin 15 → F) (k : ℕ) :
+    (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin wCols → F) (k : ℕ) :
     (idx.gateMember pub wTab k).natDegree ≤ degreeBound n := by
   unfold Index.gateMember
   refine le_trans (natDegree_sub_le _ _) (max_le ?_ ?_)
@@ -495,40 +497,43 @@ private theorem gateMember_natDegree_le [NeZero n] (idx : Index F n)
 open Kimchi.Permutation in
 /-- **Permutation-member bound.** Each of the three permutation constraints at the index's
 wiring data has `natDegree ≤ 9n` when the accumulator `z` has degree `< n`. Member `0` is
-`zkpm` (degree `≤ n` via `natDegree_prod_le` over `Ico (n−zkRows) n`, card `≤ n`) times a
+`zkpm` (the three-factor mask, degree `≤ 3 ≤ n` via `idx.zk_three`) times a
 `z·shiftSide − shiftRow z·sigmaSide` product difference (degree `≤ 8n`), so `≤ 9n`; members
 `1,2` are `(z − 1)·lagNumer` of degree `< 2n ≤ 9n`. -/
 private theorem permConstraints_natDegree_le [NeZero n] (idx : Index F n)
-    (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (hz : z.natDegree < n) (β γ : F)
+    (wTab : Fin n → Fin wCols → F) (z : Polynomial F) (hz : z.natDegree < n) (β γ : F)
     (s : Fin 3) :
     (Permutation.constraints idx.omega idx.zkRows z (idx.permWitnessPoly wTab)
-        (Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm) idx.shifts β γ
+        (Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm) idx.shifts β γ
         (⟨0, Nat.pos_of_neZero n⟩ : Fin n) idx.unmaskedEnd s).natDegree
       ≤ degreeBound n := by
   set w := idx.permWitnessPoly wTab with hw
-  set σ := Permutation.sigmaPoly idx.omega idx.shifts idx.wiringPerm with hσ
+  set σ := Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm with hσ
   -- The cell interpolants underneath both row products have `natDegree < n`.
-  have hwdeg : ∀ i : Fin 7, (w i).natDegree < n := fun i => by
+  have hwdeg : ∀ i : Fin permCols, (w i).natDegree < n := fun i => by
     rw [hw]; exact columnPoly_natDegree_lt idx.omega_prim _
-  have hσdeg : ∀ i : Fin 7, (σ i).natDegree < n := fun i => by
+  have hσdeg : ∀ i : Fin permCols, (σ i).natDegree < n := fun i => by
     rw [hσ]; exact columnPoly_natDegree_lt idx.omega_prim _
-  -- The zk mask `∏_{Ico(n-zkRows,n)} (X − ωʲ)` has degree ≤ card ≤ n.
+  -- The three-factor zk mask has degree ≤ 3, and `3 ≤ n` via `zk_three` + `zk_le`.
   have hzkbound : (zkpm idx.omega n idx.zkRows).natDegree ≤ n := by
+    have h3n : 3 ≤ n := le_trans idx.zk_three idx.zk_le
+    have h1 : ∀ e : ℕ, ((X : Polynomial F) - C (idx.omega ^ e)).natDegree ≤ 1 := fun e =>
+      le_trans (natDegree_sub_le _ _) (by simp [natDegree_X, natDegree_C])
     unfold zkpm
-    refine le_trans (natDegree_prod_le _ _) ?_
-    have hfac : ∀ j ∈ Finset.Ico (n - idx.zkRows) n,
-        (X - C (idx.omega ^ j)).natDegree ≤ 1 := by
-      intro j _
-      exact le_trans (natDegree_sub_le _ _) (by simp [natDegree_X, natDegree_C])
-    refine le_trans (Finset.sum_le_sum hfac) ?_
-    simp only [Finset.sum_const, Nat.card_Ico, smul_eq_mul, mul_one]
+    refine le_trans natDegree_mul_le ?_
+    have h2 : ((X - C (idx.omega ^ (n - idx.zkRows)))
+        * (X - C (idx.omega ^ (n - idx.zkRows + 1)))).natDegree ≤ 2 := by
+      have := h1 (n - idx.zkRows)
+      have := h1 (n - idx.zkRows + 1)
+      exact le_trans natDegree_mul_le (by omega)
+    have := h1 (n - 1)
     omega
   -- Each row-product factor has degree ≤ n (a cell `< n`, plus a constant, plus a
   -- degree-≤1 shift term), so the 7-fold product is ≤ 7n.
   have hshift : (shiftSide w idx.shifts β γ).natDegree ≤ 7 * n := by
     unfold shiftSide
     refine le_trans (natDegree_prod_le _ _) ?_
-    have hfac : ∀ i ∈ (Finset.univ : Finset (Fin 7)),
+    have hfac : ∀ i ∈ (Finset.univ : Finset (Fin permCols)),
         (w i + C γ + C β * C (idx.shifts i) * X).natDegree ≤ n := by
       intro i _
       refine le_trans (natDegree_add_le _ _) (max_le ?_ ?_)
@@ -541,7 +546,7 @@ private theorem permConstraints_natDegree_le [NeZero n] (idx : Index F n)
   have hsigma : (sigmaSide w σ β γ).natDegree ≤ 7 * n := by
     unfold sigmaSide
     refine le_trans (natDegree_prod_le _ _) ?_
-    have hfac : ∀ i ∈ (Finset.univ : Finset (Fin 7)),
+    have hfac : ∀ i ∈ (Finset.univ : Finset (Fin permCols)),
         (w i + C γ + C β * σ i).natDegree ≤ n := by
       intro i _
       refine le_trans (natDegree_add_le _ _) (max_le ?_ ?_)
@@ -591,7 +596,7 @@ variable [NeZero n]
 above, a permutation member (`permConstraints_natDegree_le`). This is the per-member input
 to the aggregate bound. -/
 private theorem fullFamily_natDegree_le (idx : Index F n) (pub : Fin idx.publicCount → F)
-    (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (hz : z.natDegree < n) (β γ : F)
+    (wTab : Fin n → Fin wCols → F) (z : Polynomial F) (hz : z.natDegree < n) (β γ : F)
     (k : Fin (gateAlphaCount + permAlphaCount)) :
     (idx.fullFamily pub wTab z β γ k).natDegree ≤ degreeBound n := by
   unfold Index.fullFamily
@@ -601,11 +606,11 @@ private theorem fullFamily_natDegree_le (idx : Index F n) (pub : Fin idx.publicC
   · rw [dif_neg h]
     exact permConstraints_natDegree_le idx wTab z hz β γ _
 
-/-- **The `hCdeg` discharge.** The α-aggregate `∑_c α^c • (member c)` fits under
+/-- **The aggregate-side bound.** The α-aggregate `∑_c α^c • (member c)` fits under
 `degreeBound n`: `natDegree_sum_le` reduces to a per-summand bound, `natDegree_smul_le`
 drops the scalar `α^c`, and each member is bounded by `fullFamily_natDegree_le`. -/
 theorem aggregate_natDegree_le (idx : Index F n) (pub : Fin idx.publicCount → F)
-    (wTab : Fin n → Fin 15 → F) (z : Polynomial F) (hz : z.natDegree < n) (β γ : F)
+    (wTab : Fin n → Fin wCols → F) (z : Polynomial F) (hz : z.natDegree < n) (β γ : F)
     (α : F) :
     (aggregate α (idx.fullFamily pub wTab z β γ)).natDegree ≤ degreeBound n := by
   unfold aggregate
@@ -616,7 +621,7 @@ theorem aggregate_natDegree_le (idx : Index F n) (pub : Fin idx.publicCount → 
     (fullFamily_natDegree_le idx pub wTab z hz β γ c)
 
 omit [DecidableEq F] [NeZero n] in
-/-- **The `htdeg` discharge.** With `t.natDegree < 7·n`, the exact quotient product
+/-- **The quotient-side bound.** With `t.natDegree < 7·n`, the exact quotient product
 `t · Z_H` fits under `degreeBound n`: `natDegree_mul_le` and `natDegree (zH F n) = n`
 (`zH = Xⁿ − 1`) give `(7n − 1) + n < 9n`. Independent of the index. -/
 theorem t_zH_natDegree_le (t : Polynomial F) (ht : t.natDegree < 7 * n) :

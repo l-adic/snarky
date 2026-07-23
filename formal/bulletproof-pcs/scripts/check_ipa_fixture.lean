@@ -18,6 +18,15 @@ chunk-fold mechanisms:
 
 open Lean Bulletproof.Fixture Bulletproof
 
+/-- The client-side composition: parse the wire claim at the SRS's round count and its
+announced shape, then verify — check-then-verify; a ragged claim parses to `none` and
+is rejected, the same observable behavior as production's guards. -/
+def verifyWire (C : Ipa.CommitmentCurve) (σ : Bulletproof.SRS C.Point)
+    (w : Ipa.Wire.Input C) : Bool :=
+  match w.check σ.k with
+  | some inp => Ipa.verify C σ inp
+  | none => false
+
 def checkFixture (C : Ipa.CommitmentCurve) (curveName : String) (path : String) :
     IO Bool := do
   let raw ← IO.FS.readFile path
@@ -35,9 +44,9 @@ def checkFixture (C : Ipa.CommitmentCurve) (curveName : String) (path : String) 
         ((fx.chunkEvals.getD i #[]).getD j #[])
       = (fx.evals.getD i #[]).getD j 0)
   let inp := fx.toInput
-  let ok := Ipa.verify C σ inp
+  let ok := verifyWire C σ inp
   let bad := { inp with evals := inp.evals.modify 0 (·.modify 0 (· + 1)) }
-  let rejected := !Ipa.verify C σ bad
+  let rejected := !verifyWire C σ bad
   IO.println s!"{path}: {fx.chunkComms.size} poly(s) × {fx.xs.size} point(s) × \
     {nc} chunk(s) — recombine comm: {if hComm then "✓" else "✗"}, \
     recombine eval: {if hEval then "✓" else "✗"}, \
@@ -60,9 +69,9 @@ def checkBatchFixture (C : Ipa.CommitmentCurve) (curveName : String) (path : Str
   -- the flattened segment view through the nc = 1 verifier: the flattening lemmas,
   -- adjudicated end-to-end against the production opening
   let inp := fx.toFlatInput
-  let ok := Ipa.verify C σ inp
+  let ok := verifyWire C σ inp
   let bad := { inp with evals := inp.evals.modify 0 (·.modify 0 (· + 1)) }
-  let rejected := !Ipa.verify C σ bad
+  let rejected := !verifyWire C σ bad
   IO.println s!"{path}: {fx.chunkComms.size} poly(s) × {fx.xs.size} point(s), \
     chunks {fx.chunkComms.map (·.size)}, batched — \
     segment comm: {if hComm then "✓" else "✗"}, \

@@ -1,3 +1,4 @@
+import Kimchi.Columns
 import Kimchi.Domain
 import Kimchi.Shifted
 import Kimchi.Aggregate
@@ -67,9 +68,9 @@ read, anchored at a row: the current-row witness cells, the next-row witness cel
 (`argument.rs`), restricted to the cell accessors (`witness_curr` / `witness_next` /
 `coeff`). -/
 structure ArgumentEnv (R : Type u) where
-  witnessCurr : Fin 15 → R
-  witnessNext : Fin 15 → R
-  coeff : Fin 15 → R
+  witnessCurr : Fin wCols → R
+  witnessNext : Fin wCols → R
+  coeff : Fin coeffCols → R
 
 /-- Push a carrier map `f : R → S` through an environment, cell by cell in each family. -/
 def ArgumentEnv.map {R S : Type u} (f : R → S) (env : ArgumentEnv R) : ArgumentEnv S :=
@@ -78,13 +79,15 @@ def ArgumentEnv.map {R S : Type u} (f : R → S) (env : ArgumentEnv R) : Argumen
 /-- **Row environment.** The field-level cells at row `i` of a witness table `wTab` and a
 coefficient table `qTab`: current row `wTab i`, next row `wTab (i + 1)` (cyclic), coefficients
 `qTab i`. -/
-def rowEnv [NeZero n] (wTab qTab : Fin n → Fin 15 → F) (i : Fin n) : ArgumentEnv F :=
+def rowEnv [NeZero n] (wTab : Fin n → Fin wCols → F) (qTab : Fin n → Fin coeffCols → F)
+    (i : Fin n) : ArgumentEnv F :=
   ⟨wTab i, wTab (i + 1), qTab i⟩
 
 /-- **Polynomial environment.** The column interpolants of the tables: `columnPoly` of each
 witness column on the current side, its `shift` on the next side, and `columnPoly` of each
 coefficient column on the coefficient side. -/
-noncomputable def polyEnv (ω : F) (wTab qTab : Fin n → Fin 15 → F) :
+noncomputable def polyEnv (ω : F) (wTab : Fin n → Fin wCols → F)
+    (qTab : Fin n → Fin coeffCols → F) :
     ArgumentEnv (Polynomial F) :=
   ⟨fun c => columnPoly ω (fun j => wTab j c),
    fun c => shift ω (columnPoly ω (fun j => wTab j c)),
@@ -96,7 +99,7 @@ noncomputable def polyEnv (ω : F) (wTab qTab : Fin n → Fin 15 → F) :
 next side. This is the one evaluation bridge in the library; every gate reaches its own bridge
 by pasting its naturality square onto this equation. -/
 private theorem polyEnv_map_aeval [NeZero n] (hω : IsPrimitiveRoot ω n)
-    (wTab qTab : Fin n → Fin 15 → F) (i : Fin n) :
+    (wTab : Fin n → Fin wCols → F) (qTab : Fin n → Fin coeffCols → F) (i : Fin n) :
     (polyEnv ω wTab qTab).map ⇑(aeval (ω ^ (i : ℕ)) : Polynomial F →ₐ[F] F)
       = rowEnv wTab qTab i := by
   simp only [polyEnv, ArgumentEnv.map, rowEnv]
@@ -130,7 +133,7 @@ structure Argument (F : Type u) [Field F] where
 environment at the node `ω^i` reproduces the field-level constraints of the row environment:
 the naturality square `constraints_map` at `aeval (ω^i)`, pasted onto `polyEnv_map_aeval`. -/
 theorem Argument.bridge [NeZero n] (G : Argument F) (hω : IsPrimitiveRoot ω n)
-    (wTab qTab : Fin n → Fin 15 → F) (i : Fin n) :
+    (wTab : Fin n → Fin wCols → F) (qTab : Fin n → Fin coeffCols → F) (i : Fin n) :
     (G.constraints (polyEnv ω wTab qTab)).map (·.eval (ω ^ (i : ℕ)))
       = G.constraints (rowEnv wTab qTab i) := by
   have hfun : (fun E : Polynomial F => E.eval (ω ^ (i : ℕ)))
@@ -153,7 +156,7 @@ naturality of `constraints` under evaluation at the domain nodes.
 
 ## Contents
 
-* `cellMap` — assemble a `Gate.AddComplete.Witness R` from a row `cur : Fin 15 → R`.
+* `cellMap` — assemble a `Gate.AddComplete.Witness R` from a row `cur : Fin wCols → R`.
 * `rowWitness` / `polyWitness` — the row-values and column-interpolant witnesses, both via
   the same `cellMap`.
 * `argument` — the CompleteAdd `Argument F` instance (single-row layout).
@@ -177,8 +180,8 @@ columns `11`–`14` are unused. Layout (kimchi `complete_add.rs`, module-doc tab
 -/
 
 /-- **CompleteAdd cell map.** Assemble a `Gate.AddComplete.Witness R` by reading the circuit
-columns of a row `cur : Fin 15 → R`. -/
-def cellMap {R : Type*} (cur : Fin 15 → R) : Gate.AddComplete.Witness R where
+columns of a row `cur : Fin wCols → R`. -/
+def cellMap {R : Type*} (cur : Fin wCols → R) : Gate.AddComplete.Witness R where
   x1     := cur 0
   y1     := cur 1
   x2     := cur 2
@@ -192,13 +195,13 @@ def cellMap {R : Type*} (cur : Fin 15 → R) : Gate.AddComplete.Witness R where
   x21Inv := cur 10
 
 /-- **CompleteAdd row witness.** The gate witness at row `i`, read off the circuit witness
-table `wTab : Fin n → Fin 15 → F`. -/
-def rowWitness (wTab : Fin n → Fin 15 → F) (i : Fin n) : Gate.AddComplete.Witness F :=
+table `wTab : Fin n → Fin wCols → F`. -/
+def rowWitness (wTab : Fin n → Fin wCols → F) (i : Fin n) : Gate.AddComplete.Witness F :=
   cellMap (wTab i)
 
 /-- **CompleteAdd poly witness.** The gate witness whose every cell is the interpolant
 `columnPoly ω` of the corresponding circuit column. -/
-noncomputable def polyWitness (ω : F) (wTab : Fin n → Fin 15 → F) :
+noncomputable def polyWitness (ω : F) (wTab : Fin n → Fin wCols → F) :
     Gate.AddComplete.Witness (Polynomial F) :=
   cellMap (fun c => columnPoly ω (fun j => wTab j c))
 
@@ -244,7 +247,7 @@ variable {F : Type*} [Field F] {n : ℕ} {ω : F}
 
 /-! ## Column layout and the cell map -/
 
-/-- **VarBaseMul cell map.** For current/next rows `cur nxt : Fin 15 → R`, assemble the gate
+/-- **VarBaseMul cell map.** For current/next rows `cur nxt : Fin wCols → R`, assemble the gate
 witness by reading each column from the row the layout table assigns it (VBSM row `i` supplies
 `cur`, ZERO row `i+1` supplies `nxt`):
 
@@ -253,7 +256,7 @@ row i  : xT yT x0 y0  n  n'  _  x1 y1 x2 y2 x3 y3 x4 y4   (VBSM)
 row i+1: x5 y5 b0 b1 b2 b3 b4 s0 s1 s2 s3 s4  _  _  _     (ZERO)
 ```
 -/
-def cellMap {R : Type*} (cur nxt : Fin 15 → R) : Gate.VarBaseMul.Witness R where
+def cellMap {R : Type*} (cur nxt : Fin wCols → R) : Gate.VarBaseMul.Witness R where
   xT := cur 0
   yT := cur 1
   x0 := cur 2
@@ -281,15 +284,15 @@ def cellMap {R : Type*} (cur nxt : Fin 15 → R) : Gate.VarBaseMul.Witness R whe
   s3 := nxt 10
   s4 := nxt 11
 
-/-- **VarBaseMul row witness.** For a table `wTab : Fin n → Fin 15 → F` the row witness at `i`
+/-- **VarBaseMul row witness.** For a table `wTab : Fin n → Fin wCols → F` the row witness at `i`
 reads the current row `i` and the next row `i+1` (cyclic, needing `[NeZero n]`). -/
-def rowWitness [NeZero n] (wTab : Fin n → Fin 15 → F) (i : Fin n) :
+def rowWitness [NeZero n] (wTab : Fin n → Fin wCols → F) (i : Fin n) :
     Gate.VarBaseMul.Witness F :=
   cellMap (wTab i) (wTab (i + 1))
 
 /-- **VarBaseMul poly witness.** Feed `cellMap` the column interpolants on the current side and
 their shifts on the next side. -/
-noncomputable def polyWitness (ω : F) (wTab : Fin n → Fin 15 → F) :
+noncomputable def polyWitness (ω : F) (wTab : Fin n → Fin wCols → F) :
     Gate.VarBaseMul.Witness (Polynomial F) :=
   cellMap (fun c => columnPoly ω (fun j => wTab j c))
     (fun c => shift ω (columnPoly ω (fun j => wTab j c)))
@@ -359,11 +362,11 @@ variable {F : Type*} [Field F] {n : ℕ} {ω : F}
 
 /-! ## The cell map -/
 
-/-- **EndoMul cell map.** Read the current/next rows `cur, nxt : Fin 15 → R` into a
+/-- **EndoMul cell map.** Read the current/next rows `cur, nxt : Fin wCols → R` into a
 `Gate.EndoMul.Witness R`. Current-row cells carry the inputs, the intermediate point, the
 slopes and the bits; the next-row cells `4, 5, 6` carry the outputs `xS, yS, n'`. The `inv`
 cell is `cur 2`, per the fix commit (see the file preamble). -/
-def cellMap {R : Type*} (cur nxt : Fin 15 → R) : Gate.EndoMul.Witness R where
+def cellMap {R : Type*} (cur nxt : Fin wCols → R) : Gate.EndoMul.Witness R where
   xT := cur 0
   yT := cur 1
   xP := cur 4
@@ -382,16 +385,16 @@ def cellMap {R : Type*} (cur nxt : Fin 15 → R) : Gate.EndoMul.Witness R where
   yS := nxt 5
   inv := cur 2
 
-/-- **EndoMul row witness.** For a table `wTab : Fin n → Fin 15 → F`, read rows `i` and `i+1`
+/-- **EndoMul row witness.** For a table `wTab : Fin n → Fin wCols → F`, read rows `i` and `i+1`
 (cyclic, needing `[NeZero n]`) through `cellMap`. -/
-def rowWitness [NeZero n] (wTab : Fin n → Fin 15 → F) (i : Fin n) :
+def rowWitness [NeZero n] (wTab : Fin n → Fin wCols → F) (i : Fin n) :
     Gate.EndoMul.Witness F :=
   cellMap (wTab i) (wTab (i + 1))
 
 /-- **EndoMul poly witness.** The polynomial lift: current-row cells become the column
 interpolants `columnPoly ω (fun j => wTab j c)`, and next-row cells become their shifts
 `shift ω (columnPoly ω (fun j => wTab j c))`. -/
-noncomputable def polyWitness (ω : F) (wTab : Fin n → Fin 15 → F) :
+noncomputable def polyWitness (ω : F) (wTab : Fin n → Fin wCols → F) :
     Gate.EndoMul.Witness (Polynomial F) :=
   cellMap (fun c => columnPoly ω (fun j => wTab j c))
     (fun c => shift ω (columnPoly ω (fun j => wTab j c)))
@@ -460,9 +463,9 @@ variable {F : Type*} [Field F] {n : ℕ} {ω : F}
 /-! ## Column layout and the cell map -/
 
 /-- **EndoScalar cell map.** Assemble a `Gate.EndoScalar.Witness R` by reading the circuit
-columns of a row `cur : Fin 15 → R`. The eight crumbs are the literal 8-element list, so the
+columns of a row `cur : Fin wCols → R`. The eight crumbs are the literal 8-element list, so the
 accumulator folds unfold directly on it (no witness reshape). -/
-def cellMap {R : Type*} (cur : Fin 15 → R) : Gate.EndoScalar.Witness R where
+def cellMap {R : Type*} (cur : Fin wCols → R) : Gate.EndoScalar.Witness R where
   n0 := cur 0
   n8 := cur 1
   a0 := cur 2
@@ -472,13 +475,13 @@ def cellMap {R : Type*} (cur : Fin 15 → R) : Gate.EndoScalar.Witness R where
   crumbs := [cur 6, cur 7, cur 8, cur 9, cur 10, cur 11, cur 12, cur 13]
 
 /-- **EndoScalar row witness.** The gate witness at row `i`, read off the circuit witness
-table `wTab : Fin n → Fin 15 → F`. -/
-def rowWitness (wTab : Fin n → Fin 15 → F) (i : Fin n) : Gate.EndoScalar.Witness F :=
+table `wTab : Fin n → Fin wCols → F`. -/
+def rowWitness (wTab : Fin n → Fin wCols → F) (i : Fin n) : Gate.EndoScalar.Witness F :=
   cellMap (wTab i)
 
 /-- **EndoScalar poly witness.** The gate witness whose every cell is the interpolant
 `columnPoly ω` of the corresponding circuit column. -/
-noncomputable def polyWitness (ω : F) (wTab : Fin n → Fin 15 → F) :
+noncomputable def polyWitness (ω : F) (wTab : Fin n → Fin wCols → F) :
     Gate.EndoScalar.Witness (Polynomial F) :=
   cellMap (fun c => columnPoly ω (fun j => wTab j c))
 
@@ -537,7 +540,7 @@ variable {F : Type*} [Field F] {n N : ℕ} {ω : F}
 /-- **Poseidon cell map.** Assemble a `Gate.Poseidon.Witness R` from the permuted register
 layout: the current row supplies `s0, s4, s1, s2, s3` (in register order), the next row
 supplies the output state `s5`. -/
-def cellMap {R : Type*} (cur nxt : Fin 15 → R) : Gate.Poseidon.Witness R where
+def cellMap {R : Type*} (cur nxt : Fin wCols → R) : Gate.Poseidon.Witness R where
   s0 := (cur 0, cur 1, cur 2)
   s4 := (cur 3, cur 4, cur 5)
   s1 := (cur 6, cur 7, cur 8)
@@ -547,26 +550,26 @@ def cellMap {R : Type*} (cur nxt : Fin 15 → R) : Gate.Poseidon.Witness R where
 
 /-- **Poseidon round-constant map.** Read the round-constant triples off a coefficient row:
 `rc j = (coeff (3j), coeff (3j+1), coeff (3j+2))`. -/
-def rcMap {R : Type*} (coeff : Fin 15 → R) : Fin 5 → R × R × R := fun j =>
+def rcMap {R : Type*} (coeff : Fin coeffCols → R) : Fin 5 → R × R × R := fun j =>
   (coeff ⟨3 * (j : ℕ), by have := j.isLt; omega⟩,
    coeff ⟨3 * (j : ℕ) + 1, by have := j.isLt; omega⟩,
    coeff ⟨3 * (j : ℕ) + 2, by have := j.isLt; omega⟩)
 
 /-- **Poseidon row witness.** The state cells at rows `i` and `i + 1` (cyclic) of a witness
 table. -/
-def rowWitness [NeZero n] (wTab : Fin n → Fin 15 → F) (i : Fin n) : Gate.Poseidon.Witness F :=
+def rowWitness [NeZero n] (wTab : Fin n → Fin wCols → F) (i : Fin n) : Gate.Poseidon.Witness F :=
   cellMap (wTab i) (wTab (i + 1))
 
 /-- **Poseidon poly witness.** The state cells as column interpolants: `columnPoly` on the
 current side, its `shift` on the next side. -/
-noncomputable def polyWitness (ω : F) (wTab : Fin n → Fin 15 → F) :
+noncomputable def polyWitness (ω : F) (wTab : Fin n → Fin wCols → F) :
     Gate.Poseidon.Witness (Polynomial F) :=
   cellMap (fun c => columnPoly ω (fun j => wTab j c))
     (fun c => shift ω (columnPoly ω (fun j => wTab j c)))
 
 /-- **Poseidon poly round constants.** The round-constant triples as coefficient-column
 interpolants. -/
-noncomputable def rcPoly (ω : F) (qTab : Fin n → Fin 15 → F) :
+noncomputable def rcPoly (ω : F) (qTab : Fin n → Fin coeffCols → F) :
     Fin 5 → Polynomial F × Polynomial F × Polynomial F :=
   rcMap (fun c => columnPoly ω (fun j => qTab j c))
 
@@ -604,8 +607,8 @@ gate's `Argument` instance over column interpolants.
 
 ## Column layout (from `generic.rs`)
 
-A generic row carries 15 witness cells `w : Fin 15 → F` and 15 coefficient cells
-`q : Fin 15 → F`. The row packs **two** generic gates: the first uses registers
+A generic row carries 15 witness cells `w : Fin wCols → F` and 15 coefficient cells
+`q : Fin coeffCols → F`. The row packs **two** generic gates: the first uses registers
 `w 0, w 1, w 2` with coefficients `q 0 … q 4`; the second uses `w 3, w 4, w 5`
 with coefficients `q 5 … q 9` (`q 10 … q 14` are unused here).
 
@@ -631,7 +634,8 @@ the other five gates: the gate row `Gate.Generic R` is assembled from the curren
 
 /-- **Generic cell map.** Assemble a `Gate.Generic R` from current-row cells `cur` (→ `w`) and
 coefficient cells `coeff` (→ `q`). -/
-def cellMap {R : Type*} (cur coeff : Fin 15 → R) : Gate.Generic R :=
+def cellMap {R : Type*} (cur : Fin wCols → R) (coeff : Fin coeffCols → R) :
+    Gate.Generic R :=
   ⟨coeff, cur⟩
 
 /-- **Generic `Argument` instance.** The gate's constraint list `Gate.Generic.constraints`
