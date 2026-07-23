@@ -12,16 +12,6 @@ objects the aggregate family is built on.
 -/
 namespace Kimchi.Protocol.Equation
 
-/-- The permutation members' alpha indices, kernel-checked against the shared pool:
-the recurrence member sits at `α ^ gateAlphaCount` (the literal `21` of `permScalar`)
-and the two boundary members at the next slots (the literals `22`/`23` of `ftEval0`).
-The scalar-side closed forms keep the literals — this lemma pins their origin. -/
-theorem perm_member_alpha_indices :
-    (21 : ℕ) = Index.gateAlphaCount
-      ∧ (22 : ℕ) = Index.gateAlphaCount + 1
-      ∧ (23 : ℕ) = Index.gateAlphaCount + 2 :=
-  ⟨rfl, rfl, rfl⟩
-
 open Polynomial Kimchi.Lift Kimchi.Index Kimchi.Protocol.Linearization
 open Kimchi.GrandProduct
 open Kimchi.Lift.Gate
@@ -236,6 +226,17 @@ private theorem eval_permWitnessPoly_eq_w [NeZero n] (idx : Index F n)
 At the first permutation alpha, the `permScalar · σ₆(ζ)` term and `ftEval0`'s σ-side and
 shift-side products recombine into that alpha times the quotient's first permutation
 constraint at the honest record. -/
+
+/-- The permutation members' alpha indices, kernel-checked against the shared pool:
+the recurrence member sits at `α ^ gateAlphaCount` (the literal `21` of `permScalar`,
+`Protocol/Linearization.lean`) and the two boundary members at the next slots (the
+literals `22`/`23` of `ftEval0`, same module). The scalar-side closed forms keep the
+literals — this lemma pins their origin. -/
+theorem perm_member_alpha_indices :
+    (21 : ℕ) = Index.gateAlphaCount
+      ∧ (22 : ℕ) = Index.gateAlphaCount + 1
+      ∧ (23 : ℕ) = Index.gateAlphaCount + 2 :=
+  ⟨rfl, rfl, rfl⟩
 
 /-- **σ-side of the verifier equation.** The permutation scalar against `σ₆(ζ)`, minus
 `ftEval0`'s σ-side product against `z(ζω)`, plus its shift-side product against `z(ζ)`,
