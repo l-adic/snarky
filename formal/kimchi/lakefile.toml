@@ -3,6 +3,17 @@ name = "kimchi"
 # package workspace — the editor opens files with the package as the root).
 packagesDir = "../.lake/packages"
 defaultTargets = ["Kimchi", "KimchiFixture", "kimchi-demo"]
+# `lake lint` (standalone): Batteries' env-linter suite over this package's library
+# roots. The nolints baseline is scripts/nolints.json (kept in sync with the workspace
+# copy at ../scripts/nolints.json).
+lintDriver = "batteries/runLinter"
+lintDriverArgs = ["Kimchi", "KimchiFixture"]
+
+# In-editor style feedback in Mathlib-importing modules (the ≤100-column contract);
+# `weak.` so builds survive a linter rename. scripts/check-style.sh stays the CI gate —
+# it also covers the Mathlib-free and targeted-import modules these linters can't see.
+[leanOptions]
+weak.linter.style.longLine = true
 
 # CompElliptic: concrete short-Weierstrass `SWCurve` / `SWPoint` with a proven group law,
 # and the Pasta curve instances. Vendored as a git submodule at vendor/CompElliptic so the
@@ -46,7 +57,7 @@ name = "Kimchi"
 # built as its own target, mirroring `FixtureKit` and `BulletproofFixture`.
 [[lean_lib]]
 name = "KimchiFixture"
-globs = ["KimchiFixture.+"]
+globs = ["KimchiFixture", "KimchiFixture.+"]
 
 
 [[lean_exe]]

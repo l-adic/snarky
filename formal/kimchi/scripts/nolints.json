@@ -1,0 +1,6 @@
+[
+  ["synTaut", "Kimchi.coeffCols_eq"],
+  ["unusedArguments", "Kimchi.Gate.AddComplete.instReprWitness.repr"],
+  ["unusedArguments", "Kimchi.Gate.EndoScalar.instReprWitness.repr"],
+  ["unusedArguments", "Kimchi.Gate.VarBaseMul.instReprWitness.repr"]
+]

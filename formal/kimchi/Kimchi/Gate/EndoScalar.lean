@@ -102,12 +102,19 @@ theorem dPoly_table (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
     (the deployed gate carries 8; kept as a `List`, since the fold is uniform in the
     count — so one `Witness` can equally model a whole multi-row challenge). -/
 structure Witness (F : Type*) where
+  /-- The input `a` accumulator (`2` at the start of a challenge). -/
   a0 : F
+  /-- The input `b` accumulator (`2` at the start of a challenge). -/
   b0 : F
+  /-- The input `n` accumulator (`0` at the start of a challenge). -/
   n0 : F
+  /-- The output `a` accumulator, after folding `a := 2·a + c_func(x)` over the crumbs. -/
   a8 : F
+  /-- The output `b` accumulator, after folding `b := 2·b + d_func(x)` over the crumbs. -/
   b8 : F
+  /-- The output `n` accumulator, after folding `n := 4·n + x` over the crumbs. -/
   n8 : F
+  /-- The MSB-first 2-bit crumbs of the challenge (the deployed gate carries 8 per row). -/
   crumbs : List F
 deriving Repr
 

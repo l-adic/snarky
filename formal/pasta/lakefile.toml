@@ -3,6 +3,15 @@ name = "pasta"
 # package workspace — the editor opens files with the package as the root).
 packagesDir = "../.lake/packages"
 defaultTargets = ["Pasta"]
+# `lake lint` (standalone): Batteries' env-linter suite over this package's root.
+lintDriver = "batteries/runLinter"
+lintDriverArgs = ["Pasta"]
+
+# In-editor style feedback in Mathlib-importing modules (the ≤100-column contract);
+# `weak.` so builds survive a linter rename. scripts/check-style.sh stays the CI gate —
+# it also covers the Mathlib-free and targeted-import modules these linters can't see.
+[leanOptions]
+weak.linter.style.longLine = true
 
 # CompElliptic: concrete short-Weierstrass `SWCurve` / `SWPoint` with a proven group law and
 # the Pasta curve instances. Shared with the parent kimchi package (same submodule

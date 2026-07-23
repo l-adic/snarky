@@ -1,8 +1,6 @@
 import Kimchi.Columns
 import Kimchi.Domain
 import Kimchi.Shifted
-import Kimchi.Aggregate
-import Kimchi.SchwartzZippel
 import Kimchi.Gate.AddComplete
 import Kimchi.Gate.VarBaseMul
 import Kimchi.Gate.EndoMul
@@ -68,8 +66,11 @@ read, anchored at a row: the current-row witness cells, the next-row witness cel
 (`argument.rs`), restricted to the cell accessors (`witness_curr` / `witness_next` /
 `coeff`). -/
 structure ArgumentEnv (R : Type u) where
+  /-- The current-row witness cells (`witness_curr`). -/
   witnessCurr : Fin wCols → R
+  /-- The next-row witness cells, cyclic `i + 1` (`witness_next`). -/
   witnessNext : Fin wCols → R
+  /-- The current row's coefficient cells (`coeff`). -/
   coeff : Fin coeffCols → R
 
 /-- Push a carrier map `f : R → S` through an environment, cell by cell in each family. -/
@@ -124,6 +125,8 @@ coefficients) enter through `algebraMap F R`, which every `f : R →ₐ[F] S` fi
 (`AlgHom.commutes`) — this is what makes a uniform naturality square possible across gates with
 different parameters. -/
 structure Argument (F : Type u) [Field F] where
+  /-- The gate's constraint expressions read from an `ArgumentEnv R`, defined for every
+  commutative `F`-algebra `R` (kimchi's `constraint_checks`). -/
   constraints : ∀ {R : Type u} [CommRing R] [Algebra F R], ArgumentEnv R → List R
   constraints_map : ∀ {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Algebra F S]
       (f : R →ₐ[F] S) (env : ArgumentEnv R),

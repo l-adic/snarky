@@ -40,13 +40,20 @@ namespace GroupMap
 /-- The per-curve data of the SvdW map: the target curve (`A = 0`), the square-root data,
 and the `setup()` constants. -/
 structure Spec (q : ℕ) [Field (ZMod q)] [Fintype (ZMod q)] [DecidableEq (ZMod q)] where
+  /-- The target curve — of the form `y² = x³ + B`, per `hA`. -/
   E : SWCurve (ZMod q)
   hA : E.A = 0
+  /-- The Tonelli–Shanks square-root data for the base field. -/
   sqrt : TonelliShanks (ZMod q)
+  /-- The SvdW seed `u` (`setup()`). -/
   u : ZMod q
+  /-- `f(u) = u³ + B` (`setup()` `fu`). -/
   fu : ZMod q
+  /-- `√(-3u²)` — arkworks' root choice, pinned by the fixture vectors (`setup()`). -/
   sqrtNegThreeUSquared : ZMod q
+  /-- `(√(-3u²) − u) / 2` (`setup()`). -/
   sqrtNegThreeUSquaredMinusUOver2 : ZMod q
+  /-- `(3u²)⁻¹` (`setup()`). -/
   invThreeUSquared : ZMod q
 
 variable {q : ℕ} [Field (ZMod q)] [Fintype (ZMod q)] [DecidableEq (ZMod q)]
@@ -112,7 +119,7 @@ example : sqrtNegThreeUSquared ^ 2 = -3 * u ^ 2 := by decide
 
 /-- `(√(-3u²) − u) / 2`. At `u = 1` this is `(√-3 − 1)/2`, a primitive cube root of unity —
 the Vesta base-field endomorphism coefficient `β`, of which it is a reuse. -/
-private def sqrtNegThreeUSquaredMinusUOver2 : Fq := Pasta.vesta_endo
+private def sqrtNegThreeUSquaredMinusUOver2 : Fq := Pasta.vestaEndo
 
 example : 2 * sqrtNegThreeUSquaredMinusUOver2 = sqrtNegThreeUSquared - u := by decide
 
@@ -161,11 +168,11 @@ example : sqrtNegThreeUSquared ^ 2 = -3 * u ^ 2 := by decide
 
 /-- `(√(-3u²) − u) / 2`. At `u = 1` this is `(√-3 − 1)/2` at `setup()`'s root choice — the
 *other* primitive cube root of unity from the Pallas endomorphism coefficient, i.e.
-`pallas_endo²`. -/
+`pallasEndo²`. -/
 private def sqrtNegThreeUSquaredMinusUOver2 : Fp :=
   8503465768106391777493614032514048814691664078728891710322960303815233784505
 
-example : sqrtNegThreeUSquaredMinusUOver2 = Pasta.pallas_endo ^ 2 := by decide
+example : sqrtNegThreeUSquaredMinusUOver2 = Pasta.pallasEndo ^ 2 := by decide
 
 example : 2 * sqrtNegThreeUSquaredMinusUOver2 = sqrtNegThreeUSquared - u := by decide
 

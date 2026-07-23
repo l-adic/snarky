@@ -42,7 +42,9 @@ private abbrev Triple (F : Type*) := F × F × F
 
 /-- Poseidon parameters: one constant triple per round, and the MDS matrix as three rows. -/
 structure Params (F : Type*) where
+  /-- One constant triple per round, added after that round's MDS pass (no initial ARK). -/
   roundConstants : Array (Triple F)
+  /-- The full 3 × 3 MDS matrix, as three rows. -/
   mds : Triple (Triple F)
 
 /-- The S-box `x ↦ x^7`. -/
@@ -73,7 +75,9 @@ deriving Repr, DecidableEq
 
 /-- A sponge in flight: the width-3 state and the mode. -/
 structure State (F : Type*) where
+  /-- The width-3 Poseidon state. -/
   state : Triple F
+  /-- The automaton direction and intra-block position. -/
   mode : Mode
 
 /-- Read rate slot `n` (`n < 2`). -/

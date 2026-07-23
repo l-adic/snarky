@@ -1,7 +1,6 @@
 import Mathlib
-import Bulletproof.Protocol
-import Bulletproof.Soundness
 import Kimchi.Verifier.Reduction.Correspond
+import Bulletproof.Soundness.SingleOpening
 
 /-!
 # Batch binding

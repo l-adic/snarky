@@ -1,6 +1,5 @@
 import Kimchi.Columns
-import Kimchi.Aggregate
-import Kimchi.SchwartzZippel
+import Kimchi.Domain
 import Kimchi.GrandProduct
 
 /-!

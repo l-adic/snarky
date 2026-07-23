@@ -1,4 +1,5 @@
 import Kimchi.Aggregate
+import Kimchi.Domain
 
 /-!
 # Counting Schwartz–Zippel: single-challenge α-separation

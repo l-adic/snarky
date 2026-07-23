@@ -26,15 +26,21 @@ namespace Snarky
 /-- A bidirectional encoding of a value type `val` as `size` field elements, together with
 its variable-bundle counterpart `var` (PS `CircuitType f a var`). -/
 class CircuitType (F : Type u) (val : Type u) (var : outParam (Type u)) where
+  /-- The number of field elements a `val` encodes to (PS `sizeInFields`, made type-level). -/
   size : Nat
+  /-- Encode a value as its `size` field elements (PS `valueToFields`). -/
   valueToFields : val → Vector F size
+  /-- Decode a value from its `size` field elements (PS `fieldsToValue`). -/
   fieldsToValue : Vector F size → val
+  /-- Flatten a variable bundle into its `size` underlying `CVar`s (PS `varToFields`). -/
   varToFields : var → Vector (CVar F) size
+  /-- Rebuild a variable bundle from `size` underlying `CVar`s (PS `fieldsToVar`). -/
   fieldsToVar : Vector (CVar F) size → var
 
 /-- Variable bundles whose well-formedness is enforced by constraints: `check` is emitted
 by `witness` under *both* interpreters, exactly like PS `CheckedType`'s `check`. -/
 class CheckedType (F c : Type u) (var : Type u) where
+  /-- The circuit that constrains the bundle to well-formed values (PS `check`). -/
   check : var → CircuitM F c PUnit
 
 /-! ## Field and boolean variables -/
@@ -56,6 +62,7 @@ instance : CheckedType F c (FVar F) where
 
 /-- A boolean as a circuit variable: a `CVar` constrained to `{0, 1}` (PS `BoolVar f`). -/
 structure BoolVar (F : Type u) where
+  /-- The underlying field expression, constrained to `{0, 1}` by `CheckedType.check`. -/
   toCVar : CVar F
 
 instance [Zero F] [One F] [DecidableEq F] : CircuitType F Bool (BoolVar F) where

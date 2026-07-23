@@ -89,6 +89,39 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         lake env lean snarky/scripts/check_axioms.lean
 
+    # Batteries' `@[env_linter]` suite (docBlame, unusedArguments, synTaut, …) over
+    # every library root. One runLinter process per module — a single multi-module run
+    # accumulates each module's import environment and gets OOM-killed. Keep the list
+    # in sync with lintDriverArgs in lakefile.toml. The nolints baseline
+    # (derive-generated instances and by-design findings only) is scripts/nolints.json.
+    - name: Run the environment linters
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        for m in Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit \
+                 Bulletproof BulletproofFixture; do
+          lake exe runLinter "$m" || exit 1
+        done
+
+    # No redundant or removable imports (mathlib's shake). The policy exceptions live in
+    # scripts/noshake.json: wholesale `import Mathlib` in the proof-heavy trees, and the
+    # notation-only Kimchi.Columns (notations contribute no constants, so shake cannot
+    # see their use).
+    # The --cfg path must be absolute: `lake exe` runs the tool from its owning
+    # package's directory (mathlib's), so the relative default resolves wrongly.
+    - name: Check import hygiene (shake)
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        lake exe shake --cfg "$PWD/scripts/noshake.json" \
+          Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit \
+          Bulletproof BulletproofFixture
+
+    # Every authored declaration must be reachable from the union of the packages'
+    # roots.txt API manifests (scripts/deadcode.lean).
+    - name: Check for dead code
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        bash scripts/deadcode.sh
+
     # Compatibility: the IPA verifier model must accept real kimchi/proof-systems
     # transcripts, and both chunk-fold mechanisms must match production — the chunk
     # layer's recombination (fixtures/ipa_{opening,batch,chunked2,chunked3}_*.json,
@@ -173,4 +206,27 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         KIMCHI_FIXTURES_DIR=kimchi/fixtures \
           lake env lean kimchi/scripts/check_vk_correspond.lean
+
+    # Kernel replay (lean4checker): re-read every library .olean and replay each
+    # declaration through the kernel alone, detecting environment tampering that
+    # elaboration-time checks — the build and the axiom gates — inherently trust.
+    # The script prunes stale oleans first (deleted/renamed modules linger in the
+    # cached build dirs and would otherwise be replayed too).
+    #
+    # Runs on pushes to main (and manual dispatch) only, NOT on PRs: every module
+    # replay reloads its Mathlib-sized import environment, so the sweep costs
+    # ~15 runner-minutes — and every commit that lands still gets the full replay.
+    # A failure surfaces as a red X on main (fix-forward or revert).
+    - name: Cache the lean4checker build
+      if: github.event_name != 'pull_request'
+      uses: actions/cache@v3
+      with:
+        path: formal/.lake/lean4checker
+        key: lean4checker-${{ runner.os }}-${{ hashFiles('formal/scripts/kernel-replay.sh', 'formal/lean-toolchain') }}
+
+    - name: Kernel-replay all modules (lean4checker)
+      if: github.event_name != 'pull_request'
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        bash scripts/kernel-replay.sh
 

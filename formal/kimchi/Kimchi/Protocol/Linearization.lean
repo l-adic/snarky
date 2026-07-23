@@ -26,17 +26,29 @@ variable {F : Type*} [Field F]
 /-- The combined evaluations the scalar side reads: each column at `ζ`, with the witness
 and the accumulator also at `ζω`. -/
 structure Evals (F : Type*) where
+  /-- The witness columns (`wCols`) at `ζ`. -/
   w : Fin wCols → F
+  /-- The witness columns (`wCols`) at `ζω`. -/
   wOmega : Fin wCols → F
+  /-- The permutation accumulator at `ζ`. -/
   z : F
+  /-- The permutation accumulator at `ζω`. -/
   zOmega : F
+  /-- The evaluated σ columns (`sigmaRows`) at `ζ`. -/
   s : Fin sigmaRows → F
+  /-- The coefficient columns (`coeffCols`) at `ζ`. -/
   coeffs : Fin coeffCols → F
+  /-- The generic selector at `ζ`. -/
   genericSelector : F
+  /-- The poseidon selector at `ζ`. -/
   poseidonSelector : F
+  /-- The completeAdd selector at `ζ`. -/
   completeAddSelector : F
+  /-- The varBaseMul selector at `ζ`. -/
   mulSelector : F
+  /-- The endoMul selector at `ζ`. -/
   emulSelector : F
+  /-- The endoScalar selector at `ζ`. -/
   endoScalarSelector : F
 
 /-- The evaluations as a gate cell environment: current row `w(ζ)`, next row `w(ζω)`,

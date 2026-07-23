@@ -34,6 +34,7 @@ open FixtureKit
 open Lean FixtureKit Bulletproof Bulletproof
 open CompElliptic.CurveForms.ShortWeierstrass
 
+/-- Parse a JSON point of `C` — `parseSWPoint` at the canonical base-field decoder. -/
 def parsePt (C : Ipa.CommitmentCurve) : Json → Except String C.Point :=
   parseSWPoint (parseZMod (n := C.base)) C.E
 
@@ -55,6 +56,8 @@ def parseSRSAt (C : Ipa.CommitmentCurve) (k : ℕ) (j : Json) :
 def parseSRS (C : Ipa.CommitmentCurve) (j : Json) : Except String (SRS C.Point) := do
   parseSRSAt C (← (← j.getObjVal? "k").getNat?) j
 
+/-- Parse the fixture's opening-proof fields (`lr`, `delta`, `z1`, `z2`, `sg`) into a
+wire proof. -/
 def parseProof (C : Ipa.CommitmentCurve) (j : Json) :
     Except String (Ipa.Wire.Proof C) := do
   let parseS : Json → Except String C.ScalarField := parseZMod
@@ -68,15 +71,25 @@ def parseProof (C : Ipa.CommitmentCurve) (j : Json) :
 /-- One parsed combine-then-open fixture: the chunked wire view (chunk points and chunk
 evaluations per polynomial), the production-combined view, and the opening proof. -/
 structure Raw (C : Ipa.CommitmentCurve) where
+  /-- The chunk points per polynomial — the chunked wire view of the commitments. -/
   chunkComms : Array (Array C.Point)
+  /-- The production-combined commitment per polynomial (`chunk_commitment(x^(2^k))`). -/
   combinedComms : Array C.Point
+  /-- The evaluation points. -/
   xs : Array C.ScalarField
+  /-- The per-chunk claimed evaluations (`chunk_evals`) — the chunked counterpart of `evals`. -/
   chunkEvals : Array (Array (Array C.ScalarField))
+  /-- The production-combined claimed evaluation matrix — the combined view's `evals`. -/
   evals : Array (Array C.ScalarField)
+  /-- The polynomial-combination scalar `ξ`. -/
   polyscale : C.ScalarField
+  /-- The evaluation-point-combination scalar `r`. -/
   evalscale : C.ScalarField
+  /-- The recorded opening proof (of the combined polynomials). -/
   proof : Ipa.Wire.Proof C
 
+/-- Parse one combine-then-open fixture, guarding the recorded curve name against
+`curveName`. -/
 def parseRaw (C : Ipa.CommitmentCurve) (curveName : String) (j : Json) :
     Except String (Raw C) := do
   let parseS : Json → Except String C.ScalarField := parseZMod
@@ -118,15 +131,27 @@ def Raw.toInput {C : Ipa.CommitmentCurve} (raw : Raw C) : Ipa.Wire.Input C :=
 combination targets (`combine_commitments` at `rand_base = 1`, `combined_inner_product`),
 and the opening proof. -/
 structure RawBatch (C : Ipa.CommitmentCurve) where
+  /-- The chunk points per polynomial — the multi-chunk `PolyComm`s entering the batch
+  as-is, each chunk one segment. -/
   chunkComms : Array (Array C.Point)
+  /-- The evaluation points. -/
   xs : Array C.ScalarField
+  /-- The per-chunk claimed evaluations, `[poly][point][chunk]`. -/
   chunkEvals : Array (Array (Array C.ScalarField))
+  /-- The polynomial-combination scalar `ξ` (one consecutive power per segment). -/
   polyscale : C.ScalarField
+  /-- The evaluation-point-combination scalar `r`. -/
   evalscale : C.ScalarField
+  /-- The production `combined_inner_product` — the flat scalar-side combination target. -/
   cip : C.ScalarField
+  /-- The production `combine_commitments` output at `rand_base = 1` — the flat group-side
+  combination target. -/
   batchCombined : C.Point
+  /-- The recorded opening proof of the chunked batch. -/
   proof : Ipa.Wire.Proof C
 
+/-- Parse one chunked-batch fixture, guarding the recorded curve name against
+`curveName`. -/
 def parseRawBatch (C : Ipa.CommitmentCurve) (curveName : String) (j : Json) :
     Except String (RawBatch C) := do
   let parseS : Json → Except String C.ScalarField := parseZMod

@@ -3,10 +3,10 @@
 -- every package's roots.txt.
 
 -- The GLV constants and derived primitive-cube-root facts.
-Pasta.pallas_endo
-Pasta.vesta_endo
-Pasta.pallas_lam
-Pasta.vesta_lam
+Pasta.pallasEndo
+Pasta.vestaEndo
+Pasta.pallasLam
+Pasta.vestaLam
 
 -- The package declares no axioms; the curve trust is native_decide certificates alone.
 --

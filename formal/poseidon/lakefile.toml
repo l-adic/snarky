@@ -3,13 +3,22 @@ name = "poseidon"
 # package workspace — the editor opens files with the package as the root).
 packagesDir = "../.lake/packages"
 defaultTargets = ["Poseidon", "FixtureKit"]
+# `lake lint` (standalone): Batteries' env-linter suite over this package's roots.
+lintDriver = "batteries/runLinter"
+lintDriverArgs = ["Poseidon", "FixtureKit"]
+
+# In-editor style feedback in Mathlib-importing modules (the ≤100-column contract);
+# `weak.` so builds survive a linter rename. scripts/check-style.sh stays the CI gate —
+# it also covers the Mathlib-free and targeted-import modules these linters can't see.
+[leanOptions]
+weak.linter.style.longLine = true
 
 # CompElliptic: the Pasta fields (`ZMod p` with primality certificates) and curves.
 [[require]]
 name = "CompElliptic"
 path = "../vendor/CompElliptic"
 
-# The Pasta trust base: the GLV constants (`Pasta.vesta_lam` seeds the Fr-sponge
+# The Pasta trust base: the GLV constants (`Pasta.vestaLam` seeds the Fr-sponge
 # challenge-expansion spec).
 [[require]]
 name = "pasta"

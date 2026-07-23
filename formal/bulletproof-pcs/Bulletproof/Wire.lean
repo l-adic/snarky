@@ -72,12 +72,17 @@ cardinalities with their primality facts, the Fq-sponge spec, the curve, and the
 map-to-curve. Carrying facts rather than field structures makes every field operation
 resolve to the canonical `ZMod` instances on both the executable and abstract sides. -/
 structure CommitmentCurve where
+  /-- The base-field cardinality; the field itself is the canonical `ZMod base`. -/
   base : ℕ
+  /-- The scalar-field cardinality; the field itself is the canonical `ZMod scalar`. -/
   scalar : ℕ
   [primeBase : Fact (Nat.Prime base)]
   [primeScalar : Fact (Nat.Prime scalar)]
+  /-- The Fq-sponge spec driving the verifier's Fiat-Shamir transcript. -/
   sponge : FqSponge.Spec base scalar
+  /-- The curve, in short-Weierstrass form over the base field. -/
   E : SWCurve (ZMod base)
+  /-- The map-to-curve deriving the transcript `U` base from a squeezed field element. -/
   toGroup : ZMod base → SWPoint E
 
 attribute [instance] CommitmentCurve.primeBase CommitmentCurve.primeScalar
@@ -101,10 +106,15 @@ def msm {n : ℕ} (g : Fin n → C.Point) (a : Fin n → C.ScalarField) : C.Poin
 /-- An IPA opening proof at round count `k` — the checked form of the wire
 `OpeningProof` (`ipa.rs`): the round count is the SRS's `σ.k`, pinned by the parse. -/
 structure Proof (C : CommitmentCurve) (k : ℕ) where
+  /-- The per-round `(L, R)` commitment pairs — a `Vector` at the checked round count `k`. -/
   lr : Vector (C.Point × C.Point) k
+  /-- The Schnorr commitment `δ`. -/
   delta : C.Point
+  /-- The Schnorr response scalar acting on `sg` and the `U` base. -/
   z1 : C.ScalarField
+  /-- The Schnorr response scalar acting on the blinding base `H`. -/
   z2 : C.ScalarField
+  /-- The challenge-folded commitment base, checked against `⟨bPolyCoefficients chal, g⟩`. -/
   sg : C.Point
 
 /-- A batched opening claim at its shape — round count `k`, `m` rows, `p` evaluation
@@ -112,11 +122,17 @@ points: the per-polynomial commitments (one segment each), the evaluation points
 claimed evaluation matrix (`evals[i][j]` = polynomial `i` at point `j`), the
 combination scalars, and the proof. Every read is total. -/
 structure Input (C : CommitmentCurve) (k m p : ℕ) where
+  /-- The per-polynomial commitments, one segment each — the `m` rows of the claim. -/
   commitments : Vector C.Point m
+  /-- The `p` evaluation points. -/
   xs : Vector C.ScalarField p
+  /-- The claimed evaluation matrix: `evals[i][j]` = polynomial `i` at point `j`. -/
   evals : Vector (Vector C.ScalarField p) m
+  /-- The polynomial-combination scalar `ξ`. -/
   polyscale : C.ScalarField
+  /-- The evaluation-point-combination scalar `r`. -/
   evalscale : C.ScalarField
+  /-- The opening proof, at the checked round count `k`. -/
   proof : Proof C k
 
 variable {k m p : ℕ}
@@ -252,19 +268,32 @@ variable {C : CommitmentCurve}
 /-- The wire opening proof (`OpeningProof`, ipa.rs): `lr` is a `Vec` — its length is
 the SRS's round count, pinned by `check`. -/
 structure Proof (C : CommitmentCurve) where
+  /-- The per-round `(L, R)` pairs — a `Vec`; its length is pinned to the round count
+  by `check`. -/
   lr : Array (C.Point × C.Point)
+  /-- The Schnorr commitment `δ`. -/
   delta : C.Point
+  /-- The Schnorr response scalar acting on `sg` and the `U` base. -/
   z1 : C.ScalarField
+  /-- The Schnorr response scalar acting on the blinding base `H`. -/
   z2 : C.ScalarField
+  /-- The challenge-folded commitment base. -/
   sg : C.Point
 
 /-- The wire batched claim (`BatchEvaluationProof`): every payload a `Vec`. -/
 structure Input (C : CommitmentCurve) where
+  /-- The per-polynomial commitments. -/
   commitments : Array C.Point
+  /-- The evaluation points. -/
   xs : Array C.ScalarField
+  /-- The claimed evaluation matrix (`evals[i][j]` = polynomial `i` at point `j`);
+  squareness against the commitments and points is `check`'s guard. -/
   evals : Array (Array C.ScalarField)
+  /-- The polynomial-combination scalar `ξ`. -/
   polyscale : C.ScalarField
+  /-- The evaluation-point-combination scalar `r`. -/
   evalscale : C.ScalarField
+  /-- The wire opening proof. -/
   proof : Proof C
 
 /-- Parse a wire proof at round count `k` — the verifier's `lr`-length guard as a
@@ -306,12 +335,22 @@ abbrev curve : Ipa.CommitmentCurve where
   E := Vesta.curve
   toGroup := GroupMapVesta.toGroup
 
+/-- The Vesta point type. -/
 abbrev Point := Ipa.CommitmentCurve.Point curve
+
+/-- The checked opening proof at round count `k`, over Vesta. -/
 abbrev Proof (k : ℕ) := Ipa.Proof curve k
+
+/-- The checked batched claim over Vesta. -/
 abbrev Input (k m p : ℕ) := Ipa.Input curve k m p
+
+/-- The wire (serde) opening proof over Vesta. -/
 abbrev WireProof := Ipa.Wire.Proof curve
+
+/-- The wire (serde) batched claim over Vesta. -/
 abbrev WireInput := Ipa.Wire.Input curve
 
+/-- `Ipa.verify` at the Vesta bundle. -/
 def verify (σ : Bulletproof.SRS Point) {m p : ℕ} : Input σ.k m p → Bool :=
   Ipa.verify curve σ
 
@@ -330,12 +369,22 @@ abbrev curve : Ipa.CommitmentCurve where
   E := Pallas.curve
   toGroup := GroupMapPallas.toGroup
 
+/-- The Pallas point type. -/
 abbrev Point := Ipa.CommitmentCurve.Point curve
+
+/-- The checked opening proof at round count `k`, over Pallas. -/
 abbrev Proof (k : ℕ) := Ipa.Proof curve k
+
+/-- The checked batched claim over Pallas. -/
 abbrev Input (k m p : ℕ) := Ipa.Input curve k m p
+
+/-- The wire (serde) opening proof over Pallas. -/
 abbrev WireProof := Ipa.Wire.Proof curve
+
+/-- The wire (serde) batched claim over Pallas. -/
 abbrev WireInput := Ipa.Wire.Input curve
 
+/-- `Ipa.verify` at the Pallas bundle. -/
 def verify (σ : Bulletproof.SRS Point) {m p : ℕ} : Input σ.k m p → Bool :=
   Ipa.verify curve σ
 

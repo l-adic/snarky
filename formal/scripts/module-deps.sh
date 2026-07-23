@@ -4,6 +4,12 @@
 # Mathlib / CompElliptic / core-Lean imports are omitted). Library sources only:
 # each package's scripts/ drivers and .lake/ build dirs are excluded.
 #
+# Why not `lake exe graph` (leanprover-community/import-graph, already available through
+# Mathlib)? That tool is single-package: cross-package edges require --include-deps,
+# which pulls the whole Mathlib closure (30k+ dot lines) and loses the per-package
+# clustering this overview exists for. Use `lake exe graph` for ad-hoc slices instead
+# (--from/--to closures, --mark-sorry); this script stays the workspace overview.
+#
 # Usage:  scripts/module-deps.sh [out.dot]     (default: docs/module-deps.dot)
 # Render: dot -Tsvg docs/module-deps.dot -o docs/module-deps.svg  (or `make lean-dep-graph`)
 set -euo pipefail
@@ -22,10 +28,12 @@ declare -A pkg_color=(
 )
 
 srcs() { # $1 = package dir -- library sources only
-  # Excludes: build/script drivers, the fixture library (`KimchiFixture/`, test-only),
-  # and executable entry points (`Main.lean`, the kimchi-demo) — none are library API.
+  # Excludes: build/script drivers, the fixture library (`KimchiFixture{.lean,/}`,
+  # test-only), and executable entry points (`Main.lean`, the kimchi-demo) — none are
+  # library API.
   find "$1" -name '*.lean' -not -path '*/.lake/*' -not -path '*/scripts/*' \
-    -not -path '*/KimchiFixture/*' -not -name 'Main.lean' | sort
+    -not -path '*/KimchiFixture/*' -not -name 'KimchiFixture.lean' \
+    -not -name 'Main.lean' | sort
 }
 
 mod_of() { # $1 = package dir, $2 = file path -> module name

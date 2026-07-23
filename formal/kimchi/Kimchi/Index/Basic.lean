@@ -67,8 +67,13 @@ seven wire pointers (each permuted cell names the next cell of its copy cycle �
 kimchi's cyclic-successor encoding of the wiring). The coefficients feed
 `ArgumentEnv.coeff` through `rowEnv` when the row is evaluated. -/
 structure GateRow (F : Type*) (n : ℕ) where
+  /-- The row's gate type. -/
   typ : GateType
+  /-- The row's coefficient cells (`coeffCols`), read as `ArgumentEnv.coeff` through
+  `rowEnv`. -/
   coeffs : Fin coeffCols → F
+  /-- The row's wire pointers (`permCols`): each permuted cell names the next cell of its
+  copy cycle. -/
   wires : Fin permCols → Fin permCols × Fin n
 
 /-- The wiring as a map on cells, read off a gate table: the stored successor
@@ -83,12 +88,16 @@ construction. On concrete data every law is decidable (the generator and shift
 conditions through the `Wiring.lean` certificates), so parsers decide them rather than
 assume them. -/
 structure _root_.Kimchi.Index (F : Type*) [Field F] (n : ℕ) where
+  /-- The gate table: one `GateRow` per domain row. -/
   gates : Fin n → GateRow F n
+  /-- The number of public-input rows. -/
   publicCount : ℕ
+  /-- The number of zero-knowledge rows. -/
   zkRows : ℕ
+  /-- The domain generator, a primitive `n`-th root of unity (`omega_prim`). -/
   omega : F
   /-- The base-field endomorphism coefficient `β` (a primitive cube root of unity —
-  `pallas_endo`/`vesta_endo` at Pasta): kimchi's `cs.endo`, consumed by the `EndoMul`
+  `pallasEndo`/`vestaEndo` at Pasta): kimchi's `cs.endo`, consumed by the `EndoMul`
   gate. The scalar-field eigenvalue `λ` is challenge-expansion data (the sponge's
   `Spec.lam`), not index data. -/
   endoBase : F
@@ -97,6 +106,7 @@ structure _root_.Kimchi.Index (F : Type*) [Field F] (n : ℕ) where
   scalar-side table (`fp_kimchi` for Vesta proofs, `fq_kimchi` for Pallas proofs).
   Data only, no law — the wire correspondence pins it to the deployed table. -/
   mds : Gate.Poseidon.Mds F
+  /-- The permutation coset shifts, one per permuted column (`shifts_coset`). -/
   shifts : Fin permCols → F
   omega_prim : IsPrimitiveRoot omega n
   /-- Production's zero-knowledge row count is `(16·nc + 5)/7` (constraints.rs:979),

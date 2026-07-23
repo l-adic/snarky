@@ -1,4 +1,4 @@
-.PHONY: help all clean build-napi test-curves test-snarky test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint lean-build lean-check-witnesses lean-style lean-style-fix lean-dep-graph build-ps gen-linearization dep-graph pickles-inventory
+.PHONY: help all clean build-napi test-curves test-snarky test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint lean-build lean-check-witnesses lean-style lean-style-fix lean-dep-graph lean-lint lean-shake lean-deadcode lean-kernel-check lean-prune-stale build-ps gen-linearization dep-graph pickles-inventory
 
 .DEFAULT_GOAL := help
 
@@ -133,6 +133,29 @@ lean-dep-graph: ## Generate the Lean module dependency graph (formal/docs/module
 	bash formal/scripts/module-deps.sh
 	dot -Tsvg formal/docs/module-deps.dot -o formal/docs/module-deps.svg
 	@echo "wrote formal/docs/module-deps.svg"
+
+# One runLinter process per module: a single multi-module run accumulates each module's
+# full import environment and gets OOM-killed. Keep in sync with lintDriverArgs in
+# formal/lakefile.toml.
+lean-lint: ## Run Batteries' env linters over every Lean library root
+	cd formal && PATH="$$HOME/.elan/bin:$$PATH" && \
+	for m in Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture; do \
+	  lake exe runLinter $$m || exit 1; \
+	done
+
+lean-shake: ## Check Lean imports for redundancy (mathlib shake; config formal/scripts/noshake.json)
+	cd formal && PATH="$$HOME/.elan/bin:$$PATH" lake exe shake \
+	  --cfg "$$PWD/scripts/noshake.json" \
+	  Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture
+
+lean-deadcode: ## Report authored Lean declarations unreachable from the roots.txt manifests
+	PATH="$$HOME/.elan/bin:$$PATH" bash formal/scripts/deadcode.sh
+
+lean-kernel-check: ## Kernel-replay every Lean module through lean4checker
+	PATH="$$HOME/.elan/bin:$$PATH" bash formal/scripts/kernel-replay.sh
+
+lean-prune-stale: ## Prune build artifacts of deleted/renamed Lean modules
+	bash formal/scripts/prune-stale-oleans.sh
 
 lean-style: ## Check Lean style (<=100 cols, no trailing ws/tabs, final newline)
 	bash formal/scripts/check-style.sh

@@ -36,16 +36,27 @@ namespace Kimchi.Gate.AddComplete
 
 /-- The CompleteAdd witness columns (cols 0–10). -/
 structure Witness (F : Type*) where
+  /-- The x-coordinate of the first addend `P₁` (column 0). -/
   x1 : F
+  /-- The y-coordinate of the first addend `P₁` (column 1). -/
   y1 : F
+  /-- The x-coordinate of the second addend `P₂` (column 2). -/
   x2 : F
+  /-- The y-coordinate of the second addend `P₂` (column 3). -/
   y2 : F
+  /-- The x-coordinate of the output sum `P₃` (column 4). -/
   x3 : F
+  /-- The y-coordinate of the output sum `P₃` (column 5). -/
   y3 : F
+  /-- The infinity flag: `1` when the sum is the point at infinity, else `0` (column 6). -/
   inf : F
+  /-- The equal-x flag `sameX = (x₁ == x₂)`, pinned via the witnessed `x21Inv` (column 7). -/
   sameX : F
+  /-- The addition slope — secant, or tangent in the doubling case (column 8). -/
   s : F
+  /-- The witnessed inverse of `y₂ − y₁` when `inf = 1`, pinning the infinity flag (column 9). -/
   infZ : F
+  /-- The witnessed inverse of `x₂ − x₁` when nonzero, pinning `sameX` (column 10). -/
   x21Inv : F
 deriving Repr
 

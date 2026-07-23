@@ -2,6 +2,7 @@ import Bulletproof.Wire
 import Kimchi.Protocol.Linearization
 import Kimchi.Verifier.Reduction.Correspond
 import Poseidon.FqSponge
+import Kimchi.Index.Basic
 
 /-!
 # The kimchi verifier body over the checked records
@@ -59,7 +60,9 @@ variable (C : Ipa.CommitmentCurve)
 /-- An evaluation pair at the two batch points — production's `PointEvaluations`
 (`proof.rs`): the column at `ζ` and at `ζω`. -/
 structure PointEvaluations (F : Type*) where
+  /-- The evaluation at `ζ`. -/
   zeta : F
+  /-- The evaluation at `ζω`. -/
   zetaOmega : F
 deriving Inhabited
 
@@ -78,11 +81,17 @@ structure ProofEvaluations (E : Type*) where
   s : Vector (PointEvaluations E) sigmaRows
   /-- The 15 coefficient-column evaluation pairs. -/
   coefficients : Vector (PointEvaluations E) coeffCols
+  /-- The generic selector's evaluation pair. -/
   genericSelector : PointEvaluations E
+  /-- The poseidon selector's evaluation pair. -/
   poseidonSelector : PointEvaluations E
+  /-- The completeAdd selector's evaluation pair. -/
   completeAddSelector : PointEvaluations E
+  /-- The varBaseMul selector's evaluation pair. -/
   mulSelector : PointEvaluations E
+  /-- The endoMul selector's evaluation pair. -/
   emulSelector : PointEvaluations E
+  /-- The endoScalar selector's evaluation pair. -/
   endomulScalarSelector : PointEvaluations E
 
 /-! ## The checked records -/
@@ -99,33 +108,55 @@ inductive PubEvalSrc (C : Ipa.CommitmentCurve) (nc : ℕ) where
 `KimchiProof.check nc k` returns, and the only thing the verifier body and the
 soundness layer ever read. -/
 structure KimchiProof (C : Ipa.CommitmentCurve) (nc k : ℕ) where
+  /-- The witness-column commitments (`w_comm`), one `nc`-chunk vector per column. -/
   wComm : Vector (Vector C.Point nc) wCols
+  /-- The permutation-aggregation commitment (`z_comm`). -/
   zComm : Vector C.Point nc
   /-- The quotient chunks: genuinely variable-length, so the bound is carried. -/
   tComm : Array C.Point
   tComm_le : tComm.size ≤ 7 * nc
+  /-- The claimed evaluations, per column family and per chunk. -/
   evals : ProofEvaluations (Vector C.ScalarField nc)
+  /-- The public-evaluation source: carried pairs, or the barycentric fallback at `nc = 1`. -/
   pubEvals : PubEvalSrc C nc
+  /-- `ft(ζω)` (Maller's optimization) — the ft row is single-chunk. -/
   ftEval1 : C.ScalarField
+  /-- The batched IPA opening proof, at the SRS's round count `k`. -/
   opening : Ipa.Proof C k
 
 /-- A chunk-validated verifier key. -/
 structure KimchiVK (C : Ipa.CommitmentCurve) (nc : ℕ) where
+  /-- The domain size exponent: `n = 2 ^ domainLog2`. -/
   domainLog2 : ℕ
+  /-- The domain generator `ω` (`domain.group_gen`). -/
   omega : C.ScalarField
+  /-- The permutation commitments (`sigma_comm`), one `nc`-chunk vector per σ column. -/
   sigmaComm : Vector (Vector C.Point nc) permCols
+  /-- The coefficient-column commitments (`coefficients_comm`). -/
   coefficientsComm : Vector (Vector C.Point nc) coeffCols
+  /-- The generic selector's commitment. -/
   genericComm : Vector C.Point nc
+  /-- The poseidon selector's commitment. -/
   poseidonComm : Vector C.Point nc
+  /-- The completeAdd selector's commitment. -/
   completeAddComm : Vector C.Point nc
+  /-- The varBaseMul selector's commitment. -/
   mulComm : Vector C.Point nc
+  /-- The endoMul selector's commitment. -/
   emulComm : Vector C.Point nc
+  /-- The endoScalar selector's commitment. -/
   endomulScalarComm : Vector C.Point nc
+  /-- The permutation coset shifts (`shift`). -/
   shifts : Vector C.ScalarField permCols
+  /-- The number of zero-knowledge rows (`zk_rows`). -/
   zkRows : ℕ
+  /-- `verifier_index.endo`, the `ft_eval0` endo coefficient. -/
   endo : C.ScalarField
+  /-- The precomputed `VerifierIndex::digest()` — an input here. -/
   digest : C.BaseField
+  /-- The Lagrange-basis commitments, chunk-validated in full. -/
   lagrangeBasis : Array (Vector C.Point nc)
+  /-- The scalar-side Poseidon parameters (`G::sponge_params()`), for the fr-sponge. -/
   frParams : Params C.ScalarField
 
 /-- The domain size of a checked key. -/
@@ -168,9 +199,13 @@ private def fqDigest (s : FqSponge.S C.base) : C.ScalarField :=
 handed to the fr-sponge, and the **warm** post-`ζ` sponge state that the opening
 verification continues (verifier.rs:1184). -/
 structure FqOracles (C : Ipa.CommitmentCurve) where
+  /-- The permutation argument's challenge `β`. -/
   beta : C.ScalarField
+  /-- The permutation argument's challenge `γ`. -/
   gamma : C.ScalarField
+  /-- The constraint-combination challenge `α`. -/
   alpha : C.ScalarField
+  /-- The evaluation-point challenge `ζ`. -/
   zeta : C.ScalarField
   /-- `fq_sponge.clone().digest()` (verifier.rs:283). -/
   digest : C.ScalarField

@@ -1,4 +1,4 @@
-import Kimchi.Domain
+import Mathlib
 
 /-!
 # α-aggregation and constraint separation
