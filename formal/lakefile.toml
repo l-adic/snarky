@@ -33,6 +33,16 @@ lintDriverArgs = [
   "Bulletproof", "BulletproofFixture"
 ]
 
+# CompElliptic pinned at the workspace level (git, daira upstream @ a549e455) so this direct
+# require is authoritative over transitive resolution — the same discipline as mathlib.
+# ironwood (Zcash) transitively requires the same `daira/CompElliptic @ a549e455` via git, so
+# both dedup to a single checkout: one CompElliptic for the workspace, the packages, and
+# ironwood. Bump this rev in lockstep with the packages' requires (all identical).
+[[require]]
+name = "CompElliptic"
+git = "https://github.com/daira/CompElliptic"
+rev = "a549e4555b17bbbe3c8d48aa7d5b493912ccfbe9"
+
 [[require]]
 name = "pasta"
 path = "pasta"
@@ -52,6 +62,17 @@ path = "kimchi"
 [[require]]
 name = "snarky"
 path = "snarky"
+
+# Zcash/ironwood: the generic forking / random-oracle / knowledge-error machinery consumed by
+# `kimchi`'s probabilistic soundness layer (`Kimchi/Verifier/Forking/`). Pinned here at the
+# workspace level — the same discipline as mathlib — so this direct pin is authoritative over
+# ironwood's own transitive resolution; bump deliberately. Ironwood pins the same
+# `daira/CompElliptic @ a549e455` we vendor, so the CompElliptic diamond collapses to our path
+# package. See formal/docs/ironwood-refoundation-plan.md.
+[[require]]
+name = "Zcash"
+git = "https://github.com/zcash/ironwood"
+rev = "83a98f7fb3bcd8f87ddf0a459dcab96a782d91d8"
 
 # Direct mathlib pin (matching the toolchain) so this workspace's resolution wins over
 # anything the packages pull in transitively.

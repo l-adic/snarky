@@ -14,11 +14,12 @@ lintDriverArgs = ["Pasta"]
 weak.linter.style.longLine = true
 
 # CompElliptic: concrete short-Weierstrass `SWCurve` / `SWPoint` with a proven group law and
-# the Pasta curve instances. Shared with the parent kimchi package (same submodule
-# checkout); when built from the parent, its path-require resolves to the same directory.
+# the Pasta curve instances. daira upstream, pinned by `rev` — identical to every other
+# package's require (and ironwood's), so lake dedups them to one checkout.
 [[require]]
 name = "CompElliptic"
-path = "../vendor/CompElliptic"
+git = "https://github.com/daira/CompElliptic"
+rev = "a549e4555b17bbbe3c8d48aa7d5b493912ccfbe9"
 
 # Mathlib: prime fields (`ZMod p`) and the elliptic-curve group law
 # (`WeierstrassCurve.Affine`). Pinned to the tag matching the toolchain.

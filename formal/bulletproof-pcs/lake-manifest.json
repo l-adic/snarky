@@ -1,18 +1,7 @@
-{
- "version": "1.2.0",
+{"version": "1.2.0",
  "packagesDir": "../.lake/packages",
- "packages": [
-  {
-   "type": "path",
-   "scope": "",
-   "name": "poseidon",
-   "manifestFile": "lake-manifest.json",
-   "inherited": false,
-   "dir": "../poseidon",
-   "configFile": "lakefile.toml"
-  },
-  {
-   "url": "https://github.com/leanprover-community/mathlib4.git",
+ "packages":
+ [{"url": "https://github.com/leanprover-community/mathlib4.git",
    "type": "git",
    "subDir": null,
    "scope": "",
@@ -21,28 +10,32 @@
    "manifestFile": "lake-manifest.json",
    "inputRev": "v4.30.0",
    "inherited": false,
-   "configFile": "lakefile.lean"
-  },
-  {
-   "type": "path",
+   "configFile": "lakefile.lean"},
+  {"type": "path",
+   "scope": "",
+   "name": "poseidon",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../poseidon",
+   "configFile": "lakefile.toml"},
+  {"type": "path",
    "scope": "",
    "name": "pasta",
    "manifestFile": "lake-manifest.json",
    "inherited": false,
    "dir": "../pasta",
-   "configFile": "lakefile.toml"
-  },
-  {
-   "type": "path",
+   "configFile": "lakefile.toml"},
+  {"url": "https://github.com/daira/CompElliptic",
+   "type": "git",
+   "subDir": null,
    "scope": "",
+   "rev": "a549e4555b17bbbe3c8d48aa7d5b493912ccfbe9",
    "name": "CompElliptic",
    "manifestFile": "lake-manifest.json",
+   "inputRev": "a549e4555b17bbbe3c8d48aa7d5b493912ccfbe9",
    "inherited": false,
-   "dir": "../vendor/CompElliptic",
-   "configFile": "lakefile.lean"
-  },
-  {
-   "url": "https://github.com/leanprover-community/plausible",
+   "configFile": "lakefile.lean"},
+  {"url": "https://github.com/leanprover-community/plausible",
    "type": "git",
    "subDir": null,
    "scope": "leanprover-community",
@@ -51,10 +44,8 @@
    "manifestFile": "lake-manifest.json",
    "inputRev": "main",
    "inherited": true,
-   "configFile": "lakefile.toml"
-  },
-  {
-   "url": "https://github.com/leanprover-community/LeanSearchClient",
+   "configFile": "lakefile.toml"},
+  {"url": "https://github.com/leanprover-community/LeanSearchClient",
    "type": "git",
    "subDir": null,
    "scope": "leanprover-community",
@@ -63,10 +54,8 @@
    "manifestFile": "lake-manifest.json",
    "inputRev": "main",
    "inherited": true,
-   "configFile": "lakefile.toml"
-  },
-  {
-   "url": "https://github.com/leanprover-community/import-graph",
+   "configFile": "lakefile.toml"},
+  {"url": "https://github.com/leanprover-community/import-graph",
    "type": "git",
    "subDir": null,
    "scope": "leanprover-community",
@@ -75,10 +64,8 @@
    "manifestFile": "lake-manifest.json",
    "inputRev": "main",
    "inherited": true,
-   "configFile": "lakefile.toml"
-  },
-  {
-   "url": "https://github.com/leanprover-community/ProofWidgets4",
+   "configFile": "lakefile.toml"},
+  {"url": "https://github.com/leanprover-community/ProofWidgets4",
    "type": "git",
    "subDir": null,
    "scope": "leanprover-community",
@@ -87,10 +74,8 @@
    "manifestFile": "lake-manifest.json",
    "inputRev": "v0.0.99",
    "inherited": true,
-   "configFile": "lakefile.lean"
-  },
-  {
-   "url": "https://github.com/leanprover-community/aesop",
+   "configFile": "lakefile.lean"},
+  {"url": "https://github.com/leanprover-community/aesop",
    "type": "git",
    "subDir": null,
    "scope": "leanprover-community",
@@ -99,10 +84,8 @@
    "manifestFile": "lake-manifest.json",
    "inputRev": "v4.30.0",
    "inherited": true,
-   "configFile": "lakefile.toml"
-  },
-  {
-   "url": "https://github.com/leanprover-community/quote4",
+   "configFile": "lakefile.toml"},
+  {"url": "https://github.com/leanprover-community/quote4",
    "type": "git",
    "subDir": null,
    "scope": "leanprover-community",
@@ -111,10 +94,8 @@
    "manifestFile": "lake-manifest.json",
    "inputRev": "v4.30.0",
    "inherited": true,
-   "configFile": "lakefile.toml"
-  },
-  {
-   "url": "https://github.com/leanprover-community/batteries",
+   "configFile": "lakefile.toml"},
+  {"url": "https://github.com/leanprover-community/batteries",
    "type": "git",
    "subDir": null,
    "scope": "leanprover-community",
@@ -123,10 +104,8 @@
    "manifestFile": "lake-manifest.json",
    "inputRev": "main",
    "inherited": true,
-   "configFile": "lakefile.toml"
-  },
-  {
-   "url": "https://github.com/leanprover/lean4-cli",
+   "configFile": "lakefile.toml"},
+  {"url": "https://github.com/leanprover/lean4-cli",
    "type": "git",
    "subDir": null,
    "scope": "leanprover",
@@ -135,22 +114,17 @@
    "manifestFile": "lake-manifest.json",
    "inputRev": "v4.30.0",
    "inherited": true,
-   "configFile": "lakefile.toml"
-  },
-  {
-   "url": "https://github.com/Verified-zkEVM/CompPoly.git",
+   "configFile": "lakefile.toml"},
+  {"url": "https://github.com/Verified-zkEVM/CompPoly.git",
    "type": "git",
    "subDir": null,
    "scope": "",
-   "rev": "18c1613e9186c7afa79a4179eea5f4b80d8e9e00",
+   "rev": "d458e5cebd364b15660ff8de20ec964dcd52c120",
    "name": "CompPoly",
    "manifestFile": "lake-manifest.json",
-   "inputRev": "18c1613e9186c7afa79a4179eea5f4b80d8e9e00",
+   "inputRev": "d458e5cebd364b15660ff8de20ec964dcd52c120",
    "inherited": true,
-   "configFile": "lakefile.lean"
-  }
- ],
- "name": "\u00abbulletproof-pcs\u00bb",
+   "configFile": "lakefile.lean"}],
+ "name": "«bulletproof-pcs»",
  "lakeDir": ".lake",
- "fixedToolchain": false
-}
+ "fixedToolchain": false}

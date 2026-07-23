@@ -26,7 +26,8 @@ core functions compiled by well-founded recursion in executable paths (e.g. `Vec
 
 Build: `make lean-build` (from repo root) or `lake build` (from `formal/`). The toolchain
 is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakefile.toml`
-(Mathlib + `CompElliptic` at `vendor/CompElliptic`, which transitively pulls `CompPoly`).
+(Mathlib + `CompElliptic`, a git require pinned to daira upstream, which transitively pulls
+`CompPoly`; `zcash/ironwood` for the forking machinery, sharing the same CompElliptic pin).
 `import Mathlib` is used wholesale in the proof-heavy trees.
 
 **Package layout.** `formal/` is a lake workspace of standalone path-required packages:
