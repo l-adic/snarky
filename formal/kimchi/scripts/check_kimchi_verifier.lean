@@ -49,13 +49,13 @@ def verifyWire (C : Ipa.CommitmentCurve) (σ : Bulletproof.SRS C.Point)
 
 /-- One chunked-verifier fixture run: decode (both formats), verify, and check the
 corruption and parse-rejection matrices. Throws on any unexpected verdict. -/
-def runChunked (C : Ipa.CommitmentCurve) (frParams : Poseidon.Params C.ScalarField)
+def runChunked (C : Ipa.CommitmentCurve)
     (path : String) (expectPublic : Bool) : IO Unit := do
   let raw ← IO.FS.readFile path
   let r : Except String
       (_ × Wire.KimchiVK C × Wire.KimchiProof C × Array C.ScalarField) := do
     let j ← Json.parse raw
-    let vk ← Kimchi.Fixture.parseVK C frParams j
+    let vk ← Kimchi.Fixture.parseVK C j
     let mps ← match (← (← j.getObjVal? "max_poly_size").getStr?).toNat? with
       | some v => pure v
       | none => throw "field max_poly_size is not a numeral"
@@ -140,9 +140,9 @@ def main : IO Unit := do
   let dir := (← IO.getEnv "KIMCHI_FIXTURES_DIR").getD "fixtures"
   -- The chunked verifier: the one-chunk fixture (no regression), then nc = 2 on both
   -- curves.
-  runChunked CV Wire.KimchiVesta.frParams s!"{dir}/kimchi_proof_vesta.json" false
-  runChunked CV Wire.KimchiVesta.frParams s!"{dir}/kimchi_proof_vesta_nc2.json" true
-  runChunked CP Wire.KimchiPallas.frParams s!"{dir}/kimchi_proof_pallas_nc2.json" true
+  runChunked CV s!"{dir}/kimchi_proof_vesta.json" false
+  runChunked CV s!"{dir}/kimchi_proof_vesta_nc2.json" true
+  runChunked CP s!"{dir}/kimchi_proof_pallas_nc2.json" true
   IO.println "✓ the executable kimchi verifiers accept the production proofs (nc = 1 \
     and nc = 2, both curves), reject corruptions, and refuse to parse ragged wire data"
 

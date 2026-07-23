@@ -1,6 +1,6 @@
 import Bulletproof.Wire
 import Kimchi.Protocol.Linearization
-import Kimchi.Verifier.Reduction.Correspond
+import Kimchi.Columns
 import Poseidon.FqSponge
 import Kimchi.Index.Basic
 
@@ -154,19 +154,22 @@ structure KimchiVK (C : Ipa.CommitmentCurve) (nc : ℕ) where
   endo : C.ScalarField
   /-- The precomputed `VerifierIndex::digest()` — an input here. -/
   digest : C.BaseField
-  /-- The Lagrange-basis commitments, chunk-validated in full. -/
+  /-- The Lagrange-basis commitments, chunk-validated in full — SRS-derived data
+  (`get_lagrange_basis` computes them from the SRS), a model input like `digest`. -/
   lagrangeBasis : Array (Vector C.Point nc)
-  /-- The scalar-side Poseidon parameters (`G::sponge_params()`), for the fr-sponge. -/
-  frParams : Params C.ScalarField
 
 /-- The domain size of a checked key. -/
 def KimchiVK.n {C : Ipa.CommitmentCurve} {nc : ℕ}
     (cvk : KimchiVK C nc) : ℕ := 2 ^ cvk.domainLog2
 
-/-- The fr-sponge spec of a checked key. -/
-private def KimchiVK.frSpec {C : Ipa.CommitmentCurve} {nc : ℕ}
-    (cvk : KimchiVK C nc) : FqSponge.Spec C.scalar C.scalar :=
-  ⟨cvk.frParams, 0⟩
+/-- The fr-sponge spec of a commitment curve: the curve's scalar-side Poseidon
+parameters (`C.frParams`, production's `G::sponge_params()`) with `lam := 0` —
+deliberately dead: the fr-sponge path never endo-expands through its own spec.
+`frOracles` expands its two squeezed prechallenges at `C.sponge.lam` (the eigenvalue
+lives on the fq-side spec), and `frDigest`'s `challengeFq`/`challengeNat` never read
+`lam`, so the slot is unused and zeroed. -/
+private def frSpec (C : Ipa.CommitmentCurve) : FqSponge.Spec C.scalar C.scalar :=
+  ⟨C.frParams, 0⟩
 
 /-- A Poseidon parameter table's MDS matrix as the gate's `Mds` record — the wire form
 of production's `Constants { mds: G::sponge_params().mds, .. }` (the scalar-side table,
@@ -236,39 +239,6 @@ def publicEvals {F : Type*} [Field F] (n : ℕ)
     (pubDot omega zeta pub * (zetaN - 1) * (n : F)⁻¹,
      pubDot omega zetaOmega pub * (n : F)⁻¹ * (zetaOmegaN - 1))
 
-/-! ## The warm-sponge opening finish -/
-
-/-- The IPA acceptance from a **warm** sponge state: production hands the post-`ζ`
-fq-sponge to the opening verifier (`BatchEvaluationProof { sponge: fq_sponge, .. }`,
-verifier.rs:1184–1193). The standalone `Bulletproof.Ipa.verify` (validated against the
-opening fixtures) hard-codes the fresh `FqSponge.init` start, so this is a copy: the
-verbatim body of `Ipa.transcript` + `Ipa.verify` with `FqSponge.init` replaced by
-`s₀`. That verbatim correspondence is the invariant that keeps the copy in sync with
-`Bulletproof.Ipa`, and the copy, like the rest of this module, is adjudicated against
-production by the fixture drivers. The claim's shape is carried by its type, so there
-are no runtime guards. -/
-def Ipa.verifyFrom {m p : ℕ} (σ : SRS C.Point) (s₀ : FqSponge.S C.base)
-    (inp : Ipa.Input C σ.k m p) : Bool :=
-  let s := absorbFr C.sponge s₀ (Ipa.shiftScalar C (Ipa.cipOf inp))
-  let (t, s) := challengeFq C.sponge s
-  let uBase := C.toGroup t
-  let (chals, s) := Ipa.roundChallenges C s inp.proof.lr
-  let s := absorbG C.sponge s inp.proof.delta
-  let (c, _) := squeezeChallenge C.sponge s
-  let chal : Fin σ.k → C.ScalarField := fun i => chals[i]
-  let b0 := combinedB chal inp.evalscale inp.pointFn
-  let v := Ipa.cipOf inp
-  let P := Ipa.combineCommitments C inp.polyscale inp.commitments.toArray
-  let Q := (inp.proof.lr.toArray.zip chals.toArray).foldl
-    (fun acc (LRu : (C.Point × C.Point) × C.ScalarField) =>
-      acc + (LRu.2⁻¹.val • LRu.1.1 + LRu.2.val • LRu.1.2))
-    (P + v.val • uBase)
-  let schnorr := decide (c.val • Q + inp.proof.delta
-    = inp.proof.z1.val • inp.proof.sg + (inp.proof.z1 * b0).val • uBase
-        + inp.proof.z2.val • σ.h)
-  let sgOk := decide (inp.proof.sg = Ipa.msm C σ.g (bPolyCoefficients chal))
-  schnorr && sgOk
-
 /-! ## The Fiat-Shamir schedules -/
 
 /-- The fq-sponge schedule of `oracles` (verifier.rs:156–283): `absorb_commitment` is
@@ -292,10 +262,10 @@ chunk vector — the two public chunk vectors via `absorb_multiple` (:391–392)
 column the `ζ`-chunk vector and the `ζω`-chunk vector (`absorb_evaluations`,
 plonk_sponge.rs: one `sponge.absorb` per point vector), in the `absorb_evaluations`
 order. -/
-def frOracles {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
+def frOracles {nc k : ℕ} (cp : KimchiProof C nc k)
     (fqDig : C.ScalarField) (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
     C.ScalarField × C.ScalarField :=
-  let sp := cvk.frSpec
+  let sp := frSpec C
   let ab := fun (s : FqSponge.S C.scalar)
       (e : PointEvaluations (Vector C.ScalarField nc)) =>
     absorbFq sp (absorbFq sp s e.zeta.toList) e.zetaOmega.toList
@@ -401,21 +371,92 @@ def zipSeg {nc : ℕ} (comm : Vector C.Point nc)
     Vector (C.Point × C.ScalarField × C.ScalarField) nc :=
   Vector.ofFn fun c => (comm[c], ev.zeta[c], ev.zetaOmega[c])
 
+/-- The literal single-column head block of the batch tail, in `to_batch` order: the
+accumulator `z` and the six selectors — the `litRowCount` rows whose commitments are
+single named record fields. The ONE place this vector literal is written; every read
+of the head region goes through `tailRows_read_lit` below. -/
+def litRowsOf {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k) :
+    Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) litRowCount :=
+  ⟨#[zipSeg C cp.zComm cp.evals.z,
+     zipSeg C cvk.genericComm cp.evals.genericSelector,
+     zipSeg C cvk.poseidonComm cp.evals.poseidonSelector,
+     zipSeg C cvk.completeAddComm cp.evals.completeAddSelector,
+     zipSeg C cvk.mulComm cp.evals.mulSelector,
+     zipSeg C cvk.emulComm cp.evals.emulSelector,
+     zipSeg C cvk.endomulScalarComm cp.evals.endomulScalarSelector], rfl⟩
+
 /-- The 43 tail rows of the batch stream in `to_batch` order (`z`, the six selectors,
 witness `0–14`, coefficients `0–14`, σ `0–5`), each row its per-chunk segments. -/
 def tailRowsOf {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k) :
     Vector (Vector (C.Point × C.ScalarField × C.ScalarField) nc) tailRowCount :=
-  (⟨#[zipSeg C cp.zComm cp.evals.z,
-      zipSeg C cvk.genericComm cp.evals.genericSelector,
-      zipSeg C cvk.poseidonComm cp.evals.poseidonSelector,
-      zipSeg C cvk.completeAddComm cp.evals.completeAddSelector,
-      zipSeg C cvk.mulComm cp.evals.mulSelector,
-      zipSeg C cvk.emulComm cp.evals.emulSelector,
-      zipSeg C cvk.endomulScalarComm cp.evals.endomulScalarSelector], rfl⟩
-    : Vector _ litRowCount)
+  litRowsOf C cvk cp
   ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
   ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
   ++ ((cvk.sigmaComm.take sigmaRows).zip cp.evals.s).map (fun x => zipSeg C x.1 x.2)
+
+/-! ### The tail-region reads
+
+The four append regions of `tailRowsOf`, read off by `Vector.getElem_append` dispatch —
+stated here, next to the definition, so its region layout is written exactly once. The
+reflection layer (`Capstone/Reflection.lean`) consumes these for every stream read. -/
+
+section TailReads
+
+variable {nc k : ℕ} {cvk : KimchiVK C nc} {cp : KimchiProof C nc k}
+
+/-- Tail row `j < 7` is the `j`-th literal row (`z` + the six selectors). -/
+theorem tailRows_read_lit (j : ℕ) (hj : j < litRowCount) :
+    (tailRowsOf C cvk cp)[j]'(by omega) = (litRowsOf C cvk cp)[j]'hj := by
+  show (litRowsOf C cvk cp
+      ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
+      ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
+      ++ ((cvk.sigmaComm.take sigmaRows).zip cp.evals.s).map
+        (fun x => zipSeg C x.1 x.2))[j]'(by omega) = _
+  rw [Vector.getElem_append, dif_pos (by omega), Vector.getElem_append,
+    dif_pos (by omega), Vector.getElem_append, dif_pos hj]
+
+/-- Tail row `7 + q` is witness column `q`'s row. -/
+theorem tailRows_read_w (q : ℕ) (hq : q < wCols) :
+    (tailRowsOf C cvk cp)[7 + q]'(by omega)
+      = zipSeg C (cp.wComm[q]'hq) (cp.evals.w[q]'hq) := by
+  show (litRowsOf C cvk cp
+      ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
+      ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
+      ++ ((cvk.sigmaComm.take sigmaRows).zip cp.evals.s).map
+        (fun x => zipSeg C x.1 x.2))[7 + q]'(by omega) = _
+  rw [Vector.getElem_append, dif_pos (by omega), Vector.getElem_append,
+    dif_pos (by omega), Vector.getElem_append, dif_neg (by omega)]
+  simp only [show 7 + q - 7 = q from by omega, Vector.getElem_map, Vector.getElem_zip]
+
+/-- Tail row `22 + q` is coefficient column `q`'s row. -/
+theorem tailRows_read_c (q : ℕ) (hq : q < coeffCols) :
+    (tailRowsOf C cvk cp)[22 + q]'(by omega)
+      = zipSeg C (cvk.coefficientsComm[q]'hq) (cp.evals.coefficients[q]'hq) := by
+  show (litRowsOf C cvk cp
+      ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
+      ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
+      ++ ((cvk.sigmaComm.take sigmaRows).zip cp.evals.s).map
+        (fun x => zipSeg C x.1 x.2))[22 + q]'(by omega) = _
+  rw [Vector.getElem_append, dif_pos (by omega), Vector.getElem_append,
+    dif_neg (by omega)]
+  simp only [show 22 + q - (7 + 15) = q from by omega, Vector.getElem_map,
+    Vector.getElem_zip]
+
+/-- Tail row `37 + q` is the `q`-th σ row. -/
+theorem tailRows_read_s (q : ℕ) (hq : q < sigmaRows) :
+    (tailRowsOf C cvk cp)[37 + q]'(by omega)
+      = zipSeg C (cvk.sigmaComm[q]'(by omega)) (cp.evals.s[q]'hq) := by
+  show (litRowsOf C cvk cp
+      ++ (cp.wComm.zip cp.evals.w).map (fun x => zipSeg C x.1 x.2)
+      ++ (cvk.coefficientsComm.zip cp.evals.coefficients).map (fun x => zipSeg C x.1 x.2)
+      ++ ((cvk.sigmaComm.take sigmaRows).zip cp.evals.s).map
+        (fun x => zipSeg C x.1 x.2))[37 + q]'(by omega) = _
+  rw [Vector.getElem_append, dif_neg (by omega)]
+  simp only [show 37 + q - (7 + 15 + 15) = q from by omega, Vector.getElem_map,
+    Vector.getElem_zip, Vector.getElem_take]
+  rfl
+
+end TailReads
 
 /-! ## The verifier -/
 
@@ -448,8 +489,8 @@ def kimchiVerify {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     let e := cp.linEvals zetaM zetaOmegaM
     let shifts : Fin permCols → C.ScalarField := fun i => cvk.shifts[i]
     let ftEval0 := Kimchi.Protocol.Linearization.ftEval0 n cvk.zkRows cvk.omega shifts
-      cvk.endo (mdsOfParams cvk.frParams) o.alpha o.beta o.gamma o.zeta pubEval0 e
-    let (v, u) := frOracles C cvk cp o.digest pubEvals
+      cvk.endo (mdsOfParams C.frParams) o.alpha o.beta o.gamma o.zeta pubEval0 e
+    let (v, u) := frOracles C cp o.digest pubEvals
     let zkpmZ := Kimchi.Protocol.Linearization.zkpmEval n cvk.zkRows cvk.omega o.zeta
     let pScalar := Kimchi.Protocol.Linearization.permScalar o.beta o.gamma o.alpha zkpmZ e
     let fComm := cvk.sigmaComm[6].map (fun P => pScalar.val • P)
@@ -470,21 +511,7 @@ def kimchiVerify {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
         proof := cp.opening }
     Ipa.verifyFrom C σ o.warm inp
 
-/-! ## The committed-column view -/
-
-/-- The committed-column view of a checked verifier key: the `IndexComms` over
-per-chunk carriers (`Fin nc → C.Point`) the reduction speaks about — every read
-total. The glue between the checked wire and the abstract capstones. -/
-def KimchiVK.comms {C : Ipa.CommitmentCurve} {nc : ℕ}
-    (cvk : KimchiVK C nc) : Kimchi.Verifier.IndexComms (Fin nc → C.Point) where
-  sigma i c := (cvk.sigmaComm[i])[c]
-  coefficients cc c := (cvk.coefficientsComm[cc])[c]
-  generic c := cvk.genericComm[c]
-  poseidon c := cvk.poseidonComm[c]
-  completeAdd c := cvk.completeAddComm[c]
-  varBaseMul c := cvk.mulComm[c]
-  endoMul c := cvk.emulComm[c]
-  endoScalar c := cvk.endomulScalarComm[c]
+/-! ## The public-input view -/
 
 /-- The public-input array as the `Fin idx.publicCount`-indexed function the circuit
 model consumes (`getD`, total; the capstones pin `pub.size = idx.publicCount`, so the

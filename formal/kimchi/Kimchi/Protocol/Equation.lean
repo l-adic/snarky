@@ -38,7 +38,7 @@ noncomputable def evalsOf (idx : Index F n) (wTab : Fin n → Fin wCols → F)
     wOmega := fun c => (columnPoly idx.omega (fun j => wTab j c)).eval (idx.omega * ζ)
     z := z.eval ζ
     zOmega := z.eval (idx.omega * ζ)
-    s := fun i => (idx.sigmaPoly ⟨(i : ℕ), by omega⟩).eval ζ
+    s := fun i => (idx.sigmaPoly (sigmaPermCol i)).eval ζ
     coeffs := fun c => (columnPoly idx.omega (fun j => idx.coeffTable j c)).eval ζ
     genericSelector := (idx.selectorPoly .generic).eval ζ
     poseidonSelector := (idx.selectorPoly .poseidon).eval ζ
@@ -226,9 +226,8 @@ this is the tiny naturality square that lets the σ-side recurrence recombine. -
 /-- The `permWitnessPoly` interpolant of column `col`, evaluated at `ζ`, is the honest
 record's witness value in that column. -/
 private theorem eval_permWitnessPoly_eq_w [NeZero n] (idx : Index F n)
-    (wTab : Fin n → Fin wCols → F) (z : Polynomial F) (ζ : F) (col : Fin permCols)
-    (h : (col : ℕ) < 15) :
-    (idx.permWitnessPoly wTab col).eval ζ = (evalsOf idx wTab z ζ).w ⟨(col : ℕ), h⟩ := by
+    (wTab : Fin n → Fin wCols → F) (z : Polynomial F) (ζ : F) (col : Fin permCols) :
+    (idx.permWitnessPoly wTab col).eval ζ = (evalsOf idx wTab z ζ).w (permCol col) := by
   rfl
 
 /-! ## The σ-side recurrence recombination
@@ -243,17 +242,17 @@ all at `α²¹·zkpm(ζ)`, equals `α²¹` times the quotient's `0`-th permutati
 the honest record. -/
 private theorem permMember_eval [NeZero n] (idx : Index F n) (wTab : Fin n → Fin wCols → F)
     (z : Polynomial F) (ζ β γ α : F) (σ : Fin permCols → Polynomial F)
-    (hσ : ∀ i : Fin sigmaRows, (σ ⟨(i : ℕ), by omega⟩).eval ζ = (evalsOf idx wTab z ζ).s i)
+    (hσ : ∀ i : Fin sigmaRows, (σ (sigmaPermCol i)).eval ζ = (evalsOf idx wTab z ζ).s i)
     (r₀ r₁ : Fin n) :
     permScalar β γ α (zkpmEval n idx.zkRows idx.omega ζ) (evalsOf idx wTab z ζ)
         * (σ 6).eval ζ
       - ((evalsOf idx wTab z ζ).w 6 + γ) * (evalsOf idx wTab z ζ).zOmega
           * α ^ 21 * zkpmEval n idx.zkRows idx.omega ζ
           * ∏ i : Fin sigmaRows, (β * (evalsOf idx wTab z ζ).s i
-              + (evalsOf idx wTab z ζ).w ⟨(i : ℕ), by omega⟩ + γ)
+              + (evalsOf idx wTab z ζ).w (sigmaCol i) + γ)
       + (α ^ 21 * zkpmEval n idx.zkRows idx.omega ζ * (evalsOf idx wTab z ζ).z)
           * ∏ i : Fin permCols, (γ + β * ζ * idx.shifts i
-              + (evalsOf idx wTab z ζ).w ⟨(i : ℕ), by omega⟩)
+              + (evalsOf idx wTab z ζ).w (permCol i))
       = α ^ 21 * (Permutation.constraints idx.omega idx.zkRows z
           (idx.permWitnessPoly wTab) σ idx.shifts β γ r₀ r₁ 0).eval ζ := by
   rw [zkpmEval_eq]
@@ -264,26 +263,26 @@ private theorem permMember_eval [NeZero n] (idx : Index F n) (wTab : Fin n → F
   have hshift : (∏ x : Fin permCols,
         (eval ζ (idx.permWitnessPoly wTab x) + γ + β * idx.shifts x * ζ))
       = ∏ i : Fin permCols, (γ + β * ζ * idx.shifts i
-          + (evalsOf idx wTab z ζ).w ⟨(i : ℕ), by omega⟩) :=
+          + (evalsOf idx wTab z ζ).w (permCol i)) :=
     Finset.prod_congr rfl fun x _ => by
-      rw [eval_permWitnessPoly_eq_w idx wTab z ζ x (by omega)]; ring
+      rw [eval_permWitnessPoly_eq_w idx wTab z ζ x]; ring
   -- split the σ-side 7-product off its last factor
   have hsigma : (∏ x : Fin permCols,
         (eval ζ (idx.permWitnessPoly wTab x) + γ + β * eval ζ (σ x)))
       = (∏ i : Fin sigmaRows, (β * (evalsOf idx wTab z ζ).s i
-            + (evalsOf idx wTab z ζ).w ⟨(i : ℕ), by omega⟩ + γ))
+            + (evalsOf idx wTab z ζ).w (sigmaCol i) + γ))
           * ((evalsOf idx wTab z ζ).w 6 + γ + β * eval ζ (σ 6)) := by
     rw [Fin.prod_univ_castSucc]
     congr 1
     refine Finset.prod_congr rfl fun i _ => ?_
-    rw [show (i.castSucc : Fin permCols) = (⟨(i : ℕ), by omega⟩ : Fin permCols) from rfl,
-      eval_permWitnessPoly_eq_w idx wTab z ζ ⟨(i : ℕ), by omega⟩ (by omega), hσ i]
+    rw [show (i.castSucc : Fin permCols) = sigmaPermCol i from rfl,
+      eval_permWitnessPoly_eq_w idx wTab z ζ (sigmaPermCol i), hσ i]
     ring
   rw [hshift, hsigma,
     show (∏ i : Fin sigmaRows, (γ + β * (evalsOf idx wTab z ζ).s i
-            + (evalsOf idx wTab z ζ).w ⟨(i : ℕ), by omega⟩))
+            + (evalsOf idx wTab z ζ).w (sigmaCol i)))
         = ∏ i : Fin sigmaRows, (β * (evalsOf idx wTab z ζ).s i
-            + (evalsOf idx wTab z ζ).w ⟨(i : ℕ), by omega⟩ + γ) from
+            + (evalsOf idx wTab z ζ).w (sigmaCol i) + γ) from
       Finset.prod_congr rfl fun i _ => by ring]
   simp only [evalsOf, mul_comm idx.omega ζ]
   ring

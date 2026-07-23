@@ -163,12 +163,14 @@ theorem verify_reflects (σ : SRS C.Point) {m p : ℕ} (inp : Ipa.Input C σ.k m
       (transcript C inp).2.2
       (fun i => (transcript C inp).2.1[i])
       inp.commitmentFn inp.pointFn inp.evalFn := by
-  simp only [Ipa.verify] at hv
+  simp only [Ipa.transcript]
+  simp only [Ipa.verify, Ipa.verifyFrom] at hv
   rw [Bool.and_eq_true] at hv
   obtain ⟨hsch, hsg⟩ := hv
   rw [decide_eq_true_eq] at hsch hsg
   refine ⟨?_, ?_⟩
-  · rw [zipFold_eq_recombine _ inp.proof.lr.toArray (transcript C inp).2.1.toArray σ.k
+  · rw [zipFold_eq_recombine _ inp.proof.lr.toArray
+        (transcriptFrom C Poseidon.FqSponge.init inp).2.1.toArray σ.k
         (by simp) (by simp)] at hsch
     rw [combineCommitments_toArray_eq hsmul] at hsch
     unfold Bulletproof.recombine Ipa.Proof.toOpening

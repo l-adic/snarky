@@ -73,52 +73,6 @@ private def selComm (comms : IndexComms G) : Fin selCount → G :=
 private def selGate : Fin selCount → GateType :=
   ![.generic, .poseidon, .completeAdd, .varBaseMul, .endoMul, .endoScalar]
 
-private theorem evalsExt {e e' : Evals F} (h1 : e.w = e'.w) (h2 : e.wOmega = e'.wOmega)
-    (h3 : e.z = e'.z) (h4 : e.zOmega = e'.zOmega) (h5 : e.s = e'.s)
-    (h6 : e.coeffs = e'.coeffs) (h7 : e.genericSelector = e'.genericSelector)
-    (h8 : e.poseidonSelector = e'.poseidonSelector)
-    (h9 : e.completeAddSelector = e'.completeAddSelector)
-    (h10 : e.mulSelector = e'.mulSelector) (h11 : e.emulSelector = e'.emulSelector)
-    (h12 : e.endoScalarSelector = e'.endoScalarSelector) : e = e' := by
-  cases e
-  cases e'
-  simp only [Evals.mk.injEq]
-  exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12⟩
-
-/-! ## The chunked indexer -/
-
-/-- Chunk `c` of the unblinded commitment of `p`: the commitment of its `c`-th
-width-`2^σ.k` coefficient window (`PolyComm.chunks`). -/
-noncomputable def commitPolyChunk [Field F] [AddCommGroup G] [Module F G]
-    (σ : SRS G) (p : Polynomial F) (c : ℕ) : G :=
-  commitPoly σ (chunkPoly (2 ^ σ.k) p c)
-
-/-- The fixed-unit-blinder chunk commitment: selectors (and the public commitment) are
-masked with the all-ones blinder, per chunk (`mask_custom`, ipa.rs:497–514). -/
-noncomputable def commitPolyMaskedChunk [Field F] [AddCommGroup G] [Module F G]
-    (σ : SRS G) (p : Polynomial F) (c : ℕ) : G :=
-  commitPolyChunk σ p c + σ.h
-
-/-- The honest chunked indexer: the verifier key a circuit determines at chunk count
-`nc` — the per-chunk commitments of its own interpolants (the parent `IndexComms` at
-the carrier `Fin nc → G`), selectors carrying the per-chunk fixed blinder. -/
-noncomputable def indexerOf [Field F] [AddCommGroup G] [Module F G]
-    (σ : SRS G) (nc : ℕ) {n : ℕ} (idx : Index F n) : IndexComms (Fin nc → G) where
-  sigma i c := commitPolyChunk σ (idx.sigmaPoly i) (c : ℕ)
-  coefficients cc c := commitPolyChunk σ (idx.coeffPoly cc) (c : ℕ)
-  generic c := commitPolyMaskedChunk σ (idx.selectorPoly .generic) (c : ℕ)
-  poseidon c := commitPolyMaskedChunk σ (idx.selectorPoly .poseidon) (c : ℕ)
-  completeAdd c := commitPolyMaskedChunk σ (idx.selectorPoly .completeAdd) (c : ℕ)
-  varBaseMul c := commitPolyMaskedChunk σ (idx.selectorPoly .varBaseMul) (c : ℕ)
-  endoMul c := commitPolyMaskedChunk σ (idx.selectorPoly .endoMul) (c : ℕ)
-  endoScalar c := commitPolyMaskedChunk σ (idx.selectorPoly .endoScalar) (c : ℕ)
-
-/-- The chunked key–index correspondence: the committed chunk columns are the circuit's
-own. -/
-def VKCorresponds [Field F] [AddCommGroup G] [Module F G] (σ : SRS G) (nc : ℕ)
-    {n : ℕ} (comms : IndexComms (Fin nc → G)) (idx : Index F n) : Prop :=
-  comms = indexerOf σ nc idx
-
 /-! ## The batch assembly (44 logical rows)
 
 The abstract rows are the deployed `to_batch` order (verifier.rs) with the ft row
@@ -229,7 +183,7 @@ private theorem batchC_cRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pub
 
 private theorem batchC_sRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
     (comms : IndexComms (Fin nc → G)) (i : Fin sigmaRows) :
-    batchC wC zC pubC comms (sRow i) = comms.sigma ⟨(i : ℕ), by omega⟩ := by
+    batchC wC zC pubC comms (sRow i) = comms.sigma (sigmaPermCol i) := by
   have h1 : ¬ 38 + (i : ℕ) < 1 := by omega
   have h2 : ¬ 38 + (i : ℕ) < 2 := by omega
   have h3 : ¬ 38 + (i : ℕ) < 8 := by omega
@@ -484,7 +438,7 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
   -- VK-row pinning: the combined σ / coefficient / selector claims are the Index's own
   have hcombS : ∀ i : Fin sigmaRows,
       (∑ ch : Fin nc, (ζ ^ 2 ^ σ.k) ^ (ch : ℕ) * E (sRow i) ch 0)
-        = (idx.sigmaPoly ⟨(i : ℕ), by omega⟩).eval ζ :=
+        = (idx.sigmaPoly (sigmaPermCol i)).eval ζ :=
     fun i => combined_eval_of_chunks σ hbind (hdσ _)
       (fun c => (hrow (sRow i) c).1.trans
         (congrFun (batchC_sRow wC zC pubC (indexerOf σ nc idx) i) c))
@@ -516,7 +470,7 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
   -- the combined record IS the honest record at the assembled table
   have hrec : claimedEvals (ζ ^ 2 ^ σ.k) ((idx.omega * ζ) ^ 2 ^ σ.k) E
       = evalsOf idx (extractTable idx.omega W) zg ζ := by
-    refine evalsExt ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    refine Evals.ext ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
     · funext col
       rw [show (claimedEvals (ζ ^ 2 ^ σ.k) ((idx.omega * ζ) ^ 2 ^ σ.k) E).w col
           = ∑ ch : Fin nc, (ζ ^ 2 ^ σ.k) ^ (ch : ℕ) * E (wRow col) ch 0 from rfl,
