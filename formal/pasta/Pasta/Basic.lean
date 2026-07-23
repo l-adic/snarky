@@ -3,6 +3,7 @@ import CompElliptic.CurveForms.ShortWeierstrass
 import CompElliptic.Curves.Pasta
 import CompElliptic.Curves.PastaOrder
 import CompElliptic.Fields.Pasta
+import Pasta.CompElliptic
 
 /-!
 # The Pasta group orders
@@ -27,6 +28,49 @@ namespace CompElliptic.CurveForms.ShortWeierstrass
 /-- The `SWCurve` as a Mathlib affine Weierstrass curve `y² = x³ + A·x + B`. -/
 abbrev SWCurve.toAffine {F : Type*} [Field F] (C : SWCurve F) : WeierstrassCurve.Affine F :=
   toW C.A C.B
+
+/-! ### Bridge to Mathlib's `Affine.Point`
+
+`SWPoint E` and Mathlib's affine point group `Point (toW E.A E.B)` are two representations of
+the same group: the computable structure (with `DecidableEq` / `native_decide`-friendly scalar
+mul) and Mathlib's inductive `Point` with its proven `AddCommGroup`. The transport maps
+`toPt` / `ofPt` are already mutually inverse on valid coordinates, so they package into an
+`Equiv`. This lets the `SWPoint`-native order theory (`CompElliptic.CurveOrder`,
+`Curves.PastaOrder`) transfer to `Nat.card (Point …)`, the form the `pallas_card` / `vesta_card`
+orders below are stated in. Upstream CompElliptic does not carry this bridge; it lives here. -/
+
+open WeierstrassCurve.Affine
+
+/-- The coordinates of any Mathlib point of `toW a b` are `Valid` (on the curve, or the `𝒪`
+sentinel). -/
+theorem valid_ofPt {F : Type*} [Field F] {a b : F} [(toW a b).IsElliptic]
+    (Q : Point (toW a b)) : Valid a b (ofPt Q) := by
+  cases Q with
+  | zero => exact Or.inr rfl
+  | some x y h => exact Or.inl (equation_toW.mp h.left)
+
+/-- `toPt` is a right inverse of `ofPt` (`b ≠ 0` so the `𝒪` sentinel round-trips). -/
+theorem toPt_ofPt {F : Type*} [Field F] [DecidableEq F] {a b : F} (hb : b ≠ 0)
+    [(toW a b).IsElliptic] (Q : Point (toW a b)) : toPt a b (ofPt Q) = Q := by
+  cases Q with
+  | zero => exact toPt_zero hb
+  | some x y h => exact toPt_some (equation_toW.mp h.left)
+
+/-- `SWPoint E` is equivalent to Mathlib's affine point group `Point (toW E.A E.B)`, via the
+coordinate transport `toPt` / `ofPt`. -/
+noncomputable def SWPoint.equivPoint {F : Type*} [Field F] [DecidableEq F] (E : SWCurve F) :
+    SWPoint E ≃ Point (toW E.A E.B) :=
+  haveI := instIsElliptic E
+  { toFun := fun P => toPt E.A E.B (P.x, P.y)
+    invFun := fun Q => ⟨(ofPt Q).1, (ofPt Q).2, valid_ofPt Q⟩
+    left_inv := fun P => SWPoint.ext_pair (ofPt_toPt E.B_nonzero P.onCurve)
+    right_inv := fun Q => toPt_ofPt E.B_nonzero Q }
+
+/-- The order counted on `SWPoint E` equals Mathlib's `Nat.card` of the affine point group — the
+bridge that carries the `SWPoint`-native order theory to the Mathlib-`Point` side. -/
+theorem SWPoint.card_eq_point {F : Type*} [Field F] [DecidableEq F] (E : SWCurve F) :
+    Nat.card (SWPoint E) = Nat.card (Point (toW E.A E.B)) :=
+  Nat.card_congr (SWPoint.equivPoint E)
 
 end CompElliptic.CurveForms.ShortWeierstrass
 

@@ -3,5 +3,5 @@
 	url = https://github.com/MinaProtocol/mina.git
 [submodule "formal/vendor/CompElliptic"]
 	path = formal/vendor/CompElliptic
-	url = https://github.com/l-adic/CompElliptic.git
+	url = https://github.com/daira/CompElliptic.git
 	branch = main

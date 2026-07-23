@@ -1,4 +1,5 @@
 import CompElliptic.Fields.Pasta
+import Pasta.CompElliptic
 import Kimchi.Permutation.Wiring
 import FixtureKit.Parse
 import Lean.Data.Json
