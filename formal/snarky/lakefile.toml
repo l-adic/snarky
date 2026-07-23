@@ -3,6 +3,12 @@ name = "snarky"
 # package workspace — the editor opens files with the package as the root).
 packagesDir = "../.lake/packages"
 defaultTargets = ["Snarky"]
+# `lake lint` (standalone): Batteries' env-linter suite over this package's root. The
+# nolints baseline is scripts/nolints.json (kept in sync with ../scripts/nolints.json).
+# No style-linter leanOptions here: this package is Mathlib-free by design, so
+# scripts/check-style.sh is its only style gate.
+lintDriver = "batteries/runLinter"
+lintDriverArgs = ["Snarky"]
 
 # The kimchi formalization: the `Snarky.Kimchi.*` bridge modules interpret the DSL's
 # reified circuits against the verified `Kimchi.Gate.Generic` checker. The core

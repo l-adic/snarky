@@ -1,8 +1,4 @@
 import Mathlib
-import Kimchi.Verifier.Reduction.Binding
-import Kimchi.Protocol.Equation
-import Kimchi.Verifier.Kimchi
-import Bulletproof.Reflection
 import Kimchi.Verifier.Reduction.Soundness
 
 /-!
@@ -71,7 +67,7 @@ never on `ξ` or `r` (anti-vacuity: the capstone quantifies it before both). Ari
 (`Fin m` rows): the AGM capstones use it at the 43-row `batchC`, the FS-reflection layer
 at the reflected run's own 45-row batch. -/
 noncomputable def badXiOf {F G : Type*} [Field F] [DecidableEq F]
-    [AddCommGroup G] [Module F G] (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
+    (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
     (x : Fin evalPts → F) (E : Fin m → Fin evalPts → F) : Finset F :=
   Kimchi.SZ.badComb
       (fun i : Fin m => E i 0 - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x 0)))
@@ -81,7 +77,7 @@ noncomputable def badXiOf {F G : Type*} [Field F] [DecidableEq F]
 /-- The bad point-combination challenges at a fixed `ξ`: the counting-SZ bad set of the
 two ξ-combined discrepancy columns. Depends on `(σ, aw₀, x, E, ξ)` — never on `r`. -/
 noncomputable def badROf {F G : Type*} [Field F] [DecidableEq F]
-    [AddCommGroup G] [Module F G] (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
+    (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
     (x : Fin evalPts → F) (E : Fin m → Fin evalPts → F) (ξ : F) : Finset F :=
   Kimchi.SZ.badComb (fun j : Fin evalPts => ∑ i : Fin m,
     ξ ^ (i : ℕ) * (E i j - innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j))))
@@ -89,7 +85,7 @@ noncomputable def badROf {F G : Type*} [Field F] [DecidableEq F]
 /-- `badXiOf` counts at most `2 · (m − 1)` challenges (at the 43-row batch: `84`): a
 union of two counting-SZ bad sets over `Fin m`. -/
 private theorem card_badXiOf_le {F G : Type*} [Field F] [DecidableEq F]
-    [AddCommGroup G] [Module F G] (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
+    (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
     (x : Fin evalPts → F) (E : Fin m → Fin evalPts → F) :
     (badXiOf σ aw₀ x E).card ≤ 2 * (m - 1) := by
   unfold badXiOf
@@ -103,7 +99,7 @@ private theorem card_badXiOf_le {F G : Type*} [Field F] [DecidableEq F]
 /-- `badROf` counts at most `1 = 2 − 1` challenge: one counting-SZ bad set over
 `Fin evalPts`. -/
 private theorem card_badROf_le {F G : Type*} [Field F] [DecidableEq F]
-    [AddCommGroup G] [Module F G] (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
+    (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
     (x : Fin evalPts → F) (E : Fin m → Fin evalPts → F) (ξ : F) :
     (badROf σ aw₀ x E ξ).card ≤ 1 := by
   unfold badROf

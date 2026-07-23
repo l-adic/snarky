@@ -30,14 +30,23 @@ variable {F : Type*}
 /-- The 3×3 MDS matrix of the round function — per-curve data
 (`G::sponge_params().mds`), one named field per entry. -/
 structure Mds (F : Type*) where
+  /-- The MDS matrix entry at row 0, column 0. -/
   m00 : F
+  /-- The MDS matrix entry at row 0, column 1. -/
   m01 : F
+  /-- The MDS matrix entry at row 0, column 2. -/
   m02 : F
+  /-- The MDS matrix entry at row 1, column 0. -/
   m10 : F
+  /-- The MDS matrix entry at row 1, column 1. -/
   m11 : F
+  /-- The MDS matrix entry at row 1, column 2. -/
   m12 : F
+  /-- The MDS matrix entry at row 2, column 0. -/
   m20 : F
+  /-- The MDS matrix entry at row 2, column 1. -/
   m21 : F
+  /-- The MDS matrix entry at row 2, column 2. -/
   m22 : F
 
 /-- Map `f` over every matrix entry. -/
@@ -71,11 +80,17 @@ def perm [CommRing F] (M : Mds F) (s0 : F × F × F) (rc : Fin 5 → F × F × F
 
 /-- One `Poseidon` row: the six chained 3-element states, `s0` (input) through `s5` (output). -/
 structure Witness (F : Type*) where
+  /-- The 3-element input state, fed to round 0. -/
   s0 : F × F × F
+  /-- The state after round 0. -/
   s1 : F × F × F
+  /-- The state after round 1. -/
   s2 : F × F × F
+  /-- The state after round 2. -/
   s3 : F × F × F
+  /-- The state after round 3. -/
   s4 : F × F × F
+  /-- The output state, after round 4. -/
   s5 : F × F × F
 
 /-- Map `f` componentwise across all six state triples of a witness. -/

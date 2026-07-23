@@ -222,8 +222,8 @@ private theorem generic_holds_of_dvd (idx : Index F n) (pub : Fin idx.publicCoun
   have h0 := hslot 0 (by norm_num [gateAlphaCount])
   have h1 := hslot 1 (by norm_num [gateAlphaCount])
   simp only [gateConstraints, Generic.argument, Generic.cellMap, Gate.Generic.constraints,
-    List.getD_cons_zero, List.getD_cons_succ, if_pos, one_ne_zero, if_neg,
-    Nat.one_ne_zero, ite_false, ite_true] at h0 h1
+    List.getD_cons_zero, List.getD_cons_succ, if_pos, one_ne_zero,
+    ite_false] at h0 h1
   exact ⟨hb1 ▸ h0, hb2 ▸ h1⟩
 
 omit [DecidableEq F] in
@@ -731,7 +731,7 @@ private theorem exists_notMem_of_card_lt {m : ℕ} {f : Fin m → F}
     (hf : Function.Injective f) (B : Finset F) (hB : B.card < m) :
     ∃ i, f i ∉ B := by
   by_contra h
-  push_neg at h
+  push Not at h
   have hsub : (Finset.univ.image f) ⊆ B := by
     intro x hx
     obtain ⟨i, _, rfl⟩ := Finset.mem_image.mp hx

@@ -33,8 +33,11 @@ variable {F c : Type u}
 the final assignment — the mirror of `Built`, with the witness table where the builder
 has the constraints. -/
 structure Proved (F : Type u) (α : Type v) where
+  /-- The computation's result value. -/
   result : α
+  /-- The next-variable counter after the run — in lockstep with `Built.nextVar`. -/
   nextVar : Nat
+  /-- The final assignment: every variable the run allocated, mapped to its witness value. -/
   assignments : Assignments F
 
 /-- Interpret a circuit as a prover run: allocate variables in lockstep with `build`, run

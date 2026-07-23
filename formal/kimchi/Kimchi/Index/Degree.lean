@@ -147,7 +147,7 @@ private theorem singleBit_entry_le {d : ℕ} {b xb yb s1 xi yi xo yo : Polynomia
     ∀ e ∈ Gate.VarBaseMul.singleBitCons b xb yb s1 xi yi xo yo, e.natDegree ≤ 8 * n := by
   intro e he
   simp only [Gate.VarBaseMul.singleBitCons, List.mem_cons, List.not_mem_nil, or_false] at he
-  rcases he with rfl | rfl | rfl | rfl <;> (compute_degree <;> omega)
+  rcases he with rfl | rfl | rfl | rfl <;> (compute_degree; omega)
 
 /-! ## Per-gate entry bound
 
@@ -185,7 +185,7 @@ private theorem addComplete_entry_le [NeZero n] (idx : Index F n)
   have b10 : (AddComplete.polyWitness idx.omega wTab).x21Inv.natDegree ≤ n - 1 := cell_le idx _
   simp only [Index.gateConstraints, Gate.AddComplete.constraints, List.mem_cons,
     List.not_mem_nil, or_false] at hE
-  rcases hE with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> (compute_degree <;> omega)
+  rcases hE with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> (compute_degree; omega)
 
 /-- **VarBaseMul entries ≤ 8n.** The decomposition is linear; each of the five bit-blocks is
 bounded by `singleBit_entry_le` (its deepest entry reaches degree `6(n−1)`). -/
@@ -222,7 +222,7 @@ private theorem varBaseMul_entry_le [NeZero n] (idx : Index F n)
   have hss4 : (VarBaseMul.polyWitness idx.omega wTab).s4.natDegree ≤ n - 1 := shift_cell_le idx _
   rw [Index.gateConstraints, Gate.VarBaseMul.constraints, List.mem_cons] at hE
   rcases hE with rfl | hE
-  · rw [Gate.VarBaseMul.decompCons]; compute_degree <;> omega
+  · rw [Gate.VarBaseMul.decompCons]; compute_degree; omega
   · rcases List.mem_append.mp hE with hE | hE4
     · rcases List.mem_append.mp hE with hE | hE3
       · rcases List.mem_append.mp hE with hE | hE2
@@ -259,7 +259,7 @@ private theorem endoMul_entry_le [NeZero n] (idx : Index F n)
   simp only [Index.gateConstraints, Gate.EndoMul.constraints, List.mem_cons,
     List.not_mem_nil, or_false] at hE
   rcases hE with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-    (compute_degree <;> omega)
+    (compute_degree; omega)
 
 /-- **Generic entries ≤ 8n.** Two entries, each degree `≤ 3(n−1)` (a bilinear `q₃·(w₀·w₁)`
 term) over cell interpolants `< n`. -/
@@ -295,7 +295,7 @@ private theorem generic_entry_le [NeZero n] (idx : Index F n)
     cell_le idx _
   simp only [Index.gateConstraints, Generic.argument, Generic.cellMap, polyEnv,
     Gate.Generic.constraints, List.mem_cons, List.not_mem_nil, or_false] at hE
-  rcases hE with rfl | rfl <;> (compute_degree <;> omega)
+  rcases hE with rfl | rfl <;> (compute_degree; omega)
 
 /-- **EndoScalar entries ≤ 8n.** The three recoding folds are bounded by
 `foldl_linComb_natDegree_le` (with per-crumb bound `n−1` for the `n`-fold, `3(n−1)` for the
@@ -326,13 +326,13 @@ private theorem endoScalar_entry_le [NeZero n] (idx : Index F n)
     have hxd := hcr x hx
     unfold Gate.EndoScalar.cPoly
     simp only [Polynomial.algebraMap_eq]
-    compute_degree <;> omega
+    compute_degree; omega
   have hdp : ∀ x ∈ w.crumbs, (Gate.EndoScalar.dPoly x (F := F)).natDegree ≤ 3 * (n - 1) := by
     intro x hx
     have hxd := hcr x hx
     unfold Gate.EndoScalar.dPoly Gate.EndoScalar.cPoly
     simp only [Polynomial.algebraMap_eq]
-    compute_degree <;> omega
+    compute_degree; omega
   simp only [Index.gateConstraints, Gate.EndoScalar.constraints, ← hwdef, List.mem_append,
     List.mem_cons, List.mem_map, List.not_mem_nil, or_false] at hE
   rcases hE with (rfl | rfl | rfl) | ⟨x, hx, rfl⟩
@@ -356,7 +356,7 @@ private theorem endoScalar_entry_le [NeZero n] (idx : Index F n)
   · -- a `crumbPoly` entry: degree `4(n − 1)`
     have hxd := hcr x hx
     unfold Gate.EndoScalar.crumbPoly
-    compute_degree <;> omega
+    compute_degree; omega
 
 omit [DecidableEq F] in
 /-- **One Poseidon round-output component stays under `8·n`.** An MDS row `r + m₀·a⁷ +
@@ -367,7 +367,7 @@ private theorem poseidon_round_comp_le {d : ℕ} {lhs r a b c m0 m1 m2 : Polynom
     (hlhs : lhs.natDegree ≤ d) (hr : r.natDegree ≤ d) (ha : a.natDegree ≤ d)
     (hb : b.natDegree ≤ d) (hc : c.natDegree ≤ d) (hd : 7 * d ≤ 8 * n) :
     (lhs - (r + m0 * a ^ 7 + m1 * b ^ 7 + m2 * c ^ 7)).natDegree ≤ 8 * n := by
-  compute_degree <;> omega
+  compute_degree; omega
 
 /-- **Poseidon entries ≤ 8n.** The deepest gate: each of the 15 entries is a state cell minus
 a round output, whose degree-7 s-box over cells `< n` reaches `7(n−1) < 8n`. Each entry is

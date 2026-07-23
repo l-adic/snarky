@@ -1,6 +1,4 @@
 import Kimchi.Gate.VarBaseMul
-import Kimchi.Gate.Semantics.AddComplete
-import Pasta
 import Pasta.Shifted
 import Mathlib
 
@@ -1113,6 +1111,7 @@ lemma smul_ne_zero_of_lt (c : WeierstrassCurve.Affine F)
   rw [h_contra, hord, smul_zero, smul_zero, add_zero] at h_decomp
   exact hT h_decomp
 
+omit [DecidableEq F] in
 /-- **x-coordinate bridge.** On a short-Weierstrass curve, a point that is neither `T`
     nor `−T` has a different `x`-coordinate. -/
 lemma x_ne_xT_of_ne_base (c : WeierstrassCurve.Affine F)
@@ -1484,6 +1483,8 @@ def accX (g : ℕ → Witness F) : ℕ → F
   | 0 => (g 0).x0
   | k + 1 => (g k).x5
 
+/-- The `y`-companion of `accX`: row 0's input `y0` when `m = 0`, else row `(m-1)`'s
+    output `y5`. -/
 def accY (g : ℕ → Witness F) : ℕ → F
   | 0 => (g 0).y0
   | k + 1 => (g k).y5

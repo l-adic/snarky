@@ -43,9 +43,36 @@ No package is privileged: `formal/` itself is a pure aggregator workspace (its l
 owns no libraries, only requires). Each package builds standalone from its own directory
 and owns its scripts (axiom gate, fixture checks, `roots.txt` API manifest); building or
 running gates from `formal/` puts everything in one shared workspace (one Mathlib) — how
-CI drives it. The only workspace-level scripts are `scripts/check-style.sh` (the
-formatter contract) and `scripts/deadcode.{lean,sh}` (cross-package reachability over
-the union of the packages' manifests).
+CI drives it. The workspace-level scripts are `scripts/check-style.sh` (the formatter
+contract), `scripts/deadcode.{lean,sh}` (cross-package reachability over the union of
+the packages' manifests), `scripts/module-deps.sh` (the dependency-graph artifact —
+`make lean-dep-graph`), `scripts/prune-stale-oleans.sh` (garbage-collect build artifacts
+of deleted/renamed modules — run it after branch switches), and
+`scripts/kernel-replay.sh` (the lean4checker kernel-replay gate).
+
+Three further quality gates are community tools, all CI-enforced:
+
+- **`lake lint`** (from `formal/`, or `make lean-lint`) — Batteries' `@[env_linter]`
+  suite (docBlame, unusedArguments, synTaut, …) over every library root; the module list
+  is `lintDriverArgs` in `lakefile.toml`. The nolints baseline
+  (`scripts/nolints.json`, per-package copies where needed) holds ONLY derive-generated
+  instances and by-design findings — fix real findings, never grow the baseline.
+  Structure fields need docstrings (docBlame): document every field.
+- **`lake exe shake <roots>`** (`make lean-shake`) — no redundant/removable imports;
+  policy exceptions in `scripts/noshake.json` (wholesale `import Mathlib` in proof-heavy
+  trees; the notation-only `Kimchi.Columns`, invisible to shake). Always pass
+  `--cfg` with an ABSOLUTE path (`lake exe` runs the tool from mathlib's directory, so
+  the relative default silently reads mathlib's own config). Treat `--fix` with
+  suspicion: it cascades removals beyond the reported suggestions — review the diff and
+  build before trusting it. Any file that uses the `Kimchi.Columns` notations must
+  import it DIRECTLY (shake cannot see notation use, so it may drop transitive
+  providers).
+- **`scripts/kernel-replay.sh`** (`make lean-kernel-check`) — lean4checker replays every
+  `.olean` through the kernel alone, catching environment tampering that the build and
+  the axiom gates inherently trust.
+
+For ad-hoc import analysis, `lake exe graph` (import-graph, via Mathlib) is available —
+e.g. `--to`/`--from` slices; the committed overview graph stays `make lean-dep-graph`.
 
 **Always run `formal/scripts/check-style.sh` before committing any change under `formal/`** —
 and fix anything it reports. Lean 4 has no autoformatter, so this script is the formatter

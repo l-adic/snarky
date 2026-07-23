@@ -16,8 +16,11 @@ open Snarky
 
 /-- A rank-1 constraint `a * b = prod` over affine expressions. -/
 structure R1CS (F : Type u) where
+  /-- The left factor of the product. -/
   a : CVar F
+  /-- The right factor of the product. -/
   b : CVar F
+  /-- The asserted product: the constraint holds when `a * b = prod` under the assignment. -/
   prod : CVar F
   deriving Repr, DecidableEq
 

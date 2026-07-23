@@ -1,0 +1,14 @@
+{"ignoreImport": ["Kimchi.Columns", "Mathlib"],
+ "ignore":
+ {"Kimchi.Verifier.Reduction.Correspond": ["Kimchi.Index.Aggregate"],
+  "Kimchi.Verifier.Capstone.Standard": ["Bulletproof.Reflection"],
+  "Kimchi.Verifier.Capstone.Reflection": ["Bulletproof.Reflection"],
+  "Kimchi.Permutation.Wiring": ["Kimchi.Permutation.Copy"],
+  "Kimchi.Permutation.Permutation": ["Kimchi.GrandProduct"],
+  "Kimchi.Permutation.Copy": ["Kimchi.SchwartzZippel"],
+  "Kimchi.Gate.VarBaseMul": ["Kimchi.Gate.AddComplete", "Pasta.Basic"],
+  "Kimchi.Gate.Semantics.EndoMul": ["Kimchi.Gate.Semantics.VarBaseMul"],
+  "Kimchi.Gate.Generic": ["Mathlib.Tactic"],
+  "Kimchi.Gate.EndoMul": ["Kimchi.Gate.VarBaseMul"],
+  "Kimchi.Gate.AddComplete": ["Pasta.Basic"],
+  "Kimchi.Columns": ["Init"]}}

@@ -88,11 +88,17 @@ def parseGateKind : String → Except String GateType
 solved witness. Wires are `(column, row)` targets in kimchi's cyclic-successor
 encoding, one per column position. -/
 structure Raw where
+  /-- The circuit's declared public-input size. -/
   publicInputSize : ℕ
+  /-- The gate type of each dumped row. -/
   typs : Array GateType
+  /-- The per-row coefficient cells. -/
   coeffs : Array (Array Fp)
+  /-- The per-row wire targets, `(column, row)` per column position. -/
   wires : Array (Array (ℕ × ℕ))
+  /-- The solved witness rows, one register array per row. -/
   witness : Array (Array Fp)
+  /-- The public-input values. -/
   pub : Array Fp
 
 /-- A `{row, col}` wire object as a `(column, row)` target. -/
@@ -141,7 +147,9 @@ decreasing_by omega
 table — the decoded `WitnessExport`, and exactly the assignment arguments of
 `Satisfies`. -/
 structure Witness (n publicCount : ℕ) where
+  /-- The public-input values. -/
   pub : Fin publicCount → Fp
+  /-- The register table, one row per domain point. -/
   tab : Fin n → Fin wCols → Fp
 
 /-- A dumped circuit ingested into the index model: the index (constructed by decision)
@@ -150,9 +158,13 @@ is computed from the dump, so the existential is carried as a field, in the mann
 the index's own laws). Consumers state their own propositions about it
 (`Satisfies inst.idx inst.wit.pub inst.wit.tab`), the way the fixture scripts do. -/
 structure Instance where
+  /-- The padded two-power domain size. -/
   n : ℕ
+  /-- The domain size is positive (carried, since `n` is computed from the dump). -/
   nz : NeZero n
+  /-- The index constructed from the dump by decision (`Index.build?`). -/
   idx : Index Fp n
+  /-- The dumped witness, shaped to the index's public count. -/
   wit : Witness n idx.publicCount
 
 /-- The gate table at padded domain size `n`: the dump's rows, then constraint-free
@@ -196,7 +208,7 @@ def build (raw : Raw) : Except String Instance := do
   let shifts : Fin permCols → Fp := fun i => (powMod fpGenerator (i : ℕ) PALLAS_BASE_CARD : ℕ)
   let gates ← gateTable raw n
   match Index.build? gates raw.publicInputSize zkRows omega
-      Pasta.pallas_endo (Kimchi.Verifier.mdsOfParams Kimchi.Verifier.Wire.KimchiVesta.frParams)
+      Pasta.pallasEndo (Kimchi.Verifier.mdsOfParams Kimchi.Verifier.Wire.KimchiVesta.frParams)
       shifts with
   | none => throw "Index.build? rejected the padded dump (a synthesized law failed)"
   | some idx =>

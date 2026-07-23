@@ -58,31 +58,57 @@ namespace Kimchi.Gate.VarBaseMul
 
 /-- The `VarBaseMul` witness columns spanning the VBSM + ZERO rows. -/
 structure Witness (F : Type*) where
+  /-- The x-coordinate of the fixed target `T` (VBSM row, col 0). -/
   xT : F
+  /-- The y-coordinate of the fixed target `T` (VBSM row, col 1). -/
   yT : F
+  /-- The x-coordinate of the input accumulator `P₀` (VBSM row, col 2). -/
   x0 : F
+  /-- The y-coordinate of the input accumulator `P₀` (VBSM row, col 3). -/
   y0 : F
+  /-- The x-coordinate of the accumulator `P₁` after bit 0 (VBSM row, col 7). -/
   x1 : F
+  /-- The y-coordinate of the accumulator `P₁` after bit 0 (VBSM row, col 8). -/
   y1 : F
+  /-- The x-coordinate of the accumulator `P₂` after bit 1 (VBSM row, col 9). -/
   x2 : F
+  /-- The y-coordinate of the accumulator `P₂` after bit 1 (VBSM row, col 10). -/
   y2 : F
+  /-- The x-coordinate of the accumulator `P₃` after bit 2 (VBSM row, col 11). -/
   x3 : F
+  /-- The y-coordinate of the accumulator `P₃` after bit 2 (VBSM row, col 12). -/
   y3 : F
+  /-- The x-coordinate of the accumulator `P₄` after bit 3 (VBSM row, col 13). -/
   x4 : F
+  /-- The y-coordinate of the accumulator `P₄` after bit 3 (VBSM row, col 14). -/
   y4 : F
+  /-- The x-coordinate of the output accumulator `P₅` (ZERO row, col 0). -/
   x5 : F
+  /-- The y-coordinate of the output accumulator `P₅` (ZERO row, col 1). -/
   y5 : F
+  /-- The input scalar register (VBSM row, col 4). -/
   n : F
+  /-- The output scalar register `n' = 32·n + 16·b₀ + 8·b₁ + 4·b₂ + 2·b₃ + b₄` (VBSM row, col 5). -/
   nPrime : F
+  /-- Bit 0: selects `+T` (`b₀ = 1`) vs `−T` (`b₀ = 0`) in step 0 (ZERO row, col 2). -/
   b0 : F
+  /-- Bit 1: selects `+T` (`b₁ = 1`) vs `−T` (`b₁ = 0`) in step 1 (ZERO row, col 3). -/
   b1 : F
+  /-- Bit 2: selects `+T` (`b₂ = 1`) vs `−T` (`b₂ = 0`) in step 2 (ZERO row, col 4). -/
   b2 : F
+  /-- Bit 3: selects `+T` (`b₃ = 1`) vs `−T` (`b₃ = 0`) in step 3 (ZERO row, col 5). -/
   b3 : F
+  /-- Bit 4: selects `+T` (`b₄ = 1`) vs `−T` (`b₄ = 0`) in step 4 (ZERO row, col 6). -/
   b4 : F
+  /-- The first-addition slope `s1` of bit block 0 (ZERO row, col 7). -/
   s0 : F
+  /-- The first-addition slope `s1` of bit block 1 (ZERO row, col 8). -/
   s1 : F
+  /-- The first-addition slope `s1` of bit block 2 (ZERO row, col 9). -/
   s2 : F
+  /-- The first-addition slope `s1` of bit block 3 (ZERO row, col 10). -/
   s3 : F
+  /-- The first-addition slope `s1` of bit block 4 (ZERO row, col 11). -/
   s4 : F
 deriving Repr
 

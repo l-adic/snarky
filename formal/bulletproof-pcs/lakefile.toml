@@ -3,6 +3,15 @@ name = "bulletproof-pcs"
 # package workspace — the editor opens files with the package as the root).
 packagesDir = "../.lake/packages"
 defaultTargets = ["Bulletproof"]
+# `lake lint` (standalone): Batteries' env-linter suite over this package's roots.
+lintDriver = "batteries/runLinter"
+lintDriverArgs = ["Bulletproof", "BulletproofFixture"]
+
+# In-editor style feedback in Mathlib-importing modules (the ≤100-column contract);
+# `weak.` so builds survive a linter rename. scripts/check-style.sh stays the CI gate —
+# it also covers the Mathlib-free and targeted-import modules these linters can't see.
+[leanOptions]
+weak.linter.style.longLine = true
 
 # CompElliptic: the Pasta fields and curves the wire verifier is instantiated at.
 [[require]]

@@ -30,32 +30,32 @@ open WeierstrassCurve.Affine
 
 /-- The Pallas base-field endomorphism coefficient `β`: a primitive cube root of unity,
     so `φ(x, y) = (β·x, y)` maps `y² = x³ + 5` to itself. -/
-def pallas_endo : Fp :=
+def pallasEndo : Fp :=
   20444556541222657078399132219657928148671392403212669005631716460534733845831
 
 /-- `β³ = 1` on Pallas. -/
-private theorem pallas_endo_cube : pallas_endo ^ 3 = 1 := by decide
+private theorem pallas_endo_cube : pallasEndo ^ 3 = 1 := by decide
 
 
 /-- The Vesta base-field endomorphism coefficient `β`: a primitive cube root of unity,
     so `φ(x, y) = (β·x, y)` maps `y² = x³ + 5` to itself. It is also the SvdW map-to-curve
     parameter `(√-3 − 1)/2` (`Poseidon.GroupMapVesta`). -/
-def vesta_endo : Fq :=
+def vestaEndo : Fq :=
   2942865608506852014473558576493638302197734138389222805617480874486368177743
 
 /-- `β³ = 1` on Vesta. -/
-private theorem vesta_endo_cube : vesta_endo ^ 3 = 1 := by decide
+private theorem vesta_endo_cube : vestaEndo ^ 3 = 1 := by decide
 
 
 /-- The scalar eigenvalue `λ` of the Pallas endomorphism `φ` — a primitive cube root of
     unity in the scalar field (`endo_scalar`, `Snarky.Curves.PastaCurve`). -/
-def pallas_lam : ℤ :=
+def pallasLam : ℤ :=
   26005156700822196841419187675678338661165322343552424574062261873906994770353
 
 /-- The scalar eigenvalue `λ` of the Vesta endomorphism `φ` — a primitive cube root of
     unity in the scalar field (`endo_scalar`); also the `λ` of the Fiat-Shamir challenge
     expansion (proof-systems `endos::<Vesta>().1`). -/
-def vesta_lam : ℤ :=
+def vestaLam : ℤ :=
   8503465768106391777493614032514048814691664078728891710322960303815233784505
 
 variable {F : Type*} [Field F] [DecidableEq F]
@@ -189,12 +189,12 @@ packages; the axiom gates permit exactly these two declarations by name. -/
 /-- **The Pallas eigenvalue anchor**: `λ • G = φ(G)` at the standard generator
     (`.toNat` puts the `ℤ` eigenvalue in `nsmul` position). -/
 theorem pallas_lam_nsmul_Gpt :
-    pallas_lam.toNat • Pallas.Gpt = endoHom Pallas.curve rfl pallas_endo_cube Pallas.Gpt := by
+    pallasLam.toNat • Pallas.Gpt = endoHom Pallas.curve rfl pallas_endo_cube Pallas.Gpt := by
   native_decide
 
 /-- **The Vesta eigenvalue anchor**: `λ • G = φ(G)` at the standard generator. -/
 theorem vesta_lam_nsmul_Gpt :
-    vesta_lam.toNat • Vesta.Gpt = endoHom Vesta.curve rfl vesta_endo_cube Vesta.Gpt := by
+    vestaLam.toNat • Vesta.Gpt = endoHom Vesta.curve rfl vesta_endo_cube Vesta.Gpt := by
   native_decide
 
 /-! ## The transport homomorphism into Mathlib's point group -/
@@ -210,7 +210,7 @@ private noncomputable def toPtHom (E : SWCurve F) : SWPoint E →+ Point E.toAff
 
 /-- **The Pallas eigenvalue relation on `SWPoint`**: `φ(P) = [λ]·P` for every point. -/
 private theorem pallas_endoHom_eq_lam_smul (P : SWPoint Pallas.curve) :
-    endoHom Pallas.curve rfl pallas_endo_cube P = pallas_lam.toNat • P := by
+    endoHom Pallas.curve rfl pallas_endo_cube P = pallasLam.toNat • P := by
   have hmem : P ∈ AddSubgroup.zmultiples Pallas.Gpt :=
     mem_zmultiples_of_prime_card Pallas.card_eq Pallas.Gpt_ne_zero
   obtain ⟨k, hk⟩ := AddSubgroup.mem_zmultiples_iff.mp hmem
@@ -219,7 +219,7 @@ private theorem pallas_endoHom_eq_lam_smul (P : SWPoint Pallas.curve) :
 
 /-- **The Vesta eigenvalue relation on `SWPoint`**: `φ(P) = [λ]·P` for every point. -/
 private theorem vesta_endoHom_eq_lam_smul (P : SWPoint Vesta.curve) :
-    endoHom Vesta.curve rfl vesta_endo_cube P = vesta_lam.toNat • P := by
+    endoHom Vesta.curve rfl vesta_endo_cube P = vestaLam.toNat • P := by
   have hmem : P ∈ AddSubgroup.zmultiples Vesta.Gpt :=
     mem_zmultiples_of_prime_card Vesta.card_eq Vesta.Gpt_ne_zero
   obtain ⟨k, hk⟩ := AddSubgroup.mem_zmultiples_iff.mp hmem
@@ -232,10 +232,10 @@ private theorem vesta_endoHom_eq_lam_smul (P : SWPoint Vesta.curve) :
     `pallas_eigen`'s conclusion. -/
 theorem pallas_endo_nonsingular {x y : Fp}
     (h : Pallas.curve.toAffine.Nonsingular x y) :
-    Pallas.curve.toAffine.Nonsingular (pallas_endo * x) y := by
+    Pallas.curve.toAffine.Nonsingular (pallasEndo * x) y := by
   have honc : OnCurve Pallas.curve.A Pallas.curve.B (x, y) := equation_toW.mp h.1
   refine nonsingular_toW ?_
-  show y ^ 2 = (pallas_endo * x) ^ 3 + Pallas.curve.A * (pallas_endo * x) + Pallas.curve.B
+  show y ^ 2 = (pallasEndo * x) ^ 3 + Pallas.curve.A * (pallasEndo * x) + Pallas.curve.B
   have heq : y ^ 2 = x ^ 3 + Pallas.curve.A * x + Pallas.curve.B := honc
   rw [show Pallas.curve.A = 0 from rfl] at heq ⊢
   linear_combination heq - x ^ 3 * pallas_endo_cube
@@ -245,33 +245,33 @@ theorem pallas_endo_nonsingular {x y : Fp}
     `Kimchi.Gate.EndoMul.endoMul`'s hypothesis `heig`. -/
 theorem pallas_eigen {x y : Fp}
     (h : Pallas.curve.toAffine.Nonsingular x y) :
-    Point.some _ _ (pallas_endo_nonsingular h) = pallas_lam • Point.some _ _ h := by
+    Point.some _ _ (pallas_endo_nonsingular h) = pallasLam • Point.some _ _ h := by
   have h' := pallas_endo_nonsingular h
   have honc : OnCurve Pallas.curve.A Pallas.curve.B (x, y) := equation_toW.mp h.1
-  have honc' : OnCurve Pallas.curve.A Pallas.curve.B (pallas_endo * x, y) :=
+  have honc' : OnCurve Pallas.curve.A Pallas.curve.B (pallasEndo * x, y) :=
     equation_toW.mp h'.1
   set P : SWPoint Pallas.curve := ⟨x, y, Or.inl honc⟩ with hPdef
   have hmap := congrArg (toPtHom Pallas.curve) (pallas_endoHom_eq_lam_smul P)
   rw [map_nsmul] at hmap
   have hL : toPtHom Pallas.curve (endoHom Pallas.curve rfl pallas_endo_cube P)
-      = Point.some (pallas_endo * x) y h' := by
-    show toPt Pallas.curve.A Pallas.curve.B (pallas_endo * x, y) = _
+      = Point.some (pallasEndo * x) y h' := by
+    show toPt Pallas.curve.A Pallas.curve.B (pallasEndo * x, y) = _
     rw [toPt_some honc']
   have hR : toPtHom Pallas.curve P = Point.some x y h := by
     show toPt Pallas.curve.A Pallas.curve.B (x, y) = _
     rw [toPt_some honc]
   rw [hL, hR] at hmap
-  rw [show pallas_lam = (pallas_lam.toNat : ℤ) from by decide, natCast_zsmul]
+  rw [show pallasLam = (pallasLam.toNat : ℤ) from by decide, natCast_zsmul]
   exact hmap
 
 /-- `φ` maps curve points to curve points — the Vesta twin of
     `pallas_endo_nonsingular`. -/
 theorem vesta_endo_nonsingular {x y : Fq}
     (h : Vesta.curve.toAffine.Nonsingular x y) :
-    Vesta.curve.toAffine.Nonsingular (vesta_endo * x) y := by
+    Vesta.curve.toAffine.Nonsingular (vestaEndo * x) y := by
   have honc : OnCurve Vesta.curve.A Vesta.curve.B (x, y) := equation_toW.mp h.1
   refine nonsingular_toW ?_
-  show y ^ 2 = (vesta_endo * x) ^ 3 + Vesta.curve.A * (vesta_endo * x) + Vesta.curve.B
+  show y ^ 2 = (vestaEndo * x) ^ 3 + Vesta.curve.A * (vestaEndo * x) + Vesta.curve.B
   have heq : y ^ 2 = x ^ 3 + Vesta.curve.A * x + Vesta.curve.B := honc
   rw [show Vesta.curve.A = 0 from rfl] at heq ⊢
   linear_combination heq - x ^ 3 * vesta_endo_cube
@@ -280,23 +280,23 @@ theorem vesta_endo_nonsingular {x y : Fq}
     `pallas_eigen`. -/
 theorem vesta_eigen {x y : Fq}
     (h : Vesta.curve.toAffine.Nonsingular x y) :
-    Point.some _ _ (vesta_endo_nonsingular h) = vesta_lam • Point.some _ _ h := by
+    Point.some _ _ (vesta_endo_nonsingular h) = vestaLam • Point.some _ _ h := by
   have h' := vesta_endo_nonsingular h
   have honc : OnCurve Vesta.curve.A Vesta.curve.B (x, y) := equation_toW.mp h.1
-  have honc' : OnCurve Vesta.curve.A Vesta.curve.B (vesta_endo * x, y) :=
+  have honc' : OnCurve Vesta.curve.A Vesta.curve.B (vestaEndo * x, y) :=
     equation_toW.mp h'.1
   set P : SWPoint Vesta.curve := ⟨x, y, Or.inl honc⟩ with hPdef
   have hmap := congrArg (toPtHom Vesta.curve) (vesta_endoHom_eq_lam_smul P)
   rw [map_nsmul] at hmap
   have hL : toPtHom Vesta.curve (endoHom Vesta.curve rfl vesta_endo_cube P)
-      = Point.some (vesta_endo * x) y h' := by
-    show toPt Vesta.curve.A Vesta.curve.B (vesta_endo * x, y) = _
+      = Point.some (vestaEndo * x) y h' := by
+    show toPt Vesta.curve.A Vesta.curve.B (vestaEndo * x, y) = _
     rw [toPt_some honc']
   have hR : toPtHom Vesta.curve P = Point.some x y h := by
     show toPt Vesta.curve.A Vesta.curve.B (x, y) = _
     rw [toPt_some honc]
   rw [hL, hR] at hmap
-  rw [show vesta_lam = (vesta_lam.toNat : ℤ) from by decide, natCast_zsmul]
+  rw [show vestaLam = (vestaLam.toNat : ℤ) from by decide, natCast_zsmul]
   exact hmap
 
 /-! ## The GLV lattice short-basis bounds -/
@@ -348,9 +348,9 @@ private theorem glv_no_short_of_cert {n lam s t k2 u v : ℤ} (hn : 0 < n)
     `< 2¹²⁴`. Keeps the accumulator off `±T`/`±φT` (`hxne`). -/
 theorem pallas_glv_no_short_relation {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0)
     (ha : |a| ≤ 2 ^ 126) (hb : |b| ≤ 2 ^ 126) :
-    ¬ (Pallas.curve.toAffine.order : ℤ) ∣ (a + b * pallas_lam) := by
+    ¬ (Pallas.curve.toAffine.order : ℤ) ∣ (a + b * pallasLam) := by
   rw [pallas_card]
-  exact glv_no_short_of_cert (n := (PALLAS_SCALAR_CARD : ℤ)) (lam := pallas_lam)
+  exact glv_no_short_of_cert (n := (PALLAS_SCALAR_CARD : ℤ)) (lam := pallasLam)
     (s := -98231058071100081932162823354453065728)
     (t := 98231058071186745657228807397848383489)
     (k2 := 88244855925979294593813989187869077937)
@@ -363,9 +363,9 @@ theorem pallas_glv_no_short_relation {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0)
     shortest-vector reason as Pallas. -/
 theorem vesta_glv_no_short_relation {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0)
     (ha : |a| ≤ 2 ^ 126) (hb : |b| ≤ 2 ^ 126) :
-    ¬ (Vesta.curve.toAffine.order : ℤ) ∣ (a + b * vesta_lam) := by
+    ¬ (Vesta.curve.toAffine.order : ℤ) ∣ (a + b * vestaLam) := by
   rw [vesta_card]
-  exact glv_no_short_of_cert (n := (PALLAS_BASE_CARD : ℤ)) (lam := vesta_lam)
+  exact glv_no_short_of_cert (n := (PALLAS_BASE_CARD : ℤ)) (lam := vestaLam)
     (s := -98231058071186745657228807397848383488)
     (t := 98231058071100081932162823354453065729)
     (k2 := 28855319743320701602732952904011762361)

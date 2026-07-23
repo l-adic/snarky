@@ -29,8 +29,11 @@ def allocRange (start n : Nat) : Vector Variable n :=
 the emitted constraints in emission order (the pure image of PS `runCircuitBuilder`'s
 `Tuple a (CircuitBuilderState c aux)`). -/
 structure Built (c : Type u) (α : Type v) where
+  /-- The computation's result value. -/
   result : α
+  /-- The next-variable counter after the run — the first variable a continuation would get. -/
   nextVar : Nat
+  /-- The constraints the run emitted, in emission order. -/
   constraints : List c
 
 /-- Interpret a circuit as its constraint system: from a next-variable counter, produce

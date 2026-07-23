@@ -65,22 +65,39 @@ variable {F : Type*} [Field F] [DecidableEq F]
     `n → n'`, the four bits, the two window slopes `s1`/`s3`, and the intermediate
     `R` and output `S` accumulator points. -/
 structure Witness (F : Type*) where
+  /-- The x-coordinate of the base point `T`. -/
   xT : F
+  /-- The y-coordinate of the base point `T`. -/
   yT : F
+  /-- The x-coordinate of the input accumulator `P`. -/
   xP : F
+  /-- The y-coordinate of the input accumulator `P`. -/
   yP : F
+  /-- The input scalar register. -/
   n : F
+  /-- The output scalar register `n' = 16·n + 8·b₁ + 4·b₂ + 2·b₃ + b₄`. -/
   nPrime : F
+  /-- The first window's base-choice bit: `Q₁` built on `T` (`b₁ = 0`) or `φ(T)` (`b₁ = 1`). -/
   b1 : F
+  /-- The first window's sign bit: `yq₁ = (2·b₂ − 1)·yT`. -/
   b2 : F
+  /-- The second window's base-choice bit: `Q₂` built on `T` (`b₃ = 0`) or `φ(T)` (`b₃ = 1`). -/
   b3 : F
+  /-- The second window's sign bit: `yq₂ = (2·b₄ − 1)·yT`. -/
   b4 : F
+  /-- The first window's slope (through `P` and `Q₁`). -/
   s1 : F
+  /-- The x-coordinate of the intermediate accumulator `R = (P + Q₁) + P`. -/
   xR : F
+  /-- The y-coordinate of the intermediate accumulator `R = (P + Q₁) + P`. -/
   yR : F
+  /-- The second window's slope (through `R` and `Q₂`). -/
   s3 : F
+  /-- The x-coordinate of the output accumulator `S = (R + Q₂) + R`. -/
   xS : F
+  /-- The y-coordinate of the output accumulator `S = (R + Q₂) + R`. -/
   yS : F
+  /-- The witnessed inverse of `(xP − xR)·(xR − xS)` — the upstream-fix distinct-point check. -/
   inv : F
 
 /-- Map a function across every witness cell. Instantiating at a ring homomorphism moves a

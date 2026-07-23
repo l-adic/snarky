@@ -21,6 +21,7 @@ open Snarky Snarky.Constraint
 
 /-! ## The circuit -/
 
+/-- The example's field: the integers mod 17 — small enough for `decide` throughout. -/
 abbrev F17 := Fin 17
 
 /-- Witness `x = 3` and `y = 5`, multiply, assert the product is `15`. -/

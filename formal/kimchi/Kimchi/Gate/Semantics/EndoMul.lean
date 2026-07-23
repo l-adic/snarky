@@ -1,7 +1,7 @@
 import Kimchi.Gate.EndoMul
-import Kimchi.Gate.Semantics.VarBaseMul
 import Kimchi.Gate.Semantics.EndoScalar
-import Pasta
+import Kimchi.Gate.Semantics.VarBaseMul
+import Pasta.Endo
 
 /-! # EndoMul gate & circuit semantics: one row computes the GLV combination
     `4·P + c₁·T + c₂·φ(T)` (soundness/completeness), and the multi-row chain
@@ -635,6 +635,8 @@ def accX (g : ℕ → Witness F) : ℕ → F
   | 0 => (g 0).xP
   | k + 1 => (g k).xS
 
+/-- The `y`-companion of `accX`: row 0's input `yP` when `k = 0`, else row `(k-1)`'s
+    output `yS`. -/
 def accY (g : ℕ → Witness F) : ℕ → F
   | 0 => (g 0).yP
   | k + 1 => (g k).yS
@@ -1184,7 +1186,7 @@ private lemma abs_offset_lt {x : ℤ} (hx : |x| < 2 ^ 126) :
 /-- **GLV off-targets at Pallas.** A bounded nonzero two-base accumulator avoids `±T`, `±φT`. -/
 theorem pallas_combo_off_targets {a b : ℤ} (ha : a ≠ 0) (hb : b ≠ 0)
     (hba : |a| < 2 ^ 126) (hbb : |b| < 2 ^ 126)
-    {T φT : Pallas.curve.toAffine.Point} (hTne : T ≠ 0) (heig : φT = pallas_lam • T) :
+    {T φT : Pallas.curve.toAffine.Point} (hTne : T ≠ 0) (heig : φT = pallasLam • T) :
     a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
       ∧ a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT := by
   obtain ⟨ha1, ha1'⟩ := abs_offset_lt hba
@@ -1198,7 +1200,7 @@ theorem pallas_combo_off_targets {a b : ℤ} (ha : a ≠ 0) (hb : b ≠ 0)
 /-- **GLV off-targets at Vesta** — the other half of the 2-cycle. -/
 theorem vesta_combo_off_targets {a b : ℤ} (ha : a ≠ 0) (hb : b ≠ 0)
     (hba : |a| < 2 ^ 126) (hbb : |b| < 2 ^ 126)
-    {T φT : Vesta.curve.toAffine.Point} (hTne : T ≠ 0) (heig : φT = vesta_lam • T) :
+    {T φT : Vesta.curve.toAffine.Point} (hTne : T ≠ 0) (heig : φT = vestaLam • T) :
     a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
       ∧ a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT := by
   obtain ⟨ha1, ha1'⟩ := abs_offset_lt hba
@@ -1226,10 +1228,10 @@ computes `[s]·T`. The per-row `hxne` is discharged internally from the GLV boun
     odd-prime-order conditions from `Pasta`. -/
 theorem pallas_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
     (g : ℕ → Witness Fp)
-    (hholds : ∀ i, i < m → Holds pallas_endo (g i))
+    (hholds : ∀ i, i < m → Holds pallasEndo (g i))
     (T φT : Pallas.curve.toAffine.Point)
     (hTns : Pallas.curve.toAffine.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
-    (hφTns : Pallas.curve.toAffine.Nonsingular (pallas_endo * (g 0).xT) (g 0).yT)
+    (hφTns : Pallas.curve.toAffine.Nonsingular (pallasEndo * (g 0).xT) (g 0).yT)
     (hφTeq : φT = Point.some _ _ hφTns)
     (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
     (hthread : ∀ i, i + 1 < m → (g (i + 1)).xP = (g i).xS ∧ (g (i + 1)).yP = (g i).yS)
@@ -1238,7 +1240,7 @@ theorem pallas_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
     ∃ (hfin : Pallas.curve.toAffine.Nonsingular (accX g m) (accY g m)) (s : ℤ),
       Point.some _ _ hfin = s • T
         ∧ (s : Fp)
-            = Kimchi.Gate.EndoScalar.toField (crumbList g m) (pallas_lam : Fp) := by
+            = Kimchi.Gate.EndoScalar.toField (crumbList g m) (pallasLam : Fp) := by
   have ha : Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0
       ∧ Pallas.curve.toAffine.a₃ = 0 := ⟨rfl, rfl, rfl⟩
   haveI : Fact (Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0
@@ -1247,23 +1249,23 @@ theorem pallas_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
   have h3 : (3 : Fp) ≠ 0 := by decide
   have hodd : Pallas.curve.toAffine.order ≠ 2 := by rw [pallas_card]; decide
   have hTne : T ≠ 0 := by rw [hTeq]; exact Point.some_ne_zero _
-  have heig : φT = pallas_lam • T := by rw [hφTeq, hTeq]; exact pallas_eigen hTns
+  have heig : φT = pallasLam • T := by rw [hφTeq, hTeq]; exact pallas_eigen hTns
   have off : ∀ a b : ℤ, a ≠ 0 → b ≠ 0 → |a| < 2 ^ 126 → |b| < 2 ^ 126 →
       a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
         ∧ a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT :=
     fun a b ha' hb hba hbb => pallas_combo_off_targets ha' hb hba hbb hTne heig
-  have hxne := accumulator_chain Pallas.curve.toAffine h2 hodd pallas_endo T φT off m hbits
+  have hxne := accumulator_chain Pallas.curve.toAffine h2 hodd pallasEndo T φT off m hbits
     g hholds hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0
-  exact endoMul Pallas.curve.toAffine ha h2 h3 hodd pallas_endo m g hholds T φT
-    hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0 hxne pallas_lam heig
+  exact endoMul Pallas.curve.toAffine ha h2 h3 hodd pallasEndo m g hholds T φT
+    hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0 hxne pallasLam heig
 
 /-- **EndoMul at Vesta** — the other half of the 2-cycle, identical modulo `vesta_*`. -/
 theorem vesta_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
     (g : ℕ → Witness Fq)
-    (hholds : ∀ i, i < m → Holds vesta_endo (g i))
+    (hholds : ∀ i, i < m → Holds vestaEndo (g i))
     (T φT : Vesta.curve.toAffine.Point)
     (hTns : Vesta.curve.toAffine.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
-    (hφTns : Vesta.curve.toAffine.Nonsingular (vesta_endo * (g 0).xT) (g 0).yT)
+    (hφTns : Vesta.curve.toAffine.Nonsingular (vestaEndo * (g 0).xT) (g 0).yT)
     (hφTeq : φT = Point.some _ _ hφTns)
     (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
     (hthread : ∀ i, i + 1 < m → (g (i + 1)).xP = (g i).xS ∧ (g (i + 1)).yP = (g i).yS)
@@ -1272,7 +1274,7 @@ theorem vesta_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
     ∃ (hfin : Vesta.curve.toAffine.Nonsingular (accX g m) (accY g m)) (s : ℤ),
       Point.some _ _ hfin = s • T
         ∧ (s : Fq)
-            = Kimchi.Gate.EndoScalar.toField (crumbList g m) (vesta_lam : Fq) := by
+            = Kimchi.Gate.EndoScalar.toField (crumbList g m) (vestaLam : Fq) := by
   have ha : Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
       ∧ Vesta.curve.toAffine.a₃ = 0 := ⟨rfl, rfl, rfl⟩
   haveI : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
@@ -1281,14 +1283,14 @@ theorem vesta_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
   have h3 : (3 : Fq) ≠ 0 := by decide
   have hodd : Vesta.curve.toAffine.order ≠ 2 := by rw [vesta_card]; decide
   have hTne : T ≠ 0 := by rw [hTeq]; exact Point.some_ne_zero _
-  have heig : φT = vesta_lam • T := by rw [hφTeq, hTeq]; exact vesta_eigen hTns
+  have heig : φT = vestaLam • T := by rw [hφTeq, hTeq]; exact vesta_eigen hTns
   have off : ∀ a b : ℤ, a ≠ 0 → b ≠ 0 → |a| < 2 ^ 126 → |b| < 2 ^ 126 →
       a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
         ∧ a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT :=
     fun a b ha' hb hba hbb => vesta_combo_off_targets ha' hb hba hbb hTne heig
-  have hxne := accumulator_chain Vesta.curve.toAffine h2 hodd vesta_endo T φT off m hbits
+  have hxne := accumulator_chain Vesta.curve.toAffine h2 hodd vestaEndo T φT off m hbits
     g hholds hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0
-  exact endoMul Vesta.curve.toAffine ha h2 h3 hodd vesta_endo m g hholds T φT
-    hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0 hxne vesta_lam heig
+  exact endoMul Vesta.curve.toAffine ha h2 h3 hodd vestaEndo m g hholds T φT
+    hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0 hxne vestaLam heig
 
 end Kimchi.Gate.EndoMul

@@ -1,4 +1,4 @@
-import Kimchi.Domain
+import Mathlib
 
 /-!
 # The grand-product core: linear-factor multisets and two-variable pinning

@@ -11,11 +11,27 @@
 #
 # Each package builds standalone from its own directory and carries its own scripts
 # (axiom gates, fixture checks, API manifest). Building/running from HERE puts everything
-# in one shared workspace (one Mathlib), which is how CI drives all of it. The only
-# scripts at this level are the genuinely workspace-wide tools: scripts/check-style.sh
-# (the formatter contract) and scripts/deadcode.{lean,sh} (cross-package reachability
-# over the union of the packages' roots.txt manifests).
+# in one shared workspace (one Mathlib), which is how CI drives all of it. The scripts at
+# this level are the genuinely workspace-wide tools: scripts/check-style.sh (the
+# formatter contract), scripts/deadcode.{lean,sh} (cross-package reachability over the
+# union of the packages' roots.txt manifests), scripts/module-deps.sh (the dependency
+# graph artifact), scripts/prune-stale-oleans.sh (build-dir garbage collection), and
+# scripts/kernel-replay.sh (the lean4checker gate); plus the lint/shake policy files
+# scripts/{nolints,noshake}.json.
 name = "formal"
+
+# `lake lint` — Batteries' `@[env_linter]` suite (docBlame, unusedArguments, synTaut, …)
+# over every library root in the workspace. The args list every root module; the nolints
+# baseline (derive-generated instances and by-design findings only) is scripts/nolints.json,
+# which runLinter reads relative to the cwd — run `lake lint` from formal/. Packages that
+# need nolints entries keep their own copy for standalone runs; keep the copies in sync.
+# CAVEAT: one run over all eight modules needs a lot of RAM (each module's import
+# environment accumulates); CI and `make lean-lint` run one runLinter process per module.
+lintDriver = "batteries/runLinter"
+lintDriverArgs = [
+  "Kimchi", "KimchiFixture", "Snarky", "Pasta", "Poseidon", "FixtureKit",
+  "Bulletproof", "BulletproofFixture"
+]
 
 [[require]]
 name = "pasta"

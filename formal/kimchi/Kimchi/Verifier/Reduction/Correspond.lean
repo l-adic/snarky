@@ -1,3 +1,4 @@
+import Kimchi.Columns
 import Kimchi.Index.Aggregate
 import Bulletproof.Protocol
 
@@ -36,13 +37,21 @@ noncomputable def commitPoly (σ : SRS G) (p : Polynomial F) : G :=
 seven permutation columns, the fifteen coefficient columns, and the six gate
 selectors. -/
 structure IndexComms (G : Type*) where
+  /-- One commitment per permutation column (`permCols`). -/
   sigma : Fin permCols → G
+  /-- One commitment per coefficient column (`coeffCols`). -/
   coefficients : Fin coeffCols → G
+  /-- The generic selector's commitment. -/
   generic : G
+  /-- The poseidon selector's commitment. -/
   poseidon : G
+  /-- The completeAdd selector's commitment. -/
   completeAdd : G
+  /-- The varBaseMul selector's commitment. -/
   varBaseMul : G
+  /-- The endoMul selector's commitment. -/
   endoMul : G
+  /-- The endoScalar selector's commitment. -/
   endoScalar : G
 
 /-- Commitment carrying a fixed unit blinder. Selector columns are committed this way

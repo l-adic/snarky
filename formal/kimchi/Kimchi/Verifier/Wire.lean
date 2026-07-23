@@ -80,11 +80,17 @@ structure KimchiVK (C : Ipa.CommitmentCurve) where
   sigmaComm : Vector (PolyComm C) permCols
   /-- The 15 coefficient commitments (`coefficients_comm`). -/
   coefficientsComm : Vector (PolyComm C) coeffCols
+  /-- The generic selector's commitment. -/
   genericComm : PolyComm C
+  /-- The poseidon selector's commitment. -/
   poseidonComm : PolyComm C
+  /-- The completeAdd selector's commitment. -/
   completeAddComm : PolyComm C
+  /-- The varBaseMul selector's commitment. -/
   mulComm : PolyComm C
+  /-- The endoMul selector's commitment. -/
   emulComm : PolyComm C
+  /-- The endoScalar selector's commitment. -/
   endomulScalarComm : PolyComm C
   /-- The 7 permutation shifts (`shift`). -/
   shifts : Vector C.ScalarField permCols
@@ -184,7 +190,10 @@ namespace Kimchi.Verifier.Wire.KimchiVesta
 
 open CompElliptic.Fields.Pasta Poseidon Kimchi.Verifier Bulletproof
 
+/-- The kimchi proof wire record over the Vesta commitment curve. -/
 abbrev Proof := KimchiProof IpaVesta.curve
+
+/-- The kimchi verifier key wire record over the Vesta commitment curve. -/
 abbrev VK := KimchiVK IpaVesta.curve
 
 /-- The Vesta-side fr-sponge Poseidon parameters: the scalar field is `Fp`, so the
@@ -199,7 +208,10 @@ namespace Kimchi.Verifier.Wire.KimchiPallas
 
 open CompElliptic.Fields.Pasta Poseidon Kimchi.Verifier Bulletproof
 
+/-- The kimchi proof wire record over the Pallas commitment curve. -/
 abbrev Proof := KimchiProof IpaPallas.curve
+
+/-- The kimchi verifier key wire record over the Pallas commitment curve. -/
 abbrev VK := KimchiVK IpaPallas.curve
 
 /-- The Pallas-side fr-sponge Poseidon parameters: the scalar field is `Fq`, so the
