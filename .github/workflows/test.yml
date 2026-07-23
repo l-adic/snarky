@@ -280,6 +280,46 @@ jobs:
         test -f packages/pickles-circuit-diffs/visualizer/dist/results/manifest.jsonl
         echo "Visualizer build verified: $(ls packages/pickles-circuit-diffs/visualizer/dist/*.js | wc -l) JS bundle(s), $(ls packages/pickles-circuit-diffs/visualizer/dist/*.css | wc -l) CSS bundle(s), $(ls packages/pickles-circuit-diffs/visualizer/dist/results/*.json | wc -l) circuit result(s)"
 
+  # ---- build the fixture-dump crate (bit-rot guard) -------------------
+  # tools/fixture-dump records the Lean formalization's fixtures from
+  # proof-systems (formal/ is checked against them). It path-depends on the mina
+  # submodule and pins its OWN toolchain (1.92, via tools/fixture-dump/rust-toolchain.toml)
+  # — newer than the snarky root's 1.88 — and is kept OUT of the root cargo
+  # workspace. Nothing else in CI compiles it, so build it here to catch a
+  # proof-systems API drift before a regeneration needs it. BUILD ONLY: running the
+  # dumpers needs the SRS files and is slow (that happens on a proof-systems bump,
+  # by hand, per the crate README).
+  build-fixture-dump:
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    # The crate's rust-toolchain.toml pins 1.92; install exactly that (the repo's
+    # default dtolnay@stable setup is 1.88, too old for the pinned proof-systems).
+    # The `toolchain` input takes the bare "1.92" channel — the same string the
+    # crate's rust-toolchain.toml carries — so rustup resolves the latest 1.92.x.
+    - name: Setup Rust 1.92 (the fixture-dump crate's pinned toolchain)
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: "1.92"
+
+    - name: Cache fixture-dump cargo build
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          tools/fixture-dump/target/
+        key: ${{ runner.os }}-fixture-dump-${{ hashFiles('tools/fixture-dump/Cargo.lock', 'tools/fixture-dump/rust-toolchain.toml') }}
+
+    - name: Build the fixture-dump crate (all binaries)
+      run: cargo build
+      working-directory: tools/fixture-dump
+
   # ---- verified witness check (Lean) ----------------------------------
   # The harness's witness-carrying results are checked against the Lean index
   # model (formal/kimchi/scripts/check_ps_witness.lean): decide `Satisfies` on the dumped

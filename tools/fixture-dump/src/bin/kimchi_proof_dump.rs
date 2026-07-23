@@ -14,6 +14,20 @@
 //! coefficient), and the verifier-index digest (taken as wire input by the Lean
 //! verifier; transcribing `VerifierIndex::digest()`'s absorb schedule is a declared
 //! deferral there).
+//!
+//! Two fixtures from the one proof, differing only in whether the proof-carried public
+//! evaluations `evals.public` are recorded:
+//!
+//! * `kimchi_proof_vesta.json` — without `evals_public`, the deployed wire
+//!   representation: o1js / OCaml `to_repr` drop the public-eval chunks at `nc = 1` and
+//!   the verifier recomputes them barycentrically (verifier.rs:336–379). The
+//!   `PubEvalSrc.barycentric` branch.
+//! * `kimchi_proof_vesta_pub.json` — with `evals_public`, which `ProverProof::create`
+//!   populates even at `nc = 1` (prover.rs:1048) and the verifier's first branch
+//!   consumes at any chunk count (verifier.rs:332). The `PubEvalSrc.carried` branch.
+//!
+//! For a genuine proof the carried values equal the barycentric ones, so both verify
+//! against the same transcript.
 
 use ark_poly::EvaluationDomain;
 use fixture_dump::{mixed_circuit, mixed_index};
@@ -148,8 +162,29 @@ fn main() {
 
     let path = format!("{out_dir}/kimchi_proof_vesta.json");
     std::fs::write(&path, serde_json::to_string_pretty(&fixture).unwrap()).unwrap();
+
+    // The carried-public twin: the SAME proof, but recording the proof-carried public
+    // evaluations the Rust prover always produces (verifier.rs uses them at any nc). The
+    // Lean verifier's `PubEvalSrc.carried` branch at one chunk.
+    let ev_public = ev
+        .public
+        .as_ref()
+        .expect("ProverProof::create should always populate evals.public");
+    let mut fixture_pub = fixture;
+    fixture_pub
+        .as_object_mut()
+        .unwrap()
+        .insert("evals_public".to_string(), pe(ev_public));
+    let pub_path = format!("{out_dir}/kimchi_proof_vesta_pub.json");
+    std::fs::write(
+        &pub_path,
+        serde_json::to_string_pretty(&fixture_pub).unwrap(),
+    )
+    .unwrap();
+
     println!(
-        "kimchi proof: n={} t chunks={}, production verify accepts; wrote {path}",
+        "kimchi proof: n={} t chunks={}, production verify accepts; wrote {path} and \
+         {pub_path} (carried evals.public twin)",
         verifier_index.domain.size(),
         proof.commitments.t_comm.chunks.len()
     );

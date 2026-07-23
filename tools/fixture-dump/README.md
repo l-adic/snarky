@@ -16,9 +16,12 @@ cd tools/fixture-dump
 rustup run 1.92 cargo build --release
 ```
 
-Seven binaries, all deterministic (seeded ChaCha20). `formal/` is a workspace of
+Eight binaries, all deterministic (seeded ChaCha20). `formal/` is a workspace of
 packages, each owning its fixtures — every binary takes its output directory as an
-argument, and the right target depends on which package checks the artifact:
+argument, and the right target depends on which package checks the artifact. Several
+binaries emit MORE THAN ONE fixture from a single invocation (`index_dump` writes three
+indices; `kimchi_proof_dump` writes two proof serializations; `kimchi_proof_dump_nc2`
+writes both Pasta curves):
 
 ```sh
 # Sponge-layer artifacts: constants + vectors  →  the poseidon package
@@ -33,6 +36,7 @@ argument, and the right target depends on which package checks the artifact:
 ./target/release/linearization_dump ../../formal/kimchi/fixtures
 ./target/release/kimchi_proof_dump ../../formal/kimchi/fixtures
 ./target/release/kimchi_proof_dump_nc2 ../../formal/kimchi/fixtures
+./target/release/kimchi_proof_dump_nc8 ../../formal/kimchi/fixtures
 ```
 
 > **Caveat (`sponge_dump`'s Lean output):** the generated-constants half of
@@ -71,11 +75,12 @@ Paths below are relative to `formal/`.
 |---|---|---|
 | `kimchi/fixtures/perm_vesta.json` | a wired circuit's permutation data — shifts, sigma columns, witness, and the `perm_aggreg` accumulator over the domain (production prove+verify asserted) | `kimchi/scripts/check_perm_fixture.sh` |
 
-`index_dump`:
+`index_dump` (three fixtures — the mixed-gate circuit, public/generic/Poseidon/CompleteAdd/EndoMulScalar and wired; the padded gate table, domain/permutation constants, witness, and the production derived columns; kimchi's row checker and prove+verify asserted for each):
 
 | artifact | contents | checked by |
 |---|---|---|
-| `kimchi/fixtures/index_vesta.json` | a mixed-gate circuit (public, generic, Poseidon, CompleteAdd, EndoMulScalar; wired) — the padded gate table, domain/permutation constants, witness, and the production derived columns (kimchi's row checker and prove+verify asserted) | `kimchi/scripts/check_index_fixture.sh`, `kimchi/scripts/check_vk_correspond.sh` |
+| `kimchi/fixtures/index_vesta.json` | the UNCHUNKED regression (Vesta, `override_srs_size = None`, one chunk, `zk_rows = 3`, so the σ interior-mask range is empty) | `kimchi/scripts/check_index_fixture.sh`, `kimchi/scripts/check_vk_correspond.sh` |
+| `kimchi/fixtures/index_vesta_nc2.json` / `…index_pallas_nc2.json` | the CHUNKED twins on both curves (`override_srs_size = n/2`, two chunks, `zk_rows = 5`, so the σ interior-mask range is NONEMPTY — rows 29, 30 at `n = 32`; the index model's σ-zeroing branch is pinned row-by-row here) | `kimchi/scripts/check_index_fixture.sh`; the Pallas one also `kimchi/scripts/check_vk_correspond.sh` |
 
 `linearization_dump`:
 
@@ -83,11 +88,12 @@ Paths below are relative to `formal/`.
 |---|---|---|
 | `kimchi/fixtures/linearization_vesta.json` | the verifier's scalar side of a real proof over the same mixed-gate circuit — challenges, combined evaluations at ζ/ζω, and the production outputs (`ft_eval0`, `perm_scalars`, the token-evaluated constant term, per-gate combined constraints) | `kimchi/scripts/check_linearization.sh` |
 
-`kimchi_proof_dump`:
+`kimchi_proof_dump` (two serializations of ONE proof — a complete kimchi wire proof + verifier key over the mixed-gate circuit, same seed and domain-sized SRS as `linearization_vesta.json`: all commitments, uncombined evaluations, opening proof, public input, and the VK data incl. Lagrange-basis commitments, both endo coefficients, and the verifier-index digest):
 
 | artifact | contents | checked by |
 |---|---|---|
-| `kimchi/fixtures/kimchi_proof_vesta.json` | a complete kimchi wire proof + verifier key over the mixed-gate circuit (same seed and domain-sized SRS as `linearization_vesta.json` — the same proof): all commitments, uncombined evaluations, opening proof, public input, and the VK data incl. Lagrange-basis commitments, both endo coefficients, and the verifier-index digest | `kimchi/scripts/check_kimchi_verifier.sh`, `kimchi/scripts/check_vk_correspond.sh` |
+| `kimchi/fixtures/kimchi_proof_vesta.json` | the deployed wire form — WITHOUT `evals_public` (o1js / OCaml `to_repr` drop the public-eval chunks at `nc = 1`; the verifier recomputes them barycentrically) | `kimchi/scripts/check_kimchi_verifier.sh`, `kimchi/scripts/check_vk_correspond.sh` |
+| `kimchi/fixtures/kimchi_proof_vesta_pub.json` | the SAME proof WITH the proof-carried `evals_public` — `ProverProof::create` always populates them and the verifier consumes carried evals at any `nc` (verifier.rs:332), so the carried-at-`nc = 1` case is production-reachable; exercises the Lean verifier's `PubEvalSrc.carried` branch at one chunk | `kimchi/scripts/check_kimchi_verifier.sh` |
 
 `kimchi_proof_dump_nc2`:
 
@@ -99,6 +105,12 @@ Paths below are relative to `formal/`.
 sidecars next to the fixtures (the verifier's intermediate oracle values, for localizing
 a Lean-side divergence layer by layer). They are debugging aids, gitignored
 (`formal/kimchi/fixtures/.gitignore`), never checked in.
+
+`kimchi_proof_dump_nc8`:
+
+| artifact | contents | checked by |
+|---|---|---|
+| `kimchi/fixtures/kimchi_proof_vesta_nc8.json` | an `nc = 8` proof (nc > 2 parameter coverage): the same mixed circuit and seed re-proved over an `max_poly_size = 8` SRS. There the chunked `zk_rows` (19) grow the domain to `n = 64`, so `nc = n / max_poly_size = 8` with a full `56`-chunk quotient, and `max_poly_size = n/8 ≠ n/2`. Same chunk-array encoding as the `nc = 2` twins. (`nc = 3` is unproducible — a non-power-of-two `max_poly_size` misaligns the segment chunking and the production prover rejects it with `WrongBlinders`; `nc = 4` would need a larger circuit.) No debug sidecar. | `kimchi/scripts/check_kimchi_verifier.sh` |
 
 `ipa_dump` is a thin wrapper over the production prover/verifier: proofs come from
 `SRS::commit`/`SRS::open`, the batched `SRS::verify` is asserted at dump time, and the
