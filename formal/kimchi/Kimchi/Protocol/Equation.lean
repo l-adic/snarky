@@ -480,38 +480,92 @@ open Polynomial Kimchi.Index Kimchi.Protocol.Equation
 
 variable {F : Type*} [Field F] {n : ℕ}
 
+/-! ## The Schwartz–Zippel exclusion sets
+
+`Protocol.sound`'s four exclusion sets as explicit named functions of the extracted witness
+table `extractTable idx.omega W`, so that soundness can be stated over these sets directly:
+`soundBadB`/`soundBadG` are the grand-product collapse β/γ sets of the two permutation
+multisets `soundM1`/`soundM2`, `soundBadA` the aggregate-family bad α's, and `soundBadZ` the
+bad ζ's that fail to pin the claimed quotient. -/
+
+/-- The left grand-product multiset of `sound`: the pairs `(W_c(ω^j), shift_c · ω^j)`
+ranging over every permutation column `c` and masked row `j`. -/
+noncomputable def soundM1 (idx : Index F n) (W : Fin wCols → Polynomial F) :
+    Multiset (F × F) :=
+  Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
+    ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
+      idx.shifts c.1 * idx.omega ^ (c.2 : ℕ))
+
+/-- The right grand-product multiset of `sound`: the same witness values paired against
+the wiring-permuted `shift · node`. -/
+noncomputable def soundM2 (idx : Index F n) (W : Fin wCols → Polynomial F) :
+    Multiset (F × F) :=
+  Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
+    ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
+      idx.shifts (Kimchi.Permutation.restrictCells idx.wiringPerm
+            idx.wiringPerm_regionPreserving c).1
+        * idx.omega ^ ((Kimchi.Permutation.restrictCells idx.wiringPerm
+            idx.wiringPerm_regionPreserving c).2 : ℕ))
+
+/-- The bad β-set of `sound`: the grand-product collapse β's for `soundM1`/`soundM2`. -/
+noncomputable def soundBadB [DecidableEq F] (idx : Index F n)
+    (W : Fin wCols → Polynomial F) : Finset F :=
+  Kimchi.GrandProduct.badBetas (soundM1 idx W) (soundM2 idx W)
+
+/-- The bad γ-set of `sound` at a good β: the grand-product collapse γ's, specialised at β. -/
+noncomputable def soundBadG [DecidableEq F] (idx : Index F n)
+    (W : Fin wCols → Polynomial F) (β : F) : Finset F :=
+  Kimchi.GrandProduct.badGammas (soundM1 idx W) (soundM2 idx W) β
+
+/-- The bad α-set of `sound`: the aggregate-family bad α's at the extracted table. -/
+noncomputable def soundBadA [DecidableEq F] [NeZero n] (idx : Index F n)
+    (pub : Fin idx.publicCount → F) (W : Fin wCols → Polynomial F)
+    (z : Polynomial F) (β γ : F) : Finset F :=
+  Kimchi.badAlphas (idx.fullFamily pub (extractTable idx.omega W) z β γ) idx.omega n
+
+/-- The bad ζ-set of `sound`: the roots pinning the claimed quotient `t` against the
+α-aggregate at the extracted table. -/
+noncomputable def soundBadZ [DecidableEq F] [NeZero n] (idx : Index F n)
+    (pub : Fin idx.publicCount → F) (W : Fin wCols → Polynomial F)
+    (z : Polynomial F) (β γ α : F) (t : Polynomial F) : Finset F :=
+  Kimchi.badZetas
+    (Kimchi.aggregate α (idx.fullFamily pub (extractTable idx.omega W) z β γ)) t n
+
 /-- **Soundness of the polynomial protocol, over the prover's oracles.** The prover's
 oracles are the witness-column polynomials `W` and the permutation-accumulator polynomial
 `z` (degree `< n`), with a quotient oracle `t` presented per challenge; the verifier has
-oracle access, reading them at the challenge point. The four Schwartz–Zippel bad challenge
-sets are small (β/γ bounded by `7·(n − zkRows)`, α by `n·(K − 1)`, ζ by
-`Index.degreeBound n`) and quantified BEFORE the challenges; and for every tuple avoiding
-them at which `Accepts` holds on the oracle evaluations, the assignment read off the
-witness oracles satisfies the circuit — the satisfying table is named EXPLICITLY in the
-conclusion (`extractTable idx.omega W`): the witness IS the oracles' own data, extracted,
-never supplied. Nothing here mentions commitments, an SRS,
-or a group: this is the idealized protocol. The commitment layer instantiates it by
-binding the oracles to commitments and certifying the claimed evaluations are the true
-oracle evaluations (`kimchiProof_sound_of_openings`). Packaged in the same `∃ bad sets,
-card bounds ∧ guarded implication` shape as the compiled roots, so the interface is a
-direct hand-off. -/
+oracle access, reading them at the challenge point. The conclusion pairs the
+Schwartz–Zippel cardinality bounds — the exclusion sets are small (β/γ bounded by
+`7·(n − zkRows)`, α by `n·(K − 1)`, ζ by `Index.degreeBound n`) — with the guarded
+implication: for every challenge tuple lying outside the exclusion sets at which `Accepts`
+holds on the oracle evaluations, the assignment read off the witness oracles satisfies the
+circuit. Both the exclusion sets (`soundBadB`/`soundBadG`/`soundBadA`/`soundBadZ`) and the
+satisfying table (`extractTable idx.omega W`) are explicit named terms of the oracles' own
+data — the witness is extracted, never supplied — so the statement is a claim about the
+protocol's specific challenges and assignment. Nothing here mentions commitments, an SRS, or
+a group: this is the idealized protocol. The commitment layer instantiates it by binding the
+oracles to commitments and certifying the claimed evaluations are the true oracle evaluations
+(`kimchiProof_sound_of_openings`). -/
 theorem sound [DecidableEq F] [NeZero n] (idx : Index F n)
     (pub : Fin idx.publicCount → F) (W : Fin wCols → Polynomial F)
     (z : Polynomial F) (hz : z.natDegree < n) :
-    ∃ (badB : Finset F) (badG : F → Finset F) (badA : F → F → Finset F)
-        (badZ : F → F → F → Polynomial F → Finset F),
-      (badB.card ≤ 7 * (n - idx.zkRows)
-        ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
-        ∧ (∀ β γ,
-            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
-        ∧ (∀ β γ α (t : Polynomial F), t.natDegree < 7 * n →
-            (badZ β γ α t).card ≤ Index.degreeBound n))
-      ∧ ∀ (β γ α : F) (t : Polynomial F) (ζ : F),
-          β ∉ badB → γ ∉ badG β → α ∉ badA β γ → ζ ∉ badZ β γ α t →
-          ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) →
-          Accepts idx pub (evalsOf idx (extractTable idx.omega W) z ζ) t β γ α ζ →
-          Satisfies idx pub (extractTable idx.omega W) := by
+    (soundBadB idx W).card ≤ 7 * (n - idx.zkRows)
+      ∧ (∀ β, (soundBadG idx W β).card ≤ 7 * (n - idx.zkRows))
+      ∧ (∀ β γ,
+          (soundBadA idx pub W z β γ).card
+            ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
+      ∧ (∀ β γ α (t : Polynomial F), t.natDegree < 7 * n →
+          (soundBadZ idx pub W z β γ α t).card ≤ Index.degreeBound n)
+    ∧ ∀ (β γ α : F) (t : Polynomial F) (ζ : F),
+        β ∉ soundBadB idx W → γ ∉ soundBadG idx W β → α ∉ soundBadA idx pub W z β γ →
+        ζ ∉ soundBadZ idx pub W z β γ α t →
+        ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) →
+        Accepts idx pub (evalsOf idx (extractTable idx.omega W) z ζ) t β γ α ζ →
+        Satisfies idx pub (extractTable idx.omega W) := by
   classical
+  -- unfold the named sets to their permutation-multiset / aggregate-family bodies …
+  simp only [soundBadB, soundBadG, soundBadA, soundBadZ, soundM1, soundM2]
+  -- … then abstract the two grand-product multisets, exactly as the underlying argument
   set m₁ : Multiset (F × F) :=
     Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
       ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
@@ -528,13 +582,7 @@ theorem sound [DecidableEq F] [NeZero n] (idx : Index F n)
     intro f
     rw [Multiset.card_map]
     simp [Finset.card_univ, Fintype.card_prod, Fintype.card_fin]
-  refine ⟨Kimchi.GrandProduct.badBetas m₁ m₂, fun β => Kimchi.GrandProduct.badGammas m₁ m₂ β,
-    fun β γ => Kimchi.badAlphas
-      (idx.fullFamily pub (extractTable idx.omega W) z β γ) idx.omega n,
-    fun β γ α t => Kimchi.badZetas
-      (Kimchi.aggregate α
-        (idx.fullFamily pub (extractTable idx.omega W) z β γ)) t n,
-    ⟨?_, ?_, ?_, ?_⟩, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
   · refine le_trans (Kimchi.GrandProduct.card_badBetas_le m₁ m₂) ?_
     rw [hm₁def, hm₂def, hcard, hcard]
     exact le_of_eq (max_self _)

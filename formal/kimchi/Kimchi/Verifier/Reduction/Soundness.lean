@@ -343,7 +343,10 @@ chunk-COMBINED record. The satisfying table is the reference openings' own witne
 rows, ASSEMBLED (`assembledRow`) into degree-`< n` polynomials. The public row's
 claims are pinned to the negated public interpolant through `hpubC` — the carried
 public evaluations of the `nc > 1` wire are adversarial data, believed only through
-this binding. -/
+this binding. The exclusion sets are the canonical `Protocol.sound` sets
+(`Protocol.soundBadB`/`soundBadG`/`soundBadA`/`soundBadZ`) at this theorem's own assembled
+witness columns and accumulator, carried through as explicit named terms so the conclusion
+is stated over the same sets the run-level roots consume. -/
 theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
     {n : ℕ} [NeZero n] [DecidableEq F] (σ : SRS G)
     (idx : Index F n) {nc : ℕ} (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n)
@@ -355,18 +358,32 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
       pubC c = commitPolyMaskedChunk σ (-(idx.pubPoly pub)) (c : ℕ))
     (aw₀ : Fin batchRows → Fin nc → Fin (2 ^ σ.k) → F) (ρw₀ : Fin batchRows → Fin nc → F)
     (hbound₀ : ∀ i c, commit σ (aw₀ i c) (ρw₀ i c) = batchC wC zC pubC comms i c) :
-    ∃ (badB : Finset F) (badG : F → Finset F) (badA : F → F → Finset F)
-        (badZ : F → F → F → Polynomial F → Finset F),
-      (badB.card ≤ 7 * (n - idx.zkRows)
-        ∧ (∀ β, (badG β).card ≤ 7 * (n - idx.zkRows))
-        ∧ (∀ β γ,
-            (badA β γ).card ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
+      ((Kimchi.Protocol.soundBadB idx
+            (fun col => assembledRow σ.k nc (aw₀ (wRow col)))).card ≤ 7 * (n - idx.zkRows)
+        ∧ (∀ β, (Kimchi.Protocol.soundBadG idx
+              (fun col => assembledRow σ.k nc (aw₀ (wRow col))) β).card
+            ≤ 7 * (n - idx.zkRows))
+        ∧ (∀ β γ, (Kimchi.Protocol.soundBadA idx pub
+              (fun col => assembledRow σ.k nc (aw₀ (wRow col)))
+              (assembledRow σ.k nc (aw₀ zRow)) β γ).card
+            ≤ n * (Index.gateAlphaCount + Index.permAlphaCount - 1))
         ∧ (∀ β γ α (t : Polynomial F), t.natDegree < 7 * n →
-            (badZ β γ α t).card ≤ Index.degreeBound n))
+            (Kimchi.Protocol.soundBadZ idx pub
+              (fun col => assembledRow σ.k nc (aw₀ (wRow col)))
+              (assembledRow σ.k nc (aw₀ zRow)) β γ α t).card ≤ Index.degreeBound n))
       ∧ ∀ (β γ α : F) (t : Polynomial F) (ζ : F)
           (E : Fin batchRows → Fin nc → Fin evalPts → F)
           (aw : Fin batchRows → Fin nc → Fin (2 ^ σ.k) → F) (ρw : Fin batchRows → Fin nc → F),
-          β ∉ badB → γ ∉ badG β → α ∉ badA β γ → ζ ∉ badZ β γ α t →
+          β ∉ Kimchi.Protocol.soundBadB idx
+              (fun col => assembledRow σ.k nc (aw₀ (wRow col))) →
+          γ ∉ Kimchi.Protocol.soundBadG idx
+              (fun col => assembledRow σ.k nc (aw₀ (wRow col))) β →
+          α ∉ Kimchi.Protocol.soundBadA idx pub
+              (fun col => assembledRow σ.k nc (aw₀ (wRow col)))
+              (assembledRow σ.k nc (aw₀ zRow)) β γ →
+          ζ ∉ Kimchi.Protocol.soundBadZ idx pub
+              (fun col => assembledRow σ.k nc (aw₀ (wRow col)))
+              (assembledRow σ.k nc (aw₀ zRow)) β γ α t →
           ζ ≠ 1 → ζ ≠ idx.omega ^ (n - idx.zkRows) →
           t.natDegree < 7 * n →
           (∀ i c, commit σ (aw i c) (ρw i c) = batchC wC zC pubC comms i c
@@ -411,9 +428,9 @@ theorem kimchiProof_sound_of_openings [Field F] [AddCommGroup G] [Module F G]
   have hdpub : (-(idx.pubPoly pub)).natDegree < nc * 2 ^ σ.k := by
     rw [hk, natDegree_neg]
     exact columnPoly_natDegree_lt idx.omega_prim _
-  obtain ⟨badB, badG, badA, badZ, hbounds, himp⟩ :=
+  obtain ⟨hb1, hb2, hb3, hb4, himp⟩ :=
     Kimchi.Protocol.sound idx pub W zg hzdeg
-  refine ⟨badB, badG, badA, badZ, hbounds, ?_⟩
+  refine ⟨⟨hb1, hb2, hb3, hb4⟩, ?_⟩
   intro β γ α t ζ E aw ρw hβ hγ hα hζ hζ₁ hζb ht hrow hteq
   -- cross-point uniqueness per chunk: fixed commitments bind the reference chunks
   have hwchunk : ∀ (col : Fin wCols) (c : Fin nc),
@@ -573,10 +590,10 @@ theorem kimchiProof_sound [Field F] [AddCommGroup G] [Module F G]
     (batchC wC zC pubC comms) ![ζ₀, idx.omega * ζ₀] E₀ (fun v j => A₀ (ι v) j)
     (fun v j => hFS₀ (ι v) j) hbind (fun v j => hacc₀ (ι v) j)
   choose ρ₀ hρ₀ using fun i => (hq₀ i).2.1
-  obtain ⟨badB, badG, badA, badZ, hbounds, himp⟩ :=
+  obtain ⟨hbounds, himp⟩ :=
     kimchiProof_sound_of_openings σ idx hnc hk hbind comms hvk pub wC zC pubC hpubC
       (fun i c => chunkCoeffs (2 ^ σ.k) (q₀ i) (c : ℕ)) ρ₀ (fun i c => hρ₀ i c)
-  refine ⟨badB, badG, badA, badZ,
+  refine ⟨_, _, _, _,
     extractTable idx.omega
       (fun col => assembledRow σ.k nc
         (fun c => chunkCoeffs (2 ^ σ.k) (q₀ (wRow col)) (c : ℕ))),
