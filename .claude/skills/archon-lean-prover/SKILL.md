@@ -57,12 +57,16 @@ docker compose run --rm -T --no-deps --entrypoint sh archon -c \
 **Verify fresh state before `loop`:** `.archon/logs/` empty, no `TO_USER.md`, `USER_HINTS.md`
 names the new target, sorry count as expected.
 
-**Blueprint/DAG panes** (dashboard) are populated only if the image has `leanblueprint` on PATH
-at `init` time (in the image since archon-docker `ad3f507`; before that, init reported
-"leanblueprint scaffolding (disabled by options)" — meaning the binary was absent — and the
-panes stayed empty on every job). With the scaffold in place, run `./archon.sh dag` before
-`loop` to have the blueprint chapters written; `dag` runs on the Claude backend — the
-"informal agent" API-key warning in the loop banner concerns a different optional helper.
+**Blueprint/DAG panes** (dashboard). `archon init` gates its blueprint scaffold on `leanblueprint`
+being on PATH, and reports its absence as the misleading "leanblueprint scaffolding (disabled by
+options)" — that was why the panes were empty on every job before archon-docker `ad3f507` added
+the pip package. With the binary present, `init` now *attempts* `leanblueprint new`, which
+currently still fails on git-repo detection (GitPython running `git diff --cached` as if outside
+a repo, despite `/work/project/.git` existing) — plausibly because `new` scaffolds a fresh
+single-package project and `formal/` is an aggregator workspace. Unresolved; the panes stay
+empty, which does not affect proving. `archon dag` (the chapter-filling agent) runs on the Claude
+backend — the "informal agent" API-key warning in the loop banner is a *different* optional
+helper, so no external key is needed for the blueprint.
 
 ## Per-project seed: `formal/.archon-seed/` (gitignored)
 
@@ -77,10 +81,30 @@ The container maps these into the work copy on first seed (README has the table)
   of this file for a worked example that freezes all of kimchi except three modules).
 - `references/` → read-only material Archon may consult (e.g. ironwood modules a design mirrors).
 
-## Model — do NOT override
+## Model — the user's call, never yours
 
-Upstream forces the loop model; `<work>/.archon/config.json` shows `claude-opus-4-8[1m]`, which is
-**correct**. Do not try to set `ARCHON_MODEL` to something else — that only causes churn.
+The loop model is `ARCHON_MODEL` in `archon-docker/.env`; the entrypoint stamps it into
+`<work>/.archon/config.json` (`loop.model`) at every container start, so it survives re-seeds and
+re-inits. Upstream Archon hard-codes `opus` and reads no model env var — that stamp is why the
+wrapper exists.
+
+**Never change it on your own initiative.** Repeatedly "fixing" the model to something the user
+had not asked for is a mistake this project has paid for more than once. Change it only when
+asked, and use the id the user names.
+
+To change it **without killing a running loop** — the entrypoint only stamps at container start,
+so edit both:
+
+```bash
+sed -i 's|^ARCHON_MODEL=.*|ARCHON_MODEL=<id>|' archon-docker/.env      # future runs
+docker exec <cid> python3 -c "import json,os; p='/work/project/.archon/config.json'; \
+  c=json.load(open(p)); c['loop']['model']='<id>'; \
+  json.dump(c,open(p+'.tmp','w'),indent=2); os.replace(p+'.tmp',p)"    # the live loop
+```
+
+The live edit lands on the **next agent spawn** — an agent already running keeps the old model,
+and its banner line (`Agent model: …`) will still show the old id. That is expected; check the
+*next* phase's banner to confirm the switch.
 
 ## Pull the work back and verify
 
