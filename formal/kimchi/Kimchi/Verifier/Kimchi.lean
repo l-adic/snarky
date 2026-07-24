@@ -168,7 +168,7 @@ deliberately dead: the fr-sponge path never endo-expands through its own spec.
 `frOracles` expands its two squeezed prechallenges at `C.sponge.lam` (the eigenvalue
 lives on the fq-side spec), and `frDigest`'s `challengeFq`/`challengeNat` never read
 `lam`, so the slot is unused and zeroed. -/
-private def frSpec (C : Ipa.CommitmentCurve) : FqSponge.Spec C.scalar C.scalar :=
+def frSpec (C : Ipa.CommitmentCurve) : FqSponge.Spec C.scalar C.scalar :=
   ⟨C.frParams, 0⟩
 
 /-- A Poseidon parameter table's MDS matrix as the gate's `Mds` record — the wire form
@@ -184,7 +184,7 @@ def mdsOfParams {F : Type*} (p : Poseidon.Params F) : Gate.Poseidon.Mds F :=
 
 /-- The fr-sponge digest (`DefaultFrSponge::digest`, kimchi/src/plonk_sponge.rs): the
 plain first squeeze — same field, no cast. -/
-private def frDigest (sp : FqSponge.Spec C.scalar C.scalar) (s : FqSponge.S C.scalar) :
+def frDigest (sp : FqSponge.Spec C.scalar C.scalar) (s : FqSponge.S C.scalar) :
     C.ScalarField :=
   (challengeFq sp s).1
 

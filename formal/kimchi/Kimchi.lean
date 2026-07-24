@@ -42,3 +42,7 @@ import Kimchi.Verifier.Wire
 import Kimchi.Verifier.Capstone.Standard
 import Kimchi.Verifier.Capstone.Algebraic
 import Kimchi.Verifier.Capstone.Reflection
+
+-- W2 · Fiat–Shamir random-oracle model (fq + fr) and its run-level faithfulness
+import Kimchi.Verifier.Forking.Model
+import Kimchi.Verifier.Forking.RunLink
