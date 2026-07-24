@@ -1,0 +1,173 @@
+import Bulletproof.Forking.Capstone
+import Bulletproof.Forking.Prover
+import Zcash.Snark.Soundness.Forking.Adversary.Recursive
+
+/-!
+# The Fiat–Shamir extraction game — the statement Stage 5b must prove
+
+This module states the endpoint of the refoundation and nothing else: the theorem whose proof
+would let `Bulletproof.poseidon_fiat_shamir_{vesta,pallas}` be deleted. Everything here is a
+statement; the extractor's body and the bound are the remaining work.
+
+## The model, and every assumption in it
+
+* **The oracle.** Challenges come from a table `O : T → Pre` over transcript prefixes, drawn
+  uniformly. Idealizing the Poseidon sponge as such a table is the *sole* trust boundary
+  (decision "Option A") — it is a modelling choice stated in prose, **not** a Lean axiom, so a
+  successful Stage 5b removes two kernel axioms and adds none.
+
+* **The challenge domain is the prechallenge domain, not the field.** The deployed verifier
+  squeezes a 128-bit prechallenge and endo-expands it, so the oracle's codomain is `Pre` and the
+  field challenge is `expand p`. The two facts that make this transport work are hypotheses here
+  and *theorems* at the deployed instantiation (`Forking/EndoChallenge.lean`): `expand` is
+  injective (fork distinctness survives) and never zero (the fork's nonzero side conditions come
+  free). This is why the error term below divides by `Fintype.card Pre ≈ 2¹²⁸` and not by `|F|`:
+  the honest number, and the one that makes the counting satisfiable at all.
+
+* **The claim is fixed, structurally.** `P`, `b`, `v` and the commitment's representation
+  `(pg, pw)` are parameters, and the adversary outputs only an opening proof — so a rewound run
+  cannot switch which claim it opens. That *is* the fixed-claim assumption (decision "D4"),
+  made structural rather than carried as a `ClaimStable` hypothesis. It is a real scope limit:
+  the standalone **cold** verifier does not absorb the commitments, so an adaptive adversary
+  there could switch claims. Kimchi's deployed usage is the **warm** start, where the
+  commitments are already in the sponge state before the IPA transcript begins; closing the gap
+  for the cold verifier is out of scope, and must not be papered over by strengthening the game.
+
+* **The prover is algebraic.** `(pg, pw)` is the AGM representation of `P`. Only the root needs
+  one: ironwood's `produceDeployed` recovers the deployed tree's decorations by Vandermonde
+  interpolation of the sibling recursions, so no per-node representations appear (decision
+  "D7").
+
+## Why this conclusion carries content where a `Prop` one would not
+
+The extractor returns `Option (OpeningOrBreak …)` — a `Σ'`/`⊕'` of **data**. At the deployed
+Pasta parameters a `Prop`-level `∃ opening ∨ ∃ relation` is free (proved, twice:
+`Forking/Triviality.lean` and `kimchi_knowledge_soundness_conclusion_free_at_1dim`), because the
+point group is a 1-dimensional `F`-vector space. Coefficients that a reduction *computes* are
+not free. Correctness needs no separate theorem: it is the extractor's return type.
+
+## The two ways this statement could be cheated, and what blocks each
+
+Worth spelling out, because the previous two attempts at this endpoint were both satisfiable
+without doing any work.
+
+* **Always answer `none`.** Then the failure set is the whole win set, and the bound claims every
+  adversary wins with probability `≤ (Q+k+1)·3/2¹²⁸`. False: an honest prover wins on *every*
+  oracle table. That is `honest_wins_everywhere` below — the anti-vacuity companion, which must
+  land with the theorem, not after it.
+
+* **Always answer `some` with a fabricated break.** Blocked twice over. `kimchiExtract` is a
+  plain `def`, not `noncomputable`, so Lean's compiler rejects a `Classical.choice`-conjured
+  witness — the distinction ironwood draws as "in a prime-order group a relation *exists*; the
+  security break is *computing* its coefficients". And it is stated for an arbitrary
+  `[AddCommGroup G] [Module F G]`, where no relation exists to be found, so no closed form can
+  satisfy the type. The same genericity blocks a fabricated opening.
+
+Both guards are cheap to keep honest: the extractor must stay computable, must stay generic in
+`G`, and should be `#eval`'d on a fixture the way `kimchiOpeningOrBreak` already is
+(`scripts/check_extractor_computes.sh`).
+-/
+
+namespace Bulletproof.Forking
+
+open Bulletproof
+open scoped ENNReal
+
+variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
+
+/-- What the extractor computes: an opening witness for the claim, or a nontrivial discrete-log
+relation over the augmented basis `(σ.g, σ.U, σ.h)` — the break, as explicit coefficients. -/
+abbrev OpeningOrBreak (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F) (v : F) : Type _ :=
+  (Σ' (a : Fin (2 ^ σ.k) → F) (ρ : F), openingRelationB σ P b v a ρ)
+    ⊕' Zcash.Snark.AlgebraicRelationWitness (F := F)
+        (Zcash.Snark.augmentedBasis σ.g σ.U σ.h)
+
+variable {T Pre Pf : Type*}
+
+/-- The challenge vector a run reads from the oracle: at each round the prefix's entry, expanded
+into the field. Index `σ.k` is the Schnorr challenge — the extra round kimchi's proof-of-knowledge
+layer adds, which `schnorr_fork_eq` consumes two of. -/
+def oracleChallenges (σ : SRS G) (expand : Pre → F) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (O : T → Pre) (p : Pf) : Fin (σ.k + 1) → F :=
+  fun i => expand (O (prefixes p i))
+
+/-- **The adversary wins**: the deployed wire verifier accepts its proof at the challenges the
+oracle supplies. This is `VerifierAcceptsAt` itself — the executable verifier's own equations,
+with the evaluation slot at the s-vector inner product (`combinedB` for a batched claim, by
+`combinedB_eq_innerProduct`) — so no parallel acceptance predicate is introduced. By
+`kimchiProverAccept_iff_verifierAcceptsAt` this is equally the folded form the fork machinery
+consumes. -/
+def Wins (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (O : T → Pre) (p : Pf) : Prop :=
+  let χ := oracleChallenges σ expand prefixes O p
+  let u := fun i : Fin σ.k => χ i.castSucc
+  VerifierAcceptsAt σ (proofOf p) P (innerProduct (bPolyCoefficients u) b) v (χ (Fin.last σ.k)) u
+
+/-- **The extractor** (body: Stage 5b). Given the oracle table and the fork tape, run the
+adversary, rewind it at the round prefixes, and compute an opening or a relation — ironwood's
+`recursiveAlgebraicFork` composed with `kimchiOpeningOrBreak`. `none` is the failure branch the
+theorem below bounds.
+
+Its *type* is the correctness statement: a `some` answer carries the witness or the break as
+data, with their defining equations. -/
+def kimchiExtract [DecidableEq F] [DecidableEq G] [DecidableEq T]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G)
+    (pg : Fin (2 ^ σ.k) → F) (pw : F) (_hP : P = commitGen σ.g pg + pw • σ.h)
+    (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (O : T → Pre) (coins : Zcash.Snark.RecursiveForkCoins Pre (σ.k + 1)) :
+    Option (OpeningOrBreak σ P b v) :=
+  sorry
+
+/-- **THE STATEMENT.** An algebraic, bounded-query adversary that convinces the deployed kimchi
+IPA verifier hands over an opening witness — or a computed discrete-log break — except on a set
+of oracle tables of measure at most `(Q + k + 1) · 3 / |Pre|`.
+
+The error is the operational query-loss slice: one `3/|Pre|` per adversary query and per forked
+round, over the `2¹²⁸` prechallenge domain. Nothing else is assumed: no `hbind` (a binding
+violation is *returned*, in the right disjunct), no Fiat–Shamir axiom (the oracle is the model),
+and no claim-adaptivity beyond the fixed-claim scope stated in the preamble.
+
+Discharging this deletes `poseidon_fiat_shamir_{vesta,pallas}` from the trust surface without
+introducing any replacement axiom. -/
+theorem kimchiExtract_failure_measure_le [DecidableEq F] [DecidableEq G]
+    [Fintype T] [DecidableEq T] [Fintype Pre] [DecidableEq Pre] [Nonempty Pre]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G)
+    (pg : Fin (2 ^ σ.k) → F) (pw : F) (hP : P = commitGen σ.g pg + pw • σ.h)
+    -- the challenge map: injective and nonvanishing (theorems at Pasta, `EndoChallenge.lean`)
+    (expand : Pre → F) (_hexp_inj : Function.Injective expand) (_hexp_ne : ∀ p, expand p ≠ 0)
+    -- the adversary, its query budget, and the transcript data it commits to per run
+    (A : Zcash.Snark.OracleComp T Pre Pf) {Q : ℕ} (_hQ : A.QueryBound Q)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    -- the round prefixes are distinct and chronological (a *theorem* about our transcript
+    -- encoding, by length — never assumed as injectivity of an abstract encoding)
+    (_D : Zcash.Snark.PrefixDecode T (σ.k + 1) prefixes)
+    -- the fork tape supplies enough fresh challenges
+    (coins : Zcash.Snark.RecursiveForkCoins Pre (σ.k + 1)) (_hcoins : coins.Complete) :
+    (PMF.uniformOfFintype (T → Pre)).toOuterMeasure
+        {O | Wins σ b v P expand proofOf prefixes O (A.run O) ∧
+          kimchiExtract σ b v P pg pw hP expand A proofOf prefixes O coins = none}
+      ≤ (Q + σ.k + 1) * (3 / Fintype.card Pre) := by
+  sorry
+
+/-- **The anti-vacuity companion — must land with the theorem above, not after it.** From a
+genuine opening witness, an adversary exists that wins on *every* oracle table: it reads its
+challenges, folds honestly, and answers the Schnorr challenge. So the win set can have measure
+`1`, and an extractor that always returns `none` cannot satisfy the bound.
+
+This is the same discipline as `Forking/Triviality.lean`'s `ipaAcceptV_of_witness`: state
+completeness of the acceptance predicate alongside its soundness, so that the soundness theorem
+is known to be about a non-empty game. -/
+theorem honest_wins_everywhere [DecidableEq T]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G)
+    (expand : Pre → F)
+    (a : Fin (2 ^ σ.k) → F) (ρ : F) (_hopen : openingRelationB σ P b v a ρ) :
+    ∃ (A : Zcash.Snark.OracleComp T Pre Pf) (proofOf : Pf → OpeningProof F G σ.k)
+      (prefixes : Pf → Fin (σ.k + 1) → T),
+      A.QueryBound (σ.k + 1) ∧
+        ∀ O : T → Pre, Wins σ b v P expand proofOf prefixes O (A.run O) := by
+  sorry
+
+end Bulletproof.Forking
