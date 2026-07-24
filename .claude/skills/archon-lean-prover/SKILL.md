@@ -32,6 +32,31 @@ cd ~/code/l-adic/archon-docker
 Then pull the work back (below) and **verify it yourself** — never trust "0 sorries" or an agent's
 "complete" self-report.
 
+## Starting a NEW job: reset the state per task, keep the build cache
+
+`.archon/` is **one task's session state** — `PROGRESS.md`, `TO_USER.md` ("Project COMPLETE"),
+`PROJECT_STATUS.md`'s knowledge base, `task_done.md`, iteration numbering. Reusing it for a new
+task contaminates the planner: it burns its cycle reconciling the old task's COMPLETE state with
+the new sorries, and stale notices can trip stage detection later. **Do NOT surgically edit the
+old state** (e.g. `sed` the stage line in `PROGRESS.md`) — that leaves everything else stale.
+The per-task flow, verified end to end:
+
+```bash
+docker stop $(docker ps -q --filter ancestor=archon-lean:local)  # end the old loop
+# 1. write the NEW .archon-seed/{USER_HINTS.md,archon-protected.yaml}; commit the scaffold
+# 2. drop the old task state + the seed marker, keeping the copy and .lake:
+docker compose run --rm -T --no-deps --entrypoint sh archon -c \
+  "rm -rf /work/project/.archon && rm -f /work/.seeded"
+./archon.sh doctor                               # re-seed source + seed files (rsync skips .lake)
+./archon.sh init --harness claude-code --force   # FRESH bootstrap; auto-detects stage
+./archon.sh loop
+```
+
+`init` is merge-based: with declarations + sorries present it prints
+`Stage detection: prover` and advances past `init` itself — no manual stage edit needed.
+**Verify fresh state before `loop`:** `.archon/logs/` empty, no `TO_USER.md`, `USER_HINTS.md`
+names the new target, sorry count as expected.
+
 ## Per-project seed: `formal/.archon-seed/` (gitignored)
 
 The container maps these into the work copy on first seed (README has the table):
@@ -95,7 +120,13 @@ bash kimchi/scripts/check_axioms.sh                          # SAME 48-root clos
   re-downloads the multi-GB Mathlib cache. The entrypoint's re-seed rsync **excludes `.lake`**, so
   to refresh source + `.archon-seed` while keeping `work/project/.lake`, remove only the seed
   marker: `docker compose run --rm --no-deps --entrypoint sh archon -c "rm -f /work/.seeded"` then
-  `./archon.sh doctor`.
+  `./archon.sh doctor`. Mid-job source refresh only — for a **new task**, also drop `.archon` and
+  re-`init` (see "Starting a NEW job" above).
+- **Empty re-seed bricked the entrypoint silently (fixed in archon-docker `516e56b`).** On images
+  older than that fix: a re-seed with no source changes made the baseline `git commit` exit 1
+  ("nothing to commit"), `set -e` killed the entrypoint before `.seeded` was written and before
+  `archon` ever ran — every retry printed only the seed lines and exited 1 with no error. Escape:
+  `--entrypoint sh … -c "touch /work/.seeded"`, rerun; or rebuild the image (`./archon.sh build`).
 - **Never `pkill -f "archon.sh …"`.** The pattern matches your own running shell command and kills
   it (exit 143/144, output lost). Stop containers with `docker stop <cid>` or `docker compose down`;
   find the loop container via `docker ps -q --filter ancestor=archon-lean:local`.
