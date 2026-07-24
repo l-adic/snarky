@@ -26,7 +26,7 @@ namespace Kimchi.Verifier.Forking
 open Zcash.Snark MeasureTheory
 open scoped ENNReal
 
-variable {F : Type*} [Fintype F] [DecidableEq F] [Nonempty F]
+variable {F : Type*} [Fintype F] [Nonempty F]
 
 /-- One coordinate's escape: if a bad-set family reads only the *other* coordinates and every
 member has card `≤ b`, a uniform vector's `i`-th coordinate lands in it with probability
