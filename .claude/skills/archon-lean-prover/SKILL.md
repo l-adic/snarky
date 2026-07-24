@@ -96,6 +96,13 @@ bash kimchi/scripts/check_axioms.sh                          # SAME 48-root clos
   to refresh source + `.archon-seed` while keeping `work/project/.lake`, remove only the seed
   marker: `docker compose run --rm --no-deps --entrypoint sh archon -c "rm -f /work/.seeded"` then
   `./archon.sh doctor`.
+- **For a NEW job, also clear `/work/project/.archon` — the rsync excludes it too.** That
+  directory holds the *previous* job's `PROGRESS.md`, `STRATEGY`, and memory. If you leave it,
+  iteration 1 is spent detecting the stale state and rewriting those files, its plan fails
+  validation (`⚠ Iteration N: skipping prover/review — plan-validate failed`), and you burn a paid
+  iteration before any proving happens. Observed cost: one full iteration. Add
+  `rm -rf /work/project/.archon` to the same container command when the job is new rather than
+  resumed — keep it only when you genuinely want Archon to continue the prior job's context.
 - **Never `pkill -f "archon.sh …"`.** The pattern matches your own running shell command and kills
   it (exit 143/144, output lost). Stop containers with `docker stop <cid>` or `docker compose down`;
   find the loop container via `docker ps -q --filter ancestor=archon-lean:local`.
