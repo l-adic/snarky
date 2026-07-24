@@ -16,7 +16,7 @@ points, matching a duplex sponge's state consumption). `Forking.OracleRun` inter
 prefix through the real sponge and proves these prefixes reproduce `fqOracles`'s
 challenges; `Forking.Model` frames the game and states the random-oracle assumption.
 
-The fr-sponge side (`v`, `u`) extends the same pattern and is developed separately.
+The fr-sponge side (`v`, `u`) extends the same pattern in the second half of this module.
 -/
 
 namespace Kimchi.Verifier.Forking
@@ -150,5 +150,80 @@ theorem preGamma_ne_preZeta (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
   omega
 
 end KimchiTranscriptElt
+
+/-! ## The fr-sponge side
+
+The scalar-side (fr-)sponge derives the two batch challenges `v` (polyscale) and `u`
+(evalscale). It is a *separate* Poseidon sponge (`frSpec C`, over `C.ScalarField`), fed the
+fq-sponge digest and the proof's evaluations. Unlike the fq side it absorbs whole scalar
+*lists* per `absorb_fr` call, so a transcript element carries a list; both squeezes are
+endo-expanded (`challengeNat` then `endoExpand`), so there is one squeeze marker. -/
+
+/-- A single element of the fr-sponge transcript: an `absorb_fr` of a whole scalar list (one
+`absorbFq` call — the fr-sponge absorbs chunk vectors, not single elements), or an
+endo-expanded squeeze (`challengeNat` then `endoExpand`): the `v`/`u` challenges. -/
+inductive FrTranscriptElt (C : Ipa.CommitmentCurve) where
+  /-- Absorb a scalar list in one `absorb_fr` call. -/
+  | frAbsorb : List C.ScalarField → FrTranscriptElt C
+  /-- An endo-expanded squeeze (`challengeNat` ∘ `endoExpand`): `v`, `u`. -/
+  | frEndo : FrTranscriptElt C
+
+namespace FrTranscriptElt
+
+open Poseidon
+
+/-- The state action of an fr element on the fr-sponge (the `.1` of the interpreter step). -/
+def frAbsorbInto (C : Ipa.CommitmentCurve) :
+    FrTranscriptElt C → FqSponge.S C.scalar → FqSponge.S C.scalar
+  | frAbsorb xs, s => FqSponge.absorbFq (frSpec C) s xs
+  | frEndo, s => (FqSponge.challengeNat (frSpec C) s).2
+
+/-- `frOracles`'s `ab` for one evaluation pair, as two `absorb_fr` elements: the `ζ`-chunk
+list then the `ζω`-chunk list. -/
+def absorbEval (e : PointEvaluations (Vector C.ScalarField nc)) : List (FrTranscriptElt C) :=
+  [frAbsorb e.zeta.toList, frAbsorb e.zetaOmega.toList]
+
+/-- The fr-sponge's pre-`v` absorb sequence — verbatim `frOracles`'s absorbs before the first
+squeeze: the fq digest, the fresh fr digest, `ft(ζω)`, the two public chunk vectors, then per
+column the `ζ`/`ζω` chunk vectors in `absorb_evaluations` order (`z`, the six single
+selectors, then the witness / coefficient / σ column folds). -/
+def preVAbsorbs (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
+    (pubEvals : PointEvaluations (Vector C.ScalarField nc)) : List (FrTranscriptElt C) :=
+  [frAbsorb [fqDig],
+   frAbsorb [frDigest C (frSpec C) FqSponge.init],
+   frAbsorb [cp.ftEval1],
+   frAbsorb pubEvals.zeta.toList,
+   frAbsorb pubEvals.zetaOmega.toList]
+  ++ absorbEval cp.evals.z
+  ++ absorbEval cp.evals.genericSelector
+  ++ absorbEval cp.evals.poseidonSelector
+  ++ absorbEval cp.evals.completeAddSelector
+  ++ absorbEval cp.evals.mulSelector
+  ++ absorbEval cp.evals.emulSelector
+  ++ absorbEval cp.evals.endomulScalarSelector
+  ++ cp.evals.w.toList.flatMap absorbEval
+  ++ cp.evals.coefficients.toList.flatMap absorbEval
+  ++ cp.evals.s.toList.flatMap absorbEval
+
+/-- The `v` prefix: the pre-absorbs then one endo squeeze. -/
+def preV (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
+    (pubEvals : PointEvaluations (Vector C.ScalarField nc)) : List (FrTranscriptElt C) :=
+  preVAbsorbs cp fqDig pubEvals ++ [frEndo]
+
+/-- The `u` prefix: `v`'s prefix then a second endo squeeze. -/
+def preU (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
+    (pubEvals : PointEvaluations (Vector C.ScalarField nc)) : List (FrTranscriptElt C) :=
+  preV cp fqDig pubEvals ++ [frEndo]
+
+/-- `v` and `u` are read at distinct transcript points (`u` has one more squeeze marker). -/
+theorem preV_ne_preU (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
+    (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
+    preV cp fqDig pubEvals ≠ preU cp fqDig pubEvals := by
+  intro h
+  have hlen := congrArg List.length h
+  simp only [preV, preU, List.length_append, List.length_cons, List.length_nil] at hlen
+  omega
+
+end FrTranscriptElt
 
 end Kimchi.Verifier.Forking

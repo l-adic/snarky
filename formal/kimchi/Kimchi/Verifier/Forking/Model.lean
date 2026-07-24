@@ -1,7 +1,7 @@
 import Kimchi.Verifier.Forking.OracleRun
 
 /-!
-# W2 · The random-oracle model and its trust boundary (fq side)
+# W2 · The random-oracle model and its trust boundary (fq + fr sides)
 
 ## What is proved, and what is assumed
 
@@ -69,5 +69,21 @@ theorem guardEvent_poseidonO
       ↔ accept ((fqOracles C cvk cp publicComm).beta, (fqOracles C cvk cp publicComm).gamma,
                 (fqOracles C cvk cp publicComm).alpha, (fqOracles C cvk cp publicComm).zeta) := by
   rw [GuardEvent, oracleChallenges_poseidonO]
+
+/-- The fr-side game event: an acceptance predicate on the `(v, u)` batch-challenge pair,
+evaluated at the challenges read from the fr-oracle `O` at the two prefixes. W3 instantiates
+`accept` with the batch-opening guard conditions (the `badXi`/`badR` avoidance). -/
+def GuardEventVU (accept : C.ScalarField × C.ScalarField → Prop)
+    (O : List (FrTranscriptElt C) → C.ScalarField) (cp : KimchiProof C nc k)
+    (fqDig : C.ScalarField) (pubEvals : PointEvaluations (Vector C.ScalarField nc)) : Prop :=
+  accept (oracleVU O cp fqDig pubEvals)
+
+/-- **The fr game specializes to the real verifier.** At `O := poseidonOFr`, the fr game event
+is exactly acceptance at the deployed verifier's own `(v, u)`. -/
+theorem guardEventVU_poseidonOFr (accept : C.ScalarField × C.ScalarField → Prop)
+    (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
+    (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
+    GuardEventVU accept poseidonOFr cp fqDig pubEvals ↔ accept (frOracles C cp fqDig pubEvals) := by
+  rw [GuardEventVU, oracleVU_poseidonOFr]
 
 end Kimchi.Verifier.Forking

@@ -112,4 +112,82 @@ theorem oracleChallenges_poseidonO (cvk : KimchiVK C nc) (cp : KimchiProof C nc 
   simp only [oracleChallenges, poseidonO_preBeta, poseidonO_preGamma, poseidonO_preAlpha,
     poseidonO_preZeta]
 
+/-! ## The fr-sponge side: `poseidonOFr` at `preV`/`preU` is `frOracles`'s `(v, u)` -/
+
+open FrTranscriptElt (frAbsorbInto absorbEval preVAbsorbs preV preU)
+
+/-- One fr-interpreter step: `frAbsorb` absorbs its list, `frEndo` endo-expands a squeeze. -/
+def frStep (acc : FqSponge.S C.scalar × C.ScalarField) :
+    FrTranscriptElt C → FqSponge.S C.scalar × C.ScalarField
+  | .frAbsorb xs => (FqSponge.absorbFq (frSpec C) acc.1 xs, acc.2)
+  | .frEndo => ((FqSponge.challengeNat (frSpec C) acc.1).2,
+      FqSponge.endoExpand C.sponge.lam (FqSponge.challengeNat (frSpec C) acc.1).1)
+
+/-- The fr-sponge as an oracle: fold a transcript prefix, return the last challenge. -/
+def poseidonOFr (t : List (FrTranscriptElt C)) : C.ScalarField :=
+  (t.foldl frStep (FqSponge.init, 0)).2
+
+/-- The two fr-side challenges read from an abstract oracle at the `v`/`u` prefixes. -/
+def oracleVU (O : List (FrTranscriptElt C) → C.ScalarField) (cp : KimchiProof C nc k)
+    (fqDig : C.ScalarField) (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
+    C.ScalarField × C.ScalarField :=
+  (O (preV cp fqDig pubEvals), O (preU cp fqDig pubEvals))
+
+/-- The fr-interpreter's state component folds `frAbsorbInto`, independent of the value. -/
+theorem foldl_frStep_fst (l : List (FrTranscriptElt C)) (s : FqSponge.S C.scalar)
+    (v : C.ScalarField) :
+    (l.foldl frStep (s, v)).1 = l.foldl (fun s e => frAbsorbInto C e s) s := by
+  induction l generalizing s v with
+  | nil => rfl
+  | cons e l ih =>
+    have hstep : (frStep (s, v) e).1 = frAbsorbInto C e s := by cases e <;> rfl
+    rw [List.foldl_cons, List.foldl_cons, ih, hstep]
+
+/-- The fr-interpreter's state after the pre-`v` absorbs is `frOracles`'s pre-squeeze state:
+the fq/fr digests, `ft(ζω)`, the public chunk vectors, then the `absorb_evaluations` folds. -/
+theorem foldl_frAbsorbInto_preVAbsorbs (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
+    (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
+    (preVAbsorbs cp fqDig pubEvals).foldl (fun s e => frAbsorbInto C e s) FqSponge.init
+      = (let sp := frSpec C
+         let ab := fun (s : FqSponge.S C.scalar)
+             (e : PointEvaluations (Vector C.ScalarField nc)) =>
+           FqSponge.absorbFq sp (FqSponge.absorbFq sp s e.zeta.toList) e.zetaOmega.toList
+         let s := FqSponge.absorbFq sp FqSponge.init [fqDig]
+         let s := FqSponge.absorbFq sp s [frDigest C sp FqSponge.init]
+         let s := FqSponge.absorbFq sp s [cp.ftEval1]
+         let s := FqSponge.absorbFq sp s pubEvals.zeta.toList
+         let s := FqSponge.absorbFq sp s pubEvals.zetaOmega.toList
+         let s := ab s cp.evals.z
+         let s := ab s cp.evals.genericSelector
+         let s := ab s cp.evals.poseidonSelector
+         let s := ab s cp.evals.completeAddSelector
+         let s := ab s cp.evals.mulSelector
+         let s := ab s cp.evals.emulSelector
+         let s := ab s cp.evals.endomulScalarSelector
+         let s := cp.evals.w.foldl ab s
+         let s := cp.evals.coefficients.foldl ab s
+         cp.evals.s.foldl ab s) := by
+  simp only [preVAbsorbs, absorbEval, frAbsorbInto, List.foldl_cons, List.foldl_append,
+    List.foldl_nil, List.foldl_flatMap, Vector.foldl_toList]
+
+theorem poseidonOFr_preV (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
+    (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
+    poseidonOFr (preV cp fqDig pubEvals) = (frOracles C cp fqDig pubEvals).1 := by
+  rw [poseidonOFr, preV, List.foldl_append, List.foldl_cons, List.foldl_nil]
+  simp only [frStep, foldl_frStep_fst, foldl_frAbsorbInto_preVAbsorbs, frOracles]
+
+theorem poseidonOFr_preU (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
+    (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
+    poseidonOFr (preU cp fqDig pubEvals) = (frOracles C cp fqDig pubEvals).2 := by
+  rw [poseidonOFr, preU, preV]
+  simp only [List.foldl_append, List.foldl_cons, List.foldl_nil, frStep, foldl_frStep_fst,
+    foldl_frAbsorbInto_preVAbsorbs, frOracles]
+
+/-- **Faithfulness (fr side).** Reading `poseidonOFr` at the `v`/`u` prefixes reproduces the
+deployed verifier's batch challenges `(v, u)` from `frOracles`. -/
+theorem oracleVU_poseidonOFr (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
+    (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
+    oracleVU poseidonOFr cp fqDig pubEvals = frOracles C cp fqDig pubEvals := by
+  rw [oracleVU, poseidonOFr_preV, poseidonOFr_preU]
+
 end Kimchi.Verifier.Forking
