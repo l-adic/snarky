@@ -96,13 +96,40 @@ bash kimchi/scripts/check_axioms.sh                          # SAME 48-root clos
   to refresh source + `.archon-seed` while keeping `work/project/.lake`, remove only the seed
   marker: `docker compose run --rm --no-deps --entrypoint sh archon -c "rm -f /work/.seeded"` then
   `./archon.sh doctor`.
-- **For a NEW job, also clear `/work/project/.archon` — the rsync excludes it too.** That
-  directory holds the *previous* job's `PROGRESS.md`, `STRATEGY`, and memory. If you leave it,
-  iteration 1 is spent detecting the stale state and rewriting those files, its plan fails
-  validation (`⚠ Iteration N: skipping prover/review — plan-validate failed`), and you burn a paid
-  iteration before any proving happens. Observed cost: one full iteration. Add
-  `rm -rf /work/project/.archon` to the same container command when the job is new rather than
-  resumed — keep it only when you genuinely want Archon to continue the prior job's context.
+- **For a NEW job, reset `/work/project/.archon`'s job-specific CONTENT — but do NOT wipe the
+  directory.** The rsync excludes `.archon`, so it holds the *previous* job's `PROGRESS.md`,
+  `STRATEGY.md` and memory. Leaving it stale costs one iteration: iteration 1 detects it, rewrites
+  those files, and its plan fails validation
+  (`⚠ Iteration N: skipping prover/review — plan-validate failed`).
+
+  **But `rm -rf /work/project/.archon` is worse — it hard-blocks the loop.** `init` then restores
+  the *stock template* `PROGRESS.md`, whose header says
+
+  ```
+  ## Current Stage
+  init
+  ```
+
+  and `loop` reads exactly that, refusing to start with
+  `✗ Project is still in init stage. Run: archon init /work/project` — even though `init` ran to
+  completion through all 12 phases and reported `Stage detection: prover`. (The previous job only
+  worked *because* `.archon` was stale and carried `Current Stage: prover` forward.)
+
+  So: rewrite `PROGRESS.md` for the new job while **keeping `## Current Stage` set to `prover`**,
+  and put the new objectives under `## Current Objectives`. If you did already wipe `.archon`, fix
+  it before launching:
+
+  ```bash
+  docker compose run --rm -T archon bash -lc 'cat > /work/project/.archon/PROGRESS.md <<EOF
+  # Project Progress
+
+  ## Current Stage
+  prover
+
+  ## Current Objectives
+  <the new job, pointing at .archon/USER_HINTS.md>
+  EOF'
+  ```
 - **Never `pkill -f "archon.sh …"`.** The pattern matches your own running shell command and kills
   it (exit 143/144, output lost). Stop containers with `docker stop <cid>` or `docker compose down`;
   find the loop container via `docker ps -q --filter ancestor=archon-lean:local`.
