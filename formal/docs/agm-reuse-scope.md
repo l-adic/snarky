@@ -125,10 +125,25 @@ equation. This is the part of bulletproof-pcs that earns its keep.
 
 Staged so each step is independently checkable, ordered by risk.
 
-**Stage 0 — settle the fold convention (§3.1).** Read `Wire.lean`'s fold against the IPA fixture
-and determine kimchi's convention. Output: either "re-point onto `foldGens`" or a proved bridge
-`IpaAcceptV_ours g b P v t ↔ IpaAcceptV_theirs g b P v (swapLR (invChallenges t))`. **Nothing
-else starts until this is settled** — everything downstream depends on it.
+**Stage 0 — settle the fold convention (§3.1). DONE**, in
+`Bulletproof/Forking/Convention.lean`.
+
+Kimchi's convention is **ours**. Ground truth is the verifier's `sg = ⟨bPolyCoefficients chal, g⟩`
+check (`Wire.lean`): `bPolyCoefficients chal m = ∏ j, if testBit m j then chal (Fin.rev j) else 1`
+is precisely the coefficient vector produced by folding with the high half scaled by `u`. At
+`k = 2` that is `g₀ + chal₁·g₁ + chal₀·g₂ + chal₀chal₁·g₃`, which `foldHalves` reproduces exactly
+and `foldGens` does not (it yields the inverted challenges). `Protocol.lean` records the same
+asymmetry independently: `bPoly = ∏ (1 + u · X ^ 2 ^ i)`, the linear form.
+
+So we keep `foldHalves` and carry the transport. Delivered:
+
+- `toZcash` — invert every challenge, exchange `L`/`R` and `Lv`/`Rv`;
+- `foldGens_inv : Zcash.Snark.foldGens v u⁻¹ = foldHalves v u` (`rfl` after `inv_inv`; their
+  `loHalf`/`hiHalf` are definitionally ours);
+- `zcash_ipaAcceptV_toZcash` — our accept implies theirs after transport;
+- `ipaExtract` — ironwood's `ipa_extractV` run on kimchi transcripts, returning `Σ'` data.
+
+Their `commitGen` unified with ours definitionally, so no adapter was needed for it.
 
 **Stage 1 — adapter, no deletions yet.** `SRS ≃ URS` (field-for-field), `commit` reconciliation
 per §3.2, and `openingRelationB ↔ IpaRelation`. Prove the round-trip. Additive only, so the
@@ -160,10 +175,15 @@ def ipa_openingOrBreak (σ : SRS G) … :
 ## 5. Acceptance gates
 
 - `lake build` clean, 0 `sorry`.
-- `#print axioms` on the new capstone: standard three only — **and no `Classical.choice` in the
-  extractor `def`s**. A `Σ'` conjured by choice is the vacuous version wearing a `Type`; this is
-  the gate that makes the whole exercise meaningful (see `Forking/Extraction.lean`'s self-audit
-  `ipa_knowledge_soundness_conclusion_free`).
+- `#print axioms` on the new capstone: standard three only.
+- **The extractor must compute.** A `Σ'` conjured by choice is the vacuous version wearing a
+  `Type`, so the data-valued form needs a gate — but *not* the "no `Classical.choice`" one I first
+  wrote here. Mathlib's `Field` hierarchy drags `Classical.choice` into everything, including
+  ironwood's own `ipa_extractV`, so the axiom list cannot discriminate. The gate that does:
+  the extractor is a plain compilable `def` (Lean's compiler rejects it otherwise, forcing
+  `noncomputable`) **and it `#eval`s on a fixture**. Demonstrated for `Forking.Convention.ipaExtract`
+  over `ZMod 7`: a depth-1 honest transcript extracts back to the original witness `(4, 6)` with
+  both opening equations `true`.
 - `bulletproof-pcs/scripts/check_axioms.sh` — roots reduce with **no** `poseidon_fiat_shamir_*`.
 - `check_ipa_fixture.sh` still passes (guards against a Stage-0 convention error).
 - `shake` / deadcode gates green after the Stage-2 deletions.
