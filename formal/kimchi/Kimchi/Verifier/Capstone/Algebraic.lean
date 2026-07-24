@@ -87,7 +87,7 @@ noncomputable def badROf {F G : Type*} [Field F] [DecidableEq F]
 
 /-- `badXiOf` counts at most `2 · (m − 1)` challenges (at the flattened batch's `44·nc`
 segments: `2·(44·nc − 1)`): a union of two counting-SZ bad sets over `Fin m`. -/
-private theorem card_badXiOf_le {F G : Type*} [Field F] [DecidableEq F]
+theorem card_badXiOf_le {F G : Type*} [Field F] [DecidableEq F]
     (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
     (x : Fin evalPts → F) (E : Fin m → Fin evalPts → F) :
     (badXiOf σ aw₀ x E).card ≤ 2 * (m - 1) := by
@@ -101,7 +101,7 @@ private theorem card_badXiOf_le {F G : Type*} [Field F] [DecidableEq F]
 
 /-- `badROf` counts at most `1 = 2 − 1` challenge: one counting-SZ bad set over
 `Fin evalPts`. -/
-private theorem card_badROf_le {F G : Type*} [Field F] [DecidableEq F]
+theorem card_badROf_le {F G : Type*} [Field F] [DecidableEq F]
     (σ : SRS G) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F)
     (x : Fin evalPts → F) (E : Fin m → Fin evalPts → F) (ξ : F) :
     (badROf σ aw₀ x E ξ).card ≤ 1 := by
@@ -349,7 +349,7 @@ noncomputable def ftChunkAssembly [Field F] (k nt : ℕ)
   ∑ j : Fin nt, rowPoly (aT j) * Polynomial.X ^ ((j : ℕ) * 2 ^ k)
 
 /-- The assembly meets the chunk-count degree bound `nt · 2^k`. -/
-private theorem ftChunkAssembly_natDegree_lt [Field F] (k : ℕ) {nt : ℕ} (hnt : 0 < nt)
+theorem ftChunkAssembly_natDegree_lt [Field F] (k : ℕ) {nt : ℕ} (hnt : 0 < nt)
     (aT : Fin nt → Fin (2 ^ k) → F) :
     (ftChunkAssembly k nt aT).natDegree < nt * 2 ^ k := by
   have h2k : 0 < 2 ^ k := Nat.two_pow_pos k
