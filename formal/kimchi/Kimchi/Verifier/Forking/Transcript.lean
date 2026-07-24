@@ -98,32 +98,56 @@ independent, the hypothesis `Forking.Model`'s per-challenge freshness bounds con
 theorem preBeta_ne_preGamma (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     (publicComm : Vector C.Point nc) :
     preBeta cvk cp publicComm ≠ preGamma cvk cp publicComm := by
-  sorry
+  intro h
+  have hlen := congrArg List.length h
+  simp only [preBeta, preGamma, preAbsorbs, wCommAbsorbs,
+    List.length_append, List.length_cons, List.length_map, List.length_nil] at hlen
+  omega
 
 theorem preGamma_ne_preAlpha (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     (publicComm : Vector C.Point nc) :
     preGamma cvk cp publicComm ≠ preAlpha cvk cp publicComm := by
-  sorry
+  intro h
+  have hlen := congrArg List.length h
+  simp only [preBeta, preGamma, preAlpha, preAbsorbs, wCommAbsorbs,
+    List.length_append, List.length_cons, List.length_map, List.length_nil] at hlen
+  omega
 
 theorem preAlpha_ne_preZeta (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     (publicComm : Vector C.Point nc) :
     preAlpha cvk cp publicComm ≠ preZeta cvk cp publicComm := by
-  sorry
+  intro h
+  have hlen := congrArg List.length h
+  simp only [preBeta, preGamma, preAlpha, preZeta, preAbsorbs, wCommAbsorbs,
+    List.length_append, List.length_cons, List.length_map, List.length_nil] at hlen
+  omega
 
 theorem preBeta_ne_preAlpha (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     (publicComm : Vector C.Point nc) :
     preBeta cvk cp publicComm ≠ preAlpha cvk cp publicComm := by
-  sorry
+  intro h
+  have hlen := congrArg List.length h
+  simp only [preBeta, preGamma, preAlpha, preAbsorbs, wCommAbsorbs,
+    List.length_append, List.length_cons, List.length_map, List.length_nil] at hlen
+  omega
 
 theorem preBeta_ne_preZeta (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     (publicComm : Vector C.Point nc) :
     preBeta cvk cp publicComm ≠ preZeta cvk cp publicComm := by
-  sorry
+  intro h
+  have hlen := congrArg List.length h
+  simp only [preBeta, preGamma, preAlpha, preZeta, preAbsorbs, wCommAbsorbs,
+    List.length_append, List.length_cons, List.length_map, List.length_nil] at hlen
+  omega
 
 theorem preGamma_ne_preZeta (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     (publicComm : Vector C.Point nc) :
     preGamma cvk cp publicComm ≠ preZeta cvk cp publicComm := by
-  sorry
+  intro h
+  have hlen := congrArg List.length h
+  simp only [preBeta, preGamma, preAlpha, preZeta, preAbsorbs, wCommAbsorbs,
+    List.length_append, List.length_cons, List.length_map, List.length_nil] at hlen
+  omega
 
 end KimchiTranscriptElt
 

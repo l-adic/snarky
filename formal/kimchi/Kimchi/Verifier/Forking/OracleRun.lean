@@ -78,19 +78,27 @@ theorem poseidonO_preGamma (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     (publicComm : Vector C.Point nc) :
     poseidonO (KimchiTranscriptElt.preGamma cvk cp publicComm)
       = (fqOracles C cvk cp publicComm).gamma := by
-  sorry
+  rw [poseidonO, preGamma, preBeta]
+  simp only [List.foldl_append, List.foldl_cons, List.foldl_nil, step, foldl_step_fst,
+    foldl_absorbInto_preAbsorbs, fqOracles]
 
 theorem poseidonO_preAlpha (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     (publicComm : Vector C.Point nc) :
     poseidonO (KimchiTranscriptElt.preAlpha cvk cp publicComm)
       = (fqOracles C cvk cp publicComm).alpha := by
-  sorry
+  rw [poseidonO, preAlpha, preGamma, preBeta]
+  simp only [List.foldl_append, List.foldl_cons, List.foldl_nil, step, foldl_step_fst,
+    foldl_absorbInto_preAbsorbs]
+  simp only [absorbInto, List.foldl_map, Vector.foldl_toList, fqOracles]
 
 theorem poseidonO_preZeta (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     (publicComm : Vector C.Point nc) :
     poseidonO (KimchiTranscriptElt.preZeta cvk cp publicComm)
       = (fqOracles C cvk cp publicComm).zeta := by
-  sorry
+  rw [poseidonO, preZeta, preAlpha, preGamma, preBeta]
+  simp only [List.foldl_append, List.foldl_cons, List.foldl_nil, step, foldl_step_fst,
+    foldl_absorbInto_preAbsorbs]
+  simp only [absorbInto, List.foldl_map, Vector.foldl_toList, Array.foldl_toList, fqOracles]
 
 /-- **Faithfulness (W2 acceptance gate).** Reading the sponge-as-oracle `poseidonO` at the
 four fq-side transcript prefixes reproduces the deployed verifier's `(β, γ, α, ζ)` exactly.
