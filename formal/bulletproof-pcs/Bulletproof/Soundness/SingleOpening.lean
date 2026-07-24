@@ -162,12 +162,12 @@ concatenates two halves. -/
 
 /-- Lower half: the restriction of a length-`2^{k+1}` vector to its first `2^k`
 indices. -/
-private def loHalf {α : Type*} {k : ℕ} (f : Fin (2 ^ (k + 1)) → α) : Fin (2 ^ k) → α :=
+def loHalf {α : Type*} {k : ℕ} (f : Fin (2 ^ (k + 1)) → α) : Fin (2 ^ k) → α :=
   fun i => f (Fin.castLE (by rw [pow_succ]; omega) i)
 
 /-- Upper half: the restriction of a length-`2^{k+1}` vector to its last `2^k`
 indices (offset by `2^k`). -/
-private def hiHalf {α : Type*} {k : ℕ} (f : Fin (2 ^ (k + 1)) → α) : Fin (2 ^ k) → α :=
+def hiHalf {α : Type*} {k : ℕ} (f : Fin (2 ^ (k + 1)) → α) : Fin (2 ^ k) → α :=
   fun i => f ⟨2 ^ k + i.val, by have := i.isLt; rw [pow_succ]; omega⟩
 
 /-- Concatenation of two length-`2^k` halves into a length-`2^{k+1}` vector. -/
@@ -181,7 +181,7 @@ def append {α : Type*} {k : ℕ} (lo hi : Fin (2 ^ k) → α) : Fin (2 ^ (k + 1
 loHalf v + u • hiHalf v` — the high half scaled by the challenge `u`. Generic over
 the module `M` so it serves both the generators (`M := G`) and the eval vector
 (`M := F`). -/
-private def foldHalves {M : Type*} [AddCommGroup M] [Module F M] {k : ℕ}
+def foldHalves {M : Type*} [AddCommGroup M] [Module F M] {k : ℕ}
     (v : Fin (2 ^ (k + 1)) → M) (u : F) : Fin (2 ^ k) → M :=
   loHalf v + u • hiHalf v
 
