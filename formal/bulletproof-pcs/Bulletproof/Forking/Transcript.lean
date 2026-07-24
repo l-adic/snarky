@@ -355,4 +355,60 @@ theorem spongeOScalar_preC (inp : Ipa.Input C k m p) :
     rfl
   rw [hLHS, hRHS]
 
+/-! ## The abstract Fiat–Shamir interface, and Poseidon as one instance
+
+The bridges above say the deployed challenges *are* reads of the sponge at transcript
+prefixes. Because the standalone opening verifier starts **cold** (`Ipa.verify = verifyFrom
+FqSponge.init`), those reads are functions of the transcript alone — which is exactly what
+lets the challenge source become a parameter, the way `zcash/ironwood` writes its verifier.
+(Kimchi's opening starts from the *warm* post-`ζ` state, so its challenges are not a function
+of the IPA transcript alone; that is why this abstraction is available here and not there.)
+
+`verifyOracle` is the opening verifier over an arbitrary source; `spongeFS` is the deployed
+Poseidon one; `verifyOracle_spongeFS` proves the abstract verifier at that instance *is*
+`Ipa.verify`. Substituting a uniformly random source — what a forking argument rewinds and
+reprograms — is then instantiating an argument, with the deployed verifier recovered as a
+theorem rather than assumed. -/
+
+/-- A source of opening challenges: a base-field squeeze for the `U` base and a scalar-field
+squeeze for the round and Schnorr challenges, each a function of the transcript prefix. Two
+squeezes rather than ironwood's one, because these two codomains differ. -/
+structure FiatShamir (C : Ipa.CommitmentCurve) where
+  /-- The raw base-field squeeze the `U` base is derived from. -/
+  squeezeBase : List (IpaTranscriptElt C) → C.BaseField
+  /-- The endo-expanded scalar squeeze of the round and Schnorr challenges. -/
+  squeezeScalar : List (IpaTranscriptElt C) → C.ScalarField
+
+/-- The opening transcript derived from a challenge source, at the prefixes the deployed
+schedule draws each challenge at. -/
+def transcriptOf (fs : FiatShamir C) (inp : Ipa.Input C k m p) :
+    C.Point × Vector C.ScalarField k × C.ScalarField :=
+  (C.toGroup (fs.squeezeBase (preT inp)),
+   Vector.ofFn fun i => fs.squeezeScalar (preU inp i),
+   fs.squeezeScalar (preC inp))
+
+/-- The opening verifier over an arbitrary challenge source: the deployed algebra
+(`Ipa.verifyWith`) at the challenges `fs` supplies. -/
+def verifyOracle (fs : FiatShamir C) (σ : SRS C.Point)
+    (inp : Ipa.Input C σ.k m p) : Bool :=
+  let (uBase, chals, c) := transcriptOf fs inp
+  Ipa.verifyWith C σ uBase chals c inp
+
+/-- The deployed source: the Poseidon sponge read at transcript prefixes from the cold start. -/
+def spongeFS (C : Ipa.CommitmentCurve) : FiatShamir C :=
+  ⟨spongeOBase, spongeOScalar⟩
+
+/-- **The abstract verifier at the Poseidon source is the deployed verifier.** Assembled from
+the three bridges. This is what makes the abstraction honest: the challenge source is a
+parameter, and the deployed verifier is recovered as a theorem rather than assumed. -/
+theorem verifyOracle_spongeFS (σ : SRS C.Point) (inp : Ipa.Input C σ.k m p) :
+    verifyOracle (spongeFS C) σ inp = Ipa.verify C σ inp := by
+  have ht : (transcriptOf (spongeFS C) inp) = Ipa.transcriptFrom C FqSponge.init inp := by
+    refine Prod.ext (toGroup_spongeOBase_preT inp)
+      (Prod.ext ?_ (spongeOScalar_preC inp))
+    refine Vector.ext fun i hi => ?_
+    simp only [transcriptOf, spongeFS, Vector.getElem_ofFn]
+    exact spongeOScalar_preU inp ⟨i, hi⟩
+  rw [verifyOracle, ht, Ipa.verify, Ipa.verifyFrom]
+
 end Bulletproof.Ipa.Forking
