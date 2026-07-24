@@ -56,6 +56,14 @@ without doing any work.
   oracle table. That is `honest_wins_everywhere` below — the anti-vacuity companion, which must
   land with the theorem, not after it.
 
+* **Accept while knowing nothing.** Not a cheat on the *extractor* but on the *game*: if the
+  adversary may choose the Schnorr commitment `δ` after seeing the challenge `c`, then
+  `VerifierAcceptsAt` is satisfiable with `z1 = z2 = 0` and no witness at all
+  (`verifierAcceptsAt_of_deferred_delta`, proved below), so no extractor could succeed and the
+  measure bound would be false. `DecodesFromPrefixes` — commit-then-challenge, ironwood's
+  `hdecode` for our proof shape — is what rules it out, and it is a *hypothesis of the theorem*,
+  not an informal reading of the protocol.
+
 * **Always answer `some` with a fabricated break.** Blocked twice over. `kimchiExtract` is a
   plain `def`, not `noncomputable`, so Lean's compiler rejects a `Classical.choice`-conjured
   witness — the distinction ironwood draws as "in a prime-order group a relation *exists*; the
@@ -125,6 +133,53 @@ def Wins (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre �
   let u := fun i : Fin σ.k => χ i.castSucc
   VerifierAcceptsAt σ (proofOf p) P (innerProduct (bPolyCoefficients u) b) v (χ (Fin.last σ.k)) u
 
+/-! ## Commit-then-challenge, and why it must be a hypothesis
+
+`Wins` alone is **not** enough to state the game, and the gap is not subtle: without tying the
+proof's group elements to the prefixes at which their challenges are read, an adversary may
+choose the Schnorr commitment `δ` *after* seeing the Schnorr challenge `c`, and then
+`VerifierAcceptsAt` is satisfiable carrying no knowledge whatsoever.
+
+`verifierAcceptsAt_of_deferred_delta` records that as a checkable claim rather than a warning:
+with `z1 = z2 = 0` and `δ := -(c • Q)`, the Schnorr equation reads `c•Q - c•Q = 0` and the
+`sg` check holds by construction — for *any* commitment, eval vector and claimed value. So an
+extractor could not possibly succeed against such an adversary, and a measure bound stated
+without the ordering hypothesis would be false.
+
+This is exactly the role ironwood's `hdecode` plays
+(`recursiveAlgebraicForkFrom_realizes`, `Recursive.lean:809`): the round points are *decoded from
+the prefix*, so rewinding at a prefix cannot change them. `DecodesFromPrefixes` below is that
+condition for our proof shape, and it is faithful to the deployed verifier — the transcript
+absorbs `Lⱼ, Rⱼ` before squeezing round `j`'s challenge, and absorbs `δ` and `sg` before
+squeezing `c`. -/
+
+/-- **Acceptance without knowledge, when `δ` may depend on `c`.** The reason the ordering
+hypothesis below is not optional. -/
+theorem verifierAcceptsAt_of_deferred_delta (σ : SRS G) (b0 v : F) (P : G) (u : Fin σ.k → F)
+    (c : F) :
+    VerifierAcceptsAt σ
+      ({ lr := fun _ => (0, 0), delta := -(c • recombine σ P v u (fun _ => (0, 0))),
+         z1 := 0, z2 := 0, sg := commitGen σ.g (bPolyCoefficients u) } : OpeningProof F G σ.k)
+      P b0 v c u := by
+  refine ⟨?_, rfl⟩
+  simp
+
+/-- **Commit-then-challenge, as a hypothesis on the adversary's transcript shape.** Every group
+element of the proof is a function of the prefix at which its own challenge is read: the round-`j`
+cross-terms of the prefix for round `j`, and the Schnorr commitment and folded generator of the
+prefix for `c`. Since the oracle's answer *at* that prefix is drawn afterwards, the adversary
+cannot make them depend on the challenge — which is precisely what makes a fork meaningful. -/
+structure DecodesFromPrefixes (σ : SRS G)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T) where
+  /-- The round cross-terms, as read off the round's own transcript prefix. -/
+  round : T → G × G
+  /-- The Schnorr commitment and folded generator, as read off the final prefix. -/
+  final : T → G × G
+  /-- Round `j`'s `(L, R)` is determined by round `j`'s prefix. -/
+  round_eq : ∀ p (j : Fin σ.k), (proofOf p).lr j = round (prefixes p j.castSucc)
+  /-- `δ` and `sg` are determined by the prefix at which the Schnorr challenge is read. -/
+  final_eq : ∀ p, ((proofOf p).delta, (proofOf p).sg) = final (prefixes p (Fin.last σ.k))
+
 /-- **The extractor** (body: Stage 5b). Given the oracle table and the fork tape, run the
 adversary, rewind it at the round prefixes, and compute an opening or a relation — ironwood's
 `recursiveAlgebraicFork` composed with `kimchiOpeningOrBreak`. `none` is the failure branch the
@@ -138,6 +193,7 @@ def kimchiExtract [DecidableEq F] [DecidableEq G] [DecidableEq T]
     (expand : Pre → F)
     (A : Zcash.Snark.OracleComp T Pre Pf)
     (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (_dec : DecodesFromPrefixes σ proofOf prefixes)
     (O : T → Pre) (coins : Zcash.Snark.RecursiveForkCoins Pre (σ.k + 1)) :
     Option (OpeningOrBreak σ P b v) :=
   sorry
@@ -162,6 +218,10 @@ theorem kimchiExtract_failure_measure_le [DecidableEq F] [DecidableEq G]
     -- the adversary, its query budget, and the transcript data it commits to per run
     (A : Zcash.Snark.OracleComp T Pre Pf) {Q : ℕ} (_hQ : A.QueryBound Q)
     (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    -- COMMIT-THEN-CHALLENGE. Without this the theorem is FALSE, by
+    -- `verifierAcceptsAt_of_deferred_delta`: an adversary free to pick δ after seeing c
+    -- accepts while knowing nothing, so no extractor can succeed against it.
+    (dec : DecodesFromPrefixes σ proofOf prefixes)
     -- the round prefixes are distinct and chronological (a *theorem* about our transcript
     -- encoding, by length — never assumed as injectivity of an abstract encoding)
     (_D : Zcash.Snark.PrefixDecode T (σ.k + 1) prefixes)
@@ -169,7 +229,7 @@ theorem kimchiExtract_failure_measure_le [DecidableEq F] [DecidableEq G]
     (coins : Zcash.Snark.RecursiveForkCoins Pre (σ.k + 1)) (_hcoins : coins.Complete) :
     (PMF.uniformOfFintype (T → Pre)).toOuterMeasure
         {O | Wins σ b v P expand proofOf prefixes O (A.run O) ∧
-          kimchiExtract σ b v P pg pw hP expand A proofOf prefixes O coins = none}
+          kimchiExtract σ b v P pg pw hP expand A proofOf prefixes dec O coins = none}
       ≤ (Q + σ.k + 1) * (3 / Fintype.card Pre) := by
   sorry
 
@@ -186,7 +246,7 @@ theorem honest_wins_everywhere [DecidableEq T]
     (expand : Pre → F)
     (a : Fin (2 ^ σ.k) → F) (ρ : F) (_hopen : openingRelationB σ P b v a ρ) :
     ∃ (A : Zcash.Snark.OracleComp T Pre Pf) (proofOf : Pf → OpeningProof F G σ.k)
-      (prefixes : Pf → Fin (σ.k + 1) → T),
+      (prefixes : Pf → Fin (σ.k + 1) → T) (_dec : DecodesFromPrefixes σ proofOf prefixes),
       A.QueryBound (σ.k + 1) ∧
         ∀ O : T → Pre, Wins σ b v P expand proofOf prefixes O (A.run O) := by
   sorry
