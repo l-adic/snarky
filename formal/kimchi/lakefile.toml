@@ -15,12 +15,13 @@ lintDriverArgs = ["Kimchi", "KimchiFixture"]
 [leanOptions]
 weak.linter.style.longLine = true
 
-# CompElliptic: concrete short-Weierstrass `SWCurve` / `SWPoint` with a proven group law,
-# and the Pasta curve instances. Vendored as a git submodule at vendor/CompElliptic so the
-# revision is locked to this repo rather than floating on upstream main.
+# CompElliptic: concrete short-Weierstrass `SWCurve` / `SWPoint` with a proven group law, and
+# the Pasta curve instances. daira upstream, pinned by `rev` so the revision is locked (and
+# identical to ironwood's own CompElliptic pin, so they share one checkout).
 [[require]]
 name = "CompElliptic"
-path = "../vendor/CompElliptic"
+git = "https://github.com/daira/CompElliptic"
+rev = "a549e4555b17bbbe3c8d48aa7d5b493912ccfbe9"
 
 # The Pasta curve trust base: the generic EC order/shape sugar, the concrete GLV constants,
 # the Hasse/CM axioms and their derived orders, and the point-group module structure.
@@ -39,6 +40,18 @@ path = "../poseidon"
 [[require]]
 name = "bulletproof-pcs"
 path = "../bulletproof-pcs"
+
+# Zcash/ironwood: the generic forking / random-oracle / knowledge-error machinery
+# (`Forking/Tree`, `Forking/Probability`, `Forking/KnowledgeError`,
+# `Forking/Adversary/OracleComp`, …) the probabilistic soundness layer under
+# `Kimchi/Verifier/Forking/` builds on. Pinned to a specific ironwood commit; bump
+# deliberately. Ironwood pins the SAME `daira/CompElliptic @ a549e455` we vendor, so its
+# transitive CompElliptic require resolves to our path package (one CompElliptic in the
+# workspace). See formal/docs/ironwood-refoundation-plan.md.
+[[require]]
+name = "Zcash"
+git = "https://github.com/zcash/ironwood"
+rev = "83a98f7fb3bcd8f87ddf0a459dcab96a782d91d8"
 
 # Mathlib gives us prime fields (`ZMod p`) and the elliptic-curve group law
 # (`WeierstrassCurve.Affine`), the trusted oracle the EC gates are checked against. Pinned to

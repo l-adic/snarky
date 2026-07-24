@@ -335,12 +335,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        # Skip the large `mina` submodule; only the Lean dependency submodules
-        # are needed.
+        # Skip the large `mina` submodule; the Lean dependencies (CompElliptic,
+        # ironwood, Mathlib) are lake git requires, fetched by setup-lean.
         submodules: false
-
-    - name: Check out the Lean dependency submodule (CompElliptic)
-      run: git submodule update --init formal/vendor/CompElliptic
 
     - name: Setup Lean + build the library
       uses: ./.github/actions/setup-lean

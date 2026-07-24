@@ -16,7 +16,8 @@ weak.linter.style.longLine = true
 # CompElliptic: the Pasta fields and curves the wire verifier is instantiated at.
 [[require]]
 name = "CompElliptic"
-path = "../vendor/CompElliptic"
+git = "https://github.com/daira/CompElliptic"
+rev = "a549e4555b17bbbe3c8d48aa7d5b493912ccfbe9"
 
 # The Pasta trust base: hasse-pinned group orders, the point-group module structure,
 # and the wire scalar-shift algebra (`Pasta.Shifted`).
