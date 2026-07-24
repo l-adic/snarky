@@ -57,6 +57,13 @@ docker compose run --rm -T --no-deps --entrypoint sh archon -c \
 **Verify fresh state before `loop`:** `.archon/logs/` empty, no `TO_USER.md`, `USER_HINTS.md`
 names the new target, sorry count as expected.
 
+**Blueprint/DAG panes** (dashboard) are populated only if the image has `leanblueprint` on PATH
+at `init` time (in the image since archon-docker `ad3f507`; before that, init reported
+"leanblueprint scaffolding (disabled by options)" — meaning the binary was absent — and the
+panes stayed empty on every job). With the scaffold in place, run `./archon.sh dag` before
+`loop` to have the blueprint chapters written; `dag` runs on the Claude backend — the
+"informal agent" API-key warning in the loop banner concerns a different optional helper.
+
 ## Per-project seed: `formal/.archon-seed/` (gitignored)
 
 The container maps these into the work copy on first seed (README has the table):
