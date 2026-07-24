@@ -52,10 +52,20 @@ docker compose run --rm -T --no-deps --entrypoint sh archon -c \
 ./archon.sh loop
 ```
 
-`init` is merge-based: with declarations + sorries present it prints
-`Stage detection: prover` and advances past `init` itself — no manual stage edit needed.
-**Verify fresh state before `loop`:** `.archon/logs/` empty, no `TO_USER.md`, `USER_HINTS.md`
-names the new target, sorry count as expected.
+**Run `init` TWICE after a full `.archon` wipe.** The first call bootstraps and writes a fresh
+`PROGRESS.md` at stage `init`; only the second (merge-based re-init) reports
+`PROGRESS.md was stuck at 'init' — advancing to 'prover'`. With one call, `loop` refuses to start:
+`✗ Project is still in init stage`. Look for the line **`PROGRESS.md stage set to: prover`**, not
+just `Stage detection: prover` — the latter prints on both calls and means nothing on its own.
+
+**Verify fresh state before `loop`:** stage is `prover` (not `init`), `.archon/logs/` empty, no
+`TO_USER.md`, `USER_HINTS.md` names the new target, sorry count as expected.
+
+**Model after a wipe:** `init` regenerates `config.json` with upstream's default `opus`, because
+the entrypoint's `ARCHON_MODEL` stamp runs *before* `archon init` creates that file. The stamp
+lands on the next container start, so `loop` gets the right model — confirm from
+`>> loop.model forced to …` and the first `Agent model:` banner rather than from `config.json`
+between commands.
 
 **Blueprint/DAG panes** (dashboard). `archon init` gates its blueprint scaffold on `leanblueprint`
 being on PATH, and reports its absence as the misleading "leanblueprint scaffolding (disabled by
