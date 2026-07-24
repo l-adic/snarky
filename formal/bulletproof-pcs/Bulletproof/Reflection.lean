@@ -164,7 +164,7 @@ theorem verify_reflects (σ : SRS C.Point) {m p : ℕ} (inp : Ipa.Input C σ.k m
       (fun i => (transcript C inp).2.1[i])
       inp.commitmentFn inp.pointFn inp.evalFn := by
   simp only [Ipa.transcript]
-  simp only [Ipa.verify, Ipa.verifyFrom] at hv
+  simp only [Ipa.verify, Ipa.verifyFrom, Ipa.verifyWith] at hv
   rw [Bool.and_eq_true] at hv
   obtain ⟨hsch, hsg⟩ := hv
   rw [decide_eq_true_eq] at hsch hsg
