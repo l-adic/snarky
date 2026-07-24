@@ -145,9 +145,22 @@ So we keep `foldHalves` and carry the transport. Delivered:
 
 Their `commitGen` unified with ours definitionally, so no adapter was needed for it.
 
-**Stage 1 — adapter, no deletions yet.** `SRS ≃ URS` (field-for-field), `commit` reconciliation
-per §3.2, and `openingRelationB ↔ IpaRelation`. Prove the round-trip. Additive only, so the
-existing 7 roots and the axiom gate stay green throughout.
+**Stage 1 — adapter. DONE**, in `Bulletproof/Forking/Adapter.lean`. Additive only; the 7 roots and
+the axiom gate stayed green.
+
+- `ursOf` / `srsOf`, with both round-trips `rfl` (structure eta);
+- `commit_eq_zcash : commit σ a r = Zcash.Snark.commit (ursOf σ) a + r • σ.h`, also `rfl`;
+- `openingRelationB_iff_zcash` — our blinded relation is theirs at the de-blinded commitment
+  `P - ρ • σ.h`, settling §3.2;
+- `openingOfAcceptV` — the composite: a kimchi accepting tree yields a witness for **our own**
+  `openingRelationB`, as data, with no extraction reproved on our side.
+
+Also delivered (was flagged as a Stage-3 need): `Convention.ipaAcceptV_of_zcash` gives the reverse
+transport, hence `ipaAcceptV_iff_zcash` and `Forking.decIpaAcceptV` — our accept is decidable by
+transport onto ironwood's `decIpaAcceptV` rather than a hand-written instance. The peel needs that
+decidability to locate a failing subtree.
+
+`check_extractor_computes.sh` now covers both the unblinded extraction and the blinded composite.
 
 **Stage 2 — delete the duplicated core.** Remove our `commitGen`, `loHalf`/`hiHalf`/`append`,
 `vandermonde3`, `ipa_round_commit_with_coeffs`, `IpaTreeV`/`IpaAcceptV`/`ipa_soundV`,

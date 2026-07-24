@@ -1,5 +1,6 @@
 import Bulletproof.Soundness
 import Zcash.Snark.Soundness.IpaSoundness
+import Zcash.Snark.Soundness.Deployed.IpaPeel
 
 /-!
 # Reconciling the two IPA fold conventions
@@ -76,6 +77,51 @@ theorem zcash_ipaAcceptV_toZcash : {d : ℕ} → (g : Fin (2 ^ d) → G) → (b 
           show P + u₃ • R + u₃⁻¹ • L = P + u₃⁻¹ • L + u₃ • R from by abel,
           show v + u₃ • Rv + u₃⁻¹ • Lv = v + u₃⁻¹ • Lv + u₃ • Rv from by abel]
         exact zcash_ipaAcceptV_toZcash _ _ _ _ t₃ ha₃
+
+/-- The transport is faithful in the other direction too: an accepting transported tree comes from
+an accepting tree. Inverting the challenges is involutive (`inv_inv`), and nonzero-ness transfers
+because `0⁻¹ = 0`.
+
+Needed for `Bulletproof.Forking.decIpaAcceptV`: with both directions the accept transfers along
+ironwood's decidability instead of us writing our own. -/
+theorem ipaAcceptV_of_zcash : {d : ℕ} → (g : Fin (2 ^ d) → G) → (b : Fin (2 ^ d) → F) →
+    (P : G) → (v : F) → (t : IpaTreeV F G d) →
+    Zcash.Snark.IpaAcceptV g b P v (toZcash t) → IpaAcceptV g b P v t
+  | 0, _, _, _, _, .leaf _, h => h
+  | _ + 1, g, b, P, v, .node L R Lv Rv u₁ u₂ u₃ t₁ t₂ t₃, h => by
+      obtain ⟨h12, h13, h23, hu₁, hu₂, hu₃, ha₁, ha₂, ha₃⟩ := h
+      have hz : ∀ u : F, u⁻¹ ≠ 0 → u ≠ 0 := fun _ hi hc => hi (by rw [hc, inv_zero])
+      refine ⟨fun hc => h12 (by rw [hc]), fun hc => h13 (by rw [hc]), fun hc => h23 (by rw [hc]),
+        hz _ hu₁, hz _ hu₂, hz _ hu₃, ?_, ?_, ?_⟩
+      · refine ipaAcceptV_of_zcash _ _ _ _ t₁ ?_
+        rw [foldGens_inv, foldGens_inv, inv_inv] at ha₁
+        rw [show P + u₁⁻¹ • L + u₁ • R = P + u₁ • R + u₁⁻¹ • L from by abel,
+          show v + u₁⁻¹ • Lv + u₁ • Rv = v + u₁ • Rv + u₁⁻¹ • Lv from by abel]
+        exact ha₁
+      · refine ipaAcceptV_of_zcash _ _ _ _ t₂ ?_
+        rw [foldGens_inv, foldGens_inv, inv_inv] at ha₂
+        rw [show P + u₂⁻¹ • L + u₂ • R = P + u₂ • R + u₂⁻¹ • L from by abel,
+          show v + u₂⁻¹ • Lv + u₂ • Rv = v + u₂ • Rv + u₂⁻¹ • Lv from by abel]
+        exact ha₂
+      · refine ipaAcceptV_of_zcash _ _ _ _ t₃ ?_
+        rw [foldGens_inv, foldGens_inv, inv_inv] at ha₃
+        rw [show P + u₃⁻¹ • L + u₃ • R = P + u₃ • R + u₃⁻¹ • L from by abel,
+          show v + u₃⁻¹ • Lv + u₃ • Rv = v + u₃ • Rv + u₃⁻¹ • Lv from by abel]
+        exact ha₃
+
+/-- The accept predicates correspond exactly under the transport. -/
+theorem ipaAcceptV_iff_zcash {d : ℕ} (g : Fin (2 ^ d) → G) (b : Fin (2 ^ d) → F) (P : G) (v : F)
+    (t : IpaTreeV F G d) :
+    IpaAcceptV g b P v t ↔ Zcash.Snark.IpaAcceptV g b P v (toZcash t) :=
+  ⟨zcash_ipaAcceptV_toZcash g b P v t, ipaAcceptV_of_zcash g b P v t⟩
+
+/-- Kimchi's accept is decidable, by transport onto ironwood's `Zcash.Snark.decIpaAcceptV`. The
+peel needs this to *locate* a failing subtree computably. -/
+instance decIpaAcceptV [DecidableEq F] [DecidableEq G] {d : ℕ} (g : Fin (2 ^ d) → G)
+    (b : Fin (2 ^ d) → F) (P : G) (v : F) (t : IpaTreeV F G d) :
+    Decidable (IpaAcceptV g b P v t) :=
+  letI := Zcash.Snark.decIpaAcceptV (F := F) g b P v (toZcash t)
+  decidable_of_iff _ (ipaAcceptV_iff_zcash g b P v t).symm
 
 /-- **Data-valued extraction at kimchi's convention**, by running ironwood's computable
 `ipa_extractV` through the transport. The witness is returned as data (`Σ'`), not asserted to
