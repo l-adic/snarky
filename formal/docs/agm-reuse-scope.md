@@ -199,9 +199,31 @@ Still open on the way to retiring the axioms:
   `kimchiProverAccept_iff_verifierAcceptsAt` (acceptance along any branch IS
   `VerifierAcceptsAt` at the assembled proof), and the headline
   `kimchi_opening_or_break_of_extractable`;
-- **Stage 5** — the probability layer: a fork certificate from a single accepting prover with
-  success probability above `kerr`, through the W2–W4 oracle model and ironwood's
-  `extractable_of_prob`/adversary machinery. Only then can `poseidon_fiat_shamir_*` retire.
+- **Stage 5a — the uniform-challenge game. DONE**, `Bulletproof/Forking/Knowledge.lean`:
+  `kimchi_knowledge_soundness` — success probability above `kerr |F| (k+1) / |F|^(k+1)` over
+  uniform challenge vectors yields opening-or-break, by `extractable_of_prob` into the Stage-4
+  chain, with the decidability instance the accepting-set count needs. Self-audited per the
+  vacuity discipline: `kimchi_knowledge_soundness_conclusion_free_at_1dim` proves the
+  `Prop`-level disjunction is free at a 1-dimensional group (the deployed Pasta case), so the
+  theorem's content at deployed parameters lives in the data-valued chain, exactly as the W5
+  scope doc's §1.1 predicted for any `Prop` conclusion over this group.
+
+- **Stage 5b — the computed fork (remaining).** The end-to-end content at Pasta needs the
+  certificate *computed* from a sponge-driven adversary: ironwood's Route B
+  (`Forking/Adversary/{OracleComp,Recursive}.lean` — the bounded-query oracle machine, rewinding
+  with explicit coins, `recursiveAlgebraicFork` + failure-measure bounds). Genericity survey:
+  `OracleComp` is fully generic in `(T, F)`; `Recursive`'s engine is generic
+  (`{T F G P ι}, [Field F]`) with only its `FpValidity` section and halo2 endpoints `Fp`-locked;
+  `Adaptive`/`DomainReduction`/`ExpectedRuns(Poly)` are generic. The seam to rebuild against our
+  verifier is `algebraicForkCertAttempt_valid`-shaped, targeting `kimchiProverAccept` (already
+  pinned to the wire by `kimchiProverAccept_iff_verifierAcceptsAt`) over the transcript domain
+  of `Bulletproof/Forking/Transcript.lean`. This is the W5 scope doc's Shape B, with its listed
+  costs; per that doc's §7 it is gated on repo-owner decisions (notably D3 challenge domain,
+  D4 fixed-claim scope, D7 AGM acceptance, D8 worth-it) before proving begins. Note D1/D2/D6
+  and the anti-triviality prerequisite (§3.0) have been resolved by the work above; the root
+  representation `(pg, pw)` already in `kimchiOpeningOrBreak` is the AGM-lite piece of D7.
+  Only after 5b can `poseidon_fiat_shamir_*` retire with content (in either shape, removing
+  two kernel axioms without adding any — ironwood declares no RO axiom and neither does W2).
 
 **Stage 2 — delete the duplicated core.** Remove our `commitGen`, `loHalf`/`hiHalf`/`append`,
 `vandermonde3`, `ipa_round_commit_with_coeffs`, `IpaTreeV`/`IpaAcceptV`/`ipa_soundV`,
