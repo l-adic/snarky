@@ -42,3 +42,6 @@ import Kimchi.Verifier.Wire
 import Kimchi.Verifier.Capstone.Standard
 import Kimchi.Verifier.Capstone.Algebraic
 import Kimchi.Verifier.Capstone.Reflection
+
+-- W2 · Fiat–Shamir random-oracle model (fq side)
+import Kimchi.Verifier.Forking.Model
