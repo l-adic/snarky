@@ -48,3 +48,5 @@ import Kimchi.Verifier.Forking.Model
 import Kimchi.Verifier.Forking.RunLink
 -- W3 · The guard-escape engine and the run-level escape bounds
 import Kimchi.Verifier.Forking.GuardEscape
+-- W4 · The finite oracle domain
+import Kimchi.Verifier.Forking.Domain
