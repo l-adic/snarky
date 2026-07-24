@@ -259,9 +259,8 @@ fq-sponge state, verifier.rs:1184–1193), combine the claim, and check the Schn
 `sg`-correctness equations. The claim's shape is carried by its type (round count
 `σ.k`), so there are no runtime guards — rejecting ragged input is the wire parse's
 job. `σ.U` is never read — the deployed `U` is transcript-derived. -/
-def verifyFrom (σ : SRS C.Point) (s₀ : FqSponge.S C.base) (inp : Input C σ.k m p) :
-    Bool :=
-  let (uBase, chals, c) := transcriptFrom C s₀ inp
+def verifyWith (σ : SRS C.Point) (uBase : C.Point) (chals : Vector C.ScalarField σ.k)
+    (c : C.ScalarField) (inp : Input C σ.k m p) : Bool :=
   let chal : Fin σ.k → C.ScalarField := fun i => chals[i]
   let b0 := combinedB chal inp.evalscale inp.pointFn
   let v := cipOf inp
@@ -275,6 +274,16 @@ def verifyFrom (σ : SRS C.Point) (s₀ : FqSponge.S C.base) (inp : Input C σ.k
         + inp.proof.z2.val • σ.h)
   let sgOk := decide (inp.proof.sg = msm C σ.g (bPolyCoefficients chal))
   schnorr && sgOk
+
+/-- The opening acceptance at the deployed Fiat–Shamir schedule: `verifyWith` fed the
+transcript `transcriptFrom` derives by continuing the warm sponge. Definitionally the
+former body, so every existing statement about `verifyFrom` is unchanged; the split only
+names the boundary between the *derivation* (`transcriptFrom`) and the *algebra*
+(`verifyWith`), so an alternative challenge source can be supplied without touching either. -/
+def verifyFrom (σ : SRS C.Point) (s₀ : FqSponge.S C.base) (inp : Input C σ.k m p) :
+    Bool :=
+  let (uBase, chals, c) := transcriptFrom C s₀ inp
+  verifyWith C σ uBase chals c inp
 
 /-- The standalone acceptance decision: `verifyFrom` at the fresh sponge
 `FqSponge.init` — the cold start, validated against the production opening fixtures. -/
