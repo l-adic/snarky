@@ -66,6 +66,27 @@ without doing any work.
 Both guards are cheap to keep honest: the extractor must stay computable, must stay generic in
 `G`, and should be `#eval`'d on a fixture the way `kimchiOpeningOrBreak` already is
 (`scripts/check_extractor_computes.sh`).
+
+## How to prove it: the oracle codomain is `Pre`, and that is fine
+
+The apparent obstacle is that ironwood's fork engine uses **one** type for both the oracle's
+answers and the certificate's challenges (`Recursive.lean`, `variable … [Field F]`), whereas ours
+must differ: the oracle answers with prechallenges, the certificate carries field challenges. We
+cannot model the oracle as returning uniform field elements — that would claim `3/|F| ≈ 2⁻²⁵⁴`
+security for a challenge space of size `2¹²⁸`, i.e. a *better* bound than the truth.
+
+The split is nonetheless cheap, because the field-locking is confined to the certificate builder:
+
+* the **measure/escape machinery is codomain-generic** — `escapesDuringC_measure_le'`
+  (`OracleComp.lean:728`) asks only `[Fintype T] [DecidableEq T] [Fintype F] [Nonempty F]`, the
+  staged-decode layer only `[Zero F]`, and `fsWins`/`PrefixDecode` no algebra at all. All of it
+  applies verbatim at `Pre`;
+* only `Recursive.lean`'s `AlgebraicDForkCert`/`DeployedForkValid` need a field — and we do not
+  use them: we have our own `KimchiForkCert`, and `expand` is applied at node construction, where
+  `_hexp_inj` supplies the three distinct field challenges and `_hexp_ne` their nonzero-ness.
+
+So the work is a thin recursive fork over `Pre` that emits `KimchiForkCert`, with the failure
+measure discharged by ironwood's escape lemmas — not a re-derivation of `Recursive.lean`.
 -/
 
 namespace Bulletproof.Forking
