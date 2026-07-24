@@ -192,8 +192,13 @@ Still open on the way to retiring the axioms:
   commitment step is one `foldHalves` (`commitGen_bPolyCoefficients_step`, module-generic), and
   `bPoly_eq_innerProduct` / `combinedB_eq_innerProduct` close the wire's `sg`/`b0` forms onto
   the folded leaves;
-- **Stage 4 wiring** — produce `KimchiForkValid` from actual `VerifierAcceptsAt` runs
-  (via `verify_reflects` and the s-vector bridge);
+- ~~Stage 4 wiring~~ **DONE**, `Bulletproof/Forking/Prover.lean`: `KimchiProver` (the
+  prefix-determined strategy; the Schnorr layer is one extra challenge round),
+  `kimchiProverAccept_forkValid` (Extractable acceptance → valid certificate, mirroring
+  ironwood's `proverAccept_forkValid`), faithfulness
+  `kimchiProverAccept_iff_verifierAcceptsAt` (acceptance along any branch IS
+  `VerifierAcceptsAt` at the assembled proof), and the headline
+  `kimchi_opening_or_break_of_extractable`;
 - **Stage 5** — the probability layer: a fork certificate from a single accepting prover with
   success probability above `kerr`, through the W2–W4 oracle model and ironwood's
   `extractable_of_prob`/adversary machinery. Only then can `poseidon_fiat_shamir_*` retire.
