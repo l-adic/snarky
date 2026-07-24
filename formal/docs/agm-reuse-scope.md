@@ -208,6 +208,16 @@ Still open on the way to retiring the axioms:
   theorem's content at deployed parameters lives in the data-valued chain, exactly as the W5
   scope doc's §1.1 predicted for any `Prop` conclusion over this group.
 
+- **D3 (challenge domain) — RESOLVED, `Bulletproof/Forking/EndoChallenge.lean`.** The forking
+  game runs over the **prechallenge** domain (`Fintype.card ≤ 2¹²⁸`), not the scalar field, so
+  the counting hypothesis is satisfiable (the W5 doc's B3 option (a)). Both facts that transport
+  needs are proved per curve: `endoExpand_{vesta,pallas}_injOn` (injective on `[0, 2¹²⁸)`) and
+  `endoExpand_{vesta,pallas}_ne_zero` (never zero — so the fork tree's nonzero side conditions
+  hold for *every* prechallenge, needing nothing from `Extractable`). A collision or a vanishing
+  value is a short GLV relation among the bounded integer accumulators, refuted by the
+  certificate-backed `{vesta,pallas}_glv_no_short_relation`. Closure: standard trio, plus
+  CompElliptic's point-count `native_decide` axiom via `{vesta,pallas}_card` (allowed).
+
 - **Stage 5b — the computed fork (remaining).** The end-to-end content at Pasta needs the
   certificate *computed* from a sponge-driven adversary: ironwood's Route B
   (`Forking/Adversary/{OracleComp,Recursive}.lean` — the bounded-query oracle machine, rewinding
