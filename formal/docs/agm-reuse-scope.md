@@ -162,6 +162,40 @@ decidability to locate a failing subtree.
 
 `check_extractor_computes.sh` now covers both the unblinded extraction and the blinded composite.
 
+**Stage 3 — the capstone. DONE** (reordered before Stage 2's deletions by user directive:
+nothing is deleted until the capstone exists), in `Bulletproof/Forking/{Schnorr,Capstone}.lean`.
+
+The survey's Stage-3 plan was over-scoped: reading `produceDeployed`/`deployed_forking_tree`
+showed ironwood recovers the deployed tree's decorations by **Vandermonde interpolation of the
+sibling recursions**, so no per-node AGM representations are needed — the plain `DForkCert`
+suffices, and the AGM surface shrinks to a single root representation `P = ⟨pg, g⟩ + pw•H`
+(exactly kimchi's Pedersen shape; `U` is transcript-derived after `P`, so no `U` slot).
+
+- `schnorr_fork_eq` — the one extraction step ironwood lacks: kimchi's Schnorr wrapper is
+  2-special-sound, with the extraction formulas inline (difference quotients);
+- `KimchiForkCert` / `KimchiForkValid` — the `(3,…,3)` wire fork, in kimchi's fold convention,
+  leaves carrying two Schnorr transcripts;
+- `toDFork` + `KimchiForkValid.toDFork` — transport into ironwood's certificate and validity
+  (`Pwhole = P + v•U`, `z = 1`, `W = H`);
+- `kimchiOpeningOrBreak` — the dichotomy: `(Σ' a ρ, openingRelationB σ P b v a ρ) ⊕'
+  AlgebraicRelationWitness (augmentedBasis σ.g σ.U σ.h)`, composing
+  `deployed_forking_tree` → `deployedToAcceptVWitnessCore` → `ipa_extractV`, de-blinded by
+  `ρ := pw`. No extraction reproved; no `hbind`.
+
+`check_extractor_computes.sh` runs the full capstone on an honest depth-0 Schnorr 2-fork over
+`ZMod 7` and recovers the witness (`some (4, 1)`). Standard axioms only.
+
+Still open on the way to retiring the axioms:
+
+- **the s-vector bridge** (`bPoly u x = ⟨bPolyCoefficients u, evalVector x⟩` + the fold
+  identities via ironwood's `Fold.lean`) — connects `KimchiForkValid`'s folded leaf data
+  (`sg = g 0`, `b 0`) to the wire's `bPolyCoefficients`/`combinedB`;
+- **Stage 4 wiring** — produce `KimchiForkValid` from actual `VerifierAcceptsAt` runs
+  (via `verify_reflects` and the s-vector bridge);
+- **Stage 5** — the probability layer: a fork certificate from a single accepting prover with
+  success probability above `kerr`, through the W2–W4 oracle model and ironwood's
+  `extractable_of_prob`/adversary machinery. Only then can `poseidon_fiat_shamir_*` retire.
+
 **Stage 2 — delete the duplicated core.** Remove our `commitGen`, `loHalf`/`hiHalf`/`append`,
 `vandermonde3`, `ipa_round_commit_with_coeffs`, `IpaTreeV`/`IpaAcceptV`/`ipa_soundV`,
 `CommitmentBinding`/`DLRelation`, and the private bilinearity helpers (including the third copy in
