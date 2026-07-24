@@ -218,7 +218,28 @@ Still open on the way to retiring the axioms:
   certificate-backed `{vesta,pallas}_glv_no_short_relation`. Closure: standard trio, plus
   CompElliptic's point-count `native_decide` axiom via `{vesta,pallas}_card` (allowed).
 
-- **Stage 5b — the computed fork (remaining).** The end-to-end content at Pasta needs the
+- **Stage 5b — the computed fork. DONE**, `Bulletproof/Forking/Game.lean` (1877 lines, 0 sorries,
+  standard axioms). `kimchiExtract_failure_measure_le`: an algebraic bounded-query adversary that
+  convinces the deployed verifier yields an opening witness or a computed DL break, except on
+  oracle tables of measure `≤ (Q + k + 1)·3/|Pre|` over the 2¹²⁸ prechallenge domain. No `hbind`,
+  no FS axiom. Supporting: `DecodesFromPrefixes` (commit-then-challenge — without it the game is
+  false, recorded as the proved `verifierAcceptsAt_of_deferred_delta`), `kimchiExtract` (a plain
+  computable `def`), `honest_wins_everywhere` (anti-vacuity companion).
+
+  *Why the escape layer is ours rather than instantiated:* `RecursiveForkReached` needs no
+  arithmetic — its body truncates the answer list and looks up a coin-tree node — but carries
+  `[Field F]` from its section's `variable` line; ironwood `omit`s those instances on the very
+  next theorem and nowhere else in 1425 lines. That part was avoidable upstream. The certificate
+  layer *is* genuinely field-coupled (`AlgebraicDForkCert` consumes challenges as `u⁻¹`).
+  Everything below the escape layer is imported and called from `Zcash.Snark.*`.
+
+- **Remaining to actually shrink the gate.** The theorem exists; the axioms are not yet retired.
+  That needs the abstract game instantiated at the deployed transcript type (`T`, `Pre`, and a
+  `PrefixDecode` proved from `Forking/Transcript.lean`'s prefix lengths), then
+  `ipa{Vesta,Pallas}_sound` and the four kimchi consumers re-plumbed onto it, then
+  `poseidon_fiat_shamir_*` deleted and `roots.txt` updated.
+
+- ~~Stage 5b (was: remaining)~~ The end-to-end content at Pasta needs the
   certificate *computed* from a sponge-driven adversary: ironwood's Route B
   (`Forking/Adversary/{OracleComp,Recursive}.lean` — the bounded-query oracle machine, rewinding
   with explicit coins, `recursiveAlgebraicFork` + failure-measure bounds). Genericity survey:
