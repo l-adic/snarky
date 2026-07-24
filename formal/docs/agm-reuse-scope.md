@@ -187,9 +187,11 @@ suffices, and the AGM surface shrinks to a single root representation `P = ⟨pg
 
 Still open on the way to retiring the axioms:
 
-- **the s-vector bridge** (`bPoly u x = ⟨bPolyCoefficients u, evalVector x⟩` + the fold
-  identities via ironwood's `Fold.lean`) — connects `KimchiForkValid`'s folded leaf data
-  (`sg = g 0`, `b 0`) to the wire's `bPolyCoefficients`/`combinedB`;
+- ~~the s-vector bridge~~ **DONE**, `Bulletproof/Forking/SVector.lean`: `bPolyCoefficients`
+  satisfies `sFun`'s doubling recursion in kimchi's convention (`bPolyCoefficients_succ`), one
+  commitment step is one `foldHalves` (`commitGen_bPolyCoefficients_step`, module-generic), and
+  `bPoly_eq_innerProduct` / `combinedB_eq_innerProduct` close the wire's `sg`/`b0` forms onto
+  the folded leaves;
 - **Stage 4 wiring** — produce `KimchiForkValid` from actual `VerifierAcceptsAt` runs
   (via `verify_reflects` and the s-vector bridge);
 - **Stage 5** — the probability layer: a fork certificate from a single accepting prover with
