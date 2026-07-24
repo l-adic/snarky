@@ -5,9 +5,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 out=$(lake env lean bulletproof-pcs/scripts/check_extractor_computes.lean)
-expected=$'(4, 6)\n(true, true)\n(4, 6)\n(true, true)'
+expected=$'(4, 6)\n(true, true)\n(4, 6)\n(true, true)\nsome (4, 1)'
 if [[ "$out" != "$expected" ]]; then
   echo "✗ extractor did not compute the expected witness"; echo "--- got ---"; echo "$out"; exit 1
 fi
-echo "✓ ipaExtract and openingOfAcceptV compute: kimchi transcript extracts to its witness,"
-echo "  both the unblinded and the blinded opening equations hold"
+echo "✓ ipaExtract, openingOfAcceptV and kimchiOpeningOrBreak compute: the kimchi transcript"
+echo "  extracts to its witness at every layer, including the full Schnorr-fork capstone"
