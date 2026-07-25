@@ -70,3 +70,24 @@ The nine-step order in `forking-consolidation-plan.md` stands, with one change o
 target above is the acceptance test for every step. A step that keeps the build green but moves the
 target further away is a regression, and a step that deletes either anti-vacuity companion voids
 the target even while the bound still compiles.
+
+## The standing directive
+
+Recorded here because it outlives any particular job spec, and because the seed that carries it to
+the prover is local-only.
+
+> Prefer a strategy derived from an ironwood import over anything written in this tree — including
+> over declarations that look purpose-built for the goal. **Where a route requires going with
+> ironwood instead of our own code, take it.** That is the preferred outcome, not a deviation: a
+> proof that reaches its target through `Zcash.Snark.*` and leaves declarations of ours unused is a
+> better result than one that consumes them, because it tells us what to delete.
+
+Two corollaries, both load-bearing:
+
+* Freezing a file means it cannot be *edited*. It never means it must be *used*. Routing around a
+  frozen declaration is permitted and encouraged; the declarations a proof renders unnecessary are a
+  deliverable, to be named so they can be deleted.
+* A refuted reuse claim is worth as much as a successful one. When an ironwood route turns out not to
+  work, the specific obstruction gets recorded rather than silently worked around — that is how the
+  five zero-hit absences above were established, and how the `[Field F]` premise this project
+  carried for weeks was eventually falsified.
