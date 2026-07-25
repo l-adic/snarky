@@ -756,3 +756,41 @@ The single `sorry` (confirmed: `grep -rn sorry` over both trees returns exactly 
 Split by directory: bulletproof-pcs **2,613 of 3,353 survive (78%)**; kimchi **259 of 440 survive (59%)**, and its non-survivors are 3 whole files.
 
 Nine files have **zero** deletions: Transcript.lean, EndoChallenge.lean, Convention.lean, Schnorr.lean, SVector.lean, Capstone.lean (bp) and Transcript.lean, OracleRun.lean, RunLink.lean (kimchi) — **1,826 file-lines untouched.**
+
+---
+
+# Checkpoint protocol
+
+Branches. `ipa-forking-extraction` holds the pre-consolidation state, including this plan and the
+landed deployed instantiation. `forking-consolidation` branches from it and is where the steps
+happen. Nothing below rewrites history on the parent, so the parent is the escape hatch.
+
+One command defines green: `formal/scripts/checkpoint.sh` (add `--fast` to skip the fixture gate
+and the env linters during iteration; run it without `--fast` before every commit). It runs, in
+this order: style, the sorry census, both package builds, the ironwood reuse seam, the extractor
+behavioural check, all four axiom censuses, the IPA fixture gate, and the env linters one process
+per root.
+
+One commit per step, and the commit is only taken when the full run is clean. Each step in the
+migration order above names the gates it can plausibly break; those are a reading aid, not a
+substitute — the whole set runs regardless, because a refactor that deletes proofs breaks things
+at a distance.
+
+Two gates deserve naming, because they are the ones that catch what the others cannot:
+
+* **`check_extractor_computes.sh` is the only behavioural gate.** It `#eval`s the extractor on a
+  fixture. Step 7 changes the extractor's algorithm — freshness moves from field images to
+  prechallenges — so a swap that typechecks but computes something else fails here and nowhere else.
+* **`check_sorry_census.sh` pins the sorry set in both directions.** `roots.txt` names no
+  declaration under `Forking/`, so a sorried theorem there passes `check_axioms.sh` untouched.
+  A new sorry fails; so does a vanished one, since a sorry that disappears means a statement
+  changed. Closing `Deployed.lean:812` means editing the expected list in the same commit.
+
+Steps 1+2 (kimchi) and step 5 are independent of everything else, so they can be committed in any
+order or on their own branches. Step 3 must precede step 4, both must precede step 7, and step 7
+must precede step 8. Step 6 needs sign-off and gates nothing.
+
+Do not use `lake exe shake`, a zero-consumer filter, or a dead-code sweep to decide what to delete.
+The risks section above lists nine declarations the `sorry`'s proof route needs that all currently
+have zero consumers, plus every faithfulness and trust-boundary artefact, which such a sweep would
+flag for removal.
