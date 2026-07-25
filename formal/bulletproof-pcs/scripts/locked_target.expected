@@ -1,0 +1,34 @@
+-- LOCKED: the target statement (docs/locked-target.md). Bytes below are frozen.
+-- Regenerating this file is a statement change and requires explicit sign-off.
+### TARGET
+theorem deployedExtract_failure_measure_le
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hinj : Function.Injective (expandPre C)) (hne : ∀ q, expandPre C q ≠ 0)
+    (σ : SRS C.Point) (claim : Ipa.Input C σ.k m p)
+    (pg : Fin (2 ^ σ.k) → C.ScalarField) (pw : C.ScalarField)
+    (hP : combinedCommitment claim.polyscale claim.commitmentFn
+      = commitGen σ.g pg + pw • σ.h)
+    (A : Zcash.Snark.OracleComp (IpaNode C σ.k) Prechallenge (Ipa.Proof C σ.k))
+    {Q : ℕ} (hQ : A.QueryBound Q)
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (σ.k + 1)) (hcoins : coins.Complete) :
+    (PMF.uniformOfFintype (IpaNode C σ.k → Prechallenge)).toOuterMeasure
+        {O | wireWins σ claim O (A.run O) ∧
+          deployedExtract σ (Ipa.cipOf claim)
+              (combinedEvalVector (2 ^ σ.k) claim.evalscale claim.pointFn)
+              (Ipa.cipOf claim) (combinedCommitment claim.polyscale claim.commitmentFn)
+              pg pw hP A O coins = none}
+      ≤ (Q + σ.k + 1) * (3 / (2 ^ 128 : ℕ)) := by
+### EXTRACTOR
+def deployedExtract (σ : SRS C.Point) (cip : C.ScalarField)
+    (b : Fin (2 ^ σ.k) → C.ScalarField) (v : C.ScalarField) (P : C.Point)
+    (pg : Fin (2 ^ σ.k) → C.ScalarField) (pw : C.ScalarField)
+    (hP : P = commitGen σ.g pg + pw • σ.h)
+    (A : Zcash.Snark.OracleComp (IpaNode C σ.k) Prechallenge (Ipa.Proof C σ.k))
+    (O : IpaNode C σ.k → Prechallenge)
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (σ.k + 1)) :
+    Option (OpeningOrBreak { σ with U := uBaseOf C cip } P b v) :=
+### CONCLUSION-TYPE
+abbrev OpeningOrBreak (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F) (v : F) : Type _ :=
+  (Σ' (a : Fin (2 ^ σ.k) → F) (ρ : F), openingRelationB σ P b v a ρ)
+    ⊕' Zcash.Snark.AlgebraicRelationWitness (F := F)
+        (Zcash.Snark.augmentedBasis σ.g σ.U σ.h)

@@ -29,6 +29,9 @@ run() {
 # Cheap and catches the most common refactor slips.
 run "style (<=100 cols, no trailing ws/tabs, final newline)" bash scripts/check-style.sh
 run "sorry census" bash scripts/check_sorry_census.sh
+# The one guard nothing else can supply: a prover under pressure adjusts the STATEMENT and every
+# other gate stays green. See docs/locked-target.md.
+run "locked target" bash bulletproof-pcs/scripts/check_locked_target.sh
 
 # Builds. The shared workspace means one Mathlib for both packages.
 run "build Bulletproof" lake build Bulletproof
