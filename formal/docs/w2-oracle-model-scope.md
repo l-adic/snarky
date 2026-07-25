@@ -224,3 +224,43 @@ where the model requires it).
 | `Fintype` friction at the game layer | pointwise bounds for W3 avoid it; `DomainReduction` reused for W4 |
 | Ironwood API drift under us | pin already hard (`83a98f7f`); the consumed core is its most stable layer |
 | Scope creep into W5 (IPA-interior challenges) | explicitly out: §2 marks them; `Transcript.lean`'s element type already accommodates them so W5 extends, not reworks |
+
+## 7. Where the Poseidon-as-RO trust boundary lives now (2026-07-25)
+
+`kimchi/Kimchi/Verifier/Forking/Model.lean` was deleted, and this section replaces its preamble as
+the written statement of the trust boundary. Its four declarations went with it: `GuardEvent` is
+`Zcash.Snark.fsWinsFull` at `m = 4` with the prefix indirection inlined, `GuardEventVU` the same at
+`m = 2`, and `guardEvent_poseidonO` / `guardEventVU_poseidonOFr` are two-line corollaries of
+`oracleChallenges_poseidonO` (`Forking/OracleRun.lean:107`) and `oracleVU_poseidonOFr` (`:188`),
+which survive. No content was lost; the faithfulness statements live where the faithfulness proofs
+already were.
+
+**The assumption, unchanged.** `Forking/Transcript.lean` and `Forking/OracleRun.lean` are fully
+verified — they define the transcript domain, interpret a prefix through the deployed Poseidon
+sponge, and prove that reading it at the prefixes reproduces the verifier's own challenges. What is
+*assumed*, and only here, is that the deployed sponge read at those prefixes behaves as a uniform
+random function on its query domain.
+
+This is deliberately **not** a Lean `axiom`. The sponge is a deterministic function; asserting its
+uniformity inside the kernel would be a false-as-stated proposition — an unconditioned distribution
+claim, the shape §5 and the statement audit both flagged. Every probabilistic theorem is instead
+stated *within* the uniform model, following ironwood's own `Forking.Oracle`, and this paragraph is
+the boundary where the model meets Poseidon.
+
+**One correction carried over.** `Model.lean`'s preamble claimed the assumption was "auditable here
+and in `roots.txt`". It was not: no declaration under either `Forking/` tree appears in any
+`roots.txt` (verified, zero hits), so the axiom gates never saw this layer at all. That gap is why
+`bulletproof-pcs/scripts/check_locked_target.sh` and `scripts/check_sorry_census.sh` exist — the
+first pins the statement being proved, the second pins the sorry set in both directions, because
+`check_axioms.sh` cannot see either.
+
+**One idealisation retired rather than carried.** `Model.lean` also recorded that the 128-bit
+prechallenge cast and the endomorphism expansion were "treated as landing uniformly in
+`C.ScalarField`", with a strengthening deferred. That deferral is no longer needed on the IPA side:
+the locked target (`docs/locked-target.md`) games the **prechallenge** alphabet directly and divides
+its error by `2 ^ 128`, with `expandPre`'s injectivity and non-vanishing as theorems. The idealisation
+was not merely imprecise — the deleted `Forking/GuardEscape.lean` divided by
+`Fintype.card C.ScalarField ≈ 2 ^ 254` for challenges carrying 128 bits, understating the per-round
+cost by about `2 ^ 126`. Restating kimchi's plonk-phase guards over the prechallenge alphabet is
+open work, tracked as the `m = 6` instantiation; until it lands, kimchi has **no** plonk-guard escape
+bound, correct or otherwise. That is a debt, not progress.
