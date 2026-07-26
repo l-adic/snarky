@@ -602,59 +602,14 @@ private theorem scanFork_snd_ne_none {α : Type*} [DecidableEq F] (expand : Pre 
   rw [hout₃]
   simp
 
-/-! ### Reached tape nodes -/
+/-! ### Reached tape nodes
 
-/-- **The tape node reached at round `m`** (`def:fork_reached`): the root tape, followed along the
-current run's first `m` answers, is exactly the current tape. Verbatim ironwood's
-`RecursiveForkReached` at `k := σ.k + 1` and codomain `Pre`.
-
-This copy is a DUPLICATE, not a forced port. Upstream's `RecursiveForkReached`
-(`Forking/Adversary/Recursive.lean:1063`) carries no instance binders — the `[Field F]` on the
-surrounding section is included in a declaration only by use, and this statement mentions no
-algebra — so it instantiates at `Pre` directly. `scripts/check_ironwood_generic.lean:159-172`
-compiles that instantiation at a payload type with no algebra at all. Prefer the upstream name;
-this is slated for replacement. -/
-def KimchiForkReached (N : ℕ) (prefixes : Pf → Fin N → T)
-    (root : Zcash.Snark.RecursiveForkCoins Pre N) :
-    {d : ℕ} → (m : ℕ) → m + d = N → (O : T → Pre) → (p : Pf) →
-      Zcash.Snark.RecursiveForkCoins Pre d → Prop
-  | 0, _, _, _, _, .leaf => True
-  | d + 1, m, _, O, p, .node order child =>
-      root.nodeAt ((List.ofFn fun i : Fin N => O (prefixes p i)).take m)
-        = some ⟨d, order, child⟩
-
-/-- **Reaching the selected child** (`lem:fork_reached_child`): extending a reached node by the
-run's own round-`m` answer reaches the selected child tape. -/
-theorem kimchiForkReached_child (N : ℕ) (prefixes : Pf → Fin N → T)
-    (root : Zcash.Snark.RecursiveForkCoins Pre N) {d m : ℕ} (hmk : m + (d + 1) = N)
-    (O : T → Pre) (p : Pf) (order : List Pre)
-    (child : Pre → Zcash.Snark.RecursiveForkCoins Pre d)
-    (hreach : KimchiForkReached N prefixes root m hmk O p (.node order child)) :
-    KimchiForkReached N prefixes root (m + 1) (by omega) O p
-      (child (O (prefixes p ⟨m, by omega⟩))) := by
-  cases d with
-  | zero =>
-      cases hc : child (O (prefixes p ⟨m, by omega⟩))
-      simp [KimchiForkReached]
-  | succ d =>
-      unfold KimchiForkReached at hreach
-      set all : List Pre := List.ofFn fun i : Fin N => O (prefixes p i) with hall
-      set path : List Pre := all.take m with hpathdef
-      set u : Pre := O (prefixes p ⟨m, by omega⟩) with hu
-      have hnext : all.take (m + 1) = path ++ [u] := by
-        rw [List.take_add_one]
-        have hm : m < all.length := by rw [hall]; simp; omega
-        rw [List.getElem?_eq_getElem hm]
-        simp only [Option.toList_some, hpathdef, hall, List.getElem_ofFn]
-        congr
-      have hn := Zcash.Snark.RecursiveForkCoins.nodeAt_append_singleton root path u order child
-        hreach
-      cases hc : child u with
-      | node childOrder grandchild =>
-          unfold KimchiForkReached
-          change root.nodeAt (all.take (m + 1)) = _
-          rw [hnext]
-          simpa only [hc, Zcash.Snark.RecursiveForkCoins.nodeAt] using hn
+Ironwood's `RecursiveForkReached` (`Forking/Adversary/Recursive.lean:1063`) and
+`recursiveForkReached_child` (`:1074`) are consumed directly. Both carry NO instance
+binders — `#check` shows signatures identical to the copies this file used to hold, up to
+the variable names `F`/`P`/`k` for `Pre`/`Pf`/`N` — so they instantiate at the
+prechallenge alphabet with no algebra. `scripts/check_ironwood_generic.lean` compiles that
+instantiation at a payload type with no algebra at all. -/
 
 /-! ### The operational escape set -/
 
@@ -789,7 +744,8 @@ theorem kimchiForkEscapeSet_prefix [DecidableEq F] [DecidableEq G] [DecidableEq 
     (root : Zcash.Snark.RecursiveForkCoins Pre (σ.k + 1))
     {e m : ℕ} (hmk : m + (e + 1) = σ.k + 1) (O : T → Pre) (p : Pf) (order : List Pre)
     (child : Pre → Zcash.Snark.RecursiveForkCoins Pre e)
-    (hreach : KimchiForkReached (σ.k + 1) prefixes root m hmk O p (.node order child)) :
+    (hreach : Zcash.Snark.RecursiveForkReached (σ.k + 1) prefixes root m hmk O p
+      (.node order child)) :
     kimchiForkEscapeSet σ b v P expand A proofOf prefixes dec D root
         (prefixes p ⟨m, by omega⟩) O
       = preForkEscape expand
@@ -824,7 +780,7 @@ private theorem kimchiForkFrom_isSome_of_not_escape [DecidableEq F] [DecidableEq
     {e : ℕ} → (m : ℕ) → (hme : m + e = σ.k) → (O : T → Pre) → (p : Pf) →
       (coins : Zcash.Snark.RecursiveForkCoins Pre (e + 1)) →
       p = A.run O →
-      KimchiForkReached (σ.k + 1) prefixes root m (by omega) O p coins →
+      Zcash.Snark.RecursiveForkReached (σ.k + 1) prefixes root m (by omega) O p coins →
       coins.Complete → Wins σ b v P expand proofOf prefixes O p →
       ¬ (A.completing prefixes).escapesDuringC
           (kimchiForkEscapeSet σ b v P expand A proofOf prefixes dec D root) O →
@@ -899,9 +855,11 @@ private theorem kimchiForkFrom_isSome_of_not_escape [DecidableEq F] [DecidableEq
         by_cases hx : x = prefixes (A.run O) ⟨m, by omega⟩
         · subst hx; simp
         · simp [hx]
-      have hreachChild : KimchiForkReached (σ.k + 1) prefixes root (m + 1) (by omega) O (A.run O)
+      have hreachChild : Zcash.Snark.RecursiveForkReached (σ.k + 1) prefixes root (m + 1)
+          (by omega) O (A.run O)
           (child (O (prefixes (A.run O) ⟨m, by omega⟩))) :=
-        kimchiForkReached_child (σ.k + 1) prefixes root (by omega) O (A.run O) order child hreach
+        Zcash.Snark.recursiveForkReached_child (σ.k + 1) prefixes root (by omega) O (A.run O)
+          order child hreach
       -- the cached branch: the induction hypothesis at round `m + 1`
       have hfirst : (kimchiForkFrom σ b v P expand A proofOf prefixes dec (m + 1) (by omega) O
           (A.run O) (child (O (prefixes (A.run O) ⟨m, by omega⟩)))).isSome :=
@@ -1051,12 +1009,8 @@ private theorem tail_snoc' {n : ℕ} {α : Sort*} (u : Fin (n + 1) → α) (c : 
   · simp only [Fin.tail, Fin.succ_last, Fin.snoc_last]
   · simp only [Fin.tail, Fin.succ_castSucc, Fin.snoc_castSucc]
 
-/-- **Run history** (`def:run_history`), ironwood's `RecursiveRunHistory` over `Pre`: a run
-`(O, p)` agrees with a history when for every `i < m` the run's round-`i` prefix is the recorded
-transcript point and the table's value there is the recorded prechallenge. -/
-def KimchiRunHistory {N : ℕ} (m : ℕ) (hm : m ≤ N) (prefixes : Pf → Fin N → T)
-    (O : T → Pre) (p : Pf) (history : Fin m → T × Pre) : Prop :=
-  ∀ i, prefixes p ⟨i.val, by omega⟩ = (history i).1 ∧ O (history i).1 = (history i).2
+/-! Run history is ironwood's `RecursiveRunHistory` (`Recursive.lean:780`), consumed
+directly: same signature up to variable naming, no instance binders. -/
 
 /-- **The runs a subtree represents** (`def:run_suffix`): the winning runs that agree with the
 fork points already fixed above round `m`, read off at the transcript points `ts`, the
@@ -1072,7 +1026,7 @@ def KimchiRunSuffix (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (exp
     (Fin e → T) → (Fin e → Pre) → G → G → F → F → F → Prop :=
   fun ts qs sg δ c z1 z2 => ∃ (O : T → Pre) (p : Pf), p = A.run O ∧
     Wins σ b v P expand proofOf prefixes O p ∧
-    KimchiRunHistory m (by omega) prefixes O p history ∧
+    Zcash.Snark.RecursiveRunHistory _ m (by omega) prefixes O p history ∧
     (∀ i : Fin e, prefixes p ⟨m + i.val, by omega⟩ = ts i) ∧
     (∀ i, O (ts i) = qs i) ∧
     (proofOf p).sg = sg ∧ (proofOf p).delta = δ ∧
@@ -1197,9 +1151,10 @@ the pinned-prefix guard in the middle), and they differ from the reprogrammed po
 private theorem kimchiRunHistory_update [DecidableEq T] {N : ℕ} {prefixes : Pf → Fin N → T}
     (D : Zcash.Snark.PrefixDecode T N prefixes) {m : ℕ} (hm : m < N) (hmN : m ≤ N)
     {O : T → Pre} {p p' : Pf} {history : Fin m → T × Pre}
-    (hhist : KimchiRunHistory m hmN prefixes O p history) (q : Pre)
+    (hhist : Zcash.Snark.RecursiveRunHistory _ m hmN prefixes O p history) (q : Pre)
     (ht' : prefixes p' ⟨m, hm⟩ = prefixes p ⟨m, hm⟩) :
-    KimchiRunHistory m hmN prefixes (Function.update O (prefixes p ⟨m, hm⟩) q) p' history := by
+    Zcash.Snark.RecursiveRunHistory _ m hmN prefixes
+      (Function.update O (prefixes p ⟨m, hm⟩) q) p' history := by
   intro i
   have hi : (i : ℕ) < m := i.isLt
   have hle : ((⟨(i : ℕ), by omega⟩ : Fin N) : ℕ) ≤ ((⟨m, hm⟩ : Fin N) : ℕ) := by simp
@@ -1230,7 +1185,7 @@ private theorem kimchiForkFrom_realizes [DecidableEq F] [DecidableEq G] [Decidab
     {e : ℕ} → (m : ℕ) → (hme : m + e = σ.k) → (O : T → Pre) → (p : Pf) →
       (coins : Zcash.Snark.RecursiveForkCoins Pre (e + 1)) → (cert : KimchiForkCert F G e) →
       (history : Fin m → T × Pre) → p = A.run O →
-      KimchiRunHistory m (by omega) prefixes O p history →
+      Zcash.Snark.RecursiveRunHistory _ m (by omega) prefixes O p history →
       kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O p coins = some cert →
       KimchiForkRealizes expand dec.round
         (KimchiRunSuffix σ b v P expand A proofOf prefixes m e hme history) cert
@@ -1295,7 +1250,7 @@ private theorem kimchiForkFrom_realizes [DecidableEq F] [DecidableEq G] [Decidab
               split at hatt₃
               · rename_i hcond₃
                 -- histories for the three branches
-                have hh₁ : KimchiRunHistory (m + 1) (by omega) prefixes O (A.run O)
+                have hh₁ : Zcash.Snark.RecursiveRunHistory _ (m + 1) (by omega) prefixes O (A.run O)
                     (Fin.snoc history (prefixes (A.run O) ⟨m, hmlt⟩,
                       O (prefixes (A.run O) ⟨m, hmlt⟩))) := by
                   intro i
@@ -1304,7 +1259,7 @@ private theorem kimchiForkFrom_realizes [DecidableEq F] [DecidableEq G] [Decidab
                     exact ⟨rfl, rfl⟩
                   · rw [Fin.snoc_castSucc]
                     exact hhist j
-                have hh₂ : KimchiRunHistory (m + 1) (by omega) prefixes
+                have hh₂ : Zcash.Snark.RecursiveRunHistory _ (m + 1) (by omega) prefixes
                     (Function.update O (prefixes (A.run O) ⟨m, hmlt⟩) q₂)
                     (A.run (Function.update O (prefixes (A.run O) ⟨m, hmlt⟩) q₂))
                     (Fin.snoc history (prefixes (A.run O) ⟨m, hmlt⟩, q₂)) := by
@@ -1314,7 +1269,7 @@ private theorem kimchiForkFrom_realizes [DecidableEq F] [DecidableEq G] [Decidab
                     exact ⟨hcond₂, Function.update_self _ _ _⟩
                   · rw [Fin.snoc_castSucc]
                     exact kimchiRunHistory_update D hmlt (by omega) hhist q₂ hcond₂ j
-                have hh₃ : KimchiRunHistory (m + 1) (by omega) prefixes
+                have hh₃ : Zcash.Snark.RecursiveRunHistory _ (m + 1) (by omega) prefixes
                     (Function.update O (prefixes (A.run O) ⟨m, hmlt⟩) q₃)
                     (A.run (Function.update O (prefixes (A.run O) ⟨m, hmlt⟩) q₃))
                     (Fin.snoc history (prefixes (A.run O) ⟨m, hmlt⟩, q₃)) := by
