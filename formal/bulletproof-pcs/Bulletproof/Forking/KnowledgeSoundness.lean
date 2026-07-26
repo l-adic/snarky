@@ -840,6 +840,80 @@ theorem pallas_failure_measure_le {m p : ℕ} (σ : SRS IpaPallas.Point)
   deployedExtract_failure_measure_le Pasta.pallas_smul_val expandPre_pallas_injective
     expandPre_pallas_ne_zero σ claim pg pw hP A hQ coins hcoins
 
+/-! ### The headline: the deployed IPA verifier is knowledge-sound, per curve
+
+One statement per curve, every curve-specific hypothesis discharged and every constant evaluated.
+Read the caveats in the docstring as part of the claim — each is a real limit, and each is stated
+because a reader who skips them would overclaim. -/
+
+/-- **The deployed Vesta IPA verifier is knowledge-sound, in the random-oracle model.**
+
+For a family of `Q`-query algebraic adversaries against the deployed Vesta IPA opening verifier,
+over a uniformly sampled setup basis and uniform challenge oracle: the probability that an
+adversary makes the **executable wire verifier** accept while the **executable extractor** fails
+to return an opening is at most
+
+`(Q + k + 1) · 3 / 2¹²⁸  +  (2ᵏ + 1) · ε  +  δ`.
+
+The extractor is `deployedExtract`, a plain computable `def` whose `#eval` on a fixture is checked
+by `scripts/check_extractor_computes.sh` — the guard that separates a reduction which *computes*
+the witness from one that merely asserts it exists. Acceptance is `Ipa.verifyWith`'s own `Bool`,
+not a re-modelled predicate.
+
+**What is assumed.** `hHard`: discrete log is `(ε, δ)`-hard for this family against reductions
+making at most `R` black-box calls. `hEff`: the extractor respects that call bound. `hcoins`: the
+fork tape is complete.
+
+**Four limits, all real.**
+1. *Random-oracle model.* The challenges are a uniform table, where the deployed protocol squeezes
+   them from the Poseidon sponge. `verifyOracle_spongeFS` (`Forking/Transcript.lean`) proves the
+   abstract verifier at the sponge source *is* `Ipa.verify`; replacing the sponge by a uniform
+   table is the idealization, and it is carried by no Lean axiom.
+2. *`δ` is not a reduction.* `derivedUDL_iff_residual_measure` proves it is the residual event's
+   own measure. Only `ε` reduces to a standard problem. This is the price of kimchi's
+   transcript-derived `U`, which halo2 does not pay — ironwood has no analogue.
+3. *The call bound says less than it looks.* `reductionEfficient_exists` proves some `R` always
+   exists without inspecting the counter, and `coins.Complete` forces order lists of size `2¹²⁸`,
+   so the honest `R` far exceeds the cost of solving discrete log outright.
+4. *One claim.* The statement is single-claim; recovering individual polynomials from a batch is
+   the separate un-batching layer (`chunked_batch_soundness`).
+
+The query-loss term is unconditional — it holds against an unbounded adversary — and at realistic
+`Q` it dominates the other two by tens of bits. -/
+theorem ipaVesta_knowledge_sound {k m p : ℕ}
+    (B : IpaVesta.Point) (fam : DeployedFamily IpaVesta.curve k m p)
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
+    (hcoins : coins.Complete) {R : ℕ} {ε δ : ℝ≥0∞}
+    (hHard : fam.DiscreteLogRelationHardFor B coins R ε δ)
+    (hEff : fam.ReductionEfficient coins R) :
+    (PMF.uniformOfFintype
+        ((SetupIndex (2 ^ k) → IpaVesta.curve.ScalarField) × fam.Coins)).toOuterMeasure
+        {q | wireWins (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
+                (fam.claim (augOfSetup (Zcash.Snark.scalarBasis B q.1))) q.2
+                ((fam.adversary (augOfSetup (Zcash.Snark.scalarBasis B q.1))).run q.2) ∧
+          ¬ fam.HasOpening (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins}
+      ≤ (fam.Q + k + 1) * (3 / (2 ^ 128 : ℕ)) + ((2 ^ k + 1 : ℕ) : ℝ≥0∞) * ε + δ := by
+  have h := vesta_knowledgeSoundness_under_DL B fam coins hcoins hHard hEff
+  rwa [vesta_card_setup k] at h
+
+/-- **The deployed Pallas IPA verifier is knowledge-sound, in the random-oracle model.** The
+Pallas twin of `ipaVesta_knowledge_sound`; same statement, same assumptions, same four limits. -/
+theorem ipaPallas_knowledge_sound {k m p : ℕ}
+    (B : IpaPallas.Point) (fam : DeployedFamily IpaPallas.curve k m p)
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
+    (hcoins : coins.Complete) {R : ℕ} {ε δ : ℝ≥0∞}
+    (hHard : fam.DiscreteLogRelationHardFor B coins R ε δ)
+    (hEff : fam.ReductionEfficient coins R) :
+    (PMF.uniformOfFintype
+        ((SetupIndex (2 ^ k) → IpaPallas.curve.ScalarField) × fam.Coins)).toOuterMeasure
+        {q | wireWins (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
+                (fam.claim (augOfSetup (Zcash.Snark.scalarBasis B q.1))) q.2
+                ((fam.adversary (augOfSetup (Zcash.Snark.scalarBasis B q.1))).run q.2) ∧
+          ¬ fam.HasOpening (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins}
+      ≤ (fam.Q + k + 1) * (3 / (2 ^ 128 : ℕ)) + ((2 ^ k + 1 : ℕ) : ℝ≥0∞) * ε + δ := by
+  have h := pallas_knowledgeSoundness_under_DL B fam coins hcoins hHard hEff
+  rwa [vesta_card_setup k] at h
+
 end Capstone
 
 /-! ## 10. The honest acceptance witness
