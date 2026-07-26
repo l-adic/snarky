@@ -363,6 +363,26 @@ def kimchiExtract [DecidableEq F] [DecidableEq G] [DecidableEq T]
         some (kimchiOpeningOrBreak σ b v P pg pw _hP cert h)
       else none
 
+/-- **The extractor's black-box call count**, as a projection of the *same* recursion the
+extractor runs — not a second definition that could drift from it. This is what makes
+`ReductionEfficient` (`Forking/KnowledgeSoundness.lean`) statable, and it is why the fork returns
+`Zcash.Snark.RecursiveForkAttempt` rather than a bare `Option`: upstream counts the same way
+(`ComputedAlgebraicFSFamily.ReductionEfficient`, `Algebraic.lean:1407`, over
+`(instanceAttempt …).runs`).
+
+Kept honest by construction: a separate counting `def` would typecheck and could be defined to
+return `0`, advertising a zero-call reduction that nothing in the tree would catch. A projection
+of the extractor's own term cannot. -/
+def kimchiExtractRuns [DecidableEq F] [DecidableEq G] [DecidableEq T]
+    [Zero Pre] [DecidableEq Pre]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (dec : DecodesFromPrefixes σ proofOf prefixes)
+    (O : T → Pre) (coins : Zcash.Snark.RecursiveForkCoins Pre (σ.k + 1)) : ℕ :=
+  (kimchiForkFrom σ b v P expand A proofOf prefixes dec 0 (Nat.zero_add σ.k) O
+    (A.run O) coins).runs
+
 /-! ## The escape layer over `Pre`
 
 The port of ironwood's escape layer (`Forking/Adversary/Recursive.lean:1062–1425`) with the

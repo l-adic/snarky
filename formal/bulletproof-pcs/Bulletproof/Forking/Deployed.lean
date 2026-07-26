@@ -841,6 +841,17 @@ theorem deployedExtract_failure_measure_le
     coins hcoins) (le_of_eq ?_)
   rw [card_prechallenge]
 
+/-- **The deployed extractor's call count** — `kimchiExtractRuns` at the same instantiation
+`deployedExtract` uses, so it counts that extractor's own recursion and cannot drift from it.
+Consumed by `DeployedFamily.ReductionEfficient` (`Forking/KnowledgeSoundness.lean`). -/
+def deployedExtractRuns (σ : SRS C.Point) (cip : C.ScalarField)
+    (b : Fin (2 ^ σ.k) → C.ScalarField) (v : C.ScalarField) (P : C.Point)
+    (A : Zcash.Snark.OracleComp (IpaNode C σ.k) Prechallenge (Ipa.Proof C σ.k))
+    (O : IpaNode C σ.k → Prechallenge)
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (σ.k + 1)) : ℕ :=
+  kimchiExtractRuns { σ with U := uBaseOf C cip } b v P (expandPre C) A toOpening
+    (nodes cip) (decodesFromPrefixes_nodes _ cip) O coins
+
 end Extractor
 
 /-! ## The two anti-vacuity companions

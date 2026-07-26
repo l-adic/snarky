@@ -651,6 +651,147 @@ theorem pallas_noOpening_measure_le_of_textbookDL {k m p : ℕ}
 theorem vesta_card_setup (k : ℕ) : Fintype.card (SetupIndex (2 ^ k)) = 2 ^ k + 1 :=
   card_setupIndex _
 
+end PerCurve
+
+/-! ## 9. The capstone: hardness internalized, gated by the call bound
+
+`deployedExtract_noOpening_measure_le_of_textbookDL` takes the two advantage bounds directly, so
+it assumes them against an **unbounded** reduction. Ironwood's designated top-level statement —
+`ComputedAlgebraicFSFamily.knowledgeSoundness_under_DL` (`Forking/Adversary/Algebraic.lean:1464`),
+named as the verifier-soundness capstone in their proof map — assumes them only against reductions
+making at most `R` black-box calls, which is the *weaker* and more plausible hypothesis. That is
+what this section adds; the bound itself is unchanged.
+
+**The call bound is large, and that is stated rather than hidden.** `coins.Complete`
+(`Recursive.lean:100`) requires every node's order list to enumerate the whole prechallenge
+domain, so any `R` satisfying `ReductionEfficient` here is astronomically bigger than the cost of
+solving discrete log outright. Upstream is in the same position — its only unconditional
+discharge is `reductionEfficient_exponential` at `R = (2·|F| + 1) ^ k`, and its own docstring and
+`KnowledgeSoundness.lean:19` say that is not a field-independent polynomial AFK bound. The gate is
+therefore honest bookkeeping, not a security claim: it records *which* reductions the hardness
+assumption is taken against. -/
+
+section Capstone
+
+variable {C : Ipa.CommitmentCurve} {k m p : ℕ} [Module C.ScalarField C.Point]
+variable (fam : DeployedFamily C k m p)
+
+/-- **The extractor's call count at one basis and one table** — `deployedExtractRuns` at the
+family's instantiation, i.e. a projection of the very recursion `attempt` runs. -/
+def DeployedFamily.attemptRuns (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (O : fam.Coins) (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) : ℕ :=
+  deployedExtractRuns (srsOfBasis k basis) (Ipa.cipOf (fam.claim basis))
+    (combinedEvalVector (2 ^ k) (fam.claim basis).evalscale (fam.claim basis).pointFn)
+    (Ipa.cipOf (fam.claim basis))
+    (combinedCommitment (fam.claim basis).polyscale (fam.claim basis).commitmentFn)
+    (fam.adversary basis) O coins
+
+/-- **The extractor makes at most `R` calls on average** — ironwood's `ReductionEfficient`
+(`Algebraic.lean:1407`) at our types. The sum is over the oracle tables, with the fork tape a
+parameter, matching how `DeployedFamily.Coins` is defined. -/
+def DeployedFamily.ReductionEfficient
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) (R : ℕ) : Prop :=
+  ∀ basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point,
+    ∑ O : fam.Coins, fam.attemptRuns basis O coins ≤ R * Fintype.card fam.Coins
+
+/-- **Discrete log is hard for this family against `R`-call reductions** — ironwood's
+`DiscreteLogRelationHardFor` (`Algebraic.lean`) at our types, carrying both advantage bounds
+because our residual (`DerivedUDLAdvantageLE`) has no upstream counterpart: kimchi's `U` is
+transcript derived, so the `U`-touching breaks cannot be charged to textbook discrete log.
+
+Read `derivedUDL_iff_residual_measure` next to this: the `δ` component is the residual event's own
+measure, not a reduction to a standard problem. Only the `ε` component is a genuine reduction. -/
+def DeployedFamily.DiscreteLogRelationHardFor (B : C.Point)
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) (R : ℕ) (ε δ : ℝ≥0∞) : Prop :=
+  fam.ReductionEfficient coins R →
+    Zcash.Snark.TextbookDLWithCoinsAdvantageLE B (relationFinder fam coins) ε ∧
+      DerivedUDLAdvantageLE fam B coins δ
+
+/-- **Deployed IPA knowledge soundness, under per-family discrete-log hardness gated by the
+extractor call bound.** The analogue of
+`Zcash.Snark.ComputedAlgebraicFSFamily.knowledgeSoundness_under_DL`
+(`Forking/Adversary/Algebraic.lean:1464`) — ironwood's designated top-level verifier-soundness
+capstone — and, like it, one application of the bound below it.
+
+The measured event and the bound are exactly
+`deployedExtract_noOpening_measure_le_of_textbookDL`'s. What changes is the hypothesis: hardness
+is assumed only against reductions respecting the call bound `R`, rather than unconditionally.
+See the section docstring on how large `R` honestly is. -/
+theorem deployedExtract_knowledgeSoundness_under_DL
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hinj : Function.Injective (expandPre C)) (hne : ∀ q, expandPre C q ≠ 0)
+    (B : C.Point)
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
+    (hcoins : coins.Complete) {R : ℕ} {ε δ : ℝ≥0∞}
+    (hHard : fam.DiscreteLogRelationHardFor B coins R ε δ)
+    (hEff : fam.ReductionEfficient coins R) :
+    (PMF.uniformOfFintype
+        ((SetupIndex (2 ^ k) → C.ScalarField) × fam.Coins)).toOuterMeasure
+        {q | wireWins (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
+                (fam.claim (augOfSetup (Zcash.Snark.scalarBasis B q.1))) q.2
+                ((fam.adversary (augOfSetup (Zcash.Snark.scalarBasis B q.1))).run q.2) ∧
+          ¬ fam.HasOpening (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins}
+      ≤ (fam.Q + k + 1) * (3 / (2 ^ 128 : ℕ))
+        + Fintype.card (SetupIndex (2 ^ k)) * ε + δ :=
+  deployedExtract_noOpening_measure_le_of_textbookDL hsmul hinj hne B fam coins hcoins
+    (hHard hEff).1 (hHard hEff).2
+
+/-- **Every fixed family has *some* call bound** — ironwood's `reductionEfficient_exists`
+(`Algebraic.lean:1413`) at our types, and stated for the same reason: so nobody reads
+`ReductionEfficient` as doing more than it does.
+
+The proof never inspects the counter; it takes the maximum over the (finite) set of bases. So the
+gate constrains *which* `R` the hardness assumption is indexed by — it does not by itself assert
+that the extractor is efficient, and no asymptotic claim follows from it. -/
+theorem DeployedFamily.reductionEfficient_exists [Fintype C.Point]
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) :
+    ∃ R, fam.ReductionEfficient coins R := by
+  classical
+  refine ⟨Finset.univ.sup fun basis => ∑ O : fam.Coins, fam.attemptRuns basis O coins, ?_⟩
+  intro basis
+  refine le_trans (Finset.le_sup (f := fun basis => ∑ O : fam.Coins,
+    fam.attemptRuns basis O coins) (Finset.mem_univ basis)) ?_
+  exact Nat.le_mul_of_pos_right _ Fintype.card_pos
+
+/-! ### The capstone, per curve -/
+
+/-- **Vesta, capstone form.** The call-bound-gated statement at the deployed curve, with every
+curve hypothesis discharged. -/
+theorem vesta_knowledgeSoundness_under_DL {k m p : ℕ}
+    (B : IpaVesta.Point) (fam : DeployedFamily IpaVesta.curve k m p)
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
+    (hcoins : coins.Complete) {R : ℕ} {ε δ : ℝ≥0∞}
+    (hHard : fam.DiscreteLogRelationHardFor B coins R ε δ)
+    (hEff : fam.ReductionEfficient coins R) :
+    (PMF.uniformOfFintype
+        ((SetupIndex (2 ^ k) → IpaVesta.curve.ScalarField) × fam.Coins)).toOuterMeasure
+        {q | wireWins (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
+                (fam.claim (augOfSetup (Zcash.Snark.scalarBasis B q.1))) q.2
+                ((fam.adversary (augOfSetup (Zcash.Snark.scalarBasis B q.1))).run q.2) ∧
+          ¬ fam.HasOpening (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins}
+      ≤ (fam.Q + k + 1) * (3 / (2 ^ 128 : ℕ))
+        + Fintype.card (SetupIndex (2 ^ k)) * ε + δ :=
+  deployedExtract_knowledgeSoundness_under_DL fam Pasta.vesta_smul_val
+    expandPre_vesta_injective expandPre_vesta_ne_zero B coins hcoins hHard hEff
+
+/-- **Pallas, capstone form.** -/
+theorem pallas_knowledgeSoundness_under_DL {k m p : ℕ}
+    (B : IpaPallas.Point) (fam : DeployedFamily IpaPallas.curve k m p)
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
+    (hcoins : coins.Complete) {R : ℕ} {ε δ : ℝ≥0∞}
+    (hHard : fam.DiscreteLogRelationHardFor B coins R ε δ)
+    (hEff : fam.ReductionEfficient coins R) :
+    (PMF.uniformOfFintype
+        ((SetupIndex (2 ^ k) → IpaPallas.curve.ScalarField) × fam.Coins)).toOuterMeasure
+        {q | wireWins (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
+                (fam.claim (augOfSetup (Zcash.Snark.scalarBasis B q.1))) q.2
+                ((fam.adversary (augOfSetup (Zcash.Snark.scalarBasis B q.1))).run q.2) ∧
+          ¬ fam.HasOpening (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins}
+      ≤ (fam.Q + k + 1) * (3 / (2 ^ 128 : ℕ))
+        + Fintype.card (SetupIndex (2 ^ k)) * ε + δ :=
+  deployedExtract_knowledgeSoundness_under_DL fam Pasta.pallas_smul_val
+    expandPre_pallas_injective expandPre_pallas_ne_zero B coins hcoins hHard hEff
+
 /-! ### The query-loss rung, per curve
 
 `deployedExtract_failure_measure_le` (`Forking/Deployed.lean`) is generic in the curve, with
@@ -699,9 +840,9 @@ theorem pallas_failure_measure_le {m p : ℕ} (σ : SRS IpaPallas.Point)
   deployedExtract_failure_measure_le Pasta.pallas_smul_val expandPre_pallas_injective
     expandPre_pallas_ne_zero σ claim pg pw hP A hQ coins hcoins
 
-end PerCurve
+end Capstone
 
-/-! ## 9. The honest acceptance witness
+/-! ## 10. The honest acceptance witness
 
 The terminal's failure set is `wireWins ∧ ¬HasOpening`. A bound on it would be uninteresting if
 the `wireWins` conjunct were what made the set small — "nobody accepts, so nothing fails". This
