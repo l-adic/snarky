@@ -1,6 +1,7 @@
 import Bulletproof.Forking.Deployed
 import Zcash.Snark.Soundness.AGM.ProbabilityCoins
 import Pasta.Basic
+import Bulletproof.Forking.Honest
 
 /-!
 # Deployed IPA knowledge soundness under discrete log
@@ -650,6 +651,145 @@ theorem pallas_noOpening_measure_le_of_textbookDL {k m p : ℕ}
 theorem vesta_card_setup (k : ℕ) : Fintype.card (SetupIndex (2 ^ k)) = 2 ^ k + 1 :=
   card_setupIndex _
 
+/-! ### The query-loss rung, per curve
+
+`deployedExtract_failure_measure_le` (`Forking/Deployed.lean`) is generic in the curve, with
+`hsmul`, `hinj` and `hne` as hypotheses. Every one is a theorem at each deployed bundle, so the
+rung instantiates outright — recorded here because a generic statement whose hypotheses are never
+discharged is the shape that hid the `hU` defect. -/
+
+/-- **Vesta, query-loss rung.** `hsmul` by `Pasta.vesta_smul_val`, `hinj`/`hne` by
+`expandPre_vesta_injective` / `expandPre_vesta_ne_zero`. -/
+theorem vesta_failure_measure_le {m p : ℕ} (σ : SRS IpaVesta.Point)
+    (claim : Ipa.Input IpaVesta.curve σ.k m p)
+    (pg : Fin (2 ^ σ.k) → IpaVesta.curve.ScalarField) (pw : IpaVesta.curve.ScalarField)
+    (hP : combinedCommitment claim.polyscale claim.commitmentFn
+      = commitGen σ.g pg + pw • σ.h)
+    (A : Zcash.Snark.OracleComp (IpaNode IpaVesta.curve σ.k) Prechallenge
+      (Ipa.Proof IpaVesta.curve σ.k))
+    {Q : ℕ} (hQ : A.QueryBound Q)
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (σ.k + 1)) (hcoins : coins.Complete) :
+    (PMF.uniformOfFintype (IpaNode IpaVesta.curve σ.k → Prechallenge)).toOuterMeasure
+        {O | wireWins σ claim O (A.run O) ∧
+          deployedExtract σ (Ipa.cipOf claim)
+              (combinedEvalVector (2 ^ σ.k) claim.evalscale claim.pointFn)
+              (Ipa.cipOf claim) (combinedCommitment claim.polyscale claim.commitmentFn)
+              pg pw hP A O coins = none}
+      ≤ (Q + σ.k + 1) * (3 / (2 ^ 128 : ℕ)) :=
+  deployedExtract_failure_measure_le Pasta.vesta_smul_val expandPre_vesta_injective
+    expandPre_vesta_ne_zero σ claim pg pw hP A hQ coins hcoins
+
+/-- **Pallas, query-loss rung.** Same discharge. -/
+theorem pallas_failure_measure_le {m p : ℕ} (σ : SRS IpaPallas.Point)
+    (claim : Ipa.Input IpaPallas.curve σ.k m p)
+    (pg : Fin (2 ^ σ.k) → IpaPallas.curve.ScalarField) (pw : IpaPallas.curve.ScalarField)
+    (hP : combinedCommitment claim.polyscale claim.commitmentFn
+      = commitGen σ.g pg + pw • σ.h)
+    (A : Zcash.Snark.OracleComp (IpaNode IpaPallas.curve σ.k) Prechallenge
+      (Ipa.Proof IpaPallas.curve σ.k))
+    {Q : ℕ} (hQ : A.QueryBound Q)
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (σ.k + 1)) (hcoins : coins.Complete) :
+    (PMF.uniformOfFintype (IpaNode IpaPallas.curve σ.k → Prechallenge)).toOuterMeasure
+        {O | wireWins σ claim O (A.run O) ∧
+          deployedExtract σ (Ipa.cipOf claim)
+              (combinedEvalVector (2 ^ σ.k) claim.evalscale claim.pointFn)
+              (Ipa.cipOf claim) (combinedCommitment claim.polyscale claim.commitmentFn)
+              pg pw hP A O coins = none}
+      ≤ (Q + σ.k + 1) * (3 / (2 ^ 128 : ℕ)) :=
+  deployedExtract_failure_measure_le Pasta.pallas_smul_val expandPre_pallas_injective
+    expandPre_pallas_ne_zero σ claim pg pw hP A hQ coins hcoins
+
 end PerCurve
+
+/-! ## 9. The honest acceptance witness
+
+The terminal's failure set is `wireWins ∧ ¬HasOpening`. A bound on it would be uninteresting if
+the `wireWins` conjunct were what made the set small — "nobody accepts, so nothing fails". This
+section rules that out by exhibiting a family that accepts on **every** oracle table at **every**
+basis, built from the anti-vacuity companion `honestNode_wireWins_everywhere` (`Honest.lean`).
+For that family the failure set is exactly `¬HasOpening`, so the bound is a statement about the
+extractor and nothing else.
+
+This is the instantiation the `hU` version could not have had at any curve. -/
+
+section Honest
+
+variable {C : Ipa.CommitmentCurve} {k m p : ℕ} [Module C.ScalarField C.Point]
+
+/-- The degenerate claim: every commitment, point, evaluation and scalar zero. -/
+def trivialInput (C : Ipa.CommitmentCurve) (k m p : ℕ) : Ipa.Input C k m p where
+  commitments := Vector.replicate m 0
+  xs := Vector.replicate p 0
+  evals := Vector.replicate m (Vector.replicate p 0)
+  polyscale := 0
+  evalscale := 0
+  proof := { lr := Vector.replicate k (0, 0), delta := 0, z1 := 0, z2 := 0, sg := 0 }
+
+/-- `(0, 0)` opens the degenerate claim. -/
+theorem trivial_hopen (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) :
+    openingRelationB
+      { srsOfBasis k basis with U := uBaseOf C (Ipa.cipOf (trivialInput C k m p)) }
+      (combinedCommitment (trivialInput C k m p).polyscale (trivialInput C k m p).commitmentFn)
+      (combinedEvalVector (2 ^ k) (trivialInput C k m p).evalscale
+        (trivialInput C k m p).pointFn)
+      (Ipa.cipOf (trivialInput C k m p)) 0 0 := by
+  constructor
+  · simp [Bulletproof.commit, commitGen, trivialInput, combinedCommitment,
+      Ipa.Input.commitmentFn]
+  · simp [trivialInput, Ipa.cipOf, combinedInnerProduct, innerProduct, Ipa.Input.evalFn]
+
+/-- **The honest family.** Its adversary is the honest prover of
+`honestNode_wireWins_everywhere`, which wins on every oracle table. `noncomputable` only because
+the adversary is extracted with `.choose`; the extractor it is fed to is untouched. -/
+noncomputable def honestFamily
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hne : ∀ q, expandPre C q ≠ 0) (k m p : ℕ) : DeployedFamily C k m p where
+  claim := fun _ => trivialInput C k m p
+  adversary := fun basis =>
+    (honestNode_wireWins_everywhere hsmul hne (srsOfBasis k basis)
+      (trivialInput C k m p) 0 0 (trivial_hopen basis)).choose
+  pg := fun _ => 0
+  pw := fun _ => 0
+  hP := by
+    intro basis
+    simp [trivialInput, combinedCommitment, commitGen, Ipa.Input.commitmentFn]
+  Q := k + 1
+  queryBound := fun basis =>
+    (honestNode_wireWins_everywhere hsmul hne (srsOfBasis k basis)
+      (trivialInput C k m p) 0 0 (trivial_hopen basis)).choose_spec.1
+
+/-- **The honest family accepts everywhere** — at every basis, on every oracle table. -/
+theorem honestFamily_accepts_everywhere
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hne : ∀ q, expandPre C q ≠ 0)
+    (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (O : (honestFamily hsmul hne k m p).Coins) :
+    wireWins (srsOfBasis k basis) ((honestFamily hsmul hne k m p).claim basis) O
+      (((honestFamily hsmul hne k m p).adversary basis).run O) :=
+  (honestNode_wireWins_everywhere hsmul hne (srsOfBasis k basis)
+    (trivialInput C k m p) 0 0 (trivial_hopen basis)).choose_spec.2 O
+
+/-- **So for the honest family the terminal measures exactly "the extractor returned no
+opening".** The acceptance conjunct is satisfied everywhere, hence carries none of the bound. -/
+theorem honestFamily_failure_set
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hne : ∀ q, expandPre C q ≠ 0) (B : C.Point)
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) :
+    {q : (SetupIndex (2 ^ k) → C.ScalarField) × (honestFamily hsmul hne k m p).Coins |
+        wireWins (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
+            ((honestFamily hsmul hne k m p).claim
+              (augOfSetup (Zcash.Snark.scalarBasis B q.1))) q.2
+            (((honestFamily hsmul hne k m p).adversary
+              (augOfSetup (Zcash.Snark.scalarBasis B q.1))).run q.2) ∧
+          ¬ (honestFamily hsmul hne k m p).HasOpening
+            (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins}
+      = {q | ¬ (honestFamily hsmul hne k m p).HasOpening
+            (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins} := by
+  ext q
+  simp only [Set.mem_setOf_eq, and_iff_right_iff_imp]
+  intro _
+  exact honestFamily_accepts_everywhere hsmul hne _ q.2
+
+end Honest
 
 end Bulletproof.Ipa.Forking
