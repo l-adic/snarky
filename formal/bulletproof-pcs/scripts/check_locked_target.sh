@@ -6,15 +6,23 @@
 # from the wire verifier. Every one of those keeps the build green and the sorry count falling while
 # proving something else. Nothing else in the gate set can see it.
 #
-# Six texts are pinned, modulo indentation and internal spacing:
+# Seven texts are pinned, modulo indentation and internal spacing:
 #   TARGET           — the query-loss rung's binders and conclusion (its PROOF is free to change)
 #   EXTRACTOR        — `deployedExtract`'s signature and return type
 #   CONCLUSION-TYPE  — `OpeningOrBreak`, so the disjunction cannot lose a side
 #   TERMINAL         — the DL-charged endpoint's binders and conclusion
 #   HAS-OPENING      — the failure predicate, which must inspect the `PSum.inl` BRANCH
-#   RELATION-FINDER  — the break projection the DL reduction consumes
+#   RELATION-FINDER  — the break projection the DL reduction consumes, including the split on the
+#                      `U` coefficient (the `else none` branch is the residual being filtered out)
+#   RESIDUAL-ASSUMPTION — `DerivedUDLAdvantageLE`, the price of the `U`-touching breaks
 #
 # plus: the extractor is a plain `def`, and both anti-vacuity companions still exist.
+#
+# RESIDUAL-ASSUMPTION is pinned because it is the one hypothesis with no upstream counterpart:
+# kimchi's `U` is transcript derived, so no DL challenge can be planted there and the event is
+# NOT reducible to textbook DL. `derivedUDL_iff_residual_measure` proves it is the residual
+# event's own measure. Widening it — or quietly folding it into `ε` — would hide the one place
+# this development assumes more than ironwood does.
 #
 # HAS-OPENING is the one that matters most. `deployedExtract` returns `opening ⊕' DL-relation`,
 # and at a prime-order group a nontrivial relation among the generators ALWAYS exists
@@ -60,11 +68,13 @@ out += ['### CONCLUSION-TYPE']
 out += block(game, r'^abbrev OpeningOrBreak ', r'augmentedBasis', 'CONCLUSION-TYPE')
 out += ['### TERMINAL']
 out += block(ks, r'^theorem deployedExtract_noOpening_measure_le_of_textbookDL',
-             r'Fintype\.card \(Zcash\.Snark\.AugmentedIndex', 'TERMINAL')
+             r'Fintype\.card \(SetupIndex', 'TERMINAL')
 out += ['### HAS-OPENING']
 out += block(ks, r'^def HasOpening ', r'PSum\.inl', 'HAS-OPENING')
 out += ['### RELATION-FINDER']
-out += block(ks, r'^def relationFinder', r'^    \| some \(PSum\.inr rel\)', 'RELATION-FINDER')
+out += block(ks, r'^def relationFinder', r'^        else none', 'RELATION-FINDER')
+out += ['### RESIDUAL-ASSUMPTION']
+out += block(ks, r'^def DerivedUDLAdvantageLE ', r'isSome\} ≤ bound', 'RESIDUAL-ASSUMPTION')
 print('\n'.join(out))
 PY
 }
