@@ -6,12 +6,23 @@
 # from the wire verifier. Every one of those keeps the build green and the sorry count falling while
 # proving something else. Nothing else in the gate set can see it.
 #
-# Three texts are pinned, modulo indentation and internal spacing:
-#   TARGET           — the theorem's binders and conclusion (its PROOF is free to change)
+# Six texts are pinned, modulo indentation and internal spacing:
+#   TARGET           — the query-loss rung's binders and conclusion (its PROOF is free to change)
 #   EXTRACTOR        — `deployedExtract`'s signature and return type
 #   CONCLUSION-TYPE  — `OpeningOrBreak`, so the disjunction cannot lose a side
+#   TERMINAL         — the DL-charged endpoint's binders and conclusion
+#   HAS-OPENING      — the failure predicate, which must inspect the `PSum.inl` BRANCH
+#   RELATION-FINDER  — the break projection the DL reduction consumes
 #
 # plus: the extractor is a plain `def`, and both anti-vacuity companions still exist.
+#
+# HAS-OPENING is the one that matters most. `deployedExtract` returns `opening ⊕' DL-relation`,
+# and at a prime-order group a nontrivial relation among the generators ALWAYS exists
+# (Soundness.lean:104-108). So a failure predicate reading `= none` — mere absence of an
+# instance — is satisfied by an extractor that returns a break on every accepting run, and
+# proves nothing. Upstream inspects the branch for exactly this reason
+# (`ComputedAlgebraicFSFamily.hasCleanOpening`, Algebraic.lean:1164). Weakening `HasOpening`
+# back to `= none` would keep the build, the axiom census and the sorry census all green.
 #
 # Changing a pinned text is a decision about what is being proved, not a proof step.
 #   check_locked_target.sh            check
@@ -22,11 +33,12 @@ cd "$(dirname "$0")/.."
 expected="scripts/locked_target.expected"
 dep="Bulletproof/Forking/Deployed.lean"
 game="Bulletproof/Forking/Game.lean"
+ks="Bulletproof/Forking/KnowledgeSoundness.lean"
 
 render() {
-  python3 - "$dep" "$game" <<'PY'
+  python3 - "$dep" "$game" "$ks" <<'PY'
 import re, sys, pathlib
-dep, game = (pathlib.Path(p).read_text().splitlines() for p in sys.argv[1:3])
+dep, game, ks = (pathlib.Path(p).read_text().splitlines() for p in sys.argv[1:4])
 
 def block(lines, start, end, what):
     # A missing anchor is itself a statement change (the usual cause: the pinned bound was edited,
@@ -46,6 +58,13 @@ out += ['### EXTRACTOR']
 out += block(dep, r'^def deployedExtract ', r'^    Option \(OpeningOrBreak', 'EXTRACTOR')
 out += ['### CONCLUSION-TYPE']
 out += block(game, r'^abbrev OpeningOrBreak ', r'augmentedBasis', 'CONCLUSION-TYPE')
+out += ['### TERMINAL']
+out += block(ks, r'^theorem deployedExtract_noOpening_measure_le_of_textbookDL',
+             r'Fintype\.card \(Zcash\.Snark\.AugmentedIndex', 'TERMINAL')
+out += ['### HAS-OPENING']
+out += block(ks, r'^def HasOpening ', r'PSum\.inl', 'HAS-OPENING')
+out += ['### RELATION-FINDER']
+out += block(ks, r'^def relationFinder', r'^    \| some \(PSum\.inr rel\)', 'RELATION-FINDER')
 print('\n'.join(out))
 PY
 }

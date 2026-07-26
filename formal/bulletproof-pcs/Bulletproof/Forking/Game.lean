@@ -606,9 +606,14 @@ private theorem scanFork_snd_ne_none {α : Type*} [DecidableEq F] (expand : Pre 
 
 /-- **The tape node reached at round `m`** (`def:fork_reached`): the root tape, followed along the
 current run's first `m` answers, is exactly the current tape. Verbatim ironwood's
-`RecursiveForkReached` at `k := σ.k + 1` and codomain `Pre` — the statement mentions no algebra,
-but ironwood's own version is stated in a section that force-includes `[Field F]`, so it cannot
-be instantiated at `Pre` and has to be restated here. -/
+`RecursiveForkReached` at `k := σ.k + 1` and codomain `Pre`.
+
+This copy is a DUPLICATE, not a forced port. Upstream's `RecursiveForkReached`
+(`Forking/Adversary/Recursive.lean:1063`) carries no instance binders — the `[Field F]` on the
+surrounding section is included in a declaration only by use, and this statement mentions no
+algebra — so it instantiates at `Pre` directly. `scripts/check_ironwood_generic.lean:159-172`
+compiles that instantiation at a payload type with no algebra at all. Prefer the upstream name;
+this is slated for replacement. -/
 def KimchiForkReached (N : ℕ) (prefixes : Pf → Fin N → T)
     (root : Zcash.Snark.RecursiveForkCoins Pre N) :
     {d : ℕ} → (m : ℕ) → m + d = N → (O : T → Pre) → (p : Pf) →

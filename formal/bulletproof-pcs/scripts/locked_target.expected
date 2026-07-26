@@ -1,5 +1,5 @@
--- LOCKED: the target statement (docs/locked-target.md). Bytes below are frozen.
--- Regenerating this file is a statement change and requires explicit sign-off.
+-- LOCKED: the target statement (docs/locked-target.md). Frozen text.
+-- Regenerating this file is a STATEMENT CHANGE and requires explicit sign-off.
 ### TARGET
 theorem deployedExtract_failure_measure_le
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
@@ -32,3 +32,37 @@ abbrev OpeningOrBreak (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F) (v : F) : 
   (Σ' (a : Fin (2 ^ σ.k) → F) (ρ : F), openingRelationB σ P b v a ρ)
     ⊕' Zcash.Snark.AlgebraicRelationWitness (F := F)
         (Zcash.Snark.augmentedBasis σ.g σ.U σ.h)
+### TERMINAL
+theorem deployedExtract_noOpening_measure_le_of_textbookDL
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hinj : Function.Injective (expandPre C)) (hne : ∀ q, expandPre C q ≠ 0)
+    (B : C.Point) (fam : DeployedFamily C k m p)
+    (hU : ∀ basis, basis Zcash.Snark.AugmentedIndex.u
+      = uBaseOf C (Ipa.cipOf (fam.claim basis)))
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
+    (hcoins : coins.Complete) {ε : ℝ≥0∞}
+    (hDL : Zcash.Snark.TextbookDLWithCoinsAdvantageLE B (fam.relationFinder hU coins) ε) :
+    (PMF.uniformOfFintype
+        ((Zcash.Snark.AugmentedIndex (2 ^ k) → C.ScalarField) × fam.Coins)).toOuterMeasure
+        {q | wireWins (srsOfBasis k (Zcash.Snark.scalarBasis B q.1))
+                (fam.claim (Zcash.Snark.scalarBasis B q.1)) q.2
+                ((fam.adversary (Zcash.Snark.scalarBasis B q.1)).run q.2) ∧
+          ¬ fam.HasOpening (Zcash.Snark.scalarBasis B q.1) q.2 coins}
+      ≤ (fam.Q + k + 1) * (3 / (2 ^ 128 : ℕ))
+        + Fintype.card (Zcash.Snark.AugmentedIndex (2 ^ k)) * ε := by
+### HAS-OPENING
+def HasOpening (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : fam.Coins)
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) : Prop :=
+  ∃ w, fam.attempt basis O coins = some (PSum.inl w)
+### RELATION-FINDER
+def relationFinder
+    (hU : ∀ basis, basis Zcash.Snark.AugmentedIndex.u
+      = uBaseOf C (Ipa.cipOf (fam.claim basis)))
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) :
+    (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) → fam.Coins →
+      Option (Zcash.Snark.AlgebraicRelationWitness (F := C.ScalarField) basis) :=
+  fun basis O =>
+    match fam.attempt basis O coins with
+    | none => none
+    | some (PSum.inl _) => none
+    | some (PSum.inr rel) => some (fam.augmentedBasis_attempt basis (hU basis) ▸ rel)

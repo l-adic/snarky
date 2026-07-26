@@ -809,7 +809,37 @@ theorem deployedExtract_failure_measure_le
               (Ipa.cipOf claim) (combinedCommitment claim.polyscale claim.commitmentFn)
               pg pw hP A O coins = none}
       ≤ (Q + σ.k + 1) * (3 / (2 ^ 128 : ℕ)) := by
-  sorry
+  -- (a) the deployed failure set is the abstract one: `wireWins_iff_wins` at exactly these
+  -- arguments, and `deployedExtract` is `kimchiExtract` at the deployed instantiation by
+  -- definition (so the second conjunct transfers by `exact`, never by `rw`).
+  have hsub :
+      {O : IpaNode C σ.k → Prechallenge | wireWins σ claim O (A.run O) ∧
+          deployedExtract σ (Ipa.cipOf claim)
+              (combinedEvalVector (2 ^ σ.k) claim.evalscale claim.pointFn)
+              (Ipa.cipOf claim) (combinedCommitment claim.polyscale claim.commitmentFn)
+              pg pw hP A O coins = none}
+        ⊆ {O : IpaNode C σ.k → Prechallenge |
+          Wins { σ with U := uBaseOf C (Ipa.cipOf claim) }
+              (combinedEvalVector (2 ^ σ.k) claim.evalscale claim.pointFn)
+              (Ipa.cipOf claim) (combinedCommitment claim.polyscale claim.commitmentFn)
+              (expandPre C) toOpening (nodes (Ipa.cipOf claim)) O (A.run O) ∧
+            kimchiExtract { σ with U := uBaseOf C (Ipa.cipOf claim) }
+                (combinedEvalVector (2 ^ σ.k) claim.evalscale claim.pointFn)
+                (Ipa.cipOf claim) (combinedCommitment claim.polyscale claim.commitmentFn)
+                pg pw hP (expandPre C) A toOpening (nodes (Ipa.cipOf claim))
+                (decodesFromPrefixes_nodes _ (Ipa.cipOf claim)) O coins = none} := by
+    rintro O ⟨hw, hf⟩
+    exact ⟨(wireWins_iff_wins hsmul σ claim O (A.run O)).mp hw, hf⟩
+  refine le_trans (MeasureTheory.measure_mono hsub) ?_
+  -- (b) the abstract bound, instantiated; then `3 / |Pre|` is `3 / 2 ^ 128`.
+  refine le_trans (kimchiExtract_failure_measure_le
+    { σ with U := uBaseOf C (Ipa.cipOf claim) }
+    (combinedEvalVector (2 ^ σ.k) claim.evalscale claim.pointFn)
+    (Ipa.cipOf claim) (combinedCommitment claim.polyscale claim.commitmentFn)
+    pg pw hP (expandPre C) hinj hne A hQ toOpening (nodes (Ipa.cipOf claim))
+    (decodesFromPrefixes_nodes _ (Ipa.cipOf claim)) (prefixDecode_nodes (Ipa.cipOf claim))
+    coins hcoins) (le_of_eq ?_)
+  rw [card_prechallenge]
 
 end Extractor
 

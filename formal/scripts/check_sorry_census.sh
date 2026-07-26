@@ -10,7 +10,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-expected=$'bulletproof-pcs/Bulletproof/Forking/Deployed.lean:812'
+expected=$'bulletproof-pcs/Bulletproof/Forking/KnowledgeSoundness.lean:205'
 
 actual=$(grep -rn '\bsorry\b' \
   bulletproof-pcs/Bulletproof kimchi/Kimchi pasta poseidon snarky \
@@ -25,5 +25,9 @@ if [[ "$actual" != "$expected" ]]; then
   exit 1
 fi
 
-echo "✓ sorry census unchanged: 1 known sorry"
-echo "  bulletproof-pcs/Bulletproof/Forking/Deployed.lean:812 — deployedExtract_failure_measure_le"
+if [[ -z "$expected" ]]; then
+  echo "✓ sorry census unchanged: the tree is sorry-free"
+else
+  echo "✓ sorry census unchanged: $(echo "$expected" | wc -l) known sorry/sorries"
+  echo "$expected" | sed 's/^/  /'
+fi
