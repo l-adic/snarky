@@ -182,22 +182,29 @@ structure DecodesFromPrefixes (σ : SRS G)
 
 /-! ## The recursive fork over the prechallenge domain
 
-The three ingredients of the extractor body, in dependency order: the freshness scan
-(`scanFork`), the fork itself (`kimchiForkFrom` — `def:pre_fork`), and the decision procedure
-that turns a candidate certificate into a *checked* one (`decideKimchiForkValid` —
-`lem:fork_valid_decidable`). Deciding validity inside the extractor is what makes the
-extractor's return type its own correctness statement: a `some` answer is valid by
-construction, and the analytic content ("`some` happens often enough") stays in the measure
-bound.
+The two ingredients of the extractor body, in dependency order: the fork itself
+(`kimchiForkFrom` — `def:pre_fork`), and the decision procedure that turns a candidate
+certificate into a *checked* one (`decideKimchiForkValid` — `lem:fork_valid_decidable`).
+Deciding validity inside the extractor is what makes the extractor's return type its own
+correctness statement: a `some` answer is valid by construction, and the analytic content
+("`some` happens often enough") stays in the measure bound.
 
-Two adaptations of ironwood's `recursiveAlgebraicForkFrom` are forced, and are the design:
+The freshness scan is **not** ours: it is `Zcash.Snark.nextForkChallenge`, used verbatim at the
+alphabet `Pre`, which asks only `[Zero Pre]` and `[DecidableEq Pre]` — both carried by the
+deployed `Fin (2 ^ 128)` (`scripts/check_ironwood_generic.lean` §1, §3). So the fork's own
+adaptation of ironwood's `recursiveAlgebraicForkFrom` is a single one, and it is structural
+rather than algebraic:
 
-* **Distinctness is tested in the field, not in `Pre`.** The signature carries `DecidableEq F`
-  but not `DecidableEq Pre`, so the scan's freshness test is "`expand u` not already selected".
-  That is exactly the distinctness the certificate needs, so no appeal to injectivity of
-  `expand` is required inside the extractor.
-* **No zero test on `Pre`.** `Pre` carries no algebra. `KimchiForkValid`'s nonzero side
-  conditions are about the *field* challenges, and are discharged by the validity decision.
+* **The recursion is indexed by certificate depth, with coins one level deeper.** Ironwood's
+  leaf level is the win check; ours is the Schnorr fork, which keeps *two* of three branches and
+  emits `KimchiForkCert.leaf`. So both cases of the recursion are `.node`, and the base case
+  does real work.
+
+Two consequences of scanning in `Pre` rather than in the field are worth naming, because they
+are where `expand`'s two properties are spent. Freshness and the zero skip are tested on
+prechallenges, so the certificate's *field* challenges need `expand` injective to be distinct
+(`hexp_inj`, in `kimchiForkFrom_realizes`) and `expand` nonvanishing to be nonzero (`hexp_ne`).
+Neither is needed to *price* a round — see the escape-layer preamble below.
 
 Nothing here is classical: `decideWins` and `decideKimchiForkValid` are plain `Decidable`
 data, so `kimchiExtract` stays a computable `def`.
@@ -239,12 +246,11 @@ private def decideKimchiForkValid [DecidableEq F] [DecidableEq G] (U H : G) (v :
         KimchiForkValid U H v (foldHalves g u₃) (foldHalves b u₃) (P + u₃⁻¹ • L + u₃ • R) t₃)
       infer_instance
 
-/-- Scan a list of prechallenges for the first one whose attempt succeeds and whose *field*
-image is fresh, returning the selected challenge and result together with the unscanned suffix
-and the grown seen-set, so a second scan resumes where the first stopped. This is ironwood's
-`nextForkChallenge` with the two forced adaptations: freshness in `F` through `expand` (there is
-no `DecidableEq Pre`) and no zero test (there is no `Zero Pre`). The run counter is dropped —
-`kimchiExtract`'s type carries no run budget. -/
+/-- **RETIRED.** Scan a list of prechallenges for the first one whose attempt succeeds and whose
+*field* image is fresh. This was the hand-adapted copy of ironwood's `nextForkChallenge` made
+when `Pre` was assumed to carry no algebra; `kimchiForkFrom` now calls
+`Zcash.Snark.nextForkChallenge` directly, which tests freshness in `Pre` and skips `q = 0` — the
+skip the escape layer prices. Nothing depends on this copy or on its four lemmas below. -/
 private def scanFork {α : Type*} [DecidableEq F] (expand : Pre → F) (attempt : Pre → Option α)
     (seen : List F) : List Pre → Option ((F × α) × List Pre × List F)
   | [] => none
@@ -366,11 +372,19 @@ unchanged — `escapesDuringC_measure_le'`, `queryBound_completing`, `escapesDur
 `uniformOfFintype_toOuterMeasure_triple_le` — because none of it mentions algebra, so all of it
 applies verbatim at `Pre`.
 
-Two textual differences from the quoted originals, both forced and both recorded in the
-blueprint: the scan's freshness test is on the *field image* `expand q` (there is no
-`DecidableEq Pre`), and there is no zero clause (there is no `Zero Pre`; the nonzero side
-conditions of `KimchiForkValid` come from `hexp_ne` instead). Smallness of the escape set, which
-ironwood gets from the zero clause, comes here from injectivity of `expand`.
+The escape layer **is** ironwood's, not a port of it: `recursiveForkEscape` asks only `[Zero F]`
+of the alphabet, so it applies at `Pre` verbatim — zero clause included. That clause is not
+optional here: the scan is `Zcash.Snark.nextForkChallenge`, which skips `q = 0`, so a `q = 0`
+that the fork cannot use must be charged, or non-escape would not force the fork to return.
+Smallness of the escape set is therefore ironwood's `recursiveForkEscape_subset_triple`, which
+needs **no** injectivity of `expand`: pricing a round costs `3 / |Pre|` on the strength of the
+zero clause alone. Injectivity is needed only downstream, in `kimchiForkFrom_realizes`, where
+freshness is tested in `Pre` but `KimchiForkRealizes` demands the three *field* challenges be
+distinct. The nonzero side conditions of `KimchiForkValid` still come from `hexp_ne`.
+
+The `PreThreeForkSuccess` / `preForkEscape` / `scanFork` block below is the earlier hand-ported
+copy of that layer. Nothing depends on it any more; it is retained only because deleting a
+declaration is the user's call.
 -/
 
 section Escape
@@ -470,17 +484,18 @@ private theorem scanFork_other_good_mem_rest {α : Type*} [DecidableEq F] (expan
 
 /-! ### The escape set over `Pre` -/
 
-/-- **Three-fork success over `Pre`** (`def:pre_three_fork`): three prechallenges with pairwise
-distinct *images* whose attempts all succeed. Distinctness is asked of the images because that is
-what `KimchiForkValid`'s node clause needs and what `scanFork` tests. Ironwood's zero clause is
-absent: `Pre` carries no algebra. -/
+/-- **RETIRED — three-fork success over `Pre`** (`def:pre_three_fork`): three prechallenges with
+pairwise distinct *images* whose attempts all succeed. Superseded by `Zcash.Snark.ThreeForkSuccess`
+at `Pre`, which the escape set and the scan both use now; this copy dropped ironwood's zero clause
+and so cannot price the `q = 0` branch that `nextForkChallenge` skips. Nothing depends on it. -/
 def PreThreeForkSuccess (expand : Pre → F) (good : Pre → Prop) : Prop :=
   ∃ q₁ q₂ q₃, expand q₁ ≠ expand q₂ ∧ expand q₁ ≠ expand q₃ ∧ expand q₂ ≠ expand q₃ ∧
     good q₁ ∧ good q₂ ∧ good q₃
 
 open Classical in
-/-- **The local escape set over `Pre`** (`def:pre_escape`), ironwood's `recursiveForkEscape` with
-the zero clause dropped. -/
+/-- **RETIRED — the local escape set over `Pre`** (`def:pre_escape`), ironwood's
+`recursiveForkEscape` with the zero clause dropped. `kimchiForkEscapeSet` uses
+`Zcash.Snark.recursiveForkEscape` directly; nothing depends on this copy. -/
 noncomputable def preForkEscape (expand : Pre → F) (good : Pre → Prop) : Set Pre :=
   if PreThreeForkSuccess expand good then ∅ else {q | good q}
 
@@ -683,7 +698,7 @@ noncomputable def kimchiForkEscapeSet [DecidableEq F] [DecidableEq G] [Decidable
   | none => ∅
   | some node =>
       if hd : D.roundOf t + node.depth = σ.k then
-        preForkEscape expand
+        Zcash.Snark.recursiveForkEscape
           (kimchiForkGood σ b v P expand A proofOf prefixes dec (D.roundOf t) hd t O node.child)
       else ∅
 
@@ -719,11 +734,15 @@ theorem kimchiForkEscapeSet_blind [DecidableEq F] [DecidableEq G] [DecidableEq T
       · simp only [dif_neg hd]
 
 /-- **Each escape set has measure at most `3 / |Pre|`** (`lem:escape_measure_le`), by the imported
-bound on the uniform measure of a set inside three points. -/
+bound on the uniform measure of a set inside three points. Since the escape layer is now
+ironwood's own, smallness comes from `recursiveForkEscape_subset_triple` — whose three points are
+`0` and the at most two successful challenges — so injectivity of `expand` is **not** used. The
+binder is kept (as `_hexp_inj`) because the call site in `kimchiExtract_failure_measure_le` is
+positional. -/
 theorem kimchiForkEscapeSet_measure_le [DecidableEq F] [DecidableEq G] [DecidableEq T]
     [Fintype Pre] [Nonempty Pre]
     (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
-    (hexp_inj : Function.Injective expand)
+    (_hexp_inj : Function.Injective expand)
     (A : Zcash.Snark.OracleComp T Pre Pf)
     (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
     (dec : DecodesFromPrefixes σ proofOf prefixes)
@@ -739,7 +758,7 @@ theorem kimchiForkEscapeSet_measure_le [DecidableEq F] [DecidableEq G] [Decidabl
   | some node =>
       by_cases hd : D.roundOf t + node.depth = σ.k
       · simp only [dif_pos hd]
-        obtain ⟨x, a, c, hsub⟩ := preForkEscape_subset_triple expand hexp_inj
+        obtain ⟨a, c, hsub⟩ := Zcash.Snark.recursiveForkEscape_subset_triple
           (kimchiForkGood σ b v P expand A proofOf prefixes dec (D.roundOf t) hd t O node.child)
         exact Zcash.Snark.uniformOfFintype_toOuterMeasure_triple_le hsub
       · simp only [dif_neg hd]
@@ -761,7 +780,7 @@ theorem kimchiForkEscapeSet_prefix [DecidableEq F] [DecidableEq G] [DecidableEq 
       (.node order child)) :
     kimchiForkEscapeSet σ b v P expand A proofOf prefixes dec D root
         (prefixes p ⟨m, by omega⟩) O
-      = preForkEscape expand
+      = Zcash.Snark.recursiveForkEscape
         (kimchiForkGood σ b v P expand A proofOf prefixes dec m (by omega)
           (prefixes p ⟨m, by omega⟩) O child) := by
   rw [kimchiForkEscapeSet,
@@ -778,8 +797,52 @@ theorem kimchiForkEscapeSet_prefix [DecidableEq F] [DecidableEq G] [DecidableEq 
   rw [hpath, hreach]
   simp only [dif_pos (show m + e = σ.k by omega)]
 
-/-! ### Non-escape forces a certificate -/
+/-! ### Non-escape forces a certificate
 
+The two corollaries of ironwood's `nextForkChallenge_two_more` that the fork actually consumes.
+They are phrased through a *predicate* `good` and an implication
+`good q → (attempt q).output.isSome` rather than through `attempt` directly: the fork's own
+attempt function is an anonymous lambda inside its body, so it can only be named by unification
+against the goal, which these shapes allow. -/
+
+/-- The first scan of a node returns. -/
+private theorem nextFork_fst_ne_none {α : Type*}
+    (attempt : Pre → Zcash.Snark.RecursiveForkAttempt α) (order : List Pre)
+    (hcomplete : ∀ q : Pre, q ∈ order) (q₁ : Pre)
+    (good : Pre → Prop) (hthree : Zcash.Snark.ThreeForkSuccess good)
+    (himp : ∀ q, good q → (attempt q).output.isSome) :
+    (Zcash.Snark.nextForkChallenge attempt [q₁] order).output ≠ none := by
+  obtain ⟨a, c, d, hac, had, hcd, ha0, hc0, hd0, ga, gc, gd⟩ := hthree
+  obtain ⟨q₂, r₂, rest, seen, hout, -⟩ :=
+    Zcash.Snark.nextForkChallenge_two_more attempt order hcomplete q₁
+      ⟨a, c, d, hac, had, hcd, ha0, hc0, hd0, himp _ ga, himp _ gc, himp _ gd⟩
+  rw [hout]
+  simp
+
+/-- The second scan, resuming where the first stopped, returns as well. -/
+private theorem nextFork_snd_ne_none {α : Type*}
+    (attempt : Pre → Zcash.Snark.RecursiveForkAttempt α) (order : List Pre)
+    (hcomplete : ∀ q : Pre, q ∈ order) (q₁ : Pre)
+    (good : Pre → Prop) (hthree : Zcash.Snark.ThreeForkSuccess good)
+    (himp : ∀ q, good q → (attempt q).output.isSome)
+    {q₂ : Pre} {r₂ : α} {rest seen : List Pre}
+    (h1 : (Zcash.Snark.nextForkChallenge attempt [q₁] order).output
+      = some ((q₂, r₂), rest, seen)) :
+    (Zcash.Snark.nextForkChallenge attempt seen rest).output ≠ none := by
+  obtain ⟨a, c, d, hac, had, hcd, ha0, hc0, hd0, ga, gc, gd⟩ := hthree
+  obtain ⟨q₂', r₂', rest', seen', hout, hthird⟩ :=
+    Zcash.Snark.nextForkChallenge_two_more attempt order hcomplete q₁
+      ⟨a, c, d, hac, had, hcd, ha0, hc0, hd0, himp _ ga, himp _ gc, himp _ gd⟩
+  rw [h1] at hout
+  simp only [Option.some.injEq, Prod.mk.injEq] at hout
+  obtain ⟨-, hrest, hseen⟩ := hout
+  subst hrest
+  subst hseen
+  intro hnone
+  rw [hnone] at hthird
+  simp at hthird
+
+omit [Zero Pre] [DecidableEq Pre] in
 /-- **Non-escape forces the fork to return** (`lem:isSome_of_not_escape`), the port of ironwood's
 `recursiveAlgebraicForkFrom_isSome_of_not_escape`. -/
 private theorem kimchiForkFrom_isSome_of_not_escape [DecidableEq F] [DecidableEq G] [DecidableEq T]
@@ -798,10 +861,125 @@ private theorem kimchiForkFrom_isSome_of_not_escape [DecidableEq F] [DecidableEq
       ¬ (A.completing prefixes).escapesDuringC
           (kimchiForkEscapeSet σ b v P expand A proofOf prefixes dec D root) O →
       (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O p coins).output.isSome
-    := by
-  -- MIGRATION SCAFFOLD: rebuild against `Zcash.Snark.nextForkChallenge`.
-  -- Upstream template: `Forking/Adversary/Recursive.lean:1258-1359`.
-  sorry
+  | 0, m, hme, O, p, .node order child, hp, hreach, hcomplete, hwin, hnoescape => by
+      subst hp
+      have hm : m = σ.k := by omega
+      subst hm
+      -- the global escape set at the Schnorr prefix is the local one
+      have hesc : kimchiForkEscapeSet σ b v P expand A proofOf prefixes dec D root
+            (prefixes (A.run O) (Fin.last σ.k)) O
+          = Zcash.Snark.recursiveForkEscape (kimchiForkGood σ b v P expand A proofOf prefixes dec
+            σ.k (by omega) (prefixes (A.run O) (Fin.last σ.k)) O child) :=
+        kimchiForkEscapeSet_prefix σ b v P expand A proofOf prefixes dec D root
+          (e := 0) (m := σ.k) (by omega) O (A.run O) order child hreach
+      -- the cached challenge is not exceptional
+      have hlocal : O (prefixes (A.run O) (Fin.last σ.k)) ∉
+          Zcash.Snark.recursiveForkEscape (kimchiForkGood σ b v P expand A proofOf prefixes dec
+            σ.k (by omega) (prefixes (A.run O) (Fin.last σ.k)) O child) := by
+        intro hu
+        exact hnoescape (Zcash.Snark.OracleComp.escapesDuringC_completing _ prefixes
+          (j := Fin.last σ.k) (by rw [hesc]; exact hu))
+      -- reprogramming at `t` with the cached answer is the identity on tables
+      have hupd : Function.update O (prefixes (A.run O) (Fin.last σ.k))
+          (O (prefixes (A.run O) (Fin.last σ.k))) = O := by
+        funext x
+        by_cases hx : x = prefixes (A.run O) (Fin.last σ.k)
+        · subst hx; simp
+        · simp [hx]
+      -- hence the cached challenge is itself good
+      have hgood₁ : kimchiForkGood σ b v P expand A proofOf prefixes dec σ.k (by omega)
+          (prefixes (A.run O) (Fin.last σ.k)) O child
+          (O (prefixes (A.run O) (Fin.last σ.k))) := by
+        rw [kimchiForkGood, hupd]
+        exact ⟨rfl, hwin⟩
+      -- hence three-fork success: were there not three, the escape set would be everything good
+      have hthree : Zcash.Snark.ThreeForkSuccess
+          (kimchiForkGood σ b v P expand A proofOf prefixes dec σ.k (by omega)
+            (prefixes (A.run O) (Fin.last σ.k)) O child) := by
+        by_contra hno
+        exact hlocal (by rw [Zcash.Snark.recursiveForkEscape, if_neg hno]; exact Or.inr hgood₁)
+      -- so the single further scan returns, and the leaf is emitted
+      rw [kimchiForkFrom, if_pos hwin]
+      simp only []
+      split
+      · rename_i hnone
+        refine absurd hnone (nextFork_fst_ne_none _ order hcomplete.1 _ _ hthree ?_)
+        intro q hq
+        rw [kimchiForkGood] at hq
+        split
+        · rfl
+        · rename_i hno
+          exact absurd hq hno
+      · rfl
+  | e + 1, m, hme, O, p, .node order child, hp, hreach, hcomplete, hwin, hnoescape => by
+      subst hp
+      have hesc : kimchiForkEscapeSet σ b v P expand A proofOf prefixes dec D root
+            (prefixes (A.run O) ⟨m, by omega⟩) O
+          = Zcash.Snark.recursiveForkEscape (kimchiForkGood σ b v P expand A proofOf prefixes dec m
+            (by omega) (prefixes (A.run O) ⟨m, by omega⟩) O child) :=
+        kimchiForkEscapeSet_prefix σ b v P expand A proofOf prefixes dec D root
+          (e := e + 1) (m := m) (by omega) O (A.run O) order child hreach
+      have hlocal : O (prefixes (A.run O) ⟨m, by omega⟩) ∉
+          Zcash.Snark.recursiveForkEscape (kimchiForkGood σ b v P expand A proofOf prefixes dec m
+            (by omega) (prefixes (A.run O) ⟨m, by omega⟩) O child) := by
+        intro hu
+        exact hnoescape (Zcash.Snark.OracleComp.escapesDuringC_completing _ prefixes
+          (j := ⟨m, by omega⟩) (by rw [hesc]; exact hu))
+      have hupd : Function.update O (prefixes (A.run O) ⟨m, by omega⟩)
+          (O (prefixes (A.run O) ⟨m, by omega⟩)) = O := by
+        funext x
+        by_cases hx : x = prefixes (A.run O) ⟨m, by omega⟩
+        · subst hx; simp
+        · simp [hx]
+      have hreachChild : Zcash.Snark.RecursiveForkReached (σ.k + 1) prefixes root (m + 1)
+          (by omega) O (A.run O) (child (O (prefixes (A.run O) ⟨m, by omega⟩))) :=
+        Zcash.Snark.recursiveForkReached_child (σ.k + 1) prefixes root (by omega) O (A.run O)
+          order child hreach
+      -- the cached branch: the induction hypothesis at round `m + 1`
+      have hfirst : (kimchiForkFrom σ b v P expand A proofOf prefixes dec (m + 1) (by omega) O
+          (A.run O) (child (O (prefixes (A.run O) ⟨m, by omega⟩)))).output.isSome :=
+        kimchiForkFrom_isSome_of_not_escape σ b v P expand A proofOf prefixes dec D root
+          (m + 1) (by omega) O (A.run O) (child (O (prefixes (A.run O) ⟨m, by omega⟩)))
+          rfl hreachChild (hcomplete.2 _) hwin hnoescape
+      have hgood₁ : kimchiForkGood σ b v P expand A proofOf prefixes dec m (by omega)
+          (prefixes (A.run O) ⟨m, by omega⟩) O child (O (prefixes (A.run O) ⟨m, by omega⟩)) := by
+        rw [kimchiForkGood, hupd]
+        exact ⟨rfl, hfirst⟩
+      have hthree : Zcash.Snark.ThreeForkSuccess
+          (kimchiForkGood σ b v P expand A proofOf prefixes dec m (by omega)
+            (prefixes (A.run O) ⟨m, by omega⟩) O child) := by
+        by_contra hno
+        exact hlocal (by rw [Zcash.Snark.recursiveForkEscape, if_neg hno]; exact Or.inr hgood₁)
+      -- the attempt succeeds wherever the round's success predicate holds
+      have himp : ∀ q : Pre,
+          kimchiForkGood σ b v P expand A proofOf prefixes dec m (by omega)
+              (prefixes (A.run O) ⟨m, by omega⟩) O child q →
+            (if prefixes (A.run (Function.update O (prefixes (A.run O) ⟨m, by omega⟩) q))
+                  (⟨m, by omega⟩ : Fin (σ.k + 1)) = prefixes (A.run O) ⟨m, by omega⟩ then
+                kimchiForkFrom σ b v P expand A proofOf prefixes dec (m + 1) (by omega)
+                  (Function.update O (prefixes (A.run O) ⟨m, by omega⟩) q)
+                  (A.run (Function.update O (prefixes (A.run O) ⟨m, by omega⟩) q)) (child q)
+              else { output := none, runs := 1 }).output.isSome := by
+        intro q hq
+        rw [kimchiForkGood] at hq
+        split
+        · exact hq.2
+        · rename_i hno
+          exact absurd hq.1 hno
+      rw [kimchiForkFrom]
+      simp only []
+      split
+      · rename_i hnone
+        rw [hnone] at hfirst
+        exact absurd hfirst (by simp)
+      · split
+        · rename_i hn2
+          exact absurd hn2 (nextFork_fst_ne_none _ order hcomplete.1 _ _ hthree himp)
+        · rename_i hout
+          split
+          · rename_i hn3
+            exact absurd hn3 (nextFork_snd_ne_none _ order hcomplete.1 _ _ hthree himp hout)
+          · rfl
 
 /-- **Root form** (`lem:isSome_of_not_escape_root`): a winning table on which the completing
 machine does not escape yields a certificate from the fork started at round `0` with the root
@@ -1070,11 +1248,18 @@ private theorem kimchiRunHistory_update [DecidableEq T] {N : ℕ} {prefixes : Pf
 
 /-- **The fork returns a realized certificate** (`lem:fork_realizes`): if the fork started at round
 `m` on a history-agreeing run returns a certificate, that certificate realizes
-`KimchiRunSuffix`. -/
+`KimchiRunSuffix`.
+
+`hexp_inj` is load-bearing here and nowhere else in the escape/counting layer: the scan is
+`Zcash.Snark.nextForkChallenge`, whose freshness test lives in `Pre`, so what it hands back is
+three *distinct prechallenges* — while `KimchiForkRealizes` (and through it `KimchiForkValid`)
+demands the three *field* challenges `expand qᵢ` be distinct. Injectivity is the only bridge.
+Nonzero-ness of those field challenges still comes from `hexp_ne`, not from the scan's own zero
+skip. -/
 private theorem kimchiForkFrom_realizes [DecidableEq F] [DecidableEq G] [DecidableEq T]
     [Zero Pre] [DecidableEq Pre]
     (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
-    (hexp_ne : ∀ q : Pre, expand q ≠ 0)
+    (hexp_ne : ∀ q : Pre, expand q ≠ 0) (hexp_inj : Function.Injective expand)
     (A : Zcash.Snark.OracleComp T Pre Pf)
     (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
     (dec : DecodesFromPrefixes σ proofOf prefixes)
@@ -1087,10 +1272,149 @@ private theorem kimchiForkFrom_realizes [DecidableEq F] [DecidableEq G] [Decidab
           = some cert →
       KimchiForkRealizes expand dec.round
         (KimchiRunSuffix σ b v P expand A proofOf prefixes m e hme history) cert
-    := by
-  -- MIGRATION SCAFFOLD: rebuild against `Zcash.Snark.nextForkChallenge`.
-  -- Upstream template: `Forking/Adversary/Recursive.lean:1258-1359`.
-  sorry
+  | 0, m, hme, O, p, .node order child, cert, history, hp, hhist, hout => by
+      subst hp
+      have hm : m = σ.k := by omega
+      subst hm
+      rw [kimchiForkFrom] at hout
+      simp only [] at hout
+      split at hout
+      · rename_i hwin
+        split at hout
+        · simp at hout
+        · rename_i q₂ z snd hsc
+          simp only [Option.some.injEq] at hout
+          subst hout
+          obtain ⟨-, hfresh, -⟩ := Zcash.Snark.nextForkChallenge_output_fresh _ [_] hsc
+          have hattq := Zcash.Snark.nextForkChallenge_output_attempt _ [_] hsc
+          have hq₂₁ : q₂ ≠ O (prefixes (A.run O) (Fin.last σ.k)) := by simpa using hfresh
+          split at hattq
+          · rename_i hcond
+            simp only [Option.some.injEq] at hattq
+            have hf := dec.final_eq (A.run O)
+            have hf' := dec.final_eq (A.run (Function.update O
+              (prefixes (A.run O) (Fin.last σ.k)) q₂))
+            rw [hcond.1] at hf'
+            refine ⟨fun h => hq₂₁ (hexp_inj h.symm), ?_, ?_⟩
+            · exact ⟨O, A.run O, rfl, hwin, hhist, fun i => i.elim0, fun i => i.elim0,
+                congrArg Prod.snd hf, congrArg Prod.fst hf, rfl, rfl, rfl⟩
+            · refine ⟨Function.update O (prefixes (A.run O) (Fin.last σ.k)) q₂,
+                A.run (Function.update O (prefixes (A.run O) (Fin.last σ.k)) q₂), rfl, hcond.2,
+                kimchiRunHistory_update D (by omega) (by omega) hhist q₂ hcond.1,
+                fun i => i.elim0, fun i => i.elim0,
+                congrArg Prod.snd hf', congrArg Prod.fst hf', ?_,
+                congrArg Prod.fst hattq, congrArg Prod.snd hattq⟩
+              rw [hcond.1, Function.update_self]
+          · simp at hattq
+      · simp at hout
+  | e + 1, m, hme, O, p, .node order child, cert, history, hp, hhist, hout => by
+      subst hp
+      have hmlt : m < σ.k + 1 := by omega
+      rw [kimchiForkFrom] at hout
+      simp only [] at hout
+      split at hout
+      · simp at hout
+      · rename_i c₁ hfirst
+        split at hout
+        · simp at hout
+        · rename_i q₂ c₂ rest seen hsecond
+          split at hout
+          · simp at hout
+          · rename_i q₃ c₃ rest₃ hthird
+            simp only [Option.some.injEq] at hout
+            subst hout
+            obtain ⟨-, hfresh₂, hseen₂⟩ := Zcash.Snark.nextForkChallenge_output_fresh _ [_] hsecond
+            have hatt₂ := Zcash.Snark.nextForkChallenge_output_attempt _ [_] hsecond
+            obtain ⟨-, hfresh₃, -⟩ := Zcash.Snark.nextForkChallenge_output_fresh _ seen hthird
+            have hatt₃ := Zcash.Snark.nextForkChallenge_output_attempt _ seen hthird
+            rw [hseen₂] at hfresh₃
+            have hq₂₁ : q₂ ≠ O (prefixes (A.run O) ⟨m, hmlt⟩) := by simpa using hfresh₂
+            have hq₃₂ : q₃ ≠ q₂ ∧ q₃ ≠ O (prefixes (A.run O) ⟨m, hmlt⟩) := by simpa using hfresh₃
+            split at hatt₂
+            · rename_i hcond₂
+              split at hatt₃
+              · rename_i hcond₃
+                -- histories for the three branches
+                have hh₁ : Zcash.Snark.RecursiveRunHistory _ (m + 1) (by omega) prefixes O
+                    (A.run O) (Fin.snoc history (prefixes (A.run O) ⟨m, hmlt⟩,
+                      O (prefixes (A.run O) ⟨m, hmlt⟩))) := by
+                  intro i
+                  refine Fin.lastCases ?_ (fun j => ?_) i
+                  · rw [Fin.snoc_last]
+                    exact ⟨rfl, rfl⟩
+                  · rw [Fin.snoc_castSucc]
+                    exact hhist j
+                have hh₂ : Zcash.Snark.RecursiveRunHistory _ (m + 1) (by omega) prefixes
+                    (Function.update O (prefixes (A.run O) ⟨m, hmlt⟩) q₂)
+                    (A.run (Function.update O (prefixes (A.run O) ⟨m, hmlt⟩) q₂))
+                    (Fin.snoc history (prefixes (A.run O) ⟨m, hmlt⟩, q₂)) := by
+                  intro i
+                  refine Fin.lastCases ?_ (fun j => ?_) i
+                  · rw [Fin.snoc_last]
+                    exact ⟨hcond₂, Function.update_self _ _ _⟩
+                  · rw [Fin.snoc_castSucc]
+                    exact kimchiRunHistory_update D hmlt (by omega) hhist q₂ hcond₂ j
+                have hh₃ : Zcash.Snark.RecursiveRunHistory _ (m + 1) (by omega) prefixes
+                    (Function.update O (prefixes (A.run O) ⟨m, hmlt⟩) q₃)
+                    (A.run (Function.update O (prefixes (A.run O) ⟨m, hmlt⟩) q₃))
+                    (Fin.snoc history (prefixes (A.run O) ⟨m, hmlt⟩, q₃)) := by
+                  intro i
+                  refine Fin.lastCases ?_ (fun j => ?_) i
+                  · rw [Fin.snoc_last]
+                    exact ⟨hcond₃, Function.update_self _ _ _⟩
+                  · rw [Fin.snoc_castSucc]
+                    exact kimchiRunHistory_update D hmlt (by omega) hhist q₃ hcond₃ j
+                -- the induction hypothesis on each branch
+                have hr₁ := kimchiForkFrom_realizes σ b v P expand hexp_ne hexp_inj A proofOf
+                  prefixes dec D (m + 1) (by omega) O (A.run O)
+                  (child (O (prefixes (A.run O) ⟨m, hmlt⟩))) c₁ _ rfl hh₁ hfirst
+                have hr₂ := kimchiForkFrom_realizes σ b v P expand hexp_ne hexp_inj A proofOf
+                  prefixes dec D (m + 1) (by omega)
+                  (Function.update O (prefixes (A.run O) ⟨m, hmlt⟩) q₂) _ (child q₂) c₂ _ rfl
+                  hh₂ hatt₂
+                have hr₃ := kimchiForkFrom_realizes σ b v P expand hexp_ne hexp_inj A proofOf
+                  prefixes dec D (m + 1) (by omega)
+                  (Function.update O (prefixes (A.run O) ⟨m, hmlt⟩) q₃) _ (child q₃) c₃ _ rfl
+                  hh₃ hatt₃
+                -- move the head of the extended history into the `(ts, qs)` slots
+                have step : ∀ (q : Pre) (cc : KimchiForkCert F G e),
+                    KimchiForkRealizes expand dec.round
+                      (KimchiRunSuffix σ b v P expand A proofOf prefixes (m + 1) e (by omega)
+                        (Fin.snoc history (prefixes (A.run O) ⟨m, hmlt⟩, q))) cc →
+                    KimchiForkRealizes expand dec.round
+                      (fun ts qs => KimchiRunSuffix σ b v P expand A proofOf prefixes m (e + 1)
+                        hme history (Fin.cons (prefixes (A.run O) ⟨m, hmlt⟩) ts)
+                        (Fin.cons q qs)) cc := by
+                  intro q cc hcc
+                  refine KimchiForkRealizes.mono expand dec.round ?_ hcc
+                  rintro ts qs sg δ c z1 z2
+                    ⟨O', p', hp', hwin', hhist', hts, hqs, hsg, hδ, hc, hz1, hz2⟩
+                  have hlast := hhist' (Fin.last m)
+                  rw [Fin.snoc_last] at hlast
+                  refine ⟨O', p', hp', hwin', ?_, ?_, ?_, hsg, hδ, hc, hz1, hz2⟩
+                  · intro j
+                    have hj := hhist' j.castSucc
+                    rw [Fin.snoc_castSucc] at hj
+                    exact hj
+                  · intro i
+                    refine Fin.cases ?_ (fun j => ?_) i
+                    · rw [Fin.cons_zero]
+                      exact hlast.1
+                    · rw [Fin.cons_succ]
+                      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hts j
+                  · intro i
+                    refine Fin.cases ?_ (fun j => ?_) i
+                    · rw [Fin.cons_zero, Fin.cons_zero]
+                      exact hlast.2
+                    · rw [Fin.cons_succ, Fin.cons_succ]
+                      exact hqs j
+                exact ⟨fun h => hq₂₁ (hexp_inj h.symm), fun h => hq₃₂.2 (hexp_inj h.symm),
+                  fun h => hq₃₂.1 (hexp_inj h.symm),
+                  hexp_ne _, hexp_ne _, hexp_ne _,
+                  prefixes (A.run O) ⟨m, hmlt⟩, O (prefixes (A.run O) ⟨m, hmlt⟩), q₂, q₃,
+                  rfl, rfl, rfl, rfl, step _ _ hr₁, step _ _ hr₂, step _ _ hr₃⟩
+              · simp at hatt₃
+            · simp at hatt₂
 
 /-- **The extractor answers `some`** (`lem:extract_isSome`): on a winning table on which the
 completing machine does not escape, the fork returns a certificate, that certificate realizes
@@ -1101,6 +1425,7 @@ private theorem kimchiExtract_isSome_of_not_escape [DecidableEq F] [DecidableEq 
     (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G)
     (pg : Fin (2 ^ σ.k) → F) (pw : F) (hP : P = commitGen σ.g pg + pw • σ.h)
     (expand : Pre → F) (hexp_ne : ∀ q : Pre, expand q ≠ 0)
+    (hexp_inj : Function.Injective expand)
     (A : Zcash.Snark.OracleComp T Pre Pf)
     (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
     (dec : DecodesFromPrefixes σ proofOf prefixes)
@@ -1113,7 +1438,7 @@ private theorem kimchiExtract_isSome_of_not_escape [DecidableEq F] [DecidableEq 
   obtain ⟨cert, hcert⟩ := Option.isSome_iff_exists.mp
     (kimchiForkFrom_isSome_of_not_escape_root σ b v P expand A proofOf prefixes dec D coins
       hcomplete O hwin hnoescape)
-  have hreal := kimchiForkFrom_realizes σ b v P expand hexp_ne A proofOf prefixes dec D
+  have hreal := kimchiForkFrom_realizes σ b v P expand hexp_ne hexp_inj A proofOf prefixes dec D
     0 (Nat.zero_add σ.k) O (A.run O) coins cert Fin.elim0 rfl (fun i => i.elim0) hcert
   -- every run the certificate records satisfies the folded acceptance at the root data
   have hyp : ∀ (ts : Fin σ.k → T) (qs : Fin σ.k → Pre) (sg δ : G) (c z1 z2 : F),
@@ -1195,8 +1520,8 @@ theorem kimchiExtract_failure_measure_le [DecidableEq F] [DecidableEq G]
         (kimchiForkEscapeSet σ b v P expand A proofOf prefixes dec _D coins) O} := by
     rintro O ⟨hwin, hfail⟩
     by_contra hno
-    have h := kimchiExtract_isSome_of_not_escape σ b v P pg pw hP expand _hexp_ne A proofOf
-      prefixes dec _D coins _hcoins O hwin hno
+    have h := kimchiExtract_isSome_of_not_escape σ b v P pg pw hP expand _hexp_ne _hexp_inj
+      A proofOf prefixes dec _D coins _hcoins O hwin hno
     rw [hfail] at h
     simp at h
   refine le_trans (MeasureTheory.measure_mono hsub) ?_
