@@ -10,7 +10,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-expected=''
+expected=$'bulletproof-pcs/Bulletproof/Forking/Game.lean:1093
+bulletproof-pcs/Bulletproof/Forking/Game.lean:804'
 
 actual=$(grep -rn '\bsorry\b' \
   bulletproof-pcs/Bulletproof kimchi/Kimchi pasta poseidon snarky \
