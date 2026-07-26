@@ -7,22 +7,41 @@
 Bulletproof.commitmentBinding_iff_no_relation
 Bulletproof.ipaRelation_unique
 
--- The chunked openings — the PCS as kimchi deploys it (a single chunk is the
--- one-element instance). Single opening: an accepting run on the combined commitment
--- of a polynomial's chunks pins its evaluation, under binding and the Fiat-Shamir
--- rewinding hypothesis. Batched: acceptance at pairwise-distinct
--- (polyscale, evalscale) pairs binds every commitment family to one genuine wide
--- polynomial.
-Bulletproof.chunked_ipa_soundness
+-- The executable wire verifier meets the algebra.
+Bulletproof.verify_reflects
+
+-- The conditional batch layer. NOT vacuous in itself: it takes the Fiat-Shamir tree as a
+-- HYPOTHESIS and applies modus ponens, so it is honest plumbing over any module. It stays
+-- because kimchi consumes it directly — `Verifier/Reduction/Soundness.lean` (2 sites) and,
+-- through `ipa_soundnessA`, `Verifier/Capstone/{Algebraic,Reflection}.lean` (3 sites).
+-- The new knowledge-soundness results cannot replace it: there is no `hFS` in them to
+-- apply, and their conclusion is a measure rather than an implication from acceptance.
 Bulletproof.chunked_batch_soundness
 
--- The Fiat-Shamir junction: the executable wire verifier meets the soundness layer,
--- and the per-curve headline — a grid of Poseidon-accepted runs yields genuine openings
--- (composing the declared FS axioms, the flattening lemmas, and chunked_batch_soundness).
-Bulletproof.verify_reflects
-Bulletproof.ipaVesta_sound
-Bulletproof.ipaPallas_sound
+-- THE HEADLINE. Knowledge soundness of the deployed IPA verifier, per curve, in the
+-- random-oracle model: an adversary makes the executable wire verifier accept while the
+-- executable extractor returns no opening only with probability at most
+-- (Q + k + 1)·3/2^128 + (2^k + 1)·ε + δ.
+Bulletproof.Ipa.Forking.ipaVesta_knowledge_sound
+Bulletproof.Ipa.Forking.ipaPallas_knowledge_sound
 
--- The declared trust surface.
+-- The query-loss rung underneath it, which assumes NO discrete-log hardness at all.
+Bulletproof.Ipa.Forking.vesta_failure_measure_le
+Bulletproof.Ipa.Forking.pallas_failure_measure_le
+
+-- What the headline does and does not claim. Roots so they cannot be swept:
+-- honestFamily_failure_set exhibits a family that accepts everywhere, so the bound is a
+-- statement about the extractor and not about acceptance being empty;
+-- reductionEfficient_exists obtains a call bound WITHOUT inspecting the counter, so the
+-- efficiency gate is not an efficiency claim; derivedUDL_iff_residual_measure shows the
+-- δ summand is the residual event's own measure rather than a reduction to a standard
+-- problem (only ε is that).
+Bulletproof.Ipa.Forking.honestFamily_failure_set
+Bulletproof.Ipa.Forking.DeployedFamily.reductionEfficient_exists
+Bulletproof.Ipa.Forking.derivedUDL_iff_residual_measure
+
+-- The declared trust surface. After the old soundness chain was deleted these have no
+-- consumer inside this package: they are declared here and used by kimchi's
+-- Verifier/Capstone/Standard.lean. Retiring them is kimchi-side work.
 Bulletproof.poseidon_fiat_shamir_vesta
 Bulletproof.poseidon_fiat_shamir_pallas

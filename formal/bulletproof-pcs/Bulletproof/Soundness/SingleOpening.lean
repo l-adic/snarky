@@ -402,28 +402,3 @@ def FiatShamirTree (σ : SRS G) (P : G) (x v : F) (accepts : Prop) : Prop :=
 
 /-! ## The headline soundness theorem -/
 
-/-- **IPA knowledge soundness — lands in the opening relation.** Under the
-Fiat–Shamir hypothesis, an accepting run yields a witness in the opening relation:
-
-`VerifierAccepts σ proof P x v c u →
-  ∃ (a : Fin (2 ^ σ.k) → F) (r : F), openingRelation σ P x v a r`.
-
-The hypothesis yields a blinder `r` and an accepting tree over `P - r • σ.h`;
-`ipaRelation_of_acceptV` extracts `a` with `⟨a, σ.g⟩ = P - r • σ.h` and
-`v = ⟨a, evalVector (2 ^ σ.k) x⟩`. Re-blinding,
-`commit σ a r = ⟨a, σ.g⟩ + r • σ.h = (P - r • σ.h) + r • σ.h = P`, so
-`openingRelation σ P x v a r` holds. -/
-theorem ipa_soundness (σ : SRS G) (proof : OpeningProof F G σ.k) (P : G) (x v c : F)
-    (u : Fin σ.k → F)
-    (hFS : FiatShamirTree σ P x v (VerifierAccepts σ proof P x v c u))
-    (hacc : VerifierAccepts σ proof P x v c u) :
-    ∃ (a : Fin (2 ^ σ.k) → F) (r : F), openingRelation σ P x v a r := by
-  obtain ⟨r, t, ht⟩ := hFS hacc
-  obtain ⟨a, hP, hv⟩ :=
-    ipaRelation_of_acceptV σ (evalVector (2 ^ σ.k) x) (P - r • σ.h) v t ht
-  refine ⟨a, r, ?_, hv⟩
-  show commitGen σ.g a + r • σ.h = P
-  rw [hP]
-  abel
-
-end Bulletproof

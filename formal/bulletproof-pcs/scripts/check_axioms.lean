@@ -10,6 +10,7 @@ Run from `formal/bulletproof-pcs/`:  lake env lean scripts/check_axioms.lean
 (or from `formal/`:                  lake env lean bulletproof-pcs/scripts/check_axioms.lean)
 -/
 import Bulletproof
+import Bulletproof.Forking.KnowledgeSoundness
 import Lean.Elab.Command
 
 open Lean Lean.Elab.Command
@@ -20,17 +21,28 @@ namespace Bulletproof.CheckAxioms
 def roots : List Name :=
   [ `Bulletproof.commitmentBinding_iff_no_relation,
     `Bulletproof.ipaRelation_unique,
-    `Bulletproof.chunked_ipa_soundness,
-    `Bulletproof.chunked_batch_soundness,
     `Bulletproof.verify_reflects,
-    `Bulletproof.ipaVesta_sound,
-    `Bulletproof.ipaPallas_sound ]
+    `Bulletproof.chunked_batch_soundness,
+    -- the headline, per curve
+    `Bulletproof.Ipa.Forking.ipaVesta_knowledge_sound,
+    `Bulletproof.Ipa.Forking.ipaPallas_knowledge_sound,
+    -- the rung below it, which assumes no DL hardness
+    `Bulletproof.Ipa.Forking.vesta_failure_measure_le,
+    `Bulletproof.Ipa.Forking.pallas_failure_measure_le,
+    -- what the headline does and does not claim
+    `Bulletproof.Ipa.Forking.honestFamily_failure_set,
+    `Bulletproof.Ipa.Forking.DeployedFamily.reductionEfficient_exists,
+    `Bulletproof.Ipa.Forking.derivedUDL_iff_residual_measure ]
 
-/-- Standard logical axioms; the FS axioms declared here;
-    `Lean.ofReduceBool` (CompElliptic's `native_decide` witnesses). -/
+/-- Standard logical axioms plus `Lean.ofReduceBool` (CompElliptic's `native_decide`
+    witnesses). NOTE what is NOT here: `poseidon_fiat_shamir_{vesta,pallas}`. Those axioms
+    are still DECLARED in `Reflection.lean` because kimchi's
+    `Verifier/Capstone/Standard.lean` consumes them directly, but no root of this package
+    reaches them any more — the old `ipa*_sound` / `chunked_*` chain that did was deleted
+    when the knowledge-soundness results took over as the API. Leaving them out of this
+    list is what keeps that true: re-introducing a root that depends on them fails here. -/
 def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound, `Lean.ofReduceBool,
-    `Bulletproof.poseidon_fiat_shamir_vesta, `Bulletproof.poseidon_fiat_shamir_pallas,
  ]
 
 /-- A CompElliptic `native_decide` point-count witness (trusted; see kimchi's gate). -/
@@ -53,7 +65,7 @@ run_cmd do
         bad := bad.push (root, ax)
   if bad.isEmpty then
     IO.println s!"✓ all {Bulletproof.CheckAxioms.roots.length} Bulletproof roots reduce to \
-      the standard axioms + the declared FS axioms + the Pasta trust base"
+      the standard axioms + the Pasta trust base (no Fiat-Shamir axiom)"
   else
     for (r, a) in bad do
       IO.eprintln s!"::error::{r} depends on disallowed axiom {a}"
