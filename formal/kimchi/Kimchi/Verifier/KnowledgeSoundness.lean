@@ -1,4 +1,5 @@
 import Kimchi.Verifier.Capstone.Reflection
+import Kimchi.Verifier.Forking.OracleRun
 import Bulletproof.Forking.KnowledgeSoundness
 
 /-!
@@ -165,17 +166,223 @@ theorem kimchiVerifyWith_eq_verifyWith {nc : ℕ} (σ : SRS C.Point) (cvk : Kimc
           else Ipa.verifyWith C σ uBase chals c
             (runInputWith σ cvk cp pub beta gamma alpha zeta v u)) := rfl
 
-/-- **FAITHFULNESS OBLIGATION.** The deployed verifier is `kimchiVerifyWith` at the challenges
-the sponge derives. Without this the statement below is about an unrelated construction; with
-it, it is about the shipped verifier under a random-oracle idealization of the sponge. The IPA
-analogue is `Bulletproof.Forking.verifyOracle_spongeFS`. -/
+/-! ### 1b. Fiat–Shamir faithfulness
+
+The generic verifier above is only worth stating if the deployed one *is* it, at challenges
+that are transcript reads. A statement of the shape `∃ β γ α ζ v u U c⃗ c, kimchiVerify =
+kimchiVerifyWith …` carries no content — it is satisfied by any construction agreeing at one
+point, and says nothing about where the challenges came from. What follows names them.
+
+The kimchi schedule threads two sponges and then continues the first one *warm*:
+
+* the **fq sponge** absorbs the key digest, the public-input commitment chunks and the
+  witness chunks, squeezes `β`, `γ` (128-bit casts), absorbs `z_comm` and squeezes `α`,
+  absorbs `t_comm` and squeezes `ζ` (both endo-expanded). Its state at that moment is the
+  **warm state** `s⋆` (`warmState`), and `fqDigest` of `s⋆` is what the second sponge eats;
+* the **fr sponge** absorbs that digest, `ft(ζω)`, the public evaluation chunk vectors and
+  every column's `ζ`/`ζω` chunk vectors, and squeezes `v` then `u`;
+* the **opening** runs on the fq sponge continued from `s⋆`, which is exactly
+  `Bulletproof.Ipa.Forking.spongeFSFrom C s⋆` (`kimchiOpeningFS`).
+
+The six pre-opening reads are `Kimchi.Verifier.Forking.poseidonO` / `poseidonOFr` at the six
+transcribed prefixes; the three opening reads are `kimchiOpeningFS`'s two squeezes at
+`preT` / `preU i` / `preC` of the claim assembled from those six. -/
+
+/-- **The warm state, as a read of the transcript.** The fq interpreter folds a prefix through
+the deployed sponge carrying a `(state, last challenge)` pair; `Forking.poseidonO` projects the
+*value* at each prefix. This is the *state* component at the `ζ` prefix — the sponge the
+deployed verifier hands the opening check, obtained as a transcript read rather than as a
+projection of the deployed schedule (`warmState_eq` is the bridge). -/
+def warmState {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
+    (publicComm : Vector C.Point nc) : Poseidon.FqSponge.S C.base :=
+  ((Forking.KimchiTranscriptElt.preZeta cvk cp publicComm).foldl
+    Forking.step (Poseidon.FqSponge.init, 0)).1
+
+/-- The warm state read off the transcript is the deployed post-`ζ` sponge state. Same fold and
+same argument as the four value-side bridges (`Forking.poseidonO_pre*`); only the projection
+differs — `foldl_step_fst` says the state component ignores the running challenge. -/
+theorem warmState_eq {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
+    (publicComm : Vector C.Point nc) :
+    warmState cvk cp publicComm = (fqOracles C cvk cp publicComm).warm := by
+  rw [warmState, Forking.KimchiTranscriptElt.preZeta, Forking.KimchiTranscriptElt.preAlpha,
+    Forking.KimchiTranscriptElt.preGamma, Forking.KimchiTranscriptElt.preBeta]
+  simp only [List.foldl_append, List.foldl_cons, List.foldl_nil, Forking.step,
+    Forking.foldl_step_fst, Forking.foldl_absorbInto_preAbsorbs]
+  simp only [Forking.KimchiTranscriptElt.absorbInto, List.foldl_map, Vector.foldl_toList,
+    Array.foldl_toList, fqOracles]
+
+/-- **The fq digest, as a read of the transcript.** `fq_sponge.clone().digest()` — the value
+handed to the fr sponge — computed from `warmState` rather than from `fqOracles`, so that the
+fr-side prefixes are functions of the transcript alone. -/
+def warmDigest {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
+    (publicComm : Vector C.Point nc) : C.ScalarField :=
+  let x := (Poseidon.FqSponge.challengeFq C.sponge (warmState cvk cp publicComm)).1
+  if x.val < C.scalar then ((x.val : ℕ) : C.ScalarField) else 0
+
+/-- The transcript-read digest is the deployed one. Immediate from `warmState_eq`. -/
+theorem warmDigest_eq {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
+    (publicComm : Vector C.Point nc) :
+    warmDigest cvk cp publicComm = (fqOracles C cvk cp publicComm).digest := by
+  rw [warmDigest, warmState_eq]
+  rfl
+
+/-- **The warm opening oracles.** The deployed Poseidon Fiat–Shamir source started at the warm
+state: its `squeezeBase` at `preT` gives the `U` base, its `squeezeScalar` at `preU i` and
+`preC` the round and Schnorr challenges. -/
+def kimchiOpeningFS {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
+    (publicComm : Vector C.Point nc) : Ipa.Forking.FiatShamir C :=
+  Ipa.Forking.spongeFSFrom C (warmState cvk cp publicComm)
+
+/-- The three warm opening reads — the base `U⋆`, the round challenges `c⃗` and the Schnorr
+challenge `c` — are the deployed opening derivation continued from the post-`ζ` state. The
+opening-suffix counterpart of `Forking.oracleChallenges_poseidonO`. -/
+theorem transcriptOf_kimchiOpeningFS {nc k m p : ℕ} (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc k) (publicComm : Vector C.Point nc)
+    {j : ℕ} (inp : Ipa.Input C j m p) :
+    Ipa.Forking.transcriptOf (kimchiOpeningFS cvk cp publicComm) inp
+      = Ipa.transcriptFrom C (fqOracles C cvk cp publicComm).warm inp := by
+  rw [kimchiOpeningFS, warmState_eq]
+  exact Ipa.Forking.transcriptOfFrom_eq _ _
+
+/-- The deployed verifier IS the size guard plus `Ipa.verifyFrom` at the warm state, on the
+claim `runInputWith` assembles from the deployed challenges. Definitional, the mirror of
+`kimchiVerifyWith_eq_verifyWith`; it is the shape the faithfulness proof compares. -/
+private theorem kimchiVerify_eq_verifyFrom {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
+    kimchiVerify C σ cvk cp pub
+      = (if cvk.lagrangeBasis.size < pub.size || cvk.n < pub.size then false
+        else
+          let publicComm := publicCommitment C σ cvk pub
+          let o := fqOracles C cvk cp publicComm
+          let pubEvals := publicEvalChunks cp cvk.n cvk.omega o.zeta (o.zeta * cvk.omega)
+            (powPow2 o.zeta cvk.domainLog2) (powPow2 (o.zeta * cvk.omega) cvk.domainLog2) pub
+          let vu := frOracles C cp o.digest pubEvals
+          Ipa.verifyFrom C σ o.warm
+            (runInputWith σ cvk cp pub o.beta o.gamma o.alpha o.zeta vu.1 vu.2)) := rfl
+
+/-- **FAITHFULNESS OBLIGATION, at named reads.** The deployed verifier is `kimchiVerifyWith` at
+challenges *pinned to transcript reads by hypothesis*: `β`, `γ`, `α`, `ζ` are `poseidonO` at
+the four fq prefixes, `v`, `u` are `poseidonOFr` at the two fr prefixes (taken at the warm
+digest and at the public evaluations the read `ζ` determines), and `U`, `c⃗`, `c` are the warm
+opening oracles' reads at the three opening prefixes of the claim built from those six.
+
+Each hypothesis defines its variable in terms of earlier ones, so the system is a chain of
+definitions, not a constraint: `kimchiVerify_eq_verifyWith` below is this theorem at its own
+solution. The IPA analogue is `Bulletproof.Ipa.Forking.verifyOracle_spongeFSFrom`, which is
+what discharges the opening suffix here. -/
+theorem kimchiVerify_eq_verifyWith_of_reads {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (publicComm : Vector C.Point nc) (beta gamma alpha zeta v u : C.ScalarField)
+    (pubEvals : PointEvaluations (Vector C.ScalarField nc))
+    (inp : Ipa.Input C σ.k (nc + 1 + tailRowCount * nc) evalPts)
+    (uBase : C.Point) (chals : Vector C.ScalarField σ.k) (c : C.ScalarField)
+    (hpc : publicComm = publicCommitment C σ cvk pub)
+    (hbeta : beta = Forking.poseidonO
+      (Forking.KimchiTranscriptElt.preBeta cvk cp publicComm))
+    (hgamma : gamma = Forking.poseidonO
+      (Forking.KimchiTranscriptElt.preGamma cvk cp publicComm))
+    (halpha : alpha = Forking.poseidonO
+      (Forking.KimchiTranscriptElt.preAlpha cvk cp publicComm))
+    (hzeta : zeta = Forking.poseidonO
+      (Forking.KimchiTranscriptElt.preZeta cvk cp publicComm))
+    (hpe : pubEvals = publicEvalChunks cp cvk.n cvk.omega zeta (zeta * cvk.omega)
+      (powPow2 zeta cvk.domainLog2) (powPow2 (zeta * cvk.omega) cvk.domainLog2) pub)
+    (hv : v = Forking.poseidonOFr
+      (Forking.FrTranscriptElt.preV cp (warmDigest cvk cp publicComm) pubEvals))
+    (hu : u = Forking.poseidonOFr
+      (Forking.FrTranscriptElt.preU cp (warmDigest cvk cp publicComm) pubEvals))
+    (hinp : inp = runInputWith σ cvk cp pub beta gamma alpha zeta v u)
+    (huBase : uBase = C.toGroup ((kimchiOpeningFS cvk cp publicComm).squeezeBase
+      (Ipa.Forking.IpaTranscriptElt.preT inp)))
+    (hchals : chals = Vector.ofFn fun i => (kimchiOpeningFS cvk cp publicComm).squeezeScalar
+      (Ipa.Forking.IpaTranscriptElt.preU inp i))
+    (hc : c = (kimchiOpeningFS cvk cp publicComm).squeezeScalar
+      (Ipa.Forking.IpaTranscriptElt.preC inp)) :
+    kimchiVerify C σ cvk cp pub
+      = kimchiVerifyWith σ cvk cp pub beta gamma alpha zeta v u uBase chals c := by
+  subst hpc hbeta hgamma halpha hzeta hpe hv hu hinp huBase hchals hc
+  -- (a) the six pre-opening reads become the six deployed squeezes, in schedule order: the
+  -- fr prefixes are read at the digest and the evaluations the fq rewrites have just fixed.
+  rw [Forking.poseidonO_preBeta, Forking.poseidonO_preGamma, Forking.poseidonO_preAlpha,
+    Forking.poseidonO_preZeta, warmDigest_eq, Forking.poseidonOFr_preV,
+    Forking.poseidonOFr_preU]
+  -- Both sides now assemble the same `runInputWith` claim behind the same guard.
+  -- (b) the start state is the deployed warm state.
+  rw [kimchiVerify_eq_verifyFrom, kimchiVerifyWith_eq_verifyWith, kimchiOpeningFS,
+    warmState_eq]
+  congr 1
+  -- (c) the warm-start opening bridge, read right-to-left.
+  exact (Ipa.Forking.verifyOracle_spongeFSFrom σ _ _).symm
+
+/-- **The public evaluation chunks at the read `ζ`** — the fr sponge absorbs these, so the two
+fr-side prefixes are functions of the fq reads through this. -/
+def kimchiPubEvals {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
+    PointEvaluations (Vector C.ScalarField nc) :=
+  let zeta := Forking.poseidonO (Forking.KimchiTranscriptElt.preZeta cvk cp
+    (publicCommitment C σ cvk pub))
+  publicEvalChunks cp cvk.n cvk.omega zeta (zeta * cvk.omega)
+    (powPow2 zeta cvk.domainLog2) (powPow2 (zeta * cvk.omega) cvk.domainLog2) pub
+
+/-- **The run's batched IPA claim at the six pre-opening reads** — `runInputWith` fed the four
+`poseidonO` reads and the two `poseidonOFr` reads. The three opening prefixes are taken at this
+claim, so it is named. -/
+def kimchiRunInput {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
+    Ipa.Input C σ.k (nc + 1 + tailRowCount * nc) evalPts :=
+  let pc := publicCommitment C σ cvk pub
+  runInputWith σ cvk cp pub
+    (Forking.poseidonO (Forking.KimchiTranscriptElt.preBeta cvk cp pc))
+    (Forking.poseidonO (Forking.KimchiTranscriptElt.preGamma cvk cp pc))
+    (Forking.poseidonO (Forking.KimchiTranscriptElt.preAlpha cvk cp pc))
+    (Forking.poseidonO (Forking.KimchiTranscriptElt.preZeta cvk cp pc))
+    (Forking.poseidonOFr (Forking.FrTranscriptElt.preV cp (warmDigest cvk cp pc)
+      (kimchiPubEvals σ cvk cp pub)))
+    (Forking.poseidonOFr (Forking.FrTranscriptElt.preU cp (warmDigest cvk cp pc)
+      (kimchiPubEvals σ cvk cp pub)))
+
+/-- **FAITHFULNESS OBLIGATION.** The deployed verifier is the challenge-generic verifier at the
+nine challenges the deployed schedule draws, each written out as an oracle read: `β`, `γ`, `α`,
+`ζ` are the sponge-as-oracle `Forking.poseidonO` at the four fq transcript prefixes; `v`, `u`
+are `Forking.poseidonOFr` at the two fr prefixes, read at the warm digest and the public
+evaluation chunks; `U`, `c⃗` and `c` are the *warm* opening oracles (`kimchiOpeningFS`, the
+deployed sponge continued from the post-`ζ` state) at `preT`, `preU i` and `preC` of the claim
+`kimchiRunInput` those six assemble.
+
+Without this the knowledge-soundness endpoints below would be about an unrelated construction;
+with it they are about the shipped verifier under a random-oracle idealization of the sponge.
+The IPA analogue is `Bulletproof.Ipa.Forking.verifyOracle_spongeFS`.
+
+Caveat, deliberately left visible: this pins the deployed verifier to the generic one at the
+*warm* base `U⋆`. The game the endpoints measure evaluates the generic verifier at a base
+derived from the claim through the *cold* sponge; the two agree only if the warm and cold
+derivations of the base do, which is not proved here. -/
 theorem kimchiVerify_eq_verifyWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
-    ∃ (beta gamma alpha zeta v u : C.ScalarField) (uBase : C.Point)
-      (chals : Vector C.ScalarField σ.k) (c : C.ScalarField),
-      kimchiVerify C σ cvk cp pub
-        = kimchiVerifyWith σ cvk cp pub beta gamma alpha zeta v u uBase chals c := by
-  sorry
+    kimchiVerify C σ cvk cp pub
+      = kimchiVerifyWith σ cvk cp pub
+          (Forking.poseidonO (Forking.KimchiTranscriptElt.preBeta cvk cp
+            (publicCommitment C σ cvk pub)))
+          (Forking.poseidonO (Forking.KimchiTranscriptElt.preGamma cvk cp
+            (publicCommitment C σ cvk pub)))
+          (Forking.poseidonO (Forking.KimchiTranscriptElt.preAlpha cvk cp
+            (publicCommitment C σ cvk pub)))
+          (Forking.poseidonO (Forking.KimchiTranscriptElt.preZeta cvk cp
+            (publicCommitment C σ cvk pub)))
+          (Forking.poseidonOFr (Forking.FrTranscriptElt.preV cp
+            (warmDigest cvk cp (publicCommitment C σ cvk pub)) (kimchiPubEvals σ cvk cp pub)))
+          (Forking.poseidonOFr (Forking.FrTranscriptElt.preU cp
+            (warmDigest cvk cp (publicCommitment C σ cvk pub)) (kimchiPubEvals σ cvk cp pub)))
+          (C.toGroup ((kimchiOpeningFS cvk cp (publicCommitment C σ cvk pub)).squeezeBase
+            (Ipa.Forking.IpaTranscriptElt.preT (kimchiRunInput σ cvk cp pub))))
+          (Vector.ofFn fun i =>
+            (kimchiOpeningFS cvk cp (publicCommitment C σ cvk pub)).squeezeScalar
+              (Ipa.Forking.IpaTranscriptElt.preU (kimchiRunInput σ cvk cp pub) i))
+          ((kimchiOpeningFS cvk cp (publicCommitment C σ cvk pub)).squeezeScalar
+            (Ipa.Forking.IpaTranscriptElt.preC (kimchiRunInput σ cvk cp pub))) :=
+  kimchiVerify_eq_verifyWith_of_reads σ cvk cp pub (publicCommitment C σ cvk pub)
+    _ _ _ _ _ _ (kimchiPubEvals σ cvk cp pub) (kimchiRunInput σ cvk cp pub) _ _ _
+    rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
 /-! ## 2. The oracle domain
 

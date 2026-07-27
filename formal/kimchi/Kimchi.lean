@@ -47,5 +47,8 @@ import Kimchi.Verifier.Capstone.Reflection
 import Kimchi.Verifier.Forking.RunLink
 -- W3 · The guard-escape engine and the run-level escape bounds
 
--- Knowledge soundness of the deployed verifier: the statement, over the IPA forking extractor
+-- Knowledge soundness of the deployed verifier, over the IPA forking extractor
 import Kimchi.Verifier.KnowledgeSoundness
+-- The honest family (anti-vacuity) and the bridge to the deployed verifier
+import Kimchi.Verifier.Forking.Honest
+import Kimchi.Verifier.Forking.Bridge

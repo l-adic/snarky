@@ -10,14 +10,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# The kimchi knowledge-soundness module is a STATEMENT: its one open proof is the
-# deliverable's boundary, not work in progress that slipped through.
-#   178 — kimchiVerify_eq_verifyWith: Fiat-Shamir faithfulness. KNOWN TOO WEAK to be worth
-#         closing as stated: the existential does not pin its witnesses, and the one-liner
-#         that closes it also closes the same statement for a verifier with Fiat-Shamir
-#         deleted. Restate it at a named sponge source before discharging.
-#         Both endpoints are now CLOSED; this is the only one left.
-expected='kimchi/Kimchi/Verifier/KnowledgeSoundness.lean:178'
+# The tree is sorry-free. Both knowledge-soundness endpoints and the Fiat-Shamir
+# faithfulness theorem are proved; the residual modelling assumption is carried as the
+# `FSFaithful` hypothesis in Verifier/Forking/Bridge.lean, not as an open proof.
+expected=''
 
 actual=$(grep -rn '\bsorry\b' \
   bulletproof-pcs/Bulletproof kimchi/Kimchi pasta poseidon snarky \
