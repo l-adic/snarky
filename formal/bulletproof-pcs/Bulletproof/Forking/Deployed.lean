@@ -511,7 +511,7 @@ conjuncts `VerifierAcceptsAt` names, so the `Bool` equation `= true` and the `Pr
 combiners are the library combiners (`combineCommitments_toArray_eq`, `msm_eq_commitGen`), the
 zip-fold is `recombine` (`zipFold_eq_recombine`), and the wire's `b₀` slot is the inner product
 against the combined eval vector (`combinedB_eq_innerProduct`). -/
-private theorem verifyWith_iff_verifierAcceptsAt (σ : SRS C.Point) (uBase : C.Point)
+theorem verifyWith_iff_verifierAcceptsAt (σ : SRS C.Point) (uBase : C.Point)
     (chals : Vector C.ScalarField σ.k) (c : C.ScalarField) (claim : Ipa.Input C σ.k m p) :
     Ipa.verifyWith C σ uBase chals c claim = true
       ↔ VerifierAcceptsAt { σ with U := uBase } (toOpening claim.proof)
