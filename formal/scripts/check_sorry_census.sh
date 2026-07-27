@@ -10,7 +10,17 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-expected=''
+# The kimchi knowledge-soundness module is a STATEMENT: its three open proofs are the
+# deliverable's boundary, not work in progress that slipped through.
+#   178 — kimchiVerify_eq_verifyWith: Fiat-Shamir faithfulness. KNOWN TOO WEAK to be worth
+#         closing as stated: the existential does not pin its witnesses, and the one-liner
+#         that closes it also closes the same statement for a verifier with Fiat-Shamir
+#         deleted. Restate it at a named sponge source before discharging.
+#   861 — vesta_kimchi_knowledge_sound
+#   878 — pallas_kimchi_knowledge_sound
+expected='kimchi/Kimchi/Verifier/KnowledgeSoundness.lean:178
+kimchi/Kimchi/Verifier/KnowledgeSoundness.lean:861
+kimchi/Kimchi/Verifier/KnowledgeSoundness.lean:878'
 
 actual=$(grep -rn '\bsorry\b' \
   bulletproof-pcs/Bulletproof kimchi/Kimchi pasta poseidon snarky \

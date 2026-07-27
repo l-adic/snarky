@@ -46,3 +46,6 @@ import Kimchi.Verifier.Capstone.Reflection
 -- W2 · Fiat–Shamir random-oracle model (fq + fr) and its run-level faithfulness
 import Kimchi.Verifier.Forking.RunLink
 -- W3 · The guard-escape engine and the run-level escape bounds
+
+-- Knowledge soundness of the deployed verifier: the statement, over the IPA forking extractor
+import Kimchi.Verifier.KnowledgeSoundness
