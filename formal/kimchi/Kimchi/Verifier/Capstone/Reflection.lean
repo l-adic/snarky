@@ -1136,20 +1136,23 @@ theorem commitmentFn_streamPos {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc 
 blinder `0`.
 
 Alias of `Capstone/Algebraic.commitPolyChunk_eq_commit`, which iter 005 promoted out of
-`private` for exactly this purpose; the duplicated proof is gone. The NAME survives only
-because consumers outside this file (`Verifier/KnowledgeSoundness.lean`) still call it —
-deleting it outright is a cross-file edit, not this file's to make. -/
+`private` for exactly this purpose; the duplicated proof is gone. This file no longer calls
+it — every in-file use now goes straight to the export — so the NAME survives ONLY for the
+four call sites in `Verifier/KnowledgeSoundness.lean`. When those move, deleting these two
+lines is the whole retirement. -/
 theorem commitPolyChunk_as_commit {F G : Type*} [Field F] [AddCommGroup G]
     [Module F G] (σ : SRS G) (p : Polynomial F) (c : ℕ) :
     commitPolyChunk σ p c = commit σ (chunkCoeffs (2 ^ σ.k) p c) 0 :=
   commitPolyChunk_eq_commit σ p c
 
 /-- The masked chunk commitment is the same window at blinder `1`. The companion of
-`commitPolyChunk_as_commit`, and the same alias note applies. -/
+`commitPolyChunk_as_commit` — but NOT yet an alias: `Capstone/Algebraic.lean` exports no
+`commitPolyMaskedChunk_eq_commit`, so this is still the only statement of the masked bridge
+and its four in-file uses stand. Retiring it needs that export first. -/
 theorem commitPolyMaskedChunk_as_commit {F G : Type*} [Field F] [AddCommGroup G]
     [Module F G] (σ : SRS G) (p : Polynomial F) (c : ℕ) :
     commitPolyMaskedChunk σ p c = commit σ (chunkCoeffs (2 ^ σ.k) p c) 1 := by
-  rw [commitPolyMaskedChunk, commitPolyChunk_as_commit]
+  rw [commitPolyMaskedChunk, commitPolyChunk_eq_commit]
   simp [commit]
 
 /-- Under binding the unblinded chunk relation of `dlRelation_of_chunk_rep_ne` is trivial,
@@ -1191,7 +1194,7 @@ theorem commitmentFn_streamPos_sRow_eq_commit {C : Ipa.CommitmentCurve}
       = commit σ (chunkCoeffs (2 ^ σ.k) (idx.sigmaPoly (sigmaPermCol i)) (c : ℕ)) 0 :=
   ((commitmentFn_streamPos σ cvk cp pub (sRow i) c).trans
     (batchC_sRow_of_corresponds σ hvk.1 _ _ _ i c)).trans
-      (commitPolyChunk_as_commit σ _ (c : ℕ))
+      (commitPolyChunk_eq_commit σ _ (c : ℕ))
 
 /-- **The coefficient rows of the run's commitment stream**: the unblinded chunk
 commitment of the circuit's own `cc`-th coefficient interpolant. -/
@@ -1205,7 +1208,7 @@ theorem commitmentFn_streamPos_cRow_eq_commit {C : Ipa.CommitmentCurve}
       = commit σ (chunkCoeffs (2 ^ σ.k) (idx.coeffPoly cc) (c : ℕ)) 0 :=
   ((commitmentFn_streamPos σ cvk cp pub (cRow cc) c).trans
     (batchC_cRow_of_corresponds σ hvk.1 _ _ _ cc c)).trans
-      (commitPolyChunk_as_commit σ _ (c : ℕ))
+      (commitPolyChunk_eq_commit σ _ (c : ℕ))
 
 /-- **The selector rows of the run's commitment stream**: the MASKED chunk commitment
 (fixed unit blinder, `mask_custom`) of the circuit's own `selGate jj` selector
@@ -1440,7 +1443,7 @@ theorem commitmentFn_streamPosAt_sRow_eq_commit {C : Ipa.CommitmentCurve}
       = commit σ (chunkCoeffs (2 ^ σ.k) (idx.sigmaPoly (sigmaPermCol i)) (c : ℕ)) 0 :=
   ((commitmentFn_streamPosAt σ cvk cp pub beta gamma alpha zeta v u (sRow i) c).trans
     (batchC_sRow_of_corresponds σ hvk.1 _ _ _ i c)).trans
-      (commitPolyChunk_as_commit σ _ (c : ℕ))
+      (commitPolyChunk_eq_commit σ _ (c : ℕ))
 
 /-- **The coefficient rows of the challenge-generic claim**: the unblinded chunk commitment
 of the circuit's own `cc`-th coefficient interpolant. -/
@@ -1455,7 +1458,7 @@ theorem commitmentFn_streamPosAt_cRow_eq_commit {C : Ipa.CommitmentCurve}
       = commit σ (chunkCoeffs (2 ^ σ.k) (idx.coeffPoly cc) (c : ℕ)) 0 :=
   ((commitmentFn_streamPosAt σ cvk cp pub beta gamma alpha zeta v u (cRow cc) c).trans
     (batchC_cRow_of_corresponds σ hvk.1 _ _ _ cc c)).trans
-      (commitPolyChunk_as_commit σ _ (c : ℕ))
+      (commitPolyChunk_eq_commit σ _ (c : ℕ))
 
 /-- **The selector rows of the challenge-generic claim**: the MASKED chunk commitment (fixed
 unit blinder, `mask_custom`) of the circuit's own `selGate jj` selector interpolant. -/
@@ -2423,5 +2426,157 @@ theorem run_badChallenge_of_not_satisfies_at {C : Ipa.CommitmentCurve}
     · exact Or.inr (Or.inr (Or.inr (Or.inl h)))
     · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl h))))
     · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl h)))))
+
+/-! ## Locality of the assembled objects
+
+The adaptive Schwartz–Zippel charge the knowledge-soundness game levies on arm (4) needs each
+exclusion set to be a function of the transcript NODE at which its challenge is read: two runs
+whose transcripts agree at that node must produce the same set. The sets are built out of this
+layer's assembled objects, so the charge needs to know exactly which parts of a run those
+objects read.
+
+The answer is narrow. `runW` reads the coefficient family at the witness-row stream positions
+and nothing else; `runZ` reads it at the accumulator-row position and nothing else. The
+emitted proof enters both only through the TYPE of the coefficient argument — and that type is
+proof-independent, since `(runInput C σ cvk cp pub).commitments.size` is *reducibly* the flat
+stream length `nc + 1 + tailRowCount · nc`. The quotient assembly reads only the chunk vectors
+and their count. And the two fr-side exclusion sets read the setup only through its round
+count `σ.k`, so the run's own IPA base — which the game overrides per run — is invisible to
+them.
+
+Every statement below is deliberately stated across TWO emitted proofs (`cp`, `cp'`) or two
+setups: at the node where the charge is levied, the two runs being compared have not yet been
+shown to emit the same proof — deriving that is downstream work, and these lemmas must not
+presuppose it. -/
+
+/-- **The assembled witness columns are local in the coefficient family.** Two coefficient
+families agreeing at every witness-row stream position assemble to the same witness columns —
+for two DIFFERENT emitted proofs `cp`, `cp'`. Nothing of the proof and nothing of the family
+away from `streamPos nc (wRow ·) ·` occurs in `runW`.
+
+The two halves the arm-(4) agreement law needs do not in fact separate: proof-irrelevance is
+already carried by stating the coefficient families at the reduced type
+`Fin (nc + 1 + tailRowCount · nc) → …` (which is what `(runInput …).commitments.size` unfolds
+to at reducible transparency, exactly as `runBounds_of_chunking` already relies on), so the
+whole content is the congruence of `assembledRow` in its coefficient argument.
+
+Project-local: the knowledge-soundness game's adaptive Schwartz–Zippel charge must exhibit its
+exclusion sets as functions of a transcript node, and the fq-side sets are functions of
+`runW`. -/
+theorem runW_congr {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp cp' : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (aRef aRef' : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField)
+    (h : ∀ (col : Fin wCols) (c : Fin nc),
+      aRef ⟨(streamPos nc (wRow col) c : ℕ), (streamPos nc (wRow col) c).isLt⟩
+        = aRef' ⟨(streamPos nc (wRow col) c : ℕ), (streamPos nc (wRow col) c).isLt⟩) :
+    runW σ cvk cp pub aRef = runW σ cvk cp' pub aRef' :=
+  funext fun col => congrArg (assembledRow σ.k nc) (funext fun c => h col c)
+
+/-- **The assembled accumulator is local in the coefficient family** — `runW_congr` at the
+single accumulator-row stream position. Same two-proof statement, same proof.
+
+Project-local: the `α`/`ζ` exclusion sets are functions of `runZ`. -/
+theorem runZ_congr {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp cp' : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (aRef aRef' : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField)
+    (h : ∀ c : Fin nc,
+      aRef ⟨(streamPos nc zRow c : ℕ), (streamPos nc zRow c).isLt⟩
+        = aRef' ⟨(streamPos nc zRow c : ℕ), (streamPos nc zRow c).isLt⟩) :
+    runZ σ cvk cp pub aRef = runZ σ cvk cp' pub aRef' :=
+  congrArg (assembledRow σ.k nc) (funext h)
+
+/-- **The assembled witness TABLE is local in the coefficient family** — the immediate
+corollary of `runW_congr`, since `runWTab` is `extractTable idx.omega` of `runW`.
+
+Project-local: the satisfaction predicate the game's arm (4) contradicts is stated at
+`runWTab`, so the agreement law has to reach the table, not only the columns. -/
+theorem runWTab_congr {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp cp' : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    {n : ℕ} (idx : Index C.ScalarField n)
+    (aRef aRef' : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField)
+    (h : ∀ (col : Fin wCols) (c : Fin nc),
+      aRef ⟨(streamPos nc (wRow col) c : ℕ), (streamPos nc (wRow col) c).isLt⟩
+        = aRef' ⟨(streamPos nc (wRow col) c : ℕ), (streamPos nc (wRow col) c).isLt⟩) :
+    runWTab σ cvk cp pub idx aRef = runWTab σ cvk cp' pub idx aRef' :=
+  congrArg (extractTable idx.omega) (runW_congr σ cvk cp cp' pub aRef aRef' h)
+
+/-- **The quotient assembly is local in the chunk family.** Two runs with the same number of
+committed quotient chunks and the same chunk coefficient vectors assemble the same quotient
+polynomial.
+
+The chunk-count equality is a hypothesis rather than a definitional coincidence, and the
+agreement of the vectors is stated across it as `∀ j j', (j : ℕ) = (j' : ℕ) → aT j = aT' j'`.
+That is deliberate: it is the shape `KimchiFamily.tPrefix_of_zetaNode` produces, so the
+consumer never has to transport a `Fin` along the count equality.
+
+Project-local: the `ζ` exclusion set is taken at `ftChunkAssembly σ.k cp.tComm.size aT`, whose
+chunk count is adversary-chosen, so node-determinacy of that set needs exactly this. -/
+theorem ftChunkAssembly_congr {F : Type*} [Field F] (k : ℕ) {nt nt' : ℕ} (hnt : nt = nt')
+    (aT : Fin nt → Fin (2 ^ k) → F) (aT' : Fin nt' → Fin (2 ^ k) → F)
+    (h : ∀ (j : Fin nt) (j' : Fin nt'), (j : ℕ) = (j' : ℕ) → aT j = aT' j') :
+    ftChunkAssembly k nt aT = ftChunkAssembly k nt' aT' := by
+  subst hnt
+  exact Finset.sum_congr rfl fun j _ => by rw [h j j rfl]
+
+/-- **The `ξ` exclusion set does not read the IPA base.** `badXiOf` reads the setup only
+through its round count `σ.k` — in the width `2 ^ σ.k` of the evaluation vector and in the
+type of the coefficient family — so replacing the setup by one differing only in the IPA
+randomisation base leaves it unchanged. Definitional.
+
+Project-local: the game's arm (4) states its fr-side sets at `KimchiFamily.runSrs basis O`,
+which is literally `{ srsOfBasis k basis with U := … }` with a RUN-DEPENDENT `U`, while the
+run-soundness roots are stated at `srsOfBasis k basis`. Naming the coincidence keeps that
+mismatch from being re-derived at each of the two sets. -/
+theorem badXiOf_setBase {F G : Type*} [Field F] [DecidableEq F] (σ : SRS G) (u : G)
+    {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F) (x : Fin evalPts → F)
+    (E : Fin m → Fin evalPts → F) :
+    badXiOf { σ with U := u } aw₀ x E = badXiOf σ aw₀ x E := rfl
+
+/-- **The `r` exclusion set does not read the IPA base** — `badXiOf_setBase` at `badROf`, for
+the same reason and by the same proof. -/
+theorem badROf_setBase {F G : Type*} [Field F] [DecidableEq F] (σ : SRS G) (u : G)
+    {m : ℕ} (aw₀ : Fin m → Fin (2 ^ σ.k) → F) (x : Fin evalPts → F)
+    (E : Fin m → Fin evalPts → F) (ξ : F) :
+    badROf { σ with U := u } aw₀ x E ξ = badROf σ aw₀ x E ξ := rfl
+
+/-- **The challenge-generic claim does not read the IPA base.** `runInputAt` reads the setup
+through its round count `σ.k` (the chunk collapses `ζ^{2^σ.k}`) and its blinding base `σ.h`
+(the public commitment's per-chunk mask) — never through the randomisation base `σ.U`, which
+the opening argument alone consumes. Definitional.
+
+Project-local: the arm-(4) exclusion sets take their evaluation points and claimed evaluations
+from `(runInputAt …).pointFn` / `.evalFn`, and the game states them at the run's own
+`KimchiFamily.runSrs`, whose `U` is a function of the whole run. This is what lets those
+arguments be recognised as the base-free ones. -/
+theorem runInputAt_setBase {C : Ipa.CommitmentCurve} (σ : SRS C.Point) (u : C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (beta gamma alpha zeta v w : C.ScalarField) :
+    runInputAt C { σ with U := u } cvk cp pub beta gamma alpha zeta v w
+      = runInputAt C σ cvk cp pub beta gamma alpha zeta v w := rfl
+
+/-- **The assembled witness columns do not read the IPA base** — `runW` reads the setup only
+through the chunk width `2 ^ σ.k`. Definitional.
+
+Project-local: the four fq-side exclusion sets are functions of `runW`/`runZ`, and the game
+names them at `KimchiFamily.runSrs basis O`, which differs between two runs even when they
+agree at the node the charge is levied at. -/
+theorem runW_setBase {C : Ipa.CommitmentCurve} (σ : SRS C.Point) (u : C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (aRef : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField) :
+    runW { σ with U := u } cvk cp pub aRef = runW σ cvk cp pub aRef := rfl
+
+/-- **The assembled accumulator does not read the IPA base** — `runW_setBase` at `runZ`. -/
+theorem runZ_setBase {C : Ipa.CommitmentCurve} (σ : SRS C.Point) (u : C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (aRef : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField) :
+    runZ { σ with U := u } cvk cp pub aRef = runZ σ cvk cp pub aRef := rfl
+
+/-- **The assembled witness table does not read the IPA base** — `runW_setBase` read through
+`extractTable`. This is the form the game's satisfaction conjunct needs. -/
+theorem runWTab_setBase {C : Ipa.CommitmentCurve} (σ : SRS C.Point) (u : C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    {n : ℕ} (idx : Index C.ScalarField n)
+    (aRef : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField) :
+    runWTab { σ with U := u } cvk cp pub idx aRef = runWTab σ cvk cp pub idx aRef := rfl
 
 end Kimchi.Verifier

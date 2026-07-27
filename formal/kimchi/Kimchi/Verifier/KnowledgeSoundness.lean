@@ -1061,11 +1061,11 @@ theorem vkCommHonest_of_pubRow (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C
   | coeff cc =>
       exact ((hbr (cRow cc) c).trans
         (batchC_cRow_of_corresponds (srsOfBasis k basis) (fam.hvk basis).1 _ _ _ cc c)).trans
-          (commitPolyChunk_as_commit _ _ (c : ℕ))
+          (commitPolyChunk_eq_commit _ _ (c : ℕ))
   | sigma i =>
       exact ((hbr (sRow i) c).trans
         (batchC_sRow_of_corresponds (srsOfBasis k basis) (fam.hvk basis).1 _ _ _ i c)).trans
-          (commitPolyChunk_as_commit _ _ (c : ℕ))
+          (commitPolyChunk_eq_commit _ _ (c : ℕ))
 
 /-- **A winning run has a big enough Lagrange basis.** The challenge-generic verifier's first
 act is the size guard `cvk.lagrangeBasis.size < pub.size || n < pub.size`, so acceptance
@@ -1624,61 +1624,13 @@ theorem card_zetaBoundaryBad_le {n : ℕ} (idx : Index C.ScalarField n) :
   refine le_trans (Finset.card_insert_le _ _) ?_
   simp
 
-/-! ## 5. THE TOP-LEVEL STATEMENT, per curve -/
+/-! ## 5. THE TOP-LEVEL STATEMENT, per curve
 
-/-- **Vesta: the deployed kimchi verifier is knowledge-sound, in the random-oracle model and
-the algebraic group model.**
-
-For a family of `Q`-query algebraic adversaries against the executable kimchi verifier, over a
-uniformly sampled setup basis and a uniform challenge table: the probability that the verifier
-accepts while the extractor fails to hand back a witness table satisfying the circuit the
-verifying key corresponds to is at most
-
-`(Q + k + 1)·3/2¹²⁸  +  (2ᵏ + 1)·ε  +  δ  +  (Q + 1)·szBudget/2¹²⁸`.
-
-Four summands, four sources: the forking extraction returns nothing (query loss,
-unconditional); it returns a relation among the sampled setup generators (`ε`, textbook
-discrete log); it returns a relation touching the transcript-derived base (`δ`, the residual —
-an assumption about a slice of the conclusion, not a reduction); or it returns an opening but
-the run's own Fiat–Shamir challenges land in an exclusion set (`szBudget`).
-
-**What remains open** (and is what the open proof stands for): the AGM-side obligation that an
-accepted opening plus the representations force `runWTab` to satisfy the circuit off the
-exclusion sets — `run_sound_algebraic_ft` with the Fiat–Shamir axiom replaced by the extracted
-opening, and with the binding sites returning relations rather than assuming they do not exist;
-and the claim-adaptivity generalization of `kimchiExtract_failure_measure_le`, whose `(P, b, v)`
-are fixed parameters while kimchi's claim is adversary output. -/
-theorem vesta_kimchi_knowledge_sound {nc k n : ℕ} [NeZero n]
-    (B : IpaVesta.Point) (fam : KimchiFamily IpaVesta.curve nc k n)
-    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
-    (hcoins : coins.Complete) {R : ℕ} {ε δ : ℝ≥0∞}
-    (hHard : fam.DiscreteLogRelationHardFor B coins R ε δ)
-    (hEff : fam.ReductionEfficient coins R) :
-    (PMF.uniformOfFintype
-        ((SetupIndex (2 ^ k) → IpaVesta.curve.ScalarField) × Coins _ nc k)).toOuterMeasure
-        {q | fam.Wins (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 ∧
-          ¬ fam.ExtractsWitness (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins}
-      ≤ (fam.Q + k + 1) * (3 / (2 ^ 128 : ℕ))
-        + ((2 ^ k + 1 : ℕ) : ℝ≥0∞) * ε + δ
-        + ((fam.Q + 1 : ℕ) : ℝ≥0∞) * ((szBudget nc n fam.idx.zkRows : ℝ≥0∞) / (2 ^ 128 : ℕ)) := by
-  sorry
-
-/-- **Pallas: the deployed kimchi verifier is knowledge-sound.** The Pallas-side twin of
-`vesta_kimchi_knowledge_sound`, over `Fq`/`IpaPallas`; same shape, same four summands. -/
-theorem pallas_kimchi_knowledge_sound {nc k n : ℕ} [NeZero n]
-    (B : IpaPallas.Point) (fam : KimchiFamily IpaPallas.curve nc k n)
-    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
-    (hcoins : coins.Complete) {R : ℕ} {ε δ : ℝ≥0∞}
-    (hHard : fam.DiscreteLogRelationHardFor B coins R ε δ)
-    (hEff : fam.ReductionEfficient coins R) :
-    (PMF.uniformOfFintype
-        ((SetupIndex (2 ^ k) → IpaPallas.curve.ScalarField) × Coins _ nc k)).toOuterMeasure
-        {q | fam.Wins (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 ∧
-          ¬ fam.ExtractsWitness (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins}
-      ≤ (fam.Q + k + 1) * (3 / (2 ^ 128 : ℕ))
-        + ((2 ^ k + 1 : ℕ) : ℝ≥0∞) * ε + δ
-        + ((fam.Q + 1 : ℕ) : ℝ≥0∞) * ((szBudget nc n fam.idx.zkRows : ℝ≥0∞) / (2 ^ 128 : ℕ)) := by
-  sorry
+The two endpoints — `vesta_kimchi_knowledge_sound` and `pallas_kimchi_knowledge_sound` — are
+stated and proved at the END of this file (section 17), after the machinery their proofs
+consume: the four-way cover (section 9), the presence summand (section 15) and the algebraic
+summand (section 16). Their statements are unchanged; what changed in moving them is that they
+are theorems rather than open goals. -/
 
 /-! ## 6. THE ACCEPTANCE TEST — per-curve instantiation
 
@@ -1739,11 +1691,6 @@ end PerCurve
 * **`kimchiDecodesFromPrefixes` must be discharged.** It returns data, so leaving it open
   makes `attempt`'s payload carry `sorryAx`. Commit-then-challenge is structurally true of the
   kimchi schedule; the `Option`-gating exists to make it provable.
-* **The claim-adaptivity generalization.** `Bulletproof.Forking.kimchiExtract_failure_measure_le`
-  fixes `(P, b, v)`; kimchi's claim is adversary output. Ironwood's forking layer already
-  carries the mechanism — `recursiveAlgebraicForkFrom_realizes` takes an oracle-taking `win`
-  together with `stable`/`stable_update` — which `Bulletproof/Forking/Game.lean` currently
-  instantiates at the trivially-true predicate.
 * **Anti-vacuity.** The accepting set must be shown non-empty, the analogue of
   `Bulletproof.Ipa.Forking.honestFamily_failure_set`, or the bound is a statement about
   nothing.
@@ -2136,12 +2083,17 @@ the extractor took the `PSum.inl` branch, so its `inl` case closes by `absurd`, 
 fails the circuit survives as arm (4).
 
 Arms (2) and (3) are closed here, outright: `relation_residual_measure_le` is summands (II)
-and (III) of `vesta_kimchi_knowledge_sound`. What the endpoint still needs is arms (1) and (4)
-— the presence rung, which is the claim-adaptive generalization of
-`Bulletproof.Forking.kimchiExtract_failure_measure_le`, and the algebraic rung, which is where
-the Fiat–Shamir-axiom-free run-soundness root delivers. Section 8's
-`relationFinder_eq_none_of_attempt_inl` and `derivedULog_eq_none_of_attempt_inl` record that
-arm (4) is disjoint from arms (2) and (3), so nothing is charged twice.
+and (III) of `vesta_kimchi_knowledge_sound`. Arm (1) is closed in section 15 (the claim-adaptive
+extraction game) and arm (4) in section 16 (the adaptive Schwartz–Zippel charge), so the cover's
+four arms are now all priced. Section 8's `relationFinder_eq_none_of_attempt_inl` and
+`derivedULog_eq_none_of_attempt_inl` record that arm (4) is disjoint from arms (2) and (3), so
+nothing is charged twice.
+
+Arm (4) carries the win conjunct. `arm4_hits_badChallenge` needs it — key-honesty is a
+consequence of the extractor's gate on *winning* runs only — and the cover has `hacc : Wins` in
+hand at exactly that branch. Narrowing the arm leaves the measured event (the conclusion of
+`wins_notExtracts_measure_le_of_arms`) untouched and makes its `hAlgebraic` hypothesis a bound
+on a SMALLER set, so the corollary is strictly stronger, not weaker.
 -/
 
 section Cover
@@ -2233,9 +2185,11 @@ Pure case analysis on `attempt`'s return value — no arithmetic, no cryptograph
 The kimchi analogue of `Bulletproof.Ipa.Forking.three_way_cover`, whose `inl` case closes by
 contradiction because its `HasOpening` carries no semantic conjunct.
 
-The statement is unchanged by the extractor's key gate; what the gate changes is that every
-point of arm (4) now *carries* key-honesty (`keyHonest_of_openedUnsatisfying`) rather than
-needing it as an added conjunct, which is what summand (IV) needs. -/
+Arm (4) carries the win conjunct, which the cover's own `hacc` supplies for free at that branch.
+It is there because `arm4_hits_badChallenge` needs it: under the extractor's key gate a point of
+the arm *carries* key-honesty (`keyHonest_of_openedUnsatisfying`), but only on a winning run.
+The narrowing shrinks the fourth arm, so the cover — and every bound derived from it — is
+strictly stronger than with the bare `OpenedUnsatisfying`. -/
 theorem four_way_cover (B : C.Point)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) :
     {q : (SetupIndex (2 ^ k) → C.ScalarField) × Coins C nc k |
@@ -2246,8 +2200,9 @@ theorem four_way_cover (B : C.Point)
         ∪ (↑(Zcash.Snark.relSetWithCoins B (fam.relationFinder coins)) :
             Set ((SetupIndex (2 ^ k) → C.ScalarField) × Coins C nc k))
         ∪ {q | fam.TouchesU (Zcash.Snark.scalarBasis B q.1) q.2 coins}
-        ∪ {q | fam.OpenedUnsatisfying
-              (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins} := by
+        ∪ {q | fam.Wins (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 ∧
+              fam.OpenedUnsatisfying
+                (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins} := by
   classical
   intro q hq
   obtain ⟨hacc, hnoext⟩ := hq
@@ -2256,8 +2211,7 @@ theorem four_way_cover (B : C.Point)
   · obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp hsome
     cases x with
     | inl a =>
-      refine Or.inr ⟨a, hx, ?_⟩
-      exact fun hs => hnoext ⟨a, hx, hs⟩
+      exact Or.inr ⟨hacc, a, hx, fun hs => hnoext ⟨a, hx, hs⟩⟩
     | inr rel =>
       by_cases hu : rel.coeffs Zcash.Snark.AugmentedIndex.u = 0
       · refine Or.inl (Or.inl (Or.inr ?_))
@@ -2344,15 +2298,18 @@ theorem openedUnsatisfying_disjoint (B : C.Point)
   · rintro ⟨rel, hrel, -⟩
     exact absurd (ha.symm.trans hrel) (by simp)
 
-/-- **The endpoint, reduced to its two open arms.** Given a bound on the presence arm (1) and a
-bound on the opened-but-unsatisfying arm (4), the measure of `Wins ∧ ¬ ExtractsWitness` is at
-most those two plus `(2 ^ k + 1) · ε + δ`: `four_way_cover`, monotonicity, and subadditivity
-three times.
+/-- **The endpoint, reduced to its two cryptographically-priced arms.** Given a bound on the
+presence arm (1) and a bound on the winning opened-but-unsatisfying arm (4), the measure of
+`Wins ∧ ¬ ExtractsWitness` is at most those two plus `(2 ^ k + 1) · ε + δ`: `four_way_cover`,
+monotonicity, and subadditivity three times.
 
 This is the shape `vesta_kimchi_knowledge_sound` and its Pallas twin consume — instantiate
-`bPresence := (Q + k + 1) · 3 / 2 ¹²⁸` and `bAlgebraic := (Q + 1) · szBudget / 2 ¹²⁸` and the
-endpoint is exactly this. Summands (II) and (III) therefore no longer figure in what is left to
-prove. -/
+`bPresence := (Q + k + 1) · 3 / 2 ¹²⁸` (section 15) and
+`bAlgebraic := (Q + 1) · szBudget / 2 ¹²⁸` (section 16) and the endpoint is exactly this.
+
+`hAlgebraic` bounds the arm WITH its win conjunct, matching `four_way_cover`; that is a smaller
+set than bare `OpenedUnsatisfying`, so the hypothesis is weaker and this corollary is
+correspondingly stronger. -/
 theorem wins_notExtracts_measure_le_of_arms (B : C.Point)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) {R : ℕ}
     {ε δ bPresence bAlgebraic : ℝ≥0∞}
@@ -2364,7 +2321,8 @@ theorem wins_notExtracts_measure_le_of_arms (B : C.Point)
           (augOfSetup (Zcash.Snark.scalarBasis B q.1)) coins} ≤ bPresence)
     (hAlgebraic : (PMF.uniformOfFintype
         ((SetupIndex (2 ^ k) → C.ScalarField) × Coins C nc k)).toOuterMeasure
-        {q | fam.OpenedUnsatisfying (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins}
+        {q | fam.Wins (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 ∧
+          fam.OpenedUnsatisfying (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins}
           ≤ bAlgebraic) :
     (PMF.uniformOfFintype
         ((SetupIndex (2 ^ k) → C.ScalarField) × Coins C nc k)).toOuterMeasure
@@ -2962,92 +2920,15 @@ The presence arm is priced by the adaptive game, whose win event is
 The kimchi win event is the executable `kimchiVerifyWith` at the table's challenges. This
 section is the bridge, `lem:wins-to-winsat`.
 
-`Bulletproof.Forking.wireWins_iff_wins` (`Deployed.lean`) is the exact pattern, but it is stated
-over the IPA node domain, and the step it factors through —
-`verifyWith_iff_verifierAcceptsAt` — is `private` in that (protected) file. So the one step is
-restated here, kept as close to the original as the import closure allows: the two combiner
-bridges it needs are `private` too, `Bulletproof.combineCommitments_eq` being the one public
-ingredient. The duplicate retires the moment the export request on `TO_USER.md` is granted. -/
+`Bulletproof.Ipa.Forking.wireWins_iff_wins` (`Deployed.lean`) is the exact pattern, and the step
+it factors through — `verifyWith_iff_verifierAcceptsAt` — is now public in that (protected)
+file, so it is imported and called rather than restated. What remains project-local is only the
+node bookkeeping: the kimchi transcript names the opening-argument squeezes by a `Squeeze` tag
+while `ipaPrefixes` names them by a `dite`, and the two spellings have to be matched. -/
 
 section WinBridge
 
 variable [Module C.ScalarField C.Point]
-
-/-- The executable MSM is `commitGen` — a copy of the `private` `msm_eq_commitGen` of
-`Bulletproof/Reflection.lean` and `Bulletproof/Forking/Deployed.lean`. -/
-private theorem msm_eq_commitGen
-    (hsmul : ∀ (z : C.ScalarField) (P : C.Point), z • P = z.val • P)
-    {m : ℕ} (g : Fin m → C.Point) (a : Fin m → C.ScalarField) :
-    Ipa.msm C g a = commitGen g a := by
-  simp only [Ipa.msm, commitGen]
-  exact Finset.sum_congr rfl fun i _ => (hsmul (a i) (g i)).symm
-
-/-- The executable running-power combination of a checked commitment *vector* is
-`combinedCommitment` of its indexed function: the public `Bulletproof.combineCommitments_eq`
-transported along the `Vector`/`Array` size coercion. A copy of the `private`
-`combineCommitments_toArray_eq`. -/
-private theorem combineCommitments_toArray_eq
-    (hsmul : ∀ (z : C.ScalarField) (P : C.Point), z • P = z.val • P)
-    (ξ : C.ScalarField) {m : ℕ} (cs : Vector C.Point m) :
-    Ipa.combineCommitments C ξ cs.toArray = combinedCommitment ξ (fun i : Fin m => cs[i]) := by
-  rw [combineCommitments_eq hsmul, combinedCommitment, combinedCommitment]
-  exact Fintype.sum_equiv (finCongr (by simp)) _ _ fun i => rfl
-
-omit [Module C.ScalarField C.Point] in
-/-- A left fold that adds `g x` for each list element equals the start plus the sum of `g` over
-the list — a copy of the `private` `foldl_add_eq_sum`. -/
-private theorem foldl_add_eq_sum {D : Type*} (g : D → C.Point) (l : List D) (init : C.Point) :
-    l.foldl (fun acc x => acc + g x) init = init + ∑ i : Fin l.length, g l[i] := by
-  induction l generalizing init with
-  | nil => simp
-  | cons a t ih =>
-    rw [List.foldl_cons, ih, _root_.add_assoc]
-    simp [Fin.sum_univ_succ]
-
-omit [Module C.ScalarField C.Point] in
-/-- The executable zip-fold recombination equals the abstract indexed sum — a copy of the
-`private` `zipFold_eq_recombine`. -/
-private theorem zipFold_eq_recombine (init : C.Point) (lr : Array (C.Point × C.Point))
-    (ch : Array C.ScalarField) (m : ℕ) (hlr : lr.size = m) (hch : ch.size = m) :
-    (lr.zip ch).foldl
-        (fun (acc : C.Point) (LRu : (C.Point × C.Point) × C.ScalarField) =>
-          acc + (LRu.2⁻¹.val • LRu.1.1 + LRu.2.val • LRu.1.2)) init
-      = init + ∑ j : Fin m,
-          ((ch[(j : ℕ)]'(by omega))⁻¹.val • (lr[(j : ℕ)]'(by omega)).1
-            + (ch[(j : ℕ)]'(by omega)).val • (lr[(j : ℕ)]'(by omega)).2) := by
-  rw [← Array.foldl_toList, foldl_add_eq_sum]
-  congr 1
-  have hlen : (lr.zip ch).toList.length = m := by
-    rw [Array.length_toList, Array.size_zip, hlr, hch, min_self]
-  refine Fintype.sum_equiv (finCongr hlen) _ _ fun i => ?_
-  simp only [finCongr_apply, Fin.val_cast, Fin.getElem_fin, Array.getElem_toList,
-    Array.getElem_zip]
-
-/-- **The executable wire acceptance is `VerifierAcceptsAt`, at arbitrary challenges** — the
-project-local twin of `Bulletproof.Forking.verifyWith_iff_verifierAcceptsAt`, which is `private`
-in the protected `Deployed.lean`. Statement and proof are the original's, verbatim up to the
-`hsmul` hypothesis being explicit rather than a section variable.
-
-It is an equivalence, and that is inherited: the forward direction is what the presence arm's
-containment needs, the backward direction is what an anti-vacuity companion for the kimchi win
-event would need. -/
-theorem verifyWith_iff_verifierAcceptsAt
-    (hsmul : ∀ (z : C.ScalarField) (P : C.Point), z • P = z.val • P)
-    {m p : ℕ} (σ : SRS C.Point) (uBase : C.Point)
-    (chals : Vector C.ScalarField σ.k) (c : C.ScalarField) (claim : Ipa.Input C σ.k m p) :
-    Ipa.verifyWith C σ uBase chals c claim = true
-      ↔ VerifierAcceptsAt { σ with U := uBase } (toOpening claim.proof)
-          (combinedCommitment claim.polyscale claim.commitmentFn)
-          (innerProduct (bPolyCoefficients fun i => chals[i])
-            (combinedEvalVector (2 ^ σ.k) claim.evalscale claim.pointFn))
-          (Ipa.cipOf claim) c (fun i => chals[i]) := by
-  rw [Ipa.verifyWith]
-  simp only [Bool.and_eq_true, decide_eq_true_eq]
-  rw [zipFold_eq_recombine _ claim.proof.lr.toArray chals.toArray σ.k (by simp) (by simp),
-    combineCommitments_toArray_eq hsmul, msm_eq_commitGen hsmul, combinedB_eq_innerProduct]
-  unfold VerifierAcceptsAt recombine toOpening
-  simp only [hsmul, Fin.getElem_fin, Vector.getElem_toArray]
-  exact Iff.rfl
 
 /-! ### The IPA squeezes read the same nodes on both sides
 
@@ -3558,5 +3439,821 @@ theorem acceptExtractionFailure_measure_prod_le
 end KimchiFamily
 
 end Presence
+
+/-! ## 16. Arm (4): the algebraic summand
+
+The last open arm. `arm4_hits_badChallenge` (section 12) contains arm (4) in a seven-fold
+disjunction of bad-challenge memberships; this section prices that union.
+
+The charge is `Bulletproof.Forking.adaptive_badSet_ofPrefix_union_expand_measure_le`, whose
+exclusion sets are functions of a *transcript node* together with the oracle's answers at
+strictly earlier nodes. The seven sets of arm (4) are instead written as functions of the whole
+oracle table — they are built from the adversary's own representations — so the two have to be
+reconciled. That reconciliation is the mathematical content of the section, and it splits in
+two:
+
+* **the sets are node-determined** (`szBadRun_agree`): two tables whose runs share the node at
+  the guarded squeeze, and whose oracle answers agree at the retracted earlier nodes, give the
+  *same* seven sets. This is what says the adversary cannot pick its exclusion set after seeing
+  the challenge the set is about;
+* **the agreement form of the charge** (`adaptive_union_expand_measure_le_of_agree`): a choice
+  function turns a table-indexed family satisfying that agreement law into the node-indexed
+  family the abstract bound wants, and at any given table the two events are literally the same
+  set.
+
+Everything else is bookkeeping: the index set is `Fin 7`, the node selector reads the run's node
+at that index's squeeze, the retraction is `regate` (section 14), and the per-index budgets sum
+to `szBudget` by `badCard_sum_le_szBudget`'s arithmetic. -/
+
+section Arm4Measure
+
+/-! ### The squeeze expansions are injective
+
+`adaptive_badSet_ofPrefix_union_expand_measure_le` reads each prechallenge into the scalar field
+through its own map and needs every one of them injective. Off `β`/`γ` that is the endomorphism
+expansion, injective per curve (`expandPre_vesta_injective` and its Pallas twin); at `β`/`γ` it
+is the plain cast of a natural number below `2 ^ 128`, which is injective because both Pasta
+scalar fields have far more than `2 ^ 128` elements. -/
+
+/-- **The prechallenge cast is injective into any field with at least `2 ^ 128` elements.**
+
+Project-local: `Prechallenge` is `Bulletproof`'s own `Fin (2 ^ 128)` and `C.ScalarField` is
+`ZMod C.scalar`, so this is `ZMod.natCast_eq_natCast_iff'` plus `Nat.mod_eq_of_lt` at both
+sides — but the composite is used once per curve and is worth naming. -/
+theorem natCast_prechallenge_injective {m : ℕ} (hm : 2 ^ 128 ≤ m) :
+    Function.Injective (fun q : Prechallenge => ((q : ℕ) : ZMod m)) := by
+  intro a b h
+  have ha : (a : ℕ) < m := lt_of_lt_of_le a.isLt hm
+  have hb : (b : ℕ) < m := lt_of_lt_of_le b.isLt hm
+  refine Fin.ext ?_
+  have h' := (ZMod.natCast_eq_natCast_iff' (a : ℕ) (b : ℕ) m).mp h
+  rwa [Nat.mod_eq_of_lt ha, Nat.mod_eq_of_lt hb] at h'
+
+/-- **Every squeeze expansion is injective** (`lem:squeeze-expand-injective`). `squeezeExpand` is
+the plain cast at `β`/`γ` and `expandPre` everywhere else, so injectivity of the two constituent
+maps is exactly what the statement needs; both are supplied per curve, neither holds generically,
+which is why they are hypotheses. -/
+theorem squeezeExpand_injective {k : ℕ} (C : Ipa.CommitmentCurve)
+    (hcast : Function.Injective (fun q : Prechallenge => ((q : ℕ) : C.ScalarField)))
+    (hexp : Function.Injective (expandPre C)) (s : Squeeze k) :
+    Function.Injective (squeezeExpand C s) := by
+  cases s with
+  | beta => exact hcast
+  | gamma => exact hcast
+  | _ => exact hexp
+
+/-! ### The quotient chunk array is fixed by the `ζ` node -/
+
+/-- **Two proofs with the same `ζ` node carry the same quotient chunks**
+(`lem:tcomm-determined`). The `ζ` node records `tComm` as a total function on `Fin (7 · nc)`
+returning the optional array entry there, and the wire invariant `tComm_le` bounds both arrays'
+sizes by `7 · nc`, so every out-of-range read is `none` on both sides and `Array.ext_getElem?`
+closes.
+
+This is the `htc` step of `kimchiProof_eq_of_preData_eq` extracted so that it is available at
+`ζ`, where `ftEval1`/`evals` are still `none` and that lemma does not apply. -/
+theorem tComm_eq_of_zetaNode {nc k : ℕ} (digest : C.ScalarField)
+    (publicComm : Fin nc → C.Point) (cp cp' : KimchiProof C nc k)
+    (h : nodeAt digest publicComm cp (Squeeze.zeta : Squeeze k)
+      = nodeAt digest publicComm cp' Squeeze.zeta) :
+    cp.tComm = cp'.tComm := by
+  have ht := congrArg (fun t => t.pre.tComm) h
+  simp only [nodeAt, Option.some.injEq] at ht
+  refine Array.ext_getElem? fun i => ?_
+  by_cases hi : i < 7 * nc
+  · exact congrFun ht ⟨i, hi⟩
+  · rw [Array.getElem?_eq_none (by have := cp.tComm_le; omega),
+      Array.getElem?_eq_none (by have := cp'.tComm_le; omega)]
+
+/-! ### Locality of the assembled objects
+
+The seven exclusion sets are built from `runW`, `runZ`, `ftChunkAssembly`, `badXiOf` and
+`badROf`. Each of the five reads strictly less than its argument list suggests, and saying so is
+what lets two runs that agree only at an early node be shown to produce the same set. The four
+statements below are exactly the reads that matter:
+
+* `runW`/`runZ` mention the emitted proof only in the TYPE of their coefficient argument (the
+  flat arity `(runInput C σ cvk cp pub).commitments.size` is reducibly `nc + 1 + tailRowCount·nc`,
+  independent of `cp`), so two runs with different proofs but agreeing coefficient vectors at the
+  witness and accumulator stream positions assemble the same polynomials;
+* `ftChunkAssembly` is a function of the chunk count and the chunk coefficient vectors;
+* `badXiOf`/`badROf` read the SRS only through `σ.k`, so overriding the transcript-derived base
+  `U` — which `runSrs` does, per run — leaves them unchanged. -/
+
+section Locality
+
+/-- **`runW` is local to the witness stream positions** (`lem:runw-local`). The two proofs are
+allowed to differ: the coefficient argument's type mentions the proof, but only through a flat
+arity that does not depend on it. -/
+private theorem runW_congr_of_agree {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (cp cp' : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (aRef aRef' : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField)
+    (h : ∀ (col : Fin wCols) (c : Fin nc),
+      aRef (streamPos nc (wRow col) c) = aRef' (streamPos nc (wRow col) c)) :
+    runW σ cvk cp pub aRef = runW σ cvk cp' pub aRef' := by
+  funext col
+  exact congrArg (assembledRow σ.k nc) (funext fun c => h col c)
+
+/-- **`runZ` is local to the accumulator stream position** — the `runW_congr_of_agree` twin. -/
+private theorem runZ_congr_of_agree {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (cp cp' : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (aRef aRef' : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField)
+    (h : ∀ c : Fin nc, aRef (streamPos nc zRow c) = aRef' (streamPos nc zRow c)) :
+    runZ σ cvk cp pub aRef = runZ σ cvk cp' pub aRef' :=
+  congrArg (assembledRow σ.k nc) (funext h)
+
+/-- **The assembled quotient is a function of the chunk count and the chunk vectors**
+(`lem:ftassembly-congr`). Stated with two independently-typed chunk index families related by
+equal underlying naturals, which is the shape the run-agreement argument produces. -/
+private theorem ftChunkAssembly_congr_of_agree {F : Type*} [Field F] (k : ℕ) {nt nt' : ℕ}
+    (aT : Fin nt → Fin (2 ^ k) → F) (aT' : Fin nt' → Fin (2 ^ k) → F) (hn : nt = nt')
+    (h : ∀ (j : Fin nt) (j' : Fin nt'), (j : ℕ) = (j' : ℕ) → aT j = aT' j') :
+    ftChunkAssembly k nt aT = ftChunkAssembly k nt' aT' := by
+  subst hn
+  exact congrArg (ftChunkAssembly k nt) (funext fun j => h j j rfl)
+
+/-- **`badXiOf` does not read the transcript-derived base** (`lem:badxi-base-irrelevant`).
+Definitional: the set reads the SRS only through `σ.k`, which a `U`-override preserves. -/
+private theorem badXiOf_setBase {G : Type*} (σ : SRS G) (u : G) {m : ℕ}
+    (aw₀ : Fin m → Fin (2 ^ σ.k) → C.ScalarField) (x : Fin evalPts → C.ScalarField)
+    (E : Fin m → Fin evalPts → C.ScalarField) :
+    badXiOf ({σ with U := u}) aw₀ x E = badXiOf σ aw₀ x E := rfl
+
+/-- **`badROf` does not read the transcript-derived base** — the `badXiOf_setBase` twin. -/
+private theorem badROf_setBase {G : Type*} (σ : SRS G) (u : G) {m : ℕ}
+    (aw₀ : Fin m → Fin (2 ^ σ.k) → C.ScalarField) (x : Fin evalPts → C.ScalarField)
+    (E : Fin m → Fin evalPts → C.ScalarField) (ξ : C.ScalarField) :
+    badROf ({σ with U := u}) aw₀ x E ξ = badROf σ aw₀ x E ξ := rfl
+
+/-- **The claim's evaluation points and claimed evaluations do not read the opening.** Two runs
+whose proofs agree away from `opening`, at the same four fq-side challenges, present the same
+`pointFn` and the same `evalFn` — the two components `badXiOf` and `badROf` read. The fr-side
+`v`/`u` are free because neither component reads them. -/
+private theorem runInputWith_pointFn_evalFn_congr {nc : ℕ} (σ : SRS C.Point)
+    (cvk : KimchiVK C nc) (pub : Array C.ScalarField) (cp cp' : KimchiProof C nc σ.k)
+    (beta gamma alpha zeta v u v' u' : C.ScalarField) (o : Ipa.Proof C σ.k)
+    (hcp : cp = { cp' with opening := o }) :
+    (runInputWith σ cvk cp pub beta gamma alpha zeta v u).pointFn
+        = (runInputWith σ cvk cp' pub beta gamma alpha zeta v' u').pointFn
+      ∧ (runInputWith σ cvk cp pub beta gamma alpha zeta v u).evalFn
+        = (runInputWith σ cvk cp' pub beta gamma alpha zeta v' u').evalFn := by
+  subst hcp
+  exact ⟨rfl, rfl⟩
+
+/-- The batched claim's polyscale slot is the handed-in `v`. Definitional, but named: reaching it
+through `runInputWith`'s `let`-chain by unification alone is what makes an `isDefEq` at that
+projection blow the recursion budget. -/
+private theorem runInputWith_polyscale {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (beta gamma alpha zeta v u : C.ScalarField) :
+    (runInputWith σ cvk cp pub beta gamma alpha zeta v u).polyscale = v := rfl
+
+/-- The batched claim's evalscale slot is the handed-in `u` — the `runInputWith_polyscale`
+twin, named for the same reason. -/
+private theorem runInputWith_evalscale {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (beta gamma alpha zeta v u : C.ScalarField) :
+    (runInputWith σ cvk cp pub beta gamma alpha zeta v u).evalscale = u := rfl
+
+end Locality
+
+/-! ### The seven exclusion sets, as a family indexed by `Fin 7`
+
+`adaptive_badSet_ofPrefix_union_expand_measure_le` prices a union over a finite index set, so the
+seven disjuncts of `arm4_hits_badChallenge` are repackaged as a `Fin 7`-indexed family of finite
+sets together with a per-index budget. The budgets are `badCard_sum_le_szBudget`'s seven
+summands, so their total is `szBudget` on the nose. -/
+
+section BadRun
+
+variable [Module C.ScalarField C.Point]
+
+/-- **The squeeze each of the seven exclusion sets guards**: `β`, `γ`, `α`, `ζ` for the four
+Schwartz–Zippel sets, `ζ` again for the boundary set, then the fr-side `ξ` and `r`. -/
+def szSqueeze {k : ℕ} : Fin 7 → Squeeze k :=
+  ![Squeeze.beta, Squeeze.gamma, Squeeze.alpha, Squeeze.zeta, Squeeze.zeta,
+    Squeeze.polyscale, Squeeze.evalscale]
+
+/-- **The per-index budget** of the seven exclusion sets: `badCard_sum_le_szBudget`'s seven
+summands, in the order `szSqueeze` names them. -/
+def szCard (nc n zkRows : ℕ) : Fin 7 → ℕ :=
+  ![7 * (n - zkRows), 7 * (n - zkRows),
+    n * (Index.gateAlphaCount + Index.permAlphaCount - 1), Index.degreeBound n, 2,
+    2 * (nc + 1 + tailRowCount * nc - 1), 1]
+
+/-- **The budgets sum to the Schwartz–Zippel budget.** `szBudget` was *defined* as this sum;
+`Fin.sum_univ_seven` unfolds the sum and `omega` does the regrouping (the two `β`/`γ` terms are
+collected into the `2 *` of the budget). -/
+theorem szCard_sum (nc n zkRows : ℕ) :
+    ∑ i : Fin 7, szCard nc n zkRows i = szBudget nc n zkRows := by
+  have h : ∑ i : Fin 7, szCard nc n zkRows i
+      = 7 * (n - zkRows) + 7 * (n - zkRows)
+        + n * (Index.gateAlphaCount + Index.permAlphaCount - 1) + Index.degreeBound n + 2
+        + 2 * (nc + 1 + tailRowCount * nc - 1) + 1 := by
+    rw [Fin.sum_univ_seven]
+    rfl
+  rw [h]
+  unfold szBudget
+  omega
+
+namespace KimchiFamily
+
+variable {nc k n : ℕ} [NeZero n] (fam : KimchiFamily C nc k n)
+
+/-- **The seven exclusion sets of arm (4), at the run** (`def:sz-bad-run`). Exactly the seven
+sets named in `arm4_hits_badChallenge`, evaluated at the run the table produces: the `β`, `γ`,
+`α` and `ζ` Schwartz–Zippel sets of the run's assembled columns, accumulator and quotient, the
+two-point `ζ` boundary set, and the run's own `ξ` and `r` sets. -/
+noncomputable def szBadRun (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (O : Coins C nc k) : Fin 7 → Finset C.ScalarField :=
+  ![Protocol.soundBadB fam.idx
+      (runW (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O) (fam.pub basis)
+        (fam.aRef basis O)),
+    Protocol.soundBadG fam.idx
+      (runW (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O) (fam.pub basis)
+        (fam.aRef basis O))
+      (fam.readsOf basis O Squeeze.beta),
+    Protocol.soundBadA fam.idx (pubView fam.idx (fam.pub basis))
+      (runW (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O) (fam.pub basis)
+        (fam.aRef basis O))
+      (runZ (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O) (fam.pub basis)
+        (fam.aRef basis O))
+      (fam.readsOf basis O Squeeze.beta) (fam.readsOf basis O Squeeze.gamma),
+    Protocol.soundBadZ fam.idx (pubView fam.idx (fam.pub basis))
+      (runW (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O) (fam.pub basis)
+        (fam.aRef basis O))
+      (runZ (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O) (fam.pub basis)
+        (fam.aRef basis O))
+      (fam.readsOf basis O Squeeze.beta) (fam.readsOf basis O Squeeze.gamma)
+      (fam.readsOf basis O Squeeze.alpha)
+      (ftChunkAssembly k (fam.proofOf basis O).tComm.size (fam.aT basis O)),
+    zetaBoundaryBad fam.idx,
+    badXiOf (fam.runSrs basis O) (fam.aRef basis O) (fam.claim basis O).pointFn
+      (fam.claim basis O).evalFn,
+    badROf (fam.runSrs basis O) (fam.aRef basis O) (fam.claim basis O).pointFn
+      (fam.claim basis O).evalFn (fam.claim basis O).polyscale]
+
+/-- **Each exclusion set costs its budget term, on EVERY table** (`lem:sz-bad-run-card`) —
+winning or not, opened or not. This is why `runBounds_of_chunking` was isolated: the adaptive
+charge must bound the sets on tables at which nothing was extracted, where the run-soundness
+root's hypothesis stack is unavailable. The `ζ` bound is instantiated at the run's own assembled
+quotient by `runBounds_zeta_at_assembly`, the boundary set costs `2` by inspection, and the two
+fr-side sets are the opening argument's own counting bounds at the flat arity. -/
+theorem szBadRun_card_le (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (O : Coins C nc k) (i : Fin 7) :
+    (fam.szBadRun basis O i).card ≤ szCard nc n fam.idx.zkRows i := by
+  have hb : RunBounds (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O)
+      (fam.pub basis) fam.idx (fam.aRef basis O) :=
+    runBounds_of_chunking (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O)
+      (fam.pub basis) fam.idx fam.hnc fam.hkn (fam.aRef basis O)
+  fin_cases i
+  · exact hb.1
+  · exact hb.2.1 _
+  · exact hb.2.2.1 _ _
+  · exact runBounds_zeta_at_assembly (srsOfBasis k basis) (fam.cvk basis)
+      (fam.proofOf basis O) (fam.pub basis) fam.idx (fam.aRef basis O) (fam.aT basis O)
+      fam.hkn (fam.htpos basis O) hb _ _ _
+  · exact card_zetaBoundaryBad_le fam.idx
+  · exact card_badXiOf_le _ _ _ _
+  · exact card_badROf_le _ _ _ _ _
+
+end KimchiFamily
+
+/-! ### The index bookkeeping the charge consumes
+
+The node selector reads the run's node at the guarded squeeze; the guard is "this is a
+pre-opening node", phrased as a bound on the squeeze rank; and the retraction sends a node to
+the run's node at an earlier pre-opening squeeze. The retraction's first branch — which sends a
+node to its own Schnorr re-gating when the requested squeeze is the node's own — exists only so
+that distinctness holds for *every* `j`, including the degenerate one naming `t`'s own squeeze;
+the exclusion set at that index never reads that coordinate. -/
+
+/-- **Every flat stream row is absorbed by `ζ`.** `absorbedBy` returns `β`, `ζ` or `α`, of ranks
+`0`, `3` and `2`, so no row's absorbing squeeze is later than `ζ` — which is what makes the two
+fr-side exclusion sets (read at `ξ` and `r`, of ranks `4` and `5`) blind to the challenge they
+guard. -/
+private theorem squeezeRank_absorbedBy_le_three {nc k : ℕ}
+    (r : Fin (nc + 1 + tailRowCount * nc)) :
+    squeezeRank (absorbedBy (k := k) r) ≤ 3 := by
+  unfold absorbedBy
+  split_ifs <;> simp [squeezeRank]
+
+/-- **The retraction to an earlier pre-opening node** (`def:regate` at the schedule). At a node
+whose own squeeze is `s`, coordinate `j` names the run's node at `preSqueeze j` whenever that
+squeeze is STRICTLY earlier in the schedule; otherwise the retraction falls back on the Schnorr
+re-gating, which is never the node itself, so `hpre`'s distinctness holds at every coordinate.
+
+The fallback exists only for the degenerate coordinates — the one naming `t`'s own squeeze, and
+the ones naming later squeezes — which the exclusion set at that index never reads.
+
+The index `i` of the exclusion set does not appear: the retraction is the same at all seven
+sets, so carrying `i` would be an unused argument. -/
+def szPre {nc k : ℕ} (j : Fin 6) (t : KimchiNode C nc k) : KimchiNode C nc k :=
+  if squeezeRank (preSqueeze j : Squeeze k) < squeezeRank t.idx then regate t (preSqueeze j)
+  else regate t Squeeze.schnorr
+
+omit [Module C.ScalarField C.Point] in
+/-- **The retraction moves every guarded node** — `hpre` of
+`adaptive_badSet_ofPrefix_union_expand_measure_le`. The tag component alone separates the two
+(`regate_ne`): on the strict branch the ranks would have to coincide, and on the fallback branch
+the guard rules out the Schnorr squeeze. -/
+theorem szPre_ne {nc k : ℕ} (t : KimchiNode C nc k) (ht : squeezeRank t.idx < 6) (j : Fin 6) :
+    szPre j t ≠ t := by
+  unfold szPre
+  split
+  · next hlt =>
+    refine regate_ne t ?_
+    intro he
+    rw [he] at hlt
+    omega
+  · refine regate_ne t ?_
+    intro he
+    rw [he] at ht
+    simp only [squeezeRank] at ht
+    omega
+
+omit [Module C.ScalarField C.Point] in
+/-- **Every guarded squeeze is a pre-opening one** — `hnode`. The seven exclusion sets are read
+at `β`, `γ`, `α`, `ζ`, `ζ`, `ξ`, `r`, whose ranks are `0`–`5`. -/
+theorem squeezeRank_szSqueeze_lt_six {k : ℕ} (i : Fin 7) :
+    squeezeRank (szSqueeze (k := k) i) < 6 := by
+  fin_cases i
+  · show (0 : ℕ) < 6; omega
+  · show (1 : ℕ) < 6; omega
+  · show (2 : ℕ) < 6; omega
+  · show (3 : ℕ) < 6; omega
+  · show (3 : ℕ) < 6; omega
+  · show (4 : ℕ) < 6; omega
+  · show (5 : ℕ) < 6; omega
+
+namespace KimchiFamily
+
+variable {nc k n : ℕ} [NeZero n] (fam : KimchiFamily C nc k n)
+
+/-- **The transcript node at which the `i`-th exclusion set's challenge is read** — the run's own
+node at `szSqueeze i`. -/
+def szNode (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (i : Fin 7)
+    (cp : KimchiProof C nc k) : KimchiNode C nc k :=
+  nodeAt (fam.digest basis) (fam.publicComm basis) cp (szSqueeze i)
+
+/-- The node selector lands on the run's own node, which is what identifies the challenge the
+charge prices with the challenge `arm4_hits_badChallenge` names. -/
+theorem szNode_proofOf (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (i : Fin 7)
+    (O : Coins C nc k) :
+    fam.szNode basis i (fam.proofOf basis O) = fam.nodesOf basis O (szSqueeze i) := rfl
+
+/-! #### What two runs sharing a node share
+
+Each of the five assembled objects the exclusion sets read is recovered from data absorbed no
+later than its own squeeze, so node agreement at a squeeze of at least that rank forces the
+object. The five statements below are exactly the five reads. -/
+
+/-- Witness-row coefficient vectors agree between two runs agreeing at ANY node: every witness
+row is absorbed at `β`, of rank `0`. -/
+private theorem aRef_wRow_eq (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (O O' : Coins C nc k) {s : Squeeze k}
+    (hnode : fam.nodesOf basis O s = fam.nodesOf basis O' s) (col : Fin wCols) (c : Fin nc) :
+    fam.aRef basis O (streamPos nc (wRow col) c)
+      = fam.aRef basis O' (streamPos nc (wRow col) c) := by
+  refine (fam.repPrefix_of_rank_le basis O O' (streamPos nc (wRow col) c) ?_ hnode).1
+  rw [absorbedBy_streamPos_of_two_le fam.hnc (wRow col) (by show 2 ≤ 8 + (col : ℕ); omega) c]
+  exact Nat.zero_le _
+
+/-- The assembled witness columns agree between two runs agreeing at any node. -/
+private theorem runW_eq_of_node (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (O O' : Coins C nc k) {s : Squeeze k}
+    (hnode : fam.nodesOf basis O s = fam.nodesOf basis O' s) :
+    runW (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O) (fam.pub basis)
+        (fam.aRef basis O)
+      = runW (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O') (fam.pub basis)
+        (fam.aRef basis O') :=
+  runW_congr_of_agree _ _ _ _ _ _ _ (fam.aRef_wRow_eq basis O O' hnode)
+
+/-- The assembled accumulator agrees between two runs agreeing at a node of rank at least `α`'s:
+the accumulator row is absorbed at `α`. -/
+private theorem runZ_eq_of_node (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (O O' : Coins C nc k) {s : Squeeze k} (h2 : 2 ≤ squeezeRank s)
+    (hnode : fam.nodesOf basis O s = fam.nodesOf basis O' s) :
+    runZ (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O) (fam.pub basis)
+        (fam.aRef basis O)
+      = runZ (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O') (fam.pub basis)
+        (fam.aRef basis O') :=
+  runZ_congr_of_agree _ _ _ _ _ _ _ fun c =>
+    (fam.repPrefix_of_rank_le basis O O' (streamPos nc zRow c)
+      (by rw [absorbedBy_streamPos_zRow]; exact h2) hnode).1
+
+/-- The quotient chunk arrays agree between two runs agreeing at a node of rank at least `ζ`'s —
+`tComm_eq_of_zetaNode` after propagating the agreement back to the `ζ` node. -/
+private theorem tComm_eq_of_node (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (O O' : Coins C nc k) {s : Squeeze k} (h3 : 3 ≤ squeezeRank s)
+    (hnode : fam.nodesOf basis O s = fam.nodesOf basis O' s) :
+    (fam.proofOf basis O).tComm = (fam.proofOf basis O').tComm :=
+  tComm_eq_of_zetaNode (fam.digest basis) (fam.publicComm basis) _ _
+    (fam.nodesOf_eq_of_rank_le basis O O' (s' := Squeeze.zeta) h3 hnode)
+
+/-- The assembled quotient polynomial agrees between two runs agreeing at a node of rank at least
+`ζ`'s: the chunk count is fixed by `tComm_eq_of_node` and the chunk coefficient vectors by AGM
+faithfulness at `ζ`. -/
+private theorem ftAssembly_eq_of_node (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (O O' : Coins C nc k) {s : Squeeze k} (h3 : 3 ≤ squeezeRank s)
+    (hnode : fam.nodesOf basis O s = fam.nodesOf basis O' s) :
+    ftChunkAssembly k (fam.proofOf basis O).tComm.size (fam.aT basis O)
+      = ftChunkAssembly k (fam.proofOf basis O').tComm.size (fam.aT basis O') := by
+  refine ftChunkAssembly_congr_of_agree k _ _
+    (congrArg Array.size (fam.tComm_eq_of_node basis O O' h3 hnode)) fun j j' hj => ?_
+  exact (fam.tPrefix_of_rank_le basis O O' j j' hj h3 hnode).1
+
+/-- Two runs agreeing at a node of rank at least `ξ`'s emit the same proof up to its opening —
+`kimchiProof_eq_of_preData_eq` at the `ξ` node, whose payload is the pre-opening data. -/
+private theorem proofOf_eq_of_node (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (O O' : Coins C nc k) {s : Squeeze k} (h4 : 4 ≤ squeezeRank s)
+    (hnode : fam.nodesOf basis O s = fam.nodesOf basis O' s) :
+    fam.proofOf basis O
+      = { fam.proofOf basis O' with opening := (fam.proofOf basis O).opening } :=
+  kimchiProof_eq_of_preData_eq (fam.digest basis) (fam.publicComm basis) _ _
+    (congrArg KimchiNode.pre
+      (fam.nodesOf_eq_of_rank_le basis O O' (s' := Squeeze.polyscale) h4 hnode))
+
+/-- The run's batched claim reads the polyscale challenge at the run's own `ξ` node. -/
+private theorem claim_polyscale (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (O : Coins C nc k) :
+    (fam.claim basis O).polyscale = fam.readsOf basis O Squeeze.polyscale := by
+  have h : fam.claim basis O = runInputWith (srsOfBasis k basis) (fam.cvk basis)
+      (fam.proofOf basis O) (fam.pub basis)
+      (fam.readsOf basis O Squeeze.beta) (fam.readsOf basis O Squeeze.gamma)
+      (fam.readsOf basis O Squeeze.alpha) (fam.readsOf basis O Squeeze.zeta)
+      (fam.readsOf basis O Squeeze.polyscale) (fam.readsOf basis O Squeeze.evalscale) := rfl
+  rw [h, runInputWith_polyscale]
+
+/-- The run's batched claim reads the evalscale challenge at the run's own `r` node. -/
+private theorem claim_evalscale (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (O : Coins C nc k) :
+    (fam.claim basis O).evalscale = fam.readsOf basis O Squeeze.evalscale := by
+  have h : fam.claim basis O = runInputWith (srsOfBasis k basis) (fam.cvk basis)
+      (fam.proofOf basis O) (fam.pub basis)
+      (fam.readsOf basis O Squeeze.beta) (fam.readsOf basis O Squeeze.gamma)
+      (fam.readsOf basis O Squeeze.alpha) (fam.readsOf basis O Squeeze.zeta)
+      (fam.readsOf basis O Squeeze.polyscale) (fam.readsOf basis O Squeeze.evalscale) := rfl
+  rw [h, runInputWith_evalscale]
+
+/-- `badXiOf` at the run's own SRS is `badXiOf` at the sampled one: the set reads the SRS only
+through `σ.k`, which the per-run `U`-override preserves. -/
+private theorem badXiOf_runSrs (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (O : Coins C nc k) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ k) → C.ScalarField)
+    (x : Fin evalPts → C.ScalarField) (E : Fin m → Fin evalPts → C.ScalarField) :
+    badXiOf (fam.runSrs basis O) aw₀ x E = badXiOf (srsOfBasis k basis) aw₀ x E :=
+  badXiOf_setBase (srsOfBasis k basis) _ aw₀ x E
+
+/-- The `badROf` twin of `badXiOf_runSrs`. -/
+private theorem badROf_runSrs (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (O : Coins C nc k) {m : ℕ} (aw₀ : Fin m → Fin (2 ^ k) → C.ScalarField)
+    (x : Fin evalPts → C.ScalarField) (E : Fin m → Fin evalPts → C.ScalarField)
+    (ξ : C.ScalarField) :
+    badROf (fam.runSrs basis O) aw₀ x E ξ = badROf (srsOfBasis k basis) aw₀ x E ξ :=
+  badROf_setBase (srsOfBasis k basis) _ aw₀ x E ξ
+
+/-- **A retracted coordinate answers the two runs' common earlier challenge.** At a strictly
+earlier pre-opening squeeze the retraction lands on the run's own node there (`regate_nodeAt_le`),
+so the hypothesis that the two tables agree at the retracted node says exactly that the two runs
+read the same challenge at that squeeze. -/
+private theorem readsOf_eq_of_ans (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (O O' : Coins C nc k) (s : Squeeze k) (j : Fin 6)
+    (hrank : squeezeRank (preSqueeze j : Squeeze k) < squeezeRank s)
+    (hans : O (szPre j (fam.nodesOf basis O s)) = O' (szPre j (fam.nodesOf basis O' s))) :
+    fam.readsOf basis O (preSqueeze j) = fam.readsOf basis O' (preSqueeze j) := by
+  have hO : ∀ P : Coins C nc k,
+      szPre j (fam.nodesOf basis P s) = fam.nodesOf basis P (preSqueeze j) := by
+    intro P
+    show (if squeezeRank (preSqueeze j : Squeeze k) < squeezeRank s
+        then regate (fam.nodesOf basis P s) (preSqueeze j)
+        else regate (fam.nodesOf basis P s) Squeeze.schnorr)
+      = fam.nodesOf basis P (preSqueeze j)
+    rw [if_pos hrank]
+    exact regate_nodeAt_le (fam.digest basis) (fam.publicComm basis) (fam.proofOf basis P)
+      (le_of_lt hrank)
+  rw [hO O, hO O'] at hans
+  exact congrArg (squeezeExpand C (preSqueeze j)) hans
+
+/-- **The batched claim's evaluation points and claimed evaluations are fixed by the `ξ` node
+and the four fq-side challenges.** These are the two components `badXiOf` and `badROf` read; the
+opening — the one part of the emitted proof the `ξ` node does not fix — appears in neither. -/
+private theorem claim_pointFn_evalFn_eq (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (O O' : Coins C nc k) {s : Squeeze k} (h4 : 4 ≤ squeezeRank s)
+    (hnode : fam.nodesOf basis O s = fam.nodesOf basis O' s)
+    (hb : fam.readsOf basis O Squeeze.beta = fam.readsOf basis O' Squeeze.beta)
+    (hg : fam.readsOf basis O Squeeze.gamma = fam.readsOf basis O' Squeeze.gamma)
+    (ha : fam.readsOf basis O Squeeze.alpha = fam.readsOf basis O' Squeeze.alpha)
+    (hz : fam.readsOf basis O Squeeze.zeta = fam.readsOf basis O' Squeeze.zeta) :
+    (fam.claim basis O).pointFn = (fam.claim basis O').pointFn
+      ∧ (fam.claim basis O).evalFn = (fam.claim basis O').evalFn := by
+  have hO : fam.claim basis O = runInputWith (srsOfBasis k basis) (fam.cvk basis)
+      (fam.proofOf basis O) (fam.pub basis)
+      (fam.readsOf basis O Squeeze.beta) (fam.readsOf basis O Squeeze.gamma)
+      (fam.readsOf basis O Squeeze.alpha) (fam.readsOf basis O Squeeze.zeta)
+      (fam.readsOf basis O Squeeze.polyscale) (fam.readsOf basis O Squeeze.evalscale) := rfl
+  have hO' : fam.claim basis O' = runInputWith (srsOfBasis k basis) (fam.cvk basis)
+      (fam.proofOf basis O') (fam.pub basis)
+      (fam.readsOf basis O' Squeeze.beta) (fam.readsOf basis O' Squeeze.gamma)
+      (fam.readsOf basis O' Squeeze.alpha) (fam.readsOf basis O' Squeeze.zeta)
+      (fam.readsOf basis O' Squeeze.polyscale) (fam.readsOf basis O' Squeeze.evalscale) := rfl
+  rw [hO, hO', hb, hg, ha, hz]
+  exact runInputWith_pointFn_evalFn_congr (srsOfBasis k basis) (fam.cvk basis) (fam.pub basis)
+    (fam.proofOf basis O) (fam.proofOf basis O') _ _ _ _ _ _ _ _ _
+    (fam.proofOf_eq_of_node basis O O' h4 hnode)
+
+/-- **The `ξ` exclusion set is fixed by the `ξ` node and the four fq-side challenges.** It reads
+every flat row's coefficient vector — all absorbed by `ζ` — the claim's evaluation points and its
+claimed evaluations, and the SRS only through `σ.k`. -/
+private theorem badXiOf_eq_of_node (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (O O' : Coins C nc k) {s : Squeeze k} (h4 : 4 ≤ squeezeRank s)
+    (hnode : fam.nodesOf basis O s = fam.nodesOf basis O' s)
+    (hb : fam.readsOf basis O Squeeze.beta = fam.readsOf basis O' Squeeze.beta)
+    (hg : fam.readsOf basis O Squeeze.gamma = fam.readsOf basis O' Squeeze.gamma)
+    (ha : fam.readsOf basis O Squeeze.alpha = fam.readsOf basis O' Squeeze.alpha)
+    (hz : fam.readsOf basis O Squeeze.zeta = fam.readsOf basis O' Squeeze.zeta) :
+    badXiOf (fam.runSrs basis O) (fam.aRef basis O) (fam.claim basis O).pointFn
+        (fam.claim basis O).evalFn
+      = badXiOf (fam.runSrs basis O') (fam.aRef basis O') (fam.claim basis O').pointFn
+        (fam.claim basis O').evalFn := by
+  have hpe := fam.claim_pointFn_evalFn_eq basis O O' h4 hnode hb hg ha hz
+  have haR : fam.aRef basis O = fam.aRef basis O' := funext fun r =>
+    (fam.repPrefix_of_rank_le basis O O' r
+      (le_trans (squeezeRank_absorbedBy_le_three r)
+        (le_trans (show (3 : ℕ) ≤ 4 by omega) h4)) hnode).1
+  rw [fam.badXiOf_runSrs basis O, fam.badXiOf_runSrs basis O', haR, hpe.1, hpe.2]
+
+/-- **The `r` exclusion set is fixed by the `r` node and the five earlier challenges** — the
+`badXiOf_eq_of_node` twin, with the polyscale challenge as the extra datum. -/
+private theorem badROf_eq_of_node (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (O O' : Coins C nc k) {s : Squeeze k} (h4 : 4 ≤ squeezeRank s)
+    (hnode : fam.nodesOf basis O s = fam.nodesOf basis O' s)
+    (hb : fam.readsOf basis O Squeeze.beta = fam.readsOf basis O' Squeeze.beta)
+    (hg : fam.readsOf basis O Squeeze.gamma = fam.readsOf basis O' Squeeze.gamma)
+    (ha : fam.readsOf basis O Squeeze.alpha = fam.readsOf basis O' Squeeze.alpha)
+    (hz : fam.readsOf basis O Squeeze.zeta = fam.readsOf basis O' Squeeze.zeta)
+    (hx : fam.readsOf basis O Squeeze.polyscale = fam.readsOf basis O' Squeeze.polyscale) :
+    badROf (fam.runSrs basis O) (fam.aRef basis O) (fam.claim basis O).pointFn
+        (fam.claim basis O).evalFn (fam.claim basis O).polyscale
+      = badROf (fam.runSrs basis O') (fam.aRef basis O') (fam.claim basis O').pointFn
+        (fam.claim basis O').evalFn (fam.claim basis O').polyscale := by
+  have hpe := fam.claim_pointFn_evalFn_eq basis O O' h4 hnode hb hg ha hz
+  have haR : fam.aRef basis O = fam.aRef basis O' := funext fun r =>
+    (fam.repPrefix_of_rank_le basis O O' r
+      (le_trans (squeezeRank_absorbedBy_le_three r)
+        (le_trans (show (3 : ℕ) ≤ 4 by omega) h4)) hnode).1
+  have hxi : (fam.claim basis O).polyscale = (fam.claim basis O').polyscale :=
+    (fam.claim_polyscale basis O).trans (hx.trans (fam.claim_polyscale basis O').symm)
+  rw [fam.badROf_runSrs basis O, fam.badROf_runSrs basis O', haR, hpe.1, hpe.2, hxi]
+
+/-- **The exclusion sets are node-determined** (`lem:sz-sets-node-determined`) — the mathematical
+content of summand (IV). Two tables whose runs share the node at the `i`-th guarded squeeze, and
+whose oracle answers agree at every strictly-earlier retracted node, produce the *same* `i`-th
+exclusion set. It says the adversary cannot choose its exclusion set after seeing the challenge
+that the set is about.
+
+The seven cases follow the schedule. `β` and `γ` read only the assembled witness columns, whose
+rows are absorbed at `β`; `α` adds the accumulator, absorbed at `α`; `ζ` adds the assembled
+quotient, whose chunk count and chunk vectors are fixed at `ζ`; the boundary set is a function of
+the circuit alone; and `ξ`, `r` read every flat row (all absorbed by `ζ`) together with the
+batched claim's evaluation points and claimed evaluations, which the `ξ` node fixes up to the
+opening — a component neither set touches. Every earlier challenge a set names is supplied by the
+retracted coordinate at that squeeze. -/
+theorem szBadRun_agree (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (i : Fin 7)
+    (O O' : Coins C nc k)
+    (hnode : fam.szNode basis i (fam.proofOf basis O)
+      = fam.szNode basis i (fam.proofOf basis O'))
+    (hans : ∀ j : Fin 6, O (szPre j (fam.szNode basis i (fam.proofOf basis O)))
+      = O' (szPre j (fam.szNode basis i (fam.proofOf basis O')))) :
+    fam.szBadRun basis O i = fam.szBadRun basis O' i := by
+  fin_cases i
+  · -- `β`: the assembled witness columns only.
+    have hn : fam.nodesOf basis O Squeeze.beta = fam.nodesOf basis O' Squeeze.beta := hnode
+    show Protocol.soundBadB fam.idx _ = Protocol.soundBadB fam.idx _
+    exact congrArg _ (fam.runW_eq_of_node basis O O' hn)
+  · -- `γ`: the same, plus the `β` challenge.
+    have hn : fam.nodesOf basis O Squeeze.gamma = fam.nodesOf basis O' Squeeze.gamma := hnode
+    have hb : fam.readsOf basis O Squeeze.beta = fam.readsOf basis O' Squeeze.beta :=
+      fam.readsOf_eq_of_ans basis O O' Squeeze.gamma 0 (by show (0 : ℕ) < 1; omega) (hans 0)
+    have hW := fam.runW_eq_of_node basis O O' hn
+    show Protocol.soundBadG fam.idx _ _ = Protocol.soundBadG fam.idx _ _
+    rw [hW, hb]
+  · -- `α`: adds the assembled accumulator and the `γ` challenge.
+    have hn : fam.nodesOf basis O Squeeze.alpha = fam.nodesOf basis O' Squeeze.alpha := hnode
+    have hb : fam.readsOf basis O Squeeze.beta = fam.readsOf basis O' Squeeze.beta :=
+      fam.readsOf_eq_of_ans basis O O' Squeeze.alpha 0 (by show (0 : ℕ) < 2; omega) (hans 0)
+    have hg : fam.readsOf basis O Squeeze.gamma = fam.readsOf basis O' Squeeze.gamma :=
+      fam.readsOf_eq_of_ans basis O O' Squeeze.alpha 1 (by show (1 : ℕ) < 2; omega) (hans 1)
+    have hW := fam.runW_eq_of_node basis O O' hn
+    have hZ := fam.runZ_eq_of_node basis O O' (s := Squeeze.alpha) (by show (2 : ℕ) ≤ 2; omega) hn
+    show Protocol.soundBadA fam.idx _ _ _ _ _ = Protocol.soundBadA fam.idx _ _ _ _ _
+    rw [hW, hZ, hb, hg]
+  · -- `ζ`: adds the assembled quotient and the `α` challenge.
+    have hn : fam.nodesOf basis O Squeeze.zeta = fam.nodesOf basis O' Squeeze.zeta := hnode
+    have hb : fam.readsOf basis O Squeeze.beta = fam.readsOf basis O' Squeeze.beta :=
+      fam.readsOf_eq_of_ans basis O O' Squeeze.zeta 0 (by show (0 : ℕ) < 3; omega) (hans 0)
+    have hg : fam.readsOf basis O Squeeze.gamma = fam.readsOf basis O' Squeeze.gamma :=
+      fam.readsOf_eq_of_ans basis O O' Squeeze.zeta 1 (by show (1 : ℕ) < 3; omega) (hans 1)
+    have ha : fam.readsOf basis O Squeeze.alpha = fam.readsOf basis O' Squeeze.alpha :=
+      fam.readsOf_eq_of_ans basis O O' Squeeze.zeta 2 (by show (2 : ℕ) < 3; omega) (hans 2)
+    have hW := fam.runW_eq_of_node basis O O' hn
+    have hZ := fam.runZ_eq_of_node basis O O' (s := Squeeze.zeta) (by show (2 : ℕ) ≤ 3; omega) hn
+    have hT :=
+      fam.ftAssembly_eq_of_node basis O O' (s := Squeeze.zeta) (by show (3 : ℕ) ≤ 3; omega) hn
+    show Protocol.soundBadZ fam.idx _ _ _ _ _ _ _ = Protocol.soundBadZ fam.idx _ _ _ _ _ _ _
+    rw [hW, hZ, hb, hg, ha, hT]
+  · -- the `ζ` boundary set: a function of the circuit alone.
+    exact (rfl : zetaBoundaryBad fam.idx = zetaBoundaryBad fam.idx)
+  · -- `ξ`: every flat row, and the claim's points and claimed evaluations.
+    have hn : fam.nodesOf basis O Squeeze.polyscale
+        = fam.nodesOf basis O' Squeeze.polyscale := hnode
+    have hb : fam.readsOf basis O Squeeze.beta = fam.readsOf basis O' Squeeze.beta :=
+      fam.readsOf_eq_of_ans basis O O' Squeeze.polyscale 0 (by show (0 : ℕ) < 4; omega) (hans 0)
+    have hg : fam.readsOf basis O Squeeze.gamma = fam.readsOf basis O' Squeeze.gamma :=
+      fam.readsOf_eq_of_ans basis O O' Squeeze.polyscale 1 (by show (1 : ℕ) < 4; omega) (hans 1)
+    have ha : fam.readsOf basis O Squeeze.alpha = fam.readsOf basis O' Squeeze.alpha :=
+      fam.readsOf_eq_of_ans basis O O' Squeeze.polyscale 2 (by show (2 : ℕ) < 4; omega) (hans 2)
+    have hz : fam.readsOf basis O Squeeze.zeta = fam.readsOf basis O' Squeeze.zeta :=
+      fam.readsOf_eq_of_ans basis O O' Squeeze.polyscale 3 (by show (3 : ℕ) < 4; omega) (hans 3)
+    exact fam.badXiOf_eq_of_node basis O O' (s := Squeeze.polyscale)
+      (by show (4 : ℕ) ≤ 4; omega) hn hb hg ha hz
+  · -- `r`: the same data, plus the `ξ` challenge.
+    have hn : fam.nodesOf basis O Squeeze.evalscale
+        = fam.nodesOf basis O' Squeeze.evalscale := hnode
+    have hb : fam.readsOf basis O Squeeze.beta = fam.readsOf basis O' Squeeze.beta :=
+      fam.readsOf_eq_of_ans basis O O' Squeeze.evalscale 0 (by show (0 : ℕ) < 5; omega) (hans 0)
+    have hg : fam.readsOf basis O Squeeze.gamma = fam.readsOf basis O' Squeeze.gamma :=
+      fam.readsOf_eq_of_ans basis O O' Squeeze.evalscale 1 (by show (1 : ℕ) < 5; omega) (hans 1)
+    have ha : fam.readsOf basis O Squeeze.alpha = fam.readsOf basis O' Squeeze.alpha :=
+      fam.readsOf_eq_of_ans basis O O' Squeeze.evalscale 2 (by show (2 : ℕ) < 5; omega) (hans 2)
+    have hz : fam.readsOf basis O Squeeze.zeta = fam.readsOf basis O' Squeeze.zeta :=
+      fam.readsOf_eq_of_ans basis O O' Squeeze.evalscale 3 (by show (3 : ℕ) < 5; omega) (hans 3)
+    have hx : fam.readsOf basis O Squeeze.polyscale
+        = fam.readsOf basis O' Squeeze.polyscale :=
+      fam.readsOf_eq_of_ans basis O O' Squeeze.evalscale 4 (by show (4 : ℕ) < 5; omega) (hans 4)
+    exact fam.badROf_eq_of_node basis O O' (s := Squeeze.evalscale)
+      (by show (4 : ℕ) ≤ 5; omega) hn hb hg ha hz hx
+
+/-! ### Arm (4)'s measure
+
+The pieces assemble. `arm4_hits_badChallenge` puts every point of the arm into the union event;
+`szBadRun_agree` and `szBadRun_card_le` are the agreement law and the budgets; the retraction and
+guard are `szPre`/`szPre_ne` and `squeezeRank_szSqueeze_lt_six`; the expansions are injective by
+`squeezeExpand_injective`. `measure_prod_le_of_forall_fibre` carries the per-basis bound to the
+joint measure, since the bound does not mention the basis. -/
+
+/-- **Arm (4)'s measure at a fixed basis.** `arm4_hits_badChallenge` puts every point of the arm
+into the seven-fold union event; the agreement-form union charge then prices it at one query
+factor times the total budget. -/
+private theorem openedUnsatisfying_measure_le
+    (hsmul : ∀ (z : C.ScalarField) (P : C.Point), z • P = z.val • P)
+    (hcast : Function.Injective (fun q : Prechallenge => ((q : ℕ) : C.ScalarField)))
+    (hexp : Function.Injective (expandPre C))
+    (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) :
+    (PMF.uniformOfFintype (Coins C nc k)).toOuterMeasure
+        {O | fam.Wins basis O ∧ fam.OpenedUnsatisfying basis O coins}
+      ≤ ((fam.Q + 1 : ℕ) : ℝ≥0∞)
+        * ((szBudget nc n fam.idx.zkRows : ℝ≥0∞) / (2 ^ 128 : ℕ)) := by
+  classical
+  have hcharge :=
+    Bulletproof.Forking.adaptive_badSet_ofPrefix_union_expand_measure_le_of_agree
+      (fam.adversary basis) (fam.queryBound basis) (fam.szNode basis)
+      (fun t => squeezeRank t.idx < 6) (fun i _ => squeezeRank_szSqueeze_lt_six i)
+      (fun _ j t => szPre j t) (fun _ t ht j => szPre_ne t ht j)
+      (fun i => squeezeExpand C (szSqueeze (k := k) i))
+      (fun i => squeezeExpand_injective C hcast hexp (szSqueeze (k := k) i))
+      (fun i O => fam.szBadRun basis O i)
+      (fun i O O' hn ha => fam.szBadRun_agree basis i O O' hn ha)
+      (szCard nc n fam.idx.zkRows) (fun i O => fam.szBadRun_card_le basis O i)
+  rw [szCard_sum, card_prechallenge] at hcharge
+  refine le_trans (MeasureTheory.measure_mono ?_) hcharge
+  rintro O ⟨hwin, harm⟩
+  rcases fam.arm4_hits_badChallenge basis O coins hsmul hwin harm with
+    h | h | h | h | h | h | h
+  · exact ⟨0, h⟩
+  · exact ⟨1, h⟩
+  · exact ⟨2, h⟩
+  · exact ⟨3, h⟩
+  · exact ⟨4, h⟩
+  · rw [fam.claim_polyscale basis O] at h
+    exact ⟨5, h⟩
+  · rw [fam.claim_evalscale basis O] at h
+    exact ⟨6, h⟩
+
+/-- **The algebraic summand** (`thm:algebraic-summand`): over the joint uniform measure on
+(setup index, oracle table) pairs, arm (4) — the winning runs on which the extractor opened but
+the assembled table does not satisfy the circuit — has measure at most
+`(Q + 1) · szBudget / 2¹²⁸`.
+
+The bound at a fixed basis does not mention the basis, so `measure_prod_le_of_forall_fibre`
+carries it to the joint measure. The two curve facts about the expansions are hypotheses rather
+than instances for the same reason they are in `acceptExtractionFailure_measure_prod_le`:
+`expandPre` is injective per curve, and the `β`/`γ` cast is injective only because the scalar
+field is bigger than `2 ¹²⁸`. -/
+theorem openedUnsatisfying_measure_prod_le
+    (hsmul : ∀ (z : C.ScalarField) (P : C.Point), z • P = z.val • P)
+    (hcast : Function.Injective (fun q : Prechallenge => ((q : ℕ) : C.ScalarField)))
+    (hexp : Function.Injective (expandPre C))
+    (B : C.Point) (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) :
+    (PMF.uniformOfFintype
+        ((SetupIndex (2 ^ k) → C.ScalarField) × Coins C nc k)).toOuterMeasure
+        {q | fam.Wins (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 ∧
+          fam.OpenedUnsatisfying (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins}
+      ≤ ((fam.Q + 1 : ℕ) : ℝ≥0∞)
+        * ((szBudget nc n fam.idx.zkRows : ℝ≥0∞) / (2 ^ 128 : ℕ)) :=
+  measure_prod_le_of_forall_fibre
+    (fun s O => fam.Wins (augOfSetup (Zcash.Snark.scalarBasis B s)) O ∧
+      fam.OpenedUnsatisfying (augOfSetup (Zcash.Snark.scalarBasis B s)) O coins)
+    fun s => fam.openedUnsatisfying_measure_le hsmul hcast hexp
+      (augOfSetup (Zcash.Snark.scalarBasis B s)) coins
+
+end KimchiFamily
+
+end BadRun
+
+end Arm4Measure
+
+/-! ## 17. THE TOP-LEVEL STATEMENT, per curve — stated and proved
+
+Everything the two endpoints consume is now above them: `wins_notExtracts_measure_le_of_arms`
+(section 9) reduces each to two measure bounds, `acceptExtractionFailure_measure_prod_le`
+(section 15) supplies the first and `openedUnsatisfying_measure_prod_le` (section 16) the second.
+What is discharged per curve is only the arithmetic of the curve: `hsmul` by
+`Pasta.vesta_smul_val` / `Pasta.pallas_smul_val`, the endo expansion's injectivity and
+non-vanishing by `expandPre_{vesta,pallas}_{injective,ne_zero}`, and the `β`/`γ` cast's
+injectivity by `natCast_prechallenge_injective` at the Pasta scalar modulus, which is far above
+`2 ¹²⁸`. -/
+
+/-- **Vesta: the deployed kimchi verifier is knowledge-sound, in the random-oracle model and
+the algebraic group model.**
+
+For a family of `Q`-query algebraic adversaries against the executable kimchi verifier, over a
+uniformly sampled setup basis and a uniform challenge table: the probability that the verifier
+accepts while the extractor fails to hand back a witness table satisfying the circuit the
+verifying key corresponds to is at most
+
+`(Q + k + 1)·3/2¹²⁸  +  (2ᵏ + 1)·ε  +  δ  +  (Q + 1)·szBudget/2¹²⁸`.
+
+Four summands, four sources: the forking extraction returns nothing (query loss,
+unconditional); it returns a relation among the sampled setup generators (`ε`, textbook
+discrete log); it returns a relation touching the transcript-derived base (`δ`, the residual —
+an assumption about a slice of the conclusion, not a reduction); or it returns an opening but
+the run's own Fiat–Shamir challenges land in an exclusion set (`szBudget`).
+
+**What the bound rests on.** Two cryptographic assumptions, both hypotheses: `hHard`, which
+prices the two discrete-log arms, and the fork tape's completeness. Everything else is proved:
+the presence arm by the claim-adaptive extraction game, and the algebraic arm by the
+Fiat–Shamir-axiom-free run-soundness root together with the adaptive Schwartz–Zippel charge.
+The narrowing of the family class is `KimchiFamily`'s own `hrepPrefix`/`hTPrefix` — algebraic
+faithfulness, i.e. that a commitment's declared representation is fixed when the commitment is
+absorbed — which is what the algebraic group model means and what
+`KimchiFamily.szBadRun_agree` consumes.
+
+`#print axioms` on this theorem gives exactly `propext`, `Classical.choice` and `Quot.sound`: no
+`sorryAx`, and in particular neither `kimchi_fiat_shamir_vesta` nor
+`Bulletproof.poseidon_fiat_shamir_vesta`. -/
+theorem vesta_kimchi_knowledge_sound {nc k n : ℕ} [NeZero n]
+    (B : IpaVesta.Point) (fam : KimchiFamily IpaVesta.curve nc k n)
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
+    (hcoins : coins.Complete) {R : ℕ} {ε δ : ℝ≥0∞}
+    (hHard : fam.DiscreteLogRelationHardFor B coins R ε δ)
+    (hEff : fam.ReductionEfficient coins R) :
+    (PMF.uniformOfFintype
+        ((SetupIndex (2 ^ k) → IpaVesta.curve.ScalarField) × Coins _ nc k)).toOuterMeasure
+        {q | fam.Wins (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 ∧
+          ¬ fam.ExtractsWitness (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins}
+      ≤ (fam.Q + k + 1) * (3 / (2 ^ 128 : ℕ))
+        + ((2 ^ k + 1 : ℕ) : ℝ≥0∞) * ε + δ
+        + ((fam.Q + 1 : ℕ) : ℝ≥0∞) * ((szBudget nc n fam.idx.zkRows : ℝ≥0∞) / (2 ^ 128 : ℕ)) := by
+  have hpres := fam.acceptExtractionFailure_measure_prod_le Pasta.vesta_smul_val
+    expandPre_vesta_injective expandPre_vesta_ne_zero B coins hcoins
+  rw [card_prechallenge] at hpres
+  exact fam.wins_notExtracts_measure_le_of_arms B coins hHard hEff hpres
+    (fam.openedUnsatisfying_measure_prod_le Pasta.vesta_smul_val
+      (natCast_prechallenge_injective (by decide)) expandPre_vesta_injective B coins)
+
+/-- **Pallas: the deployed kimchi verifier is knowledge-sound.** The Pallas-side twin of
+`vesta_kimchi_knowledge_sound`, over `Fq`/`IpaPallas`; same shape, same four summands, same
+axiom footprint. Every step of the argument is curve-generic; only the four per-curve facts
+about the expansions and the scalar action are re-discharged. -/
+theorem pallas_kimchi_knowledge_sound {nc k n : ℕ} [NeZero n]
+    (B : IpaPallas.Point) (fam : KimchiFamily IpaPallas.curve nc k n)
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
+    (hcoins : coins.Complete) {R : ℕ} {ε δ : ℝ≥0∞}
+    (hHard : fam.DiscreteLogRelationHardFor B coins R ε δ)
+    (hEff : fam.ReductionEfficient coins R) :
+    (PMF.uniformOfFintype
+        ((SetupIndex (2 ^ k) → IpaPallas.curve.ScalarField) × Coins _ nc k)).toOuterMeasure
+        {q | fam.Wins (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 ∧
+          ¬ fam.ExtractsWitness (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins}
+      ≤ (fam.Q + k + 1) * (3 / (2 ^ 128 : ℕ))
+        + ((2 ^ k + 1 : ℕ) : ℝ≥0∞) * ε + δ
+        + ((fam.Q + 1 : ℕ) : ℝ≥0∞) * ((szBudget nc n fam.idx.zkRows : ℝ≥0∞) / (2 ^ 128 : ℕ)) := by
+  have hpres := fam.acceptExtractionFailure_measure_prod_le Pasta.pallas_smul_val
+    expandPre_pallas_injective expandPre_pallas_ne_zero B coins hcoins
+  rw [card_prechallenge] at hpres
+  exact fam.wins_notExtracts_measure_le_of_arms B coins hHard hEff hpres
+    (fam.openedUnsatisfying_measure_prod_le Pasta.pallas_smul_val
+      (natCast_prechallenge_injective (by decide)) expandPre_pallas_injective B coins)
 
 end Kimchi.Verifier.KnowledgeSoundness

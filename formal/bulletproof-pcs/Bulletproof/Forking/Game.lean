@@ -2720,6 +2720,46 @@ theorem kimchiExtract_failure_measure_le_of_stableU [DecidableEq F] [DecidableEq
   push_cast
   ring
 
+/-- **The varying-base failure bound with the run-level hypotheses only.**
+`kimchiExtract_failure_measure_le_of_stableU` with `hrep` and `huOf` demanded *only at the run's
+own proof* `p = A.run O`, which is the honest shape of what an algebraic-group adversary supplies:
+the AGM gives a representation of the commitment the adversary itself emitted, and says nothing
+about a claim map evaluated at a proof no run produced.
+
+The re-packaging is exact rather than a genuine weakening, and that is worth recording: since `κ`,
+`rep` and `uOf` are unconstrained off the run, replacing each by its own value at the run
+(`fun _ O => κ (A.run O) O`, and likewise for the other two) satisfies the pointwise hypotheses
+and leaves every occurrence in the statement — all of which are at `p = A.run O` — definitionally
+unchanged. So a consumer holding only the run-level facts need not perform that substitution by
+hand; it is performed once, here. -/
+theorem kimchiExtract_failure_measure_le_of_stableU_of_runRep [DecidableEq F] [DecidableEq G]
+    [Fintype T] [DecidableEq T] [Fintype Pre] [DecidableEq Pre] [Nonempty Pre] [Zero Pre]
+    (σ : SRS G) (A : Zcash.Snark.OracleComp T Pre Pf)
+    -- the claim the run opens, and its AGM representation, both read at the run's own proof
+    (κ : Pf → (T → Pre) → (Fin (2 ^ σ.k) → F) × F × G)
+    (rep : Pf → (T → Pre) → (Fin (2 ^ σ.k) → F) × F)
+    (hrep : ∀ O : T → Pre,
+      (κ (A.run O) O).2.2 = commitGen σ.g (rep (A.run O) O).1 + (rep (A.run O) O).2 • σ.h)
+    -- THE BASE THE RUN IS CHECKED AT, a function of the claim's value at the run's own proof
+    (uBase : F → G) (uOf : Pf → (T → Pre) → G)
+    (huOf : ∀ O : T → Pre, uOf (A.run O) O = uBase (κ (A.run O) O).2.1)
+    (expand : Pre → F) (hexp_inj : Function.Injective expand) (hexp_ne : ∀ p, expand p ≠ 0)
+    {Q : ℕ} (hQ : A.QueryBound Q)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (dec : DecodesFromPrefixes σ proofOf prefixes)
+    (D : Zcash.Snark.PrefixDecode T (σ.k + 1) prefixes)
+    (hstable : ClaimStable A prefixes κ)
+    (coins : Zcash.Snark.RecursiveForkCoins Pre (σ.k + 1)) (hcoins : coins.Complete) :
+    (PMF.uniformOfFintype (T → Pre)).toOuterMeasure
+        {O | WinsAt (srsAt σ uOf (A.run O) O) expand proofOf prefixes κ O (A.run O) ∧
+          kimchiExtract (srsAt σ uOf (A.run O) O) (κ (A.run O) O).1 (κ (A.run O) O).2.1
+              (κ (A.run O) O).2.2 (rep (A.run O) O).1 (rep (A.run O) O).2 (hrep O)
+              expand A proofOf prefixes (dec.setBase (uOf (A.run O) O)) O coins = none}
+      ≤ (Q + σ.k + 1) * (3 / Fintype.card Pre) :=
+  kimchiExtract_failure_measure_le_of_stableU σ (fun _ O => κ (A.run O) O)
+    (fun _ O => rep (A.run O) O) (fun _ O => hrep O) uBase (fun _ O => uOf (A.run O) O)
+    (fun _ O => huOf O) expand hexp_inj hexp_ne A hQ proofOf prefixes dec D hstable coins hcoins
+
 /-- **THE STATEMENT, over a stable claim map** (`thm:adaptive-failure-measure`). Same hypotheses
 as `kimchiExtract_failure_measure_le` — an injective, nonvanishing expansion map, a `Q`-query
 adversary, commit-then-challenge, chronological distinct round prefixes, a complete fork tape —
@@ -3504,6 +3544,65 @@ theorem adaptive_badSet_ofPrefix_union_expand_measure_le {ι κ : Type*} [Decida
   · exact le_trans (Finset.card_le_card_of_injOn (expand i)
       (fun q hq => Finset.mem_preimage.mp hq) (hexp_inj i).injOn) (hcard i t w)
 
+/-- **The union charge from a run-level agreement law**
+(`lem:adaptive-sz-prefix-union-agree`). `adaptive_badSet_ofPrefix_union_expand_measure_le` with
+the exclusion sets given *at the run* — as functions `badRun i : (T → Pre) → Finset F` of the
+whole oracle table — rather than at a transcript point. The only thing asked of them is an
+agreement law: two tables that give the same node at index `i` and the same answers at every
+retracted node `pre i j` have the same set there.
+
+Project local, and stated in this shape on purpose: every deployed consumer builds its exclusion
+sets out of data the *run* produces (the adversary's representations, its commitments, its earlier
+challenges), so they are naturally functions of the table, while the charge above wants them as
+functions of a transcript point. Turning one into the other is a choice-function argument that
+would otherwise be repeated verbatim in each consumer; it is done once here. Expect
+`Classical.choice` in the axiom list — the witnessing table is chosen, and the agreement law is
+exactly what makes the choice immaterial.
+
+Note the two events are *equal*, not merely nested: at a table `O` the pair
+`(node i (A.run O), fun j => O (pre i j (node i (A.run O))))` is witnessed by `O` itself. -/
+theorem adaptive_badSet_ofPrefix_union_expand_measure_le_of_agree {ι κ : Type*} [DecidableEq F]
+    [Fintype ι] [Fintype T] [DecidableEq T] [Fintype Pre] [Nonempty Pre]
+    (A : Zcash.Snark.OracleComp T Pre Pf) {Q : ℕ} (hQ : A.QueryBound Q)
+    (node : ι → Pf → T) (guard : T → Prop) (hnode : ∀ (i : ι) (p : Pf), guard (node i p))
+    (pre : ι → κ → T → T) (hpre : ∀ (i : ι) (t : T), guard t → ∀ j : κ, pre i j t ≠ t)
+    (expand : ι → Pre → F) (hexp_inj : ∀ i : ι, Function.Injective (expand i))
+    (badRun : ι → (T → Pre) → Finset F)
+    (hagree : ∀ (i : ι) (O O' : T → Pre),
+      node i (A.run O) = node i (A.run O') →
+      (∀ j : κ, O (pre i j (node i (A.run O))) = O' (pre i j (node i (A.run O')))) →
+      badRun i O = badRun i O')
+    (c : ι → ℕ) (hcard : ∀ (i : ι) (O : T → Pre), (badRun i O).card ≤ c i) :
+    (PMF.uniformOfFintype (T → Pre)).toOuterMeasure
+        {O | ∃ i : ι, expand i (O (node i (A.run O))) ∈ badRun i O}
+      ≤ (Q + 1 : ℕ) * (((∑ i : ι, c i : ℕ) : ℝ≥0∞) / Fintype.card Pre) := by
+  classical
+  obtain ⟨bad, hkey, hcard'⟩ :
+      ∃ bad : ι → T → (κ → Pre) → Finset F,
+        (∀ (i : ι) (O : T → Pre),
+            bad i (node i (A.run O)) (fun j => O (pre i j (node i (A.run O)))) = badRun i O) ∧
+          ∀ (i : ι) (t : T) (w : κ → Pre), (bad i t w).card ≤ c i := by
+    refine ⟨fun i t w =>
+      if h : ∃ O : T → Pre, node i (A.run O) = t ∧ ∀ j : κ, O (pre i j t) = w j then
+        badRun i h.choose else ∅, ?_, ?_⟩
+    · intro i O
+      have hex : ∃ O' : T → Pre, node i (A.run O') = node i (A.run O) ∧
+          ∀ j : κ, O' (pre i j (node i (A.run O))) = O (pre i j (node i (A.run O))) :=
+        ⟨O, rfl, fun _ => rfl⟩
+      simp only [dif_pos hex]
+      have h1 := hex.choose_spec.1
+      exact hagree i _ O h1 fun j => by rw [h1]; exact hex.choose_spec.2 j
+    · intro i t w
+      dsimp only
+      split
+      · exact hcard i _
+      · simp only [Finset.card_empty]
+        exact Nat.zero_le (c i)
+  refine le_trans (le_of_eq ?_)
+    (adaptive_badSet_ofPrefix_union_expand_measure_le A hQ node guard hnode pre hpre
+      expand hexp_inj bad c hcard')
+  exact congrArg _ (Set.ext fun O => by simp only [Set.mem_setOf_eq, hkey])
+
 end AdaptiveBadSet
 
 /-! ## From a per-basis bound to the joint measure
@@ -3635,6 +3734,48 @@ theorem kimchiExtract_failure_measure_prod_le_of_stableU [DecidableEq F] [Decida
         (D s) (hstable s) (coins s) (hcoins s)) ?_
   gcongr
   exact hk s
+
+/-- **The varying-base failure bound over the joint measure, with the run-level hypotheses only** —
+`kimchiExtract_failure_measure_prod_le_of_stableU` with `hrep` and `huOf` demanded only at the
+run's own proof `p = (A s).run O`, the shape in which an algebraic-group adversary supplies them.
+See `kimchiExtract_failure_measure_le_of_stableU_of_runRep` for why the re-packaging is exact:
+`κ s`, `rep s` and `uOf s` are unconstrained off the run, so replacing each by its value there
+changes nothing in the statement. -/
+theorem kimchiExtract_failure_measure_prod_le_of_stableU_of_runRep [DecidableEq F] [DecidableEq G]
+    [Fintype T] [DecidableEq T] [Fintype Pre] [DecidableEq Pre] [Nonempty Pre] [Zero Pre]
+    {S : Type*} [Fintype S] [Nonempty S]
+    (σ : S → SRS G) (A : S → Zcash.Snark.OracleComp T Pre Pf)
+    (κ : ∀ s : S, Pf → (T → Pre) → (Fin (2 ^ (σ s).k) → F) × F × G)
+    (rep : ∀ s : S, Pf → (T → Pre) → (Fin (2 ^ (σ s).k) → F) × F)
+    (hrep : ∀ (s : S) (O : T → Pre), (κ s ((A s).run O) O).2.2 =
+      commitGen (σ s).g (rep s ((A s).run O) O).1 + (rep s ((A s).run O) O).2 • (σ s).h)
+    (uBase : S → F → G) (uOf : S → Pf → (T → Pre) → G)
+    (huOf : ∀ (s : S) (O : T → Pre),
+      uOf s ((A s).run O) O = uBase s (κ s ((A s).run O) O).2.1)
+    (expand : Pre → F) (hexp_inj : Function.Injective expand) (hexp_ne : ∀ p, expand p ≠ 0)
+    {Q : ℕ} (hQ : ∀ s : S, (A s).QueryBound Q)
+    (proofOf : ∀ s : S, Pf → OpeningProof F G (σ s).k)
+    (prefixes : ∀ s : S, Pf → Fin ((σ s).k + 1) → T)
+    (dec : ∀ s : S, DecodesFromPrefixes (σ s) (proofOf s) (prefixes s))
+    (D : ∀ s : S, Zcash.Snark.PrefixDecode T ((σ s).k + 1) (prefixes s))
+    (hstable : ∀ s : S, ClaimStable (A s) (prefixes s) (κ s))
+    (coins : ∀ s : S, Zcash.Snark.RecursiveForkCoins Pre ((σ s).k + 1))
+    (hcoins : ∀ s : S, (coins s).Complete)
+    {k : ℕ} (hk : ∀ s : S, (σ s).k ≤ k) :
+    (PMF.uniformOfFintype (S × (T → Pre))).toOuterMeasure
+        {x | WinsAt (srsAt (σ x.1) (uOf x.1) ((A x.1).run x.2) x.2) expand (proofOf x.1)
+              (prefixes x.1) (κ x.1) x.2 ((A x.1).run x.2) ∧
+          kimchiExtract (srsAt (σ x.1) (uOf x.1) ((A x.1).run x.2) x.2)
+              (κ x.1 ((A x.1).run x.2) x.2).1 (κ x.1 ((A x.1).run x.2) x.2).2.1
+              (κ x.1 ((A x.1).run x.2) x.2).2.2
+              (rep x.1 ((A x.1).run x.2) x.2).1 (rep x.1 ((A x.1).run x.2) x.2).2
+              (hrep x.1 x.2) expand (A x.1) (proofOf x.1) (prefixes x.1)
+              ((dec x.1).setBase (uOf x.1 ((A x.1).run x.2) x.2)) x.2 (coins x.1) = none}
+      ≤ (Q + k + 1) * (3 / Fintype.card Pre) :=
+  kimchiExtract_failure_measure_prod_le_of_stableU σ (fun s _ O => κ s ((A s).run O) O)
+    (fun s _ O => rep s ((A s).run O) O) (fun s _ O => hrep s O) uBase
+    (fun s _ O => uOf s ((A s).run O) O) (fun s _ O => huOf s O) expand hexp_inj hexp_ne A hQ
+    proofOf prefixes dec D hstable coins hcoins hk
 
 end FibreLift
 
