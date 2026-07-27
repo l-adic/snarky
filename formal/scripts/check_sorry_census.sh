@@ -16,11 +16,11 @@ cd "$(dirname "$0")/.."
 #         closing as stated: the existential does not pin its witnesses, and the one-liner
 #         that closes it also closes the same statement for a verifier with Fiat-Shamir
 #         deleted. Restate it at a named sponge source before discharging.
-#   861 — vesta_kimchi_knowledge_sound
-#   878 — pallas_kimchi_knowledge_sound
-expected='kimchi/Kimchi/Verifier/KnowledgeSoundness.lean:178
-kimchi/Kimchi/Verifier/KnowledgeSoundness.lean:861
-kimchi/Kimchi/Verifier/KnowledgeSoundness.lean:878'
+#  1664 — vesta_kimchi_knowledge_sound
+#  1681 — pallas_kimchi_knowledge_sound
+expected='kimchi/Kimchi/Verifier/KnowledgeSoundness.lean:1664
+kimchi/Kimchi/Verifier/KnowledgeSoundness.lean:1681
+kimchi/Kimchi/Verifier/KnowledgeSoundness.lean:178'
 
 actual=$(grep -rn '\bsorry\b' \
   bulletproof-pcs/Bulletproof kimchi/Kimchi pasta poseidon snarky \

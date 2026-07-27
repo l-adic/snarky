@@ -96,8 +96,10 @@ variable {σ : SRS C.Point} {nc : ℕ} {cvk : KimchiVK C nc}
   {cp : KimchiProof C nc σ.k} {pub : Array C.ScalarField}
   {pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)}
 
-/-- Blocks stay inside their region: `q·nc + c < Q·nc`. -/
-private theorem block_lt {q Q c nc : ℕ} (hq : q < Q) (hc : c < nc) :
+/-- Blocks stay inside their region: `q·nc + c < Q·nc`. Public because it is the bound
+`streamPos` carries, and downstream layers (the knowledge-soundness game) index the run's
+flat commitment stream through it rather than re-deriving the arithmetic. -/
+theorem block_lt {q Q c nc : ℕ} (hq : q < Q) (hc : c < nc) :
     q * nc + c < Q * nc := by
   calc q * nc + c < (q + 1) * nc := by rw [Nat.succ_mul]; omega
     _ ≤ Q * nc := Nat.mul_le_mul_right nc hq
@@ -146,8 +148,12 @@ row interposed at flat position `nc`, and every position lies inside the `44·nc
 flat rows by construction. The per-region value lemmas below feed the reads. -/
 
 /-- The flat stream position of abstract batch row `i`, chunk `c`. The public row's
-chunks come first and every later row `i` starts at `nc + 1 + (i − 1)·nc`. -/
-private def streamPos (nc : ℕ) (i : Fin batchRows) (c : Fin nc) :
+chunks come first and every later row `i` starts at `nc + 1 + (i − 1)·nc`. Public
+because it is the layout the downstream knowledge-soundness statement must name: the
+group-element side of "the family's verifying-key representations are honest" lives on
+the run's flat commitment stream, and this map is what says which flat entry a given
+abstract batch row and chunk occupies. -/
+def streamPos (nc : ℕ) (i : Fin batchRows) (c : Fin nc) :
     Fin (nc + 1 + tailRowCount * nc) :=
   ⟨if (i : ℕ) < 1 then (c : ℕ) else nc + 1 + ((i : ℕ) - 1) * nc + (c : ℕ), by
     have hc := c.isLt
@@ -268,6 +274,83 @@ end StreamReads
 
 /-! ## The ft opening from the reflected run -/
 
+/-- **The `ft` row's commitment, at its own flat position**: the run's opening-argument
+input carries, at flat position `nc` (immediately after the public row's `nc` chunks), the
+constructed single-chunk `ft` commitment `runFtComm`. Public because a consumer that wants
+to *name* the `ft` representation — rather than merely receive it existentially from
+`ft_opening_of_pins` — needs the position identity separately. -/
+theorem commitmentFn_ftPos {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (hsz : (nc : ℕ) < (runInput C σ cvk cp pub).commitments.size) :
+    (runInput C σ cvk cp pub).commitmentFn ⟨nc, hsz⟩ = runFtComm C σ cvk cp pub := by
+  show ((runStreamP C σ cvk cp pub (runPubEvals C σ cvk cp pub)).map
+      (·.1))[(nc : ℕ)]'(by
+        show (nc : ℕ) < nc + 1 + tailRowCount * nc
+        omega)
+    = runFtComm C σ cvk cp pub
+  rw [Vector.getElem_map, stream_ft_read C]
+
+/-- **The `ft` row's claimed evaluation, at its own flat position**: the run's claimed
+evaluation at flat position `nc` and the zeroth evaluation point IS the computed `ft`
+claim `runFtEval0`. The companion of `commitmentFn_ftPos`; together they let a consumer
+pin the `ft` representation to `aRef ⟨nc, _⟩` by name. -/
+theorem evalFn_ftPos {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (hsz : (nc : ℕ) < (runInput C σ cvk cp pub).commitments.size) :
+    (runInput C σ cvk cp pub).evalFn ⟨nc, hsz⟩ (0 : Fin evalPts)
+      = runFtEval0 C σ cvk cp pub := by
+  show (((runStreamP C σ cvk cp pub (runPubEvals C σ cvk cp pub)).map
+      (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector C.ScalarField evalPts)))[(nc : ℕ)]'(by
+        show (nc : ℕ) < nc + 1 + tailRowCount * nc
+        omega)
+      : Vector C.ScalarField evalPts)[(0 : ℕ)]
+    = runFtEval0 C σ cvk cp pub
+  rw [Vector.getElem_map, stream_ft_read C]
+  rfl
+
+/-- **The ft opening from the eval pins alone** (transcript-free): SRS-basis
+representations of the run's own flat batch rows together with the *eval pins* —
+verbatim `eval_pins_of_opening`'s conclusion at the run's own data, i.e. every claimed
+evaluation `evalFn i j` equals the represented row's true evaluation at `pointFn j` —
+yield the ft opening. The ft row sits at flat position `nc`, right after the public
+row's chunks (`stream_ft_read`): its commitment equation is `hrep` at index `nc`, and
+its value equation is the pin at `(i, j) = (nc, 0)`, the run's zeroth evaluation point
+being its own `ζ`.
+
+This is `ft_opening_of_reflected` with DL-binding, the transcript tree and the two
+good-combination guards deleted from the statement: the tree is used there ONLY to
+manufacture these pins (via `ipa_soundnessA` then `eval_pins_of_opening`), so taking
+the pins as the hypothesis isolates the transcript at a single seam. The
+knowledge-soundness game reaches the same pins from its forking extractor's accepted
+opening and so never touches the Fiat–Shamir axioms. -/
+theorem ft_opening_of_pins {C : Ipa.CommitmentCurve} [Module C.ScalarField C.Point]
+    (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (aRef : Fin (runInput C σ cvk cp pub).commitments.size → Fin (2 ^ σ.k)
+      → C.ScalarField)
+    (ρRef : Fin (runInput C σ cvk cp pub).commitments.size → C.ScalarField)
+    (hrep : ∀ i, commit σ (aRef i) (ρRef i) = (runInput C σ cvk cp pub).commitmentFn i)
+    (hpins : ∀ (i : Fin (runInput C σ cvk cp pub).commitments.size) (j : Fin evalPts),
+      (runInput C σ cvk cp pub).evalFn i j
+        = innerProduct (aRef i)
+            (evalVector (2 ^ σ.k) ((runInput C σ cvk cp pub).pointFn j))) :
+    ∃ (aft : Fin (2 ^ σ.k) → C.ScalarField) (ρft : C.ScalarField),
+      commit σ aft ρft = runFtComm C σ cvk cp pub
+        ∧ innerProduct aft (evalVector (2 ^ σ.k) (runOracles C σ cvk cp pub).zeta)
+            = runFtEval0 C σ cvk cp pub := by
+  have hsz : (nc : ℕ) < (runInput C σ cvk cp pub).commitments.size := by
+    show (nc : ℕ) < nc + 1 + tailRowCount * nc
+    omega
+  refine ⟨aRef ⟨nc, hsz⟩, ρRef ⟨nc, hsz⟩, ?_, ?_⟩
+  · rw [hrep ⟨nc, hsz⟩]
+    exact commitmentFn_ftPos σ cvk cp pub hsz
+  · have hpin := hpins ⟨nc, hsz⟩ (0 : Fin evalPts)
+    have hpt : (runInput C σ cvk cp pub).pointFn (0 : Fin evalPts)
+        = (runOracles C σ cvk cp pub).zeta := rfl
+    rw [hpt] at hpin
+    rw [← hpin]
+    exact evalFn_ftPos σ cvk cp pub hsz
+
 /-- **The ft opening from a chunked reflected run** (tree-as-hypothesis):
 DL-binding, a reflected accepted chunked run, SRS-basis representations of the run's
 own flat batch rows, the run's transcript tree (the chunked `kimchi_fiat_shamir_*`
@@ -275,7 +358,9 @@ shape, here a hypothesis), and good combination challenges yield the ft opening 
 representation of the constructed ft commitment `runFtComm` (the DOUBLE collapse at
 `ζ^{2^σ.k}`) whose evaluation at the run's own `ζ` is the computed claim `runFtEval0`.
 The ft row sits at flat position `nc`, right after the public row's chunks
-(`stream_ft_read`). -/
+(`stream_ft_read`). The tree is spent here on the two-step composite `ipa_soundnessA`
+then `eval_pins_of_opening`; everything downstream of the resulting eval pins is
+`ft_opening_of_pins`. -/
 private theorem ft_opening_of_reflected {C : Ipa.CommitmentCurve} [Module C.ScalarField C.Point]
     (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
@@ -304,33 +389,11 @@ private theorem ft_opening_of_reflected {C : Ipa.CommitmentCurve} [Module C.Scal
         ∧ innerProduct aft (evalVector (2 ^ σ.k) (runOracles C σ cvk cp pub).zeta)
             = runFtEval0 C σ cvk cp pub := by
   obtain ⟨a, ρ, hopen⟩ := ipa_soundnessA σ _ _ _ hFS hacc
-  have hpins := eval_pins_of_opening σ hbind (runInput C σ cvk cp pub).commitmentFn
-    (runInput C σ cvk cp pub).pointFn aRef ρRef hrep (runInput C σ cvk cp pub).evalFn
-    (runInput C σ cvk cp pub).polyscale (runInput C σ cvk cp pub).evalscale hξ hr a ρ hopen
-  have hsz : (nc : ℕ) < (runInput C σ cvk cp pub).commitments.size := by
-    show (nc : ℕ) < nc + 1 + tailRowCount * nc
-    omega
-  refine ⟨aRef ⟨nc, hsz⟩, ρRef ⟨nc, hsz⟩, ?_, ?_⟩
-  · rw [hrep ⟨nc, hsz⟩]
-    show ((runStreamP C σ cvk cp pub (runPubEvals C σ cvk cp pub)).map
-        (·.1))[(nc : ℕ)]'(by
-          show (nc : ℕ) < nc + 1 + tailRowCount * nc
-          omega)
-      = runFtComm C σ cvk cp pub
-    rw [Vector.getElem_map, stream_ft_read C]
-  · have hpin := hpins ⟨nc, hsz⟩ (0 : Fin evalPts)
-    have hpt : (runInput C σ cvk cp pub).pointFn (0 : Fin evalPts)
-        = (runOracles C σ cvk cp pub).zeta := rfl
-    rw [hpt] at hpin
-    rw [← hpin]
-    show (((runStreamP C σ cvk cp pub (runPubEvals C σ cvk cp pub)).map
-        (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector C.ScalarField evalPts)))[(nc : ℕ)]'(by
-          show (nc : ℕ) < nc + 1 + tailRowCount * nc
-          omega)
-        : Vector C.ScalarField evalPts)[(0 : ℕ)]
-      = runFtEval0 C σ cvk cp pub
-    rw [Vector.getElem_map, stream_ft_read C]
-    rfl
+  exact ft_opening_of_pins σ cvk cp pub aRef ρRef hrep
+    (eval_pins_of_opening σ hbind (runInput C σ cvk cp pub).commitmentFn
+      (runInput C σ cvk cp pub).pointFn aRef ρRef hrep (runInput C σ cvk cp pub).evalFn
+      (runInput C σ cvk cp pub).polyscale (runInput C σ cvk cp pub).evalscale hξ hr
+      a ρ hopen)
 
 /-- **The ft opening of the deployed chunked Vesta verifier**: a genuine
 `KimchiVesta.verify … = true`, DL-binding, representations of the run's own
@@ -484,8 +547,13 @@ private theorem addFoldl_aux {α G : Type*} [AddCommMonoid G] (f : α → G) (l 
 /-- **The public commitment corresponds**: under the Lagrange chunk pin, the deployed
 verifier's per-chunk public commitment is the per-chunk masked commitment of the
 NEGATED public interpolant — the `pubC` feed of the reduction. The `.val`-scalar
-collapse is supplied per curve (`hsmul`). -/
-private theorem publicCommitment_corresponds [Module C.ScalarField C.Point]
+collapse is supplied per curve (`hsmul`).
+
+Public because the knowledge-soundness layer needs the public row of the verifying-key
+honesty predicate: its claim is assembled at the oracle table's own challenges, so it
+cannot route through `commitmentFn_streamPos_pubRow_eq_commit` (which is stated at
+`runInput`) and must compose this chunk pin with the layout bridge itself. -/
+theorem publicCommitment_corresponds [Module C.ScalarField C.Point]
     (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
     (pub : Array C.ScalarField) {n : ℕ}
     [NeZero n] (idx : Index C.ScalarField n)
@@ -660,20 +728,25 @@ private theorem powPow2_eq {F : Type*} [Field F] (x : F) (k : ℕ) :
     rw [pow_succ]
     omega
 
-/-- Reading the run input's evaluation matrix at a stream position: the flat row's
-claim pair. -/
-private theorem runEvals_read (i : Fin batchRows) (c : Fin nc) :
-    (runInputP C σ cvk cp pub pe v u).evals[(streamPos nc i c : ℕ)]'
-        ((streamPos nc i c).isLt)
+/-- Reading a flat stream's evaluation matrix at a batch stream position: the flat row's
+claim pair. Stated for ANY stream `S` agreeing with `runStreamP` at the batch positions
+(`hS`) — the challenge-generic claim of the knowledge-soundness game differs from the
+sponge-driven one only in the `ft` slot, which no batch position reads. -/
+private theorem stream_evals_read
+    (S : Vector (C.Point × C.ScalarField × C.ScalarField) (nc + 1 + tailRowCount * nc))
+    (hS : ∀ (i : Fin batchRows) (c : Fin nc),
+      S[(streamPos nc i c : ℕ)]'((streamPos nc i c).isLt)
+        = (runStreamP C σ cvk cp pub pe)[(streamPos nc i c : ℕ)]'
+            ((streamPos nc i c).isLt))
+    (i : Fin batchRows) (c : Fin nc) :
+    (S.map (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector C.ScalarField evalPts)))[
+        (streamPos nc i c : ℕ)]'((streamPos nc i c).isLt)
       = ⟨#[((runStreamP C σ cvk cp pub pe)[(streamPos nc i c : ℕ)]'
               ((streamPos nc i c).isLt)).2.1,
           ((runStreamP C σ cvk cp pub pe)[(streamPos nc i c : ℕ)]'
               ((streamPos nc i c).isLt)).2.2],
          rfl⟩ := by
-  show ((runStreamP C σ cvk cp pub pe).map
-      (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector C.ScalarField evalPts)))[(streamPos
-        nc i c : ℕ)]'((streamPos nc i c).isLt) = _
-  rw [Vector.getElem_map]
+  rw [Vector.getElem_map, hS i c]
 
 /-- A `Fin nc`-indexed power sum whose entries read an `nc`-sized array is that
 array's chunk combination. -/
@@ -687,47 +760,54 @@ private theorem sum_readsTo (xM : C.ScalarField) (w : Array C.ScalarField)
   simp only [finCongr_apply, Fin.val_cast, Fin.getElem_fin]
 
 /-- **The chunk-combined claimed record is the run's own** (`evals.combine`): the
-abstract `claimedEvals`, fed the run's flat claims at the stream positions, IS the
-verifier's combined record `cp.linEvals` at the run's combination powers. Pure layout
-reading through the region reads. -/
-private theorem claimedEvals_run_eq :
-    claimedEvals (runZetaM C σ cvk cp pub) (runZetaOmegaM C σ cvk cp pub)
+abstract `claimedEvals`, fed a flat stream's claims at the stream positions, IS the
+verifier's combined record `cp.linEvals` at the same combination powers. Pure layout
+reading through the region reads: neither the combination powers nor the `ft` slot are
+looked at, so the statement is generic in `zM`/`zwM` and in any stream `S` that agrees
+with `runStreamP` at the batch positions. -/
+private theorem claimedEvals_stream_eq (zM zwM : C.ScalarField)
+    (S : Vector (C.Point × C.ScalarField × C.ScalarField) (nc + 1 + tailRowCount * nc))
+    (hS : ∀ (i : Fin batchRows) (c : Fin nc),
+      S[(streamPos nc i c : ℕ)]'((streamPos nc i c).isLt)
+        = (runStreamP C σ cvk cp pub pe)[(streamPos nc i c : ℕ)]'
+            ((streamPos nc i c).isLt)) :
+    claimedEvals zM zwM
         (fun (i : Fin batchRows) (ch : Fin nc) (j : Fin evalPts) =>
-          ((runInputP C σ cvk cp pub pe v u).evals[(streamPos nc i ch : ℕ)]'
-              ((streamPos nc i ch).isLt))[(j : ℕ)]'j.isLt)
-      = cp.linEvals (runZetaM C σ cvk cp pub) (runZetaOmegaM C σ cvk cp pub) := by
+          ((S.map (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector C.ScalarField evalPts)))[
+              (streamPos nc i ch : ℕ)]'((streamPos nc i ch).isLt))[(j : ℕ)]'j.isLt)
+      = cp.linEvals zM zwM := by
   refine Evals.ext ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
   · funext col
     refine sum_readsTo C _ _ (by simp) _ fun ch => ?_
     beta_reduce
-    rw [runEvals_read C (wRow col) ch, stream_read_w C col ch]
+    rw [stream_evals_read C S hS (wRow col) ch, stream_read_w C col ch]
     rfl
   · funext col
     refine sum_readsTo C _ _ (by simp) _ fun ch => ?_
     beta_reduce
-    rw [runEvals_read C (wRow col) ch, stream_read_w C col ch]
+    rw [stream_evals_read C S hS (wRow col) ch, stream_read_w C col ch]
     rfl
   · refine sum_readsTo C _ _ (by simp) _ fun ch => ?_
     beta_reduce
-    rw [runEvals_read C zRow ch, stream_read_z C ch]
+    rw [stream_evals_read C S hS zRow ch, stream_read_z C ch]
     rfl
   · refine sum_readsTo C _ _ (by simp) _ fun ch => ?_
     beta_reduce
-    rw [runEvals_read C zRow ch, stream_read_z C ch]
+    rw [stream_evals_read C S hS zRow ch, stream_read_z C ch]
     rfl
   · funext i
     refine sum_readsTo C _ _ (by simp) _ fun ch => ?_
     beta_reduce
-    rw [runEvals_read C (sRow i) ch, stream_read_s C i ch]
+    rw [stream_evals_read C S hS (sRow i) ch, stream_read_s C i ch]
     rfl
   · funext col
     refine sum_readsTo C _ _ (by simp) _ fun ch => ?_
     beta_reduce
-    rw [runEvals_read C (cRow col) ch, stream_read_c C col ch]
+    rw [stream_evals_read C S hS (cRow col) ch, stream_read_c C col ch]
     rfl
   · refine sum_readsTo C _ _ (by simp) _ fun ch => ?_
     beta_reduce
-    rw [runEvals_read C (selRow 0) ch, stream_read_sel C 0 ch,
+    rw [stream_evals_read C S hS (selRow 0) ch, stream_read_sel C 0 ch,
       tailRows_read_lit C (1 + ((0 : Fin selCount) : ℕ)) (by decide)]
     show ((Vector.ofFn _)[(ch : ℕ)]'ch.isLt
       : C.Point × C.ScalarField × C.ScalarField).2.1 = _
@@ -735,7 +815,7 @@ private theorem claimedEvals_run_eq :
     rfl
   · refine sum_readsTo C _ _ (by simp) _ fun ch => ?_
     beta_reduce
-    rw [runEvals_read C (selRow 1) ch, stream_read_sel C 1 ch,
+    rw [stream_evals_read C S hS (selRow 1) ch, stream_read_sel C 1 ch,
       tailRows_read_lit C (1 + ((1 : Fin selCount) : ℕ)) (by decide)]
     show ((Vector.ofFn _)[(ch : ℕ)]'ch.isLt
       : C.Point × C.ScalarField × C.ScalarField).2.1 = _
@@ -743,7 +823,7 @@ private theorem claimedEvals_run_eq :
     rfl
   · refine sum_readsTo C _ _ (by simp) _ fun ch => ?_
     beta_reduce
-    rw [runEvals_read C (selRow 2) ch, stream_read_sel C 2 ch,
+    rw [stream_evals_read C S hS (selRow 2) ch, stream_read_sel C 2 ch,
       tailRows_read_lit C (1 + ((2 : Fin selCount) : ℕ)) (by decide)]
     show ((Vector.ofFn _)[(ch : ℕ)]'ch.isLt
       : C.Point × C.ScalarField × C.ScalarField).2.1 = _
@@ -751,7 +831,7 @@ private theorem claimedEvals_run_eq :
     rfl
   · refine sum_readsTo C _ _ (by simp) _ fun ch => ?_
     beta_reduce
-    rw [runEvals_read C (selRow 3) ch, stream_read_sel C 3 ch,
+    rw [stream_evals_read C S hS (selRow 3) ch, stream_read_sel C 3 ch,
       tailRows_read_lit C (1 + ((3 : Fin selCount) : ℕ)) (by decide)]
     show ((Vector.ofFn _)[(ch : ℕ)]'ch.isLt
       : C.Point × C.ScalarField × C.ScalarField).2.1 = _
@@ -759,7 +839,7 @@ private theorem claimedEvals_run_eq :
     rfl
   · refine sum_readsTo C _ _ (by simp) _ fun ch => ?_
     beta_reduce
-    rw [runEvals_read C (selRow 4) ch, stream_read_sel C 4 ch,
+    rw [stream_evals_read C S hS (selRow 4) ch, stream_read_sel C 4 ch,
       tailRows_read_lit C (1 + ((4 : Fin selCount) : ℕ)) (by decide)]
     show ((Vector.ofFn _)[(ch : ℕ)]'ch.isLt
       : C.Point × C.ScalarField × C.ScalarField).2.1 = _
@@ -767,24 +847,30 @@ private theorem claimedEvals_run_eq :
     rfl
   · refine sum_readsTo C _ _ (by simp) _ fun ch => ?_
     beta_reduce
-    rw [runEvals_read C (selRow 5) ch, stream_read_sel C 5 ch,
+    rw [stream_evals_read C S hS (selRow 5) ch, stream_read_sel C 5 ch,
       tailRows_read_lit C (1 + ((5 : Fin selCount) : ℕ)) (by decide)]
     show ((Vector.ofFn _)[(ch : ℕ)]'ch.isLt
       : C.Point × C.ScalarField × C.ScalarField).2.1 = _
     rw [Vector.getElem_ofFn]
     rfl
 
-/-- **The combined public claim is the run's own**: `claimedPub` at the stream's
-public-row claims is the verifier's chunk-combined public evaluation. -/
-private theorem claimedPub_run_eq :
-    claimedPub (runZetaM C σ cvk cp pub)
+/-- **The combined public claim is the run's own**: `claimedPub` at a flat stream's
+public-row claims is the verifier's chunk-combined public evaluation. Generic in the
+combination power and in the stream, for the same reason as `claimedEvals_stream_eq`. -/
+private theorem claimedPub_stream_eq (zM : C.ScalarField)
+    (S : Vector (C.Point × C.ScalarField × C.ScalarField) (nc + 1 + tailRowCount * nc))
+    (hS : ∀ (i : Fin batchRows) (c : Fin nc),
+      S[(streamPos nc i c : ℕ)]'((streamPos nc i c).isLt)
+        = (runStreamP C σ cvk cp pub pe)[(streamPos nc i c : ℕ)]'
+            ((streamPos nc i c).isLt)) :
+    claimedPub zM
         (fun (i : Fin batchRows) (ch : Fin nc) (j : Fin evalPts) =>
-          ((runInputP C σ cvk cp pub pe v u).evals[(streamPos nc i ch : ℕ)]'
-              ((streamPos nc i ch).isLt))[(j : ℕ)]'j.isLt)
-      = combineAt (runZetaM C σ cvk cp pub) pe.zeta.toArray := by
+          ((S.map (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector C.ScalarField evalPts)))[
+              (streamPos nc i ch : ℕ)]'((streamPos nc i ch).isLt))[(j : ℕ)]'j.isLt)
+      = combineAt zM pe.zeta.toArray := by
   refine sum_readsTo C _ _ (by simp) _ fun ch => ?_
   beta_reduce
-  rw [runEvals_read C pubRow ch, stream_read_pub C ch]
+  rw [stream_evals_read C S hS pubRow ch, stream_read_pub C ch]
   rfl
 
 /-- **The constructed ft commitment is the double Maller collapse** (generic in the
@@ -836,8 +922,10 @@ variable {σ : SRS C.Point} {nc : ℕ} {cvk : KimchiVK C nc}
 /-- **The abstract 44-row chunked batch is the flat stream's commitment column**: at
 every batch row and chunk, `batchC` — fed the checked witness/accumulator/public chunk
 reads and the key's `comms` view — is the flat stream's commitment at the row's stream
-position. The layout bridge `hbound₀` consumes. -/
-private theorem batchC_eq_flat (i : Fin batchRows) (c : Fin nc) :
+position. The layout bridge `hbound₀` consumes. Public because it is the flattening
+identity the downstream layer needs in order to read the run's own commitment stream as
+the abstract batch; `commitmentFn_streamPos` is its restatement at the run's input. -/
+theorem batchC_eq_flat (i : Fin batchRows) (c : Fin nc) :
     batchC (fun (col : Fin wCols) (c : Fin nc) => (cp.wComm[col])[c])
         (fun c => cp.zComm[c])
         (fun c => (publicCommitment C σ cvk pub)[c])
@@ -936,6 +1024,479 @@ private theorem batchC_eq_flat (i : Fin batchRows) (c : Fin nc) :
 
 end GroupReconcile
 
+/-! ## The layout bridge: the run's commitment stream at a batch position
+
+`batchC_eq_flat` reads the abstract 44-row batch off the flat stream; the two statements
+below carry that read to the run's *opening-argument input* — the object the
+knowledge-soundness game's family actually represents — and then, under the key–index
+correspondence, all the way to the honest chunk commitments of the presented circuit's own
+polynomials. Together they are the export that lets a downstream layer state "the family's
+verifying-key representations are honest" without re-deriving the layout.
+
+The generic form `batchC_eq_flat_gen` comes first, because the knowledge-soundness layer's
+claim is NOT `runInput`: it is the challenge-generic `runInputWith` at the oracle table's
+own challenges, whose flat stream differs from `runStreamP`'s in exactly one slot — the
+`ft` row at flat position `nc`, which no batch stream position ever reads. -/
+
+/-- The low read of the `(public block ++ ft ++ tail)` triple append. -/
+private theorem append3_read_lo {α : Type*} {nc : ℕ} (A : Vector α nc) (B : Vector α 1)
+    (D : Vector α (tailRowCount * nc)) (j : ℕ) (hj : j < nc) :
+    ((A ++ B) ++ D)[j]'(by omega) = A[j]'hj := by
+  rw [Vector.getElem_append, dif_pos (by omega : j < nc + 1), Vector.getElem_append,
+    dif_pos hj]
+
+/-- The high read of the `(public block ++ ft ++ tail)` triple append. -/
+private theorem append3_read_hi {α : Type*} {nc : ℕ} (A : Vector α nc) (B : Vector α 1)
+    (D : Vector α (tailRowCount * nc)) (j : ℕ) (hj : j < nc + 1 + tailRowCount * nc)
+    (hge : nc + 1 ≤ j) :
+    ((A ++ B) ++ D)[j]'hj = D[j - (nc + 1)]'(by omega) := by
+  rw [Vector.getElem_append, dif_neg (by omega)]
+
+/-- The `ft` read of the `(public block ++ ft ++ tail)` triple append: position `nc` is the
+singleton middle block. -/
+private theorem append3_read_ft {α : Type*} {nc : ℕ} (A : Vector α nc) (b : α)
+    (D : Vector α (tailRowCount * nc)) (h : (nc : ℕ) < nc + 1 + tailRowCount * nc) :
+    ((A ++ (⟨#[b], rfl⟩ : Vector α 1)) ++ D)[(nc : ℕ)]'h = b := by
+  rw [Vector.getElem_append, dif_pos (by omega : (nc : ℕ) < nc + 1),
+    Vector.getElem_append, dif_neg (by omega : ¬ (nc : ℕ) < nc)]
+  simp only [Nat.sub_self]
+  rfl
+
+/-- Two `(public block ++ ft ++ tail)` triple appends that differ only in the `ft` slot read
+alike off position `nc`. This is what makes the challenge-generic claim interchangeable with
+the sponge-driven one at every batch stream position. -/
+private theorem append3_read_ne_ft {α : Type*} {nc : ℕ} (A : Vector α nc) (B B' : Vector α 1)
+    (D : Vector α (tailRowCount * nc)) (j : ℕ) (hj : j < nc + 1 + tailRowCount * nc)
+    (hne : j ≠ nc) :
+    ((A ++ B) ++ D)[j]'hj = ((A ++ B') ++ D)[j]'hj := by
+  by_cases hlo : j < nc
+  · rw [append3_read_lo _ _ _ _ hlo, append3_read_lo _ _ _ _ hlo]
+  · rw [append3_read_hi _ _ _ _ hj (by omega), append3_read_hi _ _ _ _ hj (by omega)]
+
+/-- No abstract batch stream position is the `ft` row's flat position `nc`: the public row's
+chunks sit strictly below it and every later row strictly above. -/
+private theorem streamPos_ne_ft {nc : ℕ} (i : Fin batchRows) (c : Fin nc) :
+    (streamPos nc i c : ℕ) ≠ nc := by
+  have hc := c.isLt
+  show (if (i : ℕ) < 1 then (c : ℕ)
+      else nc + 1 + ((i : ℕ) - 1) * nc + (c : ℕ)) ≠ nc
+  split <;> omega
+
+/-- **The layout bridge, challenge-generically**: the abstract 44-row chunked batch is the
+commitment column of ANY flat stream in the deployed `to_batch` shape — a public block whose
+commitments are the run's, then one `ft` slot, then the flattened 43-row tail. The `ft` slot
+is left completely free because no batch stream position reads it (`streamPos_ne_ft`).
+
+This is the form the knowledge-soundness layer needs: its claim is `runInputWith` at the
+oracle table's challenges, which agrees with `runStreamP` everywhere except that slot. -/
+theorem batchC_eq_flat_gen {C : Ipa.CommitmentCurve} {σ : SRS C.Point} {nc : ℕ}
+    {cvk : KimchiVK C nc} {cp : KimchiProof C nc σ.k} {pub : Array C.ScalarField}
+    (pubBlock : Fin nc → C.Point × C.ScalarField × C.ScalarField)
+    (hpb : ∀ c : Fin nc, (pubBlock c).1 = (publicCommitment C σ cvk pub)[c])
+    (ft : C.Point × C.ScalarField × C.ScalarField)
+    (i : Fin batchRows) (c : Fin nc) :
+    batchC (fun (col : Fin wCols) (c : Fin nc) => (cp.wComm[col])[c])
+        (fun c => cp.zComm[c])
+        (fun c => (publicCommitment C σ cvk pub)[c]) cvk.comms i c
+      = ((((Vector.ofFn pubBlock)
+            ++ (⟨#[ft], rfl⟩ : Vector (C.Point × C.ScalarField × C.ScalarField) 1))
+            ++ (tailRowsOf C cvk cp).flatten)[(streamPos nc i c : ℕ)]'
+          ((streamPos nc i c).isLt)).1 := by
+  refine (batchC_eq_flat C (pe := runPubEvals C σ cvk cp pub) i c).trans ?_
+  have hj : (streamPos nc i c : ℕ) < nc + 1 + tailRowCount * nc := (streamPos nc i c).isLt
+  have hne := streamPos_ne_ft i c
+  unfold runStreamP
+  by_cases hlo : (streamPos nc i c : ℕ) < nc
+  · rw [append3_read_lo _ _ _ _ hlo, append3_read_lo (Vector.ofFn pubBlock) _ _ _ hlo,
+      Vector.getElem_ofFn, Vector.getElem_ofFn]
+    exact (hpb ⟨_, hlo⟩).symm
+  · rw [append3_read_hi _ _ _ _ hj (by omega),
+      append3_read_hi (Vector.ofFn pubBlock) _ _ _ hj (by omega)]
+
+/-- **The run's commitment stream at a batch position**: the opening-argument input's
+commitment column reads, at the stream position of abstract batch row `i` and chunk `c`,
+exactly the abstract batch's own entry there. This is `batchC_eq_flat` restated at
+`runInput` rather than at `runStreamP`; it is the form a consumer that only knows the
+run's `Ipa.Input` can use. -/
+theorem commitmentFn_streamPos {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (i : Fin batchRows) (c : Fin nc) :
+    (runInput C σ cvk cp pub).commitmentFn
+        ⟨(streamPos nc i c : ℕ), (streamPos nc i c).isLt⟩
+      = batchC (fun (col : Fin wCols) (c : Fin nc) => (cp.wComm[col])[c])
+          (fun c => cp.zComm[c])
+          (fun c => (publicCommitment C σ cvk pub)[c]) cvk.comms i c := by
+  show ((runStreamP C σ cvk cp pub
+      (runPubEvals C σ cvk cp pub)).map
+        (·.1))[(streamPos nc i c : ℕ)]'((streamPos nc i c).isLt) = _
+  rw [Vector.getElem_map]
+  exact (batchC_eq_flat C i c).symm
+
+/-- A chunk commitment is the hiding commitment of the chunk's coefficient window at
+blinder `0`.
+
+Alias of `Capstone/Algebraic.commitPolyChunk_eq_commit`, which iter 005 promoted out of
+`private` for exactly this purpose; the duplicated proof is gone. The NAME survives only
+because consumers outside this file (`Verifier/KnowledgeSoundness.lean`) still call it —
+deleting it outright is a cross-file edit, not this file's to make. -/
+theorem commitPolyChunk_as_commit {F G : Type*} [Field F] [AddCommGroup G]
+    [Module F G] (σ : SRS G) (p : Polynomial F) (c : ℕ) :
+    commitPolyChunk σ p c = commit σ (chunkCoeffs (2 ^ σ.k) p c) 0 :=
+  commitPolyChunk_eq_commit σ p c
+
+/-- The masked chunk commitment is the same window at blinder `1`. The companion of
+`commitPolyChunk_as_commit`, and the same alias note applies. -/
+theorem commitPolyMaskedChunk_as_commit {F G : Type*} [Field F] [AddCommGroup G]
+    [Module F G] (σ : SRS G) (p : Polynomial F) (c : ℕ) :
+    commitPolyMaskedChunk σ p c = commit σ (chunkCoeffs (2 ^ σ.k) p c) 1 := by
+  rw [commitPolyMaskedChunk, commitPolyChunk_as_commit]
+  simp [commit]
+
+/-- Under binding the unblinded chunk relation of `dlRelation_of_chunk_rep_ne` is trivial,
+so the representation IS the honest window. The discharge half; a local restatement of the
+`private` `chunk_rep_of_commit` of `Verifier/Reduction/Soundness.lean`, built here on that
+file's PUBLIC break branch. -/
+private theorem rep_eq_of_chunkCommit {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
+    (σ : SRS G)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
+    {a : Fin (2 ^ σ.k) → F} {ρ : F} {p : Polynomial F} {c : ℕ}
+    (hcommit : commit σ a ρ = commitPolyChunk σ p c) :
+    a = chunkCoeffs (2 ^ σ.k) p c := by
+  obtain ⟨hrel, hnt⟩ := dlRelation_of_chunk_rep_ne σ hcommit
+  by_contra hne
+  exact hnt hne (hbind _ _ hrel).1
+
+/-- The masked analogue of `rep_eq_of_chunkCommit` (selector and public rows). -/
+private theorem rep_eq_of_maskedChunkCommit {F G : Type*} [Field F] [AddCommGroup G]
+    [Module F G] (σ : SRS G)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
+    {a : Fin (2 ^ σ.k) → F} {ρ : F} {p : Polynomial F} {c : ℕ}
+    (hcommit : commit σ a ρ = commitPolyMaskedChunk σ p c) :
+    a = chunkCoeffs (2 ^ σ.k) p c := by
+  obtain ⟨hrel, hnt⟩ := dlRelation_of_chunk_rep_masked_ne σ hcommit
+  by_contra hne
+  exact hnt hne (hbind _ _ hrel).1
+
+/-- **The σ rows of the run's commitment stream**: under the key–index correspondence the
+run's opening-argument input carries, at the stream position of the `i`-th σ row and chunk
+`c`, the unblinded chunk commitment of the circuit's own `sigmaPermCol i` permutation
+polynomial. -/
+theorem commitmentFn_streamPos_sRow_eq_commit {C : Ipa.CommitmentCurve}
+    [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    {n : ℕ} [NeZero n] {idx : Index C.ScalarField n} (hvk : cvk.Corresponds σ idx)
+    (i : Fin sigmaRows) (c : Fin nc) :
+    (runInput C σ cvk cp pub).commitmentFn
+        ⟨(streamPos nc (sRow i) c : ℕ), (streamPos nc (sRow i) c).isLt⟩
+      = commit σ (chunkCoeffs (2 ^ σ.k) (idx.sigmaPoly (sigmaPermCol i)) (c : ℕ)) 0 :=
+  ((commitmentFn_streamPos σ cvk cp pub (sRow i) c).trans
+    (batchC_sRow_of_corresponds σ hvk.1 _ _ _ i c)).trans
+      (commitPolyChunk_as_commit σ _ (c : ℕ))
+
+/-- **The coefficient rows of the run's commitment stream**: the unblinded chunk
+commitment of the circuit's own `cc`-th coefficient interpolant. -/
+theorem commitmentFn_streamPos_cRow_eq_commit {C : Ipa.CommitmentCurve}
+    [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    {n : ℕ} [NeZero n] {idx : Index C.ScalarField n} (hvk : cvk.Corresponds σ idx)
+    (cc : Fin coeffCols) (c : Fin nc) :
+    (runInput C σ cvk cp pub).commitmentFn
+        ⟨(streamPos nc (cRow cc) c : ℕ), (streamPos nc (cRow cc) c).isLt⟩
+      = commit σ (chunkCoeffs (2 ^ σ.k) (idx.coeffPoly cc) (c : ℕ)) 0 :=
+  ((commitmentFn_streamPos σ cvk cp pub (cRow cc) c).trans
+    (batchC_cRow_of_corresponds σ hvk.1 _ _ _ cc c)).trans
+      (commitPolyChunk_as_commit σ _ (c : ℕ))
+
+/-- **The selector rows of the run's commitment stream**: the MASKED chunk commitment
+(fixed unit blinder, `mask_custom`) of the circuit's own `selGate jj` selector
+interpolant. -/
+theorem commitmentFn_streamPos_selRow_eq_commit {C : Ipa.CommitmentCurve}
+    [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    {n : ℕ} [NeZero n] {idx : Index C.ScalarField n} (hvk : cvk.Corresponds σ idx)
+    (jj : Fin selCount) (c : Fin nc) :
+    (runInput C σ cvk cp pub).commitmentFn
+        ⟨(streamPos nc (selRow jj) c : ℕ), (streamPos nc (selRow jj) c).isLt⟩
+      = commit σ (chunkCoeffs (2 ^ σ.k) (idx.selectorPoly (selGate jj)) (c : ℕ)) 1 :=
+  ((commitmentFn_streamPos σ cvk cp pub (selRow jj) c).trans
+    (batchC_selRow_of_corresponds σ hvk.1 _ _ _ jj c)).trans
+      (commitPolyMaskedChunk_as_commit σ _ (c : ℕ))
+
+/-- **The public row of the run's commitment stream**: the MASKED chunk commitment of the
+NEGATED public interpolant. Unlike the other three families the public row is not a key
+entry — it is recomputed by the verifier from the key's Lagrange basis — so this case
+additionally needs the run's acceptance (for the Lagrange-basis size), the public-input
+arity, and the `.val`-scalar collapse, exactly as `publicCommitment_corresponds` does. -/
+theorem commitmentFn_streamPos_pubRow_eq_commit {C : Ipa.CommitmentCurve}
+    [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    {n : ℕ} [NeZero n] {idx : Index C.ScalarField n}
+    (hsmul : ∀ (a : C.ScalarField) (P : C.Point), a • P = a.val • P)
+    (hvk : cvk.Corresponds σ idx) (hpub : pub.size = idx.publicCount)
+    (hacc : kimchiVerify C σ cvk cp pub = true) (c : Fin nc) :
+    (runInput C σ cvk cp pub).commitmentFn
+        ⟨(streamPos nc pubRow c : ℕ), (streamPos nc pubRow c).isLt⟩
+      = commit σ
+          (chunkCoeffs (2 ^ σ.k) (-(idx.pubPoly (pubView idx pub))) (c : ℕ)) 1 := by
+  obtain ⟨hlagsz, _, _⟩ := kimchiVerify_reflects C σ cvk cp pub hacc
+  refine ((commitmentFn_streamPos σ cvk cp pub pubRow c).trans ?_).trans
+    (commitPolyMaskedChunk_as_commit σ _ (c : ℕ))
+  exact (congrFun (batchC_pubRow (fun (col : Fin wCols) (c : Fin nc) => (cp.wComm[col])[c])
+      (fun c => cp.zComm[c])
+      (fun c => (publicCommitment C σ cvk pub)[c]) cvk.comms) c).trans
+    (publicCommitment_corresponds C σ cvk pub idx
+      (fun a P => (hsmul a P).symm) hvk.2.2.2.2.2.2 hlagsz hpub c)
+
+/-! ## The run's claim at handed-in challenges
+
+The knowledge-soundness game does not run the deployed verifier: its win event is the
+CHALLENGE-GENERIC verifier, fed the six pre-IPA field challenges from an oracle table, and
+its claim is that verifier's batched input. Every root above is stated at `runInput` — the
+claim assembled from the run's OWN Poseidon sponge outputs — so none of them applies to a
+run of the game.
+
+The functions below are the challenge-generic twins of `Verifier/Reflect.lean`'s
+sponge-driven abbreviations: the same bodies with `runOracles`' four fq-side squeezes and
+the two fr-side scalars handed in as parameters. `runInputAt_eq_runInput` records that at
+the sponge's own outputs they collapse, definitionally, to the deployed objects — nothing
+new is assumed, only a parameter is exposed. -/
+
+/-- The public evaluation chunk vectors at a handed-in `ζ`: `runPubEvals`'s body, with the
+three derived powers (`ζω`, `ζⁿ`, `(ζω)ⁿ`) recomputed from the parameter exactly as the
+verifier does. -/
+def runPubEvalsAt (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (zeta : C.ScalarField) :
+    Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc) :=
+  publicEvalChunks cp cvk.n cvk.omega zeta (zeta * cvk.omega)
+    (powPow2 zeta cvk.domainLog2) (powPow2 (zeta * cvk.omega) cvk.domainLog2) pub
+
+/-- The computed `ft(ζ)` claim at handed-in challenges — `runFtEval0`'s body with the four
+fq-side squeezes as parameters. -/
+def runFtEval0At (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (beta gamma alpha zeta : C.ScalarField) : C.ScalarField :=
+  ftEval0 cvk.n cvk.zkRows cvk.omega (fun i => cvk.shifts[i]) cvk.endo
+    (mdsOfParams C.frParams) alpha beta gamma zeta
+    (combineAt (powPow2 zeta σ.k) (runPubEvalsAt C σ cvk cp pub zeta).zeta.toArray)
+    (cp.linEvals (powPow2 zeta σ.k) (powPow2 (zeta * cvk.omega) σ.k))
+
+/-- The permutation scalar (the `f_comm` coefficient) at handed-in challenges —
+`runPScalar`'s body with the four fq-side squeezes as parameters. It does not read the
+public input: the sponge did, only to produce the challenges. -/
+def runPScalarAt (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (beta gamma alpha zeta : C.ScalarField) : C.ScalarField :=
+  permScalar beta gamma alpha (zkpmEval cvk.n cvk.zkRows cvk.omega zeta)
+    (cp.linEvals (powPow2 zeta σ.k) (powPow2 (zeta * cvk.omega) σ.k))
+
+/-- The constructed `ft` commitment at handed-in challenges — `runFtComm`'s DOUBLE collapse
+at `ζ^{2^σ.k}` with the four fq-side squeezes as parameters. -/
+def runFtCommAt (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (beta gamma alpha zeta : C.ScalarField) : C.Point :=
+  Ipa.combineCommitments C (powPow2 zeta σ.k)
+      (cvk.sigmaComm[6].map
+        (fun P => (runPScalarAt C σ cvk cp beta gamma alpha zeta).val • P)).toArray
+    - (powPow2 zeta cvk.domainLog2 - 1).val
+        • Ipa.combineCommitments C (powPow2 zeta σ.k) cp.tComm
+
+/-- The flat segment stream at handed-in challenges — `runStreamP`'s triple append with the
+public block at the handed-in `ζ` and the `ft` slot rebuilt from the parameters. -/
+def runStreamAt (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (beta gamma alpha zeta : C.ScalarField) :
+    Vector (C.Point × C.ScalarField × C.ScalarField) (nc + 1 + tailRowCount * nc) :=
+  (Vector.ofFn fun c : Fin nc =>
+      ((publicCommitment C σ cvk pub)[c], (runPubEvalsAt C σ cvk cp pub zeta).zeta[c],
+        (runPubEvalsAt C σ cvk cp pub zeta).zetaOmega[c]))
+    ++ (⟨#[(runFtCommAt C σ cvk cp beta gamma alpha zeta,
+             runFtEval0At C σ cvk cp pub beta gamma alpha zeta, cp.ftEval1)], rfl⟩
+        : Vector (C.Point × C.ScalarField × C.ScalarField) 1)
+    ++ (tailRowsOf C cvk cp).flatten
+
+/-- **The run's batched IPA claim at handed-in challenges**: the batched opening-argument
+input the verifier assembles when the six pre-IPA challenges are supplied rather than
+squeezed. This is the claim the knowledge-soundness game's win event checks; its body is
+`runInputP`'s with every sponge read replaced by a parameter. -/
+def runInputAt (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (beta gamma alpha zeta v u : C.ScalarField) :
+    Ipa.Input C σ.k (nc + 1 + tailRowCount * nc) evalPts where
+  commitments := (runStreamAt C σ cvk cp pub beta gamma alpha zeta).map (·.1)
+  xs := ⟨#[zeta, zeta * cvk.omega], rfl⟩
+  evals := (runStreamAt C σ cvk cp pub beta gamma alpha zeta).map
+    (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector C.ScalarField evalPts))
+  polyscale := v
+  evalscale := u
+  proof := cp.opening
+
+/-- At the run's own sponge outputs the challenge-generic claim IS the deployed one —
+definitionally: the `At` functions are the deployed bodies with the squeezes exposed. -/
+theorem runInputAt_eq_runInput (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
+    runInputAt C σ cvk cp pub (runOracles C σ cvk cp pub).beta
+        (runOracles C σ cvk cp pub).gamma (runOracles C σ cvk cp pub).alpha
+        (runOracles C σ cvk cp pub).zeta (runVU C σ cvk cp pub).1
+        (runVU C σ cvk cp pub).2
+      = runInput C σ cvk cp pub := rfl
+
+/-- The challenge-generic stream and the sponge-driven stream at the handed-in `ζ`'s public
+block agree at every batch stream position: they differ only in the `ft` slot, which
+`streamPos_ne_ft` never reaches. -/
+private theorem runStreamAt_read_eq {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (beta gamma alpha zeta : C.ScalarField) (i : Fin batchRows) (c : Fin nc) :
+    (runStreamAt C σ cvk cp pub beta gamma alpha zeta)[(streamPos nc i c : ℕ)]'
+        ((streamPos nc i c).isLt)
+      = (runStreamP C σ cvk cp pub (runPubEvalsAt C σ cvk cp pub zeta))[
+          (streamPos nc i c : ℕ)]'((streamPos nc i c).isLt) :=
+  append3_read_ne_ft _ _ _ _ _ _ (streamPos_ne_ft i c)
+
+/-- **The layout bridge at handed-in challenges**: the challenge-generic claim's commitment
+column reads, at the stream position of abstract batch row `i` and chunk `c`, exactly the
+abstract batch's own entry there. `commitmentFn_streamPos` with the six challenges as
+parameters. -/
+theorem commitmentFn_streamPosAt {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (beta gamma alpha zeta v u : C.ScalarField) (i : Fin batchRows) (c : Fin nc) :
+    (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).commitmentFn
+        ⟨(streamPos nc i c : ℕ), (streamPos nc i c).isLt⟩
+      = batchC (fun (col : Fin wCols) (c : Fin nc) => (cp.wComm[col])[c])
+          (fun c => cp.zComm[c])
+          (fun c => (publicCommitment C σ cvk pub)[c]) cvk.comms i c := by
+  show ((runStreamAt C σ cvk cp pub beta gamma alpha zeta).map
+      (·.1))[(streamPos nc i c : ℕ)]'((streamPos nc i c).isLt) = _
+  rw [Vector.getElem_map, runStreamAt_read_eq]
+  exact (batchC_eq_flat C i c).symm
+
+/-- **The `ft` row's commitment at its own flat position**, challenge-generically: the
+challenge-generic claim carries at flat position `nc` the constructed `ft` commitment
+`runFtCommAt`. `commitmentFn_ftPos` with the challenges as parameters. -/
+theorem commitmentFn_ftPosAt {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (beta gamma alpha zeta v u : C.ScalarField)
+    (hsz : (nc : ℕ) < nc + 1 + tailRowCount * nc) :
+    (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).commitmentFn ⟨nc, hsz⟩
+      = runFtCommAt C σ cvk cp beta gamma alpha zeta := by
+  show ((runStreamAt C σ cvk cp pub beta gamma alpha zeta).map (·.1))[(nc : ℕ)]'hsz = _
+  rw [Vector.getElem_map]
+  exact congrArg Prod.fst (append3_read_ft _ _ _ hsz)
+
+/-- **The `ft` row's claimed evaluation at its own flat position**, challenge-generically:
+the claimed evaluation at flat position `nc` and the zeroth evaluation point is the computed
+`ft` claim `runFtEval0At`. `evalFn_ftPos` with the challenges as parameters. -/
+theorem evalFn_ftPosAt {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (beta gamma alpha zeta v u : C.ScalarField)
+    (hsz : (nc : ℕ) < nc + 1 + tailRowCount * nc) :
+    (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).evalFn ⟨nc, hsz⟩ (0 : Fin evalPts)
+      = runFtEval0At C σ cvk cp pub beta gamma alpha zeta := by
+  show (((runStreamAt C σ cvk cp pub beta gamma alpha zeta).map
+      (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector C.ScalarField evalPts)))[(nc : ℕ)]'hsz
+      : Vector C.ScalarField evalPts)[(0 : ℕ)] = _
+  have hft : (runStreamAt C σ cvk cp pub beta gamma alpha zeta)[(nc : ℕ)]'hsz
+      = (runFtCommAt C σ cvk cp beta gamma alpha zeta,
+          runFtEval0At C σ cvk cp pub beta gamma alpha zeta, cp.ftEval1) :=
+    append3_read_ft _ _ _ hsz
+  rw [Vector.getElem_map, hft]
+  rfl
+
+/-- The two evaluation points of the challenge-generic claim, in the shape the openings seam
+consumes: the handed-in `ζ` and `ω·ζ` at the corresponded root of unity. -/
+theorem pointFn_runInputAt {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (beta gamma alpha zeta v u : C.ScalarField) {n : ℕ}
+    {idx : Index C.ScalarField n} (homega : cvk.omega = idx.omega) :
+    (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).pointFn
+      = ![zeta, idx.omega * zeta] := by
+  funext j
+  fin_cases j
+  · rfl
+  · show zeta * cvk.omega = _
+    rw [homega]
+    exact mul_comm _ _
+
+/-! ### The verifying-key rows of the challenge-generic claim
+
+The four challenge-generic twins of `commitmentFn_streamPos_{s,c,sel,pub}Row_eq_commit`.
+They are what turns "the family's verifying-key representations are honest" from an
+assumption into a theorem for a claim assembled at an oracle table's challenges: the group
+side is fixed by the key–index correspondence, and no batch stream position reads the `ft`
+slot, which is the only place the challenges enter the commitment column.
+
+The public row takes the Lagrange-basis size bound `hlagsz` directly rather than an
+acceptance of the deployed verifier: the challenge-generic verifier's own size guard is
+exactly that bound, so a consumer whose win event is `kimchiVerifyWith` has it in hand. -/
+
+/-- **The σ rows of the challenge-generic claim**: under the key–index correspondence the
+claim carries, at the stream position of the `i`-th σ row and chunk `c`, the unblinded chunk
+commitment of the circuit's own `sigmaPermCol i` permutation polynomial. -/
+theorem commitmentFn_streamPosAt_sRow_eq_commit {C : Ipa.CommitmentCurve}
+    [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (beta gamma alpha zeta v u : C.ScalarField) {n : ℕ} [NeZero n]
+    {idx : Index C.ScalarField n} (hvk : cvk.Corresponds σ idx)
+    (i : Fin sigmaRows) (c : Fin nc) :
+    (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).commitmentFn
+        ⟨(streamPos nc (sRow i) c : ℕ), (streamPos nc (sRow i) c).isLt⟩
+      = commit σ (chunkCoeffs (2 ^ σ.k) (idx.sigmaPoly (sigmaPermCol i)) (c : ℕ)) 0 :=
+  ((commitmentFn_streamPosAt σ cvk cp pub beta gamma alpha zeta v u (sRow i) c).trans
+    (batchC_sRow_of_corresponds σ hvk.1 _ _ _ i c)).trans
+      (commitPolyChunk_as_commit σ _ (c : ℕ))
+
+/-- **The coefficient rows of the challenge-generic claim**: the unblinded chunk commitment
+of the circuit's own `cc`-th coefficient interpolant. -/
+theorem commitmentFn_streamPosAt_cRow_eq_commit {C : Ipa.CommitmentCurve}
+    [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (beta gamma alpha zeta v u : C.ScalarField) {n : ℕ} [NeZero n]
+    {idx : Index C.ScalarField n} (hvk : cvk.Corresponds σ idx)
+    (cc : Fin coeffCols) (c : Fin nc) :
+    (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).commitmentFn
+        ⟨(streamPos nc (cRow cc) c : ℕ), (streamPos nc (cRow cc) c).isLt⟩
+      = commit σ (chunkCoeffs (2 ^ σ.k) (idx.coeffPoly cc) (c : ℕ)) 0 :=
+  ((commitmentFn_streamPosAt σ cvk cp pub beta gamma alpha zeta v u (cRow cc) c).trans
+    (batchC_cRow_of_corresponds σ hvk.1 _ _ _ cc c)).trans
+      (commitPolyChunk_as_commit σ _ (c : ℕ))
+
+/-- **The selector rows of the challenge-generic claim**: the MASKED chunk commitment (fixed
+unit blinder, `mask_custom`) of the circuit's own `selGate jj` selector interpolant. -/
+theorem commitmentFn_streamPosAt_selRow_eq_commit {C : Ipa.CommitmentCurve}
+    [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (beta gamma alpha zeta v u : C.ScalarField) {n : ℕ} [NeZero n]
+    {idx : Index C.ScalarField n} (hvk : cvk.Corresponds σ idx)
+    (jj : Fin selCount) (c : Fin nc) :
+    (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).commitmentFn
+        ⟨(streamPos nc (selRow jj) c : ℕ), (streamPos nc (selRow jj) c).isLt⟩
+      = commit σ (chunkCoeffs (2 ^ σ.k) (idx.selectorPoly (selGate jj)) (c : ℕ)) 1 :=
+  ((commitmentFn_streamPosAt σ cvk cp pub beta gamma alpha zeta v u (selRow jj) c).trans
+    (batchC_selRow_of_corresponds σ hvk.1 _ _ _ jj c)).trans
+      (commitPolyMaskedChunk_as_commit σ _ (c : ℕ))
+
+/-- **The public row of the challenge-generic claim**: the MASKED chunk commitment of the
+NEGATED public interpolant. Unlike the other three families the public row is not a key
+entry — it is recomputed by the verifier from the key's Lagrange basis — so this case
+additionally needs the Lagrange-basis size bound (the challenge-generic verifier's own size
+guard), the public-input arity, and the `.val`-scalar collapse. -/
+theorem commitmentFn_streamPosAt_pubRow_eq_commit {C : Ipa.CommitmentCurve}
+    [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (beta gamma alpha zeta v u : C.ScalarField) {n : ℕ} [NeZero n]
+    {idx : Index C.ScalarField n}
+    (hsmul : ∀ (a : C.ScalarField) (P : C.Point), a • P = a.val • P)
+    (hvk : cvk.Corresponds σ idx) (hpub : pub.size = idx.publicCount)
+    (hlagsz : pub.size ≤ cvk.lagrangeBasis.size) (c : Fin nc) :
+    (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).commitmentFn
+        ⟨(streamPos nc pubRow c : ℕ), (streamPos nc pubRow c).isLt⟩
+      = commit σ
+          (chunkCoeffs (2 ^ σ.k) (-(idx.pubPoly (pubView idx pub))) (c : ℕ)) 1 := by
+  refine ((commitmentFn_streamPosAt σ cvk cp pub beta gamma alpha zeta v u pubRow c).trans
+    ?_).trans (commitPolyMaskedChunk_as_commit σ _ (c : ℕ))
+  exact (congrFun (batchC_pubRow (fun (col : Fin wCols) (c : Fin nc) => (cp.wComm[col])[c])
+      (fun c => cp.zComm[c])
+      (fun c => (publicCommitment C σ cvk pub)[c]) cvk.comms) c).trans
+    (publicCommitment_corresponds C σ cvk pub idx
+      (fun a P => (hsmul a P).symm) hvk.2.2.2.2.2.2 hlagsz hpub c)
+
 /-! ## The chunked run-level terminal roots
 
 Residue-free AGM soundness of the deployed Pasta verifiers, stated over the run's own data.
@@ -1030,6 +1591,355 @@ def RunGuardImp {C : Ipa.CommitmentCurve}
   (runOracles C σ cvk cp pub).zeta ≠ idx.omega ^ (n - idx.zkRows) →
   Satisfies idx (pubView idx pub) (runWTab σ cvk cp pub idx aRef)
 
+/-- **Guarded satisfaction at handed-in challenges**: `RunGuardImp` with the four fq-side
+squeezes as parameters. The assembled columns `runW`/`runZ`, the accumulator and the
+extracted table `runWTab` do NOT mention the challenges — they are read off the
+representations at the layout positions `streamPos` — so the exclusion sets and the
+satisfying table are literally the same objects in both predicates; only the six guard
+hypotheses move from the sponge's outputs to the parameters. -/
+def RunGuardImpAt {C : Ipa.CommitmentCurve}
+    (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
+    (pub : Array C.ScalarField) {n : ℕ} [NeZero n] (idx : Index C.ScalarField n)
+    (beta gamma alpha zeta : C.ScalarField)
+    (aRef : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField)
+    (aT : Fin cp.tComm.size → Fin (2 ^ σ.k) → C.ScalarField) : Prop :=
+  beta ∉ Protocol.soundBadB idx (runW σ cvk cp pub aRef) →
+  gamma ∉ Protocol.soundBadG idx (runW σ cvk cp pub aRef) beta →
+  alpha ∉ Protocol.soundBadA idx (pubView idx pub) (runW σ cvk cp pub aRef)
+      (runZ σ cvk cp pub aRef) beta gamma →
+  zeta ∉ Protocol.soundBadZ idx (pubView idx pub) (runW σ cvk cp pub aRef)
+      (runZ σ cvk cp pub aRef) beta gamma alpha
+      (ftChunkAssembly σ.k cp.tComm.size aT) →
+  zeta ≠ 1 →
+  zeta ≠ idx.omega ^ (n - idx.zkRows) →
+  Satisfies idx (pubView idx pub) (runWTab σ cvk cp pub idx aRef)
+
+/-- **Run soundness at key-honest representations, at handed-in challenges**: the
+binding-free, transcript-free run-level root with the six pre-IPA challenges supplied as
+parameters rather than squeezed. This is the form the knowledge-soundness game consumes:
+its win event is the challenge-generic verifier at the oracle table's own challenges, so its
+claim is `runInputAt` and no root stated at `runInput` applies to it.
+
+Mathematically this costs nothing. Every step the sponge-driven proof invokes — the
+binding-free openings seam `kimchiProof_sound_of_openings_of_vkrep`, the `ft` chunk identity
+`ft_identity_of_chunks_of_eq`, the layout bridge and the two scalar reconciliations — already
+takes its challenges as arguments; the sponge appears only where the outermost wrapper
+supplies them. `run_sound_algebraic_of_vkrep` is this theorem at `runOracles`' outputs, and
+recovers its previous statement character for character. -/
+theorem run_sound_algebraic_at_of_vkrep {C : Ipa.CommitmentCurve}
+    [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
+    (pub : Array C.ScalarField) {n : ℕ} [NeZero n] (idx : Index C.ScalarField n)
+    (beta gamma alpha zeta v u : C.ScalarField)
+    (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n) (hn : cvk.n = n)
+    (hvk : cvk.Corresponds σ idx)
+    (htpos : 0 < cp.tComm.size)
+    (aRef : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField)
+    (ρRef : Fin (nc + 1 + tailRowCount * nc) → C.ScalarField)
+    (hrep : ∀ i, commit σ (aRef i) (ρRef i)
+      = (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).commitmentFn i)
+    (aT : Fin cp.tComm.size → Fin (2 ^ σ.k) → C.ScalarField)
+    (hpins : ∀ (i : Fin (nc + 1 + tailRowCount * nc)) (j : Fin evalPts),
+      (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).evalFn i j
+        = innerProduct (aRef i)
+            (evalVector (2 ^ σ.k)
+              ((runInputAt C σ cvk cp pub beta gamma alpha zeta v u).pointFn j)))
+    (hsigRep : ∀ (i : Fin sigmaRows) (c : Fin nc),
+      aRef ⟨(streamPos nc (sRow i) c : ℕ), (streamPos nc (sRow i) c).isLt⟩
+        = chunkCoeffs (2 ^ σ.k) (idx.sigmaPoly (sigmaPermCol i)) (c : ℕ))
+    (hcoeffRep : ∀ (cc : Fin coeffCols) (c : Fin nc),
+      aRef ⟨(streamPos nc (cRow cc) c : ℕ), (streamPos nc (cRow cc) c).isLt⟩
+        = chunkCoeffs (2 ^ σ.k) (idx.coeffPoly cc) (c : ℕ))
+    (hselRep : ∀ (jj : Fin selCount) (c : Fin nc),
+      aRef ⟨(streamPos nc (selRow jj) c : ℕ), (streamPos nc (selRow jj) c).isLt⟩
+        = chunkCoeffs (2 ^ σ.k) (idx.selectorPoly (selGate jj)) (c : ℕ))
+    (hpubRep : ∀ c : Fin nc,
+      aRef ⟨(streamPos nc pubRow c : ℕ), (streamPos nc pubRow c).isLt⟩
+        = chunkCoeffs (2 ^ σ.k) (-(idx.pubPoly (pubView idx pub))) (c : ℕ))
+    (hftRep : ∀ i : Fin (nc + 1 + tailRowCount * nc), (i : ℕ) = nc →
+      aRef i
+        = runPScalarAt C σ cvk cp beta gamma alpha zeta
+            • ∑ c : Fin nc, (zeta ^ 2 ^ σ.k) ^ (c : ℕ)
+                • chunkCoeffs (2 ^ σ.k) (idx.sigmaPoly 6) (c : ℕ)
+          - (zeta ^ n - 1)
+            • ∑ j : Fin cp.tComm.size, (zeta ^ 2 ^ σ.k) ^ (j : ℕ) • aT j) :
+    RunBounds σ cvk cp pub idx aRef
+      ∧ RunGuardImpAt σ cvk cp pub idx beta gamma alpha zeta aRef aT := by
+  obtain ⟨_hvkc, homega, hzk, hshift, hendo, hmds, _hlag⟩ := hvk
+  have hlt : ∀ (i : Fin batchRows) (c : Fin nc),
+      (streamPos nc i c : ℕ) < nc + 1 + tailRowCount * nc :=
+    fun i c => (streamPos nc i c).isLt
+  -- (2) the reference openings at the stream positions bind the abstract batch
+  have hbound₀ : ∀ (i : Fin batchRows) (c : Fin nc),
+      commit σ (aRef ⟨(streamPos nc i c : ℕ), hlt i c⟩)
+          (ρRef ⟨(streamPos nc i c : ℕ), hlt i c⟩)
+        = batchC (fun col c => (cp.wComm[col])[c]) (fun c => cp.zComm[c])
+            (fun c => (publicCommitment C σ cvk pub)[c])
+            cvk.comms i c := fun i c =>
+    (hrep ⟨(streamPos nc i c : ℕ), hlt i c⟩).trans
+      (commitmentFn_streamPosAt σ cvk cp pub beta gamma alpha zeta v u i c)
+  -- (4) the binding-free openings seam — its exclusion sets are `runW`/`runZ`'s
+  obtain ⟨hbounds, himp⟩ :=
+    kimchiProof_sound_of_openings_of_vkrep σ idx hnc hk cvk.comms (pubView idx pub)
+      (fun col c => (cp.wComm[col])[c]) (fun c => cp.zComm[c])
+      (fun c => (publicCommitment C σ cvk pub)[c])
+      (fun i c => aRef ⟨(streamPos nc i c : ℕ), hlt i c⟩)
+  refine ⟨hbounds, ?_⟩
+  intro hβ hγ hα hζ hζ1 hζb
+  -- (5) the eval pins are the hypothesis `hpins` — the transcript seam
+  -- (6) the ft row, named at its own flat position, and the Maller identity
+  have hsz : (nc : ℕ) < nc + 1 + tailRowCount * nc := by omega
+  have heval_ft : innerProduct (aRef ⟨nc, hsz⟩) (evalVector (2 ^ σ.k) zeta)
+      = runFtEval0At C σ cvk cp pub beta gamma alpha zeta := by
+    have hpin := hpins ⟨nc, hsz⟩ (0 : Fin evalPts)
+    have hpt0 : (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).pointFn
+        (0 : Fin evalPts) = zeta := rfl
+    rw [hpt0] at hpin
+    rw [← hpin]
+    exact evalFn_ftPosAt σ cvk cp pub beta gamma alpha zeta v u hsz
+  have hσ₆ : (idx.sigmaPoly 6).natDegree < nc * 2 ^ σ.k := by
+    rw [hk]
+    exact columnPoly_natDegree_lt idx.omega_prim _
+  obtain ⟨htdeg, hteq0⟩ := ft_identity_of_chunks_of_eq σ (idx.sigmaPoly 6) hσ₆
+    htpos cp.tComm_le aT
+    (runPScalarAt C σ cvk cp beta gamma alpha zeta) zeta
+    (runFtEval0At C σ cvk cp pub beta gamma alpha zeta) n hk (aRef ⟨nc, hsz⟩) _ rfl
+    heval_ft (hftRep ⟨nc, hsz⟩ rfl)
+  -- (7) reconcile the derived identity into the consumer's shape
+  have hSread := runStreamAt_read_eq σ cvk cp pub beta gamma alpha zeta
+  have hce := claimedEvals_stream_eq C (powPow2 zeta σ.k)
+    (powPow2 (zeta * cvk.omega) σ.k) _ hSread
+  have hcpe := claimedPub_stream_eq C (powPow2 zeta σ.k) _ hSread
+  have hζM : powPow2 zeta σ.k = zeta ^ 2 ^ σ.k := powPow2_eq zeta σ.k
+  have hζwM : powPow2 (zeta * cvk.omega) σ.k = (idx.omega * zeta) ^ 2 ^ σ.k := by
+    rw [powPow2_eq, homega, mul_comm]
+  unfold runPScalarAt runFtEval0At at hteq0
+  rw [← hce, ← hcpe, hζM, hζwM, hn, hzk, homega, hendo, hmds, hshift] at hteq0
+  -- (8) the per-row pins, at the consumer's two eval points
+  have hpt : (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).pointFn
+      = ![zeta, idx.omega * zeta] := by
+    funext j
+    fin_cases j
+    · rfl
+    · show zeta * cvk.omega = _
+      rw [homega]
+      exact mul_comm _ _
+  rw [hpt] at hpins
+  -- (9) feed the consumer
+  exact himp beta gamma alpha (ftChunkAssembly σ.k cp.tComm.size aT) zeta
+    (fun (i : Fin batchRows) (ch : Fin nc) (j : Fin evalPts) =>
+      ((runInputAt C σ cvk cp pub beta gamma alpha zeta v u).evals[
+          (streamPos nc i ch : ℕ)]'((streamPos nc i ch).isLt))[(j : ℕ)]'j.isLt)
+    (fun i c => aRef ⟨(streamPos nc i c : ℕ), hlt i c⟩)
+    (fun i c => ρRef ⟨(streamPos nc i c : ℕ), hlt i c⟩)
+    hβ hγ hα hζ hζ1 hζb htdeg
+    (fun i c => ⟨hbound₀ i c,
+      fun j => hpins ⟨(streamPos nc i c : ℕ), hlt i c⟩ j⟩)
+    (fun _ _ => rfl) (fun _ => rfl)
+    hsigRep hcoeffRep hselRep hpubRep
+    hteq0
+
+/-- **Run soundness at key-honest representations** (transcript-free AND binding-free): the
+pins-as-hypothesis root with DL-binding `hbind` deleted and replaced by the two things
+binding was spent on downstream of the transcript — the four verifying-key row pinnings
+(`hsigRep`/`hcoeffRep`/`hselRep`/`hpubRep`, transported to the flat stream along
+`streamPos`) and the `ft` row's coefficient equality `hftRep`.
+
+The seam is inherited from the two split cores. Step (4) calls the binding-free
+`kimchiProof_sound_of_openings_of_vkrep`, whose two cross-point agreement hypotheses are
+`rfl` here because this consumer supplies the SAME representation function on both sides,
+and whose four verifying-key pinnings are exactly the new hypotheses. Step (6) calls
+`ft_identity_of_chunks_of_eq`, whose coefficient equality is `hftRep` at the `ft` row's own
+flat position `nc` (`evalFn_ftPos`). Steps (1)–(3), (5) and (7)–(9) mention neither binding
+nor the group-side commitments and are unchanged.
+
+Because the group-side pins are now hypotheses, four further hypotheses of the
+pins-as-hypothesis root become unused and are dropped from the statement: `hbind`,
+`hsmul` and `hacc` (which served only the public row's Lagrange chunk pin and the `ft`
+commitment reconciliation), `hpub`, and the quotient chunk blinders `ρT`/`hTC` (the `ft`
+identity no longer looks at the quotient commitments). `run_sound_algebraic_of_pins` is
+recovered from this theorem by discharging all five new hypotheses from `hbind`.
+
+This is the form the knowledge-soundness game consumes: over its sampled key basis binding
+provably FAILS, and the verifying-key pinnings are supplied instead by the family's own
+key-honesty predicate — with the dishonest complement priced as a discrete-log relation. -/
+theorem run_sound_algebraic_of_vkrep {C : Ipa.CommitmentCurve}
+    [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
+    (pub : Array C.ScalarField) {n : ℕ} [NeZero n] (idx : Index C.ScalarField n)
+    (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n) (hn : cvk.n = n)
+    (hvk : cvk.Corresponds σ idx)
+    (htpos : 0 < cp.tComm.size)
+    (aRef : Fin (runInput C σ cvk cp pub).commitments.size
+      → Fin (2 ^ σ.k) → C.ScalarField)
+    (ρRef : Fin (runInput C σ cvk cp pub).commitments.size → C.ScalarField)
+    (hrep : ∀ i, commit σ (aRef i) (ρRef i)
+      = (runInput C σ cvk cp pub).commitmentFn i)
+    (aT : Fin cp.tComm.size → Fin (2 ^ σ.k) → C.ScalarField)
+    (hpins : ∀ (i : Fin (runInput C σ cvk cp pub).commitments.size) (j : Fin evalPts),
+      (runInput C σ cvk cp pub).evalFn i j
+        = innerProduct (aRef i)
+            (evalVector (2 ^ σ.k) ((runInput C σ cvk cp pub).pointFn j)))
+    (hsigRep : ∀ (i : Fin sigmaRows) (c : Fin nc),
+      aRef ⟨(streamPos nc (sRow i) c : ℕ), (streamPos nc (sRow i) c).isLt⟩
+        = chunkCoeffs (2 ^ σ.k) (idx.sigmaPoly (sigmaPermCol i)) (c : ℕ))
+    (hcoeffRep : ∀ (cc : Fin coeffCols) (c : Fin nc),
+      aRef ⟨(streamPos nc (cRow cc) c : ℕ), (streamPos nc (cRow cc) c).isLt⟩
+        = chunkCoeffs (2 ^ σ.k) (idx.coeffPoly cc) (c : ℕ))
+    (hselRep : ∀ (jj : Fin selCount) (c : Fin nc),
+      aRef ⟨(streamPos nc (selRow jj) c : ℕ), (streamPos nc (selRow jj) c).isLt⟩
+        = chunkCoeffs (2 ^ σ.k) (idx.selectorPoly (selGate jj)) (c : ℕ))
+    (hpubRep : ∀ c : Fin nc,
+      aRef ⟨(streamPos nc pubRow c : ℕ), (streamPos nc pubRow c).isLt⟩
+        = chunkCoeffs (2 ^ σ.k) (-(idx.pubPoly (pubView idx pub))) (c : ℕ))
+    (hftRep : ∀ i : Fin (runInput C σ cvk cp pub).commitments.size, (i : ℕ) = nc →
+      aRef i
+        = runPScalar C σ cvk cp pub
+            • ∑ c : Fin nc, ((runOracles C σ cvk cp pub).zeta ^ 2 ^ σ.k) ^ (c : ℕ)
+                • chunkCoeffs (2 ^ σ.k) (idx.sigmaPoly 6) (c : ℕ)
+          - ((runOracles C σ cvk cp pub).zeta ^ n - 1)
+            • ∑ j : Fin cp.tComm.size,
+                ((runOracles C σ cvk cp pub).zeta ^ 2 ^ σ.k) ^ (j : ℕ) • aT j) :
+    RunBounds σ cvk cp pub idx aRef ∧ RunGuardImp σ cvk cp pub idx aRef aT :=
+  run_sound_algebraic_at_of_vkrep σ cvk cp pub idx
+    (runOracles C σ cvk cp pub).beta (runOracles C σ cvk cp pub).gamma
+    (runOracles C σ cvk cp pub).alpha (runOracles C σ cvk cp pub).zeta
+    (runVU C σ cvk cp pub).1 (runVU C σ cvk cp pub).2
+    hnc hk hn hvk htpos aRef ρRef hrep aT hpins hsigRep hcoeffRep hselRep hpubRep hftRep
+
+/-- **Run soundness from the eval pins** (transcript-free): the run-level root with the
+Fiat–Shamir transcript tree and the two good-combination guards `hξ`/`hr` replaced by the
+single hypothesis `hpins` — verbatim `eval_pins_of_opening`'s conclusion at the run's own
+data. From a genuine acceptance `kimchiVerify σ cvk cp pub = true` at production chunking
+`nc · 2^σ.k = n`, the AGM path still yields `RunBounds ∧ RunGuardImp`.
+
+The seam. In `run_sound_algebraic_ft` the tree is consumed at exactly two sites — the flat
+eval pins of step (5) and `ft_opening_of_reflected` at step (6) — and both run the same
+two-step composite `ipa_soundnessA` then `eval_pins_of_opening` at the identical arguments.
+Making the pins a hypothesis isolates that composite in the corollary
+`run_sound_algebraic_ft`, which is where the `kimchi_fiat_shamir_*` axioms are henceforth
+the only consumers. The knowledge-soundness game produces the same pins from its forking
+extractor's own accepted opening, so it calls this theorem directly and stays axiom-clean.
+
+DL-binding `hbind` is deliberately NOT removed: it is used at two further sites — the
+openings seam of step (4) (`kimchiProof_sound_of_openings`) and the ft-chunk identity of
+step (6) (`ft_identity_of_chunks`) — that have nothing to do with the transcript.
+
+Recovered, statement unchanged, from the binding-free `run_sound_algebraic_of_vkrep`:
+`hbind` is spent here and only here, discharging the four verifying-key row pinnings
+(through `dlRelation_of_chunk_rep{,_masked}_ne` at the corresponding key's batch rows) and
+the `ft` row's coefficient equality (through `ft_dlRelation_of_chunks_ne`). Each is a
+difference relation between two representations of the same group element, which binding
+kills. -/
+theorem run_sound_algebraic_of_pins {C : Ipa.CommitmentCurve}
+    [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
+    (pub : Array C.ScalarField) {n : ℕ} [NeZero n] (idx : Index C.ScalarField n)
+    (hsmul : ∀ (a : C.ScalarField) (P : C.Point), a • P = a.val • P)
+    (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n) (hn : cvk.n = n)
+    (hvk : cvk.Corresponds σ idx)
+    (hpub : pub.size = idx.publicCount)
+    (htpos : 0 < cp.tComm.size)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → C.ScalarField) (wh : C.ScalarField),
+      DLRelation σ w wh → w = 0 ∧ wh = 0)
+    (hacc : kimchiVerify C σ cvk cp pub = true)
+    (aRef : Fin (runInput C σ cvk cp pub).commitments.size
+      → Fin (2 ^ σ.k) → C.ScalarField)
+    (ρRef : Fin (runInput C σ cvk cp pub).commitments.size → C.ScalarField)
+    (hrep : ∀ i, commit σ (aRef i) (ρRef i)
+      = (runInput C σ cvk cp pub).commitmentFn i)
+    (aT : Fin cp.tComm.size → Fin (2 ^ σ.k) → C.ScalarField)
+    (ρT : Fin cp.tComm.size → C.ScalarField)
+    (hTC : ∀ j : Fin cp.tComm.size, commit σ (aT j) (ρT j) = cp.tComm[j])
+    (hpins : ∀ (i : Fin (runInput C σ cvk cp pub).commitments.size) (j : Fin evalPts),
+      (runInput C σ cvk cp pub).evalFn i j
+        = innerProduct (aRef i)
+            (evalVector (2 ^ σ.k) ((runInput C σ cvk cp pub).pointFn j))) :
+    RunBounds σ cvk cp pub idx aRef ∧ RunGuardImp σ cvk cp pub idx aRef aT := by
+  obtain ⟨hvkc, _, _, _, _, _, hlag⟩ := id hvk
+  -- (1) the body reflection: the Lagrange-basis size feeds the public row's chunk pin
+  obtain ⟨hlagsz, _, _⟩ := kimchiVerify_reflects C σ cvk cp pub hacc
+  have hlt : ∀ (i : Fin batchRows) (c : Fin nc),
+      (streamPos nc i c : ℕ) < (runInput C σ cvk cp pub).commitments.size :=
+    fun i c => (streamPos nc i c).isLt
+  -- (2) the reference openings at the stream positions bind the abstract batch
+  have hbound₀ : ∀ (i : Fin batchRows) (c : Fin nc),
+      commit σ (aRef ⟨(streamPos nc i c : ℕ), hlt i c⟩)
+          (ρRef ⟨(streamPos nc i c : ℕ), hlt i c⟩)
+        = batchC (fun col c => (cp.wComm[col])[c]) (fun c => cp.zComm[c])
+            (fun c => (publicCommitment C σ cvk pub)[c])
+            cvk.comms i c := fun i c =>
+    (hrep ⟨(streamPos nc i c : ℕ), hlt i c⟩).trans
+      (commitmentFn_streamPos σ cvk cp pub i c)
+  -- (3) the public row pinned through the Lagrange chunk pin
+  have hpubC : ∀ c : Fin nc,
+      (publicCommitment C σ cvk pub)[c]
+        = commitPolyMaskedChunk σ (-(idx.pubPoly (pubView idx pub))) (c : ℕ) :=
+    fun c => publicCommitment_corresponds C σ cvk pub idx
+      (fun a P => (hsmul a P).symm) hlag hlagsz hpub c
+  -- (4) binding pins each verifying-key row's representation to the honest chunk window
+  have hsigRep : ∀ (i : Fin sigmaRows) (c : Fin nc),
+      aRef ⟨(streamPos nc (sRow i) c : ℕ), (streamPos nc (sRow i) c).isLt⟩
+        = chunkCoeffs (2 ^ σ.k) (idx.sigmaPoly (sigmaPermCol i)) (c : ℕ) := fun i c =>
+    rep_eq_of_chunkCommit σ hbind
+      ((hbound₀ (sRow i) c).trans (batchC_sRow_of_corresponds σ hvkc _ _ _ i c))
+  have hcoeffRep : ∀ (cc : Fin coeffCols) (c : Fin nc),
+      aRef ⟨(streamPos nc (cRow cc) c : ℕ), (streamPos nc (cRow cc) c).isLt⟩
+        = chunkCoeffs (2 ^ σ.k) (idx.coeffPoly cc) (c : ℕ) := fun cc c =>
+    rep_eq_of_chunkCommit σ hbind
+      ((hbound₀ (cRow cc) c).trans (batchC_cRow_of_corresponds σ hvkc _ _ _ cc c))
+  have hselRep : ∀ (jj : Fin selCount) (c : Fin nc),
+      aRef ⟨(streamPos nc (selRow jj) c : ℕ), (streamPos nc (selRow jj) c).isLt⟩
+        = chunkCoeffs (2 ^ σ.k) (idx.selectorPoly (selGate jj)) (c : ℕ) := fun jj c =>
+    rep_eq_of_maskedChunkCommit σ hbind
+      ((hbound₀ (selRow jj) c).trans (batchC_selRow_of_corresponds σ hvkc _ _ _ jj c))
+  have hpubRep : ∀ c : Fin nc,
+      aRef ⟨(streamPos nc pubRow c : ℕ), (streamPos nc pubRow c).isLt⟩
+        = chunkCoeffs (2 ^ σ.k) (-(idx.pubPoly (pubView idx pub))) (c : ℕ) := fun c =>
+    rep_eq_of_maskedChunkCommit σ hbind
+      ((hbound₀ pubRow c).trans
+        ((congrFun (batchC_pubRow (fun (col : Fin wCols) (c : Fin nc) => (cp.wComm[col])[c])
+            (fun c => cp.zComm[c])
+            (fun c => (publicCommitment C σ cvk pub)[c]) cvk.comms) c).trans (hpubC c)))
+  -- (5) binding pins the ft row's representation to the intended combination
+  have hsz : (nc : ℕ) < (runInput C σ cvk cp pub).commitments.size := by
+    show (nc : ℕ) < nc + 1 + tailRowCount * nc
+    omega
+  have hCσ6 : ∀ c : Fin nc,
+      (cvk.sigmaComm[6])[c] = commitPolyChunk σ (idx.sigmaPoly 6) (c : ℕ) :=
+    fun c => congrFun (congrArg (fun cm => cm.sigma 6) hvkc) c
+  have hcommit : commit σ (aRef ⟨nc, hsz⟩) (ρRef ⟨nc, hsz⟩)
+      = runPScalar C σ cvk cp pub
+          • ∑ c : Fin nc,
+              ((runOracles C σ cvk cp pub).zeta ^ 2 ^ σ.k) ^ (c : ℕ)
+                • (cvk.sigmaComm[6])[c]
+        - ((runOracles C σ cvk cp pub).zeta ^ n - 1)
+            • ∑ j : Fin cp.tComm.size,
+                ((runOracles C σ cvk cp pub).zeta ^ 2 ^ σ.k) ^ (j : ℕ)
+                  • cp.tComm[j] :=
+    ((hrep ⟨nc, hsz⟩).trans (commitmentFn_ftPos σ cvk cp pub hsz)).trans
+      (runFtComm_eq C hsmul hn)
+  have hft : aRef ⟨nc, hsz⟩
+      = runPScalar C σ cvk cp pub
+          • ∑ c : Fin nc, ((runOracles C σ cvk cp pub).zeta ^ 2 ^ σ.k) ^ (c : ℕ)
+              • chunkCoeffs (2 ^ σ.k) (idx.sigmaPoly 6) (c : ℕ)
+        - ((runOracles C σ cvk cp pub).zeta ^ n - 1)
+          • ∑ j : Fin cp.tComm.size,
+              ((runOracles C σ cvk cp pub).zeta ^ 2 ^ σ.k) ^ (j : ℕ) • aT j := by
+    obtain ⟨hrel, _⟩ := ft_dlRelation_of_chunks_ne σ (idx.sigmaPoly 6)
+      (fun c => (cvk.sigmaComm[6])[c]) hCσ6
+      (fun j => cp.tComm[j]) aT ρT hTC
+      (runPScalar C σ cvk cp pub) (runOracles C σ cvk cp pub).zeta n
+      (aRef ⟨nc, hsz⟩) (ρRef ⟨nc, hsz⟩) _ _ rfl rfl hcommit
+    exact sub_eq_zero.mp (hbind _ _ hrel).1
+  -- (6) feed the key-honest root
+  exact run_sound_algebraic_of_vkrep σ cvk cp pub idx hnc hk hn hvk htpos
+    aRef ρRef hrep aT hpins hsigRep hcoeffRep hselRep hpubRep
+    (fun i hi => by
+      have hie : i = ⟨nc, hsz⟩ := Fin.eq_of_val_eq hi
+      rw [hie]
+      exact hft)
+
 /-- **The run-level residue-free root, curve-generically**: from a genuine acceptance
 `kimchiVerify σ cvk cp pub = true` of the checked records at production chunking
 `nc · 2^σ.k = n`, the AGM path yields `RunBounds ∧ RunGuardImp` — the Schwartz–Zippel
@@ -1043,8 +1953,11 @@ argument, not carried here. The two
 curve-specific facts enter as
 hypotheses: `hsmul`, the `.val`-scalar collapse of the point-count-backed `Module`
 instance, and `hFS`, the Fiat–Shamir transcript tree at the run's own warm data —
-taken ONCE and threaded to both consumers (the flat eval pins at step (5) and
-`ft_opening_of_reflected` at step (6)). The public roots
+taken ONCE and spent HERE, in the two-step composite `ipa_soundnessA` then
+`eval_pins_of_opening`, whose output (the flat eval pins) is the whole hypothesis
+surface `run_sound_algebraic_of_pins` needs: this theorem is now exactly that
+manufacture, and the arithmetic all lives transcript-free in
+`run_sound_algebraic_of_pins`. The public roots
 `kimchi{Vesta,Pallas}_run_sound_algebraic_ft` are thin wrappers applying exactly one
 `kimchi_fiat_shamir_*` instance each.
 
@@ -1092,126 +2005,14 @@ private theorem run_sound_algebraic_ft {C : Ipa.CommitmentCurve}
           (runInput C σ cvk cp pub).evalFn
           (runInput C σ cvk cp pub).polyscale) :
     RunBounds σ cvk cp pub idx aRef ∧ RunGuardImp σ cvk cp pub idx aRef aT := by
-  obtain ⟨hvkc, homega, hzk, hshift, hendo, hmds, hlag⟩ := hvk
-  -- (1) the body reflection: the guards and the warm acceptance
-  obtain ⟨hlagsz, _hpubn, haccept⟩ :=
-    kimchiVerify_reflects C σ cvk cp pub hacc
-  have hlt : ∀ (i : Fin batchRows) (c : Fin nc),
-      (streamPos nc i c : ℕ) < (runInput C σ cvk cp pub).commitments.size :=
-    fun i c => (streamPos nc i c).isLt
-  -- (2) the reference openings at the stream positions bind the abstract batch
-  have hbound₀ : ∀ (i : Fin batchRows) (c : Fin nc),
-      commit σ (aRef ⟨(streamPos nc i c : ℕ), hlt i c⟩)
-          (ρRef ⟨(streamPos nc i c : ℕ), hlt i c⟩)
-        = batchC (fun col c => (cp.wComm[col])[c]) (fun c => cp.zComm[c])
-            (fun c => (publicCommitment C σ cvk pub)[c])
-            cvk.comms i c := by
-    intro i c
-    rw [hrep ⟨(streamPos nc i c : ℕ), hlt i c⟩]
-    show ((runStreamP C σ cvk cp pub
-        (runPubEvals C σ cvk cp pub)).map
-          (·.1))[(streamPos nc i c : ℕ)]'(hlt i c) = _
-    rw [Vector.getElem_map]
-    exact (batchC_eq_flat C i c).symm
-  -- (3) the public row pinned through the Lagrange chunk pin
-  have hpubC : ∀ c : Fin nc,
-      (publicCommitment C σ cvk pub)[c]
-        = commitPolyMaskedChunk σ (-(idx.pubPoly (pubView idx pub))) (c : ℕ) :=
-    fun c => publicCommitment_corresponds C σ cvk pub idx
-      (fun a P => (hsmul a P).symm) hlag hlagsz hpub c
-  -- (4) the residue-free openings seam, fed directly — its exclusion sets are `runW`/`runZ`'s
-  obtain ⟨hbounds, himp⟩ :=
-    kimchiProof_sound_of_openings σ idx hnc hk hbind cvk.comms hvkc (pubView idx pub)
-      (fun col c => (cp.wComm[col])[c]) (fun c => cp.zComm[c])
-      (fun c => (publicCommitment C σ cvk pub)[c])
-      hpubC
-      (fun i c => aRef ⟨(streamPos nc i c : ℕ), hlt i c⟩)
-      (fun i c => ρRef ⟨(streamPos nc i c : ℕ), hlt i c⟩)
-      hbound₀
-  refine ⟨hbounds, ?_⟩
-  intro hβ hγ hα hζ hζ1 hζb
-  -- (5) the eval pins from the run's single accepted opening (flat arity)
+  obtain ⟨_hlagsz, _hpubn, haccept⟩ := kimchiVerify_reflects C σ cvk cp pub hacc
   obtain ⟨a, ρ, hopen⟩ := ipa_soundnessA σ _ _ _ hFS haccept
-  have hpins := eval_pins_of_opening σ hbind
-    (runInput C σ cvk cp pub).commitmentFn
-    (runInput C σ cvk cp pub).pointFn aRef ρRef hrep
-    (runInput C σ cvk cp pub).evalFn
-    (runInput C σ cvk cp pub).polyscale
-    (runInput C σ cvk cp pub).evalscale hξ hr a ρ hopen
-  -- (6) the ft opening and the Maller identity at the double collapse
-  obtain ⟨aft, ρft, hcomm_ft, heval_ft⟩ :=
-    ft_opening_of_reflected σ cvk cp pub hbind haccept aRef ρRef hrep hFS hξ hr
-  have hCσ6 : ∀ c : Fin nc,
-      (cvk.sigmaComm[6])[c] = commitPolyChunk σ (idx.sigmaPoly 6) (c : ℕ) :=
-    fun c => congrFun (congrArg (fun cm => cm.sigma 6) hvkc) c
-  have hσ₆ : (idx.sigmaPoly 6).natDegree
-      < nc * 2 ^ σ.k := by
-    rw [hk]
-    exact columnPoly_natDegree_lt idx.omega_prim _
-  have hcommit : commit σ aft ρft
-      = runPScalar C σ cvk cp pub
-          • ∑ c : Fin nc,
-              ((runOracles C σ cvk cp pub).zeta ^ 2 ^ σ.k) ^ (c : ℕ)
-                • (cvk.sigmaComm[6])[c]
-        - ((runOracles C σ cvk cp pub).zeta ^ n - 1)
-            • ∑ j : Fin cp.tComm.size,
-                ((runOracles C σ cvk cp pub).zeta ^ 2 ^ σ.k) ^ (j : ℕ)
-                  • cp.tComm[j] :=
-    hcomm_ft.trans (runFtComm_eq C hsmul hn)
-  obtain ⟨htdeg, hteq0⟩ := ft_identity_of_chunks σ hbind (idx.sigmaPoly 6) hσ₆
-    (fun c => (cvk.sigmaComm[6])[c]) hCσ6 htpos cp.tComm_le
-    (fun j => cp.tComm[j]) aT ρT hTC
-    (runPScalar C σ cvk cp pub)
-    (runOracles C σ cvk cp pub).zeta
-    (runFtEval0 C σ cvk cp pub) n hk aft ρft hcommit heval_ft
-  -- (7) reconcile the derived identity into the consumer's shape
-  have hce := claimedEvals_run_eq C (σ := σ) (cvk := cvk) (cp := cp)
-    (pub := pub) (pe := runPubEvals C σ cvk cp pub)
-    (v := (runVU C σ cvk cp pub).1)
-    (u := (runVU C σ cvk cp pub).2)
-  have hcpe := claimedPub_run_eq C (σ := σ) (cvk := cvk) (cp := cp)
-    (pub := pub) (pe := runPubEvals C σ cvk cp pub)
-    (v := (runVU C σ cvk cp pub).1)
-    (u := (runVU C σ cvk cp pub).2)
-  have hζM : runZetaM C σ cvk cp pub
-      = (runOracles C σ cvk cp pub).zeta ^ 2 ^ σ.k := by
-    unfold runZetaM
-    rw [powPow2_eq]
-  have hζwM : runZetaOmegaM C σ cvk cp pub
-      = (idx.omega * (runOracles C σ cvk cp pub).zeta) ^ 2 ^ σ.k := by
-    unfold runZetaOmegaM runZetaOmega
-    rw [powPow2_eq, homega, mul_comm]
-  unfold runPScalar runFtEval0 runFtEval0P runPubEval0 runLinEvals at hteq0
-  rw [← hce, ← hcpe, hζM, hζwM, hn, hzk, homega, hendo, hmds, hshift] at hteq0
-  -- (8) the per-row pins, at the consumer's two eval points
-  have hpt : (runInput C σ cvk cp pub).pointFn
-      = ![(runOracles C σ cvk cp pub).zeta,
-          idx.omega * (runOracles C σ cvk cp pub).zeta] := by
-    funext j
-    fin_cases j
-    · rfl
-    · show (runOracles C σ cvk cp pub).zeta * cvk.omega = _
-      rw [homega]
-      exact mul_comm _ _
-  rw [hpt] at hpins
-  -- (9) feed the consumer
-  exact himp (runOracles C σ cvk cp pub).beta
-    (runOracles C σ cvk cp pub).gamma
-    (runOracles C σ cvk cp pub).alpha
-    (ftChunkAssembly σ.k cp.tComm.size aT)
-    (runOracles C σ cvk cp pub).zeta
-    (fun (i : Fin batchRows) (ch : Fin nc) (j : Fin evalPts) =>
-      ((runInputP C σ cvk cp pub
-          (runPubEvals C σ cvk cp pub)
-          (runVU C σ cvk cp pub).1
-          (runVU C σ cvk cp pub).2).evals[(streamPos nc i ch : ℕ)]'
-            ((streamPos nc i ch).isLt))[(j : ℕ)]'j.isLt)
-    (fun i c => aRef ⟨(streamPos nc i c : ℕ), hlt i c⟩)
-    (fun i c => ρRef ⟨(streamPos nc i c : ℕ), hlt i c⟩)
-    hβ hγ hα hζ hζ1 hζb htdeg
-    (fun i c => ⟨hbound₀ i c,
-      fun j => hpins ⟨(streamPos nc i c : ℕ), hlt i c⟩ j⟩)
-    hteq0
+  exact run_sound_algebraic_of_pins σ cvk cp pub idx hsmul hnc hk hn hvk hpub htpos
+    hbind hacc aRef ρRef hrep aT ρT hTC
+    (eval_pins_of_opening σ hbind (runInput C σ cvk cp pub).commitmentFn
+      (runInput C σ cvk cp pub).pointFn aRef ρRef hrep (runInput C σ cvk cp pub).evalFn
+      (runInput C σ cvk cp pub).polyscale (runInput C σ cvk cp pub).evalscale hξ hr
+      a ρ hopen)
 
 /-- **The run-level residue-free root (Vesta)**: from a genuine acceptance
 `kimchiVerify σ cvk cp pub = true` of the checked records at production chunking
@@ -1313,5 +2114,314 @@ theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point) {nc : ℕ
   run_sound_algebraic_ft σ cvk cp pub idx Pasta.pallas_smul_val hnc hk hn hvk hpub
     htpos hbind hacc (kimchi_fiat_shamir_pallas σ cvk cp pub) aRef ρRef hrep aT ρT
     hTC hξ hr
+
+/-! ## What arm (4) of the knowledge-soundness game consumes from this layer
+
+The game calls the challenge-generic root `run_sound_algebraic_at_of_vkrep` once per point of
+its algebraic summand and must then convert the conclusion into a statement about the run's
+own challenges. Three packagings keep that conversion out of the game file, in the same
+spirit as `badChallenge_of_not_pins` (`Capstone/Algebraic.lean`):
+
+* `runBounds_of_chunking` — the Schwartz–Zippel cardinality bounds hold unconditionally,
+  from the production chunking equation alone;
+* `runBounds_zeta_at_assembly` — the fourth bound, instantiated at the run's own assembled
+  quotient polynomial, with the degree side condition discharged;
+* `guard_fails_of_not_satisfies` — the contrapositive of `RunGuardImpAt`;
+* `run_sound_algebraic_at_of_opening` — the root with the evaluation-pin hypothesis replaced
+  by an accepted opening of the batched claim, the two fr-side exclusion memberships
+  appearing as the alternative branches.
+
+The composite `run_badChallenge_of_not_satisfies_at` chains all four: from an accepted
+opening whose coefficient vector is the polyscale combination of the declared rows, and a
+table that does NOT satisfy the circuit, one of the seven counted bad events fires. -/
+
+/-- **The Schwartz–Zippel cardinality bounds of a reflected run are unconditional.** They are
+the first component of the binding-free openings seam, whose inputs are the production
+chunking equation `nc · 2^σ.k = n`, `0 < nc`, and the representation function alone — no
+opening, no transcript, no pins. Stating this separately is what lets the knowledge-soundness
+game price its exclusion sets on every branch, not only on the branch where the extracted
+coefficients match.
+
+Project-local: `run_sound_algebraic_at_of_vkrep` already delivers `RunBounds` in its
+conjunction, but only under its full hypothesis stack; the game needs the bounds where that
+stack is unavailable. -/
+theorem runBounds_of_chunking {C : Ipa.CommitmentCurve}
+    [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    {n : ℕ} [NeZero n] (idx : Index C.ScalarField n)
+    (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n)
+    (aRef : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField) :
+    RunBounds σ cvk cp pub idx aRef :=
+  (kimchiProof_sound_of_openings_of_vkrep σ idx hnc hk cvk.comms (pubView idx pub)
+    (fun col c => (cp.wComm[col])[c]) (fun c => cp.zComm[c])
+    (fun c => (publicCommitment C σ cvk pub)[c])
+    (fun i c => aRef ⟨(streamPos nc i c : ℕ), (streamPos nc i c).isLt⟩)).1
+
+/-- **The `ζ` cardinality bound at the run's own assembled quotient.** `RunBounds`' fourth
+clause is stated for an ARBITRARY polynomial of degree `< 7·n`; the game charges its `ζ` to
+the exclusion set at the run's assembled quotient `ftChunkAssembly σ.k cp.tComm.size aT`, so
+the degree side condition has to be discharged there. It is: `ftChunkAssembly_natDegree_lt`
+bounds the assembly's degree by `cp.tComm.size · 2^σ.k`, the wire invariant `cp.tComm_le`
+bounds the chunk count by `7·nc`, and the production chunking equation turns that into
+`7·n`. The bound therefore holds unconditionally at the assembly.
+
+Project-local: it keeps the degree bookkeeping out of the game file, where the bound is
+needed once per point of the algebraic summand. -/
+theorem runBounds_zeta_at_assembly {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    {n : ℕ} [NeZero n] (idx : Index C.ScalarField n)
+    (aRef : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField)
+    (aT : Fin cp.tComm.size → Fin (2 ^ σ.k) → C.ScalarField)
+    (hk : nc * 2 ^ σ.k = n) (htpos : 0 < cp.tComm.size)
+    (hbounds : RunBounds σ cvk cp pub idx aRef) (beta gamma alpha : C.ScalarField) :
+    (Protocol.soundBadZ idx (pubView idx pub) (runW σ cvk cp pub aRef)
+        (runZ σ cvk cp pub aRef) beta gamma alpha
+        (ftChunkAssembly σ.k cp.tComm.size aT)).card ≤ Index.degreeBound n := by
+  refine hbounds.2.2.2 beta gamma alpha _ ?_
+  refine lt_of_lt_of_le (ftChunkAssembly_natDegree_lt σ.k htpos aT) ?_
+  calc cp.tComm.size * 2 ^ σ.k
+      ≤ 7 * nc * 2 ^ σ.k := Nat.mul_le_mul cp.tComm_le (le_refl _)
+    _ = 7 * n := by rw [mul_assoc, hk]
+
+/-- **The six exclusion sets this layer names cost what the run's Schwartz–Zippel budget
+allots them.** The four fq-side sets come from `runBounds_of_chunking` (with the `ζ` one at
+the run's own assembled quotient, via `runBounds_zeta_at_assembly`), the two fr-side sets
+from `card_badXiOf_le` / `card_badROf_le` at the batch's `nc + 1 + tailRowCount·nc` rows.
+
+The right-hand side is `Verifier/KnowledgeSoundness.szBudget nc n idx.zkRows` MINUS the `2`
+that budget allots the `ζ` boundary set `zetaBoundaryBad` — the one exclusion set that lives
+downstream of this file. So the game closes its accounting by adding
+`card_zetaBoundaryBad_le` to this bound; the total is the budget term for term, with no
+slack and no rounding.
+
+Project-local: the budget is the endpoint's fourth summand, and this is where the sets it
+prices are actually defined. -/
+theorem runBadCard_sum_le {C : Ipa.CommitmentCurve}
+    [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    {n : ℕ} [NeZero n] (idx : Index C.ScalarField n)
+    (aRef : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField)
+    (aT : Fin cp.tComm.size → Fin (2 ^ σ.k) → C.ScalarField)
+    (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n) (htpos : 0 < cp.tComm.size)
+    (beta gamma alpha xi : C.ScalarField)
+    (x : Fin evalPts → C.ScalarField)
+    (E : Fin (nc + 1 + tailRowCount * nc) → Fin evalPts → C.ScalarField) :
+    (Protocol.soundBadB idx (runW σ cvk cp pub aRef)).card
+        + (Protocol.soundBadG idx (runW σ cvk cp pub aRef) beta).card
+        + (Protocol.soundBadA idx (pubView idx pub) (runW σ cvk cp pub aRef)
+            (runZ σ cvk cp pub aRef) beta gamma).card
+        + (Protocol.soundBadZ idx (pubView idx pub) (runW σ cvk cp pub aRef)
+            (runZ σ cvk cp pub aRef) beta gamma alpha
+            (ftChunkAssembly σ.k cp.tComm.size aT)).card
+        + (badXiOf σ aRef x E).card
+        + (badROf σ aRef x E xi).card
+      ≤ 2 * (7 * (n - idx.zkRows))
+        + n * (Index.gateAlphaCount + Index.permAlphaCount - 1)
+        + Index.degreeBound n
+        + (2 * (nc + 1 + tailRowCount * nc - 1) + 1) := by
+  have hb := runBounds_of_chunking σ cvk cp pub idx hnc hk aRef
+  have h1 := hb.1
+  have h2 := hb.2.1 beta
+  have h3 := hb.2.2.1 beta gamma
+  have h4 := runBounds_zeta_at_assembly σ cvk cp pub idx aRef aT hk htpos hb beta gamma alpha
+  have h5 := card_badXiOf_le σ aRef x E
+  have h6 := card_badROf_le σ aRef x E xi
+  omega
+
+/-- **A failure of satisfaction names a failing guard.** The contrapositive of
+`RunGuardImpAt`: if the assembled table does not satisfy the circuit while guarded
+satisfaction at handed-in challenges holds, one of the six guard conditions must fail — the
+handed-in `β`, `γ`, `α` or `ζ` lies in its exclusion set, or `ζ` sits on one of the two
+boundary points.
+
+Project-local: classical and short, but it belongs beside `RunGuardImpAt`, and it keeps the
+`by_contra` out of the game file — the same reasoning that put `badChallenge_of_not_pins`
+beside `eval_pins_of_opening_of_eq`. -/
+theorem guard_fails_of_not_satisfies {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    {n : ℕ} [NeZero n] (idx : Index C.ScalarField n)
+    (beta gamma alpha zeta : C.ScalarField)
+    (aRef : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField)
+    (aT : Fin cp.tComm.size → Fin (2 ^ σ.k) → C.ScalarField)
+    (himp : RunGuardImpAt σ cvk cp pub idx beta gamma alpha zeta aRef aT)
+    (hns : ¬ Satisfies idx (pubView idx pub) (runWTab σ cvk cp pub idx aRef)) :
+    beta ∈ Protocol.soundBadB idx (runW σ cvk cp pub aRef)
+      ∨ gamma ∈ Protocol.soundBadG idx (runW σ cvk cp pub aRef) beta
+      ∨ alpha ∈ Protocol.soundBadA idx (pubView idx pub) (runW σ cvk cp pub aRef)
+          (runZ σ cvk cp pub aRef) beta gamma
+      ∨ zeta ∈ Protocol.soundBadZ idx (pubView idx pub) (runW σ cvk cp pub aRef)
+          (runZ σ cvk cp pub aRef) beta gamma alpha
+          (ftChunkAssembly σ.k cp.tComm.size aT)
+      ∨ zeta = 1
+      ∨ zeta = idx.omega ^ (n - idx.zkRows) := by
+  by_contra hcon
+  push Not at hcon
+  obtain ⟨hβ, hγ, hα, hζ, hζ1, hζb⟩ := hcon
+  exact hns (himp hβ hγ hα hζ hζ1 hζb)
+
+/-- **Run soundness from an accepted opening, at handed-in challenges.**
+`run_sound_algebraic_at_of_vkrep` with its evaluation-pin hypothesis `hpins` replaced by what
+the knowledge-soundness extractor actually hands over: an accepted opening `(a, ρ)` of the
+batched claim's combined commitment against the combined evaluation vector at the claim's own
+checked value `Ipa.cipOf`, together with the coefficient equality `ha` certifying that `a` IS
+the polyscale combination of the declared per-row representations.
+
+The two fr-side exclusion memberships become the alternative branches of the conclusion:
+either the run's polyscale challenge lies in `badXiOf`, or its evalscale challenge lies in
+`badROf`, or the cardinality bounds and guarded satisfaction hold. Off both sets
+`eval_pins_of_opening_of_eq` turns the opening into the per-row pins and the existing root
+applies verbatim — no arithmetic is re-derived here.
+
+Project-local: it is the single call the game's algebraic summand makes, replacing the
+by-hand case split it would otherwise carry. -/
+theorem run_sound_algebraic_at_of_opening {C : Ipa.CommitmentCurve}
+    [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
+    (pub : Array C.ScalarField) {n : ℕ} [NeZero n] (idx : Index C.ScalarField n)
+    (beta gamma alpha zeta v u : C.ScalarField)
+    (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n) (hn : cvk.n = n)
+    (hvk : cvk.Corresponds σ idx)
+    (htpos : 0 < cp.tComm.size)
+    (aRef : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField)
+    (ρRef : Fin (nc + 1 + tailRowCount * nc) → C.ScalarField)
+    (hrep : ∀ i, commit σ (aRef i) (ρRef i)
+      = (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).commitmentFn i)
+    (aT : Fin cp.tComm.size → Fin (2 ^ σ.k) → C.ScalarField)
+    (a : Fin (2 ^ σ.k) → C.ScalarField) (ρ : C.ScalarField)
+    (hopen : openingRelationB σ
+      (combinedCommitment (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).polyscale
+        (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).commitmentFn)
+      (combinedEvalVector (2 ^ σ.k)
+        (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).evalscale
+        (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).pointFn)
+      (Ipa.cipOf (runInputAt C σ cvk cp pub beta gamma alpha zeta v u)) a ρ)
+    (ha : a = ∑ i : Fin (nc + 1 + tailRowCount * nc),
+      (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).polyscale ^ (i : ℕ) • aRef i)
+    (hsigRep : ∀ (i : Fin sigmaRows) (c : Fin nc),
+      aRef ⟨(streamPos nc (sRow i) c : ℕ), (streamPos nc (sRow i) c).isLt⟩
+        = chunkCoeffs (2 ^ σ.k) (idx.sigmaPoly (sigmaPermCol i)) (c : ℕ))
+    (hcoeffRep : ∀ (cc : Fin coeffCols) (c : Fin nc),
+      aRef ⟨(streamPos nc (cRow cc) c : ℕ), (streamPos nc (cRow cc) c).isLt⟩
+        = chunkCoeffs (2 ^ σ.k) (idx.coeffPoly cc) (c : ℕ))
+    (hselRep : ∀ (jj : Fin selCount) (c : Fin nc),
+      aRef ⟨(streamPos nc (selRow jj) c : ℕ), (streamPos nc (selRow jj) c).isLt⟩
+        = chunkCoeffs (2 ^ σ.k) (idx.selectorPoly (selGate jj)) (c : ℕ))
+    (hpubRep : ∀ c : Fin nc,
+      aRef ⟨(streamPos nc pubRow c : ℕ), (streamPos nc pubRow c).isLt⟩
+        = chunkCoeffs (2 ^ σ.k) (-(idx.pubPoly (pubView idx pub))) (c : ℕ))
+    (hftRep : ∀ i : Fin (nc + 1 + tailRowCount * nc), (i : ℕ) = nc →
+      aRef i
+        = runPScalarAt C σ cvk cp beta gamma alpha zeta
+            • ∑ c : Fin nc, (zeta ^ 2 ^ σ.k) ^ (c : ℕ)
+                • chunkCoeffs (2 ^ σ.k) (idx.sigmaPoly 6) (c : ℕ)
+          - (zeta ^ n - 1)
+            • ∑ j : Fin cp.tComm.size, (zeta ^ 2 ^ σ.k) ^ (j : ℕ) • aT j) :
+    (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).polyscale
+        ∈ badXiOf σ aRef (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).pointFn
+            (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).evalFn
+      ∨ (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).evalscale
+          ∈ badROf σ aRef (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).pointFn
+              (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).evalFn
+              (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).polyscale
+      ∨ (RunBounds σ cvk cp pub idx aRef
+          ∧ RunGuardImpAt σ cvk cp pub idx beta gamma alpha zeta aRef aT) := by
+  by_cases hξ : (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).polyscale
+      ∈ badXiOf σ aRef (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).pointFn
+          (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).evalFn
+  · exact Or.inl hξ
+  by_cases hr : (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).evalscale
+      ∈ badROf σ aRef (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).pointFn
+          (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).evalFn
+          (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).polyscale
+  · exact Or.inr (Or.inl hr)
+  refine Or.inr (Or.inr ?_)
+  exact run_sound_algebraic_at_of_vkrep σ cvk cp pub idx beta gamma alpha zeta v u hnc hk hn
+    hvk htpos aRef ρRef hrep aT
+    (eval_pins_of_opening_of_eq σ _ _ aRef _ _ _ hξ hr a ρ hopen ha)
+    hsigRep hcoeffRep hselRep hpubRep hftRep
+
+/-- **The seven counted bad events of the algebraic summand.** The composite the
+knowledge-soundness game calls: from an accepted opening of the run's batched claim whose
+coefficient vector is the declared polyscale combination, together with the statement that
+the assembled table does NOT satisfy the circuit, one of seven counted memberships holds —
+the four fq-side exclusion sets at the run's own assembled columns (the `ζ` one taken at the
+run's assembled quotient), the two `ζ` boundary points, or one of the two fr-side exclusion
+sets.
+
+Nothing here is assumed: `runBounds_of_chunking` supplies the cardinality bounds
+unconditionally, and each disjunct is a set whose cardinality this layer bounds
+(`runBounds_zeta_at_assembly`, `card_badXiOf_le`, `card_badROf_le`). -/
+theorem run_badChallenge_of_not_satisfies_at {C : Ipa.CommitmentCurve}
+    [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
+    (pub : Array C.ScalarField) {n : ℕ} [NeZero n] (idx : Index C.ScalarField n)
+    (beta gamma alpha zeta v u : C.ScalarField)
+    (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n) (hn : cvk.n = n)
+    (hvk : cvk.Corresponds σ idx)
+    (htpos : 0 < cp.tComm.size)
+    (aRef : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField)
+    (ρRef : Fin (nc + 1 + tailRowCount * nc) → C.ScalarField)
+    (hrep : ∀ i, commit σ (aRef i) (ρRef i)
+      = (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).commitmentFn i)
+    (aT : Fin cp.tComm.size → Fin (2 ^ σ.k) → C.ScalarField)
+    (a : Fin (2 ^ σ.k) → C.ScalarField) (ρ : C.ScalarField)
+    (hopen : openingRelationB σ
+      (combinedCommitment (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).polyscale
+        (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).commitmentFn)
+      (combinedEvalVector (2 ^ σ.k)
+        (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).evalscale
+        (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).pointFn)
+      (Ipa.cipOf (runInputAt C σ cvk cp pub beta gamma alpha zeta v u)) a ρ)
+    (ha : a = ∑ i : Fin (nc + 1 + tailRowCount * nc),
+      (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).polyscale ^ (i : ℕ) • aRef i)
+    (hsigRep : ∀ (i : Fin sigmaRows) (c : Fin nc),
+      aRef ⟨(streamPos nc (sRow i) c : ℕ), (streamPos nc (sRow i) c).isLt⟩
+        = chunkCoeffs (2 ^ σ.k) (idx.sigmaPoly (sigmaPermCol i)) (c : ℕ))
+    (hcoeffRep : ∀ (cc : Fin coeffCols) (c : Fin nc),
+      aRef ⟨(streamPos nc (cRow cc) c : ℕ), (streamPos nc (cRow cc) c).isLt⟩
+        = chunkCoeffs (2 ^ σ.k) (idx.coeffPoly cc) (c : ℕ))
+    (hselRep : ∀ (jj : Fin selCount) (c : Fin nc),
+      aRef ⟨(streamPos nc (selRow jj) c : ℕ), (streamPos nc (selRow jj) c).isLt⟩
+        = chunkCoeffs (2 ^ σ.k) (idx.selectorPoly (selGate jj)) (c : ℕ))
+    (hpubRep : ∀ c : Fin nc,
+      aRef ⟨(streamPos nc pubRow c : ℕ), (streamPos nc pubRow c).isLt⟩
+        = chunkCoeffs (2 ^ σ.k) (-(idx.pubPoly (pubView idx pub))) (c : ℕ))
+    (hftRep : ∀ i : Fin (nc + 1 + tailRowCount * nc), (i : ℕ) = nc →
+      aRef i
+        = runPScalarAt C σ cvk cp beta gamma alpha zeta
+            • ∑ c : Fin nc, (zeta ^ 2 ^ σ.k) ^ (c : ℕ)
+                • chunkCoeffs (2 ^ σ.k) (idx.sigmaPoly 6) (c : ℕ)
+          - (zeta ^ n - 1)
+            • ∑ j : Fin cp.tComm.size, (zeta ^ 2 ^ σ.k) ^ (j : ℕ) • aT j)
+    (hns : ¬ Satisfies idx (pubView idx pub) (runWTab σ cvk cp pub idx aRef)) :
+    beta ∈ Protocol.soundBadB idx (runW σ cvk cp pub aRef)
+      ∨ gamma ∈ Protocol.soundBadG idx (runW σ cvk cp pub aRef) beta
+      ∨ alpha ∈ Protocol.soundBadA idx (pubView idx pub) (runW σ cvk cp pub aRef)
+          (runZ σ cvk cp pub aRef) beta gamma
+      ∨ zeta ∈ Protocol.soundBadZ idx (pubView idx pub) (runW σ cvk cp pub aRef)
+          (runZ σ cvk cp pub aRef) beta gamma alpha
+          (ftChunkAssembly σ.k cp.tComm.size aT)
+      ∨ zeta = 1
+      ∨ zeta = idx.omega ^ (n - idx.zkRows)
+      ∨ (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).polyscale
+          ∈ badXiOf σ aRef (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).pointFn
+              (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).evalFn
+      ∨ (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).evalscale
+          ∈ badROf σ aRef (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).pointFn
+              (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).evalFn
+              (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).polyscale := by
+  rcases run_sound_algebraic_at_of_opening σ cvk cp pub idx beta gamma alpha zeta v u hnc hk
+      hn hvk htpos aRef ρRef hrep aT a ρ hopen ha hsigRep hcoeffRep hselRep hpubRep
+      hftRep with hξ | hr | ⟨_, himp⟩
+  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl hξ))))))
+  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr hr))))))
+  · rcases guard_fails_of_not_satisfies σ cvk cp pub idx beta gamma alpha zeta aRef aT
+        himp hns with h | h | h | h | h | h
+    · exact Or.inl h
+    · exact Or.inr (Or.inl h)
+    · exact Or.inr (Or.inr (Or.inl h))
+    · exact Or.inr (Or.inr (Or.inr (Or.inl h)))
+    · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl h))))
+    · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl h)))))
 
 end Kimchi.Verifier
