@@ -86,8 +86,7 @@ Kimchi.Verifier.kimchiPallas_run_sound
 -- The FS-reflection ft openings: from ONE genuine acceptance, the ft row of the run's
 -- own flat stream opens to the computed runFtEval0 (axioms consumed: the
 -- kimchi_fiat_shamir_* pair, once each).
-Kimchi.Verifier.ft_opening_of_reflected_vesta
-Kimchi.Verifier.ft_opening_of_reflected_pallas
+Kimchi.Verifier.ft_opening_of_pins
 -- The abstract chunked AGM root (Capstone/Algebraic.lean): residue-free algebraic
 -- soundness with the Fiat-Shamir tree and the ft opening as caller hypotheses —
 -- consumes NO Fiat-Shamir axiom.
@@ -104,5 +103,5 @@ Kimchi.Verifier.kimchiProof_sound_algebraic_ft
 -- challenges. Scope: that a genuine run's challenges avoid the (card-bounded) exclusion sets,
 -- and the good-combination conditions `hξ`/`hr`, are hypotheses of `RunGuardImp` — the
 -- forking/density argument, not carried here.
-Kimchi.Verifier.kimchiVesta_run_sound_algebraic_ft
-Kimchi.Verifier.kimchiPallas_run_sound_algebraic_ft
+Kimchi.Verifier.kimchiVesta_run_sound_of_pins
+Kimchi.Verifier.kimchiPallas_run_sound_of_pins

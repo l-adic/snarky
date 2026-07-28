@@ -36,52 +36,6 @@ namespace Kimchi.Verifier
 open Polynomial Bulletproof Kimchi.Index Kimchi.Protocol.Linearization
   Kimchi.Protocol.Equation CompElliptic.Fields.Pasta Kimchi.Verifier
 
-/-! ## The Fiat–Shamir axioms -/
-
-/-- **AXIOM (Fiat–Shamir, Poseidon instantiation over the deployed run, Vesta).**
-A run accepted by the deployed warm-sponge finish
-(`Ipa.verifyFrom … (runWarm …) (runInput …) = true`, the `ReflectedRun.accepts` field
-of the reflection) admits a de-blinded accepting transcript tree over the run's own
-flat segment batch. The idealized transcript is the deployed one: the fq-sponge
-absorb/squeeze schedule of `oracles` (verifier.rs:156–283 — the index digest, the
-public, witness, `z` and `t` commitments absorbed, with `β`, `γ`, `α`, `ζ` squeezed
-between), whose warm final state seeds the opening verification
-(`BatchEvaluationProof { sponge: fq_sponge, … }`, verifier.rs:1185–1193). The declared
-assumption is exactly that the Poseidon sponge provides a valid Fiat–Shamir transform
-at this transcript; the statement mentions only the run's own wire data — no
-arithmetic content, no reference to the abstract batch. What would discharge it is
-the program already stated for `Bulletproof.poseidon_fiat_shamir_*`: the sponge
-itself is definitional and fixture-validated, and the axiom packages the remaining
-rewinding/forking extraction against its random-oracle behaviour. -/
-axiom kimchi_fiat_shamir_vesta (σ : SRS IpaVesta.Point) {nc : ℕ}
-    (cvk : KimchiVK IpaVesta.curve nc)
-    (cp : KimchiProof IpaVesta.curve nc σ.k) (pub : Array Fp) :
-  FiatShamirTreeB σ
-    (combinedCommitment (runInput IpaVesta.curve σ cvk cp pub).polyscale
-      (runInput IpaVesta.curve σ cvk cp pub).commitmentFn)
-    (combinedEvalVector (2 ^ σ.k) (runInput IpaVesta.curve σ cvk cp pub).evalscale
-      (runInput IpaVesta.curve σ cvk cp pub).pointFn)
-    (Ipa.cipOf (runInput IpaVesta.curve σ cvk cp pub))
-    (Ipa.verifyFrom IpaVesta.curve σ (runWarm IpaVesta.curve σ cvk cp pub)
-      (runInput IpaVesta.curve σ cvk cp pub) = true)
-
-/-- **AXIOM (Fiat–Shamir, Poseidon instantiation over the deployed run, Pallas).**
-The Pallas-side twin of `kimchi_fiat_shamir_vesta` — the same idealized transcript
-(the `oracles` schedule, verifier.rs:156–283, seeding the opening verification at
-verifier.rs:1185–1193) and the same discharge program (definitional
-fixture-validated sponge plus the rewinding/forking extraction). -/
-axiom kimchi_fiat_shamir_pallas (σ : SRS IpaPallas.Point) {nc : ℕ}
-    (cvk : KimchiVK IpaPallas.curve nc)
-    (cp : KimchiProof IpaPallas.curve nc σ.k) (pub : Array Fq) :
-  FiatShamirTreeB σ
-    (combinedCommitment (runInput IpaPallas.curve σ cvk cp pub).polyscale
-      (runInput IpaPallas.curve σ cvk cp pub).commitmentFn)
-    (combinedEvalVector (2 ^ σ.k) (runInput IpaPallas.curve σ cvk cp pub).evalscale
-      (runInput IpaPallas.curve σ cvk cp pub).pointFn)
-    (Ipa.cipOf (runInput IpaPallas.curve σ cvk cp pub))
-    (Ipa.verifyFrom IpaPallas.curve σ (runWarm IpaPallas.curve σ cvk cp pub)
-      (runInput IpaPallas.curve σ cvk cp pub) = true)
-
 variable (C : Ipa.CommitmentCurve)
 
 /-! ## The stream reads
@@ -395,64 +349,7 @@ private theorem ft_opening_of_reflected {C : Ipa.CommitmentCurve} [Module C.Scal
       (runInput C σ cvk cp pub).polyscale (runInput C σ cvk cp pub).evalscale hξ hr
       a ρ hopen)
 
-/-- **The ft opening of the deployed chunked Vesta verifier**: a genuine
-`KimchiVesta.verify … = true`, DL-binding, representations of the run's own
-flat batch rows, and good combination challenges yield the ft opening. The run is
-reflected trust-free (`kimchiVerify_reflects`); the transcript tree is
-`kimchi_fiat_shamir_vesta` at the run's own warm data — the sole axiom
-consumed. The chunked Vesta FS-reflection root. -/
-theorem ft_opening_of_reflected_vesta (σ : SRS IpaVesta.Point) {nc : ℕ}
-    (cvk : KimchiVK IpaVesta.curve nc) (cp : KimchiProof IpaVesta.curve nc σ.k)
-    (pub : Array Fp)
-    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (hacc : Ipa.verifyFrom IpaVesta.curve σ (runWarm IpaVesta.curve σ cvk cp pub)
-      (runInput IpaVesta.curve σ cvk cp pub) = true)
-    (aRef : Fin (runInput IpaVesta.curve σ cvk cp pub).commitments.size
-      → Fin (2 ^ σ.k) → Fp)
-    (ρRef : Fin (runInput IpaVesta.curve σ cvk cp pub).commitments.size → Fp)
-    (hrep : ∀ i, commit σ (aRef i) (ρRef i)
-      = (runInput IpaVesta.curve σ cvk cp pub).commitmentFn i)
-    (hξ : (runInput IpaVesta.curve σ cvk cp pub).polyscale
-      ∉ badXiOf σ aRef (runInput IpaVesta.curve σ cvk cp pub).pointFn
-          (runInput IpaVesta.curve σ cvk cp pub).evalFn)
-    (hr : (runInput IpaVesta.curve σ cvk cp pub).evalscale
-      ∉ badROf σ aRef (runInput IpaVesta.curve σ cvk cp pub).pointFn
-          (runInput IpaVesta.curve σ cvk cp pub).evalFn
-          (runInput IpaVesta.curve σ cvk cp pub).polyscale) :
-    ∃ (aft : Fin (2 ^ σ.k) → Fp) (ρft : Fp),
-      commit σ aft ρft = runFtComm IpaVesta.curve σ cvk cp pub
-        ∧ innerProduct aft
-            (evalVector (2 ^ σ.k) (runOracles IpaVesta.curve σ cvk cp pub).zeta)
-            = runFtEval0 IpaVesta.curve σ cvk cp pub :=
-  ft_opening_of_reflected σ cvk cp pub hbind hacc aRef ρRef hrep
-    (kimchi_fiat_shamir_vesta σ cvk cp pub) hξ hr
 
-/-- **The ft opening of the deployed chunked Pallas verifier.** The Pallas twin. -/
-theorem ft_opening_of_reflected_pallas (σ : SRS IpaPallas.Point) {nc : ℕ}
-    (cvk : KimchiVK IpaPallas.curve nc) (cp : KimchiProof IpaPallas.curve nc σ.k)
-    (pub : Array Fq)
-    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (hacc : Ipa.verifyFrom IpaPallas.curve σ (runWarm IpaPallas.curve σ cvk cp pub)
-      (runInput IpaPallas.curve σ cvk cp pub) = true)
-    (aRef : Fin (runInput IpaPallas.curve σ cvk cp pub).commitments.size
-      → Fin (2 ^ σ.k) → Fq)
-    (ρRef : Fin (runInput IpaPallas.curve σ cvk cp pub).commitments.size → Fq)
-    (hrep : ∀ i, commit σ (aRef i) (ρRef i)
-      = (runInput IpaPallas.curve σ cvk cp pub).commitmentFn i)
-    (hξ : (runInput IpaPallas.curve σ cvk cp pub).polyscale
-      ∉ badXiOf σ aRef (runInput IpaPallas.curve σ cvk cp pub).pointFn
-          (runInput IpaPallas.curve σ cvk cp pub).evalFn)
-    (hr : (runInput IpaPallas.curve σ cvk cp pub).evalscale
-      ∉ badROf σ aRef (runInput IpaPallas.curve σ cvk cp pub).pointFn
-          (runInput IpaPallas.curve σ cvk cp pub).evalFn
-          (runInput IpaPallas.curve σ cvk cp pub).polyscale) :
-    ∃ (aft : Fin (2 ^ σ.k) → Fq) (ρft : Fq),
-      commit σ aft ρft = runFtComm IpaPallas.curve σ cvk cp pub
-        ∧ innerProduct aft
-            (evalVector (2 ^ σ.k) (runOracles IpaPallas.curve σ cvk cp pub).zeta)
-            = runFtEval0 IpaPallas.curve σ cvk cp pub :=
-  ft_opening_of_reflected σ cvk cp pub hbind hacc aRef ρRef hrep
-    (kimchi_fiat_shamir_pallas σ cvk cp pub) hξ hr
 
 /-! ## The chunk combination as an indexed power sum -/
 
@@ -2017,106 +1914,7 @@ private theorem run_sound_algebraic_ft {C : Ipa.CommitmentCurve}
       (runInput C σ cvk cp pub).polyscale (runInput C σ cvk cp pub).evalscale hξ hr
       a ρ hopen)
 
-/-- **The run-level residue-free root (Vesta)**: from a genuine acceptance
-`kimchiVerify σ cvk cp pub = true` of the checked records at production chunking
-`nc · 2^σ.k = n`, the AGM path delivers the guarded
-`RunBounds ∧ RunGuardImp` — the Schwartz–Zippel cardinality bounds together with the guarded
-satisfaction of the assembled witness table `runWTab σ cvk cp pub idx aRef`, the algebraic
-prover's own per-chunk representations. The exclusion sets and the table are the canonical
-named terms `Protocol.soundBad*` at `runW`/`runZ` (`RunBounds`/`RunGuardImp`), so the
-conclusion constrains the run's own Fiat–Shamir challenges; that those challenges avoid the
-exclusion sets, and the conditions `hξ`/`hr`, are hypotheses (the forking/density argument).
-A deployed run reaches this root through the
-wire boundary: the client parses with `Wire.{KimchiVK,KimchiProof}.check` (a checked
-record cannot hold a ragged proof) and calls `kimchiVerify` on the result. The prover
-supplies SRS-basis representations of the run's `44·nc + 1` flat segment rows
-(`aRef`/`ρRef`) and of the `tComm` chunks (`aT`/`ρT`); everything else is derived
-from the single reflected run: the openings seam `kimchiProof_sound_of_openings` is
-fed directly (reference side: the representations at the stream positions; consumer
-side: the eval pins of the run's one accepted opening), the public row is pinned
-through `publicCommitment_corresponds` and the key's Lagrange chunk pin, and the
-quotient `t := ftChunkAssembly σ.k cp.tComm.size aT` with its Maller identity comes
-from the ft opening through `ft_identity_of_chunks` at the DOUBLE `ζ^{2^σ.k}`
-collapse. The key–index hypothesis is the checked `KimchiVK.Corresponds` —
-per-chunk `VKCorresponds`, the scalar pins, and the Lagrange pin.
 
-The trust surface. Axiom consumed: `kimchi_fiat_shamir_vesta` (once, threaded
-through `run_sound_algebraic_ft` to both the flat eval pins and the ft opening), on
-top of the point-count-backed `Module` instance. The computational hypotheses stay
-in the statement: the AGM representations `aRef`/`ρRef`/`aT`/`ρT`, the good-challenge
-guards `hξ`/`hr`, and DL-binding `hbind` — the assumption that no nontrivial
-discrete-log relation among the SRS generators is known. `hbind` is
-information-theoretically false at real parameters and meaningful only as a
-computational assumption — see the `hbind` scope note in the
-`Bulletproof/Soundness.lean` module docstring (the file of
-`chunked_batch_soundness`). No `ζⁿ ≠ 1` guard: the public claims are proof-carried
-batch data, believed only through binding — no barycentric reconciliation. The Vesta
-run-level root. -/
-theorem kimchiVesta_run_sound_algebraic_ft (σ : SRS IpaVesta.Point) {nc : ℕ}
-    (cvk : KimchiVK IpaVesta.curve nc) (cp : KimchiProof IpaVesta.curve nc σ.k)
-    (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
-    (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n) (hn : cvk.n = n)
-    (hvk : cvk.Corresponds σ idx)
-    (hpub : pub.size = idx.publicCount)
-    (htpos : 0 < cp.tComm.size)
-    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (hacc : kimchiVerify IpaVesta.curve σ cvk cp pub = true)
-    (aRef : Fin (runInput IpaVesta.curve σ cvk cp pub).commitments.size
-      → Fin (2 ^ σ.k) → Fp)
-    (ρRef : Fin (runInput IpaVesta.curve σ cvk cp pub).commitments.size → Fp)
-    (hrep : ∀ i, commit σ (aRef i) (ρRef i)
-      = (runInput IpaVesta.curve σ cvk cp pub).commitmentFn i)
-    (aT : Fin cp.tComm.size → Fin (2 ^ σ.k) → Fp) (ρT : Fin cp.tComm.size → Fp)
-    (hTC : ∀ j : Fin cp.tComm.size, commit σ (aT j) (ρT j) = cp.tComm[j])
-    (hξ : (runInput IpaVesta.curve σ cvk cp pub).polyscale
-      ∉ badXiOf σ aRef (runInput IpaVesta.curve σ cvk cp pub).pointFn
-          (runInput IpaVesta.curve σ cvk cp pub).evalFn)
-    (hr : (runInput IpaVesta.curve σ cvk cp pub).evalscale
-      ∉ badROf σ aRef (runInput IpaVesta.curve σ cvk cp pub).pointFn
-          (runInput IpaVesta.curve σ cvk cp pub).evalFn
-          (runInput IpaVesta.curve σ cvk cp pub).polyscale) :
-    RunBounds σ cvk cp pub idx aRef ∧ RunGuardImp σ cvk cp pub idx aRef aT :=
-  run_sound_algebraic_ft σ cvk cp pub idx Pasta.vesta_smul_val hnc hk hn hvk hpub
-    htpos hbind hacc (kimchi_fiat_shamir_vesta σ cvk cp pub) aRef ρRef hrep aT ρT
-    hTC hξ hr
-
-/-- **The run-level residue-free root (Pallas).** The Pallas-side twin of
-`kimchiVesta_run_sound_algebraic_ft`, over `Fq`/`IpaPallas`. Same shape: the conclusion is
-`RunBounds ∧ RunGuardImp` over the canonical exclusion sets `Protocol.soundBad*` at
-`runW`/`runZ` and the assembled table `runWTab …`, with the run's avoidance of the exclusion
-sets and the conditions `hξ`/`hr` left as hypotheses (the forking/density argument). The same
-trust surface: the sole axiom consumed is its Fiat–Shamir assumption
-`kimchi_fiat_shamir_pallas` (once, through `run_sound_algebraic_ft`), and the
-computational hypotheses — the AGM representations `aRef`/`ρRef`/`aT`/`ρT`, the
-good-challenge guards `hξ`/`hr`, and DL-binding `hbind` (see the `hbind` scope note in the
-`Bulletproof/Soundness.lean` module docstring) — stay in the statement. -/
-theorem kimchiPallas_run_sound_algebraic_ft (σ : SRS IpaPallas.Point) {nc : ℕ}
-    (cvk : KimchiVK IpaPallas.curve nc) (cp : KimchiProof IpaPallas.curve nc σ.k)
-    (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
-    (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n) (hn : cvk.n = n)
-    (hvk : cvk.Corresponds σ idx)
-    (hpub : pub.size = idx.publicCount)
-    (htpos : 0 < cp.tComm.size)
-    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
-    (hacc : kimchiVerify IpaPallas.curve σ cvk cp pub = true)
-    (aRef : Fin (runInput IpaPallas.curve σ cvk cp pub).commitments.size
-      → Fin (2 ^ σ.k) → Fq)
-    (ρRef : Fin (runInput IpaPallas.curve σ cvk cp pub).commitments.size → Fq)
-    (hrep : ∀ i, commit σ (aRef i) (ρRef i)
-      = (runInput IpaPallas.curve σ cvk cp pub).commitmentFn i)
-    (aT : Fin cp.tComm.size → Fin (2 ^ σ.k) → Fq) (ρT : Fin cp.tComm.size → Fq)
-    (hTC : ∀ j : Fin cp.tComm.size, commit σ (aT j) (ρT j) = cp.tComm[j])
-    (hξ : (runInput IpaPallas.curve σ cvk cp pub).polyscale
-      ∉ badXiOf σ aRef (runInput IpaPallas.curve σ cvk cp pub).pointFn
-          (runInput IpaPallas.curve σ cvk cp pub).evalFn)
-    (hr : (runInput IpaPallas.curve σ cvk cp pub).evalscale
-      ∉ badROf σ aRef (runInput IpaPallas.curve σ cvk cp pub).pointFn
-          (runInput IpaPallas.curve σ cvk cp pub).evalFn
-          (runInput IpaPallas.curve σ cvk cp pub).polyscale) :
-    RunBounds σ cvk cp pub idx aRef ∧ RunGuardImp σ cvk cp pub idx aRef aT :=
-  run_sound_algebraic_ft σ cvk cp pub idx Pasta.pallas_smul_val hnc hk hn hvk hpub
-    htpos hbind hacc (kimchi_fiat_shamir_pallas σ cvk cp pub) aRef ρRef hrep aT ρT
-    hTC hξ hr
 
 /-! ## What arm (4) of the knowledge-soundness game consumes from this layer
 
@@ -2578,5 +2376,75 @@ theorem runWTab_setBase {C : Ipa.CommitmentCurve} (σ : SRS C.Point) (u : C.Poin
     {n : ℕ} (idx : Index C.ScalarField n)
     (aRef : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField) :
     runWTab { σ with U := u } cvk cp pub idx aRef = runWTab σ cvk cp pub idx aRef := rfl
+
+/-- **The run-level root at supplied evaluation pins (Vesta).** The Fiat–Shamir-free form.
+Where the removed `kimchiVesta_run_sound_algebraic_ft` obtained the run's opening from a
+declared Fiat–Shamir axiom, this takes the per-row evaluation pins that opening was only ever
+used to manufacture. It consumes NO Fiat–Shamir axiom: the pins come from the forking
+extractor, and the probability that they fail is exactly what the knowledge-soundness
+endpoints bound.
+
+Conditional where the axiom-fed form looked unconditional, which is the honest shape — the
+deterministic per-run claim needs an opening, and supplying one is a probabilistic statement
+rather than a free one. -/
+theorem kimchiVesta_run_sound_of_pins (σ : SRS IpaVesta.Point) {nc : ℕ}
+    (cvk : KimchiVK IpaVesta.curve nc) (cp : KimchiProof IpaVesta.curve nc σ.k)
+    (pub : Array Fp) {n : ℕ} [NeZero n] (idx : Index Fp n)
+    (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n) (hn : cvk.n = n)
+    (hvk : cvk.Corresponds σ idx)
+    (hpub : pub.size = idx.publicCount)
+    (htpos : 0 < cp.tComm.size)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp), DLRelation σ w wh → w = 0 ∧ wh = 0)
+    (hacc : kimchiVerify IpaVesta.curve σ cvk cp pub = true)
+    (aRef : Fin (runInput IpaVesta.curve σ cvk cp pub).commitments.size
+      → Fin (2 ^ σ.k) → Fp)
+    (ρRef : Fin (runInput IpaVesta.curve σ cvk cp pub).commitments.size → Fp)
+    (hrep : ∀ i, commit σ (aRef i) (ρRef i)
+      = (runInput IpaVesta.curve σ cvk cp pub).commitmentFn i)
+    (aT : Fin cp.tComm.size → Fin (2 ^ σ.k) → Fp) (ρT : Fin cp.tComm.size → Fp)
+    (hTC : ∀ j : Fin cp.tComm.size, commit σ (aT j) (ρT j) = cp.tComm[j])
+    (hpins : ∀ (i : Fin (runInput IpaVesta.curve σ cvk cp pub).commitments.size)
+        (j : Fin evalPts),
+      (runInput IpaVesta.curve σ cvk cp pub).evalFn i j
+        = innerProduct (aRef i)
+            (evalVector (2 ^ σ.k) ((runInput IpaVesta.curve σ cvk cp pub).pointFn j))) :
+    RunBounds σ cvk cp pub idx aRef ∧ RunGuardImp σ cvk cp pub idx aRef aT :=
+  run_sound_algebraic_of_pins σ cvk cp pub idx Pasta.vesta_smul_val hnc hk hn hvk hpub
+    htpos hbind hacc aRef ρRef hrep aT ρT hTC hpins
+
+/-- **The run-level root at supplied evaluation pins (Pallas).** The Fiat–Shamir-free form.
+Where the removed `kimchiPallas_run_sound_algebraic_ft` obtained the run's opening from a
+declared Fiat–Shamir axiom, this takes the per-row evaluation pins that opening was only ever
+used to manufacture. It consumes NO Fiat–Shamir axiom: the pins come from the forking
+extractor, and the probability that they fail is exactly what the knowledge-soundness
+endpoints bound.
+
+Conditional where the axiom-fed form looked unconditional, which is the honest shape — the
+deterministic per-run claim needs an opening, and supplying one is a probabilistic statement
+rather than a free one. -/
+theorem kimchiPallas_run_sound_of_pins (σ : SRS IpaPallas.Point) {nc : ℕ}
+    (cvk : KimchiVK IpaPallas.curve nc) (cp : KimchiProof IpaPallas.curve nc σ.k)
+    (pub : Array Fq) {n : ℕ} [NeZero n] (idx : Index Fq n)
+    (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n) (hn : cvk.n = n)
+    (hvk : cvk.Corresponds σ idx)
+    (hpub : pub.size = idx.publicCount)
+    (htpos : 0 < cp.tComm.size)
+    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq), DLRelation σ w wh → w = 0 ∧ wh = 0)
+    (hacc : kimchiVerify IpaPallas.curve σ cvk cp pub = true)
+    (aRef : Fin (runInput IpaPallas.curve σ cvk cp pub).commitments.size
+      → Fin (2 ^ σ.k) → Fq)
+    (ρRef : Fin (runInput IpaPallas.curve σ cvk cp pub).commitments.size → Fq)
+    (hrep : ∀ i, commit σ (aRef i) (ρRef i)
+      = (runInput IpaPallas.curve σ cvk cp pub).commitmentFn i)
+    (aT : Fin cp.tComm.size → Fin (2 ^ σ.k) → Fq) (ρT : Fin cp.tComm.size → Fq)
+    (hTC : ∀ j : Fin cp.tComm.size, commit σ (aT j) (ρT j) = cp.tComm[j])
+    (hpins : ∀ (i : Fin (runInput IpaPallas.curve σ cvk cp pub).commitments.size)
+        (j : Fin evalPts),
+      (runInput IpaPallas.curve σ cvk cp pub).evalFn i j
+        = innerProduct (aRef i)
+            (evalVector (2 ^ σ.k) ((runInput IpaPallas.curve σ cvk cp pub).pointFn j))) :
+    RunBounds σ cvk cp pub idx aRef ∧ RunGuardImp σ cvk cp pub idx aRef aT :=
+  run_sound_algebraic_of_pins σ cvk cp pub idx Pasta.pallas_smul_val hnc hk hn hvk hpub
+    htpos hbind hacc aRef ρRef hrep aT ρT hTC hpins
 
 end Kimchi.Verifier

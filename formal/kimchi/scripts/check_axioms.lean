@@ -57,10 +57,9 @@ def roots : List Name :=
     `Kimchi.Verifier.kimchiPallas_sound,
     `Kimchi.Verifier.kimchiVesta_run_sound,
     `Kimchi.Verifier.kimchiPallas_run_sound,
-    `Kimchi.Verifier.ft_opening_of_reflected_vesta,
-    `Kimchi.Verifier.ft_opening_of_reflected_pallas,
-    `Kimchi.Verifier.kimchiVesta_run_sound_algebraic_ft,
-    `Kimchi.Verifier.kimchiPallas_run_sound_algebraic_ft ]
+    `Kimchi.Verifier.ft_opening_of_pins,
+    `Kimchi.Verifier.kimchiVesta_run_sound_of_pins,
+    `Kimchi.Verifier.kimchiPallas_run_sound_of_pins ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms and
     `Lean.ofReduceBool`. The pasta package declares NO axioms — the group orders are
@@ -79,8 +78,6 @@ def allowed : List Name :=
     -- (`Ipa.verifyFrom (runWarm) (runInput)`, the flat segment stream) rather than the
     -- cold `Ipa.verify`. One per curve; the residue-free ft openings
     -- (`ft_opening_of_reflected_*`) and the terminal roots are stated over these.
-    `Kimchi.Verifier.kimchi_fiat_shamir_vesta,
-    `Kimchi.Verifier.kimchi_fiat_shamir_pallas,
  ]
 
 /-- A trusted `native_decide` witness: CompElliptic's point counts, or pasta's two GLV
