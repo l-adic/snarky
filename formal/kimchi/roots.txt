@@ -62,46 +62,64 @@ Kimchi.Gate.Poseidon.complete
 -- it and the soundness line.) Gated by `scripts/check_axioms.lean`.
 Kimchi.Index.satisfies_iff_fullFamily_dvd
 
--- THE EXECUTABLE VERIFIER, over the checked records (production chunking; `nc = 1`
--- is just the one-chunk case), and the wire-boundary parser that feeds it: clients
--- parse the serde-typed wire records at the run's chunk count
--- (`Wire.{KimchiProof,KimchiVK}.check` — the verifier's own length checks factored
--- as a total parse; a checked record cannot hold a ragged proof) and call
--- `kimchiVerify` on the result. The composition is adjudicated against the
--- production fixtures — nc=2 on BOTH curves plus the one-chunk fixture — by
--- `scripts/check_kimchi_verifier.lean` (accept + corruption rejections).
+-- The executable verifier and the wire parsers. Not soundness results: this is the API the
+-- fixture drivers exercise (`check_kimchi_verifier.sh` runs `kimchiVerify` on five production
+-- proofs; the parsers are what turn dumped wire data into the checked records). They are rooted
+-- because nothing in the library consumes them -- the scripts do.
 Kimchi.Verifier.kimchiVerify
 Kimchi.Verifier.Wire.KimchiProof.check
 Kimchi.Verifier.Wire.KimchiVK.check
--- The reduction: the 44-row grid soundness at nc * 2^k = n (the public row is IN the
--- batch — its claims are proof-carried and believed only through binding), extraction
--- via chunked_batch_soundness directly.
-Kimchi.Verifier.kimchiProof_sound
--- The standard-model run-level capstones (grid path): the grid capstones at the
--- deployed Pasta verifiers (per-node poseidon_fiat_shamir over the flat segment
--- stream) and the AGM corollary with the residue-free algebraic quotient (the ft
--- row's DOUBLE collapse at zeta^{2^k}).
-Kimchi.Verifier.kimchiVesta_run_sound
-Kimchi.Verifier.kimchiPallas_run_sound
--- The FS-reflection ft openings: from ONE genuine acceptance, the ft row of the run's
--- own flat stream opens to the computed runFtEval0 (axioms consumed: the
--- kimchi_fiat_shamir_* pair, once each).
-Kimchi.Verifier.ft_opening_of_pins
--- The abstract chunked AGM root (Capstone/Algebraic.lean): residue-free algebraic
--- soundness with the Fiat-Shamir tree and the ft opening as caller hypotheses —
--- consumes NO Fiat-Shamir axiom.
-Kimchi.Verifier.kimchiProof_sound_algebraic_ft
--- THE TERMINAL THEOREMS — AGM soundness of the deployed verifier at production
--- chunking. From a genuine `verify = true`, AGM representations of the 44*nc+1 flat
--- segment rows and the t chunks deliver the guarded `Satisfies idx (pubView idx pub)`:
--- openings seam fed directly, public row bound through the key's Lagrange chunk pin,
--- Maller identity from the ft opening at the DOUBLE zeta^{2^k} collapse. Trust
--- surface = kimchi_fiat_shamir (Poseidon-RO) + DL-binding (hbind) + CompElliptic.
--- The conclusion is `RunBounds ∧ RunGuardImp` over the canonical Schwartz-Zippel exclusion
--- sets `Protocol.soundBad*` (at the run's assembled `runW`/`runZ`) and the assembled table
--- `runWTab` — explicit named terms, so the conclusion constrains the run's own Fiat-Shamir
--- challenges. Scope: that a genuine run's challenges avoid the (card-bounded) exclusion sets,
--- and the good-combination conditions `hξ`/`hr`, are hypotheses of `RunGuardImp` — the
--- forking/density argument, not carried here.
-Kimchi.Verifier.kimchiVesta_run_sound_of_pins
-Kimchi.Verifier.kimchiPallas_run_sound_of_pins
+
+-- =====================================================================================
+-- THE KNOWLEDGE-SOUNDNESS DEVELOPMENT
+--
+-- The deployed verifier is knowledge-sound, per curve, in the random-oracle model: over a
+-- uniformly sampled setup basis and a uniform challenge table, and for every complete fork
+-- tape, the probability that the executable verifier accepts while the forking extractor
+-- returns no table satisfying the circuit the verifying key corresponds to is at most
+--   (Q + k + 1)*3/2^128 + (2^k + 1)*eps + delta + (Q + 1)*szBudget/2^128.
+-- Trust surface: the standard axioms plus the Pasta certificates. No Fiat-Shamir axiom.
+Kimchi.Verifier.KnowledgeSoundness.vesta_kimchi_knowledge_sound
+Kimchi.Verifier.KnowledgeSoundness.pallas_kimchi_knowledge_sound
+
+-- Faithfulness: the deployed verifier IS the challenge-generic one at the sponge's own
+-- squeezes, stated at named sources rather than as an existential (an existential over the
+-- challenges is satisfied even by a verifier with Fiat-Shamir deleted).
+Kimchi.Verifier.KnowledgeSoundness.kimchiVerify_eq_verifyWith
+
+-- What the endpoints do and do not claim, rooted so they cannot be swept:
+-- `FSFaithful` names the eight equations separating the game from the deployed verifier --
+-- exactly the random-oracle idealisation, the same step the IPA capstone already takes --
+-- and `wins_iff_kimchiVerify` is the pointwise bridge that holds wherever they do;
+-- the honest family witnesses that the bound is a statement about the extractor rather
+-- than about acceptance being empty.
+Kimchi.Verifier.Forking.Bridge.FSFaithful
+Kimchi.Verifier.Forking.Bridge.wins_iff_kimchiVerify
+Kimchi.Verifier.Forking.honestKimchiFamily_wins
+Kimchi.Verifier.Forking.honestKimchiFamily_failure_set
+
+-- =====================================================================================
+-- REVISIT: the AGM un-batching lemmas, rooted to keep them, not because they are API.
+--
+-- These are the results behind "no grid is needed": per-commitment representations plus ONE
+-- accepted opening give every per-row evaluation pin, against two counted exclusion sets.
+-- The endpoints do not call them -- they call the split forms
+-- (`eval_pins_of_opening_of_eq`, `dlRelation_of_opening_ne`) that separate the
+-- conclusion-given-equality from the relation-given-inequality -- so the closure would
+-- otherwise drop them along with the old soundness chain.
+--
+-- They are kept because they are mathematical content rather than plumbing, and because the
+-- un-batching argument is the part of this development with no counterpart upstream
+-- (ironwood's `batch_open_soundV` needs a grid it cannot obtain from one run). Rooting is a
+-- holding action: decide whether they earn standalone status or should follow the chain out.
+--
+-- NOTE: marking these `private` was considered and does not compose with rooting -- private
+-- names are mangled, and nothing in their own files consumes them, so they would read as
+-- unused file-local declarations to both `lake lint` and the dead-code pass.
+Kimchi.Verifier.eval_pins_of_opening
+Kimchi.Verifier.combinedCommitment_eq_commit_of_rep
+Kimchi.Verifier.dlRelation_of_opening_ne
+Kimchi.Verifier.dlRelation_of_commit_eq
+Kimchi.Verifier.dlRelation_of_chunk_rep_ne
+Kimchi.Verifier.dlRelation_of_chunk_rep_masked_ne
+Kimchi.Verifier.ft_identity_of_chunks
