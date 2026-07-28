@@ -590,14 +590,19 @@ named as the verifier-soundness capstone in their proof map — assumes them onl
 making at most `R` black-box calls, which is the *weaker* and more plausible hypothesis. That is
 what this section adds; the bound itself is unchanged.
 
-**The call bound is large, and that is stated rather than hidden.** `coins.Complete`
-(`Recursive.lean:100`) requires every node's order list to enumerate the whole prechallenge
-domain, so any `R` satisfying `ReductionEfficient` here is astronomically bigger than the cost of
-solving discrete log outright. Upstream is in the same position — its only unconditional
-discharge is `reductionEfficient_exponential` at `R = (2·|F| + 1) ^ k`, and its own docstring and
-`KnowledgeSoundness.lean:19` say that is not a field-independent polynomial AFK bound. The gate is
-therefore honest bookkeeping, not a security claim: it records *which* reductions the hardness
-assumption is taken against. -/
+**What the call bound does and does not say** (external-audit E-1 — an earlier revision here
+OVERclaimed the limitation). `Complete` is a search-completeness condition — it is what makes
+non-escape imply extraction — and it does not by itself bound the cost: `ReductionEfficient`
+averages the run count over oracle tables, and a table on which the adversary loses costs
+exactly ONE run (`recursiveAlgebraicForkFrom` descends without rewinding and returns at the
+leaf), so the quantity gated here is the classical expected-forking cost, not the worst case.
+What is *proved* is only the worst case, ironwood's `(2·|F| + 1) ^ k`
+(`reductionEfficient_exponential`); a table-averaged bound is not proved here. Upstream's
+`ExpectedRuns.lean` proves `E[runs] ≤ (6/δ)^k` under a uniform good-challenge density floor,
+on the tape-averaged axis; porting it to this axis is open, as is any unconditional
+polynomial bound. The gate is therefore honest bookkeeping, not a security claim: it records
+*which* reductions the hardness assumption is taken against, with the extractor's cost an
+open item rather than a known-large one. -/
 
 section Capstone
 
@@ -801,9 +806,14 @@ fork tape is complete.
 2. *`δ` is not a reduction.* `derivedUDL_iff_residual_measure` proves it is the residual event's
    own measure. Only `ε` reduces to a standard problem. This is the price of kimchi's
    transcript-derived `U`, which halo2 does not pay — ironwood has no analogue.
-3. *The call bound says less than it looks.* `reductionEfficient_exists` proves some `R` always
-   exists without inspecting the counter, and `coins.Complete` forces order lists of size `2¹²⁸`,
-   so the honest `R` far exceeds the cost of solving discrete log outright.
+3. *The extractor's cost is UNPROVED, not known-large* (external-audit E-1).
+   `reductionEfficient_exists` obtains some `R` without inspecting the counter, and the only
+   proved bound is ironwood's worst case `(2·|F| + 1)^k` — but a losing table costs one run,
+   so the table-averaged quantity `ReductionEfficient` gates is the classical
+   expected-forking cost, unbounded by any theorem here. Because `ε` bounds the DL advantage
+   of this specific finder, a generic-group grounding of `ε` needs a cost bound this
+   development does not yet have; `ExpectedRuns.lean` upstream has the conditional bound
+   (`(6/δ)^k` under a fork-spread floor, tape-averaged) that would supply one.
 4. *One claim.* The statement is single-claim; recovering individual polynomials from a batch is
    the separate un-batching layer (`chunked_batch_soundness`).
 

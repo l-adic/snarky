@@ -77,6 +77,8 @@ def runChunked (C : Ipa.CommitmentCurve)
     let mps ← match (← (← j.getObjVal? "max_poly_size").getStr?).toNat? with
       | some v => pure v
       | none => throw "field max_poly_size is not a numeral"
+    -- `Nat.log2` truncates a non-two-power `max_poly_size` (external-audit C-4);
+    -- production domains are radix-2, so fixture values are exact powers.
     let σ ← parseSRSAt C (Nat.log2 mps) j
     let proof ← Kimchi.Fixture.parseKimchiProof C j
     let pub ← parseArrOf (parseZMod (n := C.scalar)) (← j.getObjVal? "public")

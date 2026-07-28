@@ -38,6 +38,16 @@ Scope (every deferral is declared here):
   single σ-commitment term (verifier.rs:897–956);
 * `σ.k > domainLog2` — production's sub-SRS `chunk_size = 1` regime — is out of
   scope (the verifier rejects it);
+* at the two excluded evaluation points `ζ ∈ {1, ω^(n−zkRows)}` production PANICS
+  (`.expect("negligible probability")`, verifier.rs:459–460) while this executable
+  takes `ZMod`'s junk division (`x/0 = 0`) and proceeds — harmless for the theorems,
+  which exclude exactly these two points (`zetaBoundaryBad`, the `+2` of `szBudget`),
+  but a real algorithm-vs-algorithm difference (external-audit V-3);
+* the final check is the two bracket equations as a DETERMINISTIC conjunction where
+  production checks one rng-weighted MSM (`r₁·A + r₂·B = 0`, fresh `thread_rng`) —
+  Lean-accept implies production-accept with probability 1, the conservative
+  direction — and this verifier checks ONE proof (= production's `batch_verify` on a
+  singleton); multi-proof batching is out of scope (external-audit V-4);
 * production's key carries the public-input count (`pub public: usize`,
   verifier_index.rs:71 — a serialized field) and `to_batch` rejects a mismatched
   argument outright (`public_input.len() != verifier_index.public`,

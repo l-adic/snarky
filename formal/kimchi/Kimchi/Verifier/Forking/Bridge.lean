@@ -226,13 +226,4 @@ theorem wins_iff_kimchiVerify (fam : KimchiFamily C nc k n)
 
 end Faithful
 
-/-! ## 4. The endpoints, over deployed acceptance
-
-`wins_iff_kimchiVerify` converts deployed acceptance into `KimchiFamily.Wins` **pointwise on the
-faithful locus**, so the deployed failure event intersected with that locus is a subset of the
-event the endpoints bound. Monotonicity of the outer measure does the rest.
-
-Read the caveat on each statement before quoting it: intersecting with the faithful locus
-*restricts* the measured event. These are modelling statements, not stronger bounds. -/
-
 end Kimchi.Verifier.Forking.Bridge

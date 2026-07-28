@@ -358,10 +358,11 @@ Without this the knowledge-soundness endpoints below would be about an unrelated
 with it they are about the shipped verifier under a random-oracle idealization of the sponge.
 The IPA analogue is `Bulletproof.Ipa.Forking.verifyOracle_spongeFS`.
 
-Caveat, deliberately left visible: this pins the deployed verifier to the generic one at the
-*warm* base `U⋆`. The game the endpoints measure evaluates the generic verifier at a base
-derived from the claim through the *cold* sponge; the two agree only if the warm and cold
-derivations of the base do, which is not proved here. -/
+The base slot needs no caveat (an earlier revision carried one here): the game the endpoints
+measure evaluates the generic verifier at the same *warm* base this theorem pins —
+`KimchiFamily.Wins` feeds `fam.warmBase`, and `Forking/Bridge.lean` records that the two
+slots are the same term, closed by `rfl`. The cold-base game, and the ninth `FSFaithful`
+field it required, are gone. -/
 theorem kimchiVerify_eq_verifyWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
     kimchiVerify C σ cvk cp pub
@@ -833,7 +834,10 @@ structure KimchiFamily (C : Ipa.CommitmentCurve) [Module C.ScalarField C.Point]
   cvk : (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) → KimchiVK C nc
   /-- The public input at each basis. -/
   pub : (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) → Array C.ScalarField
-  /-- The absorbed key digest, as a transcript label. -/
+  /-- The absorbed key digest, as a transcript label. Free family data, and harmless as
+  such: the bound is ∀-families, and the bridge self-polices — a family whose label
+  diverges from `VerifierIndex::digest()` makes `FSFaithful` unsatisfiable rather than
+  silently applying (external-audit B-5). -/
   digest : (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) → C.ScalarField
   /-- The circuit the key is a key *for*. -/
   idx : Index C.ScalarField n
@@ -891,7 +895,11 @@ structure KimchiFamily (C : Ipa.CommitmentCurve) [Module C.ScalarField C.Point]
   its representation after seeing the very challenge an exclusion set is about, which destroys
   the blindness the adaptive Schwartz–Zippel charge needs. It is a field rather than a
   hypothesis of the endpoint because the endpoint's statement is frozen; it narrows the family
-  class to exactly the families the algebraic group model admits. -/
+  class to exactly the families the algebraic group model admits. One honest boundary of
+  that class (external-audit B-6): a family whose representations depend on answers to
+  OFF-RUN oracle cells — cells its own transcript never reads — while emitting the same
+  commitments is excluded; that is the emission-time reading of AGM-in-the-ROM, and it is
+  the narrowing this field performs. -/
   hrepPrefix : ∀ basis O O' (i : Fin (nc + 1 + tailRowCount * nc)),
     kimchiNodes (digest basis)
         (fun c => (publicCommitment C (srsOfBasis k basis) (cvk basis) (pub basis))[c])
@@ -4363,7 +4371,10 @@ an assumption about a slice of the conclusion, not a reduction); or it returns a
 the run's own Fiat–Shamir challenges land in an exclusion set (`szBudget`).
 
 **What the bound rests on.** Two cryptographic assumptions, both hypotheses: `hHard`, which
-prices the two discrete-log arms, and the fork tape's completeness. Everything else is proved:
+prices the two discrete-log arms, and the fork tape's completeness. `hEff` fixes which
+reductions `hHard` is taken against; the extractor's cost is not bounded by any theorem in
+this development (external-audit E-1), so `ε` is assumed for the finder rather than derived
+from a time bound. Everything else is proved:
 the presence arm by the claim-adaptive extraction game, and the algebraic arm by the
 Fiat–Shamir-axiom-free run-soundness root together with the adaptive Schwartz–Zippel charge.
 The narrowing of the family class is `KimchiFamily`'s own `hrepPrefix`/`hTPrefix` — algebraic

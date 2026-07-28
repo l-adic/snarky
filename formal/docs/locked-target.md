@@ -132,3 +132,11 @@ Two per-curve corollaries follow by discharging the three hypotheses. Those repl
 `poseidon_fiat_shamir_{vesta,pallas}` axioms (`Reflection.lean:192`, `:202`) at the four kimchi use
 sites (`kimchi/…/Capstone/Standard.lean:210`, `:258`, `:349`, `:431`). That retirement, not this
 theorem, is the point.
+
+## Regeneration policy (external-audit A-4)
+
+Re-pinning an `.expected` file (`--regen`) is a statement change. It lands as an **isolated
+commit** whose message quotes the statement diff verbatim — never folded into a lint,
+refactor or feature commit — so the change of WHAT is proved is reviewable on its own.
+Same-PR regeneration is inherently invisible to the gate itself (it is textual); the
+isolated-commit rule is what makes it visible to review.

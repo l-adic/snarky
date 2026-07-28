@@ -1,8 +1,11 @@
 # AGENTS-formal.md — agent context for `formal/` (the `Kimchi` Lean library)
 
-This directory is a **Lean 4 + Mathlib** formalization of the kimchi custom EC gates
-(AddComplete, VarBaseMul, EndoMul, EndoScalar, Generic) used by the Pasta-curve proof
-system. The `Kimchi.*` namespace is **not** a circuit-DSL embedding: there is no `Circuit`
+This directory is a **Lean 4 + Mathlib** formalization of the kimchi proof system over
+the Pasta curves: the basic gate set (Generic, Poseidon, AddComplete, VarBaseMul, EndoMul,
+EndoScalar), the arithmetization, the executable verifier, and per-curve knowledge
+soundness of that verifier. **The modeled fragment excludes lookups, optional gates,
+recursion, and the sub-SRS regime** — Mina/pickles proofs are OUTSIDE it on four axes; the
+canonical fragment statement lives in `Kimchi/Verifier/KnowledgeSoundness.lean`'s preamble. The `Kimchi.*` namespace is **not** a circuit-DSL embedding: there is no `Circuit`
 monad, no `FormalCircuit`/`ProvableType`/`ElaboratedCircuit`, no `circuit_proof_start`.
 Gates are modelled as **plain Lean predicates over witness structures**, and proved
 faithful to **Mathlib's elliptic-curve group law** (`WeierstrassCurve.Affine`). If you've
@@ -82,19 +85,20 @@ check-only by default (non-zero exit on any violation); `check-style.sh --fix` a
 trailing whitespace and final newlines (the over-long lines you wrap by hand). CI runs the
 same checks, so a clean run here is the gate for a green build.
 
-## The three layers
+## The layer stack
 
-The library is a strict bottom-up stack (`Cycle` → `Circuit` → `Gate` → `Curve`):
+The kimchi package is a bottom-up stack (the `Circuit`/`Cycle` directories this guide once
+described are gone; their content lives in `Gate/` + `Gate/Semantics/` + the pasta package):
 
-| Layer | Dir | Models | Field |
-| --- | --- | --- | --- |
-| **Gate** | `Kimchi/Gate/` | one gate row as a constraint predicate, proved to compute the intended EC operation | coordinate field `F` |
-| **Circuit** | `Kimchi/Circuit/` | a *chain* of `m` gate rows folded into one result (double-and-add ladder, GLV accumulation) | coordinate field `F` |
-| **Cycle** | `Kimchi/Cycle/` | the *two-field* account: lifts coordinate-field results into the **scalar field** (the group order `q`), using the curve axioms | scalar field, via `CMCurve`/`TwoCycle` |
+| Layer | Dir | Models |
+| --- | --- | --- |
+| **Gate** | `kimchi/Kimchi/Gate/` | one gate row as a constraint predicate (`Holds`/`ok`/`ok_iff`), proved to compute the intended EC/permutation operation |
+| **Semantics** | `kimchi/Kimchi/Gate/Semantics/` | multi-row chains (ladders, GLV accumulation) and the per-curve deployed entry points, with pasta's certified orders/eigenvalues in place of the old axioms |
+| **Arithmetization** | `kimchi/Kimchi/{Index,Permutation,Protocol,Lift,...}` | the index, satisfiability ↔ divisibility, the linearization |
+| **Verifier** | `kimchi/Kimchi/Verifier/` | the executable verifier, the wire layer, and the knowledge-soundness development |
 
-`Kimchi/Curve.lean` is the shared EC oracle imported by everything. `Main.lean` +
-`Kimchi/Gate/Generic.lean` are a runnable demo of "ingest a (gate, witness) and run the
-verified checker".
+`Main.lean` + `Kimchi/Gate/Generic.lean` are a runnable demo of "ingest a (gate, witness)
+and run the verified checker".
 
 Above the gate stack, the library has grown four further trees:
 
@@ -118,19 +122,16 @@ convention. Also: state threaded through executable folds must be concrete data 
 structures) — the compiler eta-expands function-valued definitions, making folds
 exponential.
 
-### The Circuit module convention
+### The gate/semantics module convention
 
-Each `Circuit/{Name}` is exactly two files:
+Each modelled gate is two files:
 
-- **`Kimchi/Circuit/{Name}.lean`** — the thin top-level module. It exposes only the headline root
-  theorems: for `EndoMul`/`VarBaseMul`, the per-Pasta-curve specializations (`pallas_endoMul`,
-  `varBaseMul_scaleFast1`, …); for the field-generic circuits, the principal results. It imports
-  `Kimchi.Circuit.{Name}.Internal`.
-- **`Kimchi/Circuit/{Name}/Internal.lean`** — the entire supporting development (the recurrence
-  folds, ladder/recoding kernels, non-degeneracy toolkit, and the abstract soundness theorems).
-  Its declarations stay public — the generic roots (`endoMul`, `varBaseMul_subwrap_correct`, …)
-  live here and are still tracked by `scripts/check_axioms.lean` — `Internal` is a naming
-  convention, not an access boundary.
+- **`Kimchi/Gate/{Name}.lean`** — the constraint model (`Witness`/`Holds`/`ok`/`ok_iff`)
+  and the per-row soundness/completeness.
+- **`Kimchi/Gate/Semantics/{Name}.lean`** — the multi-row development (recurrence folds,
+  ladder/recoding kernels, non-degeneracy toolkit) up to the per-Pasta-curve deployed
+  entry points (`pallas_endoMul`, `varBaseMul_scaleFast1`, …), tracked by
+  `scripts/check_axioms.lean`.
 
 ## How a gate is modelled
 
@@ -190,8 +191,9 @@ theorem sound_point_noninf (W : WeierstrassCurve.Affine F) (ha : IsShortShape W)
 theorem gate_scalarMul … (h : Holds w) :
     Point.some _ _ h5 = (32 : ℕ) • Point.some _ _ h0 + (16 : ℕ) • Point.some _ _ hQ0 + …
 
--- Cycle layer: the genuine scalar lives in the scalar field, via the order axiom
-theorem varBaseMul_faithful (c : CMCurve F) {p : ℕ} [CharP F p] …
+-- Per-curve entry point: the genuine scalar lives in the scalar field, via pasta's
+-- certified order (no axiom)
+theorem varBaseMul_scaleFast2 … / pallas_endoMul …
 ```
 
 The **Spec is the semantic contract**: it must state the *intended* EC operation
@@ -220,43 +222,27 @@ Reusable EC lemmas live in `Curve.lean` — **prefer these over re-deriving**:
 - `signed_target` — `∃ e, Point.some _ _ hQ = e • Point.some _ _ hT ∧ (e:F) = 2b−1` (the `±T` selector for bit `b`).
 - `some_eq_some` — points with equal coordinates are equal (congruence past the nonsingularity proof).
 
-## The axiom boundary (`Cycle/Axioms.lean`, `Cycle/Pasta.lean`)
+## The trust surface (zero axiom declarations)
 
-The whole point of the `Cycle` layer is to make the **non-Mathlib facts explicit and
-auditable**. The Gate and Circuit layers are axiom-free (only `propext, Classical.choice,
-Quot.sound`). The genuinely-unprovable facts are bundled as fields of `CMCurve`, each
-flagged `**AXIOM**` in its docstring:
-
-```lean
-structure CMCurve (F) [Field F] [DecidableEq F] where
-  W : WeierstrassCurve.Affine F
-  short : IsShortShape W
-  order : ℕ
-  order_smul : ∀ P : W.Point, (order : ℤ) • P = 0          -- **AXIOM (Schoof)**: the point count
-  beta : F ; beta_cube : beta ^ 3 = 1
-  lam : ℤ
-  eigen : ∀ {x y} (h …) (h' …),                            -- **AXIOM (CM)**: φ(x,y)=(βx,y) acts as [λ]
-    Point.some _ _ h' = lam • Point.some _ _ h
-```
-
-`Cycle/Pasta.lean` instantiates the **concrete** Pallas curve: the field is
-`CompElliptic.Fields.Pasta.PallasBaseField` (`= ZMod p`, carrying a machine-checked,
-axiom-clean Pratt/Lucas primality certificate); `W`, `order`, `beta` are concrete. Only
-`pallas_order_smul`, `pallas_eigen`, `lam` remain `axiom`s. The result is verified by
-
-```lean
-#print axioms Kimchi.Cycle.Pasta.pallas_endoMul_faithful
--- [propext, Classical.choice, Quot.sound, lam, pallas_eigen, pallas_order_smul]
-```
+The tree contains **no `axiom` declarations at all** — the historical `Cycle/Axioms.lean` /
+`CMCurve` boundary this guide once described is gone, as are the Fiat–Shamir axioms. Every
+closure reduces to the three standard logical axioms (`propext`, `Classical.choice`,
+`Quot.sound`) plus **certified `native_decide` witnesses**: CompElliptic's primality,
+point-count, sqrt-order and eigen-anchor certificates, and pasta's two declared GLV
+eigenvalue anchors in `Pasta/Endo.lean` — each trusting the compiler through
+`Lean.trustCompiler`. Discrete-log hardness is a *hypothesis of the statements*; the
+random-oracle idealisation enters only as the game's uniform challenge table (`FSFaithful`
+names the identification with the deployed sponge).
 
 **Axiom discipline (follow this):**
-- New trusted facts go in `CMCurve`/`TwoCycle` as `**AXIOM**`-docstringed fields, **not** as
-  free top-level `axiom`s scattered in gate files.
-- The CI gate (`.github/workflows/lean.yml`) runs `#print axioms` on the headline theorems and
-  fails on `sorryAx`. **Never introduce `sorry`/`admit`.**
-- **Avoid `native_decide` in our own proofs** — use `decide` or `reduce_mod_char`. It is accepted
-  only when inherited from CompElliptic (whose point-count proofs use it); `check_axioms.lean`
-  allows `CompElliptic`-namespaced `native_decide` axioms and rejects any from this tree.
+- Introduce NO axioms. A genuinely unprovable fact becomes a *hypothesis* of the statements
+  that need it, never an `axiom`.
+- The CI gates (`.github/workflows/lean.yml`) audit every package's surface
+  (`*/scripts/check_axioms.sh` — kimchi, pasta, poseidon, bulletproof-pcs, snarky) and fail
+  on `sorryAx` or any stray axiom; the sorry census pins the whole tree.
+- **Avoid `native_decide` in our own proofs** — use `decide` or `reduce_mod_char`. The gates
+  trust `native_decide` certificates by DEFINING MODULE (upstream CompElliptic, plus
+  `Pasta/Endo.lean`'s two declared anchors) and reject any other site in this tree.
 
 ## Fixtures and compatibility checks
 
@@ -291,10 +277,10 @@ op type, a decoder, and a `step : state -> op -> state x Bool`.
 
 ## Conventions
 
-- **Namespacing** matches the path: `Kimchi.Gate.*`, `Kimchi.Circuit.*`, `Kimchi.Cycle.*`.
+- **Namespacing** matches the path: `Kimchi.Gate.*`, `Kimchi.Index.*`, `Kimchi.Verifier.*`.
 - **Theorem names**: `ok_iff` (reflection), `sound_*` / `sound_point_*` (soundness),
   `complete_*` (completeness), `*_faithful` (the full bridge), `chain_*` / `gate_*` (folded
-  results), `*_scalar` (scalar-field analogue in `Cycle`).
+  results), `*_scalar` (scalar-field analogue).
 - **`F p` / `ZMod p`** for the field; `[Field F] [DecidableEq F]` (add `[CharP F p]` when the
   characteristic matters). Follow **Mathlib naming conventions** for new lemmas.
 - **Docstrings are dense and that's intentional** — every gate file opens with a multi-paragraph
@@ -304,11 +290,10 @@ op type, a decoder, and a `step : state -> op -> state x Bool`.
 - **Files are split into `/-! ## … -/` sections** (constraint model → reflection → soundness →
   completeness → runnable `#eval` example → supporting lemmas). Keep section docstrings in sync
   with reality (see below).
-- **Each circuit is two files** (see "The Circuit module convention" above): a thin top-level
-  `Kimchi/Circuit/{Name}.lean` exposing the headline roots, and `Kimchi/Circuit/{Name}/Internal.lean`
-  holding the whole supporting development. Add new supporting lemmas to `Internal.lean`; promote a
-  result to the top-level file only when it is a headline root. Do not reintroduce a scatter of
-  per-topic submodules.
+- **Each modelled gate is two files** (see "The gate/semantics module convention" above):
+  the constraint model in `Kimchi/Gate/{Name}.lean` and the multi-row development in
+  `Kimchi/Gate/Semantics/{Name}.lean`. Do not reintroduce a scatter of per-topic
+  submodules.
 - **Never modify `maxHeartbeats`.** If a proof is slow, profile with `#count_heartbeats in`
   (`import Mathlib.Util.CountHeartbeats`) and fix the proof, don't raise the limit.
 
@@ -336,6 +321,6 @@ witness is used freely to line up `Point.some _ _ h` terms before `abel`/`rw`.
   look different across gates because the gates *are* different; each scheme is internally
   consistent. They mirror the `.purs` column names — don't homogenize them.
 - **Stale `STUB`-style comments have bitten before.** When this guide was written, `gate_scalarMul`
-  was labelled "STUB" despite being a complete proof, and `Cycle/Axioms.lean` claimed "nothing
+  was labelled "STUB" despite being a complete proof, and a since-deleted axioms file claimed "nothing
   here is used yet" after Phases 1–4 had come to depend on it. Both are fixed; the lesson stands —
   trust the proof body and `#print axioms`, not a docstring's self-description.

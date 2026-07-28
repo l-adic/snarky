@@ -275,6 +275,7 @@ private theorem claimStable_const [DecidableEq T] {N : ℕ} (A : Zcash.Snark.Ora
     (prefixes : Pf → Fin N → T) (c : ClaimData) :
     ClaimStable A prefixes (fun _ _ => c) := fun _ _ _ _ => rfl
 
+omit [Field F] [AddCommGroup G] [Module F G] in
 /-- **A constant base map is base-stable** (`lem:base-stable-const`). The fixed-base instance:
 both sides of the conclusion are the same `U`, so nothing has to be checked. This is what recovers
 the fixed-base adaptive-claim bound from the varying-base one at `uOf := fun _ _ => σ.U`, the way
@@ -1153,11 +1154,13 @@ what lets the tower below quantify over the varying base without a dependent tra
 private def srsAt (σ : SRS G) (uOf : Pf → (T → Pre) → G) (p : Pf) (O : T → Pre) : SRS G :=
   { σ with U := uOf p O }
 
+omit [Field F] in
 /-- The round count of the run's setup is the sampled setup's — by `rfl`, and stated so that the
 `omega` goals of the fork's arithmetic can be discharged after a `show`. -/
 @[simp] theorem srsAt_k (σ : SRS G) (uOf : Pf → (T → Pre) → G) (p : Pf) (O : T → Pre) :
     (srsAt σ uOf p O).k = σ.k := rfl
 
+omit [Field F] [AddCommGroup G] [Module F G] in
 /-- **Commit-then-challenge does not mention the base.** Every field of `DecodesFromPrefixes`
 mentions the setup only through its round count, so a decoding structure at `σ` is one at any
 rebasing of `σ`. Needed because the structure's *parameter* is the setup itself, which the

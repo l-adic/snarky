@@ -105,8 +105,9 @@ structure KimchiVK (C : Ipa.CommitmentCurve) where
   (constraints.rs:774–784), carried as data here. -/
   zkRows : ℕ
   /-- `verifier_index.endo`, the `ft_eval0` endo coefficient — NOT serialized data
-  (production marks it `#[serde(skip)]` and recomputes it as `endos::<G>()`,
-  verifier_index.rs:140); a model input like `digest`. -/
+  (production marks it `#[serde(skip)]` and recomputes it as `G::other_curve_endo()`,
+  i.e. `endos::<OtherG>().0`, the OTHER curve's base-field endo — verifier_index.rs:140;
+  the endpoints pin it to `idx.endoBase` via `Corresponds`); a model input like `digest`. -/
   endo : C.ScalarField
   /-- The precomputed `VerifierIndex::digest()` — an input here. -/
   digest : C.BaseField
@@ -191,7 +192,9 @@ def KimchiVK.check {C : Ipa.CommitmentCurve} (nc : ℕ) (vk : KimchiVK C) :
 /-- The run's chunk count, from the domain and SRS widths (production
 `chunk_size = d1 / max_poly_size`, verifier.rs:145–152): the count clients `check`
 against. Meaningful only under the SRS pin `σ.k ≤ vk.domainLog2` (production's
-sub-SRS `chunk_size = 1` regime is out of scope); clients guard it. -/
+sub-SRS `chunk_size = 1` regime is out of scope); clients guard it — the `ℕ`
+subtraction underneath returns `1` on the unguarded underflow, so the client-side
+guard is load-bearing (external-audit C-4). -/
 def runNc (σ : SRS C.Point) (vk : KimchiVK C) : ℕ :=
   2 ^ (vk.domainLog2 - σ.k)
 
