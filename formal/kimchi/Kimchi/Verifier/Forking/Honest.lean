@@ -2201,7 +2201,22 @@ theorem honestKimchiFamily_wins
 family the measured event `Wins ∧ ¬ExtractsWitness`, restricted to the non-excluded slice of
 sampled multipliers, is exactly `¬ExtractsWitness`: the acceptance conjunct carries none of
 the bound there. The kimchi twin of
-`Bulletproof.Ipa.Forking.honestFamily_failure_set`. -/
+`Bulletproof.Ipa.Forking.honestFamily_failure_set`.
+
+**On the `Index` hypothesis.** This is stated for *every* index of the given shape, as the
+endpoints are stated for every family — no particular circuit is fixed, and the soundness
+results depend on no instance whatsoever. What an instance would add is only that the class is
+non-empty, and that is not in doubt: `kimchi/scripts/check_index_fixture.sh` runs
+`Index.build?` on dumped production circuits and requires it to accept, deciding the
+primitive-root and coset certificates, the row bounds and the wiring laws on real data, then
+checks `Satisfies` against the production witness. So the thirteen laws of `Index` are jointly
+satisfiable, and demonstrated so on every CI run.
+
+What is therefore still missing is a *proof term* rather than an evaluated check: a Lean-side
+`Index` would turn that evidence into a theorem. It is worth having and it is not load-bearing.
+The narrow extra the honest family wants is `publicCount = 0`, which production circuits do not
+satisfy, so the witness would be a trivial circuit rather than a deployed one — enough to settle
+inhabitation, and not to be read as a claim about deployed circuits. -/
 theorem honestKimchiFamily_failure_set
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0) {k : ℕ} (hk : 0 < k) {nc : ℕ} (hnc : 0 < nc) {d : ℕ}
