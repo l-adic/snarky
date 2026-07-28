@@ -49,7 +49,8 @@ def roots : List Name :=
     `Bulletproof.Ipa.Forking.deployedExtract_U_irrelevant,
     `Bulletproof.Ipa.Forking.uRepresentationOfBreak,
     `Bulletproof.Ipa.Forking.winsAtBase_uBaseOf,
-    `Bulletproof.Ipa.Forking.honestNode_wins_everywhere ]
+    `Bulletproof.Ipa.Forking.honestNode_wins_everywhere,
+    `Bulletproof.Ipa.Forking.verifyWith_of_deferred_delta ]
 
 /-- Standard logical axioms plus `Lean.ofReduceBool` (CompElliptic's `native_decide`
     witnesses). NOTE what is NOT here: any Fiat-Shamir axiom. The former
@@ -57,15 +58,18 @@ def roots : List Name :=
     chain when the knowledge-soundness results took over as the API; re-introducing an
     axiom of that kind fails this gate. -/
 def allowed : List Name :=
-  [ `propext, `Classical.choice, `Quot.sound, `Lean.ofReduceBool,
- ]
+  [ `propext, `Classical.choice, `Quot.sound ]
 
-/-- A CompElliptic `native_decide` point-count witness (trusted; see kimchi's gate). -/
-def isTrustedNativeDecide (ax : Name) : Bool :=
-  let s := ax.toString
-  "CompElliptic.".isPrefixOf s && (s.splitOn "native_decide").length > 1
+/-- A trusted `native_decide` certificate, discriminated by DEFINING MODULE rather than by
+    name prefix (external-audit A-8; see kimchi's gate for the full note). -/
+def isTrustedNativeDecide (env : Environment) (ax : Name) : Bool :=
+  (ax.toString.splitOn "native_decide").length > 1 &&
+    match env.getModuleFor? ax with
+    | some m => (`CompElliptic).isPrefixOf m || m == `Pasta.Endo
+    | none => false
 
-def isAllowed (ax : Name) : Bool := allowed.contains ax || isTrustedNativeDecide ax
+def isAllowed (env : Environment) (ax : Name) : Bool :=
+  allowed.contains ax || isTrustedNativeDecide env ax
 
 end Bulletproof.CheckAxioms
 
@@ -76,7 +80,7 @@ run_cmd do
     unless env.contains root do
       throwError "axiom-check root not in environment: {root}"
     for ax in (← liftCoreM <| Lean.collectAxioms root) do
-      unless Bulletproof.CheckAxioms.isAllowed ax do
+      unless Bulletproof.CheckAxioms.isAllowed env ax do
         bad := bad.push (root, ax)
   if bad.isEmpty then
     IO.println s!"✓ all {Bulletproof.CheckAxioms.roots.length} Bulletproof roots reduce to \

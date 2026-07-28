@@ -53,40 +53,52 @@ def roots : List Name :=
     -- over the standard axioms and the Pasta certificates alone.
     `Kimchi.Verifier.KnowledgeSoundness.vesta_kimchi_knowledge_sound,
     `Kimchi.Verifier.KnowledgeSoundness.pallas_kimchi_knowledge_sound,
-    `Kimchi.Verifier.Forking.honestKimchiFamily_wins ]
+    `Kimchi.Verifier.Forking.honestKimchiFamily_wins,
+    -- The Tier-2/3 surface (external-audit A-2): the faithfulness layer, the named
+    -- anti-vacuity exhibits, and the REVISIT AGM lemmas are consumed by nothing, so no
+    -- other root's closure reaches them — gate them by name or a `sorry` there passes
+    -- the entire wired battery.
+    `Kimchi.Verifier.KnowledgeSoundness.kimchiVerify_eq_verifyWith,
+    `Kimchi.Verifier.Forking.Bridge.wins_iff_kimchiVerify,
+    `Kimchi.Verifier.Forking.honestKimchiFamily_failure_set,
+    `Kimchi.Verifier.KnowledgeSoundness.exists_ne_zero_kernel_scalarBasis,
+    `Kimchi.Verifier.eval_pins_of_opening,
+    `Kimchi.Verifier.combinedCommitment_eq_commit_of_rep,
+    `Kimchi.Verifier.dlRelation_of_opening_ne,
+    `Kimchi.Verifier.dlRelation_of_commit_eq,
+    `Kimchi.Verifier.dlRelation_of_chunk_rep_ne,
+    `Kimchi.Verifier.dlRelation_of_chunk_rep_masked_ne,
+    `Kimchi.Verifier.ft_identity_of_chunks ]
 
-/-- The only axioms the roots may depend on: the standard logical axioms and
-    `Lean.ofReduceBool`. The pasta package declares NO axioms — the group orders are
-    unconditional (CompElliptic's fibre-bound argument) and the CM eigenvalue relations are
-    THEOREMS (homomorphism + prime-order cyclicity + `native_decide` anchors at the
-    generators). The `native_decide` witnesses are permitted separately by
-    `isTrustedNativeDecide`. -/
+/-- The only axioms the roots may depend on: the standard logical axioms. The pasta
+    package declares NO axioms — the group orders are unconditional (CompElliptic's
+    fibre-bound argument) and the CM eigenvalue relations are THEOREMS (homomorphism +
+    prime-order cyclicity + `native_decide` anchors at the generators). The
+    `native_decide` certificates — CompElliptic's primality, point-count, sqrt-order and
+    eigen-anchor witnesses plus pasta's two declared anchors, each trusting the compiler
+    through `Lean.trustCompiler` — are permitted separately by `isTrustedNativeDecide`.
+    (`Lean.ofReduceBool` is NOT produced by `native_decide` on this toolchain and is
+    deliberately absent.) -/
 def allowed : List Name :=
-  [ `propext, `Classical.choice, `Quot.sound, `Lean.ofReduceBool,
-    -- The declared Fiat-Shamir assumption: Poseidon-accepted runs admit de-blinded
-    -- accepting transcript trees (`Bulletproof/Reflection.lean`, bulletproof-pcs
-    -- package). One per Pasta curve.
-    -- The deployed-run Fiat-Shamir assumptions
-    -- (`Kimchi/Verifier/Capstone/Reflection.lean`), anchored on the warm reflected run
-    -- (`Ipa.verifyFrom (runWarm) (runInput)`, the flat segment stream) rather than the
-    -- cold `Ipa.verify`. One per curve; the residue-free ft openings
-    -- (`ft_opening_of_reflected_*`) and the terminal roots are stated over these.
- ]
+  [ `propext, `Classical.choice, `Quot.sound ]
 
-/-- A trusted `native_decide` witness: CompElliptic's point counts, or pasta's two GLV
-    eigenvalue anchors (`Pasta.{pallas,vesta}_lam_nsmul_Gpt`, `pasta/Pasta/Endo.lean`) —
-    exactly those declarations, by name. Any other `native_decide` in our tree is still
-    rejected. -/
-def isTrustedNativeDecide (ax : Name) : Bool :=
-  let s := ax.toString
-  (s.splitOn "native_decide").length > 1 &&
-    ("CompElliptic.".isPrefixOf s
-      || "Pasta.pallas_lam_nsmul_Gpt.".isPrefixOf s
-      || "Pasta.vesta_lam_nsmul_Gpt.".isPrefixOf s)
+/-- A trusted `native_decide` certificate, discriminated by DEFINING MODULE rather than
+    by name prefix (external-audit A-8: the name is forgeable from inside a
+    `namespace CompElliptic` block in this tree — and this tree does author declarations
+    in that namespace — while the defining module is not: tree files keep their own
+    module names regardless of the namespaces they open). Trusted: any `native_decide`
+    axiom defined in an upstream CompElliptic module, or in `Pasta/Endo.lean` — the one
+    tree file declared to hold the two GLV eigenvalue anchors. -/
+def isTrustedNativeDecide (env : Environment) (ax : Name) : Bool :=
+  (ax.toString.splitOn "native_decide").length > 1 &&
+    match env.getModuleFor? ax with
+    | some m => (`CompElliptic).isPrefixOf m || m == `Pasta.Endo
+    | none => false
 
-/-- An axiom is permitted if it is in the explicit allowlist or is a CompElliptic `native_decide`
-    witness. -/
-def isAllowed (ax : Name) : Bool := allowed.contains ax || isTrustedNativeDecide ax
+/-- An axiom is permitted if it is in the explicit allowlist or is a certified
+    `native_decide` witness. -/
+def isAllowed (env : Environment) (ax : Name) : Bool :=
+  allowed.contains ax || isTrustedNativeDecide env ax
 
 end Kimchi.CheckAxioms
 
@@ -97,11 +109,11 @@ run_cmd do
     unless env.contains root do
       throwError "axiom-check root not in environment: {root}"
     for ax in (← liftCoreM <| Lean.collectAxioms root) do
-      unless Kimchi.CheckAxioms.isAllowed ax do
+      unless Kimchi.CheckAxioms.isAllowed env ax do
         bad := bad.push (root, ax)
   if bad.isEmpty then
     IO.println s!"✓ all {Kimchi.CheckAxioms.roots.length} roots reduce to the allowed axiom set \
-      {Kimchi.CheckAxioms.allowed}"
+      {Kimchi.CheckAxioms.allowed} (+ certified upstream native_decide)"
   else
     for (r, a) in bad do
       IO.eprintln s!"::error::{r} depends on disallowed axiom {a}"
