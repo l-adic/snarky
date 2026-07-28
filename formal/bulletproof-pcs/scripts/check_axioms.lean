@@ -50,7 +50,8 @@ def roots : List Name :=
     `Bulletproof.Ipa.Forking.uRepresentationOfBreak,
     `Bulletproof.Ipa.Forking.winsAtBase_uBaseOf,
     `Bulletproof.Ipa.Forking.honestNode_wins_everywhere,
-    `Bulletproof.Ipa.Forking.verifyWith_of_deferred_delta ]
+    `Bulletproof.Ipa.Forking.verifyWith_of_deferred_delta,
+    `Bulletproof.Ipa.Forking.exists_complete_coins ]
 
 /-- Standard logical axioms plus `Lean.ofReduceBool` (CompElliptic's `native_decide`
     witnesses). NOTE what is NOT here: any Fiat-Shamir axiom. The former

@@ -130,6 +130,11 @@ Kimchi.Verifier.Forking.Bridge.FSFaithful
 Kimchi.Verifier.Forking.Bridge.wins_iff_kimchiVerify
 Kimchi.Verifier.Forking.honestKimchiFamily_wins
 Kimchi.Verifier.Forking.honestKimchiFamily_failure_set
+-- and the per-curve closures of the loop (external-audit B-4): a concrete four-row
+-- index on each curve, and with it the honest family and its failure-set corollary,
+-- unconditionally at the deployed instantiations.
+Kimchi.Verifier.Forking.vesta_honest_extraction_failure_measure_le
+Kimchi.Verifier.Forking.pallas_honest_extraction_failure_measure_le
 -- and: the sampled basis is maximally non-binding -- `hbind` is refutable at
 -- `augOfSetup (scalarBasis B s)`, which is why no binding hypothesis can appear anywhere
 -- in the endpoints' ancestry (the module preamble's "eval pins would be circular" record).

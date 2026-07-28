@@ -69,6 +69,8 @@ Bulletproof.Ipa.Forking.uRepresentationOfBreak
 --     cold-base statements (the generalize-and-recover contract of `Forking/Honest.lean`).
 Bulletproof.Ipa.Forking.winsAtBase_uBaseOf
 Bulletproof.Ipa.Forking.honestNode_wins_everywhere
+-- (e) the endpoints' tape-completeness hypothesis has an explicit closed witness.
+Bulletproof.Ipa.Forking.exists_complete_coins
 
 -- The surface the fixture drivers and check gates exercise. Nothing in the library
 -- consumes these -- the scripts do, so the dead-code driver additionally checks each

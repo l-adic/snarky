@@ -1574,7 +1574,239 @@ open scoped ENNReal
 
 variable {F : Type*} [Field F]
 
+/-- The gate table of the empty circuit: every row carries the constraint-free `zero` gate,
+all-zero coefficients, and the identity wiring (each cell is its own copy-cycle
+successor). -/
+private def trivialGates (F : Type*) [Field F] : Fin 4 → Index.GateRow F 4 :=
+  fun i => ⟨.zero, fun _ => 0, fun c => (c, i)⟩
+
+/-- The coset shifts `1, 2, …, 7`, one per permuted column. -/
+private def trivialShifts (F : Type*) [Field F] : Fin permCols → F :=
+  fun i => (((i : ℕ) + 1 : ℕ) : F)
+
+/-- The shifts are non-zero: `i + 1` is a natural number below `2402` other than `0`, and
+the cast is injective there. -/
+private theorem trivialShifts_ne_zero
+    (hcast : ∀ a b : ℕ, a < 2402 → b < 2402 → (a : F) = (b : F) → a = b)
+    (i : Fin permCols) : trivialShifts F i ≠ 0 := by
+  intro h
+  have := hcast ((i : ℕ) + 1) 0 (by omega) (by omega) (by simpa [trivialShifts] using h)
+  omega
+
+/-- Distinct shifts have distinct fourth powers: the seven values `1, 16, 81, 256, 625,
+1296, 2401` are distinct naturals below `2402`, and fourth-powering is injective on `ℕ`. -/
+private theorem trivialShifts_pow_ne
+    (hcast : ∀ a b : ℕ, a < 2402 → b < 2402 → (a : F) = (b : F) → a = b)
+    (i j : Fin permCols) (hij : i ≠ j) :
+    trivialShifts F i ^ 4 ≠ trivialShifts F j ^ 4 := by
+  intro h
+  have hi : (i : ℕ) < 7 := i.isLt
+  have hj : (j : ℕ) < 7 := j.isLt
+  have hcast' : ((((i : ℕ) + 1) ^ 4 : ℕ) : F) = ((((j : ℕ) + 1) ^ 4 : ℕ) : F) := by
+    push_cast
+    simpa [trivialShifts] using h
+  have hb : ∀ m : ℕ, m < 7 → (m + 1) ^ 4 < 2402 := by
+    intro m hm
+    calc (m + 1) ^ 4 ≤ 7 ^ 4 := Nat.pow_le_pow_left (by omega) 4
+      _ < 2402 := by norm_num
+  have h4 := hcast _ _ (hb _ hi) (hb _ hj) hcast'
+  have h5 : (i : ℕ) + 1 = (j : ℕ) + 1 := Nat.pow_left_injective (by omega) h4
+  exact hij (Fin.ext (by omega : (i : ℕ) = (j : ℕ)))
+
+/-- **The shifts represent distinct cosets** — proved directly, without the decidable
+certificate (whose ratio test would require reducing a `ZMod` inverse). A relation
+`sᵢ = sⱼ·ωᵉ` raised to the fourth power kills `ω` (it is a fourth root of unity) and
+leaves `sᵢ⁴ = sⱼ⁴`, which `trivialShifts_pow_ne` excludes off the diagonal. -/
+private theorem trivialShifts_coset (ω : F) (hω4 : ω ^ 4 = 1)
+    (hcast : ∀ a b : ℕ, a < 2402 → b < 2402 → (a : F) = (b : F) → a = b) :
+    Kimchi.Permutation.CosetShifts ω (trivialShifts F) := by
+  refine ⟨trivialShifts_ne_zero hcast, fun i j e heq => ?_⟩
+  by_contra hij
+  refine trivialShifts_pow_ne hcast i j hij ?_
+  calc trivialShifts F i ^ 4 = (trivialShifts F j * ω ^ e) ^ 4 := by rw [heq]
+    _ = trivialShifts F j ^ 4 * (ω ^ 4) ^ e := by
+        rw [mul_pow, ← pow_mul, ← pow_mul, Nat.mul_comm]
+    _ = trivialShifts F j ^ 4 := by rw [hω4, one_pow, mul_one]
+
+/-- **The empty circuit on a four-row domain.** Zero public rows, three zero-knowledge
+rows, generator `ω`, coset shifts `1,…,7`, and a gate table all of whose rows carry the
+`zero` gate type, all-zero coefficients and the identity wiring.
+
+The hypotheses are the *smallest* data that makes the index laws true: `ω` is a primitive
+fourth root of unity (`hω4`, `hω2` — the two-power certificate at `n = 4`), and the field's
+natural-number cast is injective below `2402 = 7⁴ + 1`, which is what separates the seven
+shifts' cosets. Every remaining law is immediate at this data: the wiring is the identity,
+hence bijective, region-preserving and identity on the masked rows; every row carries the
+`zero` gate, so no gate sits on a masked row and no two-row gate reads into the mask; and
+both public-row conditions are vacuous at zero public rows. -/
+private def trivialIndex (F : Type*) [Field F] [DecidableEq F] (ω : F) (hω4 : ω ^ 4 = 1)
+    (hω2 : ω ^ 2 ≠ 1)
+    (hcast : ∀ a b : ℕ, a < 2402 → b < 2402 → (a : F) = (b : F) → a = b) :
+    Index F 4 where
+  gates := trivialGates F
+  publicCount := 0
+  zkRows := 3
+  omega := ω
+  endoBase := 0
+  mds := ⟨0, 0, 0, 0, 0, 0, 0, 0, 0⟩
+  shifts := trivialShifts F
+  omega_prim := Kimchi.Permutation.isPrimitiveRoot_of_certificate (n := 4) (k := 2) rfl
+    (decide_eq_true ⟨hω4, hω2⟩)
+  zk_three := le_refl 3
+  zk_le := by omega
+  public_le := by omega
+  shifts_coset := trivialShifts_coset ω hω4 hcast
+  wiring_bijective := Function.bijective_id
+  wiring_region := fun _ => Iff.rfl
+  public_generic := fun _ hi => absurd hi (by omega)
+  public_coeffs := fun _ hi => absurd hi (by omega)
+  masked_identity := fun _ _ => rfl
+  masked_zero := fun _ _ => rfl
+  masked_boundary := fun _ _ => rfl
+
 /-! ### The two Pasta instantiations -/
+
+/-- `trivialIndex`'s cast hypothesis at a `ZMod` whose modulus clears `2402`: two naturals
+below the modulus with equal residues are equal. -/
+private theorem natCast_inj_of_lt_zmod (p : ℕ) [NeZero p] (hp : 2402 ≤ p) :
+    ∀ a b : ℕ, a < 2402 → b < 2402 → ((a : ZMod p) = (b : ZMod p)) → a = b := by
+  intro a b ha hb h
+  rwa [ZMod.natCast_eq_natCast_iff', Nat.mod_eq_of_lt (by omega),
+    Nat.mod_eq_of_lt (by omega)] at h
+
+/-- A primitive fourth root of unity in Vesta's scalar field `ZMod PALLAS_BASE_CARD`
+(hex `0x36bdcc7b0f28b5df31744fb72326829dff98203a45f8ebf0e047f48898cdb6db`), obtained as
+`5 ^ ((PALLAS_BASE_CARD − 1)/4)`. -/
+private def vestaOmega : Bulletproof.IpaVesta.curve.ScalarField :=
+  24760239192664116622385963963284001971067308018068707868888628426778644166363
+
+/-- A primitive fourth root of unity in Pallas' scalar field `ZMod PALLAS_SCALAR_CARD`
+(hex `0x3691ce115adfa1187d65aa6313c354eb4a146505975fd3435d2f235b4abeb917`), obtained as
+`5 ^ ((PALLAS_SCALAR_CARD − 1)/4)`. -/
+private def pallasOmega : Bulletproof.IpaPallas.curve.ScalarField :=
+  24682508875525884897641270952488416149830453149035712389703207095981135804695
+
+/-- `vestaOmega` is a fourth root of unity. -/
+private theorem vestaOmega_pow_four : vestaOmega ^ 4 = 1 := by decide
+
+/-- `vestaOmega` is primitive: its square is `−1`, not `1`. -/
+private theorem vestaOmega_pow_two_ne_one : vestaOmega ^ 2 ≠ 1 := by decide
+
+/-- `vestaOmega` is not `1` — `honestKimchiFamily`'s `hω`. -/
+private theorem vestaOmega_ne_one : vestaOmega ≠ 1 := by decide
+
+/-- `pallasOmega` is a fourth root of unity. -/
+private theorem pallasOmega_pow_four : pallasOmega ^ 4 = 1 := by decide
+
+/-- `pallasOmega` is primitive: its square is `−1`, not `1`. -/
+private theorem pallasOmega_pow_two_ne_one : pallasOmega ^ 2 ≠ 1 := by decide
+
+/-- `pallasOmega` is not `1` — `honestKimchiFamily`'s `hω`. -/
+private theorem pallasOmega_ne_one : pallasOmega ≠ 1 := by decide
+
+/-- The trivial index over Vesta's scalar field, at domain size `2 ² = 4`. -/
+private def vestaIndex : Index Bulletproof.IpaVesta.curve.ScalarField (2 ^ 2) :=
+  trivialIndex _ vestaOmega vestaOmega_pow_four vestaOmega_pow_two_ne_one
+    (natCast_inj_of_lt_zmod _ (by decide))
+
+/-- The trivial index over Pallas' scalar field, at domain size `2 ² = 4`. -/
+private def pallasIndex : Index Bulletproof.IpaPallas.curve.ScalarField (2 ^ 2) :=
+  trivialIndex _ pallasOmega pallasOmega_pow_four pallasOmega_pow_two_ne_one
+    (natCast_inj_of_lt_zmod _ (by decide))
+
+private theorem vestaIndex_omega : vestaIndex.omega = vestaOmega := rfl
+
+private theorem vestaIndex_publicCount : vestaIndex.publicCount = 0 := rfl
+
+private theorem pallasIndex_omega : pallasIndex.omega = pallasOmega := rfl
+
+private theorem pallasIndex_publicCount : pallasIndex.publicCount = 0 := rfl
+
+/-- **The Vesta honest family, with no hypotheses at all.** `honestKimchiFamily` at chunk
+count `nc = 1`, opening depth `k = 2`, domain exponent `d = 2` and the trivial index over
+Vesta's scalar field. The four side conditions are arithmetic (`0 < 2`, `0 < 1`,
+`1 · 2² = 2²`) and the two index facts; the two curve facts — that the scalar action agrees
+with the natural-number action, and that the challenge expansion never vanishes — are the
+per-curve facts `vesta_kimchi_knowledge_sound` itself discharges. -/
+private noncomputable def vestaHonestFamily :
+    KimchiFamily Bulletproof.IpaVesta.curve 1 2 (2 ^ 2) :=
+  honestKimchiFamily (C := Bulletproof.IpaVesta.curve) Pasta.vesta_smul_val
+    expandPre_vesta_ne_zero (by decide) (by decide) vestaIndex
+    (by rw [vestaIndex_omega]; exact vestaOmega_ne_one) vestaIndex_publicCount (by decide)
+
+/-- **The Pallas honest family, with no hypotheses at all** — the Pallas twin of
+`vestaHonestFamily`. -/
+private noncomputable def pallasHonestFamily :
+    KimchiFamily Bulletproof.IpaPallas.curve 1 2 (2 ^ 2) :=
+  honestKimchiFamily (C := Bulletproof.IpaPallas.curve) Pasta.pallas_smul_val
+    expandPre_pallas_ne_zero (by decide) (by decide) pallasIndex
+    (by rw [pallasIndex_omega]; exact pallasOmega_ne_one) pallasIndex_publicCount (by decide)
+
+/-- **The Vesta honest family accepts** — at every base point, every multiplier vector with
+a live blinding slot, and every oracle table. This is the non-vacuity statement: a kimchi
+adversary family whose acceptance conjunct is satisfiable exists, unconditionally. -/
+private theorem vestaHonestFamily_wins (B : Bulletproof.IpaVesta.Point)
+    (sm : SetupIndex (2 ^ 2) → Bulletproof.IpaVesta.curve.ScalarField)
+    (hsb : sm SetupIndex.blind ≠ 0) (O : Coins Bulletproof.IpaVesta.curve 1 2) :
+    vestaHonestFamily.Wins (augOfSetup (Zcash.Snark.scalarBasis B sm)) O :=
+  honestKimchiFamily_wins _ _ _ _ _ _ _ _ B sm hsb O
+
+/-- **The Pallas honest family accepts** — the Pallas twin of `vestaHonestFamily_wins`. -/
+private theorem pallasHonestFamily_wins (B : Bulletproof.IpaPallas.Point)
+    (sm : SetupIndex (2 ^ 2) → Bulletproof.IpaPallas.curve.ScalarField)
+    (hsb : sm SetupIndex.blind ≠ 0) (O : Coins Bulletproof.IpaPallas.curve 1 2) :
+    pallasHonestFamily.Wins (augOfSetup (Zcash.Snark.scalarBasis B sm)) O :=
+  honestKimchiFamily_wins _ _ _ _ _ _ _ _ B sm hsb O
+
+/-- **On the Vesta honest family the endpoint's bound is a statement about the extractor
+alone.** The measured set no longer mentions acceptance: on the non-excluded slice of
+sampled multipliers the family always wins (`vestaHonestFamily_wins`), so
+`{¬ExtractsWitness} ∩ slice` is contained in the endpoint's `{Wins ∧ ¬ExtractsWitness}`,
+and the right-hand side is verbatim the four-summand bound of
+`vesta_kimchi_knowledge_sound`. -/
+theorem vesta_honest_extraction_failure_measure_le
+    (B : Bulletproof.IpaVesta.Point)
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (2 + 1))
+    (hcoins : coins.Complete) {R : ℕ} {ε δ : ℝ≥0∞}
+    (hHard : vestaHonestFamily.DiscreteLogRelationHardFor B coins R ε δ)
+    (hEff : vestaHonestFamily.ReductionEfficient coins R) :
+    (PMF.uniformOfFintype
+        ((SetupIndex (2 ^ 2) → Bulletproof.IpaVesta.curve.ScalarField) ×
+          Coins Bulletproof.IpaVesta.curve 1 2)).toOuterMeasure
+        ({q | ¬ vestaHonestFamily.ExtractsWitness
+              (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins}
+          ∩ {q | q.1 SetupIndex.blind ≠ 0})
+      ≤ (vestaHonestFamily.Q + 2 + 1) * (3 / (2 ^ 128 : ℕ))
+        + ((2 ^ 2 + 1 : ℕ) : ℝ≥0∞) * ε + δ
+        + ((vestaHonestFamily.Q + 1 : ℕ) : ℝ≥0∞)
+          * ((szBudget 1 (2 ^ 2) vestaHonestFamily.idx.zkRows : ℝ≥0∞) / (2 ^ 128 : ℕ)) := by
+  refine le_trans (MeasureTheory.OuterMeasure.mono _ ?_)
+    (vesta_kimchi_knowledge_sound B vestaHonestFamily coins hcoins hHard hEff)
+  rintro q ⟨hext, hb⟩
+  exact ⟨vestaHonestFamily_wins B q.1 hb q.2, hext⟩
+
+/-- **On the Pallas honest family the endpoint's bound is a statement about the extractor
+alone** — the Pallas twin of `vesta_honest_extraction_failure_measure_le`. -/
+theorem pallas_honest_extraction_failure_measure_le
+    (B : Bulletproof.IpaPallas.Point)
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (2 + 1))
+    (hcoins : coins.Complete) {R : ℕ} {ε δ : ℝ≥0∞}
+    (hHard : pallasHonestFamily.DiscreteLogRelationHardFor B coins R ε δ)
+    (hEff : pallasHonestFamily.ReductionEfficient coins R) :
+    (PMF.uniformOfFintype
+        ((SetupIndex (2 ^ 2) → Bulletproof.IpaPallas.curve.ScalarField) ×
+          Coins Bulletproof.IpaPallas.curve 1 2)).toOuterMeasure
+        ({q | ¬ pallasHonestFamily.ExtractsWitness
+              (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins}
+          ∩ {q | q.1 SetupIndex.blind ≠ 0})
+      ≤ (pallasHonestFamily.Q + 2 + 1) * (3 / (2 ^ 128 : ℕ))
+        + ((2 ^ 2 + 1 : ℕ) : ℝ≥0∞) * ε + δ
+        + ((pallasHonestFamily.Q + 1 : ℕ) : ℝ≥0∞)
+          * ((szBudget 1 (2 ^ 2) pallasHonestFamily.idx.zkRows : ℝ≥0∞) / (2 ^ 128 : ℕ)) := by
+  refine le_trans (MeasureTheory.OuterMeasure.mono _ ?_)
+    (pallas_kimchi_knowledge_sound B pallasHonestFamily coins hcoins hHard hEff)
+  rintro q ⟨hext, hb⟩
+  exact ⟨pallasHonestFamily_wins B q.1 hb q.2, hext⟩
 
 end Trivial
 

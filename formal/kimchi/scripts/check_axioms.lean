@@ -68,7 +68,10 @@ def roots : List Name :=
     `Kimchi.Verifier.dlRelation_of_commit_eq,
     `Kimchi.Verifier.dlRelation_of_chunk_rep_ne,
     `Kimchi.Verifier.dlRelation_of_chunk_rep_masked_ne,
-    `Kimchi.Verifier.ft_identity_of_chunks ]
+    `Kimchi.Verifier.ft_identity_of_chunks,
+    -- the per-curve honest-family corollaries (external-audit B-4)
+    `Kimchi.Verifier.Forking.vesta_honest_extraction_failure_measure_le,
+    `Kimchi.Verifier.Forking.pallas_honest_extraction_failure_measure_le ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms. The pasta
     package declares NO axioms — the group orders are unconditional (CompElliptic's

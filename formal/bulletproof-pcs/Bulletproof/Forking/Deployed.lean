@@ -854,6 +854,20 @@ def deployedExtractRuns (σ : SRS C.Point) (cip : C.ScalarField)
 
 end Extractor
 
+/-- **The identity-ordered uniform tape** at every depth: each node carries the identity
+enumeration of the prechallenge alphabet and identical children. A closed term, so that
+`coins.Complete` — a hypothesis of every endpoint — has an explicit in-tree witness rather
+than only upstream satisfiability (external-audit D-2). -/
+def identityTape : (d : ℕ) → Zcash.Snark.RecursiveForkTape Prechallenge d
+  | 0 => .leaf
+  | d + 1 => .node (finCongr (Fintype.card_fin _)) fun _ => identityTape d
+
+/-- **Complete fork tapes exist at every depth** — the witness is `identityTape`'s coins,
+complete by ironwood's `RecursiveForkTape.toCoins_complete`. -/
+theorem exists_complete_coins (d : ℕ) :
+    ∃ coins : Zcash.Snark.RecursiveForkCoins Prechallenge d, coins.Complete :=
+  ⟨(identityTape d).toCoins, Zcash.Snark.RecursiveForkTape.toCoins_complete _⟩
+
 /-! ## The two anti-vacuity companions
 
 The bound above is satisfiable by an extractor that always answers `none` *if* the win set is
