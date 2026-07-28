@@ -504,37 +504,107 @@ theorem honestNodeAdv_prefixes (cip : C.ScalarField)
 
 end Machine
 
-/-! ## The companion -/
+/-! ## The companion at a free randomisation base
 
-section Companion
+`Forking/Deployed.lean` fixes the opening base at the COLD, pre-`ζ` term
+`uBaseOf C (Ipa.cipOf claim)`, and that is correct there: the deployed `Ipa.verify` is
+cold-started, and `uBaseOf_eq_transcript` proves the executable transcript hands back exactly that
+point. A consumer running the same opening *inside* a larger transcript — kimchi, whose forking
+game reaches the opening only after the evaluation challenge `ζ` has been absorbed — meets a
+different, WARM base, and no amount of rewriting produces one statement from the other once the
+base is baked into the statement.
 
-variable [Module C.ScalarField C.Point]
+So the two companions below are proved once with the base a free parameter, and the cold
+statements the deployed bound consumes are recovered as the `U := uBaseOf C _` instance. **Nothing
+here is new mathematics**; the base is free for three independent reasons, each of which is worth
+stating because each is what removes one apparent dependency:
 
-/-- **The honest prover wins on every table.** From a genuine opening witness there is an oracle
-machine over the deployed node domain, within budget `σ.k + 1`, whose output satisfies `Wins` for
-*every* table. So the win set can have measure `1`, and an extractor that always returns `none`
-cannot satisfy the deployed bound.
+* `openingRelationB σ P b v a ρ` is `commit σ a ρ = P ∧ v = innerProduct a b`, which reads `σ.g`
+  and `σ.h` and NEVER `σ.U`. So the `{ σ with U := · }` decoration in an `openingRelationB`
+  hypothesis is exactly that — decoration: a witness at one base is a witness at every base,
+  definitionally.
+* The honest prover's acceptance invariant
+  `P + v • U = commitGen σ.g a + commitGen b a • U + ρ • σ.h` is an identity IN `U`: it is
+  obtained by cancelling `v • U = commitGen b a • U` on both sides, and `honestProver_accept`
+  is already quantified over `U`.
+* The query domain `nodes cip` is indexed by the *claimed value*, never by the base. Base and
+  transcript index therefore decouple, which is what lets a warm base be substituted later
+  without a fixed point arising between "which base" and "which nodes are queried". -/
 
-This is `Game.lean`'s `honest_wins_everywhere` transported from its own prefix type
-`HonestPrefix Pre (k+1)` to `IpaNode C k`: the honest machine is the same `k + 1` nested queries
-over a final `pure`, but its query points are now nodes of its own proof rather than abstract
-answer-history prefixes, and its output is a wire proof rather than the answer vector. The
-reindexing is legitimate because round `j`'s output depends only on challenges strictly before
-`j` — `lrAt_congr` / `leafAt_congr`, restated above because they are `private` in the frozen
-`Game.lean`. Nonzeroness of the round challenges is `expandPre_{vesta,pallas}_ne_zero`, which
-holds for every prechallenge without any hypothesis. -/
-theorem honestNode_wins_everywhere (hne : ∀ q, expandPre C q ≠ 0)
-    (σ : SRS C.Point) (cip : C.ScalarField)
+section AtBase
+
+/-- **The opening win on the wire, at a given base.** The challenge-generic executable opening
+verifier returns `true` on `σ`, the base `U`, the `σ.k` round challenges the table supplies at the
+claim's round nodes, the Schnorr challenge it supplies at the claim's Schnorr node, and the claim
+with its opening slot replaced by `π`.
+
+This is `wireWins` with its base freed. `wireWins` is frozen at the cold
+`uBaseOf C (Ipa.cipOf claim)` — the one thing a warm-transcript consumer has to vary — while every
+other argument, in particular the query domain `nodes (Ipa.cipOf claim)` the table is read at,
+stays put. At the cold base the two are the same term (`winsAtBase_uBaseOf`). -/
+def winsAtBase (σ : SRS C.Point) (U : C.Point) (claim : Ipa.Input C σ.k m p)
+    (O : IpaNode C σ.k → Prechallenge) (π : Ipa.Proof C σ.k) : Prop :=
+  Ipa.verifyWith C σ U
+      (Vector.ofFn fun i => expandPre C (O (nodeU (Ipa.cipOf claim) π i)))
+      (expandPre C (O (nodeC (Ipa.cipOf claim) π)))
+      { claim with proof := π } = true
+
+/-- **At the cold base, `winsAtBase` IS `wireWins`.** The transcription check on the definition
+above: the two `Prop`s are the same term, so no bridge lemma is ever needed in the cold direction,
+and the deployed companion is a literal instance of the base-generic one. -/
+theorem winsAtBase_uBaseOf (σ : SRS C.Point) (claim : Ipa.Input C σ.k m p)
+    (O : IpaNode C σ.k → Prechallenge) (π : Ipa.Proof C σ.k) :
+    winsAtBase σ (uBaseOf C (Ipa.cipOf claim)) claim O π = wireWins σ claim O π := rfl
+
+/-- **The wire predicate at a base is the abstract win event at that base.** The executable
+verifier's `Bool` at the table's challenges is `true` exactly when the abstract game's `Wins` holds
+against the SRS whose randomisation base is `U`.
+
+This is `wireWins_iff_wins` with its base freed. The base can be freed because the bridge that
+does the work, `verifyWith_iff_verifierAcceptsAt`, already takes the base as an explicit argument
+and is quantified over it; the four proof lines are the frozen ones verbatim, with
+`uBaseOf C (Ipa.cipOf claim)` replaced by `U`. As there, it is stated as an *equivalence* and it
+is the BACKWARD direction that the anti-vacuity argument spends: the honest machine's algebra
+delivers `Wins`, while the event a measure bound is stated over lives on the wire. -/
+theorem winsAtBase_iff_wins [Module C.ScalarField C.Point]
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (σ : SRS C.Point) (U : C.Point) (claim : Ipa.Input C σ.k m p)
+    (O : IpaNode C σ.k → Prechallenge) (π : Ipa.Proof C σ.k) :
+    winsAtBase σ U claim O π ↔
+      Wins { σ with U := U }
+        (combinedEvalVector (2 ^ σ.k) claim.evalscale claim.pointFn)
+        (Ipa.cipOf claim)
+        (combinedCommitment claim.polyscale claim.commitmentFn)
+        (expandPre C) toOpening (nodes (Ipa.cipOf claim)) O π := by
+  rw [winsAtBase, verifyWith_iff_verifierAcceptsAt hsmul]
+  unfold Wins oracleChallenges
+  simp only [nodes, Fin.snoc_castSucc, Fin.snoc_last, Fin.getElem_fin, Vector.getElem_ofFn]
+  exact Iff.rfl
+
+/-- **The honest prover wins on every table, at every base.** From a genuine opening witness for
+`(P, b, v)` at the SRS whose randomisation base is `U` there is an oracle machine over the
+deployed node domain, within budget `σ.k + 1`, whose output satisfies `Wins` at that same `U` for
+*every* table.
+
+This is `honestNode_wins_everywhere` with `(U : C.Point)` an explicit argument in place of the
+cold `uBaseOf C cip`, and the claimed value `cip` — which indexes the query domain — left as a
+SEPARATE free argument rather than tied to the base. Operationally that is the whole of the
+difference: the cold proof opens by naming `U := uBaseOf C cip` and then never uses the defining
+equation, so deleting that line generalises it. Every ingredient it rests on is already
+base-generic — `honestProver_accept` quantifies over `U`, `honestNodeAdv` and its run/budget
+analysis are indexed by `cip` alone, and `kimchiProverAccept_iff_verifierAcceptsAt` takes the SRS
+(hence its base) as an argument. -/
+theorem honestNode_wins_everywhere_at [Module C.ScalarField C.Point]
+    (hne : ∀ q, expandPre C q ≠ 0)
+    (σ : SRS C.Point) (U : C.Point) (cip : C.ScalarField)
     (b : Fin (2 ^ σ.k) → C.ScalarField) (v : C.ScalarField) (P : C.Point)
     (a : Fin (2 ^ σ.k) → C.ScalarField) (ρ : C.ScalarField)
-    (hopen : openingRelationB { σ with U := uBaseOf C cip } P b v a ρ) :
+    (hopen : openingRelationB { σ with U := U } P b v a ρ) :
     ∃ A : Zcash.Snark.OracleComp (IpaNode C σ.k) Prechallenge (Ipa.Proof C σ.k),
       A.QueryBound (σ.k + 1) ∧
         ∀ O : IpaNode C σ.k → Prechallenge,
-          Wins { σ with U := uBaseOf C cip } b v P (expandPre C) toOpening (nodes cip) O
-            (A.run O) := by
+          Wins { σ with U := U } b v P (expandPre C) toOpening (nodes cip) O (A.run O) := by
   obtain ⟨hP1, hv1⟩ := hopen
-  set U : C.Point := uBaseOf C cip with hU
   set pr : KimchiProver C.ScalarField C.Point σ.k := honestProver U ρ σ.g b a with hpr
   have hcb : commitGen b a = v := by
     rw [hv1]
@@ -572,6 +642,67 @@ theorem honestNode_wins_everywhere (hne : ∀ q, expandPre C q ≠ 0)
   rw [hchi, hproof]
   exact key
 
+/-- **The honest prover wins on the wire, on every table, at every base.** The same machine,
+measured by the `Bool` the executable opening verifier returns at the base `U`.
+
+This is `honestNode_wireWins_everywhere` with its base freed: `honestNode_wins_everywhere_at` at
+the claim's own data (`b` the combined evaluation vector, `v` and `cip` both the combined inner
+product, `P` the combined commitment), followed by the backward direction of
+`winsAtBase_iff_wins`. Instantiating `U := uBaseOf C (Ipa.cipOf claim)` and transporting along
+`winsAtBase_uBaseOf` returns the deployed companion exactly. -/
+theorem honestNode_winsAtBase_everywhere [Module C.ScalarField C.Point]
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hne : ∀ q, expandPre C q ≠ 0)
+    (σ : SRS C.Point) (U : C.Point) (claim : Ipa.Input C σ.k m p)
+    (a : Fin (2 ^ σ.k) → C.ScalarField) (ρ : C.ScalarField)
+    (hopen : openingRelationB { σ with U := U }
+      (combinedCommitment claim.polyscale claim.commitmentFn)
+      (combinedEvalVector (2 ^ σ.k) claim.evalscale claim.pointFn)
+      (Ipa.cipOf claim) a ρ) :
+    ∃ A : Zcash.Snark.OracleComp (IpaNode C σ.k) Prechallenge (Ipa.Proof C σ.k),
+      A.QueryBound (σ.k + 1) ∧
+        ∀ O : IpaNode C σ.k → Prechallenge, winsAtBase σ U claim O (A.run O) := by
+  obtain ⟨A, hQ, hW⟩ := honestNode_wins_everywhere_at hne σ U (Ipa.cipOf claim)
+    (combinedEvalVector (2 ^ σ.k) claim.evalscale claim.pointFn) (Ipa.cipOf claim)
+    (combinedCommitment claim.polyscale claim.commitmentFn) a ρ hopen
+  exact ⟨A, hQ, fun O => (winsAtBase_iff_wins hsmul σ U claim O (A.run O)).mpr (hW O)⟩
+
+end AtBase
+
+/-! ## The companion -/
+
+section Companion
+
+variable [Module C.ScalarField C.Point]
+
+/-- **The honest prover wins on every table.** From a genuine opening witness there is an oracle
+machine over the deployed node domain, within budget `σ.k + 1`, whose output satisfies `Wins` for
+*every* table. So the win set can have measure `1`, and an extractor that always returns `none`
+cannot satisfy the deployed bound.
+
+This is `Game.lean`'s `honest_wins_everywhere` transported from its own prefix type
+`HonestPrefix Pre (k+1)` to `IpaNode C k`: the honest machine is the same `k + 1` nested queries
+over a final `pure`, but its query points are now nodes of its own proof rather than abstract
+answer-history prefixes, and its output is a wire proof rather than the answer vector. The
+reindexing is legitimate because round `j`'s output depends only on challenges strictly before
+`j` — `lrAt_congr` / `leafAt_congr`, restated above because they are `private` in the frozen
+`Game.lean`. Nonzeroness of the round challenges is `expandPre_{vesta,pallas}_ne_zero`, which
+holds for every prechallenge without any hypothesis.
+
+It is the `U := uBaseOf C cip` instance of the base-generic `honestNode_wins_everywhere_at`
+above — the cold base is nowhere used by the argument, only carried. -/
+theorem honestNode_wins_everywhere (hne : ∀ q, expandPre C q ≠ 0)
+    (σ : SRS C.Point) (cip : C.ScalarField)
+    (b : Fin (2 ^ σ.k) → C.ScalarField) (v : C.ScalarField) (P : C.Point)
+    (a : Fin (2 ^ σ.k) → C.ScalarField) (ρ : C.ScalarField)
+    (hopen : openingRelationB { σ with U := uBaseOf C cip } P b v a ρ) :
+    ∃ A : Zcash.Snark.OracleComp (IpaNode C σ.k) Prechallenge (Ipa.Proof C σ.k),
+      A.QueryBound (σ.k + 1) ∧
+        ∀ O : IpaNode C σ.k → Prechallenge,
+          Wins { σ with U := uBaseOf C cip } b v P (expandPre C) toOpening (nodes cip) O
+            (A.run O) :=
+  honestNode_wins_everywhere_at hne σ (uBaseOf C cip) cip b v P a ρ hopen
+
 /-- **The honest prover wins on the wire, on every table.** The same machine, measured by the
 `Bool` the deployed wire verifier actually returns — which is the form
 `deployedExtract_failure_measure_le`'s win event is stated in.
@@ -580,7 +711,11 @@ This is `honestNode_wins_everywhere` followed by the *backward* direction of
 `wireWins_iff_wins` at each table; it is the entire reason that bridge is stated as an
 equivalence. Consequently the event measured by the deployed bound is not vacuous: for a claim
 with a genuine opening its win component has measure `1`, so an extractor that always answers
-`none` violates the bound as soon as `(Q + σ.k + 1) · 3 / 2 ^ 128 < 1`. -/
+`none` violates the bound as soon as `(Q + σ.k + 1) · 3 / 2 ^ 128 < 1`.
+
+Both steps are taken at once by the base-generic `honestNode_winsAtBase_everywhere`, of which
+this is the `U := uBaseOf C (Ipa.cipOf claim)` instance: at that base `winsAtBase` and `wireWins`
+are the same term (`winsAtBase_uBaseOf`), so the transport is definitional. -/
 theorem honestNode_wireWins_everywhere
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
@@ -592,11 +727,8 @@ theorem honestNode_wireWins_everywhere
       (Ipa.cipOf claim) a ρ) :
     ∃ A : Zcash.Snark.OracleComp (IpaNode C σ.k) Prechallenge (Ipa.Proof C σ.k),
       A.QueryBound (σ.k + 1) ∧
-        ∀ O : IpaNode C σ.k → Prechallenge, wireWins σ claim O (A.run O) := by
-  obtain ⟨A, hQ, hW⟩ := honestNode_wins_everywhere hne σ (Ipa.cipOf claim)
-    (combinedEvalVector (2 ^ σ.k) claim.evalscale claim.pointFn) (Ipa.cipOf claim)
-    (combinedCommitment claim.polyscale claim.commitmentFn) a ρ hopen
-  exact ⟨A, hQ, fun O => (wireWins_iff_wins hsmul σ claim O (A.run O)).mpr (hW O)⟩
+        ∀ O : IpaNode C σ.k → Prechallenge, wireWins σ claim O (A.run O) :=
+  honestNode_winsAtBase_everywhere hsmul hne σ (uBaseOf C (Ipa.cipOf claim)) claim a ρ hopen
 
 end Companion
 

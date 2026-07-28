@@ -953,14 +953,26 @@ def warmBase (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins
     (fam.pub basis) (fam.digest basis) (fam.proofOf basis O) O
 
 /-- The SRS the opening argument runs against: the sampled basis with the transcript-derived
-IPA base. Matching `deployedExtract`, whose `U` override this copies. -/
+IPA base. Matching `deployedExtract`, whose `U` override this copies — except that the override
+point is the WARM base `fam.warmBase basis O`, the one the deployed kimchi verifier actually
+squeezes from the post-`ζ` sponge state, not the cold `uBaseOf` of the standalone opening. -/
 def runSrs (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
     SRS C.Point :=
-  { srsOfBasis k basis with U := uBaseOf C (Ipa.cipOf (fam.claim basis O)) }
+  { srsOfBasis k basis with U := fam.warmBase basis O }
 
 /-- **The deployed win**: the executable challenge-generic verifier accepts, with *every*
 challenge read off the table at the run's own nodes — the pre-IPA six, the `k` round challenges
-and the Schnorr challenge. The analogue of `Deployed.wireWins`. -/
+and the Schnorr challenge — and with the opening base the WARM one, `fam.warmBase basis O`.
+The analogue of `Deployed.wireWins`.
+
+The base slot is where this parts company with the standalone opening. `Deployed.wireWins` feeds
+`uBaseOf C (Ipa.cipOf claim)`, the base squeezed from a sponge started at `FqSponge.init`, and
+that is correct there: for the standalone IPA the opening *is* the whole protocol, so its sponge
+really does start cold. Inside kimchi the opening is reached only after the key digest, the
+public commitment chunks, the witness, permutation and quotient chunks have been absorbed, and
+the deployed verifier squeezes its base from THAT state. `fam.warmBase basis O` is that point
+(`KimchiFamily.warmBase` just above), so with it in this slot `Bridge.kimchiVerify_eq_gameArgs`
+needs no base-agreement hypothesis: the two sides are the same term. -/
 def Wins (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) : Prop :=
   kimchiVerifyWith (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O) (fam.pub basis)
       (reads (fam.digest basis) (fam.publicComm basis) (fam.proofOf basis O) O Squeeze.beta)
@@ -971,7 +983,7 @@ def Wins (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C n
         Squeeze.polyscale)
       (reads (fam.digest basis) (fam.publicComm basis) (fam.proofOf basis O) O
         Squeeze.evalscale)
-      (uBaseOf C (Ipa.cipOf (fam.claim basis O)))
+      (fam.warmBase basis O)
       (Vector.ofFn fun i : Fin k =>
         reads (fam.digest basis) (fam.publicComm basis) (fam.proofOf basis O) O
           (Squeeze.ipaRound i))
@@ -1739,17 +1751,23 @@ noncomputable def relationFinder (coins : Zcash.Snark.RecursiveForkCoins Prechal
     | some (PSum.inr rel) =>
         if hu : rel.coeffs Zcash.Snark.AugmentedIndex.u = 0 then
           some (setupBasis_srsOfBasis_augOfSetup_override bs
-            (uBaseOf C (Ipa.cipOf (fam.claim (augOfSetup bs) O))) ▸ restrictToSetup rel hu)
+            (fam.warmBase (augOfSetup bs) O) ▸ restrictToSetup rel hu)
         else none
 
 /-- **The residual**: a break that touches the transcript-derived base computes its discrete
 log. The copy of `Bulletproof.Ipa.Forking.derivedULog`. `noncomputable` only because the
-key-gated `attempt` is. -/
+key-gated `attempt` is.
+
+The base whose discrete log is computed is the WARM one, `fam.warmBase … O`, matching the base
+the game is now played at; the body is base-agnostic and carries over unchanged. So
+`DerivedUDLAdvantageLE` below, and with it `DiscreteLogRelationHardFor`, prices breaks that
+touch the warm post-`ζ` base rather than the cold `uBaseOf` one. The endpoint text is unchanged;
+what it assumes hard is the point the deployed verifier actually uses. -/
 noncomputable def derivedULog (B : C.Point)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
     (s : SetupIndex (2 ^ k) → C.ScalarField) (O : Coins C nc k) :
     Option (Zcash.Snark.DiscreteLogRepresentation (F := C.ScalarField) B
-      (uBaseOf C (Ipa.cipOf (fam.claim (augOfSetup (Zcash.Snark.scalarBasis B s)) O)))) :=
+      (fam.warmBase (augOfSetup (Zcash.Snark.scalarBasis B s)) O)) :=
   match fam.attempt (augOfSetup (Zcash.Snark.scalarBasis B s)) O coins with
   | none => none
   | some (PSum.inl _) => none
@@ -3413,7 +3431,7 @@ theorem winsAt_of_wins
         (fam.digest basis) cp O'))
       O (fam.proofOf basis O) := by
   -- (1) the size guard is off, so the win is `Ipa.verifyWith` at the run's own claim
-  have hv : Ipa.verifyWith C (srsOfBasis k basis) (uBaseOf C (Ipa.cipOf (fam.claim basis O)))
+  have hv : Ipa.verifyWith C (srsOfBasis k basis) (fam.warmBase basis O)
       (Vector.ofFn fun i : Fin k => fam.readsOf basis O (Squeeze.ipaRound i))
       (fam.readsOf basis O Squeeze.schnorr) (fam.claim basis O) = true := by
     have h := hwin
@@ -3424,7 +3442,7 @@ theorem winsAt_of_wins
     · exact h
   -- (2) the wire-to-algebra bridge, at the transcript-derived base
   have hacc := (verifyWith_iff_verifierAcceptsAt hsmul (srsOfBasis k basis)
-    (uBaseOf C (Ipa.cipOf (fam.claim basis O)))
+    (fam.warmBase basis O)
     (Vector.ofFn fun i : Fin k => fam.readsOf basis O (Squeeze.ipaRound i))
     (fam.readsOf basis O Squeeze.schnorr) (fam.claim basis O)).mp hv
   -- (3) both sides read the table at the same nodes
@@ -3796,15 +3814,20 @@ theorem ipaAttempt_eq_none_of_attempt
 uniform sampling of the setup index and the oracle table is at most
 `(Q + k + 1) · 3 / |Prechallenge|`.
 
-`kimchiExtract_failure_measure_prod_le_of_stableU` at the sampled setups
+`kimchiExtract_failure_measure_prod_le_of_stableBase` at the sampled setups
 `srsOfBasis k (augOfSetup (scalarBasis B s))`, with the claim map the run's claim triple, the
-base map the group-map image of its middle component, the representation map the family's
+base map the run's WARM base `fam.warmBase`, the representation map the family's
 polyscale-combined coefficient vector and blinder, and the prechallenge alphabet. Its hypotheses
 are the two curve facts about the expansion (supplied), the family's query bound, commit-then-
 challenge (`kimchiDecodesFromPrefixes`) and distinct chronological prefixes
-(`kimchiPrefixDecode`), completeness of the fork tape (supplied), and claim stability
-(`claimStable_runClaimTriple`). The containment is `winsAt_of_wins` and
-`ipaAttempt_eq_none_of_attempt`.
+(`kimchiPrefixDecode`), completeness of the fork tape (supplied), base stability
+(`KimchiFamily.baseStable_warmBase`) and claim stability (`claimStable_runClaimTriple`). The
+containment is `winsAt_of_wins` and `ipaAttempt_eq_none_of_attempt`.
+
+The base-stable form rather than the `_of_stableU` one is what the warm base needs: `_of_stableU`
+asks that the base factor through the claimed value, which the warm base does NOT do — it is
+squeezed from the post-`ζ` sponge state, a function of the whole pre-opening payload. What it
+does satisfy is the weaker `BaseStable`, and that is exactly `_of_stableBase`'s `hbase`.
 
 The two expansion facts are hypotheses rather than instances because `expandPre` is injective and
 nonvanishing per curve (`expandPre_vesta_injective` and its three siblings), not generically. -/
@@ -3821,7 +3844,7 @@ theorem acceptExtractionFailure_measure_prod_le
       ≤ (fam.Q + k + 1) * (3 / Fintype.card Prechallenge) := by
   classical
   refine le_trans (MeasureTheory.measure_mono ?_)
-    (kimchiExtract_failure_measure_prod_le_of_stableU
+    (kimchiExtract_failure_measure_prod_le_of_stableBase
       (S := SetupIndex (2 ^ k) → C.ScalarField)
       (fun s => srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B s)))
       (fun s _ O => claimTriple
@@ -3833,10 +3856,7 @@ theorem acceptExtractionFailure_measure_prod_le
       (fun s _ O => (fam.pgOf (augOfSetup (Zcash.Snark.scalarBasis B s)) O,
         fam.pwOf (augOfSetup (Zcash.Snark.scalarBasis B s)) O))
       (fun s _ O => fam.hPOf (augOfSetup (Zcash.Snark.scalarBasis B s)) O)
-      (fun _ => uBaseOf C)
-      (fun s _ O => uBaseOf C
-        (Ipa.cipOf (fam.claim (augOfSetup (Zcash.Snark.scalarBasis B s)) O)))
-      (fun _ _ _ => rfl)
+      (fun s _ O => fam.warmBase (augOfSetup (Zcash.Snark.scalarBasis B s)) O)
       (expandPre C) hexp_inj hexp_ne
       (fun s => fam.adversary (augOfSetup (Zcash.Snark.scalarBasis B s)))
       (fun s => fam.queryBound (augOfSetup (Zcash.Snark.scalarBasis B s)))
@@ -3851,6 +3871,7 @@ theorem acceptExtractionFailure_measure_prod_le
       (fun s => kimchiPrefixDecode (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B s)))
         (fam.digest (augOfSetup (Zcash.Snark.scalarBasis B s)))
         (fam.publicComm (augOfSetup (Zcash.Snark.scalarBasis B s))))
+      (fun s => fam.baseStable_warmBase (augOfSetup (Zcash.Snark.scalarBasis B s)))
       (fun s => fam.claimStable_runClaimTriple (augOfSetup (Zcash.Snark.scalarBasis B s)))
       (fun _ => coins) (fun _ => hcoins) (k := k) (fun _ => le_rfl))
   rintro ⟨s, O⟩ ⟨hwin, hnone⟩

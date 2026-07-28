@@ -829,7 +829,8 @@ noncomputable def honestClaim [Module C.ScalarField C.Point] (σ : SRS C.Point) 
 /-- **The derived claim is openable at a scalar SRS, at every opening base.** Stated at the
 `U`-overridden SRS, which is exactly the hypothesis shape of the opening layer's
 `Bulletproof.Ipa.Forking.honestNode_wireWins_everywhere` — and of its base-generic sibling
-`honestNode_winsAtBase_everywhere` below.
+`Bulletproof.Ipa.Forking.honestNode_winsAtBase_everywhere`, which is what the chain below
+actually spends.
 
 The base `U` is a free parameter rather than the cold `uBaseOf C (Ipa.cipOf …)` it used to
 name: `openingRelationB σ P b v a ρ` is `commit σ a ρ = P ∧ v = innerProduct a b`, and
@@ -1232,167 +1233,36 @@ theorem liftIpaNode_prefix [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc
 
 The opening argument is checked at an SRS **together with a distinguished base point `U`**: the
 verifier's fold invariant is an identity in `U`, and a transcript built for one `U` is not
-accepted at another. Two declarations of the frozen opening layer pin that `U` to the COLD base
+accepted at another. The deployed opening layer pins that `U` to the COLD base
 `uBaseOf C (Ipa.cipOf claim)` — the sponge base derived from claim data with the sponge started
-at `FqSponge.init`: the wire win predicate `Bulletproof.Ipa.Forking.wireWins`
-(`Forking/Deployed.lean`) and the anti-vacuity companion
-`Bulletproof.Ipa.Forking.honestNode_wins_everywhere` (`Forking/Honest.lean`). When the kimchi win
-event is retargeted at the WARM post-`ζ` base, the honest family must win THERE, and no rewriting
-supplies that. This section restates both with the base a free parameter.
+at `FqSponge.init` — both in the wire win predicate `Bulletproof.Ipa.Forking.wireWins`
+(`Forking/Deployed.lean`) and in the anti-vacuity companion
+`Bulletproof.Ipa.Forking.honestNode_wireWins_everywhere` (`Forking/Honest.lean`). That is right
+for the standalone opening, where the opening IS the whole protocol. The kimchi win event is
+checked at the WARM post-`ζ` base instead, so the honest family must win THERE, and no rewriting
+produces one statement from the other once the base is baked in.
 
-**Nothing here is new mathematics**, and the frozen files are imported rather than copied — only
-the one theorem whose statement pins the base is restated (at a strictly more general base):
+**The base-generic layer lives upstream and is imported, not restated here.** `section AtBase` of
+`Bulletproof/Forking/Honest.lean` provides exactly the four declarations the kimchi-side chain
+consumes, and the file-level `open Bulletproof.Ipa.Forking` above brings them into scope under
+their short names:
 
-* `openingRelationB σ P b v a ρ` is `commit σ a ρ = P ∧ v = innerProduct a b`, which reads `σ.g`
-  and `σ.h` and NEVER `σ.U`. So `{ σ with U := X }` in an `openingRelationB` statement is
-  decoration: a witness at one base is a witness at every base, definitionally. That is what
-  frees the four openability lemmas above.
-* The honest prover's acceptance invariant
-  `P + v • U = commitGen σ.g a + commitGen b a • U + ρ • σ.h` is an identity IN `U`, obtained by
-  cancelling `v • U = commitGen b a • U` on both sides.
-* The query domain `Bulletproof.Ipa.Forking.nodes cip` is indexed by the claimed value, not by
-  the base. So the base and the transcript index decouple — which is exactly what lets a warm
-  base be plugged in later without a fixed point arising. -/
+* `winsAtBase σ U claim O π` — the wire win predicate with the base a free parameter — together
+  with `winsAtBase_uBaseOf`, the `rfl` recording that at the cold base it *is* `wireWins`;
+* `winsAtBase_iff_wins` — the wire/abstract bridge at an arbitrary base, spent below in its
+  BACKWARD direction (the honest machine's algebra delivers `Wins`, the family's win event lives
+  on the wire);
+* `honestNode_wins_everywhere_at` and `honestNode_winsAtBase_everywhere` — the honest machine's
+  win on every table at an arbitrary base, abstract and on the wire respectively.
 
-section AtBase
-
-/-- **The opening win on the wire, at a given base.** The executable challenge-generic opening
-verifier returns `true` on `σ`, the base `U`, the `σ.k` round challenges the table supplies at
-the claim's round nodes, the Schnorr challenge it supplies at the claim's Schnorr node, and the
-claim with its opening slot replaced by `π`.
-
-This mirrors `Bulletproof.Ipa.Forking.wireWins` with its base freed; that declaration is frozen
-at the cold `uBaseOf C (Ipa.cipOf claim)`, which is the one thing this development has to vary.
-At the cold base the two are the same statement, by `rfl` (`winsAtBase_uBaseOf`). -/
-def winsAtBase {m p : ℕ} (σ : SRS C.Point) (U : C.Point) (claim : Ipa.Input C σ.k m p)
-    (O : IpaNode C σ.k → Prechallenge) (π : Ipa.Proof C σ.k) : Prop :=
-  Ipa.verifyWith C σ U
-      (Vector.ofFn fun i =>
-        expandPre C (O (Bulletproof.Ipa.Forking.nodeU (Ipa.cipOf claim) π i)))
-      (expandPre C (O (Bulletproof.Ipa.Forking.nodeC (Ipa.cipOf claim) π)))
-      { claim with proof := π } = true
-
-/-- **At the cold base, `winsAtBase` IS `wireWins`.** The transcription check on the definition
-above: the two `Prop`s are the same term, so no bridge lemma is ever needed in the cold
-direction. -/
-theorem winsAtBase_uBaseOf {m p : ℕ} (σ : SRS C.Point) (claim : Ipa.Input C σ.k m p)
-    (O : IpaNode C σ.k → Prechallenge) (π : Ipa.Proof C σ.k) :
-    winsAtBase σ (uBaseOf C (Ipa.cipOf claim)) claim O π
-      = Bulletproof.Ipa.Forking.wireWins σ claim O π := rfl
-
-/-- **The wire predicate at a base is the abstract win event at that base.** The executable
-verifier's `Bool` at the table's challenges is `true` exactly when the abstract game's `Wins`
-holds against the SRS whose randomisation base is `U`.
-
-This mirrors `Bulletproof.Ipa.Forking.wireWins_iff_wins`, which states the same equivalence at
-the cold base only. The base can be freed because the bridge it delegates to,
-`verifyWith_iff_verifierAcceptsAt`, already takes the base as an explicit argument and is
-quantified over it; the four proof lines are the frozen ones verbatim. It is used in the
-BACKWARD direction — the honest machine's algebra delivers `Wins`, while the family's win event
-is stated on the wire. -/
-theorem winsAtBase_iff_wins [Module C.ScalarField C.Point]
-    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
-    {m p : ℕ} (σ : SRS C.Point) (U : C.Point) (claim : Ipa.Input C σ.k m p)
-    (O : IpaNode C σ.k → Prechallenge) (π : Ipa.Proof C σ.k) :
-    winsAtBase σ U claim O π ↔
-      Wins { σ with U := U }
-        (combinedEvalVector (2 ^ σ.k) claim.evalscale claim.pointFn)
-        (Ipa.cipOf claim)
-        (Bulletproof.combinedCommitment claim.polyscale claim.commitmentFn)
-        (expandPre C) toOpening (Bulletproof.Ipa.Forking.nodes (Ipa.cipOf claim)) O π := by
-  rw [winsAtBase, verifyWith_iff_verifierAcceptsAt hsmul]
-  unfold Wins Bulletproof.Forking.oracleChallenges
-  simp only [Bulletproof.Ipa.Forking.nodes, Fin.snoc_castSucc, Fin.snoc_last, Fin.getElem_fin,
-    Vector.getElem_ofFn]
-  exact Iff.rfl
-
-/-- **The honest prover wins on every table, at every base.** From a genuine opening witness for
-`(P, b, v)` at the SRS whose base is `U` there is an oracle machine over the deployed node
-domain, within budget `σ.k + 1`, whose output satisfies `Wins` at that same `U` for EVERY table.
-
-This is `Bulletproof.Ipa.Forking.honestNode_wins_everywhere` restated with `(U : C.Point)` an
-explicit argument in place of the cold `uBaseOf C cip`, and the claimed value `cip` — which
-indexes the query domain — left as a SEPARATE free argument rather than tied to the base. The
-frozen proof opens with `set U : C.Point := uBaseOf C cip with hU` and then never uses `hU`, so
-deleting that line is the whole of the change: every ingredient below is the frozen one, and
-every ingredient is public. -/
-theorem honestNode_wins_everywhere_at [Module C.ScalarField C.Point]
-    (hne : ∀ q, expandPre C q ≠ 0)
-    (σ : SRS C.Point) (U : C.Point) (cip : C.ScalarField)
-    (b : Fin (2 ^ σ.k) → C.ScalarField) (v : C.ScalarField) (P : C.Point)
-    (a : Fin (2 ^ σ.k) → C.ScalarField) (ρ : C.ScalarField)
-    (hopen : openingRelationB { σ with U := U } P b v a ρ) :
-    ∃ A : Zcash.Snark.OracleComp (IpaNode C σ.k) Prechallenge (Ipa.Proof C σ.k),
-      A.QueryBound (σ.k + 1) ∧
-        ∀ O : IpaNode C σ.k → Prechallenge,
-          Wins { σ with U := U } b v P (expandPre C) toOpening
-            (Bulletproof.Ipa.Forking.nodes cip) O (A.run O) := by
-  obtain ⟨hP1, hv1⟩ := hopen
-  set pr : KimchiProver C.ScalarField C.Point σ.k := honestProver U ρ σ.g b a with hpr
-  have hcb : commitGen b a = v := by
-    rw [hv1]
-    simp only [commitGen, innerProduct, smul_eq_mul]
-  have hinv : P + v • U = commitGen σ.g a + commitGen b a • U + ρ • σ.h := by
-    rw [hcb, ← hP1]
-    show commitGen σ.g a + ρ • σ.h + v • U = _
-    abel
-  refine ⟨honestNodeAdv cip pr, honestNodeAdv_queryBound cip pr, ?_⟩
-  intro O
-  set π : Ipa.Proof C σ.k := (honestNodeAdv cip pr).run O with hπ
-  set q : Fin (σ.k + 1) → Prechallenge :=
-    (honestNodeAdvAux cip pr (σ.k + 1) 0 (by omega) Fin.elim0).run O with hq
-  set χ : Fin (σ.k + 1) → C.ScalarField := fun i => expandPre C (q i) with hχdef
-  have hchi : Bulletproof.Forking.oracleChallenges { σ with U := U } (expandPre C)
-      (Bulletproof.Ipa.Forking.nodes cip) O π = χ := by
-    funext i
-    rw [Bulletproof.Forking.oracleChallenges, hχdef]
-    exact congrArg (expandPre C) (honestNodeAdv_prefixes cip pr O i)
-  have hproof : toOpening π = pr.proofAt χ := by
-    rw [hπ, honestNodeAdv, mapComp_run, toOpening_wireProofOf]
-  have hsnoc : Fin.snoc (fun i : Fin σ.k => χ i.castSucc) (χ (Fin.last σ.k)) = χ :=
-    Fin.snoc_init_self χ
-  have hacc : kimchiProverAccept pr σ.g b U σ.h v P χ :=
-    honestProver_accept U σ.h ρ v σ.g b a P χ (fun i => by rw [hχdef]; exact hne _) hinv
-  have key := (kimchiProverAccept_iff_verifierAcceptsAt { σ with U := U } pr b v P
-    (fun i : Fin σ.k => χ i.castSucc) (χ (Fin.last σ.k))).mp (by rw [hsnoc]; exact hacc)
-  rw [hsnoc] at key
-  show VerifierAcceptsAt { σ with U := U } (toOpening π) P
-    (innerProduct (bPolyCoefficients fun i : Fin σ.k =>
-      Bulletproof.Forking.oracleChallenges { σ with U := U } (expandPre C)
-        (Bulletproof.Ipa.Forking.nodes cip) O π i.castSucc) b) v
-    (Bulletproof.Forking.oracleChallenges { σ with U := U } (expandPre C)
-      (Bulletproof.Ipa.Forking.nodes cip) O π (Fin.last σ.k))
-    (fun i : Fin σ.k =>
-      Bulletproof.Forking.oracleChallenges { σ with U := U } (expandPre C)
-        (Bulletproof.Ipa.Forking.nodes cip) O π i.castSucc)
-  rw [hchi, hproof]
-  exact key
-
-/-- **The honest prover wins on the wire, on every table, at every base.** The same machine,
-measured by the `Bool` the executable opening verifier returns at the base `U`.
-
-This mirrors `Bulletproof.Ipa.Forking.honestNode_wireWins_everywhere`: it is
-`honestNode_wins_everywhere_at` at the claim's own data (`b` the combined evaluation vector, `v`
-and `cip` the combined inner product, `P` the combined commitment), followed by the backward
-direction of `winsAtBase_iff_wins`. -/
-theorem honestNode_winsAtBase_everywhere [Module C.ScalarField C.Point]
-    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
-    (hne : ∀ q, expandPre C q ≠ 0)
-    (σ : SRS C.Point) (U : C.Point) {m p : ℕ} (claim : Ipa.Input C σ.k m p)
-    (a : Fin (2 ^ σ.k) → C.ScalarField) (ρ : C.ScalarField)
-    (hopen : openingRelationB { σ with U := U }
-      (Bulletproof.combinedCommitment claim.polyscale claim.commitmentFn)
-      (combinedEvalVector (2 ^ σ.k) claim.evalscale claim.pointFn)
-      (Ipa.cipOf claim) a ρ) :
-    ∃ A : Zcash.Snark.OracleComp (IpaNode C σ.k) Prechallenge (Ipa.Proof C σ.k),
-      A.QueryBound (σ.k + 1) ∧
-        ∀ O : IpaNode C σ.k → Prechallenge, winsAtBase σ U claim O (A.run O) := by
-  obtain ⟨A, hQ, hW⟩ := honestNode_wins_everywhere_at hne σ U (Ipa.cipOf claim)
-    (combinedEvalVector (2 ^ σ.k) claim.evalscale claim.pointFn) (Ipa.cipOf claim)
-    (Bulletproof.combinedCommitment claim.polyscale claim.commitmentFn) a ρ hopen
-  exact ⟨A, hQ, fun O => (winsAtBase_iff_wins hsmul σ U claim O (A.run O)).mpr (hW O)⟩
-
-end AtBase
+Freeing the base costs nothing mathematically, for three independent reasons the upstream section
+spells out: `openingRelationB σ P b v a ρ` reads `σ.g` and `σ.h` and NEVER `σ.U`, so a witness at
+one base is a witness at every base definitionally; the honest prover's acceptance invariant
+`P + v • U = commitGen σ.g a + commitGen b a • U + ρ • σ.h` is an identity IN `U`; and the query
+domain `Bulletproof.Ipa.Forking.nodes cip` is indexed by the claimed value, not by the base, so
+base and transcript index decouple — which is what lets a warm base be plugged in below without a
+fixed point arising. What this file adds on top is the kimchi-side chain: `honestMachineAt` and
+`honestMachineAt_winsAtBase`, then the honest adversary at a base function and its win. -/
 
 /-! ## The honest kimchi adversary
 
@@ -2019,15 +1889,90 @@ ever measured — the endpoints quantify over `augOfSetup (scalarBasis B s)` —
 
 The algebraic-group data is table-free: the coefficient vectors and blinders come from
 `exists_rep_commitments`, which does not read the oracle, and the quotient chunks are the
-`nc` zeros. That is exactly what makes the two prefix-determinacy fields reflexivity. -/
+`nc` zeros. That is exactly what makes the two prefix-determinacy fields reflexivity.
+
+**The base the family must win at is the WARM one.** `KimchiFamily.Wins` feeds the generic
+verifier `fam.warmBase basis O`, the point the deployed verifier squeezes from the post-`ζ`
+sponge state, which varies with the oracle table. So the branching adversary is built from the
+base-generic `honestAdversaryAtFn` rather than the cold `honestAdversary`, at the base function
+`honestWarmBase` below — and `honestWarmBase_apply_eq_warmBase` is the one step that closes the
+apparent circle between "the base the machine builds its transcript for" and "the base the run's
+own proof determines". -/
 
 section Family
 
 variable [Module C.ScalarField C.Point]
 
+/-- **The degenerate family's opening base, as a function of the six pre-opening
+prechallenges.** `kimchiWarmBase` at the family's own SRS, verifying key and (empty) public
+input, on the DEGENERATE proof `zeroProof`, at the six prechallenges packed into a `Fin 6`
+tuple.
+
+The proof slot is `zeroProof` rather than the run's own proof, and that is what makes the
+definition well-founded: the honest adversary must fix a base *before* it knows which opening it
+will emit, so a base that read the emitted proof could not be supplied to `honestAdversaryAtFn`
+at all. Nothing is lost, because the warm base does not depend on the `opening` field — the
+pre-`ζ` absorb schedule never touches it and `preT` reads the claim only through its value — so
+`zeroProof` and the run's `zeroProofWith op` give the same point. That is
+`honestWarmBase_apply_eq_warmBase`.
+
+Project-local: it names the base at which this development's own degenerate family plays. -/
+noncomputable def honestWarmBase {k : ℕ} (nc : ℕ) {d : ℕ} (idx : Index C.ScalarField (2 ^ d))
+    (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (qβ qγ qα qζ qv qu : Prechallenge) : C.Point :=
+  kimchiWarmBase (srsOfBasis k basis) (honestVK (srsOfBasis k basis) nc idx) #[]
+    (zeroProof C nc k) ![qβ, qγ, qα, qζ, qv, qu]
+
+/-- **The base function, at the run's own six answers, IS the run's warm base.** Fix a proof `cp`
+whose pre-opening payload is the degenerate one — every proof the family's adversary can emit is
+of this shape, since it differs from `zeroProof` only in its `opening` field. Then evaluating
+`honestWarmBase` at the table's answers at `cp`'s six pre-opening nodes returns exactly
+`warmBase … cp O`, the base `KimchiFamily.Wins` checks the run at.
+
+This is the single mathematical step of the warm retarget, and it is where the apparent
+circularity dissolves. `honestAdversaryAtFn` hands its base function the six prechallenges it
+read, so the base slot of `honestAdversaryAtFn_wins` is `honestWarmBase` at those six answers,
+computed from `zeroProof`; the win event wants the same squeeze computed from the emitted proof.
+Two rewrites close the gap: `warmBase_eq_kimchiWarmBase` (`rfl`) puts the win event's base into
+challenge-tuple form, and `kimchiWarmBase_eq_of_preData_eq` — whose hypothesis is precisely
+"same pre-opening payload" — exchanges `zeroProof` for `cp`. The six challenge slots then agree
+because `preSqueeze` enumerates `β, γ, α, ζ, ξ, r` in the order the tuple packs them.
+
+Project-local: both sides are this development's own constructions. -/
+theorem honestWarmBase_apply_eq_warmBase {k : ℕ} (nc : ℕ) {d : ℕ}
+    (idx : Index C.ScalarField (2 ^ d))
+    (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (cp : KimchiProof C nc k)
+    (hpre : preDataOf (0 : C.ScalarField)
+        (fun c => (publicCommitment C (srsOfBasis k basis)
+          (honestVK (srsOfBasis k basis) nc idx) #[])[c]) (zeroProof C nc k)
+      = preDataOf (0 : C.ScalarField)
+        (fun c => (publicCommitment C (srsOfBasis k basis)
+          (honestVK (srsOfBasis k basis) nc idx) #[])[c]) cp)
+    (O : KimchiNode C nc k → Prechallenge) :
+    honestWarmBase nc idx basis
+        (O (kimchiNodes 0 (fun c => (publicCommitment C (srsOfBasis k basis)
+          (honestVK (srsOfBasis k basis) nc idx) #[])[c]) cp Squeeze.beta))
+        (O (kimchiNodes 0 (fun c => (publicCommitment C (srsOfBasis k basis)
+          (honestVK (srsOfBasis k basis) nc idx) #[])[c]) cp Squeeze.gamma))
+        (O (kimchiNodes 0 (fun c => (publicCommitment C (srsOfBasis k basis)
+          (honestVK (srsOfBasis k basis) nc idx) #[])[c]) cp Squeeze.alpha))
+        (O (kimchiNodes 0 (fun c => (publicCommitment C (srsOfBasis k basis)
+          (honestVK (srsOfBasis k basis) nc idx) #[])[c]) cp Squeeze.zeta))
+        (O (kimchiNodes 0 (fun c => (publicCommitment C (srsOfBasis k basis)
+          (honestVK (srsOfBasis k basis) nc idx) #[])[c]) cp Squeeze.polyscale))
+        (O (kimchiNodes 0 (fun c => (publicCommitment C (srsOfBasis k basis)
+          (honestVK (srsOfBasis k basis) nc idx) #[])[c]) cp Squeeze.evalscale))
+      = warmBase (srsOfBasis k basis) (honestVK (srsOfBasis k basis) nc idx) #[] 0 cp O := by
+  rw [warmBase_eq_kimchiWarmBase, honestWarmBase,
+    kimchiWarmBase_eq_of_preData_eq (srsOfBasis k basis) (honestVK (srsOfBasis k basis) nc idx)
+      #[] 0 (zeroProof C nc k) cp _ hpre]
+  congr 1
+  funext i
+  fin_cases i <;> rfl
+
 open Classical in
-/-- The family's adversary: the honest one at a scalar basis, the constant degenerate proof
-elsewhere. -/
+/-- The family's adversary: the honest one at a scalar basis, at the warm base function
+`honestWarmBase`; the constant degenerate proof elsewhere. -/
 noncomputable def familyAdversary
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0) {k : ℕ} (hk : 0 < k) (nc : ℕ) {d : ℕ}
@@ -2035,12 +1980,13 @@ noncomputable def familyAdversary
     (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) :
     Zcash.Snark.OracleComp (KimchiNode C nc k) Prechallenge (KimchiProof C nc k) :=
   if h : IsScalarSRS (srsOfBasis k basis) then
-    honestAdversary hsmul hne h hk nc idx hω 0
+    honestAdversaryAtFn hsmul hne h hk nc idx hω 0
       (fun c => (publicCommitment C (srsOfBasis k basis)
         (honestVK (srsOfBasis k basis) nc idx) #[])[c])
+      (honestWarmBase nc idx basis)
   else .pure (zeroProof C nc k)
 
-/-- At a scalar basis the family's adversary IS the honest adversary. -/
+/-- At a scalar basis the family's adversary IS the honest adversary at the warm base. -/
 theorem familyAdversary_scalar
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0) {k : ℕ} (hk : 0 < k) (nc : ℕ) {d : ℕ}
@@ -2048,9 +1994,10 @@ theorem familyAdversary_scalar
     (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (h : IsScalarSRS (srsOfBasis k basis)) :
     familyAdversary hsmul hne hk nc idx hω basis
-      = honestAdversary hsmul hne h hk nc idx hω 0
+      = honestAdversaryAtFn hsmul hne h hk nc idx hω 0
         (fun c => (publicCommitment C (srsOfBasis k basis)
-          (honestVK (srsOfBasis k basis) nc idx) #[])[c]) := by
+          (honestVK (srsOfBasis k basis) nc idx) #[])[c])
+        (honestWarmBase nc idx basis) := by
   rw [familyAdversary, dif_pos h]
 
 /-- **The family's adversary always emits the degenerate proof**, with some opening — the
@@ -2066,9 +2013,9 @@ theorem familyAdversary_run
   rw [familyAdversary]
   split
   · rename_i h
-    exact ⟨_, honestAdversary_run hsmul hne h hk nc idx hω 0
+    exact ⟨_, honestAdversaryAtFn_run hsmul hne h hk nc idx hω 0
       (fun c => (publicCommitment C (srsOfBasis k basis)
-        (honestVK (srsOfBasis k basis) nc idx) #[])[c]) O⟩
+        (honestVK (srsOfBasis k basis) nc idx) #[])[c]) (honestWarmBase nc idx basis) O⟩
   · exact ⟨(zeroProof C nc k).opening, rfl⟩
 
 /-- The family's adversary stays within `k + 7` queries at every basis. -/
@@ -2081,9 +2028,9 @@ theorem familyAdversary_queryBound
   rw [familyAdversary]
   split
   · rename_i h
-    exact honestAdversary_queryBound hsmul hne h hk nc idx hω 0
+    exact honestAdversaryAtFn_queryBound hsmul hne h hk nc idx hω 0
       (fun c => (publicCommitment C (srsOfBasis k basis)
-        (honestVK (srsOfBasis k basis) nc idx) #[])[c])
+        (honestVK (srsOfBasis k basis) nc idx) #[])[c]) (honestWarmBase nc idx basis)
   · exact Zcash.Snark.OracleComp.QueryBound.pure _ _
 
 omit [Module C.ScalarField C.Point] in
@@ -2170,8 +2117,29 @@ noncomputable def honestKimchiFamily
 
 /-! ## The family accepts, so the endpoints' bound is about the extractor -/
 
+/-- The degenerate family's warm base, with its four data fields spelled out. Definitional —
+it exists only so that a rewrite can name the term, which a projection of the structure literal
+does not let it do. -/
+private theorem honestKimchiFamily_warmBase
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hne : ∀ q, expandPre C q ≠ 0) {k : ℕ} (hk : 0 < k) {nc : ℕ} (hnc : 0 < nc) {d : ℕ}
+    (idx : Index C.ScalarField (2 ^ d)) (hω : idx.omega ≠ 1) (hpc : idx.publicCount = 0)
+    (hd : nc * 2 ^ k = 2 ^ d) (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (O : Coins C nc k) :
+    (honestKimchiFamily hsmul hne hk hnc idx hω hpc hd).warmBase basis O
+      = warmBase (srsOfBasis k basis) (honestVK (srsOfBasis k basis) nc (indexAtCurve C idx))
+          #[] 0 (((honestKimchiFamily hsmul hne hk hnc idx hω hpc hd).adversary basis).run O)
+          O := rfl
+
 /-- **The honest family accepts on every table, at every sampled basis with a live blinding
-multiplier.** -/
+multiplier.**
+
+The base slot is where the proof does its work. `honestAdversaryAtFn_wins` delivers acceptance
+with the verifier fed `honestWarmBase` at the six answers the run collected; `KimchiFamily.Wins`
+asks for acceptance with it fed `fam.warmBase basis O`. Those are the same point by
+`honestWarmBase_apply_eq_warmBase`, whose "same pre-opening payload" hypothesis holds because
+the family's adversary always emits `zeroProofWith op` (`familyAdversary_run`) and `preDataOf`
+never reads the `opening` field. -/
 theorem honestKimchiFamily_wins
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0) {k : ℕ} (hk : 0 < k) {nc : ℕ} (hnc : 0 < nc) {d : ℕ}
@@ -2183,18 +2151,51 @@ theorem honestKimchiFamily_wins
   have hs := isScalarSRS_srsOfBasis_scalarBasis k B sm hsb
   have hA : ((honestKimchiFamily hsmul hne hk hnc idx hω hpc hd).adversary
         (augOfSetup (Zcash.Snark.scalarBasis B sm))).run O
-      = (honestAdversary hsmul hne hs hk nc (indexAtCurve C idx) hω 0
+      = (honestAdversaryAtFn hsmul hne hs hk nc (indexAtCurve C idx) hω 0
         (fun c => (publicCommitment C
           (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B sm)))
           (honestVK (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B sm))) nc
-            (indexAtCurve C idx)) #[])[c])).run O := by
+            (indexAtCurve C idx)) #[])[c])
+        (honestWarmBase nc (indexAtCurve C idx)
+          (augOfSetup (Zcash.Snark.scalarBasis B sm)))).run O := by
     rw [show (honestKimchiFamily hsmul hne hk hnc idx hω hpc hd).adversary
         (augOfSetup (Zcash.Snark.scalarBasis B sm))
         = familyAdversary hsmul hne hk nc (indexAtCurve C idx) hω
           (augOfSetup (Zcash.Snark.scalarBasis B sm)) from rfl,
       familyAdversary_scalar hsmul hne hk nc (indexAtCurve C idx) hω _ hs]
     rfl
-  exact honestAdversary_wins hsmul hne hs hk nc (indexAtCurve C idx) hω 0 _ O _ hA
+  have hwin := honestAdversaryAtFn_wins hsmul hne hs hk nc (indexAtCurve C idx) hω 0
+    (fun c => (publicCommitment C
+      (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B sm)))
+      (honestVK (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B sm))) nc
+        (indexAtCurve C idx)) #[])[c])
+    (honestWarmBase nc (indexAtCurve C idx) (augOfSetup (Zcash.Snark.scalarBasis B sm)))
+    O _ hA
+  -- the run's proof carries the degenerate pre-opening payload: it is `zeroProofWith op`,
+  -- and `preDataOf` never reads the `opening` field
+  have hpre : preDataOf (0 : C.ScalarField)
+      (fun c => (publicCommitment C
+        (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B sm)))
+        (honestVK (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B sm))) nc
+          (indexAtCurve C idx)) #[])[c]) (zeroProof C nc k)
+    = preDataOf (0 : C.ScalarField)
+      (fun c => (publicCommitment C
+        (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B sm)))
+        (honestVK (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B sm))) nc
+          (indexAtCurve C idx)) #[])[c])
+      (((honestKimchiFamily hsmul hne hk hnc idx hω hpc hd).adversary
+        (augOfSetup (Zcash.Snark.scalarBasis B sm))).run O) := by
+    obtain ⟨op, hop⟩ := familyAdversary_run hsmul hne hk nc (indexAtCurve C idx) hω
+      (augOfSetup (Zcash.Snark.scalarBasis B sm)) O
+    rw [show ((honestKimchiFamily hsmul hne hk hnc idx hω hpc hd).adversary
+        (augOfSetup (Zcash.Snark.scalarBasis B sm))).run O
+        = (familyAdversary hsmul hne hk nc (indexAtCurve C idx) hω
+          (augOfSetup (Zcash.Snark.scalarBasis B sm))).run O from rfl, hop]
+    rfl
+  unfold KimchiFamily.Wins
+  rw [honestKimchiFamily_warmBase, ← honestWarmBase_apply_eq_warmBase nc (indexAtCurve C idx)
+    (augOfSetup (Zcash.Snark.scalarBasis B sm)) _ hpre O]
+  exact hwin
 
 /-- **The bound the endpoints prove is a statement about the extractor.** On the honest
 family the measured event `Wins ∧ ¬ExtractsWitness`, restricted to the non-excluded slice of
