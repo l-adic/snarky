@@ -804,6 +804,23 @@ def runClaim {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (pub : Array C.
     (reads digest (fun c => (publicCommitment C σ cvk pub)[c]) cp O Squeeze.polyscale)
     (reads digest (fun c => (publicCommitment C σ cvk pub)[c]) cp O Squeeze.evalscale)
 
+/-- **The warm opening base at a run** (`def:warm-base`). The deployed verifier does not derive
+the `U` base of the opening argument from a cold sponge: it continues the fq sponge from the
+*warm* state — the state reached after the whole pre-opening absorb schedule, i.e. the state at
+which `ζ` is squeezed — and squeezes the base there, at the `preT` prefix of the claim the run
+opens. This is that group element, as a function of the emitted proof and the oracle table:
+`toGroup` of `kimchiOpeningFS`'s base squeeze at `preT (runClaim …)`.
+
+It is the map the family's runs are checked at, and it is *not* a function of the claimed value
+alone (`rem:warm-base-not-claim-factored`), which is why it needs base stability rather than the
+older factors-through-the-claim hypothesis. Mirrors nothing directly; it is to the base what
+`runClaim` (just above) is to the claim, and is written in the same table-reading style. -/
+def warmBase {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (pub : Array C.ScalarField)
+    (digest : C.ScalarField) (cp : KimchiProof C nc σ.k)
+    (O : KimchiNode C nc σ.k → Prechallenge) : C.Point :=
+  C.toGroup ((kimchiOpeningFS cvk cp (publicCommitment C σ cvk pub)).squeezeBase
+    (IpaTranscriptElt.preT (runClaim σ cvk pub digest cp O)))
+
 /-- **The oracle table** the adversary and the extractor share. Ironwood's `Coins`
 (`Algebraic.lean:857`) carries the recursive fork tape alongside; here that tape stays a
 parameter, which makes the bound hold for every complete tape rather than on average. -/
@@ -926,6 +943,14 @@ def claim (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C 
     Ipa.Input C k (nc + 1 + tailRowCount * nc) evalPts :=
   runClaim (srsOfBasis k basis) (fam.cvk basis) (fam.pub basis) (fam.digest basis)
     (fam.proofOf basis O) O
+
+/-- **The family's warm opening base** at a basis and a table: `warmBase` at the family's own
+SRS, verifying key, public input and digest, on the proof the adversary emits. Mirrors
+`KimchiFamily.claim` just above, one field at a time, with `runClaim` replaced by `warmBase`. -/
+def warmBase (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
+    C.Point :=
+  _root_.Kimchi.Verifier.KnowledgeSoundness.warmBase (srsOfBasis k basis) (fam.cvk basis)
+    (fam.pub basis) (fam.digest basis) (fam.proofOf basis O) O
 
 /-- The SRS the opening argument runs against: the sampled basis with the transcript-derived
 IPA base. Matching `deployedExtract`, whose `U` override this copies. -/
@@ -2907,6 +2932,195 @@ theorem KimchiFamily.claimStable_runClaimTriple {n : ℕ} [NeZero n]
     (fam.digest basis) (fam.adversary basis)
 
 end ClaimTriple
+
+/-! ## 11b. The warm opening base factors through the pre-opening data
+
+The section above discharges claim stability for the triple the win condition reads. The
+deployed *base* needs the same treatment, and gets it by the same argument at a group-valued map
+instead of a triple-valued one: `claimStable_of_preDataFactors` is stated for an arbitrary
+`ClaimData`, and base stability *is* claim stability at `ClaimData := C.Point`
+(`Bulletproof.Forking.BaseStable` is a plain `def` alias), so the skeleton's output is already
+the statement wanted, with no transport.
+
+The single fact that carries the discharge is the one section 11 already proves:
+`kimchiProof_eq_of_preData_eq`, the pre-opening payload determines the proof up to its
+`opening`. Both halves of the warm base are then determined, because neither reads `opening` —
+the warm state is folded from the pre-`ζ` absorb schedule (`preZeta` reads `digest`, the public
+commitment, `wComm`, `zComm` and `tComm`, and nothing else), and the `preT` prefix is a function
+of the claimed value, which is the middle component of the claim triple. -/
+
+section WarmBase
+
+variable {nc k : ℕ}
+
+/-- **The `U`-base prefix reads the claim only through its value** (`lem:preT-through-cip`).
+`preT inp` is the two-element list `[frScalar (shiftScalar (cipOf inp)), sqBase]`, so it is
+literally a function of `cipOf inp`; in particular it does not read the opening proof, which is
+what distinguishes it from the round and Schnorr prefixes.
+
+Deliberately kept local rather than pushed into `Bulletproof/Forking/Transcript.lean`: it is a
+one-step `congrArg` that only this discharge needs. -/
+theorem preT_eq_of_cipOf_eq {j m p : ℕ} (inp inp' : Ipa.Input C j m p)
+    (h : Ipa.cipOf inp = Ipa.cipOf inp') :
+    IpaTranscriptElt.preT inp = IpaTranscriptElt.preT inp' := by
+  simp only [IpaTranscriptElt.preT, IpaTranscriptElt.preTAbsorbs, h]
+
+/-- **The warm state is determined by the pre-opening payload**
+(`lem:warm-state-through-predata`). The warm state is the fold of the fq sponge along the
+pre-`ζ` absorb list — the key digest, the public commitment chunks, the witness commitments, the
+permutation commitment and the quotient chunks — none of which is the opening. So equal payloads
+force the two proofs into the same shape and the two folds have the same input.
+
+Mirrors `triple_eq_of_preData_eq` (section 11) verbatim: the same `kimchiProof_eq_of_preData_eq`
+rewrite, the same `subst`, and the same `rfl`. -/
+theorem warmState_eq_of_preData_eq (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (pub : Array C.ScalarField) (digest : C.ScalarField) (cp cp' : KimchiProof C nc σ.k)
+    (h : preDataOf digest (fun c => (publicCommitment C σ cvk pub)[c]) cp
+      = preDataOf digest (fun c => (publicCommitment C σ cvk pub)[c]) cp') :
+    warmState cvk cp (publicCommitment C σ cvk pub)
+      = warmState cvk cp' (publicCommitment C σ cvk pub) := by
+  obtain ⟨o, ho⟩ : ∃ o, cp = { cp' with opening := o } :=
+    ⟨cp.opening, kimchiProof_eq_of_preData_eq _ _ cp cp' h⟩
+  subst ho
+  rfl
+
+variable [Module C.ScalarField C.Point]
+
+/-- **The warm base as a function of the proof and the six pre-opening challenges alone**
+(`def:warm-base`, payload-and-challenges form): `warmBase` with the table replaced by a
+`Fin 6`-indexed tuple of prechallenges, each expanded by its own squeeze's map.
+
+Mirrors `kimchiClaimOf` (section 10) exactly — same six arguments, same expansion — and stands
+to `warmBase` as `kimchiClaimOf` stands to `runClaim`. -/
+def kimchiWarmBase (σ : SRS C.Point) (cvk : KimchiVK C nc) (pub : Array C.ScalarField)
+    (cp : KimchiProof C nc σ.k) (ch : Fin 6 → Prechallenge) : C.Point :=
+  C.toGroup ((kimchiOpeningFS cvk cp (publicCommitment C σ cvk pub)).squeezeBase
+    (IpaTranscriptElt.preT (kimchiClaimOf σ cvk pub cp ch)))
+
+omit [Module C.ScalarField C.Point] in
+/-- **The warm base reads exactly the six pre-opening nodes** — the run form is the
+challenge-tuple form at the table's answers at the run's own six pre-opening nodes. Definitional,
+and the exact mirror of `runClaim_eq_kimchiClaimOf` (section 10), which is `rfl` for the same
+reason: the base is built from the run's claim and the claim already reads only those six. -/
+theorem warmBase_eq_kimchiWarmBase (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (pub : Array C.ScalarField) (digest : C.ScalarField) (cp : KimchiProof C nc σ.k)
+    (O : KimchiNode C nc σ.k → Prechallenge) :
+    warmBase σ cvk pub digest cp O
+      = kimchiWarmBase σ cvk pub cp (fun i =>
+          O (kimchiNodes digest (fun c => (publicCommitment C σ cvk pub)[c]) cp
+            (preSqueeze i))) := rfl
+
+/-- **The warm base is determined by the payload and the six challenges**
+(`lem:warm-base-of-predata`). The base is `toGroup` of one squeeze, so it suffices to equate the
+squeeze's two arguments: the source is `spongeFSFrom` of the warm state, equal by
+`warmState_eq_of_preData_eq`; the prefix is `preT` of the run's claim, and the two claims have
+the same value because that value is the middle component of the claim triple, which
+`triple_eq_of_preData_eq` already equates — so `preT_eq_of_cipOf_eq` equates the prefixes.
+
+Mirrors the *use* of `triple_eq_of_preData_eq` rather than its proof: no second `subst` is
+needed, because both halves are already available as lemmas. -/
+theorem kimchiWarmBase_eq_of_preData_eq (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (pub : Array C.ScalarField) (digest : C.ScalarField) (cp cp' : KimchiProof C nc σ.k)
+    (ch : Fin 6 → Prechallenge)
+    (h : preDataOf digest (fun c => (publicCommitment C σ cvk pub)[c]) cp
+      = preDataOf digest (fun c => (publicCommitment C σ cvk pub)[c]) cp') :
+    kimchiWarmBase σ cvk pub cp ch = kimchiWarmBase σ cvk pub cp' ch := by
+  have hstate := warmState_eq_of_preData_eq σ cvk pub digest cp cp' h
+  have htriple := triple_eq_of_preData_eq σ cvk pub digest cp cp'
+    (squeezeExpand C (Squeeze.beta : Squeeze σ.k) (ch 0))
+    (squeezeExpand C (Squeeze.gamma : Squeeze σ.k) (ch 1))
+    (squeezeExpand C (Squeeze.alpha : Squeeze σ.k) (ch 2))
+    (squeezeExpand C (Squeeze.zeta : Squeeze σ.k) (ch 3))
+    (squeezeExpand C (Squeeze.polyscale : Squeeze σ.k) (ch 4))
+    (squeezeExpand C (Squeeze.evalscale : Squeeze σ.k) (ch 5)) h
+  have hcip : Ipa.cipOf (kimchiClaimOf σ cvk pub cp ch)
+      = Ipa.cipOf (kimchiClaimOf σ cvk pub cp' ch) := congrArg (fun t => t.2.1) htriple
+  rw [kimchiWarmBase, kimchiWarmBase, kimchiOpeningFS, kimchiOpeningFS, hstate,
+    preT_eq_of_cipOf_eq _ _ hcip]
+
+/-- **The warm base as a function of the pre-opening payload alone** (`def:pre-warm-base`) — the
+`claimOf` that `claimStable_of_preDataFactors` asks for, at `ClaimData := C.Point`. Total by a
+classical case split on whether the payload is realized by some proof at all; on the realized
+branch the choice of realizer does not matter, which is `kimchiWarmBase_eq_of_preData_eq`.
+Unrealized payloads never arise from a run, so their value is immaterial.
+
+Mirrors `preClaimTriple` (section 11) exactly, with `0` in place of `(0, 0, 0)`. -/
+noncomputable def preWarmBase (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (pub : Array C.ScalarField) (digest : C.ScalarField)
+    (d : PreIpaData C nc) (ch : Fin 6 → Prechallenge) : C.Point :=
+  letI := Classical.propDecidable
+    (∃ cp : KimchiProof C nc σ.k,
+      preDataOf digest (fun c => (publicCommitment C σ cvk pub)[c]) cp = d)
+  if h : ∃ cp : KimchiProof C nc σ.k,
+      preDataOf digest (fun c => (publicCommitment C σ cvk pub)[c]) cp = d then
+    kimchiWarmBase σ cvk pub h.choose ch
+  else 0
+
+/-- **The factorization, at a realized payload** (`lem:warm-base-factors`): the run's own warm
+base is what `preWarmBase` returns at the run's payload. This is the `hκ` of
+`claimStable_of_preDataFactors`.
+
+Mirrors `claimTriple_kimchiClaimOf_eq_preClaimTriple` (section 11) line for line: the payload is
+realized by the run itself, so the defining case split takes its first branch, and
+`kimchiWarmBase_eq_of_preData_eq` at `hex.choose_spec` equates the chosen realizer's value with
+the run's. -/
+theorem kimchiWarmBase_eq_preWarmBase (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (pub : Array C.ScalarField) (digest : C.ScalarField) (cp : KimchiProof C nc σ.k)
+    (ch : Fin 6 → Prechallenge) :
+    kimchiWarmBase σ cvk pub cp ch
+      = preWarmBase σ cvk pub digest
+          (preDataOf digest (fun c => (publicCommitment C σ cvk pub)[c]) cp) ch := by
+  have hex : ∃ cp' : KimchiProof C nc σ.k,
+      preDataOf digest (fun c => (publicCommitment C σ cvk pub)[c]) cp'
+        = preDataOf digest (fun c => (publicCommitment C σ cvk pub)[c]) cp := ⟨cp, rfl⟩
+  rw [preWarmBase, dif_pos hex]
+  exact kimchiWarmBase_eq_of_preData_eq σ cvk pub digest _ cp ch hex.choose_spec |>.symm
+
+/-- **The deployed warm base is base-stable** (`thm:warm-base-stable`), for any adversary against
+the transcript of `σ`, `cvk`, `pub`, `digest`. `claimStable_of_preDataFactors` supplies the two
+schedule facts; the factorization is `warmBase_eq_kimchiWarmBase` followed by
+`kimchiWarmBase_eq_preWarmBase`.
+
+Mirrors `claimStable_claimTriple` (section 11), with the skeleton instantiated at
+`ClaimData := C.Point` instead of the triple type. No transport into `BaseStable` is needed or
+wanted: that predicate is a `def` alias of `ClaimStable` at the group
+(`Bulletproof/Forking/Game.lean`), so the skeleton's output already *is* this statement. -/
+theorem baseStable_warmBase (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (pub : Array C.ScalarField) (digest : C.ScalarField)
+    (A : Zcash.Snark.OracleComp (KimchiNode C nc σ.k) Prechallenge (KimchiProof C nc σ.k)) :
+    Bulletproof.Forking.BaseStable A
+      (ipaPrefixes σ digest (fun c => (publicCommitment C σ cvk pub)[c]))
+      (fun cp O => warmBase σ cvk pub digest cp O) :=
+  claimStable_of_preDataFactors σ digest (fun c => (publicCommitment C σ cvk pub)[c]) A
+    (fun cp O => warmBase σ cvk pub digest cp O)
+    (preWarmBase σ cvk pub digest)
+    (fun p O => by
+      show warmBase σ cvk pub digest p O = _
+      rw [warmBase_eq_kimchiWarmBase]
+      exact kimchiWarmBase_eq_preWarmBase σ cvk pub digest p _)
+
+/-- **The base hypothesis of the family's measure bound** (`thm:warm-base-stable`, family form):
+at every basis, the family's own warm base map is stable under the fork's reprogrammings.
+`Bulletproof.Forking.kimchiExtract_failure_measure_prod_le_of_stableBase` takes exactly this as
+its `hbase`, at `uOf s := fun _ O => fam.warmBase basis O`, so the map is written in that
+shape — ignoring the proof argument and reading the run's own proof through `fam.warmBase` —
+rather than in the proof-taking shape of the generic theorem above.
+
+The two shapes agree only up to `KimchiFamily.warmBase`'s own unfolding, and unifying them
+*under the binder* sends the elaborator into the sponge fold, so the step is taken after
+`intro`, where the comparison is between two closed terms with the same head. Mirrors
+`KimchiFamily.claimStable_runClaimTriple` (section 11): the generic theorem at the family's own
+SRS, verifying key, public input, digest and adversary. -/
+theorem KimchiFamily.baseStable_warmBase {n : ℕ} [NeZero n]
+    (fam : KimchiFamily C nc k n) (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) :
+    Bulletproof.Forking.BaseStable (fam.adversary basis)
+      (ipaPrefixes (srsOfBasis k basis) (fam.digest basis) (fam.publicComm basis))
+      (fun _ O => fam.warmBase basis O) := by
+  intro j O u h
+  exact _root_.Kimchi.Verifier.KnowledgeSoundness.baseStable_warmBase (srsOfBasis k basis)
+    (fam.cvk basis) (fam.pub basis) (fam.digest basis) (fam.adversary basis) j O u h
+
+end WarmBase
 
 /-! ## 12. Arm (4): the algebraic containment
 

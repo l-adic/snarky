@@ -826,17 +826,23 @@ noncomputable def honestClaim [Module C.ScalarField C.Point] (σ : SRS C.Point) 
     Ipa.Input C σ.k (nc + 1 + tailRowCount * nc) evalPts :=
   runInputWith σ (honestVK σ nc idx) (zeroProof C nc σ.k) #[] β γ α ζ v u
 
-/-- **The derived claim is openable at a scalar SRS.** Stated at the `U`-overridden SRS,
-which is exactly the hypothesis shape of the opening layer's
-`Bulletproof.Ipa.Forking.honestNode_wireWins_everywhere`. -/
+/-- **The derived claim is openable at a scalar SRS, at every opening base.** Stated at the
+`U`-overridden SRS, which is exactly the hypothesis shape of the opening layer's
+`Bulletproof.Ipa.Forking.honestNode_wireWins_everywhere` — and of its base-generic sibling
+`honestNode_winsAtBase_everywhere` below.
+
+The base `U` is a free parameter rather than the cold `uBaseOf C (Ipa.cipOf …)` it used to
+name: `openingRelationB σ P b v a ρ` is `commit σ a ρ = P ∧ v = innerProduct a b`, and
+`commit` reads only `σ.g` and `σ.h`, never `σ.U`. So the override is decoration and a
+witness at one base is a witness at every base — the proof below is untouched. -/
 theorem exists_openingRelationB_honestClaim [Module C.ScalarField C.Point]
     {σ : SRS C.Point} {B : C.Point} {s : Fin (2 ^ σ.k) → C.ScalarField}
     {sb : C.ScalarField} (hg : σ.g = fun i => s i • B) (hh : σ.h = sb • B) (hsb : sb ≠ 0)
     {nc d : ℕ} (idx : Index C.ScalarField (2 ^ d)) (β γ α ζ v u : C.ScalarField)
-    (hu : u ≠ -1) :
+    (hu : u ≠ -1) (U : C.Point) :
     ∃ (a : Fin (2 ^ σ.k) → C.ScalarField) (ρ : C.ScalarField),
       openingRelationB
-        { σ with U := uBaseOf C (Ipa.cipOf (honestClaim σ nc idx β γ α ζ v u)) }
+        { σ with U := U }
         (Bulletproof.combinedCommitment (honestClaim σ nc idx β γ α ζ v u).polyscale
           (honestClaim σ nc idx β γ α ζ v u).commitmentFn)
         (combinedEvalVector (2 ^ σ.k) (honestClaim σ nc idx β γ α ζ v u).evalscale
@@ -854,20 +860,18 @@ theorem exists_openingRelationB_honestClaim [Module C.ScalarField C.Point]
       (honestClaim σ nc idx β γ α ζ v u).commitmentFn = lam • B from hlam]
   exact exists_openingRelationB_smul_base _ B s sb hg hh hsb lam _ _ ⟨0, hpos⟩ hb
 
-/-- **The derived claim is openable at the sampled bases the endpoints measure over.**
-`exists_openingRelationB_honestClaim` at `srsOfBasis k (augOfSetup (scalarBasis B s))`,
-whose generators and blinding base are read off by `srsOfBasis_scalarBasis_g` /
-`srsOfBasis_scalarBasis_h`. -/
+/-- **The derived claim is openable at the sampled bases the endpoints measure over, at
+every opening base.** `exists_openingRelationB_honestClaim` at
+`srsOfBasis k (augOfSetup (scalarBasis B s))`, whose generators and blinding base are read
+off by `srsOfBasis_scalarBasis_g` / `srsOfBasis_scalarBasis_h`; the base `U` is free for
+the same reason it is free there. -/
 theorem exists_opening_runInputWith_scalarBasis [Module C.ScalarField C.Point]
     {k nc d : ℕ} (B : C.Point) (s : SetupIndex (2 ^ k) → C.ScalarField)
     (hsb : s SetupIndex.blind ≠ 0) (idx : Index C.ScalarField (2 ^ d))
-    (β γ α ζ v u : C.ScalarField) (hu : u ≠ -1) :
+    (β γ α ζ v u : C.ScalarField) (hu : u ≠ -1) (U : C.Point) :
     ∃ (a : Fin (2 ^ k) → C.ScalarField) (ρ : C.ScalarField),
       openingRelationB
-        { srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B s)) with
-          U := uBaseOf C (Ipa.cipOf
-            (honestClaim (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B s))) nc idx
-              β γ α ζ v u)) }
+        { srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B s)) with U := U }
         (Bulletproof.combinedCommitment
           (honestClaim (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B s))) nc idx
             β γ α ζ v u).polyscale
@@ -882,7 +886,7 @@ theorem exists_opening_runInputWith_scalarBasis [Module C.ScalarField C.Point]
           (honestClaim (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B s))) nc idx
             β γ α ζ v u)) a ρ :=
   exists_openingRelationB_honestClaim (srsOfBasis_scalarBasis_g k B s)
-    (srsOfBasis_scalarBasis_h k B s) hsb idx β γ α ζ v u hu
+    (srsOfBasis_scalarBasis_h k B s) hsb idx β γ α ζ v u hu U
 
 /-! ## The proof the honest adversary emits
 
@@ -911,18 +915,18 @@ theorem runInputWith_zeroProofWith (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK
     runInputWith σ cvk (zeroProofWith C nc σ.k op) pub β γ α ζ v u
       = { runInputWith σ cvk (zeroProof C nc σ.k) pub β γ α ζ v u with proof := op } := rfl
 
-/-- **The claim of the emitted proof is openable at a scalar SRS** — the form
-`Bulletproof.Ipa.Forking.honestNode_wireWins_everywhere` consumes, at the claim the honest
-adversary's own run presents. -/
+/-- **The claim of the emitted proof is openable at a scalar SRS, at every opening base** —
+the form `Bulletproof.Ipa.Forking.honestNode_wireWins_everywhere` consumes, at the claim the
+honest adversary's own run presents. The base `U` is free because `openingRelationB` reads
+only `σ.g` and `σ.h`; the one-line delegation is unchanged. -/
 theorem exists_openingRelationB_honestClaim_opening [Module C.ScalarField C.Point]
     {σ : SRS C.Point} {B : C.Point} {s : Fin (2 ^ σ.k) → C.ScalarField}
     {sb : C.ScalarField} (hg : σ.g = fun i => s i • B) (hh : σ.h = sb • B) (hsb : sb ≠ 0)
     {nc d : ℕ} (idx : Index C.ScalarField (2 ^ d)) (β γ α ζ v u : C.ScalarField)
-    (hu : u ≠ -1) (op : Ipa.Proof C σ.k) :
+    (hu : u ≠ -1) (op : Ipa.Proof C σ.k) (U : C.Point) :
     ∃ (a : Fin (2 ^ σ.k) → C.ScalarField) (ρ : C.ScalarField),
       openingRelationB
-        { σ with U := uBaseOf C (Ipa.cipOf
-            (runInputWith σ (honestVK σ nc idx) (zeroProofWith C nc σ.k op) #[] β γ α ζ v u)) }
+        { σ with U := U }
         (Bulletproof.combinedCommitment
           (runInputWith σ (honestVK σ nc idx) (zeroProofWith C nc σ.k op) #[]
             β γ α ζ v u).polyscale
@@ -935,7 +939,7 @@ theorem exists_openingRelationB_honestClaim_opening [Module C.ScalarField C.Poin
             β γ α ζ v u).pointFn)
         (Ipa.cipOf (runInputWith σ (honestVK σ nc idx) (zeroProofWith C nc σ.k op) #[]
           β γ α ζ v u)) a ρ :=
-  exists_openingRelationB_honestClaim hg hh hsb idx β γ α ζ v u hu
+  exists_openingRelationB_honestClaim hg hh hsb idx β γ α ζ v u hu U
 
 /-! ## The verifier's size guard at the empty public input
 
@@ -995,17 +999,18 @@ theorem honestClaim_pointFn [Module C.ScalarField C.Point] (σ : SRS C.Point) (n
       (honestClaim σ nc idx β γ α ζ v u).pointFn 1 = ζ * idx.omega :=
   ⟨rfl, rfl⟩
 
-/-- **The derived claim is openable at a scalar SRS, at every evalscale.** The
-`u ≠ -1` hypothesis of `exists_openingRelationB_honestClaim` is replaced by `ζ ≠ 0` and
-`ω ≠ 1` — both properties of data the adversary controls or the oracle's expansion
-guarantees, hence available at every oracle table. -/
+/-- **The derived claim is openable at a scalar SRS, at every evalscale and every opening
+base.** The `u ≠ -1` hypothesis of `exists_openingRelationB_honestClaim` is replaced by
+`ζ ≠ 0` and `ω ≠ 1` — both properties of data the adversary controls or the oracle's
+expansion guarantees, hence available at every oracle table. The base `U` is free for the
+reason recorded at `exists_openingRelationB_honestClaim`: the relation never reads `σ.U`. -/
 theorem exists_openingRelationB_honestClaim_of_ne [Module C.ScalarField C.Point]
     {σ : SRS C.Point} (hscal : IsScalarSRS σ)
     (hk : 0 < σ.k) {nc d : ℕ} (idx : Index C.ScalarField (2 ^ d))
-    (β γ α ζ v u : C.ScalarField) (hζ : ζ ≠ 0) (hω : idx.omega ≠ 1) :
+    (β γ α ζ v u : C.ScalarField) (hζ : ζ ≠ 0) (hω : idx.omega ≠ 1) (U : C.Point) :
     ∃ (a : Fin (2 ^ σ.k) → C.ScalarField) (ρ : C.ScalarField),
       openingRelationB
-        { σ with U := uBaseOf C (Ipa.cipOf (honestClaim σ nc idx β γ α ζ v u)) }
+        { σ with U := U }
         (Bulletproof.combinedCommitment (honestClaim σ nc idx β γ α ζ v u).polyscale
           (honestClaim σ nc idx β γ α ζ v u).commitmentFn)
         (combinedEvalVector (2 ^ σ.k) (honestClaim σ nc idx β γ α ζ v u).evalscale
@@ -1223,6 +1228,172 @@ theorem liftIpaNode_prefix [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc
       dif_pos (show ((i : ℕ)) < σ.k from i.isLt), liftIpaNode_nodeU, ipaPrefixes]
     rw [Fin.val_castSucc, dif_pos (show ((i : ℕ)) < σ.k from i.isLt)]
 
+/-! ## The opening argument's honest chain, at an arbitrary opening base
+
+The opening argument is checked at an SRS **together with a distinguished base point `U`**: the
+verifier's fold invariant is an identity in `U`, and a transcript built for one `U` is not
+accepted at another. Two declarations of the frozen opening layer pin that `U` to the COLD base
+`uBaseOf C (Ipa.cipOf claim)` — the sponge base derived from claim data with the sponge started
+at `FqSponge.init`: the wire win predicate `Bulletproof.Ipa.Forking.wireWins`
+(`Forking/Deployed.lean`) and the anti-vacuity companion
+`Bulletproof.Ipa.Forking.honestNode_wins_everywhere` (`Forking/Honest.lean`). When the kimchi win
+event is retargeted at the WARM post-`ζ` base, the honest family must win THERE, and no rewriting
+supplies that. This section restates both with the base a free parameter.
+
+**Nothing here is new mathematics**, and the frozen files are imported rather than copied — only
+the one theorem whose statement pins the base is restated (at a strictly more general base):
+
+* `openingRelationB σ P b v a ρ` is `commit σ a ρ = P ∧ v = innerProduct a b`, which reads `σ.g`
+  and `σ.h` and NEVER `σ.U`. So `{ σ with U := X }` in an `openingRelationB` statement is
+  decoration: a witness at one base is a witness at every base, definitionally. That is what
+  frees the four openability lemmas above.
+* The honest prover's acceptance invariant
+  `P + v • U = commitGen σ.g a + commitGen b a • U + ρ • σ.h` is an identity IN `U`, obtained by
+  cancelling `v • U = commitGen b a • U` on both sides.
+* The query domain `Bulletproof.Ipa.Forking.nodes cip` is indexed by the claimed value, not by
+  the base. So the base and the transcript index decouple — which is exactly what lets a warm
+  base be plugged in later without a fixed point arising. -/
+
+section AtBase
+
+/-- **The opening win on the wire, at a given base.** The executable challenge-generic opening
+verifier returns `true` on `σ`, the base `U`, the `σ.k` round challenges the table supplies at
+the claim's round nodes, the Schnorr challenge it supplies at the claim's Schnorr node, and the
+claim with its opening slot replaced by `π`.
+
+This mirrors `Bulletproof.Ipa.Forking.wireWins` with its base freed; that declaration is frozen
+at the cold `uBaseOf C (Ipa.cipOf claim)`, which is the one thing this development has to vary.
+At the cold base the two are the same statement, by `rfl` (`winsAtBase_uBaseOf`). -/
+def winsAtBase {m p : ℕ} (σ : SRS C.Point) (U : C.Point) (claim : Ipa.Input C σ.k m p)
+    (O : IpaNode C σ.k → Prechallenge) (π : Ipa.Proof C σ.k) : Prop :=
+  Ipa.verifyWith C σ U
+      (Vector.ofFn fun i =>
+        expandPre C (O (Bulletproof.Ipa.Forking.nodeU (Ipa.cipOf claim) π i)))
+      (expandPre C (O (Bulletproof.Ipa.Forking.nodeC (Ipa.cipOf claim) π)))
+      { claim with proof := π } = true
+
+/-- **At the cold base, `winsAtBase` IS `wireWins`.** The transcription check on the definition
+above: the two `Prop`s are the same term, so no bridge lemma is ever needed in the cold
+direction. -/
+theorem winsAtBase_uBaseOf {m p : ℕ} (σ : SRS C.Point) (claim : Ipa.Input C σ.k m p)
+    (O : IpaNode C σ.k → Prechallenge) (π : Ipa.Proof C σ.k) :
+    winsAtBase σ (uBaseOf C (Ipa.cipOf claim)) claim O π
+      = Bulletproof.Ipa.Forking.wireWins σ claim O π := rfl
+
+/-- **The wire predicate at a base is the abstract win event at that base.** The executable
+verifier's `Bool` at the table's challenges is `true` exactly when the abstract game's `Wins`
+holds against the SRS whose randomisation base is `U`.
+
+This mirrors `Bulletproof.Ipa.Forking.wireWins_iff_wins`, which states the same equivalence at
+the cold base only. The base can be freed because the bridge it delegates to,
+`verifyWith_iff_verifierAcceptsAt`, already takes the base as an explicit argument and is
+quantified over it; the four proof lines are the frozen ones verbatim. It is used in the
+BACKWARD direction — the honest machine's algebra delivers `Wins`, while the family's win event
+is stated on the wire. -/
+theorem winsAtBase_iff_wins [Module C.ScalarField C.Point]
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    {m p : ℕ} (σ : SRS C.Point) (U : C.Point) (claim : Ipa.Input C σ.k m p)
+    (O : IpaNode C σ.k → Prechallenge) (π : Ipa.Proof C σ.k) :
+    winsAtBase σ U claim O π ↔
+      Wins { σ with U := U }
+        (combinedEvalVector (2 ^ σ.k) claim.evalscale claim.pointFn)
+        (Ipa.cipOf claim)
+        (Bulletproof.combinedCommitment claim.polyscale claim.commitmentFn)
+        (expandPre C) toOpening (Bulletproof.Ipa.Forking.nodes (Ipa.cipOf claim)) O π := by
+  rw [winsAtBase, verifyWith_iff_verifierAcceptsAt hsmul]
+  unfold Wins Bulletproof.Forking.oracleChallenges
+  simp only [Bulletproof.Ipa.Forking.nodes, Fin.snoc_castSucc, Fin.snoc_last, Fin.getElem_fin,
+    Vector.getElem_ofFn]
+  exact Iff.rfl
+
+/-- **The honest prover wins on every table, at every base.** From a genuine opening witness for
+`(P, b, v)` at the SRS whose base is `U` there is an oracle machine over the deployed node
+domain, within budget `σ.k + 1`, whose output satisfies `Wins` at that same `U` for EVERY table.
+
+This is `Bulletproof.Ipa.Forking.honestNode_wins_everywhere` restated with `(U : C.Point)` an
+explicit argument in place of the cold `uBaseOf C cip`, and the claimed value `cip` — which
+indexes the query domain — left as a SEPARATE free argument rather than tied to the base. The
+frozen proof opens with `set U : C.Point := uBaseOf C cip with hU` and then never uses `hU`, so
+deleting that line is the whole of the change: every ingredient below is the frozen one, and
+every ingredient is public. -/
+theorem honestNode_wins_everywhere_at [Module C.ScalarField C.Point]
+    (hne : ∀ q, expandPre C q ≠ 0)
+    (σ : SRS C.Point) (U : C.Point) (cip : C.ScalarField)
+    (b : Fin (2 ^ σ.k) → C.ScalarField) (v : C.ScalarField) (P : C.Point)
+    (a : Fin (2 ^ σ.k) → C.ScalarField) (ρ : C.ScalarField)
+    (hopen : openingRelationB { σ with U := U } P b v a ρ) :
+    ∃ A : Zcash.Snark.OracleComp (IpaNode C σ.k) Prechallenge (Ipa.Proof C σ.k),
+      A.QueryBound (σ.k + 1) ∧
+        ∀ O : IpaNode C σ.k → Prechallenge,
+          Wins { σ with U := U } b v P (expandPre C) toOpening
+            (Bulletproof.Ipa.Forking.nodes cip) O (A.run O) := by
+  obtain ⟨hP1, hv1⟩ := hopen
+  set pr : KimchiProver C.ScalarField C.Point σ.k := honestProver U ρ σ.g b a with hpr
+  have hcb : commitGen b a = v := by
+    rw [hv1]
+    simp only [commitGen, innerProduct, smul_eq_mul]
+  have hinv : P + v • U = commitGen σ.g a + commitGen b a • U + ρ • σ.h := by
+    rw [hcb, ← hP1]
+    show commitGen σ.g a + ρ • σ.h + v • U = _
+    abel
+  refine ⟨honestNodeAdv cip pr, honestNodeAdv_queryBound cip pr, ?_⟩
+  intro O
+  set π : Ipa.Proof C σ.k := (honestNodeAdv cip pr).run O with hπ
+  set q : Fin (σ.k + 1) → Prechallenge :=
+    (honestNodeAdvAux cip pr (σ.k + 1) 0 (by omega) Fin.elim0).run O with hq
+  set χ : Fin (σ.k + 1) → C.ScalarField := fun i => expandPre C (q i) with hχdef
+  have hchi : Bulletproof.Forking.oracleChallenges { σ with U := U } (expandPre C)
+      (Bulletproof.Ipa.Forking.nodes cip) O π = χ := by
+    funext i
+    rw [Bulletproof.Forking.oracleChallenges, hχdef]
+    exact congrArg (expandPre C) (honestNodeAdv_prefixes cip pr O i)
+  have hproof : toOpening π = pr.proofAt χ := by
+    rw [hπ, honestNodeAdv, mapComp_run, toOpening_wireProofOf]
+  have hsnoc : Fin.snoc (fun i : Fin σ.k => χ i.castSucc) (χ (Fin.last σ.k)) = χ :=
+    Fin.snoc_init_self χ
+  have hacc : kimchiProverAccept pr σ.g b U σ.h v P χ :=
+    honestProver_accept U σ.h ρ v σ.g b a P χ (fun i => by rw [hχdef]; exact hne _) hinv
+  have key := (kimchiProverAccept_iff_verifierAcceptsAt { σ with U := U } pr b v P
+    (fun i : Fin σ.k => χ i.castSucc) (χ (Fin.last σ.k))).mp (by rw [hsnoc]; exact hacc)
+  rw [hsnoc] at key
+  show VerifierAcceptsAt { σ with U := U } (toOpening π) P
+    (innerProduct (bPolyCoefficients fun i : Fin σ.k =>
+      Bulletproof.Forking.oracleChallenges { σ with U := U } (expandPre C)
+        (Bulletproof.Ipa.Forking.nodes cip) O π i.castSucc) b) v
+    (Bulletproof.Forking.oracleChallenges { σ with U := U } (expandPre C)
+      (Bulletproof.Ipa.Forking.nodes cip) O π (Fin.last σ.k))
+    (fun i : Fin σ.k =>
+      Bulletproof.Forking.oracleChallenges { σ with U := U } (expandPre C)
+        (Bulletproof.Ipa.Forking.nodes cip) O π i.castSucc)
+  rw [hchi, hproof]
+  exact key
+
+/-- **The honest prover wins on the wire, on every table, at every base.** The same machine,
+measured by the `Bool` the executable opening verifier returns at the base `U`.
+
+This mirrors `Bulletproof.Ipa.Forking.honestNode_wireWins_everywhere`: it is
+`honestNode_wins_everywhere_at` at the claim's own data (`b` the combined evaluation vector, `v`
+and `cip` the combined inner product, `P` the combined commitment), followed by the backward
+direction of `winsAtBase_iff_wins`. -/
+theorem honestNode_winsAtBase_everywhere [Module C.ScalarField C.Point]
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hne : ∀ q, expandPre C q ≠ 0)
+    (σ : SRS C.Point) (U : C.Point) {m p : ℕ} (claim : Ipa.Input C σ.k m p)
+    (a : Fin (2 ^ σ.k) → C.ScalarField) (ρ : C.ScalarField)
+    (hopen : openingRelationB { σ with U := U }
+      (Bulletproof.combinedCommitment claim.polyscale claim.commitmentFn)
+      (combinedEvalVector (2 ^ σ.k) claim.evalscale claim.pointFn)
+      (Ipa.cipOf claim) a ρ) :
+    ∃ A : Zcash.Snark.OracleComp (IpaNode C σ.k) Prechallenge (Ipa.Proof C σ.k),
+      A.QueryBound (σ.k + 1) ∧
+        ∀ O : IpaNode C σ.k → Prechallenge, winsAtBase σ U claim O (A.run O) := by
+  obtain ⟨A, hQ, hW⟩ := honestNode_wins_everywhere_at hne σ U (Ipa.cipOf claim)
+    (combinedEvalVector (2 ^ σ.k) claim.evalscale claim.pointFn) (Ipa.cipOf claim)
+    (Bulletproof.combinedCommitment claim.polyscale claim.commitmentFn) a ρ hopen
+  exact ⟨A, hQ, fun O => (winsAtBase_iff_wins hsmul σ U claim O (A.run O)).mpr (hW O)⟩
+
+end AtBase
+
 /-! ## The honest kimchi adversary
 
 The adversary reads the six pre-opening challenges at the degenerate proof's own nodes —
@@ -1249,6 +1420,7 @@ theorem exists_honestMachine [Module C.ScalarField C.Point]
             (honestClaim σ nc idx β γ α (expandPre C qζ) v u) O (A.run O) := by
   obtain ⟨a, ρ, hopen⟩ := exists_openingRelationB_honestClaim_of_ne hscal hk idx
     β γ α (expandPre C qζ) v u (hne qζ) hω
+    (uBaseOf C (Ipa.cipOf (honestClaim σ nc idx β γ α (expandPre C qζ) v u)))
   exact Bulletproof.Ipa.Forking.honestNode_wireWins_everywhere hsmul hne σ
     (honestClaim σ nc idx β γ α (expandPre C qζ) v u) a ρ hopen
 
@@ -1288,6 +1460,69 @@ theorem honestMachine_wireWins [Module C.ScalarField C.Point]
       ((honestMachine hsmul hne hscal hk nc idx hω β γ α qζ v u).run O) :=
   (exists_honestMachine hsmul hne hscal hk nc idx hω β γ α qζ v
     u).choose_spec.2 O
+
+/-- **The opening layer's honest machine at the derived claim, at an arbitrary opening base.**
+The base-generic sibling of `exists_honestMachine`: the same construction, run through
+`honestNode_winsAtBase_everywhere` instead of the frozen cold-base
+`Bulletproof.Ipa.Forking.honestNode_wireWins_everywhere`, so its output is accepted at the base
+`U` the caller names rather than at `uBaseOf C (Ipa.cipOf …)`.
+
+The witness it feeds is the same one: `exists_openingRelationB_honestClaim_of_ne` at `U`, which
+is the cold witness verbatim because `openingRelationB` never reads `σ.U`. As there, everything
+is at the prechallenge `qζ` rather than at `ζ`, so the non-vanishing of `ζ` is available at EVERY
+oracle answer. -/
+theorem exists_honestMachineAt [Module C.ScalarField C.Point]
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hne : ∀ q, expandPre C q ≠ 0)
+    {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
+    (idx : Index C.ScalarField (2 ^ d)) (hω : idx.omega ≠ 1)
+    (β γ α : C.ScalarField) (qζ : Prechallenge) (v u : C.ScalarField) (U : C.Point) :
+    ∃ A : Zcash.Snark.OracleComp (IpaNode C σ.k) Prechallenge (Ipa.Proof C σ.k),
+      A.QueryBound (σ.k + 1) ∧
+        ∀ O : IpaNode C σ.k → Prechallenge,
+          winsAtBase σ U (honestClaim σ nc idx β γ α (expandPre C qζ) v u) O (A.run O) := by
+  obtain ⟨a, ρ, hopen⟩ := exists_openingRelationB_honestClaim_of_ne hscal hk idx
+    β γ α (expandPre C qζ) v u (hne qζ) hω U
+  exact honestNode_winsAtBase_everywhere hsmul hne σ U
+    (honestClaim σ nc idx β γ α (expandPre C qζ) v u) a ρ hopen
+
+/-- The honest machine at the base `U`, named so the adversary at `U` and its analysis refer to
+the same computation. Mirrors `honestMachine`; `noncomputable` only because it is extracted with
+`.choose`. -/
+noncomputable def honestMachineAt [Module C.ScalarField C.Point]
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hne : ∀ q, expandPre C q ≠ 0)
+    {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
+    (idx : Index C.ScalarField (2 ^ d)) (hω : idx.omega ≠ 1)
+    (β γ α : C.ScalarField) (qζ : Prechallenge) (v u : C.ScalarField) (U : C.Point) :
+    Zcash.Snark.OracleComp (IpaNode C σ.k) Prechallenge (Ipa.Proof C σ.k) :=
+  (exists_honestMachineAt hsmul hne hscal hk nc idx hω β γ α qζ v u U).choose
+
+/-- The honest machine at `U` stays within the opening argument's own budget — the budget does
+not depend on the base. Mirrors `honestMachine_queryBound`. -/
+theorem honestMachineAt_queryBound [Module C.ScalarField C.Point]
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hne : ∀ q, expandPre C q ≠ 0)
+    {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
+    (idx : Index C.ScalarField (2 ^ d)) (hω : idx.omega ≠ 1)
+    (β γ α : C.ScalarField) (qζ : Prechallenge) (v u : C.ScalarField) (U : C.Point) :
+    (honestMachineAt hsmul hne hscal hk nc idx hω β γ α qζ v u U).QueryBound
+      (σ.k + 1) :=
+  (exists_honestMachineAt hsmul hne hscal hk nc idx hω β γ α qζ v u U).choose_spec.1
+
+/-- The honest machine at `U` produces an output the challenge-generic opening verifier accepts
+**at `U`**, on every table. Mirrors `honestMachine_wireWins`, with `wireWins σ …` replaced by
+`winsAtBase σ U …`. -/
+theorem honestMachineAt_winsAtBase [Module C.ScalarField C.Point]
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hne : ∀ q, expandPre C q ≠ 0)
+    {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
+    (idx : Index C.ScalarField (2 ^ d)) (hω : idx.omega ≠ 1)
+    (β γ α : C.ScalarField) (qζ : Prechallenge) (v u : C.ScalarField) (U : C.Point)
+    (O : IpaNode C σ.k → Prechallenge) :
+    winsAtBase σ U (honestClaim σ nc idx β γ α (expandPre C qζ) v u) O
+      ((honestMachineAt hsmul hne hscal hk nc idx hω β γ α qζ v u U).run O) :=
+  (exists_honestMachineAt hsmul hne hscal hk nc idx hω β γ α qζ v u U).choose_spec.2 O
 
 /-- **The six pre-opening nodes do not read the opening field**, so the adversary can
 query them before it knows which opening proof it will emit. -/
@@ -1386,6 +1621,170 @@ theorem honestAdversary_run [Module C.ScalarField C.Point]
   simp only [honestAdversary, Zcash.Snark.OracleComp.run_query,
     Bulletproof.Ipa.Forking.mapComp_run, Zcash.Snark.OracleComp.run_mapDomain, reads]
 
+/-! ### The honest adversary at an arbitrary opening base
+
+`honestAdversary` builds its transcript for the cold base, because `honestMachine` does. The
+base-generic sibling below builds it for a base the caller names.
+
+The base is **not** a plain point but a function of the six pre-opening prechallenges, and that
+is forced rather than decorative. The base the family's win event will eventually be checked at
+is `KimchiFamily.warmBase`, which is `toGroup` of a squeeze at `preT` of the run's claim — and
+the run's claim is `runInputWith` at the six challenges the table supplies, so the warm base
+genuinely varies with the table. An adversary is one fixed computation, so a base slot that is a
+plain point could never be instantiated there. What saves the construction is that the warm base
+depends on the table only through those six answers (`preT` reads the claim through `cip` alone,
+and the pre-opening absorb schedule never reads the `opening` field —
+`kimchiNodes_zeroProofWith_pre`), and the adversary has already read them by the time it must fix
+a base. So the base is exactly a
+function of the six prechallenges, and `honestAdversaryAt` below is the constant case. -/
+
+/-- **The honest kimchi adversary at a table-derived opening base.** Six queries at the
+degenerate proof's pre-opening nodes, then the honest opening machine AT THE BASE
+`Ubase qβ qγ qα qζ qv qu` transported along `liftIpaNode`, then the degenerate proof carrying
+the opening it returns.
+
+Mirrors `honestAdversary`, whose machine is `honestMachine` (cold base) rather than
+`honestMachineAt`. Taking the base as a function of the six answers rather than as a point is
+what makes a warm, table-derived base reachable; see the section preamble. -/
+noncomputable def honestAdversaryAtFn [Module C.ScalarField C.Point]
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hne : ∀ q, expandPre C q ≠ 0)
+    {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
+    (idx : Index C.ScalarField (2 ^ d)) (hω : idx.omega ≠ 1)
+    (digest : C.ScalarField) (publicComm : Fin nc → C.Point)
+    (Ubase : Prechallenge → Prechallenge → Prechallenge → Prechallenge → Prechallenge →
+      Prechallenge → C.Point) :
+    Zcash.Snark.OracleComp (KimchiNode C nc σ.k) Prechallenge (KimchiProof C nc σ.k) :=
+  .query (kimchiNodes digest publicComm (zeroProof C nc σ.k) Squeeze.beta) fun qβ =>
+  .query (kimchiNodes digest publicComm (zeroProof C nc σ.k) Squeeze.gamma) fun qγ =>
+  .query (kimchiNodes digest publicComm (zeroProof C nc σ.k) Squeeze.alpha) fun qα =>
+  .query (kimchiNodes digest publicComm (zeroProof C nc σ.k) Squeeze.zeta) fun qζ =>
+  .query (kimchiNodes digest publicComm (zeroProof C nc σ.k) Squeeze.polyscale) fun qv =>
+  .query (kimchiNodes digest publicComm (zeroProof C nc σ.k) Squeeze.evalscale) fun qu =>
+    Bulletproof.Ipa.Forking.mapComp (zeroProofWith C nc σ.k)
+      (Zcash.Snark.OracleComp.mapDomain (liftIpaNode (zeroPre C nc σ.k digest publicComm))
+        (honestMachineAt hsmul hne hscal hk nc idx hω
+          (squeezeExpand C (k := σ.k) Squeeze.beta qβ)
+          (squeezeExpand C (k := σ.k) Squeeze.gamma qγ)
+          (squeezeExpand C (k := σ.k) Squeeze.alpha qα) qζ
+          (squeezeExpand C (k := σ.k) Squeeze.polyscale qv)
+          (squeezeExpand C (k := σ.k) Squeeze.evalscale qu)
+          (Ubase qβ qγ qα qζ qv qu)))
+
+/-- **The honest kimchi adversary at a fixed opening base** — `honestAdversaryAtFn` at the
+constant base function. This is the form to use when the base is genuinely a closed term; for
+the warm base, which varies with the table, use `honestAdversaryAtFn` itself. -/
+noncomputable def honestAdversaryAt [Module C.ScalarField C.Point]
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hne : ∀ q, expandPre C q ≠ 0)
+    {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
+    (idx : Index C.ScalarField (2 ^ d)) (hω : idx.omega ≠ 1)
+    (digest : C.ScalarField) (publicComm : Fin nc → C.Point) (U : C.Point) :
+    Zcash.Snark.OracleComp (KimchiNode C nc σ.k) Prechallenge (KimchiProof C nc σ.k) :=
+  honestAdversaryAtFn hsmul hne hscal hk nc idx hω digest publicComm
+    (fun _ _ _ _ _ _ => U)
+
+/-- **The base-generic honest adversary's query bound is `k + 7`** — six pre-opening queries and
+the opening machine's `k + 1`, `mapDomain` and `mapComp` adding none. The base changes nothing:
+`honestMachineAt_queryBound` is the same bound at every base. Mirrors
+`honestAdversary_queryBound`. -/
+theorem honestAdversaryAtFn_queryBound [Module C.ScalarField C.Point]
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hne : ∀ q, expandPre C q ≠ 0)
+    {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
+    (idx : Index C.ScalarField (2 ^ d)) (hω : idx.omega ≠ 1)
+    (digest : C.ScalarField) (publicComm : Fin nc → C.Point)
+    (Ubase : Prechallenge → Prechallenge → Prechallenge → Prechallenge → Prechallenge →
+      Prechallenge → C.Point) :
+    (honestAdversaryAtFn hsmul hne hscal hk nc idx hω digest publicComm Ubase).QueryBound
+      (σ.k + 7) := by
+  have hbase : ∀ (β γ α : C.ScalarField) (qζ : Prechallenge) (v u : C.ScalarField)
+      (U : C.Point),
+      (Bulletproof.Ipa.Forking.mapComp (zeroProofWith C nc σ.k)
+        (Zcash.Snark.OracleComp.mapDomain
+          (liftIpaNode (zeroPre C nc σ.k digest publicComm))
+          (honestMachineAt hsmul hne hscal hk nc idx hω β γ α qζ v u U))).QueryBound
+        (σ.k + 1) := by
+    intro β γ α qζ v u U
+    exact Bulletproof.Ipa.Forking.mapComp_queryBound _
+      (Zcash.Snark.OracleComp.queryBound_mapDomain _
+        (honestMachineAt_queryBound hsmul hne hscal hk nc idx hω β γ α qζ v u U))
+  have h6 : (honestAdversaryAtFn hsmul hne hscal hk nc idx hω digest publicComm
+      Ubase).QueryBound (σ.k + 1 + 1 + 1 + 1 + 1 + 1 + 1) := by
+    unfold honestAdversaryAtFn
+    exact Zcash.Snark.OracleComp.QueryBound.query fun qβ =>
+      Zcash.Snark.OracleComp.QueryBound.query fun qγ =>
+      Zcash.Snark.OracleComp.QueryBound.query fun qα =>
+      Zcash.Snark.OracleComp.QueryBound.query fun qζ =>
+      Zcash.Snark.OracleComp.QueryBound.query fun qv =>
+      Zcash.Snark.OracleComp.QueryBound.query fun qu => hbase _ _ _ _ _ _ _
+  exact h6.mono (by omega)
+
+/-- The honest adversary at a fixed base is within the same `k + 7` budget — the constant case of
+`honestAdversaryAtFn_queryBound`. -/
+theorem honestAdversaryAt_queryBound [Module C.ScalarField C.Point]
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hne : ∀ q, expandPre C q ≠ 0)
+    {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
+    (idx : Index C.ScalarField (2 ^ d)) (hω : idx.omega ≠ 1)
+    (digest : C.ScalarField) (publicComm : Fin nc → C.Point) (U : C.Point) :
+    (honestAdversaryAt hsmul hne hscal hk nc idx hω digest publicComm U).QueryBound
+      (σ.k + 7) :=
+  honestAdversaryAtFn_queryBound hsmul hne hscal hk nc idx hω digest publicComm _
+
+/-- **What the base-generic honest adversary emits**: the degenerate proof carrying the opening
+the transported machine at the base `Ubase` (applied to the six answers the table supplied)
+returns. Mirrors `honestAdversary_run`. -/
+theorem honestAdversaryAtFn_run [Module C.ScalarField C.Point]
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hne : ∀ q, expandPre C q ≠ 0)
+    {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
+    (idx : Index C.ScalarField (2 ^ d)) (hω : idx.omega ≠ 1)
+    (digest : C.ScalarField) (publicComm : Fin nc → C.Point)
+    (Ubase : Prechallenge → Prechallenge → Prechallenge → Prechallenge → Prechallenge →
+      Prechallenge → C.Point)
+    (O : KimchiNode C nc σ.k → Prechallenge) :
+    (honestAdversaryAtFn hsmul hne hscal hk nc idx hω digest publicComm Ubase).run O
+      = zeroProofWith C nc σ.k
+          ((honestMachineAt hsmul hne hscal hk nc idx hω
+              (reads digest publicComm (zeroProof C nc σ.k) O Squeeze.beta)
+              (reads digest publicComm (zeroProof C nc σ.k) O Squeeze.gamma)
+              (reads digest publicComm (zeroProof C nc σ.k) O Squeeze.alpha)
+              (O (kimchiNodes digest publicComm (zeroProof C nc σ.k) Squeeze.zeta))
+              (reads digest publicComm (zeroProof C nc σ.k) O Squeeze.polyscale)
+              (reads digest publicComm (zeroProof C nc σ.k) O Squeeze.evalscale)
+              (Ubase (O (kimchiNodes digest publicComm (zeroProof C nc σ.k) Squeeze.beta))
+                (O (kimchiNodes digest publicComm (zeroProof C nc σ.k) Squeeze.gamma))
+                (O (kimchiNodes digest publicComm (zeroProof C nc σ.k) Squeeze.alpha))
+                (O (kimchiNodes digest publicComm (zeroProof C nc σ.k) Squeeze.zeta))
+                (O (kimchiNodes digest publicComm (zeroProof C nc σ.k) Squeeze.polyscale))
+                (O (kimchiNodes digest publicComm (zeroProof C nc σ.k)
+                  Squeeze.evalscale)))).run
+            (O ∘ liftIpaNode (zeroPre C nc σ.k digest publicComm))) := by
+  simp only [honestAdversaryAtFn, Zcash.Snark.OracleComp.run_query,
+    Bulletproof.Ipa.Forking.mapComp_run, Zcash.Snark.OracleComp.run_mapDomain, reads]
+
+/-- What the honest adversary at a fixed base emits — the constant case of
+`honestAdversaryAtFn_run`. -/
+theorem honestAdversaryAt_run [Module C.ScalarField C.Point]
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hne : ∀ q, expandPre C q ≠ 0)
+    {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
+    (idx : Index C.ScalarField (2 ^ d)) (hω : idx.omega ≠ 1)
+    (digest : C.ScalarField) (publicComm : Fin nc → C.Point) (U : C.Point)
+    (O : KimchiNode C nc σ.k → Prechallenge) :
+    (honestAdversaryAt hsmul hne hscal hk nc idx hω digest publicComm U).run O
+      = zeroProofWith C nc σ.k
+          ((honestMachineAt hsmul hne hscal hk nc idx hω
+              (reads digest publicComm (zeroProof C nc σ.k) O Squeeze.beta)
+              (reads digest publicComm (zeroProof C nc σ.k) O Squeeze.gamma)
+              (reads digest publicComm (zeroProof C nc σ.k) O Squeeze.alpha)
+              (O (kimchiNodes digest publicComm (zeroProof C nc σ.k) Squeeze.zeta))
+              (reads digest publicComm (zeroProof C nc σ.k) O Squeeze.polyscale)
+              (reads digest publicComm (zeroProof C nc σ.k) O Squeeze.evalscale) U).run
+            (O ∘ liftIpaNode (zeroPre C nc σ.k digest publicComm))) :=
+  honestAdversaryAtFn_run hsmul hne hscal hk nc idx hω digest publicComm _ O
+
 end Adversary
 
 /-! ## The honest adversary wins on every table -/
@@ -1480,6 +1879,135 @@ theorem honestAdversary_wins [Module C.ScalarField C.Point]
     (reads digest publicComm (zeroProof C nc σ.k) O Squeeze.polyscale)
     (reads digest publicComm (zeroProof C nc σ.k) O Squeeze.evalscale)
     (O (kimchiNodes digest publicComm (zeroProof C nc σ.k) Squeeze.zeta)) _ rfl
+
+/-- **The honest adversary at `U` wins, at the challenges its own run collected.** The kernel of
+`honestAdversary_wins_at`, stated at named challenges and a named base so that neither the six
+oracle reads nor the base computation has to be spelled out inside the acceptance predicate.
+
+Mirrors `honestAdversary_wins_aux`, with `honestMachine`/`wireWins` replaced by
+`honestMachineAt`/`winsAtBase` and the cold `uBaseOf C (Ipa.cipOf …)` slot of the verifier
+replaced by `U`. The proof is the frozen one minus the `cipOf_setProof` rewrite, which existed
+only to normalise the cold base's argument and has nothing left to act on. -/
+theorem honestAdversary_wins_aux_at [Module C.ScalarField C.Point]
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hne : ∀ q, expandPre C q ≠ 0)
+    {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
+    (idx : Index C.ScalarField (2 ^ d)) (hω : idx.omega ≠ 1)
+    (digest : C.ScalarField) (publicComm : Fin nc → C.Point)
+    (O : KimchiNode C nc σ.k → Prechallenge) (β γ α v u : C.ScalarField)
+    (qζ : Prechallenge) (U : C.Point) (op : Ipa.Proof C σ.k)
+    (hop : op = (honestMachineAt hsmul hne hscal hk nc idx hω β γ α qζ v u U).run
+      (O ∘ liftIpaNode (zeroPre C nc σ.k digest publicComm))) :
+    kimchiVerifyWith σ (honestVK σ nc idx) (zeroProofWith C nc σ.k op) #[]
+        β γ α (expandPre C qζ) v u U
+        (Vector.ofFn fun i : Fin σ.k =>
+          reads digest publicComm (zeroProofWith C nc σ.k op) O (Squeeze.ipaRound i))
+        (reads digest publicComm (zeroProofWith C nc σ.k op) O Squeeze.schnorr)
+      = true := by
+  have hwin := honestMachineAt_winsAtBase hsmul hne hscal hk nc idx hω β γ α qζ v u U
+    (O ∘ liftIpaNode (zeroPre C nc σ.k digest publicComm))
+  rw [← hop] at hwin
+  unfold winsAtBase honestClaim at hwin
+  rw [kimchiVerifyWith_empty_pub, runInputWith_zeroProofWith]
+  have hround : ∀ i : Fin σ.k,
+      reads digest publicComm (zeroProofWith C nc σ.k op) O (Squeeze.ipaRound i)
+        = expandPre C ((O ∘ liftIpaNode (zeroPre C nc σ.k digest publicComm))
+            (Bulletproof.Ipa.Forking.nodeU
+              (Ipa.cipOf (runInputWith σ (honestVK σ nc idx) (zeroProof C nc σ.k) #[]
+                β γ α (expandPre C qζ) v u)) op i)) := by
+    intro i
+    rw [Function.comp_apply, liftIpaNode_nodeU]
+    rfl
+  have hfinal : reads digest publicComm (zeroProofWith C nc σ.k op) O Squeeze.schnorr
+      = expandPre C ((O ∘ liftIpaNode (zeroPre C nc σ.k digest publicComm))
+          (Bulletproof.Ipa.Forking.nodeC
+            (Ipa.cipOf (runInputWith σ (honestVK σ nc idx) (zeroProof C nc σ.k) #[]
+              β γ α (expandPre C qζ) v u)) op)) := by
+    rw [Function.comp_apply, liftIpaNode_nodeC]
+    rfl
+  simp only [hround, hfinal]
+  exact hwin
+
+/-- **The base-generic honest adversary wins on every oracle table.** The challenge-generic
+kimchi verifier accepts the proof it emits — with the six pre-opening challenges, the `k` round
+challenges and the Schnorr challenge read off the table at the run's own nodes, and with the
+opening base the run's own six answers determine.
+
+Mirrors `honestAdversary_wins`, whose base slot is the cold `uBaseOf C (Ipa.cipOf …)`. As there,
+it is stated at an arbitrary `cp` equal to the run, so that it applies verbatim to a family whose
+adversary is the honest one only after a case split on the basis. -/
+theorem honestAdversaryAtFn_wins [Module C.ScalarField C.Point]
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hne : ∀ q, expandPre C q ≠ 0)
+    {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
+    (idx : Index C.ScalarField (2 ^ d)) (hω : idx.omega ≠ 1)
+    (digest : C.ScalarField) (publicComm : Fin nc → C.Point)
+    (Ubase : Prechallenge → Prechallenge → Prechallenge → Prechallenge → Prechallenge →
+      Prechallenge → C.Point)
+    (O : KimchiNode C nc σ.k → Prechallenge) (cp : KimchiProof C nc σ.k)
+    (hcp : cp =
+      (honestAdversaryAtFn hsmul hne hscal hk nc idx hω digest publicComm Ubase).run O) :
+    kimchiVerifyWith σ (honestVK σ nc idx) cp #[]
+        (reads digest publicComm cp O Squeeze.beta)
+        (reads digest publicComm cp O Squeeze.gamma)
+        (reads digest publicComm cp O Squeeze.alpha)
+        (reads digest publicComm cp O Squeeze.zeta)
+        (reads digest publicComm cp O Squeeze.polyscale)
+        (reads digest publicComm cp O Squeeze.evalscale)
+        (Ubase (O (kimchiNodes digest publicComm cp Squeeze.beta))
+          (O (kimchiNodes digest publicComm cp Squeeze.gamma))
+          (O (kimchiNodes digest publicComm cp Squeeze.alpha))
+          (O (kimchiNodes digest publicComm cp Squeeze.zeta))
+          (O (kimchiNodes digest publicComm cp Squeeze.polyscale))
+          (O (kimchiNodes digest publicComm cp Squeeze.evalscale)))
+        (Vector.ofFn fun i : Fin σ.k => reads digest publicComm cp O (Squeeze.ipaRound i))
+        (reads digest publicComm cp O Squeeze.schnorr)
+      = true := by
+  subst hcp
+  rw [honestAdversaryAtFn_run hsmul hne hscal hk nc idx hω digest publicComm Ubase O]
+  exact honestAdversary_wins_aux_at hsmul hne hscal hk nc idx hω digest publicComm O
+    (reads digest publicComm (zeroProof C nc σ.k) O Squeeze.beta)
+    (reads digest publicComm (zeroProof C nc σ.k) O Squeeze.gamma)
+    (reads digest publicComm (zeroProof C nc σ.k) O Squeeze.alpha)
+    (reads digest publicComm (zeroProof C nc σ.k) O Squeeze.polyscale)
+    (reads digest publicComm (zeroProof C nc σ.k) O Squeeze.evalscale)
+    (O (kimchiNodes digest publicComm (zeroProof C nc σ.k) Squeeze.zeta))
+    (Ubase (O (kimchiNodes digest publicComm (zeroProof C nc σ.k) Squeeze.beta))
+      (O (kimchiNodes digest publicComm (zeroProof C nc σ.k) Squeeze.gamma))
+      (O (kimchiNodes digest publicComm (zeroProof C nc σ.k) Squeeze.alpha))
+      (O (kimchiNodes digest publicComm (zeroProof C nc σ.k) Squeeze.zeta))
+      (O (kimchiNodes digest publicComm (zeroProof C nc σ.k) Squeeze.polyscale))
+      (O (kimchiNodes digest publicComm (zeroProof C nc σ.k) Squeeze.evalscale))) _ rfl
+
+/-- **The honest adversary at a fixed base `U` wins on every oracle table.** The
+`honestAdversary_wins` statement with its cold `uBaseOf C (Ipa.cipOf (runInputWith …))` argument
+replaced by the base slot `U` itself — the verifier is fed literally `U`, not a term that happens
+to reduce to it.
+
+The constant case of `honestAdversaryAtFn_wins`. Note that a *fixed* base is not enough to reach
+the warm base, which varies with the table; that is what `honestAdversaryAtFn_wins` is for. -/
+theorem honestAdversary_wins_at [Module C.ScalarField C.Point]
+    (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
+    (hne : ∀ q, expandPre C q ≠ 0)
+    {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
+    (idx : Index C.ScalarField (2 ^ d)) (hω : idx.omega ≠ 1)
+    (digest : C.ScalarField) (publicComm : Fin nc → C.Point) (U : C.Point)
+    (O : KimchiNode C nc σ.k → Prechallenge) (cp : KimchiProof C nc σ.k)
+    (hcp : cp =
+      (honestAdversaryAt hsmul hne hscal hk nc idx hω digest publicComm U).run O) :
+    kimchiVerifyWith σ (honestVK σ nc idx) cp #[]
+        (reads digest publicComm cp O Squeeze.beta)
+        (reads digest publicComm cp O Squeeze.gamma)
+        (reads digest publicComm cp O Squeeze.alpha)
+        (reads digest publicComm cp O Squeeze.zeta)
+        (reads digest publicComm cp O Squeeze.polyscale)
+        (reads digest publicComm cp O Squeeze.evalscale)
+        U
+        (Vector.ofFn fun i : Fin σ.k => reads digest publicComm cp O (Squeeze.ipaRound i))
+        (reads digest publicComm cp O Squeeze.schnorr)
+      = true :=
+  honestAdversaryAtFn_wins hsmul hne hscal hk nc idx hω digest publicComm
+    (fun _ _ _ _ _ _ => U) O cp hcp
 
 /-! ## The degenerate honest family
 
