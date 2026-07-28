@@ -25,8 +25,9 @@ expansion (`sponge.rs` `to_field_with_length`, Halo §6.2): accumulators `a = b 
 for each 2-bit window from the top, `a, b := 2a, 2b`, the low bit selects `s = ±1`, the high
 bit routes `s` into `a` or `b`; the result is `a·λ + b`. This is the same recoding the
 `EndoScalar` gate constrains in-circuit (`Kimchi.Gate.EndoScalar`, accumulator init
-`(2, 2)`). Points absorb as `SWPoint`s: the two affine coordinates, or a single `0` for the
-identity (`sponge.rs` `absorb_g`, both cases).
+`(2, 2)`). Points absorb as `SWPoint`s: the two affine coordinates unconditionally — the
+identity is the `(0, 0)` sentinel, absorbed as two zeros exactly as `sponge.rs` `absorb_g`
+does.
 
 `FqVesta` and `FqPallas` instantiate the two sides of the Pasta cycle
 (`DefaultFqSponge<VestaParameters>` / `DefaultFqSponge<PallasParameters>`); each is its

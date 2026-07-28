@@ -172,8 +172,13 @@ def main : IO Unit := do
   runChunked CP s!"{dir}/kimchi_proof_pallas_nc2.json" true
   runChunked CV s!"{dir}/kimchi_proof_vesta_nc8.json" true
     (heavy := true)
+  -- Live EndoMul + VarBaseMul selectors at an empty public input (the audit's C-3 /
+  -- V-1 mask): acceptance here pins the α-weighted constraint order and the
+  -- scalar-register sign of both scalar-multiplication gates, and exercises the
+  -- empty-public branch (public commitment = the all-ones blinding mask).
+  runChunked CV s!"{dir}/kimchi_proof_vesta_emul.json" false
   IO.println "✓ the executable kimchi verifiers accept the production proofs (nc = 1 \
-    barycentric and carried, nc = 2 on both curves, nc = 8), reject corruptions, and \
-    refuse to parse ragged wire data"
+    barycentric and carried, nc = 2 on both curves, nc = 8, and the live-EndoMul/VarBaseMul \
+    empty-public proof), reject corruptions, and refuse to parse ragged wire data"
 
 #eval main

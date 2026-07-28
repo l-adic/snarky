@@ -64,7 +64,7 @@ fn gate_type_name(t: GateType) -> Option<&'static str> {
 
 macro_rules! dump_index {
     ($modname:ident, $curve_str:literal, $G:ty, $GParams:ty, $F:ty, $circuit:path,
-     $half:expr, $fname:literal) => {
+     $srs_over:expr, $label:literal, $fname:literal) => {
         mod $modname {
             use super::*;
 
@@ -87,14 +87,18 @@ macro_rules! dump_index {
                     .domain
                     .d1
                     .size();
-                let override_srs_size: Option<usize> =
-                    if $half { Some(n_probe / 2) } else { None };
+                let srs_over: fn(usize) -> Option<usize> = $srs_over;
+                let override_srs_size = srs_over(n_probe);
                 let index = mixed_index_over::<$G>(gates, override_srs_size);
-                assert_eq!(
-                    index.cs.domain.d1.size(),
-                    n_probe,
-                    "domain grew under the chunked zk_rows; fixture story assumes a fixed n"
-                );
+                // At `None`/`n/2` the chunked zk_rows fit the probed domain; a smaller
+                // SRS (the nc = 8 instance) legitimately grows it (zk_rows = 19).
+                if override_srs_size.map_or(true, |s| s >= n_probe / 2) {
+                    assert_eq!(
+                        index.cs.domain.d1.size(),
+                        n_probe,
+                        "domain grew under the chunked zk_rows; fixture story assumes a fixed n"
+                    );
+                }
 
                 // kimchi's own row checker, then the full production prove + verify.
                 index
@@ -200,8 +204,7 @@ macro_rules! dump_index {
                 println!(
                     "index ({}, {}): n={n} zk_rows={zk_rows} gates={n_gates}: cs.verify + \
                      production prove+verify accept; wrote {path}",
-                    $curve_str,
-                    if $half { "nc=2" } else { "nc=1" },
+                    $curve_str, $label,
                 );
                 let _ = <$G as KimchiCurve<FULL_ROUNDS>>::sponge_params;
                 let _ = <$F>::one();
@@ -219,7 +222,8 @@ dump_index!(
     mina_curves::pasta::VestaParameters,
     mina_curves::pasta::Fp,
     mixed_circuit,
-    false,
+    |_| None,
+    "nc=1",
     "index_vesta.json"
 );
 // The chunked twins (two chunks, zk_rows = 5, nonempty σ interior mask) on both curves.
@@ -230,7 +234,8 @@ dump_index!(
     mina_curves::pasta::VestaParameters,
     mina_curves::pasta::Fp,
     mixed_circuit,
-    true,
+    |n| Some(n / 2),
+    "nc=2",
     "index_vesta_nc2.json"
 );
 dump_index!(
@@ -240,8 +245,23 @@ dump_index!(
     mina_curves::pasta::PallasParameters,
     mina_curves::pasta::Fq,
     mixed_circuit_fq,
-    true,
+    |n| Some(n / 2),
+    "nc=2",
     "index_pallas_nc2.json"
+);
+// The nc = 8 instance (external-audit C-3: `Corresponds` was unwitnessed at nc = 8):
+// the same mixed circuit over the `max_poly_size = 8` SRS of `kimchi_proof_dump_nc8`,
+// where the chunked `zk_rows = 19` grow the domain to 64.
+dump_index!(
+    vesta_nc8,
+    "vesta",
+    mina_curves::pasta::Vesta,
+    mina_curves::pasta::VestaParameters,
+    mina_curves::pasta::Fp,
+    mixed_circuit,
+    |_| Some(8),
+    "nc=8",
+    "index_vesta_nc8.json"
 );
 
 fn main() {
@@ -249,4 +269,5 @@ fn main() {
     vesta::run(&out_dir);
     vesta_nc2::run(&out_dir);
     pallas_nc2::run(&out_dir);
+    vesta_nc8::run(&out_dir);
 }
