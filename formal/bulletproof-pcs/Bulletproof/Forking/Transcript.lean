@@ -188,9 +188,16 @@ private def rstep (C : Ipa.CommitmentCurve)
 private theorem roundChallengesAux_eq_foldl (s : FqSponge.S C.base)
     (lr : Array (C.Point × C.Point)) :
     Ipa.roundChallengesAux C s lr = lr.toList.foldl (rstep C) (#[], s) := by
+  have hstep : (fun (acc : Array C.ScalarField × FqSponge.S C.base) LR =>
+      let s := FqSponge.absorbG C.sponge (FqSponge.absorbG C.sponge acc.2 LR.1) LR.2
+      let (u, s) := FqSponge.squeezeChallenge C.sponge s
+      (acc.1.push u, s)) = rstep C := by
+    funext acc LR
+    rcases hsq : FqSponge.squeezeChallenge C.sponge
+        (FqSponge.absorbG C.sponge (FqSponge.absorbG C.sponge acc.2 LR.1) LR.2) with ⟨u, s'⟩
+    simp only [rstep, hsq]
   unfold Ipa.roundChallengesAux
-  rw [← Array.foldl_toList]
-  rfl
+  rw [← Array.foldl_toList, hstep]
 
 /-- The model sponge state after folding the round block of `L` from `s`. -/
 private def mstate (C : Ipa.CommitmentCurve) (s : FqSponge.S C.base)

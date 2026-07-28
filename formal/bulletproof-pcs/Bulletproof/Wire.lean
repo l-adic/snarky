@@ -207,7 +207,7 @@ private theorem foldl_fst_size {S γ α : Type*} (step : (Array γ × S) → α 
 /-- The fold squeezes exactly one round challenge per `(L, R)` pair. -/
 theorem roundChallengesAux_size (s : FqSponge.S C.base) (lr : Array (C.Point × C.Point)) :
     (roundChallengesAux C s lr).1.size = lr.size := by
-  simp only [roundChallengesAux]
+  unfold roundChallengesAux
   rw [← Array.foldl_toList, foldl_fst_size]
   · simp
   · intro acc a

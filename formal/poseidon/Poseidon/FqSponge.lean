@@ -71,11 +71,14 @@ private def lowLimbs (x : ZMod base) : List ℕ :=
 def absorbFq (spec : Spec base scalar) (s : S base) (xs : List (ZMod base)) : S base :=
   ⟨absorb spec.params s.sponge xs, []⟩
 
-/-- Absorb a point (`absorb_g`): its `x` then its `y` coordinate, or a single `0` for the
-identity. -/
+/-- Absorb a point (`absorb_g`): its `x` then its `y` coordinate, unconditionally — the
+identity is the `(0, 0)` sentinel by construction (`SWPoint.zero`), so this absorbs two
+zeros for it, exactly as production does (`sponge.rs:335–339` absorbs `[0]` then `[0]`).
+Branching to a single `0` here would leave the duplex position one slot behind production
+on every transcript containing an identity commitment. -/
 def absorbG (spec : Spec base scalar) {E : SWCurve (ZMod base)} (s : S base)
     (P : SWPoint E) : S base :=
-  if P = 0 then absorbFq spec s [0] else absorbFq spec s [P.x, P.y]
+  absorbFq spec s [P.x, P.y]
 
 /-- Absorb a scalar-field element (`absorb_fr`). The branch is determined by the
 cardinalities: a smaller scalar modulus embeds directly; a larger one absorbs as its high

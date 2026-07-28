@@ -122,11 +122,14 @@ def Witness.map {R S : Type*} (f : R → S) (w : Witness R) : Witness S where
   yS := f w.yS
   inv := f w.inv
 
-/-- The 12 constraint expressions: two `(P+Q)+P` blocks (3 each, with `Q` the endo-and-
-    sign-selected target), the distinct-point check, 4 booleanity checks, and the
-    scalar-register decomposition — the single transcription, from which the relational
-    spec (`Holds`) and the quotient layer's constraint polynomials are both read. `endo`
-    is the base-field endomorphism coefficient.
+/-- The 12 constraint expressions, **in production's list order** (`endosclmul.rs:524–549`):
+    4 booleanity checks, two `(P+Q)+P` blocks (3 each, with `Q` the endo-and-sign-selected
+    target), the scalar-register decomposition, and the distinct-point check — the single
+    transcription, from which the relational spec (`Holds`), the quotient layer's constraint
+    polynomials, and the linearization's positional `α`-weighting are all read. The order and
+    the scalar-register sign are load-bearing: `combine_constraints` weights position `k` by
+    `α^k`, so any deviation changes the linearization's constant term on EndoMul-active rows.
+    `endo` is the base-field endomorphism coefficient.
     (The distinct-point check is the upstream fix o1-labs/proof-systems@64129ce4 — see
     `block_sound` / `distinctPoints`; the pre-fix gate without it is underconstrained.) -/
 def constraints {R : Type*} [CommRing R] (endo : R) (w : Witness R) : List R :=
@@ -134,8 +137,13 @@ def constraints {R : Type*} [CommRing R] (endo : R) (w : Witness R) : List R :=
   let yq1 := (2 * w.b2 - 1) * w.yT
   let xq2 := (1 + (endo - 1) * w.b3) * w.xT
   let yq2 := (2 * w.b4 - 1) * w.yT
+  -- booleanity of the four bits
+  [ w.b1 * (w.b1 - 1)
+  , w.b2 * (w.b2 - 1)
+  , w.b3 * (w.b3 - 1)
+  , w.b4 * (w.b4 - 1)
   -- first window `P → R`, slope `s1`
-  [ (xq1 - w.xP) * w.s1 - (yq1 - w.yP)
+  , (xq1 - w.xP) * w.s1 - (yq1 - w.yP)
   , (2 * w.xP - w.s1 ^ 2 + xq1) * ((w.xP - w.xR) * w.s1 + w.yR + w.yP)
       - (w.xP - w.xR) * (2 * w.yP)
   , (w.yR + w.yP) ^ 2 - (w.xP - w.xR) ^ 2 * (w.s1 ^ 2 - xq1 + w.xR)
@@ -144,16 +152,11 @@ def constraints {R : Type*} [CommRing R] (endo : R) (w : Witness R) : List R :=
   , (2 * w.xR - w.s3 ^ 2 + xq2) * ((w.xR - w.xS) * w.s3 + w.yS + w.yR)
       - (w.xR - w.xS) * (2 * w.yR)
   , (w.yS + w.yR) ^ 2 - (w.xR - w.xS) ^ 2 * (w.s3 ^ 2 - xq2 + w.xS)
+  -- scalar register (production's sign: accumulator minus the next register)
+  , (16 * w.n + 8 * w.b1 + 4 * w.b2 + 2 * w.b3 + w.b4) - w.nPrime
   -- distinct-point check (upstream fix): `inv` witnesses `(xP−xR)·(xR−xS)` is a
   -- unit, forcing `xP ≠ xR` and `xR ≠ xS` (no degenerate `R = −P` / `S = −R`)
-  , (w.xP - w.xR) * (w.xR - w.xS) * w.inv - 1
-  -- booleanity of the four bits
-  , w.b1 * (w.b1 - 1)
-  , w.b2 * (w.b2 - 1)
-  , w.b3 * (w.b3 - 1)
-  , w.b4 * (w.b4 - 1)
-  -- scalar register
-  , w.nPrime - (16 * w.n + 8 * w.b1 + 4 * w.b2 + 2 * w.b3 + w.b4) ]
+  , (w.xP - w.xR) * (w.xR - w.xS) * w.inv - 1 ]
 
 /-- RELATIONAL spec: all 12 constraint expressions vanish. -/
 def Holds (endo : F) (w : Witness F) : Prop :=
@@ -187,6 +190,11 @@ theorem holds_iff (endo : F) (w : Witness F) :
       ∧ (w.nPrime = 16 * w.n + 8 * w.b1 + 4 * w.b2 + 2 * w.b3 + w.b4) := by
   simp only [Holds, constraints, List.forall_mem_cons, List.not_mem_nil, false_implies,
     implies_true, and_true, sub_eq_zero]
+  constructor
+  · rintro ⟨hb1, hb2, hb3, hb4, h1, h2, h3, h4, h5, h6, hn, hinv⟩
+    exact ⟨h1, h2, h3, h4, h5, h6, hinv, hb1, hb2, hb3, hb4, hn.symm⟩
+  · rintro ⟨h1, h2, h3, h4, h5, h6, hinv, hb1, hb2, hb3, hb4, hn⟩
+    exact ⟨hb1, hb2, hb3, hb4, h1, h2, h3, h4, h5, h6, hn.symm, hinv⟩
 
 omit [DecidableEq F] in
 /-- The constraint expressions commute with ring homomorphisms (applied cellwise via
