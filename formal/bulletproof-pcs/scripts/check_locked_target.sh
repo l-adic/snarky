@@ -114,5 +114,34 @@ if ! grep -qE '^theorem honestNode_wireWins_everywhere' Bulletproof/Forking/Hone
   echo "✗ anti-vacuity companion missing: honestNode_wireWins_everywhere"; exit 1
 fi
 
+# THE EXHIBIT SET. Every self-audit certificate — the results whose whole job is to say what
+# the endpoints do NOT claim — pinned by existence here, because nothing else can protect
+# them: an exhibit is by construction consumed by nothing, so under the dead=0 gate it is
+# indistinguishable from dead code the moment it leaves roots.txt. (That is not
+# hypothetical: the dead-code sweep at e7c431b2 deleted kimchi's concrete-index exhibits for
+# exactly this reason, which the external audit found and generalized in its addendum.)
+# Deleting one now fails a LOCK — a statement-level decision needing sign-off — rather than
+# passing silently.
+exhibits_dep='sg_determined_of_verifyWith wireWins_pinTable pinTable_factors chainAt_sg
+              nodeTranscript_nodes uBaseOf_eq_transcript identityTape exists_complete_coins'
+exhibits_ks='wireWins_U_irrelevant deployedExtract_U_irrelevant uRepresentationOfBreak
+             reductionEfficient_exists derivedUDL_iff_residual_measure honestFamily_failure_set'
+exhibits_tr='verifyOracle_spongeFS verifyOracleFrom_spongeFSFrom spongeFS_eq_from
+             toGroup_spongeOBase_preT'
+exhibits_hon='winsAtBase_uBaseOf honestNode_wins_everywhere'
+for pair in "$dep:$exhibits_dep" "$ks:$exhibits_ks" \
+            "Bulletproof/Forking/Transcript.lean:$exhibits_tr" \
+            "Bulletproof/Forking/Honest.lean:$exhibits_hon"; do
+  file="${pair%%:*}"; names="${pair#*:}"
+  for n in $names; do
+    if ! grep -qE "^(theorem|def|noncomputable def) ([A-Za-z_.]*\.)?$n\b" "$file"; then
+      echo "✗ EXHIBIT MISSING: $n (expected in $file)"
+      echo "  Exhibits are the anti-vacuity layer. Removing one is a decision about what"
+      echo "  the endpoints claim, not a cleanup — see docs/locked-target.md."
+      exit 1
+    fi
+  done
+done
+
 echo "✓ locked target intact: statement, extractor type, conclusion type,"
-echo "  plain-def extractor, and both anti-vacuity companions"
+echo "  plain-def extractor, both anti-vacuity companions, and the 20 exhibits"

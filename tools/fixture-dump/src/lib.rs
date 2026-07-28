@@ -3,11 +3,15 @@
 //! construction, so both fixtures describe the same circuit family.
 
 use ark_ec::short_weierstrass::{Affine as SWAffine, Projective, SWCurveConfig};
-use ark_ff::{PrimeField, UniformRand};
+use ark_ec::{AffineRepr, CurveGroup};
+use ark_ff::{BitIteratorLE, PrimeField, UniformRand, Zero};
 use kimchi::{
     circuits::{
         gate::{CircuitGate, GateType},
-        polynomials::{endomul_scalar, generic::GenericGateSpec, poseidon as poseidon_gate},
+        polynomials::{
+            endomul_scalar, endosclmul, generic::GenericGateSpec, poseidon as poseidon_gate,
+            varbasemul,
+        },
         wires::Wire,
     },
     curve::KimchiCurve,
@@ -17,7 +21,7 @@ use mina_poseidon::{
     pasta::{fp_kimchi, fq_kimchi, FULL_ROUNDS},
     poseidon::ArithmeticSpongeParams,
 };
-use poly_commitment::ipa::endos;
+use poly_commitment::{ipa::endos, SRS as _};
 use rand_chacha::ChaCha20Rng;
 
 pub const COLUMNS: usize = 15;
@@ -223,4 +227,92 @@ pub fn mixed_index(
     poly_commitment::ipa::SRS<Vesta>,
 > {
     mixed_index_over::<Vesta>(gates, None)
+}
+
+/// The scalar-multiplication circuit: rows 0–1 `EndoMul` (8 bits, 4 per row), row 2 the
+/// accumulator landing row (`Zero`), rows 3–6 two `VarBaseMul`/`Zero` pairs (10 bits,
+/// 5 per pair). No public rows. Witnesses from production's own generators
+/// (`endosclmul::gen_witness`, `varbasemul::witness`), exactly as kimchi's gate tests
+/// build them.
+pub fn emul_circuit(rng: &mut ChaCha20Rng) -> (Vec<CircuitGate<Fp>>, [Vec<Fp>; COLUMNS]) {
+    let mut gates: Vec<CircuitGate<Fp>> = vec![];
+    // EndoMul block: chunks rows 0..2, accumulator row 2.
+    for row in 0..2 {
+        gates.push(CircuitGate::new(GateType::EndoMul, Wire::for_row(row), vec![]));
+    }
+    gates.push(CircuitGate::new(GateType::Zero, Wire::for_row(2), vec![]));
+    // VarBaseMul block: (VBSM, Zero) pairs at rows (3,4) and (5,6).
+    for i in 0..2 {
+        gates.push(CircuitGate::new(
+            GateType::VarBaseMul,
+            Wire::for_row(3 + 2 * i),
+            vec![],
+        ));
+        gates.push(CircuitGate::new(
+            GateType::Zero,
+            Wire::for_row(3 + 2 * i + 1),
+            vec![],
+        ));
+    }
+    let n_rows = gates.len();
+    let mut witness: [Vec<Fp>; COLUMNS] =
+        std::array::from_fn(|_| vec![Fp::zero(); n_rows]);
+
+    // EndoMul witness (the endomul.rs test harness at 8 bits).
+    {
+        let num_bits = 8;
+        let (endo_q, _endo_r) = endos::<Pallas>();
+        let bits_lsb: Vec<_> = BitIteratorLE::new(Fp::rand(rng).into_bigint())
+            .take(num_bits)
+            .collect();
+        let bits_msb: Vec<_> = bits_lsb.iter().copied().rev().collect();
+        let base = Pallas::generator();
+        let acc0 = {
+            let t = Pallas::new_unchecked(endo_q * base.x, base.y);
+            let p = t + base;
+            let acc: Pallas = (p + p).into();
+            (acc.x, acc.y)
+        };
+        let _ = endosclmul::gen_witness(&mut witness, 0, endo_q, (base.x, base.y), &bits_msb, acc0);
+    }
+    // VarBaseMul witness (the varbasemul.rs test harness at 10 bits).
+    {
+        let num_bits = 10;
+        let bits_lsb: Vec<_> = BitIteratorLE::new(Fp::rand(rng).into_bigint())
+            .take(num_bits)
+            .collect();
+        let bits_msb: Vec<_> = bits_lsb.iter().copied().rev().collect();
+        let base = Pallas::generator();
+        let g = Pallas::generator().into_group();
+        let acc = (g + g).into_affine();
+        let _ = varbasemul::witness(&mut witness, 3, (base.x, base.y), &bits_msb, (acc.x, acc.y));
+    }
+    (gates, witness)
+}
+
+/// A domain-sized-SRS prover index with ZERO public inputs (`mixed_index_over` hardwires
+/// one public row; this circuit has none).
+pub fn emul_index(
+    gates: Vec<CircuitGate<Fp>>,
+) -> kimchi::prover_index::ProverIndex<FULL_ROUNDS, Vesta, poly_commitment::ipa::SRS<Vesta>> {
+    kimchi::prover_index::testing::new_index_for_test_with_lookups_and_custom_srs::<
+        FULL_ROUNDS,
+        Vesta,
+        _,
+        _,
+    >(
+        gates,
+        0,
+        0,
+        vec![],
+        None,
+        false,
+        None,
+        |d1, size| {
+            let srs = poly_commitment::ipa::SRS::<Vesta>::create(size);
+            srs.get_lagrange_basis(d1);
+            srs
+        },
+        false,
+    )
 }

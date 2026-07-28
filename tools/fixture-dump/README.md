@@ -87,7 +87,8 @@ Paths below are relative to `formal/`.
 
 | artifact | contents | checked by |
 |---|---|---|
-| `kimchi/fixtures/linearization_vesta.json` | the verifier's scalar side of a real proof over the same mixed-gate circuit — challenges, combined evaluations at ζ/ζω, and the production outputs (`ft_eval0`, `perm_scalars`, the token-evaluated constant term, per-gate combined constraints) | `kimchi/scripts/check_linearization.sh` |
+| `kimchi/fixtures/linearization_vesta.json` | the verifier's scalar side of a real proof over the same mixed-gate circuit — challenges, combined evaluations at ζ/ζω, and the production outputs (`ft_eval0`, `perm_scalars`, the token-evaluated constant term, per-gate combined constraints). Live gate terms: generic, poseidon, completeAdd, endoScalar | `kimchi/scripts/check_linearization.sh` |
+| `kimchi/fixtures/linearization_vesta_emul.json` | the same scalar-side record over the SCALAR-MULTIPLICATION circuit (`emul_circuit`, the one `kimchi_proof_dump_emul` proves). Live gate terms: **varBaseMul, endoMul** — the two whose per-gate targets are identically zero in the mixed-gate fixture, so without this one their checks read `0 = 0` (external-audit R-1). Every gate is now live in at least one linearization fixture, and the driver FAILS if a gate it is meant to exercise has a zero target | `kimchi/scripts/check_linearization.sh` |
 
 `kimchi_proof_dump` (two serializations of ONE proof — a complete kimchi wire proof + verifier key over the mixed-gate circuit, same seed and domain-sized SRS as `linearization_vesta.json`: all commitments, uncombined evaluations, opening proof, public input, and the VK data incl. Lagrange-basis commitments, both endo coefficients, and the verifier-index digest):
 

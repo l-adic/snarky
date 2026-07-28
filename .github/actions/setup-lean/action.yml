@@ -34,11 +34,19 @@ runs:
       working-directory: formal
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        # Ensure the manifest matches the Mathlib revision pinned in lakefile.toml
-        # so `lake exe cache get` does not fail on toolchain mismatch checks.
-        lake update mathlib
-        # Mathlib olean cache (does NOT include ProofWidgets' widget JS).
-        lake exe cache get
+        # Restore dependencies FROM THE COMMITTED MANIFEST (`lake-manifest.json`), so CI
+        # builds the pinned revisions rather than whatever `lake update` resolves at run
+        # time — the external audit's §2.1 observation that `lake update mathlib` made the
+        # dependency set a moving target. If the manifest and lakefile.toml genuinely
+        # disagree, that is a repo-state error and should fail here rather than be
+        # silently re-resolved; the fallback re-resolves and SAYS SO, so the drift is
+        # visible in the log instead of invisible.
+        # (Mathlib olean cache; does NOT include ProofWidgets' widget JS.)
+        if ! lake exe cache get 2>/dev/null; then
+          echo "::warning::committed lake-manifest.json did not satisfy the cache; re-resolving mathlib -- this run is NOT on the committed dependency pin"
+          lake update mathlib
+          lake exe cache get
+        fi
         # Older ProofWidgets tags ship prebuilt widget JS in a GitHub release
         # asset (`ProofWidgets4.tar.gz`) that `lake exe cache get` does not
         # fetch. Newer tags vendor this differently and may not publish the

@@ -98,5 +98,21 @@ if ! grep -qE '^theorem honestKimchiFamily_failure_set' "$honest"; then
   echo "✗ anti-vacuity companion missing: honestKimchiFamily_failure_set"; exit 1
 fi
 
+# THE EXHIBIT SET (see the bulletproof-pcs gate's note): certificates consumed by nothing
+# are indistinguishable from dead code once they leave roots.txt, so their existence is
+# pinned here instead of relying on review.
+for n in exists_ne_zero_kernel_scalarBasis kimchiVerify_eq_verifyWith; do
+  if ! grep -qE "^(theorem|def) $n\b" "$ks"; then
+    echo "✗ EXHIBIT MISSING: $n (expected in $ks)"; exit 1
+  fi
+done
+for n in vesta_honest_extraction_failure_measure_le \
+         pallas_honest_extraction_failure_measure_le; do
+  if ! grep -qE "^theorem $n\b" "$honest"; then
+    echo "✗ EXHIBIT MISSING: $n (the per-curve honest-family corollary, in $honest)"
+    exit 1
+  fi
+done
+
 echo "✓ kimchi locked target intact: both endpoint statements, Wins, ExtractsWitness,"
-echo "  relationFinder, the faithfulness bundle, and both honest-family exhibits"
+echo "  relationFinder, the faithfulness bundle, and the six exhibits"

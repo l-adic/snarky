@@ -2,8 +2,9 @@
 
 **To:** the auditing firm, in response to `docs/external-audit-report.md` (2026-07-28)
 **From:** the `l-adic/snarky` project, `formal/` subtree
-**Remediation revisions:** `4ff807a6` … HEAD on `kimchi-knowledge-soundness` (six commits,
-one per work phase; each commit message carries the finding IDs it addresses)
+**Remediation revisions:** `4ff807a6` … HEAD on `kimchi-knowledge-soundness` (one commit
+per work phase, plus a follow-up round for R-1; each commit message carries the finding
+IDs it addresses)
 **Baseline audited:** `2c8c57cc`
 
 This document states, per finding, what we modified to accommodate the report — and, for
@@ -110,12 +111,13 @@ because tree files keep their own module names regardless of the namespaces they
 |---|---|
 | A-3 | **Fixed.** A kimchi-side locked-target gate (`kimchi/scripts/check_locked_target.sh`, 67 pinned lines) pins both endpoint statements, `Wins`, `ExtractsWitness`, and `relationFinder`; the `noncomputable` asymmetry the report flagged is documented in its header (the computability guard lives on the IPA extractor underneath plus the behavioural check). CI-wired. |
 | A-6 | **Fixed** (kernel replay now runs on PRs) with the census-vs-replay division of labor documented at the CI step. The residual — lean4checker not recomputing the axiom tables — is accepted as inherent to the tool, per the owner's direction. |
-| A-7 | **Fixed.** `scripts/fixtures.sha256` pins every committed fixture (31 files) by hash and records the proof-systems revision (`mina @3969f761`); a CI step verifies hashes and completeness. Regeneration remains a bump-time action with a `--regen` re-pin, per the dump README. |
+| A-7 | **Fixed.** `scripts/fixtures.sha256` pins every committed fixture (32 files) by hash and records the proof-systems revision (`mina @3969f761`); a CI step verifies hashes and completeness. Regeneration remains a bump-time action with a `--regen` re-pin, per the dump README. |
 | B-2 | **Fixed.** The endpoint docstrings now state the measured closure: the three standard axioms plus CompElliptic's certified `native_decide` witnesses per curve. |
 | B-3 | **Fixed.** The stale cold-base caveat is rewritten to the current fact: the game evaluates at the warm base and `Bridge.lean` closes the slot identity by `rfl`. |
 | B-4 | **Fixed, and the loop genuinely closed.** The empty "Non-vacuity of the family itself" section was a dead-code-sweep regression on our side (the blocks existed, unreferenced, one commit earlier); they are restored, and the loop is now closed AND rooted: `vesta/pallas_honest_extraction_failure_measure_le` — a concrete four-row index at `publicCount = 0` on each curve, with the honest family and its failure-set corollary — join `roots.txt` and the axiom gate, so the honest-family layer has its per-curve corollaries and a sweep can never take them again. This also resolves the report's C-6 residue. |
 | C-2 | **Fixed** as part of the fragment statement (the proof-shape clause appears at every surface C-1 covers). |
-| C-3 | **Fixed.** Three coverage additions: the live-EndoMul/VarBaseMul proof (above), `Corresponds` adjudicated at `nc = 8` (`index_vesta_nc8.json`; 28 columns × 8 chunks, all match), and the empty-public-input branch exercised by the emul fixture (which has `public_count = 0`). All pre-existing fixtures regenerate byte-identical. |
+| C-3 | **Fixed, in two rounds** — the first round overstated it (see R-1 below). Coverage additions: the live-EndoMul/VarBaseMul proof, `Corresponds` adjudicated at `nc = 8` (`index_vesta_nc8.json`; 28 columns × 8 chunks, all match), the empty-public-input branch (the emul fixture has `public_count = 0`), and — after R-1 — a second linearization fixture restoring gate-by-gate adjudication. All pre-existing fixtures regenerate byte-identical. |
+| **R-1** | **Fixed, and the finding is accepted as correct.** Our first C-3 round left `check_linearization`'s per-gate targets for `endoMul` and `varBaseMul` at `"0"` — verified: exactly the two gates V-1 concerned were still adjudicated `0 = 0`, with coverage resting entirely on whole-proof acceptance. `linearization_dump` now emits a **second** fixture, `linearization_vesta_emul.json`, from the emul circuit (live gate terms `varBaseMul`, `endoMul`); the driver runs both, and each fixture declares which gates it is meant to exercise and **fails if such a gate's target is zero**, so a vacuous check can no longer read as a pass. The driver's own output now annotates zero targets `(0)`. Every gate is live in at least one fixture. **Negative control (NC-2):** under the pre-fix EndoMul the mixed fixture passes unchanged while the emul fixture reports `endoMul: ✗` beside `varBaseMul: ✓` — the localization R-1 asked for, rather than a whole-proof rejection. |
 | E-1 | **Prose adopted in full; the upgrade deferred** (§5.1). The three overclaiming passages are replaced by the report's corrected account — the extractor's cost is *unproved*, not known-large — and both kimchi endpoints now carry the `hEff` sentence. We accept the report's characterization that this was the one place the development described itself as weaker than shown. |
 
 ## 4. Low / Info findings
@@ -187,6 +189,34 @@ hypothesis is now visible wherever the results are quoted, and the checked wire 
 matches it. The attack shape the report's C2 log lists as #7 therefore remains a scope
 boundary — now a *declared* one — rather than a priced one.
 
+### 5.2b Negative controls are now recorded (was: prose only)
+
+The follow-up's observation that our discrimination checks were prose rather than
+replayable is addressed by `docs/negative-controls.md`: for each fixture added to close a
+finding, the exact mutation that must make it fail and the observed failure, in replayable
+steps. We agree with the follow-up's framing that the standing controls are the fixtures
+themselves — this file records the *discrimination evidence*, which is what was missing,
+and does not add a gate. It documents NC-1 (V-1 end-to-end), NC-2 (R-1 localization,
+including the sub-observation that a sign-only perturbation fails to compile because
+`holds_iff` cross-checks the list), and NC-3 (V-2's trace shape).
+
+### 5.2c The addendum's B-4 generalization — acted on
+
+The addendum's observation is the sharpest structural point in either document:
+
+> under a dead=0 gate, any exhibit absent from `roots.txt` is by construction eligible for
+> deletion, and nothing but review distinguishes an anti-vacuity certificate from dead code.
+
+We agree, and rooting the exhibits (our B-4 fix) only protects them while they *stay* in
+`roots.txt` — a sweep that removes both the root and the declaration is still silently
+green. Both locked-target gates therefore now pin the **existence of the whole exhibit
+set** — 20 on the bulletproof-pcs side, 6 on the kimchi side, including the sponge
+faithfulness bridges, the sg-slot defence, the `U`-irrelevance pair,
+`uRepresentationOfBreak`, the self-limiting exhibits, the per-curve honest corollaries and
+the `Complete` witness. Deleting one now fails a *lock*, which by the project's own policy
+is a statement-level decision requiring sign-off, rather than passing as cleanup.
+Discrimination check recorded as NC-4.
+
 ### 5.3 V-4, the modelling choice: deterministic conjunction
 
 We keep the two bracket equations as a deterministic conjunction rather than modeling
@@ -195,9 +225,22 @@ the conservative direction for soundness — and the difference is now a *declar
 deviation with the report's own one-sentence characterization, alongside the
 singleton-`batch_verify` note. No further work is planned here.
 
-Two report items were, per the owner, closed as accepted residuals rather than worked:
-the kernel-replay/census division of labor (A-6's second half, documented at the CI
-step), and nothing else.
+### 5.4 The two §2.1 observations — both now fixed rather than accepted
+
+Neither was raised as a finding, and both were accurate:
+
+* **PR runs were filtered to pull requests targeting `main`**, so a stacked PR (one based
+  on a feature branch) ran no Lean gate at all. The `branches:` filter is removed from the
+  `pull_request` trigger; the `paths:` filter stays, so every PR touching `formal/` is
+  gated whatever its base.
+* **`setup-lean` ran `lake update mathlib` at CI time**, making the dependency set a
+  moving target rather than the committed `lake-manifest.json`. CI now restores from the
+  committed manifest; the re-resolve survives only as a fallback that emits a
+  `::warning::` saying the run is *not* on the committed pin, so drift is visible in the
+  log instead of silent.
+
+One report item is, per the owner, an accepted residual rather than worked: the
+kernel-replay/census division of labor (A-6's second half), documented at the CI step.
 
 ---
 
@@ -213,8 +256,13 @@ So the auditors can re-baseline quickly:
 * **New pinned surfaces**: `kimchi/scripts/locked_target.expected` (67 lines);
   `scripts/fixtures.sha256` (31 files at `mina @3969f761`).
 * **Fixture set changed**: + `kimchi_proof_vesta_emul.json`, + `index_vesta_nc8.json`,
-  and the two fq-sponge trace files gained one case each (the V-2 probe). Everything
-  else regenerates byte-identical, re-verified after the Rust-side changes.
+  + `linearization_vesta_emul.json` (R-1), and the two fq-sponge trace files gained one
+  case each (the V-2 probe). Everything else regenerates byte-identical, re-verified
+  after the Rust-side changes — including after `linearization_dump` was refactored to
+  emit two fixtures (the historical one is byte-identical only if the prover continues
+  the *same* rng the circuit drew from, which the refactor preserves).
+* **CI triggers changed**: `pull_request` no longer filters on base branch (§5.4), and
+  `setup-lean` builds from the committed manifest with a warned fallback (§5.4).
 * **`parseZMod` is stricter** (rejects ≥ p), matching arkworks serde.
 * **One statement-adjacent change**: none of the pinned statement texts changed in this
   remediation. (The `Coins` re-spelling the report examined in A-4 predates it and is

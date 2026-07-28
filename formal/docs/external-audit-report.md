@@ -1009,3 +1009,92 @@ says pickles/Mina proofs are out of scope. No package READMEs exist. → **C-1**
   `PERMUTS`/`PERMUTS−1`/`COLUMNS`; the Lean `GateType` is exactly the declared six plus `zero`;
   and the corruption matrices genuinely pin the chunk-level degrees of freedom across both curves
   and `nc ∈ {1,2,8}`.
+
+---
+
+## Addendum — verification of the remediation (2026-07-28, post-`5bea7d60`)
+
+The project's response is `docs/external-audit-response.md`, covering commits
+`4ff807a6 … 5bea7d60`. This addendum records what the auditors **re-verified independently**
+against the remediated tree, rather than accepting from the response.
+
+**Both Criticals are genuinely closed, and closed at the right layer.**
+
+* **V-1.** `Gate/EndoMul.lean`'s list now reads `[bool b₁..b₄, window-1, window-2,
+  (16n+8b₁+4b₂+2b₃+b₄) − n′, inv]` — position-for-position `endosclmul.rs:524–549`, with
+  production's scalar-register sign. Verified by direct comparison of both sources.
+* **V-2.** `FqSponge.absorbG` is `absorbFq spec s [P.x, P.y]`, branchless. Verified.
+* **The masks that hid them are closed by production-generated fixtures, not by assertion.**
+  `kimchi_proof_vesta_emul.json` is emitted by a new dumper (`kimchi_proof_dump_emul.rs`); it
+  carries **NONZERO** `evals_emul_selector` and `evals_mul_selector` (independently checked — every
+  pre-existing fixture has both identically zero), is run by `check_kimchi_verifier.lean:183`, and
+  ACCEPTS under the fixed verifier. Its `public: []` also exercises the empty-public-input branch.
+  Both curves' `fq_sponge` fixtures now contain the exact shape this report specified as the only
+  discriminating one, `[absorb_g_inf, absorb_fr, challenge]`, plus a longer variant.
+
+**Gate battery, re-run end to end on the remediated tree.** Axiom gates green at kimchi **52**,
+bulletproof-pcs **30**, poseidon **19** (new), pasta 13, snarky 5; both locked-target gates green
+(the new kimchi one pins both endpoints, `Wins`, `ExtractsWitness`, `relationFinder`, the
+faithfulness bundle and both honest exhibits); sorry census green with the widened scope
+(`KimchiFixture`, `BulletproofFixture`, every `scripts/` dir, `expected=''`); dead code 0 of 1545;
+fixture manifest green (31 files, `mina 3969f761846e`); all fixture drivers green.
+
+**CI wiring confirmed by reading `lean.yml`.** All four previously-unwired gates now run
+(`check_locked_target.sh` ×2 pre-build, `check_sorry_census.sh`, `check_extractor_computes.lean`,
+`check_ironwood_generic.lean`), plus the poseidon axiom gate and `check_fixtures_manifest.sh`.
+Kernel replay carries no `if:` guard and its comment records the PR-coverage fix; there are no
+conditional guards anywhere in the workflow.
+
+**Independent regeneration.** Rebuilding `tools/fixture-dump` against the pinned submodule and
+re-running all nine dumpers reproduces **every** committed fixture byte-for-byte, including the two
+new ones (only the committed `.gitignore` and the two documented gitignored debug sidecars differ).
+The A-7 manifest is therefore consistent with what production actually emits, not merely with
+itself.
+
+**Spot checks on the remaining dispositions**, all confirmed present and rooted:
+`vesta/pallas_honest_extraction_failure_measure_le` (`Honest.lean:1767`, `:1790`, in both
+`roots.txt` and the axiom gate); `identityTape` / `exists_complete_coins` (`Deployed.lean:861`,
+`:867`, rooted); module-based `native_decide` trust via `env.getModuleFor?` against
+`CompElliptic.*` or `Pasta.Endo`; `guard (0 < p.tComm.size)` in `Wire.lean` with a matching driver
+rejection case; the four `Columns.lean` derivation `rfl`s; the E-1 prose replacement and the `hEff`
+sentence at both endpoints; the fragment statement at the module preamble, both endpoint
+docstrings, and `formal/CLAUDE.md`.
+
+**B-4's account is truthful and the underlying incident is worth recording.** `git show e7c431b2`
+confirms the dead-code sweep deleted 983 lines from `Honest.lean`, including the concrete-index
+blocks — so the empty section was a regression, not an unwritten promise. The remediation's fix
+(rooting the exhibits and gating them) is the correct one, but the *class* of risk generalizes:
+under a dead=0 gate, any exhibit absent from `roots.txt` is by construction eligible for deletion,
+and nothing but review distinguishes an anti-vacuity certificate from dead code.
+
+### Residual findings
+
+* **R-1 (Low) — C-3 is only partly closed at the scalar layer.** `linearization_vesta.json` is
+  unchanged (it regenerates byte-identical) and still carries `gate_combined.endoMul = "0"` and
+  `varBaseMul = "0"`, so `check_linearization`'s per-gate checks for exactly the two gates V-1
+  concerned remain **vacuous** (`0 = 0`). Coverage for V-1 now rests entirely on the end-to-end
+  emul proof, which is sufficient to catch a regression but reports it as a whole-proof rejection
+  rather than localizing it to a gate and constraint index. The emul circuit's dumper already
+  exists; emitting a second linearization fixture from it is cheap and would restore
+  gate-by-gate adjudication.
+* **R-2 (Info) — the one-time negative controls are prose.** That the pre-fix verifier rejects the
+  emul fixture, and that a one-zero `absorbG` fails the new sponge case, are reported but not
+  replayable from the tree. The standing controls are the fixtures themselves, which is the right
+  design; the one-time discrimination checks are simply unrecorded. Structurally both hold: the
+  emul fixture's acceptance depends on `ftEval0`, which consumes the gate linearization
+  positionally.
+* **R-3 (Info) — two unnumbered §2.1 observations remain open**, fairly, since they were never
+  numbered findings: PR runs are filtered to pull requests *targeting `main`*, so a stacked PR onto
+  a feature branch still runs no Lean gate; and `setup-lean` runs `lake update mathlib` at CI time
+  rather than building from the committed `lake-manifest.json`.
+
+### Verdict
+
+Fourteen of the report's findings are fixed and independently verified; three are deferred with
+recorded sign-off (E-1's upgrade, B-1's strong form, V-4) and one accepted as a tool residual
+(A-6's second half). No fix introduced a statement change: `Gate.EndoMul.constraints` is a
+definitional edit that leaves every `Holds`-based statement semantically unchanged (`Holds` is
+∀-over-the-list, and `e = 0 ↔ −e = 0`) while deliberately changing the linearization *value* —
+which is the fix. The deferrals are the honest ones: each is real proof work, each is stated as
+open rather than closed, and E-1 in particular is left with the upstream tool cited at the point
+where the work would begin.

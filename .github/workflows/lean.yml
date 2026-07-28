@@ -12,8 +12,11 @@ on:
       - 'formal/**'
       - '.github/workflows/lean.yml'
       - '.github/actions/setup-lean/**'
+  # Every pull request that touches formal/, whatever its base — a branch filter here
+  # would leave a STACKED PR (one targeting a feature branch) with no Lean gate at all,
+  # which is how an unaudited formal/ change reaches a base branch. Flagged as an
+  # unnumbered observation in the external audit's §2.1.
   pull_request:
-    branches: [ main ]
     paths:
       - 'formal/**'
       - '.github/workflows/lean.yml'
