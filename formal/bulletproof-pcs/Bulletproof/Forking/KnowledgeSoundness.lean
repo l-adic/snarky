@@ -77,15 +77,6 @@ omit [Module C.ScalarField C.Point] in
 @[simp] theorem srsOfBasis_k (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) :
     (srsOfBasis k basis).k = k := rfl
 
-omit [Module C.ScalarField C.Point] in
-/-- Reassembling the augmented basis from the SRS slots loses no group element — ironwood's
-round-trip `augmentedBasis_ursOfAugmentedBasis` (`AGM/Adapter.lean:344`) at our slot names. -/
-@[simp] theorem augmentedBasis_srsOfBasis
-    (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) :
-    Zcash.Snark.augmentedBasis (srsOfBasis k basis).g (srsOfBasis k basis).U
-      (srsOfBasis k basis).h = basis :=
-  Zcash.Snark.augmentedBasis_ursOfAugmentedBasis k basis
-
 /-! ## The basis-indexed adversary family -/
 
 /-- **A basis-indexed deployed adversary family** — our analogue of
@@ -188,15 +179,6 @@ def augOfSetup {n : ℕ} (bs : SetupIndex n → G) : Zcash.Snark.AugmentedIndex 
   | Sum.inl i => bs (Sum.inl i)
   | Sum.inr j => if j = 0 then 0 else bs (Sum.inr ())
 
-@[simp] theorem augOfSetup_gen {n : ℕ} (bs : SetupIndex n → G) (i : Fin n) :
-    augOfSetup bs (Zcash.Snark.AugmentedIndex.gen i) = bs (SetupIndex.gen i) := rfl
-
-@[simp] theorem augOfSetup_u {n : ℕ} (bs : SetupIndex n → G) :
-    augOfSetup bs (Zcash.Snark.AugmentedIndex.u) = 0 := rfl
-
-@[simp] theorem augOfSetup_w {n : ℕ} (bs : SetupIndex n → G) :
-    augOfSetup bs (Zcash.Snark.AugmentedIndex.w) = bs SetupIndex.blind := rfl
-
 /-- The slot count the DL reduction pays: one **better** than the incumbent `2 ^ k + 2`. -/
 theorem card_setupIndex (n : ℕ) : Fintype.card (SetupIndex n) = n + 1 := by simp
 
@@ -207,17 +189,6 @@ end Basis
 section Roundtrip
 
 variable {C : Ipa.CommitmentCurve} {k : ℕ} [Module C.ScalarField C.Point]
-
-omit [Module C.ScalarField C.Point] in
-/-- **The round trip, unconditionally.** This is what replaces `hU`: not a hypothesis, a theorem.
-Compare `augmentedBasis_srsOfBasis` (`KnowledgeSoundness.lean:80`), which is upstream's
-`augmentedBasis_ursOfAugmentedBasis` round trip. -/
-@[simp] theorem setupBasis_srsOfBasis_augOfSetup (bs : SetupIndex (2 ^ k) → C.Point) :
-    setupBasis (srsOfBasis k (augOfSetup bs)).g (srsOfBasis k (augOfSetup bs)).h = bs := by
-  funext i
-  rcases i with i | u
-  · rfl
-  · cases u; rfl
 
 omit [Module C.ScalarField C.Point] in
 /-- The same after the extractor's `U` override — the form the transport in `relationFinder`
@@ -233,7 +204,7 @@ needs, since the break's basis is read off `{ srsOfBasis k basis with U := uBase
 
 /-- **The presented SRS's `U` slot is dead** — two SRSs differing only in `U` give the same
 extractor run, by `rfl`. This is what licenses the dead slot in `augOfSetup`. -/
-private theorem deployedExtract_U_irrelevant (σ : SRS C.Point) (X : C.Point) (cip : C.ScalarField)
+theorem deployedExtract_U_irrelevant (σ : SRS C.Point) (X : C.Point) (cip : C.ScalarField)
     (b : Fin (2 ^ σ.k) → C.ScalarField) (v : C.ScalarField) (P : C.Point)
     (pg : Fin (2 ^ σ.k) → C.ScalarField) (pw : C.ScalarField)
     (hP : P = commitGen σ.g pg + pw • σ.h)
@@ -245,7 +216,7 @@ private theorem deployedExtract_U_irrelevant (σ : SRS C.Point) (X : C.Point) (c
 
 omit [Module C.ScalarField C.Point] in
 /-- Same for the win event: `Ipa.verifyWith` reads only `σ.g` and `σ.h`. -/
-private theorem wireWins_U_irrelevant {m p : ℕ} (σ : SRS C.Point) (X : C.Point)
+theorem wireWins_U_irrelevant {m p : ℕ} (σ : SRS C.Point) (X : C.Point)
     (claim : Ipa.Input C σ.k m p) (O : IpaNode C σ.k → Prechallenge)
     (π : Ipa.Proof C σ.k) :
     wireWins σ claim O π = wireWins { σ with U := X } claim O π := rfl
@@ -301,7 +272,7 @@ def restrictToSetup {n : ℕ} {g : Fin n → G} {U H : G}
 representation of the transcript-derived base `U` over the sampled setup generators — the
 adversary opened `uBaseOf C cip` in `(g, h)`. Data-valued, not a `Prop`-level `∃`: this is what
 keeps the third summand's assumption from being vacuous. -/
-private def uRepresentationOfBreak {n : ℕ} {g : Fin n → G} {U H : G}
+def uRepresentationOfBreak {n : ℕ} {g : Fin n → G} {U H : G}
     (r : Zcash.Snark.AlgebraicRelationWitness (F := F) (Zcash.Snark.augmentedBasis g U H))
     (hu : r.coeffs Zcash.Snark.AugmentedIndex.u ≠ 0) :
     Zcash.Snark.GroupRepresentation (F := F) (setupBasis g H) U where
@@ -603,49 +574,6 @@ end Terminal
 /-! ## 8. THE ACCEPTANCE TEST — the per-curve corollaries -/
 
 section PerCurve
-
-/-- **Vesta.** Every curve-specific hypothesis discharged: `hsmul` by `Pasta.vesta_smul_val`,
-`hinj` by `expandPre_vesta_injective`, `hne` by `expandPre_vesta_ne_zero`. What remains are the
-two cryptographic assumptions (`hDL`, `hUDL`), the fork tape, and the family itself — nothing
-that constrains the curve.
-
-This is the statement the incumbent could not have: `hU` at `IpaVesta.curve` would have forced
-`Function.Surjective IpaVesta.curve.toGroup`, and `GroupMapVesta.toGroup` picks one canonical
-`y` per `x`. -/
-private theorem vesta_noOpening_measure_le_of_textbookDL {k m p : ℕ}
-    (B : IpaVesta.Point) (fam : DeployedFamily IpaVesta.curve k m p)
-    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
-    (hcoins : coins.Complete) {ε δ : ℝ≥0∞}
-    (hDL : Zcash.Snark.TextbookDLWithCoinsAdvantageLE B (relationFinder fam coins) ε)
-    (hUDL : DerivedUDLAdvantageLE fam B coins δ) :
-    (PMF.uniformOfFintype
-        ((SetupIndex (2 ^ k) → IpaVesta.curve.ScalarField) × fam.Coins)).toOuterMeasure
-        {q | wireWins (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
-                (fam.claim (augOfSetup (Zcash.Snark.scalarBasis B q.1))) q.2
-                ((fam.adversary (augOfSetup (Zcash.Snark.scalarBasis B q.1))).run q.2) ∧
-          ¬ fam.HasOpening (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins}
-      ≤ (fam.Q + k + 1) * (3 / (2 ^ 128 : ℕ))
-        + Fintype.card (SetupIndex (2 ^ k)) * ε + δ :=
-  deployedExtract_noOpening_measure_le_of_textbookDL Pasta.vesta_smul_val
-    expandPre_vesta_injective expandPre_vesta_ne_zero B fam coins hcoins hDL hUDL
-
-/-- **Pallas**, same discharge. -/
-private theorem pallas_noOpening_measure_le_of_textbookDL {k m p : ℕ}
-    (B : IpaPallas.Point) (fam : DeployedFamily IpaPallas.curve k m p)
-    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
-    (hcoins : coins.Complete) {ε δ : ℝ≥0∞}
-    (hDL : Zcash.Snark.TextbookDLWithCoinsAdvantageLE B (relationFinder fam coins) ε)
-    (hUDL : DerivedUDLAdvantageLE fam B coins δ) :
-    (PMF.uniformOfFintype
-        ((SetupIndex (2 ^ k) → IpaPallas.curve.ScalarField) × fam.Coins)).toOuterMeasure
-        {q | wireWins (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
-                (fam.claim (augOfSetup (Zcash.Snark.scalarBasis B q.1))) q.2
-                ((fam.adversary (augOfSetup (Zcash.Snark.scalarBasis B q.1))).run q.2) ∧
-          ¬ fam.HasOpening (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins}
-      ≤ (fam.Q + k + 1) * (3 / (2 ^ 128 : ℕ))
-        + Fintype.card (SetupIndex (2 ^ k)) * ε + δ :=
-  deployedExtract_noOpening_measure_le_of_textbookDL Pasta.pallas_smul_val
-    expandPre_pallas_injective expandPre_pallas_ne_zero B fam coins hcoins hDL hUDL
 
 /-- The Vesta bound, with the slot count evaluated: `2 ^ k + 1`. -/
 private theorem vesta_card_setup (k : ℕ) : Fintype.card (SetupIndex (2 ^ k)) = 2 ^ k + 1 :=

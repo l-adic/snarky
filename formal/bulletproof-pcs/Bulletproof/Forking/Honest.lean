@@ -18,22 +18,14 @@ That is this module's endpoint (`honestNode_wins_everywhere`, and its wire form
 `honestNode_wireWins_everywhere`), and by the project's phase-P1 gate it lands before any work on
 the measure bound itself.
 
-## Why the abstract companion does not transport
+## Why the machine is built here, at the node domain
 
-`Forking/Game.lean` proves the abstract analogue `honest_wins_everywhere`, but over its *own*
-prefix type `HonestPrefix Pre (k+1) = Σ j : Fin (k+1), Fin j → Pre` and with output type
-`Fin (k+1) → Pre` — the answer vector. Neither choice survives here, where the prefixes are
-`nodes cip` (structured `IpaNode`s) and the output must be a wire `Ipa.Proof C σ.k`, because
-`wireWins` runs the executable verifier on it. So the machine is rebuilt.
-
-Worse, every ingredient of that proof is `private` in the frozen `Game.lean`: the `commitGen`
-bilinearity block and the fold identity, the honest strategy and its acceptance invariant, the
-query machine with its run and budget lemmas, and the two prefix-determination congruences. What
-*is* public and reusable is `Forking/Prover.lean`: `KimchiProver` with `lrAt`, `leafAt`,
-`proofAt`, the folded acceptance `kimchiProverAccept` together with
-`kimchiProverAccept_iff_verifierAcceptsAt`. This module therefore rebuilds the private half on
-top of the public half. Nothing is re-*invented*: every statement below is the node-domain
-counterpart of a statement that already exists somewhere in the frozen tree.
+An abstract honest adversary over `Forking/Game.lean`'s raw prefix type would not transport:
+here the prefixes are `nodes cip` (structured `IpaNode`s) and the output must be a wire
+`Ipa.Proof C σ.k`, because `wireWins` runs the executable verifier on it. So the machine is
+built at the node domain directly, on top of the public `Forking/Prover.lean` half:
+`KimchiProver` with `lrAt`, `leafAt`, `proofAt`, and the folded acceptance
+`kimchiProverAccept` together with `kimchiProverAccept_iff_verifierAcceptsAt`.
 
 ## The one genuinely new argument
 
@@ -87,12 +79,12 @@ theorem commitGen_smul_gen {n : ℕ} (s : F) (g : Fin n → G) (a : Fin n → F)
   exact Finset.sum_congr rfl fun i _ => smul_comm (a i) s (g i)
 
 /-- Additivity of `commitGen` in the coefficients. -/
-theorem commitGen_add_coeff {n : ℕ} (g : Fin n → G) (a a' : Fin n → F) :
+private theorem commitGen_add_coeff {n : ℕ} (g : Fin n → G) (a a' : Fin n → F) :
     commitGen g (a + a') = commitGen g a + commitGen g a' := by
   simp only [commitGen, Pi.add_apply, add_smul, Finset.sum_add_distrib]
 
 /-- `commitGen` pulls a scalar out of the coefficients. -/
-theorem commitGen_smul_coeff {n : ℕ} (s : F) (g : Fin n → G) (a : Fin n → F) :
+private theorem commitGen_smul_coeff {n : ℕ} (s : F) (g : Fin n → G) (a : Fin n → F) :
     commitGen g (s • a) = s • commitGen g a := by
   simp only [commitGen, Pi.smul_apply, smul_eq_mul, mul_smul, Finset.smul_sum]
 
@@ -109,7 +101,7 @@ theorem commitGen_split {d : ℕ} (g : Fin (2 ^ (d + 1)) → G) (a : Fin (2 ^ (d
 against the folded generators `foldHalves g u` recovers the parent commitment plus the two
 blinded cross-terms. Stated over the section's module `G`; it is used at `G` (the generator
 commitment) *and* at `F` (the inner product). -/
-theorem commitGen_fold_identity {d : ℕ}
+private theorem commitGen_fold_identity {d : ℕ}
     (g : Fin (2 ^ (d + 1)) → G) (a : Fin (2 ^ (d + 1)) → F) (u : F) (hu : u ≠ 0) :
     commitGen (foldHalves g u) (loHalf a + u⁻¹ • hiHalf a) =
       commitGen g a + u⁻¹ • commitGen (loHalf g) (hiHalf a)
@@ -120,7 +112,7 @@ theorem commitGen_fold_identity {d : ℕ}
   abel
 
 /-- `commitGen` over a singleton index family. -/
-theorem commitGen_one (g : Fin (2 ^ 0) → G) (a : Fin (2 ^ 0) → F) :
+private theorem commitGen_one (g : Fin (2 ^ 0) → G) (a : Fin (2 ^ 0) → F) :
     commitGen g a = a 0 • g 0 :=
   Fin.sum_univ_one fun i => a i • g i
 
@@ -137,7 +129,7 @@ cross-terms `L = ⟨a_hi, g_lo⟩ + ⟨a_hi, b_lo⟩ • U` and `R = ⟨a_lo, g_
 `U` components are mandatory, they absorb the inner-product cross terms while the claimed value
 `v` stays fixed — and continues on the folded data. The Schnorr layer is taken with zero
 blinding: `δ = 0`, `z1 = c · a₀`, `z2 = c · ρ`. -/
-def honestProver (U : G) (ρ : F) :
+private def honestProver (U : G) (ρ : F) :
     {d : ℕ} → (Fin (2 ^ d) → G) → (Fin (2 ^ d) → F) → (Fin (2 ^ d) → F) → KimchiProver F G d
   | 0, g, _, a => .leaf (g 0) 0 (fun c => (c * a 0, c * ρ))
   | _ + 1, g, bb, a =>
@@ -150,7 +142,7 @@ def honestProver (U : G) (ρ : F) :
 `P + v • U = ⟨a, g⟩ + ⟨a, b⟩ • U + ρ • H`, then the honest strategy is accepted along *every*
 challenge vector whose round challenges are nonzero. Note `v` is fixed while `⟨a, b⟩` folds —
 that is exactly what the `U` components of `L` and `R` pay for. -/
-theorem honestProver_accept (U H : G) (ρ v : F) :
+private theorem honestProver_accept (U H : G) (ρ v : F) :
     {d : ℕ} → (g : Fin (2 ^ d) → G) → (bb : Fin (2 ^ d) → F) → (a : Fin (2 ^ d) → F) →
       (P : G) → (χ : Fin (d + 1) → F) → (∀ i : Fin d, χ i.castSucc ≠ 0) →
       P + v • U = commitGen g a + commitGen bb a • U + ρ • H →
@@ -191,7 +183,7 @@ challenges — never the Schnorr challenge. -/
 
 omit [Field F] [AddCommGroup G] [Module F G] in
 /-- Round `j`'s cross-terms depend only on the challenges strictly before round `j`. -/
-theorem lrAt_congr :
+private theorem lrAt_congr :
     {d : ℕ} → (pr : KimchiProver F G d) → (χ χ' : Fin (d + 1) → F) → (j : Fin d) →
       (∀ i : Fin d, (i : ℕ) < (j : ℕ) → χ i.castSucc = χ' i.castSucc) →
       pr.lrAt χ j = pr.lrAt χ' j
@@ -210,7 +202,7 @@ theorem lrAt_congr :
 omit [Field F] [AddCommGroup G] [Module F G] in
 /-- The leaf's `(sg, δ)` depend only on the round challenges — never on the Schnorr challenge,
 which is what commit-then-challenge asks of the honest prover. -/
-theorem leafAt_congr :
+private theorem leafAt_congr :
     {d : ℕ} → (pr : KimchiProver F G d) → (χ χ' : Fin (d + 1) → F) →
       (∀ i : Fin d, χ i.castSucc = χ' i.castSucc) →
       ((pr.leafAt χ).1, (pr.leafAt χ).2.1) = ((pr.leafAt χ').1, (pr.leafAt χ').2.1)
@@ -229,14 +221,8 @@ end HonestStrategy
 /-- Pad a partial challenge vector out to full length by zeros. Only the entries below `m` are
 ever consulted (by `lrAt_congr` / `leafAt_congr`), so the filler is immaterial; using `0` avoids
 needing an inhabitant of the prechallenge type. -/
-def padChal {F : Type*} [Zero F] {m N : ℕ} (w : Fin m → F) : Fin N → F :=
+private def padChal {F : Type*} [Zero F] {m N : ℕ} (w : Fin m → F) : Fin N → F :=
   fun i => if h : (i : ℕ) < m then w ⟨i, h⟩ else 0
-
-/-- Padding a full-length vector is the identity. -/
-@[simp] theorem padChal_self {F : Type*} [Zero F] {N : ℕ} (w : Fin N → F) :
-    padChal (N := N) w = w := by
-  funext i
-  simp only [padChal, dif_pos i.isLt, Fin.eta]
 
 /-- Reading a padded vector below the pad length. -/
 private theorem padChal_apply_of_lt {F : Type*} [Zero F] {m N : ℕ} (w : Fin m → F) (i : Fin N)
@@ -289,7 +275,7 @@ private def wireProofOf (ω : OpeningProof C.ScalarField C.Point k) : Ipa.Proof 
   sg := ω.sg
 
 /-- `wireProofOf` is a section of `toOpening`. -/
-@[simp] theorem toOpening_wireProofOf (ω : OpeningProof C.ScalarField C.Point k) :
+@[simp] private theorem toOpening_wireProofOf (ω : OpeningProof C.ScalarField C.Point k) :
     toOpening (wireProofOf ω) = ω := by
   cases ω
   simp only [toOpening, wireProofOf, OpeningProof.mk.injEq, and_true]
@@ -297,7 +283,8 @@ private def wireProofOf (ω : OpeningProof C.ScalarField C.Point k) : Ipa.Proof 
   simp
 
 /-- The `lr` entries of a wire-packed proof. -/
-@[simp] theorem wireProofOf_lr_getElem (ω : OpeningProof C.ScalarField C.Point k) (j : Fin k) :
+@[simp] private theorem wireProofOf_lr_getElem (ω : OpeningProof C.ScalarField C.Point k)
+    (j : Fin k) :
     (wireProofOf ω).lr[j] = ω.lr j := by
   simp [wireProofOf]
 
@@ -331,8 +318,7 @@ private def honestNode (cip : C.ScalarField) (pr : KimchiProver C.ScalarField C.
       sg := some (pr.leafAt (padChal fun i => expandPre C (acc i))).1 }
 
 /-- The round-`i` query point of a *completed* answer vector: the honest node built from the
-answers strictly before `i`. This is the node-domain counterpart of `Game.lean`'s
-`honestPrefixes`. -/
+answers strictly before `i`. -/
 private def honestPrefixNode (cip : C.ScalarField) (pr : KimchiProver C.ScalarField C.Point k)
     (q : Fin (k + 1) → Prechallenge) (i : Fin (k + 1)) : IpaNode C k :=
   honestNode cip pr i.isLt (fun l => q (l.castLE i.isLt.le))
@@ -553,7 +539,7 @@ def winsAtBase (σ : SRS C.Point) (U : C.Point) (claim : Ipa.Input C σ.k m p)
 /-- **At the cold base, `winsAtBase` IS `wireWins`.** The transcription check on the definition
 above: the two `Prop`s are the same term, so no bridge lemma is ever needed in the cold direction,
 and the deployed companion is a literal instance of the base-generic one. -/
-private theorem winsAtBase_uBaseOf (σ : SRS C.Point) (claim : Ipa.Input C σ.k m p)
+theorem winsAtBase_uBaseOf (σ : SRS C.Point) (claim : Ipa.Input C σ.k m p)
     (O : IpaNode C σ.k → Prechallenge) (π : Ipa.Proof C σ.k) :
     winsAtBase σ (uBaseOf C (Ipa.cipOf claim)) claim O π = wireWins σ claim O π := rfl
 
@@ -681,18 +667,17 @@ machine over the deployed node domain, within budget `σ.k + 1`, whose output sa
 *every* table. So the win set can have measure `1`, and an extractor that always returns `none`
 cannot satisfy the deployed bound.
 
-This is `Game.lean`'s `honest_wins_everywhere` transported from its own prefix type
-`HonestPrefix Pre (k+1)` to `IpaNode C k`: the honest machine is the same `k + 1` nested queries
-over a final `pure`, but its query points are now nodes of its own proof rather than abstract
-answer-history prefixes, and its output is a wire proof rather than the answer vector. The
-reindexing is legitimate because round `j`'s output depends only on challenges strictly before
-`j` — `lrAt_congr` / `leafAt_congr`, restated above because they are `private` in the frozen
-`Game.lean`. Nonzeroness of the round challenges is `expandPre_{vesta,pallas}_ne_zero`, which
-holds for every prechallenge without any hypothesis.
+This is the abstract honest-adversary argument at the deployed node domain: the honest
+machine is `k + 1` nested queries over a final `pure`, its query points are nodes of its own
+proof rather than abstract answer-history prefixes, and its output is a wire proof rather than
+the answer vector. The reindexing is legitimate because round `j`'s output depends only on
+challenges strictly before `j` — `lrAt_congr` / `leafAt_congr` above. Nonzeroness of the round
+challenges is `expandPre_{vesta,pallas}_ne_zero`, which holds for every prechallenge without
+any hypothesis.
 
 It is the `U := uBaseOf C cip` instance of the base-generic `honestNode_wins_everywhere_at`
 above — the cold base is nowhere used by the argument, only carried. -/
-private theorem honestNode_wins_everywhere (hne : ∀ q, expandPre C q ≠ 0)
+theorem honestNode_wins_everywhere (hne : ∀ q, expandPre C q ≠ 0)
     (σ : SRS C.Point) (cip : C.ScalarField)
     (b : Fin (2 ^ σ.k) → C.ScalarField) (v : C.ScalarField) (P : C.Point)
     (a : Fin (2 ^ σ.k) → C.ScalarField) (ρ : C.ScalarField)

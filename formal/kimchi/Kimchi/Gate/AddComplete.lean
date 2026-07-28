@@ -58,7 +58,6 @@ structure Witness (F : Type*) where
   infZ : F
   /-- The witnessed inverse of `x₂ − x₁` when nonzero, pinning `sameX` (column 10). -/
   x21Inv : F
-deriving Repr
 
 variable {F : Type*}
 

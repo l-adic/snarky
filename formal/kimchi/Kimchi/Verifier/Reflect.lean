@@ -43,7 +43,7 @@ private def runZetaOmega (σ : SRS C.Point) (cvk : KimchiVK C nc)
   (runOracles C σ cvk cp pub).zeta * cvk.omega
 
 /-- The domain-size power `ζⁿ`, by the squaring ladder. -/
-def runZetaN (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private def runZetaN (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : C.ScalarField :=
   powPow2 (runOracles C σ cvk cp pub).zeta cvk.domainLog2
 
@@ -53,7 +53,7 @@ private def runZetaOmegaN (σ : SRS C.Point) (cvk : KimchiVK C nc)
   powPow2 (runZetaOmega C σ cvk cp pub) cvk.domainLog2
 
 /-- The chunk-combination power `ζ^{2^σ.k}` (`ζ^max_poly_size`). -/
-def runZetaM (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private def runZetaM (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : C.ScalarField :=
   powPow2 (runOracles C σ cvk cp pub).zeta σ.k
 
@@ -85,7 +85,7 @@ def runVU (σ : SRS C.Point) (cvk : KimchiVK C nc)
   frOracles C cp (runOracles C σ cvk cp pub).digest (runPubEvals C σ cvk cp pub)
 
 /-- The run's computed `ft(ζ)` claim at a given combined public evaluation. -/
-def runFtEval0P (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private def runFtEval0P (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (pubEval0 : C.ScalarField) : C.ScalarField :=
   ftEval0 cvk.n cvk.zkRows cvk.omega (fun i => cvk.shifts[i]) cvk.endo
@@ -104,7 +104,7 @@ def runPScalar (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (runLinEvals C σ cvk cp pub)
 
 /-- The run's `f_comm` chunks — the `pScalar`-scaled `σ₆` chunk vector. -/
-def runFComm (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private def runFComm (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
     Vector C.Point nc :=
   cvk.sigmaComm[6].map (fun P => (runPScalar C σ cvk cp pub).val • P)
@@ -146,14 +146,6 @@ private def runInputP (σ : SRS C.Point) (cvk : KimchiVK C nc)
   polyscale := v
   evalscale := u
   proof := cp.opening
-
-/-- The acceptance decision at given public evaluations and combination scalars. -/
-private def runBody (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
-    (pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc))
-    (v u : C.ScalarField) : Bool :=
-  Ipa.verifyFrom C σ (runOracles C σ cvk cp pub).warm
-    (runInputP C σ cvk cp pub pe v u)
 
 /-- The batched IPA input the run hands to the warm-sponge opening finish (closed
 form). -/

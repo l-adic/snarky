@@ -226,17 +226,6 @@ At the first permutation alpha, the `permScalar · σ₆(ζ)` term and `ftEval0`
 shift-side products recombine into that alpha times the quotient's first permutation
 constraint at the honest record. -/
 
-/-- The permutation members' alpha indices, kernel-checked against the shared pool:
-the recurrence member sits at `α ^ gateAlphaCount` (the literal `21` of `permScalar`,
-`Protocol/Linearization.lean`) and the two boundary members at the next slots (the
-literals `22`/`23` of `ftEval0`, same module). The scalar-side closed forms keep the
-literals — this lemma pins their origin. -/
-private theorem perm_member_alpha_indices :
-    (21 : ℕ) = Index.gateAlphaCount
-      ∧ (22 : ℕ) = Index.gateAlphaCount + 1
-      ∧ (23 : ℕ) = Index.gateAlphaCount + 2 :=
-  ⟨rfl, rfl, rfl⟩
-
 /-- **σ-side of the verifier equation.** The permutation scalar against `σ₆(ζ)`, minus
 `ftEval0`'s σ-side product against `z(ζω)`, plus its shift-side product against `z(ζ)`,
 all at `α²¹·zkpm(ζ)`, equals `α²¹` times the quotient's `0`-th permutation constraint at

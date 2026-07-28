@@ -148,7 +148,7 @@ lean-shake: ## Check Lean imports for redundancy (mathlib shake; config formal/s
 	  --cfg "$$PWD/scripts/noshake.json" \
 	  Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture
 
-lean-deadcode: ## Report authored Lean declarations unreachable from the roots.txt manifests
+lean-deadcode: ## Gate: fail on any authored Lean declaration unreachable from roots.txt
 	PATH="$$HOME/.elan/bin:$$PATH" bash formal/scripts/deadcode.sh
 
 lean-kernel-check: ## Kernel-replay every Lean module through lean4checker

@@ -35,14 +35,6 @@ private def ursOf (σ : SRS G) : Zcash.Snark.URS G := ⟨σ.k, σ.g, σ.h, σ.U�
 /-- Ironwood's URS read as our SRS: `w ↦ h`, `u ↦ U`. -/
 def srsOf (urs : Zcash.Snark.URS G) : SRS G := ⟨urs.k, urs.g, urs.w, urs.u⟩
 
-@[simp] theorem ursOf_k (σ : SRS G) : (ursOf σ).k = σ.k := rfl
-
-@[simp] theorem ursOf_g (σ : SRS G) : (ursOf σ).g = σ.g := rfl
-
-private theorem srsOf_ursOf (σ : SRS G) : srsOf (ursOf σ) = σ := rfl
-
-private theorem ursOf_srsOf (urs : Zcash.Snark.URS G) : ursOf (srsOf urs) = urs := rfl
-
 end Structure
 
 /-! ## The commitment and the opening relation -/

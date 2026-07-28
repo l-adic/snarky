@@ -40,8 +40,61 @@ Bulletproof.Ipa.Forking.honestFamily_failure_set
 Bulletproof.Ipa.Forking.DeployedFamily.reductionEfficient_exists
 Bulletproof.Ipa.Forking.derivedUDL_iff_residual_measure
 
--- The declared trust surface. After the old soundness chain was deleted these have no
--- consumer inside this package: they are declared here and used by kimchi's
--- Verifier/Capstone/Standard.lean. Retiring them is kimchi-side work.
-Bulletproof.poseidon_fiat_shamir_vesta
-Bulletproof.poseidon_fiat_shamir_pallas
+-- The checked defences of the deployed model's two modelling steps, rooted for the same
+-- reason: nothing consumes an exhibit.
+-- (a) Fiat-Shamir faithfulness: the abstract verifier fed the Poseidon sponge's own reads IS
+--     the executable `Ipa.verify` (cold and warm forms, and the sponge-source bridges).
+Bulletproof.Ipa.Forking.verifyOracle_spongeFS
+Bulletproof.Ipa.Forking.verifyOracleFrom_spongeFSFrom
+Bulletproof.Ipa.Forking.spongeFS_eq_from
+Bulletproof.Ipa.Forking.spongeOBase_eq_from
+Bulletproof.Ipa.Forking.spongeOScalar_eq_from
+Bulletproof.Ipa.Forking.toGroup_spongeOBase_preT
+Bulletproof.Ipa.Forking.uBaseOf_eq_transcript
+-- (b) the `sg` slot: the idealized node domain deviates from the deployed schedule only in
+--     the `sg` component, and that deviation is harmless on everything the game measures --
+--     the faithfulness identity, the determination of `sg`, the pinning factorization, and
+--     the fork's own reads.
+Bulletproof.Ipa.Forking.nodeTranscript_nodes
+Bulletproof.Ipa.Forking.sg_determined_of_verifyWith
+Bulletproof.Ipa.Forking.wireWins_pinTable
+Bulletproof.Ipa.Forking.pinTable_factors
+Bulletproof.Ipa.Forking.chainAt_sg
+-- (c) the deployed family reads `σ.U` nowhere (both `rfl`), and a break at the sampled
+--     generators is computed data, not an existence claim.
+Bulletproof.Ipa.Forking.wireWins_U_irrelevant
+Bulletproof.Ipa.Forking.deployedExtract_U_irrelevant
+Bulletproof.Ipa.Forking.uRepresentationOfBreak
+-- (d) recovery instances certifying the base-generic honest lemmas recover the original
+--     cold-base statements (the generalize-and-recover contract of `Forking/Honest.lean`).
+Bulletproof.Ipa.Forking.winsAtBase_uBaseOf
+Bulletproof.Ipa.Forking.honestNode_wins_everywhere
+
+-- The surface the fixture drivers and check gates exercise. Nothing in the library
+-- consumes these -- the scripts do, so the dead-code driver additionally checks each
+-- name in this block appears in a scripts/ file (`-- synthesis` lines are exempt:
+-- instances are found by class resolution, not by name).
+-- script-surface:begin
+Bulletproof.Fixture.parseSRS
+Bulletproof.Fixture.parseSRSAt
+Bulletproof.Fixture.parsePt
+Bulletproof.Fixture.parseRaw
+Bulletproof.Fixture.parseRawBatch
+Bulletproof.Fixture.Raw.toInput
+Bulletproof.Fixture.RawBatch.toFlatInput
+Bulletproof.Fixture.recombinePoint
+Bulletproof.Fixture.recombineScalar
+Bulletproof.Fixture.segmentCombinePoint
+Bulletproof.Fixture.segmentCombineScalar
+Bulletproof.Ipa.Wire.Input.check
+Bulletproof.Forking.ipaExtract
+Bulletproof.Forking.openingOfAcceptV
+Bulletproof.Forking.decIpaAcceptV -- synthesis: `by decide` on IpaAcceptV in check_extractor_computes.lean
+Bulletproof.Ipa.Forking.verifyWith_of_deferred_delta
+-- script-surface:end
+
+-- `@[simp]` rfl-lemmas the live proofs use through `simp` -- simp applies rfl-rewrites
+-- definitionally, so the lemma constant never lands in the proof term and the constant
+-- walk cannot see the use. Deleting either breaks the build.
+Bulletproof.Forking.srsAt_k
+Bulletproof.Ipa.Forking.srsOfBasis_k

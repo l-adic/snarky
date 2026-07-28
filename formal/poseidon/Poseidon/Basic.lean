@@ -72,7 +72,6 @@ the current block, `squeezed n` after `n` squeezes from the current block (`n â‰
 private inductive Mode
   | absorbed (n : Fin 3)
   | squeezed (n : Fin 3)
-deriving Repr, DecidableEq
 
 /-- A sponge in flight: the width-3 state and the mode. -/
 structure State (F : Type*) where

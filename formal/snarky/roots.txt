@@ -1,0 +1,23 @@
+-- API root set for the snarky package (the deep-embedded circuit DSL).
+-- Consumed by the workspace dead-code pass (formal/scripts/deadcode.sh). The axiom audit
+-- lives in scripts/check_axioms.lean (the same five interpreter laws).
+--
+-- NOTE: the dead-code pass traverses Snarky for CREDITING only — a `Kimchi.*` declaration
+-- consumed by this package is live through these roots — but does not yet audit `Snarky.*`
+-- declarations themselves. Bringing the DSL surface under the dead-zero contract is
+-- deferred: it requires deciding which combinators are API of the port.
+
+-- The interpreter laws the embedding exists to state (Snarky/Laws.lean).
+Snarky.build_eraseWitness
+Snarky.prove_assignments_le
+Snarky.prove_build_agrees
+Snarky.prove_sound
+Snarky.CVar.eval_le
+
+-- The concrete R1CS constraint model (Snarky/Constraint/R1CS.lean).
+Snarky.Constraint.R1CS.holds
+Snarky.Constraint.R1CS.holds_mono
+
+-- The Kimchi Generic-gate bridge (Snarky/Kimchi/Backend.lean): a DSL constraint holds
+-- iff its written Generic row satisfies the verified checker's predicate.
+Snarky.Kimchi.GateConstraint.holds_iff_row

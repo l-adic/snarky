@@ -106,8 +106,8 @@ def parseRaw (C : Ipa.CommitmentCurve) (curveName : String) (j : Json) :
            evalscale := ← parseS (← fld "evalscale")
            proof := ← parseProof C j }
 
-/-- Commitment recombination, executably: `∑ i, yⁱ • Pᵢ` — `commit_combine`'s
-group-side formula. The identity at one chunk. -/
+/-- Commitment recombination, executably: `∑ i, yⁱ • Pᵢ` — the chunked commitment
+recombination's group-side formula. The identity at one chunk. -/
 def recombinePoint (C : Ipa.CommitmentCurve) (y : C.ScalarField)
     (chunks : Array C.Point) : C.Point :=
   Ipa.msm C (fun i : Fin chunks.size => chunks.getD i 0) (fun i => y ^ (i : ℕ))

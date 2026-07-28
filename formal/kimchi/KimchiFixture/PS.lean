@@ -39,14 +39,14 @@ open Lean Kimchi Kimchi.Index CompElliptic.Fields.Pasta
 /-! ## Element decoders (the PureScript encodings) -/
 
 /-- A hex digit's value. -/
-def hexVal? (c : Char) : Option ℕ :=
+private def hexVal? (c : Char) : Option ℕ :=
   if '0' ≤ c ∧ c ≤ '9' then some (c.toNat - '0'.toNat)
   else if 'a' ≤ c ∧ c ≤ 'f' then some (c.toNat - 'a'.toNat + 10)
   else if 'A' ≤ c ∧ c ≤ 'F' then some (c.toNat - 'A'.toNat + 10)
   else none
 
 /-- A little-endian byte-hex string (byte 0 least significant) as a natural. -/
-def hexLEtoNat (s : String) : Except String ℕ := do
+private def hexLEtoNat (s : String) : Except String ℕ := do
   let cs := s.toList.toArray
   unless cs.size % 2 = 0 do throw s!"odd-length hex: {s.take 40}"
   let mut acc : ℕ := 0
@@ -59,12 +59,12 @@ def hexLEtoNat (s : String) : Except String ℕ := do
   return acc
 
 /-- A little-endian hex string as an element of `ZMod m` (the cast reduces). -/
-def parseHexLE {m : ℕ} (j : Json) : Except String (ZMod m) := do
+private def parseHexLE {m : ℕ} (j : Json) : Except String (ZMod m) := do
   return ((← hexLEtoNat (← j.getStr?)) : ZMod m)
 
 /-- A signed decimal string (the comparison format shows values above `p/2` negated)
 as an element of `ZMod m`. -/
-def parseSignedDecimal {m : ℕ} (j : Json) : Except String (ZMod m) := do
+private def parseSignedDecimal {m : ℕ} (j : Json) : Except String (ZMod m) := do
   let s ← j.getStr?
   let (neg, digits) := if s.startsWith "-" then (true, s.drop 1) else (false, s)
   match digits.toNat? with
@@ -72,7 +72,7 @@ def parseSignedDecimal {m : ℕ} (j : Json) : Except String (ZMod m) := do
   | none => throw s!"not a signed decimal: {s.take 40}"
 
 /-- The harness's gate-kind tags (`gateKindToString`). -/
-def parseGateKind : String → Except String GateType
+private def parseGateKind : String → Except String GateType
   | "Zero" => .ok .zero
   | "Generic" => .ok .generic
   | "Poseidon" => .ok .poseidon
@@ -102,7 +102,7 @@ structure Raw where
   pub : Array Fp
 
 /-- A `{row, col}` wire object as a `(column, row)` target. -/
-def parseWire (j : Json) : Except String (ℕ × ℕ) := do
+private def parseWire (j : Json) : Except String (ℕ × ℕ) := do
   return (← (← j.getObjVal? "col").getNat?, ← (← j.getObjVal? "row").getNat?)
 
 /-- The PureScript side of a comparison JSON; `none` when the JSON is not a comparison
@@ -130,11 +130,11 @@ def parseComparison? (j : Json) : Except String (Option Raw) := do
 def zkRows : ℕ := 3
 
 /-- The Pasta base fields' multiplicative generator (proof-systems `fp.rs` GENERATOR). -/
-def fpGenerator : ℕ := 5
+private def fpGenerator : ℕ := 5
 
 /-- Fast modular exponentiation (`Monoid.npow` on `ZMod` is linear in the exponent —
 unusable at 255-bit exponents). -/
-def powMod (b : ℕ) : ℕ → ℕ → ℕ
+private def powMod (b : ℕ) : ℕ → ℕ → ℕ
   | 0, _ => 1
   | e + 1, m =>
     let h := powMod b ((e + 1) / 2) m

@@ -53,10 +53,6 @@ layout — absorbs the public value. -/
 def Generic.withPublic (g : Generic F) (p : F) : Generic F :=
   ⟨Function.update g.q 4 (g.q 4 - p), g.w⟩
 
-/-- Folding in a zero public input is the identity — the sanity check of the layout. -/
-theorem Generic.withPublic_zero (g : Generic F) : g.withPublic 0 = g := by
-  simp [withPublic]
-
 instance [DecidableEq F] (g : Generic F) : Decidable g.Holds := by
   unfold Generic.Holds
   infer_instance
@@ -126,11 +122,11 @@ instance : Fact (Nat.Prime 17) := ⟨by norm_num⟩
 private def egQ : Fin 15 → ZMod 17 := ![0, 0, 1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 /-- A satisfying row: `3 · 4 = 12` in `ZMod 17`. -/
-private def egGood : Generic (ZMod 17) :=
+def egGood : Generic (ZMod 17) :=
   { q := egQ, w := ![3, 4, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] }
 
 /-- A failing row: `3 · 4 ≠ 13`. -/
-private def egBad : Generic (ZMod 17) :=
+def egBad : Generic (ZMod 17) :=
   { q := egQ, w := ![3, 4, 13, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] }
 
 #eval satisfies [egGood]   -- true

@@ -124,16 +124,16 @@ def spongeOBase (t : List (IpaTranscriptElt C)) : C.BaseField :=
   (FqSponge.challengeFq C.sponge (t.dropLast.foldl (fun s e => stepState C e s) FqSponge.init)).1
 
 /-- The scalar-field oracle: the endo-expanded squeeze of the round and Schnorr challenges. -/
-private def spongeOScalar (t : List (IpaTranscriptElt C)) : C.ScalarField :=
+def spongeOScalar (t : List (IpaTranscriptElt C)) : C.ScalarField :=
   (FqSponge.squeezeChallenge C.sponge
     (t.dropLast.foldl (fun s e => stepState C e s) FqSponge.init)).1
 
 /-- The cold base oracle is the start-state-general one at `FqSponge.init`. -/
-private theorem spongeOBase_eq_from (t : List (IpaTranscriptElt C)) :
+theorem spongeOBase_eq_from (t : List (IpaTranscriptElt C)) :
     spongeOBase t = spongeOBaseFrom FqSponge.init t := rfl
 
 /-- The cold scalar oracle is the start-state-general one at `FqSponge.init`. -/
-private theorem spongeOScalar_eq_from (t : List (IpaTranscriptElt C)) :
+theorem spongeOScalar_eq_from (t : List (IpaTranscriptElt C)) :
     spongeOScalar t = spongeOScalarFrom FqSponge.init t := rfl
 
 /-! ### Prefix shift
@@ -143,22 +143,6 @@ prefix: reading at `t` from `δ*(s₀, t₀)` is reading at `t₀ ++ t` from `s�
 formal content of "the opening transcript is a *suffix*" — it is what lets a warm-start read
 be re-expressed against the enclosing protocol's transcript. The `t ≠ []` side condition is
 real: the trailing marker being dropped must come from `t`, not from `t₀`. -/
-
-/-- **Prefix shift, base oracle.** Reading at `t` from the state reached along `t₀` is reading
-at `t₀ ++ t` from the earlier state. -/
-private theorem spongeOBaseFrom_append (s₀ : FqSponge.S C.base) (t₀ t : List (IpaTranscriptElt C))
-    (ht : t ≠ []) :
-    spongeOBaseFrom s₀ (t₀ ++ t)
-      = spongeOBaseFrom (t₀.foldl (fun s e => stepState C e s) s₀) t := by
-  simp only [spongeOBaseFrom, List.dropLast_append_of_ne_nil ht, List.foldl_append]
-
-/-- **Prefix shift, scalar oracle.** Reading at `t` from the state reached along `t₀` is reading
-at `t₀ ++ t` from the earlier state. -/
-private theorem spongeOScalarFrom_append (s₀ : FqSponge.S C.base) (t₀ t : List (IpaTranscriptElt C))
-    (ht : t ≠ []) :
-    spongeOScalarFrom s₀ (t₀ ++ t)
-      = spongeOScalarFrom (t₀.foldl (fun s e => stepState C e s) s₀) t := by
-  simp only [spongeOScalarFrom, List.dropLast_append_of_ne_nil ht, List.foldl_append]
 
 /-! ## Bridges: the oracle reads are `transcriptFrom`'s outputs
 
@@ -384,11 +368,6 @@ private theorem spongeOScalarFrom_preU
     exact Option.some.inj hg
   rw [hLHS, hRHS]
 
-/-- **The round challenges.** The scalar oracle at `preU i` is round `i`'s challenge. -/
-private theorem spongeOScalar_preU (inp : Ipa.Input C k m p) (i : Fin k) :
-    spongeOScalar (preU inp i) = (Ipa.transcriptFrom C FqSponge.init inp).2.1[i] :=
-  spongeOScalarFrom_preU FqSponge.init inp i
-
 /-- **The Schnorr challenge, from any start state.** The scalar oracle at `preC` is the `c` of
 the derivation started at `s₀`. -/
 private theorem spongeOScalarFrom_preC (s₀ : FqSponge.S C.base) (inp : Ipa.Input C k m p) :
@@ -432,11 +411,6 @@ private theorem spongeOScalarFrom_preC (s₀ : FqSponge.S C.base) (inp : Ipa.Inp
     rw [roundChallengesAux_snd]
     rfl
   rw [hLHS, hRHS]
-
-/-- **The Schnorr challenge.** The scalar oracle at `preC` is `c`. -/
-private theorem spongeOScalar_preC (inp : Ipa.Input C k m p) :
-    spongeOScalar (preC inp) = (Ipa.transcriptFrom C FqSponge.init inp).2.2 :=
-  spongeOScalarFrom_preC FqSponge.init inp
 
 /-! ## The abstract Fiat–Shamir interface, and Poseidon as one instance
 
@@ -484,11 +458,11 @@ def spongeFSFrom (C : Ipa.CommitmentCurve) (s₀ : FqSponge.S C.base) : FiatSham
   ⟨spongeOBaseFrom s₀, spongeOScalarFrom s₀⟩
 
 /-- The deployed source: the Poseidon sponge read at transcript prefixes from the cold start. -/
-private def spongeFS (C : Ipa.CommitmentCurve) : FiatShamir C :=
+def spongeFS (C : Ipa.CommitmentCurve) : FiatShamir C :=
   ⟨spongeOBase, spongeOScalar⟩
 
 /-- The cold Poseidon source is `spongeFSFrom` at `FqSponge.init`. -/
-private theorem spongeFS_eq_from (C : Ipa.CommitmentCurve) :
+theorem spongeFS_eq_from (C : Ipa.CommitmentCurve) :
     spongeFS C = spongeFSFrom C FqSponge.init := rfl
 
 /-- The opening transcript the deployed Poseidon source produces from the start state `s₀` —
@@ -506,7 +480,7 @@ private def verifyOracleFrom (C : Ipa.CommitmentCurve) (σ : SRS C.Point) (s₀ 
 
 /-- **The model derivation at a start state is the deployed derivation at that start state.**
 The three bridges assembled componentwise; vector equality is checked entrywise. -/
-theorem transcriptOfFrom_eq (s₀ : FqSponge.S C.base) (inp : Ipa.Input C k m p) :
+private theorem transcriptOfFrom_eq (s₀ : FqSponge.S C.base) (inp : Ipa.Input C k m p) :
     transcriptOfFrom C s₀ inp = Ipa.transcriptFrom C s₀ inp := by
   refine Prod.ext (toGroup_spongeOBaseFrom_preT s₀ inp)
     (Prod.ext ?_ (spongeOScalarFrom_preC s₀ inp))
@@ -528,7 +502,7 @@ theorem verifyOracle_spongeFSFrom (σ : SRS C.Point) (s₀ : FqSponge.S C.base)
 fed the Poseidon source started at `s₀` — is `Ipa.verifyFrom` started at `s₀`. This is what
 makes the abstraction honest at the warm start: the challenge source is a parameter, and the
 deployed verifier is recovered as a theorem rather than assumed. -/
-private theorem verifyOracleFrom_spongeFSFrom (σ : SRS C.Point) (s₀ : FqSponge.S C.base)
+theorem verifyOracleFrom_spongeFSFrom (σ : SRS C.Point) (s₀ : FqSponge.S C.base)
     (inp : Ipa.Input C σ.k m p) :
     verifyOracleFrom C σ s₀ inp = Ipa.verifyFrom C σ s₀ inp :=
   verifyOracle_spongeFSFrom σ s₀ inp
@@ -536,7 +510,7 @@ private theorem verifyOracleFrom_spongeFSFrom (σ : SRS C.Point) (s₀ : FqSpong
 /-- **The abstract verifier at the Poseidon source is the deployed verifier.** The cold
 specialisation of `verifyOracle_spongeFSFrom`: `Ipa.verify` is `Ipa.verifyFrom` at
 `FqSponge.init`. -/
-private theorem verifyOracle_spongeFS (σ : SRS C.Point) (inp : Ipa.Input C σ.k m p) :
+theorem verifyOracle_spongeFS (σ : SRS C.Point) (inp : Ipa.Input C σ.k m p) :
     verifyOracle (spongeFS C) σ inp = Ipa.verify C σ inp :=
   verifyOracle_spongeFSFrom σ FqSponge.init inp
 

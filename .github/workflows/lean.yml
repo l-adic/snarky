@@ -111,8 +111,9 @@ jobs:
           Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit \
           Bulletproof BulletproofFixture
 
-    # Every authored declaration must be reachable from the union of the packages'
-    # roots.txt API manifests (scripts/deadcode.lean).
+    # GATE: every authored declaration must be reachable from the union of the packages'
+    # roots.txt API manifests, and every script-surface root must appear in a scripts/
+    # file (scripts/deadcode.lean exits nonzero otherwise).
     - name: Check for dead code
       run: |
         export PATH="$HOME/.elan/bin:$PATH"

@@ -32,17 +32,16 @@ modelling hypothesis, false in general — Poseidon's state after absorbing the 
 public commitment chunks, the witness chunks, the permutation and the quotient chunks is not the
 initial state — and it is gone: the game moved to the warm base instead.) The standalone IPA
 keeps its cold base and is right to, because there the opening *is* the whole protocol and its
-sponge really does start cold; `uBaseOf_eq_warmBase_init` records precisely that.
+sponge really does start cold; `Bulletproof.Ipa.Forking.spongeFS_eq_from` records precisely
+that.
 
 ## Contents
 
-1. `uBaseOf_eq_warmBase_init` — the standalone opening's cold base is the start-state-general
-   base oracle at `Poseidon.FqSponge.init`.
+1. A prose note recording why the IPA side legitimately keeps its cold base while the kimchi
+   game moves to `KimchiFamily.warmBase`.
 2. `FSFaithful` — the eight Fiat–Shamir read equations, bundled.
 3. `wins_iff_kimchiVerify` — **the bridge**: on a faithful table the win predicate *is* deployed
    acceptance.
-4. `vesta_deployed_failure_measure_le` / `pallas_deployed_failure_measure_le` — the endpoints,
-   restated over deployed acceptance on the faithful locus.
 
 Everything here is Archon-original: these are statements about this development's own
 constructions, so no external source is cited.
@@ -62,26 +61,6 @@ opening source `Ipa.Forking.spongeFSFrom C s₀` specialises to it at `s₀ = Po
 (`Ipa.Forking.spongeFS_eq_from`), so the standalone opening's base is literally the warm base of
 a cold start. Nothing in this module consumes it; it is recorded because it is the reason the IPA
 side legitimately keeps `uBaseOf` while the kimchi game moves to `KimchiFamily.warmBase`. -/
-
-/-- **The standalone opening's base is the warm base oracle started cold.** `uBaseOf` folds
-`spongeOBase` along the `preT` prefix of the claim; `spongeOBase` is `spongeOBaseFrom` at
-`Poseidon.FqSponge.init`, which is `(spongeFSFrom C Poseidon.FqSponge.init).squeezeBase`.
-
-This is what justifies the split between the two sides of the development. For the standalone
-IPA the opening *is* the whole protocol, so its sponge genuinely starts at
-`Poseidon.FqSponge.init` and `uBaseOf` is the warm base — `Bulletproof.Ipa.Forking.wireWins` and
-`honestNode_wireWins_everywhere` are frozen at it and correct. Inside kimchi the opening is
-reached with the sponge already carrying the key digest, the public commitment chunks and the
-witness, permutation and quotient chunks, so the same expression names a different point and the
-game uses `KimchiFamily.warmBase` instead.
-
-Project-local because both sides are this development's own constructions: `uBaseOf` lives in
-`Bulletproof/Forking/Deployed.lean` (frozen) and the start-state-general oracles in
-`Bulletproof/Forking/Transcript.lean`. -/
-private theorem uBaseOf_eq_warmBase_init {k m p : ℕ} (inp : Ipa.Input C k m p) :
-    uBaseOf C (Ipa.cipOf inp)
-      = C.toGroup ((spongeFSFrom C Poseidon.FqSponge.init).squeezeBase
-          (IpaTranscriptElt.preT inp)) := rfl
 
 /-! ## 2. Fiat–Shamir faithfulness of a table, as a hypothesis
 
@@ -227,23 +206,6 @@ private theorem kimchiVerify_eq_gameArgs (fam : KimchiFamily C nc k n)
   · -- the `k` round challenges, one `FSFaithful.round` per index
     exact congrArg _ (funext h.round)
 
-/-- **On a faithful table the game's claim is the deployed claim.** The six pre-opening read
-equations already pin the whole batched IPA claim: `KimchiFamily.claim` is `runInputWith` at the
-six reads (`claim_eq_runInputWith`) and `kimchiRunInput` is `runInputWith` at the six deployed
-squeezes, so the six equations identify them argument by argument.
-
-This is what makes the remaining two conjuncts of `FSFaithful` — the round reads and the Schnorr
-read — and the opening base statable interchangeably at the game's claim or at the deployed one:
-the two are the same input. -/
-private theorem claim_eq_kimchiRunInput (fam : KimchiFamily C nc k n)
-    (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k)
-    (h : FSFaithful fam basis O) :
-    fam.claim basis O
-      = kimchiRunInput (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O)
-          (fam.pub basis) := by
-  rw [claim_eq_runInputWith, h.beta, h.gamma, h.alpha, h.zeta, h.polyscale, h.evalscale]
-  rfl
-
 /-- **THE BRIDGE — the win predicate is deployed acceptance, on a faithful table.** For a family,
 a basis and an oracle table faithful to the run, `KimchiFamily.Wins` holds exactly when the
 deployed kimchi verifier returns `true` on that run's SRS, verifying key, emitted proof and
@@ -272,73 +234,5 @@ event the endpoints bound. Monotonicity of the outer measure does the rest.
 
 Read the caveat on each statement before quoting it: intersecting with the faithful locus
 *restricts* the measured event. These are modelling statements, not stronger bounds. -/
-
-/-- **Vesta: the endpoint bounds deployed extraction failure on the faithful locus.** Over a
-uniformly sampled setup basis and a uniform challenge table, the measure of the event
-
-* the **deployed** kimchi verifier accepts the family's proof, and
-* the extractor fails to hand back a satisfying witness table, and
-* the table is faithful to the run (`FSFaithful`)
-
-is at most `vesta_kimchi_knowledge_sound`'s four-summand bound, verbatim.
-
-**Caveat — this is a modelling statement, not a stronger probability bound.** Intersecting with
-the faithful locus RESTRICTS the measured event; in the random-oracle model the faithful tables
-are a null set (a uniform table agrees with the sponge at eight prescribed nodes with negligible
-probability). What this says is that *where the model is accurate*, the event the endpoint
-measures is the deployed event. It is emphatically **not** "the deployed verifier is
-knowledge-sound"; conflating the two is the standard way to overclaim a random-oracle result.
-
-Project-local because it composes this development's own bridge with its own endpoint. -/
-private theorem vesta_deployed_failure_measure_le {nc k n : ℕ} [NeZero n]
-    (B : IpaVesta.Point) (fam : KimchiFamily IpaVesta.curve nc k n)
-    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
-    (hcoins : coins.Complete) {R : ℕ} {ε δ : ℝ≥0∞}
-    (hHard : fam.DiscreteLogRelationHardFor B coins R ε δ)
-    (hEff : fam.ReductionEfficient coins R) :
-    (PMF.uniformOfFintype
-        ((SetupIndex (2 ^ k) → IpaVesta.curve.ScalarField) × Coins _ nc k)).toOuterMeasure
-        ({q | kimchiVerify IpaVesta.curve
-              (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
-              (fam.cvk (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
-              (fam.proofOf (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2)
-              (fam.pub (augOfSetup (Zcash.Snark.scalarBasis B q.1))) = true ∧
-            ¬ fam.ExtractsWitness (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins}
-          ∩ {q | FSFaithful fam (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2})
-      ≤ (fam.Q + k + 1) * (3 / (2 ^ 128 : ℕ))
-        + ((2 ^ k + 1 : ℕ) : ℝ≥0∞) * ε + δ
-        + ((fam.Q + 1 : ℕ) : ℝ≥0∞) * ((szBudget nc n fam.idx.zkRows : ℝ≥0∞) / (2 ^ 128 : ℕ)) := by
-  refine le_trans (MeasureTheory.measure_mono ?_)
-    (vesta_kimchi_knowledge_sound B fam coins hcoins hHard hEff)
-  rintro q ⟨⟨haccept, hfail⟩, hfaithful⟩
-  exact ⟨(wins_iff_kimchiVerify fam _ q.2 hfaithful).mpr haccept, hfail⟩
-
-/-- **Pallas: the endpoint bounds deployed extraction failure on the faithful locus.** The
-Pallas-side twin of `vesta_deployed_failure_measure_le`, over `Fq`/`IpaPallas`; same shape, same
-four summands, and the same caveat — the faithful tables are a null set and intersecting with
-them restricts the measured event, so this is a modelling statement about where the random-oracle
-idealisation is accurate, not a stronger probability bound. -/
-private theorem pallas_deployed_failure_measure_le {nc k n : ℕ} [NeZero n]
-    (B : IpaPallas.Point) (fam : KimchiFamily IpaPallas.curve nc k n)
-    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
-    (hcoins : coins.Complete) {R : ℕ} {ε δ : ℝ≥0∞}
-    (hHard : fam.DiscreteLogRelationHardFor B coins R ε δ)
-    (hEff : fam.ReductionEfficient coins R) :
-    (PMF.uniformOfFintype
-        ((SetupIndex (2 ^ k) → IpaPallas.curve.ScalarField) × Coins _ nc k)).toOuterMeasure
-        ({q | kimchiVerify IpaPallas.curve
-              (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
-              (fam.cvk (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
-              (fam.proofOf (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2)
-              (fam.pub (augOfSetup (Zcash.Snark.scalarBasis B q.1))) = true ∧
-            ¬ fam.ExtractsWitness (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins}
-          ∩ {q | FSFaithful fam (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2})
-      ≤ (fam.Q + k + 1) * (3 / (2 ^ 128 : ℕ))
-        + ((2 ^ k + 1 : ℕ) : ℝ≥0∞) * ε + δ
-        + ((fam.Q + 1 : ℕ) : ℝ≥0∞) * ((szBudget nc n fam.idx.zkRows : ℝ≥0∞) / (2 ^ 128 : ℕ)) := by
-  refine le_trans (MeasureTheory.measure_mono ?_)
-    (pallas_kimchi_knowledge_sound B fam coins hcoins hHard hEff)
-  rintro q ⟨⟨haccept, hfail⟩, hfaithful⟩
-  exact ⟨(wins_iff_kimchiVerify fam _ q.2 hfaithful).mpr haccept, hfail⟩
 
 end Kimchi.Verifier.Forking.Bridge

@@ -64,7 +64,6 @@ structure PointEvaluations (F : Type*) where
   zeta : F
   /-- The evaluation at `ζω`. -/
   zetaOmega : F
-deriving Inhabited
 
 /-- The proof's claimed evaluations, one `PointEvaluations` per column family
 (`ProofEvaluations`, proof.rs), generic in the per-point payload `E`: `Array F` on the

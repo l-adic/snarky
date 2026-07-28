@@ -95,60 +95,6 @@ The four prefixes are pairwise distinct — each extends the previous by at leas
 increase. Distinct transcript points is what makes a uniform oracle's four reads
 independent, the hypothesis `Forking.Model`'s per-challenge freshness bounds consume. -/
 
-private theorem preBeta_ne_preGamma (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
-    (publicComm : Vector C.Point nc) :
-    preBeta cvk cp publicComm ≠ preGamma cvk cp publicComm := by
-  intro h
-  have hlen := congrArg List.length h
-  simp only [preBeta, preGamma, preAbsorbs, wCommAbsorbs,
-    List.length_append, List.length_cons, List.length_map, List.length_nil] at hlen
-  omega
-
-private theorem preGamma_ne_preAlpha (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
-    (publicComm : Vector C.Point nc) :
-    preGamma cvk cp publicComm ≠ preAlpha cvk cp publicComm := by
-  intro h
-  have hlen := congrArg List.length h
-  simp only [preBeta, preGamma, preAlpha, preAbsorbs, wCommAbsorbs,
-    List.length_append, List.length_cons, List.length_map, List.length_nil] at hlen
-  omega
-
-private theorem preAlpha_ne_preZeta (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
-    (publicComm : Vector C.Point nc) :
-    preAlpha cvk cp publicComm ≠ preZeta cvk cp publicComm := by
-  intro h
-  have hlen := congrArg List.length h
-  simp only [preBeta, preGamma, preAlpha, preZeta, preAbsorbs, wCommAbsorbs,
-    List.length_append, List.length_cons, List.length_map, List.length_nil] at hlen
-  omega
-
-private theorem preBeta_ne_preAlpha (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
-    (publicComm : Vector C.Point nc) :
-    preBeta cvk cp publicComm ≠ preAlpha cvk cp publicComm := by
-  intro h
-  have hlen := congrArg List.length h
-  simp only [preBeta, preGamma, preAlpha, preAbsorbs, wCommAbsorbs,
-    List.length_append, List.length_cons, List.length_map, List.length_nil] at hlen
-  omega
-
-private theorem preBeta_ne_preZeta (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
-    (publicComm : Vector C.Point nc) :
-    preBeta cvk cp publicComm ≠ preZeta cvk cp publicComm := by
-  intro h
-  have hlen := congrArg List.length h
-  simp only [preBeta, preGamma, preAlpha, preZeta, preAbsorbs, wCommAbsorbs,
-    List.length_append, List.length_cons, List.length_map, List.length_nil] at hlen
-  omega
-
-private theorem preGamma_ne_preZeta (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
-    (publicComm : Vector C.Point nc) :
-    preGamma cvk cp publicComm ≠ preZeta cvk cp publicComm := by
-  intro h
-  have hlen := congrArg List.length h
-  simp only [preBeta, preGamma, preAlpha, preZeta, preAbsorbs, wCommAbsorbs,
-    List.length_append, List.length_cons, List.length_map, List.length_nil] at hlen
-  omega
-
 end KimchiTranscriptElt
 
 /-! ## The fr-sponge side
@@ -214,15 +160,6 @@ def preV (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
 def preU (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
     (pubEvals : PointEvaluations (Vector C.ScalarField nc)) : List (FrTranscriptElt C) :=
   preV cp fqDig pubEvals ++ [frEndo]
-
-/-- `v` and `u` are read at distinct transcript points (`u` has one more squeeze marker). -/
-private theorem preV_ne_preU (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
-    (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
-    preV cp fqDig pubEvals ≠ preU cp fqDig pubEvals := by
-  intro h
-  have hlen := congrArg List.length h
-  simp only [preV, preU, List.length_append, List.length_cons, List.length_nil] at hlen
-  omega
 
 end FrTranscriptElt
 

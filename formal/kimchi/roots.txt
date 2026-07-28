@@ -15,9 +15,10 @@
 --
 -- Format: one fully-qualified declaration name per line; `--` lines and blanks are ignored.
 --
--- Note: the `kimchi-demo` executable (Main.lean) is a SEPARATE build root, reaching the demo
--- defs `Kimchi.Gate.{egQ, egGood, egBad, satisfies}`. Those are demo-only and are not part
--- of this library API surface, so they are reachable through the executable rather than here.
+-- Note: the `kimchi-demo` executable (Main.lean) is a SEPARATE build root; it and the
+-- inline `#eval`/`example` regression demos consume the `eg*` defs rooted at the end of
+-- this file — those consumers are invisible to the constant walk, so the defs are rooted
+-- explicitly.
 
 -- Generic gate
 Kimchi.Gate.Generic.sound
@@ -62,13 +63,45 @@ Kimchi.Gate.Poseidon.complete
 -- it and the soundness line.) Gated by `scripts/check_axioms.lean`.
 Kimchi.Index.satisfies_iff_fullFamily_dvd
 
--- The executable verifier and the wire parsers. Not soundness results: this is the API the
--- fixture drivers exercise (`check_kimchi_verifier.sh` runs `kimchiVerify` on five production
--- proofs; the parsers are what turn dumped wire data into the checked records). They are rooted
--- because nothing in the library consumes them -- the scripts do.
+-- The executable verifier, the wire parsers, and the rest of the surface the fixture
+-- drivers exercise (`check_kimchi_verifier.sh` runs `kimchiVerify` on five production
+-- proofs; the parsers turn dumped wire data into the checked records; the certificates
+-- and row forms are what `check_perm_fixture.sh` decides on production data). Nothing in
+-- the library consumes these -- the scripts do, so the dead-code driver additionally
+-- checks each name in this block appears in a scripts/ file (`-- synthesis` lines are
+-- exempt: instances are found by class resolution, not by name).
+-- script-surface:begin
 Kimchi.Verifier.kimchiVerify
 Kimchi.Verifier.Wire.KimchiProof.check
 Kimchi.Verifier.Wire.KimchiVK.check
+Kimchi.Verifier.Wire.runNc
+Kimchi.Fixture.parseVK
+Kimchi.Fixture.parseKimchiProof
+Kimchi.Fixture.parseComm
+Kimchi.Fixture.PS.Instance
+Kimchi.Fixture.PS.build
+Kimchi.Fixture.PS.parseComparison?
+Kimchi.Index.build?
+Kimchi.Index.instDecidableSatisfies -- synthesis: decide (Satisfies ..) in check_ps_witness.lean
+Kimchi.Permutation.primitiveRootCertificate
+Kimchi.Permutation.cosetShiftsCertificate
+Kimchi.Permutation.shiftSideRow
+Kimchi.Permutation.sigmaSideRow
+-- script-surface:end
+
+-- What the executable checks MEAN. The fixture drivers run the decidable forms; these are
+-- the theorems that give those runs semantic content, rooted alongside them: the gate
+-- reflection bridges (`ok = true` iff the gate's relational spec `Holds`), and the
+-- permutation certificate bridges (a passing certificate implies the specification Prop).
+-- The `ok` checkers themselves are live through their `ok_iff` statements.
+Kimchi.Gate.AddComplete.ok_iff
+Kimchi.Gate.EndoScalar.ok_iff
+Kimchi.Gate.Poseidon.ok_iff
+Kimchi.Gate.VarBaseMul.ok_iff
+Kimchi.Permutation.isPrimitiveRoot_of_certificate
+Kimchi.Permutation.cosetShifts_of_certificate
+Kimchi.Permutation.shiftSide_eval_row
+Kimchi.Permutation.sigmaSide_eval_row
 
 -- =====================================================================================
 -- THE KNOWLEDGE-SOUNDNESS DEVELOPMENT
@@ -97,6 +130,10 @@ Kimchi.Verifier.Forking.Bridge.FSFaithful
 Kimchi.Verifier.Forking.Bridge.wins_iff_kimchiVerify
 Kimchi.Verifier.Forking.honestKimchiFamily_wins
 Kimchi.Verifier.Forking.honestKimchiFamily_failure_set
+-- and: the sampled basis is maximally non-binding -- `hbind` is refutable at
+-- `augOfSetup (scalarBasis B s)`, which is why no binding hypothesis can appear anywhere
+-- in the endpoints' ancestry (the module preamble's "eval pins would be circular" record).
+Kimchi.Verifier.KnowledgeSoundness.exists_ne_zero_kernel_scalarBasis
 
 -- =====================================================================================
 -- REVISIT: the AGM un-batching lemmas, rooted to keep them, not because they are API.
@@ -123,3 +160,12 @@ Kimchi.Verifier.dlRelation_of_commit_eq
 Kimchi.Verifier.dlRelation_of_chunk_rep_ne
 Kimchi.Verifier.dlRelation_of_chunk_rep_masked_ne
 Kimchi.Verifier.ft_identity_of_chunks
+
+-- Demo defs consumed by the kimchi-demo executable (Main.lean) and the files' own
+-- `#eval`/`example` regression sections — consumers the constant walk cannot see.
+Kimchi.Gate.egGood
+Kimchi.Gate.egBad
+Kimchi.Gate.AddComplete.egDouble
+Kimchi.Gate.Poseidon.egMds
+Kimchi.Gate.Poseidon.egPoseidon
+Kimchi.Gate.VarBaseMul.egVBM

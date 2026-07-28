@@ -128,14 +128,6 @@ theorem batchC_pubRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fi
   simp only [batchC, pubRow]
   rw [if_pos h1]
 
-private theorem batchC_zRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
-    (comms : IndexComms (Fin nc → G)) :
-    batchC wC zC pubC comms zRow = zC := by
-  have h1 : ¬ (1 : ℕ) < 1 := by omega
-  have h2 : (1 : ℕ) < 2 := by omega
-  simp only [batchC, zRow]
-  rw [if_neg h1, if_pos h2]
-
 /-- The batch reads the key's `j`-th selector commitment chunks (`selComm`) at the `j`-th
 selector row. Public: the verifying-key row bridge (`Capstone/Reflection.lean`) names it. -/
 private theorem batchC_selRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
@@ -149,20 +141,6 @@ private theorem batchC_selRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC p
   congr 1
   apply Fin.ext
   show 2 + (j : ℕ) - 2 = (j : ℕ)
-  omega
-
-private theorem batchC_wRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
-    (comms : IndexComms (Fin nc → G)) (c : Fin wCols) :
-    batchC wC zC pubC comms (wRow c) = wC c := by
-  have h1 : ¬ 8 + (c : ℕ) < 1 := by omega
-  have h2 : ¬ 8 + (c : ℕ) < 2 := by omega
-  have h3 : ¬ 8 + (c : ℕ) < 8 := by omega
-  have h4 : 8 + (c : ℕ) < 23 := by omega
-  simp only [batchC, wRow]
-  rw [if_neg h1, if_neg h2, dif_neg h3, dif_pos h4]
-  congr 1
-  apply Fin.ext
-  show 8 + (c : ℕ) - 8 = (c : ℕ)
   omega
 
 /-- The batch reads the key's `c`-th coefficient-column commitment chunks at the `c`-th
@@ -409,29 +387,6 @@ theorem dlRelation_of_chunk_rep_masked_ne [Field F] [AddCommGroup G] [Module F G
       ∧ (a ≠ chunkCoeffs (2 ^ σ.k) p c → a - chunkCoeffs (2 ^ σ.k) p c ≠ 0) :=
   ⟨dlRelation_of_commit_eq σ (hcommit.trans (maskedChunkCommit_as_commit σ p c)),
     fun hne => sub_ne_zero_of_ne hne⟩
-
-/-- Under binding the unblinded chunk relation is trivial, so the representation IS the
-honest window. The discharge half of `dlRelation_of_chunk_rep_ne`. -/
-private theorem chunk_rep_of_commit [Field F] [AddCommGroup G] [Module F G]
-    (σ : SRS G)
-    (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
-    {a : Fin (2 ^ σ.k) → F} {ρ : F} {p : Polynomial F} {c : ℕ}
-    (hcommit : commit σ a ρ = commitPolyChunk σ p c) :
-    a = chunkCoeffs (2 ^ σ.k) p c := by
-  obtain ⟨hrel, hnt⟩ := dlRelation_of_chunk_rep_ne σ hcommit
-  by_contra hne
-  exact hnt hne (hbind _ _ hrel).1
-
-/-- The masked analogue of `chunk_rep_of_commit`. -/
-private theorem chunk_rep_of_commit_masked [Field F] [AddCommGroup G] [Module F G]
-    (σ : SRS G)
-    (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
-    {a : Fin (2 ^ σ.k) → F} {ρ : F} {p : Polynomial F} {c : ℕ}
-    (hcommit : commit σ a ρ = commitPolyMaskedChunk σ p c) :
-    a = chunkCoeffs (2 ^ σ.k) p c := by
-  obtain ⟨hrel, hnt⟩ := dlRelation_of_chunk_rep_masked_ne σ hcommit
-  by_contra hne
-  exact hnt hne (hbind _ _ hrel).1
 
 /-! ## The claimed record -/
 

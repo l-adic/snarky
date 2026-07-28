@@ -336,7 +336,7 @@ private theorem toList_eq_map_finRange {α : Type*} {n : ℕ} (v : Vector α n) 
 
 /-- **The nodes are the deployed prefixes.** The round nodes assemble `preU` and the Schnorr node
 assembles `preC`, so the idealized oracle domain really does abstract the deployed schedule. -/
-private theorem nodeTranscript_nodes (inp : Ipa.Input C k m p) :
+theorem nodeTranscript_nodes (inp : Ipa.Input C k m p) :
     (∀ i : Fin k,
         nodeTranscript (nodeU (Ipa.cipOf inp) inp.proof i) = preU inp i) ∧
       nodeTranscript (nodeC (Ipa.cipOf inp) inp.proof) = preC inp := by
@@ -383,7 +383,7 @@ function of the round challenges alone — read at nodes strictly earlier than t
 
 This is the theorem that discharges the modelling deviation: the extra `sg` component of the
 Schnorr node ranges over values of which at most one is compatible with acceptance. -/
-private theorem sg_determined_of_verifyWith (σ : SRS C.Point) (uBase : C.Point)
+theorem sg_determined_of_verifyWith (σ : SRS C.Point) (uBase : C.Point)
     (chals : Vector C.ScalarField σ.k) (c : C.ScalarField) (inp : Ipa.Input C σ.k m p)
     (h : Ipa.verifyWith C σ uBase chals c inp = true) :
     inp.proof.sg = Ipa.msm C σ.g (bPolyCoefficients fun i => chals[i]) := by
@@ -400,7 +400,7 @@ def uBaseOf (C : Ipa.CommitmentCurve) (cip : C.ScalarField) : C.Point :=
   C.toGroup (spongeOBase [frScalar (Ipa.shiftScalar C cip), sqBase])
 
 /-- `uBaseOf` at a checked input's own `cip` is `transcriptFrom`'s `U`. -/
-private theorem uBaseOf_eq_transcript (inp : Ipa.Input C k m p) :
+theorem uBaseOf_eq_transcript (inp : Ipa.Input C k m p) :
     uBaseOf C (Ipa.cipOf inp) = (Ipa.transcriptFrom C FqSponge.init inp).1 :=
   toGroup_spongeOBase_preT inp
 
@@ -650,7 +650,7 @@ private theorem pinNode_factors (σ : SRS C.Point) (O : IpaNode C σ.k → Prech
 /-- **The pinned table factors through `sgForget`** — `pinNode_factors` followed by `congr`.
 Equivalently: `pinTable σ O` is the pullback along `sgForget` of a table on the honest, sg-free
 node domain. -/
-private theorem pinTable_factors (σ : SRS C.Point) (O : IpaNode C σ.k → Prechallenge)
+theorem pinTable_factors (σ : SRS C.Point) (O : IpaNode C σ.k → Prechallenge)
     {t t' : IpaNode C σ.k} (h : sgForget t = sgForget t') :
     pinTable σ O t = pinTable σ O t' :=
   congrArg O (pinNode_factors σ O h)
@@ -724,7 +724,7 @@ At the round nodes the two tables agree unconditionally (`pinNode_nodeU`), so bo
 `sg_determined_of_verifyWith` applied to the *pinned* run pins `π.sg` to `msm` at the pinned round
 challenges, which by the previous sentence are the unpinned ones — precisely the condition
 `pinNode_nodeC_of_sg` asks for. -/
-private theorem wireWins_pinTable (σ : SRS C.Point) (claim : Ipa.Input C σ.k m p)
+theorem wireWins_pinTable (σ : SRS C.Point) (claim : Ipa.Input C σ.k m p)
     (O : IpaNode C σ.k → Prechallenge) (π : Ipa.Proof C σ.k) :
     wireWins σ claim O π ↔ wireWins σ claim (pinTable σ O) π := by
   have hu : ∀ i : Fin σ.k,
@@ -751,7 +751,7 @@ the chained node `chainAt t i` of `prefixDecode_nodes` either has `sg = none` (w
 `t` itself (when `i = k`). Consequently the only extra oracle point the fork machinery visits
 beyond the queried nodes carries no `sg` data at all, and `wireWins_pinTable` covers the remaining
 one. -/
-private theorem chainAt_sg (cip : C.ScalarField) (t : IpaNode C k) (i : Fin (k + 1)) :
+theorem chainAt_sg (cip : C.ScalarField) (t : IpaNode C k) (i : Fin (k + 1)) :
     ((i : ℕ) < k → ((prefixDecode_nodes cip).chainAt t i).sg = none) ∧
       (¬ ((i : ℕ) < k) → (prefixDecode_nodes cip).chainAt t i = t) := by
   refine ⟨fun h => ?_, fun h => ?_⟩
@@ -867,7 +867,7 @@ its conclusion with the `wireWins` event the measure bound is actually about (av
 `sg := msm C σ.g (bPolyCoefficients chal)` and `δ := -(c • Q)`, the wire verifier accepts at
 *any* claim: the `sg` check is definitional and the Schnorr equation reads `0 = 0`.
 
-This is the deployed twin of `verifierAcceptsAt_of_deferred_delta`, and it is the reason the
+This is the deployed form of the deferred-δ counterexample, and it is the reason the
 Schnorr node of `nodes` must carry `δ`: an adversary allowed to choose `δ` after reading `c`
 convinces the wire verifier while knowing nothing, so no extractor could succeed and
 `deployedExtract_failure_measure_le` would be false. Commit-then-challenge

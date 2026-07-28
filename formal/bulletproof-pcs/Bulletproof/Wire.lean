@@ -365,22 +365,6 @@ abbrev curve : Ipa.CommitmentCurve where
 /-- The Vesta point type. -/
 abbrev Point := Ipa.CommitmentCurve.Point curve
 
-/-- The checked opening proof at round count `k`, over Vesta. -/
-abbrev Proof (k : ℕ) := Ipa.Proof curve k
-
-/-- The checked batched claim over Vesta. -/
-abbrev Input (k m p : ℕ) := Ipa.Input curve k m p
-
-/-- The wire (serde) opening proof over Vesta. -/
-abbrev WireProof := Ipa.Wire.Proof curve
-
-/-- The wire (serde) batched claim over Vesta. -/
-abbrev WireInput := Ipa.Wire.Input curve
-
-/-- `Ipa.verify` at the Vesta bundle. -/
-def verify (σ : Bulletproof.SRS Point) {m p : ℕ} : Input σ.k m p → Bool :=
-  Ipa.verify curve σ
-
 end Bulletproof.IpaVesta
 
 namespace Bulletproof.IpaPallas
@@ -400,21 +384,5 @@ abbrev curve : Ipa.CommitmentCurve where
 
 /-- The Pallas point type. -/
 abbrev Point := Ipa.CommitmentCurve.Point curve
-
-/-- The checked opening proof at round count `k`, over Pallas. -/
-abbrev Proof (k : ℕ) := Ipa.Proof curve k
-
-/-- The checked batched claim over Pallas. -/
-abbrev Input (k m p : ℕ) := Ipa.Input curve k m p
-
-/-- The wire (serde) opening proof over Pallas. -/
-abbrev WireProof := Ipa.Wire.Proof curve
-
-/-- The wire (serde) batched claim over Pallas. -/
-abbrev WireInput := Ipa.Wire.Input curve
-
-/-- `Ipa.verify` at the Pallas bundle. -/
-def verify (σ : Bulletproof.SRS Point) {m p : ℕ} : Input σ.k m p → Bool :=
-  Ipa.verify curve σ
 
 end Bulletproof.IpaPallas

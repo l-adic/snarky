@@ -77,20 +77,4 @@ scoped notation "tailRowCount" => (43 : Nat)
 /-- The abstract batch rows (public row included, ft row excluded). -/
 scoped notation "batchRows" => (44 : Nat)
 
-/-- `coeffCols` is production's `COLUMNS`, like `wCols` — kernel-checked. -/
-private theorem coeffCols_eq : coeffCols = wCols := rfl
-
-/-- `sigmaRows` is `permCols − 1` — kernel-checked. -/
-private theorem sigmaRows_eq : sigmaRows = permCols - 1 := rfl
-
-/-- `litRowCount` is `z` plus the selectors — kernel-checked. -/
-private theorem litRowCount_eq : litRowCount = 1 + selCount := rfl
-
-/-- `tailRowCount` is the four tail regions — kernel-checked. -/
-private theorem tailRowCount_eq :
-    tailRowCount = litRowCount + wCols + coeffCols + sigmaRows := rfl
-
-/-- `batchRows` is the public row plus the tail — kernel-checked. -/
-private theorem batchRows_eq : batchRows = 1 + tailRowCount := rfl
-
 end Kimchi

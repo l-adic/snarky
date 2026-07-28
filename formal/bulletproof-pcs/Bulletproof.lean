@@ -2,6 +2,8 @@ import Bulletproof.Protocol
 import Bulletproof.Wire
 import Bulletproof.Soundness
 import Bulletproof.Reflection
+import Bulletproof.Forking.Capstone
+import Bulletproof.Forking.KnowledgeSoundness
 
 /-!
 # Bulletproof — the IPA polynomial commitment scheme
@@ -11,12 +13,14 @@ commitment as deployed by kimchi. The abstract scheme and its soundness (`Basic`
 `Batch`, `Chunk`, `Verify`, `Soundness/**` — opening soundness, batched opening
 soundness, binding = no-DL-relation, the chunked width pass); the executable wire
 verifier over the Pasta curves, driven by the Poseidon Fq-sponge (`Wire`); the
-Fiat–Shamir instantiation — the `poseidon_fiat_shamir_{vesta,pallas}` axioms and the
-per-curve headline soundness `ipa{Vesta,Pallas}_sound` (`Reflection`). The fixture
-decoders for the proof-systems wire data live in the separate `BulletproofFixture`
-target, driven by `scripts/check_ipa_fixture.lean`.
+reflection bridge between the two (`Reflection`); and the forking development
+(`Forking/`), whose per-curve headline is the knowledge soundness of the deployed
+verifier, `Ipa.Forking.ipa{Vesta,Pallas}_knowledge_sound`. The fixture decoders for
+the proof-systems wire data live in the separate `BulletproofFixture` target, driven
+by `scripts/check_ipa_fixture.lean`.
 
-Trust surface: DL-binding (a hypothesis throughout) and the Fiat–Shamir axioms — the
-declared assumption that the Poseidon sponge (the `poseidon` package) provides a valid
-Fiat–Shamir transform.
+Trust surface: DL-binding (a hypothesis throughout) and the standard logical axioms —
+no Fiat–Shamir axiom. The random-oracle idealisation enters only as the game's uniform
+challenge table, and the sponge-faithfulness exhibits (`Forking/Transcript.lean`,
+`Forking/Deployed.lean`) record how the game's reads relate to the deployed sponge.
 -/

@@ -1,9 +1,8 @@
 /-
-Axiom-closure gate for the bulletproof PCS. This package DECLARES the Fiat-Shamir axioms
-(`Bulletproof.poseidon_fiat_shamir_{vesta,pallas}` — the Poseidon sponge, from the
-`poseidon` package, provides a valid Fiat-Shamir transform); the gate checks that the
-soundness surface reduces to the standard logical axioms + those FS axioms + the Pasta
-trust base (native_decide certificates only — no axioms) and nothing else. DL-binding is a
+Axiom-closure gate for the bulletproof PCS: the soundness surface reduces to the standard
+logical axioms + the Pasta trust base (native_decide certificates only — no axioms) and
+nothing else. There is NO Fiat-Shamir axiom: the random-oracle idealisation enters the
+knowledge-soundness results only as the game's uniform challenge table. DL-binding is a
 hypothesis throughout, never an axiom.
 
 Run from `formal/bulletproof-pcs/`:  lake env lean scripts/check_axioms.lean
@@ -32,15 +31,31 @@ def roots : List Name :=
     -- what the headline does and does not claim
     `Bulletproof.Ipa.Forking.honestFamily_failure_set,
     `Bulletproof.Ipa.Forking.DeployedFamily.reductionEfficient_exists,
-    `Bulletproof.Ipa.Forking.derivedUDL_iff_residual_measure ]
+    `Bulletproof.Ipa.Forking.derivedUDL_iff_residual_measure,
+    -- the checked defences of the deployed model (see roots.txt)
+    `Bulletproof.Ipa.Forking.verifyOracle_spongeFS,
+    `Bulletproof.Ipa.Forking.verifyOracleFrom_spongeFSFrom,
+    `Bulletproof.Ipa.Forking.spongeFS_eq_from,
+    `Bulletproof.Ipa.Forking.spongeOBase_eq_from,
+    `Bulletproof.Ipa.Forking.spongeOScalar_eq_from,
+    `Bulletproof.Ipa.Forking.toGroup_spongeOBase_preT,
+    `Bulletproof.Ipa.Forking.uBaseOf_eq_transcript,
+    `Bulletproof.Ipa.Forking.nodeTranscript_nodes,
+    `Bulletproof.Ipa.Forking.sg_determined_of_verifyWith,
+    `Bulletproof.Ipa.Forking.wireWins_pinTable,
+    `Bulletproof.Ipa.Forking.pinTable_factors,
+    `Bulletproof.Ipa.Forking.chainAt_sg,
+    `Bulletproof.Ipa.Forking.wireWins_U_irrelevant,
+    `Bulletproof.Ipa.Forking.deployedExtract_U_irrelevant,
+    `Bulletproof.Ipa.Forking.uRepresentationOfBreak,
+    `Bulletproof.Ipa.Forking.winsAtBase_uBaseOf,
+    `Bulletproof.Ipa.Forking.honestNode_wins_everywhere ]
 
 /-- Standard logical axioms plus `Lean.ofReduceBool` (CompElliptic's `native_decide`
-    witnesses). NOTE what is NOT here: `poseidon_fiat_shamir_{vesta,pallas}`. Those axioms
-    are still DECLARED in `Reflection.lean` because kimchi's
-    `Verifier/Capstone/Standard.lean` consumes them directly, but no root of this package
-    reaches them any more — the old `ipa*_sound` / `chunked_*` chain that did was deleted
-    when the knowledge-soundness results took over as the API. Leaving them out of this
-    list is what keeps that true: re-introducing a root that depends on them fails here. -/
+    witnesses). NOTE what is NOT here: any Fiat-Shamir axiom. The former
+    `poseidon_fiat_shamir_{vesta,pallas}` were deleted along with the old `ipa*_sound`
+    chain when the knowledge-soundness results took over as the API; re-introducing an
+    axiom of that kind fails this gate. -/
 def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound, `Lean.ofReduceBool,
  ]

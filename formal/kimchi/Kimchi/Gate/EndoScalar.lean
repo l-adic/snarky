@@ -116,7 +116,6 @@ structure Witness (F : Type*) where
   n8 : F
   /-- The MSB-first 2-bit crumbs of the challenge (the deployed gate carries 8 per row). -/
   crumbs : List F
-deriving Repr
 
 /-- The gate constraint expressions (11 at the deployed 8-crumb width: `3 + #crumbs`) — the
     single transcription: the three accumulator folds (`n := 4n+x`, `a := 2a + cPoly x`,

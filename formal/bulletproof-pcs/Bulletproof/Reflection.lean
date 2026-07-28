@@ -7,8 +7,7 @@ import Pasta
 
 The bridge between `Bulletproof.Ipa.verify` (executable, over checked wire data,
 challenges derived by the Poseidon sponge) and the `Prop`-level acceptance
-`BatchAccepts` of the IPA soundness development — and, through the Fiat-Shamir axiom,
-the batch knowledge-soundness theorem itself.
+`BatchAccepts` of the IPA soundness development.
 
 Three strata:
 
@@ -27,20 +26,13 @@ Three strata:
   (`Input.commitmentFn`/`pointFn`/`evalFn`, and the sized challenge vector of
   `transcript`), used identically on both sides.
 
-* **The Fiat-Shamir axiom and the headline.** `poseidon_fiat_shamir_vesta` is the
-  project's declared assumption, stated at the junction: a run accepted by the
-  Poseidon-instantiated verifier admits a de-blinded accepting transcript tree over the
-  combined eval vector (`FiatShamirTreeB`, with the deployed acceptance
-  `verify … = true` as the antecedent). It packages the rewinding/forking extraction and
-  the random-oracle behaviour of the sponge; everything downstream of it is proved.
-  `ipaVesta_sound` composes the axiom, the flattening lemmas, and
-  `chunked_batch_soundness`: the claim declares its segment structure (`nc` chunks per
-  polynomial), the verifier consumes the flattened segment stream
-  (`segmentStream`), and a grid of accepting runs at pairwise-distinct combination
-  scalars, under the no-DL-relation binding *hypothesis*, binds every commitment family
-  to one genuine polynomial with its chunk windows and evaluations. Binding stays a
-  hypothesis — it is information-theoretically false at real parameters and meaningful
-  only computationally (see `Soundness/Batch.lean`).
+* **No Fiat-Shamir axiom.** The former `poseidon_fiat_shamir_{vesta,pallas}` axioms and
+  the `ipaVesta_sound` chain they fed are gone. Knowledge soundness of the deployed
+  verifier is proved in `Forking/` (`Ipa.Forking.ipa{Vesta,Pallas}_knowledge_sound`),
+  with the random-oracle idealisation carried as the game's uniform challenge table and
+  the sponge-faithfulness exhibits recorded in `Forking/Transcript.lean` and
+  `Forking/Deployed.lean`. What this module contributes to that development is the
+  reflection layer alone: `verify_reflects` and the combiner identities below.
 -/
 
 namespace Bulletproof
@@ -182,39 +174,7 @@ end Reflection
 
 /-! ## The Fiat-Shamir axiom -/
 
-/-- **AXIOM (Fiat-Shamir, Poseidon instantiation, Vesta).** A run accepted by the
-Poseidon-instantiated verifier admits a de-blinded accepting transcript tree over the
-combined eval vector: `FiatShamirTreeB` with the deployed acceptance
-`Ipa.verify … = true` as the antecedent. This is the project's declared assumption that
-the Poseidon sponge provides a valid Fiat-Shamir transform — it packages the
-rewinding/forking extraction and the random-oracle behaviour of the sponge. It is the
-sole non-standard axiom of the headline `ipaVesta_sound`. -/
-axiom poseidon_fiat_shamir_vesta (σ : SRS IpaVesta.Point) {m p : ℕ}
-    (inp : IpaVesta.Input σ.k m p) :
-  FiatShamirTreeB σ
-    (combinedCommitment inp.polyscale inp.commitmentFn)
-    (combinedEvalVector (2 ^ σ.k) inp.evalscale inp.pointFn)
-    (cipOf inp)
-    (Ipa.verify IpaVesta.curve σ inp = true)
-
-/-- **AXIOM (Fiat-Shamir, Poseidon instantiation, Pallas).** The Pallas-side twin of
-`poseidon_fiat_shamir_vesta`. -/
-axiom poseidon_fiat_shamir_pallas (σ : SRS IpaPallas.Point) {m p : ℕ}
-    (inp : IpaPallas.Input σ.k m p) :
-  FiatShamirTreeB σ
-    (combinedCommitment inp.polyscale inp.commitmentFn)
-    (combinedEvalVector (2 ^ σ.k) inp.evalscale inp.pointFn)
-    (cipOf inp)
-    (Ipa.verify IpaPallas.curve σ inp = true)
-
 /-! ## The headline -/
-
-/-- The flattened segment stream of a chunked family, as the checked vector:
-polynomial-outer, chunk-inner (`finSigmaFinEquiv`), the deployed `combine_commitments`
-order. -/
-private def segmentStream {α : Type*} {n : ℕ} {nc : Fin n → ℕ}
-    (f : (i : Fin n) → Fin (nc i) → α) : Vector α (∑ i, nc i) :=
-  Vector.ofFn fun s => f (finSigmaFinEquiv.symm s).1 (finSigmaFinEquiv.symm s).2
 
 section ChunkedHeadline
 

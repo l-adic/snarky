@@ -37,11 +37,6 @@ The five workhorses the Fiat–Shamir-reflection roots reuse across the module b
 are module-public here (consumed by `Capstone/Reflection.lean`); the counting and
 degree lemmas that only support them stay `private`.
 
-The last section packages the two binding-free halves for the knowledge-soundness game:
-`algebraicRelationOfDL` injects a nontrivial discrete-log relation into the run's AUGMENTED
-basis (the shape the relation finder consumes, at zero coefficient on the transcript-derived
-base), and `badChallenge_of_not_pins` is the contrapositive of `eval_pins_of_opening_of_eq`
-— "the extracted table failed ⟹ a challenge was bad", the direction the game reads.
 -/
 
 open Bulletproof
@@ -119,7 +114,7 @@ theorem card_badROf_le {F G : Type*} [Field F] [DecidableEq F]
 binding-free): SRS-basis representations `(aw₀ i, ρw₀ i)` of the `m` batch rows collapse
 the ξ-combination `∑ i, ξ^i • C i` to a SINGLE commitment, that of the ξ-combined
 representation. Pure `map_sum`/`map_smul` of the linear map `commitₗ`, mirroring
-`commit_combine`.
+the chunked commitment recombination.
 
 Project-local: it is the binding-free half of `eval_pins_of_opening`, split out so that
 the knowledge-soundness reduction — which runs over keys where binding provably FAILS —
@@ -390,9 +385,9 @@ private theorem ftChunkAssembly_eval [Field F] (k nt : ℕ)
 blinder `0` — the shape binding consumes.
 
 Module-public (it was `private`) because the reflection layer needs exactly this bridge to
-read the run's verifying-key stream as honest chunk commitments: `Capstone/Reflection.lean`
-carries project-local duplicates (`commitPolyChunk_as_commit`,
-`commitPolyMaskedChunk_as_commit`) that this export is meant to retire. -/
+read the run's verifying-key stream as honest chunk commitments. The unmasked project-local
+duplicate in `Capstone/Reflection.lean` has been retired against this export; the masked one
+(`commitPolyMaskedChunk_as_commit`) still stands, pending a masked export here. -/
 theorem commitPolyChunk_eq_commit [Field F] [AddCommGroup G] [Module F G]
     (σ : SRS G) (p : Polynomial F) (c : ℕ) :
     commitPolyChunk σ p c = commit σ (chunkCoeffs (2 ^ σ.k) p c) 0 := by
@@ -598,93 +593,5 @@ theorem ft_identity_of_chunks [Field F] [AddCommGroup G]
     exact hntriv hne (hbind _ _ hrel).1
   exact ft_identity_of_chunks_of_eq σ σ₆ hσ₆ hnt0 hnt aT pScalar ζ v0 n hk a b hb heval
     hab
-
-
-/-! ## From a discrete-log relation to a break the finder accepts
-
-The knowledge-soundness extractor's break branch does not emit a bare discrete-log relation:
-it emits a nontrivial relation over the run's AUGMENTED basis `(σ.g, U, σ.h)` — the setup
-generators, the transcript-derived base and the blinder — and the relation finder keeps
-exactly those whose coefficient at the transcript-derived base vanishes, restricting them to
-the setup basis. Every break this development produces (the per-row collision, the
-combined-opening mismatch, the verifying-key mismatch, the derived `ft` mismatch) has that
-one shape, so the injection is named ONCE here rather than inlined per call site.
-
-`badChallenge_of_not_pins` is the other half the game reads: the contrapositive of
-`eval_pins_of_opening_of_eq`. The game must conclude "a challenge was bad" from "the
-extracted table failed", never the converse, so the `by_contra` belongs here and not in the
-game file. -/
-
-/-- **A nontrivial discrete-log relation is a break over the augmented basis, at zero
-coefficient on the transcript-derived base.** From `DLRelation σ w wh` with `w ≠ 0`, the
-coefficient vector `augmentedCoeffs w 0 wh` is a nontrivial relation over
-`augmentedBasis σ.g U σ.h`: the augmented representation evaluates to
-`⟨w, σ.g⟩ + 0 • U + wh • σ.h` (`representationEval_augmentedBasis`), the middle term dies,
-and what is left is the relation itself. Nontriviality is inherited from `w ≠ 0` — the
-restriction of the coefficients to the setup generators IS `w`.
-
-Project-local: this is the injection the knowledge-soundness extractor's break branch needs,
-and the reason the breaks it emits land in the `ε`-priced arm rather than the residual —
-their `u`-coefficient is `0` by `algebraicRelationOfDL_coeffs_u`, definitionally. `U` is a
-parameter (not `σ.U`) because the run's transcript-derived base is squeezed from the
-transcript, not read off the setup. -/
-private def algebraicRelationOfDL [Field F] [AddCommGroup G] [Module F G]
-    (σ : SRS G) (U : G) (w : Fin (2 ^ σ.k) → F) (wh : F)
-    (hrel : DLRelation σ w wh) (hw : w ≠ 0) :
-    Zcash.Snark.AlgebraicRelationWitness (F := F)
-      (Zcash.Snark.augmentedBasis σ.g U σ.h) where
-  coeffs := Zcash.Snark.augmentedCoeffs w 0 wh
-  nontrivial := fun hzero => hw (funext fun i => congrFun hzero (Sum.inl i))
-  relation := by
-    rw [Zcash.Snark.representationEval_augmentedBasis]
-    simpa using hrel
-
-/-- **The computed break does not touch the transcript-derived base.** Definitional, and the
-reason `algebraicRelationOfDL` lands in the arm the relation finder keeps: the finder retains
-exactly the breaks whose coefficient at `u` vanishes. -/
-private theorem algebraicRelationOfDL_coeffs_u [Field F] [AddCommGroup G] [Module F G]
-    (σ : SRS G) (U : G) (w : Fin (2 ^ σ.k) → F) (wh : F)
-    (hrel : DLRelation σ w wh) (hw : w ≠ 0) :
-    (algebraicRelationOfDL σ U w wh hrel hw).coeffs Zcash.Snark.AugmentedIndex.u = 0 := rfl
-
-/-- The break's coefficients on the setup generators are the given ones. Definitional; stated
-so the consumer can read the relation off the setup basis without unfolding the injection. -/
-private theorem algebraicRelationOfDL_coeffs_gen [Field F] [AddCommGroup G] [Module F G]
-    (σ : SRS G) (U : G) (w : Fin (2 ^ σ.k) → F) (wh : F)
-    (hrel : DLRelation σ w wh) (hw : w ≠ 0) (i : Fin (2 ^ σ.k)) :
-    (algebraicRelationOfDL σ U w wh hrel hw).coeffs (Zcash.Snark.AugmentedIndex.gen i)
-      = w i := rfl
-
-/-- The break's coefficient at the blinding base is the given one. Definitional. -/
-private theorem algebraicRelationOfDL_coeffs_w [Field F] [AddCommGroup G] [Module F G]
-    (σ : SRS G) (U : G) (w : Fin (2 ^ σ.k) → F) (wh : F)
-    (hrel : DLRelation σ w wh) (hw : w ≠ 0) :
-    (algebraicRelationOfDL σ U w wh hrel hw).coeffs Zcash.Snark.AugmentedIndex.w = wh := rfl
-
-/-- **An unpinned evaluation forces a bad challenge** — the contrapositive packaging of
-`eval_pins_of_opening_of_eq`. Given the per-row representations `aw₀`, an accepted opening
-`(a, ρ)` of the combined claim, and the coordinate equality `ha` the extractor's left branch
-certifies, a single claimed evaluation that is NOT the inner product of its row's
-representation with the evaluation vector forces the polyscale challenge into `badXiOf` or
-the evalscale challenge into `badROf` — both counted, never assumed.
-
-Project-local: this is the direction the knowledge-soundness game consumes. It reads "the
-extracted table failed at `(i, j)`", and must charge that to one of the two counted
-exclusion sets; stating it here keeps the `by_contra` out of the game file. The per-row
-blinders `ρw₀` and their representation hypothesis do NOT appear — deriving `ha` is what
-consumes them, and here `ha` is given. -/
-private theorem badChallenge_of_not_pins [Field F] [DecidableEq F] [AddCommGroup G] [Module F G]
-    (σ : SRS G) {m : ℕ} (C : Fin m → G) (x : Fin evalPts → F)
-    (aw₀ : Fin m → Fin (2 ^ σ.k) → F) (E : Fin m → Fin evalPts → F) (ξ r : F)
-    (a : Fin (2 ^ σ.k) → F) (ρ : F)
-    (hopen : openingRelationB σ (combinedCommitment ξ C)
-      (combinedEvalVector (2 ^ σ.k) r x) (combinedInnerProduct ξ r E) a ρ)
-    (ha : a = ∑ i : Fin m, ξ ^ (i : ℕ) • aw₀ i)
-    {i : Fin m} {j : Fin evalPts}
-    (hij : E i j ≠ innerProduct (aw₀ i) (evalVector (2 ^ σ.k) (x j))) :
-    ξ ∈ badXiOf σ aw₀ x E ∨ r ∈ badROf σ aw₀ x E ξ := by
-  by_contra hcon
-  obtain ⟨hξ, hr⟩ := not_or.mp hcon
-  exact hij (eval_pins_of_opening_of_eq σ C x aw₀ E ξ r hξ hr a ρ hopen ha i j)
 
 end Kimchi.Verifier

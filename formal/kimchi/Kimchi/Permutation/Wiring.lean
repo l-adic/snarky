@@ -141,7 +141,7 @@ noncomputable def sigmaPoly (ω : F) (zkRows : ℕ) (shifts : Fin permCols → F
   fun i => columnPoly ω (fun j : Fin n => sigmaCell ω zkRows shifts σpFull i j)
 
 /-- The sigma columns' row semantics, on the whole domain: the committed cell value. -/
-theorem eval_sigmaPoly {ω : F} (hω : IsPrimitiveRoot ω n) (zkRows : ℕ)
+private theorem eval_sigmaPoly {ω : F} (hω : IsPrimitiveRoot ω n) (zkRows : ℕ)
     (shifts : Fin permCols → F)
     (σpFull : Equiv.Perm (Fin permCols × Fin n)) (i : Fin permCols) (j : Fin n) :
     (sigmaPoly ω zkRows shifts σpFull i).eval (ω ^ (j : ℕ))

@@ -188,7 +188,7 @@ private def chainCrumbs (w : ℕ → Witness F) (m : ℕ) : List F :=
   (List.range m).flatMap (fun i => (w i).crumbs)
 
 omit [Field F] in
-@[simp] theorem chainCrumbs_zero (w : ℕ → Witness F) : chainCrumbs w 0 = [] := rfl
+@[simp] private theorem chainCrumbs_zero (w : ℕ → Witness F) : chainCrumbs w 0 = [] := rfl
 
 omit [Field F] in
 /-- The crumbs through row `m` extend those through the first `m` rows by row `m`'s crumbs. -/

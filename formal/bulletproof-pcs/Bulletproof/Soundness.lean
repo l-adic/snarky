@@ -114,13 +114,12 @@ variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
 /-! ## Per-commitment separation -/
 
-/-- Generalized Fiat–Shamir tree hypothesis: `FiatShamirTree` with the eval vector
+/-- Generalized Fiat–Shamir tree hypothesis, with the eval vector
 abstracted to an arbitrary `b : Fin (2 ^ σ.k) → F`. An accepting run yields a
 de-blinded accepting tree over `b`,
 `accepts → ∃ (ρ : F) (t : IpaTreeV F G σ.k), IpaAcceptV σ.g b (P - ρ • σ.h) v t`.
 
-The original is the specialization
-`FiatShamirTree σ P x v accepts = FiatShamirTreeB σ P (evalVector (2 ^ σ.k) x) v accepts`. -/
+The unbatched form is the specialization at `b := evalVector (2 ^ σ.k) x`. -/
 def FiatShamirTreeB (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F) (v : F)
     (accepts : Prop) : Prop :=
   accepts → ∃ (ρ : F) (t : IpaTreeV F G σ.k),

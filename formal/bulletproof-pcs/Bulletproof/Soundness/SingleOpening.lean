@@ -350,9 +350,9 @@ chunked claims compose onto (`Chunk.lean`, `Soundness/ChunkedBatch.lean`). Every
 below the Fiat–Shamir bridge is proved; the bridge itself is the single stated
 hypothesis.
 
-`FiatShamirTree` turns an accepting verifier run into a clean accepting transcript
-tree over a de-blinded commitment. It bundles the Fiat–Shamir rewinding (uniform
-challenges yield three distinct sub-transcripts per round), the correspondence
+The Fiat–Shamir tree hypothesis (`FiatShamirTreeB`) turns an accepting verifier run into a
+clean accepting transcript tree over a de-blinded commitment. It bundles the Fiat–Shamir
+rewinding (uniform challenges yield three distinct sub-transcripts per round), the correspondence
 between the verifier's multi-scalar check and the recursive tree, and the
 Schnorr/hiding reduction that extracts the blinder `r` (so the tree is over the
 non-hiding commitment `P - r • σ.h`). Given the tree, `ipaRelation_of_acceptV` and
@@ -383,22 +383,6 @@ theorem ipaRelation_of_acceptV (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (P : G) (
   rw [hib]; exact hv.symm
 
 /-! ## The Fiat–Shamir rewinding hypothesis -/
-
-/-- **The Fiat–Shamir rewinding hypothesis** — the single trust assumption. An
-accepting run yields a *de-blinded* accepting tree: a blinder `r : F` and a tree
-`t` with
-
-`accepts → ∃ (r : F) (t : IpaTreeV F G σ.k),
-  IpaAcceptV σ.g (evalVector (2 ^ σ.k) x) (P - r • σ.h) v t`.
-
-This bundles the rewinding proper (uniform challenges give three distinct
-sub-transcripts per round), the correspondence between the verifier's multi-scalar
-check and the recursive tree, and the Schnorr/hiding reduction extracting the
-blinder `r`, so the tree is over the non-hiding de-blinded commitment
-`P - r • σ.h`. -/
-private def FiatShamirTree (σ : SRS G) (P : G) (x v : F) (accepts : Prop) : Prop :=
-  accepts → ∃ (r : F) (t : IpaTreeV F G σ.k),
-    IpaAcceptV σ.g (evalVector (2 ^ σ.k) x) (P - r • σ.h) v t
 
 /-! ## The headline soundness theorem -/
 

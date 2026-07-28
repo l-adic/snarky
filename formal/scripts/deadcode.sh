@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Reachability / dead-code report: lists authored Kimchi.* declarations not reachable from the
-# API root set in roots.txt. Driver: scripts/deadcode.lean. Requires a prior `lake build Kimchi`.
+# Dead-code GATE (nonzero exit on failure): every authored declaration must be reachable from
+# the union of the packages' roots.txt manifests, and every script-surface root must appear in
+# a scripts/ file. Driver: scripts/deadcode.lean. Requires a prior `lake build`.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 lake env lean scripts/deadcode.lean

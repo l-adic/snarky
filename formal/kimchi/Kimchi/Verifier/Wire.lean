@@ -197,22 +197,10 @@ namespace Kimchi.Verifier.Wire.KimchiVesta
 
 open Kimchi.Verifier Bulletproof
 
-/-- The kimchi proof wire record over the Vesta commitment curve. -/
-abbrev Proof := KimchiProof IpaVesta.curve
-
-/-- The kimchi verifier key wire record over the Vesta commitment curve. -/
-abbrev VK := KimchiVK IpaVesta.curve
-
 end Kimchi.Verifier.Wire.KimchiVesta
 
 namespace Kimchi.Verifier.Wire.KimchiPallas
 
 open Kimchi.Verifier Bulletproof
-
-/-- The kimchi proof wire record over the Pallas commitment curve. -/
-abbrev Proof := KimchiProof IpaPallas.curve
-
-/-- The kimchi verifier key wire record over the Pallas commitment curve. -/
-abbrev VK := KimchiVK IpaPallas.curve
 
 end Kimchi.Verifier.Wire.KimchiPallas

@@ -33,24 +33,6 @@ variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
 /-! ## The iterated fold -/
 
-/-- Fold a `2^d`-vector down to a singleton along a challenge vector, head first — the iterated
-`foldHalves`, generic over the module (generators and eval vectors alike). -/
-private def foldAll {M : Type*} [AddCommGroup M] [Module F M] :
-    {d : ℕ} → (Fin (2 ^ d) → M) → (Fin d → F) → (Fin (2 ^ 0) → M)
-  | 0, g, _ => g
-  | _ + 1, g, u => foldAll (foldHalves g (u 0)) (Fin.tail u)
-
-/-- **The s-vector commitment is the full fold**: iterating
-`commitGen_bPolyCoefficients_step` down to the base. At `M := G` this is the wire's
-`sg`-correctness target; at `M := F` it is the wire's `b0`. -/
-private theorem commitGen_bPolyCoefficients_foldAll {M : Type*} [AddCommGroup M] [Module F M] :
-    {d : ℕ} → (u : Fin d → F) → (g : Fin (2 ^ d) → M) →
-    commitGen g (bPolyCoefficients u) = foldAll g u 0
-  | 0, u, g => commitGen_bPolyCoefficients_zero u g
-  | _ + 1, u, g => by
-      rw [commitGen_bPolyCoefficients_step]
-      exact commitGen_bPolyCoefficients_foldAll (Fin.tail u) _
-
 /-! ## The prover strategy -/
 
 /-- A prefix-determined kimchi prover strategy. At each round it commits to the cross-terms
@@ -78,39 +60,6 @@ def kimchiProverAccept : {d : ℕ} → KimchiProver F G d → (Fin (2 ^ d) → G
         (P + (χ 0)⁻¹ • L + (χ 0) • R) (Fin.tail χ)
 
 /-! ## From extractable acceptance to a valid certificate -/
-
-/-- **An extractable acceptance yields a valid fork certificate** — the kimchi mirror of
-ironwood's `proverAccept_forkValid`. The `Extractable` tree hands three distinct nonzero
-challenges per round; interior rounds use all three, and the final (Schnorr) round keeps the
-first two transcripts, which is what the certificate's leaf carries. -/
-private theorem kimchiProverAccept_forkValid {U H : G} {v : F} :
-    {d : ℕ} → (pr : KimchiProver F G d) → (g : Fin (2 ^ d) → G) → (b : Fin (2 ^ d) → F) →
-    (P : G) → Zcash.Snark.Extractable (kimchiProverAccept pr g b U H v P) →
-    ∃ cert : KimchiForkCert F G d, KimchiForkValid U H v g b P cert
-  | 0, .leaf sg δ resp, g, b, P, hext => by
-      obtain ⟨c₁, c₂, c₃, h12, _, _, _, _, _, e₁, e₂, _⟩ := hext
-      have h₁ : kimchiProverAccept (.leaf sg δ resp) g b U H v P (Fin.cons c₁ Fin.elim0) := e₁
-      have h₂ : kimchiProverAccept (.leaf sg δ resp) g b U H v P (Fin.cons c₂ Fin.elim0) := e₂
-      rw [kimchiProverAccept, Fin.cons_zero] at h₁ h₂
-      exact ⟨.leaf sg δ c₁ (resp c₁).1 (resp c₁).2 c₂ (resp c₂).1 (resp c₂).2,
-        h12, h₁.1, h₁.1 ▸ h₁.2, h₁.1 ▸ h₂.2⟩
-  | d + 1, .node L R cont, g, b, P, hext => by
-      obtain ⟨u₁, u₂, u₃, h12, h13, h23, hu₁, hu₂, hu₃, e₁, e₂, e₃⟩ := hext
-      have key : ∀ u : F,
-          (fun rest => kimchiProverAccept (.node L R cont) g b U H v P (Fin.cons u rest))
-            = kimchiProverAccept (cont u) (foldHalves g u) (foldHalves b u) U H v
-                (P + u⁻¹ • L + u • R) := by
-        intro u
-        funext rest
-        rw [kimchiProverAccept, Fin.cons_zero, Fin.tail_cons]
-      rw [key u₁] at e₁
-      rw [key u₂] at e₂
-      rw [key u₃] at e₃
-      obtain ⟨t₁, hv₁⟩ := kimchiProverAccept_forkValid (cont u₁) _ _ _ e₁
-      obtain ⟨t₂, hv₂⟩ := kimchiProverAccept_forkValid (cont u₂) _ _ _ e₂
-      obtain ⟨t₃, hv₃⟩ := kimchiProverAccept_forkValid (cont u₃) _ _ _ e₃
-      exact ⟨.node L R u₁ u₂ u₃ t₁ t₂ t₃,
-        h12, h13, h23, hu₁, hu₂, hu₃, hv₁, hv₂, hv₃⟩
 
 /-! ## Faithfulness: the folded acceptance is the wire verifier's
 
@@ -216,23 +165,5 @@ theorem kimchiProverAccept_iff_verifierAcceptsAt (σ : SRS G) (pr : KimchiProver
   exact and_comm
 
 /-! ## The headline composition -/
-
-/-- **Knowledge from an extractable acceptance.** A prover strategy whose acceptance is
-`Extractable`, together with its representation of the commitment, yields an opening witness for
-`openingRelationB` — or a nontrivial relation over `(g, U, H)` exists. The certificate comes from
-`kimchiProverAccept_forkValid`, the dichotomy from `kimchiOpeningOrBreak`; stated at the `Prop`
-level since `Extractable`'s challenge tree is existential. -/
-theorem kimchi_opening_or_break_of_extractable [DecidableEq F] [DecidableEq G] (σ : SRS G)
-    (b : Fin (2 ^ σ.k) → F) (v : F) (P : G)
-    (pg : Fin (2 ^ σ.k) → F) (pw : F) (hP : P = commitGen σ.g pg + pw • σ.h)
-    (pr : KimchiProver F G σ.k)
-    (hext : Zcash.Snark.Extractable (kimchiProverAccept pr σ.g b σ.U σ.h v P)) :
-    (∃ (a : Fin (2 ^ σ.k) → F) (ρ : F), openingRelationB σ P b v a ρ) ∨
-      Nonempty (Zcash.Snark.AlgebraicRelationWitness (F := F)
-        (Zcash.Snark.augmentedBasis σ.g σ.U σ.h)) := by
-  obtain ⟨cert, hv⟩ := kimchiProverAccept_forkValid pr σ.g b P hext
-  match kimchiOpeningOrBreak σ b v P pg pw hP cert hv with
-  | .inl ⟨a, ρ, h⟩ => exact .inl ⟨a, ρ, h⟩
-  | .inr rel => exact .inr ⟨rel⟩
 
 end Bulletproof.Forking

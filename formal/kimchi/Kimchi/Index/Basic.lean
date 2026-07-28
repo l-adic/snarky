@@ -53,12 +53,12 @@ inductive GateType where
   | varBaseMul
   | endoMul
   | endoScalar
-  deriving DecidableEq, Repr, Inhabited, Fintype
+  deriving DecidableEq, Inhabited, Fintype
 
 /-- The gate types whose constraints read the *next* row as well as their own
 (`witness_next` in kimchi's `ArgumentEnv`; the `cellMap cur nxt` transcriptions in the
 quotient layer). Everything else is single-row. -/
-def GateType.twoRow : GateType → Bool
+private def GateType.twoRow : GateType → Bool
   | .poseidon | .varBaseMul | .endoMul => true
   | _ => false
 
@@ -201,10 +201,6 @@ noncomputable def coeffPoly (idx : Index F n) (c : Fin coeffCols) : Polynomial F
 /-- The sigma polynomial of column `col`. -/
 noncomputable def sigmaPoly (idx : Index F n) (col : Fin permCols) : Polynomial F :=
   columnPoly idx.omega (idx.sigmaAddrRow col)
-
-theorem eval_sigmaPoly (idx : Index F n) (col : Fin permCols) (i : Fin n) :
-    (idx.sigmaPoly col).eval (idx.omega ^ (i : ℕ)) = idx.sigmaAddrRow col i :=
-  eval_columnPoly idx.omega_prim _ i
 
 /-- The index's sigma interpolants are the wiring instantiation's, at the derived
 permutation — definitionally: the stored successor map underlies both. -/
