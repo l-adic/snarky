@@ -1098,3 +1098,46 @@ definitional edit that leaves every `Holds`-based statement semantically unchang
 which is the fix. The deferrals are the honest ones: each is real proof work, each is stated as
 open rather than closed, and E-1 in particular is left with the upstream tool cited at the point
 where the work would begin.
+
+### Follow-up round — verification of `c49054e4`
+
+All three residuals of the addendum are closed, and the B-4 generalization was taken up rather
+than noted. Re-verified independently:
+
+* **R-1 — closed, and better than specified.** `linearization_vesta_emul.json` (emitted by the
+  refactored `linearization_dump`) carries **LIVE** `endoMul` and `varBaseMul` targets — the two
+  that were `0 = 0` — while the historical fixture keeps the other four, so every gate is live in
+  at least one fixture. Two additions beyond the ask: the driver **fails** if a gate named in a
+  fixture's `liveGates` has a zero target (`check_linearization.lean:120–126`), and zero targets
+  are annotated `(0)` in the driver's own output, so a vacuous check now *reads* as vacuous
+  (observed: `varBaseMul: ✓ (0), endoMul: ✓ (0)` on the mixed fixture, un-annotated on the emul
+  one). The Rust refactor that shares the circuit between dumpers threads the prover's rng rather
+  than reseeding, and the claim that this leaves the historical fixture untouched was checked the
+  hard way: a full rebuild and regeneration of all nine dumpers reproduces **every** committed
+  fixture byte-for-byte; the manifest gate is green at 32 files.
+* **R-2 — closed.** `docs/negative-controls.md` records four controls (NC-1 end-to-end V-1, NC-2
+  gate-localized V-1, NC-3 the V-2 trace shape, NC-4 the exhibit guards) with the exact mutation,
+  the observed failure, and a replay convention. **NC-4 was replayed by the auditors**: renaming
+  `chainAt_sg` produces `✗ EXHIBIT MISSING: chainAt_sg` and **exit 1**; restoring gives exit 0.
+  The file's closing section, distinguishing self-discriminating structural gates from
+  data-driven ones that need controls, is the right scoping and is accurate.
+* **R-3 — closed by fixing, not accepting.** The `pull_request` branch filter is removed, so a
+  stacked PR touching `formal/` is gated whatever its base; and `lake update mathlib` is replaced
+  by a cache restore from the committed `lake-manifest.json`, with a fallback that re-resolves
+  **and emits a `::warning::` saying the run is not on the committed pin** — drift becomes visible
+  in the log instead of silent.
+* **The B-4 generalization was implemented.** Both locked-target gates now pin the *existence* of
+  the whole exhibit set — 20 in bulletproof-pcs, 6 in kimchi — with the rationale and the
+  `e7c431b2` precedent recorded in the script header. This closes the class, not the instance:
+  rooting protects an exhibit only while it stays rooted, whereas a sweep removing root and
+  declaration together was previously green.
+
+The auditors' report was committed unmodified (additive only; no deletions).
+
+**Closing verdict.** Every finding this engagement raised is now either fixed and independently
+verified, or deferred with a recorded rationale and the remaining work identified. The three
+standing deferrals are E-1's upgrade (a proved extractor-cost bound — the substantive open item,
+with ironwood's `ExpectedRuns.lean` cited at the point where the work begins), B-1's strong form
+(discharging `t := 0`), and V-4 (the deterministic-conjunction modelling choice). No fix altered a
+statement's meaning; the one definitional edit, `Gate.EndoMul.constraints`, leaves every
+`Holds`-based theorem semantically unchanged while deliberately correcting the linearization value.
