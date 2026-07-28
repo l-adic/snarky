@@ -42,7 +42,7 @@ theorem deployedExtract_noOpening_measure_le_of_textbookDL
     (hDL : Zcash.Snark.TextbookDLWithCoinsAdvantageLE B (relationFinder fam coins) ε)
     (hUDL : DerivedUDLAdvantageLE fam B coins δ) :
     (PMF.uniformOfFintype
-        ((SetupIndex (2 ^ k) → C.ScalarField) × fam.Coins)).toOuterMeasure
+        ((SetupIndex (2 ^ k) → C.ScalarField) × Coins C k)).toOuterMeasure
         {q | wireWins (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
                 (fam.claim (augOfSetup (Zcash.Snark.scalarBasis B q.1))) q.2
                 ((fam.adversary (augOfSetup (Zcash.Snark.scalarBasis B q.1))).run q.2) ∧
@@ -50,12 +50,12 @@ theorem deployedExtract_noOpening_measure_le_of_textbookDL
       ≤ (fam.Q + k + 1) * (3 / (2 ^ 128 : ℕ))
         + Fintype.card (SetupIndex (2 ^ k)) * ε + δ := by
 ### HAS-OPENING
-def HasOpening (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : fam.Coins)
+def HasOpening (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C k)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) : Prop :=
   ∃ w, fam.attempt basis O coins = some (PSum.inl w)
 ### RELATION-FINDER
 def relationFinder (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) :
-    (bs : SetupIndex (2 ^ k) → C.Point) → fam.Coins →
+    (bs : SetupIndex (2 ^ k) → C.Point) → Coins C k →
       Option (Zcash.Snark.AlgebraicRelationWitness (F := C.ScalarField) bs) :=
   fun bs O =>
     match fam.attempt (augOfSetup bs) O coins with
@@ -69,5 +69,5 @@ def relationFinder (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
 ### RESIDUAL-ASSUMPTION
 def DerivedUDLAdvantageLE (B : C.Point)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) (bound : ℝ≥0∞) : Prop :=
-  (PMF.uniformOfFintype ((SetupIndex (2 ^ k) → C.ScalarField) × fam.Coins)).toOuterMeasure
+  (PMF.uniformOfFintype ((SetupIndex (2 ^ k) → C.ScalarField) × Coins C k)).toOuterMeasure
       {q | (derivedULog fam B coins q.1 q.2).isSome} ≤ bound

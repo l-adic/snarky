@@ -285,7 +285,7 @@ private def wireProofOf (ω : OpeningProof C.ScalarField C.Point k) : Ipa.Proof 
 /-- The `lr` entries of a wire-packed proof. -/
 @[simp] private theorem wireProofOf_lr_getElem (ω : OpeningProof C.ScalarField C.Point k)
     (j : Fin k) :
-    (wireProofOf ω).lr[j] = ω.lr j := by
+    (wireProofOf ω).lr[(j : ℕ)] = ω.lr j := by
   simp [wireProofOf]
 
 /-! ## The honest machine over the node domain -/
@@ -443,7 +443,7 @@ private theorem honestPrefixNode_eq_nodes (cip : C.ScalarField)
   have hlrπ : ∀ l : Fin k,
       (wireProofOf (pr.proofAt χ) : Ipa.Proof C k).lr[l] = pr.lrAt χ l := by
     intro l
-    rw [wireProofOf_lr_getElem]
+    simp only [Fin.getElem_fin, wireProofOf_lr_getElem]
     rfl
   have hdeltaπ : (wireProofOf (pr.proofAt χ) : Ipa.Proof C k).delta = (pr.leafAt χ).2.1 := rfl
   have hsgπ : (wireProofOf (pr.proofAt χ) : Ipa.Proof C k).sg = (pr.leafAt χ).1 := rfl

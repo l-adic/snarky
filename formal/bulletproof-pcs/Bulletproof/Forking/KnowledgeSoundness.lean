@@ -104,18 +104,18 @@ structure DeployedFamily (C : Ipa.CommitmentCurve) [Module C.ScalarField C.Point
   /-- Every basis's adversary respects it. -/
   queryBound : ∀ basis, (adversary basis).QueryBound Q
 
+/-- The oracle table the adversary and the extractor share — ironwood's `Coins`
+(`Algebraic.lean:857`) carries the recursive fork tape alongside; here that tape stays a
+parameter, which makes the bound hold for every complete tape rather than on average. -/
+abbrev Coins (C : Ipa.CommitmentCurve) (k : ℕ) : Type := IpaNode C k → Prechallenge
+
 namespace DeployedFamily
 
 variable (fam : DeployedFamily C k m p)
 
-/-- The oracle table the adversary and the extractor share — ironwood's `Coins`
-(`Algebraic.lean:857`) carries the recursive fork tape alongside; here that tape stays a
-parameter, which makes the bound hold for every complete tape rather than on average. -/
-abbrev Coins (_fam : DeployedFamily C k m p) : Type := IpaNode C k → Prechallenge
-
 /-- One run of the deployed extractor, at a basis and an oracle table — ironwood's
 `instanceAttempt` (`Algebraic.lean:862`). -/
-def attempt (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : fam.Coins)
+def attempt (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C k)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) :
     Option (OpeningOrBreak
       { srsOfBasis k basis with U := uBaseOf C (Ipa.cipOf (fam.claim basis)) }
@@ -131,7 +131,7 @@ def attempt (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : fam.Co
 /-- **The extractor returned an opening** — ironwood's `hasCleanOpening` (`Algebraic.lean:1164`) at
 our types. It inspects the `PSum` branch, which `deployedExtract … = none` does not: that is the
 entire difference between the query-loss rung and the statement below. -/
-def HasOpening (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : fam.Coins)
+def HasOpening (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C k)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) : Prop :=
   ∃ w, fam.attempt basis O coins = some (PSum.inl w)
 
@@ -140,7 +140,7 @@ def HasOpening (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : fam
 query-loss rung already bounds: `deployedExtract_failure_measure_le` is stated at exactly this
 set, since `fam.attempt` is `deployedExtract` by definition. -/
 def acceptExtractionFailure (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
-    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) : Set fam.Coins :=
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) : Set (Coins C k) :=
   {O | wireWins (srsOfBasis k basis) (fam.claim basis) O ((fam.adversary basis).run O) ∧
     fam.attempt basis O coins = none}
 
@@ -309,7 +309,7 @@ No `hU`: the transport is the unconditional round trip
 `setupBasis_srsOfBasis_augOfSetup_override`. The `U`-touching breaks are filtered out here and
 become the residual `TouchesU` below. -/
 def relationFinder (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) :
-    (bs : SetupIndex (2 ^ k) → C.Point) → fam.Coins →
+    (bs : SetupIndex (2 ^ k) → C.Point) → Coins C k →
       Option (Zcash.Snark.AlgebraicRelationWitness (F := C.ScalarField) bs) :=
   fun bs O =>
     match fam.attempt (augOfSetup bs) O coins with
@@ -325,7 +325,7 @@ def relationFinder (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
 base*. Such a break is not a relation among the sampled setup generators, so it is invisible to
 the fixed-slot DL reduction. This event has no counterpart in the incumbent two-way cover — it is
 where `hU` used to be doing (illegitimate) work. -/
-def TouchesU (bs : SetupIndex (2 ^ k) → C.Point) (O : fam.Coins)
+def TouchesU (bs : SetupIndex (2 ^ k) → C.Point) (O : Coins C k)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) : Prop :=
   ∃ rel, fam.attempt (augOfSetup bs) O coins = some (PSum.inr rel) ∧
     rel.coeffs Zcash.Snark.AugmentedIndex.u ≠ 0
@@ -335,7 +335,7 @@ by construction (`scalarBasis B s i = s i • B`), so a `U`-touching break yield
 of the transcript-derived base `uBaseOf C (Ipa.cipOf (fam.claim …))` itself. Upstream's
 `discreteLogOfBasis_of_relation` (`AGM/Adapter.lean:211`) at slot `u`. -/
 def derivedULog (B : C.Point) (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
-    (s : SetupIndex (2 ^ k) → C.ScalarField) (O : fam.Coins) :
+    (s : SetupIndex (2 ^ k) → C.ScalarField) (O : Coins C k) :
     Option (Zcash.Snark.DiscreteLogRepresentation (F := C.ScalarField) B
       (uBaseOf C (Ipa.cipOf (fam.claim (augOfSetup (Zcash.Snark.scalarBasis B s)))))) :=
   match fam.attempt (augOfSetup (Zcash.Snark.scalarBasis B s)) O coins with
@@ -368,14 +368,14 @@ cannot be reduced to textbook DL. It is not hidden inside `hU`, and it is not cl
 from anything upstream. -/
 def DerivedUDLAdvantageLE (B : C.Point)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) (bound : ℝ≥0∞) : Prop :=
-  (PMF.uniformOfFintype ((SetupIndex (2 ^ k) → C.ScalarField) × fam.Coins)).toOuterMeasure
+  (PMF.uniformOfFintype ((SetupIndex (2 ^ k) → C.ScalarField) × Coins C k)).toOuterMeasure
       {q | (derivedULog fam B coins q.1 q.2).isSome} ≤ bound
 
 /-- The residual event is exactly the event `derivedULog` succeeds on: the assumption above bounds
 the residual and nothing else. -/
 theorem derivedULog_isSome_iff (B : C.Point)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
-    (s : SetupIndex (2 ^ k) → C.ScalarField) (O : fam.Coins) :
+    (s : SetupIndex (2 ^ k) → C.ScalarField) (O : Coins C k) :
     (derivedULog fam B coins s O).isSome ↔
       TouchesU fam (Zcash.Snark.scalarBasis B s) O coins := by
   classical
@@ -408,9 +408,9 @@ theorem derivedUDL_iff_residual_measure (B : C.Point)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) (δ : ℝ≥0∞) :
     DerivedUDLAdvantageLE fam B coins δ ↔
       (PMF.uniformOfFintype
-          ((SetupIndex (2 ^ k) → C.ScalarField) × fam.Coins)).toOuterMeasure
+          ((SetupIndex (2 ^ k) → C.ScalarField) × Coins C k)).toOuterMeasure
         {q | TouchesU fam (Zcash.Snark.scalarBasis B q.1) q.2 coins} ≤ δ := by
-  have hset : {q : (SetupIndex (2 ^ k) → C.ScalarField) × fam.Coins |
+  have hset : {q : (SetupIndex (2 ^ k) → C.ScalarField) × Coins C k |
         TouchesU fam (Zcash.Snark.scalarBasis B q.1) q.2 coins}
       = {q | (derivedULog fam B coins q.1 q.2).isSome} := by
     ext q
@@ -431,7 +431,7 @@ already bounded by `deployedExtract_failure_measure_le`), or produced a setup-ba
 (charged to textbook DL), or produced a `U`-touching break (the residual). -/
 private theorem three_way_cover (B : C.Point) (fam : DeployedFamily C k m p)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) :
-    {q : (SetupIndex (2 ^ k) → C.ScalarField) × fam.Coins |
+    {q : (SetupIndex (2 ^ k) → C.ScalarField) × Coins C k |
         wireWins (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
             (fam.claim (augOfSetup (Zcash.Snark.scalarBasis B q.1))) q.2
             ((fam.adversary (augOfSetup (Zcash.Snark.scalarBasis B q.1))).run q.2) ∧
@@ -439,7 +439,7 @@ private theorem three_way_cover (B : C.Point) (fam : DeployedFamily C k m p)
       ⊆ {q | q.2 ∈ fam.acceptExtractionFailure
               (augOfSetup (Zcash.Snark.scalarBasis B q.1)) coins}
         ∪ (↑(Zcash.Snark.relSetWithCoins B (relationFinder fam coins)) :
-            Set ((SetupIndex (2 ^ k) → C.ScalarField) × fam.Coins))
+            Set ((SetupIndex (2 ^ k) → C.ScalarField) × Coins C k))
         ∪ {q | TouchesU fam (Zcash.Snark.scalarBasis B q.1) q.2 coins} := by
   classical
   intro q hq
@@ -475,7 +475,7 @@ private theorem presence_summand
     (B : C.Point) (fam : DeployedFamily C k m p)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) (hcoins : coins.Complete) :
     (PMF.uniformOfFintype
-        ((SetupIndex (2 ^ k) → C.ScalarField) × fam.Coins)).toOuterMeasure
+        ((SetupIndex (2 ^ k) → C.ScalarField) × Coins C k)).toOuterMeasure
         {q | q.2 ∈ fam.acceptExtractionFailure
           (augOfSetup (Zcash.Snark.scalarBasis B q.1)) coins}
       ≤ (fam.Q + k + 1) * (3 / (2 ^ 128 : ℕ)) := by
@@ -498,7 +498,7 @@ theorem relation_summand (B : C.Point) (fam : DeployedFamily C k m p)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) {ε : ℝ≥0∞}
     (hDL : Zcash.Snark.TextbookDLWithCoinsAdvantageLE B (relationFinder fam coins) ε) :
     (PMF.uniformOfFintype
-        ((SetupIndex (2 ^ k) → C.ScalarField) × fam.Coins)).toOuterMeasure
+        ((SetupIndex (2 ^ k) → C.ScalarField) × Coins C k)).toOuterMeasure
         (Zcash.Snark.relSetWithCoins B (relationFinder fam coins))
       ≤ Fintype.card (SetupIndex (2 ^ k)) * ε :=
   Zcash.Snark.relationWithCoins_prob_le_of_textbookDL B _ hDL
@@ -508,10 +508,10 @@ theorem residual_summand (B : C.Point) (fam : DeployedFamily C k m p)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) {δ : ℝ≥0∞}
     (hU : DerivedUDLAdvantageLE fam B coins δ) :
     (PMF.uniformOfFintype
-        ((SetupIndex (2 ^ k) → C.ScalarField) × fam.Coins)).toOuterMeasure
+        ((SetupIndex (2 ^ k) → C.ScalarField) × Coins C k)).toOuterMeasure
         {q | TouchesU fam (Zcash.Snark.scalarBasis B q.1) q.2 coins}
       ≤ δ := by
-  have hset : {q : (SetupIndex (2 ^ k) → C.ScalarField) × fam.Coins |
+  have hset : {q : (SetupIndex (2 ^ k) → C.ScalarField) × Coins C k |
         TouchesU fam (Zcash.Snark.scalarBasis B q.1) q.2 coins}
       = {q | (derivedULog fam B coins q.1 q.2).isSome} := by
     ext q
@@ -554,7 +554,7 @@ theorem deployedExtract_noOpening_measure_le_of_textbookDL
     (hDL : Zcash.Snark.TextbookDLWithCoinsAdvantageLE B (relationFinder fam coins) ε)
     (hUDL : DerivedUDLAdvantageLE fam B coins δ) :
     (PMF.uniformOfFintype
-        ((SetupIndex (2 ^ k) → C.ScalarField) × fam.Coins)).toOuterMeasure
+        ((SetupIndex (2 ^ k) → C.ScalarField) × Coins C k)).toOuterMeasure
         {q | wireWins (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
                 (fam.claim (augOfSetup (Zcash.Snark.scalarBasis B q.1))) q.2
                 ((fam.adversary (augOfSetup (Zcash.Snark.scalarBasis B q.1))).run q.2) ∧
@@ -607,7 +607,7 @@ variable (fam : DeployedFamily C k m p)
 /-- **The extractor's call count at one basis and one table** — `deployedExtractRuns` at the
 family's instantiation, i.e. a projection of the very recursion `attempt` runs. -/
 def DeployedFamily.attemptRuns (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
-    (O : fam.Coins) (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) : ℕ :=
+    (O : Coins C k) (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) : ℕ :=
   deployedExtractRuns (srsOfBasis k basis) (Ipa.cipOf (fam.claim basis))
     (combinedEvalVector (2 ^ k) (fam.claim basis).evalscale (fam.claim basis).pointFn)
     (Ipa.cipOf (fam.claim basis))
@@ -616,11 +616,11 @@ def DeployedFamily.attemptRuns (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C
 
 /-- **The extractor makes at most `R` calls on average** — ironwood's `ReductionEfficient`
 (`Algebraic.lean:1407`) at our types. The sum is over the oracle tables, with the fork tape a
-parameter, matching how `DeployedFamily.Coins` is defined. -/
+parameter, matching how `Coins` is defined. -/
 def DeployedFamily.ReductionEfficient
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) (R : ℕ) : Prop :=
   ∀ basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point,
-    ∑ O : fam.Coins, fam.attemptRuns basis O coins ≤ R * Fintype.card fam.Coins
+    ∑ O : Coins C k, fam.attemptRuns basis O coins ≤ R * Fintype.card (Coins C k)
 
 /-- **Discrete log is hard for this family against `R`-call reductions** — ironwood's
 `DiscreteLogRelationHardFor` (`Algebraic.lean`) at our types, carrying both advantage bounds
@@ -654,7 +654,7 @@ private theorem deployedExtract_knowledgeSoundness_under_DL
     (hHard : fam.DiscreteLogRelationHardFor B coins R ε δ)
     (hEff : fam.ReductionEfficient coins R) :
     (PMF.uniformOfFintype
-        ((SetupIndex (2 ^ k) → C.ScalarField) × fam.Coins)).toOuterMeasure
+        ((SetupIndex (2 ^ k) → C.ScalarField) × Coins C k)).toOuterMeasure
         {q | wireWins (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
                 (fam.claim (augOfSetup (Zcash.Snark.scalarBasis B q.1))) q.2
                 ((fam.adversary (augOfSetup (Zcash.Snark.scalarBasis B q.1))).run q.2) ∧
@@ -675,9 +675,9 @@ theorem DeployedFamily.reductionEfficient_exists [Fintype C.Point]
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) :
     ∃ R, fam.ReductionEfficient coins R := by
   classical
-  refine ⟨Finset.univ.sup fun basis => ∑ O : fam.Coins, fam.attemptRuns basis O coins, ?_⟩
+  refine ⟨Finset.univ.sup fun basis => ∑ O : Coins C k, fam.attemptRuns basis O coins, ?_⟩
   intro basis
-  refine le_trans (Finset.le_sup (f := fun basis => ∑ O : fam.Coins,
+  refine le_trans (Finset.le_sup (f := fun basis => ∑ O : Coins C k,
     fam.attemptRuns basis O coins) (Finset.mem_univ basis)) ?_
   exact Nat.le_mul_of_pos_right _ Fintype.card_pos
 
@@ -692,7 +692,7 @@ private theorem vesta_knowledgeSoundness_under_DL {k m p : ℕ}
     (hHard : fam.DiscreteLogRelationHardFor B coins R ε δ)
     (hEff : fam.ReductionEfficient coins R) :
     (PMF.uniformOfFintype
-        ((SetupIndex (2 ^ k) → IpaVesta.curve.ScalarField) × fam.Coins)).toOuterMeasure
+        ((SetupIndex (2 ^ k) → IpaVesta.curve.ScalarField) × Coins IpaVesta.curve k)).toOuterMeasure
         {q | wireWins (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
                 (fam.claim (augOfSetup (Zcash.Snark.scalarBasis B q.1))) q.2
                 ((fam.adversary (augOfSetup (Zcash.Snark.scalarBasis B q.1))).run q.2) ∧
@@ -710,7 +710,8 @@ private theorem pallas_knowledgeSoundness_under_DL {k m p : ℕ}
     (hHard : fam.DiscreteLogRelationHardFor B coins R ε δ)
     (hEff : fam.ReductionEfficient coins R) :
     (PMF.uniformOfFintype
-        ((SetupIndex (2 ^ k) → IpaPallas.curve.ScalarField) × fam.Coins)).toOuterMeasure
+        ((SetupIndex (2 ^ k) → IpaPallas.curve.ScalarField)
+          × Coins IpaPallas.curve k)).toOuterMeasure
         {q | wireWins (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
                 (fam.claim (augOfSetup (Zcash.Snark.scalarBasis B q.1))) q.2
                 ((fam.adversary (augOfSetup (Zcash.Snark.scalarBasis B q.1))).run q.2) ∧
@@ -815,7 +816,7 @@ theorem ipaVesta_knowledge_sound {k m p : ℕ}
     (hHard : fam.DiscreteLogRelationHardFor B coins R ε δ)
     (hEff : fam.ReductionEfficient coins R) :
     (PMF.uniformOfFintype
-        ((SetupIndex (2 ^ k) → IpaVesta.curve.ScalarField) × fam.Coins)).toOuterMeasure
+        ((SetupIndex (2 ^ k) → IpaVesta.curve.ScalarField) × Coins IpaVesta.curve k)).toOuterMeasure
         {q | wireWins (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
                 (fam.claim (augOfSetup (Zcash.Snark.scalarBasis B q.1))) q.2
                 ((fam.adversary (augOfSetup (Zcash.Snark.scalarBasis B q.1))).run q.2) ∧
@@ -833,7 +834,8 @@ theorem ipaPallas_knowledge_sound {k m p : ℕ}
     (hHard : fam.DiscreteLogRelationHardFor B coins R ε δ)
     (hEff : fam.ReductionEfficient coins R) :
     (PMF.uniformOfFintype
-        ((SetupIndex (2 ^ k) → IpaPallas.curve.ScalarField) × fam.Coins)).toOuterMeasure
+        ((SetupIndex (2 ^ k) → IpaPallas.curve.ScalarField)
+          × Coins IpaPallas.curve k)).toOuterMeasure
         {q | wireWins (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
                 (fam.claim (augOfSetup (Zcash.Snark.scalarBasis B q.1))) q.2
                 ((fam.adversary (augOfSetup (Zcash.Snark.scalarBasis B q.1))).run q.2) ∧
@@ -906,7 +908,7 @@ private theorem honestFamily_accepts_everywhere
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
-    (O : (honestFamily hsmul hne k m p).Coins) :
+    (O : Coins C k) :
     wireWins (srsOfBasis k basis) ((honestFamily hsmul hne k m p).claim basis) O
       (((honestFamily hsmul hne k m p).adversary basis).run O) :=
   (honestNode_wireWins_everywhere hsmul hne (srsOfBasis k basis)
@@ -918,7 +920,7 @@ theorem honestFamily_failure_set
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0) (B : C.Point)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) :
-    {q : (SetupIndex (2 ^ k) → C.ScalarField) × (honestFamily hsmul hne k m p).Coins |
+    {q : (SetupIndex (2 ^ k) → C.ScalarField) × Coins C k |
         wireWins (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
             ((honestFamily hsmul hne k m p).claim
               (augOfSetup (Zcash.Snark.scalarBasis B q.1))) q.2
