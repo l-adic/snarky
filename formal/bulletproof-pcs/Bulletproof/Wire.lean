@@ -244,14 +244,6 @@ def transcript (inp : Input C k m p) :
     C.Point × Vector C.ScalarField k × C.ScalarField :=
   transcriptFrom C FqSponge.init inp
 
-/-- A batched claim at given combination scalars — the checked input the grid rows of
-the soundness statements range over. The curve is implicit (inferred from the
-commitment vector). -/
-def mkInput {C : CommitmentCurve} {k m p : ℕ} (commitments : Vector C.Point m)
-    (xs : Vector C.ScalarField p) (evals : Vector (Vector C.ScalarField p) m)
-    (ξ r : C.ScalarField) (proof : Proof C k) : Input C k m p :=
-  { commitments := commitments, xs := xs, evals := evals
-    polyscale := ξ, evalscale := r, proof := proof }
 
 /-- The acceptance decision from a given initial sponge state `s₀`, against a library
 SRS: derive the transcript (from `s₀` — kimchi's warm start hands the post-`ζ`

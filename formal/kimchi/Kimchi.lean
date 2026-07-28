@@ -39,7 +39,6 @@ import Kimchi.Verifier.Reduction.Soundness
 import Kimchi.Verifier.Kimchi
 import Kimchi.Verifier.Reflect
 import Kimchi.Verifier.Wire
-import Kimchi.Verifier.Capstone.Standard
 import Kimchi.Verifier.Capstone.Algebraic
 import Kimchi.Verifier.Capstone.Reflection
 

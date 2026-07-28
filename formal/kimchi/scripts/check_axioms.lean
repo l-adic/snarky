@@ -49,17 +49,11 @@ def roots : List Name :=
     `Kimchi.Verifier.Wire.KimchiProof.check,
     `Kimchi.Verifier.Wire.KimchiVK.check,
     `Kimchi.Protocol.sound,
-    `Kimchi.Verifier.kimchiProof_sound_of_openings,
-    `Kimchi.Verifier.kimchiProof_sound,
-    `Kimchi.Verifier.kimchiProof_sound_algebraic,
-    `Kimchi.Verifier.kimchiProof_sound_algebraic_ft,
-    `Kimchi.Verifier.kimchiVesta_sound,
-    `Kimchi.Verifier.kimchiPallas_sound,
-    `Kimchi.Verifier.kimchiVesta_run_sound,
-    `Kimchi.Verifier.kimchiPallas_run_sound,
-    `Kimchi.Verifier.ft_opening_of_pins,
-    `Kimchi.Verifier.kimchiVesta_run_sound_of_pins,
-    `Kimchi.Verifier.kimchiPallas_run_sound_of_pins ]
+    -- The knowledge-soundness endpoints: the deployed verifier is knowledge-sound per curve,
+    -- over the standard axioms and the Pasta certificates alone.
+    `Kimchi.Verifier.KnowledgeSoundness.vesta_kimchi_knowledge_sound,
+    `Kimchi.Verifier.KnowledgeSoundness.pallas_kimchi_knowledge_sound,
+    `Kimchi.Verifier.Forking.honestKimchiFamily_wins ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms and
     `Lean.ofReduceBool`. The pasta package declares NO axioms — the group orders are
@@ -72,7 +66,6 @@ def allowed : List Name :=
     -- The declared Fiat-Shamir assumption: Poseidon-accepted runs admit de-blinded
     -- accepting transcript trees (`Bulletproof/Reflection.lean`, bulletproof-pcs
     -- package). One per Pasta curve.
-    `Bulletproof.poseidon_fiat_shamir_vesta, `Bulletproof.poseidon_fiat_shamir_pallas,
     -- The deployed-run Fiat-Shamir assumptions
     -- (`Kimchi/Verifier/Capstone/Reflection.lean`), anchored on the warm reflected run
     -- (`Ipa.verifyFrom (runWarm) (runInput)`, the flat segment stream) rather than the

@@ -71,10 +71,6 @@ def runPubEvals (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (runZetaOmega C σ cvk cp pub) (runZetaN C σ cvk cp pub)
     (runZetaOmegaN C σ cvk cp pub) pub
 
-/-- The run's chunk-combined public evaluation at `ζ` — `ft_eval0`'s public slot. -/
-def runPubEval0 (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : C.ScalarField :=
-  combineAt (runZetaM C σ cvk cp pub) (runPubEvals C σ cvk cp pub).zeta.toArray
 
 /-- The run's chunk-combined evaluation record — the verifier's `evals.combine`. -/
 def runLinEvals (σ : SRS C.Point) (cvk : KimchiVK C nc)
@@ -98,10 +94,6 @@ def runFtEval0P (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (runOracles C σ cvk cp pub).gamma (runOracles C σ cvk cp pub).zeta pubEval0
     (runLinEvals C σ cvk cp pub)
 
-/-- The run's computed `ft(ζ)` claim (closed form). -/
-def runFtEval0 (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : C.ScalarField :=
-  runFtEval0P C σ cvk cp pub (runPubEval0 C σ cvk cp pub)
 
 /-- The run's permutation scalar (the `f_comm` coefficient). -/
 def runPScalar (σ : SRS C.Point) (cvk : KimchiVK C nc)
@@ -171,43 +163,8 @@ def runInput (σ : SRS C.Point) (cvk : KimchiVK C nc)
   runInputP C σ cvk cp pub (runPubEvals C σ cvk cp pub)
     (runVU C σ cvk cp pub).1 (runVU C σ cvk cp pub).2
 
-/-- The warm post-`ζ` sponge state the opening verification continues from. -/
-def runWarm (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
-    FqSponge.S C.base :=
-  (runOracles C σ cvk cp pub).warm
 
 /-! ## The body reflection -/
 
-/-- **The body reflection**: a `kimchiVerify` acceptance is the two
-argument-dependent guards plus the warm-sponge IPA finish accepting the run's own
-flat segment stream — no trust, pure code-path reading. The `replace` re-expresses
-`kimchiVerify`'s body through the named run functions (definitional: they mirror the
-body's `let`s; the one pair destructuring, `(v, u) := frOracles …`, stays a match),
-so no sponge computation is ever reduced. -/
-theorem kimchiVerify_reflects (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
-    (hv : kimchiVerify C σ cvk cp pub = true) :
-    pub.size ≤ cvk.lagrangeBasis.size ∧ pub.size ≤ cvk.n
-      ∧ Ipa.verifyFrom C σ (runWarm C σ cvk cp pub)
-          (runInput C σ cvk cp pub) = true := by
-  replace hv : (if cvk.lagrangeBasis.size < pub.size || cvk.n < pub.size then
-      false
-    else
-      match runVU C σ cvk cp pub with
-      | (v, u) => runBody C σ cvk cp pub (runPubEvals C σ cvk cp pub) v u) = true := hv
-  split at hv
-  case isTrue => exact absurd hv (by simp)
-  case isFalse hguard =>
-  have hg : ¬ cvk.lagrangeBasis.size < pub.size ∧ ¬ cvk.n < pub.size := by
-    simpa [not_or] using hguard
-  rcases hvu : runVU C σ cvk cp pub with ⟨vv, uu⟩
-  rw [hvu] at hv
-  replace hv : runBody C σ cvk cp pub (runPubEvals C σ cvk cp pub) vv uu = true := hv
-  have hv0 : vv = (runVU C σ cvk cp pub).1 := by rw [hvu]
-  have hv1 : uu = (runVU C σ cvk cp pub).2 := by rw [hvu]
-  subst hv0
-  subst hv1
-  exact ⟨Nat.le_of_not_lt hg.1, Nat.le_of_not_lt hg.2, hv⟩
 
 end Kimchi.Verifier

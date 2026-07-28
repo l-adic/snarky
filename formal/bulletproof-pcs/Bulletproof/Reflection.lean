@@ -220,47 +220,6 @@ section ChunkedHeadline
 
 variable {Cc : CommitmentCurve} [Module Cc.ScalarField Cc.Point]
 
-/-- The Fiat-Shamir axiom's flat tree, reshaped to the chunked combiners of the segment
-stream through the flattening lemmas. Generic over the curve bundle; the per-curve
-headlines instantiate it at their axiom. -/
-private theorem fs_tree_chunked
-    (ax : ∀ (σ : SRS Cc.Point) {m p : ℕ} (inp : Ipa.Input Cc σ.k m p),
-      FiatShamirTreeB σ
-        (combinedCommitment inp.polyscale inp.commitmentFn)
-        (combinedEvalVector (2 ^ σ.k) inp.evalscale inp.pointFn)
-        (cipOf inp)
-        (Ipa.verify Cc σ inp = true))
-    (σ : SRS Cc.Point) {n : ℕ} {nc : Fin n → ℕ}
-    (C : (i : Fin n) → Fin (nc i) → Cc.Point)
-    {p : ℕ} (xs : Vector Cc.ScalarField p)
-    (e : (i : Fin n) → Fin (nc i) → Fin p → Cc.ScalarField)
-    (ξ rr : Cc.ScalarField) (proof : Ipa.Proof Cc σ.k) :
-    FiatShamirTreeB σ (chunkedCombinedCommitment ξ C)
-      (combinedEvalVector (2 ^ σ.k) rr fun j : Fin p => xs[j])
-      (chunkedCombinedInnerProduct ξ rr e)
-      (Ipa.verify Cc σ
-        (mkInput (segmentStream C) xs
-          (segmentStream fun i c => Vector.ofFn (e i c)) ξ rr proof) = true) := by
-  set inp : Ipa.Input Cc σ.k (∑ i, nc i) p :=
-    mkInput (segmentStream C) xs
-      (segmentStream fun i c => Vector.ofFn (e i c)) ξ rr proof with hinp
-  have h := ax σ inp
-  have hC : combinedCommitment inp.polyscale inp.commitmentFn
-      = chunkedCombinedCommitment ξ C := by
-    rw [chunkedCombinedCommitment_eq_flat, combinedCommitment, combinedCommitment]
-    refine Finset.sum_congr rfl fun v _ => ?_
-    congr 1
-    simp [hinp, Ipa.Input.commitmentFn, Ipa.mkInput, segmentStream]
-  have hcip : cipOf inp = chunkedCombinedInnerProduct ξ rr e := by
-    rw [chunkedCombinedInnerProduct_eq_flat, cipOf, combinedInnerProduct,
-      combinedInnerProduct]
-    refine Finset.sum_congr rfl fun v _ => ?_
-    congr 1
-    refine Finset.sum_congr rfl fun j _ => ?_
-    congr 1
-    simp [hinp, Ipa.Input.evalFn, Ipa.mkInput, segmentStream]
-  rw [hC, hcip] at h
-  exact h
 
 end ChunkedHeadline
 
